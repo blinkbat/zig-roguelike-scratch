@@ -2,8 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
-// THE ONLY FILE THAT TOUCHES A DEVICE. Everything else asks for an Action or reads `walk` and `lean`.
-// The pad is the primary input and the only one the UI names; the keyboard mirrors it.
+// THE ONLY FILE THAT TOUCHES A DEVICE. The pad is primary and the only one the UI names; the keyboard mirrors it.
 
 pub const PAD: i32 = 0;
 const LEAN: rl.GamepadButton = .left_trigger_1;
@@ -21,7 +20,6 @@ fn padName(comptime b: rl.GamepadButton) [:0]const u8 {
     };
 }
 
-/// Held keys or buttons sum, so two of them make a diagonal.
 const Walk = struct {
     d: mathx.Dir,
     pad: ?rl.GamepadButton = null,
@@ -39,7 +37,6 @@ const WALKS = [_]Walk{
     .{ .d = .nw, .keys = &.{.kp_7} },
 };
 
-/// The d-pad's buttons, in the order the lean overlay draws them.
 pub const DPAD = blk: {
     var ds: []const mathx.Dir = &.{};
     for (WALKS) |w| {
@@ -48,7 +45,7 @@ pub const DPAD = blk: {
     break :blk ds[0..ds.len].*;
 };
 
-/// LB held turns a d-pad cardinal one eighth clockwise onto a diagonal: up is up-right, left is up-left.
+/// One eighth clockwise: up is up-right, left is up-left.
 pub fn leanOf(d: mathx.Dir) mathx.Dir {
     if (d.diagonal()) return d;
     return @enumFromInt(@intFromEnum(d) + 1);
@@ -90,15 +87,13 @@ pub const Action = enum {
 
 const ACTIONS = std.enums.values(Action);
 
-/// A stick is a level and a walk wants edges: Schmitt trigger, DAS then ARR, re-latch the moment it is steered.
-/// `settle` holds a new direction back until it has been stable that long, so two buttons or keys pressed or
-/// released a frame apart read as one diagonal instead of an orthogonal step first. A tap let go before it has
-/// settled still steps once, on release.
+/// Schmitt trigger, then DAS and ARR; re-latches the moment it is steered. `settle` holds a new direction back so two
+/// keys a frame apart read as one diagonal; a tap let go before it settles steps once, on release.
 pub const Stepper = struct {
     pub const FIRE: f32 = 0.50;
     pub const REARM: f32 = 0.32;
-    pub const DAS: f32 = 0.20;
-    pub const ARR: f32 = 0.09;
+    pub const DAS: f32 = 0.28;
+    pub const ARR: f32 = 0.13;
     pub const SETTLE: f32 = 0.05;
 
     latched: ?mathx.Dir = null,
@@ -153,7 +148,6 @@ fn partOf(d: mathx.Dir, diag: mathx.Dir) bool {
 pub const State = struct {
     pressed: std.EnumSet(Action) = .initEmpty(),
     walk: ?mathx.Dir = null,
-    /// LB held: the d-pad is on its diagonal layer, and the overlay shows where each button goes.
     lean: bool = false,
     step: Stepper = .{},
 
@@ -323,7 +317,8 @@ test "a held walk that has stepped owes nothing when it is let go" {
     var s = Stepper{};
     const dt: f32 = 1.0 / 60.0;
     var steps: usize = 0;
-    for (0..20) |_| {
+    const held: usize = @intFromFloat(@ceil((Stepper.SETTLE + Stepper.DAS) / dt) + 2);
+    for (0..held) |_| {
         if (s.tick(dt, 1, mathx.Dir.e.heading(), Stepper.SETTLE) != null) steps += 1;
     }
     if (s.tick(dt, 0, 0, Stepper.SETTLE) != null) steps += 1;

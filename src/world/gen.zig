@@ -22,7 +22,6 @@ comptime {
     std.debug.assert(grid.MAX_TORCHES >= MAX_ROOMS);
 }
 
-/// A room's outer corner has its floor on the diagonal away from it: `corner_tl` has its floor to the south-east.
 const CORNERS = [_]struct { floor: mathx.Dir, s: grid.WallShape }{
     .{ .floor = .se, .s = .corner_tl },
     .{ .floor = .sw, .s = .corner_tr },
@@ -58,7 +57,7 @@ pub const Floor = struct {
     start: P = .{ .x = 0, .y = 0 },
 };
 
-/// Rooms and L-corridors, then tunnelled until one flood fill reaches every open cell. Reproducible from the seed.
+/// Every open cell connected; reproducible from the seed.
 pub fn build(lv: *grid.Level, seed: u64) Floor {
     lv.* = grid.Level.blank();
     var rng = mathx.Rng.init(seed);
@@ -94,7 +93,6 @@ pub fn build(lv: *grid.Level, seed: u64) Floor {
     return f;
 }
 
-/// On the brick face of a wall along the room's top edge.
 fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
     var spots: [ROOM_W_HI]i32 = undefined;
     var n: usize = 0;
@@ -152,7 +150,6 @@ fn firstOpen(lv: *const grid.Level) ?P {
     return null;
 }
 
-/// Tunnels from the first unreached cell to the nearest reached one until nothing is orphaned.
 fn connect(lv: *grid.Level, rng: *mathx.Rng) void {
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
@@ -181,8 +178,7 @@ fn connect(lv: *grid.Level, rng: *mathx.Rng) void {
     }
 }
 
-/// A room knows its own corners, so they are corners even where a corridor runs just outside them. Stamped over
-/// `shapeWalls`, except where a tunnel carved the corner open, opened a doorway beside it, or runs below it.
+/// Stamped over `shapeWalls`, which reads a room's corners as straight walls where a corridor runs just outside them.
 fn outlineRoom(lv: *grid.Level, r: Room) void {
     for (CORNERS) |c| {
         const p = r.corner(c.floor);
@@ -191,15 +187,12 @@ fn outlineRoom(lv: *grid.Level, r: Room) void {
     }
 }
 
-/// A room corner whose floor lies toward `floor`, with a doorway in the outline beside it or floor below it.
 fn keepsFloorShape(lv: *const grid.Level, p: P, floor: mathx.Dir) bool {
     const d = floor.delta();
     return lv.walkable(p.add(.{ .x = d.x, .y = 0 })) or lv.walkable(p.add(.{ .x = 0, .y = d.y })) or
         lv.walkable(p.add(mathx.Dir.s.delta()));
 }
 
-/// Every wall's `grid.WallShape` from the terrain round it: what corridors and anything no room claims are drawn
-/// as. Runs once at the end of generation and nothing recomputes it.
 pub fn shapeWalls(lv: *grid.Level) void {
     for (0..grid.CELLS) |i| {
         lv.shape[i] = if (lv.tile[i] == .wall) wallShape(lv, grid.Level.of(i)) else null;
@@ -226,7 +219,6 @@ fn wallShape(lv: *const grid.Level, p: P) grid.WallShape {
     return found orelse .solid;
 }
 
-/// A floor cell nobody stands on, at least `min_gap` from `away_from`.
 pub fn openSpot(lv: *const grid.Level, rng: *mathx.Rng, away_from: P, min_gap: i32) ?P {
     for (0..SPOT_TRIES) |_| {
         const p = P{ .x = rng.range(1, grid.W - 2), .y = rng.range(1, grid.H - 2) };
@@ -411,11 +403,7 @@ test "floor lies below a wall exactly when it is a top wall, a bottom block corn
         for (lv.shape, 0..) |shape, k| {
             const s = shape orelse continue;
             const below = lv.walkable(grid.Level.of(k).add(mathx.Dir.s.delta()));
-            const faced = switch (s) {
-                .top, .block_bl, .block_br, .post => true,
-                else => false,
-            };
-            try std.testing.expectEqual(below, faced);
+            try std.testing.expectEqual(below, s.faced());
         }
     }
 }

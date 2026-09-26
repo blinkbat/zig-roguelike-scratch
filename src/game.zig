@@ -10,14 +10,13 @@ const actor = @import("play/actor.zig");
 const bow = @import("play/bow.zig");
 const look = @import("gfx/look.zig");
 const light = @import("gfx/light.zig");
+const font = @import("gfx/font.zig");
 
 const P = mathx.P;
 
 pub const WINDOW_W: i32 = 1600;
 pub const WINDOW_H: i32 = 900;
 pub const CELL: i32 = 64;
-/// raylib's built-in font is 10 px tall; only whole multiples of it stay crisp.
-const FONT: i32 = 10;
 pub const GLYPH: i32 = 60;
 pub const CARET: i32 = 30;
 const TORCH_GLYPH: i32 = 30;
@@ -53,7 +52,6 @@ pub const MINI_PAD: i32 = 12;
 const MINI_FRAME: i32 = 4;
 const MINI_HERO_GROW: i32 = 1;
 pub const RATS: usize = 8;
-/// Past the archer's sight, so nothing is awake on arrival.
 pub const RAT_GAP: i32 = 12;
 pub const SHOT_SEED: u64 = 0x5EED_1234;
 const SHOTS_DIR = "shots";
@@ -61,12 +59,13 @@ const FLIGHT_S: f32 = 0.022;
 const CAM_EASE: f32 = 12.0;
 /// One walk repeat, so the glides of a held walk join end to end.
 const GLIDE_S: f32 = input.Stepper.ARR;
+/// Pixels, at the top of each glide's hop.
+const HOP_PX: f32 = 10;
 /// `gen.build` rolls from the bare seed; without the salt the rats replay the floor's rolls.
 const PLAY_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
 
 comptime {
     std.debug.assert(@mod(CELL, look.SPRITE_PX) == 0);
-    for ([_]i32{ GLYPH, CARET, TORCH_GLYPH, TEXT, TITLE }) |size| std.debug.assert(@mod(size, FONT) == 0);
     std.debug.assert(GLYPH <= CELL);
     std.debug.assert(LOG_Y + @as(i32, @intCast(Log.SHOWN)) * LOG_LINE <= HUD_H);
     std.debug.assert(RAT_GAP > actor.row(.archer).sight);
@@ -119,20 +118,36 @@ fn cellPx(p: P) rl.Vector2 {
     return .{ .x = @floatFromInt(p.x * CELL), .y = @floatFromInt(p.y * CELL) };
 }
 
-/// Presentation only: a body slides from where it was drawn to the cell it already stands on.
+/// Presentation only: the body already stands on `to`.
 pub const Glide = struct {
     from: rl.Vector2,
     to: P,
     t: f32,
+    /// Where a step taken mid-hop left the body, so it hops on from there instead of dropping to the floor.
+    from_lift: f32 = 0,
 
     fn still(p: P) Glide {
         return .{ .from = cellPx(p), .to = p, .t = GLIDE_S };
+    }
+
+    fn toward(self: Glide, p: P, t: f32) Glide {
+        return .{ .from = self.now(), .to = p, .t = t, .from_lift = self.height() };
     }
 
     fn now(self: Glide) rl.Vector2 {
         const k = @min(1.0, self.t / GLIDE_S);
         const to = cellPx(self.to);
         return .{ .x = mathx.lerpF(self.from.x, to.x, k), .y = mathx.lerpF(self.from.y, to.y, k) };
+    }
+
+    fn height(self: Glide) f32 {
+        const k = @min(1.0, self.t / GLIDE_S);
+        return self.from_lift * (1 - k) + HOP_PX * 4 * k * (1 - k);
+    }
+
+    /// Pixels above the ground the body is drawn; its shadow, bar, light and the camera stay on the ground.
+    fn lift(self: Glide) i32 {
+        return mathx.roundTiesUp(self.height());
     }
 };
 
@@ -148,7 +163,6 @@ pub const Game = struct {
     kills: usize = 0,
     log: Log = .{},
     st: input.State = .{},
-    /// The reticle while aiming. Nothing is spent until the shot is confirmed.
     mark: P = .{ .x = 0, .y = 0 },
     /// World pixels, eased toward the archer. Nothing in the simulation reads it.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
@@ -160,6 +174,7 @@ pub const Game = struct {
     /// Indexed by pool slot. Presentation only: the last way a body stepped, struck or aimed across.
     facing: [actor.MAX]Facing = @splat(.right),
     sprites: look.Sprites = .{},
+    face: font.Face = .{},
     light: *light.Light,
     flow: [grid.CELLS]i32,
     queue: [grid.CELLS]u32,
@@ -243,8 +258,6 @@ fn ratTally(g: *Game) Tally {
     return t;
 }
 
-// ---- turns ----------------------------------------------------------------------------------------------
-
 const Move = enum { kick, step, blocked };
 
 fn heroMove(g: *Game, d: mathx.Dir) Move {
@@ -320,7 +333,6 @@ fn wound(g: *Game, id: u16, dmg: i32, comptime verb: []const u8) void {
     if (ratTally(g).left == 0) g.log.say("The last rat is dead.", .{});
 }
 
-/// Everything else gets one action, then control is back with the player.
 fn endTurn(g: *Game) void {
     const h = g.archer() orelse return;
     castSight(g, h.at);
@@ -361,9 +373,6 @@ fn ratTurn(g: *Game, id: u16) void {
     g.pool.move(&g.lv, id, r.at.add(step.delta()));
 }
 
-// ---- update ---------------------------------------------------------------------------------------------
-
-/// Centred when the floor is smaller than the view on that axis, clamped to its edges otherwise.
 fn camAxis(centre: f32, view: f32, world: f32) f32 {
     if (view >= world) return (world - view) * 0.5;
     return std.math.clamp(centre - view * 0.5, 0, world - view);
@@ -389,7 +398,7 @@ fn stepGlide(g: *Game, dt: f32) void {
     for (g.pool.slice(), 0..) |a, i| {
         const gl = &g.glide[i];
         gl.t += dt;
-        if (!gl.to.eq(a.at)) gl.* = .{ .from = gl.now(), .to = a.at, .t = late };
+        if (!gl.to.eq(a.at)) gl.* = gl.toward(a.at, late);
     }
 }
 
@@ -439,20 +448,13 @@ fn middle(v: rl.Vector2) [2]f32 {
     return .{ v.x / c + 0.5, v.y / c + 0.5 };
 }
 
-// ---- draw -----------------------------------------------------------------------------------------------
-
-fn drawGlyph(ch: u8, sx: i32, sy: i32, col: rl.Color) void {
-    const s = [_:0]u8{ch};
-    const w = rl.measureText(&s, GLYPH);
-    rl.drawText(&s, sx + @divTrunc(CELL - w, 2), sy + @divTrunc(CELL - GLYPH, 2), GLYPH, col);
-}
-
-fn text(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
-    rl.drawText(s, x, y, size, col);
+fn drawGlyph(g: *Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void {
+    const half = @divTrunc(CELL, 2);
+    glyphAt(g, ch, sx + half, sy + half, GLYPH, col);
 }
 
 fn textMid(g: *Game, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
-    text(s, @divTrunc(g.screen.x - rl.measureText(s, size), 2), y, size, col);
+    g.face.text(s, @divTrunc(g.screen.x - g.face.width(s, size), 2), y, size, col);
 }
 
 const Cam = struct {
@@ -478,7 +480,6 @@ const Cam = struct {
     }
 };
 
-/// Centred in the cell at the largest whole-number scale that fits.
 fn spriteRect(t: rl.Texture2D, sx: i32, sy: i32) rl.Rectangle {
     const k = @max(1, @divTrunc(CELL, t.width));
     return .{
@@ -490,14 +491,13 @@ fn spriteRect(t: rl.Texture2D, sx: i32, sy: i32) rl.Rectangle {
 }
 
 fn drawSprite(t: rl.Texture2D, sx: i32, sy: i32) void {
-    const src = rl.Rectangle{ .x = 0, .y = 0, .width = @floatFromInt(t.width), .height = @floatFromInt(t.height) };
-    rl.drawTexturePro(t, src, spriteRect(t, sx, sy), .{ .x = 0, .y = 0 }, 0, look.LIT);
+    rl.drawTexturePro(t, look.whole(t), spriteRect(t, sx, sy), .{ .x = 0, .y = 0 }, 0, look.LIT);
 }
 
 /// Centred on `(cx, cy)`.
-fn glyphAt(ch: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+fn glyphAt(g: *Game, ch: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
     const s = [_:0]u8{ch};
-    rl.drawText(&s, cx - @divTrunc(rl.measureText(&s, size), 2), cy - @divTrunc(size, 2), size, col);
+    g.face.draw(&s, cx - @divTrunc(g.face.width(&s, size), 2), cy - @divTrunc(size, 2), size, col);
 }
 
 fn outline(c: Cam, p: P, col: rl.Color) void {
@@ -517,12 +517,25 @@ fn inView(g: *Game, a: actor.Actor) bool {
     return a.alive and g.lv.isLit(a.at);
 }
 
+fn bodyShownAt(g: *Game, p: P) bool {
+    return g.lv.isLit(p) and g.lv.who(p) != grid.NO_ONE;
+}
+
 fn bar(x: i32, y: i32, w: i32, h: i32, hp: i32, max: i32, back: rl.Color) void {
     rl.drawRectangle(x, y, w, h, back);
     rl.drawRectangle(x, y, @divTrunc(w * @max(0, hp), max), h, look.LIFE);
 }
 
-/// One kind of terrain at full light, over the seen cells from `lo` up to `hi`.
+const Shown = struct {
+    a: actor.Actor,
+    slot: usize,
+    s: P,
+    mid: [2]f32,
+    left: bool,
+    shine: light.Shine,
+};
+
+/// At full light, over the seen cells from `lo` up to `hi`.
 fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, kind: grid.Tile, arrow_at: ?P) void {
     var y = lo.y;
     while (y < hi.y) : (y += 1) {
@@ -535,13 +548,12 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, kind: grid.Tile, arrow_at: ?P) vo
                 continue;
             }
             if (kind == .floor) fillCell(c, p, look.FLOOR_BG);
-            // A body is only drawn where it is lit, so only a lit body hides its floor.
-            if (g.lv.isLit(p) and g.lv.who(p) != grid.NO_ONE) continue;
+            if (bodyShownAt(g, p)) continue;
             if (arrow_at) |a| {
                 if (a.eq(p)) continue;
             }
             const l = look.tile(kind);
-            drawGlyph(l.ch, c.sx(p), c.sy(p), l.fg);
+            drawGlyph(g, l.ch, c.sx(p), c.sy(p), l.fg);
         }
     }
 }
@@ -556,15 +568,28 @@ fn drawWorld(g: *Game) void {
     const arrow_at: ?P = if (g.shot) |s| s.cell() else null;
     const aim_from: ?P = if (g.mode != .aim) null else if (g.archer()) |a| a.at else null;
 
-    drawTerrain(g, c, lo, hi, .floor, arrow_at);
-    var shine: [actor.MAX]light.Shine = undefined;
+    var shown: [actor.MAX]Shown = undefined;
+    var n: usize = 0;
     for (g.pool.slice(), 0..) |a, i| {
         if (!inView(g, a)) continue;
         const at = g.glide[i].now();
-        shine[i] = g.light.onBody(middle(at), actor.Pool.idOf(i) == g.hero);
-        const t = g.sprites.body(a.kind) orelse continue;
-        const s = c.px(at);
-        g.light.drawShadows(t, spriteRect(t, s.x, s.y), g.facing[i] == .left, middle(at), shine[i]);
+        const mid = middle(at);
+        shown[n] = .{
+            .a = a,
+            .slot = i,
+            .s = c.px(at),
+            .mid = mid,
+            .left = g.facing[i] == .left,
+            .shine = g.light.onBody(mid, actor.Pool.idOf(i) == g.hero),
+        };
+        n += 1;
+    }
+    const bodies = shown[0..n];
+
+    drawTerrain(g, c, lo, hi, .floor, arrow_at);
+    for (bodies) |b| {
+        const t = g.sprites.body(b.a.kind) orelse continue;
+        g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), b.left, b.mid, b.shine);
     }
     drawTerrain(g, c, lo, hi, .wall, arrow_at);
     g.light.bake(&g.lv, lo, hi);
@@ -583,57 +608,51 @@ fn drawWorld(g: *Game) void {
         for (f.path[0..f.len]) |p| fillCell(c, p, look.AIM_PATH);
     }
 
-    for (g.pool.slice(), 0..) |a, i| {
-        if (!inView(g, a)) continue;
-        const at = g.glide[i].now();
-        const s = c.px(at);
-        if (g.sprites.body(a.kind)) |t| {
-            g.light.drawBody(t, spriteRect(t, s.x, s.y), g.facing[i] == .left, middle(at), shine[i]);
+    for (bodies) |b| {
+        const y = b.s.y - g.glide[b.slot].lift();
+        if (g.sprites.body(b.a.kind)) |t| {
+            g.light.drawBody(t, spriteRect(t, b.s.x, y), b.left, b.mid, b.shine);
         } else {
-            const l = look.body(a.kind);
-            drawGlyph(l.ch, s.x, s.y, shine[i].tint(l.fg));
+            const l = look.body(b.a.kind);
+            drawGlyph(g, l.ch, b.s.x, y, b.shine.tint(l.fg));
         }
     }
 
     drawTorches(g, c);
 
-    for (g.pool.slice(), 0..) |a, i| {
-        if (!inView(g, a) or !a.foe() or !a.hurt()) continue;
-        const s = c.px(g.glide[i].now());
-        const y_bar = s.y + CELL - BODY_BAR_H - BODY_BAR_LIFT;
-        bar(s.x + BODY_BAR_INSET, y_bar, CELL - BODY_BAR_INSET * 2, BODY_BAR_H, a.hp, actor.row(a.kind).hp, look.BG);
+    for (bodies) |b| {
+        if (!b.a.foe() or !b.a.hurt()) continue;
+        const y_bar = b.s.y + CELL - BODY_BAR_H - BODY_BAR_LIFT;
+        bar(b.s.x + BODY_BAR_INSET, y_bar, CELL - BODY_BAR_INSET * 2, BODY_BAR_H, b.a.hp, actor.row(b.a.kind).hp, look.BG);
     }
 
     if (g.mode == .aim) outline(c, g.mark, look.RETICLE);
     if (g.mode == .play and g.st.lean) drawLean(g, c);
 
     if (g.shot) |s| {
-        if (s.cell()) |p| drawGlyph(s.glyph, c.sx(p), c.sy(p), look.ARROW);
+        if (s.cell()) |p| drawGlyph(g, s.glyph, c.sx(p), c.sy(p), look.ARROW);
     }
 }
 
 /// Over the light map, so each flame is its own light; a remembered one stays drawn, dim and unlit.
 fn drawTorches(g: *Game, c: Cam) void {
     var buf: [grid.MAX_TORCHES]light.Flame = undefined;
-    const flames = g.light.flames(&buf);
+    const flames = g.light.flames(&g.lv, &buf);
     const cell: f32 = @floatFromInt(CELL);
-    for (flames, g.lv.torches()) |f, w| {
-        if (!g.lv.isSeen(w)) continue;
+    for (flames) |f| {
         const x = mathx.roundTiesUp(f.at[0] * cell) - c.x;
         const y = mathx.roundTiesUp(f.at[1] * cell) - c.y;
-        glyphAt(look.TORCH.ch, x, y, TORCH_GLYPH, look.TORCH_DIM);
-        glyphAt(look.TORCH.ch, x, y, TORCH_GLYPH, look.fade(look.TORCH.fg, f.sight * @min(1, f.glow)));
+        glyphAt(g, look.TORCH.ch, x, y, TORCH_GLYPH, look.TORCH_DIM);
+        glyphAt(g, look.TORCH.ch, x, y, TORCH_GLYPH, look.fade(look.TORCH.fg, f.sight * @min(1, f.glow)));
     }
     g.light.drawGlows(flames, @floatFromInt(-c.x), @floatFromInt(-c.y), cell);
 }
 
-/// LB held: the four diagonal cells round the archer, each marked with the d-pad button that goes there.
 fn drawLean(g: *Game, c: Cam) void {
     const h = g.archer() orelse return;
     for (input.DPAD) |button| {
         const d = input.leanOf(button);
         const p = h.at.add(d.delta());
-        const w = g.lv.who(p);
         const col = switch (heroMove(g, d)) {
             .kick => look.LEAN_FOE,
             .step => look.LEAN_OPEN,
@@ -641,14 +660,14 @@ fn drawLean(g: *Game, c: Cam) void {
         };
         outline(c, p, col);
         const ch = look.caret(button);
-        if (g.lv.walkable(p) and !(g.lv.isLit(p) and w != grid.NO_ONE)) {
-            drawGlyph(ch, c.sx(p), c.sy(p), col);
+        if (g.lv.walkable(p) and !bodyShownAt(g, p)) {
+            drawGlyph(g, ch, c.sx(p), c.sy(p), col);
             continue;
         }
         const s = [_:0]u8{ch};
-        const dx: i32 = if (d.delta().x > 0) CELL - rl.measureText(&s, CARET) - CARET_PAD_X else CARET_PAD_X;
+        const dx: i32 = if (d.delta().x > 0) CELL - g.face.width(&s, CARET) - CARET_PAD_X else CARET_PAD_X;
         const dy: i32 = if (d.delta().y > 0) CELL - CARET - CARET_PAD_Y else CARET_PAD_Y;
-        text(&s, c.sx(p) + dx, c.sy(p) + dy, CARET, col);
+        g.face.text(&s, c.sx(p) + dx, c.sy(p) + dy, CARET, col);
     }
 }
 
@@ -695,17 +714,17 @@ fn drawHud(g: *Game) void {
     const hp = if (g.archer()) |h| h.hp else 0;
     const bar_y = top + BAR_Y;
     bar(HUD_PAD, bar_y, BAR_W, BAR_H, hp, max, look.LIFE_BG);
-    text(std.fmt.bufPrintZ(&buf, "HP {d}/{d}", .{ @max(0, hp), max }) catch "", HUD_PAD + BAR_TEXT_X, bar_y + @divTrunc(BAR_H - TEXT, 2), TEXT, look.TEXT);
+    g.face.text(std.fmt.bufPrintZ(&buf, "HP {d}/{d}", .{ @max(0, hp), max }) catch "", HUD_PAD + BAR_TEXT_X, bar_y + @divTrunc(BAR_H - TEXT, 2), TEXT, look.TEXT);
     const r = ratTally(g);
-    text(std.fmt.bufPrintZ(&buf, "Rats {d}/{d}", .{ r.left, r.total }) catch "", HUD_PAD, top + TALLY_Y, TEXT, look.DIM);
+    g.face.text(std.fmt.bufPrintZ(&buf, "Rats {d}/{d}", .{ r.left, r.total }) catch "", HUD_PAD, top + TALLY_Y, TEXT, look.DIM);
     const hint: [:0]const u8 = if (g.mode == .aim) HINT_AIM else HINT_PLAY;
-    text(hint, g.screen.x - rl.measureText(hint, TEXT) - HUD_PAD, top + HINT_Y, TEXT, look.DIM);
+    g.face.text(hint, g.screen.x - g.face.width(hint, TEXT) - HUD_PAD, top + HINT_Y, TEXT, look.DIM);
 
     for (0..Log.SHOWN) |row| {
         const back = Log.SHOWN - 1 - row;
         const l = g.log.line(back) orelse continue;
         const a = 1.0 - @as(f32, @floatFromInt(back)) * LOG_FADE;
-        text(l, LOG_X, top + LOG_Y + @as(i32, @intCast(row)) * LOG_LINE, TEXT, look.fade(look.TEXT, a));
+        g.face.text(l, LOG_X, top + LOG_Y + @as(i32, @intCast(row)) * LOG_LINE, TEXT, look.fade(look.TEXT, a));
     }
 }
 
@@ -726,8 +745,6 @@ pub fn drawFrame(g: *Game) void {
     if (g.mode == .dead) drawDead(g);
 }
 
-// ---- entry ----------------------------------------------------------------------------------------------
-
 fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*Game) void) void {
     const alloc = std.heap.c_allocator;
     rl.setConfigFlags(flags);
@@ -737,7 +754,9 @@ fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*Game
     defer shut(alloc, g);
     g.sprites = look.Sprites.load();
     defer g.sprites.unload();
-    g.light.load(&g.sprites.bodies.values);
+    g.face = font.Face.load();
+    defer g.face.unload();
+    g.light.load(&g.sprites.bodies);
     defer g.light.unload();
     body(g);
 }
@@ -788,7 +807,6 @@ fn shoot(g: *Game) void {
     capture(g, target, SHOTS_DIR ++ "/torch.png");
 }
 
-/// A torch on a wall with the archer and two rats below it and a pillar beside them: its light and their shadows.
 fn poseTorch(g: *Game) void {
     arena(g, .{ .x = 20, .y = 15 }, &.{ .{ .x = 17, .y = 12 }, .{ .x = 23, .y = 13 } });
     var x: i32 = 12;
@@ -818,7 +836,6 @@ fn capture(g: *Game, target: rl.RenderTexture2D, path: [:0]const u8) void {
     std.debug.print("{s} {s}\n", .{ path, if (rl.exportImage(img, path)) "written" else "FAILED" });
 }
 
-/// DEV ONLY. CPU time per frame of a held random walk: `update`, then `drawFrame` into a render texture.
 pub fn bench() void {
     withGame(.{ .window_hidden = true }, "roguelike --bench", benchWalk);
 }
@@ -861,7 +878,6 @@ fn benchWalk(g: *Game) void {
 const POSE_NEAR: i32 = 3;
 const POSE_FAR: i32 = 5;
 
-/// A hurt rat in view, so the frame shows a body, its bar and something to aim at.
 fn poseRat(g: *Game) void {
     const h = g.archer() orelse return;
     const rat = for (g.pool.slice(), 0..) |a, i| {
@@ -877,8 +893,6 @@ fn poseRat(g: *Game) void {
     wound(g, rat, bow.DMG_LO, "You shoot");
     settle(g);
 }
-
-// ---- tests ----------------------------------------------------------------------------------------------
 
 fn arena(g: *Game, hero: P, rats: []const P) void {
     g.lv = grid.openFloor();
@@ -1106,7 +1120,7 @@ test "a held walk glides at one steady speed and the camera follows it without s
             const on = Cam.of(g).px(g.glide[hero].now()).x;
             if (on != on_last) {
                 const dir: i32 = if (on > on_last) 1 else -1;
-                if (t > 0.3 and on_dir != 0 and dir != on_dir) flips += 1;
+                if (t > input.Stepper.SETTLE + input.Stepper.DAS + GLIDE_S and on_dir != 0 and dir != on_dir) flips += 1;
                 on_dir = dir;
             }
             on_last = on;
@@ -1117,6 +1131,61 @@ test "a held walk glides at one steady speed and the camera follows it without s
         try std.testing.expect(lo[1] > 0 and hi[1] - lo[1] < 0.5);
         try std.testing.expectEqual(@as(usize, 0), flips);
     }
+}
+
+test "every step is one hop that peaks mid-glide and lands as the glide ends, and the ground under it does not bob" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 32 }, &.{.{ .x = 50, .y = 32 }});
+    g.pool.get(2).?.awake = true;
+    g.st = .{};
+    const hero = actor.Pool.slot(g.hero);
+    const dt: f32 = 1.0 / 240.0;
+    var peaks = [_]i32{0} ** actor.MAX;
+    var steps: usize = 0;
+    var hops: usize = 0;
+    var high = false;
+    const ground = [2]f32{ g.glide[hero].now().y, g.cam.y };
+    var bobbed = false;
+    var t: f32 = 0;
+    while (t < 1.5) : (t += dt) {
+        g.st.walk = g.st.step.tick(dt, 1, mathx.Dir.e.heading(), input.Stepper.SETTLE);
+        update(g, dt);
+        if (g.st.walk != null) steps += 1;
+        const up = g.glide[hero].lift() * 2 > @as(i32, HOP_PX);
+        if (up and !high) hops += 1;
+        high = up;
+        for (g.glide[0..g.pool.n], 0..) |gl, i| peaks[i] = @max(peaks[i], gl.lift());
+        if (g.glide[hero].now().y != ground[0] or g.cam.y != ground[1]) bobbed = true;
+    }
+    for (0..60) |_| {
+        g.st.walk = g.st.step.tick(dt, 0, 0, input.Stepper.SETTLE);
+        update(g, dt);
+    }
+    std.debug.print("hop: {d} steps, {d} hops, the archer peaks {d} px and the rat {d} px\n", .{ steps, hops, peaks[hero], peaks[actor.Pool.slot(2)] });
+    try std.testing.expect(steps > 5);
+    try std.testing.expectEqual(steps, hops);
+    try std.testing.expectEqual(@as(i32, HOP_PX), peaks[hero]);
+    try std.testing.expectEqual(@as(i32, HOP_PX), peaks[actor.Pool.slot(2)]);
+    for (g.glide[0..g.pool.n]) |gl| try std.testing.expectEqual(@as(i32, 0), gl.lift());
+    try std.testing.expect(!bobbed);
+}
+
+test "a step taken mid-hop hops on from the height the body was at" {
+    var gl = Glide.still(.{ .x = 5, .y = 5 });
+    gl = gl.toward(.{ .x = 6, .y = 5 }, 0);
+    var worst: f32 = 0;
+    var t: f32 = 0;
+    const dt: f32 = 1.0 / 240.0;
+    while (t < GLIDE_S * 3) : (t += dt) {
+        const before = gl.height();
+        gl.t += dt;
+        if (@abs(t - GLIDE_S * 0.4) < dt * 0.5) gl = gl.toward(.{ .x = 7, .y = 5 }, 0);
+        worst = @max(worst, @abs(gl.height() - before));
+    }
+    std.debug.print("hop cut short by a step: the biggest jump in height between {d} Hz frames {d:.2} px\n", .{ 1 / dt, worst });
+    try std.testing.expect(worst < HOP_PX * 0.2);
+    try std.testing.expectEqual(@as(i32, 0), gl.lift());
 }
 
 test "a body at rest lands on its tile's pixel whatever fraction the camera is at" {

@@ -82,7 +82,6 @@ const DELTAS = std.EnumArray(Dir, P).init(.{
 
 pub const ALL_DIRS = std.enums.values(Dir);
 
-/// The step from `a` to an adjacent `b`, or null if they are not adjacent.
 pub fn dirTo(a: P, b: P) ?Dir {
     const d = b.sub(a);
     for (ALL_DIRS) |dir| {
@@ -158,10 +157,10 @@ test "dir deltas run clockwise from north" {
 }
 
 test "the held sector survives a thumb resting on its boundary" {
-    const past = Dir.n.heading() + (TAU / 16.0) + 0.05;
+    const past = Dir.n.heading() + SECTOR * 0.5 + 0.05;
     try std.testing.expectEqual(Dir.ne, dirOf(past, null));
     try std.testing.expectEqual(Dir.n, dirOf(past, .n));
-    const far = Dir.n.heading() + (TAU / 16.0) + HYST + 0.05;
+    const far = Dir.n.heading() + SECTOR * 0.5 + HYST + 0.05;
     try std.testing.expectEqual(Dir.ne, dirOf(far, .n));
 }
 

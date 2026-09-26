@@ -29,33 +29,32 @@ pub const Tile = enum(u8) {
     }
 };
 
-/// Which faces of a wall border floor. Stamped once by `gen.build` and never recomputed.
+/// Stamped once by `gen.build` and never recomputed.
 pub const WallShape = enum {
-    /// Floor below (and maybe above), none beside: a room's top wall.
     top,
-    /// Floor above only, none beside, or on more than one diagonal and on no side: a room's bottom wall.
     bottom,
-    /// Floor to the east (and maybe west), none below, and above only when west is floor too: a room's left wall,
-    /// or the top of a wall between two runs of floor.
     left,
-    /// Floor to the west only, none above or below: a room's right wall.
     right,
-    /// Floor on one side of each axis: a wall block's corner where two runs of floor meet round it, named for
-    /// where it sits on the block, so `block_tr` has its floor to the north and east. A bottom one may have floor
-    /// above too.
+    /// Named for where it sits on the block: `block_tr` has its floor north and east.
     block_tl,
     block_tr,
     block_bl,
     block_br,
-    /// Floor below and on both sides.
     post,
-    /// Floor only on one diagonal: a room's outer corner, named for where it sits on the room.
+    /// Named for where it sits on the room: `corner_tl` has its floor south-east.
     corner_tl,
     corner_tr,
     corner_bl,
     corner_br,
-    /// No floor round it at all.
     solid,
+
+    /// Floor lies below it, so its brick face shows.
+    pub fn faced(s: WallShape) bool {
+        return switch (s) {
+            .top, .block_bl, .block_br, .post => true,
+            .bottom, .left, .right, .block_tl, .block_tr, .corner_tl, .corner_tr, .corner_bl, .corner_br, .solid => false,
+        };
+    }
 };
 
 pub const Level = struct {
@@ -66,7 +65,7 @@ pub const Level = struct {
     lit: [CELLS]bool,
     /// 1-based into the actor pool; `NO_ONE` is empty.
     occupant: [CELLS]u16,
-    /// Walls with a torch on their face, placed by `gen.build`.
+    /// Walls with a torch on their face.
     torch: [MAX_TORCHES]P,
     torch_n: usize,
 
@@ -173,7 +172,7 @@ pub const Level = struct {
         return self.walkable(.{ .x = to.x, .y = from.y }) and self.walkable(.{ .x = from.x, .y = to.y });
     }
 
-    /// `passOk` and nobody standing there; `ignore` is the mover's own id.
+    /// `ignore` is the mover's own id.
     pub fn stepOk(self: *const Level, from: P, d: mathx.Dir, ignore: u16) bool {
         if (!self.passOk(from, d)) return false;
         const w = self.who(from.add(d.delta()));
@@ -181,7 +180,7 @@ pub const Level = struct {
     }
 };
 
-/// Walking steps from `from` to every cell, terrain only, or -1 where nothing reaches.
+/// Terrain only; -1 where nothing reaches.
 pub fn distances(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32) usize {
     @memset(out, -1);
     var head: usize = 0;

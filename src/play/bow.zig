@@ -21,7 +21,6 @@ pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     return d >= 1 and d <= RANGE and lv.walkable(to) and lv.isLit(to) and grid.clearLine(lv, from, to);
 }
 
-/// The nearest foe the archer can see, in range, with a clear Bresenham line to it.
 pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?u16 {
     var best: ?u16 = null;
     var best_d: f32 = std.math.floatMax(f32);

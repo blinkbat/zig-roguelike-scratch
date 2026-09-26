@@ -62,7 +62,7 @@ const Root = struct {
     }
 };
 
-/// Every PNG in `assets/` is embedded under its file name, so the exe runs from any directory. `@embedFile("<name>")` reads one.
+/// Every PNG and TTF in `assets/` is embedded under its file name, so the exe runs from any directory. `@embedFile("<name>")` reads one.
 fn assetNames(b: *std.Build) []const []const u8 {
     var dir = b.build_root.handle.openDir(ASSETS, .{ .iterate = true }) catch |e|
         std.debug.panic(ASSETS ++ "/ could not be opened ({s})", .{@errorName(e)});
@@ -70,7 +70,7 @@ fn assetNames(b: *std.Build) []const []const u8 {
     var names = std.ArrayList([]const u8).init(b.allocator);
     var it = dir.iterate();
     while (it.next() catch |e| std.debug.panic(ASSETS ++ "/ could not be listed ({s})", .{@errorName(e)})) |ent| {
-        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, ".png")) continue;
+        if (ent.kind != .file or !(std.mem.endsWith(u8, ent.name, ".png") or std.mem.endsWith(u8, ent.name, ".ttf"))) continue;
         names.append(b.dupe(ent.name)) catch @panic("OOM listing " ++ ASSETS ++ "/");
     }
     return names.items;

@@ -1,5 +1,5 @@
 @echo off
-REM shot.cmd - build then render shots\lean.png and shots\aim.png headless (window hidden). Leaves a running game alone.
+REM shot.cmd - build then render shots\lean.png, shots\aim.png and shots\torch.png headless (window hidden). Leaves a running game alone.
 setlocal
 call "%~dp0_zig.cmd" || exit /b 1
 "%ZIG%" build --prefix zig-out-dev

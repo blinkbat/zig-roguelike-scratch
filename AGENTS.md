@@ -33,7 +33,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   composes the archer's carried light (after Brogue's miner's light), each torch (occluded by its own `fov.cast`)
   and the fog: sight and memory ease per cell, and memory fades to black exactly at the edge of what was ever seen,
   so no unseen cell is ever drawn. It is cosmetic: nothing in the simulation reads it, and it decides no visibility.
-- **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG there under its file name, read with
+- **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG and TTF there under its file name, read with
   `@embedFile`), so the exe runs from any directory. A body's PNG is a file in `assets/` and its entry in
   `look.BODY_PNGS`; a tile's is a file, a field in `Sprites` that `load` and `unload` name, and its arm in
   `Sprites.tileAt`. Sprites are authored at `look.SPRITE_PX` (64), facing right; `Game.facing` mirrors a body
@@ -48,13 +48,14 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   `corner_tl` has its floor to the south-east. `Sprites.wall` holds one texture per shape, cut from `walls.png`'s 64 px cells by `WALL_CELLS`; one with none draws `#`.
   The generator also hangs the torches (`Level.torch`), one on the `top` wall of most rooms, after every layout roll
   so a seed's floor is unchanged by them.
-- **raylib's built-in font is 10 px; draw it only at whole multiples** (`GLYPH` 60 in a 64 px `CELL`, `TEXT`
-  20) or it resamples.
+- **TEXT IS BALTHAZAR** (`assets/Balthazar-Regular.ttf`, OFL), drawn by `gfx/font.zig` from one mipmapped 96 px
+  atlas as `zig-soulslike` draws it, so any size reads clean; hud text sits on a drop shadow. raylib's built-in font
+  stands in only when the atlas fails to load, which is every test.
 - **`CELL` IS A WHOLE MULTIPLE OF 64**, the sprites' authored size; they draw at `CELL / 64`, never fractional.
 - **THE GRID IS y-DOWN** and **Chebyshev is the only metric**. **A diagonal may not cut a corner** (`passOk`).
 - **`fov.cast` IS THE ONLY VISIBILITY COMPUTATION.** A rat sees the archer exactly when the archer's pass lit the
-  rat's cell. A body is drawn only where it is lit; terrain is remembered.
+  rat's cell and the archer is within the rat's sight. A body is drawn only where it is lit; terrain is remembered.
 - **`Pool.damage` IS THE ONLY PLACE HP GOES DOWN.**
-- **THE PICTURE LAGS THE MECHANIC.** The camera eases, bodies glide (`Glide`, one walk repeat long), the fog eases
+- **THE PICTURE LAGS THE MECHANIC.** The camera eases, bodies glide and hop (`Glide`, one walk repeat long), the fog eases
   and the arrow flies after the hit has already resolved; nothing in the simulation reads the view.
 - **EVERY DRAWN STRING IS ASCII.**

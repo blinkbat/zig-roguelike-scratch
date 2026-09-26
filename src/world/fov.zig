@@ -74,7 +74,7 @@ fn scan(lv: *grid.Level, q: Quad, row_in: Row, radius: i32) void {
     }
 }
 
-/// A creature sees the hero exactly when the hero's pass lit the creature's cell.
+/// A creature sees the hero exactly when the hero's pass lit the creature's cell and the hero is within its `reach`.
 pub fn sees(lv: *const grid.Level, watcher: P, hero: P, reach: i32) bool {
     return lv.isLit(watcher) and mathx.dist(watcher, hero) <= reach;
 }

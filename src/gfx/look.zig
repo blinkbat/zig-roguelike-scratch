@@ -13,9 +13,11 @@ pub const Look = struct {
     fg: rl.Color,
 };
 
-/// Needs a live GL context, so it is loaded after the window opens and never in a test.
+pub const Bodies = std.EnumArray(actor.Kind, ?rl.Texture2D);
+
+/// Needs a live GL context.
 pub const Sprites = struct {
-    bodies: std.EnumArray(actor.Kind, ?rl.Texture2D) = .initFill(null),
+    bodies: Bodies = .initFill(null),
     floor: ?rl.Texture2D = null,
     wall: std.EnumArray(grid.WallShape, ?rl.Texture2D) = .initFill(null),
 
@@ -25,7 +27,8 @@ pub const Sprites = struct {
         const sheet = rl.loadImageFromMemory(".png", @embedFile("walls.png")) catch return s;
         defer rl.unloadImage(sheet);
         for (std.enums.values(grid.WallShape)) |shape| {
-            s.wall.set(shape, toTexture(wallCell(sheet, WALL_CELLS.get(shape) orelse continue)));
+            const cell = WALL_CELLS.get(shape) orelse continue;
+            s.wall.set(shape, toTexture(wallCell(sheet, cell) orelse continue));
         }
         return s;
     }
@@ -81,7 +84,9 @@ const WALL_CELLS = std.EnumArray(grid.WallShape, ?WallCell).init(.{
     .solid = null,
 });
 
-fn wallCell(sheet: rl.Image, c: WallCell) rl.Image {
+/// raylib's `imageFromImage` copies without clamping, so a cell off the sheet would read past it.
+fn wallCell(sheet: rl.Image, c: WallCell) ?rl.Image {
+    if ((c.col + 1) * SPRITE_PX > sheet.width or (c.row + 1) * SPRITE_PX > sheet.height) return null;
     const px: f32 = @floatFromInt(SPRITE_PX);
     return rl.imageFromImage(sheet, .{
         .x = @as(f32, @floatFromInt(c.col)) * px,
@@ -89,6 +94,10 @@ fn wallCell(sheet: rl.Image, c: WallCell) rl.Image {
         .width = px,
         .height = px,
     });
+}
+
+pub fn whole(t: rl.Texture2D) rl.Rectangle {
+    return .{ .x = 0, .y = 0, .width = @floatFromInt(t.width), .height = @floatFromInt(t.height) };
 }
 
 pub fn rgb(hex: u24) rl.Color {
@@ -105,7 +114,7 @@ const SHADE = rgb(0x3e3c46);
 
 pub const BG = rgb(0x07070a);
 pub const LIT = rl.Color.white;
-/// The light remembered terrain is drawn under: dark and blue, after Brogue's memory colour.
+/// The light remembered terrain is drawn under, after Brogue's memory colour.
 pub const REMEMBERED = rgb(0x33385c);
 pub const FLOOR_BG = rgb(0x121116);
 pub const TEXT = rgb(0xd8cdb4);
@@ -124,7 +133,6 @@ pub fn tile(t: grid.Tile) Look {
     };
 }
 
-/// Drawn over the light map, so the flame is its own light; remembered, it is the dim one.
 pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
 
@@ -160,7 +168,6 @@ pub const LEAN_OPEN = GOLD;
 pub const LEAN_FOE = FOE;
 pub const LEAN_BLOCKED = SHADE;
 
-/// The d-pad button a lean-overlay cell answers to.
 pub fn caret(d: mathx.Dir) u8 {
     return switch (d) {
         .n => '^',
@@ -177,15 +184,31 @@ pub const MINI_FOE = FOE;
 pub const MINI_VIEW = fade(GOLD, 0.7);
 
 test "every glyph is printable ascii" {
-    for (std.enums.values(grid.Tile)) |t| {
-        const c = tile(t).ch;
-        try std.testing.expect(c > 32 and c < 127);
+    const inked = struct {
+        fn f(c: u8) bool {
+            return std.ascii.isPrint(c) and c != ' ';
+        }
+    }.f;
+    for (std.enums.values(grid.Tile)) |t| try std.testing.expect(inked(tile(t).ch));
+    for (std.enums.values(actor.Kind)) |k| try std.testing.expect(inked(body(k).ch));
+    try std.testing.expect(inked(TORCH.ch));
+}
+
+test "every wall shape's cell lies inside walls.png, and one past its edge is refused" {
+    const png = @embedFile("walls.png");
+    const w = std.mem.readInt(i32, png[16..20], .big);
+    const h = std.mem.readInt(i32, png[20..24], .big);
+    const sheet = rl.genImageColor(w, h, rl.Color.white);
+    defer rl.unloadImage(sheet);
+    var cut: usize = 0;
+    for (WALL_CELLS.values) |c| {
+        const img = wallCell(sheet, c orelse continue) orelse return error.CellOffSheet;
+        rl.unloadImage(img);
+        cut += 1;
     }
-    for (std.enums.values(actor.Kind)) |k| {
-        const c = body(k).ch;
-        try std.testing.expect(c > 32 and c < 127);
-    }
-    try std.testing.expect(TORCH.ch > 32 and TORCH.ch < 127);
+    std.debug.print("walls.png {d}x{d}: {d} shapes cut from it\n", .{ w, h, cut });
+    try std.testing.expect(wallCell(sheet, .{ .col = @divTrunc(w, SPRITE_PX), .row = 0 }) == null);
+    try std.testing.expect(wallCell(sheet, .{ .col = 0, .row = @divTrunc(h, SPRITE_PX) }) == null);
 }
 
 test "an arrow's glyph follows its slope" {
