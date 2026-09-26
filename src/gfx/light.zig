@@ -44,6 +44,8 @@ const CARRY_CEILING: f32 = 0.7;
 const CARRY_FACE_WRAP: f32 = 0.6;
 
 const AMBIENT: Rgb = .{ 0.10, 0.11, 0.17 };
+/// The light remembered terrain is drawn under, after Brogue's memory colour.
+const MEMORY = rgbOf(look.rgb(0x33385c));
 const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
@@ -56,12 +58,18 @@ const REVEAL: f32 = 14.0;
 const FORGET: f32 = 5.0;
 /// Cells: memory is black on the edge of anything unseen and full this far from it.
 const VOID_FADE: f32 = 1.5;
+/// The same fade on ground in sight: short of a neighbour's middle, so nothing seen is darkened past the unseen cell's rim.
+const SIGHT_FADE: f32 = 0.4;
 const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
-/// Lands an eased value exactly, so a settled cell reads as whole to `remembered`.
+const VOID_SPAN: usize = @intCast(VOID_REACH * 2 + 1);
+/// Lands an eased value exactly, so a settled cell reads as whole to `fadeOf`.
 const SETTLE: f32 = 1e-3;
 const FLICKER: f32 = 0.14;
-const FLICKER_HZ = [3]f32{ 1.5, 5.0, 11.0 };
-const FLICKER_WEIGHT = [3]f32{ 0.6, 0.3, 0.1 };
+const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
+    .{ .hz = 1.5, .weight = 0.6 },
+    .{ .hz = 5.0, .weight = 0.3 },
+    .{ .hz = 11.0, .weight = 0.1 },
+};
 /// Per channel, light past this bends toward a square root instead of clipping (Brogue's `adjustedLightValue`).
 const KNEE: f32 = 1.5;
 
@@ -93,8 +101,6 @@ const GLOW_CORE_A: f32 = 0.85;
 const GLOW_HALO_A: f32 = 0.2;
 const GLOW_TINT: Rgb = .{ 1.0, 0.52, 0.22 };
 
-const MEMORY = rgbOf(look.REMEMBERED);
-
 comptime {
     std.debug.assert(SHADOW_PAD >= SHADOW_SOFT_TIP * 0.5 * @as(f32, @floatFromInt(SHADOW_TAPS)));
 }
@@ -109,7 +115,7 @@ const Spot = struct {
     surface: Surface,
 
     fn of(lv: *const grid.Level, q: [2]f32) Spot {
-        const cell = P{ .x = @intFromFloat(@floor(q[0])), .y = @intFromFloat(@floor(q[1])) };
+        const cell = cellOf(q);
         if (lv.at(cell) == .floor) return .{ .x = q[0], .y = q[1], .z = 0, .surface = .floor };
         const fy = q[1] - @floor(q[1]);
         const top: f32 = @floatFromInt(cell.y);
@@ -203,6 +209,31 @@ fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32, out: f32) f32 {
     return f[@intCast(y * w + x)];
 }
 
+fn cellOf(q: [2]f32) P {
+    return .{ .x = @intFromFloat(@floor(q[0])), .y = @intFromFloat(@floor(q[1])) };
+}
+
+/// A cell's memory at each point in it, from the cells round it short of wholly remembered.
+const Fade = struct {
+    flat: ?f32 = null,
+    n: usize = 0,
+    short: [VOID_SPAN * VOID_SPAN]Short = undefined,
+
+    const Short = struct { x: f32, y: f32, m: f32 };
+
+    fn at(f: *const Fade, x: f32, y: f32, sight: f32) f32 {
+        if (f.flat) |v| return v;
+        const reach = mathx.lerpF(VOID_FADE, SIGHT_FADE, sight);
+        var v: f32 = 1;
+        for (f.short[0..f.n]) |c| {
+            const dx = @max(0, @max(c.x - x, x - c.x - 1));
+            const dy = @max(0, @max(c.y - y, y - c.y - 1));
+            v = @min(v, c.m + (1 - c.m) * smooth(@sqrt(dx * dx + dy * dy) / reach));
+        }
+        return v;
+    }
+};
+
 fn hash(n: i32, seed: u32) f32 {
     var x: u32 = @bitCast(n);
     x = (x ^ seed) *% 0x9E3779B1;
@@ -221,7 +252,7 @@ fn noise(t: f32, seed: u32) f32 {
 
 pub fn flicker(t: f32, seed: u32) f32 {
     var n: f32 = 0;
-    for (FLICKER_HZ, FLICKER_WEIGHT, 0..) |hz, w, i| n += w * (noise(t * hz, seed ^ (@as(u32, @intCast(i)) *% 0x5BD1E995)) * 2 - 1);
+    for (FLICKER_BANDS, 0..) |b, i| n += b.weight * (noise(t * b.hz, seed ^ (@as(u32, @intCast(i)) *% 0x5BD1E995)) * 2 - 1);
     return 1 + FLICKER * n;
 }
 
@@ -255,6 +286,8 @@ fn colourOf(c: Rgb, a: f32) rl.Color {
     const k = @max(splat(0), @min(splat(1), c)) * splat(255) + splat(0.5);
     return .{ .r = @intFromFloat(k[0]), .g = @intFromFloat(k[1]), .b = @intFromFloat(k[2]), .a = @intFromFloat(std.math.clamp(a, 0, 1) * 255 + 0.5) };
 }
+
+const DARK = colourOf(@splat(0), 1);
 
 fn lum(c: Rgb) f32 {
     return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
@@ -303,6 +336,8 @@ pub const Light = struct {
     sight: [grid.CELLS]f32,
     memory: [grid.CELLS]f32,
     soft_sight: [grid.CELLS]f32,
+    seen_sight: [grid.CELLS]f32,
+    soft_memory: [grid.CELLS]f32,
     blur: [grid.CELLS]f32,
     clear: [grid.CELLS]bool,
     clear_row: [grid.CELLS]bool,
@@ -360,11 +395,15 @@ pub const Light = struct {
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {
         const up = 1 - @exp(-dt * REVEAL);
         const down = 1 - @exp(-dt * FORGET);
+        var moved = false;
         for (0..grid.CELLS) |i| {
-            self.sight[i] = ease(self.sight[i], if (lv.lit[i]) 1 else 0, up, down);
-            self.memory[i] = ease(self.memory[i], if (lv.seen[i]) 1 else 0, up, down);
+            const s = ease(self.sight[i], if (lv.lit[i]) 1 else 0, up, down);
+            const m = ease(self.memory[i], if (lv.seen[i]) 1 else 0, up, down);
+            moved = moved or s != self.sight[i] or m != self.memory[i];
+            self.sight[i] = s;
+            self.memory[i] = m;
         }
-        self.soften();
+        if (moved) self.soften();
         self.t += dt;
         self.fan();
     }
@@ -378,8 +417,12 @@ pub const Light = struct {
         }
     }
 
+    /// Sight blurs over seen ground only, so a cell never seen does not dim the ground in sight round it.
     fn soften(self: *Light) void {
-        blur121(&self.sight, &self.blur, &self.soft_sight);
+        for (&self.seen_sight, &self.sight, &self.memory) |*w, s, m| w.* = s * m;
+        blur121(&self.seen_sight, &self.blur, &self.soft_sight);
+        blur121(&self.memory, &self.blur, &self.soft_memory);
+        for (&self.soft_sight, &self.soft_memory) |*s, m| s.* = if (m > 0) @min(1, s.* / m) else 0;
         const r: usize = VOID_REACH;
         const w: usize = @intCast(grid.W);
         const h: usize = @intCast(grid.H);
@@ -403,47 +446,37 @@ pub const Light = struct {
         }
     }
 
-    /// Sight and memory at a point on the screen, cells.
-    fn fog(self: *const Light, x: f32, y: f32) [2]f32 {
-        return .{ bilinear(&self.soft_sight, grid.W, grid.H, x - 0.5, y - 0.5, 0), self.remembered(x, y) };
+    /// A point on the screen, cells.
+    fn sightAt(self: *const Light, x: f32, y: f32) f32 {
+        return bilinear(&self.soft_sight, grid.W, grid.H, x - 0.5, y - 0.5, 0);
     }
 
     /// By distance, not a blur: a blur is not black on the edge of an unseen cell that seen ground wraps round.
-    fn remembered(self: *const Light, x: f32, y: f32) f32 {
-        const cx: i32 = @intFromFloat(@floor(x));
-        const cy: i32 = @intFromFloat(@floor(y));
-        const own = self.memoryAt(.{ .x = cx, .y = cy });
-        if (own <= 0) return 0;
-        if (own >= 1 and self.whole(.{ .x = cx, .y = cy })) return 1;
-        const r = VOID_REACH;
-        var v: f32 = 1;
-        var j = cy - r;
-        while (j <= cy + r) : (j += 1) {
-            var i = cx - r;
-            while (i <= cx + r) : (i += 1) {
+    fn fadeOf(self: *const Light, c: P) Fade {
+        const own = self.memoryAt(c);
+        if (own <= 0) return .{ .flat = 0 };
+        if (own >= 1 and self.whole(c)) return .{ .flat = 1 };
+        var f = Fade{};
+        var j = c.y - VOID_REACH;
+        while (j <= c.y + VOID_REACH) : (j += 1) {
+            var i = c.x - VOID_REACH;
+            while (i <= c.x + VOID_REACH) : (i += 1) {
                 const m = self.memoryAt(.{ .x = i, .y = j });
                 if (m >= 1) continue;
-                const fi: f32 = @floatFromInt(i);
-                const fj: f32 = @floatFromInt(j);
-                const dx = @max(0, @max(fi - x, x - fi - 1));
-                const dy = @max(0, @max(fj - y, y - fj - 1));
-                v = @min(v, m + (1 - m) * smooth(@sqrt(dx * dx + dy * dy) / VOID_FADE));
+                f.short[f.n] = .{ .x = @floatFromInt(i), .y = @floatFromInt(j), .m = m };
+                f.n += 1;
             }
         }
-        return v;
+        return f;
     }
 
     fn memoryAt(self: *const Light, p: P) f32 {
-        if (!grid.Level.inside(p)) return 0;
-        const i = grid.Level.idx(p);
-        return self.memory[i];
+        return grid.cellOr(f32, &self.memory, p, 0);
     }
 
-    /// Nothing within reach of `remembered`'s fade round cell `p` is short of wholly remembered.
+    /// Nothing within reach of `fadeOf`'s fade round cell `p` is short of wholly remembered.
     fn whole(self: *const Light, p: P) bool {
-        if (!grid.Level.inside(p)) return false;
-        const i = grid.Level.idx(p);
-        return self.clear[i];
+        return grid.cellOr(bool, &self.clear, p, false);
     }
 
     fn near(self: *const Light, lo: P, hi: P, out: *[grid.MAX_TORCHES]u8) []const u8 {
@@ -472,10 +505,16 @@ pub const Light = struct {
 
     /// `q` is in cells.
     pub fn at(self: *const Light, lv: *const grid.Level, torches: []const u8, q: [2]f32) Rgb {
-        const f = self.fog(q[0], q[1]);
-        if (f[1] <= FAINT) return @splat(0);
+        const fade = self.fadeOf(cellOf(q));
+        return self.shade(lv, torches, q, &fade);
+    }
+
+    fn shade(self: *const Light, lv: *const grid.Level, torches: []const u8, q: [2]f32, fade: *const Fade) Rgb {
+        const sight = self.sightAt(q[0], q[1]);
+        const memory = fade.at(q[0], q[1], sight);
+        if (memory <= FAINT) return @splat(0);
         var view = AMBIENT;
-        if (f[0] > FAINT) {
+        if (sight > FAINT) {
             const s = Spot.of(lv, q);
             view += CARRY * splat(self.carried(s));
             for (torches) |i| {
@@ -483,36 +522,44 @@ pub const Light = struct {
                 view += t.colour * splat(t.shine(s));
             }
         }
-        return (MEMORY + (view - MEMORY) * splat(f[0])) * splat(f[1]);
+        return (MEMORY + (view - MEMORY) * splat(sight)) * splat(memory);
     }
 
     /// Cells `lo` up to `hi`, and a texel round them for the filter.
     pub fn bake(self: *Light, lv: *const grid.Level, lo: P, hi: P) void {
         var ids: [grid.MAX_TORCHES]u8 = undefined;
         const torches = self.near(lo.sub(.{ .x = 1, .y = 1 }), hi.add(.{ .x = 1, .y = 1 }), &ids);
-        const tx0 = @max(0, lo.x * SUB - 1);
-        const ty0 = @max(0, lo.y * SUB - 1);
-        const tx1 = @min(MAP_W, hi.x * SUB + 1);
-        const ty1 = @min(MAP_H, hi.y * SUB + 1);
+        const t0 = P{ .x = @max(0, lo.x * SUB - 1), .y = @max(0, lo.y * SUB - 1) };
+        const t1 = P{ .x = @min(MAP_W, hi.x * SUB + 1), .y = @min(MAP_H, hi.y * SUB + 1) };
+        var c = P{ .x = 0, .y = @divFloor(t0.y, SUB) };
+        while (c.y * SUB < t1.y) : (c.y += 1) {
+            c.x = @divFloor(t0.x, SUB);
+            while (c.x * SUB < t1.x) : (c.x += 1) self.bakeCell(lv, torches, c, t0, t1);
+        }
+    }
+
+    fn bakeCell(self: *Light, lv: *const grid.Level, torches: []const u8, c: P, t0: P, t1: P) void {
+        const fade = self.fadeOf(c);
+        const dark = if (fade.flat) |v| v == 0 else false;
         const sub: f32 = @floatFromInt(SUB);
-        var ty = ty0;
-        while (ty < ty1) : (ty += 1) {
-            var tx = tx0;
-            while (tx < tx1) : (tx += 1) {
+        var ty = @max(t0.y, c.y * SUB);
+        while (ty < @min(t1.y, (c.y + 1) * SUB)) : (ty += 1) {
+            var tx = @max(t0.x, c.x * SUB);
+            while (tx < @min(t1.x, (c.x + 1) * SUB)) : (tx += 1) {
                 const q = [2]f32{ (@as(f32, @floatFromInt(tx)) + 0.5) / sub, (@as(f32, @floatFromInt(ty)) + 0.5) / sub };
-                self.map[@intCast(ty * MAP_W + tx)] = colourOf(knee(self.at(lv, torches, q)) / splat(OVERBRIGHT), 1);
+                self.map[@intCast(ty * MAP_W + tx)] = if (dark) DARK else colourOf(knee(self.shade(lv, torches, q, &fade)) / splat(OVERBRIGHT), 1);
             }
         }
     }
 
     /// `centre` is on the ground, cells. The carried light lights its own `carrier` flat.
     pub fn onBody(self: *const Light, centre: [2]f32, carrier: bool) Shine {
-        const f = self.fog(centre[0], centre[1]);
-        var s = Shine{ .ambient = MEMORY + (AMBIENT - MEMORY) * splat(f[0]) };
+        const sight = self.sightAt(centre[0], centre[1]);
+        var s = Shine{ .ambient = MEMORY + (AMBIENT - MEMORY) * splat(sight) };
         if (self.carrier) |c| {
             const dx = c[0] - centre[0];
             const dy = c[1] - centre[1];
-            const k = carryFade(@sqrt(dx * dx + dy * dy)) * f[0];
+            const k = carryFade(@sqrt(dx * dx + dy * dy)) * sight;
             if (carrier) {
                 s.ambient += CARRY * splat(k);
             } else if (k > FAINT) {
@@ -526,7 +573,7 @@ pub const Light = struct {
             const dz = fl[2] - BODY_Z;
             const d2 = dx * dx + dy * dy + dz * dz;
             if (d2 >= REACH2) continue;
-            const k = falloff(d2) * t.reached(centre[0], centre[1]) * f[0];
+            const k = falloff(d2) * t.reached(centre[0], centre[1]) * sight;
             if (k <= FAINT) continue;
             s.add(.{ .drawn = t.drawn(), .ground = .{ fl[0], fl[1] }, .colour = t.colour * splat(k), .casts = true });
         }
@@ -539,7 +586,7 @@ pub const Light = struct {
         for (self.torch[0..self.torch_n]) |t| {
             if (!lv.isSeen(t.wall)) continue;
             const d = t.drawn();
-            out[n] = .{ .at = d, .glow = t.glow, .sight = self.fog(d[0], d[1])[0] };
+            out[n] = .{ .at = d, .glow = t.glow, .sight = self.sightAt(d[0], d[1]) };
             n += 1;
         }
         return out[0..n];
@@ -810,6 +857,17 @@ const ShadowShader = struct {
     foot: i32,
 };
 
+/// Every field but `shader` is the location of the GLSL uniform it is named for.
+fn uniforms(comptime T: type, s: rl.Shader) T {
+    var u: T = undefined;
+    u.shader = s;
+    inline for (std.meta.fields(T)) |f| {
+        if (comptime std.mem.eql(u8, f.name, "shader")) continue;
+        @field(u, f.name) = rl.getShaderLocation(s, f.name);
+    }
+    return u;
+}
+
 const Art = struct {
     id: u32,
     /// Texel rows from the sprite's top to just under its lowest opaque row.
@@ -836,27 +894,10 @@ const Gpu = struct {
         var g = Gpu{};
         const blank = rl.genImageColor(MAP_W, MAP_H, rl.Color.black);
         defer rl.unloadImage(blank);
-        if (rl.loadTextureFromImage(blank)) |t| {
-            rl.setTextureFilter(t, .bilinear);
-            rl.setTextureWrap(t, .clamp);
-            g.map = t;
-        } else |_| {}
+        g.map = clamped(blank, .bilinear);
         g.glow = glowTexture();
-        if (rl.loadShaderFromMemory(null, BODY_FS)) |s| {
-            g.body = .{
-                .shader = s,
-                .size = rl.getShaderLocation(s, "size"),
-                .flip = rl.getShaderLocation(s, "flip"),
-                .ambient = rl.getShaderLocation(s, "ambient"),
-                .count = rl.getShaderLocation(s, "count"),
-                .lpos = rl.getShaderLocation(s, "lpos"),
-                .lcol = rl.getShaderLocation(s, "lcol"),
-                .normals = rl.getShaderLocation(s, "normals"),
-            };
-        } else |_| {}
-        if (rl.loadShaderFromMemory(null, SHADOW_FS)) |s| {
-            g.shadow = .{ .shader = s, .size = rl.getShaderLocation(s, "size"), .foot = rl.getShaderLocation(s, "foot") };
-        } else |_| {}
+        if (rl.loadShaderFromMemory(null, BODY_FS)) |s| g.body = uniforms(BodyShader, s) else |_| {}
+        if (rl.loadShaderFromMemory(null, SHADOW_FS)) |s| g.shadow = uniforms(ShadowShader, s) else |_| {}
         for (bodies.values) |b| {
             const t = b orelse continue;
             g.arts[g.art_n] = artOf(t);
@@ -953,9 +994,16 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
             px[@intCast(y * w + x)] = colourOf(unit * splat(0.5) + splat(0.5), 1);
         }
     }
-    const img = rl.Image{ .data = &px, .width = w, .height = h, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    return clamped(rgba(&px, w, h), .point);
+}
+
+fn rgba(px: *anyopaque, w: i32, h: i32) rl.Image {
+    return .{ .data = px, .width = w, .height = h, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+}
+
+fn clamped(img: rl.Image, filter: rl.TextureFilter) ?rl.Texture2D {
     const t = rl.loadTextureFromImage(img) catch return null;
-    rl.setTextureFilter(t, .point);
+    rl.setTextureFilter(t, filter);
     rl.setTextureWrap(t, .clamp);
     return t;
 }
@@ -972,14 +1020,11 @@ fn glowTexture() ?rl.Texture2D {
             px[y * GLOW_PX + x] = .{ .r = 255, .g = 255, .b = 255, .a = @intFromFloat(a * 255) };
         }
     }
-    const img = rl.Image{ .data = &px, .width = GLOW_PX, .height = GLOW_PX, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
-    const t = rl.loadTextureFromImage(img) catch return null;
-    rl.setTextureFilter(t, .bilinear);
-    rl.setTextureWrap(t, .clamp);
-    return t;
+    return clamped(rgba(&px, GLOW_PX, GLOW_PX), .bilinear);
 }
 
 const gen = @import("../world/gen.zig");
+const actor = @import("../play/actor.zig");
 
 const TORCH_AT = P{ .x = 20, .y = 10 };
 
@@ -1125,6 +1170,37 @@ test "the edge of sight ramps across texels instead of stepping at a cell" {
     try std.testing.expect(biggest < jump * 0.2);
 }
 
+test "a baked texel is exactly the light `at` gives its middle, fading or never seen" {
+    var lv: grid.Level = undefined;
+    const f = gen.build(&lv, 0xBA4E);
+    fov.cast(&lv, f.start, actor.row(.archer).sight);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    fov.cast(&lv, f.rooms[1].centre(), actor.row(.archer).sight);
+    l.carrier = .{ @as(f32, @floatFromInt(f.start.x)) + 0.5, @as(f32, @floatFromInt(f.start.y)) + 0.5 };
+    for (0..4) |_| l.step(&lv, 1.0 / 60.0);
+    l.bake(&lv, .{ .x = 0, .y = 0 }, .{ .x = grid.W, .y = grid.H });
+    var ids: [grid.MAX_TORCHES]u8 = undefined;
+    const torches = l.near(.{ .x = -1, .y = -1 }, .{ .x = grid.W + 1, .y = grid.H + 1 }, &ids);
+    const sub: f32 = @floatFromInt(SUB);
+    var dark: usize = 0;
+    var fading: usize = 0;
+    var off: usize = 0;
+    for (0..TEXELS) |i| {
+        const tx: f32 = @floatFromInt(i % @as(usize, @intCast(MAP_W)));
+        const ty: f32 = @floatFromInt(i / @as(usize, @intCast(MAP_W)));
+        const q = [2]f32{ (tx + 0.5) / sub, (ty + 0.5) / sub };
+        const m = l.memoryAt(cellOf(q));
+        if (m == 0) dark += 1;
+        if (m > 0 and m < 1) fading += 1;
+        const want = colourOf(knee(l.at(&lv, torches, q)) / splat(OVERBRIGHT), 1);
+        if (!std.meta.eql(want, l.map[i])) off += 1;
+    }
+    std.debug.print("whole floor baked: {d} texels never seen, {d} fading in, {d} off what `at` gives\n", .{ dark, fading, off });
+    try std.testing.expect(dark > 0 and fading > 0);
+    try std.testing.expectEqual(@as(usize, 0), off);
+}
+
 test "remembered ground fades to black exactly at the edge of what was ever seen" {
     var lv = grid.openFloor();
     for (0..grid.CELLS) |i| lv.seen[i] = grid.Level.of(i).x < 20;
@@ -1151,7 +1227,7 @@ test "remembered ground is black on every line where a seen cell meets an unseen
     var lv: grid.Level = undefined;
     const l = try Light.create(std.testing.allocator);
     defer std.testing.allocator.destroy(l);
-    const sight = @import("../play/actor.zig").row(.archer).sight;
+    const sight = actor.row(.archer).sight;
     const full = lum(MEMORY);
     var lines: usize = 0;
     var bright: usize = 0;
@@ -1188,6 +1264,37 @@ test "remembered ground is black on every line where a seen cell meets an unseen
     std.debug.print("{d} lines between seen and unseen over 10 floors, {d} showing memory above 5%, the brightest {d:.0}% of full\n", .{ lines, bright, worst * 100 });
     try std.testing.expect(lines > 500);
     try std.testing.expect(worst < 0.01);
+}
+
+test "a doorway sight skips in a hall's side wall leaves no dark patch in the hall" {
+    var lv = grid.Level.blank();
+    var x: i32 = 5;
+    while (x <= 40) : (x += 1) lv.set(.{ .x = x, .y = 20 }, .floor);
+    const door = P{ .x = 25, .y = 21 };
+    lv.set(door, .floor);
+    var y: i32 = 22;
+    while (y <= 26) : (y += 1) {
+        x = 22;
+        while (x <= 28) : (x += 1) lv.set(.{ .x = x, .y = y }, .floor);
+    }
+    gen.shapeWalls(&lv);
+    fov.cast(&lv, .{ .x = 20, .y = 20 }, actor.row(.archer).sight);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    l.carrier = .{ 20.5, 20.5 };
+    try std.testing.expect(!lv.isSeen(door));
+    std.debug.print("hall light by cells from the archer, a doorway sight skips at 5:", .{});
+    var worst: f32 = 0;
+    x = 20;
+    while (x < 30) : (x += 1) {
+        const d: f32 = @floatFromInt(x - 20);
+        const v = lum(l.at(&lv, &.{}, .{ 20.5 + d, 20.5 }));
+        std.debug.print(" {d}:{d:.3}", .{ d, v });
+        worst = @max(worst, @abs(v - lum(AMBIENT + CARRY * splat(carryFade(d)))));
+    }
+    std.debug.print("; furthest off the carried light alone {d:.4}\n", .{worst});
+    try std.testing.expect(worst < 1e-3);
+    try std.testing.expectEqual(@as(f32, 0), lum(l.at(&lv, &.{}, .{ 25.5, 21.5 })));
 }
 
 test "a flame flickers within a tenth or so either way and never jumps" {

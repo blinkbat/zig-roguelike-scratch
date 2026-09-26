@@ -5,18 +5,23 @@ const mathx = @import("mathx.zig");
 // THE ONLY FILE THAT TOUCHES A DEVICE. The pad is primary and the only one the UI names; the keyboard mirrors it.
 
 pub const PAD: i32 = 0;
-const LEAN: rl.GamepadButton = .left_trigger_1;
+const LEAN: rl.GamepadButton = .left_trigger_2;
 
 pub const MOVE_CAPTION = "D-pad";
 pub const LEAN_CAPTION = padName(LEAN);
 
-fn padName(comptime b: rl.GamepadButton) [:0]const u8 {
+fn padName(b: rl.GamepadButton) [:0]const u8 {
     return switch (b) {
         .right_face_down => "A",
-        .right_face_left => "X",
         .right_face_right => "B",
+        .right_face_left => "X",
+        .right_face_up => "Y",
         .left_trigger_1 => "LB",
-        else => @compileError("no caption for " ++ @tagName(b)),
+        .left_trigger_2 => "LT",
+        .right_trigger_1 => "RB",
+        .right_trigger_2 => "RT",
+        .middle_left => "View",
+        else => "?",
     };
 }
 
@@ -51,41 +56,49 @@ pub fn leanOf(d: mathx.Dir) mathx.Dir {
     return @enumFromInt(@intFromEnum(d) + 1);
 }
 
-pub const Action = enum {
-    use,
-    fire,
-    wait,
-    back,
-    fullscreen,
+pub const Button = enum {
+    a,
+    b,
+    x,
+    y,
+    lb,
+    rb,
+    rt,
+    view,
 
-    fn button(a: Action) ?rl.GamepadButton {
-        return switch (a) {
-            .use => .right_face_down,
-            .fire => .right_face_left,
-            .wait, .back => .right_face_right,
-            .fullscreen => null,
+    fn pad(b: Button) rl.GamepadButton {
+        return switch (b) {
+            .a => .right_face_down,
+            .b => .right_face_right,
+            .x => .right_face_left,
+            .y => .right_face_up,
+            .lb => .left_trigger_1,
+            .rb => .right_trigger_1,
+            .rt => .right_trigger_2,
+            .view => .middle_left,
         };
     }
 
-    fn keys(a: Action) []const rl.KeyboardKey {
-        return switch (a) {
-            .use, .fullscreen => &.{ .enter, .kp_enter },
-            .fire => &.{ .f, .space },
-            .wait, .back => &.{ .period, .kp_5 },
+    fn keys(b: Button) []const rl.KeyboardKey {
+        return switch (b) {
+            .a => &.{ .enter, .kp_enter },
+            .b => &.{ .period, .kp_5 },
+            .x => &.{ .f, .space },
+            .y => &.{.e},
+            .lb => &.{.q},
+            .rb => &.{.r},
+            .rt => &.{.t},
+            .view => &.{.tab},
         };
     }
 
-    /// Keyboard chords that need Alt held; every other key refuses to fire under Alt.
-    fn alt(a: Action) bool {
-        return a == .fullscreen;
-    }
-
-    pub fn caption(comptime a: Action) [:0]const u8 {
-        return padName(a.button() orelse @compileError(@tagName(a) ++ " has no pad button to name"));
+    pub fn caption(b: Button) [:0]const u8 {
+        return padName(b.pad());
     }
 };
 
-const ACTIONS = std.enums.values(Action);
+const BUTTONS = std.enums.values(Button);
+const FULLSCREEN_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
 
 /// Schmitt trigger, then DAS and ARR; re-latches the moment it is steered. `settle` holds a new direction back so two
 /// keys a frame apart read as one diagonal; a tap let go before it settles steps once, on release.
@@ -146,13 +159,19 @@ fn partOf(d: mathx.Dir, diag: mathx.Dir) bool {
 }
 
 pub const State = struct {
-    pressed: std.EnumSet(Action) = .initEmpty(),
+    pressed: std.EnumSet(Button) = .initEmpty(),
+    down: std.EnumSet(Button) = .initEmpty(),
+    fullscreen: bool = false,
     walk: ?mathx.Dir = null,
     lean: bool = false,
     step: Stepper = .{},
 
-    pub fn hit(self: State, a: Action) bool {
-        return self.pressed.contains(a);
+    pub fn hit(self: State, b: Button) bool {
+        return self.pressed.contains(b);
+    }
+
+    pub fn held(self: State, b: Button) bool {
+        return self.down.contains(b);
     }
 
     /// Seconds since this frame's walk step was due; 0 when none fired.
@@ -163,12 +182,21 @@ pub const State = struct {
     pub fn update(self: *State, dt: f32) void {
         const pad = rl.isGamepadAvailable(PAD);
         const alt_down = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
-        for (ACTIONS) |a| {
-            var on = if (a.button()) |b| pad and rl.isGamepadButtonPressed(PAD, b) else false;
-            if (a.alt() == alt_down) {
-                for (a.keys()) |k| on = on or rl.isKeyPressed(k);
+        for (BUTTONS) |b| {
+            var on = pad and rl.isGamepadButtonPressed(PAD, b.pad());
+            var hold = pad and rl.isGamepadButtonDown(PAD, b.pad());
+            if (!alt_down) {
+                for (b.keys()) |k| {
+                    on = on or rl.isKeyPressed(k);
+                    hold = hold or rl.isKeyDown(k);
+                }
             }
-            self.pressed.setPresent(a, on);
+            self.pressed.setPresent(b, on);
+            self.down.setPresent(b, hold);
+        }
+        self.fullscreen = false;
+        if (alt_down) {
+            for (FULLSCREEN_KEYS) |k| self.fullscreen = self.fullscreen or rl.isKeyPressed(k);
         }
         self.lean = pad and rl.isGamepadButtonDown(PAD, LEAN);
 
@@ -323,6 +351,11 @@ test "a held walk that has stepped owes nothing when it is let go" {
     }
     if (s.tick(dt, 0, 0, Stepper.SETTLE) != null) steps += 1;
     try std.testing.expectEqual(@as(usize, 2), steps);
+}
+
+test "every button the ui names has a caption" {
+    for (BUTTONS) |b| try std.testing.expect(!std.mem.eql(u8, b.caption(), "?"));
+    try std.testing.expect(!std.mem.eql(u8, LEAN_CAPTION, "?"));
 }
 
 test "the lean layer puts each d-pad button on its own diagonal" {

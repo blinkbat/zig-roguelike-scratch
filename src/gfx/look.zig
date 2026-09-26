@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
+const skillbar = @import("../play/skillbar.zig");
 
 // EVERY PICTURE IN THE GAME. A thing with a sprite in `Sprites` draws it; anything without one falls back to its glyph.
 
@@ -24,7 +25,7 @@ pub const Sprites = struct {
     pub fn load() Sprites {
         var s = Sprites{ .floor = texture(@embedFile("floor.png")) };
         for (std.enums.values(actor.Kind)) |k| s.bodies.set(k, texture(BODY_PNGS.get(k) orelse continue));
-        const sheet = rl.loadImageFromMemory(".png", @embedFile("walls.png")) catch return s;
+        const sheet = rl.loadImageFromMemory(".png", WALLS_PNG) catch return s;
         defer rl.unloadImage(sheet);
         for (std.enums.values(grid.WallShape)) |shape| {
             const cell = WALL_CELLS.get(shape) orelse continue;
@@ -64,6 +65,8 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .archer = @embedFile("archer.png"),
     .rat = @embedFile("rat.png"),
 });
+
+const WALLS_PNG = @embedFile("walls.png");
 
 const WallCell = struct { col: i32, row: i32 };
 
@@ -114,8 +117,6 @@ const SHADE = rgb(0x3e3c46);
 
 pub const BG = rgb(0x07070a);
 pub const LIT = rl.Color.white;
-/// The light remembered terrain is drawn under, after Brogue's memory colour.
-pub const REMEMBERED = rgb(0x33385c);
 pub const FLOOR_BG = rgb(0x121116);
 pub const TEXT = rgb(0xd8cdb4);
 pub const DIM = rgb(0x8c8672);
@@ -178,6 +179,20 @@ pub fn caret(d: mathx.Dir) u8 {
     };
 }
 
+pub fn skill(a: skillbar.Act) Look {
+    return switch (a) {
+        .shoot => .{ .ch = '}', .fg = ARROW },
+        .wait => .{ .ch = 'z', .fg = DIM },
+        .secondary => .{ .ch = '2', .fg = GOLD },
+    };
+}
+
+pub const SLOT_BG = rgb(0x1a1820);
+pub const SLOT_EMPTY = rgb(0x0e0d12);
+pub const SLOT_HELD = GOLD;
+pub const SLOT_CURSOR = RETICLE;
+pub const SLOT_CLEAR = FOE;
+
 pub const MINI_BG = fade(BG, 0.9);
 pub const MINI_HERO = rgb(0x9cf08a);
 pub const MINI_FOE = FOE;
@@ -192,12 +207,12 @@ test "every glyph is printable ascii" {
     for (std.enums.values(grid.Tile)) |t| try std.testing.expect(inked(tile(t).ch));
     for (std.enums.values(actor.Kind)) |k| try std.testing.expect(inked(body(k).ch));
     try std.testing.expect(inked(TORCH.ch));
+    for (skillbar.ACTS) |a| try std.testing.expect(inked(skill(a).ch));
 }
 
 test "every wall shape's cell lies inside walls.png, and one past its edge is refused" {
-    const png = @embedFile("walls.png");
-    const w = std.mem.readInt(i32, png[16..20], .big);
-    const h = std.mem.readInt(i32, png[20..24], .big);
+    const w = std.mem.readInt(i32, WALLS_PNG[16..20], .big);
+    const h = std.mem.readInt(i32, WALLS_PNG[20..24], .big);
     const sheet = rl.genImageColor(w, h, rl.Color.white);
     defer rl.unloadImage(sheet);
     var cut: usize = 0;

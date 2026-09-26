@@ -92,9 +92,7 @@ pub const Level = struct {
     }
 
     pub fn wallShape(self: *const Level, p: P) ?WallShape {
-        if (!inside(p)) return null;
-        const i = idx(p);
-        return self.shape[i];
+        return cellOr(?WallShape, &self.shape, p, null);
     }
 
     pub fn inside(p: P) bool {
@@ -114,9 +112,7 @@ pub const Level = struct {
 
     /// Outside the map reads as wall, so no caller needs a bounds check.
     pub fn at(self: *const Level, p: P) Tile {
-        if (!inside(p)) return .wall;
-        const i = idx(p);
-        return self.tile[i];
+        return cellOr(Tile, &self.tile, p, .wall);
     }
 
     pub fn set(self: *Level, p: P, t: Tile) void {
@@ -125,9 +121,7 @@ pub const Level = struct {
     }
 
     pub fn who(self: *const Level, p: P) u16 {
-        if (!inside(p)) return NO_ONE;
-        const i = idx(p);
-        return self.occupant[i];
+        return cellOr(u16, &self.occupant, p, NO_ONE);
     }
 
     pub fn stand(self: *Level, p: P, id: u16) void {
@@ -149,15 +143,11 @@ pub const Level = struct {
     }
 
     pub fn isLit(self: *const Level, p: P) bool {
-        if (!inside(p)) return false;
-        const i = idx(p);
-        return self.lit[i];
+        return cellOr(bool, &self.lit, p, false);
     }
 
     pub fn isSeen(self: *const Level, p: P) bool {
-        if (!inside(p)) return false;
-        const i = idx(p);
-        return self.seen[i];
+        return cellOr(bool, &self.seen, p, false);
     }
 
     pub fn walkable(self: *const Level, p: P) bool {
@@ -179,6 +169,12 @@ pub const Level = struct {
         return w == NO_ONE or w == ignore;
     }
 };
+
+pub fn cellOr(comptime T: type, cells: *const [CELLS]T, p: P, outside: T) T {
+    if (!Level.inside(p)) return outside;
+    const i = Level.idx(p);
+    return cells[i];
+}
 
 /// Terrain only; -1 where nothing reaches.
 pub fn distances(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32) usize {

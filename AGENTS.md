@@ -9,8 +9,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 ## Build & verify
 
 - `zig` is NOT on PATH. `check.cmd` (type-check, the error loop) · `build.cmd` · `run.cmd` · `test.cmd [filter]` ·
-  `shot.cmd` (headless frames into `shots\lean.png`, `shots\aim.png` and `shots\torch.png`, a posed torch with rats
-  under it; built into `zig-out-dev` so a running game is untouched).
+  `shot.cmd` (headless frames into `shots\lean.png`, `shots\aim.png`, `shots\torch.png`, a posed torch with rats
+  under it, and `shots\bind.png`, the bind screen with its picker open; built into `zig-out-dev` so a running game is untouched).
   `zig-out-dev\bin\roguelike.exe --bench` (after `shot.cmd` builds it) prints per-frame CPU time of a headless walk.
   The toolchain is named once, in `_zig.cmd`. From PowerShell, call them as `.\check.cmd` from this directory.
 - **EVERY MODULE CARRYING TESTS MUST BE NAMED IN `main.zig`'s `test {}` BLOCK** — `build.zig` panics otherwise,
@@ -20,8 +20,11 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 ## Laws
 
 - **`core/input.zig` IS THE ONLY FILE THAT TOUCHES A DEVICE.** The controller is the primary input and the only
-  one the UI names; the keyboard mirrors it. D-pad moves, LB held puts the d-pad on diagonals (`leanOf`), X aims
-  and X again shoots, B waits or cancels, A restarts after death. Alt+Enter toggles borderless fullscreen.
+  one the UI names; the keyboard mirrors it. D-pad moves, LT held puts the d-pad on diagonals (`leanOf`). Skills sit
+  on PoE2's controller skill bar (`play/skillbar.zig`): LB, A, X, Y, B, RB and RT are slots in a primary and a
+  secondary set, the secondary set is used while the button bound to "Activate Secondary Skill Set" (LB) is held, and
+  View opens the bind screen (A select or pick up, X change, Y remove, B close). Defaults: X Shoot, B Wait. The button
+  that opened the reticle shoots, B cancels, A restarts after death. Alt+Enter toggles borderless fullscreen.
 - **NOTHING IS SPENT UNTIL THE SHOT IS CONFIRMED.** `bow.aimable` is both the reticle's legal cells and the
   shot's legality — one call, so the highlight cannot disagree with the resolver.
 - **THE LAYOUT READS `Game.screen`, NEVER A WINDOW CONSTANT**, because fullscreen changes it at runtime.
@@ -32,7 +35,9 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   shader from normals bevelled off their silhouette at load; torch flames and their glow draw over it all. The map
   composes the archer's carried light (after Brogue's miner's light), each torch (occluded by its own `fov.cast`)
   and the fog: sight and memory ease per cell, and memory fades to black exactly at the edge of what was ever seen,
-  so no unseen cell is ever drawn. It is cosmetic: nothing in the simulation reads it, and it decides no visibility.
+  so no unseen cell is ever drawn. Ground in sight is never dimmed by a cell never seen (a side door the symmetric FOV
+  skips): there the fade is only a rim, and sight blurs over seen cells alone. It is cosmetic: nothing in the
+  simulation reads it, and it decides no visibility.
 - **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG and TTF there under its file name, read with
   `@embedFile`), so the exe runs from any directory. A body's PNG is a file in `assets/` and its entry in
   `look.BODY_PNGS`; a tile's is a file, a field in `Sprites` that `load` and `unload` name, and its arm in

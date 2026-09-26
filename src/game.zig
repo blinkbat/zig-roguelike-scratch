@@ -8,6 +8,7 @@ const fov = @import("world/fov.zig");
 const gen = @import("world/gen.zig");
 const actor = @import("play/actor.zig");
 const bow = @import("play/bow.zig");
+const skillbar = @import("play/skillbar.zig");
 const look = @import("gfx/look.zig");
 const light = @import("gfx/light.zig");
 const font = @import("gfx/font.zig");
@@ -17,6 +18,8 @@ const P = mathx.P;
 pub const WINDOW_W: i32 = 1600;
 pub const WINDOW_H: i32 = 900;
 pub const CELL: i32 = 64;
+const CELL_F: f32 = @floatFromInt(CELL);
+const HALF_CELL: i32 = @divTrunc(CELL, 2);
 pub const GLYPH: i32 = 60;
 pub const CARET: i32 = 30;
 const TORCH_GLYPH: i32 = 30;
@@ -38,13 +41,41 @@ const BAR_TEXT_X: i32 = 8;
 const TALLY_Y: i32 = 54;
 const HINT_Y: i32 = HUD_H - 32;
 const HUD_EDGE: i32 = 2;
-const LOG_X: i32 = HUD_PAD + BAR_W + HUD_PAD * 3;
 const LOG_Y: i32 = 14;
 const LOG_LINE: i32 = 26;
 const LOG_FADE: f32 = 0.22;
 const DEAD_TITLE_DY: i32 = -100;
 const DEAD_SCORE_DY: i32 = -10;
 const DEAD_HINT_DY: i32 = 30;
+const SLOT_PX: i32 = 56;
+const SLOT_GAP: i32 = 6;
+const GROUP_GAP: i32 = 20;
+const SLOT_TEXT: i32 = 16;
+const SLOT_GLYPH: i32 = 40;
+const KEY_GAP: i32 = 2;
+const SKILLS_Y: i32 = 12;
+const SLOT_XS = blk: {
+    var xs: [skillbar.SLOTS.len]i32 = undefined;
+    var x: i32 = 0;
+    var i: usize = 0;
+    for (skillbar.GROUPS, 0..) |grp, gi| {
+        if (gi > 0) x += GROUP_GAP - SLOT_GAP;
+        for (grp) |_| {
+            xs[i] = x;
+            x += SLOT_PX + SLOT_GAP;
+            i += 1;
+        }
+    }
+    break :blk xs;
+};
+const SKILLS_W: i32 = SLOT_XS[SLOT_XS.len - 1] + SLOT_PX;
+const PICKS: usize = 1 + skillbar.ACTS.len;
+const BIND_TITLE: i32 = 40;
+const BIND_TOP_DY: i32 = -230;
+const BIND_ROWS_DY: i32 = BIND_TITLE + BIND_POP_DY + SLOT_PX;
+const BIND_ROW_H: i32 = TEXT + 6 + SLOT_PX + KEY_GAP + SLOT_TEXT + 24;
+const BIND_POP_DY: i32 = 10;
+const BIND_INFO_DY: i32 = 8;
 pub const MINI: i32 = 3;
 pub const MINI_W: i32 = grid.W * MINI;
 pub const MINI_H: i32 = grid.H * MINI;
@@ -68,11 +99,39 @@ comptime {
     std.debug.assert(@mod(CELL, look.SPRITE_PX) == 0);
     std.debug.assert(GLYPH <= CELL);
     std.debug.assert(LOG_Y + @as(i32, @intCast(Log.SHOWN)) * LOG_LINE <= HUD_H);
+    std.debug.assert(SKILLS_Y + SLOT_PX + KEY_GAP + SLOT_TEXT <= HUD_H);
     std.debug.assert(RAT_GAP > actor.row(.archer).sight);
     std.debug.assert(1 + RATS <= actor.MAX);
 }
 
-pub const Mode = enum { play, aim, dead };
+pub const Mode = enum { play, aim, bind, dead };
+
+const Binds = struct {
+    row: usize = 0,
+    col: usize = 0,
+    menu: Menu = .browse,
+
+    const Menu = union(enum) { browse, pick: usize, carry: skillbar.Slot };
+
+    fn slot(b: Binds) skillbar.Slot {
+        return .{ .set = b.row, .button = skillbar.SLOTS[b.col] };
+    }
+
+    fn move(b: *Binds, d: mathx.Dir) void {
+        b.col = wrap(b.col, d.delta().x, skillbar.SLOTS.len);
+        b.row = wrap(b.row, d.delta().y, skillbar.SETS);
+    }
+};
+
+fn wrap(i: usize, by: i32, n: usize) usize {
+    return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
+}
+
+/// Picker cell 0 clears the slot; the rest are the acts in order.
+fn pickOf(a: ?skillbar.Act) usize {
+    const act = a orelse return 1;
+    return 1 + (std.mem.indexOfScalar(skillbar.Act, skillbar.ACTS, act) orelse 0);
+}
 
 pub const Log = struct {
     pub const LINES: usize = 32;
@@ -134,14 +193,18 @@ pub const Glide = struct {
         return .{ .from = self.now(), .to = p, .t = t, .from_lift = self.height() };
     }
 
+    fn done(self: Glide) f32 {
+        return @min(1.0, self.t / GLIDE_S);
+    }
+
     fn now(self: Glide) rl.Vector2 {
-        const k = @min(1.0, self.t / GLIDE_S);
+        const k = self.done();
         const to = cellPx(self.to);
         return .{ .x = mathx.lerpF(self.from.x, to.x, k), .y = mathx.lerpF(self.from.y, to.y, k) };
     }
 
     fn height(self: Glide) f32 {
-        const k = @min(1.0, self.t / GLIDE_S);
+        const k = self.done();
         return self.from_lift * (1 - k) + HOP_PX * 4 * k * (1 - k);
     }
 
@@ -163,6 +226,9 @@ pub const Game = struct {
     kills: usize = 0,
     log: Log = .{},
     st: input.State = .{},
+    bar: skillbar.Bar = .{},
+    binds: Binds = .{},
+    aim_by: input.Button = .x,
     mark: P = .{ .x = 0, .y = 0 },
     /// World pixels, eased toward the archer. Nothing in the simulation reads it.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
@@ -285,7 +351,7 @@ fn heroStep(g: *Game, d: mathx.Dir) void {
     endTurn(g);
 }
 
-fn openAim(g: *Game) void {
+fn openAim(g: *Game, by: input.Button) void {
     const h = g.archer() orelse return;
     const target = bow.pick(&g.lv, &g.pool, h.at) orelse {
         g.log.say("Nothing in range.", .{});
@@ -293,7 +359,81 @@ fn openAim(g: *Game) void {
     };
     g.mark = g.pool.get(target).?.at;
     turnToward(g, g.hero, g.mark.x - h.at.x);
+    g.aim_by = by;
     g.mode = .aim;
+}
+
+const Use = struct { act: skillbar.Act, by: input.Button };
+
+/// Since PoE2 0.2.0, pressing the modifier while a button is already held fires that button's secondary skill.
+fn usedSkill(g: *Game) ?Use {
+    const set = g.bar.active(g.st.down);
+    for (skillbar.SLOTS) |b| {
+        if (!g.st.hit(b)) continue;
+        const a = g.bar.at(.{ .set = set, .button = b }) orelse continue;
+        if (a != .secondary) return .{ .act = a, .by = b };
+    }
+    const m = g.bar.modifier orelse return null;
+    if (!g.st.hit(m)) return null;
+    for (skillbar.SLOTS) |b| {
+        if (b == m or !g.st.held(b)) continue;
+        const a = g.bar.at(.{ .set = 1, .button = b }) orelse continue;
+        if (a != .secondary) return .{ .act = a, .by = b };
+    }
+    return null;
+}
+
+fn useSkill(g: *Game, u: Use) void {
+    switch (u.act) {
+        .shoot => openAim(g, u.by),
+        .wait => endTurn(g),
+        .secondary => {},
+    }
+}
+
+fn openBinds(g: *Game) void {
+    g.binds.menu = .browse;
+    g.mode = .bind;
+}
+
+fn bindStep(g: *Game) void {
+    const b = &g.binds;
+    const here = b.slot();
+    switch (b.menu) {
+        .browse => {
+            if (g.st.hit(.b) or g.st.hit(.view)) {
+                g.mode = .play;
+            } else if (g.st.hit(.a)) {
+                b.menu = if (g.bar.at(here) != null) .{ .carry = here } else .{ .pick = pickOf(null) };
+            } else if (g.st.hit(.x)) {
+                b.menu = .{ .pick = pickOf(g.bar.at(here)) };
+            } else if (g.st.hit(.y)) {
+                g.bar.clear(here);
+            } else if (g.st.walk) |d| {
+                b.move(d);
+            }
+        },
+        .pick => |i| {
+            if (g.st.hit(.b)) {
+                b.menu = .browse;
+            } else if (g.st.hit(.a)) {
+                if (i == 0) g.bar.clear(here) else g.bar.bind(here, skillbar.ACTS[i - 1]);
+                b.menu = .browse;
+            } else if (g.st.walk) |d| {
+                b.menu = .{ .pick = wrap(i, d.delta().x, PICKS) };
+            }
+        },
+        .carry => |from| {
+            if (g.st.hit(.b)) {
+                b.menu = .browse;
+            } else if (g.st.hit(.a)) {
+                g.bar.swap(from, here);
+                b.menu = .browse;
+            } else if (g.st.walk) |d| {
+                b.move(d);
+            }
+        },
+    }
 }
 
 fn nudgeAim(g: *Game, d: mathx.Dir) void {
@@ -315,12 +455,14 @@ fn confirmAim(g: *Game) void {
     const f = bow.fly(&g.lv, h.at, to);
     g.shot = .{ .flight = f, .glyph = look.arrow(to.x - h.at.x, to.y - h.at.y) };
     if (f.struck != grid.NO_ONE) {
-        wound(g, f.struck, g.rng.range(bow.DMG_LO, bow.DMG_HI), "You shoot");
+        wound(g, f.struck, g.rng.range(bow.DMG_LO, bow.DMG_HI), SHOOT);
     } else {
         g.log.say("Your arrow finds nothing.", .{});
     }
     endTurn(g);
 }
+
+const SHOOT = "You shoot";
 
 fn wound(g: *Game, id: u16, dmg: i32, comptime verb: []const u8) void {
     const name = actor.row((g.pool.get(id) orelse return).kind).name;
@@ -378,10 +520,14 @@ fn camAxis(centre: f32, view: f32, world: f32) f32 {
     return std.math.clamp(centre - view * 0.5, 0, world - view);
 }
 
+fn heroNow(g: *Game) ?rl.Vector2 {
+    if (g.archer() == null) return null;
+    return g.glide[actor.Pool.slot(g.hero)].now();
+}
+
 fn camWant(g: *Game) rl.Vector2 {
-    if (g.archer() == null) return g.cam;
-    const at = g.glide[actor.Pool.slot(g.hero)].now();
-    const half: f32 = @floatFromInt(@divTrunc(CELL, 2));
+    const at = heroNow(g) orelse return g.cam;
+    const half: f32 = @floatFromInt(HALF_CELL);
     return .{
         .x = camAxis(at.x + half, @floatFromInt(g.screen.x), @floatFromInt(grid.W * CELL)),
         .y = camAxis(at.y + half, @floatFromInt(g.viewH()), @floatFromInt(grid.H * CELL)),
@@ -405,24 +551,25 @@ fn stepGlide(g: *Game, dt: f32) void {
 pub fn update(g: *Game, dt: f32) void {
     switch (g.mode) {
         .play => {
-            if (g.st.hit(.fire)) {
-                openAim(g);
-            } else if (g.st.hit(.wait)) {
-                endTurn(g);
+            if (g.st.hit(.view)) {
+                openBinds(g);
+            } else if (usedSkill(g)) |u| {
+                useSkill(g, u);
             } else if (g.st.walk) |d| {
                 heroStep(g, d);
             }
         },
         .aim => {
-            if (g.st.hit(.back)) {
-                g.mode = .play;
-            } else if (g.st.hit(.fire)) {
+            if (g.st.hit(g.aim_by)) {
                 confirmAim(g);
+            } else if (g.st.hit(.b) or g.st.hit(.view)) {
+                g.mode = .play;
             } else if (g.st.walk) |d| {
                 nudgeAim(g, d);
             }
         },
-        .dead => if (g.st.hit(.use)) begin(g, freshSeed()),
+        .bind => bindStep(g),
+        .dead => if (g.st.hit(.a)) begin(g, freshSeed()),
     }
     stepGlide(g, dt);
     if (g.shot) |*s| {
@@ -439,18 +586,15 @@ pub fn update(g: *Game, dt: f32) void {
 
 /// The archer's middle as drawn, cells: the carried light glides with the body.
 fn carrierAt(g: *Game) ?[2]f32 {
-    if (g.archer() == null) return null;
-    return middle(g.glide[actor.Pool.slot(g.hero)].now());
+    return middle(heroNow(g) orelse return null);
 }
 
 fn middle(v: rl.Vector2) [2]f32 {
-    const c: f32 = @floatFromInt(CELL);
-    return .{ v.x / c + 0.5, v.y / c + 0.5 };
+    return .{ v.x / CELL_F + 0.5, v.y / CELL_F + 0.5 };
 }
 
 fn drawGlyph(g: *Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void {
-    const half = @divTrunc(CELL, 2);
-    glyphAt(g, ch, sx + half, sy + half, GLYPH, col);
+    glyphAt(g, ch, sx + HALF_CELL, sy + HALF_CELL, GLYPH, col);
 }
 
 fn textMid(g: *Game, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
@@ -638,14 +782,13 @@ fn drawWorld(g: *Game) void {
 fn drawTorches(g: *Game, c: Cam) void {
     var buf: [grid.MAX_TORCHES]light.Flame = undefined;
     const flames = g.light.flames(&g.lv, &buf);
-    const cell: f32 = @floatFromInt(CELL);
     for (flames) |f| {
-        const x = mathx.roundTiesUp(f.at[0] * cell) - c.x;
-        const y = mathx.roundTiesUp(f.at[1] * cell) - c.y;
+        const x = mathx.roundTiesUp(f.at[0] * CELL_F) - c.x;
+        const y = mathx.roundTiesUp(f.at[1] * CELL_F) - c.y;
         glyphAt(g, look.TORCH.ch, x, y, TORCH_GLYPH, look.TORCH_DIM);
         glyphAt(g, look.TORCH.ch, x, y, TORCH_GLYPH, look.fade(look.TORCH.fg, f.sight * @min(1, f.glow)));
     }
-    g.light.drawGlows(flames, @floatFromInt(-c.x), @floatFromInt(-c.y), cell);
+    g.light.drawGlows(flames, @floatFromInt(-c.x), @floatFromInt(-c.y), CELL_F);
 }
 
 fn drawLean(g: *Game, c: Cam) void {
@@ -699,10 +842,105 @@ fn drawMinimap(g: *Game) void {
     rl.drawRectangleLines(vx, vy, @divTrunc(g.screen.x * MINI, CELL), @divTrunc(g.viewH() * MINI, CELL), look.MINI_VIEW);
 }
 
-const HINT_PLAY = input.MOVE_CAPTION ++ " move   " ++ input.LEAN_CAPTION ++ "+" ++ input.MOVE_CAPTION ++ " diagonal   " ++
-    input.Action.fire.caption() ++ " aim   " ++ input.Action.wait.caption() ++ " wait";
-const HINT_AIM = input.MOVE_CAPTION ++ " aim   " ++ input.Action.fire.caption() ++ " shoot   " ++
-    input.Action.back.caption() ++ " cancel";
+const HINT_PLAY = input.LEAN_CAPTION ++ "+" ++ input.MOVE_CAPTION ++ " diagonal   " ++ input.Button.view.caption() ++ " bind skills";
+
+fn skillsX(g: *Game) i32 {
+    return @divTrunc(g.screen.x - SKILLS_W, 2);
+}
+
+const SlotLook = struct { act: ?skillbar.Act, key: ?input.Button, edge: rl.Color, faded: bool = false };
+
+fn drawSlot(g: *Game, x: i32, y: i32, s: SlotLook) void {
+    const a: f32 = if (s.faded) 0.35 else 1;
+    rl.drawRectangle(x, y, SLOT_PX, SLOT_PX, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a));
+    rl.drawRectangleLinesEx(.{
+        .x = @floatFromInt(x),
+        .y = @floatFromInt(y),
+        .width = @floatFromInt(SLOT_PX),
+        .height = @floatFromInt(SLOT_PX),
+    }, @floatFromInt(LINE_W), look.fade(s.edge, a));
+    if (s.act) |act| {
+        const l = look.skill(act);
+        glyphAt(g, l.ch, x + @divTrunc(SLOT_PX, 2), y + @divTrunc(SLOT_PX, 2), SLOT_GLYPH, look.fade(l.fg, a));
+    }
+    const k = (s.key orelse return).caption();
+    g.face.draw(k, x + @divTrunc(SLOT_PX - g.face.width(k, SLOT_TEXT), 2), y + SLOT_PX + KEY_GAP, SLOT_TEXT, look.fade(look.DIM, a));
+}
+
+fn drawSkills(g: *Game, top: i32) void {
+    const set = g.bar.active(g.st.down);
+    const x0 = skillsX(g);
+    for (skillbar.SLOTS, SLOT_XS) |b, dx| {
+        const held = g.st.held(b) and g.mode == .play;
+        drawSlot(g, x0 + dx, top + SKILLS_Y, .{
+            .act = g.bar.at(.{ .set = set, .button = b }),
+            .key = b,
+            .edge = if (held) look.SLOT_HELD else look.EDGE,
+        });
+    }
+}
+
+fn drawBinds(g: *Game) void {
+    var buf: [128]u8 = undefined;
+    const b = g.binds;
+    const x0 = skillsX(g);
+    const y0 = @divTrunc(g.viewH(), 2) + BIND_TOP_DY;
+    rl.drawRectangle(0, 0, g.screen.x, g.viewH(), look.VEIL);
+    textMid(g, "BIND SKILLS", y0, BIND_TITLE, look.TEXT);
+    var cursor = P{ .x = 0, .y = 0 };
+    for (0..skillbar.SETS) |s| {
+        const ry = y0 + BIND_ROWS_DY + @as(i32, @intCast(s)) * BIND_ROW_H;
+        g.face.text(skillbar.SET_NAMES[s], x0, ry, TEXT, look.DIM);
+        const sy = ry + TEXT + 6;
+        for (skillbar.SLOTS, SLOT_XS, 0..) |key, dx, i| {
+            const here = s == b.row and i == b.col;
+            const carried = switch (b.menu) {
+                .carry => |from| from.set == s and from.button == key,
+                else => false,
+            };
+            if (here) cursor = .{ .x = x0 + dx, .y = sy };
+            drawSlot(g, x0 + dx, sy, .{
+                .act = g.bar.at(.{ .set = s, .button = key }),
+                .key = key,
+                .edge = if (here) look.SLOT_CURSOR else look.EDGE,
+                .faded = carried,
+            });
+        }
+    }
+    const info_y = y0 + BIND_ROWS_DY + @as(i32, @intCast(skillbar.SETS)) * BIND_ROW_H + BIND_INFO_DY;
+    var shown: ?skillbar.Act = g.bar.at(b.slot());
+    var legend: [:0]const u8 = if (shown == null) "A select skill   X select skill   B close" else "A pick up   X change skill   Y remove   B close";
+    switch (b.menu) {
+        .browse => {},
+        .carry => |from| {
+            shown = g.bar.at(from);
+            legend = "A put down   B cancel";
+            if (shown) |a| drawSlot(g, cursor.x, cursor.y - SLOT_PX - BIND_POP_DY, .{ .act = a, .key = from.button, .edge = look.SLOT_CURSOR });
+        },
+        .pick => |pick| {
+            legend = "A bind   B back";
+            shown = if (pick == 0) null else skillbar.ACTS[pick - 1];
+            const w = @as(i32, @intCast(PICKS)) * (SLOT_PX + SLOT_GAP) - SLOT_GAP;
+            const px = cursor.x + @divTrunc(SLOT_PX - w, 2);
+            const py = cursor.y - SLOT_PX - BIND_POP_DY;
+            for (0..PICKS) |i| {
+                const x = px + @as(i32, @intCast(i)) * (SLOT_PX + SLOT_GAP);
+                const edge = if (i == pick) look.SLOT_CURSOR else if (i == 0) look.SLOT_CLEAR else look.EDGE;
+                drawSlot(g, x, py, .{ .act = if (i == 0) null else skillbar.ACTS[i - 1], .key = null, .edge = edge });
+                if (i == 0) glyphAt(g, 'x', x + @divTrunc(SLOT_PX, 2), py + @divTrunc(SLOT_PX, 2), @divTrunc(SLOT_PX, 2), look.SLOT_CLEAR);
+            }
+        },
+    }
+    if (shown) |a| {
+        textMid(g, a.name(), info_y, TEXT, look.TEXT);
+        textMid(g, a.desc(), info_y + LOG_LINE, TEXT, look.DIM);
+    } else if (b.menu == .pick) {
+        textMid(g, "Clear slot", info_y, TEXT, look.TEXT);
+    }
+    const hold = if (g.bar.modifier) |m| std.fmt.bufPrintZ(&buf, "Hold {s} for the Secondary Skill Set", .{m.caption()}) catch "" else "No button holds the Secondary Skill Set";
+    textMid(g, hold, info_y + LOG_LINE * 2, TEXT, look.DIM);
+    textMid(g, legend, info_y + LOG_LINE * 4, TEXT, look.DIM);
+}
 
 fn drawHud(g: *Game) void {
     const top = g.viewH();
@@ -717,14 +955,19 @@ fn drawHud(g: *Game) void {
     g.face.text(std.fmt.bufPrintZ(&buf, "HP {d}/{d}", .{ @max(0, hp), max }) catch "", HUD_PAD + BAR_TEXT_X, bar_y + @divTrunc(BAR_H - TEXT, 2), TEXT, look.TEXT);
     const r = ratTally(g);
     g.face.text(std.fmt.bufPrintZ(&buf, "Rats {d}/{d}", .{ r.left, r.total }) catch "", HUD_PAD, top + TALLY_Y, TEXT, look.DIM);
-    const hint: [:0]const u8 = if (g.mode == .aim) HINT_AIM else HINT_PLAY;
-    g.face.text(hint, g.screen.x - g.face.width(hint, TEXT) - HUD_PAD, top + HINT_Y, TEXT, look.DIM);
+    const hint: [:0]const u8 = if (g.mode == .aim)
+        std.fmt.bufPrintZ(&buf, "{s} shoot   {s} cancel   {s} aim", .{ g.aim_by.caption(), input.Button.b.caption(), input.MOVE_CAPTION }) catch ""
+    else
+        HINT_PLAY;
+    g.face.text(hint, HUD_PAD, top + HINT_Y, TEXT, look.DIM);
+    drawSkills(g, top);
 
+    const log_x = skillsX(g) + SKILLS_W + HUD_PAD * 2;
     for (0..Log.SHOWN) |row| {
         const back = Log.SHOWN - 1 - row;
         const l = g.log.line(back) orelse continue;
         const a = 1.0 - @as(f32, @floatFromInt(back)) * LOG_FADE;
-        g.face.text(l, LOG_X, top + LOG_Y + @as(i32, @intCast(row)) * LOG_LINE, TEXT, look.fade(look.TEXT, a));
+        g.face.text(l, log_x, top + LOG_Y + @as(i32, @intCast(row)) * LOG_LINE, TEXT, look.fade(look.TEXT, a));
     }
 }
 
@@ -734,7 +977,7 @@ fn drawDead(g: *Game) void {
     rl.drawRectangle(0, 0, g.screen.x, g.viewH(), look.VEIL);
     textMid(g, "YOU DIED", mid + DEAD_TITLE_DY, TITLE, look.LIFE);
     textMid(g, std.fmt.bufPrintZ(&buf, "{d} rats killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
-    textMid(g, comptime input.Action.use.caption() ++ "  new floor", mid + DEAD_HINT_DY, TEXT, look.DIM);
+    textMid(g, comptime input.Button.a.caption() ++ "  new floor", mid + DEAD_HINT_DY, TEXT, look.DIM);
 }
 
 pub fn drawFrame(g: *Game) void {
@@ -742,6 +985,7 @@ pub fn drawFrame(g: *Game) void {
     drawWorld(g);
     drawMinimap(g);
     drawHud(g);
+    if (g.mode == .bind) drawBinds(g);
     if (g.mode == .dead) drawDead(g);
 }
 
@@ -750,7 +994,10 @@ fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*Game
     rl.setConfigFlags(flags);
     rl.initWindow(WINDOW_W, WINDOW_H, title);
     defer rl.closeWindow();
-    const g = boot(alloc) catch return;
+    const g = boot(alloc) catch |e| {
+        std.debug.print("boot FAILED ({s})\n", .{@errorName(e)});
+        return;
+    };
     defer shut(alloc, g);
     g.sprites = look.Sprites.load();
     defer g.sprites.unload();
@@ -770,7 +1017,7 @@ fn loop(g: *Game) void {
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
         g.st.update(dt);
-        if (g.st.hit(.fullscreen)) rl.toggleBorderlessWindowed();
+        if (g.st.fullscreen) rl.toggleBorderlessWindowed();
         g.screen = .{ .x = rl.getScreenWidth(), .y = rl.getScreenHeight() };
         update(g, dt);
         rl.beginDrawing();
@@ -785,11 +1032,15 @@ pub fn shot() void {
     withGame(.{ .window_hidden = true }, "roguelike --shot", shoot);
 }
 
-fn shoot(g: *Game) void {
-    const target = rl.loadRenderTexture(g.screen.x, g.screen.y) catch {
+fn renderTarget(g: *Game) ?rl.RenderTexture2D {
+    return rl.loadRenderTexture(g.screen.x, g.screen.y) catch {
         std.debug.print("render texture FAILED\n", .{});
-        return;
+        return null;
     };
+}
+
+fn shoot(g: *Game) void {
+    const target = renderTarget(g) orelse return;
     defer rl.unloadRenderTexture(target);
     std.fs.cwd().makePath(SHOTS_DIR) catch {};
 
@@ -799,21 +1050,28 @@ fn shoot(g: *Game) void {
     capture(g, target, SHOTS_DIR ++ "/lean.png");
 
     g.st.lean = false;
-    openAim(g);
+    openAim(g, .x);
     capture(g, target, SHOTS_DIR ++ "/aim.png");
 
     g.mode = .play;
     poseTorch(g);
     capture(g, target, SHOTS_DIR ++ "/torch.png");
+
+    openBinds(g);
+    g.binds.col = 2;
+    g.binds.menu = .{ .pick = pickOf(g.bar.at(g.binds.slot())) };
+    capture(g, target, SHOTS_DIR ++ "/bind.png");
 }
+
+const POSE_TORCH = P{ .x = 20, .y = 10 };
 
 fn poseTorch(g: *Game) void {
     arena(g, .{ .x = 20, .y = 15 }, &.{ .{ .x = 17, .y = 12 }, .{ .x = 23, .y = 13 } });
     var x: i32 = 12;
-    while (x < 29) : (x += 1) g.lv.set(.{ .x = x, .y = 10 }, .wall);
+    while (x < 29) : (x += 1) g.lv.set(.{ .x = x, .y = POSE_TORCH.y }, .wall);
     g.lv.set(.{ .x = 22, .y = 12 }, .wall);
     gen.shapeWalls(&g.lv);
-    g.lv.addTorch(.{ .x = 20, .y = 10 });
+    g.lv.addTorch(POSE_TORCH);
     settle(g);
 }
 
@@ -843,8 +1101,12 @@ pub fn bench() void {
 const BENCH_FRAMES: usize = 3600;
 
 fn benchWalk(g: *Game) void {
-    const target = rl.loadRenderTexture(g.screen.x, g.screen.y) catch return;
+    const target = renderTarget(g) orelse return;
     defer rl.unloadRenderTexture(target);
+    var t = std.time.Timer.start() catch {
+        std.debug.print("timer FAILED\n", .{});
+        return;
+    };
     begin(g, SHOT_SEED);
     var rng = mathx.Rng.init(SHOT_SEED);
     var d: mathx.Dir = .e;
@@ -854,7 +1116,7 @@ fn benchWalk(g: *Game) void {
     for (0..BENCH_FRAMES) |i| {
         if (g.mode == .dead) begin(g, SHOT_SEED +% i);
         const was = g.archer().?.at;
-        var t = std.time.Timer.start() catch return;
+        t.reset();
         g.st.walk = g.st.step.tick(dt, 1, d.heading(), input.Stepper.SETTLE);
         update(g, dt);
         sim[i] = t.lap();
@@ -890,7 +1152,7 @@ fn poseRat(g: *Game) void {
         g.pool.move(&g.lv, rat, p);
         break;
     }
-    wound(g, rat, bow.DMG_LO, "You shoot");
+    wound(g, rat, bow.DMG_LO, SHOOT);
     settle(g);
 }
 
@@ -901,7 +1163,7 @@ fn arena(g: *Game, hero: P, rats: []const P) void {
     settle(g);
 }
 
-fn press(g: *Game, a: input.Action) void {
+fn press(g: *Game, a: input.Button) void {
     g.st = .{};
     g.st.pressed.insert(a);
     update(g, 0);
@@ -910,6 +1172,68 @@ fn press(g: *Game, a: input.Action) void {
 fn nudge(g: *Game, d: mathx.Dir) void {
     g.st = .{ .walk = d };
     update(g, 0);
+}
+
+fn pressHolding(g: *Game, a: input.Button, held: []const input.Button) void {
+    g.st = .{};
+    g.st.pressed.insert(a);
+    g.st.down.insert(a);
+    for (held) |h| g.st.down.insert(h);
+    update(g, 0);
+}
+
+test "a skill fires from whatever button holds it, and the secondary set only with its modifier held" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
+    g.bar.clear(.{ .set = 0, .button = .x });
+    g.bar.bind(.{ .set = 1, .button = .rb }, .shoot);
+    press(g, .x);
+    press(g, .rb);
+    try std.testing.expectEqual(Mode.play, g.mode);
+    pressHolding(g, .rb, &.{.lb});
+    try std.testing.expectEqual(Mode.aim, g.mode);
+    try std.testing.expectEqual(input.Button.rb, g.aim_by);
+    press(g, .x);
+    try std.testing.expect(!g.pool.get(2).?.hurt());
+    press(g, .rb);
+    try std.testing.expectEqual(Mode.play, g.mode);
+    try std.testing.expect(g.pool.get(2).?.hurt());
+}
+
+test "pressing the modifier while a button is already held fires that button's secondary skill" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
+    g.bar.bind(.{ .set = 1, .button = .y }, .shoot);
+    pressHolding(g, .lb, &.{.y});
+    try std.testing.expectEqual(Mode.aim, g.mode);
+    try std.testing.expectEqual(input.Button.y, g.aim_by);
+}
+
+test "the bind screen picks, carries and removes bindings, and spends no turn" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 30, .y = 20 }});
+    g.pool.get(2).?.awake = true;
+    press(g, .view);
+    try std.testing.expectEqual(Mode.bind, g.mode);
+    g.binds.col = std.mem.indexOfScalar(input.Button, &skillbar.SLOTS, .y).?;
+    press(g, .a);
+    nudge(g, .e);
+    press(g, .a);
+    try std.testing.expectEqual(@as(?skillbar.Act, skillbar.ACTS[1]), g.bar.at(.{ .set = 0, .button = .y }));
+    g.binds.col = std.mem.indexOfScalar(input.Button, &skillbar.SLOTS, .x).?;
+    press(g, .a);
+    nudge(g, .s);
+    press(g, .a);
+    try std.testing.expectEqual(@as(?skillbar.Act, null), g.bar.at(.{ .set = 0, .button = .x }));
+    try std.testing.expectEqual(@as(?skillbar.Act, .shoot), g.bar.at(.{ .set = 1, .button = .x }));
+    press(g, .y);
+    try std.testing.expectEqual(@as(?skillbar.Act, null), g.bar.at(.{ .set = 1, .button = .x }));
+    press(g, .b);
+    try std.testing.expectEqual(Mode.play, g.mode);
+    try std.testing.expectEqual(P{ .x = 30, .y = 20 }, g.pool.get(2).?.at);
 }
 
 test "a new floor has every rat placed and none of them in sight" {
@@ -959,7 +1283,7 @@ test "a body faces right until it steps, aims or turns on someone to its left, a
     try std.testing.expectEqual(Facing.left, g.facing[hero]);
     nudge(g, .e);
     try std.testing.expectEqual(Facing.right, g.facing[hero]);
-    press(g, .fire);
+    press(g, .x);
     try std.testing.expectEqual(Mode.aim, g.mode);
     try std.testing.expect(g.mark.x < g.archer().?.at.x);
     try std.testing.expectEqual(Facing.left, g.facing[hero]);
@@ -969,12 +1293,12 @@ test "X opens aim on the nearest rat and nothing is spent until X again" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 27, .y = 20 }, .{ .x = 23, .y = 22 } });
-    press(g, .fire);
+    press(g, .x);
     try std.testing.expectEqual(Mode.aim, g.mode);
     try std.testing.expectEqual(P{ .x = 23, .y = 22 }, g.mark);
     try std.testing.expect(!g.pool.get(3).?.awake);
     try std.testing.expect(!g.pool.get(3).?.hurt());
-    press(g, .fire);
+    press(g, .x);
     try std.testing.expectEqual(Mode.play, g.mode);
     try std.testing.expect(g.pool.get(3).?.hurt());
     try std.testing.expect(!g.pool.get(2).?.hurt());
@@ -985,8 +1309,8 @@ test "B cancels aim and costs no turn" {
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
     g.pool.get(2).?.awake = true;
-    press(g, .fire);
-    press(g, .back);
+    press(g, .x);
+    press(g, .b);
     try std.testing.expectEqual(Mode.play, g.mode);
     try std.testing.expectEqual(P{ .x = 25, .y = 20 }, g.pool.get(2).?.at);
 }
@@ -997,7 +1321,7 @@ test "the reticle walks only onto cells the arrow can reach" {
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 20 + bow.RANGE, .y = 20 }});
     g.lv.set(.{ .x = 20 + bow.RANGE, .y = 19 }, .wall);
     castSight(g, .{ .x = 20, .y = 20 });
-    press(g, .fire);
+    press(g, .x);
     nudge(g, .e);
     try std.testing.expectEqual(P{ .x = 20 + bow.RANGE, .y = 20 }, g.mark);
     nudge(g, .n);
@@ -1010,13 +1334,13 @@ test "two arrows kill a rat at range, and the first wakes it" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
-    press(g, .fire);
-    press(g, .fire);
+    press(g, .x);
+    press(g, .x);
     const r = g.pool.get(2).?;
     try std.testing.expect(r.awake and r.hp > 0 and r.hp <= 3);
     try std.testing.expectEqual(@as(i32, 26), r.at.x);
-    press(g, .fire);
-    press(g, .fire);
+    press(g, .x);
+    press(g, .x);
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.pool.get(2));
     try std.testing.expectEqual(@as(usize, 1), g.kills);
 }
@@ -1026,7 +1350,7 @@ test "X with nothing in sight stays in play and spends no turn" {
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 40, .y = 20 }});
     g.pool.get(2).?.awake = true;
-    press(g, .fire);
+    press(g, .x);
     try std.testing.expectEqual(Mode.play, g.mode);
     try std.testing.expectEqual(@as(i32, 40), g.pool.get(2).?.at.x);
 }
@@ -1035,9 +1359,8 @@ test "the camera never shows past the edge of the floor, and centres it on a scr
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     begin(g, 4321);
-    const c: f32 = @floatFromInt(CELL);
-    const world_w = @as(f32, @floatFromInt(grid.W)) * c;
-    const world_h = @as(f32, @floatFromInt(grid.H)) * c;
+    const world_w = @as(f32, @floatFromInt(grid.W)) * CELL_F;
+    const world_h = @as(f32, @floatFromInt(grid.H)) * CELL_F;
     for ([_]P{ .{ .x = 1600, .y = 900 }, .{ .x = 2560, .y = 1440 } }) |screen| {
         g.screen = screen;
         for ([_]P{ .{ .x = 0, .y = 0 }, .{ .x = grid.W - 1, .y = grid.H - 1 }, .{ .x = 48, .y = 32 } }) |p| {
