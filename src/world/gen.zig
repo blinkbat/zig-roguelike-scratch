@@ -157,7 +157,7 @@ fn addRoom(f: *Floor, r: Room) bool {
     return true;
 }
 
-fn carveRoom(lv: *grid.Level, r: Room) void {
+pub fn carveRoom(lv: *grid.Level, r: Room) void {
     var y = r.y;
     while (y < r.y + r.h) : (y += 1) {
         var x = r.x;

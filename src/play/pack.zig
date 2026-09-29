@@ -13,6 +13,7 @@ pub const KINDS = [_][]const actor.Kind{
     &.{ .rat, .rat, .slime },
     &.{.rat},
     &.{ .rat, .rat },
+    &.{.bloat},
 };
 pub const REACH: i32 = 2;
 /// Cells from the archer's start to every member of every pack: past the archer's sight, so none starts in view.
@@ -40,7 +41,6 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P) void
     }
 }
 
-/// Nearest ring first, and only a cell the lead has a clear line to.
 fn spotNear(lv: *const grid.Level, rng: *mathx.Rng, lead: P, start: P) ?P {
     var ring: i32 = 1;
     while (ring <= REACH) : (ring += 1) {
@@ -84,7 +84,7 @@ test "packs come only in their listed makeups, and every slime stands by a rat" 
             if (!by_rat) lone_slimes += 1;
         }
     }
-    std.debug.print("200 floors, {d} packs each: {d} rats, {d} slimes, {d} slimes with no rat beside them\n", .{ PER_FLOOR, counts.get(.rat), counts.get(.slime), lone_slimes });
+    std.debug.print("200 floors, {d} packs each: {d} rats, {d} slimes, {d} bloats, {d} slimes with no rat beside them\n", .{ PER_FLOOR, counts.get(.rat), counts.get(.slime), counts.get(.bloat), lone_slimes });
     try std.testing.expectEqual(@as(usize, 0), counts.get(.archer));
     try std.testing.expectEqual(@as(usize, 0), lone_slimes);
     try std.testing.expect(counts.get(.slime) < counts.get(.rat));

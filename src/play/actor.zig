@@ -8,6 +8,7 @@ pub const Kind = enum {
     archer,
     rat,
     slime,
+    bloat,
 
     pub fn foe(k: Kind) bool {
         return k != .archer;
@@ -22,20 +23,31 @@ pub const FOES = blk: {
     break :blk ks[0..ks.len].*;
 };
 
+pub const Strike = struct { lo: i32, hi: i32, verb: [:0]const u8 };
+
+pub const Blow = union(enum) {
+    strike: Strike,
+    /// It dies instead (Brogue's kamikaze), and bursts into caustic gas however it dies.
+    burst,
+};
+
 pub const Row = struct {
     name: [:0]const u8,
     hp: i32,
-    hit_lo: i32,
-    hit_hi: i32,
     sight: i32,
-    strikes: [:0]const u8,
+    blow: Blow,
+    /// Brogue's `MONST_FLITS`: a third of its moves go a random way.
+    flits: bool = false,
 };
+
+pub const FLIT: f32 = 0.33;
 
 pub fn row(k: Kind) Row {
     return switch (k) {
-        .archer => .{ .name = "you", .hp = 24, .hit_lo = 1, .hit_hi = 2, .sight = 10, .strikes = "kicks" },
-        .rat => .{ .name = "rat", .hp = 6, .hit_lo = 1, .hit_hi = 3, .sight = 7, .strikes = "bites" },
-        .slime => .{ .name = "slime", .hp = 14, .hit_lo = 2, .hit_hi = 5, .sight = 6, .strikes = "slams" },
+        .archer => .{ .name = "you", .hp = 24, .sight = 10, .blow = .{ .strike = .{ .lo = 1, .hi = 2, .verb = "kicks" } } },
+        .rat => .{ .name = "rat", .hp = 6, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "bites" } } },
+        .slime => .{ .name = "slime", .hp = 14, .sight = 6, .blow = .{ .strike = .{ .lo = 2, .hi = 5, .verb = "slams" } } },
+        .bloat => .{ .name = "bloat", .hp = 4, .sight = 7, .blow = .burst, .flits = true },
     };
 }
 
@@ -112,13 +124,18 @@ pub const Pool = struct {
     }
 };
 
+/// Brogue's `monsterAvoids`: gas is shunned by a body not already in some.
+fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
+    return lv.gassy(from.add(d.delta())) and !lv.gassy(from);
+}
+
 /// Downhill on a walked-distance map from the hero; null when no open neighbour is closer.
 pub fn chase(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32) ?mathx.Dir {
     var best: ?mathx.Dir = null;
     var best_d = flow[grid.Level.idx(from)];
     if (best_d < 0) return null;
     for (mathx.ALL_DIRS) |d| {
-        if (!lv.stepOk(from, d, id)) continue;
+        if (!lv.stepOk(from, d, id) or shuns(lv, from, d)) continue;
         const v = flow[grid.Level.idx(from.add(d.delta()))];
         if (v >= 0 and v < best_d) {
             best_d = v;
@@ -126,6 +143,20 @@ pub fn chase(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i
         }
     }
     return best;
+}
+
+/// Brogue's `randValidDirectionFrom`: any step it may take and does not shun, or one onto `prey`.
+pub fn flit(lv: *const grid.Level, from: P, id: u16, prey: u16, rng: *mathx.Rng) ?mathx.Dir {
+    var ways: [mathx.ALL_DIRS.len]mathx.Dir = undefined;
+    var n: usize = 0;
+    for (mathx.ALL_DIRS) |d| {
+        const onto = lv.passOk(from, d) and lv.who(from.add(d.delta())) == prey;
+        if (!onto and (!lv.stepOk(from, d, id) or shuns(lv, from, d))) continue;
+        ways[n] = d;
+        n += 1;
+    }
+    if (n == 0) return null;
+    return ways[rng.below(@intCast(n))];
 }
 
 test "a spawned body stands on the grid and leaves it when it dies" {
@@ -156,4 +187,39 @@ test "chase walks round a wall toward the hero" {
     }
     std.debug.print("round a wall: {d} steps to reach a hero 4 cells away\n", .{steps});
     try std.testing.expect(mathx.dist(at, hero) <= 1);
+}
+
+test "chase will not step from clean air into gas, but walks on through it from inside" {
+    var lv = grid.openFloor();
+    var flow: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    _ = grid.distances(&lv, .{ .x = 20, .y = 5 }, &flow, &queue);
+    var y: i32 = 1;
+    while (y < grid.H - 1) : (y += 1) lv.addGas(.{ .x = 15, .y = y }, 50);
+    const at = P{ .x = 14, .y = 5 };
+    try std.testing.expectEqual(@as(?mathx.Dir, null), chase(&lv, at, 1, &flow));
+    lv.addGas(at, 50);
+    const d = chase(&lv, at, 1, &flow) orelse return error.Stuck;
+    try std.testing.expectEqual(@as(i32, 15), at.add(d.delta()).x);
+}
+
+test "a flit goes every open way about evenly, onto its prey too, and never into gas from clean air" {
+    var lv = grid.openFloor();
+    var rng = mathx.Rng.init(0xF117);
+    const from = P{ .x = 10, .y = 10 };
+    lv.stand(from, 2);
+    lv.stand(.{ .x = 11, .y = 10 }, 1);
+    lv.putBarrel(.{ .x = 9, .y = 10 });
+    lv.addGas(.{ .x = 10, .y = 9 }, 30);
+    const TRIES: usize = 6000;
+    var counts = std.EnumArray(mathx.Dir, usize).initFill(0);
+    for (0..TRIES) |_| counts.getPtr(flit(&lv, from, 2, 1, &rng) orelse return error.Stuck).* += 1;
+    std.debug.print("{d} flits beside a barrel west and gas north:", .{TRIES});
+    for (mathx.ALL_DIRS) |d| std.debug.print(" {s} {d}", .{ @tagName(d), counts.get(d) });
+    std.debug.print("\n", .{});
+    try std.testing.expectEqual(@as(usize, 0), counts.get(.w));
+    try std.testing.expectEqual(@as(usize, 0), counts.get(.n));
+    for ([_]mathx.Dir{ .ne, .e, .se, .s, .sw, .nw }) |d| {
+        try std.testing.expect(counts.get(d) * 6 > TRIES * 85 / 100 and counts.get(d) * 6 < TRIES * 115 / 100);
+    }
 }

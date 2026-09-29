@@ -1,8 +1,8 @@
 # AGENTS.md — roguelike-scratch
 
 A grid roguelike in **Zig 0.14.1 + raylib**, built from `..\zig-grid-roguelike`'s foundation (grid, symmetric
-FOV, room generator, input stepper) with every system stripped out. One archer, two foes (the rat and the tougher
-slime, both melee) placed in packs by `play/pack.zig` (`pack.KINDS` lists the makeups), barrels that break for gold, no items, no stats beyond hp. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
+FOV, room generator, input stepper) with every system stripped out. One archer, three foes (the rat and the tougher
+slime, both melee, and Brogue's bloat, which flits and bursts into caustic gas) placed in packs by `play/pack.zig` (`pack.KINDS` lists the makeups), barrels that break for gold, no items, no stats beyond hp. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
 
 Prefer no comments in code. Don't make product/design decisions — ask. Don't commit, push or branch unless asked.
 
@@ -10,7 +10,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 
 - `zig` is NOT on PATH. `check.cmd` (type-check, the error loop) · `build.cmd` · `run.cmd` · `test.cmd [filter]` ·
   `shot.cmd` (headless frames into `shots\lean.png`, `shots\aim.png`, `shots\torch.png`, a posed torch with rats
-  under it, and `shots\bind.png`, the bind screen with its picker open; built into `zig-out-dev` so a running game is untouched).
+  under it, `shots\bind.png`, the bind screen with its picker open, and `shots\gas.png`, a room a few turns after a
+  bloat burst in it; built into `zig-out-dev` so a running game is untouched).
   `zig-out-dev\bin\roguelike.exe --bench` (after `shot.cmd` builds it) prints per-frame CPU time of a headless walk.
   The toolchain is named once, in `_zig.cmd`. From PowerShell, call them as `.\check.cmd` from this directory.
 - **EVERY MODULE CARRYING TESTS MUST BE NAMED IN `main.zig`'s `test {}` BLOCK** — `build.zig` panics otherwise,
@@ -38,6 +39,11 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   so no unseen cell is ever drawn. Ground in sight is never dimmed by a cell never seen (a side door the symmetric FOV
   skips): there the fade is only a rim, and sight blurs over seen cells alone. It is cosmetic: nothing in the
   simulation reads it, and it decides no visibility.
+- **`gfx/fx.zig` IS EVERY BLOW'S AFTERMATH**, after zig-soulslike's and far fainter: the struck body flashes toward
+  `light.FLASH_RGB` (drawn by the body shader), a pinprick of light marks the contact, and the body's matter
+  (`fx.matterOf`: blood, ooze, a bloat's purple ichor, a barrel's splinters) sprays along the blow and lies a moment as a stain. Motes draw
+  before the light map, so it lights and fogs them. A blow lands when the picture reaches it: an arrow's as it
+  arrives, a bite or a bloat's burst at the foe's place in the stagger (`Game.bit`). Nothing in the simulation reads it.
 - **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG and TTF there under its file name, read with
   `@embedFile`), so the exe runs from any directory. A body's PNG is a file in `assets/` and its entry in
   `look.BODY_PNGS`; a tile's is a file, a field in `Sprites` that `load` and `unload` name, and its arm in
@@ -65,9 +71,17 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **`fov.cast` IS THE ONLY VISIBILITY COMPUTATION.** A foe sees the archer exactly when the archer's pass lit the
   foe's cell and the archer is within the foe's sight. A body is drawn only where it is lit; terrain is remembered.
 - **`Pool.damage` IS THE ONLY PLACE HP GOES DOWN.**
+- **`world/gas.zig` IS EVERY GAS**, Brogue CE's `updateVolumetricMedia` for one gas: `Level.gas` is Brogue's volume,
+  spread twice a turn by each open cell taking the mean of itself and its open neighbours (rounded at random), and a
+  cell that held gas loses a unit a fifth of the time, so gas shut in a room lingers and gas in the open clears. A
+  bloat (`Blow.burst`, Brogue's kamikaze) dies instead of striking and bursts into `gas.BURST` however it dies; a third
+  of its moves go a random way (`actor.flit`). Brogue's turn order: the archer acts and the gas eats at it, the gas
+  spreads, then each foe acts and the gas eats at it, a fifteenth of full hp. No foe steps from clean air into gas.
+  `gfx/cloud.zig` draws it as Brogue tints it (30% plus a point a unit, 90% at most), eased in sight and remembered
+  out of it, before the light map; its harm flashes a body (`fx.sting`) at the body's place in the stagger.
 - **THE PICTURE LAGS THE MECHANIC.** The camera eases, bodies glide and hop (one walk repeat long), or slide a little past the cell and settle back (twice that), by
   their `look.gait` (`Glide`), the fog eases and the arrow flies after the hit has already resolved; nothing in the
   simulation reads the view. Foes act nearest the archer first (`Game.order`), and a turn is drawn in that order: the
-  archer's step or arrow, then each foe in sight a `STAGGER_S` behind the one before. A turn takes as long as its
-  slowest glide or arrow (`Game.busy`); a walk due before then waits for it, the latest standing in for any before.
+  archer's step, kick or arrow, then each foe in sight a `STAGGER_S` behind the one before. A turn takes as long as its
+  slowest glide, arrow or flash (`Game.busy`); a walk due before then waits for it, the latest standing in for any before.
 - **EVERY DRAWN STRING IS ASCII.**

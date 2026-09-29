@@ -6,6 +6,15 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
+/// An eased value this near where it is going lands there exactly, so one that has arrived reads as arrived.
+pub const SETTLE: f32 = 1e-3;
+
+/// `up` and `down` are the share of the way it goes, rising and falling.
+pub fn ease(v: f32, want: f32, up: f32, down: f32) f32 {
+    const n = v + (want - v) * (if (want > v) up else down);
+    return if (@abs(want - n) < SETTLE) want else n;
+}
+
 pub fn roundTiesUp(v: f32) i32 {
     return @intFromFloat(@floor(v + 0.5));
 }
@@ -31,6 +40,11 @@ pub const P = struct {
         return .{ .x = a.x - b.x, .y = a.y - b.y };
     }
 };
+
+/// The cell a point measured in cells lies in.
+pub fn cellOf(q: [2]f32) P {
+    return .{ .x = @intFromFloat(@floor(q[0])), .y = @intFromFloat(@floor(q[1])) };
+}
 
 /// Chebyshev, to match 8-way movement: every step, range and gap on the grid.
 pub fn dist(a: P, b: P) i32 {
@@ -141,7 +155,12 @@ pub const Rng = struct {
     }
 
     pub fn chance(self: *Rng, p: f32) bool {
-        return self.r().float(f32) < p;
+        return self.unit() < p;
+    }
+
+    /// [0, 1).
+    pub fn unit(self: *Rng) f32 {
+        return self.r().float(f32);
     }
 };
 

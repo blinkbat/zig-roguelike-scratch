@@ -73,6 +73,7 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .archer = @embedFile("archer.png"),
     .rat = @embedFile("rat.png"),
     .slime = @embedFile("slime.png"),
+    .bloat = null,
 });
 
 const WALLS_PNG = @embedFile("walls.png");
@@ -110,6 +111,24 @@ fn wallCell(sheet: rl.Image, c: WallCell) ?rl.Image {
 
 pub fn whole(t: rl.Texture2D) rl.Rectangle {
     return .{ .x = 0, .y = 0, .width = @floatFromInt(t.width), .height = @floatFromInt(t.height) };
+}
+
+/// The whole floor on screen, its top-left corner at `ox, oy`.
+pub fn floorRect(ox: i32, oy: i32, cell: i32) rl.Rectangle {
+    return .{
+        .x = @floatFromInt(ox),
+        .y = @floatFromInt(oy),
+        .width = @floatFromInt(grid.W * cell),
+        .height = @floatFromInt(grid.H * cell),
+    };
+}
+
+/// Needs a live GL context.
+pub fn clamped(img: rl.Image, filter: rl.TextureFilter) ?rl.Texture2D {
+    const t = rl.loadTextureFromImage(img) catch return null;
+    rl.setTextureFilter(t, filter);
+    rl.setTextureWrap(t, .clamp);
+    return t;
 }
 
 pub fn rgb(hex: u24) rl.Color {
@@ -153,15 +172,19 @@ pub fn body(k: actor.Kind) Look {
         .archer => .{ .ch = '@', .fg = rgb(0x7cc86e) },
         .rat => .{ .ch = 'r', .fg = rgb(0xb07a4e) },
         .slime => .{ .ch = 's', .fg = rgb(0x6fae5a) },
+        .bloat => .{ .ch = 'b', .fg = GAS },
     };
 }
+
+/// Brogue's `poisonGasColor`, the bloat's and its gas's.
+pub const GAS = rgb(0xbf40d9);
 
 pub const Gait = enum { hop, slide };
 
 pub fn gait(k: actor.Kind) Gait {
     return switch (k) {
         .archer, .rat => .hop,
-        .slime => .slide,
+        .slime, .bloat => .slide,
     };
 }
 
@@ -213,6 +236,7 @@ pub const SLOT_EMPTY = rgb(0x0e0d12);
 pub const SLOT_HELD = GOLD;
 pub const SLOT_CURSOR = RETICLE;
 pub const SLOT_CLEAR = FOE;
+pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 
 pub const MINI_BG = fade(BG, 0.9);
 pub const MINI_HERO = rgb(0x9cf08a);
@@ -229,6 +253,7 @@ test "every glyph is printable ascii" {
     for (std.enums.values(actor.Kind)) |k| try std.testing.expect(inked(body(k).ch));
     try std.testing.expect(inked(TORCH.ch));
     try std.testing.expect(inked(BARREL.ch));
+    try std.testing.expect(inked(CLEAR.ch));
     for (skillbar.ACTS) |a| try std.testing.expect(inked(skill(a).ch));
 }
 

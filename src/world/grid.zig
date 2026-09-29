@@ -66,6 +66,8 @@ pub const Level = struct {
     /// 1-based into the actor pool; `NO_ONE` is empty.
     occupant: [CELLS]u16,
     barrel: [CELLS]bool,
+    /// Caustic gas, Brogue's volume: `world/gas.zig` spreads it.
+    gas: [CELLS]u16,
     /// Walls with a torch on their face.
     torch: [MAX_TORCHES]P,
     torch_n: usize,
@@ -78,6 +80,7 @@ pub const Level = struct {
             .lit = [_]bool{false} ** CELLS,
             .occupant = [_]u16{NO_ONE} ** CELLS,
             .barrel = [_]bool{false} ** CELLS,
+            .gas = [_]u16{0} ** CELLS,
             .torch = undefined,
             .torch_n = 0,
         };
@@ -146,6 +149,20 @@ pub const Level = struct {
         if (!self.hasBarrel(p)) return false;
         self.barrel[idx(p)] = false;
         return true;
+    }
+
+    pub fn gasAt(self: *const Level, p: P) u16 {
+        return cellOr(u16, &self.gas, p, 0);
+    }
+
+    pub fn gassy(self: *const Level, p: P) bool {
+        return self.gasAt(p) > 0;
+    }
+
+    pub fn addGas(self: *Level, p: P, volume: u16) void {
+        if (!self.walkable(p)) return;
+        const i = idx(p);
+        self.gas[i] +|= volume;
     }
 
     pub fn taken(self: *const Level, p: P) bool {

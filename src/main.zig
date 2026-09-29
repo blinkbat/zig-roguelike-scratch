@@ -19,12 +19,15 @@ test {
     _ = @import("world/grid.zig");
     _ = @import("world/fov.zig");
     _ = @import("world/gen.zig");
+    _ = @import("world/gas.zig");
     _ = @import("play/actor.zig");
     _ = @import("play/bow.zig");
     _ = @import("play/pack.zig");
     _ = @import("play/skillbar.zig");
     _ = @import("gfx/look.zig");
     _ = @import("gfx/font.zig");
+    _ = @import("gfx/fx.zig");
+    _ = @import("gfx/cloud.zig");
     _ = @import("gfx/light.zig");
     _ = @import("game.zig");
 }
