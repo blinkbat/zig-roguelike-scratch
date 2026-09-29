@@ -16,14 +16,18 @@ pub const Look = struct {
 
 pub const Bodies = std.EnumArray(actor.Kind, ?rl.Texture2D);
 
+/// Every sprite lit by the body shader: the bodies, then the barrel.
+pub const FIGURES: usize = Bodies.len + 1;
+
 /// Needs a live GL context.
 pub const Sprites = struct {
     bodies: Bodies = .initFill(null),
+    barrel: ?rl.Texture2D = null,
     floor: ?rl.Texture2D = null,
     wall: std.EnumArray(grid.WallShape, ?rl.Texture2D) = .initFill(null),
 
     pub fn load() Sprites {
-        var s = Sprites{ .floor = texture(@embedFile("floor.png")) };
+        var s = Sprites{ .floor = texture(@embedFile("floor.png")), .barrel = texture(@embedFile("barrel.png")) };
         for (std.enums.values(actor.Kind)) |k| s.bodies.set(k, texture(BODY_PNGS.get(k) orelse continue));
         const sheet = rl.loadImageFromMemory(".png", WALLS_PNG) catch return s;
         defer rl.unloadImage(sheet);
@@ -35,13 +39,17 @@ pub const Sprites = struct {
     }
 
     pub fn unload(self: Sprites) void {
-        for ([_]?rl.Texture2D{self.floor} ++ self.bodies.values ++ self.wall.values) |s| {
+        for ([_]?rl.Texture2D{self.floor} ++ self.figures() ++ self.wall.values) |s| {
             if (s) |t| rl.unloadTexture(t);
         }
     }
 
     pub fn body(self: Sprites, k: actor.Kind) ?rl.Texture2D {
         return self.bodies.get(k);
+    }
+
+    pub fn figures(self: Sprites) [FIGURES]?rl.Texture2D {
+        return self.bodies.values ++ [_]?rl.Texture2D{self.barrel};
     }
 
     pub fn tileAt(self: Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
@@ -64,6 +72,7 @@ pub const Sprites = struct {
 const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .archer = @embedFile("archer.png"),
     .rat = @embedFile("rat.png"),
+    .slime = @embedFile("slime.png"),
 });
 
 const WALLS_PNG = @embedFile("walls.png");
@@ -136,11 +145,14 @@ pub fn tile(t: grid.Tile) Look {
 
 pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
+pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
+pub const COIN = GOLD;
 
 pub fn body(k: actor.Kind) Look {
     return switch (k) {
         .archer => .{ .ch = '@', .fg = rgb(0x7cc86e) },
         .rat => .{ .ch = 'r', .fg = rgb(0xb07a4e) },
+        .slime => .{ .ch = 's', .fg = rgb(0x6fae5a) },
     };
 }
 
@@ -207,6 +219,7 @@ test "every glyph is printable ascii" {
     for (std.enums.values(grid.Tile)) |t| try std.testing.expect(inked(tile(t).ch));
     for (std.enums.values(actor.Kind)) |k| try std.testing.expect(inked(body(k).ch));
     try std.testing.expect(inked(TORCH.ch));
+    try std.testing.expect(inked(BARREL.ch));
     for (skillbar.ACTS) |a| try std.testing.expect(inked(skill(a).ch));
 }
 

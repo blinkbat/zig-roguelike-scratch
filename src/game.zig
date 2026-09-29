@@ -8,6 +8,7 @@ const fov = @import("world/fov.zig");
 const gen = @import("world/gen.zig");
 const actor = @import("play/actor.zig");
 const bow = @import("play/bow.zig");
+const pack = @import("play/pack.zig");
 const skillbar = @import("play/skillbar.zig");
 const look = @import("gfx/look.zig");
 const light = @import("gfx/light.zig");
@@ -39,6 +40,7 @@ const BAR_H: i32 = 24;
 const BAR_Y: i32 = 18;
 const BAR_TEXT_X: i32 = 8;
 const TALLY_Y: i32 = 54;
+const TALLY_GAP: i32 = 24;
 const HINT_Y: i32 = HUD_H - 32;
 const HUD_EDGE: i32 = 2;
 const LOG_Y: i32 = 14;
@@ -82,9 +84,10 @@ pub const MINI_H: i32 = grid.H * MINI;
 pub const MINI_PAD: i32 = 12;
 const MINI_FRAME: i32 = 4;
 const MINI_HERO_GROW: i32 = 1;
-pub const RATS: usize = 8;
-pub const RAT_GAP: i32 = 12;
+pub const FOE_GAP: i32 = 12;
 pub const SHOT_SEED: u64 = 0x5EED_1234;
+pub const GOLD_LO: i32 = 3;
+pub const GOLD_HI: i32 = 12;
 const SHOTS_DIR = "shots";
 const FLIGHT_S: f32 = 0.022;
 const CAM_EASE: f32 = 12.0;
@@ -100,8 +103,7 @@ comptime {
     std.debug.assert(GLYPH <= CELL);
     std.debug.assert(LOG_Y + @as(i32, @intCast(Log.SHOWN)) * LOG_LINE <= HUD_H);
     std.debug.assert(SKILLS_Y + SLOT_PX + KEY_GAP + SLOT_TEXT <= HUD_H);
-    std.debug.assert(RAT_GAP > actor.row(.archer).sight);
-    std.debug.assert(1 + RATS <= actor.MAX);
+    std.debug.assert(FOE_GAP > actor.row(.archer).sight);
 }
 
 pub const Mode = enum { play, aim, bind, dead };
@@ -224,6 +226,7 @@ pub const Game = struct {
     rng: mathx.Rng,
     seed: u64 = 0,
     kills: usize = 0,
+    gold: i32 = 0,
     log: Log = .{},
     st: input.State = .{},
     bar: skillbar.Bar = .{},
@@ -278,18 +281,16 @@ pub fn begin(g: *Game, seed: u64) void {
     g.rng = mathx.Rng.init(seed ^ PLAY_SALT);
     const floor = gen.build(&g.lv, seed);
     reset(g, floor.start);
-    for (0..RATS) |_| {
-        const at = gen.openSpot(&g.lv, &g.rng, floor.start, RAT_GAP) orelse break;
-        _ = g.pool.spawn(&g.lv, actor.Actor.of(.rat, at));
-    }
+    pack.place(&g.lv, &g.pool, &g.rng, floor.start, FOE_GAP);
     settle(g);
-    g.log.say("{d} rats somewhere on this floor. Seed {d}.", .{ ratTally(g).total, seed });
+    g.log.say("{d} rats and {d} slimes somewhere on this floor. Seed {d}.", .{ tally(g, .rat).total, tally(g, .slime).total, seed });
 }
 
 fn reset(g: *Game, hero: P) void {
     g.pool = .{};
     g.hero = g.pool.spawn(&g.lv, actor.Actor.of(.archer, hero));
     g.kills = 0;
+    g.gold = 0;
     g.shot = null;
     g.log = .{};
     g.mode = .play;
@@ -314,10 +315,10 @@ fn castSight(g: *Game, from: P) void {
 
 const Tally = struct { left: usize = 0, total: usize = 0 };
 
-fn ratTally(g: *Game) Tally {
+fn tally(g: *Game, kind: actor.Kind) Tally {
     var t = Tally{};
     for (g.pool.slice()) |a| {
-        if (a.kind != .rat) continue;
+        if (a.kind != kind) continue;
         t.total += 1;
         if (a.alive) t.left += 1;
     }
@@ -328,7 +329,7 @@ const Move = enum { kick, step, blocked };
 
 fn heroMove(g: *Game, d: mathx.Dir) Move {
     const h = g.archer() orelse return .blocked;
-    if (g.lv.who(h.at.add(d.delta())) != grid.NO_ONE and g.lv.passOk(h.at, d)) return .kick;
+    if (g.lv.taken(h.at.add(d.delta())) and g.lv.passOk(h.at, d)) return .kick;
     return if (g.lv.stepOk(h.at, d, g.hero)) .step else .blocked;
 }
 
@@ -343,7 +344,8 @@ fn heroStep(g: *Game, d: mathx.Dir) void {
     switch (heroMove(g, d)) {
         .kick => {
             const r = actor.row(.archer);
-            wound(g, g.lv.who(to), g.rng.range(r.hit_lo, r.hit_hi), "You kick");
+            const w = g.lv.who(to);
+            if (w != grid.NO_ONE) wound(g, w, g.rng.range(r.hit_lo, r.hit_hi), KICK) else smash(g, to, KICK);
         },
         .step => g.pool.move(&g.lv, g.hero, to),
         .blocked => return,
@@ -353,11 +355,10 @@ fn heroStep(g: *Game, d: mathx.Dir) void {
 
 fn openAim(g: *Game, by: input.Button) void {
     const h = g.archer() orelse return;
-    const target = bow.pick(&g.lv, &g.pool, h.at) orelse {
+    g.mark = bow.pick(&g.lv, &g.pool, h.at) orelse {
         g.log.say("Nothing in range.", .{});
         return;
     };
-    g.mark = g.pool.get(target).?.at;
     turnToward(g, g.hero, g.mark.x - h.at.x);
     g.aim_by = by;
     g.mode = .aim;
@@ -454,15 +455,22 @@ fn confirmAim(g: *Game) void {
     const to = g.mark;
     const f = bow.fly(&g.lv, h.at, to);
     g.shot = .{ .flight = f, .glyph = look.arrow(to.x - h.at.x, to.y - h.at.y) };
-    if (f.struck != grid.NO_ONE) {
-        wound(g, f.struck, g.rng.range(bow.DMG_LO, bow.DMG_HI), SHOOT);
-    } else {
-        g.log.say("Your arrow finds nothing.", .{});
-    }
+    if (f.struck) |hit| switch (hit) {
+        .body => |id| wound(g, id, g.rng.range(bow.DMG_LO, bow.DMG_HI), SHOOT),
+        .barrel => |p| smash(g, p, SHOOT),
+    } else g.log.say("Your arrow finds nothing.", .{});
     endTurn(g);
 }
 
 const SHOOT = "You shoot";
+const KICK = "You kick";
+
+fn smash(g: *Game, p: P, comptime verb: []const u8) void {
+    if (!g.lv.breakBarrel(p)) return;
+    const gold = g.rng.range(GOLD_LO, GOLD_HI);
+    g.gold += gold;
+    g.log.say(verb ++ " the barrel. It breaks: {d} gold.", .{gold});
+}
 
 fn wound(g: *Game, id: u16, dmg: i32, comptime verb: []const u8) void {
     const name = actor.row((g.pool.get(id) orelse return).kind).name;
@@ -472,7 +480,8 @@ fn wound(g: *Game, id: u16, dmg: i32, comptime verb: []const u8) void {
     }
     g.kills += 1;
     g.log.say(verb ++ " the {s} for {d}. It dies.", .{ name, dmg });
-    if (ratTally(g).left == 0) g.log.say("The last rat is dead.", .{});
+    const kind = g.pool.items[actor.Pool.slot(id)].kind;
+    if (tally(g, kind).left == 0) g.log.say("The last {s} is dead.", .{name});
 }
 
 fn endTurn(g: *Game) void {
@@ -482,12 +491,12 @@ fn endTurn(g: *Game) void {
     for (0..g.pool.n) |i| {
         const id = actor.Pool.idOf(i);
         if (id == g.hero) continue;
-        ratTurn(g, id);
+        foeTurn(g, id);
         if (g.mode == .dead) return;
     }
 }
 
-fn ratTurn(g: *Game, id: u16) void {
+fn foeTurn(g: *Game, id: u16) void {
     const r = g.pool.get(id) orelse return;
     const h = g.archer() orelse return;
     const row = actor.row(r.kind);
@@ -502,7 +511,7 @@ fn ratTurn(g: *Game, id: u16) void {
         if (g.lv.passOk(r.at, d)) {
             turnToward(g, id, d.delta().x);
             const dmg = g.rng.range(row.hit_lo, row.hit_hi);
-            g.log.say("The {s} bites you for {d}.", .{ row.name, dmg });
+            g.log.say("The {s} {s} you for {d}.", .{ row.name, row.strikes, dmg });
             if (g.pool.damage(&g.lv, g.hero, dmg)) {
                 g.log.say("You die.", .{});
                 g.mode = .dead;
@@ -661,8 +670,8 @@ fn inView(g: *Game, a: actor.Actor) bool {
     return a.alive and g.lv.isLit(a.at);
 }
 
-fn bodyShownAt(g: *Game, p: P) bool {
-    return g.lv.isLit(p) and g.lv.who(p) != grid.NO_ONE;
+fn standsShownAt(g: *Game, p: P) bool {
+    return (g.lv.isLit(p) and g.lv.who(p) != grid.NO_ONE) or (g.lv.isSeen(p) and g.lv.hasBarrel(p));
 }
 
 fn bar(x: i32, y: i32, w: i32, h: i32, hp: i32, max: i32, back: rl.Color) void {
@@ -679,6 +688,28 @@ const Shown = struct {
     shine: light.Shine,
 };
 
+const Prop = struct {
+    s: P,
+    mid: [2]f32,
+    shine: light.Shine,
+};
+
+fn barrelsIn(g: *Game, c: Cam, lo: P, hi: P, out: *[gen.MAX_BARRELS]Prop) []const Prop {
+    var n: usize = 0;
+    var y = lo.y;
+    while (y < hi.y) : (y += 1) {
+        var x = lo.x;
+        while (x < hi.x) : (x += 1) {
+            const p = P{ .x = x, .y = y };
+            if (n == out.len or !g.lv.hasBarrel(p) or !g.lv.isSeen(p)) continue;
+            const mid = middle(cellPx(p));
+            out[n] = .{ .s = .{ .x = c.sx(p), .y = c.sy(p) }, .mid = mid, .shine = g.light.onBody(mid, false) };
+            n += 1;
+        }
+    }
+    return out[0..n];
+}
+
 /// At full light, over the seen cells from `lo` up to `hi`.
 fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, kind: grid.Tile, arrow_at: ?P) void {
     var y = lo.y;
@@ -692,7 +723,7 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, kind: grid.Tile, arrow_at: ?P) vo
                 continue;
             }
             if (kind == .floor) fillCell(c, p, look.FLOOR_BG);
-            if (bodyShownAt(g, p)) continue;
+            if (standsShownAt(g, p)) continue;
             if (arrow_at) |a| {
                 if (a.eq(p)) continue;
             }
@@ -729,8 +760,13 @@ fn drawWorld(g: *Game) void {
         n += 1;
     }
     const bodies = shown[0..n];
+    var props: [gen.MAX_BARRELS]Prop = undefined;
+    const barrels = barrelsIn(g, c, lo, hi, &props);
 
     drawTerrain(g, c, lo, hi, .floor, arrow_at);
+    if (g.sprites.barrel) |t| {
+        for (barrels) |b| g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), false, b.mid, b.shine);
+    }
     for (bodies) |b| {
         const t = g.sprites.body(b.a.kind) orelse continue;
         g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), b.left, b.mid, b.shine);
@@ -750,6 +786,14 @@ fn drawWorld(g: *Game) void {
         }
         const f = bow.fly(&g.lv, from, g.mark);
         for (f.path[0..f.len]) |p| fillCell(c, p, look.AIM_PATH);
+    }
+
+    for (barrels) |b| {
+        if (g.sprites.barrel) |t| {
+            g.light.drawBody(t, spriteRect(t, b.s.x, b.s.y), false, b.mid, b.shine);
+        } else {
+            drawGlyph(g, look.BARREL.ch, b.s.x, b.s.y, b.shine.tint(look.BARREL.fg));
+        }
     }
 
     for (bodies) |b| {
@@ -803,7 +847,7 @@ fn drawLean(g: *Game, c: Cam) void {
         };
         outline(c, p, col);
         const ch = look.caret(button);
-        if (g.lv.walkable(p) and !bodyShownAt(g, p)) {
+        if (g.lv.walkable(p) and !standsShownAt(g, p)) {
             drawGlyph(g, ch, c.sx(p), c.sy(p), col);
             continue;
         }
@@ -953,8 +997,12 @@ fn drawHud(g: *Game) void {
     const bar_y = top + BAR_Y;
     bar(HUD_PAD, bar_y, BAR_W, BAR_H, hp, max, look.LIFE_BG);
     g.face.text(std.fmt.bufPrintZ(&buf, "HP {d}/{d}", .{ @max(0, hp), max }) catch "", HUD_PAD + BAR_TEXT_X, bar_y + @divTrunc(BAR_H - TEXT, 2), TEXT, look.TEXT);
-    const r = ratTally(g);
-    g.face.text(std.fmt.bufPrintZ(&buf, "Rats {d}/{d}", .{ r.left, r.total }) catch "", HUD_PAD, top + TALLY_Y, TEXT, look.DIM);
+    const r = tally(g, .rat);
+    const s = tally(g, .slime);
+    const foes = std.fmt.bufPrintZ(&buf, "Rats {d}/{d}   Slimes {d}/{d}", .{ r.left, r.total, s.left, s.total }) catch "";
+    g.face.text(foes, HUD_PAD, top + TALLY_Y, TEXT, look.DIM);
+    const gold_x = HUD_PAD + g.face.width(foes, TEXT) + TALLY_GAP;
+    g.face.text(std.fmt.bufPrintZ(&buf, "Gold {d}", .{g.gold}) catch "", gold_x, top + TALLY_Y, TEXT, look.COIN);
     const hint: [:0]const u8 = if (g.mode == .aim)
         std.fmt.bufPrintZ(&buf, "{s} shoot   {s} cancel   {s} aim", .{ g.aim_by.caption(), input.Button.b.caption(), input.MOVE_CAPTION }) catch ""
     else
@@ -976,7 +1024,7 @@ fn drawDead(g: *Game) void {
     const mid = @divTrunc(g.viewH(), 2);
     rl.drawRectangle(0, 0, g.screen.x, g.viewH(), look.VEIL);
     textMid(g, "YOU DIED", mid + DEAD_TITLE_DY, TITLE, look.LIFE);
-    textMid(g, std.fmt.bufPrintZ(&buf, "{d} rats killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
+    textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
     textMid(g, comptime input.Button.a.caption() ++ "  new floor", mid + DEAD_HINT_DY, TEXT, look.DIM);
 }
 
@@ -1003,7 +1051,8 @@ fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*Game
     defer g.sprites.unload();
     g.face = font.Face.load();
     defer g.face.unload();
-    g.light.load(&g.sprites.bodies);
+    const figures = g.sprites.figures();
+    g.light.load(&figures);
     defer g.light.unload();
     body(g);
 }
@@ -1236,16 +1285,20 @@ test "the bind screen picks, carries and removes bindings, and spends no turn" {
     try std.testing.expectEqual(P{ .x = 30, .y = 20 }, g.pool.get(2).?.at);
 }
 
-test "a new floor has every rat placed and none of them in sight" {
+test "a new floor has every pack placed, no foe in sight or on a barrel" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     for (0..40) |i| {
         begin(g, 0xF00D +% i *% 7919);
-        try std.testing.expectEqual(Tally{ .left = RATS, .total = RATS }, ratTally(g));
+        const r = tally(g, .rat);
+        const s = tally(g, .slime);
+        try std.testing.expect(r.left == r.total and s.left == s.total);
+        try std.testing.expect(r.total + s.total >= pack.PER_FLOOR);
         const h = g.archer().?;
         for (g.pool.slice()[1..]) |a| {
             try std.testing.expect(!g.lv.isLit(a.at));
-            try std.testing.expect(mathx.dist(a.at, h.at) >= RAT_GAP);
+            try std.testing.expect(!g.lv.hasBarrel(a.at));
+            try std.testing.expect(mathx.dist(a.at, h.at) >= FOE_GAP);
         }
     }
 }
@@ -1267,6 +1320,21 @@ test "a rat that sees you notices, closes and bites" {
     try std.testing.expectEqual(@as(?usize, 0), noticed);
     try std.testing.expectEqual(@as(?usize, 5), contact);
     try std.testing.expect(lost > 0);
+}
+
+test "a slime beside you slams you in melee harder than a rat bites" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const id = g.pool.spawn(&g.lv, actor.Actor.of(.slime, .{ .x = 21, .y = 20 }));
+    g.pool.get(id).?.awake = true;
+    snapGlide(g);
+    endTurn(g);
+    const row = actor.row(.slime);
+    const lost = actor.row(.archer).hp - g.archer().?.hp;
+    std.debug.print("slime slam: {d} hp\n", .{lost});
+    try std.testing.expect(lost >= row.hit_lo and lost <= row.hit_hi);
+    try std.testing.expectEqual(P{ .x = 21, .y = 20 }, g.pool.get(id).?.at);
 }
 
 test "a body faces right until it steps, aims or turns on someone to its left, and straight up or down keeps it" {
@@ -1355,6 +1423,36 @@ test "X with nothing in sight stays in play and spends no turn" {
     try std.testing.expectEqual(@as(i32, 40), g.pool.get(2).?.at.x);
 }
 
+test "a kicked barrel breaks for gold where it stood, and the archer stays put" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const at = P{ .x = 21, .y = 20 };
+    g.lv.putBarrel(at);
+    nudge(g, .e);
+    std.debug.print("kicked barrel: {d} gold\n", .{g.gold});
+    try std.testing.expect(!g.lv.hasBarrel(at));
+    try std.testing.expect(g.gold >= GOLD_LO and g.gold <= GOLD_HI);
+    try std.testing.expectEqual(P{ .x = 20, .y = 20 }, g.archer().?.at);
+    nudge(g, .e);
+    try std.testing.expectEqual(at, g.archer().?.at);
+}
+
+test "X aims at a barrel when no rat is in reach, and the arrow breaks it" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const at = P{ .x = 25, .y = 20 };
+    g.lv.putBarrel(at);
+    press(g, .x);
+    try std.testing.expectEqual(Mode.aim, g.mode);
+    try std.testing.expectEqual(at, g.mark);
+    try std.testing.expectEqual(@as(i32, 0), g.gold);
+    press(g, .x);
+    try std.testing.expect(!g.lv.hasBarrel(at));
+    try std.testing.expect(g.gold >= GOLD_LO);
+}
+
 test "the camera never shows past the edge of the floor, and centres it on a screen bigger than it" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
@@ -1404,7 +1502,7 @@ test "rats land on the floor as the floor is, not where its own rolls put the ro
         }
         for (0..grid.CELLS) |c| {
             const p = grid.Level.of(c);
-            if (!lv.walkable(p) or mathx.dist(p, f.start) < RAT_GAP) continue;
+            if (!lv.walkable(p) or lv.hasBarrel(p) or mathx.dist(p, f.start) < FOE_GAP) continue;
             open += 1;
             if (inRoom(f, p)) open_in += 1;
         }

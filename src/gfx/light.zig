@@ -593,8 +593,8 @@ pub const Light = struct {
     }
 
     /// Needs a live GL context.
-    pub fn load(self: *Light, bodies: *const look.Bodies) void {
-        self.gpu = Gpu.load(bodies);
+    pub fn load(self: *Light, figures: *const [look.FIGURES]?rl.Texture2D) void {
+        self.gpu = Gpu.load(figures);
     }
 
     pub fn unload(self: *Light) void {
@@ -887,10 +887,10 @@ const Gpu = struct {
     glow: ?rl.Texture2D = null,
     body: ?BodyShader = null,
     shadow: ?ShadowShader = null,
-    arts: [look.Bodies.len]Art = undefined,
+    arts: [look.FIGURES]Art = undefined,
     art_n: usize = 0,
 
-    fn load(bodies: *const look.Bodies) Gpu {
+    fn load(figures: *const [look.FIGURES]?rl.Texture2D) Gpu {
         var g = Gpu{};
         const blank = rl.genImageColor(MAP_W, MAP_H, rl.Color.black);
         defer rl.unloadImage(blank);
@@ -898,7 +898,7 @@ const Gpu = struct {
         g.glow = glowTexture();
         if (rl.loadShaderFromMemory(null, BODY_FS)) |s| g.body = uniforms(BodyShader, s) else |_| {}
         if (rl.loadShaderFromMemory(null, SHADOW_FS)) |s| g.shadow = uniforms(ShadowShader, s) else |_| {}
-        for (bodies.values) |b| {
+        for (figures) |b| {
             const t = b orelse continue;
             g.arts[g.art_n] = artOf(t);
             g.art_n += 1;

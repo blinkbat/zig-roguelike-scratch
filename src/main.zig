@@ -21,6 +21,7 @@ test {
     _ = @import("world/gen.zig");
     _ = @import("play/actor.zig");
     _ = @import("play/bow.zig");
+    _ = @import("play/pack.zig");
     _ = @import("play/skillbar.zig");
     _ = @import("gfx/look.zig");
     _ = @import("gfx/font.zig");

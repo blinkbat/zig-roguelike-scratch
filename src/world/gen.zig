@@ -17,6 +17,8 @@ const ROOMS_PER_LOOP: usize = 4;
 const CONNECT_PASSES: usize = 64;
 const SPOT_TRIES: usize = 2000;
 const TORCH_CHANCE: f32 = 0.7;
+const BARRELS_HI: u32 = 2;
+pub const MAX_BARRELS: usize = MAX_ROOMS * BARRELS_HI;
 
 comptime {
     std.debug.assert(grid.MAX_TORCHES >= MAX_ROOMS);
@@ -37,6 +39,14 @@ pub const Room = struct {
 
     pub fn centre(r: Room) P {
         return .{ .x = r.x + @divTrunc(r.w, 2), .y = r.y + @divTrunc(r.h, 2) };
+    }
+
+    fn holds(r: Room, p: P) bool {
+        return p.x >= r.x and p.x < r.x + r.w and p.y >= r.y and p.y < r.y + r.h;
+    }
+
+    fn onEdge(r: Room, p: P) bool {
+        return r.holds(p) and (p.x == r.x or p.y == r.y or p.x == r.x + r.w - 1 or p.y == r.y + r.h - 1);
     }
 
     fn overlaps(a: Room, b: Room, pad: i32) bool {
@@ -89,6 +99,7 @@ pub fn build(lv: *grid.Level, seed: u64) Floor {
     for (f.rooms[0..f.room_n]) |r| {
         if (rng.chance(TORCH_CHANCE)) hangTorch(lv, r, &rng);
     }
+    for (f.rooms[0..f.room_n]) |r| stackBarrels(lv, r, &rng);
     f.start = f.rooms[0].centre();
     return f;
 }
@@ -104,6 +115,37 @@ fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
     }
     if (n == 0) return;
     lv.addTorch(.{ .x = spots[rng.below(@intCast(n))], .y = r.y - 1 });
+}
+
+/// Against the room's own walls and nowhere beside a way in, so no barrel can seal a path.
+fn stackBarrels(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
+    var spots: [2 * (ROOM_W_HI + ROOM_H_HI)]P = undefined;
+    var n: usize = 0;
+    var y = r.y;
+    while (y < r.y + r.h) : (y += 1) {
+        var x = r.x;
+        while (x < r.x + r.w) : (x += 1) {
+            const p = P{ .x = x, .y = y };
+            if (!r.onEdge(p) or besideDoor(lv, r, p)) continue;
+            spots[n] = p;
+            n += 1;
+        }
+    }
+    var left = rng.below(BARRELS_HI + 1);
+    while (left > 0 and n > 0) : (left -= 1) {
+        const k = rng.below(@intCast(n));
+        lv.putBarrel(spots[k]);
+        n -= 1;
+        spots[k] = spots[n];
+    }
+}
+
+fn besideDoor(lv: *const grid.Level, r: Room, p: P) bool {
+    for (mathx.ALL_DIRS) |d| {
+        const q = p.add(d.delta());
+        if (!r.holds(q) and lv.walkable(q)) return true;
+    }
+    return false;
 }
 
 fn addRoom(f: *Floor, r: Room) bool {
@@ -222,7 +264,7 @@ fn wallShape(lv: *const grid.Level, p: P) grid.WallShape {
 pub fn openSpot(lv: *const grid.Level, rng: *mathx.Rng, away_from: P, min_gap: i32) ?P {
     for (0..SPOT_TRIES) |_| {
         const p = P{ .x = rng.range(1, grid.W - 2), .y = rng.range(1, grid.H - 2) };
-        if (!lv.walkable(p) or lv.who(p) != grid.NO_ONE) continue;
+        if (!lv.walkable(p) or lv.taken(p)) continue;
         if (mathx.dist(p, away_from) < min_gap) continue;
         return p;
     }
@@ -454,6 +496,45 @@ test "every torch hangs on a room's top wall with floor below it" {
     try std.testing.expect(total * 2 > rooms);
 }
 
+test "barrels stand on room floor and never cut one open cell off from the start" {
+    var lv: grid.Level = undefined;
+    var reached: [grid.CELLS]bool = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    var barrels: usize = 0;
+    var rooms: usize = 0;
+    for (0..200) |i| {
+        const f = build(&lv, 0xBA22E1 +% i *% 7919);
+        rooms += f.room_n;
+        try std.testing.expect(!lv.hasBarrel(f.start));
+        var open: usize = 0;
+        for (0..grid.CELLS) |c| {
+            if (lv.barrel[c]) {
+                barrels += 1;
+                try std.testing.expect(lv.walkable(grid.Level.of(c)));
+            } else if (!lv.tile[c].solid()) open += 1;
+        }
+        @memset(&reached, false);
+        reached[grid.Level.idx(f.start)] = true;
+        queue[0] = @intCast(grid.Level.idx(f.start));
+        var head: usize = 0;
+        var tail: usize = 1;
+        while (head < tail) : (head += 1) {
+            const here = grid.Level.of(queue[head]);
+            for (mathx.ALL_DIRS) |d| {
+                if (!lv.stepOk(here, d, grid.NO_ONE)) continue;
+                const k = grid.Level.idx(here.add(d.delta()));
+                if (reached[k]) continue;
+                reached[k] = true;
+                queue[tail] = @intCast(k);
+                tail += 1;
+            }
+        }
+        try std.testing.expectEqual(open, tail);
+    }
+    std.debug.print("200 floors: {d} barrels over {d} rooms, every open cell still reached\n", .{ barrels, rooms });
+    try std.testing.expect(barrels > rooms / 2);
+}
+
 test "a seed reproduces a floor" {
     var a: grid.Level = undefined;
     var b: grid.Level = undefined;
@@ -461,4 +542,5 @@ test "a seed reproduces a floor" {
     _ = build(&b, 777);
     try std.testing.expectEqualSlices(grid.Tile, &a.tile, &b.tile);
     try std.testing.expectEqualSlices(P, a.torches(), b.torches());
+    try std.testing.expectEqualSlices(bool, &a.barrel, &b.barrel);
 }

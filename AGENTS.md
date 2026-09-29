@@ -1,8 +1,8 @@
 # AGENTS.md — roguelike-scratch
 
 A grid roguelike in **Zig 0.14.1 + raylib**, built from `..\zig-grid-roguelike`'s foundation (grid, symmetric
-FOV, room generator, input stepper) with every system stripped out. One archer, one foe (the rat), no items, no
-stats beyond hp. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
+FOV, room generator, input stepper) with every system stripped out. One archer, two foes (the rat and the tougher
+slime, both melee) placed in packs by `play/pack.zig` (`pack.KINDS` lists the makeups), barrels that break for gold, no items, no stats beyond hp. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
 
 Prefer no comments in code. Don't make product/design decisions — ask. Don't commit, push or branch unless asked.
 
@@ -41,7 +41,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG and TTF there under its file name, read with
   `@embedFile`), so the exe runs from any directory. A body's PNG is a file in `assets/` and its entry in
   `look.BODY_PNGS`; a tile's is a file, a field in `Sprites` that `load` and `unload` name, and its arm in
-  `Sprites.tileAt`. Sprites are authored at `look.SPRITE_PX` (64), facing right; `Game.facing` mirrors a body
+  `Sprites.tileAt`; the barrel's is a `Sprites` field in `Sprites.figures`, the sprites the body shader lights.
+  Sprites are authored at `look.SPRITE_PX` (64), facing right; `Game.facing` mirrors a body
   whose last step, strike or aim went leftward, and straight up or down keeps it.
 - **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** at the end of `gen.build` and stored in `Level.shape`:
   the four sides, the four outer corners, the four block corners, post, solid. Nothing recomputes it, and nothing about what has
@@ -52,7 +53,10 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   block corners and `post`; every other shape is ceiling only. A corner is named for where it sits on the room, so
   `corner_tl` has its floor to the south-east. `Sprites.wall` holds one texture per shape, cut from `walls.png`'s 64 px cells by `WALL_CELLS`; one with none draws `#`.
   The generator also hangs the torches (`Level.torch`), one on the `top` wall of most rooms, after every layout roll
-  so a seed's floor is unchanged by them.
+  so a seed's floor is unchanged by them, and then the barrels (`Level.barrel`): up to two per room on its edge
+  cells, never beside a way in, so no barrel seals a path. A barrel blocks a step and stops an arrow; one hit, shot
+  or kicked, breaks it for gold. It has no hp. `bow.pick` aims at a barrel only when no foe is in reach. A seen
+  barrel is drawn, lit as memory is when out of sight.
 - **TEXT IS BALTHAZAR** (`assets/Balthazar-Regular.ttf`, OFL), drawn by `gfx/font.zig` from one mipmapped 96 px
   atlas as `zig-soulslike` draws it, so any size reads clean; hud text sits on a drop shadow. raylib's built-in font
   stands in only when the atlas fails to load, which is every test.

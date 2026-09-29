@@ -65,6 +65,7 @@ pub const Level = struct {
     lit: [CELLS]bool,
     /// 1-based into the actor pool; `NO_ONE` is empty.
     occupant: [CELLS]u16,
+    barrel: [CELLS]bool,
     /// Walls with a torch on their face.
     torch: [MAX_TORCHES]P,
     torch_n: usize,
@@ -76,6 +77,7 @@ pub const Level = struct {
             .seen = [_]bool{false} ** CELLS,
             .lit = [_]bool{false} ** CELLS,
             .occupant = [_]u16{NO_ONE} ** CELLS,
+            .barrel = [_]bool{false} ** CELLS,
             .torch = undefined,
             .torch_n = 0,
         };
@@ -132,6 +134,24 @@ pub const Level = struct {
         self.occupant[idx(p)] = NO_ONE;
     }
 
+    pub fn hasBarrel(self: *const Level, p: P) bool {
+        return cellOr(bool, &self.barrel, p, false);
+    }
+
+    pub fn putBarrel(self: *Level, p: P) void {
+        self.barrel[idx(p)] = true;
+    }
+
+    pub fn breakBarrel(self: *Level, p: P) bool {
+        if (!self.hasBarrel(p)) return false;
+        self.barrel[idx(p)] = false;
+        return true;
+    }
+
+    pub fn taken(self: *const Level, p: P) bool {
+        return self.who(p) != NO_ONE or self.hasBarrel(p);
+    }
+
     pub fn lightless(self: *Level) void {
         self.lit = [_]bool{false} ** CELLS;
     }
@@ -165,7 +185,9 @@ pub const Level = struct {
     /// `ignore` is the mover's own id.
     pub fn stepOk(self: *const Level, from: P, d: mathx.Dir, ignore: u16) bool {
         if (!self.passOk(from, d)) return false;
-        const w = self.who(from.add(d.delta()));
+        const to = from.add(d.delta());
+        if (self.hasBarrel(to)) return false;
+        const w = self.who(to);
         return w == NO_ONE or w == ignore;
     }
 };
@@ -294,6 +316,16 @@ test "a body blocks a step but never itself" {
     lv.stand(.{ .x = 6, .y = 5 }, 7);
     try std.testing.expect(!lv.stepOk(.{ .x = 5, .y = 5 }, .e, 3));
     try std.testing.expect(lv.stepOk(.{ .x = 5, .y = 5 }, .e, 7));
+}
+
+test "a barrel blocks a step until it breaks" {
+    var lv = openFloor();
+    const p = P{ .x = 6, .y = 5 };
+    lv.putBarrel(p);
+    try std.testing.expect(!lv.stepOk(.{ .x = 5, .y = 5 }, .e, NO_ONE));
+    try std.testing.expect(lv.breakBarrel(p));
+    try std.testing.expect(!lv.breakBarrel(p));
+    try std.testing.expect(lv.stepOk(.{ .x = 5, .y = 5 }, .e, NO_ONE));
 }
 
 test "a ray reaches its mark in chebyshev steps and a wall blocks the line" {

@@ -4,7 +4,7 @@ const grid = @import("../world/grid.zig");
 
 const P = mathx.P;
 
-pub const Kind = enum { archer, rat };
+pub const Kind = enum { archer, rat, slime };
 
 pub const Row = struct {
     name: [:0]const u8,
@@ -12,12 +12,14 @@ pub const Row = struct {
     hit_lo: i32,
     hit_hi: i32,
     sight: i32,
+    strikes: [:0]const u8,
 };
 
 pub fn row(k: Kind) Row {
     return switch (k) {
-        .archer => .{ .name = "you", .hp = 24, .hit_lo = 1, .hit_hi = 2, .sight = 10 },
-        .rat => .{ .name = "rat", .hp = 6, .hit_lo = 1, .hit_hi = 3, .sight = 7 },
+        .archer => .{ .name = "you", .hp = 24, .hit_lo = 1, .hit_hi = 2, .sight = 10, .strikes = "kicks" },
+        .rat => .{ .name = "rat", .hp = 6, .hit_lo = 1, .hit_hi = 3, .sight = 7, .strikes = "bites" },
+        .slime => .{ .name = "slime", .hp = 14, .hit_lo = 2, .hit_hi = 5, .sight = 6, .strikes = "slams" },
     };
 }
 
