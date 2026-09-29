@@ -76,24 +76,27 @@ const KNEE: f32 = 1.5;
 pub const BODY_LIGHTS: usize = 4;
 /// Texels toward the viewer, for the side-lighting of a body.
 const BODY_LIGHT_Z: f32 = 40.0;
-const SHADOWS: usize = 2;
-const SHADOW_MAX: f32 = 0.7;
-const SHADOW_SHARE: f32 = 0.2;
+const SHADOW_MAX: f32 = 0.85;
+/// A light with this share of all that reaches a body casts its darkest shadow; under it the shadow eases out to none.
+const SHADOW_FULL: f32 = 0.5;
+/// And a light at least this bright; a torch is, out to about half its reach.
+const SHADOW_LAMP_FULL: f32 = 0.25;
+const SHADOW_FAINT: f32 = 0.004;
 /// Of the body's drawn height.
-const SHADOW_LEN_LO: f32 = 0.3;
-const SHADOW_LEN_HI: f32 = 0.8;
-const SHADOW_LEN_PER_CELL: f32 = 0.12;
+const SHADOW_LEN_LO: f32 = 0.5;
+const SHADOW_LEN_HI: f32 = 1.8;
+const SHADOW_LEN_PER_CELL: f32 = 0.2;
 const SHADOW_SQUASH: f32 = 0.55;
 const SHADOW_RISE_MIN: f32 = 0.3;
 /// Texels of blur room round a shadow's silhouette.
-const SHADOW_PAD: f32 = 4;
+const SHADOW_PAD: f32 = 6;
 /// Texels between the shadow shader's blur taps, at its tip and at its foot.
-const SHADOW_SOFT_TIP: f32 = 3.0;
-const SHADOW_SOFT_FOOT: f32 = 0.6;
-const SHADOW_TAPS: i32 = 2;
+const SHADOW_SOFT_TIP: f32 = 4.0;
+const SHADOW_SOFT_FOOT: f32 = 1.2;
+const SHADOW_TAPS: i32 = 3;
 const CONTACT_W: f32 = 0.62;
 const CONTACT_H: f32 = 0.2;
-const CONTACT_A: f32 = 0.45;
+const CONTACT_A: f32 = 0.7;
 const GLOW_PX: i32 = 64;
 const GLOW_CORE: f32 = 0.45;
 const GLOW_HALO: f32 = 2.6;
@@ -667,35 +670,16 @@ pub const Light = struct {
             glowAt(g, fx, fy, dest.width * CONTACT_W * 0.5, dest.width * CONTACT_H * 0.5, colourOf(@splat(0), a));
         }
         const sh = self.gpu.shadow orelse return;
+        var buf: [BODY_LIGHTS]Cast = undefined;
+        const cs = casts(s, centre, foot_row * scale, &buf);
+        if (cs.len == 0) return;
         const size = [2]f32{ @floatFromInt(tex.width), @floatFromInt(tex.height) };
         const foot = foot_row / size[1];
         rl.beginShaderMode(sh.shader);
         defer rl.endShaderMode();
         rl.setShaderValue(sh.shader, sh.size, &size, .vec2);
         rl.setShaderValue(sh.shader, sh.foot, &foot, .float);
-        var order: [BODY_LIGHTS]usize = std.simd.iota(usize, BODY_LIGHTS);
-        std.mem.sort(usize, order[0..s.n], s, struct {
-            fn brighter(by: Shine, a: usize, b: usize) bool {
-                return lum(by.lamp[a].colour) > lum(by.lamp[b].colour);
-            }
-        }.brighter);
-        var cast: usize = 0;
-        for (order[0..s.n]) |i| {
-            const l = s.lamp[i];
-            if (!l.casts) continue;
-            if (cast == SHADOWS) break;
-            cast += 1;
-            const share = lum(l.colour) / lit;
-            if (share < SHADOW_SHARE) continue;
-            const dx = centre[0] - l.ground[0];
-            const dy = centre[1] - l.ground[1];
-            const d = @sqrt(dx * dx + dy * dy);
-            if (d < 0.05) continue;
-            const len = foot_row * scale * std.math.clamp(SHADOW_LEN_LO + SHADOW_LEN_PER_CELL * d, SHADOW_LEN_LO, SHADOW_LEN_HI);
-            const down: f32 = if (dy >= 0) 1 else -1;
-            const rise = down * @max(@abs(dy / d) * SHADOW_SQUASH, SHADOW_RISE_MIN);
-            silhouette(tex, fx, fy, .{ dx / d * len, rise * len }, dest.width, foot, left, SHADOW_MAX * share);
-        }
+        for (cs) |c| silhouette(tex, fx, fy, c.lean, dest.width, foot, left, c.alpha);
         rl.gl.rlDrawRenderBatchActive();
     }
 
@@ -712,6 +696,32 @@ pub const Light = struct {
         }
     }
 };
+
+/// `lean` is pixels from the feet to the tip.
+const Cast = struct { lean: [2]f32, alpha: f32 };
+
+/// `height` is pixels from the feet to the top of the art.
+fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const Cast {
+    const lit = lum(s.ambient + s.total());
+    if (lit <= 0) return out[0..0];
+    var n: usize = 0;
+    for (s.lamp[0..s.n]) |l| {
+        if (!l.casts) continue;
+        const own = lum(l.colour);
+        const alpha = SHADOW_MAX * smooth(own / lit / SHADOW_FULL) * smooth(own / SHADOW_LAMP_FULL);
+        if (alpha < SHADOW_FAINT) continue;
+        const dx = centre[0] - l.ground[0];
+        const dy = centre[1] - l.ground[1];
+        const d = @sqrt(dx * dx + dy * dy);
+        if (d < 0.05) continue;
+        const len = height * std.math.clamp(SHADOW_LEN_LO + SHADOW_LEN_PER_CELL * d, SHADOW_LEN_LO, SHADOW_LEN_HI);
+        const down: f32 = if (dy >= 0) 1 else -1;
+        const rise = down * @max(@abs(dy / d) * SHADOW_SQUASH, SHADOW_RISE_MIN);
+        out[n] = .{ .lean = .{ dx / d * len, rise * len }, .alpha = alpha };
+        n += 1;
+    }
+    return out[0..n];
+}
 
 /// Centred on `(x, y)`, `rx` and `ry` across.
 fn glowAt(g: rl.Texture2D, x: f32, y: f32, rx: f32, ry: f32, c: rl.Color) void {
@@ -1347,6 +1357,45 @@ test "a torch on a wall never seen has no flame to draw, though the floor below 
     const got = l.flames(&lv, &buf);
     std.debug.print("unseen torch over a floor in sight: {d} flame(s), sight {d:.3}\n", .{ got.len, if (got.len > 0) got[0].sight else 0 });
     try std.testing.expectEqual(@as(usize, 0), got.len);
+}
+
+fn castAlpha(l: *const Light, at: [2]f32, carrier: bool) [2]f32 {
+    var buf: [BODY_LIGHTS]Cast = undefined;
+    const cs = casts(l.onBody(at, carrier), at, 60, &buf);
+    if (cs.len == 0) return .{ 0, 0 };
+    return .{ cs[0].alpha, @sqrt(cs[0].lean[0] * cs[0].lean[0] + cs[0].lean[1] * cs[0].lean[1]) };
+}
+
+test "a cast shadow fades out smoothly as its body walks away from the torch" {
+    var lv: grid.Level = undefined;
+    testRoom(&lv, &.{});
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const fl = l.torch[0].flame();
+    const Row = struct { name: []const u8, carrier: ?f32, carrying: bool };
+    var steepest: f32 = 0;
+    var nearest_end: f32 = std.math.floatMax(f32);
+    for ([_]Row{ .{ .name = "alone", .carrier = null, .carrying = false }, .{ .name = "archer", .carrier = 0, .carrying = true }, .{ .name = "rat by archer", .carrier = 2, .carrying = false } }) |r| {
+        std.debug.print("shadow alpha/px, {s}, by cells from the flame:", .{r.name});
+        var last: ?f32 = null;
+        var worst: f32 = 0;
+        var gone: f32 = 0;
+        var d: f32 = 0.5;
+        while (d < @as(f32, @floatFromInt(REACH)) + 0.5) : (d += 0.125) {
+            const at = [2]f32{ fl[0] + d, fl[1] + 0.5 };
+            l.carrier = if (r.carrier) |c| .{ at[0] + c, at[1] } else null;
+            const v = castAlpha(l, at, r.carrying);
+            if (@mod(d, 1) == 0.5) std.debug.print(" {d:.1}:{d:.2}/{d:.0}", .{ d, v[0], v[1] });
+            if (last) |was| worst = @max(worst, was - v[0]);
+            if (v[0] > 0) gone = d;
+            last = v[0];
+        }
+        std.debug.print("; biggest drop per 1/8 cell {d:.3}, last cast at {d:.2}\n", .{ worst, gone });
+        steepest = @max(steepest, worst);
+        nearest_end = @min(nearest_end, gone);
+    }
+    try std.testing.expect(steepest < 0.07);
+    try std.testing.expect(nearest_end >= @as(f32, @floatFromInt(REACH)) - 1.5);
 }
 
 test "a body takes its torch's light from where the flame is drawn, and none from behind a pillar" {

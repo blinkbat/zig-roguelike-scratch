@@ -84,7 +84,6 @@ pub const MINI_H: i32 = grid.H * MINI;
 pub const MINI_PAD: i32 = 12;
 const MINI_FRAME: i32 = 4;
 const MINI_HERO_GROW: i32 = 1;
-pub const FOE_GAP: i32 = 12;
 pub const SHOT_SEED: u64 = 0x5EED_1234;
 pub const GOLD_LO: i32 = 3;
 pub const GOLD_HI: i32 = 12;
@@ -95,7 +94,14 @@ const CAM_EASE: f32 = 12.0;
 const GLIDE_S: f32 = input.Stepper.ARR;
 /// Pixels, at the top of each glide's hop.
 const HOP_PX: f32 = 10;
-/// `gen.build` rolls from the bare seed; without the salt the rats replay the floor's rolls.
+const SLIDE_S: f32 = GLIDE_S * 2;
+/// Between one body's glide and the next's in a turn: the archer, then the foes in sight nearest first.
+const STAGGER_S: f32 = GLIDE_S * 0.5;
+/// A walk due this close to the turn's last glide ending is not held for it.
+const PACE_SLACK: f32 = 1e-4;
+/// Ease-out-back's overshoot constant: 1.165 carries a slide 5% past its cell (1.70158, the usual one, 10%).
+const SLIDE_BACK: f32 = 1.165;
+/// `gen.build` rolls from the bare seed; without the salt the packs replay the floor's rolls.
 const PLAY_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
 
 comptime {
@@ -103,7 +109,6 @@ comptime {
     std.debug.assert(GLYPH <= CELL);
     std.debug.assert(LOG_Y + @as(i32, @intCast(Log.SHOWN)) * LOG_LINE <= HUD_H);
     std.debug.assert(SKILLS_Y + SLOT_PX + KEY_GAP + SLOT_TEXT <= HUD_H);
-    std.debug.assert(FOE_GAP > actor.row(.archer).sight);
 }
 
 pub const Mode = enum { play, aim, bind, dead };
@@ -184,30 +189,46 @@ pub const Glide = struct {
     from: rl.Vector2,
     to: P,
     t: f32,
+    gait: look.Gait,
     /// Where a step taken mid-hop left the body, so it hops on from there instead of dropping to the floor.
     from_lift: f32 = 0,
 
-    fn still(p: P) Glide {
-        return .{ .from = cellPx(p), .to = p, .t = GLIDE_S };
+    fn still(p: P, gait: look.Gait) Glide {
+        return .{ .from = cellPx(p), .to = p, .t = GLIDE_S, .gait = gait };
     }
 
     fn toward(self: Glide, p: P, t: f32) Glide {
-        return .{ .from = self.now(), .to = p, .t = t, .from_lift = self.height() };
+        return .{ .from = self.now(), .to = p, .t = t, .gait = self.gait, .from_lift = self.height() };
     }
 
+    fn span(self: Glide) f32 {
+        return switch (self.gait) {
+            .hop => GLIDE_S,
+            .slide => SLIDE_S,
+        };
+    }
+
+    /// `t` is below 0 while the glide waits its turn.
     fn done(self: Glide) f32 {
-        return @min(1.0, self.t / GLIDE_S);
+        return std.math.clamp(self.t / self.span(), 0, 1);
     }
 
     fn now(self: Glide) rl.Vector2 {
-        const k = self.done();
+        const k = switch (self.gait) {
+            .hop => self.done(),
+            .slide => overshoot(self.done()),
+        };
         const to = cellPx(self.to);
         return .{ .x = mathx.lerpF(self.from.x, to.x, k), .y = mathx.lerpF(self.from.y, to.y, k) };
     }
 
     fn height(self: Glide) f32 {
         const k = self.done();
-        return self.from_lift * (1 - k) + HOP_PX * 4 * k * (1 - k);
+        const hop: f32 = switch (self.gait) {
+            .hop => HOP_PX * 4 * k * (1 - k),
+            .slide => 0,
+        };
+        return self.from_lift * (1 - k) + hop;
     }
 
     /// Pixels above the ground the body is drawn; its shadow, bar, light and the camera stay on the ground.
@@ -215,6 +236,12 @@ pub const Glide = struct {
         return mathx.roundTiesUp(self.height());
     }
 };
+
+/// Penner's ease-out-back: past 1 late in the glide, then back to exactly 1.
+fn overshoot(k: f32) f32 {
+    const u = k - 1;
+    return 1 + (SLIDE_BACK + 1) * u * u * u + SLIDE_BACK * u * u;
+}
 
 pub const Facing = enum { right, left };
 
@@ -242,6 +269,13 @@ pub const Game = struct {
     glide: [actor.MAX]Glide = undefined,
     /// Indexed by pool slot. Presentation only: the last way a body stepped, struck or aimed across.
     facing: [actor.MAX]Facing = @splat(.right),
+    /// The living foes as of the last turn, nearest the archer first: the order they act and are drawn acting in.
+    order: [actor.MAX]u16 = undefined,
+    order_n: usize = 0,
+    /// Seconds until the last turn's slowest glide ends; a walk waits for it.
+    busy: f32 = 0,
+    /// A walk that came due while `busy`.
+    pending: ?mathx.Dir = null,
     sprites: look.Sprites = .{},
     face: font.Face = .{},
     light: *light.Light,
@@ -281,9 +315,15 @@ pub fn begin(g: *Game, seed: u64) void {
     g.rng = mathx.Rng.init(seed ^ PLAY_SALT);
     const floor = gen.build(&g.lv, seed);
     reset(g, floor.start);
-    pack.place(&g.lv, &g.pool, &g.rng, floor.start, FOE_GAP);
+    pack.place(&g.lv, &g.pool, &g.rng, floor.start);
     settle(g);
-    g.log.say("{d} rats and {d} slimes somewhere on this floor. Seed {d}.", .{ tally(g, .rat).total, tally(g, .slime).total, seed });
+    var buf: [Log.COLS]u8 = undefined;
+    var out = std.io.fixedBufferStream(&buf);
+    for (actor.FOES, 0..) |k, i| {
+        const sep = if (i == 0) "" else if (i + 1 == actor.FOES.len) " and " else ", ";
+        out.writer().print("{s}{d} {s}s", .{ sep, tally(g, k).total, actor.row(k).name }) catch break;
+    }
+    g.log.say("{s} somewhere on this floor. Seed {d}.", .{ out.getWritten(), seed });
 }
 
 fn reset(g: *Game, hero: P) void {
@@ -294,6 +334,9 @@ fn reset(g: *Game, hero: P) void {
     g.shot = null;
     g.log = .{};
     g.mode = .play;
+    g.order_n = 0;
+    g.busy = 0;
+    g.pending = null;
 }
 
 fn settle(g: *Game) void {
@@ -455,6 +498,7 @@ fn confirmAim(g: *Game) void {
     const to = g.mark;
     const f = bow.fly(&g.lv, h.at, to);
     g.shot = .{ .flight = f, .glyph = look.arrow(to.x - h.at.x, to.y - h.at.y) };
+    g.busy = @max(g.busy, @as(f32, @floatFromInt(f.len)) * FLIGHT_S);
     if (f.struck) |hit| switch (hit) {
         .body => |id| wound(g, id, g.rng.range(bow.DMG_LO, bow.DMG_HI), SHOOT),
         .barrel => |p| smash(g, p, SHOOT),
@@ -488,12 +532,32 @@ fn endTurn(g: *Game) void {
     const h = g.archer() orelse return;
     castSight(g, h.at);
     _ = grid.distances(&g.lv, h.at, &g.flow, &g.queue);
-    for (0..g.pool.n) |i| {
-        const id = actor.Pool.idOf(i);
-        if (id == g.hero) continue;
+    orderFoes(g, h.at);
+    for (g.order[0..g.order_n]) |id| {
         foeTurn(g, id);
         if (g.mode == .dead) return;
     }
+}
+
+/// Ties go to the older foe.
+fn orderFoes(g: *Game, from: P) void {
+    g.order_n = 0;
+    for (g.pool.slice(), 0..) |a, i| {
+        const id = actor.Pool.idOf(i);
+        if (id == g.hero or !a.alive) continue;
+        g.order[g.order_n] = id;
+        g.order_n += 1;
+    }
+    const Near = struct {
+        pool: *const actor.Pool,
+        from: P,
+        fn nearer(n: @This(), a: u16, b: u16) bool {
+            const da = mathx.dist(n.pool.items[actor.Pool.slot(a)].at, n.from);
+            const db = mathx.dist(n.pool.items[actor.Pool.slot(b)].at, n.from);
+            return da < db or (da == db and a < b);
+        }
+    };
+    std.mem.sort(u16, g.order[0..g.order_n], Near{ .pool = &g.pool, .from = from }, Near.nearer);
 }
 
 fn foeTurn(g: *Game, id: u16) void {
@@ -544,28 +608,69 @@ fn camWant(g: *Game) rl.Vector2 {
 }
 
 fn snapGlide(g: *Game) void {
-    for (g.pool.slice(), 0..) |a, i| g.glide[i] = Glide.still(a.at);
+    for (g.pool.slice(), 0..) |a, i| g.glide[i] = Glide.still(a.at, look.gait(a.kind));
 }
 
-/// A body that moved this frame starts gliding as of when its step was due, not from this frame.
-fn stepGlide(g: *Game, dt: f32) void {
-    const late = g.st.late();
+/// A body that moved this frame starts gliding `late` seconds ago, as of when its step was due; each one in sight
+/// after the first a stagger behind the one before, the archer first and then the foes in the order they acted.
+fn stepGlide(g: *Game, dt: f32, late: f32) void {
+    for (g.glide[0..g.pool.n]) |*gl| gl.t += dt;
+    const loosed = if (g.shot) |s| s.t == 0 else false;
+    var rank: f32 = if (loosed) 1 else 0;
+    stagger(g, g.hero, late, &rank);
+    for (g.order[0..g.order_n]) |id| stagger(g, id, late, &rank);
     for (g.pool.slice(), 0..) |a, i| {
-        const gl = &g.glide[i];
-        gl.t += dt;
-        if (!gl.to.eq(a.at)) gl.* = gl.toward(a.at, late);
+        if (!g.glide[i].to.eq(a.at)) g.glide[i] = g.glide[i].toward(a.at, late);
     }
 }
 
+fn stagger(g: *Game, id: u16, late: f32, rank: *f32) void {
+    const a = g.pool.get(id) orelse return;
+    const gl = &g.glide[actor.Pool.slot(id)];
+    if (gl.to.eq(a.at)) return;
+    if (!inView(g, a.*)) {
+        gl.* = gl.toward(a.at, late);
+        return;
+    }
+    const wait = rank.* * STAGGER_S;
+    gl.* = gl.toward(a.at, late - wait);
+    rank.* += 1;
+    g.busy = @max(g.busy, wait + gl.span() - late);
+}
+
+/// The walk that `update` takes this frame, and how long ago it came due.
+const Walk = struct { d: mathx.Dir, late: f32 };
+
+/// A walk due while the last turn is still gliding waits for it, the latest one standing in for any before it.
+fn paced(g: *Game) ?Walk {
+    if (g.st.walk) |d| {
+        if (g.busy > PACE_SLACK) {
+            g.pending = d;
+            return null;
+        }
+        g.pending = null;
+        return .{ .d = d, .late = g.st.late() };
+    }
+    const d = g.pending orelse return null;
+    if (g.busy > PACE_SLACK) return null;
+    g.pending = null;
+    return .{ .d = d, .late = @max(0, -g.busy) };
+}
+
 pub fn update(g: *Game, dt: f32) void {
+    g.busy -= dt;
+    var late = g.st.late();
     switch (g.mode) {
         .play => {
             if (g.st.hit(.view)) {
+                g.pending = null;
                 openBinds(g);
             } else if (usedSkill(g)) |u| {
+                g.pending = null;
                 useSkill(g, u);
-            } else if (g.st.walk) |d| {
-                heroStep(g, d);
+            } else if (paced(g)) |w| {
+                late = w.late;
+                heroStep(g, w.d);
             }
         },
         .aim => {
@@ -580,7 +685,7 @@ pub fn update(g: *Game, dt: f32) void {
         .bind => bindStep(g),
         .dead => if (g.st.hit(.a)) begin(g, freshSeed()),
     }
-    stepGlide(g, dt);
+    stepGlide(g, dt, late);
     if (g.shot) |*s| {
         s.t += dt;
         if (s.cell() == null) g.shot = null;
@@ -670,8 +775,13 @@ fn inView(g: *Game, a: actor.Actor) bool {
     return a.alive and g.lv.isLit(a.at);
 }
 
+/// Remembered like terrain: nothing but the archer breaks one, and only in sight.
+fn barrelShownAt(g: *Game, p: P) bool {
+    return g.lv.isSeen(p) and g.lv.hasBarrel(p);
+}
+
 fn standsShownAt(g: *Game, p: P) bool {
-    return (g.lv.isLit(p) and g.lv.who(p) != grid.NO_ONE) or (g.lv.isSeen(p) and g.lv.hasBarrel(p));
+    return (g.lv.isLit(p) and g.lv.who(p) != grid.NO_ONE) or barrelShownAt(g, p);
 }
 
 fn bar(x: i32, y: i32, w: i32, h: i32, hp: i32, max: i32, back: rl.Color) void {
@@ -701,7 +811,7 @@ fn barrelsIn(g: *Game, c: Cam, lo: P, hi: P, out: *[gen.MAX_BARRELS]Prop) []cons
         var x = lo.x;
         while (x < hi.x) : (x += 1) {
             const p = P{ .x = x, .y = y };
-            if (n == out.len or !g.lv.hasBarrel(p) or !g.lv.isSeen(p)) continue;
+            if (n == out.len or !barrelShownAt(g, p)) continue;
             const mid = middle(cellPx(p));
             out[n] = .{ .s = .{ .x = c.sx(p), .y = c.sy(p) }, .mid = mid, .shine = g.light.onBody(mid, false) };
             n += 1;
@@ -997,12 +1107,15 @@ fn drawHud(g: *Game) void {
     const bar_y = top + BAR_Y;
     bar(HUD_PAD, bar_y, BAR_W, BAR_H, hp, max, look.LIFE_BG);
     g.face.text(std.fmt.bufPrintZ(&buf, "HP {d}/{d}", .{ @max(0, hp), max }) catch "", HUD_PAD + BAR_TEXT_X, bar_y + @divTrunc(BAR_H - TEXT, 2), TEXT, look.TEXT);
-    const r = tally(g, .rat);
-    const s = tally(g, .slime);
-    const foes = std.fmt.bufPrintZ(&buf, "Rats {d}/{d}   Slimes {d}/{d}", .{ r.left, r.total, s.left, s.total }) catch "";
-    g.face.text(foes, HUD_PAD, top + TALLY_Y, TEXT, look.DIM);
-    const gold_x = HUD_PAD + g.face.width(foes, TEXT) + TALLY_GAP;
-    g.face.text(std.fmt.bufPrintZ(&buf, "Gold {d}", .{g.gold}) catch "", gold_x, top + TALLY_Y, TEXT, look.COIN);
+    var tally_x = HUD_PAD;
+    for (actor.FOES) |k| {
+        const t = tally(g, k);
+        const name = actor.row(k).name;
+        const s = std.fmt.bufPrintZ(&buf, "{c}{s}s {d}/{d}", .{ std.ascii.toUpper(name[0]), name[1..], t.left, t.total }) catch "";
+        g.face.text(s, tally_x, top + TALLY_Y, TEXT, look.DIM);
+        tally_x += g.face.width(s, TEXT) + TALLY_GAP;
+    }
+    g.face.text(std.fmt.bufPrintZ(&buf, "Gold {d}", .{g.gold}) catch "", tally_x, top + TALLY_Y, TEXT, look.COIN);
     const hint: [:0]const u8 = if (g.mode == .aim)
         std.fmt.bufPrintZ(&buf, "{s} shoot   {s} cancel   {s} aim", .{ g.aim_by.caption(), input.Button.b.caption(), input.MOVE_CAPTION }) catch ""
     else
@@ -1171,7 +1284,8 @@ fn benchWalk(g: *Game) void {
         sim[i] = t.lap();
         drawInto(g, target);
         draw[i] = t.read();
-        if (g.st.walk != null and g.archer() != null and g.archer().?.at.eq(was)) d = mathx.ALL_DIRS[rng.below(mathx.ALL_DIRS.len)];
+        const tried = g.st.walk != null and g.pending == null;
+        if (tried and g.archer() != null and g.archer().?.at.eq(was)) d = mathx.ALL_DIRS[rng.below(mathx.ALL_DIRS.len)];
     }
     for ([_][]u64{ &sim, &draw }, [_][]const u8{ "update", "draw" }) |xs, name| {
         std.mem.sort(u64, xs, {}, std.sort.asc(u64));
@@ -1212,18 +1326,27 @@ fn arena(g: *Game, hero: P, rats: []const P) void {
     settle(g);
 }
 
+/// As if the last turn's glides had all ended.
+fn calm(g: *Game) void {
+    g.busy = 0;
+    g.pending = null;
+}
+
 fn press(g: *Game, a: input.Button) void {
+    calm(g);
     g.st = .{};
     g.st.pressed.insert(a);
     update(g, 0);
 }
 
 fn nudge(g: *Game, d: mathx.Dir) void {
+    calm(g);
     g.st = .{ .walk = d };
     update(g, 0);
 }
 
 fn pressHolding(g: *Game, a: input.Button, held: []const input.Button) void {
+    calm(g);
     g.st = .{};
     g.st.pressed.insert(a);
     g.st.down.insert(a);
@@ -1290,15 +1413,18 @@ test "a new floor has every pack placed, no foe in sight or on a barrel" {
     defer shut(std.testing.allocator, g);
     for (0..40) |i| {
         begin(g, 0xF00D +% i *% 7919);
-        const r = tally(g, .rat);
-        const s = tally(g, .slime);
-        try std.testing.expect(r.left == r.total and s.left == s.total);
-        try std.testing.expect(r.total + s.total >= pack.PER_FLOOR);
+        var placed: usize = 0;
+        for (actor.FOES) |k| {
+            const t = tally(g, k);
+            try std.testing.expectEqual(t.total, t.left);
+            placed += t.total;
+        }
+        try std.testing.expect(placed >= pack.PER_FLOOR);
         const h = g.archer().?;
         for (g.pool.slice()[1..]) |a| {
             try std.testing.expect(!g.lv.isLit(a.at));
             try std.testing.expect(!g.lv.hasBarrel(a.at));
-            try std.testing.expect(mathx.dist(a.at, h.at) >= FOE_GAP);
+            try std.testing.expect(mathx.dist(a.at, h.at) >= pack.GAP);
         }
     }
 }
@@ -1476,20 +1602,20 @@ test "the camera never shows past the edge of the floor, and centres it on a scr
     try std.testing.expectEqual((world_h - @as(f32, @floatFromInt(g.viewH()))) * 0.5, v.y);
 }
 
-test "rats land on the floor as the floor is, not where its own rolls put the rooms" {
+test "packs land on the floor as the floor is, not where its own rolls put the rooms" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     const inRoom = struct {
         fn f(fl: gen.Floor, p: P) bool {
             for (fl.rooms[0..fl.room_n]) |r| {
-                if (p.x >= r.x and p.x < r.x + r.w and p.y >= r.y and p.y < r.y + r.h) return true;
+                if (r.holds(p)) return true;
             }
             return false;
         }
     }.f;
     var lv: grid.Level = undefined;
-    var rats: usize = 0;
-    var rats_in: usize = 0;
+    var foes: usize = 0;
+    var foes_in: usize = 0;
     var open: usize = 0;
     var open_in: usize = 0;
     for (0..200) |i| {
@@ -1497,19 +1623,19 @@ test "rats land on the floor as the floor is, not where its own rolls put the ro
         begin(g, seed);
         const f = gen.build(&lv, seed);
         for (g.pool.slice()[1..]) |a| {
-            rats += 1;
-            if (inRoom(f, a.at)) rats_in += 1;
+            foes += 1;
+            if (inRoom(f, a.at)) foes_in += 1;
         }
         for (0..grid.CELLS) |c| {
             const p = grid.Level.of(c);
-            if (!lv.walkable(p) or lv.hasBarrel(p) or mathx.dist(p, f.start) < FOE_GAP) continue;
+            if (!lv.walkable(p) or lv.hasBarrel(p) or mathx.dist(p, f.start) < pack.GAP) continue;
             open += 1;
             if (inRoom(f, p)) open_in += 1;
         }
     }
     const want = open_in * 100 / open;
-    const got = rats_in * 100 / rats;
-    std.debug.print("200 floors: {d}% of the open floor a rat may take is in a room, {d}% of rats are\n", .{ want, got });
+    const got = foes_in * 100 / foes;
+    std.debug.print("200 floors: {d}% of the open floor a foe may take is in a room, {d}% of foes are\n", .{ want, got });
     try std.testing.expect(got <= want + 5 and got + 5 >= want);
 }
 
@@ -1569,10 +1695,12 @@ test "every step is one hop that peaks mid-glide and lands as the glide ends, an
     const ground = [2]f32{ g.glide[hero].now().y, g.cam.y };
     var bobbed = false;
     var t: f32 = 0;
+    var was = g.archer().?.at;
     while (t < 1.5) : (t += dt) {
         g.st.walk = g.st.step.tick(dt, 1, mathx.Dir.e.heading(), input.Stepper.SETTLE);
         update(g, dt);
-        if (g.st.walk != null) steps += 1;
+        if (!g.archer().?.at.eq(was)) steps += 1;
+        was = g.archer().?.at;
         const up = g.glide[hero].lift() * 2 > @as(i32, HOP_PX);
         if (up and !high) hops += 1;
         high = up;
@@ -1593,7 +1721,7 @@ test "every step is one hop that peaks mid-glide and lands as the glide ends, an
 }
 
 test "a step taken mid-hop hops on from the height the body was at" {
-    var gl = Glide.still(.{ .x = 5, .y = 5 });
+    var gl = Glide.still(.{ .x = 5, .y = 5 }, .hop);
     gl = gl.toward(.{ .x = 6, .y = 5 }, 0);
     var worst: f32 = 0;
     var t: f32 = 0;
@@ -1607,6 +1735,69 @@ test "a step taken mid-hop hops on from the height the body was at" {
     std.debug.print("hop cut short by a step: the biggest jump in height between {d} Hz frames {d:.2} px\n", .{ 1 / dt, worst });
     try std.testing.expect(worst < HOP_PX * 0.2);
     try std.testing.expectEqual(@as(i32, 0), gl.lift());
+}
+
+test "a slime slides without hopping, a little past its cell, and settles exactly on it" {
+    var gl = Glide.still(.{ .x = 5, .y = 5 }, look.gait(.slime));
+    gl = gl.toward(.{ .x = 6, .y = 5 }, 0);
+    const to = cellPx(.{ .x = 6, .y = 5 }).x;
+    var past: f32 = 0;
+    var peak_at: f32 = 0;
+    var t: f32 = 0;
+    while (t < gl.span() * 1.5) : (t += 1.0 / 240.0) {
+        gl.t = t;
+        try std.testing.expectEqual(@as(i32, 0), gl.lift());
+        if (gl.now().x - to > past) {
+            past = gl.now().x - to;
+            peak_at = gl.done();
+        }
+    }
+    std.debug.print("slime slide: {d:.1} px past its cell at {d:.0}% of the glide\n", .{ past, peak_at * 100 });
+    try std.testing.expectApproxEqAbs(CELL_F * 0.05, past, 0.3);
+    try std.testing.expectEqual(to, gl.now().x);
+}
+
+test "foes act nearest first, so the one behind in a corridor follows the one ahead" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 25, .y = 20 }, .{ .x = 24, .y = 20 } });
+    var x: i32 = 21;
+    while (x < 30) : (x += 1) {
+        g.lv.set(.{ .x = x, .y = 19 }, .wall);
+        g.lv.set(.{ .x = x, .y = 21 }, .wall);
+    }
+    for (g.pool.slice()[1..]) |*a| a.awake = true;
+    endTurn(g);
+    std.debug.print("corridor: nearer rat to {d}, the one behind to {d}\n", .{ g.pool.get(3).?.at.x, g.pool.get(2).?.at.x });
+    try std.testing.expectEqualSlices(u16, &.{ 3, 2 }, g.order[0..g.order_n]);
+    try std.testing.expectEqual(@as(i32, 23), g.pool.get(3).?.at.x);
+    try std.testing.expectEqual(@as(i32, 24), g.pool.get(2).?.at.x);
+}
+
+test "a turn's glides start the archer first, then each foe in sight a stagger behind, and the next walk waits for the last" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 27, .y = 20 }, .{ .x = 24, .y = 23 } });
+    _ = g.pool.spawn(&g.lv, actor.Actor.of(.slime, .{ .x = 26, .y = 17 }));
+    for (g.pool.slice()[1..]) |*a| a.awake = true;
+    settle(g);
+    nudge(g, .e);
+    const t = [_]f32{ g.glide[0].t, g.glide[actor.Pool.slot(3)].t, g.glide[actor.Pool.slot(4)].t, g.glide[actor.Pool.slot(2)].t };
+    std.debug.print("glide starts: archer {d:.3} s, then {d:.3}, {d:.3}, {d:.3}; the turn is busy {d:.3} s\n", .{ -t[0], -t[1], -t[2], -t[3], g.busy });
+    try std.testing.expectEqualSlices(u16, &.{ 3, 4, 2 }, g.order[0..g.order_n]);
+    for (t, 0..) |v, i| try std.testing.expectApproxEqAbs(-STAGGER_S * @as(f32, @floatFromInt(i)), v, 1e-6);
+    try std.testing.expectApproxEqAbs(STAGGER_S * 2 + SLIDE_S, g.busy, 1e-6);
+    const at = g.archer().?.at;
+    g.st = .{ .walk = .e };
+    update(g, 0);
+    try std.testing.expectEqual(at, g.archer().?.at);
+    g.st = .{};
+    var waited: f32 = 0;
+    const dt: f32 = 1.0 / 240.0;
+    while (g.archer().?.at.eq(at) and waited < 1) : (waited += dt) update(g, dt);
+    std.debug.print("a walk pressed mid-turn steps {d:.3} s later\n", .{waited});
+    try std.testing.expect(!g.archer().?.at.eq(at));
+    try std.testing.expectApproxEqAbs(STAGGER_S * 2 + SLIDE_S, waited, dt * 1.5);
 }
 
 test "a body at rest lands on its tile's pixel whatever fraction the camera is at" {

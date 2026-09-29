@@ -41,7 +41,7 @@ pub const Room = struct {
         return .{ .x = r.x + @divTrunc(r.w, 2), .y = r.y + @divTrunc(r.h, 2) };
     }
 
-    fn holds(r: Room, p: P) bool {
+    pub fn holds(r: Room, p: P) bool {
         return p.x >= r.x and p.x < r.x + r.w and p.y >= r.y and p.y < r.y + r.h;
     }
 

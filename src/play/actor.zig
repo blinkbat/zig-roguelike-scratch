@@ -4,7 +4,23 @@ const grid = @import("../world/grid.zig");
 
 const P = mathx.P;
 
-pub const Kind = enum { archer, rat, slime };
+pub const Kind = enum {
+    archer,
+    rat,
+    slime,
+
+    pub fn foe(k: Kind) bool {
+        return k != .archer;
+    }
+};
+
+pub const FOES = blk: {
+    var ks: []const Kind = &.{};
+    for (std.enums.values(Kind)) |k| {
+        if (k.foe()) ks = ks ++ &[_]Kind{k};
+    }
+    break :blk ks[0..ks.len].*;
+};
 
 pub const Row = struct {
     name: [:0]const u8,
@@ -39,7 +55,7 @@ pub const Actor = struct {
     }
 
     pub fn foe(self: Actor) bool {
-        return self.kind != .archer;
+        return self.kind.foe();
     }
 };
 

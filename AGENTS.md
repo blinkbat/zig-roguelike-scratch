@@ -62,9 +62,12 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   stands in only when the atlas fails to load, which is every test.
 - **`CELL` IS A WHOLE MULTIPLE OF 64**, the sprites' authored size; they draw at `CELL / 64`, never fractional.
 - **THE GRID IS y-DOWN** and **Chebyshev is the only metric**. **A diagonal may not cut a corner** (`passOk`).
-- **`fov.cast` IS THE ONLY VISIBILITY COMPUTATION.** A rat sees the archer exactly when the archer's pass lit the
-  rat's cell and the archer is within the rat's sight. A body is drawn only where it is lit; terrain is remembered.
+- **`fov.cast` IS THE ONLY VISIBILITY COMPUTATION.** A foe sees the archer exactly when the archer's pass lit the
+  foe's cell and the archer is within the foe's sight. A body is drawn only where it is lit; terrain is remembered.
 - **`Pool.damage` IS THE ONLY PLACE HP GOES DOWN.**
-- **THE PICTURE LAGS THE MECHANIC.** The camera eases, bodies glide and hop (`Glide`, one walk repeat long), the fog eases
-  and the arrow flies after the hit has already resolved; nothing in the simulation reads the view.
+- **THE PICTURE LAGS THE MECHANIC.** The camera eases, bodies glide and hop (one walk repeat long), or slide a little past the cell and settle back (twice that), by
+  their `look.gait` (`Glide`), the fog eases and the arrow flies after the hit has already resolved; nothing in the
+  simulation reads the view. Foes act nearest the archer first (`Game.order`), and a turn is drawn in that order: the
+  archer's step or arrow, then each foe in sight a `STAGGER_S` behind the one before. A turn takes as long as its
+  slowest glide or arrow (`Game.busy`); a walk due before then waits for it, the latest standing in for any before.
 - **EVERY DRAWN STRING IS ASCII.**

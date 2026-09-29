@@ -15,6 +15,8 @@ pub const KINDS = [_][]const actor.Kind{
     &.{ .rat, .rat },
 };
 pub const REACH: i32 = 2;
+/// Cells from the archer's start to every member of every pack: past the archer's sight, so none starts in view.
+pub const GAP: i32 = 12;
 pub const BIGGEST: usize = blk: {
     var most: usize = 0;
     for (KINDS) |k| most = @max(most, k.len);
@@ -23,29 +25,26 @@ pub const BIGGEST: usize = blk: {
 
 comptime {
     std.debug.assert(1 + PER_FLOOR * BIGGEST <= actor.MAX);
-    std.debug.assert(REACH <= RING_HI);
+    std.debug.assert(GAP > actor.row(.archer).sight);
 }
 
-/// Every member at least `gap` from `start`.
-pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, gap: i32) void {
+pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P) void {
     for (0..PER_FLOOR) |_| {
         const kinds = KINDS[rng.below(KINDS.len)];
-        const lead = gen.openSpot(lv, rng, start, gap) orelse return;
+        const lead = gen.openSpot(lv, rng, start, GAP) orelse return;
         _ = pool.spawn(lv, actor.Actor.of(kinds[0], lead));
         for (kinds[1..]) |k| {
-            const at = spotNear(lv, rng, lead, start, gap) orelse break;
+            const at = spotNear(lv, rng, lead, start) orelse break;
             _ = pool.spawn(lv, actor.Actor.of(k, at));
         }
     }
 }
 
-const RING_HI: usize = 4;
-
 /// Nearest ring first, and only a cell the lead has a clear line to.
-fn spotNear(lv: *const grid.Level, rng: *mathx.Rng, lead: P, start: P, gap: i32) ?P {
+fn spotNear(lv: *const grid.Level, rng: *mathx.Rng, lead: P, start: P) ?P {
     var ring: i32 = 1;
     while (ring <= REACH) : (ring += 1) {
-        var spots: [8 * RING_HI]P = undefined;
+        var spots: [8 * REACH]P = undefined;
         var n: usize = 0;
         var y = lead.y - ring;
         while (y <= lead.y + ring) : (y += 1) {
@@ -53,7 +52,7 @@ fn spotNear(lv: *const grid.Level, rng: *mathx.Rng, lead: P, start: P, gap: i32)
             while (x <= lead.x + ring) : (x += 1) {
                 const p = P{ .x = x, .y = y };
                 if (mathx.dist(p, lead) != ring or !lv.walkable(p) or lv.taken(p)) continue;
-                if (mathx.dist(p, start) < gap or !grid.clearLine(lv, lead, p)) continue;
+                if (mathx.dist(p, start) < GAP or !grid.clearLine(lv, lead, p)) continue;
                 spots[n] = p;
                 n += 1;
             }
@@ -72,12 +71,12 @@ test "packs come only in their listed makeups, and every slime stands by a rat" 
         const f = gen.build(&lv, seed);
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(seed);
-        place(&lv, &pool, &rng, f.start, 12);
+        place(&lv, &pool, &rng, f.start);
         try std.testing.expect(pool.n >= PER_FLOOR and pool.n <= PER_FLOOR * BIGGEST);
         for (pool.slice()) |a| {
             counts.getPtr(a.kind).* += 1;
             try std.testing.expect(!lv.hasBarrel(a.at) and lv.walkable(a.at));
-            try std.testing.expect(mathx.dist(a.at, f.start) >= 12);
+            try std.testing.expect(mathx.dist(a.at, f.start) >= GAP);
             if (a.kind != .slime) continue;
             const by_rat = for (pool.slice()) |b| {
                 if (b.kind == .rat and mathx.dist(a.at, b.at) <= REACH) break true;

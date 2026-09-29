@@ -156,6 +156,15 @@ pub fn body(k: actor.Kind) Look {
     };
 }
 
+pub const Gait = enum { hop, slide };
+
+pub fn gait(k: actor.Kind) Gait {
+    return switch (k) {
+        .archer, .rat => .hop,
+        .slime => .slide,
+    };
+}
+
 /// y-down, so a delta whose signs agree runs top-left to bottom-right.
 pub fn arrow(dx: i32, dy: i32) u8 {
     if (dy == 0) return '-';
