@@ -121,10 +121,16 @@ const PRIMARY = blk: {
     break :blk r;
 };
 
+/// The buttons that open the bind screen and the pause menu, which no skill takes.
+const NOT_SLOTS = [_]Button{ .view, .pause };
+
 comptime {
-    for (SLOTS, 0..) |a, i| {
-        for (SLOTS[i + 1 ..]) |b| std.debug.assert(a != b);
-        std.debug.assert(a != .view);
+    for (std.enums.values(Button)) |b| {
+        var n: usize = 0;
+        for (SLOTS ++ NOT_SLOTS) |s| {
+            if (s == b) n += 1;
+        }
+        std.debug.assert(n == 1);
     }
 }
 

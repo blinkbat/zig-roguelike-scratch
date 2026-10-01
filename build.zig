@@ -99,8 +99,18 @@ fn checkTestRoster(b: *std.Build) void {
             std.debug.panic(SRC ++ "/{s} could not be stat'd ({s})", .{ slashed, @errorName(e) });
         if (st.size < MIN_SRC) std.debug.panic(SRC ++ "/{s} is {d} bytes — a truncated file, not a module", .{ slashed, st.size });
         const want = b.fmt("@import(\"{s}\")", .{slashed});
-        if (std.mem.indexOf(u8, root, want) == null) {
+        if (!named(root, want)) {
             std.debug.panic(ROOT ++ "'s test block does not name {s}. Add `_ = {s};`.", .{ slashed, want });
         }
     }
+}
+
+/// On a line of the test block that is not commented out.
+fn named(root: []const u8, want: []const u8) bool {
+    var lines = std.mem.splitScalar(u8, root, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, line, " \t"), "//")) continue;
+        if (std.mem.indexOf(u8, line, want) != null) return true;
+    }
+    return false;
 }

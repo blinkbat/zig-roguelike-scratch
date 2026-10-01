@@ -27,6 +27,7 @@ const FALLOFF_D0: f32 = 2.5;
 /// A wall is this tall; its brick face fills the cell below `FACE_FROM`, so the face is drawn foreshortened.
 const WALL_H: f32 = 1.0;
 const FACE_FROM: f32 = 0.6;
+const FACE_H: f32 = 1 - FACE_FROM;
 const FLAME_Z: f32 = 0.6;
 /// How far the flame stands out from its wall, so the bricks beside it are not lit edge-on.
 const STANDOFF: f32 = 0.3;
@@ -120,14 +121,14 @@ const Spot = struct {
 
     fn of(lv: *const grid.Level, q: [2]f32) Spot {
         const cell = mathx.cellOf(q);
-        if (lv.at(cell) == .floor) return .{ .x = q[0], .y = q[1], .z = 0, .surface = .floor };
+        if (!lv.at(cell).solid()) return .{ .x = q[0], .y = q[1], .z = 0, .surface = .floor };
         const fy = q[1] - @floor(q[1]);
         const top: f32 = @floatFromInt(cell.y);
         const faced = if (lv.wallShape(cell)) |s| s.faced() else false;
         if (faced and fy >= FACE_FROM) {
-            return .{ .x = q[0], .y = top + 1, .z = (1 - fy) / (1 - FACE_FROM) * WALL_H, .surface = .face };
+            return .{ .x = q[0], .y = top + 1, .z = (1 - fy) / FACE_H * WALL_H, .surface = .face };
         }
-        return .{ .x = q[0], .y = q[1] + (1 - FACE_FROM), .z = WALL_H, .surface = .ceiling };
+        return .{ .x = q[0], .y = q[1] + FACE_H, .z = WALL_H, .surface = .ceiling };
     }
 };
 
@@ -147,13 +148,12 @@ const Torch = struct {
 
     /// On the ground plane.
     fn flame(t: Torch) [3]f32 {
-        return .{ @as(f32, @floatFromInt(t.wall.x)) + 0.5, @as(f32, @floatFromInt(t.wall.y)) + 1 + STANDOFF, FLAME_Z };
+        return .{ mathx.centre(t.wall)[0], @as(f32, @floatFromInt(t.wall.y)) + 1 + STANDOFF, FLAME_Z };
     }
 
     /// Where the flame is drawn: up its wall's foreshortened face.
     fn drawn(t: Torch) [2]f32 {
-        const face_h = 1 - FACE_FROM;
-        return .{ @as(f32, @floatFromInt(t.wall.x)) + 0.5, @as(f32, @floatFromInt(t.wall.y)) + 1 - FLAME_Z / WALL_H * face_h };
+        return .{ mathx.centre(t.wall)[0], @as(f32, @floatFromInt(t.wall.y)) + 1 - FLAME_Z / WALL_H * FACE_H };
     }
 
     fn reached(t: *const Torch, x: f32, y: f32) f32 {
@@ -379,14 +379,8 @@ pub const Light = struct {
             const f = t.floor();
             fov.cast(&self.scratch, f, REACH);
             var j: usize = 0;
-            var y: i32 = -REACH;
-            while (y <= REACH) : (y += 1) {
-                var x: i32 = -REACH;
-                while (x <= REACH) : (x += 1) {
-                    t.reach[j] = if (self.scratch.isLit(.{ .x = f.x + x, .y = f.y + y })) 1 else 0;
-                    j += 1;
-                }
-            }
+            var box = grid.Cells.of(f.sub(.{ .x = REACH, .y = REACH }), f.add(.{ .x = REACH + 1, .y = REACH + 1 }));
+            while (box.next()) |p| : (j += 1) t.reach[j] = if (self.scratch.isLit(p)) 1 else 0;
             self.torch[self.torch_n] = t;
             self.torch_n += 1;
         }
@@ -464,15 +458,12 @@ pub const Light = struct {
         if (own <= 0) return .{ .flat = 0 };
         if (own >= 1 and self.whole(c)) return .{ .flat = 1 };
         var f = Fade{};
-        var j = c.y - VOID_REACH;
-        while (j <= c.y + VOID_REACH) : (j += 1) {
-            var i = c.x - VOID_REACH;
-            while (i <= c.x + VOID_REACH) : (i += 1) {
-                const m = self.memoryAt(.{ .x = i, .y = j });
-                if (m >= 1) continue;
-                f.short[f.n] = .{ .x = @floatFromInt(i), .y = @floatFromInt(j), .m = m };
-                f.n += 1;
-            }
+        var box = grid.Cells.of(c.sub(.{ .x = VOID_REACH, .y = VOID_REACH }), c.add(.{ .x = VOID_REACH + 1, .y = VOID_REACH + 1 }));
+        while (box.next()) |p| {
+            const m = self.memoryAt(p);
+            if (m >= 1) continue;
+            f.short[f.n] = .{ .x = @floatFromInt(p.x), .y = @floatFromInt(p.y), .m = m };
+            f.n += 1;
         }
         return f;
     }
@@ -488,7 +479,7 @@ pub const Light = struct {
 
     fn near(self: *const Light, lo: P, hi: P, out: *[grid.MAX_TORCHES]TorchIx) []const TorchIx {
         var n: usize = 0;
-        for (self.torch[0..self.torch_n], 0..) |t, i| {
+        for (self.torch[0..self.torch_n], 0..) |*t, i| {
             const f = t.floor();
             if (f.x + REACH < lo.x or f.x - REACH > hi.x or f.y + REACH < lo.y or f.y - REACH > hi.y) continue;
             out[n] = @intCast(i);
@@ -497,17 +488,22 @@ pub const Light = struct {
         return out[0..n];
     }
 
+    /// Cells across the ground from the carried light, and how far of that is southward.
+    fn fromCarrier(self: *const Light, x: f32, y: f32) ?struct { flat: f32, dy: f32 } {
+        const c = self.carrier orelse return null;
+        const dx = c[0] - x;
+        const dy = c[1] - y;
+        return .{ .flat = @sqrt(dx * dx + dy * dy), .dy = dy };
+    }
+
     fn carried(self: *const Light, s: Spot) f32 {
-        const c = self.carrier orelse return 0;
-        const dx = c[0] - s.x;
-        const dy = c[1] - s.y;
-        const flat = @sqrt(dx * dx + dy * dy);
+        const f = self.fromCarrier(s.x, s.y) orelse return 0;
         const facing = switch (s.surface) {
             .floor => 1,
-            .face => wrapped(dy / @max(flat, 1e-2), CARRY_FACE_WRAP),
+            .face => wrapped(f.dy / @max(f.flat, 1e-2), CARRY_FACE_WRAP),
             .ceiling => CARRY_CEILING,
         };
-        return carryFade(flat) * facing;
+        return carryFade(f.flat) * facing;
     }
 
     /// `q` is in cells.
@@ -570,10 +566,9 @@ pub const Light = struct {
         const v = self.viewAt(centre);
         var s = Shine{ .ambient = remembered(AMBIENT, v.sight, v.memory) };
         const lit = v.sight * v.memory;
-        if (self.carrier) |c| {
-            const dx = c[0] - centre[0];
-            const dy = c[1] - centre[1];
-            const k = carryFade(@sqrt(dx * dx + dy * dy)) * lit;
+        if (self.fromCarrier(centre[0], centre[1])) |f| {
+            const c = self.carrier.?;
+            const k = carryFade(f.flat) * lit;
             if (carrier) {
                 s.ambient += CARRY * splat(k);
             } else if (k > FAINT) {
@@ -593,7 +588,7 @@ pub const Light = struct {
     /// A flame hangs on its wall's south face, so a wall seen only from behind shows none.
     pub fn flames(self: *const Light, lv: *const grid.Level, out: *[grid.MAX_TORCHES]Flame) []const Flame {
         var n: usize = 0;
-        for (self.torch[0..self.torch_n]) |t| {
+        for (self.torch[0..self.torch_n]) |*t| {
             if (!lv.isSeen(t.wall) or !lv.isSeen(t.floor())) continue;
             const d = t.drawn();
             const v = self.viewAt(d);
@@ -887,6 +882,11 @@ const Art = struct {
     /// Texel rows from the sprite's top to just under its lowest opaque row.
     foot: f32,
     normals: ?rl.Texture2D,
+
+    /// Footed at its bottom row, with no normals.
+    fn bare(t: rl.Texture2D) Art {
+        return .{ .id = t.id, .foot = @floatFromInt(t.height), .normals = null };
+    }
 };
 
 /// Texels in from the silhouette over which a body's edge rounds off, and how steeply.
@@ -908,8 +908,8 @@ const Gpu = struct {
         var g = Gpu{};
         g.map = look.canvas(MAP_W, MAP_H, rl.Color.black);
         g.glow = look.radial(GLOW_PX, glowAlpha);
-        if (rl.loadShaderFromMemory(null, BODY_FS)) |s| g.body = look.uniforms(BodyShader, s) else |_| {}
-        if (rl.loadShaderFromMemory(null, SHADOW_FS)) |s| g.shadow = look.uniforms(ShadowShader, s) else |_| {}
+        if (look.shader(BODY_FS)) |s| g.body = look.uniforms(BodyShader, s);
+        if (look.shader(SHADOW_FS)) |s| g.shadow = look.uniforms(ShadowShader, s);
         for (figures) |b| {
             const t = b orelse continue;
             g.arts[g.art_n] = artOf(t);
@@ -932,12 +932,12 @@ const Gpu = struct {
         for (g.arts[0..g.art_n]) |a| {
             if (a.id == t.id) return a;
         }
-        return .{ .id = t.id, .foot = @floatFromInt(t.height), .normals = null };
+        return Art.bare(t);
     }
 };
 
 fn artOf(t: rl.Texture2D) Art {
-    var a = Art{ .id = t.id, .foot = @floatFromInt(t.height), .normals = null };
+    var a = Art.bare(t);
     if (t.width > ART_MAX or t.height > ART_MAX) return a;
     const img = rl.loadImageFromTexture(t) catch return a;
     defer rl.unloadImage(img);

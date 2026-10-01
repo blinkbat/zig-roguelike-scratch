@@ -93,7 +93,6 @@ const App = struct {
         g.name = name;
         g.bar = .{};
         app.inSlot(slot);
-        g.unsaved = true;
         app.autosave.?.flush(g);
     }
 
@@ -113,16 +112,18 @@ const App = struct {
     fn playTest(app: *App, from: atlas.Start) void {
         const g = app.g;
         game.beginWorldAt(g, app.ed.?.world, from);
-        g.name = hero.Name.of(hero.Class.archer.title());
+        g.name = hero.Class.archer.unnamed();
+        g.bar = .{};
         g.permadeath = false;
         g.back = .editor;
         app.leaveRun();
         app.scene = .play;
     }
 
-    /// Before the run is left: its last turns are written.
+    /// Before the run is left: its last turns are written, through any door it stands on.
     fn leaveRun(app: *App) void {
         if (app.autosave) |*a| {
+            game.arrive(app.g);
             a.flush(app.g);
             a.deinit();
         }
@@ -153,7 +154,7 @@ const App = struct {
                 game.frame(g);
                 if (app.autosave) |*a| {
                     if (g.mode == .dead) {
-                        a.end();
+                        a.end(g);
                         a.deinit();
                         app.autosave = null;
                     } else a.step(g, rl.getFrameTime());
@@ -200,7 +201,7 @@ const App = struct {
         defer rl.endDrawing();
         rl.clearBackground(look.BG);
         const note = app.note[0..app.note_n];
-        const back = g.st.hit(menu.BACK) or g.st.hit(input.Button.pause);
+        const back = menu.backed(&g.st);
         switch (app.page) {
             .main => {
                 var rows: [MAIN_ROWS.len][:0]const u8 = undefined;
@@ -247,9 +248,8 @@ const App = struct {
                 }
             },
             .name => {
-                var buf: [LINE]u8 = undefined;
-                const title = std.fmt.bufPrintZ(&buf, "NAME YOUR {s}", .{app.class.title()}) catch "";
-                for (buf[0..title.len]) |*c| c.* = std.ascii.toUpper(c.*);
+                var buf: [naming.TITLE_MAX]u8 = undefined;
+                const title = naming.titleOf(app.class, &buf);
                 const outcome = app.entry.step(&g.st);
                 naming.draw(&app.entry, g.face, g.screen, title);
                 switch (outcome orelse return true) {
@@ -273,9 +273,9 @@ const App = struct {
                     app.toTitle();
                 } else if (g.st.hit(DELETE) and app.list[at] != .empty) {
                     if (app.armed == at) {
-                        save.remove(at);
+                        const gone = save.remove(at);
                         app.rescan();
-                        app.say("Slot {d} deleted", .{at + 1});
+                        if (gone) |_| app.say("Slot {d} deleted", .{at + 1}) else |e| app.say("Slot {d} did not delete ({s})", .{ at + 1, @errorName(e) });
                     } else {
                         app.armed = at;
                         app.say("{s} again deletes slot {d}; it cannot be undone", .{ DELETE.caption(), at + 1 });
@@ -283,14 +283,14 @@ const App = struct {
                 } else if (picked) |i| switch (app.list[i]) {
                     .run => app.loadRun(i),
                     .empty => app.say("Slot {d} is empty", .{i + 1}),
-                    .unreadable => app.say("Slot {d} is from another build of the game, and will not load", .{i + 1}),
+                    .unreadable => |why| app.say("Slot {d}: {s}, it will not load", .{ i + 1, why.caption() }),
                 };
             },
             .options => {
                 const full = rl.isWindowState(.{ .borderless_windowed_mode = true });
                 var rows: [OPTION_ROWS.len][:0]const u8 = undefined;
                 for (OPTION_ROWS, &rows) |r, *l| l.* = switch (r) {
-                    .fullscreen => if (full) "Fullscreen: On" else "Fullscreen: Off",
+                    .fullscreen => menu.toggle("Fullscreen", full),
                     .debug => "Debug",
                 };
                 const picked = app.options.step(&g.st, rows.len);
@@ -305,7 +305,7 @@ const App = struct {
             .debug => {
                 var rows: [DEBUG_ROWS.len][:0]const u8 = undefined;
                 for (DEBUG_ROWS, &rows) |r, *l| l.* = switch (r) {
-                    .unkillable => if (g.unkillable) "Unkillable: On" else "Unkillable: Off",
+                    .unkillable => menu.toggle("Unkillable", g.unkillable),
                 };
                 const picked = app.debugs.step(&g.st, rows.len);
                 menu.draw(g.face, g.screen, "DEBUG", &rows, app.debugs.at, "Unkillable keeps the hero on 1 hp whatever strikes it", "back");
@@ -329,7 +329,7 @@ fn slotLine(s: *const save.Slot, buf: *[LINE]u8, i: usize) [:0]const u8 {
     var sum: [LINE]u8 = undefined;
     const what: []const u8 = switch (s.*) {
         .empty => "Empty",
-        .unreadable => "From another build",
+        .unreadable => |why| why.caption(),
         .run => |*r| r.line(&sum),
     };
     return std.fmt.bufPrintZ(buf, "{d}   {s}", .{ i + 1, what }) catch "";
@@ -347,10 +347,13 @@ fn body(g: *game.Game) void {
     const alloc = std.heap.c_allocator;
     const w = alloc.create(atlas.Atlas) catch return;
     defer alloc.destroy(w);
-    var app = App{ .alloc = alloc, .g = g, .world = w, .edit_path = start_edit orelse atlas.MAIN };
+    const plain = if (start_edit) |p| atlas.plain(p) else true;
+    var app = App{ .alloc = alloc, .g = g, .world = w, .edit_path = if (plain) start_edit orelse atlas.MAIN else atlas.MAIN };
     defer if (app.ed) |e| e.destroy();
     defer app.leaveRun();
     app.toTitle();
-    if (start_edit != null) app.toEdit();
+    if (!plain) {
+        app.say("The world to edit is named in letters the game cannot draw; the editor opens {s}", .{atlas.MAIN});
+    } else if (start_edit != null) app.toEdit();
     while (app.frame()) {}
 }

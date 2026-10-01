@@ -9,19 +9,58 @@ const MARGIN: i32 = 2;
 const ROOM_GAP: i32 = 2;
 pub const MAX_ROOMS: usize = 24;
 const ROOM_TRIES: usize = 300;
-const ROOM_W_LO: i32 = 5;
-const ROOM_W_HI: i32 = 13;
-const ROOM_H_LO: i32 = 4;
-const ROOM_H_HI: i32 = 9;
+pub const ROOM_MIN: i32 = 3;
+pub const ROOM_W_MAX: i32 = 24;
+pub const ROOM_H_MAX: i32 = 16;
+pub const BARRELS_MAX: u32 = 6;
+/// `Params.torches` is out of this.
+pub const PERCENT: u8 = 100;
+pub const SIZE_MIN = P{ .x = ROOM_MIN + 2 * MARGIN, .y = ROOM_MIN + 2 * MARGIN };
 const ROOMS_PER_LOOP: usize = 4;
 const CONNECT_PASSES: usize = 64;
-const SPOT_TRIES: usize = 2000;
-const TORCH_CHANCE: f32 = 0.7;
-const BARRELS_HI: u32 = 2;
 
 comptime {
     std.debug.assert(grid.MAX_TORCHES >= MAX_ROOMS);
 }
+
+/// A rolled floor's shape: the box its rooms fall in, centred on the map, and what each room holds.
+pub const Params = struct {
+    size: P = .{ .x = grid.W, .y = grid.H },
+    rooms: usize = MAX_ROOMS,
+    /// Lowest and highest, both inclusive.
+    room_w: [2]i32 = .{ 5, 13 },
+    room_h: [2]i32 = .{ 4, 9 },
+    /// Percent of rooms that hang a torch.
+    torches: u8 = 70,
+    /// The most barrels one room stacks.
+    barrels: u32 = 2,
+
+    /// Every field into its range, the rooms into the box.
+    pub fn fit(p: Params) Params {
+        var q = p;
+        q.size = .{ .x = std.math.clamp(p.size.x, SIZE_MIN.x, grid.W), .y = std.math.clamp(p.size.y, SIZE_MIN.y, grid.H) };
+        q.rooms = std.math.clamp(p.rooms, 1, MAX_ROOMS);
+        q.room_w = span(p.room_w, @min(ROOM_W_MAX, q.size.x - 2 * MARGIN));
+        q.room_h = span(p.room_h, @min(ROOM_H_MAX, q.size.y - 2 * MARGIN));
+        q.torches = @min(p.torches, PERCENT);
+        q.barrels = @min(p.barrels, BARRELS_MAX);
+        return q;
+    }
+
+    fn span(r: [2]i32, most: i32) [2]i32 {
+        const hi = std.math.clamp(r[1], ROOM_MIN, most);
+        return .{ std.math.clamp(r[0], ROOM_MIN, hi), hi };
+    }
+
+    fn corner(p: Params) P {
+        return .{ .x = @divTrunc(grid.W - p.size.x, 2), .y = @divTrunc(grid.H - p.size.y, 2) };
+    }
+
+    /// As `fit` leaves it.
+    pub fn valid(p: *const Params) bool {
+        return std.meta.eql(p.fit(), p.*);
+    }
+};
 
 const CORNERS = [_]struct { floor: mathx.Dir, s: grid.WallShape }{
     .{ .floor = .se, .s = .corner_tl },
@@ -42,6 +81,10 @@ pub const Room = struct {
 
     pub fn holds(r: Room, p: P) bool {
         return p.x >= r.x and p.x < r.x + r.w and p.y >= r.y and p.y < r.y + r.h;
+    }
+
+    fn cells(r: Room) grid.Cells {
+        return grid.Cells.of(.{ .x = r.x, .y = r.y }, .{ .x = r.x + r.w, .y = r.y + r.h });
     }
 
     fn onEdge(r: Room, p: P) bool {
@@ -67,22 +110,24 @@ pub const Floor = struct {
 };
 
 pub fn build(lv: *grid.Level, seed: u64) Floor {
-    return around(lv, seed, &.{});
+    return around(lv, seed, &.{}, .{});
 }
 
-/// Every open cell connected, each of `doors` too; reproducible from the seed and the doors.
-pub fn around(lv: *grid.Level, seed: u64, doors: []const P) Floor {
+/// Every open cell connected, each of `doors` too; reproducible from the seed, the doors and `params`.
+pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floor {
     std.debug.assert(doors.len <= grid.MAX_DOORS);
+    const pm = params.fit();
+    const o = pm.corner();
     lv.* = grid.Level.blank();
     var rng = mathx.Rng.init(seed);
     var f = Floor{};
     var tries: usize = 0;
-    while (tries < ROOM_TRIES and f.room_n < MAX_ROOMS) : (tries += 1) {
-        const w = rng.range(ROOM_W_LO, ROOM_W_HI);
-        const h = rng.range(ROOM_H_LO, ROOM_H_HI);
+    while (tries < ROOM_TRIES and f.room_n < pm.rooms) : (tries += 1) {
+        const w = rng.range(pm.room_w[0], pm.room_w[1]);
+        const h = rng.range(pm.room_h[0], pm.room_h[1]);
         const r = Room{
-            .x = rng.range(MARGIN, grid.W - MARGIN - w),
-            .y = rng.range(MARGIN, grid.H - MARGIN - h),
+            .x = rng.range(o.x + MARGIN, o.x + pm.size.x - MARGIN - w),
+            .y = rng.range(o.y + MARGIN, o.y + pm.size.y - MARGIN - h),
             .w = w,
             .h = h,
         };
@@ -99,23 +144,25 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P) Floor {
     }
     for (doors, 0..) |d, k| {
         lv.putDoor(d, k);
-        const in = inset(d);
+        // A door on the map's edge is reached from the cell inside it, so no corridor runs along the edge.
+        const in = grid.Level.inset(d);
         runX(lv, d.x, in.x, d.y);
         runY(lv, d.y, in.y, in.x);
     }
     connect(lv, &rng);
     shapeWalls(lv);
     for (f.rooms[0..f.room_n]) |r| outlineRoom(lv, r);
+    const torch_chance = @as(f32, @floatFromInt(pm.torches)) / PERCENT;
     for (f.rooms[0..f.room_n]) |r| {
-        if (rng.chance(TORCH_CHANCE)) hangTorch(lv, r, &rng);
+        if (rng.chance(torch_chance)) hangTorch(lv, r, &rng);
     }
-    for (f.rooms[0..f.room_n]) |r| stackBarrels(lv, r, &rng);
+    for (f.rooms[0..f.room_n]) |r| stackBarrels(lv, r, &rng, pm.barrels);
     f.start = f.rooms[0].centre();
     return f;
 }
 
 fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
-    var spots: [ROOM_W_HI]i32 = undefined;
+    var spots: [ROOM_W_MAX]i32 = undefined;
     var n: usize = 0;
     var x = r.x;
     while (x < r.x + r.w) : (x += 1) {
@@ -128,20 +175,16 @@ fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
 }
 
 /// Against the room's own walls and nowhere beside a way in, so no barrel can seal a path.
-fn stackBarrels(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
-    var spots: [2 * (ROOM_W_HI + ROOM_H_HI)]P = undefined;
+fn stackBarrels(lv: *grid.Level, r: Room, rng: *mathx.Rng, most: u32) void {
+    var spots: [2 * (ROOM_W_MAX + ROOM_H_MAX)]P = undefined;
     var n: usize = 0;
-    var y = r.y;
-    while (y < r.y + r.h) : (y += 1) {
-        var x = r.x;
-        while (x < r.x + r.w) : (x += 1) {
-            const p = P{ .x = x, .y = y };
-            if (!r.onEdge(p) or besideDoor(lv, r, p) or lv.doorAt(p) != null) continue;
-            spots[n] = p;
-            n += 1;
-        }
+    var cells = r.cells();
+    while (cells.next()) |p| {
+        if (!r.onEdge(p) or besideDoor(lv, r, p) or lv.doorAt(p) != null) continue;
+        spots[n] = p;
+        n += 1;
     }
-    var left = rng.below(BARRELS_HI + 1);
+    var left = rng.below(most + 1);
     while (left > 0 and n > 0) : (left -= 1) {
         const k = rng.below(@intCast(n));
         lv.putBarrel(spots[k]);
@@ -168,11 +211,8 @@ fn addRoom(f: *Floor, r: Room) bool {
 }
 
 pub fn carveRoom(lv: *grid.Level, r: Room) void {
-    var y = r.y;
-    while (y < r.y + r.h) : (y += 1) {
-        var x = r.x;
-        while (x < r.x + r.w) : (x += 1) lv.set(.{ .x = x, .y = y }, .floor);
-    }
+    var cells = r.cells();
+    while (cells.next()) |p| lv.set(p, .floor);
 }
 
 fn tunnel(lv: *grid.Level, a: P, b: P, rng: *mathx.Rng) void {
@@ -195,15 +235,6 @@ fn runY(lv: *grid.Level, y0: i32, y1: i32, x: i32) void {
     while (y <= @max(y0, y1)) : (y += 1) lv.set(.{ .x = x, .y = y }, .floor);
 }
 
-/// A door on the map's edge is reached from the cell inside it, so no corridor runs along the edge.
-fn inset(p: P) P {
-    return .{ .x = std.math.clamp(p.x, 1, grid.W - 2), .y = std.math.clamp(p.y, 1, grid.H - 2) };
-}
-
-fn onRim(p: P) bool {
-    return !inset(p).eq(p);
-}
-
 fn firstOpen(lv: *const grid.Level) ?P {
     for (0..grid.CELLS) |i| {
         if (!lv.tile[i].solid()) return grid.Level.of(i);
@@ -224,11 +255,11 @@ fn connect(lv: *grid.Level, rng: *mathx.Rng) void {
                 break;
             }
         }
-        const o = inset(orphan orelse return);
+        const o = grid.Level.inset(orphan orelse return);
         var best: ?P = null;
         var best_d: i32 = std.math.maxInt(i32);
         for (0..grid.CELLS) |i| {
-            if (dist[i] < 0 or onRim(grid.Level.of(i))) continue;
+            if (dist[i] < 0 or grid.Level.onRim(grid.Level.of(i))) continue;
             const d = mathx.dist(grid.Level.of(i), o);
             if (d < best_d) {
                 best_d = d;
@@ -278,16 +309,6 @@ fn wallShape(lv: *const grid.Level, p: P) grid.WallShape {
         found = c.s;
     }
     return found orelse .solid;
-}
-
-pub fn openSpot(lv: *const grid.Level, rng: *mathx.Rng, away_from: P, min_gap: i32) ?P {
-    for (0..SPOT_TRIES) |_| {
-        const p = P{ .x = rng.range(1, grid.W - 2), .y = rng.range(1, grid.H - 2) };
-        if (!lv.walkable(p) or lv.taken(p)) continue;
-        if (mathx.dist(p, away_from) < min_gap) continue;
-        return p;
-    }
-    return null;
 }
 
 test "every floor connects" {
@@ -567,7 +588,7 @@ test "a floor generated around doors reaches every door, and no barrel stands on
             const top = @as(i32, @intCast(k)) * band;
             d.* = .{ .x = rng.range(0, grid.W - 1), .y = rng.range(top, top + band - 1) };
         }
-        const f = around(&lv, 0xD0025 +% i *% 7919, &doors);
+        const f = around(&lv, 0xD0025 +% i *% 7919, &doors, .{});
         _ = grid.distances(&lv, f.start, &dist, &queue);
         for (doors, 0..) |d, k| {
             try std.testing.expectEqual(@as(?usize, k), lv.doorAt(d));
@@ -593,16 +614,43 @@ test "a door on the map's edge is the only floor on the edge" {
             .{ .x = rng.range(1, grid.W - 2), .y = 0 },
             .{ .x = rng.range(1, grid.W - 2), .y = grid.H - 1 },
         };
-        const f = around(&lv, 0xED6E5 +% i *% 7919, &doors);
+        const f = around(&lv, 0xED6E5 +% i *% 7919, &doors, .{});
         _ = grid.distances(&lv, f.start, &dist, &queue);
         for (doors) |d| try std.testing.expect(dist[grid.Level.idx(d)] >= 0);
         for (0..grid.CELLS) |k| {
             const p = grid.Level.of(k);
-            if (onRim(p) and lv.walkable(p) and lv.doorAt(p) == null) rim += 1;
+            if (grid.Level.onRim(p) and lv.walkable(p) and lv.doorAt(p) == null) rim += 1;
         }
     }
     std.debug.print("200 floors with a door on each edge: {d} edge cells of floor that are not doors\n", .{rim});
     try std.testing.expectEqual(@as(usize, 0), rim);
+}
+
+test "a floor rolled in a small box keeps its rooms in it, to their count and size, and still connects" {
+    var lv: grid.Level = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    const pm = Params{ .size = .{ .x = 40, .y = 30 }, .rooms = 6, .room_w = .{ 4, 8 }, .room_h = .{ 3, 6 }, .torches = 0, .barrels = 0 };
+    const o = pm.corner();
+    var rooms: usize = 0;
+    for (0..50) |i| {
+        const f = around(&lv, 0xB0C5 +% i *% 7919, &.{.{ .x = 2, .y = 2 }}, pm);
+        rooms += f.room_n;
+        try std.testing.expect(f.room_n >= 1 and f.room_n <= pm.rooms);
+        try std.testing.expectEqual(@as(usize, 0), lv.torch_n);
+        for (f.rooms[0..f.room_n]) |r| {
+            try std.testing.expect(r.w >= 4 and r.w <= 8 and r.h >= 3 and r.h <= 6);
+            try std.testing.expect(r.x >= o.x + MARGIN and r.x + r.w <= o.x + pm.size.x - MARGIN);
+            try std.testing.expect(r.y >= o.y + MARGIN and r.y + r.h <= o.y + pm.size.y - MARGIN);
+        }
+        _ = grid.distances(&lv, f.start, &dist, &queue);
+        try std.testing.expect(dist[grid.Level.idx(.{ .x = 2, .y = 2 })] >= 0);
+    }
+    std.debug.print("50 floors in a 40x30 box, at most 6 rooms: {d} rooms\n", .{rooms});
+    const squeezed = (Params{ .size = .{ .x = 1, .y = 500 }, .room_w = .{ 20, 2 } }).fit();
+    try std.testing.expectEqual(SIZE_MIN.x, squeezed.size.x);
+    try std.testing.expectEqual([2]i32{ ROOM_MIN, ROOM_MIN }, squeezed.room_w);
+    try std.testing.expectEqual(grid.H, squeezed.size.y);
 }
 
 test "a seed reproduces a floor" {

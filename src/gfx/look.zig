@@ -8,6 +8,8 @@ const skillbar = @import("../play/skillbar.zig");
 // EVERY PICTURE IN THE GAME. A thing with a sprite in `Sprites` draws it; anything without one falls back to its glyph.
 
 pub const SPRITE_PX: i32 = 64;
+/// A body or tile with no sprite draws its glyph this big, at `SPRITE_PX`.
+pub const GLYPH_PX: i32 = 60;
 
 pub const Look = struct {
     ch: u8,
@@ -166,6 +168,12 @@ pub fn radial(comptime px: i32, comptime alphaAt: fn (f32, f32) f32) ?rl.Texture
     return clamped(rgba(&img, px, px), .bilinear);
 }
 
+/// Null when it does not compile: raylib then hands back its default shader rather than an error.
+pub fn shader(fs: [:0]const u8) ?rl.Shader {
+    const s = rl.loadShaderFromMemory(null, fs) catch return null;
+    return if (s.id == rl.gl.rlGetShaderIdDefault()) null else s;
+}
+
 /// Every field but `shader` is the location of the GLSL uniform it is named for.
 pub fn uniforms(comptime T: type, s: rl.Shader) T {
     var u: T = undefined;
@@ -230,6 +238,15 @@ pub fn body(k: actor.Kind) Look {
 /// Brogue's `poisonGasColor`, the bloat's and its gas's.
 pub const GAS = rgb(0xbf40d9);
 
+/// What a blow sprays: `fx.matterOf`'s.
+pub const BLOOD = rl.Color{ .r = 112, .g = 22, .b = 16, .a = 220 };
+pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = 220 };
+pub const SPLINTER = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
+/// Brogue's purple blood: the gas's, darker.
+pub const ICHOR = rl.Color{ .r = GAS.r / 2, .g = GAS.g / 2, .b = GAS.b / 2, .a = BLOOD.a };
+/// The pinprick where a blow lands.
+pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
+
 pub const Gait = enum { hop, slide };
 
 pub fn gait(k: actor.Kind) Gait {
@@ -282,8 +299,11 @@ pub fn skill(a: skillbar.Act) Look {
     };
 }
 
-pub const SLOT_BG = rgb(0x1a1820);
-pub const SLOT_EMPTY = rgb(0x0e0d12);
+const PANEL = rgb(0x0e0d12);
+const RAISED = rgb(0x1a1820);
+
+pub const SLOT_BG = RAISED;
+pub const SLOT_EMPTY = PANEL;
 pub const SLOT_HELD = GOLD;
 pub const SLOT_CURSOR = RETICLE;
 pub const SLOT_CLEAR = FOE;
@@ -293,6 +313,12 @@ pub const MINI_BG = fade(BG, 0.9);
 pub const MINI_HERO = rgb(0x9cf08a);
 pub const MINI_FOE = FOE;
 pub const MINI_VIEW = fade(GOLD, 0.7);
+
+pub const EDIT_PANEL = PANEL;
+pub const EDIT_ROW_ON = RAISED;
+pub const EDIT_ON = GOLD;
+pub const EDIT_PICKED = RETICLE;
+pub const EDIT_WARN = FOE;
 
 test "every glyph is printable ascii" {
     const inked = struct {

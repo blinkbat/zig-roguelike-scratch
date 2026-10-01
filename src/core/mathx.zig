@@ -52,20 +52,46 @@ pub const P = struct {
     }
 };
 
-/// The cell a point measured in cells lies in.
 /// The middle of `p`, in cells: `cellOf` of it is `p`.
 pub fn centre(p: P) [2]f32 {
     return .{ @as(f32, @floatFromInt(p.x)) + 0.5, @as(f32, @floatFromInt(p.y)) + 0.5 };
 }
 
+/// The cell a point measured in cells lies in.
 pub fn cellOf(q: [2]f32) P {
     return .{ .x = @intFromFloat(@floor(q[0])), .y = @intFromFloat(@floor(q[1])) };
+}
+
+/// `i` moved `by` round `n` places.
+pub fn wrap(i: usize, by: i32, n: usize) usize {
+    return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
 }
 
 /// Chebyshev, to match 8-way movement: every step, range and gap on the grid.
 pub fn dist(a: P, b: P) i32 {
     return @intCast(@max(@abs(a.x - b.x), @abs(a.y - b.y)));
 }
+
+/// The cells exactly `r` from `c`, row by row.
+pub const Ring = struct {
+    c: P,
+    r: i32,
+    at: P,
+
+    pub fn init(c: P, r: i32) Ring {
+        return .{ .c = c, .r = r, .at = .{ .x = c.x - r, .y = c.y - r } };
+    }
+
+    pub fn next(self: *Ring) ?P {
+        while (self.at.y <= self.c.y + self.r) {
+            const p = self.at;
+            self.at.x += 1;
+            if (self.at.x > self.c.x + self.r) self.at = .{ .x = self.c.x - self.r, .y = self.at.y + 1 };
+            if (dist(p, self.c) == self.r) return p;
+        }
+        return null;
+    }
+};
 
 pub fn distEuclid(a: P, b: P) f32 {
     const dx: f32 = @floatFromInt(a.x - b.x);

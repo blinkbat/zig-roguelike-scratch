@@ -1,8 +1,8 @@
 # AGENTS.md — roguelike-scratch
 
-A grid roguelike in **Zig 0.14.1 + raylib**, built from `..\zig-grid-roguelike`'s foundation (grid, symmetric
+A grid roguelike in **Zig 0.14.1 + raylib**, built from `..\__archive\zig-grid-roguelike`'s foundation (grid, symmetric
 FOV, room generator, input stepper) with every system stripped out. One archer, three foes (the rat and the tougher
-slime, both melee, and Brogue's bloat, which flits and bursts into caustic gas) placed in packs by `play/pack.zig` (`pack.KINDS` lists the makeups; each kind's quota of `pack.FEW` is filled first, from the makeups holding it), barrels that break for gold, no items, no stats beyond hp. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
+slime, both melee, and Brogue's bloat, which flits and bursts into caustic gas) placed in packs by `play/pack.zig` (a `pack.Spec`: its makeups, drawn by weight, `pack.KINDS` by default; each kind's quota of `few` is filled first, from the makeups holding it; never more bodies than the pool holds once every slime has split to quarters), barrels that break for gold, no items, no stats beyond hp. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
 
 A blow that leaves a slime alive under half its hp splits it (`Pool.split`, `Row.splits`) into two half slimes, and
 one that leaves either half under half its own splits that half into two quarters, so a slime ends as four; each is
@@ -17,13 +17,13 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - `zig` is NOT on PATH. `check.cmd` (type-check, the error loop) · `build.cmd` · `run.cmd` · `test.cmd [filter]` ·
   `shot.cmd` (headless frames into `shots\lean.png`, `shots\aim.png`, `shots\torch.png`, a posed torch with rats
   under it, `shots\bind.png`, the bind screen with its picker open, and `shots\gas.png`, a room a few turns after a
-  bloat burst in it, `shots\pause.png`, the pause menu over it, and `shots\edit.png` and `shots\edit-graph.png`,
-  the editor's map and graph on a posed three-node world, and `shots\name.png`, the hero's name being typed; built
+  bloat burst in it, `shots\pause.png`, the pause menu over it, and `shots\edit.png`, `shots\edit-graph.png` and
+  `shots\edit-gen.png`, the editor's map, graph and a procgen node's generator on a posed three-node world, and `shots\name.png`, the hero's name being typed; built
   into `zig-out-dev` so a running game is untouched).
   `edit.cmd [path]` opens the world editor (`--edit`) on `worlds\main.world` or the `.world` named.
   `zig-out-dev\bin\roguelike.exe --bench` (after `shot.cmd` builds it) prints per-frame CPU time of a headless walk.
   The toolchain is named once, in `_zig.cmd`. From PowerShell, call them as `.\check.cmd` from this directory.
-- **EVERY MODULE CARRYING TESTS MUST BE NAMED IN `main.zig`'s `test {}` BLOCK** — `build.zig` panics otherwise,
+- **EVERY MODULE MUST BE NAMED IN `main.zig`'s `test {}` BLOCK** — `build.zig` panics otherwise,
   and on any `src/**/*.zig` under 512 bytes.
 - Verify with tests that print the number. Do NOT launch the interactive window; the owner plays it.
 
@@ -56,8 +56,9 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   (`Autosave`), and once more as the run is left. Death ends it: the slot is deleted as the hero dies. A play-test
   has no slot. Tests never write a save file.
 - **THE WORLD IS `world/atlas.zig`**: nodes, each bespoke (authored floor, walls, torches, barrels and foes) or
-  procgen (an algorithm; `gen.around` is the only one), each with doors. A procgen node holds no seed: its floor is
-  rolled round its doors each run, from the run's seed and the node (`Game.rollOf`), so a world plays differently
+  procgen (an algorithm; `gen.around` is the only one), each with doors. A procgen node holds no seed, but holds its floor's
+  `gen.Params` (the box its rooms fall in, their count and size, torches, barrels) and its foes' `pack.Spec` (packs,
+  makeups, reach, gap from the arrival, apart from each other); its floor is rolled round its doors each run, from the run's seed and the node (`game.rollOf`), so a world plays differently
   every time. A door links both ways to one door on any node (`Atlas.link`). `Node.stamp` builds a node's `Level`:
   procgen generates round its doors, tunnelling each into the floor; bespoke opens each door's cell. `worlds\main.world` is played when it loads, else
   one generated floor. Stepping onto a linked door takes the archer, once the turn is drawn, to the door it leads to
@@ -65,7 +66,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   the world. The file is text (`Atlas.write` / `parse`), strict, saved beside itself and renamed over. A node also
   keeps a name and its box's place on the editor's graph. Tests never write a world file.
 - **THE EDITOR (`edit/editor.zig`) EDITS THE WORLD AND NOTHING ELSE READS IT.** A map of one node, a bespoke one drawn
-  as it will play and a procgen one as its doors alone (`Node.sketch`; its floor is only rolled in play), or a graph
+  as it will play and a procgen one as its doors alone (`Node.sketch`; its floor is only rolled in play, from the
+  settings on the panel's Generator tab), or a graph
   of every node, its floor, its doors and their links, the boxes
   dragged where the owner wants them. Every press is a gesture, and all a gesture changes is one undo
   (`Editor.gesture` then `bank` on its first change; whole-world snapshots, `UNDO_CAP` of them). Leaving, quitting,
@@ -103,7 +105,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   `Sprites.tileAt`; the barrel's is a `Sprites` field in `Sprites.figures`, the sprites the body shader lights.
   Sprites are authored at `look.SPRITE_PX` (64), facing right; `Game.facing` mirrors a body
   whose last step, strike or aim went leftward, and straight up or down keeps it.
-- **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** at the end of `gen.build`, or by `Node.stamp` for a bespoke node
+- **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** in `gen.around`, before the torches and barrels, or by `Node.stamp` for a bespoke node
   (`shapeWalls` alone), and stored in `Level.shape`:
   the four sides, the four outer corners, the four block corners, post, solid. Nothing recomputes it, and nothing about what has
   been revealed touches it (owner's call). `shapeWalls` classes every wall from the floor round it, then
@@ -112,8 +114,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   it keeps the neighbour rule's shape. A wall draws a brick face exactly when floor lies below it: `top`, the bottom
   block corners and `post`; every other shape is ceiling only. A corner is named for where it sits on the room, so
   `corner_tl` has its floor to the south-east. `Sprites.wall` holds one texture per shape, cut from `walls.png`'s 64 px cells by `WALL_CELLS`; one with none draws `#`.
-  The generator also hangs the torches (`Level.torch`), one on the `top` wall of most rooms, after every layout roll
-  so a seed's floor is unchanged by them, and then the barrels (`Level.barrel`): up to two per room on its edge
+  The generator also hangs the torches (`Level.torch`), one on the `top` wall of `Params.torches` percent of rooms, after every layout roll
+  so a seed's floor is unchanged by them, and then the barrels (`Level.barrel`): up to `Params.barrels` per room on its edge
   cells, never beside a way in, so no barrel seals a path. A barrel blocks a step and stops an arrow; one hit, shot
   or kicked, breaks it for gold. It has no hp. `bow.pick` aims at a barrel only when no foe is in reach. A seen
   barrel is drawn, lit as memory is when out of sight.
@@ -125,7 +127,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **`fov.cast` IS THE ONLY VISIBILITY COMPUTATION.** A foe sees the archer exactly when the archer's pass lit the
   foe's cell and the archer is within the foe's sight. A body is drawn only where it is lit, judged at its middle as drawn;
   terrain is remembered.
-- **`Pool.damage` IS THE ONLY PLACE HP GOES DOWN**, but for `Pool.split` sharing a slime's hp between its halves.
+- **`Pool.damage` IS THE ONLY PLACE HP GOES DOWN**, but for `Pool.split` sharing a slime's hp
+  between its halves and the archer carrying its hp through a door.
 - **`world/gas.zig` IS EVERY GAS**, after Brogue CE's `updateVolumetricMedia` for one gas: `Level.gas` is Brogue's
   volume, spread twice a turn by each cell holding `gas.GASSED_UP` or more sharing it evenly over itself and its open
   neighbours (a thinner cell keeps its own), and a cell that held gas loses a unit on `gas.DISSIPATE` of passes, so gas

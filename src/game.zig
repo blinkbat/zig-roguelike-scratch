@@ -35,14 +35,14 @@ const HALF_CELL: i32 = @divTrunc(CELL, 2);
 fn authored(comptime px: i32) i32 {
     return @divExact(CELL * px, look.SPRITE_PX);
 }
-const GLYPH: i32 = authored(60);
+const GLYPH: i32 = authored(look.GLYPH_PX);
 const CARET: i32 = authored(30);
 const TORCH_GLYPH: i32 = authored(30);
-const TEXT: i32 = 20;
-const LINE_W: i32 = @divTrunc(CELL, 32);
+const TEXT: i32 = font.BODY;
+const LINE_W: i32 = authored(2);
 const OUTLINE_INSET: i32 = authored(1);
-const BODY_BAR_INSET: i32 = @divTrunc(CELL, 10);
-const BODY_BAR_H: i32 = @divTrunc(CELL, 16);
+const BODY_BAR_INSET: i32 = authored(6);
+const BODY_BAR_H: i32 = authored(4);
 const BODY_BAR_LIFT: i32 = authored(2);
 const CARET_PAD_X: i32 = authored(4);
 const CARET_PAD_Y: i32 = authored(2);
@@ -168,18 +168,14 @@ const Binds = struct {
     }
 
     fn move(b: *Binds, d: mathx.Dir) void {
-        b.col = wrap(b.col, d.delta().x, skillbar.SLOTS.len);
-        b.row = wrap(b.row, d.delta().y, skillbar.SETS.len);
+        b.col = mathx.wrap(b.col, d.delta().x, skillbar.SLOTS.len);
+        b.row = mathx.wrap(b.row, d.delta().y, skillbar.SETS.len);
     }
 
     fn colOf(button: input.Button) usize {
         return std.mem.indexOfScalar(input.Button, &skillbar.SLOTS, button).?;
     }
 };
-
-fn wrap(i: usize, by: i32, n: usize) usize {
-    return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
-}
 
 /// Picker cell 0 clears the slot; the rest are the acts in order. An empty slot opens it on the first act.
 fn pickOf(a: ?skillbar.Act) usize {
@@ -267,11 +263,21 @@ pub const Glide = struct {
         return .{ .from = self.now(), .to = self.to, .t = t, .gait = self.gait, .from_lift = self.height(), .bump = bump };
     }
 
-    fn span(self: Glide) f32 {
-        if (self.bump != null) return BUMP_S;
+    /// Its gait's, or a bump.
+    const Motion = enum { hop, slide, bump };
+
+    fn motion(self: Glide) Motion {
+        if (self.bump != null) return .bump;
         return switch (self.gait) {
+            inline else => |gt| @field(Motion, @tagName(gt)),
+        };
+    }
+
+    fn span(self: Glide) f32 {
+        return switch (self.motion()) {
             .hop => GLIDE_S,
             .slide => SLIDE_S,
+            .bump => BUMP_S,
         };
     }
 
@@ -289,8 +295,8 @@ pub const Glide = struct {
 
     /// Where the body is, its bump aside: the camera follows this.
     fn ground(self: Glide) rl.Vector2 {
-        const k = if (self.bump != null) self.done() else switch (self.gait) {
-            .hop => self.done(),
+        const k = switch (self.motion()) {
+            .hop, .bump => self.done(),
             .slide => overshoot(self.done()),
         };
         const to = cellPx(self.to);
@@ -299,9 +305,9 @@ pub const Glide = struct {
 
     fn height(self: Glide) f32 {
         const k = self.done();
-        const hop: f32 = if (self.bump != null) 0 else switch (self.gait) {
+        const hop: f32 = switch (self.motion()) {
             .hop => HOP_PX * 4 * k * (1 - k),
-            .slide => 0,
+            .slide, .bump => 0,
         };
         return self.from_lift * (1 - k) + hop;
     }
@@ -336,10 +342,25 @@ const Bite = struct { blow: enum { hurt, kill, burst }, after: fx.After };
 const Gassed = struct { kill: bool, after: fx.After };
 
 /// A foe that turned this turn is drawn turning at its place in the stagger, `in` seconds on.
-const Turning = struct { to: Facing, in: f32 = 0 };
+/// `in` is set once the turn it was taken in has its stagger.
+const Turning = struct { to: Facing, in: ?f32 = null };
 
 /// A node as the archer left it.
-pub const Visit = struct { lv: grid.Level, pool: actor.Pool, facing: [actor.MAX]Facing };
+pub const Visit = struct {
+    lv: grid.Level,
+    pool: actor.Pool,
+    facing: [actor.MAX]Facing,
+
+    fn of(g: *const Game) Visit {
+        return .{ .lv = g.lv, .pool = g.pool, .facing = g.facing };
+    }
+
+    fn restore(v: *const Visit, g: *Game) void {
+        g.lv = v.lv;
+        g.pool = v.pool;
+        g.facing = v.facing;
+    }
+};
 
 pub const Game = struct {
     mode: Mode = .play,
@@ -348,7 +369,7 @@ pub const Game = struct {
     pause_menu: menu.Menu = .{},
     back: Back = .title,
     exit: ?Exit = null,
-    name: heroes.Name = heroes.Name.of(heroes.Class.archer.title()),
+    name: heroes.Name = heroes.Class.archer.unnamed(),
     /// A run in a save slot: death ends it, and the way out of the death screen is the way back.
     permadeath: bool = false,
     /// DEBUG: the hero keeps 1 hp whatever strikes it, so it never dies. Kept across runs, never saved.
@@ -453,13 +474,23 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
     alloc.destroy(g);
 }
 
-pub fn begin(g: *Game, seed: u64) void {
-    g.world = null;
+/// In `w`, or on one generated floor for none.
+fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
+    g.world = w;
+    g.visited = .initEmpty();
+    g.node = 0;
     g.seed = seed;
     g.rng = mathx.Rng.init(seed ^ PLAY_SALT);
+    g.pool = .{};
+    g.hero = grid.NO_ONE;
+    g.unsaved = true;
+}
+
+pub fn begin(g: *Game, seed: u64) void {
+    startRun(g, null, seed);
     const floor = gen.build(&g.lv, seed);
     reset(g, floor.start);
-    pack.place(&g.lv, &g.pool, &g.rng, floor.start);
+    pack.place(&g.lv, &g.pool, &g.rng, floor.start, &.{});
     settle(g);
     var buf: [Log.COLS]u8 = undefined;
     var out = std.io.fixedBufferStream(&buf);
@@ -476,17 +507,8 @@ pub fn beginWorld(g: *Game, w: *const atlas.Atlas) void {
 }
 
 pub fn beginWorldAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start) void {
-    g.world = w;
-    g.visited = .initEmpty();
-    g.seed = freshSeed();
-    g.rng = mathx.Rng.init(g.seed ^ PLAY_SALT);
-    g.pool = .{};
-    g.hero = grid.NO_ONE;
-    g.kills = 0;
-    g.gold = 0;
-    g.log = .{};
-    g.mode = .play;
-    g.vignette.clear();
+    startRun(g, w, freshSeed());
+    freshRun(g);
     enter(g, from.node, from.at);
 }
 
@@ -497,8 +519,7 @@ fn enter(g: *Game, n: usize, at: P) void {
     g.node = n;
     const back = g.visited.isSet(n);
     if (back) {
-        g.lv = g.visits[n].lv;
-        g.pool = g.visits[n].pool;
+        g.visits[n].restore(g);
         const hero = actor.Pool.slot(g.hero);
         g.lv.clear(g.pool.items[hero].at);
     } else {
@@ -517,17 +538,17 @@ fn enter(g: *Game, n: usize, at: P) void {
     } else {
         g.hero = g.pool.spawn(&g.lv, actor.Actor.of(.archer, to));
         switch (w.node[n].plan) {
-            .procgen => pack.place(&g.lv, &g.pool, &g.rng, to),
+            .procgen => |*pg| pack.place(&g.lv, &g.pool, &g.rng, to, &pg.foes),
             .bespoke => |*b| for (b.foes()) |f| {
-                if (g.lv.walkable(f.at) and !g.lv.taken(f.at)) _ = g.pool.spawn(&g.lv, actor.Actor.of(f.kind, f.at));
+                if (g.lv.vacant(f.at)) _ = g.pool.spawn(&g.lv, actor.Actor.of(f.kind, f.at));
             },
         }
     }
     g.archer().?.hp = hp;
     g.unsaved = true;
+    if (!back) g.facing = @splat(.right);
     freshTurn(g);
     settle(g);
-    if (back) g.facing = g.visits[n].facing;
 }
 
 /// A procgen node's floor this run: the same for the run, another the next.
@@ -542,7 +563,7 @@ fn leadsTo(g: *const Game, p: P) ?atlas.Link {
 }
 
 fn goThrough(g: *Game, l: atlas.Link) void {
-    g.visits[g.node] = .{ .lv = g.lv, .pool = g.pool, .facing = g.facing };
+    g.visits[g.node] = Visit.of(g);
     g.visited.set(g.node);
     const walk = g.pending;
     const hero = actor.Pool.slot(g.hero);
@@ -552,6 +573,12 @@ fn goThrough(g: *Game, l: atlas.Link) void {
     g.facing[hero] = facing;
 }
 
+/// A door stepped onto is gone through now, so the run is never left on it.
+pub fn arrive(g: *Game) void {
+    const l = g.travel orelse return;
+    goThrough(g, l);
+}
+
 fn restart(g: *Game) void {
     if (g.world) |w| beginWorld(g, w) else begin(g, freshSeed());
 }
@@ -559,12 +586,18 @@ fn restart(g: *Game) void {
 fn reset(g: *Game, hero: P) void {
     g.pool = .{};
     g.hero = g.pool.spawn(&g.lv, actor.Actor.of(.archer, hero));
+    g.facing = @splat(.right);
+    freshRun(g);
+    freshTurn(g);
+}
+
+/// What every run starts from, whatever floor it is on.
+fn freshRun(g: *Game) void {
     g.kills = 0;
     g.gold = 0;
     g.log = .{};
     g.mode = .play;
     g.vignette.clear();
-    freshTurn(g);
 }
 
 fn freshTurn(g: *Game) void {
@@ -587,8 +620,6 @@ fn settle(g: *Game) void {
     g.cloud.settle(&g.lv);
     snapGlide(g);
     catchUp(g);
-    g.facing = @splat(.right);
-    g.turning = @splat(null);
     g.cam = camWant(g);
     g.light.settle(&g.lv);
     g.light.carrier = carrierAt(g);
@@ -596,15 +627,12 @@ fn settle(g: *Game) void {
 
 /// A run read back from a save: its simulation as it was, its picture drawn afresh.
 pub fn resumeRun(g: *Game) void {
-    const facing = g.facing;
     g.mode = .play;
     g.exit = null;
-    g.permadeath = true;
     g.unsaved = false;
     g.vignette.clear();
     freshTurn(g);
     settle(g);
-    g.facing = facing;
 }
 
 pub fn freshSeed() u64 {
@@ -708,11 +736,14 @@ fn openBinds(g: *Game) void {
 fn bindStep(g: *Game) void {
     const b = &g.binds;
     const here = b.slot();
+    const was = g.bar;
+    defer if (!std.meta.eql(was, g.bar)) {
+        g.unsaved = true;
+    };
     switch (b.menu) {
         .browse => {
             if (g.st.hit(BACK) or g.st.hit(MENU)) {
                 g.mode = .play;
-                g.unsaved = true;
             } else if (g.st.hit(CONFIRM)) {
                 b.menu = if (g.bar.at(here) != null) .{ .carry = here } else .{ .pick = pickOf(null) };
             } else if (g.st.hit(CHANGE)) {
@@ -730,7 +761,7 @@ fn bindStep(g: *Game) void {
                 if (pickAct(i)) |a| g.bar.bind(here, a) else g.bar.clear(here);
                 b.menu = .browse;
             } else if (g.st.walk) |d| {
-                b.menu = .{ .pick = wrap(i, d.delta().x, PICKS) };
+                b.menu = .{ .pick = mathx.wrap(i, d.delta().x, PICKS) };
             }
         },
         .carry => |from| {
@@ -777,7 +808,7 @@ fn confirmAim(g: *Game) void {
 }
 
 const SHOOT = "shoots";
-const KICK = "kicks";
+const KICK = actor.row(.archer).blow.strike.verb;
 
 /// Where a blow came from, and how long until the picture reaches it.
 const Stroke = struct { from: P, wait: f32 };
@@ -823,11 +854,16 @@ fn wound(g: *Game, id: u16, dmg: i32, comptime verb: []const u8, s: Stroke) void
     const at = a.at;
     const i = actor.Pool.slot(id);
     const name = actor.row(kind).name;
-    const lethal = g.pool.damage(&g.lv, id, dmg);
+    const lethal = hurt(g, id, dmg).lethal;
     if (lethal) g.log.say("{s} " ++ verb ++ " the {s} for {d}. It dies.", .{ g.name.text(), name, dmg }) else g.log.say("{s} " ++ verb ++ " the {s} for {d}.", .{ g.name.text(), name, dmg });
-    const other = if (lethal) null else split(g, id);
-    strike(g, i, s, at, lethal, .{ .body = snap(g, i), .reveals = other }, 0);
+    strike(g, i, s, at, lethal, afterBlow(g, id, lethal), 0);
     if (lethal) fell(g, kind, at);
+}
+
+/// The body as a blow left it, a slime it left under half its hp split.
+fn afterBlow(g: *Game, id: u16, lethal: bool) fx.After {
+    const other = if (lethal) null else split(g, id);
+    return .{ .body = snap(g, actor.Pool.slot(id)), .reveals = other };
 }
 
 /// The new slime is not drawn until the blow that split it lands; the new slot, if it split.
@@ -882,11 +918,13 @@ fn endTurn(g: *Game) void {
     }
 }
 
-/// What `dmg` takes off the body `id`: all of it, but for an unkillable hero, who keeps 1 hp.
-fn harmTo(g: *Game, id: u16, dmg: i32) i32 {
-    if (id != g.hero or !g.unkillable) return dmg;
-    const a = g.pool.get(id) orelse return dmg;
-    return std.math.clamp(a.hp - 1, 0, dmg);
+const Hurt = struct { dmg: i32, lethal: bool };
+
+/// Every blow or sting on a body: all of `dmg`, but for an unkillable hero, who keeps 1 hp.
+fn hurt(g: *Game, id: u16, dmg: i32) Hurt {
+    const a = g.pool.get(id) orelse return .{ .dmg = 0, .lethal = false };
+    const taken = if (id == g.hero and g.unkillable) std.math.clamp(a.hp - 1, 0, dmg) else dmg;
+    return .{ .dmg = taken, .lethal = g.pool.damage(&g.lv, id, taken) };
 }
 
 fn gasHarm(g: *Game, id: u16) void {
@@ -894,13 +932,11 @@ fn gasHarm(g: *Game, id: u16) void {
     if (!g.lv.gassy(a.at)) return;
     const kind = a.kind;
     const at = a.at;
-    const dmg = harmTo(g, id, gas.harm(a.max));
-    const i = actor.Pool.slot(id);
-    const lethal = g.pool.damage(&g.lv, id, dmg);
-    const other = if (lethal or id == g.hero) null else split(g, id);
-    g.gassed[i] = .{ .kill = lethal, .after = .{ .body = snap(g, i), .reveals = other } };
+    const h = hurt(g, id, gas.harm(a.max));
+    const lethal = h.lethal;
+    g.gassed[actor.Pool.slot(id)] = .{ .kill = lethal, .after = afterBlow(g, id, lethal) };
     if (id == g.hero) {
-        g.log.say("The caustic gas eats at {s} for {d}.", .{ g.name.text(), dmg });
+        g.log.say("The caustic gas eats at {s} for {d}.", .{ g.name.text(), h.dmg });
         if (lethal) heroDies(g);
         return;
     }
@@ -965,10 +1001,10 @@ fn reach(g: *Game, id: u16, row: actor.Row) void {
     const i = actor.Pool.slot(id);
     switch (row.blow) {
         .strike => |s| {
-            const dmg = harmTo(g, g.hero, g.rng.range(s.lo, s.hi));
-            g.log.say("The {s} {s} {s} for {d}.", .{ row.name, s.verb, g.name.text(), dmg });
-            const lethal = g.pool.damage(&g.lv, g.hero, dmg);
-            g.bit[i] = .{ .blow = if (lethal) .kill else .hurt, .after = .{ .body = snap(g, actor.Pool.slot(g.hero)) } };
+            const h = hurt(g, g.hero, g.rng.range(s.lo, s.hi));
+            const lethal = h.lethal;
+            g.log.say("The {s} {s} {s} for {d}.", .{ row.name, s.verb, g.name.text(), h.dmg });
+            g.bit[i] = .{ .blow = if (lethal) .kill else .hurt, .after = afterBlow(g, g.hero, lethal) };
             if (lethal) heroDies(g);
         },
         .burst => {
@@ -1048,14 +1084,19 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     const moved = !gl.to.eq(a.at);
     const bit = g.bit[i];
     const gassed = g.gassed[i];
-    if (!moved and bit == null and gassed == null) return start;
+    if (!moved and bit == null and gassed == null) {
+        if (g.turning[i]) |*t| {
+            if (t.in == null) t.in = start;
+        }
+        return start;
+    }
     g.bit[i] = null;
     g.gassed[i] = null;
     const shown = g.lv.isLit(a.at);
     const placed = if (moved) shown or g.lv.isLit(gl.to) else shown and bit != null;
     const wait = if (placed) next.* else 0;
     if (placed) next.* += STAGGER_S;
-    if (g.turning[i]) |*t| t.in = wait;
+    if (g.turning[i]) |*t| t.in = if (placed) wait - late else start;
     const hero = actor.Pool.slot(g.hero);
     const hero_at = g.pool.items[hero].at;
     var lands = if (placed) wait else start;
@@ -1074,7 +1115,7 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
         .burst => if (shown) strike(g, i, .{ .from = hero_at, .wait = hits }, a.at, true, b.after, 0),
     };
     const h = gassed orelse return lands;
-    if (!shown) return lands;
+    if (!shown and !placed) return lands;
     if (h.kill) strike(g, i, .{ .from = a.at, .wait = lands }, a.at, true, h.after, 0) else sting(g, i, lands, h.after);
     return lands;
 }
@@ -1082,10 +1123,15 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
 /// The walk that `update` takes this frame, and how long ago it came due.
 const Walk = struct { d: mathx.Dir, late: f32 };
 
+/// The last turn is drawn out: its slowest glide, arrow or flash has ended.
+pub fn quiet(g: *const Game) bool {
+    return g.busy <= PACE_SLACK;
+}
+
 /// A walk due while the last turn is still gliding waits for it, the latest one standing in for any before it.
 fn paced(g: *Game) ?Walk {
     if (g.st.walk) |d| {
-        if (g.busy > PACE_SLACK) {
+        if (!quiet(g)) {
             g.pending = d;
             return null;
         }
@@ -1093,7 +1139,7 @@ fn paced(g: *Game) ?Walk {
         return .{ .d = d, .late = g.st.late() };
     }
     const d = g.pending orelse return null;
-    if (g.busy > PACE_SLACK) return null;
+    if (!quiet(g)) return null;
     g.pending = null;
     return .{ .d = d, .late = @max(0, -g.busy) };
 }
@@ -1111,7 +1157,11 @@ pub fn update(g: *Game, dt: f32) void {
     stepTurning(g, dt);
     var late: f32 = 0;
     const over = g.permadeath and g.mode == .dead;
-    if (g.mode != .pause and g.mode != .bind and !over and g.st.hit(PAUSE)) {
+    const pausable = switch (g.mode) {
+        .play, .aim, .dead => true,
+        .bind, .pause => false,
+    };
+    if (pausable and !over and g.st.hit(PAUSE)) {
         g.paused_from = g.mode;
         g.pause_menu = .{};
         g.mode = .pause;
@@ -1120,7 +1170,7 @@ pub fn update(g: *Game, dt: f32) void {
         .play => {
             if (g.travel) |l| {
                 if (g.st.walk) |d| g.pending = d;
-                if (g.busy <= PACE_SLACK) goThrough(g, l);
+                if (quiet(g)) goThrough(g, l);
             } else if (g.st.hit(MENU)) {
                 g.pending = null;
                 openBinds(g);
@@ -1190,8 +1240,13 @@ fn pauseLabel(g: *const Game, r: PauseRow) [:0]const u8 {
     };
 }
 
+/// Over the top `h` pixels of the window.
+fn veil(g: *const Game, h: i32) void {
+    rl.drawRectangle(0, 0, g.screen.x, h, look.VEIL);
+}
+
 fn drawPause(g: *Game) void {
-    rl.drawRectangle(0, 0, g.screen.x, g.screen.y, look.VEIL);
+    veil(g, g.screen.y);
     var rows: [PAUSE_ROWS.len][:0]const u8 = undefined;
     for (PAUSE_ROWS, &rows) |r, *l| l.* = pauseLabel(g, r);
     menu.draw(g.face, g.screen, "PAUSED", &rows, g.pause_menu.at, null, "resume");
@@ -1200,8 +1255,9 @@ fn drawPause(g: *Game) void {
 fn stepTurning(g: *Game, dt: f32) void {
     for (&g.turning, 0..) |*t, i| {
         if (t.*) |*u| {
-            u.in -= dt;
-            if (u.in > 0) continue;
+            const left = (u.in orelse continue) - dt;
+            u.in = left;
+            if (left > 0) continue;
             g.facing[i] = u.to;
             t.* = null;
         }
@@ -1241,7 +1297,7 @@ fn goldShown(g: *const Game) i32 {
 }
 
 fn deathShown(g: *const Game) bool {
-    return g.mode == .dead and g.busy <= 0;
+    return g.mode == .dead and quiet(g);
 }
 
 /// Read off the archer's slot, not `archer()`, so the blow that kills it still reddens the view.
@@ -1310,7 +1366,6 @@ fn drawSprite(t: rl.Texture2D, sx: i32, sy: i32) void {
     look.stretch(t, spriteRect(t, sx, sy), look.LIT);
 }
 
-/// Centred on `(cx, cy)`.
 fn outline(c: Cam, p: P, col: rl.Color) void {
     rl.drawRectangleLinesEx(.{
         .x = @floatFromInt(c.sx(p) + OUTLINE_INSET),
@@ -1330,7 +1385,16 @@ fn barrelShownAt(g: *Game, p: P) bool {
 }
 
 fn standsShownAt(g: *Game, p: P) bool {
-    return (g.lv.isLit(p) and g.lv.who(p) != grid.NO_ONE) or barrelShownAt(g, p);
+    return shownAt(g, p, null);
+}
+
+fn shownAt(g: *Game, p: P, skip: ?usize) bool {
+    for (0..g.pool.n) |i| {
+        if (i == skip) continue;
+        const at = drawnAt(g, i) orelse continue;
+        if (cellUnder(at).eq(p)) return true;
+    }
+    return barrelShownAt(g, p);
 }
 
 fn bar(x: i32, y: i32, w: i32, h: i32, hp: i32, max: i32, back: rl.Color) void {
@@ -1493,12 +1557,18 @@ fn drawTorches(g: *Game, c: Cam) void {
     g.light.drawGlows(flames, @floatFromInt(-c.x), @floatFromInt(-c.y), CELL_F);
 }
 
+/// `heroMove` as drawn: a body or barrel shown there is kicked, whatever the simulation already did to it.
+fn leanShown(g: *Game, from: P, d: mathx.Dir) Move {
+    if (!g.lv.passOk(from, d)) return .blocked;
+    return if (shownAt(g, from.add(d.delta()), heroSlot(g))) .kick else .step;
+}
+
 fn drawLean(g: *Game, c: Cam) void {
     const h = g.archer() orelse return;
     for (input.DPAD) |button| {
         const d = input.leanOf(button);
         const p = h.at.add(d.delta());
-        const col = switch (heroMove(g, d)) {
+        const col = switch (leanShown(g, h.at, d)) {
             .kick => look.LEAN_FOE,
             .step => look.LEAN_OPEN,
             .blocked => look.LEAN_BLOCKED,
@@ -1573,7 +1643,7 @@ fn drawSlot(g: *Game, x: i32, y: i32, s: SlotLook) void {
         g.face.glyph(l.ch, x + SLOT_MID, y + SLOT_MID, SLOT_GLYPH, look.fade(l.fg, a));
     }
     const k = (s.key orelse return).caption();
-    g.face.draw(k, x + @divTrunc(SLOT_PX - g.face.width(k, SLOT_TEXT), 2), y + SLOT_PX + KEY_GAP, SLOT_TEXT, look.fade(look.DIM, a));
+    g.face.draw(k, g.face.leftFor(k, x + SLOT_MID, SLOT_TEXT), y + SLOT_PX + KEY_GAP, SLOT_TEXT, look.fade(look.DIM, a));
 }
 
 fn drawSkills(g: *Game, top: i32) void {
@@ -1594,7 +1664,7 @@ fn drawBinds(g: *Game) void {
     const b = g.binds;
     const x0 = skillsX(g);
     const y0 = @divTrunc(g.viewH(), 2) + BIND_TOP_DY;
-    rl.drawRectangle(0, 0, g.screen.x, g.viewH(), look.VEIL);
+    veil(g, g.viewH());
     textMid(g, "BIND SKILLS", y0, BIND_TITLE, look.TEXT);
     var cursor = P{ .x = 0, .y = 0 };
     for (skillbar.SETS, 0..) |set, row| {
@@ -1692,13 +1762,14 @@ fn drawHud(g: *Game) void {
 fn drawDead(g: *Game) void {
     var buf: [LINE_BUF]u8 = undefined;
     const mid = @divTrunc(g.viewH(), 2);
-    rl.drawRectangle(0, 0, g.screen.x, g.viewH(), look.VEIL);
-    var died: [heroes.Name.MAX + " DIED".len + 1]u8 = undefined;
-    const said = std.fmt.bufPrintZ(&died, "{s} DIED", .{g.name.text()}) catch "";
+    veil(g, g.viewH());
+    const DIED = " DIED";
+    var died: [heroes.Name.MAX + DIED.len + 1]u8 = undefined;
+    const said = std.fmt.bufPrintZ(&died, "{s}" ++ DIED, .{g.name.text()}) catch "";
     for (died[0..said.len]) |*c| c.* = std.ascii.toUpper(c.*);
     textMid(g, said, mid + DEAD_TITLE_DY, menu.TITLE, look.LIFE);
     textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
-    const again = againLabel(g);
+    const again = if (g.permadeath) pauseLabel(g, .back) else againLabel(g);
     textMid(g, std.fmt.bufPrintZ(&buf, "{s}  {c}{s}", .{ CONFIRM.caption(), std.ascii.toLower(again[0]), again[1..] }) catch "", mid + DEAD_HINT_DY, TEXT, look.DIM);
 }
 
@@ -1798,12 +1869,13 @@ fn shoot(g: *Game) void {
     capture(g, target, SHOTS_DIR ++ "/pause.png");
     g.mode = g.paused_from;
 
-    editor.shoot(g, target, SHOTS_DIR ++ "/edit.png", SHOTS_DIR ++ "/edit-graph.png");
+    editor.shoot(g, target, SHOTS_DIR ++ "/edit.png", SHOTS_DIR ++ "/edit-graph.png", SHOTS_DIR ++ "/edit-gen.png");
 
     const entry = naming.Entry{ .name = heroes.Name.of("Arwen"), .row = 2, .col = 4 };
     rl.beginTextureMode(target);
     rl.clearBackground(look.BG);
-    naming.draw(&entry, g.face, g.screen, "NAME YOUR ARCHER");
+    var title: [naming.TITLE_MAX]u8 = undefined;
+    naming.draw(&entry, g.face, g.screen, naming.titleOf(.archer, &title));
     rl.endTextureMode();
     exportTarget(target, SHOTS_DIR ++ "/name.png");
 }
@@ -1976,6 +2048,8 @@ fn drawn(g: *Game, slot: usize) bool {
     return !gone(g, slot);
 }
 
+/// Gas thick enough to sting for many turns.
+const TEST_GAS = 100;
 const SLIME_HALF: i32 = @divTrunc(actor.row(.slime).hp, 2);
 
 /// Idle frames until the last turn is drawn out and every foe is drawn turned.
@@ -2252,7 +2326,7 @@ test "the camera never shows past the edge of the floor, and centres it on a scr
     begin(g, 4321);
     const world_w = @as(f32, @floatFromInt(grid.W)) * CELL_F;
     const world_h = @as(f32, @floatFromInt(grid.H)) * CELL_F;
-    for ([_]P{ .{ .x = 1600, .y = 900 }, .{ .x = 2560, .y = 1440 } }) |screen| {
+    for ([_]P{ .{ .x = WINDOW_W, .y = WINDOW_H }, .{ .x = 2560, .y = 1440 } }) |screen| {
         g.screen = screen;
         for ([_]P{ .{ .x = 0, .y = 0 }, .{ .x = grid.W - 1, .y = grid.H - 1 }, .{ .x = 48, .y = 32 } }) |p| {
             g.archer().?.at = p;
@@ -2476,8 +2550,8 @@ test "an arrow's rat flashes when the arrow gets there, not when the hit resolve
     try std.testing.expect(g.pool.get(2).?.hurt());
     try std.testing.expectEqual(@as(f32, 0), g.fx.flashOf(rat));
     const t = framesUntil(g, rat, flashing);
-    std.debug.print("arrow 5 cells out: the rat flashes {d:.3} s after the shot, the arrow reaches it at {d:.3} s\n", .{ t, 4 * FLIGHT_S });
-    try std.testing.expectApproxEqAbs(4 * FLIGHT_S, t, TEST_TOL);
+    std.debug.print("arrow 5 cells out: the rat flashes {d:.3} s after the shot, the arrow reaches it at {d:.3} s\n", .{ t, flown(4) });
+    try std.testing.expectApproxEqAbs(flown(4), t, TEST_TOL);
 }
 
 test "after an arrow the foes act a stagger after it lands, so the rat it strikes is still under it" {
@@ -2487,7 +2561,7 @@ test "after an arrow the foes act a stagger after it lands, so the rat it strike
     g.pool.get(2).?.awake = true;
     press(g, .x);
     press(g, .x);
-    const lands = 6 * FLIGHT_S;
+    const lands = flown(6);
     const starts = -g.glide[actor.Pool.slot(2)].t;
     std.debug.print("an arrow 7 cells out lands {d:.3} s in, and the rat it struck steps at {d:.3} s\n", .{ lands, starts });
     try std.testing.expect(g.pool.get(2).?.hurt());
@@ -2506,7 +2580,7 @@ test "a body the arrow kills stands until the arrow reaches it and its flash is 
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.pool.get(2));
     try std.testing.expect(drawnAt(g, rat) != null);
     const t = framesUntil(g, rat, gone);
-    const lands = @as(f32, @floatFromInt(bow.RANGE - 1)) * FLIGHT_S;
+    const lands = flown(bow.RANGE - 1);
     std.debug.print("a rat an arrow kills {d} cells out is drawn {d:.3} s on; the arrow lands at {d:.3} s\n", .{ bow.RANGE, t, lands });
     try std.testing.expectApproxEqAbs(lands + fx.FLASH_S, t, TEST_TOL);
 }
@@ -2595,6 +2669,19 @@ test "a kick bumps the rat and lands at the bump's height, and the rat bites bac
     try std.testing.expectEqual(cam, g.cam);
 }
 
+test "the lean shows a kick on the rat a kick killed until it falls" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    arena(g, at, &.{.{ .x = 21, .y = 20 }});
+    g.pool.get(2).?.hp = 1;
+    nudge(g, .e);
+    try std.testing.expect(g.pool.get(2) == null);
+    try std.testing.expectEqual(Move.kick, leanShown(g, at, .e));
+    drawnOut(g);
+    try std.testing.expectEqual(Move.step, leanShown(g, at, .e));
+}
+
 test "a kick dealt in a frame of play is no further into its bump than its blow is to landing" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
@@ -2646,7 +2733,7 @@ test "a body at rest lands on its tile's pixel whatever fraction the camera is a
 }
 
 test "the minimap fits in the top right, clear of the hud" {
-    for ([_]P{ .{ .x = 1600, .y = 900 }, .{ .x = 1920, .y = 1080 }, .{ .x = 2560, .y = 1440 } }) |screen| {
+    for ([_]P{ .{ .x = WINDOW_W, .y = WINDOW_H }, .{ .x = 1920, .y = 1080 }, .{ .x = 2560, .y = 1440 } }) |screen| {
         const o = miniOrigin(screen.x);
         try std.testing.expect(o.x > @divTrunc(screen.x, 2));
         try std.testing.expect(o.y + MINI_H + MINI_FRAME < screen.y - HUD_H);
@@ -2763,7 +2850,7 @@ test "a foe the gas kills after it steps keeps its place in the turn, and its de
     const was = g.pool.get(2).?.at;
     g.pool.get(2).?.awake = true;
     g.pool.get(2).?.hp = 1;
-    g.lv.addGas(was, 100);
+    g.lv.addGas(was, TEST_GAS);
     nudge(g, .w);
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.pool.get(2));
     try std.testing.expect(!g.pool.items[actor.Pool.slot(2)].at.eq(was));
@@ -2783,7 +2870,7 @@ test "an arrow that bursts a bloat eats at a sleeping foe with its gas as it lan
     press(g, .x);
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.pool.get(bloat));
     try std.testing.expect(g.pool.get(rat).?.hurt());
-    const lands = 6 * FLIGHT_S;
+    const lands = flown(6);
     const t = framesUntil(g, actor.Pool.slot(rat), flashing);
     std.debug.print("a bloat shot 7 cells out: the arrow lands {d:.3} s in, and its gas stings the rat beside it {d:.3} s in\n", .{ lands, t });
     try std.testing.expectApproxEqAbs(lands, t, TEST_TOL);
@@ -2805,8 +2892,8 @@ test "a bloat's cloud is drawn from when its burst lands" {
     press(g, .x);
     try std.testing.expect(g.lv.gasAt(Burst.at) > 0 and !Burst.clouded(g, 0));
     const t = framesUntil(g, 0, Burst.clouded);
-    std.debug.print("a bloat shot 7 cells out: the arrow lands {d:.3} s in, its cloud first drawn {d:.3} s in\n", .{ 6 * FLIGHT_S, t });
-    try std.testing.expectApproxEqAbs(6 * FLIGHT_S, t, TEST_TOL);
+    std.debug.print("a bloat shot 7 cells out: the arrow lands {d:.3} s in, its cloud first drawn {d:.3} s in\n", .{ flown(6), t });
+    try std.testing.expectApproxEqAbs(flown(6), t, TEST_TOL);
 }
 
 test "a foe stepping out of sight takes its place in the turn" {
@@ -2843,7 +2930,7 @@ test "a barrel the arrow breaks stands until the arrow reaches it" {
     press(g, .x);
     try std.testing.expect(!g.lv.hasBarrel(Gone.at) and !Gone.f(g, 0));
     const t = framesUntil(g, 0, Gone.f);
-    const lands = @as(f32, @floatFromInt(bow.RANGE - 1)) * FLIGHT_S;
+    const lands = flown(bow.RANGE - 1);
     std.debug.print("a barrel shot {d} cells out breaks {d:.3} s on; the arrow lands at {d:.3} s\n", .{ bow.RANGE, t, lands });
     try std.testing.expectApproxEqAbs(lands, t, TEST_TOL);
 }
@@ -2863,8 +2950,8 @@ test "a foe's hp as drawn, the archer's and the low glow drop as the blow lands,
         }
     };
     const t = framesUntil(g, rat, Drop.f);
-    std.debug.print("an arrow 7 cells out: the rat's bar drops {d:.3} s in, as it lands at {d:.3} s\n", .{ t, 6 * FLIGHT_S });
-    try std.testing.expectApproxEqAbs(6 * FLIGHT_S, t, TEST_TOL);
+    std.debug.print("an arrow 7 cells out: the rat's bar drops {d:.3} s in, as it lands at {d:.3} s\n", .{ t, flown(6) });
+    try std.testing.expectApproxEqAbs(flown(6), t, TEST_TOL);
     arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 25, .y = 21 }, .{ .x = 22, .y = 20 } });
     for (g.pool.slice()[1..]) |*a| a.awake = true;
     const low = @divTrunc(actor.row(.archer).hp, 3);
@@ -2899,7 +2986,7 @@ test "an arrow that splits a slime shows it as the arrow lands, the new half sli
     try std.testing.expectEqual(fx.Body.of(g.pool.items[other], g.pictured[other].seq), g.pictured[other]);
     try std.testing.expectEqualStrings("The slime splits in two!", g.log.line(0).?);
     const t = framesUntil(g, other, drawn);
-    const lands = 6 * FLIGHT_S;
+    const lands = flown(6);
     try std.testing.expectEqual(actor.Kind.slime_half, g.pictured[slime].kind);
     try std.testing.expect(samePx(g.glide[other].now(), cellPx(at)));
     try std.testing.expect(g.busy >= SLIDE_S);
@@ -3024,7 +3111,7 @@ test "a slime an arrow splits shows split as the arrow lands, though the gas eat
     const at = P{ .x = 25, .y = 20 };
     const id = spawnAt(g, .slime, at, true);
     g.pool.get(id).?.hp = SLIME_HALF + 1;
-    for ([_]P{ at, .{ .x = 24, .y = 20 } }) |p| g.lv.addGas(p, 100);
+    for ([_]P{ at, .{ .x = 24, .y = 20 } }) |p| g.lv.addGas(p, TEST_GAS);
     catchUp(g);
     press(g, .x);
     press(g, .x);
@@ -3032,7 +3119,7 @@ test "a slime an arrow splits shows split as the arrow lands, though the gas eat
     const other = slime + 1;
     try std.testing.expect(!g.pool.items[slime].at.eq(at));
     const t = framesUntil(g, other, drawn);
-    const lands = 4 * FLIGHT_S;
+    const lands = flown(4);
     std.debug.print("an arrow 5 cells out splits a slime in gas: the new half shows {d:.3} s in, as the arrow lands at {d:.3} s, the gas still to land on the slime\n", .{ t, lands });
     try std.testing.expectApproxEqAbs(lands, t, TEST_TOL);
     try std.testing.expect(g.fx.pending(slime));
@@ -3046,7 +3133,7 @@ test "a split nobody sees holds no one's walk" {
     const at = P{ .x = 40, .y = 20 };
     const id = spawnAt(g, .slime, at, false);
     g.pool.get(id).?.hp = SLIME_HALF + 1;
-    g.lv.addGas(at, 100);
+    g.lv.addGas(at, TEST_GAS);
     catchUp(g);
     press(g, .b);
     try std.testing.expectEqual(actor.Kind.slime_half, g.pool.get(id).?.kind);
@@ -3082,7 +3169,7 @@ test "a foe with no place in the turn is stung as the archer's step lands, not b
     defer shut(std.testing.allocator, g);
     const at = P{ .x = 28, .y = 20 };
     arena(g, .{ .x = 20, .y = 20 }, &.{at});
-    g.lv.addGas(at, 100);
+    g.lv.addGas(at, TEST_GAS);
     nudge(g, .w);
     const rat = actor.Pool.slot(2);
     try std.testing.expect(g.pool.get(2).?.hurt() and g.pool.get(2).?.at.eq(at));
@@ -3107,6 +3194,23 @@ test "a foe is drawn turning at its place in the turn" {
     const t = framesUntil(g, far, Left.f);
     std.debug.print("the second rat in the turn is drawn turning {d:.3} s in\n", .{t});
     try std.testing.expectApproxEqAbs(STAGGER_S, t, TEST_TOL);
+}
+
+test "a foe that notices the archer turns to it once the archer's step is drawn" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 24, .y = 20 }});
+    nudge(g, .w);
+    const rat = actor.Pool.slot(2);
+    try std.testing.expect(g.pool.get(2).?.awake);
+    const Left = struct {
+        fn f(game: *Game, i: usize) bool {
+            return game.facing[i] == .left;
+        }
+    };
+    const t = framesUntil(g, rat, Left.f);
+    std.debug.print("a rat noticing the archer turns {d:.3} s in, the step lands at {d:.3} s\n", .{ t, GLIDE_S });
+    try std.testing.expectApproxEqAbs(GLIDE_S, t, TEST_TOL);
 }
 
 test "a slime split off one not yet drawn waits for it" {

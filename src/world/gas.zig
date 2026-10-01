@@ -23,7 +23,7 @@ pub fn harm(max_hp: i32) i32 {
     return @max(1, @divTrunc(max_hp, HARM_PART));
 }
 
-pub fn any(lv: *const grid.Level) bool {
+fn any(lv: *const grid.Level) bool {
     return std.mem.indexOfNone(u16, &lv.gas, &.{0}) != null;
 }
 
@@ -36,40 +36,35 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng) void {
 fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
     const box = reach(lv) orelse return;
     var next = [_]u32{0} ** grid.CELLS;
-    var y = box[0].y;
-    while (y <= box[1].y) : (y += 1) {
-        var x = box[0].x;
-        while (x <= box[1].x) : (x += 1) {
-            const p = P{ .x = x, .y = y };
-            const i = grid.Level.idx(p);
-            const v = lv.gas[i];
-            if (v == 0) continue;
-            if (v < GASSED_UP) {
-                next[i] += v;
-                continue;
-            }
-            var to: [mathx.ALL_DIRS.len + 1]usize = undefined;
-            to[0] = i;
-            var n: usize = 1;
-            for (mathx.ALL_DIRS) |d| {
-                const q = p.add(d.delta());
-                if (!lv.walkable(q)) continue;
-                to[n] = grid.Level.idx(q);
-                n += 1;
-            }
-            const share: u32 = v / @as(u32, @intCast(n));
-            for (to[0..n]) |t| next[t] += share;
-            for (0..v % n) |_| next[to[rng.below(@intCast(n))]] += 1;
+    const lo = box[0];
+    const hi = box[1].add(.{ .x = 1, .y = 1 });
+    var cells = grid.Cells.of(lo, hi);
+    while (cells.next()) |p| {
+        const i = grid.Level.idx(p);
+        const v = lv.gas[i];
+        if (v == 0) continue;
+        if (v < GASSED_UP) {
+            next[i] += v;
+            continue;
         }
+        var to: [mathx.ALL_DIRS.len + 1]usize = undefined;
+        to[0] = i;
+        var n: usize = 1;
+        for (mathx.ALL_DIRS) |d| {
+            const q = p.add(d.delta());
+            if (!lv.walkable(q)) continue;
+            to[n] = grid.Level.idx(q);
+            n += 1;
+        }
+        const share: u32 = v / @as(u32, @intCast(n));
+        for (to[0..n]) |t| next[t] += share;
+        for (0..v % n) |_| next[to[rng.below(@intCast(n))]] += 1;
     }
-    y = box[0].y;
-    while (y <= box[1].y) : (y += 1) {
-        var x = box[0].x;
-        while (x <= box[1].x) : (x += 1) {
-            const i = grid.Level.idx(.{ .x = x, .y = y });
-            if (next[i] > 0 and lv.gas[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
-            lv.gas[i] = @intCast(@min(next[i], std.math.maxInt(u16)));
-        }
+    cells = grid.Cells.of(lo, hi);
+    while (cells.next()) |p| {
+        const i = grid.Level.idx(p);
+        if (next[i] > 0 and lv.gas[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
+        lv.gas[i] = @intCast(@min(next[i], std.math.maxInt(u16)));
     }
 }
 

@@ -6,10 +6,10 @@ const actor = @import("actor.zig");
 
 const P = mathx.P;
 
+/// `Spec`'s defaults.
 pub const PER_FLOOR: usize = 10;
-/// Every foe kind has at least this many on a floor.
 pub const FEW: usize = 3;
-/// The first kind leads; the rest stand at most `REACH` from it.
+/// The first kind leads.
 pub const KINDS = [_][]const actor.Kind{
     &.{ .rat, .slime },
     &.{ .rat, .rat, .slime },
@@ -18,7 +18,7 @@ pub const KINDS = [_][]const actor.Kind{
     &.{.bloat},
 };
 pub const REACH: i32 = 2;
-/// Cells from the archer's start to every member of every pack: past the archer's sight, so none starts in view.
+/// Past the archer's sight, so by default none starts in view.
 pub const GAP: i32 = 12;
 pub const BIGGEST: usize = blk: {
     var most: usize = 0;
@@ -26,94 +26,241 @@ pub const BIGGEST: usize = blk: {
     break :blk most;
 };
 
-/// The foes in the fewest makeups first, so the packs that fill their quota fill the others' on the way.
-const QUOTA_ORDER = blk: {
-    var ks = actor.FOES;
-    for (1..ks.len) |i| {
-        var j = i;
-        while (j > 0 and makeupsWith(ks[j]) < makeupsWith(ks[j - 1])) : (j -= 1) std.mem.swap(actor.Kind, &ks[j], &ks[j - 1]);
-    }
-    break :blk ks;
-};
-
-/// The archer and every pack, each slime split down to quarters.
-const MOST_BODIES = blk: {
-    var most: usize = 0;
-    for (KINDS) |m| {
-        var n: usize = 0;
-        for (m) |k| n += actor.most(k);
-        most = @max(most, n);
-    }
-    break :blk 1 + PER_FLOOR * most;
-};
+pub const PACKS_MAX: usize = 32;
+pub const FEW_MAX: usize = PACKS_MAX;
+pub const MAKEUP_MAX: usize = 5;
+pub const MAKEUPS_MAX: usize = 8;
+pub const WEIGHT_MIN: u8 = 1;
+pub const WEIGHT_MAX: u8 = 9;
+/// A new member's kind, and what one of no foe kind becomes.
+pub const FIRST = actor.FOES[0];
+pub const REACH_MAX: i32 = 4;
+pub const GAP_MAX: i32 = 48;
+pub const APART_MAX: i32 = 32;
+const SPOT_TRIES: usize = 2000;
 
 comptime {
-    std.debug.assert(MOST_BODIES <= actor.MAX);
     std.debug.assert(GAP > actor.row(.archer).sight);
     std.debug.assert(FEW * actor.FOES.len <= PER_FLOOR);
-    for (actor.FOES) |k| std.debug.assert(makeupsWith(k) > 0);
+    std.debug.assert(KINDS.len <= MAKEUPS_MAX and BIGGEST <= MAKEUP_MAX and REACH <= REACH_MAX);
+    for (actor.FOES) |k| std.debug.assert((Spec{}).holders(k) > 0);
+    std.debug.assert((Spec{}).valid());
 }
 
-fn holds(makeup: []const actor.Kind, k: actor.Kind) bool {
-    return std.mem.indexOfScalar(actor.Kind, makeup, k) != null;
-}
+/// One pack: its lead, then the rest, and how often it is drawn against the others.
+pub const Makeup = struct {
+    kind: [MAKEUP_MAX]actor.Kind = @splat(FIRST),
+    n: usize = 1,
+    weight: u8 = WEIGHT_MIN,
 
-fn makeupsWith(k: actor.Kind) usize {
-    var n: usize = 0;
-    for (KINDS) |m| {
-        if (holds(m, k)) n += 1;
+    pub fn of(ks: []const actor.Kind) Makeup {
+        var m = Makeup{ .n = ks.len };
+        @memcpy(m.kind[0..ks.len], ks);
+        return m;
     }
-    return n;
-}
 
-pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P) void {
+    pub fn kinds(self: *const Makeup) []const actor.Kind {
+        return self.kind[0..self.n];
+    }
+
+    fn holds(self: *const Makeup, k: actor.Kind) bool {
+        return std.mem.indexOfScalar(actor.Kind, self.kinds(), k) != null;
+    }
+
+    pub fn canGrow(self: *const Makeup) bool {
+        return self.n < MAKEUP_MAX;
+    }
+
+    /// The lead stays.
+    pub fn canShrink(self: *const Makeup) bool {
+        return self.n > 1;
+    }
+
+    pub fn grow(self: *Makeup) bool {
+        if (!self.canGrow()) return false;
+        self.kind[self.n] = FIRST;
+        self.n += 1;
+        return true;
+    }
+
+    pub fn shrink(self: *Makeup) bool {
+        if (!self.canShrink()) return false;
+        self.n -= 1;
+        return true;
+    }
+
+    /// The `i`th member becomes the next foe kind, round to the first.
+    pub fn turn(self: *Makeup, i: usize) void {
+        const at = std.mem.indexOfScalar(actor.Kind, &actor.FOES, self.kind[i]) orelse actor.FOES.len - 1;
+        self.kind[i] = actor.FOES[mathx.wrap(at, 1, actor.FOES.len)];
+    }
+};
+
+const DEFAULT_MAKEUPS = blk: {
+    var ms: [MAKEUPS_MAX]Makeup = @splat(.{});
+    for (KINDS, 0..) |k, i| ms[i] = Makeup.of(k);
+    break :blk ms;
+};
+
+/// The foes a rolled floor is given: how many packs, of which makeups, and how they stand.
+pub const Spec = struct {
+    packs: usize = PER_FLOOR,
+    /// Each kind any makeup holds has at least this many, while packs are left to place.
+    few: usize = FEW,
+    /// Cells from its lead to the rest of a pack, at most.
+    reach: i32 = REACH,
+    /// Cells from where the archer arrives to every foe, at least.
+    gap: i32 = GAP,
+    /// Cells from every member of one pack to every member of another, at least.
+    apart: i32 = 0,
+    makeup: [MAKEUPS_MAX]Makeup = DEFAULT_MAKEUPS,
+    makeup_n: usize = KINDS.len,
+
+    pub fn makeups(self: *const Spec) []const Makeup {
+        return self.makeup[0..self.makeup_n];
+    }
+
+    pub fn canAdd(self: *const Spec) bool {
+        return self.makeup_n < MAKEUPS_MAX;
+    }
+
+    /// The last makeup stays.
+    pub fn canDrop(self: *const Spec) bool {
+        return self.makeup_n > 1;
+    }
+
+    /// A lone foe of the first kind, drawn as often as one.
+    pub fn addMakeup(self: *Spec) bool {
+        if (!self.canAdd()) return false;
+        self.makeup[self.makeup_n] = .{};
+        self.makeup_n += 1;
+        return true;
+    }
+
+    /// The rest move up.
+    pub fn dropMakeup(self: *Spec, i: usize) bool {
+        if (!self.canDrop()) return false;
+        std.mem.copyForwards(Makeup, self.makeup[i .. self.makeup_n - 1], self.makeup[i + 1 .. self.makeup_n]);
+        self.makeup_n -= 1;
+        return true;
+    }
+
+    /// Every field into its range; a makeup of foes alone, at least one of them, at least one makeup.
+    pub fn fit(s: Spec) Spec {
+        var t = s;
+        t.packs = @min(s.packs, PACKS_MAX);
+        t.few = @min(s.few, FEW_MAX);
+        t.reach = std.math.clamp(s.reach, 1, REACH_MAX);
+        t.gap = std.math.clamp(s.gap, 0, GAP_MAX);
+        t.apart = std.math.clamp(s.apart, 0, APART_MAX);
+        t.makeup_n = std.math.clamp(s.makeup_n, 1, MAKEUPS_MAX);
+        for (t.makeup[0..t.makeup_n]) |*m| {
+            m.n = std.math.clamp(m.n, 1, MAKEUP_MAX);
+            m.weight = std.math.clamp(m.weight, WEIGHT_MIN, WEIGHT_MAX);
+            for (m.kind[0..m.n]) |*k| {
+                if (!k.stocked()) k.* = FIRST;
+            }
+        }
+        return t;
+    }
+
+    /// As `fit` leaves it.
+    pub fn valid(s: *const Spec) bool {
+        return std.meta.eql(s.fit(), s.*);
+    }
+
+    fn holders(self: *const Spec, k: actor.Kind) usize {
+        var n: usize = 0;
+        for (self.makeups()) |*m| {
+            if (m.holds(k)) n += 1;
+        }
+        return n;
+    }
+
+    /// By weight, among the makeups holding `k`, or all of them.
+    fn pick(self: *const Spec, rng: *mathx.Rng, k: ?actor.Kind) *const Makeup {
+        var total: u32 = 0;
+        for (self.makeups()) |*m| {
+            if (k == null or m.holds(k.?)) total += m.weight;
+        }
+        var r = rng.below(total);
+        for (self.makeups()) |*m| {
+            if (k != null and !m.holds(k.?)) continue;
+            if (r < m.weight) return m;
+            r -= m.weight;
+        }
+        unreachable;
+    }
+
+    /// The foes in the fewest makeups first, so the packs that fill their quota fill the others' on the way.
+    fn quotaOrder(self: *const Spec) [actor.FOES.len]actor.Kind {
+        var ks = actor.FOES;
+        for (1..ks.len) |i| {
+            var j = i;
+            while (j > 0 and self.holders(ks[j]) < self.holders(ks[j - 1])) : (j -= 1) std.mem.swap(actor.Kind, &ks[j], &ks[j - 1]);
+        }
+        return ks;
+    }
+};
+
+/// No more than the pool holds once every slime placed has split down to quarters.
+pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec) void {
+    var bodies = pool.n;
     var packs: usize = 0;
-    for (QUOTA_ORDER) |k| {
-        while (packs < PER_FLOOR and pool.tally(k).total < FEW) : (packs += 1) {
-            if (!placeOne(lv, pool, rng, start, holding(rng, k))) return;
+    for (spec.quotaOrder()) |k| {
+        if (spec.holders(k) == 0) continue;
+        while (packs < spec.packs and pool.tally(k).total < spec.few) : (packs += 1) {
+            if (!placeOne(lv, pool, rng, start, spec, spec.pick(rng, k), &bodies)) return;
         }
     }
-    while (packs < PER_FLOOR) : (packs += 1) {
-        if (!placeOne(lv, pool, rng, start, KINDS[rng.below(KINDS.len)])) return;
+    while (packs < spec.packs) : (packs += 1) {
+        if (!placeOne(lv, pool, rng, start, spec, spec.pick(rng, null), &bodies)) return;
     }
 }
 
-fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, kinds: []const actor.Kind) bool {
-    const lead = gen.openSpot(lv, rng, start, GAP) orelse return false;
-    _ = pool.spawn(lv, actor.Actor.of(kinds[0], lead));
-    for (kinds[1..]) |k| {
-        const at = spotNear(lv, rng, lead, start) orelse break;
+fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec, m: *const Makeup, bodies: *usize) bool {
+    if (bodies.* + actor.most(m.kind[0]) > actor.MAX) return false;
+    const others = pool.n;
+    const lead = leadSpot(lv, pool, rng, start, spec, others) orelse return false;
+    _ = pool.spawn(lv, actor.Actor.of(m.kind[0], lead));
+    bodies.* += actor.most(m.kind[0]);
+    for (m.kinds()[1..]) |k| {
+        if (bodies.* + actor.most(k) > actor.MAX) break;
+        const at = spotNear(lv, pool, rng, lead, start, spec, others) orelse break;
         _ = pool.spawn(lv, actor.Actor.of(k, at));
+        bodies.* += actor.most(k);
     }
     return true;
 }
 
-fn holding(rng: *mathx.Rng, k: actor.Kind) []const actor.Kind {
-    var ids: [KINDS.len]usize = undefined;
-    var n: usize = 0;
-    for (KINDS, 0..) |m, i| {
-        if (!holds(m, k)) continue;
-        ids[n] = i;
-        n += 1;
+/// Free, `spec.gap` from the start, and `spec.apart` from every foe of the packs placed before, the first `others`.
+fn clear(lv: *const grid.Level, pool: *actor.Pool, p: P, start: P, spec: *const Spec, others: usize) bool {
+    if (!lv.vacant(p) or mathx.dist(p, start) < spec.gap) return false;
+    if (spec.apart == 0) return true;
+    for (pool.items[0..others]) |*a| {
+        if (a.foe() and mathx.dist(a.at, p) < spec.apart) return false;
     }
-    return KINDS[ids[rng.below(@intCast(n))]];
+    return true;
 }
 
-fn spotNear(lv: *const grid.Level, rng: *mathx.Rng, lead: P, start: P) ?P {
+fn leadSpot(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec, others: usize) ?P {
+    for (0..SPOT_TRIES) |_| {
+        const p = P{ .x = rng.range(grid.INNER_LO.x, grid.INNER_HI.x), .y = rng.range(grid.INNER_LO.y, grid.INNER_HI.y) };
+        if (clear(lv, pool, p, start, spec, others)) return p;
+    }
+    return null;
+}
+
+fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, start: P, spec: *const Spec, others: usize) ?P {
     var ring: i32 = 1;
-    while (ring <= REACH) : (ring += 1) {
-        var spots: [8 * REACH]P = undefined;
+    while (ring <= spec.reach) : (ring += 1) {
+        var spots: [8 * REACH_MAX]P = undefined;
         var n: usize = 0;
-        var y = lead.y - ring;
-        while (y <= lead.y + ring) : (y += 1) {
-            var x = lead.x - ring;
-            while (x <= lead.x + ring) : (x += 1) {
-                const p = P{ .x = x, .y = y };
-                if (mathx.dist(p, lead) != ring or !lv.walkable(p) or lv.taken(p)) continue;
-                if (mathx.dist(p, start) < GAP or !grid.clearLine(lv, lead, p)) continue;
-                spots[n] = p;
-                n += 1;
-            }
+        var cells = mathx.Ring.init(lead, ring);
+        while (cells.next()) |p| {
+            if (!clear(lv, pool, p, start, spec, others) or !grid.clearLine(lv, lead, p)) continue;
+            spots[n] = p;
+            n += 1;
         }
         if (n > 0) return spots[rng.below(@intCast(n))];
     }
@@ -130,7 +277,7 @@ test "every floor has a few of each foe at least, and every slime stands by a ra
         const f = gen.build(&lv, seed);
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(seed);
-        place(&lv, &pool, &rng, f.start);
+        place(&lv, &pool, &rng, f.start, &.{});
         try std.testing.expect(pool.n >= PER_FLOOR and pool.n <= PER_FLOOR * BIGGEST);
         for (actor.FOES) |k| fewest.set(k, @min(fewest.get(k), pool.tally(k).total));
         for (pool.slice()) |a| {
@@ -149,4 +296,67 @@ test "every floor has a few of each foe at least, and every slime stands by a ra
     try std.testing.expectEqual(@as(usize, 0), lone_slimes);
     try std.testing.expect(counts.get(.slime) < counts.get(.rat));
     for (actor.FOES) |k| try std.testing.expect(fewest.get(k) >= FEW);
+}
+
+test "a spec of its own makeups places only them, its packs kept apart and the pool never overfilled" {
+    var lv: grid.Level = undefined;
+    var spec = Spec{ .packs = 6, .few = 0, .apart = 10, .makeup_n = 1 };
+    spec.makeup[0] = Makeup.of(&.{ .bloat, .bloat });
+    var closest: i32 = APART_MAX;
+    for (0..40) |i| {
+        const seed: u64 = 0xA9A27 +% i *% 7919;
+        const f = gen.build(&lv, seed);
+        var pool = actor.Pool{};
+        var rng = mathx.Rng.init(seed);
+        place(&lv, &pool, &rng, f.start, &spec);
+        try std.testing.expect(pool.n <= 2 * spec.packs);
+        for (pool.slice(), 0..) |a, k| {
+            try std.testing.expectEqual(actor.Kind.bloat, a.kind);
+            for (pool.slice()[0..k]) |b| {
+                const d = mathx.dist(a.at, b.at);
+                if (d > spec.reach * 2) closest = @min(closest, d);
+            }
+        }
+    }
+    var crowd = Spec{ .packs = PACKS_MAX, .few = 0, .gap = 0, .makeup_n = 1 };
+    crowd.makeup[0] = Makeup.of(&.{ .rat, .rat, .rat, .rat, .rat });
+    _ = gen.build(&lv, 0xC20D);
+    var pool = actor.Pool{};
+    var rng = mathx.Rng.init(0xC20D);
+    place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &crowd);
+    const rats = pool.n;
+    crowd.makeup[0] = Makeup.of(&.{ .slime, .slime, .slime, .slime, .slime });
+    _ = gen.build(&lv, 0xC20D);
+    pool = .{};
+    _ = pool.spawn(&lv, actor.Actor.of(.archer, .{ .x = 0, .y = 0 }));
+    place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &crowd);
+    const slimes = pool.tally(.slime).total;
+    std.debug.print("pairs of bloats 10 apart: the closest two of different packs {d} cells; 32 packs of 5 rats: {d} bodies; of 5 slimes, by an archer: {d} slimes\n", .{ closest, rats, slimes });
+    try std.testing.expect(closest >= spec.apart);
+    try std.testing.expectEqual(actor.MAX, rats);
+    try std.testing.expectEqual(actor.MAX, 1 + slimes * actor.most(.slime) + 3);
+    try std.testing.expect(!(Spec{ .makeup_n = 0 }).valid());
+    try std.testing.expect((Spec{}).valid());
+}
+
+test "a makeup grows, shrinks to its lead and turns round the foe kinds; the last makeup stays" {
+    var s = Spec{};
+    while (s.addMakeup()) {}
+    try std.testing.expectEqual(MAKEUPS_MAX, s.makeup_n);
+    const m = &s.makeup[MAKEUPS_MAX - 1];
+    while (m.grow()) {}
+    try std.testing.expectEqual(MAKEUP_MAX, m.n);
+    while (m.shrink()) {}
+    try std.testing.expectEqual(@as(usize, 1), m.n);
+    for (actor.FOES[1..]) |k| {
+        m.turn(0);
+        try std.testing.expectEqual(k, m.kind[0]);
+    }
+    m.turn(0);
+    try std.testing.expectEqual(actor.FOES[0], m.kind[0]);
+    try std.testing.expect(s.dropMakeup(0));
+    try std.testing.expectEqualSlices(actor.Kind, KINDS[1], s.makeup[0].kinds());
+    while (s.dropMakeup(0)) {}
+    try std.testing.expectEqual(@as(usize, 1), s.makeup_n);
+    try std.testing.expect(s.valid());
 }

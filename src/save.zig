@@ -1,27 +1,37 @@
 const std = @import("std");
 const store = @import("core/store.zig");
-const mathx = @import("core/mathx.zig");
 const game = @import("game.zig");
 const atlas = @import("world/atlas.zig");
 const grid = @import("world/grid.zig");
 const actor = @import("play/actor.zig");
 const hero = @import("play/hero.zig");
-const skillbar = @import("play/skillbar.zig");
 
 // A run frozen whole: the world it is played in, every node visited as it was left, the one being played as it is.
 
 pub const SLOTS: usize = 3;
-pub const DIR = "saves";
+const DIR = "saves";
 const EXT = ".save";
-const TMP_EXT = ".tmp";
 const MAGIC = "roguelike-save\n";
 const FILE_CAP: usize = 64 << 20;
 const PATH_MAX: usize = 64;
 /// Seconds between saves while turns are taken; the last turn's is written once they stop.
-pub const GAP_S: f32 = 1;
+const GAP_S: f32 = 1;
 
-const Visited = std.StaticBitSet(atlas.MAX_NODES);
-const Facings = [actor.MAX]game.Facing;
+const Seed = @FieldType(game.Game, "seed");
+const Node = @FieldType(game.Game, "node");
+const Visited = @FieldType(game.Game, "visited");
+/// What follows the visited nodes, in this order: the node being played and the run round it.
+const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name" };
+const TAIL_TYPES = blk: {
+    var ts: [TAIL_FIELDS.len]type = undefined;
+    for (TAIL_FIELDS, 0..) |f, i| ts[i] = @FieldType(game.Game, f);
+    break :blk ts;
+};
+const TAIL = blk: {
+    var n: usize = 0;
+    for (TAIL_TYPES) |T| n += @sizeOf(T);
+    break :blk n;
+};
 
 /// What the slot list shows of a run, read without the rest of it.
 pub const Summary = struct {
@@ -29,39 +39,45 @@ pub const Summary = struct {
     hp: i32,
     max: i32,
     gold: i32,
-    kills: usize,
     /// Null on a generated floor.
     node: ?usize,
     place: [atlas.NAME_MAX]u8 = undefined,
     place_n: usize = 0,
 
     pub fn line(self: *const Summary, buf: []u8) [:0]const u8 {
-        var at: [atlas.NAME_MAX + 16]u8 = undefined;
-        const where = if (self.node) |n|
-            (if (self.place_n > 0) self.place[0..self.place_n] else std.fmt.bufPrint(&at, "node {d}", .{n}) catch "")
-        else
-            "a generated floor";
+        var at: [atlas.TITLE_MAX]u8 = undefined;
+        const where = if (self.node) |n| atlas.titleOf(self.place[0..self.place_n], n, &at) else "a generated floor";
         return std.fmt.bufPrintZ(buf, "{s}   HP {d}/{d}   Gold {d}   {s}", .{ self.name.text(), @max(0, self.hp), self.max, self.gold, where }) catch "";
     }
 };
 
-pub const Slot = union(enum) { empty, unreadable, run: Summary };
+/// Why a slot will not load.
+pub const Unreadable = enum {
+    other_build,
+    damaged,
 
-const FINGERPRINT = store.fingerprint(.{
-    Summary, u64,       bool,  atlas.Atlas, usize,    Visited,      game.Visit, grid.Level, actor.Pool,
-    u16,     mathx.Rng, usize, i32,         game.Log, skillbar.Bar, Facings,    hero.Name,
-});
+    pub fn caption(u: Unreadable) []const u8 {
+        return switch (u) {
+            .other_build => "From another build of the game",
+            .damaged => "Damaged",
+        };
+    }
+};
+
+pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
+
+const FINGERPRINT = store.fingerprint([_]type{ Summary, Seed, bool, atlas.Atlas, Node, Visited, game.Visit } ++ TAIL_TYPES);
 const HEAD = MAGIC.len + @sizeOf(u64);
+/// The payload's hash ends the file, so a file damaged or cut short is refused before any of it is believed.
+const SUM = @sizeOf(u64);
 
-/// What follows the visited nodes: the node being played and the run round it.
-const TAIL = @sizeOf(grid.Level) + @sizeOf(actor.Pool) + @sizeOf(u16) + @sizeOf(mathx.Rng) + @sizeOf(usize) +
-    @sizeOf(i32) + @sizeOf(game.Log) + @sizeOf(skillbar.Bar) + @sizeOf(Facings) + @sizeOf(hero.Name);
 
-pub const Error = error{ NotASave, OtherBuild, Short };
+pub const Error = error{ NotASave, OtherBuild, Short, Damaged };
 
 fn summaryOf(g: *game.Game) Summary {
-    const h = g.pool.items[actor.Pool.slot(g.hero)];
-    var s = Summary{ .name = g.name, .hp = h.hp, .max = h.max, .gold = g.gold, .kills = g.kills, .node = null };
+    const i = actor.Pool.slot(g.hero);
+    const h = g.pool.items[i];
+    var s = Summary{ .name = g.name, .hp = h.hp, .max = h.max, .gold = g.gold, .node = null };
     if (g.world) |w| {
         s.node = g.node;
         const nm = w.node[g.node].name();
@@ -71,7 +87,9 @@ fn summaryOf(g: *game.Game) Summary {
     return s;
 }
 
-pub fn write(g: *game.Game, w: anytype) !void {
+fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
+    const from = out.items.len;
+    const w = out.writer();
     try w.writeAll(MAGIC);
     try store.put(w, &FINGERPRINT);
     try store.put(w, &summaryOf(g));
@@ -83,41 +101,47 @@ pub fn write(g: *game.Game, w: anytype) !void {
     try store.put(w, &g.visited);
     var it = g.visited.iterator(.{});
     while (it.next()) |n| try store.put(w, &g.visits[n]);
-    try store.put(w, &g.lv);
-    try store.put(w, &g.pool);
-    try store.put(w, &g.hero);
-    try store.put(w, &g.rng);
-    try store.put(w, &g.kills);
-    try store.put(w, &g.gold);
-    try store.put(w, &g.log);
-    try store.put(w, &g.bar);
-    try store.put(w, &g.facing);
-    try store.put(w, &g.name);
+    inline for (TAIL_FIELDS) |f| try store.put(w, &@field(g, f));
+    try store.put(w, &std.hash.Wyhash.hash(0, out.items[from + HEAD ..]));
 }
 
 fn header(bytes: *[]const u8) Error!void {
     if (bytes.len < HEAD or !std.mem.eql(u8, bytes.*[0..MAGIC.len], MAGIC)) return error.NotASave;
-    if (std.mem.readInt(u64, bytes.*[MAGIC.len..HEAD], @import("builtin").cpu.arch.endian()) != FINGERPRINT) return error.OtherBuild;
-    bytes.* = bytes.*[HEAD..];
+    var b = bytes.*[MAGIC.len..];
+    var print: u64 = undefined;
+    _ = store.take(&b, &print);
+    if (print != FINGERPRINT) return error.OtherBuild;
+    bytes.* = b;
 }
 
-pub fn peek(bytes: []const u8) Error!Summary {
+fn peek(bytes: []const u8) Error!Summary {
     var b = bytes;
     try header(&b);
     var s: Summary = undefined;
     if (!store.take(&b, &s)) return error.Short;
+    if (s.name.n > hero.Name.MAX or s.place_n > atlas.NAME_MAX) return error.Damaged;
+    if (!atlas.plain(s.name.text()) or !atlas.plain(s.place[0..s.place_n])) return error.Damaged;
+    if (s.node) |n| {
+        if (n >= atlas.MAX_NODES) return error.Damaged;
+    }
     return s;
 }
 
 /// All of it is measured before any of it reaches `g`, so a file that does not read leaves the game as it was.
-pub fn read(bytes: []const u8, g: *game.Game, world: *atlas.Atlas) Error!void {
+fn read(bytes: []const u8, g: *game.Game, world: *atlas.Atlas) Error!void {
     var b = bytes;
     try header(&b);
+    if (b.len < SUM) return error.Short;
+    var tail = b[b.len - SUM ..];
+    var sum: u64 = undefined;
+    _ = store.take(&tail, &sum);
+    b = b[0 .. b.len - SUM];
+    if (sum != std.hash.Wyhash.hash(0, b)) return error.Damaged;
     var s: Summary = undefined;
-    var seed: u64 = undefined;
+    var seed: Seed = undefined;
     var has_world: bool = undefined;
     if (!store.take(&b, &s) or !store.take(&b, &seed) or !store.take(&b, &has_world)) return error.Short;
-    const at_visited = @as(usize, if (has_world) @sizeOf(atlas.Atlas) else 0) + @sizeOf(usize);
+    const at_visited = @as(usize, if (has_world) @sizeOf(atlas.Atlas) else 0) + @sizeOf(Node);
     if (b.len < at_visited + @sizeOf(Visited)) return error.Short;
     var visited: Visited = undefined;
     var vb = b[at_visited..];
@@ -131,37 +155,17 @@ pub fn read(bytes: []const u8, g: *game.Game, world: *atlas.Atlas) Error!void {
     _ = store.take(&b, &g.visited);
     var it = g.visited.iterator(.{});
     while (it.next()) |n| _ = store.take(&b, &g.visits[n]);
-    _ = store.take(&b, &g.lv);
-    _ = store.take(&b, &g.pool);
-    _ = store.take(&b, &g.hero);
-    _ = store.take(&b, &g.rng);
-    _ = store.take(&b, &g.kills);
-    _ = store.take(&b, &g.gold);
-    _ = store.take(&b, &g.log);
-    _ = store.take(&b, &g.bar);
-    _ = store.take(&b, &g.facing);
-    _ = store.take(&b, &g.name);
+    inline for (TAIL_FIELDS) |f| _ = store.take(&b, &@field(g, f));
     game.resumeRun(g);
 }
 
-pub fn path(buf: []u8, slot: usize) []const u8 {
+fn path(buf: []u8, slot: usize) []const u8 {
     return std.fmt.bufPrint(buf, DIR ++ "/slot{d}" ++ EXT, .{slot + 1}) catch unreachable;
 }
 
-/// Written beside itself and renamed over it, so a write that fails part-way leaves the last save standing.
 fn writeFile(bytes: []const u8, slot: usize) !void {
-    try std.fs.cwd().makePath(DIR);
     var buf: [PATH_MAX]u8 = undefined;
-    var tmp_buf: [PATH_MAX]u8 = undefined;
-    const p = path(&buf, slot);
-    const tmp = try std.fmt.bufPrint(&tmp_buf, "{s}" ++ TMP_EXT, .{p});
-    {
-        var f = try std.fs.cwd().createFile(tmp, .{});
-        defer f.close();
-        try f.writeAll(bytes);
-        try f.sync();
-    }
-    try std.fs.cwd().rename(tmp, p);
+    try store.replace(path(&buf, slot), bytes);
 }
 
 pub fn load(alloc: std.mem.Allocator, slot: usize, g: *game.Game, world: *atlas.Atlas) !void {
@@ -171,9 +175,9 @@ pub fn load(alloc: std.mem.Allocator, slot: usize, g: *game.Game, world: *atlas.
     try read(bytes, g, world);
 }
 
-pub fn remove(slot: usize) void {
+pub fn remove(slot: usize) !void {
     var buf: [PATH_MAX]u8 = undefined;
-    std.fs.cwd().deleteFile(path(&buf, slot)) catch {};
+    std.fs.cwd().deleteFile(path(&buf, slot)) catch |e| if (e != error.FileNotFound) return e;
 }
 
 pub fn slots() [SLOTS]Slot {
@@ -184,11 +188,12 @@ pub fn slots() [SLOTS]Slot {
 
 fn slotAt(i: usize) Slot {
     var buf: [PATH_MAX]u8 = undefined;
-    var f = std.fs.cwd().openFile(path(&buf, i), .{}) catch |e| return if (e == error.FileNotFound) .empty else .unreadable;
+    var f = std.fs.cwd().openFile(path(&buf, i), .{}) catch |e| return if (e == error.FileNotFound) .empty else .{ .unreadable = .damaged };
     defer f.close();
     var head: [HEAD + @sizeOf(Summary)]u8 = undefined;
-    const n = f.readAll(&head) catch return .unreadable;
-    return .{ .run = peek(head[0..n]) catch return .unreadable };
+    const n = f.readAll(&head) catch return .{ .unreadable = .damaged };
+    const s = peek(head[0..n]) catch |e| return .{ .unreadable = if (e == error.OtherBuild) .other_build else .damaged };
+    return .{ .run = s };
 }
 
 /// The first slot with no run in it.
@@ -218,22 +223,26 @@ pub const Autosave = struct {
         self.bytes.deinit();
     }
 
-    /// Not mid-door: the turn that stepped onto it is written once it is gone through.
+    /// Not mid-door, nor mid-turn: a foe's turn to face the archer is only in `facing` once it is drawn.
     pub fn step(self: *Autosave, g: *game.Game, dt: f32) void {
         self.since += dt;
-        if (!g.unsaved or self.since < GAP_S or g.travel != null) return;
+        if (!g.unsaved or self.since < GAP_S or g.travel != null or !game.quiet(g)) return;
         self.flush(g);
     }
 
+    /// A write that failed is written again.
     pub fn flush(self: *Autosave, g: *game.Game) void {
-        if (!g.unsaved) return;
         self.wait();
-        if (self.failed) |e| g.log.say("The last save did not write ({s}).", .{@errorName(e)});
-        self.failed = null;
+        if (self.failed) |e| {
+            g.log.say("The last save did not write ({s}).", .{@errorName(e)});
+            self.failed = null;
+            g.unsaved = true;
+        }
+        if (!g.unsaved) return;
         self.bytes.clearRetainingCapacity();
-        write(g, self.bytes.writer()) catch |e| return g.log.say("The save did not write ({s}).", .{@errorName(e)});
-        g.unsaved = false;
         self.since = 0;
+        write(g, &self.bytes) catch |e| return g.log.say("The save did not write ({s}).", .{@errorName(e)});
+        g.unsaved = false;
         self.writer = std.Thread.spawn(.{}, writeOff, .{self}) catch blk: {
             writeOff(self);
             break :blk null;
@@ -254,9 +263,9 @@ pub const Autosave = struct {
     }
 
     /// The run is lost, and its save with it.
-    pub fn end(self: *Autosave) void {
+    pub fn end(self: *Autosave, g: *game.Game) void {
         self.wait();
-        remove(self.slot);
+        remove(self.slot) catch |e| g.log.say("The save did not delete ({s}).", .{@errorName(e)});
     }
 };
 
@@ -290,7 +299,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
 
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
-    try write(g, buf.writer());
+    try write(g, &buf);
     std.debug.print("a run of two nodes, one left behind: {d} KB saved\n", .{buf.items.len / 1024});
 
     const back = try game.boot(alloc);
@@ -298,8 +307,11 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     const into = try alloc.create(atlas.Atlas);
     defer alloc.destroy(into);
     game.begin(back, 1);
-    try std.testing.expectError(error.Short, read(buf.items[0 .. buf.items.len - 1], back, into));
+    try std.testing.expectError(error.Damaged, read(buf.items[0 .. buf.items.len - 1], back, into));
     try std.testing.expectError(error.NotASave, read("not a save", back, into));
+    buf.items[buf.items.len / 2] +%= 1;
+    try std.testing.expectError(error.Damaged, read(buf.items, back, into));
+    buf.items[buf.items.len / 2] -%= 1;
     try std.testing.expectEqual(@as(?*const atlas.Atlas, null), back.world);
     try read(buf.items, back, into);
     try std.testing.expectEqualStrings("Arwen", back.name.text());
@@ -310,8 +322,11 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqualSlices(grid.Tile, &g.lv.tile, &back.lv.tile);
     try std.testing.expectEqualSlices(grid.Tile, &g.visits[0].lv.tile, &back.visits[0].lv.tile);
     try std.testing.expectEqualStrings("A line to keep.", back.log.line(0).?);
-    try std.testing.expect(back.permadeath);
     const s = try peek(buf.items);
     var line: [128]u8 = undefined;
     try std.testing.expectEqualStrings("Arwen   HP 19/24   Gold 17   The Warrens", s.line(&line));
+    const far: ?usize = atlas.MAX_NODES;
+    const at = HEAD + @offsetOf(Summary, "node");
+    @memcpy(buf.items[at..][0..@sizeOf(?usize)], std.mem.asBytes(&far));
+    try std.testing.expectError(error.Damaged, peek(buf.items));
 }

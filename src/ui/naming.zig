@@ -12,6 +12,9 @@ const hero = @import("../play/hero.zig");
 const LETTERS = [_][]const u8{ "ABCDEFGHIJKLM", "NOPQRSTUVWXYZ", "abcdefghijklm", "nopqrstuvwxyz" };
 const Key = union(enum) { ch: u8, space, rub, done };
 const LAST = [_]Key{ .space, .rub, .done };
+const DONE_AT = for (LAST, 0..) |k, i| {
+    if (k == .done) break i;
+} else unreachable;
 const ROWS = LETTERS.len + 1;
 const COLS = LETTERS[0].len;
 
@@ -26,7 +29,7 @@ const TITLE_DY: i32 = -230;
 const FIELD_DY: i32 = -150;
 const GRID_DY: i32 = -70;
 const LEGEND_DY: i32 = 200;
-const CARET = "_";
+const CARET = menu.CARET;
 
 const LEGEND = menu.CONFIRM.caption() ++ " type" ++ menu.SEP ++ RUB.caption() ++ " delete" ++ menu.SEP ++
     input.MOVE_CAPTION ++ " move" ++ menu.SEP ++ menu.BACK.caption() ++ " back";
@@ -54,7 +57,7 @@ pub const Entry = struct {
         }
         if (st.rub or st.hit(RUB)) self.name.pop();
         if (st.walk) |d| self.move(d);
-        if (st.hit(menu.BACK) or st.hit(input.Button.pause)) return .back;
+        if (menu.backed(st)) return .back;
         if (!st.hit(menu.CONFIRM)) return null;
         switch (self.key()) {
             .ch => |c| _ = self.name.push(c),
@@ -68,21 +71,32 @@ pub const Entry = struct {
     /// Typed on the keyboard, Enter then means done.
     fn onDone(self: *Entry) void {
         self.row = ROWS - 1;
-        self.col = LAST.len - 1;
+        self.col = DONE_AT;
     }
 
     fn move(self: *Entry, d: mathx.Dir) void {
         const v = d.delta();
         if (v.y != 0) {
-            self.row = @intCast(@mod(@as(i32, @intCast(self.row)) + v.y, @as(i32, ROWS)));
+            self.row = mathx.wrap(self.row, v.y, ROWS);
             self.col = @min(self.col, width(self.row) - 1);
         }
-        if (v.x != 0) {
-            const w: i32 = @intCast(width(self.row));
-            self.col = @intCast(@mod(@as(i32, @intCast(self.col)) + v.x, w));
-        }
+        if (v.x != 0) self.col = mathx.wrap(self.col, v.x, width(self.row));
     }
 };
+
+const ASK = "NAME YOUR ";
+pub const TITLE_MAX = blk: {
+    var most: usize = 0;
+    for (hero.CLASSES) |c| most = @max(most, c.title().len);
+    break :blk ASK.len + most + 1;
+};
+
+/// "NAME YOUR ARCHER".
+pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
+    const t = std.fmt.bufPrintZ(buf, ASK ++ "{s}", .{c.title()}) catch unreachable;
+    for (buf[0..t.len]) |*ch| ch.* = std.ascii.toUpper(ch.*);
+    return t;
+}
 
 pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8) void {
     const mid = @divTrunc(screen.y, 2);
@@ -107,8 +121,8 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
                 .done => "Done",
                 .ch => unreachable,
             };
-            const cx = @divTrunc(screen.x, 2) + (@as(i32, @intCast(c)) - 1) * WIDE_W;
-            face.text(label, cx - @divTrunc(face.width(label, KEY), 2), y + @divTrunc(KEY_H - KEY, 2), KEY, col);
+            const cx = @divTrunc(screen.x, 2) + @divTrunc((2 * @as(i32, @intCast(c)) + 1 - @as(i32, LAST.len)) * WIDE_W, 2);
+            face.text(label, face.leftFor(label, cx, KEY), y + @divTrunc(KEY_H - KEY, 2), KEY, col);
         }
     }
     menu.mid(face, screen, LEGEND, mid + LEGEND_DY, menu.NOTE, look.DIM);
@@ -133,6 +147,6 @@ test "the grid types a name, the keyboard types into it, and done waits for a na
     st = .{};
     st.pressed.insert(menu.CONFIRM);
     try std.testing.expectEqual(@as(?Outcome, .done), e.step(&st));
-    var blank = Entry{ .row = ROWS - 1, .col = LAST.len - 1 };
+    var blank = Entry{ .row = ROWS - 1, .col = DONE_AT };
     try std.testing.expectEqual(@as(?Outcome, null), blank.step(&st));
 }

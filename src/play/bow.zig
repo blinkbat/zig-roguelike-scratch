@@ -20,14 +20,7 @@ pub const Flight = struct {
 /// The reticle's legal cells and the shot's legality are this one call; a line slips past corners sight does not, so every cell on it is lit.
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     const d = mathx.dist(from, to);
-    if (d < 1 or d > RANGE or !lv.walkable(to)) return false;
-    var ray = grid.Ray.init(from, to);
-    while (ray.next()) |c| {
-        if (!lv.isLit(c)) return false;
-        if (c.eq(to)) return true;
-        if (lv.at(c).blind()) return false;
-    }
-    return true;
+    return d >= 1 and d <= RANGE and lv.walkable(to) and grid.litLine(lv, from, to);
 }
 
 pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
@@ -36,13 +29,9 @@ pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
         if (a.alive and a.foe() and aimable(lv, from, a.at)) near.offer(a.at);
     }
     if (near.best != null) return near.best;
-    var y = from.y - RANGE;
-    while (y <= from.y + RANGE) : (y += 1) {
-        var x = from.x - RANGE;
-        while (x <= from.x + RANGE) : (x += 1) {
-            const p = P{ .x = x, .y = y };
-            if (lv.hasBarrel(p) and aimable(lv, from, p)) near.offer(p);
-        }
+    var cells = grid.Cells.of(from.sub(.{ .x = RANGE, .y = RANGE }), from.add(.{ .x = RANGE + 1, .y = RANGE + 1 }));
+    while (cells.next()) |p| {
+        if (lv.hasBarrel(p) and aimable(lv, from, p)) near.offer(p);
     }
     return near.best;
 }

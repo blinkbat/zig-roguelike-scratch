@@ -41,6 +41,20 @@ fn describe(comptime T: type) []const u8 {
     } ++ size;
 }
 
+/// Written beside itself and renamed over it, so a write that fails part-way leaves the last one standing.
+pub fn replace(path: []const u8, bytes: []const u8) !void {
+    if (std.fs.path.dirname(path)) |d| try std.fs.cwd().makePath(d);
+    var tmp_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp = try std.fmt.bufPrint(&tmp_buf, "{s}.tmp", .{path});
+    {
+        var f = try std.fs.cwd().createFile(tmp, .{});
+        defer f.close();
+        try f.writeAll(bytes);
+        try f.sync();
+    }
+    try std.fs.cwd().rename(tmp, path);
+}
+
 pub fn put(w: anytype, v: anytype) !void {
     try w.writeAll(std.mem.asBytes(v));
 }

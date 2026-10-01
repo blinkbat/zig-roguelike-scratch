@@ -3,6 +3,8 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
 const gen = @import("gen.zig");
 const actor = @import("../play/actor.zig");
+const store = @import("../core/store.zig");
+const pack = @import("../play/pack.zig");
 
 const P = mathx.P;
 
@@ -13,17 +15,33 @@ pub const DIR = "worlds";
 pub const EXT = ".world";
 pub const MAIN = worldPath("main");
 
+/// Printable ascii, as every drawn string is.
+pub fn plain(s: []const u8) bool {
+    for (s) |c| {
+        if (!std.ascii.isPrint(c)) return false;
+    }
+    return true;
+}
+
+/// A node's name, or its number for one with none.
+pub fn titleOf(name: []const u8, n: usize, buf: *[TITLE_MAX]u8) []const u8 {
+    if (name.len > 0) return name;
+    return std.fmt.bufPrint(buf, UNNAMED ++ "{d}", .{n}) catch unreachable;
+}
+
 /// `DIR/<stem>.world`.
 pub fn worldPath(comptime stem: []const u8) []const u8 {
     return DIR ++ "/" ++ stem ++ EXT;
 }
-const TMP_EXT = ".tmp";
 const HEADER = "roguelike-world 1";
 const TEXT_CAP: usize = 8 << 20;
 const COLS: usize = @intCast(grid.W);
 const ROWS: usize = @intCast(grid.H);
 pub const NAME_MAX: usize = 20;
-/// Where a new node's box sits on the editor's graph, by its index.
+const UNNAMED = "node ";
+/// A node's name, or "node 31" for one with none.
+pub const TITLE_MAX: usize = @max(NAME_MAX, UNNAMED.len + std.fmt.count("{d}", .{MAX_NODES - 1}));
+/// A new node's box takes the first free place on a grid of the editor's graph this many boxes wide.
 const GRAPH_COLS: usize = 4;
 pub const GRAPH_STEP = P{ .x = 240, .y = 200 };
 /// A box's place on the graph, either way on either axis; far enough that i32 sums of places never overflow.
@@ -43,7 +61,7 @@ pub const Foe = struct { kind: actor.Kind, at: P };
 pub const Algo = enum { rooms };
 
 /// Its floor is rolled round its doors each run, so a world plays differently every time.
-pub const Procgen = struct { algo: Algo = .rooms };
+pub const Procgen = struct { algo: Algo = .rooms, floor: gen.Params = .{}, foes: pack.Spec = .{} };
 
 pub const Bespoke = struct {
     tile: [grid.CELLS]grid.Tile = [_]grid.Tile{.wall} ** grid.CELLS,
@@ -52,6 +70,10 @@ pub const Bespoke = struct {
     torch_n: usize = 0,
     foe: [MAX_FOES]Foe = undefined,
     foe_n: usize = 0,
+
+    pub fn floorAt(self: *const Bespoke, p: P) bool {
+        return grid.cellOr(grid.Tile, &self.tile, p, .wall) == .floor;
+    }
 
     pub fn torches(self: *const Bespoke) []const P {
         return self.torch[0..self.torch_n];
@@ -115,16 +137,26 @@ pub const Node = struct {
         return self.label[0..self.label_n];
     }
 
-    /// Printable ascii, trimmed, `NAME_MAX` at most; an empty name is none.
-    pub fn rename(self: *Node, s: []const u8) bool {
+    /// Printable ascii, trimmed, `NAME_MAX` at most; an empty name is none. Whether it changed; null when refused.
+    pub fn rename(self: *Node, s: []const u8) ?bool {
         const t = std.mem.trim(u8, s, " ");
-        if (t.len > NAME_MAX) return false;
-        for (t) |c| {
-            if (!std.ascii.isPrint(c)) return false;
-        }
+        if (t.len > NAME_MAX or !plain(t)) return null;
+        if (std.mem.eql(u8, t, self.name())) return false;
         @memcpy(self.label[0..t.len], t);
         self.label_n = t.len;
         return true;
+    }
+
+    pub fn title(self: *const Node, n: usize, buf: *[TITLE_MAX]u8) []const u8 {
+        return titleOf(self.name(), n, buf);
+    }
+
+    /// Its floor is only rolled in play.
+    pub fn unrolled(self: *const Node) bool {
+        return switch (self.plan) {
+            .procgen => true,
+            .bespoke => false,
+        };
     }
 
     pub fn unlinked(self: *const Node) usize {
@@ -148,9 +180,7 @@ pub const Node = struct {
 
     /// Floor, or a door, which opens its cell.
     pub fn opens(self: *const Node, b: *const Bespoke, p: P) bool {
-        if (!grid.Level.inside(p)) return false;
-        const i = grid.Level.idx(p);
-        return b.tile[i] == .floor or self.doorAt(p) != null;
+        return b.floorAt(p) or self.doorAt(p) != null;
     }
 
     /// On a wall with open ground below it, so its flame lights the ground.
@@ -160,9 +190,12 @@ pub const Node = struct {
 
     /// On floor, and not in a doorway.
     pub fn barrelFits(self: *const Node, b: *const Bespoke, p: P) bool {
-        if (!grid.Level.inside(p)) return false;
-        const i = grid.Level.idx(p);
-        return b.tile[i] == .floor and self.doorAt(p) == null;
+        return b.floorAt(p) and self.doorAt(p) == null;
+    }
+
+    /// Where a barrel fits, and none stands.
+    pub fn foeFits(self: *const Node, b: *const Bespoke, p: P) bool {
+        return self.barrelFits(b, p) and !grid.cellOr(bool, &b.barrel, p, false);
     }
 
     /// Procgen, the floor is rolled from `roll` round the doors; bespoke, each door opens the cell it hangs in.
@@ -170,9 +203,9 @@ pub const Node = struct {
         var cells: [grid.MAX_DOORS]P = undefined;
         for (self.doors(), 0..) |d, i| cells[i] = d.at;
         switch (self.plan) {
-            .procgen => |pg| switch (pg.algo) {
+            .procgen => |*pg| switch (pg.algo) {
                 .rooms => {
-                    _ = gen.around(lv, roll, cells[0..self.door_n]);
+                    _ = gen.around(lv, roll, cells[0..self.door_n], pg.floor);
                 },
             },
             .bespoke => |*b| {
@@ -226,7 +259,7 @@ pub const Atlas = struct {
         var i: i32 = 0;
         while (true) : (i += 1) {
             const p = P{ .x = @mod(i, cols) * GRAPH_STEP.x, .y = @divTrunc(i, cols) * GRAPH_STEP.y };
-            const clear = for (self.nodes()) |nd| {
+            const clear = for (self.nodes()) |*nd| {
                 if (@abs(nd.pos.x - p.x) < GRAPH_STEP.x and @abs(nd.pos.y - p.y) < GRAPH_STEP.y) break false;
             } else true;
             if (clear) return p;
@@ -250,7 +283,7 @@ pub const Atlas = struct {
 
     pub fn addDoor(self: *Atlas, n: usize, p: P) ?usize {
         const nd = &self.node[n];
-        if (nd.door_n == grid.MAX_DOORS or nd.doorAt(p) != null or !grid.Level.inside(p)) return null;
+        if (nd.door_n == grid.MAX_DOORS or nd.doorAt(p) != null or !grid.Level.inside(p) or grid.Level.cornered(p)) return null;
         nd.door[nd.door_n] = .{ .at = p };
         nd.door_n += 1;
         return nd.door_n - 1;
@@ -289,45 +322,45 @@ pub const Atlas = struct {
         self.doorOf(to).to = null;
     }
 
-    pub fn save(self: *Atlas, path: []const u8) !void {
-        if (std.fs.path.dirname(path)) |d| try std.fs.cwd().makePath(d);
-        var tmp_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const tmp = try std.fmt.bufPrint(&tmp_buf, "{s}" ++ TMP_EXT, .{path});
-        {
-            var f = try std.fs.cwd().createFile(tmp, .{});
-            defer f.close();
-            var bw = std.io.bufferedWriter(f.writer());
-            try self.write(bw.writer());
-            try bw.flush();
-            try f.sync();
-        }
-        // Written beside itself and renamed over it, so a write that fails part-way leaves the old world standing.
-        try std.fs.cwd().rename(tmp, path);
+    pub fn save(self: *Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
+        var text = std.ArrayList(u8).init(alloc);
+        defer text.deinit();
+        try self.write(text.writer());
+        try store.replace(path, text.items);
     }
 
     pub fn write(self: *Atlas, w: anytype) !void {
-        try w.print(HEADER ++ "\nstart {d} {d} {d}\n", .{ self.start.node, self.start.at.x, self.start.at.y });
+        try w.print(HEADER ++ "\n" ++ says(.start) ++ "{d} {d} {d}\n", .{ self.start.node, self.start.at.x, self.start.at.y });
         for (self.nodes()) |*nd| {
             switch (nd.plan) {
-                .procgen => |pg| try w.print("node procgen {s}\n", .{@tagName(pg.algo)}),
+                .procgen => |*pg| {
+                    try w.print(says(.node) ++ "{s} {s}\n", .{ @tagName(nd.plan), @tagName(pg.algo) });
+                    inline for (FLOOR_KNOBS) |k| try putKnob(w, k, @field(pg.floor, k));
+                    inline for (FOE_KNOBS) |k| try putKnob(w, k, @field(pg.foes, k));
+                    for (pg.foes.makeups()) |*m| {
+                        try w.print(says(.makeup) ++ "{d}", .{m.weight});
+                        for (m.kinds()) |k| try w.print(" {s}", .{@tagName(k)});
+                        try w.writeByte('\n');
+                    }
+                },
                 .bespoke => |*b| {
-                    try w.writeAll("node bespoke\n");
+                    try w.print(says(.node) ++ "{s}\n", .{@tagName(nd.plan)});
                     for (0..ROWS) |y| {
-                        try w.writeAll("row ");
+                        try w.writeAll(says(.row));
                         for (0..COLS) |x| {
-                            const i = y * COLS + x;
+                            const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(y) });
                             try w.writeByte(if (b.barrel[i]) BARREL_CH else tileCh(b.tile[i]));
                         }
                         try w.writeByte('\n');
                     }
-                    for (b.torches()) |t| try w.print("torch {d} {d}\n", .{ t.x, t.y });
-                    for (b.foes()) |f| try w.print("foe {s} {d} {d}\n", .{ @tagName(f.kind), f.at.x, f.at.y });
+                    for (b.torches()) |t| try w.print(says(.torch) ++ "{d} {d}\n", .{ t.x, t.y });
+                    for (b.foes()) |f| try w.print(says(.foe) ++ "{s} {d} {d}\n", .{ @tagName(f.kind), f.at.x, f.at.y });
                 },
             }
-            if (nd.label_n > 0) try w.print("name {s}\n", .{nd.name()});
-            try w.print("at {d} {d}\n", .{ nd.pos.x, nd.pos.y });
+            if (nd.label_n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
+            try w.print(says(.at) ++ "{d} {d}\n", .{ nd.pos.x, nd.pos.y });
             for (nd.doors()) |d| {
-                try w.print("door {d} {d}", .{ d.at.x, d.at.y });
+                try w.print(says(.door) ++ "{d} {d}", .{ d.at.x, d.at.y });
                 if (d.to) |l| try w.print(" {d} {d}", .{ l.node, l.door });
                 try w.writeByte('\n');
             }
@@ -346,59 +379,90 @@ pub const Atlas = struct {
         const head = std.mem.trimRight(u8, lines.next() orelse return error.NoHeader, "\r");
         if (!std.mem.eql(u8, head, HEADER)) return error.NoHeader;
         var row: usize = 0;
+        var own_makeups = false;
         while (lines.next()) |raw| {
             const line = std.mem.trimRight(u8, raw, "\r");
             var f = std.mem.tokenizeScalar(u8, line, ' ');
             const word = f.next() orelse continue;
-            if (std.mem.eql(u8, word, "start")) {
-                self.start = .{ .node = try int(usize, &f), .at = try cell(&f) };
-            } else if (std.mem.eql(u8, word, "node")) {
-                const kind = std.meta.stringToEnum(std.meta.Tag(Plan), f.next() orelse return error.BadLine) orelse return error.BadLine;
-                const plan: Plan = switch (kind) {
-                    .procgen => blk: {
-                        const algo = std.meta.stringToEnum(Algo, f.next() orelse return error.BadLine) orelse return error.BadLine;
-                        // Written before procgen nodes were rolled each run: the seed they kept is let go.
-                        if (f.peek() != null) _ = try int(u64, &f);
-                        break :blk .{ .procgen = .{ .algo = algo } };
-                    },
-                    .bespoke => .{ .bespoke = .{} },
-                };
-                try self.painted(row);
-                _ = self.add(plan) orelse return error.TooMany;
-                row = 0;
-            } else if (std.mem.eql(u8, word, "name")) {
-                if (!(try self.last()).rename(f.rest())) return error.BadLine;
+            const said = std.meta.stringToEnum(Word, word) orelse {
+                if (!knob(word)) return error.BadLine;
+                const pg = try self.procgen();
+                inline for (FLOOR_KNOBS) |k| {
+                    if (std.mem.eql(u8, word, k)) @field(pg.floor, k) = try takeValue(@TypeOf(@field(pg.floor, k)), &f);
+                }
+                inline for (FOE_KNOBS) |k| {
+                    if (std.mem.eql(u8, word, k)) @field(pg.foes, k) = try takeValue(@TypeOf(@field(pg.foes, k)), &f);
+                }
+                if (f.next() != null) return error.BadLine;
                 continue;
-            } else if (std.mem.eql(u8, word, "at")) {
-                const pos = P{ .x = try int(i32, &f), .y = try int(i32, &f) };
-                if (@abs(pos.x) > POS_MAX or @abs(pos.y) > POS_MAX) return error.BadLine;
-                (try self.last()).pos = pos;
-            } else if (std.mem.eql(u8, word, "door")) {
-                const nd = try self.last();
-                const at = try cell(&f);
-                const k = self.addDoor(self.node_n - 1, at) orelse return error.TooMany;
-                if (f.peek() != null) nd.door[k].to = .{ .node = try int(usize, &f), .door = try int(usize, &f) };
-            } else {
-                const b = try self.bespoke();
-                if (std.mem.eql(u8, word, "row")) {
+            };
+            switch (said) {
+                .start => self.start = .{ .node = try int(usize, &f), .at = try cell(&f) },
+                .node => {
+                        const kind = std.meta.stringToEnum(std.meta.Tag(Plan), f.next() orelse return error.BadLine) orelse return error.BadLine;
+                    const plan: Plan = switch (kind) {
+                        .procgen => blk: {
+                            const algo = std.meta.stringToEnum(Algo, f.next() orelse return error.BadLine) orelse return error.BadLine;
+                            // Written before procgen nodes were rolled each run: the seed they kept is let go.
+                            if (f.peek() != null) _ = try int(u64, &f);
+                            break :blk .{ .procgen = .{ .algo = algo } };
+                        },
+                        .bespoke => .{ .bespoke = .{} },
+                    };
+                    try self.finished(row);
+                    _ = self.add(plan) orelse return error.TooMany;
+                    row = 0;
+                    own_makeups = false;
+                },
+                .name => {
+                    _ = (try self.last()).rename(f.rest()) orelse return error.BadLine;
+                    continue;
+                },
+                .at => {
+                    const pos = P{ .x = try int(i32, &f), .y = try int(i32, &f) };
+                    if (@abs(pos.x) > POS_MAX or @abs(pos.y) > POS_MAX) return error.BadLine;
+                    (try self.last()).pos = pos;
+                },
+                .door => {
+                    const nd = try self.last();
+                    const at = try cell(&f);
+                    const k = self.addDoor(self.node_n - 1, at) orelse return error.TooMany;
+                    if (f.peek() != null) nd.door[k].to = .{ .node = try int(usize, &f), .door = try int(usize, &f) };
+                },
+                .makeup => {
+                    const fo = &(try self.procgen()).foes;
+                    if (!own_makeups) fo.makeup_n = 0;
+                    own_makeups = true;
+                    if (!fo.addMakeup()) return error.TooMany;
+                    const m = &fo.makeup[fo.makeup_n - 1];
+                    m.* = .{ .weight = try int(u8, &f), .n = 0 };
+                    while (f.next()) |name| {
+                        const k = std.meta.stringToEnum(actor.Kind, name) orelse return error.BadLine;
+                        if (!m.grow()) return error.BadLine;
+                        m.kind[m.n - 1] = k;
+                    }
+                },
+                .row => {
+                    const b = try self.bespoke();
                     const cells = f.next() orelse return error.BadLine;
                     if (cells.len != COLS or row == ROWS) return error.BadLine;
                     for (cells, 0..) |c, x| {
-                        const i = row * COLS + x;
+                        const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(row) });
                         b.barrel[i] = c == BARREL_CH;
                         b.tile[i] = if (c == BARREL_CH) .floor else chTile(c) orelse return error.BadLine;
                     }
                     row += 1;
-                } else if (std.mem.eql(u8, word, "torch")) {
-                    if (!b.addTorch(try cell(&f))) return error.TooMany;
-                } else if (std.mem.eql(u8, word, "foe")) {
+                },
+                .torch => if (!(try self.bespoke()).addTorch(try cell(&f))) return error.TooMany,
+                .foe => {
+                    const b = try self.bespoke();
                     const k = std.meta.stringToEnum(actor.Kind, f.next() orelse return error.BadLine) orelse return error.BadLine;
-                    if (!k.foe() or !b.addFoe(.{ .kind = k, .at = try cell(&f) })) return error.BadLine;
-                } else return error.BadLine;
+                    if (!k.stocked() or !b.addFoe(.{ .kind = k, .at = try cell(&f) })) return error.BadLine;
+                },
             }
             if (f.next() != null) return error.BadLine;
         }
-        try self.painted(row);
+        try self.finished(row);
         if (self.node_n == 0) return error.NoNodes;
         for (self.nodes(), 0..) |*nd, n| {
             for (nd.doors(), 0..) |d, k| {
@@ -412,9 +476,27 @@ pub const Atlas = struct {
         if (self.start.node >= self.node_n) return error.BadLink;
     }
 
-    /// A bespoke node is written whole: every row of it.
-    fn painted(self: *Atlas, rows: usize) Error!void {
-        if (self.node_n > 0 and self.node[self.node_n - 1].plan == .bespoke and rows != ROWS) return error.BadLine;
+    /// A bespoke node is written whole, every row of it, each foe on open floor; a procgen node's floor and foes each
+    /// in their ranges.
+    fn finished(self: *Atlas, rows: usize) Error!void {
+        if (self.node_n == 0) return;
+        const nd = &self.node[self.node_n - 1];
+        switch (nd.plan) {
+            .bespoke => |*b| {
+                if (rows != ROWS) return error.BadLine;
+                for (b.foes()) |f| {
+                    if (!nd.foeFits(b, f.at)) return error.BadLine;
+                }
+            },
+            .procgen => |*pg| if (!pg.floor.valid() or !pg.foes.valid()) return error.BadLine,
+        }
+    }
+
+    fn procgen(self: *Atlas) Error!*Procgen {
+        return switch ((try self.last()).plan) {
+            .procgen => |*pg| pg,
+            .bespoke => error.BadLine,
+        };
     }
 
     fn last(self: *Atlas) Error!*Node {
@@ -432,7 +514,83 @@ pub const Atlas = struct {
 
 pub const Error = error{ NoHeader, BadLine, TooMany, NoNodes, BadLink };
 
+/// A procgen node's lines but its makeups: each named for, and holding, a field of its floor or its foes.
+pub const FLOOR_KNOBS = knobsOf(gen.Params, &.{});
+pub const FOE_KNOBS = knobsOf(pack.Spec, &.{ MAKEUP, MAKEUP ++ "_n" });
+/// Every other line's first word, which no knob may take.
+const Word = enum { start, node, name, at, door, makeup, row, torch, foe };
+const MAKEUP = @tagName(Word.makeup);
+
+/// A line's first word and the space after it.
+fn says(comptime w: Word) []const u8 {
+    return @tagName(w) ++ " ";
+}
+
+comptime {
+    std.debug.assert(@hasField(pack.Spec, MAKEUP) and @hasField(pack.Spec, MAKEUP ++ "_n"));
+    const all = FLOOR_KNOBS ++ FOE_KNOBS ++ knobsOf(Word, &.{});
+    for (all, 0..) |a, i| {
+        for (all[0..i]) |b| std.debug.assert(!std.mem.eql(u8, a, b));
+    }
+}
+
+fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const u8 {
+    comptime var out: []const []const u8 = &.{};
+    inline for (std.meta.fields(T)) |f| {
+        const skipped = for (skip) |s| {
+            if (std.mem.eql(u8, s, f.name)) break true;
+        } else false;
+        if (!skipped) out = out ++ &[_][]const u8{f.name};
+    }
+    return out;
+}
+
+fn knob(word: []const u8) bool {
+    inline for (FLOOR_KNOBS ++ FOE_KNOBS) |k| {
+        if (std.mem.eql(u8, word, k)) return true;
+    }
+    return false;
+}
+
+fn putKnob(w: anytype, comptime name: []const u8, v: anytype) !void {
+    try w.writeAll(name);
+    try putValue(w, v);
+    try w.writeByte('\n');
+}
+
+/// Each whole number in it, a space before each.
+fn putValue(w: anytype, v: anytype) !void {
+    const T = @TypeOf(v);
+    switch (@typeInfo(T)) {
+        .int => try w.print(" {d}", .{v}),
+        .array => for (v) |x| try putValue(w, x),
+        .@"struct" => inline for (std.meta.fields(T)) |f| try putValue(w, @field(v, f.name)),
+        else => @compileError(@typeName(T) ++ " is no knob"),
+    }
+}
+
+fn takeValue(comptime T: type, f: *std.mem.TokenIterator(u8, .scalar)) Error!T {
+    switch (@typeInfo(T)) {
+        .int => return int(T, f),
+        .array => |a| {
+            var out: T = undefined;
+            for (&out) |*x| x.* = try takeValue(a.child, f);
+            return out;
+        },
+        .@"struct" => {
+            var out: T = undefined;
+            inline for (std.meta.fields(T)) |fl| @field(out, fl.name) = try takeValue(fl.type, f);
+            return out;
+        },
+        else => @compileError(@typeName(T) ++ " is no knob"),
+    }
+}
+
 const BARREL_CH = '0';
+
+comptime {
+    std.debug.assert(chTile(BARREL_CH) == null);
+}
 
 fn tileCh(t: grid.Tile) u8 {
     return switch (t) {
@@ -490,6 +648,7 @@ pub const Listing = struct {
         while (it.next() catch null) |e| {
             if (self.n == MAX_LISTED) break;
             if (e.kind != .file or !std.mem.endsWith(u8, e.name, EXT) or e.name.len > FILE_MAX) continue;
+            if (!plain(e.name)) continue;
             const s = std.fmt.bufPrint(&self.path[self.n], DIR ++ "/{s}", .{e.name}) catch continue;
             self.len[self.n] = s.len;
             self.n += 1;
@@ -508,29 +667,18 @@ pub const Listing = struct {
 /// Where a body arriving at `p` stands: `p`, or the open cell no one holds, nor `foes` are to, fewest steps from it.
 pub fn landing(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
     if (!lv.walkable(p)) return nearest(lv, p, foes);
-    var seen = std.StaticBitSet(grid.CELLS).initEmpty();
+    if (free(lv, p, foes)) return p;
+    var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
-    var head: usize = 0;
-    var tail: usize = 1;
-    queue[0] = @intCast(grid.Level.idx(p));
-    seen.set(queue[0]);
-    while (head < tail) : (head += 1) {
-        const q = grid.Level.of(queue[head]);
+    var flood = grid.Flood.init(lv, p, &dist, &queue);
+    while (flood.next()) |q| {
         if (free(lv, q, foes)) return q;
-        for (mathx.ALL_DIRS) |d| {
-            if (!lv.passOk(q, d)) continue;
-            const k = grid.Level.idx(q.add(d.delta()));
-            if (seen.isSet(k)) continue;
-            seen.set(k);
-            queue[tail] = @intCast(k);
-            tail += 1;
-        }
     }
     return nearest(lv, p, foes);
 }
 
 fn free(lv: *const grid.Level, q: P, foes: []const Foe) bool {
-    if (!lv.walkable(q) or lv.taken(q)) return false;
+    if (!lv.vacant(q)) return false;
     for (foes) |f| {
         if (f.at.eq(q)) return false;
     }
@@ -541,17 +689,10 @@ fn free(lv: *const grid.Level, q: P, foes: []const Foe) bool {
 fn nearest(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
     var ring: i32 = 0;
     while (ring < @max(grid.W, grid.H)) : (ring += 1) {
-        var best: ?P = null;
-        var y = p.y - ring;
-        while (y <= p.y + ring) : (y += 1) {
-            var x = p.x - ring;
-            while (x <= p.x + ring) : (x += 1) {
-                const q = P{ .x = x, .y = y };
-                if (mathx.dist(q, p) != ring or !free(lv, q, foes)) continue;
-                if (best == null) best = q;
-            }
+        var cells = mathx.Ring.init(p, ring);
+        while (cells.next()) |q| {
+            if (free(lv, q, foes)) return q;
         }
-        if (best) |q| return q;
     }
     return null;
 }
@@ -567,6 +708,13 @@ test "a world saves and loads back the same" {
     defer std.testing.allocator.destroy(a);
     const room = a.add(.{ .bespoke = .{} }).?;
     const cave = a.add(.{ .procgen = .{} }).?;
+    const pg = &a.node[cave].plan.procgen;
+    pg.floor.size = .{ .x = 50, .y = 40 };
+    pg.floor.torches = 20;
+    pg.foes.apart = 6;
+    pg.foes.makeup_n = 2;
+    pg.foes.makeup[1] = pack.Makeup.of(&.{ .bloat, .rat });
+    pg.foes.makeup[1].weight = 3;
     const b = &a.node[room].plan.bespoke;
     var y: i32 = 3;
     while (y < 9) : (y += 1) {
@@ -580,8 +728,9 @@ test "a world saves and loads back the same" {
     const d1 = a.addDoor(cave, .{ .x = 0, .y = 30 }).?;
     a.link(.{ .node = room, .door = d0 }, .{ .node = cave, .door = d1 });
     a.start = .{ .node = room, .at = .{ .x = 5, .y = 5 } };
-    try std.testing.expect(a.node[cave].rename("  The Deep Cave "));
-    try std.testing.expect(!a.node[room].rename("a name far too long to keep"));
+    try std.testing.expectEqual(@as(?bool, true), a.node[cave].rename("  The Deep Cave "));
+    try std.testing.expectEqual(@as(?bool, false), a.node[cave].rename("The Deep Cave"));
+    try std.testing.expectEqual(@as(?bool, null), a.node[room].rename("a name far too long to keep"));
     a.node[room].pos = .{ .x = -40, .y = 310 };
 
     var buf = std.ArrayList(u8).init(std.testing.allocator);
@@ -596,7 +745,12 @@ test "a world saves and loads back the same" {
     std.debug.print("a two-node world is {d} bytes of text\n", .{buf.items.len});
     try std.testing.expectEqualStrings(buf.items, again.items);
     try std.testing.expectEqual(@as(?Link, .{ .node = cave, .door = d1 }), back.node[room].door[d0].to);
-    try std.testing.expect(back.node[cave].plan == .procgen);
+    const bpg = &back.node[cave].plan.procgen;
+    try std.testing.expect(std.meta.eql(pg.floor, bpg.floor));
+    try std.testing.expectEqual(@as(i32, 6), bpg.foes.apart);
+    try std.testing.expectEqual(@as(usize, 2), bpg.foes.makeup_n);
+    try std.testing.expectEqual(@as(u8, 3), bpg.foes.makeup[1].weight);
+    try std.testing.expectEqualSlices(actor.Kind, &.{ .bloat, .rat }, bpg.foes.makeup[1].kinds());
     try std.testing.expectEqualStrings("The Deep Cave", back.node[cave].name());
     try std.testing.expectEqual(P{ .x = -40, .y = 310 }, back.node[room].pos);
     try std.testing.expectEqual(GRAPH_STEP.x, back.node[cave].pos.x);
@@ -613,6 +767,13 @@ test "a world file with a one-way link, a door linked to itself, a stray word or
         head ++ "node procgen rooms deep\n",
         head ++ "node procgen rooms\nat 0 0\nnode procgen rooms\nat -2147483648 0\nnode procgen rooms\n",
         head ++ "node bespoke\nrow " ++ "#" ** COLS ++ "\n",
+        head ++ "node procgen rooms\nsize 20 20\nroom_w 5 30\n",
+        head ++ "node procgen rooms\nmakeup 0 rat\n",
+        head ++ "node procgen rooms\nmakeup 1 slime_half\n",
+        head ++ "node procgen rooms\nmakeup 1\n",
+        head ++ "node procgen rooms\napart 99\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** ROWS ++ "foe rat 3 3\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "." ** COLS ++ "\n") ** ROWS ++ "foe slime_half 3 3\n",
     };
     for (bad) |t| try std.testing.expect(std.meta.isError(a.parse(t)));
     try a.parse(head ++ "node procgen rooms 1790812916605\n");
@@ -656,6 +817,16 @@ test "a bespoke node's doors open their cells and a torch hangs only over floor"
     try std.testing.expectEqual(@as(?usize, 0), lv.doorAt(.{ .x = 5, .y = 6 }));
     try std.testing.expectEqual(@as(usize, 1), lv.torch_n);
     try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 5, .y = 4 }).?);
+}
+
+test "no door goes in a map corner, which no step reaches" {
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const n = a.add(.{ .procgen = .{} }).?;
+    for ([_]P{ .{ .x = 0, .y = 0 }, .{ .x = grid.W - 1, .y = 0 }, .{ .x = 0, .y = grid.H - 1 }, .{ .x = grid.W - 1, .y = grid.H - 1 } }) |p| {
+        try std.testing.expectEqual(@as(?usize, null), a.addDoor(n, p));
+    }
+    try std.testing.expect(a.addDoor(n, .{ .x = 1, .y = 0 }) != null);
 }
 
 test "a body lands on the nearest open cell no one holds" {

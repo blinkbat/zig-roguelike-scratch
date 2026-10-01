@@ -13,7 +13,15 @@ pub const Kind = enum {
     bloat,
 
     pub fn foe(k: Kind) bool {
-        return k != .archer;
+        return switch (k) {
+            .archer => false,
+            .rat, .slime, .slime_half, .slime_quarter, .bloat => true,
+        };
+    }
+
+    /// A foe a floor is stocked with, not one split off another.
+    pub fn stocked(k: Kind) bool {
+        return k.foe() and k.family() == k;
     }
 
     /// The kind a body was placed as: a slime, for the halves and quarters split off one.
@@ -41,7 +49,7 @@ const FAMILY = blk: {
 pub const FOES = blk: {
     var ks: []const Kind = &.{};
     for (std.enums.values(Kind)) |k| {
-        if (k.foe() and k.family() == k) ks = ks ++ &[_]Kind{k};
+        if (k.stocked()) ks = ks ++ &[_]Kind{k};
     }
     break :blk ks[0..ks.len].*;
 };
@@ -77,11 +85,11 @@ const SLAM = Blow{ .strike = .{ .lo = 2, .hi = 5, .verb = "slams" } };
 
 pub fn row(k: Kind) Row {
     return switch (k) {
-        .archer => .{ .name = "you", .hp = 24, .sight = 10, .blow = .{ .strike = .{ .lo = 1, .hi = 2, .verb = "kicks" } } },
+        .archer => .{ .name = "archer", .hp = 24, .sight = 10, .blow = .{ .strike = .{ .lo = 1, .hi = 2, .verb = "kicks" } } },
         .rat => .{ .name = "rat", .hp = 6, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "bites" } } },
         .slime => .{ .name = "slime", .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half },
-        .slime_half => .{ .name = "half slime", .hp = 20, .sight = 6, .blow = SLAM, .splits = .slime_quarter },
-        .slime_quarter => .{ .name = "quarter slime", .hp = 10, .sight = 6, .blow = SLAM },
+        .slime_half => .{ .name = "half slime", .hp = @divTrunc(row(.slime).hp, 2), .sight = row(.slime).sight, .blow = SLAM, .splits = .slime_quarter },
+        .slime_quarter => .{ .name = "quarter slime", .hp = @divTrunc(row(.slime_half).hp, 2), .sight = row(.slime).sight, .blow = SLAM },
         .bloat => .{ .name = "bloat", .hp = 4, .sight = 7, .blow = .burst, .flits = true },
     };
 }

@@ -1,19 +1,17 @@
 const std = @import("std");
-const actor = @import("actor.zig");
 
 pub const Class = enum {
     archer,
-
-    pub fn kind(c: Class) actor.Kind {
-        return switch (c) {
-            .archer => .archer,
-        };
-    }
 
     pub fn title(c: Class) [:0]const u8 {
         return switch (c) {
             .archer => "Archer",
         };
+    }
+
+    /// What a hero of it no one named is called: a play-test's.
+    pub fn unnamed(c: Class) Name {
+        return Name.of(c.title());
     }
 
     pub fn blurb(c: Class) [:0]const u8 {

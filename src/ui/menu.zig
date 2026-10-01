@@ -11,7 +11,7 @@ pub const BACK = input.Button.b;
 pub const TITLE: i32 = 60;
 const ROW: i32 = 30;
 const ROW_STEP: i32 = 46;
-pub const NOTE: i32 = 20;
+pub const NOTE: i32 = font.BODY;
 const TITLE_DY: i32 = -60;
 const ROWS_DY: i32 = 20;
 const NOTE_GAP: i32 = 30;
@@ -20,6 +20,8 @@ const MARK_GAP: i32 = 18;
 pub const NOTE_MAX: usize = 160;
 /// Between the items of a legend or crib.
 pub const SEP = "   ";
+/// After a field being typed in.
+pub const CARET = "_";
 
 /// A column of rows, walked with the d-pad and picked with A.
 pub const Menu = struct {
@@ -28,14 +30,15 @@ pub const Menu = struct {
     /// The row picked this frame.
     pub fn step(self: *Menu, st: *const input.State, n: usize) ?usize {
         self.at = @min(self.at, n - 1);
-        if (st.walk) |d| {
-            const dy = d.delta().y;
-            if (dy < 0) self.at = (self.at + n - 1) % n;
-            if (dy > 0) self.at = (self.at + 1) % n;
-        }
+        if (st.walk) |d| self.at = mathx.wrap(self.at, d.delta().y, n);
         return if (st.hit(CONFIRM)) self.at else null;
     }
 };
+
+/// B, or Menu, which on a page of the title backs out of it too.
+pub fn backed(st: *const input.State) bool {
+    return st.hit(BACK) or st.hit(input.Button.pause);
+}
 
 const LEGEND = CONFIRM.caption() ++ " select" ++ SEP ++ input.MOVE_CAPTION ++ " move";
 
@@ -60,14 +63,19 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, rows: []const
         mid(face, screen, std.fmt.bufPrintZ(&buf, "{s}", .{n}) catch "", y, NOTE, look.DIM);
         y += NOTE_GAP;
     }
-    var buf: [96]u8 = undefined;
+    var buf: [NOTE_MAX + 1]u8 = undefined;
     const legend = if (back) |b| std.fmt.bufPrintZ(&buf, LEGEND ++ SEP ++ "{s} {s}", .{ BACK.caption(), b }) catch LEGEND else LEGEND;
     mid(face, screen, legend, y + LEGEND_DY - NOTE_GAP, NOTE, look.DIM);
 }
 
+/// A row that turns something on and off.
+pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
+    return if (on) label ++ ": On" else label ++ ": Off";
+}
+
 /// Centred across the screen.
 pub fn mid(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
-    face.text(s, @divTrunc(screen.x - face.width(s, size), 2), y, size, col);
+    face.text(s, face.leftFor(s, @divTrunc(screen.x, 2), size), y, size, col);
 }
 
 test "the menu walks round its rows and picks the one it is on" {

@@ -6,6 +6,9 @@ const P = mathx.P;
 pub const W: i32 = 96;
 pub const H: i32 = 64;
 pub const CELLS: usize = @intCast(W * H);
+/// The corners of the map inside its edge, both inclusive.
+pub const INNER_LO = P{ .x = 1, .y = 1 };
+pub const INNER_HI = P{ .x = W - 2, .y = H - 2 };
 
 pub const NO_ONE: u16 = 0;
 pub const MAX_TORCHES: usize = 32;
@@ -31,7 +34,7 @@ pub const Tile = enum(u8) {
     }
 };
 
-/// Stamped once by `gen.build` and never recomputed.
+/// Stamped once by `gen.shapeWalls`, a room's corners then by `gen.outlineRoom`, and never recomputed.
 pub const WallShape = enum {
     top,
     bottom,
@@ -107,6 +110,20 @@ pub const Level = struct {
 
     pub fn inside(p: P) bool {
         return p.x >= 0 and p.y >= 0 and p.x < W and p.y < H;
+    }
+
+    /// The nearest cell off the map's edge.
+    pub fn inset(p: P) P {
+        return .{ .x = std.math.clamp(p.x, INNER_LO.x, INNER_HI.x), .y = std.math.clamp(p.y, INNER_LO.y, INNER_HI.y) };
+    }
+
+    pub fn onRim(p: P) bool {
+        return !inset(p).eq(p);
+    }
+
+    /// No step reaches a map corner: a diagonal into it cuts the rim's corner.
+    pub fn cornered(p: P) bool {
+        return (p.x == 0 or p.x == W - 1) and (p.y == 0 or p.y == H - 1);
     }
 
     /// Bind it before reading: `self.tile[idx(p)]` makes Zig 0.14 copy the whole array to honour the call's order.
@@ -188,6 +205,11 @@ pub const Level = struct {
         return self.who(p) != NO_ONE or self.hasBarrel(p);
     }
 
+    /// Open, and no one and no barrel in it.
+    pub fn vacant(self: *const Level, p: P) bool {
+        return self.walkable(p) and !self.taken(p);
+    }
+
     pub fn lightless(self: *Level) void {
         self.lit = [_]bool{false} ** CELLS;
     }
@@ -253,30 +275,45 @@ pub fn cellOr(comptime T: type, cells: *const [CELLS]T, p: P, outside: T) T {
     return cells[i];
 }
 
-/// Terrain only; -1 where nothing reaches.
+/// Terrain only; -1 where nothing reaches. How many cells it reached.
 pub fn distances(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32) usize {
-    @memset(out, -1);
-    var head: usize = 0;
-    var tail: usize = 0;
-    const s = Level.idx(from);
-    out[s] = 0;
-    queue[tail] = @intCast(s);
-    tail += 1;
-    while (head < tail) {
-        const i = queue[head];
-        head += 1;
+    var flood = Flood.init(lv, from, out, queue);
+    while (flood.next()) |_| {}
+    return flood.tail;
+}
+
+/// Breadth first from a cell over the terrain, one cell at a time, nearest first; `dist` fills as it goes.
+pub const Flood = struct {
+    lv: *const Level,
+    dist: *[CELLS]i32,
+    queue: *[CELLS]u32,
+    head: usize = 0,
+    tail: usize = 1,
+
+    pub fn init(lv: *const Level, from: P, dist: *[CELLS]i32, queue: *[CELLS]u32) Flood {
+        @memset(dist, -1);
+        const s = Level.idx(from);
+        dist[s] = 0;
+        queue[0] = @intCast(s);
+        return .{ .lv = lv, .dist = dist, .queue = queue };
+    }
+
+    pub fn next(self: *Flood) ?P {
+        if (self.head == self.tail) return null;
+        const i = self.queue[self.head];
+        self.head += 1;
         const here = Level.of(i);
         for (mathx.ALL_DIRS) |d| {
-            if (!lv.passOk(here, d)) continue;
+            if (!self.lv.passOk(here, d)) continue;
             const qi = Level.idx(here.add(d.delta()));
-            if (out[qi] >= 0) continue;
-            out[qi] = out[i] + 1;
-            queue[tail] = @intCast(qi);
-            tail += 1;
+            if (self.dist[qi] >= 0) continue;
+            self.dist[qi] = self.dist[i] + 1;
+            self.queue[self.tail] = @intCast(qi);
+            self.tail += 1;
         }
+        return here;
     }
-    return tail;
-}
+};
 
 /// Bresenham from the cell after `from` up to and including `to`.
 pub const Ray = struct {
@@ -326,8 +363,18 @@ pub const Ray = struct {
 
 /// No wall strictly between the two. The target's own cell may be opaque.
 pub fn clearLine(lv: *const Level, from: P, to: P) bool {
+    return lineOk(lv, from, to, false);
+}
+
+/// `clearLine`, and every cell on it lit, the target's too.
+pub fn litLine(lv: *const Level, from: P, to: P) bool {
+    return lineOk(lv, from, to, true);
+}
+
+fn lineOk(lv: *const Level, from: P, to: P, comptime lit: bool) bool {
     var ray = Ray.init(from, to);
     while (ray.next()) |c| {
+        if (lit and !lv.isLit(c)) return false;
         if (c.eq(to)) return true;
         if (lv.at(c).blind()) return false;
     }
@@ -338,7 +385,7 @@ pub fn openFloor() Level {
     var lv = Level.blank();
     for (0..CELLS) |i| {
         const p = Level.of(i);
-        if (p.x > 0 and p.y > 0 and p.x < W - 1 and p.y < H - 1) lv.tile[i] = .floor;
+        if (!Level.onRim(p)) lv.tile[i] = .floor;
     }
     return lv;
 }

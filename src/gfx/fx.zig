@@ -36,7 +36,7 @@ const FLY_FADE: f32 = 0.5;
 const MOTE_STEP: f32 = 1.0 / 30.0;
 /// Of its speed along the ground a mote keeps through each bounce.
 const SKID: f32 = 0.6;
-const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
+const CONTACT = look.CONTACT;
 const CONTACT_S: f32 = 0.09;
 /// Sprite pixels.
 const CONTACT_R: f32 = 7;
@@ -67,12 +67,12 @@ const Spray = struct {
 
 fn sprayOf(m: Matter) Spray {
     return switch (m) {
-        .blood => .{ .col = .{ .r = 112, .g = 22, .b = 16, .a = 220 }, .hit = 6, .kill = 14, .along_lo = 0.6, .along_hi = 2.2, .fan = 0.8, .up_lo = 0.6, .up_hi = 1.6, .grav = 7, .drag = 3, .life_lo = 0.35, .life_hi = 0.6, .r_lo = 1.2, .r_hi = 2.4, .stains = true },
-        .ooze => .{ .col = .{ .r = 70, .g = 120, .b = 72, .a = 220 }, .hit = 6, .kill = 15, .along_lo = 0.4, .along_hi = 1.7, .fan = 0.9, .up_lo = 0.5, .up_hi = 1.4, .grav = 5.5, .drag = 3, .life_lo = 0.3, .life_hi = 0.6, .r_lo = 1.4, .r_hi = 2.8, .stains = true },
-        .wood => .{ .col = .{ .r = 120, .g = 82, .b = 46, .a = 230 }, .hit = 6, .kill = 11, .along_lo = 0.2, .along_hi = 1.2, .fan = 1.4, .up_lo = 0.8, .up_hi = 1.9, .grav = 9, .drag = 2, .life_lo = 0.4, .life_hi = 0.7, .r_lo = 1.2, .r_hi = 2.2, .stains = false, .bounce = 0.35 },
+        .blood => .{ .col = look.BLOOD, .hit = 6, .kill = 14, .along_lo = 0.6, .along_hi = 2.2, .fan = 0.8, .up_lo = 0.6, .up_hi = 1.6, .grav = 7, .drag = 3, .life_lo = 0.35, .life_hi = 0.6, .r_lo = 1.2, .r_hi = 2.4, .stains = true },
+        .ooze => .{ .col = look.OOZE, .hit = 6, .kill = 15, .along_lo = 0.4, .along_hi = 1.7, .fan = 0.9, .up_lo = 0.5, .up_hi = 1.4, .grav = 5.5, .drag = 3, .life_lo = 0.3, .life_hi = 0.6, .r_lo = 1.4, .r_hi = 2.8, .stains = true },
+        .wood => .{ .col = look.SPLINTER, .hit = 6, .kill = 11, .along_lo = 0.2, .along_hi = 1.2, .fan = 1.4, .up_lo = 0.8, .up_hi = 1.9, .grav = 9, .drag = 2, .life_lo = 0.4, .life_hi = 0.7, .r_lo = 1.2, .r_hi = 2.2, .stains = false, .bounce = 0.35 },
         .ichor => blk: {
             var s = sprayOf(.blood);
-            s.col = .{ .r = look.GAS.r / 2, .g = look.GAS.g / 2, .b = look.GAS.b / 2, .a = s.col.a };
+            s.col = look.ICHOR;
             break :blk s;
         },
     };
