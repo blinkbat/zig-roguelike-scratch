@@ -34,6 +34,12 @@ pub const Face = struct {
         rl.drawTextEx(f, s, .{ .x = @floatFromInt(x), .y = @floatFromInt(y) }, @floatFromInt(size), 0, col);
     }
 
+    /// One character, its middle on `cx`, `cy`.
+    pub fn glyph(self: Face, ch: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+        const s = [_:0]u8{ch};
+        self.draw(&s, cx - @divTrunc(self.width(&s, size), 2), cy - @divTrunc(size, 2), size, col);
+    }
+
     /// Over a drop shadow, for text on the hud.
     pub fn text(self: Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
         const off = @max(@divTrunc(size, SHADOW_STEP), 1);

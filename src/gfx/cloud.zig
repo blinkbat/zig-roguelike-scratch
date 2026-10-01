@@ -25,35 +25,55 @@ pub fn tintOf(volume: u16) f32 {
     return @min(TINT_HI, TINT_LO + TINT_PER * @as(f32, @floatFromInt(volume)));
 }
 
+const Shade = struct { shader: rl.Shader, time: i32, cells: i32 };
+
 pub const Cloud = struct {
     tint: [grid.CELLS]f32,
     px: [TEXELS]rl.Color,
     stale: bool,
     /// The cells last baked into `px`.
     baked: [2]P,
+    /// Seconds, for the drift.
+    t: f32,
+    /// Seconds until the burst the newest gas came from lands; till then the cloud stays as drawn.
+    held: f32,
     tex: ?rl.Texture2D,
+    shade: ?Shade,
 
     pub fn create(alloc: std.mem.Allocator) !*Cloud {
         const c = try alloc.create(Cloud);
         c.tex = null;
+        c.shade = null;
         c.baked = @splat(.{ .x = 0, .y = 0 });
         c.clear();
         return c;
     }
 
+    /// The drift restarts too: the shader's hash loses its grain as `t` grows.
     pub fn clear(self: *Cloud) void {
         @memset(&self.tint, 0);
         self.stale = true;
+        self.t = 0;
+        self.held = 0;
     }
 
     /// As if long eased: the gas in sight, and nothing remembered.
     pub fn settle(self: *Cloud, lv: *const grid.Level) void {
         for (&self.tint, &lv.lit, &lv.gas) |*t, lit, v| t.* = if (lit) tintOf(v) else 0;
         self.stale = true;
+        self.held = 0;
+    }
+
+    pub fn hold(self: *Cloud, s: f32) void {
+        self.held = @max(self.held, s);
     }
 
     pub fn step(self: *Cloud, lv: *const grid.Level, dt: f32) void {
-        const k = 1 - @exp(-dt * EASE);
+        self.t += dt;
+        self.held -= dt;
+        if (self.held > 0) return;
+        self.held = 0;
+        const k = mathx.easing(dt, EASE);
         for (&self.tint, &lv.lit, &lv.gas) |*t, lit, v| {
             const want = tintOf(v);
             if (!lit or t.* == want) continue;
@@ -64,14 +84,16 @@ pub const Cloud = struct {
 
     /// Needs a live GL context.
     pub fn load(self: *Cloud) void {
-        const blank = rl.genImageColor(TEX_W, TEX_H, rl.Color.blank);
-        defer rl.unloadImage(blank);
-        self.tex = look.clamped(blank, .bilinear);
+        self.tex = look.canvas(TEX_W, TEX_H, rl.Color.blank);
+        const s = rl.loadShaderFromMemory(null, CLOUD_FS) catch return;
+        self.shade = look.uniforms(Shade, s);
     }
 
     pub fn unload(self: *Cloud) void {
         if (self.tex) |t| rl.unloadTexture(t);
+        if (self.shade) |s| rl.unloadShader(s.shader);
         self.tex = null;
+        self.shade = null;
     }
 
     /// Cells `lo` up to `hi` are on screen; `ox, oy` is where the floor's top-left corner lands.
@@ -84,7 +106,14 @@ pub const Cloud = struct {
             rl.updateTexture(tex, &self.px);
             self.stale = false;
         }
-        rl.drawTexturePro(tex, look.whole(tex), look.floorRect(ox, oy, cell), .{ .x = 0, .y = 0 }, 0, rl.Color.white);
+        const s = self.shade orelse return look.overFloor(tex, ox, oy, cell);
+        const cells = [2]f32{ @floatFromInt(grid.W), @floatFromInt(grid.H) };
+        rl.beginShaderMode(s.shader);
+        defer rl.endShaderMode();
+        rl.setShaderValue(s.shader, s.time, &self.t, .float);
+        rl.setShaderValue(s.shader, s.cells, &cells, .vec2);
+        look.overFloor(tex, ox, oy, cell);
+        rl.gl.rlDrawRenderBatchActive();
     }
 
     fn bake(self: *Cloud, lv: *const grid.Level, view: [2]P) void {
@@ -99,7 +128,7 @@ pub const Cloud = struct {
     /// A wall's texels take the tint of the open cell each faces, so gas meets a wall whole and none shows past it.
     fn texel(self: *const Cloud, lv: *const grid.Level, tx: i32, ty: i32) f32 {
         const c = P{ .x = @divFloor(tx, SUB), .y = @divFloor(ty, SUB) };
-        if (lv.walkable(c)) return self.tint[grid.Level.idx(c)];
+        if (lv.walkable(c)) return grid.cellOr(f32, &self.tint, c, 0);
         const sx: i32 = if (@mod(tx, SUB) * 2 < SUB) -1 else 1;
         const sy: i32 = if (@mod(ty, SUB) * 2 < SUB) -1 else 1;
         return @max(self.openAt(lv, c.add(.{ .x = sx, .y = 0 })), self.openAt(lv, c.add(.{ .x = 0, .y = sy })));
@@ -107,9 +136,68 @@ pub const Cloud = struct {
 
     fn openAt(self: *const Cloud, lv: *const grid.Level, p: P) f32 {
         if (!lv.walkable(p)) return 0;
-        return self.tint[grid.Level.idx(p)];
+        return grid.cellOr(f32, &self.tint, p, 0);
     }
 };
+
+/// Cells the noise pushes a pixel's lookup, and the fray's reach.
+const WARP: f32 = 0.12;
+const SOFT: f32 = 0.12;
+
+comptime {
+    // Past a quarter cell a pixel beside a wall reads the gas of the room behind the wall.
+    std.debug.assert(WARP + SOFT < 0.25);
+}
+
+const CLOUD_FS = "#version 330\n" ++ std.fmt.comptimePrint(
+    "const float TINT_HI = {d:.4};\nconst float WARP = {d:.4};\nconst float SOFT = {d:.4};\n",
+    .{ TINT_HI, WARP, SOFT },
+) ++
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\uniform sampler2D texture0;
+    \\uniform float time;
+    \\uniform vec2 cells;
+    \\out vec4 finalColor;
+    \\const vec2 DRIFT = vec2(0.21, 0.13);
+    \\float hash(vec2 p) {
+    \\    p = fract(p * vec2(123.34, 456.21));
+    \\    p += dot(p, p + 45.32);
+    \\    return fract(p.x * p.y);
+    \\}
+    \\float noise(vec2 p) {
+    \\    vec2 i = floor(p);
+    \\    vec2 f = fract(p);
+    \\    vec2 u = f * f * (3.0 - 2.0 * f);
+    \\    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+    \\}
+    \\float fbm(vec2 p) {
+    \\    float v = 0.0;
+    \\    float a = 0.5;
+    \\    for (int i = 0; i < 3; i++) {
+    \\        v += a * noise(p);
+    \\        p = p * 2.07 + vec2(5.2, 1.3);
+    \\        a *= 0.5;
+    \\    }
+    \\    return v / 0.875;
+    \\}
+    \\float density(vec2 c) {
+    \\    return texture(texture0, c / cells).a;
+    \\}
+    \\void main() {
+    \\    vec2 c = fragTexCoord * cells;
+    \\    vec2 drift = DRIFT * time;
+    \\    vec2 w = vec2(fbm(c * 0.7 + drift), fbm(c * 0.7 - drift.yx + 4.0)) - 0.5;
+    \\    vec2 q = c + w * WARP * 2.0;
+    \\    float d = density(q) * 0.4
+    \\        + (density(q + vec2(SOFT, 0.0)) + density(q - vec2(SOFT, 0.0))
+    \\        + density(q + vec2(0.0, SOFT)) + density(q - vec2(0.0, SOFT))) * 0.15;
+    \\    if (d < 0.004) discard;
+    \\    float n = fbm(c * 1.3 + w * 1.5 - drift * 0.6);
+    \\    vec3 col = texture(texture0, q / cells).rgb * mix(0.75, 1.2, n);
+    \\    finalColor = vec4(col, clamp(d * mix(0.5, 1.1, n), 0.0, TINT_HI)) * fragColor;
+    \\}
+;
 
 /// And a cell round them for the filter to reach.
 fn filtered(lo: P, hi: P) [2]P {

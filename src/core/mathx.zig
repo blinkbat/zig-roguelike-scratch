@@ -15,6 +15,17 @@ pub fn ease(v: f32, want: f32, up: f32, down: f32) f32 {
     return if (@abs(want - n) < SETTLE) want else n;
 }
 
+/// The share of the way an ease at `rate` per second goes in `dt`, the same whatever the frame rate.
+pub fn easing(dt: f32, rate: f32) f32 {
+    return 1 - @exp(-dt * rate);
+}
+
+/// Smoothstep, clamped to 0 and 1.
+pub fn smooth(t: f32) f32 {
+    const c = std.math.clamp(t, 0, 1);
+    return c * c * (3 - 2 * c);
+}
+
 pub fn roundTiesUp(v: f32) i32 {
     return @intFromFloat(@floor(v + 0.5));
 }
@@ -42,6 +53,11 @@ pub const P = struct {
 };
 
 /// The cell a point measured in cells lies in.
+/// The middle of `p`, in cells: `cellOf` of it is `p`.
+pub fn centre(p: P) [2]f32 {
+    return .{ @as(f32, @floatFromInt(p.x)) + 0.5, @as(f32, @floatFromInt(p.y)) + 0.5 };
+}
+
 pub fn cellOf(q: [2]f32) P {
     return .{ .x = @intFromFloat(@floor(q[0])), .y = @intFromFloat(@floor(q[1])) };
 }

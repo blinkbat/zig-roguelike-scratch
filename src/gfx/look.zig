@@ -73,7 +73,9 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .archer = @embedFile("archer.png"),
     .rat = @embedFile("rat.png"),
     .slime = @embedFile("slime.png"),
-    .bloat = null,
+    .slime_half = @embedFile("slime-half.png"),
+    .slime_quarter = @embedFile("slime-quarter.png"),
+    .bloat = @embedFile("bloat.png"),
 });
 
 const WALLS_PNG = @embedFile("walls.png");
@@ -109,18 +111,29 @@ fn wallCell(sheet: rl.Image, c: WallCell) ?rl.Image {
     });
 }
 
-pub fn whole(t: rl.Texture2D) rl.Rectangle {
+fn whole(t: rl.Texture2D) rl.Rectangle {
     return .{ .x = 0, .y = 0, .width = @floatFromInt(t.width), .height = @floatFromInt(t.height) };
 }
 
-/// The whole floor on screen, its top-left corner at `ox, oy`.
-pub fn floorRect(ox: i32, oy: i32, cell: i32) rl.Rectangle {
-    return .{
+/// All of `t` over `dest`.
+pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
+    rl.drawTexturePro(t, whole(t), dest, .{ .x = 0, .y = 0 }, 0, tint);
+}
+
+/// Stretched over the whole floor, its top-left corner at `ox, oy`.
+pub fn overFloor(t: rl.Texture2D, ox: i32, oy: i32, cell: i32) void {
+    const dest = rl.Rectangle{
         .x = @floatFromInt(ox),
         .y = @floatFromInt(oy),
         .width = @floatFromInt(grid.W * cell),
         .height = @floatFromInt(grid.H * cell),
     };
+    stretch(t, dest, rl.Color.white);
+}
+
+/// Borrows `px`, packed `w` to a row: nothing to unload.
+pub fn rgba(px: *anyopaque, w: i32, h: i32) rl.Image {
+    return .{ .data = px, .width = w, .height = h, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
 }
 
 /// Needs a live GL context.
@@ -129,6 +142,39 @@ pub fn clamped(img: rl.Image, filter: rl.TextureFilter) ?rl.Texture2D {
     rl.setTextureFilter(t, filter);
     rl.setTextureWrap(t, .clamp);
     return t;
+}
+
+/// Filled with `c`, for pixels uploaded every frame. Needs a live GL context.
+pub fn canvas(w: i32, h: i32, c: rl.Color) ?rl.Texture2D {
+    const img = rl.genImageColor(w, h, c);
+    defer rl.unloadImage(img);
+    return clamped(img, .bilinear);
+}
+
+/// White, its alpha `alphaAt(dx, dy)` from the middle, 1 at the middle of each edge. Needs a live GL context.
+pub fn radial(comptime px: i32, comptime alphaAt: fn (f32, f32) f32) ?rl.Texture2D {
+    const n: usize = @intCast(px);
+    var img: [n * n]rl.Color = undefined;
+    const half: f32 = @as(f32, @floatFromInt(px)) * 0.5;
+    for (0..n) |y| {
+        for (0..n) |x| {
+            const dx = (@as(f32, @floatFromInt(x)) + 0.5 - half) / half;
+            const dy = (@as(f32, @floatFromInt(y)) + 0.5 - half) / half;
+            img[y * n + x] = .{ .r = 255, .g = 255, .b = 255, .a = @intFromFloat(alphaAt(dx, dy) * 255) };
+        }
+    }
+    return clamped(rgba(&img, px, px), .bilinear);
+}
+
+/// Every field but `shader` is the location of the GLSL uniform it is named for.
+pub fn uniforms(comptime T: type, s: rl.Shader) T {
+    var u: T = undefined;
+    u.shader = s;
+    inline for (std.meta.fields(T)) |f| {
+        if (comptime std.mem.eql(u8, f.name, "shader")) continue;
+        @field(u, f.name) = rl.getShaderLocation(s, f.name);
+    }
+    return u;
 }
 
 pub fn rgb(hex: u24) rl.Color {
@@ -146,6 +192,10 @@ const SHADE = rgb(0x3e3c46);
 pub const BG = rgb(0x07070a);
 pub const LIT = rl.Color.white;
 pub const FLOOR_BG = rgb(0x121116);
+/// Unlit rock, where a wall has no texture.
+pub const ROCK = rgb(0x1e1c24);
+/// The editor's ground of a procgen node, whose floor is only rolled in play.
+pub const UNROLLED = rgb(0x1b2330);
 pub const TEXT = rgb(0xd8cdb4);
 pub const DIM = rgb(0x8c8672);
 pub const LIFE = rgb(0x9c2f2a);
@@ -165,13 +215,14 @@ pub fn tile(t: grid.Tile) Look {
 pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
+pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
 pub const COIN = GOLD;
 
 pub fn body(k: actor.Kind) Look {
     return switch (k) {
         .archer => .{ .ch = '@', .fg = rgb(0x7cc86e) },
         .rat => .{ .ch = 'r', .fg = rgb(0xb07a4e) },
-        .slime => .{ .ch = 's', .fg = rgb(0x6fae5a) },
+        .slime, .slime_half, .slime_quarter => .{ .ch = 's', .fg = rgb(0x6fae5a) },
         .bloat => .{ .ch = 'b', .fg = GAS },
     };
 }
@@ -184,7 +235,7 @@ pub const Gait = enum { hop, slide };
 pub fn gait(k: actor.Kind) Gait {
     return switch (k) {
         .archer, .rat => .hop,
-        .slime, .bloat => .slide,
+        .slime, .slime_half, .slime_quarter, .bloat => .slide,
     };
 }
 
@@ -253,6 +304,7 @@ test "every glyph is printable ascii" {
     for (std.enums.values(actor.Kind)) |k| try std.testing.expect(inked(body(k).ch));
     try std.testing.expect(inked(TORCH.ch));
     try std.testing.expect(inked(BARREL.ch));
+    try std.testing.expect(inked(DOOR.ch));
     try std.testing.expect(inked(CLEAR.ch));
     for (skillbar.ACTS) |a| try std.testing.expect(inked(skill(a).ch));
 }

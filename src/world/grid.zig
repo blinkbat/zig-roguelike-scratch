@@ -9,6 +9,8 @@ pub const CELLS: usize = @intCast(W * H);
 
 pub const NO_ONE: u16 = 0;
 pub const MAX_TORCHES: usize = 32;
+pub const MAX_DOORS: usize = 16;
+pub const NO_DOOR: u8 = 0;
 
 pub const Tile = enum(u8) {
     wall,
@@ -66,6 +68,8 @@ pub const Level = struct {
     /// 1-based into the actor pool; `NO_ONE` is empty.
     occupant: [CELLS]u16,
     barrel: [CELLS]bool,
+    /// 1-based into the map's doors; `NO_DOOR` is none.
+    door: [CELLS]u8,
     /// Caustic gas, Brogue's volume: `world/gas.zig` spreads it.
     gas: [CELLS]u16,
     /// Walls with a torch on their face.
@@ -80,6 +84,7 @@ pub const Level = struct {
             .lit = [_]bool{false} ** CELLS,
             .occupant = [_]u16{NO_ONE} ** CELLS,
             .barrel = [_]bool{false} ** CELLS,
+            .door = [_]u8{NO_DOOR} ** CELLS,
             .gas = [_]u16{0} ** CELLS,
             .torch = undefined,
             .torch_n = 0,
@@ -151,6 +156,20 @@ pub const Level = struct {
         return true;
     }
 
+    /// The door's index into its map's doors.
+    pub fn doorAt(self: *const Level, p: P) ?usize {
+        const d = cellOr(u8, &self.door, p, NO_DOOR);
+        return if (d == NO_DOOR) null else d - 1;
+    }
+
+    /// Opens the cell it hangs in.
+    pub fn putDoor(self: *Level, p: P, i: usize) void {
+        if (!inside(p)) return;
+        const k = idx(p);
+        self.tile[k] = .floor;
+        self.door[k] = @intCast(i + 1);
+    }
+
     pub fn gasAt(self: *const Level, p: P) u16 {
         return cellOr(u16, &self.gas, p, 0);
     }
@@ -206,6 +225,25 @@ pub const Level = struct {
         if (self.hasBarrel(to)) return false;
         const w = self.who(to);
         return w == NO_ONE or w == ignore;
+    }
+};
+
+/// Every cell from `lo` up to `hi`, row by row.
+pub const Cells = struct {
+    lo: P,
+    hi: P,
+    at: P,
+
+    pub fn of(lo: P, hi: P) Cells {
+        return .{ .lo = lo, .hi = hi, .at = if (lo.x < hi.x) lo else .{ .x = lo.x, .y = hi.y } };
+    }
+
+    pub fn next(self: *Cells) ?P {
+        if (self.at.y >= self.hi.y) return null;
+        const p = self.at;
+        self.at.x += 1;
+        if (self.at.x == self.hi.x) self.at = .{ .x = self.lo.x, .y = p.y + 1 };
+        return p;
     }
 };
 

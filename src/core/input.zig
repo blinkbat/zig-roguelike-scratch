@@ -4,7 +4,8 @@ const mathx = @import("mathx.zig");
 
 // THE ONLY FILE THAT TOUCHES A DEVICE. The pad is primary and the only one the UI names; the keyboard mirrors it.
 
-pub const PAD: i32 = 0;
+const PAD: i32 = 0;
+const ENTER_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
 const LEAN: rl.GamepadButton = .left_trigger_2;
 
 pub const MOVE_CAPTION = "D-pad";
@@ -21,6 +22,7 @@ fn padName(b: rl.GamepadButton) [:0]const u8 {
         .right_trigger_1 => "RB",
         .right_trigger_2 => "RT",
         .middle_left => "View",
+        .middle_right => "Menu",
         else => "?",
     };
 }
@@ -65,6 +67,7 @@ pub const Button = enum {
     rb,
     rt,
     view,
+    pause,
 
     fn pad(b: Button) rl.GamepadButton {
         return switch (b) {
@@ -76,12 +79,13 @@ pub const Button = enum {
             .rb => .right_trigger_1,
             .rt => .right_trigger_2,
             .view => .middle_left,
+            .pause => .middle_right,
         };
     }
 
     fn keys(b: Button) []const rl.KeyboardKey {
         return switch (b) {
-            .a => &.{ .enter, .kp_enter },
+            .a => &ENTER_KEYS,
             .b => &.{ .period, .kp_5 },
             .x => &.{ .f, .space },
             .y => &.{.e},
@@ -89,6 +93,7 @@ pub const Button = enum {
             .rb => &.{.r},
             .rt => &.{.t},
             .view => &.{.tab},
+            .pause => &.{.escape},
         };
     }
 
@@ -98,7 +103,11 @@ pub const Button = enum {
 };
 
 const BUTTONS = std.enums.values(Button);
-const FULLSCREEN_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
+
+/// raylib closes the window on Esc unless its exit key is cleared. Needs the window open.
+pub fn claimKeys() void {
+    rl.setExitKey(.null);
+}
 
 /// Schmitt trigger, then DAS and ARR; re-latches the moment it is steered. `settle` holds a new direction back so two
 /// keys a frame apart read as one diagonal; a tap let go before it settles steps once, on release.
@@ -158,6 +167,37 @@ fn partOf(d: mathx.Dir, diag: mathx.Dir) bool {
     return b.x == a.x or b.y == a.y;
 }
 
+/// Printable ascii typed this frame.
+pub const Typed = struct {
+    const MAX: usize = 16;
+    buf: [MAX]u8 = undefined,
+    n: usize = 0,
+
+    pub fn text(self: *const Typed) []const u8 {
+        return self.buf[0..self.n];
+    }
+
+    fn read(self: *Typed) void {
+        self.n = 0;
+        while (true) {
+            const c = rl.getCharPressed();
+            if (c == 0) break;
+            if (c < ' ' or c > '~' or self.n == MAX) continue;
+            self.buf[self.n] = @intCast(c);
+            self.n += 1;
+        }
+    }
+};
+
+/// A key that types a character, which a field being typed in takes from the buttons and the walk.
+fn types(k: rl.KeyboardKey) bool {
+    const c = @intFromEnum(k);
+    return (c >= @intFromEnum(rl.KeyboardKey.a) and c <= @intFromEnum(rl.KeyboardKey.z)) or
+        (c >= @intFromEnum(rl.KeyboardKey.zero) and c <= @intFromEnum(rl.KeyboardKey.nine)) or
+        (c >= @intFromEnum(rl.KeyboardKey.kp_0) and c <= @intFromEnum(rl.KeyboardKey.kp_9)) or
+        k == .space or k == .period or k == .apostrophe or k == .minus;
+}
+
 pub const State = struct {
     pressed: std.EnumSet(Button) = .initEmpty(),
     down: std.EnumSet(Button) = .initEmpty(),
@@ -165,6 +205,10 @@ pub const State = struct {
     walk: ?mathx.Dir = null,
     lean: bool = false,
     step: Stepper = .{},
+    /// Set by whatever is typed into, before `update`: typing keys then type, and press no button.
+    typing: bool = false,
+    typed: Typed = .{},
+    rub: bool = false,
 
     pub fn hit(self: State, b: Button) bool {
         return self.pressed.contains(b);
@@ -187,6 +231,7 @@ pub const State = struct {
             var hold = pad and rl.isGamepadButtonDown(PAD, b.pad());
             if (!alt_down) {
                 for (b.keys()) |k| {
+                    if (self.typing and types(k)) continue;
                     on = on or rl.isKeyPressed(k);
                     hold = hold or rl.isKeyDown(k);
                 }
@@ -194,11 +239,14 @@ pub const State = struct {
             self.pressed.setPresent(b, on);
             self.down.setPresent(b, hold);
         }
-        self.fullscreen = false;
-        if (alt_down) {
-            for (FULLSCREEN_KEYS) |k| self.fullscreen = self.fullscreen or rl.isKeyPressed(k);
-        }
+        self.fullscreen = alt_down and anyHit(&ENTER_KEYS);
         self.lean = pad and rl.isGamepadButtonDown(PAD, LEAN);
+        self.typed.n = 0;
+        self.rub = false;
+        if (self.typing) {
+            self.typed.read();
+            self.rub = rl.isKeyPressed(.backspace) or rl.isKeyPressedRepeat(.backspace);
+        }
 
         var x: f32 = 0;
         var y: f32 = 0;
@@ -214,7 +262,7 @@ pub const State = struct {
             if (digital) |p| {
                 if (self.lean) digital = leanOf(mathx.dirTo(.{ .x = 0, .y = 0 }, p).?).delta();
             }
-            if (digital orelse keyWalk()) |d| {
+            if (digital orelse keyWalk(self.typing)) |d| {
                 defl = 1;
                 heading = mathx.headingOf(@floatFromInt(d.x), @floatFromInt(d.y));
                 settle = Stepper.SETTLE;
@@ -223,6 +271,141 @@ pub const State = struct {
         self.walk = self.step.tick(dt, defl, heading, settle);
     }
 };
+
+/// The editor's, and the only mouse: it is a desk tool, so it names keys.
+pub const Desk = struct {
+    pub const TOOL_KEYS = [_]struct { key: rl.KeyboardKey, name: [:0]const u8 }{
+        .{ .key = .one, .name = "1" },   .{ .key = .two, .name = "2" },   .{ .key = .three, .name = "3" },
+        .{ .key = .four, .name = "4" },  .{ .key = .five, .name = "5" },  .{ .key = .six, .name = "6" },
+        .{ .key = .seven, .name = "7" }, .{ .key = .eight, .name = "8" }, .{ .key = .nine, .name = "9" },
+        .{ .key = .zero, .name = "0" },
+    };
+    const PAN_KEYS = [_]struct { d: mathx.Dir, keys: [2]rl.KeyboardKey }{
+        .{ .d = .n, .keys = .{ .w, .up } },
+        .{ .d = .e, .keys = .{ .d, .right } },
+        .{ .d = .s, .keys = .{ .s, .down } },
+        .{ .d = .w, .keys = .{ .a, .left } },
+    };
+    pub const PLAY_CAPTION = "F5";
+    pub const PLAY_HERE_CAPTION = "F6";
+    pub const SAVE_CAPTION = "Ctrl+S";
+    pub const SAVE_AS_CAPTION = "Ctrl+Shift+S";
+    pub const OPEN_CAPTION = "Ctrl+O";
+    pub const NEW_CAPTION = "Ctrl+N";
+    pub const UNDO_CAPTION = "Ctrl+Z";
+    pub const REDO_CAPTION = "Ctrl+Y / Ctrl+Shift+Z";
+    pub const TOOLS_CAPTION = TOOL_KEYS[0].name ++ "-" ++ TOOL_KEYS[TOOL_KEYS.len - 1].name;
+    pub const PAINT_CAPTION = "LMB";
+    pub const ERASE_CAPTION = "RMB";
+    pub const RECT_CAPTION = "Shift+drag";
+    pub const BRUSH_CAPTION = "[ ]";
+    pub const PAN_CAPTION = "MMB drag / WASD / arrows";
+    pub const WHEEL_CAPTION = "wheel";
+    pub const FULLSCREEN_CAPTION = "Alt+Enter";
+    pub const GRAPH_CAPTION = "Tab";
+    pub const GO_CAPTION = "G";
+    pub const RENAME_CAPTION = "F2";
+    pub const BACK_CAPTION = "Esc";
+    pub const ENTER_CAPTION = "Enter";
+
+    mouse: mathx.P = .{ .x = 0, .y = 0 },
+    /// Pixels the mouse moved since the last frame.
+    moved: mathx.P = .{ .x = 0, .y = 0 },
+    wheel: f32 = 0,
+    paint: bool = false,
+    paint_hit: bool = false,
+    erase: bool = false,
+    erase_hit: bool = false,
+    grab: bool = false,
+    shift: bool = false,
+    /// Held pan keys, one step on each axis.
+    pan: mathx.P = .{ .x = 0, .y = 0 },
+    play: bool = false,
+    play_here: bool = false,
+    save: bool = false,
+    save_as: bool = false,
+    open: bool = false,
+    new: bool = false,
+    undo: bool = false,
+    redo: bool = false,
+    graph: bool = false,
+    go: bool = false,
+    rename: bool = false,
+    back: bool = false,
+    enter: bool = false,
+    fullscreen: bool = false,
+    rub: bool = false,
+    smaller: bool = false,
+    bigger: bool = false,
+    tool: ?usize = null,
+    typed: Typed = .{},
+
+    pub fn text(self: *const Desk) []const u8 {
+        return self.typed.text();
+    }
+
+    pub fn update(self: *Desk) void {
+        const m = rl.getMousePosition();
+        const d = rl.getMouseDelta();
+        self.mouse = .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
+        self.moved = .{ .x = @intFromFloat(d.x), .y = @intFromFloat(d.y) };
+        self.wheel = rl.getMouseWheelMove();
+        self.paint = rl.isMouseButtonDown(.left);
+        self.paint_hit = rl.isMouseButtonPressed(.left);
+        self.erase = rl.isMouseButtonDown(.right);
+        self.erase_hit = rl.isMouseButtonPressed(.right);
+        self.grab = rl.isMouseButtonDown(.middle);
+        const ctrl = rl.isKeyDown(.left_control) or rl.isKeyDown(.right_control);
+        self.shift = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
+        self.pan = .{ .x = 0, .y = 0 };
+        if (!ctrl) {
+            for (PAN_KEYS) |w| {
+                for (w.keys) |k| {
+                    if (!rl.isKeyDown(k)) continue;
+                    self.pan = self.pan.add(w.d.delta());
+                    break;
+                }
+            }
+        }
+        const hit = struct {
+            fn f(k: rl.KeyboardKey) bool {
+                return rl.isKeyPressed(k);
+            }
+        }.f;
+        self.play = hit(.f5);
+        self.play_here = hit(.f6);
+        self.save = ctrl and !self.shift and hit(.s);
+        self.save_as = ctrl and self.shift and hit(.s);
+        self.open = ctrl and hit(.o);
+        self.new = ctrl and hit(.n);
+        self.undo = ctrl and !self.shift and hit(.z);
+        self.redo = ctrl and (hit(.y) or (self.shift and hit(.z)));
+        self.graph = hit(.tab);
+        self.go = !ctrl and hit(.g);
+        self.rename = hit(.f2);
+        self.back = hit(.escape);
+        const alt = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
+        self.fullscreen = alt and anyHit(&ENTER_KEYS);
+        self.enter = !alt and anyHit(&ENTER_KEYS);
+        self.rub = hit(.backspace) or rl.isKeyPressedRepeat(.backspace);
+        self.smaller = hit(.left_bracket);
+        self.bigger = hit(.right_bracket);
+        self.tool = null;
+        if (!ctrl) {
+            for (TOOL_KEYS, 0..) |k, i| {
+                if (hit(k.key)) self.tool = i;
+            }
+        }
+        self.typed.read();
+    }
+};
+
+fn anyHit(keys: []const rl.KeyboardKey) bool {
+    for (keys) |k| {
+        if (rl.isKeyPressed(k)) return true;
+    }
+    return false;
+}
 
 fn nonZero(p: mathx.P) ?mathx.P {
     return if (p.x == 0 and p.y == 0) null else p;
@@ -237,11 +420,11 @@ fn dpadWalk() ?mathx.P {
     return nonZero(p);
 }
 
-fn keyWalk() ?mathx.P {
+fn keyWalk(typing: bool) ?mathx.P {
     var p = mathx.P{ .x = 0, .y = 0 };
     for (WALKS) |w| {
         for (w.keys) |k| {
-            if (!rl.isKeyDown(k)) continue;
+            if ((typing and types(k)) or !rl.isKeyDown(k)) continue;
             p = p.add(w.d.delta());
             break;
         }

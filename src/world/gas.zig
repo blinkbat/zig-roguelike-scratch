@@ -3,8 +3,8 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
 const gen = @import("gen.zig");
 
-// EVERY GAS, Brogue CE's `updateVolumetricMedia` for one gas. The loss is per cell, so a cloud spread thin over open
-// ground clears fast and one shut in a room lingers.
+// EVERY GAS, after Brogue CE's `updateVolumetricMedia` for one gas, but only a gassed-up cell spreads. The loss is per
+// cell, so a cloud spread over open ground clears sooner than one shut in a room.
 
 const P = mathx.P;
 
@@ -12,8 +12,10 @@ const P = mathx.P;
 pub const BURST: u16 = 2000;
 /// Brogue updates gas twice a hundred ticks, which is one turn.
 pub const PASSES: usize = 2;
-/// Brogue's `TM_GAS_DISSIPATES`.
-pub const DISSIPATE: f32 = 0.2;
+/// A cell holding less keeps its gas: it takes from a gassed-up neighbour and gives none on.
+pub const GASSED_UP: u16 = 20;
+/// The share of passes a cell that held gas loses a unit; Brogue's `TM_GAS_DISSIPATES` is 0.2.
+pub const DISSIPATE: f32 = 0.5;
 /// Brogue's `T_CAUSES_DAMAGE`: a fifteenth of the body's full hp a turn.
 const HARM_PART: i32 = 15;
 
@@ -30,34 +32,45 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng) void {
     for (0..PASSES) |_| spread(lv, rng);
 }
 
-/// Row by row as Brogue goes, over only the cells a pass can reach: past them every sum is 0 and nothing is rolled.
+/// What a gassed-up cell cannot share evenly goes a unit at a time to any of its cells at random, so spreading loses none.
 fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
     const box = reach(lv) orelse return;
-    var next = [_]u16{0} ** grid.CELLS;
+    var next = [_]u32{0} ** grid.CELLS;
     var y = box[0].y;
     while (y <= box[1].y) : (y += 1) {
         var x = box[0].x;
         while (x <= box[1].x) : (x += 1) {
             const p = P{ .x = x, .y = y };
             const i = grid.Level.idx(p);
-            if (lv.tile[i].solid()) continue;
-            const own = lv.gas[i];
-            var sum: u32 = own;
-            var n: u32 = 1;
+            const v = lv.gas[i];
+            if (v == 0) continue;
+            if (v < GASSED_UP) {
+                next[i] += v;
+                continue;
+            }
+            var to: [mathx.ALL_DIRS.len + 1]usize = undefined;
+            to[0] = i;
+            var n: usize = 1;
             for (mathx.ALL_DIRS) |d| {
                 const q = p.add(d.delta());
                 if (!lv.walkable(q)) continue;
-                sum += lv.gasAt(q);
+                to[n] = grid.Level.idx(q);
                 n += 1;
             }
-            if (sum == 0) continue;
-            var v = sum / n;
-            if (rng.below(n) < sum % n) v += 1;
-            if (v > 0 and own > 0 and rng.chance(DISSIPATE)) v -= 1;
-            next[i] = @intCast(v);
+            const share: u32 = v / @as(u32, @intCast(n));
+            for (to[0..n]) |t| next[t] += share;
+            for (0..v % n) |_| next[to[rng.below(@intCast(n))]] += 1;
         }
     }
-    lv.gas = next;
+    y = box[0].y;
+    while (y <= box[1].y) : (y += 1) {
+        var x = box[0].x;
+        while (x <= box[1].x) : (x += 1) {
+            const i = grid.Level.idx(.{ .x = x, .y = y });
+            if (next[i] > 0 and lv.gas[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
+            lv.gas[i] = @intCast(@min(next[i], std.math.maxInt(u16)));
+        }
+    }
 }
 
 /// The corners of the box round every cell holding gas, a cell wider all round.
@@ -105,7 +118,22 @@ fn onOpenFloor(rng: *mathx.Rng) !Life {
     return lasts(&lv, rng);
 }
 
-test "a burst shut in a room lingers, and on open floor thins out and clears far sooner" {
+test "a gassed-up cell shares its gas evenly with its open neighbours, and a thinner one keeps its own" {
+    var rng = mathx.Rng.init(0x6A5);
+    const at = P{ .x = 20, .y = 20 };
+    var lv = grid.openFloor();
+    lv.addGas(at, 9 * 100);
+    spread(&lv, &rng);
+    for (mathx.ALL_DIRS) |d| try std.testing.expectEqual(@as(u16, 100), lv.gasAt(at.add(d.delta())));
+    try std.testing.expect(lv.gasAt(at) >= 99);
+    var thin = grid.openFloor();
+    thin.addGas(at, GASSED_UP - 1);
+    spread(&thin, &rng);
+    for (mathx.ALL_DIRS) |d| try std.testing.expectEqual(@as(u16, 0), thin.gasAt(at.add(d.delta())));
+    try std.testing.expect(thin.gasAt(at) >= GASSED_UP - 2);
+}
+
+test "a burst shut in a room lingers, and on open floor clears sooner and spreads only as far as it stays gassed up" {
     var rng = mathx.Rng.init(0x6A5);
     var shut = grid.Level.blank();
     const room = gen.Room{ .x = 10, .y = 10, .w = 9, .h = 6 };
@@ -115,8 +143,8 @@ test "a burst shut in a room lingers, and on open floor thins out and clears far
     const b = try onOpenFloor(&rng);
     std.debug.print("a bloat's burst: shut in a 9x6 room it lasts {d} turns over at most {d} cells, on open floor {d} turns over at most {d}\n", .{ a.turns, a.most, b.turns, b.most });
     try std.testing.expectEqual(@as(usize, @intCast(room.w * room.h)), a.most);
-    try std.testing.expect(a.turns > b.turns * 2);
-    try std.testing.expect(b.most > a.most * 4);
+    try std.testing.expect(a.turns > b.turns);
+    try std.testing.expect(b.most < BURST / GASSED_UP * 2);
 }
 
 test "a burst in a room of a real floor leaks out of its doorways: sooner gone than shut in, later than in the open" {

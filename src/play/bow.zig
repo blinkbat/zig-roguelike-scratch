@@ -17,10 +17,17 @@ pub const Flight = struct {
     struck: ?Hit = null,
 };
 
-/// The reticle's legal cells and the shot's legality are this one call.
+/// The reticle's legal cells and the shot's legality are this one call; a line slips past corners sight does not, so every cell on it is lit.
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     const d = mathx.dist(from, to);
-    return d >= 1 and d <= RANGE and lv.walkable(to) and lv.isLit(to) and grid.clearLine(lv, from, to);
+    if (d < 1 or d > RANGE or !lv.walkable(to)) return false;
+    var ray = grid.Ray.init(from, to);
+    while (ray.next()) |c| {
+        if (!lv.isLit(c)) return false;
+        if (c.eq(to)) return true;
+        if (lv.at(c).blind()) return false;
+    }
+    return true;
 }
 
 pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
@@ -40,15 +47,19 @@ pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
     return near.best;
 }
 
+/// Chebyshev first; the straighter line breaks a tie.
 const Nearest = struct {
     from: P,
     best: ?P = null,
-    best_d: f32 = std.math.floatMax(f32),
+    best_d: i32 = std.math.maxInt(i32),
+    best_line: f32 = std.math.floatMax(f32),
 
     fn offer(n: *Nearest, p: P) void {
-        const d = mathx.distEuclid(n.from, p);
-        if (d >= n.best_d) return;
+        const d = mathx.dist(n.from, p);
+        const line = mathx.distEuclid(n.from, p);
+        if (d > n.best_d or (d == n.best_d and line >= n.best_line)) return;
         n.best_d = d;
+        n.best_line = line;
         n.best = p;
     }
 };
@@ -132,6 +143,62 @@ test "pick takes the nearest visible rat in range and ignores the dark" {
     while (y < 36) : (y += 1) lv.set(.{ .x = 28, .y = y }, .wall);
     fov.cast(&lv, hero, sight);
     try std.testing.expectEqual(@as(?P, .{ .x = 36, .y = 30 }), pick(&lv, &pool, hero));
+}
+
+test "pick takes the rat fewest steps away, not the one nearest as the crow flies" {
+    const fov = @import("../world/fov.zig");
+    var lv = grid.openFloor();
+    var pool = actor.Pool{};
+    const hero = P{ .x = 30, .y = 30 };
+    _ = pool.spawn(&lv, actor.Actor.of(.archer, hero));
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 35, .y = 30 }));
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 34, .y = 34 }));
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 34, .y = 27 }));
+    fov.cast(&lv, hero, actor.row(.archer).sight);
+    try std.testing.expectEqual(@as(?P, .{ .x = 34, .y = 27 }), pick(&lv, &pool, hero));
+}
+
+test "no mark is legal whose line crosses a cell out of sight, though the mark is lit and no wall stands on the line" {
+    const fov = @import("../world/fov.zig");
+    const gen = @import("../world/gen.zig");
+    var lv: grid.Level = undefined;
+    _ = gen.build(&lv, 41120);
+    const from = P{ .x = 37, .y = 28 };
+    const mark = P{ .x = 45, .y = 27 };
+    const past = P{ .x = 42, .y = 27 };
+    fov.cast(&lv, from, actor.row(.archer).sight);
+    try std.testing.expect(lv.isLit(mark) and grid.clearLine(&lv, from, mark));
+    try std.testing.expect(lv.walkable(past) and !lv.isLit(past));
+    try std.testing.expect(!aimable(&lv, from, mark));
+    var marks: usize = 0;
+    var dark: usize = 0;
+    for (0..10) |i| {
+        _ = gen.build(&lv, 41120 +% i *% 7919);
+        var k: usize = 0;
+        while (k < grid.CELLS) : (k += 7) {
+            const at = grid.Level.of(k);
+            if (!lv.walkable(at)) continue;
+            fov.cast(&lv, at, actor.row(.archer).sight);
+            var y = at.y - RANGE;
+            while (y <= at.y + RANGE) : (y += 1) {
+                var x = at.x - RANGE;
+                while (x <= at.x + RANGE) : (x += 1) {
+                    const p = P{ .x = x, .y = y };
+                    if (!aimable(&lv, at, p)) continue;
+                    marks += 1;
+                    var ray = grid.Ray.init(at, p);
+                    while (ray.next()) |c| {
+                        if (lv.isLit(c)) continue;
+                        dark += 1;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    std.debug.print("{d} legal marks over 10 floors, {d} of them past a cell out of sight\n", .{ marks, dark });
+    try std.testing.expect(marks > 10000);
+    try std.testing.expectEqual(@as(usize, 0), dark);
 }
 
 test "a rat takes exactly two arrows" {

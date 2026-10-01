@@ -163,24 +163,32 @@ const Torch = struct {
         return bilinear(&t.reach, SPAN, SPAN, u, v, 0);
     }
 
-    fn shine(t: *const Torch, s: Spot) f32 {
+    /// The flame's offset from a point and how much of it reaches there, fallen off and occluded; null out of reach.
+    fn toward(t: *const Torch, x: f32, y: f32, z: f32) ?struct { d: [3]f32, d2: f32, k: f32 } {
         const f = t.flame();
-        const dx = f[0] - s.x;
-        const dy = f[1] - s.y;
-        const dz = f[2] - s.z;
-        const flat2 = dx * dx + dy * dy;
-        const d2 = flat2 + dz * dz;
-        if (d2 >= REACH2) return 0;
-        const o = t.reached(s.x, s.y);
-        if (o <= 0) return 0;
+        const d = [3]f32{ f[0] - x, f[1] - y, f[2] - z };
+        const d2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+        if (d2 >= REACH2) return null;
+        const o = t.reached(x, y);
+        if (o <= 0) return null;
+        return .{ .d = d, .d2 = d2, .k = falloff(d2) * o };
+    }
+
+    fn shine(t: *const Torch, s: Spot) f32 {
+        const r = t.toward(s.x, s.y, s.z) orelse return 0;
         const facing = switch (s.surface) {
-            .floor => wrapped(dz / @sqrt(d2), FLOOR_WRAP),
-            .face => wrapped(dy / @sqrt(@max(flat2, 1e-4)), FACE_WRAP) * FACE_GAIN,
+            .floor => wrapped(r.d[2] / @sqrt(r.d2), FLOOR_WRAP),
+            .face => wrapped(r.d[1] / @sqrt(@max(r.d[0] * r.d[0] + r.d[1] * r.d[1], 1e-4)), FACE_WRAP) * FACE_GAIN,
             .ceiling => CEILING_CATCH,
         };
-        return falloff(d2) * facing * o;
+        return r.k * facing;
     }
 };
+
+/// Memory's dim out of sight, black where never seen: the ground's and a body's alike.
+fn remembered(view: Rgb, sight: f32, memory: f32) Rgb {
+    return (MEMORY + (view - MEMORY) * splat(sight)) * splat(memory);
+}
 
 /// Windowed inverse square: exactly nothing at `REACH`.
 fn falloff(d2: f32) f32 {
@@ -266,10 +274,7 @@ fn knee(c: Rgb) Rgb {
     return out;
 }
 
-fn smooth(t: f32) f32 {
-    const c = std.math.clamp(t, 0, 1);
-    return c * c * (3 - 2 * c);
-}
+const smooth = mathx.smooth;
 
 fn splat(k: f32) Rgb {
     return @splat(k);
@@ -331,7 +336,8 @@ pub const Shine = struct {
     }
 };
 
-pub const Flame = struct { at: [2]f32, glow: f32, sight: f32 };
+/// `lit` is how far in sight the flame is, `memory` how far remembered, as the ground under a body is.
+pub const Flame = struct { at: [2]f32, glow: f32, lit: f32, memory: f32 };
 
 pub const Light = struct {
     sight: [grid.CELLS]f32,
@@ -394,8 +400,8 @@ pub const Light = struct {
     }
 
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {
-        const up = 1 - @exp(-dt * REVEAL);
-        const down = 1 - @exp(-dt * FORGET);
+        const up = mathx.easing(dt, REVEAL);
+        const down = mathx.easing(dt, FORGET);
         var moved = false;
         for (0..grid.CELLS) |i| {
             const s = mathx.ease(self.sight[i], if (lv.lit[i]) 1 else 0, up, down);
@@ -523,7 +529,7 @@ pub const Light = struct {
                 view += t.colour * splat(t.shine(s));
             }
         }
-        return (MEMORY + (view - MEMORY) * splat(sight)) * splat(memory);
+        return remembered(view, sight, memory);
     }
 
     /// Cells `lo` up to `hi`, and a texel round them for the filter.
@@ -553,14 +559,21 @@ pub const Light = struct {
         }
     }
 
-    /// `centre` is on the ground, cells. The carried light lights its own `carrier` flat.
+    /// How far in sight and how far remembered a point is, cells, as the light map has the ground there.
+    fn viewAt(self: *const Light, q: [2]f32) struct { sight: f32, memory: f32 } {
+        const sight = self.sightAt(q[0], q[1]);
+        return .{ .sight = sight, .memory = self.fadeOf(mathx.cellOf(q)).at(q[0], q[1], sight) };
+    }
+
+    /// `centre` is on the ground, cells. The carried light lights its own `carrier` flat. Faded as the ground under it is.
     pub fn onBody(self: *const Light, centre: [2]f32, carrier: bool) Shine {
-        const sight = self.sightAt(centre[0], centre[1]);
-        var s = Shine{ .ambient = MEMORY + (AMBIENT - MEMORY) * splat(sight) };
+        const v = self.viewAt(centre);
+        var s = Shine{ .ambient = remembered(AMBIENT, v.sight, v.memory) };
+        const lit = v.sight * v.memory;
         if (self.carrier) |c| {
             const dx = c[0] - centre[0];
             const dy = c[1] - centre[1];
-            const k = carryFade(@sqrt(dx * dx + dy * dy)) * sight;
+            const k = carryFade(@sqrt(dx * dx + dy * dy)) * lit;
             if (carrier) {
                 s.ambient += CARRY * splat(k);
             } else if (k > FAINT) {
@@ -568,25 +581,23 @@ pub const Light = struct {
             }
         }
         for (self.torch[0..self.torch_n]) |*t| {
-            const fl = t.flame();
-            const dx = fl[0] - centre[0];
-            const dy = fl[1] - centre[1];
-            const dz = fl[2] - BODY_Z;
-            const d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 >= REACH2) continue;
-            const k = falloff(d2) * t.reached(centre[0], centre[1]) * sight;
+            const r = t.toward(centre[0], centre[1], BODY_Z) orelse continue;
+            const k = r.k * lit;
             if (k <= FAINT) continue;
+            const fl = t.flame();
             s.add(.{ .drawn = t.drawn(), .ground = .{ fl[0], fl[1] }, .colour = t.colour * splat(k), .casts = true });
         }
         return s;
     }
 
+    /// A flame hangs on its wall's south face, so a wall seen only from behind shows none.
     pub fn flames(self: *const Light, lv: *const grid.Level, out: *[grid.MAX_TORCHES]Flame) []const Flame {
         var n: usize = 0;
         for (self.torch[0..self.torch_n]) |t| {
-            if (!lv.isSeen(t.wall)) continue;
+            if (!lv.isSeen(t.wall) or !lv.isSeen(t.floor())) continue;
             const d = t.drawn();
-            out[n] = .{ .at = d, .glow = t.glow, .sight = self.sightAt(d[0], d[1]) };
+            const v = self.viewAt(d);
+            out[n] = .{ .at = d, .glow = t.glow, .lit = v.sight * v.memory, .memory = v.memory };
             n += 1;
         }
         return out[0..n];
@@ -609,7 +620,7 @@ pub const Light = struct {
         rl.gl.rlSetBlendFactors(rl.gl.rl_dst_color, rl.gl.rl_src_color, rl.gl.rl_func_add);
         rl.beginBlendMode(.custom);
         defer rl.endBlendMode();
-        rl.drawTexturePro(tex, look.whole(tex), look.floorRect(ox, oy, cell), .{ .x = 0, .y = 0 }, 0, rl.Color.white);
+        look.overFloor(tex, ox, oy, cell);
     }
 
     /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
@@ -681,11 +692,11 @@ pub const Light = struct {
         rl.beginBlendMode(.additive);
         defer rl.endBlendMode();
         for (flames_) |f| {
-            if (f.sight <= FAINT) continue;
+            if (f.lit <= FAINT) continue;
             const x = ox + f.at[0] * cell;
             const y = oy + f.at[1] * cell;
-            glowAt(g, x, y, cell * GLOW_HALO, cell * GLOW_HALO, colourOf(GLOW_TINT, GLOW_HALO_A * f.glow * f.sight));
-            glowAt(g, x, y, cell * GLOW_CORE, cell * GLOW_CORE, colourOf(GLOW_TINT, GLOW_CORE_A * f.glow * f.sight));
+            glowAt(g, x, y, cell * GLOW_HALO, cell * GLOW_HALO, colourOf(GLOW_TINT, GLOW_HALO_A * f.glow * f.lit));
+            glowAt(g, x, y, cell * GLOW_CORE, cell * GLOW_CORE, colourOf(GLOW_TINT, GLOW_CORE_A * f.glow * f.lit));
         }
     }
 };
@@ -724,7 +735,7 @@ fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const
 
 /// Centred on `(x, y)`, reaching `rx` and `ry` out from it.
 fn glowAt(g: rl.Texture2D, x: f32, y: f32, rx: f32, ry: f32, c: rl.Color) void {
-    rl.drawTexturePro(g, look.whole(g), .{ .x = x - rx, .y = y - ry, .width = rx * 2, .height = ry * 2 }, .{ .x = 0, .y = 0 }, 0, c);
+    look.stretch(g, .{ .x = x - rx, .y = y - ry, .width = rx * 2, .height = ry * 2 }, c);
 }
 
 /// `lean` is pixels from the feet to the top of the head. Leaning down the screen mirrors the quad, so its corners go
@@ -871,17 +882,6 @@ const ShadowShader = struct {
     foot: i32,
 };
 
-/// Every field but `shader` is the location of the GLSL uniform it is named for.
-fn uniforms(comptime T: type, s: rl.Shader) T {
-    var u: T = undefined;
-    u.shader = s;
-    inline for (std.meta.fields(T)) |f| {
-        if (comptime std.mem.eql(u8, f.name, "shader")) continue;
-        @field(u, f.name) = rl.getShaderLocation(s, f.name);
-    }
-    return u;
-}
-
 const Art = struct {
     id: u32,
     /// Texel rows from the sprite's top to just under its lowest opaque row.
@@ -906,12 +906,10 @@ const Gpu = struct {
 
     fn load(figures: *const [look.FIGURES]?rl.Texture2D) Gpu {
         var g = Gpu{};
-        const blank = rl.genImageColor(MAP_W, MAP_H, rl.Color.black);
-        defer rl.unloadImage(blank);
-        g.map = look.clamped(blank, .bilinear);
-        g.glow = glowTexture();
-        if (rl.loadShaderFromMemory(null, BODY_FS)) |s| g.body = uniforms(BodyShader, s) else |_| {}
-        if (rl.loadShaderFromMemory(null, SHADOW_FS)) |s| g.shadow = uniforms(ShadowShader, s) else |_| {}
+        g.map = look.canvas(MAP_W, MAP_H, rl.Color.black);
+        g.glow = look.radial(GLOW_PX, glowAlpha);
+        if (rl.loadShaderFromMemory(null, BODY_FS)) |s| g.body = look.uniforms(BodyShader, s) else |_| {}
+        if (rl.loadShaderFromMemory(null, SHADOW_FS)) |s| g.shadow = look.uniforms(ShadowShader, s) else |_| {}
         for (figures) |b| {
             const t = b orelse continue;
             g.arts[g.art_n] = artOf(t);
@@ -1008,32 +1006,20 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
             px[@intCast(y * w + x)] = colourOf(unit * splat(0.5) + splat(0.5), 1);
         }
     }
-    return look.clamped(rgba(&px, w, h), .point);
+    return look.clamped(look.rgba(&px, w, h), .point);
 }
 
-fn rgba(px: *anyopaque, w: i32, h: i32) rl.Image {
-    return .{ .data = px, .width = w, .height = h, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
-}
-
-fn glowTexture() ?rl.Texture2D {
-    var px: [GLOW_PX * GLOW_PX]rl.Color = undefined;
-    const half: f32 = @as(f32, @floatFromInt(GLOW_PX)) * 0.5;
-    for (0..GLOW_PX) |y| {
-        for (0..GLOW_PX) |x| {
-            const dx = (@as(f32, @floatFromInt(x)) + 0.5 - half) / half;
-            const dy = (@as(f32, @floatFromInt(y)) + 0.5 - half) / half;
-            const r2 = @min(1, dx * dx + dy * dy);
-            const a = (1 - r2) * (1 - r2) * @exp(-3 * r2);
-            px[y * GLOW_PX + x] = .{ .r = 255, .g = 255, .b = 255, .a = @intFromFloat(a * 255) };
-        }
-    }
-    return look.clamped(rgba(&px, GLOW_PX, GLOW_PX), .bilinear);
+fn glowAlpha(dx: f32, dy: f32) f32 {
+    const r2 = @min(1, dx * dx + dy * dy);
+    return (1 - r2) * (1 - r2) * @exp(-3 * r2);
 }
 
 const gen = @import("../world/gen.zig");
 const actor = @import("../play/actor.zig");
 
 const TORCH_AT = P{ .x = 20, .y = 10 };
+/// Cells in from an edge, so a sample on it reads the seen cell and not the unseen one past it.
+const EDGE_EPS: f32 = 1e-4;
 
 fn testRoom(lv: *grid.Level, walls: []const P) void {
     lv.* = grid.openFloor();
@@ -1078,18 +1064,20 @@ test "a torch pools light on the floor below it, fading to nothing at its reach"
 
 test "a brick face by its torch catches far more than the ceiling above it, and one turned away catches none" {
     var lv: grid.Level = undefined;
-    testRoom(&lv, &.{.{ .x = 26, .y = 14 }});
+    testRoom(&lv, &.{.{ .x = 22, .y = 14 }});
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     const own = added(l, &lv, .{ 20.5, 10.875 });
     const ceiling = added(l, &lv, .{ 20.5, 10.25 });
     const along = added(l, &lv, .{ 23.5, 10.875 });
     const along_ceiling = added(l, &lv, .{ 23.5, 10.25 });
-    const away = added(l, &lv, .{ 26.5, 14.875 });
-    std.debug.print("torchlight: its own face {d:.3} and the ceiling above {d:.3}, a face 3 along {d:.3} and its ceiling {d:.3}, a face turned away {d:.3}\n", .{ own, ceiling, along, along_ceiling, away });
+    const away = added(l, &lv, .{ 22.5, 14.875 });
+    const away_ceiling = added(l, &lv, .{ 22.5, 14.25 });
+    std.debug.print("torchlight: its own face {d:.3} and the ceiling above {d:.3}, a face 3 along {d:.3} and its ceiling {d:.3}, a face in reach turned away {d:.3} under a ceiling at {d:.3}\n", .{ own, ceiling, along, along_ceiling, away, away_ceiling });
     try std.testing.expect(own > ceiling * 3);
     try std.testing.expect(own > along);
     try std.testing.expect(along > along_ceiling * 1.5);
+    try std.testing.expect(away_ceiling > 0.01);
     try std.testing.expectApproxEqAbs(@as(f32, 0), away, 1e-5);
 }
 
@@ -1214,7 +1202,7 @@ test "remembered ground fades to black exactly at the edge of what was ever seen
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     const full = lum(l.at(&lv, &.{}, .{ 15.5, 30.5 }));
-    const at_edge = lum(l.at(&lv, &.{}, .{ 20.0, 30.5 }));
+    const at_edge = lum(l.at(&lv, &.{}, .{ 20.0 - EDGE_EPS, 30.5 }));
     const half_in = lum(l.at(&lv, &.{}, .{ 19.5, 30.5 }));
     const one_in = lum(l.at(&lv, &.{}, .{ 19.0, 30.5 }));
     const two_in = lum(l.at(&lv, &.{}, .{ 18.0, 30.5 }));
@@ -1254,12 +1242,12 @@ test "remembered ground is black on every line where a seen cell meets an unseen
                 const ax: f32 = @floatFromInt(a.x);
                 const ay: f32 = @floatFromInt(a.y);
                 var most: f32 = 0;
-                for ([_]f32{ 0, 0.25, 0.5, 0.75, 1 }) |t| {
+                for ([_]f32{ 0, 0.25, 0.5, 0.75, 1 - EDGE_EPS }) |t| {
                     const q: [2]f32 = switch (d) {
                         .n => .{ ax + t, ay },
-                        .s => .{ ax + t, ay + 1 },
+                        .s => .{ ax + t, ay + 1 - EDGE_EPS },
                         .w => .{ ax, ay + t },
-                        else => .{ ax + 1, ay + t },
+                        else => .{ ax + 1 - EDGE_EPS, ay + t },
                     };
                     most = @max(most, lum(l.at(&lv, &.{}, q)) / full);
                 }
@@ -1352,8 +1340,35 @@ test "a torch on a wall never seen has no flame to draw, though the floor below 
     defer std.testing.allocator.destroy(l);
     var buf: [grid.MAX_TORCHES]Flame = undefined;
     const got = l.flames(&lv, &buf);
-    std.debug.print("unseen torch over a floor in sight: {d} flame(s), sight {d:.3}\n", .{ got.len, if (got.len > 0) got[0].sight else 0 });
+    std.debug.print("unseen torch over a floor in sight: {d} flame(s), lit {d:.3}\n", .{ got.len, if (got.len > 0) got[0].lit else 0 });
     try std.testing.expectEqual(@as(usize, 0), got.len);
+}
+
+test "a torch seen only from behind its wall has no flame, and a remembered one fades up with its wall" {
+    var lv: grid.Level = undefined;
+    testRoom(&lv, &.{});
+    lv.lightless();
+    @memset(&lv.seen, false);
+    for (0..grid.CELLS) |i| {
+        if (grid.Level.of(i).y <= TORCH_AT.y) lv.light(grid.Level.of(i));
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    var buf: [grid.MAX_TORCHES]Flame = undefined;
+    try std.testing.expect(lv.isSeen(TORCH_AT));
+    try std.testing.expectEqual(@as(usize, 0), l.flames(&lv, &buf).len);
+    @memset(&lv.seen, false);
+    lv.lightless();
+    l.settle(&lv);
+    @memset(&lv.lit, true);
+    @memset(&lv.seen, true);
+    l.step(&lv, 1.0 / 60.0);
+    const first = l.flames(&lv, &buf)[0].memory;
+    for (0..120) |_| l.step(&lv, 1.0 / 60.0);
+    const settled = l.flames(&lv, &buf)[0].memory;
+    std.debug.print("a torch coming into sight: its remembered flame at {d:.3} the first frame, {d:.3} two seconds on\n", .{ first, settled });
+    try std.testing.expect(first < 0.3);
+    try std.testing.expectEqual(@as(f32, 1), settled);
 }
 
 fn castAlpha(l: *const Light, at: [2]f32, carrier: bool) [2]f32 {
@@ -1393,6 +1408,32 @@ test "a cast shadow fades out smoothly as its body walks away from the torch" {
     }
     try std.testing.expect(steepest < 0.07);
     try std.testing.expect(nearest_end >= @as(f32, @floatFromInt(REACH)) - 1.5);
+}
+
+test "a body is lit as the ground under it is, fading into sight and on the edge of the unseen" {
+    var lv = grid.openFloor();
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    var y: i32 = 10;
+    while (y < 21) : (y += 1) {
+        var x: i32 = 10;
+        while (x < 21) : (x += 1) lv.light(.{ .x = x, .y = y });
+    }
+    l.carrier = .{ 15.5, 15.5 };
+    var worst: f32 = 0;
+    var first: [2]f32 = undefined;
+    for (0..30) |frame| {
+        l.step(&lv, 1.0 / 60.0);
+        for ([_][2]f32{ .{ 15.5, 15.5 }, .{ 18.5, 12.5 }, .{ 20.5, 15.5 }, .{ 20.9, 20.9 } }, 0..) |c, k| {
+            const body = l.onBody(c, false);
+            const on = lum(body.ambient + body.total());
+            const ground = lum(l.at(&lv, &.{}, c));
+            if (frame == 0 and k == 0) first = .{ on, ground };
+            worst = @max(worst, @abs(on - ground));
+        }
+    }
+    std.debug.print("a body and its ground fading into sight: {d:.3} and {d:.3} the first frame, at most {d:.5} apart\n", .{ first[0], first[1], worst });
+    try std.testing.expect(worst < FAINT);
 }
 
 test "a body takes its torch's light from where the flame is drawn, and none from behind a pillar" {
