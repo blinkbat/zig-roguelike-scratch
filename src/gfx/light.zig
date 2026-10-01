@@ -21,7 +21,7 @@ const OVERBRIGHT: f32 = 2.0;
 /// Cells.
 pub const REACH: i32 = 7;
 const REACH2: f32 = @floatFromInt(REACH * REACH);
-const SPAN: i32 = REACH * 2 + 1;
+const SPAN: i32 = grid.Cells.span(REACH);
 /// Cells: the inverse square's reference distance.
 const FALLOFF_D0: f32 = 2.5;
 /// A wall is this tall; its brick face fills the cell below `FACE_FROM`, so the face is drawn foreshortened.
@@ -61,7 +61,7 @@ const VOID_FADE: f32 = 1.5;
 /// The same fade on ground in sight: short of a neighbour's middle, so nothing seen is darkened past the unseen cell's rim.
 const SIGHT_FADE: f32 = 0.4;
 const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
-const VOID_SPAN: usize = @intCast(VOID_REACH * 2 + 1);
+const VOID_SPAN: usize = @intCast(grid.Cells.span(VOID_REACH));
 const FLICKER: f32 = 0.14;
 const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
     .{ .hz = 1.5, .weight = 0.6 },
@@ -156,10 +156,20 @@ const Torch = struct {
         return .{ mathx.centre(t.wall)[0], @as(f32, @floatFromInt(t.wall.y)) + 1 - FLAME_Z / WALL_H * FACE_H };
     }
 
+    /// The top-left of the box `reach` covers.
+    fn corner(t: *const Torch) P {
+        return t.floor().sub(.{ .x = REACH, .y = REACH });
+    }
+
+    fn texel(t: *const Torch, p: P) usize {
+        const o = t.corner();
+        return @intCast((p.y - o.y) * SPAN + (p.x - o.x));
+    }
+
     fn reached(t: *const Torch, x: f32, y: f32) f32 {
-        const f = t.floor();
-        const u = x - @as(f32, @floatFromInt(f.x - REACH)) - 0.5;
-        const v = y - @as(f32, @floatFromInt(f.y - REACH)) - 0.5;
+        const o = t.corner();
+        const u = x - @as(f32, @floatFromInt(o.x)) - 0.5;
+        const v = y - @as(f32, @floatFromInt(o.y)) - 0.5;
         return bilinear(&t.reach, SPAN, SPAN, u, v, 0);
     }
 
@@ -238,6 +248,7 @@ const Fade = struct {
         for (f.short[0..f.n]) |c| {
             const dx = @max(0, @max(c.x - x, x - c.x - 1));
             const dy = @max(0, @max(c.y - y, y - c.y - 1));
+            if (dx >= reach or dy >= reach) continue;
             v = @min(v, c.m + (1 - c.m) * smooth(@sqrt(dx * dx + dy * dy) / reach));
         }
         return v;
@@ -331,10 +342,24 @@ pub const Shine = struct {
         return c;
     }
 
+    fn lit(self: Shine) f32 {
+        return lum(self.ambient + self.total());
+    }
+
     pub fn tint(self: Shine, c: rl.Color) rl.Color {
-        return colourOf(rgbOf(c) * (self.ambient + self.total() * splat(TINT_DIRECT)), @as(f32, @floatFromInt(c.a)) / 255);
+        return recolour(c, rgbOf(c) * (self.ambient + self.total() * splat(TINT_DIRECT)));
+    }
+
+    /// As the body shader would draw `c`, for what is drawn without it.
+    pub fn drawn(self: Shine, c: rl.Color, flash: f32) rl.Color {
+        return flashed(self.tint(c), flash);
     }
 };
+
+/// `rgb` at `c`'s alpha.
+fn recolour(c: rl.Color, rgb: Rgb) rl.Color {
+    return colourOf(rgb, @as(f32, @floatFromInt(c.a)) / 255);
+}
 
 /// `lit` is how far in sight the flame is, `memory` how far remembered, as the ground under a body is.
 pub const Flame = struct { at: [2]f32, glow: f32, lit: f32, memory: f32 };
@@ -378,9 +403,8 @@ pub const Light = struct {
             var t = Torch{ .wall = w, .reach = undefined, .seed = @as(u32, @intCast(i)) *% 0x27D4EB2F +% 0x165667B1 };
             const f = t.floor();
             fov.cast(&self.scratch, f, REACH);
-            var j: usize = 0;
-            var box = grid.Cells.of(f.sub(.{ .x = REACH, .y = REACH }), f.add(.{ .x = REACH + 1, .y = REACH + 1 }));
-            while (box.next()) |p| : (j += 1) t.reach[j] = if (self.scratch.isLit(p)) 1 else 0;
+            var box = grid.Cells.around(f, REACH);
+            while (box.next()) |p| t.reach[t.texel(p)] = if (self.scratch.isLit(p)) 1 else 0;
             self.torch[self.torch_n] = t;
             self.torch_n += 1;
         }
@@ -425,8 +449,8 @@ pub const Light = struct {
         blur121(&self.memory, &self.blur, &self.soft_memory);
         for (&self.soft_sight, &self.soft_memory) |*s, m| s.* = if (m > 0) @min(1, s.* / m) else 0;
         const r: usize = VOID_REACH;
-        const w: usize = @intCast(grid.W);
-        const h: usize = @intCast(grid.H);
+        const w = grid.COLS;
+        const h = grid.ROWS;
         for (0..h) |y| {
             for (0..w) |x| {
                 var ok = x >= r and x + r < w;
@@ -458,7 +482,7 @@ pub const Light = struct {
         if (own <= 0) return .{ .flat = 0 };
         if (own >= 1 and self.whole(c)) return .{ .flat = 1 };
         var f = Fade{};
-        var box = grid.Cells.of(c.sub(.{ .x = VOID_REACH, .y = VOID_REACH }), c.add(.{ .x = VOID_REACH + 1, .y = VOID_REACH + 1 }));
+        var box = grid.Cells.around(c, VOID_REACH);
         while (box.next()) |p| {
             const m = self.memoryAt(p);
             if (m >= 1) continue;
@@ -626,7 +650,7 @@ pub const Light = struct {
         const normals = self.gpu.art(tex).normals;
         const sh = self.gpu.body;
         if (sh == null or normals == null) {
-            rl.drawTexturePro(tex, src, dest, .{ .x = 0, .y = 0 }, 0, flashed(s.tint(rl.Color.white), flash));
+            rl.drawTexturePro(tex, src, dest, .{ .x = 0, .y = 0 }, 0, s.drawn(rl.Color.white, flash));
             return;
         }
         var pos: [BODY_LIGHTS][3]f32 = undefined;
@@ -662,7 +686,7 @@ pub const Light = struct {
         const scale = dest.height / @as(f32, @floatFromInt(tex.height));
         const fx = dest.x + dest.width * 0.5;
         const fy = dest.y + foot_row * scale;
-        const lit = lum(s.ambient + s.total());
+        const lit = s.lit();
         if (lit <= 0) return;
         if (self.gpu.glow) |g| {
             const a = CONTACT_A * @min(1, lit / lum(CARRY));
@@ -699,7 +723,7 @@ pub const Light = struct {
 /// The body shader's flash, for what is drawn without it.
 pub fn flashed(c: rl.Color, k: f32) rl.Color {
     const from = rgbOf(c);
-    return colourOf(from + (FLASH_RGB - from) * splat(k), @as(f32, @floatFromInt(c.a)) / 255);
+    return recolour(c, from + (FLASH_RGB - from) * splat(k));
 }
 
 /// `lean` is pixels from the feet to the tip.
@@ -707,7 +731,7 @@ const Cast = struct { lean: [2]f32, alpha: f32 };
 
 /// `height` is pixels from the feet to the top of the art.
 fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const Cast {
-    const lit = lum(s.ambient + s.total());
+    const lit = s.lit();
     if (lit <= 0) return out[0..0];
     var n: usize = 0;
     for (s.lamp[0..s.n]) |l| {
@@ -763,8 +787,8 @@ fn silhouette(tex: rl.Texture2D, fx: f32, fy: f32, lean: [2]f32, width: f32, foo
 }
 
 fn blur121(src: *const [grid.CELLS]f32, tmp: *[grid.CELLS]f32, out: *[grid.CELLS]f32) void {
-    const w: usize = @intCast(grid.W);
-    const h: usize = @intCast(grid.H);
+    const w = grid.COLS;
+    const h = grid.ROWS;
     for (0..h) |y| {
         for (0..w) |x| {
             const l = src[y * w + (if (x == 0) 0 else x - 1)];
@@ -781,13 +805,10 @@ fn blur121(src: *const [grid.CELLS]f32, tmp: *[grid.CELLS]f32, out: *[grid.CELLS
     }
 }
 
-const BODY_FS = "#version 330\n" ++ std.fmt.comptimePrint(
+const BODY_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     "#define LIGHTS {d}\nconst float KNEE = {d:.4};\nconst vec3 FLASH = vec3({d:.4}, {d:.4}, {d:.4});\n",
     .{ BODY_LIGHTS, KNEE, FLASH_RGB[0], FLASH_RGB[1], FLASH_RGB[2] },
 ) ++
-    \\in vec2 fragTexCoord;
-    \\in vec4 fragColor;
-    \\uniform sampler2D texture0;
     \\uniform sampler2D normals;
     \\uniform vec2 size;
     \\uniform float flip;
@@ -796,7 +817,6 @@ const BODY_FS = "#version 330\n" ++ std.fmt.comptimePrint(
     \\uniform vec3 lpos[LIGHTS];
     \\uniform vec3 lcol[LIGHTS];
     \\uniform float flash;
-    \\out vec4 finalColor;
     \\const float WRAP = 0.4;
     \\const float RISE = 0.7;
     \\const float RIM = 0.8;
@@ -809,7 +829,7 @@ const BODY_FS = "#version 330\n" ++ std.fmt.comptimePrint(
     \\void main() {
     \\    vec2 px = floor(fragTexCoord * size) + 0.5;
     \\    vec4 c = texture(texture0, px / size);
-    \\    if (c.a < 0.004) discard;
+    \\    if (c.a < CLEAR_A) discard;
     \\    vec3 n = texture(normals, px / size).xyz * 2.0 - 1.0;
     \\    n.x *= flip;
     \\    n = normalize(n);
@@ -832,16 +852,12 @@ const BODY_FS = "#version 330\n" ++ std.fmt.comptimePrint(
     \\}
 ;
 
-const SHADOW_FS = "#version 330\n" ++ std.fmt.comptimePrint(
+const SHADOW_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     "const float SOFT_TIP = {d:.4};\nconst float SOFT_FOOT = {d:.4};\nconst int TAPS = {d};\n",
     .{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT, SHADOW_TAPS },
 ) ++
-    \\in vec2 fragTexCoord;
-    \\in vec4 fragColor;
-    \\uniform sampler2D texture0;
     \\uniform vec2 size;
     \\uniform float foot;
-    \\out vec4 finalColor;
     \\float alphaAt(vec2 uv) {
     \\    if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > foot) return 0.0;
     \\    return texture(texture0, uv).a;
@@ -892,7 +908,7 @@ const Art = struct {
 /// Texels in from the silhouette over which a body's edge rounds off, and how steeply.
 const BEVEL_PX: i32 = 5;
 const BEVEL_DEPTH: f32 = 2.0;
-const ART_MAX: i32 = 128;
+const ART_MAX: i32 = 2 * look.SPRITE_PX;
 /// Alpha above which a texel is part of the silhouette.
 const SOLID_A: u8 = 25;
 
@@ -928,7 +944,7 @@ const Gpu = struct {
         }
     }
 
-    fn art(g: Gpu, t: rl.Texture2D) Art {
+    fn art(g: *const Gpu, t: rl.Texture2D) Art {
         for (g.arts[0..g.art_n]) |a| {
             if (a.id == t.id) return a;
         }
@@ -1172,7 +1188,7 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     fov.cast(&lv, f.rooms[1].centre(), actor.row(.archer).sight);
-    l.carrier = .{ @as(f32, @floatFromInt(f.start.x)) + 0.5, @as(f32, @floatFromInt(f.start.y)) + 0.5 };
+    l.carrier = mathx.centre(f.start);
     for (0..4) |_| l.step(&lv, 1.0 / 60.0);
     l.bake(&lv, .{ .x = 0, .y = 0 }, .{ .x = grid.W, .y = grid.H });
     var ids: [grid.MAX_TORCHES]TorchIx = undefined;

@@ -32,7 +32,6 @@ const LINE: usize = 200;
 const UNDO_CAP: usize = 24;
 const PATH_MAX: usize = 256;
 const FIELD_MAX: usize = 32;
-const NAME_BUF: usize = atlas.TITLE_MAX;
 /// A press that moves this far is a drag, not a click.
 const DRAG_PX: i32 = 4;
 /// Door numbers are unreadable below this many pixels a cell.
@@ -63,23 +62,26 @@ const TOOL_COLS: usize = 2;
 const TEXT_DY: i32 = @divTrunc(ROW_H - TEXT, 2);
 /// A node's title, down from the top of its row or box.
 const TITLE_DY: i32 = 3;
+/// Between one node's row and the next.
+const NODE_GAP: i32 = 2;
+/// A node's detail line, down from its title.
+const DETAIL_DY: i32 = TEXT + 1;
 
 comptime {
     std.debug.assert(atlas.GRAPH_STEP.x > BOX_W and atlas.GRAPH_STEP.y > BOX_H);
-    std.debug.assert(FIELD_MAX >= atlas.NAME_MAX and NAME_BUF >= atlas.NAME_MAX);
+    std.debug.assert(FIELD_MAX >= atlas.NAME_MAX);
     std.debug.assert(MEMBERS_X + @as(i32, pack.MAKEUP_MAX) * (MEMBER_W + MEMBER_GAP) <= MAKEUP_TOOLS_X);
 }
 
 const PANEL_BG = look.EDIT_PANEL;
 const ROW_ON = look.EDIT_ROW_ON;
 const ON = look.EDIT_ON;
-const HOVER = look.fade(look.TEXT, 0.6);
+const HOVER = look.EDIT_HOVER;
 const PICKED = look.EDIT_PICKED;
-const UNLINKED = look.DIM;
+const UNLINKED = look.EDIT_UNLINKED;
 const WARN = look.EDIT_WARN;
 const START = look.body(.archer);
 const START_MARK = [_]u8{ START.ch, ' ' };
-const VEIL = look.VEIL;
 
 const Tool = enum {
     floor,
@@ -165,7 +167,7 @@ const UNGENERATED = blk: {
         if (!t.generated()) names = names ++ &[_][]const u8{@tagName(t)};
     }
     var s: []const u8 = "";
-    for (names, 0..) |nm, i| s = s ++ (if (i == 0) "" else if (i + 1 == names.len) " and " else ", ") ++ nm;
+    for (names, 0..) |nm, i| s = s ++ menu.listSep(i, names.len) ++ nm;
     break :blk s;
 };
 
@@ -189,6 +191,17 @@ const CRIB_ALL = [_][:0]const u8{
 };
 const STATUS_H: i32 = GAP * (@as(i32, CRIB_ALL.len) + 3) + TEXT * (@as(i32, CRIB_ALL.len) + 2);
 
+comptime {
+    @setEvalBranchQuota(100_000);
+    var crib: []const u8 = CRIB_MAP ++ CRIB_GRAPH;
+    for (CRIB_ALL) |l| crib = crib ++ l;
+    for (@typeInfo(Desk).@"struct".decls) |d| {
+        if (!std.mem.endsWith(u8, d.name, "_CAPTION")) continue;
+        if (std.mem.indexOf(u8, crib, @as([]const u8, @field(Desk, d.name))) == null) @compileError("the crib never names " ++ d.name);
+    }
+}
+const LINK_CANCELLED = "Link cancelled";
+
 /// What the editor asks of whatever runs it.
 pub const Action = union(enum) { none, play: atlas.Start, leave, quit };
 
@@ -208,44 +221,36 @@ const Pending = enum { leave, quit, open, new };
 const Modal = enum { none, confirm, name, open };
 const Naming = enum { new, save_as };
 
-const Field = struct {
-    buf: [FIELD_MAX]u8 = undefined,
-    n: usize = 0,
-    cap: usize = FIELD_MAX,
+fn Text(comptime N: usize) type {
+    return struct {
+        const Self = @This();
+        buf: [N]u8 = undefined,
+        n: usize = 0,
+        cap: usize = N,
 
-    fn text(f: *const Field) []const u8 {
-        return f.buf[0..f.n];
-    }
-
-    fn set(f: *Field, s: []const u8, cap: usize) void {
-        f.cap = cap;
-        f.n = @min(s.len, cap);
-        @memcpy(f.buf[0..f.n], s[0..f.n]);
-    }
-
-    fn feed(f: *Field, d: *const Desk) void {
-        for (d.text()) |c| {
-            if (f.n == f.cap) break;
-            f.buf[f.n] = c;
-            f.n += 1;
+        fn text(f: *const Self) []const u8 {
+            return f.buf[0..f.n];
         }
-        if (d.rub and f.n > 0) f.n -= 1;
-    }
-};
 
-const Path = struct {
-    buf: [PATH_MAX]u8 = undefined,
-    n: usize = 0,
+        fn set(f: *Self, s: []const u8, cap: usize) void {
+            f.cap = @min(cap, N);
+            f.n = @min(s.len, f.cap);
+            @memcpy(f.buf[0..f.n], s[0..f.n]);
+        }
 
-    fn text(p: *const Path) []const u8 {
-        return p.buf[0..p.n];
-    }
+        fn feed(f: *Self, d: *const Desk) void {
+            for (d.text()) |c| {
+                if (f.n == f.cap) break;
+                f.buf[f.n] = c;
+                f.n += 1;
+            }
+            if (d.rub and f.n > 0) f.n -= 1;
+        }
+    };
+}
 
-    fn set(p: *Path, s: []const u8) void {
-        p.n = @min(s.len, PATH_MAX);
-        @memcpy(p.buf[0..p.n], s[0..p.n]);
-    }
-};
+const Field = Text(FIELD_MAX);
+const Path = Text(PATH_MAX);
 
 const Drag = struct { node: usize, grab: P, from: P, moved: bool = false };
 const Rect = struct { from: P, erase: bool };
@@ -253,7 +258,8 @@ const Rect = struct { from: P, erase: bool };
 pub const Editor = struct {
     alloc: std.mem.Allocator,
     world: *atlas.Atlas,
-    /// The world as the gesture under way found it: banked on its first change.
+    /// The world as the gesture under way found it: banked on its first change. `open` parses into it and
+    /// `swapStep` swaps through it.
     scratch: *atlas.Atlas,
     hist: *[UNDO_CAP]atlas.Atlas,
     /// A ring: the oldest step kept is at `hist_base`.
@@ -285,6 +291,8 @@ pub const Editor = struct {
     /// The node as it will be played, less its foes: drawn, never read by an edit.
     lv: grid.Level = undefined,
     stale: bool = true,
+    /// The start marker on the map, worked out as `lv` is.
+    start_at: ?P = null,
     thumb_lv: grid.Level = undefined,
     thumbs: [atlas.MAX_NODES]?rl.Texture2D = @splat(null),
     thumb_ok: std.StaticBitSet(atlas.MAX_NODES) = .initEmpty(),
@@ -297,12 +305,14 @@ pub const Editor = struct {
     rect: ?Rect = null,
     drag: ?Drag = null,
     modal: Modal = .none,
-    /// A modal opened this frame takes no click until the next.
+    /// A modal opened or closed this frame: no click lands until the next.
     fresh: bool = false,
     pending: Pending = .leave,
     pending_path: Path = .{},
     naming: Naming = .new,
     renaming: bool = false,
+    /// A click ended the rename this frame: its field's row takes it, not the buttons that row gives way to.
+    renamed: bool = false,
     field: Field = .{},
     listing: atlas.Listing = .{},
     /// Listed worlds scrolled off the top of the open modal.
@@ -310,8 +320,7 @@ pub const Editor = struct {
     desk: Desk = .{},
     action: Action = .none,
     tip: ?[:0]const u8 = null,
-    said: [LINE]u8 = undefined,
-    said_n: usize = 0,
+    said: menu.Note(LINE) = .{},
     said_t: f32 = 0,
 
     pub fn create(alloc: std.mem.Allocator) !*Editor {
@@ -377,7 +386,7 @@ pub const Editor = struct {
     }
 
     fn setPath(ed: *Editor, p: []const u8) void {
-        ed.file.set(p);
+        ed.file.set(p, PATH_MAX);
     }
 
     fn plan(ed: *Editor) *atlas.Plan {
@@ -393,7 +402,7 @@ pub const Editor = struct {
     }
 
     fn say(ed: *Editor, comptime fmt: []const u8, args: anytype) void {
-        ed.said_n = (std.fmt.bufPrint(&ed.said, fmt, args) catch &ed.said).len;
+        ed.said.say(fmt, args);
         ed.said_t = SAY_S;
     }
 
@@ -507,18 +516,19 @@ pub const Editor = struct {
     fn preview(ed: *Editor) void {
         if (!ed.stale) return;
         ed.here().sketch(&ed.lv);
+        ed.start_at = ed.startOn();
         ed.stale = false;
     }
 
-    /// The hero has somewhere to stand there: the cell, or the nearest one open.
+    /// Where the hero starts on the open node, when it starts there.
+    fn startOn(ed: *Editor) ?P {
+        const s = ed.world.start;
+        if (s.node != ed.node) return null;
+        return if (ed.here().unrolled()) s.at else atlas.landing(&ed.lv, s.at, ed.here().placed());
+    }
+
     fn standable(ed: *Editor, from: atlas.Start) bool {
-        const nd = &ed.world.node[from.node];
-        const b = switch (nd.plan) {
-            .bespoke => |*b| b,
-            .procgen => return true,
-        };
-        nd.sketch(&ed.thumb_lv);
-        return atlas.landing(&ed.thumb_lv, from.at, b.foes()) != null;
+        return ed.world.standable(from, &ed.thumb_lv);
     }
 
     fn doorAt(ed: *Editor, p: P) ?usize {
@@ -527,7 +537,7 @@ pub const Editor = struct {
 
     /// Its number and name, marked when the world starts there.
     fn nodeTitle(ed: *Editor, n: usize, buf: []u8) [:0]const u8 {
-        var name: [NAME_BUF]u8 = undefined;
+        var name: [atlas.TITLE_MAX]u8 = undefined;
         const mark: []const u8 = if (ed.world.start.node == n) &START_MARK else "";
         if (ed.renamingNode(n)) return std.fmt.bufPrintZ(buf, "{s}{d}  {s}" ++ menu.CARET, .{ mark, n, ed.field.text() }) catch "";
         return std.fmt.bufPrintZ(buf, "{s}{d}  {s}", .{ mark, n, ed.nodeName(n, &name) }) catch "";
@@ -541,7 +551,7 @@ pub const Editor = struct {
         ed.action = .{ .play = ed.world.start };
     }
 
-    fn nodeName(ed: *Editor, n: usize, buf: *[NAME_BUF]u8) []const u8 {
+    fn nodeName(ed: *Editor, n: usize, buf: *[atlas.TITLE_MAX]u8) []const u8 {
         return ed.world.node[n].title(n, buf);
     }
 
@@ -616,7 +626,7 @@ pub const Editor = struct {
     }
 
     fn named(ed: *Editor) void {
-        var buf: [PATH_MAX]u8 = undefined;
+        var buf: [atlas.PATH_MAX]u8 = undefined;
         const p = atlas.pathFor(&buf, ed.field.text()) orelse return ed.say("Type a name of letters or digits", .{});
         if (std.fs.cwd().access(p, .{})) {
             return ed.say("{s} is there already; open it, or pick another name", .{p});
@@ -629,7 +639,7 @@ pub const Editor = struct {
                 if (!ed.save()) ed.file = keep;
             },
             .new => {
-                ed.pending_path.set(p);
+                ed.pending_path.set(p, PATH_MAX);
                 ed.request(.new);
             },
         }
@@ -731,7 +741,7 @@ pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
     const c = Editor.canvas(g);
     if (ed.recentre) {
         ed.preview();
-        ed.lookAt(c, .{ .x = @divTrunc(grid.W, 2), .y = @divTrunc(grid.H, 2) });
+        ed.lookAt(c, grid.MIDDLE);
         ed.recentre = false;
     }
     step(ed, g, rl.getFrameTime());
@@ -739,10 +749,11 @@ pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
     draw(ed, g);
     rl.endDrawing();
     ed.fresh = false;
+    ed.renamed = false;
     if (ed.action == .play) ed.drop();
     if (ed.action == .play and !ed.standable(ed.action.play)) {
-        var buf: [NAME_BUF]u8 = undefined;
-        ed.say("{s} has no open floor to start on", .{ed.nodeName(ed.action.play.node, &buf)});
+        var buf: [atlas.TITLE_MAX]u8 = undefined;
+        ed.say(atlas.NO_FLOOR, .{ed.nodeName(ed.action.play.node, &buf)});
         ed.action = .none;
     }
     return ed.action;
@@ -751,17 +762,28 @@ pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
 fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     const d = &ed.desk;
     ed.said_t -= dt;
-    if (ed.modal != .none) return modalKeys(ed);
+    if (ed.modal != .none) {
+        modalKeys(ed);
+        if (ed.modal == .none) ed.fresh = true;
+        return;
+    }
     if (ed.renaming) {
         ed.field.feed(d);
         if (d.back) {
             ed.renaming = false;
-        } else if (d.enter or d.paint_hit or d.erase_hit) ed.commitRename();
-        if (ed.renaming or !(d.paint_hit or d.erase_hit)) return;
-    } else if (d.back) return escape(ed);
+        } else if (d.enter or d.clicked()) {
+            ed.commitRename();
+            ed.renamed = d.clicked();
+        }
+        if (ed.renaming or !d.clicked()) return;
+    } else if (d.back) {
+        if (d.clicked()) ed.gesture();
+        return escape(ed);
+    }
     const c = Editor.canvas(g);
     if (d.play) ed.playStart();
-    if (d.play_here) playHere(ed, c);
+    const over = rl.checkCollisionPointRec(vec(d.mouse), c);
+    if (d.play_here) playHere(ed, c, over);
     if (d.save) _ = ed.save();
     if (d.save_as) ed.askName(.save_as);
     if (d.open) ed.askOpen();
@@ -770,13 +792,12 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     if (d.redo) ed.redo();
     if (d.graph) ed.setView(ed.view.other());
     if (d.rename) ed.startRename();
-    if (d.go) goThrough(ed, c);
+    if (d.go) goThrough(ed, c, over);
     if (d.smaller) ed.brush -|= 1;
     if (d.bigger) ed.brush = @min(ed.brush + 1, BRUSHES.len - 1);
     if (d.tool) |i| ed.setTool(TOOLS[i]);
     if (ed.modal != .none) return;
-    if (d.paint_hit or d.erase_hit) ed.gesture();
-    const over = rl.checkCollisionPointRec(vec(d.mouse), c);
+    if (d.clicked()) ed.gesture();
     const pan = [2]f32{ @floatFromInt(d.pan.x), @floatFromInt(d.pan.y) };
     const moved = [2]f32{ @floatFromInt(d.moved.x), @floatFromInt(d.moved.y) };
     switch (ed.view) {
@@ -810,7 +831,7 @@ fn escape(ed: *Editor) void {
         ed.drop();
     } else if (ed.pick != null) {
         ed.pick = null;
-        ed.say("Link cancelled", .{});
+        ed.say(LINK_CANCELLED, .{});
     } else if (ed.view == .graph) {
         ed.setView(.map);
     } else ed.request(.leave);
@@ -835,50 +856,58 @@ fn modalKeys(ed: *Editor) void {
     }
 }
 
-fn playHere(ed: *Editor, c: rl.Rectangle) void {
+fn playHere(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const p = ed.cellAt(c, ed.desk.mouse);
-    if (ed.view != .map or !grid.Level.inside(p) or !rl.checkCollisionPointRec(vec(ed.desk.mouse), c)) {
+    if (ed.view != .map or !grid.Level.inside(p) or !over) {
         return ed.say("{s} plays from the cell under the cursor on a map", .{Desk.PLAY_HERE_CAPTION});
     }
     ed.action = .{ .play = .{ .node = ed.node, .at = p } };
 }
 
-fn goThrough(ed: *Editor, c: rl.Rectangle) void {
+fn goThrough(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (ed.view != .map) return;
-    const door = if (rl.checkCollisionPointRec(vec(ed.desk.mouse), c)) ed.doorAt(ed.cellAt(c, ed.desk.mouse)) else null;
+    const door = if (over) ed.doorAt(ed.cellAt(c, ed.desk.mouse)) else null;
     const k = door orelse return ed.say("{s} goes through the door under the cursor", .{Desk.GO_CAPTION});
     const to = ed.here().door[k].to orelse return ed.say("Door {d} leads nowhere yet", .{k});
     ed.select(to.node);
     ed.recentre = false;
     ed.lookAt(c, ed.world.node[to.node].door[to.door].at);
-    var buf: [NAME_BUF]u8 = undefined;
+    var buf: [atlas.TITLE_MAX]u8 = undefined;
     ed.say("Through door {d} to {s}, door {d}", .{ k, ed.nodeName(to.node, &buf), to.door });
 }
 
 fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const d = &ed.desk;
     const p = ed.cellAt(c, d.mouse);
-    if (!d.paint and !d.erase) {
+    const held = switch (ed.stroke) {
+        .none => d.paint or d.erase,
+        .paint => d.paint,
+        .erase => d.erase,
+    };
+    if (!held) {
         if (ed.rect) |r| fillRect(ed, r, clampCell(p));
         ed.drop();
     }
-    if (over and (d.paint_hit or d.erase_hit)) {
+    if (over and d.clicked()) {
+        ed.drop();
         ed.stroke = if (d.paint_hit) .paint else .erase;
-        if (d.shift and ed.tool.broad() and ed.tool.fits(ed.here()) and grid.Level.inside(p)) ed.rect = .{ .from = p, .erase = d.erase_hit };
+        if (d.shift and ed.tool.broad() and ed.tool.fits(ed.here()) and grid.Level.inside(p)) ed.rect = .{ .from = p, .erase = ed.stroke == .erase };
     }
-    if (!over or !grid.Level.inside(p)) ed.stroke_at = null;
-    if (ed.rect != null or !over or ed.stroke == .none or !grid.Level.inside(p)) return;
+    if (!over) ed.stroke_at = null;
+    if (ed.rect != null or !over or ed.stroke == .none) return;
     const hit = if (ed.stroke == .paint) d.paint_hit else d.erase_hit;
     if (!hit and !ed.tool.strokes()) return;
     if (!ed.tool.fits(ed.here())) {
-        if (hit) ed.say("A procgen node is generated; it takes only " ++ UNGENERATED, .{});
+        if (hit and grid.Level.inside(p)) ed.say("A procgen node is generated; it takes only " ++ UNGENERATED, .{});
         return;
     }
     if (hit or ed.stroke_at == null) {
-        brushAt(ed, p);
+        if (grid.Level.inside(p)) brushAt(ed, p);
     } else {
-        var ray = grid.Ray.init(ed.stroke_at orelse p, p);
-        while (ray.next()) |q| brushAt(ed, q);
+        var ray = grid.Ray.init(ed.stroke_at.?, p);
+        while (ray.next()) |q| {
+            if (grid.Level.inside(q)) brushAt(ed, q);
+        }
     }
     ed.stroke_at = p;
 }
@@ -962,6 +991,7 @@ fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
         .wall => {
             b.barrel[i] = false;
             if (b.foeAt(p)) |f| b.dropFoe(f);
+            if (b.torchAt(p.add(mathx.Dir.n.delta()))) |k| b.dropTorch(k);
         },
         .floor => if (b.torchAt(p)) |k| b.dropTorch(k),
     }
@@ -1017,7 +1047,7 @@ fn place(ed: *Editor, p: P) void {
                 return ed.say("Linking node {d} door {d}: click the door it leads to, on any node", .{ here.node, here.door });
             };
             ed.pick = null;
-            if (from.node == here.node and from.door == here.door) return ed.say("Link cancelled", .{});
+            if (std.meta.eql(from, here)) return ed.say(LINK_CANCELLED, .{});
             if (ed.world.node[from.node].door[from.door].to) |t| {
                 if (std.meta.eql(t, here)) return ed.say("Those doors lead to each other already", .{});
             }
@@ -1092,7 +1122,7 @@ fn addNode(ed: *Editor, plan: atlas.Plan) void {
 
 /// Hot and clicked this frame. Under a modal only the modal's own are live, and not the frame it opened.
 fn hot(ed: *Editor, r: rl.Rectangle, live: bool, modal: bool, tip: ?[:0]const u8) struct { hot: bool, hit: bool } {
-    const on_layer = if (modal) !ed.fresh else ed.modal == .none;
+    const on_layer = !ed.fresh and (modal or ed.modal == .none);
     const in_clip = if (ed.clip) |c| rl.checkCollisionPointRec(vec(ed.desk.mouse), c) else true;
     const h = live and on_layer and in_clip and rl.checkCollisionPointRec(vec(ed.desk.mouse), r);
     if (h and tip != null) ed.tip = tip;
@@ -1134,6 +1164,10 @@ fn cellOfRow(y: i32, k: usize, n: usize) rl.Rectangle {
     return slotOf(PAD, INNER_W, y, k, n);
 }
 
+fn scissor(r: rl.Rectangle) void {
+    rl.beginScissorMode(@intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height));
+}
+
 /// `n` buttons across the panel, taken left to right.
 const Across = struct {
     y: i32,
@@ -1144,6 +1178,10 @@ const Across = struct {
         std.debug.assert(a.k < a.n);
         defer a.k += 1;
         return cellOfRow(a.y, a.k, a.n);
+    }
+
+    fn done(a: *const Across) void {
+        std.debug.assert(a.k == a.n);
     }
 };
 
@@ -1173,6 +1211,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     if (button(ed, g, file.next(), "Open", false, true, "Open a world (" ++ Desk.OPEN_CAPTION ++ ")")) ed.askOpen();
     if (button(ed, g, file.next(), "Save", false, true, "Save (" ++ Desk.SAVE_CAPTION ++ ")")) _ = ed.save();
     if (button(ed, g, file.next(), "Save as", false, true, "Save under a new name (" ++ Desk.SAVE_AS_CAPTION ++ ")")) ed.askName(.save_as);
+    file.done();
     y += ROW_H + GAP;
     var views = Across{ .y = y, .n = 4 };
     const other: [:0]const u8 = if (ed.view == .map) "Graph" else "Map";
@@ -1184,6 +1223,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
         ed.playStart();
     }
     if (button(ed, g, views.next(), "Title", false, true, "Back to the title (" ++ Desk.BACK_CAPTION ++ ")")) ed.request(.leave);
+    views.done();
     y += ROW_H + GAP * 3;
     const rows = (TOOLS.len + TOOL_COLS - 1) / TOOL_COLS;
     for (TOOLS, Desk.TOOL_CAPTIONS, 0..) |t, key, i| {
@@ -1201,13 +1241,15 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     if (button(ed, g, adds.next(), "+ Procgen", false, true, "A node the rooms generator rolls round its doors, anew each run")) {
         addNode(ed, .{ .procgen = .{} });
     }
+    adds.done();
     y += ROW_H + GAP;
-    if (ed.renaming) {
+    if (ed.renaming or ed.renamed) {
         fieldRow(ed, g, cellOfRow(y, 0, 1));
     } else {
         var node = Across{ .y = y, .n = 2 };
         if (button(ed, g, node.next(), "Rename", false, true, "Name this node (" ++ Desk.RENAME_CAPTION ++ ")")) ed.startRename();
         if (button(ed, g, node.next(), "Delete", false, ed.world.node_n > 1, "Delete this node; its doors' links go with it")) deleteNode(ed);
+        node.done();
     }
     y += ROW_H + GAP * 3;
     const rolled = ed.rolled();
@@ -1216,6 +1258,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     if (button(ed, g, tabs.next(), "Generator", ed.lower == .generator and rolled != null, rolled != null, "What this procgen node's floor and foes are rolled from")) {
         ed.lower = .generator;
     }
+    tabs.done();
     y += ROW_H + GAP * 2;
     if (ed.lower == .generator) {
         if (rolled) |pg| return drawGenerator(ed, g, y, pg);
@@ -1225,12 +1268,12 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     var detail_buf: [LINE]u8 = undefined;
     for (ed.world.nodes()[ed.scroll..], ed.scroll..) |*nd, n| {
         if (y >= g.screen.y) break;
-        const r = rl.Rectangle{ .x = @floatFromInt(PAD), .y = @floatFromInt(y), .width = @floatFromInt(INNER_W), .height = @floatFromInt(NODE_H - 2) };
+        const r = rl.Rectangle{ .x = @floatFromInt(PAD), .y = @floatFromInt(y), .width = @floatFromInt(INNER_W), .height = @floatFromInt(NODE_H - NODE_GAP) };
         const on = n == ed.node;
         const h = hot(ed, r, true, false, "Open this node");
         plate(r, on, h.hot);
         g.face.draw(ed.nodeTitle(n, &buf), PAD + GAP, y + TITLE_DY, TEXT, titleColor(ed, n));
-        g.face.draw(nodeDetail(nd, &detail_buf), PAD + GAP, y + TITLE_DY + 1 + TEXT, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
+        g.face.draw(nodeDetail(nd, &detail_buf), PAD + GAP, y + TITLE_DY + DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
         if (h.hit) ed.goTo(n);
         y += NODE_H;
     }
@@ -1242,8 +1285,8 @@ fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void 
     const fl = &pg.floor;
     const fo = &pg.foes;
     const shown = @max(0, g.screen.y - top);
-    rl.beginScissorMode(0, top, PANEL_W, shown);
     ed.clip = .{ .x = 0, .y = @floatFromInt(top), .width = @floatFromInt(PANEL_W), .height = @floatFromInt(shown) };
+    scissor(ed.clip.?);
     defer {
         rl.endScissorMode();
         ed.clip = null;
@@ -1448,7 +1491,7 @@ fn drawStatus(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     rl.drawRectangle(PANEL_W, top, g.screen.x - PANEL_W, STATUS_H, PANEL_BG);
     rl.drawRectangle(PANEL_W, top, g.screen.x - PANEL_W, 1, look.EDGE);
     const line = if (ed.said_t > 0)
-        std.fmt.bufPrintZ(&buf, "{s}", .{ed.said[0..ed.said_n]}) catch ""
+        ed.said.text()
     else if (ed.tip) |t| t else hover(ed, c, &buf);
     var y = top + GAP;
     g.face.draw(line, PANEL_W + PAD, y, TEXT, look.TEXT);
@@ -1458,11 +1501,12 @@ fn drawStatus(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         y += TEXT + GAP;
         g.face.draw(crib, PANEL_W + PAD, y, TEXT, look.DIM);
     }
+    std.debug.assert(y + TEXT == top + STATUS_H);
 }
 
 fn hover(ed: *Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
     if (!rl.checkCollisionPointRec(vec(ed.desk.mouse), c)) return "";
-    var a: [NAME_BUF]u8 = undefined;
+    var a: [atlas.TITLE_MAX]u8 = undefined;
     if (ed.view == .graph) {
         const n = ed.boxUnder(c, ed.desk.mouse) orelse return "";
         var d: [LINE]u8 = undefined;
@@ -1501,7 +1545,7 @@ fn visible(ed: *const Editor, c: rl.Rectangle) struct { lo: P, hi: P } {
 
 fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     ed.preview();
-    rl.beginScissorMode(@intFromFloat(c.x), @intFromFloat(c.y), @intFromFloat(c.width), @intFromFloat(c.height));
+    scissor(c);
     defer rl.endScissorMode();
     const v = visible(ed, c);
     const unrolled = ed.here().unrolled();
@@ -1536,15 +1580,9 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
             g.face.text(std.fmt.bufPrintZ(&buf, "{d}", .{k}) catch "", @intFromFloat(r.x + 1), @intFromFloat(r.y), size, look.TEXT);
         }
         const pk = ed.pick orelse continue;
-        if (pk.node == ed.node and pk.door == k) rl.drawRectangleLinesEx(r, 2, PICKED);
+        if (std.meta.eql(pk, atlas.Link{ .node = ed.node, .door = k })) rl.drawRectangleLinesEx(r, 2, PICKED);
     }
-    if (ed.world.start.node == ed.node) {
-        const at = switch (ed.plan().*) {
-            .bespoke => |*b| atlas.landing(&ed.lv, ed.world.start.at, b.foes()),
-            .procgen => ed.world.start.at,
-        };
-        if (at) |s| glyph(ed, g, START.ch, ed.cellRect(c, s), START.fg);
-    }
+    if (ed.start_at) |s| glyph(ed, g, START.ch, ed.cellRect(c, s), START.fg);
     const m = ed.cellAt(c, ed.desk.mouse);
     if (ed.rect) |r| {
         outlineCells(ed, c, r.from, clampCell(m), PICKED);
@@ -1561,7 +1599,7 @@ fn outlineCells(ed: *const Editor, c: rl.Rectangle, a: P, b: P, col: rl.Color) v
 }
 
 fn drawGraph(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
-    rl.beginScissorMode(@intFromFloat(c.x), @intFromFloat(c.y), @intFromFloat(c.width), @intFromFloat(c.height));
+    scissor(c);
     defer rl.endScissorMode();
     var buf: [LINE]u8 = undefined;
     for (0..ed.world.node_n) |n| {
@@ -1616,7 +1654,7 @@ fn thumb(ed: *Editor, n: usize) ?rl.Texture2D {
 
 fn drawModal(ed: *Editor, g: *game.Game) void {
     var buf: [LINE]u8 = undefined;
-    rl.drawRectangle(0, 0, g.screen.x, g.screen.y, VEIL);
+    game.veil(g, g.screen.y);
     const body = modalBody(ed);
     const h = PAD + HEAD + PAD + body + ROW_H + PAD;
     const x = @divTrunc(g.screen.x - MODAL_W, 2);
@@ -1646,7 +1684,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
         .name => {
             fieldRow(ed, g, row(x + PAD, y, MODAL_W - PAD * 2));
             y += ROW_H + GAP;
-            var pbuf: [PATH_MAX]u8 = undefined;
+            var pbuf: [atlas.PATH_MAX]u8 = undefined;
             const note = if (atlas.pathFor(&pbuf, ed.field.text())) |p| std.fmt.bufPrintZ(&buf, "Makes {s}", .{p}) catch "" else "Type a name";
             g.face.draw(note, x + PAD, y, SMALL, look.DIM);
             y += ROW_H + PAD;
@@ -1663,7 +1701,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
                 const p = ed.listing.at(i);
                 const label = std.fmt.bufPrintZ(&buf, "{s}", .{p}) catch "";
                 if (buttonOn(ed, g, row(x + PAD, y, MODAL_W - PAD * 2), label, std.mem.eql(u8, p, ed.path()), true, true, null)) {
-                    ed.pending_path.set(p);
+                    ed.pending_path.set(p, PATH_MAX);
                     ed.modal = .none;
                     ed.request(.open);
                     return;
@@ -1794,6 +1832,11 @@ fn testEditor() !*Editor {
     ed.world.* = .{};
     ed.setPath(atlas.worldPath("test_editor"));
     return ed;
+}
+
+fn mouseOn(ed: *const Editor, c: rl.Rectangle, p: P) P {
+    const r = ed.cellRect(c, p);
+    return .{ .x = @as(i32, @intFromFloat(r.x)) + 1, .y = @as(i32, @intFromFloat(r.y)) + 1 };
 }
 
 fn click(ed: *Editor, t: Tool, p: P) void {
@@ -1930,8 +1973,7 @@ test "a fast stroke paints every cell it passes, and Esc mid-rectangle lets the 
     ed.tool = .floor;
     const at = struct {
         fn f(e: *Editor, p: P) P {
-            const r = e.cellRect(.{ .x = 0, .y = 0, .width = 2000, .height = 2000 }, p);
-            return .{ .x = @as(i32, @intFromFloat(r.x)) + 1, .y = @as(i32, @intFromFloat(r.y)) + 1 };
+            return mouseOn(e, .{ .x = 0, .y = 0, .width = 2000, .height = 2000 }, p);
         }
     }.f;
     ed.desk = .{ .paint = true, .paint_hit = true, .mouse = at(ed, .{ .x = 2, .y = 2 }) };
@@ -1964,6 +2006,41 @@ test "a fast stroke paints every cell it passes, and Esc mid-rectangle lets the 
     try std.testing.expect(ed.standable(.{ .node = 0, .at = .{ .x = 30, .y = 30 } }));
     _ = ed.world.add(.{ .bespoke = .{} });
     try std.testing.expect(!ed.standable(.{ .node = 1, .at = .{ .x = 30, .y = 30 } }));
+}
+
+test "a stroke leaving the map paints up to its edge, and it ends with the button that began it" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    _ = ed.world.add(.{ .bespoke = .{} });
+    const b = &ed.world.node[0].plan.bespoke;
+    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    ed.cam = .{ -4, 0 };
+    ed.tool = .floor;
+    ed.gesture();
+    ed.desk = .{ .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = 5, .y = 10 }) };
+    mapMouse(ed, c, true);
+    ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = -3, .y = 10 }) };
+    mapMouse(ed, c, true);
+    var row_n: usize = 0;
+    var x: i32 = 0;
+    while (x < grid.W) : (x += 1) {
+        if (b.tile[grid.Level.idx(.{ .x = x, .y = 10 })] == .floor) row_n += 1;
+    }
+    ed.desk = .{ .paint = true, .erase = true, .erase_hit = true, .mouse = mouseOn(ed, c, .{ .x = 20, .y = 20 }) };
+    mapMouse(ed, c, true);
+    ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = 4, .y = 10 }) };
+    mapMouse(ed, c, true);
+    std.debug.print("a stroke from x 5 to x -3 in one frame: {d} cells painted to the edge\n", .{row_n});
+    try std.testing.expectEqual(@as(usize, 6), row_n);
+    try std.testing.expectEqual(grid.Tile.floor, b.tile[grid.Level.idx(.{ .x = 4, .y = 10 })]);
+    click(ed, .torch, .{ .x = 3, .y = 9 });
+    try std.testing.expectEqual(@as(usize, 1), b.torch_n);
+    click(ed, .wall, .{ .x = 3, .y = 10 });
+    try std.testing.expectEqual(@as(usize, 0), b.torch_n);
+    ed.tool = .floor;
+    ed.desk = .{ .shift = true, .paint = true, .erase = true, .paint_hit = true, .erase_hit = true, .mouse = mouseOn(ed, c, .{ .x = 8, .y = 8 }) };
+    mapMouse(ed, c, true);
+    try std.testing.expect(!ed.rect.?.erase);
 }
 
 test "leaving with unsaved changes asks first, and leaving a saved world does not" {

@@ -223,6 +223,13 @@ pub const Autosave = struct {
         self.bytes.deinit();
     }
 
+    /// The run's last write on disk, and why it did not write if it did not.
+    pub fn close(self: *Autosave, g: *game.Game) ?anyerror {
+        self.flush(g);
+        self.deinit();
+        return self.failed;
+    }
+
     /// Not mid-door, nor mid-turn: a foe's turn to face the archer is only in `facing` once it is drawn.
     pub fn step(self: *Autosave, g: *game.Game, dt: f32) void {
         self.since += dt;
@@ -241,7 +248,10 @@ pub const Autosave = struct {
         if (!g.unsaved) return;
         self.bytes.clearRetainingCapacity();
         self.since = 0;
-        write(g, &self.bytes) catch |e| return g.log.say("The save did not write ({s}).", .{@errorName(e)});
+        write(g, &self.bytes) catch |e| {
+            self.failed = e;
+            return;
+        };
         g.unsaved = false;
         self.writer = std.Thread.spawn(.{}, writeOff, .{self}) catch blk: {
             writeOff(self);
@@ -262,10 +272,12 @@ pub const Autosave = struct {
         self.writer = null;
     }
 
-    /// The run is lost, and its save with it.
+    /// The run is lost, and its save with it: a slot that will not delete is emptied of a run that would load.
     pub fn end(self: *Autosave, g: *game.Game) void {
         self.wait();
-        remove(self.slot) catch |e| g.log.say("The save did not delete ({s}).", .{@errorName(e)});
+        remove(self.slot) catch |e| {
+            writeFile("", self.slot) catch g.log.say("The save did not delete ({s}).", .{@errorName(e)});
+        };
     }
 };
 

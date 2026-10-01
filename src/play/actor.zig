@@ -188,19 +188,31 @@ pub const Pool = struct {
         const a = self.get(id) orelse return null;
         const next = row(a.kind).splits orelse return null;
         if (a.hp * 2 >= a.max or self.n == MAX) return null;
-        var ways: [mathx.ALL_DIRS.len]P = undefined;
-        var n: usize = 0;
+        var ways = Ways{};
         for (mathx.ALL_DIRS) |d| {
-            if (!lv.stepOk(a.at, d, grid.NO_ONE)) continue;
-            ways[n] = a.at.add(d.delta());
-            n += 1;
+            if (lv.stepOk(a.at, d, grid.NO_ONE)) ways.add(d);
         }
-        if (n == 0) return null;
+        const d = ways.pick(rng) orelse return null;
         const hp = @max(1, @divTrunc(a.hp, 2));
         a.kind = next;
         a.hp = hp;
         a.max = hp;
-        return self.spawn(lv, .{ .kind = next, .at = ways[rng.below(@intCast(n))], .hp = hp, .max = hp, .awake = true, .waits = true });
+        return self.spawn(lv, .{ .kind = next, .at = a.at.add(d.delta()), .hp = hp, .max = hp, .awake = true, .waits = true });
+    }
+};
+
+/// Some of the ways out of a cell, one of them picked at random.
+const Ways = struct {
+    d: [mathx.ALL_DIRS.len]mathx.Dir = undefined,
+    n: usize = 0,
+
+    fn add(self: *Ways, d: mathx.Dir) void {
+        self.d[self.n] = d;
+        self.n += 1;
+    }
+
+    fn pick(self: *const Ways, rng: *mathx.Rng) ?mathx.Dir {
+        return if (self.n == 0) null else self.d[rng.below(@intCast(self.n))];
     }
 };
 
@@ -227,16 +239,12 @@ pub fn chase(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i
 
 /// Brogue's `randValidDirectionFrom`: any step it may take and does not shun, or one onto `prey`.
 pub fn flit(lv: *const grid.Level, from: P, id: u16, prey: u16, rng: *mathx.Rng) ?mathx.Dir {
-    var ways: [mathx.ALL_DIRS.len]mathx.Dir = undefined;
-    var n: usize = 0;
+    var ways = Ways{};
     for (mathx.ALL_DIRS) |d| {
         const onto = lv.passOk(from, d) and lv.who(from.add(d.delta())) == prey;
-        if (!onto and (!lv.stepOk(from, d, id) or shuns(lv, from, d))) continue;
-        ways[n] = d;
-        n += 1;
+        if (onto or (lv.stepOk(from, d, id) and !shuns(lv, from, d))) ways.add(d);
     }
-    if (n == 0) return null;
-    return ways[rng.below(@intCast(n))];
+    return ways.pick(rng);
 }
 
 test "a spawned body stands on the grid and leaves it when it dies" {

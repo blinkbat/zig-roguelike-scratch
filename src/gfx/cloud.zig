@@ -100,7 +100,7 @@ pub const Cloud = struct {
     pub fn draw(self: *Cloud, lv: *const grid.Level, lo: P, hi: P, ox: i32, oy: i32, cell: i32) void {
         const tex = self.tex orelse return;
         if (std.mem.allEqual(f32, &self.tint, 0)) return;
-        const view = filtered(lo, hi);
+        const view = grid.grown(lo, hi, 1);
         if (self.stale or !view[0].eq(self.baked[0]) or !view[1].eq(self.baked[1])) {
             self.bake(lv, view);
             rl.updateTexture(tex, &self.px);
@@ -149,16 +149,20 @@ comptime {
     std.debug.assert(WARP + SOFT < 0.25);
 }
 
-const CLOUD_FS = "#version 330\n" ++ std.fmt.comptimePrint(
-    "const float TINT_HI = {d:.4};\nconst float WARP = {d:.4};\nconst float SOFT = {d:.4};\n",
-    .{ TINT_HI, WARP, SOFT },
+const OCTAVES: u32 = 3;
+/// The most `fbm`'s octaves, each half the last, sum to.
+const FBM_MAX: f32 = 1 - std.math.pow(f32, 0.5, OCTAVES);
+/// The softened density's share from its own texel; the four `SOFT` round it split the rest.
+const CENTRE_W: f32 = 0.4;
+const SIDE_W: f32 = (1 - CENTRE_W) / 4;
+
+const CLOUD_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
+    "const float TINT_HI = {d:.4};\nconst float WARP = {d:.4};\nconst float SOFT = {d:.4};\n" ++
+        "const int OCTAVES = {d};\nconst float FBM_MAX = {d:.4};\nconst float CENTRE_W = {d:.4};\nconst float SIDE_W = {d:.4};\n",
+    .{ TINT_HI, WARP, SOFT, OCTAVES, FBM_MAX, CENTRE_W, SIDE_W },
 ) ++
-    \\in vec2 fragTexCoord;
-    \\in vec4 fragColor;
-    \\uniform sampler2D texture0;
     \\uniform float time;
     \\uniform vec2 cells;
-    \\out vec4 finalColor;
     \\const vec2 DRIFT = vec2(0.21, 0.13);
     \\float hash(vec2 p) {
     \\    p = fract(p * vec2(123.34, 456.21));
@@ -174,12 +178,12 @@ const CLOUD_FS = "#version 330\n" ++ std.fmt.comptimePrint(
     \\float fbm(vec2 p) {
     \\    float v = 0.0;
     \\    float a = 0.5;
-    \\    for (int i = 0; i < 3; i++) {
+    \\    for (int i = 0; i < OCTAVES; i++) {
     \\        v += a * noise(p);
     \\        p = p * 2.07 + vec2(5.2, 1.3);
     \\        a *= 0.5;
     \\    }
-    \\    return v / 0.875;
+    \\    return v / FBM_MAX;
     \\}
     \\float density(vec2 c) {
     \\    return texture(texture0, c / cells).a;
@@ -189,23 +193,15 @@ const CLOUD_FS = "#version 330\n" ++ std.fmt.comptimePrint(
     \\    vec2 drift = DRIFT * time;
     \\    vec2 w = vec2(fbm(c * 0.7 + drift), fbm(c * 0.7 - drift.yx + 4.0)) - 0.5;
     \\    vec2 q = c + w * WARP * 2.0;
-    \\    float d = density(q) * 0.4
+    \\    float d = density(q) * CENTRE_W
     \\        + (density(q + vec2(SOFT, 0.0)) + density(q - vec2(SOFT, 0.0))
-    \\        + density(q + vec2(0.0, SOFT)) + density(q - vec2(0.0, SOFT))) * 0.15;
-    \\    if (d < 0.004) discard;
+    \\        + density(q + vec2(0.0, SOFT)) + density(q - vec2(0.0, SOFT))) * SIDE_W;
+    \\    if (d < CLEAR_A) discard;
     \\    float n = fbm(c * 1.3 + w * 1.5 - drift * 0.6);
     \\    vec3 col = texture(texture0, q / cells).rgb * mix(0.75, 1.2, n);
     \\    finalColor = vec4(col, clamp(d * mix(0.5, 1.1, n), 0.0, TINT_HI)) * fragColor;
     \\}
 ;
-
-/// And a cell round them for the filter to reach.
-fn filtered(lo: P, hi: P) [2]P {
-    return .{
-        .{ .x = @max(0, lo.x - 1), .y = @max(0, lo.y - 1) },
-        .{ .x = @min(grid.W, hi.x + 1), .y = @min(grid.H, hi.y + 1) },
-    };
-}
 
 test "Brogue's tint: 30% at the thinnest, a point a unit, 90% at most" {
     try std.testing.expectEqual(@as(f32, 0), tintOf(0));

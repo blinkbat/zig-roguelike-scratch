@@ -6,6 +6,9 @@ const P = mathx.P;
 pub const W: i32 = 96;
 pub const H: i32 = 64;
 pub const CELLS: usize = @intCast(W * H);
+pub const COLS: usize = @intCast(W);
+pub const ROWS: usize = @intCast(H);
+pub const MIDDLE = P{ .x = @divTrunc(W, 2), .y = @divTrunc(H, 2) };
 /// The corners of the map inside its edge, both inclusive.
 pub const INNER_LO = P{ .x = 1, .y = 1 };
 pub const INNER_HI = P{ .x = W - 2, .y = H - 2 };
@@ -250,6 +253,14 @@ pub const Level = struct {
     }
 };
 
+/// From `lo` up to `hi`, `by` cells bigger each way, on the map.
+pub fn grown(lo: P, hi: P, by: i32) [2]P {
+    return .{
+        .{ .x = @max(0, lo.x - by), .y = @max(0, lo.y - by) },
+        .{ .x = @min(W, hi.x + by), .y = @min(H, hi.y + by) },
+    };
+}
+
 /// Every cell from `lo` up to `hi`, row by row.
 pub const Cells = struct {
     lo: P,
@@ -258,6 +269,16 @@ pub const Cells = struct {
 
     pub fn of(lo: P, hi: P) Cells {
         return .{ .lo = lo, .hi = hi, .at = if (lo.x < hi.x) lo else .{ .x = lo.x, .y = hi.y } };
+    }
+
+    /// Cells across `around(_, r)`.
+    pub fn span(r: i32) i32 {
+        return r * 2 + 1;
+    }
+
+    /// Every cell within `r` of `c`, on the map or off it.
+    pub fn around(c: P, r: i32) Cells {
+        return of(c.sub(.{ .x = r, .y = r }), c.add(.{ .x = r + 1, .y = r + 1 }));
     }
 
     pub fn next(self: *Cells) ?P {

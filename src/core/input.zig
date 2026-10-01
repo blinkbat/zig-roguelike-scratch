@@ -313,15 +313,17 @@ pub const Desk = struct {
     const SMALLER_KEY: rl.KeyboardKey = .left_bracket;
     const BIGGER_KEY: rl.KeyboardKey = .right_bracket;
     const CTRL = "Ctrl+";
+    const ALT = "Alt+";
     pub const SHIFT_CAPTION = "Shift";
+    const CTRL_SHIFT = CTRL ++ SHIFT_CAPTION ++ "+";
     pub const PLAY_CAPTION = keyName(PLAY_KEY);
     pub const PLAY_HERE_CAPTION = keyName(PLAY_HERE_KEY);
     pub const SAVE_CAPTION = CTRL ++ keyName(SAVE_KEY);
-    pub const SAVE_AS_CAPTION = CTRL ++ SHIFT_CAPTION ++ "+" ++ keyName(SAVE_KEY);
+    pub const SAVE_AS_CAPTION = CTRL_SHIFT ++ keyName(SAVE_KEY);
     pub const OPEN_CAPTION = CTRL ++ keyName(OPEN_KEY);
     pub const NEW_CAPTION = CTRL ++ keyName(NEW_KEY);
     pub const UNDO_CAPTION = CTRL ++ keyName(UNDO_KEY);
-    pub const REDO_CAPTION = CTRL ++ keyName(REDO_KEY) ++ " / " ++ CTRL ++ SHIFT_CAPTION ++ "+" ++ keyName(UNDO_KEY);
+    pub const REDO_CAPTION = CTRL ++ keyName(REDO_KEY) ++ " / " ++ CTRL_SHIFT ++ keyName(UNDO_KEY);
     pub const TOOLS_CAPTION = TOOL_CAPTIONS[0] ++ "-" ++ TOOL_CAPTIONS[TOOL_KEYS.len - 1];
     pub const PAINT_CAPTION = mouseName(PAINT_BUTTON);
     pub const ERASE_CAPTION = mouseName(ERASE_BUTTON);
@@ -349,7 +351,7 @@ pub const Desk = struct {
     pub const RENAME_CAPTION = keyName(RENAME_KEY);
     pub const BACK_CAPTION = keyName(BACK_KEY);
     pub const ENTER_CAPTION = keyName(ENTER_KEYS[0]);
-    pub const FULLSCREEN_CAPTION = "Alt+" ++ ENTER_CAPTION;
+    pub const FULLSCREEN_CAPTION = ALT ++ ENTER_CAPTION;
 
     comptime {
         var bare: []const rl.KeyboardKey = &(TOOL_KEYS ++ [_]rl.KeyboardKey{ PLAY_KEY, PLAY_HERE_KEY, GRAPH_KEY, GO_KEY, RENAME_KEY, BACK_KEY, SMALLER_KEY, BIGGER_KEY });
@@ -400,6 +402,11 @@ pub const Desk = struct {
 
     pub fn text(self: *const Desk) []const u8 {
         return self.typed.text();
+    }
+
+    /// Either button pressed this frame.
+    pub fn clicked(self: *const Desk) bool {
+        return self.paint_hit or self.erase_hit;
     }
 
     pub fn update(self: *Desk) void {

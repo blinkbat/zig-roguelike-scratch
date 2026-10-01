@@ -36,9 +36,7 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng) void {
 fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
     const box = reach(lv) orelse return;
     var next = [_]u32{0} ** grid.CELLS;
-    const lo = box[0];
-    const hi = box[1].add(.{ .x = 1, .y = 1 });
-    var cells = grid.Cells.of(lo, hi);
+    var cells = grid.Cells.of(box[0], box[1]);
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
         const v = lv.gas[i];
@@ -60,7 +58,7 @@ fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
         for (to[0..n]) |t| next[t] += share;
         for (0..v % n) |_| next[to[rng.below(@intCast(n))]] += 1;
     }
-    cells = grid.Cells.of(lo, hi);
+    cells = grid.Cells.of(box[0], box[1]);
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
         if (next[i] > 0 and lv.gas[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
@@ -68,7 +66,7 @@ fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
     }
 }
 
-/// The corners of the box round every cell holding gas, a cell wider all round.
+/// The box round every cell holding gas, a cell wider all round, up to but not including its high corner.
 fn reach(lv: *const grid.Level) ?[2]P {
     var lo = P{ .x = grid.W, .y = grid.H };
     var hi = P{ .x = -1, .y = -1 };
@@ -79,10 +77,7 @@ fn reach(lv: *const grid.Level) ?[2]P {
         hi = .{ .x = @max(hi.x, p.x), .y = @max(hi.y, p.y) };
     }
     if (hi.x < 0) return null;
-    return .{
-        .{ .x = @max(0, lo.x - 1), .y = @max(0, lo.y - 1) },
-        .{ .x = @min(grid.W - 1, hi.x + 1), .y = @min(grid.H - 1, hi.y + 1) },
-    };
+    return grid.grown(lo, hi.add(.{ .x = 1, .y = 1 }), 1);
 }
 
 const Life = struct { turns: usize = 0, most: usize = 0 };
@@ -105,7 +100,7 @@ fn lasts(lv: *grid.Level, rng: *mathx.Rng) !Life {
     return life;
 }
 
-const OPEN_AT = P{ .x = @divTrunc(grid.W, 2), .y = @divTrunc(grid.H, 2) };
+const OPEN_AT = grid.MIDDLE;
 
 fn onOpenFloor(rng: *mathx.Rng) !Life {
     var lv = grid.openFloor();

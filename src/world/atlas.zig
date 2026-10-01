@@ -35,8 +35,8 @@ pub fn worldPath(comptime stem: []const u8) []const u8 {
 }
 const HEADER = "roguelike-world 1";
 const TEXT_CAP: usize = 8 << 20;
-const COLS: usize = @intCast(grid.W);
-const ROWS: usize = @intCast(grid.H);
+const COLS = grid.COLS;
+const ROWS = grid.ROWS;
 pub const NAME_MAX: usize = 20;
 const UNNAMED = "node ";
 /// A node's name, or "node 31" for one with none.
@@ -49,7 +49,9 @@ pub const POS_MAX: u32 = 1 << 24;
 const MAX_LISTED: usize = 64;
 /// A world file's name, `.world` and all.
 const FILE_MAX: usize = 64;
-const ListedPath = [DIR.len + 1 + FILE_MAX]u8;
+/// A path in `DIR`.
+pub const PATH_MAX = DIR.len + 1 + FILE_MAX;
+const ListedPath = [PATH_MAX]u8;
 
 pub const Link = struct { node: usize, door: usize };
 
@@ -171,6 +173,18 @@ pub const Node = struct {
         return self.door[0..self.door_n];
     }
 
+    fn doorsMut(self: *Node) []Door {
+        return self.door[0..self.door_n];
+    }
+
+    /// The foes placed on it, where the archer never lands; a procgen node's are rolled in play.
+    pub fn placed(self: *const Node) []const Foe {
+        return switch (self.plan) {
+            .bespoke => |*b| b.foes(),
+            .procgen => &.{},
+        };
+    }
+
     pub fn doorAt(self: *const Node, p: P) ?usize {
         for (self.doors(), 0..) |d, i| {
             if (d.at.eq(p)) return i;
@@ -211,7 +225,7 @@ pub const Node = struct {
             .bespoke => |*b| {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;
-                for (cells[0..self.door_n], 0..) |p, i| lv.putDoor(p, i);
+                self.openDoors(lv);
                 gen.shapeWalls(lv);
                 for (b.torches()) |t| {
                     if (self.torchFits(b, t)) lv.addTorch(t);
@@ -229,13 +243,17 @@ pub const Node = struct {
             .bespoke => self.stamp(lv, 0),
             .procgen => {
                 lv.* = grid.Level.blank();
-                for (self.doors(), 0..) |d, i| lv.putDoor(d.at, i);
+                self.openDoors(lv);
             },
         }
     }
+
+    fn openDoors(self: *const Node, lv: *grid.Level) void {
+        for (self.doors(), 0..) |d, i| lv.putDoor(d.at, i);
+    }
 };
 
-pub const Start = struct { node: usize = 0, at: P = .{ .x = grid.W / 2, .y = grid.H / 2 } };
+pub const Start = struct { node: usize = 0, at: P = grid.MIDDLE };
 
 pub const Atlas = struct {
     node: [MAX_NODES]Node = undefined,
@@ -272,7 +290,7 @@ pub const Atlas = struct {
         std.mem.copyForwards(Node, self.node[n .. self.node_n - 1], self.node[n + 1 .. self.node_n]);
         self.node_n -= 1;
         for (self.nodes()) |*nd| {
-            for (nd.door[0..nd.door_n]) |*d| {
+            for (nd.doorsMut()) |*d| {
                 if (d.to) |*l| {
                     if (l.node > n) l.node -= 1;
                 }
@@ -295,7 +313,7 @@ pub const Atlas = struct {
         std.mem.copyForwards(Door, nd.door[at.door .. nd.door_n - 1], nd.door[at.door + 1 .. nd.door_n]);
         nd.door_n -= 1;
         for (self.nodes()) |*other| {
-            for (other.door[0..other.door_n]) |*d| {
+            for (other.doorsMut()) |*d| {
                 if (d.to) |*l| {
                     if (l.node == at.node and l.door > at.door) l.door -= 1;
                 }
@@ -380,22 +398,21 @@ pub const Atlas = struct {
         if (!std.mem.eql(u8, head, HEADER)) return error.NoHeader;
         var row: usize = 0;
         var own_makeups = false;
+        var seen = std.EnumSet(Word).initEmpty();
+        var knobbed = KnobSet.initEmpty();
         while (lines.next()) |raw| {
             const line = std.mem.trimRight(u8, raw, "\r");
             var f = std.mem.tokenizeScalar(u8, line, ' ');
             const word = f.next() orelse continue;
             const said = std.meta.stringToEnum(Word, word) orelse {
-                if (!knob(word)) return error.BadLine;
-                const pg = try self.procgen();
-                inline for (FLOOR_KNOBS) |k| {
-                    if (std.mem.eql(u8, word, k)) @field(pg.floor, k) = try takeValue(@TypeOf(@field(pg.floor, k)), &f);
-                }
-                inline for (FOE_KNOBS) |k| {
-                    if (std.mem.eql(u8, word, k)) @field(pg.foes, k) = try takeValue(@TypeOf(@field(pg.foes, k)), &f);
-                }
+                try takeKnob(try self.procgen(), word, &f, &knobbed);
                 if (f.next() != null) return error.BadLine;
                 continue;
             };
+            if (ONCE.contains(said)) {
+                if (seen.contains(said)) return error.BadLine;
+                seen.insert(said);
+            }
             switch (said) {
                 .start => self.start = .{ .node = try int(usize, &f), .at = try cell(&f) },
                 .node => {
@@ -413,6 +430,8 @@ pub const Atlas = struct {
                     _ = self.add(plan) orelse return error.TooMany;
                     row = 0;
                     own_makeups = false;
+                    seen = seen.intersectWith(ONCE_FILE);
+                    knobbed = KnobSet.initEmpty();
                 },
                 .name => {
                     _ = (try self.last()).rename(f.rest()) orelse return error.BadLine;
@@ -464,6 +483,7 @@ pub const Atlas = struct {
         }
         try self.finished(row);
         if (self.node_n == 0) return error.NoNodes;
+        if (!seen.contains(.start)) return error.NoStart;
         for (self.nodes(), 0..) |*nd, n| {
             for (nd.doors(), 0..) |d, k| {
                 const l = d.to orelse continue;
@@ -492,6 +512,14 @@ pub const Atlas = struct {
         }
     }
 
+    /// The hero has somewhere to stand there: the cell, or the nearest one open.
+    pub fn standable(self: *const Atlas, from: Start, scratch: *grid.Level) bool {
+        const nd = &self.node[from.node];
+        if (nd.unrolled()) return true;
+        nd.sketch(scratch);
+        return landing(scratch, from.at, nd.placed()) != null;
+    }
+
     fn procgen(self: *Atlas) Error!*Procgen {
         return switch ((try self.last()).plan) {
             .procgen => |*pg| pg,
@@ -512,14 +540,23 @@ pub const Atlas = struct {
     }
 };
 
-pub const Error = error{ NoHeader, BadLine, TooMany, NoNodes, BadLink };
+pub const NO_FLOOR = "{s} has no open floor to start on";
+
+pub const Error = error{ NoHeader, BadLine, TooMany, NoNodes, NoStart, BadLink };
 
 /// A procgen node's lines but its makeups: each named for, and holding, a field of its floor or its foes.
 pub const FLOOR_KNOBS = knobsOf(gen.Params, &.{});
-pub const FOE_KNOBS = knobsOf(pack.Spec, &.{ MAKEUP, MAKEUP ++ "_n" });
+pub const FOE_KNOBS = knobsOf(pack.Spec, MAKEUP_FIELDS);
 /// Every other line's first word, which no knob may take.
 const Word = enum { start, node, name, at, door, makeup, row, torch, foe };
+const ONCE_FILE = std.EnumSet(Word).initOne(.start);
+const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at });
+const ONCE = ONCE_FILE.unionWith(ONCE_NODE);
+const KNOBS = FLOOR_KNOBS ++ FOE_KNOBS;
+const KnobSet = std.StaticBitSet(KNOBS.len);
 const MAKEUP = @tagName(Word.makeup);
+/// `pack.Spec`'s makeups, which are lines of their own.
+const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
 
 /// A line's first word and the space after it.
 fn says(comptime w: Word) []const u8 {
@@ -527,8 +564,8 @@ fn says(comptime w: Word) []const u8 {
 }
 
 comptime {
-    std.debug.assert(@hasField(pack.Spec, MAKEUP) and @hasField(pack.Spec, MAKEUP ++ "_n"));
-    const all = FLOOR_KNOBS ++ FOE_KNOBS ++ knobsOf(Word, &.{});
+    for (MAKEUP_FIELDS) |m| std.debug.assert(@hasField(pack.Spec, m));
+    const all = KNOBS ++ knobsOf(Word, &.{});
     for (all, 0..) |a, i| {
         for (all[0..i]) |b| std.debug.assert(!std.mem.eql(u8, a, b));
     }
@@ -545,11 +582,18 @@ fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const 
     return out;
 }
 
-fn knob(word: []const u8) bool {
-    inline for (FLOOR_KNOBS ++ FOE_KNOBS) |k| {
-        if (std.mem.eql(u8, word, k)) return true;
+/// The knob `word` names, said once a node.
+fn takeKnob(pg: *Procgen, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), knobbed: *KnobSet) Error!void {
+    inline for (KNOBS, 0..) |k, i| {
+        if (std.mem.eql(u8, word, k)) {
+            if (knobbed.isSet(i)) return error.BadLine;
+            knobbed.set(i);
+            const part = if (comptime i < FLOOR_KNOBS.len) &pg.floor else &pg.foes;
+            @field(part, k) = try takeValue(@TypeOf(@field(part, k)), f);
+            return;
+        }
     }
-    return false;
+    return error.BadLine;
 }
 
 fn putKnob(w: anytype, comptime name: []const u8, v: anytype) !void {
@@ -632,12 +676,24 @@ pub fn pathFor(buf: []u8, name: []const u8) ?[]const u8 {
 
 /// The world files in `DIR`, sorted.
 pub const Listing = struct {
-    path: [MAX_LISTED]ListedPath = undefined,
-    len: [MAX_LISTED]usize = undefined,
+    file: [MAX_LISTED]Listed = undefined,
     n: usize = 0,
 
+    const Listed = struct {
+        buf: ListedPath,
+        n: usize,
+
+        fn text(l: *const Listed) []const u8 {
+            return l.buf[0..l.n];
+        }
+
+        fn before(_: void, a: Listed, b: Listed) bool {
+            return std.mem.lessThan(u8, a.text(), b.text());
+        }
+    };
+
     pub fn at(self: *const Listing, i: usize) []const u8 {
-        return self.path[i][0..self.len[i]];
+        return self.file[i].text();
     }
 
     pub fn scan(self: *Listing) void {
@@ -649,18 +705,11 @@ pub const Listing = struct {
             if (self.n == MAX_LISTED) break;
             if (e.kind != .file or !std.mem.endsWith(u8, e.name, EXT) or e.name.len > FILE_MAX) continue;
             if (!plain(e.name)) continue;
-            const s = std.fmt.bufPrint(&self.path[self.n], DIR ++ "/{s}", .{e.name}) catch continue;
-            self.len[self.n] = s.len;
+            const f = &self.file[self.n];
+            f.n = (std.fmt.bufPrint(&f.buf, DIR ++ "/{s}", .{e.name}) catch continue).len;
             self.n += 1;
         }
-        var i: usize = 1;
-        while (i < self.n) : (i += 1) {
-            var j = i;
-            while (j > 0 and std.mem.lessThan(u8, self.at(j), self.at(j - 1))) : (j -= 1) {
-                std.mem.swap(ListedPath, &self.path[j], &self.path[j - 1]);
-                std.mem.swap(usize, &self.len[j], &self.len[j - 1]);
-            }
-        }
+        std.sort.insertion(Listed, self.file[0..self.n], {}, Listed.before);
     }
 };
 
@@ -774,11 +823,17 @@ test "a world file with a one-way link, a door linked to itself, a stray word or
         head ++ "node procgen rooms\napart 99\n",
         head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** ROWS ++ "foe rat 3 3\n",
         head ++ "node bespoke\n" ++ ("row " ++ "." ** COLS ++ "\n") ** ROWS ++ "foe slime_half 3 3\n",
+        head ++ "start 0 6 6\nnode procgen rooms\n",
+        head ++ "node procgen rooms\nname A\nname B\n",
+        head ++ "node procgen rooms\nat 0 0\nat 1 1\n",
+        head ++ "node procgen rooms\napart 4\napart 5\n",
+        HEADER ++ "\nnode procgen rooms\n",
     };
     for (bad) |t| try std.testing.expect(std.meta.isError(a.parse(t)));
     try a.parse(head ++ "node procgen rooms 1790812916605\n");
     try a.parse(head ++ "node procgen rooms\n  name  Deep  Cave\n");
     try std.testing.expectEqualStrings("Deep  Cave", a.node[0].name());
+    try a.parse(head ++ "node procgen rooms\nat 0 0\napart 4\nnode procgen rooms\nat 1 1\napart 5\n");
 }
 
 test "removing a node unlinks the doors into it and renumbers the rest" {

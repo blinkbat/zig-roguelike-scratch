@@ -10,7 +10,9 @@ const look = @import("look.zig");
 /// `ichor` is Brogue's purple blood.
 pub const Matter = enum { blood, ooze, wood, ichor };
 
-pub fn matterOf(k: actor.Kind) Matter {
+/// A body's, or a barrel's (null).
+pub fn matterOf(kind: ?actor.Kind) Matter {
+    const k = kind orelse return .wood;
     return switch (k) {
         .archer, .rat => .blood,
         .slime, .slime_half, .slime_quarter => .ooze,

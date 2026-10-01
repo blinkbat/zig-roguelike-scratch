@@ -7,6 +7,7 @@ const font = @import("../gfx/font.zig");
 
 pub const CONFIRM = input.Button.a;
 pub const BACK = input.Button.b;
+pub const PAUSE = input.Button.pause;
 
 pub const TITLE: i32 = 60;
 const ROW: i32 = 30;
@@ -23,6 +24,36 @@ pub const SEP = "   ";
 /// After a field being typed in.
 pub const CARET = "_";
 
+/// A line said, kept terminated so it draws as it is; one too long is cut short.
+pub fn Note(comptime N: usize) type {
+    return struct {
+        const Self = @This();
+        buf: [N + 1]u8 = @splat(0),
+        n: usize = 0,
+
+        pub fn say(self: *Self, comptime fmt: []const u8, args: anytype) void {
+            self.n = (std.fmt.bufPrintZ(&self.buf, fmt, args) catch blk: {
+                self.buf[N] = 0;
+                break :blk self.buf[0..N];
+            }).len;
+        }
+
+        pub fn clear(self: *Self) void {
+            self.n = 0;
+            self.buf[0] = 0;
+        }
+
+        pub fn text(self: *const Self) [:0]const u8 {
+            return self.buf[0..self.n :0];
+        }
+    };
+}
+
+/// Before the `i`th of `n` items said as a list: "a, b and c".
+pub fn listSep(i: usize, n: usize) []const u8 {
+    return if (i == 0) "" else if (i + 1 == n) " and " else ", ";
+}
+
 /// A column of rows, walked with the d-pad and picked with A.
 pub const Menu = struct {
     at: usize = 0,
@@ -37,13 +68,16 @@ pub const Menu = struct {
 
 /// B, or Menu, which on a page of the title backs out of it too.
 pub fn backed(st: *const input.State) bool {
-    return st.hit(BACK) or st.hit(input.Button.pause);
+    return st.hit(BACK) or st.hit(PAUSE);
 }
 
-const LEGEND = CONFIRM.caption() ++ " select" ++ SEP ++ input.MOVE_CAPTION ++ " move";
+pub const MOVE_ITEM = input.MOVE_CAPTION ++ " move";
+/// What `BACK` does on a page, in its legend.
+pub const BACK_LABEL = "back";
+const LEGEND = CONFIRM.caption() ++ " select" ++ SEP ++ MOVE_ITEM;
 
 /// Centred on the screen, the row at `at` marked.
-pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, rows: []const [:0]const u8, at: usize, note: ?[]const u8, back: ?[:0]const u8) void {
+pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, rows: []const [:0]const u8, at: usize, note: ?[:0]const u8, back: ?[:0]const u8) void {
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(rows.len)) * ROW_STEP, 2);
     mid(face, screen, title, top + TITLE_DY - TITLE, TITLE, look.TEXT);
     for (rows, 0..) |r, i| {
@@ -59,8 +93,7 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, rows: []const
     }
     var y = top + ROWS_DY + @as(i32, @intCast(rows.len)) * ROW_STEP + NOTE_GAP;
     if (note) |n| {
-        var buf: [NOTE_MAX + 1]u8 = undefined;
-        mid(face, screen, std.fmt.bufPrintZ(&buf, "{s}", .{n}) catch "", y, NOTE, look.DIM);
+        mid(face, screen, n, y, NOTE, look.DIM);
         y += NOTE_GAP;
     }
     var buf: [NOTE_MAX + 1]u8 = undefined;

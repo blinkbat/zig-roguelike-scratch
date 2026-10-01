@@ -8,6 +8,7 @@ const P = mathx.P;
 pub const RANGE: i32 = 9;
 pub const DMG_LO: i32 = 3;
 pub const DMG_HI: i32 = 5;
+pub const VERB = "shoots";
 
 pub const Hit = union(enum) { body: u16, barrel: P };
 
@@ -29,7 +30,7 @@ pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
         if (a.alive and a.foe() and aimable(lv, from, a.at)) near.offer(a.at);
     }
     if (near.best != null) return near.best;
-    var cells = grid.Cells.of(from.sub(.{ .x = RANGE, .y = RANGE }), from.add(.{ .x = RANGE + 1, .y = RANGE + 1 }));
+    var cells = grid.Cells.around(from, RANGE);
     while (cells.next()) |p| {
         if (lv.hasBarrel(p) and aimable(lv, from, p)) near.offer(p);
     }

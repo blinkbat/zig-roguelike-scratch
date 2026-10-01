@@ -83,15 +83,33 @@ pub const Ring = struct {
     }
 
     pub fn next(self: *Ring) ?P {
-        while (self.at.y <= self.c.y + self.r) {
-            const p = self.at;
-            self.at.x += 1;
-            if (self.at.x > self.c.x + self.r) self.at = .{ .x = self.c.x - self.r, .y = self.at.y + 1 };
-            if (dist(p, self.c) == self.r) return p;
-        }
-        return null;
+        if (self.at.y > self.c.y + self.r) return null;
+        const p = self.at;
+        const right = self.c.x + self.r;
+        const edge = p.y == self.c.y - self.r or p.y == self.c.y + self.r;
+        if (p.x >= right) {
+            self.at = .{ .x = self.c.x - self.r, .y = p.y + 1 };
+        } else self.at.x = if (edge) p.x + 1 else right;
+        return p;
     }
 };
+
+test "a ring is the cells of its box exactly its radius out, in the box's order" {
+    const c = P{ .x = 3, .y = -2 };
+    for (0..6) |ri| {
+        const r: i32 = @intCast(ri);
+        var ring = Ring.init(c, r);
+        var y = c.y - r;
+        while (y <= c.y + r) : (y += 1) {
+            var x = c.x - r;
+            while (x <= c.x + r) : (x += 1) {
+                const p = P{ .x = x, .y = y };
+                if (dist(p, c) == r) try std.testing.expectEqual(p, ring.next().?);
+            }
+        }
+        try std.testing.expectEqual(@as(?P, null), ring.next());
+    }
+}
 
 pub fn distEuclid(a: P, b: P) f32 {
     const dx: f32 = @floatFromInt(a.x - b.x);

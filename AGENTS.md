@@ -58,10 +58,10 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **THE WORLD IS `world/atlas.zig`**: nodes, each bespoke (authored floor, walls, torches, barrels and foes) or
   procgen (an algorithm; `gen.around` is the only one), each with doors. A procgen node holds no seed, but holds its floor's
   `gen.Params` (the box its rooms fall in, their count and size, torches, barrels) and its foes' `pack.Spec` (packs,
-  makeups, reach, gap from the arrival, apart from each other); its floor is rolled round its doors each run, from the run's seed and the node (`game.rollOf`), so a world plays differently
+  a few of each kind, makeups, reach, gap from the arrival, apart from each other); its floor is rolled round its doors each run, from the run's seed and the node (`game.rollOf`), so a world plays differently
   every time. A door links both ways to one door on any node (`Atlas.link`). `Node.stamp` builds a node's `Level`:
-  procgen generates round its doors, tunnelling each into the floor; bespoke opens each door's cell. `worlds\main.world` is played when it loads, else
-  one generated floor. Stepping onto a linked door takes the archer, once the turn is drawn, to the door it leads to
+  procgen generates round its doors, tunnelling each into the floor; bespoke opens each door's cell. `worlds\main.world` is played when it loads, one
+  generated floor when there is none, and New refuses one that will not parse or whose start has no open floor. Stepping onto a linked door takes the archer, once the turn is drawn, to the door it leads to
   (`atlas.landing` when that is taken), hp carried; a node left is kept as it was for the run, and death restarts
   the world. The file is text (`Atlas.write` / `parse`), strict, saved beside itself and renamed over. A node also
   keeps a name and its box's place on the editor's graph. Tests never write a world file.
@@ -101,7 +101,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   world, under the minimap and hud. Nothing in the simulation reads it.
 - **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG and TTF there under its file name, read with
   `@embedFile`), so the exe runs from any directory. A body's PNG is a file in `assets/` and its entry in
-  `look.BODY_PNGS`; a tile's is a file, a field in `Sprites` that `load` and `unload` name, and its arm in
+  `look.BODY_PNGS`; a tile's is a file, a field in `Sprites` that `load` names (`unload` walks every field), and its arm in
   `Sprites.tileAt`; the barrel's is a `Sprites` field in `Sprites.figures`, the sprites the body shader lights.
   Sprites are authored at `look.SPRITE_PX` (64), facing right; `Game.facing` mirrors a body
   whose last step, strike or aim went leftward, and straight up or down keeps it.

@@ -32,7 +32,7 @@ const LEGEND_DY: i32 = 200;
 const CARET = menu.CARET;
 
 const LEGEND = menu.CONFIRM.caption() ++ " type" ++ menu.SEP ++ RUB.caption() ++ " delete" ++ menu.SEP ++
-    input.MOVE_CAPTION ++ " move" ++ menu.SEP ++ menu.BACK.caption() ++ " back";
+    menu.MOVE_ITEM ++ menu.SEP ++ menu.BACK.caption() ++ " " ++ menu.BACK_LABEL;
 
 pub const Outcome = enum { done, back };
 
@@ -50,7 +50,7 @@ pub const Entry = struct {
         return LAST[self.col];
     }
 
-    /// The name, done, once it is confirmed; `back` when backed out of.
+    /// `done` once a name is confirmed, read off `name.done()`; `back` when backed out of.
     pub fn step(self: *Entry, st: *const input.State) ?Outcome {
         for (st.typed.text()) |c| {
             if (self.name.push(c)) self.onDone();
@@ -94,7 +94,7 @@ pub const TITLE_MAX = blk: {
 /// "NAME YOUR ARCHER".
 pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
     const t = std.fmt.bufPrintZ(buf, ASK ++ "{s}", .{c.title()}) catch unreachable;
-    for (buf[0..t.len]) |*ch| ch.* = std.ascii.toUpper(ch.*);
+    _ = std.ascii.upperString(buf[0..t.len], t);
     return t;
 }
 
@@ -141,7 +141,9 @@ test "the grid types a name, the keyboard types into it, and done waits for a na
     _ = e.step(&st);
     try std.testing.expectEqualStrings("Aa", e.name.text());
     st = .{};
-    st.typed = .{ .buf = "ron".* ++ ([_]u8{0} ** 13), .n = 3 };
+    st.typed = .{};
+    @memcpy(st.typed.buf[0..3], "ron");
+    st.typed.n = 3;
     _ = e.step(&st);
     try std.testing.expectEqualStrings("Aaron", e.name.text());
     st = .{};

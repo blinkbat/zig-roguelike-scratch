@@ -41,22 +41,26 @@ pub const Sprites = struct {
     }
 
     pub fn unload(self: Sprites) void {
-        for ([_]?rl.Texture2D{self.floor} ++ self.figures() ++ self.wall.values) |s| {
-            if (s) |t| rl.unloadTexture(t);
+        inline for (std.meta.fields(Sprites)) |f| {
+            const v = @field(self, f.name);
+            const all: []const ?rl.Texture2D = if (f.type == ?rl.Texture2D) &.{v} else &v.values;
+            for (all) |s| {
+                if (s) |t| rl.unloadTexture(t);
+            }
         }
     }
 
-    pub fn body(self: Sprites, k: actor.Kind) ?rl.Texture2D {
-        return self.bodies.get(k);
+    pub fn body(self: *const Sprites, k: actor.Kind) ?rl.Texture2D {
+        return self.bodies.getPtrConst(k).*;
     }
 
     pub fn figures(self: Sprites) [FIGURES]?rl.Texture2D {
         return self.bodies.values ++ [_]?rl.Texture2D{self.barrel};
     }
 
-    pub fn tileAt(self: Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
+    pub fn tileAt(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
         return switch (lv.at(p)) {
-            .wall => self.wall.get(lv.wallShape(p) orelse return null),
+            .wall => self.wall.getPtrConst(lv.wallShape(p) orelse return null).*,
             .floor => self.floor,
         };
     }
@@ -239,11 +243,13 @@ pub fn body(k: actor.Kind) Look {
 pub const GAS = rgb(0xbf40d9);
 
 /// What a blow sprays: `fx.matterOf`'s.
-pub const BLOOD = rl.Color{ .r = 112, .g = 22, .b = 16, .a = 220 };
-pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = 220 };
+pub const BLOOD = rl.Color{ .r = 112, .g = 22, .b = 16, .a = GORE_A };
+pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = GORE_A };
 pub const SPLINTER = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
 /// Brogue's purple blood: the gas's, darker.
-pub const ICHOR = rl.Color{ .r = GAS.r / 2, .g = GAS.g / 2, .b = GAS.b / 2, .a = BLOOD.a };
+pub const ICHOR = rl.Color{ .r = GAS.r / 2, .g = GAS.g / 2, .b = GAS.b / 2, .a = GORE_A };
+/// What a body sprays, as against a barrel's splinters.
+const GORE_A: u8 = 220;
 /// The pinprick where a blow lands.
 pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
 
@@ -309,6 +315,17 @@ pub const SLOT_CURSOR = RETICLE;
 pub const SLOT_CLEAR = FOE;
 pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 
+/// What every fragment shader opens with: raylib's inputs and output, and the alpha below which nothing is drawn.
+pub const FS_HEAD =
+    \\#version 330
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\uniform sampler2D texture0;
+    \\out vec4 finalColor;
+    \\const float CLEAR_A = 0.004;
+    \\
+;
+
 pub const MINI_BG = fade(BG, 0.9);
 pub const MINI_HERO = rgb(0x9cf08a);
 pub const MINI_FOE = FOE;
@@ -319,6 +336,8 @@ pub const EDIT_ROW_ON = RAISED;
 pub const EDIT_ON = GOLD;
 pub const EDIT_PICKED = RETICLE;
 pub const EDIT_WARN = FOE;
+pub const EDIT_HOVER = fade(TEXT, 0.6);
+pub const EDIT_UNLINKED = DIM;
 
 test "every glyph is printable ascii" {
     const inked = struct {
