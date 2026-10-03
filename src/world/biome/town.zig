@@ -14,6 +14,8 @@ pub const BLOCK_MAX: u8 = 24;
 pub const STREET_MAX: u8 = 4;
 const MARGIN: i32 = 4;
 const HOUSE_LEAST: i32 = 5;
+/// How often a block is cut by an alley each way.
+const SPLIT_CHANCE: f32 = 0.7;
 /// A house on a lot: whole, a barrel at most, a torch in three.
 const HOUSE = buildings.Params{ .barrels = 1, .torches = 30 };
 
@@ -54,31 +56,26 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     carve.box(lv, lo, hi, street);
     const step: i32 = @as(i32, p.block) + p.street;
     const s: i32 = p.street;
-    var y = lo.y + s;
+    const top = lo.y + s;
+    var y = top;
+    while (y + p.block <= hi.y - s) : (y += step) {
+        if (carve.percent(rng, p.canals)) {
+            carve.box(lv, .{ .x = lo.x, .y = y - s }, .{ .x = hi.x, .y = y }, .water);
+        }
+    }
+    y = top;
     while (y + p.block <= hi.y - s) : (y += step) {
         var x = lo.x + s;
         while (x + p.block <= hi.x - s) : (x += step) {
             const b = buildings.Box{ .lo = .{ .x = x, .y = y }, .hi = .{ .x = x + p.block, .y = y + p.block } };
             block(lv, rng, b, p, street);
         }
-        if (carve.percent(rng, p.canals)) {
-            carve.box(lv, .{ .x = lo.x, .y = y - s }, .{ .x = hi.x, .y = y }, .water);
-        }
     }
     const plaza = grid.MIDDLE;
     carve.disc(lv, plaza, @as(f32, @floatFromInt(p.block)) * 0.55, street, null);
-    setpiece.stamp(lv, plaza.sub(.{ .x = 2, .y = 2 }), setpiece.rows(.well));
+    setpiece.stampAround(lv, plaza, setpiece.rows(.well));
     var x = lo.x;
-    while (x < hi.x) : (x += step) {
-        var yy = lo.y;
-        while (yy < hi.y) : (yy += 1) {
-            var k: i32 = 0;
-            while (k < s) : (k += 1) {
-                const q = P{ .x = x + k, .y = yy };
-                if (lv.at(q) == .water) lv.set(q, .bridge);
-            }
-        }
-    }
+    while (x < hi.x) : (x += step) bridge(lv, .{ .x = x, .y = lo.y }, .{ .x = x + s, .y = hi.y });
     const ring: grid.Tile = switch (p.wall) {
         .none => return,
         .wall => .wall,
@@ -98,13 +95,24 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     }
 }
 
-/// Cut into lots by alleys; each lot built on, a house walled round with a doorway onto a street, or left a yard.
+/// Every canal cell from `lo` up to `hi` bridged.
+fn bridge(lv: *grid.Level, lo: P, hi: P) void {
+    var cells = grid.Cells.of(lo, hi);
+    while (cells.next()) |q| {
+        if (lv.at(q).liquid()) lv.set(q, .bridge);
+    }
+}
+
+/// Cut into lots by alleys; each lot built on, a house walled round with a doorway onto a street, or left a yard. An
+/// alley from top to bottom with a canal at both ends gets one across, to the streets either side.
 fn block(lv: *grid.Level, rng: *mathx.Rng, b: buildings.Box, p: Params, street: grid.Tile) void {
     const w = b.hi.x - b.lo.x;
     const h = b.hi.y - b.lo.y;
-    const split_x = w >= 2 * HOUSE_LEAST + 1 and rng.chance(0.7);
-    const split_y = h >= 2 * HOUSE_LEAST + 1 and rng.chance(0.7);
+    const split_x = w >= 2 * HOUSE_LEAST + 1 and rng.chance(SPLIT_CHANCE);
+    const crosses = h >= 2 * HOUSE_LEAST + 1;
+    var split_y = crosses and rng.chance(SPLIT_CHANCE);
     const mx = if (split_x) rng.range(b.lo.x + HOUSE_LEAST, b.hi.x - HOUSE_LEAST - 1) else b.hi.x;
+    if (split_x and crosses and lv.at(.{ .x = mx, .y = b.lo.y - 1 }).liquid() and lv.at(.{ .x = mx, .y = b.hi.y }).liquid()) split_y = true;
     const my = if (split_y) rng.range(b.lo.y + HOUSE_LEAST, b.hi.y - HOUSE_LEAST - 1) else b.hi.y;
     const lots = [_]buildings.Box{
         .{ .lo = b.lo, .hi = .{ .x = mx, .y = my } },
@@ -120,6 +128,25 @@ fn block(lv: *grid.Level, rng: *mathx.Rng, b: buildings.Box, p: Params, street: 
         }
         buildings.raise(lv, rng, lot, HOUSE, street);
     }
+}
+
+test "no house's doorway opens on a canal" {
+    const TOWNS = 100;
+    var lv = grid.Level.blank();
+    var region: [grid.CELLS]u16 = undefined;
+    var size: [grid.CELLS]u32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    var sealed: usize = 0;
+    for (0..TOWNS) |i| {
+        var rng = mathx.Rng.init(i);
+        shape(&lv, &rng, 0, .{ .canals = 100, .street = 3 });
+        const most = carve.biggest(size[0..carve.label(&lv, &region, &size, &queue)]);
+        for (lv.tile, region) |t, r| {
+            if (t == .floor and r != most) sealed += 1;
+        }
+    }
+    std.debug.print("{d} towns all canals: {d} house floor cells shut off from the streets\n", .{ TOWNS, sealed });
+    try std.testing.expectEqual(@as(usize, 0), sealed);
 }
 
 test "a town's houses each open onto its streets" {

@@ -12,6 +12,11 @@ const P = mathx.P;
 /// Cells a torch's flame lights, from the floor below it.
 pub const TORCH_REACH: i32 = 7;
 
+/// Where the pool of a torch hung on `wall` is cast from.
+pub fn torchFloor(wall: P) P {
+    return wall.add(mathx.Dir.s.delta());
+}
+
 /// A light a body carries, and how far it reaches.
 pub const Source = struct { at: P, reach: i32 };
 
@@ -25,7 +30,7 @@ pub fn skyReach(outdoors: bool, hour: f32, sight: i32) f32 {
 /// Every cell a torch or a carried light reaches, past whatever blocks sight.
 pub fn pools(lv: *const grid.Level, carried: []const Source, out: *[grid.CELLS]bool) void {
     @memset(out, false);
-    for (lv.torches()) |t| fov.castInto(lv, t.add(mathx.Dir.s.delta()), TORCH_REACH, out);
+    for (lv.torches()) |t| fov.castInto(lv, torchFloor(t), TORCH_REACH, out);
     for (carried) |s| fov.castInto(lv, s.at, s.reach, out);
 }
 
@@ -83,7 +88,7 @@ test "a torch's pool is seen across the dark, and a cell once seen is remembered
     lv.addTorch(torch);
     const lamp = [_]Source{.{ .at = at, .reach = 3 }};
     see(&lv, at, 10, 0, &lamp);
-    const under = torch.add(mathx.Dir.s.delta());
+    const under = torchFloor(torch);
     try std.testing.expect(lv.isLit(under));
     try std.testing.expect(!lv.isLit(.{ .x = at.x - 8, .y = at.y }));
     const away = P{ .x = 30, .y = 30 };

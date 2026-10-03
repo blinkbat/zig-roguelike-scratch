@@ -308,7 +308,8 @@ pub const Fx = struct {
         for (&self.motes) |*m| {
             if (m.life <= 0 or !m.landed) continue;
             const a = m.life / (m.max * STAIN_FADE);
-            rl.drawEllipse(@intFromFloat(ox + m.p[0] * cell), @intFromFloat(oy + m.p[1] * cell), m.r * k * STAIN_W, m.r * k * STAIN_H, look.fade(m.col, a));
+            const s = screen(m.*, ox, oy, cell);
+            rl.drawEllipse(@intFromFloat(s.x), @intFromFloat(s.y), m.r * k * STAIN_W, m.r * k * STAIN_H, look.fade(m.col, a));
         }
         for (&self.motes) |*m| {
             if (m.life <= 0 or m.landed or m.add) continue;

@@ -30,7 +30,7 @@ const LEGEND_DY: i32 = 200;
 const CARET = menu.CARET;
 
 const LEGEND = menu.CONFIRM.caption() ++ " type" ++ menu.SEP ++ RUB.caption() ++ " delete" ++ menu.SEP ++
-    menu.MOVE_ITEM ++ menu.SEP ++ menu.BACK.caption() ++ " " ++ menu.BACK_LABEL;
+    menu.MOVE_ITEM ++ menu.SEP ++ menu.BACK_ITEM;
 
 pub const Outcome = enum { done, back };
 

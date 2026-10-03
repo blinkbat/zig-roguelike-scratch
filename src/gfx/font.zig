@@ -78,21 +78,30 @@ pub const Face = struct {
     /// One character, its middle on `cx`, `cy`.
     pub fn glyph(self: Face, ch: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         const s = [_:0]u8{ch};
-        self.draw(&s, self.leftFor(&s, cx, size), cy - @divTrunc(size, 2), size, col);
+        self.centred(&s, cx, cy, size, col);
+    }
+
+    /// Its middle on `cx`, `cy`.
+    fn centred(self: Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+        self.draw(s, self.leftFor(s, cx, size), topFor(cy, size), size, col);
+    }
+
+    fn topFor(cy: i32, size: i32) i32 {
+        return cy - @divTrunc(size, 2);
     }
 
     /// One symbol, UTF-8, its middle on `cx`, `cy`; `alt` where the font has no atlas.
     pub fn symbol(self: *const Face, sym: [:0]const u8, alt: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         const f = self.font orelse return self.glyph(alt, cx, cy, size, col);
         const cp = std.unicode.utf8Decode(sym) catch null;
-        const i = self.indexOf(cp orelse -1) orelse return self.draw(sym, self.leftFor(sym, cx, size), cy - @divTrunc(size, 2), size, col);
+        const i = self.indexOf(cp orelse -1) orelse return self.centred(sym, cx, cy, size, col);
         // raylib's MeasureTextEx and DrawTextCodepoint for one glyph, the index already known.
         const scale = @as(f32, @floatFromInt(size)) / @as(f32, @floatFromInt(f.baseSize));
         const g = f.glyphs[i];
         const r = f.recs[i];
         const w: f32 = if (g.advanceX > 0) @floatFromInt(g.advanceX) else r.width + @as(f32, @floatFromInt(g.offsetX));
         const x: f32 = @floatFromInt(cx - @divTrunc(@as(i32, @intFromFloat(w * scale)), 2));
-        const y: f32 = @floatFromInt(cy - @divTrunc(size, 2));
+        const y: f32 = @floatFromInt(topFor(cy, size));
         const pad: f32 = @floatFromInt(f.glyphPadding);
         const src = rl.Rectangle{ .x = r.x - pad, .y = r.y - pad, .width = r.width + 2 * pad, .height = r.height + 2 * pad };
         const dst = rl.Rectangle{

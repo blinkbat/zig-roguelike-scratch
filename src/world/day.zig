@@ -6,13 +6,11 @@ const mathx = @import("../core/mathx.zig");
 pub const HOURS: f32 = 24;
 pub const SUNRISE: f32 = 6;
 pub const SUNSET: f32 = 20;
-const MINUTES: u16 = 24 * 60;
+const MINUTES: u16 = @as(u16, @intFromFloat(HOURS)) * 60;
 /// Game minutes a turn takes: a day is `MINUTES / TURN_MINUTES` turns.
 pub const TURN_MINUTES: u16 = 6;
 /// A run starts at half past eight, a whole day ahead of it.
 pub const START_MINUTE: u16 = 8 * 60 + 30;
-/// Hours either side of the horizon over which it turns from day to night.
-const WINDOW_FADE: f32 = 0.75;
 
 comptime {
     std.debug.assert(MINUTES % TURN_MINUTES == 0 and START_MINUTE < MINUTES);
@@ -47,11 +45,6 @@ pub fn toward(from: f32, to: f32) f32 {
     return if (d > HOURS / 2) d - HOURS else d;
 }
 
-/// 1 broad day, 0 dead of night, exactly half at the horizon: what a body that keeps hours reads.
-pub fn dayShare(hour: f32) f32 {
-    return mathx.smoothstep(-WINDOW_FADE, WINDOW_FADE, sunUp(hour));
-}
-
 /// How much of the sky's light there is to see by: all of it by day, none from an hour and a half past sunset to as
 /// long before sunrise, so the dead of night is as dark as underground.
 pub fn daylight(hour: f32) f32 {
@@ -79,14 +72,10 @@ test "a turn moves the clock on, a day is 240 turns, and it comes round to where
     try std.testing.expectApproxEqAbs(@as(f32, -0.5), toward(0.25, 23.75), 1e-4);
 }
 
-test "the day turns to night in a ramp, half at each horizon" {
-    try std.testing.expectApproxEqAbs(@as(f32, 0.5), dayShare(SUNRISE), 1e-4);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.5), dayShare(SUNSET), 1e-4);
-    try std.testing.expectEqual(@as(f32, 1), dayShare(12));
-    try std.testing.expectEqual(@as(f32, 0), dayShare(0));
+test "the light to see by turns from day to night in a ramp, half at each horizon" {
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), daylight(SUNSET), 1e-4);
     try std.testing.expectEqual(@as(f32, 1), daylight(12));
     try std.testing.expectEqual(@as(f32, 0), daylight(SUNSET + TWILIGHT));
     try std.testing.expectEqual(@as(f32, 0), daylight(SUNRISE - TWILIGHT));
-    try std.testing.expect(daylight(SUNSET + 1) > 0 and dayShare(SUNSET + 1) == 0);
+    try std.testing.expect(daylight(SUNSET + 1) > 0);
 }

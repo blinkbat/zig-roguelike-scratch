@@ -5,6 +5,7 @@ const atlas = @import("world/atlas.zig");
 const grid = @import("world/grid.zig");
 const actor = @import("play/actor.zig");
 const hero = @import("play/hero.zig");
+const menu = @import("ui/menu.zig");
 
 pub const SLOTS: usize = 3;
 const DIR = "saves";
@@ -45,7 +46,7 @@ pub const Summary = struct {
     pub fn line(self: *const Summary, buf: []u8) [:0]const u8 {
         var at: [atlas.TITLE_MAX]u8 = undefined;
         const where = if (self.node) |n| atlas.titleOf(self.place[0..self.place_n], n, &at) else "a generated floor";
-        return std.fmt.bufPrintZ(buf, "{s}   HP {d}/{d}   Gold {d}   {s}", .{ self.name.text(), @max(0, self.hp), self.max, self.gold, where }) catch "";
+        return std.fmt.bufPrintZ(buf, "{s}" ++ menu.SEP ++ "HP {d}/{d}" ++ menu.SEP ++ "Gold {d}" ++ menu.SEP ++ "{s}", .{ self.name.text(), @max(0, self.hp), self.max, self.gold, where }) catch "";
     }
 };
 
@@ -156,8 +157,13 @@ fn read(bytes: []const u8, g: *game.Game, world: *atlas.Atlas) Error!void {
     game.resumeRun(g);
 }
 
+/// The slot as the player and its file name count it.
+pub fn number(slot: usize) usize {
+    return slot + 1;
+}
+
 fn path(buf: []u8, slot: usize) []const u8 {
-    return std.fmt.bufPrint(buf, DIR ++ "/slot{d}" ++ EXT, .{slot + 1}) catch unreachable;
+    return std.fmt.bufPrint(buf, DIR ++ "/slot{d}" ++ EXT, .{number(slot)}) catch unreachable;
 }
 
 fn writeFile(bytes: []const u8, slot: usize) !void {
@@ -332,7 +338,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqualStrings("A line to keep.", back.log.line(0).?);
     const s = try peek(buf.items);
     var line: [128]u8 = undefined;
-    try std.testing.expectEqualStrings("Arwen   HP 19/24   Gold 17   The Warrens", s.line(&line));
+    try std.testing.expectEqualStrings("Arwen" ++ menu.SEP ++ "HP 19/24" ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.line(&line));
     const far: ?usize = atlas.MAX_NODES;
     const at = HEAD + @offsetOf(Summary, "node");
     @memcpy(buf.items[at..][0..@sizeOf(?usize)], std.mem.asBytes(&far));

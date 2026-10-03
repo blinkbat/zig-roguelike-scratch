@@ -242,19 +242,24 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
 }
 
 /// Every template but `.mixed`, which draws one of them.
-const TEMPLATES = [_][]const []const u8{ &HUTS, &COMPOUND, &PILLARS };
-
-fn templateOf(t: Template, rng: *mathx.Rng) usize {
-    return switch (t) {
-        .huts => 0,
-        .compound => 1,
-        .pillars => 2,
-        .mixed => rng.below(TEMPLATES.len),
+/// Each template's art, at its place in `Template`; `mixed`, last, picks one.
+const TEMPLATES = blk: {
+    var a: [@intFromEnum(Template.mixed)][]const []const u8 = undefined;
+    for (&a, 0..) |*s, i| s.* = switch (@as(Template, @enumFromInt(i))) {
+        .huts => &HUTS,
+        .compound => &COMPOUND,
+        .pillars => &PILLARS,
+        .mixed => unreachable,
     };
-}
+    break :blk a;
+};
 
 comptime {
-    std.debug.assert(TEMPLATES[0].ptr == &HUTS and TEMPLATES[1].ptr == &COMPOUND and TEMPLATES[2].ptr == &PILLARS);
+    std.debug.assert(TEMPLATES.len + 1 == std.enums.values(Template).len);
+}
+
+fn templateOf(t: Template, rng: *mathx.Rng) usize {
+    return if (t == .mixed) rng.below(TEMPLATES.len) else @intFromEnum(t);
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {

@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
+const lume = @import("lume.zig");
 const gen = @import("gen.zig");
 const carve = @import("carve.zig");
 const open = @import("biome/open.zig");
@@ -183,7 +184,7 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     for (features, 0..) |f, i| f.fit().apply(lv, &rng, seed +% i *% FEATURE_SALT, pal);
     carve.seal(lv, pal.solid);
     carve.openDoors(lv, doors, pal.open);
-    if (!carve.anyOpen(lv)) carve.disc(lv, grid.MIDDLE, CLEARING_R, pal.open, null);
+    if (lv.firstOpen() == null) carve.disc(lv, grid.MIDDLE, CLEARING_R, pal.open, null);
     carve.connect(lv, &rng, .{ .path = pal.path, .pocket = pal.pocket });
     settle(lv, rooms);
 }
@@ -209,7 +210,7 @@ fn settle(lv: *grid.Level, rooms: ?*const Shaped) void {
     }
     var kept: usize = 0;
     for (lv.torches()) |t| {
-        if (lv.wallShape(t) != .top or !lv.walkable(t.add(mathx.Dir.s.delta()))) continue;
+        if (lv.wallShape(t) != .top or !lv.walkable(lume.torchFloor(t))) continue;
         lv.torch[kept] = t;
         kept += 1;
     }
@@ -279,7 +280,7 @@ test "a doorless floor rolled all solid still has ground to start on" {
     var lv: grid.Level = undefined;
     const thick = [_]Feature{.{ .scatter = .{ .tile = .shrub, .on = .grass, .amount = 1000 } }};
     roll(&lv, 0xD0, &.{}, Floor.of(.open), &thick);
-    try std.testing.expect(carve.anyOpen(&lv));
+    try std.testing.expect(lv.firstOpen() != null);
     try std.testing.expect(lv.walkable(grid.MIDDLE));
 }
 

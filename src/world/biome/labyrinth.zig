@@ -29,7 +29,7 @@ pub fn palette(p: Params) carve.Palette {
     return switch (p.style) {
         .walls => carve.Palette.BUILT,
         .rock => carve.Palette.CAVE,
-        .hedge => .{ .open = .grass, .solid = .shrub, .path = .grass },
+        .hedge => carve.Palette.WILD,
     };
 }
 

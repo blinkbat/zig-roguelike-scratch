@@ -146,7 +146,7 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .boulder = .{ .solid = true, .blind = true, .ground = .grass },
 });
 
-/// Stamped once by `gen.shapeWalls`, a room's corners then by `gen.outlineRoom`, and never recomputed.
+/// Stamped by `gen.shapeWalls`, a room's corners then by `gen.outlineRoom`; recomputed only by the generator itself.
 pub const WallShape = enum {
     top,
     bottom,
@@ -214,8 +214,15 @@ pub const Level = struct {
         return self.torch[0..self.torch_n];
     }
 
+    fn hasTorch(self: *const Level, p: P) bool {
+        for (self.torches()) |t| {
+            if (t.eq(p)) return true;
+        }
+        return false;
+    }
+
     pub fn addTorch(self: *Level, p: P) void {
-        if (self.torch_n == MAX_TORCHES) return;
+        if (self.torch_n == MAX_TORCHES or self.hasTorch(p)) return;
         self.torch[self.torch_n] = p;
         self.torch_n += 1;
     }
@@ -231,6 +238,19 @@ pub const Level = struct {
     /// The nearest cell off the map's edge.
     pub fn inset(p: P) P {
         return .{ .x = std.math.clamp(p.x, INNER_LO.x, INNER_HI.x), .y = std.math.clamp(p.y, INNER_LO.y, INNER_HI.y) };
+    }
+
+    /// Cells in from the nearest edge: 0 on the rim.
+    pub fn edgeDist(p: P) i32 {
+        return @min(@min(p.x, W - 1 - p.x), @min(p.y, H - 1 - p.y));
+    }
+
+    /// The first cell a step can stand on, in reading order.
+    pub fn firstOpen(self: *const Level) ?P {
+        for (self.tile, 0..) |t, i| {
+            if (!t.solid()) return of(i);
+        }
+        return null;
     }
 
     pub fn onRim(p: P) bool {

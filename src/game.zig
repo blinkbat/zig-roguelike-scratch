@@ -104,8 +104,9 @@ const MINI: i32 = 3;
 const MINI_W: i32 = grid.W * MINI;
 const MINI_H: i32 = grid.H * MINI;
 const MINI_PAD: i32 = 12;
-/// Cells past the view a prop's shadow can reach into it from: the longest the sky throws, and a canopy's spread.
-const CAST_MARGIN: i32 = 3;
+/// Cells past the view a prop's shadow can reach into it from: the longest the sky throws a cell's height, rounded up,
+/// which leaves room for a canopy's spread and the shadow's blur.
+const CAST_MARGIN: i32 = @intFromFloat(@ceil(sky.REACH_MAX));
 const MINI_FRAME: i32 = 4;
 const MINI_HERO_GROW: i32 = 1;
 pub const SHOT_SEED: u64 = 0x5EED_1234;
@@ -279,6 +280,10 @@ pub const Glide = struct {
         };
     }
 
+    fn left(self: Glide) f32 {
+        return self.span() - self.t;
+    }
+
     /// `t` is below 0 while the glide waits its turn.
     fn done(self: Glide) f32 {
         return std.math.clamp(self.t / self.span(), 0, 1);
@@ -398,6 +403,8 @@ pub const Game = struct {
     /// World pixels, eased toward the archer. Nothing in the simulation reads it.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
     screen: P = .{ .x = WINDOW_W, .y = WINDOW_H },
+    /// The framebuffer a frame draws into: the window's, or a texture's. Asking GL stalls it.
+    framebuffer: u32 = 0,
     shot: ?Shot = null,
     /// Indexed by pool slot.
     glide: [actor.MAX]Glide = undefined,
@@ -496,7 +503,7 @@ pub fn begin(g: *Game, seed: u64) void {
     var buf: [Log.COLS]u8 = undefined;
     var out = std.io.fixedBufferStream(&buf);
     for (actor.FOES, 0..) |k, i| {
-        out.writer().print("{s}{d} {s}s", .{ menu.listSep(i, actor.FOES.len), g.pool.tally(k).total, actor.row(k).name }) catch break;
+        out.writer().print("{s}{d} {s}s", .{ menu.listSep(i, actor.FOES.len, .@"and"), g.pool.tally(k).total, actor.row(k).name }) catch break;
     }
     g.log.say("{s} somewhere on this floor. Seed {d}.", .{ out.getWritten(), seed });
 }
@@ -685,7 +692,7 @@ fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
             const w = g.lv.who(to);
             const i = actor.Pool.slot(g.hero);
             g.glide[i] = g.glide[i].bumping(to, late);
-            holdUntil(g, g.glide[i].span() - late);
+            holdUntil(g, g.glide[i].left());
             const s = Stroke{ .from = h.at, .wait = BUMP_LANDS - late };
             if (w != grid.NO_ONE) wound(g, w, g.rng.range(KICK.lo, KICK.hi), KICK.verb, s) else smash(g, to, KICK.verb, s);
             g.lead = s.wait;
@@ -1129,7 +1136,7 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
         gl.* = gl.bumping(hero_at, late - wait);
     }
     if (moved or bit != null) {
-        lands = wait + gl.span() - late;
+        lands = gl.left();
         if (placed) holdUntil(g, lands);
     }
     const hits = wait + BUMP_LANDS - late;
@@ -1309,7 +1316,7 @@ fn catchUp(g: *Game) void {
         if (g.fx.revealing(i) or g.split_from[from] != null) continue;
         g.split_from[i] = null;
         g.glide[i] = g.glide[from].toward(a.at, 0);
-        if (g.lv.isLit(g.pool.items[from].at) or g.lv.isLit(a.at)) holdUntil(g, g.glide[i].span());
+        if (g.lv.isLit(g.pool.items[from].at) or g.lv.isLit(a.at)) holdUntil(g, g.glide[i].left());
     }
 }
 
@@ -1387,12 +1394,7 @@ const Cam = struct {
 
 fn spriteRect(t: rl.Texture2D, sx: i32, sy: i32) rl.Rectangle {
     const k = @max(1, @divTrunc(CELL, t.width));
-    return .{
-        .x = @floatFromInt(sx + @divTrunc(CELL - t.width * k, 2)),
-        .y = @floatFromInt(sy + @divTrunc(CELL - t.height * k, 2)),
-        .width = @floatFromInt(t.width * k),
-        .height = @floatFromInt(t.height * k),
-    };
+    return look.rect(sx + @divTrunc(CELL - t.width * k, 2), sy + @divTrunc(CELL - t.height * k, 2), t.width * k, t.height * k);
 }
 
 fn drawSprite(t: rl.Texture2D, sx: i32, sy: i32) void {
@@ -1400,12 +1402,7 @@ fn drawSprite(t: rl.Texture2D, sx: i32, sy: i32) void {
 }
 
 fn outline(c: Cam, p: P, col: rl.Color) void {
-    rl.drawRectangleLinesEx(.{
-        .x = @floatFromInt(c.sx(p) + OUTLINE_INSET),
-        .y = @floatFromInt(c.sy(p) + OUTLINE_INSET),
-        .width = @floatFromInt(CELL - OUTLINE_INSET * 2),
-        .height = @floatFromInt(CELL - OUTLINE_INSET * 2),
-    }, @floatFromInt(LINE_W), col);
+    rl.drawRectangleLinesEx(look.rect(c.sx(p) + OUTLINE_INSET, c.sy(p) + OUTLINE_INSET, CELL - OUTLINE_INSET * 2, CELL - OUTLINE_INSET * 2), @floatFromInt(LINE_W), col);
 }
 
 fn fillCell(c: Cam, p: P, col: rl.Color) void {
@@ -1503,6 +1500,27 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P) void {
     }
 }
 
+fn drawShadows(g: *Game, c: Cam, cast: [2]P, bodies: []const Shown) void {
+    if (g.sprites.barrel) |t| {
+        var barrels = Barrels.of(g, c, cast[0], cast[1]);
+        while (barrels.next()) |b| g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), false, b.mid, b.shine);
+    }
+    var props = grid.Cells.of(cast[0], cast[1]);
+    while (props.next()) |p| {
+        const kind = g.lv.at(p);
+        if (!look.stands(kind) or !g.lv.isSeen(p)) continue;
+        const t = g.sprites.tileOf(kind, null) orelse continue;
+        const mid = mathx.centre(p);
+        const shine = g.light.onBody(mid, false);
+        const rect = spriteRect(t, c.sx(p), c.sy(p));
+        if (look.canopied(kind)) g.light.drawCanopy(t, rect, mid, shine) else g.light.drawShadows(t, rect, false, mid, shine);
+    }
+    for (bodies) |b| {
+        const t = g.sprites.body(b.pic.kind) orelse continue;
+        g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), b.left, b.mid, b.shine);
+    }
+}
+
 fn drawWorld(g: *Game) void {
     const c = Cam.of(g);
     const lo = P{ .x = @max(0, @divFloor(c.x, CELL)), .y = @max(0, @divFloor(c.y, CELL)) };
@@ -1531,24 +1549,9 @@ fn drawWorld(g: *Game) void {
     const bodies = shown[0..n];
 
     drawTerrain(g, c, lo, hi, .ground, arrow_at);
-    const cast = grid.grown(lo, hi, CAST_MARGIN);
-    if (g.sprites.barrel) |t| {
-        var barrels = Barrels.of(g, c, cast[0], cast[1]);
-        while (barrels.next()) |b| g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), false, b.mid, b.shine);
-    }
-    var props = grid.Cells.of(cast[0], cast[1]);
-    while (props.next()) |p| {
-        const kind = g.lv.at(p);
-        if (!look.stands(kind) or !g.lv.isSeen(p)) continue;
-        const t = g.sprites.tileOf(kind, null) orelse continue;
-        const mid = mathx.centre(p);
-        const shine = g.light.onBody(mid, false);
-        const rect = spriteRect(t, c.sx(p), c.sy(p));
-        if (look.canopied(kind)) g.light.drawCanopy(t, rect, mid, shine) else g.light.drawShadows(t, rect, false, mid, shine);
-    }
-    for (bodies) |b| {
-        const t = g.sprites.body(b.pic.kind) orelse continue;
-        g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), b.left, b.mid, b.shine);
+    if (g.light.beginShadows(g.screen, g.framebuffer)) {
+        drawShadows(g, c, grid.grown(lo, hi, CAST_MARGIN), bodies);
+        g.light.endShadows();
     }
     g.cloud.draw(&g.lv, lo, hi, -c.x, -c.y, CELL);
     drawTerrain(g, c, lo, hi, .solid, arrow_at);
@@ -1608,11 +1611,11 @@ fn leanShown(g: *Game, from: P, d: mathx.Dir) Move {
 }
 
 fn drawLean(g: *Game, c: Cam) void {
-    const h = g.archer() orelse return;
+    const at = cellUnder(heroNow(g) orelse return);
     for (input.DPAD) |button| {
         const d = input.leanOf(button);
-        const p = h.at.add(d.delta());
-        const col = switch (leanShown(g, h.at, d)) {
+        const p = at.add(d.delta());
+        const col = switch (leanShown(g, at, d)) {
             .kick => look.LEAN_FOE,
             .step => look.LEAN_OPEN,
             .blocked => look.LEAN_BLOCKED,
@@ -1664,7 +1667,7 @@ fn drawMinimap(g: *Game) void {
     if (g.mini.tex) |t| {
         for (&g.mini.px, g.lv.tile, g.lv.seen, g.lv.lit) |*c, tile, seen, lit| c.* = if (seen) look.mini(tile, lit) else rl.Color.blank;
         rl.updateTexture(t, &g.mini.px);
-        look.stretch(t, .{ .x = @floatFromInt(o.x), .y = @floatFromInt(o.y), .width = @floatFromInt(MINI_W), .height = @floatFromInt(MINI_H) }, rl.Color.white);
+        look.stretch(t, look.rect(o.x, o.y, MINI_W, MINI_H), rl.Color.white);
     }
     for (g.pool.slice(), 0..) |a, i| {
         if (!a.foe()) continue;
@@ -1690,7 +1693,7 @@ const HINT_AIM = "{s} shoot" ++ SEP ++ "{s} cancel" ++ SEP ++ input.MOVE_CAPTION
 const LEGEND_EMPTY = CONFIRM.caption() ++ " select skill" ++ SEP ++ CHANGE.caption() ++ " select skill" ++ SEP ++ BACK.caption() ++ " close";
 const LEGEND_BOUND = CONFIRM.caption() ++ " pick up" ++ SEP ++ CHANGE.caption() ++ " change skill" ++ SEP ++ REMOVE.caption() ++ " remove" ++ SEP ++ BACK.caption() ++ " close";
 const LEGEND_CARRY = CONFIRM.caption() ++ " put down" ++ SEP ++ BACK.caption() ++ " cancel";
-const LEGEND_PICK = CONFIRM.caption() ++ " bind" ++ SEP ++ BACK.caption() ++ " back";
+const LEGEND_PICK = CONFIRM.caption() ++ " bind" ++ SEP ++ menu.BACK_ITEM;
 
 fn skillsX(g: *Game) i32 {
     return @divTrunc(g.screen.x - SKILLS_W, 2);
@@ -1701,12 +1704,7 @@ const SlotLook = struct { act: ?skillbar.Act, key: ?input.Button, edge: rl.Color
 fn drawSlot(g: *Game, x: i32, y: i32, s: SlotLook) void {
     const a: f32 = if (s.faded) CARRIED_A else 1;
     rl.drawRectangle(x, y, SLOT_PX, SLOT_PX, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a));
-    rl.drawRectangleLinesEx(.{
-        .x = @floatFromInt(x),
-        .y = @floatFromInt(y),
-        .width = @floatFromInt(SLOT_PX),
-        .height = @floatFromInt(SLOT_PX),
-    }, @floatFromInt(LINE_W), look.fade(s.edge, a));
+    rl.drawRectangleLinesEx(look.rect(x, y, SLOT_PX, SLOT_PX), @floatFromInt(LINE_W), look.fade(s.edge, a));
     if (s.act) |act| {
         const l = look.skill(act);
         g.face.glyph(l.ch, x + SLOT_MID, y + SLOT_MID, SLOT_GLYPH, look.fade(l.fg, a));
@@ -1839,7 +1837,7 @@ fn drawDead(g: *Game) void {
     textMid(g, said, mid + DEAD_TITLE_DY, menu.TITLE, look.LIFE);
     textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
     const again = if (g.permadeath) pauseLabel(g, .back) else againLabel(g);
-    textMid(g, std.fmt.bufPrintZ(&buf, "{s}  {c}{s}", .{ CONFIRM.caption(), std.ascii.toLower(again[0]), again[1..] }) catch "", mid + DEAD_HINT_DY, TEXT, look.DIM);
+    textMid(g, std.fmt.bufPrintZ(&buf, "{s} {c}{s}", .{ CONFIRM.caption(), std.ascii.toLower(again[0]), again[1..] }) catch "", mid + DEAD_HINT_DY, TEXT, look.DIM);
 }
 
 pub fn drawFrame(g: *Game) void {
@@ -2012,6 +2010,8 @@ fn poseTorch(g: *Game) void {
 
 fn drawInto(g: *Game, target: rl.RenderTexture2D) void {
     rl.beginTextureMode(target);
+    g.framebuffer = target.id;
+    defer g.framebuffer = 0;
     drawFrame(g);
     rl.endTextureMode();
 }

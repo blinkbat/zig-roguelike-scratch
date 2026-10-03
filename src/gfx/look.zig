@@ -145,8 +145,12 @@ fn wallCell(sheet: rl.Image, c: WallCell) ?rl.Image {
     });
 }
 
-fn whole(t: rl.Texture2D) rl.Rectangle {
-    return .{ .x = 0, .y = 0, .width = @floatFromInt(t.width), .height = @floatFromInt(t.height) };
+pub fn whole(t: rl.Texture2D) rl.Rectangle {
+    return rect(0, 0, t.width, t.height);
+}
+
+pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
+    return .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(w), .height = @floatFromInt(h) };
 }
 
 pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
@@ -155,13 +159,7 @@ pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
 
 /// Stretched over the whole floor, its top-left corner at `ox, oy`.
 pub fn overFloor(t: rl.Texture2D, ox: i32, oy: i32, cell: i32) void {
-    const dest = rl.Rectangle{
-        .x = @floatFromInt(ox),
-        .y = @floatFromInt(oy),
-        .width = @floatFromInt(grid.W * cell),
-        .height = @floatFromInt(grid.H * cell),
-    };
-    stretch(t, dest, rl.Color.white);
+    stretch(t, rect(ox, oy, grid.W * cell, grid.H * cell), rl.Color.white);
 }
 
 /// Borrows `px`, packed `w` to a row: nothing to unload.

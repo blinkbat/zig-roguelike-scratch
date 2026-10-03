@@ -84,7 +84,13 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **`gfx/look.zig` IS EVERY PICTURE.** A thing with a texture in `Sprites` draws it; the rest draw their glyph.
 - **`gfx/light.zig` IS EVERY LIGHT, AND THE FOG IS PART OF IT.** Terrain draws at full brightness; one pass of the
   light map (2x modulate, so it can brighten) lights it, and nothing else tints terrain. Open ground, and the ground under
-  anything solid, goes down first, then body shadows, then the solid tiles, so a wall covers any shadow that reaches it. Bodies are lit per pixel by their own
+  anything solid, goes down first, then body shadows, then the solid tiles, so a wall covers any shadow that reaches it.
+  Every shadow and contact pool is drawn into a mask of the screen (`Light.beginShadows`), the darker winning where they
+  overlap (Photoshop's Darken, `GL_MIN`, channel by channel), and the mask multiplies the ground under it: however many
+  overlap, the mask is no darker than the darkest shade among them (`light.SHADE_RGB`, or by night the colder
+  `MOON_SHADE_RGB`). The sky's shadows are as dark as its key's share of the sky's own light (`skyDepth`), so the moon
+  casts as the sun does, and its terrain shadows darken whatever lights the ground, the archer's own light too. Bodies
+  are lit per pixel by their own
   shader from normals bevelled off their silhouette at load, faded as the ground under them is; torch flames and their
   glow draw over it all. The map
   composes the archer's carried light (after Brogue's miner's light), each torch (occluded by its own `fov.cast`)
@@ -105,7 +111,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   `Light.sky` replaces the dark's ambient with the hour's, lights ground, wall tops and south faces by the key,
   shadows them by a march toward it over what stands in its way (`light.CASTERS`: walls, rock, fences and the rest),
   drifts soft cloud shadows over them in real time (`light.clouded`, off the light's own seconds), lights bodies from
-  its side and dims the carried light out by day. A shadow is soft and takes 55% of the sky's light at most. Bodies,
+  its side and dims the carried light out by day. A sun shadow is soft and takes 55% of the sky's light at most; a moon shadow darkens all the light there besides. Bodies,
   barrels and the standing tiles (`look.STANDING`: shrubs, tiny shrubs, boulders) cast from their own place as every
   light does: a silhouette, but a tree's (`look.canopied`) is its canopy's soft pool (`Light.drawCanopy`). Everything
   that blocks a step but a liquid casts one way or the other (asserted). Nothing in the simulation reads the light.
@@ -164,7 +170,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **`CELL` IS A WHOLE MULTIPLE OF 64**, the sprites' authored size; they draw at `CELL / 64`, never fractional.
 - **THE GRID IS y-DOWN** and **Chebyshev is the only metric**. **A diagonal may not cut a corner** (`passOk`).
 - **`fov.cast` IS THE ONLY LINE OF SIGHT, AND `world/lume.zig` THE ONLY LIGHT THAT DECIDES WHAT IS SEEN.** The archer's
-  pass (`lume.see`, from `Game.castSight`) keeps its line of sight, as far as its eyes reach (`Row.sight`), in
+  pass (`lume.see`, from `game.castSight`) keeps its line of sight, as far as its eyes reach (`Row.sight`), in
   `Level.los`, and of that leaves lit (`Level.lit`, and seen) only what is light enough: within the sky's reach
   (`lume.skyReach`: none under a roof or from an hour and a half past sunset to as long before sunrise, the archer's
   whole sight by day, `day.daylight` between), in a torch's pool (`lume.TORCH_REACH`, cast from the floor below its
@@ -185,7 +191,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   spreads, then each foe acts and the gas eats at it, a fifteenth of full hp. No foe steps from clean air into gas.
   `gfx/cloud.zig` draws it as Brogue tints it (30% plus a point a unit, 90% at most), eased in sight and remembered
   out of it, before the light map, through a shader that frays and churns it with drifting noise, and a burst's cloud
-  from when the burst lands; its harm flashes a body (`fx.sting`) as the body arrives at its place in the stagger, or
+  from when the burst lands; its harm flashes a body (`Fx.sting`) as the body arrives at its place in the stagger, or
   once the archer's step, kick or arrow is drawn for a body with none.
 - **THE PICTURE LAGS THE MECHANIC.** The camera eases, bodies glide and hop (one walk repeat long), or slide a little past the cell and settle back (twice that), by
   their `look.gait` (`Glide`), the fog eases and the arrow flies after the hit has already resolved; nothing in the

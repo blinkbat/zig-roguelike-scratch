@@ -163,7 +163,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
         .tombs => if (inner >= 8) {
             for ([_]P{ .{ .x = 2, .y = 2 }, .{ .x = inner - 1, .y = 2 }, .{ .x = 2, .y = inner - 1 }, .{ .x = inner - 1, .y = inner - 1 } }) |o| lv.set(lo.add(o), .wall);
             if (rng.chance(0.4)) lv.set(mid, .grave) else if (rng.chance(0.5)) lv.putBarrel(lo.add(.{ .x = 2, .y = 3 }));
-            lv.addTorch(.{ .x = mid.x, .y = lo.y });
+            if (mask & N_BIT == 0) lv.addTorch(.{ .x = mid.x, .y = lo.y });
         },
         .sewers => {
             const across = mask & (W_BIT | E_BIT) != 0;

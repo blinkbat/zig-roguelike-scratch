@@ -57,15 +57,21 @@ fn lerp(r: [2]u8, t: f32) f32 {
 /// Below this height is sea or shore, where a river ends.
 const SHORE: f32 = 26;
 const SOURCE_TRIES: usize = 400;
+/// Below this height is ocean.
+pub const SEA = 20;
+/// From this height up is mountain.
+pub const MOUNTAIN = 90;
+/// At this heat and under is tundra or glacier.
+pub const FROST = 10;
 
 /// DF v50's order: lake and mountain and ocean by height, then cold, then rain against drainage.
 pub fn classify(height: f32, rain: f32, drain: f32, heat: f32) Biome {
-    if (height < 20) return .ocean;
+    if (height < SEA) return .ocean;
     if (height < 23) return .coast;
     if (height < SHORE) return .beach;
-    if (height >= 90) return .mountain;
+    if (height >= MOUNTAIN) return .mountain;
     if (height >= 84) return .foothills;
-    if (heat <= 10) return if (drain < 75) .tundra else .glacier;
+    if (heat <= FROST) return if (drain < 75) .tundra else .glacier;
     if (rain < 10) return if (drain < 33) .desert else if (drain <= 65) .wasteland else .badlands;
     if (rain < 20) return .grassland;
     if (rain < 33) return .savanna;

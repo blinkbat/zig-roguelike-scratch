@@ -67,7 +67,7 @@ test "lakes fill open ground, and an island stays dry" {
     var rng = mathx.Rng.init(0x1A4E);
     carve.fill(&lv, .grass);
     carve.rim(&lv, .shrub);
-    const pal = carve.Palette{ .open = .grass, .solid = .shrub, .path = .grass };
+    const pal = carve.Palette.WILD;
     apply(&lv, &rng, 1, pal, .{ .count = 4, .size = 10, .island = 100 });
     std.debug.print("4 lakes with islands: {d} water, {d} shallows\n", .{ carve.count(&lv, .water), carve.count(&lv, .shallows) });
     try std.testing.expect(carve.count(&lv, .water) > 40);

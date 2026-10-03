@@ -109,8 +109,8 @@ pub const Params = struct {
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, _: carve.Palette, p: Params) void {
     const art = rows(p.piece);
-    const w: i32 = @intCast(art[0].len);
-    const h: i32 = @intCast(art.len);
+    const w = size(art).x;
+    const h = size(art).y;
     const pad: i32 = p.apart;
     var taken: [COUNT_MAX]buildings.Box = undefined;
     var n: usize = 0;
@@ -122,6 +122,17 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, _: carve.Palette, p: Para
         const at = P{ .x = @divTrunc(room.lo.x + room.hi.x - w, 2), .y = @divTrunc(room.lo.y + room.hi.y - h, 2) };
         stamp(lv, at, art);
     }
+}
+
+/// Cells across and down.
+pub fn size(art: []const []const u8) P {
+    return .{ .x = @intCast(art[0].len), .y = @intCast(art.len) };
+}
+
+/// `stamp`ed with its middle on `mid`.
+pub fn stampAround(lv: *grid.Level, mid: P, art: []const []const u8) void {
+    const s = size(art);
+    stamp(lv, mid.sub(.{ .x = @divTrunc(s.x, 2), .y = @divTrunc(s.y, 2) }), art);
 }
 
 pub fn stamp(lv: *grid.Level, at: P, art: []const []const u8) void {
@@ -150,7 +161,7 @@ test "pieces land apart on open ground" {
     var rng = mathx.Rng.init(0x5E7);
     carve.fill(&lv, .grass);
     carve.rim(&lv, .shrub);
-    apply(&lv, &rng, 0, .{ .open = .grass, .solid = .shrub, .path = .grass }, .{ .piece = .graveyard, .count = 3 });
+    apply(&lv, &rng, 0, carve.Palette.WILD, .{ .piece = .graveyard, .count = 3 });
     std.debug.print("3 graveyards: {d} graves\n", .{carve.count(&lv, .grave)});
     try std.testing.expectEqual(@as(usize, 3 * 12), carve.count(&lv, .grave));
 }

@@ -69,7 +69,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, pm: Params) void {
     }
     for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);
-        const inner = p.x >= BORDER and p.y >= BORDER and p.x < grid.W - BORDER and p.y < grid.H - BORDER;
+        const inner = grid.Level.edgeDist(p) >= BORDER;
         lv.tile[i] = if (inner and depth[i] > OPEN_OVER) .dirt else .rock;
     }
     if (carve.count(lv, .dirt) == 0) lv.set(grid.MIDDLE, .dirt);

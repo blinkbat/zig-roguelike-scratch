@@ -71,7 +71,7 @@ pub const Vignette = struct {
         const tex = self.tex orelse return;
         const a = self.alpha();
         if (a <= 0) return;
-        look.stretch(tex, .{ .x = 0, .y = 0, .width = @floatFromInt(w), .height = @floatFromInt(h) }, look.fade(look.LIFE, a));
+        look.stretch(tex, look.rect(0, 0, w, h), look.fade(look.LIFE, a));
     }
 };
 

@@ -11,12 +11,19 @@ const P = mathx.P;
 
 pub const TOWER_MAX: u8 = 6;
 pub const MOAT_MAX: u8 = 4;
+pub const SIZE_MIN = [2]u8{ 24, 18 };
+pub const BARRELS_MAX: u8 = 24;
+/// Cells between the spots along the keep's top wall a torch may hang, and of all a node's torches, the most it hangs.
+const TORCH_EVERY: i32 = 3;
+const TORCHES_MOST = grid.MAX_TORCHES / 2;
 const CURTAIN: i32 = 2;
 const GATE_W: i32 = 3;
 /// The keep's share of the courtyard, and the narrowest room it is cut into.
 const KEEP_OF: f32 = 0.5;
 const ROOM_LEAST: i32 = 4;
 const BERM: i32 = 2;
+/// Cells between the well and the courtyard's walls or the keep.
+const WELL_GAP: i32 = 2;
 
 pub const Params = struct {
     /// The curtain's width and height.
@@ -32,11 +39,11 @@ pub const Params = struct {
     pub fn fit(p: Params) Params {
         var q = p;
         const room = 2 * (MOAT_MAX + BERM + TOWER_MAX + 1);
-        q.size = .{ std.math.clamp(p.size[0], 24, @as(u8, @intCast(grid.W - room))), std.math.clamp(p.size[1], 18, @as(u8, @intCast(grid.H - room))) };
+        q.size = .{ std.math.clamp(p.size[0], SIZE_MIN[0], @as(u8, @intCast(grid.W - room))), std.math.clamp(p.size[1], SIZE_MIN[1], @as(u8, @intCast(grid.H - room))) };
         q.towers = @min(p.towers, TOWER_MAX);
         q.moat = @min(p.moat, MOAT_MAX);
         q.torches = @min(p.torches, mathx.PERCENT);
-        q.barrels = @min(p.barrels, 24);
+        q.barrels = @min(p.barrels, BARRELS_MAX);
         return q;
     }
 };
@@ -88,25 +95,20 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
             while (s <= @divTrunc(GATE_W, 2)) : (s += 1) {
                 const q = gate_at.add(.{ .x = out_dir.x * -k + span.x * s, .y = out_dir.y * -k + span.y * s });
                 const was = lv.at(q);
-                lv.set(q, if (was == .water) .bridge else if (was == .wall) .floor else was);
+                lv.set(q, if (was.liquid()) .bridge else if (was == .wall) .floor else was);
             }
         }
     }
-    const yw = yard_hi.x - yard_lo.x;
-    const yh = yard_hi.y - yard_lo.y;
-    const kw: i32 = @intFromFloat(@as(f32, @floatFromInt(yw)) * KEEP_OF);
-    const kh: i32 = @intFromFloat(@as(f32, @floatFromInt(yh)) * KEEP_OF);
-    const keep = buildings.Box{ .lo = .{ .x = mid.x - @divTrunc(kw, 2), .y = mid.y - @divTrunc(kh, 2) }, .hi = .{ .x = mid.x + @divTrunc(kw + 1, 2), .y = mid.y + @divTrunc(kh + 1, 2) } };
+    const keep = keepOf(p);
     carve.box(lv, keep.lo, keep.hi, .wall);
     const in = keep.inner();
     carve.box(lv, in.lo, in.hi, .floor);
+    lv.set(buildings.doorway(rng, keep)[0], .floor);
     buildings.partition(lv, rng, in, ROOM_LEAST, .wall);
-    const way = buildings.doorway(rng, keep);
-    lv.set(way[0], .floor);
     var torches: usize = 0;
     var x = in.lo.x + 1;
-    while (x < in.hi.x - 1) : (x += 3) {
-        if (carve.percent(rng, p.torches) and torches < grid.MAX_TORCHES / 2) {
+    while (x < in.hi.x - 1) : (x += TORCH_EVERY) {
+        if (carve.percent(rng, p.torches) and torches < TORCHES_MOST) {
             lv.addTorch(.{ .x = x, .y = keep.lo.y });
             torches += 1;
         }
@@ -115,8 +117,41 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         const q = P{ .x = rng.range(in.lo.x, in.hi.x - 1), .y = rng.range(in.lo.y, in.hi.y - 1) };
         if (lv.at(q) == .floor and carve.clearAround(lv, q)) lv.putBarrel(q);
     }
-    const well = P{ .x = rng.range(yard_lo.x + 2, @max(yard_lo.x + 2, keep.lo.x - 7)), .y = rng.range(yard_lo.y + 2, yard_hi.y - 7) };
-    if (keep.lo.x - well.x > 6) setpiece.stamp(lv, well, setpiece.rows(.well));
+    const art = setpiece.rows(.well);
+    const room = setpiece.size(art).add(.{ .x = WELL_GAP, .y = WELL_GAP });
+    const well = P{ .x = rng.range(yard_lo.x + WELL_GAP, @max(yard_lo.x + WELL_GAP, keep.lo.x - room.x)), .y = rng.range(yard_lo.y + WELL_GAP, yard_hi.y - room.y) };
+    if (keep.lo.x - well.x >= room.x) setpiece.stamp(lv, well, art);
+}
+
+/// The keep, in the middle of the courtyard.
+fn keepOf(p: Params) buildings.Box {
+    const mid = grid.MIDDLE;
+    const kw: i32 = @intFromFloat(@as(f32, @floatFromInt(@as(i32, p.size[0]) - 2 * CURTAIN)) * KEEP_OF);
+    const kh: i32 = @intFromFloat(@as(f32, @floatFromInt(@as(i32, p.size[1]) - 2 * CURTAIN)) * KEEP_OF);
+    return .{ .lo = .{ .x = mid.x - @divTrunc(kw, 2), .y = mid.y - @divTrunc(kh, 2) }, .hi = .{ .x = mid.x + @divTrunc(kw + 1, 2), .y = mid.y + @divTrunc(kh + 1, 2) } };
+}
+
+test "every room of the keep opens onto the yard" {
+    const KEEPS = 200;
+    var lv = grid.Level.blank();
+    var region: [grid.CELLS]u16 = undefined;
+    var size: [grid.CELLS]u32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    const p = (Params{}).fit();
+    const in = keepOf(p).inner();
+    var sealed: usize = 0;
+    for (0..KEEPS) |i| {
+        var rng = mathx.Rng.init(i);
+        shape(&lv, &rng, 0, p);
+        const most = carve.biggest(size[0..carve.label(&lv, &region, &size, &queue)]);
+        var cells = grid.Cells.of(in.lo, in.hi);
+        const whole = while (cells.next()) |q| {
+            if (!lv.at(q).solid() and region[grid.Level.idx(q)] != most) break false;
+        } else true;
+        if (!whole) sealed += 1;
+    }
+    std.debug.print("{d} keeps: {d} with a room sealed off\n", .{ KEEPS, sealed });
+    try std.testing.expectEqual(@as(usize, 0), sealed);
 }
 
 test "a keep stands walled, its gates open through the curtain and over the moat" {

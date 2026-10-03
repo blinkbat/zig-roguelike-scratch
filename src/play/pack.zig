@@ -33,6 +33,7 @@ pub const WEIGHT_MIN: u8 = 1;
 pub const WEIGHT_MAX: u8 = 9;
 /// A new member's kind, and what one of no foe kind becomes.
 pub const FIRST = actor.FOES[0];
+pub const REACH_MIN: i32 = 1;
 pub const REACH_MAX: i32 = 4;
 pub const GAP_MAX: i32 = 48;
 pub const APART_MAX: i32 = 32;
@@ -148,7 +149,7 @@ pub const Spec = struct {
         var t = s;
         t.packs = @min(s.packs, PACKS_MAX);
         t.few = @min(s.few, FEW_MAX);
-        t.reach = std.math.clamp(s.reach, 1, REACH_MAX);
+        t.reach = std.math.clamp(s.reach, REACH_MIN, REACH_MAX);
         t.gap = std.math.clamp(s.gap, 0, GAP_MAX);
         t.apart = std.math.clamp(s.apart, 0, APART_MAX);
         t.makeup_n = std.math.clamp(s.makeup_n, 1, MAKEUPS_MAX);
@@ -260,7 +261,7 @@ fn leadSpot(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P,
 fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, start: P, spec: *const Spec, others: usize) ?P {
     var ring: i32 = 1;
     while (ring <= spec.reach) : (ring += 1) {
-        var spots: [8 * REACH_MAX]P = undefined;
+        var spots: [mathx.Ring.cells(REACH_MAX)]P = undefined;
         var n: usize = 0;
         var cells = mathx.Ring.init(lead, ring);
         while (cells.next()) |p| {

@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
+const lume = @import("lume.zig");
 
 const P = mathx.P;
 
@@ -227,18 +228,11 @@ fn runY(lv: *grid.Level, y0: i32, y1: i32, x: i32) void {
     while (y <= @max(y0, y1)) : (y += 1) lv.set(.{ .x = x, .y = y }, .floor);
 }
 
-fn firstOpen(lv: *const grid.Level) ?P {
-    for (0..grid.CELLS) |i| {
-        if (!lv.tile[i].solid()) return grid.Level.of(i);
-    }
-    return null;
-}
-
 fn connect(lv: *grid.Level, rng: *mathx.Rng) void {
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     for (0..CONNECT_PASSES) |_| {
-        const start = firstOpen(lv) orelse return;
+        const start = lv.firstOpen() orelse return;
         _ = grid.distances(lv, start, &dist, &queue);
         var orphan: ?P = null;
         for (0..grid.CELLS) |i| {
@@ -521,7 +515,7 @@ test "every torch hangs on a room's top wall with floor below it" {
         total += lv.torch_n;
         for (lv.torches()) |t| {
             try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(t).?);
-            try std.testing.expect(lv.walkable(t.add(mathx.Dir.s.delta())));
+            try std.testing.expect(lv.walkable(lume.torchFloor(t)));
         }
     }
     std.debug.print("40 floors: {d} torches over {d} rooms\n", .{ total, rooms });

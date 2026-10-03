@@ -12,6 +12,11 @@ pub const SIZE_MIN: u8 = 4;
 pub const SIZE_MAX: u8 = 20;
 pub const BARRELS_MAX: u8 = 4;
 const TRIES: usize = 120;
+const SPLIT_TRIES: usize = 8;
+const DOOR_TRIES: usize = 8;
+const BARREL_TRIES: usize = 40;
+/// Cells between a building and the map's edge.
+const SITE_MARGIN: i32 = 2;
 
 pub const Params = struct {
     count: u8 = 6,
@@ -45,6 +50,11 @@ pub const Box = struct {
         return .{ .lo = b.lo.add(.{ .x = 1, .y = 1 }), .hi = b.hi.sub(.{ .x = 1, .y = 1 }) };
     }
 
+    /// Whether `b` comes within `pad` cells of `o`.
+    pub fn overlaps(b: Box, o: Box, pad: i32) bool {
+        return b.lo.x - pad < o.hi.x and b.hi.x + pad > o.lo.x and b.lo.y - pad < o.hi.y and b.hi.y + pad > o.lo.y;
+    }
+
     pub fn onEdge(b: Box, p: P) bool {
         return p.x == b.lo.x or p.y == b.lo.y or p.x == b.hi.x - 1 or p.y == b.hi.y - 1;
     }
@@ -52,9 +62,9 @@ pub const Box = struct {
 
 /// A `w` by `h` box clear of liquid, doors, bridges and every box in `taken`, a cell of margin round it.
 pub fn site(lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, taken: []const Box) ?Box {
-    if (w + 4 > grid.W or h + 4 > grid.H) return null;
+    if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
     for (0..TRIES) |_| {
-        const lo = P{ .x = rng.range(2, grid.W - 2 - w), .y = rng.range(2, grid.H - 2 - h) };
+        const lo = P{ .x = rng.range(SITE_MARGIN, grid.W - SITE_MARGIN - w), .y = rng.range(SITE_MARGIN, grid.H - SITE_MARGIN - h) };
         const b = Box{ .lo = lo, .hi = lo.add(.{ .x = w, .y = h }) };
         if (fits(lv, b, taken)) return b;
     }
@@ -63,7 +73,7 @@ pub fn site(lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, taken: []con
 
 fn fits(lv: *const grid.Level, b: Box, taken: []const Box) bool {
     for (taken) |t| {
-        if (b.lo.x - 1 < t.hi.x and b.hi.x + 1 > t.lo.x and b.lo.y - 1 < t.hi.y and b.hi.y + 1 > t.lo.y) return false;
+        if (b.overlaps(t, 1)) return false;
     }
     var cells = grid.Cells.of(b.lo.sub(.{ .x = 1, .y = 1 }), b.hi.add(.{ .x = 1, .y = 1 }));
     while (cells.next()) |q| {
@@ -95,7 +105,23 @@ pub fn doorway(rng: *mathx.Rng, b: Box) [2]P {
     };
 }
 
-/// The box's floor cut into rooms by walls, each wall with a doorway, until no room is wider than twice `least`.
+/// Where a wall cutting `b` may stand, `least` in from its sides: both its ends meet `walls`, not a doorway.
+fn splitAt(lv: *const grid.Level, rng: *mathx.Rng, b: Box, across: bool, least: i32, walls: grid.Tile) ?i32 {
+    const lo = if (across) b.lo.x else b.lo.y;
+    const hi = if (across) b.hi.x else b.hi.y;
+    for (0..SPLIT_TRIES) |_| {
+        const at = rng.range(lo + least, hi - least - 1);
+        const ends: [2]P = if (across)
+            .{ .{ .x = at, .y = b.lo.y - 1 }, .{ .x = at, .y = b.hi.y } }
+        else
+            .{ .{ .x = b.lo.x - 1, .y = at }, .{ .x = b.hi.x, .y = at } };
+        if (lv.at(ends[0]) == walls and lv.at(ends[1]) == walls) return at;
+    }
+    return null;
+}
+
+/// The box's floor cut into rooms by walls, each wall with a doorway, until no room is wider than twice `least` or no
+/// wall can stand there clear of a doorway.
 pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, walls: grid.Tile) void {
     var stack: [64]Box = undefined;
     stack[0] = inside;
@@ -109,14 +135,14 @@ pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, wall
         if (!across and h < 2 * least + 1) continue;
         if (n + 2 > stack.len) continue;
         if (across) {
-            const x = rng.range(b.lo.x + least, b.hi.x - least - 1);
+            const x = splitAt(lv, rng, b, true, least, walls) orelse continue;
             var y = b.lo.y;
             while (y < b.hi.y) : (y += 1) lv.set(.{ .x = x, .y = y }, walls);
             lv.set(.{ .x = x, .y = rng.range(b.lo.y, b.hi.y - 1) }, .floor);
             stack[n] = .{ .lo = b.lo, .hi = .{ .x = x, .y = b.hi.y } };
             stack[n + 1] = .{ .lo = .{ .x = x + 1, .y = b.lo.y }, .hi = b.hi };
         } else {
-            const y = rng.range(b.lo.y + least, b.hi.y - least - 1);
+            const y = splitAt(lv, rng, b, false, least, walls) orelse continue;
             var x = b.lo.x;
             while (x < b.hi.x) : (x += 1) lv.set(.{ .x = x, .y = y }, walls);
             lv.set(.{ .x = rng.range(b.lo.x, b.hi.x - 1), .y = y }, .floor);
@@ -148,14 +174,18 @@ pub fn raise(lv: *grid.Level, rng: *mathx.Rng, b: Box, p: Params, outside: grid.
         const fallen = carve.percent(rng, if (edge) p.decay else p.decay / 2);
         lv.set(q, if (fallen) .rubble else if (edge) p.walls else p.floor);
     }
-    const way = doorway(rng, b);
+    var way = doorway(rng, b);
+    for (0..DOOR_TRIES) |_| {
+        if (!lv.at(way[1]).liquid()) break;
+        way = doorway(rng, b);
+    }
     lv.set(way[0], p.floor);
     if (lv.at(way[1]).solid()) lv.set(way[1], outside);
     const in = b.inner();
     if (carve.percent(rng, p.torches) and in.hi.x - in.lo.x > 2) lv.addTorch(.{ .x = rng.range(in.lo.x + 1, in.hi.x - 2), .y = b.lo.y });
     var left = rng.below(@as(u32, p.barrels) + 1);
     var tries: usize = 0;
-    while (left > 0 and tries < 40) : (tries += 1) {
+    while (left > 0 and tries < BARREL_TRIES) : (tries += 1) {
         const q = P{ .x = rng.range(in.lo.x, in.hi.x - 1), .y = rng.range(in.lo.y, in.hi.y - 1) };
         if (!in.onEdge(q) or mathx.dist(q, way[0]) <= 1 or lv.at(q) != p.floor) continue;
         lv.putBarrel(q);
@@ -168,7 +198,7 @@ test "buildings stand walled with a way in, and decayed ones lie in rubble" {
     var rng = mathx.Rng.init(0xB111);
     carve.fill(&lv, .grass);
     carve.rim(&lv, .shrub);
-    const pal = carve.Palette{ .open = .grass, .solid = .shrub, .path = .grass };
+    const pal = carve.Palette.WILD;
     apply(&lv, &rng, 0, pal, .{ .count = 8 });
     const walls = carve.count(&lv, .wall);
     apply(&lv, &rng, 0, pal, .{ .count = 8, .decay = 60 });

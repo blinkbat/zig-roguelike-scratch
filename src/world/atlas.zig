@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
+const lume = @import("lume.zig");
 const gen = @import("gen.zig");
 const procgen = @import("procgen.zig");
 const actor = @import("../play/actor.zig");
@@ -30,9 +31,12 @@ pub fn titleOf(name: []const u8, n: usize, buf: *[TITLE_MAX]u8) []const u8 {
     return std.fmt.bufPrint(buf, UNNAMED ++ "{d}", .{n}) catch unreachable;
 }
 
+/// What comes before a world file's stem in its path.
+const PREFIX = DIR ++ "/";
+
 /// `DIR/<stem>.world`.
 pub fn worldPath(comptime stem: []const u8) []const u8 {
-    return DIR ++ "/" ++ stem ++ EXT;
+    return PREFIX ++ stem ++ EXT;
 }
 const HEADER = "roguelike-world 1";
 const TEXT_CAP: usize = 8 << 20;
@@ -246,7 +250,7 @@ pub const Node = struct {
 
     /// On a wall with open ground below it, so its flame lights the ground.
     pub fn torchFits(self: *const Node, b: *const Bespoke, p: P) bool {
-        return b.tileAt(p) == .wall and self.doorAt(p) == null and self.opens(b, p.add(mathx.Dir.s.delta()));
+        return b.tileAt(p) == .wall and self.doorAt(p) == null and self.opens(b, lume.torchFloor(p));
     }
 
     /// On floor, the one ground a row's `grid.BARREL_LETTER` stands on, and not in a doorway.
@@ -471,7 +475,7 @@ pub const Atlas = struct {
             switch (said) {
                 .start => self.start = .{ .node = try int(usize, &f), .at = try cell(&f) },
                 .node => {
-                        const kind = std.meta.stringToEnum(std.meta.Tag(Plan), f.next() orelse return error.BadLine) orelse return error.BadLine;
+                    const kind = std.meta.stringToEnum(std.meta.Tag(Plan), f.next() orelse return error.BadLine) orelse return error.BadLine;
                     const plan: Plan = switch (kind) {
                         .procgen => blk: {
                             const algo = std.meta.stringToEnum(Algo, f.next() orelse return error.BadLine) orelse return error.BadLine;
@@ -510,8 +514,9 @@ pub const Atlas = struct {
                     featured = FeatureKnobSet.initEmpty();
                 },
                 .makeup => {
-                    if ((try self.procgen()).feature_n > 0) return error.BadLine;
-                    const fo = &(try self.procgen()).foes;
+                    const pg = try self.procgen();
+                    if (pg.feature_n > 0) return error.BadLine;
+                    const fo = &pg.foes;
                     if (!own_makeups) fo.makeup_n = 0;
                     own_makeups = true;
                     if (!fo.addMakeup()) return error.TooMany;
@@ -603,10 +608,11 @@ pub const Atlas = struct {
 };
 
 pub const NO_FLOOR = "{s} has no open floor to start on";
+pub const NO_WORLDS = "No worlds in " ++ DIR ++ " yet";
 
 pub const Error = error{ NoHeader, BadLine, TooMany, NoNodes, NoStart, BadLink };
 
-/// A procgen node's lines but its makeups: each named for, and holding, a field of its floor or its foes.
+/// A procgen node's base lines: each named for, and holding, a field of its floor; the foes' are `FOE_KNOBS`.
 pub fn floorKnobs(comptime a: Algo) []const []const u8 {
     return armKnobs(Floor, a);
 }
@@ -757,7 +763,7 @@ pub fn pathFor(buf: []u8, name: []const u8) ?[]const u8 {
         n += 1;
     }
     if (n == 0) return null;
-    return std.fmt.bufPrint(buf, DIR ++ "/{s}" ++ EXT, .{stem[0..n]}) catch null;
+    return std.fmt.bufPrint(buf, PREFIX ++ "{s}" ++ EXT, .{stem[0..n]}) catch null;
 }
 
 /// The world files in `DIR`, sorted; past `MAX`, the first `MAX` of them.
@@ -786,7 +792,7 @@ pub const Listing = struct {
     /// Its file's name, short of `DIR` and `EXT`.
     pub fn stem(self: *const Listing, i: usize) []const u8 {
         const p = self.at(i);
-        return p[DIR.len + 1 .. p.len - EXT.len];
+        return p[PREFIX.len .. p.len - EXT.len];
     }
 
     pub fn scan(self: *Listing) void {

@@ -8,6 +8,11 @@ const day = @import("../world/day.zig");
 
 pub const Rgb = @Vector(3, f32);
 
+/// `a` eased toward `b` by `k`.
+pub fn mix(a: Rgb, b: Rgb, k: f32) Rgb {
+    return a + (b - a) * @as(Rgb, @splat(k));
+}
+
 const HOURS = day.HOURS;
 const SUNRISE = day.SUNRISE;
 const SUNSET = day.SUNSET;
@@ -22,10 +27,14 @@ const SUN_ALT_MAX: f32 = 60;
 /// at noon; the sun's own does not.
 const KEY_ALT_MIN: f32 = 25;
 const KEY_ALT_MAX: f32 = 50;
+/// Cells the longest shadow the sky throws runs along the ground per cell of height.
+pub const REACH_MAX: f32 = 1 / @tan(std.math.degreesToRadians(KEY_ALT_MIN));
 /// Where the moon takes over from the sun as the light that casts, and back.
 const KEY_SWAP_DAWN: f32 = 5.0;
 const KEY_SWAP_DUSK: f32 = 20.8;
 const KEY_SWAP_FADE: f32 = 0.45;
+/// A light leaning along the ground less than this stands straight up.
+pub const OVERHEAD: f32 = 1e-4;
 /// The palette's sky is a hemisphere's; seen from above it lights the ground in shade this many times over.
 const SKY_GAIN: f32 = 1.6;
 /// The palette's key is a 3D scene's; on art drawn flat it is this strong.
@@ -100,13 +109,13 @@ const MIDNIGHT = Key{ .at = 0, .key = .{ 0.006, 0.008, 0.018 }, .sky = .{ 0.004,
 const KEYS = [_]Key{
     MIDNIGHT,
     .{ .at = 2.5, .key = NIGHT.key, .sky = NIGHT.sky },
-    .{ .at = 5.0, .key = .{ 0.088, 0.104, 0.168 }, .sky = .{ 0.046, 0.056, 0.088 } },
-    .{ .at = 6.0, .key = .{ 1.100, 0.620, 0.340 }, .sky = .{ 0.120, 0.124, 0.166 } },
+    .{ .at = KEY_SWAP_DAWN, .key = .{ 0.088, 0.104, 0.168 }, .sky = .{ 0.046, 0.056, 0.088 } },
+    .{ .at = SUNRISE, .key = .{ 1.100, 0.620, 0.340 }, .sky = .{ 0.120, 0.124, 0.166 } },
     .{ .at = 8.5, .key = .{ 1.250, 1.070, 0.860 }, .sky = .{ 0.176, 0.208, 0.276 } },
     .{ .at = 12.0, .key = .{ 1.310, 1.280, 1.180 }, .sky = .{ 0.196, 0.232, 0.310 } },
     .{ .at = 17.45, .key = .{ 1.320, 1.100, 0.800 }, .sky = .{ 0.168, 0.188, 0.244 } },
     .{ .at = 19.4, .key = .{ 1.180, 0.660, 0.320 }, .sky = .{ 0.132, 0.136, 0.186 } },
-    .{ .at = 20.8, .key = .{ 0.130, 0.150, 0.230 }, .sky = .{ 0.058, 0.068, 0.102 } },
+    .{ .at = KEY_SWAP_DUSK, .key = .{ 0.130, 0.150, 0.230 }, .sky = .{ 0.058, 0.068, 0.102 } },
     .{ .at = 21.5, .key = NIGHT.key, .sky = NIGHT.sky },
     .{ .at = HOURS, .key = MIDNIGHT.key, .sky = MIDNIGHT.sky },
 };
@@ -122,8 +131,8 @@ fn paletteAt(hour: f32) struct { key: Rgb, sky: Rgb } {
     while (i + 2 < KEYS.len and KEYS[i + 1].at <= h) i += 1;
     const a = KEYS[i];
     const b = KEYS[i + 1];
-    const t: Rgb = @splat(mathx.smoothstep(0, 1, (h - a.at) / (b.at - a.at)));
-    return .{ .key = a.key + (b.key - a.key) * t, .sky = a.sky + (b.sky - a.sky) * t };
+    const t = mathx.smoothstep(0, 1, (h - a.at) / (b.at - a.at));
+    return .{ .key = mix(a.key, b.key, t), .sky = mix(a.sky, b.sky, t) };
 }
 
 /// What lights open ground at an hour.
@@ -136,6 +145,8 @@ pub const Sky = struct {
     ambient: Rgb,
     /// How much of the archer's own light still shows: none by day.
     carry: f32,
+    /// How far the light that casts is the moon's: 0 by day, 1 by night.
+    moon: f32,
 
     /// Its lean off straight up: the length of its direction along the ground.
     pub fn flat(s: Sky) f32 {
@@ -145,12 +156,17 @@ pub const Sky = struct {
     /// Along the ground toward it, a unit vector; south when it stands straight up.
     pub fn across(s: Sky) [2]f32 {
         const f = s.flat();
-        return if (f > 1e-4) .{ s.dir[0] / f, s.dir[1] / f } else .{ 0, 1 };
+        return if (f > OVERHEAD) .{ s.dir[0] / f, s.dir[1] / f } else .{ 0, 1 };
     }
 
     /// Cells a shadow runs along the ground per cell of height.
     pub fn reach(s: Sky) f32 {
         return s.flat() / @max(s.dir[2], 1e-3);
+    }
+
+    /// Cells up per cell along the ground toward it.
+    pub fn rise(s: Sky) f32 {
+        return s.dir[2] / @max(s.flat(), OVERHEAD);
     }
 };
 
@@ -161,6 +177,7 @@ pub fn at(hour: f32) Sky {
         .key = p.key * @as(Rgb, @splat(keyDim(hour) * KEY_GAIN)),
         .ambient = p.sky * @as(Rgb, @splat(SKY_GAIN)),
         .carry = 1 - day.daylight(hour),
+        .moon = moonShare(hour),
     };
 }
 
@@ -170,7 +187,7 @@ fn acrossScreen(d: [3]f32) [3]f32 {
     var y = d[1] * NORTH_SOUTH;
     const flat = @sqrt(x * x + y * y);
     const least = d[2] / @tan(std.math.degreesToRadians(KEY_ALT_MAX));
-    if (flat > 1e-4 and flat < least) {
+    if (flat > OVERHEAD and flat < least) {
         x *= least / flat;
         y *= least / flat;
     }
@@ -199,7 +216,7 @@ test "one light always casts, its altitude floored, and it changes hands at the 
         longest = @max(longest, at(h).reach());
     }
     std.debug.print("a shadow is at most {d:.2} cells long a cell of height\n", .{longest});
-    try std.testing.expect(longest <= 1 / @tan(std.math.degreesToRadians(KEY_ALT_MIN)) + 1e-3);
+    try std.testing.expect(longest <= REACH_MAX + 1e-3);
     try std.testing.expect(keyDir(KEY_SWAP_DUSK)[2] > 0.9 and keyDim(KEY_SWAP_DUSK) < 1e-4);
     const moon = keyDir(1);
     const sun = sunDir(1);

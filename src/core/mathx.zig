@@ -62,7 +62,6 @@ pub fn cellOf(q: [2]f32) P {
     return .{ .x = @intFromFloat(@floor(q[0])), .y = @intFromFloat(@floor(q[1])) };
 }
 
-/// `i` moved `by` round `n` places.
 /// Out of this, a percent setting.
 pub const PERCENT = 100;
 /// Out of this, a per-thousand setting.
@@ -79,6 +78,7 @@ pub fn span(comptime T: type, r: [2]T, lo: T, hi: T) [2]T {
     return .{ std.math.clamp(r[0], lo, top), top };
 }
 
+/// `i` moved `by` round `n` places.
 pub fn wrap(i: usize, by: i32, n: usize) usize {
     return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
 }
@@ -98,6 +98,11 @@ pub const Ring = struct {
         return .{ .c = c, .r = r, .at = .{ .x = c.x - r, .y = c.y - r } };
     }
 
+    /// How many cells a ring of radius `r` holds.
+    pub fn cells(r: i32) usize {
+        return if (r == 0) 1 else @intCast(8 * r);
+    }
+
     pub fn next(self: *Ring) ?P {
         if (self.at.y > self.c.y + self.r) return null;
         const p = self.at;
@@ -115,15 +120,19 @@ test "a ring is the cells of its box exactly its radius out, in the box's order"
     for (0..6) |ri| {
         const r: i32 = @intCast(ri);
         var ring = Ring.init(c, r);
+        var n: usize = 0;
         var y = c.y - r;
         while (y <= c.y + r) : (y += 1) {
             var x = c.x - r;
             while (x <= c.x + r) : (x += 1) {
                 const p = P{ .x = x, .y = y };
-                if (dist(p, c) == r) try std.testing.expectEqual(p, ring.next().?);
+                if (dist(p, c) != r) continue;
+                try std.testing.expectEqual(p, ring.next().?);
+                n += 1;
             }
         }
         try std.testing.expectEqual(@as(?P, null), ring.next());
+        try std.testing.expectEqual(Ring.cells(r), n);
     }
 }
 

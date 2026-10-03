@@ -62,7 +62,7 @@ test "a road crosses the map whole and bridges a river" {
     var rng = mathx.Rng.init(0x20AD);
     carve.fill(&lv, .shrub);
     carve.river(&lv, &rng, .{ .x = 40, .y = 0 }, .{ .x = 44, .y = grid.H - 1 }, 3, .water, null, null);
-    apply(&lv, &rng, 0, .{ .open = .grass, .solid = .shrub, .path = .grass }, .{ .course = .across, .wander = 0 });
+    apply(&lv, &rng, 0, carve.Palette.WILD, .{ .course = .across, .wander = 0 });
     var region: [grid.CELLS]u16 = undefined;
     var size: [grid.CELLS]u32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;

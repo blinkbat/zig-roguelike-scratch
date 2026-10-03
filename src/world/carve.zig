@@ -127,10 +127,19 @@ pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: grid.Tile, 
 
 /// Every cell within `r` of `c`, a circle as near as cells make one, over the tiles `over` allows.
 pub fn disc(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime over: ?fn (grid.Tile) bool) void {
+    discOf(lv, c, r, t, false, over);
+}
+
+/// `disc`, the rim too, so a river runs off the map.
+pub fn discAll(lv: *grid.Level, c: P, r: f32, t: grid.Tile) void {
+    discOf(lv, c, r, t, true, null);
+}
+
+fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, comptime over: ?fn (grid.Tile) bool) void {
     const k: i32 = @intFromFloat(@ceil(r));
     var cells = grid.Cells.around(c, k);
     while (cells.next()) |q| {
-        if (grid.Level.onRim(q)) continue;
+        if (!with_rim and grid.Level.onRim(q)) continue;
         const dx: f32 = @floatFromInt(q.x - c.x);
         const dy: f32 = @floatFromInt(q.y - c.y);
         if (dx * dx + dy * dy > r * r + 0.25) continue;
@@ -178,9 +187,11 @@ pub const Palette = struct {
     pub const BUILT = Palette{ .open = .floor, .solid = .wall, .path = .floor };
     /// Dirt in rock.
     pub const CAVE = Palette{ .open = .dirt, .solid = .rock, .path = .dirt };
+    /// Grass in shrub.
+    pub const WILD = Palette{ .open = .grass, .solid = .shrub, .path = .grass };
 };
 
-/// Every stretch of open ground joined to the biggest by a bending trail that bridges water and lava.
+/// Every stretch of open ground joined to the biggest by a bending trail that bridges water, lava and chasms.
 pub fn connect(lv: *grid.Level, rng: *mathx.Rng, j: Join) void {
     var region: [grid.CELLS]u16 = undefined;
     var size: [grid.CELLS]u32 = undefined;
@@ -223,7 +234,7 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, j: Join) void {
 }
 
 /// The stretch with the most cells, the first of any tie.
-fn biggest(size: []const u32) u16 {
+pub fn biggest(size: []const u32) u16 {
     var main: u16 = 0;
     for (size[1..], 1..) |n, r| {
         if (n > size[main]) main = @intCast(r);
@@ -285,13 +296,6 @@ pub fn unbar(lv: *grid.Level) void {
     }
 }
 
-pub fn anyOpen(lv: *const grid.Level) bool {
-    for (lv.tile) |t| {
-        if (!t.solid()) return true;
-    }
-    return false;
-}
-
 /// The stretches holding a door.
 fn doorsIn(lv: *const grid.Level, region: *const [grid.CELLS]u16) Regions {
     var out = Regions.initEmpty();
@@ -303,7 +307,7 @@ fn doorsIn(lv: *const grid.Level, region: *const [grid.CELLS]u16) Regions {
 
 const Regions = std.StaticBitSet(grid.CELLS);
 
-/// Side steps from `a` to `b` picked at random, never leaving their box; solid becomes `path`, water and lava a bridge.
+/// Side steps from `a` to `b` picked at random, never leaving their box; solid becomes `path`, a liquid a bridge.
 pub fn trail(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, path: grid.Tile) void {
     var p = a;
     lay(lv, p, path);
@@ -371,24 +375,18 @@ pub fn river(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: f32, fill_with
     var m = Meander.init(a, b, 1);
     while (m.next(rng)) |c| {
         if (bed) |k| k.add(c);
-        if (bank) |bk| disc(lv, c, width / 2 + 1, bk, notLiquid);
+        if (bank) |bk| disc(lv, c, bankReach(width), bk, notLiquid);
         discAll(lv, c, width / 2, fill_with);
     }
 }
 
-fn notLiquid(t: grid.Tile) bool {
-    return !t.liquid();
+/// How far from a river's middle its bank runs, `width` across.
+pub fn bankReach(width: f32) f32 {
+    return width / 2 + 1;
 }
 
-/// `disc`, the rim too, so a river runs off the map.
-pub fn discAll(lv: *grid.Level, c: P, r: f32, t: grid.Tile) void {
-    const k: i32 = @intFromFloat(@ceil(r));
-    var cells = grid.Cells.around(c, k);
-    while (cells.next()) |q| {
-        const dx: f32 = @floatFromInt(q.x - c.x);
-        const dy: f32 = @floatFromInt(q.y - c.y);
-        if (dx * dx + dy * dy <= r * r + 0.25) lv.set(q, t);
-    }
+fn notLiquid(t: grid.Tile) bool {
+    return !t.liquid();
 }
 
 /// A cell on the map's edge: `side` 0 west, 1 east, 2 north, 3 south, somewhere along its middle half.

@@ -21,7 +21,7 @@ const MARK_GAP: i32 = 18;
 /// The title above the rows and the note and legend below them.
 const CHROME_H: i32 = TITLE - TITLE_DY + ROWS_DY + NOTE_GAP * 2 + LEGEND_DY + NOTE * 2;
 pub const NOTE_MAX: usize = 160;
-/// Between the items of a legend or crib.
+/// Between the items of a legend or crib, and the fields of a slot's line.
 pub const SEP = "   ";
 /// After a field being typed in.
 pub const CARET = "_";
@@ -51,9 +51,16 @@ pub fn Note(comptime N: usize) type {
     };
 }
 
-/// Before the `i`th of `n` items said as a list: "a, b and c".
-pub fn listSep(i: usize, n: usize) []const u8 {
-    return if (i == 0) "" else if (i + 1 == n) " and " else ", ";
+pub const Conjunction = enum { @"and", @"or" };
+
+/// Before the `i`th of `n` items said as a list: "a, b and c", or "a, b or c".
+pub fn listSep(i: usize, n: usize, last: Conjunction) []const u8 {
+    if (i == 0) return "";
+    if (i + 1 < n) return ", ";
+    return switch (last) {
+        .@"and" => " and ",
+        .@"or" => " or ",
+    };
 }
 
 /// A column of rows, walked with the d-pad and picked with A.
@@ -76,6 +83,7 @@ pub fn backed(st: *const input.State) bool {
 pub const MOVE_ITEM = input.MOVE_CAPTION ++ " move";
 /// What `BACK` does on a page, in its legend.
 pub const BACK_LABEL = "back";
+pub const BACK_ITEM = BACK.caption() ++ " " ++ BACK_LABEL;
 const LEGEND = CONFIRM.caption() ++ " select" ++ SEP ++ MOVE_ITEM;
 
 /// The rows that fit between the title and the legend, `at` among them.

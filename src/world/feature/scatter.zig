@@ -38,7 +38,7 @@ test "clumps take the share asked of the ground, and lone solids never touch" {
     carve.fill(&lv, .grass);
     carve.rim(&lv, .shrub);
     const open = carve.count(&lv, .grass);
-    const pal = carve.Palette{ .open = .grass, .solid = .shrub, .path = .grass };
+    const pal = carve.Palette.WILD;
     apply(&lv, &rng, 3, pal, .{ .tile = .reeds, .amount = 250, .clump = 8 });
     const reeds = carve.count(&lv, .reeds);
     std.debug.print("reeds in clumps at 250 a thousand: {d} of {d} grass, {d} a thousand\n", .{ reeds, open, reeds * 1000 / open });

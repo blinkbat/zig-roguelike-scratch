@@ -15,6 +15,8 @@ pub const SIDES_MAX: u8 = 10;
 /// A spot lands within this share of the box from where its layout puts it.
 const JITTER: f32 = 0.06;
 const SIDE_REACH: i32 = 14;
+/// Cells between a clearing's rim and the map's edge.
+const RIM_GAP: i32 = 2;
 /// Of the box's shorter side, a bowl's and the lakebed's half-width.
 const BOWL_OF: f32 = 0.22;
 const ARENA_OF: f32 = 0.42;
@@ -86,12 +88,13 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     carve.fill(lv, pal.solid);
     const g = graphOf(p.layout);
     const noise = carve.Noise.init(seed ^ 0x70B0);
-    const span = P{ .x = grid.W - 2 * (p.clearing + 2), .y = grid.H - 2 * (p.clearing + 2) };
+    const inset = p.clearing + RIM_GAP;
+    const span = P{ .x = grid.W - 2 * inset, .y = grid.H - 2 * inset };
     var at: [NODES_MAX]P = undefined;
     for (g.spots, 0..) |s, i| {
         const fx = std.math.clamp(s.x + (rng.unit() - 0.5) * 2 * JITTER, 0, 1);
         const fy = std.math.clamp(s.y + (rng.unit() - 0.5) * 2 * JITTER, 0, 1);
-        at[i] = .{ .x = p.clearing + 2 + @as(i32, @intFromFloat(fx * @as(f32, @floatFromInt(span.x)))), .y = p.clearing + 2 + @as(i32, @intFromFloat(fy * @as(f32, @floatFromInt(span.y)))) };
+        at[i] = .{ .x = inset + @as(i32, @intFromFloat(fx * @as(f32, @floatFromInt(span.x)))), .y = inset + @as(i32, @intFromFloat(fy * @as(f32, @floatFromInt(span.y)))) };
     }
     const short: f32 = @floatFromInt(@min(grid.W, grid.H));
     for (g.spots, 0..) |s, i| {
@@ -106,8 +109,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     for (0..p.sides) |_| {
         const from = at[rng.below(@intCast(g.spots.len))];
         const to = P{
-            .x = std.math.clamp(from.x + rng.range(-SIDE_REACH, SIDE_REACH), p.clearing + 2, grid.W - 3 - p.clearing),
-            .y = std.math.clamp(from.y + rng.range(-SIDE_REACH, SIDE_REACH), p.clearing + 2, grid.H - 3 - p.clearing),
+            .x = std.math.clamp(from.x + rng.range(-SIDE_REACH, SIDE_REACH), inset, grid.W - 1 - inset),
+            .y = std.math.clamp(from.y + rng.range(-SIDE_REACH, SIDE_REACH), inset, grid.H - 1 - inset),
         };
         path(lv, rng, from, to, w, pal.open);
         clearing(lv, noise, to, @as(f32, @floatFromInt(p.clearing)) * 0.6, FRAY, pal.open);

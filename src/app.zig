@@ -53,6 +53,7 @@ const DebugRow = enum {
 };
 const DEBUG_ROWS = std.enums.values(DebugRow);
 const DELETE = input.Button.y;
+const NAME = "roguelike";
 const LINE: usize = 160;
 
 /// A page's title: the row that opens it, in capitals.
@@ -93,13 +94,18 @@ const App = struct {
         app.note.say(fmt, args);
     }
 
+    /// No world to pick: New plays one generated floor.
+    fn generated(app: *const App) bool {
+        return app.listing.n == 0;
+    }
+
     fn toTitle(app: *App) void {
         app.scene = .title;
         app.page = .main;
         app.listing.scan();
-        if (app.listing.n > 0) {
-            app.say("{s} picks a world in {s}", .{ MainRow.new.label(), atlas.DIR });
-        } else app.say("No worlds in {s} yet: {s} makes one generated floor", .{ atlas.DIR, MainRow.new.label() });
+        if (app.generated()) {
+            app.say(atlas.NO_WORLDS ++ ": {s} makes one generated floor", .{MainRow.new.label()});
+        } else app.say("{s} picks a world in {s}", .{ MainRow.new.label(), atlas.DIR });
     }
 
     /// Its world picked, or none to pick from.
@@ -110,7 +116,7 @@ const App = struct {
 
     /// Back from choosing a hero: to the worlds, or the title when there were none.
     fn fromClass(app: *App) void {
-        if (app.listing.n == 0) return app.toTitle();
+        if (app.generated()) return app.toTitle();
         app.note.clear();
         app.page = .world;
     }
@@ -137,7 +143,7 @@ const App = struct {
     fn newRun(app: *App, name: hero.Name) void {
         const g = app.g;
         const slot = save.free(&app.list) orelse return app.toTitle();
-        if (app.listing.n == 0) {
+        if (app.generated()) {
             game.begin(g, game.freshSeed());
         } else {
             var buf: [atlas.PATH_MAX]u8 = undefined;
@@ -158,7 +164,7 @@ const App = struct {
     }
 
     fn loadRun(app: *App, slot: usize) void {
-        save.load(app.alloc, slot, app.g, app.world) catch |e| return app.say("Slot {d} did not load ({s})", .{ slot + 1, @errorName(e) });
+        save.load(app.alloc, slot, app.g, app.world) catch |e| return app.say("Slot {d} did not load ({s})", .{ save.number(slot), @errorName(e) });
         app.inSlot(slot, null);
     }
 
@@ -272,14 +278,14 @@ const App = struct {
                 var rows: [MAIN_ROWS.len][:0]const u8 = undefined;
                 for (MAIN_ROWS, &rows) |r, *l| l.* = r.label();
                 const picked = app.title.step(&g.st, MAIN_ROWS.len);
-                menu.draw(g.face, g.screen, "ROGUELIKE", &rows, app.title.at, note, null);
+                menu.draw(g.face, g.screen, comptime caps(NAME), &rows, app.title.at, note, null);
                 switch (MAIN_ROWS[picked orelse return true]) {
                     .new => {
                         app.rescan();
                         if (save.free(&app.list) == null) return app.refuse();
                         app.listing.scan();
                         app.note.clear();
-                        app.page = if (app.listing.n == 0) .class else .world;
+                        app.page = if (app.generated()) .class else .world;
                     },
                     .load => {
                         app.rescan();
@@ -348,17 +354,17 @@ const App = struct {
                     if (app.armed == at) {
                         const gone = save.remove(at);
                         app.rescan();
-                        if (gone) |_| app.say("Slot {d} deleted", .{at + 1}) else |e| app.say("Slot {d} did not delete ({s})", .{ at + 1, @errorName(e) });
+                        if (gone) |_| app.say("Slot {d} deleted", .{save.number(at)}) else |e| app.say("Slot {d} did not delete ({s})", .{ save.number(at), @errorName(e) });
                     } else {
                         app.armed = at;
-                        app.say("{s} again deletes slot {d}; it cannot be undone", .{ DELETE.caption(), at + 1 });
+                        app.say("{s} again deletes slot {d}; it cannot be undone", .{ DELETE.caption(), save.number(at) });
                     }
                 } else if (picked) |i| {
                     app.armed = null;
                     switch (app.list[i]) {
                         .run => app.loadRun(i),
-                        .empty => app.say("Slot {d} is empty", .{i + 1}),
-                        .unreadable => |why| app.say("Slot {d}: {s}, it will not load", .{ i + 1, why.caption() }),
+                        .empty => app.say("Slot {d} is empty", .{save.number(i)}),
+                        .unreadable => |why| app.say("Slot {d}: {s}, it will not load", .{ save.number(i), why.caption() }),
                     }
                 }
             },
@@ -408,7 +414,7 @@ fn slotLine(s: *const save.Slot, buf: *[LINE]u8, i: usize) [:0]const u8 {
         .unreadable => |why| why.caption(),
         .run => |*r| r.line(&sum),
     };
-    return std.fmt.bufPrintZ(buf, "{d}   {s}", .{ i + 1, what }) catch "";
+    return std.fmt.bufPrintZ(buf, "{d}" ++ menu.SEP ++ "{s}", .{ save.number(i), what }) catch "";
 }
 
 var start_edit: ?[]const u8 = null;
@@ -416,7 +422,7 @@ var start_edit: ?[]const u8 = null;
 /// `edit` opens the editor on that world first; null opens the title.
 pub fn run(edit: ?[]const u8) void {
     start_edit = edit;
-    game.withGame(.{ .vsync_hint = true }, "roguelike", body);
+    game.withGame(.{ .vsync_hint = true }, NAME, body);
 }
 
 fn body(g: *game.Game) void {
