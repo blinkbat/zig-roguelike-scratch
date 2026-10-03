@@ -43,14 +43,13 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, _: carve.Palette, p: Para
     const surface = p.paving.tile();
     for (0..p.count) |_| {
         const ends = p.course.ends(rng);
-        var m = carve.Meander.init(ends[0], ends[1], @as(f32, @floatFromInt(p.wander)) / mathx.PERCENT);
+        var m = carve.Meander.init(ends[0], ends[1], mathx.fraction(p.wander));
         while (m.next(rng)) |c| {
             const k: i32 = @intFromFloat(@ceil(r));
             var cells = grid.Cells.around(c, k);
             while (cells.next()) |q| {
                 if (!grid.Level.inside(q) or mathx.distEuclid(q, c) > r + 0.5) continue;
-                const t = lv.at(q);
-                lv.set(q, if (t.liquid() or t == .bridge) .bridge else surface);
+                lv.set(q, carve.paved(lv.at(q), surface));
             }
         }
     }

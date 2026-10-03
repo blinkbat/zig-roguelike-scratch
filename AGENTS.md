@@ -2,7 +2,7 @@
 
 A grid roguelike in **Zig 0.14.1 + raylib**, built from `..\__archive\zig-grid-roguelike`'s foundation (grid, symmetric
 FOV, room generator, input stepper) with every system stripped out. One archer, three foes (the rat and the tougher
-slime, both melee, and Brogue's bloat, which flits and bursts into caustic gas) placed in packs by `play/pack.zig` (a `pack.Spec`: its makeups, drawn by weight, `pack.KINDS` by default; each kind's quota of `few` is filled first, from the makeups holding it; never more bodies than the pool holds once every slime has split to quarters), barrels that break for gold, no items, no stats beyond hp. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
+slime, both melee, and Brogue's bloat, which flits and bursts into caustic gas) placed in packs by `play/pack.zig` (a `pack.Spec`: its makeups, drawn by weight, `pack.KINDS` by default; each kind's quota of `few` is filled first, from the makeups holding it; never more bodies than the pool holds once every slime has split to quarters, `actor.roomFor`, which a bespoke node's foes keep to too), barrels that break for gold, no items, no stats beyond hp. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
 
 A blow that leaves a slime alive under half its hp splits it (`Pool.split`, `Row.splits`) into two half slimes, and
 one that leaves either half under half its own splits that half into two quarters, so a slime ends as four; each is
@@ -84,8 +84,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **THE LAYOUT READS `Game.screen`, NEVER A WINDOW CONSTANT**, because fullscreen changes it at runtime.
 - **`gfx/look.zig` IS EVERY PICTURE.** A thing with a texture in `Sprites` draws it; the rest draw their glyph.
 - **`gfx/light.zig` IS EVERY LIGHT, AND THE FOG IS PART OF IT.** Terrain draws at full brightness; one pass of the
-  light map (2x modulate, so it can brighten) lights it, and nothing else tints terrain. Open ground, and the ground under
-  anything solid or standing on it, goes down first, then body shadows, then the solid and standing tiles, so a wall
+  light map (2x modulate, so it can brighten) lights it, and nothing else tints terrain. Open ground and liquids, and the ground under
+  anything solid or standing on it, go down first, then body shadows, then the solid and standing tiles, so a wall
   covers any shadow that reaches it.
   Every shadow and contact pool is drawn into a mask of the screen (`Light.beginShadows`), the darker winning where they
   overlap (Photoshop's Darken, `GL_MIN`, channel by channel), and the mask multiplies the ground under it: however many
@@ -148,7 +148,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   text. A knob is a field of a base's or feature's `Params`: whole numbers, or an enum written by name. The outdoor
   bases (open, wilds, topology, terrain) strew lone boulders over their grass (`carve.Litter`, the `litter` knob),
   each where it closes no way, then tiny shrubs, tall grass in patches and shrooms (`carve.Decor`, the
-  `decor` knob).
+  `decor` knob), laid by `carve.dress` after the base's shape for any base whose `Params` holds them.
 - **A TILE IS ITS ROW IN `grid.TERRAIN`** (solid, blind, what lies under it, liquid), its letter in a world file or set piece `Tile.letter`, its picture its row in `look.TILES`
   (a symbol, its ASCII stand-in, colours, minimap). A shrub, boulder or fungus blocks sight and step, a grave a step
   alone;

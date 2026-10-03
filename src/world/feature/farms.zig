@@ -27,21 +27,16 @@ pub const Params = struct {
 };
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
-    var taken: [COUNT_MAX]grid.Box = undefined;
-    var n: usize = 0;
+    var lots: buildings.Lots(COUNT_MAX) = .{};
     for (0..p.count) |_| {
-        const b = buildings.site(lv, rng, rng.range(p.size[0], p.size[1]), rng.range(p.size[0], p.size[1]), taken[0..n]) orelse continue;
-        taken[n] = b;
-        n += 1;
+        const b = lots.take(lv, rng, rng.range(p.size[0], p.size[1]), rng.range(p.size[0], p.size[1])) orelse continue;
         const across = rng.chance(0.5);
         var cells = b.cells();
         while (cells.next()) |q| {
             const row = if (across) q.y - b.lo.y else q.x - b.lo.x;
             lv.set(q, if (b.onEdge(q)) p.fence else if (@mod(row, 2) == 0) p.furrow else p.crop);
         }
-        const gate = buildings.doorway(rng, b);
-        lv.set(gate[0], p.furrow);
-        if (lv.at(gate[1]).solid()) lv.set(gate[1], pal.open);
+        buildings.openWay(lv, buildings.doorway(rng, b), p.furrow, pal.open);
     }
 }
 

@@ -115,8 +115,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         path(lv, rng, from, to, w, pal.open);
         clearing(lv, noise, to, @as(f32, @floatFromInt(p.clearing)) * 0.6, FRAY, pal.open);
     }
-    p.litter.strew(lv, rng);
-    p.decor.strew(lv, rng, seed);
 }
 
 fn clearing(lv: *grid.Level, noise: carve.Noise, c: P, r: f32, fray: f32, open: grid.Tile) void {

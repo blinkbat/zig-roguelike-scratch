@@ -70,6 +70,10 @@ pub fn cellOf(q: [2]f32) P {
 pub const PERCENT = 100;
 pub const MILLE = 1000;
 
+pub fn fraction(pc: anytype) f32 {
+    return @as(f32, @floatFromInt(pc)) / PERCENT;
+}
+
 pub fn smoothstep(lo: f32, hi: f32, x: f32) f32 {
     return smooth(std.math.clamp((x - lo) / (hi - lo), 0, 1));
 }

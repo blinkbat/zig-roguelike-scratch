@@ -54,6 +54,10 @@ pub fn most(k: Kind) usize {
     return if (row(k).splits) |n| 2 * most(n) else 1;
 }
 
+pub fn roomFor(bodies: usize, k: Kind) bool {
+    return bodies + most(k) <= MAX;
+}
+
 pub const Strike = struct { lo: i32, hi: i32, verb: [:0]const u8 };
 
 pub const Blow = union(enum) {
@@ -194,11 +198,7 @@ pub const Pool = struct {
         const a = self.get(id) orelse return null;
         const next = row(a.kind).splits orelse return null;
         if (a.hp * 2 >= a.max or self.n == MAX) return null;
-        var ways = Ways{};
-        for (mathx.ALL_DIRS) |d| {
-            if (lv.stepOk(a.at, d, grid.NO_ONE)) ways.add(d);
-        }
-        const d = ways.pick(rng) orelse return null;
+        const d = rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, Step{ .lv = lv, .from = a.at, .id = grid.NO_ONE }, Step.free) orelse return null;
         const hp = @max(1, @divTrunc(a.hp, 2));
         a.kind = next;
         a.hp = hp;
@@ -207,17 +207,20 @@ pub const Pool = struct {
     }
 };
 
-const Ways = struct {
-    d: [mathx.ALL_DIRS.len]mathx.Dir = undefined,
-    n: usize = 0,
+/// A step `id` might take from `from`.
+const Step = struct {
+    lv: *const grid.Level,
+    from: P,
+    id: u16,
+    prey: u16 = grid.NO_ONE,
 
-    fn add(self: *Ways, d: mathx.Dir) void {
-        self.d[self.n] = d;
-        self.n += 1;
+    fn free(s: Step, d: mathx.Dir) bool {
+        return s.lv.stepOk(s.from, d, s.id);
     }
 
-    fn pick(self: *const Ways, rng: *mathx.Rng) ?mathx.Dir {
-        return if (self.n == 0) null else self.d[rng.below(@intCast(self.n))];
+    fn flits(s: Step, d: mathx.Dir) bool {
+        const onto = s.lv.passOk(s.from, d) and s.lv.who(s.from.add(d.delta())) == s.prey;
+        return onto or (s.free(d) and !shuns(s.lv, s.from, d));
     }
 };
 
@@ -244,12 +247,7 @@ pub fn chase(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i
 
 /// Brogue's `randValidDirectionFrom`: any step it may take and does not shun, or one onto `prey`.
 pub fn flit(lv: *const grid.Level, from: P, id: u16, prey: u16, rng: *mathx.Rng) ?mathx.Dir {
-    var ways = Ways{};
-    for (mathx.ALL_DIRS) |d| {
-        const onto = lv.passOk(from, d) and lv.who(from.add(d.delta())) == prey;
-        if (onto or (lv.stepOk(from, d, id) and !shuns(lv, from, d))) ways.add(d);
-    }
-    return ways.pick(rng);
+    return rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, Step{ .lv = lv, .from = from, .id = id, .prey = prey }, Step.flits);
 }
 
 test "a spawned body stands on the grid and leaves it when it dies" {

@@ -6,7 +6,7 @@ const P = mathx.P;
 
 /// Of its 3x3, at least this many solid turns a cell solid on a smoothing pass, the cave rule's.
 const CROWD: usize = 5;
-/// A pocket of open ground this small, holding no door, is filled; a bigger one gets a trail.
+/// A pocket of open ground this small, holding no door and by no liquid, is filled; a bigger one gets a trail.
 const POCKET: usize = 16;
 const JOIN_PASSES: usize = 160;
 const NONE = std.math.maxInt(u16);
@@ -68,6 +68,15 @@ pub fn sow(lv: *grid.Level, rng: *mathx.Rng, pc: u32, solid: grid.Tile, open: gr
     }
 }
 
+pub const SMOOTH_MAX: u8 = 8;
+
+/// `sown` percent solid, smoothed `passes` times, then `strays` a thousand lone solids over the open.
+pub fn cellular(lv: *grid.Level, rng: *mathx.Rng, sown: u32, passes: u32, strays: u32, pal: Palette) void {
+    sow(lv, rng, sown, pal.solid, pal.open);
+    smooth(lv, passes, pal.solid, pal.open);
+    scatter(lv, rng, strays, .{ .tile = pal.open }, pal.solid, true);
+}
+
 /// The cave rule, `passes` times: off the map counts as solid; any other tile is left, and counts as open.
 pub fn smooth(lv: *grid.Level, passes: u32, solid: grid.Tile, open: grid.Tile) void {
     var next: [grid.CELLS]grid.Tile = undefined;
@@ -98,10 +107,20 @@ pub fn clearAround(lv: *const grid.Level, p: P) bool {
     return true;
 }
 
+/// What a scatter lays over: `tile`, and if `decked` the decor standing on it too.
+pub const Over = struct {
+    tile: grid.Tile,
+    decked: bool = false,
+
+    fn has(o: Over, t: grid.Tile) bool {
+        return t == o.tile or (o.decked and !t.solid() and t.ground() == o.tile);
+    }
+};
+
 /// `lone` puts it only where it closes no way.
-pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: grid.Tile, put: grid.Tile, lone: bool) void {
+pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool) void {
     for (0..grid.CELLS) |i| {
-        if (lv.tile[i] != on) continue;
+        if (!on.has(lv.tile[i])) continue;
         const p = grid.Level.of(i);
         if (grid.Level.onRim(p) or (lone and !clearAround(lv, p))) continue;
         if (rng.perMille(per_mille)) lv.tile[i] = put;
@@ -193,14 +212,14 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette) void {
         const n = st.label(lv);
         if (n <= 1) return;
         const main = st.biggest();
-        const doored = doorsIn(lv, region);
+        const kept = if (pal.pocket != null) keptIn(lv, region) else Regions.initEmpty();
         var first: [grid.CELLS]u32 = undefined;
         @memset(first[0..n], NO_CELL);
         for (0..grid.CELLS) |i| {
             const r = region[i];
             if (r == NONE or r == main) continue;
             if (pal.pocket) |fill_with| {
-                if (size[r] < POCKET and !doored.isSet(r)) {
+                if (size[r] < POCKET and !kept.isSet(r)) {
                     lv.tile[i] = fill_with;
                     continue;
                 }
@@ -300,12 +319,22 @@ pub fn unbar(lv: *grid.Level) void {
     }
 }
 
-fn doorsIn(lv: *const grid.Level, region: *const [grid.CELLS]u16) Regions {
+/// The stretches no pocket fill takes: one holding a door, or one by a liquid, as an island is.
+fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16) Regions {
     var out = Regions.initEmpty();
     for (0..grid.CELLS) |i| {
-        if (lv.door[i] != grid.NO_DOOR and region[i] != NONE) out.set(region[i]);
+        if (region[i] == NONE) continue;
+        if (lv.door[i] != grid.NO_DOOR or byLiquid(lv, grid.Level.of(i))) out.set(region[i]);
     }
     return out;
+}
+
+fn byLiquid(lv: *const grid.Level, p: P) bool {
+    for (mathx.ALL_DIRS) |d| {
+        const q = p.add(d.delta());
+        if (grid.Level.inside(q) and lv.at(q).liquid()) return true;
+    }
+    return false;
 }
 
 const Regions = std.StaticBitSet(grid.CELLS);
@@ -325,7 +354,12 @@ pub fn trail(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, path: grid.Tile) void
 
 fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
     const t = lv.at(p);
-    if (t.liquid()) lv.set(p, .bridge) else if (t.solid()) lv.set(p, path);
+    if (t.solid()) lv.set(p, paved(t, path));
+}
+
+/// What a way laid over `t` leaves: a bridge over a liquid or a bridge, else `put`.
+pub fn paved(t: grid.Tile, put: grid.Tile) grid.Tile {
+    return if (t.liquid() or t == .bridge) .bridge else put;
 }
 
 /// A course from `a` that bends at random but always comes round to `b`; `wander` 0 runs straight.
@@ -459,13 +493,19 @@ pub const Decor = struct {
 
     pub fn strew(d: Decor, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
         strewn(lv, rng, d.tiny_shrubs, .tiny_shrub);
-        clumps(lv, Noise.init(seed ^ 0x7A11), TALL_GRASS_SCALE, d.tall_grass, grid.Tile.tall_grass.ground().?, .tall_grass);
+        clumps(lv, Noise.init(seed ^ 0x7A11), TALL_GRASS_SCALE, d.tall_grass, .{ .tile = grid.Tile.tall_grass.ground().? }, .tall_grass);
         strewn(lv, rng, d.shrooms, .shrooms);
     }
 };
 
+/// Litter, then decor, for a base whose `Params` has them.
+pub fn dress(p: anytype, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
+    if (@hasField(@TypeOf(p), "litter")) p.litter.strew(lv, rng);
+    if (@hasField(@TypeOf(p), "decor")) p.decor.strew(lv, rng, seed);
+}
+
 fn strewn(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, put: grid.Tile) void {
-    scatter(lv, rng, per_mille, put.ground().?, put, put.solid());
+    scatter(lv, rng, per_mille, .{ .tile = put.ground().? }, put, put.solid());
 }
 
 /// The tile an enum of tiles names.
@@ -522,12 +562,12 @@ pub const Bank = enum {
 };
 
 /// `put` on the `per_mille` of `on` cells whose noise is highest, so it lies in clumps `scale` cells across.
-pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: grid.Tile, put: grid.Tile) void {
+pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: Over, put: grid.Tile) void {
     const BUCKETS = 256;
     var hist = [_]u32{0} ** BUCKETS;
     var n: u32 = 0;
     for (0..grid.CELLS) |i| {
-        if (lv.tile[i] != on or grid.Level.onRim(grid.Level.of(i))) continue;
+        if (!on.has(lv.tile[i]) or grid.Level.onRim(grid.Level.of(i))) continue;
         hist[bucket(noise.at(grid.Level.of(i), scale, 3), BUCKETS)] += 1;
         n += 1;
     }
@@ -536,7 +576,7 @@ pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: gri
     var taken: u32 = 0;
     while (cut > 0 and taken + hist[cut - 1] <= want) : (cut -= 1) taken += hist[cut - 1];
     for (0..grid.CELLS) |i| {
-        if (lv.tile[i] != on or grid.Level.onRim(grid.Level.of(i))) continue;
+        if (!on.has(lv.tile[i]) or grid.Level.onRim(grid.Level.of(i))) continue;
         if (bucket(noise.at(grid.Level.of(i), scale, 3), BUCKETS) >= cut) lv.tile[i] = put;
     }
 }
@@ -569,6 +609,20 @@ test "noise is smooth, in range, and a seed is a field" {
     }
     std.debug.print("noise at 12 cells, 3 octaves: {d:.2} to {d:.2}, the most one cell steps it {d:.3}\n", .{ lo, hi, jump });
     try std.testing.expect(lo >= 0 and hi <= 1 and hi - lo > 0.5 and jump < 0.2);
+}
+
+test "a small island is bridged, not filled as a pocket" {
+    var lv = grid.Level.blank();
+    var rng = mathx.Rng.init(0x15E);
+    var pal = Palette.WILD;
+    pal.pocket = pal.solid;
+    field(&lv, pal);
+    disc(&lv, grid.MIDDLE, 4, .water, null);
+    disc(&lv, grid.MIDDLE, 1, .grass, null);
+    connect(&lv, &rng, pal);
+    std.debug.print("a five-cell island in a pocket-filling base: {d} bridge cells after joining\n", .{count(&lv, .bridge)});
+    try std.testing.expect(lv.walkable(grid.MIDDLE));
+    try std.testing.expect(count(&lv, .bridge) > 0);
 }
 
 test "a river runs edge to edge and parts the ground, and a join bridges it" {

@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
 const skillbar = @import("../play/skillbar.zig");
+const font = @import("font.zig");
 
 pub const SPRITE_PX: i32 = 64;
 /// A body or tile with no sprite draws its glyph this big, at `SPRITE_PX`.
@@ -179,7 +180,7 @@ pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
 
 /// Stretched over the whole floor, its top-left corner at `ox, oy`.
 pub fn overFloor(t: rl.Texture2D, ox: i32, oy: i32, cell: i32) void {
-    stretch(t, rect(ox, oy, grid.W * cell, grid.H * cell), rl.Color.white);
+    stretch(t, rect(ox, oy, grid.W * cell, grid.H * cell), LIT);
 }
 
 /// Borrows `px`, packed `w` to a row: nothing to unload.
@@ -196,10 +197,10 @@ pub fn clamped(img: rl.Image, filter: rl.TextureFilter) ?rl.Texture2D {
 }
 
 /// Filled with `c`, for pixels uploaded every frame. Needs a live GL context.
-pub fn canvas(w: i32, h: i32, c: rl.Color) ?rl.Texture2D {
+pub fn canvas(w: i32, h: i32, c: rl.Color, filter: rl.TextureFilter) ?rl.Texture2D {
     const img = rl.genImageColor(w, h, c);
     defer rl.unloadImage(img);
-    return clamped(img, .bilinear);
+    return clamped(img, filter);
 }
 
 /// White, its alpha `alphaAt(r)` at `r` from the middle, 1 at the middle of each edge. Needs a live GL context.
@@ -278,9 +279,10 @@ pub fn tile(t: grid.Tile) Look {
     return .{ .ch = l.ch, .fg = l.fg };
 }
 
-/// Its symbol as drawn by the font, UTF-8; `tile(t).ch` stands in where the font has no atlas.
-pub fn tileSym(t: grid.Tile) [:0]const u8 {
-    return TILES.get(t).sym;
+/// Its symbol, centred on `cx, cy`; its ASCII `ch` where the font has no atlas.
+pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32) void {
+    const l = TILES.get(t);
+    face.symbol(l.sym, l.ch, cx, cy, size, l.fg);
 }
 
 /// Under a tile's glyph where it has no sprite; null leaves the background.

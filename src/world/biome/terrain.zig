@@ -119,8 +119,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     }
     for (0..p.rivers) |_| river(lv, rng, &height);
     carve.rim(lv, palette(p).solid);
-    p.litter.strew(lv, rng);
-    p.decor.strew(lv, rng, seed);
 }
 
 /// Value noise bunches round the middle; this spreads it back toward 0 and 1.

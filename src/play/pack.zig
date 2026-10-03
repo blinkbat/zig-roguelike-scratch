@@ -83,6 +83,7 @@ pub const Makeup = struct {
     pub fn shrink(self: *Makeup) bool {
         if (!self.canShrink()) return false;
         self.n -= 1;
+        self.kind[self.n] = FIRST;
         return true;
     }
 
@@ -134,6 +135,7 @@ pub const Spec = struct {
         if (!self.canDrop()) return false;
         std.mem.copyForwards(Makeup, self.makeup[i .. self.makeup_n - 1], self.makeup[i + 1 .. self.makeup_n]);
         self.makeup_n -= 1;
+        self.makeup[self.makeup_n] = .{};
         return true;
     }
 
@@ -211,20 +213,16 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, give
 }
 
 fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec, m: *const Makeup, bodies: *usize) bool {
-    if (!roomFor(bodies.*, m.kind[0])) return false;
+    if (!actor.roomFor(bodies.*, m.kind[0])) return false;
     const others = pool.n;
     const lead = leadSpot(lv, pool, rng, start, spec, others) orelse return false;
     spawnCounted(lv, pool, m.kind[0], lead, bodies);
     for (m.kinds()[1..]) |k| {
-        if (!roomFor(bodies.*, k)) break;
+        if (!actor.roomFor(bodies.*, k)) break;
         const at = spotNear(lv, pool, rng, lead, start, spec, others) orelse break;
         spawnCounted(lv, pool, k, at, bodies);
     }
     return true;
-}
-
-fn roomFor(bodies: usize, k: actor.Kind) bool {
-    return bodies + actor.most(k) <= actor.MAX;
 }
 
 fn spawnCounted(lv: *grid.Level, pool: *actor.Pool, k: actor.Kind, at: P, bodies: *usize) void {

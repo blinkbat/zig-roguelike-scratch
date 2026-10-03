@@ -99,7 +99,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
             while (s <= @divTrunc(GATE_W, 2)) : (s += 1) {
                 const q = gate_at.add(.{ .x = out_dir.x * -k + span.x * s, .y = out_dir.y * -k + span.y * s });
                 const was = lv.at(q);
-                lv.set(q, if (was.liquid()) .bridge else if (was == .wall) .floor else was);
+                lv.set(q, carve.paved(was, if (was == .wall) .floor else was));
             }
         }
     }
@@ -129,10 +129,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
 
 /// The curtain wall's outside, in the middle of the map.
 fn curtainOf(p: Params) grid.Box {
-    const w: i32 = p.size[0];
-    const h: i32 = p.size[1];
-    const lo = P{ .x = @divTrunc(grid.W - w, 2), .y = @divTrunc(grid.H - h, 2) };
-    return .{ .lo = lo, .hi = lo.add(.{ .x = w, .y = h }) };
+    return grid.Box.centred(p.size[0], p.size[1]);
 }
 
 /// Cells from the curtain out to the moat: the berm runs round the towers' outside.

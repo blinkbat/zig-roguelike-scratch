@@ -161,7 +161,7 @@ const CASTERS = std.EnumArray(grid.Tile, ?Caster).initDefault(@as(?Caster, null)
 
 comptime {
     for (std.enums.values(grid.Tile)) |t| {
-        if (t.solid() and !t.liquid()) std.debug.assert((CASTERS.get(t) != null) != look.stands(t));
+        if (t.upright()) std.debug.assert((CASTERS.get(t) != null) != look.stands(t));
     }
 }
 
@@ -403,8 +403,11 @@ fn falloff(d2: f32) f32 {
 }
 
 fn carryFade(d: f32) f32 {
-    return @max(0, 1 - (1 - CARRY_FADE) * d / CARRY_R);
+    const along = 1 - (1 - CARRY_FADE) * d / CARRY_R;
+    return @max(0, @min(along, CARRY_EDGE * (CARRY_R - d)));
 }
+
+const CARRY_EDGE = 1 - (1 - CARRY_FADE) * (CARRY_R - 1) / CARRY_R;
 
 fn wrapped(cos: f32, wrap: f32) f32 {
     return @max(0, (cos + wrap) / (1 + wrap));
@@ -920,7 +923,7 @@ pub const Light = struct {
             .ground = .{ centre[0] + toward[0], centre[1] + toward[1] },
             .colour = k.key * splat(lit * on),
             .casts = k.reach() > SUN_OVERHEAD,
-            .sky = .{ .reach = k.reach(), .depth = skyDepth(k, on) * lit, .shade = ray.shade },
+            .sky = .{ .reach = k.reach(), .depth = skyDepth(k, sun * cloud) * lit, .shade = ray.shade },
         });
         return ray.dim(sun, cloud);
     }
@@ -1356,7 +1359,7 @@ const Gpu = struct {
 
     fn load(figures: *const [look.FIGURES]?rl.Texture2D) Gpu {
         var g = Gpu{};
-        g.map = look.canvas(MAP_W, MAP_H, rl.Color.black);
+        g.map = look.canvas(MAP_W, MAP_H, rl.Color.black, .bilinear);
         g.glow = look.radial(GLOW_PX, glowAlpha);
         g.streak = look.field(STREAK_PX[0], STREAK_PX[1], streakAlpha);
         if (look.shader(BODY_FS)) |s| g.body = look.uniforms(BodyShader, s);
@@ -1794,8 +1797,10 @@ test "the carried light fades across what it lets the archer see and leaves that
         try std.testing.expect(v < last);
         last = v;
     }
-    std.debug.print(", memory {d:.3}\n", .{lum(MEMORY)});
+    const past = lum(l.at(&lv, &.{}, .{ 40.5 + edge + 1, 30.5 }));
+    std.debug.print(", a cell past {d:.3}, memory {d:.3}\n", .{ past, lum(MEMORY) });
     try std.testing.expect(last > lum(MEMORY));
+    try std.testing.expectApproxEqAbs(lum(AMBIENT), past, 1e-4);
 }
 
 test "a torch on a wall never seen has no flame to draw, though the floor below it is in sight" {
@@ -1965,7 +1970,7 @@ test "everything that blocks a step and does not stand shades the ground past it
     const at = P{ .x = 30, .y = 30 };
     const m = mathx.centre(at);
     for (std.enums.values(grid.Tile)) |t| {
-        if (!t.solid() or t.liquid() or look.stands(t)) continue;
+        if (!t.upright() or look.stands(t)) continue;
         var lv = grid.openFloor();
         lv.set(at, t);
         var worst: f32 = 0;

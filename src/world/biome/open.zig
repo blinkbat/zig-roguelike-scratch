@@ -24,17 +24,19 @@ pub fn palette(p: Params) carve.Palette {
     return .{ .open = g, .solid = p.edge.tile(), .path = g };
 }
 
-pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
-    const pal = palette(p);
-    carve.field(lv, pal);
-    p.litter.strew(lv, rng);
-    p.decor.strew(lv, rng, seed);
+pub fn shape(lv: *grid.Level, _: *mathx.Rng, _: u64, p: Params) void {
+    carve.field(lv, palette(p));
+}
+
+fn dressed(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
+    shape(lv, rng, seed, p);
+    carve.dress(p, lv, rng, seed);
 }
 
 test "a field strews lone boulders, open ground all round each" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x0B1D);
-    shape(&lv, &rng, 0, .{ .litter = .{ .boulders = carve.LITTER_MAX } });
+    dressed(&lv, &rng, 0, .{ .litter = .{ .boulders = carve.LITTER_MAX } });
     var boulders: usize = 0;
     for (lv.tile, 0..) |t, k| {
         if (t != .boulder) continue;
@@ -48,7 +50,7 @@ test "a field strews lone boulders, open ground all round each" {
 test "a field strews tiny shrubs, tall grass in patches and shrooms, and a step goes through each" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0xDEC0);
-    shape(&lv, &rng, 0xDEC0, .{});
+    dressed(&lv, &rng, 0xDEC0, .{});
     var tall: usize = 0;
     var patched: usize = 0;
     var shrooms: usize = 0;

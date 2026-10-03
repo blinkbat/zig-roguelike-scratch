@@ -155,8 +155,14 @@ pub const Bespoke = struct {
         return true;
     }
 
+    pub fn bodies(self: *const Bespoke) usize {
+        var n = actor.most(.archer);
+        for (self.foes()) |f| n += actor.most(f.kind);
+        return n;
+    }
+
     pub fn addFoe(self: *Bespoke, f: Foe) bool {
-        if (self.foe_n == MAX_FOES or self.foeAt(f.at) != null) return false;
+        if (self.foe_n == MAX_FOES or self.foeAt(f.at) != null or !actor.roomFor(self.bodies(), f.kind)) return false;
         self.foe[self.foe_n] = f;
         self.foe_n += 1;
         return true;
@@ -994,6 +1000,14 @@ test "a bespoke node's doors open their cells and a torch hangs only over floor"
     try std.testing.expectEqual(@as(?usize, 0), lv.doorAt(.{ .x = 5, .y = 6 }));
     try std.testing.expectEqual(@as(usize, 1), lv.torch_n);
     try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 5, .y = 4 }).?);
+}
+
+test "a bespoke node takes no more slimes than the pool holds once every one has split to quarters" {
+    var b = Bespoke{};
+    var slimes: usize = 0;
+    while (b.addFoe(.{ .kind = .slime, .at = .{ .x = @intCast(1 + slimes), .y = 1 } })) slimes += 1;
+    try std.testing.expectEqual((actor.MAX - 1) / actor.most(.slime), slimes);
+    try std.testing.expect(b.bodies() <= actor.MAX);
 }
 
 test "no door goes in a map corner, which no step reaches" {

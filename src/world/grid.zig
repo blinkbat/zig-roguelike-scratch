@@ -69,6 +69,11 @@ pub const Tile = enum(u8) {
         return TERRAIN.get(t).liquid;
     }
 
+    /// Blocks a step and stands up off the ground, as a liquid does not.
+    pub fn upright(t: Tile) bool {
+        return t.solid() and !t.liquid();
+    }
+
     pub fn letter(t: Tile) u8 {
         return switch (t) {
             .wall => '#',
@@ -253,7 +258,7 @@ pub const Level = struct {
     }
 
     pub fn firstOpen(self: *const Level) ?P {
-        for (self.tile, 0..) |t, i| {
+        for (&self.tile, 0..) |t, i| {
             if (!t.solid()) return of(i);
         }
         return null;
@@ -426,6 +431,11 @@ pub const Box = struct {
 
     pub fn inMap(m: i32) Box {
         return .{ .lo = .{ .x = m, .y = m }, .hi = .{ .x = W - m, .y = H - m } };
+    }
+
+    /// `w` by `h` in the middle of the map.
+    pub fn centred(w: i32, h: i32) Box {
+        return sized(.{ .x = @divTrunc(W - w, 2), .y = @divTrunc(H - h, 2) }, w, h);
     }
 
     /// x is drawn before y.

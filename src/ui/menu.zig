@@ -110,6 +110,13 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const 
     mid(face, screen, legend, y + LEGEND_DY - NOTE_GAP, NOTE, look.DIM);
 }
 
+/// Printed into `buf` upper-cased, as a title is; empty if it does not fit.
+pub fn shout(buf: []u8, comptime fmt: []const u8, args: anytype) [:0]const u8 {
+    const s = std.fmt.bufPrintZ(buf, fmt, args) catch return "";
+    _ = std.ascii.upperString(buf[0..s.len], s);
+    return s;
+}
+
 pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
     return if (on) label ++ ": On" else label ++ ": Off";
 }

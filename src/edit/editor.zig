@@ -25,7 +25,7 @@ const SECTION_GAP: i32 = GAP * 3;
 const BLOCK_GAP: i32 = GAP * 2;
 const ROW_STEP: i32 = ROW_H + GAP;
 const TEXT: i32 = font.BODY;
-const SMALL: i32 = 16;
+const SMALL = font.SMALL;
 const HEAD: i32 = 24;
 const INNER_W: i32 = PANEL_W - PAD * 2;
 const ZOOMS = [_]f32{ 8, 16, 32, 64 };
@@ -171,6 +171,7 @@ const Tool = enum {
 const TOOLS = std.enums.values(Tool);
 const TORCH_RULE = "hangs on a wall with floor below it";
 const FOE_RULE = "stands on open floor";
+const NO_ROOM = "The node has no room for another {s}";
 const UNGENERATED = blk: {
     var names: []const []const u8 = &.{};
     for (TOOLS) |t| {
@@ -1050,8 +1051,9 @@ fn place(ed: *Editor, p: P) void {
             if (!ed.here().foeFits(b, p)) return ed.say("A foe " ++ FOE_RULE, .{});
             if (b.foeAt(p)) |f| {
                 if (b.foe[f].kind == k) return;
+                if (!actor.roomFor(b.bodies() - actor.most(b.foe[f].kind), k)) return ed.say(NO_ROOM, .{@tagName(k)});
                 b.foe[f].kind = k;
-            } else if (!b.addFoe(.{ .kind = k, .at = p })) return ed.say("The node holds {d} foes", .{atlas.MAX_FOES});
+            } else if (!b.addFoe(.{ .kind = k, .at = p })) return ed.say(NO_ROOM, .{@tagName(k)});
             ed.changed();
         },
         .door => {
@@ -1936,8 +1938,7 @@ fn thumb(ed: *Editor, n: usize) ?rl.Texture2D {
                 look.mini(lv.tile[i], true);
         }
         if (ed.thumbs[n] == null) {
-            ed.thumbs[n] = look.canvas(grid.W, grid.H, look.BG);
-            if (ed.thumbs[n]) |t| rl.setTextureFilter(t, .point);
+            ed.thumbs[n] = look.canvas(grid.W, grid.H, look.BG, .point);
         }
         if (ed.thumbs[n]) |t| rl.updateTexture(t, &px);
         ed.thumb_ok.set(n);
@@ -2031,7 +2032,7 @@ fn cancelButton(ed: *Editor, g: *game.Game, bx: i32, y: i32) void {
 }
 
 fn sprite(t: rl.Texture2D, r: rl.Rectangle) void {
-    look.stretch(t, r, rl.Color.white);
+    look.stretch(t, r, look.LIT);
 }
 
 fn glyph(ed: *const Editor, g: *game.Game, ch: u8, r: rl.Rectangle, col: rl.Color) void {
@@ -2041,7 +2042,7 @@ fn glyph(ed: *const Editor, g: *game.Game, ch: u8, r: rl.Rectangle, col: rl.Colo
 
 fn tileGlyph(ed: *const Editor, g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
     const m = ed.inkOf(r);
-    g.face.symbol(look.tileSym(t), look.tile(t).ch, m.x, m.y, m.size, look.tile(t).fg);
+    look.inkTile(&g.face, t, m.x, m.y, m.size);
 }
 
 const SHOT_ZOOM: usize = ZOOM_AT + 1;

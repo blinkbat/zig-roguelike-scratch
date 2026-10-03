@@ -6,7 +6,6 @@ const carve = @import("../carve.zig");
 // ADOM's forest square, Qud's jungle, Diablo II's Dark Wood.
 
 pub const THICKET_MAX: u8 = 75;
-pub const SMOOTH_MAX: u8 = 8;
 pub const STRAYS_MAX: u16 = 100;
 
 pub const Params = struct {
@@ -22,7 +21,7 @@ pub const Params = struct {
     pub fn fit(p: Params) Params {
         var q = p;
         q.thicket = @min(p.thicket, THICKET_MAX);
-        q.smooth = @min(p.smooth, SMOOTH_MAX);
+        q.smooth = @min(p.smooth, carve.SMOOTH_MAX);
         q.strays = @min(p.strays, STRAYS_MAX);
         q.litter = p.litter.fit();
         q.decor = p.decor.fit();
@@ -36,13 +35,8 @@ pub fn palette(_: Params) carve.Palette {
     return pal;
 }
 
-pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
-    const pal = palette(p);
-    carve.sow(lv, rng, p.thicket, pal.solid, pal.open);
-    carve.smooth(lv, p.smooth, pal.solid, pal.open);
-    carve.scatter(lv, rng, p.strays, pal.open, pal.solid, true);
-    p.litter.strew(lv, rng);
-    p.decor.strew(lv, rng, seed);
+pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
+    carve.cellular(lv, rng, p.thicket, p.smooth, p.strays, palette(p));
 }
 
 test "lone shrubs stand in the open, none touching another shrub" {

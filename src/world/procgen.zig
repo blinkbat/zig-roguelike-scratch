@@ -174,6 +174,7 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
             lv.* = grid.Level.blank();
             var rng = mathx.Rng.init(seed);
             @field(BASES, @tagName(t)).shape(lv, &rng, seed, p.fit());
+            carve.dress(p.fit(), lv, &rng, seed);
             carve.openDoors(lv, doors, pal.open);
         },
     }
@@ -277,6 +278,44 @@ test "a doorless floor rolled all solid still has ground to start on" {
     roll(&lv, 0xD0, &.{}, .{ .open = .{ .decor = .{ .tiny_shrubs = 0, .tall_grass = 0, .shrooms = 0 } } }, &thick);
     try std.testing.expect(lv.firstOpen() != null);
     try std.testing.expect(lv.walkable(grid.MIDDLE));
+}
+
+test "a set piece in a thicket opens onto the ground round it, so no join fills or breaks into it" {
+    var lv: grid.Level = undefined;
+    var st: carve.Stretches = .{};
+    const runs = 200;
+    const p = (wilds.Params{}).fit();
+    for ([_]setpiece.Piece{ .tower, .shrine, .graveyard, .camp }) |pc| {
+        var shut: usize = 0;
+        for (0..runs) |i| {
+            const seed = 0x5E7 +% i *% 7919;
+            lv = grid.Level.blank();
+            var rng = mathx.Rng.init(seed);
+            wilds.shape(&lv, &rng, seed, p);
+            carve.dress(p, &lv, &rng, seed);
+            setpiece.apply(&lv, &rng, seed, wilds.palette(p), .{ .piece = pc, .count = 1 });
+            _ = st.label(&lv);
+            const inside = for (lv.tile, 0..) |t, k| {
+                if (t == .floor or t == .dirt) break k;
+            } else continue;
+            const r = st.region[inside];
+            const out = for (lv.tile, 0..) |t, k| {
+                if (st.region[k] == r and t == .grass) break true;
+            } else false;
+            if (!out) shut += 1;
+        }
+        std.debug.print("{s} in the wilds: {d} of {d} shut in\n", .{ @tagName(pc), shut, runs });
+        try std.testing.expectEqual(@as(usize, 0), shut);
+    }
+}
+
+test "a scatter over grass takes the decor standing on it too" {
+    var lv: grid.Level = undefined;
+    const frozen = [_]Feature{.{ .scatter = .{ .tile = .snow, .on = .grass, .amount = 1000 } }};
+    roll(&lv, 0xF0, &.{}, Floor.of(.open), &frozen);
+    const decor = carve.count(&lv, .tall_grass) + carve.count(&lv, .tiny_shrub) + carve.count(&lv, .shrooms);
+    std.debug.print("open ground but frozen: {d} decor left, {d} snow\n", .{ decor, carve.count(&lv, .snow) });
+    try std.testing.expectEqual(@as(usize, 0), decor);
 }
 
 test "a feature that changes nothing leaves the rooms' wall shapes as they were" {

@@ -50,8 +50,9 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const pal = palette(p);
     const street = pal.path;
     carve.field(lv, pal);
-    const lo = P{ .x = MARGIN, .y = MARGIN };
-    const hi = P{ .x = grid.W - MARGIN, .y = grid.H - MARGIN };
+    const streets = grid.Box.inMap(MARGIN);
+    const lo = streets.lo;
+    const hi = streets.hi;
     carve.box(lv, lo, hi, street);
     const step: i32 = @as(i32, p.block) + p.street;
     const s: i32 = p.street;
@@ -101,7 +102,7 @@ const Gate = struct { at: P, in: mathx.Dir };
 
 /// A cell outside the streets all round.
 fn wallBox() grid.Box {
-    return .{ .lo = .{ .x = MARGIN - 1, .y = MARGIN - 1 }, .hi = .{ .x = grid.W - MARGIN + 1, .y = grid.H - MARGIN + 1 } };
+    return grid.Box.inMap(MARGIN - 1);
 }
 
 fn gates() [4]Gate {
@@ -118,7 +119,7 @@ fn gates() [4]Gate {
 fn bridge(lv: *grid.Level, lo: P, hi: P) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |q| {
-        if (lv.at(q).liquid()) lv.set(q, .bridge);
+        lv.set(q, carve.paved(lv.at(q), lv.at(q)));
     }
 }
 

@@ -36,9 +36,9 @@ pub fn palette(p: Params) carve.Palette {
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const pal = palette(p);
     carve.fill(lv, pal.solid);
-    const m: i32 = p.margin;
-    const lo = mathx.P{ .x = m, .y = m };
-    const hi = mathx.P{ .x = grid.W - m, .y = grid.H - m };
+    const floor = grid.Box.inMap(p.margin);
+    const lo = floor.lo;
+    const hi = floor.hi;
     carve.box(lv, lo, hi, pal.open);
     switch (p.style) {
         .bare => {},

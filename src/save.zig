@@ -193,6 +193,7 @@ fn slotAt(i: usize) Slot {
     defer f.close();
     var head: [HEAD + @sizeOf(Summary)]u8 = undefined;
     const n = f.readAll(&head) catch return .{ .unreadable = .damaged };
+    if (n == 0) return .empty;
     const s = peek(head[0..n]) catch |e| return .{ .unreadable = if (e == error.OtherBuild) .other_build else .damaged };
     return .{ .run = s };
 }
@@ -245,11 +246,11 @@ pub const Autosave = struct {
         if (!g.unsaved) return;
         self.bytes.clearRetainingCapacity();
         self.since = 0;
+        g.unsaved = false;
         write(g, &self.bytes) catch |e| {
             self.failed = e;
             return;
         };
-        g.unsaved = false;
         self.writer = std.Thread.spawn(.{}, writeOff, .{self}) catch blk: {
             writeOff(self);
             break :blk null;

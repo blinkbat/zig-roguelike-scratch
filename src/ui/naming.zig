@@ -89,9 +89,7 @@ pub const TITLE_MAX = blk: {
 };
 
 pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
-    const t = std.fmt.bufPrintZ(buf, ASK ++ "{s}", .{c.title()}) catch unreachable;
-    _ = std.ascii.upperString(buf[0..t.len], t);
-    return t;
+    return menu.shout(buf, ASK ++ "{s}", .{c.title()});
 }
 
 pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8) void {

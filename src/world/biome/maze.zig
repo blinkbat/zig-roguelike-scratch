@@ -96,7 +96,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         .size = size,
         .origin = undefined,
     };
-    pl.origin = .{ .x = @divTrunc(grid.W - @as(i32, @intCast(pl.cols)) * size, 2), .y = @divTrunc(grid.H - @as(i32, @intCast(pl.rows)) * size, 2) };
+    pl.origin = grid.Box.centred(@as(i32, @intCast(pl.cols)) * size, @as(i32, @intCast(pl.rows)) * size).lo;
     var placed: [COLS_MAX * ROWS_MAX]usize = undefined;
     var n: usize = 1;
     placed[0] = (pl.rows / 2) * COLS_MAX + pl.cols / 2;

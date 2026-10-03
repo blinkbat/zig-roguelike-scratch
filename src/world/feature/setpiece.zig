@@ -40,7 +40,7 @@ pub fn rows(p: Piece) []const []const u8 {
             " +++++ ",
             "+,,,,,+",
             "+,,!,,+",
-            "+,0,,, ",
+            "+,0,,,,",
             " +++++ ",
         },
         .graveyard => &.{
@@ -110,20 +110,28 @@ pub const Params = struct {
     }
 };
 
-pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, _: carve.Palette, p: Params) void {
+pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
     const art = rows(p.piece);
     const w = size(art).x;
     const h = size(art).y;
     const pad: i32 = p.apart;
-    var taken: [COUNT_MAX]grid.Box = undefined;
-    var n: usize = 0;
+    var lots: buildings.Lots(COUNT_MAX) = .{};
     for (0..p.count) |_| {
-        const room = buildings.site(lv, rng, w + 2 * pad, h + 2 * pad, taken[0..n]) orelse
-            buildings.site(lv, rng, w, h, taken[0..n]) orelse continue;
-        taken[n] = room;
-        n += 1;
+        const room = lots.take(lv, rng, w + 2 * pad, h + 2 * pad) orelse lots.take(lv, rng, w, h) orelse continue;
         const at = P{ .x = @divTrunc(room.lo.x + room.hi.x - w, 2), .y = @divTrunc(room.lo.y + room.hi.y - h, 2) };
         stamp(lv, at, art);
+        clearRound(lv, grid.Box.sized(at, w, h), pal);
+    }
+}
+
+/// So its opening never gives onto a thicket that seals it in.
+fn clearRound(lv: *grid.Level, b: grid.Box, pal: carve.Palette) void {
+    const round = grid.grown(b.lo, b.hi, 1);
+    var cells = grid.Cells.of(round[0], round[1]);
+    while (cells.next()) |q| {
+        const t = lv.at(q);
+        const closes = t == pal.solid or (t.solid() and t.ground() != null);
+        if (closes and !b.holds(q) and !grid.Level.onRim(q)) lv.set(q, pal.open);
     }
 }
 

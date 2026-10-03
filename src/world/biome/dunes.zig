@@ -37,8 +37,8 @@ pub fn shape(lv: *grid.Level, _: *mathx.Rng, seed: u64, p: Params) void {
     const crest = carve.Noise.init(seed ^ 0xD0E5);
     const broken = carve.Noise.init(seed ^ 0xB20C);
     const s: f32 = @floatFromInt(p.scale);
-    const band = @as(f32, @floatFromInt(p.ridges)) / mathx.PERCENT;
-    const high = 1 - @as(f32, @floatFromInt(p.mesas)) / mathx.PERCENT * 2.5;
+    const band = mathx.fraction(p.ridges);
+    const high = 1 - mathx.fraction(p.mesas) * 2.5;
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
         const v = crest.at(q, s, 3);

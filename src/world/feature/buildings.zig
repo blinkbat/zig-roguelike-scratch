@@ -54,6 +54,28 @@ pub fn site(lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, taken: []con
     return null;
 }
 
+/// Up to `most` boxes, each a `site` clear of the ones before.
+pub fn Lots(comptime most: usize) type {
+    return struct {
+        box: [most]Box = undefined,
+        n: usize = 0,
+
+        pub fn take(self: *@This(), lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32) ?Box {
+            if (self.n == most) return null;
+            const b = site(lv, rng, w, h, self.box[0..self.n]) orelse return null;
+            self.box[self.n] = b;
+            self.n += 1;
+            return b;
+        }
+    };
+}
+
+/// The doorway's cell gets `inside`, and the cell outside it `outside` where that is solid.
+pub fn openWay(lv: *grid.Level, way: [2]P, inside: grid.Tile, outside: grid.Tile) void {
+    lv.set(way[0], inside);
+    if (lv.at(way[1]).solid()) lv.set(way[1], outside);
+}
+
 fn fits(lv: *const grid.Level, b: Box, taken: []const Box) bool {
     for (taken) |t| {
         if (b.overlaps(t, 1)) return false;
@@ -153,14 +175,11 @@ pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, wall
 }
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
-    var taken: [COUNT_MAX]Box = undefined;
-    var n: usize = 0;
+    var lots: Lots(COUNT_MAX) = .{};
     for (0..p.count) |_| {
         const w = rng.range(p.size[0], p.size[1]);
         const h = rng.range(p.size[0], @max(p.size[0], @divTrunc(p.size[1] * 3, 4)));
-        const b = site(lv, rng, w, h, taken[0..n]) orelse continue;
-        taken[n] = b;
-        n += 1;
+        const b = lots.take(lv, rng, w, h) orelse continue;
         raise(lv, rng, b, p, pal.open);
     }
 }
@@ -174,8 +193,7 @@ pub fn raise(lv: *grid.Level, rng: *mathx.Rng, b: Box, p: Params, outside: grid.
         lv.set(q, if (fallen) .rubble else if (edge) p.walls else p.floor);
     }
     const way = dryDoorway(lv, rng, b) orelse doorway(rng, b);
-    lv.set(way[0], p.floor);
-    if (lv.at(way[1]).solid()) lv.set(way[1], outside);
+    openWay(lv, way, p.floor, outside);
     const in = b.inner();
     if (rng.percent(p.torches) and in.hi.x - in.lo.x > 2) lv.addTorch(.{ .x = rng.range(in.lo.x + 1, in.hi.x - 2), .y = b.lo.y });
     var left = rng.below(@as(u32, p.barrels) + 1);

@@ -9,7 +9,7 @@ const LEAN: rl.GamepadButton = .left_trigger_2;
 pub const MOVE_CAPTION = "D-pad";
 pub const LEAN_CAPTION = padName(LEAN);
 
-fn padName(b: rl.GamepadButton) [:0]const u8 {
+fn padName(comptime b: rl.GamepadButton) [:0]const u8 {
     return switch (b) {
         .right_face_down => "A",
         .right_face_right => "B",
@@ -21,7 +21,7 @@ fn padName(b: rl.GamepadButton) [:0]const u8 {
         .right_trigger_2 => "RT",
         .middle_left => "View",
         .middle_right => "Menu",
-        else => "?",
+        else => @compileError("no caption for " ++ @tagName(b)),
     };
 }
 
@@ -96,7 +96,9 @@ pub const Button = enum {
     }
 
     pub fn caption(b: Button) [:0]const u8 {
-        return padName(b.pad());
+        return switch (b) {
+            inline else => |t| comptime padName(t.pad()),
+        };
     }
 };
 

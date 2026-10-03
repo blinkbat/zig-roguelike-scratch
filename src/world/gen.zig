@@ -49,7 +49,7 @@ pub const Params = struct {
     }
 
     fn corner(p: Params) P {
-        return .{ .x = @divTrunc(grid.W - p.size.x, 2), .y = @divTrunc(grid.H - p.size.y, 2) };
+        return grid.Box.centred(p.size.x, p.size.y).lo;
     }
 };
 

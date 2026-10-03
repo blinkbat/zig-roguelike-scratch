@@ -72,7 +72,7 @@ const SLOT_GAP: i32 = 6;
 const SLOT_STEP: i32 = SLOT_PX + SLOT_GAP;
 const CARRIED_A: f32 = 0.35;
 const GROUP_GAP: i32 = 20;
-const SLOT_TEXT: i32 = 16;
+const SLOT_TEXT = font.SMALL;
 const SLOT_GLYPH: i32 = 40;
 const KEY_GAP: i32 = 2;
 const SKILLS_Y: i32 = 12;
@@ -633,10 +633,10 @@ pub fn resumeRun(g: *Game) void {
     g.mode = .play;
     g.exit = null;
     g.unsaved = false;
-    g.vignette.clear();
     g.outdoors = outdoorsNow(g);
     freshTurn(g);
     settle(g);
+    if (heroSlot(g)) |i| g.vignette.settle(g.pictured[i].hp, g.pictured[i].max) else g.vignette.clear();
 }
 
 fn outdoorsNow(g: *const Game) bool {
@@ -659,6 +659,7 @@ fn castSight(g: *Game, from: P) void {
     }
     const sight = actor.row(HERO).sight;
     lume.see(&g.lv, from, sight, lume.skyReach(g.outdoors, g.clock.hour(), sight), carried[0..n]);
+    g.mini.stale = true;
 }
 
 const Move = enum { kick, step, blocked };
@@ -1494,8 +1495,8 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: 
         if (!g.lv.isSeen(p)) continue;
         const here = g.lv.at(p);
         const kind = switch (pass) {
-            .ground => here.ground() orelse if (here.solid()) continue else here,
-            .solid => if (here.solid() or here.ground() != null) here else continue,
+            .ground => here.ground() orelse if (here.upright()) continue else here,
+            .solid => if (here.upright() or here.ground() != null) here else continue,
         };
         defer if (g.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
         if (g.sprites.tileOf(kind, g.lv.wallShape(p))) |t| {
@@ -1507,8 +1508,7 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: 
         if (arrow_at) |a| {
             if (a.eq(p)) continue;
         }
-        const l = look.tile(kind);
-        g.face.symbol(look.tileSym(kind), l.ch, c.sx(p) + HALF_CELL, c.sy(p) + HALF_CELL, GLYPH, l.fg);
+        look.inkTile(&g.face, kind, c.sx(p) + HALF_CELL, c.sy(p) + HALF_CELL, GLYPH);
     }
 }
 
@@ -1649,10 +1649,12 @@ fn drawLean(g: *Game, c: Cam, stood: *const Stood) void {
 const Minimap = struct {
     tex: ?rl.Texture2D = null,
     px: [grid.CELLS]rl.Color = undefined,
+    /// Set by `castSight`, the only change to what it shows.
+    stale: bool = true,
 
     fn load(m: *Minimap) void {
-        m.tex = look.canvas(grid.W, grid.H, rl.Color.blank);
-        if (m.tex) |t| rl.setTextureFilter(t, .point);
+        m.tex = look.canvas(grid.W, grid.H, rl.Color.blank, .point);
+        m.stale = true;
     }
 
     fn unload(m: *Minimap) void {
@@ -1677,9 +1679,12 @@ fn drawMinimap(g: *Game) void {
     rl.drawRectangle(o.x - f, o.y - f, fw, fh, look.MINI_BG);
     rl.drawRectangleLines(o.x - f, o.y - f, fw, fh, look.EDGE);
     if (g.mini.tex) |t| {
-        for (&g.mini.px, g.lv.tile, g.lv.seen, g.lv.lit) |*c, tile, seen, lit| c.* = if (seen) look.mini(tile, lit) else rl.Color.blank;
-        rl.updateTexture(t, &g.mini.px);
-        look.stretch(t, look.rect(o.x, o.y, MINI_W, MINI_H), rl.Color.white);
+        if (g.mini.stale) {
+            for (&g.mini.px, &g.lv.tile, &g.lv.seen, &g.lv.lit) |*c, tile, seen, lit| c.* = if (seen) look.mini(tile, lit) else rl.Color.blank;
+            rl.updateTexture(t, &g.mini.px);
+            g.mini.stale = false;
+        }
+        look.stretch(t, look.rect(o.x, o.y, MINI_W, MINI_H), look.LIT);
     }
     for (g.pool.slice(), 0..) |a, i| {
         if (!a.foe()) continue;
@@ -1844,8 +1849,7 @@ fn drawDead(g: *Game) void {
     veil(g, g.viewH());
     const DIED = " DIED";
     var died: [heroes.Name.MAX + DIED.len + 1]u8 = undefined;
-    const said = std.fmt.bufPrintZ(&died, "{s}" ++ DIED, .{g.name.text()}) catch "";
-    _ = std.ascii.upperString(died[0..said.len], said);
+    const said = menu.shout(&died, "{s}" ++ DIED, .{g.name.text()});
     textMid(g, said, mid + DEAD_TITLE_DY, menu.TITLE, look.LIFE);
     textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
     const again = if (g.permadeath) pauseLabel(g, .back) else againLabel(g);
@@ -2060,14 +2064,13 @@ fn overviews(g: *Game, w: *atlas.Atlas) void {
             const y = p.y * OVERVIEW_CELL;
             const under = t.ground() orelse t;
             if (look.tileBg(under)) |bg| rl.drawRectangle(x, y, OVERVIEW_CELL, OVERVIEW_CELL, bg);
-            const l = look.tile(t);
             const cx = x + OVERVIEW_MID;
             const cy = y + OVERVIEW_MID;
             if (g.lv.barrel[k]) {
                 g.face.glyph(look.BARREL.ch, cx, cy, OVERVIEW_INK, look.BARREL.fg);
             } else if (g.lv.door[k] != grid.NO_DOOR) {
                 g.face.glyph(look.DOOR.ch, cx, cy, OVERVIEW_INK, look.DOOR.fg);
-            } else g.face.symbol(look.tileSym(t), l.ch, cx, cy, OVERVIEW_INK, l.fg);
+            } else look.inkTile(&g.face, t, cx, cy, OVERVIEW_INK);
         }
         for (g.lv.torches()) |t| g.face.glyph(look.TORCH.ch, t.x * OVERVIEW_CELL + OVERVIEW_MID, t.y * OVERVIEW_CELL + OVERVIEW_MID, OVERVIEW_INK, look.TORCH.fg);
         rl.endTextureMode();

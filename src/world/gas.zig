@@ -70,8 +70,8 @@ fn reach(lv: *const grid.Level) ?[2]P {
     for (&lv.gas, 0..) |v, i| {
         if (v == 0) continue;
         const p = grid.Level.of(i);
-        lo = .{ .x = @min(lo.x, p.x), .y = @min(lo.y, p.y) };
-        hi = .{ .x = @max(hi.x, p.x), .y = @max(hi.y, p.y) };
+        lo = lo.min(p);
+        hi = hi.max(p);
     }
     if (hi.x < 0) return null;
     return grid.grown(lo, hi.add(.{ .x = 1, .y = 1 }), 1);

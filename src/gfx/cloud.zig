@@ -83,7 +83,7 @@ pub const Cloud = struct {
 
     /// Needs a live GL context.
     pub fn load(self: *Cloud) void {
-        self.tex = look.canvas(TEX_W, TEX_H, rl.Color.blank);
+        self.tex = look.canvas(TEX_W, TEX_H, rl.Color.blank, .bilinear);
         const s = look.shader(CLOUD_FS) orelse return;
         self.shade = look.uniforms(Shade, s);
     }

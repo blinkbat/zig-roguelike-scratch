@@ -5,7 +5,6 @@ const carve = @import("../carve.zig");
 // ADOM's caverns, Diablo II's Den of Evil, Dwarf Fortress's caverns; spires are DF's passage density.
 
 pub const FILL_MAX: u8 = 70;
-pub const SMOOTH_MAX: u8 = 8;
 pub const SPIRES_MAX: u16 = 80;
 
 pub const Params = struct {
@@ -18,7 +17,7 @@ pub const Params = struct {
     pub fn fit(p: Params) Params {
         var q = p;
         q.fill = @min(p.fill, FILL_MAX);
-        q.smooth = @min(p.smooth, SMOOTH_MAX);
+        q.smooth = @min(p.smooth, carve.SMOOTH_MAX);
         q.spires = @min(p.spires, SPIRES_MAX);
         return q;
     }
@@ -31,8 +30,5 @@ pub fn palette(_: Params) carve.Palette {
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
-    const pal = palette(p);
-    carve.sow(lv, rng, p.fill, pal.solid, pal.open);
-    carve.smooth(lv, p.smooth, pal.solid, pal.open);
-    carve.scatter(lv, rng, p.spires, pal.open, pal.solid, true);
+    carve.cellular(lv, rng, p.fill, p.smooth, p.spires, palette(p));
 }
