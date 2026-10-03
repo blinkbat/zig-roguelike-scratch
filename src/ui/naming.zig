@@ -7,8 +7,6 @@ const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
 const hero = @import("../play/hero.zig");
 
-// A name typed on a grid of keys with the d-pad, as a console asks for one; the keyboard types straight into it.
-
 const LETTERS = [_][]const u8{ "ABCDEFGHIJKLM", "NOPQRSTUVWXYZ", "abcdefghijklm", "nopqrstuvwxyz" };
 const Key = union(enum) { ch: u8, space, rub, done };
 const LAST = [_]Key{ .space, .rub, .done };

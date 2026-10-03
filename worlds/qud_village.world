@@ -1,0 +1,14 @@
+roguelike-world 1
+start 0 48 32
+node procgen site
+template huts
+decay 0
+feature farms
+count 3
+crop reeds
+furrow shallows
+feature setpiece
+piece well
+count 1
+name Qud Village
+at 0 0

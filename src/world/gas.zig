@@ -3,9 +3,6 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
 const gen = @import("gen.zig");
 
-// EVERY GAS, after Brogue CE's `updateVolumetricMedia` for one gas, but only a gassed-up cell spreads. The loss is per
-// cell, so a cloud spread over open ground clears sooner than one shut in a room.
-
 const P = mathx.P;
 
 /// Brogue's `DF_BLOAT_DEATH`.

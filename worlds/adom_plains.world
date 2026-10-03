@@ -1,0 +1,13 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground grass
+feature scatter
+tile shrub
+on grass
+amount 10
+feature lake
+count 1
+size 6
+name ADOM Plains
+at 0 0

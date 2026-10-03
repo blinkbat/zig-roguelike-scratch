@@ -1,0 +1,7 @@
+roguelike-world 1
+start 0 48 32
+node procgen hall
+style graves
+margin 6
+name ADOM Graveyard
+at 0 0

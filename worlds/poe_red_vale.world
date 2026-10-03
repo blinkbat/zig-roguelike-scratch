@@ -1,0 +1,14 @@
+roguelike-world 1
+start 0 48 8
+node procgen topology
+layout ring
+filler rock
+ground dirt
+path 4
+feature river
+width 2
+course down
+count 2
+fords 2
+name PoE2 Red Vale
+at 0 0

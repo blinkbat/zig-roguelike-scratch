@@ -22,6 +22,9 @@ const font = @import("gfx/font.zig");
 const fx = @import("gfx/fx.zig");
 const cloud = @import("gfx/cloud.zig");
 const vignette = @import("gfx/vignette.zig");
+const sky = @import("gfx/sky.zig");
+const day = @import("world/day.zig");
+const lume = @import("world/lume.zig");
 
 const P = mathx.P;
 
@@ -101,6 +104,8 @@ const MINI: i32 = 3;
 const MINI_W: i32 = grid.W * MINI;
 const MINI_H: i32 = grid.H * MINI;
 const MINI_PAD: i32 = 12;
+/// Cells past the view a prop's shadow can reach into it from: the longest the sky throws, and a canopy's spread.
+const CAST_MARGIN: i32 = 3;
 const MINI_FRAME: i32 = 4;
 const MINI_HERO_GROW: i32 = 1;
 pub const SHOT_SEED: u64 = 0x5EED_1234;
@@ -114,14 +119,11 @@ const GLIDE_S: f32 = input.Stepper.ARR;
 /// Pixels, at the top of each glide's hop.
 const HOP_PX: f32 = @floatFromInt(authored(10));
 const SLIDE_S: f32 = GLIDE_S * 2;
-/// Between one body's glide and the next's in a turn: the archer, then the foes in sight nearest first.
 const STAGGER_S: f32 = GLIDE_S * 0.5;
-/// A melee blow's bump toward what it strikes and back, one walk repeat long, landing at its height.
 const BUMP_S: f32 = GLIDE_S;
 /// Of the bump, the share out to the blow.
 const BUMP_HIT: f32 = 0.5;
 const BUMP_LANDS: f32 = BUMP_S * BUMP_HIT;
-/// Pixels toward what it strikes, at the bump's height: about a third of a cell.
 const BUMP_PX: f32 = CELL_F * 0.35;
 /// A walk due this close to the turn's last glide ending is not held for it.
 const PACE_SLACK: f32 = 1e-4;
@@ -146,10 +148,8 @@ comptime {
 
 pub const Mode = enum { play, aim, bind, dead, pause };
 
-/// Where the pause menu's way out leads.
 pub const Back = enum { title, editor };
 
-/// A way out of the game the pause menu picked, for whatever runs it.
 pub const Exit = enum { back, quit };
 
 const PAUSE = menu.PAUSE;
@@ -256,14 +256,12 @@ pub const Glide = struct {
         return .{ .from = self.now(), .to = p, .t = t, .gait = self.gait, .from_lift = self.height() };
     }
 
-    /// From where it stands toward `at` and back, without leaving its cell.
     fn bumping(self: Glide, at: P, t: f32) Glide {
         const d = at.sub(self.to);
         const bump = rl.Vector2{ .x = @as(f32, @floatFromInt(d.x)) * BUMP_PX, .y = @as(f32, @floatFromInt(d.y)) * BUMP_PX };
         return .{ .from = self.now(), .to = self.to, .t = t, .gait = self.gait, .from_lift = self.height(), .bump = bump };
     }
 
-    /// Its gait's, or a bump.
     const Motion = enum { hop, slide, bump };
 
     fn motion(self: Glide) Motion {
@@ -318,7 +316,6 @@ pub const Glide = struct {
     }
 };
 
-/// Out to the blow quickening, 1 as it lands, then easing back to 0.
 fn bumpOf(k: f32) f32 {
     if (k < BUMP_HIT) {
         const u = k / BUMP_HIT;
@@ -327,7 +324,7 @@ fn bumpOf(k: f32) f32 {
     return 1 - mathx.smooth((k - BUMP_HIT) / (1 - BUMP_HIT));
 }
 
-/// Penner's ease-out-back: past 1 late in the glide, then back to exactly 1.
+/// Penner's ease-out-back.
 fn overshoot(k: f32) f32 {
     const u = k - 1;
     return 1 + (SLIDE_BACK + 1) * u * u * u + SLIDE_BACK * u * u;
@@ -335,17 +332,13 @@ fn overshoot(k: f32) f32 {
 
 pub const Facing = enum { right, left };
 
-/// A foe's blow this turn: it bit the archer, or burst itself instead; `after` is the body it landed on as it left it.
 const Bite = struct { blow: enum { hurt, kill, burst }, after: fx.After };
 
-/// The gas's harm on a body this turn.
 const Gassed = struct { kill: bool, after: fx.After };
 
-/// A foe that turned this turn is drawn turning at its place in the stagger, `in` seconds on.
 /// `in` is set once the turn it was taken in has its stagger.
 const Turning = struct { to: Facing, in: ?f32 = null };
 
-/// A node as the archer left it.
 pub const Visit = struct {
     lv: grid.Level,
     pool: actor.Pool,
@@ -364,7 +357,6 @@ pub const Visit = struct {
 
 pub const Game = struct {
     mode: Mode = .play,
-    /// The mode the pause menu returns to.
     paused_from: Mode = .play,
     pause_menu: menu.Menu = .{},
     back: Back = .title,
@@ -372,6 +364,12 @@ pub const Game = struct {
     name: heroes.Name = heroes.Class.archer.unnamed(),
     /// A run in a save slot: death ends it, and the way out of the death screen is the way back.
     permadeath: bool = false,
+    /// The hour, moved on a turn at a time.
+    clock: day.Clock = .{},
+    /// The node played is open to the sky, so the hour lights it.
+    outdoors: bool = false,
+    /// The hour as the sky is drawn: eased after `clock`, so the light never steps.
+    hour_shown: f32 = day.Clock.hour(.{}),
     /// DEBUG: the hero keeps 1 hp whatever strikes it, so it never dies. Kept across runs, never saved.
     unkillable: bool = false,
     /// A turn was taken, or the run changed, since the run was last saved. Nothing in the simulation reads it.
@@ -399,7 +397,6 @@ pub const Game = struct {
     mark: P = .{ .x = 0, .y = 0 },
     /// World pixels, eased toward the archer. Nothing in the simulation reads it.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
-    /// The window's size this frame; it changes when fullscreen is toggled.
     screen: P = .{ .x = WINDOW_W, .y = WINDOW_H },
     shot: ?Shot = null,
     /// Indexed by pool slot.
@@ -429,6 +426,7 @@ pub const Game = struct {
     split_from: [actor.MAX]?usize = @splat(null),
     fx: fx.Fx = .{},
     vignette: vignette.Vignette = .{},
+    mini: Minimap = .{},
     sprites: look.Sprites = .{},
     face: font.Face = .{},
     light: *light.Light,
@@ -479,10 +477,13 @@ fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
     g.world = w;
     g.visited = .initEmpty();
     g.node = 0;
+    g.outdoors = false;
     g.seed = seed;
     g.rng = mathx.Rng.init(seed ^ PLAY_SALT);
     g.pool = .{};
     g.hero = grid.NO_ONE;
+    g.clock = .{};
+    g.hour_shown = g.clock.hour();
     g.unsaved = true;
 }
 
@@ -500,13 +501,12 @@ pub fn begin(g: *Game, seed: u64) void {
     g.log.say("{s} somewhere on this floor. Seed {d}.", .{ out.getWritten(), seed });
 }
 
-/// From the world's start, every node fresh.
 pub fn beginWorld(g: *Game, w: *const atlas.Atlas) void {
-    beginWorldAt(g, w, w.start);
+    beginWorldAt(g, w, w.start, freshSeed());
 }
 
-pub fn beginWorldAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start) void {
-    startRun(g, w, freshSeed());
+pub fn beginWorldAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64) void {
+    startRun(g, w, seed);
     freshRun(g);
     enter(g, from.node, from.at);
 }
@@ -516,6 +516,7 @@ fn enter(g: *Game, n: usize, at: P) void {
     const w = g.world.?;
     const hp = if (g.archer()) |h| h.hp else actor.row(HERO).hp;
     g.node = n;
+    g.outdoors = w.node[n].outdoor();
     const back = g.visited.isSet(n);
     if (back) {
         g.visits[n].restore(g);
@@ -591,7 +592,6 @@ fn reset(g: *Game, hero: P) void {
     freshTurn(g);
 }
 
-/// What every run starts from, whatever floor it is on.
 fn freshRun(g: *Game) void {
     g.kills = 0;
     g.gold = 0;
@@ -622,6 +622,8 @@ fn settle(g: *Game) void {
     catchUp(g);
     g.cam = camWant(g);
     g.light.settle(&g.lv);
+    g.hour_shown = g.clock.hour();
+    g.light.sky = skyNow(g);
     g.light.carrier = carrierAt(g);
 }
 
@@ -631,6 +633,7 @@ pub fn resumeRun(g: *Game) void {
     g.exit = null;
     g.unsaved = false;
     g.vignette.clear();
+    g.outdoors = if (g.world) |w| w.node[g.node].outdoor() else false;
     freshTurn(g);
     settle(g);
 }
@@ -639,8 +642,18 @@ pub fn freshSeed() u64 {
     return @bitCast(std.time.milliTimestamp());
 }
 
+/// What the archer sees from `from`: as far as its eyes reach, where the sky, a torch or a carried light lets it.
 fn castSight(g: *Game, from: P) void {
-    fov.cast(&g.lv, from, actor.row(HERO).sight);
+    var carried: [actor.MAX]lume.Source = undefined;
+    var n: usize = 0;
+    for (g.pool.slice(), 0..) |a, i| {
+        const r = actor.row(a.kind).light;
+        if (!a.alive or r <= 0) continue;
+        carried[n] = .{ .at = if (actor.Pool.idOf(i) == g.hero) from else a.at, .reach = r };
+        n += 1;
+    }
+    const sight = actor.row(HERO).sight;
+    lume.see(&g.lv, from, sight, lume.skyReach(g.outdoors, g.clock.hour(), sight), carried[0..n]);
 }
 
 const Move = enum { kick, step, blocked };
@@ -659,7 +672,6 @@ fn turnToward(g: *Game, id: u16, dx: i32) void {
     g.facing[actor.Pool.slot(id)] = facingOf(dx) orelse return;
 }
 
-/// A foe is drawn turning at its place in the stagger.
 fn turnLater(g: *Game, id: u16, dx: i32) void {
     g.turning[actor.Pool.slot(id)] = .{ .to = facingOf(dx) orelse return };
 }
@@ -727,7 +739,6 @@ fn useSkill(g: *Game, u: Use) void {
     }
 }
 
-/// What closes the bind screen or the reticle.
 fn closed(st: *const input.State) bool {
     return st.hit(BACK) or st.hit(BINDS);
 }
@@ -839,7 +850,6 @@ fn sting(g: *Game, slot: usize, wait: f32, after: ?fx.After) void {
     flashes(g, wait);
 }
 
-/// The body in `slot` as a blow dealt now leaves it.
 fn snap(g: *Game, slot: usize) fx.Body {
     g.seq += 1;
     return fx.Body.of(g.pool.items[slot], g.seq);
@@ -849,7 +859,6 @@ fn flashes(g: *Game, wait: f32) void {
     holdUntil(g, wait + fx.FLASH_S);
 }
 
-/// A turn takes as long as its slowest glide, arrow or flash.
 fn holdUntil(g: *Game, t: f32) void {
     g.busy = @max(g.busy, t);
 }
@@ -895,7 +904,6 @@ fn split(g: *Game, id: u16) ?usize {
     return o;
 }
 
-/// Every foe's death, whatever dealt it.
 fn fell(g: *Game, kind: actor.Kind, at: P) void {
     const name = actor.row(kind).name;
     g.kills += 1;
@@ -912,10 +920,12 @@ fn heroDies(g: *Game) void {
     g.mode = .dead;
 }
 
-/// Brogue's order: the archer acts and the gas eats at it, the gas spreads, then each foe acts and the gas eats at it.
+/// Brogue's order: the archer acts and the gas eats at it, the gas spreads, then each foe acts and the gas eats at it;
+/// then the archer's sight again, for a light a foe carries has moved with it.
 fn endTurn(g: *Game) void {
     const h = g.archer() orelse return;
     g.unsaved = true;
+    g.clock.turn();
     defer {
         for (g.pool.slice()) |*a| a.waits = false;
     }
@@ -930,6 +940,7 @@ fn endTurn(g: *Game) void {
         if (g.mode == .dead) return;
         gasHarm(g, id);
     }
+    if (g.archer()) |a| castSight(g, a.at);
 }
 
 const Hurt = struct { dmg: i32, lethal: bool };
@@ -989,7 +1000,7 @@ fn foeTurn(g: *Game, id: u16) void {
         if (!fov.sees(&g.lv, r.at, h.at, row.sight)) return;
         r.awake = true;
         turnLater(g, id, h.at.x - r.at.x);
-        g.log.say("A {s} notices {s}.", .{ row.name, g.name.text() });
+        if (g.lv.isLit(r.at)) g.log.say("A {s} notices {s}.", .{ row.name, g.name.text() });
         return;
     }
     const flitted = if (row.flits and g.rng.chance(actor.FLIT)) actor.flit(&g.lv, r.at, id, g.hero, &g.rng) else null;
@@ -1087,10 +1098,8 @@ fn stepGlide(g: *Game, late: f32) void {
     }
 }
 
-/// A foe that bit or burst takes its place in the stagger as one seen stepping does, its turn is drawn there, and it
-/// bumps the archer from there, its blow landing at the bump's height. The gas's harm lands as the body's step or bump
-/// ends, or at `start` for one with no place: once the archer's part is drawn, which may have burst the bloat the gas
-/// came from. When this body's part is drawn.
+/// The gas's harm on a body with no place lands at `start`, once the archer's part is drawn, which may have burst
+/// the bloat it came from. When this body's part is drawn.
 fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     const i = actor.Pool.slot(id);
     const a = g.pool.items[i];
@@ -1218,9 +1227,19 @@ pub fn update(g: *Game, dt: f32) void {
     const k = mathx.easing(dt, CAM_EASE);
     g.cam.x = mathx.lerpF(g.cam.x, want.x, k);
     g.cam.y = mathx.lerpF(g.cam.y, want.y, k);
+    g.hour_shown = day.wrapHour(g.hour_shown + day.toward(g.hour_shown, g.clock.hour()) * mathx.easing(dt, HOUR_EASE));
+    g.light.sky = skyNow(g);
     g.light.step(&g.lv, dt);
     g.light.carrier = carrierAt(g);
 }
+
+/// The sky over the node played, if it is open to one.
+fn skyNow(g: *const Game) ?sky.Sky {
+    return if (g.outdoors) sky.at(g.hour_shown) else null;
+}
+
+/// Per second, how fast the sky drawn catches the hour a turn moved on.
+const HOUR_EASE: f32 = 4;
 
 fn pauseStep(g: *Game) void {
     if (menu.backed(&g.st)) {
@@ -1237,7 +1256,6 @@ fn pauseStep(g: *Game) void {
     }
 }
 
-/// What `restart` does.
 fn againLabel(g: *const Game) [:0]const u8 {
     return if (g.world != null) "Restart the world" else "New floor";
 }
@@ -1432,7 +1450,6 @@ const Prop = struct {
     shine: light.Shine,
 };
 
-/// The barrels shown from `lo` up to `hi`, however many a bespoke node holds.
 const Barrels = struct {
     g: *Game,
     c: Cam,
@@ -1452,30 +1469,37 @@ const Barrels = struct {
     }
 };
 
-/// A body or a barrel: its sprite, lit by the body shader, or its glyph.
 fn drawFigure(g: *Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid: [2]f32, shine: light.Shine, flash: f32) void {
     if (tex) |t| {
         g.light.drawBody(t, spriteRect(t, s.x, s.y), left, mid, shine, flash);
     } else drawGlyph(g, l.ch, s.x, s.y, shine.drawn(l.fg, flash));
 }
 
+/// The open ground and what lies under anything solid, then the solid, which covers the shadows cast between.
+const Pass = enum { ground, solid };
+
 /// At full light, over the seen cells from `lo` up to `hi`.
-fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, kind: grid.Tile, arrow_at: ?P) void {
+fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
-        if (!g.lv.isSeen(p) or g.lv.at(p) != kind) continue;
+        if (!g.lv.isSeen(p)) continue;
+        const here = g.lv.at(p);
+        const kind = switch (pass) {
+            .ground => if (here.solid()) here.ground() orelse continue else here,
+            .solid => if (here.solid()) here else continue,
+        };
         defer if (g.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
-        if (g.sprites.tileAt(&g.lv, p)) |t| {
+        if (g.sprites.tileOf(kind, g.lv.wallShape(p))) |t| {
             drawSprite(t, c.sx(p), c.sy(p));
             continue;
         }
-        if (kind == .floor) fillCell(c, p, look.FLOOR_BG);
-        if (standsShownAt(g, p)) continue;
+        if (look.tileBg(kind)) |bg| fillCell(c, p, bg);
+        if (kind != here or standsShownAt(g, p)) continue;
         if (arrow_at) |a| {
             if (a.eq(p)) continue;
         }
         const l = look.tile(kind);
-        drawGlyph(g, l.ch, c.sx(p), c.sy(p), l.fg);
+        g.face.symbol(look.tileSym(kind), l.ch, c.sx(p) + HALF_CELL, c.sy(p) + HALF_CELL, GLYPH, l.fg);
     }
 }
 
@@ -1506,17 +1530,28 @@ fn drawWorld(g: *Game) void {
     }
     const bodies = shown[0..n];
 
-    drawTerrain(g, c, lo, hi, .floor, arrow_at);
+    drawTerrain(g, c, lo, hi, .ground, arrow_at);
+    const cast = grid.grown(lo, hi, CAST_MARGIN);
     if (g.sprites.barrel) |t| {
-        var barrels = Barrels.of(g, c, lo, hi);
+        var barrels = Barrels.of(g, c, cast[0], cast[1]);
         while (barrels.next()) |b| g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), false, b.mid, b.shine);
+    }
+    var props = grid.Cells.of(cast[0], cast[1]);
+    while (props.next()) |p| {
+        const kind = g.lv.at(p);
+        if (!look.stands(kind) or !g.lv.isSeen(p)) continue;
+        const t = g.sprites.tileOf(kind, null) orelse continue;
+        const mid = mathx.centre(p);
+        const shine = g.light.onBody(mid, false);
+        const rect = spriteRect(t, c.sx(p), c.sy(p));
+        if (look.canopied(kind)) g.light.drawCanopy(t, rect, mid, shine) else g.light.drawShadows(t, rect, false, mid, shine);
     }
     for (bodies) |b| {
         const t = g.sprites.body(b.pic.kind) orelse continue;
         g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), b.left, b.mid, b.shine);
     }
     g.cloud.draw(&g.lv, lo, hi, -c.x, -c.y, CELL);
-    drawTerrain(g, c, lo, hi, .wall, arrow_at);
+    drawTerrain(g, c, lo, hi, .solid, arrow_at);
     g.fx.draw(@floatFromInt(-c.x), @floatFromInt(-c.y), CELL_F);
     g.light.bake(&g.lv, lo, hi);
     g.light.drawMap(-c.x, -c.y, CELL);
@@ -1595,6 +1630,22 @@ fn drawLean(g: *Game, c: Cam) void {
     }
 }
 
+/// The seen cells, a texel each, drawn `MINI` times over in one quad. Needs a live GL context.
+const Minimap = struct {
+    tex: ?rl.Texture2D = null,
+    px: [grid.CELLS]rl.Color = undefined,
+
+    fn load(m: *Minimap) void {
+        m.tex = look.canvas(grid.W, grid.H, rl.Color.blank);
+        if (m.tex) |t| rl.setTextureFilter(t, .point);
+    }
+
+    fn unload(m: *Minimap) void {
+        if (m.tex) |t| rl.unloadTexture(t);
+        m.tex = null;
+    }
+};
+
 fn miniOrigin(screen_w: i32) P {
     return .{ .x = screen_w - MINI_W - MINI_PAD, .y = MINI_PAD };
 }
@@ -1610,9 +1661,10 @@ fn drawMinimap(g: *Game) void {
     const fh = MINI_H + f * 2;
     rl.drawRectangle(o.x - f, o.y - f, fw, fh, look.MINI_BG);
     rl.drawRectangleLines(o.x - f, o.y - f, fw, fh, look.EDGE);
-    for (0..grid.CELLS) |i| {
-        if (!g.lv.seen[i]) continue;
-        miniDot(o, grid.Level.of(i), 0, look.mini(g.lv.tile[i], g.lv.lit[i]));
+    if (g.mini.tex) |t| {
+        for (&g.mini.px, g.lv.tile, g.lv.seen, g.lv.lit) |*c, tile, seen, lit| c.* = if (seen) look.mini(tile, lit) else rl.Color.blank;
+        rl.updateTexture(t, &g.mini.px);
+        look.stretch(t, .{ .x = @floatFromInt(o.x), .y = @floatFromInt(o.y), .width = @floatFromInt(MINI_W), .height = @floatFromInt(MINI_H) }, rl.Color.white);
     }
     for (g.pool.slice(), 0..) |a, i| {
         if (!a.foe()) continue;
@@ -1814,7 +1866,7 @@ pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*
     defer shut(alloc, g);
     g.sprites = look.Sprites.load();
     defer g.sprites.unload();
-    g.face = font.Face.load();
+    g.face = font.Face.load(look.TILE_CODEPOINTS);
     defer g.face.unload();
     const figures = g.sprites.figures();
     g.light.load(&figures);
@@ -1823,6 +1875,8 @@ pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*
     defer g.cloud.unload();
     g.vignette.load();
     defer g.vignette.unload();
+    g.mini.load();
+    defer g.mini.unload();
     body(g);
 }
 
@@ -1830,7 +1884,6 @@ pub fn fullscreen() bool {
     return rl.isWindowState(.{ .borderless_windowed_mode = true });
 }
 
-/// Borderless fullscreen toggled when `toggle`, then the window's size as it now is.
 pub fn syncScreen(g: *Game, toggle: bool) void {
     if (toggle) rl.toggleBorderlessWindowed();
     g.screen = .{ .x = rl.getScreenWidth(), .y = rl.getScreenHeight() };
@@ -1890,6 +1943,25 @@ fn shoot(g: *Game) void {
     capture(g, target, SHOTS_DIR ++ "/pause.png");
     g.mode = g.paused_from;
 
+    if (std.heap.c_allocator.create(atlas.Atlas)) |w| {
+        defer std.heap.c_allocator.destroy(w);
+        overviews(g, w);
+        if (w.load(std.heap.c_allocator, atlas.worldPath(SHOT_BIOME))) {
+            beginWorldAt(g, w, w.start, SHOT_SEED);
+            capture(g, target, SHOTS_DIR ++ "/biome.png");
+        } else |e| std.debug.print("biome shot: {s} did not load ({s})\n", .{ SHOT_BIOME, @errorName(e) });
+        if (w.load(std.heap.c_allocator, atlas.worldPath(SHOT_OUTDOOR))) {
+            for (SHOT_HOURS) |s| {
+                beginWorldAt(g, w, w.start, SHOT_SEED);
+                g.lv.seen = @splat(false);
+                g.clock = day.Clock.at(s.hour);
+                settle(g);
+                capture(g, target, s.path);
+            }
+        } else |e| std.debug.print("sky shots: {s} did not load ({s})\n", .{ SHOT_OUTDOOR, @errorName(e) });
+        begin(g, SHOT_SEED);
+    } else |_| {}
+
     editor.shoot(g, target, SHOTS_DIR ++ "/edit.png", SHOTS_DIR ++ "/edit-graph.png", SHOTS_DIR ++ "/edit-gen.png");
 
     const entry = naming.Entry{ .name = heroes.Name.of("Arwen"), .row = 2, .col = 4 };
@@ -1906,6 +1978,7 @@ const POSE_GAS_TURNS: usize = 3;
 
 fn poseGas(g: *Game) void {
     arena(g, .{ .x = 18, .y = 16 }, &.{});
+    g.outdoors = false;
     var x: i32 = 13;
     while (x <= 31) : (x += 1) {
         g.lv.set(.{ .x = x, .y = 10 }, .wall);
@@ -1928,6 +2001,7 @@ const POSE_TORCH = P{ .x = 20, .y = 10 };
 
 fn poseTorch(g: *Game) void {
     arena(g, .{ .x = 20, .y = 15 }, &.{ .{ .x = 17, .y = 12 }, .{ .x = 23, .y = 13 } });
+    g.outdoors = false;
     var x: i32 = 12;
     while (x < 29) : (x += 1) g.lv.set(.{ .x = x, .y = POSE_TORCH.y }, .wall);
     g.lv.set(.{ .x = 22, .y = 12 }, .wall);
@@ -1942,12 +2016,63 @@ fn drawInto(g: *Game, target: rl.RenderTexture2D) void {
     rl.endTextureMode();
 }
 
+const OVERVIEW_CELL: i32 = 10;
+const OVERVIEW_MID: i32 = @divTrunc(OVERVIEW_CELL, 2);
+/// A glyph a little bigger than its cell, so the font's side bearings leave no gaps.
+const OVERVIEW_INK: i32 = OVERVIEW_CELL + 2;
+/// The world `shots/biome.png` plays, from `atlas.DIR`.
+const SHOT_BIOME = "qud_salt_marsh";
+/// The world the sky is shot over, at each of these hours.
+const SHOT_OUTDOOR = "wilds";
+const SHOT_HOURS = [_]struct { hour: f32, path: [:0]const u8 }{
+    .{ .hour = 7.0, .path = SHOTS_DIR ++ "/dawn.png" },
+    .{ .hour = 12.0, .path = SHOTS_DIR ++ "/noon.png" },
+    .{ .hour = 16.5, .path = SHOTS_DIR ++ "/day.png" },
+    .{ .hour = 19.3, .path = SHOTS_DIR ++ "/dusk.png" },
+    .{ .hour = 1.0, .path = SHOTS_DIR ++ "/night.png" },
+};
+
+/// DEV ONLY. Each world's start node rolled and drawn whole, a glyph a cell, into `shots/worlds/<name>.png`.
+fn overviews(g: *Game, w: *atlas.Atlas) void {
+    const target = rl.loadRenderTexture(grid.W * OVERVIEW_CELL, grid.H * OVERVIEW_CELL) catch return;
+    defer rl.unloadRenderTexture(target);
+    std.fs.cwd().makePath(SHOTS_DIR ++ "/worlds") catch {};
+    var list = atlas.Listing{};
+    list.scan();
+    for (0..list.n) |i| {
+        w.load(std.heap.c_allocator, list.at(i)) catch continue;
+        w.node[w.start.node].stamp(&g.lv, SHOT_SEED +% i);
+        rl.beginTextureMode(target);
+        rl.clearBackground(look.BG);
+        for (0..grid.CELLS) |k| {
+            const p = grid.Level.of(k);
+            const t = g.lv.tile[k];
+            const x = p.x * OVERVIEW_CELL;
+            const y = p.y * OVERVIEW_CELL;
+            const under = t.ground() orelse t;
+            if (look.tileBg(under)) |bg| rl.drawRectangle(x, y, OVERVIEW_CELL, OVERVIEW_CELL, bg);
+            const l = look.tile(t);
+            const cx = x + OVERVIEW_MID;
+            const cy = y + OVERVIEW_MID;
+            if (g.lv.barrel[k]) {
+                g.face.glyph(look.BARREL.ch, cx, cy, OVERVIEW_INK, look.BARREL.fg);
+            } else if (g.lv.door[k] != grid.NO_DOOR) {
+                g.face.glyph(look.DOOR.ch, cx, cy, OVERVIEW_INK, look.DOOR.fg);
+            } else g.face.symbol(look.tileSym(t), l.ch, cx, cy, OVERVIEW_INK, l.fg);
+        }
+        for (g.lv.torches()) |t| g.face.glyph(look.TORCH.ch, t.x * OVERVIEW_CELL + OVERVIEW_MID, t.y * OVERVIEW_CELL + OVERVIEW_MID, OVERVIEW_INK, look.TORCH.fg);
+        rl.endTextureMode();
+        var buf: [atlas.PATH_MAX + 32]u8 = undefined;
+        const name = std.fmt.bufPrintZ(&buf, SHOTS_DIR ++ "/worlds/{s}.png", .{list.stem(i)}) catch continue;
+        exportTarget(target, name);
+    }
+}
+
 fn capture(g: *Game, target: rl.RenderTexture2D, path: [:0]const u8) void {
     drawInto(g, target);
     exportTarget(target, path);
 }
 
-/// DEV ONLY.
 pub fn exportTarget(target: rl.RenderTexture2D, path: [:0]const u8) void {
     var img = rl.loadImageFromTexture(target.texture) catch {
         std.debug.print("{s} FAILED\n", .{path});
@@ -2023,9 +2148,12 @@ fn poseRat(g: *Game) void {
     settle(g);
 }
 
+/// An open field at noon, so the archer's eyes reach as far as they ever do.
 fn arena(g: *Game, hero: P, rats: []const P) void {
     g.lv = grid.openFloor();
     reset(g, hero);
+    g.outdoors = true;
+    g.clock = day.Clock.at(12);
     for (rats) |r| _ = g.pool.spawn(&g.lv, actor.Actor.of(.rat, r));
     settle(g);
 }
@@ -2236,6 +2364,61 @@ test "a body faces right until it steps, aims or turns on someone to its left, a
     try std.testing.expectEqual(Mode.aim, g.mode);
     try std.testing.expect(g.mark.x < g.archer().?.at.x);
     try std.testing.expectEqual(Facing.left, g.facing[hero]);
+}
+
+test "a step moves the hour on a turn's minutes, a bump into a wall does not, and the sky drawn eases after it" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{});
+    g.lv.set(.{ .x = 19, .y = 20 }, .wall);
+    const was = g.clock.minute;
+    nudge(g, .w);
+    try std.testing.expectEqual(was, g.clock.minute);
+    nudge(g, .e);
+    try std.testing.expectEqual(was + day.TURN_MINUTES, g.clock.minute);
+    const behind = day.toward(g.hour_shown, g.clock.hour());
+    g.st = .{};
+    var t: f32 = 0;
+    while (day.toward(g.hour_shown, g.clock.hour()) > behind / 100 and t < 2) : (t += TEST_DT) update(g, TEST_DT);
+    std.debug.print("a step: {d:.3} h ahead of the sky drawn, caught up in {d:.2} s\n", .{ behind, t });
+    try std.testing.expect(behind > 0 and t < 2);
+}
+
+test "underground a rat past the archer's light is out of sight and out of the bow's reach until a torch lights it" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const hero = P{ .x = 20, .y = 20 };
+    const rat_at = P{ .x = 27, .y = 20 };
+    arena(g, hero, &.{rat_at});
+    try std.testing.expect(g.lv.isLit(rat_at) and bow.aimable(&g.lv, hero, rat_at));
+    g.outdoors = false;
+    settle(g);
+    try std.testing.expect(!g.lv.isLit(rat_at) and g.lv.inLos(rat_at));
+    try std.testing.expect(bow.pick(&g.lv, &g.pool, hero) == null);
+    try std.testing.expect(fov.sees(&g.lv, rat_at, hero, actor.row(.rat).sight));
+    const wall = rat_at.add(mathx.Dir.n.delta());
+    g.lv.set(wall, .wall);
+    g.lv.addTorch(wall);
+    settle(g);
+    try std.testing.expect(g.lv.isLit(rat_at) and bow.aimable(&g.lv, hero, rat_at));
+}
+
+test "the archer sees further by day than by night out of doors, and as little at midnight as underground" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 40, .y = 30 }, &.{});
+    var seen: [4]usize = undefined;
+    for ([_]f32{ 12, 19.5, 0 }, 0..) |h, i| {
+        g.clock = day.Clock.at(h);
+        settle(g);
+        seen[i] = std.mem.count(bool, &g.lv.lit, &.{true});
+    }
+    g.outdoors = false;
+    settle(g);
+    seen[3] = std.mem.count(bool, &g.lv.lit, &.{true});
+    std.debug.print("cells in the archer's sight: {d} at noon, {d} at dusk, {d} at midnight, {d} underground\n", .{ seen[0], seen[1], seen[2], seen[3] });
+    try std.testing.expect(seen[0] > seen[1] and seen[1] > seen[2]);
+    try std.testing.expectEqual(seen[3], seen[2]);
 }
 
 test "a step into a wall turns no one and spends no turn" {

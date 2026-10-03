@@ -1,0 +1,9 @@
+roguelike-world 1
+start 0 48 32
+node procgen terrain
+height 35 70
+rain 20 32
+heat 60 90
+rivers 1
+name DF Savanna
+at 0 0

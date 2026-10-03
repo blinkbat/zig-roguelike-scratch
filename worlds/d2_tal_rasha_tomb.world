@@ -1,0 +1,7 @@
+roguelike-world 1
+start 0 48 32
+node procgen maze
+style tombs
+rooms 16
+name D2 Tal Rasha's Tomb
+at 0 0

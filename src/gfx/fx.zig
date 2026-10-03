@@ -5,8 +5,6 @@ const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("look.zig");
 
-// EVERY BLOW'S AFTERMATH, after zig-soulslike's and fainter. Nothing in the simulation reads any of it.
-
 /// `ichor` is Brogue's purple blood.
 pub const Matter = enum { blood, ooze, wood, ichor };
 

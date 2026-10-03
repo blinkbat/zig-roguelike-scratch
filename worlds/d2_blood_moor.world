@@ -1,0 +1,28 @@
+roguelike-world 1
+start 0 4 32
+node procgen open
+ground grass
+edge fence
+feature border
+tile fence
+width 2
+rough 1
+feature river
+width 3
+course down
+fords 1
+feature setpiece
+piece circle
+count 2
+feature buildings
+count 2
+size 5 8
+feature lake
+count 1
+size 4
+feature scatter
+tile shrub
+on grass
+amount 8
+name D2 Blood Moor
+at 0 0

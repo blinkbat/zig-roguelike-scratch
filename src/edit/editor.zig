@@ -49,7 +49,6 @@ const MODAL_ROWS: usize = 12;
 const MODAL_BTN_W: i32 = 150;
 const LABEL_W: i32 = 96;
 const STEP_W: i32 = 24;
-/// A step taken with shift held is this many.
 const SHIFT_STEP: i32 = 5;
 const WEIGHT_W: i32 = 30;
 const MEMBER_W: i32 = 24;
@@ -60,11 +59,8 @@ const MAKEUP_TOOLS_X: i32 = INNER_W - @as(i32, MAKEUP_TOOLS.len) * (STEP_W + GAP
 const TORCH_STEP: i32 = 10;
 const TOOL_COLS: usize = 2;
 const TEXT_DY: i32 = @divTrunc(ROW_H - TEXT, 2);
-/// A node's title, down from the top of its row or box.
 const TITLE_DY: i32 = 3;
-/// Between one node's row and the next.
 const NODE_GAP: i32 = 2;
-/// A node's detail line, down from its title.
 const DETAIL_DY: i32 = TEXT + 1;
 
 comptime {
@@ -95,7 +91,6 @@ const Tool = enum {
     link,
     start,
 
-    /// The foe of its name.
     fn foe(t: Tool) ?actor.Kind {
         return std.meta.stringToEnum(actor.Kind, @tagName(t));
     }
@@ -202,7 +197,6 @@ comptime {
 }
 const LINK_CANCELLED = "Link cancelled";
 
-/// What the editor asks of whatever runs it.
 pub const Action = union(enum) { none, play: atlas.Start, leave, quit };
 
 const View = enum {
@@ -291,7 +285,6 @@ pub const Editor = struct {
     /// The node as it will be played, less its foes: drawn, never read by an edit.
     lv: grid.Level = undefined,
     stale: bool = true,
-    /// The start marker on the map, worked out as `lv` is.
     start_at: ?P = null,
     thumb_lv: grid.Level = undefined,
     thumbs: [atlas.MAX_NODES]?rl.Texture2D = @splat(null),
@@ -397,6 +390,12 @@ pub const Editor = struct {
         return ZOOMS[ed.zoom];
     }
 
+    /// Where and how big a glyph in the cell `r` is drawn.
+    fn inkOf(ed: *const Editor, r: rl.Rectangle) struct { x: i32, y: i32, size: i32 } {
+        const half = ed.px() * 0.5;
+        return .{ .x = @intFromFloat(r.x + half), .y = @intFromFloat(r.y + half), .size = @intFromFloat(ed.px() * GLYPH_OF_CELL) };
+    }
+
     fn brushSize(ed: *const Editor) i32 {
         return BRUSHES[ed.brush];
     }
@@ -478,7 +477,6 @@ pub const Editor = struct {
         ed.say("Redone ({d} more)", .{ed.hist_len - ed.hist_at});
     }
 
-    /// Lets go of whatever press is under way: a stroke, a rectangle, a box being dragged.
     fn drop(ed: *Editor) void {
         ed.stroke = .none;
         ed.stroke_at = null;
@@ -499,7 +497,6 @@ pub const Editor = struct {
         ed.view = v;
     }
 
-    /// Onto a node there still is, after the world lost some.
     fn clampSelection(ed: *Editor) void {
         ed.node = @min(ed.node, ed.world.node_n - 1);
         ed.scroll = @min(ed.scroll, ed.world.node_n - 1);
@@ -559,7 +556,6 @@ pub const Editor = struct {
         return &ed.world.node[ed.node];
     }
 
-    /// The open node's generator, when it is a procgen node.
     fn rolled(ed: *Editor) ?*atlas.Procgen {
         return switch (ed.plan().*) {
             .procgen => |*pg| pg,
@@ -567,7 +563,6 @@ pub const Editor = struct {
         };
     }
 
-    /// Opened on the map.
     fn goTo(ed: *Editor, n: usize) void {
         ed.select(n);
         ed.setView(.map);
@@ -825,7 +820,6 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     }
 }
 
-/// Esc backs out one step at a time, the last out of the editor.
 fn escape(ed: *Editor) void {
     if (ed.rect != null) {
         ed.drop();
@@ -987,14 +981,11 @@ fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
     const i = grid.Level.idx(p);
     if (b.tile[i] == t or ed.doorAt(p) != null) return;
     b.tile[i] = t;
-    switch (t) {
-        .wall => {
-            b.barrel[i] = false;
-            if (b.foeAt(p)) |f| b.dropFoe(f);
-            if (b.torchAt(p.add(mathx.Dir.n.delta()))) |k| b.dropTorch(k);
-        },
-        .floor => if (b.torchAt(p)) |k| b.dropTorch(k),
-    }
+    if (t.solid()) {
+        b.barrel[i] = false;
+        if (b.foeAt(p)) |f| b.dropFoe(f);
+        if (b.torchAt(p.add(mathx.Dir.n.delta()))) |k| b.dropTorch(k);
+    } else if (b.torchAt(p)) |k| b.dropTorch(k);
     ed.changed();
 }
 
@@ -1067,8 +1058,8 @@ fn place(ed: *Editor, p: P) void {
 fn remove(ed: *Editor, p: P) void {
     const i = grid.Level.idx(p);
     switch (ed.tool) {
-        .floor => paintTile(ed, p, .wall),
-        .wall => paintTile(ed, p, .floor),
+        .floor => if (ed.plan().bespoke.tile[i] == .floor) paintTile(ed, p, .wall),
+        .wall => if (ed.plan().bespoke.tile[i] == .wall) paintTile(ed, p, .floor),
         .barrel => {
             const b = &ed.plan().bespoke;
             if (!b.barrel[i]) return;
@@ -1142,7 +1133,6 @@ fn buttonOn(ed: *Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on
     return h.hit;
 }
 
-/// Under a row that is picked or hovered.
 fn plate(r: rl.Rectangle, on: bool, hot_: bool) void {
     if (on or hot_) rl.drawRectangleRec(r, ROW_ON);
     if (on) rl.drawRectangleLinesEx(r, 1, ON);
@@ -1282,7 +1272,6 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
 /// A procgen node's floor, then its foes, a row a setting, scrolled by the wheel; every click is one undo.
 fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void {
     const was = pg.*;
-    const fl = &pg.floor;
     const fo = &pg.foes;
     const shown = @max(0, g.screen.y - top);
     ed.clip = .{ .x = 0, .y = @floatFromInt(top), .width = @floatFromInt(PANEL_W), .height = @floatFromInt(shown) };
@@ -1293,8 +1282,25 @@ fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void 
     }
     ed.gen_top = std.math.clamp(ed.gen_top, 0, ed.gen_most);
     var y = top - ed.gen_top;
-    knobs(ed, g, &y, "Floor", fl, &FLOOR_ROWS);
+    section(g, &y, "Base");
+    choiceRow(ed, g, &y, atlas.Floor, &pg.floor, ALGO_CHOICE);
+    switch (pg.floor) {
+        inline else => |*fl, t| knobRows(ed, g, &y, fl, comptime rowsOf(t)),
+    }
     y += GAP * 2;
+    section(g, &y, "Features");
+    var drop_feature: ?usize = null;
+    for (pg.feature[0..pg.feature_n], 0..) |*ft, i| {
+        if (button(ed, g, row(PAD + LABEL_W - STEP_W - GAP, y, STEP_W), "x", false, true, "Take this feature away")) drop_feature = i;
+        choiceRow(ed, g, &y, atlas.Feature, ft, FEATURE_CHOICE);
+        switch (ft.*) {
+            inline else => |*fp, k| knobRows(ed, g, &y, fp, comptime featureRowsOf(k)),
+        }
+        y += GAP * 2;
+    }
+    if (drop_feature) |i| pg.dropFeature(i);
+    if (button(ed, g, cellOfRow(y, 0, 1), "+ Feature", false, pg.feature_n < atlas.MAX_FEATURES, ADD_FEATURE_TIP)) _ = pg.addFeature(atlas.FIRST_FEATURE);
+    y += ROW_H + GAP * 3;
     knobs(ed, g, &y, "Foes", fo, &FOE_ROWS);
     y += GAP * 2;
     section(g, &y, "Makeups");
@@ -1306,7 +1312,8 @@ fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void 
     if (drop) |i| _ = fo.dropMakeup(i);
     if (button(ed, g, cellOfRow(y, 0, 1), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
     ed.gen_most = @max(0, y + ROW_H + PAD + ed.gen_top - top - shown);
-    fl.* = fl.fit();
+    pg.floor = pg.floor.fit();
+    for (pg.feature[0..pg.feature_n]) |*ft| ft.* = ft.fit();
     fo.* = fo.fit();
     if (!std.meta.eql(was, pg.*)) ed.changed();
 }
@@ -1319,10 +1326,23 @@ fn section(g: *game.Game, y: *i32, title: [:0]const u8) void {
 /// A titled run of knob rows, one a field of `owner`.
 fn knobs(ed: *Editor, g: *game.Game, y: *i32, title: [:0]const u8, owner: anytype, comptime rows: []const Knob) void {
     section(g, y, title);
+    knobRows(ed, g, y, owner, rows);
+}
+
+fn knobRows(ed: *Editor, g: *game.Game, y: *i32, owner: anytype, comptime rows: []const Knob) void {
     inline for (rows) |k| {
         knobRow(ed, g, y.*, owner, k);
         y.* += ROW_H + GAP;
     }
+}
+
+/// Which arm of the union `v` is, stepped round them; a new arm starts afresh.
+fn choiceRow(ed: *Editor, g: *game.Game, y: *i32, comptime U: type, v: *U, comptime c: Choice) void {
+    rowLabel(g, y.*, c.label);
+    var tag = std.meta.activeTag(v.*);
+    stepChoice(ed, g, y.*, std.meta.Tag(U), &tag, c.tip);
+    if (tag != std.meta.activeTag(v.*)) v.* = U.of(tag);
+    y.* += ROW_H + GAP;
 }
 
 /// Its weight, its members from the lead, then its tools: true when it is to be deleted.
@@ -1362,7 +1382,6 @@ fn drawMakeup(ed: *Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bo
     return dropped;
 }
 
-/// Right of a makeup's members.
 const MakeupTool = enum {
     grow,
     shrink,
@@ -1395,7 +1414,7 @@ fn num(buf: []u8, comptime fmt: []const u8, v: anytype) [:0]const u8 {
     return std.fmt.bufPrintZ(buf, fmt, .{v}) catch "";
 }
 
-/// One row of the generator: a field of the floor's `gen.Params` or the foes' `pack.Spec`, a tip for each number in it.
+/// One row of the generator: a field of the base's, a feature's or the foes' params, a tip for each number in it.
 const Knob = struct { field: []const u8, label: [:0]const u8, tips: []const [:0]const u8, unit: i32 = 1, fmt: []const u8 = "{d}" };
 
 const FLOOR_ROWS = [_]Knob{
@@ -1405,6 +1424,213 @@ const FLOOR_ROWS = [_]Knob{
     .{ .field = "room_h", .label = "Room H", .tips = &.{ "The shortest a room is rolled", "The tallest a room is rolled" } },
     .{ .field = "torches", .label = "Torches", .tips = &.{"Of the rooms, how many hang a torch"}, .unit = TORCH_STEP, .fmt = "{d}%" },
     .{ .field = "barrels", .label = "Barrels", .tips = &.{"The most barrels one room stacks"} },
+};
+
+const WILDS_ROWS = [_]Knob{
+    .{ .field = "thicket", .label = "Thicket", .tips = &.{"Of the ground, how much is sown with shrub before it is smoothed"}, .fmt = "{d}%" },
+    .{ .field = "smooth", .label = "Smooth", .tips = &.{"Smoothing passes: more, rounder thickets and wider glades"} },
+    .{ .field = "strays", .label = "Strays", .tips = &.{"Lone shrubs, a thousandth of the open grass each"} },
+    .{ .field = "litter", .label = "Litter", .tips = &.{ "Lone tiny shrubs, a thousandth of the open grass each", "Lone boulders, a thousandth of the open grass each" } },
+};
+
+const OPEN_ROWS = [_]Knob{
+    .{ .field = "ground", .label = "Ground", .tips = &.{"The open ground, edge to edge"} },
+    .{ .field = "edge", .label = "Edge", .tips = &.{"What rings the map and seals it"} },
+    .{ .field = "litter", .label = "Litter", .tips = &.{ "Lone tiny shrubs, a thousandth of the open grass each", "Lone boulders, a thousandth of the open grass each" } },
+};
+
+const CAVES_ROWS = [_]Knob{
+    .{ .field = "fill", .label = "Fill", .tips = &.{"Of the ground, how much is sown with rock before it is smoothed"}, .fmt = "{d}%" },
+    .{ .field = "smooth", .label = "Smooth", .tips = &.{"Smoothing passes: more, rounder caves"} },
+    .{ .field = "spires", .label = "Spires", .tips = &.{"Lone rock spires, a thousandth of the open floor each"} },
+};
+
+const CAVERN_ROWS = [_]Knob{
+    .{ .field = "chambers", .label = "Chambers", .tips = &.{"Round chambers it digs, at most"} },
+    .{ .field = "radius", .label = "Radius", .tips = &.{ "The smallest chamber's radius", "The largest chamber's radius" } },
+    .{ .field = "fray", .label = "Fray", .tips = &.{"How much noise frays a chamber's edge"}, .fmt = "{d}%" },
+};
+
+const STRATA_ROWS = [_]Knob{
+    .{ .field = "sectors", .label = "Sectors", .tips = &.{"Sectors across and down the map is cut into"} },
+    .{ .field = "seeds", .label = "Seeds", .tips = &.{"Deep points dropped in each sector, at most"} },
+    .{ .field = "blur", .label = "Blur", .tips = &.{"Blur passes: more, rounder and wider pockets"} },
+};
+
+const LABYRINTH_ROWS = [_]Knob{
+    .{ .field = "style", .label = "Style", .tips = &.{"Built walls, rock, or a hedge maze"} },
+    .{ .field = "chamber", .label = "Chamber", .tips = &.{"Half-width of an open chamber at the heart; 0 for none"} },
+    .{ .field = "braid", .label = "Braid", .tips = &.{"Of the dead ends, how many are knocked through into loops"}, .fmt = "{d}%" },
+};
+
+const HALL_ROWS = [_]Knob{
+    .{ .field = "style", .label = "Style", .tips = &.{"Bare, pillared, grave alcoves, or a grove of plants"} },
+    .{ .field = "margin", .label = "Margin", .tips = &.{"Rock between the hall and the map's edge"} },
+};
+
+const MAZE_ROWS = [_]Knob{
+    .{ .field = "style", .label = "Style", .tips = &.{"Caves, tombs, sewers, lava or ice"} },
+    .{ .field = "rooms", .label = "Rooms", .tips = &.{"Rooms it sets, at most"} },
+    .{ .field = "size", .label = "Size", .tips = &.{"Cells on a room's side"} },
+    .{ .field = "merge", .label = "Merge", .tips = &.{"A thousandth: how often a room is joined to each one already beside it"} },
+};
+
+const TOPOLOGY_ROWS = [_]Knob{
+    .{ .field = "layout", .label = "Layout", .tips = &.{"The shape of its graph of spots"} },
+    .{ .field = "filler", .label = "Filler", .tips = &.{"What fills between the paths"} },
+    .{ .field = "ground", .label = "Ground", .tips = &.{"The paths' and clearings' ground"} },
+    .{ .field = "clearing", .label = "Clearing", .tips = &.{"A spot's clearing, half-width"} },
+    .{ .field = "path", .label = "Path", .tips = &.{"A path's width"} },
+    .{ .field = "sides", .label = "Sides", .tips = &.{"Side paths off to dead-end clearings"} },
+    .{ .field = "litter", .label = "Litter", .tips = &.{ "Lone tiny shrubs, a thousandth of the open grass each", "Lone boulders, a thousandth of the open grass each" } },
+};
+
+const TERRAIN_ROWS = [_]Knob{
+    .{ .field = "height", .label = "Height", .tips = &.{ "Lowest elevation, 0 to 100; under 20 is sea", "Highest elevation; 90 and over is mountain" } },
+    .{ .field = "rain", .label = "Rain", .tips = &.{ "Driest, 0 to 100", "Wettest" } },
+    .{ .field = "drain", .label = "Drainage", .tips = &.{ "Least drained, 0 to 100", "Best drained" } },
+    .{ .field = "heat", .label = "Heat", .tips = &.{ "Coldest, 0 to 100; 10 and under is tundra or glacier", "Hottest" } },
+    .{ .field = "scale", .label = "Scale", .tips = &.{"Cells across a field's features"} },
+    .{ .field = "rivers", .label = "Rivers", .tips = &.{"Rivers running downhill from the heights"} },
+    .{ .field = "litter", .label = "Litter", .tips = &.{ "Lone tiny shrubs, a thousandth of the open grass each", "Lone boulders, a thousandth of the open grass each" } },
+};
+
+const KEEP_ROWS = [_]Knob{
+    .{ .field = "size", .label = "Size", .tips = &.{ "The curtain wall's width", "The curtain wall's height" } },
+    .{ .field = "towers", .label = "Towers", .tips = &.{"A corner tower's half-width; 0 for none"} },
+    .{ .field = "moat", .label = "Moat", .tips = &.{"The moat's width; 0 for none"} },
+    .{ .field = "yard", .label = "Yard", .tips = &.{"The courtyard's ground"} },
+    .{ .field = "outside", .label = "Outside", .tips = &.{"The ground outside the walls"} },
+    .{ .field = "torches", .label = "Torches", .tips = &.{"Of the keep's top walls, how many hang a torch"}, .fmt = "{d}%" },
+    .{ .field = "barrels", .label = "Barrels", .tips = &.{"Barrels in the keep, at most"} },
+};
+
+const TOWN_ROWS = [_]Knob{
+    .{ .field = "wall", .label = "Wall", .tips = &.{"None, a stone wall or a fence round it"} },
+    .{ .field = "block", .label = "Block", .tips = &.{"A block's side between streets"} },
+    .{ .field = "street", .label = "Street", .tips = &.{"A street's width"} },
+    .{ .field = "houses", .label = "Houses", .tips = &.{"Of each block's lots, how many are built on"}, .fmt = "{d}%" },
+    .{ .field = "canals", .label = "Canals", .tips = &.{"Of the streets, how many are canals"}, .fmt = "{d}%" },
+    .{ .field = "ground", .label = "Streets", .tips = &.{"The streets' ground"} },
+    .{ .field = "outside", .label = "Outside", .tips = &.{"The ground round the town"} },
+};
+
+const DUNES_ROWS = [_]Knob{
+    .{ .field = "ground", .label = "Ground", .tips = &.{"The open ground"} },
+    .{ .field = "ridges", .label = "Ridges", .tips = &.{"How wide a crest of the noise stands as ridge"} },
+    .{ .field = "mesas", .label = "Mesas", .tips = &.{"Of the highest ground, how much stands as mesa"} },
+    .{ .field = "scale", .label = "Scale", .tips = &.{"Cells across a dune"} },
+};
+
+const SITE_ROWS = [_]Knob{
+    .{ .field = "template", .label = "Template", .tips = &.{"Huts, compound, pillars, or any one per section"} },
+    .{ .field = "decay", .label = "Decay", .tips = &.{"Of the walls, how many have fallen to rubble"}, .fmt = "{d}%" },
+    .{ .field = "ground", .label = "Ground", .tips = &.{"The ground between and round the buildings"} },
+};
+
+fn rowsOf(comptime a: atlas.Algo) []const Knob {
+    return switch (a) {
+        .rooms => &FLOOR_ROWS,
+        .open => &OPEN_ROWS,
+        .wilds => &WILDS_ROWS,
+        .caves => &CAVES_ROWS,
+        .cavern => &CAVERN_ROWS,
+        .strata => &STRATA_ROWS,
+        .labyrinth => &LABYRINTH_ROWS,
+        .hall => &HALL_ROWS,
+        .maze => &MAZE_ROWS,
+        .topology => &TOPOLOGY_ROWS,
+        .terrain => &TERRAIN_ROWS,
+        .keep => &KEEP_ROWS,
+        .town => &TOWN_ROWS,
+        .dunes => &DUNES_ROWS,
+        .site => &SITE_ROWS,
+    };
+}
+
+const RIVER_ROWS = [_]Knob{
+    .{ .field = "fill", .label = "Fill", .tips = &.{"What it runs with: water, lava, a chasm; rock makes a cliff"} },
+    .{ .field = "width", .label = "Width", .tips = &.{"Cells across"} },
+    .{ .field = "bank", .label = "Bank", .tips = &.{"What lines it either side"} },
+    .{ .field = "course", .label = "Course", .tips = &.{"Across, down, or either"} },
+    .{ .field = "count", .label = "Count", .tips = &.{"How many"} },
+    .{ .field = "fords", .label = "Fords", .tips = &.{"Crossings laid over it: shallows, a bridge, or a gap"} },
+};
+
+const LAKE_ROWS = [_]Knob{
+    .{ .field = "fill", .label = "Fill", .tips = &.{"Water, lava, rock for a mesa, a chasm for a pit"} },
+    .{ .field = "count", .label = "Count", .tips = &.{"How many, at most"} },
+    .{ .field = "size", .label = "Size", .tips = &.{"The biggest one's half-width"} },
+    .{ .field = "ring", .label = "Ring", .tips = &.{"What rings each"} },
+    .{ .field = "island", .label = "Island", .tips = &.{"Of them, how many keep an island at their heart"}, .fmt = "{d}%" },
+};
+
+const ROAD_ROWS = [_]Knob{
+    .{ .field = "paving", .label = "Paving", .tips = &.{"What it is laid with"} },
+    .{ .field = "width", .label = "Width", .tips = &.{"Cells across"} },
+    .{ .field = "course", .label = "Course", .tips = &.{"Across, down, or either"} },
+    .{ .field = "count", .label = "Count", .tips = &.{"How many"} },
+    .{ .field = "wander", .label = "Wander", .tips = &.{"How much it bends, of a river's bending"}, .fmt = "{d}%" },
+};
+
+const SCATTER_ROWS = [_]Knob{
+    .{ .field = "tile", .label = "Tile", .tips = &.{"What it lays"} },
+    .{ .field = "on", .label = "On", .tips = &.{"What it lays it on"} },
+    .{ .field = "amount", .label = "Amount", .tips = &.{"A thousandth of those cells; 1000 lays it on all of them"} },
+    .{ .field = "clump", .label = "Clump", .tips = &.{"Clumps this many cells across; 0 lays it a cell at a time"} },
+};
+
+const BORDER_ROWS = [_]Knob{
+    .{ .field = "tile", .label = "Tile", .tips = &.{"What rings the map"} },
+    .{ .field = "width", .label = "Width", .tips = &.{"Cells deep, at least"} },
+    .{ .field = "rough", .label = "Rough", .tips = &.{"Cells more it frays inward, at most"} },
+};
+
+const BUILDINGS_ROWS = [_]Knob{
+    .{ .field = "count", .label = "Count", .tips = &.{"How many, at most"} },
+    .{ .field = "size", .label = "Size", .tips = &.{ "The shortest side, walls and all", "The longest side" } },
+    .{ .field = "decay", .label = "Decay", .tips = &.{"Of the walls, how many have fallen to rubble"}, .fmt = "{d}%" },
+    .{ .field = "walls", .label = "Walls", .tips = &.{"What they are walled with"} },
+    .{ .field = "floor", .label = "Floor", .tips = &.{"What they are floored with"} },
+    .{ .field = "barrels", .label = "Barrels", .tips = &.{"The most barrels one stacks"} },
+    .{ .field = "torches", .label = "Torches", .tips = &.{"Of them, how many hang a torch"}, .fmt = "{d}%" },
+};
+
+const FARMS_ROWS = [_]Knob{
+    .{ .field = "count", .label = "Count", .tips = &.{"Fields, at most"} },
+    .{ .field = "size", .label = "Size", .tips = &.{ "The shortest side, fence and all", "The longest side" } },
+    .{ .field = "crop", .label = "Crop", .tips = &.{"What grows in the rows"} },
+    .{ .field = "furrow", .label = "Furrow", .tips = &.{"What lies between the rows"} },
+    .{ .field = "fence", .label = "Fence", .tips = &.{"What fences each field"} },
+};
+
+const SETPIECE_ROWS = [_]Knob{
+    .{ .field = "piece", .label = "Piece", .tips = &.{"The hand-drawn piece it stamps"} },
+    .{ .field = "count", .label = "Count", .tips = &.{"How many, at most"} },
+    .{ .field = "apart", .label = "Apart", .tips = &.{"Cells of margin round each"} },
+};
+
+fn featureRowsOf(comptime k: atlas.Kind) []const Knob {
+    return switch (k) {
+        .river => &RIVER_ROWS,
+        .lake => &LAKE_ROWS,
+        .road => &ROAD_ROWS,
+        .scatter => &SCATTER_ROWS,
+        .border => &BORDER_ROWS,
+        .buildings => &BUILDINGS_ROWS,
+        .farms => &FARMS_ROWS,
+        .setpiece => &SETPIECE_ROWS,
+    };
+}
+
+const Choice = struct { label: [:0]const u8, tip: [:0]const u8 };
+const ALGO_CHOICE = Choice{ .label = "Algorithm", .tip = "The base its floor is rolled from; changing it starts that base afresh" };
+const FEATURE_CHOICE = Choice{ .label = "Feature", .tip = "What this feature lays over the base; changing it starts that feature afresh" };
+const ADD_FEATURE_TIP = blk: {
+    const kinds = std.enums.values(atlas.Kind);
+    var s: [:0]const u8 = "Lay another feature over the base:";
+    for (kinds, 0..) |k, i| s = s ++ (if (i == 0) " " else if (i + 1 == kinds.len) " or " else ", ") ++ @tagName(k);
+    break :blk s;
 };
 
 const FOE_ROWS = [_]Knob{
@@ -1419,12 +1645,15 @@ const ADD_MAKEUP_TIP = "Another pack it may roll, a lone " ++ actor.row(pack.FIR
 const SHIFT_TIP = std.fmt.comptimePrint(" ({s} steps {d})", .{ Desk.SHIFT_CAPTION, SHIFT_STEP });
 
 comptime {
-    covers(@FieldType(atlas.Procgen, "floor"), &FLOOR_ROWS, atlas.FLOOR_KNOBS);
+    @setEvalBranchQuota(1_000_000);
+    for (std.enums.values(atlas.Algo)) |a| covers(@FieldType(atlas.Floor, @tagName(a)), rowsOf(a), atlas.floorKnobs(a));
+    for (std.enums.values(atlas.Kind)) |k| covers(@FieldType(atlas.Feature, @tagName(k)), featureRowsOf(k), atlas.featureKnobs(k));
     covers(@FieldType(atlas.Procgen, "foes"), &FOE_ROWS, atlas.FOE_KNOBS);
 }
 
 /// A row for each of `T`'s knobs and no other, and a tip for each number in it.
 fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []const []const u8) void {
+    @setEvalBranchQuota(100_000);
     if (rows.len != knobs_.len) @compileError("a generator row is for no knob");
     for (knobs_) |name| {
         const r = for (rows) |r| {
@@ -1436,14 +1665,13 @@ fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []cons
 
 fn numbers(comptime T: type) usize {
     return switch (@typeInfo(T)) {
-        .int => 1,
+        .int, .@"enum" => 1,
         .array => |a| a.len,
         .@"struct" => |s| s.fields.len,
         else => @compileError(@typeName(T) ++ " is no knob"),
     };
 }
 
-/// Its label, then `- value +` for each number in the field.
 fn knobRow(ed: *Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob) void {
     rowLabel(g, y, k.label);
     const v = &@field(owner.*, k.field);
@@ -1451,6 +1679,7 @@ fn knobRow(ed: *Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob)
     const n = comptime numbers(T);
     switch (@typeInfo(T)) {
         .int => stepNumber(ed, g, y, 0, n, T, v, k),
+        .@"enum" => stepChoice(ed, g, y, T, v, k.tips[0]),
         .array => |a| inline for (0..n) |i| stepNumber(ed, g, y, i, n, a.child, &v[i], k),
         .@"struct" => |s| inline for (s.fields, 0..) |f, i| stepNumber(ed, g, y, i, n, f.type, &@field(v.*, f.name), k),
         else => unreachable,
@@ -1462,6 +1691,20 @@ fn stepNumber(ed: *Editor, g: *game.Game, y: i32, comptime i: usize, n: usize, c
     const tip = k.tips[i] ++ SHIFT_TIP;
     const r = slotOf(PAD + LABEL_W, INNER_W - LABEL_W, y, i, n);
     bump(T, v, k.unit * stepper(ed, g, r, num(&buf, k.fmt, v.*), .{ .{ .tip = tip }, .{ .tip = tip } }));
+}
+
+/// `- name +`, round the choices.
+fn stepChoice(ed: *Editor, g: *game.Game, y: i32, comptime T: type, v: *T, tip: [:0]const u8) void {
+    var buf: [32]u8 = undefined;
+    const r = slotOf(PAD + LABEL_W, INNER_W - LABEL_W, y, 0, 1);
+    const by = stepper(ed, g, r, num(&buf, "{s}", @tagName(v.*)), .{ .{ .tip = tip }, .{ .tip = tip } });
+    v.* = cycle(T, v.*, by);
+}
+
+fn cycle(comptime T: type, v: T, by: i32) T {
+    const all = comptime std.enums.values(T);
+    const at = std.mem.indexOfScalar(T, all, v).?;
+    return all[mathx.wrap(at, std.math.sign(by), all.len)];
 }
 
 const Step = struct { tip: [:0]const u8, live: bool = true };
@@ -1522,11 +1765,10 @@ fn hover(ed: *Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
     return std.fmt.bufPrintZ(buf, "{d},{d}  door {d} leads to {s} (node {d}) door {d}; {s} goes through", .{ p.x, p.y, k, ed.nodeName(to.node, &a), to.node, to.door, Desk.GO_CAPTION }) catch "";
 }
 
-/// What it is generated by and how its doors stand.
 fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {
     const kind = switch (nd.plan) {
         .bespoke => "bespoke",
-        .procgen => |pg| @tagName(pg.algo),
+        .procgen => |pg| @tagName(pg.floor),
     };
     const open = nd.unlinked();
     if (open == 0) return std.fmt.bufPrintZ(buf, "{s}, {d} doors", .{ kind, nd.door_n }) catch "";
@@ -1554,10 +1796,17 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         const r = ed.cellRect(c, p);
         if (unrolled) {
             rl.drawRectangleRec(r, look.UNROLLED);
-        } else if (g.sprites.tileAt(&ed.lv, p)) |t| {
-            sprite(t, r);
         } else {
-            rl.drawRectangleRec(r, if (ed.lv.at(p) == .wall) look.ROCK else look.FLOOR_BG);
+            if (ed.lv.at(p).ground()) |u| {
+                if (g.sprites.tileOf(u, null)) |t| sprite(t, r) else if (look.tileBg(u)) |bg| rl.drawRectangleRec(r, bg);
+            }
+            if (g.sprites.tileAt(&ed.lv, p)) |t| {
+                sprite(t, r);
+            } else {
+                const t = ed.lv.at(p);
+                if (look.tileBg(t) orelse if (t.ground() == null) look.BARE_WALL else null) |bg| rl.drawRectangleRec(r, bg);
+                if (t != .wall) tileGlyph(ed, g, t, r);
+            }
         }
         if (ed.lv.hasBarrel(p)) {
             if (g.sprites.barrel) |t| sprite(t, r) else glyph(ed, g, look.BARREL.ch, r, look.BARREL.fg);
@@ -1731,7 +1980,6 @@ fn modalButton(bx: i32, y: i32, k: i32) rl.Rectangle {
     return row(bx - (MODAL_BTN_W + GAP) * k, y, MODAL_BTN_W);
 }
 
-/// What is being typed, as it is typed.
 fn fieldRow(ed: *Editor, g: *game.Game, r: rl.Rectangle) void {
     var buf: [LINE]u8 = undefined;
     rl.drawRectangleRec(r, ROW_ON);
@@ -1751,12 +1999,16 @@ fn sprite(t: rl.Texture2D, r: rl.Rectangle) void {
 }
 
 fn glyph(ed: *const Editor, g: *game.Game, ch: u8, r: rl.Rectangle, col: rl.Color) void {
-    const half = ed.px() * 0.5;
-    g.face.glyph(ch, @intFromFloat(r.x + half), @intFromFloat(r.y + half), @intFromFloat(ed.px() * GLYPH_OF_CELL), col);
+    const m = ed.inkOf(r);
+    g.face.glyph(ch, m.x, m.y, m.size, col);
 }
 
-/// DEV ONLY: a bespoke room linked to a procgen node, the link tool mid-pick; then the same world as a graph; then
-/// the procgen node's generator, given a makeup of its own.
+fn tileGlyph(ed: *const Editor, g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
+    const m = ed.inkOf(r);
+    g.face.symbol(look.tileSym(t), look.tile(t).ch, m.x, m.y, m.size, look.tile(t).fg);
+}
+
+/// DEV ONLY: the posed world's map mid link-pick, its graph, then its procgen node's generator.
 pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8) void {
     const ed = Editor.create(std.heap.c_allocator) catch return;
     defer ed.destroy();

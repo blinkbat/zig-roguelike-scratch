@@ -1,0 +1,5 @@
+roguelike-world 1
+start 0 48 32
+node procgen strata
+name Qud Strata
+at 0 0

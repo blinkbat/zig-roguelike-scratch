@@ -1,0 +1,8 @@
+roguelike-world 1
+start 0 48 32
+node procgen maze
+style tombs
+rooms 9
+size 16
+name D2 Worldstone Keep
+at 0 0

@@ -6,7 +6,6 @@ const actor = @import("actor.zig");
 
 const P = mathx.P;
 
-/// `Spec`'s defaults.
 pub const PER_FLOOR: usize = 10;
 pub const FEW: usize = 3;
 /// The first kind leads.
@@ -137,7 +136,6 @@ pub const Spec = struct {
         return true;
     }
 
-    /// The rest move up.
     pub fn dropMakeup(self: *Spec, i: usize) bool {
         if (!self.canDrop()) return false;
         std.mem.copyForwards(Makeup, self.makeup[i .. self.makeup_n - 1], self.makeup[i + 1 .. self.makeup_n]);

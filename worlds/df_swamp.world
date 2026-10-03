@@ -1,0 +1,10 @@
+roguelike-world 1
+start 0 48 32
+node procgen terrain
+height 30 60
+rain 66 100
+drain 0 32
+heat 50 90
+rivers 1
+name DF Swamp
+at 0 0

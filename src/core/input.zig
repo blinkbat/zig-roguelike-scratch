@@ -2,8 +2,6 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
-// THE ONLY FILE THAT TOUCHES A DEVICE. The pad is primary and the only one the UI names; the keyboard mirrors it.
-
 const PAD: i32 = 0;
 const ENTER_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
 const LEAN: rl.GamepadButton = .left_trigger_2;
@@ -404,7 +402,6 @@ pub const Desk = struct {
         return self.typed.text();
     }
 
-    /// Either button pressed this frame.
     pub fn clicked(self: *const Desk) bool {
         return self.paint_hit or self.erase_hit;
     }
@@ -472,7 +469,6 @@ fn rubbed() bool {
     return rl.isKeyPressed(.backspace) or rl.isKeyPressedRepeat(.backspace);
 }
 
-/// What the editor's crib calls a key.
 fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
     return switch (k) {
         .f2 => "F2",
@@ -526,7 +522,6 @@ fn heldWalk(walks: []const Walk, typing: bool) mathx.P {
     return p;
 }
 
-/// What the editor's crib calls a mouse button.
 fn mouseName(comptime b: rl.MouseButton) [:0]const u8 {
     return switch (b) {
         .left => "LMB",

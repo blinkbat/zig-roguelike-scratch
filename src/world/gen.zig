@@ -13,8 +13,6 @@ pub const ROOM_MIN: i32 = 3;
 pub const ROOM_W_MAX: i32 = 24;
 pub const ROOM_H_MAX: i32 = 16;
 pub const BARRELS_MAX: u32 = 6;
-/// `Params.torches` is out of this.
-pub const PERCENT: u8 = 100;
 pub const SIZE_MIN = P{ .x = ROOM_MIN + 2 * MARGIN, .y = ROOM_MIN + 2 * MARGIN };
 const ROOMS_PER_LOOP: usize = 4;
 const CONNECT_PASSES: usize = 64;
@@ -42,23 +40,17 @@ pub const Params = struct {
         q.rooms = std.math.clamp(p.rooms, 1, MAX_ROOMS);
         q.room_w = span(p.room_w, @min(ROOM_W_MAX, q.size.x - 2 * MARGIN));
         q.room_h = span(p.room_h, @min(ROOM_H_MAX, q.size.y - 2 * MARGIN));
-        q.torches = @min(p.torches, PERCENT);
+        q.torches = @min(p.torches, mathx.PERCENT);
         q.barrels = @min(p.barrels, BARRELS_MAX);
         return q;
     }
 
     fn span(r: [2]i32, most: i32) [2]i32 {
-        const hi = std.math.clamp(r[1], ROOM_MIN, most);
-        return .{ std.math.clamp(r[0], ROOM_MIN, hi), hi };
+        return mathx.span(i32, r, ROOM_MIN, most);
     }
 
     fn corner(p: Params) P {
         return .{ .x = @divTrunc(grid.W - p.size.x, 2), .y = @divTrunc(grid.H - p.size.y, 2) };
-    }
-
-    /// As `fit` leaves it.
-    pub fn valid(p: *const Params) bool {
-        return std.meta.eql(p.fit(), p.*);
     }
 };
 
@@ -152,7 +144,7 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
     connect(lv, &rng);
     shapeWalls(lv);
     for (f.rooms[0..f.room_n]) |r| outlineRoom(lv, r);
-    const torch_chance = @as(f32, @floatFromInt(pm.torches)) / PERCENT;
+    const torch_chance = @as(f32, @floatFromInt(pm.torches)) / mathx.PERCENT;
     for (f.rooms[0..f.room_n]) |r| {
         if (rng.chance(torch_chance)) hangTorch(lv, r, &rng);
     }

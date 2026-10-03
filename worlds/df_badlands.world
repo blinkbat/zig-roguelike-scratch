@@ -1,0 +1,10 @@
+roguelike-world 1
+start 0 48 32
+node procgen terrain
+height 30 70
+rain 0 9
+drain 66 100
+heat 60 100
+rivers 0
+name DF Badlands
+at 0 0

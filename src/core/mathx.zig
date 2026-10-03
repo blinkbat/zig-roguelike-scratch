@@ -63,6 +63,22 @@ pub fn cellOf(q: [2]f32) P {
 }
 
 /// `i` moved `by` round `n` places.
+/// Out of this, a percent setting.
+pub const PERCENT = 100;
+/// Out of this, a per-thousand setting.
+pub const MILLE = 1000;
+
+/// 0 at `lo`, 1 at `hi`, eased between.
+pub fn smoothstep(lo: f32, hi: f32, x: f32) f32 {
+    return smooth(std.math.clamp((x - lo) / (hi - lo), 0, 1));
+}
+
+/// `r` as a low and a high, each in `lo..hi`, the low not above the high.
+pub fn span(comptime T: type, r: [2]T, lo: T, hi: T) [2]T {
+    const top = std.math.clamp(r[1], lo, hi);
+    return .{ std.math.clamp(r[0], lo, top), top };
+}
+
 pub fn wrap(i: usize, by: i32, n: usize) usize {
     return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
 }

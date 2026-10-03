@@ -45,7 +45,6 @@ const FAMILY = blk: {
     break :blk t;
 };
 
-/// The foes a floor is stocked with.
 pub const FOES = blk: {
     var ks: []const Kind = &.{};
     for (std.enums.values(Kind)) |k| {
@@ -71,8 +70,11 @@ pub const Row = struct {
     name: [:0]const u8,
     /// A fresh body's; one split off a slime has half what that slime had left.
     hp: i32,
+    /// Cells its eyes reach, where there is light to see by.
     sight: i32,
     blow: Blow,
+    /// Cells round it the light it carries reaches; none for most.
+    light: i32 = 0,
     /// Brogue's `MONST_FLITS`: a third of its moves go a random way.
     flits: bool = false,
     /// What it splits into, two of them, when a blow leaves it under half its hp.
@@ -85,7 +87,7 @@ const SLAM = Blow{ .strike = .{ .lo = 2, .hi = 5, .verb = "slams" } };
 
 pub fn row(k: Kind) Row {
     return switch (k) {
-        .archer => .{ .name = "archer", .hp = 24, .sight = 10, .blow = .{ .strike = .{ .lo = 1, .hi = 2, .verb = "kicks" } } },
+        .archer => .{ .name = "archer", .hp = 24, .sight = 10, .light = 5, .blow = .{ .strike = .{ .lo = 1, .hi = 2, .verb = "kicks" } } },
         .rat => .{ .name = "rat", .hp = 6, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "bites" } } },
         .slime => .{ .name = "slime", .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half },
         .slime_half => .{ .name = "half slime", .hp = @divTrunc(row(.slime).hp, 2), .sight = row(.slime).sight, .blow = SLAM, .splits = .slime_quarter },

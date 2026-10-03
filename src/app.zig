@@ -10,10 +10,8 @@ const hero = @import("play/hero.zig");
 const save = @import("save.zig");
 const input = @import("core/input.zig");
 
-// The title, the game and the editor, and the ways between them.
-
 const Scene = enum { title, play, edit };
-const Page = enum { main, class, name, load, options, debug };
+const Page = enum { main, world, class, name, load, options, debug };
 const MainRow = enum {
     new,
     load,
@@ -75,6 +73,9 @@ const App = struct {
     scene: Scene = .title,
     page: Page = .main,
     title: menu.Menu = .{},
+    worlds: menu.Menu = .{},
+    /// The worlds New picks from; with none, it plays one generated floor.
+    listing: atlas.Listing = .{},
     classes: menu.Menu = .{},
     loads: menu.Menu = .{},
     options: menu.Menu = .{},
@@ -95,9 +96,23 @@ const App = struct {
     fn toTitle(app: *App) void {
         app.scene = .title;
         app.page = .main;
-        if (std.fs.cwd().access(atlas.MAIN, .{})) {
-            app.say("{s} goes into {s}", .{ MainRow.new.label(), atlas.MAIN });
-        } else |_| app.say("No {s} yet: {s} makes one generated floor", .{ atlas.MAIN, MainRow.new.label() });
+        app.listing.scan();
+        if (app.listing.n > 0) {
+            app.say("{s} picks a world in {s}", .{ MainRow.new.label(), atlas.DIR });
+        } else app.say("No worlds in {s} yet: {s} makes one generated floor", .{ atlas.DIR, MainRow.new.label() });
+    }
+
+    /// Its world picked, or none to pick from.
+    fn toClass(app: *App) void {
+        app.note.clear();
+        app.page = .class;
+    }
+
+    /// Back from choosing a hero: to the worlds, or the title when there were none.
+    fn fromClass(app: *App) void {
+        if (app.listing.n == 0) return app.toTitle();
+        app.note.clear();
+        app.page = .world;
     }
 
     fn toEdit(app: *App) void {
@@ -122,18 +137,21 @@ const App = struct {
     fn newRun(app: *App, name: hero.Name) void {
         const g = app.g;
         const slot = save.free(&app.list) orelse return app.toTitle();
-        if (app.world.load(app.alloc, atlas.MAIN)) {
+        if (app.listing.n == 0) {
+            game.begin(g, game.freshSeed());
+        } else {
+            var buf: [atlas.PATH_MAX]u8 = undefined;
+            const path = buf[0..app.listing.at(app.worlds.at).len];
+            @memcpy(path, app.listing.at(app.worlds.at));
+            app.world.load(app.alloc, path) catch |e| {
+                app.toTitle();
+                return app.say("{s} did not load ({s})", .{ path, @errorName(e) });
+            };
             if (!app.world.standable(app.world.start, &g.lv)) {
                 app.toTitle();
-                return app.say(atlas.NO_FLOOR, .{atlas.MAIN});
+                return app.say(atlas.NO_FLOOR, .{path});
             }
             game.beginWorld(g, app.world);
-        } else |e| {
-            if (e != error.FileNotFound) {
-                app.toTitle();
-                return app.say("{s} did not load ({s})", .{ atlas.MAIN, @errorName(e) });
-            }
-            game.begin(g, game.freshSeed());
         }
         app.inSlot(slot, name);
         app.autosave.?.flush(g);
@@ -152,7 +170,7 @@ const App = struct {
     }
 
     fn playTest(app: *App, from: atlas.Start) void {
-        game.beginWorldAt(app.g, app.ed.?.world, from);
+        game.beginWorldAt(app.g, app.ed.?.world, from, game.freshSeed());
         app.leaveRun();
         app.play(.editor, hero.Class.archer.unnamed());
     }
@@ -259,8 +277,9 @@ const App = struct {
                     .new => {
                         app.rescan();
                         if (save.free(&app.list) == null) return app.refuse();
+                        app.listing.scan();
                         app.note.clear();
-                        app.page = .class;
+                        app.page = if (app.listing.n == 0) .class else .world;
                     },
                     .load => {
                         app.rescan();
@@ -275,13 +294,26 @@ const App = struct {
                     .quit => return false,
                 }
             },
+            .world => {
+                var names: [atlas.Listing.MAX][atlas.PATH_MAX + 1]u8 = undefined;
+                var rows: [atlas.Listing.MAX][:0]const u8 = undefined;
+                const n = app.listing.n;
+                for (names[0..n], rows[0..n], 0..) |*b, *l, i| l.* = std.fmt.bufPrintZ(b, "{s}", .{app.listing.stem(i)}) catch "";
+                const picked = app.worlds.step(&g.st, n);
+                var path: [atlas.PATH_MAX + 1]u8 = undefined;
+                const where = std.fmt.bufPrintZ(&path, "{s}", .{app.listing.at(app.worlds.at)}) catch "";
+                menu.draw(g.face, g.screen, "CHOOSE A WORLD", rows[0..n], app.worlds.at, where, menu.BACK_LABEL);
+                if (back) {
+                    app.toTitle();
+                } else if (picked) |_| app.toClass();
+            },
             .class => {
                 var rows: [hero.CLASSES.len][:0]const u8 = undefined;
                 for (hero.CLASSES, &rows) |c, *l| l.* = c.title();
                 const picked = app.classes.step(&g.st, rows.len);
                 menu.draw(g.face, g.screen, "CHOOSE A HERO", &rows, app.classes.at, hero.CLASSES[app.classes.at].blurb(), menu.BACK_LABEL);
                 if (back) {
-                    app.toTitle();
+                    app.fromClass();
                 } else if (picked) |i| {
                     app.class = hero.CLASSES[i];
                     app.entry = .{};

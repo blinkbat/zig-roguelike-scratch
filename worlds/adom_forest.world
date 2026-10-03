@@ -1,0 +1,11 @@
+roguelike-world 1
+start 0 48 32
+node procgen wilds
+thicket 58
+smooth 5
+strays 30
+feature lake
+count 1
+size 5
+name ADOM Forest
+at 0 0

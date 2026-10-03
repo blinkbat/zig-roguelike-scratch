@@ -38,16 +38,43 @@ fn symmetric(row: Row, col: i32) bool {
     return c >= d * row.start and c <= d * row.end;
 }
 
-/// Symmetric shadowcasting.
+/// Symmetric shadowcasting: what `origin` sees is lit, and seen from then on.
 pub fn cast(lv: *grid.Level, origin: P, radius: i32) void {
     lv.lightless();
-    lv.light(origin);
+    castWith(lv, origin, radius, Sight{ .lv = lv });
+}
+
+/// The same, each cell `origin` reaches set in `out`, the rest left as they were.
+pub fn castInto(lv: *const grid.Level, origin: P, radius: i32, out: *[grid.CELLS]bool) void {
+    castWith(lv, origin, radius, Into{ .out = out });
+}
+
+const Sight = struct {
+    lv: *grid.Level,
+
+    fn mark(s: Sight, p: P) void {
+        s.lv.light(p);
+    }
+};
+
+const Into = struct {
+    out: *[grid.CELLS]bool,
+
+    fn mark(s: Into, p: P) void {
+        if (!grid.Level.inside(p)) return;
+        const i = grid.Level.idx(p);
+        s.out[i] = true;
+    }
+};
+
+fn castWith(lv: *const grid.Level, origin: P, radius: i32, sink: anytype) void {
+    sink.mark(origin);
     for (std.enums.values(Cardinal)) |c| {
-        scan(lv, .{ .origin = origin, .card = c }, .{ .depth = 1, .start = -1, .end = 1 }, radius);
+        scan(lv, sink, .{ .origin = origin, .card = c }, .{ .depth = 1, .start = -1, .end = 1 }, radius);
     }
 }
 
-fn scan(lv: *grid.Level, q: Quad, row_in: Row, radius: i32) void {
+fn scan(lv: *const grid.Level, sink: anytype, q: Quad, row_in: Row, radius: i32) void {
     if (row_in.depth > radius) return;
     var row = row_in;
     var prev_wall: ?bool = null;
@@ -59,24 +86,25 @@ fn scan(lv: *grid.Level, q: Quad, row_in: Row, radius: i32) void {
         const p = q.at(row.depth, col);
         const wall = lv.at(p).blind();
         if (mathx.distEuclid(q.origin, p) <= @as(f32, @floatFromInt(radius)) + 0.5) {
-            if (wall or symmetric(row, col)) lv.light(p);
+            if (wall or symmetric(row, col)) sink.mark(p);
         }
         if (prev_wall) |pw| {
             if (pw and !wall) row.start = slope(row.depth, col);
             if (!pw and wall) {
-                scan(lv, q, .{ .depth = row.depth + 1, .start = row.start, .end = slope(row.depth, col) }, radius);
+                scan(lv, sink, q, .{ .depth = row.depth + 1, .start = row.start, .end = slope(row.depth, col) }, radius);
             }
         }
         prev_wall = wall;
     }
     if (prev_wall) |pw| {
-        if (!pw) scan(lv, q, .{ .depth = row.depth + 1, .start = row.start, .end = row.end }, radius);
+        if (!pw) scan(lv, sink, q, .{ .depth = row.depth + 1, .start = row.start, .end = row.end }, radius);
     }
 }
 
-/// A creature sees the hero exactly when the hero's pass lit the creature's cell and the hero is within its `reach`.
+/// A creature sees the hero exactly when the hero's line of sight reaches the creature's cell and the hero is within
+/// its `reach`: the hero carries a light, so is never too dark to see.
 pub fn sees(lv: *const grid.Level, watcher: P, hero: P, reach: i32) bool {
-    return lv.isLit(watcher) and mathx.dist(watcher, hero) <= reach;
+    return lv.inLos(watcher) and mathx.dist(watcher, hero) <= reach;
 }
 
 test "an open floor lights a round pool, not a square one" {

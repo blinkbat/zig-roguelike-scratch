@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
 const gen = @import("gen.zig");
+const procgen = @import("procgen.zig");
 const actor = @import("../play/actor.zig");
 const store = @import("../core/store.zig");
 const pack = @import("../play/pack.zig");
@@ -46,10 +47,9 @@ const GRAPH_COLS: usize = 4;
 pub const GRAPH_STEP = P{ .x = 240, .y = 200 };
 /// A box's place on the graph, either way on either axis; far enough that i32 sums of places never overflow.
 pub const POS_MAX: u32 = 1 << 24;
-const MAX_LISTED: usize = 64;
+const MAX_LISTED: usize = 128;
 /// A world file's name, `.world` and all.
 const FILE_MAX: usize = 64;
-/// A path in `DIR`.
 pub const PATH_MAX = DIR.len + 1 + FILE_MAX;
 const ListedPath = [PATH_MAX]u8;
 
@@ -59,11 +59,46 @@ pub const Door = struct { at: P, to: ?Link = null };
 
 pub const Foe = struct { kind: actor.Kind, at: P };
 
-/// `gen.around` is the only one.
-pub const Algo = enum { rooms };
+pub const Algo = procgen.Algo;
+pub const Floor = procgen.Floor;
+pub const Kind = procgen.Kind;
+pub const Feature = procgen.Feature;
+pub const MAX_FEATURES = procgen.MAX_FEATURES;
 
-/// Its floor is rolled round its doors each run, so a world plays differently every time.
-pub const Procgen = struct { algo: Algo = .rooms, floor: gen.Params = .{}, foes: pack.Spec = .{} };
+/// Rolled round its doors each run: its base, then each of its features over it, in order.
+pub const Procgen = struct {
+    floor: Floor = .{ .rooms = .{} },
+    /// Past `feature_n`, each slot as `Feature.of` leaves it, so two plans compare by what they hold.
+    feature: [MAX_FEATURES]Feature = @splat(Feature.of(FIRST_FEATURE)),
+    feature_n: usize = 0,
+    foes: pack.Spec = .{},
+
+    pub fn features(self: *const Procgen) []const Feature {
+        return self.feature[0..self.feature_n];
+    }
+
+    pub fn addFeature(self: *Procgen, k: Kind) bool {
+        if (self.feature_n == MAX_FEATURES) return false;
+        self.feature[self.feature_n] = Feature.of(k);
+        self.feature_n += 1;
+        return true;
+    }
+
+    pub fn dropFeature(self: *Procgen, i: usize) void {
+        std.mem.copyForwards(Feature, self.feature[i .. self.feature_n - 1], self.feature[i + 1 .. self.feature_n]);
+        self.feature_n -= 1;
+        self.feature[self.feature_n] = Feature.of(FIRST_FEATURE);
+    }
+
+    pub fn valid(self: *const Procgen) bool {
+        for (self.features()) |*f| {
+            if (!f.valid()) return false;
+        }
+        return self.floor.valid() and self.foes.valid();
+    }
+};
+
+pub const FIRST_FEATURE = std.enums.values(Kind)[0];
 
 pub const Bespoke = struct {
     tile: [grid.CELLS]grid.Tile = [_]grid.Tile{.wall} ** grid.CELLS,
@@ -73,8 +108,12 @@ pub const Bespoke = struct {
     foe: [MAX_FOES]Foe = undefined,
     foe_n: usize = 0,
 
+    pub fn tileAt(self: *const Bespoke, p: P) grid.Tile {
+        return grid.cellOr(grid.Tile, &self.tile, p, .wall);
+    }
+
     pub fn floorAt(self: *const Bespoke, p: P) bool {
-        return grid.cellOr(grid.Tile, &self.tile, p, .wall) == .floor;
+        return !self.tileAt(p).solid();
     }
 
     pub fn torches(self: *const Bespoke) []const P {
@@ -153,6 +192,14 @@ pub const Node = struct {
         return titleOf(self.name(), n, buf);
     }
 
+    /// Open to the sky, so the day lights it; a bespoke node is under a roof.
+    pub fn outdoor(self: *const Node) bool {
+        return switch (self.plan) {
+            .procgen => |*pg| pg.floor.outdoor(),
+            .bespoke => false,
+        };
+    }
+
     /// Its floor is only rolled in play.
     pub fn unrolled(self: *const Node) bool {
         return switch (self.plan) {
@@ -199,17 +246,17 @@ pub const Node = struct {
 
     /// On a wall with open ground below it, so its flame lights the ground.
     pub fn torchFits(self: *const Node, b: *const Bespoke, p: P) bool {
-        return grid.Level.inside(p) and !self.opens(b, p) and self.opens(b, p.add(mathx.Dir.s.delta()));
+        return b.tileAt(p) == .wall and self.doorAt(p) == null and self.opens(b, p.add(mathx.Dir.s.delta()));
     }
 
-    /// On floor, and not in a doorway.
+    /// On floor, the one ground a row's `grid.BARREL_LETTER` stands on, and not in a doorway.
     pub fn barrelFits(self: *const Node, b: *const Bespoke, p: P) bool {
-        return b.floorAt(p) and self.doorAt(p) == null;
+        return b.tileAt(p) == .floor and self.doorAt(p) == null;
     }
 
-    /// Where a barrel fits, and none stands.
+    /// On open ground, not in a doorway, and no barrel there.
     pub fn foeFits(self: *const Node, b: *const Bespoke, p: P) bool {
-        return self.barrelFits(b, p) and !grid.cellOr(bool, &b.barrel, p, false);
+        return b.floorAt(p) and self.doorAt(p) == null and !grid.cellOr(bool, &b.barrel, p, false);
     }
 
     /// Procgen, the floor is rolled from `roll` round the doors; bespoke, each door opens the cell it hangs in.
@@ -217,11 +264,7 @@ pub const Node = struct {
         var cells: [grid.MAX_DOORS]P = undefined;
         for (self.doors(), 0..) |d, i| cells[i] = d.at;
         switch (self.plan) {
-            .procgen => |*pg| switch (pg.algo) {
-                .rooms => {
-                    _ = gen.around(lv, roll, cells[0..self.door_n], pg.floor);
-                },
-            },
+            .procgen => |*pg| procgen.roll(lv, roll, cells[0..self.door_n], pg.floor, pg.features()),
             .bespoke => |*b| {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;
@@ -352,13 +395,21 @@ pub const Atlas = struct {
         for (self.nodes()) |*nd| {
             switch (nd.plan) {
                 .procgen => |*pg| {
-                    try w.print(says(.node) ++ "{s} {s}\n", .{ @tagName(nd.plan), @tagName(pg.algo) });
-                    inline for (FLOOR_KNOBS) |k| try putKnob(w, k, @field(pg.floor, k));
+                    try w.print(says(.node) ++ "{s} {s}\n", .{ @tagName(nd.plan), @tagName(pg.floor) });
+                    switch (pg.floor) {
+                        inline else => |*fl, t| inline for (comptime floorKnobs(t)) |k| try putKnob(w, k, @field(fl.*, k)),
+                    }
                     inline for (FOE_KNOBS) |k| try putKnob(w, k, @field(pg.foes, k));
                     for (pg.foes.makeups()) |*m| {
                         try w.print(says(.makeup) ++ "{d}", .{m.weight});
                         for (m.kinds()) |k| try w.print(" {s}", .{@tagName(k)});
                         try w.writeByte('\n');
+                    }
+                    for (pg.features()) |*ft| {
+                        try w.print(says(.feature) ++ "{s}\n", .{@tagName(ft.*)});
+                        switch (ft.*) {
+                            inline else => |*fp, k| inline for (comptime featureKnobs(k)) |kn| try putKnob(w, kn, @field(fp.*, kn)),
+                        }
                     }
                 },
                 .bespoke => |*b| {
@@ -367,7 +418,7 @@ pub const Atlas = struct {
                         try w.writeAll(says(.row));
                         for (0..COLS) |x| {
                             const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(y) });
-                            try w.writeByte(if (b.barrel[i]) BARREL_CH else tileCh(b.tile[i]));
+                            try w.writeByte(if (b.barrel[i]) grid.BARREL_LETTER else b.tile[i].letter());
                         }
                         try w.writeByte('\n');
                     }
@@ -400,12 +451,16 @@ pub const Atlas = struct {
         var own_makeups = false;
         var seen = std.EnumSet(Word).initEmpty();
         var knobbed = KnobSet.initEmpty();
+        var featured = FeatureKnobSet.initEmpty();
         while (lines.next()) |raw| {
             const line = std.mem.trimRight(u8, raw, "\r");
             var f = std.mem.tokenizeScalar(u8, line, ' ');
             const word = f.next() orelse continue;
             const said = std.meta.stringToEnum(Word, word) orelse {
-                try takeKnob(try self.procgen(), word, &f, &knobbed);
+                const pg = try self.procgen();
+                if (pg.feature_n > 0) {
+                    try takeFeatureKnob(&pg.feature[pg.feature_n - 1], word, &f, &featured);
+                } else try takeKnob(pg, word, &f, &knobbed);
                 if (f.next() != null) return error.BadLine;
                 continue;
             };
@@ -422,7 +477,7 @@ pub const Atlas = struct {
                             const algo = std.meta.stringToEnum(Algo, f.next() orelse return error.BadLine) orelse return error.BadLine;
                             // Written before procgen nodes were rolled each run: the seed they kept is let go.
                             if (f.peek() != null) _ = try int(u64, &f);
-                            break :blk .{ .procgen = .{ .algo = algo } };
+                            break :blk .{ .procgen = .{ .floor = Floor.of(algo) } };
                         },
                         .bespoke => .{ .bespoke = .{} },
                     };
@@ -448,7 +503,14 @@ pub const Atlas = struct {
                     const k = self.addDoor(self.node_n - 1, at) orelse return error.TooMany;
                     if (f.peek() != null) nd.door[k].to = .{ .node = try int(usize, &f), .door = try int(usize, &f) };
                 },
+                .feature => {
+                    const pg = try self.procgen();
+                    const k = std.meta.stringToEnum(Kind, f.next() orelse return error.BadLine) orelse return error.BadLine;
+                    if (!pg.addFeature(k)) return error.TooMany;
+                    featured = FeatureKnobSet.initEmpty();
+                },
                 .makeup => {
+                    if ((try self.procgen()).feature_n > 0) return error.BadLine;
                     const fo = &(try self.procgen()).foes;
                     if (!own_makeups) fo.makeup_n = 0;
                     own_makeups = true;
@@ -467,8 +529,8 @@ pub const Atlas = struct {
                     if (cells.len != COLS or row == ROWS) return error.BadLine;
                     for (cells, 0..) |c, x| {
                         const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(row) });
-                        b.barrel[i] = c == BARREL_CH;
-                        b.tile[i] = if (c == BARREL_CH) .floor else chTile(c) orelse return error.BadLine;
+                        b.barrel[i] = c == grid.BARREL_LETTER;
+                        b.tile[i] = if (c == grid.BARREL_LETTER) .floor else grid.Tile.ofLetter(c) orelse return error.BadLine;
                     }
                     row += 1;
                 },
@@ -508,7 +570,7 @@ pub const Atlas = struct {
                     if (!nd.foeFits(b, f.at)) return error.BadLine;
                 }
             },
-            .procgen => |*pg| if (!pg.floor.valid() or !pg.foes.valid()) return error.BadLine,
+            .procgen => |*pg| if (!pg.valid()) return error.BadLine,
         }
     }
 
@@ -545,15 +607,24 @@ pub const NO_FLOOR = "{s} has no open floor to start on";
 pub const Error = error{ NoHeader, BadLine, TooMany, NoNodes, NoStart, BadLink };
 
 /// A procgen node's lines but its makeups: each named for, and holding, a field of its floor or its foes.
-pub const FLOOR_KNOBS = knobsOf(gen.Params, &.{});
+pub fn floorKnobs(comptime a: Algo) []const []const u8 {
+    return armKnobs(Floor, a);
+}
+const FLOOR_KNOBS_MAX = mostKnobs(Floor);
 pub const FOE_KNOBS = knobsOf(pack.Spec, MAKEUP_FIELDS);
 /// Every other line's first word, which no knob may take.
-const Word = enum { start, node, name, at, door, makeup, row, torch, foe };
+const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe };
 const ONCE_FILE = std.EnumSet(Word).initOne(.start);
 const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at });
 const ONCE = ONCE_FILE.unionWith(ONCE_NODE);
-const KNOBS = FLOOR_KNOBS ++ FOE_KNOBS;
-const KnobSet = std.StaticBitSet(KNOBS.len);
+/// A feature's lines after its own: each named for, and holding, a field of it.
+pub fn featureKnobs(comptime k: Kind) []const []const u8 {
+    return armKnobs(Feature, k);
+}
+const FEATURE_KNOBS_MAX = mostKnobs(Feature);
+const FeatureKnobSet = std.StaticBitSet(FEATURE_KNOBS_MAX);
+/// An algorithm's knobs by place, then the foes' after `FLOOR_KNOBS_MAX`.
+const KnobSet = std.StaticBitSet(FLOOR_KNOBS_MAX + FOE_KNOBS.len);
 const MAKEUP = @tagName(Word.makeup);
 /// `pack.Spec`'s makeups, which are lines of their own.
 const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
@@ -564,14 +635,32 @@ fn says(comptime w: Word) []const u8 {
 }
 
 comptime {
+    @setEvalBranchQuota(1_000_000);
     for (MAKEUP_FIELDS) |m| std.debug.assert(@hasField(pack.Spec, m));
-    const all = KNOBS ++ knobsOf(Word, &.{});
-    for (all, 0..) |a, i| {
-        for (all[0..i]) |b| std.debug.assert(!std.mem.eql(u8, a, b));
+    for (std.enums.values(Algo)) |algo| distinct(floorKnobs(algo) ++ FOE_KNOBS ++ knobsOf(Word, &.{}));
+    for (std.enums.values(Kind)) |kind| distinct(featureKnobs(kind) ++ knobsOf(Word, &.{}));
+}
+
+fn distinct(comptime names: []const []const u8) void {
+    for (names, 0..) |a, i| {
+        for (names[0..i]) |b| std.debug.assert(!std.mem.eql(u8, a, b));
     }
 }
 
+/// The knobs of the union `U`'s arm `tag`: its payload's fields.
+fn armKnobs(comptime U: type, comptime tag: std.meta.Tag(U)) []const []const u8 {
+    return knobsOf(@FieldType(U, @tagName(tag)), &.{});
+}
+
+/// The most knobs any of the union `U`'s arms has.
+fn mostKnobs(comptime U: type) usize {
+    var most: usize = 0;
+    for (std.enums.values(std.meta.Tag(U))) |t| most = @max(most, armKnobs(U, t).len);
+    return most;
+}
+
 fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const u8 {
+    @setEvalBranchQuota(100_000);
     comptime var out: []const []const u8 = &.{};
     inline for (std.meta.fields(T)) |f| {
         const skipped = for (skip) |s| {
@@ -582,18 +671,33 @@ fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const 
     return out;
 }
 
-/// The knob `word` names, said once a node.
+/// The knob `word` names, said once a node, and a knob of the node's own algorithm.
 fn takeKnob(pg: *Procgen, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), knobbed: *KnobSet) Error!void {
-    inline for (KNOBS, 0..) |k, i| {
-        if (std.mem.eql(u8, word, k)) {
-            if (knobbed.isSet(i)) return error.BadLine;
-            knobbed.set(i);
-            const part = if (comptime i < FLOOR_KNOBS.len) &pg.floor else &pg.foes;
-            @field(part, k) = try takeValue(@TypeOf(@field(part, k)), f);
-            return;
-        }
+    switch (pg.floor) {
+        inline else => |*fl, t| inline for (comptime floorKnobs(t), 0..) |k, i| {
+            if (std.mem.eql(u8, word, k)) return takeOnce(fl, k, i, f, knobbed);
+        },
+    }
+    inline for (FOE_KNOBS, 0..) |k, i| {
+        if (std.mem.eql(u8, word, k)) return takeOnce(&pg.foes, k, FLOOR_KNOBS_MAX + i, f, knobbed);
     }
     return error.BadLine;
+}
+
+/// The knob `word` names of the feature being read, said once.
+fn takeFeatureKnob(ft: *Feature, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), set: *FeatureKnobSet) Error!void {
+    switch (ft.*) {
+        inline else => |*fp, k| inline for (comptime featureKnobs(k), 0..) |kn, i| {
+            if (std.mem.eql(u8, word, kn)) return takeOnce(fp, kn, i, f, set);
+        },
+    }
+    return error.BadLine;
+}
+
+fn takeOnce(owner: anytype, comptime k: []const u8, i: usize, f: *std.mem.TokenIterator(u8, .scalar), knobbed: anytype) Error!void {
+    if (knobbed.isSet(i)) return error.BadLine;
+    knobbed.set(i);
+    @field(owner.*, k) = try takeValue(@TypeOf(@field(owner.*, k)), f);
 }
 
 fn putKnob(w: anytype, comptime name: []const u8, v: anytype) !void {
@@ -607,6 +711,7 @@ fn putValue(w: anytype, v: anytype) !void {
     const T = @TypeOf(v);
     switch (@typeInfo(T)) {
         .int => try w.print(" {d}", .{v}),
+        .@"enum" => try w.print(" {s}", .{@tagName(v)}),
         .array => for (v) |x| try putValue(w, x),
         .@"struct" => inline for (std.meta.fields(T)) |f| try putValue(w, @field(v, f.name)),
         else => @compileError(@typeName(T) ++ " is no knob"),
@@ -616,6 +721,7 @@ fn putValue(w: anytype, v: anytype) !void {
 fn takeValue(comptime T: type, f: *std.mem.TokenIterator(u8, .scalar)) Error!T {
     switch (@typeInfo(T)) {
         .int => return int(T, f),
+        .@"enum" => return std.meta.stringToEnum(T, f.next() orelse return error.BadLine) orelse error.BadLine,
         .array => |a| {
             var out: T = undefined;
             for (&out) |*x| x.* = try takeValue(a.child, f);
@@ -628,26 +734,6 @@ fn takeValue(comptime T: type, f: *std.mem.TokenIterator(u8, .scalar)) Error!T {
         },
         else => @compileError(@typeName(T) ++ " is no knob"),
     }
-}
-
-const BARREL_CH = '0';
-
-comptime {
-    std.debug.assert(chTile(BARREL_CH) == null);
-}
-
-fn tileCh(t: grid.Tile) u8 {
-    return switch (t) {
-        .wall => '#',
-        .floor => '.',
-    };
-}
-
-fn chTile(c: u8) ?grid.Tile {
-    for (std.enums.values(grid.Tile)) |t| {
-        if (tileCh(t) == c) return t;
-    }
-    return null;
 }
 
 fn int(comptime T: type, f: *std.mem.TokenIterator(u8, .scalar)) Error!T {
@@ -674,8 +760,9 @@ pub fn pathFor(buf: []u8, name: []const u8) ?[]const u8 {
     return std.fmt.bufPrint(buf, DIR ++ "/{s}" ++ EXT, .{stem[0..n]}) catch null;
 }
 
-/// The world files in `DIR`, sorted.
+/// The world files in `DIR`, sorted; past `MAX`, the first `MAX` of them.
 pub const Listing = struct {
+    pub const MAX = MAX_LISTED;
     file: [MAX_LISTED]Listed = undefined,
     n: usize = 0,
 
@@ -696,18 +783,32 @@ pub const Listing = struct {
         return self.file[i].text();
     }
 
+    /// Its file's name, short of `DIR` and `EXT`.
+    pub fn stem(self: *const Listing, i: usize) []const u8 {
+        const p = self.at(i);
+        return p[DIR.len + 1 .. p.len - EXT.len];
+    }
+
     pub fn scan(self: *Listing) void {
         self.n = 0;
         var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return;
         defer dir.close();
         var it = dir.iterate();
         while (it.next() catch null) |e| {
-            if (self.n == MAX_LISTED) break;
             if (e.kind != .file or !std.mem.endsWith(u8, e.name, EXT) or e.name.len > FILE_MAX) continue;
             if (!plain(e.name)) continue;
-            const f = &self.file[self.n];
-            f.n = (std.fmt.bufPrint(&f.buf, DIR ++ "/{s}", .{e.name}) catch continue).len;
-            self.n += 1;
+            var l: Listed = undefined;
+            l.n = (std.fmt.bufPrint(&l.buf, DIR ++ "/{s}", .{e.name}) catch continue).len;
+            if (self.n < MAX_LISTED) {
+                self.file[self.n] = l;
+                self.n += 1;
+                continue;
+            }
+            var last: usize = 0;
+            for (self.file[1..], 1..) |*o, i| {
+                if (Listed.before({}, self.file[last], o.*)) last = i;
+            }
+            if (Listed.before({}, l, self.file[last])) self.file[last] = l;
         }
         std.sort.insertion(Listed, self.file[0..self.n], {}, Listed.before);
     }
@@ -758,8 +859,15 @@ test "a world saves and loads back the same" {
     const room = a.add(.{ .bespoke = .{} }).?;
     const cave = a.add(.{ .procgen = .{} }).?;
     const pg = &a.node[cave].plan.procgen;
-    pg.floor.size = .{ .x = 50, .y = 40 };
-    pg.floor.torches = 20;
+    pg.floor.rooms.size = .{ .x = 50, .y = 40 };
+    pg.floor.rooms.torches = 20;
+    const wood = a.add(.{ .procgen = .{ .floor = .{ .wilds = .{ .thicket = 30, .strays = 7 } } } }).?;
+    const wpg = &a.node[wood].plan.procgen;
+    _ = wpg.addFeature(.river);
+    wpg.feature[0].river.fill = .lava;
+    wpg.feature[0].river.width = 5;
+    _ = wpg.addFeature(.setpiece);
+    wpg.feature[1].setpiece.piece = .graveyard;
     pg.foes.apart = 6;
     pg.foes.makeup_n = 2;
     pg.foes.makeup[1] = pack.Makeup.of(&.{ .bloat, .rat });
@@ -796,6 +904,8 @@ test "a world saves and loads back the same" {
     try std.testing.expectEqual(@as(?Link, .{ .node = cave, .door = d1 }), back.node[room].door[d0].to);
     const bpg = &back.node[cave].plan.procgen;
     try std.testing.expect(std.meta.eql(pg.floor, bpg.floor));
+    try std.testing.expect(std.meta.eql(a.node[wood].plan.procgen, back.node[wood].plan.procgen));
+    try std.testing.expectEqual(grid.Tile.lava, back.node[wood].plan.procgen.feature[0].river.fill);
     try std.testing.expectEqual(@as(i32, 6), bpg.foes.apart);
     try std.testing.expectEqual(@as(usize, 2), bpg.foes.makeup_n);
     try std.testing.expectEqual(@as(u8, 3), bpg.foes.makeup[1].weight);
@@ -827,6 +937,14 @@ test "a world file with a one-way link, a door linked to itself, a stray word or
         head ++ "node procgen rooms\nname A\nname B\n",
         head ++ "node procgen rooms\nat 0 0\nat 1 1\n",
         head ++ "node procgen rooms\napart 4\napart 5\n",
+        head ++ "node procgen wilds\nrooms 4\n",
+        head ++ "node procgen rooms\nthicket 40\n",
+        head ++ "node procgen wilds\nthicket 99\n",
+        head ++ "node procgen wilds\nfeature river\nthicket 40\n",
+        head ++ "node procgen wilds\nfeature river\nwidth 3\nwidth 4\n",
+        head ++ "node procgen wilds\nfeature river\nmakeup 1 rat\n",
+        head ++ "node procgen wilds\nfeature canal\n",
+        head ++ "node procgen wilds\nfeature river\nfill moss\n",
         HEADER ++ "\nnode procgen rooms\n",
     };
     for (bad) |t| try std.testing.expect(std.meta.isError(a.parse(t)));
@@ -834,6 +952,13 @@ test "a world file with a one-way link, a door linked to itself, a stray word or
     try a.parse(head ++ "node procgen rooms\n  name  Deep  Cave\n");
     try std.testing.expectEqualStrings("Deep  Cave", a.node[0].name());
     try a.parse(head ++ "node procgen rooms\nat 0 0\napart 4\nnode procgen rooms\nat 1 1\napart 5\n");
+    try a.parse(head ++ "node procgen wilds\nthicket 50\nsmooth 2\nstrays 0\npacks 4\n");
+    try std.testing.expectEqual(50, a.node[0].plan.procgen.floor.wilds.thicket);
+    try a.parse(head ++ "node procgen caves\nfill 50\nfeature lake\nfill lava\ncount 2\nfeature river\nwidth 2\n");
+    const pg = &a.node[0].plan.procgen;
+    try std.testing.expectEqual(@as(usize, 2), pg.feature_n);
+    try std.testing.expectEqual(grid.Tile.lava, pg.feature[0].lake.fill);
+    try std.testing.expectEqual(@as(u8, 2), pg.feature[1].river.width);
 }
 
 test "removing a node unlinks the doors into it and renumbers the rest" {
@@ -913,4 +1038,35 @@ test "a world file is named from anything typed, and nothing left of it is no na
     var buf: [128]u8 = undefined;
     try std.testing.expectEqualStrings(DIR ++ "/the_deepcave2" ++ EXT, pathFor(&buf, " The Deep/Cave2! ").?);
     try std.testing.expectEqual(@as(?[]const u8, null), pathFor(&buf, "../"));
+}
+
+test "every world in the worlds folder parses, and each procgen node rolls its ground whole" {
+    var list = Listing{};
+    list.scan();
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    var lv: grid.Level = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    var rolled: usize = 0;
+    for (0..list.n) |i| {
+        a.load(std.testing.allocator, list.at(i)) catch |e| {
+            std.debug.print("{s}: {s}\n", .{ list.at(i), @errorName(e) });
+            return e;
+        };
+        for (a.nodes(), 0..) |*nd, n| {
+            if (!nd.unrolled()) continue;
+            nd.stamp(&lv, 0x5EED +% n);
+            const at = landing(&lv, if (a.start.node == n) a.start.at else grid.MIDDLE, &.{}) orelse return error.NoFloor;
+            var open: usize = 0;
+            for (lv.tile) |t| {
+                if (!t.solid()) open += 1;
+            }
+            const reached = grid.distances(&lv, at, &dist, &queue);
+            if (reached != open) std.debug.print("{s} node {d}: {d} open, {d} reached from {d},{d}\n", .{ list.at(i), n, open, reached, at.x, at.y });
+            try std.testing.expectEqual(open, reached);
+            rolled += 1;
+        }
+    }
+    std.debug.print("{d} worlds parsed, {d} procgen nodes rolled whole\n", .{ list.n, rolled });
 }

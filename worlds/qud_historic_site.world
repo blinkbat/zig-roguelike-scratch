@@ -1,0 +1,11 @@
+roguelike-world 1
+start 0 48 32
+node procgen site
+template mixed
+decay 35
+feature scatter
+tile shrub
+on grass
+amount 30
+name Qud Historic Site
+at 0 0

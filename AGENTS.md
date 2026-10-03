@@ -17,7 +17,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - `zig` is NOT on PATH. `check.cmd` (type-check, the error loop) · `build.cmd` · `run.cmd` · `test.cmd [filter]` ·
   `shot.cmd` (headless frames into `shots\lean.png`, `shots\aim.png`, `shots\torch.png`, a posed torch with rats
   under it, `shots\bind.png`, the bind screen with its picker open, and `shots\gas.png`, a room a few turns after a
-  bloat burst in it, `shots\pause.png`, the pause menu over it, and `shots\edit.png`, `shots\edit-graph.png` and
+  bloat burst in it, `shots\pause.png`, the pause menu over it, `shots\biome.png`, the archer arrived in `qud_salt_marsh`, `shots\dawn.png`, `noon.png`, `day.png`, `dusk.png` and `night.png`, the wilds at 7.00, 12.00, 16.30, 19.18 and 1.00, each
+  world's start node rolled whole a glyph a cell into `shots\worlds\<name>.png`, and `shots\edit.png`, `shots\edit-graph.png` and
   `shots\edit-gen.png`, the editor's map, graph and a procgen node's generator on a posed three-node world, and `shots\name.png`, the hero's name being typed; built
   into `zig-out-dev` so a running game is untouched).
   `edit.cmd [path]` opens the world editor (`--edit`) on `worlds\main.world` or the `.world` named.
@@ -40,8 +41,9 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   then type (`State.typed`, Backspace `rub`) and press no button nor walk. The editor is a desk tool: its mouse and
   keys are `input.Desk`, and it names them.
 - **`app.zig` IS THE WAY BETWEEN THE TITLE, THE GAME AND THE EDITOR.** The title (`ui/menu.zig`, as the pause menu
-  is): New picks a hero's class (`play/hero.zig`; the archer alone so far) and has it named on a grid of keys the
-  d-pad walks and the keyboard types into (`ui/naming.zig`), then plays `worlds\main.world` read fresh from disk in
+  is): New picks a world, one of the `.world` files in `worlds\` (`atlas.Listing`, a long list scrolling with
+  `menu.window`; one generated floor when there are none), then a hero's class (`play/hero.zig`; the archer alone so far) and has it named on a grid of keys the
+  d-pad walks and the keyboard types into (`ui/naming.zig`), then plays the world read fresh from disk in
   the first free save slot (refused when all are taken); Load plays or deletes (Y, twice) a slot; Options toggles
   fullscreen and opens Debug (Unkillable: the hero keeps 1 hp whatever strikes it, `Game.unkillable`, never saved); Editor opens the editor; Quit quits. The hero's name is said in the log, the hud and the death screen,
   and nowhere "you". The pause menu resumes, restarts,
@@ -49,19 +51,20 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   only names the way out (`Game.exit`) and the app takes it. The window's close button closes the app, but for an
   editor with unsaved changes, which asks first.
 - **A SAVE (`save.zig`) FREEZES THE WHOLE RUN**: the world it is played in, every node visited as it was left, the
-  one being played as it stands, the rng, the log and the skill bar, as their bytes under a fingerprint of their
+  one being played as it stands, the rng, the log, the skill bar and the hour, as their bytes under a fingerprint of their
   types (`core/store.zig`), so a build whose types changed refuses it, and it is measured whole before any of it
   reaches the game. `save.SLOTS` (3) slots in `saves\`. A slot's run is written once a turn has changed it and the
   last write is `save.GAP_S` old (never mid-door), copied on the frame and written off it on a thread
   (`Autosave`), and once more as the run is left. Death ends it: the slot is deleted as the hero dies. A play-test
   has no slot. Tests never write a save file.
 - **THE WORLD IS `world/atlas.zig`**: nodes, each bespoke (authored floor, walls, torches, barrels and foes) or
-  procgen (an algorithm; `gen.around` is the only one), each with doors. A procgen node holds no seed, but holds its floor's
-  `gen.Params` (the box its rooms fall in, their count and size, torches, barrels) and its foes' `pack.Spec` (packs,
+  procgen (a base biome and the features laid over it, `world/procgen.zig`), each with doors. A procgen node
+  holds no seed, but holds its base's settings (`procgen.Floor`), its features' (`procgen.Feature`, `MAX_FEATURES`)
+  and its foes' `pack.Spec` (packs,
   a few of each kind, makeups, reach, gap from the arrival, apart from each other); its floor is rolled round its doors each run, from the run's seed and the node (`game.rollOf`), so a world plays differently
   every time. A door links both ways to one door on any node (`Atlas.link`). `Node.stamp` builds a node's `Level`:
-  procgen generates round its doors, tunnelling each into the floor; bespoke opens each door's cell. `worlds\main.world` is played when it loads, one
-  generated floor when there is none, and New refuses one that will not parse or whose start has no open floor. Stepping onto a linked door takes the archer, once the turn is drawn, to the door it leads to
+  procgen generates round its doors, tunnelling each into the floor; bespoke opens each door's cell. The world New picks is played when it loads, one
+  generated floor when `worlds\` holds none, and New refuses one that will not parse or whose start has no open floor. Stepping onto a linked door takes the archer, once the turn is drawn, to the door it leads to
   (`atlas.landing` when that is taken), hp carried; a node left is kept as it was for the run, and death restarts
   the world. The file is text (`Atlas.write` / `parse`), strict, saved beside itself and renamed over. A node also
   keeps a name and its box's place on the editor's graph. Tests never write a world file.
@@ -80,8 +83,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **THE LAYOUT READS `Game.screen`, NEVER A WINDOW CONSTANT**, because fullscreen changes it at runtime.
 - **`gfx/look.zig` IS EVERY PICTURE.** A thing with a texture in `Sprites` draws it; the rest draw their glyph.
 - **`gfx/light.zig` IS EVERY LIGHT, AND THE FOG IS PART OF IT.** Terrain draws at full brightness; one pass of the
-  light map (2x modulate, so it can brighten) lights it, and nothing else tints terrain. Floors go down first, then
-  body shadows, then walls, so a wall covers any shadow that reaches it. Bodies are lit per pixel by their own
+  light map (2x modulate, so it can brighten) lights it, and nothing else tints terrain. Open ground, and the ground under
+  anything solid, goes down first, then body shadows, then the solid tiles, so a wall covers any shadow that reaches it. Bodies are lit per pixel by their own
   shader from normals bevelled off their silhouette at load, faded as the ground under them is; torch flames and their
   glow draw over it all. The map
   composes the archer's carried light (after Brogue's miner's light), each torch (occluded by its own `fov.cast`)
@@ -89,6 +92,23 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   so no unseen cell is ever drawn. Ground in sight is never dimmed by a cell never seen (a side door the symmetric FOV
   skips): there the fade is only a rim, and sight blurs over seen cells alone. It is cosmetic: nothing in the
   simulation reads it, and it decides no visibility.
+- **`world/day.zig` IS THE HOUR, AND IT IS SIMULATION**: `Game.clock`, whole minutes, moved on 6 a turn in `endTurn`
+  (a day is 240 turns), on every node, saved with the run, starting at 8.30. No hud shows it. It decides how far the
+  archer sees out of doors (`world/lume.zig`).
+- **`gfx/sky.zig` IS THE DAY'S LIGHT**, zig-soulslike's `daynight.zig` seen from above, drawn from `Game.hour_shown`,
+  which eases after the clock so the light never steps. The sun rises east, stands south at noon and sets west; the
+  moon is its opposite, and the one light that casts (`sky.keyDir`) changes hands over the top in the dark, its
+  altitude floored at 25 degrees so a shadow never outruns its caster by much. On the map its north-south lean is
+  squashed (`sky.NORTH_SOUTH`), so shadows run mostly across the screen, and it stands no steeper than 50 degrees, so
+  even at noon everything throws a shadow past its edge. Its sunrise and sunset keys are warmed to gold. Only a node
+  open to the sky (`Node.outdoor`: the outdoor bases; bespoke and rooms nodes are under a roof) gets it: there
+  `Light.sky` replaces the dark's ambient with the hour's, lights ground, wall tops and south faces by the key,
+  shadows them by a march toward it over what stands in its way (`light.CASTERS`: walls, rock, fences and the rest),
+  drifts soft cloud shadows over them in real time (`light.clouded`, off the light's own seconds), lights bodies from
+  its side and dims the carried light out by day. A shadow is soft and takes 55% of the sky's light at most. Bodies,
+  barrels and the standing tiles (`look.STANDING`: shrubs, tiny shrubs, boulders) cast from their own place as every
+  light does: a silhouette, but a tree's (`look.canopied`) is its canopy's soft pool (`Light.drawCanopy`). Everything
+  that blocks a step but a liquid casts one way or the other (asserted). Nothing in the simulation reads the light.
 - **`gfx/fx.zig` IS EVERY BLOW'S AFTERMATH**, after zig-soulslike's and fainter: the struck body flashes toward
   `light.FLASH_RGB` (drawn by the body shader), a pinprick of light marks the contact, and the body's matter
   (`fx.matterOf`: blood, ooze, a bloat's purple ichor, a barrel's splinters) sprays along the blow and lies a moment as a stain. Motes draw
@@ -101,10 +121,29 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   world, under the minimap and hud. Nothing in the simulation reads it.
 - **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG and TTF there under its file name, read with
   `@embedFile`), so the exe runs from any directory. A body's PNG is a file in `assets/` and its entry in
-  `look.BODY_PNGS`; a tile's is a file, a field in `Sprites` that `load` names (`unload` walks every field), and its arm in
-  `Sprites.tileAt`; the barrel's is a `Sprites` field in `Sprites.figures`, the sprites the body shader lights.
+  `look.BODY_PNGS`; a tile's is a file and its entry in `look.TILE_PNGS` (a wall's are cut from `walls.png`); the barrel's is a `Sprites` field in `Sprites.figures`, the sprites the body shader lights.
   Sprites are authored at `look.SPRITE_PX` (64), facing right; `Game.facing` mirrors a body
   whose last step, strike or aim went leftward, and straight up or down keeps it.
+- **PROCGEN IS A BASE AND ITS FEATURES** (`world/procgen.zig`, after Qud's builder stacks): `roll` lays the base
+  (`gen.around`'s rooms, or a `world/biome/*.zig` module's `shape`, its doors opened so features see them), then each
+  feature (`world/feature/*.zig`'s `apply`) in order, on a stream salted apart so adding one leaves the base as it
+  was; then seals the edge, opens the doors again, opens a clearing at the middle if no ground is open, joins every
+  stretch of ground to the biggest by bending trails that bridge water, lava and chasms (`carve.connect`), and
+  `settle`s (walls shaped afresh but a rooms' corner nothing changed round, a barrel or torch that no longer fits
+  dropped, and any barrel that parts the ground, `carve.unbar`), all as the base's `carve.Palette` says. Rooms bare keep `gen.around` whole. Bases: rooms, open, wilds, caves, cavern (ADOM),
+  strata (Qud's NoiseMap), labyrinth, hall (ADOM's Big Room, grove, graveyard), maze (Diablo II's DrlgMaze),
+  topology (Path of Exile's graphs), terrain (Dwarf Fortress's fields and biome checks), keep, town, dunes, site
+  (Qud's segmented WFC). Features: river (any band: water, lava, chasm, a rock cliff, with fords), lake (any blob),
+  road, scatter (any tile on any tile, alone or clumped), border, buildings (decay makes ruins), farms, setpiece.
+  `carve.zig` is their shared toolkit. Each `worlds\<game>_<place>.world` is one touchstone's example, written as
+  text. A knob is a field of a base's or feature's `Params`: whole numbers, or an enum written by name. The outdoor
+  bases (open, wilds, topology, terrain) strew lone tiny shrubs and boulders over their grass (`carve.Litter`, the
+  `litter` knob), each where it closes no way.
+- **A TILE IS ITS ROW IN `grid.TERRAIN`** (solid, blind, what lies under it, liquid), its letter in a world file or set piece `Tile.letter`, its picture its row in `look.TILES`
+  (a symbol, its ASCII stand-in, colours, minimap). A shrub, boulder or fungus blocks sight and step, a grave or tiny
+  shrub a step alone;
+  each is lit as the ground and draws its ground under it; water, lava, a chasm and a fence
+  block a step but not sight or an arrow; reeds and crop block sight but not a step. Only `.wall` is shaped.
 - **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** in `gen.around`, before the torches and barrels, or by `Node.stamp` for a bespoke node
   (`shapeWalls` alone), and stored in `Level.shape`:
   the four sides, the four outer corners, the four block corners, post, solid. Nothing recomputes it, and nothing about what has
@@ -124,9 +163,17 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   stands in only when the atlas fails to load, which is every test.
 - **`CELL` IS A WHOLE MULTIPLE OF 64**, the sprites' authored size; they draw at `CELL / 64`, never fractional.
 - **THE GRID IS y-DOWN** and **Chebyshev is the only metric**. **A diagonal may not cut a corner** (`passOk`).
-- **`fov.cast` IS THE ONLY VISIBILITY COMPUTATION.** A foe sees the archer exactly when the archer's pass lit the
-  foe's cell and the archer is within the foe's sight. A body is drawn only where it is lit, judged at its middle as drawn;
-  terrain is remembered.
+- **`fov.cast` IS THE ONLY LINE OF SIGHT, AND `world/lume.zig` THE ONLY LIGHT THAT DECIDES WHAT IS SEEN.** The archer's
+  pass (`lume.see`, from `Game.castSight`) keeps its line of sight, as far as its eyes reach (`Row.sight`), in
+  `Level.los`, and of that leaves lit (`Level.lit`, and seen) only what is light enough: within the sky's reach
+  (`lume.skyReach`: none under a roof or from an hour and a half past sunset to as long before sunrise, the archer's
+  whole sight by day, `day.daylight` between), in a torch's pool (`lume.TORCH_REACH`, cast from the floor below its
+  flame) or in the pool of a light a body carries (`Row.light`: the archer's 5; a foe's or a bonfire's alike). So
+  underground and at midnight the archer sees what its own light and the torches show, and the bow reaches no
+  further, for a mark and every cell to it must be lit. A foe sees the archer exactly when the archer's line of
+  sight reaches the foe's cell and the archer is within the foe's sight: the archer carries a light. A body is drawn
+  only where it is lit, judged at its middle as drawn; terrain is remembered. The picture's light (`gfx/light.zig`)
+  matches it: the torch's reach is `lume.TORCH_REACH` and the drawn lantern fades out a cell past the archer's.
 - **`Pool.damage` IS THE ONLY PLACE HP GOES DOWN**, but for `Pool.split` sharing a slime's hp
   between its halves and the archer carrying its hp through a door.
 - **`world/gas.zig` IS EVERY GAS**, after Brogue CE's `updateVolumetricMedia` for one gas: `Level.gas` is Brogue's
@@ -151,4 +198,5 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   lands, sliding out of it. Each frame moves on what earlier frames set going before it deals anything new. A
   turn takes as long as its slowest glide, arrow or flash (`Game.busy`); a walk due before then waits for it, the latest
   standing in for any before.
-- **EVERY DRAWN STRING IS ASCII.**
+- **EVERY DRAWN STRING IS ASCII**, but a tile's symbol: any codepoint Balthazar holds, baked into the font atlas by
+  `look.TILE_CODEPOINTS`, its ASCII `ch` drawn instead where the font has no atlas.

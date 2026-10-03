@@ -1,0 +1,8 @@
+roguelike-world 1
+start 0 48 32
+node procgen topology
+layout arena
+filler rock
+ground dirt
+name PoE1 Dried Lake
+at 0 0

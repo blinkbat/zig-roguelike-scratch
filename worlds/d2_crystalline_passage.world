@@ -1,0 +1,8 @@
+roguelike-world 1
+start 0 48 32
+node procgen maze
+style ice
+rooms 12
+size 16
+name D2 Crystalline Pass
+at 0 0

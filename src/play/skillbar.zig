@@ -121,7 +121,6 @@ const PRIMARY = blk: {
     break :blk r;
 };
 
-/// Opens the bind screen.
 pub const BINDS = Button.view;
 /// The buttons that open the bind screen and the pause menu, which no skill takes.
 const NOT_SLOTS = [_]Button{ BINDS, .pause };

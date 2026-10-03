@@ -6,8 +6,6 @@ const grid = @import("world/grid.zig");
 const actor = @import("play/actor.zig");
 const hero = @import("play/hero.zig");
 
-// A run frozen whole: the world it is played in, every node visited as it was left, the one being played as it is.
-
 pub const SLOTS: usize = 3;
 const DIR = "saves";
 const EXT = ".save";
@@ -21,7 +19,7 @@ const Seed = @FieldType(game.Game, "seed");
 const Node = @FieldType(game.Game, "node");
 const Visited = @FieldType(game.Game, "visited");
 /// What follows the visited nodes, in this order: the node being played and the run round it.
-const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name" };
+const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock" };
 const TAIL_TYPES = blk: {
     var ts: [TAIL_FIELDS.len]type = undefined;
     for (TAIL_FIELDS, 0..) |f, i| ts[i] = @FieldType(game.Game, f);
@@ -51,7 +49,6 @@ pub const Summary = struct {
     }
 };
 
-/// Why a slot will not load.
 pub const Unreadable = enum {
     other_build,
     damaged,
@@ -196,7 +193,6 @@ fn slotAt(i: usize) Slot {
     return .{ .run = s };
 }
 
-/// The first slot with no run in it.
 pub fn free(list: *const [SLOTS]Slot) ?usize {
     for (list, 0..) |s, i| {
         if (s == .empty) return i;

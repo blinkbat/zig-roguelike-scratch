@@ -3,9 +3,6 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const look = @import("look.zig");
 
-// THE ARCHER'S DANGER: the edge of the view reddens as a blow on the archer lands, and glows while its hp is low.
-// Nothing in the simulation reads it.
-
 /// Seconds a blow's reddening takes to rise, and to fade.
 const RISE_S: f32 = 0.12;
 const PAIN_S: f32 = 0.9;

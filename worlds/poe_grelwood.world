@@ -1,0 +1,12 @@
+roguelike-world 1
+start 0 48 6
+node procgen topology
+layout diamond
+filler shrub
+ground grass
+clearing 6
+feature river
+width 2
+course any
+name PoE2 Grelwood
+at 0 0

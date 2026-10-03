@@ -1,0 +1,9 @@
+roguelike-world 1
+start 0 48 32
+node procgen rooms
+feature river
+width 2
+bank none
+course any
+name ADOM Dungeon Level
+at 0 0

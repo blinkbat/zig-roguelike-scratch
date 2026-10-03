@@ -58,7 +58,7 @@ pub fn fly(lv: *const grid.Level, from: P, to: P) Flight {
     var f = Flight{};
     var ray = grid.Ray.init(from, to);
     while (ray.next()) |c| {
-        if (f.len == f.path.len or lv.at(c).blind()) break;
+        if (f.len == f.path.len or (!c.eq(to) and lv.at(c).blind())) break;
         f.path[f.len] = c;
         f.len += 1;
         const w = lv.who(c);
@@ -91,6 +91,20 @@ test "a wall stops an arrow short of it" {
     const f = fly(&lv, .{ .x = 10, .y = 10 }, .{ .x = 16, .y = 10 });
     try std.testing.expectEqual(@as(?Hit, null), f.struck);
     try std.testing.expectEqual(@as(usize, 2), f.len);
+}
+
+test "a foe standing in reeds is aimable and the arrow reaches it" {
+    const fov = @import("../world/fov.zig");
+    var lv = grid.openFloor();
+    var pool = actor.Pool{};
+    const hero = P{ .x = 10, .y = 10 };
+    const at = P{ .x = 14, .y = 10 };
+    _ = pool.spawn(&lv, actor.Actor.of(.archer, hero));
+    lv.set(at, .reeds);
+    const rat = pool.spawn(&lv, actor.Actor.of(.rat, at));
+    fov.cast(&lv, hero, actor.row(.archer).sight);
+    try std.testing.expect(aimable(&lv, hero, at));
+    try std.testing.expectEqual(@as(?Hit, .{ .body = rat }), fly(&lv, hero, at).struck);
 }
 
 test "a barrel in the line takes the arrow meant for the rat behind it" {

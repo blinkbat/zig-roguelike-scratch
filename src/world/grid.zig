@@ -19,23 +19,132 @@ pub const MAX_DOORS: usize = 16;
 pub const NO_DOOR: u8 = 0;
 
 pub const Tile = enum(u8) {
+    /// Built, and shaped by `gen.shapeWalls`.
     wall,
     floor,
+    grass,
+    shrub,
+    /// Natural stone: a cave's walls, a cliff, a crag.
+    rock,
+    dirt,
+    sand,
+    snow,
+    /// Deep: no step crosses it, but sight and an arrow do.
+    water,
+    shallows,
+    bridge,
+    /// Tall: a step goes in, sight does not go through.
+    reeds,
+    rubble,
+    fence,
+    lava,
+    fungus,
+    /// A drop no step crosses; sight and an arrow go over.
+    chasm,
+    ice,
+    grave,
+    /// Tall wheat: a step goes in, sight does not go through.
+    crop,
+    /// Low: no step goes in, sight and an arrow go over.
+    tiny_shrub,
+    boulder,
 
     pub fn solid(t: Tile) bool {
-        return switch (t) {
-            .wall => true,
-            .floor => false,
-        };
+        return TERRAIN.get(t).solid;
     }
 
     pub fn blind(t: Tile) bool {
+        return TERRAIN.get(t).blind;
+    }
+
+    /// What lies under it: drawn first, beneath its own picture.
+    pub fn ground(t: Tile) ?Tile {
+        return TERRAIN.get(t).ground;
+    }
+
+    /// Water, lava or a chasm, which a trail crosses by a bridge.
+    pub fn liquid(t: Tile) bool {
+        return TERRAIN.get(t).liquid;
+    }
+
+    /// Its letter in a world file's rows and a set piece's art.
+    pub fn letter(t: Tile) u8 {
         return switch (t) {
-            .wall => true,
-            .floor => false,
+            .wall => '#',
+            .floor => '.',
+            .grass => '"',
+            .shrub => '&',
+            .rock => '%',
+            .dirt => ',',
+            .sand => ':',
+            .snow => '*',
+            .water => '~',
+            .shallows => '-',
+            .bridge => '=',
+            .reeds => '|',
+            .rubble => ';',
+            .fence => '+',
+            .lava => '!',
+            .fungus => 'T',
+            .chasm => 'v',
+            .ice => 'i',
+            .grave => 't',
+            .crop => 'w',
+            .tiny_shrub => '\'',
+            .boulder => 'o',
         };
     }
+
+    pub fn ofLetter(c: u8) ?Tile {
+        for (std.enums.values(Tile)) |t| {
+            if (t.letter() == c) return t;
+        }
+        return null;
+    }
 };
+
+/// Floor with a barrel on it, in a world file's rows and a set piece's art.
+pub const BARREL_LETTER = '0';
+
+comptime {
+    @setEvalBranchQuota(100_000);
+    std.debug.assert(Tile.ofLetter(BARREL_LETTER) == null);
+    for (std.enums.values(Tile), 0..) |a, i| {
+        std.debug.assert(std.ascii.isPrint(a.letter()) and a.letter() != ' ');
+        for (std.enums.values(Tile)[0..i]) |b| std.debug.assert(a.letter() != b.letter());
+    }
+}
+
+const Terrain = struct { solid: bool, blind: bool, ground: ?Tile = null, liquid: bool = false };
+const OPEN = Terrain{ .solid = false, .blind = false };
+const SHUT = Terrain{ .solid = true, .blind = true };
+const MOAT = Terrain{ .solid = true, .blind = false };
+const LIQUID = Terrain{ .solid = true, .blind = false, .liquid = true };
+
+const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
+    .wall = SHUT,
+    .floor = OPEN,
+    .grass = OPEN,
+    .shrub = .{ .solid = true, .blind = true, .ground = .grass },
+    .rock = SHUT,
+    .dirt = OPEN,
+    .sand = OPEN,
+    .snow = OPEN,
+    .water = LIQUID,
+    .shallows = OPEN,
+    .bridge = OPEN,
+    .reeds = .{ .solid = false, .blind = true },
+    .rubble = OPEN,
+    .fence = MOAT,
+    .lava = LIQUID,
+    .fungus = .{ .solid = true, .blind = true, .ground = .dirt },
+    .chasm = LIQUID,
+    .ice = OPEN,
+    .grave = .{ .solid = true, .blind = false, .ground = .grass },
+    .crop = .{ .solid = false, .blind = true },
+    .tiny_shrub = .{ .solid = true, .blind = false, .ground = .grass },
+    .boulder = .{ .solid = true, .blind = true, .ground = .grass },
+});
 
 /// Stamped once by `gen.shapeWalls`, a room's corners then by `gen.outlineRoom`, and never recomputed.
 pub const WallShape = enum {
@@ -70,7 +179,10 @@ pub const Level = struct {
     /// Null on anything that is not a wall.
     shape: [CELLS]?WallShape,
     seen: [CELLS]bool,
+    /// In the archer's sight: in its line of sight and light enough to see.
     lit: [CELLS]bool,
+    /// In the archer's line of sight, light or dark.
+    los: [CELLS]bool,
     /// 1-based into the actor pool; `NO_ONE` is empty.
     occupant: [CELLS]u16,
     barrel: [CELLS]bool,
@@ -88,6 +200,7 @@ pub const Level = struct {
             .shape = [_]?WallShape{null} ** CELLS,
             .seen = [_]bool{false} ** CELLS,
             .lit = [_]bool{false} ** CELLS,
+            .los = [_]bool{false} ** CELLS,
             .occupant = [_]u16{NO_ONE} ** CELLS,
             .barrel = [_]bool{false} ** CELLS,
             .door = [_]u8{NO_DOOR} ** CELLS,
@@ -227,6 +340,10 @@ pub const Level = struct {
         return cellOr(bool, &self.lit, p, false);
     }
 
+    pub fn inLos(self: *const Level, p: P) bool {
+        return cellOr(bool, &self.los, p, false);
+    }
+
     pub fn isSeen(self: *const Level, p: P) bool {
         return cellOr(bool, &self.seen, p, false);
     }
@@ -271,7 +388,6 @@ pub const Cells = struct {
         return .{ .lo = lo, .hi = hi, .at = if (lo.x < hi.x) lo else .{ .x = lo.x, .y = hi.y } };
     }
 
-    /// Cells across `around(_, r)`.
     pub fn span(r: i32) i32 {
         return r * 2 + 1;
     }

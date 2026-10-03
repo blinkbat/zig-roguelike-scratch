@@ -1,0 +1,14 @@
+roguelike-world 1
+start 0 48 8
+node procgen topology
+layout ring
+filler water
+ground shallows
+path 2
+feature scatter
+tile reeds
+on shallows
+amount 250
+clump 4
+name PoE2 Azak Bog
+at 0 0

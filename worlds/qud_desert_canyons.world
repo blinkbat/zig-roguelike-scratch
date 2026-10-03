@@ -1,0 +1,18 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground sand
+edge rock
+feature river
+fill rock
+width 4
+bank none
+course across
+count 2
+fords 3
+feature scatter
+tile rock
+on sand
+amount 15
+name Qud Desert Canyons
+at 0 0

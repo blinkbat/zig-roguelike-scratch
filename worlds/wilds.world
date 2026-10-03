@@ -1,0 +1,18 @@
+roguelike-world 1
+start 0 48 32
+node procgen wilds
+thicket 42
+smooth 4
+strays 20
+packs 10
+few 3
+reach 2
+gap 12
+apart 0
+makeup 1 rat slime
+makeup 1 rat rat slime
+makeup 1 rat
+makeup 1 rat rat
+makeup 1 bloat
+name The Wilds
+at 0 0

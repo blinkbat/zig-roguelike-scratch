@@ -5,8 +5,6 @@ const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
 const skillbar = @import("../play/skillbar.zig");
 
-// EVERY PICTURE IN THE GAME. A thing with a sprite in `Sprites` draws it; anything without one falls back to its glyph.
-
 pub const SPRITE_PX: i32 = 64;
 /// A body or tile with no sprite draws its glyph this big, at `SPRITE_PX`.
 pub const GLYPH_PX: i32 = 60;
@@ -18,19 +16,32 @@ pub const Look = struct {
 
 pub const Bodies = std.EnumArray(actor.Kind, ?rl.Texture2D);
 
-/// Every sprite lit by the body shader: the bodies, then the barrel.
-pub const FIGURES: usize = Bodies.len + 1;
+/// Tiles drawn standing up out of their cell: each throws its silhouette's shadow, as a body does.
+pub const STANDING = [_]grid.Tile{ .shrub, .tiny_shrub, .boulder };
+
+pub fn stands(t: grid.Tile) bool {
+    return std.mem.indexOfScalar(grid.Tile, &STANDING, t) != null;
+}
+
+/// A tree: its shadow is its canopy's soft pool, not its silhouette.
+pub fn canopied(t: grid.Tile) bool {
+    return t == .shrub or t == .tiny_shrub;
+}
+
+/// Every sprite whose silhouette casts: the bodies, the barrel, then the standing tiles.
+pub const FIGURES: usize = Bodies.len + 1 + STANDING.len;
 
 /// Needs a live GL context.
 pub const Sprites = struct {
     bodies: Bodies = .initFill(null),
     barrel: ?rl.Texture2D = null,
-    floor: ?rl.Texture2D = null,
+    tiles: std.EnumArray(grid.Tile, ?rl.Texture2D) = .initFill(null),
     wall: std.EnumArray(grid.WallShape, ?rl.Texture2D) = .initFill(null),
 
     pub fn load() Sprites {
-        var s = Sprites{ .floor = texture(@embedFile("floor.png")), .barrel = texture(@embedFile("barrel.png")) };
+        var s = Sprites{ .barrel = texture(@embedFile("barrel.png")) };
         for (std.enums.values(actor.Kind)) |k| s.bodies.set(k, texture(BODY_PNGS.get(k) orelse continue));
+        for (std.enums.values(grid.Tile)) |t| s.tiles.set(t, texture(TILE_PNGS.get(t) orelse continue));
         const sheet = rl.loadImageFromMemory(".png", WALLS_PNG) catch return s;
         defer rl.unloadImage(sheet);
         for (std.enums.values(grid.WallShape)) |shape| {
@@ -55,14 +66,18 @@ pub const Sprites = struct {
     }
 
     pub fn figures(self: Sprites) [FIGURES]?rl.Texture2D {
-        return self.bodies.values ++ [_]?rl.Texture2D{self.barrel};
+        var standing: [STANDING.len]?rl.Texture2D = undefined;
+        for (STANDING, &standing) |t, *s| s.* = self.tiles.get(t);
+        return self.bodies.values ++ [_]?rl.Texture2D{self.barrel} ++ standing;
     }
 
     pub fn tileAt(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
-        return switch (lv.at(p)) {
-            .wall => self.wall.getPtrConst(lv.wallShape(p) orelse return null).*,
-            .floor => self.floor,
-        };
+        return self.tileOf(lv.at(p), lv.wallShape(p));
+    }
+
+    pub fn tileOf(self: *const Sprites, t: grid.Tile, shape: ?grid.WallShape) ?rl.Texture2D {
+        if (t == .wall) return self.wall.getPtrConst(shape orelse return null).*;
+        return self.tiles.getPtrConst(t).*;
     }
 
     fn texture(png: []const u8) ?rl.Texture2D {
@@ -83,6 +98,19 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .slime_quarter = @embedFile("slime-quarter.png"),
     .bloat = @embedFile("bloat.png"),
 });
+
+/// A wall's are cut from `WALLS_PNG` by its shape instead.
+const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const u8, null), .{
+    .floor = @embedFile("floor.png"),
+    .grass = @embedFile("grass.png"),
+    .shrub = @embedFile("shrub.png"),
+    .tiny_shrub = @embedFile("tiny-shrub.png"),
+    .boulder = @embedFile("boulder.png"),
+});
+
+comptime {
+    std.debug.assert(TILE_PNGS.get(.wall) == null);
+}
 
 const WALLS_PNG = @embedFile("walls.png");
 
@@ -121,7 +149,6 @@ fn whole(t: rl.Texture2D) rl.Rectangle {
     return .{ .x = 0, .y = 0, .width = @floatFromInt(t.width), .height = @floatFromInt(t.height) };
 }
 
-/// All of `t` over `dest`.
 pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
     rl.drawTexturePro(t, whole(t), dest, .{ .x = 0, .y = 0 }, 0, tint);
 }
@@ -203,9 +230,10 @@ const SHADE = rgb(0x3e3c46);
 
 pub const BG = rgb(0x07070a);
 pub const LIT = rl.Color.white;
-pub const FLOOR_BG = rgb(0x121116);
-/// Unlit rock, where a wall has no texture.
-pub const ROCK = rgb(0x1e1c24);
+const FLOOR_BG = rgb(0x121116);
+const GRASS_BG = rgb(0x111a0e);
+/// The editor's wall where it has no texture.
+pub const BARE_WALL = rgb(0x1e1c24);
 /// The editor's ground of a procgen node, whose floor is only rolled in play.
 pub const UNROLLED = rgb(0x1b2330);
 pub const TEXT = rgb(0xd8cdb4);
@@ -216,13 +244,66 @@ pub const EDGE = rgb(0x4a4438);
 pub const ARROW = rgb(0xe6dcb4);
 pub const VEIL = fade(BG, 0.72);
 
-/// At full light: the light map dims it.
+/// At full light: the light map dims it. `ch` is its ASCII stand-in.
 pub fn tile(t: grid.Tile) Look {
-    return switch (t) {
-        .wall => .{ .ch = '#', .fg = rgb(0x9a8e78) },
-        .floor => .{ .ch = '.', .fg = rgb(0x5e5a50) },
-    };
+    const l = TILES.get(t);
+    return .{ .ch = l.ch, .fg = l.fg };
 }
+
+/// Its symbol as drawn by the font, UTF-8; `tile(t).ch` stands in where the font has no atlas.
+pub fn tileSym(t: grid.Tile) [:0]const u8 {
+    return TILES.get(t).sym;
+}
+
+/// Under a tile's glyph where it has no sprite; null leaves the background.
+pub fn tileBg(t: grid.Tile) ?rl.Color {
+    return TILES.get(t).bg;
+}
+
+const TileLook = struct { sym: [:0]const u8, ch: u8, fg: rl.Color, bg: ?rl.Color, mini: rl.Color, mini_dim: rl.Color };
+
+const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
+    .wall = .{ .sym = "#", .ch = '#', .fg = rgb(0x9a8e78), .bg = null, .mini = rgb(0x8a7f6a), .mini_dim = rgb(0x46434c) },
+    .floor = .{ .sym = "·", .ch = '.', .fg = rgb(0x5e5a50), .bg = FLOOR_BG, .mini = rgb(0x3a3830), .mini_dim = rgb(0x1c1c22) },
+    .grass = .{ .sym = "\"", .ch = '"', .fg = rgb(0x4f7a3a), .bg = GRASS_BG, .mini = rgb(0x2e4426), .mini_dim = rgb(0x182016) },
+    .shrub = .{ .sym = "¥", .ch = '&', .fg = rgb(0x6f9a4a), .bg = null, .mini = rgb(0x5e8a3e), .mini_dim = rgb(0x2e3c2a) },
+    .rock = .{ .sym = "#", .ch = '#', .fg = rgb(0x8a7e6c), .bg = rgb(0x262220), .mini = rgb(0x6e6558), .mini_dim = rgb(0x38332e) },
+    .dirt = .{ .sym = "·", .ch = '.', .fg = rgb(0x8a6a44), .bg = rgb(0x1a140e), .mini = rgb(0x4a3a28), .mini_dim = rgb(0x231c14) },
+    .sand = .{ .sym = "·", .ch = '.', .fg = rgb(0xd8c084), .bg = rgb(0x2e2716), .mini = rgb(0x8a7a50), .mini_dim = rgb(0x403a28) },
+    .snow = .{ .sym = "°", .ch = '*', .fg = rgb(0xe6eef2), .bg = rgb(0x2c3036), .mini = rgb(0x9aa2a8), .mini_dim = rgb(0x464a50) },
+    .water = .{ .sym = "≈", .ch = '~', .fg = rgb(0x4a80d0), .bg = rgb(0x0e1a36), .mini = rgb(0x24508a), .mini_dim = rgb(0x142640) },
+    .shallows = .{ .sym = "~", .ch = '~', .fg = rgb(0x78b0d4), .bg = rgb(0x14283c), .mini = rgb(0x3e6e8e), .mini_dim = rgb(0x1e3444) },
+    .bridge = .{ .sym = "=", .ch = '=', .fg = rgb(0xa87c48), .bg = rgb(0x1e160e), .mini = rgb(0x7a5a36), .mini_dim = rgb(0x3a2c1c) },
+    .reeds = .{ .sym = "¦", .ch = '|', .fg = rgb(0xa8b24a), .bg = rgb(0x161a0c), .mini = rgb(0x6a7030), .mini_dim = rgb(0x32361a) },
+    .rubble = .{ .sym = "•", .ch = ',', .fg = rgb(0x8a7f6a), .bg = rgb(0x18161a), .mini = rgb(0x4e4840), .mini_dim = rgb(0x26241f) },
+    .fence = .{ .sym = "∏", .ch = '#', .fg = rgb(0x9a6638), .bg = GRASS_BG, .mini = rgb(0x7a5030), .mini_dim = rgb(0x3a2818) },
+    .lava = .{ .sym = "≈", .ch = '~', .fg = rgb(0xff8a30), .bg = rgb(0x501406), .mini = rgb(0xc8501a), .mini_dim = rgb(0x5a240c) },
+    .fungus = .{ .sym = "¶", .ch = 'T', .fg = rgb(0xb882e0), .bg = null, .mini = rgb(0x7a4e9a), .mini_dim = rgb(0x3a2a48) },
+    .chasm = .{ .sym = "·", .ch = ':', .fg = rgb(0x24222a), .bg = rgb(0x030305), .mini = rgb(0x0c0c10), .mini_dim = rgb(0x060608) },
+    .ice = .{ .sym = "·", .ch = '_', .fg = rgb(0xb8e4f4), .bg = rgb(0x1c3440), .mini = rgb(0x7ab0c8), .mini_dim = rgb(0x3a5462) },
+    .grave = .{ .sym = "†", .ch = '+', .fg = rgb(0xc8c4b8), .bg = null, .mini = rgb(0x8a8680), .mini_dim = rgb(0x44423e) },
+    .crop = .{ .sym = "¥", .ch = '"', .fg = rgb(0xd8b84a), .bg = rgb(0x1e1a0a), .mini = rgb(0x8a7a30), .mini_dim = rgb(0x403a18) },
+    .tiny_shrub = .{ .sym = "'", .ch = '\'', .fg = rgb(0x6f9a4a), .bg = null, .mini = rgb(0x4e7436), .mini_dim = rgb(0x26341f) },
+    .boulder = .{ .sym = "o", .ch = 'o', .fg = rgb(0x9a8e90), .bg = null, .mini = rgb(0x7a7072), .mini_dim = rgb(0x3c3638) },
+});
+
+comptime {
+    for (TILES.values) |l| std.debug.assert(l.sym.len != 1 or l.sym[0] == l.ch);
+}
+
+/// Every symbol a tile draws, for the font to bake.
+pub const TILE_CODEPOINTS = blk: {
+    var out: []const i32 = &.{};
+    for (TILES.values) |l| {
+        const cp: i32 = std.unicode.utf8Decode(l.sym) catch unreachable;
+        if (cp < 0x80) continue;
+        const have = for (out) |o| {
+            if (o == cp) break true;
+        } else false;
+        if (!have) out = out ++ &[_]i32{cp};
+    }
+    break :blk out;
+};
 
 pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
@@ -242,7 +323,6 @@ pub fn body(k: actor.Kind) Look {
 /// Brogue's `poisonGasColor`, the bloat's and its gas's.
 pub const GAS = rgb(0xbf40d9);
 
-/// What a blow sprays: `fx.matterOf`'s.
 pub const BLOOD = rl.Color{ .r = 112, .g = 22, .b = 16, .a = GORE_A };
 pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = GORE_A };
 pub const SPLINTER = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
@@ -274,10 +354,8 @@ pub fn arrow(dx: i32, dy: i32) u8 {
 }
 
 pub fn mini(t: grid.Tile, lit: bool) rl.Color {
-    return switch (t) {
-        .wall => if (lit) rgb(0x8a7f6a) else rgb(0x46434c),
-        .floor => if (lit) rgb(0x3a3830) else rgb(0x1c1c22),
-    };
+    const l = TILES.get(t);
+    return if (lit) l.mini else l.mini_dim;
 }
 
 pub const AIM_REACH = fade(GOLD, 0.10);

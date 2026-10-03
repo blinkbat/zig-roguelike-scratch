@@ -1,8 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Plain data written as its bytes. A file says what shape of data it holds by `fingerprint`, so a build whose types
-// have changed refuses it rather than misreads it.
+// A file names its types by `fingerprint`, so a build whose types changed refuses it rather than misreads it.
 
 /// Every field's name and type, every enum's tags, and each type's size; and the compiler, which lays them out.
 pub fn fingerprint(comptime types: anytype) u64 {

@@ -4,8 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../world/grid.zig");
 const look = @import("look.zig");
 
-// EVERY CLOUD OF GAS AS DRAWN, after Brogue's `getCellAppearance`; out of sight it keeps what was last seen, as memory
-// does. Drawn under the light map, which lights and fogs it. Nothing in the simulation reads it.
+// After Brogue's `getCellAppearance`.
 
 const P = mathx.P;
 

@@ -1,0 +1,12 @@
+roguelike-world 1
+start 0 48 32
+node procgen caves
+fill 52
+smooth 4
+feature scatter
+tile rubble
+on dirt
+amount 350
+clump 5
+name ADOM Mountains
+at 0 0

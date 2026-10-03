@@ -18,6 +18,8 @@ const ROWS_DY: i32 = 20;
 const NOTE_GAP: i32 = 30;
 const LEGEND_DY: i32 = 60;
 const MARK_GAP: i32 = 18;
+/// The title above the rows and the note and legend below them.
+const CHROME_H: i32 = TITLE - TITLE_DY + ROWS_DY + NOTE_GAP * 2 + LEGEND_DY + NOTE * 2;
 pub const NOTE_MAX: usize = 160;
 /// Between the items of a legend or crib.
 pub const SEP = "   ";
@@ -76,12 +78,22 @@ pub const MOVE_ITEM = input.MOVE_CAPTION ++ " move";
 pub const BACK_LABEL = "back";
 const LEGEND = CONFIRM.caption() ++ " select" ++ SEP ++ MOVE_ITEM;
 
-/// Centred on the screen, the row at `at` marked.
-pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, rows: []const [:0]const u8, at: usize, note: ?[:0]const u8, back: ?[:0]const u8) void {
+/// The rows that fit between the title and the legend, `at` among them.
+fn window(screen_h: i32, n: usize, at: usize) struct { from: usize, len: usize } {
+    const room: usize = @intCast(@max(1, @divTrunc(screen_h - CHROME_H, ROW_STEP)));
+    const len = @min(n, room);
+    const from = @min(at -| len / 2, n - len);
+    return .{ .from = from, .len = len };
+}
+
+/// Centred on the screen, the row at `at` marked; rows past the screen scroll with it.
+pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const [:0]const u8, at: usize, note: ?[:0]const u8, back: ?[:0]const u8) void {
+    const win = window(screen.y, all.len, at);
+    const rows = all[win.from..][0..win.len];
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(rows.len)) * ROW_STEP, 2);
     mid(face, screen, title, top + TITLE_DY - TITLE, TITLE, look.TEXT);
-    for (rows, 0..) |r, i| {
-        const y = top + ROWS_DY + @as(i32, @intCast(i)) * ROW_STEP;
+    for (rows, win.from..) |r, i| {
+        const y = top + ROWS_DY + @as(i32, @intCast(i - win.from)) * ROW_STEP;
         const on = i == at;
         const w = face.width(r, ROW);
         const x = @divTrunc(screen.x - w, 2);
@@ -101,7 +113,6 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, rows: []const
     mid(face, screen, legend, y + LEGEND_DY - NOTE_GAP, NOTE, look.DIM);
 }
 
-/// A row that turns something on and off.
 pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
     return if (on) label ++ ": On" else label ++ ": Off";
 }
@@ -109,6 +120,14 @@ pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
 /// Centred across the screen.
 pub fn mid(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
     face.text(s, face.leftFor(s, @divTrunc(screen.x, 2), size), y, size, col);
+}
+
+test "a long menu shows the rows that fit, the one it is on among them" {
+    const w = window(900, 40, 39);
+    std.debug.print("40 rows on a 900 px screen: {d} shown, from {d}\n", .{ w.len, w.from });
+    try std.testing.expect(w.len < 40 and w.from + w.len == 40);
+    try std.testing.expectEqual(@as(usize, 0), window(900, 40, 0).from);
+    try std.testing.expectEqual(@as(usize, 3), window(900, 3, 2).len);
 }
 
 test "the menu walks round its rows and picks the one it is on" {

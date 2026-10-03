@@ -1,0 +1,14 @@
+roguelike-world 1
+start 0 48 10
+node procgen dunes
+ground dirt
+ridges 3
+mesas 2
+feature river
+fill rock
+width 4
+bank none
+course across
+fords 1
+name D2 Dry Hills
+at 0 0

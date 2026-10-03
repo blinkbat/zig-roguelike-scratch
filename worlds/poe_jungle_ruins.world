@@ -1,0 +1,13 @@
+roguelike-world 1
+start 0 14 10
+node procgen topology
+layout grid
+filler shrub
+ground grass
+clearing 7
+feature buildings
+count 6
+decay 50
+size 5 8
+name PoE2 Jungle Ruins
+at 0 0

@@ -1,0 +1,24 @@
+roguelike-world 1
+start 0 4 32
+node procgen open
+ground grass
+edge rock
+feature border
+tile rock
+width 2
+rough 4
+feature setpiece
+piece cairns
+count 1
+feature setpiece
+piece tower
+count 1
+feature setpiece
+piece corral
+count 1
+feature scatter
+tile rock
+on grass
+amount 15
+name D2 Stony Field
+at 0 0

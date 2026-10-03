@@ -1,0 +1,21 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground dirt
+edge rock
+feature border
+tile rock
+width 2
+rough 3
+feature lake
+fill rock
+count 7
+size 8
+ring none
+feature lake
+fill chasm
+count 9
+size 4
+ring none
+name D2 Outer Steppes
+at 0 0

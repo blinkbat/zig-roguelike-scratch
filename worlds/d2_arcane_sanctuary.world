@@ -1,0 +1,9 @@
+roguelike-world 1
+start 0 48 32
+node procgen maze
+style tombs
+rooms 48
+size 10
+merge 1000
+name D2 Arcane Sanctuary
+at 0 0

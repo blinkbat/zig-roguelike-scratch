@@ -1,0 +1,15 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground sand
+edge rock
+feature border
+tile rock
+width 2
+rough 3
+feature buildings
+count 12
+decay 55
+floor sand
+name D2 Lost City
+at 0 0

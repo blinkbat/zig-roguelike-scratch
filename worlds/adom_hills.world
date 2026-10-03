@@ -1,0 +1,19 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground grass
+feature scatter
+tile rubble
+on grass
+amount 250
+clump 6
+feature scatter
+tile rock
+on grass
+amount 30
+feature scatter
+tile shrub
+on grass
+amount 10
+name ADOM Hills
+at 0 0

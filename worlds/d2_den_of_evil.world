@@ -1,0 +1,7 @@
+roguelike-world 1
+start 0 48 32
+node procgen maze
+style caves
+rooms 8
+name D2 Den of Evil
+at 0 0

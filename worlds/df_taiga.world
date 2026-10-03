@@ -1,0 +1,14 @@
+roguelike-world 1
+start 0 48 32
+node procgen terrain
+height 40 60
+rain 70 100
+drain 50 100
+heat 12 24
+rivers 1
+feature lake
+count 6
+size 3
+ring none
+name DF Taiga
+at 0 0
