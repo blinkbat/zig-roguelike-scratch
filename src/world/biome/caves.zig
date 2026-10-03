@@ -1,4 +1,3 @@
-const std = @import("std");
 const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
@@ -23,12 +22,13 @@ pub const Params = struct {
 
 pub fn palette(_: Params) carve.Palette {
     var pal = carve.Palette.CAVE;
-    pal.pocket = .rock;
+    pal.pocket = pal.solid;
     return pal;
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
-    carve.sow(lv, rng, p.fill, .rock, .dirt);
-    carve.smooth(lv, p.smooth, .rock, .dirt);
-    carve.scatter(lv, rng, p.spires, .dirt, .rock, true);
+    const pal = palette(p);
+    carve.sow(lv, rng, p.fill, pal.solid, pal.open);
+    carve.smooth(lv, p.smooth, pal.solid, pal.open);
+    carve.scatter(lv, rng, p.spires, pal.open, pal.solid, true);
 }

@@ -75,13 +75,13 @@ pub const Vignette = struct {
     }
 };
 
-fn edgeAlpha(dx: f32, dy: f32) f32 {
-    const r = @sqrt(dx * dx + dy * dy) / std.math.sqrt2;
-    return mathx.smooth((r - CLEAR_R) / (FULL_R - CLEAR_R));
+fn edgeAlpha(r: f32) f32 {
+    const corner = r / std.math.sqrt2;
+    return mathx.smooth((corner - CLEAR_R) / (FULL_R - CLEAR_R));
 }
 
 fn lowOf(hp: i32, max: i32) f32 {
-    const left = @as(f32, @floatFromInt(@max(0, hp))) / @as(f32, @floatFromInt(max));
+    const left = @as(f32, @floatFromInt(hp)) / @as(f32, @floatFromInt(max));
     return std.math.clamp((LOW - left) / LOW, 0, 1);
 }
 

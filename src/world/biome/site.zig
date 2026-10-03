@@ -113,7 +113,7 @@ const Model = struct {
             for (DIRS, 0..) |d, k| {
                 m.fits[a][k] = Bits.initEmpty();
                 for (0..m.n) |b| {
-                    if (agrees(m.pat[a], m.pat[b], d[0], d[1])) m.fits[a][k].set(b);
+                    if (agrees(m.pat[a], m.pat[b], d.x, d.y)) m.fits[a][k].set(b);
                 }
                 m.any[k].setUnion(m.fits[a][k]);
             }
@@ -135,7 +135,7 @@ const Model = struct {
     }
 };
 
-const DIRS = [4][2]i32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } };
+const DIRS = mathx.CARDINALS;
 
 fn symbol(c: u8) u8 {
     return @intCast(std.mem.indexOfScalar(u8, SYMBOLS, c) orelse 0);
@@ -180,7 +180,8 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
     var all = Bits.initEmpty();
     for (0..m.n) |i| all.set(i);
     for (wave[0 .. w * h]) |*c| c.* = all;
-    var stack: [CELLS_MAX * 4]u16 = undefined;
+    var stack: [CELLS_MAX]u16 = undefined;
+    var queued = std.StaticBitSet(CELLS_MAX).initEmpty();
     while (true) {
         var best: ?usize = null;
         var best_e: f32 = std.math.floatMax(f32);
@@ -208,9 +209,11 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
         wave[cell].set(chosen);
         var top: usize = 1;
         stack[0] = @intCast(cell);
+        queued.set(cell);
         while (top > 0) {
             top -= 1;
             const c = stack[top];
+            queued.unset(c);
             const cx: i32 = @intCast(c % w);
             const cy: i32 = @intCast(c / w);
             var allowed = m.any;
@@ -222,18 +225,18 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
                 }
             }
             for (DIRS, 0..) |d, k| {
-                const nx = cx + d[0];
-                const ny = cy + d[1];
+                const nx = cx + d.x;
+                const ny = cy + d.y;
                 if (nx < 0 or ny < 0 or nx >= w or ny >= h) continue;
                 const ni: usize = @as(usize, @intCast(ny)) * w + @as(usize, @intCast(nx));
                 const now = wave[ni].intersectWith(allowed[k]);
                 if (now.eql(wave[ni])) continue;
                 if (now.count() == 0) return false;
                 wave[ni] = now;
-                if (top < stack.len) {
-                    stack[top] = @intCast(ni);
-                    top += 1;
-                }
+                if (queued.isSet(ni)) continue;
+                queued.set(ni);
+                stack[top] = @intCast(ni);
+                top += 1;
             }
         }
     }
@@ -241,7 +244,6 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
     return true;
 }
 
-/// Every template but `.mixed`, which draws one of them.
 /// Each template's art, at its place in `Template`; `mixed`, last, picks one.
 const TEMPLATES = blk: {
     var a: [@intFromEnum(Template.mixed)][]const []const u8 = undefined;
@@ -263,9 +265,8 @@ fn templateOf(t: Template, rng: *mathx.Rng) usize {
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
-    const g = p.ground.tile();
-    carve.fill(lv, g);
-    carve.rim(lv, .shrub);
+    const pal = palette(p);
+    carve.field(lv, pal);
     var out: [CELLS_MAX]u8 = undefined;
     var models: [TEMPLATES.len]?Model = @splat(null);
     var y: i32 = MARGIN;
@@ -287,9 +288,9 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
                     for (0..w) |xx| {
                         const q = P{ .x = x + @as(i32, @intCast(xx)), .y = y + @as(i32, @intCast(yy)) };
                         const t: grid.Tile = switch (SYMBOLS[out[yy * w + xx]]) {
-                            '#' => if (carve.percent(rng, p.decay)) .rubble else .wall,
+                            '#' => if (rng.percent(p.decay)) .rubble else .wall,
                             '.' => .floor,
-                            else => g,
+                            else => pal.open,
                         };
                         lv.set(q, t);
                     }

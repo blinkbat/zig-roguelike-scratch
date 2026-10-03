@@ -41,11 +41,11 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: P
     for (0..p.count) |_| {
         const c = for (0..TRIES) |_| {
             const half = @divTrunc(most, 2);
-            const q = P{ .x = rng.range(half + 1, grid.W - 2 - half), .y = rng.range(half + 1, grid.H - 2 - half) };
+            const q = grid.Box.inMap(half + 1).roll(rng);
             if (lv.walkable(q)) break q;
         } else continue;
         const r = rng.range(SIZE_MIN, most);
-        const isle = carve.percent(rng, p.island);
+        const isle = rng.percent(p.island);
         const rf: f32 = @floatFromInt(r);
         var cells = grid.Cells.around(c, r + 1);
         while (cells.next()) |q| {
@@ -65,8 +65,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: P
 test "lakes fill open ground, and an island stays dry" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x1A4E);
-    carve.fill(&lv, .grass);
-    carve.rim(&lv, .shrub);
+    carve.field(&lv, carve.Palette.WILD);
     const pal = carve.Palette.WILD;
     apply(&lv, &rng, 1, pal, .{ .count = 4, .size = 10, .island = 100 });
     std.debug.print("4 lakes with islands: {d} water, {d} shallows\n", .{ carve.count(&lv, .water), carve.count(&lv, .shallows) });

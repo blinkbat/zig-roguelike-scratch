@@ -119,12 +119,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
 }
 
 fn clearing(lv: *grid.Level, noise: carve.Noise, c: P, r: f32, fray: f32, open: grid.Tile) void {
-    const k: i32 = @intFromFloat(@ceil(r * (1 + fray / 2)));
-    var cells = grid.Cells.around(c, k);
-    while (cells.next()) |q| {
-        if (grid.Level.onRim(q)) continue;
-        if (mathx.distEuclid(q, c) / r < 1 - fray / 2 + fray * noise.at(q, 4, 2)) lv.set(q, open);
-    }
+    carve.blob(lv, noise, c, r, 4, 1 - fray / 2, fray, open);
 }
 
 fn path(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, w: f32, open: grid.Tile) void {
@@ -134,13 +129,11 @@ fn path(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, w: f32, open: grid.Tile) v
 
 test "every layout joins its spots" {
     var lv = grid.Level.blank();
-    var region: [grid.CELLS]u16 = undefined;
-    var size: [grid.CELLS]u32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
+    var st: carve.Stretches = .{};
     for (std.enums.values(Layout)) |l| {
         var rng = mathx.Rng.init(0x70B0);
         shape(&lv, &rng, 1, .{ .layout = l, .sides = 0 });
-        const parts = carve.label(&lv, &region, &size, &queue);
+        const parts = st.label(&lv);
         std.debug.print("{s}: {d} open cells in {d} stretches\n", .{ @tagName(l), carve.count(&lv, .grass), parts });
         if (l != .grid) try std.testing.expectEqual(@as(usize, 1), parts);
     }

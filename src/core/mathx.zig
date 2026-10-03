@@ -50,6 +50,14 @@ pub const P = struct {
     pub fn sub(a: P, b: P) P {
         return .{ .x = a.x - b.x, .y = a.y - b.y };
     }
+
+    pub fn min(a: P, b: P) P {
+        return .{ .x = @min(a.x, b.x), .y = @min(a.y, b.y) };
+    }
+
+    pub fn max(a: P, b: P) P {
+        return .{ .x = @max(a.x, b.x), .y = @max(a.y, b.y) };
+    }
 };
 
 /// The middle of `p`, in cells: `cellOf` of it is `p`.
@@ -70,6 +78,20 @@ pub const MILLE = 1000;
 /// 0 at `lo`, 1 at `hi`, eased between.
 pub fn smoothstep(lo: f32, hi: f32, x: f32) f32 {
     return smooth(std.math.clamp((x - lo) / (hi - lo), 0, 1));
+}
+
+/// Across a square's corners, top-left, top-right, bottom-left, bottom-right.
+pub fn bilerp(c: [4]f32, a: f32, b: f32) f32 {
+    return lerpF(lerpF(c[0], c[1], a), lerpF(c[2], c[3], a), b);
+}
+
+/// Value noise: `lattice` at the whole points round `(u, v)`, eased between.
+pub fn valueNoise(ctx: anytype, comptime lattice: fn (@TypeOf(ctx), i32, i32) f32, u: f32, v: f32) f32 {
+    const fu = @floor(u);
+    const fv = @floor(v);
+    const x: i32 = @intFromFloat(fu);
+    const y: i32 = @intFromFloat(fv);
+    return bilerp(.{ lattice(ctx, x, y), lattice(ctx, x + 1, y), lattice(ctx, x, y + 1), lattice(ctx, x + 1, y + 1) }, smooth(u - fu), smooth(v - fv));
 }
 
 /// `r` as a low and a high, each in `lo..hi`, the low not above the high.
@@ -181,6 +203,9 @@ const DELTAS = std.EnumArray(Dir, P).init(.{
 
 pub const ALL_DIRS = std.enums.values(Dir);
 
+/// The four straight steps, east, west, south, north: generators draw in this order.
+pub const CARDINALS = [_]P{ Dir.e.delta(), Dir.w.delta(), Dir.s.delta(), Dir.n.delta() };
+
 pub fn dirTo(a: P, b: P) ?Dir {
     const d = b.sub(a);
     for (ALL_DIRS) |dir| {
@@ -241,6 +266,14 @@ pub const Rng = struct {
 
     pub fn chance(self: *Rng, p: f32) bool {
         return self.unit() < p;
+    }
+
+    pub fn percent(self: *Rng, pc: u32) bool {
+        return self.below(PERCENT) < pc;
+    }
+
+    pub fn perMille(self: *Rng, pm: u32) bool {
+        return self.below(MILLE) < pm;
     }
 
     /// [0, 1).

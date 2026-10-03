@@ -32,11 +32,12 @@ pub fn palette(p: Params) carve.Palette {
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
-    carve.fill(lv, .wall);
+    const pal = palette(p);
+    carve.fill(lv, pal.solid);
     const m: i32 = p.margin;
     const lo = mathx.P{ .x = m, .y = m };
     const hi = mathx.P{ .x = grid.W - m, .y = grid.H - m };
-    carve.box(lv, lo, hi, .floor);
+    carve.box(lv, lo, hi, pal.open);
     switch (p.style) {
         .bare => {},
         .pillars => {
@@ -59,7 +60,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         .grove => {
             var cells = grid.Cells.of(lo, .{ .x = hi.x, .y = hi.y - @divTrunc(hi.y - lo.y, GROVE_CLEAR_OF) });
             while (cells.next()) |q| {
-                if (carve.percent(rng, GROVE_FILL)) lv.set(q, .shrub);
+                if (rng.percent(GROVE_FILL)) lv.set(q, .shrub);
             }
         },
     }

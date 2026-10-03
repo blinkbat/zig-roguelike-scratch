@@ -23,8 +23,8 @@ pub fn palette(p: Params) carve.Palette {
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
-    carve.fill(lv, p.ground.tile());
-    carve.rim(lv, p.edge.tile());
+    const pal = palette(p);
+    carve.field(lv, pal);
     p.litter.strew(lv, rng);
 }
 

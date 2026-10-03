@@ -136,13 +136,7 @@ const WALL_CELLS = std.EnumArray(grid.WallShape, ?WallCell).init(.{
 /// raylib's `imageFromImage` copies without clamping, so a cell off the sheet would read past it.
 fn wallCell(sheet: rl.Image, c: WallCell) ?rl.Image {
     if ((c.col + 1) * SPRITE_PX > sheet.width or (c.row + 1) * SPRITE_PX > sheet.height) return null;
-    const px: f32 = @floatFromInt(SPRITE_PX);
-    return rl.imageFromImage(sheet, .{
-        .x = @as(f32, @floatFromInt(c.col)) * px,
-        .y = @as(f32, @floatFromInt(c.row)) * px,
-        .width = px,
-        .height = px,
-    });
+    return rl.imageFromImage(sheet, rect(c.col * SPRITE_PX, c.row * SPRITE_PX, SPRITE_PX, SPRITE_PX));
 }
 
 pub fn whole(t: rl.Texture2D) rl.Rectangle {
@@ -182,8 +176,8 @@ pub fn canvas(w: i32, h: i32, c: rl.Color) ?rl.Texture2D {
     return clamped(img, .bilinear);
 }
 
-/// White, its alpha `alphaAt(dx, dy)` from the middle, 1 at the middle of each edge. Needs a live GL context.
-pub fn radial(comptime px: i32, comptime alphaAt: fn (f32, f32) f32) ?rl.Texture2D {
+/// White, its alpha `alphaAt(r)` at `r` from the middle, 1 at the middle of each edge. Needs a live GL context.
+pub fn radial(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
     const n: usize = @intCast(px);
     var img: [n * n]rl.Color = undefined;
     const half: f32 = @as(f32, @floatFromInt(px)) * 0.5;
@@ -191,7 +185,7 @@ pub fn radial(comptime px: i32, comptime alphaAt: fn (f32, f32) f32) ?rl.Texture
         for (0..n) |x| {
             const dx = (@as(f32, @floatFromInt(x)) + 0.5 - half) / half;
             const dy = (@as(f32, @floatFromInt(y)) + 0.5 - half) / half;
-            img[y * n + x] = .{ .r = 255, .g = 255, .b = 255, .a = @intFromFloat(alphaAt(dx, dy) * 255) };
+            img[y * n + x] = fade(rl.Color.white, alphaAt(@sqrt(dx * dx + dy * dy)));
         }
     }
     return clamped(rgba(&img, px, px), .bilinear);

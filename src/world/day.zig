@@ -6,11 +6,12 @@ const mathx = @import("../core/mathx.zig");
 pub const HOURS: f32 = 24;
 pub const SUNRISE: f32 = 6;
 pub const SUNSET: f32 = 20;
-const MINUTES: u16 = @as(u16, @intFromFloat(HOURS)) * 60;
+const PER_HOUR: u16 = 60;
+const MINUTES: u16 = @as(u16, @intFromFloat(HOURS)) * PER_HOUR;
 /// Game minutes a turn takes: a day is `MINUTES / TURN_MINUTES` turns.
 pub const TURN_MINUTES: u16 = 6;
 /// A run starts at half past eight, a whole day ahead of it.
-pub const START_MINUTE: u16 = 8 * 60 + 30;
+pub const START_MINUTE: u16 = 8 * PER_HOUR + 30;
 
 comptime {
     std.debug.assert(MINUTES % TURN_MINUTES == 0 and START_MINUTE < MINUTES);
@@ -25,16 +26,16 @@ pub const Clock = struct {
     }
 
     pub fn hour(c: Clock) f32 {
-        return @as(f32, @floatFromInt(c.minute)) / 60;
+        return @as(f32, @floatFromInt(c.minute)) / PER_HOUR;
     }
 
     pub fn at(h: f32) Clock {
-        return .{ .minute = @intFromFloat(@mod(@round(wrapHour(h) * 60), @as(f32, @floatFromInt(MINUTES)))) };
+        return .{ .minute = @intFromFloat(@mod(@round(wrapHour(h) * PER_HOUR), @as(f32, @floatFromInt(MINUTES)))) };
     }
 };
 
 pub fn wrapHour(h: f32) f32 {
-    if (!std.math.isFinite(h)) return @as(f32, @floatFromInt(START_MINUTE)) / 60;
+    if (!std.math.isFinite(h)) return (Clock{}).hour();
     const r = @rem(h, HOURS);
     return if (r < 0) r + HOURS else r;
 }
@@ -68,7 +69,7 @@ test "a turn moves the clock on, a day is 240 turns, and it comes round to where
     try std.testing.expectEqual(START_MINUTE, c.minute);
     c = Clock.at(23.99);
     c.turn();
-    try std.testing.expect(c.hour() < @as(f32, @floatFromInt(TURN_MINUTES)) / 60);
+    try std.testing.expect(c.hour() < @as(f32, @floatFromInt(TURN_MINUTES)) / PER_HOUR);
     try std.testing.expectApproxEqAbs(@as(f32, -0.5), toward(0.25, 23.75), 1e-4);
 }
 

@@ -35,8 +35,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: P
 test "clumps take the share asked of the ground, and lone solids never touch" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x5CA7);
-    carve.fill(&lv, .grass);
-    carve.rim(&lv, .shrub);
+    carve.field(&lv, carve.Palette.WILD);
     const open = carve.count(&lv, .grass);
     const pal = carve.Palette.WILD;
     apply(&lv, &rng, 3, pal, .{ .tile = .reeds, .amount = 250, .clump = 8 });

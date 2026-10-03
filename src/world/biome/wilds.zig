@@ -5,8 +5,6 @@ const carve = @import("../carve.zig");
 
 // ADOM's forest square, Qud's jungle, Diablo II's Dark Wood.
 
-const P = mathx.P;
-
 pub const THICKET_MAX: u8 = 75;
 pub const SMOOTH_MAX: u8 = 8;
 pub const STRAYS_MAX: u16 = 100;
@@ -26,13 +24,16 @@ pub const Params = struct {
 };
 
 pub fn palette(_: Params) carve.Palette {
-    return .{ .open = .grass, .solid = .shrub, .path = .grass, .pocket = .shrub };
+    var pal = carve.Palette.WILD;
+    pal.pocket = pal.solid;
+    return pal;
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
-    carve.sow(lv, rng, p.thicket, .shrub, .grass);
-    carve.smooth(lv, p.smooth, .shrub, .grass);
-    carve.scatter(lv, rng, p.strays, .grass, .shrub, true);
+    const pal = palette(p);
+    carve.sow(lv, rng, p.thicket, pal.solid, pal.open);
+    carve.smooth(lv, p.smooth, pal.solid, pal.open);
+    carve.scatter(lv, rng, p.strays, pal.open, pal.solid, true);
     p.litter.strew(lv, rng);
 }
 

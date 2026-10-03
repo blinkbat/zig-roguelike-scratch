@@ -503,7 +503,7 @@ pub fn begin(g: *Game, seed: u64) void {
     var buf: [Log.COLS]u8 = undefined;
     var out = std.io.fixedBufferStream(&buf);
     for (actor.FOES, 0..) |k, i| {
-        out.writer().print("{s}{d} {s}s", .{ menu.listSep(i, actor.FOES.len, .@"and"), g.pool.tally(k).total, actor.row(k).name }) catch break;
+        out.writer().print("{s}{d} {s}", .{ menu.listSep(i, actor.FOES.len, .@"and"), g.pool.tally(k).total, actor.plural(k) }) catch break;
     }
     g.log.say("{s} somewhere on this floor. Seed {d}.", .{ out.getWritten(), seed });
 }
@@ -523,7 +523,7 @@ fn enter(g: *Game, n: usize, at: P) void {
     const w = g.world.?;
     const hp = if (g.archer()) |h| h.hp else actor.row(HERO).hp;
     g.node = n;
-    g.outdoors = w.node[n].outdoor();
+    g.outdoors = outdoorsNow(g);
     const back = g.visited.isSet(n);
     if (back) {
         g.visits[n].restore(g);
@@ -640,9 +640,14 @@ pub fn resumeRun(g: *Game) void {
     g.exit = null;
     g.unsaved = false;
     g.vignette.clear();
-    g.outdoors = if (g.world) |w| w.node[g.node].outdoor() else false;
+    g.outdoors = outdoorsNow(g);
     freshTurn(g);
     settle(g);
+}
+
+fn outdoorsNow(g: *const Game) bool {
+    const w = g.world orelse return false;
+    return w.node[g.node].outdoor();
 }
 
 pub fn freshSeed() u64 {
@@ -725,17 +730,20 @@ fn usedSkill(g: *Game) ?Use {
     const set = g.bar.active(g.st.down);
     for (skillbar.SLOTS) |b| {
         if (!g.st.hit(b)) continue;
-        const a = g.bar.at(.{ .set = set, .button = b }) orelse continue;
-        if (a != .secondary) return .{ .act = a, .by = b };
+        return skillOn(g, set, b) orelse continue;
     }
     const m = g.bar.modifier orelse return null;
     if (!g.st.hit(m)) return null;
     for (skillbar.SLOTS) |b| {
         if (b == m or !g.st.held(b)) continue;
-        const a = g.bar.at(.{ .set = .secondary, .button = b }) orelse continue;
-        if (a != .secondary) return .{ .act = a, .by = b };
+        return skillOn(g, .secondary, b) orelse continue;
     }
     return null;
+}
+
+fn skillOn(g: *const Game, set: skillbar.Set, b: input.Button) ?Use {
+    const a = g.bar.at(.{ .set = set, .button = b }) orelse return null;
+    return if (a == .secondary) null else .{ .act = a, .by = b };
 }
 
 fn useSkill(g: *Game, u: Use) void {
@@ -907,7 +915,7 @@ fn split(g: *Game, id: u16) ?usize {
     g.pictured[o] = fx.Body.of(b, g.seq);
     g.glide[o] = Glide.still(b.at, look.gait(b.kind));
     g.facing[o] = if (g.turning[i]) |t| t.to else g.facing[i];
-    if (g.lv.isLit(g.pool.items[i].at)) g.log.say("The {s} splits in two!", .{name});
+    sayAt(g, g.pool.items[i].at, "The {s} splits in two!", .{name});
     return o;
 }
 
@@ -916,10 +924,15 @@ fn fell(g: *Game, kind: actor.Kind, at: P) void {
     g.kills += 1;
     if (kind.bursts()) {
         g.lv.addGas(at, gas.BURST);
-        if (g.lv.isLit(at)) g.log.say("The {s} bursts, leaving a cloud of caustic gas!", .{name});
+        sayAt(g, at, "The {s} bursts, leaving a cloud of caustic gas!", .{name});
     }
     const family = kind.family();
     if (g.pool.tally(family).left == 0) g.log.say("The last {s} is dead.", .{actor.row(family).name});
+}
+
+/// Said only where the archer can see it happen.
+fn sayAt(g: *Game, at: P, comptime fmt: []const u8, args: anytype) void {
+    if (g.lv.isLit(at)) g.log.say(fmt, args);
 }
 
 fn heroDies(g: *Game) void {
@@ -973,7 +986,7 @@ fn gasHarm(g: *Game, id: u16) void {
         return;
     }
     if (!lethal) return;
-    if (g.lv.isLit(at)) g.log.say("The {s} dies.", .{actor.row(kind).name});
+    sayAt(g, at, "The {s} dies.", .{actor.row(kind).name});
     fell(g, kind, at);
 }
 
@@ -1007,7 +1020,7 @@ fn foeTurn(g: *Game, id: u16) void {
         if (!fov.sees(&g.lv, r.at, h.at, row.sight)) return;
         r.awake = true;
         turnLater(g, id, h.at.x - r.at.x);
-        if (g.lv.isLit(r.at)) g.log.say("A {s} notices {s}.", .{ row.name, g.name.text() });
+        sayAt(g, r.at, "A {s} notices {s}.", .{ row.name, g.name.text() });
         return;
     }
     const flitted = if (row.flits and g.rng.chance(actor.FLIT)) actor.flit(&g.lv, r.at, id, g.hero, &g.rng) else null;
@@ -1429,7 +1442,7 @@ fn shownAt(g: *Game, p: P, skip: ?usize) bool {
 
 fn bar(x: i32, y: i32, w: i32, h: i32, hp: i32, max: i32, back: rl.Color) void {
     rl.drawRectangle(x, y, w, h, back);
-    rl.drawRectangle(x, y, @divTrunc(w * @max(0, hp), max), h, look.LIFE);
+    rl.drawRectangle(x, y, @divTrunc(w * hp, max), h, look.LIFE);
 }
 
 const Shown = struct {
@@ -1445,6 +1458,11 @@ const Prop = struct {
     s: P,
     mid: [2]f32,
     shine: light.Shine,
+
+    fn at(g: *Game, c: Cam, p: P) Prop {
+        const mid = mathx.centre(p);
+        return .{ .s = .{ .x = c.sx(p), .y = c.sy(p) }, .mid = mid, .shine = g.light.onBody(mid, false) };
+    }
 };
 
 const Barrels = struct {
@@ -1458,9 +1476,7 @@ const Barrels = struct {
 
     fn next(self: *Barrels) ?Prop {
         while (self.cells.next()) |p| {
-            if (!barrelShownAt(self.g, p)) continue;
-            const mid = mathx.centre(p);
-            return .{ .s = .{ .x = self.c.sx(p), .y = self.c.sy(p) }, .mid = mid, .shine = self.g.light.onBody(mid, false) };
+            if (barrelShownAt(self.g, p)) return Prop.at(self.g, self.c, p);
         }
         return null;
     }
@@ -1475,8 +1491,11 @@ fn drawFigure(g: *Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid:
 /// The open ground and what lies under anything solid, then the solid, which covers the shadows cast between.
 const Pass = enum { ground, solid };
 
+/// The cells bodies are drawn standing in this frame.
+const Stood = std.StaticBitSet(grid.CELLS);
+
 /// At full light, over the seen cells from `lo` up to `hi`.
-fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P) void {
+fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: *const Stood) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
         if (!g.lv.isSeen(p)) continue;
@@ -1491,7 +1510,7 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P) void {
             continue;
         }
         if (look.tileBg(kind)) |bg| fillCell(c, p, bg);
-        if (kind != here or standsShownAt(g, p)) continue;
+        if (kind != here or stood.isSet(grid.Level.idx(p)) or barrelShownAt(g, p)) continue;
         if (arrow_at) |a| {
             if (a.eq(p)) continue;
         }
@@ -1510,10 +1529,9 @@ fn drawShadows(g: *Game, c: Cam, cast: [2]P, bodies: []const Shown) void {
         const kind = g.lv.at(p);
         if (!look.stands(kind) or !g.lv.isSeen(p)) continue;
         const t = g.sprites.tileOf(kind, null) orelse continue;
-        const mid = mathx.centre(p);
-        const shine = g.light.onBody(mid, false);
-        const rect = spriteRect(t, c.sx(p), c.sy(p));
-        if (look.canopied(kind)) g.light.drawCanopy(t, rect, mid, shine) else g.light.drawShadows(t, rect, false, mid, shine);
+        const pr = Prop.at(g, c, p);
+        const rect = spriteRect(t, pr.s.x, pr.s.y);
+        if (look.canopied(kind)) g.light.drawCanopy(t, rect, pr.mid, pr.shine) else g.light.drawShadows(t, rect, false, pr.mid, pr.shine);
     }
     for (bodies) |b| {
         const t = g.sprites.body(b.pic.kind) orelse continue;
@@ -1532,9 +1550,12 @@ fn drawWorld(g: *Game) void {
     const aim_from: ?P = if (g.mode != .aim) null else if (g.archer()) |a| a.at else null;
 
     var shown: [actor.MAX]Shown = undefined;
+    var stood = Stood.initEmpty();
     var n: usize = 0;
     for (0..g.pool.n) |i| {
         const at = drawnAt(g, i) orelse continue;
+        const under = cellUnder(at);
+        if (grid.Level.inside(under)) stood.set(grid.Level.idx(under));
         const mid = middle(at);
         shown[n] = .{
             .pic = g.pictured[i],
@@ -1548,13 +1569,13 @@ fn drawWorld(g: *Game) void {
     }
     const bodies = shown[0..n];
 
-    drawTerrain(g, c, lo, hi, .ground, arrow_at);
+    drawTerrain(g, c, lo, hi, .ground, arrow_at, &stood);
     if (g.light.beginShadows(g.screen, g.framebuffer)) {
         drawShadows(g, c, grid.grown(lo, hi, CAST_MARGIN), bodies);
         g.light.endShadows();
     }
     g.cloud.draw(&g.lv, lo, hi, -c.x, -c.y, CELL);
-    drawTerrain(g, c, lo, hi, .solid, arrow_at);
+    drawTerrain(g, c, lo, hi, .solid, arrow_at, &stood);
     g.fx.draw(@floatFromInt(-c.x), @floatFromInt(-c.y), CELL_F);
     g.light.bake(&g.lv, lo, hi);
     g.light.drawMap(-c.x, -c.y, CELL);
@@ -1800,12 +1821,12 @@ fn drawHud(g: *Game) void {
     const hp = if (shown) |h| h.hp else 0;
     const bar_y = top + BAR_Y;
     bar(HUD_PAD, bar_y, BAR_W, BAR_H, hp, max, look.LIFE_BG);
-    g.face.text(std.fmt.bufPrintZ(&buf, "{s}  HP {d}/{d}", .{ g.name.text(), @max(0, hp), max }) catch "", HUD_PAD + BAR_TEXT_X, bar_y + @divTrunc(BAR_H - TEXT, 2), TEXT, look.TEXT);
+    g.face.text(std.fmt.bufPrintZ(&buf, "{s}  HP {d}/{d}", .{ g.name.text(), hp, max }) catch "", HUD_PAD + BAR_TEXT_X, bar_y + @divTrunc(BAR_H - TEXT, 2), TEXT, look.TEXT);
     var tally_x = HUD_PAD;
     for (actor.FOES) |k| {
         const t = tallyShown(g, k);
-        const name = actor.row(k).name;
-        const s = std.fmt.bufPrintZ(&buf, "{c}{s}s {d}/{d}", .{ std.ascii.toUpper(name[0]), name[1..], t.left, t.total }) catch "";
+        const name = actor.plural(k);
+        const s = std.fmt.bufPrintZ(&buf, "{c}{s} {d}/{d}", .{ std.ascii.toUpper(name[0]), name[1..], t.left, t.total }) catch "";
         g.face.text(s, tally_x, top + TALLY_Y, TEXT, look.DIM);
         tally_x += g.face.width(s, TEXT) + TALLY_GAP;
     }
@@ -2334,9 +2355,7 @@ test "a slime beside you slams you in melee harder than a rat bites" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{});
-    const id = g.pool.spawn(&g.lv, actor.Actor.of(.slime, .{ .x = 21, .y = 20 }));
-    g.pool.get(id).?.awake = true;
-    snapGlide(g);
+    const id = spawnAt(g, .slime, .{ .x = 21, .y = 20 }, true);
     endTurn(g);
     const slam = actor.row(.slime).blow.strike;
     const lost = actor.row(HERO).hp - g.archer().?.hp;

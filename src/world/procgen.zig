@@ -185,7 +185,7 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     carve.seal(lv, pal.solid);
     carve.openDoors(lv, doors, pal.open);
     if (lv.firstOpen() == null) carve.disc(lv, grid.MIDDLE, CLEARING_R, pal.open, null);
-    carve.connect(lv, &rng, .{ .path = pal.path, .pocket = pal.pocket });
+    carve.connect(lv, &rng, pal);
     settle(lv, rooms);
 }
 

@@ -27,14 +27,14 @@ pub const Params = struct {
 };
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
-    var taken: [COUNT_MAX]buildings.Box = undefined;
+    var taken: [COUNT_MAX]grid.Box = undefined;
     var n: usize = 0;
     for (0..p.count) |_| {
         const b = buildings.site(lv, rng, rng.range(p.size[0], p.size[1]), rng.range(p.size[0], p.size[1]), taken[0..n]) orelse continue;
         taken[n] = b;
         n += 1;
         const across = rng.chance(0.5);
-        var cells = grid.Cells.of(b.lo, b.hi);
+        var cells = b.cells();
         while (cells.next()) |q| {
             const row = if (across) q.y - b.lo.y else q.x - b.lo.x;
             lv.set(q, if (b.onEdge(q)) p.fence else if (@mod(row, 2) == 0) p.furrow else p.crop);
@@ -48,8 +48,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
 test "fields are fenced, in furrows of crop" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0xFA2);
-    carve.fill(&lv, .grass);
-    carve.rim(&lv, .shrub);
+    carve.field(&lv, carve.Palette.WILD);
     apply(&lv, &rng, 0, .{ .open = .grass, .solid = .shrub, .path = .dirt }, .{});
     std.debug.print("5 fields: {d} fence, {d} crop, {d} furrow\n", .{ carve.count(&lv, .fence), carve.count(&lv, .crop), carve.count(&lv, .dirt) });
     try std.testing.expect(carve.count(&lv, .crop) > 50 and carve.count(&lv, .fence) > 50);

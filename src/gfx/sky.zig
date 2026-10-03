@@ -10,7 +10,16 @@ pub const Rgb = @Vector(3, f32);
 
 /// `a` eased toward `b` by `k`.
 pub fn mix(a: Rgb, b: Rgb, k: f32) Rgb {
-    return a + (b - a) * @as(Rgb, @splat(k));
+    return a + (b - a) * splat(k);
+}
+
+pub fn splat(k: f32) Rgb {
+    return @splat(k);
+}
+
+/// Its length along the ground.
+fn flatOf(d: [3]f32) f32 {
+    return @sqrt(d[0] * d[0] + d[1] * d[1]);
 }
 
 const HOURS = day.HOURS;
@@ -81,7 +90,7 @@ pub fn sunDir(hour: f32) [3]f32 {
 /// sun's own vertical plane, so a shadow shrinks to its foot and grows out the other side and never turns.
 pub fn keyDir(hour: f32) [3]f32 {
     const s = sunDir(hour);
-    const flat = @sqrt(s[0] * s[0] + s[1] * s[1]);
+    const flat = flatOf(s);
     const h = [2]f32{ s[0] / flat, s[1] / flat };
     const sun_alt = std.math.asin(std.math.clamp(s[2], -1, 1));
     const floor_alt = std.math.degreesToRadians(KEY_ALT_MIN);
@@ -131,7 +140,7 @@ fn paletteAt(hour: f32) struct { key: Rgb, sky: Rgb } {
     while (i + 2 < KEYS.len and KEYS[i + 1].at <= h) i += 1;
     const a = KEYS[i];
     const b = KEYS[i + 1];
-    const t = mathx.smoothstep(0, 1, (h - a.at) / (b.at - a.at));
+    const t = mathx.smooth((h - a.at) / (b.at - a.at));
     return .{ .key = mix(a.key, b.key, t), .sky = mix(a.sky, b.sky, t) };
 }
 
@@ -150,7 +159,7 @@ pub const Sky = struct {
 
     /// Its lean off straight up: the length of its direction along the ground.
     pub fn flat(s: Sky) f32 {
-        return @sqrt(s.dir[0] * s.dir[0] + s.dir[1] * s.dir[1]);
+        return flatOf(s.dir);
     }
 
     /// Along the ground toward it, a unit vector; south when it stands straight up.
@@ -174,8 +183,8 @@ pub fn at(hour: f32) Sky {
     const p = paletteAt(hour);
     return .{
         .dir = acrossScreen(keyDir(hour)),
-        .key = p.key * @as(Rgb, @splat(keyDim(hour) * KEY_GAIN)),
-        .ambient = p.sky * @as(Rgb, @splat(SKY_GAIN)),
+        .key = p.key * splat(keyDim(hour) * KEY_GAIN),
+        .ambient = p.sky * splat(SKY_GAIN),
         .carry = 1 - day.daylight(hour),
         .moon = moonShare(hour),
     };

@@ -62,39 +62,13 @@ const CORNERS = [_]struct { floor: mathx.Dir, s: grid.WallShape }{
     .{ .floor = .nw, .s = .corner_br },
 };
 
-pub const Room = struct {
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
+pub const Room = grid.Box;
 
-    pub fn centre(r: Room) P {
-        return .{ .x = r.x + @divTrunc(r.w, 2), .y = r.y + @divTrunc(r.h, 2) };
-    }
-
-    pub fn holds(r: Room, p: P) bool {
-        return p.x >= r.x and p.x < r.x + r.w and p.y >= r.y and p.y < r.y + r.h;
-    }
-
-    fn cells(r: Room) grid.Cells {
-        return grid.Cells.of(.{ .x = r.x, .y = r.y }, .{ .x = r.x + r.w, .y = r.y + r.h });
-    }
-
-    fn onEdge(r: Room, p: P) bool {
-        return r.holds(p) and (p.x == r.x or p.y == r.y or p.x == r.x + r.w - 1 or p.y == r.y + r.h - 1);
-    }
-
-    fn overlaps(a: Room, b: Room, pad: i32) bool {
-        return a.x - pad < b.x + b.w and a.x + a.w + pad > b.x and
-            a.y - pad < b.y + b.h and a.y + a.h + pad > b.y;
-    }
-
-    /// The outline cell at the corner whose floor lies toward `floor`.
-    fn corner(r: Room, floor: mathx.Dir) P {
-        const d = floor.delta();
-        return .{ .x = if (d.x > 0) r.x - 1 else r.x + r.w, .y = if (d.y > 0) r.y - 1 else r.y + r.h };
-    }
-};
+/// The outline cell at `r`'s corner whose floor lies toward `floor`.
+fn corner(r: Room, floor: mathx.Dir) P {
+    const d = floor.delta();
+    return .{ .x = if (d.x > 0) r.lo.x - 1 else r.hi.x, .y = if (d.y > 0) r.lo.y - 1 else r.hi.y };
+}
 
 pub const Floor = struct {
     rooms: [MAX_ROOMS]Room = undefined,
@@ -118,12 +92,11 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
     while (tries < ROOM_TRIES and f.room_n < pm.rooms) : (tries += 1) {
         const w = rng.range(pm.room_w[0], pm.room_w[1]);
         const h = rng.range(pm.room_h[0], pm.room_h[1]);
-        const r = Room{
+        const at = P{
             .x = rng.range(o.x + MARGIN, o.x + pm.size.x - MARGIN - w),
             .y = rng.range(o.y + MARGIN, o.y + pm.size.y - MARGIN - h),
-            .w = w,
-            .h = h,
         };
+        const r = Room.sized(at, w, h);
         if (!addRoom(&f, r)) continue;
         carveRoom(lv, r);
     }
@@ -145,9 +118,8 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
     connect(lv, &rng);
     shapeWalls(lv);
     for (f.rooms[0..f.room_n]) |r| outlineRoom(lv, r);
-    const torch_chance = @as(f32, @floatFromInt(pm.torches)) / mathx.PERCENT;
     for (f.rooms[0..f.room_n]) |r| {
-        if (rng.chance(torch_chance)) hangTorch(lv, r, &rng);
+        if (rng.percent(pm.torches)) hangTorch(lv, r, &rng);
     }
     for (f.rooms[0..f.room_n]) |r| stackBarrels(lv, r, &rng, pm.barrels);
     f.start = f.rooms[0].centre();
@@ -157,14 +129,14 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
 fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
     var spots: [ROOM_W_MAX]i32 = undefined;
     var n: usize = 0;
-    var x = r.x;
-    while (x < r.x + r.w) : (x += 1) {
-        if (lv.wallShape(.{ .x = x, .y = r.y - 1 }) != .top) continue;
+    var x = r.lo.x;
+    while (x < r.hi.x) : (x += 1) {
+        if (lv.wallShape(.{ .x = x, .y = r.lo.y - 1 }) != .top) continue;
         spots[n] = x;
         n += 1;
     }
     if (n == 0) return;
-    lv.addTorch(.{ .x = spots[rng.below(@intCast(n))], .y = r.y - 1 });
+    lv.addTorch(.{ .x = spots[rng.below(@intCast(n))], .y = r.lo.y - 1 });
 }
 
 /// Against the room's own walls and nowhere beside a way in, so no barrel can seal a path.
@@ -242,24 +214,22 @@ fn connect(lv: *grid.Level, rng: *mathx.Rng) void {
             }
         }
         const o = grid.Level.inset(orphan orelse return);
-        var best: ?P = null;
-        var best_d: i32 = std.math.maxInt(i32);
-        for (0..grid.CELLS) |i| {
-            if (dist[i] < 0 or grid.Level.onRim(grid.Level.of(i))) continue;
-            const d = mathx.dist(grid.Level.of(i), o);
-            if (d < best_d) {
-                best_d = d;
-                best = grid.Level.of(i);
-            }
-        }
-        tunnel(lv, o, best orelse return, rng);
+        tunnel(lv, o, grid.nearest(o, Reached{ .dist = &dist }) orelse return, rng);
     }
 }
+
+const Reached = struct {
+    dist: *const [grid.CELLS]i32,
+
+    pub fn has(r: Reached, i: usize) bool {
+        return r.dist[i] >= 0;
+    }
+};
 
 /// Stamped over `shapeWalls`, which reads a room's corners as straight walls where a corridor runs just outside them.
 fn outlineRoom(lv: *grid.Level, r: Room) void {
     for (CORNERS) |c| {
-        const p = r.corner(c.floor);
+        const p = corner(r, c.floor);
         if (lv.at(p) != .wall or !grid.Level.inside(p) or keepsFloorShape(lv, p, c.floor)) continue;
         lv.shape[grid.Level.idx(p)] = c.s;
     }
@@ -339,7 +309,7 @@ test "the rim stays solid and the start is floor" {
 }
 
 fn room(lv: *grid.Level, x0: i32, y0: i32, x1: i32, y1: i32) void {
-    carveRoom(lv, .{ .x = x0, .y = y0, .w = x1 - x0 + 1, .h = y1 - y0 + 1 });
+    carveRoom(lv, .{ .lo = .{ .x = x0, .y = y0 }, .hi = .{ .x = x1 + 1, .y = y1 + 1 } });
 }
 
 test "a room's four sides, its corners and the rock behind it" {
@@ -398,7 +368,7 @@ test "a corridor's walls run with it, and turn a block corner where another meet
 
 test "a room ringed by corridors keeps its top corners, and a wall with a corridor below it faces that corridor" {
     var lv = grid.Level.blank();
-    const r = Room{ .x = 8, .y = 3, .w = 9, .h = 6 };
+    const r = Room.sized(.{ .x = 8, .y = 3 }, 9, 6);
     carveRoom(&lv, r);
     room(&lv, 1, 1, 24, 1);
     room(&lv, 1, 10, 24, 10);
@@ -425,7 +395,7 @@ test "a room ringed by corridors keeps its top corners, and a wall with a corrid
 
 test "a room corner beside a doorway takes the shape of the floor round it" {
     var lv = grid.Level.blank();
-    const r = Room{ .x = 8, .y = 3, .w = 9, .h = 6 };
+    const r = Room.sized(.{ .x = 8, .y = 3 }, 9, 6);
     carveRoom(&lv, r);
     room(&lv, 8, 1, 8, 2);
     room(&lv, 2, 8, 7, 8);
@@ -448,7 +418,7 @@ test "every room corner still standing after generation is drawn as that corner,
         const f = build(&lv, 0xC0 +% i *% 104729);
         for (f.rooms[0..f.room_n]) |r| {
             for (CORNERS) |c| {
-                const p = r.corner(c.floor);
+                const p = corner(r, c.floor);
                 if (lv.at(p) != .wall) continue;
                 if (keepsFloorShape(&lv, p, c.floor)) {
                     by_floor += 1;
@@ -625,9 +595,9 @@ test "a floor rolled in a small box keeps its rooms in it, to their count and si
         try std.testing.expect(f.room_n >= 1 and f.room_n <= pm.rooms);
         try std.testing.expectEqual(@as(usize, 0), lv.torch_n);
         for (f.rooms[0..f.room_n]) |r| {
-            try std.testing.expect(r.w >= 4 and r.w <= 8 and r.h >= 3 and r.h <= 6);
-            try std.testing.expect(r.x >= o.x + MARGIN and r.x + r.w <= o.x + pm.size.x - MARGIN);
-            try std.testing.expect(r.y >= o.y + MARGIN and r.y + r.h <= o.y + pm.size.y - MARGIN);
+            try std.testing.expect(r.width() >= 4 and r.width() <= 8 and r.height() >= 3 and r.height() <= 6);
+            try std.testing.expect(r.lo.x >= o.x + MARGIN and r.hi.x <= o.x + pm.size.x - MARGIN);
+            try std.testing.expect(r.lo.y >= o.y + MARGIN and r.hi.y <= o.y + pm.size.y - MARGIN);
         }
         _ = grid.distances(&lv, f.start, &dist, &queue);
         try std.testing.expect(dist[grid.Level.idx(.{ .x = 2, .y = 2 })] >= 0);

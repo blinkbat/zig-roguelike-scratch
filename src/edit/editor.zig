@@ -47,7 +47,7 @@ const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @fl
 const LABEL_OF_CELL: f32 = 0.4;
 const THUMB: i32 = 2;
 const BOX_W: i32 = grid.W * THUMB;
-const BOX_TOP: i32 = 26;
+const BOX_TOP: i32 = TEXT + 2 * TITLE_DY;
 const BOX_H: i32 = BOX_TOP + grid.H * THUMB;
 const LINK_W: f32 = 2;
 const DOT_R: f32 = 4;
@@ -267,6 +267,10 @@ fn Text(comptime N: usize) type {
             @memcpy(f.buf[0..f.n], s[0..f.n]);
         }
 
+        fn put(f: *Self, s: []const u8) void {
+            f.set(s, N);
+        }
+
         fn feed(f: *Self, d: *const Desk) void {
             for (d.text()) |c| {
                 if (f.n == f.cap) break;
@@ -414,7 +418,7 @@ pub const Editor = struct {
     }
 
     fn setPath(ed: *Editor, p: []const u8) void {
-        ed.file.set(p, PATH_MAX);
+        ed.file.put(p);
     }
 
     fn plan(ed: *Editor) *atlas.Plan {
@@ -645,7 +649,7 @@ pub const Editor = struct {
 
     fn askName(ed: *Editor, n: Naming) void {
         ed.naming = n;
-        ed.field.set("", FIELD_MAX);
+        ed.field.put("");
         ed.ask(.name);
     }
 
@@ -669,7 +673,7 @@ pub const Editor = struct {
                 if (!ed.save()) ed.file = keep;
             },
             .new => {
-                ed.pending_path.set(p, PATH_MAX);
+                ed.pending_path.put(p);
                 ed.request(.new);
             },
         }
@@ -702,6 +706,14 @@ pub const Editor = struct {
             ed.cam[0] + (@as(f32, @floatFromInt(m.x)) - c.x) / ed.px(),
             ed.cam[1] + (@as(f32, @floatFromInt(m.y)) - c.y) / ed.px(),
         });
+    }
+
+    fn mouseCell(ed: *const Editor, c: rl.Rectangle) P {
+        return ed.cellAt(c, ed.desk.mouse);
+    }
+
+    fn mouseIn(ed: *const Editor, r: rl.Rectangle) bool {
+        return rl.checkCollisionPointRec(vec(ed.desk.mouse), r);
     }
 
     fn cellRect(ed: *const Editor, c: rl.Rectangle, p: P) rl.Rectangle {
@@ -810,7 +822,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     }
     const c = Editor.canvas(g);
     if (d.play) ed.playStart();
-    const over = rl.checkCollisionPointRec(vec(d.mouse), c);
+    const over = ed.mouseIn(c);
     if (d.play_here) playHere(ed, c, over);
     if (ed.action != .none) return;
     if (d.save) _ = ed.save();
@@ -825,24 +837,16 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     if (d.smaller) ed.brush -|= 1;
     if (d.bigger) ed.brush = @min(ed.brush + 1, BRUSHES.len - 1);
     if (d.tool) |i| ed.setTool(TOOLS[i]);
-    if (ed.modal != .none) return;
+    if (ed.modal != .none or ed.renaming) return;
     if (d.clicked()) ed.gesture();
-    const pan = [2]f32{ @floatFromInt(d.pan.x), @floatFromInt(d.pan.y) };
-    const moved = [2]f32{ @floatFromInt(d.moved.x), @floatFromInt(d.moved.y) };
     switch (ed.view) {
         .map => {
-            for (0..2) |k| {
-                ed.cam[k] += pan[k] * PAN_PX_S * dt / ed.px();
-                if (d.grab) ed.cam[k] -= moved[k] / ed.px();
-            }
+            panBy(&ed.cam, d, dt, ed.px());
             if (d.wheel != 0 and over) zoom(ed, c, if (d.wheel > 0) 1 else -1);
             mapMouse(ed, c, over);
         },
         .graph => {
-            for (0..2) |k| {
-                ed.gcam[k] += pan[k] * PAN_PX_S * dt;
-                if (d.grab) ed.gcam[k] -= moved[k];
-            }
+            panBy(&ed.gcam, d, dt, 1);
             graphMouse(ed, c, over);
         },
     }
@@ -851,6 +855,16 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
         if (ed.lower == .generator and ed.rolled() != null) {
             ed.gen_top = std.math.clamp(ed.gen_top + if (up) -ROW_H else ROW_H, 0, ed.gen_most);
         } else scrollNodes(ed, if (up) -1 else 1);
+    }
+}
+
+/// `px` screen pixels a unit of `cam`.
+fn panBy(cam: *[2]f32, d: *const Desk, dt: f32, px: f32) void {
+    const pan = [2]f32{ @floatFromInt(d.pan.x), @floatFromInt(d.pan.y) };
+    const moved = [2]f32{ @floatFromInt(d.moved.x), @floatFromInt(d.moved.y) };
+    for (0..2) |k| {
+        cam[k] += pan[k] * PAN_PX_S * dt / px;
+        if (d.grab) cam[k] -= moved[k] / px;
     }
 }
 
@@ -885,7 +899,7 @@ fn modalKeys(ed: *Editor) void {
 }
 
 fn playHere(ed: *Editor, c: rl.Rectangle, over: bool) void {
-    const p = ed.cellAt(c, ed.desk.mouse);
+    const p = ed.mouseCell(c);
     if (ed.view != .map or !grid.Level.inside(p) or !over) {
         return ed.say("{s} plays from the cell under the cursor on a map", .{Desk.PLAY_HERE_CAPTION});
     }
@@ -894,7 +908,7 @@ fn playHere(ed: *Editor, c: rl.Rectangle, over: bool) void {
 
 fn goThrough(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (ed.view != .map) return;
-    const door = if (over) ed.doorAt(ed.cellAt(c, ed.desk.mouse)) else null;
+    const door = if (over) ed.doorAt(ed.mouseCell(c)) else null;
     const k = door orelse return ed.say("{s} goes through the door under the cursor", .{Desk.GO_CAPTION});
     const to = ed.here().door[k].to orelse return ed.say("Door {d} leads nowhere yet", .{k});
     ed.select(to.node);
@@ -906,14 +920,17 @@ fn goThrough(ed: *Editor, c: rl.Rectangle, over: bool) void {
 
 fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const d = &ed.desk;
-    const p = ed.cellAt(c, d.mouse);
+    const p = ed.mouseCell(c);
     const held = switch (ed.stroke) {
         .none => d.paint or d.erase,
         .paint => d.paint,
         .erase => d.erase,
     };
     if (!held) {
-        if (ed.rect) |r| fillRect(ed, r, clampCell(p));
+        if (ed.rect) |r| {
+            fillRect(ed, r, clampCell(p));
+            if (d.clicked()) ed.gesture();
+        }
         ed.drop();
     }
     if (over and d.clicked()) {
@@ -958,9 +975,7 @@ fn clampCell(p: P) P {
 }
 
 fn fillRect(ed: *Editor, r: Rect, to: P) void {
-    const lo = P{ .x = @min(r.from.x, to.x), .y = @min(r.from.y, to.y) };
-    const hi = P{ .x = @max(r.from.x, to.x) + 1, .y = @max(r.from.y, to.y) + 1 };
-    var cells = grid.Cells.of(lo, hi);
+    var cells = grid.Cells.of(r.from.min(to), r.from.max(to).add(.{ .x = 1, .y = 1 }));
     while (cells.next()) |p| {
         if (grid.Level.inside(p)) apply(ed, p, r.erase);
     }
@@ -1016,8 +1031,7 @@ fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
     if (b.tile[i] == t or ed.doorAt(p) != null) return;
     b.tile[i] = t;
     if (t.solid()) {
-        b.barrel[i] = false;
-        if (b.foeAt(p)) |f| b.dropFoe(f);
+        b.clearCell(p);
         if (b.torchAt(p.add(mathx.Dir.n.delta()))) |k| b.dropTorch(k);
     } else if (b.torchAt(p)) |k| b.dropTorch(k);
     ed.changed();
@@ -1055,8 +1069,7 @@ fn place(ed: *Editor, p: P) void {
             switch (ed.plan().*) {
                 .bespoke => |*b| {
                     b.tile[i] = .floor;
-                    b.barrel[i] = false;
-                    if (b.foeAt(p)) |f| b.dropFoe(f);
+                    b.clearCell(p);
                     if (b.torchAt(p)) |t| b.dropTorch(t);
                 },
                 .procgen => {},
@@ -1072,9 +1085,9 @@ fn place(ed: *Editor, p: P) void {
                 return ed.say("Linking node {d} door {d}: click the door it leads to, on any node", .{ here.node, here.door });
             };
             ed.pick = null;
-            if (std.meta.eql(from, here)) return ed.say(LINK_CANCELLED, .{});
+            if (from.eq(here)) return ed.say(LINK_CANCELLED, .{});
             if (ed.world.node[from.node].door[from.door].to) |t| {
-                if (std.meta.eql(t, here)) return ed.say("Those doors lead to each other already", .{});
+                if (t.eq(here)) return ed.say("Those doors lead to each other already", .{});
             }
             ed.world.link(from, here);
             ed.say("Node {d} door {d} and node {d} door {d} lead to each other", .{ from.node, from.door, here.node, here.door });
@@ -1148,8 +1161,8 @@ fn addNode(ed: *Editor, plan: atlas.Plan) void {
 /// Hot and clicked this frame. Under a modal only the modal's own are live, and not the frame it opened.
 fn hot(ed: *Editor, r: rl.Rectangle, live: bool, modal: bool, tip: ?[:0]const u8) struct { hot: bool, hit: bool } {
     const on_layer = !ed.fresh and ed.action == .none and (modal or ed.modal == .none);
-    const in_clip = if (ed.clip) |c| rl.checkCollisionPointRec(vec(ed.desk.mouse), c) else true;
-    const h = live and on_layer and in_clip and rl.checkCollisionPointRec(vec(ed.desk.mouse), r);
+    const in_clip = if (ed.clip) |c| ed.mouseIn(c) else true;
+    const h = live and on_layer and in_clip and ed.mouseIn(r);
     if (h and tip != null) ed.tip = tip;
     return .{ .hot = h, .hit = h and ed.desk.paint_hit };
 }
@@ -1287,7 +1300,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     if (ed.lower == .generator) {
         if (rolled) |pg| return drawGenerator(ed, g, y, pg);
     }
-    rl.beginScissorMode(0, y, PANEL_W, @max(0, g.screen.y - y));
+    scissor(lowerArea(g, y));
     defer rl.endScissorMode();
     var detail_buf: [LINE]u8 = undefined;
     for (ed.world.nodes()[ed.scroll..], ed.scroll..) |*nd, n| {
@@ -1303,13 +1316,19 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     }
 }
 
+/// The panel under its tabs, down to the window's foot.
+fn lowerArea(g: *const game.Game, top: i32) rl.Rectangle {
+    return look.rect(0, top, PANEL_W, @max(0, g.screen.y - top));
+}
+
 /// A procgen node's base, its features, its foes and their makeups, a row a setting, scrolled by the wheel; every click is one undo.
 fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void {
     const was = pg.*;
     const fo = &pg.foes;
-    const shown = @max(0, g.screen.y - top);
-    ed.clip = look.rect(0, top, PANEL_W, shown);
-    scissor(ed.clip.?);
+    const area = lowerArea(g, top);
+    const shown: i32 = @intFromFloat(area.height);
+    ed.clip = area;
+    scissor(area);
     defer {
         rl.endScissorMode();
         ed.clip = null;
@@ -1324,7 +1343,7 @@ fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void 
     y += BLOCK_GAP;
     section(g, &y, "Features");
     var drop_feature: ?usize = null;
-    for (pg.feature[0..pg.feature_n], 0..) |*ft, i| {
+    for (pg.featuresMut(), 0..) |*ft, i| {
         if (button(ed, g, row(PAD + LABEL_W - STEP_W - GAP, y, STEP_W), DROP, false, true, "Take this feature away")) drop_feature = i;
         choiceRow(ed, g, &y, atlas.Feature, ft, FEATURE_CHOICE);
         switch (ft.*) {
@@ -1347,7 +1366,7 @@ fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void 
     if (button(ed, g, cellOfRow(y, 0, 1), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
     ed.gen_most = @max(0, y + ROW_H + PAD + ed.gen_top - top - shown);
     pg.floor = pg.floor.fit();
-    for (pg.feature[0..pg.feature_n]) |*ft| ft.* = ft.fit();
+    for (pg.featuresMut()) |*ft| ft.* = ft.fit();
     fo.* = fo.fit();
     if (!std.meta.eql(was, pg.*)) ed.changed();
 }
@@ -1533,10 +1552,10 @@ const TOPOLOGY_ROWS = [_]Knob{
 const ZERO_TO_PERCENT = std.fmt.comptimePrint("0 to {d}", .{mathx.PERCENT});
 
 const TERRAIN_ROWS = [_]Knob{
-    .{ .field = "height", .label = "Height", .tips = &.{ std.fmt.comptimePrint("Lowest elevation, 0 to {d}; under {d} is sea", .{ mathx.PERCENT, terrain.SEA }), std.fmt.comptimePrint("Highest elevation; {d} and over is mountain", .{terrain.MOUNTAIN}) } },
+    .{ .field = "height", .label = "Height", .tips = &.{ "Lowest elevation, " ++ ZERO_TO_PERCENT ++ std.fmt.comptimePrint("; under {d} is sea", .{terrain.SEA}), std.fmt.comptimePrint("Highest elevation; {d} and over is mountain", .{terrain.MOUNTAIN}) } },
     .{ .field = "rain", .label = "Rain", .tips = &.{ "Driest, " ++ ZERO_TO_PERCENT, "Wettest" } },
     .{ .field = "drain", .label = "Drainage", .tips = &.{ "Least drained, " ++ ZERO_TO_PERCENT, "Best drained" } },
-    .{ .field = "heat", .label = "Heat", .tips = &.{ std.fmt.comptimePrint("Coldest, 0 to {d}; {d} and under is tundra or glacier", .{ mathx.PERCENT, terrain.FROST }), "Hottest" } },
+    .{ .field = "heat", .label = "Heat", .tips = &.{ "Coldest, " ++ ZERO_TO_PERCENT ++ std.fmt.comptimePrint("; {d} and under is tundra or glacier", .{terrain.FROST}), "Hottest" } },
     .{ .field = "scale", .label = "Scale", .tips = &.{"Cells across a field's features"} },
     .{ .field = "rivers", .label = "Rivers", .tips = &.{"Rivers running downhill from the heights"} },
     LITTER_ROW,
@@ -1737,16 +1756,18 @@ fn knobRow(ed: *Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob)
 fn stepNumber(ed: *Editor, g: *game.Game, y: i32, comptime i: usize, n: usize, comptime T: type, v: *T, comptime k: Knob) void {
     var buf: [16]u8 = undefined;
     const tip = k.tips[i] ++ SHIFT_TIP;
-    const r = slotOf(PAD + LABEL_W, INNER_W - LABEL_W, y, i, n);
-    bump(T, v, k.unit * stepper(ed, g, r, num(&buf, k.fmt, v.*), .{ .{ .tip = tip }, .{ .tip = tip } }));
+    bump(T, v, k.unit * stepper(ed, g, valueSlot(y, i, n), num(&buf, k.fmt, v.*), .{ .{ .tip = tip }, .{ .tip = tip } }));
 }
 
 /// `- name +`, round the choices.
 fn stepChoice(ed: *Editor, g: *game.Game, y: i32, comptime T: type, v: *T, tip: [:0]const u8) void {
-    var buf: [32]u8 = undefined;
-    const r = slotOf(PAD + LABEL_W, INNER_W - LABEL_W, y, 0, 1);
-    const by = stepper(ed, g, r, num(&buf, "{s}", @tagName(v.*)), .{ .{ .tip = tip }, .{ .tip = tip } });
+    const by = stepper(ed, g, valueSlot(y, 0, 1), @tagName(v.*), .{ .{ .tip = tip }, .{ .tip = tip } });
     v.* = cycle(T, v.*, by);
+}
+
+/// The `k`th of `n` values right of a generator row's label.
+fn valueSlot(y: i32, k: usize, n: usize) rl.Rectangle {
+    return slotOf(PAD + LABEL_W, INNER_W - LABEL_W, y, k, n);
 }
 
 fn cycle(comptime T: type, v: T, by: i32) T {
@@ -1796,14 +1817,14 @@ fn drawStatus(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
 }
 
 fn hover(ed: *Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
-    if (!rl.checkCollisionPointRec(vec(ed.desk.mouse), c)) return "";
+    if (!ed.mouseIn(c)) return "";
     var a: [atlas.TITLE_MAX]u8 = undefined;
     if (ed.view == .graph) {
         const n = ed.boxUnder(c, ed.desk.mouse) orelse return "";
         var d: [LINE]u8 = undefined;
         return std.fmt.bufPrintZ(buf, "{s} (node {d}): {s}", .{ ed.nodeName(n, &a), n, nodeDetail(&ed.world.node[n], &d) }) catch "";
     }
-    const p = ed.cellAt(c, ed.desk.mouse);
+    const p = ed.mouseCell(c);
     if (!grid.Level.inside(p)) return "";
     const nd = ed.here();
     const k = nd.doorAt(p) orelse
@@ -1877,10 +1898,10 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
             g.face.text(std.fmt.bufPrintZ(&buf, "{d}", .{k}) catch "", @intFromFloat(r.x + 1), @intFromFloat(r.y), size, look.TEXT);
         }
         const pk = ed.pick orelse continue;
-        if (std.meta.eql(pk, atlas.Link{ .node = ed.node, .door = k })) rl.drawRectangleLinesEx(r, 2, PICKED);
+        if (pk.eq(.{ .node = ed.node, .door = k })) rl.drawRectangleLinesEx(r, 2, PICKED);
     }
     if (ed.start_at) |s| glyph(ed, g, START.ch, ed.cellRect(c, s), START.fg);
-    const m = ed.cellAt(c, ed.desk.mouse);
+    const m = ed.mouseCell(c);
     if (ed.rect) |r| {
         outlineCells(ed, c, r.from, clampCell(m), PICKED);
     } else if (grid.Level.inside(m)) {
@@ -1890,8 +1911,8 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
 }
 
 fn outlineCells(ed: *const Editor, c: rl.Rectangle, a: P, b: P, col: rl.Color) void {
-    const lo = ed.cellRect(c, .{ .x = @min(a.x, b.x), .y = @min(a.y, b.y) });
-    const hi = ed.cellRect(c, .{ .x = @max(a.x, b.x), .y = @max(a.y, b.y) });
+    const lo = ed.cellRect(c, a.min(b));
+    const hi = ed.cellRect(c, a.max(b));
     rl.drawRectangleLinesEx(.{ .x = lo.x, .y = lo.y, .width = hi.x + hi.width - lo.x, .height = hi.y + hi.height - lo.y }, 1, col);
 }
 
@@ -1993,7 +2014,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
                 const p = ed.listing.at(i);
                 const label = std.fmt.bufPrintZ(&buf, "{s}", .{p}) catch "";
                 if (buttonOn(ed, g, row(x + PAD, y, MODAL_INNER_W), label, std.mem.eql(u8, p, ed.path()), true, true, null)) {
-                    ed.pending_path.set(p, PATH_MAX);
+                    ed.pending_path.put(p);
                     ed.modal = .none;
                     ed.request(.open);
                     return;
@@ -2337,6 +2358,26 @@ test "a stroke leaving the map paints up to its edge, and it ends with the butto
     ed.desk = .{ .shift = true, .paint = true, .erase = true, .paint_hit = true, .erase_hit = true, .mouse = mouseOn(ed, c, .{ .x = 8, .y = 8 }) };
     mapMouse(ed, c, true);
     try std.testing.expect(!ed.rect.?.erase);
+}
+
+test "a click on the frame a rectangle is let go is an undo of its own" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    _ = ed.world.add(.{ .bespoke = .{} });
+    const b = &ed.world.node[0].plan.bespoke;
+    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    ed.cam = .{ 0, 0 };
+    ed.tool = .floor;
+    ed.desk = .{ .shift = true, .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = 2, .y = 2 }) };
+    ed.gesture();
+    mapMouse(ed, c, true);
+    ed.desk = .{ .erase = true, .erase_hit = true, .mouse = mouseOn(ed, c, .{ .x = 6, .y = 4 }) };
+    ed.gesture();
+    mapMouse(ed, c, true);
+    try std.testing.expectEqual(grid.Tile.wall, b.tile[grid.Level.idx(.{ .x = 6, .y = 4 })]);
+    try std.testing.expectEqual(grid.Tile.floor, b.tile[grid.Level.idx(.{ .x = 5, .y = 4 })]);
+    ed.undo();
+    try std.testing.expectEqual(grid.Tile.floor, ed.world.node[0].plan.bespoke.tile[grid.Level.idx(.{ .x = 6, .y = 4 })]);
 }
 
 test "leaving with unsaved changes asks first, and leaving a saved world does not" {

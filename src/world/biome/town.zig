@@ -48,9 +48,9 @@ pub fn palette(p: Params) carve.Palette {
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
-    const street = p.ground.tile();
-    carve.fill(lv, p.outside.tile());
-    carve.rim(lv, .shrub);
+    const pal = palette(p);
+    const street = pal.path;
+    carve.field(lv, pal);
     const lo = P{ .x = MARGIN, .y = MARGIN };
     const hi = P{ .x = grid.W - MARGIN, .y = grid.H - MARGIN };
     carve.box(lv, lo, hi, street);
@@ -59,7 +59,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const top = lo.y + s;
     var y = top;
     while (y + p.block <= hi.y - s) : (y += step) {
-        if (carve.percent(rng, p.canals)) {
+        if (rng.percent(p.canals)) {
             carve.box(lv, .{ .x = lo.x, .y = y - s }, .{ .x = hi.x, .y = y }, .water);
         }
     }
@@ -67,7 +67,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     while (y + p.block <= hi.y - s) : (y += step) {
         var x = lo.x + s;
         while (x + p.block <= hi.x - s) : (x += step) {
-            const b = buildings.Box{ .lo = .{ .x = x, .y = y }, .hi = .{ .x = x + p.block, .y = y + p.block } };
+            const b = grid.Box{ .lo = .{ .x = x, .y = y }, .hi = .{ .x = x + p.block, .y = y + p.block } };
             block(lv, rng, b, p, street);
         }
     }
@@ -81,18 +81,37 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         .wall => .wall,
         .fence => .fence,
     };
-    {
-        const wl = lo.sub(.{ .x = 1, .y = 1 });
-        const wh = hi.add(.{ .x = 1, .y = 1 });
-        const walled = buildings.Box{ .lo = wl, .hi = wh };
-        var cells = grid.Cells.of(wl, wh);
-        while (cells.next()) |q| {
-            if (walled.onEdge(q)) lv.set(q, ring);
-        }
-        for ([_]P{ .{ .x = grid.MIDDLE.x, .y = wl.y }, .{ .x = grid.MIDDLE.x, .y = wh.y - 1 }, .{ .x = wl.x, .y = grid.MIDDLE.y }, .{ .x = wh.x - 1, .y = grid.MIDDLE.y } }) |g| {
-            carve.disc(lv, g, 1.5, street, null);
-        }
+    const walled = wallBox();
+    var cells = walled.cells();
+    while (cells.next()) |q| {
+        if (walled.onEdge(q)) lv.set(q, ring);
     }
+    for (gates()) |g| {
+        carve.disc(lv, g.at, 1.5, street, null);
+        const side = P{ .x = g.in.y, .y = g.in.x };
+        const deep = g.at.add(.{ .x = g.in.x * s, .y = g.in.y * s });
+        const a = g.at.sub(side);
+        const b = deep.add(side);
+        bridge(lv, a.min(b), a.max(b).add(.{ .x = 1, .y = 1 }));
+    }
+}
+
+const Gate = struct { at: P, in: P };
+
+/// A cell outside the streets all round.
+fn wallBox() grid.Box {
+    return .{ .lo = .{ .x = MARGIN - 1, .y = MARGIN - 1 }, .hi = .{ .x = grid.W - MARGIN + 1, .y = grid.H - MARGIN + 1 } };
+}
+
+fn gates() [4]Gate {
+    const wl = wallBox().lo;
+    const wh = wallBox().hi;
+    return .{
+        .{ .at = .{ .x = grid.MIDDLE.x, .y = wl.y }, .in = .{ .x = 0, .y = 1 } },
+        .{ .at = .{ .x = grid.MIDDLE.x, .y = wh.y - 1 }, .in = .{ .x = 0, .y = -1 } },
+        .{ .at = .{ .x = wl.x, .y = grid.MIDDLE.y }, .in = .{ .x = 1, .y = 0 } },
+        .{ .at = .{ .x = wh.x - 1, .y = grid.MIDDLE.y }, .in = .{ .x = -1, .y = 0 } },
+    };
 }
 
 /// Every canal cell from `lo` up to `hi` bridged.
@@ -105,7 +124,7 @@ fn bridge(lv: *grid.Level, lo: P, hi: P) void {
 
 /// Cut into lots by alleys; each lot built on, a house walled round with a doorway onto a street, or left a yard. An
 /// alley from top to bottom with a canal at both ends gets one across, to the streets either side.
-fn block(lv: *grid.Level, rng: *mathx.Rng, b: buildings.Box, p: Params, street: grid.Tile) void {
+fn block(lv: *grid.Level, rng: *mathx.Rng, b: grid.Box, p: Params, street: grid.Tile) void {
     const w = b.hi.x - b.lo.x;
     const h = b.hi.y - b.lo.y;
     const split_x = w >= 2 * HOUSE_LEAST + 1 and rng.chance(SPLIT_CHANCE);
@@ -114,7 +133,7 @@ fn block(lv: *grid.Level, rng: *mathx.Rng, b: buildings.Box, p: Params, street: 
     const mx = if (split_x) rng.range(b.lo.x + HOUSE_LEAST, b.hi.x - HOUSE_LEAST - 1) else b.hi.x;
     if (split_x and crosses and lv.at(.{ .x = mx, .y = b.lo.y - 1 }).liquid() and lv.at(.{ .x = mx, .y = b.hi.y }).liquid()) split_y = true;
     const my = if (split_y) rng.range(b.lo.y + HOUSE_LEAST, b.hi.y - HOUSE_LEAST - 1) else b.hi.y;
-    const lots = [_]buildings.Box{
+    const lots = [_]grid.Box{
         .{ .lo = b.lo, .hi = .{ .x = mx, .y = my } },
         .{ .lo = .{ .x = mx + 1, .y = b.lo.y }, .hi = .{ .x = b.hi.x, .y = my } },
         .{ .lo = .{ .x = b.lo.x, .y = my + 1 }, .hi = .{ .x = mx, .y = b.hi.y } },
@@ -122,7 +141,7 @@ fn block(lv: *grid.Level, rng: *mathx.Rng, b: buildings.Box, p: Params, street: 
     };
     for (lots) |lot| {
         if (lot.hi.x - lot.lo.x < HOUSE_LEAST or lot.hi.y - lot.lo.y < HOUSE_LEAST) continue;
-        if (!carve.percent(rng, p.houses)) {
+        if (!rng.percent(p.houses)) {
             carve.box(lv, lot.lo, lot.hi, .grass);
             continue;
         }
@@ -133,20 +152,39 @@ fn block(lv: *grid.Level, rng: *mathx.Rng, b: buildings.Box, p: Params, street: 
 test "no house's doorway opens on a canal" {
     const TOWNS = 100;
     var lv = grid.Level.blank();
-    var region: [grid.CELLS]u16 = undefined;
-    var size: [grid.CELLS]u32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
+    var st: carve.Stretches = .{};
     var sealed: usize = 0;
     for (0..TOWNS) |i| {
         var rng = mathx.Rng.init(i);
         shape(&lv, &rng, 0, .{ .canals = 100, .street = 3 });
-        const most = carve.biggest(size[0..carve.label(&lv, &region, &size, &queue)]);
-        for (lv.tile, region) |t, r| {
+        _ = st.label(&lv);
+        const most = st.biggest();
+        for (lv.tile, st.region) |t, r| {
             if (t == .floor and r != most) sealed += 1;
         }
     }
     std.debug.print("{d} towns all canals: {d} house floor cells shut off from the streets\n", .{ TOWNS, sealed });
     try std.testing.expectEqual(@as(usize, 0), sealed);
+}
+
+test "every town gate steps across its street, canal or not" {
+    const TOWNS = 50;
+    var lv = grid.Level.blank();
+    var wet: usize = 0;
+    for (0..TOWNS) |i| {
+        var rng = mathx.Rng.init(i);
+        const p = (Params{ .canals = 100, .street = @intCast(1 + i % STREET_MAX) }).fit();
+        shape(&lv, &rng, 0, p);
+        const s: i32 = p.street;
+        for (gates()) |g| {
+            var k: i32 = 0;
+            while (k <= s) : (k += 1) {
+                if (!lv.walkable(g.at.add(.{ .x = g.in.x * k, .y = g.in.y * k }))) wet += 1;
+            }
+        }
+    }
+    std.debug.print("{d} towns all canals: {d} cells of gate and street a step cannot cross\n", .{ TOWNS, wet });
+    try std.testing.expectEqual(@as(usize, 0), wet);
 }
 
 test "a town's houses each open onto its streets" {

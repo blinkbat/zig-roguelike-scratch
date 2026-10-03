@@ -7,7 +7,6 @@ const carve = @import("../carve.zig");
 
 pub const WIDTH_MAX: u8 = 5;
 pub const COUNT_MAX: u8 = 3;
-pub const WANDER_MAX: u8 = mathx.PERCENT;
 
 pub const Paving = enum {
     dirt,
@@ -34,7 +33,7 @@ pub const Params = struct {
         var q = p;
         q.width = std.math.clamp(p.width, 1, WIDTH_MAX);
         q.count = std.math.clamp(p.count, 1, COUNT_MAX);
-        q.wander = @min(p.wander, WANDER_MAX);
+        q.wander = @min(p.wander, mathx.PERCENT);
         return q;
     }
 };
@@ -63,10 +62,8 @@ test "a road crosses the map whole and bridges a river" {
     carve.fill(&lv, .shrub);
     carve.river(&lv, &rng, .{ .x = 40, .y = 0 }, .{ .x = 44, .y = grid.H - 1 }, 3, .water, null, null);
     apply(&lv, &rng, 0, carve.Palette.WILD, .{ .course = .across, .wander = 0 });
-    var region: [grid.CELLS]u16 = undefined;
-    var size: [grid.CELLS]u32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
-    const parts = carve.label(&lv, &region, &size, &queue);
+    var st: carve.Stretches = .{};
+    const parts = st.label(&lv);
     std.debug.print("a straight road through a forest and over a river: {d} road, {d} bridge, {d} stretch of ground\n", .{ carve.count(&lv, .dirt), carve.count(&lv, .bridge), parts });
     try std.testing.expectEqual(@as(usize, 1), parts);
     try std.testing.expect(carve.count(&lv, .bridge) > 0);

@@ -54,13 +54,13 @@ pub fn palette(p: Params) carve.Palette {
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
-    const out = p.outside.tile();
+    const pal = palette(p);
+    const out = pal.open;
     carve.fill(lv, out);
-    carve.rim(lv, .shrub);
-    const w: i32 = p.size[0];
-    const h: i32 = p.size[1];
-    const lo = P{ .x = @divTrunc(grid.W - w, 2), .y = @divTrunc(grid.H - h, 2) };
-    const hi = lo.add(.{ .x = w, .y = h });
+    carve.rim(lv, pal.solid);
+    const curtain = curtainOf(p);
+    const lo = curtain.lo;
+    const hi = curtain.hi;
     const m: i32 = p.moat;
     if (m > 0) {
         carve.box(lv, lo.sub(.{ .x = BERM + m, .y = BERM + m }), hi.add(.{ .x = BERM + m, .y = BERM + m }), .water);
@@ -72,14 +72,16 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     carve.box(lv, yard_lo, yard_hi, p.yard.tile());
     const t: f32 = @floatFromInt(p.towers);
     if (p.towers > 0) {
-        for ([_]P{ lo, .{ .x = hi.x - 1, .y = lo.y }, .{ .x = lo.x, .y = hi.y - 1 }, hi.sub(.{ .x = 1, .y = 1 }) }) |c| {
+        for (towersOf(curtain)) |c| {
             carve.disc(lv, c, t + 1, .wall, null);
             carve.disc(lv, c, t - 0.5, .floor, null);
             const toward = P{ .x = std.math.sign(grid.MIDDLE.x - c.x), .y = std.math.sign(grid.MIDDLE.y - c.y) };
             var q = c;
             for (0..@intCast(p.towers + CURTAIN + 1)) |_| {
-                q = q.add(toward);
-                if (lv.at(q) == .wall) lv.set(q, .floor);
+                for ([_]P{ .{ .x = toward.x, .y = 0 }, .{ .x = 0, .y = toward.y } }) |d| {
+                    q = q.add(d);
+                    if (lv.at(q) == .wall) lv.set(q, .floor);
+                }
             }
         }
     }
@@ -108,13 +110,13 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     var torches: usize = 0;
     var x = in.lo.x + 1;
     while (x < in.hi.x - 1) : (x += TORCH_EVERY) {
-        if (carve.percent(rng, p.torches) and torches < TORCHES_MOST) {
+        if (rng.percent(p.torches) and torches < TORCHES_MOST) {
             lv.addTorch(.{ .x = x, .y = keep.lo.y });
             torches += 1;
         }
     }
     for (0..p.barrels) |_| {
-        const q = P{ .x = rng.range(in.lo.x, in.hi.x - 1), .y = rng.range(in.lo.y, in.hi.y - 1) };
+        const q = in.roll(rng);
         if (lv.at(q) == .floor and carve.clearAround(lv, q)) lv.putBarrel(q);
     }
     const art = setpiece.rows(.well);
@@ -123,8 +125,21 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     if (keep.lo.x - well.x >= room.x) setpiece.stamp(lv, well, art);
 }
 
+/// The curtain wall's outside, in the middle of the map.
+fn curtainOf(p: Params) grid.Box {
+    const w: i32 = p.size[0];
+    const h: i32 = p.size[1];
+    const lo = P{ .x = @divTrunc(grid.W - w, 2), .y = @divTrunc(grid.H - h, 2) };
+    return .{ .lo = lo, .hi = lo.add(.{ .x = w, .y = h }) };
+}
+
+/// Its four corner cells, where the towers stand.
+fn towersOf(b: grid.Box) [4]P {
+    return .{ b.lo, .{ .x = b.hi.x - 1, .y = b.lo.y }, .{ .x = b.lo.x, .y = b.hi.y - 1 }, b.hi.sub(.{ .x = 1, .y = 1 }) };
+}
+
 /// The keep, in the middle of the courtyard.
-fn keepOf(p: Params) buildings.Box {
+fn keepOf(p: Params) grid.Box {
     const mid = grid.MIDDLE;
     const kw: i32 = @intFromFloat(@as(f32, @floatFromInt(@as(i32, p.size[0]) - 2 * CURTAIN)) * KEEP_OF);
     const kh: i32 = @intFromFloat(@as(f32, @floatFromInt(@as(i32, p.size[1]) - 2 * CURTAIN)) * KEEP_OF);
@@ -134,19 +149,18 @@ fn keepOf(p: Params) buildings.Box {
 test "every room of the keep opens onto the yard" {
     const KEEPS = 200;
     var lv = grid.Level.blank();
-    var region: [grid.CELLS]u16 = undefined;
-    var size: [grid.CELLS]u32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
+    var st: carve.Stretches = .{};
     const p = (Params{}).fit();
     const in = keepOf(p).inner();
     var sealed: usize = 0;
     for (0..KEEPS) |i| {
         var rng = mathx.Rng.init(i);
         shape(&lv, &rng, 0, p);
-        const most = carve.biggest(size[0..carve.label(&lv, &region, &size, &queue)]);
-        var cells = grid.Cells.of(in.lo, in.hi);
+        _ = st.label(&lv);
+        const most = st.biggest();
+        var cells = in.cells();
         const whole = while (cells.next()) |q| {
-            if (!lv.at(q).solid() and region[grid.Level.idx(q)] != most) break false;
+            if (!lv.at(q).solid() and st.of(q) != most) break false;
         } else true;
         if (!whole) sealed += 1;
     }
@@ -154,14 +168,33 @@ test "every room of the keep opens onto the yard" {
     try std.testing.expectEqual(@as(usize, 0), sealed);
 }
 
+test "every corner tower opens onto the yard, however wide" {
+    var lv = grid.Level.blank();
+    var st: carve.Stretches = .{};
+    var sealed: usize = 0;
+    var towers: usize = 0;
+    for (1..TOWER_MAX + 1) |t| {
+        const p = (Params{ .towers = @intCast(t) }).fit();
+        var rng = mathx.Rng.init(t);
+        shape(&lv, &rng, 0, p);
+        _ = st.label(&lv);
+        const curtain = curtainOf(p);
+        const yard = st.of(.{ .x = grid.MIDDLE.x, .y = curtain.lo.y + CURTAIN });
+        for (towersOf(curtain)) |c| {
+            towers += 1;
+            if (st.of(c) != yard) sealed += 1;
+        }
+    }
+    std.debug.print("{d} corner towers: {d} shut off from the yard\n", .{ towers, sealed });
+    try std.testing.expectEqual(@as(usize, 0), sealed);
+}
+
 test "a keep stands walled, its gates open through the curtain and over the moat" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0xCA57);
     shape(&lv, &rng, 0, (Params{}).fit());
-    var region: [grid.CELLS]u16 = undefined;
-    var size: [grid.CELLS]u32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
-    const parts = carve.label(&lv, &region, &size, &queue);
+    var st: carve.Stretches = .{};
+    const parts = st.label(&lv);
     std.debug.print("a keep: {d} wall, {d} moat, {d} bridge, {d} stretches of ground before joining\n", .{ carve.count(&lv, .wall), carve.count(&lv, .water), carve.count(&lv, .bridge), parts });
     try std.testing.expect(carve.count(&lv, .bridge) >= 2 * 3);
     try std.testing.expect(carve.count(&lv, .wall) > 300);

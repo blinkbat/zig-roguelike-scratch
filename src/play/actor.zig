@@ -96,6 +96,16 @@ pub fn row(k: Kind) Row {
     };
 }
 
+pub fn plural(k: Kind) [:0]const u8 {
+    return PLURALS.get(k);
+}
+
+const PLURALS = blk: {
+    var t = std.EnumArray(Kind, [:0]const u8).initUndefined();
+    for (std.enums.values(Kind)) |k| t.set(k, row(k).name ++ "s");
+    break :blk t;
+};
+
 pub const Actor = struct {
     kind: Kind,
     at: P,
@@ -176,7 +186,7 @@ pub const Pool = struct {
     /// The only place hp goes down. Returns true on the killing blow.
     pub fn damage(self: *Pool, lv: *grid.Level, id: u16, amount: i32) bool {
         const a = self.get(id) orelse return false;
-        a.hp -= amount;
+        a.hp = @max(0, a.hp - amount);
         a.awake = true;
         if (a.hp > 0) return false;
         a.alive = false;

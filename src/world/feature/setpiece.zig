@@ -112,7 +112,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, _: carve.Palette, p: Para
     const w = size(art).x;
     const h = size(art).y;
     const pad: i32 = p.apart;
-    var taken: [COUNT_MAX]buildings.Box = undefined;
+    var taken: [COUNT_MAX]grid.Box = undefined;
     var n: usize = 0;
     for (0..p.count) |_| {
         const room = buildings.site(lv, rng, w + 2 * pad, h + 2 * pad, taken[0..n]) orelse
@@ -159,8 +159,7 @@ test "every piece is a rectangle of known keys" {
 test "pieces land apart on open ground" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x5E7);
-    carve.fill(&lv, .grass);
-    carve.rim(&lv, .shrub);
+    carve.field(&lv, carve.Palette.WILD);
     apply(&lv, &rng, 0, carve.Palette.WILD, .{ .piece = .graveyard, .count = 3 });
     std.debug.print("3 graveyards: {d} graves\n", .{carve.count(&lv, .grave)});
     try std.testing.expectEqual(@as(usize, 3 * 12), carve.count(&lv, .grave));

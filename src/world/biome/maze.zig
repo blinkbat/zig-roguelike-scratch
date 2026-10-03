@@ -116,7 +116,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
             const orr = r + s.dr;
             if (oc < 0 or orr < 0 or oc >= pl.cols or orr >= pl.rows) continue;
             const o = @as(usize, @intCast(orr)) * COLS_MAX + @as(usize, @intCast(oc));
-            if (o == from or pl.mask[o] == null or !carve.chance(rng, p.merge)) continue;
+            if (o == from or pl.mask[o] == null or !rng.perMille(p.merge)) continue;
             pl.mask[k].? |= s.bit;
             pl.mask[o].? |= s.back;
         }
@@ -137,15 +137,14 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
     const mid = lo.add(.{ .x = @divTrunc(size, 2), .y = @divTrunc(size, 2) });
     const in_lo = lo.add(.{ .x = 1, .y = 1 });
     const in_hi = lo.add(.{ .x = size - 1, .y = size - 1 });
-    switch (style) {
-        .tombs, .sewers => carve.box(lv, in_lo, in_hi, pal.open),
-        .caves, .lava, .ice => {
-            const half: f32 = @as(f32, @floatFromInt(size)) / 2 - 1;
-            var cells = grid.Cells.of(in_lo, in_hi);
-            while (cells.next()) |q| {
-                if (mathx.distEuclid(q, mid) / half < 0.55 + 0.6 * noise.at(q, 3, 2)) lv.set(q, pal.open);
-            }
-        },
+    if (style.built()) {
+        carve.box(lv, in_lo, in_hi, pal.open);
+    } else {
+        const half: f32 = @as(f32, @floatFromInt(size)) / 2 - 1;
+        var cells = grid.Cells.of(in_lo, in_hi);
+        while (cells.next()) |q| {
+            if (mathx.distEuclid(q, mid) / half < 0.55 + 0.6 * noise.at(q, 3, 2)) lv.set(q, pal.open);
+        }
     }
     for (SIDES) |s| {
         if (mask & s.bit == 0) continue;

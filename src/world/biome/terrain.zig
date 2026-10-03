@@ -116,7 +116,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         lv.tile[i] = groundOf(b, fields[4].at(q, 5, 2), rng.unit());
     }
     for (0..p.rivers) |_| river(lv, rng, &height);
-    carve.rim(lv, .rock);
+    carve.rim(lv, palette(p).solid);
     p.litter.strew(lv, rng);
 }
 
@@ -130,10 +130,10 @@ fn river(lv: *grid.Level, rng: *mathx.Rng, height: *[grid.CELLS]f32) void {
     var top: f32 = 0;
     for (height) |h| top = @max(top, h);
     var at: P = for (0..SOURCE_TRIES) |_| {
-        const q = P{ .x = rng.range(2, grid.W - 3), .y = rng.range(2, grid.H - 3) };
+        const q = grid.Box.inMap(2).roll(rng);
         if (height[grid.Level.idx(q)] >= top * SOURCE_OVER) break q;
     } else return;
-    const dirs = [4]P{ .{ .x = 1, .y = 0 }, .{ .x = -1, .y = 0 }, .{ .x = 0, .y = 1 }, .{ .x = 0, .y = -1 } };
+    const dirs = mathx.CARDINALS;
     for (0..RIVER_STEPS) |_| {
         const i = grid.Level.idx(at);
         if (lv.tile[i] == .water and height[i] < SHORE) return;

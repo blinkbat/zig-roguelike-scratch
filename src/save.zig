@@ -12,7 +12,8 @@ const DIR = "saves";
 const EXT = ".save";
 const MAGIC = "roguelike-save\n";
 const FILE_CAP: usize = 64 << 20;
-const PATH_MAX: usize = 64;
+const PATH_FMT = DIR ++ "/slot{d}" ++ EXT;
+const PATH_MAX: usize = std.fmt.count(PATH_FMT, .{SLOTS});
 /// Seconds between saves while turns are taken; the last turn's is written once they stop.
 const GAP_S: f32 = 1;
 
@@ -46,7 +47,7 @@ pub const Summary = struct {
     pub fn line(self: *const Summary, buf: []u8) [:0]const u8 {
         var at: [atlas.TITLE_MAX]u8 = undefined;
         const where = if (self.node) |n| atlas.titleOf(self.place[0..self.place_n], n, &at) else "a generated floor";
-        return std.fmt.bufPrintZ(buf, "{s}" ++ menu.SEP ++ "HP {d}/{d}" ++ menu.SEP ++ "Gold {d}" ++ menu.SEP ++ "{s}", .{ self.name.text(), @max(0, self.hp), self.max, self.gold, where }) catch "";
+        return std.fmt.bufPrintZ(buf, "{s}" ++ menu.SEP ++ "HP {d}/{d}" ++ menu.SEP ++ "Gold {d}" ++ menu.SEP ++ "{s}", .{ self.name.text(), self.hp, self.max, self.gold, where }) catch "";
     }
 };
 
@@ -163,7 +164,7 @@ pub fn number(slot: usize) usize {
 }
 
 fn path(buf: []u8, slot: usize) []const u8 {
-    return std.fmt.bufPrint(buf, DIR ++ "/slot{d}" ++ EXT, .{number(slot)}) catch unreachable;
+    return std.fmt.bufPrint(buf, PATH_FMT, .{number(slot)}) catch unreachable;
 }
 
 fn writeFile(bytes: []const u8, slot: usize) !void {

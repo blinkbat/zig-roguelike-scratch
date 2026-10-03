@@ -29,7 +29,7 @@ pub fn palette(p: Params) carve.Palette {
 }
 
 pub fn shape(lv: *grid.Level, _: *mathx.Rng, seed: u64, p: Params) void {
-    const g = p.ground.tile();
+    const pal = palette(p);
     const crest = carve.Noise.init(seed ^ 0xD0E5);
     const broken = carve.Noise.init(seed ^ 0xB20C);
     const s: f32 = @floatFromInt(p.scale);
@@ -40,7 +40,7 @@ pub fn shape(lv: *grid.Level, _: *mathx.Rng, seed: u64, p: Params) void {
         const v = crest.at(q, s, 3);
         const ridge = @abs(v - 0.5) < band and broken.at(q, s / 2, 2) > 0.45;
         const mesa = v > high;
-        lv.tile[i] = if (ridge or mesa) .rock else g;
+        lv.tile[i] = if (ridge or mesa) pal.solid else pal.open;
     }
-    carve.rim(lv, .rock);
+    carve.rim(lv, pal.solid);
 }

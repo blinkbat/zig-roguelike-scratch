@@ -204,7 +204,9 @@ pub const Spec = struct {
 };
 
 /// No more than the pool holds once every slime placed has split down to quarters.
-pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec) void {
+pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, given: *const Spec) void {
+    const fitted = given.fit();
+    const spec = &fitted;
     var bodies = pool.n;
     var packs: usize = 0;
     for (spec.quotaOrder()) |k| {
@@ -252,7 +254,7 @@ fn clear(lv: *const grid.Level, pool: *actor.Pool, p: P, start: P, spec: *const 
 
 fn leadSpot(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec, others: usize) ?P {
     for (0..SPOT_TRIES) |_| {
-        const p = P{ .x = rng.range(grid.INNER_LO.x, grid.INNER_HI.x), .y = rng.range(grid.INNER_LO.y, grid.INNER_HI.y) };
+        const p = grid.Box.inMap(1).roll(rng);
         if (clear(lv, pool, p, start, spec, others)) return p;
     }
     return null;

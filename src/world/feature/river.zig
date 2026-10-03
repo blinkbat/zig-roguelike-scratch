@@ -60,19 +60,16 @@ fn fordOf(fill: grid.Tile, pal: carve.Palette) grid.Tile {
 
 /// Of `rivers` laid one to a fresh map with a ford, how many leave a tenth of the ground cut off.
 fn cutOff(rivers: usize, bank: carve.Bank) usize {
-    var region: [grid.CELLS]u16 = undefined;
-    var size: [grid.CELLS]u32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
+    var st: carve.Stretches = .{};
     const pal = carve.Palette{ .open = .grass, .solid = .shrub, .path = .dirt };
     var cut: usize = 0;
     for (0..rivers) |i| {
         var lv = grid.Level.blank();
         var rng = mathx.Rng.init(i);
-        carve.fill(&lv, .grass);
-        carve.rim(&lv, .shrub);
+        carve.field(&lv, carve.Palette.WILD);
         apply(&lv, &rng, 0, pal, (Params{ .bank = bank, .course = .across, .fords = 1 }).fit());
-        const sizes = size[0..carve.label(&lv, &region, &size, &queue)];
-        const most = carve.biggest(sizes);
+        const sizes = st.size[0..st.label(&lv)];
+        const most = st.biggest();
         var ground: u32 = 0;
         for (sizes) |s| ground += s;
         for (sizes, 0..) |s, r| {
@@ -96,8 +93,7 @@ test "a ford crosses a river's rock bank as it does a walkable one" {
 test "a cliff band with a gap leaves the map whole, and a river's ford is shallow" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0xC11F);
-    carve.fill(&lv, .grass);
-    carve.rim(&lv, .shrub);
+    carve.field(&lv, carve.Palette.WILD);
     const pal = carve.Palette{ .open = .grass, .solid = .shrub, .path = .dirt };
     apply(&lv, &rng, 0, pal, .{ .fill = .rock, .bank = .none, .course = .across, .fords = 1 });
     try std.testing.expect(carve.count(&lv, .rock) > grid.W);

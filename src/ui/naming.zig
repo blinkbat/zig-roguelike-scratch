@@ -1,5 +1,4 @@
 const std = @import("std");
-const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const look = @import("../gfx/look.zig");

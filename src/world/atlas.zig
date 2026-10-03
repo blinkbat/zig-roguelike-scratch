@@ -51,13 +51,19 @@ const GRAPH_COLS: usize = 4;
 pub const GRAPH_STEP = P{ .x = 240, .y = 200 };
 /// A box's place on the graph, either way on either axis; far enough that i32 sums of places never overflow.
 pub const POS_MAX: u32 = 1 << 24;
-const MAX_LISTED: usize = 128;
 /// A world file's name, `.world` and all.
 const FILE_MAX: usize = 64;
-pub const PATH_MAX = DIR.len + 1 + FILE_MAX;
+pub const PATH_MAX = PREFIX.len + FILE_MAX;
 const ListedPath = [PATH_MAX]u8;
 
-pub const Link = struct { node: usize, door: usize };
+pub const Link = struct {
+    node: usize,
+    door: usize,
+
+    pub fn eq(a: Link, b: Link) bool {
+        return a.node == b.node and a.door == b.door;
+    }
+};
 
 pub const Door = struct { at: P, to: ?Link = null };
 
@@ -78,6 +84,10 @@ pub const Procgen = struct {
     foes: pack.Spec = .{},
 
     pub fn features(self: *const Procgen) []const Feature {
+        return self.feature[0..self.feature_n];
+    }
+
+    pub fn featuresMut(self: *Procgen) []Feature {
         return self.feature[0..self.feature_n];
     }
 
@@ -164,6 +174,12 @@ pub const Bespoke = struct {
     pub fn dropFoe(self: *Bespoke, i: usize) void {
         self.foe_n -= 1;
         self.foe[i] = self.foe[self.foe_n];
+    }
+
+    /// No barrel nor foe on it.
+    pub fn clearCell(self: *Bespoke, p: P) void {
+        self.barrel[grid.Level.idx(p)] = false;
+        if (self.foeAt(p)) |f| self.dropFoe(f);
     }
 };
 
@@ -376,7 +392,7 @@ pub const Atlas = struct {
     pub fn link(self: *Atlas, a: Link, b: Link) void {
         self.unlink(a);
         self.unlink(b);
-        if (a.node == b.node and a.door == b.door) return;
+        if (a.eq(b)) return;
         self.doorOf(a).to = b;
         self.doorOf(b).to = a;
     }
@@ -555,9 +571,10 @@ pub const Atlas = struct {
             for (nd.doors(), 0..) |d, k| {
                 const l = d.to orelse continue;
                 if (l.node >= self.node_n or l.door >= self.node[l.node].door_n) return error.BadLink;
-                if (l.node == n and l.door == k) return error.BadLink;
+                const here = Link{ .node = n, .door = k };
+                if (l.eq(here)) return error.BadLink;
                 const back = self.node[l.node].door[l.door].to orelse return error.BadLink;
-                if (back.node != n or back.door != k) return error.BadLink;
+                if (!back.eq(here)) return error.BadLink;
             }
         }
         if (self.start.node >= self.node_n) return error.BadLink;
@@ -768,8 +785,8 @@ pub fn pathFor(buf: []u8, name: []const u8) ?[]const u8 {
 
 /// The world files in `DIR`, sorted; past `MAX`, the first `MAX` of them.
 pub const Listing = struct {
-    pub const MAX = MAX_LISTED;
-    file: [MAX_LISTED]Listed = undefined,
+    pub const MAX: usize = 128;
+    file: [MAX]Listed = undefined,
     n: usize = 0,
 
     const Listed = struct {
@@ -804,8 +821,8 @@ pub const Listing = struct {
             if (e.kind != .file or !std.mem.endsWith(u8, e.name, EXT) or e.name.len > FILE_MAX) continue;
             if (!plain(e.name)) continue;
             var l: Listed = undefined;
-            l.n = (std.fmt.bufPrint(&l.buf, DIR ++ "/{s}", .{e.name}) catch continue).len;
-            if (self.n < MAX_LISTED) {
+            l.n = (std.fmt.bufPrint(&l.buf, PREFIX ++ "{s}", .{e.name}) catch continue).len;
+            if (self.n < MAX) {
                 self.file[self.n] = l;
                 self.n += 1;
                 continue;

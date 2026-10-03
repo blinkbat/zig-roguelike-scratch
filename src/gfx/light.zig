@@ -178,12 +178,7 @@ fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
         if (!grid.Level.inside(c)) break;
         const k = CASTERS.get(lv.at(c)) orelse continue;
         var over = (k.h - z - t * rise) / (SUN_SOFT * k.h);
-        if (k.r) |r| {
-            const m = mathx.centre(c);
-            const dx = px - m[0];
-            const dy = py - m[1];
-            over = @min(over, (r - @sqrt(dx * dx + dy * dy)) / SUN_EDGE);
-        }
+        if (k.r) |r| over = @min(over, (r - offMiddle(c, .{ px, py })) / SUN_EDGE);
         if (over <= 0) continue;
         lit = @min(lit, 1 - smooth(@min(over, 1)));
         if (lit <= 0) return 0;
@@ -212,18 +207,10 @@ fn clouded(x: f32, y: f32, t: f32) f32 {
 }
 
 fn value2(u: f32, v: f32) f32 {
-    const iu = @floor(u);
-    const iv = @floor(v);
-    const x: i32 = @intFromFloat(iu);
-    const y: i32 = @intFromFloat(iv);
-    const a = smooth(u - iu);
-    const b = smooth(v - iv);
-    const top = mathx.lerpF(hash2(x, y), hash2(x + 1, y), a);
-    const bot = mathx.lerpF(hash2(x, y + 1), hash2(x + 1, y + 1), a);
-    return mathx.lerpF(top, bot, b);
+    return mathx.valueNoise({}, hash2, u, v);
 }
 
-fn hash2(x: i32, y: i32) f32 {
+fn hash2(_: void, x: i32, y: i32) f32 {
     return hash(x *% 73856093 ^ y *% 19349663, 0xC10D);
 }
 
@@ -280,7 +267,7 @@ const SunRay = struct {
 fn cloudIn(corners: [4]f32, c: P, q: [2]f32) f32 {
     const u = q[0] - @as(f32, @floatFromInt(c.x));
     const v = q[1] - @as(f32, @floatFromInt(c.y));
-    return mathx.lerpF(mathx.lerpF(corners[0], corners[1], u), mathx.lerpF(corners[2], corners[3], u), v);
+    return mathx.bilerp(corners, u, v);
 }
 
 /// What of the sky's light reaches a texel: its ray, and the cloud over it.
@@ -304,10 +291,15 @@ const Surface = enum { floor, face, ceiling };
 fn topOf(t: grid.Tile, cell: P, q: [2]f32) f32 {
     const k = CASTERS.get(t) orelse return 0;
     const r = k.r orelse return k.h;
-    const m = mathx.centre(cell);
+    return if (offMiddle(cell, q) < r) k.h else 0;
+}
+
+/// Cells from `c`'s middle to `q`.
+fn offMiddle(c: P, q: [2]f32) f32 {
+    const m = mathx.centre(c);
     const dx = q[0] - m[0];
     const dy = q[1] - m[1];
-    return if (dx * dx + dy * dy < r * r) k.h else 0;
+    return @sqrt(dx * dx + dy * dy);
 }
 
 /// Where a light-map texel sits in the world: the screen shows a wall's face and ceiling lifted off the ground.
@@ -372,7 +364,10 @@ const Torch = struct {
         const u = x - @as(f32, @floatFromInt(o.x)) - 0.5;
         const v = y - @as(f32, @floatFromInt(o.y)) - 0.5;
         const c = mathx.cellOf(.{ x, y });
-        const own = mathx.dist(c, t.floor()) <= REACH and t.reach[t.texel(c)] > 0;
+        const own = mathx.dist(c, t.floor()) <= REACH and blk: {
+            const i = t.texel(c);
+            break :blk t.reach[i] > 0;
+        };
         return bilinear(if (own) &t.reach else &t.open, SPAN, SPAN, u, v, 0);
     }
 
@@ -424,11 +419,7 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32, out: f32) f32 {
     const fy = @floor(v);
     const x0: i32 = @intFromFloat(fx);
     const y0: i32 = @intFromFloat(fy);
-    const a = u - fx;
-    const b = v - fy;
-    const top = mathx.lerpF(texel(f, w, h, x0, y0, out), texel(f, w, h, x0 + 1, y0, out), a);
-    const bot = mathx.lerpF(texel(f, w, h, x0, y0 + 1, out), texel(f, w, h, x0 + 1, y0 + 1, out), a);
-    return mathx.lerpF(top, bot, b);
+    return mathx.bilerp(.{ texel(f, w, h, x0, y0, out), texel(f, w, h, x0 + 1, y0, out), texel(f, w, h, x0, y0 + 1, out), texel(f, w, h, x0 + 1, y0 + 1, out) }, u - fx, v - fy);
 }
 
 fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32, out: f32) f32 {
@@ -490,9 +481,7 @@ fn knee(c: Rgb) Rgb {
 
 const smooth = mathx.smooth;
 
-fn splat(k: f32) Rgb {
-    return @splat(k);
-}
+const splat = sky.splat;
 
 fn rgbOf(c: rl.Color) Rgb {
     return Rgb{ @floatFromInt(c.r), @floatFromInt(c.g), @floatFromInt(c.b) } / splat(255);
@@ -531,7 +520,12 @@ const SkyCast = struct { reach: f32, depth: f32, shade: Rgb };
 /// the sun and moon swap, and whatever else lights the ground.
 fn skyDepth(k: sky.Sky, lit: f32) f32 {
     const key = lum(k.key) * lit;
-    return SKY_SHADOW * smooth(key / @max(key + lum(k.ambient), 1e-6) / SHADOW_FULL);
+    return SKY_SHADOW * castShare(key, key + lum(k.ambient));
+}
+
+/// A light with `own` of the `all` that reaches a body: how much of its darkest shadow it casts.
+fn castShare(own: f32, all: f32) f32 {
+    return smooth(own / @max(all, 1e-6) / SHADOW_FULL);
 }
 
 fn skyShade(k: sky.Sky) Rgb {
@@ -844,7 +838,8 @@ pub const Light = struct {
     /// Cells `lo` up to `hi`, and a texel round them for the filter.
     pub fn bake(self: *Light, lv: *const grid.Level, lo: P, hi: P) void {
         var ids: [grid.MAX_TORCHES]TorchIx = undefined;
-        const torches = self.near(lo.sub(.{ .x = 1, .y = 1 }), hi.add(.{ .x = 1, .y = 1 }), &ids);
+        const round = grid.grown(lo, hi, 1);
+        const torches = self.near(round[0], round[1], &ids);
         const t0 = P{ .x = @max(0, lo.x * SUB - 1), .y = @max(0, lo.y * SUB - 1) };
         const t1 = P{ .x = @min(MAP_W, hi.x * SUB + 1), .y = @min(MAP_H, hi.y * SUB + 1) };
         const ray: ?SunRay = if (self.sky) |k| SunRay.of(k) else null;
@@ -972,7 +967,7 @@ pub const Light = struct {
     pub fn drawBody(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: Shine, flash: f32) void {
         const w: f32 = @floatFromInt(tex.width);
         const h: f32 = @floatFromInt(tex.height);
-        const src = rl.Rectangle{ .x = 0, .y = 0, .width = if (left) -w else w, .height = h };
+        const src = look.rect(0, 0, if (left) -tex.width else tex.width, tex.height);
         const normals = self.gpu.art(tex).normals;
         const sh = self.gpu.body;
         if (sh == null or normals == null) {
@@ -1055,7 +1050,7 @@ pub const Light = struct {
         const t = self.gpu.mask.?.texture;
         rl.beginBlendMode(.multiplied);
         defer rl.endBlendMode();
-        rl.drawTextureRec(t, .{ .x = 0, .y = 0, .width = @floatFromInt(t.width), .height = @floatFromInt(-t.height) }, .{ .x = 0, .y = 0 }, rl.Color.white);
+        rl.drawTextureRec(t, look.rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);
     }
 
     /// Between `beginShadows` and `endShadows`, before the walls, which cover whatever of it reaches them.
@@ -1127,7 +1122,7 @@ fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const
     for (s.lamp[0..s.n]) |l| {
         if (!l.casts) continue;
         const own = lum(l.colour);
-        const alpha = if (l.sky) |k| k.depth else SHADOW_MAX * smooth(own / lit / SHADOW_FULL) * smooth(own / SHADOW_LAMP_FULL);
+        const alpha = if (l.sky) |k| k.depth else SHADOW_MAX * castShare(own, lit) * smooth(own / SHADOW_LAMP_FULL);
         if (alpha < SHADOW_FAINT) continue;
         const dx = centre[0] - l.ground[0];
         const dy = centre[1] - l.ground[1];
@@ -1136,7 +1131,7 @@ fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const
         const len = height * if (l.sky) |k| k.reach else std.math.clamp(SHADOW_LEN_LO + SHADOW_LEN_PER_CELL * d, SHADOW_LEN_LO, SHADOW_LEN_HI);
         const down: f32 = if (dy >= 0) 1 else -1;
         // The sky's turns slowly through due east and west: floored, it would flip across the feet in a frame.
-        const rise = if (l.sky != null) dy / d * SHADOW_SQUASH else down * @max(@abs(dy / d) * SHADOW_SQUASH, SHADOW_RISE_MIN);
+        const rise = if (l.sky != null) dy / d else down * @max(@abs(dy / d) * SHADOW_SQUASH, SHADOW_RISE_MIN);
         out[n] = .{ .lean = .{ dx / d * len, rise * len }, .alpha = alpha, .shade = if (l.sky) |k| k.shade else SHADE_RGB };
         n += 1;
     }
@@ -1439,8 +1434,8 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
     return look.clamped(look.rgba(&px, w, h), .point);
 }
 
-fn glowAlpha(dx: f32, dy: f32) f32 {
-    const r2 = @min(1, dx * dx + dy * dy);
+fn glowAlpha(r: f32) f32 {
+    const r2 = @min(1, r * r);
     return (1 - r2) * (1 - r2) * @exp(-3 * r2);
 }
 
@@ -1480,7 +1475,7 @@ test "a torch pools light on the floor below it, fading to nothing at its reach"
     const fl = l.torch[0].flame();
     std.debug.print("torchlight on the floor by cells from the flame:", .{});
     var last = std.math.floatMax(f32);
-    for ([_]f32{ 0.25, 1, 2, 3, 4, 5, 6, 7 }) |r| {
+    for ([_]f32{ 0.25, 1, 2, 3, 4, 5, 6, @floatFromInt(REACH) }) |r| {
         const v = added(l, &lv, .{ fl[0], fl[1] + r });
         std.debug.print(" {d}:{d:.3}", .{ r, v });
         try std.testing.expect(v <= last);
@@ -1901,14 +1896,16 @@ test "a body takes its torch's light from where the flame is drawn, and none fro
     try std.testing.expect(lum(carrying.ambient) > lum(AMBIENT + CARRY) * 0.95);
 }
 
+const ART_H: f32 = @floatFromInt(look.SPRITE_PX);
+
 /// From the middle of `c`, cells away from the sky's light along the ground until the point is half lit.
 fn shadowLength(lv: *const grid.Level, k: sky.Sky, c: P) f32 {
-    const flat = k.flat();
+    const u = k.across();
     const m = mathx.centre(c);
     var d: f32 = 0;
     while (d < 12) : (d += 0.01) {
-        const x = m[0] - k.dir[0] / flat * d;
-        const y = m[1] - k.dir[1] / flat * d;
+        const x = m[0] - u[0] * d;
+        const y = m[1] - u[1] * d;
         if (!mathx.cellOf(.{ x, y }).eq(c) and sunlit(lv, SunRay.of(k), x, y, 0) > 0.5) return d;
     }
     return d;
@@ -1930,8 +1927,8 @@ test "the sun throws a thing's shadow its height times the hour's reach, away fr
         try std.testing.expect(rock_len > k.reach() * WALL_H * (1 - SUN_SOFT) and rock_len < k.reach() * WALL_H + 0.75);
         try std.testing.expect(bush_len > tip - SUN_SOFT * b.h * k.reach() - SUN_EDGE and bush_len <= tip);
         const m = mathx.centre(rock);
-        const flat = k.flat();
-        try std.testing.expectEqual(@as(f32, 1), sunlit(&lv, SunRay.of(k), m[0] + k.dir[0] / flat * 0.6, m[1] + k.dir[1] / flat * 0.6, 0));
+        const u = k.across();
+        try std.testing.expectEqual(@as(f32, 1), sunlit(&lv, SunRay.of(k), m[0] + u[0] * 0.6, m[1] + u[1] * 0.6, 0));
     }
 }
 
@@ -1945,9 +1942,8 @@ test "everything that blocks a step and does not stand shades the ground past it
         var worst: f32 = 0;
         for ([_]f32{ 8, 12, 17 }) |hour| {
             const k = sky.at(hour);
-            const flat = k.flat();
-            const ux = k.dir[0] / flat;
-            const uy = k.dir[1] / flat;
+            const ux = k.across()[0];
+            const uy = k.across()[1];
             const edge = CASTERS.get(t).?.r orelse 0.5 / @max(@abs(ux), @abs(uy));
             const past = edge + 0.05;
             const shade = sunlit(&lv, SunRay.of(k), m[0] - ux * past, m[1] - uy * past, 0);
@@ -1973,13 +1969,32 @@ test "a standing shrub takes the sun as a body does, and throws its shadow the s
     var lean: [2][2]f32 = undefined;
     for ([_]P{ shrub, foe }, 0..) |c, i| {
         const s = l.onBody(mathx.centre(c), false);
-        const cs = casts(s, mathx.centre(c), 64, &out[i]);
+        const cs = casts(s, mathx.centre(c), ART_H, &out[i]);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         lean[i] = cs[0].lean;
     }
     std.debug.print("at 16.5h a shrub's shadow leans {d:.1},{d:.1} px, a foe's {d:.1},{d:.1}\n", .{ lean[0][0], lean[0][1], lean[1][0], lean[1][1] });
     for (0..2) |k| try std.testing.expectApproxEqAbs(lean[1][k], lean[0][k], 1e-3);
     try std.testing.expect(lean[0][0] > 0);
+}
+
+test "a body's sun shadow runs the way the ground's do, its height times the hour's reach" {
+    var lv = grid.openFloor();
+    @memset(&lv.lit, true);
+    @memset(&lv.seen, true);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const at = mathx.centre(.{ .x = 40, .y = 30 });
+    for ([_]f32{ 9, 13, 16.5 }) |hour| {
+        l.sky = sky.at(hour);
+        var buf: [BODY_LIGHTS]Cast = undefined;
+        const cs = casts(l.onBody(at, false), at, ART_H, &buf);
+        try std.testing.expectEqual(@as(usize, 1), cs.len);
+        const u = l.sky.?.across();
+        const want = ART_H * l.sky.?.reach();
+        std.debug.print("at {d:.1}h a body's shadow leans {d:.1},{d:.1} px, the ground's {d:.1},{d:.1}\n", .{ hour, cs[0].lean[0], cs[0].lean[1], -u[0] * want, -u[1] * want });
+        for (0..2) |k| try std.testing.expectApproxEqAbs(-u[k] * want, cs[0].lean[k], 1e-2);
+    }
 }
 
 test "skipping the sun's march where nothing that casts is near changes nothing it would have found" {
@@ -2001,8 +2016,7 @@ test "skipping the sun's march where nothing that casts is near changes nothing 
                 const q = [2]f32{ c[0] + 0.3, c[1] - 0.2 };
                 checked += 1;
                 try std.testing.expectEqual(sunlit(&lv, SunRay.of(k), q[0], q[1], z), l.sunAt(&lv, SunRay.of(k), q[0], q[1], z));
-                const flat = k.flat();
-                const far = (CAST_TALLEST - z) / (k.dir[2] / flat);
+                const far = SunRay.of(k).far(z);
                 const e = [2]f32{ q[0] + k.across()[0] * far, q[1] + k.across()[1] * far };
                 const lo = mathx.cellOf(.{ @min(q[0], e[0]), @min(q[1], e[1]) });
                 const hi = mathx.cellOf(.{ @max(q[0], e[0]), @max(q[1], e[1]) });
@@ -2028,7 +2042,7 @@ test "a sun shadow turns smoothly through due east and due west, never flipping 
         while (h < span[1]) : (h += 0.005) {
             l.sky = sky.at(h);
             var buf: [BODY_LIGHTS]Cast = undefined;
-            const cs = casts(l.onBody(at, false), at, 64, &buf);
+            const cs = casts(l.onBody(at, false), at, ART_H, &buf);
             if (cs.len == 0) {
                 was = null;
                 continue;
@@ -2054,11 +2068,11 @@ test "under the sky, ground in the sun outshines ground in shade, and night is d
     const none = l.near(.{ .x = 0, .y = 0 }, .{ .x = 0, .y = 0 }, &ids);
     l.sky = sky.at(morning);
     const k = l.sky.?;
-    const flat = k.flat();
+    const u = k.across();
     const m = mathx.centre(rock);
     const behind = 0.5 + k.reach() * 0.5;
-    const shade = lum(l.at(&lv, none, .{ m[0] - k.dir[0] / flat * behind, m[1] - k.dir[1] / flat * behind }));
-    const sun = lum(l.at(&lv, none, .{ m[0] + k.dir[0] / flat * 2, m[1] + k.dir[1] / flat * 2 }));
+    const shade = lum(l.at(&lv, none, .{ m[0] - u[0] * behind, m[1] - u[1] * behind }));
+    const sun = lum(l.at(&lv, none, .{ m[0] + u[0] * 2, m[1] + u[1] * 2 }));
     l.sky = sky.at(0);
     const night = lum(l.at(&lv, none, .{ m[0] + 5, m[1] }));
     std.debug.print("{d}h ground: {d:.2} in the sun, {d:.2} in a rock's shadow; {d:.3} at midnight\n", .{ morning, sun, shade, night });
@@ -2081,7 +2095,7 @@ test "the moon throws a cold shadow as deep as the sun's, over the archer's own 
     for ([_]f32{ 12, 1 }, 0..) |h, i| {
         l.sky = sky.at(h);
         var buf: [BODY_LIGHTS]Cast = undefined;
-        const cs = casts(l.onBody(foe, false), foe, 64, &buf);
+        const cs = casts(l.onBody(foe, false), foe, ART_H, &buf);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         depth[i] = cs[0].alpha;
         blue[i] = cs[0].shade[2] / cs[0].shade[0];

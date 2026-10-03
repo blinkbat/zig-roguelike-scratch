@@ -15,14 +15,6 @@ const NO_CELL = std.math.maxInt(u32);
 const MEANDER: f32 = 0.55;
 const RIVER_STEPS: usize = 4 * (grid.W + grid.H);
 
-pub fn chance(rng: *mathx.Rng, per_mille: u32) bool {
-    return rng.below(mathx.MILLE) < per_mille;
-}
-
-pub fn percent(rng: *mathx.Rng, pc: u32) bool {
-    return rng.below(mathx.PERCENT) < pc;
-}
-
 /// Smooth value noise in 0..1, summed over octaves; a seed is a field.
 pub const Noise = struct {
     seed: u64,
@@ -40,15 +32,7 @@ pub const Noise = struct {
     }
 
     fn value(self: Noise, x: f32, y: f32) f32 {
-        const fx = @floor(x);
-        const fy = @floor(y);
-        const ix: i32 = @intFromFloat(fx);
-        const iy: i32 = @intFromFloat(fy);
-        const tx = mathx.smooth(x - fx);
-        const ty = mathx.smooth(y - fy);
-        const top = mathx.lerpF(self.lattice(ix, iy), self.lattice(ix + 1, iy), tx);
-        const bottom = mathx.lerpF(self.lattice(ix, iy + 1), self.lattice(ix + 1, iy + 1), tx);
-        return mathx.lerpF(top, bottom, ty);
+        return mathx.valueNoise(self, lattice, x, y);
     }
 
     /// At a cell, its features about `scale` cells across, finer octaves on them.
@@ -81,7 +65,7 @@ pub fn rim(lv: *grid.Level, t: grid.Tile) void {
 /// Every cell inside the rim `solid` at `pc` percent, else `open`; the rim `solid`.
 pub fn sow(lv: *grid.Level, rng: *mathx.Rng, pc: u32, solid: grid.Tile, open: grid.Tile) void {
     for (0..grid.CELLS) |i| {
-        lv.tile[i] = if (grid.Level.onRim(grid.Level.of(i)) or percent(rng, pc)) solid else open;
+        lv.tile[i] = if (grid.Level.onRim(grid.Level.of(i)) or rng.percent(pc)) solid else open;
     }
 }
 
@@ -121,7 +105,7 @@ pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: grid.Tile, 
         if (lv.tile[i] != on) continue;
         const p = grid.Level.of(i);
         if (grid.Level.onRim(p) or (lone and !clearAround(lv, p))) continue;
-        if (chance(rng, per_mille)) lv.tile[i] = put;
+        if (rng.perMille(per_mille)) lv.tile[i] = put;
     }
 }
 
@@ -150,6 +134,21 @@ fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, 
     }
 }
 
+/// `t` round `c` off the rim, its edge frayed: in where a cell's distance over `r` is under `lo + span` times the noise.
+pub fn blob(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile) void {
+    var cells = grid.Cells.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span))));
+    while (cells.next()) |q| {
+        if (grid.Level.onRim(q)) continue;
+        if (mathx.distEuclid(q, c) / r < lo + span * noise.at(q, scale, 2)) lv.set(q, t);
+    }
+}
+
+/// All `pal.open`, ringed by `pal.solid`.
+pub fn field(lv: *grid.Level, pal: Palette) void {
+    fill(lv, pal.open);
+    rim(lv, pal.solid);
+}
+
 pub fn box(lv: *grid.Level, lo: P, hi: P, t: grid.Tile) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |q| lv.set(q, t);
@@ -173,14 +172,13 @@ pub fn seal(lv: *grid.Level, t: grid.Tile) void {
     }
 }
 
-/// What a trail lays, and what fills a small doorless pocket; null gives every pocket a trail.
-pub const Join = struct { path: grid.Tile, pocket: ?grid.Tile = null };
-
 /// A base's own ground, which its features and the finishing passes draw from.
 pub const Palette = struct {
     open: grid.Tile,
     solid: grid.Tile,
+    /// What a trail lays.
     path: grid.Tile,
+    /// What fills a small doorless pocket; null gives every pocket a trail.
     pocket: ?grid.Tile = null,
 
     /// Floor walled round, as the rooms are.
@@ -192,21 +190,21 @@ pub const Palette = struct {
 };
 
 /// Every stretch of open ground joined to the biggest by a bending trail that bridges water, lava and chasms.
-pub fn connect(lv: *grid.Level, rng: *mathx.Rng, j: Join) void {
-    var region: [grid.CELLS]u16 = undefined;
-    var size: [grid.CELLS]u32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
+pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette) void {
+    var st: Stretches = .{};
+    const region = &st.region;
+    const size = &st.size;
     for (0..JOIN_PASSES) |_| {
-        const n = label(lv, &region, &size, &queue);
+        const n = st.label(lv);
         if (n <= 1) return;
-        const main = biggest(size[0..n]);
-        const doored = doorsIn(lv, &region);
+        const main = st.biggest();
+        const doored = doorsIn(lv, region);
         var first: [grid.CELLS]u32 = undefined;
         @memset(first[0..n], NO_CELL);
         for (0..grid.CELLS) |i| {
             const r = region[i];
             if (r == NONE or r == main) continue;
-            if (j.pocket) |fill_with| {
+            if (pal.pocket) |fill_with| {
                 if (size[r] < POCKET and !doored.isSet(r)) {
                     lv.tile[i] = fill_with;
                     continue;
@@ -217,71 +215,83 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, j: Join) void {
         for (first[0..n]) |orphan| {
             if (orphan == NO_CELL) continue;
             const from = grid.Level.inset(grid.Level.of(orphan));
-            var best: ?P = null;
-            var best_d: i32 = std.math.maxInt(i32);
-            for (0..grid.CELLS) |i| {
-                const q = grid.Level.of(i);
-                if (region[i] != main or grid.Level.onRim(q)) continue;
-                const d = mathx.dist(q, from);
-                if (d < best_d) {
-                    best_d = d;
-                    best = q;
+            const to = grid.nearest(from, InStretch{ .st = &st, .r = main }) orelse return;
+            trail(lv, rng, from, to, pal.path);
+        }
+    }
+}
+
+/// Each open cell's stretch of ground, as a step walks it.
+pub const Stretches = struct {
+    region: [grid.CELLS]u16 = undefined,
+    size: [grid.CELLS]u32 = undefined,
+    queue: [grid.CELLS]u32 = undefined,
+    n: usize = 0,
+
+    /// How many stretches.
+    pub fn label(s: *Stretches, lv: *const grid.Level) usize {
+        return s.labelBy(lv, false);
+    }
+
+    /// The stretch with the most cells, the first of any tie.
+    pub fn biggest(s: *const Stretches) u16 {
+        var main: u16 = 0;
+        for (s.size[1..s.n], 1..) |n, r| {
+            if (n > s.size[main]) main = @intCast(r);
+        }
+        return main;
+    }
+
+    pub fn of(s: *const Stretches, p: P) u16 {
+        const i = grid.Level.idx(p);
+        return s.region[i];
+    }
+
+    fn labelBy(s: *Stretches, lv: *const grid.Level, comptime barred: bool) usize {
+        @memset(&s.region, NONE);
+        var n: u16 = 0;
+        for (0..grid.CELLS) |c| {
+            if (s.region[c] != NONE or lv.tile[c].solid() or (barred and lv.barrel[c])) continue;
+            s.region[c] = n;
+            s.queue[0] = @intCast(c);
+            var head: usize = 0;
+            var tail: usize = 1;
+            while (head < tail) : (head += 1) {
+                const here = grid.Level.of(s.queue[head]);
+                for (mathx.ALL_DIRS) |d| {
+                    if (!lv.passOk(here, d)) continue;
+                    const k = grid.Level.idx(here.add(d.delta()));
+                    if (s.region[k] != NONE or (barred and lv.barrel[k])) continue;
+                    s.region[k] = n;
+                    s.queue[tail] = @intCast(k);
+                    tail += 1;
                 }
             }
-            trail(lv, rng, from, best orelse return, j.path);
+            s.size[n] = @intCast(tail);
+            n += 1;
         }
+        s.n = n;
+        return n;
     }
-}
+};
 
-/// The stretch with the most cells, the first of any tie.
-pub fn biggest(size: []const u32) u16 {
-    var main: u16 = 0;
-    for (size[1..], 1..) |n, r| {
-        if (n > size[main]) main = @intCast(r);
+const InStretch = struct {
+    st: *const Stretches,
+    r: u16,
+
+    pub fn has(s: InStretch, i: usize) bool {
+        return s.st.region[i] == s.r;
     }
-    return main;
-}
-
-/// Each open cell's stretch of ground, as a step walks it; how many stretches.
-pub fn label(lv: *const grid.Level, region: *[grid.CELLS]u16, size: *[grid.CELLS]u32, queue: *[grid.CELLS]u32) usize {
-    return labelBy(lv, region, size, queue, false);
-}
-
-fn labelBy(lv: *const grid.Level, region: *[grid.CELLS]u16, size: *[grid.CELLS]u32, queue: *[grid.CELLS]u32, comptime barred: bool) usize {
-    @memset(region, NONE);
-    var n: u16 = 0;
-    for (0..grid.CELLS) |s| {
-        if (region[s] != NONE or lv.tile[s].solid() or (barred and lv.barrel[s])) continue;
-        region[s] = n;
-        queue[0] = @intCast(s);
-        var head: usize = 0;
-        var tail: usize = 1;
-        while (head < tail) : (head += 1) {
-            const here = grid.Level.of(queue[head]);
-            for (mathx.ALL_DIRS) |d| {
-                if (!lv.passOk(here, d)) continue;
-                const k = grid.Level.idx(here.add(d.delta()));
-                if (region[k] != NONE or (barred and lv.barrel[k])) continue;
-                region[k] = n;
-                queue[tail] = @intCast(k);
-                tail += 1;
-            }
-        }
-        size[n] = @intCast(tail);
-        n += 1;
-    }
-    return n;
-}
+};
 
 /// Barrels taken away, one a pass, each beside ground they cut off from the biggest stretch, till none does.
 pub fn unbar(lv: *grid.Level) void {
-    var region: [grid.CELLS]u16 = undefined;
-    var size: [grid.CELLS]u32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
+    var st: Stretches = .{};
+    const region = &st.region;
     while (true) {
-        const n = labelBy(lv, &region, &size, &queue, true);
+        const n = st.labelBy(lv, true);
         if (n <= 1) return;
-        const main = biggest(size[0..n]);
+        const main = st.biggest();
         const cut = for (0..grid.CELLS) |i| {
             if (!lv.barrel[i]) continue;
             const p = grid.Level.of(i);
@@ -370,7 +380,7 @@ pub const Bed = struct {
     }
 };
 
-/// From edge to edge: `fill` `width` across, `bank` a cell either side over whatever is not liquid.
+/// From edge to edge: `fill_with` `width` across, `bank` a cell either side over whatever is not liquid.
 pub fn river(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: f32, fill_with: grid.Tile, bank: ?grid.Tile, bed: ?*Bed) void {
     var m = Meander.init(a, b, 1);
     while (m.next(rng)) |c| {
@@ -539,15 +549,12 @@ test "noise is smooth, in range, and a seed is a field" {
 test "a river runs edge to edge and parts the ground, and a join bridges it" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x21E);
-    fill(&lv, .grass);
-    rim(&lv, .shrub);
+    field(&lv, Palette.WILD);
     river(&lv, &rng, .{ .x = 0, .y = 32 }, .{ .x = grid.W - 1, .y = 30 }, 3, .water, .shallows, null);
-    var region: [grid.CELLS]u16 = undefined;
-    var size: [grid.CELLS]u32 = undefined;
-    var queue: [grid.CELLS]u32 = undefined;
-    const parted = label(&lv, &region, &size, &queue);
-    connect(&lv, &rng, .{ .path = .dirt });
-    const joined = label(&lv, &region, &size, &queue);
+    var st: Stretches = .{};
+    const parted = st.label(&lv);
+    connect(&lv, &rng, .{ .open = .grass, .solid = .shrub, .path = .dirt });
+    const joined = st.label(&lv);
     std.debug.print("a river: {d} water cells, the ground in {d} parts, {d} after joining by {d} bridge cells\n", .{ count(&lv, .water), parted, joined, count(&lv, .bridge) });
     try std.testing.expect(parted >= 2);
     try std.testing.expectEqual(@as(usize, 1), joined);

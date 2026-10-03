@@ -123,13 +123,13 @@ test "a gassed-up cell shares its gas evenly with its open neighbours, and a thi
 test "a burst shut in a room lingers, and on open floor clears sooner and spreads only as far as it stays gassed up" {
     var rng = mathx.Rng.init(0x6A5);
     var shut = grid.Level.blank();
-    const room = gen.Room{ .x = 10, .y = 10, .w = 9, .h = 6 };
+    const room = gen.Room.sized(.{ .x = 10, .y = 10 }, 9, 6);
     gen.carveRoom(&shut, room);
     shut.addGas(room.centre(), BURST);
     const a = try lasts(&shut, &rng);
     const b = try onOpenFloor(&rng);
     std.debug.print("a bloat's burst: shut in a 9x6 room it lasts {d} turns over at most {d} cells, on open floor {d} turns over at most {d}\n", .{ a.turns, a.most, b.turns, b.most });
-    try std.testing.expectEqual(@as(usize, @intCast(room.w * room.h)), a.most);
+    try std.testing.expectEqual(@as(usize, @intCast(room.width() * room.height())), a.most);
     try std.testing.expect(a.turns > b.turns);
     try std.testing.expect(b.most < BURST / GASSED_UP * 2);
 }

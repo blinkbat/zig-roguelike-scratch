@@ -390,6 +390,22 @@ pub const Level = struct {
     }
 };
 
+/// Of the cells off the rim that `set.has` takes, the nearest `from`, the first of any tie.
+pub fn nearest(from: P, set: anytype) ?P {
+    var best: ?P = null;
+    var best_d: i32 = std.math.maxInt(i32);
+    for (0..CELLS) |i| {
+        const q = Level.of(i);
+        if (!set.has(i) or Level.onRim(q)) continue;
+        const d = mathx.dist(q, from);
+        if (d < best_d) {
+            best_d = d;
+            best = q;
+        }
+    }
+    return best;
+}
+
 /// From `lo` up to `hi`, `by` cells bigger each way, on the map.
 pub fn grown(lo: P, hi: P, by: i32) [2]P {
     return .{
@@ -397,6 +413,61 @@ pub fn grown(lo: P, hi: P, by: i32) [2]P {
         .{ .x = @min(W, hi.x + by), .y = @min(H, hi.y + by) },
     };
 }
+
+/// The cells from `lo` up to `hi`.
+pub const Box = struct {
+    lo: P,
+    hi: P,
+
+    pub fn sized(lo: P, w: i32, h: i32) Box {
+        return .{ .lo = lo, .hi = lo.add(.{ .x = w, .y = h }) };
+    }
+
+    /// The map, `m` cells in from its edge all round.
+    pub fn inMap(m: i32) Box {
+        return .{ .lo = .{ .x = m, .y = m }, .hi = .{ .x = W - m, .y = H - m } };
+    }
+
+    /// One of its cells at random, x drawn before y.
+    pub fn roll(b: Box, rng: *mathx.Rng) P {
+        const x = rng.range(b.lo.x, b.hi.x - 1);
+        return .{ .x = x, .y = rng.range(b.lo.y, b.hi.y - 1) };
+    }
+
+    pub fn width(b: Box) i32 {
+        return b.hi.x - b.lo.x;
+    }
+
+    pub fn height(b: Box) i32 {
+        return b.hi.y - b.lo.y;
+    }
+
+    pub fn centre(b: Box) P {
+        return b.lo.add(.{ .x = @divTrunc(b.width(), 2), .y = @divTrunc(b.height(), 2) });
+    }
+
+    pub fn holds(b: Box, p: P) bool {
+        return p.x >= b.lo.x and p.x < b.hi.x and p.y >= b.lo.y and p.y < b.hi.y;
+    }
+
+    pub fn cells(b: Box) Cells {
+        return Cells.of(b.lo, b.hi);
+    }
+
+    pub fn inner(b: Box) Box {
+        return .{ .lo = b.lo.add(.{ .x = 1, .y = 1 }), .hi = b.hi.sub(.{ .x = 1, .y = 1 }) };
+    }
+
+    /// Whether `b` comes within `pad` cells of `o`.
+    pub fn overlaps(b: Box, o: Box, pad: i32) bool {
+        return b.lo.x - pad < o.hi.x and b.hi.x + pad > o.lo.x and b.lo.y - pad < o.hi.y and b.hi.y + pad > o.lo.y;
+    }
+
+    /// In it, on its outline.
+    pub fn onEdge(b: Box, p: P) bool {
+        return b.holds(p) and (p.x == b.lo.x or p.y == b.lo.y or p.x == b.hi.x - 1 or p.y == b.hi.y - 1);
+    }
+};
 
 /// Every cell from `lo` up to `hi`, row by row.
 pub const Cells = struct {

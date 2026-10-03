@@ -47,7 +47,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     stack[0] = @intCast(start);
     seen[start] = true;
     lv.set(cellAt(start % CELLS_X, start / CELLS_X), pal.open);
-    const steps = [4][2]i32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } };
+    const steps = mathx.CARDINALS;
     while (top > 0) {
         const at = stack[top - 1];
         const cx: i32 = @intCast(at % CELLS_X);
@@ -55,8 +55,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         var open: [4]usize = undefined;
         var n: usize = 0;
         for (steps, 0..) |s, k| {
-            const nx = cx + s[0];
-            const ny = cy + s[1];
+            const nx = cx + s.x;
+            const ny = cy + s.y;
             if (nx < 0 or ny < 0 or nx >= CELLS_X or ny >= CELLS_Y) continue;
             if (seen[@as(usize, @intCast(ny)) * CELLS_X + @as(usize, @intCast(nx))]) continue;
             open[n] = k;
@@ -67,12 +67,12 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
             continue;
         }
         const s = steps[open[rng.below(@intCast(n))]];
-        const nx: usize = @intCast(cx + s[0]);
-        const ny: usize = @intCast(cy + s[1]);
+        const nx: usize = @intCast(cx + s.x);
+        const ny: usize = @intCast(cy + s.y);
         const k = ny * CELLS_X + nx;
         seen[k] = true;
         const here = cellAt(@intCast(cx), @intCast(cy));
-        lv.set(here.add(.{ .x = s[0], .y = s[1] }), pal.open);
+        lv.set(here.add(s), pal.open);
         lv.set(cellAt(nx, ny), pal.open);
         stack[top] = @intCast(k);
         top += 1;
@@ -84,15 +84,15 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
             var n: usize = 0;
             var opens: usize = 0;
             for (steps) |s| {
-                const w = c.add(.{ .x = s[0], .y = s[1] });
+                const w = c.add(s);
                 if (lv.at(w) == pal.open) {
                     opens += 1;
-                } else if (!grid.Level.onRim(w) and !grid.Level.onRim(w.add(.{ .x = s[0], .y = s[1] }))) {
+                } else if (!grid.Level.onRim(w) and !grid.Level.onRim(w.add(s))) {
                     walls[n] = w;
                     n += 1;
                 }
             }
-            if (opens == 1 and n > 0 and carve.percent(rng, p.braid)) lv.set(walls[rng.below(@intCast(n))], pal.open);
+            if (opens == 1 and n > 0 and rng.percent(p.braid)) lv.set(walls[rng.below(@intCast(n))], pal.open);
         }
     }
     if (p.chamber > 0) {
