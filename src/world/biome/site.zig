@@ -70,7 +70,9 @@ pub const Params = struct {
     ground: carve.Ground = .grass,
 
     pub fn fit(p: Params) Params {
-        return .{ .template = p.template, .decay = @min(p.decay, mathx.PERCENT), .ground = p.ground };
+        var q = p;
+        q.decay = @min(p.decay, mathx.PERCENT);
+        return q;
     }
 };
 
@@ -81,8 +83,7 @@ pub fn palette(p: Params) carve.Palette {
 
 const Pattern = [N * N]u8;
 
-/// Every N x N window of a template, wrapping round its edges as Qud reads its own, each of its eight rotations and
-/// reflections, counted.
+/// Every N x N window, wrapping round its edges as Qud reads its own, in all eight rotations and reflections, counted.
 const Model = struct {
     pat: [PATTERNS_MAX]Pattern = undefined,
     weight: [PATTERNS_MAX]u32 = undefined,

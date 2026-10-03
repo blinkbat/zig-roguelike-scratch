@@ -16,7 +16,6 @@ const MARGIN: i32 = 4;
 const HOUSE_LEAST: i32 = 5;
 /// How often a block is cut by an alley each way.
 const SPLIT_CHANCE: f32 = 0.7;
-/// A house on a lot: whole, a barrel at most, a torch in three.
 const HOUSE = buildings.Params{ .barrels = 1, .torches = 30 };
 
 pub const Wall = enum { none, wall, fence };
@@ -88,15 +87,17 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     }
     for (gates()) |g| {
         carve.disc(lv, g.at, 1.5, street, null);
-        const side = P{ .x = g.in.y, .y = g.in.x };
-        const deep = g.at.add(.{ .x = g.in.x * s, .y = g.in.y * s });
+        const in = g.in.delta();
+        const side = P{ .x = in.y, .y = in.x };
+        const deep = g.at.add(.{ .x = in.x * s, .y = in.y * s });
         const a = g.at.sub(side);
         const b = deep.add(side);
         bridge(lv, a.min(b), a.max(b).add(.{ .x = 1, .y = 1 }));
     }
 }
 
-const Gate = struct { at: P, in: P };
+/// `in` is the way into the town.
+const Gate = struct { at: P, in: mathx.Dir };
 
 /// A cell outside the streets all round.
 fn wallBox() grid.Box {
@@ -107,14 +108,13 @@ fn gates() [4]Gate {
     const wl = wallBox().lo;
     const wh = wallBox().hi;
     return .{
-        .{ .at = .{ .x = grid.MIDDLE.x, .y = wl.y }, .in = .{ .x = 0, .y = 1 } },
-        .{ .at = .{ .x = grid.MIDDLE.x, .y = wh.y - 1 }, .in = .{ .x = 0, .y = -1 } },
-        .{ .at = .{ .x = wl.x, .y = grid.MIDDLE.y }, .in = .{ .x = 1, .y = 0 } },
-        .{ .at = .{ .x = wh.x - 1, .y = grid.MIDDLE.y }, .in = .{ .x = -1, .y = 0 } },
+        .{ .at = .{ .x = grid.MIDDLE.x, .y = wl.y }, .in = .s },
+        .{ .at = .{ .x = grid.MIDDLE.x, .y = wh.y - 1 }, .in = .n },
+        .{ .at = .{ .x = wl.x, .y = grid.MIDDLE.y }, .in = .e },
+        .{ .at = .{ .x = wh.x - 1, .y = grid.MIDDLE.y }, .in = .w },
     };
 }
 
-/// Every canal cell from `lo` up to `hi` bridged.
 fn bridge(lv: *grid.Level, lo: P, hi: P) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |q| {
@@ -122,11 +122,10 @@ fn bridge(lv: *grid.Level, lo: P, hi: P) void {
     }
 }
 
-/// Cut into lots by alleys; each lot built on, a house walled round with a doorway onto a street, or left a yard. An
-/// alley from top to bottom with a canal at both ends gets one across, to the streets either side.
+/// An alley from top to bottom with a canal at both ends gets one across, to the streets either side.
 fn block(lv: *grid.Level, rng: *mathx.Rng, b: grid.Box, p: Params, street: grid.Tile) void {
-    const w = b.hi.x - b.lo.x;
-    const h = b.hi.y - b.lo.y;
+    const w = b.width();
+    const h = b.height();
     const split_x = w >= 2 * HOUSE_LEAST + 1 and rng.chance(SPLIT_CHANCE);
     const crosses = h >= 2 * HOUSE_LEAST + 1;
     var split_y = crosses and rng.chance(SPLIT_CHANCE);
@@ -140,7 +139,7 @@ fn block(lv: *grid.Level, rng: *mathx.Rng, b: grid.Box, p: Params, street: grid.
         .{ .lo = .{ .x = mx + 1, .y = my + 1 }, .hi = b.hi },
     };
     for (lots) |lot| {
-        if (lot.hi.x - lot.lo.x < HOUSE_LEAST or lot.hi.y - lot.lo.y < HOUSE_LEAST) continue;
+        if (lot.width() < HOUSE_LEAST or lot.height() < HOUSE_LEAST) continue;
         if (!rng.percent(p.houses)) {
             carve.box(lv, lot.lo, lot.hi, .grass);
             continue;
@@ -154,16 +153,20 @@ test "no house's doorway opens on a canal" {
     var lv = grid.Level.blank();
     var st: carve.Stretches = .{};
     var sealed: usize = 0;
-    for (0..TOWNS) |i| {
-        var rng = mathx.Rng.init(i);
-        shape(&lv, &rng, 0, .{ .canals = 100, .street = 3 });
-        _ = st.label(&lv);
-        const most = st.biggest();
-        for (lv.tile, st.region) |t, r| {
-            if (t == .floor and r != most) sealed += 1;
+    var towns: usize = 0;
+    for ([_]u8{ BLOCK_MIN, BLOCK_MIN + 1, 2 * HOUSE_LEAST, (Params{}).block }) |blk| {
+        for (0..TOWNS) |i| {
+            var rng = mathx.Rng.init(i);
+            shape(&lv, &rng, 0, (Params{ .canals = 100, .street = 3, .block = blk }).fit());
+            towns += 1;
+            _ = st.label(&lv);
+            const most = st.biggest();
+            for (lv.tile, st.region) |t, r| {
+                if (t == .floor and r != most) sealed += 1;
+            }
         }
     }
-    std.debug.print("{d} towns all canals: {d} house floor cells shut off from the streets\n", .{ TOWNS, sealed });
+    std.debug.print("{d} towns all canals: {d} house floor cells shut off from the streets\n", .{ towns, sealed });
     try std.testing.expectEqual(@as(usize, 0), sealed);
 }
 
@@ -179,7 +182,7 @@ test "every town gate steps across its street, canal or not" {
         for (gates()) |g| {
             var k: i32 = 0;
             while (k <= s) : (k += 1) {
-                if (!lv.walkable(g.at.add(.{ .x = g.in.x * k, .y = g.in.y * k }))) wet += 1;
+                if (!lv.walkable(g.at.add(.{ .x = g.in.delta().x * k, .y = g.in.delta().y * k }))) wet += 1;
             }
         }
     }

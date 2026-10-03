@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 
 // A file names its types by `fingerprint`, so a build whose types changed refuses it rather than misreads it.
 
-/// Every field's name and type, every enum's tags, and each type's size; and the compiler, which lays them out.
 pub fn fingerprint(comptime types: anytype) u64 {
     const h = comptime blk: {
         @setEvalBranchQuota(200_000);
@@ -58,7 +57,6 @@ pub fn put(w: anytype, v: anytype) !void {
     try w.writeAll(std.mem.asBytes(v));
 }
 
-/// Reads `@sizeOf` the value's type off `bytes` into it; false when too few are left.
 pub fn take(bytes: *[]const u8, v: anytype) bool {
     const out = std.mem.asBytes(v);
     if (bytes.len < out.len) return false;

@@ -16,16 +16,39 @@ pub const Look = struct {
 
 pub const Bodies = std.EnumArray(actor.Kind, ?rl.Texture2D);
 
-/// Tiles drawn standing up out of their cell: each throws its silhouette's shadow, as a body does.
-pub const STANDING = [_]grid.Tile{ .shrub, .tiny_shrub, .boulder };
+/// How a standing tile casts: its silhouette, as a body does, or a tree's canopy pool.
+pub const Shadow = enum { silhouette, canopy };
+
+const STANDS = std.EnumArray(grid.Tile, ?Shadow).initDefault(@as(?Shadow, null), .{
+    .shrub = .canopy,
+    .tiny_shrub = .canopy,
+    .boulder = .silhouette,
+    .fungus = .silhouette,
+    .tall_grass = .silhouette,
+    .shrooms = .silhouette,
+});
+
+pub const STANDING = blk: {
+    var n: usize = 0;
+    for (STANDS.values) |s| {
+        if (s != null) n += 1;
+    }
+    var out: [n]grid.Tile = undefined;
+    var i: usize = 0;
+    for (std.enums.values(grid.Tile)) |t| {
+        if (STANDS.get(t) == null) continue;
+        out[i] = t;
+        i += 1;
+    }
+    break :blk out;
+};
 
 pub fn stands(t: grid.Tile) bool {
-    return std.mem.indexOfScalar(grid.Tile, &STANDING, t) != null;
+    return STANDS.get(t) != null;
 }
 
-/// A tree: its shadow is its canopy's soft pool, not its silhouette.
 pub fn canopied(t: grid.Tile) bool {
-    return t == .shrub or t == .tiny_shrub;
+    return STANDS.get(t) == .canopy;
 }
 
 /// Every sprite whose silhouette casts: the bodies, the barrel, then the standing tiles.
@@ -106,6 +129,9 @@ const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const
     .shrub = @embedFile("shrub.png"),
     .tiny_shrub = @embedFile("tiny-shrub.png"),
     .boulder = @embedFile("boulder.png"),
+    .fungus = @embedFile("tall-shroom.png"),
+    .tall_grass = @embedFile("tall-grass.png"),
+    .shrooms = @embedFile("small-shrooms.png"),
 });
 
 comptime {
@@ -178,17 +204,27 @@ pub fn canvas(w: i32, h: i32, c: rl.Color) ?rl.Texture2D {
 
 /// White, its alpha `alphaAt(r)` at `r` from the middle, 1 at the middle of each edge. Needs a live GL context.
 pub fn radial(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
-    const n: usize = @intCast(px);
-    var img: [n * n]rl.Color = undefined;
-    const half: f32 = @as(f32, @floatFromInt(px)) * 0.5;
-    for (0..n) |y| {
-        for (0..n) |x| {
-            const dx = (@as(f32, @floatFromInt(x)) + 0.5 - half) / half;
-            const dy = (@as(f32, @floatFromInt(y)) + 0.5 - half) / half;
-            img[y * n + x] = fade(rl.Color.white, alphaAt(@sqrt(dx * dx + dy * dy)));
+    const round = struct {
+        fn at(u: f32, v: f32) f32 {
+            return alphaAt(mathx.len(u * 2 - 1, v * 2 - 1));
+        }
+    };
+    return field(px, px, round.at);
+}
+
+/// White, its alpha `alphaAt(u, v)` at each texel's middle, `u` and `v` 0 to 1 across and down. Needs a live GL context.
+pub fn field(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f32) ?rl.Texture2D {
+    const nw: usize = @intCast(w);
+    const nh: usize = @intCast(h);
+    var img: [nw * nh]rl.Color = undefined;
+    for (0..nh) |y| {
+        for (0..nw) |x| {
+            const u = (@as(f32, @floatFromInt(x)) + 0.5) / @as(f32, @floatFromInt(w));
+            const v = (@as(f32, @floatFromInt(y)) + 0.5) / @as(f32, @floatFromInt(h));
+            img[y * nw + x] = fade(rl.Color.white, alphaAt(u, v));
         }
     }
-    return clamped(rgba(&img, px, px), .bilinear);
+    return clamped(rgba(&img, w, h), .bilinear);
 }
 
 /// Null when it does not compile: raylib then hands back its default shader rather than an error.
@@ -277,6 +313,8 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .crop = .{ .sym = "¥", .ch = '"', .fg = rgb(0xd8b84a), .bg = rgb(0x1e1a0a), .mini = rgb(0x8a7a30), .mini_dim = rgb(0x403a18) },
     .tiny_shrub = .{ .sym = "'", .ch = '\'', .fg = rgb(0x6f9a4a), .bg = null, .mini = rgb(0x4e7436), .mini_dim = rgb(0x26341f) },
     .boulder = .{ .sym = "o", .ch = 'o', .fg = rgb(0x9a8e90), .bg = null, .mini = rgb(0x7a7072), .mini_dim = rgb(0x3c3638) },
+    .tall_grass = .{ .sym = "\"", .ch = '"', .fg = rgb(0x7aa84e), .bg = null, .mini = rgb(0x3a5630), .mini_dim = rgb(0x1c2818) },
+    .shrooms = .{ .sym = "•", .ch = ',', .fg = rgb(0xd8ccb4), .bg = null, .mini = rgb(0x3c4a30), .mini_dim = rgb(0x1e241a) },
 });
 
 comptime {

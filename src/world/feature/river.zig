@@ -29,18 +29,17 @@ pub const Params = struct {
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
     const w: f32 = @floatFromInt(p.width);
-    var bed = carve.Bed{};
-    for (0..p.count) |_| {
+    var beds = [_]carve.Bed{.{}} ** COUNT_MAX;
+    for (beds[0..p.count]) |*bed| {
         const ends = p.course.ends(rng);
-        carve.river(lv, rng, ends[0], ends[1], w, p.fill, p.bank.tile(), &bed);
+        carve.river(lv, rng, ends[0], ends[1], w, p.fill, p.bank.tile(), bed);
     }
-    if (bed.n == 0) return;
     const across = fordOf(p.fill, pal);
     const bank = p.bank.tile();
-    const ford_r = @divTrunc(@as(i32, p.width), 2) + 1;
+    const ford_r: i32 = @intFromFloat(@floor(carve.bankReach(w)));
     const bank_r: i32 = @intFromFloat(@ceil(carve.bankReach(w)));
-    for (0..p.fords) |_| {
-        const c = bed.cell[rng.below(@intCast(bed.n))];
+    for (0..p.fords) |k| {
+        const c = fordAt(&beds[k % p.count], rng, bank_r + ford_r) orelse continue;
         var cells = grid.Cells.around(c, bank_r);
         while (cells.next()) |q| {
             if (grid.Level.onRim(q)) continue;
@@ -52,28 +51,36 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
     }
 }
 
+/// A cell of the bed, `clear` cells off the map's edge if the bed has one, so the ford crosses to the map.
+fn fordAt(bed: *const carve.Bed, rng: *mathx.Rng, clear: i32) ?mathx.P {
+    const cells = bed.cell[0..bed.n];
+    if (cells.len == 0) return null;
+    return rng.pickWhere(mathx.P, cells, clear, offEdge) orelse cells[rng.below(@intCast(cells.len))];
+}
+
+fn offEdge(clear: i32, c: mathx.P) bool {
+    return grid.Level.edgeDist(c) > clear;
+}
+
 fn fordOf(fill: grid.Tile, pal: carve.Palette) grid.Tile {
     if (fill == .water) return .shallows;
     if (fill.liquid()) return .bridge;
     return pal.path;
 }
 
-/// Of `rivers` laid one to a fresh map with a ford, how many leave a tenth of the ground cut off.
-fn cutOff(rivers: usize, bank: carve.Bank) usize {
+fn cutOff(maps: usize, p: Params, least: u32) usize {
     var st: carve.Stretches = .{};
     const pal = carve.Palette{ .open = .grass, .solid = .shrub, .path = .dirt };
     var cut: usize = 0;
-    for (0..rivers) |i| {
+    for (0..maps) |i| {
         var lv = grid.Level.blank();
         var rng = mathx.Rng.init(i);
         carve.field(&lv, carve.Palette.WILD);
-        apply(&lv, &rng, 0, pal, (Params{ .bank = bank, .course = .across, .fords = 1 }).fit());
+        apply(&lv, &rng, 0, pal, p.fit());
         const sizes = st.size[0..st.label(&lv)];
         const most = st.biggest();
-        var ground: u32 = 0;
-        for (sizes) |s| ground += s;
         for (sizes, 0..) |s, r| {
-            if (r != most and s * 10 > ground) {
+            if (r != most and s >= least) {
                 cut += 1;
                 break;
             }
@@ -84,10 +91,30 @@ fn cutOff(rivers: usize, bank: carve.Bank) usize {
 
 test "a ford crosses a river's rock bank as it does a walkable one" {
     const RIVERS = 50;
-    const rock = cutOff(RIVERS, .rock);
-    const shallows = cutOff(RIVERS, .shallows);
+    const tenth = grid.CELLS / 10;
+    const rock = cutOff(RIVERS, .{ .bank = .rock, .course = .across, .fords = 1 }, tenth);
+    const shallows = cutOff(RIVERS, .{ .bank = .shallows, .course = .across, .fords = 1 }, tenth);
     std.debug.print("{d} rivers, a ford each, still cut off a tenth of the map: {d} banked with rock, {d} with shallows\n", .{ RIVERS, rock, shallows });
     try std.testing.expectEqual(shallows, rock);
+}
+
+test "a ford lands off the map's edge whenever its river runs there" {
+    var bed = carve.Bed{};
+    bed.n = 0;
+    var y: i32 = 1;
+    while (y < grid.H - 1) : (y += 1) {
+        bed.cell[bed.n] = .{ .x = 1, .y = y };
+        bed.n += 1;
+    }
+    bed.cell[bed.n] = grid.MIDDLE;
+    bed.n += 1;
+    var rng = mathx.Rng.init(0xF0D);
+    var hugging: usize = 0;
+    for (0..200) |_| {
+        if (grid.Level.edgeDist(fordAt(&bed, &rng, 4).?) <= 4) hugging += 1;
+    }
+    std.debug.print("a bed along the west rim but one cell: 200 fords, {d} against the rim\n", .{hugging});
+    try std.testing.expectEqual(@as(usize, 0), hugging);
 }
 
 test "a cliff band with a gap leaves the map whole, and a river's ford is shallow" {

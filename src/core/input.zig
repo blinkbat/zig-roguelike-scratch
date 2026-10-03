@@ -107,8 +107,7 @@ pub fn claimKeys() void {
     rl.setExitKey(.null);
 }
 
-/// Schmitt trigger, then DAS and ARR; re-latches the moment it is steered. `settle` holds a new direction back so two
-/// keys a frame apart read as one diagonal; a tap let go before it settles steps once, on release.
+/// Schmitt trigger, then DAS and ARR; `settle` holds a new direction back so two keys a frame apart read as one diagonal.
 pub const Stepper = struct {
     pub const FIRE: f32 = 0.50;
     pub const REARM: f32 = 0.32;
@@ -148,8 +147,7 @@ pub const Stepper = struct {
         return now;
     }
 
-    /// The key left over from a diagonal that stepped owes nothing; a diagonal that has not stepped survives one
-    /// of its keys coming up first.
+    /// A diagonal that has not stepped survives one of its keys coming up first.
     fn owe(self: Stepper, now: mathx.Dir) ?mathx.Dir {
         const last = self.latched orelse return now;
         if (self.fired > 0) return if (partOf(now, last)) null else now;
@@ -165,7 +163,6 @@ fn partOf(d: mathx.Dir, diag: mathx.Dir) bool {
     return b.x == a.x or b.y == a.y;
 }
 
-/// Printable ascii typed this frame.
 pub const Typed = struct {
     const MAX: usize = 16;
     buf: [MAX]u8 = undefined,
@@ -187,7 +184,6 @@ pub const Typed = struct {
     }
 };
 
-/// A key that types a character, which a field being typed in takes from the buttons and the walk.
 fn types(k: rl.KeyboardKey) bool {
     const c = @intFromEnum(k);
     return (c >= @intFromEnum(rl.KeyboardKey.a) and c <= @intFromEnum(rl.KeyboardKey.z)) or
@@ -203,7 +199,7 @@ pub const State = struct {
     walk: ?mathx.Dir = null,
     lean: bool = false,
     step: Stepper = .{},
-    /// Set by whatever is typed into, before each `update`, which it lasts: typing keys then type, and press no button.
+    /// Set before each `update`, which clears it: typing keys then type, and press no button.
     typing: bool = false,
     typed: Typed = .{},
     rub: bool = false,
@@ -279,7 +275,6 @@ pub const Desk = struct {
         for (TOOL_KEYS, &out) |k, *c| c.* = keyName(k);
         break :blk out;
     };
-    /// The walk's d-pad directions, on the keys that are not the keypad's.
     const PAN_KEYS = blk: {
         var out: [DPAD.len]Walk = undefined;
         var n: usize = 0;
@@ -367,7 +362,6 @@ pub const Desk = struct {
     }
 
     mouse: mathx.P = .{ .x = 0, .y = 0 },
-    /// Pixels the mouse moved since the last frame.
     moved: mathx.P = .{ .x = 0, .y = 0 },
     wheel: f32 = 0,
     paint: bool = false,
@@ -376,7 +370,6 @@ pub const Desk = struct {
     erase_hit: bool = false,
     grab: bool = false,
     shift: bool = false,
-    /// Held pan keys, one step on each axis.
     pan: mathx.P = .{ .x = 0, .y = 0 },
     play: bool = false,
     play_here: bool = false,
@@ -464,7 +457,6 @@ fn fullscreenHit() bool {
     return altDown() and anyHit(&ENTER_KEYS);
 }
 
-/// Backspace, pressed or held into repeat.
 fn rubbed() bool {
     return rl.isKeyPressed(.backspace) or rl.isKeyPressedRepeat(.backspace);
 }
@@ -509,7 +501,6 @@ fn keyWalk(typing: bool) ?mathx.P {
     return nonZero(heldWalk(&WALKS, typing));
 }
 
-/// Each walk with a key of it held, once however many are.
 fn heldWalk(walks: []const Walk, typing: bool) mathx.P {
     var p = mathx.P{ .x = 0, .y = 0 };
     for (walks) |w| {

@@ -13,7 +13,6 @@ pub const SIZE_MAX: u8 = 20;
 pub const BARRELS_MAX: u8 = 4;
 const TRIES: usize = 120;
 const SPLIT_TRIES: usize = 8;
-const DOOR_TRIES: usize = 8;
 const BARREL_TRIES: usize = 40;
 /// Cells between a building and the map's edge.
 const SITE_MARGIN: i32 = 2;
@@ -59,7 +58,8 @@ fn fits(lv: *const grid.Level, b: Box, taken: []const Box) bool {
     for (taken) |t| {
         if (b.overlaps(t, 1)) return false;
     }
-    var cells = grid.Cells.of(b.lo.sub(.{ .x = 1, .y = 1 }), b.hi.add(.{ .x = 1, .y = 1 }));
+    const round = grid.grown(b.lo, b.hi, 1);
+    var cells = grid.Cells.of(round[0], round[1]);
     while (cells.next()) |q| {
         const t = lv.at(q);
         if (t.liquid() or t == .bridge or lv.doorAt(q) != null) return false;
@@ -67,26 +67,44 @@ fn fits(lv: *const grid.Level, b: Box, taken: []const Box) bool {
     return true;
 }
 
+const SIDES = [_]mathx.Dir{ .n, .s, .w, .e };
+
 /// A cell on the box's outline, not a corner, and the cell outside it.
 pub fn doorway(rng: *mathx.Rng, b: Box) [2]P {
-    return switch (rng.below(4)) {
-        0 => blk: {
-            const x = rng.range(b.lo.x + 1, b.hi.x - 2);
-            break :blk .{ .{ .x = x, .y = b.lo.y }, .{ .x = x, .y = b.lo.y - 1 } };
-        },
-        1 => blk: {
-            const x = rng.range(b.lo.x + 1, b.hi.x - 2);
-            break :blk .{ .{ .x = x, .y = b.hi.y - 1 }, .{ .x = x, .y = b.hi.y } };
-        },
-        2 => blk: {
-            const y = rng.range(b.lo.y + 1, b.hi.y - 2);
-            break :blk .{ .{ .x = b.lo.x, .y = y }, .{ .x = b.lo.x - 1, .y = y } };
-        },
-        else => blk: {
-            const y = rng.range(b.lo.y + 1, b.hi.y - 2);
-            break :blk .{ .{ .x = b.hi.x - 1, .y = y }, .{ .x = b.hi.x, .y = y } };
-        },
+    const side = SIDES[rng.below(SIDES.len)];
+    return doorwayOn(b, side, rng.range(0, spanOf(b, side) - 1));
+}
+
+fn doorwayOn(b: Box, side: mathx.Dir, k: i32) [2]P {
+    const w: P = switch (side) {
+        .n => .{ .x = b.lo.x + 1 + k, .y = b.lo.y },
+        .s => .{ .x = b.lo.x + 1 + k, .y = b.hi.y - 1 },
+        .w => .{ .x = b.lo.x, .y = b.lo.y + 1 + k },
+        .e => .{ .x = b.hi.x - 1, .y = b.lo.y + 1 + k },
+        .ne, .se, .sw, .nw => unreachable,
     };
+    return .{ w, w.add(side.delta()) };
+}
+
+fn spanOf(b: Box, side: mathx.Dir) i32 {
+    return (if (side == .n or side == .s) b.width() else b.height()) - 2;
+}
+
+fn dryDoorway(lv: *const grid.Level, rng: *mathx.Rng, b: Box) ?[2]P {
+    var all: [2 * (grid.W + grid.H)][2]P = undefined;
+    var n: usize = 0;
+    for (SIDES) |side| {
+        var k: i32 = 0;
+        while (k < spanOf(b, side) and n < all.len) : (k += 1) {
+            all[n] = doorwayOn(b, side, k);
+            n += 1;
+        }
+    }
+    return rng.pickWhere([2]P, all[0..n], lv, dry);
+}
+
+fn dry(lv: *const grid.Level, way: [2]P) bool {
+    return !lv.at(way[1]).liquid();
 }
 
 /// Where a wall cutting `b` may stand, `least` in from its sides: both its ends meet `walls`, not a doorway.
@@ -104,8 +122,7 @@ fn splitAt(lv: *const grid.Level, rng: *mathx.Rng, b: Box, across: bool, least: 
     return null;
 }
 
-/// The box's floor cut into rooms by walls, each wall with a doorway, until no room is wider than twice `least` or no
-/// wall can stand there clear of a doorway.
+/// Cut by walls, each with a doorway, till no room is wider than twice `least`.
 pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, walls: grid.Tile) void {
     var stack: [64]Box = undefined;
     stack[0] = inside;
@@ -148,7 +165,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
     }
 }
 
-/// Walled round on `b`'s outline, a doorway out onto `outside`, a torch and barrels as `p` says.
+/// `outside` is laid outside the doorway where that cell is solid.
 pub fn raise(lv: *grid.Level, rng: *mathx.Rng, b: Box, p: Params, outside: grid.Tile) void {
     var cells = b.cells();
     while (cells.next()) |q| {
@@ -156,11 +173,7 @@ pub fn raise(lv: *grid.Level, rng: *mathx.Rng, b: Box, p: Params, outside: grid.
         const fallen = rng.percent(if (edge) p.decay else p.decay / 2);
         lv.set(q, if (fallen) .rubble else if (edge) p.walls else p.floor);
     }
-    var way = doorway(rng, b);
-    for (0..DOOR_TRIES) |_| {
-        if (!lv.at(way[1]).liquid()) break;
-        way = doorway(rng, b);
-    }
+    const way = dryDoorway(lv, rng, b) orelse doorway(rng, b);
     lv.set(way[0], p.floor);
     if (lv.at(way[1]).solid()) lv.set(way[1], outside);
     const in = b.inner();

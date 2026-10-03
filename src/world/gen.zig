@@ -22,7 +22,6 @@ comptime {
     std.debug.assert(grid.MAX_TORCHES >= MAX_ROOMS);
 }
 
-/// A rolled floor's shape: the box its rooms fall in, centred on the map, and what each room holds.
 pub const Params = struct {
     size: P = .{ .x = grid.W, .y = grid.H },
     rooms: usize = MAX_ROOMS,
@@ -34,7 +33,6 @@ pub const Params = struct {
     /// The most barrels one room stacks.
     barrels: u32 = 2,
 
-    /// Every field into its range, the rooms into the box.
     pub fn fit(p: Params) Params {
         var q = p;
         q.size = .{ .x = std.math.clamp(p.size.x, SIZE_MIN.x, grid.W), .y = std.math.clamp(p.size.y, SIZE_MIN.y, grid.H) };

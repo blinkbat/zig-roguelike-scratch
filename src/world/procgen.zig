@@ -82,12 +82,10 @@ pub const Floor = union(Algo) {
         };
     }
 
-    /// As `fit` leaves it.
     pub fn valid(f: *const Floor) bool {
         return std.meta.eql(f.fit(), f.*);
     }
 
-    /// Open to the sky, so the day lights it.
     pub fn outdoor(f: Floor) bool {
         return switch (f) {
             .open, .wilds, .terrain, .keep, .town, .dunes, .site => true,
@@ -148,7 +146,6 @@ pub const Feature = union(Kind) {
         };
     }
 
-    /// As `fit` leaves it.
     pub fn valid(f: *const Feature) bool {
         return std.meta.eql(f.fit(), f.*);
     }
@@ -195,8 +192,6 @@ const CLEARING_R: f32 = 3;
 /// The rooms' tiles and wall shapes before any feature was laid.
 const Shaped = struct { tile: [grid.CELLS]grid.Tile, shape: [grid.CELLS]?grid.WallShape };
 
-/// Built walls shaped afresh, a rooms' corner kept where nothing round it changed; a barrel or torch left where it no
-/// longer fits taken away, and any barrel that parts the ground.
 fn settle(lv: *grid.Level, rooms: ?*const Shaped) void {
     for (0..grid.CELLS) |i| {
         if (lv.barrel[i] and (lv.tile[i].solid() or lv.door[i] != grid.NO_DOOR)) lv.barrel[i] = false;
@@ -279,7 +274,7 @@ test "every base, bare and under every feature, joins its ground, reaches its do
 test "a doorless floor rolled all solid still has ground to start on" {
     var lv: grid.Level = undefined;
     const thick = [_]Feature{.{ .scatter = .{ .tile = .shrub, .on = .grass, .amount = 1000 } }};
-    roll(&lv, 0xD0, &.{}, Floor.of(.open), &thick);
+    roll(&lv, 0xD0, &.{}, .{ .open = .{ .decor = .{ .tiny_shrubs = 0, .tall_grass = 0, .shrooms = 0 } } }, &thick);
     try std.testing.expect(lv.firstOpen() != null);
     try std.testing.expect(lv.walkable(grid.MIDDLE));
 }

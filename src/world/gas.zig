@@ -63,7 +63,7 @@ fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
     }
 }
 
-/// The box round every cell holding gas, a cell wider all round, up to but not including its high corner.
+/// A cell wider than the gas all round; the high corner exclusive.
 fn reach(lv: *const grid.Level) ?[2]P {
     var lo = P{ .x = grid.W, .y = grid.H };
     var hi = P{ .x = -1, .y = -1 };

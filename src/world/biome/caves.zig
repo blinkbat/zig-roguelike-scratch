@@ -16,7 +16,11 @@ pub const Params = struct {
     spires: u16 = 6,
 
     pub fn fit(p: Params) Params {
-        return .{ .fill = @min(p.fill, FILL_MAX), .smooth = @min(p.smooth, SMOOTH_MAX), .spires = @min(p.spires, SPIRES_MAX) };
+        var q = p;
+        q.fill = @min(p.fill, FILL_MAX);
+        q.smooth = @min(p.smooth, SMOOTH_MAX);
+        q.spires = @min(p.spires, SPIRES_MAX);
+        return q;
     }
 };
 

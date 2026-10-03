@@ -56,7 +56,6 @@ const DELETE = input.Button.y;
 const NAME = "roguelike";
 const LINE: usize = 160;
 
-/// A page's title: the row that opens it, in capitals.
 fn caps(comptime s: []const u8) [:0]const u8 {
     var b: [s.len:0]u8 = undefined;
     for (s, 0..) |c, i| b[i] = std.ascii.toUpper(c);
@@ -67,7 +66,6 @@ fn caps(comptime s: []const u8) [:0]const u8 {
 const App = struct {
     alloc: std.mem.Allocator,
     g: *game.Game,
-    /// The world being played: read fresh from disk for New, or out of the save for Load.
     world: *atlas.Atlas,
     ed: ?*editor.Editor = null,
     edit_path: []const u8,
@@ -75,7 +73,6 @@ const App = struct {
     page: Page = .main,
     title: menu.Menu = .{},
     worlds: menu.Menu = .{},
-    /// The worlds New picks from; with none, it plays one generated floor.
     listing: atlas.Listing = .{},
     classes: menu.Menu = .{},
     loads: menu.Menu = .{},
@@ -84,7 +81,6 @@ const App = struct {
     class: hero.Class = .archer,
     entry: naming.Entry = .{},
     list: [save.SLOTS]save.Slot = @splat(.empty),
-    /// The slot the next press of `DELETE` deletes.
     armed: ?usize = null,
     /// The run being played in a slot; null for a play-test.
     autosave: ?save.Autosave = null,
@@ -94,7 +90,6 @@ const App = struct {
         app.note.say(fmt, args);
     }
 
-    /// No world to pick: New plays one generated floor.
     fn generated(app: *const App) bool {
         return app.listing.n == 0;
     }
@@ -108,13 +103,11 @@ const App = struct {
         } else app.say("{s} picks a world in {s}", .{ MainRow.new.label(), atlas.DIR });
     }
 
-    /// Its world picked, or none to pick from.
     fn toClass(app: *App) void {
         app.note.clear();
         app.page = .class;
     }
 
-    /// Back from choosing a hero: to the worlds, or the title when there were none.
     fn fromClass(app: *App) void {
         if (app.generated()) return app.toTitle();
         app.note.clear();
@@ -139,7 +132,6 @@ const App = struct {
         app.armed = null;
     }
 
-    /// Into the first free slot, which New made sure of.
     fn newRun(app: *App, name: hero.Name) void {
         const g = app.g;
         const slot = save.free(&app.list) orelse return app.toTitle();
@@ -168,7 +160,6 @@ const App = struct {
         app.inSlot(slot, null);
     }
 
-    /// A new run is named and its skill bar laid out afresh; a loaded one keeps its own.
     fn inSlot(app: *App, slot: usize, fresh: ?hero.Name) void {
         app.leaveRun();
         app.play(.title, fresh);
@@ -192,7 +183,6 @@ const App = struct {
         app.scene = .play;
     }
 
-    /// Before the run is left: its last turns are written, through any door it stands on.
     fn leaveRun(app: *App) void {
         if (app.autosave) |*a| {
             game.leave(app.g);

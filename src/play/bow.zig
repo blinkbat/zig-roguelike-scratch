@@ -37,7 +37,6 @@ pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
     return near.best;
 }
 
-/// Chebyshev first; the straighter line breaks a tie.
 const Nearest = struct {
     from: P,
     best: ?P = null,

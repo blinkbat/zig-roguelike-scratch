@@ -18,15 +18,11 @@ const ROWS_DY: i32 = 20;
 const NOTE_GAP: i32 = 30;
 const LEGEND_DY: i32 = 60;
 const MARK_GAP: i32 = 18;
-/// The title above the rows and the note and legend below them.
 const CHROME_H: i32 = TITLE - TITLE_DY + ROWS_DY + NOTE_GAP * 2 + LEGEND_DY + NOTE * 2;
 pub const NOTE_MAX: usize = 160;
-/// Between the items of a legend or crib, and the fields of a slot's line.
 pub const SEP = "   ";
-/// After a field being typed in.
 pub const CARET = "_";
 
-/// A line said, kept terminated so it draws as it is; one too long is cut short.
 pub fn Note(comptime N: usize) type {
     return struct {
         const Self = @This();
@@ -53,7 +49,6 @@ pub fn Note(comptime N: usize) type {
 
 pub const Conjunction = enum { @"and", @"or" };
 
-/// Before the `i`th of `n` items said as a list: "a, b and c", or "a, b or c".
 pub fn listSep(i: usize, n: usize, last: Conjunction) []const u8 {
     if (i == 0) return "";
     if (i + 1 < n) return ", ";
@@ -63,11 +58,9 @@ pub fn listSep(i: usize, n: usize, last: Conjunction) []const u8 {
     };
 }
 
-/// A column of rows, walked with the d-pad and picked with A.
 pub const Menu = struct {
     at: usize = 0,
 
-    /// The row picked this frame.
     pub fn step(self: *Menu, st: *const input.State, n: usize) ?usize {
         self.at = @min(self.at, n - 1);
         if (st.walk) |d| self.at = mathx.wrap(self.at, d.delta().y, n);
@@ -75,18 +68,15 @@ pub const Menu = struct {
     }
 };
 
-/// B, or Menu, which on a page of the title backs out of it too.
 pub fn backed(st: *const input.State) bool {
     return st.hit(BACK) or st.hit(PAUSE);
 }
 
 pub const MOVE_ITEM = input.MOVE_CAPTION ++ " move";
-/// What `BACK` does on a page, in its legend.
 pub const BACK_LABEL = "back";
 pub const BACK_ITEM = BACK.caption() ++ " " ++ BACK_LABEL;
 const LEGEND = CONFIRM.caption() ++ " select" ++ SEP ++ MOVE_ITEM;
 
-/// The rows that fit between the title and the legend, `at` among them.
 fn window(screen_h: i32, n: usize, at: usize) struct { from: usize, len: usize } {
     const room: usize = @intCast(@max(1, @divTrunc(screen_h - CHROME_H, ROW_STEP)));
     const len = @min(n, room);
@@ -94,7 +84,6 @@ fn window(screen_h: i32, n: usize, at: usize) struct { from: usize, len: usize }
     return .{ .from = from, .len = len };
 }
 
-/// Centred on the screen, the row at `at` marked; rows past the screen scroll with it.
 pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const [:0]const u8, at: usize, note: ?[:0]const u8, back: ?[:0]const u8) void {
     const win = window(screen.y, all.len, at);
     const rows = all[win.from..][0..win.len];
@@ -125,7 +114,6 @@ pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
     return if (on) label ++ ": On" else label ++ ": Off";
 }
 
-/// Centred across the screen.
 pub fn mid(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
     face.text(s, face.leftFor(s, @divTrunc(screen.x, 2), size), y, size, col);
 }

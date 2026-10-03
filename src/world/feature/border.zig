@@ -15,7 +15,10 @@ pub const Params = struct {
     rough: u8 = 3,
 
     pub fn fit(p: Params) Params {
-        return .{ .tile = p.tile, .width = std.math.clamp(p.width, 1, WIDTH_MAX), .rough = @min(p.rough, ROUGH_MAX) };
+        var q = p;
+        q.width = std.math.clamp(p.width, 1, WIDTH_MAX);
+        q.rough = @min(p.rough, ROUGH_MAX);
+        return q;
     }
 };
 

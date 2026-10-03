@@ -35,7 +35,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   on PoE2's controller skill bar (`play/skillbar.zig`): LB, A, X, Y, B, RB and RT are slots in a primary and a
   secondary set, the secondary set is used while the button bound to "Activate Secondary Skill Set" (LB) is held, and
   View opens the bind screen (A select or pick up, X change, Y remove, B close). Defaults: X Shoot, B Wait. The button
-  that opened the reticle shoots, B cancels, A restarts after death (or, in a save slot, goes back to the title).
+  that opened the reticle shoots, B cancels, A, B, X or Menu restarts after death (or, in a save slot,
+  goes back to the title), and Menu opens no pause menu over it.
   Alt+Enter toggles borderless fullscreen. Menu (Esc) opens the pause menu; raylib's exit key is cleared
   (`input.claimKeys`), so Esc never closes the window. A field being typed in sets `State.typing`: the keys that type
   then type (`State.typed`, Backspace `rub`) and press no button nor walk. The editor is a desk tool: its mouse and
@@ -84,7 +85,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **`gfx/look.zig` IS EVERY PICTURE.** A thing with a texture in `Sprites` draws it; the rest draw their glyph.
 - **`gfx/light.zig` IS EVERY LIGHT, AND THE FOG IS PART OF IT.** Terrain draws at full brightness; one pass of the
   light map (2x modulate, so it can brighten) lights it, and nothing else tints terrain. Open ground, and the ground under
-  anything solid, goes down first, then body shadows, then the solid tiles, so a wall covers any shadow that reaches it.
+  anything solid or standing on it, goes down first, then body shadows, then the solid and standing tiles, so a wall
+  covers any shadow that reaches it.
   Every shadow and contact pool is drawn into a mask of the screen (`Light.beginShadows`), the darker winning where they
   overlap (Photoshop's Darken, `GL_MIN`, channel by channel), and the mask multiplies the ground under it: however many
   overlap, the mask is no darker than the darkest shade among them (`light.SHADE_RGB`, or by night the colder
@@ -104,7 +106,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **`gfx/sky.zig` IS THE DAY'S LIGHT**, zig-soulslike's `daynight.zig` seen from above, drawn from `Game.hour_shown`,
   which eases after the clock so the light never steps. The sun rises east, stands south at noon and sets west; the
   moon is its opposite, and the one light that casts (`sky.keyDir`) changes hands over the top in the dark, its
-  altitude floored at 25 degrees so a shadow never outruns its caster by much. On the map its north-south lean is
+  altitude floored at 35 degrees so a shadow never outruns its caster by much. On the map its north-south lean is
   squashed (`sky.NORTH_SOUTH`), so shadows run mostly across the screen, and it stands no steeper than 50 degrees, so
   even at noon everything throws a shadow past its edge. Its sunrise and sunset keys are warmed to gold. Only a node
   open to the sky (`Node.outdoor`: the outdoor bases; bespoke and rooms nodes are under a roof) gets it: there
@@ -112,8 +114,9 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   shadows them by a march toward it over what stands in its way (`light.CASTERS`: walls, rock, fences and the rest),
   drifts soft cloud shadows over them in real time (`light.clouded`, off the light's own seconds), lights bodies from
   its side and dims the carried light out by day. A sun shadow is soft and takes 55% of the sky's light at most; a moon shadow darkens all the light there besides. Bodies,
-  barrels and the standing tiles (`look.STANDING`: shrubs, tiny shrubs, boulders) cast from their own place as every
-  light does: a silhouette, but a tree's (`look.canopied`) is its canopy's soft pool (`Light.drawCanopy`). Everything
+  barrels and the standing tiles (`look.STANDING`: shrubs, tiny shrubs, boulders, fungus, tall grass, shrooms) cast from their own place as every
+  light does: a silhouette, but a tree's (`look.canopied`) is its canopy's soft pool (`Light.drawCanopy`), and one
+  running nearly straight across the screen gives way to a soft streak darkest at the feet (`light.solidity`). Everything
   that blocks a step but a liquid casts one way or the other (asserted). Nothing in the simulation reads the light.
 - **`gfx/fx.zig` IS EVERY BLOW'S AFTERMATH**, after zig-soulslike's and fainter: the struck body flashes toward
   `light.FLASH_RGB` (drawn by the body shader), a pinprick of light marks the contact, and the body's matter
@@ -143,13 +146,15 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   road, scatter (any tile on any tile, alone or clumped), border, buildings (decay makes ruins), farms, setpiece.
   `carve.zig` is their shared toolkit. Each `worlds\<game>_<place>.world` is one touchstone's example, written as
   text. A knob is a field of a base's or feature's `Params`: whole numbers, or an enum written by name. The outdoor
-  bases (open, wilds, topology, terrain) strew lone tiny shrubs and boulders over their grass (`carve.Litter`, the
-  `litter` knob), each where it closes no way.
+  bases (open, wilds, topology, terrain) strew lone boulders over their grass (`carve.Litter`, the `litter` knob),
+  each where it closes no way, then tiny shrubs, tall grass in patches and shrooms (`carve.Decor`, the
+  `decor` knob).
 - **A TILE IS ITS ROW IN `grid.TERRAIN`** (solid, blind, what lies under it, liquid), its letter in a world file or set piece `Tile.letter`, its picture its row in `look.TILES`
-  (a symbol, its ASCII stand-in, colours, minimap). A shrub, boulder or fungus blocks sight and step, a grave or tiny
-  shrub a step alone;
+  (a symbol, its ASCII stand-in, colours, minimap). A shrub, boulder or fungus blocks sight and step, a grave a step
+  alone;
   each is lit as the ground and draws its ground under it; water, lava, a chasm and a fence
-  block a step but not sight or an arrow; reeds and crop block sight but not a step. Only `.wall` is shaped.
+  block a step but not sight or an arrow; reeds and crop block sight but not a step; tiny shrubs, tall grass and shrooms are decor,
+  blocking nothing, on grass drawn under them. Only `.wall` is shaped.
 - **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** in `gen.around`, before the torches and barrels, or by `Node.stamp` for a bespoke node
   (`shapeWalls` alone), and stored in `Level.shape`:
   the four sides, the four outer corners, the four block corners, post, solid. Nothing recomputes it, and nothing about what has

@@ -2,13 +2,10 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const day = @import("../world/day.zig");
 
-// zig-soulslike's day (`world/daynight.zig`) on a map seen from above: the sun, the moon that casts after it and the
-// light's colours all functions of the hour `world/day.zig` keeps. Directions are toward the light: x east, y south
-// (down the screen), z up.
+// zig-soulslike's `world/daynight.zig` seen from above. Directions point toward the light: x east, y south (down the screen), z up.
 
 pub const Rgb = @Vector(3, f32);
 
-/// `a` eased toward `b` by `k`.
 pub fn mix(a: Rgb, b: Rgb, k: f32) Rgb {
     return a + (b - a) * splat(k);
 }
@@ -17,9 +14,8 @@ pub fn splat(k: f32) Rgb {
     return @splat(k);
 }
 
-/// Its length along the ground.
 fn flatOf(d: [3]f32) f32 {
-    return @sqrt(d[0] * d[0] + d[1] * d[1]);
+    return mathx.len(d[0], d[1]);
 }
 
 const HOURS = day.HOURS;
@@ -32,12 +28,11 @@ const NIGHT_SPAN: f32 = HOURS - DAY_SPAN;
 const AZ_RISE: f32 = 100;
 const AZ_SET: f32 = 262;
 const SUN_ALT_MAX: f32 = 60;
-/// The casting light's altitude stays between these, so a shadow never outruns the screen nor hides under its caster
-/// at noon; the sun's own does not.
-const KEY_ALT_MIN: f32 = 25;
-const KEY_ALT_MAX: f32 = 50;
+/// The casting light's altitude is clamped to these, so a shadow neither outruns the screen nor hides under its caster; the sun's own is not.
+const KEY_ALT_MIN = std.math.degreesToRadians(@as(f32, 35));
+const KEY_ALT_MAX = std.math.degreesToRadians(@as(f32, 50));
 /// Cells the longest shadow the sky throws runs along the ground per cell of height.
-pub const REACH_MAX: f32 = 1 / @tan(std.math.degreesToRadians(KEY_ALT_MIN));
+pub const REACH_MAX: f32 = 1 / @tan(KEY_ALT_MIN);
 /// Where the moon takes over from the sun as the light that casts, and back.
 const KEY_SWAP_DAWN: f32 = 5.0;
 const KEY_SWAP_DUSK: f32 = 20.8;
@@ -85,17 +80,14 @@ pub fn sunDir(hour: f32) [3]f32 {
     return dirFrom(az, alt);
 }
 
-/// The one light that casts: the sun while it is up and the moon, its opposite, once it is down, the altitude floored.
-/// It changes hands over the top, in the dark: up from the floored sun through the zenith onto the floored moon in the
-/// sun's own vertical plane, so a shadow shrinks to its foot and grows out the other side and never turns.
+/// The one light that casts, altitude floored; it changes hands over the zenith in the sun's vertical plane, so a shadow shrinks to its foot and regrows opposite, never turning.
 pub fn keyDir(hour: f32) [3]f32 {
     const s = sunDir(hour);
     const flat = flatOf(s);
     const h = [2]f32{ s[0] / flat, s[1] / flat };
     const sun_alt = std.math.asin(std.math.clamp(s[2], -1, 1));
-    const floor_alt = std.math.degreesToRadians(KEY_ALT_MIN);
-    const tip_sun = 1 / @tan(@max(sun_alt, floor_alt));
-    const tip_moon = -1 / @tan(@max(-sun_alt, floor_alt));
+    const tip_sun = 1 / @tan(@max(sun_alt, KEY_ALT_MIN));
+    const tip_moon = -1 / @tan(@max(-sun_alt, KEY_ALT_MIN));
     const elev = std.math.atan2(1.0, mathx.lerpF(tip_sun, tip_moon, moonShare(hour)));
     const c = @cos(elev);
     return .{ h[0] * c, h[1] * c, @sin(elev) };
@@ -113,8 +105,7 @@ const Key = struct { at: f32, key: Rgb, sky: Rgb };
 const NIGHT = Key{ .at = 0, .key = .{ 0.022, 0.030, 0.060 }, .sky = .{ 0.014, 0.018, 0.034 } };
 const MIDNIGHT = Key{ .at = 0, .key = .{ 0.006, 0.008, 0.018 }, .sky = .{ 0.004, 0.005, 0.011 } };
 
-/// zig-soulslike's key and sky rows, first at 0 and last at 24 the same, so midnight is a blend and not a seam. Its
-/// sunrise and sunset keys are warmed to gold here: its deep orange takes the green out of grass seen flat.
+/// zig-soulslike's key and sky rows, 0 and 24 equal so midnight is no seam; sunrise and sunset keys warmed to gold, as its deep orange takes the green out of grass seen flat.
 const KEYS = [_]Key{
     MIDNIGHT,
     .{ .at = 2.5, .key = NIGHT.key, .sky = NIGHT.sky },
@@ -144,7 +135,6 @@ fn paletteAt(hour: f32) struct { key: Rgb, sky: Rgb } {
     return .{ .key = mix(a.key, b.key, t), .sky = mix(a.sky, b.sky, t) };
 }
 
-/// What lights open ground at an hour.
 pub const Sky = struct {
     /// Toward the light that casts, a unit vector.
     dir: [3]f32,
@@ -157,7 +147,7 @@ pub const Sky = struct {
     /// How far the light that casts is the moon's: 0 by day, 1 by night.
     moon: f32,
 
-    /// Its lean off straight up: the length of its direction along the ground.
+    /// The length of `dir` along the ground.
     pub fn flat(s: Sky) f32 {
         return flatOf(s.dir);
     }
@@ -194,8 +184,8 @@ pub fn at(hour: f32) Sky {
 fn acrossScreen(d: [3]f32) [3]f32 {
     var x = d[0];
     var y = d[1] * NORTH_SOUTH;
-    const flat = @sqrt(x * x + y * y);
-    const least = d[2] / @tan(std.math.degreesToRadians(KEY_ALT_MAX));
+    const flat = mathx.len(x, y);
+    const least = d[2] / @tan(KEY_ALT_MAX);
     if (flat > OVERHEAD and flat < least) {
         x *= least / flat;
         y *= least / flat;
@@ -215,7 +205,7 @@ test "the sun rises in the east, stands in the south at noon, sets in the west a
 }
 
 test "one light always casts, its altitude floored, and it changes hands at the zenith in the dark" {
-    const floor_z = @sin(std.math.degreesToRadians(KEY_ALT_MIN));
+    const floor_z = @sin(KEY_ALT_MIN);
     var h: f32 = 0;
     var longest: f32 = 0;
     while (h < HOURS) : (h += 0.05) {

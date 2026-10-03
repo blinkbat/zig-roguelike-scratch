@@ -47,7 +47,7 @@ pub const Entry = struct {
         return LAST[self.col];
     }
 
-    /// `done` once a name is confirmed, read off `name.done()`; `back` when backed out of.
+    /// On `done` the name is `name.done()`.
     pub fn step(self: *Entry, st: *const input.State) ?Outcome {
         for (st.typed.text()) |c| {
             if (self.name.push(c)) self.onDone();
@@ -88,7 +88,6 @@ pub const TITLE_MAX = blk: {
     break :blk ASK.len + most + 1;
 };
 
-/// "NAME YOUR ARCHER".
 pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
     const t = std.fmt.bufPrintZ(buf, ASK ++ "{s}", .{c.title()}) catch unreachable;
     _ = std.ascii.upperString(buf[0..t.len], t);

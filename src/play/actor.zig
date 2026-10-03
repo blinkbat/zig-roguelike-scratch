@@ -19,17 +19,14 @@ pub const Kind = enum {
         };
     }
 
-    /// A foe a floor is stocked with, not one split off another.
     pub fn stocked(k: Kind) bool {
         return k.foe() and k.family() == k;
     }
 
-    /// The kind a body was placed as: a slime, for the halves and quarters split off one.
     pub fn family(k: Kind) Kind {
         return FAMILY.get(k);
     }
 
-    /// It dies bursting into gas, however it dies.
     pub fn bursts(k: Kind) bool {
         return row(k).blow == .burst;
     }
@@ -53,7 +50,6 @@ pub const FOES = blk: {
     break :blk ks[0..ks.len].*;
 };
 
-/// The most bodies one of `k` can end as, split and split again.
 pub fn most(k: Kind) usize {
     return if (row(k).splits) |n| 2 * most(n) else 1;
 }
@@ -73,7 +69,7 @@ pub const Row = struct {
     /// Cells its eyes reach, where there is light to see by.
     sight: i32,
     blow: Blow,
-    /// Cells round it the light it carries reaches; none for most.
+    /// Cells round it the light it carries reaches.
     light: i32 = 0,
     /// Brogue's `MONST_FLITS`: a third of its moves go a random way.
     flits: bool = false,
@@ -165,7 +161,6 @@ pub const Pool = struct {
         return self.items[0..self.n];
     }
 
-    /// A slime's halves and quarters count as slimes.
     pub fn tally(self: *Pool, k: Kind) Tally {
         var t = Tally{};
         for (self.slice()) |a| {
@@ -183,7 +178,7 @@ pub const Pool = struct {
         lv.stand(to, id);
     }
 
-    /// The only place hp goes down. Returns true on the killing blow.
+    /// The only place hp goes down; true on the killing blow.
     pub fn damage(self: *Pool, lv: *grid.Level, id: u16, amount: i32) bool {
         const a = self.get(id) orelse return false;
         a.hp = @max(0, a.hp - amount);
@@ -194,8 +189,7 @@ pub const Pool = struct {
         return true;
     }
 
-    /// A body `damage` left under half its hp divides into two of what it `splits` into, each on half what it had left,
-    /// the new one on a free cell beside it; with none free it waits for a blow that finds one. The new one's id.
+    /// Call after `damage`; with no free cell beside it, it splits on a later blow. The new body's id.
     pub fn split(self: *Pool, lv: *grid.Level, id: u16, rng: *mathx.Rng) ?u16 {
         const a = self.get(id) orelse return null;
         const next = row(a.kind).splits orelse return null;
@@ -213,7 +207,6 @@ pub const Pool = struct {
     }
 };
 
-/// Some of the ways out of a cell, one of them picked at random.
 const Ways = struct {
     d: [mathx.ALL_DIRS.len]mathx.Dir = undefined,
     n: usize = 0,
@@ -233,7 +226,7 @@ fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
     return lv.gassy(from.add(d.delta())) and !lv.gassy(from);
 }
 
-/// Downhill on a walked-distance map from the hero; null when no open neighbour is closer.
+/// Downhill on `flow`, a walked-distance map from the hero.
 pub fn chase(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32) ?mathx.Dir {
     var best: ?mathx.Dir = null;
     var best_d = flow[grid.Level.idx(from)];

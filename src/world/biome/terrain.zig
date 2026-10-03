@@ -13,7 +13,7 @@ pub const RIVERS_MAX: u8 = 6;
 const RIVER_STEPS: usize = 600;
 /// Cold lowers with height above this elevation, a point of heat for every point of height, as DF biases it.
 const LAPSE_FROM: f32 = 60;
-/// Of the highest cells, this share may start a river.
+/// A river may start where the height is at least this share of the highest.
 const SOURCE_OVER: f32 = 0.75;
 
 pub const Biome = enum { ocean, coast, beach, mountain, foothills, glacier, tundra, desert, wasteland, badlands, grassland, savanna, shrubland, marsh, swamp, forest, taiga };
@@ -28,17 +28,19 @@ pub const Params = struct {
     scale: u8 = 28,
     rivers: u8 = 1,
     litter: carve.Litter = .{},
+    decor: carve.Decor = .{},
 
     pub fn fit(p: Params) Params {
-        return .{
-            .height = range(p.height),
-            .rain = range(p.rain),
-            .drain = range(p.drain),
-            .heat = range(p.heat),
-            .scale = std.math.clamp(p.scale, SCALE_MIN, SCALE_MAX),
-            .rivers = @min(p.rivers, RIVERS_MAX),
-            .litter = p.litter.fit(),
-        };
+        var q = p;
+        q.height = range(p.height);
+        q.rain = range(p.rain);
+        q.drain = range(p.drain);
+        q.heat = range(p.heat);
+        q.scale = std.math.clamp(p.scale, SCALE_MIN, SCALE_MAX);
+        q.rivers = @min(p.rivers, RIVERS_MAX);
+        q.litter = p.litter.fit();
+        q.decor = p.decor.fit();
+        return q;
     }
 
     fn range(r: [2]u8) [2]u8 {
@@ -80,7 +82,7 @@ pub fn classify(height: f32, rain: f32, drain: f32, heat: f32) Biome {
     return if (heat > 25) .forest else .taiga;
 }
 
-/// A biome's ground at a cell, `v` its fine noise there, `roll` a die from 0 to 1.
+/// `v` is its fine noise there, `roll` a die from 0 to 1.
 fn groundOf(b: Biome, v: f32, roll: f32) grid.Tile {
     return switch (b) {
         .ocean => .water,
@@ -118,6 +120,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     for (0..p.rivers) |_| river(lv, rng, &height);
     carve.rim(lv, palette(p).solid);
     p.litter.strew(lv, rng);
+    p.decor.strew(lv, rng, seed);
 }
 
 /// Value noise bunches round the middle; this spreads it back toward 0 and 1.

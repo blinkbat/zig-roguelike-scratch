@@ -14,12 +14,16 @@ pub const Params = struct {
     ground: carve.Ground = .sand,
     /// Hundredths of the noise either side of a crest that stand as ridge.
     ridges: u8 = 6,
-    /// Percent of the ground highest up that stands as mesa.
+    /// Crest noise over 1 less 2.5 times this percent stands as mesa.
     mesas: u8 = 4,
     scale: u8 = 18,
 
     pub fn fit(p: Params) Params {
-        return .{ .ground = p.ground, .ridges = @min(p.ridges, RIDGES_MAX), .mesas = @min(p.mesas, MESAS_MAX), .scale = std.math.clamp(p.scale, SCALE_MIN, SCALE_MAX) };
+        var q = p;
+        q.ridges = @min(p.ridges, RIDGES_MAX);
+        q.mesas = @min(p.mesas, MESAS_MAX);
+        q.scale = std.math.clamp(p.scale, SCALE_MIN, SCALE_MAX);
+        return q;
     }
 };
 

@@ -105,7 +105,6 @@ fn checkTestRoster(b: *std.Build) void {
     }
 }
 
-/// On a line of the test block that is not commented out.
 fn named(root: []const u8, want: []const u8) bool {
     var lines = std.mem.splitScalar(u8, root, '\n');
     while (lines.next()) |line| {

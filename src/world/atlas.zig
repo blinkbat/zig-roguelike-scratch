@@ -25,16 +25,13 @@ pub fn plain(s: []const u8) bool {
     return true;
 }
 
-/// A node's name, or its number for one with none.
 pub fn titleOf(name: []const u8, n: usize, buf: *[TITLE_MAX]u8) []const u8 {
     if (name.len > 0) return name;
     return std.fmt.bufPrint(buf, UNNAMED ++ "{d}", .{n}) catch unreachable;
 }
 
-/// What comes before a world file's stem in its path.
 const PREFIX = DIR ++ "/";
 
-/// `DIR/<stem>.world`.
 pub fn worldPath(comptime stem: []const u8) []const u8 {
     return PREFIX ++ stem ++ EXT;
 }
@@ -44,7 +41,6 @@ const COLS = grid.COLS;
 const ROWS = grid.ROWS;
 pub const NAME_MAX: usize = 20;
 const UNNAMED = "node ";
-/// A node's name, or "node 31" for one with none.
 pub const TITLE_MAX: usize = @max(NAME_MAX, UNNAMED.len + std.fmt.count("{d}", .{MAX_NODES - 1}));
 /// A new node's box takes the first free place on a grid of the editor's graph this many boxes wide.
 const GRAPH_COLS: usize = 4;
@@ -176,7 +172,6 @@ pub const Bespoke = struct {
         self.foe[i] = self.foe[self.foe_n];
     }
 
-    /// No barrel nor foe on it.
     pub fn clearCell(self: *Bespoke, p: P) void {
         self.barrel[grid.Level.idx(p)] = false;
         if (self.foeAt(p)) |f| self.dropFoe(f);
@@ -212,7 +207,6 @@ pub const Node = struct {
         return titleOf(self.name(), n, buf);
     }
 
-    /// Open to the sky, so the day lights it; a bespoke node is under a roof.
     pub fn outdoor(self: *const Node) bool {
         return switch (self.plan) {
             .procgen => |*pg| pg.floor.outdoor(),
@@ -220,7 +214,6 @@ pub const Node = struct {
         };
     }
 
-    /// Its floor is only rolled in play.
     pub fn unrolled(self: *const Node) bool {
         return switch (self.plan) {
             .procgen => true,
@@ -259,27 +252,23 @@ pub const Node = struct {
         return null;
     }
 
-    /// Floor, or a door, which opens its cell.
     pub fn opens(self: *const Node, b: *const Bespoke, p: P) bool {
         return b.floorAt(p) or self.doorAt(p) != null;
     }
 
-    /// On a wall with open ground below it, so its flame lights the ground.
     pub fn torchFits(self: *const Node, b: *const Bespoke, p: P) bool {
         return b.tileAt(p) == .wall and self.doorAt(p) == null and self.opens(b, lume.torchFloor(p));
     }
 
-    /// On floor, the one ground a row's `grid.BARREL_LETTER` stands on, and not in a doorway.
+    /// Only `.floor`: the one ground a row's `grid.BARREL_LETTER` stands on.
     pub fn barrelFits(self: *const Node, b: *const Bespoke, p: P) bool {
         return b.tileAt(p) == .floor and self.doorAt(p) == null;
     }
 
-    /// On open ground, not in a doorway, and no barrel there.
     pub fn foeFits(self: *const Node, b: *const Bespoke, p: P) bool {
         return b.floorAt(p) and self.doorAt(p) == null and !grid.cellOr(bool, &b.barrel, p, false);
     }
 
-    /// Procgen, the floor is rolled from `roll` round the doors; bespoke, each door opens the cell it hangs in.
     pub fn stamp(self: *const Node, lv: *grid.Level, roll: u64) void {
         var cells: [grid.MAX_DOORS]P = undefined;
         for (self.doors(), 0..) |d, i| cells[i] = d.at;
@@ -300,7 +289,6 @@ pub const Node = struct {
         }
     }
 
-    /// What can be known of it before play: bespoke, as it plays; procgen, its doors alone, in rock.
     pub fn sketch(self: *const Node, lv: *grid.Level) void {
         switch (self.plan) {
             .bespoke => self.stamp(lv, 0),
@@ -334,7 +322,6 @@ pub const Atlas = struct {
         return self.node_n - 1;
     }
 
-    /// The first graph slot no node's box lies over.
     fn freeSlot(self: *Atlas) P {
         const cols: i32 = @intCast(GRAPH_COLS);
         var i: i32 = 0;
@@ -347,7 +334,6 @@ pub const Atlas = struct {
         }
     }
 
-    /// Every door that led into it is left unlinked, and the start moves to the first node if it was here.
     pub fn remove(self: *Atlas, n: usize) void {
         for (self.node[n].doors(), 0..) |_, k| self.unlink(.{ .node = n, .door = k });
         std.mem.copyForwards(Node, self.node[n .. self.node_n - 1], self.node[n + 1 .. self.node_n]);
@@ -388,7 +374,6 @@ pub const Atlas = struct {
         return &self.node[at.node].door[at.door];
     }
 
-    /// Both ways: a door leads to the one it came through. Whatever either led to is unlinked first.
     pub fn link(self: *Atlas, a: Link, b: Link) void {
         self.unlink(a);
         self.unlink(b);
@@ -580,8 +565,6 @@ pub const Atlas = struct {
         if (self.start.node >= self.node_n) return error.BadLink;
     }
 
-    /// A bespoke node is written whole, every row of it, each foe on open floor; a procgen node's floor and foes each
-    /// in their ranges.
     fn finished(self: *Atlas, rows: usize) Error!void {
         if (self.node_n == 0) return;
         const nd = &self.node[self.node_n - 1];
@@ -596,7 +579,6 @@ pub const Atlas = struct {
         }
     }
 
-    /// The hero has somewhere to stand there: the cell, or the nearest one open.
     pub fn standable(self: *const Atlas, from: Start, scratch: *grid.Level) bool {
         const nd = &self.node[from.node];
         if (nd.unrolled()) return true;
@@ -652,7 +634,6 @@ const MAKEUP = @tagName(Word.makeup);
 /// `pack.Spec`'s makeups, which are lines of their own.
 const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
 
-/// A line's first word and the space after it.
 fn says(comptime w: Word) []const u8 {
     return @tagName(w) ++ " ";
 }
@@ -670,12 +651,10 @@ fn distinct(comptime names: []const []const u8) void {
     }
 }
 
-/// The knobs of the union `U`'s arm `tag`: its payload's fields.
 fn armKnobs(comptime U: type, comptime tag: std.meta.Tag(U)) []const []const u8 {
     return knobsOf(@FieldType(U, @tagName(tag)), &.{});
 }
 
-/// The most knobs any of the union `U`'s arms has.
 fn mostKnobs(comptime U: type) usize {
     var most: usize = 0;
     for (std.enums.values(std.meta.Tag(U))) |t| most = @max(most, armKnobs(U, t).len);
@@ -694,7 +673,6 @@ fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const 
     return out;
 }
 
-/// The knob `word` names, said once a node, and a knob of the node's own algorithm.
 fn takeKnob(pg: *Procgen, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), knobbed: *KnobSet) Error!void {
     switch (pg.floor) {
         inline else => |*fl, t| inline for (comptime floorKnobs(t), 0..) |k, i| {
@@ -707,7 +685,6 @@ fn takeKnob(pg: *Procgen, word: []const u8, f: *std.mem.TokenIterator(u8, .scala
     return error.BadLine;
 }
 
-/// The knob `word` names of the feature being read, said once.
 fn takeFeatureKnob(ft: *Feature, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), set: *FeatureKnobSet) Error!void {
     switch (ft.*) {
         inline else => |*fp, k| inline for (comptime featureKnobs(k), 0..) |kn, i| {
@@ -729,7 +706,6 @@ fn putKnob(w: anytype, comptime name: []const u8, v: anytype) !void {
     try w.writeByte('\n');
 }
 
-/// Each whole number in it, a space before each.
 fn putValue(w: anytype, v: anytype) !void {
     const T = @TypeOf(v);
     switch (@typeInfo(T)) {
@@ -768,7 +744,6 @@ fn cell(f: *std.mem.TokenIterator(u8, .scalar)) Error!P {
     return if (grid.Level.inside(p)) p else error.BadLine;
 }
 
-/// `DIR/<name>.world`, the name lowered to letters, digits and underscores; null when nothing is left of it.
 pub fn pathFor(buf: []u8, name: []const u8) ?[]const u8 {
     var stem: [FILE_MAX - EXT.len]u8 = undefined;
     var n: usize = 0;
@@ -806,7 +781,6 @@ pub const Listing = struct {
         return self.file[i].text();
     }
 
-    /// Its file's name, short of `DIR` and `EXT`.
     pub fn stem(self: *const Listing, i: usize) []const u8 {
         const p = self.at(i);
         return p[PREFIX.len .. p.len - EXT.len];

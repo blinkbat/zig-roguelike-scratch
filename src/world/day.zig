@@ -1,16 +1,13 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 
-// The hour, simulation: a turn moves it on, a run saves it, and the sky (`gfx/sky.zig`) is drawn from it.
 
 pub const HOURS: f32 = 24;
 pub const SUNRISE: f32 = 6;
 pub const SUNSET: f32 = 20;
 const PER_HOUR: u16 = 60;
 const MINUTES: u16 = @as(u16, @intFromFloat(HOURS)) * PER_HOUR;
-/// Game minutes a turn takes: a day is `MINUTES / TURN_MINUTES` turns.
 pub const TURN_MINUTES: u16 = 6;
-/// A run starts at half past eight, a whole day ahead of it.
 pub const START_MINUTE: u16 = 8 * PER_HOUR + 30;
 
 comptime {
@@ -46,8 +43,7 @@ pub fn toward(from: f32, to: f32) f32 {
     return if (d > HOURS / 2) d - HOURS else d;
 }
 
-/// How much of the sky's light there is to see by: all of it by day, none from an hour and a half past sunset to as
-/// long before sunrise, so the dead of night is as dark as underground.
+/// None from `TWILIGHT` past sunset to as long before sunrise, so the dead of night is as dark as underground.
 pub fn daylight(hour: f32) f32 {
     return mathx.smoothstep(-TWILIGHT, TWILIGHT, sunUp(hour));
 }

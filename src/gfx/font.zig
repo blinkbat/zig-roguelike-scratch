@@ -7,7 +7,6 @@ const ATLAS_PX: i32 = 96;
 const SHADOW_A: u16 = 200;
 /// Text size per pixel the shadow sits down and right.
 const SHADOW_STEP: i32 = 14;
-/// Body text: the hud's, the menus' notes, the editor's.
 pub const BODY: i32 = 20;
 const ASCII_LO: i32 = 32;
 const ASCII_N: usize = 95;
@@ -81,7 +80,6 @@ pub const Face = struct {
         self.centred(&s, cx, cy, size, col);
     }
 
-    /// Its middle on `cx`, `cy`.
     fn centred(self: Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         self.draw(s, self.leftFor(s, cx, size), topFor(cy, size), size, col);
     }

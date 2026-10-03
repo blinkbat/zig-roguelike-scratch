@@ -44,7 +44,7 @@ pub fn cast(lv: *grid.Level, origin: P, radius: i32) void {
     castWith(lv, origin, radius, Sight{ .lv = lv });
 }
 
-/// The same, each cell `origin` reaches set in `out`, the rest left as they were.
+/// Leaves the cells of `out` it does not reach as they were.
 pub fn castInto(lv: *const grid.Level, origin: P, radius: i32, out: *[grid.CELLS]bool) void {
     castWith(lv, origin, radius, Into{ .out = out });
 }
@@ -101,8 +101,7 @@ fn scan(lv: *const grid.Level, sink: anytype, q: Quad, row_in: Row, radius: i32)
     }
 }
 
-/// A creature sees the hero exactly when the hero's line of sight reaches the creature's cell and the hero is within
-/// its `reach`: the hero carries a light, so is never too dark to see.
+/// The hero carries a light, so is never too dark to see.
 pub fn sees(lv: *const grid.Level, watcher: P, hero: P, reach: i32) bool {
     return lv.inLos(watcher) and mathx.dist(watcher, hero) <= reach;
 }

@@ -17,11 +17,13 @@ pub const Style = enum { bare, pillars, graves, grove };
 
 pub const Params = struct {
     style: Style = .bare,
-    /// Rock between the hall and the map's edge.
+    /// Cells of wall between the hall and the map's edge.
     margin: u8 = 4,
 
     pub fn fit(p: Params) Params {
-        return .{ .style = p.style, .margin = std.math.clamp(p.margin, 1, MARGIN_MAX) };
+        var q = p;
+        q.margin = std.math.clamp(p.margin, 1, MARGIN_MAX);
+        return q;
     }
 };
 

@@ -9,10 +9,12 @@ pub const Params = struct {
     ground: carve.Ground = .grass,
     edge: carve.Solid = .shrub,
     litter: carve.Litter = .{},
+    decor: carve.Decor = .{},
 
     pub fn fit(p: Params) Params {
         var q = p;
         q.litter = p.litter.fit();
+        q.decor = p.decor.fit();
         return q;
     }
 };
@@ -22,24 +24,49 @@ pub fn palette(p: Params) carve.Palette {
     return .{ .open = g, .solid = p.edge.tile(), .path = g };
 }
 
-pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
+pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const pal = palette(p);
     carve.field(lv, pal);
     p.litter.strew(lv, rng);
+    p.decor.strew(lv, rng, seed);
 }
 
-test "a field strews lone tiny shrubs and boulders, open ground all round each" {
+test "a field strews lone boulders, open ground all round each" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x0B1D);
-    const most = carve.Litter{ .tiny_shrubs = carve.LITTER_MAX, .boulders = carve.LITTER_MAX };
-    shape(&lv, &rng, 0, .{ .litter = most });
-    var shrubs: usize = 0;
+    shape(&lv, &rng, 0, .{ .litter = .{ .boulders = carve.LITTER_MAX } });
     var boulders: usize = 0;
     for (lv.tile, 0..) |t, k| {
-        if (t != .tiny_shrub and t != .boulder) continue;
-        if (t == .tiny_shrub) shrubs += 1 else boulders += 1;
+        if (t != .boulder) continue;
+        boulders += 1;
         try std.testing.expect(carve.clearAround(&lv, grid.Level.of(k)));
     }
-    std.debug.print("a field at {d} a thousand of each: {d} tiny shrubs, {d} boulders\n", .{ carve.LITTER_MAX, shrubs, boulders });
-    try std.testing.expect(shrubs > 200 and boulders > 100);
+    std.debug.print("a field at {d} a thousand: {d} boulders\n", .{ carve.LITTER_MAX, boulders });
+    try std.testing.expect(boulders > 100);
+}
+
+test "a field strews tiny shrubs, tall grass in patches and shrooms, and a step goes through each" {
+    var lv = grid.Level.blank();
+    var rng = mathx.Rng.init(0xDEC0);
+    shape(&lv, &rng, 0xDEC0, .{});
+    var tall: usize = 0;
+    var patched: usize = 0;
+    var shrooms: usize = 0;
+    var shrubs: usize = 0;
+    for (lv.tile, 0..) |t, k| {
+        if (t == .shrooms) shrooms += 1;
+        if (t == .tiny_shrub) shrubs += 1;
+        if (t != .tall_grass) continue;
+        tall += 1;
+        const p = grid.Level.of(k);
+        for (mathx.CARDINALS) |d| {
+            if (lv.at(p.add(d)) == .tall_grass) {
+                patched += 1;
+                break;
+            }
+        }
+    }
+    std.debug.print("a field's decor: {d} tiny shrubs, {d} tall grass, {d} of it beside more, {d} shrooms\n", .{ shrubs, tall, patched, shrooms });
+    try std.testing.expect(shrubs > 10 and tall > 200 and patched * 10 > tall * 9 and shrooms > 10);
+    for ([_]grid.Tile{ .tiny_shrub, .tall_grass, .shrooms }) |t| try std.testing.expect(!t.solid() and !t.blind());
 }

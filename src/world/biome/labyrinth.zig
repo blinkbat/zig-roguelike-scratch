@@ -15,13 +15,16 @@ pub const Style = enum { walls, rock, hedge };
 
 pub const Params = struct {
     style: Style = .walls,
-    /// Half-width of an open chamber at the heart; 0 has none.
+    /// Half-height of an open chamber at the heart, half again as wide; 0 has none.
     chamber: u8 = 0,
     /// Percent of dead ends knocked through.
     braid: u8 = 10,
 
     pub fn fit(p: Params) Params {
-        return .{ .style = p.style, .chamber = @min(p.chamber, CHAMBER_MAX), .braid = @min(p.braid, mathx.PERCENT) };
+        var q = p;
+        q.chamber = @min(p.chamber, CHAMBER_MAX);
+        q.braid = @min(p.braid, mathx.PERCENT);
+        return q;
     }
 };
 

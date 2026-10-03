@@ -9,7 +9,6 @@ pub const Class = enum {
         };
     }
 
-    /// What a hero of it no one named is called: a play-test's.
     pub fn unnamed(c: Class) Name {
         return Name.of(c.title());
     }
@@ -23,7 +22,6 @@ pub const Class = enum {
 
 pub const CLASSES = std.enums.values(Class);
 
-/// What the hero is called in the log, the hud and the save list.
 pub const Name = struct {
     pub const MAX: usize = 16;
     buf: [MAX]u8 = undefined,
@@ -39,7 +37,6 @@ pub const Name = struct {
         return self.buf[0..self.n];
     }
 
-    /// Letters, digits, `-`, `'` and single spaces between words; false for one it does not take.
     pub fn push(self: *Name, c: u8) bool {
         const word = std.ascii.isAlphanumeric(c) or c == '-' or c == '\'';
         const gap = c == ' ' and self.n > 0 and self.buf[self.n - 1] != ' ';
@@ -53,7 +50,6 @@ pub const Name = struct {
         self.n -|= 1;
     }
 
-    /// Without the space a name may end on while it is typed.
     pub fn done(self: *const Name) Name {
         var nm = self.*;
         while (nm.n > 0 and nm.buf[nm.n - 1] == ' ') nm.n -= 1;

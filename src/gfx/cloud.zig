@@ -33,7 +33,7 @@ pub const Cloud = struct {
     /// The cells last baked into `px`.
     baked: [2]P,
     /// Seconds, for the drift.
-    t: f32,
+    t: mathx.Seconds,
     /// Seconds until the burst the newest gas came from lands; till then the cloud stays as drawn.
     held: f32,
     tex: ?rl.Texture2D,
@@ -52,7 +52,7 @@ pub const Cloud = struct {
     pub fn clear(self: *Cloud) void {
         @memset(&self.tint, 0);
         self.stale = true;
-        self.t = 0;
+        self.t = .{};
         self.held = 0;
     }
 
@@ -68,7 +68,7 @@ pub const Cloud = struct {
     }
 
     pub fn step(self: *Cloud, lv: *const grid.Level, dt: f32) void {
-        self.t += dt;
+        self.t.step(dt);
         self.held -= dt;
         if (self.held > 0) return;
         self.held = 0;
@@ -109,7 +109,8 @@ pub const Cloud = struct {
         const cells = [2]f32{ @floatFromInt(grid.W), @floatFromInt(grid.H) };
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
-        rl.setShaderValue(s.shader, s.time, &self.t, .float);
+        const time = self.t.at();
+        rl.setShaderValue(s.shader, s.time, &time, .float);
         rl.setShaderValue(s.shader, s.cells, &cells, .vec2);
         look.overFloor(tex, ox, oy, cell);
         rl.gl.rlDrawRenderBatchActive();

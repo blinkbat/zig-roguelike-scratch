@@ -4,38 +4,32 @@ const grid = @import("grid.zig");
 const fov = @import("fov.zig");
 const day = @import("day.zig");
 
-// Light that decides what is seen: the sky's out of doors for the hour, each torch's pool and each light a body
-// carries. The picture of it is `gfx/light.zig`'s, which decides nothing.
+// Light that decides what is seen; `gfx/light.zig` only draws it.
 
 const P = mathx.P;
 
 /// Cells a torch's flame lights, from the floor below it.
 pub const TORCH_REACH: i32 = 7;
 
-/// Where the pool of a torch hung on `wall` is cast from.
 pub fn torchFloor(wall: P) P {
     return wall.add(mathx.Dir.s.delta());
 }
 
-/// A light a body carries, and how far it reaches.
 pub const Source = struct { at: P, reach: i32 };
 
-/// Cells round the viewer the sky lights well enough to see by: its whole `sight` by day, none at night or under a
-/// roof.
+/// In cells: the whole `sight` by day, none at night or under a roof.
 pub fn skyReach(outdoors: bool, hour: f32, sight: i32) f32 {
     if (!outdoors) return 0;
     return day.daylight(hour) * @as(f32, @floatFromInt(sight));
 }
 
-/// Every cell a torch or a carried light reaches, past whatever blocks sight.
 pub fn pools(lv: *const grid.Level, carried: []const Source, out: *[grid.CELLS]bool) void {
     @memset(out, false);
     for (lv.torches()) |t| fov.castInto(lv, torchFloor(t), TORCH_REACH, out);
     for (carried) |s| fov.castInto(lv, s.at, s.reach, out);
 }
 
-/// What `viewer`'s line of sight reaches (`lv.lit` as `fov.cast` left it) kept as `los`, and of it, what is light
-/// enough to see left lit: within the sky's reach or in a pool. Cells it reached in the dark are seen only if they were.
+/// Takes `lv.lit` as `fov.cast` left it and keeps it as `los`.
 pub fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool, was_seen: *const [grid.CELLS]bool) void {
     lv.los = lv.lit;
     for (0..grid.CELLS) |i| {
@@ -46,7 +40,6 @@ pub fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool
     }
 }
 
-/// `fov.cast` and `dim` as one: what `viewer`, whose eyes reach `sight`, sees by the light there is.
 pub fn see(lv: *grid.Level, viewer: P, sight: i32, sky: f32, carried: []const Source) void {
     const was = lv.seen;
     fov.cast(lv, viewer, sight);

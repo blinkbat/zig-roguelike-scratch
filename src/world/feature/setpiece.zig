@@ -103,7 +103,10 @@ pub const Params = struct {
     apart: u8 = 6,
 
     pub fn fit(p: Params) Params {
-        return .{ .piece = p.piece, .count = std.math.clamp(p.count, 1, COUNT_MAX), .apart = @min(p.apart, APART_MAX) };
+        var q = p;
+        q.count = std.math.clamp(p.count, 1, COUNT_MAX);
+        q.apart = @min(p.apart, APART_MAX);
+        return q;
     }
 };
 
@@ -124,12 +127,10 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, _: carve.Palette, p: Para
     }
 }
 
-/// Cells across and down.
 pub fn size(art: []const []const u8) P {
     return .{ .x = @intCast(art[0].len), .y = @intCast(art.len) };
 }
 
-/// `stamp`ed with its middle on `mid`.
 pub fn stampAround(lv: *grid.Level, mid: P, art: []const []const u8) void {
     const s = size(art);
     stamp(lv, mid.sub(.{ .x = @divTrunc(s.x, 2), .y = @divTrunc(s.y, 2) }), art);

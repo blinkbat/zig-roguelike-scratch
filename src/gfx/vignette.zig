@@ -24,7 +24,7 @@ pub const Vignette = struct {
     pain: f32 = 0,
     rising: bool = false,
     low: f32 = 0,
-    t: f32 = 0,
+    t: mathx.Seconds = .{},
     /// The archer's flash last frame: it rising is a blow landing.
     was: f32 = 0,
     tex: ?rl.Texture2D = null,
@@ -48,11 +48,11 @@ pub const Vignette = struct {
         }
         const k = mathx.easing(dt, LOW_EASE);
         self.low = mathx.ease(self.low, lowOf(hp, max), k, k);
-        self.t += dt;
+        self.t.step(dt);
     }
 
     pub fn alpha(self: Vignette) f32 {
-        const beat = 0.5 + 0.5 * @sin(self.t * BEAT_HZ * mathx.TAU);
+        const beat = 0.5 + 0.5 * @sin(self.t.at() * BEAT_HZ * mathx.TAU);
         return @min(1, PAIN_A * self.pain * self.pain + LOW_A * self.low * (1 - BEAT + BEAT * beat));
     }
 
@@ -117,7 +117,7 @@ test "the low glow is off above a third of full hp and grows as hp falls toward 
     for ([_]i32{ 24, 9, 8, 6, 4, 2, 1 }) |hp| {
         var v = Vignette{};
         for (0..600) |_| v.step(1.0 / 60.0, 0, hp, 24);
-        v.t = 0.25 / BEAT_HZ;
+        v.t = .{ .sum = 0.25 / BEAT_HZ };
         const a = v.alpha();
         std.debug.print(" {d}:{d:.2}", .{ hp, a });
         if (hp >= 8) try std.testing.expectEqual(@as(f32, 0), a) else try std.testing.expect(a > last);

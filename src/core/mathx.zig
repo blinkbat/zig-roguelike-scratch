@@ -6,21 +6,18 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
-/// An eased value this near where it is going lands there exactly, so one that has arrived reads as arrived.
+/// Within this of its target an ease lands on it exactly.
 pub const SETTLE: f32 = 1e-3;
 
-/// `up` and `down` are the share of the way it goes, rising and falling.
 pub fn ease(v: f32, want: f32, up: f32, down: f32) f32 {
     const n = v + (want - v) * (if (want > v) up else down);
     return if (@abs(want - n) < SETTLE) want else n;
 }
 
-/// The share of the way an ease at `rate` per second goes in `dt`, the same whatever the frame rate.
 pub fn easing(dt: f32, rate: f32) f32 {
     return 1 - @exp(-dt * rate);
 }
 
-/// Smoothstep, clamped to 0 and 1.
 pub fn smooth(t: f32) f32 {
     const c = std.math.clamp(t, 0, 1);
     return c * c * (3 - 2 * c);
@@ -70,12 +67,9 @@ pub fn cellOf(q: [2]f32) P {
     return .{ .x = @intFromFloat(@floor(q[0])), .y = @intFromFloat(@floor(q[1])) };
 }
 
-/// Out of this, a percent setting.
 pub const PERCENT = 100;
-/// Out of this, a per-thousand setting.
 pub const MILLE = 1000;
 
-/// 0 at `lo`, 1 at `hi`, eased between.
 pub fn smoothstep(lo: f32, hi: f32, x: f32) f32 {
     return smooth(std.math.clamp((x - lo) / (hi - lo), 0, 1));
 }
@@ -85,7 +79,6 @@ pub fn bilerp(c: [4]f32, a: f32, b: f32) f32 {
     return lerpF(lerpF(c[0], c[1], a), lerpF(c[2], c[3], a), b);
 }
 
-/// Value noise: `lattice` at the whole points round `(u, v)`, eased between.
 pub fn valueNoise(ctx: anytype, comptime lattice: fn (@TypeOf(ctx), i32, i32) f32, u: f32, v: f32) f32 {
     const fu = @floor(u);
     const fv = @floor(v);
@@ -94,13 +87,11 @@ pub fn valueNoise(ctx: anytype, comptime lattice: fn (@TypeOf(ctx), i32, i32) f3
     return bilerp(.{ lattice(ctx, x, y), lattice(ctx, x + 1, y), lattice(ctx, x, y + 1), lattice(ctx, x + 1, y + 1) }, smooth(u - fu), smooth(v - fv));
 }
 
-/// `r` as a low and a high, each in `lo..hi`, the low not above the high.
 pub fn span(comptime T: type, r: [2]T, lo: T, hi: T) [2]T {
     const top = std.math.clamp(r[1], lo, hi);
     return .{ std.math.clamp(r[0], lo, top), top };
 }
 
-/// `i` moved `by` round `n` places.
 pub fn wrap(i: usize, by: i32, n: usize) usize {
     return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
 }
@@ -120,7 +111,6 @@ pub const Ring = struct {
         return .{ .c = c, .r = r, .at = .{ .x = c.x - r, .y = c.y - r } };
     }
 
-    /// How many cells a ring of radius `r` holds.
     pub fn cells(r: i32) usize {
         return if (r == 0) 1 else @intCast(8 * r);
     }
@@ -159,12 +149,28 @@ test "a ring is the cells of its box exactly its radius out, in the box's order"
 }
 
 pub fn distEuclid(a: P, b: P) f32 {
-    const dx: f32 = @floatFromInt(a.x - b.x);
-    const dy: f32 = @floatFromInt(a.y - b.y);
-    return @sqrt(dx * dx + dy * dy);
+    return len(@floatFromInt(a.x - b.x), @floatFromInt(a.y - b.y));
 }
 
-/// Clockwise from north; `dirOf` divides a heading straight into the ordinal.
+/// Real seconds summed frame by frame, in f64: an f32 sum stops moving after a day or so.
+pub const Seconds = struct {
+    sum: f64 = 0,
+
+    pub fn step(s: *Seconds, dt: f32) void {
+        s.sum += dt;
+    }
+
+    pub fn at(s: Seconds) f32 {
+        return @floatCast(s.sum);
+    }
+};
+
+/// `std.math.hypot` without its guard against overflow, which costs in a per-texel loop.
+pub fn len(x: f32, y: f32) f32 {
+    return @sqrt(x * x + y * y);
+}
+
+/// Clockwise from north: `dirOf` and `heading` rely on the ordinals.
 pub const Dir = enum(u3) {
     n = 0,
     ne = 1,
@@ -185,6 +191,10 @@ pub const Dir = enum(u3) {
 
     pub fn heading(d: Dir) f32 {
         return @as(f32, @floatFromInt(@intFromEnum(d))) * SECTOR;
+    }
+
+    pub fn opposite(d: Dir) Dir {
+        return @enumFromInt(@intFromEnum(d) +% 4);
     }
 };
 
@@ -239,7 +249,7 @@ pub fn angleDelta(a: f32, b: f32) f32 {
 
 /// Radial, never per-axis: a square gate's corner is 0.62 per axis but 0.88 true.
 pub fn deflection(x: f32, y: f32) f32 {
-    return @min(1.0, @sqrt(x * x + y * y));
+    return @min(1.0, len(x, y));
 }
 
 pub const Rng = struct {
@@ -279,6 +289,21 @@ pub const Rng = struct {
     /// [0, 1).
     pub fn unit(self: *Rng) f32 {
         return self.r().float(f32);
+    }
+
+    pub fn pickWhere(self: *Rng, comptime T: type, items: []const T, ctx: anytype, comptime ok: fn (@TypeOf(ctx), T) bool) ?T {
+        var n: u32 = 0;
+        for (items) |it| {
+            if (ok(ctx, it)) n += 1;
+        }
+        if (n == 0) return null;
+        var k = self.below(n);
+        for (items) |it| {
+            if (!ok(ctx, it)) continue;
+            if (k == 0) return it;
+            k -= 1;
+        }
+        unreachable;
     }
 };
 

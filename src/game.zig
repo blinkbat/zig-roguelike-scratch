@@ -104,8 +104,7 @@ const MINI: i32 = 3;
 const MINI_W: i32 = grid.W * MINI;
 const MINI_H: i32 = grid.H * MINI;
 const MINI_PAD: i32 = 12;
-/// Cells past the view a prop's shadow can reach into it from: the longest the sky throws a cell's height, rounded up,
-/// which leaves room for a canopy's spread and the shadow's blur.
+/// Cells past the view a prop's shadow can reach into it from.
 const CAST_MARGIN: i32 = @intFromFloat(@ceil(sky.REACH_MAX));
 const MINI_FRAME: i32 = 4;
 const MINI_HERO_GROW: i32 = 1;
@@ -369,9 +368,7 @@ pub const Game = struct {
     name: heroes.Name = heroes.Class.archer.unnamed(),
     /// A run in a save slot: death ends it, and the way out of the death screen is the way back.
     permadeath: bool = false,
-    /// The hour, moved on a turn at a time.
     clock: day.Clock = .{},
-    /// The node played is open to the sky, so the hour lights it.
     outdoors: bool = false,
     /// The hour as the sky is drawn: eased after `clock`, so the light never steps.
     hour_shown: f32 = day.Clock.hour(.{}),
@@ -479,7 +476,6 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
     alloc.destroy(g);
 }
 
-/// In `w`, or on one generated floor for none.
 fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
     g.world = w;
     g.visited = .initEmpty();
@@ -551,7 +547,6 @@ fn enter(g: *Game, n: usize, at: P) void {
     settle(g);
 }
 
-/// A procgen node's floor this run: the same for the run, another the next.
 fn rollOf(run: u64, n: usize) u64 {
     return std.hash.Wyhash.hash(run, std.mem.asBytes(&n));
 }
@@ -634,7 +629,6 @@ fn settle(g: *Game) void {
     g.light.carrier = carrierAt(g);
 }
 
-/// A run read back from a save: its simulation as it was, its picture drawn afresh.
 pub fn resumeRun(g: *Game) void {
     g.mode = .play;
     g.exit = null;
@@ -654,7 +648,6 @@ pub fn freshSeed() u64 {
     return @bitCast(std.time.milliTimestamp());
 }
 
-/// What the archer sees from `from`: as far as its eyes reach, where the sky, a torch or a carried light lets it.
 fn castSight(g: *Game, from: P) void {
     var carried: [actor.MAX]lume.Source = undefined;
     var n: usize = 0;
@@ -930,7 +923,6 @@ fn fell(g: *Game, kind: actor.Kind, at: P) void {
     if (g.pool.tally(family).left == 0) g.log.say("The last {s} is dead.", .{actor.row(family).name});
 }
 
-/// Said only where the archer can see it happen.
 fn sayAt(g: *Game, at: P, comptime fmt: []const u8, args: anytype) void {
     if (g.lv.isLit(at)) g.log.say(fmt, args);
 }
@@ -940,8 +932,7 @@ fn heroDies(g: *Game) void {
     g.mode = .dead;
 }
 
-/// Brogue's order: the archer acts and the gas eats at it, the gas spreads, then each foe acts and the gas eats at it;
-/// then the archer's sight again, for a light a foe carries has moved with it.
+/// Brogue's turn order, then the archer's sight again, for a light a foe carries has moved with it.
 fn endTurn(g: *Game) void {
     const h = g.archer() orelse return;
     g.unsaved = true;
@@ -965,7 +956,6 @@ fn endTurn(g: *Game) void {
 
 const Hurt = struct { dmg: i32, lethal: bool };
 
-/// Every blow or sting on a body: all of `dmg`, but for an unkillable hero, who keeps 1 hp.
 fn hurt(g: *Game, id: u16, dmg: i32) Hurt {
     const a = g.pool.get(id) orelse return .{ .dmg = 0, .lethal = false };
     const taken = if (id == g.hero and g.unkillable) std.math.clamp(a.hp - 1, 0, dmg) else dmg;
@@ -1066,8 +1056,7 @@ fn camAxis(centre: f32, view: f32, world: f32) f32 {
     return std.math.clamp(centre - view * 0.5, 0, world - view);
 }
 
-/// Dead, a body stands until its killing blow lands, its flash is gone and its last step is drawn; split off, from
-/// when the blow that split it lands.
+/// Dead, a body stands until its killing blow lands, its flash is gone and its last step is drawn.
 fn standing(g: *Game, i: usize) bool {
     if (g.split_from[i] != null) return false;
     return g.pool.items[i].alive or g.fx.holds(i) or g.glide[i].done() < 1;
@@ -1086,7 +1075,6 @@ fn heroNow(g: *Game) ?rl.Vector2 {
     return (heroGlide(g) orelse return null).now();
 }
 
-/// Where the body is drawn this frame, if it is: only over a cell in sight.
 fn drawnAt(g: *Game, i: usize) ?rl.Vector2 {
     if (!standing(g, i)) return null;
     const at = g.glide[i].now();
@@ -1106,8 +1094,7 @@ fn snapGlide(g: *Game) void {
     for (g.pool.slice(), 0..) |a, i| g.glide[i] = Glide.still(a.at, look.gait(a.kind));
 }
 
-/// A body that moved this frame starts gliding `late` seconds ago, as of when its step was due; each one in sight
-/// after the first a stagger behind the one before, the archer first and then the foes in the order they acted.
+/// Glides start `late` seconds ago, each one in sight a stagger behind the one before: the archer, then foes in acting order.
 fn stepGlide(g: *Game, late: f32) void {
     var next: f32 = if (g.lead) |t| t + late + STAGGER_S else 0;
     const archer_done = stagger(g, g.hero, late, g.lead orelse 0, &next);
@@ -1118,8 +1105,7 @@ fn stepGlide(g: *Game, late: f32) void {
     }
 }
 
-/// The gas's harm on a body with no place lands at `start`, once the archer's part is drawn, which may have burst
-/// the bloat it came from. When this body's part is drawn.
+/// Gas harm on a body with no place lands at `start`, after the archer's part, which may burst its bloat. Returns when this body's part is drawn.
 fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     const i = actor.Pool.slot(id);
     const a = g.pool.items[i];
@@ -1163,10 +1149,8 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     return lands;
 }
 
-/// The walk that `update` takes this frame, and how long ago it came due.
 const Walk = struct { d: mathx.Dir, late: f32 };
 
-/// The last turn is drawn out: its slowest glide, arrow or flash has ended.
 pub fn quiet(g: *const Game) bool {
     return g.busy <= PACE_SLACK;
 }
@@ -1179,12 +1163,17 @@ fn paced(g: *Game) ?Walk {
             return null;
         }
         g.pending = null;
-        return .{ .d = d, .late = g.st.late() };
+        return .{ .d = d, .late = @min(g.st.late(), sinceQuiet(g)) };
     }
     const d = g.pending orelse return null;
     if (!quiet(g)) return null;
     g.pending = null;
-    return .{ .d = d, .late = @max(0, -g.busy) };
+    return .{ .d = d, .late = sinceQuiet(g) };
+}
+
+/// Seconds since the last turn was drawn out.
+fn sinceQuiet(g: *const Game) f32 {
+    return @max(0, -g.busy);
 }
 
 /// What the last frames set going moves on before this frame deals any more, so a blow dealt now lands `wait` on.
@@ -1199,12 +1188,11 @@ pub fn update(g: *Game, dt: f32) void {
     }
     stepTurning(g, dt);
     var late: f32 = 0;
-    const over = g.permadeath and g.mode == .dead;
     const pausable = switch (g.mode) {
-        .play, .aim, .dead => true,
-        .bind, .pause => false,
+        .play, .aim => true,
+        .dead, .bind, .pause => false,
     };
-    if (pausable and !over and g.st.hit(PAUSE)) {
+    if (pausable and g.st.hit(PAUSE)) {
         g.paused_from = g.mode;
         g.pause_menu = .{};
         g.mode = .pause;
@@ -1235,7 +1223,7 @@ pub fn update(g: *Game, dt: f32) void {
             }
         },
         .bind => bindStep(g),
-        .dead => if (deathShown(g) and g.st.hit(CONFIRM)) {
+        .dead => if (deathShown(g) and dismissed(&g.st)) {
             if (g.permadeath) g.exit = .back else restart(g);
         },
         .pause => pauseStep(g),
@@ -1253,7 +1241,6 @@ pub fn update(g: *Game, dt: f32) void {
     g.light.carrier = carrierAt(g);
 }
 
-/// The sky over the node played, if it is open to one.
 fn skyNow(g: *const Game) ?sky.Sky {
     return if (g.outdoors) sky.at(g.hour_shown) else null;
 }
@@ -1292,7 +1279,6 @@ fn pauseLabel(g: *const Game, r: PauseRow) [:0]const u8 {
     };
 }
 
-/// Over the top `h` pixels of the window.
 pub fn veil(g: *const Game, h: i32) void {
     rl.drawRectangle(0, 0, g.screen.x, h, look.VEIL);
 }
@@ -1316,8 +1302,7 @@ fn stepTurning(g: *Game, dt: f32) void {
     }
 }
 
-/// Each body as the latest-dealt blow landed on it left it, or as it is once none is left to land. A slime split off
-/// another slides out of it as the blow that split it lands, and not before the one it split off is drawn.
+/// A slime split off another slides out as the blow that split it lands, and not before the one it split off is drawn.
 fn catchUp(g: *Game) void {
     for (g.pool.slice(), 0..) |a, i| {
         if (!g.fx.pending(i)) {
@@ -1349,8 +1334,17 @@ fn goldShown(g: *const Game) i32 {
 }
 
 fn deathShown(g: *const Game) bool {
-    const dead = g.mode == .dead or (g.mode == .pause and g.paused_from == .dead);
-    return dead and quiet(g);
+    return g.mode == .dead and quiet(g);
+}
+
+/// The death screen's way on: A, Menu, B, or X, which Space presses.
+const DISMISS = [_]input.Button{ CONFIRM, PAUSE, .b, .x };
+
+fn dismissed(st: *const input.State) bool {
+    for (DISMISS) |b| {
+        if (st.hit(b)) return true;
+    }
+    return false;
 }
 
 /// Read off the archer's slot, not `archer()`, so the blow that kills it still reddens the view.
@@ -1427,17 +1421,17 @@ fn barrelShownAt(g: *Game, p: P) bool {
     return g.lv.isSeen(p) and (g.lv.hasBarrel(p) or g.fx.breaking(p));
 }
 
-fn standsShownAt(g: *Game, p: P) bool {
-    return shownAt(g, p, null);
+fn shownAt(g: *Game, stood: *const Stood, p: P) bool {
+    return (grid.Level.inside(p) and stood.isSet(grid.Level.idx(p))) or barrelShownAt(g, p);
 }
 
-fn shownAt(g: *Game, p: P, skip: ?usize) bool {
+fn stoodNow(g: *Game) Stood {
+    var stood = Stood.initEmpty();
     for (0..g.pool.n) |i| {
-        if (i == skip) continue;
-        const at = drawnAt(g, i) orelse continue;
-        if (cellUnder(at).eq(p)) return true;
+        const under = cellUnder(drawnAt(g, i) orelse continue);
+        if (grid.Level.inside(under)) stood.set(grid.Level.idx(under));
     }
-    return barrelShownAt(g, p);
+    return stood;
 }
 
 fn bar(x: i32, y: i32, w: i32, h: i32, hp: i32, max: i32, back: rl.Color) void {
@@ -1488,10 +1482,9 @@ fn drawFigure(g: *Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid:
     } else drawGlyph(g, l.ch, s.x, s.y, shine.drawn(l.fg, flash));
 }
 
-/// The open ground and what lies under anything solid, then the solid, which covers the shadows cast between.
+/// The solid pass covers the shadows cast between the two.
 const Pass = enum { ground, solid };
 
-/// The cells bodies are drawn standing in this frame.
 const Stood = std.StaticBitSet(grid.CELLS);
 
 /// At full light, over the seen cells from `lo` up to `hi`.
@@ -1501,8 +1494,8 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: 
         if (!g.lv.isSeen(p)) continue;
         const here = g.lv.at(p);
         const kind = switch (pass) {
-            .ground => if (here.solid()) here.ground() orelse continue else here,
-            .solid => if (here.solid()) here else continue,
+            .ground => here.ground() orelse if (here.solid()) continue else here,
+            .solid => if (here.solid() or here.ground() != null) here else continue,
         };
         defer if (g.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
         if (g.sprites.tileOf(kind, g.lv.wallShape(p))) |t| {
@@ -1510,7 +1503,7 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: 
             continue;
         }
         if (look.tileBg(kind)) |bg| fillCell(c, p, bg);
-        if (kind != here or stood.isSet(grid.Level.idx(p)) or barrelShownAt(g, p)) continue;
+        if (kind != here or shownAt(g, stood, p)) continue;
         if (arrow_at) |a| {
             if (a.eq(p)) continue;
         }
@@ -1550,12 +1543,10 @@ fn drawWorld(g: *Game) void {
     const aim_from: ?P = if (g.mode != .aim) null else if (g.archer()) |a| a.at else null;
 
     var shown: [actor.MAX]Shown = undefined;
-    var stood = Stood.initEmpty();
+    const stood = stoodNow(g);
     var n: usize = 0;
     for (0..g.pool.n) |i| {
         const at = drawnAt(g, i) orelse continue;
-        const under = cellUnder(at);
-        if (grid.Level.inside(under)) stood.set(grid.Level.idx(under));
         const mid = middle(at);
         shown[n] = .{
             .pic = g.pictured[i],
@@ -1605,7 +1596,7 @@ fn drawWorld(g: *Game) void {
     }
 
     if (g.mode == .aim) outline(c, g.mark, look.RETICLE);
-    if (g.mode == .play and g.st.lean) drawLean(g, c);
+    if (g.mode == .play and g.st.lean) drawLean(g, c, &stood);
 
     if (g.shot) |s| {
         if (s.cell()) |p| drawGlyph(g, s.glyph, c.sx(p), c.sy(p), look.ARROW);
@@ -1626,24 +1617,24 @@ fn drawTorches(g: *Game, c: Cam) void {
 }
 
 /// `heroMove` as drawn: a body or barrel shown there is kicked, whatever the simulation already did to it.
-fn leanShown(g: *Game, from: P, d: mathx.Dir) Move {
+fn leanShown(g: *Game, stood: *const Stood, from: P, d: mathx.Dir) Move {
     if (!g.lv.passOk(from, d)) return .blocked;
-    return if (shownAt(g, from.add(d.delta()), heroSlot(g))) .kick else .step;
+    return if (shownAt(g, stood, from.add(d.delta()))) .kick else .step;
 }
 
-fn drawLean(g: *Game, c: Cam) void {
+fn drawLean(g: *Game, c: Cam, stood: *const Stood) void {
     const at = cellUnder(heroNow(g) orelse return);
     for (input.DPAD) |button| {
         const d = input.leanOf(button);
         const p = at.add(d.delta());
-        const col = switch (leanShown(g, at, d)) {
+        const col = switch (leanShown(g, stood, at, d)) {
             .kick => look.LEAN_FOE,
             .step => look.LEAN_OPEN,
             .blocked => look.LEAN_BLOCKED,
         };
         outline(c, p, col);
         const ch = look.caret(button);
-        if (g.lv.walkable(p) and !standsShownAt(g, p)) {
+        if (g.lv.walkable(p) and !shownAt(g, stood, p)) {
             drawGlyph(g, ch, c.sx(p), c.sy(p), col);
             continue;
         }
@@ -1918,8 +1909,7 @@ pub fn frame(g: *Game) void {
     rl.endDrawing();
 }
 
-/// DEV ONLY. A render texture, not `takeScreenshot`: the batch is only guaranteed flushed at `endTextureMode`,
-/// and the target is upside down.
+/// DEV ONLY. A render texture, not `takeScreenshot`: the batch is only guaranteed flushed at `endTextureMode`.
 pub fn shot() void {
     withGame(.{ .window_hidden = true }, "roguelike --shot", shoot);
 }
@@ -2041,9 +2031,7 @@ const OVERVIEW_CELL: i32 = 10;
 const OVERVIEW_MID: i32 = @divTrunc(OVERVIEW_CELL, 2);
 /// A glyph a little bigger than its cell, so the font's side bearings leave no gaps.
 const OVERVIEW_INK: i32 = OVERVIEW_CELL + 2;
-/// The world `shots/biome.png` plays, from `atlas.DIR`.
 const SHOT_BIOME = "qud_salt_marsh";
-/// The world the sky is shot over, at each of these hours.
 const SHOT_OUTDOOR = "wilds";
 const SHOT_HOURS = [_]struct { hour: f32, path: [:0]const u8 }{
     .{ .hour = 7.0, .path = SHOTS_DIR ++ "/dawn.png" },
@@ -2053,7 +2041,7 @@ const SHOT_HOURS = [_]struct { hour: f32, path: [:0]const u8 }{
     .{ .hour = 1.0, .path = SHOTS_DIR ++ "/night.png" },
 };
 
-/// DEV ONLY. Each world's start node rolled and drawn whole, a glyph a cell, into `shots/worlds/<name>.png`.
+/// DEV ONLY.
 fn overviews(g: *Game, w: *atlas.Atlas) void {
     const target = rl.loadRenderTexture(grid.W * OVERVIEW_CELL, grid.H * OVERVIEW_CELL) catch return;
     defer rl.unloadRenderTexture(target);
@@ -2179,7 +2167,6 @@ fn arena(g: *Game, hero: P, rats: []const P) void {
     settle(g);
 }
 
-/// As if the last turn's glides had all ended.
 fn calm(g: *Game) void {
     g.busy = 0;
     g.pending = null;
@@ -2226,7 +2213,6 @@ fn drawn(g: *Game, slot: usize) bool {
 const TEST_GAS = 100;
 const SLIME_HALF = actor.row(.slime_half).hp;
 
-/// Idle frames until the last turn is drawn out and every foe is drawn turned.
 fn drawnOut(g: *Game) void {
     g.st = .{};
     var t: f32 = 0;
@@ -2904,9 +2890,9 @@ test "the lean shows a kick on the rat a kick killed until it falls" {
     g.pool.get(2).?.hp = 1;
     nudge(g, .e);
     try std.testing.expect(g.pool.get(2) == null);
-    try std.testing.expectEqual(Move.kick, leanShown(g, at, .e));
+    try std.testing.expectEqual(Move.kick, leanShown(g, &stoodNow(g), at, .e));
     drawnOut(g);
-    try std.testing.expectEqual(Move.step, leanShown(g, at, .e));
+    try std.testing.expectEqual(Move.step, leanShown(g, &stoodNow(g), at, .e));
 }
 
 test "a kick dealt in a frame of play is no further into its bump than its blow is to landing" {
@@ -3269,6 +3255,7 @@ test "slimes split in fights on real floors, and every body keeps a cell of its 
         g.archer().?.max = 1000;
         var rng = mathx.Rng.init(f);
         for (0..300) |_| {
+            if (g.mode == .dead) break;
             const n = g.pool.n;
             press(g, .x);
             if (g.mode == .aim) press(g, .x) else nudge(g, mathx.ALL_DIRS[rng.below(mathx.ALL_DIRS.len)]);
@@ -3425,12 +3412,30 @@ test "a kick due late in a frame puts the foes a stagger after it lands, late on
     for (g.pool.slice()[1..]) |*a| a.awake = true;
     const late: f32 = 0.05;
     calm(g);
+    g.busy = -1;
     g.st = .{ .walk = .e };
     g.st.step.late = late;
     update(g, 0);
     const t = framesUntil(g, actor.Pool.slot(g.hero), reddened);
     std.debug.print("a kick due {d:.3} s late: the first bite lands {d:.3} s on\n", .{ late, t });
     try std.testing.expectApproxEqAbs(2 * BUMP_LANDS + STAGGER_S - late, t, TEST_TOL);
+}
+
+test "a walk due just before the last turn is drawn out starts as it ends" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const busy: f32 = 0.005;
+    const dt: f32 = 0.016;
+    const due: f32 = 0.015;
+    calm(g);
+    g.busy = busy;
+    g.st = .{ .walk = .e };
+    g.st.step.late = due;
+    update(g, dt);
+    const t = g.glide[actor.Pool.slot(g.hero)].t;
+    std.debug.print("a walk due {d:.3} s ago, the turn drawn out {d:.3} s ago: the step is {d:.3} s in\n", .{ due, dt - busy, t });
+    try std.testing.expectApproxEqAbs(dt - busy, t, 1e-5);
 }
 
 test "a run left mid-turn keeps the way its foes were turning" {
@@ -3495,6 +3500,24 @@ test "the dead archer's floor restarts only once the death is shown" {
     }.f);
     press(g, CONFIRM);
     try std.testing.expectEqual(Mode.play, g.mode);
+}
+
+test "Start, B or Space leaves the death screen as A does, and none of them pauses it" {
+    for (DISMISS) |b| {
+        const g = try boot(std.testing.allocator);
+        defer shut(std.testing.allocator, g);
+        arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
+        g.pool.get(2).?.awake = true;
+        g.archer().?.hp = 1;
+        nudge(g, .e);
+        _ = framesUntil(g, 0, struct {
+            fn f(game: *Game, _: usize) bool {
+                return deathShown(game);
+            }
+        }.f);
+        press(g, b);
+        try std.testing.expectEqual(Mode.play, g.mode);
+    }
 }
 
 test "the reticle crosses the archer to the far side of a corridor" {

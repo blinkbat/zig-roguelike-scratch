@@ -17,9 +17,16 @@ pub const Params = struct {
     /// Per thousand cells of open grass, a lone shrub.
     strays: u16 = 20,
     litter: carve.Litter = .{},
+    decor: carve.Decor = .{},
 
     pub fn fit(p: Params) Params {
-        return .{ .thicket = @min(p.thicket, THICKET_MAX), .smooth = @min(p.smooth, SMOOTH_MAX), .strays = @min(p.strays, STRAYS_MAX), .litter = p.litter.fit() };
+        var q = p;
+        q.thicket = @min(p.thicket, THICKET_MAX);
+        q.smooth = @min(p.smooth, SMOOTH_MAX);
+        q.strays = @min(p.strays, STRAYS_MAX);
+        q.litter = p.litter.fit();
+        q.decor = p.decor.fit();
+        return q;
     }
 };
 
@@ -29,12 +36,13 @@ pub fn palette(_: Params) carve.Palette {
     return pal;
 }
 
-pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
+pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const pal = palette(p);
     carve.sow(lv, rng, p.thicket, pal.solid, pal.open);
     carve.smooth(lv, p.smooth, pal.solid, pal.open);
     carve.scatter(lv, rng, p.strays, pal.open, pal.solid, true);
     p.litter.strew(lv, rng);
+    p.decor.strew(lv, rng, seed);
 }
 
 test "lone shrubs stand in the open, none touching another shrub" {

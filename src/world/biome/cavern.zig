@@ -21,7 +21,11 @@ pub const Params = struct {
     fray: u8 = 40,
 
     pub fn fit(p: Params) Params {
-        return .{ .chambers = std.math.clamp(p.chambers, 1, CHAMBERS_MAX), .radius = mathx.span(u8, p.radius, RADIUS_MIN, RADIUS_MAX), .fray = @min(p.fray, mathx.PERCENT) };
+        var q = p;
+        q.chambers = std.math.clamp(p.chambers, 1, CHAMBERS_MAX);
+        q.radius = mathx.span(u8, p.radius, RADIUS_MIN, RADIUS_MAX);
+        q.fray = @min(p.fray, mathx.PERCENT);
+        return q;
     }
 };
 

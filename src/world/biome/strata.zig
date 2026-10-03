@@ -27,7 +27,11 @@ pub const Params = struct {
     blur: u8 = 5,
 
     pub fn fit(p: Params) Params {
-        return .{ .sectors = std.math.clamp(p.sectors, 1, SECTORS_MAX), .seeds = @min(p.seeds, SEEDS_MAX), .blur = @min(p.blur, BLUR_MAX) };
+        var q = p;
+        q.sectors = std.math.clamp(p.sectors, 1, SECTORS_MAX);
+        q.seeds = @min(p.seeds, SEEDS_MAX);
+        q.blur = @min(p.blur, BLUR_MAX);
+        return q;
     }
 };
 

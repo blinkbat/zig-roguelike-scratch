@@ -21,10 +21,8 @@ const PAD: i32 = 12;
 const ROW_H: i32 = 26;
 const NODE_H: i32 = 46;
 const GAP: i32 = 6;
-/// Between the panel's sections, and between blocks within one.
 const SECTION_GAP: i32 = GAP * 3;
 const BLOCK_GAP: i32 = GAP * 2;
-/// A row and the gap under it.
 const ROW_STEP: i32 = ROW_H + GAP;
 const TEXT: i32 = font.BODY;
 const SMALL: i32 = 16;
@@ -173,7 +171,6 @@ const Tool = enum {
 const TOOLS = std.enums.values(Tool);
 const TORCH_RULE = "hangs on a wall with floor below it";
 const FOE_RULE = "stands on open floor";
-/// "door, link and start": the tools a procgen node takes.
 const UNGENERATED = blk: {
     var names: []const []const u8 = &.{};
     for (TOOLS) |t| {
@@ -291,8 +288,7 @@ const Rect = struct { from: P, erase: bool };
 pub const Editor = struct {
     alloc: std.mem.Allocator,
     world: *atlas.Atlas,
-    /// The world as the gesture under way found it: banked on its first change. `open` parses into it and
-    /// `swapStep` swaps through it.
+    /// The world as the gesture under way found it, banked on its first change; `open` parses into it, `swapStep` swaps through it.
     scratch: *atlas.Atlas,
     hist: *[UNDO_CAP]atlas.Atlas,
     /// A ring: the oldest step kept is at `hist_base`.
@@ -429,7 +425,6 @@ pub const Editor = struct {
         return ZOOMS[ed.zoom];
     }
 
-    /// Where and how big a glyph in the cell `r` is drawn.
     fn inkOf(ed: *const Editor, r: rl.Rectangle) struct { x: i32, y: i32, size: i32 } {
         const half = ed.px() * 0.5;
         return .{ .x = @intFromFloat(r.x + half), .y = @intFromFloat(r.y + half), .size = @intFromFloat(ed.px() * GLYPH_OF_CELL) };
@@ -471,7 +466,6 @@ pub const Editor = struct {
         ed.hist_at = ed.hist_len;
     }
 
-    /// The `k`th step from the oldest kept.
     fn kept(ed: *Editor, k: usize) *atlas.Atlas {
         return &ed.hist[(ed.hist_base + k) % UNDO_CAP];
     }
@@ -556,7 +550,6 @@ pub const Editor = struct {
         ed.stale = false;
     }
 
-    /// Where the hero starts on the open node, when it starts there.
     fn startOn(ed: *Editor) ?P {
         const s = ed.world.start;
         if (s.node != ed.node) return null;
@@ -571,7 +564,6 @@ pub const Editor = struct {
         return ed.here().doorAt(p);
     }
 
-    /// Its number and name, marked when the world starts there.
     fn nodeTitle(ed: *Editor, n: usize, buf: []u8) [:0]const u8 {
         var name: [atlas.TITLE_MAX]u8 = undefined;
         const mark: []const u8 = if (ed.world.start.node == n) &START_MARK else "";
@@ -761,7 +753,6 @@ pub const Editor = struct {
     }
 };
 
-/// One procgen node.
 fn freshWorld(w: *atlas.Atlas) void {
     w.* = .{};
     _ = w.add(.{ .procgen = .{} });
@@ -964,7 +955,6 @@ fn brushAt(ed: *Editor, p: P) void {
     fillRect(ed, .{ .from = box.lo, .erase = erase }, box.hi);
 }
 
-/// The `n` by `n` cells a brush with its middle on `p` covers.
 fn brushBox(p: P, n: i32) struct { lo: P, hi: P } {
     const lo = p.sub(.{ .x = @divTrunc(n - 1, 2), .y = @divTrunc(n - 1, 2) });
     return .{ .lo = lo, .hi = lo.add(.{ .x = n - 1, .y = n - 1 }) };
@@ -1189,14 +1179,12 @@ fn row(x: i32, y: i32, w: i32) rl.Rectangle {
     return look.rect(x, y, w, ROW_H);
 }
 
-/// The `k`th of `n` equal slots across `span` pixels from `x0`.
 fn slotOf(x0: i32, span: i32, y: i32, k: usize, n: usize) rl.Rectangle {
     const ni: i32 = @intCast(n);
     const w = @divTrunc(span - GAP * (ni - 1), ni);
     return row(x0 + @as(i32, @intCast(k)) * (w + GAP), y, w);
 }
 
-/// `n` buttons across the panel, the `k`th.
 fn cellOfRow(y: i32, k: usize, n: usize) rl.Rectangle {
     return slotOf(PAD, INNER_W, y, k, n);
 }
@@ -1205,7 +1193,6 @@ fn scissor(r: rl.Rectangle) void {
     rl.beginScissorMode(@intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height));
 }
 
-/// `n` buttons across the panel, taken left to right.
 const Across = struct {
     y: i32,
     n: usize,
@@ -1235,7 +1222,6 @@ fn draw(ed: *Editor, g: *game.Game) void {
     drawStatus(ed, g, c);
 }
 
-/// File, then view, then tools, then node commands, then the node list or the open node's generator, which scroll.
 fn drawPanel(ed: *Editor, g: *game.Game) void {
     var buf: [LINE]u8 = undefined;
     rl.drawRectangle(0, 0, PANEL_W, g.screen.y, PANEL_BG);
@@ -1316,12 +1302,10 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     }
 }
 
-/// The panel under its tabs, down to the window's foot.
 fn lowerArea(g: *const game.Game, top: i32) rl.Rectangle {
     return look.rect(0, top, PANEL_W, @max(0, g.screen.y - top));
 }
 
-/// A procgen node's base, its features, its foes and their makeups, a row a setting, scrolled by the wheel; every click is one undo.
 fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void {
     const was = pg.*;
     const fo = &pg.foes;
@@ -1376,7 +1360,6 @@ fn section(g: *game.Game, y: *i32, title: [:0]const u8) void {
     y.* += HEAD;
 }
 
-/// A titled run of knob rows, one a field of `owner`.
 fn knobs(ed: *Editor, g: *game.Game, y: *i32, title: [:0]const u8, owner: anytype, comptime rows: []const Knob) void {
     section(g, y, title);
     knobRows(ed, g, y, owner, rows);
@@ -1389,7 +1372,6 @@ fn knobRows(ed: *Editor, g: *game.Game, y: *i32, owner: anytype, comptime rows: 
     }
 }
 
-/// Which arm of the union `v` is, stepped round them; a new arm starts afresh.
 fn choiceRow(ed: *Editor, g: *game.Game, y: *i32, comptime U: type, v: *U, comptime c: Choice) void {
     rowLabel(g, y.*, c.label);
     var tag = std.meta.activeTag(v.*);
@@ -1398,7 +1380,7 @@ fn choiceRow(ed: *Editor, g: *game.Game, y: *i32, comptime U: type, v: *U, compt
     y.* += ROW_STEP;
 }
 
-/// Its weight, its members from the lead, then its tools: true when it is to be deleted.
+/// True when it is to be deleted.
 fn drawMakeup(ed: *Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bool) bool {
     var buf: [8]u8 = undefined;
     const weight = stepper(ed, g, row(PAD, y, WEIGHT_SPAN), num(&buf, "x{d}", m.weight), .{
@@ -1435,7 +1417,6 @@ fn drawMakeup(ed: *Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bo
     return dropped;
 }
 
-/// Takes away the row it is on.
 const DROP = "x";
 
 const MakeupTool = enum {
@@ -1478,7 +1459,9 @@ const DECAY_ROW = Knob{ .field = "decay", .label = "Decay", .tips = &.{"Of the w
 const COUNT_ROW = Knob{ .field = "count", .label = "Count", .tips = &.{"How many"} };
 const COUNT_MOST_ROW = Knob{ .field = "count", .label = "Count", .tips = &.{"How many, at most"} };
 const WIDTH_ROW = Knob{ .field = "width", .label = "Width", .tips = &.{"Cells across"} };
-const LITTER_ROW = Knob{ .field = "litter", .label = "Litter", .tips = &.{ "Lone tiny shrubs, a thousandth of the open grass each", "Lone boulders, a thousandth of the open grass each" } };
+const LITTER_ROW = Knob{ .field = "litter", .label = "Litter", .tips = &.{"Lone boulders, a thousandth of the open grass each"} };
+const DECOR_ROW = Knob{ .field = "decor", .label = "Decor", .tips = &.{ "Tiny shrubs a cell at a time, a thousandth of the open grass each", "Tall grass in patches, a thousandth of the open grass each", "Shrooms a cell at a time, a thousandth of the open grass each" } };
+const GRASS_ROWS = [_]Knob{ LITTER_ROW, DECOR_ROW };
 const COURSE_ROW = Knob{ .field = "course", .label = "Course", .tips = &.{"Across, down, or either"} };
 
 const ROOMS_ROWS = [_]Knob{
@@ -1494,14 +1477,12 @@ const WILDS_ROWS = [_]Knob{
     .{ .field = "thicket", .label = "Thicket", .tips = &.{"Of the ground, how much is sown with shrub before it is smoothed"}, .fmt = PERCENT_FMT },
     .{ .field = "smooth", .label = "Smooth", .tips = &.{"Smoothing passes: more, rounder thickets and wider glades"} },
     .{ .field = "strays", .label = "Strays", .tips = &.{"Lone shrubs, a thousandth of the open grass each"} },
-    LITTER_ROW,
-};
+} ++ GRASS_ROWS;
 
 const OPEN_ROWS = [_]Knob{
     .{ .field = "ground", .label = "Ground", .tips = &.{"The open ground, edge to edge"} },
     .{ .field = "edge", .label = "Edge", .tips = &.{"What rings the map and seals it"} },
-    LITTER_ROW,
-};
+} ++ GRASS_ROWS;
 
 const CAVES_ROWS = [_]Knob{
     .{ .field = "fill", .label = "Fill", .tips = &.{"Of the ground, how much is sown with rock before it is smoothed"}, .fmt = PERCENT_FMT },
@@ -1523,13 +1504,13 @@ const STRATA_ROWS = [_]Knob{
 
 const LABYRINTH_ROWS = [_]Knob{
     .{ .field = "style", .label = "Style", .tips = &.{"Built walls, rock, or a hedge maze"} },
-    .{ .field = "chamber", .label = "Chamber", .tips = &.{"Half-width of an open chamber at the heart; 0 for none"} },
+    .{ .field = "chamber", .label = "Chamber", .tips = &.{"Half-height of an open chamber at the heart, half again as wide; 0 for none"} },
     .{ .field = "braid", .label = "Braid", .tips = &.{"Of the dead ends, how many are knocked through into loops"}, .fmt = PERCENT_FMT },
 };
 
 const HALL_ROWS = [_]Knob{
     .{ .field = "style", .label = "Style", .tips = &.{"Bare, pillared, grave alcoves, or a grove of plants"} },
-    .{ .field = "margin", .label = "Margin", .tips = &.{"Rock between the hall and the map's edge"} },
+    .{ .field = "margin", .label = "Margin", .tips = &.{"Wall between the hall and the map's edge"} },
 };
 
 const MAZE_ROWS = [_]Knob{
@@ -1546,8 +1527,7 @@ const TOPOLOGY_ROWS = [_]Knob{
     .{ .field = "clearing", .label = "Clearing", .tips = &.{"A spot's clearing, half-width"} },
     .{ .field = "path", .label = "Path", .tips = &.{"A path's width"} },
     .{ .field = "sides", .label = "Sides", .tips = &.{"Side paths off to dead-end clearings"} },
-    LITTER_ROW,
-};
+} ++ GRASS_ROWS;
 
 const ZERO_TO_PERCENT = std.fmt.comptimePrint("0 to {d}", .{mathx.PERCENT});
 
@@ -1558,8 +1538,7 @@ const TERRAIN_ROWS = [_]Knob{
     .{ .field = "heat", .label = "Heat", .tips = &.{ "Coldest, " ++ ZERO_TO_PERCENT ++ std.fmt.comptimePrint("; {d} and under is tundra or glacier", .{terrain.FROST}), "Hottest" } },
     .{ .field = "scale", .label = "Scale", .tips = &.{"Cells across a field's features"} },
     .{ .field = "rivers", .label = "Rivers", .tips = &.{"Rivers running downhill from the heights"} },
-    LITTER_ROW,
-};
+} ++ GRASS_ROWS;
 
 const KEEP_ROWS = [_]Knob{
     .{ .field = "size", .label = "Size", .tips = &.{ "The curtain wall's width", "The curtain wall's height" } },
@@ -1584,7 +1563,7 @@ const TOWN_ROWS = [_]Knob{
 const DUNES_ROWS = [_]Knob{
     .{ .field = "ground", .label = "Ground", .tips = &.{"The open ground"} },
     .{ .field = "ridges", .label = "Ridges", .tips = &.{"How wide a crest of the noise stands as ridge"} },
-    .{ .field = "mesas", .label = "Mesas", .tips = &.{"Of the highest ground, how much stands as mesa"}, .fmt = PERCENT_FMT },
+    .{ .field = "mesas", .label = "Mesas", .tips = &.{"More stands as mesa, the highest ground first"}, .fmt = PERCENT_FMT },
     .{ .field = "scale", .label = "Scale", .tips = &.{"Cells across a dune"} },
 };
 
@@ -1718,7 +1697,6 @@ comptime {
     covers(@FieldType(atlas.Procgen, "foes"), &FOE_ROWS, atlas.FOE_KNOBS);
 }
 
-/// A row for each of `T`'s knobs and no other, and a tip for each number in it.
 fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []const []const u8) void {
     @setEvalBranchQuota(100_000);
     if (rows.len != knobs_.len) @compileError("a generator row is for no knob");
@@ -1759,13 +1737,11 @@ fn stepNumber(ed: *Editor, g: *game.Game, y: i32, comptime i: usize, n: usize, c
     bump(T, v, k.unit * stepper(ed, g, valueSlot(y, i, n), num(&buf, k.fmt, v.*), .{ .{ .tip = tip }, .{ .tip = tip } }));
 }
 
-/// `- name +`, round the choices.
 fn stepChoice(ed: *Editor, g: *game.Game, y: i32, comptime T: type, v: *T, tip: [:0]const u8) void {
     const by = stepper(ed, g, valueSlot(y, 0, 1), @tagName(v.*), .{ .{ .tip = tip }, .{ .tip = tip } });
     v.* = cycle(T, v.*, by);
 }
 
-/// The `k`th of `n` values right of a generator row's label.
 fn valueSlot(y: i32, k: usize, n: usize) rl.Rectangle {
     return slotOf(PAD + LABEL_W, INNER_W - LABEL_W, y, k, n);
 }
@@ -1778,7 +1754,7 @@ fn cycle(comptime T: type, v: T, by: i32) T {
 
 const Step = struct { tip: [:0]const u8, live: bool = true };
 
-/// `- value +` across `r`, the minus then the plus: the step it was clicked by, if it was.
+/// `- value +` across `r`, the minus then the plus: the step it was clicked by, `SHIFT_STEP` times over with Shift held.
 fn stepper(ed: *Editor, g: *game.Game, r: rl.Rectangle, value: [:0]const u8, steps: [2]Step) i32 {
     const x: i32 = @intFromFloat(r.x);
     const y: i32 = @intFromFloat(r.y);
@@ -1941,7 +1917,6 @@ fn drawGraph(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     }
 }
 
-/// The node's sketch, a pixel or two a cell; drawn anew only when the node changed.
 fn thumb(ed: *Editor, n: usize) ?rl.Texture2D {
     if (!ed.thumb_ok.isSet(n)) {
         ed.world.node[n].sketch(&ed.thumb_lv);
@@ -2037,7 +2012,6 @@ fn modalBody(ed: *const Editor) i32 {
     };
 }
 
-/// The `k`th of a modal's buttons leftward from the one at `bx`.
 fn modalButton(bx: i32, y: i32, k: i32) rl.Rectangle {
     return row(bx - (MODAL_BTN_W + GAP) * k, y, MODAL_BTN_W);
 }

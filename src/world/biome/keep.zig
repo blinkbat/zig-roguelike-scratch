@@ -12,8 +12,9 @@ const P = mathx.P;
 pub const TOWER_MAX: u8 = 6;
 pub const MOAT_MAX: u8 = 4;
 pub const SIZE_MIN = [2]u8{ 24, 18 };
+pub const SIZE_MAX = [2]u8{ @intCast(grid.W - 2 * (MOAT_MAX + BERM + towerReach(TOWER_MAX))), @intCast(grid.H - 2 * (MOAT_MAX + BERM + towerReach(TOWER_MAX))) };
 pub const BARRELS_MAX: u8 = 24;
-/// Cells between the spots along the keep's top wall a torch may hang, and of all a node's torches, the most it hangs.
+/// Cells between the spots along the keep's top wall a torch may hang.
 const TORCH_EVERY: i32 = 3;
 const TORCHES_MOST = grid.MAX_TORCHES / 2;
 const CURTAIN: i32 = 2;
@@ -22,6 +23,7 @@ const GATE_W: i32 = 3;
 const KEEP_OF: f32 = 0.5;
 const ROOM_LEAST: i32 = 4;
 const BERM: i32 = 2;
+const TOWER_WALL: i32 = 1;
 /// Cells between the well and the courtyard's walls or the keep.
 const WELL_GAP: i32 = 2;
 
@@ -38,8 +40,7 @@ pub const Params = struct {
 
     pub fn fit(p: Params) Params {
         var q = p;
-        const room = 2 * (MOAT_MAX + BERM + TOWER_MAX + 1);
-        q.size = .{ std.math.clamp(p.size[0], SIZE_MIN[0], @as(u8, @intCast(grid.W - room))), std.math.clamp(p.size[1], SIZE_MIN[1], @as(u8, @intCast(grid.H - room))) };
+        q.size = .{ std.math.clamp(p.size[0], SIZE_MIN[0], SIZE_MAX[0]), std.math.clamp(p.size[1], SIZE_MIN[1], SIZE_MAX[1]) };
         q.towers = @min(p.towers, TOWER_MAX);
         q.moat = @min(p.moat, MOAT_MAX);
         q.torches = @min(p.torches, mathx.PERCENT);
@@ -62,9 +63,10 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const lo = curtain.lo;
     const hi = curtain.hi;
     const m: i32 = p.moat;
+    const berm = bermOf(p);
     if (m > 0) {
-        carve.box(lv, lo.sub(.{ .x = BERM + m, .y = BERM + m }), hi.add(.{ .x = BERM + m, .y = BERM + m }), .water);
-        carve.box(lv, lo.sub(.{ .x = BERM, .y = BERM }), hi.add(.{ .x = BERM, .y = BERM }), out);
+        carve.box(lv, lo.sub(.{ .x = berm + m, .y = berm + m }), hi.add(.{ .x = berm + m, .y = berm + m }), .water);
+        carve.box(lv, lo.sub(.{ .x = berm, .y = berm }), hi.add(.{ .x = berm, .y = berm }), out);
     }
     carve.box(lv, lo, hi, .wall);
     const yard_lo = lo.add(.{ .x = CURTAIN, .y = CURTAIN });
@@ -73,11 +75,11 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const t: f32 = @floatFromInt(p.towers);
     if (p.towers > 0) {
         for (towersOf(curtain)) |c| {
-            carve.disc(lv, c, t + 1, .wall, null);
+            carve.disc(lv, c, @floatFromInt(towerReach(p.towers)), .wall, null);
             carve.disc(lv, c, t - 0.5, .floor, null);
             const toward = P{ .x = std.math.sign(grid.MIDDLE.x - c.x), .y = std.math.sign(grid.MIDDLE.y - c.y) };
             var q = c;
-            for (0..@intCast(p.towers + CURTAIN + 1)) |_| {
+            for (0..@intCast(towerReach(p.towers) + CURTAIN)) |_| {
                 for ([_]P{ .{ .x = toward.x, .y = 0 }, .{ .x = 0, .y = toward.y } }) |d| {
                     q = q.add(d);
                     if (lv.at(q) == .wall) lv.set(q, .floor);
@@ -91,7 +93,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         const gate_at = if (across) P{ .x = if (side < 0) lo.x else hi.x - 1, .y = mid.y } else P{ .x = mid.x, .y = if (side < 0) lo.y else hi.y - 1 };
         const out_dir = if (across) P{ .x = side, .y = 0 } else P{ .x = 0, .y = side };
         const span = P{ .x = if (across) 0 else 1, .y = if (across) 1 else 0 };
-        var k: i32 = -CURTAIN - BERM - m;
+        var k: i32 = -CURTAIN - berm - m;
         while (k <= CURTAIN) : (k += 1) {
             var s: i32 = -@divTrunc(GATE_W, 2);
             while (s <= @divTrunc(GATE_W, 2)) : (s += 1) {
@@ -133,12 +135,19 @@ fn curtainOf(p: Params) grid.Box {
     return .{ .lo = lo, .hi = lo.add(.{ .x = w, .y = h }) };
 }
 
-/// Its four corner cells, where the towers stand.
+/// Cells from the curtain out to the moat: the berm runs round the towers' outside.
+fn bermOf(p: Params) i32 {
+    return BERM + towerReach(p.towers);
+}
+
+fn towerReach(towers: u8) i32 {
+    return if (towers > 0) @as(i32, towers) + TOWER_WALL else 0;
+}
+
 fn towersOf(b: grid.Box) [4]P {
     return .{ b.lo, .{ .x = b.hi.x - 1, .y = b.lo.y }, .{ .x = b.lo.x, .y = b.hi.y - 1 }, b.hi.sub(.{ .x = 1, .y = 1 }) };
 }
 
-/// The keep, in the middle of the courtyard.
 fn keepOf(p: Params) grid.Box {
     const mid = grid.MIDDLE;
     const kw: i32 = @intFromFloat(@as(f32, @floatFromInt(@as(i32, p.size[0]) - 2 * CURTAIN)) * KEEP_OF);
@@ -187,6 +196,26 @@ test "every corner tower opens onto the yard, however wide" {
     }
     std.debug.print("{d} corner towers: {d} shut off from the yard\n", .{ towers, sealed });
     try std.testing.expectEqual(@as(usize, 0), sealed);
+}
+
+test "a keep's ground is one stretch before joining, its berm running round the towers, at any towers and moat" {
+    var lv = grid.Level.blank();
+    var st: carve.Stretches = .{};
+    var keeps: usize = 0;
+    var cut: usize = 0;
+    for (0..TOWER_MAX + 1) |t| {
+        for (0..MOAT_MAX + 1) |m| {
+            for ([_][2]u8{ SIZE_MIN, (Params{}).size, SIZE_MAX }) |size| {
+                const p = (Params{ .towers = @intCast(t), .moat = @intCast(m), .size = size }).fit();
+                var rng = mathx.Rng.init(t * 31 + m);
+                shape(&lv, &rng, 0, p);
+                keeps += 1;
+                if (st.label(&lv) != 1) cut += 1;
+            }
+        }
+    }
+    std.debug.print("{d} keeps: {d} cut into more than one stretch\n", .{ keeps, cut });
+    try std.testing.expectEqual(@as(usize, 0), cut);
 }
 
 test "a keep stands walled, its gates open through the curtain and over the moat" {

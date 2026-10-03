@@ -31,7 +31,6 @@ pub const MAKEUP_MAX: usize = 5;
 pub const MAKEUPS_MAX: usize = 8;
 pub const WEIGHT_MIN: u8 = 1;
 pub const WEIGHT_MAX: u8 = 9;
-/// A new member's kind, and what one of no foe kind becomes.
 pub const FIRST = actor.FOES[0];
 pub const REACH_MIN: i32 = 1;
 pub const REACH_MAX: i32 = 4;
@@ -47,7 +46,6 @@ comptime {
     std.debug.assert((Spec{}).valid());
 }
 
-/// One pack: its lead, then the rest, and how often it is drawn against the others.
 pub const Makeup = struct {
     kind: [MAKEUP_MAX]actor.Kind = @splat(FIRST),
     n: usize = 1,
@@ -71,7 +69,6 @@ pub const Makeup = struct {
         return self.n < MAKEUP_MAX;
     }
 
-    /// The lead stays.
     pub fn canShrink(self: *const Makeup) bool {
         return self.n > 1;
     }
@@ -89,7 +86,6 @@ pub const Makeup = struct {
         return true;
     }
 
-    /// The `i`th member becomes the next foe kind, round to the first.
     pub fn turn(self: *Makeup, i: usize) void {
         const at = std.mem.indexOfScalar(actor.Kind, &actor.FOES, self.kind[i]) orelse actor.FOES.len - 1;
         self.kind[i] = actor.FOES[mathx.wrap(at, 1, actor.FOES.len)];
@@ -102,7 +98,6 @@ const DEFAULT_MAKEUPS = blk: {
     break :blk ms;
 };
 
-/// The foes a rolled floor is given: how many packs, of which makeups, and how they stand.
 pub const Spec = struct {
     packs: usize = PER_FLOOR,
     /// Each kind any makeup holds has at least this many, while packs are left to place.
@@ -124,12 +119,10 @@ pub const Spec = struct {
         return self.makeup_n < MAKEUPS_MAX;
     }
 
-    /// The last makeup stays.
     pub fn canDrop(self: *const Spec) bool {
         return self.makeup_n > 1;
     }
 
-    /// A lone foe of the first kind, drawn as often as one.
     pub fn addMakeup(self: *Spec) bool {
         if (!self.canAdd()) return false;
         self.makeup[self.makeup_n] = .{};
@@ -144,7 +137,6 @@ pub const Spec = struct {
         return true;
     }
 
-    /// Every field into its range; a makeup of foes alone, at least one of them, at least one makeup.
     pub fn fit(s: Spec) Spec {
         var t = s;
         t.packs = @min(s.packs, PACKS_MAX);
@@ -163,7 +155,6 @@ pub const Spec = struct {
         return t;
     }
 
-    /// As `fit` leaves it.
     pub fn valid(s: *const Spec) bool {
         return std.meta.eql(s.fit(), s.*);
     }
@@ -176,7 +167,6 @@ pub const Spec = struct {
         return n;
     }
 
-    /// By weight, among the makeups holding `k`, or all of them.
     fn pick(self: *const Spec, rng: *mathx.Rng, k: ?actor.Kind) *const Makeup {
         var total: u32 = 0;
         for (self.makeups()) |*m| {

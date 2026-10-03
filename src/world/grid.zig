@@ -45,9 +45,11 @@ pub const Tile = enum(u8) {
     grave,
     /// Tall wheat: a step goes in, sight does not go through.
     crop,
-    /// Low: no step goes in, sight and an arrow go over.
     tiny_shrub,
     boulder,
+    /// Decor: a step goes in, sight and an arrow go through.
+    tall_grass,
+    shrooms,
 
     pub fn solid(t: Tile) bool {
         return TERRAIN.get(t).solid;
@@ -67,7 +69,6 @@ pub const Tile = enum(u8) {
         return TERRAIN.get(t).liquid;
     }
 
-    /// Its letter in a world file's rows and a set piece's art.
     pub fn letter(t: Tile) u8 {
         return switch (t) {
             .wall => '#',
@@ -92,6 +93,8 @@ pub const Tile = enum(u8) {
             .crop => 'w',
             .tiny_shrub => '\'',
             .boulder => 'o',
+            .tall_grass => 'y',
+            .shrooms => 'm',
         };
     }
 
@@ -103,7 +106,7 @@ pub const Tile = enum(u8) {
     }
 };
 
-/// Floor with a barrel on it, in a world file's rows and a set piece's art.
+/// Floor with a barrel on it.
 pub const BARREL_LETTER = '0';
 
 comptime {
@@ -120,12 +123,14 @@ const OPEN = Terrain{ .solid = false, .blind = false };
 const SHUT = Terrain{ .solid = true, .blind = true };
 const MOAT = Terrain{ .solid = true, .blind = false };
 const LIQUID = Terrain{ .solid = true, .blind = false, .liquid = true };
+const DECOR = Terrain{ .solid = false, .blind = false, .ground = .grass };
+const TALL_PROP = Terrain{ .solid = true, .blind = true, .ground = .grass };
 
 const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .wall = SHUT,
     .floor = OPEN,
     .grass = OPEN,
-    .shrub = .{ .solid = true, .blind = true, .ground = .grass },
+    .shrub = TALL_PROP,
     .rock = SHUT,
     .dirt = OPEN,
     .sand = OPEN,
@@ -142,8 +147,10 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .ice = OPEN,
     .grave = .{ .solid = true, .blind = false, .ground = .grass },
     .crop = .{ .solid = false, .blind = true },
-    .tiny_shrub = .{ .solid = true, .blind = false, .ground = .grass },
-    .boulder = .{ .solid = true, .blind = true, .ground = .grass },
+    .tiny_shrub = DECOR,
+    .boulder = TALL_PROP,
+    .tall_grass = DECOR,
+    .shrooms = DECOR,
 });
 
 /// Stamped by `gen.shapeWalls`, a room's corners then by `gen.outlineRoom`; recomputed only by the generator itself.
@@ -188,7 +195,7 @@ pub const Level = struct {
     barrel: [CELLS]bool,
     /// 1-based into the map's doors; `NO_DOOR` is none.
     door: [CELLS]u8,
-    /// Caustic gas, Brogue's volume: `world/gas.zig` spreads it.
+    /// Caustic gas, Brogue's volume.
     gas: [CELLS]u16,
     /// Walls with a torch on their face.
     torch: [MAX_TORCHES]P,
@@ -245,7 +252,6 @@ pub const Level = struct {
         return @min(@min(p.x, W - 1 - p.x), @min(p.y, H - 1 - p.y));
     }
 
-    /// The first cell a step can stand on, in reading order.
     pub fn firstOpen(self: *const Level) ?P {
         for (self.tile, 0..) |t, i| {
             if (!t.solid()) return of(i);
@@ -273,7 +279,6 @@ pub const Level = struct {
         return .{ .x = @mod(n, W), .y = @divFloor(n, W) };
     }
 
-    /// Outside the map reads as wall, so no caller needs a bounds check.
     pub fn at(self: *const Level, p: P) Tile {
         return cellOr(Tile, &self.tile, p, .wall);
     }
@@ -309,13 +314,11 @@ pub const Level = struct {
         return true;
     }
 
-    /// The door's index into its map's doors.
     pub fn doorAt(self: *const Level, p: P) ?usize {
         const d = cellOr(u8, &self.door, p, NO_DOOR);
         return if (d == NO_DOOR) null else d - 1;
     }
 
-    /// Opens the cell it hangs in.
     pub fn putDoor(self: *Level, p: P, i: usize) void {
         if (!inside(p)) return;
         const k = idx(p);
@@ -341,7 +344,6 @@ pub const Level = struct {
         return self.who(p) != NO_ONE or self.hasBarrel(p);
     }
 
-    /// Open, and no one and no barrel in it.
     pub fn vacant(self: *const Level, p: P) bool {
         return self.walkable(p) and !self.taken(p);
     }
@@ -372,7 +374,7 @@ pub const Level = struct {
         return inside(p) and !self.at(p).solid();
     }
 
-    /// Terrain only. A diagonal may not cut the corner of a wall on either side of it.
+    /// Terrain only.
     pub fn passOk(self: *const Level, from: P, d: mathx.Dir) bool {
         const to = from.add(d.delta());
         if (!self.walkable(to)) return false;
@@ -406,7 +408,6 @@ pub fn nearest(from: P, set: anytype) ?P {
     return best;
 }
 
-/// From `lo` up to `hi`, `by` cells bigger each way, on the map.
 pub fn grown(lo: P, hi: P, by: i32) [2]P {
     return .{
         .{ .x = @max(0, lo.x - by), .y = @max(0, lo.y - by) },
@@ -414,7 +415,7 @@ pub fn grown(lo: P, hi: P, by: i32) [2]P {
     };
 }
 
-/// The cells from `lo` up to `hi`.
+/// `hi` exclusive.
 pub const Box = struct {
     lo: P,
     hi: P,
@@ -423,12 +424,11 @@ pub const Box = struct {
         return .{ .lo = lo, .hi = lo.add(.{ .x = w, .y = h }) };
     }
 
-    /// The map, `m` cells in from its edge all round.
     pub fn inMap(m: i32) Box {
         return .{ .lo = .{ .x = m, .y = m }, .hi = .{ .x = W - m, .y = H - m } };
     }
 
-    /// One of its cells at random, x drawn before y.
+    /// x is drawn before y.
     pub fn roll(b: Box, rng: *mathx.Rng) P {
         const x = rng.range(b.lo.x, b.hi.x - 1);
         return .{ .x = x, .y = rng.range(b.lo.y, b.hi.y - 1) };
@@ -463,13 +463,12 @@ pub const Box = struct {
         return b.lo.x - pad < o.hi.x and b.hi.x + pad > o.lo.x and b.lo.y - pad < o.hi.y and b.hi.y + pad > o.lo.y;
     }
 
-    /// In it, on its outline.
     pub fn onEdge(b: Box, p: P) bool {
         return b.holds(p) and (p.x == b.lo.x or p.y == b.lo.y or p.x == b.hi.x - 1 or p.y == b.hi.y - 1);
     }
 };
 
-/// Every cell from `lo` up to `hi`, row by row.
+/// `hi` exclusive, row by row.
 pub const Cells = struct {
     lo: P,
     hi: P,
@@ -510,7 +509,7 @@ pub fn distances(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32
     return flood.tail;
 }
 
-/// Breadth first from a cell over the terrain, one cell at a time, nearest first; `dist` fills as it goes.
+/// `dist` fills as it goes.
 pub const Flood = struct {
     lv: *const Level,
     dist: *[CELLS]i32,
@@ -589,7 +588,7 @@ pub const Ray = struct {
     }
 };
 
-/// No wall strictly between the two. The target's own cell may be opaque.
+/// The target's own cell may be opaque.
 pub fn clearLine(lv: *const Level, from: P, to: P) bool {
     return lineOk(lv, from, to, false);
 }

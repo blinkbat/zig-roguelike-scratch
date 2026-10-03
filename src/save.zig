@@ -14,13 +14,12 @@ const MAGIC = "roguelike-save\n";
 const FILE_CAP: usize = 64 << 20;
 const PATH_FMT = DIR ++ "/slot{d}" ++ EXT;
 const PATH_MAX: usize = std.fmt.count(PATH_FMT, .{SLOTS});
-/// Seconds between saves while turns are taken; the last turn's is written once they stop.
 const GAP_S: f32 = 1;
 
 const Seed = @FieldType(game.Game, "seed");
 const Node = @FieldType(game.Game, "node");
 const Visited = @FieldType(game.Game, "visited");
-/// What follows the visited nodes, in this order: the node being played and the run round it.
+/// Written after the visited nodes, in this order.
 const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock" };
 const TAIL_TYPES = blk: {
     var ts: [TAIL_FIELDS.len]type = undefined;
@@ -33,7 +32,6 @@ const TAIL = blk: {
     break :blk n;
 };
 
-/// What the slot list shows of a run, read without the rest of it.
 pub const Summary = struct {
     name: hero.Name,
     hp: i32,
@@ -158,7 +156,6 @@ fn read(bytes: []const u8, g: *game.Game, world: *atlas.Atlas) Error!void {
     game.resumeRun(g);
 }
 
-/// The slot as the player and its file name count it.
 pub fn number(slot: usize) usize {
     return slot + 1;
 }
@@ -207,8 +204,7 @@ pub fn free(list: *const [SLOTS]Slot) ?usize {
     return null;
 }
 
-/// The run in one slot, written once a turn has changed it and the last write is `GAP_S` old. Must not move while
-/// a write is under way.
+/// Must not move while a write is under way.
 pub const Autosave = struct {
     slot: usize,
     bytes: std.ArrayList(u8),
@@ -226,7 +222,6 @@ pub const Autosave = struct {
         self.bytes.deinit();
     }
 
-    /// The run's last write on disk, and why it did not write if it did not.
     pub fn close(self: *Autosave, g: *game.Game) ?anyerror {
         self.flush(g);
         self.deinit();
@@ -240,7 +235,6 @@ pub const Autosave = struct {
         self.flush(g);
     }
 
-    /// A write that failed is written again.
     pub fn flush(self: *Autosave, g: *game.Game) void {
         self.wait();
         if (self.failed) |e| {
@@ -268,14 +262,13 @@ pub const Autosave = struct {
         };
     }
 
-    /// Until the write under way, if one is, is on disk.
     pub fn wait(self: *Autosave) void {
         const t = self.writer orelse return;
         t.join();
         self.writer = null;
     }
 
-    /// The run is lost, and its save with it: a slot that will not delete is emptied of a run that would load.
+    /// A slot that will not delete is emptied, so it holds no run that would load.
     pub fn end(self: *Autosave, g: *game.Game) void {
         self.wait();
         remove(self.slot) catch |e| {

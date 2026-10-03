@@ -219,7 +219,6 @@ pub const Fx = struct {
         return false;
     }
 
-    /// Or its flash is still up.
     pub fn holds(self: *const Fx, slot: usize) bool {
         return self.flash[slot] > 0 or self.pending(slot);
     }
@@ -393,7 +392,7 @@ test "a blow flashes its body for a beat and sprays blood a fraction of a cell, 
         if (flash_gone == null and fx.flashOf(3) == 0) flash_gone = t;
         for (fx.motes) |m| {
             if (m.life <= 0 or m.add) continue;
-            reach = @max(reach, @sqrt((m.p[0] - 20.5) * (m.p[0] - 20.5) + (m.p[1] - 20.5) * (m.p[1] - 20.5)));
+            reach = @max(reach, mathx.len(m.p[0] - 20.5, m.p[1] - 20.5));
         }
         if (@abs(t - 0.7) < dt * 0.5) {
             for (fx.motes) |m| {
@@ -461,10 +460,10 @@ test "a blow from nowhere sprays all round, not in one heap" {
         const dx = m.p[0] - b.at[0];
         const dy = m.p[1] - b.at[1];
         sum = .{ sum[0] + dx, sum[1] + dy };
-        reach = @max(reach, @sqrt(dx * dx + dy * dy));
+        reach = @max(reach, mathx.len(dx, dy));
         n += 1;
     }
-    const drift = @sqrt(sum[0] * sum[0] + sum[1] * sum[1]) / n;
+    const drift = mathx.len(sum[0], sum[1]) / n;
     std.debug.print("a spray from nowhere: {d} stains out to {d:.2} cells, their middle {d:.2} cells off the blow\n", .{ n, reach, drift });
     try std.testing.expectEqual(@as(f32, @floatFromInt(sprayOf(.blood).kill)), n);
     try std.testing.expect(reach > 0.15);

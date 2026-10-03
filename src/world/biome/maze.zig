@@ -11,7 +11,6 @@ pub const SIZE_MIN: u8 = 8;
 pub const SIZE_MAX: u8 = 20;
 pub const ROOMS_MAX: u8 = 48;
 const TRIES: usize = 2000;
-/// A doorway's width between two joined rooms.
 const DOOR_W: i32 = 3;
 const W_BIT: u4 = 1;
 const E_BIT: u4 = 2;
@@ -25,7 +24,6 @@ pub const Style = enum {
     lava,
     ice,
 
-    /// Walled and floored, its ways straight.
     fn built(s: Style) bool {
         return switch (s) {
             .tombs, .sewers => true,
@@ -34,7 +32,6 @@ pub const Style = enum {
     }
 };
 
-/// How much a natural maze's ways wander.
 const CAVE_WANDER: f32 = 0.6;
 
 pub const Params = struct {
@@ -46,7 +43,11 @@ pub const Params = struct {
     merge: u16 = 500,
 
     pub fn fit(p: Params) Params {
-        return .{ .style = p.style, .rooms = std.math.clamp(p.rooms, 1, ROOMS_MAX), .size = std.math.clamp(p.size, SIZE_MIN, SIZE_MAX), .merge = @min(p.merge, mathx.MILLE) };
+        var q = p;
+        q.rooms = std.math.clamp(p.rooms, 1, ROOMS_MAX);
+        q.size = std.math.clamp(p.size, SIZE_MIN, SIZE_MAX);
+        q.merge = @min(p.merge, mathx.MILLE);
+        return q;
     }
 };
 
@@ -132,7 +133,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     }
 }
 
-/// One room in its box, opening on the sides its mask names: the cell beyond each opening is the next room's.
+/// The cell beyond each opening is the next room's.
 fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal: carve.Palette, lo: P, size: i32, mask: u4) void {
     const mid = lo.add(.{ .x = @divTrunc(size, 2), .y = @divTrunc(size, 2) });
     const in_lo = lo.add(.{ .x = 1, .y = 1 });
@@ -174,10 +175,40 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
                 lv.set(q, if (@abs(along) <= 1) .bridge else .water);
             }
         },
-        .lava => if (rng.chance(0.6)) carve.disc(lv, mid.add(.{ .x = rng.range(-2, 2), .y = rng.range(-2, 2) }), 1.6, .lava, null),
-        .ice => carve.disc(lv, mid, @as(f32, @floatFromInt(size)) / 5, .snow, null),
+        .lava => if (rng.chance(0.6)) pool(lv, mid.add(.{ .x = rng.range(-2, 2), .y = rng.range(-2, 2) })),
         .caves => {},
+        .ice => carve.disc(lv, mid, @as(f32, @floatFromInt(size)) / 5, .snow, null),
     }
+}
+
+const POOL_R: f32 = 1.6;
+
+fn pool(lv: *grid.Level, c: P) void {
+    var st: carve.Stretches = .{};
+    const before = st.label(lv);
+    const was = lv.tile;
+    carve.disc(lv, c, POOL_R, .lava, null);
+    if (st.label(lv) > before) lv.tile = was;
+}
+
+test "a lava maze's pools never part ground its ways join" {
+    var lv = grid.Level.blank();
+    var st: carve.Stretches = .{};
+    var mazes: usize = 0;
+    var parted: usize = 0;
+    for ([_]u8{ SIZE_MIN, (Params{}).size, SIZE_MAX }) |size| {
+        for (0..100) |i| {
+            var rng = mathx.Rng.init(i);
+            shape(&lv, &rng, i, (Params{ .style = .lava, .size = size }).fit());
+            const with = st.label(&lv);
+            for (&lv.tile) |*t| {
+                if (t.* == .lava) t.* = .floor;
+            }
+            mazes += 1;
+            if (with > st.label(&lv)) parted += 1;
+        }
+    }
+    std.debug.print("{d} lava mazes: {d} with ground a pool parts\n", .{ mazes, parted });    try std.testing.expectEqual(@as(usize, 0), parted);
 }
 
 test "a maze sets the rooms asked, joined, and merging adds loops" {

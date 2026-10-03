@@ -3,8 +3,7 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Path of Exile's topology graphs; the layouts are Grim Tangle, Red Vale, Keth, Manor Ramparts, the Crossroads,
-// Mawdun Quarry, Jungle Ruins and Dried Lake.
+// Path of Exile's topology graphs; the layouts are Grim Tangle, Red Vale, Keth, Manor Ramparts, the Crossroads, Mawdun Quarry, Jungle Ruins and Dried Lake.
 
 const P = mathx.P;
 
@@ -36,6 +35,7 @@ pub const Params = struct {
     /// Side paths off to dead-end clearings.
     sides: u8 = 3,
     litter: carve.Litter = .{},
+    decor: carve.Decor = .{},
 
     pub fn fit(p: Params) Params {
         var q = p;
@@ -43,6 +43,7 @@ pub const Params = struct {
         q.path = std.math.clamp(p.path, 1, PATH_MAX);
         q.sides = @min(p.sides, SIDES_MAX);
         q.litter = p.litter.fit();
+        q.decor = p.decor.fit();
         return q;
     }
 };
@@ -72,7 +73,6 @@ fn graphOf(l: Layout) Graph {
     };
 }
 
-/// The most spots any layout has; every edge joins two of its own.
 const NODES_MAX: usize = blk: {
     var most: usize = 0;
     for (std.enums.values(Layout)) |l| {
@@ -116,6 +116,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         clearing(lv, noise, to, @as(f32, @floatFromInt(p.clearing)) * 0.6, FRAY, pal.open);
     }
     p.litter.strew(lv, rng);
+    p.decor.strew(lv, rng, seed);
 }
 
 fn clearing(lv: *grid.Level, noise: carve.Noise, c: P, r: f32, fray: f32, open: grid.Tile) void {
