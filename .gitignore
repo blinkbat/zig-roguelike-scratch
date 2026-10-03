@@ -5,3 +5,4 @@ zig-out-dev/
 shots/
 *.exe
 *.pdb
+saves/
