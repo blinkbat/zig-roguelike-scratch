@@ -11,9 +11,10 @@ const POCKET: usize = 16;
 const JOIN_PASSES: usize = 160;
 const NONE = std.math.maxInt(u16);
 const NO_CELL = std.math.maxInt(u32);
-/// A river's turn a step, at most, in radians.
+/// A meander's bend changes by up to half this a step, in radians, at full wander.
 const MEANDER: f32 = 0.55;
-const RIVER_STEPS: usize = 4 * (grid.W + grid.H);
+/// The most steps a meander takes.
+const MEANDER_STEPS: usize = 4 * (grid.W + grid.H);
 
 /// Smooth value noise in 0..1, summed over octaves; a seed is a field.
 pub const Noise = struct {
@@ -154,7 +155,12 @@ fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, 
 
 /// `t` round `c` off the rim, its edge frayed: in where a cell's distance over `r` is under `lo + span` times the noise.
 pub fn blob(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile) void {
-    var cells = grid.Cells.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span))));
+    blobIn(lv, noise, c, r, scale, lo, span, t, grid.Box.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span)))));
+}
+
+/// `blob`, cut to `within`.
+pub fn blobIn(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile, within: grid.Box) void {
+    var cells = within.cells();
     while (cells.next()) |q| {
         if (grid.Level.onRim(q)) continue;
         if (mathx.distEuclid(q, c) / r < lo + span * noise.at(q, scale, 2)) lv.set(q, t);
@@ -166,8 +172,8 @@ pub fn field(lv: *grid.Level, pal: Palette) void {
     rim(lv, pal.solid);
 }
 
-pub fn box(lv: *grid.Level, lo: P, hi: P, t: grid.Tile) void {
-    var cells = grid.Cells.of(lo, hi);
+pub fn box(lv: *grid.Level, b: grid.Box, t: grid.Tile) void {
+    var cells = b.cells();
     while (cells.next()) |q| lv.set(q, t);
 }
 
@@ -201,7 +207,27 @@ pub const Palette = struct {
     pub const BUILT = Palette{ .open = .floor, .solid = .wall, .path = .floor };
     pub const CAVE = Palette{ .open = .dirt, .solid = .rock, .path = .dirt };
     pub const WILD = Palette{ .open = .grass, .solid = .shrub, .path = .grass };
+
+    /// Its small doorless pockets filled with its solid.
+    pub fn pocketed(p: Palette) Palette {
+        var q = p;
+        q.pocket = p.solid;
+        return q;
+    }
 };
+
+/// Opens the ring round `b`, so what stands in it never gives onto a thicket or rock that seals it in, or is filled as a pocket.
+pub fn clearRound(lv: *grid.Level, b: grid.Box, pal: Palette) void {
+    var cells = b.grown(1).cells();
+    while (cells.next()) |q| {
+        if (closes(lv.at(q), pal) and !b.holds(q) and !grid.Level.onRim(q)) lv.set(q, pal.open);
+    }
+}
+
+/// The base's own solid, or what stands on ground: what `clearRound` opens.
+pub fn closes(t: grid.Tile, pal: Palette) bool {
+    return t == pal.solid or (t.solid() and t.ground() != null);
+}
 
 /// Every stretch of open ground joined to the biggest by a bending trail that bridges water, lava and chasms.
 pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette) void {
@@ -293,7 +319,7 @@ const InStretch = struct {
     r: u16,
 
     pub fn has(s: InStretch, i: usize) bool {
-        return s.st.region[i] == s.r;
+        return s.st.region[i] == s.r and !grid.Level.onRim(grid.Level.of(i));
     }
 };
 
@@ -383,7 +409,7 @@ pub const Meander = struct {
         const dx = self.tx - self.x;
         const dy = self.ty - self.y;
         self.steps += 1;
-        if (dx * dx + dy * dy < 1 or self.steps >= RIVER_STEPS) {
+        if (dx * dx + dy * dy < 1 or self.steps >= MEANDER_STEPS) {
             self.done = true;
             return c;
         }
@@ -397,25 +423,41 @@ pub const Meander = struct {
 
 /// The cells a river's middle steps through, off the rim, to cross it at.
 pub const Bed = struct {
-    cell: [RIVER_STEPS]P = undefined,
+    cell: [MEANDER_STEPS]P = undefined,
     n: usize = 0,
 
     fn add(self: *Bed, c: P) void {
-        if (self.n == RIVER_STEPS or grid.Level.onRim(c)) return;
+        if (self.n == MEANDER_STEPS or grid.Level.onRim(c)) return;
         self.cell[self.n] = c;
         self.n += 1;
     }
 };
 
-/// From edge to edge: `fill_with` `width` across, `bank` a cell either side over whatever is not liquid.
-pub fn river(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: f32, fill_with: grid.Tile, bank: ?grid.Tile, bed: ?*Bed) void {
-    var m = Meander.init(a, b, 1);
-    while (m.next(rng)) |c| {
-        if (bed) |k| k.add(c);
-        if (bank) |bk| disc(lv, c, bankReach(width), bk, notLiquid);
-        discAll(lv, c, width / 2, fill_with);
+/// A river's middle from edge to edge, the rim too.
+pub const Flow = struct {
+    cell: [MEANDER_STEPS]P = undefined,
+    n: usize = 0,
+
+    pub fn of(rng: *mathx.Rng, a: P, b: P, bed: ?*Bed) Flow {
+        var f = Flow{};
+        var m = Meander.init(a, b, 1);
+        while (m.next(rng)) |c| {
+            if (bed) |k| k.add(c);
+            f.cell[f.n] = c;
+            f.n += 1;
+        }
+        return f;
     }
-}
+
+    /// A cell either side of its fill, over whatever is not liquid.
+    pub fn bank(f: *const Flow, lv: *grid.Level, width: f32, t: grid.Tile) void {
+        for (f.cell[0..f.n]) |c| disc(lv, c, bankReach(width), t, notLiquid);
+    }
+
+    pub fn fill(f: *const Flow, lv: *grid.Level, width: f32, t: grid.Tile) void {
+        for (f.cell[0..f.n]) |c| discAll(lv, c, width / 2, t);
+    }
+};
 
 pub fn bankReach(width: f32) f32 {
     return width / 2 + 1;
@@ -497,6 +539,14 @@ pub const Decor = struct {
         strewn(lv, rng, d.shrooms, .shrooms);
     }
 };
+
+/// `p` with its litter and decor, where it has them, in range.
+pub fn fitDress(p: anytype) @TypeOf(p) {
+    var q = p;
+    if (@hasField(@TypeOf(p), "litter")) q.litter = p.litter.fit();
+    if (@hasField(@TypeOf(p), "decor")) q.decor = p.decor.fit();
+    return q;
+}
 
 /// Litter, then decor, for a base whose `Params` has them.
 pub fn dress(p: anytype, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
@@ -614,8 +664,7 @@ test "noise is smooth, in range, and a seed is a field" {
 test "a small island is bridged, not filled as a pocket" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x15E);
-    var pal = Palette.WILD;
-    pal.pocket = pal.solid;
+    const pal = Palette.WILD.pocketed();
     field(&lv, pal);
     disc(&lv, grid.MIDDLE, 4, .water, null);
     disc(&lv, grid.MIDDLE, 1, .grass, null);
@@ -629,7 +678,9 @@ test "a river runs edge to edge and parts the ground, and a join bridges it" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x21E);
     field(&lv, Palette.WILD);
-    river(&lv, &rng, .{ .x = 0, .y = 32 }, .{ .x = grid.W - 1, .y = 30 }, 3, .water, .shallows, null);
+    const f = Flow.of(&rng, .{ .x = 0, .y = 32 }, .{ .x = grid.W - 1, .y = 30 }, null);
+    f.bank(&lv, 3, .shallows);
+    f.fill(&lv, 3, .water);
     var st: Stretches = .{};
     const parted = st.label(&lv);
     connect(&lv, &rng, .{ .open = .grass, .solid = .shrub, .path = .dirt });

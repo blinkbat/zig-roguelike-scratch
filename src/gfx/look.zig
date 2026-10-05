@@ -61,9 +61,11 @@ pub const Sprites = struct {
     barrel: ?rl.Texture2D = null,
     tiles: std.EnumArray(grid.Tile, ?rl.Texture2D) = .initFill(null),
     wall: std.EnumArray(grid.WallShape, ?rl.Texture2D) = .initFill(null),
+    /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
+    skills: ?rl.Texture2D = null,
 
     pub fn load() Sprites {
-        var s = Sprites{ .barrel = texture(@embedFile("barrel.png")) };
+        var s = Sprites{ .barrel = texture(@embedFile("barrel.png")), .skills = skillIcons() };
         for (std.enums.values(actor.Kind)) |k| s.bodies.set(k, texture(BODY_PNGS.get(k) orelse continue));
         for (std.enums.values(grid.Tile)) |t| s.tiles.set(t, texture(TILE_PNGS.get(t) orelse continue));
         const sheet = rl.loadImageFromMemory(".png", WALLS_PNG) catch return s;
@@ -75,14 +77,8 @@ pub const Sprites = struct {
         return s;
     }
 
-    pub fn unload(self: Sprites) void {
-        inline for (std.meta.fields(Sprites)) |f| {
-            const v = @field(self, f.name);
-            const all: []const ?rl.Texture2D = if (f.type == ?rl.Texture2D) &.{v} else &v.values;
-            for (all) |s| {
-                if (s) |t| rl.unloadTexture(t);
-            }
-        }
+    pub fn unload(self: *Sprites) void {
+        unloadAll(self);
     }
 
     pub fn body(self: *const Sprites, k: actor.Kind) ?rl.Texture2D {
@@ -121,6 +117,7 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .slime_half = @embedFile("slime-half.png"),
     .slime_quarter = @embedFile("slime-quarter.png"),
     .bloat = @embedFile("bloat.png"),
+    .pib = @embedFile("pib.png"),
 });
 
 /// A wall's are cut from `WALLS_PNG` by its shape instead.
@@ -235,7 +232,7 @@ pub fn shader(fs: [:0]const u8) ?rl.Shader {
 }
 
 /// Every field but `shader` is the location of the GLSL uniform it is named for.
-pub fn uniforms(comptime T: type, s: rl.Shader) T {
+fn uniforms(comptime T: type, s: rl.Shader) T {
     var u: T = undefined;
     u.shader = s;
     inline for (std.meta.fields(T)) |f| {
@@ -243,6 +240,56 @@ pub fn uniforms(comptime T: type, s: rl.Shader) T {
         @field(u, f.name) = rl.getShaderLocation(s, f.name);
     }
     return u;
+}
+
+/// `fs` loaded with `uniforms` found in it; a field it declares no uniform for is a compile error.
+pub fn program(comptime T: type, comptime fs: [:0]const u8) ?T {
+    comptime {
+        @setEvalBranchQuota(100_000);
+        for (std.meta.fields(T)) |f| {
+            if (!std.mem.eql(u8, f.name, "shader") and !declares(fs, f.name)) @compileError("no uniform " ++ f.name ++ " in the shader for " ++ @typeName(T));
+        }
+    }
+    return uniforms(T, shader(fs) orelse return null);
+}
+
+fn declares(comptime fs: []const u8, comptime name: []const u8) bool {
+    var lines = std.mem.splitScalar(u8, fs, '\n');
+    while (lines.next()) |l| {
+        const line = std.mem.trim(u8, l, " \t\r");
+        if (!std.mem.startsWith(u8, line, "uniform ")) continue;
+        const end = std.mem.indexOfAny(u8, line, "[;") orelse continue;
+        const head = std.mem.trimRight(u8, line[0..end], " ");
+        const at = std.mem.lastIndexOfScalar(u8, head, ' ') orelse continue;
+        if (std.mem.eql(u8, head[at + 1 ..], name)) return true;
+    }
+    return false;
+}
+
+/// Each texture, render texture and shader `v` holds, a `program`'s too, unloaded and nulled.
+pub fn unloadAll(v: anytype) void {
+    inline for (std.meta.fields(@TypeOf(v.*))) |f| {
+        if (comptime @typeInfo(f.type) == .@"struct" and @hasField(f.type, "values") and @hasDecl(f.type, "Key")) {
+            for (&@field(v.*, f.name).values) |*held| {
+                if (held.*) |t| rl.unloadTexture(t);
+                held.* = null;
+            }
+            continue;
+        }
+        const Child = switch (@typeInfo(f.type)) {
+            .optional => |o| o.child,
+            else => void,
+        };
+        const program_ = @typeInfo(Child) == .@"struct" and @hasField(Child, "shader");
+        const resource = Child == rl.Texture2D or Child == rl.RenderTexture2D or Child == rl.Shader or program_;
+        if (resource) {
+            const held = &@field(v.*, f.name);
+            if (held.*) |r| {
+                if (Child == rl.Texture2D) rl.unloadTexture(r) else if (Child == rl.RenderTexture2D) rl.unloadRenderTexture(r) else if (Child == rl.Shader) rl.unloadShader(r) else rl.unloadShader(r.shader);
+            }
+            held.* = null;
+        }
+    }
 }
 
 pub fn rgb(hex: u24) rl.Color {
@@ -269,15 +316,14 @@ pub const TEXT = rgb(0xd8cdb4);
 pub const DIM = rgb(0x8c8672);
 pub const LIFE = rgb(0x9c2f2a);
 pub const LIFE_BG = fade(LIFE, 0.25);
+pub const MANA = rgb(0x326cb5);
+pub const MANA_BG = fade(MANA, 0.25);
+pub const FIRE = rgb(0xff8a32);
+pub const FIRE_CORE = rgb(0xffe6a0);
+pub const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
 pub const ARROW = rgb(0xe6dcb4);
 pub const VEIL = fade(BG, 0.72);
-
-/// At full light: the light map dims it. `ch` is its ASCII stand-in.
-pub fn tile(t: grid.Tile) Look {
-    const l = TILES.get(t);
-    return .{ .ch = l.ch, .fg = l.fg };
-}
 
 /// Its symbol, centred on `cx, cy`; its ASCII `ch` where the font has no atlas.
 pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32) void {
@@ -343,12 +389,32 @@ pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
 pub const COIN = GOLD;
 
+/// What a picture of the whole map marks a cell with over its tile, a door before a barrel.
+pub const Mark = enum {
+    door,
+    barrel,
+
+    pub fn of(lv: *const grid.Level, i: usize) ?Mark {
+        if (lv.door[i] != grid.NO_DOOR) return .door;
+        if (lv.barrel[i]) return .barrel;
+        return null;
+    }
+
+    pub fn look(m: Mark) Look {
+        return switch (m) {
+            .door => DOOR,
+            .barrel => BARREL,
+        };
+    }
+};
+
 pub fn body(k: actor.Kind) Look {
     return switch (k) {
         .archer => .{ .ch = '@', .fg = rgb(0x7cc86e) },
         .rat => .{ .ch = 'r', .fg = rgb(0xb07a4e) },
         .slime, .slime_half, .slime_quarter => .{ .ch = 's', .fg = rgb(0x6fae5a) },
         .bloat => .{ .ch = 'b', .fg = GAS },
+        .pib => .{ .ch = 'p', .fg = rgb(0xe89aa6) },
     };
 }
 
@@ -364,12 +430,14 @@ pub const ICHOR = rl.Color{ .r = GAS.r / 2, .g = GAS.g / 2, .b = GAS.b / 2, .a =
 const GORE_A: u8 = 220;
 /// The pinprick where a blow lands.
 pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
+pub const JUKE_TRAIL = rl.Color{ .r = 196, .g = 212, .b = 218, .a = 140 };
+pub const JUKE_DUST = rl.Color{ .r = 184, .g = 161, .b = 125, .a = 170 };
 
 pub const Gait = enum { hop, slide };
 
 pub fn gait(k: actor.Kind) Gait {
     return switch (k) {
-        .archer, .rat => .hop,
+        .archer, .rat, .pib => .hop,
         .slime, .slime_half, .slime_quarter, .bloat => .slide,
     };
 }
@@ -392,6 +460,8 @@ pub fn mini(t: grid.Tile, lit: bool) rl.Color {
 
 pub const AIM_REACH = fade(GOLD, 0.10);
 pub const AIM_PATH = fade(GOLD, 0.28);
+pub const COLD = rgb(0x8cddf5);
+pub const AIM_COLD = fade(COLD, 0.24);
 pub const RETICLE = rgb(0xe8c25a);
 pub const LEAN_OPEN = GOLD;
 pub const LEAN_FOE = FOE;
@@ -407,12 +477,104 @@ pub fn caret(d: mathx.Dir) u8 {
     };
 }
 
-pub fn skill(a: skillbar.Act) Look {
+fn skillLines(a: skillbar.Act) []const [4]f32 {
     return switch (a) {
-        .shoot => .{ .ch = '}', .fg = ARROW },
-        .wait => .{ .ch = 'z', .fg = DIM },
-        .secondary => .{ .ch = '2', .fg = GOLD },
+        .shoot => &.{
+            .{ 6, 26, 26, 6 },
+            .{ 16, 6, 26, 6 },
+            .{ 26, 6, 26, 16 },
+            .{ 5, 19, 12, 19 },
+            .{ 12, 19, 12, 26 },
+        },
+        .burning_arrow => &.{
+            .{ 13, 26, 27, 12 },
+            .{ 19, 12, 27, 12 },
+            .{ 27, 12, 27, 20 },
+            .{ 9, 23, 4, 18 },
+            .{ 4, 18, 4, 14 },
+            .{ 4, 14, 11, 5 },
+            .{ 11, 5, 10, 13 },
+            .{ 10, 13, 15, 10 },
+            .{ 15, 10, 17, 17 },
+            .{ 17, 17, 13, 22 },
+        },
+        .glacial_shot => &.{
+            .{ 5, 27, 25, 7 },
+            .{ 17, 7, 25, 7 },
+            .{ 25, 7, 25, 15 },
+            .{ 5, 6, 15, 16 },
+            .{ 5, 16, 15, 6 },
+            .{ 3, 11, 17, 11 },
+            .{ 10, 4, 10, 18 },
+        },
+        .juke => &.{
+            .{ 6, 7, 15, 16 },
+            .{ 15, 16, 6, 25 },
+            .{ 17, 7, 26, 16 },
+            .{ 26, 16, 17, 25 },
+        },
+        .wait => &.{
+            .{ 7, 5, 25, 5 },
+            .{ 7, 27, 25, 27 },
+            .{ 9, 5, 9, 10 },
+            .{ 9, 10, 23, 22 },
+            .{ 23, 22, 23, 27 },
+            .{ 23, 5, 23, 10 },
+            .{ 23, 10, 9, 22 },
+            .{ 9, 22, 9, 27 },
+        },
+        .secondary => &.{
+            .{ 6, 10, 26, 10 },
+            .{ 20, 4, 26, 10 },
+            .{ 26, 10, 20, 16 },
+            .{ 26, 22, 6, 22 },
+            .{ 12, 16, 6, 22 },
+            .{ 6, 22, 12, 28 },
+        },
     };
+}
+
+pub fn arrowInk(a: skillbar.Act) rl.Color {
+    return switch (a) {
+        .burning_arrow => FIRE,
+        .glacial_shot => COLD,
+        .shoot, .wait, .secondary, .juke => ARROW,
+    };
+}
+
+pub const SKILL_PX: i32 = 40;
+
+pub fn drawSkill(sprites: *const Sprites, a: skillbar.Act, x: i32, y: i32, alpha: f32) void {
+    const ink = fade(rl.Color.white, alpha);
+    const t = sprites.skills orelse return inkSkill(a, x, y, ink);
+    const i: i32 = @intFromEnum(a);
+    rl.drawTexturePro(t, rect(i * SKILL_PX, 0, SKILL_PX, SKILL_PX), rect(x, y, SKILL_PX, SKILL_PX), .{ .x = 0, .y = 0 }, 0, ink);
+}
+
+/// Needs a live GL context.
+fn skillIcons() ?rl.Texture2D {
+    const target = rl.loadRenderTexture(SKILL_PX * @as(i32, @intCast(skillbar.ACTS.len)), SKILL_PX) catch return null;
+    defer rl.unloadRenderTexture(target);
+    rl.beginTextureMode(target);
+    rl.clearBackground(rl.Color.blank);
+    for (skillbar.ACTS) |a| inkSkill(a, @as(i32, @intFromEnum(a)) * SKILL_PX, 0, rl.Color.white);
+    rl.endTextureMode();
+    var img = rl.loadImageFromTexture(target.texture) catch return null;
+    rl.imageFlipVertical(&img);
+    return Sprites.toTexture(img);
+}
+
+fn inkSkill(a: skillbar.Act, x: i32, y: i32, ink: rl.Color) void {
+    const scale = @as(f32, @floatFromInt(SKILL_PX)) / 32;
+    const ox: f32 = @floatFromInt(x);
+    const oy: f32 = @floatFromInt(y);
+    for (skillLines(a)) |line| {
+        const from = rl.Vector2{ .x = ox + line[0] * scale, .y = oy + line[1] * scale };
+        const to = rl.Vector2{ .x = ox + line[2] * scale, .y = oy + line[3] * scale };
+        rl.drawLineEx(from, to, 2 * scale, ink);
+        rl.drawCircleV(from, scale, ink);
+        rl.drawCircleV(to, scale, ink);
+    }
 }
 
 const PANEL = rgb(0x0e0d12);
@@ -455,13 +617,12 @@ test "every glyph is printable ascii" {
             return std.ascii.isPrint(c) and c != ' ';
         }
     }.f;
-    for (std.enums.values(grid.Tile)) |t| try std.testing.expect(inked(tile(t).ch));
+    for (std.enums.values(grid.Tile)) |t| try std.testing.expect(inked(TILES.get(t).ch));
     for (std.enums.values(actor.Kind)) |k| try std.testing.expect(inked(body(k).ch));
     try std.testing.expect(inked(TORCH.ch));
     try std.testing.expect(inked(BARREL.ch));
     try std.testing.expect(inked(DOOR.ch));
     try std.testing.expect(inked(CLEAR.ch));
-    for (skillbar.ACTS) |a| try std.testing.expect(inked(skill(a).ch));
 }
 
 test "every wall shape's cell lies inside walls.png, and one past its edge is refused" {

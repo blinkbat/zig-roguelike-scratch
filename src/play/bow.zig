@@ -10,12 +10,22 @@ pub const DMG_LO: i32 = 3;
 pub const DMG_HI: i32 = 5;
 pub const VERB = "shoots";
 
+pub fn roll(rng: *mathx.Rng) i32 {
+    return rng.range(DMG_LO, DMG_HI);
+}
+
 pub const Hit = union(enum) { body: u16, barrel: P };
 
 pub const Flight = struct {
     path: [RANGE]P = undefined,
     len: usize = 0,
     struck: ?Hit = null,
+
+    /// The cell of what it struck.
+    pub fn impact(f: *const Flight) ?P {
+        if (f.struck == null) return null;
+        return f.path[f.len - 1];
+    }
 };
 
 /// The reticle's legal cells and the shot's legality are this one call; a line slips past corners sight does not, so every cell on it is lit.

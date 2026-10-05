@@ -34,7 +34,7 @@ pub const MAX_FEATURES: usize = 6;
 const FEATURE_SALT: u64 = 0xFEA7_0BE5;
 
 /// A base biome: `gen.around`'s rooms, or a module with `Params`, `shape` and `palette`.
-pub const Algo = enum { rooms, open, wilds, caves, cavern, strata, labyrinth, hall, maze, topology, terrain, keep, town, dunes, site };
+pub const Algo = std.meta.Tag(Floor);
 
 const BASES = .{
     .open = open,
@@ -53,7 +53,7 @@ const BASES = .{
     .site = site,
 };
 
-pub const Floor = union(Algo) {
+pub const Floor = union(enum) {
     rooms: gen.Params,
     open: open.Params,
     wilds: wilds.Params,
@@ -78,7 +78,7 @@ pub const Floor = union(Algo) {
 
     pub fn fit(f: Floor) Floor {
         return switch (f) {
-            inline else => |p, t| @unionInit(Floor, @tagName(t), p.fit()),
+            inline else => |p, t| @unionInit(Floor, @tagName(t), carve.fitDress(p.fit())),
         };
     }
 
@@ -111,7 +111,7 @@ pub const Floor = union(Algo) {
 
 
 /// Laid over a base, in order.
-pub const Kind = enum { river, lake, road, scatter, border, buildings, farms, setpiece };
+pub const Kind = std.meta.Tag(Feature);
 
 const FEATURES = .{
     .river = river,
@@ -124,7 +124,7 @@ const FEATURES = .{
     .setpiece = setpiece,
 };
 
-pub const Feature = union(Kind) {
+pub const Feature = union(enum) {
     river: river.Params,
     lake: lake.Params,
     road: road.Params,
@@ -163,7 +163,7 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     const pal = floor.palette();
     var rooms: ?*const Shaped = null;
     var shaped: Shaped = undefined;
-    switch (floor) {
+    switch (floor.fit()) {
         .rooms => |p| {
             _ = gen.around(lv, seed, doors, p);
             if (features.len == 0) return;
@@ -173,8 +173,8 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
         inline else => |p, t| {
             lv.* = grid.Level.blank();
             var rng = mathx.Rng.init(seed);
-            @field(BASES, @tagName(t)).shape(lv, &rng, seed, p.fit());
-            carve.dress(p.fit(), lv, &rng, seed);
+            @field(BASES, @tagName(t)).shape(lv, &rng, seed, p);
+            carve.dress(p, lv, &rng, seed);
             carve.openDoors(lv, doors, pal.open);
         },
     }
@@ -207,10 +207,10 @@ fn settle(lv: *grid.Level, rooms: ?*const Shaped) void {
     var kept: usize = 0;
     for (lv.torches()) |t| {
         if (lv.wallShape(t) != .top or !lv.walkable(lume.torchFloor(t))) continue;
-        lv.torch[kept] = t;
+        lv.torch.at[kept] = t;
         kept += 1;
     }
-    lv.torch_n = kept;
+    lv.torch.n = kept;
 }
 
 fn untouched(lv: *const grid.Level, was: *const [grid.CELLS]grid.Tile, p: P) bool {
@@ -274,7 +274,7 @@ test "every base, bare and under every feature, joins its ground, reaches its do
 
 test "a doorless floor rolled all solid still has ground to start on" {
     var lv: grid.Level = undefined;
-    const thick = [_]Feature{.{ .scatter = .{ .tile = .shrub, .on = .grass, .amount = 1000 } }};
+    const thick = [_]Feature{.{ .scatter = .{ .tile = .shrub, .on = .grass, .amount = scatter.AMOUNT_MAX } }};
     roll(&lv, 0xD0, &.{}, .{ .open = .{ .decor = .{ .tiny_shrubs = 0, .tall_grass = 0, .shrooms = 0 } } }, &thick);
     try std.testing.expect(lv.firstOpen() != null);
     try std.testing.expect(lv.walkable(grid.MIDDLE));
@@ -285,7 +285,7 @@ test "a set piece in a thicket opens onto the ground round it, so no join fills 
     var st: carve.Stretches = .{};
     const runs = 200;
     const p = (wilds.Params{}).fit();
-    for ([_]setpiece.Piece{ .tower, .shrine, .graveyard, .camp }) |pc| {
+    for (std.enums.values(setpiece.Piece)) |pc| {
         var shut: usize = 0;
         for (0..runs) |i| {
             const seed = 0x5E7 +% i *% 7919;
@@ -309,9 +309,96 @@ test "a set piece in a thicket opens onto the ground round it, so no join fills 
     }
 }
 
+test "a set piece in a thicket or in rock keeps its ground through the joins" {
+    var lv: grid.Level = undefined;
+    const runs = 200;
+    inline for (.{ wilds, caves }) |base| {
+        const p = (base.Params{}).fit();
+        const pal = base.palette(p);
+        for (std.enums.values(setpiece.Piece)) |pc| {
+            var lost: usize = 0;
+            for (0..runs) |i| {
+                const seed = 0x5E7 +% i *% 7919;
+                lv = grid.Level.blank();
+                var rng = mathx.Rng.init(seed);
+                base.shape(&lv, &rng, seed, p);
+                carve.dress(p, &lv, &rng, seed);
+                const art = setpiece.rows(pc);
+                const s = setpiece.size(art);
+                const at = grid.MIDDLE.sub(.{ .x = @divTrunc(s.x, 2), .y = @divTrunc(s.y, 2) });
+                setpiece.place(&lv, at, art, pal);
+                carve.seal(&lv, pal.solid);
+                carve.connect(&lv, &rng, pal);
+                var gone = false;
+                for (art, 0..) |line, y| {
+                    for (line, 0..) |c, x| {
+                        const q = at.add(.{ .x = @intCast(x), .y = @intCast(y) });
+                        const t = grid.Tile.ofLetter(c) orelse continue;
+                        if (!t.solid() and lv.at(q).solid()) gone = true;
+                    }
+                }
+                if (gone) lost += 1;
+            }
+            std.debug.print("{s} in {s}: {d} of {d} maps lost ground to the joins\n", .{ @tagName(pc), @typeName(base), lost, runs });
+            try std.testing.expectEqual(@as(usize, 0), lost);
+        }
+    }
+}
+
+test "a house in a thicket or in rock keeps its floor through the joins" {
+    var lv: grid.Level = undefined;
+    const runs = 200;
+    inline for (.{ wilds, caves, topology }) |base| {
+        const p = (base.Params{}).fit();
+        const pal = base.palette(p);
+        var lost: usize = 0;
+        for (0..runs) |i| {
+            const seed = 0x51ED +% i *% 7919;
+            lv = grid.Level.blank();
+            var rng = mathx.Rng.init(seed);
+            base.shape(&lv, &rng, seed, p);
+            carve.dress(p, &lv, &rng, seed);
+            buildings.apply(&lv, &rng, seed, pal, (buildings.Params{}).fit());
+            carve.seal(&lv, pal.solid);
+            const before = carve.count(&lv, .floor);
+            carve.connect(&lv, &rng, pal);
+            if (carve.count(&lv, .floor) < before) lost += 1;
+        }
+        std.debug.print("houses in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, runs });
+        try std.testing.expectEqual(@as(usize, 0), lost);
+    }
+}
+
+test "a small house or shrine walled in by an earlier feature keeps its floor through the joins" {
+    var lv: grid.Level = undefined;
+    const runs = 200;
+    const small = (buildings.Params{ .count = buildings.COUNT_MAX, .size = .{ 5, 6 } }).fit();
+    inline for (.{ wilds, caves }) |base| {
+        const p = (base.Params{}).fit();
+        const pal = base.palette(p);
+        var lost: usize = 0;
+        for (0..runs) |i| {
+            const seed = 0xB0DE +% i *% 7919;
+            lv = grid.Level.blank();
+            var rng = mathx.Rng.init(seed);
+            base.shape(&lv, &rng, seed, p);
+            carve.dress(p, &lv, &rng, seed);
+            if (base == wilds) border.apply(&lv, &rng, seed, pal, (border.Params{}).fit()) else buildings.apply(&lv, &rng, seed, pal, small);
+            buildings.apply(&lv, &rng, seed, pal, small);
+            setpiece.apply(&lv, &rng, seed, pal, (setpiece.Params{ .piece = .shrine, .count = setpiece.COUNT_MAX, .apart = 0 }).fit());
+            carve.seal(&lv, pal.solid);
+            const before = carve.count(&lv, .floor);
+            carve.connect(&lv, &rng, pal);
+            if (carve.count(&lv, .floor) < before) lost += 1;
+        }
+        std.debug.print("small houses and shrines after a feature in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, runs });
+        try std.testing.expectEqual(@as(usize, 0), lost);
+    }
+}
+
 test "a scatter over grass takes the decor standing on it too" {
     var lv: grid.Level = undefined;
-    const frozen = [_]Feature{.{ .scatter = .{ .tile = .snow, .on = .grass, .amount = 1000 } }};
+    const frozen = [_]Feature{.{ .scatter = .{ .tile = .snow, .on = .grass, .amount = scatter.AMOUNT_MAX } }};
     roll(&lv, 0xF0, &.{}, Floor.of(.open), &frozen);
     const decor = carve.count(&lv, .tall_grass) + carve.count(&lv, .tiny_shrub) + carve.count(&lv, .shrooms);
     std.debug.print("open ground but frozen: {d} decor left, {d} snow\n", .{ decor, carve.count(&lv, .snow) });

@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
+const carve = @import("carve.zig");
 const lume = @import("lume.zig");
 
 const P = mathx.P;
@@ -90,13 +91,10 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
     while (tries < ROOM_TRIES and f.room_n < pm.rooms) : (tries += 1) {
         const w = rng.range(pm.room_w[0], pm.room_w[1]);
         const h = rng.range(pm.room_h[0], pm.room_h[1]);
-        const at = P{
-            .x = rng.range(o.x + MARGIN, o.x + pm.size.x - MARGIN - w),
-            .y = rng.range(o.y + MARGIN, o.y + pm.size.y - MARGIN - h),
-        };
+        const at = (grid.Box{ .lo = o.add(.{ .x = MARGIN, .y = MARGIN }), .hi = o.add(pm.size).sub(.{ .x = MARGIN, .y = MARGIN }) }).rollFor(&rng, w, h);
         const r = Room.sized(at, w, h);
         if (!addRoom(&f, r)) continue;
-        carveRoom(lv, r);
+        carve.box(lv, r, .floor);
     }
     var i: usize = 1;
     while (i < f.room_n) : (i += 1) tunnel(lv, f.rooms[i - 1].centre(), f.rooms[i].centre(), &rng);
@@ -173,11 +171,6 @@ fn addRoom(f: *Floor, r: Room) bool {
     return true;
 }
 
-pub fn carveRoom(lv: *grid.Level, r: Room) void {
-    var cells = r.cells();
-    while (cells.next()) |p| lv.set(p, .floor);
-}
-
 fn tunnel(lv: *grid.Level, a: P, b: P, rng: *mathx.Rng) void {
     if (rng.chance(0.5)) {
         runX(lv, a.x, b.x, a.y);
@@ -220,7 +213,7 @@ const Reached = struct {
     dist: *const [grid.CELLS]i32,
 
     pub fn has(r: Reached, i: usize) bool {
-        return r.dist[i] >= 0;
+        return r.dist[i] >= 0 and !grid.Level.onRim(grid.Level.of(i));
     }
 };
 
@@ -307,7 +300,7 @@ test "the rim stays solid and the start is floor" {
 }
 
 fn room(lv: *grid.Level, x0: i32, y0: i32, x1: i32, y1: i32) void {
-    carveRoom(lv, .{ .lo = .{ .x = x0, .y = y0 }, .hi = .{ .x = x1 + 1, .y = y1 + 1 } });
+    carve.box(lv, .{ .lo = .{ .x = x0, .y = y0 }, .hi = .{ .x = x1 + 1, .y = y1 + 1 } }, .floor);
 }
 
 test "a room's four sides, its corners and the rock behind it" {
@@ -367,7 +360,7 @@ test "a corridor's walls run with it, and turn a block corner where another meet
 test "a room ringed by corridors keeps its top corners, and a wall with a corridor below it faces that corridor" {
     var lv = grid.Level.blank();
     const r = Room.sized(.{ .x = 8, .y = 3 }, 9, 6);
-    carveRoom(&lv, r);
+    carve.box(&lv, r, .floor);
     room(&lv, 1, 1, 24, 1);
     room(&lv, 1, 10, 24, 10);
     room(&lv, 5, 1, 5, 10);
@@ -394,7 +387,7 @@ test "a room ringed by corridors keeps its top corners, and a wall with a corrid
 test "a room corner beside a doorway takes the shape of the floor round it" {
     var lv = grid.Level.blank();
     const r = Room.sized(.{ .x = 8, .y = 3 }, 9, 6);
-    carveRoom(&lv, r);
+    carve.box(&lv, r, .floor);
     room(&lv, 8, 1, 8, 2);
     room(&lv, 2, 8, 7, 8);
     shapeWalls(&lv);
@@ -480,7 +473,7 @@ test "every torch hangs on a room's top wall with floor below it" {
     for (0..40) |i| {
         const f = build(&lv, 0x7040 +% i *% 7919);
         rooms += f.room_n;
-        total += lv.torch_n;
+        total += lv.torch.n;
         for (lv.torches()) |t| {
             try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(t).?);
             try std.testing.expect(lv.walkable(lume.torchFloor(t)));
@@ -591,7 +584,7 @@ test "a floor rolled in a small box keeps its rooms in it, to their count and si
         const f = around(&lv, 0xB0C5 +% i *% 7919, &.{.{ .x = 2, .y = 2 }}, pm);
         rooms += f.room_n;
         try std.testing.expect(f.room_n >= 1 and f.room_n <= pm.rooms);
-        try std.testing.expectEqual(@as(usize, 0), lv.torch_n);
+        try std.testing.expectEqual(@as(usize, 0), lv.torch.n);
         for (f.rooms[0..f.room_n]) |r| {
             try std.testing.expect(r.width() >= 4 and r.width() <= 8 and r.height() >= 3 and r.height() <= 6);
             try std.testing.expect(r.lo.x >= o.x + MARGIN and r.hi.x <= o.x + pm.size.x - MARGIN);

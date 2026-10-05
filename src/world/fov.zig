@@ -85,7 +85,7 @@ fn scan(lv: *const grid.Level, sink: anytype, q: Quad, row_in: Row, radius: i32)
     while (col <= max_col) : (col += 1) {
         const p = q.at(row.depth, col);
         const wall = lv.at(p).blind();
-        if (mathx.distEuclid(q.origin, p) <= @as(f32, @floatFromInt(radius)) + 0.5) {
+        if (mathx.reaches(q.origin, p, @floatFromInt(radius))) {
             if (wall or symmetric(row, col)) sink.mark(p);
         }
         if (prev_wall) |pw| {

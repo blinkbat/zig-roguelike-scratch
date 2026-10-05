@@ -15,7 +15,13 @@ const DEPTH: f32 = 80;
 const GROUND_TOP: u32 = 4;
 const OPEN_OVER: f32 = 2;
 const KERNEL = [3][3]f32{ .{ 1, 3, 1 }, .{ 3, 6, 3 }, .{ 1, 3, 1 } };
-const KERNEL_SUM: f32 = 22;
+const KERNEL_SUM: f32 = blk: {
+    var s: f32 = 0;
+    for (KERNEL) |row| {
+        for (row) |k| s += k;
+    }
+    break :blk s;
+};
 /// Cells of rock kept round the map, Qud's border.
 const BORDER: i32 = 3;
 
@@ -52,7 +58,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, pm: Params) void {
         const ox = BORDER + @as(i32, @intCast(s % n)) * sw;
         const oy = BORDER + @as(i32, @intCast(s / n)) * sh;
         for (0..rng.below(@as(u32, pm.seeds) + 1)) |_| {
-            const p = P{ .x = rng.range(ox, ox + sw - 1), .y = rng.range(oy, oy + sh - 1) };
+            const p = grid.Box.sized(.{ .x = ox, .y = oy }, sw, sh).roll(rng);
             depth[grid.Level.idx(p)] = DEPTH;
         }
     }

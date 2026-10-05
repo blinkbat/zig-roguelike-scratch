@@ -25,13 +25,13 @@ fn describe(comptime T: type) []const u8 {
         .array => |a| std.fmt.comptimePrint("[{d}]", .{a.len}) ++ describe(a.child),
         .optional => |o| "?" ++ describe(o.child),
         .@"struct" => |st| blk: {
-            var s: []const u8 = "{";
+            var s: []const u8 = if (@hasDecl(T, "Key") and @TypeOf(T.Key) == type) describe(T.Key) ++ "{" else "{";
             for (st.fields) |f| s = s ++ f.name ++ ":" ++ describe(f.type) ++ ";";
             break :blk s ++ "}";
         },
         .@"union" => |u| blk: {
             if (u.tag_type == null) @compileError(@typeName(T) ++ " has no tag to store");
-            var s: []const u8 = "union{";
+            var s: []const u8 = "union(" ++ describe(u.tag_type.?) ++ "){";
             for (u.fields) |f| s = s ++ f.name ++ ":" ++ describe(f.type) ++ ";";
             break :blk s ++ "}";
         },
@@ -79,4 +79,18 @@ test "a value round-trips, and a changed type changes the fingerprint" {
     try std.testing.expect(take(&bytes, &back));
     try std.testing.expectEqual(a, back);
     try std.testing.expect(!take(&bytes, &back));
+}
+
+test "an enum-indexed array whose keys are reordered changes the fingerprint" {
+    const A = std.EnumArray(enum { cold, fire }, i16);
+    const B = std.EnumArray(enum { fire, cold }, i16);
+    try std.testing.expect(fingerprint(.{A}) != fingerprint(.{B}));
+}
+
+test "a union whose tag values change changes the fingerprint" {
+    const Ab = enum(u8) { a = 0, b = 1 };
+    const Ba = enum(u8) { a = 1, b = 0 };
+    const A = union(Ab) { a: u8, b: u8 };
+    const B = union(Ba) { a: u8, b: u8 };
+    try std.testing.expect(fingerprint(.{A}) != fingerprint(.{B}));
 }

@@ -24,9 +24,7 @@ pub const Params = struct {
 };
 
 pub fn palette(_: Params) carve.Palette {
-    var pal = carve.Palette.CAVE;
-    pal.pocket = pal.solid;
-    return pal;
+    return carve.Palette.CAVE.pocketed();
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {

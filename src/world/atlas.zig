@@ -49,6 +49,8 @@ pub const GRAPH_STEP = P{ .x = 240, .y = 200 };
 pub const POS_MAX: u32 = 1 << 24;
 /// A world file's name, `.world` and all.
 const FILE_MAX: usize = 64;
+/// A world file's name before `.world`, as `pathFor` makes it.
+pub const STEM_MAX = FILE_MAX - EXT.len;
 pub const PATH_MAX = PREFIX.len + FILE_MAX;
 const ListedPath = [PATH_MAX]u8;
 
@@ -100,11 +102,16 @@ pub const Procgen = struct {
         self.feature[self.feature_n] = Feature.of(FIRST_FEATURE);
     }
 
+    pub fn fit(self: *const Procgen) Procgen {
+        var q = self.*;
+        q.floor = q.floor.fit();
+        for (q.featuresMut()) |*f| f.* = f.fit();
+        q.foes = q.foes.fit();
+        return q;
+    }
+
     pub fn valid(self: *const Procgen) bool {
-        for (self.features()) |*f| {
-            if (!f.valid()) return false;
-        }
-        return self.floor.valid() and self.foes.valid();
+        return std.meta.eql(self.fit(), self.*);
     }
 };
 
@@ -113,8 +120,7 @@ pub const FIRST_FEATURE = std.enums.values(Kind)[0];
 pub const Bespoke = struct {
     tile: [grid.CELLS]grid.Tile = [_]grid.Tile{.wall} ** grid.CELLS,
     barrel: [grid.CELLS]bool = [_]bool{false} ** grid.CELLS,
-    torch: [grid.MAX_TORCHES]P = undefined,
-    torch_n: usize = 0,
+    torch: grid.Torches = .{},
     foe: [MAX_FOES]Foe = undefined,
     foe_n: usize = 0,
 
@@ -127,18 +133,11 @@ pub const Bespoke = struct {
     }
 
     pub fn torches(self: *const Bespoke) []const P {
-        return self.torch[0..self.torch_n];
+        return self.torch.slice();
     }
 
     pub fn foes(self: *const Bespoke) []const Foe {
         return self.foe[0..self.foe_n];
-    }
-
-    pub fn torchAt(self: *const Bespoke, p: P) ?usize {
-        for (self.torches(), 0..) |t, i| {
-            if (t.eq(p)) return i;
-        }
-        return null;
     }
 
     pub fn foeAt(self: *const Bespoke, p: P) ?usize {
@@ -146,13 +145,6 @@ pub const Bespoke = struct {
             if (f.at.eq(p)) return i;
         }
         return null;
-    }
-
-    pub fn addTorch(self: *Bespoke, p: P) bool {
-        if (self.torch_n == grid.MAX_TORCHES or self.torchAt(p) != null) return false;
-        self.torch[self.torch_n] = p;
-        self.torch_n += 1;
-        return true;
     }
 
     pub fn bodies(self: *const Bespoke) usize {
@@ -166,11 +158,6 @@ pub const Bespoke = struct {
         self.foe[self.foe_n] = f;
         self.foe_n += 1;
         return true;
-    }
-
-    pub fn dropTorch(self: *Bespoke, i: usize) void {
-        self.torch_n -= 1;
-        self.torch[i] = self.torch[self.torch_n];
     }
 
     pub fn dropFoe(self: *Bespoke, i: usize) void {
@@ -344,13 +331,7 @@ pub const Atlas = struct {
         for (self.node[n].doors(), 0..) |_, k| self.unlink(.{ .node = n, .door = k });
         std.mem.copyForwards(Node, self.node[n .. self.node_n - 1], self.node[n + 1 .. self.node_n]);
         self.node_n -= 1;
-        for (self.nodes()) |*nd| {
-            for (nd.doorsMut()) |*d| {
-                if (d.to) |*l| {
-                    if (l.node > n) l.node -= 1;
-                }
-            }
-        }
+        self.renumber(.{ .node = n, .door = 0 }, Atlas.pastNode);
         if (self.start.node == n) self.start = .{} else if (self.start.node > n) self.start.node -= 1;
     }
 
@@ -367,13 +348,24 @@ pub const Atlas = struct {
         const nd = &self.node[at.node];
         std.mem.copyForwards(Door, nd.door[at.door .. nd.door_n - 1], nd.door[at.door + 1 .. nd.door_n]);
         nd.door_n -= 1;
-        for (self.nodes()) |*other| {
-            for (other.doorsMut()) |*d| {
-                if (d.to) |*l| {
-                    if (l.node == at.node and l.door > at.door) l.door -= 1;
-                }
+        self.renumber(at, Atlas.pastDoor);
+    }
+
+    /// Every link, once `gone` is taken away.
+    fn renumber(self: *Atlas, gone: Link, comptime past: fn (*Link, Link) void) void {
+        for (self.nodes()) |*nd| {
+            for (nd.doorsMut()) |*d| {
+                if (d.to) |*l| past(l, gone);
             }
         }
+    }
+
+    fn pastNode(l: *Link, gone: Link) void {
+        if (l.node > gone.node) l.node -= 1;
+    }
+
+    fn pastDoor(l: *Link, gone: Link) void {
+        if (l.node == gone.node and l.door > gone.door) l.door -= 1;
     }
 
     fn doorOf(self: *Atlas, at: Link) *Door {
@@ -546,7 +538,7 @@ pub const Atlas = struct {
                     }
                     row += 1;
                 },
-                .torch => if (!(try self.bespoke()).addTorch(try cell(&f))) return error.TooMany,
+                .torch => if (!(try self.bespoke()).torch.add(try cell(&f))) return error.TooMany,
                 .foe => {
                     const b = try self.bespoke();
                     const k = std.meta.stringToEnum(actor.Kind, f.next() orelse return error.BadLine) orelse return error.BadLine;
@@ -751,7 +743,7 @@ fn cell(f: *std.mem.TokenIterator(u8, .scalar)) Error!P {
 }
 
 pub fn pathFor(buf: []u8, name: []const u8) ?[]const u8 {
-    var stem: [FILE_MAX - EXT.len]u8 = undefined;
+    var stem: [STEM_MAX]u8 = undefined;
     var n: usize = 0;
     for (std.mem.trim(u8, name, " ")) |c| {
         if (n == stem.len) break;
@@ -840,14 +832,15 @@ fn free(lv: *const grid.Level, q: P, foes: []const Foe) bool {
 
 /// From a cell no one can stand on: the nearest open one, through rock.
 fn nearest(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
-    var ring: i32 = 0;
-    while (ring < @max(grid.W, grid.H)) : (ring += 1) {
-        var cells = mathx.Ring.init(p, ring);
-        while (cells.next()) |q| {
-            if (free(lv, q, foes)) return q;
+    const Free = struct {
+        lv: *const grid.Level,
+        foes: []const Foe,
+
+        pub fn has(f: @This(), i: usize) bool {
+            return free(f.lv, grid.Level.of(i), f.foes);
         }
-    }
-    return null;
+    };
+    return grid.nearest(p, Free{ .lv = lv, .foes = foes });
 }
 
 fn testAtlas() !*Atlas {
@@ -882,7 +875,7 @@ test "a world saves and loads back the same" {
         while (x < 12) : (x += 1) b.tile[grid.Level.idx(.{ .x = x, .y = y })] = .floor;
     }
     b.barrel[grid.Level.idx(.{ .x = 4, .y = 4 })] = true;
-    _ = b.addTorch(.{ .x = 6, .y = 2 });
+    _ = b.torch.add(.{ .x = 6, .y = 2 });
     _ = b.addFoe(.{ .kind = .slime, .at = .{ .x = 9, .y = 6 } });
     const d0 = a.addDoor(room, .{ .x = 11, .y = 5 }).?;
     const d1 = a.addDoor(cave, .{ .x = 0, .y = 30 }).?;
@@ -991,14 +984,14 @@ test "a bespoke node's doors open their cells and a torch hangs only over floor"
     const n = a.add(.{ .bespoke = .{} }).?;
     const b = &a.node[n].plan.bespoke;
     b.tile[grid.Level.idx(.{ .x = 5, .y = 5 })] = .floor;
-    _ = b.addTorch(.{ .x = 5, .y = 4 });
-    _ = b.addTorch(.{ .x = 20, .y = 20 });
+    _ = b.torch.add(.{ .x = 5, .y = 4 });
+    _ = b.torch.add(.{ .x = 20, .y = 20 });
     _ = a.addDoor(n, .{ .x = 5, .y = 6 });
     var lv: grid.Level = undefined;
     a.node[n].stamp(&lv, 0);
     try std.testing.expect(lv.walkable(.{ .x = 5, .y = 6 }));
     try std.testing.expectEqual(@as(?usize, 0), lv.doorAt(.{ .x = 5, .y = 6 }));
-    try std.testing.expectEqual(@as(usize, 1), lv.torch_n);
+    try std.testing.expectEqual(@as(usize, 1), lv.torch.n);
     try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 5, .y = 4 }).?);
 }
 

@@ -23,16 +23,12 @@ pub const Params = struct {
         q.thicket = @min(p.thicket, THICKET_MAX);
         q.smooth = @min(p.smooth, carve.SMOOTH_MAX);
         q.strays = @min(p.strays, STRAYS_MAX);
-        q.litter = p.litter.fit();
-        q.decor = p.decor.fit();
         return q;
     }
 };
 
 pub fn palette(_: Params) carve.Palette {
-    var pal = carve.Palette.WILD;
-    pal.pocket = pal.solid;
-    return pal;
+    return carve.Palette.WILD.pocketed();
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {

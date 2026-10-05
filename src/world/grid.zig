@@ -186,6 +186,36 @@ pub const WallShape = enum {
     }
 };
 
+/// Walls a torch hangs on, each once.
+pub const Torches = struct {
+    at: [MAX_TORCHES]P = undefined,
+    n: usize = 0,
+
+    pub fn slice(self: *const Torches) []const P {
+        return self.at[0..self.n];
+    }
+
+    pub fn find(self: *const Torches, p: P) ?usize {
+        for (self.slice(), 0..) |t, i| {
+            if (t.eq(p)) return i;
+        }
+        return null;
+    }
+
+    /// False when full or already hung there.
+    pub fn add(self: *Torches, p: P) bool {
+        if (self.n == MAX_TORCHES or self.find(p) != null) return false;
+        self.at[self.n] = p;
+        self.n += 1;
+        return true;
+    }
+
+    pub fn drop(self: *Torches, i: usize) void {
+        self.n -= 1;
+        self.at[i] = self.at[self.n];
+    }
+};
+
 pub const Level = struct {
     tile: [CELLS]Tile,
     /// Null on anything that is not a wall.
@@ -203,8 +233,7 @@ pub const Level = struct {
     /// Caustic gas, Brogue's volume.
     gas: [CELLS]u16,
     /// Walls with a torch on their face.
-    torch: [MAX_TORCHES]P,
-    torch_n: usize,
+    torch: Torches,
 
     pub fn blank() Level {
         return .{
@@ -217,26 +246,16 @@ pub const Level = struct {
             .barrel = [_]bool{false} ** CELLS,
             .door = [_]u8{NO_DOOR} ** CELLS,
             .gas = [_]u16{0} ** CELLS,
-            .torch = undefined,
-            .torch_n = 0,
+            .torch = .{},
         };
     }
 
     pub fn torches(self: *const Level) []const P {
-        return self.torch[0..self.torch_n];
-    }
-
-    fn hasTorch(self: *const Level, p: P) bool {
-        for (self.torches()) |t| {
-            if (t.eq(p)) return true;
-        }
-        return false;
+        return self.torch.slice();
     }
 
     pub fn addTorch(self: *Level, p: P) void {
-        if (self.torch_n == MAX_TORCHES or self.hasTorch(p)) return;
-        self.torch[self.torch_n] = p;
-        self.torch_n += 1;
+        _ = self.torch.add(p);
     }
 
     pub fn wallShape(self: *const Level, p: P) ?WallShape {
@@ -397,13 +416,13 @@ pub const Level = struct {
     }
 };
 
-/// Of the cells off the rim that `set.has` takes, the nearest `from`, the first of any tie.
+/// Of the cells `set.has` takes, the nearest `from`, the first of any tie.
 pub fn nearest(from: P, set: anytype) ?P {
     var best: ?P = null;
     var best_d: i32 = std.math.maxInt(i32);
     for (0..CELLS) |i| {
         const q = Level.of(i);
-        if (!set.has(i) or Level.onRim(q)) continue;
+        if (!set.has(i)) continue;
         const d = mathx.dist(q, from);
         if (d < best_d) {
             best_d = d;
@@ -413,13 +432,6 @@ pub fn nearest(from: P, set: anytype) ?P {
     return best;
 }
 
-pub fn grown(lo: P, hi: P, by: i32) [2]P {
-    return .{
-        .{ .x = @max(0, lo.x - by), .y = @max(0, lo.y - by) },
-        .{ .x = @min(W, hi.x + by), .y = @min(H, hi.y + by) },
-    };
-}
-
 /// `hi` exclusive.
 pub const Box = struct {
     lo: P,
@@ -427,6 +439,11 @@ pub const Box = struct {
 
     pub fn sized(lo: P, w: i32, h: i32) Box {
         return .{ .lo = lo, .hi = lo.add(.{ .x = w, .y = h }) };
+    }
+
+    /// Every cell within `r` of `c`, on the map or off it.
+    pub fn around(c: P, r: i32) Box {
+        return .{ .lo = c.sub(.{ .x = r, .y = r }), .hi = c.add(.{ .x = r + 1, .y = r + 1 }) };
     }
 
     pub fn inMap(m: i32) Box {
@@ -440,8 +457,13 @@ pub const Box = struct {
 
     /// x is drawn before y.
     pub fn roll(b: Box, rng: *mathx.Rng) P {
-        const x = rng.range(b.lo.x, b.hi.x - 1);
-        return .{ .x = x, .y = rng.range(b.lo.y, b.hi.y - 1) };
+        return b.rollFor(rng, 1, 1);
+    }
+
+    /// The corner of a `w` by `h` box that lies inside this one; x is drawn before y.
+    pub fn rollFor(b: Box, rng: *mathx.Rng, w: i32, h: i32) P {
+        const x = rng.range(b.lo.x, b.hi.x - w);
+        return .{ .x = x, .y = rng.range(b.lo.y, b.hi.y - h) };
     }
 
     pub fn width(b: Box) i32 {
@@ -465,7 +487,20 @@ pub const Box = struct {
     }
 
     pub fn inner(b: Box) Box {
-        return .{ .lo = b.lo.add(.{ .x = 1, .y = 1 }), .hi = b.hi.sub(.{ .x = 1, .y = 1 }) };
+        return b.shrunk(1);
+    }
+
+    /// `by` cells in each way.
+    pub fn shrunk(b: Box, by: i32) Box {
+        return .{ .lo = b.lo.add(.{ .x = by, .y = by }), .hi = b.hi.sub(.{ .x = by, .y = by }) };
+    }
+
+    /// `by` cells out each way, kept on the map.
+    pub fn grown(b: Box, by: i32) Box {
+        return .{
+            .lo = .{ .x = @max(0, b.lo.x - by), .y = @max(0, b.lo.y - by) },
+            .hi = .{ .x = @min(W, b.hi.x + by), .y = @min(H, b.hi.y + by) },
+        };
     }
 
     /// Whether `b` comes within `pad` cells of `o`.
@@ -492,9 +527,8 @@ pub const Cells = struct {
         return r * 2 + 1;
     }
 
-    /// Every cell within `r` of `c`, on the map or off it.
     pub fn around(c: P, r: i32) Cells {
-        return of(c.sub(.{ .x = r, .y = r }), c.add(.{ .x = r + 1, .y = r + 1 }));
+        return Box.around(c, r).cells();
     }
 
     pub fn next(self: *Cells) ?P {

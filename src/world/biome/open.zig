@@ -12,10 +12,7 @@ pub const Params = struct {
     decor: carve.Decor = .{},
 
     pub fn fit(p: Params) Params {
-        var q = p;
-        q.litter = p.litter.fit();
-        q.decor = p.decor.fit();
-        return q;
+        return p;
     }
 };
 

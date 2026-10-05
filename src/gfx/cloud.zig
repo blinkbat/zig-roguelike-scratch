@@ -31,7 +31,7 @@ pub const Cloud = struct {
     px: [TEXELS]rl.Color,
     stale: bool,
     /// The cells last baked into `px`.
-    baked: [2]P,
+    baked: grid.Box,
     /// Seconds, for the drift.
     t: mathx.Seconds,
     /// Seconds until the burst the newest gas came from lands; till then the cloud stays as drawn.
@@ -43,12 +43,12 @@ pub const Cloud = struct {
         const c = try alloc.create(Cloud);
         c.tex = null;
         c.shade = null;
-        c.baked = @splat(.{ .x = 0, .y = 0 });
+        c.baked = .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 0, .y = 0 } };
         c.clear();
         return c;
     }
 
-    /// The drift restarts too: the shader's hash loses its grain as `t` grows.
+    /// The drift restarts too, as it does whenever no gas is drawn: the shader's hash loses its grain as `t` grows.
     pub fn clear(self: *Cloud) void {
         @memset(&self.tint, 0);
         self.stale = true;
@@ -84,23 +84,22 @@ pub const Cloud = struct {
     /// Needs a live GL context.
     pub fn load(self: *Cloud) void {
         self.tex = look.canvas(TEX_W, TEX_H, rl.Color.blank, .bilinear);
-        const s = look.shader(CLOUD_FS) orelse return;
-        self.shade = look.uniforms(Shade, s);
+        self.shade = look.program(Shade, CLOUD_FS);
     }
 
     pub fn unload(self: *Cloud) void {
-        if (self.tex) |t| rl.unloadTexture(t);
-        if (self.shade) |s| rl.unloadShader(s.shader);
-        self.tex = null;
-        self.shade = null;
+        look.unloadAll(self);
     }
 
     /// Cells `lo` up to `hi` are on screen; `ox, oy` is where the floor's top-left corner lands.
     pub fn draw(self: *Cloud, lv: *const grid.Level, lo: P, hi: P, ox: i32, oy: i32, cell: i32) void {
         const tex = self.tex orelse return;
-        if (std.mem.allEqual(f32, &self.tint, 0)) return;
-        const view = grid.grown(lo, hi, 1);
-        if (self.stale or !view[0].eq(self.baked[0]) or !view[1].eq(self.baked[1])) {
+        if (std.mem.allEqual(f32, &self.tint, 0)) {
+            self.t = .{};
+            return;
+        }
+        const view = (grid.Box{ .lo = lo, .hi = hi }).grown(1);
+        if (self.stale or !view.lo.eq(self.baked.lo) or !view.hi.eq(self.baked.hi)) {
             self.bake(lv, view);
             rl.updateTexture(tex, &self.px);
             self.stale = false;
@@ -116,11 +115,11 @@ pub const Cloud = struct {
         rl.gl.rlDrawRenderBatchActive();
     }
 
-    fn bake(self: *Cloud, lv: *const grid.Level, view: [2]P) void {
-        var ty = view[0].y * SUB;
-        while (ty < view[1].y * SUB) : (ty += 1) {
-            var tx = view[0].x * SUB;
-            while (tx < view[1].x * SUB) : (tx += 1) self.px[@intCast(ty * TEX_W + tx)] = look.fade(look.GAS, self.texel(lv, tx, ty));
+    fn bake(self: *Cloud, lv: *const grid.Level, view: grid.Box) void {
+        var ty = view.lo.y * SUB;
+        while (ty < view.hi.y * SUB) : (ty += 1) {
+            var tx = view.lo.x * SUB;
+            while (tx < view.hi.x * SUB) : (tx += 1) self.px[@intCast(ty * TEX_W + tx)] = look.fade(look.GAS, self.texel(lv, tx, ty));
         }
         self.baked = view;
     }
@@ -150,16 +149,18 @@ comptime {
 }
 
 const OCTAVES: u32 = 3;
-/// The most `fbm`'s octaves, each half the last, sum to.
-const FBM_MAX: f32 = 1 - std.math.pow(f32, 0.5, OCTAVES);
+/// Each of `fbm`'s octaves weighs this much of the last, the first this much of one.
+const FBM_GAIN: f32 = 0.5;
+/// The most `fbm`'s octaves sum to.
+const FBM_MAX: f32 = FBM_GAIN * (1 - std.math.pow(f32, FBM_GAIN, OCTAVES)) / (1 - FBM_GAIN);
 /// The softened density's share from its own texel; the four `SOFT` round it split the rest.
 const CENTRE_W: f32 = 0.4;
 const SIDE_W: f32 = (1 - CENTRE_W) / 4;
 
 const CLOUD_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     "const float TINT_HI = {d:.4};\nconst float WARP = {d:.4};\nconst float SOFT = {d:.4};\n" ++
-        "const int OCTAVES = {d};\nconst float FBM_MAX = {d:.4};\nconst float CENTRE_W = {d:.4};\nconst float SIDE_W = {d:.4};\n",
-    .{ TINT_HI, WARP, SOFT, OCTAVES, FBM_MAX, CENTRE_W, SIDE_W },
+        "const int OCTAVES = {d};\nconst float FBM_GAIN = {d:.4};\nconst float FBM_MAX = {d:.4};\nconst float CENTRE_W = {d:.4};\nconst float SIDE_W = {d:.4};\n",
+    .{ TINT_HI, WARP, SOFT, OCTAVES, FBM_GAIN, FBM_MAX, CENTRE_W, SIDE_W },
 ) ++
     \\uniform float time;
     \\uniform vec2 cells;
@@ -177,11 +178,11 @@ const CLOUD_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     \\}
     \\float fbm(vec2 p) {
     \\    float v = 0.0;
-    \\    float a = 0.5;
+    \\    float a = FBM_GAIN;
     \\    for (int i = 0; i < OCTAVES; i++) {
     \\        v += a * noise(p);
     \\        p = p * 2.07 + vec2(5.2, 1.3);
-    \\        a *= 0.5;
+    \\        a *= FBM_GAIN;
     \\    }
     \\    return v / FBM_MAX;
     \\}

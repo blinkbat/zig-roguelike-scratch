@@ -58,10 +58,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         var open: [4]usize = undefined;
         var n: usize = 0;
         for (steps, 0..) |s, k| {
-            const nx = cx + s.x;
-            const ny = cy + s.y;
-            if (nx < 0 or ny < 0 or nx >= CELLS_X or ny >= CELLS_Y) continue;
-            if (seen[@as(usize, @intCast(ny)) * CELLS_X + @as(usize, @intCast(nx))]) continue;
+            const near = mathx.slot(cx + s.x, cy + s.y, CELLS_X, CELLS_Y) orelse continue;
+            if (seen[near]) continue;
             open[n] = k;
             n += 1;
         }
@@ -100,7 +98,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     }
     if (p.chamber > 0) {
         const h: i32 = p.chamber;
-        carve.box(lv, grid.MIDDLE.sub(.{ .x = @divTrunc(h * 3, 2), .y = h }), grid.MIDDLE.add(.{ .x = @divTrunc(h * 3, 2) + 1, .y = h + 1 }), pal.open);
+        carve.box(lv, .{ .lo = grid.MIDDLE.sub(.{ .x = @divTrunc(h * 3, 2), .y = h }), .hi = grid.MIDDLE.add(.{ .x = @divTrunc(h * 3, 2) + 1, .y = h + 1 }) }, pal.open);
     }
 }
 

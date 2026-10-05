@@ -57,21 +57,19 @@ pub fn palette(p: Params) carve.Palette {
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const pal = palette(p);
     const out = pal.open;
-    carve.fill(lv, out);
-    carve.rim(lv, pal.solid);
+    carve.field(lv, pal);
     const curtain = curtainOf(p);
     const lo = curtain.lo;
     const hi = curtain.hi;
     const m: i32 = p.moat;
     const berm = bermOf(p);
     if (m > 0) {
-        carve.box(lv, lo.sub(.{ .x = berm + m, .y = berm + m }), hi.add(.{ .x = berm + m, .y = berm + m }), .water);
-        carve.box(lv, lo.sub(.{ .x = berm, .y = berm }), hi.add(.{ .x = berm, .y = berm }), out);
+        carve.box(lv, curtain.grown(berm + m), .water);
+        carve.box(lv, curtain.grown(berm), out);
     }
-    carve.box(lv, lo, hi, .wall);
-    const yard_lo = lo.add(.{ .x = CURTAIN, .y = CURTAIN });
-    const yard_hi = hi.sub(.{ .x = CURTAIN, .y = CURTAIN });
-    carve.box(lv, yard_lo, yard_hi, p.yard.tile());
+    carve.box(lv, curtain, .wall);
+    const yard = curtain.shrunk(CURTAIN);
+    carve.box(lv, yard, p.yard.tile());
     const t: f32 = @floatFromInt(p.towers);
     if (p.towers > 0) {
         for (towersOf(curtain)) |c| {
@@ -104,9 +102,9 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         }
     }
     const keep = keepOf(p);
-    carve.box(lv, keep.lo, keep.hi, .wall);
+    carve.box(lv, keep, .wall);
     const in = keep.inner();
-    carve.box(lv, in.lo, in.hi, .floor);
+    carve.box(lv, in, .floor);
     lv.set(buildings.doorway(rng, keep)[0], .floor);
     buildings.partition(lv, rng, in, ROOM_LEAST, .wall);
     var torches: usize = 0;
@@ -123,7 +121,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     }
     const art = setpiece.rows(.well);
     const room = setpiece.size(art).add(.{ .x = WELL_GAP, .y = WELL_GAP });
-    const well = P{ .x = rng.range(yard_lo.x + WELL_GAP, @max(yard_lo.x + WELL_GAP, keep.lo.x - room.x)), .y = rng.range(yard_lo.y + WELL_GAP, yard_hi.y - room.y) };
+    const well = P{ .x = rng.range(yard.lo.x + WELL_GAP, @max(yard.lo.x + WELL_GAP, keep.lo.x - room.x)), .y = rng.range(yard.lo.y + WELL_GAP, yard.hi.y - room.y) };
     if (keep.lo.x - well.x >= room.x) setpiece.stamp(lv, well, art);
 }
 
@@ -146,10 +144,9 @@ fn towersOf(b: grid.Box) [4]P {
 }
 
 fn keepOf(p: Params) grid.Box {
-    const mid = grid.MIDDLE;
     const kw: i32 = @intFromFloat(@as(f32, @floatFromInt(@as(i32, p.size[0]) - 2 * CURTAIN)) * KEEP_OF);
     const kh: i32 = @intFromFloat(@as(f32, @floatFromInt(@as(i32, p.size[1]) - 2 * CURTAIN)) * KEEP_OF);
-    return .{ .lo = .{ .x = mid.x - @divTrunc(kw, 2), .y = mid.y - @divTrunc(kh, 2) }, .hi = .{ .x = mid.x + @divTrunc(kw + 1, 2), .y = mid.y + @divTrunc(kh + 1, 2) } };
+    return grid.Box.centred(kw, kh);
 }
 
 test "every room of the keep opens onto the yard" {

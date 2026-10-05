@@ -42,8 +42,6 @@ pub const Params = struct {
         q.clearing = std.math.clamp(p.clearing, CLEARING_MIN, CLEARING_MAX);
         q.path = std.math.clamp(p.path, 1, PATH_MAX);
         q.sides = @min(p.sides, SIDES_MAX);
-        q.litter = p.litter.fit();
-        q.decor = p.decor.fit();
         return q;
     }
 };

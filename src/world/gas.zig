@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
+const carve = @import("carve.zig");
 const gen = @import("gen.zig");
 
 const P = mathx.P;
@@ -11,7 +12,7 @@ pub const BURST: u16 = 2000;
 pub const PASSES: usize = 2;
 /// A cell holding less keeps its gas: it takes from a gassed-up neighbour and gives none on.
 pub const GASSED_UP: u16 = 20;
-/// The share of passes a cell that held gas loses a unit; Brogue's `TM_GAS_DISSIPATES` is 0.2.
+/// The share of passes a cell that held gas loses a unit.
 pub const DISSIPATE: f32 = 0.5;
 /// Brogue's `T_CAUSES_DAMAGE`: a fifteenth of the body's full hp a turn.
 const HARM_PART: i32 = 15;
@@ -33,7 +34,7 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng) void {
 fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
     const box = reach(lv) orelse return;
     var next = [_]u32{0} ** grid.CELLS;
-    var cells = grid.Cells.of(box[0], box[1]);
+    var cells = box.cells();
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
         const v = lv.gas[i];
@@ -55,7 +56,7 @@ fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
         for (to[0..n]) |t| next[t] += share;
         for (0..v % n) |_| next[to[rng.below(@intCast(n))]] += 1;
     }
-    cells = grid.Cells.of(box[0], box[1]);
+    cells = box.cells();
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
         if (next[i] > 0 and lv.gas[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
@@ -64,7 +65,7 @@ fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
 }
 
 /// A cell wider than the gas all round; the high corner exclusive.
-fn reach(lv: *const grid.Level) ?[2]P {
+fn reach(lv: *const grid.Level) ?grid.Box {
     var lo = P{ .x = grid.W, .y = grid.H };
     var hi = P{ .x = -1, .y = -1 };
     for (&lv.gas, 0..) |v, i| {
@@ -74,7 +75,7 @@ fn reach(lv: *const grid.Level) ?[2]P {
         hi = hi.max(p);
     }
     if (hi.x < 0) return null;
-    return grid.grown(lo, hi.add(.{ .x = 1, .y = 1 }), 1);
+    return (grid.Box{ .lo = lo, .hi = hi.add(.{ .x = 1, .y = 1 }) }).grown(1);
 }
 
 const Life = struct { turns: usize = 0, most: usize = 0 };
@@ -124,7 +125,7 @@ test "a burst shut in a room lingers, and on open floor clears sooner and spread
     var rng = mathx.Rng.init(0x6A5);
     var shut = grid.Level.blank();
     const room = gen.Room.sized(.{ .x = 10, .y = 10 }, 9, 6);
-    gen.carveRoom(&shut, room);
+    carve.box(&shut, room, .floor);
     shut.addGas(room.centre(), BURST);
     const a = try lasts(&shut, &rng);
     const b = try onOpenFloor(&rng);
@@ -147,7 +148,7 @@ test "a burst in a room of a real floor leaks out of its doorways: sooner gone t
         lv.addGas(r.centre(), BURST);
         real += (try lasts(&lv, &rng)).turns;
         shut = grid.Level.blank();
-        gen.carveRoom(&shut, r);
+        carve.box(&shut, r, .floor);
         shut.addGas(r.centre(), BURST);
         sealed += (try lasts(&shut, &rng)).turns;
     }

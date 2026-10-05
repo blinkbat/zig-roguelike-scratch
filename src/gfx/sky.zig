@@ -80,7 +80,7 @@ pub fn sunDir(hour: f32) [3]f32 {
     return dirFrom(az, alt);
 }
 
-/// The one light that casts, altitude floored; it changes hands over the zenith in the sun's vertical plane, so a shadow shrinks to its foot and regrows opposite, never turning.
+/// The one light that casts, altitude floored; it changes hands over the zenith in the sun's vertical plane, so laid across the screen (`at`) its shadow keeps `KEY_ALT_MAX`'s length and flips while `keyDim` fades it out and back in.
 pub fn keyDir(hour: f32) [3]f32 {
     const s = sunDir(hour);
     const flat = flatOf(s);
@@ -155,7 +155,7 @@ pub const Sky = struct {
     /// Along the ground toward it, a unit vector; south when it stands straight up.
     pub fn across(s: Sky) [2]f32 {
         const f = s.flat();
-        return if (f > OVERHEAD) .{ s.dir[0] / f, s.dir[1] / f } else .{ 0, 1 };
+        return if (upright(f)) .{ 0, 1 } else .{ s.dir[0] / f, s.dir[1] / f };
     }
 
     /// Cells a shadow runs along the ground per cell of height.
@@ -169,6 +169,11 @@ pub const Sky = struct {
     }
 };
 
+/// A light whose length along the ground is `flat` stands straight over what it lights, and casts no shadow.
+pub fn upright(flat: f32) bool {
+    return flat < OVERHEAD;
+}
+
 pub fn at(hour: f32) Sky {
     const p = paletteAt(hour);
     return .{
@@ -180,13 +185,13 @@ pub fn at(hour: f32) Sky {
     };
 }
 
-/// Its north-south lean squashed, then laid no steeper than `KEY_ALT_MAX`; straight overhead, as at the swap, it stays.
+/// Its north-south lean squashed, then laid no steeper than `KEY_ALT_MAX`; only one leaning less than `OVERHEAD` stays upright.
 fn acrossScreen(d: [3]f32) [3]f32 {
     var x = d[0];
     var y = d[1] * NORTH_SOUTH;
     const flat = mathx.len(x, y);
     const least = d[2] / @tan(KEY_ALT_MAX);
-    if (flat > OVERHEAD and flat < least) {
+    if (!upright(flat) and flat < least) {
         x *= least / flat;
         y *= least / flat;
     }

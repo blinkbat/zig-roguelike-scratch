@@ -16,7 +16,12 @@ const SECTION_MIN: i32 = 10;
 const STREET: i32 = 2;
 const MARGIN: i32 = 2;
 const ATTEMPTS: usize = 12;
+/// In `grid.Tile.letter`'s legend; grass stands for the site's ground.
 const SYMBOLS = "\"#.";
+
+comptime {
+    for (SYMBOLS) |c| std.debug.assert(grid.Tile.ofLetter(c) != null);
+}
 
 pub const Template = enum { huts, compound, pillars, mixed };
 
@@ -197,15 +202,15 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
             }
         }
         const cell = best orelse break;
-        var total: u32 = 0;
-        var it = wave[cell].iterator(.{});
-        while (it.next()) |p| total += m.weight[p];
-        var pick = rng.below(total);
-        it = wave[cell].iterator(.{});
-        const chosen = while (it.next()) |p| {
-            if (pick < m.weight[p]) break p;
-            pick -= m.weight[p];
-        } else unreachable;
+        const Open = struct {
+            m: *const Model,
+            wave: *const Bits,
+
+            fn weight(o: @This(), p: usize) u32 {
+                return if (o.wave.isSet(p)) o.m.weight[p] else 0;
+            }
+        };
+        const chosen = rng.weighted(m.n, Open{ .m = m, .wave = &wave[cell] }, Open.weight).?;
         wave[cell] = Bits.initEmpty();
         wave[cell].set(chosen);
         var top: usize = 1;
@@ -226,10 +231,7 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
                 }
             }
             for (DIRS, 0..) |d, k| {
-                const nx = cx + d.x;
-                const ny = cy + d.y;
-                if (nx < 0 or ny < 0 or nx >= w or ny >= h) continue;
-                const ni: usize = @as(usize, @intCast(ny)) * w + @as(usize, @intCast(nx));
+                const ni = mathx.slot(cx + d.x, cy + d.y, w, h) orelse continue;
                 const now = wave[ni].intersectWith(allowed[k]);
                 if (now.eql(wave[ni])) continue;
                 if (now.count() == 0) return false;
@@ -288,10 +290,10 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
                 for (0..h) |yy| {
                     for (0..w) |xx| {
                         const q = P{ .x = x + @as(i32, @intCast(xx)), .y = y + @as(i32, @intCast(yy)) };
-                        const t: grid.Tile = switch (SYMBOLS[out[yy * w + xx]]) {
-                            '#' => if (rng.percent(p.decay)) .rubble else .wall,
-                            '.' => .floor,
-                            else => pal.open,
+                        const t: grid.Tile = switch (grid.Tile.ofLetter(SYMBOLS[out[yy * w + xx]]).?) {
+                            .wall => if (rng.percent(p.decay)) .rubble else .wall,
+                            .grass => pal.open,
+                            else => |kept| kept,
                         };
                         lv.set(q, t);
                     }

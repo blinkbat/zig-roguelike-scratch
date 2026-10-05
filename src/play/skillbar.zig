@@ -1,5 +1,8 @@
 const std = @import("std");
 const input = @import("../core/input.zig");
+const burning = @import("burning.zig");
+const glacial = @import("glacial.zig");
+const juke = @import("juke.zig");
 
 const Button = input.Button;
 
@@ -7,12 +10,30 @@ pub const Act = enum {
     shoot,
     wait,
     secondary,
+    juke,
+    burning_arrow,
+    glacial_shot,
 
     pub fn name(a: Act) [:0]const u8 {
         return switch (a) {
             .shoot => "Shoot",
             .wait => "Wait",
             .secondary => "Activate Secondary Skill Set",
+            .juke => "Juke",
+            .burning_arrow => "Burning Arrow",
+            .glacial_shot => "Glacial Shot",
+        };
+    }
+
+    /// What confirming it does, as a hint says it.
+    pub fn verb(a: Act) [:0]const u8 {
+        return switch (a) {
+            .shoot => "shoot",
+            .wait => "wait",
+            .secondary => "hold",
+            .juke => "juke",
+            .burning_arrow => "fire burning arrow",
+            .glacial_shot => "fire glacial shot",
         };
     }
 
@@ -21,6 +42,37 @@ pub const Act = enum {
             .shoot => "Aim an arrow at a target in range; press again to loose it.",
             .wait => "Let a turn pass.",
             .secondary => "Hold to use Skills in your Secondary Skill Set. Takes up this slot in both Skill Sets.",
+            .juke => juke.DESCRIPTION,
+            .burning_arrow => burning.DESCRIPTION,
+            .glacial_shot => glacial.DESCRIPTION,
+        };
+    }
+
+    pub const Reticle = enum { bow, leap };
+
+    /// What it aims with, if it aims.
+    pub fn reticle(a: Act) ?Reticle {
+        return switch (a) {
+            .shoot, .burning_arrow, .glacial_shot => .bow,
+            .juke => .leap,
+            .wait, .secondary => null,
+        };
+    }
+
+    pub fn cost(a: Act) i32 {
+        return switch (a) {
+            .juke => juke.COST,
+            .burning_arrow => burning.COST,
+            .glacial_shot => glacial.COST,
+            .shoot, .wait, .secondary => 0,
+        };
+    }
+
+    /// Turns after it is used before it can be again.
+    pub fn cooldown(a: Act) u8 {
+        return switch (a) {
+            .juke => juke.COOLDOWN,
+            .shoot, .wait, .secondary, .burning_arrow, .glacial_shot => 0,
         };
     }
 };
@@ -117,7 +169,10 @@ pub const Bar = struct {
 const PRIMARY = blk: {
     var r = Row.initFill(null);
     r.set(.x, .shoot);
-    r.set(.b, .wait);
+    r.set(.b, .juke);
+    r.set(.y, .wait);
+    r.set(.rb, .burning_arrow);
+    r.set(.rt, .glacial_shot);
     break :blk r;
 };
 
@@ -134,10 +189,13 @@ comptime {
     }
 }
 
-test "the bar starts with Shoot on X, Wait on B and the secondary set held on LB" {
+test "the bar starts with Shoot on X, Juke on B, Wait on Y and the secondary set held on LB" {
     const bar = Bar{};
     try std.testing.expectEqual(@as(?Act, .shoot), bar.at(.{ .set = .primary, .button = .x }));
-    try std.testing.expectEqual(@as(?Act, .wait), bar.at(.{ .set = .primary, .button = .b }));
+    try std.testing.expectEqual(@as(?Act, .juke), bar.at(.{ .set = .primary, .button = .b }));
+    try std.testing.expectEqual(@as(?Act, .wait), bar.at(.{ .set = .primary, .button = .y }));
+    try std.testing.expectEqual(@as(?Act, .burning_arrow), bar.at(.{ .set = .primary, .button = .rb }));
+    try std.testing.expectEqual(@as(?Act, .glacial_shot), bar.at(.{ .set = .primary, .button = .rt }));
     try std.testing.expectEqual(@as(?Act, .secondary), bar.at(.{ .set = .secondary, .button = .lb }));
     try std.testing.expectEqual(@as(?Act, null), bar.at(.{ .set = .secondary, .button = .x }));
     var down = std.EnumSet(Button).initEmpty();
@@ -175,6 +233,6 @@ test "picking a slot up and putting it down on another swaps the two, across set
     try std.testing.expectEqual(@as(?Act, .shoot), bar.at(.{ .set = .secondary, .button = .b }));
     bar.swap(.{ .set = .primary, .button = .lb }, .{ .set = .secondary, .button = .b });
     try std.testing.expectEqual(@as(?Button, .b), bar.modifier);
-    try std.testing.expectEqual(@as(?Act, .wait), bar.at(.{ .set = .primary, .button = .lb }));
+    try std.testing.expectEqual(@as(?Act, .juke), bar.at(.{ .set = .primary, .button = .lb }));
     try std.testing.expectEqual(@as(?Act, .shoot), bar.at(.{ .set = .secondary, .button = .lb }));
 }

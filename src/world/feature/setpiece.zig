@@ -117,22 +117,21 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
     const pad: i32 = p.apart;
     var lots: buildings.Lots(COUNT_MAX) = .{};
     for (0..p.count) |_| {
-        const room = lots.take(lv, rng, w + 2 * pad, h + 2 * pad) orelse lots.take(lv, rng, w, h) orelse continue;
-        const at = P{ .x = @divTrunc(room.lo.x + room.hi.x - w, 2), .y = @divTrunc(room.lo.y + room.hi.y - h, 2) };
-        stamp(lv, at, art);
-        clearRound(lv, grid.Box.sized(at, w, h), pal);
+        const room = lots.take(lv, rng, w + 2 * pad, h + 2 * pad, pal) orelse lots.take(lv, rng, w, h, pal) orelse continue;
+        place(lv, .{ .x = @divTrunc(room.lo.x + room.hi.x - w, 2), .y = @divTrunc(room.lo.y + room.hi.y - h, 2) }, art, pal);
     }
 }
 
-/// So its opening never gives onto a thicket that seals it in.
-fn clearRound(lv: *grid.Level, b: grid.Box, pal: carve.Palette) void {
-    const round = grid.grown(b.lo, b.hi, 1);
-    var cells = grid.Cells.of(round[0], round[1]);
-    while (cells.next()) |q| {
-        const t = lv.at(q);
-        const closes = t == pal.solid or (t.solid() and t.ground() != null);
-        if (closes and !b.holds(q) and !grid.Level.onRim(q)) lv.set(q, pal.open);
+/// Stamped, its gaps and the ring round it opened, so no thicket or rock seals its ground in.
+pub fn place(lv: *grid.Level, at: P, art: []const []const u8, pal: carve.Palette) void {
+    stamp(lv, at, art);
+    for (art, 0..) |line, y| {
+        for (line, 0..) |c, x| {
+            const q = at.add(.{ .x = @intCast(x), .y = @intCast(y) });
+            if (c == ' ' and !grid.Level.onRim(q) and carve.closes(lv.at(q), pal)) lv.set(q, pal.open);
+        }
     }
+    carve.clearRound(lv, grid.Box.sized(at, size(art).x, size(art).y), pal);
 }
 
 pub fn size(art: []const []const u8) P {

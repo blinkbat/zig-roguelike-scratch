@@ -54,14 +54,7 @@ const DebugRow = enum {
 const DEBUG_ROWS = std.enums.values(DebugRow);
 const DELETE = input.Button.y;
 const NAME = "roguelike";
-const LINE: usize = 160;
-
-fn caps(comptime s: []const u8) [:0]const u8 {
-    var b: [s.len:0]u8 = undefined;
-    for (s, 0..) |c, i| b[i] = std.ascii.toUpper(c);
-    const out = b;
-    return &out;
-}
+const LINE = menu.NOTE_MAX;
 
 const App = struct {
     alloc: std.mem.Allocator,
@@ -268,7 +261,7 @@ const App = struct {
                 var rows: [MAIN_ROWS.len][:0]const u8 = undefined;
                 for (MAIN_ROWS, &rows) |r, *l| l.* = r.label();
                 const picked = app.title.step(&g.st, MAIN_ROWS.len);
-                menu.draw(g.face, g.screen, comptime caps(NAME), &rows, app.title.at, note, null);
+                menu.draw(g.face, g.screen, comptime menu.caps(NAME), &rows, app.title.at, note, null);
                 switch (MAIN_ROWS[picked orelse return true]) {
                     .new => {
                         app.rescan();
@@ -336,7 +329,7 @@ const App = struct {
                     app.armed = null;
                     app.note.clear();
                 }
-                menu.draw(g.face, g.screen, comptime caps(MainRow.load.label()), &rows, app.loads.at, note, menu.BACK_LABEL ++ menu.SEP ++ comptime DELETE.caption() ++ " delete");
+                menu.draw(g.face, g.screen, comptime menu.caps(MainRow.load.label()), &rows, app.loads.at, note, menu.BACK_LABEL ++ menu.SEP ++ comptime DELETE.caption() ++ " delete");
                 const at = app.loads.at;
                 if (back) {
                     app.toTitle();
@@ -366,7 +359,7 @@ const App = struct {
                     .debug => r.label(),
                 };
                 const picked = app.options.step(&g.st, rows.len);
-                menu.draw(g.face, g.screen, comptime caps(MainRow.options.label()), &rows, app.options.at, null, menu.BACK_LABEL);
+                menu.draw(g.face, g.screen, comptime menu.caps(MainRow.options.label()), &rows, app.options.at, null, menu.BACK_LABEL);
                 if (back) {
                     app.toTitle();
                 } else if (picked) |i| switch (OPTION_ROWS[i]) {
@@ -380,7 +373,7 @@ const App = struct {
                     .unkillable => menu.toggle(DebugRow.unkillable.label(), g.unkillable),
                 };
                 const picked = app.debugs.step(&g.st, rows.len);
-                menu.draw(g.face, g.screen, comptime caps(OptionRow.debug.label()), &rows, app.debugs.at, comptime DebugRow.unkillable.label() ++ " keeps the hero on 1 hp whatever strikes it", menu.BACK_LABEL);
+                menu.draw(g.face, g.screen, comptime menu.caps(OptionRow.debug.label()), &rows, app.debugs.at, comptime DebugRow.unkillable.label() ++ " keeps the hero on 1 hp whatever strikes it", menu.BACK_LABEL);
                 if (back) {
                     app.page = .options;
                 } else if (picked) |i| switch (DEBUG_ROWS[i]) {
@@ -410,14 +403,14 @@ fn slotLine(s: *const save.Slot, buf: *[LINE]u8, i: usize) [:0]const u8 {
 var start_edit: ?[]const u8 = null;
 
 /// `edit` opens the editor on that world first; null opens the title.
-pub fn run(edit: ?[]const u8) void {
+pub fn run(edit: ?[]const u8) !void {
     start_edit = edit;
-    game.withGame(.{ .vsync_hint = true }, NAME, body);
+    try game.withGame(.{ .vsync_hint = true }, NAME, body);
 }
 
-fn body(g: *game.Game) void {
+fn body(g: *game.Game) !void {
     const alloc = std.heap.c_allocator;
-    const w = alloc.create(atlas.Atlas) catch return;
+    const w = try alloc.create(atlas.Atlas);
     defer alloc.destroy(w);
     const plain = if (start_edit) |p| atlas.plain(p) else true;
     var app = App{ .alloc = alloc, .g = g, .world = w, .edit_path = if (plain) start_edit orelse atlas.MAIN else atlas.MAIN };

@@ -39,7 +39,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const floor = grid.Box.inMap(p.margin);
     const lo = floor.lo;
     const hi = floor.hi;
-    carve.box(lv, lo, hi, pal.open);
+    carve.box(lv, .{ .lo = lo, .hi = hi }, pal.open);
     switch (p.style) {
         .bare => {},
         .pillars => {
@@ -53,8 +53,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
             var x = lo.x + 1;
             while (x + ALCOVE_W < hi.x) : (x += ALCOVE_W + 1) {
                 for ([_]i32{ lo.y, hi.y - ALCOVE_D }) |top| {
-                    carve.box(lv, .{ .x = x - 1, .y = top }, .{ .x = x + ALCOVE_W, .y = top + ALCOVE_D }, .wall);
-                    carve.box(lv, .{ .x = x, .y = top }, .{ .x = x + ALCOVE_W - 1, .y = top + ALCOVE_D }, .floor);
+                    carve.box(lv, .{ .lo = .{ .x = x - 1, .y = top }, .hi = .{ .x = x + ALCOVE_W, .y = top + ALCOVE_D } }, .wall);
+                    carve.box(lv, .{ .lo = .{ .x = x, .y = top }, .hi = .{ .x = x + ALCOVE_W - 1, .y = top + ALCOVE_D } }, .floor);
                     lv.set(.{ .x = x + 1, .y = if (top == lo.y) top else top + ALCOVE_D - 1 }, .grave);
                 }
             }

@@ -89,7 +89,10 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const 
     const rows = all[win.from..][0..win.len];
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(rows.len)) * ROW_STEP, 2);
     mid(face, screen, title, top + TITLE_DY - TITLE, TITLE, look.TEXT);
-    for (rows, win.from..) |r, i| {
+    const widest = screen.x - 2 * (MARK_GAP * 2 + face.width(">", ROW));
+    var fit_buf: [NOTE_MAX + 1]u8 = undefined;
+    for (rows, win.from..) |whole, i| {
+        const r = face.fit(&fit_buf, whole, ROW, widest, false);
         const y = top + ROWS_DY + @as(i32, @intCast(i - win.from)) * ROW_STEP;
         const on = i == at;
         const w = face.width(r, ROW);
@@ -117,12 +120,22 @@ pub fn shout(buf: []u8, comptime fmt: []const u8, args: anytype) [:0]const u8 {
     return s;
 }
 
+/// `shout` for a string known at compile time; call it `comptime`.
+pub fn caps(comptime s: []const u8) [:0]const u8 {
+    var b: [s.len:0]u8 = undefined;
+    _ = std.ascii.upperString(&b, s);
+    const out = b;
+    return &out;
+}
+
 pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
     return if (on) label ++ ": On" else label ++ ": Off";
 }
 
 pub fn mid(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
-    face.text(s, face.leftFor(s, @divTrunc(screen.x, 2), size), y, size, col);
+    var buf: [NOTE_MAX + 1]u8 = undefined;
+    const t = face.fit(&buf, s, size, screen.x - 2 * MARK_GAP, false);
+    face.text(t, face.leftFor(t, @divTrunc(screen.x, 2), size), y, size, col);
 }
 
 test "a long menu shows the rows that fit, the one it is on among them" {

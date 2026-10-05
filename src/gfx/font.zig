@@ -12,6 +12,7 @@ pub const SMALL: i32 = 16;
 const ASCII_LO: i32 = 32;
 const ASCII_N: usize = 95;
 const SYMBOLS_MAX: usize = 16;
+const ELLIPSIS = "...";
 
 /// Until `load` succeeds, raylib's built-in font stands in.
 pub const Face = struct {
@@ -60,28 +61,56 @@ pub const Face = struct {
         self.font = null;
     }
 
-    pub fn width(self: Face, s: [:0]const u8, size: i32) i32 {
+    /// raylib's MeasureTextEx at no spacing, its glyph search skipped for printable ASCII.
+    pub fn width(self: *const Face, s: [:0]const u8, size: i32) i32 {
         const f = self.font orelse return rl.measureText(s, size);
-        return @intFromFloat(rl.measureTextEx(f, s, @floatFromInt(size), 0).x);
+        if (!self.ordered or !printable(s)) return @intFromFloat(rl.measureTextEx(f, s, @floatFromInt(size), 0).x);
+        var w: f32 = 0;
+        for (s) |c| w += measured(f, ascii(c));
+        return @intFromFloat(w * scaleOf(f, size));
     }
 
-    pub fn draw(self: Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
+    /// raylib's DrawTextEx at no spacing, its glyph search skipped for printable ASCII.
+    pub fn draw(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
         const f = self.font orelse return rl.drawText(s, x, y, size, col);
-        rl.drawTextEx(f, s, .{ .x = @floatFromInt(x), .y = @floatFromInt(y) }, @floatFromInt(size), 0, col);
+        const at = rl.Vector2{ .x = @floatFromInt(x), .y = @floatFromInt(y) };
+        if (!self.ordered or !printable(s)) return rl.drawTextEx(f, s, at, @floatFromInt(size), 0, col);
+        const scale = scaleOf(f, size);
+        var off: f32 = 0;
+        for (s) |c| {
+            const i = ascii(c);
+            if (c != ' ') put(f, i, at.x + off, at.y, scale, col);
+            const g = f.glyphs[i];
+            off += if (g.advanceX == 0) f.recs[i].width * scale else @as(f32, @floatFromInt(g.advanceX)) * scale;
+        }
+    }
+
+    /// `s` whole, or as much of it as fits in `max` px beside "..." (its end kept when `keep_end`), in `buf`, which must not hold `s`.
+    pub fn fit(self: *const Face, buf: []u8, s: []const u8, size: i32, max: i32, keep_end: bool) [:0]const u8 {
+        const whole = std.fmt.bufPrintZ(buf, "{s}", .{s}) catch "";
+        if (whole.len == s.len and self.width(whole, size) <= max) return whole;
+        var n = @min(s.len, buf.len -| (ELLIPSIS.len + 1));
+        while (true) : (n -= 1) {
+            const t = (if (keep_end)
+                std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{s[s.len - n ..]})
+            else
+                std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{s[0..n]})) catch return whole;
+            if (n == 0 or self.width(t, size) <= max) return t;
+        }
     }
 
     /// Where `s` starts with its middle on `cx`.
-    pub fn leftFor(self: Face, s: [:0]const u8, cx: i32, size: i32) i32 {
+    pub fn leftFor(self: *const Face, s: [:0]const u8, cx: i32, size: i32) i32 {
         return cx - @divTrunc(self.width(s, size), 2);
     }
 
     /// One character, its middle on `cx`, `cy`.
-    pub fn glyph(self: Face, ch: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+    pub fn glyph(self: *const Face, ch: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         const s = [_:0]u8{ch};
         self.centred(&s, cx, cy, size, col);
     }
 
-    fn centred(self: Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+    fn centred(self: *const Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         self.draw(s, self.leftFor(s, cx, size), topFor(cy, size), size, col);
     }
 
@@ -94,28 +123,51 @@ pub const Face = struct {
         const f = self.font orelse return self.glyph(alt, cx, cy, size, col);
         const cp = std.unicode.utf8Decode(sym) catch null;
         const i = self.indexOf(cp orelse -1) orelse return self.centred(sym, cx, cy, size, col);
-        // raylib's MeasureTextEx and DrawTextCodepoint for one glyph, the index already known.
-        const scale = @as(f32, @floatFromInt(size)) / @as(f32, @floatFromInt(f.baseSize));
-        const g = f.glyphs[i];
-        const r = f.recs[i];
-        const w: f32 = if (g.advanceX > 0) @floatFromInt(g.advanceX) else r.width + @as(f32, @floatFromInt(g.offsetX));
-        const x: f32 = @floatFromInt(cx - @divTrunc(@as(i32, @intFromFloat(w * scale)), 2));
-        const y: f32 = @floatFromInt(topFor(cy, size));
-        const pad: f32 = @floatFromInt(f.glyphPadding);
-        const src = rl.Rectangle{ .x = r.x - pad, .y = r.y - pad, .width = r.width + 2 * pad, .height = r.height + 2 * pad };
-        const dst = rl.Rectangle{
-            .x = x + @as(f32, @floatFromInt(g.offsetX)) * scale - pad * scale,
-            .y = y + @as(f32, @floatFromInt(g.offsetY)) * scale - pad * scale,
-            .width = src.width * scale,
-            .height = src.height * scale,
-        };
-        rl.drawTexturePro(f.texture, src, dst, .{ .x = 0, .y = 0 }, 0, col);
+        const scale = scaleOf(f, size);
+        const x: f32 = @floatFromInt(cx - @divTrunc(@as(i32, @intFromFloat(measured(f, i) * scale)), 2));
+        put(f, i, x, @floatFromInt(topFor(cy, size)), scale, col);
     }
 
     /// Over a drop shadow, for text on the hud.
-    pub fn text(self: Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
+    pub fn text(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
         const off = @max(@divTrunc(size, SHADOW_STEP), 1);
         self.draw(s, x + off, y + off, size, .{ .r = 0, .g = 0, .b = 0, .a = @intCast(SHADOW_A * col.a / 255) });
         self.draw(s, x, y, size, col);
     }
 };
+
+fn printable(s: []const u8) bool {
+    for (s) |c| {
+        if (c < ASCII_LO or c >= ASCII_LO + ASCII_N) return false;
+    }
+    return true;
+}
+
+fn ascii(c: u8) usize {
+    return @intCast(c - ASCII_LO);
+}
+
+fn scaleOf(f: rl.Font, size: i32) f32 {
+    return @as(f32, @floatFromInt(size)) / @as(f32, @floatFromInt(f.baseSize));
+}
+
+/// Glyph `i`'s advance as raylib's MeasureTextEx sums it, unscaled.
+fn measured(f: rl.Font, i: usize) f32 {
+    const g = f.glyphs[i];
+    return if (g.advanceX > 0) @floatFromInt(g.advanceX) else f.recs[i].width + @as(f32, @floatFromInt(g.offsetX));
+}
+
+/// raylib's DrawTextCodepoint, glyph `i` already found.
+fn put(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, col: rl.Color) void {
+    const g = f.glyphs[i];
+    const r = f.recs[i];
+    const pad: f32 = @floatFromInt(f.glyphPadding);
+    const src = rl.Rectangle{ .x = r.x - pad, .y = r.y - pad, .width = r.width + 2 * pad, .height = r.height + 2 * pad };
+    const dst = rl.Rectangle{
+        .x = x + @as(f32, @floatFromInt(g.offsetX)) * scale - pad * scale,
+        .y = y + @as(f32, @floatFromInt(g.offsetY)) * scale - pad * scale,
+        .width = src.width * scale,
+        .height = src.height * scale,
+    };
+    rl.drawTexturePro(f.texture, src, dst, .{ .x = 0, .y = 0 }, 0, col);
+}

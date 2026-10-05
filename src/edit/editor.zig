@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const grid = @import("../world/grid.zig");
 const atlas = @import("../world/atlas.zig");
+const lume = @import("../world/lume.zig");
 const terrain = @import("../world/biome/terrain.zig");
 const scatter = @import("../world/feature/scatter.zig");
 const actor = @import("../play/actor.zig");
@@ -72,7 +73,7 @@ const DETAIL_DY: i32 = TEXT + 1;
 
 comptime {
     std.debug.assert(atlas.GRAPH_STEP.x > BOX_W and atlas.GRAPH_STEP.y > BOX_H);
-    std.debug.assert(FIELD_MAX >= atlas.NAME_MAX);
+    std.debug.assert(FIELD_MAX >= atlas.NAME_MAX and FIELD_MAX <= atlas.STEM_MAX);
     std.debug.assert(MEMBERS_X + @as(i32, pack.MAKEUP_MAX) * (MEMBER_W + MEMBER_GAP) <= MAKEUP_TOOLS_X);
 }
 
@@ -94,6 +95,7 @@ const Tool = enum {
     rat,
     slime,
     bloat,
+    pib,
     door,
     link,
     start,
@@ -110,7 +112,7 @@ const Tool = enum {
     fn generated(t: Tool) bool {
         return switch (t) {
             .door, .link, .start => false,
-            .floor, .wall, .barrel, .torch, .rat, .slime, .bloat => true,
+            .floor, .wall, .barrel, .torch, .rat, .slime, .bloat, .pib => true,
         };
     }
 
@@ -118,7 +120,7 @@ const Tool = enum {
     fn strokes(t: Tool) bool {
         return switch (t) {
             .floor, .wall, .barrel => true,
-            .torch, .rat, .slime, .bloat, .door, .link, .start => false,
+            .torch, .rat, .slime, .bloat, .pib, .door, .link, .start => false,
         };
     }
 
@@ -126,7 +128,7 @@ const Tool = enum {
     fn broad(t: Tool) bool {
         return switch (t) {
             .floor, .wall => true,
-            .barrel, .torch, .rat, .slime, .bloat, .door, .link, .start => false,
+            .barrel, .torch, .rat, .slime, .bloat, .pib, .door, .link, .start => false,
         };
     }
 
@@ -139,6 +141,7 @@ const Tool = enum {
             .rat => "Rat",
             .slime => "Slime",
             .bloat => "Bloat",
+            .pib => "Pib",
             .door => "Door",
             .link => "Link",
             .start => "Start",
@@ -160,7 +163,7 @@ const Tool = enum {
             .wall => "paint rock; " ++ Desk.ERASE_CAPTION ++ " paints floor",
             .barrel => "breaks for gold; " ++ Desk.ERASE_CAPTION ++ " takes it away",
             .torch => TORCH_RULE,
-            .rat, .slime, .bloat => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
+            .rat, .slime, .bloat, .pib => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
             .door => "any cell of any node; a procgen node's floor is rolled round its doors each run",
             .link => "click a door, then the door it leads to on any node; " ++ Desk.ERASE_CAPTION ++ " unlinks",
             .start => "where the world begins, and " ++ Desk.PLAY_CAPTION ++ " plays from",
@@ -183,8 +186,10 @@ const UNGENERATED = blk: {
 };
 
 comptime {
+    @setEvalBranchQuota(10_000);
     std.debug.assert(TOOLS.len == Desk.TOOL_KEYS.len);
     for (actor.FOES) |k| std.debug.assert(@hasField(Tool, @tagName(k)));
+    for (TOOLS) |t| std.debug.assert(if (t.foe()) |k| k.stocked() else true);
 }
 
 const SEP = menu.SEP;
@@ -817,6 +822,8 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     const over = ed.mouseIn(c);
     if (d.play_here) playHere(ed, c, over);
     if (ed.action != .none) return;
+    const view = ed.view;
+    const node = ed.node;
     if (d.save) _ = ed.save();
     if (d.save_as) ed.askName(.save_as);
     if (d.open) ed.askOpen();
@@ -831,6 +838,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     if (d.tool) |i| ed.setTool(TOOLS[i]);
     if (ed.modal != .none or ed.renaming) return;
     if (d.clicked()) ed.gesture();
+    if (d.clicked() and (ed.view != view or ed.node != node)) return;
     switch (ed.view) {
         .map => {
             panBy(&ed.cam, d, dt, ed.px());
@@ -861,7 +869,7 @@ fn panBy(cam: *[2]f32, d: *const Desk, dt: f32, px: f32) void {
 }
 
 fn escape(ed: *Editor) void {
-    if (ed.rect != null) {
+    if (ed.rect != null or ed.drag != null) {
         ed.drop();
     } else if (ed.pick != null) {
         ed.pick = null;
@@ -928,7 +936,7 @@ fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (over and d.clicked()) {
         ed.drop();
         ed.stroke = if (d.paint_hit) .paint else .erase;
-        if (d.shift and ed.tool.broad() and ed.tool.fits(ed.here()) and grid.Level.inside(p)) ed.rect = .{ .from = p, .erase = ed.stroke == .erase };
+        if (d.shift and ed.tool.broad() and ed.tool.fits(ed.here())) ed.rect = .{ .from = clampCell(p), .erase = ed.stroke == .erase };
     }
     if (!over) ed.stroke_at = null;
     if (ed.rect != null or !over or ed.stroke == .none) return;
@@ -1023,8 +1031,8 @@ fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
     b.tile[i] = t;
     if (t.solid()) {
         b.clearCell(p);
-        if (b.torchAt(p.add(mathx.Dir.n.delta()))) |k| b.dropTorch(k);
-    } else if (b.torchAt(p)) |k| b.dropTorch(k);
+        if (b.torch.find(lume.torchWall(p))) |k| b.torch.drop(k);
+    } else if (b.torch.find(p)) |k| b.torch.drop(k);
     ed.changed();
 }
 
@@ -1042,18 +1050,18 @@ fn place(ed: *Editor, p: P) void {
         .torch => {
             const b = &ed.plan().bespoke;
             if (!ed.here().torchFits(b, p)) return ed.say("A torch " ++ TORCH_RULE, .{});
-            if (!b.addTorch(p)) return ed.say("That wall holds a torch, or the node holds {d}", .{grid.MAX_TORCHES});
+            if (!b.torch.add(p)) return ed.say("That wall holds a torch, or the node holds {d}", .{grid.MAX_TORCHES});
             ed.changed();
         },
-        .rat, .slime, .bloat => {
+        .rat, .slime, .bloat, .pib => {
             const b = &ed.plan().bespoke;
             const k = ed.tool.foe().?;
             if (!ed.here().foeFits(b, p)) return ed.say("A foe " ++ FOE_RULE, .{});
             if (b.foeAt(p)) |f| {
                 if (b.foe[f].kind == k) return;
-                if (!actor.roomFor(b.bodies() - actor.most(b.foe[f].kind), k)) return ed.say(NO_ROOM, .{@tagName(k)});
+                if (!actor.roomFor(b.bodies() - actor.most(b.foe[f].kind), k)) return ed.say(NO_ROOM, .{actor.row(k).name});
                 b.foe[f].kind = k;
-            } else if (!b.addFoe(.{ .kind = k, .at = p })) return ed.say(NO_ROOM, .{@tagName(k)});
+            } else if (!b.addFoe(.{ .kind = k, .at = p })) return ed.say(NO_ROOM, .{actor.row(k).name});
             ed.changed();
         },
         .door => {
@@ -1062,7 +1070,7 @@ fn place(ed: *Editor, p: P) void {
                 .bespoke => |*b| {
                     b.tile[i] = .floor;
                     b.clearCell(p);
-                    if (b.torchAt(p)) |t| b.dropTorch(t);
+                    if (b.torch.find(p)) |t| b.torch.drop(t);
                 },
                 .procgen => {},
             }
@@ -1107,10 +1115,10 @@ fn remove(ed: *Editor, p: P) void {
         },
         .torch => {
             const b = &ed.plan().bespoke;
-            b.dropTorch(b.torchAt(p) orelse return);
+            b.torch.drop(b.torch.find(p) orelse return);
             ed.changed();
         },
-        .rat, .slime, .bloat => {
+        .rat, .slime, .bloat, .pib => {
             const b = &ed.plan().bespoke;
             b.dropFoe(b.foeAt(p) orelse return);
             ed.changed();
@@ -1168,8 +1176,20 @@ fn buttonOn(ed: *Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on
     const h = hot(ed, r, live, modal, tip);
     plate(r, on, h.hot);
     const y: i32 = @intFromFloat(r.y);
-    g.face.draw(label, @as(i32, @intFromFloat(r.x)) + GAP, y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), TEXT, if (live) look.TEXT else look.DIM);
+    var fit_buf: [LINE]u8 = undefined;
+    g.face.draw(g.face.fit(&fit_buf, label, TEXT, insetW(r), false), @as(i32, @intFromFloat(r.x)) + GAP, y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), TEXT, if (live) look.TEXT else look.DIM);
     return h.hit;
+}
+
+/// Pixels for text in `r`, a `GAP` in from each side.
+fn insetW(r: rl.Rectangle) i32 {
+    return @as(i32, @intFromFloat(r.width)) - 2 * GAP;
+}
+
+/// `s` fitted ahead of `suffix`, which is kept whole.
+fn fitBefore(g: *const game.Game, buf: []u8, fit_buf: []u8, s: []const u8, suffix: [:0]const u8, max: i32) [:0]const u8 {
+    const head = g.face.fit(fit_buf, s, TEXT, max - g.face.width(suffix, TEXT), false);
+    return std.fmt.bufPrintZ(buf, "{s}{s}", .{ head, suffix }) catch "";
 }
 
 fn plate(r: rl.Rectangle, on: bool, hot_: bool) void {
@@ -1229,7 +1249,8 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     rl.drawRectangle(0, 0, PANEL_W, g.screen.y, PANEL_BG);
     rl.drawRectangle(PANEL_W - 1, 0, 1, g.screen.y, look.EDGE);
     var y = PAD;
-    g.face.draw(std.fmt.bufPrintZ(&buf, "{s}{s}", .{ ed.path(), if (ed.dirty) " *" else "" }) catch "", PAD, y, TEXT, look.TEXT);
+    var fit_buf: [LINE]u8 = undefined;
+    g.face.draw(fitBefore(g, &buf, &fit_buf, ed.path(), if (ed.dirty) " *" else "", INNER_W), PAD, y, TEXT, look.TEXT);
     y += HEAD + GAP;
     var file = Across{ .y = y, .n = 4 };
     if (button(ed, g, file.next(), "New", false, true, "New world (" ++ Desk.NEW_CAPTION ++ ")")) ed.askName(.new);
@@ -1297,11 +1318,16 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
         const on = n == ed.node;
         const h = hot(ed, r, true, false, "Open this node");
         plate(r, on, h.hot);
-        g.face.draw(ed.nodeTitle(n, &buf), PAD + GAP, y + TITLE_DY, TEXT, titleColor(ed, n));
+        g.face.draw(fitTitle(ed, g, n, &buf, &fit_buf, INNER_W - 2 * GAP), PAD + GAP, y + TITLE_DY, TEXT, titleColor(ed, n));
         g.face.draw(nodeDetail(nd, &detail_buf), PAD + GAP, y + TITLE_DY + DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
         if (h.hit) ed.goTo(n);
         y += NODE_H;
     }
+}
+
+/// A name being typed keeps its end, where the caret is.
+fn fitTitle(ed: *Editor, g: *const game.Game, n: usize, buf: []u8, fit_buf: []u8, max: i32) [:0]const u8 {
+    return g.face.fit(fit_buf, ed.nodeTitle(n, buf), TEXT, max, ed.renamingNode(n));
 }
 
 fn lowerArea(g: *const game.Game, top: i32) rl.Rectangle {
@@ -1351,9 +1377,7 @@ fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void 
     if (drop) |i| _ = fo.dropMakeup(i);
     if (button(ed, g, cellOfRow(y, 0, 1), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
     ed.gen_most = @max(0, y + ROW_H + PAD + ed.gen_top - top - shown);
-    pg.floor = pg.floor.fit();
-    for (pg.featuresMut()) |*ft| ft.* = ft.fit();
-    fo.* = fo.fit();
+    pg.* = pg.fit();
     if (!std.meta.eql(was, pg.*)) ed.changed();
 }
 
@@ -1689,7 +1713,7 @@ const FOE_ROWS = [_]Knob{
 };
 
 const ADD_PROCGEN_TIP = "A node the " ++ @tagName((atlas.Procgen{}).floor) ++ " generator rolls round its doors, anew each run";
-const ADD_MAKEUP_TIP ="Another pack it may roll, a lone " ++ actor.row(pack.FIRST).name ++ " to begin";
+const ADD_MAKEUP_TIP = "Another pack it may roll, a lone " ++ actor.row(pack.FIRST).name ++ " to begin";
 const SHIFT_TIP = std.fmt.comptimePrint(" ({s} steps {d})", .{ Desk.SHIFT_CAPTION, SHIFT_STEP });
 
 comptime {
@@ -1784,7 +1808,8 @@ fn drawStatus(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         ed.said.text()
     else if (ed.tip) |t| t else hover(ed, c, &buf);
     var y = top + GAP;
-    g.face.draw(line, PANEL_W + PAD, y, TEXT, look.TEXT);
+    var fit_buf: [LINE + 1]u8 = undefined;
+    g.face.draw(g.face.fit(&fit_buf, line, TEXT, g.screen.x - PANEL_W - 2 * PAD, false), PANEL_W + PAD, y, TEXT, look.TEXT);
     y += TEXT + BLOCK_GAP;
     g.face.draw(if (ed.view == .map) CRIB_MAP else CRIB_GRAPH, PANEL_W + PAD, y, TEXT, look.DIM);
     for (CRIB_ALL) |crib| {
@@ -1822,7 +1847,7 @@ fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {
     return std.fmt.bufPrintZ(buf, "{s}, {d} doors, {d} unlinked", .{ kind, nd.door_n, open }) catch "";
 }
 
-fn visible(ed: *const Editor, c: rl.Rectangle) struct { lo: P, hi: P } {
+fn visible(ed: *const Editor, c: rl.Rectangle) grid.Box {
     return .{
         .lo = .{ .x = @max(0, @as(i32, @intFromFloat(@floor(ed.cam[0])))), .y = @max(0, @as(i32, @intFromFloat(@floor(ed.cam[1])))) },
         .hi = .{
@@ -1898,11 +1923,12 @@ fn drawGraph(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     scissor(c);
     defer rl.endScissorMode();
     var buf: [LINE]u8 = undefined;
+    var fit_buf: [LINE]u8 = undefined;
     for (0..ed.world.node_n) |n| {
         const b = ed.boxAt(c, n);
         rl.drawRectangleRec(b, PANEL_BG);
         if (thumb(ed, n)) |t| sprite(t, .{ .x = b.x, .y = b.y + @as(f32, @floatFromInt(BOX_TOP)), .width = @floatFromInt(BOX_W), .height = @floatFromInt(BOX_H - BOX_TOP) });
-        g.face.draw(ed.nodeTitle(n, &buf), @as(i32, @intFromFloat(b.x)) + GAP, @as(i32, @intFromFloat(b.y)) + TITLE_DY, TEXT, titleColor(ed, n));
+        g.face.draw(fitTitle(ed, g, n, &buf, &fit_buf, BOX_W - 2 * GAP), @as(i32, @intFromFloat(b.x)) + GAP, @as(i32, @intFromFloat(b.y)) + TITLE_DY, TEXT, titleColor(ed, n));
         rl.drawRectangleLinesEx(b, 1, if (n == ed.node) ON else look.EDGE);
     }
     for (ed.world.nodes(), 0..) |*nd, n| {
@@ -1926,12 +1952,10 @@ fn thumb(ed: *Editor, n: usize) ?rl.Texture2D {
         const unrolled = ed.world.node[n].unrolled();
         for (&px, 0..) |*c, i| {
             const lv = &ed.thumb_lv;
-            c.* = if (lv.door[i] != grid.NO_DOOR)
-                look.DOOR.fg
+            c.* = if (look.Mark.of(lv, i)) |m|
+                m.look().fg
             else if (unrolled)
                 look.UNROLLED
-            else if (lv.barrel[i])
-                look.BARREL.fg
             else if ((lv.shape[i] orelse .top) == .solid)
                 look.BG
             else
@@ -1968,7 +1992,9 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
     const bx = x + MODAL_W - PAD - MODAL_BTN_W;
     switch (ed.modal) {
         .confirm => {
-            g.face.draw(std.fmt.bufPrintZ(&buf, "{s} has changes that are not saved.", .{ed.path()}) catch "", x + PAD, y, TEXT, look.TEXT);
+            var fit_buf: [LINE]u8 = undefined;
+            g.face.draw(fitBefore(g, &buf, &fit_buf, ed.path(), " has changes that are not saved.", MODAL_INNER_W), x + PAD, y, TEXT, look.TEXT);
+            std.debug.assert(y + TEXT <= buttons_y);
             y = buttons_y;
             if (buttonOn(ed, g, modalButton(bx, y, 2), "Save (" ++ Desk.ENTER_CAPTION ++ ")", false, true, true, null) and ed.save()) ed.commit();
             if (buttonOn(ed, g, modalButton(bx, y, 1), "Discard", false, true, true, null)) ed.commit();
@@ -1979,7 +2005,9 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
             y += ROW_STEP;
             var pbuf: [atlas.PATH_MAX]u8 = undefined;
             const note = if (atlas.pathFor(&pbuf, ed.field.text())) |p| std.fmt.bufPrintZ(&buf, "Makes {s}", .{p}) catch "" else "Type a name";
-            g.face.draw(note, x + PAD, y, SMALL, look.DIM);
+            var fit_buf: [LINE]u8 = undefined;
+            g.face.draw(g.face.fit(&fit_buf, note, SMALL, MODAL_INNER_W, false), x + PAD, y, SMALL, look.DIM);
+            std.debug.assert(y + SMALL <= buttons_y);
             y = buttons_y;
             if (buttonOn(ed, g, modalButton(bx, y, 1), "OK (" ++ Desk.ENTER_CAPTION ++ ")", false, true, true, null)) ed.named();
             cancelButton(ed, g, bx, y);
@@ -1997,6 +2025,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
                 }
                 y += ROW_H;
             }
+            std.debug.assert(y + @as(i32, if (ed.listing.n == 0) TEXT else 0) <= buttons_y);
             cancelButton(ed, g, bx, buttons_y);
         },
         .none => {},
@@ -2019,8 +2048,10 @@ fn modalButton(bx: i32, y: i32, k: i32) rl.Rectangle {
 
 fn fieldRow(ed: *Editor, g: *game.Game, r: rl.Rectangle) void {
     var buf: [LINE]u8 = undefined;
+    var fit_buf: [LINE]u8 = undefined;
     rl.drawRectangleRec(r, ROW_ON);
-    g.face.draw(std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "", @as(i32, @intFromFloat(r.x)) + GAP, @as(i32, @intFromFloat(r.y)) + TEXT_DY, TEXT, look.RETICLE);
+    const typed = std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "";
+    g.face.draw(g.face.fit(&fit_buf, typed, TEXT, insetW(r), true), @as(i32, @intFromFloat(r.x)) + GAP, @as(i32, @intFromFloat(r.y)) + TEXT_DY, TEXT, look.RETICLE);
 }
 
 fn titleColor(ed: *const Editor, n: usize) rl.Color {
@@ -2049,8 +2080,8 @@ const SHOT_ZOOM: usize = ZOOM_AT + 1;
 const SHOT_BRUSH: usize = 2;
 
 /// DEV ONLY: the posed world's map mid link-pick, its graph, then its procgen node's generator.
-pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8) void {
-    const ed = Editor.create(std.heap.c_allocator) catch return;
+pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8) !void {
+    const ed = try Editor.create(std.heap.c_allocator);
     defer ed.destroy();
     const w = ed.world;
     w.* = .{};
@@ -2101,7 +2132,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
         rl.beginTextureMode(target);
         draw(ed, g);
         rl.endTextureMode();
-        game.exportTarget(target, p);
+        try game.exportTarget(target, p);
     }
     ed.view = .map;
     ed.select(1);
@@ -2116,7 +2147,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     ed.gen_top = ed.gen_most;
     draw(ed, g);
     rl.endTextureMode();
-    game.exportTarget(target, gen_path);
+    try game.exportTarget(target, gen_path);
 }
 
 fn testEditor() !*Editor {
@@ -2158,7 +2189,7 @@ test "painting a bespoke node: a door opens its wall and no wall paints over it"
     try std.testing.expect(ed.lv.walkable(.{ .x = 10, .y = 5 }));
     try std.testing.expectEqual(@as(?usize, 0), ed.lv.doorAt(.{ .x = 10, .y = 5 }));
     try std.testing.expectEqual(@as(usize, 1), w.node[0].plan.bespoke.foe_n);
-    try std.testing.expectEqual(@as(usize, 1), ed.lv.torch_n);
+    try std.testing.expectEqual(@as(usize, 1), ed.lv.torch.n);
     try std.testing.expect(ed.dirty);
 }
 
@@ -2326,13 +2357,36 @@ test "a stroke leaving the map paints up to its edge, and it ends with the butto
     try std.testing.expectEqual(@as(usize, 6), row_n);
     try std.testing.expectEqual(grid.Tile.floor, b.tile[grid.Level.idx(.{ .x = 4, .y = 10 })]);
     click(ed, .torch, .{ .x = 3, .y = 9 });
-    try std.testing.expectEqual(@as(usize, 1), b.torch_n);
+    try std.testing.expectEqual(@as(usize, 1), b.torch.n);
     click(ed, .wall, .{ .x = 3, .y = 10 });
-    try std.testing.expectEqual(@as(usize, 0), b.torch_n);
+    try std.testing.expectEqual(@as(usize, 0), b.torch.n);
     ed.tool = .floor;
     ed.desk = .{ .shift = true, .paint = true, .erase = true, .paint_hit = true, .erase_hit = true, .mouse = mouseOn(ed, c, .{ .x = 8, .y = 8 }) };
     mapMouse(ed, c, true);
     try std.testing.expect(!ed.rect.?.erase);
+}
+
+test "a rectangle begun off the map fills from its edge" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    _ = ed.world.add(.{ .bespoke = .{} });
+    const b = &ed.world.node[0].plan.bespoke;
+    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    ed.cam = .{ -4, -4 };
+    ed.tool = .floor;
+    ed.gesture();
+    ed.desk = .{ .shift = true, .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = -2, .y = -2 }) };
+    mapMouse(ed, c, true);
+    ed.desk = .{ .shift = true, .paint = true, .mouse = mouseOn(ed, c, .{ .x = 4, .y = 4 }) };
+    mapMouse(ed, c, true);
+    ed.desk = .{ .mouse = mouseOn(ed, c, .{ .x = 4, .y = 4 }) };
+    mapMouse(ed, c, true);
+    var n: usize = 0;
+    for (b.tile) |t| {
+        if (t == .floor) n += 1;
+    }
+    std.debug.print("a rectangle from -2,-2 to 4,4: {d} cells of floor\n", .{n});
+    try std.testing.expectEqual(@as(usize, 25), n);
 }
 
 test "a click on the frame a rectangle is let go is an undo of its own" {

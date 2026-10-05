@@ -15,6 +15,15 @@ pub fn torchFloor(wall: P) P {
     return wall.add(mathx.Dir.s.delta());
 }
 
+pub fn torchWall(floor: P) P {
+    return floor.add(mathx.Dir.n.delta());
+}
+
+/// The cells the torch on `wall` lights, added to `out`.
+pub fn torchPool(lv: *const grid.Level, wall: P, out: *[grid.CELLS]bool) void {
+    fov.castInto(lv, torchFloor(wall), TORCH_REACH, out);
+}
+
 pub const Source = struct { at: P, reach: i32 };
 
 /// In cells: the whole `sight` by day, none at night or under a roof.
@@ -23,9 +32,12 @@ pub fn skyReach(outdoors: bool, hour: f32, sight: i32) f32 {
     return day.daylight(hour) * @as(f32, @floatFromInt(sight));
 }
 
-pub fn pools(lv: *const grid.Level, carried: []const Source, out: *[grid.CELLS]bool) void {
+/// Only as far as `sight` of `viewer` reaches: nothing past it is read.
+fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, out: *[grid.CELLS]bool) void {
     @memset(out, false);
-    for (lv.torches()) |t| fov.castInto(lv, torchFloor(t), TORCH_REACH, out);
+    for (lv.torches()) |t| {
+        if (mathx.dist(torchFloor(t), viewer) <= sight + TORCH_REACH) torchPool(lv, t, out);
+    }
     for (carried) |s| fov.castInto(lv, s.at, s.reach, out);
 }
 
@@ -34,7 +46,7 @@ pub fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool
     lv.los = lv.lit;
     for (0..grid.CELLS) |i| {
         if (!lv.lit[i]) continue;
-        const near = mathx.distEuclid(viewer, grid.Level.of(i)) <= sky + 0.5;
+        const near = mathx.reaches(viewer, grid.Level.of(i), sky);
         lv.lit[i] = near or lit_by[i];
         lv.seen[i] = was_seen[i] or lv.lit[i];
     }
@@ -44,7 +56,7 @@ pub fn see(lv: *grid.Level, viewer: P, sight: i32, sky: f32, carried: []const So
     const was = lv.seen;
     fov.cast(lv, viewer, sight);
     var lit_by: [grid.CELLS]bool = undefined;
-    pools(lv, carried, &lit_by);
+    pools(lv, viewer, sight, carried, &lit_by);
     dim(lv, viewer, sky, &lit_by, &was);
 }
 
@@ -85,7 +97,7 @@ test "a torch's pool is seen across the dark, and a cell once seen is remembered
     try std.testing.expect(lv.isLit(under));
     try std.testing.expect(!lv.isLit(.{ .x = at.x - 8, .y = at.y }));
     const away = P{ .x = 30, .y = 30 };
-    lv.torch_n = 0;
+    lv.torch.n = 0;
     see(&lv, away, 10, 0, &lamp);
     try std.testing.expect(!lv.isLit(under) and lv.isSeen(under));
     try std.testing.expect(!lv.isSeen(.{ .x = at.x - 8, .y = at.y + 9 }));

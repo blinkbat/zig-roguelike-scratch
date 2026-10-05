@@ -30,12 +30,15 @@ pub const Params = struct {
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
     const w: f32 = @floatFromInt(p.width);
     var beds = [_]carve.Bed{.{}} ** COUNT_MAX;
-    for (beds[0..p.count]) |*bed| {
+    var flows: [COUNT_MAX]carve.Flow = undefined;
+    for (flows[0..p.count], beds[0..p.count]) |*f, *bed| {
         const ends = p.course.ends(rng);
-        carve.river(lv, rng, ends[0], ends[1], w, p.fill, p.bank.tile(), bed);
+        f.* = carve.Flow.of(rng, ends[0], ends[1], bed);
     }
-    const across = fordOf(p.fill, pal);
     const bank = p.bank.tile();
+    if (bank) |bk| for (flows[0..p.count]) |*f| f.bank(lv, w, bk);
+    for (flows[0..p.count]) |*f| f.fill(lv, w, p.fill);
+    const across = fordOf(p.fill, pal);
     const ford_r: i32 = @intFromFloat(@floor(carve.bankReach(w)));
     const bank_r: i32 = @intFromFloat(@ceil(carve.bankReach(w)));
     for (0..p.fords) |k| {
@@ -128,4 +131,46 @@ test "a cliff band with a gap leaves the map whole, and a river's ford is shallo
     apply(&lv, &rng, 0, pal, .{ .course = .down, .fords = 2 });
     std.debug.print("a cliff across and a river down: {d} rock, {d} water, {d} ford shallows and banks\n", .{ carve.count(&lv, .rock), carve.count(&lv, .water), carve.count(&lv, .shallows) });
     try std.testing.expect(carve.count(&lv, .water) > grid.H);
+}
+
+test "crossing cliffs with banks keep each other's rock" {
+    const p = Params{ .fill = .rock, .bank = .shallows, .course = .any, .count = COUNT_MAX };
+    var holed: usize = 0;
+    var lost: usize = 0;
+    for (0..50) |s| {
+        var lv = grid.Level.blank();
+        carve.field(&lv, carve.Palette.WILD);
+        var rng = mathx.Rng.init(0xC4055 + s);
+        apply(&lv, &rng, 0, carve.Palette.WILD, p);
+        var cliffs = grid.Level.blank();
+        var again = mathx.Rng.init(0xC4055 + s);
+        for (0..p.count) |_| {
+            const ends = p.course.ends(&again);
+            carve.Flow.of(&again, ends[0], ends[1], null).fill(&cliffs, @floatFromInt(p.width), .rock);
+        }
+        var here: usize = 0;
+        for (cliffs.tile, lv.tile) |want, got| {
+            if (want == .rock and got != .rock) here += 1;
+        }
+        lost += here;
+        if (here > 0) holed += 1;
+    }
+    std.debug.print("50 maps of {d} banked cliffs: {d} with a cliff holed, {d} rock cells lost\n", .{ COUNT_MAX, holed, lost });
+    try std.testing.expectEqual(@as(usize, 0), lost);
+}
+
+test "a cliff with a bank keeps its rock" {
+    var thin: usize = 0;
+    var least: usize = grid.CELLS;
+    for (0..50) |s| {
+        var lv = grid.Level.blank();
+        var rng = mathx.Rng.init(0xBA4C + s);
+        carve.field(&lv, carve.Palette.WILD);
+        apply(&lv, &rng, 0, carve.Palette.WILD, .{ .fill = .rock, .bank = .shallows, .course = .across });
+        const rock = carve.count(&lv, .rock);
+        least = @min(least, rock);
+        if (rock <= grid.W) thin += 1;
+    }
+    std.debug.print("50 cliffs banked with shallows: {d} under a map's width of rock, the least {d}\n", .{ thin, least });
+    try std.testing.expectEqual(@as(usize, 0), thin);
 }

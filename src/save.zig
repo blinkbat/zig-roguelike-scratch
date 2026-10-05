@@ -20,15 +20,41 @@ const Seed = @FieldType(game.Game, "seed");
 const Node = @FieldType(game.Game, "node");
 const Visited = @FieldType(game.Game, "visited");
 /// Written after the visited nodes, in this order.
-const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock" };
-const TAIL_TYPES = blk: {
-    var ts: [TAIL_FIELDS.len]type = undefined;
-    for (TAIL_FIELDS, 0..) |f, i| ts[i] = @FieldType(game.Game, f);
-    break :blk ts;
+const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "cooldown", "stepped" };
+/// Written before the tail, by hand.
+const HEAD_FIELDS = .{ "seed", "world", "node", "visited", "visits" };
+/// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
+const UNSAVED = .{
+    "mode",    "paused_from", "pause_menu", "back",   "exit",       "permadeath", "outdoors", "hour_shown", "unkillable", "unsaved",
+    "travel",  "st",          "binds",      "aim_by", "aim_act",    "mark",       "cam",      "screen",     "framebuffer", "shot",
+    "glide",   "turning",     "order",      "order_n", "busy",      "pending",    "lead",     "owed",       "ran",        "pictured",
+    "seq",     "split_from",  "fx",         "vignette", "mini",     "sprites",    "face",     "light",      "cloud",      "flowed",
+    "flow",    "queue",
+};
+
+comptime {
+    @setEvalBranchQuota(100_000);
+    for (std.meta.fields(game.Game)) |f| {
+        var n: usize = 0;
+        for (TAIL_FIELDS ++ HEAD_FIELDS ++ UNSAVED) |name| {
+            if (std.mem.eql(u8, f.name, name)) n += 1;
+        }
+        if (n != 1) @compileError("save.zig: say whether game.Game." ++ f.name ++ " is saved");
+    }
+}
+
+/// Named as well as typed, so two fields of one type swapped change the fingerprint.
+const Tail = blk: {
+    var fs: [TAIL_FIELDS.len]std.builtin.Type.StructField = undefined;
+    for (TAIL_FIELDS, 0..) |f, i| {
+        const T = @FieldType(game.Game, f);
+        fs[i] = .{ .name = f, .type = T, .default_value_ptr = null, .is_comptime = false, .alignment = @alignOf(T) };
+    }
+    break :blk @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fs, .decls = &.{}, .is_tuple = false } });
 };
 const TAIL = blk: {
     var n: usize = 0;
-    for (TAIL_TYPES) |T| n += @sizeOf(T);
+    for (std.meta.fields(Tail)) |f| n += @sizeOf(f.type);
     break :blk n;
 };
 
@@ -63,16 +89,15 @@ pub const Unreadable = enum {
 
 pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
 
-const FINGERPRINT = store.fingerprint([_]type{ Summary, Seed, bool, atlas.Atlas, Node, Visited, game.Visit } ++ TAIL_TYPES);
+const FINGERPRINT = store.fingerprint([_]type{ Summary, Seed, bool, atlas.Atlas, Node, Visited, game.Visit, Tail });
 const HEAD = MAGIC.len + @sizeOf(u64);
 /// The payload's hash ends the file, so a file damaged or cut short is refused before any of it is believed.
 const SUM = @sizeOf(u64);
 
-
 pub const Error = error{ NotASave, OtherBuild, Short, Damaged };
 
 fn summaryOf(g: *game.Game) Summary {
-    const i = actor.Pool.slot(g.hero);
+    const i = game.heroSlot(g).?;
     const h = g.pool.items[i];
     var s = Summary{ .name = g.name, .hp = h.hp, .max = h.max, .gold = g.gold, .node = null };
     if (g.world) |w| {
@@ -84,8 +109,9 @@ fn summaryOf(g: *game.Game) Summary {
     return s;
 }
 
+/// Into an empty `out`, all but the sum `seal` ends it with.
 fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
-    const from = out.items.len;
+    std.debug.assert(out.items.len == 0);
     const w = out.writer();
     try w.writeAll(MAGIC);
     try store.put(w, &FINGERPRINT);
@@ -99,7 +125,13 @@ fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
     var it = g.visited.iterator(.{});
     while (it.next()) |n| try store.put(w, &g.visits[n]);
     inline for (TAIL_FIELDS) |f| try store.put(w, &@field(g, f));
-    try store.put(w, &std.hash.Wyhash.hash(0, out.items[from + HEAD ..]));
+    try out.ensureUnusedCapacity(SUM);
+}
+
+/// Ends a file `write` began in `out` with its sum, in the room `write` kept, so it may run off the frame.
+fn seal(out: *std.ArrayList(u8)) void {
+    const sum = std.hash.Wyhash.hash(0, out.items[HEAD..]);
+    out.appendSliceAssumeCapacity(std.mem.asBytes(&sum));
 }
 
 fn header(bytes: *[]const u8) Error!void {
@@ -116,8 +148,7 @@ fn peek(bytes: []const u8) Error!Summary {
     try header(&b);
     var s: Summary = undefined;
     if (!store.take(&b, &s)) return error.Short;
-    if (s.name.n > hero.Name.MAX or s.place_n > atlas.NAME_MAX) return error.Damaged;
-    if (!atlas.plain(s.name.text()) or !atlas.plain(s.place[0..s.place_n])) return error.Damaged;
+    if (!s.name.valid() or s.place_n > atlas.NAME_MAX or !atlas.plain(s.place[0..s.place_n])) return error.Damaged;
     if (s.node) |n| {
         if (n >= atlas.MAX_NODES) return error.Damaged;
     }
@@ -212,7 +243,9 @@ pub const Autosave = struct {
     since: f32 = GAP_S,
     /// A write takes milliseconds of disk, so it is done off the frame; the run is copied into `bytes` first.
     writer: ?std.Thread = null,
+    finished: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
     failed: ?anyerror = null,
+    reported: ?anyerror = null,
 
     pub fn init(alloc: std.mem.Allocator, slot: usize) Autosave {
         return .{ .slot = slot, .bytes = std.ArrayList(u8).init(alloc) };
@@ -232,6 +265,9 @@ pub const Autosave = struct {
     /// Not mid-door, nor mid-turn: a foe's turn to face the archer is only in `facing` once it is drawn.
     pub fn step(self: *Autosave, g: *game.Game, dt: f32) void {
         self.since += dt;
+        if (!self.finished.load(.acquire)) return;
+        self.wait();
+        if (self.failed != null) g.unsaved = true;
         if (!g.unsaved or self.since < GAP_S or g.travel != null or !game.quiet(g)) return;
         self.flush(g);
     }
@@ -239,10 +275,11 @@ pub const Autosave = struct {
     pub fn flush(self: *Autosave, g: *game.Game) void {
         self.wait();
         if (self.failed) |e| {
-            g.log.say("The last save did not write ({s}).", .{@errorName(e)});
+            if (self.reported == null or self.reported.? != e) g.log.say("The last save did not write ({s}).", .{@errorName(e)});
+            self.reported = e;
             self.failed = null;
             g.unsaved = true;
-        }
+        } else self.reported = null;
         if (!g.unsaved) return;
         self.bytes.clearRetainingCapacity();
         self.since = 0;
@@ -251,6 +288,7 @@ pub const Autosave = struct {
             self.failed = e;
             return;
         };
+        self.finished.store(false, .release);
         self.writer = std.Thread.spawn(.{}, writeOff, .{self}) catch blk: {
             writeOff(self);
             break :blk null;
@@ -258,6 +296,8 @@ pub const Autosave = struct {
     }
 
     fn writeOff(self: *Autosave) void {
+        defer self.finished.store(true, .release);
+        seal(&self.bytes);
         writeFile(self.bytes.items, self.slot) catch |e| {
             self.failed = e;
         };
@@ -277,6 +317,57 @@ pub const Autosave = struct {
         };
     }
 };
+
+test "an unfinished autosave defers the next snapshot without consuming dirty state" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.begin(g, 1);
+    var a = Autosave.init(std.testing.failing_allocator, 0);
+    defer a.deinit();
+    a.finished.store(false, .release);
+    a.since = GAP_S;
+    a.step(g, GAP_S);
+    try std.testing.expect(g.unsaved);
+    try std.testing.expectEqual(@as(?anyerror, null), a.failed);
+    try std.testing.expectEqual(@as(usize, 0), a.bytes.items.len);
+    try std.testing.expectEqual(GAP_S * 2, a.since);
+
+    a.finished.store(true, .release);
+    a.step(g, 0);
+    try std.testing.expectEqual(@as(?anyerror, error.OutOfMemory), a.failed);
+    a.step(g, 0);
+    try std.testing.expect(g.unsaved);
+    std.debug.print("autosave deferred for {d:.0} save intervals; completion resumes capture and failure rearms it\n", .{GAP_S * 2 / GAP_S});
+}
+
+test "a failed autosave marks an idle run dirty again without another turn" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.begin(g, 1);
+    var a = Autosave.init(std.testing.allocator, 0);
+    defer a.deinit();
+    a.since = 0;
+    a.failed = error.AccessDenied;
+    g.unsaved = false;
+    a.step(g, 0);
+    try std.testing.expect(g.unsaved);
+    try std.testing.expectEqual(@as(?anyerror, error.AccessDenied), a.failed);
+    try std.testing.expectEqual(@as(usize, 0), a.bytes.items.len);
+    std.debug.print("failed autosave rearmed after 0 turns; retry remains throttled\n", .{});
+}
+
+test "a save that keeps failing is said once, not once a retry" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.begin(g, 1);
+    var a = Autosave.init(std.testing.failing_allocator, 0);
+    defer a.deinit();
+    const said = g.log.n;
+    const RETRIES = 6;
+    for (0..RETRIES) |_| a.step(g, GAP_S);
+    try std.testing.expectEqual(said + 1, g.log.n);
+    std.debug.print("a save failing {d} retries in a row: {d} log line\n", .{ RETRIES, g.log.n - said });
+}
 
 fn testWorld() !*atlas.Atlas {
     const w = try std.testing.allocator.create(atlas.Atlas);
@@ -300,15 +391,24 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     game.beginWorld(g, w);
     g.name = hero.Name.of("Arwen");
     g.gold = 17;
+    g.mana = 37;
+    g.cooldown.set(.juke, 2);
+    g.archer().?.resists.set(.fire, 50);
+    g.archer().?.resists.set(.cold, 25);
+    g.archer().?.burn = .{ .turns = 2 };
+    g.archer().?.chill = .{ .turns = 2, .phase = 1 };
+    if (g.pool.n > 1) g.pool.items[1].chill = .{ .turns = 1, .phase = 2 };
     _ = g.pool.damage(&g.lv, g.hero, 5);
     g.travel = .{ .node = 1, .door = 0 };
     g.busy = 0;
     game.update(g, 0);
     g.log.say("A line to keep.", .{});
+    g.stepped = true;
 
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     try write(g, &buf);
+    seal(&buf);
     std.debug.print("a run of two nodes, one left behind: {d} KB saved\n", .{buf.items.len / 1024});
 
     const back = try game.boot(alloc);
@@ -327,6 +427,15 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqual(@as(usize, 1), back.node);
     try std.testing.expectEqual(g.archer().?.at, back.archer().?.at);
     try std.testing.expectEqual(g.archer().?.hp, back.archer().?.hp);
+    try std.testing.expectEqual(@as(i32, 37), back.mana);
+    try std.testing.expectEqual(@as(u8, 2), back.cooldown.get(.juke));
+    try std.testing.expect(back.stepped);
+    try std.testing.expectEqual(@as(i16, 50), back.archer().?.resists.get(.fire));
+    try std.testing.expectEqual(@as(i16, 25), back.archer().?.resists.get(.cold));
+    try std.testing.expectEqual(@as(u8, 2), back.archer().?.burn.turns);
+    try std.testing.expectEqual(@as(u8, 2), back.archer().?.chill.turns);
+    try std.testing.expectEqual(@as(u8, 1), back.archer().?.chill.phase);
+    for (g.visits[0].pool.slice(), back.visits[0].pool.slice()) |before, after| try std.testing.expectEqual(before.chill, after.chill);
     try std.testing.expectEqual(g.pool.n, back.pool.n);
     try std.testing.expectEqualSlices(grid.Tile, &g.lv.tile, &back.lv.tile);
     try std.testing.expectEqualSlices(grid.Tile, &g.visits[0].lv.tile, &back.visits[0].lv.tile);

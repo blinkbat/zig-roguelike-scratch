@@ -5,4 +5,4 @@ setlocal
 call "%~dp0_zig.cmd" || exit /b 1
 "%ZIG%" build
 if errorlevel 1 ( echo BUILD FAILED & exit /b 1 )
-echo BUILD OK: zig-out\bin\roguelike.exe
+echo BUILD OK: zig-out\bin\%EXE%

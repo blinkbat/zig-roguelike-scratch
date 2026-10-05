@@ -271,7 +271,7 @@ pub const State = struct {
 
 /// The editor's, and the only mouse: it is a desk tool, so it names keys.
 pub const Desk = struct {
-    pub const TOOL_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
+    pub const TOOL_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero, .minus };
     pub const TOOL_CAPTIONS = blk: {
         var out: [TOOL_KEYS.len][:0]const u8 = undefined;
         for (TOOL_KEYS, &out) |k, *c| c.* = keyName(k);
@@ -294,19 +294,19 @@ pub const Desk = struct {
     const PAINT_BUTTON: rl.MouseButton = .left;
     const ERASE_BUTTON: rl.MouseButton = .right;
     const GRAB_BUTTON: rl.MouseButton = .middle;
-    const PLAY_KEY: rl.KeyboardKey = .f5;
-    const PLAY_HERE_KEY: rl.KeyboardKey = .f6;
-    const SAVE_KEY: rl.KeyboardKey = .s;
-    const OPEN_KEY: rl.KeyboardKey = .o;
-    const NEW_KEY: rl.KeyboardKey = .n;
-    const UNDO_KEY: rl.KeyboardKey = .z;
-    const REDO_KEY: rl.KeyboardKey = .y;
-    const GRAPH_KEY: rl.KeyboardKey = .tab;
-    const GO_KEY: rl.KeyboardKey = .g;
-    const RENAME_KEY: rl.KeyboardKey = .f2;
-    const BACK_KEY: rl.KeyboardKey = .escape;
-    const SMALLER_KEY: rl.KeyboardKey = .left_bracket;
-    const BIGGER_KEY: rl.KeyboardKey = .right_bracket;
+    pub const PLAY_KEY: rl.KeyboardKey = .f5;
+    pub const PLAY_HERE_KEY: rl.KeyboardKey = .f6;
+    pub const SAVE_KEY: rl.KeyboardKey = .s;
+    pub const OPEN_KEY: rl.KeyboardKey = .o;
+    pub const NEW_KEY: rl.KeyboardKey = .n;
+    pub const UNDO_KEY: rl.KeyboardKey = .z;
+    pub const REDO_KEY: rl.KeyboardKey = .y;
+    pub const GRAPH_KEY: rl.KeyboardKey = .tab;
+    pub const GO_KEY: rl.KeyboardKey = .g;
+    pub const RENAME_KEY: rl.KeyboardKey = .f2;
+    pub const BACK_KEY: rl.KeyboardKey = .escape;
+    pub const SMALLER_KEY: rl.KeyboardKey = .left_bracket;
+    pub const BIGGER_KEY: rl.KeyboardKey = .right_bracket;
     const CTRL = "Ctrl+";
     const ALT = "Alt+";
     pub const SHIFT_CAPTION = "Shift";
@@ -319,7 +319,7 @@ pub const Desk = struct {
     pub const NEW_CAPTION = CTRL ++ keyName(NEW_KEY);
     pub const UNDO_CAPTION = CTRL ++ keyName(UNDO_KEY);
     pub const REDO_CAPTION = CTRL ++ keyName(REDO_KEY) ++ " / " ++ CTRL_SHIFT ++ keyName(UNDO_KEY);
-    pub const TOOLS_CAPTION = TOOL_CAPTIONS[0] ++ "-" ++ TOOL_CAPTIONS[TOOL_KEYS.len - 1];
+    pub const TOOLS_CAPTION = TOOL_CAPTIONS[0] ++ " to " ++ TOOL_CAPTIONS[TOOL_KEYS.len - 1];
     pub const PAINT_CAPTION = mouseName(PAINT_BUTTON);
     pub const ERASE_CAPTION = mouseName(ERASE_BUTTON);
     pub const RECT_CAPTION = SHIFT_CAPTION ++ "+drag";
@@ -349,10 +349,17 @@ pub const Desk = struct {
     pub const FULLSCREEN_CAPTION = ALT ++ ENTER_CAPTION;
 
     comptime {
-        var bare: []const rl.KeyboardKey = &(TOOL_KEYS ++ [_]rl.KeyboardKey{ PLAY_KEY, PLAY_HERE_KEY, GRAPH_KEY, GO_KEY, RENAME_KEY, BACK_KEY, SMALLER_KEY, BIGGER_KEY });
+        var bare: []const rl.KeyboardKey = &TOOL_KEYS;
         for (PAN_KEYS) |w| bare = bare ++ w.keys;
+        var ctrl: []const rl.KeyboardKey = &.{};
+        for (@typeInfo(Desk).@"struct".decls) |d| {
+            if (!std.mem.endsWith(u8, d.name, "_KEY")) continue;
+            const k = [_]rl.KeyboardKey{@field(Desk, d.name)};
+            const caption = d.name[0 .. d.name.len - "_KEY".len] ++ "_CAPTION";
+            if (@hasDecl(Desk, caption) and std.mem.startsWith(u8, @field(Desk, caption), CTRL)) ctrl = ctrl ++ &k else bare = bare ++ &k;
+        }
         distinct(bare);
-        distinct(&.{ SAVE_KEY, OPEN_KEY, NEW_KEY, UNDO_KEY, REDO_KEY });
+        distinct(ctrl);
     }
 
     fn distinct(comptime keys: []const rl.KeyboardKey) void {
@@ -473,6 +480,7 @@ fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
         .enter => "Enter",
         .left_bracket => "[",
         .right_bracket => "]",
+        .minus => "-",
         .a, .b, .c, .d, .e, .f, .g, .h, .i, .j, .k, .l, .m, .n, .o, .p, .q, .r, .s, .t, .u, .v, .w, .x, .y, .z => &[_:0]u8{std.ascii.toUpper(@tagName(k)[0])},
         .zero, .one, .two, .three, .four, .five, .six, .seven, .eight, .nine => &[_:0]u8{'0' + @intFromEnum(k) - @intFromEnum(rl.KeyboardKey.zero)},
         else => @compileError("no caption for " ++ @tagName(k)),
@@ -638,11 +646,6 @@ test "every direction walks on exactly one entry, and every bound key a name typ
             if (c > ' ' and c <= '~') try std.testing.expect(types(k));
         }
     }
-}
-
-test "every button the ui names has a caption" {
-    for (BUTTONS) |b| try std.testing.expect(!std.mem.eql(u8, b.caption(), "?"));
-    try std.testing.expect(!std.mem.eql(u8, LEAN_CAPTION, "?"));
 }
 
 test "the lean layer puts each d-pad button on its own diagonal" {

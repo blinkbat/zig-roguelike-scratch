@@ -53,14 +53,14 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const streets = grid.Box.inMap(MARGIN);
     const lo = streets.lo;
     const hi = streets.hi;
-    carve.box(lv, lo, hi, street);
+    carve.box(lv, .{ .lo = lo, .hi = hi }, street);
     const step: i32 = @as(i32, p.block) + p.street;
     const s: i32 = p.street;
     const top = lo.y + s;
     var y = top;
     while (y + p.block <= hi.y - s) : (y += step) {
         if (rng.percent(p.canals)) {
-            carve.box(lv, .{ .x = lo.x, .y = y - s }, .{ .x = hi.x, .y = y }, .water);
+            carve.box(lv, .{ .lo = .{ .x = lo.x, .y = y - s }, .hi = .{ .x = hi.x, .y = y } }, .water);
         }
     }
     y = top;
@@ -142,7 +142,7 @@ fn block(lv: *grid.Level, rng: *mathx.Rng, b: grid.Box, p: Params, street: grid.
     for (lots) |lot| {
         if (lot.width() < HOUSE_LEAST or lot.height() < HOUSE_LEAST) continue;
         if (!rng.percent(p.houses)) {
-            carve.box(lv, lot.lo, lot.hi, .grass);
+            carve.box(lv, lot, .grass);
             continue;
         }
         buildings.raise(lv, rng, lot, HOUSE, street);

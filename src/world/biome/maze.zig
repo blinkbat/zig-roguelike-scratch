@@ -74,16 +74,26 @@ const Plan = struct {
         return self.mask[r * COLS_MAX + c];
     }
 
+    /// The slot at column `cr.x`, row `cr.y`; null off the plan.
+    fn slot(self: *const Plan, cr: P) ?usize {
+        if (cr.x < 0 or cr.y < 0 or cr.x >= self.cols or cr.y >= self.rows) return null;
+        return @as(usize, @intCast(cr.y)) * COLS_MAX + @as(usize, @intCast(cr.x));
+    }
+
+    fn place(k: usize) P {
+        return .{ .x = @intCast(k % COLS_MAX), .y = @intCast(k / COLS_MAX) };
+    }
+
     fn corner(self: *const Plan, c: usize, r: usize) P {
         return self.origin.add(.{ .x = @as(i32, @intCast(c)) * self.size, .y = @as(i32, @intCast(r)) * self.size });
     }
 };
 
-const SIDES = [4]struct { dc: i32, dr: i32, bit: u4, back: u4 }{
-    .{ .dc = -1, .dr = 0, .bit = W_BIT, .back = E_BIT },
-    .{ .dc = 1, .dr = 0, .bit = E_BIT, .back = W_BIT },
-    .{ .dc = 0, .dr = 1, .bit = S_BIT, .back = N_BIT },
-    .{ .dc = 0, .dr = -1, .bit = N_BIT, .back = S_BIT },
+const SIDES = [4]struct { d: mathx.Dir, bit: u4, back: u4 }{
+    .{ .d = .w, .bit = W_BIT, .back = E_BIT },
+    .{ .d = .e, .bit = E_BIT, .back = W_BIT },
+    .{ .d = .s, .bit = S_BIT, .back = N_BIT },
+    .{ .d = .n, .bit = N_BIT, .back = S_BIT },
 };
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
@@ -105,18 +115,13 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     while (n < p.rooms and tries < TRIES) : (tries += 1) {
         const from = placed[rng.below(@intCast(n))];
         const side = SIDES[rng.below(4)];
-        const c = @as(i32, @intCast(from % COLS_MAX)) + side.dc;
-        const r = @as(i32, @intCast(from / COLS_MAX)) + side.dr;
-        if (c < 0 or r < 0 or c >= pl.cols or r >= pl.rows) continue;
-        const k = @as(usize, @intCast(r)) * COLS_MAX + @as(usize, @intCast(c));
+        const cr = Plan.place(from).add(side.d.delta());
+        const k = pl.slot(cr) orelse continue;
         if (pl.mask[k] != null) continue;
         pl.mask[k] = side.back;
         pl.mask[from].? |= side.bit;
         for (SIDES) |s| {
-            const oc = c + s.dc;
-            const orr = r + s.dr;
-            if (oc < 0 or orr < 0 or oc >= pl.cols or orr >= pl.rows) continue;
-            const o = @as(usize, @intCast(orr)) * COLS_MAX + @as(usize, @intCast(oc));
+            const o = pl.slot(cr.add(s.d.delta())) orelse continue;
             if (o == from or pl.mask[o] == null or !rng.perMille(p.merge)) continue;
             pl.mask[k].? |= s.bit;
             pl.mask[o].? |= s.back;
@@ -135,22 +140,19 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
 
 /// The cell beyond each opening is the next room's.
 fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal: carve.Palette, lo: P, size: i32, mask: u4) void {
-    const mid = lo.add(.{ .x = @divTrunc(size, 2), .y = @divTrunc(size, 2) });
-    const in_lo = lo.add(.{ .x = 1, .y = 1 });
-    const in_hi = lo.add(.{ .x = size - 1, .y = size - 1 });
+    const whole = grid.Box.sized(lo, size, size);
+    const mid = whole.centre();
+    const inside = whole.inner();
     if (style.built()) {
-        carve.box(lv, in_lo, in_hi, pal.open);
+        carve.box(lv, inside, pal.open);
     } else {
-        const half: f32 = @as(f32, @floatFromInt(size)) / 2 - 1;
-        var cells = grid.Cells.of(in_lo, in_hi);
-        while (cells.next()) |q| {
-            if (mathx.distEuclid(q, mid) / half < 0.55 + 0.6 * noise.at(q, 3, 2)) lv.set(q, pal.open);
-        }
+        carve.blobIn(lv, noise, mid, @as(f32, @floatFromInt(size)) / 2 - 1, 3, 0.55, 0.6, pal.open, inside);
     }
     for (SIDES) |s| {
         if (mask & s.bit == 0) continue;
-        const edge = mid.add(.{ .x = s.dc * @divTrunc(size, 2), .y = s.dr * @divTrunc(size, 2) });
-        var m = carve.Meander.init(mid, edge.add(.{ .x = s.dc, .y = s.dr }), if (style.built()) 0 else CAVE_WANDER);
+        const step = s.d.delta();
+        const edge = mid.add(.{ .x = step.x * @divTrunc(size, 2), .y = step.y * @divTrunc(size, 2) });
+        var m = carve.Meander.init(mid, edge.add(step), if (style.built()) 0 else CAVE_WANDER);
         while (m.next(rng)) |q| {
             var cells = grid.Cells.around(q, @divTrunc(DOOR_W, 2));
             while (cells.next()) |d| {
@@ -167,7 +169,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
         },
         .sewers => {
             const across = mask & (W_BIT | E_BIT) != 0;
-            var cells = grid.Cells.of(in_lo, in_hi);
+            var cells = inside.cells();
             while (cells.next()) |q| {
                 const off = if (across) q.y - mid.y else q.x - mid.x;
                 const along = if (across) q.x - mid.x else q.y - mid.y;

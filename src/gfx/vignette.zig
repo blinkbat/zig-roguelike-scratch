@@ -8,7 +8,7 @@ const RISE_S: f32 = 0.12;
 const PAIN_S: f32 = 0.9;
 const PAIN_A: f32 = 0.2;
 /// Of full hp, where the low glow starts.
-const LOW: f32 = 1.0 / 3.0;
+pub const LOW: f32 = 1.0 / 3.0;
 const LOW_A: f32 = 0.3;
 /// Per second.
 const LOW_EASE: f32 = 4.0;
@@ -68,8 +68,7 @@ pub const Vignette = struct {
     }
 
     pub fn unload(self: *Vignette) void {
-        if (self.tex) |t| rl.unloadTexture(t);
-        self.tex = null;
+        look.unloadAll(self);
     }
 
     /// Over the view, `w` by `h` from the screen's top-left.
@@ -82,8 +81,7 @@ pub const Vignette = struct {
 };
 
 fn edgeAlpha(r: f32) f32 {
-    const corner = r / std.math.sqrt2;
-    return mathx.smooth((corner - CLEAR_R) / (FULL_R - CLEAR_R));
+    return mathx.smoothstep(CLEAR_R, FULL_R, r / std.math.sqrt2);
 }
 
 fn lowOf(hp: i32, max: i32) f32 {

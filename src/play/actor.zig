@@ -1,6 +1,10 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../world/grid.zig");
+const damage = @import("damage.zig");
+const burning = @import("burning.zig");
+const glacial = @import("glacial.zig");
+const bleeding = @import("bleeding.zig");
 
 const P = mathx.P;
 
@@ -11,11 +15,12 @@ pub const Kind = enum {
     slime_half,
     slime_quarter,
     bloat,
+    pib,
 
     pub fn foe(k: Kind) bool {
         return switch (k) {
             .archer => false,
-            .rat, .slime, .slime_half, .slime_quarter, .bloat => true,
+            .rat, .slime, .slime_half, .slime_quarter, .bloat, .pib => true,
         };
     }
 
@@ -58,7 +63,17 @@ pub fn roomFor(bodies: usize, k: Kind) bool {
     return bodies + most(k) <= MAX;
 }
 
-pub const Strike = struct { lo: i32, hi: i32, verb: [:0]const u8 };
+/// `bleeds`: percent chance a blow that leaves its mark alive opens a bleed.
+pub const Strike = struct {
+    lo: i32,
+    hi: i32,
+    verb: [:0]const u8,
+    bleeds: u32 = 0,
+
+    pub fn roll(s: Strike, rng: *mathx.Rng) i32 {
+        return rng.range(s.lo, s.hi);
+    }
+};
 
 pub const Blow = union(enum) {
     strike: Strike,
@@ -77,11 +92,16 @@ pub const Row = struct {
     light: i32 = 0,
     /// Brogue's `MONST_FLITS`: a third of its moves go a random way.
     flits: bool = false,
+    /// Runs from the archer for `FLEE_TURNS` of its turns when it sees a foe die within `FRIGHT_REACH`.
+    flees: bool = false,
     /// What it splits into, two of them, when a blow leaves it under half its hp.
     splits: ?Kind = null,
+    resists: damage.Resists = .initFill(0),
 };
 
 pub const FLIT: f32 = 0.33;
+pub const FRIGHT_REACH: i32 = 5;
+pub const FLEE_TURNS: u8 = 4;
 
 const SLAM = Blow{ .strike = .{ .lo = 2, .hi = 5, .verb = "slams" } };
 
@@ -93,6 +113,7 @@ pub fn row(k: Kind) Row {
         .slime_half => .{ .name = "half slime", .hp = @divTrunc(row(.slime).hp, 2), .sight = row(.slime).sight, .blow = SLAM, .splits = .slime_quarter },
         .slime_quarter => .{ .name = "quarter slime", .hp = @divTrunc(row(.slime_half).hp, 2), .sight = row(.slime).sight, .blow = SLAM },
         .bloat => .{ .name = "bloat", .hp = 4, .sight = 7, .blow = .burst, .flits = true },
+        .pib => .{ .name = "pib", .hp = 10, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "stabs", .bleeds = 30 } }, .flees = true },
     };
 }
 
@@ -115,9 +136,15 @@ pub const Actor = struct {
     alive: bool = true,
     /// Split off this turn: it acts from the next.
     waits: bool = false,
+    resists: damage.Resists = .initFill(0),
+    burn: burning.Burn = .{},
+    chill: glacial.Chill = .{},
+    bleed: bleeding.Bleed = .{},
+    /// Its turns left running from the archer.
+    fright: u8 = 0,
 
     pub fn of(k: Kind, at: P) Actor {
-        return .{ .kind = k, .at = at, .hp = row(k).hp, .max = row(k).hp };
+        return .{ .kind = k, .at = at, .hp = row(k).hp, .max = row(k).hp, .resists = row(k).resists };
     }
 
     pub fn hurt(self: Actor) bool {
@@ -126,6 +153,13 @@ pub const Actor = struct {
 
     pub fn foe(self: Actor) bool {
         return self.kind.foe();
+    }
+
+    /// The turn is over: what started or split off in it is no longer fresh.
+    pub fn settle(self: *Actor) void {
+        self.waits = false;
+        self.burn.settle();
+        self.bleed.settle();
     }
 };
 
@@ -203,7 +237,11 @@ pub const Pool = struct {
         a.kind = next;
         a.hp = hp;
         a.max = hp;
-        return self.spawn(lv, .{ .kind = next, .at = a.at.add(d.delta()), .hp = hp, .max = hp, .awake = true, .waits = true });
+        var half = a.*;
+        half.at = a.at.add(d.delta());
+        half.awake = true;
+        half.waits = true;
+        return self.spawn(lv, half);
     }
 };
 
@@ -231,13 +269,23 @@ fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
 
 /// Downhill on `flow`, a walked-distance map from the hero.
 pub fn chase(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32) ?mathx.Dir {
+    return climb(lv, from, id, flow, -1);
+}
+
+/// Uphill on `flow`: the step furthest a walk from the hero, or none when no step gains on it.
+pub fn flee(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32) ?mathx.Dir {
+    return climb(lv, from, id, flow, 1);
+}
+
+/// The step that most gains on `flow` the way `sign` goes, the first of any tie.
+fn climb(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32, comptime sign: i32) ?mathx.Dir {
     var best: ?mathx.Dir = null;
     var best_d = flow[grid.Level.idx(from)];
     if (best_d < 0) return null;
     for (mathx.ALL_DIRS) |d| {
         if (!lv.stepOk(from, d, id) or shuns(lv, from, d)) continue;
         const v = flow[grid.Level.idx(from.add(d.delta()))];
-        if (v >= 0 and v < best_d) {
+        if (v >= 0 and (v - best_d) * sign > 0) {
             best_d = v;
             best = d;
         }
@@ -321,7 +369,7 @@ test "a slime with no free cell beside it waits to split until a blow finds one"
 }
 
 test "every foe a floor is stocked with is its own family, and a slime ends as four quarters at most" {
-    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat }, &FOES);
+    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib }, &FOES);
     try std.testing.expectEqual(Kind.slime, Kind.slime_quarter.family());
     try std.testing.expectEqual(Kind.rat, Kind.rat.family());
     try std.testing.expectEqual(@as(usize, 4), most(.slime));
@@ -344,6 +392,26 @@ test "chase walks round a wall toward the hero" {
     }
     std.debug.print("round a wall: {d} steps to reach a hero 4 cells away\n", .{steps});
     try std.testing.expect(mathx.dist(at, hero) <= 1);
+}
+
+test "flee gains a step on the hero every turn, and stops in a dead end" {
+    const lv = grid.openFloor();
+    var flow: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    _ = grid.distances(&lv, .{ .x = 10, .y = 10 }, &flow, &queue);
+    var at = P{ .x = 12, .y = 10 };
+    const start = flow[grid.Level.idx(at)];
+    for (0..FLEE_TURNS) |_| {
+        const d = flee(&lv, at, 1, &flow) orelse return error.Stuck;
+        at = at.add(d.delta());
+    }
+    std.debug.print("{d} turns fleeing: {d} walked steps from the hero, from {d}\n", .{ FLEE_TURNS, flow[grid.Level.idx(at)], start });
+    try std.testing.expectEqual(start + FLEE_TURNS, flow[grid.Level.idx(at)]);
+    var pit = grid.openFloor();
+    for (mathx.ALL_DIRS) |d| pit.set((P{ .x = 20, .y = 20 }).add(d.delta()), .wall);
+    pit.set(.{ .x = 19, .y = 20 }, .floor);
+    _ = grid.distances(&pit, .{ .x = 17, .y = 20 }, &flow, &queue);
+    try std.testing.expectEqual(@as(?mathx.Dir, null), flee(&pit, .{ .x = 20, .y = 20 }, 1, &flow));
 }
 
 test "chase will not step from clean air into gas, but walks on through it from inside" {

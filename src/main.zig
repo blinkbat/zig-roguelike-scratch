@@ -3,9 +3,9 @@ const game = @import("game.zig");
 const app = @import("app.zig");
 const atlas = @import("world/atlas.zig");
 
-pub fn main() void {
+pub fn main() !void {
     const alloc = std.heap.c_allocator;
-    const argv = std.process.argsAlloc(alloc) catch return app.run(null);
+    const argv = try std.process.argsAlloc(alloc);
     defer std.process.argsFree(alloc, argv);
     for (argv[1..], 1..) |a, i| {
         if (std.mem.eql(u8, a, "--edit")) return app.run(if (i + 1 < argv.len) argv[i + 1] else atlas.MAIN);
@@ -13,7 +13,7 @@ pub fn main() void {
         if (std.mem.eql(u8, a, "--shot")) return game.shot();
         if (std.mem.eql(u8, a, "--bench")) return game.bench();
     }
-    app.run(null);
+    try app.run(null);
 }
 
 test {
@@ -53,6 +53,11 @@ test {
     _ = @import("world/atlas.zig");
     _ = @import("play/actor.zig");
     _ = @import("play/bow.zig");
+    _ = @import("play/damage.zig");
+    _ = @import("play/bleeding.zig");
+    _ = @import("play/burning.zig");
+    _ = @import("play/glacial.zig");
+    _ = @import("play/juke.zig");
     _ = @import("play/pack.zig");
     _ = @import("play/skillbar.zig");
     _ = @import("play/hero.zig");

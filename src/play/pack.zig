@@ -6,7 +6,7 @@ const actor = @import("actor.zig");
 
 const P = mathx.P;
 
-pub const PER_FLOOR: usize = 10;
+pub const PER_FLOOR: usize = 12;
 pub const FEW: usize = 3;
 /// The first kind leads.
 pub const KINDS = [_][]const actor.Kind{
@@ -15,6 +15,9 @@ pub const KINDS = [_][]const actor.Kind{
     &.{.rat},
     &.{ .rat, .rat },
     &.{.bloat},
+    &.{ .pib, .pib },
+    &.{ .pib, .rat, .rat },
+    &.{ .rat, .slime, .pib },
 };
 pub const REACH: i32 = 2;
 /// Past the archer's sight, so by default none starts in view.
@@ -170,17 +173,16 @@ pub const Spec = struct {
     }
 
     fn pick(self: *const Spec, rng: *mathx.Rng, k: ?actor.Kind) *const Makeup {
-        var total: u32 = 0;
-        for (self.makeups()) |*m| {
-            if (k == null or m.holds(k.?)) total += m.weight;
-        }
-        var r = rng.below(total);
-        for (self.makeups()) |*m| {
-            if (k != null and !m.holds(k.?)) continue;
-            if (r < m.weight) return m;
-            r -= m.weight;
-        }
-        unreachable;
+        const Holding = struct {
+            spec: *const Spec,
+            k: ?actor.Kind,
+
+            fn weight(h: @This(), i: usize) u32 {
+                const m = &h.spec.makeups()[i];
+                return if (h.k == null or m.holds(h.k.?)) m.weight else 0;
+            }
+        };
+        return &self.makeups()[rng.weighted(self.makeup_n, Holding{ .spec = self, .k = k }, Holding.weight).?];
     }
 
     /// The foes in the fewest makeups first, so the packs that fill their quota fill the others' on the way.
@@ -288,7 +290,7 @@ test "every floor has a few of each foe at least, and every slime stands by a ra
             if (!by_rat) lone_slimes += 1;
         }
     }
-    std.debug.print("200 floors, {d} packs each: {d} rats, {d} slimes, {d} bloats; the fewest on one floor {d} rats, {d} slimes, {d} bloats; {d} slimes with no rat beside them\n", .{ PER_FLOOR, counts.get(.rat), counts.get(.slime), counts.get(.bloat), fewest.get(.rat), fewest.get(.slime), fewest.get(.bloat), lone_slimes });
+    std.debug.print("200 floors, {d} packs each: {d} rats, {d} slimes, {d} bloats, {d} pibs; the fewest on one floor {d} rats, {d} slimes, {d} bloats, {d} pibs; {d} slimes with no rat beside them\n", .{ PER_FLOOR, counts.get(.rat), counts.get(.slime), counts.get(.bloat), counts.get(.pib), fewest.get(.rat), fewest.get(.slime), fewest.get(.bloat), fewest.get(.pib), lone_slimes });
     try std.testing.expectEqual(@as(usize, 0), counts.get(.archer));
     try std.testing.expectEqual(@as(usize, 0), lone_slimes);
     try std.testing.expect(counts.get(.slime) < counts.get(.rat));

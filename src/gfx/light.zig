@@ -96,12 +96,12 @@ const SHADOW_LEN_PER_CELL: f32 = 0.2;
 const SHADOW_SQUASH: f32 = 0.55;
 /// Cells: a light this close to a body's middle stands over it and casts no shadow.
 const SHADOW_OVERHEAD: f32 = 0.05;
-const SHADOW_RISE_MIN: f32 = 0.3;
+const SHADOW_NEAR: f32 = 0.5;
 /// Texels of blur room round a shadow's silhouette.
 const SHADOW_PAD: f32 = 6;
 /// Texels between the shadow shader's blur taps, at its tip and at its foot.
-const SHADOW_SOFT_TIP: f32 = 4.0;
-const SHADOW_SOFT_FOOT: f32 = 1.2;
+const SHADOW_SOFT_TIP: f32 = 2.0;
+const SHADOW_SOFT_FOOT: f32 = 0.6;
 const SHADOW_TAPS: i32 = 3;
 /// Of a shadow's length, its run up or down the screen: under `THIN_HI` its silhouette gives way to a soft streak, wholly by `THIN_LO`.
 const THIN_LO: f32 = 0.06;
@@ -115,9 +115,6 @@ const STREAK_FOOT: f32 = 0.1;
 const STREAK_TAIL: f32 = 1.5;
 const STREAK_PX = [2]i32{ 64, 16 };
 
-comptime {
-    std.debug.assert(SHADOW_RISE_MIN / mathx.len(1, SHADOW_RISE_MIN) >= THIN_HI);
-}
 const CONTACT_W: f32 = 0.62;
 const CONTACT_H: f32 = 0.2;
 const CONTACT_A: f32 = 0.7;
@@ -141,11 +138,14 @@ const CANOPY_SQUASH: f32 = 0.7;
 const CANOPY_AT: f32 = 0.45;
 const CANOPY_STRETCH: f32 = 0.5;
 const CANOPY_A: f32 = 1.6;
+/// Cells from a cell-tall caster its longest shadow, sky's or torch's, silhouette or canopy, reaches.
+pub const CAST_REACH: f32 = blk: {
+    const l = @max(sky.REACH_MAX, SHADOW_LEN_HI);
+    break :blk @max(l, CANOPY_AT * l + CANOPY_R * (1 + l * CANOPY_STRETCH));
+};
 const TRUNK_OF: f32 = 0.6;
 /// Cells to the side the sun lights a body from, as the body shader takes a lamp.
 const SUN_LAMP_D: f32 = 3;
-/// Cells of shadow per cell of height under which a body casts none; terrain still shades down to `sky.OVERHEAD`.
-const SUN_OVERHEAD: f32 = 0.05;
 
 /// What stands in the sun's way: cells tall, and how far from its middle a round one reaches; square fills its cell.
 const Caster = struct { h: f32, r: ?f32 = null };
@@ -173,7 +173,7 @@ const CAST_TALLEST: f32 = blk: {
 
 /// 1 where the light the sky casts reaches a point `z` cells up, eased to 0 under anything between it and the light.
 fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
-    if (ray.flat < sky.OVERHEAD) return 1;
+    if (sky.upright(ray.flat)) return 1;
     const ux = ray.u[0];
     const uy = ray.u[1];
     const rise = ray.rise;
@@ -285,7 +285,7 @@ fn sunFacing(sk: sky.Sky, s: Spot) f32 {
 }
 
 comptime {
-    std.debug.assert(SHADOW_PAD >= SHADOW_SOFT_TIP * 0.5 * @as(f32, @floatFromInt(SHADOW_TAPS)));
+    std.debug.assert(SHADOW_PAD >= SHADOW_SOFT_TIP * @as(f32, @floatFromInt(SHADOW_TAPS)));
 }
 
 const Surface = enum { floor, face, ceiling };
@@ -316,11 +316,21 @@ const Spot = struct {
         const top: f32 = @floatFromInt(cell.y);
         const faced = if (lv.wallShape(cell)) |s| s.faced() else false;
         if (faced and fy >= FACE_FROM) {
-            return .{ .x = q[0], .y = top + 1, .z = (1 - fy) / FACE_H * WALL_H, .surface = .face };
+            return .{ .x = q[0], .y = top + 1, .z = faceZ(fy), .surface = .face };
         }
         return .{ .x = q[0], .y = q[1] + FACE_H, .z = WALL_H, .surface = .ceiling };
     }
 };
+
+/// The height a wall's face shows `fy` down its cell; `faceY` is its inverse.
+fn faceZ(fy: f32) f32 {
+    return (1 - fy) / FACE_H * WALL_H;
+}
+
+/// Where height `z` up the face of the wall at row `top` is drawn.
+fn faceY(top: f32, z: f32) f32 {
+    return top + 1 - z / WALL_H * FACE_H;
+}
 
 const TorchIx = std.math.IntFittingRange(0, grid.MAX_TORCHES - 1);
 
@@ -345,11 +355,11 @@ const Torch = struct {
 
     /// Where the flame is drawn: up its wall's foreshortened face.
     fn drawn(t: Torch) [2]f32 {
-        return .{ mathx.centre(t.wall)[0], @as(f32, @floatFromInt(t.wall.y)) + 1 - FLAME_Z / WALL_H * FACE_H };
+        return .{ mathx.centre(t.wall)[0], faceY(@floatFromInt(t.wall.y), FLAME_Z) };
     }
 
     fn corner(t: *const Torch) P {
-        return t.floor().sub(.{ .x = REACH, .y = REACH });
+        return grid.Box.around(t.floor(), REACH).lo;
     }
 
     fn texel(t: *const Torch, p: P) usize {
@@ -403,11 +413,14 @@ fn falloff(d2: f32) f32 {
 }
 
 fn carryFade(d: f32) f32 {
-    const along = 1 - (1 - CARRY_FADE) * d / CARRY_R;
-    return @max(0, @min(along, CARRY_EDGE * (CARRY_R - d)));
+    return @max(0, @min(carryAlong(d), CARRY_EDGE * (CARRY_R - d)));
 }
 
-const CARRY_EDGE = 1 - (1 - CARRY_FADE) * (CARRY_R - 1) / CARRY_R;
+fn carryAlong(d: f32) f32 {
+    return 1 - (1 - CARRY_FADE) * d / CARRY_R;
+}
+
+const CARRY_EDGE = carryAlong(CARRY_R - 1);
 
 fn wrapped(cos: f32, wrap: f32) f32 {
     return @max(0, (cos + wrap) / (1 + wrap));
@@ -423,8 +436,7 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32, out: f32) f32 {
 }
 
 fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32, out: f32) f32 {
-    if (x < 0 or y < 0 or x >= w or y >= h) return out;
-    return f[@intCast(y * w + x)];
+    return f[mathx.slot(x, y, @intCast(w), @intCast(h)) orelse return out];
 }
 
 /// A cell's memory at each point in it, from the cells round it short of wholly remembered.
@@ -532,6 +544,8 @@ fn skyShade(k: sky.Sky) Rgb {
 
 pub const Shine = struct {
     ambient: Rgb = @splat(0),
+    /// How far in sight the ground under the body is.
+    sight: f32 = 1,
     n: usize = 0,
     lamp: [BODY_LIGHTS]Lamp = undefined,
 
@@ -596,6 +610,8 @@ pub const Light = struct {
     casting: [(grid.COLS + 1) * (grid.ROWS + 1)]u16,
     t: mathx.Seconds,
     map: [TEXELS]rl.Color,
+    /// The rows of `map` the last `bake` wrote, all the texture needs sent.
+    baked: [2]i32,
     scratch: grid.Level,
     gpu: Gpu,
 
@@ -611,6 +627,7 @@ pub const Light = struct {
         @memset(&l.sight, 0);
         @memset(&l.memory, 0);
         @memset(&l.map, rl.Color.black);
+        l.baked = .{ 0, MAP_H };
         l.soften();
         return l;
     }
@@ -621,12 +638,12 @@ pub const Light = struct {
         self.torch_n = 0;
         for (lv.torches(), 0..) |w, i| {
             var t = Torch{ .wall = w, .reach = undefined, .open = undefined, .seed = @as(u32, @intCast(i)) *% 0x27D4EB2F +% 0x165667B1 };
-            const f = t.floor();
-            fov.cast(&self.scratch, f, REACH);
-            var box = grid.Cells.around(f, REACH);
+            var pool: [grid.CELLS]bool = @splat(false);
+            lume.torchPool(lv, w, &pool);
+            var box = grid.Cells.around(t.floor(), REACH);
             while (box.next()) |p| {
                 const k = t.texel(p);
-                t.reach[k] = if (self.scratch.isLit(p)) 1 else 0;
+                t.reach[k] = if (grid.Level.inside(p) and pool[grid.Level.idx(p)]) 1 else 0;
                 t.open[k] = if (lv.at(p).blind()) 0 else t.reach[k];
             }
             self.torch[self.torch_n] = t;
@@ -646,8 +663,11 @@ pub const Light = struct {
         const down = mathx.easing(dt, FORGET);
         var moved = false;
         for (0..grid.CELLS) |i| {
-            const s = mathx.ease(self.sight[i], if (lv.lit[i]) 1 else 0, up, down);
-            const m = mathx.ease(self.memory[i], if (lv.seen[i]) 1 else 0, up, down);
+            const want_s: f32 = if (lv.lit[i]) 1 else 0;
+            const want_m: f32 = if (lv.seen[i]) 1 else 0;
+            if (self.sight[i] == want_s and self.memory[i] == want_m) continue;
+            const s = mathx.ease(self.sight[i], want_s, up, down);
+            const m = mathx.ease(self.memory[i], want_m, up, down);
             moved = moved or s != self.sight[i] or m != self.memory[i];
             self.sight[i] = s;
             self.memory[i] = m;
@@ -725,11 +745,11 @@ pub const Light = struct {
         return grid.cellOr(bool, &self.clear, p, false);
     }
 
-    fn near(self: *const Light, lo: P, hi: P, out: *[grid.MAX_TORCHES]TorchIx) []const TorchIx {
+    fn near(self: *const Light, view: grid.Box, out: *[grid.MAX_TORCHES]TorchIx) []const TorchIx {
         var n: usize = 0;
         for (self.torch[0..self.torch_n], 0..) |*t, i| {
             const f = t.floor();
-            if (f.x + REACH < lo.x or f.x - REACH > hi.x or f.y + REACH < lo.y or f.y - REACH > hi.y) continue;
+            if (!grid.Box.around(f, REACH).overlaps(view, 0)) continue;
             out[n] = @intCast(i);
             n += 1;
         }
@@ -769,7 +789,7 @@ pub const Light = struct {
 
     /// `sunlit`, but 1 at once where nothing that casts stands anywhere the ray toward the light could cross.
     fn sunAt(self: *const Light, lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
-        if (ray.flat < sky.OVERHEAD) return 1;
+        if (sky.upright(ray.flat)) return 1;
         const u = ray.u;
         const far = ray.far(z);
         const ex = x + u[0] * far;
@@ -798,7 +818,7 @@ pub const Light = struct {
     }
 
     fn base(self: *const Light) Rgb {
-        return if (self.sky) |k| k.ambient else AMBIENT;
+        return @max(MEMORY, if (self.sky) |k| k.ambient else AMBIENT);
     }
 
     /// `q` is in cells.
@@ -836,11 +856,11 @@ pub const Light = struct {
     /// Cells `lo` up to `hi`, and a texel round them for the filter.
     pub fn bake(self: *Light, lv: *const grid.Level, lo: P, hi: P) void {
         var ids: [grid.MAX_TORCHES]TorchIx = undefined;
-        const round = grid.grown(lo, hi, 1);
-        const torches = self.near(round[0], round[1], &ids);
+        const torches = self.near((grid.Box{ .lo = lo, .hi = hi }).grown(1), &ids);
         const t0 = P{ .x = @max(0, lo.x * SUB - 1), .y = @max(0, lo.y * SUB - 1) };
         const t1 = P{ .x = @min(MAP_W, hi.x * SUB + 1), .y = @min(MAP_H, hi.y * SUB + 1) };
         const ray: ?SunRay = if (self.sky) |k| SunRay.of(k) else null;
+        self.baked = .{ t0.y, t1.y };
         var c = P{ .x = 0, .y = @divFloor(t0.y, SUB) };
         while (c.y * SUB < t1.y) : (c.y += 1) {
             c.x = @divFloor(t0.x, SUB);
@@ -888,7 +908,7 @@ pub const Light = struct {
     pub fn onBody(self: *const Light, centre: [2]f32, carrier: bool) Shine {
         const v = self.viewAt(centre);
         const lit = v.lit;
-        var s = Shine{};
+        var s = Shine{ .sight = lit };
         const night: Rgb = if (self.sky) |k| self.sunOnBody(&s, k, centre, lit) else splat(1);
         s.ambient = remembered(self.base() * night, v.sight, v.memory);
         if (self.fromCarrier(centre[0], centre[1])) |f| {
@@ -922,7 +942,7 @@ pub const Light = struct {
             .drawn = .{ centre[0] + toward[0] * SUN_LAMP_D, centre[1] + toward[1] * SUN_LAMP_D },
             .ground = .{ centre[0] + toward[0], centre[1] + toward[1] },
             .colour = k.key * splat(lit * on),
-            .casts = k.reach() > SUN_OVERHEAD,
+            .casts = !sky.upright(k.flat()),
             .sky = .{ .reach = k.reach(), .depth = skyDepth(k, sun * cloud) * lit, .shade = ray.shade },
         });
         return ray.dim(sun, cloud);
@@ -954,7 +974,8 @@ pub const Light = struct {
     /// `ox, oy` is where the map's top-left corner lands on screen.
     pub fn drawMap(self: *Light, ox: i32, oy: i32, cell: i32) void {
         const tex = self.gpu.map orelse return;
-        rl.updateTexture(tex, &self.map);
+        const from, const to = self.baked;
+        if (to > from) rl.updateTextureRec(tex, look.rect(0, from, MAP_W, to - from), &self.map[@intCast(from * MAP_W)]);
         rl.gl.rlSetBlendFactors(rl.gl.rl_dst_color, rl.gl.rl_src_color, rl.gl.rl_func_add);
         rl.beginBlendMode(.custom);
         defer rl.endBlendMode();
@@ -1123,12 +1144,13 @@ fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const
     for (s.lamp[0..s.n]) |l| {
         if (!l.casts) continue;
         const own = lum(l.colour);
-        const alpha = if (l.sky) |k| k.depth else SHADOW_MAX * castShare(own, lit) * smooth(own / SHADOW_LAMP_FULL);
-        if (alpha < SHADOW_FAINT) continue;
+        var alpha = if (l.sky) |k| k.depth else SHADOW_MAX * castShare(own, lit) * smooth(own / SHADOW_LAMP_FULL);
         const dx = centre[0] - l.ground[0];
         const dy = centre[1] - l.ground[1];
         const d = mathx.len(dx, dy);
         if (d < SHADOW_OVERHEAD) continue;
+        if (l.sky == null) alpha *= mathx.smoothstep(SHADOW_OVERHEAD, SHADOW_NEAR, d);
+        if (alpha < SHADOW_FAINT) continue;
         const len = height * if (l.sky) |k| k.reach else std.math.clamp(SHADOW_LEN_LO + SHADOW_LEN_PER_CELL * d, SHADOW_LEN_LO, SHADOW_LEN_HI);
         // The sky's turns slowly through due east and west: floored, it would flip across the feet in a frame.
         const rise = if (l.sky != null) dy / d else lampRise(dy / d);
@@ -1139,10 +1161,8 @@ fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const
     return out[0..n];
 }
 
-/// Down-screen lean per unit of a lamp shadow's length, `dy_d` the ground's: squashed, never flatter than `SHADOW_RISE_MIN`.
 fn lampRise(dy_d: f32) f32 {
-    const down: f32 = if (dy_d >= 0) 1 else -1;
-    return down * @max(@abs(dy_d) * SHADOW_SQUASH, SHADOW_RISE_MIN);
+    return dy_d * SHADOW_SQUASH;
 }
 
 fn solidity(lean: [2]f32) f32 {
@@ -1299,7 +1319,7 @@ const SHADOW_FS = POOL_HEAD ++ std.fmt.comptimePrint(
     \\    float a = 0.0;
     \\    for (int i = -TAPS; i <= TAPS; i++) {
     \\        for (int j = -TAPS; j <= TAPS; j++) {
-    \\            a += alphaAt(fragTexCoord + vec2(float(i), float(j)) * spread * 0.5 / size);
+    \\            a += alphaAt(fragTexCoord + vec2(float(i), float(j)) * spread / size);
     \\        }
     \\    }
     \\    float n = float(TAPS * 2 + 1);
@@ -1362,8 +1382,8 @@ const Gpu = struct {
         g.map = look.canvas(MAP_W, MAP_H, rl.Color.black, .bilinear);
         g.glow = look.radial(GLOW_PX, glowAlpha);
         g.streak = look.field(STREAK_PX[0], STREAK_PX[1], streakAlpha);
-        if (look.shader(BODY_FS)) |s| g.body = look.uniforms(BodyShader, s);
-        if (look.shader(SHADOW_FS)) |s| g.shadow = look.uniforms(ShadowShader, s);
+        g.body = look.program(BodyShader, BODY_FS);
+        g.shadow = look.program(ShadowShader, SHADOW_FS);
         g.shade = look.shader(SHADE_FS);
         for (figures) |b| {
             const t = b orelse continue;
@@ -1373,14 +1393,8 @@ const Gpu = struct {
         return g;
     }
 
-    fn unload(g: Gpu) void {
-        if (g.map) |t| rl.unloadTexture(t);
-        if (g.glow) |t| rl.unloadTexture(t);
-        if (g.streak) |t| rl.unloadTexture(t);
-        if (g.body) |s| rl.unloadShader(s.shader);
-        if (g.shadow) |s| rl.unloadShader(s.shader);
-        if (g.shade) |s| rl.unloadShader(s);
-        if (g.mask) |m| rl.unloadRenderTexture(m);
+    fn unload(g: *Gpu) void {
+        look.unloadAll(g);
         for (g.arts[0..g.art_n]) |a| {
             if (a.normals) |t| rl.unloadTexture(t);
         }
@@ -1441,9 +1455,8 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
             while (dy <= reach) : (dy += 1) {
                 var dx: i32 = -reach;
                 while (dx <= reach) : (dx += 1) {
-                    const sx = x + dx;
-                    const sy = y + dy;
-                    const clear = sx < 0 or sy < 0 or sx >= w or sy >= h or !solid[@intCast(sy * w + sx)];
+                    const k = mathx.slot(x + dx, y + dy, @intCast(w), @intCast(h));
+                    const clear = if (k) |s| !solid[s] else true;
                     if (clear) near2 = @min(near2, dx * dx + dy * dy);
                 }
             }
@@ -1496,7 +1509,7 @@ fn testLight(lv: *const grid.Level) !*Light {
 
 fn added(l: *const Light, lv: *const grid.Level, q: [2]f32) f32 {
     var ids: [grid.MAX_TORCHES]TorchIx = undefined;
-    return lum(l.at(lv, l.near(.{ .x = 0, .y = 0 }, .{ .x = grid.W, .y = grid.H }, &ids), q)) - lum(AMBIENT);
+    return lum(l.at(lv, l.near(grid.Box.inMap(0), &ids), q)) - lum(l.at(lv, &.{}, q));
 }
 
 test "a torch pools light on the floor below it, fading to nothing at its reach" {
@@ -1582,7 +1595,7 @@ test "a cell coming into sight fades up fast, and fades down to memory slower on
     }
     const q = [2]f32{ 15.5, 15.5 };
     l.carrier = q;
-    const bright = lum(AMBIENT + CARRY);
+    const bright = lum(l.base() + CARRY);
     const dim = lum(MEMORY);
     const Up = struct {
         var want: f32 = 0;
@@ -1616,6 +1629,7 @@ test "the edge of sight ramps across texels instead of stepping at a cell" {
     }
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
+    l.sky = sky.at(12);
     l.bake(&lv, .{ .x = 10, .y = 25 }, .{ .x = 30, .y = 35 });
     const row: i32 = 30 * SUB;
     var biggest: f32 = 0;
@@ -1646,7 +1660,7 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     for (0..4) |_| l.step(&lv, 1.0 / 60.0);
     l.bake(&lv, .{ .x = 0, .y = 0 }, .{ .x = grid.W, .y = grid.H });
     var ids: [grid.MAX_TORCHES]TorchIx = undefined;
-    const torches = l.near(.{ .x = -1, .y = -1 }, .{ .x = grid.W + 1, .y = grid.H + 1 }, &ids);
+    const torches = l.near(grid.Box.inMap(-1), &ids);
     const sub: f32 = @floatFromInt(SUB);
     var dark: usize = 0;
     var fading: usize = 0;
@@ -1755,7 +1769,7 @@ test "a doorway sight skips in a hall's side wall leaves no dark patch in the ha
         const d: f32 = @floatFromInt(x - 20);
         const v = lum(l.at(&lv, &.{}, .{ 20.5 + d, 20.5 }));
         std.debug.print(" {d}:{d:.3}", .{ d, v });
-        worst = @max(worst, @abs(v - lum(AMBIENT + CARRY * splat(carryFade(d)))));
+        worst = @max(worst, @abs(v - lum(l.base() + CARRY * splat(carryFade(d)))));
     }
     std.debug.print("; furthest off the carried light alone {d:.4}\n", .{worst});
     try std.testing.expect(worst < 1e-3);
@@ -1781,6 +1795,101 @@ test "a flame flickers within a tenth or so either way and never jumps" {
     try std.testing.expect(jump < 0.03);
 }
 
+test "a shadow fades through zero as a body passes directly under a torch" {
+    var s = Shine{ .ambient = AMBIENT };
+    s.add(.{ .drawn = .{ 40.5, 30.5 }, .ground = .{ 40.5, 30.5 }, .colour = splat(1), .casts = true });
+    var last: f32 = 0;
+    var worst: f32 = 0;
+    for (0..201) |i| {
+        const dx = (@as(f32, @floatFromInt(i)) - 100) / 100;
+        var buf: [BODY_LIGHTS]Cast = undefined;
+        const cs = casts(s, .{ 40.5 + dx, 30.5 }, ART_H, &buf);
+        const alpha = if (cs.len == 0) 0 else cs[0].alpha;
+        if (i > 0) worst = @max(worst, @abs(alpha - last));
+        if (@abs(dx) <= SHADOW_OVERHEAD) try std.testing.expectEqual(@as(f32, 0), alpha);
+        last = alpha;
+    }
+    std.debug.print("torch shadow passing under the light: largest alpha step {d:.4}\n", .{worst});
+    try std.testing.expect(worst < 0.04);
+}
+
+test "torch shadow crosses its light's horizontal line without flipping" {
+    var s = Shine{ .ambient = AMBIENT };
+    s.add(.{ .drawn = .{ 43.5, 30.5 }, .ground = .{ 43.5, 30.5 }, .colour = splat(1), .casts = true });
+    var last: ?[2]f32 = null;
+    var worst: f32 = 0;
+    for (0..41) |i| {
+        const dy = (@as(f32, @floatFromInt(i)) - 20) / 1000;
+        var buf: [BODY_LIGHTS]Cast = undefined;
+        const cs = casts(s, .{ 40.5, 30.5 + dy }, ART_H, &buf);
+        try std.testing.expectEqual(@as(usize, 1), cs.len);
+        try std.testing.expectEqual(@as(f32, 0), cs[0].solid);
+        if (last) |was| worst = @max(worst, mathx.len(cs[0].lean[0] - was[0], cs[0].lean[1] - was[1]));
+        last = cs[0].lean;
+    }
+    std.debug.print("torch shadow across the horizontal: largest tip step {d:.4} px\n", .{worst});
+    try std.testing.expect(worst < 0.1);
+}
+
+test "night lantern on explored ground fades into memory without a dark ring" {
+    var lv = grid.openFloor();
+    lv.seen = @splat(true);
+    const at = P{ .x = 40, .y = 30 };
+    lume.see(&lv, at, actor.row(.archer).sight, 0, &.{.{ .at = at, .reach = actor.row(.archer).light }});
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    l.carrier = mathx.centre(at);
+    l.sky = sky.at(1);
+    var lowest = lum(MEMORY);
+    var rise: f32 = 0;
+    var last = lum(l.at(&lv, &.{}, l.carrier.?));
+    for (1..161) |i| {
+        const d = @as(f32, @floatFromInt(i)) / 20;
+        const value = lum(l.at(&lv, &.{}, .{ 40.5 + d, 30.5 }));
+        lowest = @min(lowest, value);
+        rise = @max(rise, value - last);
+        last = value;
+    }
+    std.debug.print("night lantern into explored ground: minimum {d:.4}, memory {d:.4}, outward rise {d:.4}\n", .{ lowest, lum(MEMORY), rise });
+    try std.testing.expect(lowest >= lum(MEMORY) - 0.002);
+    try std.testing.expect(rise < 0.002);
+}
+
+test "moving night light stays above memory at 60 and 144 Hz" {
+    const from = P{ .x = 40, .y = 30 };
+    for ([_]f32{ 60, 144 }) |hz| {
+        var lv = grid.openFloor();
+        lv.seen = @splat(true);
+        lume.see(&lv, from, 10, 0, &.{.{ .at = from, .reach = actor.row(.archer).light }});
+        const l = try testLight(&lv);
+        defer std.testing.allocator.destroy(l);
+        l.sky = sky.at(1);
+        const to = from.add(.{ .x = 1, .y = 1 });
+        lume.see(&lv, to, 10, 0, &.{.{ .at = to, .reach = actor.row(.archer).light }});
+        var lowest = lum(MEMORY);
+        var worst: f32 = 0;
+        var previous: [80]f32 = undefined;
+        var frame: usize = 0;
+        var t: f32 = 0;
+        while (t <= 1) : (t += 1 / hz) {
+            const k = @min(1, t / 0.13);
+            l.carrier = .{ 40.5 + k, 30.5 + k };
+            l.step(&lv, 1 / hz);
+            for (0..80) |i| {
+                const x = 35.5 + @as(f32, @floatFromInt(i)) / 5;
+                const v = lum(l.at(&lv, &.{}, .{ x, 30.5 }));
+                lowest = @min(lowest, v);
+                if (frame > 0) worst = @max(worst, @abs(v - previous[i]));
+                previous[i] = v;
+            }
+            frame += 1;
+        }
+        std.debug.print("moving night light at {d} Hz: minimum {d:.4}, largest frame change {d:.4}\n", .{ hz, lowest, worst });
+        try std.testing.expect(lowest >= lum(MEMORY) - 0.002);
+        try std.testing.expect(worst < 0.08);
+    }
+}
+
 test "the carried light fades across what it lets the archer see and leaves that edge above memory" {
     var lv = grid.openFloor();
     @memset(&lv.lit, true);
@@ -1800,7 +1909,7 @@ test "the carried light fades across what it lets the archer see and leaves that
     const past = lum(l.at(&lv, &.{}, .{ 40.5 + edge + 1, 30.5 }));
     std.debug.print(", a cell past {d:.3}, memory {d:.3}\n", .{ past, lum(MEMORY) });
     try std.testing.expect(last > lum(MEMORY));
-    try std.testing.expectApproxEqAbs(lum(AMBIENT), past, 1e-4);
+    try std.testing.expectApproxEqAbs(lum(MEMORY), past, 1e-4);
 }
 
 test "a torch on a wall never seen has no flame to draw, though the floor below it is in sight" {
@@ -1866,7 +1975,7 @@ test "a cast shadow fades out smoothly as its body walks away from the torch" {
         var worst: f32 = 0;
         var gone: f32 = 0;
         var d: f32 = 0.5;
-        while (d < @as(f32, @floatFromInt(REACH)) + 0.5) : (d += 0.125) {
+        while (d < @as(f32, @floatFromInt(REACH)) + 0.5) : (d += 0.0625) {
             const at = [2]f32{ fl[0] + d, fl[1] + 0.5 };
             l.carrier = if (r.carrier) |c| .{ at[0] + c, at[1] } else null;
             const v = castAlpha(l, at, r.carrying);
@@ -1875,12 +1984,12 @@ test "a cast shadow fades out smoothly as its body walks away from the torch" {
             if (v[0] > 0) gone = d;
             last = v[0];
         }
-        std.debug.print("; biggest drop per 1/8 cell {d:.3}, last cast at {d:.2}\n", .{ worst, gone });
+        std.debug.print("; biggest drop per 1/16 cell {d:.3}, last cast at {d:.2}\n", .{ worst, gone });
         steepest = @max(steepest, worst);
         nearest_end = @min(nearest_end, gone);
     }
     try std.testing.expect(steepest < 0.07);
-    try std.testing.expect(nearest_end >= @as(f32, @floatFromInt(REACH)) - 1.5);
+    try std.testing.expect(nearest_end + 0.0625 >= @as(f32, @floatFromInt(REACH)) - 1.5);
 }
 
 test "a body is lit as the ground under it is, fading into sight and on the edge of the unseen" {
@@ -2098,8 +2207,7 @@ test "under the sky, ground in the sun outshines ground in shade, and night is d
     lv.set(rock, .rock);
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
-    var ids: [grid.MAX_TORCHES]TorchIx = undefined;
-    const none = l.near(.{ .x = 0, .y = 0 }, .{ .x = 0, .y = 0 }, &ids);
+    const none: []const TorchIx = &.{};
     l.sky = sky.at(morning);
     const k = l.sky.?;
     const u = k.across();
@@ -2110,7 +2218,8 @@ test "under the sky, ground in the sun outshines ground in shade, and night is d
     l.sky = sky.at(0);
     const night = lum(l.at(&lv, none, .{ m[0] + 5, m[1] }));
     std.debug.print("{d}h ground: {d:.2} in the sun, {d:.2} in a rock's shadow; {d:.3} at midnight\n", .{ morning, sun, shade, night });
-    try std.testing.expect(sun > shade * 1.2 and sun < shade * 2 and shade > night * 4);
+    try std.testing.expect(sun > shade * 1.2 and sun < shade * 2 and shade > night * 2.5);
+    try std.testing.expect(night >= lum(MEMORY));
 }
 
 test "the moon throws a cold shadow as deep as the sun's, over the archer's own light too" {
@@ -2134,8 +2243,7 @@ test "the moon throws a cold shadow as deep as the sun's, over the archer's own 
         depth[i] = cs[0].alpha;
         blue[i] = cs[0].shade[2] / cs[0].shade[0];
     }
-    var ids: [grid.MAX_TORCHES]TorchIx = undefined;
-    const none = l.near(.{ .x = 0, .y = 0 }, .{ .x = 0, .y = 0 }, &ids);
+    const none: []const TorchIx = &.{};
     const k = l.sky.?;
     const u = k.across();
     const off = 0.5 + k.reach() * 0.5;
@@ -2153,7 +2261,7 @@ test "the moon throws a cold shadow as deep as the sun's, over the archer's own 
     try std.testing.expect(body_behind / body_toward < 0.9 and body_behind / body_toward > ground_near - 0.05);
 }
 
-test "a sun shadow thinned to a sliver from the side gives way to a soft streak; a torch's never does" {
+test "sun and torch shadows thinned to slivers give way to soft streaks" {
     var lv = grid.openFloor();
     @memset(&lv.lit, true);
     @memset(&lv.seen, true);
@@ -2172,7 +2280,7 @@ test "a sun shadow thinned to a sliver from the side gives way to a soft streak;
     var a: f32 = 0;
     while (a < std.math.tau) : (a += 0.01) torch_least = @min(torch_least, solidity(.{ @cos(a), lampRise(@sin(a)) }));
     std.debug.print("of a sun shadow, silhouette: {d:.2} at 6h, {d:.2} at 8h, {d:.2} at noon; of a torch's, {d:.2} at least\n", .{ silhouette_at[0], silhouette_at[1], silhouette_at[2], torch_least });
-    try std.testing.expect(silhouette_at[0] < 0.1 and silhouette_at[1] > 0.5 and silhouette_at[2] == 1 and torch_least == 1);
+    try std.testing.expect(silhouette_at[0] < 0.1 and silhouette_at[1] > 0.5 and silhouette_at[2] == 1 and torch_least == 0);
 }
 
 test "a streak is darkest at the feet and gone at the tip, and a sideways sun shadow runs at most its reach" {

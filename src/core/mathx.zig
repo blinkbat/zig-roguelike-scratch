@@ -156,6 +156,17 @@ pub fn distEuclid(a: P, b: P) f32 {
     return len(@floatFromInt(a.x - b.x), @floatFromInt(a.y - b.y));
 }
 
+/// `x, y` in a `w` by `h` grid stored row by row; null off it.
+pub fn slot(x: i32, y: i32, w: usize, h: usize) ?usize {
+    if (x < 0 or y < 0 or x >= w or y >= h) return null;
+    return @as(usize, @intCast(y)) * w + @as(usize, @intCast(x));
+}
+
+/// Sight's round reach: a cell half a cell past `r` is still in it.
+pub fn reaches(a: P, b: P, r: f32) bool {
+    return distEuclid(a, b) <= r + 0.5;
+}
+
 /// Real seconds summed frame by frame, in f64: an f32 sum stops moving after a day or so.
 pub const Seconds = struct {
     sum: f64 = 0,
@@ -293,6 +304,20 @@ pub const Rng = struct {
     /// [0, 1).
     pub fn unit(self: *Rng) f32 {
         return self.r().float(f32);
+    }
+
+    /// An index under `n`, each as likely as its `weight`; null when all weigh nothing.
+    pub fn weighted(self: *Rng, n: usize, ctx: anytype, comptime weight: fn (@TypeOf(ctx), usize) u32) ?usize {
+        var total: u32 = 0;
+        for (0..n) |i| total += weight(ctx, i);
+        if (total == 0) return null;
+        var left = self.below(total);
+        for (0..n) |i| {
+            const w = weight(ctx, i);
+            if (left < w) return i;
+            left -= w;
+        }
+        unreachable;
     }
 
     pub fn pickWhere(self: *Rng, comptime T: type, items: []const T, ctx: anytype, comptime ok: fn (@TypeOf(ctx), T) bool) ?T {

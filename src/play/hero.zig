@@ -1,5 +1,8 @@
 const std = @import("std");
 
+pub const MANA: i32 = 100;
+pub const MANA_REGEN: i32 = 5;
+
 pub const Class = enum {
     archer,
 
@@ -46,6 +49,11 @@ pub const Name = struct {
         return true;
     }
 
+    /// Whether `push` would have spelt it, as a name read from a file must be.
+    pub fn valid(self: *const Name) bool {
+        return self.n <= MAX and Name.of(self.text()).n == self.n;
+    }
+
     pub fn pop(self: *Name) void {
         self.n -|= 1;
     }
@@ -63,4 +71,7 @@ test "a name takes letters and single spaces, up to its length, and ends on no s
     try std.testing.expectEqualStrings("Ar wen the Bold ", nm.text());
     try std.testing.expectEqualStrings("Ar wen the Bold", nm.done().text());
     try std.testing.expectEqualStrings("O'Neil-Ray", Name.of("O'Neil-Ray").text());
+    try std.testing.expect(nm.valid());
+    nm.buf[1] = '!';
+    try std.testing.expect(!nm.valid());
 }

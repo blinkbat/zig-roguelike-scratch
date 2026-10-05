@@ -43,13 +43,12 @@ pub const Params = struct {
 
 const Box = grid.Box;
 
-/// A `w` by `h` box clear of liquid, doors, bridges and every box in `taken`, a cell of margin round it.
-pub fn site(lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, taken: []const Box) ?Box {
+/// A `w` by `h` box clear of liquid, doors, bridges, every box in `taken` and any solid `carve.clearRound` leaves standing, a cell of margin round it.
+pub fn site(lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, taken: []const Box, pal: carve.Palette) ?Box {
     if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
     for (0..TRIES) |_| {
-        const lo = P{ .x = rng.range(SITE_MARGIN, grid.W - SITE_MARGIN - w), .y = rng.range(SITE_MARGIN, grid.H - SITE_MARGIN - h) };
-        const b = Box.sized(lo, w, h);
-        if (fits(lv, b, taken)) return b;
+        const b = Box.sized(Box.inMap(SITE_MARGIN).rollFor(rng, w, h), w, h);
+        if (fits(lv, b, taken, pal)) return b;
     }
     return null;
 }
@@ -60,9 +59,9 @@ pub fn Lots(comptime most: usize) type {
         box: [most]Box = undefined,
         n: usize = 0,
 
-        pub fn take(self: *@This(), lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32) ?Box {
+        pub fn take(self: *@This(), lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, pal: carve.Palette) ?Box {
             if (self.n == most) return null;
-            const b = site(lv, rng, w, h, self.box[0..self.n]) orelse return null;
+            const b = site(lv, rng, w, h, self.box[0..self.n], pal) orelse return null;
             self.box[self.n] = b;
             self.n += 1;
             return b;
@@ -76,15 +75,15 @@ pub fn openWay(lv: *grid.Level, way: [2]P, inside: grid.Tile, outside: grid.Tile
     if (lv.at(way[1]).solid()) lv.set(way[1], outside);
 }
 
-fn fits(lv: *const grid.Level, b: Box, taken: []const Box) bool {
+fn fits(lv: *const grid.Level, b: Box, taken: []const Box, pal: carve.Palette) bool {
     for (taken) |t| {
         if (b.overlaps(t, 1)) return false;
     }
-    const round = grid.grown(b.lo, b.hi, 1);
-    var cells = grid.Cells.of(round[0], round[1]);
+    var cells = b.grown(1).cells();
     while (cells.next()) |q| {
         const t = lv.at(q);
         if (t.liquid() or t == .bridge or lv.doorAt(q) != null) return false;
+        if (t.solid() and !carve.closes(t, pal)) return false;
     }
     return true;
 }
@@ -159,13 +158,13 @@ pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, wall
         if (n + 2 > stack.len) continue;
         if (across) {
             const x = splitAt(lv, rng, b, true, least, walls) orelse continue;
-            carve.box(lv, .{ .x = x, .y = b.lo.y }, .{ .x = x + 1, .y = b.hi.y }, walls);
+            carve.box(lv, .{ .lo = .{ .x = x, .y = b.lo.y }, .hi = .{ .x = x + 1, .y = b.hi.y } }, walls);
             lv.set(.{ .x = x, .y = rng.range(b.lo.y, b.hi.y - 1) }, .floor);
             stack[n] = .{ .lo = b.lo, .hi = .{ .x = x, .y = b.hi.y } };
             stack[n + 1] = .{ .lo = .{ .x = x + 1, .y = b.lo.y }, .hi = b.hi };
         } else {
             const y = splitAt(lv, rng, b, false, least, walls) orelse continue;
-            carve.box(lv, .{ .x = b.lo.x, .y = y }, .{ .x = b.hi.x, .y = y + 1 }, walls);
+            carve.box(lv, .{ .lo = .{ .x = b.lo.x, .y = y }, .hi = .{ .x = b.hi.x, .y = y + 1 } }, walls);
             lv.set(.{ .x = rng.range(b.lo.x, b.hi.x - 1), .y = y }, .floor);
             stack[n] = .{ .lo = b.lo, .hi = .{ .x = b.hi.x, .y = y } };
             stack[n + 1] = .{ .lo = .{ .x = b.lo.x, .y = y + 1 }, .hi = b.hi };
@@ -179,8 +178,9 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
     for (0..p.count) |_| {
         const w = rng.range(p.size[0], p.size[1]);
         const h = rng.range(p.size[0], @max(p.size[0], @divTrunc(p.size[1] * 3, 4)));
-        const b = lots.take(lv, rng, w, h) orelse continue;
+        const b = lots.take(lv, rng, w, h, pal) orelse continue;
         raise(lv, rng, b, p, pal.open);
+        carve.clearRound(lv, b, pal);
     }
 }
 

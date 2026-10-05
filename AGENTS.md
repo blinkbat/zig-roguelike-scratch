@@ -1,14 +1,15 @@
 # AGENTS.md — roguelike-scratch
 
 A grid roguelike in **Zig 0.14.1 + raylib**, built from `..\__archive\zig-grid-roguelike`'s foundation (grid, symmetric
-FOV, room generator, input stepper) with every system stripped out. One archer, three foes (the rat and the tougher
-slime, both melee, and Brogue's bloat, which flits and bursts into caustic gas) placed in packs by `play/pack.zig` (a `pack.Spec`: its makeups, drawn by weight, `pack.KINDS` by default; each kind's quota of `few` is filled first, from the makeups holding it; never more bodies than the pool holds once every slime has split to quarters, `actor.roomFor`, which a bespoke node's foes keep to too), barrels that break for gold, no items, no stats beyond hp. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
+FOV, room generator, input stepper) with every system stripped out. One archer, four foes (the rat and the tougher
+slime, both melee, Brogue's bloat, which flits and bursts into caustic gas, and the pib, whose stab may open a bleed
+and who runs when it sees a foe die) placed in packs by `play/pack.zig` (a `pack.Spec`: its makeups, drawn by weight, `pack.KINDS` by default; each kind's quota of `few` is filled first, from the makeups holding it; never more bodies than the pool holds once every slime has split to quarters, `actor.roomFor`, which a bespoke node's foes keep to too), barrels that break for gold, no items, HP and mana. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
 
 A blow that leaves a slime alive under half its hp splits it (`Pool.split`, `Row.splits`) into two half slimes, and
 one that leaves either half under half its own splits that half into two quarters, so a slime ends as four; each is
 on half what it split from had left (at least 1), the new one on a free cell beside it and acting from the next turn;
 with no free cell it splits on a later blow. A slime's splits are of its `Kind.family` and count
-as slimes.
+as slimes. The hero also has mana for Juke, shown beside HP in the HUD.
 
 Prefer no comments in code. Don't make product/design decisions — ask. Don't commit, push or branch unless asked.
 
@@ -17,7 +18,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - `zig` is NOT on PATH. `check.cmd` (type-check, the error loop) · `build.cmd` · `run.cmd` · `test.cmd [filter]` ·
   `shot.cmd` (headless frames into `shots\lean.png`, `shots\aim.png`, `shots\torch.png`, a posed torch with rats
   under it, `shots\bind.png`, the bind screen with its picker open, and `shots\gas.png`, a room a few turns after a
-  bloat burst in it, `shots\pause.png`, the pause menu over it, `shots\biome.png`, the archer arrived in `qud_salt_marsh`, `shots\dawn.png`, `noon.png`, `day.png`, `dusk.png` and `night.png`, the wilds at 7.00, 12.00, 16.30, 19.18 and 1.00, each
+  bloat burst in it, `shots\pause.png`, the pause menu over it, `shots\biome.png`, the archer arrived in `qud_salt_marsh`, `shots\dawn.png`, `noon.png`, `day.png`, `dusk.png` and `night.png`, the wilds at 7.00, 12.00, 16.30, 19.18 and 1.00;
+  `shots\night-memory.png` keeps the noon exploration at midnight to check the lantern's fade into memory; each
   world's start node rolled whole a glyph a cell into `shots\worlds\<name>.png`, and `shots\edit.png`, `shots\edit-graph.png` and
   `shots\edit-gen.png`, the editor's map, graph and a procgen node's generator on a posed three-node world, and `shots\name.png`, the hero's name being typed; built
   into `zig-out-dev` so a running game is untouched).
@@ -27,6 +29,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **EVERY MODULE MUST BE NAMED IN `main.zig`'s `test {}` BLOCK** — `build.zig` panics otherwise,
   and on any `src/**/*.zig` under 512 bytes.
 - Verify with tests that print the number. Do NOT launch the interactive window; the owner plays it.
+- When carrying an actor across `enter` replacing its pool, use an initialized `var` snapshot assigned from the
+  actor. A `const` conditional of `h.*` aliased the replaced storage on Zig 0.14.1; door/save tests caught it.
 
 ## Laws
 
@@ -34,8 +38,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   one the UI names; the keyboard mirrors it. D-pad moves, LT held puts the d-pad on diagonals (`leanOf`). Skills sit
   on PoE2's controller skill bar (`play/skillbar.zig`): LB, A, X, Y, B, RB and RT are slots in a primary and a
   secondary set, the secondary set is used while the button bound to "Activate Secondary Skill Set" (LB) is held, and
-  View opens the bind screen (A select or pick up, X change, Y remove, B close). Defaults: X Shoot, B Wait. The button
-  that opened the reticle shoots, B cancels, A, B, X or Menu restarts after death (or, in a save slot,
+  View opens the bind screen (A select or pick up, X change, Y remove, B close). Defaults: X Shoot, B Juke, Y Wait, RB Burning Arrow, RT Glacial Shot. The button
+  that opened the reticle confirms; B cancels, or View when B opened it. A, B, X or Menu restarts after death (or, in a save slot,
   goes back to the title), and Menu opens no pause menu over it.
   Alt+Enter toggles borderless fullscreen. Menu (Esc) opens the pause menu; raylib's exit key is cleared
   (`input.claimKeys`), so Esc never closes the window. A field being typed in sets `State.typing`: the keys that type
@@ -57,7 +61,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   reaches the game. `save.SLOTS` (3) slots in `saves\`. A slot's run is written once a turn has changed it and the
   last write is `save.GAP_S` old (never mid-door), copied on the frame and written off it on a thread
   (`Autosave`), and once more as the run is left. Death ends it: the slot is deleted as the hero dies. A play-test
-  has no slot. Tests never write a save file.
+  has no slot. Completed background writes signal through an atomic flag; failures rearm the dirty state even
+  while idle, and retry on the same interval. Tests never write a save file.
 - **THE WORLD IS `world/atlas.zig`**: nodes, each bespoke (authored floor, walls, torches, barrels and foes) or
   procgen (a base biome and the features laid over it, `world/procgen.zig`), each with doors. A procgen node
   holds no seed, but holds its base's settings (`procgen.Floor`), its features' (`procgen.Feature`, `MAX_FEATURES`)
@@ -81,8 +86,45 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 - **NOTHING IS SPENT UNTIL THE SHOT IS CONFIRMED.** `bow.aimable` is both the reticle's legal cells and the
   shot's legality — one call, so the highlight cannot disagree with the resolver. Every cell the arrow crosses to a
   legal mark is in sight: a line slips past a wall's corner where sight does not.
+- **JUKE (`play/juke.zig`) JUMPS INSTANTLY**, across obstacles to visible vacant ground within 3 Chebyshev tiles.
+  Targeting starts on the hero and can cross invalid cells; only `juke.aimable` landings confirm. It spends no turn,
+  costs 20 mana and starts a 3-turn cooldown. The hero has 100 mana and recovers 5 per spent turn; idle frames do
+  neither. HP and mana bars sit together in the HUD, with cooldown turns on each bound Juke slot. Mana and cooldown
+  persist across doors and saves, reset on a new run. `gfx/fx.zig` draws its fading trail and landing dust.
+  `shot.cmd` also writes `shots/juke-aim.png` and `shots/juke.png` for targeting, effects and resource bars.
+- **BURNING ARROW (`play/burning.zig`) ADDS FIRE** to the normal arrow: 2-4 added fire damage, 15 mana, one turn,
+  a 50% chance to ignite a surviving target that took fire damage. Burning deals 4 fire damage on each of the next
+  3 turns after the body's action and gas harm; reapplying refreshes duration without stacking or delaying a due tick.
+  `play/damage.zig` defines cold, fire, chaos and lightning damage and percent resistances. Physical damage stays
+  whole; each element is reduced separately, rounding down, with resistance clamped to -100 through 100. All
+  kinds start at zero resistance. An actor owns its resistances and burn; both survive saves, node visits and slime
+  splits. The hero carries them through doors. `Pool.damage` still applies every loss of HP. Burn damage, death,
+  splitting, flashes and flames follow the existing delayed presentation; a bloat killed by fire still bursts.
+  `shot.cmd` writes `shots/burning-aim.png`, `shots/burning-arrow.png` and `shots/burning.png`.
+- **GLACIAL SHOT (`play/glacial.zig`) BURSTS AT THE FIRST BODY OR BARREL HIT**: normal physical arrow damage to
+  that body, plus 2-4 cold damage to it and foes in a 90-degree cone extending 2 Chebyshev tiles behind the impact,
+  along the shot's direction. `glacial.cone` is shared by damage, the aiming preview and the delayed frost burst;
+  `fov.castInto` blocks it behind terrain without changing sight or memory. It costs 15 mana and one turn, only on
+  confirmation. An empty shot has no burst. Each surviving foe taking cold damage rolls independently for chill:
+  50% base chance scaled by clamped cold resistance (50% resistance gives 25% chance; immunity prevents chill).
+  Chill lasts 3 enemy turns including the shot's response: act, act, skip. Refreshing keeps the cadence and resets
+  duration, without stacking. Skipping stops movement and attacks, never gas or burn ticks; idle frames do nothing.
+  Chill duration and cadence survive saves, visits and slime splits. A burst captures its targets before damage,
+  so newborn halves inherit chill without taking that burst again; on its waiting turn a newborn half's chill and
+  burn run as its parent's do. Its ice and chill markers wait for impact, and a chill wearing down shows at the
+  body's place in the stagger (`fx.Settle`).
+  `shot.cmd` writes `shots/glacial-aim.png`, `shots/glacial-arrow.png`, `shots/glacial.png` and `shots/glacial-bind.png`.
+- **THE PIB (`Row.flees`) BLEEDS AND RUNS.** Its stab (`Strike.bleeds`, 30%) opens a bleed on a target it leaves
+  alive (`play/bleeding.zig`): physical, unresisted, 1 a turn, or 2 on a turn the body moved (the archer's step or
+  juke, `Game.stepped`), for 5 turns from the next, ticking after burn; reopening refreshes it without stacking.
+  A pib that sees a foe die within `actor.FRIGHT_REACH` (5, a clear line) wakes and runs for `actor.FLEE_TURNS` (4)
+  of its turns, uphill on the walk from the archer (`actor.flee`); cornered, it holds its cell and strikes an archer beside it; each death refreshes it.
+  The bleed shows as drops on the body, a drip and stain each tick, and the hero's statuses (bleeding, burning,
+  chilled, with turns left) sit beside the HP bar.
 - **THE LAYOUT READS `Game.screen`, NEVER A WINDOW CONSTANT**, because fullscreen changes it at runtime.
 - **`gfx/look.zig` IS EVERY PICTURE.** A thing with a texture in `Sprites` draws it; the rest draw their glyph.
+  Ability slots use monochrome line placeholders through `look.drawSkill`, shared by the HUD and bind picker.
+  `skillbar.Act.cost` supplies mana checks, spending and slot dimming; ability descriptions use their mechanic constants.
 - **`gfx/light.zig` IS EVERY LIGHT, AND THE FOG IS PART OF IT.** Terrain draws at full brightness; one pass of the
   light map (2x modulate, so it can brighten) lights it, and nothing else tints terrain. Open ground and liquids, and the ground under
   anything solid or standing on it, go down first, then body shadows, then the solid and standing tiles, so a wall
@@ -96,7 +138,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   shader from normals bevelled off their silhouette at load, faded as the ground under them is; torch flames and their
   glow draw over it all. The map
   composes the archer's carried light (after Brogue's miner's light), each torch (occluded by its own `fov.cast`)
-  and the fog: sight and memory ease per cell, and memory fades to black exactly at the edge of what was ever seen,
+  and the fog: unshadowed ambient is floored at memory's RGB before adding lights, so the lantern never fades into
+  a dark ring below remembered ground. Sight and memory ease per cell, and memory fades to black exactly at the edge of what was ever seen,
   so no unseen cell is ever drawn. Ground in sight is never dimmed by a cell never seen (a side door the symmetric FOV
   skips): there the fade is only a rim, and sight blurs over seen cells alone. It is cosmetic: nothing in the
   simulation reads it, and it decides no visibility.
@@ -109,14 +152,15 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   altitude floored at 35 degrees so a shadow never outruns its caster by much. On the map its north-south lean is
   squashed (`sky.NORTH_SOUTH`), so shadows run mostly across the screen, and it stands no steeper than 50 degrees, so
   even at noon everything throws a shadow past its edge. Its sunrise and sunset keys are warmed to gold. Only a node
-  open to the sky (`Node.outdoor`: the outdoor bases; bespoke and rooms nodes are under a roof) gets it: there
-  `Light.sky` replaces the dark's ambient with the hour's, lights ground, wall tops and south faces by the key,
+  open to the sky (`Node.outdoor`, from `procgen.Floor.outdoor`; bespoke and rooms nodes are under a roof) gets it: there
+  `Light.sky` replaces the dark's ambient with the hour's (still floored at memory), lights ground, wall tops and south faces by the key,
   shadows them by a march toward it over what stands in its way (`light.CASTERS`: walls, rock, fences and the rest),
   drifts soft cloud shadows over them in real time (`light.clouded`, off the light's own seconds), lights bodies from
   its side and dims the carried light out by day. A sun shadow is soft and takes 55% of the sky's light at most; a moon shadow darkens all the light there besides. Bodies,
   barrels and the standing tiles (`look.STANDING`: shrubs, tiny shrubs, boulders, fungus, tall grass, shrooms) cast from their own place as every
   light does: a silhouette, but a tree's (`look.canopied`) is its canopy's soft pool (`Light.drawCanopy`), and one
-  running nearly straight across the screen gives way to a soft streak darkest at the feet (`light.solidity`). Everything
+  running nearly straight across the screen gives way to a soft streak darkest at the feet (`light.solidity`), for
+  torches as well as sky lights. A torch shadow fades to zero as its caster passes directly under the light. Everything
   that blocks a step but a liquid casts one way or the other (asserted). Nothing in the simulation reads the light.
 - **`gfx/fx.zig` IS EVERY BLOW'S AFTERMATH**, after zig-soulslike's and fainter: the struck body flashes toward
   `light.FLASH_RGB` (drawn by the body shader), a pinprick of light marks the contact, and the body's matter
@@ -124,7 +168,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   before the light map, so it lights and fogs them. A blow lands when the picture reaches it: an arrow's as it
   arrives, a melee blow (a kick, a bite or slam, a bloat's burst) at the height of its bump, the striker lurching a
   third of a cell toward what it strikes and back (`Glide.bump`, `BUMP_S`), a foe's from its place in the stagger
-  (`Game.bit`). Nothing in the simulation reads it.
+  (`Owed.bit`). Nothing in the simulation reads it.
 - **`gfx/vignette.zig` IS THE ARCHER'S DANGER**: the view's edge reddens as a blow on the archer lands (its flash
   rising, so a bite and the gas's sting alike) and glows, throbbing, while its hp is under a third. Drawn over the
   world, under the minimap and hud. Nothing in the simulation reads it.
@@ -146,9 +190,11 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   road, scatter (any tile on any tile, alone or clumped), border, buildings (decay makes ruins), farms, setpiece.
   `carve.zig` is their shared toolkit. Each `worlds\<game>_<place>.world` is one touchstone's example, written as
   text. A knob is a field of a base's or feature's `Params`: whole numbers, or an enum written by name. The outdoor
-  bases (open, wilds, topology, terrain) strew lone boulders over their grass (`carve.Litter`, the `litter` knob),
+  bases with `litter` (open, wilds, topology, terrain) strew lone boulders over their grass (`carve.Litter`),
   each where it closes no way, then tiny shrubs, tall grass in patches and shrooms (`carve.Decor`, the
-  `decor` knob), laid by `carve.dress` after the base's shape for any base whose `Params` holds them.
+  `decor` knob), laid by `carve.dress` after the base's shape for any base whose `Params` holds them. Outdoor lighting
+  is decided separately by `Floor.outdoor`: open, wilds, terrain, keep, town, dunes and site; hall's graves and grove;
+  and topology unless its filler is rock or wall.
 - **A TILE IS ITS ROW IN `grid.TERRAIN`** (solid, blind, what lies under it, liquid), its letter in a world file or set piece `Tile.letter`, its picture its row in `look.TILES`
   (a symbol, its ASCII stand-in, colours, minimap). A shrub, boulder or fungus blocks sight and step, a grave a step
   alone;
@@ -208,6 +254,6 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   (`fx.After`, in the order they were dealt), and a slime split off one is drawn from when the blow that split it
   lands, sliding out of it. Each frame moves on what earlier frames set going before it deals anything new. A
   turn takes as long as its slowest glide, arrow or flash (`Game.busy`); a walk due before then waits for it, the latest
-  standing in for any before.
+  standing in for any before. Skill activation and reticle confirmation also require `quiet`, including Wait and Shoot.
 - **EVERY DRAWN STRING IS ASCII**, but a tile's symbol: any codepoint Balthazar holds, baked into the font atlas by
   `look.TILE_CODEPOINTS`, its ASCII `ch` drawn instead where the font has no atlas.

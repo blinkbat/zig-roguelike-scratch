@@ -38,8 +38,6 @@ pub const Params = struct {
         q.heat = range(p.heat);
         q.scale = std.math.clamp(p.scale, SCALE_MIN, SCALE_MAX);
         q.rivers = @min(p.rivers, RIVERS_MAX);
-        q.litter = p.litter.fit();
-        q.decor = p.decor.fit();
         return q;
     }
 
@@ -107,15 +105,19 @@ fn groundOf(b: Biome, v: f32, roll: f32) grid.Tile {
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const s: f32 = @floatFromInt(p.scale);
-    const fields = [_]carve.Noise{ .init(seed ^ 0x4E16), .init(seed ^ 0x2A1F), .init(seed ^ 0xD2A1), .init(seed ^ 0x4EA7), .init(seed ^ 0xF1E1) };
+    const elevation = carve.Noise.init(seed ^ 0x4E16);
+    const rainfall = carve.Noise.init(seed ^ 0x2A1F);
+    const drainage = carve.Noise.init(seed ^ 0xD2A1);
+    const warmth = carve.Noise.init(seed ^ 0x4EA7);
+    const grain = carve.Noise.init(seed ^ 0xF1E1);
     var height: [grid.CELLS]f32 = undefined;
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
-        const h = lerp(p.height, stretch(fields[0].at(q, s, 4)));
+        const h = lerp(p.height, stretch(elevation.at(q, s, 4)));
         height[i] = h;
-        const heat = lerp(p.heat, stretch(fields[3].at(q, s * 2, 2))) - @max(0, h - LAPSE_FROM);
-        const b = classify(h, lerp(p.rain, stretch(fields[1].at(q, s, 3))), lerp(p.drain, stretch(fields[2].at(q, s, 3))), heat);
-        lv.tile[i] = groundOf(b, fields[4].at(q, 5, 2), rng.unit());
+        const heat = lerp(p.heat, stretch(warmth.at(q, s * 2, 2))) - @max(0, h - LAPSE_FROM);
+        const b = classify(h, lerp(p.rain, stretch(rainfall.at(q, s, 3))), lerp(p.drain, stretch(drainage.at(q, s, 3))), heat);
+        lv.tile[i] = groundOf(b, grain.at(q, 5, 2), rng.unit());
     }
     for (0..p.rivers) |_| river(lv, rng, &height);
     carve.rim(lv, palette(p).solid);
