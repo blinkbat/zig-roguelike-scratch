@@ -28,7 +28,7 @@ const SPAN: i32 = grid.Cells.span(REACH);
 const FALLOFF_D0: f32 = 2.5;
 /// A wall is this tall; its brick face fills the cell below `FACE_FROM`, so the face is drawn foreshortened.
 const WALL_H: f32 = 1.0;
-const FACE_FROM: f32 = 0.6;
+const FACE_FROM: f32 = 1 - @as(f32, @floatFromInt(look.WALL_FACE_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
 const FACE_H: f32 = 1 - FACE_FROM;
 const FLAME_Z: f32 = 0.6;
 /// How far the flame stands out from its wall, so the bricks beside it are not lit edge-on.

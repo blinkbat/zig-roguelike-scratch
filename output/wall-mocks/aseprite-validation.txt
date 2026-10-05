@@ -1,0 +1,3 @@
+regular-walls.aseprite: reopened successfully; 47 named slices; 3 layers; 1536x1024
+forest-tree-walls.aseprite: reopened successfully; 47 named slices; 3 layers; 1536x1024
+cave-walls.aseprite: reopened successfully; 47 named slices; 2 layers; 1536x1024

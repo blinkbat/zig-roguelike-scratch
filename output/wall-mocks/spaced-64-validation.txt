@@ -1,0 +1,3 @@
+regular-walls: reopened; 47 slices at 64x64; 5 layers; pixels preserved; labels outside cells
+forest-tree-walls: reopened; 47 slices at 64x64; 5 layers; pixels preserved; labels outside cells
+cave-walls: reopened; 47 slices at 64x64; 5 layers; pixels preserved; labels outside cells

@@ -1,0 +1,512 @@
+{
+  "purpose": "Import the user-painted Draw here layer after editing; never import the grid, labels, guide or underdrawing.",
+  "files": [
+    "regular-walls.aseprite",
+    "forest-tree-walls.aseprite",
+    "cave-walls.aseprite"
+  ],
+  "canvas": [
+    512,
+    448
+  ],
+  "cell_size": [
+    64,
+    64
+  ],
+  "grid_origin": [
+    0,
+    64
+  ],
+  "art_layer": "Draw here",
+  "unused_cells": [
+    [
+      448,
+      384,
+      64,
+      64
+    ]
+  ],
+  "neighbor_bits": {
+    "N": 1,
+    "E": 2,
+    "S": 4,
+    "W": 8,
+    "NE": 16,
+    "SE": 32,
+    "SW": 64,
+    "NW": 128
+  },
+  "tiles": [
+    {
+      "id": 1,
+      "neighbor_mask": 0,
+      "rect": [
+        0,
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 2,
+      "neighbor_mask": 1,
+      "rect": [
+        64,
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 3,
+      "neighbor_mask": 2,
+      "rect": [
+        128,
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 4,
+      "neighbor_mask": 4,
+      "rect": [
+        192,
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 5,
+      "neighbor_mask": 8,
+      "rect": [
+        256,
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 6,
+      "neighbor_mask": 3,
+      "rect": [
+        320,
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 7,
+      "neighbor_mask": 19,
+      "rect": [
+        384,
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 8,
+      "neighbor_mask": 5,
+      "rect": [
+        448,
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 9,
+      "neighbor_mask": 6,
+      "rect": [
+        0,
+        128,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 10,
+      "neighbor_mask": 38,
+      "rect": [
+        64,
+        128,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 11,
+      "neighbor_mask": 9,
+      "rect": [
+        128,
+        128,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 12,
+      "neighbor_mask": 137,
+      "rect": [
+        192,
+        128,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 13,
+      "neighbor_mask": 10,
+      "rect": [
+        256,
+        128,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 14,
+      "neighbor_mask": 12,
+      "rect": [
+        320,
+        128,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 15,
+      "neighbor_mask": 76,
+      "rect": [
+        384,
+        128,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 16,
+      "neighbor_mask": 7,
+      "rect": [
+        448,
+        128,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 17,
+      "neighbor_mask": 23,
+      "rect": [
+        0,
+        192,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 18,
+      "neighbor_mask": 39,
+      "rect": [
+        64,
+        192,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 19,
+      "neighbor_mask": 55,
+      "rect": [
+        128,
+        192,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 20,
+      "neighbor_mask": 11,
+      "rect": [
+        192,
+        192,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 21,
+      "neighbor_mask": 27,
+      "rect": [
+        256,
+        192,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 22,
+      "neighbor_mask": 139,
+      "rect": [
+        320,
+        192,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 23,
+      "neighbor_mask": 155,
+      "rect": [
+        384,
+        192,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 24,
+      "neighbor_mask": 13,
+      "rect": [
+        448,
+        192,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 25,
+      "neighbor_mask": 77,
+      "rect": [
+        0,
+        256,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 26,
+      "neighbor_mask": 141,
+      "rect": [
+        64,
+        256,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 27,
+      "neighbor_mask": 205,
+      "rect": [
+        128,
+        256,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 28,
+      "neighbor_mask": 14,
+      "rect": [
+        192,
+        256,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 29,
+      "neighbor_mask": 46,
+      "rect": [
+        256,
+        256,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 30,
+      "neighbor_mask": 78,
+      "rect": [
+        320,
+        256,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 31,
+      "neighbor_mask": 110,
+      "rect": [
+        384,
+        256,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 32,
+      "neighbor_mask": 15,
+      "rect": [
+        448,
+        256,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 33,
+      "neighbor_mask": 31,
+      "rect": [
+        0,
+        320,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 34,
+      "neighbor_mask": 47,
+      "rect": [
+        64,
+        320,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 35,
+      "neighbor_mask": 63,
+      "rect": [
+        128,
+        320,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 36,
+      "neighbor_mask": 79,
+      "rect": [
+        192,
+        320,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 37,
+      "neighbor_mask": 95,
+      "rect": [
+        256,
+        320,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 38,
+      "neighbor_mask": 111,
+      "rect": [
+        320,
+        320,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 39,
+      "neighbor_mask": 127,
+      "rect": [
+        384,
+        320,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 40,
+      "neighbor_mask": 143,
+      "rect": [
+        448,
+        320,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 41,
+      "neighbor_mask": 159,
+      "rect": [
+        0,
+        384,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 42,
+      "neighbor_mask": 175,
+      "rect": [
+        64,
+        384,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 43,
+      "neighbor_mask": 191,
+      "rect": [
+        128,
+        384,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 44,
+      "neighbor_mask": 207,
+      "rect": [
+        192,
+        384,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 45,
+      "neighbor_mask": 223,
+      "rect": [
+        256,
+        384,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 46,
+      "neighbor_mask": 239,
+      "rect": [
+        320,
+        384,
+        64,
+        64
+      ]
+    },
+    {
+      "id": 47,
+      "neighbor_mask": 255,
+      "rect": [
+        384,
+        384,
+        64,
+        64
+      ]
+    }
+  ],
+  "note": "Every neighbor mask occurs once. Similar silhouettes at different offsets represent distinct connections. This is an editing template, not a currently integrated or seam-validated game atlas."
+}

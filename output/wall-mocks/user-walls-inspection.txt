@@ -1,0 +1,11 @@
+Canvas 512x448; 7 layers; 1 frames
+1: Paper - hide for transparent export; visible=true; opacity=255
+2: Underdrawing (25%); visible=true; opacity=64
+3: Exact connection guide (hidden); visible=true; opacity=64
+4: Labels - hide before export; visible=true; opacity=255
+5: 64x64 grid + X unused - hide before export; visible=true; opacity=255
+6: Draw here; visible=true; opacity=255
+7: Layer 1; visible=true; opacity=255
+Cell 01: 675 painted pixels
+Cell 02: 1125 painted pixels
+Cell 03: 1161 painted pixels

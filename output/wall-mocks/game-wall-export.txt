@@ -1,0 +1,14 @@
+corner_tl <- authored cell 45 at 0,0
+top <- authored cell 23 at 1,0
+corner_tr <- authored cell 43 at 2,0
+left <- authored cell 27 at 0,1
+right <- authored cell 19 at 2,1
+corner_bl <- authored cell 46 at 0,2
+bottom <- authored cell 31 at 1,2
+corner_br <- authored cell 39 at 2,2
+block_tl <- authored cell 10 at 5,1
+block_tr <- authored cell 15 at 6,1
+block_bl <- authored cell 7 at 5,2
+block_br <- authored cell 12 at 6,2
+post <- authored cell 2 at 8,1
+solid <- authored cell 47 at 9,1

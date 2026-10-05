@@ -1,0 +1,2 @@
+C:/Users/DavidBennett/Desktop/regular-walls-extrapolated.aseprite
+Reopened successfully. 47 exact 64x64 slices. 44 new painted cells. Seven original colors. User pixels and their position unchanged. Separate new-art layer; Draw here is on top.

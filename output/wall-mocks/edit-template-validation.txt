@@ -1,0 +1,3 @@
+regular-walls: 47 64x64 slices; 25% underdrawing; grid above; empty editable Draw here on top; X unused
+forest-tree-walls: 47 64x64 slices; 25% underdrawing; grid above; empty editable Draw here on top; X unused
+cave-walls: 47 64x64 slices; 25% underdrawing; grid above; empty editable Draw here on top; X unused

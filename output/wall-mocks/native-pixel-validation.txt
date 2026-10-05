@@ -1,0 +1,2 @@
+C:/Users/DavidBennett/Desktop/regular-walls-pixel.aseprite
+Original painted layer unchanged. 44 native-pixel connection extensions. 14 fully opaque 64x64 runtime wall pieces, using only the seven user colors. Brick strips are copied 1:1, 11px high. Horizontal brick repetition and vertical side joins verified.

@@ -1,0 +1,484 @@
+{
+  "bits": {
+    "N": 1,
+    "E": 2,
+    "S": 4,
+    "W": 8,
+    "NE": 16,
+    "SE": 32,
+    "SW": 64,
+    "NW": 128
+  },
+  "patterns": [
+    {
+      "id": 1,
+      "neighbor_mask": 0,
+      "bounds": [
+        48,
+        102,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 2,
+      "neighbor_mask": 1,
+      "bounds": [
+        240,
+        102,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 3,
+      "neighbor_mask": 2,
+      "bounds": [
+        432,
+        102,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 4,
+      "neighbor_mask": 4,
+      "bounds": [
+        624,
+        102,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 5,
+      "neighbor_mask": 8,
+      "bounds": [
+        816,
+        102,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 6,
+      "neighbor_mask": 3,
+      "bounds": [
+        1008,
+        102,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 7,
+      "neighbor_mask": 19,
+      "bounds": [
+        1200,
+        102,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 8,
+      "neighbor_mask": 5,
+      "bounds": [
+        1392,
+        102,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 9,
+      "neighbor_mask": 6,
+      "bounds": [
+        48,
+        250,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 10,
+      "neighbor_mask": 38,
+      "bounds": [
+        240,
+        250,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 11,
+      "neighbor_mask": 9,
+      "bounds": [
+        432,
+        250,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 12,
+      "neighbor_mask": 137,
+      "bounds": [
+        624,
+        250,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 13,
+      "neighbor_mask": 10,
+      "bounds": [
+        816,
+        250,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 14,
+      "neighbor_mask": 12,
+      "bounds": [
+        1008,
+        250,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 15,
+      "neighbor_mask": 76,
+      "bounds": [
+        1200,
+        250,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 16,
+      "neighbor_mask": 7,
+      "bounds": [
+        1392,
+        250,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 17,
+      "neighbor_mask": 23,
+      "bounds": [
+        48,
+        398,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 18,
+      "neighbor_mask": 39,
+      "bounds": [
+        240,
+        398,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 19,
+      "neighbor_mask": 55,
+      "bounds": [
+        432,
+        398,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 20,
+      "neighbor_mask": 11,
+      "bounds": [
+        624,
+        398,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 21,
+      "neighbor_mask": 27,
+      "bounds": [
+        816,
+        398,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 22,
+      "neighbor_mask": 139,
+      "bounds": [
+        1008,
+        398,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 23,
+      "neighbor_mask": 155,
+      "bounds": [
+        1200,
+        398,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 24,
+      "neighbor_mask": 13,
+      "bounds": [
+        1392,
+        398,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 25,
+      "neighbor_mask": 77,
+      "bounds": [
+        48,
+        546,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 26,
+      "neighbor_mask": 141,
+      "bounds": [
+        240,
+        546,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 27,
+      "neighbor_mask": 205,
+      "bounds": [
+        432,
+        546,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 28,
+      "neighbor_mask": 14,
+      "bounds": [
+        624,
+        546,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 29,
+      "neighbor_mask": 46,
+      "bounds": [
+        816,
+        546,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 30,
+      "neighbor_mask": 78,
+      "bounds": [
+        1008,
+        546,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 31,
+      "neighbor_mask": 110,
+      "bounds": [
+        1200,
+        546,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 32,
+      "neighbor_mask": 15,
+      "bounds": [
+        1392,
+        546,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 33,
+      "neighbor_mask": 31,
+      "bounds": [
+        48,
+        694,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 34,
+      "neighbor_mask": 47,
+      "bounds": [
+        240,
+        694,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 35,
+      "neighbor_mask": 63,
+      "bounds": [
+        432,
+        694,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 36,
+      "neighbor_mask": 79,
+      "bounds": [
+        624,
+        694,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 37,
+      "neighbor_mask": 95,
+      "bounds": [
+        816,
+        694,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 38,
+      "neighbor_mask": 111,
+      "bounds": [
+        1008,
+        694,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 39,
+      "neighbor_mask": 127,
+      "bounds": [
+        1200,
+        694,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 40,
+      "neighbor_mask": 143,
+      "bounds": [
+        1392,
+        694,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 41,
+      "neighbor_mask": 159,
+      "bounds": [
+        48,
+        842,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 42,
+      "neighbor_mask": 175,
+      "bounds": [
+        240,
+        842,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 43,
+      "neighbor_mask": 191,
+      "bounds": [
+        432,
+        842,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 44,
+      "neighbor_mask": 207,
+      "bounds": [
+        624,
+        842,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 45,
+      "neighbor_mask": 223,
+      "bounds": [
+        816,
+        842,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 46,
+      "neighbor_mask": 239,
+      "bounds": [
+        1008,
+        842,
+        96,
+        96
+      ]
+    },
+    {
+      "id": 47,
+      "neighbor_mask": 255,
+      "bounds": [
+        1200,
+        842,
+        96,
+        96
+      ]
+    }
+  ]
+}

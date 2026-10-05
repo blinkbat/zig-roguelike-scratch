@@ -7,6 +7,7 @@ const skillbar = @import("../play/skillbar.zig");
 const font = @import("font.zig");
 
 pub const SPRITE_PX: i32 = 64;
+pub const WALL_FACE_PX: i32 = 11;
 /// A body or tile with no sprite draws its glyph this big, at `SPRITE_PX`.
 pub const GLYPH_PX: i32 = 60;
 
@@ -154,7 +155,7 @@ const WALL_CELLS = std.EnumArray(grid.WallShape, ?WallCell).init(.{
     .block_bl = .{ .col = 5, .row = 2 },
     .block_br = .{ .col = 6, .row = 2 },
     .post = .{ .col = 8, .row = 1 },
-    .solid = null,
+    .solid = .{ .col = 9, .row = 1 },
 });
 
 /// raylib's `imageFromImage` copies without clamping, so a cell off the sheet would read past it.
@@ -637,6 +638,7 @@ test "every wall shape's cell lies inside walls.png, and one past its edge is re
         cut += 1;
     }
     std.debug.print("walls.png {d}x{d}: {d} shapes cut from it\n", .{ w, h, cut });
+    try std.testing.expectEqual(std.enums.values(grid.WallShape).len, cut);
     try std.testing.expect(wallCell(sheet, .{ .col = @divTrunc(w, SPRITE_PX), .row = 0 }) == null);
     try std.testing.expect(wallCell(sheet, .{ .col = 0, .row = @divTrunc(h, SPRITE_PX) }) == null);
 }

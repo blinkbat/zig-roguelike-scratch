@@ -1,0 +1,8 @@
+Original painted layer and position unchanged after reopening.
+47 distinct authoring cells; 44 extensions use copied uneven edge strips.
+All declared cardinal connections have continuous opaque central coverage.
+Cell 02 north boundary repaired with a copy of its first painted row beneath the original layer.
+14 runtime shapes; seven source colours; binary alpha; opaque interiors.
+Horizontal brick phase and vertical edge endpoints checked.
+Runtime Aseprite reopened; exported pixels equal the constructed atlas.
+No resampling, rotation, mirroring or image generation.

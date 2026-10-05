@@ -1,0 +1,2 @@
+Updated C:/Users/DavidBennett/Desktop/regular-walls.aseprite
+Reopened and verified: original painted layer unchanged; native pixel extension present; 47 slices.
