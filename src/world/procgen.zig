@@ -1,7 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
-const lume = @import("lume.zig");
 const gen = @import("gen.zig");
 const carve = @import("carve.zig");
 const open = @import("biome/open.zig");
@@ -161,14 +160,10 @@ pub const Feature = union(enum) {
 pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features: []const Feature) void {
     std.debug.assert(doors.len <= grid.MAX_DOORS);
     const pal = floor.palette();
-    var rooms: ?*const Shaped = null;
-    var shaped: Shaped = undefined;
     switch (floor.fit()) {
         .rooms => |p| {
             _ = gen.around(lv, seed, doors, p);
             if (features.len == 0) return;
-            shaped = .{ .tile = lv.tile, .shape = lv.shape };
-            rooms = &shaped;
         },
         inline else => |p, t| {
             lv.* = grid.Level.blank();
@@ -184,41 +179,25 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     carve.openDoors(lv, doors, pal.open);
     if (lv.firstOpen() == null) carve.disc(lv, grid.MIDDLE, CLEARING_R, pal.open, null);
     carve.connect(lv, &rng, pal);
-    settle(lv, rooms);
+    settle(lv);
 }
 
 /// A floor rolled with no open ground and no door gets this clearing at its middle to start in.
 const CLEARING_R: f32 = 3;
 
-/// The rooms' tiles and wall shapes before any feature was laid.
-const Shaped = struct { tile: [grid.CELLS]grid.Tile, shape: [grid.CELLS]?grid.WallShape };
-
-fn settle(lv: *grid.Level, rooms: ?*const Shaped) void {
+fn settle(lv: *grid.Level) void {
     for (0..grid.CELLS) |i| {
         if (lv.barrel[i] and (lv.tile[i].solid() or lv.door[i] != grid.NO_DOOR)) lv.barrel[i] = false;
     }
     carve.unbar(lv);
     gen.shapeWalls(lv);
-    if (rooms) |was| {
-        for (0..grid.CELLS) |i| {
-            if (was.shape[i] != null and lv.shape[i] != null and untouched(lv, &was.tile, grid.Level.of(i))) lv.shape[i] = was.shape[i];
-        }
-    }
     var kept: usize = 0;
     for (lv.torches()) |t| {
-        if (lv.wallShape(t) != .top or !lv.walkable(lume.torchFloor(t))) continue;
+        if (!gen.bearsTorch(lv, t)) continue;
         lv.torch.at[kept] = t;
         kept += 1;
     }
     lv.torch.n = kept;
-}
-
-fn untouched(lv: *const grid.Level, was: *const [grid.CELLS]grid.Tile, p: P) bool {
-    var cells = grid.Cells.around(p, 1);
-    while (cells.next()) |q| {
-        if (lv.at(q) != grid.cellOr(grid.Tile, was, q, .wall)) return false;
-    }
-    return true;
 }
 
 const TEST_RUNS: usize = 12;

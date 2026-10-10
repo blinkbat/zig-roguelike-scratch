@@ -36,7 +36,7 @@ local function decorate(image,inside,offsets)
     end
   end
 end
-local masks={0,1,2,4,8,3,19,5,6,38,9,137,10,12,76,7,23,39,55,11,27,139,155,13,77,141,205,14,46,78,110,15,31,47,63,79,95,111,127,143,159,175,191,207,223,239,255}
+local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 local bits={{128,1,16},{8,0,2},{64,4,32}}
 local function blob(mask)
   local image=Image(64,64,ColorMode.RGB)
@@ -103,76 +103,6 @@ for i,mask in ipairs(masks) do
   end
   references[#references+1]=tile
 end
-local rows={
- {'corner_tl',0,0,0,false,3},{'top',1,0,4,true},{'corner_tr',2,0,0,false,2},
- {'left',0,1,2,false},{'right',2,1,8,false},
- {'corner_bl',0,2,0,false,1},{'bottom',1,2,1,false},{'corner_br',2,2,0,false,0},
- {'block_tl',5,1,9,false},{'block_tr',6,1,3,false},
- {'block_bl',5,2,12,true},{'block_br',6,2,6,true},{'post',8,1,14,true},{'solid',9,1,0,false}
-}
-local atlas=Image(640,256,ColorMode.RGB)
-local tiles={}
-for _,row in ipairs(rows) do
-  local image=Image(64,64,ColorMode.RGB)
-  local open,face=row[4],row[5]
-  for y=0,63 do for x=0,63 do
-    local pixel=tan
-    if face and y>=53 then
-      pixel=brick(x,y-53)
-      if (open & 8)~=0 and x<4 then pixel=sample(18+x,99+y-53) end
-      if (open & 2)~=0 and x>=60 then pixel=sample(40+x-60,99+y-53) end
-    else
-      if (open & 1)~=0 and y<6 then pixel=sample(160+x%32,83+y) end
-      if (open & 8)~=0 and x<4 then pixel=sample(83+x,sideRow(y)) end
-      if (open & 2)~=0 and x>=60 then pixel=sample(105+x-60,sideRow(y)) end
-      if (open & 1)~=0 and y<6 and (open & 8)~=0 and x<6 then pixel=sample(18+x,83+y) end
-      if (open & 1)~=0 and y<6 and (open & 2)~=0 and x>=58 then pixel=sample(38+x-58,83+y) end
-    end
-    image:putPixel(x,y,pixel)
-  end end
-  decorate(image,function(x,y) return x>5 and x<58 and y>5 and y<(face and 50 or 58) end,{{10,11},{40,31},{17,43}})
-  if row[6] then
-    local corner=row[6]
-    local east=corner%2==1
-    local south=corner>=2
-    local sx=east and 105 or 83
-    local dx=east and 60 or 0
-    local dy=south and 62 or 0
-    for y=0,1 do for x=0,3 do
-      local pixel=sample(sx+x,80+y)
-      if pc.rgbaA(pixel)>0 then image:putPixel(dx+x,dy+y,pixel) end
-    end end
-  end
-  for it in image:pixels() do
-    assert(pc.rgbaA(it())==0 or (pc.rgbaA(it())==255 and palette[it()]),'palette or alpha changed')
-  end
-  for y=6,52 do for x=6,57 do assert(pc.rgbaA(image:getPixel(x,y))==255,'interior hole') end end
-  atlas:drawImage(image,Point(row[2]*64,row[3]*64))
-  tiles[row[1]]=image
-end
-for y=0,63 do
-  assert(pc.rgbaA(tiles.top:getPixel(0,y))==255 and pc.rgbaA(tiles.top:getPixel(63,y))==255)
-  assert(tiles.top:getPixel(0,y)==tiles.top:getPixel(32,y))
-  assert(tiles.top:getPixel(31,y)==tiles.top:getPixel(63,y))
-end
-for x=0,63 do
-  assert(tiles.left:getPixel(x,0)==tiles.left:getPixel(x,63))
-  assert(tiles.right:getPixel(x,0)==tiles.right:getPixel(x,63))
-end
-for x=6,57 do assert(pc.rgbaA(tiles.solid:getPixel(x,0))==255) end
-atlas:saveAs(work..'walls-ported-candidate.png')
-local preview=Image(320,320,ColorMode.RGB)
-local scene={
- {'corner_tl','top','top','top','corner_tr'},
- {'left',false,false,false,'right'},
- {'left',false,'post',false,'right'},
- {'left',false,false,false,'right'},
- {'corner_bl','bottom','bottom','bottom','corner_br'}
-}
-for y,line in ipairs(scene) do for x,name in ipairs(line) do
-  if name then preview:drawImage(tiles[name],Point((x-1)*64,(y-1)*64)) end
-end end
-preview:saveAs(work..'walls-ported-room.png')
 sprite:saveCopyAs(work..'regular-walls-before-ported-edges-'..os.date('%Y%m%d-%H%M%S')..'.aseprite')
 extension.name='Extension - ported painted edges'
 extension:cel(1).image=completed
@@ -192,22 +122,7 @@ for _,layer in ipairs(reopened.layers) do
 end
 assert(preserved and #reopened.slices==47)
 reopened:close()
-local runtime=Sprite(640,256,ColorMode.RGB)
-runtime.layers[1].name='Runtime walls - copied native pixels'
-runtime:newCel(runtime.layers[1],1,atlas,Point(0,0))
-runtime.data='Derived from Desktop regular-walls.aseprite Layer 1 by tools/tile_art/port_walls.lua. Native copied strips; no resizing. Export this art layer to assets/walls.png. See docs/TILE_ART_WORKFLOW.md.'
-for _,row in ipairs(rows) do
-  local slice=runtime:newSlice(Rectangle(row[2]*64,row[3]*64,64,64))
-  slice.name=row[1]
-end
-runtime:saveAs(root..'assets/source/walls.aseprite')
-runtime:close()
-local check=assert(app.open(root..'assets/source/walls.aseprite'))
-local exported=Image(640,256,ColorMode.RGB)
-exported:drawImage(check.layers[1]:cel(1).image,check.layers[1]:cel(1).position)
-assert(exported:isEqual(atlas))
-exported:saveAs(root..'assets/walls.png')
-check:close()
+dofile(root..'tools/tile_art/export_walls.lua')
 local report=assert(io.open(work..'ported-pixel-validation.txt','w'))
-report:write('Original painted layer and position unchanged after reopening.\n47 distinct authoring cells; 44 extensions use copied uneven edge strips.\nAll declared cardinal connections have continuous opaque central coverage.\nCell 02 north boundary repaired with a copy of its first painted row beneath the original layer.\n14 runtime shapes; seven source colours; binary alpha; opaque interiors.\nHorizontal brick phase and vertical edge endpoints checked.\nRuntime Aseprite reopened; exported pixels equal the constructed atlas.\nNo resampling, rotation, mirroring or image generation.\n')
+report:write('Original painted layer and position unchanged after reopening.\n47 distinct authoring cells; 44 extensions use copied uneven edge strips.\nAll declared cardinal connections have continuous opaque central coverage.\nCell 02 north boundary repaired with a copy of its first painted row beneath the original layer.\nexport_walls.lua cut all 47 cells, Layer 1 over the extension, into assets/walls.png; binary alpha.\nNo resampling, rotation, mirroring or image generation.\n')
 report:close()

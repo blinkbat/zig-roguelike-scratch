@@ -7,7 +7,8 @@ const skillbar = @import("../play/skillbar.zig");
 const font = @import("font.zig");
 
 pub const SPRITE_PX: i32 = 64;
-pub const WALL_FACE_PX: i32 = 11;
+/// A faced wall's bottom rows of brick, as `tools/tile_art/export_walls.lua` paints them.
+pub const WALL_FACE_PX: i32 = 23;
 /// A body or tile with no sprite draws its glyph this big, at `SPRITE_PX`.
 pub const GLYPH_PX: i32 = 60;
 
@@ -61,7 +62,8 @@ pub const Sprites = struct {
     bodies: Bodies = .initFill(null),
     barrel: ?rl.Texture2D = null,
     tiles: std.EnumArray(grid.Tile, ?rl.Texture2D) = .initFill(null),
-    wall: std.EnumArray(grid.WallShape, ?rl.Texture2D) = .initFill(null),
+    /// In the sheet's order, `WALL_MASKS`.
+    wall: [WALL_MASKS.len]?rl.Texture2D = @splat(null),
     /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
     skills: ?rl.Texture2D = null,
 
@@ -71,10 +73,7 @@ pub const Sprites = struct {
         for (std.enums.values(grid.Tile)) |t| s.tiles.set(t, texture(TILE_PNGS.get(t) orelse continue));
         const sheet = rl.loadImageFromMemory(".png", WALLS_PNG) catch return s;
         defer rl.unloadImage(sheet);
-        for (std.enums.values(grid.WallShape)) |shape| {
-            const cell = WALL_CELLS.get(shape) orelse continue;
-            s.wall.set(shape, toTexture(wallCell(sheet, cell) orelse continue));
-        }
+        for (&s.wall, 0..) |*w, i| w.* = toTexture(wallCell(sheet, i) orelse continue);
         return s;
     }
 
@@ -97,7 +96,10 @@ pub const Sprites = struct {
     }
 
     pub fn tileOf(self: *const Sprites, t: grid.Tile, shape: ?grid.WallShape) ?rl.Texture2D {
-        if (t == .wall) return self.wall.getPtrConst(shape orelse return null).*;
+        if (t == .wall) {
+            const i = WALL_CELL[(shape orelse return null).mask()];
+            return self.wall[i];
+        }
         return self.tiles.getPtrConst(t).*;
     }
 
@@ -139,29 +141,28 @@ comptime {
 
 const WALLS_PNG = @embedFile("walls.png");
 
-const WallCell = struct { col: i32, row: i32 };
+/// Each cell of `walls.png`'s, read across its rows, is the shape with this mask; `tools/tile_art/wall_masks.lua` lists them in this order.
+const WALL_MASKS = [_]u8{ 0, 1, 2, 4, 8, 3, 19, 5, 6, 38, 9, 137, 10, 12, 76, 7, 23, 39, 55, 11, 27, 139, 155, 13, 77, 141, 205, 14, 46, 78, 110, 15, 31, 47, 63, 79, 95, 111, 127, 143, 159, 175, 191, 207, 223, 239, 255 };
+const WALL_COLS: usize = 8;
 
-const WALL_CELLS = std.EnumArray(grid.WallShape, ?WallCell).init(.{
-    .corner_tl = .{ .col = 0, .row = 0 },
-    .top = .{ .col = 1, .row = 0 },
-    .corner_tr = .{ .col = 2, .row = 0 },
-    .left = .{ .col = 0, .row = 1 },
-    .right = .{ .col = 2, .row = 1 },
-    .corner_bl = .{ .col = 0, .row = 2 },
-    .bottom = .{ .col = 1, .row = 2 },
-    .corner_br = .{ .col = 2, .row = 2 },
-    .block_tl = .{ .col = 5, .row = 1 },
-    .block_tr = .{ .col = 6, .row = 1 },
-    .block_bl = .{ .col = 5, .row = 2 },
-    .block_br = .{ .col = 6, .row = 2 },
-    .post = .{ .col = 8, .row = 1 },
-    .solid = .{ .col = 9, .row = 1 },
-});
+/// Every joined shape's cell; a shape `WallShape.joined` would change has none.
+const WALL_CELL = blk: {
+    @setEvalBranchQuota(10_000);
+    var at = [_]u8{0xFF} ** 256;
+    for (WALL_MASKS, 0..) |m, i| {
+        std.debug.assert(at[m] == 0xFF and @as(grid.WallShape, @bitCast(m)).joined().mask() == m);
+        at[m] = i;
+    }
+    for (0..256) |m| std.debug.assert(at[@as(grid.WallShape, @bitCast(@as(u8, m))).joined().mask()] != 0xFF);
+    break :blk at;
+};
 
 /// raylib's `imageFromImage` copies without clamping, so a cell off the sheet would read past it.
-fn wallCell(sheet: rl.Image, c: WallCell) ?rl.Image {
-    if ((c.col + 1) * SPRITE_PX > sheet.width or (c.row + 1) * SPRITE_PX > sheet.height) return null;
-    return rl.imageFromImage(sheet, rect(c.col * SPRITE_PX, c.row * SPRITE_PX, SPRITE_PX, SPRITE_PX));
+fn wallCell(sheet: rl.Image, i: usize) ?rl.Image {
+    const col: i32 = @intCast(i % WALL_COLS);
+    const row: i32 = @intCast(i / WALL_COLS);
+    if ((col + 1) * SPRITE_PX > sheet.width or (row + 1) * SPRITE_PX > sheet.height) return null;
+    return rl.imageFromImage(sheet, rect(col * SPRITE_PX, row * SPRITE_PX, SPRITE_PX, SPRITE_PX));
 }
 
 pub fn whole(t: rl.Texture2D) rl.Rectangle {
@@ -272,6 +273,13 @@ pub fn unloadAll(v: anytype) void {
     inline for (std.meta.fields(@TypeOf(v.*))) |f| {
         if (comptime @typeInfo(f.type) == .@"struct" and @hasField(f.type, "values") and @hasDecl(f.type, "Key")) {
             for (&@field(v.*, f.name).values) |*held| {
+                if (held.*) |t| rl.unloadTexture(t);
+                held.* = null;
+            }
+            continue;
+        }
+        if (comptime @typeInfo(f.type) == .array and std.meta.Elem(f.type) == ?rl.Texture2D) {
+            for (&@field(v.*, f.name)) |*held| {
                 if (held.*) |t| rl.unloadTexture(t);
                 held.* = null;
             }
@@ -626,21 +634,14 @@ test "every glyph is printable ascii" {
     try std.testing.expect(inked(CLEAR.ch));
 }
 
-test "every wall shape's cell lies inside walls.png, and one past its edge is refused" {
+test "every wall shape's cell lies inside walls.png, and one past its end is refused" {
     const w = std.mem.readInt(i32, WALLS_PNG[16..20], .big);
     const h = std.mem.readInt(i32, WALLS_PNG[20..24], .big);
     const sheet = rl.genImageColor(w, h, rl.Color.white);
     defer rl.unloadImage(sheet);
-    var cut: usize = 0;
-    for (WALL_CELLS.values) |c| {
-        const img = wallCell(sheet, c orelse continue) orelse return error.CellOffSheet;
-        rl.unloadImage(img);
-        cut += 1;
-    }
-    std.debug.print("walls.png {d}x{d}: {d} shapes cut from it\n", .{ w, h, cut });
-    try std.testing.expectEqual(std.enums.values(grid.WallShape).len, cut);
-    try std.testing.expect(wallCell(sheet, .{ .col = @divTrunc(w, SPRITE_PX), .row = 0 }) == null);
-    try std.testing.expect(wallCell(sheet, .{ .col = 0, .row = @divTrunc(h, SPRITE_PX) }) == null);
+    for (0..WALL_MASKS.len) |i| rl.unloadImage(wallCell(sheet, i) orelse return error.CellOffSheet);
+    std.debug.print("walls.png {d}x{d}: {d} shapes cut from it\n", .{ w, h, WALL_MASKS.len });
+    try std.testing.expect(wallCell(sheet, @intCast(@divTrunc(w, SPRITE_PX) * @divTrunc(h, SPRITE_PX))) == null);
 }
 
 test "an arrow's glyph follows its slope" {

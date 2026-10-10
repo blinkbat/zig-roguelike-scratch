@@ -158,31 +158,38 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .shrooms = DECOR,
 });
 
-/// Stamped by `gen.shapeWalls`, a room's corners then by `gen.outlineRoom`; recomputed only by the generator itself.
-pub const WallShape = enum {
-    top,
-    bottom,
-    left,
-    right,
-    /// Named for where it sits on the block: `block_tr` has its floor north and east.
-    block_tl,
-    block_tr,
-    block_bl,
-    block_br,
-    post,
-    /// Named for where it sits on the room: `corner_tl` has its floor south-east.
-    corner_tl,
-    corner_tr,
-    corner_bl,
-    corner_br,
-    solid,
+/// Which neighbours are walls too, stamped by `gen.shapeWalls`; its bits are the wall sheet's masks.
+pub const WallShape = packed struct(u8) {
+    n: bool = false,
+    e: bool = false,
+    s: bool = false,
+    w: bool = false,
+    ne: bool = false,
+    se: bool = false,
+    sw: bool = false,
+    nw: bool = false,
 
-    /// Floor lies below it, so its brick face shows.
-    pub fn faced(s: WallShape) bool {
-        return switch (s) {
-            .top, .block_bl, .block_br, .post => true,
-            .bottom, .left, .right, .block_tl, .block_tr, .corner_tl, .corner_tr, .corner_bl, .corner_br, .solid => false,
-        };
+    /// A corner joins only where both sides beside it do, which leaves 47 shapes of the 256.
+    pub fn joined(raw: WallShape) WallShape {
+        var j = raw;
+        j.ne = raw.ne and raw.n and raw.e;
+        j.se = raw.se and raw.s and raw.e;
+        j.sw = raw.sw and raw.s and raw.w;
+        j.nw = raw.nw and raw.n and raw.w;
+        return j;
+    }
+
+    pub fn mask(shape: WallShape) u8 {
+        return @bitCast(shape);
+    }
+
+    /// No wall below it, so its brick face shows.
+    pub fn faced(shape: WallShape) bool {
+        return !shape.s;
+    }
+
+    pub fn solid(shape: WallShape) bool {
+        return shape.mask() == 0xFF;
     }
 };
 

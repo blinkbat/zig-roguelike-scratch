@@ -992,7 +992,7 @@ test "a bespoke node's doors open their cells and a torch hangs only over floor"
     try std.testing.expect(lv.walkable(.{ .x = 5, .y = 6 }));
     try std.testing.expectEqual(@as(?usize, 0), lv.doorAt(.{ .x = 5, .y = 6 }));
     try std.testing.expectEqual(@as(usize, 1), lv.torch.n);
-    try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 5, .y = 4 }).?);
+    try std.testing.expect(gen.bearsTorch(&lv, .{ .x = 5, .y = 4 }));
 }
 
 test "a bespoke node takes no more slimes than the pool holds once every one has split to quarters" {

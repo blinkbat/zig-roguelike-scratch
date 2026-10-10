@@ -54,20 +54,7 @@ pub const Params = struct {
     }
 };
 
-const CORNERS = [_]struct { floor: mathx.Dir, s: grid.WallShape }{
-    .{ .floor = .se, .s = .corner_tl },
-    .{ .floor = .sw, .s = .corner_tr },
-    .{ .floor = .ne, .s = .corner_bl },
-    .{ .floor = .nw, .s = .corner_br },
-};
-
 pub const Room = grid.Box;
-
-/// The outline cell at `r`'s corner whose floor lies toward `floor`.
-fn corner(r: Room, floor: mathx.Dir) P {
-    const d = floor.delta();
-    return .{ .x = if (d.x > 0) r.lo.x - 1 else r.hi.x, .y = if (d.y > 0) r.lo.y - 1 else r.hi.y };
-}
 
 pub const Floor = struct {
     rooms: [MAX_ROOMS]Room = undefined,
@@ -113,7 +100,6 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
     }
     connect(lv, &rng);
     shapeWalls(lv);
-    for (f.rooms[0..f.room_n]) |r| outlineRoom(lv, r);
     for (f.rooms[0..f.room_n]) |r| {
         if (rng.percent(pm.torches)) hangTorch(lv, r, &rng);
     }
@@ -127,7 +113,7 @@ fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
     var n: usize = 0;
     var x = r.lo.x;
     while (x < r.hi.x) : (x += 1) {
-        if (lv.wallShape(.{ .x = x, .y = r.lo.y - 1 }) != .top) continue;
+        if (!bearsTorch(lv, .{ .x = x, .y = r.lo.y - 1 })) continue;
         spots[n] = x;
         n += 1;
     }
@@ -217,21 +203,6 @@ const Reached = struct {
     }
 };
 
-/// Stamped over `shapeWalls`, which reads a room's corners as straight walls where a corridor runs just outside them.
-fn outlineRoom(lv: *grid.Level, r: Room) void {
-    for (CORNERS) |c| {
-        const p = corner(r, c.floor);
-        if (lv.at(p) != .wall or !grid.Level.inside(p) or keepsFloorShape(lv, p, c.floor)) continue;
-        lv.shape[grid.Level.idx(p)] = c.s;
-    }
-}
-
-fn keepsFloorShape(lv: *const grid.Level, p: P, floor: mathx.Dir) bool {
-    const d = floor.delta();
-    return lv.walkable(p.add(.{ .x = d.x, .y = 0 })) or lv.walkable(p.add(.{ .x = 0, .y = d.y })) or
-        lv.walkable(p.add(mathx.Dir.s.delta()));
-}
-
 pub fn shapeWalls(lv: *grid.Level) void {
     for (0..grid.CELLS) |i| {
         lv.shape[i] = if (lv.tile[i] == .wall) wallShape(lv, grid.Level.of(i)) else null;
@@ -239,23 +210,27 @@ pub fn shapeWalls(lv: *grid.Level) void {
 }
 
 fn wallShape(lv: *const grid.Level, p: P) grid.WallShape {
-    const n = lv.walkable(p.add(mathx.Dir.n.delta()));
-    const s = lv.walkable(p.add(mathx.Dir.s.delta()));
-    const e = lv.walkable(p.add(mathx.Dir.e.delta()));
-    const w = lv.walkable(p.add(mathx.Dir.w.delta()));
-    if (s and (e or w)) return if (e and w) .post else if (e) .block_br else .block_bl;
-    if (n and e != w) return if (e) .block_tr else .block_tl;
-    if (s) return .top;
-    if (e) return .left;
-    if (w) return .right;
-    if (n) return .bottom;
-    var found: ?grid.WallShape = null;
-    for (CORNERS) |c| {
-        if (!lv.walkable(p.add(c.floor.delta()))) continue;
-        if (found != null) return .bottom;
-        found = c.s;
-    }
-    return found orelse .solid;
+    return grid.WallShape.joined(.{
+        .n = joins(lv, p, .n),
+        .e = joins(lv, p, .e),
+        .s = joins(lv, p, .s),
+        .w = joins(lv, p, .w),
+        .ne = joins(lv, p, .ne),
+        .se = joins(lv, p, .se),
+        .sw = joins(lv, p, .sw),
+        .nw = joins(lv, p, .nw),
+    });
+}
+
+/// Off the map counts, so a wall runs on over the edge.
+fn joins(lv: *const grid.Level, p: P, d: mathx.Dir) bool {
+    return lv.at(p.add(d.delta())) == .wall;
+}
+
+/// A wall whose brick face looks onto floor.
+pub fn bearsTorch(lv: *const grid.Level, p: P) bool {
+    const s = lv.wallShape(p) orelse return false;
+    return s.faced() and lv.walkable(lume.torchFloor(p));
 }
 
 test "every floor connects" {
@@ -303,170 +278,89 @@ fn room(lv: *grid.Level, x0: i32, y0: i32, x1: i32, y1: i32) void {
     carve.box(lv, .{ .lo = .{ .x = x0, .y = y0 }, .hi = .{ .x = x1 + 1, .y = y1 + 1 } }, .floor);
 }
 
-test "a room's four sides, its corners and the rock behind it" {
+fn shapeAt(lv: *const grid.Level, x: i32, y: i32) grid.WallShape {
+    return lv.wallShape(.{ .x = x, .y = y }).?;
+}
+
+test "a room's sides and corners are shaped by the walls round them, and the rock behind it is solid" {
     var lv = grid.Level.blank();
     room(&lv, 5, 5, 10, 8);
     shapeWalls(&lv);
-    try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 7, .y = 4 }).?);
-    try std.testing.expectEqual(grid.WallShape.bottom, lv.wallShape(.{ .x = 7, .y = 9 }).?);
-    try std.testing.expectEqual(grid.WallShape.left, lv.wallShape(.{ .x = 4, .y = 6 }).?);
-    try std.testing.expectEqual(grid.WallShape.right, lv.wallShape(.{ .x = 11, .y = 6 }).?);
-    try std.testing.expectEqual(grid.WallShape.corner_tl, lv.wallShape(.{ .x = 4, .y = 4 }).?);
-    try std.testing.expectEqual(grid.WallShape.corner_tr, lv.wallShape(.{ .x = 11, .y = 4 }).?);
-    try std.testing.expectEqual(grid.WallShape.corner_bl, lv.wallShape(.{ .x = 4, .y = 9 }).?);
-    try std.testing.expectEqual(grid.WallShape.corner_br, lv.wallShape(.{ .x = 11, .y = 9 }).?);
-    try std.testing.expectEqual(grid.WallShape.solid, lv.wallShape(.{ .x = 2, .y = 2 }).?);
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .w = true, .ne = true, .nw = true }, shapeAt(&lv, 7, 4));
+    try std.testing.expectEqual(grid.WallShape{ .e = true, .s = true, .w = true, .se = true, .sw = true }, shapeAt(&lv, 7, 9));
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .s = true, .w = true, .sw = true, .nw = true }, shapeAt(&lv, 4, 6));
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .s = true, .ne = true, .se = true }, shapeAt(&lv, 11, 6));
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .s = true, .w = true, .ne = true, .sw = true, .nw = true }, shapeAt(&lv, 4, 4));
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .s = true, .w = true, .ne = true, .se = true, .nw = true }, shapeAt(&lv, 11, 4));
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .s = true, .w = true, .se = true, .sw = true, .nw = true }, shapeAt(&lv, 4, 9));
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .s = true, .w = true, .ne = true, .se = true, .sw = true }, shapeAt(&lv, 11, 9));
+    try std.testing.expect(shapeAt(&lv, 2, 2).solid());
     try std.testing.expectEqual(@as(?grid.WallShape, null), lv.wallShape(.{ .x = 7, .y = 6 }));
 }
 
-test "a wall with floor on two diagonals and none beside it is a bottom wall, not a corner" {
+test "a wall with floor on two diagonals joins the other two corners" {
     var lv = grid.Level.blank();
     lv.set(.{ .x = 6, .y = 6 }, .floor);
     lv.set(.{ .x = 4, .y = 4 }, .floor);
     shapeWalls(&lv);
-    try std.testing.expectEqual(grid.WallShape.bottom, lv.wallShape(.{ .x = 5, .y = 5 }).?);
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .s = true, .w = true, .ne = true, .sw = true }, shapeAt(&lv, 5, 5));
 }
 
-test "a wall with no floor below it is never drawn as a post" {
+test "a corner joins only where both sides beside it do" {
     var lv = grid.Level.blank();
-    room(&lv, 4, 2, 8, 2);
-    room(&lv, 5, 3, 5, 10);
-    room(&lv, 7, 3, 7, 10);
-    room(&lv, 4, 11, 8, 11);
-    room(&lv, 2, 14, 10, 14);
-    room(&lv, 2, 16, 10, 16);
-    room(&lv, 11, 14, 11, 16);
+    lv.set(.{ .x = 5, .y = 4 }, .floor);
     shapeWalls(&lv);
-    try std.testing.expectEqual(grid.WallShape.left, lv.wallShape(.{ .x = 6, .y = 3 }).?);
-    try std.testing.expectEqual(grid.WallShape.left, lv.wallShape(.{ .x = 6, .y = 6 }).?);
-    try std.testing.expectEqual(grid.WallShape.post, lv.wallShape(.{ .x = 6, .y = 10 }).?);
-    try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 6, .y = 15 }).?);
-    try std.testing.expectEqual(grid.WallShape.block_br, lv.wallShape(.{ .x = 10, .y = 15 }).?);
+    try std.testing.expectEqual(grid.WallShape{ .e = true, .s = true, .w = true, .se = true, .sw = true }, shapeAt(&lv, 5, 5));
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .s = true, .w = true, .se = true, .sw = true, .nw = true }, shapeAt(&lv, 4, 5));
 }
 
-test "a corridor's walls run with it, and turn a block corner where another meets it" {
+test "a wall on the map's edge runs on over it" {
+    var lv = grid.Level.blank();
+    lv.set(.{ .x = 1, .y = 1 }, .floor);
+    shapeWalls(&lv);
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .s = true, .w = true, .ne = true, .sw = true, .nw = true }, shapeAt(&lv, 0, 0));
+}
+
+test "a wall between two corridors joins only along itself, and a pillar joins nothing" {
     var lv = grid.Level.blank();
     room(&lv, 5, 10, 20, 10);
-    room(&lv, 30, 5, 30, 20);
-    room(&lv, 40, 10, 44, 10);
-    room(&lv, 40, 11, 40, 14);
+    room(&lv, 5, 12, 20, 12);
+    room(&lv, 30, 5, 34, 9);
+    lv.set(.{ .x = 32, .y = 7 }, .wall);
     shapeWalls(&lv);
-    try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 12, .y = 9 }).?);
-    try std.testing.expectEqual(grid.WallShape.bottom, lv.wallShape(.{ .x = 12, .y = 11 }).?);
-    try std.testing.expectEqual(grid.WallShape.left, lv.wallShape(.{ .x = 29, .y = 12 }).?);
-    try std.testing.expectEqual(grid.WallShape.block_tl, lv.wallShape(.{ .x = 41, .y = 11 }).?);
+    try std.testing.expectEqual(grid.WallShape{ .e = true, .w = true }, shapeAt(&lv, 12, 11));
+    try std.testing.expectEqual(grid.WallShape{ .n = true, .e = true, .w = true, .ne = true, .nw = true }, shapeAt(&lv, 12, 9));
+    try std.testing.expectEqual(grid.WallShape{}, shapeAt(&lv, 32, 7));
 }
 
-test "a room ringed by corridors keeps its top corners, and a wall with a corridor below it faces that corridor" {
-    var lv = grid.Level.blank();
-    const r = Room.sized(.{ .x = 8, .y = 3 }, 9, 6);
-    carve.box(&lv, r, .floor);
-    room(&lv, 1, 1, 24, 1);
-    room(&lv, 1, 10, 24, 10);
-    room(&lv, 5, 1, 5, 10);
-    room(&lv, 19, 1, 19, 10);
-    room(&lv, 5, 6, 19, 6);
-    shapeWalls(&lv);
-    try std.testing.expect(lv.wallShape(.{ .x = 7, .y = 2 }).? != .corner_tl);
-    outlineRoom(&lv, r);
-    try std.testing.expectEqual(grid.WallShape.corner_tl, lv.wallShape(.{ .x = 7, .y = 2 }).?);
-    try std.testing.expectEqual(grid.WallShape.corner_tr, lv.wallShape(.{ .x = 17, .y = 2 }).?);
-    try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 7, .y = 9 }).?);
-    try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 17, .y = 9 }).?);
-    try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 12, .y = 9 }).?);
-    try std.testing.expectEqual(grid.WallShape.left, lv.wallShape(.{ .x = 7, .y = 4 }).?);
-    try std.testing.expectEqual(grid.WallShape.right, lv.wallShape(.{ .x = 17, .y = 4 }).?);
-    try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(.{ .x = 12, .y = 2 }).?);
-    try std.testing.expectEqual(@as(?grid.WallShape, null), lv.wallShape(.{ .x = 7, .y = 6 }));
-    try std.testing.expectEqual(grid.WallShape.block_br, lv.wallShape(.{ .x = 7, .y = 5 }).?);
-    try std.testing.expectEqual(grid.WallShape.block_tr, lv.wallShape(.{ .x = 7, .y = 7 }).?);
-    try std.testing.expectEqual(grid.WallShape.block_bl, lv.wallShape(.{ .x = 17, .y = 5 }).?);
-    try std.testing.expectEqual(grid.WallShape.block_tl, lv.wallShape(.{ .x = 17, .y = 7 }).?);
-}
-
-test "a room corner beside a doorway takes the shape of the floor round it" {
-    var lv = grid.Level.blank();
-    const r = Room.sized(.{ .x = 8, .y = 3 }, 9, 6);
-    carve.box(&lv, r, .floor);
-    room(&lv, 8, 1, 8, 2);
-    room(&lv, 2, 8, 7, 8);
-    shapeWalls(&lv);
-    outlineRoom(&lv, r);
-    try std.testing.expectEqual(grid.WallShape.left, lv.wallShape(.{ .x = 7, .y = 2 }).?);
-    try std.testing.expectEqual(grid.WallShape.block_bl, lv.wallShape(.{ .x = 9, .y = 2 }).?);
-    try std.testing.expectEqual(grid.WallShape.bottom, lv.wallShape(.{ .x = 7, .y = 9 }).?);
-    try std.testing.expectEqual(grid.WallShape.block_br, lv.wallShape(.{ .x = 7, .y = 7 }).?);
-    try std.testing.expectEqual(grid.WallShape.corner_tr, lv.wallShape(.{ .x = 17, .y = 2 }).?);
-    try std.testing.expectEqual(grid.WallShape.corner_br, lv.wallShape(.{ .x = 17, .y = 9 }).?);
-    try std.testing.expectEqual(grid.WallShape.bottom, lv.wallShape(.{ .x = 12, .y = 9 }).?);
-}
-
-test "every room corner still standing after generation is drawn as that corner, unless floor beside or below shapes it" {
-    var lv: grid.Level = undefined;
-    var standing: usize = 0;
-    var by_floor: usize = 0;
-    for (0..40) |i| {
-        const f = build(&lv, 0xC0 +% i *% 104729);
-        for (f.rooms[0..f.room_n]) |r| {
-            for (CORNERS) |c| {
-                const p = corner(r, c.floor);
-                if (lv.at(p) != .wall) continue;
-                if (keepsFloorShape(&lv, p, c.floor)) {
-                    by_floor += 1;
-                    try std.testing.expect(lv.wallShape(p).? != c.s);
-                    continue;
-                }
-                standing += 1;
-                try std.testing.expectEqual(c.s, lv.wallShape(p).?);
-            }
-        }
-    }
-    std.debug.print("40 floors: {d} room corners drawn as corners, {d} drawn by the floor beside or below them\n", .{ standing, by_floor });
-    try std.testing.expect(standing > 40 * 4);
-}
-
-test "floor lies below a wall exactly when it is a top wall, a bottom block corner or a post" {
+test "a wall's brick face shows exactly when no wall stands below it" {
     var lv: grid.Level = undefined;
     for (0..40) |i| {
         _ = build(&lv, 0xFACE +% i *% 7919);
         for (lv.shape, 0..) |shape, k| {
             const s = shape orelse continue;
-            const below = lv.walkable(grid.Level.of(k).add(mathx.Dir.s.delta()));
-            try std.testing.expectEqual(below, s.faced());
+            try std.testing.expectEqual(lv.at(grid.Level.of(k).add(mathx.Dir.s.delta())) != .wall, s.faced());
         }
     }
 }
 
-test "build stamps a shape on every wall and on nothing else, and they divide up like this" {
+test "build stamps a joined shape on every wall and on nothing else" {
     var lv: grid.Level = undefined;
-    const shapes = comptime std.enums.values(grid.WallShape);
-    var counts = [_]usize{0} ** shapes.len;
+    var used = std.StaticBitSet(256).initEmpty();
     for (0..40) |i| {
         _ = build(&lv, 0xA11 +% i *% 7919);
         for (lv.tile, lv.shape) |t, s| {
             try std.testing.expectEqual(t == .wall, s != null);
-            if (s) |w| counts[@intFromEnum(w)] += 1;
+            const w = s orelse continue;
+            try std.testing.expectEqual(w, w.joined());
+            used.set(w.mask());
         }
     }
-    var faces: usize = 0;
-    for (shapes, counts) |s, n| {
-        if (s != .solid) faces += n;
-    }
-    std.debug.print("40 floors, {d} wall faces:", .{faces});
-    for (shapes, counts) |s, n| {
-        if (s != .solid) std.debug.print(" {s} {d}%", .{ @tagName(s), n * 100 / faces });
-    }
-    std.debug.print("\n", .{});
-    const at = struct {
-        fn n(cs: []const usize, s: grid.WallShape) usize {
-            return cs[@intFromEnum(s)];
-        }
-    }.n;
-    try std.testing.expect(at(&counts, .top) + at(&counts, .bottom) > faces / 4);
-    try std.testing.expect(at(&counts, .left) + at(&counts, .right) > faces / 4);
+    std.debug.print("40 floors use {d} of the 47 wall shapes\n", .{used.count()});
+    try std.testing.expect(used.count() > 20);
 }
 
-test "every torch hangs on a room's top wall with floor below it" {
+test "every torch hangs on a room's wall with its face onto floor" {
     var lv: grid.Level = undefined;
     var total: usize = 0;
     var rooms: usize = 0;
@@ -474,10 +368,7 @@ test "every torch hangs on a room's top wall with floor below it" {
         const f = build(&lv, 0x7040 +% i *% 7919);
         rooms += f.room_n;
         total += lv.torch.n;
-        for (lv.torches()) |t| {
-            try std.testing.expectEqual(grid.WallShape.top, lv.wallShape(t).?);
-            try std.testing.expect(lv.walkable(lume.torchFloor(t)));
-        }
+        for (lv.torches()) |t| try std.testing.expect(bearsTorch(&lv, t));
     }
     std.debug.print("40 floors: {d} torches over {d} rooms\n", .{ total, rooms });
     try std.testing.expect(total * 2 > rooms);

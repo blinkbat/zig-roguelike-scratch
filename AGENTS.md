@@ -204,15 +204,14 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   block a step but not sight or an arrow; reeds and crop block sight but not a step; tiny shrubs, tall grass and shrooms are decor,
   blocking nothing, on grass drawn under them. Only `.wall` is shaped.
 - **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** in `gen.around`, before the torches and barrels, or by `Node.stamp` for a bespoke node
-  (`shapeWalls` alone), and stored in `Level.shape`:
-  the four sides, the four outer corners, the four block corners, post, solid. Nothing recomputes it, and nothing about what has
-  been revealed touches it (owner's call). `shapeWalls` classes every wall from the floor round it, then
-  `outlineRoom` stamps each room's four corners over that — rooms here are ringed by corridors one cell out, so
-  the neighbour rule alone reads a room's corners as straight walls. A corner with a doorway beside it or floor below
-  it keeps the neighbour rule's shape. A wall draws a brick face exactly when floor lies below it: `top`, the bottom
-  block corners and `post`; every other shape is ceiling only. A corner is named for where it sits on the room, so
-  `corner_tl` has its floor to the south-east. `Sprites.wall` holds one texture per shape, cut from `walls.png`'s 64 px cells by `WALL_CELLS`; one with none draws `#`.
-  The generator also hangs the torches (`Level.torch`), one on the `top` wall of `Params.torches` percent of rooms, after every layout roll
+  (`shapeWalls` alone), and stored in `Level.shape`: which of its eight neighbours are walls too (`grid.WallShape`,
+  off the map counting), a corner only where both sides beside it are (`WallShape.joined`), so one of 47 shapes.
+  Nothing recomputes it, and nothing about what has been revealed touches it (owner's call). Its picture is the
+  atlas's cell for it (`look.WALL_MASKS`, `walls.png` read across its rows), filling the cell, built by
+  `tools/tile_art/export_walls.lua` from the painted strips of the Desktop `regular-walls.aseprite`'s `Layer 1`: an
+  outline on each side it does not join, a notch at a north corner it does not. A wall shows a brick face, its
+  bottom `look.WALL_FACE_PX` rows, where nothing joins it from the south (`WallShape.faced`).
+  The generator also hangs the torches (`Level.torch`), one on a faced wall over floor (`gen.bearsTorch`) above `Params.torches` percent of rooms, after every layout roll
   so a seed's floor is unchanged by them, and then the barrels (`Level.barrel`): up to `Params.barrels` per room on its edge
   cells, never beside a way in, so no barrel seals a path. A barrel blocks a step and stops an arrow; one hit, shot
   or kicked, breaks it for gold. It has no hp. `bow.pick` aims at a barrel only when no foe is in reach. A seen

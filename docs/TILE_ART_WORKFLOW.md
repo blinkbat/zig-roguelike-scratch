@@ -53,28 +53,9 @@ The reference uses seven opaque RGB colours: `(202,158,106)`, `(84,15,0)`, `(149
 
 ## Map the artwork to the game
 
-The 47-cell authoring reference and the game's wall atlas have different layouts. The current game stores 14 `WallShape` values in `Level.shape`; `src/gfx/look.zig` maps them through `WALL_CELLS`. Do not substitute a 47-cell sheet for that atlas or change simulation geometry to accommodate an export.
+`Level.shape` holds each wall's `grid.WallShape`, the mask of its eight neighbours that are walls (N 1, E 2, S 4, W 8, NE 16, SE 32, SW 64, NW 128; a diagonal only where both sides beside it are walls), one of 47. `src/gfx/look.zig` maps it through `WALL_MASKS`, in `tools/tile_art/wall_masks.lua`'s order, the same order as the Desktop sheet's 47 cells.
 
-Runtime `assets/walls.png` has 64-pixel cells in a 640 by 256 atlas. Its occupied positions are:
-
-| Shape | Column, row | Brick face |
-| --- | --- | --- |
-| corner_tl | 0, 0 | No |
-| top | 1, 0 | Yes |
-| corner_tr | 2, 0 | No |
-| left | 0, 1 | No |
-| right | 2, 1 | No |
-| corner_bl | 0, 2 | No |
-| bottom | 1, 2 | No |
-| corner_br | 2, 2 | No |
-| block_tl | 5, 1 | No |
-| block_tr | 6, 1 | No |
-| block_bl | 5, 2 | Yes |
-| block_br | 6, 2 | Yes |
-| post | 8, 1 | Yes |
-| solid | 9, 1 | No |
-
-Room corners are named by their location in the room: `corner_tl` has floor to its southeast. A brick face occupies the bottom 11 pixels of a faced runtime tile. `look.WALL_FACE_PX` and the face lighting boundary in `src/gfx/light.zig` must agree with the exported pixels.
+The Desktop sheet draws each shape as a thin core with arms; the game does not. Runtime `assets/walls.png` (512 by 384, eight cells to a row, the 48th empty) fills every cell, built by `tools/tile_art/export_walls.lua` from `Layer 1`'s painted strips the way the old 14-shape atlas was: the stepped top line, side edges and their corners on each side the wall does not join, a 2 by 4 notch at a north corner it does not, chips copied over the cap. Where it does not join south, its bottom 23 rows are the brick face: the cap's edge, the top mortar, six courses alternating rows 101 and 104 and the last course with its foot (107 to 109), ended by the face-end strips on an unjoined side. A face beside a missing south corner meets the next cap along a one-pixel outline, a hand repair. It writes `assets/source/walls.aseprite` with one slice per mask, and only reads the Desktop file. `look.WALL_FACE_PX` must match the face height.
 
 Regular wall work applies to `.wall`. Cave rock and forest artwork are separate and are deferred.
 
@@ -95,7 +76,7 @@ Use Aseprite's native image and layer operations for pixel ports. The installed 
 
 For each material, retain the canonical source path, painted layers, crop coordinates, connection mask order, runtime mapping, applied transforms, local repairs and validation results. Keep scripts beside the project and dated backups under `output/`, rather than filling the Desktop with competing "final" files.
 
-The current regular-wall port is `tools/tile_art/port_walls.lua`. It replaces only the generated extension in the Desktop source, preserves `Layer 1`, and writes an editable runtime atlas to `assets/source/walls.aseprite`. It reopens that atlas and exports exactly those pixels to `assets/walls.png`. The desktop sheet is the 47-pattern authoring reference; the repository source is the exact 14-shape game atlas.
+The current regular-wall port is `tools/tile_art/port_walls.lua`. It replaces only the generated extension in the Desktop source, preserves `Layer 1`, then runs `export_walls.lua`, which builds the 47 full cells into `assets/source/walls.aseprite` and `assets/walls.png`. To rebuild them alone, without touching the Desktop sheet, run `export_walls.lua`.
 
 Before rerunning, inspect all layers for new owner edits and incorporate those into the source selection. The present script samples `Layer 1` and regenerates its extension and runtime output; it must not overwrite later edits to generated artwork without incorporating them.
 
