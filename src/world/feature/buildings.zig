@@ -43,12 +43,12 @@ pub const Params = struct {
 
 const Box = grid.Box;
 
-/// A `w` by `h` box clear of liquid, doors, bridges, every box in `taken` and any solid `carve.clearRound` leaves standing, a cell of margin round it.
-pub fn site(lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, taken: []const Box, pal: carve.Palette) ?Box {
+/// A `w` by `h` box clear of liquid, doors, bridges and any solid `carve.clearRound` leaves standing, a cell of margin round it, and `gap` cells clear of every box in `taken`.
+pub fn site(lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, taken: []const Box, gap: i32, pal: carve.Palette) ?Box {
     if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
     for (0..TRIES) |_| {
         const b = Box.sized(Box.inMap(SITE_MARGIN).rollFor(rng, w, h), w, h);
-        if (fits(lv, b, taken, pal)) return b;
+        if (fits(lv, b, taken, gap, pal)) return b;
     }
     return null;
 }
@@ -60,8 +60,12 @@ pub fn Lots(comptime most: usize) type {
         n: usize = 0,
 
         pub fn take(self: *@This(), lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, pal: carve.Palette) ?Box {
+            return self.takeApart(lv, rng, w, h, 1, pal);
+        }
+
+        pub fn takeApart(self: *@This(), lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
             if (self.n == most) return null;
-            const b = site(lv, rng, w, h, self.box[0..self.n], pal) orelse return null;
+            const b = site(lv, rng, w, h, self.box[0..self.n], gap, pal) orelse return null;
             self.box[self.n] = b;
             self.n += 1;
             return b;
@@ -75,9 +79,9 @@ pub fn openWay(lv: *grid.Level, way: [2]P, inside: grid.Tile, outside: grid.Tile
     if (lv.at(way[1]).solid()) lv.set(way[1], outside);
 }
 
-fn fits(lv: *const grid.Level, b: Box, taken: []const Box, pal: carve.Palette) bool {
+fn fits(lv: *const grid.Level, b: Box, taken: []const Box, gap: i32, pal: carve.Palette) bool {
     for (taken) |t| {
-        if (b.overlaps(t, 1)) return false;
+        if (b.overlaps(t, gap)) return false;
     }
     var cells = b.grown(1).cells();
     while (cells.next()) |q| {
@@ -195,7 +199,7 @@ pub fn raise(lv: *grid.Level, rng: *mathx.Rng, b: Box, p: Params, outside: grid.
     const way = dryDoorway(lv, rng, b) orelse doorway(rng, b);
     openWay(lv, way, p.floor, outside);
     const in = b.inner();
-    if (rng.percent(p.torches) and in.hi.x - in.lo.x > 2) lv.addTorch(.{ .x = rng.range(in.lo.x + 1, in.hi.x - 2), .y = b.lo.y });
+    if (rng.percent(p.torches) and in.width() > 2) lv.addTorch(.{ .x = rng.range(in.lo.x + 1, in.hi.x - 2), .y = b.lo.y });
     var left = rng.below(@as(u32, p.barrels) + 1);
     var tries: usize = 0;
     while (left > 0 and tries < BARREL_TRIES) : (tries += 1) {

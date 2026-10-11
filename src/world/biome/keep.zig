@@ -12,7 +12,7 @@ const P = mathx.P;
 pub const TOWER_MAX: u8 = 6;
 pub const MOAT_MAX: u8 = 4;
 pub const SIZE_MIN = [2]u8{ 24, 18 };
-pub const SIZE_MAX = [2]u8{ @intCast(grid.W - 2 * (MOAT_MAX + BERM + towerReach(TOWER_MAX))), @intCast(grid.H - 2 * (MOAT_MAX + BERM + towerReach(TOWER_MAX))) };
+pub const SIZE_MAX = [2]u8{ @intCast(grid.W - 2 * reachOf(TOWER_MAX, MOAT_MAX)), @intCast(grid.H - 2 * reachOf(TOWER_MAX, MOAT_MAX)) };
 pub const BARRELS_MAX: u8 = 24;
 /// Cells between the spots along the keep's top wall a torch may hang.
 const TORCH_EVERY: i32 = 3;
@@ -64,7 +64,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const m: i32 = p.moat;
     const berm = bermOf(p);
     if (m > 0) {
-        carve.box(lv, curtain.grown(berm + m), .water);
+        carve.box(lv, curtain.grown(reachOf(p.towers, p.moat)), .water);
         carve.box(lv, curtain.grown(berm), out);
     }
     carve.box(lv, curtain, .wall);
@@ -91,7 +91,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         const gate_at = if (across) P{ .x = if (side < 0) lo.x else hi.x - 1, .y = mid.y } else P{ .x = mid.x, .y = if (side < 0) lo.y else hi.y - 1 };
         const out_dir = if (across) P{ .x = side, .y = 0 } else P{ .x = 0, .y = side };
         const span = P{ .x = if (across) 0 else 1, .y = if (across) 1 else 0 };
-        var k: i32 = -CURTAIN - berm - m;
+        var k: i32 = -CURTAIN - reachOf(p.towers, p.moat);
         while (k <= CURTAIN) : (k += 1) {
             var s: i32 = -@divTrunc(GATE_W, 2);
             while (s <= @divTrunc(GATE_W, 2)) : (s += 1) {
@@ -133,6 +133,11 @@ fn curtainOf(p: Params) grid.Box {
 /// Cells from the curtain out to the moat: the berm runs round the towers' outside.
 fn bermOf(p: Params) i32 {
     return BERM + towerReach(p.towers);
+}
+
+/// Cells from the curtain out to the moat's far side.
+fn reachOf(towers: u8, moat: u8) i32 {
+    return BERM + towerReach(towers) + moat;
 }
 
 fn towerReach(towers: u8) i32 {

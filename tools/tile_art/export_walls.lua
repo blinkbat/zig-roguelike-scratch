@@ -3,6 +3,8 @@ local path=app.params.source or 'C:/Users/DavidBennett/Desktop/regular-walls.ase
 local pc=app.pixelColor
 local masks=dofile(root..'tools/tile_art/wall_masks.lua')
 assert(#masks==47)
+local COLS=8
+local W,H=COLS*64,math.ceil(#masks/COLS)*64
 -- Brick courses under the cap's lower edge: 7 courses, 23 rows; src/gfx/look.zig's WALL_FACE_PX.
 local FACE=23
 local sprite=assert(app.open(path))
@@ -78,7 +80,7 @@ local function tile(mask)
   end
   return image
 end
-local atlas=Image(512,384,ColorMode.RGB)
+local atlas=Image(W,H,ColorMode.RGB)
 local cells={}
 for i,mask in ipairs(masks) do
   local image=tile(mask)
@@ -90,20 +92,20 @@ for i,mask in ipairs(masks) do
   end
   for _,other in ipairs(cells) do assert(not image:isEqual(other),'duplicate cell '..mask) end
   cells[#cells+1]=image
-  atlas:drawImage(image,Point(((i-1)%8)*64,math.floor((i-1)/8)*64))
+  atlas:drawImage(image,Point(((i-1)%COLS)*64,math.floor((i-1)/COLS)*64))
 end
-local runtime=Sprite(512,384,ColorMode.RGB)
+local runtime=Sprite(W,H,ColorMode.RGB)
 runtime.layers[1].name='Runtime walls'
 runtime:newCel(runtime.layers[1],1,atlas,Point(0,0))
 runtime.data='Full-cell walls built from Desktop regular-walls.aseprite Layer 1 strips by tools/tile_art/export_walls.lua; cell i is mask i of wall_masks.lua.'
 for i,mask in ipairs(masks) do
-  local slice=runtime:newSlice(Rectangle(((i-1)%8)*64,math.floor((i-1)/8)*64,64,64))
+  local slice=runtime:newSlice(Rectangle(((i-1)%COLS)*64,math.floor((i-1)/COLS)*64,64,64))
   slice.name='mask '..mask
 end
 runtime:saveAs(root..'assets/source/walls.aseprite')
 runtime:close()
 local check=assert(app.open(root..'assets/source/walls.aseprite'))
-local exported=Image(512,384,ColorMode.RGB)
+local exported=Image(W,H,ColorMode.RGB)
 exported:drawImage(check.layers[1]:cel(1).image,check.layers[1]:cel(1).position)
 check:close()
 assert(exported:isEqual(atlas))

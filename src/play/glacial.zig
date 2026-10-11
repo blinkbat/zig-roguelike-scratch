@@ -46,7 +46,7 @@ pub fn procs(rng: *mathx.Rng, resist: i16) bool {
 }
 
 pub const Cone = struct {
-    cells: [(RANGE * 2 + 1) * (RANGE * 2 + 1)]P = undefined,
+    cells: [grid.Cells.span(RANGE) * grid.Cells.span(RANGE)]P = undefined,
     n: usize = 0,
 
     pub fn has(self: *const Cone, p: P) bool {
@@ -66,7 +66,9 @@ pub fn cone(lv: *const grid.Level, from: P, impact: P) Cone {
     const dy = impact.y - from.y;
     var cells = grid.Cells.around(impact, RANGE);
     while (cells.next()) |p| {
-        if (!lv.walkable(p) or !visible[grid.Level.idx(p)]) continue;
+        if (!lv.walkable(p)) continue;
+        const i = grid.Level.idx(p);
+        if (!visible[i]) continue;
         const x = p.x - impact.x;
         const y = p.y - impact.y;
         const along = dx * x + dy * y;

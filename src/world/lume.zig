@@ -69,10 +69,10 @@ test "the dark shows only what a light reaches, the day all the eyes do, and dus
     const at = P{ .x = 40, .y = 30 };
     const sight: i32 = 10;
     const lamp = [_]Source{.{ .at = at, .reach = 5 }};
-    see(&lv, at, sight, skyReach(false, 12, sight), &lamp);
+    see(&lv, at, sight, skyReach(false, day.NOON, sight), &lamp);
     const dark = count(&lv.lit);
     const reached = count(&lv.los);
-    see(&lv, at, sight, skyReach(true, 12, sight), &lamp);
+    see(&lv, at, sight, skyReach(true, day.NOON, sight), &lamp);
     const noon = count(&lv.lit);
     see(&lv, at, sight, skyReach(true, day.SUNSET - 0.5, sight), &lamp);
     const dusk = count(&lv.lit);

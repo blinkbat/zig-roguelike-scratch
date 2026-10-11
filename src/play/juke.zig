@@ -7,9 +7,12 @@ pub const COOLDOWN: u8 = 3;
 pub const COST: i32 = 20;
 pub const DESCRIPTION = std.fmt.comptimePrint("Jump to visible empty ground within {d} tiles. {d} mana, no turn cost, {d}-turn cooldown.", .{ RANGE, COST, COOLDOWN });
 
+pub fn inReach(from: mathx.P, to: mathx.P) bool {
+    return mathx.dist(from, to) <= RANGE;
+}
+
 pub fn aimable(lv: *const grid.Level, from: mathx.P, to: mathx.P) bool {
-    const d = mathx.dist(from, to);
-    return d >= 1 and d <= RANGE and lv.isLit(to) and lv.vacant(to);
+    return !to.eq(from) and inReach(from, to) and lv.isLit(to) and lv.vacant(to);
 }
 
 test "juke lands up to three tiles away across obstacles but only on visible empty ground" {

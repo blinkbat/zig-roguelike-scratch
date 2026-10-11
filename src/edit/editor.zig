@@ -30,8 +30,20 @@ const SMALL = font.SMALL;
 const HEAD: i32 = 24;
 const INNER_W: i32 = PANEL_W - PAD * 2;
 const ZOOMS = [_]f32{ 8, 16, 32, 64 };
-const ZOOM_AT: usize = 1;
+const ZOOM_AT = zoomOf(16);
 const BRUSHES = [_]i32{ 1, 2, 3, 5 };
+
+fn zoomOf(px: f32) usize {
+    return std.mem.indexOfScalar(f32, &ZOOMS, px).?;
+}
+
+/// "Rat" from "rat".
+fn capital(comptime s: [:0]const u8) [:0]const u8 {
+    comptime var c: [s.len:0]u8 = s[0..s.len].*;
+    c[0] = std.ascii.toUpper(c[0]);
+    const out = c;
+    return &out;
+}
 const PAN_PX_S: f32 = 900;
 const SAY_S: f32 = 4;
 const LINE: usize = 200;
@@ -74,6 +86,7 @@ const DETAIL_DY: i32 = TEXT + 1;
 comptime {
     std.debug.assert(atlas.GRAPH_STEP.x > BOX_W and atlas.GRAPH_STEP.y > BOX_H);
     std.debug.assert(FIELD_MAX >= atlas.NAME_MAX and FIELD_MAX <= atlas.STEM_MAX);
+    std.debug.assert(PATH_MAX >= atlas.PATH_MAX);
     std.debug.assert(MEMBERS_X + @as(i32, pack.MAKEUP_MAX) * (MEMBER_W + MEMBER_GAP) <= MAKEUP_TOOLS_X);
 }
 
@@ -138,10 +151,7 @@ const Tool = enum {
             .wall => "Wall",
             .barrel => "Barrel",
             .torch => "Torch",
-            .rat => "Rat",
-            .slime => "Slime",
-            .bloat => "Bloat",
-            .pib => "Pib",
+            inline .rat, .slime, .bloat, .pib => |f| comptime capital(actor.row(Tool.foe(f).?).name),
             .door => "Door",
             .link => "Link",
             .start => "Start",
@@ -600,6 +610,11 @@ pub const Editor = struct {
         };
     }
 
+    /// The node's generator, when the Generator tab is the one showing.
+    fn generator(ed: *Editor) ?*atlas.Procgen {
+        return if (ed.lower == .generator) ed.rolled() else null;
+    }
+
     fn goTo(ed: *Editor, n: usize) void {
         ed.select(n);
         ed.setView(.map);
@@ -844,6 +859,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
             panBy(&ed.cam, d, dt, ed.px());
             if (d.wheel != 0 and over) zoom(ed, c, if (d.wheel > 0) 1 else -1);
             mapMouse(ed, c, over);
+            if (d.fullscreen) ed.stroke_at = null;
         },
         .graph => {
             panBy(&ed.gcam, d, dt, 1);
@@ -852,7 +868,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     }
     if (d.wheel != 0 and d.mouse.x < PANEL_W) {
         const up = d.wheel > 0;
-        if (ed.lower == .generator and ed.rolled() != null) {
+        if (ed.generator() != null) {
             ed.gen_top = std.math.clamp(ed.gen_top + if (up) -ROW_H else ROW_H, 0, ed.gen_most);
         } else scrollNodes(ed, if (up) -1 else 1);
     }
@@ -937,6 +953,9 @@ fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
         ed.drop();
         ed.stroke = if (d.paint_hit) .paint else .erase;
         if (d.shift and ed.tool.broad() and ed.tool.fits(ed.here())) ed.rect = .{ .from = clampCell(p), .erase = ed.stroke == .erase };
+    } else if (d.clicked() and ed.rect == null) {
+        ed.stroke = .none;
+        ed.stroke_at = null;
     }
     if (!over) ed.stroke_at = null;
     if (ed.rect != null or !over or ed.stroke == .none) return;
@@ -1177,13 +1196,17 @@ fn buttonOn(ed: *Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on
     plate(r, on, h.hot);
     const y: i32 = @intFromFloat(r.y);
     var fit_buf: [LINE]u8 = undefined;
-    g.face.draw(g.face.fit(&fit_buf, label, TEXT, insetW(r), false), @as(i32, @intFromFloat(r.x)) + GAP, y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), TEXT, if (live) look.TEXT else look.DIM);
+    g.face.draw(g.face.fit(&fit_buf, label, TEXT, insetW(r), false), textX(r), y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), TEXT, if (live) look.TEXT else look.DIM);
     return h.hit;
 }
 
 /// Pixels for text in `r`, a `GAP` in from each side.
 fn insetW(r: rl.Rectangle) i32 {
     return @as(i32, @intFromFloat(r.width)) - 2 * GAP;
+}
+
+fn textX(r: rl.Rectangle) i32 {
+    return @as(i32, @intFromFloat(r.x)) + GAP;
 }
 
 /// `s` fitted ahead of `suffix`, which is kept whole.
@@ -1298,17 +1321,15 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
         node.done();
     }
     y += ROW_H + SECTION_GAP;
-    const rolled = ed.rolled();
+    const shown = ed.generator();
     var tabs = Across{ .y = y, .n = 2 };
-    if (button(ed, g, tabs.next(), Lower.nodes.label(), ed.lower == .nodes or rolled == null, true, "Every node of the world")) ed.lower = .nodes;
-    if (button(ed, g, tabs.next(), Lower.generator.label(), ed.lower == .generator and rolled != null, rolled != null, "What this procgen node's floor and foes are rolled from")) {
+    if (button(ed, g, tabs.next(), Lower.nodes.label(), shown == null, true, "Every node of the world")) ed.lower = .nodes;
+    if (button(ed, g, tabs.next(), Lower.generator.label(), shown != null, ed.rolled() != null, "What this procgen node's floor and foes are rolled from")) {
         ed.lower = .generator;
     }
     tabs.done();
     y += ROW_H + BLOCK_GAP;
-    if (ed.lower == .generator) {
-        if (rolled) |pg| return drawGenerator(ed, g, y, pg);
-    }
+    if (shown) |pg| return drawGenerator(ed, g, y, pg);
     scissor(lowerArea(g, y));
     defer rl.endScissorMode();
     var detail_buf: [LINE]u8 = undefined;
@@ -1318,7 +1339,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
         const on = n == ed.node;
         const h = hot(ed, r, true, false, "Open this node");
         plate(r, on, h.hot);
-        g.face.draw(fitTitle(ed, g, n, &buf, &fit_buf, INNER_W - 2 * GAP), PAD + GAP, y + TITLE_DY, TEXT, titleColor(ed, n));
+        g.face.draw(fitTitle(ed, g, n, &buf, &fit_buf, insetW(r)), textX(r), y + TITLE_DY, TEXT, titleColor(ed, n));
         g.face.draw(nodeDetail(nd, &detail_buf), PAD + GAP, y + TITLE_DY + DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
         if (h.hit) ed.goTo(n);
         y += NODE_H;
@@ -1421,8 +1442,8 @@ fn drawMakeup(ed: *Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bo
         if (i >= m.n) continue;
         const h = hot(ed, r, true, false, if (i == 0) "The lead: click for the next foe" else "A member: click for the next foe");
         plate(r, false, h.hot);
-        const k = m.kind[i];
-        g.face.glyph(look.body(k).ch, @intFromFloat(r.x + r.width / 2), @intFromFloat(r.y + r.height / 2), TEXT, look.body(k).fg);
+        const l = look.body(m.kind[i]);
+        g.face.glyph(l.ch, @intFromFloat(r.x + r.width / 2), @intFromFloat(r.y + r.height / 2), TEXT, l.fg);
         if (h.hit) m.turn(i);
     }
     var dropped = false;
@@ -1840,7 +1861,7 @@ fn hover(ed: *Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
 fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {
     const kind = switch (nd.plan) {
         .bespoke => "bespoke",
-        .procgen => |pg| @tagName(pg.floor),
+        .procgen => |*pg| @tagName(pg.floor),
     };
     const open = nd.unlinked();
     if (open == 0) return std.fmt.bufPrintZ(buf, "{s}, {d} doors", .{ kind, nd.door_n }) catch "";
@@ -1869,7 +1890,7 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         if (unrolled) {
             rl.drawRectangleRec(r, look.UNROLLED);
         } else {
-            if (ed.lv.at(p).ground()) |u| {
+            if (look.under(ed.lv.at(p))) |u| {
                 if (g.sprites.tileOf(u, null)) |t| sprite(t, r) else if (look.tileBg(u)) |bg| rl.drawRectangleRec(r, bg);
             }
             if (g.sprites.tileAt(&ed.lv, p)) |t| {
@@ -1881,14 +1902,14 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
             }
         }
         if (ed.lv.hasBarrel(p)) {
-            if (g.sprites.barrel) |t| sprite(t, r) else glyph(ed, g, look.BARREL.ch, r, look.BARREL.fg);
+            figure(ed, g, g.sprites.barrel, look.BARREL, r);
         }
     }
     for (ed.lv.torches()) |t| glyph(ed, g, look.TORCH.ch, ed.cellRect(c, t), look.TORCH.fg);
     switch (ed.plan().*) {
         .bespoke => |*b| for (b.foes()) |f| {
             const r = ed.cellRect(c, f.at);
-            if (g.sprites.body(f.kind)) |t| sprite(t, r) else glyph(ed, g, look.body(f.kind).ch, r, look.body(f.kind).fg);
+            figure(ed, g, g.sprites.body(f.kind), look.body(f.kind), r);
         },
         .procgen => {},
     }
@@ -1928,7 +1949,7 @@ fn drawGraph(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         const b = ed.boxAt(c, n);
         rl.drawRectangleRec(b, PANEL_BG);
         if (thumb(ed, n)) |t| sprite(t, .{ .x = b.x, .y = b.y + @as(f32, @floatFromInt(BOX_TOP)), .width = @floatFromInt(BOX_W), .height = @floatFromInt(BOX_H - BOX_TOP) });
-        g.face.draw(fitTitle(ed, g, n, &buf, &fit_buf, BOX_W - 2 * GAP), @as(i32, @intFromFloat(b.x)) + GAP, @as(i32, @intFromFloat(b.y)) + TITLE_DY, TEXT, titleColor(ed, n));
+        g.face.draw(fitTitle(ed, g, n, &buf, &fit_buf, insetW(b)), textX(b), @as(i32, @intFromFloat(b.y)) + TITLE_DY, TEXT, titleColor(ed, n));
         rl.drawRectangleLinesEx(b, 1, if (n == ed.node) ON else look.EDGE);
     }
     for (ed.world.nodes(), 0..) |*nd, n| {
@@ -2051,7 +2072,7 @@ fn fieldRow(ed: *Editor, g: *game.Game, r: rl.Rectangle) void {
     var fit_buf: [LINE]u8 = undefined;
     rl.drawRectangleRec(r, ROW_ON);
     const typed = std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "";
-    g.face.draw(g.face.fit(&fit_buf, typed, TEXT, insetW(r), true), @as(i32, @intFromFloat(r.x)) + GAP, @as(i32, @intFromFloat(r.y)) + TEXT_DY, TEXT, look.RETICLE);
+    g.face.draw(g.face.fit(&fit_buf, typed, TEXT, insetW(r), true), textX(r), @as(i32, @intFromFloat(r.y)) + TEXT_DY, TEXT, look.RETICLE);
 }
 
 fn titleColor(ed: *const Editor, n: usize) rl.Color {
@@ -2066,6 +2087,11 @@ fn sprite(t: rl.Texture2D, r: rl.Rectangle) void {
     look.stretch(t, r, look.LIT);
 }
 
+/// Its sprite where it has one, else its glyph, as `game.drawFigure` draws it.
+fn figure(ed: *const Editor, g: *game.Game, tex: ?rl.Texture2D, l: look.Look, r: rl.Rectangle) void {
+    if (tex) |t| sprite(t, r) else glyph(ed, g, l.ch, r, l.fg);
+}
+
 fn glyph(ed: *const Editor, g: *game.Game, ch: u8, r: rl.Rectangle, col: rl.Color) void {
     const m = ed.inkOf(r);
     g.face.glyph(ch, m.x, m.y, m.size, col);
@@ -2076,8 +2102,8 @@ fn tileGlyph(ed: *const Editor, g: *game.Game, t: grid.Tile, r: rl.Rectangle) vo
     look.inkTile(&g.face, t, m.x, m.y, m.size);
 }
 
-const SHOT_ZOOM: usize = ZOOM_AT + 1;
-const SHOT_BRUSH: usize = 2;
+const SHOT_ZOOM = zoomOf(32);
+const SHOT_BRUSH = std.mem.indexOfScalar(i32, &BRUSHES, 3).?;
 
 /// DEV ONLY: the posed world's map mid link-pick, its graph, then its procgen node's generator.
 pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8) !void {
@@ -2366,6 +2392,26 @@ test "a stroke leaving the map paints up to its edge, and it ends with the butto
     try std.testing.expect(!ed.rect.?.erase);
 }
 
+test "a click off the map ends the stroke held through it" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    _ = ed.world.add(.{ .bespoke = .{} });
+    const b = &ed.world.node[0].plan.bespoke;
+    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    ed.cam = .{ 0, 0 };
+    ed.tool = .floor;
+    ed.desk = .{ .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = 2, .y = 2 }) };
+    ed.gesture();
+    mapMouse(ed, c, true);
+    ed.desk = .{ .paint = true, .erase = true, .erase_hit = true, .mouse = .{ .x = -5, .y = -5 } };
+    ed.gesture();
+    mapMouse(ed, c, false);
+    ed.desk = .{ .paint = true, .erase = true, .mouse = mouseOn(ed, c, .{ .x = 4, .y = 2 }) };
+    mapMouse(ed, c, true);
+    try std.testing.expectEqual(@as(usize, 1), ed.hist_at);
+    try std.testing.expectEqual(grid.Tile.wall, b.tile[grid.Level.idx(.{ .x = 4, .y = 2 })]);
+}
+
 test "a rectangle begun off the map fills from its edge" {
     const ed = try testEditor();
     defer ed.destroy();
@@ -2440,7 +2486,7 @@ test "a rename is one undo, and deleting a node renumbers the list round it" {
     ed.undo();
     ed.undo();
     try std.testing.expectEqual(@as(usize, 3), ed.world.node_n);
-    try std.testing.expectEqual(@as(usize, 0), ed.world.node[1].label_n);
+    try std.testing.expectEqual(@as(usize, 0), ed.world.node[1].label.n);
 }
 
 test "a node added is named as it is added, one undo for both" {

@@ -13,11 +13,7 @@ pub const APART_MAX: u8 = 30;
 
 pub const Piece = enum { circle, cairns, camp, graveyard, well, tower, shrine, corral, oasis };
 
-/// In `grid.Tile.letter`'s legend; ' ' leaves the ground as it is.
-fn key(c: u8) ?grid.Tile {
-    return if (c == grid.BARREL_LETTER) .floor else grid.Tile.ofLetter(c);
-}
-
+/// In `grid.groundOf`'s legend; ' ' leaves the ground as it is.
 pub fn rows(p: Piece) []const []const u8 {
     return switch (p) {
         .circle => &.{
@@ -114,23 +110,25 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
     const art = rows(p.piece);
     const w = size(art).x;
     const h = size(art).y;
-    const pad: i32 = p.apart;
     var lots: buildings.Lots(COUNT_MAX) = .{};
     for (0..p.count) |_| {
-        const room = lots.take(lv, rng, w + 2 * pad, h + 2 * pad, pal) orelse lots.take(lv, rng, w, h, pal) orelse continue;
-        place(lv, .{ .x = @divTrunc(room.lo.x + room.hi.x - w, 2), .y = @divTrunc(room.lo.y + room.hi.y - h, 2) }, art, pal);
+        const room = spaced(&lots, lv, rng, w, h, p.apart, pal) orelse continue;
+        place(lv, room.lo, art, pal);
+    }
+}
+
+/// A lot whose margin of `apart` keeps clear of the others', the gap halved till one fits.
+fn spaced(lots: *buildings.Lots(COUNT_MAX), lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, apart: i32, pal: carve.Palette) ?grid.Box {
+    var gap = @max(1, 2 * apart);
+    while (true) : (gap = @divTrunc(gap, 2)) {
+        if (lots.takeApart(lv, rng, w, h, gap, pal)) |r| return r;
+        if (gap <= 1) return null;
     }
 }
 
 /// Stamped, its gaps and the ring round it opened, so no thicket or rock seals its ground in.
 pub fn place(lv: *grid.Level, at: P, art: []const []const u8, pal: carve.Palette) void {
-    stamp(lv, at, art);
-    for (art, 0..) |line, y| {
-        for (line, 0..) |c, x| {
-            const q = at.add(.{ .x = @intCast(x), .y = @intCast(y) });
-            if (c == ' ' and !grid.Level.onRim(q) and carve.closes(lv.at(q), pal)) lv.set(q, pal.open);
-        }
-    }
+    stampOver(lv, at, art, pal);
     carve.clearRound(lv, grid.Box.sized(at, size(art).x, size(art).y), pal);
 }
 
@@ -138,28 +136,60 @@ pub fn size(art: []const []const u8) P {
     return .{ .x = @intCast(art[0].len), .y = @intCast(art.len) };
 }
 
-pub fn stampAround(lv: *grid.Level, mid: P, art: []const []const u8) void {
+/// Where `art` centred on `mid` has its top left.
+pub fn cornerFor(mid: P, art: []const []const u8) P {
     const s = size(art);
-    stamp(lv, mid.sub(.{ .x = @divTrunc(s.x, 2), .y = @divTrunc(s.y, 2) }), art);
+    return mid.sub(.{ .x = @divTrunc(s.x, 2), .y = @divTrunc(s.y, 2) });
+}
+
+pub fn stampAround(lv: *grid.Level, mid: P, art: []const []const u8) void {
+    stamp(lv, cornerFor(mid, art), art);
 }
 
 pub fn stamp(lv: *grid.Level, at: P, art: []const []const u8) void {
-    for (art, 0..) |line, y| {
-        for (line, 0..) |c, x| {
-            const q = at.add(.{ .x = @intCast(x), .y = @intCast(y) });
-            if (grid.Level.onRim(q)) continue;
-            lv.set(q, key(c) orelse continue);
-            if (c == grid.BARREL_LETTER) lv.putBarrel(q);
+    stampOver(lv, at, art, null);
+}
+
+/// With `open`, a ' ' gap is opened where what stands there would close it.
+fn stampOver(lv: *grid.Level, at: P, art: []const []const u8, open: ?carve.Palette) void {
+    var it = Spots{ .at = at, .art = art };
+    while (it.next()) |s| {
+        if (grid.Level.onRim(s.q)) continue;
+        if (grid.groundOf(s.c)) |t| {
+            lv.set(s.q, t);
+            if (s.c == grid.BARREL_LETTER) lv.putBarrel(s.q);
+        } else if (open) |pal| {
+            if (carve.closes(lv.at(s.q), pal)) lv.set(s.q, pal.open);
         }
     }
 }
+
+/// Each cell of `art` laid with its top left at `at`, and its letter.
+pub const Spots = struct {
+    at: P,
+    art: []const []const u8,
+    x: usize = 0,
+    y: usize = 0,
+
+    pub fn next(s: *Spots) ?struct { q: P, c: u8 } {
+        if (s.y == s.art.len) return null;
+        const q = s.at.add(.{ .x = @intCast(s.x), .y = @intCast(s.y) });
+        const c = s.art[s.y][s.x];
+        s.x += 1;
+        if (s.x == s.art[s.y].len) {
+            s.x = 0;
+            s.y += 1;
+        }
+        return .{ .q = q, .c = c };
+    }
+};
 
 test "every piece is a rectangle of known keys" {
     for (std.enums.values(Piece)) |pc| {
         const art = rows(pc);
         for (art) |line| {
             try std.testing.expectEqual(art[0].len, line.len);
-            for (line) |c| try std.testing.expect(c == ' ' or key(c) != null);
+            for (line) |c| try std.testing.expect(c == ' ' or grid.groundOf(c) != null);
         }
     }
 }
@@ -171,4 +201,32 @@ test "pieces land apart on open ground" {
     apply(&lv, &rng, 0, carve.Palette.WILD, .{ .piece = .graveyard, .count = 3 });
     std.debug.print("3 graveyards: {d} graves\n", .{carve.count(&lv, .grave)});
     try std.testing.expectEqual(@as(usize, 3 * 12), carve.count(&lv, .grave));
+}
+
+test "shrines set wide apart land no closer than at the default margin" {
+    var default: i32 = 0;
+    std.debug.print("the nearest two of 3 shrines in 50 maps by apart:", .{});
+    for ([_]u8{ 0, 6, 20, APART_MAX }) |apart| {
+        var nearest: i32 = std.math.maxInt(i32);
+        for (0..50) |seed| {
+            var lv = grid.Level.blank();
+            var rng = mathx.Rng.init(0x5E7 +% seed *% 7919);
+            carve.field(&lv, carve.Palette.WILD);
+            apply(&lv, &rng, 0, carve.Palette.WILD, (Params{ .piece = .shrine, .count = 3, .apart = apart }).fit());
+            var at: [3]P = undefined;
+            var n: usize = 0;
+            for (lv.barrel, 0..) |b, i| {
+                if (!b) continue;
+                at[n] = grid.Level.of(i);
+                n += 1;
+            }
+            for (at[0..n], 0..) |a, i| {
+                for (at[i + 1 .. n]) |b| nearest = @min(nearest, mathx.dist(a, b));
+            }
+        }
+        std.debug.print(" {d}:{d}", .{ apart, nearest });
+        if (apart == (Params{}).apart) default = nearest;
+        if (apart > (Params{}).apart) try std.testing.expect(nearest >= default);
+    }
+    std.debug.print("\n", .{});
 }

@@ -40,6 +40,18 @@ fn cellAt(cx: usize, cy: usize) P {
     return .{ .x = @intCast(cx * 2 + 1), .y = @intCast(cy * 2 + 1) };
 }
 
+/// A step from cell `cx, cy` to one on the map not yet carved.
+const Unseen = struct {
+    seen: *const [CELLS_X * CELLS_Y]bool,
+    cx: i32,
+    cy: i32,
+
+    fn has(u: Unseen, s: P) bool {
+        const near = mathx.slot(u.cx + s.x, u.cy + s.y, CELLS_X, CELLS_Y) orelse return false;
+        return !u.seen[near];
+    }
+};
+
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const pal = palette(p);
     carve.fill(lv, pal.solid);
@@ -55,22 +67,13 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         const at = stack[top - 1];
         const cx: i32 = @intCast(at % CELLS_X);
         const cy: i32 = @intCast(at / CELLS_X);
-        var open: [4]usize = undefined;
-        var n: usize = 0;
-        for (steps, 0..) |s, k| {
-            const near = mathx.slot(cx + s.x, cy + s.y, CELLS_X, CELLS_Y) orelse continue;
-            if (seen[near]) continue;
-            open[n] = k;
-            n += 1;
-        }
-        if (n == 0) {
+        const s = rng.pickWhere(P, &steps, Unseen{ .seen = &seen, .cx = cx, .cy = cy }, Unseen.has) orelse {
             top -= 1;
             continue;
-        }
-        const s = steps[open[rng.below(@intCast(n))]];
+        };
         const nx: usize = @intCast(cx + s.x);
         const ny: usize = @intCast(cy + s.y);
-        const k = ny * CELLS_X + nx;
+        const k = mathx.slot(cx + s.x, cy + s.y, CELLS_X, CELLS_Y).?;
         seen[k] = true;
         const here = cellAt(@intCast(cx), @intCast(cy));
         lv.set(here.add(s), pal.open);
@@ -81,7 +84,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     for (0..CELLS_Y) |cy| {
         for (0..CELLS_X) |cx| {
             const c = cellAt(cx, cy);
-            var walls: [4]P = undefined;
+            var walls: [steps.len]P = undefined;
             var n: usize = 0;
             var opens: usize = 0;
             for (steps) |s| {

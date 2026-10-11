@@ -75,7 +75,7 @@ pub fn fraction(pc: anytype) f32 {
 }
 
 pub fn smoothstep(lo: f32, hi: f32, x: f32) f32 {
-    return smooth(std.math.clamp((x - lo) / (hi - lo), 0, 1));
+    return smooth((x - lo) / (hi - lo));
 }
 
 /// Across a square's corners, top-left, top-right, bottom-left, bottom-right.
@@ -185,7 +185,7 @@ pub fn len(x: f32, y: f32) f32 {
     return @sqrt(x * x + y * y);
 }
 
-/// Clockwise from north: `dirOf` and `heading` rely on the ordinals.
+/// Clockwise from north: `dirOf`, `heading` and `turned` rely on the ordinals.
 pub const Dir = enum(u3) {
     n = 0,
     ne = 1,
@@ -209,7 +209,11 @@ pub const Dir = enum(u3) {
     }
 
     pub fn opposite(d: Dir) Dir {
-        return @enumFromInt(@intFromEnum(d) +% 4);
+        return d.turned(4);
+    }
+
+    pub fn turned(d: Dir, eighths: u3) Dir {
+        return @enumFromInt(@intFromEnum(d) +% eighths);
     }
 };
 

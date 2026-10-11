@@ -99,15 +99,16 @@ pub fn keyDim(hour: f32) f32 {
     return k * k;
 }
 
+const Palette = struct { key: Rgb, sky: Rgb };
 const Key = struct { at: f32, key: Rgb, sky: Rgb };
 
 /// Night, darker than zig-soulslike's so the dark outdoors reads as dark, and darkest at midnight.
-const NIGHT = Key{ .at = 0, .key = .{ 0.022, 0.030, 0.060 }, .sky = .{ 0.014, 0.018, 0.034 } };
-const MIDNIGHT = Key{ .at = 0, .key = .{ 0.006, 0.008, 0.018 }, .sky = .{ 0.004, 0.005, 0.011 } };
+const NIGHT = Palette{ .key = .{ 0.022, 0.030, 0.060 }, .sky = .{ 0.014, 0.018, 0.034 } };
+const MIDNIGHT = Palette{ .key = .{ 0.006, 0.008, 0.018 }, .sky = .{ 0.004, 0.005, 0.011 } };
 
 /// zig-soulslike's key and sky rows, 0 and 24 equal so midnight is no seam; sunrise and sunset keys warmed to gold, as its deep orange takes the green out of grass seen flat.
 const KEYS = [_]Key{
-    MIDNIGHT,
+    .{ .at = 0, .key = MIDNIGHT.key, .sky = MIDNIGHT.sky },
     .{ .at = 2.5, .key = NIGHT.key, .sky = NIGHT.sky },
     .{ .at = KEY_SWAP_DAWN, .key = .{ 0.088, 0.104, 0.168 }, .sky = .{ 0.046, 0.056, 0.088 } },
     .{ .at = SUNRISE, .key = .{ 1.100, 0.620, 0.340 }, .sky = .{ 0.120, 0.124, 0.166 } },
@@ -125,13 +126,13 @@ comptime {
     for (KEYS[1..], 0..) |k, i| std.debug.assert(k.at > KEYS[i].at);
 }
 
-fn paletteAt(hour: f32) struct { key: Rgb, sky: Rgb } {
+fn paletteAt(hour: f32) Palette {
     const h = wrapHour(hour);
     var i: usize = 0;
     while (i + 2 < KEYS.len and KEYS[i + 1].at <= h) i += 1;
     const a = KEYS[i];
     const b = KEYS[i + 1];
-    const t = mathx.smooth((h - a.at) / (b.at - a.at));
+    const t = mathx.smoothstep(a.at, b.at, h);
     return .{ .key = mix(a.key, b.key, t), .sky = mix(a.sky, b.sky, t) };
 }
 
@@ -228,7 +229,7 @@ test "one light always casts, its altitude floored, and it changes hands at the 
 }
 
 test "noon is bright and midnight dark, the day turns in a ramp, and midnight is no seam" {
-    const noon = at(12);
+    const noon = at(day.NOON);
     const night = at(0);
     std.debug.print("key at noon {d:.2} {d:.2} {d:.2}, at midnight {d:.3} {d:.3} {d:.3}; shade at noon {d:.2}, at midnight {d:.3}\n", .{ noon.key[0], noon.key[1], noon.key[2], night.key[0], night.key[1], night.key[2], noon.ambient[1], night.ambient[1] });
     try std.testing.expect(noon.key[0] > 1.0 and night.key[0] < 0.1);

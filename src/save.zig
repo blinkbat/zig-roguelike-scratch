@@ -41,6 +41,9 @@ comptime {
         }
         if (n != 1) @compileError("save.zig: say whether game.Game." ++ f.name ++ " is saved");
     }
+    for (TAIL_FIELDS ++ HEAD_FIELDS ++ UNSAVED) |name| {
+        if (!@hasField(game.Game, name)) @compileError("save.zig: game.Game has no field " ++ name);
+    }
 }
 
 /// Named as well as typed, so two fields of one type swapped change the fingerprint.
@@ -65,12 +68,11 @@ pub const Summary = struct {
     gold: i32,
     /// Null on a generated floor.
     node: ?usize,
-    place: [atlas.NAME_MAX]u8 = undefined,
-    place_n: usize = 0,
+    place: atlas.Label = .{},
 
     pub fn line(self: *const Summary, buf: []u8) [:0]const u8 {
         var at: [atlas.TITLE_MAX]u8 = undefined;
-        const where = if (self.node) |n| atlas.titleOf(self.place[0..self.place_n], n, &at) else "a generated floor";
+        const where = if (self.node) |n| atlas.titleOf(self.place.text(), n, &at) else "a generated floor";
         return std.fmt.bufPrintZ(buf, "{s}" ++ menu.SEP ++ "HP {d}/{d}" ++ menu.SEP ++ "Gold {d}" ++ menu.SEP ++ "{s}", .{ self.name.text(), self.hp, self.max, self.gold, where }) catch "";
     }
 };
@@ -102,9 +104,7 @@ fn summaryOf(g: *game.Game) Summary {
     var s = Summary{ .name = g.name, .hp = h.hp, .max = h.max, .gold = g.gold, .node = null };
     if (g.world) |w| {
         s.node = g.node;
-        const nm = w.node[g.node].name();
-        @memcpy(s.place[0..nm.len], nm);
-        s.place_n = nm.len;
+        s.place = w.node[g.node].label;
     }
     return s;
 }
@@ -148,7 +148,7 @@ fn peek(bytes: []const u8) Error!Summary {
     try header(&b);
     var s: Summary = undefined;
     if (!store.take(&b, &s)) return error.Short;
-    if (!s.name.valid() or s.place_n > atlas.NAME_MAX or !atlas.plain(s.place[0..s.place_n])) return error.Damaged;
+    if (!s.name.valid() or !s.place.valid()) return error.Damaged;
     if (s.node) |n| {
         if (n >= atlas.MAX_NODES) return error.Damaged;
     }

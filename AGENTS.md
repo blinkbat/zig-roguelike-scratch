@@ -129,7 +129,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   `skillbar.Act.cost` supplies mana checks, spending and slot dimming; ability descriptions use their mechanic constants.
 - **`gfx/light.zig` IS EVERY LIGHT, AND THE FOG IS PART OF IT.** Terrain draws at full brightness; one pass of the
   light map (2x modulate, so it can brighten) lights it, and nothing else tints terrain. Open ground and liquids, and the ground under
-  anything solid or standing on it, go down first, then body shadows, then the solid and standing tiles, so a wall
+  anything solid or standing on it (floor under a wall, `look.under`), go down first, then body shadows, then the solid and standing tiles, so a wall
   covers any shadow that reaches it.
   Every shadow and contact pool is drawn into a mask of the screen (`Light.beginShadows`), the darker winning where they
   overlap (Photoshop's Darken, `GL_MIN`, channel by channel), and the mask multiplies the ground under it: however many
@@ -184,7 +184,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   feature (`world/feature/*.zig`'s `apply`) in order, on a stream salted apart so adding one leaves the base as it
   was; then seals the edge, opens the doors again, opens a clearing at the middle if no ground is open, joins every
   stretch of ground to the biggest by bending trails that bridge water, lava and chasms (`carve.connect`), and
-  `settle`s (walls shaped afresh but a rooms' corner nothing changed round, a barrel or torch that no longer fits
+  `settle`s (walls shaped afresh, a barrel or torch that no longer fits
   dropped, and any barrel that parts the ground, `carve.unbar`), all as the base's `carve.Palette` says. Rooms bare keep `gen.around` whole. Bases: rooms, open, wilds, caves, cavern (ADOM),
   strata (Qud's NoiseMap), labyrinth, hall (ADOM's Big Room, grove, graveyard), maze (Diablo II's DrlgMaze),
   topology (Path of Exile's graphs), terrain (Dwarf Fortress's fields and biome checks), keep, town, dunes, site

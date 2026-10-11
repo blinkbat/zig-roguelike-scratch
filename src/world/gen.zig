@@ -38,8 +38,8 @@ pub const Params = struct {
         var q = p;
         q.size = .{ .x = std.math.clamp(p.size.x, SIZE_MIN.x, grid.W), .y = std.math.clamp(p.size.y, SIZE_MIN.y, grid.H) };
         q.rooms = std.math.clamp(p.rooms, 1, MAX_ROOMS);
-        q.room_w = span(p.room_w, @min(ROOM_W_MAX, q.size.x - 2 * MARGIN));
-        q.room_h = span(p.room_h, @min(ROOM_H_MAX, q.size.y - 2 * MARGIN));
+        q.room_w = span(p.room_w, @min(ROOM_W_MAX, q.area().width()));
+        q.room_h = span(p.room_h, @min(ROOM_H_MAX, q.area().height()));
         q.torches = @min(p.torches, mathx.PERCENT);
         q.barrels = @min(p.barrels, BARRELS_MAX);
         return q;
@@ -49,8 +49,9 @@ pub const Params = struct {
         return mathx.span(i32, r, ROOM_MIN, most);
     }
 
-    fn corner(p: Params) P {
-        return grid.Box.centred(p.size.x, p.size.y).lo;
+    /// Where the rooms fall: `size`, centred on the map, inside its margin.
+    fn area(p: Params) grid.Box {
+        return grid.Box.centred(p.size.x, p.size.y).shrunk(MARGIN);
     }
 };
 
@@ -66,11 +67,22 @@ pub fn build(lv: *grid.Level, seed: u64) Floor {
     return around(lv, seed, &.{}, .{});
 }
 
+/// Drops the torches no wall bears any more, the rest kept in order.
+pub fn keepTorches(lv: *grid.Level) void {
+    var kept: usize = 0;
+    for (lv.torches()) |t| {
+        if (!bearsTorch(lv, t)) continue;
+        lv.torch.at[kept] = t;
+        kept += 1;
+    }
+    lv.torch.n = kept;
+}
+
 /// Every open cell connected, each of `doors` too; reproducible from the seed, the doors and `params`.
 pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floor {
     std.debug.assert(doors.len <= grid.MAX_DOORS);
     const pm = params.fit();
-    const o = pm.corner();
+    const area = pm.area();
     lv.* = grid.Level.blank();
     var rng = mathx.Rng.init(seed);
     var f = Floor{};
@@ -78,7 +90,7 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
     while (tries < ROOM_TRIES and f.room_n < pm.rooms) : (tries += 1) {
         const w = rng.range(pm.room_w[0], pm.room_w[1]);
         const h = rng.range(pm.room_h[0], pm.room_h[1]);
-        const at = (grid.Box{ .lo = o.add(.{ .x = MARGIN, .y = MARGIN }), .hi = o.add(pm.size).sub(.{ .x = MARGIN, .y = MARGIN }) }).rollFor(&rng, w, h);
+        const at = area.rollFor(&rng, w, h);
         const r = Room.sized(at, w, h);
         if (!addRoom(&f, r)) continue;
         carve.box(lv, r, .floor);
@@ -210,16 +222,9 @@ pub fn shapeWalls(lv: *grid.Level) void {
 }
 
 fn wallShape(lv: *const grid.Level, p: P) grid.WallShape {
-    return grid.WallShape.joined(.{
-        .n = joins(lv, p, .n),
-        .e = joins(lv, p, .e),
-        .s = joins(lv, p, .s),
-        .w = joins(lv, p, .w),
-        .ne = joins(lv, p, .ne),
-        .se = joins(lv, p, .se),
-        .sw = joins(lv, p, .sw),
-        .nw = joins(lv, p, .nw),
-    });
+    var s: grid.WallShape = .{};
+    inline for (std.meta.fields(grid.WallShape)) |f| @field(s, f.name) = joins(lv, p, @field(mathx.Dir, f.name));
+    return s.joined();
 }
 
 /// Off the map counts, so a wall runs on over the edge.
@@ -241,10 +246,7 @@ test "every floor connects" {
     for (0..200) |i| {
         const seed: u64 = 0xBEEF +% i *% 7919;
         const f = build(&lv, seed);
-        var open: usize = 0;
-        for (lv.tile) |t| {
-            if (!t.solid()) open += 1;
-        }
+        const open = lv.openCount();
         const reached = grid.distances(&lv, f.start, &dist, &queue);
         if (reached != open) {
             std.debug.print("seed {d}: {d} open cells, flood reached {d}\n", .{ seed, open, reached });
@@ -469,7 +471,7 @@ test "a floor rolled in a small box keeps its rooms in it, to their count and si
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     const pm = Params{ .size = .{ .x = 40, .y = 30 }, .rooms = 6, .room_w = .{ 4, 8 }, .room_h = .{ 3, 6 }, .torches = 0, .barrels = 0 };
-    const o = pm.corner();
+    const area = pm.area();
     var rooms: usize = 0;
     for (0..50) |i| {
         const f = around(&lv, 0xB0C5 +% i *% 7919, &.{.{ .x = 2, .y = 2 }}, pm);
@@ -478,8 +480,7 @@ test "a floor rolled in a small box keeps its rooms in it, to their count and si
         try std.testing.expectEqual(@as(usize, 0), lv.torch.n);
         for (f.rooms[0..f.room_n]) |r| {
             try std.testing.expect(r.width() >= 4 and r.width() <= 8 and r.height() >= 3 and r.height() <= 6);
-            try std.testing.expect(r.lo.x >= o.x + MARGIN and r.hi.x <= o.x + pm.size.x - MARGIN);
-            try std.testing.expect(r.lo.y >= o.y + MARGIN and r.hi.y <= o.y + pm.size.y - MARGIN);
+            try std.testing.expect(r.lo.x >= area.lo.x and r.hi.x <= area.hi.x and r.lo.y >= area.lo.y and r.hi.y <= area.hi.y);
         }
         _ = grid.distances(&lv, f.start, &dist, &queue);
         try std.testing.expect(dist[grid.Level.idx(.{ .x = 2, .y = 2 })] >= 0);

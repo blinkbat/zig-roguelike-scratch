@@ -94,9 +94,9 @@ const Model = struct {
     weight: [PATTERNS_MAX]u32 = undefined,
     n: usize = 0,
     /// `fits[p][d]`: the patterns that may sit one step in direction `d` from `p`.
-    fits: [PATTERNS_MAX][4]Bits = undefined,
+    fits: [PATTERNS_MAX][DIRS.len]Bits = undefined,
     /// `fits` of every pattern together, each way: what a cell any pattern may yet be allows its neighbours.
-    any: [4]Bits = @splat(Bits.initEmpty()),
+    any: [DIRS.len]Bits = @splat(Bits.initEmpty()),
 
     fn of(art: []const []const u8) Model {
         var m = Model{};
@@ -261,6 +261,12 @@ const TEMPLATES = blk: {
 
 comptime {
     std.debug.assert(TEMPLATES.len + 1 == std.enums.values(Template).len);
+    @setEvalBranchQuota(10_000);
+    for (TEMPLATES) |art| {
+        for (art) |line| {
+            for (line) |c| std.debug.assert(std.mem.indexOfScalar(u8, SYMBOLS, c) != null);
+        }
+    }
 }
 
 fn templateOf(t: Template, rng: *mathx.Rng) usize {
@@ -311,7 +317,7 @@ test "every template's model holds all its patterns and every one has a neighbou
         std.debug.print("a template: {d} patterns of 3x3 with rotations and reflections, room for {d}\n", .{ m.n, PATTERNS_MAX });
         try std.testing.expect(m.n > 10 and m.n < PATTERNS_MAX);
         for (0..m.n) |a| {
-            for (0..4) |k| try std.testing.expect(m.fits[a][k].count() > 0);
+            for (0..DIRS.len) |k| try std.testing.expect(m.fits[a][k].count() > 0);
         }
     }
 }

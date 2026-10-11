@@ -24,6 +24,7 @@ pub const Class = enum {
 };
 
 pub const CLASSES = std.enums.values(Class);
+pub const DEFAULT: Class = .archer;
 
 pub const Name = struct {
     pub const MAX: usize = 16;

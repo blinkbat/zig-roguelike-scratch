@@ -9,6 +9,8 @@ const P = mathx.P;
 
 pub const CLEARING_MIN: u8 = 2;
 pub const CLEARING_MAX: u8 = 12;
+/// A path of 1 would draw the same plus-shaped disc as 2: no narrower path walks a diagonal.
+pub const PATH_MIN: u8 = 2;
 pub const PATH_MAX: u8 = 6;
 pub const SIDES_MAX: u8 = 10;
 /// A spot lands within this share of the box from where its layout puts it.
@@ -40,7 +42,7 @@ pub const Params = struct {
     pub fn fit(p: Params) Params {
         var q = p;
         q.clearing = std.math.clamp(p.clearing, CLEARING_MIN, CLEARING_MAX);
-        q.path = std.math.clamp(p.path, 1, PATH_MAX);
+        q.path = std.math.clamp(p.path, PATH_MIN, PATH_MAX);
         q.sides = @min(p.sides, SIDES_MAX);
         return q;
     }
@@ -87,7 +89,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const g = graphOf(p.layout);
     const noise = carve.Noise.init(seed ^ 0x70B0);
     const inset = p.clearing + RIM_GAP;
-    const span = P{ .x = grid.W - 2 * inset, .y = grid.H - 2 * inset };
+    const span = P{ .x = grid.W - 1 - 2 * inset, .y = grid.H - 1 - 2 * inset };
     var at: [NODES_MAX]P = undefined;
     for (g.spots, 0..) |s, i| {
         const fx = std.math.clamp(s.x + (rng.unit() - 0.5) * 2 * JITTER, 0, 1);
@@ -121,7 +123,18 @@ fn clearing(lv: *grid.Level, noise: carve.Noise, c: P, r: f32, fray: f32, open: 
 
 fn path(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, w: f32, open: grid.Tile) void {
     var m = carve.Meander.init(a, b, 0.7);
-    while (m.next(rng)) |c| carve.disc(lv, c, @max(w, 0.5) + 0.5, open, null);
+    while (m.next(rng)) |c| carve.disc(lv, c, w + 0.5, open, null);
+}
+
+test "every path width draws a different map" {
+    var lv = grid.Level.blank();
+    var maps: [PATH_MAX - PATH_MIN + 1][grid.CELLS]grid.Tile = undefined;
+    for (&maps, PATH_MIN..) |*tiles, w| {
+        var rng = mathx.Rng.init(0x70B0);
+        shape(&lv, &rng, 1, .{ .path = @intCast(w) });
+        tiles.* = lv.tile;
+        for (maps[0 .. w - PATH_MIN]) |*was| try std.testing.expect(!std.mem.eql(grid.Tile, was, tiles));
+    }
 }
 
 test "every layout joins its spots" {

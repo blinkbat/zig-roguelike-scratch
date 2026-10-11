@@ -42,7 +42,7 @@ const BODY_Z: f32 = 0.4;
 /// The archer's own light; `CARRY_R` is cells.
 const CARRY: Rgb = .{ 0.92, 0.88, 0.80 };
 /// A cell past what the archer's light lets it see, so its glow fades out on the edge of sight.
-const CARRY_R: f32 = @floatFromInt(actor.row(.archer).light + 1);
+const CARRY_R: f32 = @floatFromInt(actor.row(actor.HERO).light + 1);
 const CARRY_FADE: f32 = 0.3;
 const CARRY_CEILING: f32 = 0.7;
 const CARRY_FACE_WRAP: f32 = 0.6;
@@ -189,7 +189,7 @@ fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
         var over = (k.h - z - t * rise) / (SUN_SOFT * k.h);
         if (k.r) |r| over = @min(over, (r - offMiddle(c, .{ px, py })) / SUN_EDGE);
         if (over <= 0) continue;
-        lit = @min(lit, 1 - smooth(@min(over, 1)));
+        lit = @min(lit, 1 - smooth(over));
         if (lit <= 0) return 0;
     }
     return lit;
@@ -203,12 +203,15 @@ const CLOUD_DRIFT = [2]f32{ 0.35, 0.12 };
 const CLOUD_COVER: f32 = 0.52;
 const CLOUD_SOFT: f32 = 0.3;
 const CLOUD_DEPTH: f32 = 0.18;
+/// Of the noise, the broad octave's share and the fine one's, the fine one this many times finer.
+const CLOUD_OCTAVES = [2]f32{ 0.65, 0.35 };
+const CLOUD_LACUNARITY: f32 = 2.3;
 
 /// What of the sun a cloud's shadow drifting over a point at `t` seconds leaves it.
 fn clouded(x: f32, y: f32, t: f32) f32 {
     const u = x / CLOUD_SCALE + t * CLOUD_DRIFT[0] / CLOUD_SCALE;
     const v = y / CLOUD_SCALE + t * CLOUD_DRIFT[1] / CLOUD_SCALE;
-    const n = value2(u, v) * 0.65 + value2(u * 2.3 + 17, v * 2.3 - 9) * 0.35;
+    const n = value2(u, v) * CLOUD_OCTAVES[0] + value2(u * CLOUD_LACUNARITY + 17, v * CLOUD_LACUNARITY - 9) * CLOUD_OCTAVES[1];
     const edge = 1 - CLOUD_COVER;
     const cover = mathx.smoothstep(edge - CLOUD_SOFT / 2, edge + CLOUD_SOFT / 2, n);
     return 1 - CLOUD_DEPTH * cover;
@@ -369,14 +372,7 @@ const Torch = struct {
 
     fn reached(t: *const Torch, x: f32, y: f32) f32 {
         const o = t.corner();
-        const u = x - @as(f32, @floatFromInt(o.x)) - 0.5;
-        const v = y - @as(f32, @floatFromInt(o.y)) - 0.5;
-        const c = mathx.cellOf(.{ x, y });
-        const own = mathx.dist(c, t.floor()) <= REACH and blk: {
-            const i = t.texel(c);
-            break :blk t.reach[i] > 0;
-        };
-        return bilinear(if (own) &t.reach else &t.open, SPAN, SPAN, u, v, 0);
+        return occluded(&t.reach, &t.open, SPAN, SPAN, x - @as(f32, @floatFromInt(o.x)) - 0.5, y - @as(f32, @floatFromInt(o.y)) - 0.5);
     }
 
     /// The flame's offset from a point and how much of it reaches there, fallen off and occluded; null out of reach.
@@ -394,7 +390,7 @@ const Torch = struct {
         const r = t.toward(s.x, s.y, s.z) orelse return 0;
         const facing = switch (s.surface) {
             .floor => wrapped(r.d[2] / @sqrt(r.d2), FLOOR_WRAP),
-            .face => faceCatch(r.d[1] / @sqrt(@max(r.d[0] * r.d[0] + r.d[1] * r.d[1], 1e-4))),
+            .face => faceCatch(faceCos(r.d[1], mathx.len(r.d[0], r.d[1]))),
             .ceiling => CEILING_CATCH,
         };
         return r.k * facing;
@@ -437,6 +433,17 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32, out: f32) f32 {
 
 fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32, out: f32) f32 {
     return f[mathx.slot(x, y, @intCast(w), @intCast(h)) orelse return out];
+}
+
+/// A light's reach at `(u, v)`: blended over `reach` inside a cell it reaches, over `open` in one it misses, so no wall passes its light on.
+fn occluded(reach: []const f32, open: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
+    const own = texel(reach, w, h, @intFromFloat(@floor(u + 0.5)), @intFromFloat(@floor(v + 0.5)), 0) > 0;
+    return bilinear(if (own) reach else open, w, h, u, v, 0);
+}
+
+/// `reach` but for what blocks sight, which `occluded` blends from beyond a light's reach.
+fn opened(reach: f32, blind: bool) f32 {
+    return if (blind) 0 else reach;
 }
 
 /// A cell's memory at each point in it, from the cells round it short of wholly remembered.
@@ -492,6 +499,13 @@ fn knee(c: Rgb) Rgb {
 }
 
 const smooth = mathx.smooth;
+
+/// The cosine a light `dy` south of a south face and `flat` from it along the ground strikes it at.
+fn faceCos(dy: f32, flat: f32) f32 {
+    return dy / @max(flat, FACE_EPS);
+}
+
+const FACE_EPS: f32 = 1e-2;
 
 const splat = sky.splat;
 
@@ -598,6 +612,8 @@ pub const Light = struct {
     seen_sight: [grid.CELLS]f32,
     soft_memory: [grid.CELLS]f32,
     blur: [grid.CELLS]f32,
+    /// `sight` but for what blocks it, as `Torch.open` is, so the carried light passes through no wall.
+    carry_open: [grid.CELLS]f32,
     clear: [grid.CELLS]bool,
     clear_row: [grid.CELLS]bool,
     torch: [grid.MAX_TORCHES]Torch,
@@ -626,6 +642,7 @@ pub const Light = struct {
         l.gpu = .{};
         @memset(&l.sight, 0);
         @memset(&l.memory, 0);
+        @memset(&l.scratch.tile, .floor);
         @memset(&l.map, rl.Color.black);
         l.baked = .{ 0, MAP_H };
         l.soften();
@@ -643,8 +660,8 @@ pub const Light = struct {
             var box = grid.Cells.around(t.floor(), REACH);
             while (box.next()) |p| {
                 const k = t.texel(p);
-                t.reach[k] = if (grid.Level.inside(p) and pool[grid.Level.idx(p)]) 1 else 0;
-                t.open[k] = if (lv.at(p).blind()) 0 else t.reach[k];
+                t.reach[k] = if (grid.cellOr(bool, &pool, p, false)) 1 else 0;
+                t.open[k] = opened(t.reach[k], lv.at(p).blind());
             }
             self.torch[self.torch_n] = t;
             self.torch_n += 1;
@@ -689,6 +706,7 @@ pub const Light = struct {
     /// Sight blurs over seen ground only, so a cell never seen does not dim the ground in sight round it.
     fn soften(self: *Light) void {
         for (&self.seen_sight, &self.sight, &self.memory) |*w, s, m| w.* = s * m;
+        for (&self.carry_open, &self.sight, &self.scratch.tile) |*o, s, t| o.* = opened(s, t.blind());
         blur121(&self.seen_sight, &self.blur, &self.soft_sight);
         blur121(&self.memory, &self.blur, &self.soft_memory);
         for (&self.soft_sight, &self.soft_memory) |*s, m| s.* = if (m > 0) @min(1, s.* / m) else 0;
@@ -756,22 +774,25 @@ pub const Light = struct {
         return out[0..n];
     }
 
-    /// Cells across the ground from the carried light, and how far of that is southward.
-    fn fromCarrier(self: *const Light, x: f32, y: f32) ?struct { flat: f32, dy: f32 } {
+    /// Cells across the ground from the carried light, how far of that is southward, and how much of it reaches there, fallen off and occluded.
+    fn carryToward(self: *const Light, x: f32, y: f32) ?struct { at: [2]f32, flat: f32, dy: f32, k: f32 } {
         const c = self.carrier orelse return null;
         const dx = c[0] - x;
         const dy = c[1] - y;
-        return .{ .flat = mathx.len(dx, dy), .dy = dy };
+        const flat = mathx.len(dx, dy);
+        if (flat >= CARRY_R or self.carryShare() <= 0) return null;
+        const reach = occluded(&self.sight, &self.carry_open, grid.W, grid.H, x - 0.5, y - 0.5);
+        return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat) * self.carryShare() * reach };
     }
 
     fn carried(self: *const Light, s: Spot) f32 {
-        const f = self.fromCarrier(s.x, s.y) orelse return 0;
+        const f = self.carryToward(s.x, s.y) orelse return 0;
         const facing = switch (s.surface) {
             .floor => 1,
-            .face => wrapped(f.dy / @max(f.flat, 1e-2), CARRY_FACE_WRAP),
+            .face => wrapped(faceCos(f.dy, f.flat), CARRY_FACE_WRAP),
             .ceiling => CARRY_CEILING,
         };
-        return carryFade(f.flat) * facing * self.carryShare();
+        return f.k * facing;
     }
 
     fn countCasters(self: *Light, lv: *const grid.Level) void {
@@ -825,7 +846,7 @@ pub const Light = struct {
     pub fn at(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32) Rgb {
         const c = mathx.cellOf(q);
         const fade = self.fadeOf(c);
-        const sun: ?Sun = if (self.sky) |k| .{ .ray = SunRay.of(k), .cloud = cloudIn(self.cloudCorners(c), c, q) } else null;
+        const sun: ?Sun = if (self.sky) |k| .{ .ray = SunRay.of(k), .cloud = self.cloudAt(q) } else null;
         return self.shade(lv, torches, q, &fade, sun);
     }
 
@@ -866,6 +887,11 @@ pub const Light = struct {
             c.x = @divFloor(t0.x, SUB);
             while (c.x * SUB < t1.x) : (c.x += 1) self.bakeCell(lv, torches, c, t0, t1, ray);
         }
+    }
+
+    fn cloudAt(self: *const Light, q: [2]f32) f32 {
+        const c = mathx.cellOf(q);
+        return cloudIn(self.cloudCorners(c), c, q);
     }
 
     /// A cloud's shadow is cells across, so it is read at a cell's corners and eased between them.
@@ -911,13 +937,12 @@ pub const Light = struct {
         var s = Shine{ .sight = lit };
         const night: Rgb = if (self.sky) |k| self.sunOnBody(&s, k, centre, lit) else splat(1);
         s.ambient = remembered(self.base() * night, v.sight, v.memory);
-        if (self.fromCarrier(centre[0], centre[1])) |f| {
-            const c = self.carrier.?;
-            const k = carryFade(f.flat) * lit * self.carryShare();
+        if (self.carryToward(centre[0], centre[1])) |f| {
+            const k = f.k * lit;
             if (carrier) {
                 s.ambient += CARRY * splat(k) * night;
             } else if (k > FAINT) {
-                s.add(.{ .drawn = c, .ground = c, .colour = CARRY * splat(k), .casts = false });
+                s.add(.{ .drawn = f.at, .ground = f.at, .colour = CARRY * splat(k), .casts = false });
             }
         }
         for (self.torch[0..self.torch_n]) |*t| {
@@ -936,7 +961,7 @@ pub const Light = struct {
         const ray = SunRay.of(k);
         const toward = ray.u;
         const sun = self.sunAt(&self.scratch, ray, centre[0], centre[1], BODY_Z);
-        const cloud = clouded(centre[0], centre[1], self.t.at());
+        const cloud = self.cloudAt(centre);
         const on = reaching(sun, cloud);
         if (lit > 0) s.add(.{
             .drawn = .{ centre[0] + toward[0] * SUN_LAMP_D, centre[1] + toward[1] * SUN_LAMP_D },
@@ -1910,6 +1935,31 @@ test "the carried light fades across what it lets the archer see and leaves that
     std.debug.print(", a cell past {d:.3}, memory {d:.3}\n", .{ past, lum(MEMORY) });
     try std.testing.expect(last > lum(MEMORY));
     try std.testing.expectApproxEqAbs(lum(MEMORY), past, 1e-4);
+}
+
+test "the carried light reaches no remembered floor behind a wall" {
+    var lv: grid.Level = undefined;
+    testRoom(&lv, &.{});
+    lv.lightless();
+    lv.seen = @splat(true);
+    const at = P{ .x = 30, .y = TORCH_AT.y + 1 };
+    lume.see(&lv, at, actor.row(.archer).sight, 0, &.{.{ .at = at, .reach = actor.row(.archer).light }});
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const wy: f32 = @floatFromInt(TORCH_AT.y);
+    const spots = [_][2]f32{ .{ 30.5, wy - EDGE_EPS }, .{ 31.5, wy - 0.5 } };
+    var dark: [spots.len]f32 = undefined;
+    for (spots, &dark) |q, *d| d.* = lum(l.at(&lv, &.{}, q));
+    l.carrier = mathx.centre(at);
+    std.debug.print("carried light added behind a wall:", .{});
+    for (spots, dark) |q, d| {
+        const v = lum(l.at(&lv, &.{}, q)) - d;
+        std.debug.print(" {d:.4}", .{v});
+        try std.testing.expectApproxEqAbs(@as(f32, 0), v, 1e-5);
+    }
+    const front = lum(l.at(&lv, &.{}, .{ 30.5, wy + 1 + EDGE_EPS }));
+    std.debug.print(", at its front {d:.4}\n", .{front - lum(MEMORY)});
+    try std.testing.expect(front > lum(MEMORY) + 0.05);
 }
 
 test "a torch on a wall never seen has no flame to draw, though the floor below it is in sight" {

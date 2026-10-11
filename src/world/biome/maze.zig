@@ -59,8 +59,13 @@ pub fn palette(p: Params) carve.Palette {
     };
 }
 
-const COLS_MAX: usize = @intCast(@divTrunc(grid.W - 2, SIZE_MIN));
-const ROWS_MAX: usize = @intCast(@divTrunc(grid.H - 2, SIZE_MIN));
+const COLS_MAX: usize = slotsFor(SIZE_MIN).x;
+const ROWS_MAX: usize = slotsFor(SIZE_MIN).y;
+
+/// Rooms of side `size` across and down inside the rim.
+fn slotsFor(size: i32) struct { x: usize, y: usize } {
+    return .{ .x = @intCast(@divTrunc(grid.W - 2, size)), .y = @intCast(@divTrunc(grid.H - 2, size)) };
+}
 
 const Plan = struct {
     cols: usize,
@@ -101,8 +106,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     carve.fill(lv, pal.solid);
     const size: i32 = p.size;
     var pl = Plan{
-        .cols = @intCast(@divTrunc(grid.W - 2, size)),
-        .rows = @intCast(@divTrunc(grid.H - 2, size)),
+        .cols = slotsFor(size).x,
+        .rows = slotsFor(size).y,
         .size = size,
         .origin = undefined,
     };
@@ -114,7 +119,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     var tries: usize = 0;
     while (n < p.rooms and tries < TRIES) : (tries += 1) {
         const from = placed[rng.below(@intCast(n))];
-        const side = SIDES[rng.below(4)];
+        const side = SIDES[rng.below(SIDES.len)];
         const cr = Plan.place(from).add(side.d.delta());
         const k = pl.slot(cr) orelse continue;
         if (pl.mask[k] != null) continue;

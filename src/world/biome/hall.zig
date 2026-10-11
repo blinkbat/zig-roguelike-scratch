@@ -39,7 +39,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const floor = grid.Box.inMap(p.margin);
     const lo = floor.lo;
     const hi = floor.hi;
-    carve.box(lv, .{ .lo = lo, .hi = hi }, pal.open);
+    carve.box(lv, floor, pal.open);
     switch (p.style) {
         .bare => {},
         .pillars => {
@@ -60,7 +60,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
             }
         },
         .grove => {
-            var cells = grid.Cells.of(lo, .{ .x = hi.x, .y = hi.y - @divTrunc(hi.y - lo.y, GROVE_CLEAR_OF) });
+            var cells = grid.Cells.of(lo, .{ .x = hi.x, .y = hi.y - @divTrunc(floor.height(), GROVE_CLEAR_OF) });
             while (cells.next()) |q| {
                 if (rng.percent(GROVE_FILL)) lv.set(q, .shrub);
             }

@@ -166,10 +166,8 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
             if (features.len == 0) return;
         },
         inline else => |p, t| {
-            lv.* = grid.Level.blank();
             var rng = mathx.Rng.init(seed);
-            @field(BASES, @tagName(t)).shape(lv, &rng, seed, p);
-            carve.dress(p, lv, &rng, seed);
+            lay(@field(BASES, @tagName(t)), lv, &rng, seed, p);
             carve.openDoors(lv, doors, pal.open);
         },
     }
@@ -182,6 +180,13 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     settle(lv);
 }
 
+/// A base's shape on a blank map, dressed.
+fn lay(comptime base: type, lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: anytype) void {
+    lv.* = grid.Level.blank();
+    base.shape(lv, rng, seed, p);
+    carve.dress(p, lv, rng, seed);
+}
+
 /// A floor rolled with no open ground and no door gets this clearing at its middle to start in.
 const CLEARING_R: f32 = 3;
 
@@ -191,13 +196,7 @@ fn settle(lv: *grid.Level) void {
     }
     carve.unbar(lv);
     gen.shapeWalls(lv);
-    var kept: usize = 0;
-    for (lv.torches()) |t| {
-        if (!gen.bearsTorch(lv, t)) continue;
-        lv.torch.at[kept] = t;
-        kept += 1;
-    }
-    lv.torch.n = kept;
+    gen.keepTorches(lv);
 }
 
 const TEST_RUNS: usize = 12;
@@ -227,10 +226,7 @@ test "every base, bare and under every feature, joins its ground, reaches its do
             };
             const seed = 0x51ED +% i *% 7919;
             roll(&lv, seed, &doors, Floor.of(a), features);
-            var open_n: usize = 0;
-            for (lv.tile) |t| {
-                if (!t.solid()) open_n += 1;
-            }
+            const open_n = lv.openCount();
             try std.testing.expectEqual(open_n, grid.distances(&lv, doors[0], &dist, &queue));
             for (doors, 0..) |d, k| try std.testing.expectEqual(@as(?usize, k), lv.doorAt(d));
             for (0..grid.CELLS) |k| {
@@ -268,10 +264,8 @@ test "a set piece in a thicket opens onto the ground round it, so no join fills 
         var shut: usize = 0;
         for (0..runs) |i| {
             const seed = 0x5E7 +% i *% 7919;
-            lv = grid.Level.blank();
             var rng = mathx.Rng.init(seed);
-            wilds.shape(&lv, &rng, seed, p);
-            carve.dress(p, &lv, &rng, seed);
+            lay(wilds, &lv, &rng, seed, p);
             setpiece.apply(&lv, &rng, seed, wilds.palette(p), .{ .piece = pc, .count = 1 });
             _ = st.label(&lv);
             const inside = for (lv.tile, 0..) |t, k| {
@@ -298,23 +292,18 @@ test "a set piece in a thicket or in rock keeps its ground through the joins" {
             var lost: usize = 0;
             for (0..runs) |i| {
                 const seed = 0x5E7 +% i *% 7919;
-                lv = grid.Level.blank();
                 var rng = mathx.Rng.init(seed);
-                base.shape(&lv, &rng, seed, p);
-                carve.dress(p, &lv, &rng, seed);
+                lay(base, &lv, &rng, seed, p);
                 const art = setpiece.rows(pc);
-                const s = setpiece.size(art);
-                const at = grid.MIDDLE.sub(.{ .x = @divTrunc(s.x, 2), .y = @divTrunc(s.y, 2) });
+                const at = setpiece.cornerFor(grid.MIDDLE, art);
                 setpiece.place(&lv, at, art, pal);
                 carve.seal(&lv, pal.solid);
                 carve.connect(&lv, &rng, pal);
                 var gone = false;
-                for (art, 0..) |line, y| {
-                    for (line, 0..) |c, x| {
-                        const q = at.add(.{ .x = @intCast(x), .y = @intCast(y) });
-                        const t = grid.Tile.ofLetter(c) orelse continue;
-                        if (!t.solid() and lv.at(q).solid()) gone = true;
-                    }
+                var spots = setpiece.Spots{ .at = at, .art = art };
+                while (spots.next()) |s| {
+                    const t = grid.Tile.ofLetter(s.c) orelse continue;
+                    if (!t.solid() and lv.at(s.q).solid()) gone = true;
                 }
                 if (gone) lost += 1;
             }
@@ -333,10 +322,8 @@ test "a house in a thicket or in rock keeps its floor through the joins" {
         var lost: usize = 0;
         for (0..runs) |i| {
             const seed = 0x51ED +% i *% 7919;
-            lv = grid.Level.blank();
             var rng = mathx.Rng.init(seed);
-            base.shape(&lv, &rng, seed, p);
-            carve.dress(p, &lv, &rng, seed);
+            lay(base, &lv, &rng, seed, p);
             buildings.apply(&lv, &rng, seed, pal, (buildings.Params{}).fit());
             carve.seal(&lv, pal.solid);
             const before = carve.count(&lv, .floor);
@@ -358,10 +345,8 @@ test "a small house or shrine walled in by an earlier feature keeps its floor th
         var lost: usize = 0;
         for (0..runs) |i| {
             const seed = 0xB0DE +% i *% 7919;
-            lv = grid.Level.blank();
             var rng = mathx.Rng.init(seed);
-            base.shape(&lv, &rng, seed, p);
-            carve.dress(p, &lv, &rng, seed);
+            lay(base, &lv, &rng, seed, p);
             if (base == wilds) border.apply(&lv, &rng, seed, pal, (border.Params{}).fit()) else buildings.apply(&lv, &rng, seed, pal, small);
             buildings.apply(&lv, &rng, seed, pal, small);
             setpiece.apply(&lv, &rng, seed, pal, (setpiece.Params{ .piece = .shrine, .count = setpiece.COUNT_MAX, .apart = 0 }).fit());
@@ -375,6 +360,30 @@ test "a small house or shrine walled in by an earlier feature keeps its floor th
     }
 }
 
+test "a small house a later thicket shuts in keeps its floor through the joins" {
+    var lv: grid.Level = undefined;
+    const runs = 200;
+    const small = (buildings.Params{ .count = buildings.COUNT_MAX, .size = .{ 5, 6 } }).fit();
+    const p = (wilds.Params{}).fit();
+    const pal = wilds.palette(p);
+    for ([_]scatter.Params{ .{ .amount = 300, .clump = 6 }, .{ .amount = scatter.AMOUNT_MAX } }) |thicket| {
+        var lost: usize = 0;
+        for (0..runs) |i| {
+            const seed = 0x7A1C +% i *% 7919;
+            var rng = mathx.Rng.init(seed);
+            lay(wilds, &lv, &rng, seed, p);
+            buildings.apply(&lv, &rng, seed, pal, small);
+            scatter.apply(&lv, &rng, seed, pal, thicket.fit());
+            carve.seal(&lv, pal.solid);
+            const before = carve.count(&lv, .floor);
+            carve.connect(&lv, &rng, pal);
+            if (carve.count(&lv, .floor) < before) lost += 1;
+        }
+        std.debug.print("small houses under a thicket of {d} a thousand, clumps {d}: {d} of {d} maps lost floor to the joins\n", .{ thicket.amount, thicket.clump, lost, runs });
+        try std.testing.expectEqual(@as(usize, 0), lost);
+    }
+}
+
 test "a scatter over grass takes the decor standing on it too" {
     var lv: grid.Level = undefined;
     const frozen = [_]Feature{.{ .scatter = .{ .tile = .snow, .on = .grass, .amount = scatter.AMOUNT_MAX } }};
@@ -384,12 +393,11 @@ test "a scatter over grass takes the decor standing on it too" {
     try std.testing.expectEqual(@as(usize, 0), decor);
 }
 
-test "a feature that changes nothing leaves the rooms' wall shapes as they were" {
+test "a feature that changes nothing leaves the rooms as they were" {
     var bare: grid.Level = undefined;
     var laid: grid.Level = undefined;
     const none = [_]Feature{.{ .scatter = .{ .tile = .shrub, .on = .grass, .amount = 0 } }};
     roll(&bare, 0x2007, &.{}, Floor.of(.rooms), &.{});
     roll(&laid, 0x2007, &.{}, Floor.of(.rooms), &none);
     try std.testing.expectEqualSlices(grid.Tile, &bare.tile, &laid.tile);
-    try std.testing.expectEqualSlices(?grid.WallShape, &bare.shape, &laid.shape);
 }

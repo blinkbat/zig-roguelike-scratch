@@ -114,6 +114,11 @@ pub const Tile = enum(u8) {
 /// Floor with a barrel on it.
 pub const BARREL_LETTER = '0';
 
+/// The tile under a letter of `Tile.letter`'s legend or `BARREL_LETTER`.
+pub fn groundOf(c: u8) ?Tile {
+    return if (c == BARREL_LETTER) .floor else Tile.ofLetter(c);
+}
+
 comptime {
     @setEvalBranchQuota(100_000);
     std.debug.assert(Tile.ofLetter(BARREL_LETTER) == null);
@@ -290,6 +295,12 @@ pub const Level = struct {
         return null;
     }
 
+    pub fn openCount(self: *const Level) usize {
+        var n: usize = 0;
+        for (self.tile) |t| n += @intFromBool(!t.solid());
+        return n;
+    }
+
     pub fn onRim(p: P) bool {
         return !inset(p).eq(p);
     }
@@ -459,7 +470,11 @@ pub const Box = struct {
 
     /// `w` by `h` in the middle of the map.
     pub fn centred(w: i32, h: i32) Box {
-        return sized(.{ .x = @divTrunc(W - w, 2), .y = @divTrunc(H - h, 2) }, w, h);
+        return inMap(0).centredIn(w, h);
+    }
+
+    pub fn centredIn(outer: Box, w: i32, h: i32) Box {
+        return sized(outer.lo.add(.{ .x = @divTrunc(outer.width() - w, 2), .y = @divTrunc(outer.height() - h, 2) }), w, h);
     }
 
     /// x is drawn before y.

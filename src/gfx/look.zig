@@ -143,9 +143,14 @@ const WALLS_PNG = @embedFile("walls.png");
 
 /// Each cell of `walls.png`'s, read across its rows, is the shape with this mask; `tools/tile_art/wall_masks.lua` lists them in this order.
 const WALL_MASKS = [_]u8{ 0, 1, 2, 4, 8, 3, 19, 5, 6, 38, 9, 137, 10, 12, 76, 7, 23, 39, 55, 11, 27, 139, 155, 13, 77, 141, 205, 14, 46, 78, 110, 15, 31, 47, 63, 79, 95, 111, 127, 143, 159, 175, 191, 207, 223, 239, 255 };
-const WALL_COLS: usize = 8;
+const WALL_COLS: usize = @divExact(pngSize(WALLS_PNG).x, SPRITE_PX);
 
-/// Every joined shape's cell; a shape `WallShape.joined` would change has none.
+/// From the PNG's IHDR.
+fn pngSize(png: []const u8) mathx.P {
+    return .{ .x = std.mem.readInt(i32, png[16..20], .big), .y = std.mem.readInt(i32, png[20..24], .big) };
+}
+
+/// Every shape's cell, an unjoined one its joined shape's.
 const WALL_CELL = blk: {
     @setEvalBranchQuota(10_000);
     var at = [_]u8{0xFF} ** 256;
@@ -153,8 +158,12 @@ const WALL_CELL = blk: {
         std.debug.assert(at[m] == 0xFF and @as(grid.WallShape, @bitCast(m)).joined().mask() == m);
         at[m] = i;
     }
-    for (0..256) |m| std.debug.assert(at[@as(grid.WallShape, @bitCast(@as(u8, m))).joined().mask()] != 0xFF);
-    break :blk at;
+    var all: [256]u8 = undefined;
+    for (&all, 0..) |*cell, m| {
+        cell.* = at[@as(grid.WallShape, @bitCast(@as(u8, m))).joined().mask()];
+        std.debug.assert(cell.* != 0xFF);
+    }
+    break :blk all;
 };
 
 /// raylib's `imageFromImage` copies without clamping, so a cell off the sheet would read past it.
@@ -345,6 +354,11 @@ pub fn tileBg(t: grid.Tile) ?rl.Color {
     return TILES.get(t).bg;
 }
 
+/// What draws under `t`: its own ground, or floor under an upright tile with no ground or background to hide its gaps.
+pub fn under(t: grid.Tile) ?grid.Tile {
+    return t.ground() orelse if (t.upright() and tileBg(t) == null) .floor else null;
+}
+
 const TileLook = struct { sym: [:0]const u8, ch: u8, fg: rl.Color, bg: ?rl.Color, mini: rl.Color, mini_dim: rl.Color };
 
 const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
@@ -472,6 +486,7 @@ pub const AIM_PATH = fade(GOLD, 0.28);
 pub const COLD = rgb(0x8cddf5);
 pub const AIM_COLD = fade(COLD, 0.24);
 pub const RETICLE = rgb(0xe8c25a);
+pub const RETICLE_BLOCKED = SHADE;
 pub const LEAN_OPEN = GOLD;
 pub const LEAN_FOE = FOE;
 pub const LEAN_BLOCKED = SHADE;
@@ -556,8 +571,12 @@ pub const SKILL_PX: i32 = 40;
 pub fn drawSkill(sprites: *const Sprites, a: skillbar.Act, x: i32, y: i32, alpha: f32) void {
     const ink = fade(rl.Color.white, alpha);
     const t = sprites.skills orelse return inkSkill(a, x, y, ink);
-    const i: i32 = @intFromEnum(a);
-    rl.drawTexturePro(t, rect(i * SKILL_PX, 0, SKILL_PX, SKILL_PX), rect(x, y, SKILL_PX, SKILL_PX), .{ .x = 0, .y = 0 }, 0, ink);
+    rl.drawTexturePro(t, rect(skillX(a), 0, SKILL_PX, SKILL_PX), rect(x, y, SKILL_PX, SKILL_PX), .{ .x = 0, .y = 0 }, 0, ink);
+}
+
+/// Its cell's left edge in `Sprites.skills`.
+fn skillX(a: skillbar.Act) i32 {
+    return @as(i32, @intFromEnum(a)) * SKILL_PX;
 }
 
 /// Needs a live GL context.
@@ -566,15 +585,18 @@ fn skillIcons() ?rl.Texture2D {
     defer rl.unloadRenderTexture(target);
     rl.beginTextureMode(target);
     rl.clearBackground(rl.Color.blank);
-    for (skillbar.ACTS) |a| inkSkill(a, @as(i32, @intFromEnum(a)) * SKILL_PX, 0, rl.Color.white);
+    for (skillbar.ACTS) |a| inkSkill(a, skillX(a), 0, rl.Color.white);
     rl.endTextureMode();
     var img = rl.loadImageFromTexture(target.texture) catch return null;
     rl.imageFlipVertical(&img);
     return Sprites.toTexture(img);
 }
 
+/// The grid `skillLines` is drawn on.
+const SKILL_GRID: f32 = 32;
+
 fn inkSkill(a: skillbar.Act, x: i32, y: i32, ink: rl.Color) void {
-    const scale = @as(f32, @floatFromInt(SKILL_PX)) / 32;
+    const scale = @as(f32, @floatFromInt(SKILL_PX)) / SKILL_GRID;
     const ox: f32 = @floatFromInt(x);
     const oy: f32 = @floatFromInt(y);
     for (skillLines(a)) |line| {
@@ -635,13 +657,39 @@ test "every glyph is printable ascii" {
 }
 
 test "every wall shape's cell lies inside walls.png, and one past its end is refused" {
-    const w = std.mem.readInt(i32, WALLS_PNG[16..20], .big);
-    const h = std.mem.readInt(i32, WALLS_PNG[20..24], .big);
+    const w = pngSize(WALLS_PNG).x;
+    const h = pngSize(WALLS_PNG).y;
     const sheet = rl.genImageColor(w, h, rl.Color.white);
     defer rl.unloadImage(sheet);
     for (0..WALL_MASKS.len) |i| rl.unloadImage(wallCell(sheet, i) orelse return error.CellOffSheet);
     std.debug.print("walls.png {d}x{d}: {d} shapes cut from it\n", .{ w, h, WALL_MASKS.len });
     try std.testing.expect(wallCell(sheet, @intCast(@divTrunc(w, SPRITE_PX) * @divTrunc(h, SPRITE_PX))) == null);
+}
+
+test "floor shows through a wall's gaps; a tile with its own ground or background keeps it" {
+    try std.testing.expectEqual(@as(?grid.Tile, .floor), under(.wall));
+    try std.testing.expectEqual(@as(?grid.Tile, .grass), under(.shrub));
+    try std.testing.expectEqual(@as(?grid.Tile, null), under(.rock));
+    try std.testing.expectEqual(@as(?grid.Tile, null), under(.floor));
+    try std.testing.expectEqual(@as(?grid.Tile, null), under(.water));
+}
+
+test "the wall sheet's masks and face height are the ones its export script paints" {
+    const alloc = std.testing.allocator;
+    const masks = try std.fs.cwd().readFileAlloc(alloc, "tools/tile_art/wall_masks.lua", 4096);
+    defer alloc.free(masks);
+    const list = masks[(std.mem.indexOf(u8, masks, "return {") orelse return error.NoList) + "return {".len ..];
+    var nums = std.mem.tokenizeAny(u8, list[0 .. std.mem.indexOfScalar(u8, list, '}') orelse return error.NoList], ", ");
+    var n: usize = 0;
+    while (nums.next()) |m| : (n += 1) {
+        try std.testing.expect(n < WALL_MASKS.len);
+        try std.testing.expectEqual(WALL_MASKS[n], try std.fmt.parseInt(u8, m, 10));
+    }
+    try std.testing.expectEqual(WALL_MASKS.len, n);
+    const script = try std.fs.cwd().readFileAlloc(alloc, "tools/tile_art/export_walls.lua", 1 << 16);
+    defer alloc.free(script);
+    const face = script[(std.mem.indexOf(u8, script, "local FACE=") orelse return error.NoFace) + "local FACE=".len ..];
+    try std.testing.expectEqual(WALL_FACE_PX, try std.fmt.parseInt(i32, face[0 .. std.mem.indexOfAny(u8, face, "\r\n") orelse return error.NoFace], 10));
 }
 
 test "an arrow's glyph follows its slope" {

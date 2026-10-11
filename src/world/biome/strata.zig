@@ -83,7 +83,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, pm: Params) void {
         const inner = grid.Level.edgeDist(p) >= BORDER;
         lv.tile[i] = if (inner and depth[i] > OPEN_OVER) pal.open else pal.solid;
     }
-    if (carve.count(lv, pal.open) == 0) lv.set(grid.MIDDLE, pal.open);
 }
 
 fn shuffle(rng: *mathx.Rng, xs: []usize) void {

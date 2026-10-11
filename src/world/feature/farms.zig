@@ -44,7 +44,7 @@ test "fields are fenced, in furrows of crop" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0xFA2);
     carve.field(&lv, carve.Palette.WILD);
-    apply(&lv, &rng, 0, .{ .open = .grass, .solid = .shrub, .path = .dirt }, .{});
+    apply(&lv, &rng, 0, carve.Palette.TRAILED, .{});
     std.debug.print("5 fields: {d} fence, {d} crop, {d} furrow\n", .{ carve.count(&lv, .fence), carve.count(&lv, .crop), carve.count(&lv, .dirt) });
     try std.testing.expect(carve.count(&lv, .crop) > 50 and carve.count(&lv, .fence) > 50);
 }

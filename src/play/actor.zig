@@ -47,6 +47,8 @@ const FAMILY = blk: {
     break :blk t;
 };
 
+pub const HERO: Kind = .archer;
+
 pub const FOES = blk: {
     var ks: []const Kind = &.{};
     for (std.enums.values(Kind)) |k| {

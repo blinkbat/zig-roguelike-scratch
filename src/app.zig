@@ -50,6 +50,12 @@ const DebugRow = enum {
             .unkillable => "Unkillable",
         };
     }
+
+    fn note(r: DebugRow) [:0]const u8 {
+        return switch (r) {
+            .unkillable => comptime std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ DebugRow.unkillable.label(), game.UNKILLABLE_HP }),
+        };
+    }
 };
 const DEBUG_ROWS = std.enums.values(DebugRow);
 const DELETE = input.Button.y;
@@ -71,7 +77,7 @@ const App = struct {
     loads: menu.Menu = .{},
     options: menu.Menu = .{},
     debugs: menu.Menu = .{},
-    class: hero.Class = .archer,
+    class: hero.Class = hero.DEFAULT,
     entry: naming.Entry = .{},
     list: [save.SLOTS]save.Slot = @splat(.empty),
     armed: ?usize = null,
@@ -162,7 +168,7 @@ const App = struct {
     fn playTest(app: *App, from: atlas.Start) void {
         game.beginWorldAt(app.g, app.ed.?.world, from, game.freshSeed());
         app.leaveRun();
-        app.play(.editor, hero.Class.archer.unnamed());
+        app.play(.editor, hero.DEFAULT.unnamed());
     }
 
     fn play(app: *App, back: game.Back, fresh: ?hero.Name) void {
@@ -373,7 +379,7 @@ const App = struct {
                     .unkillable => menu.toggle(DebugRow.unkillable.label(), g.unkillable),
                 };
                 const picked = app.debugs.step(&g.st, rows.len);
-                menu.draw(g.face, g.screen, comptime menu.caps(OptionRow.debug.label()), &rows, app.debugs.at, comptime DebugRow.unkillable.label() ++ " keeps the hero on 1 hp whatever strikes it", menu.BACK_LABEL);
+                menu.draw(g.face, g.screen, comptime menu.caps(OptionRow.debug.label()), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note(), menu.BACK_LABEL);
                 if (back) {
                     app.page = .options;
                 } else if (picked) |i| switch (DEBUG_ROWS[i]) {

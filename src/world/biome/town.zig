@@ -53,13 +53,13 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const streets = grid.Box.inMap(MARGIN);
     const lo = streets.lo;
     const hi = streets.hi;
-    carve.box(lv, .{ .lo = lo, .hi = hi }, street);
+    carve.box(lv, streets, street);
     const step: i32 = @as(i32, p.block) + p.street;
     const s: i32 = p.street;
     const top = lo.y + s;
     var y = top;
     while (y + p.block <= hi.y - s) : (y += step) {
-        if (rng.percent(p.canals)) {
+        if (rng.percent(p.canals) and !(y == top and p.wall != .none)) {
             carve.box(lv, .{ .lo = .{ .x = lo.x, .y = y - s }, .hi = .{ .x = hi.x, .y = y } }, .water);
         }
     }
@@ -189,6 +189,29 @@ test "every town gate steps across its street, canal or not" {
     }
     std.debug.print("{d} towns all canals: {d} cells of gate and street a step cannot cross\n", .{ TOWNS, wet });
     try std.testing.expectEqual(@as(usize, 0), wet);
+}
+
+test "every gate of a walled town leads to its plaza, its top street a canal or not" {
+    const TOWNS = 50;
+    var lv = grid.Level.blank();
+    var st: carve.Stretches = .{};
+    var dead: usize = 0;
+    for (0..TOWNS) |i| {
+        var rng = mathx.Rng.init(i);
+        shape(&lv, &rng, 0, (Params{ .canals = 100, .street = @intCast(1 + i % STREET_MAX) }).fit());
+        for (gates()) |g| {
+            const side = P{ .x = g.in.delta().y, .y = g.in.delta().x };
+            var d: i32 = -2;
+            while (d <= 2) : (d += 1) lv.set(g.at.add(.{ .x = side.x * d, .y = side.y * d }), .wall);
+        }
+        _ = st.label(&lv);
+        const plaza = st.biggest();
+        for (gates()) |g| {
+            if (st.region[grid.Level.idx(g.at.add(g.in.delta()))] != plaza) dead += 1;
+        }
+    }
+    std.debug.print("{d} walled towns all canals: {d} gates leading nowhere\n", .{ TOWNS, dead });
+    try std.testing.expectEqual(@as(usize, 0), dead);
 }
 
 test "a town's houses each open onto its streets" {

@@ -73,7 +73,7 @@ fn fordOf(fill: grid.Tile, pal: carve.Palette) grid.Tile {
 
 fn cutOff(maps: usize, p: Params, least: u32) usize {
     var st: carve.Stretches = .{};
-    const pal = carve.Palette{ .open = .grass, .solid = .shrub, .path = .dirt };
+    const pal = carve.Palette.TRAILED;
     var cut: usize = 0;
     for (0..maps) |i| {
         var lv = grid.Level.blank();
@@ -124,7 +124,7 @@ test "a cliff band with a gap leaves the map whole, and a river's ford is shallo
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0xC11F);
     carve.field(&lv, carve.Palette.WILD);
-    const pal = carve.Palette{ .open = .grass, .solid = .shrub, .path = .dirt };
+    const pal = carve.Palette.TRAILED;
     apply(&lv, &rng, 0, pal, .{ .fill = .rock, .bank = .none, .course = .across, .fords = 1 });
     try std.testing.expect(carve.count(&lv, .rock) > grid.W);
     try std.testing.expect(carve.count(&lv, .dirt) > 0);

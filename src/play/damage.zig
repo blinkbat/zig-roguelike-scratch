@@ -18,6 +18,11 @@ pub const Damage = struct {
     pub fn reaches(self: Damage, resists: Resists, e: Element) bool {
         return resisted(self.elements.get(e), resists.get(e)) > 0;
     }
+
+    /// Leaves a body on `hp` alive with some of its `e` got through, so `e`'s status may take.
+    pub fn afflicts(self: Damage, resists: Resists, e: Element, hp: i32) bool {
+        return self.total(resists) < hp and self.reaches(resists, e);
+    }
 };
 
 /// Harm a turn for `TURNS` turns from the turn after it starts; started again, it refreshes without stacking or delaying a due tick.

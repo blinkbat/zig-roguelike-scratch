@@ -6,7 +6,7 @@ const P = mathx.P;
 
 /// Of its 3x3, at least this many solid turns a cell solid on a smoothing pass, the cave rule's.
 const CROWD: usize = 5;
-/// A pocket of open ground this small, holding no door and by no liquid, is filled; a bigger one gets a trail.
+/// A pocket of open ground this small, unless `keptIn` keeps it, is filled; a bigger one gets a trail.
 const POCKET: usize = 16;
 const JOIN_PASSES: usize = 160;
 const NONE = std.math.maxInt(u16);
@@ -207,6 +207,7 @@ pub const Palette = struct {
     pub const BUILT = Palette{ .open = .floor, .solid = .wall, .path = .floor };
     pub const CAVE = Palette{ .open = .dirt, .solid = .rock, .path = .dirt };
     pub const WILD = Palette{ .open = .grass, .solid = .shrub, .path = .grass };
+    pub const TRAILED = Palette{ .open = .grass, .solid = .shrub, .path = .dirt };
 
     /// Its small doorless pockets filled with its solid.
     pub fn pocketed(p: Palette) Palette {
@@ -238,7 +239,7 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette) void {
         const n = st.label(lv);
         if (n <= 1) return;
         const main = st.biggest();
-        const kept = if (pal.pocket != null) keptIn(lv, region) else Regions.initEmpty();
+        const kept = if (pal.pocket != null) keptIn(lv, region, pal) else Regions.initEmpty();
         var first: [grid.CELLS]u32 = undefined;
         @memset(first[0..n], NO_CELL);
         for (0..grid.CELLS) |i| {
@@ -345,12 +346,15 @@ pub fn unbar(lv: *grid.Level) void {
     }
 }
 
-/// The stretches no pocket fill takes: one holding a door, or one by a liquid, as an island is.
-fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16) Regions {
+/// The stretches no pocket fill takes: one holding a door, one by a liquid, as an island is, or one holding ground a feature laid, as a house is.
+fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette) Regions {
+    const base = Over{ .tile = pal.open, .decked = true };
     var out = Regions.initEmpty();
     for (0..grid.CELLS) |i| {
         if (region[i] == NONE) continue;
-        if (lv.door[i] != grid.NO_DOOR or byLiquid(lv, grid.Level.of(i))) out.set(region[i]);
+        const t = lv.tile[i];
+        const laid = !base.has(t) and t != pal.path;
+        if (laid or lv.door[i] != grid.NO_DOOR or byLiquid(lv, grid.Level.of(i))) out.set(region[i]);
     }
     return out;
 }
@@ -683,7 +687,7 @@ test "a river runs edge to edge and parts the ground, and a join bridges it" {
     f.fill(&lv, 3, .water);
     var st: Stretches = .{};
     const parted = st.label(&lv);
-    connect(&lv, &rng, .{ .open = .grass, .solid = .shrub, .path = .dirt });
+    connect(&lv, &rng, Palette.TRAILED);
     const joined = st.label(&lv);
     std.debug.print("a river: {d} water cells, the ground in {d} parts, {d} after joining by {d} bridge cells\n", .{ count(&lv, .water), parted, joined, count(&lv, .bridge) });
     try std.testing.expect(parted >= 2);

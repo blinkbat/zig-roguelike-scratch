@@ -53,7 +53,7 @@ pub const DPAD = blk: {
 /// One eighth clockwise: up is up-right, left is up-left.
 pub fn leanOf(d: mathx.Dir) mathx.Dir {
     if (d.diagonal()) return d;
-    return @enumFromInt(@intFromEnum(d) + 1);
+    return d.turned(1);
 }
 
 pub const Button = enum {

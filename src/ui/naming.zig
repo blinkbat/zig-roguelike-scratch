@@ -15,6 +15,10 @@ const DONE_AT = for (LAST, 0..) |k, i| {
 const ROWS = LETTERS.len + 1;
 const COLS = LETTERS[0].len;
 
+comptime {
+    for (LETTERS) |row| std.debug.assert(row.len == COLS);
+}
+
 pub const RUB = input.Button.x;
 
 const FIELD: i32 = 36;

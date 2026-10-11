@@ -18,6 +18,8 @@ const ROWS_DY: i32 = 20;
 const NOTE_GAP: i32 = 30;
 const LEGEND_DY: i32 = 60;
 const MARK_GAP: i32 = 18;
+const MARK_L = ">";
+const MARK_R = "<";
 const CHROME_H: i32 = TITLE - TITLE_DY + ROWS_DY + NOTE_GAP * 2 + LEGEND_DY + NOTE * 2;
 pub const NOTE_MAX: usize = 160;
 pub const SEP = "   ";
@@ -89,7 +91,8 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const 
     const rows = all[win.from..][0..win.len];
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(rows.len)) * ROW_STEP, 2);
     mid(face, screen, title, top + TITLE_DY - TITLE, TITLE, look.TEXT);
-    const widest = screen.x - 2 * (MARK_GAP * 2 + face.width(">", ROW));
+    const mark_w = face.width(MARK_L, ROW);
+    const widest = screen.x - 2 * (MARK_GAP * 2 + mark_w);
     var fit_buf: [NOTE_MAX + 1]u8 = undefined;
     for (rows, win.from..) |whole, i| {
         const r = face.fit(&fit_buf, whole, ROW, widest, false);
@@ -99,8 +102,8 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const 
         const x = @divTrunc(screen.x - w, 2);
         face.text(r, x, y, ROW, if (on) look.RETICLE else look.DIM);
         if (on) {
-            face.text(">", x - MARK_GAP - face.width(">", ROW), y, ROW, look.RETICLE);
-            face.text("<", x + w + MARK_GAP, y, ROW, look.RETICLE);
+            face.text(MARK_L, x - MARK_GAP - mark_w, y, ROW, look.RETICLE);
+            face.text(MARK_R, x + w + MARK_GAP, y, ROW, look.RETICLE);
         }
     }
     var y = top + ROWS_DY + @as(i32, @intCast(rows.len)) * ROW_STEP + NOTE_GAP;

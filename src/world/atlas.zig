@@ -148,7 +148,7 @@ pub const Bespoke = struct {
     }
 
     pub fn bodies(self: *const Bespoke) usize {
-        var n = actor.most(.archer);
+        var n = actor.most(actor.HERO);
         for (self.foes()) |f| n += actor.most(f.kind);
         return n;
     }
@@ -173,27 +173,44 @@ pub const Bespoke = struct {
 
 pub const Plan = union(enum) { bespoke: Bespoke, procgen: Procgen };
 
+/// A node's name: printable ascii, `NAME_MAX` at most; an empty name is none.
+pub const Label = struct {
+    buf: [NAME_MAX]u8 = undefined,
+    n: usize = 0,
+
+    pub fn text(self: *const Label) []const u8 {
+        return self.buf[0..self.n];
+    }
+
+    /// Trimmed. Whether it changed; null when refused.
+    pub fn set(self: *Label, s: []const u8) ?bool {
+        const t = std.mem.trim(u8, s, " ");
+        if (t.len > NAME_MAX or !plain(t)) return null;
+        if (std.mem.eql(u8, t, self.text())) return false;
+        @memcpy(self.buf[0..t.len], t);
+        self.n = t.len;
+        return true;
+    }
+
+    pub fn valid(self: *const Label) bool {
+        return self.n <= NAME_MAX and plain(self.text());
+    }
+};
+
 pub const Node = struct {
     plan: Plan,
     door: [grid.MAX_DOORS]Door = undefined,
     door_n: usize = 0,
-    label: [NAME_MAX]u8 = undefined,
-    label_n: usize = 0,
+    label: Label = .{},
     /// Its box's top-left on the editor's graph.
     pos: P = .{ .x = 0, .y = 0 },
 
     pub fn name(self: *const Node) []const u8 {
-        return self.label[0..self.label_n];
+        return self.label.text();
     }
 
-    /// Printable ascii, trimmed, `NAME_MAX` at most; an empty name is none. Whether it changed; null when refused.
     pub fn rename(self: *Node, s: []const u8) ?bool {
-        const t = std.mem.trim(u8, s, " ");
-        if (t.len > NAME_MAX or !plain(t)) return null;
-        if (std.mem.eql(u8, t, self.name())) return false;
-        @memcpy(self.label[0..t.len], t);
-        self.label_n = t.len;
-        return true;
+        return self.label.set(s);
     }
 
     pub fn title(self: *const Node, n: usize, buf: *[TITLE_MAX]u8) []const u8 {
@@ -272,9 +289,8 @@ pub const Node = struct {
                 lv.tile = b.tile;
                 self.openDoors(lv);
                 gen.shapeWalls(lv);
-                for (b.torches()) |t| {
-                    if (self.torchFits(b, t)) lv.addTorch(t);
-                }
+                lv.torch = b.torch;
+                gen.keepTorches(lv);
                 for (0..grid.CELLS) |i| {
                     if (b.barrel[i] and self.barrelFits(b, grid.Level.of(i))) lv.barrel[i] = true;
                 }
@@ -429,7 +445,7 @@ pub const Atlas = struct {
                     for (b.foes()) |f| try w.print(says(.foe) ++ "{s} {d} {d}\n", .{ @tagName(f.kind), f.at.x, f.at.y });
                 },
             }
-            if (nd.label_n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
+            if (nd.label.n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
             try w.print(says(.at) ++ "{d} {d}\n", .{ nd.pos.x, nd.pos.y });
             for (nd.doors()) |d| {
                 try w.print(says(.door) ++ "{d} {d}", .{ d.at.x, d.at.y });
@@ -534,7 +550,7 @@ pub const Atlas = struct {
                     for (cells, 0..) |c, x| {
                         const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(row) });
                         b.barrel[i] = c == grid.BARREL_LETTER;
-                        b.tile[i] = if (c == grid.BARREL_LETTER) .floor else grid.Tile.ofLetter(c) orelse return error.BadLine;
+                        b.tile[i] = grid.groundOf(c) orelse return error.BadLine;
                     }
                     row += 1;
                 },
@@ -1062,10 +1078,7 @@ test "every world in the worlds folder parses, and each procgen node rolls its g
             if (!nd.unrolled()) continue;
             nd.stamp(&lv, 0x5EED +% n);
             const at = landing(&lv, if (a.start.node == n) a.start.at else grid.MIDDLE, &.{}) orelse return error.NoFloor;
-            var open: usize = 0;
-            for (lv.tile) |t| {
-                if (!t.solid()) open += 1;
-            }
+            const open = lv.openCount();
             const reached = grid.distances(&lv, at, &dist, &queue);
             if (reached != open) std.debug.print("{s} node {d}: {d} open, {d} reached from {d},{d}\n", .{ list.at(i), n, open, reached, at.x, at.y });
             try std.testing.expectEqual(open, reached);

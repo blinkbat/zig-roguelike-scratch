@@ -5,6 +5,7 @@ const mathx = @import("../core/mathx.zig");
 pub const HOURS: f32 = 24;
 pub const SUNRISE: f32 = 6;
 pub const SUNSET: f32 = 20;
+pub const NOON: f32 = 12;
 const PER_HOUR: u16 = 60;
 const MINUTES: u16 = @as(u16, @intFromFloat(HOURS)) * PER_HOUR;
 pub const TURN_MINUTES: u16 = 6;
@@ -71,7 +72,7 @@ test "a turn moves the clock on, a day is 240 turns, and it comes round to where
 
 test "the light to see by turns from day to night in a ramp, half at each horizon" {
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), daylight(SUNSET), 1e-4);
-    try std.testing.expectEqual(@as(f32, 1), daylight(12));
+    try std.testing.expectEqual(@as(f32, 1), daylight(NOON));
     try std.testing.expectEqual(@as(f32, 0), daylight(SUNSET + TWILIGHT));
     try std.testing.expectEqual(@as(f32, 0), daylight(SUNRISE - TWILIGHT));
     try std.testing.expect(daylight(SUNSET + 1) > 0);

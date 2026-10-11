@@ -182,6 +182,12 @@ pub const JUKE_S: f32 = 0.6;
 const ICE_MOTES: usize = 12;
 const TRAIL_MOTES: usize = 20;
 const DUST_MOTES: usize = 24;
+const EMBER_MOTES: usize = 18;
+const DRIP_MOTES: usize = 5;
+/// The marks a status draws on a body.
+const BLEED_DROPS = 4;
+const CHILL_FLAKES = 5;
+const BURN_FLAMES = 7;
 
 const Due = union(enum) {
     blow: Blow,
@@ -196,6 +202,18 @@ const Due = union(enum) {
             .settle => |s| s.slot,
             .frost => null,
         };
+    }
+
+    fn blowOf(d: Due) ?Blow {
+        return switch (d) {
+            .blow => |b| b,
+            .sting, .settle, .frost => null,
+        };
+    }
+
+    fn onBarrel(d: Due) bool {
+        const b = d.blowOf() orelse return false;
+        return b.slot == null;
     }
 
     fn after(d: Due) ?After {
@@ -250,14 +268,7 @@ pub const Fx = struct {
         if (wait <= 0 or self.due_n == DUE) return self.fire(what);
         self.due[self.due_n] = .{ .t = wait, .what = what };
         self.due_n += 1;
-        if (onBarrel(what)) self.barrels_due += 1;
-    }
-
-    fn onBarrel(what: Due) bool {
-        return switch (what) {
-            .blow => |b| b.slot == null,
-            .sting, .settle, .frost => false,
-        };
+        if (what.onBarrel()) self.barrels_due += 1;
     }
 
     fn fire(self: *Fx, what: Due) void {
@@ -308,10 +319,7 @@ pub const Fx = struct {
     pub fn breaking(self: *const Fx, p: mathx.P) bool {
         if (self.barrels_due == 0) return false;
         for (self.due[0..self.due_n]) |d| {
-            switch (d.what) {
-                .blow => |b| if (b.slot == null and mathx.cellOf(b.at).eq(p)) return true,
-                .sting, .settle, .frost => {},
-            }
+            if (d.what.onBarrel() and mathx.cellOf(d.what.blowOf().?.at).eq(p)) return true;
         }
         return false;
     }
@@ -320,10 +328,7 @@ pub const Fx = struct {
     pub fn goldDue(self: *const Fx) i32 {
         var n: i32 = 0;
         for (self.due[0..self.due_n]) |d| {
-            switch (d.what) {
-                .blow => |b| n += b.gold,
-                .sting, .settle, .frost => {},
-            }
+            if (d.what.blowOf()) |b| n += b.gold;
         }
         return n;
     }
@@ -347,7 +352,7 @@ pub const Fx = struct {
             const what = self.due[i].what;
             self.due_n -= 1;
             self.due[i] = self.due[self.due_n];
-            if (onBarrel(what)) self.barrels_due -= 1;
+            if (what.onBarrel()) self.barrels_due -= 1;
             self.fire(what);
         }
         var left = dt;
@@ -381,7 +386,7 @@ pub const Fx = struct {
     }
 
     fn embers(self: *Fx, at: [2]f32) void {
-        for (0..18) |_| {
+        for (0..EMBER_MOTES) |_| {
             const dir = heading(self.rng.unit() * mathx.TAU);
             const speed = 0.4 + self.rng.unit();
             self.emit(.{
@@ -397,7 +402,7 @@ pub const Fx = struct {
 
     fn drip(self: *Fx, at: [2]f32) void {
         const s = sprayOf(.blood);
-        for (0..5) |_| {
+        for (0..DRIP_MOTES) |_| {
             self.emit(.{
                 .p = .{ at[0] + (self.rng.unit() - 0.5) * 0.4, at[1] + (self.rng.unit() - 0.5) * 0.2, STRIKE_Z + self.rng.unit() * 0.2 },
                 .v = .{ (self.rng.unit() - 0.5) * 0.3, (self.rng.unit() - 0.5) * 0.3, 0 },
@@ -413,8 +418,8 @@ pub const Fx = struct {
 
     pub fn drawBleeding(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
         const t = self.seconds.at();
-        for (0..4) |i| {
-            const phase = @as(f32, @floatFromInt(i)) / 4;
+        for (0..BLEED_DROPS) |i| {
+            const phase = @as(f32, @floatFromInt(i)) / BLEED_DROPS;
             const age = @mod(t * 0.9 + phase + @as(f32, @floatFromInt(seed)) * 0.23, 1);
             const at = rl.Vector2{ .x = x + cell * (0.3 + phase * 0.4), .y = y + cell * (0.45 + age * 0.4) };
             const r = cell * (0.022 + age * 0.012);
@@ -441,8 +446,8 @@ pub const Fx = struct {
 
     pub fn drawChilled(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
         const t = self.seconds.at() + @as(f32, @floatFromInt(seed));
-        for (0..5) |i| {
-            const phase = @as(f32, @floatFromInt(i)) / 5;
+        for (0..CHILL_FLAKES) |i| {
+            const phase = @as(f32, @floatFromInt(i)) / CHILL_FLAKES;
             const cx = x + cell * (0.22 + phase * 0.56);
             const cy = y + cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
             const r = cell * 0.035;
@@ -454,13 +459,13 @@ pub const Fx = struct {
 
     pub fn drawBurning(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, alpha: f32) void {
         const t = self.seconds.at();
-        for (0..7) |i| {
-            const phase = @as(f32, @floatFromInt(i)) / 7;
+        for (0..BURN_FLAMES) |i| {
+            const phase = @as(f32, @floatFromInt(i)) / BURN_FLAMES;
             const age = @mod(t * 1.7 + phase + @as(f32, @floatFromInt(seed)) * 0.17, 1);
             const sway = @sin(t * 6 + phase * mathx.TAU) * 0.04;
             const at = rl.Vector2{ .x = x + cell * (0.22 + phase * 0.56 + sway), .y = y + cell * (0.82 - age * 0.65) };
             const r = cell * (0.065 - age * 0.045);
-            rl.drawCircleV(at, r, look.fade(look.FIRE, (1 - age) * 0.85 * alpha));
+            rl.drawCircleV(at, r, look.fade(Status.burning.ink(), (1 - age) * 0.85 * alpha));
             rl.drawCircleV(at, r * 0.45, look.fade(look.FIRE_CORE, (1 - age) * 0.9 * alpha));
         }
     }
