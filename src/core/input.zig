@@ -126,12 +126,11 @@ pub const Stepper = struct {
     owed: ?mathx.Dir = null,
 
     pub fn tick(self: *Stepper, dt: f32, defl: f32, heading: f32, settle: f32) ?mathx.Dir {
-        if (defl < REARM) {
+        if (!stickWalks(defl, self.latched != null)) {
             const tap = self.owed;
             self.* = .{};
             return tap;
         }
-        if (self.latched == null and defl < FIRE) return null;
         const now = mathx.dirOf(heading, self.latched);
         if (self.latched != now) {
             const owed = self.owe(now);
@@ -157,6 +156,11 @@ pub const Stepper = struct {
         return if (partOf(now, o)) o else now;
     }
 };
+
+/// The stick walks once pushed past `FIRE` and holds the walk down to `REARM`; short of that the d-pad and keys walk, the stick resting off centre or not.
+fn stickWalks(defl: f32, was: bool) bool {
+    return defl >= Stepper.FIRE or (was and defl >= Stepper.REARM);
+}
 
 fn partOf(d: mathx.Dir, diag: mathx.Dir) bool {
     if (!diag.diagonal() or d.diagonal()) return false;
@@ -201,6 +205,8 @@ pub const State = struct {
     walk: ?mathx.Dir = null,
     lean: bool = false,
     step: Stepper = .{},
+    /// The stick holds the walk, from passing `FIRE` until under `REARM`: the d-pad and keys walk only when it does not.
+    stick: bool = false,
     /// Set before each `update`, which clears it: typing keys then type, and press no button.
     typing: bool = false,
     typed: Typed = .{},
@@ -253,7 +259,9 @@ pub const State = struct {
         var defl = mathx.deflection(x, y);
         var heading = mathx.headingOf(x, y);
         var settle: f32 = 0;
-        if (defl < Stepper.REARM) {
+        self.stick = stickWalks(defl, self.stick);
+        if (!self.stick) {
+            defl = 0;
             var digital = if (pad) dpadWalk() else null;
             if (digital) |p| {
                 if (self.lean) digital = leanOf(mathx.dirTo(.{ .x = 0, .y = 0 }, p).?).delta();
@@ -535,8 +543,8 @@ fn mouseName(comptime b: rl.MouseButton) [:0]const u8 {
 test "the walk fires once, waits DAS, then repeats at ARR" {
     var s = Stepper{};
     const north = mathx.Dir.n.heading();
-    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(0.016, 0.40, north, 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, .n), s.tick(0.016, 0.90, north, 0));
+    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(mathx.FRAME_DT, 0.40, north, 0));
+    try std.testing.expectEqual(@as(?mathx.Dir, .n), s.tick(mathx.FRAME_DT, 0.90, north, 0));
     const dt: f32 = 1.0 / 600.0;
     var gaps: [4]f32 = undefined;
     var n: usize = 0;
@@ -558,7 +566,7 @@ test "the walk fires once, waits DAS, then repeats at ARR" {
 test "a stalled frame does not bank repeats" {
     var s = Stepper{};
     const north = mathx.Dir.n.heading();
-    const dt: f32 = 1.0 / 60.0;
+    const dt = mathx.FRAME_DT;
     for (0..31) |_| _ = s.tick(dt, 1, north, 0);
     var steps: usize = 0;
     if (s.tick(1.0, 1, north, 0) != null) steps += 1;
@@ -569,18 +577,26 @@ test "a stalled frame does not bank repeats" {
     try std.testing.expectEqual(@as(usize, 1), steps);
 }
 
+test "a stick resting off centre leaves the d-pad and keys to walk, and a pushed one holds its walk down to rearming" {
+    const resting = (Stepper.REARM + Stepper.FIRE) / 2;
+    try std.testing.expect(!stickWalks(resting, false));
+    try std.testing.expect(stickWalks(Stepper.FIRE, false));
+    try std.testing.expect(stickWalks(resting, true));
+    try std.testing.expect(!stickWalks(Stepper.REARM / 2, true));
+}
+
 test "a stick is steered, not re-pressed" {
     var s = Stepper{};
-    try std.testing.expectEqual(@as(?mathx.Dir, .n), s.tick(0.016, 0.9, mathx.Dir.n.heading(), 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(0.016, 0.9, mathx.Dir.n.heading(), 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, .e), s.tick(0.016, 0.9, mathx.Dir.e.heading(), 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(0.016, 0.1, mathx.Dir.e.heading(), 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, .e), s.tick(0.016, 0.9, mathx.Dir.e.heading(), 0));
+    try std.testing.expectEqual(@as(?mathx.Dir, .n), s.tick(mathx.FRAME_DT, 0.9, mathx.Dir.n.heading(), 0));
+    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(mathx.FRAME_DT, 0.9, mathx.Dir.n.heading(), 0));
+    try std.testing.expectEqual(@as(?mathx.Dir, .e), s.tick(mathx.FRAME_DT, 0.9, mathx.Dir.e.heading(), 0));
+    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(mathx.FRAME_DT, 0.1, mathx.Dir.e.heading(), 0));
+    try std.testing.expectEqual(@as(?mathx.Dir, .e), s.tick(mathx.FRAME_DT, 0.9, mathx.Dir.e.heading(), 0));
 }
 
 test "a d-pad diagonal pressed and released a frame apart is one diagonal step" {
     var s = Stepper{};
-    const dt: f32 = 1.0 / 60.0;
+    const dt = mathx.FRAME_DT;
     const settle = Stepper.SETTLE;
     var steps: [8]?mathx.Dir = undefined;
     steps[0] = s.tick(dt, 1, mathx.Dir.n.heading(), settle);
@@ -600,7 +616,7 @@ test "a d-pad diagonal pressed and released a frame apart is one diagonal step" 
 
 test "a tap let go before it settles steps once, on release" {
     var s = Stepper{};
-    const dt: f32 = 1.0 / 60.0;
+    const dt = mathx.FRAME_DT;
     const settle = Stepper.SETTLE;
     const got = [_]?mathx.Dir{
         s.tick(dt, 1, mathx.Dir.n.heading(), settle),
@@ -613,7 +629,7 @@ test "a tap let go before it settles steps once, on release" {
 
 test "a quick diagonal tap let go one key at a time steps the diagonal" {
     var s = Stepper{};
-    const dt: f32 = 1.0 / 60.0;
+    const dt = mathx.FRAME_DT;
     const settle = Stepper.SETTLE;
     const got = [_]?mathx.Dir{
         s.tick(dt, 1, mathx.Dir.n.heading(), settle),
@@ -626,7 +642,7 @@ test "a quick diagonal tap let go one key at a time steps the diagonal" {
 
 test "a held walk that has stepped owes nothing when it is let go" {
     var s = Stepper{};
-    const dt: f32 = 1.0 / 60.0;
+    const dt = mathx.FRAME_DT;
     var steps: usize = 0;
     const held: usize = @intFromFloat(@ceil((Stepper.SETTLE + Stepper.DAS) / dt) + 2);
     for (0..held) |_| {

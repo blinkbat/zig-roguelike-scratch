@@ -93,32 +93,30 @@ const WARN = look.EDIT_WARN;
 const START = look.body(actor.HERO);
 const START_MARK = [_]u8{ START.ch, ' ' };
 
-const Tool = enum {
+/// A foe's tool for each kind in `actor.FOES`, among the rest.
+const Tool = union(enum) {
     floor,
     wall,
     barrel,
     torch,
-    rat,
-    slime,
-    bloat,
-    pib,
+    foe: actor.Kind,
     door,
     link,
     start,
 
-    fn foe(t: Tool) ?actor.Kind {
-        return std.meta.stringToEnum(actor.Kind, @tagName(t));
-    }
-
     fn fits(t: Tool, nd: *const atlas.Node) bool {
         return !nd.unrolled() or !t.generated();
+    }
+
+    fn eql(a: Tool, b: Tool) bool {
+        return std.meta.eql(a, b);
     }
 
     /// A procgen node's floor, torches, barrels and foes are the generator's.
     fn generated(t: Tool) bool {
         return switch (t) {
             .door, .link, .start => false,
-            .floor, .wall, .barrel, .torch, .rat, .slime, .bloat, .pib => true,
+            .floor, .wall, .barrel, .torch, .foe => true,
         };
     }
 
@@ -126,7 +124,7 @@ const Tool = enum {
     fn strokes(t: Tool) bool {
         return switch (t) {
             .floor, .wall, .barrel => true,
-            .torch, .rat, .slime, .bloat, .pib, .door, .link, .start => false,
+            .torch, .foe, .door, .link, .start => false,
         };
     }
 
@@ -134,24 +132,26 @@ const Tool = enum {
     fn broad(t: Tool) bool {
         return switch (t) {
             .floor, .wall => true,
-            .barrel, .torch, .rat, .slime, .bloat, .pib, .door, .link, .start => false,
+            .barrel, .torch, .foe, .door, .link, .start => false,
         };
     }
 
     fn name(t: Tool) [:0]const u8 {
         return switch (t) {
-            inline else => |k| comptime blk: {
-                @setEvalBranchQuota(10_000);
-                break :blk if (k.foe()) |f| menu.capital(actor.row(f).name) else menu.named(k);
+            .foe => |k| switch (k) {
+                inline else => |f| comptime menu.capital(actor.row(f).name),
             },
+            inline else => |_, tag| comptime menu.named(tag),
         };
     }
 
     fn tip(t: Tool) [:0]const u8 {
         return switch (t) {
-            inline else => |k| comptime blk: {
+            .foe => "Foe: " ++ comptime rule(.{ .foe = actor.FOES[0] }),
+            inline else => |_, tag| comptime blk: {
                 @setEvalBranchQuota(10_000);
-                break :blk (if (k.foe() != null) "Foe" else k.name()) ++ ": " ++ k.rule();
+                const k = @unionInit(Tool, @tagName(tag), {});
+                break :blk k.name() ++ ": " ++ k.rule();
             },
         };
     }
@@ -162,7 +162,7 @@ const Tool = enum {
             .wall => "paint rock; " ++ Desk.ERASE_CAPTION ++ " paints floor",
             .barrel => "breaks for gold; " ++ Desk.ERASE_CAPTION ++ " takes it away",
             .torch => TORCH_RULE,
-            .rat, .slime, .bloat, .pib => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
+            .foe => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
             .door => "any cell of any node; a procgen node's floor is rolled round its doors each run",
             .link => "click a door, then the door it leads to on any node; " ++ Desk.ERASE_CAPTION ++ " unlinks",
             .start => "where the world begins, and " ++ Desk.PLAY_CAPTION ++ " plays from",
@@ -170,7 +170,15 @@ const Tool = enum {
     }
 };
 
-const TOOLS = std.enums.values(Tool);
+const TOOLS = blk: {
+    var out: []const Tool = &.{};
+    for (std.enums.values(std.meta.Tag(Tool))) |tag| {
+        if (tag == .foe) {
+            for (actor.FOES) |k| out = out ++ &[_]Tool{.{ .foe = k }};
+        } else out = out ++ &[_]Tool{@unionInit(Tool, @tagName(tag), {})};
+    }
+    break :blk out[0..out.len].*;
+};
 const TORCH_RULE = "hangs on a wall with floor below it";
 const FOE_RULE = "stands on open floor";
 const NO_ROOM = "The node has no room for another {s}";
@@ -187,8 +195,7 @@ const UNGENERATED = blk: {
 comptime {
     @setEvalBranchQuota(10_000);
     std.debug.assert(TOOLS.len == Desk.TOOL_KEYS.len);
-    for (actor.FOES) |k| std.debug.assert(@hasField(Tool, @tagName(k)));
-    for (TOOLS) |t| std.debug.assert(if (t.foe()) |k| k.stocked() else true);
+    for (actor.FOES) |k| std.debug.assert(k.stocked());
 }
 
 const SEP = menu.SEP;
@@ -517,7 +524,7 @@ pub const Editor = struct {
     }
 
     fn setTool(ed: *Editor, t: Tool) void {
-        if (t != ed.tool) {
+        if (!t.eql(ed.tool)) {
             ed.drop();
             ed.pick = null;
         }
@@ -927,7 +934,7 @@ fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     };
     if (!held) {
         if (ed.rect) |r| {
-            fillRect(ed, r, clampCell(p));
+            fillRect(ed, r, grid.Level.clamp(p));
             if (d.clicked()) ed.gesture();
         }
         ed.drop();
@@ -935,7 +942,7 @@ fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (over and d.clicked()) {
         ed.drop();
         ed.stroke = if (d.paint_hit) .paint else .erase;
-        if (d.shift and ed.tool.broad() and ed.tool.fits(ed.here())) ed.rect = .{ .from = clampCell(p), .erase = ed.stroke == .erase };
+        if (d.shift and ed.tool.broad() and ed.tool.fits(ed.here())) ed.rect = .{ .from = grid.Level.clamp(p), .erase = ed.stroke == .erase };
     } else if (d.clicked() and ed.rect == null) {
         ed.stroke = .none;
         ed.stroke_at = null;
@@ -969,10 +976,6 @@ fn brushAt(ed: *Editor, p: P) void {
 fn brushBox(p: P, n: i32) struct { lo: P, hi: P } {
     const lo = p.sub(.{ .x = @divTrunc(n - 1, 2), .y = @divTrunc(n - 1, 2) });
     return .{ .lo = lo, .hi = lo.add(.{ .x = n - 1, .y = n - 1 }) };
-}
-
-fn clampCell(p: P) P {
-    return .{ .x = std.math.clamp(p.x, 0, grid.W - 1), .y = std.math.clamp(p.y, 0, grid.H - 1) };
 }
 
 fn fillRect(ed: *Editor, r: Rect, to: P) void {
@@ -1053,9 +1056,8 @@ fn place(ed: *Editor, p: P) void {
             if (!b.torch.add(p)) return ed.say("That wall holds a torch, or the node holds {d}", .{grid.MAX_TORCHES});
             ed.changed();
         },
-        .rat, .slime, .bloat, .pib => {
+        .foe => |k| {
             const b = &ed.plan().bespoke;
-            const k = ed.tool.foe().?;
             if (!ed.here().foeFits(b, p)) return ed.say("A foe " ++ FOE_RULE, .{});
             if (b.foeAt(p)) |f| {
                 if (b.foe[f].kind == k) return;
@@ -1073,7 +1075,7 @@ fn place(ed: *Editor, p: P) void {
                 },
                 .procgen => {},
             }
-            ed.say("Door {d}; the {s} tool joins it to another", .{ k, Tool.link.name() });
+            ed.say("Door {d}; the {s} tool joins it to another", .{ k, @as(Tool, .link).name() });
             ed.changed();
         },
         .link => {
@@ -1117,7 +1119,7 @@ fn remove(ed: *Editor, p: P) void {
             if (!b.torch.remove(p)) return;
             ed.changed();
         },
-        .rat, .slime, .bloat, .pib => {
+        .foe => {
             const b = &ed.plan().bespoke;
             b.dropFoe(b.foeAt(p) orelse return);
             ed.changed();
@@ -1286,7 +1288,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
         else
             std.fmt.bufPrintZ(&buf, "{s}  {s}", .{ key, t.name() }) catch "";
         const r = cellOfRow(y + @as(i32, @intCast(i % rows)) * ROW_H, i / rows, TOOL_COLS);
-        if (button(ed, g, r, label, t == ed.tool, t.fits(ed.here()), t.tip())) ed.setTool(t);
+        if (button(ed, g, r, label, t.eql(ed.tool), t.fits(ed.here()), t.tip())) ed.setTool(t);
     }
     y += @as(i32, @intCast(rows)) * ROW_H + SECTION_GAP;
     var adds = Across{ .y = y, .n = 2 };
@@ -1324,7 +1326,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
         const h = hot(ed, r, true, false, "Open this node");
         plate(r, on, h.hot);
         g.face.draw(fitTitle(ed, g, n, &buf, &fit_buf, insetW(r)), textX(r), y + TITLE_DY, TEXT, titleColor(ed, n));
-        g.face.draw(nodeDetail(nd, &detail_buf), PAD + GAP, y + TITLE_DY + DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
+        g.face.draw(nodeDetail(nd, &detail_buf), textX(r), y + TITLE_DY + DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
         if (h.hit) ed.goTo(n);
         y += NODE_H;
     }
@@ -1483,125 +1485,136 @@ fn num(buf: []u8, comptime fmt: []const u8, v: anytype) [:0]const u8 {
 }
 
 /// One row of the generator: a field of the base's, a feature's or the foes' params, a tip for each number in it.
-const Knob = struct { field: []const u8, label: [:0]const u8, tips: []const [:0]const u8, unit: i32 = 1, fmt: []const u8 = "{d}" };
+const Knob = struct {
+    field: [:0]const u8,
+    /// Its row's name, when the field's own, capitalised, will not do.
+    label: ?[:0]const u8 = null,
+    tips: []const [:0]const u8,
+    unit: i32 = 1,
+    fmt: []const u8 = "{d}",
+
+    fn caption(comptime k: Knob) [:0]const u8 {
+        return k.label orelse comptime menu.capital(k.field);
+    }
+};
 
 const PERCENT_FMT = "{d}%";
-const DECAY_ROW = Knob{ .field = "decay", .label = "Decay", .tips = &.{"Of the walls, how many have fallen to rubble"}, .fmt = PERCENT_FMT };
-const COUNT_ROW = Knob{ .field = "count", .label = "Count", .tips = &.{"How many"} };
-const COUNT_MOST_ROW = Knob{ .field = "count", .label = "Count", .tips = &.{"How many, at most"} };
-const WIDTH_ROW = Knob{ .field = "width", .label = "Width", .tips = &.{"Cells across"} };
-const LITTER_ROW = Knob{ .field = "litter", .label = "Litter", .tips = &.{"Lone boulders, a thousandth of the open grass each"} };
-const DECOR_ROW = Knob{ .field = "decor", .label = "Decor", .tips = &.{ "Tiny shrubs a cell at a time, a thousandth of the open grass each", "Tall grass in patches, a thousandth of the open grass each", "Shrooms a cell at a time, a thousandth of the open grass each" } };
+const DECAY_ROW = Knob{ .field = "decay", .tips = &.{"Of the walls, how many have fallen to rubble"}, .fmt = PERCENT_FMT };
+const COUNT_ROW = Knob{ .field = "count", .tips = &.{"How many"} };
+const COUNT_MOST_ROW = Knob{ .field = "count", .tips = &.{"How many, at most"} };
+const WIDTH_ROW = Knob{ .field = "width", .tips = &.{"Cells across"} };
+const LITTER_ROW = Knob{ .field = "litter", .tips = &.{"Lone boulders, a thousandth of the open grass each"} };
+const DECOR_ROW = Knob{ .field = "decor", .tips = &.{ "Tiny shrubs a cell at a time, a thousandth of the open grass each", "Tall grass in patches, a thousandth of the open grass each", "Shrooms a cell at a time, a thousandth of the open grass each" } };
 const GRASS_ROWS = [_]Knob{ LITTER_ROW, DECOR_ROW };
-const COURSE_ROW = Knob{ .field = "course", .label = "Course", .tips = &.{"Across, down, or either"} };
+const COURSE_ROW = Knob{ .field = "course", .tips = &.{"Across, down, or either"} };
 
 const ROOMS_ROWS = [_]Knob{
-    .{ .field = "size", .label = "Size", .tips = &.{ "Width of the box the rooms fall in, centred on the map", "Height of the box the rooms fall in, centred on the map" } },
-    .{ .field = "rooms", .label = "Rooms", .tips = &.{"The most rooms it rolls"} },
+    .{ .field = "size", .tips = &.{ "Width of the box the rooms fall in, centred on the map", "Height of the box the rooms fall in, centred on the map" } },
+    .{ .field = "rooms", .tips = &.{"The most rooms it rolls"} },
     .{ .field = "room_w", .label = "Room W", .tips = &.{ "The narrowest a room is rolled", "The widest a room is rolled" } },
     .{ .field = "room_h", .label = "Room H", .tips = &.{ "The shortest a room is rolled", "The tallest a room is rolled" } },
-    .{ .field = "torches", .label = "Torches", .tips = &.{"Of the rooms, how many hang a torch"}, .unit = TORCH_STEP, .fmt = PERCENT_FMT },
-    .{ .field = "barrels", .label = "Barrels", .tips = &.{"The most barrels one room stacks"} },
+    .{ .field = "torches", .tips = &.{"Of the rooms, how many hang a torch"}, .unit = TORCH_STEP, .fmt = PERCENT_FMT },
+    .{ .field = "barrels", .tips = &.{"The most barrels one room stacks"} },
 };
 
 const WILDS_ROWS = [_]Knob{
-    .{ .field = "thicket", .label = "Thicket", .tips = &.{"Of the ground, how much is sown with shrub before it is smoothed"}, .fmt = PERCENT_FMT },
-    .{ .field = "smooth", .label = "Smooth", .tips = &.{"Smoothing passes: more, rounder thickets and wider glades"} },
-    .{ .field = "strays", .label = "Strays", .tips = &.{"Lone shrubs, a thousandth of the open grass each"} },
+    .{ .field = "thicket", .tips = &.{"Of the ground, how much is sown with shrub before it is smoothed"}, .fmt = PERCENT_FMT },
+    .{ .field = "smooth", .tips = &.{"Smoothing passes: more, rounder thickets and wider glades"} },
+    .{ .field = "strays", .tips = &.{"Lone shrubs, a thousandth of the open grass each"} },
 } ++ GRASS_ROWS;
 
 const OPEN_ROWS = [_]Knob{
-    .{ .field = "ground", .label = "Ground", .tips = &.{"The open ground, edge to edge"} },
-    .{ .field = "edge", .label = "Edge", .tips = &.{"What rings the map and seals it"} },
+    .{ .field = "ground", .tips = &.{"The open ground, edge to edge"} },
+    .{ .field = "edge", .tips = &.{"What rings the map and seals it"} },
 } ++ GRASS_ROWS;
 
 const CAVES_ROWS = [_]Knob{
-    .{ .field = "fill", .label = "Fill", .tips = &.{"Of the ground, how much is sown with rock before it is smoothed"}, .fmt = PERCENT_FMT },
-    .{ .field = "smooth", .label = "Smooth", .tips = &.{"Smoothing passes: more, rounder caves"} },
-    .{ .field = "spires", .label = "Spires", .tips = &.{"Lone rock spires, a thousandth of the open floor each"} },
+    .{ .field = "fill", .tips = &.{"Of the ground, how much is sown with rock before it is smoothed"}, .fmt = PERCENT_FMT },
+    .{ .field = "smooth", .tips = &.{"Smoothing passes: more, rounder caves"} },
+    .{ .field = "spires", .tips = &.{"Lone rock spires, a thousandth of the open floor each"} },
 };
 
 const CAVERN_ROWS = [_]Knob{
-    .{ .field = "chambers", .label = "Chambers", .tips = &.{"Round chambers it digs, at most"} },
-    .{ .field = "radius", .label = "Radius", .tips = &.{ "The smallest chamber's radius", "The largest chamber's radius" } },
-    .{ .field = "fray", .label = "Fray", .tips = &.{"How much noise frays a chamber's edge"}, .fmt = PERCENT_FMT },
+    .{ .field = "chambers", .tips = &.{"Round chambers it digs, at most"} },
+    .{ .field = "radius", .tips = &.{ "The smallest chamber's radius", "The largest chamber's radius" } },
+    .{ .field = "fray", .tips = &.{"How much noise frays a chamber's edge"}, .fmt = PERCENT_FMT },
 };
 
 const STRATA_ROWS = [_]Knob{
-    .{ .field = "sectors", .label = "Sectors", .tips = &.{"Sectors across and down the map is cut into"} },
-    .{ .field = "seeds", .label = "Seeds", .tips = &.{"Deep points dropped in each sector, at most"} },
-    .{ .field = "blur", .label = "Blur", .tips = &.{"Blur passes: more, rounder and wider pockets"} },
+    .{ .field = "sectors", .tips = &.{"Sectors across and down the map is cut into"} },
+    .{ .field = "seeds", .tips = &.{"Deep points dropped in each sector, at most"} },
+    .{ .field = "blur", .tips = &.{"Blur passes: more, rounder and wider pockets"} },
 };
 
 const LABYRINTH_ROWS = [_]Knob{
-    .{ .field = "style", .label = "Style", .tips = &.{"Built walls, rock, or a hedge maze"} },
-    .{ .field = "chamber", .label = "Chamber", .tips = &.{"Half-height of an open chamber at the heart, half again as wide; 0 for none"} },
-    .{ .field = "braid", .label = "Braid", .tips = &.{"Of the dead ends, how many are knocked through into loops"}, .fmt = PERCENT_FMT },
+    .{ .field = "style", .tips = &.{"Built walls, rock, or a hedge maze"} },
+    .{ .field = "chamber", .tips = &.{"Half-height of an open chamber at the heart, half again as wide; 0 for none"} },
+    .{ .field = "braid", .tips = &.{"Of the dead ends, how many are knocked through into loops"}, .fmt = PERCENT_FMT },
 };
 
 const HALL_ROWS = [_]Knob{
-    .{ .field = "style", .label = "Style", .tips = &.{"Bare, pillared, grave alcoves, or a grove of plants"} },
-    .{ .field = "margin", .label = "Margin", .tips = &.{"Wall between the hall and the map's edge"} },
+    .{ .field = "style", .tips = &.{"Bare, pillared, grave alcoves, or a grove of plants"} },
+    .{ .field = "margin", .tips = &.{"Wall between the hall and the map's edge"} },
 };
 
 const MAZE_ROWS = [_]Knob{
-    .{ .field = "style", .label = "Style", .tips = &.{"Caves, tombs, sewers, lava or ice"} },
-    .{ .field = "rooms", .label = "Rooms", .tips = &.{"Rooms it sets, at most"} },
-    .{ .field = "size", .label = "Size", .tips = &.{"Cells on a room's side"} },
-    .{ .field = "merge", .label = "Merge", .tips = &.{"A thousandth: how often a room is joined to each one already beside it"} },
+    .{ .field = "style", .tips = &.{"Caves, tombs, sewers, lava or ice"} },
+    .{ .field = "rooms", .tips = &.{"Rooms it sets, at most"} },
+    .{ .field = "size", .tips = &.{"Cells on a room's side"} },
+    .{ .field = "merge", .tips = &.{"A thousandth: how often a room is joined to each one already beside it"} },
 };
 
 const TOPOLOGY_ROWS = [_]Knob{
-    .{ .field = "layout", .label = "Layout", .tips = &.{"The shape of its graph of spots"} },
-    .{ .field = "filler", .label = "Filler", .tips = &.{"What fills between the paths"} },
-    .{ .field = "ground", .label = "Ground", .tips = &.{"The paths' and clearings' ground"} },
-    .{ .field = "clearing", .label = "Clearing", .tips = &.{"A spot's clearing, half-width"} },
-    .{ .field = "path", .label = "Path", .tips = &.{"A path's width"} },
-    .{ .field = "sides", .label = "Sides", .tips = &.{"Side paths off to dead-end clearings"} },
+    .{ .field = "layout", .tips = &.{"The shape of its graph of spots"} },
+    .{ .field = "filler", .tips = &.{"What fills between the paths"} },
+    .{ .field = "ground", .tips = &.{"The paths' and clearings' ground"} },
+    .{ .field = "clearing", .tips = &.{"A spot's clearing, half-width"} },
+    .{ .field = "path", .tips = &.{"A path's width"} },
+    .{ .field = "sides", .tips = &.{"Side paths off to dead-end clearings"} },
 } ++ GRASS_ROWS;
 
 const ZERO_TO_PERCENT = std.fmt.comptimePrint("0 to {d}", .{mathx.PERCENT});
 
 const TERRAIN_ROWS = [_]Knob{
-    .{ .field = "height", .label = "Height", .tips = &.{ "Lowest elevation, " ++ ZERO_TO_PERCENT ++ std.fmt.comptimePrint("; under {d} is sea", .{terrain.SEA}), std.fmt.comptimePrint("Highest elevation; {d} and over is mountain", .{terrain.MOUNTAIN}) } },
-    .{ .field = "rain", .label = "Rain", .tips = &.{ "Driest, " ++ ZERO_TO_PERCENT, "Wettest" } },
+    .{ .field = "height", .tips = &.{ "Lowest elevation, " ++ ZERO_TO_PERCENT ++ std.fmt.comptimePrint("; under {d} is sea", .{terrain.SEA}), std.fmt.comptimePrint("Highest elevation; {d} and over is mountain", .{terrain.MOUNTAIN}) } },
+    .{ .field = "rain", .tips = &.{ "Driest, " ++ ZERO_TO_PERCENT, "Wettest" } },
     .{ .field = "drain", .label = "Drainage", .tips = &.{ "Least drained, " ++ ZERO_TO_PERCENT, "Best drained" } },
-    .{ .field = "heat", .label = "Heat", .tips = &.{ "Coldest, " ++ ZERO_TO_PERCENT ++ std.fmt.comptimePrint("; {d} and under is tundra or glacier", .{terrain.FROST}), "Hottest" } },
-    .{ .field = "scale", .label = "Scale", .tips = &.{"Cells across a field's features"} },
-    .{ .field = "rivers", .label = "Rivers", .tips = &.{"Rivers running downhill from the heights"} },
+    .{ .field = "heat", .tips = &.{ "Coldest, " ++ ZERO_TO_PERCENT ++ std.fmt.comptimePrint("; {d} and under is tundra or glacier", .{terrain.FROST}), "Hottest" } },
+    .{ .field = "scale", .tips = &.{"Cells across a field's features"} },
+    .{ .field = "rivers", .tips = &.{"Rivers running downhill from the heights"} },
 } ++ GRASS_ROWS;
 
 const KEEP_ROWS = [_]Knob{
-    .{ .field = "size", .label = "Size", .tips = &.{ "The curtain wall's width", "The curtain wall's height" } },
-    .{ .field = "towers", .label = "Towers", .tips = &.{"A corner tower's half-width; 0 for none"} },
-    .{ .field = "moat", .label = "Moat", .tips = &.{"The moat's width; 0 for none"} },
-    .{ .field = "yard", .label = "Yard", .tips = &.{"The courtyard's ground"} },
-    .{ .field = "outside", .label = "Outside", .tips = &.{"The ground outside the walls"} },
-    .{ .field = "torches", .label = "Torches", .tips = &.{"Of the keep's top walls, how many hang a torch"}, .fmt = PERCENT_FMT },
-    .{ .field = "barrels", .label = "Barrels", .tips = &.{"Barrels in the keep, at most"} },
+    .{ .field = "size", .tips = &.{ "The curtain wall's width", "The curtain wall's height" } },
+    .{ .field = "towers", .tips = &.{"A corner tower's half-width; 0 for none"} },
+    .{ .field = "moat", .tips = &.{"The moat's width; 0 for none"} },
+    .{ .field = "yard", .tips = &.{"The courtyard's ground"} },
+    .{ .field = "outside", .tips = &.{"The ground outside the walls"} },
+    .{ .field = "torches", .tips = &.{"Of the keep's top walls, how many hang a torch"}, .fmt = PERCENT_FMT },
+    .{ .field = "barrels", .tips = &.{"Barrels in the keep, at most"} },
 };
 
 const TOWN_ROWS = [_]Knob{
-    .{ .field = "wall", .label = "Wall", .tips = &.{"None, a stone wall or a fence round it"} },
-    .{ .field = "block", .label = "Block", .tips = &.{"A block's side between streets"} },
-    .{ .field = "street", .label = "Street", .tips = &.{"A street's width"} },
-    .{ .field = "houses", .label = "Houses", .tips = &.{"Of each block's lots, how many are built on"}, .fmt = PERCENT_FMT },
-    .{ .field = "canals", .label = "Canals", .tips = &.{"Of the streets, how many are canals"}, .fmt = PERCENT_FMT },
+    .{ .field = "wall", .tips = &.{"None, a stone wall or a fence round it"} },
+    .{ .field = "block", .tips = &.{"A block's side between streets"} },
+    .{ .field = "street", .tips = &.{"A street's width"} },
+    .{ .field = "houses", .tips = &.{"Of each block's lots, how many are built on"}, .fmt = PERCENT_FMT },
+    .{ .field = "canals", .tips = &.{"Of the streets, how many are canals"}, .fmt = PERCENT_FMT },
     .{ .field = "ground", .label = "Streets", .tips = &.{"The streets' ground"} },
-    .{ .field = "outside", .label = "Outside", .tips = &.{"The ground round the town"} },
+    .{ .field = "outside", .tips = &.{"The ground round the town"} },
 };
 
 const DUNES_ROWS = [_]Knob{
-    .{ .field = "ground", .label = "Ground", .tips = &.{"The open ground"} },
-    .{ .field = "ridges", .label = "Ridges", .tips = &.{"How wide a crest of the noise stands as ridge"} },
-    .{ .field = "mesas", .label = "Mesas", .tips = &.{"More stands as mesa, the highest ground first"}, .fmt = PERCENT_FMT },
-    .{ .field = "scale", .label = "Scale", .tips = &.{"Cells across a dune"} },
+    .{ .field = "ground", .tips = &.{"The open ground"} },
+    .{ .field = "ridges", .tips = &.{"How wide a crest of the noise stands as ridge"} },
+    .{ .field = "mesas", .tips = &.{"More stands as mesa, the highest ground first"}, .fmt = PERCENT_FMT },
+    .{ .field = "scale", .tips = &.{"Cells across a dune"} },
 };
 
 const SITE_ROWS = [_]Knob{
-    .{ .field = "template", .label = "Template", .tips = &.{"Huts, compound, pillars, or any one per section"} },
+    .{ .field = "template", .tips = &.{"Huts, compound, pillars, or any one per section"} },
     DECAY_ROW,
-    .{ .field = "ground", .label = "Ground", .tips = &.{"The ground between and round the buildings"} },
+    .{ .field = "ground", .tips = &.{"The ground between and round the buildings"} },
 };
 
 fn rowsOf(comptime a: atlas.Algo) []const Knob {
@@ -1625,65 +1638,65 @@ fn rowsOf(comptime a: atlas.Algo) []const Knob {
 }
 
 const RIVER_ROWS = [_]Knob{
-    .{ .field = "fill", .label = "Fill", .tips = &.{"What it runs with: water, lava, a chasm; rock makes a cliff"} },
+    .{ .field = "fill", .tips = &.{"What it runs with: water, lava, a chasm; rock makes a cliff"} },
     WIDTH_ROW,
-    .{ .field = "bank", .label = "Bank", .tips = &.{"What lines it either side"} },
+    .{ .field = "bank", .tips = &.{"What lines it either side"} },
     COURSE_ROW,
     COUNT_ROW,
-    .{ .field = "fords", .label = "Fords", .tips = &.{"Crossings laid over it: shallows, a bridge, or a gap"} },
+    .{ .field = "fords", .tips = &.{"Crossings laid over it: shallows, a bridge, or a gap"} },
 };
 
 const LAKE_ROWS = [_]Knob{
-    .{ .field = "fill", .label = "Fill", .tips = &.{"Water, lava, rock for a mesa, a chasm for a pit"} },
+    .{ .field = "fill", .tips = &.{"Water, lava, rock for a mesa, a chasm for a pit"} },
     COUNT_MOST_ROW,
-    .{ .field = "size", .label = "Size", .tips = &.{"The biggest one's half-width"} },
-    .{ .field = "ring", .label = "Ring", .tips = &.{"What rings each"} },
-    .{ .field = "island", .label = "Island", .tips = &.{"Of them, how many keep an island at their heart"}, .fmt = PERCENT_FMT },
+    .{ .field = "size", .tips = &.{"The biggest one's half-width"} },
+    .{ .field = "ring", .tips = &.{"What rings each"} },
+    .{ .field = "island", .tips = &.{"Of them, how many keep an island at their heart"}, .fmt = PERCENT_FMT },
 };
 
 const ROAD_ROWS = [_]Knob{
-    .{ .field = "paving", .label = "Paving", .tips = &.{"What it is laid with"} },
+    .{ .field = "paving", .tips = &.{"What it is laid with"} },
     WIDTH_ROW,
     COURSE_ROW,
     COUNT_ROW,
-    .{ .field = "wander", .label = "Wander", .tips = &.{"How much it bends, of a river's bending"}, .fmt = PERCENT_FMT },
+    .{ .field = "wander", .tips = &.{"How much it bends, of a river's bending"}, .fmt = PERCENT_FMT },
 };
 
 const SCATTER_ROWS = [_]Knob{
-    .{ .field = "tile", .label = "Tile", .tips = &.{"What it lays"} },
-    .{ .field = "on", .label = "On", .tips = &.{"What it lays it on"} },
-    .{ .field = "amount", .label = "Amount", .tips = &.{std.fmt.comptimePrint("A thousandth of those cells; {d} lays it on all of them", .{scatter.AMOUNT_MAX})} },
-    .{ .field = "clump", .label = "Clump", .tips = &.{"Clumps this many cells across; 0 lays it a cell at a time"} },
+    .{ .field = "tile", .tips = &.{"What it lays"} },
+    .{ .field = "on", .tips = &.{"What it lays it on"} },
+    .{ .field = "amount", .tips = &.{std.fmt.comptimePrint("A thousandth of those cells; {d} lays it on all of them", .{scatter.AMOUNT_MAX})} },
+    .{ .field = "clump", .tips = &.{"Clumps this many cells across; 0 lays it a cell at a time"} },
 };
 
 const BORDER_ROWS = [_]Knob{
-    .{ .field = "tile", .label = "Tile", .tips = &.{"What rings the map"} },
-    .{ .field = "width", .label = "Width", .tips = &.{"Cells deep, at least"} },
-    .{ .field = "rough", .label = "Rough", .tips = &.{"Cells more it frays inward, at most"} },
+    .{ .field = "tile", .tips = &.{"What rings the map"} },
+    .{ .field = "width", .tips = &.{"Cells deep, at least"} },
+    .{ .field = "rough", .tips = &.{"Cells more it frays inward, at most"} },
 };
 
 const BUILDINGS_ROWS = [_]Knob{
     COUNT_MOST_ROW,
-    .{ .field = "size", .label = "Size", .tips = &.{ "The shortest side, walls and all", "The longest side" } },
+    .{ .field = "size", .tips = &.{ "The shortest side, walls and all", "The longest side" } },
     DECAY_ROW,
-    .{ .field = "walls", .label = "Walls", .tips = &.{"What they are walled with"} },
-    .{ .field = "floor", .label = "Floor", .tips = &.{"What they are floored with"} },
-    .{ .field = "barrels", .label = "Barrels", .tips = &.{"The most barrels one stacks"} },
-    .{ .field = "torches", .label = "Torches", .tips = &.{"Of them, how many hang a torch"}, .fmt = PERCENT_FMT },
+    .{ .field = "walls", .tips = &.{"What they are walled with"} },
+    .{ .field = "floor", .tips = &.{"What they are floored with"} },
+    .{ .field = "barrels", .tips = &.{"The most barrels one stacks"} },
+    .{ .field = "torches", .tips = &.{"Of them, how many hang a torch"}, .fmt = PERCENT_FMT },
 };
 
 const FARMS_ROWS = [_]Knob{
-    .{ .field = "count", .label = "Count", .tips = &.{"Fields, at most"} },
-    .{ .field = "size", .label = "Size", .tips = &.{ "The shortest side, fence and all", "The longest side" } },
-    .{ .field = "crop", .label = "Crop", .tips = &.{"What grows in the rows"} },
-    .{ .field = "furrow", .label = "Furrow", .tips = &.{"What lies between the rows"} },
-    .{ .field = "fence", .label = "Fence", .tips = &.{"What fences each field"} },
+    .{ .field = "count", .tips = &.{"Fields, at most"} },
+    .{ .field = "size", .tips = &.{ "The shortest side, fence and all", "The longest side" } },
+    .{ .field = "crop", .tips = &.{"What grows in the rows"} },
+    .{ .field = "furrow", .tips = &.{"What lies between the rows"} },
+    .{ .field = "fence", .tips = &.{"What fences each field"} },
 };
 
 const SETPIECE_ROWS = [_]Knob{
-    .{ .field = "piece", .label = "Piece", .tips = &.{"The hand-drawn piece it stamps"} },
+    .{ .field = "piece", .tips = &.{"The hand-drawn piece it stamps"} },
     COUNT_MOST_ROW,
-    .{ .field = "apart", .label = "Apart", .tips = &.{"Cells of margin round each"} },
+    .{ .field = "apart", .tips = &.{"Cells of margin round each"} },
 };
 
 fn featureRowsOf(comptime k: atlas.Kind) []const Knob {
@@ -1710,11 +1723,11 @@ const ADD_FEATURE_TIP = blk: {
 };
 
 const FOE_ROWS = [_]Knob{
-    .{ .field = "packs", .label = "Packs", .tips = &.{"How many packs it places"} },
+    .{ .field = "packs", .tips = &.{"How many packs it places"} },
     .{ .field = "few", .label = "At least", .tips = &.{"Each foe any makeup holds has this many at least, while packs last"} },
-    .{ .field = "reach", .label = "Reach", .tips = &.{"Cells from a pack's lead to the rest of it, at most"} },
-    .{ .field = "gap", .label = "Gap", .tips = &.{"Cells from where the hero arrives to every foe, at least"} },
-    .{ .field = "apart", .label = "Apart", .tips = &.{"Cells from one pack to every other, at least; 0 lets them crowd"} },
+    .{ .field = "reach", .tips = &.{"Cells from a pack's lead to the rest of it, at most"} },
+    .{ .field = "gap", .tips = &.{"Cells from where the hero arrives to every foe, at least"} },
+    .{ .field = "apart", .tips = &.{"Cells from one pack to every other, at least; 0 lets them crowd"} },
 };
 
 const ADD_PROCGEN_TIP = "A node the " ++ @tagName((atlas.Procgen{}).floor) ++ " generator rolls round its doors, anew each run";
@@ -1749,7 +1762,7 @@ fn numbers(comptime T: type) usize {
 }
 
 fn knobRow(ed: *Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob) void {
-    rowLabel(g, y, k.label);
+    rowLabel(g, y, comptime k.caption());
     const v = &@field(owner.*, k.field);
     const T = @TypeOf(v.*);
     const n = comptime numbers(T);
@@ -1778,9 +1791,7 @@ fn valueSlot(y: i32, k: usize, n: usize) rl.Rectangle {
 }
 
 fn cycle(comptime T: type, v: T, by: i32) T {
-    const all = comptime std.enums.values(T);
-    const at = std.mem.indexOfScalar(T, all, v).?;
-    return all[mathx.wrap(at, std.math.sign(by), all.len)];
+    return mathx.stepIn(T, comptime std.enums.values(T), v, std.math.sign(by), null);
 }
 
 const Step = struct { tip: [:0]const u8, live: bool = true };
@@ -1911,7 +1922,7 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     if (ed.start_at) |s| glyph(ed, g, START.ch, ed.cellRect(c, s), START.fg);
     const m = ed.mouseCell(c);
     if (ed.rect) |r| {
-        outlineCells(ed, c, r.from, clampCell(m), PICKED);
+        outlineCells(ed, c, r.from, grid.Level.clamp(m), PICKED);
     } else if (grid.Level.inside(m)) {
         const box = brushBox(m, if (ed.tool.broad() and ed.tool.fits(ed.here())) ed.brushSize() else 1);
         outlineCells(ed, c, box.lo, box.hi, HOVER);
@@ -2107,8 +2118,8 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     const posed = [_]struct { t: Tool, at: P }{
         .{ .t = .torch, .at = .{ .x = 14, .y = 5 } },
         .{ .t = .barrel, .at = .{ .x = 8, .y = 6 } },
-        .{ .t = .rat, .at = .{ .x = 18, .y = 10 } },
-        .{ .t = .slime, .at = .{ .x = 20, .y = 12 } },
+        .{ .t = .{ .foe = .rat }, .at = .{ .x = 18, .y = 10 } },
+        .{ .t = .{ .foe = .slime }, .at = .{ .x = 20, .y = 12 } },
         .{ .t = .door, .at = .{ .x = 24, .y = 10 } },
         .{ .t = .door, .at = .{ .x = 16, .y = 16 } },
         .{ .t = .start, .at = .{ .x = 10, .y = 10 } },
@@ -2186,8 +2197,8 @@ test "painting a bespoke node: a door opens its wall and no wall paints over it"
     fillRect(ed, .{ .from = .{ .x = 4, .y = 5 }, .erase = false }, .{ .x = 9, .y = 5 });
     click(ed, .door, .{ .x = 10, .y = 5 });
     click(ed, .wall, .{ .x = 10, .y = 5 });
-    click(ed, .rat, .{ .x = 5, .y = 5 });
-    click(ed, .rat, .{ .x = 5, .y = 9 });
+    click(ed, .{ .foe = .rat }, .{ .x = 5, .y = 5 });
+    click(ed, .{ .foe = .rat }, .{ .x = 5, .y = 9 });
     click(ed, .torch, .{ .x = 6, .y = 4 });
     click(ed, .torch, .{ .x = 6, .y = 3 });
     ed.gesture();
@@ -2216,8 +2227,8 @@ test "the link tool joins doors on two nodes, and a procgen node takes doors but
     click(ed, .link, .{ .x = 3, .y = 3 });
     try std.testing.expectEqual(@as(?atlas.Link, .{ .node = 1, .door = 0 }), w.node[0].door[0].to);
     try std.testing.expectEqual(@as(?atlas.Link, .{ .node = 0, .door = 0 }), w.node[1].door[0].to);
-    try std.testing.expect(!Tool.floor.fits(&w.node[1]));
-    try std.testing.expect(Tool.door.fits(&w.node[1]));
+    try std.testing.expect(!@as(Tool, .floor).fits(&w.node[1]));
+    try std.testing.expect(@as(Tool, .door).fits(&w.node[1]));
     ed.select(1);
     ed.preview();
     try std.testing.expectEqual(@as(?usize, 0), ed.lv.doorAt(.{ .x = 40, .y = 30 }));

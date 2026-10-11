@@ -56,9 +56,13 @@ pub const Lots = struct {
     /// Cells between two lots at the least, so neither's ring opens the other.
     pub const GAP: i32 = 1;
 
-    /// A feature starts taking lots: its own keep its gap apart, the earlier features' `GAP`.
+    /// A feature starts taking lots, as `procgen` has each: its own keep its gap apart, the earlier features' `GAP`.
     pub fn begin(self: *Lots) void {
         self.mine = self.n;
+    }
+
+    pub fn slice(self: *const Lots) []const Box {
+        return self.box[0..self.n];
     }
 
     pub fn take(self: *Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, pal: carve.Palette) ?Box {
@@ -84,7 +88,7 @@ pub const Lots = struct {
     }
 
     fn clear(self: *const Lots, b: Box, gap: i32) bool {
-        for (self.box[0..self.n], 0..) |t, i| {
+        for (self.slice(), 0..) |t, i| {
             if (b.overlaps(t, if (i < self.mine) GAP else gap)) return false;
         }
         return true;
@@ -203,7 +207,6 @@ pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, wall
 }
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots: *Lots, p: Params) void {
-    lots.begin();
     for (0..p.count) |_| {
         const w = rng.range(p.size[0], p.size[1]);
         const h = rng.range(p.size[0], @max(p.size[0], @divTrunc(p.size[1] * 3, 4)));

@@ -106,8 +106,7 @@ pub const Makeup = struct {
     }
 
     pub fn turn(self: *Makeup, i: usize) void {
-        const at = std.mem.indexOfScalar(actor.Kind, &actor.FOES, self.kind[i]) orelse actor.FOES.len - 1;
-        self.kind[i] = actor.FOES[mathx.wrap(at, 1, actor.FOES.len)];
+        self.kind[i] = mathx.stepIn(actor.Kind, &actor.FOES, self.kind[i], 1, actor.FOES.len - 1);
     }
 };
 
@@ -151,9 +150,7 @@ pub const Spec = struct {
 
     pub fn dropMakeup(self: *Spec, i: usize) bool {
         if (!self.canDrop()) return false;
-        std.mem.copyForwards(Makeup, self.makeup[i .. self.makeup_n - 1], self.makeup[i + 1 .. self.makeup_n]);
-        self.makeup_n -= 1;
-        self.makeup[self.makeup_n] = .{};
+        mathx.removeAt(Makeup, &self.makeup, &self.makeup_n, i, .{});
         return true;
     }
 

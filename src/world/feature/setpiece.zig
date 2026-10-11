@@ -110,7 +110,6 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots:
     const art = rows(p.piece);
     const w = size(art).x;
     const h = size(art).y;
-    lots.begin();
     for (0..p.count) |_| {
         const room = spaced(lots, lv, rng, w, h, p.apart, pal) orelse continue;
         place(lv, room.lo, art, pal);

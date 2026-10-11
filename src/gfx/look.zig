@@ -278,20 +278,21 @@ fn declares(comptime fs: []const u8, comptime name: []const u8) bool {
 }
 
 /// Each texture, render texture and shader `v` holds, a `program`'s too, unloaded and nulled.
+fn unloadEach(held: []?rl.Texture2D) void {
+    for (held) |*h| {
+        if (h.*) |t| rl.unloadTexture(t);
+        h.* = null;
+    }
+}
+
 pub fn unloadAll(v: anytype) void {
     inline for (std.meta.fields(@TypeOf(v.*))) |f| {
         if (comptime @typeInfo(f.type) == .@"struct" and @hasField(f.type, "values") and @hasDecl(f.type, "Key")) {
-            for (&@field(v.*, f.name).values) |*held| {
-                if (held.*) |t| rl.unloadTexture(t);
-                held.* = null;
-            }
+            unloadEach(&@field(v.*, f.name).values);
             continue;
         }
         if (comptime @typeInfo(f.type) == .array and std.meta.Elem(f.type) == ?rl.Texture2D) {
-            for (&@field(v.*, f.name)) |*held| {
-                if (held.*) |t| rl.unloadTexture(t);
-                held.* = null;
-            }
+            unloadEach(&@field(v.*, f.name));
             continue;
         }
         const Child = switch (@typeInfo(f.type)) {

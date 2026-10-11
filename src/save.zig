@@ -73,7 +73,7 @@ pub const Summary = struct {
     pub fn line(self: *const Summary, buf: []u8) [:0]const u8 {
         var at: [atlas.TITLE_MAX]u8 = undefined;
         const where = if (self.node) |n| atlas.titleOf(self.place.text(), n, &at) else "a generated floor";
-        return std.fmt.bufPrintZ(buf, "{s}" ++ menu.SEP ++ "HP {d}/{d}" ++ menu.SEP ++ "Gold {d}" ++ menu.SEP ++ "{s}", .{ self.name.text(), self.hp, self.max, self.gold, where }) catch "";
+        return std.fmt.bufPrintZ(buf, "{s}" ++ menu.SEP ++ hero.HP_FMT ++ menu.SEP ++ hero.GOLD_FMT ++ menu.SEP ++ "{s}", .{ self.name.text(), self.hp, self.max, self.gold, where }) catch "";
     }
 };
 

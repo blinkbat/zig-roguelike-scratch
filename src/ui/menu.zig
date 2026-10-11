@@ -20,7 +20,11 @@ const LEGEND_DY: i32 = 60;
 const MARK_GAP: i32 = 18;
 const MARK_L = ">";
 const MARK_R = "<";
-const CHROME_H: i32 = TITLE - TITLE_DY + ROWS_DY + NOTE_GAP * 2 + LEGEND_DY + NOTE * 2;
+/// `draw`'s, from the title's top to the first row, and from under the last row to the legend's foot.
+const ABOVE: i32 = TITLE - TITLE_DY + ROWS_DY;
+const BELOW: i32 = NOTE_GAP + LEGEND_DY + NOTE;
+/// The rows sit at the middle, so either side takes the more of the two.
+const CHROME_H: i32 = 2 * @as(i32, @max(ABOVE, BELOW));
 pub const NOTE_MAX: usize = 160;
 pub const SEP = "   ";
 pub const CARET = "_";

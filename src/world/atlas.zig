@@ -11,7 +11,7 @@ const pack = @import("../play/pack.zig");
 const P = mathx.P;
 
 pub const MAX_NODES: usize = 32;
-/// Every placed foe and the archer fit the pool; a slime that finds it full does not split.
+/// Every placed foe and the archer fit the pool.
 pub const MAX_FOES: usize = actor.MAX - 1;
 pub const DIR = "worlds";
 pub const EXT = ".world";
@@ -97,9 +97,7 @@ pub const Procgen = struct {
     }
 
     pub fn dropFeature(self: *Procgen, i: usize) void {
-        std.mem.copyForwards(Feature, self.feature[i .. self.feature_n - 1], self.feature[i + 1 .. self.feature_n]);
-        self.feature_n -= 1;
-        self.feature[self.feature_n] = Feature.of(FIRST_FEATURE);
+        mathx.removeAt(Feature, &self.feature, &self.feature_n, i, Feature.of(FIRST_FEATURE));
     }
 
     pub fn fit(self: *const Procgen) Procgen {
@@ -352,8 +350,7 @@ pub const Atlas = struct {
 
     pub fn remove(self: *Atlas, n: usize) void {
         for (self.node[n].doors(), 0..) |_, k| self.unlink(.{ .node = n, .door = k });
-        std.mem.copyForwards(Node, self.node[n .. self.node_n - 1], self.node[n + 1 .. self.node_n]);
-        self.node_n -= 1;
+        mathx.removeAt(Node, &self.node, &self.node_n, n, null);
         self.renumber(.{ .node = n, .door = 0 }, Atlas.pastNode);
         if (self.start.node == n) self.start = .{} else if (self.start.node > n) self.start.node -= 1;
     }
@@ -369,8 +366,7 @@ pub const Atlas = struct {
     pub fn removeDoor(self: *Atlas, at: Link) void {
         self.unlink(at);
         const nd = &self.node[at.node];
-        std.mem.copyForwards(Door, nd.door[at.door .. nd.door_n - 1], nd.door[at.door + 1 .. nd.door_n]);
-        nd.door_n -= 1;
+        mathx.removeAt(Door, &nd.door, &nd.door_n, at.door, null);
         self.renumber(at, Atlas.pastDoor);
     }
 

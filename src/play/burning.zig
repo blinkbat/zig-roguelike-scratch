@@ -10,6 +10,7 @@ pub const TURNS: u8 = 3;
 pub const PER_TURN: i32 = 4;
 pub const VERB = "shoots a burning arrow into";
 pub const TAKES = "catches fire";
+pub const ELEMENT: damage.Element = .fire;
 pub const DESCRIPTION = std.fmt.comptimePrint("Adds {d}-{d} fire damage. {d}% burn chance: {d} fire damage for {d} turns. {d} mana.", .{ FIRE_LO, FIRE_HI, CHANCE, PER_TURN, TURNS, COST });
 
 pub const Burn = damage.Lasting(TURNS, i16, seared);

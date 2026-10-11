@@ -2,6 +2,9 @@ const std = @import("std");
 
 pub const MANA: i32 = 100;
 pub const MANA_REGEN: i32 = 5;
+/// Hp then most hp, as the hud and a save slot read it.
+pub const HP_FMT = "HP {d}/{d}";
+pub const GOLD_FMT = "Gold {d}";
 
 pub const Class = enum {
     archer,

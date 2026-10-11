@@ -985,7 +985,7 @@ const IT_DIES = " It dies.";
 /// An arrow's physical roll, on a body, then its element's, in the order every shot draws them.
 fn rollArrow(rng: *mathx.Rng, comptime act: skillbar.Act, body: bool) damage.Damage {
     var hit = damage.Damage{ .physical = if (body) bow.roll(rng) else 0 };
-    if (act != .shoot) hit.elements.set(elementOf(act), arrowOf(act).roll(rng));
+    if (act != .shoot) hit.elements.set(arrowOf(act).ELEMENT, arrowOf(act).roll(rng));
     return hit;
 }
 
@@ -995,8 +995,8 @@ fn burningHit(g: *Game, id: u16, s: Stroke) void {
 
 /// `blow` on the body, the arrow's element afflicting it on the element's chance.
 fn elementHit(g: *Game, id: u16, blow: damage.Damage, comptime act: skillbar.Act, s: Stroke) void {
-    const el = comptime elementOf(act);
     const arrow = arrowOf(act);
+    const el = arrow.ELEMENT;
     const a = g.pool.get(id) orelse return;
     const dealt = blow.total(a.resists);
     const at = a.at;
@@ -1011,15 +1011,7 @@ fn elementHit(g: *Game, id: u16, blow: damage.Damage, comptime act: skillbar.Act
     if (takes) sayAt(g, at, "The {s} " ++ arrow.TAKES ++ "!", .{name});
 }
 
-fn elementOf(comptime act: skillbar.Act) damage.Element {
-    return switch (act) {
-        .burning_arrow => .fire,
-        .glacial_shot => .cold,
-        .shoot, .juke, .wait, .secondary => @compileError("no element"),
-    };
-}
-
-/// An elemental arrow's module: its roll, its chance to afflict, its verb and what is said as it takes.
+/// An elemental arrow's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
 fn arrowOf(comptime act: skillbar.Act) type {
     return switch (act) {
         .burning_arrow => burning,
@@ -1231,7 +1223,7 @@ fn ranAlready(g: *Game, id: u16, comptime tick: Tick) bool {
 fn burnHarm(g: *Game, id: u16) void {
     const a = g.pool.get(id) orelse return;
     if (ranAlready(g, id, .burned)) return;
-    const dmg = a.burn.tick(a.resists.get(.fire)) orelse return;
+    const dmg = a.burn.tick(a.resists.get(burning.ELEMENT)) orelse return;
     if (dmg == 0) return;
     _ = harmTick(g, id, dmg, .burned, .{ .hero = "Burning sears {s} for {d}.", .foe = "Burning sears the {s} for {d}." });
 }
@@ -2211,7 +2203,7 @@ fn drawHud(g: *Game) void {
     const shown: ?fx.Body = if (heroSlot(g)) |i| g.pictured[i] else null;
     const max = if (shown) |h| h.max else actor.row(HERO).hp;
     const hp = if (shown) |h| h.hp else 0;
-    meter(g, top + BAR_Y, hp, max, look.LIFE_BG, look.LIFE, std.fmt.bufPrintZ(&buf, "{s}  HP {d}/{d}", .{ g.name.text(), hp, max }) catch "");
+    meter(g, top + BAR_Y, hp, max, look.LIFE_BG, look.LIFE, std.fmt.bufPrintZ(&buf, "{s}  " ++ heroes.HP_FMT, .{ g.name.text(), hp, max }) catch "");
     meter(g, top + MANA_Y, g.mana, heroes.MANA, look.MANA_BG, look.MANA, std.fmt.bufPrintZ(&buf, "Mana {d}/{d}", .{ g.mana, heroes.MANA }) catch "");
     if (shown) |h| drawStatus(g, top, h);
     var tally_x = HUD_PAD;
@@ -2221,7 +2213,7 @@ fn drawHud(g: *Game) void {
         g.face.text(s, tally_x, top + TALLY_Y, TEXT, look.DIM);
         tally_x += g.face.width(s, TEXT) + TALLY_GAP;
     }
-    g.face.text(std.fmt.bufPrintZ(&buf, "Gold {d}", .{goldShown(g)}) catch "", tally_x, top + TALLY_Y, TEXT, look.COIN);
+    g.face.text(std.fmt.bufPrintZ(&buf, heroes.GOLD_FMT, .{goldShown(g)}) catch "", tally_x, top + TALLY_Y, TEXT, look.COIN);
     const hint: [:0]const u8 = if (g.mode == .aim)
         std.fmt.bufPrintZ(&buf, HINT_AIM, .{ g.aim_by.caption(), g.aim_act.verb(), cancelOf(g.aim_by).caption() }) catch ""
     else
@@ -2554,7 +2546,7 @@ fn benchWalk(g: *Game) !void {
     begin(g, SHOT_SEED);
     var rng = mathx.Rng.init(SHOT_SEED);
     var d: mathx.Dir = .e;
-    const dt: f32 = 1.0 / 60.0;
+    const dt = mathx.FRAME_DT;
     var sim = [_]u64{0} ** BENCH_FRAMES;
     var draw = [_]u64{0} ** BENCH_FRAMES;
     for (0..BENCH_FRAMES) |i| {
@@ -3830,7 +3822,7 @@ test "a kick dealt in a frame of play is no further into its bump than its blow 
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
     calm(g);
     g.st = .{ .walk = .e };
-    update(g, 1.0 / 60.0);
+    update(g, mathx.FRAME_DT);
     const t = g.glide[actor.Pool.slot(g.hero)].t;
     std.debug.print("a kick dealt in a 60 fps frame: {d:.4} s into its bump as the frame ends\n", .{t});
     try std.testing.expectEqual(@as(f32, 0), t);

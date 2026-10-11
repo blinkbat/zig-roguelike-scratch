@@ -91,7 +91,7 @@ fn lowOf(hp: i32, max: i32) f32 {
 
 test "a blow on the archer starts reddening the edge as it lands, rises, and fades within its time" {
     var v = Vignette{};
-    v.step(1.0 / 60.0, 0, 24, 24);
+    v.step(mathx.FRAME_DT, 0, 24, 24);
     try std.testing.expectEqual(@as(f32, 0), v.alpha());
     const dt = mathx.TEST_DT;
     var flash: f32 = 0.45;
@@ -120,7 +120,7 @@ test "the low glow is off above a third of full hp and grows as hp falls toward 
     var last: f32 = -1;
     for ([_]i32{ 24, 9, 8, 6, 4, 2, 1 }) |hp| {
         var v = Vignette{};
-        for (0..600) |_| v.step(1.0 / 60.0, 0, hp, 24);
+        for (0..600) |_| v.step(mathx.FRAME_DT, 0, hp, 24);
         v.t = .{ .sum = 0.25 / BEAT_HZ };
         const a = v.alpha();
         std.debug.print(" {d}:{d:.2}", .{ hp, a });

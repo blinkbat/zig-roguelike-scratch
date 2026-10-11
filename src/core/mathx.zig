@@ -100,6 +100,12 @@ pub fn wrap(i: usize, by: i32, n: usize) usize {
     return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
 }
 
+/// The value `by` places on from `v` in `list`, wrapping round; counted from `missing` when `v` is not in it.
+pub fn stepIn(comptime T: type, list: []const T, v: T, by: i32, missing: ?usize) T {
+    const at = std.mem.indexOfScalar(T, list, v) orelse missing.?;
+    return list[wrap(at, by, list.len)];
+}
+
 /// Chebyshev, to match 8-way movement: every step, range and gap on the grid.
 pub fn dist(a: P, b: P) i32 {
     return @intCast(@max(@abs(a.x - b.x), @abs(a.y - b.y)));
@@ -167,8 +173,17 @@ pub fn reaches(a: P, b: P, r: f32) bool {
     return distEuclid(a, b) <= r + 0.5;
 }
 
-/// A test's frame, seconds.
+/// Takes `items[i]` out of the first `n.*`, the rest keeping their order, and leaves `blank` in the slot freed at the end.
+pub fn removeAt(comptime T: type, items: []T, n: *usize, i: usize, blank: ?T) void {
+    std.mem.copyForwards(T, items[i .. n.* - 1], items[i + 1 .. n.*]);
+    n.* -= 1;
+    if (blank) |b| items[n.*] = b;
+}
+
+/// A test's fine frame, seconds, for timings read to a few milliseconds.
 pub const TEST_DT: f32 = 1.0 / 240.0;
+/// A frame at 60 a second, for a bench or a test that counts frames.
+pub const FRAME_DT: f32 = 1.0 / 60.0;
 
 /// Real seconds summed frame by frame, in f64: an f32 sum stops moving after a day or so.
 pub const Seconds = struct {

@@ -253,8 +253,16 @@ pub fn closes(t: grid.Tile, pal: Palette) bool {
     return t == pal.solid or (t.solid() and t.ground() != null);
 }
 
-/// Every stretch of open ground joined to the biggest by a bending trail that bridges water, lava and chasms; `before` is the map before the features, so ground they changed is theirs.
-pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, before: ?*const [grid.CELLS]grid.Tile) void {
+/// What the features laid over a base, so `connect` fills no ground of theirs as a pocket.
+pub const Laid = struct {
+    /// What they raised: houses, fields, set pieces.
+    lots: []const grid.Box = &.{},
+    /// The base before them, so ground they opened from its solid is theirs.
+    before: ?*const [grid.CELLS]grid.Tile = null,
+};
+
+/// Every stretch of open ground joined to the biggest by a bending trail that bridges water, lava and chasms.
+pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, laid: Laid) void {
     var st: Stretches = .{};
     const region = &st.region;
     const size = &st.size;
@@ -262,7 +270,7 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, before: ?*const [
         const n = st.label(lv);
         if (n <= 1) return;
         const main = st.biggest();
-        const kept = if (pal.pocket != null) keptIn(lv, region, pal, before) else Regions.initEmpty();
+        const kept = if (pal.pocket != null) keptIn(lv, region, pal, laid) else Regions.initEmpty();
         var first: [grid.CELLS]u32 = undefined;
         @memset(first[0..n], NO_CELL);
         for (0..grid.CELLS) |i| {
@@ -379,16 +387,23 @@ pub fn unbar(lv: *grid.Level) void {
     }
 }
 
-/// The stretches no pocket fill takes: one holding a door, one by a liquid, as an island is, or one holding ground a feature laid, as a house is.
-fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, before: ?*const [grid.CELLS]grid.Tile) Regions {
+/// The stretches no pocket fill takes: one holding a door, one by a liquid, as an island is, one holding ground other than the base's open, decor or path, ground a feature opened, as a ford is, or one in a lot, as a house is.
+fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, laid: Laid) Regions {
     const base = Over{ .tile = pal.open, .decked = true };
     var out = Regions.initEmpty();
     for (0..grid.CELLS) |i| {
         if (region[i] == NONE) continue;
         const t = lv.tile[i];
-        const changed = if (before) |b| b[i] != t else false;
-        const laid = changed or (!base.has(t) and t != pal.path);
-        if (laid or lv.door[i] != grid.NO_DOOR or byLiquid(lv, grid.Level.of(i))) out.set(region[i]);
+        const other = !base.has(t) and t != pal.path;
+        const opened = if (laid.before) |b| b[i].solid() else false;
+        if (other or opened or lv.door[i] != grid.NO_DOOR or byLiquid(lv, grid.Level.of(i))) out.set(region[i]);
+    }
+    for (laid.lots) |lot| {
+        var cells = lot.cells();
+        while (cells.next()) |q| {
+            const r = region[grid.Level.idx(q)];
+            if (r != NONE) out.set(r);
+        }
     }
     return out;
 }
@@ -706,7 +721,7 @@ test "a small island is bridged, not filled as a pocket" {
     field(&lv, pal);
     disc(&lv, grid.MIDDLE, 4, .water, null);
     disc(&lv, grid.MIDDLE, 1, .grass, null);
-    connect(&lv, &rng, pal, null);
+    connect(&lv, &rng, pal, .{});
     std.debug.print("a five-cell island in a pocket-filling base: {d} bridge cells after joining\n", .{count(&lv, .bridge)});
     try std.testing.expect(lv.walkable(grid.MIDDLE));
     try std.testing.expect(count(&lv, .bridge) > 0);
@@ -721,7 +736,7 @@ test "a river runs edge to edge and parts the ground, and a join bridges it" {
     f.fill(&lv, 3, .water);
     var st: Stretches = .{};
     const parted = st.label(&lv);
-    connect(&lv, &rng, Palette.TRAILED, null);
+    connect(&lv, &rng, Palette.TRAILED, .{});
     const joined = st.label(&lv);
     std.debug.print("a river: {d} water cells, the ground in {d} parts, {d} after joining by {d} bridge cells\n", .{ count(&lv, .water), parted, joined, count(&lv, .bridge) });
     try std.testing.expect(parted >= 2);

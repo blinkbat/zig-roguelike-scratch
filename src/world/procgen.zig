@@ -153,7 +153,10 @@ pub const Feature = union(enum) {
         switch (f) {
             inline else => |p, t| {
                 const m = @field(FEATURES, @tagName(t));
-                if (comptime takesLots(m)) m.apply(lv, rng, seed, pal, lots, p) else m.apply(lv, rng, seed, pal, p);
+                if (comptime takesLots(m)) {
+                    lots.begin();
+                    m.apply(lv, rng, seed, pal, lots, p);
+                } else m.apply(lv, rng, seed, pal, p);
             },
         }
     }
@@ -198,7 +201,7 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     carve.seal(lv, pal.solid);
     carve.openDoors(lv, doors, pal.open);
     if (lv.firstOpen() == null) carve.disc(lv, grid.MIDDLE, CLEARING_R, pal.open, null);
-    carve.connect(lv, &rng, pal, &base);
+    carve.connect(lv, &rng, pal, .{ .lots = lots.slice(), .before = &base });
     settle(lv);
 }
 
@@ -222,6 +225,8 @@ fn settle(lv: *grid.Level) void {
 }
 
 const TEST_RUNS: usize = 12;
+/// Maps a count test rolls to say how many of them go wrong.
+const COUNT_RUNS: usize = 200;
 const SMALL_HOUSES = (buildings.Params{ .count = buildings.COUNT_MAX, .size = .{ 5, 6 } }).fit();
 const PACKED_SHRINES = (setpiece.Params{ .piece = .shrine, .count = setpiece.COUNT_MAX, .apart = 0 }).fit();
 
@@ -282,11 +287,10 @@ test "a doorless floor rolled all solid still has ground to start on" {
 test "a set piece in a thicket opens onto the ground round it, so no join fills or breaks into it" {
     var lv: grid.Level = undefined;
     var st: carve.Stretches = .{};
-    const runs = 200;
     const p = (wilds.Params{}).fit();
     for (std.enums.values(setpiece.Piece)) |pc| {
         var shut: usize = 0;
-        for (0..runs) |i| {
+        for (0..COUNT_RUNS) |i| {
             const seed = 0x5E7 +% i *% 7919;
             var rng = mathx.Rng.init(seed);
             lay(wilds, &lv, &rng, seed, p);
@@ -302,20 +306,19 @@ test "a set piece in a thicket opens onto the ground round it, so no join fills 
             } else false;
             if (!out) shut += 1;
         }
-        std.debug.print("{s} in the wilds: {d} of {d} shut in\n", .{ @tagName(pc), shut, runs });
+        std.debug.print("{s} in the wilds: {d} of {d} shut in\n", .{ @tagName(pc), shut, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), shut);
     }
 }
 
 test "a set piece in a thicket or in rock keeps its ground through the joins" {
     var lv: grid.Level = undefined;
-    const runs = 200;
     inline for (.{ wilds, caves }) |base| {
         const p = (base.Params{}).fit();
         const pal = base.palette(p);
         for (std.enums.values(setpiece.Piece)) |pc| {
             var lost: usize = 0;
-            for (0..runs) |i| {
+            for (0..COUNT_RUNS) |i| {
                 const seed = 0x5E7 +% i *% 7919;
                 var rng = mathx.Rng.init(seed);
                 lay(base, &lv, &rng, seed, p);
@@ -323,7 +326,7 @@ test "a set piece in a thicket or in rock keeps its ground through the joins" {
                 const at = setpiece.cornerFor(grid.MIDDLE, art);
                 setpiece.place(&lv, at, art, pal);
                 carve.seal(&lv, pal.solid);
-                carve.connect(&lv, &rng, pal, null);
+                carve.connect(&lv, &rng, pal, .{});
                 var gone = false;
                 var spots = setpiece.Spots{ .at = at, .art = art };
                 while (spots.next()) |s| {
@@ -332,7 +335,7 @@ test "a set piece in a thicket or in rock keeps its ground through the joins" {
                 }
                 if (gone) lost += 1;
             }
-            std.debug.print("{s} in {s}: {d} of {d} maps lost ground to the joins\n", .{ @tagName(pc), @typeName(base), lost, runs });
+            std.debug.print("{s} in {s}: {d} of {d} maps lost ground to the joins\n", .{ @tagName(pc), @typeName(base), lost, COUNT_RUNS });
             try std.testing.expectEqual(@as(usize, 0), lost);
         }
     }
@@ -340,12 +343,11 @@ test "a set piece in a thicket or in rock keeps its ground through the joins" {
 
 test "a house in a thicket or in rock keeps its floor through the joins" {
     var lv: grid.Level = undefined;
-    const runs = 200;
     inline for (.{ wilds, caves, topology }) |base| {
         const p = (base.Params{}).fit();
         const pal = base.palette(p);
         var lost: usize = 0;
-        for (0..runs) |i| {
+        for (0..COUNT_RUNS) |i| {
             const seed = 0x51ED +% i *% 7919;
             var rng = mathx.Rng.init(seed);
             lay(base, &lv, &rng, seed, p);
@@ -353,47 +355,47 @@ test "a house in a thicket or in rock keeps its floor through the joins" {
             buildings.apply(&lv, &rng, seed, pal, &lots, (buildings.Params{}).fit());
             carve.seal(&lv, pal.solid);
             const before = carve.count(&lv, .floor);
-            carve.connect(&lv, &rng, pal, null);
+            carve.connect(&lv, &rng, pal, .{});
             if (carve.count(&lv, .floor) < before) lost += 1;
         }
-        std.debug.print("houses in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, runs });
+        std.debug.print("houses in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
 
 test "a small house or shrine walled in by an earlier feature keeps its floor through the joins" {
     var lv: grid.Level = undefined;
-    const runs = 200;
     inline for (.{ wilds, caves }) |base| {
         const p = (base.Params{}).fit();
         const pal = base.palette(p);
         var lost: usize = 0;
-        for (0..runs) |i| {
+        for (0..COUNT_RUNS) |i| {
             const seed = 0xB0DE +% i *% 7919;
             var rng = mathx.Rng.init(seed);
             lay(base, &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
             if (base == wilds) border.apply(&lv, &rng, seed, pal, (border.Params{}).fit()) else buildings.apply(&lv, &rng, seed, pal, &lots, SMALL_HOUSES);
+            lots.begin();
             buildings.apply(&lv, &rng, seed, pal, &lots, SMALL_HOUSES);
+            lots.begin();
             setpiece.apply(&lv, &rng, seed, pal, &lots, PACKED_SHRINES);
             carve.seal(&lv, pal.solid);
             const before = carve.count(&lv, .floor);
-            carve.connect(&lv, &rng, pal, null);
+            carve.connect(&lv, &rng, pal, .{});
             if (carve.count(&lv, .floor) < before) lost += 1;
         }
-        std.debug.print("small houses and shrines after a feature in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, runs });
+        std.debug.print("small houses and shrines after a feature in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
 
 test "a small house a later thicket shuts in keeps its floor through the joins" {
     var lv: grid.Level = undefined;
-    const runs = 200;
     const p = (wilds.Params{}).fit();
     const pal = wilds.palette(p);
     for ([_]scatter.Params{ .{ .amount = 300, .clump = 6 }, .{ .amount = scatter.AMOUNT_MAX } }) |thicket| {
         var lost: usize = 0;
-        for (0..runs) |i| {
+        for (0..COUNT_RUNS) |i| {
             const seed = 0x7A1C +% i *% 7919;
             var rng = mathx.Rng.init(seed);
             lay(wilds, &lv, &rng, seed, p);
@@ -402,68 +404,88 @@ test "a small house a later thicket shuts in keeps its floor through the joins" 
             scatter.apply(&lv, &rng, seed, pal, thicket.fit());
             carve.seal(&lv, pal.solid);
             const before = carve.count(&lv, .floor);
-            carve.connect(&lv, &rng, pal, null);
+            carve.connect(&lv, &rng, pal, .{});
             if (carve.count(&lv, .floor) < before) lost += 1;
         }
-        std.debug.print("small houses under a thicket of {d} a thousand, clumps {d}: {d} of {d} maps lost floor to the joins\n", .{ thicket.amount, thicket.clump, lost, runs });
+        std.debug.print("small houses under a thicket of {d} a thousand, clumps {d}: {d} of {d} maps lost floor to the joins\n", .{ thicket.amount, thicket.clump, lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
 
 test "a house floored as the base's own ground keeps it through the joins, a border shutting it in" {
     var lv: grid.Level = undefined;
-    var was: [grid.CELLS]grid.Tile = undefined;
-    const runs = 200;
     const rim = (border.Params{ .width = 6, .rough = border.ROUGH_MAX }).fit();
     inline for (.{ .{ hall, hall.Params{ .style = .grove } }, .{ topology, topology.Params{ .ground = .floor } } }) |b| {
         const p = b[1].fit();
         const pal = b[0].palette(p);
         var lost: usize = 0;
-        for (0..runs) |i| {
+        for (0..COUNT_RUNS) |i| {
             const seed = 0xF100 +% i *% 7919;
             var rng = mathx.Rng.init(seed);
             lay(b[0], &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
-            was = lv.tile;
             buildings.apply(&lv, &rng, seed, pal, &lots, SMALL_HOUSES);
             border.apply(&lv, &rng, seed, pal, rim);
             carve.seal(&lv, pal.solid);
             var laid = std.StaticBitSet(grid.CELLS).initEmpty();
-            for (lv.tile, was, 0..) |t, w, k| laid.setValue(k, t == .floor and w != .floor);
-            carve.connect(&lv, &rng, pal, &was);
-            var it = laid.iterator(.{});
-            while (it.next()) |k| {
-                if (lv.tile[k].solid()) break;
-            } else continue;
-            lost += 1;
+            for (lots.slice()) |box| {
+                var cells = box.cells();
+                while (cells.next()) |q| {
+                    if (!lv.at(q).solid()) laid.set(grid.Level.idx(q));
+                }
+            }
+            carve.connect(&lv, &rng, pal, .{ .lots = lots.slice() });
+            if (filled(&lv, &laid)) lost += 1;
         }
-        std.debug.print("houses then a border in {s}: {d} of {d} maps lost house floor to the joins\n", .{ @typeName(b[0]), lost, runs });
+        std.debug.print("houses then a border in {s}: {d} of {d} maps lost house floor to the joins\n", .{ @typeName(b[0]), lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
 
 test "a field in a thicket keeps its fence through the joins" {
     var lv: grid.Level = undefined;
-    var was: [grid.CELLS]grid.Tile = undefined;
-    const runs = 200;
     inline for (.{wilds}) |base| {
         const p = (base.Params{}).fit();
         const pal = base.palette(p);
         var broken: usize = 0;
-        for (0..runs) |i| {
+        for (0..COUNT_RUNS) |i| {
             const seed = 0xFA2E +% i *% 7919;
             var rng = mathx.Rng.init(seed);
             lay(base, &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
-            was = lv.tile;
             farms.apply(&lv, &rng, seed, pal, &lots, (farms.Params{}).fit());
             carve.seal(&lv, pal.solid);
             const before = carve.count(&lv, .fence);
-            carve.connect(&lv, &rng, pal, &was);
+            carve.connect(&lv, &rng, pal, .{ .lots = lots.slice() });
             if (carve.count(&lv, .fence) < before) broken += 1;
         }
-        std.debug.print("fields in {s}: {d} of {d} maps had a join break a fence\n", .{ @typeName(base), broken, runs });
+        std.debug.print("fields in {s}: {d} of {d} maps had a join break a fence\n", .{ @typeName(base), broken, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), broken);
+    }
+}
+
+test "a cliff's fords keep their crossing through the joins" {
+    var lv: grid.Level = undefined;
+    var base: [grid.CELLS]grid.Tile = undefined;
+    const cliff = (river.Params{ .fill = .rock, .bank = .none, .course = .across, .fords = river.FORDS_MAX }).fit();
+    inline for (.{ wilds, caves, topology }) |b| {
+        const p = (b.Params{}).fit();
+        const pal = b.palette(p);
+        var lost: usize = 0;
+        for (0..COUNT_RUNS) |i| {
+            const seed = 0xF02D +% i *% 7919;
+            var rng = mathx.Rng.init(seed);
+            lay(b, &lv, &rng, seed, p);
+            base = lv.tile;
+            river.apply(&lv, &rng, seed, pal, cliff);
+            carve.seal(&lv, pal.solid);
+            var opened = std.StaticBitSet(grid.CELLS).initEmpty();
+            for (lv.tile, base, 0..) |t, was, k| opened.setValue(k, was.solid() and !t.solid());
+            carve.connect(&lv, &rng, pal, .{ .before = &base });
+            if (filled(&lv, &opened)) lost += 1;
+        }
+        std.debug.print("rock cliffs with {d} fords in {s}: {d} of {d} maps filled a ford\n", .{ cliff.fords, @typeName(b), lost, COUNT_RUNS });
+        try std.testing.expectEqual(@as(usize, 0), lost);
     }
 }
 
@@ -471,13 +493,12 @@ test "a house or set piece is raised clear of what an earlier feature laid" {
     var lv: grid.Level = undefined;
     var base: [grid.CELLS]grid.Tile = undefined;
     var was: [grid.CELLS]grid.Tile = undefined;
-    const runs = 200;
     const houses = (buildings.Params{ .count = 8, .size = .{ 5, 9 } }).fit();
     inline for (.{ .{ open, open.Params{} }, .{ hall, hall.Params{} } }) |b| {
         const p = b[1].fit();
         const pal = b[0].palette(p);
         var hit: usize = 0;
-        for (0..runs) |i| {
+        for (0..COUNT_RUNS) |i| {
             const seed = 0x4A3 +% i *% 7919;
             var rng = mathx.Rng.init(seed);
             lay(b[0], &lv, &rng, seed, p);
@@ -485,16 +506,27 @@ test "a house or set piece is raised clear of what an earlier feature laid" {
             base = lv.tile;
             farms.apply(&lv, &rng, seed, pal, &lots, (farms.Params{ .count = 6 }).fit());
             was = lv.tile;
+            lots.begin();
             buildings.apply(&lv, &rng, seed, pal, &lots, houses);
             var over = laidOver(&lv, &was, &base, pal);
             was = lv.tile;
+            lots.begin();
             setpiece.apply(&lv, &rng, seed, pal, &lots, PACKED_SHRINES);
             over = over or laidOver(&lv, &was, &base, pal);
             if (over) hit += 1;
         }
-        std.debug.print("houses after fields, shrines after both, in {s}: {d} of {d} maps laid over them\n", .{ @typeName(b[0]), hit, runs });
+        std.debug.print("houses after fields, shrines after both, in {s}: {d} of {d} maps laid over them\n", .{ @typeName(b[0]), hit, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), hit);
     }
+}
+
+/// Some cell of `cells` is solid now.
+fn filled(lv: *const grid.Level, cells: *const std.StaticBitSet(grid.CELLS)) bool {
+    var it = cells.iterator(.{});
+    while (it.next()) |k| {
+        if (lv.tile[k].solid()) return true;
+    }
+    return false;
 }
 
 /// A cell an earlier feature laid, more than the base's open ground, changed since `was`.

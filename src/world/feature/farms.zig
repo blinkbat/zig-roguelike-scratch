@@ -27,7 +27,6 @@ pub const Params = struct {
 };
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots: *buildings.Lots, p: Params) void {
-    lots.begin();
     for (0..p.count) |_| {
         const b = lots.take(lv, rng, rng.range(p.size[0], p.size[1]), rng.range(p.size[0], p.size[1]), pal) orelse continue;
         const across = rng.chance(0.5);

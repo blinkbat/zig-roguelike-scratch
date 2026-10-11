@@ -422,33 +422,41 @@ fn wrapped(cos: f32, wrap: f32) f32 {
     return @max(0, (cos + wrap) / (1 + wrap));
 }
 
-/// `out` where `(u, v)` falls outside the grid; texel centres sit on whole numbers.
-fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32, out: f32) f32 {
+/// 0 outside the grid; texel centres sit on whole numbers.
+fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
     const fx = @floor(u);
     const fy = @floor(v);
     const x0: i32 = @intFromFloat(fx);
     const y0: i32 = @intFromFloat(fy);
-    return mathx.bilerp(.{ texel(f, w, h, x0, y0, out), texel(f, w, h, x0 + 1, y0, out), texel(f, w, h, x0, y0 + 1, out), texel(f, w, h, x0 + 1, y0 + 1, out) }, u - fx, v - fy);
+    return mathx.bilerp(.{ texel(f, w, h, x0, y0), texel(f, w, h, x0 + 1, y0), texel(f, w, h, x0, y0 + 1), texel(f, w, h, x0 + 1, y0 + 1) }, u - fx, v - fy);
 }
+
+/// A point's own texel weighs a quarter at least in `bilinear`, so on wholly remembered open ground `open_sight` holds whole; toward a shrub clump's middle, where nothing open weighs, or ground still coming into memory, `sightAt` eases to `soft_sight`.
+const OPEN_WHOLE: f32 = 4;
 
 /// A map-sized field at a point on the screen, cells.
 fn sample(f: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
-    return bilinear(f, grid.W, grid.H, x - 0.5, y - 0.5, 0);
+    return bilinear(f, grid.W, grid.H, x - 0.5, y - 0.5);
 }
 
-fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32, out: f32) f32 {
-    return f[mathx.slot(x, y, @intCast(w), @intCast(h)) orelse return out];
+fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32) f32 {
+    return f[mathx.slot(x, y, @intCast(w), @intCast(h)) orelse return 0];
 }
 
 /// A light's reach at `(u, v)`: blended over `reach` inside a cell it reaches, over `open` in one it misses, so no wall passes its light on.
 fn occluded(reach: []const f32, open: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
-    const own = texel(reach, w, h, @intFromFloat(@floor(u + 0.5)), @intFromFloat(@floor(v + 0.5)), 0) > 0;
-    return bilinear(if (own) reach else open, w, h, u, v, 0);
+    const own = texel(reach, w, h, @intFromFloat(@floor(u + 0.5)), @intFromFloat(@floor(v + 0.5))) > 0;
+    return bilinear(if (own) reach else open, w, h, u, v);
 }
 
-/// `reach` but for what blocks sight, which `occluded` blends from beyond a light's reach.
-fn opened(reach: f32, blind: bool) f32 {
-    return if (blind) 0 else reach;
+/// 1 where `on`, else 0: a mask to multiply by.
+fn mask(on: bool) f32 {
+    return @floatFromInt(@intFromBool(on));
+}
+
+/// Blocks sight and stands over its whole cell, its ground never showing: a wall or rock, not a shrub or reeds.
+fn hidesGround(t: grid.Tile) bool {
+    return t.blind() and t.upright() and !look.stands(t);
 }
 
 /// A cell's memory at each point in it, from the cells round it short of wholly remembered.
@@ -614,11 +622,13 @@ pub const Light = struct {
     sight: [grid.CELLS]f32,
     memory: [grid.CELLS]f32,
     soft_sight: [grid.CELLS]f32,
-    seen_sight: [grid.CELLS]f32,
-    /// `soft_sight` over open ground alone, so no cell that blocks sight lends ground its light or dims it.
+    /// `soft_sight` over open ground alone, so no cell that blocks sight lends ground its light or dims it; times `open_weight`, which `sightAt` divides back out.
     open_sight: [grid.CELLS]f32,
-    open_memory: [grid.CELLS]f32,
-    /// 1 on a cell that blocks no sight, which `sightAt` blends `open_sight` over; set from the tiles in `settle`.
+    /// 1 on a cell that blocks no sight; set from the tiles in `settle`.
+    see_through: [grid.CELLS]f32,
+    /// How far `open_sight` counts: open ground, by how well it is remembered. `sightAt` blends over these alone.
+    open_weight: [grid.CELLS]f32,
+    /// 1 on a cell whose ground shows, where `sightAt` blends `open_sight`, so a shrub's edge is one field with the ground beside it; set from the tiles in `settle`.
     ground: [grid.CELLS]f32,
     blur: [grid.CELLS]f32,
     share: [grid.CELLS]f32,
@@ -672,15 +682,15 @@ pub const Light = struct {
             var box = grid.Cells.around(t.floor(), REACH);
             while (box.next()) |p| {
                 const k = t.texel(p);
-                t.reach[k] = if (grid.cellOr(bool, &pool, p, false)) 1 else 0;
-                t.open[k] = opened(t.reach[k], lv.at(p).blind());
+                t.reach[k] = mask(grid.cellOr(bool, &pool, p, false));
+                t.open[k] = t.reach[k] * grid.cellOr(f32, &self.see_through, p, 0);
             }
             self.torch[self.torch_n] = t;
             self.torch_n += 1;
         }
         for (0..grid.CELLS) |i| {
-            self.sight[i] = if (lv.lit[i]) 1 else 0;
-            self.memory[i] = if (lv.seen[i]) 1 else 0;
+            self.sight[i] = mask(lv.lit[i]);
+            self.memory[i] = mask(lv.seen[i]);
         }
         self.soften();
         self.t = .{};
@@ -692,8 +702,8 @@ pub const Light = struct {
         const down = mathx.easing(dt, FORGET);
         var moved = false;
         for (0..grid.CELLS) |i| {
-            const want_s: f32 = if (lv.lit[i]) 1 else 0;
-            const want_m: f32 = if (lv.seen[i]) 1 else 0;
+            const want_s = mask(lv.lit[i]);
+            const want_m = mask(lv.seen[i]);
             if (self.sight[i] == want_s and self.memory[i] == want_m) continue;
             const s = mathx.ease(self.sight[i], want_s, up, down);
             const m = mathx.ease(self.memory[i], want_m, up, down);
@@ -716,20 +726,23 @@ pub const Light = struct {
     }
 
     fn grounded(self: *Light) void {
-        for (&self.ground, &self.scratch.tile) |*g, t| g.* = opened(1, t.blind());
+        for (&self.see_through, &self.ground, &self.scratch.tile) |*k, *g, t| {
+            k.* = mask(!t.blind());
+            g.* = mask(!hidesGround(t));
+        }
     }
 
-    /// Sight blurs over seen ground only, so a cell never seen does not dim the ground in sight round it, and over open ground alone for open ground, so no wall lends it light.
+    /// Sight blurs over seen ground only, so a cell never seen does not dim the ground in sight round it, and over open ground alone for ground, so nothing that blocks sight lends it light.
     fn soften(self: *Light) void {
-        for (&self.seen_sight, &self.open_sight, &self.open_memory, &self.carry_open, &self.sight, &self.memory, &self.ground) |*seen, *open, *om, *carry, s, m, g| {
+        for (&self.soft_sight, &self.open_sight, &self.open_weight, &self.carry_open, &self.sight, &self.memory, &self.see_through) |*seen, *open, *w, *carry, s, m, k| {
             seen.* = s * m;
-            open.* = s * m * g;
-            om.* = m * g;
-            carry.* = s * g;
+            open.* = s * m * k;
+            w.* = m * k;
+            carry.* = s * k;
         }
-        self.blurShare(&self.seen_sight, &self.memory, &self.soft_sight);
-        self.blurShare(&self.open_sight, &self.open_memory, &self.open_sight);
-        for (&self.open_sight, &self.ground) |*o, g| o.* *= g;
+        self.blurShare(&self.soft_sight, &self.memory);
+        self.blurShare(&self.open_sight, &self.open_weight);
+        for (&self.open_sight, &self.open_weight) |*o, w| o.* *= w;
         self.markClear();
     }
 
@@ -757,17 +770,20 @@ pub const Light = struct {
         }
     }
 
-    /// `num` blurred over `den` blurred: each cell's share of what counts round it. `out` may be `num`.
-    fn blurShare(self: *Light, num: *const [grid.CELLS]f32, den: *const [grid.CELLS]f32, out: *[grid.CELLS]f32) void {
-        blur121(num, &self.blur, out);
+    /// `num` blurred over `den` blurred, in place: each cell's share of what counts round it.
+    fn blurShare(self: *Light, num: *[grid.CELLS]f32, den: *const [grid.CELLS]f32) void {
+        blur121(num, &self.blur, num);
         blur121(den, &self.blur, &self.share);
-        for (out, &self.share) |*o, d| o.* = if (d > 0) @min(1, o.* / d) else 0;
+        for (num, &self.share) |*o, d| o.* = if (d > 0) @min(1, o.* / d) else 0;
     }
 
     /// A point on the screen, cells.
     fn sightAt(self: *const Light, x: f32, y: f32) f32 {
-        if (grid.cellOr(f32, &self.ground, mathx.cellOf(.{ x, y }), 0) <= 0) return sample(&self.soft_sight, x, y);
-        return sample(&self.open_sight, x, y) / sample(&self.ground, x, y);
+        const soft = sample(&self.soft_sight, x, y);
+        if (grid.cellOr(f32, &self.ground, mathx.cellOf(.{ x, y }), 0) <= 0) return soft;
+        const weight = sample(&self.open_weight, x, y);
+        if (weight <= 0) return soft;
+        return mathx.lerpF(soft, sample(&self.open_sight, x, y) / weight, @min(1, weight * OPEN_WHOLE));
     }
 
     /// By distance, not a blur: a blur is not black on the edge of an unseen cell that seen ground wraps round.
@@ -1526,8 +1542,8 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
     while (y < h) : (y += 1) {
         var x: i32 = 0;
         while (x < w) : (x += 1) {
-            const gx = texel(&height, w, h, x + 1, y, 0) - texel(&height, w, h, x - 1, y, 0);
-            const gy = texel(&height, w, h, x, y + 1, 0) - texel(&height, w, h, x, y - 1, 0);
+            const gx = texel(&height, w, h, x + 1, y) - texel(&height, w, h, x - 1, y);
+            const gy = texel(&height, w, h, x, y + 1) - texel(&height, w, h, x, y - 1);
             const n = Rgb{ -gx * BEVEL_DEPTH, -gy * BEVEL_DEPTH, 1 };
             const unit = n / splat(@sqrt(@reduce(.Add, n * n)));
             px[@intCast(y * w + x)] = colourOf(unit * splat(0.5) + splat(0.5), 1);
@@ -1638,7 +1654,7 @@ fn stepUntil(l: *Light, lv: *const grid.Level, q: [2]f32, comptime done: fn (f32
     var frames: usize = 0;
     var ids: [grid.MAX_TORCHES]TorchIx = undefined;
     const none = ids[0..0];
-    while (frames < 600 and !done(lum(l.at(lv, none, q)))) : (frames += 1) l.step(lv, 1.0 / 60.0);
+    while (frames < 600 and !done(lum(l.at(lv, none, q)))) : (frames += 1) l.step(lv, mathx.FRAME_DT);
     return frames;
 }
 
@@ -1672,10 +1688,15 @@ test "a cell coming into sight fades up fast, and fades down to memory slower on
     };
     Down.want = dim + (bright - dim) * 0.05;
     const down = stepUntil(l, &lv, q, Down.f);
-    std.debug.print("fog: 95% of the way into sight in {d} ms, out of it to memory in {d} ms\n", .{ up * 1000 / 60, down * 1000 / 60 });
-    try std.testing.expect(up > 0 and up < 20);
-    try std.testing.expect(down > up and down < 60);
-    for (0..600) |_| l.step(&lv, 1.0 / 60.0);
+    const ms = struct {
+        fn of(frames: usize) f32 {
+            return @as(f32, @floatFromInt(frames)) * mathx.FRAME_DT * 1000;
+        }
+    }.of;
+    std.debug.print("fog: 95% of the way into sight in {d:.0} ms, out of it to memory in {d:.0} ms\n", .{ ms(up), ms(down) });
+    try std.testing.expect(up > 0 and ms(up) < 333);
+    try std.testing.expect(down > up and ms(down) < 1000);
+    for (0..600) |_| l.step(&lv, mathx.FRAME_DT);
     try std.testing.expectApproxEqAbs(dim, lum(l.at(&lv, &.{}, q)), 0.002);
 }
 
@@ -1715,7 +1736,7 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     defer std.testing.allocator.destroy(l);
     fov.cast(&lv, f.rooms[1].centre(), actor.row(.archer).sight);
     l.carrier = mathx.centre(f.start);
-    for (0..4) |_| l.step(&lv, 1.0 / 60.0);
+    for (0..4) |_| l.step(&lv, mathx.FRAME_DT);
     l.bake(&lv, .{ .x = 0, .y = 0 }, .{ .x = grid.W, .y = grid.H });
     var ids: [grid.MAX_TORCHES]TorchIx = undefined;
     const torches = l.near(grid.Box.inMap(-1), &ids);
@@ -1840,8 +1861,9 @@ test "a flame flickers within a tenth or so either way and never jumps" {
     var jump: f32 = 0;
     var last = flicker(0, 7);
     var i: usize = 1;
-    while (i < 60 * 60) : (i += 1) {
-        const v = flicker(@as(f32, @floatFromInt(i)) / 60.0, 7);
+    const minute: usize = @intFromFloat(@round(60 / mathx.FRAME_DT));
+    while (i < minute) : (i += 1) {
+        const v = flicker(@as(f32, @floatFromInt(i)) * mathx.FRAME_DT, 7);
         lo = @min(lo, v);
         hi = @max(hi, v);
         jump = @max(jump, @abs(v - last));
@@ -2068,6 +2090,72 @@ test "sight has no step where it ends along a wall, nor as it eases out behind o
     try std.testing.expectApproxEqAbs(gone, easing, 1e-2);
 }
 
+test "sight has no step where open ground meets a shrub at its edge" {
+    var lv = grid.openFloor();
+    const shrub = P{ .x = 30, .y = 20 };
+    lv.set(shrub, .shrub);
+    for (0..grid.CELLS) |i| {
+        const p = grid.Level.of(i);
+        lv.seen[i] = true;
+        lv.lit[i] = p.x <= shrub.x or p.y != shrub.y;
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const y: f32 = @as(f32, @floatFromInt(shrub.y)) + 0.5;
+    const x: f32 = @floatFromInt(shrub.x + 1);
+    const past = l.sightAt(x + EDGE_EPS, y);
+    const step = past - l.sightAt(x - EDGE_EPS, y);
+    const own = l.open_sight[grid.Level.idx(.{ .x = shrub.x + 1, .y = shrub.y })];
+    std.debug.print("sight across a shrub's edge where sight ends: {d:.4}; just past it {d:.4}, its ground's own {d:.4}\n", .{ step, past, own });
+    try std.testing.expectApproxEqAbs(@as(f32, 0), step, 1e-3);
+    try std.testing.expectApproxEqAbs(own, past, 1e-3);
+}
+
+test "sight has no step through a shrub clump, nor as the ground behind a hedge is first seen" {
+    var lv = grid.openFloor();
+    for ([_]P{ .{ .x = 30, .y = 20 }, .{ .x = 31, .y = 20 }, .{ .x = 30, .y = 21 }, .{ .x = 31, .y = 21 } }) |p| lv.set(p, .shrub);
+    for (0..grid.CELLS) |i| {
+        lv.seen[i] = true;
+        lv.lit[i] = grid.Level.of(i).y <= 20;
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const step = l.sightAt(30.6, 20.5 + EDGE_EPS) - l.sightAt(30.6, 20.5 - EDGE_EPS);
+    var hedge = grid.openFloor();
+    var y: i32 = 1;
+    while (y < grid.H - 1) : (y += 1) hedge.set(.{ .x = 30, .y = y }, .shrub);
+    for (0..grid.CELLS) |i| {
+        hedge.seen[i] = grid.Level.of(i).x <= 30;
+        hedge.lit[i] = hedge.seen[i];
+    }
+    const h = try testLight(&hedge);
+    defer std.testing.allocator.destroy(h);
+    const unseen = h.sightAt(30.6, 20.5);
+    const behind = grid.Level.idx(.{ .x = 31, .y = 20 });
+    h.sight[behind] = 2 * mathx.SETTLE;
+    h.memory[behind] = 2 * mathx.SETTLE;
+    h.soften();
+    const glimpsed = h.sightAt(30.6, 20.5);
+    std.debug.print("sight through a shrub clump's middle: {d:.4}; behind a hedge, unseen {d:.4}, first glimpsed {d:.4}\n", .{ step, unseen, glimpsed });
+    try std.testing.expectApproxEqAbs(@as(f32, 0), step, 1e-2);
+    try std.testing.expectApproxEqAbs(unseen, glimpsed, 1e-2);
+}
+
+test "a shrub in sight at the edge of what was ever seen is not dimmed toward the cells never seen" {
+    var lv = grid.openFloor();
+    const shrub = P{ .x = 30, .y = 20 };
+    lv.set(shrub, .shrub);
+    for (0..grid.CELLS) |i| {
+        lv.seen[i] = grid.Level.of(i).x >= shrub.x;
+        lv.lit[i] = lv.seen[i];
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const v = l.sightAt(@as(f32, @floatFromInt(shrub.x)) + EDGE_EPS, @as(f32, @floatFromInt(shrub.y)) + 0.5);
+    std.debug.print("sight at a shrub's unexplored edge: {d:.4}\n", .{v});
+    try std.testing.expectApproxEqAbs(@as(f32, 1), v, 1e-3);
+}
+
 test "a torch on a wall never seen has no flame to draw, though the floor below it is in sight" {
     var lv: grid.Level = undefined;
     testRoom(&lv, &.{});
@@ -2100,9 +2188,9 @@ test "a torch seen only from behind its wall has no flame, and a remembered one 
     l.settle(&lv);
     @memset(&lv.lit, true);
     @memset(&lv.seen, true);
-    l.step(&lv, 1.0 / 60.0);
+    l.step(&lv, mathx.FRAME_DT);
     const first = l.flames(&lv, &buf)[0].memory;
-    for (0..120) |_| l.step(&lv, 1.0 / 60.0);
+    for (0..120) |_| l.step(&lv, mathx.FRAME_DT);
     const settled = l.flames(&lv, &buf)[0].memory;
     std.debug.print("a torch coming into sight: its remembered flame at {d:.3} the first frame, {d:.3} two seconds on\n", .{ first, settled });
     try std.testing.expect(first < 0.3);
@@ -2161,7 +2249,7 @@ test "a body is lit as the ground under it is, fading into sight and on the edge
     var worst: f32 = 0;
     var first: [2]f32 = undefined;
     for (0..30) |frame| {
-        l.step(&lv, 1.0 / 60.0);
+        l.step(&lv, mathx.FRAME_DT);
         for ([_][2]f32{ .{ 15.5, 15.5 }, .{ 18.5, 12.5 }, .{ 20.5, 15.5 }, .{ 20.9, 20.9 } }, 0..) |c, k| {
             const body = l.onBody(c, false);
             const on = lum(body.ambient + body.total());

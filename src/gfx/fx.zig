@@ -5,6 +5,7 @@ const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
 const glacial = @import("../play/glacial.zig");
 const look = @import("look.zig");
+const menu = @import("../ui/menu.zig");
 
 /// `ichor` is Brogue's purple blood.
 pub const Matter = enum { blood, ooze, wood, ichor };
@@ -118,11 +119,7 @@ pub const Status = enum {
     chilled,
 
     pub fn caption(s: Status) [:0]const u8 {
-        return switch (s) {
-            .bleeding => "Bleeding",
-            .burning => "Burning",
-            .chilled => "Chilled",
-        };
+        return menu.named(s);
     }
 
     pub fn ink(s: Status) rl.Color {
@@ -188,7 +185,7 @@ const DRIP_MOTES: usize = 5;
 const BLEED_DROPS = 4;
 const CHILL_FLAKES = 5;
 const BURN_FLAMES = 7;
-/// Where across a body's cell a status's marks begin, and how far they spread.
+/// Where across a body's cell chill's flakes and burn's flames begin, and how far they spread.
 const MARKS_FROM: f32 = 0.22;
 const MARKS_SPAN: f32 = 0.56;
 

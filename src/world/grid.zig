@@ -292,6 +292,11 @@ pub const Level = struct {
         return p.x >= 0 and p.y >= 0 and p.x < W and p.y < H;
     }
 
+    /// The nearest cell on the map.
+    pub fn clamp(p: P) P {
+        return .{ .x = std.math.clamp(p.x, 0, W - 1), .y = std.math.clamp(p.y, 0, H - 1) };
+    }
+
     /// The nearest cell off the map's edge.
     pub fn inset(p: P) P {
         return .{ .x = std.math.clamp(p.x, INNER_LO.x, INNER_HI.x), .y = std.math.clamp(p.y, INNER_LO.y, INNER_HI.y) };
