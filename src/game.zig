@@ -595,7 +595,7 @@ fn rollOf(run: u64, n: usize) u64 {
 fn leadsTo(g: *const Game, p: P) ?atlas.Link {
     const w = g.world orelse return null;
     const k = g.lv.doorAt(p) orelse return null;
-    return w.node[g.node].door[k].to;
+    return w.door(.{ .node = g.node, .door = k }).to;
 }
 
 fn goThrough(g: *Game, l: atlas.Link) void {
@@ -604,7 +604,7 @@ fn goThrough(g: *Game, l: atlas.Link) void {
     const walk = g.pending;
     const hero = heroSlot(g).?;
     const facing = g.facing[hero];
-    enter(g, l.node, g.world.?.node[l.node].door[l.door].at);
+    enter(g, l.node, g.world.?.door(l).at);
     g.pending = walk;
     g.facing[hero] = facing;
 }
@@ -969,7 +969,7 @@ fn confirmAim(g: *Game) void {
                 .barrel => |p| smash(g, p, SHOOT, s),
             },
             .shoot => switch (hit) {
-                .body => |id| wound(g, id, rollArrow(&g.rng, act, true).physical, SHOOT, s),
+                .body => |id| wound(g, id, rollArrow(&g.rng, .shoot, true).physical, SHOOT, s),
                 .barrel => |p| smash(g, p, SHOOT, s),
             },
             .juke, .wait, .secondary => unreachable,
@@ -983,44 +983,49 @@ const SHOOT = bow.VERB;
 const IT_DIES = " It dies.";
 
 /// An arrow's physical roll, on a body, then its element's, in the order every shot draws them.
-fn rollArrow(rng: *mathx.Rng, act: skillbar.Act, body: bool) damage.Damage {
+fn rollArrow(rng: *mathx.Rng, comptime act: skillbar.Act, body: bool) damage.Damage {
     var hit = damage.Damage{ .physical = if (body) bow.roll(rng) else 0 };
-    switch (act) {
-        .shoot => {},
-        .burning_arrow => hit.elements.set(.fire, burning.roll(rng)),
-        .glacial_shot => hit.elements.set(.cold, glacial.roll(rng)),
-        .juke, .wait, .secondary => unreachable,
-    }
+    if (act != .shoot) hit.elements.set(elementOf(act), arrowOf(act).roll(rng));
     return hit;
 }
 
 fn burningHit(g: *Game, id: u16, s: Stroke) void {
-    elementHit(g, id, rollArrow(&g.rng, .burning_arrow, true), .fire, s);
+    elementHit(g, id, rollArrow(&g.rng, .burning_arrow, true), .burning_arrow, s);
 }
 
-/// `blow` on the body, its element afflicting it on the element's chance.
-fn elementHit(g: *Game, id: u16, blow: damage.Damage, comptime el: damage.Element, s: Stroke) void {
+/// `blow` on the body, the arrow's element afflicting it on the element's chance.
+fn elementHit(g: *Game, id: u16, blow: damage.Damage, comptime act: skillbar.Act, s: Stroke) void {
+    const el = comptime elementOf(act);
+    const arrow = arrowOf(act);
     const a = g.pool.get(id) orelse return;
     const dealt = blow.total(a.resists);
     const at = a.at;
     const name = actor.row(a.kind).name;
-    const takes = blow.afflicts(a.resists, el, a.hp) and switch (el) {
-        .fire => burning.procs(&g.rng),
-        .cold => glacial.procs(&g.rng, a.resists.get(.cold)),
-        .chaos, .lightning => @compileError("no affliction"),
-    };
+    const takes = blow.afflicts(a.resists, el, a.hp) and arrow.procs(&g.rng, a.resists.get(el));
     if (takes) switch (el) {
         .fire => a.burn.start(),
         .cold => a.chill.apply(),
         .chaos, .lightning => @compileError("no affliction"),
     };
-    const verb, const line = switch (el) {
-        .fire => .{ burning.VERB, "catches fire" },
-        .cold => .{ glacial.VERB, "is chilled" },
-        .chaos, .lightning => @compileError("no affliction"),
+    if (dealt > 0) wound(g, id, dealt, arrow.VERB, s);
+    if (takes) sayAt(g, at, "The {s} " ++ arrow.TAKES ++ "!", .{name});
+}
+
+fn elementOf(comptime act: skillbar.Act) damage.Element {
+    return switch (act) {
+        .burning_arrow => .fire,
+        .glacial_shot => .cold,
+        .shoot, .juke, .wait, .secondary => @compileError("no element"),
     };
-    if (dealt > 0) wound(g, id, dealt, verb, s);
-    if (takes) sayAt(g, at, "The {s} " ++ line ++ "!", .{name});
+}
+
+/// An elemental arrow's module: its roll, its chance to afflict, its verb and what is said as it takes.
+fn arrowOf(comptime act: skillbar.Act) type {
+    return switch (act) {
+        .burning_arrow => burning,
+        .glacial_shot => glacial,
+        .shoot, .juke, .wait, .secondary => @compileError("no element"),
+    };
 }
 
 fn glacialHit(g: *Game, hit: bow.Hit, impact: P, s: Stroke) void {
@@ -1042,7 +1047,7 @@ fn glacialHit(g: *Game, hit: bow.Hit, impact: P, s: Stroke) void {
     for (targets[0..n]) |id| {
         var blow = rolled;
         if (direct != id) blow.physical = 0;
-        elementHit(g, id, blow, .cold, s);
+        elementHit(g, id, blow, .glacial_shot, s);
     }
 }
 const HERO = actor.HERO;
@@ -1316,11 +1321,9 @@ fn foeTurn(g: *Game, id: u16) void {
         if (actor.flee(&g.lv, r.at, id, flowTo(g, h.at))) |d| {
             turnLater(g, id, d.delta().x);
             g.pool.move(&g.lv, id, r.at.add(d.delta()));
-        } else if (mathx.dirTo(r.at, h.at)) |d| {
-            if (g.lv.passOk(r.at, d)) {
-                turnLater(g, id, d.delta().x);
-                reach(g, id, row);
-            }
+        } else if (besideWay(g, r.at, h.at)) |d| {
+            turnLater(g, id, d.delta().x);
+            reach(g, id, row);
         }
         if (r.fright == 0) sayAt(g, r.at, "The {s} stops running.", .{row.name});
         return;
@@ -1334,10 +1337,13 @@ fn foeTurn(g: *Game, id: u16) void {
 }
 
 fn foeWay(g: *Game, at: P, id: u16, hero: P) ?mathx.Dir {
-    if (mathx.dirTo(at, hero)) |d| {
-        if (g.lv.passOk(at, d)) return d;
-    }
-    return actor.chase(&g.lv, at, id, flowTo(g, hero));
+    return besideWay(g, at, hero) orelse actor.chase(&g.lv, at, id, flowTo(g, hero));
+}
+
+/// The step onto `hero` when it stands beside `at`, no corner cut.
+fn besideWay(g: *const Game, at: P, hero: P) ?mathx.Dir {
+    const d = mathx.dirTo(at, hero) orelse return null;
+    return if (g.lv.passOk(at, d)) d else null;
 }
 
 fn flowTo(g: *Game, hero: P) *const [grid.CELLS]i32 {
@@ -2209,10 +2215,9 @@ fn drawHud(g: *Game) void {
     meter(g, top + MANA_Y, g.mana, heroes.MANA, look.MANA_BG, look.MANA, std.fmt.bufPrintZ(&buf, "Mana {d}/{d}", .{ g.mana, heroes.MANA }) catch "");
     if (shown) |h| drawStatus(g, top, h);
     var tally_x = HUD_PAD;
-    for (actor.FOES) |k| {
+    inline for (actor.FOES) |k| {
         const t = tallyShown(g, k);
-        const name = actor.plural(k);
-        const s = std.fmt.bufPrintZ(&buf, "{c}{s} {d}/{d}", .{ std.ascii.toUpper(name[0]), name[1..], t.left, t.total }) catch "";
+        const s = std.fmt.bufPrintZ(&buf, "{s} {d}/{d}", .{ comptime menu.capital(actor.plural(k)), t.left, t.total }) catch "";
         g.face.text(s, tally_x, top + TALLY_Y, TEXT, look.DIM);
         tally_x += g.face.width(s, TEXT) + TALLY_GAP;
     }
@@ -2607,14 +2612,13 @@ fn arena(g: *Game, hero: P, rats: []const P) void {
 }
 
 /// DEV ONLY: an rng whose next `act` into a body ignites or chills the first `procs` it rolls for, drawn as `confirmAim` draws.
-fn procRng(act: skillbar.Act, procs: usize) mathx.Rng {
+fn procRng(comptime act: skillbar.Act, procs: usize) mathx.Rng {
     var seed: u64 = 0;
     while (true) : (seed += 1) {
         var rng = mathx.Rng.init(seed);
         _ = rollArrow(&rng, act, true);
         const all = for (0..procs) |_| {
-            const ok = if (act == .burning_arrow) burning.procs(&rng) else glacial.procs(&rng, 0);
-            if (!ok) break false;
+            if (!arrowOf(act).procs(&rng, 0)) break false;
         } else true;
         if (all) return mathx.Rng.init(seed);
     }
@@ -2680,7 +2684,7 @@ fn nudge(g: *Game, d: mathx.Dir) void {
     update(g, 0);
 }
 
-const TEST_DT: f32 = 1.0 / 240.0;
+const TEST_DT = mathx.TEST_DT;
 const TEST_TOL: f32 = TEST_DT * 1.5;
 
 /// Seconds of idle frames until `done(g, slot)`, a second at most.

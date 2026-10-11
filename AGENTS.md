@@ -143,7 +143,8 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   and the fog: unshadowed ambient is floored at memory's RGB before adding lights, so the lantern never fades into
   a dark ring below remembered ground. Sight and memory ease per cell, and memory fades to black exactly at the edge of what was ever seen,
   so no unseen cell is ever drawn. Ground in sight is never dimmed by a cell never seen (a side door the symmetric FOV
-  skips): there the fade is only a rim, and sight blurs over seen cells alone. It is cosmetic: nothing in the
+  skips): there the fade is only a rim, and sight blurs over seen cells alone, and on open ground over open ground alone, so
+  no wall lends the ground behind it light. It is cosmetic: nothing in the
   simulation reads it, and it decides no visibility.
 - **`world/day.zig` IS THE HOUR, AND IT IS SIMULATION**: `Game.clock`, whole minutes, moved on 6 a turn in `endTurn`
   (a day is 240 turns), on every node, saved with the run, starting at 8.30. No hud shows it. It decides how far the

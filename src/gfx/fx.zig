@@ -188,6 +188,9 @@ const DRIP_MOTES: usize = 5;
 const BLEED_DROPS = 4;
 const CHILL_FLAKES = 5;
 const BURN_FLAMES = 7;
+/// Where across a body's cell a status's marks begin, and how far they spread.
+const MARKS_FROM: f32 = 0.22;
+const MARKS_SPAN: f32 = 0.56;
 
 const Due = union(enum) {
     blow: Blow,
@@ -448,7 +451,7 @@ pub const Fx = struct {
         const t = self.seconds.at() + @as(f32, @floatFromInt(seed));
         for (0..CHILL_FLAKES) |i| {
             const phase = @as(f32, @floatFromInt(i)) / CHILL_FLAKES;
-            const cx = x + cell * (0.22 + phase * 0.56);
+            const cx = x + cell * (MARKS_FROM + phase * MARKS_SPAN);
             const cy = y + cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
             const r = cell * 0.035;
             const col = look.fade(ink, 0.7 + @sin(t * 3 + phase) * 0.2);
@@ -463,7 +466,7 @@ pub const Fx = struct {
             const phase = @as(f32, @floatFromInt(i)) / BURN_FLAMES;
             const age = @mod(t * 1.7 + phase + @as(f32, @floatFromInt(seed)) * 0.17, 1);
             const sway = @sin(t * 6 + phase * mathx.TAU) * 0.04;
-            const at = rl.Vector2{ .x = x + cell * (0.22 + phase * 0.56 + sway), .y = y + cell * (0.82 - age * 0.65) };
+            const at = rl.Vector2{ .x = x + cell * (MARKS_FROM + phase * MARKS_SPAN + sway), .y = y + cell * (0.82 - age * 0.65) };
             const r = cell * (0.065 - age * 0.045);
             rl.drawCircleV(at, r, look.fade(Status.burning.ink(), (1 - age) * 0.85 * alpha));
             rl.drawCircleV(at, r * 0.45, look.fade(look.FIRE_CORE, (1 - age) * 0.9 * alpha));
@@ -633,7 +636,7 @@ test "a blow flashes its body for a beat and sprays blood a fraction of a cell, 
     fx.strike(0, TEST_BLOW);
     try std.testing.expectApproxEqAbs(FLASH_GAIN, fx.flashOf(3), 1e-6);
     try std.testing.expectEqual(@as(f32, 0), fx.flashOf(2));
-    const dt: f32 = 1.0 / 240.0;
+    const dt = mathx.TEST_DT;
     var reach: f32 = 0;
     var ahead: usize = 0;
     var t: f32 = 0;
@@ -669,8 +672,8 @@ test "splinters bounce and leave no stain, and a mote that flies into a wall is 
     fx.strike(0, b);
     var bounced = false;
     var t: f32 = 0;
-    while (t < 1.5) : (t += 1.0 / 240.0) {
-        fx.step(&lv, 1.0 / 240.0);
+    while (t < 1.5) : (t += mathx.TEST_DT) {
+        fx.step(&lv, mathx.TEST_DT);
         for (fx.motes) |m| {
             if (m.life > 0 and !m.add and m.p[2] == 0 and m.v[2] > 0) bounced = true;
         }
@@ -682,7 +685,7 @@ test "splinters bounce and leave no stain, and a mote that flies into a wall is 
     b.matter = .blood;
     fx.strike(0, b);
     t = 0;
-    while (t < 1) : (t += 1.0 / 240.0) fx.step(&lv, 1.0 / 240.0);
+    while (t < 1) : (t += mathx.TEST_DT) fx.step(&lv, mathx.TEST_DT);
     for (fx.motes) |m| {
         if (m.life > 0 and !m.add) try std.testing.expect(m.p[0] < 21);
     }
@@ -702,7 +705,7 @@ test "a blow from nowhere sprays all round, not in one heap" {
     b.dir = null;
     b.lethal = true;
     fx.strike(0, b);
-    for (0..240) |_| fx.step(&lv, 1.0 / 240.0);
+    for (0..240) |_| fx.step(&lv, mathx.TEST_DT);
     var sum = [2]f32{ 0, 0 };
     var reach: f32 = 0;
     var n: f32 = 0;

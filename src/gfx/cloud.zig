@@ -220,7 +220,7 @@ test "the drawn cloud eases to the gas in sight, and out of sight keeps what was
     const i = grid.Level.idx(.{ .x = 10, .y = 10 });
     lv.gas[i] = 40;
     lv.lit[i] = true;
-    const dt: f32 = 1.0 / 240.0;
+    const dt = mathx.TEST_DT;
     var t: f32 = 0;
     while (c.tint[i] < tintOf(40) * 0.95) : (t += dt) c.step(&lv, dt);
     for (0..240) |_| c.step(&lv, dt);

@@ -207,7 +207,7 @@ pub const Torches = struct {
         return self.at[0..self.n];
     }
 
-    pub fn find(self: *const Torches, p: P) ?usize {
+    fn find(self: *const Torches, p: P) ?usize {
         for (self.slice(), 0..) |t, i| {
             if (t.eq(p)) return i;
         }
@@ -222,9 +222,23 @@ pub const Torches = struct {
         return true;
     }
 
-    pub fn drop(self: *Torches, i: usize) void {
+    /// False when none hangs there.
+    pub fn remove(self: *Torches, p: P) bool {
+        const i = self.find(p) orelse return false;
         self.n -= 1;
         self.at[i] = self.at[self.n];
+        return true;
+    }
+
+    /// Those `fits` keeps, in order.
+    pub fn keep(self: *Torches, ctx: anytype, comptime fits: fn (@TypeOf(ctx), P) bool) void {
+        var kept: usize = 0;
+        for (self.slice()) |t| {
+            if (!fits(ctx, t)) continue;
+            self.at[kept] = t;
+            kept += 1;
+        }
+        self.n = kept;
     }
 };
 

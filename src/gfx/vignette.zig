@@ -93,7 +93,7 @@ test "a blow on the archer starts reddening the edge as it lands, rises, and fad
     var v = Vignette{};
     v.step(1.0 / 60.0, 0, 24, 24);
     try std.testing.expectEqual(@as(f32, 0), v.alpha());
-    const dt: f32 = 1.0 / 240.0;
+    const dt = mathx.TEST_DT;
     var flash: f32 = 0.45;
     v.step(dt, flash, 24, 24);
     const first = v.alpha();

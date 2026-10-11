@@ -130,15 +130,33 @@ pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: 
 
 /// Only over the tiles `over` allows.
 pub fn disc(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime over: ?fn (grid.Tile) bool) void {
-    discOf(lv, c, r, t, false, over);
+    discOf(lv, c, r, t, false, false, over);
 }
 
 /// `disc`, the rim too, so a river runs off the map.
 fn discAll(lv: *grid.Level, c: P, r: f32, t: grid.Tile) void {
-    discOf(lv, c, r, t, true, null);
+    discOf(lv, c, r, t, true, false, null);
 }
 
-fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, comptime over: ?fn (grid.Tile) bool) void {
+/// Narrower, a lane would be gapped on a diagonal.
+pub const LANE_MIN: u8 = 2;
+
+pub const Lane = enum {
+    /// Off the rim, over whatever is there.
+    cut,
+    /// To the rim, bridging a liquid.
+    road,
+};
+
+/// `width` cells wide along a `Meander` from `a` to `b`.
+pub fn lane(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, t: grid.Tile, comptime how: Lane) void {
+    std.debug.assert(width >= LANE_MIN);
+    const r = @as(f32, @floatFromInt(width - 1)) / 2 + 0.5;
+    var m = Meander.init(a, b, wander);
+    while (m.next(rng)) |c| discOf(lv, c, r, t, how == .road, how == .road, null);
+}
+
+fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, comptime pave: bool, comptime over: ?fn (grid.Tile) bool) void {
     const k: i32 = @intFromFloat(@ceil(r));
     var cells = grid.Cells.around(c, k);
     while (cells.next()) |q| {
@@ -149,7 +167,7 @@ fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, 
         if (over) |ok| {
             if (!ok(lv.at(q))) continue;
         }
-        lv.set(q, t);
+        lv.set(q, if (pave) paved(lv.at(q), t) else t);
     }
 }
 
@@ -209,6 +227,11 @@ pub const Palette = struct {
     pub const WILD = Palette{ .open = .grass, .solid = .shrub, .path = .grass };
     pub const TRAILED = Palette{ .open = .grass, .solid = .shrub, .path = .dirt };
 
+    /// Its trails laid in its own open ground.
+    pub fn on(open: grid.Tile, solid: grid.Tile) Palette {
+        return .{ .open = open, .solid = solid, .path = open };
+    }
+
     /// Its small doorless pockets filled with its solid.
     pub fn pocketed(p: Palette) Palette {
         var q = p;
@@ -230,8 +253,8 @@ pub fn closes(t: grid.Tile, pal: Palette) bool {
     return t == pal.solid or (t.solid() and t.ground() != null);
 }
 
-/// Every stretch of open ground joined to the biggest by a bending trail that bridges water, lava and chasms.
-pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette) void {
+/// Every stretch of open ground joined to the biggest by a bending trail that bridges water, lava and chasms; `before` is the map before the features, so ground they changed is theirs.
+pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette, before: ?*const [grid.CELLS]grid.Tile) void {
     var st: Stretches = .{};
     const region = &st.region;
     const size = &st.size;
@@ -239,7 +262,7 @@ pub fn connect(lv: *grid.Level, rng: *mathx.Rng, pal: Palette) void {
         const n = st.label(lv);
         if (n <= 1) return;
         const main = st.biggest();
-        const kept = if (pal.pocket != null) keptIn(lv, region, pal) else Regions.initEmpty();
+        const kept = if (pal.pocket != null) keptIn(lv, region, pal, before) else Regions.initEmpty();
         var first: [grid.CELLS]u32 = undefined;
         @memset(first[0..n], NO_CELL);
         for (0..grid.CELLS) |i| {
@@ -280,6 +303,16 @@ pub const Stretches = struct {
             if (n > s.size[main]) main = @intCast(r);
         }
         return main;
+    }
+
+    /// Some stretch of `was`, an earlier `region`, now lies in two.
+    pub fn parts(s: *const Stretches, was: *const [grid.CELLS]u16) bool {
+        var to: [grid.CELLS]u16 = @splat(NONE);
+        for (was, &s.region) |a, b| {
+            if (a == NONE or b == NONE) continue;
+            if (to[a] == NONE) to[a] = b else if (to[a] != b) return true;
+        }
+        return false;
     }
 
     pub fn of(s: *const Stretches, p: P) u16 {
@@ -347,13 +380,14 @@ pub fn unbar(lv: *grid.Level) void {
 }
 
 /// The stretches no pocket fill takes: one holding a door, one by a liquid, as an island is, or one holding ground a feature laid, as a house is.
-fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette) Regions {
+fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, before: ?*const [grid.CELLS]grid.Tile) Regions {
     const base = Over{ .tile = pal.open, .decked = true };
     var out = Regions.initEmpty();
     for (0..grid.CELLS) |i| {
         if (region[i] == NONE) continue;
         const t = lv.tile[i];
-        const laid = !base.has(t) and t != pal.path;
+        const changed = if (before) |b| b[i] != t else false;
+        const laid = changed or (!base.has(t) and t != pal.path);
         if (laid or lv.door[i] != grid.NO_DOOR or byLiquid(lv, grid.Level.of(i))) out.set(region[i]);
     }
     return out;
@@ -672,7 +706,7 @@ test "a small island is bridged, not filled as a pocket" {
     field(&lv, pal);
     disc(&lv, grid.MIDDLE, 4, .water, null);
     disc(&lv, grid.MIDDLE, 1, .grass, null);
-    connect(&lv, &rng, pal);
+    connect(&lv, &rng, pal, null);
     std.debug.print("a five-cell island in a pocket-filling base: {d} bridge cells after joining\n", .{count(&lv, .bridge)});
     try std.testing.expect(lv.walkable(grid.MIDDLE));
     try std.testing.expect(count(&lv, .bridge) > 0);
@@ -687,7 +721,7 @@ test "a river runs edge to edge and parts the ground, and a join bridges it" {
     f.fill(&lv, 3, .water);
     var st: Stretches = .{};
     const parted = st.label(&lv);
-    connect(&lv, &rng, Palette.TRAILED);
+    connect(&lv, &rng, Palette.TRAILED, null);
     const joined = st.label(&lv);
     std.debug.print("a river: {d} water cells, the ground in {d} parts, {d} after joining by {d} bridge cells\n", .{ count(&lv, .water), parted, joined, count(&lv, .bridge) });
     try std.testing.expect(parted >= 2);

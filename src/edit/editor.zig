@@ -37,13 +37,6 @@ fn zoomOf(px: f32) usize {
     return std.mem.indexOfScalar(f32, &ZOOMS, px).?;
 }
 
-/// "Rat" from "rat".
-fn capital(comptime s: [:0]const u8) [:0]const u8 {
-    comptime var c: [s.len:0]u8 = s[0..s.len].*;
-    c[0] = std.ascii.toUpper(c[0]);
-    const out = c;
-    return &out;
-}
 const PAN_PX_S: f32 = 900;
 const SAY_S: f32 = 4;
 const LINE: usize = 200;
@@ -97,7 +90,7 @@ const HOVER = look.EDIT_HOVER;
 const PICKED = look.EDIT_PICKED;
 const UNLINKED = look.EDIT_UNLINKED;
 const WARN = look.EDIT_WARN;
-const START = look.body(.archer);
+const START = look.body(actor.HERO);
 const START_MARK = [_]u8{ START.ch, ' ' };
 
 const Tool = enum {
@@ -147,14 +140,10 @@ const Tool = enum {
 
     fn name(t: Tool) [:0]const u8 {
         return switch (t) {
-            .floor => "Floor",
-            .wall => "Wall",
-            .barrel => "Barrel",
-            .torch => "Torch",
-            inline .rat, .slime, .bloat, .pib => |f| comptime capital(actor.row(Tool.foe(f).?).name),
-            .door => "Door",
-            .link => "Link",
-            .start => "Start",
+            inline else => |k| comptime blk: {
+                @setEvalBranchQuota(10_000);
+                break :blk if (k.foe()) |f| menu.capital(actor.row(f).name) else menu.named(k);
+            },
         };
     }
 
@@ -239,10 +228,7 @@ const View = enum {
     }
 
     fn label(v: View) [:0]const u8 {
-        return switch (v) {
-            .map => "Map",
-            .graph => "Graph",
-        };
+        return menu.named(v);
     }
 };
 /// What the panel shows under the node commands.
@@ -251,10 +237,7 @@ const Lower = enum {
     generator,
 
     fn label(l: Lower) [:0]const u8 {
-        return switch (l) {
-            .nodes => "Nodes",
-            .generator => "Generator",
-        };
+        return menu.named(l);
     }
 };
 const Stroke = enum { none, paint, erase };
@@ -766,7 +749,7 @@ pub const Editor = struct {
 
     fn dotAt(ed: *const Editor, c: rl.Rectangle, l: atlas.Link) rl.Vector2 {
         const b = ed.boxAt(c, l.node);
-        const d = ed.world.node[l.node].door[l.door].at;
+        const d = ed.world.door(l).at;
         return .{
             .x = b.x + @as(f32, @floatFromInt(d.x * THUMB + @divTrunc(THUMB, 2))),
             .y = b.y + @as(f32, @floatFromInt(BOX_TOP + d.y * THUMB + @divTrunc(THUMB, 2))),
@@ -929,7 +912,7 @@ fn goThrough(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const to = ed.here().door[k].to orelse return ed.say("Door {d} leads nowhere yet", .{k});
     ed.select(to.node);
     ed.recentre = false;
-    ed.lookAt(c, ed.world.node[to.node].door[to.door].at);
+    ed.lookAt(c, ed.world.door(to).at);
     var buf: [atlas.TITLE_MAX]u8 = undefined;
     ed.say("Through door {d} to {s}, door {d}", .{ k, ed.nodeName(to.node, &buf), to.door });
 }
@@ -1005,6 +988,7 @@ fn apply(ed: *Editor, p: P, erase: bool) void {
 
 fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const d = &ed.desk;
+    if (d.erase_hit) ed.drag = null;
     if (over and d.paint_hit) {
         if (ed.boxUnder(c, d.mouse)) |n| {
             const b = ed.boxAt(c, n);
@@ -1048,10 +1032,7 @@ fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
     const i = grid.Level.idx(p);
     if (b.tile[i] == t or ed.doorAt(p) != null) return;
     b.tile[i] = t;
-    if (t.solid()) {
-        b.clearCell(p);
-        if (b.torch.find(lume.torchWall(p))) |k| b.torch.drop(k);
-    } else if (b.torch.find(p)) |k| b.torch.drop(k);
+    ed.here().pruneAt(b, p);
     ed.changed();
 }
 
@@ -1088,8 +1069,7 @@ fn place(ed: *Editor, p: P) void {
             switch (ed.plan().*) {
                 .bespoke => |*b| {
                     b.tile[i] = .floor;
-                    b.clearCell(p);
-                    if (b.torch.find(p)) |t| b.torch.drop(t);
+                    ed.here().pruneAt(b, p);
                 },
                 .procgen => {},
             }
@@ -1105,7 +1085,7 @@ fn place(ed: *Editor, p: P) void {
             };
             ed.pick = null;
             if (from.eq(here)) return ed.say(LINK_CANCELLED, .{});
-            if (ed.world.node[from.node].door[from.door].to) |t| {
+            if (ed.world.door(from).to) |t| {
                 if (t.eq(here)) return ed.say("Those doors lead to each other already", .{});
             }
             ed.world.link(from, here);
@@ -1134,7 +1114,7 @@ fn remove(ed: *Editor, p: P) void {
         },
         .torch => {
             const b = &ed.plan().bespoke;
-            b.torch.drop(b.torch.find(p) orelse return);
+            if (!b.torch.remove(p)) return;
             ed.changed();
         },
         .rat, .slime, .bloat, .pib => {
@@ -1145,6 +1125,10 @@ fn remove(ed: *Editor, p: P) void {
         .door => {
             const k = ed.doorAt(p) orelse return;
             ed.world.removeDoor(.{ .node = ed.node, .door = k });
+            switch (ed.plan().*) {
+                .bespoke => |*b| ed.here().pruneAt(b, p),
+                .procgen => {},
+            }
             ed.pick = null;
             ed.changed();
             ed.restamp();
@@ -1860,7 +1844,7 @@ fn hover(ed: *Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
 
 fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {
     const kind = switch (nd.plan) {
-        .bespoke => "bespoke",
+        .bespoke => @tagName(nd.plan),
         .procgen => |*pg| @tagName(pg.floor),
     };
     const open = nd.unlinked();
@@ -2037,8 +2021,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
             if (ed.listing.n == 0) g.face.draw(atlas.NO_WORLDS, x + PAD, y, TEXT, look.DIM);
             for (ed.listed_top..@min(ed.listing.n, ed.listed_top + MODAL_ROWS)) |i| {
                 const p = ed.listing.at(i);
-                const label = std.fmt.bufPrintZ(&buf, "{s}", .{p}) catch "";
-                if (buttonOn(ed, g, row(x + PAD, y, MODAL_INNER_W), label, std.mem.eql(u8, p, ed.path()), true, true, null)) {
+                if (buttonOn(ed, g, row(x + PAD, y, MODAL_INNER_W), p, std.mem.eql(u8, p, ed.path()), true, true, null)) {
                     ed.pending_path.put(p);
                     ed.modal = .none;
                     ed.request(.open);
@@ -2453,6 +2436,45 @@ test "a click on the frame a rectangle is let go is an undo of its own" {
     try std.testing.expectEqual(grid.Tile.floor, b.tile[grid.Level.idx(.{ .x = 5, .y = 4 })]);
     ed.undo();
     try std.testing.expectEqual(grid.Tile.floor, ed.world.node[0].plan.bespoke.tile[grid.Level.idx(.{ .x = 6, .y = 4 })]);
+}
+
+test "a door on a wall taken away takes the torch it held up" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    _ = ed.world.add(.{ .bespoke = .{} });
+    const b = &ed.world.node[0].plan.bespoke;
+    const door = P{ .x = 6, .y = 5 };
+    const torch = lume.torchWall(door);
+    _ = ed.world.addDoor(0, door);
+    try std.testing.expect(b.torch.add(torch));
+    try std.testing.expect(ed.here().torchFits(b, torch));
+    ed.gesture();
+    ed.tool = .door;
+    remove(ed, door);
+    try std.testing.expectEqual(@as(usize, 0), b.torch.n);
+}
+
+test "the other button pressed mid graph drag ends the drag, one undo for it" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    _ = ed.world.add(.{ .bespoke = .{} });
+    const was = ed.world.node[0].pos;
+    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    ed.view = .graph;
+    ed.gesture();
+    ed.drag = .{ .node = 0, .grab = .{ .x = 0, .y = 0 }, .from = .{ .x = 100, .y = 100 } };
+    ed.desk = .{ .paint = true, .mouse = .{ .x = 200, .y = 100 } };
+    graphMouse(ed, c, true);
+    ed.desk = .{ .paint = true, .erase = true, .erase_hit = true, .mouse = .{ .x = 300, .y = 100 } };
+    ed.gesture();
+    graphMouse(ed, c, true);
+    ed.desk = .{ .paint = true, .erase = true, .mouse = .{ .x = 400, .y = 100 } };
+    graphMouse(ed, c, true);
+    ed.desk = .{ .mouse = .{ .x = 400, .y = 100 } };
+    graphMouse(ed, c, true);
+    try std.testing.expectEqual(@as(usize, 1), ed.hist_at);
+    ed.undo();
+    try std.testing.expect(ed.world.node[0].pos.eq(was));
 }
 
 test "leaving with unsaved changes asks first, and leaving a saved world does not" {

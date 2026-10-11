@@ -9,6 +9,7 @@ pub const CHANCE: u32 = 50;
 pub const TURNS: u8 = 3;
 pub const PER_TURN: i32 = 4;
 pub const VERB = "shoots a burning arrow into";
+pub const TAKES = "catches fire";
 pub const DESCRIPTION = std.fmt.comptimePrint("Adds {d}-{d} fire damage. {d}% burn chance: {d} fire damage for {d} turns. {d} mana.", .{ FIRE_LO, FIRE_HI, CHANCE, PER_TURN, TURNS, COST });
 
 pub const Burn = damage.Lasting(TURNS, i16, seared);
@@ -21,7 +22,7 @@ pub fn roll(rng: *mathx.Rng) i32 {
     return rng.range(FIRE_LO, FIRE_HI);
 }
 
-pub fn procs(rng: *mathx.Rng) bool {
+pub fn procs(rng: *mathx.Rng, _: i16) bool {
     return rng.percent(CHANCE);
 }
 
@@ -38,7 +39,7 @@ test "burning begins next turn, lasts three ticks and refreshes without stacking
     var rng = mathx.Rng.init(811);
     var hits: usize = 0;
     for (0..1000) |_| {
-        if (procs(&rng)) hits += 1;
+        if (procs(&rng, 0)) hits += 1;
     }
     try std.testing.expect(hits > 400 and hits < 600);
     std.debug.print("burning: {d}/1000 ignites, {d} ticks, {d} damage at 50% fire resistance\n", .{ hits, TURNS, total });

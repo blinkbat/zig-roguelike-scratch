@@ -20,13 +20,7 @@ const MainRow = enum {
     quit,
 
     fn label(r: MainRow) [:0]const u8 {
-        return switch (r) {
-            .new => "New",
-            .load => "Load",
-            .options => "Options",
-            .editor => "Editor",
-            .quit => "Quit",
-        };
+        return menu.named(r);
     }
 };
 const MAIN_ROWS = std.enums.values(MainRow);
@@ -35,10 +29,7 @@ const OptionRow = enum {
     debug,
 
     fn label(r: OptionRow) [:0]const u8 {
-        return switch (r) {
-            .fullscreen => "Fullscreen",
-            .debug => "Debug",
-        };
+        return menu.named(r);
     }
 };
 const OPTION_ROWS = std.enums.values(OptionRow);
@@ -46,9 +37,7 @@ const DebugRow = enum {
     unkillable,
 
     fn label(r: DebugRow) [:0]const u8 {
-        return switch (r) {
-            .unkillable => "Unkillable",
-        };
+        return menu.named(r);
     }
 
     fn note(r: DebugRow) [:0]const u8 {
@@ -127,7 +116,7 @@ const App = struct {
     }
 
     fn rescan(app: *App) void {
-        app.list = save.slots();
+        app.list = save.slots(app.alloc);
         app.armed = null;
     }
 
@@ -295,9 +284,7 @@ const App = struct {
                 const n = app.listing.n;
                 for (names[0..n], rows[0..n], 0..) |*b, *l, i| l.* = std.fmt.bufPrintZ(b, "{s}", .{app.listing.stem(i)}) catch "";
                 const picked = app.worlds.step(&g.st, n);
-                var path: [atlas.PATH_MAX + 1]u8 = undefined;
-                const where = std.fmt.bufPrintZ(&path, "{s}", .{app.listing.at(app.worlds.at)}) catch "";
-                menu.draw(g.face, g.screen, "CHOOSE A WORLD", rows[0..n], app.worlds.at, where, menu.BACK_LABEL);
+                menu.draw(g.face, g.screen, "CHOOSE A WORLD", rows[0..n], app.worlds.at, app.listing.at(app.worlds.at), menu.BACK_LABEL);
                 if (back) {
                     app.toTitle();
                 } else if (picked) |_| app.toClass();

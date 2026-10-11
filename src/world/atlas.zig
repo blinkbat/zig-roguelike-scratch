@@ -52,7 +52,7 @@ const FILE_MAX: usize = 64;
 /// A world file's name before `.world`, as `pathFor` makes it.
 pub const STEM_MAX = FILE_MAX - EXT.len;
 pub const PATH_MAX = PREFIX.len + FILE_MAX;
-const ListedPath = [PATH_MAX]u8;
+const ListedPath = [PATH_MAX + 1]u8;
 
 pub const Link = struct {
     node: usize,
@@ -164,11 +164,6 @@ pub const Bespoke = struct {
         self.foe_n -= 1;
         self.foe[i] = self.foe[self.foe_n];
     }
-
-    pub fn clearCell(self: *Bespoke, p: P) void {
-        self.barrel[grid.Level.idx(p)] = false;
-        if (self.foeAt(p)) |f| self.dropFoe(f);
-    }
 };
 
 pub const Plan = union(enum) { bespoke: Bespoke, procgen: Procgen };
@@ -279,6 +274,18 @@ pub const Node = struct {
         return b.floorAt(p) and self.doorAt(p) == null and !grid.cellOr(bool, &b.barrel, p, false);
     }
 
+    /// After `p`'s tile or door changed: takes away the torch, barrel and foe it no longer fits, as `parse` would refuse them.
+    pub fn pruneAt(self: *const Node, b: *Bespoke, p: P) void {
+        for ([_]P{ p, lume.torchWall(p) }) |w| {
+            if (grid.Level.inside(w) and !self.torchFits(b, w)) _ = b.torch.remove(w);
+        }
+        const i = grid.Level.idx(p);
+        if (b.barrel[i] and !self.barrelFits(b, p)) b.barrel[i] = false;
+        if (b.foeAt(p)) |f| {
+            if (!self.foeFits(b, p)) b.dropFoe(f);
+        }
+    }
+
     pub fn stamp(self: *const Node, lv: *grid.Level, roll: u64) void {
         var cells: [grid.MAX_DOORS]P = undefined;
         for (self.doors(), 0..) |d, i| cells[i] = d.at;
@@ -386,6 +393,10 @@ pub const Atlas = struct {
 
     fn doorOf(self: *Atlas, at: Link) *Door {
         return &self.node[at.node].door[at.door];
+    }
+
+    pub fn door(self: *const Atlas, at: Link) Door {
+        return self.node[at.node].door[at.door];
     }
 
     pub fn link(self: *Atlas, a: Link, b: Link) void {
@@ -572,7 +583,7 @@ pub const Atlas = struct {
                 if (l.node >= self.node_n or l.door >= self.node[l.node].door_n) return error.BadLink;
                 const here = Link{ .node = n, .door = k };
                 if (l.eq(here)) return error.BadLink;
-                const back = self.node[l.node].door[l.door].to orelse return error.BadLink;
+                const back = self.door(l).to orelse return error.BadLink;
                 if (!back.eq(here)) return error.BadLink;
             }
         }
@@ -587,6 +598,12 @@ pub const Atlas = struct {
                 if (rows != ROWS) return error.BadLine;
                 for (b.foes()) |f| {
                     if (!nd.foeFits(b, f.at)) return error.BadLine;
+                }
+                for (b.torches()) |t| {
+                    if (!nd.torchFits(b, t)) return error.BadLine;
+                }
+                for (b.barrel, 0..) |on, i| {
+                    if (on and !nd.barrelFits(b, grid.Level.of(i))) return error.BadLine;
                 }
             },
             .procgen => |*pg| if (!pg.valid()) return error.BadLine,
@@ -782,8 +799,8 @@ pub const Listing = struct {
         buf: ListedPath,
         n: usize,
 
-        fn text(l: *const Listed) []const u8 {
-            return l.buf[0..l.n];
+        fn text(l: *const Listed) [:0]const u8 {
+            return l.buf[0..l.n :0];
         }
 
         fn before(_: void, a: Listed, b: Listed) bool {
@@ -791,7 +808,7 @@ pub const Listing = struct {
         }
     };
 
-    pub fn at(self: *const Listing, i: usize) []const u8 {
+    pub fn at(self: *const Listing, i: usize) [:0]const u8 {
         return self.file[i].text();
     }
 
@@ -809,7 +826,7 @@ pub const Listing = struct {
             if (e.kind != .file or !std.mem.endsWith(u8, e.name, EXT) or e.name.len > FILE_MAX) continue;
             if (!plain(e.name)) continue;
             var l: Listed = undefined;
-            l.n = (std.fmt.bufPrint(&l.buf, PREFIX ++ "{s}", .{e.name}) catch continue).len;
+            l.n = (std.fmt.bufPrintZ(&l.buf, PREFIX ++ "{s}", .{e.name}) catch continue).len;
             if (self.n < MAX) {
                 self.file[self.n] = l;
                 self.n += 1;
@@ -945,6 +962,9 @@ test "a world file with a one-way link, a door linked to itself, a stray word or
         head ++ "node procgen rooms\napart 99\n",
         head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** ROWS ++ "foe rat 3 3\n",
         head ++ "node bespoke\n" ++ ("row " ++ "." ** COLS ++ "\n") ** ROWS ++ "foe slime_half 3 3\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** ROWS ++ "torch 3 3\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "." ** COLS ++ "\n") ** ROWS ++ "torch 3 3\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "0" ** COLS ++ "\n") ** ROWS ++ "door 3 3\n",
         head ++ "start 0 6 6\nnode procgen rooms\n",
         head ++ "node procgen rooms\nname A\nname B\n",
         head ++ "node procgen rooms\nat 0 0\nat 1 1\n",
@@ -961,6 +981,8 @@ test "a world file with a one-way link, a door linked to itself, a stray word or
     };
     for (bad) |t| try std.testing.expect(std.meta.isError(a.parse(t)));
     try a.parse(head ++ "node procgen rooms 1790812916605\n");
+    try a.parse(head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** 4 ++ "row " ++ "." ** COLS ++ "\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** (ROWS - 5) ++ "torch 3 3\n");
+    try std.testing.expectEqual(@as(usize, 1), a.node[0].plan.bespoke.torch.n);
     try a.parse(head ++ "node procgen rooms\n  name  Deep  Cave\n");
     try std.testing.expectEqualStrings("Deep  Cave", a.node[0].name());
     try a.parse(head ++ "node procgen rooms\nat 0 0\napart 4\nnode procgen rooms\nat 1 1\napart 5\n");

@@ -3,6 +3,7 @@ const input = @import("../core/input.zig");
 const burning = @import("burning.zig");
 const glacial = @import("glacial.zig");
 const juke = @import("juke.zig");
+const menu = @import("../ui/menu.zig");
 
 const Button = input.Button;
 
@@ -177,7 +178,7 @@ const PRIMARY = blk: {
 };
 
 pub const BINDS = Button.view;
-const NOT_SLOTS = [_]Button{ BINDS, .pause };
+const NOT_SLOTS = [_]Button{ BINDS, menu.PAUSE };
 
 comptime {
     for (std.enums.values(Button)) |b| {

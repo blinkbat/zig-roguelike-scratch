@@ -431,6 +431,11 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32, out: f32) f32 {
     return mathx.bilerp(.{ texel(f, w, h, x0, y0, out), texel(f, w, h, x0 + 1, y0, out), texel(f, w, h, x0, y0 + 1, out), texel(f, w, h, x0 + 1, y0 + 1, out) }, u - fx, v - fy);
 }
 
+/// A map-sized field at a point on the screen, cells.
+fn sample(f: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
+    return bilinear(f, grid.W, grid.H, x - 0.5, y - 0.5, 0);
+}
+
 fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32, out: f32) f32 {
     return f[mathx.slot(x, y, @intCast(w), @intCast(h)) orelse return out];
 }
@@ -610,8 +615,13 @@ pub const Light = struct {
     memory: [grid.CELLS]f32,
     soft_sight: [grid.CELLS]f32,
     seen_sight: [grid.CELLS]f32,
-    soft_memory: [grid.CELLS]f32,
+    /// `soft_sight` over open ground alone, so no cell that blocks sight lends ground its light or dims it.
+    open_sight: [grid.CELLS]f32,
+    open_memory: [grid.CELLS]f32,
+    /// 1 on a cell that blocks no sight, which `sightAt` blends `open_sight` over; set from the tiles in `settle`.
+    ground: [grid.CELLS]f32,
     blur: [grid.CELLS]f32,
+    share: [grid.CELLS]f32,
     /// `sight` but for what blocks it, as `Torch.open` is, so the carried light passes through no wall.
     carry_open: [grid.CELLS]f32,
     clear: [grid.CELLS]bool,
@@ -643,6 +653,7 @@ pub const Light = struct {
         @memset(&l.sight, 0);
         @memset(&l.memory, 0);
         @memset(&l.scratch.tile, .floor);
+        l.grounded();
         @memset(&l.map, rl.Color.black);
         l.baked = .{ 0, MAP_H };
         l.soften();
@@ -651,6 +662,7 @@ pub const Light = struct {
 
     pub fn settle(self: *Light, lv: *const grid.Level) void {
         self.scratch = lv.*;
+        self.grounded();
         self.countCasters(lv);
         self.torch_n = 0;
         for (lv.torches(), 0..) |w, i| {
@@ -703,39 +715,59 @@ pub const Light = struct {
         }
     }
 
-    /// Sight blurs over seen ground only, so a cell never seen does not dim the ground in sight round it.
+    fn grounded(self: *Light) void {
+        for (&self.ground, &self.scratch.tile) |*g, t| g.* = opened(1, t.blind());
+    }
+
+    /// Sight blurs over seen ground only, so a cell never seen does not dim the ground in sight round it, and over open ground alone for open ground, so no wall lends it light.
     fn soften(self: *Light) void {
-        for (&self.seen_sight, &self.sight, &self.memory) |*w, s, m| w.* = s * m;
-        for (&self.carry_open, &self.sight, &self.scratch.tile) |*o, s, t| o.* = opened(s, t.blind());
-        blur121(&self.seen_sight, &self.blur, &self.soft_sight);
-        blur121(&self.memory, &self.blur, &self.soft_memory);
-        for (&self.soft_sight, &self.soft_memory) |*s, m| s.* = if (m > 0) @min(1, s.* / m) else 0;
+        for (&self.seen_sight, &self.open_sight, &self.open_memory, &self.carry_open, &self.sight, &self.memory, &self.ground) |*seen, *open, *om, *carry, s, m, g| {
+            seen.* = s * m;
+            open.* = s * m * g;
+            om.* = m * g;
+            carry.* = s * g;
+        }
+        self.blurShare(&self.seen_sight, &self.memory, &self.soft_sight);
+        self.blurShare(&self.open_sight, &self.open_memory, &self.open_sight);
+        for (&self.open_sight, &self.ground) |*o, g| o.* *= g;
+        self.markClear();
+    }
+
+    /// `clear` from `memory`, by the run of wholly remembered cells ending at each: a span ends there when the run is as long.
+    fn markClear(self: *Light) void {
         const r: usize = VOID_REACH;
+        const span = 2 * r + 1;
         const w = grid.COLS;
         const h = grid.ROWS;
+        @memset(&self.clear_row, false);
+        @memset(&self.clear, false);
         for (0..h) |y| {
-            for (0..w) |x| {
-                var ok = x >= r and x + r < w;
-                if (ok) {
-                    for (x - r..x + r + 1) |k| ok = ok and self.memory[y * w + k] >= 1;
-                }
-                self.clear_row[y * w + x] = ok;
+            var run: usize = 0;
+            for (self.memory[y * w ..][0..w], 0..) |m, x| {
+                run = if (m >= 1) run + 1 else 0;
+                if (run >= span) self.clear_row[y * w + x - r] = true;
             }
         }
+        var runs: [grid.COLS]u16 = @splat(0);
         for (0..h) |y| {
-            for (0..w) |x| {
-                var ok = y >= r and y + r < h;
-                if (ok) {
-                    for (y - r..y + r + 1) |k| ok = ok and self.clear_row[k * w + x];
-                }
-                self.clear[y * w + x] = ok;
+            for (self.clear_row[y * w ..][0..w], &runs, 0..) |ok, *run, x| {
+                run.* = if (ok) run.* + 1 else 0;
+                if (run.* >= span) self.clear[(y - r) * w + x] = true;
             }
         }
     }
 
+    /// `num` blurred over `den` blurred: each cell's share of what counts round it. `out` may be `num`.
+    fn blurShare(self: *Light, num: *const [grid.CELLS]f32, den: *const [grid.CELLS]f32, out: *[grid.CELLS]f32) void {
+        blur121(num, &self.blur, out);
+        blur121(den, &self.blur, &self.share);
+        for (out, &self.share) |*o, d| o.* = if (d > 0) @min(1, o.* / d) else 0;
+    }
+
     /// A point on the screen, cells.
     fn sightAt(self: *const Light, x: f32, y: f32) f32 {
-        return bilinear(&self.soft_sight, grid.W, grid.H, x - 0.5, y - 0.5, 0);
+        if (grid.cellOr(f32, &self.ground, mathx.cellOf(.{ x, y }), 0) <= 0) return sample(&self.soft_sight, x, y);
+        return sample(&self.open_sight, x, y) / sample(&self.ground, x, y);
     }
 
     /// By distance, not a blur: a blur is not black on the edge of an unseen cell that seen ground wraps round.
@@ -1249,22 +1281,22 @@ fn silhouette(tex: rl.Texture2D, fx: f32, fy: f32, width: f32, foot: f32, left: 
     rl.gl.rlSetTexture(0);
 }
 
+/// The edges repeat their own cell. `out` may be `src`.
 fn blur121(src: *const [grid.CELLS]f32, tmp: *[grid.CELLS]f32, out: *[grid.CELLS]f32) void {
     const w = grid.COLS;
     const h = grid.ROWS;
     for (0..h) |y| {
-        for (0..w) |x| {
-            const l = src[y * w + (if (x == 0) 0 else x - 1)];
-            const r = src[y * w + @min(w - 1, x + 1)];
-            tmp[y * w + x] = (l + src[y * w + x] * 2 + r) * 0.25;
-        }
+        const s = src[y * w ..][0..w];
+        const t = tmp[y * w ..][0..w];
+        t[0] = (s[0] + s[0] * 2 + s[1]) * 0.25;
+        for (t[1 .. w - 1], s[0 .. w - 2], s[1 .. w - 1], s[2..w]) |*v, l, m, r| v.* = (l + m * 2 + r) * 0.25;
+        t[w - 1] = (s[w - 2] + s[w - 1] * 2 + s[w - 1]) * 0.25;
     }
     for (0..h) |y| {
-        for (0..w) |x| {
-            const u = tmp[(if (y == 0) 0 else y - 1) * w + x];
-            const d = tmp[@min(h - 1, y + 1) * w + x];
-            out[y * w + x] = (u + tmp[y * w + x] * 2 + d) * 0.25;
-        }
+        const u = tmp[(if (y == 0) 0 else y - 1) * w ..][0..w];
+        const m = tmp[y * w ..][0..w];
+        const d = tmp[@min(h - 1, y + 1) * w ..][0..w];
+        for (out[y * w ..][0..w], u, m, d) |*v, a, b, c| v.* = (a + b * 2 + c) * 0.25;
     }
 }
 
@@ -1510,6 +1542,7 @@ fn glowAlpha(r: f32) f32 {
 }
 
 const gen = @import("../world/gen.zig");
+const day = @import("../world/day.zig");
 
 const TORCH_AT = P{ .x = 20, .y = 10 };
 /// Cells in from an edge, so a sample on it reads the seen cell and not the unseen one past it.
@@ -1960,6 +1993,79 @@ test "the carried light reaches no remembered floor behind a wall" {
     const front = lum(l.at(&lv, &.{}, .{ 30.5, wy + 1 + EDGE_EPS }));
     std.debug.print(", at its front {d:.4}\n", .{front - lum(MEMORY)});
     try std.testing.expect(front > lum(MEMORY) + 0.05);
+}
+
+test "daylight reaches no remembered floor behind a wall in sight" {
+    var lv = grid.openFloor();
+    var x: i32 = 1;
+    while (x < grid.W - 1) : (x += 1) lv.set(.{ .x = x, .y = TORCH_AT.y }, .wall);
+    gen.shapeWalls(&lv);
+    for (0..grid.CELLS) |i| {
+        lv.seen[i] = true;
+        lv.lit[i] = grid.Level.of(i).y >= TORCH_AT.y;
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    l.sky = sky.at(day.NOON);
+    const wy: f32 = @floatFromInt(TORCH_AT.y);
+    std.debug.print("noon behind a wall in sight, over memory:", .{});
+    for ([_][2]f32{ .{ 30.5, wy - 1.5 }, .{ 30.5, wy - 0.5 }, .{ 30.5, wy - EDGE_EPS } }) |q| {
+        const v = lum(l.at(&lv, &.{}, q)) - lum(MEMORY);
+        std.debug.print(" {d:.4}", .{v});
+        try std.testing.expectApproxEqAbs(@as(f32, 0), v, 1e-5);
+    }
+    const front = lum(l.at(&lv, &.{}, .{ 30.5, wy + 1.5 }));
+    std.debug.print(", in front {d:.4}\n", .{front - lum(MEMORY)});
+    try std.testing.expect(front > lum(MEMORY) + 0.1);
+}
+
+test "a cell is clear exactly when every cell within its fade's reach is wholly remembered" {
+    var lv = grid.openFloor();
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    var rng = mathx.Rng.init(0xC1EA);
+    const r = VOID_REACH;
+    var n: usize = 0;
+    for (0..20) |_| {
+        for (&l.memory) |*m| m.* = if (rng.percent(97)) 1 else 0.5;
+        l.soften();
+        for (0..grid.CELLS) |i| {
+            const c = grid.Level.of(i);
+            var want = c.x >= r and c.y >= r and c.x + r < grid.W and c.y + r < grid.H;
+            var box = grid.Cells.around(c, r);
+            while (box.next()) |p| want = want and l.memoryAt(p) >= 1;
+            try std.testing.expectEqual(want, l.clear[i]);
+            if (want) n += 1;
+        }
+    }
+    std.debug.print("20 memories: {d} cells clear, each as the box round it says\n", .{n});
+    try std.testing.expect(n > 0);
+}
+
+test "sight has no step where it ends along a wall, nor as it eases out behind one" {
+    var lv = grid.openFloor();
+    var x: i32 = 1;
+    while (x < grid.W - 1) : (x += 1) lv.set(.{ .x = x, .y = TORCH_AT.y }, .wall);
+    gen.shapeWalls(&lv);
+    for (0..grid.CELLS) |i| {
+        const p = grid.Level.of(i);
+        lv.seen[i] = true;
+        lv.lit[i] = p.y >= TORCH_AT.y and p.x <= 30;
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const fy: f32 = @floatFromInt(TORCH_AT.y + 1);
+    const step = l.sightAt(31 + EDGE_EPS, fy + 0.5) - l.sightAt(31 - EDGE_EPS, fy + 0.5);
+    const behind = grid.Level.idx(.{ .x = 20, .y = TORCH_AT.y - 1 });
+    l.sight[behind] = 2 * mathx.SETTLE;
+    l.soften();
+    const easing = l.sightAt(20.5, fy - 1.5);
+    l.sight[behind] = 0;
+    l.soften();
+    const gone = l.sightAt(20.5, fy - 1.5);
+    std.debug.print("sight across its edge along a wall: {d:.4}; behind a wall, easing out {d:.4}, then gone {d:.4}\n", .{ step, easing, gone });
+    try std.testing.expectApproxEqAbs(@as(f32, 0), step, 1e-3);
+    try std.testing.expectApproxEqAbs(gone, easing, 1e-2);
 }
 
 test "a torch on a wall never seen has no flame to draw, though the floor below it is in sight" {

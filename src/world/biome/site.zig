@@ -82,8 +82,7 @@ pub const Params = struct {
 };
 
 pub fn palette(p: Params) carve.Palette {
-    const g = p.ground.tile();
-    return .{ .open = g, .solid = .shrub, .path = g };
+    return carve.Palette.on(p.ground.tile(), .shrub);
 }
 
 const Pattern = [N * N]u8;

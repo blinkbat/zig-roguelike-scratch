@@ -67,7 +67,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     while (y + p.block <= hi.y - s) : (y += step) {
         var x = lo.x + s;
         while (x + p.block <= hi.x - s) : (x += step) {
-            const b = grid.Box{ .lo = .{ .x = x, .y = y }, .hi = .{ .x = x + p.block, .y = y + p.block } };
+            const b = grid.Box.sized(.{ .x = x, .y = y }, p.block, p.block);
             block(lv, rng, b, p, street);
         }
     }
@@ -127,12 +127,12 @@ fn bridge(lv: *grid.Level, lo: P, hi: P) void {
 fn block(lv: *grid.Level, rng: *mathx.Rng, b: grid.Box, p: Params, street: grid.Tile) void {
     const w = b.width();
     const h = b.height();
-    const split_x = w >= 2 * HOUSE_LEAST + 1 and rng.chance(SPLIT_CHANCE);
-    const crosses = h >= 2 * HOUSE_LEAST + 1;
+    const split_x = buildings.cuttable(w, HOUSE_LEAST) and rng.chance(SPLIT_CHANCE);
+    const crosses = buildings.cuttable(h, HOUSE_LEAST);
     var split_y = crosses and rng.chance(SPLIT_CHANCE);
-    const mx = if (split_x) rng.range(b.lo.x + HOUSE_LEAST, b.hi.x - HOUSE_LEAST - 1) else b.hi.x;
+    const mx = if (split_x) buildings.cutAt(rng, b.lo.x, b.hi.x, HOUSE_LEAST) else b.hi.x;
     if (split_x and crosses and lv.at(.{ .x = mx, .y = b.lo.y - 1 }).liquid() and lv.at(.{ .x = mx, .y = b.hi.y }).liquid()) split_y = true;
-    const my = if (split_y) rng.range(b.lo.y + HOUSE_LEAST, b.hi.y - HOUSE_LEAST - 1) else b.hi.y;
+    const my = if (split_y) buildings.cutAt(rng, b.lo.y, b.hi.y, HOUSE_LEAST) else b.hi.y;
     const lots = [_]grid.Box{
         .{ .lo = b.lo, .hi = .{ .x = mx, .y = my } },
         .{ .lo = .{ .x = mx + 1, .y = b.lo.y }, .hi = .{ .x = b.hi.x, .y = my } },

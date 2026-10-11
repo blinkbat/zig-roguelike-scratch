@@ -50,8 +50,9 @@ pub const Params = struct {
 };
 
 pub fn palette(p: Params) carve.Palette {
-    const g = p.outside.tile();
-    return .{ .open = g, .solid = .shrub, .path = .dirt };
+    var pal = carve.Palette.TRAILED;
+    pal.open = p.outside.tile();
+    return pal;
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {

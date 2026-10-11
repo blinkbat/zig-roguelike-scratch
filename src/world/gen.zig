@@ -69,13 +69,7 @@ pub fn build(lv: *grid.Level, seed: u64) Floor {
 
 /// Drops the torches no wall bears any more, the rest kept in order.
 pub fn keepTorches(lv: *grid.Level) void {
-    var kept: usize = 0;
-    for (lv.torches()) |t| {
-        if (!bearsTorch(lv, t)) continue;
-        lv.torch.at[kept] = t;
-        kept += 1;
-    }
-    lv.torch.n = kept;
+    lv.torch.keep(@as(*const grid.Level, lv), bearsTorch);
 }
 
 /// Every open cell connected, each of `doors` too; reproducible from the seed, the doors and `params`.

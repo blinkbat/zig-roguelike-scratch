@@ -43,35 +43,53 @@ pub const Params = struct {
 
 const Box = grid.Box;
 
-/// A `w` by `h` box clear of liquid, doors, bridges and any solid `carve.clearRound` leaves standing, a cell of margin round it, and `gap` cells clear of every box in `taken`.
-pub fn site(lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, taken: []const Box, gap: i32, pal: carve.Palette) ?Box {
-    if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
-    for (0..TRIES) |_| {
-        const b = Box.sized(Box.inMap(SITE_MARGIN).rollFor(rng, w, h), w, h);
-        if (fits(lv, b, taken, gap, pal)) return b;
+/// Room for every lot a floor's features take, as `procgen` asserts.
+pub const LOTS_MAX: usize = 6 * COUNT_MAX;
+
+/// Every lot a floor's features take, so no feature raises one over another's.
+pub const Lots = struct {
+    box: [LOTS_MAX]Box = undefined,
+    n: usize = 0,
+    /// The first lot of the feature taking them now.
+    mine: usize = 0,
+
+    /// Cells between two lots at the least, so neither's ring opens the other.
+    pub const GAP: i32 = 1;
+
+    /// A feature starts taking lots: its own keep its gap apart, the earlier features' `GAP`.
+    pub fn begin(self: *Lots) void {
+        self.mine = self.n;
     }
-    return null;
-}
 
-/// Up to `most` boxes, each a `site` clear of the ones before.
-pub fn Lots(comptime most: usize) type {
-    return struct {
-        box: [most]Box = undefined,
-        n: usize = 0,
+    pub fn take(self: *Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, pal: carve.Palette) ?Box {
+        return self.takeApart(lv, rng, w, h, GAP, pal);
+    }
 
-        pub fn take(self: *@This(), lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, pal: carve.Palette) ?Box {
-            return self.takeApart(lv, rng, w, h, 1, pal);
+    pub fn takeApart(self: *Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
+        if (self.n == LOTS_MAX) return null;
+        const b = self.site(lv, rng, w, h, gap, pal) orelse return null;
+        self.box[self.n] = b;
+        self.n += 1;
+        return b;
+    }
+
+    /// A `w` by `h` box clear of liquid, doors, bridges and any solid `carve.clearRound` leaves standing, a cell of margin round it, and clear of every lot taken.
+    fn site(self: *const Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
+        if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
+        for (0..TRIES) |_| {
+            const b = Box.sized(Box.inMap(SITE_MARGIN).rollFor(rng, w, h), w, h);
+            if (self.clear(b, gap) and fits(lv, b, pal)) return b;
         }
+        return null;
+    }
 
-        pub fn takeApart(self: *@This(), lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
-            if (self.n == most) return null;
-            const b = site(lv, rng, w, h, self.box[0..self.n], gap, pal) orelse return null;
-            self.box[self.n] = b;
-            self.n += 1;
-            return b;
+    fn clear(self: *const Lots, b: Box, gap: i32) bool {
+        for (self.box[0..self.n], 0..) |t, i| {
+            if (b.overlaps(t, if (i < self.mine) GAP else gap)) return false;
         }
-    };
-}
+        return true;
+    }
+};
 
 /// The doorway's cell gets `inside`, and the cell outside it `outside` where that is solid.
 pub fn openWay(lv: *grid.Level, way: [2]P, inside: grid.Tile, outside: grid.Tile) void {
@@ -79,10 +97,7 @@ pub fn openWay(lv: *grid.Level, way: [2]P, inside: grid.Tile, outside: grid.Tile
     if (lv.at(way[1]).solid()) lv.set(way[1], outside);
 }
 
-fn fits(lv: *const grid.Level, b: Box, taken: []const Box, gap: i32, pal: carve.Palette) bool {
-    for (taken) |t| {
-        if (b.overlaps(t, gap)) return false;
-    }
+fn fits(lv: *const grid.Level, b: Box, pal: carve.Palette) bool {
     var cells = b.grown(1).cells();
     while (cells.next()) |q| {
         const t = lv.at(q);
@@ -132,12 +147,22 @@ fn dry(lv: *const grid.Level, way: [2]P) bool {
     return !lv.at(way[1]).liquid();
 }
 
+/// A side `len` long has room for a cut with `least` on each side of it.
+pub fn cuttable(len: i32, least: i32) bool {
+    return len >= 2 * least + 1;
+}
+
+/// A cut across `lo` up to `hi`, `least` in from either end.
+pub fn cutAt(rng: *mathx.Rng, lo: i32, hi: i32, least: i32) i32 {
+    return rng.range(lo + least, hi - least - 1);
+}
+
 /// Where a wall cutting `b` may stand, `least` in from its sides: both its ends meet `walls`, not a doorway.
 fn splitAt(lv: *const grid.Level, rng: *mathx.Rng, b: Box, across: bool, least: i32, walls: grid.Tile) ?i32 {
     const lo = if (across) b.lo.x else b.lo.y;
     const hi = if (across) b.hi.x else b.hi.y;
     for (0..SPLIT_TRIES) |_| {
-        const at = rng.range(lo + least, hi - least - 1);
+        const at = cutAt(rng, lo, hi, least);
         const ends: [2]P = if (across)
             .{ .{ .x = at, .y = b.lo.y - 1 }, .{ .x = at, .y = b.hi.y } }
         else
@@ -157,8 +182,8 @@ pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, wall
         const b = stack[n];
         const w = b.width();
         const h = b.height();
-        const across = if (w >= 2 * least + 1 and h >= 2 * least + 1) rng.chance(@as(f32, @floatFromInt(w)) / @as(f32, @floatFromInt(w + h))) else w >= 2 * least + 1;
-        if (!across and h < 2 * least + 1) continue;
+        const across = if (cuttable(w, least) and cuttable(h, least)) rng.chance(@as(f32, @floatFromInt(w)) / @as(f32, @floatFromInt(w + h))) else cuttable(w, least);
+        if (!across and !cuttable(h, least)) continue;
         if (n + 2 > stack.len) continue;
         if (across) {
             const x = splitAt(lv, rng, b, true, least, walls) orelse continue;
@@ -177,8 +202,8 @@ pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, wall
     }
 }
 
-pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
-    var lots: Lots(COUNT_MAX) = .{};
+pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots: *Lots, p: Params) void {
+    lots.begin();
     for (0..p.count) |_| {
         const w = rng.range(p.size[0], p.size[1]);
         const h = rng.range(p.size[0], @max(p.size[0], @divTrunc(p.size[1] * 3, 4)));
@@ -215,9 +240,10 @@ test "buildings stand walled with a way in, and decayed ones lie in rubble" {
     var rng = mathx.Rng.init(0xB111);
     carve.field(&lv, carve.Palette.WILD);
     const pal = carve.Palette.WILD;
-    apply(&lv, &rng, 0, pal, .{ .count = 8 });
+    var lots: Lots = .{};
+    apply(&lv, &rng, 0, pal, &lots, .{ .count = 8 });
     const walls = carve.count(&lv, .wall);
-    apply(&lv, &rng, 0, pal, .{ .count = 8, .decay = 60 });
+    apply(&lv, &rng, 0, pal, &lots, .{ .count = 8, .decay = 60 });
     std.debug.print("8 houses: {d} wall cells; 8 more at 60% decay: {d} rubble\n", .{ walls, carve.count(&lv, .rubble) });
     try std.testing.expect(walls > 8 * 12 and carve.count(&lv, .rubble) > 40);
 }

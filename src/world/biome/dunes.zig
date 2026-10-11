@@ -28,8 +28,7 @@ pub const Params = struct {
 };
 
 pub fn palette(p: Params) carve.Palette {
-    const g = p.ground.tile();
-    return .{ .open = g, .solid = .rock, .path = g };
+    return carve.Palette.on(p.ground.tile(), .rock);
 }
 
 pub fn shape(lv: *grid.Level, _: *mathx.Rng, seed: u64, p: Params) void {

@@ -167,6 +167,9 @@ pub fn reaches(a: P, b: P, r: f32) bool {
     return distEuclid(a, b) <= r + 0.5;
 }
 
+/// A test's frame, seconds.
+pub const TEST_DT: f32 = 1.0 / 240.0;
+
 /// Real seconds summed frame by frame, in f64: an f32 sum stops moving after a day or so.
 pub const Seconds = struct {
     sum: f64 = 0,

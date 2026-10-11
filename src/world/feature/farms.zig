@@ -26,8 +26,8 @@ pub const Params = struct {
     }
 };
 
-pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
-    var lots: buildings.Lots(COUNT_MAX) = .{};
+pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots: *buildings.Lots, p: Params) void {
+    lots.begin();
     for (0..p.count) |_| {
         const b = lots.take(lv, rng, rng.range(p.size[0], p.size[1]), rng.range(p.size[0], p.size[1]), pal) orelse continue;
         const across = rng.chance(0.5);
@@ -37,6 +37,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
             lv.set(q, if (b.onEdge(q)) p.fence else if (@mod(row, 2) == 0) p.furrow else p.crop);
         }
         buildings.openWay(lv, buildings.doorway(rng, b), p.furrow, pal.open);
+        carve.clearRound(lv, b, pal);
     }
 }
 
@@ -44,7 +45,8 @@ test "fields are fenced, in furrows of crop" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0xFA2);
     carve.field(&lv, carve.Palette.WILD);
-    apply(&lv, &rng, 0, carve.Palette.TRAILED, .{});
+    var lots: buildings.Lots = .{};
+    apply(&lv, &rng, 0, carve.Palette.TRAILED, &lots, .{});
     std.debug.print("5 fields: {d} fence, {d} crop, {d} furrow\n", .{ carve.count(&lv, .fence), carve.count(&lv, .crop), carve.count(&lv, .dirt) });
     try std.testing.expect(carve.count(&lv, .crop) > 50 and carve.count(&lv, .fence) > 50);
 }

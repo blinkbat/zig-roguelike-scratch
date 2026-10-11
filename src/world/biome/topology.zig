@@ -9,8 +9,7 @@ const P = mathx.P;
 
 pub const CLEARING_MIN: u8 = 2;
 pub const CLEARING_MAX: u8 = 12;
-/// A path of 1 would draw the same plus-shaped disc as 2: no narrower path walks a diagonal.
-pub const PATH_MIN: u8 = 2;
+pub const PATH_MIN: u8 = carve.LANE_MIN;
 pub const PATH_MAX: u8 = 6;
 pub const SIDES_MAX: u8 = 10;
 /// A spot lands within this share of the box from where its layout puts it.
@@ -49,8 +48,7 @@ pub const Params = struct {
 };
 
 pub fn palette(p: Params) carve.Palette {
-    const g = p.ground.tile();
-    return .{ .open = g, .solid = p.filler.tile(), .path = g, .pocket = p.filler.tile() };
+    return carve.Palette.on(p.ground.tile(), p.filler.tile()).pocketed();
 }
 
 const Spot = struct { x: f32, y: f32, big: bool = false };
@@ -101,10 +99,9 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         const r: f32 = if (!s.big) @floatFromInt(p.clearing) else if (p.layout == .arena) short * ARENA_OF else short * BOWL_OF;
         clearing(lv, noise, at[i], r, if (s.big) BIG_FRAY else FRAY, pal.open);
     }
-    const w = @as(f32, @floatFromInt(p.path - 1)) / 2;
     for (g.edges) |e| {
         if (p.layout == .grid and rng.chance(0.3)) continue;
-        path(lv, rng, at[e[0]], at[e[1]], w, pal.open);
+        path(lv, rng, at[e[0]], at[e[1]], p.path, pal.open);
     }
     for (0..p.sides) |_| {
         const from = at[rng.below(@intCast(g.spots.len))];
@@ -112,7 +109,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
             .x = std.math.clamp(from.x + rng.range(-SIDE_REACH, SIDE_REACH), inset, grid.W - 1 - inset),
             .y = std.math.clamp(from.y + rng.range(-SIDE_REACH, SIDE_REACH), inset, grid.H - 1 - inset),
         };
-        path(lv, rng, from, to, w, pal.open);
+        path(lv, rng, from, to, p.path, pal.open);
         clearing(lv, noise, to, @as(f32, @floatFromInt(p.clearing)) * 0.6, FRAY, pal.open);
     }
 }
@@ -121,9 +118,10 @@ fn clearing(lv: *grid.Level, noise: carve.Noise, c: P, r: f32, fray: f32, open: 
     carve.blob(lv, noise, c, r, 4, 1 - fray / 2, fray, open);
 }
 
-fn path(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, w: f32, open: grid.Tile) void {
-    var m = carve.Meander.init(a, b, 0.7);
-    while (m.next(rng)) |c| carve.disc(lv, c, w + 0.5, open, null);
+const PATH_WANDER: f32 = 0.7;
+
+fn path(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, open: grid.Tile) void {
+    carve.lane(lv, rng, a, b, width, PATH_WANDER, open, .cut);
 }
 
 test "every path width draws a different map" {

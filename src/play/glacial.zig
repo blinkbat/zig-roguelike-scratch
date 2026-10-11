@@ -14,6 +14,7 @@ pub const TURNS: u8 = 3;
 pub const RANGE: i32 = 2;
 pub const CYCLE: u8 = 3;
 pub const VERB = "frosts";
+pub const TAKES = "is chilled";
 pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} cold in a {d}-tile cone. {d}% chill (cold resistance lowers chance): skip 1 in {d} turns for {d} turns. {d} mana.", .{ COLD_LO, COLD_HI, RANGE, CHANCE, CYCLE, TURNS, COST });
 
 pub const Chill = struct {
@@ -57,11 +58,14 @@ pub const Cone = struct {
     }
 };
 
+/// The least sight radius `mathx.reaches` takes to every corner of the `RANGE` box.
+const CAST_R: i32 = @intFromFloat(@ceil(@as(f32, @floatFromInt(RANGE)) * std.math.sqrt2 - 0.5));
+
 pub fn cone(lv: *const grid.Level, from: P, impact: P) Cone {
     var out = Cone{};
     if (from.eq(impact)) return out;
     var visible: [grid.CELLS]bool = @splat(false);
-    fov.castInto(lv, impact, RANGE * 2, &visible);
+    fov.castInto(lv, impact, CAST_R, &visible);
     const dx = impact.x - from.x;
     const dy = impact.y - from.y;
     var cells = grid.Cells.around(impact, RANGE);

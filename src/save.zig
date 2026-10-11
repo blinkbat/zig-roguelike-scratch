@@ -143,9 +143,21 @@ fn header(bytes: *[]const u8) Error!void {
     bytes.* = b;
 }
 
-fn peek(bytes: []const u8) Error!Summary {
+/// The bytes between the header and the sum, once the sum vouches for them.
+fn payload(bytes: []const u8) Error![]const u8 {
     var b = bytes;
     try header(&b);
+    if (b.len < SUM) return error.Short;
+    var tail = b[b.len - SUM ..];
+    var sum: u64 = undefined;
+    _ = store.take(&tail, &sum);
+    b = b[0 .. b.len - SUM];
+    if (sum != std.hash.Wyhash.hash(0, b)) return error.Damaged;
+    return b;
+}
+
+fn peek(bytes: []const u8) Error!Summary {
+    var b = try payload(bytes);
     var s: Summary = undefined;
     if (!store.take(&b, &s)) return error.Short;
     if (!s.name.valid() or !s.place.valid()) return error.Damaged;
@@ -157,14 +169,7 @@ fn peek(bytes: []const u8) Error!Summary {
 
 /// All of it is measured before any of it reaches `g`, so a file that does not read leaves the game as it was.
 fn read(bytes: []const u8, g: *game.Game, world: *atlas.Atlas) Error!void {
-    var b = bytes;
-    try header(&b);
-    if (b.len < SUM) return error.Short;
-    var tail = b[b.len - SUM ..];
-    var sum: u64 = undefined;
-    _ = store.take(&tail, &sum);
-    b = b[0 .. b.len - SUM];
-    if (sum != std.hash.Wyhash.hash(0, b)) return error.Damaged;
+    var b = try payload(bytes);
     var s: Summary = undefined;
     var seed: Seed = undefined;
     var has_world: bool = undefined;
@@ -200,9 +205,13 @@ fn writeFile(bytes: []const u8, slot: usize) !void {
     try store.replace(path(&buf, slot), bytes);
 }
 
-pub fn load(alloc: std.mem.Allocator, slot: usize, g: *game.Game, world: *atlas.Atlas) !void {
+fn readSlot(alloc: std.mem.Allocator, slot: usize) ![]u8 {
     var buf: [PATH_MAX]u8 = undefined;
-    const bytes = try std.fs.cwd().readFileAlloc(alloc, path(&buf, slot), FILE_CAP);
+    return std.fs.cwd().readFileAlloc(alloc, path(&buf, slot), FILE_CAP);
+}
+
+pub fn load(alloc: std.mem.Allocator, slot: usize, g: *game.Game, world: *atlas.Atlas) !void {
+    const bytes = try readSlot(alloc, slot);
     defer alloc.free(bytes);
     try read(bytes, g, world);
 }
@@ -212,20 +221,18 @@ pub fn remove(slot: usize) !void {
     std.fs.cwd().deleteFile(path(&buf, slot)) catch |e| if (e != error.FileNotFound) return e;
 }
 
-pub fn slots() [SLOTS]Slot {
+pub fn slots(alloc: std.mem.Allocator) [SLOTS]Slot {
     var out: [SLOTS]Slot = undefined;
-    for (&out, 0..) |*s, i| s.* = slotAt(i);
+    for (&out, 0..) |*s, i| s.* = slotAt(alloc, i);
     return out;
 }
 
-fn slotAt(i: usize) Slot {
-    var buf: [PATH_MAX]u8 = undefined;
-    var f = std.fs.cwd().openFile(path(&buf, i), .{}) catch |e| return if (e == error.FileNotFound) .empty else .{ .unreadable = .damaged };
-    defer f.close();
-    var head: [HEAD + @sizeOf(Summary)]u8 = undefined;
-    const n = f.readAll(&head) catch return .{ .unreadable = .damaged };
-    if (n == 0) return .empty;
-    const s = peek(head[0..n]) catch |e| return .{ .unreadable = if (e == error.OtherBuild) .other_build else .damaged };
+/// Read whole, so a slot listed as a run is one `load` will take.
+fn slotAt(alloc: std.mem.Allocator, i: usize) Slot {
+    const bytes = readSlot(alloc, i) catch |e| return if (e == error.FileNotFound) .empty else .{ .unreadable = .damaged };
+    defer alloc.free(bytes);
+    if (bytes.len == 0) return .empty;
+    const s = peek(bytes) catch |e| return .{ .unreadable = if (e == error.OtherBuild) .other_build else .damaged };
     return .{ .run = s };
 }
 
@@ -443,8 +450,13 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     const s = try peek(buf.items);
     var line: [128]u8 = undefined;
     try std.testing.expectEqualStrings("Arwen" ++ menu.SEP ++ "HP 19/24" ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.line(&line));
-    const far: ?usize = atlas.MAX_NODES;
     const at = HEAD + @offsetOf(Summary, "node");
+    buf.items[at + @sizeOf(usize)] +%= 2;
+    try std.testing.expectError(error.Damaged, peek(buf.items));
+    buf.items[at + @sizeOf(usize)] -%= 2;
+    const far: ?usize = atlas.MAX_NODES;
     @memcpy(buf.items[at..][0..@sizeOf(?usize)], std.mem.asBytes(&far));
+    buf.shrinkRetainingCapacity(buf.items.len - SUM);
+    seal(&buf);
     try std.testing.expectError(error.Damaged, peek(buf.items));
 }

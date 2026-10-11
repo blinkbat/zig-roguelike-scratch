@@ -192,10 +192,12 @@ const POOL_R: f32 = 1.6;
 
 fn pool(lv: *grid.Level, c: P) void {
     var st: carve.Stretches = .{};
-    const before = st.label(lv);
+    _ = st.label(lv);
+    const region = st.region;
     const was = lv.tile;
     carve.disc(lv, c, POOL_R, .lava, null);
-    if (st.label(lv) > before) lv.tile = was;
+    _ = st.label(lv);
+    if (st.parts(&region)) lv.tile = was;
 }
 
 test "a lava maze's pools never part ground its ways join" {
@@ -215,7 +217,8 @@ test "a lava maze's pools never part ground its ways join" {
             if (with > st.label(&lv)) parted += 1;
         }
     }
-    std.debug.print("{d} lava mazes: {d} with ground a pool parts\n", .{ mazes, parted });    try std.testing.expectEqual(@as(usize, 0), parted);
+    std.debug.print("{d} lava mazes: {d} with ground a pool parts\n", .{ mazes, parted });
+    try std.testing.expectEqual(@as(usize, 0), parted);
 }
 
 test "a maze sets the rooms asked, joined, and merging adds loops" {

@@ -131,6 +131,21 @@ pub fn caps(comptime s: []const u8) [:0]const u8 {
     return &out;
 }
 
+/// "Rat" from "rat"; call it `comptime`.
+pub fn capital(comptime s: [:0]const u8) [:0]const u8 {
+    comptime var c: [s.len:0]u8 = s[0..s.len].*;
+    c[0] = std.ascii.toUpper(c[0]);
+    const out = c;
+    return &out;
+}
+
+/// An enum value's tag, `capital`ised: a row's label.
+pub fn named(e: anytype) [:0]const u8 {
+    return switch (e) {
+        inline else => |t| comptime capital(@tagName(t)),
+    };
+}
+
 pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
     return if (on) label ++ ": On" else label ++ ": Off";
 }

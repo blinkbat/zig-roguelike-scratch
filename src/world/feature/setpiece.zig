@@ -106,23 +106,24 @@ pub const Params = struct {
     }
 };
 
-pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
+pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots: *buildings.Lots, p: Params) void {
     const art = rows(p.piece);
     const w = size(art).x;
     const h = size(art).y;
-    var lots: buildings.Lots(COUNT_MAX) = .{};
+    lots.begin();
     for (0..p.count) |_| {
-        const room = spaced(&lots, lv, rng, w, h, p.apart, pal) orelse continue;
+        const room = spaced(lots, lv, rng, w, h, p.apart, pal) orelse continue;
         place(lv, room.lo, art, pal);
     }
 }
 
 /// A lot whose margin of `apart` keeps clear of the others', the gap halved till one fits.
-fn spaced(lots: *buildings.Lots(COUNT_MAX), lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, apart: i32, pal: carve.Palette) ?grid.Box {
-    var gap = @max(1, 2 * apart);
+fn spaced(lots: *buildings.Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, apart: i32, pal: carve.Palette) ?grid.Box {
+    const least = buildings.Lots.GAP;
+    var gap = @max(least, 2 * apart);
     while (true) : (gap = @divTrunc(gap, 2)) {
         if (lots.takeApart(lv, rng, w, h, gap, pal)) |r| return r;
-        if (gap <= 1) return null;
+        if (gap <= least) return null;
     }
 }
 
@@ -198,7 +199,8 @@ test "pieces land apart on open ground" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x5E7);
     carve.field(&lv, carve.Palette.WILD);
-    apply(&lv, &rng, 0, carve.Palette.WILD, .{ .piece = .graveyard, .count = 3 });
+    var lots: buildings.Lots = .{};
+    apply(&lv, &rng, 0, carve.Palette.WILD, &lots, .{ .piece = .graveyard, .count = 3 });
     std.debug.print("3 graveyards: {d} graves\n", .{carve.count(&lv, .grave)});
     try std.testing.expectEqual(@as(usize, 3 * 12), carve.count(&lv, .grave));
 }
@@ -212,7 +214,8 @@ test "shrines set wide apart land no closer than at the default margin" {
             var lv = grid.Level.blank();
             var rng = mathx.Rng.init(0x5E7 +% seed *% 7919);
             carve.field(&lv, carve.Palette.WILD);
-            apply(&lv, &rng, 0, carve.Palette.WILD, (Params{ .piece = .shrine, .count = 3, .apart = apart }).fit());
+            var lots: buildings.Lots = .{};
+            apply(&lv, &rng, 0, carve.Palette.WILD, &lots, (Params{ .piece = .shrine, .count = 3, .apart = apart }).fit());
             var at: [3]P = undefined;
             var n: usize = 0;
             for (lv.barrel, 0..) |b, i| {
