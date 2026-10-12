@@ -81,10 +81,6 @@ pub const Floor = union(enum) {
         };
     }
 
-    pub fn valid(f: *const Floor) bool {
-        return std.meta.eql(f.fit(), f.*);
-    }
-
     pub fn outdoor(f: Floor) bool {
         return switch (f) {
             .open, .wilds, .terrain, .keep, .town, .dunes, .site => true,
@@ -107,7 +103,6 @@ pub const Floor = union(enum) {
         };
     }
 };
-
 
 /// Laid over a base, in order.
 pub const Kind = std.meta.Tag(Feature);
@@ -143,10 +138,6 @@ pub const Feature = union(enum) {
         return switch (f) {
             inline else => |p, t| @unionInit(Feature, @tagName(t), p.fit()),
         };
-    }
-
-    pub fn valid(f: *const Feature) bool {
-        return std.meta.eql(f.fit(), f.*);
     }
 
     fn apply(f: Feature, lv: *grid.Level, rng: *mathx.Rng, seed: u64, pal: carve.Palette, lots: *buildings.Lots) void {
@@ -197,7 +188,10 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     var rng = mathx.Rng.init(seed ^ FEATURE_SALT);
     const base = lv.tile;
     var lots: buildings.Lots = .{};
-    for (features, 0..) |f, i| f.fit().apply(lv, &rng, seed +% i *% FEATURE_SALT, pal, &lots);
+    for (features, 0..) |f, i| {
+        reshape(lv);
+        f.fit().apply(lv, &rng, seed +% i *% FEATURE_SALT, pal, &lots);
+    }
     carve.seal(lv, pal.solid);
     carve.openDoors(lv, doors, pal.open);
     if (lv.firstOpen() == null) carve.disc(lv, grid.MIDDLE, CLEARING_R, pal.open, null);
@@ -220,6 +214,11 @@ fn settle(lv: *grid.Level) void {
         if (lv.barrel[i] and (lv.tile[i].solid() or lv.door[i] != grid.NO_DOOR)) lv.barrel[i] = false;
     }
     carve.unbar(lv);
+    reshape(lv);
+}
+
+/// Walls shaped afresh and the torches they no longer bear dropped, so a buried torch frees its slot.
+fn reshape(lv: *grid.Level) void {
     gen.shapeWalls(lv);
     gen.keepTorches(lv);
 }
@@ -274,6 +273,24 @@ test "every base, bare and under every feature, joins its ground, reaches its do
         std.debug.print("{s}: open ground {d}% to {d}% of the map\n", .{ @tagName(a), least * 100 / grid.CELLS, most * 100 / grid.CELLS });
         try std.testing.expect(least * 10 > grid.CELLS);
     }
+}
+
+test "a torch a border buries frees its slot for the houses raised after it" {
+    var lv: grid.Level = undefined;
+    const floor = Floor{ .rooms = .{ .torches = mathx.PERCENT } };
+    const features = [_]Feature{
+        .{ .border = .{ .width = border.WIDTH_MAX } },
+        .{ .buildings = .{ .count = buildings.COUNT_MAX, .size = .{ 5, 6 }, .torches = mathx.PERCENT } },
+    };
+    var least: usize = grid.MAX_TORCHES;
+    var sum: usize = 0;
+    for (0..COUNT_RUNS) |i| {
+        roll(&lv, 0x70C +% i *% 7919, &.{}, floor, &features);
+        least = @min(least, lv.torch.n);
+        sum += lv.torch.n;
+    }
+    std.debug.print("rooms all torched, a wide border, then houses all torched: {d} to {d} torches, {d} average of {d}\n", .{ least, grid.MAX_TORCHES, sum / COUNT_RUNS, grid.MAX_TORCHES });
+    try std.testing.expect(sum / COUNT_RUNS * 2 > grid.MAX_TORCHES);
 }
 
 test "a doorless floor rolled all solid still has ground to start on" {

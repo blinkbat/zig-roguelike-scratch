@@ -127,14 +127,14 @@ pub const Cloud = struct {
     /// A wall's texels take the tint of the open cell each faces, so gas meets a wall whole and none shows past it.
     fn texel(self: *const Cloud, lv: *const grid.Level, tx: i32, ty: i32) f32 {
         const c = P{ .x = @divFloor(tx, SUB), .y = @divFloor(ty, SUB) };
-        if (lv.walkable(c)) return self.openAt(lv, c);
+        if (lv.flat(c)) return self.openAt(lv, c);
         const sx: i32 = if (@mod(tx, SUB) * 2 < SUB) -1 else 1;
         const sy: i32 = if (@mod(ty, SUB) * 2 < SUB) -1 else 1;
         return @max(self.openAt(lv, c.add(.{ .x = sx, .y = 0 })), self.openAt(lv, c.add(.{ .x = 0, .y = sy })));
     }
 
     fn openAt(self: *const Cloud, lv: *const grid.Level, p: P) f32 {
-        if (!lv.walkable(p)) return 0;
+        if (!lv.flat(p)) return 0;
         return grid.cellOr(f32, &self.tint, p, 0);
     }
 };

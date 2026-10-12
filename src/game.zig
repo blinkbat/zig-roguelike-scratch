@@ -192,7 +192,7 @@ const Binds = struct {
 
 /// Picker cell 0 clears the slot; the rest are the acts in order. An empty slot opens it on the first act.
 fn pickOf(a: ?skillbar.Act) usize {
-    return 1 + std.mem.indexOfScalar(skillbar.Act, skillbar.ACTS, a orelse skillbar.ACTS[0]).?;
+    return 1 + (a orelse skillbar.ACTS[0]).index();
 }
 
 fn pickAct(i: usize) ?skillbar.Act {
@@ -1430,7 +1430,7 @@ fn stepGlide(g: *Game, late: f32) void {
     }
 }
 
-/// Gas harm on a body with no place lands at `start`, after the archer's part, which may burst its bloat. Returns when this body's part is drawn.
+/// A tick's harm or a chill wearing down on a body with no place lands at `start`, after the archer's part, which may burst its bloat. Returns when this body's part is drawn.
 fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     const i = actor.Pool.slot(id);
     const a = g.pool.items[i];
@@ -1469,10 +1469,11 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     };
     if (owed.chilled) |c| g.fx.settle(lands, .{ .slot = i, .after = c });
     const mark: ?[2]f32 = if (shown) mathx.centre(a.at) else null;
+    const drip: ?fx.Drip = if (mark) |m| .{ .at = m, .matter = fx.matterOf(a.kind) } else null;
     const in_view = shown or placed;
     if (owed.gassed) |h| harmShown(g, a.at, lands, h, false, in_view, .{ .slot = i, .after = h.after });
     if (owed.burned) |h| harmShown(g, a.at, lands, h, true, in_view, .{ .slot = i, .after = h.after, .fire_at = mark });
-    if (owed.bled) |h| harmShown(g, a.at, lands, h, false, in_view, .{ .slot = i, .after = h.after, .drip_at = mark });
+    if (owed.bled) |h| harmShown(g, a.at, lands, h, false, in_view, .{ .slot = i, .after = h.after, .drip = drip });
     return lands;
 }
 

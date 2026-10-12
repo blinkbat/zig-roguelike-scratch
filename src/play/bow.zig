@@ -116,6 +116,20 @@ test "a foe standing in reeds is aimable and the arrow reaches it" {
     try std.testing.expectEqual(@as(?Hit, .{ .body = rat }), fly(&lv, hero, at).struck);
 }
 
+test "an arrow flies over water to the rat across it" {
+    const fov = @import("../world/fov.zig");
+    var lv = grid.openFloor();
+    var pool = actor.Pool{};
+    const hero = P{ .x = 10, .y = 10 };
+    const at = P{ .x = 15, .y = 10 };
+    _ = pool.spawn(&lv, actor.Actor.of(.archer, hero));
+    for (0..3) |k| lv.set(.{ .x = 12 + @as(i32, @intCast(k)), .y = 10 }, .water);
+    const rat = pool.spawn(&lv, actor.Actor.of(.rat, at));
+    fov.cast(&lv, hero, actor.row(.archer).sight);
+    try std.testing.expect(aimable(&lv, hero, at));
+    try std.testing.expectEqual(@as(?Hit, .{ .body = rat }), fly(&lv, hero, at).struck);
+}
+
 test "a barrel in the line takes the arrow meant for the rat behind it" {
     var lv = grid.openFloor();
     var pool = actor.Pool{};

@@ -25,10 +25,7 @@ pub const Style = enum {
     ice,
 
     fn built(s: Style) bool {
-        return switch (s) {
-            .tombs, .sewers => true,
-            .caves, .lava, .ice => false,
-        };
+        return std.meta.eql(palette(.{ .style = s }), carve.Palette.BUILT);
     }
 };
 

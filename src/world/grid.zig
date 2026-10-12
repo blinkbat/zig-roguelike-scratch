@@ -395,8 +395,13 @@ pub const Level = struct {
         return self.gasAt(p) > 0;
     }
 
+    /// Nothing stands up from it: open ground or a liquid, which gas drifts and a drop flies over.
+    pub fn flat(self: *const Level, p: P) bool {
+        return inside(p) and !self.at(p).upright();
+    }
+
     pub fn addGas(self: *Level, p: P, volume: u16) void {
-        if (!self.walkable(p)) return;
+        if (!self.flat(p)) return;
         const i = idx(p);
         self.gas[i] +|= volume;
     }

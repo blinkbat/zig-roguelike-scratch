@@ -5,7 +5,7 @@ Extend the owner's pixel art by copying and manipulating the actual painted piec
 ## Start from the editable source
 
 1. Locate the file the owner is actually editing and inspect its layers. Do not assume the layer named "Draw here" contains the drawing.
-2. Save a dated backup under the project's output directory before changing it.
+2. Save a dated backup to `%TEMP%\wall-mocks\` (Aseprite's `app.fs.tempPath`) before changing it, never into the repository.
 3. Export the painted layers alone and inspect them at native resolution and an integer zoom. Record the cell size, source rectangles and layer names.
 4. Preserve the original painted layer and its position exactly. Put extensions on a separate editable layer. Update the original working Aseprite file so the owner sees the changes there.
 
@@ -57,7 +57,7 @@ The reference uses seven opaque RGB colours: `(202,158,106)`, `(84,15,0)`, `(149
 
 The Desktop sheet draws each shape as a thin core with arms; the game does not. Runtime `assets/walls.png` (512 by 384, eight cells to a row, the 48th empty) fills every cell, built by `tools/tile_art/export_walls.lua` from `Layer 1`'s painted strips the way the old 14-shape atlas was: the stepped top line, side edges and their corners on each side the wall does not join, a 2 by 4 notch at a north corner it does not, chips copied over the cap. Where it does not join south, its bottom 23 rows are the brick face: the cap's edge, the top mortar, six courses alternating rows 101 and 104 and the last course with its foot (107 to 109), ended by the face-end strips on an unjoined side. A face beside a missing south corner meets the next cap along a one-pixel outline, a hand repair. It writes `assets/source/walls.aseprite` with one slice per mask, and only reads the Desktop file. `look.WALL_FACE_PX` must match the face height.
 
-Regular wall work applies to `.wall`. Cave rock and forest artwork are separate and are deferred.
+Regular wall work applies to `.wall`. Cave rock and forest artwork are separate and are deferred. Their Desktop sheets, `cave-walls.aseprite` and `forest-tree-walls.aseprite`, hold full-cell guides for the owner to paint over on `Draw here`, written by `tools/tile_art/guide_walls.lua` (`--script-param source=<sheet>`) with the runtime rules above: the underdrawing with the face, the exact connection guide without it. `tools/tile_art/idea_walls.lua` (`source=<sheet>`, `kind=cave|forest`) draws rough procedural ideas on the `Ideas - hide before export` layer, tiling across joined edges, and a connected preview in `%TEMP%\wall-mocks\<sheet>-ideas-preview.png`; it is inspiration, not art to ship. `water.aseprite` and `deep-water.aseprite` on the Desktop are the same sheets, made from the cave sheet by `new_sheet.lua` with a header from `sheet_title.py`; a liquid's 10-row earth bank faces north instead (`guide_walls.lua` with `face=north rows=10`, `idea_walls.lua` with `kind=water|deep rows=10`).
 
 ## Validate the saved result
 
@@ -74,7 +74,7 @@ Inspect both the unlit artwork and the lit game. Lighting can conceal a gap or m
 
 Use Aseprite's native image and layer operations for pixel ports. The installed executable is `C:/Users/DavidBennett/Desktop/projects/Aseprite/src/build/bin/aseprite.exe`. On this machine, invoke a batch Lua script through PowerShell `Start-Process -WindowStyle Hidden -PassThru -Wait`; record its exit code and have the script write an explicit validation report.
 
-For each material, retain the canonical source path, painted layers, crop coordinates, connection mask order, runtime mapping, applied transforms, local repairs and validation results. Keep scripts beside the project and dated backups under `output/`, rather than filling the Desktop with competing "final" files.
+For each material, retain the canonical source path, painted layers, crop coordinates, connection mask order, runtime mapping, applied transforms, local repairs and validation results. Keep scripts beside the project and dated backups, previews and reports in `%TEMP%\wall-mocks\`, never in the repository and never on the Desktop as competing "final" files.
 
 The current regular-wall port is `tools/tile_art/port_walls.lua`. It replaces only the generated extension in the Desktop source, preserves `Layer 1`, then runs `export_walls.lua`, which builds the 47 full cells into `assets/source/walls.aseprite` and `assets/walls.png`. To rebuild them alone, without touching the Desktop sheet, run `export_walls.lua`.
 
@@ -91,6 +91,6 @@ $process.ExitCode
 
 The port copies horizontal outlines, vertical outlines, rounded corners, brick runs, face ends and complete 10 by 10 cap-detail patches. Plain interior space uses the sampled cap colour. Source strips repeat without scaling or rotation. Vertical strips share their endpoint sample so stacked tiles meet. Cell 02 had an empty first row at its north connection; the extension repairs this by copying its next row beneath the untouched original layer.
 
-Validation artifacts live in `output/wall-mocks/`. `port_walls.lua` writes `ported-pixel-validation.txt` there; the copy on disk predates the 47-shape export and still describes the old 14-shape atlas, so rerun the port before citing it. `export_walls.lua` asserts its own palette, alpha, connection coverage and distinct cells, and `look.zig`'s tests check `WALL_MASKS` and `WALL_FACE_PX` against `wall_masks.lua` and its `FACE`. Inspecting shots for seam gaps is not exhaustive coverage of every generated map.
+Validation artifacts go to `%TEMP%\wall-mocks\`. `port_walls.lua` writes `ported-pixel-validation.txt` there; the committed copy in `output/wall-mocks/` predates the 47-shape export and still describes the old 14-shape atlas, so rerun the port before citing it. `export_walls.lua` asserts its own palette, alpha, connection coverage and distinct cells, and `look.zig`'s tests check `WALL_MASKS` and `WALL_FACE_PX` against `wall_masks.lua` and its `FACE`. Inspecting shots for seam gaps is not exhaustive coverage of every generated map.
 
 Current correction notes: the generated approximation changed the drawing; resizing then distorted its pixel scale. A subsequent native-colour draft still replaced the uneven borders with straight lines. Neither palette matching nor native resolution alone is enough. Preserve the actual painted edge sequences and verify their joins.

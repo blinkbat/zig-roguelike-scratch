@@ -76,6 +76,11 @@ pub const Act = enum {
             .shoot, .wait, .secondary, .burning_arrow, .glacial_shot => 0,
         };
     }
+
+    /// Its place in `ACTS`.
+    pub fn index(a: Act) usize {
+        return std.enums.EnumIndexer(Act).indexOf(a);
+    }
 };
 
 pub const ACTS = std.enums.values(Act);

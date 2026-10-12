@@ -534,8 +534,9 @@ fn middleHalf(rng: *mathx.Rng, span: i32) i32 {
     return rng.range(@divTrunc(span, 4), @divTrunc(span * 3, 4));
 }
 
-/// West and east, then north and south.
-const EDGES = [_]mathx.Dir{ .w, .e, .n, .s };
+const ACROSS = [_]mathx.Dir{ .w, .e };
+const DOWN = [_]mathx.Dir{ .n, .s };
+const EDGES = ACROSS ++ DOWN;
 
 pub const Course = enum {
     across,
@@ -544,8 +545,8 @@ pub const Course = enum {
 
     pub fn ends(c: Course, rng: *mathx.Rng) [2]P {
         const side = switch (c) {
-            .across => EDGES[rng.below(2)],
-            .down => EDGES[2 + rng.below(2)],
+            .across => ACROSS[rng.below(ACROSS.len)],
+            .down => DOWN[rng.below(DOWN.len)],
             .any => EDGES[rng.below(EDGES.len)],
         };
         return .{ edge(rng, side), edge(rng, side.opposite()) };

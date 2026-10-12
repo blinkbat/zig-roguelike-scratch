@@ -54,7 +54,7 @@ pub fn canopied(t: grid.Tile) bool {
     return STANDS.get(t) == .canopy;
 }
 
-/// Every sprite whose silhouette casts: the bodies, the barrel, then the standing tiles.
+/// Every sprite that throws a shadow from its feet: the bodies, the barrel, then the standing tiles.
 pub const FIGURES: usize = Bodies.len + 1 + STANDING.len;
 
 /// Needs a live GL context.
@@ -277,7 +277,6 @@ fn declares(comptime fs: []const u8, comptime name: []const u8) bool {
     return false;
 }
 
-/// Each texture, render texture and shader `v` holds, a `program`'s too, unloaded and nulled.
 fn unloadEach(held: []?rl.Texture2D) void {
     for (held) |*h| {
         if (h.*) |t| rl.unloadTexture(t);
@@ -285,6 +284,7 @@ fn unloadEach(held: []?rl.Texture2D) void {
     }
 }
 
+/// Each texture, render texture and shader `v` holds, a `program`'s too, unloaded and nulled.
 pub fn unloadAll(v: anytype) void {
     inline for (std.meta.fields(@TypeOf(v.*))) |f| {
         if (comptime @typeInfo(f.type) == .@"struct" and @hasField(f.type, "values") and @hasDecl(f.type, "Key")) {
@@ -577,7 +577,7 @@ pub fn drawSkill(sprites: *const Sprites, a: skillbar.Act, x: i32, y: i32, alpha
 
 /// Its cell's left edge in `Sprites.skills`.
 fn skillX(a: skillbar.Act) i32 {
-    return @as(i32, @intFromEnum(a)) * SKILL_PX;
+    return @as(i32, @intCast(a.index())) * SKILL_PX;
 }
 
 /// Needs a live GL context.

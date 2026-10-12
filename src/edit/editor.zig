@@ -2307,16 +2307,18 @@ test "undoing back to what was saved leaves nothing unsaved, and a press held th
     try std.testing.expect(ed.drag == null and ed.rect == null);
 }
 
+const TEST_CANVAS = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+
 test "a fast stroke paints every cell it passes, and Esc mid-rectangle lets the press go" {
     const ed = try testEditor();
     defer ed.destroy();
     _ = ed.world.add(.{ .bespoke = .{} });
-    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    const c = TEST_CANVAS;
     ed.cam = .{ 0, 0 };
     ed.tool = .floor;
     const at = struct {
         fn f(e: *Editor, p: P) P {
-            return mouseOn(e, .{ .x = 0, .y = 0, .width = 2000, .height = 2000 }, p);
+            return mouseOn(e, TEST_CANVAS, p);
         }
     }.f;
     ed.desk = .{ .paint = true, .paint_hit = true, .mouse = at(ed, .{ .x = 2, .y = 2 }) };
@@ -2356,7 +2358,7 @@ test "a stroke leaving the map paints up to its edge, and it ends with the butto
     defer ed.destroy();
     _ = ed.world.add(.{ .bespoke = .{} });
     const b = &ed.world.node[0].plan.bespoke;
-    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    const c = TEST_CANVAS;
     ed.cam = .{ -4, 0 };
     ed.tool = .floor;
     ed.gesture();
@@ -2391,7 +2393,7 @@ test "a click off the map ends the stroke held through it" {
     defer ed.destroy();
     _ = ed.world.add(.{ .bespoke = .{} });
     const b = &ed.world.node[0].plan.bespoke;
-    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    const c = TEST_CANVAS;
     ed.cam = .{ 0, 0 };
     ed.tool = .floor;
     ed.desk = .{ .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = 2, .y = 2 }) };
@@ -2411,7 +2413,7 @@ test "a rectangle begun off the map fills from its edge" {
     defer ed.destroy();
     _ = ed.world.add(.{ .bespoke = .{} });
     const b = &ed.world.node[0].plan.bespoke;
-    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    const c = TEST_CANVAS;
     ed.cam = .{ -4, -4 };
     ed.tool = .floor;
     ed.gesture();
@@ -2434,7 +2436,7 @@ test "a click on the frame a rectangle is let go is an undo of its own" {
     defer ed.destroy();
     _ = ed.world.add(.{ .bespoke = .{} });
     const b = &ed.world.node[0].plan.bespoke;
-    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    const c = TEST_CANVAS;
     ed.cam = .{ 0, 0 };
     ed.tool = .floor;
     ed.desk = .{ .shift = true, .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = 2, .y = 2 }) };
@@ -2470,7 +2472,7 @@ test "the other button pressed mid graph drag ends the drag, one undo for it" {
     defer ed.destroy();
     _ = ed.world.add(.{ .bespoke = .{} });
     const was = ed.world.node[0].pos;
-    const c = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
+    const c = TEST_CANVAS;
     ed.view = .graph;
     ed.gesture();
     ed.drag = .{ .node = 0, .grab = .{ .x = 0, .y = 0 }, .from = .{ .x = 100, .y = 100 } };

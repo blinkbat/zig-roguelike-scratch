@@ -1,6 +1,7 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local path=app.params.source or 'C:/Users/DavidBennett/Desktop/regular-walls.aseprite'
-local work=root..'output/wall-mocks/'
+local work=app.fs.joinPath(app.fs.tempPath,'wall-mocks')..'/'
+app.fs.makeAllDirectories(work)
 local pc=app.pixelColor
 local sprite=assert(app.open(path))
 assert(sprite.width==512 and sprite.height==448)

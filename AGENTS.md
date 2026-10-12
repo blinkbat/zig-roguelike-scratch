@@ -13,6 +13,11 @@ as slimes. The hero also has mana for Juke, shown beside HP in the HUD.
 
 Prefer no comments in code. Don't make product/design decisions — ask. Don't commit, push or branch unless asked.
 
+**NOTHING SCRATCH GOES IN THE REPO.** Backups, previews, mocks, validation reports, timing roots and throwaway
+scripts go to `%TEMP%` or the session scratchpad, never under this directory (`output/` included). A tool that
+writes one writes it there (`tools/tile_art/*.lua` use `app.fs.tempPath`). Leave `git status` as you found it but
+for the change asked for.
+
 - Wall and repeating tile workflow: `docs/TILE_ART_WORKFLOW.md`. Port the owner's actual pixels and uneven outlines at native scale; preserve authored layers, update the canonical Aseprite file, and inspect connected game tiles. Regular walls use Desktop `regular-walls.aseprite`, painted on `Layer 1`; cave and forest are separate.
 
 ## Build & verify
@@ -139,7 +144,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   are lit per pixel by their own
   shader from normals bevelled off their silhouette at load, faded as the ground under them is; torch flames and their
   glow draw over it all. The map
-  composes the archer's carried light (after Brogue's miner's light), each torch (occluded by its own `fov.cast`)
+  composes the archer's carried light (after Brogue's miner's light), each torch (occluded by its own `lume.torchPool`)
   and the fog: unshadowed ambient is floored at memory's RGB before adding lights, so the lantern never fades into
   a dark ring below remembered ground. Sight and memory ease per cell, and memory fades to black exactly at the edge of what was ever seen,
   so no unseen cell is ever drawn. Ground in sight is never dimmed by a cell never seen (a side door the symmetric FOV
@@ -177,7 +182,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   world, under the minimap and hud. Nothing in the simulation reads it.
 - **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG and TTF there under its file name, read with
   `@embedFile`), so the exe runs from any directory. A body's PNG is a file in `assets/` and its entry in
-  `look.BODY_PNGS`; a tile's is a file and its entry in `look.TILE_PNGS` (a wall's are cut from `walls.png`); the barrel's is a `Sprites` field in `Sprites.figures`, the sprites the body shader lights.
+  `look.BODY_PNGS`; a tile's is a file and its entry in `look.TILE_PNGS` (a wall's are cut from `walls.png`); the barrel's is a `Sprites` field in `Sprites.figures`, the sprites that throw a shadow from their feet; the body shader lights the bodies and the barrel among them.
   Sprites are authored at `look.SPRITE_PX` (64), facing right; `Game.facing` mirrors a body
   whose last step, strike or aim went leftward, and straight up or down keeps it.
 - **PROCGEN IS A BASE AND ITS FEATURES** (`world/procgen.zig`, after Qud's builder stacks): `roll` lays the base
@@ -202,12 +207,12 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   (a symbol, its ASCII stand-in, colours, minimap). A shrub, boulder or fungus blocks sight and step, a grave a step
   alone;
   each is lit as the ground and draws its ground under it; water, lava, a chasm and a fence
-  block a step but not sight or an arrow; reeds and crop block sight but not a step; tiny shrubs, tall grass and shrooms are decor,
+  block a step but not sight or an arrow, and the liquids not gas; reeds and crop block sight but not a step; tiny shrubs, tall grass and shrooms are decor,
   blocking nothing, on grass drawn under them. Only `.wall` is shaped.
-- **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** in `gen.around`, before the torches and barrels, or by `Node.stamp` for a bespoke node
+- **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** in `gen.around`, before the torches and barrels, again before each feature and once settled (`procgen.reshape`), or by `Node.stamp` for a bespoke node
   (`shapeWalls` alone), and stored in `Level.shape`: which of its eight neighbours are walls too (`grid.WallShape`,
   off the map counting), a corner only where both sides beside it are (`WallShape.joined`), so one of 47 shapes.
-  Nothing recomputes it, and nothing about what has been revealed touches it (owner's call). Its picture is the
+  Nothing recomputes it once the floor is built, and nothing about what has been revealed touches it (owner's call). Its picture is the
   atlas's cell for it (`look.WALL_MASKS`, `walls.png` read across its rows), filling the cell, built by
   `tools/tile_art/export_walls.lua` from the painted strips of the Desktop `regular-walls.aseprite`'s `Layer 1`: an
   outline on each side it does not join, a notch at a north corner it does not. A wall shows a brick face, its
@@ -237,7 +242,7 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
   between its halves and the archer carrying its hp through a door.
 - **`world/gas.zig` IS EVERY GAS**, after Brogue CE's `updateVolumetricMedia` for one gas: `Level.gas` is Brogue's
   volume, spread twice a turn by each cell holding `gas.GASSED_UP` or more sharing it evenly over itself and its open
-  neighbours (a thinner cell keeps its own), and a cell that held gas loses a unit on `gas.DISSIPATE` of passes, so gas
+  neighbours, a liquid's too (`Level.flat`; a thinner cell keeps its own), and a cell that held gas loses a unit on `gas.DISSIPATE` of passes, so gas
   shut in a room lingers and gas in the open clears sooner. A
   bloat (`Blow.burst`, Brogue's kamikaze) dies instead of striking and bursts into `gas.BURST` however it dies; a third
   of its moves go a random way (`actor.flit`). Brogue's turn order: the archer acts and the gas eats at it, the gas

@@ -164,7 +164,9 @@ pub const Body = struct {
 /// What landing shows: the body as the blow left it, and the slot of one it split off, drawn from then.
 pub const After = struct { body: Body, reveals: ?usize = null };
 
-pub const Sting = struct { slot: usize, after: ?After = null, fire_at: ?[2]f32 = null, drip_at: ?[2]f32 = null };
+pub const Drip = struct { at: [2]f32, matter: Matter };
+
+pub const Sting = struct { slot: usize, after: ?After = null, fire_at: ?[2]f32 = null, drip: ?Drip = null };
 
 /// A body changed by no blow, as a chill wearing off: it catches up unflashed.
 pub const Settle = struct { slot: usize, after: After };
@@ -179,7 +181,7 @@ pub const JUKE_S: f32 = 0.6;
 const ICE_MOTES: usize = 12;
 const TRAIL_MOTES: usize = 20;
 const DUST_MOTES: usize = 24;
-const EMBER_MOTES: usize = 18;
+const EMBERS = Spray{ .col = look.FIRE, .hit = 18, .kill = 18, .along_lo = 0.4, .along_hi = 1.4, .fan = 0, .up_lo = 0.5, .up_hi = 1.5, .grav = 0, .drag = 2, .life_lo = 0.25, .life_hi = 0.55, .r_lo = 1.5, .r_hi = 3.5, .stains = false };
 const DRIP_MOTES: usize = 5;
 /// The marks a status draws on a body.
 const BLEED_DROPS = 4;
@@ -279,7 +281,7 @@ pub const Fx = struct {
             .sting => |s| {
                 self.flash[s.slot] = FLASH_S;
                 if (s.fire_at) |at| self.embers(at);
-                if (s.drip_at) |at| self.drip(at);
+                if (s.drip) |d| self.drip(d);
             },
         }
         const slot = what.on() orelse return;
@@ -366,14 +368,19 @@ pub const Fx = struct {
         if (b.slot) |s| self.flash[s] = FLASH_S;
         self.emit(.{ .p = .{ b.at[0], b.at[1], STRIKE_Z }, .v = .{ 0, 0, 0 }, .life = CONTACT_S, .r = CONTACT_R * (if (b.lethal) KILL_POP else 1), .col = CONTACT, .add = true });
         const s = sprayOf(b.matter);
+        self.spray(b.at, b.dir, s, if (b.lethal) s.kill else s.hit);
+    }
+
+    /// Along `dir`, or all round for none.
+    fn spray(self: *Fx, at: [2]f32, dir: ?[2]f32, s: Spray, n: usize) void {
         const rng = &self.rng;
-        for (0..if (b.lethal) s.kill else s.hit) |_| {
-            const dir = b.dir orelse heading(rng.unit() * mathx.TAU);
+        for (0..n) |_| {
+            const d = dir orelse heading(rng.unit() * mathx.TAU);
             const along = mathx.lerpF(s.along_lo, s.along_hi, rng.unit());
             const across = (rng.unit() * 2 - 1) * s.fan;
             self.emit(.{
-                .p = .{ b.at[0], b.at[1], STRIKE_Z },
-                .v = .{ dir[0] * along - dir[1] * across, dir[1] * along + dir[0] * across, mathx.lerpF(s.up_lo, s.up_hi, rng.unit()) },
+                .p = .{ at[0], at[1], STRIKE_Z },
+                .v = .{ d[0] * along - d[1] * across, d[1] * along + d[0] * across, mathx.lerpF(s.up_lo, s.up_hi, rng.unit()) },
                 .life = mathx.lerpF(s.life_lo, s.life_hi, rng.unit()),
                 .r = mathx.lerpF(s.r_lo, s.r_hi, rng.unit()),
                 .col = s.col,
@@ -386,22 +393,12 @@ pub const Fx = struct {
     }
 
     fn embers(self: *Fx, at: [2]f32) void {
-        for (0..EMBER_MOTES) |_| {
-            const dir = heading(self.rng.unit() * mathx.TAU);
-            const speed = 0.4 + self.rng.unit();
-            self.emit(.{
-                .p = .{ at[0], at[1], STRIKE_Z },
-                .v = .{ dir[0] * speed, dir[1] * speed, 0.5 + self.rng.unit() },
-                .life = 0.25 + self.rng.unit() * 0.3,
-                .r = 1.5 + self.rng.unit() * 2,
-                .col = look.FIRE,
-                .drag = 2,
-            });
-        }
+        self.spray(at, null, EMBERS, EMBERS.hit);
     }
 
-    fn drip(self: *Fx, at: [2]f32) void {
-        const s = sprayOf(.blood);
+    fn drip(self: *Fx, d: Drip) void {
+        const s = sprayOf(d.matter);
+        const at = d.at;
         for (0..DRIP_MOTES) |_| {
             self.emit(.{
                 .p = .{ at[0] + (self.rng.unit() - 0.5) * 0.4, at[1] + (self.rng.unit() - 0.5) * 0.2, STRIKE_Z + self.rng.unit() * 0.2 },
@@ -548,11 +545,16 @@ fn tick(m: *Mote, lv: *const grid.Level, dt: f32) void {
     m.v[0] *= k;
     m.v[1] *= k;
     m.v[2] = m.v[2] * k - m.grav * dt;
-    if (m.terrain and !lv.walkable(mathx.cellOf(.{ m.p[0], m.p[1] }))) {
+    const cell = mathx.cellOf(.{ m.p[0], m.p[1] });
+    if (m.terrain and !lv.flat(cell)) {
         m.life = 0;
         return;
     }
     if (m.p[2] > 0) return;
+    if (m.terrain and !lv.walkable(cell)) {
+        m.life = 0;
+        return;
+    }
     m.p[2] = 0;
     if (m.stains) {
         m.landed = true;
@@ -692,6 +694,22 @@ test "splinters bounce and leave no stain, and a mote that flies into a wall is 
     for (fx.motes) |m| {
         if (m.life > 0 and !m.add) try std.testing.expect(m.p[0] < 21);
     }
+}
+
+test "a drop flies on over water and leaves no stain where it falls in" {
+    var lv = grid.openFloor();
+    lv.set(.{ .x = 21, .y = 20 }, .water);
+    lv.set(.{ .x = 22, .y = 20 }, .water);
+    var m = Mote{ .p = .{ 20.5, 20.5, 0.5 }, .v = .{ 1.5, 0, 0 }, .life = 1, .r = 1, .col = rl.Color.red, .grav = 2, .stains = true };
+    var over_water = false;
+    var t: f32 = 0;
+    while (m.life > 0 and t < 2) : (t += mathx.TEST_DT) {
+        tick(&m, &lv, mathx.TEST_DT);
+        if (m.life > 0 and m.p[2] > 0 and m.p[0] >= 21) over_water = true;
+    }
+    std.debug.print("a drop thrown off the bank flies to x {d:.2} and falls in\n", .{m.p[0]});
+    try std.testing.expect(over_water);
+    try std.testing.expect(!m.landed and m.life <= 0 and m.p[0] >= 21 and m.p[0] < 23);
 }
 
 test "a blow from nowhere sprays all round, not in one heap" {

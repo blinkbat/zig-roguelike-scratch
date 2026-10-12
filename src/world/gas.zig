@@ -48,7 +48,7 @@ fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
         var n: usize = 1;
         for (mathx.ALL_DIRS) |d| {
             const q = p.add(d.delta());
-            if (!lv.walkable(q)) continue;
+            if (!lv.flat(q)) continue;
             to[n] = grid.Level.idx(q);
             n += 1;
         }
@@ -90,7 +90,7 @@ fn lasts(lv: *grid.Level, rng: *mathx.Rng) !Life {
         var cells: usize = 0;
         for (lv.gas, lv.tile) |v, t| {
             if (v == 0) continue;
-            if (t.solid()) return error.GasInWall;
+            if (t.upright()) return error.GasInWall;
             cells += 1;
         }
         life.most = @max(life.most, cells);
@@ -156,6 +156,22 @@ test "a burst in a room of a real floor leaks out of its doorways: sooner gone t
     std.debug.print("{d} floors, a burst in a room's middle: gone in {d} turns on average, {d} with the same rooms shut, {d} on open floor\n", .{ FLOORS, real / FLOORS, sealed / FLOORS, open });
     try std.testing.expect(real < sealed);
     try std.testing.expect(real > open * FLOORS);
+}
+
+test "gas drifts over a river to the bank across it" {
+    var rng = mathx.Rng.init(0x6A5);
+    var lv = grid.openFloor();
+    const at = P{ .x = 20, .y = 20 };
+    var y: i32 = 0;
+    while (y < grid.H) : (y += 1) {
+        for (0..3) |k| lv.set(.{ .x = 22 + @as(i32, @intCast(k)), .y = y }, .water);
+    }
+    lv.addGas(at, BURST);
+    const across = P{ .x = 25, .y = 20 };
+    var turns: usize = 0;
+    while (!lv.gassy(across) and any(&lv)) : (turns += 1) turn(&lv, &rng);
+    std.debug.print("a burst two cells from a 3-wide river reaches the far bank in {d} turns\n", .{turns});
+    try std.testing.expect(lv.gassy(across));
 }
 
 test "gas eats a fifteenth of full hp a turn and never less than one" {
