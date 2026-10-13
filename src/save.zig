@@ -8,6 +8,7 @@ const hero = @import("play/hero.zig");
 const menu = @import("ui/menu.zig");
 
 pub const SLOTS: usize = 3;
+pub const NOT_WRITTEN = "The last save did not write ({s})";
 const DIR = "saves";
 const EXT = ".save";
 const MAGIC = "roguelike-save\n";
@@ -282,7 +283,7 @@ pub const Autosave = struct {
     pub fn flush(self: *Autosave, g: *game.Game) void {
         self.wait();
         if (self.failed) |e| {
-            if (self.reported == null or self.reported.? != e) g.log.say("The last save did not write ({s}).", .{@errorName(e)});
+            if (self.reported == null or self.reported.? != e) g.log.say(NOT_WRITTEN ++ ".", .{@errorName(e)});
             self.reported = e;
             self.failed = null;
             g.unsaved = true;

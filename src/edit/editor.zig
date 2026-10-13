@@ -409,8 +409,7 @@ pub const Editor = struct {
         ed.banked = true;
         ed.node = 0;
         ed.scroll = 0;
-        ed.pick = null;
-        ed.drop();
+        ed.release();
         ed.dirty = false;
         ed.renaming = false;
         ed.modal = .none;
@@ -494,8 +493,7 @@ pub const Editor = struct {
         ed.world.* = ed.kept(k).*;
         ed.kept(k).* = ed.scratch.*;
         ed.banked = true;
-        ed.drop();
-        ed.pick = null;
+        ed.release();
         ed.clampSelection();
         ed.restamp();
     }
@@ -523,11 +521,14 @@ pub const Editor = struct {
         ed.drag = null;
     }
 
+    /// `drop`, and the link half made.
+    fn release(ed: *Editor) void {
+        ed.drop();
+        ed.pick = null;
+    }
+
     fn setTool(ed: *Editor, t: Tool) void {
-        if (!t.eql(ed.tool)) {
-            ed.drop();
-            ed.pick = null;
-        }
+        if (!t.eql(ed.tool)) ed.release();
         ed.tool = t;
     }
 
@@ -623,7 +624,7 @@ pub const Editor = struct {
         switch (ed.pending) {
             .leave => ed.action = .leave,
             .quit => ed.action = .quit,
-            .open => ed.open(p) catch |e| ed.say("{s} did not load ({s})", .{ p, @errorName(e) }),
+            .open => ed.open(p) catch |e| ed.say(atlas.NOT_LOADED, .{ p, @errorName(e) }),
             .new => {
                 freshWorld(ed.world);
                 ed.setPath(p);
@@ -1148,8 +1149,7 @@ fn remove(ed: *Editor, p: P) void {
 
 fn deleteNode(ed: *Editor) void {
     ed.world.remove(ed.node);
-    ed.pick = null;
-    ed.drop();
+    ed.release();
     ed.renaming = false;
     ed.clampSelection();
     ed.bank();
@@ -1748,30 +1748,21 @@ fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []cons
         const r = for (rows) |r| {
             if (std.mem.eql(u8, r.field, name)) break r;
         } else @compileError(name ++ " has no row on the generator");
-        if (r.tips.len != numbers(@FieldType(T, name))) @compileError(name ++ " wants a tip for each number in it");
+        if (r.tips.len != atlas.knobNumbers(@FieldType(T, name))) @compileError(name ++ " wants a tip for each number in it");
     }
-}
-
-fn numbers(comptime T: type) usize {
-    return switch (@typeInfo(T)) {
-        .int, .@"enum" => 1,
-        .array => |a| a.len,
-        .@"struct" => |s| s.fields.len,
-        else => @compileError(@typeName(T) ++ " is no knob"),
-    };
 }
 
 fn knobRow(ed: *Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob) void {
     rowLabel(g, y, comptime k.caption());
     const v = &@field(owner.*, k.field);
     const T = @TypeOf(v.*);
-    const n = comptime numbers(T);
+    const n = comptime atlas.knobNumbers(T);
     switch (@typeInfo(T)) {
         .int => stepNumber(ed, g, y, 0, n, T, v, k),
         .@"enum" => stepChoice(ed, g, y, T, v, k.tips[0]),
         .array => |a| inline for (0..n) |i| stepNumber(ed, g, y, i, n, a.child, &v[i], k),
         .@"struct" => |s| inline for (s.fields, 0..) |f, i| stepNumber(ed, g, y, i, n, f.type, &@field(v.*, f.name), k),
-        else => unreachable,
+        else => @compileError(@typeName(T) ++ " is no knob"),
     }
 }
 
@@ -2534,7 +2525,7 @@ test "a node added is named as it is added, one undo for both" {
     try std.testing.expect(ed.renaming);
     var buf: [LINE]u8 = undefined;
     ed.field.set("Pit", atlas.NAME_MAX);
-    try std.testing.expect(std.mem.endsWith(u8, ed.nodeTitle(ed.node, &buf), "Pit_"));
+    try std.testing.expect(std.mem.endsWith(u8, ed.nodeTitle(ed.node, &buf), "Pit" ++ menu.CARET));
     ed.commitRename();
     try std.testing.expectEqualStrings("Pit", ed.world.node[before].name());
     ed.undo();

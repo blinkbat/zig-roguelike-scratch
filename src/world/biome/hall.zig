@@ -12,6 +12,7 @@ const ALCOVE_D: i32 = 3;
 /// The Animated Forest's plant share, and the rows left clear below it, of the hall's height.
 const GROVE_FILL: u32 = 50;
 const GROVE_CLEAR_OF: i32 = 3;
+const GROVE_PLANT: grid.Tile = .shrub;
 
 pub const Style = enum { bare, pillars, graves, grove };
 
@@ -29,7 +30,7 @@ pub const Params = struct {
 
 pub fn palette(p: Params) carve.Palette {
     var pal = carve.Palette.BUILT;
-    pal.pocket = if (p.style == .grove) .shrub else null;
+    pal.pocket = if (p.style == .grove) GROVE_PLANT else null;
     return pal;
 }
 
@@ -46,15 +47,15 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
             var y = lo.y + 2;
             while (y < hi.y - 2) : (y += PILLAR_STEP) {
                 var x = lo.x + 2;
-                while (x < hi.x - 2) : (x += PILLAR_STEP) lv.set(.{ .x = x, .y = y }, .wall);
+                while (x < hi.x - 2) : (x += PILLAR_STEP) lv.set(.{ .x = x, .y = y }, pal.solid);
             }
         },
         .graves => {
             var x = lo.x + 1;
             while (x + ALCOVE_W < hi.x) : (x += ALCOVE_W + 1) {
                 for ([_]i32{ lo.y, hi.y - ALCOVE_D }) |top| {
-                    carve.box(lv, .{ .lo = .{ .x = x - 1, .y = top }, .hi = .{ .x = x + ALCOVE_W, .y = top + ALCOVE_D } }, .wall);
-                    carve.box(lv, .{ .lo = .{ .x = x, .y = top }, .hi = .{ .x = x + ALCOVE_W - 1, .y = top + ALCOVE_D } }, .floor);
+                    carve.box(lv, .{ .lo = .{ .x = x - 1, .y = top }, .hi = .{ .x = x + ALCOVE_W, .y = top + ALCOVE_D } }, pal.solid);
+                    carve.box(lv, .{ .lo = .{ .x = x, .y = top }, .hi = .{ .x = x + ALCOVE_W - 1, .y = top + ALCOVE_D } }, pal.open);
                     lv.set(.{ .x = x + 1, .y = if (top == lo.y) top else top + ALCOVE_D - 1 }, .grave);
                 }
             }
@@ -62,7 +63,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         .grove => {
             var cells = grid.Cells.of(lo, .{ .x = hi.x, .y = hi.y - @divTrunc(floor.height(), GROVE_CLEAR_OF) });
             while (cells.next()) |q| {
-                if (rng.percent(GROVE_FILL)) lv.set(q, .shrub);
+                if (rng.percent(GROVE_FILL)) lv.set(q, GROVE_PLANT);
             }
         },
     }

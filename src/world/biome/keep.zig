@@ -123,7 +123,18 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const art = setpiece.rows(.well);
     const room = setpiece.size(art).add(.{ .x = WELL_GAP, .y = WELL_GAP });
     const well = P{ .x = rng.range(yard.lo.x + WELL_GAP, @max(yard.lo.x + WELL_GAP, keep.lo.x - room.x)), .y = rng.range(yard.lo.y + WELL_GAP, yard.hi.y - room.y) };
-    if (keep.lo.x - well.x >= room.x) setpiece.stamp(lv, well, art);
+    if (keep.lo.x - well.x >= room.x and clearOfTowers(curtain, p.towers, well, setpiece.size(art))) setpiece.stamp(lv, well, art);
+}
+
+/// The cell of a box at `at` nearest each corner tower lies past its wall and `WELL_GAP` more.
+fn clearOfTowers(curtain: grid.Box, towers: u8, at: P, size: P) bool {
+    if (towers == 0) return true;
+    const r = towerReach(towers) + WELL_GAP;
+    for (towersOf(curtain)) |c| {
+        const q = P{ .x = std.math.clamp(c.x, at.x, at.x + size.x - 1), .y = std.math.clamp(c.y, at.y, at.y + size.y - 1) };
+        if (carve.inDisc(c, q, @floatFromInt(r))) return false;
+    }
+    return true;
 }
 
 /// The curtain wall's outside, in the middle of the map.
@@ -196,6 +207,32 @@ test "every corner tower opens onto the yard, however wide" {
     }
     std.debug.print("{d} corner towers: {d} shut off from the yard\n", .{ towers, sealed });
     try std.testing.expectEqual(@as(usize, 0), sealed);
+}
+
+test "the well never stands in a corner tower" {
+    const KEEPS = 1500;
+    var lv = grid.Level.blank();
+    var keeps: usize = 0;
+    var broken: usize = 0;
+    for (TOWER_MAX - 1..TOWER_MAX + 1) |t| {
+        const p = (Params{ .towers = @intCast(t) }).fit();
+        const reach = towerReach(p.towers);
+        for (0..KEEPS) |i| {
+            var rng = mathx.Rng.init(i * 7 + t);
+            shape(&lv, &rng, 0, p);
+            keeps += 1;
+            const hit = towers: for (towersOf(curtainOf(p))) |c| {
+                var cells = grid.Cells.around(c, reach);
+                while (cells.next()) |q| {
+                    if (!carve.inDisc(c, q, @floatFromInt(reach))) continue;
+                    if (lv.at(q) != .wall and lv.at(q) != .floor) break :towers true;
+                }
+            } else false;
+            if (hit) broken += 1;
+        }
+    }
+    std.debug.print("{d} keeps: {d} with the well in a tower\n", .{ keeps, broken });
+    try std.testing.expectEqual(@as(usize, 0), broken);
 }
 
 test "a keep's ground is one stretch before joining, its berm running round the towers, at any towers and moat" {

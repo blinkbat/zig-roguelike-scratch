@@ -619,16 +619,19 @@ pub const SLOT_CURSOR = RETICLE;
 pub const SLOT_CLEAR = FOE;
 pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 
-/// What every fragment shader opens with: raylib's inputs and output, and the alpha below which nothing is drawn.
-pub const FS_HEAD =
+/// The alpha below which nothing is drawn.
+pub const CLEAR_A: f32 = 0.004;
+
+/// What every fragment shader opens with: raylib's inputs and output, and `CLEAR_A`.
+pub const FS_HEAD = std.fmt.comptimePrint(
     \\#version 330
     \\in vec2 fragTexCoord;
     \\in vec4 fragColor;
     \\uniform sampler2D texture0;
     \\out vec4 finalColor;
-    \\const float CLEAR_A = 0.004;
+    \\const float CLEAR_A = {d};
     \\
-;
+, .{CLEAR_A});
 
 pub const MINI_BG = fade(BG, 0.9);
 pub const MINI_HERO = rgb(0x9cf08a);

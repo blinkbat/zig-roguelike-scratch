@@ -422,9 +422,7 @@ pub const Atlas = struct {
             switch (nd.plan) {
                 .procgen => |*pg| {
                     try w.print(says(.node) ++ "{s} {s}\n", .{ @tagName(nd.plan), @tagName(pg.floor) });
-                    switch (pg.floor) {
-                        inline else => |*fl, t| inline for (comptime floorKnobs(t)) |k| try putKnob(w, k, @field(fl.*, k)),
-                    }
+                    try putArm(w, &pg.floor);
                     inline for (FOE_KNOBS) |k| try putKnob(w, k, @field(pg.foes, k));
                     for (pg.foes.makeups()) |*m| {
                         try w.print(says(.makeup) ++ "{d}", .{m.weight});
@@ -433,9 +431,7 @@ pub const Atlas = struct {
                     }
                     for (pg.features()) |*ft| {
                         try w.print(says(.feature) ++ "{s}\n", .{@tagName(ft.*)});
-                        switch (ft.*) {
-                            inline else => |*fp, k| inline for (comptime featureKnobs(k)) |kn| try putKnob(w, kn, @field(fp.*, kn)),
-                        }
+                        try putArm(w, ft);
                     }
                 },
                 .bespoke => |*b| {
@@ -497,10 +493,10 @@ pub const Atlas = struct {
             switch (said) {
                 .start => self.start = .{ .node = try int(usize, &f), .at = try cell(&f) },
                 .node => {
-                    const kind = std.meta.stringToEnum(std.meta.Tag(Plan), f.next() orelse return error.BadLine) orelse return error.BadLine;
+                    const kind = try takeValue(std.meta.Tag(Plan), &f);
                     const plan: Plan = switch (kind) {
                         .procgen => blk: {
-                            const algo = std.meta.stringToEnum(Algo, f.next() orelse return error.BadLine) orelse return error.BadLine;
+                            const algo = try takeValue(Algo, &f);
                             // Written before procgen nodes were rolled each run: the seed they kept is let go.
                             if (f.peek() != null) _ = try int(u64, &f);
                             break :blk .{ .procgen = .{ .floor = Floor.of(algo) } };
@@ -531,7 +527,7 @@ pub const Atlas = struct {
                 },
                 .feature => {
                     const pg = try self.procgen();
-                    const k = std.meta.stringToEnum(Kind, f.next() orelse return error.BadLine) orelse return error.BadLine;
+                    const k = try takeValue(Kind, &f);
                     if (!pg.addFeature(k)) return error.TooMany;
                     featured = FeatureKnobSet.initEmpty();
                 },
@@ -564,7 +560,7 @@ pub const Atlas = struct {
                 .torch => if (!(try self.bespoke()).torch.add(try cell(&f))) return error.TooMany,
                 .foe => {
                     const b = try self.bespoke();
-                    const k = std.meta.stringToEnum(actor.Kind, f.next() orelse return error.BadLine) orelse return error.BadLine;
+                    const k = try takeValue(actor.Kind, &f);
                     if (!k.stocked() or !b.addFoe(.{ .kind = k, .at = try cell(&f) })) return error.BadLine;
                 },
             }
@@ -634,6 +630,7 @@ pub const Atlas = struct {
 };
 
 pub const NO_FLOOR = "{s} has no open floor to start on";
+pub const NOT_LOADED = "{s} did not load ({s})";
 pub const NO_WORLDS = "No worlds in " ++ DIR ++ " yet";
 
 pub const Error = error{ NoHeader, BadLine, TooMany, NoNodes, NoStart, BadLink };
@@ -701,11 +698,7 @@ fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const 
 }
 
 fn takeKnob(pg: *Procgen, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), knobbed: *KnobSet) Error!void {
-    switch (pg.floor) {
-        inline else => |*fl, t| inline for (comptime floorKnobs(t), 0..) |k, i| {
-            if (std.mem.eql(u8, word, k)) return takeOnce(fl, k, i, f, knobbed);
-        },
-    }
+    if (try takeArm(&pg.floor, word, f, knobbed)) return;
     inline for (FOE_KNOBS, 0..) |k, i| {
         if (std.mem.eql(u8, word, k)) return takeOnce(&pg.foes, k, FLOOR_KNOBS_MAX + i, f, knobbed);
     }
@@ -713,12 +706,26 @@ fn takeKnob(pg: *Procgen, word: []const u8, f: *std.mem.TokenIterator(u8, .scala
 }
 
 fn takeFeatureKnob(ft: *Feature, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), set: *FeatureKnobSet) Error!void {
-    switch (ft.*) {
-        inline else => |*fp, k| inline for (comptime featureKnobs(k), 0..) |kn, i| {
-            if (std.mem.eql(u8, word, kn)) return takeOnce(fp, kn, i, f, set);
+    if (!try takeArm(ft, word, f, set)) return error.BadLine;
+}
+
+/// The knob named `word` of the union's arm, if it has one.
+fn takeArm(u: anytype, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), knobbed: anytype) Error!bool {
+    switch (u.*) {
+        inline else => |*p| inline for (comptime knobsOf(@TypeOf(p.*), &.{}), 0..) |k, i| {
+            if (std.mem.eql(u8, word, k)) {
+                try takeOnce(p, k, i, f, knobbed);
+                return true;
+            }
         },
     }
-    return error.BadLine;
+    return false;
+}
+
+fn putArm(w: anytype, u: anytype) !void {
+    switch (u.*) {
+        inline else => |*p| inline for (comptime knobsOf(@TypeOf(p.*), &.{})) |k| try putKnob(w, k, @field(p.*, k)),
+    }
 }
 
 fn takeOnce(owner: anytype, comptime k: []const u8, i: usize, f: *std.mem.TokenIterator(u8, .scalar), knobbed: anytype) Error!void {
@@ -731,6 +738,16 @@ fn putKnob(w: anytype, comptime name: []const u8, v: anytype) !void {
     try w.writeAll(name);
     try putValue(w, v);
     try w.writeByte('\n');
+}
+
+/// How many numbers a knob of type `T` holds on its line.
+pub fn knobNumbers(comptime T: type) usize {
+    return switch (@typeInfo(T)) {
+        .int, .@"enum" => 1,
+        .array => |a| a.len,
+        .@"struct" => |s| s.fields.len,
+        else => @compileError(@typeName(T) ++ " is no knob"),
+    };
 }
 
 fn putValue(w: anytype, v: anytype) !void {

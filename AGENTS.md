@@ -26,7 +26,7 @@ for the change asked for.
   `shot.cmd` (headless frames into `shots\lean.png`, `shots\aim.png`, `shots\torch.png`, a posed torch with rats
   under it, `shots\bind.png`, the bind screen with its picker open, and `shots\gas.png`, a room a few turns after a
   bloat burst in it, `shots\pause.png`, the pause menu over it, `shots\biome.png`, the archer arrived in `qud_salt_marsh`, `shots\dawn.png`, `noon.png`, `day.png`, `dusk.png` and `night.png`, the wilds at 7.00, 12.00, 16.30, 19.18 and 1.00;
-  `shots\night-memory.png` keeps the noon exploration at midnight to check the lantern's fade into memory; each
+  `shots\night-memory.png` keeps the noon exploration at 1.00 to check the lantern's fade into memory; each
   world's start node rolled whole a glyph a cell into `shots\worlds\<name>.png`, and `shots\edit.png`, `shots\edit-graph.png` and
   `shots\edit-gen.png`, the editor's map, graph and a procgen node's generator on a posed three-node world, and `shots\name.png`, the hero's name being typed; built
   into `zig-out-dev` so a running game is untouched).
@@ -66,7 +66,7 @@ for the change asked for.
   one being played as it stands, the rng, the log, the skill bar and the hour, as their bytes under a fingerprint of their
   types (`core/store.zig`), so a build whose types changed refuses it, and it is measured whole before any of it
   reaches the game. `save.SLOTS` (3) slots in `saves\`. A slot's run is written once a turn has changed it and the
-  last write is `save.GAP_S` old (never mid-door), copied on the frame and written off it on a thread
+  last write is `save.GAP_S` old (never mid-door nor mid-turn), copied on the frame and written off it on a thread
   (`Autosave`), and once more as the run is left. Death ends it: the slot is deleted as the hero dies. A play-test
   has no slot. Completed background writes signal through an atomic flag; failures rearm the dirty state even
   while idle, and retry on the same interval. Tests never write a save file.

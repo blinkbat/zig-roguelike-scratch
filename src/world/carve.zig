@@ -156,14 +156,19 @@ pub fn lane(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32
     while (m.next(rng)) |c| discOf(lv, c, r, t, how == .road, how == .road, null);
 }
 
+/// Within `r` of `c`, as `disc` lays it.
+pub fn inDisc(c: P, q: P, r: f32) bool {
+    const dx: f32 = @floatFromInt(q.x - c.x);
+    const dy: f32 = @floatFromInt(q.y - c.y);
+    return dx * dx + dy * dy <= r * r + 0.25;
+}
+
 fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, comptime pave: bool, comptime over: ?fn (grid.Tile) bool) void {
     const k: i32 = @intFromFloat(@ceil(r));
     var cells = grid.Cells.around(c, k);
     while (cells.next()) |q| {
         if (!with_rim and grid.Level.onRim(q)) continue;
-        const dx: f32 = @floatFromInt(q.x - c.x);
-        const dy: f32 = @floatFromInt(q.y - c.y);
-        if (dx * dx + dy * dy > r * r + 0.25) continue;
+        if (!inDisc(c, q, r)) continue;
         if (over) |ok| {
             if (!ok(lv.at(q))) continue;
         }

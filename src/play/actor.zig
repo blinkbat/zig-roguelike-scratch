@@ -160,8 +160,9 @@ pub const Actor = struct {
     /// The turn is over: what started or split off in it is no longer fresh.
     pub fn settle(self: *Actor) void {
         self.waits = false;
-        self.burn.settle();
-        self.bleed.settle();
+        inline for (std.meta.fields(Actor)) |f| {
+            if (@typeInfo(f.type) == .@"struct" and @hasDecl(f.type, "settle")) @field(self, f.name).settle();
+        }
     }
 };
 

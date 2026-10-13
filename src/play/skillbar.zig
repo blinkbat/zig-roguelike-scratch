@@ -121,6 +121,13 @@ pub const Bar = struct {
         return self.set.get(s.set).get(s.button);
     }
 
+    pub fn buttonOf(self: Bar, s: Set, a: Act) ?Button {
+        for (SLOTS) |b| {
+            if (self.at(.{ .set = s, .button = b }) == a) return b;
+        }
+        return null;
+    }
+
     pub fn active(self: Bar, down: std.EnumSet(Button)) Set {
         const m = self.modifier orelse return .primary;
         return if (down.contains(m)) .secondary else .primary;

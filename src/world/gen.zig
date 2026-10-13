@@ -115,16 +115,14 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
 }
 
 fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
-    var spots: [ROOM_W_MAX]i32 = undefined;
+    var top: [ROOM_W_MAX]P = undefined;
     var n: usize = 0;
     var x = r.lo.x;
     while (x < r.hi.x) : (x += 1) {
-        if (!bearsTorch(lv, .{ .x = x, .y = r.lo.y - 1 })) continue;
-        spots[n] = x;
+        top[n] = .{ .x = x, .y = r.lo.y - 1 };
         n += 1;
     }
-    if (n == 0) return;
-    lv.addTorch(.{ .x = spots[rng.below(@intCast(n))], .y = r.lo.y - 1 });
+    if (rng.pickWhere(P, top[0..n], @as(*const grid.Level, lv), bearsTorch)) |p| lv.addTorch(p);
 }
 
 /// Against the room's own walls and nowhere beside a way in, so no barrel can seal a path.

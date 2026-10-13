@@ -435,25 +435,26 @@ pub const Desk = struct {
                 return rl.isKeyPressed(k);
             }
         }.f;
-        self.play = hit(PLAY_KEY);
-        self.play_here = hit(PLAY_HERE_KEY);
+        const bare = !ctrl;
+        self.play = bare and hit(PLAY_KEY);
+        self.play_here = bare and hit(PLAY_HERE_KEY);
         self.save = ctrl and !self.shift and hit(SAVE_KEY);
         self.save_as = ctrl and self.shift and hit(SAVE_KEY);
         self.open = ctrl and hit(OPEN_KEY);
         self.new = ctrl and hit(NEW_KEY);
         self.undo = ctrl and !self.shift and hit(UNDO_KEY);
         self.redo = ctrl and (hit(REDO_KEY) or (self.shift and hit(UNDO_KEY)));
-        self.graph = hit(GRAPH_KEY);
-        self.go = !ctrl and hit(GO_KEY);
-        self.rename = hit(RENAME_KEY);
-        self.back = hit(BACK_KEY);
+        self.graph = bare and hit(GRAPH_KEY);
+        self.go = bare and hit(GO_KEY);
+        self.rename = bare and hit(RENAME_KEY);
+        self.back = bare and hit(BACK_KEY);
         self.fullscreen = fullscreenHit();
         self.enter = !altDown() and anyHit(&ENTER_KEYS);
         self.rub = rubbed();
-        self.smaller = hit(SMALLER_KEY);
-        self.bigger = hit(BIGGER_KEY);
+        self.smaller = bare and hit(SMALLER_KEY);
+        self.bigger = bare and hit(BIGGER_KEY);
         self.tool = null;
-        if (!ctrl) {
+        if (bare) {
             for (TOOL_KEYS, 0..) |k, i| {
                 if (hit(k)) self.tool = i;
             }

@@ -118,6 +118,18 @@ const FEATURES = .{
     .setpiece = setpiece,
 };
 
+/// Every module listed is an arm of its union, holding the module's `Params`.
+fn armsOf(comptime U: type, comptime modules: anytype) void {
+    for (std.meta.fieldNames(@TypeOf(modules))) |name| {
+        if (!@hasField(U, name) or @FieldType(U, name) != @field(modules, name).Params) @compileError(name ++ " is no arm of " ++ @typeName(U));
+    }
+}
+
+comptime {
+    armsOf(Floor, BASES);
+    armsOf(Feature, FEATURES);
+}
+
 pub const Feature = union(enum) {
     river: river.Params,
     lake: lake.Params,

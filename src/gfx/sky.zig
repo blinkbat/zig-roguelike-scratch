@@ -202,7 +202,7 @@ fn acrossScreen(d: [3]f32) [3]f32 {
 
 test "the sun rises in the east, stands in the south at noon, sets in the west and is under the ground at midnight" {
     const rise = sunDir(SUNRISE);
-    const noon = sunDir(13);
+    const noon = sunDir((day.SUNRISE + day.SUNSET) / 2);
     const set = sunDir(SUNSET);
     try std.testing.expect(@abs(rise[2]) < 1e-4 and rise[0] > 0.9);
     try std.testing.expect(@abs(set[2]) < 1e-4 and set[0] < -0.9);

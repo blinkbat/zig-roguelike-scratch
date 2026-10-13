@@ -178,6 +178,7 @@ pub const DUE: usize = actor.MAX * 6 + 2;
 pub const Frost = struct { at: mathx.P, area: glacial.Cone };
 
 pub const JUKE_S: f32 = 0.6;
+const JUKE_R = [2]f32{ 2, 5 };
 const ICE_MOTES: usize = 12;
 const TRAIL_MOTES: usize = 20;
 const DUST_MOTES: usize = 24;
@@ -477,7 +478,7 @@ pub const Fx = struct {
                 .p = .{ mathx.lerpF(a[0], b[0], t), mathx.lerpF(a[1], b[1], t), 0.15 + self.rng.unit() * 0.35 },
                 .v = .{ 0, 0, 0.12 },
                 .life = 0.18 + t * 0.16,
-                .r = 2 + self.rng.unit() * 3,
+                .r = mathx.lerpF(JUKE_R[0], JUKE_R[1], self.rng.unit()),
                 .col = look.JUKE_TRAIL,
                 .terrain = false,
             });
@@ -489,7 +490,7 @@ pub const Fx = struct {
                 .p = .{ b[0] + dir[0] * 0.28, b[1] + dir[1] * 0.28, 0.04 },
                 .v = .{ dir[0] * speed, dir[1] * speed, 0.3 + self.rng.unit() * 0.7 },
                 .life = (1 + self.rng.unit()) * JUKE_S / 2,
-                .r = 2 + self.rng.unit() * 3,
+                .r = mathx.lerpF(JUKE_R[0], JUKE_R[1], self.rng.unit()),
                 .col = look.JUKE_DUST,
                 .grav = 2,
                 .drag = 3,
@@ -645,11 +646,11 @@ test "a blow flashes its body for a beat and sprays blood a fraction of a cell, 
         if (flash_gone == null and fx.flashOf(3) == 0) flash_gone = t;
         for (fx.motes) |m| {
             if (m.life <= 0 or m.add) continue;
-            reach = @max(reach, mathx.len(m.p[0] - 20.5, m.p[1] - 20.5));
+            reach = @max(reach, mathx.len(m.p[0] - TEST_BLOW.at[0], m.p[1] - TEST_BLOW.at[1]));
         }
         if (@abs(t - 0.7) < dt * 0.5) {
             for (fx.motes) |m| {
-                if (m.landed and m.life > 0 and m.p[0] > 20.5) ahead += 1;
+                if (m.landed and m.life > 0 and m.p[0] > TEST_BLOW.at[0]) ahead += 1;
             }
             try std.testing.expectEqual(@as(usize, sprayOf(.blood).hit), live(&fx).stains);
         }

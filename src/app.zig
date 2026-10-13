@@ -91,15 +91,19 @@ const App = struct {
         } else app.say("{s} picks a world in {s}", .{ MainRow.new.label(), atlas.DIR });
     }
 
-    fn toClass(app: *App) void {
+    /// A page that shows `note` opens on it cleared.
+    fn goPage(app: *App, p: Page) void {
         app.note.clear();
-        app.page = .class;
+        app.page = p;
+    }
+
+    fn toClass(app: *App) void {
+        app.goPage(.class);
     }
 
     fn fromClass(app: *App) void {
         if (app.generated()) return app.toTitle();
-        app.note.clear();
-        app.page = .world;
+        app.goPage(.world);
     }
 
     fn toEdit(app: *App) void {
@@ -110,7 +114,7 @@ const App = struct {
         };
         ed.open(app.edit_path) catch |e| {
             app.toTitle();
-            return app.say("{s} did not load ({s}); the editor will not open over it", .{ app.edit_path, @errorName(e) });
+            return app.say(atlas.NOT_LOADED ++ "; the editor will not open over it", .{ app.edit_path, @errorName(e) });
         };
         app.scene = .edit;
     }
@@ -131,7 +135,7 @@ const App = struct {
             @memcpy(path, app.listing.at(app.worlds.at));
             app.world.load(app.alloc, path) catch |e| {
                 app.toTitle();
-                return app.say("{s} did not load ({s})", .{ path, @errorName(e) });
+                return app.say(atlas.NOT_LOADED, .{ path, @errorName(e) });
             };
             if (!app.world.standable(app.world.start, &g.lv)) {
                 app.toTitle();
@@ -174,7 +178,7 @@ const App = struct {
     fn leaveRun(app: *App) void {
         if (app.autosave) |*a| {
             game.leave(app.g);
-            if (a.close(app.g)) |e| app.say("The last save did not write ({s})", .{@errorName(e)});
+            if (a.close(app.g)) |e| app.say(save.NOT_WRITTEN, .{@errorName(e)});
         }
         app.autosave = null;
     }
@@ -262,17 +266,14 @@ const App = struct {
                         app.rescan();
                         if (save.free(&app.list) == null) return app.refuse();
                         app.listing.scan();
-                        app.note.clear();
-                        app.page = if (app.generated()) .class else .world;
+                        app.goPage(if (app.generated()) .class else .world);
                     },
                     .load => {
                         app.rescan();
-                        app.note.clear();
-                        app.page = .load;
+                        app.goPage(.load);
                     },
                     .options => {
-                        app.note.clear();
-                        app.page = .options;
+                        app.goPage(.options);
                     },
                     .editor => app.toEdit(),
                     .quit => return false,
