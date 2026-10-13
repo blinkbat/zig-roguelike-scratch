@@ -54,8 +54,8 @@ pub fn canopied(t: grid.Tile) bool {
     return STANDS.get(t) == .canopy;
 }
 
-/// Every sprite that throws a shadow from its feet: the bodies, the barrel, then the standing tiles.
-pub const FIGURES: usize = Bodies.len + 1 + STANDING.len;
+/// Every sprite that throws a shadow from its feet: bodies, barrel, standing tiles and forest shapes.
+pub const FIGURES: usize = Bodies.len + 1 + STANDING.len + WALL_MASKS.len;
 
 /// Needs a live GL context.
 pub const Sprites = struct {
@@ -64,6 +64,7 @@ pub const Sprites = struct {
     tiles: std.EnumArray(grid.Tile, ?rl.Texture2D) = .initFill(null),
     /// In the sheet's order, `WALL_MASKS`.
     wall: [WALL_MASKS.len]?rl.Texture2D = @splat(null),
+    forest: [WALL_MASKS.len]?rl.Texture2D = @splat(null),
     /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
     skills: ?rl.Texture2D = null,
 
@@ -71,9 +72,8 @@ pub const Sprites = struct {
         var s = Sprites{ .barrel = texture(@embedFile("barrel.png")), .skills = skillIcons() };
         for (std.enums.values(actor.Kind)) |k| s.bodies.set(k, texture(BODY_PNGS.get(k) orelse continue));
         for (std.enums.values(grid.Tile)) |t| s.tiles.set(t, texture(TILE_PNGS.get(t) orelse continue));
-        const sheet = rl.loadImageFromMemory(".png", WALLS_PNG) catch return s;
-        defer rl.unloadImage(sheet);
-        for (&s.wall, 0..) |*w, i| w.* = toTexture(wallCell(sheet, i) orelse continue);
+        s.wall = shapeTextures(WALLS_PNG);
+        s.forest = shapeTextures(FOREST_PNG);
         return s;
     }
 
@@ -88,11 +88,16 @@ pub const Sprites = struct {
     pub fn figures(self: Sprites) [FIGURES]?rl.Texture2D {
         var standing: [STANDING.len]?rl.Texture2D = undefined;
         for (STANDING, &standing) |t, *s| s.* = self.tiles.get(t);
-        return self.bodies.values ++ [_]?rl.Texture2D{self.barrel} ++ standing;
+        return self.bodies.values ++ [_]?rl.Texture2D{self.barrel} ++ standing ++ self.forest;
     }
 
     pub fn tileAt(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
-        return self.tileOf(lv.at(p), lv.wallShape(p));
+        const t = lv.at(p);
+        const shape = lv.tileShape(p);
+        if (t == .shrub and (shape orelse grid.WallShape{}).mask() == 0 and forestAt(lv, p)) {
+            return self.forest[WALL_CELL[0]] orelse self.tiles.get(.shrub);
+        }
+        return self.tileOf(t, shape);
     }
 
     pub fn tileOf(self: *const Sprites, t: grid.Tile, shape: ?grid.WallShape) ?rl.Texture2D {
@@ -100,7 +105,20 @@ pub const Sprites = struct {
             const i = WALL_CELL[(shape orelse return null).mask()];
             return self.wall[i];
         }
+        if (t == .shrub) {
+            if (shape) |s| {
+                if (s.mask() != 0) return self.forest[WALL_CELL[s.mask()]] orelse self.tiles.get(.shrub);
+            }
+        }
         return self.tiles.getPtrConst(t).*;
+    }
+
+    fn shapeTextures(png: []const u8) [WALL_MASKS.len]?rl.Texture2D {
+        var out: [WALL_MASKS.len]?rl.Texture2D = @splat(null);
+        const sheet = rl.loadImageFromMemory(".png", png) catch return out;
+        defer rl.unloadImage(sheet);
+        for (&out, 0..) |*t, i| t.* = toTexture(wallCell(sheet, i) orelse continue);
+        return out;
     }
 
     fn texture(png: []const u8) ?rl.Texture2D {
@@ -140,6 +158,16 @@ comptime {
 }
 
 const WALLS_PNG = @embedFile("walls.png");
+const FOREST_PNG = @embedFile("forest-tree-walls.png");
+
+fn loneClump(p: mathx.P) bool {
+    const coordinates = [2]i32{ p.x, p.y };
+    return std.hash.Wyhash.hash(0xF02E57, std.mem.asBytes(&coordinates)) % 3 == 0;
+}
+
+pub fn forestAt(lv: *const grid.Level, p: mathx.P) bool {
+    return lv.at(p) == .shrub and ((lv.tileShape(p) orelse grid.WallShape{}).mask() != 0 or loneClump(p));
+}
 
 /// Each cell of `walls.png`'s, read across its rows, is the shape with this mask; `tools/tile_art/wall_masks.lua` lists them in this order.
 const WALL_MASKS = [_]u8{ 0, 1, 2, 4, 8, 3, 19, 5, 6, 38, 9, 137, 10, 12, 76, 7, 23, 39, 55, 11, 27, 139, 155, 13, 77, 141, 205, 14, 46, 78, 110, 15, 31, 47, 63, 79, 95, 111, 127, 143, 159, 175, 191, 207, 223, 239, 255 };
@@ -660,14 +688,59 @@ test "every glyph is printable ascii" {
     try std.testing.expect(inked(CLEAR.ch));
 }
 
-test "every wall shape's cell lies inside walls.png, and one past its end is refused" {
-    const w = pngSize(WALLS_PNG).x;
-    const h = pngSize(WALLS_PNG).y;
-    const sheet = rl.genImageColor(w, h, rl.Color.white);
-    defer rl.unloadImage(sheet);
-    for (0..WALL_MASKS.len) |i| rl.unloadImage(wallCell(sheet, i) orelse return error.CellOffSheet);
-    std.debug.print("walls.png {d}x{d}: {d} shapes cut from it\n", .{ w, h, WALL_MASKS.len });
-    try std.testing.expect(wallCell(sheet, @intCast(@divTrunc(w, SPRITE_PX) * @divTrunc(h, SPRITE_PX))) == null);
+test "every wall and forest cell lies inside its PNG, and one past its end is refused" {
+    for ([_][]const u8{ WALLS_PNG, FOREST_PNG }, [_][]const u8{ "walls", "forest" }) |png, name| {
+        const w = pngSize(png).x;
+        const h = pngSize(png).y;
+        const sheet = rl.genImageColor(w, h, rl.Color.white);
+        defer rl.unloadImage(sheet);
+        try std.testing.expectEqual(@as(i32, SPRITE_PX * WALL_COLS), w);
+        try std.testing.expectEqual(@as(i32, SPRITE_PX * 6), h);
+        for (0..WALL_MASKS.len) |i| rl.unloadImage(wallCell(sheet, i) orelse return error.CellOffSheet);
+        std.debug.print("{s}.png {d}x{d}: {d} shapes cut from it\n", .{ name, w, h, WALL_MASKS.len });
+        try std.testing.expect(wallCell(sheet, @intCast(@divTrunc(w, SPRITE_PX) * @divTrunc(h, SPRITE_PX))) == null);
+    }
+}
+
+test "forest sprites follow connections and isolated trees mix with clumps without changing visibility" {
+    const gen = @import("../world/gen.zig");
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .grass);
+    var sprites = Sprites{};
+    const tree = rl.Texture2D{ .id = 1, .width = SPRITE_PX, .height = SPRITE_PX, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    sprites.tiles.set(.shrub, tree);
+    for (&sprites.forest, 0..) |*t, i| {
+        var texture_ = tree;
+        texture_.id = @intCast(i + 2);
+        t.* = texture_;
+    }
+    const a = mathx.P{ .x = 20, .y = 20 };
+    const b = a.add(.{ .x = 1, .y = 0 });
+    lv.set(a, .shrub);
+    lv.set(b, .shrub);
+    gen.shapeWalls(&lv);
+    try std.testing.expectEqual(sprites.forest[WALL_CELL[2]].?.id, sprites.tileAt(&lv, a).?.id);
+    try std.testing.expectEqual(sprites.forest[WALL_CELL[8]].?.id, sprites.tileAt(&lv, b).?.id);
+    lv.seen = @splat(true);
+    try std.testing.expectEqual(sprites.forest[WALL_CELL[2]].?.id, sprites.tileAt(&lv, a).?.id);
+    @memset(&lv.tile, .grass);
+    var trees: usize = 0;
+    var clumps: usize = 0;
+    for (0..100) |i| {
+        const p = mathx.P{ .x = 2 + @as(i32, @intCast(i % 10)) * 3, .y = 2 + @as(i32, @intCast(i / 10)) * 3 };
+        lv.set(p, .shrub);
+    }
+    gen.shapeWalls(&lv);
+    for (lv.tile, 0..) |t, i| {
+        if (t != .shrub) continue;
+        const p = grid.Level.of(i);
+        const id = sprites.tileAt(&lv, p).?.id;
+        try std.testing.expectEqual(id, sprites.tileAt(&lv, p).?.id);
+        try std.testing.expect(t.solid() and t.blind());
+        if (id == tree.id) trees += 1 else if (id == sprites.forest[0].?.id) clumps += 1 else return error.NotAnIsolatedSprite;
+    }
+    std.debug.print("100 isolated blockers: {d} lone trees, {d} forest clumps; 2 connected tiles keep their shapes\n", .{ trees, clumps });
+    try std.testing.expect(trees > 40 and clumps > 15 and clumps < trees);
 }
 
 test "floor shows through a wall's gaps; a tile with its own ground or background keeps it" {

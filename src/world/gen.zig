@@ -209,7 +209,16 @@ const Reached = struct {
 
 pub fn shapeWalls(lv: *grid.Level) void {
     for (0..grid.CELLS) |i| {
-        lv.shape[i] = if (lv.tile[i] == .wall) wallShape(lv, grid.Level.of(i)) else null;
+        lv.shape[i] = switch (lv.tile[i]) {
+            .wall, .shrub => wallShape(lv, grid.Level.of(i)),
+            else => null,
+        };
+    }
+}
+
+pub fn restoreForestShapes(lv: *grid.Level) void {
+    for (lv.tile, lv.shape, 0..) |t, s, i| {
+        if (t == .shrub and s == null) lv.shape[i] = wallShape(lv, grid.Level.of(i));
     }
 }
 
@@ -221,13 +230,39 @@ fn wallShape(lv: *const grid.Level, p: P) grid.WallShape {
 
 /// Off the map counts, so a wall runs on over the edge.
 fn joins(lv: *const grid.Level, p: P, d: mathx.Dir) bool {
-    return lv.at(p.add(d.delta())) == .wall;
+    const q = p.add(d.delta());
+    return !grid.Level.inside(q) or lv.at(q) == lv.at(p);
 }
 
 /// A wall whose brick face looks onto floor.
 pub fn bearsTorch(lv: *const grid.Level, p: P) bool {
     const s = lv.wallShape(p) orelse return false;
     return s.faced() and lv.walkable(lume.torchFloor(p));
+}
+
+test "forest shapes join their own material, continue over the rim and never hold torches" {
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .grass);
+    const p = P{ .x = 10, .y = 10 };
+    lv.set(p, .shrub);
+    lv.set(p.add(.{ .x = 1, .y = 0 }), .shrub);
+    lv.set(p.add(.{ .x = 0, .y = -1 }), .shrub);
+    lv.set(p.add(.{ .x = -1, .y = 0 }), .wall);
+    lv.set(.{ .x = 0, .y = 0 }, .shrub);
+    shapeWalls(&lv);
+    try std.testing.expectEqual(@as(u8, 3), lv.tileShape(p).?.mask());
+    try std.testing.expectEqual(@as(u8, 137), lv.tileShape(.{ .x = 0, .y = 0 }).?.mask());
+    try std.testing.expect(lv.wallShape(p) == null and !bearsTorch(&lv, p));
+    lv.set(p.add(.{ .x = 1, .y = -1 }), .shrub);
+    shapeWalls(&lv);
+    try std.testing.expectEqual(@as(u8, 19), lv.tileShape(p).?.mask());
+    const wall = p.add(.{ .x = -1, .y = 0 });
+    try std.testing.expectEqual(@as(u8, 0), lv.wallShape(wall).?.mask());
+    lv.shape[grid.Level.idx(p)] = null;
+    restoreForestShapes(&lv);
+    try std.testing.expectEqual(@as(u8, 19), lv.tileShape(p).?.mask());
+    try std.testing.expectEqual(@as(u8, 0), lv.wallShape(wall).?.mask());
+    std.debug.print("forest shapes: 2 corner forms, 1 map rim, 1 separate brick wall, 1 restored legacy shape\n", .{});
 }
 
 test "every floor connects" {

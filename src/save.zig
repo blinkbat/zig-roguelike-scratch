@@ -26,11 +26,11 @@ const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar
 const HEAD_FIELDS = .{ "seed", "world", "node", "visited", "visits" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
-    "mode",    "paused_from", "pause_menu", "back",   "exit",       "permadeath", "outdoors", "hour_shown", "unkillable", "unsaved",
-    "travel",  "st",          "binds",      "aim_by", "aim_act",    "mark",       "cam",      "screen",     "framebuffer", "shot",
-    "glide",   "turning",     "order",      "order_n", "busy",      "pending",    "lead",     "owed",       "ran",        "pictured",
-    "seq",     "split_from",  "fx",         "vignette", "mini",     "sprites",    "face",     "light",      "cloud",      "flowed",
-    "flow",    "queue",
+    "mode",   "paused_from", "pause_menu", "back",     "exit",    "permadeath", "outdoors", "hour_shown", "unkillable",  "unsaved",
+    "travel", "st",          "binds",      "aim_by",   "aim_act", "mark",       "cam",      "screen",     "framebuffer", "shot",
+    "glide",  "turning",     "order",      "order_n",  "busy",    "pending",    "lead",     "owed",       "ran",         "pictured",
+    "seq",    "split_from",  "fx",         "vignette", "mini",    "sprites",    "face",     "light",      "cloud",       "flowed",
+    "flow",   "queue",
 };
 
 comptime {
@@ -412,6 +412,15 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     game.update(g, 0);
     g.log.say("A line to keep.", .{});
     g.stepped = true;
+    const forest = grid.Level.idx(.{ .x = 70, .y = 50 });
+    for ([_]*grid.Level{ &g.lv, &g.visits[0].lv }) |lv| {
+        var cells = (grid.Box{ .lo = .{ .x = 69, .y = 49 }, .hi = .{ .x = 73, .y = 52 } }).cells();
+        while (cells.next()) |p| lv.set(p, .grass);
+        for (forest..forest + 2) |i| {
+            lv.tile[i] = .shrub;
+            lv.shape[i] = null;
+        }
+    }
 
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
@@ -447,6 +456,11 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqual(g.pool.n, back.pool.n);
     try std.testing.expectEqualSlices(grid.Tile, &g.lv.tile, &back.lv.tile);
     try std.testing.expectEqualSlices(grid.Tile, &g.visits[0].lv.tile, &back.visits[0].lv.tile);
+    for ([_]*const grid.Level{ &back.lv, &back.visits[0].lv }) |lv| {
+        try std.testing.expectEqual(@as(u8, 2), lv.shape[forest].?.mask());
+        try std.testing.expectEqual(@as(u8, 8), lv.shape[forest + 1].?.mask());
+    }
+    std.debug.print("save reload restored 4 absent forest shapes across the active and visited nodes\n", .{});
     try std.testing.expectEqualStrings("A line to keep.", back.log.line(0).?);
     const s = try peek(buf.items);
     var line: [128]u8 = undefined;

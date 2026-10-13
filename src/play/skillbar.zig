@@ -193,6 +193,7 @@ pub const BINDS = Button.view;
 const NOT_SLOTS = [_]Button{ BINDS, menu.PAUSE };
 
 comptime {
+    if (!std.mem.eql(Button, &SLOTS, &input.SLOT_ORDER)) @compileError("the keyboard numbers the slots out of their order");
     for (std.enums.values(Button)) |b| {
         var n: usize = 0;
         for (SLOTS ++ NOT_SLOTS) |s| {

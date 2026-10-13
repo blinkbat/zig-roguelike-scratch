@@ -30,7 +30,7 @@ const AZ_SET: f32 = 262;
 const SUN_ALT_MAX: f32 = 60;
 /// The casting light's altitude is clamped to these, so a shadow neither outruns the screen nor hides under its caster; the sun's own is not.
 const KEY_ALT_MIN = std.math.degreesToRadians(@as(f32, 35));
-const KEY_ALT_MAX = std.math.degreesToRadians(@as(f32, 50));
+const KEY_ALT_MAX = std.math.degreesToRadians(@as(f32, 42));
 /// Cells the longest shadow the sky throws runs along the ground per cell of height.
 pub const REACH_MAX: f32 = 1 / @tan(KEY_ALT_MIN);
 /// Where the moon takes over from the sun as the light that casts, and back.
@@ -198,6 +198,12 @@ fn acrossScreen(d: [3]f32) [3]f32 {
     }
     const n = @sqrt(x * x + y * y + d[2] * d[2]);
     return .{ x / n, y / n, d[2] / n };
+}
+
+test "a noon shadow reaches beyond a cell-tall sprite" {
+    const reach = at(day.NOON).reach();
+    std.debug.print("noon shadow reaches {d:.2} sprite heights\n", .{reach});
+    try std.testing.expect(reach > 1.05 and reach < 1.3);
 }
 
 test "the sun rises in the east, stands in the south at noon, sets in the west and is under the ground at midnight" {

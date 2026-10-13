@@ -5,9 +5,42 @@ const mathx = @import("mathx.zig");
 const PAD: i32 = 0;
 const ENTER_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
 const LEAN: rl.GamepadButton = .left_trigger_2;
+const LEAN_KEYS = [_]rl.KeyboardKey{ .left_shift, .right_shift };
 
-pub const MOVE_CAPTION = "D-pad";
-pub const LEAN_CAPTION = padName(LEAN);
+/// What the player last pressed, which every caption names.
+pub const Device = enum { pad, keys };
+
+/// A caption built at compile time for each device, picked for `d`.
+pub fn per(d: Device, comptime f: fn (comptime Device) [:0]const u8) [:0]const u8 {
+    return switch (d) {
+        inline else => |c| comptime f(c),
+    };
+}
+
+pub fn moveName(comptime d: Device) [:0]const u8 {
+    return switch (d) {
+        .pad => "D-pad",
+        .keys => comptime blk: {
+            var letters: []const u8 = "";
+            for ([_]mathx.Dir{ .n, .w, .s, .e }) |dir| {
+                const w = for (WALKS) |x| {
+                    if (x.d == dir) break x;
+                } else unreachable;
+                for (w.keys) |k| {
+                    if (@tagName(k).len == 1) letters = letters ++ keyName(k);
+                }
+            }
+            break :blk std.fmt.comptimePrint("{s}", .{letters});
+        },
+    };
+}
+
+pub fn leanName(comptime d: Device) [:0]const u8 {
+    return switch (d) {
+        .pad => padName(LEAN),
+        .keys => keyName(LEAN_KEYS[0]),
+    };
+}
 
 fn padName(comptime b: rl.GamepadButton) [:0]const u8 {
     return switch (b) {
@@ -81,28 +114,58 @@ pub const Button = enum {
         };
     }
 
+    /// Its keys in menus, the first naming it; a slot's own key is its number (`SLOT_KEYS`).
     fn keys(b: Button) []const rl.KeyboardKey {
         return switch (b) {
             .a => &ENTER_KEYS,
-            .b => &.{ .period, .kp_5 },
-            .x => &.{ .f, .space },
-            .y => &.{.e},
-            .lb => &.{.q},
-            .rb => &.{.r},
-            .rt => &.{.t},
+            .x => &.{.space},
+            .y => &.{.delete},
+            .b, .lb, .rb, .rt => &.{},
             .view => &.{.tab},
             .pause => &.{.escape},
         };
     }
 
-    pub fn caption(b: Button) [:0]const u8 {
+    fn isSlot(b: Button) bool {
+        return std.mem.indexOfScalar(Button, &SLOT_ORDER, b) != null;
+    }
+
+    pub fn name(comptime b: Button, comptime d: Device) [:0]const u8 {
+        return switch (d) {
+            .pad => padName(b.pad()),
+            .keys => if (b.keys().len == 0) @compileError(@tagName(b) ++ " has no key in menus") else keyName(b.keys()[0]),
+        };
+    }
+
+    pub fn caption(b: Button, d: Device) [:0]const u8 {
         return switch (b) {
-            inline else => |t| comptime padName(t.pad()),
+            inline else => |t| switch (d) {
+                inline else => |c| comptime if (c == .keys and t.keys().len == 0) "" else t.name(c),
+            },
         };
     }
 };
 
+/// The slots left to right, as the keyboard numbers them.
+pub const SLOT_ORDER = [_]Button{ .lb, .a, .x, .y, .b, .rb, .rt };
+const SLOT_KEYS = blk: {
+    var out: [SLOT_ORDER.len]rl.KeyboardKey = undefined;
+    for (&out, 0..) |*k, i| k.* = @enumFromInt(@intFromEnum(rl.KeyboardKey.one) + i);
+    break :blk out;
+};
+const SLOT_CAPTIONS = blk: {
+    var out: [SLOT_KEYS.len][:0]const u8 = undefined;
+    for (SLOT_KEYS, &out) |k, *c| c.* = keyName(k);
+    break :blk out;
+};
+const SECOND_KEYS = [_]rl.KeyboardKey{ .left_control, .right_control };
+pub const SECOND_CAPTION = keyName(SECOND_KEYS[0]);
+
 const BUTTONS = std.enums.values(Button);
+
+/// How long a button is held before `State.long` reports it.
+pub const HOLD_S: f32 = 0.4;
+const SPENT: f32 = -std.math.inf(f32);
 
 /// raylib closes the window on Esc unless its exit key is cleared. Needs the window open.
 pub fn claimKeys() void {
@@ -201,6 +264,10 @@ fn types(k: rl.KeyboardKey) bool {
 pub const State = struct {
     pressed: std.EnumSet(Button) = .initEmpty(),
     down: std.EnumSet(Button) = .initEmpty(),
+    /// Set on the frame a button has been down `HOLD_S`, unless it was `spend`t.
+    long_held: std.EnumSet(Button) = .initEmpty(),
+    down_s: std.EnumArray(Button, f32) = .initFill(0),
+    device: Device = .pad,
     fullscreen: bool = false,
     walk: ?mathx.Dir = null,
     lean: bool = false,
@@ -211,6 +278,10 @@ pub const State = struct {
     typing: bool = false,
     typed: Typed = .{},
     rub: bool = false,
+    /// Set before each `update`: the number keys press the slots and the menu keys press none.
+    playing: bool = false,
+    /// Set before each `update`: the slot Ctrl holds, which the number keys skip.
+    modifier: ?Button = null,
 
     pub fn hit(self: State, b: Button) bool {
         return self.pressed.contains(b);
@@ -218,6 +289,25 @@ pub const State = struct {
 
     pub fn held(self: State, b: Button) bool {
         return self.down.contains(b);
+    }
+
+    pub fn long(self: State, b: Button) bool {
+        return self.long_held.contains(b);
+    }
+
+    /// A press used for something else: holding it on reports no `long` until it is let go.
+    pub fn spend(self: *State, b: Button) void {
+        self.down_s.set(b, SPENT);
+    }
+
+    pub fn caption(self: State, b: Button) [:0]const u8 {
+        return b.caption(self.device);
+    }
+
+    pub fn slotCaption(self: State, b: Button) [:0]const u8 {
+        if (self.device == .pad or !b.isSlot()) return b.caption(self.device);
+        if (b == self.modifier) return SECOND_CAPTION;
+        return SLOT_CAPTIONS[numberOf(self.modifier, b).?];
     }
 
     /// Seconds since this frame's walk step was due; 0 when none fired.
@@ -231,7 +321,7 @@ pub const State = struct {
         for (BUTTONS) |b| {
             var on = pad and rl.isGamepadButtonPressed(PAD, b.pad());
             var hold = pad and rl.isGamepadButtonDown(PAD, b.pad());
-            if (!alt_down) {
+            if (!alt_down and !(self.playing and b.isSlot())) {
                 for (b.keys()) |k| {
                     if (self.typing and types(k)) continue;
                     on = on or rl.isKeyPressed(k);
@@ -241,8 +331,12 @@ pub const State = struct {
             self.pressed.setPresent(b, on);
             self.down.setPresent(b, hold);
         }
+        if (self.playing and !alt_down) self.slotKeys();
+        self.time(dt);
+        var keyed = false;
+        while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();
-        self.lean = pad and rl.isGamepadButtonDown(PAD, LEAN);
+        self.lean = (pad and rl.isGamepadButtonDown(PAD, LEAN)) or (!self.typing and either(LEAN_KEYS[0], LEAN_KEYS[1]));
         self.typed.n = 0;
         self.rub = false;
         if (self.typing) {
@@ -259,14 +353,13 @@ pub const State = struct {
         var defl = mathx.deflection(x, y);
         var heading = mathx.headingOf(x, y);
         var settle: f32 = 0;
+        const was_stick = self.stick;
         self.stick = stickWalks(defl, self.stick);
         if (!self.stick) {
             defl = 0;
-            var digital = if (pad) dpadWalk() else null;
-            if (digital) |p| {
-                if (self.lean) digital = leanOf(mathx.dirTo(.{ .x = 0, .y = 0 }, p).?).delta();
-            }
-            if (digital orelse keyWalk(self.typing)) |d| {
+            const digital = if (pad) dpadWalk() else null;
+            if (digital orelse keyWalk(self.typing)) |p| {
+                const d = if (self.lean) leanOf(mathx.dirTo(.{ .x = 0, .y = 0 }, p).?).delta() else p;
                 defl = 1;
                 heading = mathx.headingOf(@floatFromInt(d.x), @floatFromInt(d.y));
                 settle = Stepper.SETTLE;
@@ -274,8 +367,58 @@ pub const State = struct {
         }
         self.walk = self.step.tick(dt, defl, heading, settle);
         self.typing = false;
+        self.device = deviceOf(self.device, pad, (self.stick and !was_stick) or padPressed(pad), keyed);
+    }
+
+    fn slotKeys(self: *State) void {
+        for (SLOT_ORDER) |b| {
+            const keys: []const rl.KeyboardKey = if (b == self.modifier) &SECOND_KEYS else SLOT_KEYS[numberOf(self.modifier, b).?..][0..1];
+            for (keys) |k| {
+                if (rl.isKeyPressed(k)) self.pressed.insert(b);
+                if (rl.isKeyDown(k)) self.down.insert(b);
+            }
+        }
+    }
+
+    fn time(self: *State, dt: f32) void {
+        self.long_held = .initEmpty();
+        for (BUTTONS) |b| {
+            const t = self.down_s.getPtr(b);
+            if (!self.down.contains(b)) {
+                t.* = 0;
+                continue;
+            }
+            const was = t.*;
+            t.* += dt;
+            if (was < HOLD_S and t.* >= HOLD_S) self.long_held.insert(b);
+        }
     }
 };
+
+/// Its place among the slots the number keys reach, which skip the modifier's.
+fn numberOf(modifier: ?Button, b: Button) ?usize {
+    var n: usize = 0;
+    for (SLOT_ORDER) |s| {
+        if (s == modifier) continue;
+        if (s == b) return n;
+        n += 1;
+    }
+    return null;
+}
+
+fn deviceOf(was: Device, pad: bool, pad_hit: bool, keyed: bool) Device {
+    if (!pad) return .keys;
+    if (pad_hit) return .pad;
+    return if (keyed) .keys else was;
+}
+
+fn padPressed(pad: bool) bool {
+    if (!pad) return false;
+    for (std.enums.values(rl.GamepadButton)) |b| {
+        if (b != .unknown and rl.isGamepadButtonPressed(PAD, b)) return true;
+    }
+    return false;
+}
 
 /// The editor's, and the only mouse: it is a desk tool, so it names keys.
 pub const Desk = struct {
@@ -475,8 +618,11 @@ fn fullscreenHit() bool {
     return altDown() and anyHit(&ENTER_KEYS);
 }
 
+const RUB_KEY: rl.KeyboardKey = .backspace;
+pub const RUB_CAPTION = keyName(RUB_KEY);
+
 fn rubbed() bool {
-    return rl.isKeyPressed(.backspace) or rl.isKeyPressedRepeat(.backspace);
+    return rl.isKeyPressed(RUB_KEY) or rl.isKeyPressedRepeat(RUB_KEY);
 }
 
 fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
@@ -487,6 +633,12 @@ fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
         .tab => "Tab",
         .escape => "Esc",
         .enter => "Enter",
+        .space => "Space",
+        .period => "Period",
+        .backspace => "Backspace",
+        .delete => "Del",
+        .left_control => "Ctrl",
+        .left_shift => "Shift",
         .left_bracket => "[",
         .right_bracket => "]",
         .minus => "-",
@@ -663,6 +815,78 @@ test "every direction walks on exactly one entry, and every bound key a name typ
             if (c > ' ' and c <= '~') try std.testing.expect(types(k));
         }
     }
+}
+
+test "a held button reports long once at HOLD_S, and a spent one not until it is let go" {
+    const dt = mathx.FRAME_DT;
+    var s = State{};
+    s.down.insert(.view);
+    var fired: usize = 0;
+    var at: f32 = 0;
+    var t: f32 = 0;
+    while (t < 1) {
+        t += dt;
+        s.time(dt);
+        if (s.long(.view)) {
+            fired += 1;
+            at = t;
+        }
+    }
+    std.debug.print("held a second: long once at {d:.3} s\n", .{at});
+    try std.testing.expectEqual(@as(usize, 1), fired);
+    try std.testing.expect(at >= HOLD_S and at - HOLD_S <= dt * 1.5);
+    s.down = .initEmpty();
+    s.time(dt);
+    s.down.insert(.view);
+    s.spend(.view);
+    for (0..120) |_| {
+        s.time(dt);
+        try std.testing.expect(!s.long(.view));
+    }
+    s.down = .initEmpty();
+    s.time(dt);
+    s.down.insert(.view);
+    fired = 0;
+    for (0..60) |_| {
+        s.time(dt);
+        if (s.long(.view)) fired += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), fired);
+}
+
+test "the last device pressed is the one named, and the keyboard when no pad is plugged in" {
+    try std.testing.expectEqual(Device.keys, deviceOf(.pad, true, false, true));
+    try std.testing.expectEqual(Device.pad, deviceOf(.keys, true, true, true));
+    try std.testing.expectEqual(Device.keys, deviceOf(.keys, true, false, false));
+    try std.testing.expectEqual(Device.pad, deviceOf(.pad, true, false, false));
+    try std.testing.expectEqual(Device.keys, deviceOf(.pad, false, false, false));
+}
+
+test "the keyboard numbers the slots past the modifier, which Ctrl holds" {
+    var s = State{ .device = .keys, .modifier = .lb };
+    std.debug.print("slots, LB the modifier:", .{});
+    for (SLOT_ORDER) |b| std.debug.print(" {s}={s}", .{ @tagName(b), s.slotCaption(b) });
+    std.debug.print("\n", .{});
+    try std.testing.expectEqualStrings(SECOND_CAPTION, s.slotCaption(.lb));
+    try std.testing.expectEqualStrings("1", s.slotCaption(.a));
+    try std.testing.expectEqualStrings("6", s.slotCaption(.rt));
+    s.modifier = .x;
+    try std.testing.expectEqualStrings("1", s.slotCaption(.lb));
+    try std.testing.expectEqualStrings("3", s.slotCaption(.y));
+    s.modifier = null;
+    try std.testing.expectEqualStrings("7", s.slotCaption(.rt));
+    try std.testing.expectEqualStrings("Tab", s.slotCaption(.view));
+    s.device = .pad;
+    try std.testing.expectEqualStrings("RT", s.slotCaption(.rt));
+}
+
+test "menus name dedicated keys, and the walk names WASD and Shift" {
+    try std.testing.expectEqualStrings("WASD", moveName(.keys));
+    try std.testing.expectEqualStrings("Shift", leanName(.keys));
+    try std.testing.expectEqualStrings("Enter", Button.a.caption(.keys));
+    try std.testing.expectEqualStrings("Space", Button.x.caption(.keys));
+    try std.testing.expectEqualStrings("Del", Button.y.caption(.keys));
+    try std.testing.expectEqualStrings("Esc", Button.pause.caption(.keys));
 }
 
 test "the lean layer puts each d-pad button on its own diagonal" {

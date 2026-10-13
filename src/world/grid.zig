@@ -163,7 +163,7 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .shrooms = DECOR,
 });
 
-/// Which neighbours are walls too, stamped by `gen.shapeWalls`; its bits are the wall sheet's masks.
+/// Same-material neighbours, stamped by `gen.shapeWalls`; its bits are the wall sheets' masks.
 pub const WallShape = packed struct(u8) {
     n: bool = false,
     e: bool = false,
@@ -244,7 +244,7 @@ pub const Torches = struct {
 
 pub const Level = struct {
     tile: [CELLS]Tile,
-    /// Null on anything that is not a wall.
+    /// Null on anything that is neither a wall nor a forest tile.
     shape: [CELLS]?WallShape,
     seen: [CELLS]bool,
     /// In the archer's sight: in its line of sight and light enough to see.
@@ -285,6 +285,11 @@ pub const Level = struct {
     }
 
     pub fn wallShape(self: *const Level, p: P) ?WallShape {
+        if (self.at(p) != .wall) return null;
+        return self.tileShape(p);
+    }
+
+    pub fn tileShape(self: *const Level, p: P) ?WallShape {
         return cellOr(?WallShape, &self.shape, p, null);
     }
 

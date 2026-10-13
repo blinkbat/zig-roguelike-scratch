@@ -48,6 +48,10 @@ const DebugRow = enum {
 };
 const DEBUG_ROWS = std.enums.values(DebugRow);
 const DELETE = input.Button.y;
+
+fn loadBack(comptime d: input.Device) [:0]const u8 {
+    return menu.BACK_LABEL ++ menu.SEP ++ DELETE.name(d) ++ " delete";
+}
 const NAME = "roguelike";
 const LINE = menu.NOTE_MAX;
 
@@ -248,6 +252,7 @@ const App = struct {
     fn titleFrame(app: *App) bool {
         const g = app.g;
         g.st.typing = app.page == .name;
+        g.st.playing = false;
         g.st.update(rl.getFrameTime());
         game.syncScreen(g, g.st.fullscreen);
         rl.beginDrawing();
@@ -260,7 +265,7 @@ const App = struct {
                 var rows: [MAIN_ROWS.len][:0]const u8 = undefined;
                 for (MAIN_ROWS, &rows) |r, *l| l.* = r.label();
                 const picked = app.title.step(&g.st, MAIN_ROWS.len);
-                menu.draw(g.face, g.screen, comptime menu.caps(NAME), &rows, app.title.at, note, null);
+                menu.draw(g.face, g.screen, g.st.device, comptime menu.caps(NAME), &rows, app.title.at, note, null);
                 switch (MAIN_ROWS[picked orelse return true]) {
                     .new => {
                         app.rescan();
@@ -285,7 +290,7 @@ const App = struct {
                 const n = app.listing.n;
                 for (names[0..n], rows[0..n], 0..) |*b, *l, i| l.* = std.fmt.bufPrintZ(b, "{s}", .{app.listing.stem(i)}) catch "";
                 const picked = app.worlds.step(&g.st, n);
-                menu.draw(g.face, g.screen, "CHOOSE A WORLD", rows[0..n], app.worlds.at, app.listing.at(app.worlds.at), menu.BACK_LABEL);
+                menu.draw(g.face, g.screen, g.st.device, "CHOOSE A WORLD", rows[0..n], app.worlds.at, app.listing.at(app.worlds.at), menu.BACK_LABEL);
                 if (back) {
                     app.toTitle();
                 } else if (picked) |_| app.toClass();
@@ -294,7 +299,7 @@ const App = struct {
                 var rows: [hero.CLASSES.len][:0]const u8 = undefined;
                 for (hero.CLASSES, &rows) |c, *l| l.* = c.title();
                 const picked = app.classes.step(&g.st, rows.len);
-                menu.draw(g.face, g.screen, "CHOOSE A HERO", &rows, app.classes.at, hero.CLASSES[app.classes.at].blurb(), menu.BACK_LABEL);
+                menu.draw(g.face, g.screen, g.st.device, "CHOOSE A HERO", &rows, app.classes.at, hero.CLASSES[app.classes.at].blurb(), menu.BACK_LABEL);
                 if (back) {
                     app.fromClass();
                 } else if (picked) |i| {
@@ -307,7 +312,7 @@ const App = struct {
                 var buf: [naming.TITLE_MAX]u8 = undefined;
                 const title = naming.titleOf(app.class, &buf);
                 const outcome = app.entry.step(&g.st);
-                naming.draw(&app.entry, g.face, g.screen, title);
+                naming.draw(&app.entry, g.face, g.screen, g.st.device, title);
                 switch (outcome orelse return true) {
                     .back => app.page = .class,
                     .done => app.newRun(app.entry.name.done()),
@@ -323,7 +328,7 @@ const App = struct {
                     app.armed = null;
                     app.note.clear();
                 }
-                menu.draw(g.face, g.screen, comptime menu.caps(MainRow.load.label()), &rows, app.loads.at, note, menu.BACK_LABEL ++ menu.SEP ++ comptime DELETE.caption() ++ " delete");
+                menu.draw(g.face, g.screen, g.st.device, comptime menu.caps(MainRow.load.label()), &rows, app.loads.at, note, input.per(g.st.device, loadBack));
                 const at = app.loads.at;
                 if (back) {
                     app.toTitle();
@@ -334,7 +339,7 @@ const App = struct {
                         if (gone) |_| app.say("Slot {d} deleted", .{save.number(at)}) else |e| app.say("Slot {d} did not delete ({s})", .{ save.number(at), @errorName(e) });
                     } else {
                         app.armed = at;
-                        app.say("{s} again deletes slot {d}; it cannot be undone", .{ DELETE.caption(), save.number(at) });
+                        app.say("{s} again deletes slot {d}; it cannot be undone", .{ g.st.caption(DELETE), save.number(at) });
                     }
                 } else if (picked) |i| {
                     app.armed = null;
@@ -353,7 +358,7 @@ const App = struct {
                     .debug => r.label(),
                 };
                 const picked = app.options.step(&g.st, rows.len);
-                menu.draw(g.face, g.screen, comptime menu.caps(MainRow.options.label()), &rows, app.options.at, null, menu.BACK_LABEL);
+                menu.draw(g.face, g.screen, g.st.device, comptime menu.caps(MainRow.options.label()), &rows, app.options.at, null, menu.BACK_LABEL);
                 if (back) {
                     app.toTitle();
                 } else if (picked) |i| switch (OPTION_ROWS[i]) {
@@ -367,7 +372,7 @@ const App = struct {
                     .unkillable => menu.toggle(DebugRow.unkillable.label(), g.unkillable),
                 };
                 const picked = app.debugs.step(&g.st, rows.len);
-                menu.draw(g.face, g.screen, comptime menu.caps(OptionRow.debug.label()), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note(), menu.BACK_LABEL);
+                menu.draw(g.face, g.screen, g.st.device, comptime menu.caps(OptionRow.debug.label()), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note(), menu.BACK_LABEL);
                 if (back) {
                     app.page = .options;
                 } else if (picked) |i| switch (DEBUG_ROWS[i]) {

@@ -69,6 +69,7 @@ test {
     _ = @import("gfx/vignette.zig");
     _ = @import("gfx/light.zig");
     _ = @import("ui/menu.zig");
+    _ = @import("ui/hud.zig");
     _ = @import("ui/naming.zig");
     _ = @import("game.zig");
     _ = @import("edit/editor.zig");

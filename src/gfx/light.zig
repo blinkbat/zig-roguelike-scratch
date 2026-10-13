@@ -129,10 +129,10 @@ const GLOW_HALO_A: f32 = 0.2;
 const GLOW_TINT: Rgb = .{ 1.0, 0.52, 0.22 };
 /// Cells between a sun ray's samples; a shadow eases in over `SUN_SOFT` of its caster's height under its top, and `SUN_EDGE` cells in from a round one's edge.
 const SUN_STEP: f32 = 0.1;
-const SUN_SOFT: f32 = 0.5;
+const SUN_SOFT: f32 = 0.7;
 const SUN_EDGE: f32 = 0.2;
 /// Of the sky's light, how much a sun shadow takes away at its darkest, and how dark a body's sun shadow is.
-const SUN_SHADE: f32 = 0.55;
+const SUN_SHADE: f32 = 0.45;
 const SUN_SHADOW_A: f32 = 0.4;
 const SKY_SHADOW = SHADOW_MAX * SUN_SHADOW_A;
 /// A tree's shadow: canopy radius (of sprite width), squash, place along a full-height shadow, stretch per height it runs, darkness; trunk contact of a body's.
@@ -141,10 +141,16 @@ const CANOPY_SQUASH: f32 = 0.7;
 const CANOPY_AT: f32 = 0.45;
 const CANOPY_STRETCH: f32 = 0.5;
 const CANOPY_A: f32 = 1.6;
+const FOREST_STEPS: usize = 8;
+const FOREST_A: f32 = 1.3;
+const FOREST_MAX: f32 = 0.75;
+const FOREST_SOFT: f32 = 3.0;
+const FOREST_PAD: f32 = FOREST_SOFT * SHADOW_TAPS;
 /// Cells from a cell-tall caster its longest shadow, sky's or torch's, silhouette or canopy, reaches.
 pub const CAST_REACH: f32 = blk: {
     const l = @max(sky.REACH_MAX, SHADOW_LEN_HI);
-    break :blk @max(l, CANOPY_AT * l + CANOPY_R * (1 + l * CANOPY_STRETCH));
+    const pad = @max(SHADOW_PAD, FOREST_PAD) / look.SPRITE_PX;
+    break :blk 0.5 + @max(pad + l * (1 + pad), CANOPY_AT * l + CANOPY_R * (1 + l * CANOPY_STRETCH));
 };
 const TRUNK_OF: f32 = 0.6;
 /// Cells to the side the sun lights a body from, as the body shader takes a lamp.
@@ -543,10 +549,8 @@ fn colourOf(c: Rgb, a: f32) rl.Color {
     return .{ .r = @intFromFloat(k[0]), .g = @intFromFloat(k[1]), .b = @intFromFloat(k[2]), .a = @intFromFloat(std.math.clamp(a, 0, 1) * 255 + 0.5) };
 }
 
-const DARK = colourOf(@splat(0), 1);
-
-fn texelOf(c: Rgb) rl.Color {
-    return colourOf(knee(c) / splat(OVERBRIGHT), 1);
+fn texelOf(c: Rgb, sight: f32) rl.Color {
+    return colourOf(knee(c) / splat(OVERBRIGHT), sight);
 }
 
 fn lum(c: Rgb) f32 {
@@ -675,8 +679,9 @@ pub const Light = struct {
         @memset(&l.sight, 0);
         @memset(&l.memory, 0);
         @memset(&l.scratch.tile, .floor);
+        @memset(&l.scratch.los, false);
         l.grounded();
-        @memset(&l.map, rl.Color.black);
+        @memset(&l.map, rl.Color.blank);
         l.baked = .{ 0, MAP_H };
         l.soften();
         return l;
@@ -710,6 +715,7 @@ pub const Light = struct {
     }
 
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {
+        self.scratch.los = lv.los;
         const up = mathx.easing(dt, REVEAL);
         const down = mathx.easing(dt, FORGET);
         var moved = false;
@@ -834,24 +840,36 @@ pub const Light = struct {
     }
 
     /// Cells across the ground from the carried light, how far of that is southward, and how much of it reaches there, fallen off and occluded.
-    fn carryToward(self: *const Light, x: f32, y: f32) ?struct { at: [2]f32, flat: f32, dy: f32, k: f32 } {
+    fn carryToward(self: *const Light, x: f32, y: f32, fogged: bool) ?struct { at: [2]f32, flat: f32, dy: f32, k: f32 } {
         const c = self.carrier orelse return null;
         const dx = c[0] - x;
         const dy = c[1] - y;
         const flat = mathx.len(dx, dy);
         if (flat >= CARRY_R or self.carryShare() <= 0) return null;
-        const reach = sampleOccluded(&self.sight, &self.carry_open, x, y);
+        const reach = if (fogged) sampleOccluded(&self.sight, &self.carry_open, x, y) else self.carryReach(x, y);
         return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat) * self.carryShare() * reach };
     }
 
     fn carried(self: *const Light, s: Spot) f32 {
-        const f = self.carryToward(s.x, s.y) orelse return 0;
+        const f = self.carryToward(s.x, s.y, true) orelse return 0;
         const facing = switch (s.surface) {
             .floor => 1,
             .face => wrapped(faceCos(f.dy, f.flat), CARRY_FACE_WRAP),
             .ceiling => CARRY_CEILING,
         };
         return f.k * facing;
+    }
+
+    fn carryReach(self: *const Light, x: f32, y: f32) f32 {
+        const corner = mathx.cellOf(.{ x - 0.5, y - 0.5 });
+        var reach: [4]f32 = undefined;
+        var open: [4]f32 = undefined;
+        for (0..4) |i| {
+            const p = corner.add(.{ .x = @intCast(i % 2), .y = @intCast(i / 2) });
+            reach[i] = mask(self.scratch.inLos(p));
+            open[i] = reach[i] * grid.cellOr(f32, &self.see_through, p, 0);
+        }
+        return occluded(&reach, &open, 2, 2, x - 0.5 - @as(f32, @floatFromInt(corner.x)), y - 0.5 - @as(f32, @floatFromInt(corner.y)));
     }
 
     fn countCasters(self: *Light, lv: *const grid.Level) void {
@@ -908,12 +926,12 @@ pub const Light = struct {
         const c = mathx.cellOf(q);
         const fade = self.fadeOf(c);
         const sun: ?Sun = if (self.sky) |k| .{ .ray = SunRay.of(k), .cloud = self.cloudAt(q) } else null;
-        return self.shade(lv, torches, q, &fade, sun);
+        return self.shade(lv, torches, q, self.viewIn(q, &fade), sun);
     }
 
-    fn shade(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32, fade: *const Fade, sun: ?Sun) Rgb {
-        const sight = self.sightAt(q[0], q[1]);
-        const memory = fade.at(q[0], q[1], sight);
+    fn shade(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32, v: View, sun: ?Sun) Rgb {
+        const sight = v.sight;
+        const memory = v.memory;
         if (memory <= FAINT) return @splat(0);
         var view = self.base();
         if (sight > FAINT) {
@@ -979,26 +997,41 @@ pub const Light = struct {
             while (tx < @min(t1.x, (c.x + 1) * SUB)) : (tx += 1) {
                 const q = [2]f32{ (@as(f32, @floatFromInt(tx)) + 0.5) / sub, (@as(f32, @floatFromInt(ty)) + 0.5) / sub };
                 const sun: ?Sun = if (ray) |r| .{ .ray = r, .cloud = cloudIn(corners, c, q) } else null;
-                self.map[@intCast(ty * MAP_W + tx)] = if (dark) DARK else texelOf(self.shade(lv, torches, q, &fade, sun));
+                const v = if (dark) View{ .sight = 0, .memory = 0, .lit = 0 } else self.viewIn(q, &fade);
+                self.map[@intCast(ty * MAP_W + tx)] = if (dark) rl.Color.blank else texelOf(self.shade(lv, torches, q, v, sun), v.lit);
             }
         }
     }
 
     /// `q` in cells, as the light map has the ground there.
-    fn viewAt(self: *const Light, q: [2]f32) struct { sight: f32, memory: f32, lit: f32 } {
+    const View = struct { sight: f32, memory: f32, lit: f32 };
+
+    fn viewAt(self: *const Light, q: [2]f32) View {
+        return self.viewIn(q, &self.fadeOf(mathx.cellOf(q)));
+    }
+
+    fn viewIn(self: *const Light, q: [2]f32, fade: *const Fade) View {
         const sight = self.sightAt(q[0], q[1]);
-        const memory = self.fadeOf(mathx.cellOf(q)).at(q[0], q[1], sight);
+        const memory = fade.at(q[0], q[1], sight);
         return .{ .sight = sight, .memory = memory, .lit = sight * memory };
     }
 
     /// `centre` is on the ground, cells. The carried light lights its own `carrier` flat. Faded as the ground under it is.
     pub fn onBody(self: *const Light, centre: [2]f32, carrier: bool) Shine {
-        const v = self.viewAt(centre);
+        return self.bodyLight(centre, carrier, true);
+    }
+
+    pub fn onCaster(self: *const Light, centre: [2]f32, carrier: bool) Shine {
+        return self.bodyLight(centre, carrier, false);
+    }
+
+    fn bodyLight(self: *const Light, centre: [2]f32, carrier: bool, fogged: bool) Shine {
+        const v = if (fogged) self.viewAt(centre) else View{ .sight = 1, .memory = 1, .lit = 1 };
         const lit = v.lit;
         var s = Shine{ .sight = lit };
         const night: Rgb = if (self.sky) |k| self.sunOnBody(&s, k, centre, lit) else splat(1);
         s.ambient = remembered(self.base() * night, v.sight, v.memory);
-        if (self.carryToward(centre[0], centre[1])) |f| {
+        if (self.carryToward(centre[0], centre[1], fogged)) |f| {
             const k = f.k * lit;
             if (carrier) {
                 s.ambient += CARRY * splat(k) * night;
@@ -1060,12 +1093,18 @@ pub const Light = struct {
     /// `ox, oy` is where the map's top-left corner lands on screen.
     pub fn drawMap(self: *Light, ox: i32, oy: i32, cell: i32) void {
         const tex = self.gpu.map orelse return;
-        const from, const to = self.baked;
-        if (to > from) rl.updateTextureRec(tex, look.rect(0, from, MAP_W, to - from), &self.map[@intCast(from * MAP_W)]);
+        self.uploadMap();
         rl.gl.rlSetBlendFactors(rl.gl.rl_dst_color, rl.gl.rl_src_color, rl.gl.rl_func_add);
         rl.beginBlendMode(.custom);
         defer rl.endBlendMode();
         look.overFloor(tex, ox, oy, cell);
+    }
+
+    fn uploadMap(self: *Light) void {
+        const tex = self.gpu.map orelse return;
+        const from, const to = self.baked;
+        if (to > from) rl.updateTextureRec(tex, look.rect(0, from, MAP_W, to - from), &self.map[@intCast(from * MAP_W)]);
+        self.baked = .{ 0, 0 };
     }
 
     /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
@@ -1123,7 +1162,7 @@ pub const Light = struct {
     /// Shadows until `endShadows` go into a mask of the screen, the darker winning; false with no GL. `outer` is the framebuffer being drawn into.
     pub fn beginShadows(self: *Light, screen: P, outer: u32) bool {
         const pool = self.gpu.shade orelse return false;
-        if (self.gpu.shadow == null) return false;
+        if (self.gpu.shadow == null or self.gpu.receiver == null or self.gpu.map == null) return false;
         rl.gl.rlDrawRenderBatchActive();
         self.gpu.outer = outer;
         if (self.gpu.mask) |m| {
@@ -1145,13 +1184,22 @@ pub const Light = struct {
         return true;
     }
 
-    pub fn endShadows(self: *Light) void {
+    pub fn endShadows(self: *Light, ox: i32, oy: i32, cell: i32) void {
         rl.endShaderMode();
         rl.endBlendMode();
         rl.gl.rlEnableFramebuffer(self.gpu.outer);
         const t = self.gpu.mask.?.texture;
+        self.uploadMap();
+        const receiver = self.gpu.receiver.?;
+        const map_rect = [4]f32{ @floatFromInt(ox), @floatFromInt(oy), @floatFromInt(grid.W * cell), @floatFromInt(grid.H * cell) };
+        const screen = [2]f32{ @floatFromInt(t.width), @floatFromInt(t.height) };
         rl.beginBlendMode(.multiplied);
         defer rl.endBlendMode();
+        rl.beginShaderMode(receiver.shader);
+        defer rl.endShaderMode();
+        rl.setShaderValueTexture(receiver.shader, receiver.lightmap, self.gpu.map.?);
+        rl.setShaderValue(receiver.shader, receiver.map_rect, &map_rect, .vec4);
+        rl.setShaderValue(receiver.shader, receiver.screen, &screen, .vec2);
         rl.drawTextureRec(t, look.rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);
     }
 
@@ -1169,6 +1217,10 @@ pub const Light = struct {
         rl.beginShaderMode(sh.shader);
         rl.setShaderValue(sh.shader, sh.size, &size, .vec2);
         rl.setShaderValue(sh.shader, sh.foot, &foot, .float);
+        const joined = [4]f32{ 0, 0, 0, 0 };
+        rl.setShaderValue(sh.shader, sh.joined, &joined, .vec4);
+        const softness = [2]f32{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT };
+        rl.setShaderValue(sh.shader, sh.softness, &softness, .vec2);
         for (cs) |c| {
             if (c.solid <= 0) continue;
             var full = c;
@@ -1199,6 +1251,32 @@ pub const Light = struct {
         }
     }
 
+    pub fn drawForestShadows(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: Shine, shape: grid.WallShape) void {
+        _ = self.footOf(tex, dest, s, 1) orelse return;
+        const sh = self.gpu.shadow orelse return;
+        var buf: [BODY_LIGHTS]Cast = undefined;
+        const cs = casts(s, centre, dest.height, &buf);
+        if (cs.len == 0) return;
+        const size = [2]f32{ @floatFromInt(tex.width), @floatFromInt(tex.height) };
+        const foot: f32 = 1;
+        rl.beginShaderMode(sh.shader);
+        rl.setShaderValue(sh.shader, sh.size, &size, .vec2);
+        rl.setShaderValue(sh.shader, sh.foot, &foot, .float);
+        const joined = [4]f32{ @floatFromInt(@intFromBool(shape.w)), @floatFromInt(@intFromBool(shape.e)), @floatFromInt(@intFromBool(shape.n)), @floatFromInt(@intFromBool(shape.s)) };
+        rl.setShaderValue(sh.shader, sh.joined, &joined, .vec4);
+        const softness = [2]f32{ FOREST_SOFT, FOREST_SOFT };
+        rl.setShaderValue(sh.shader, sh.softness, &softness, .vec2);
+        for (cs) |c| {
+            const ink = colourOf(c.shade, @min(FOREST_MAX, c.alpha * FOREST_A));
+            for (0..FOREST_STEPS + 1) |i| {
+                const along = @as(f32, @floatFromInt(i)) / FOREST_STEPS;
+                forestQuad(tex, dest, centre, c, along, ink);
+            }
+        }
+        rl.gl.rlDrawRenderBatchActive();
+        rl.beginShaderMode(self.gpu.shade.?);
+    }
+
     pub fn drawGlows(self: *const Light, flames_: []const Flame, ox: f32, oy: f32, cell: f32) void {
         const g = self.gpu.glow orelse return;
         rl.beginBlendMode(.additive);
@@ -1220,7 +1298,7 @@ pub fn flashed(c: rl.Color, k: f32) rl.Color {
 }
 
 /// Pixels: `lean` from the feet to the tip; `solid` the share that is silhouette, the rest a streak.
-const Cast = struct { lean: [2]f32, len: f32, solid: f32, alpha: f32, shade: Rgb };
+const Cast = struct { lean: [2]f32, len: f32, solid: f32, alpha: f32, shade: Rgb, source: ?[2]f32 = null };
 
 /// `height` is pixels from the feet to the top of the art.
 fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const Cast {
@@ -1237,11 +1315,8 @@ fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const
         if (d < SHADOW_OVERHEAD) continue;
         if (l.sky == null) alpha *= mathx.smoothstep(SHADOW_OVERHEAD, SHADOW_NEAR, d);
         if (alpha < SHADOW_FAINT) continue;
-        const len = height * if (l.sky) |k| k.reach else std.math.clamp(SHADOW_LEN_LO + SHADOW_LEN_PER_CELL * d, SHADOW_LEN_LO, SHADOW_LEN_HI);
-        // The sky's turns slowly through due east and west: floored, it would flip across the feet in a frame.
-        const rise = if (l.sky != null) dy / d else lampRise(dy / d);
-        const lean = [2]f32{ dx / d * len, rise * len };
-        out[n] = .{ .lean = lean, .len = mathx.len(lean[0], lean[1]), .solid = solidity(lean), .alpha = alpha, .shade = if (l.sky) |k| k.shade else SHADE_RGB };
+        const lean = if (l.sky) |k| [2]f32{ dx / d * height * k.reach, dy / d * height * k.reach } else lampLean(.{ dx, dy }, height);
+        out[n] = .{ .lean = lean, .len = mathx.len(lean[0], lean[1]), .solid = solidity(lean), .alpha = alpha, .shade = if (l.sky) |k| k.shade else SHADE_RGB, .source = if (l.sky == null) l.ground else null };
         n += 1;
     }
     return out[0..n];
@@ -1249,6 +1324,33 @@ fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const
 
 fn lampRise(dy_d: f32) f32 {
     return dy_d * SHADOW_SQUASH;
+}
+
+fn lampLean(delta: [2]f32, height: f32) [2]f32 {
+    const d = mathx.len(delta[0], delta[1]);
+    if (d < SHADOW_OVERHEAD) return .{ 0, 0 };
+    const len = height * std.math.clamp(SHADOW_LEN_LO + SHADOW_LEN_PER_CELL * d, SHADOW_LEN_LO, SHADOW_LEN_HI);
+    return .{ delta[0] / d * len, lampRise(delta[1] / d) * len };
+}
+
+fn forestTip(c: Cast, centre: [2]f32, uv: [2]f32, height: f32) [2]f32 {
+    const source = c.source orelse return c.lean;
+    return lampLean(.{ centre[0] + uv[0] - 0.5 - source[0], centre[1] + uv[1] - 0.5 - source[1] }, height);
+}
+
+fn forestQuad(tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, c: Cast, along: f32, ink: rl.Color) void {
+    const pad = FOREST_PAD / @as(f32, @floatFromInt(tex.width));
+    const corners = [4][2]f32{ .{ -pad, -pad }, .{ -pad, 1 + pad }, .{ 1 + pad, 1 + pad }, .{ 1 + pad, -pad } };
+    rl.gl.rlSetTexture(tex.id);
+    rl.gl.rlBegin(rl.gl.rl_quads);
+    rl.gl.rlColor4ub(ink.r, ink.g, ink.b, ink.a);
+    for (corners) |uv| {
+        const lean = forestTip(c, centre, uv, dest.height);
+        rl.gl.rlTexCoord2f(uv[0], uv[1]);
+        rl.gl.rlVertex2f(dest.x + uv[0] * dest.width + lean[0] * along, dest.y + uv[1] * dest.height + lean[1] * along);
+    }
+    rl.gl.rlEnd();
+    rl.gl.rlSetTexture(0);
 }
 
 fn solidity(lean: [2]f32) f32 {
@@ -1390,18 +1492,41 @@ const SHADE_FS = POOL_HEAD ++
     \\}
 ;
 
+const RECEIVER_FS = look.FS_HEAD ++
+    \\uniform sampler2D lightmap;
+    \\uniform vec4 map_rect;
+    \\uniform vec2 screen;
+    \\void main() {
+    \\    vec2 pixel = vec2(fragTexCoord.x, 1.0 - fragTexCoord.y) * screen;
+    \\    vec2 uv = (pixel - map_rect.xy) / map_rect.zw;
+    \\    float sight = texture(lightmap, uv).a;
+    \\    vec3 shadow = texture(texture0, fragTexCoord).rgb;
+    \\    finalColor = vec4(mix(vec3(1.0), shadow, sight), 1.0);
+    \\}
+;
+
+const ReceiverShader = struct {
+    shader: rl.Shader,
+    lightmap: i32,
+    map_rect: i32,
+    screen: i32,
+};
+
 const SHADOW_FS = POOL_HEAD ++ std.fmt.comptimePrint(
-    "const float SOFT_TIP = {d:.4};\nconst float SOFT_FOOT = {d:.4};\nconst int TAPS = {d};\n",
-    .{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT, SHADOW_TAPS },
+    "const int TAPS = {d};\n",
+    .{SHADOW_TAPS},
 ) ++
     \\uniform vec2 size;
     \\uniform float foot;
+    \\uniform vec4 joined;
+    \\uniform vec2 softness;
     \\float alphaAt(vec2 uv) {
-    \\    if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > foot) return 0.0;
-    \\    return texture(texture0, uv).a;
+    \\    if ((uv.x < 0.0 && joined.x < 0.5) || (uv.x > 1.0 && joined.y < 0.5)) return 0.0;
+    \\    if ((uv.y < 0.0 && joined.z < 0.5) || (uv.y > foot && joined.w < 0.5)) return 0.0;
+    \\    return texture(texture0, clamp(uv, vec2(0.0), vec2(1.0, foot))).a;
     \\}
     \\void main() {
-    \\    float spread = mix(SOFT_TIP, SOFT_FOOT, clamp(fragTexCoord.y / foot, 0.0, 1.0));
+    \\    float spread = mix(softness.x, softness.y, clamp(fragTexCoord.y / foot, 0.0, 1.0));
     \\    float a = 0.0;
     \\    for (int i = -TAPS; i <= TAPS; i++) {
     \\        for (int j = -TAPS; j <= TAPS; j++) {
@@ -1429,6 +1554,8 @@ const ShadowShader = struct {
     shader: rl.Shader,
     size: i32,
     foot: i32,
+    joined: i32,
+    softness: i32,
 };
 
 const Art = struct {
@@ -1455,6 +1582,7 @@ const Gpu = struct {
     streak: ?rl.Texture2D = null,
     body: ?BodyShader = null,
     shadow: ?ShadowShader = null,
+    receiver: ?ReceiverShader = null,
     shade: ?rl.Shader = null,
     /// The screen's shadows, white where there are none; sized to the screen when drawn.
     mask: ?rl.RenderTexture2D = null,
@@ -1470,6 +1598,7 @@ const Gpu = struct {
         g.streak = look.field(STREAK_PX[0], STREAK_PX[1], streakAlpha);
         g.body = look.program(BodyShader, BODY_FS);
         g.shadow = look.program(ShadowShader, SHADOW_FS);
+        g.receiver = look.program(ReceiverShader, RECEIVER_FS);
         g.shade = look.shader(SHADE_FS);
         for (figures) |b| {
             const t = b orelse continue;
@@ -1651,6 +1780,94 @@ test "no torchlight reaches the floor behind its wall" {
     try std.testing.expect(below > 0.05);
 }
 
+test "forest shadow edges project together under torches and the sky" {
+    const a = [2]f32{ 20.5, 20.5 };
+    var checked: usize = 0;
+    for ([_]?[2]f32{ null, .{ 20.5, 17.3 }, .{ 15.5, 20.5 }, .{ 26.5, 25.5 } }) |source| {
+        const cast = Cast{ .lean = .{ 40, -12 }, .len = 42, .solid = 1, .alpha = 0.7, .shade = SHADE_RGB, .source = source };
+        for (0..2) |axis| {
+            var b = a;
+            b[axis] += 1;
+            for (0..17) |i| {
+                const across = @as(f32, @floatFromInt(i)) / 16;
+                var auv = [2]f32{ across, across };
+                var buv = auv;
+                auv[axis] = 1;
+                buv[axis] = 0;
+                const left = forestTip(cast, a, auv, 64);
+                const right = forestTip(cast, b, buv, 64);
+                for (0..2) |k| try std.testing.expectApproxEqAbs(left[k], right[k], 1e-5);
+                checked += 1;
+            }
+        }
+    }
+    std.debug.print("{d} shared forest shadow edge points agree under 3 torches and the sky\n", .{checked});
+}
+
+test "shadow casters keep their light outside sight and memory" {
+    var lv: grid.Level = undefined;
+    testRoom(&lv, &.{});
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const centre = [2]f32{ 20.5, 13.5 };
+    l.carrier = .{ 22.5, 14.5 };
+    @memset(&lv.los, true);
+    var checked: usize = 0;
+    for ([_]?f32{ day.NOON, 1, null }) |hour| {
+        l.sky = if (hour) |h| sky.at(h) else null;
+        @memset(&lv.lit, true);
+        @memset(&lv.seen, true);
+        l.settle(&lv);
+        var before: [BODY_LIGHTS]Cast = undefined;
+        const expected = casts(l.onCaster(centre, false), centre, ART_H, &before);
+        try std.testing.expect(expected.len > 0);
+        for ([_]bool{ false, true }) |remembered_| {
+            @memset(&lv.lit, false);
+            @memset(&lv.seen, remembered_);
+            l.settle(&lv);
+            var after: [BODY_LIGHTS]Cast = undefined;
+            const actual = casts(l.onCaster(centre, false), centre, ART_H, &after);
+            try std.testing.expectEqualSlices(Cast, expected, actual);
+            try std.testing.expectEqual(@as(usize, 0), casts(l.onBody(centre, false), centre, ART_H, &after).len);
+            checked += actual.len;
+        }
+    }
+    std.debug.print("{d} sun, moon and torch casts unchanged outside sight and memory; hidden bodies cast none through their draw lighting\n", .{checked});
+}
+
+test "shadow receivers fade at sight and disappear in remembered or unseen ground" {
+    var lv = grid.openFloor();
+    for (0..grid.CELLS) |i| {
+        const p = grid.Level.of(i);
+        lv.seen[i] = p.x < 30;
+        lv.lit[i] = p.x < 20;
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    l.sky = sky.at(day.NOON);
+    l.bake(&lv, .{ .x = 10, .y = 20 }, .{ .x = 40, .y = 21 });
+    var live: usize = 0;
+    var faded: usize = 0;
+    var remembered_: usize = 0;
+    var unseen: usize = 0;
+    for (10 * SUB..40 * SUB) |x| {
+        const c = l.map[20 * SUB * MAP_W + x];
+        if (x < 18 * SUB) {
+            try std.testing.expectEqual(@as(u8, 255), c.a);
+            live += 1;
+        } else if (x > 22 * SUB and x < 28 * SUB) {
+            try std.testing.expectEqual(@as(u8, 0), c.a);
+            try std.testing.expect(c.r > 0);
+            remembered_ += 1;
+        } else if (x >= 30 * SUB) {
+            try std.testing.expectEqual(rl.Color.blank, c);
+            unseen += 1;
+        } else if (c.a > 0 and c.a < 255) faded += 1;
+    }
+    try std.testing.expect(faded > 0);
+    std.debug.print("shadow receivers: {d} fully visible, {d} fading, {d} memory and {d} unseen texels with no live shadow\n", .{ live, faded, remembered_, unseen });
+}
+
 test "a pillar throws the torch's shadow across the floor behind it" {
     var lv: grid.Level = undefined;
     testRoom(&lv, &.{.{ .x = 20, .y = 13 }});
@@ -1764,7 +1981,7 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
         const m = l.memoryAt(mathx.cellOf(q));
         if (m == 0) dark += 1;
         if (m > 0 and m < 1) fading += 1;
-        const want = texelOf(l.at(&lv, torches, q));
+        const want = texelOf(l.at(&lv, torches, q), l.viewAt(q).lit);
         if (!std.meta.eql(want, l.map[i])) off += 1;
     }
     std.debug.print("whole floor baked: {d} texels never seen, {d} fading in, {d} off what `at` gives\n", .{ dark, fading, off });
@@ -2511,7 +2728,7 @@ test "the moon throws a cold shadow as deep as the sun's, over the archer's own 
     const ground_near = lum(l.at(&lv, none, .{ m[0] - u[0] * near, m[1] - u[1] * near })) / lum(l.at(&lv, none, .{ m[0] + u[0] * near, m[1] + u[1] * near }));
     std.debug.print("a foe's shadow {d:.2} deep at noon, {d:.2} at 1h, blue over red {d:.2} and {d:.2}; by the archer's own light at 1h, ground behind a rock {d:.3} to {d:.3} in front, blue over red {d:.2} to {d:.2}; just past its edge a body takes {d:.2} of the light in front, the ground {d:.2}\n", .{ depth[0], depth[1], blue[0], blue[1], lum(behind), lum(toward), behind[2] / behind[0], toward[2] / toward[0], body_behind / body_toward, ground_near });
     try std.testing.expect(depth[1] > depth[0] * 0.8 and blue[1] > blue[0]);
-    try std.testing.expect(lum(behind) < lum(toward) * 0.85 and behind[2] / behind[0] > toward[2] / toward[0]);
+    try std.testing.expect(lum(behind) < lum(toward) * 0.9 and behind[2] / behind[0] > toward[2] / toward[0]);
     try std.testing.expect(body_behind / body_toward < 0.9 and body_behind / body_toward > ground_near - 0.05);
 }
 

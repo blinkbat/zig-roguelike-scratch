@@ -19,6 +19,7 @@ writes one writes it there (`tools/tile_art/*.lua` use `app.fs.tempPath`). Leave
 for the change asked for.
 
 - Wall and repeating tile workflow: `docs/TILE_ART_WORKFLOW.md`. Port the owner's actual pixels and uneven outlines at native scale; preserve authored layers, update the canonical Aseprite file, and inspect connected game tiles. Regular walls use Desktop `regular-walls.aseprite`, painted on `Layer 1`; cave and forest are separate.
+- Forest artwork uses `assets/source/forest-tree-walls.aseprite` and `assets/backup/` at the owner's request. `export_forest.lua` exports its two art layers; the Desktop source keeps `Draw here` and separate `Forest extensions`. `.shrub` connections use the 47-cell forest atlas; isolated blockers mix `shrub.png` and forest cell 01 by stable position hash. The owner requested darker forest foliage and grass pixels; before-tone sources are backed up, and `tone_forest.lua` records the palette change. `shot.cmd` includes `shots/forest.png` and five `shadows-*.png` lighting studies.
 
 ## Build & verify
 
@@ -41,14 +42,17 @@ for the change asked for.
 
 ## Laws
 
-- **`core/input.zig` IS THE ONLY FILE THAT TOUCHES A DEVICE.** The controller is the primary input and the only
-  one the UI names; the keyboard mirrors it. D-pad moves, LT held puts the d-pad on diagonals (`leanOf`). Skills sit
+- **`core/input.zig` IS THE ONLY FILE THAT TOUCHES A DEVICE.** The controller is the primary input; the keyboard
+  mirrors it, a key for every action (`docs/CONTROLLER.md`, after PoE2). Every caption names the device last pressed
+  (`State.device`, `input.per`). D-pad moves, LT (Shift) held puts it on diagonals (`leanOf`). Skills sit
   on PoE2's controller skill bar (`play/skillbar.zig`): LB, A, X, Y, B, RB and RT are slots in a primary and a
   secondary set, the secondary set is used while the button bound to "Activate Secondary Skill Set" (LB) is held, and
-  View opens the bind screen (A select or pick up, X change, Y remove, B close). Defaults: X Shoot, B Juke, Y Wait, RB Burning Arrow, RT Glacial Shot. The button
-  that opened the reticle confirms; B cancels, or View when B opened it. A, B, X or Menu restarts after death (or, in a save slot,
-  goes back to the title), and Menu opens no pause menu over it.
-  Alt+Enter toggles borderless fullscreen. Menu (Esc) opens the pause menu; raylib's exit key is cleared
+  View held `input.HOLD_S` opens the bind screen (a press that closes or cancels is `spend`t) (A select or pick up, X change, Y remove, B close). Defaults: X Shoot, B Juke, Y Wait, RB Burning Arrow, RT Glacial Shot. The button
+  that opened the reticle confirms; B or Menu cancels, or View when B opened it. A, B, X or Menu restarts after death (or, in a save slot,
+  goes back to the title), and Menu opens no pause menu over it. On the keyboard a slot is a number (`input.SLOT_ORDER`,
+  skipping the modifier's, which Ctrl holds) and menus have their own keys (Enter, Space, Del), dead in play
+  (`State.playing`). Esc backs out of anything open, a step at a time.
+  Alt+Enter toggles borderless fullscreen. Menu (Esc) opens the pause menu from play; raylib's exit key is cleared
   (`input.claimKeys`), so Esc never closes the window. A field being typed in sets `State.typing`: the keys that type
   then type (`State.typed`, Backspace `rub`) and press no button nor walk. The editor is a desk tool: its mouse and
   keys are `input.Desk`, and it names them.
@@ -57,7 +61,7 @@ for the change asked for.
   `menu.window`; one generated floor when there are none), then a hero's class (`play/hero.zig`; the archer alone so far) and has it named on a grid of keys the
   d-pad walks and the keyboard types into (`ui/naming.zig`), then plays the world read fresh from disk in
   the first free save slot (refused when all are taken); Load plays or deletes (Y, twice) a slot; Options toggles
-  fullscreen and opens Debug (Unkillable: the hero keeps 1 hp whatever strikes it, `Game.unkillable`, never saved); Editor opens the editor; Quit quits. The hero's name is said in the log, the hud and the death screen,
+  fullscreen and opens Debug (Unkillable: the hero keeps 1 hp whatever strikes it, `Game.unkillable`, never saved); Editor opens the editor; Quit quits. The hero's name is said in the log and the death screen,
   and nowhere "you". The pause menu resumes, restarts,
   goes back where the game came from (`Game.back`: the title, or the editor that play-tested it) or quits; the game
   only names the way out (`Game.exit`) and the app takes it. The window's close button closes the app, but for an
@@ -96,9 +100,9 @@ for the change asked for.
 - **JUKE (`play/juke.zig`) JUMPS INSTANTLY**, across obstacles to visible vacant ground within 3 Chebyshev tiles.
   Targeting starts on the hero and can cross invalid cells; only `juke.aimable` landings confirm. It spends no turn,
   costs 20 mana and starts a 3-turn cooldown. The hero has 100 mana and recovers 5 per spent turn; idle frames do
-  neither. HP and mana bars sit together in the HUD, with cooldown turns on each bound Juke slot. Mana and cooldown
+  neither. Life and mana orbs flank the HUD's skills, with cooldown turns on each bound Juke slot. Mana and cooldown
   persist across doors and saves, reset on a new run. `gfx/fx.zig` draws its fading trail and landing dust.
-  `shot.cmd` also writes `shots/juke-aim.png` and `shots/juke.png` for targeting, effects and resource bars.
+  `shot.cmd` also writes `shots/juke-aim.png` and `shots/juke.png` for targeting, effects and resources.
 - **BURNING ARROW (`play/burning.zig`) ADDS FIRE** to the normal arrow: 2-4 added fire damage, 15 mana, one turn,
   a 50% chance to ignite a surviving target that took fire damage. Burning deals 4 fire damage on each of the next
   3 turns after the body's action and gas harm; reapplying refreshes duration without stacking or delaying a due tick.
@@ -127,8 +131,9 @@ for the change asked for.
   A pib that sees a foe die within `actor.FRIGHT_REACH` (5, a clear line) wakes and runs for `actor.FLEE_TURNS` (4)
   of its turns, uphill on the walk from the archer (`actor.flee`); cornered, it holds its cell and strikes an archer beside it; each death refreshes it.
   The bleed shows as drops on the body, a drip and stain each tick, and the hero's statuses (bleeding, burning,
-  chilled, with turns left) sit beside the HP bar.
+  chilled, with turns left) appear as icons above the skill strip.
 - **THE LAYOUT READS `Game.screen`, NEVER A WINDOW CONSTANT**, because fullscreen changes it at runtime.
+- **THE HUD (`ui/hud.zig`) FOLLOWS `docs/HUD_LAYOUT.md`**: one 744-pixel assembly centered at the bottom, with filled life and mana orbs around the skill strip, live input captions, cooldowns and active ailments. The world fills the viewport behind it; the minimap stays at the top right. No live hero-name label, enemy/gold counters, log strip or permanent control instructions. `shot.cmd` captures full, partial, critical and empty orbs, both devices, secondary skills and the bind overlay across 720p, 900p and 1080p (`shots/hud-*.png`).
 - **`gfx/look.zig` IS EVERY PICTURE.** A thing with a texture in `Sprites` draws it; the rest draw their glyph.
   Ability slots use monochrome line placeholders through `look.drawSkill`, shared by the HUD and bind picker.
   `skillbar.Act.cost` supplies mana checks, spending and slot dimming; ability descriptions use their mechanic constants.
@@ -141,6 +146,10 @@ for the change asked for.
   overlap, the mask is no darker than the darkest shade among them (`light.SHADE_RGB`, or by night the colder
   `MOON_SHADE_RGB`). The sky's shadows are as dark as its key's share of the sky's own light (`skyDepth`), so the moon
   casts as the sun does, and its terrain shadows darken whatever lights the ground, the archer's own light too. Bodies
+  and props cast even outside sight, memory, light range or the screen when an actual light reaches them. Caster lighting
+  (`Light.onCaster`) ignores fog; the mask fades by sight at its receiver, stored in the light map's alpha, so live
+  shadows do not change remembered or unseen ground. Culling includes a three-cell margin for the longest soft shadow.
+  Actors' shadows follow their presented position, birth and death, independently of whether their sprite is visible. Bodies
   are lit per pixel by their own
   shader from normals bevelled off their silhouette at load, faded as the ground under them is; torch flames and their
   glow draw over it all. The map
@@ -158,13 +167,13 @@ for the change asked for.
   which eases after the clock so the light never steps. The sun rises east, stands south at noon and sets west; the
   moon is its opposite, and the one light that casts (`sky.keyDir`) changes hands over the top in the dark, its
   altitude floored at 35 degrees so a shadow never outruns its caster by much. On the map its north-south lean is
-  squashed (`sky.NORTH_SOUTH`), so shadows run mostly across the screen, and it stands no steeper than 50 degrees, so
+  squashed (`sky.NORTH_SOUTH`), so shadows run mostly across the screen, and it stands no steeper than 42 degrees, so
   even at noon everything throws a shadow past its edge. Its sunrise and sunset keys are warmed to gold. Only a node
   open to the sky (`Node.outdoor`, from `procgen.Floor.outdoor`; bespoke and rooms nodes are under a roof) gets it: there
   `Light.sky` replaces the dark's ambient with the hour's (still floored at memory), lights ground, wall tops and south faces by the key,
   shadows them by a march toward it over what stands in its way (`light.CASTERS`: walls, rock, fences and the rest),
   drifts soft cloud shadows over them in real time (`light.clouded`, off the light's own seconds), lights bodies from
-  its side and dims the carried light out by day. A sun shadow is soft and takes 55% of the sky's light at most; a moon shadow darkens all the light there besides. Bodies,
+  its side and dims the carried light out by day. A sun shadow is soft and takes 45% of the sky's light at most; a moon shadow darkens all the light there besides. Forest walls and isolated forest clumps cast their continuous footprint under torches, sun and moon (`Light.drawForestShadows`), with wider soft edges and capped contrast; joined edges stay continuous, and lone trees keep their soft canopy shadow. Bodies,
   barrels and the standing tiles (`look.STANDING`: shrubs, tiny shrubs, boulders, fungus, tall grass, shrooms) cast from their own place as every
   light does: a silhouette, but a tree's (`look.canopied`) is its canopy's soft pool (`Light.drawCanopy`), and one
   running nearly straight across the screen gives way to a soft streak darkest at the feet (`light.solidity`), for
@@ -208,11 +217,11 @@ for the change asked for.
   alone;
   each is lit as the ground and draws its ground under it; water, lava, a chasm and a fence
   block a step but not sight or an arrow, and the liquids not gas; reeds and crop block sight but not a step; tiny shrubs, tall grass and shrooms are decor,
-  blocking nothing, on grass drawn under them. Only `.wall` is shaped.
+  blocking nothing, on grass drawn under them. `.wall` and `.shrub` are shaped, each joining its own material.
 - **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** in `gen.around`, before the torches and barrels, again before each feature and once settled (`procgen.reshape`), or by `Node.stamp` for a bespoke node
   (`shapeWalls` alone), and stored in `Level.shape`: which of its eight neighbours are walls too (`grid.WallShape`,
   off the map counting), a corner only where both sides beside it are (`WallShape.joined`), so one of 47 shapes.
-  Nothing recomputes it once the floor is built, and nothing about what has been revealed touches it (owner's call). Its picture is the
+  Nothing recomputes it once the floor is built, and nothing about what has been revealed touches it (owner's call). Forests use the same stored masks, joining shrubs alone; older saves acquire missing forest masks once on resume. `Level.wallShape` still returns brick walls alone, `Level.tileShape` either material. A brick wall's picture is the
   atlas's cell for it (`look.WALL_MASKS`, `walls.png` read across its rows), filling the cell, built by
   `tools/tile_art/export_walls.lua` from the painted strips of the Desktop `regular-walls.aseprite`'s `Layer 1`: an
   outline on each side it does not join, a notch at a north corner it does not. A wall shows a brick face, its

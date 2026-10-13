@@ -32,8 +32,12 @@ const GRID_DY: i32 = -70;
 const LEGEND_DY: i32 = 200;
 const CARET = menu.CARET;
 
-const LEGEND = menu.CONFIRM.caption() ++ " type" ++ menu.SEP ++ RUB.caption() ++ " delete" ++ menu.SEP ++
-    menu.MOVE_ITEM ++ menu.SEP ++ menu.BACK_ITEM;
+fn legendOf(comptime d: input.Device) [:0]const u8 {
+    return switch (d) {
+        .pad => menu.CONFIRM.name(d) ++ " type" ++ menu.SEP ++ RUB.name(d) ++ " delete" ++ menu.SEP ++ menu.moveItem(d),
+        .keys => "Type a name" ++ menu.SEP ++ input.RUB_CAPTION ++ " delete" ++ menu.SEP ++ menu.CONFIRM.name(d) ++ " done",
+    } ++ menu.SEP ++ menu.backItem(d);
+}
 
 pub const Outcome = enum { done, back };
 
@@ -96,7 +100,7 @@ pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
     return menu.shout(buf, ASK ++ "{s}", .{c.title()});
 }
 
-pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8) void {
+pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, d: input.Device, title: [:0]const u8) void {
     const mid = @divTrunc(screen.y, 2);
     menu.mid(face, screen, title, mid + TITLE_DY, menu.TITLE, look.TEXT);
     var buf: [hero.Name.MAX + CARET.len + 1]u8 = undefined;
@@ -123,7 +127,7 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
             face.text(label, face.leftFor(label, cx, KEY), y + @divTrunc(KEY_H - KEY, 2), KEY, col);
         }
     }
-    menu.mid(face, screen, LEGEND, mid + LEGEND_DY, menu.NOTE, look.DIM);
+    menu.mid(face, screen, input.per(d, legendOf), mid + LEGEND_DY, menu.NOTE, look.DIM);
 }
 
 test "the grid types a name, the keyboard types into it, and done waits for a name" {

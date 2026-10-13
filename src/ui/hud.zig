@@ -1,0 +1,159 @@
+const std = @import("std");
+const rl = @import("raylib");
+const mathx = @import("../core/mathx.zig");
+const font = @import("../gfx/font.zig");
+const look = @import("../gfx/look.zig");
+const fx = @import("../gfx/fx.zig");
+
+pub const WIDTH: i32 = 744;
+pub const HEIGHT: i32 = 172;
+const BOTTOM: i32 = 12;
+const ORB_R: i32 = 52;
+const FILL_R: i32 = 44;
+const FRAME = look.rgb(0x625a48);
+const FRAME_DARK = look.rgb(0x22211f);
+const WELL = look.rgb(0x080a10);
+const PLATE = look.rgb(0x101114);
+const LIFE_CORE = look.rgb(0xb83b32);
+const LIFE_EDGE = look.rgb(0x541412);
+const MANA_CORE = look.rgb(0x376eb4);
+const MANA_EDGE = look.rgb(0x14294d);
+const STATUS_PX: i32 = 32;
+const STATUS_GAP: i32 = 8;
+
+pub const Layout = struct {
+    left: i32,
+    top: i32,
+    life: mathx.P,
+    mana: mathx.P,
+    skills: mathx.P,
+    skills_w: i32,
+
+    pub fn of(screen: mathx.P, skills_w: i32) Layout {
+        const left = @divTrunc(screen.x - WIDTH, 2);
+        const top = screen.y - BOTTOM - HEIGHT;
+        return .{
+            .left = left,
+            .top = top,
+            .life = .{ .x = left + 64, .y = top + 104 },
+            .mana = .{ .x = left + WIDTH - 64, .y = top + 104 },
+            .skills = .{ .x = @divTrunc(screen.x - skills_w, 2), .y = top + 76 },
+            .skills_w = skills_w,
+        };
+    }
+};
+
+pub fn frame(layout: Layout) void {
+    const x = layout.left;
+    const y = layout.skills.y - 10;
+    const width = WIDTH;
+    rl.drawRectangle(x - 3, y + 3, width + 6, 94, look.fade(rl.Color.black, 0.5));
+    rl.drawRectangle(x, y, width, 92, PLATE);
+    rl.drawRectangleLinesEx(look.rect(x, y, width, 92), 2, FRAME);
+    rl.drawLine(x + 8, y + 5, x + width - 8, y + 5, FRAME_DARK);
+    rl.drawLine(x + 8, y + 86, x + width - 8, y + 86, FRAME_DARK);
+}
+
+pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32) void {
+    orb(face, layout.life, "Life", hp, hp_max, LIFE_CORE, LIFE_EDGE);
+    orb(face, layout.mana, "Mana", mana, mana_max, MANA_CORE, MANA_EDGE);
+}
+
+fn fillHeight(value: i32, max: i32) i32 {
+    if (max <= 0) return 0;
+    const clamped: i64 = std.math.clamp(value, 0, max);
+    return @intCast(@divTrunc(clamped * FILL_R * 2, max));
+}
+
+fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, max: i32, core: rl.Color, edge: rl.Color) void {
+    const x = centre.x;
+    const y = centre.y;
+    rl.drawCircle(x, y + 4, ORB_R + 2, look.fade(rl.Color.black, 0.6));
+    rl.drawCircle(x, y, ORB_R, FRAME_DARK);
+    rl.drawCircle(x, y, ORB_R - 2, FRAME);
+    rl.drawCircle(x, y, ORB_R - 5, FRAME_DARK);
+    rl.drawCircle(x, y, FILL_R + 2, look.rgb(0x020305));
+    rl.drawCircle(x, y, FILL_R, WELL);
+    const filled = fillHeight(value, max);
+    if (filled > 0) {
+        const surface = y + FILL_R - filled;
+        rl.beginScissorMode(x - FILL_R, surface, FILL_R * 2, filled);
+        rl.drawCircleGradient(x, y, FILL_R, core, edge);
+        rl.endScissorMode();
+        if (filled < FILL_R * 2) {
+            const dy: f32 = @floatFromInt(surface - y);
+            const half: i32 = @intFromFloat(@sqrt(@max(0, FILL_R * FILL_R - dy * dy)));
+            rl.drawLine(x - half + 1, surface, x + half - 1, surface, look.fade(core, 0.8));
+        }
+    }
+    rl.drawEllipse(x - 20, y - 24, 3, 6, look.fade(look.TEXT, 0.16));
+    var buf: [48]u8 = undefined;
+    const label = std.fmt.bufPrintZ(&buf, "{s} {d}/{d}", .{ name, @max(0, value), @max(0, max) }) catch "";
+    face.text(label, face.leftFor(label, x, font.BODY), y - ORB_R - 23, font.BODY, look.TEXT);
+}
+
+pub fn statuses(layout: Layout, face: *const font.Face, status: std.EnumArray(fx.Status, u8)) void {
+    var count: i32 = 0;
+    for (status.values) |turns| count += @intFromBool(turns > 0);
+    var x = layout.left + @divTrunc(WIDTH - count * (STATUS_PX + STATUS_GAP) + STATUS_GAP, 2);
+    const y = layout.top + 20;
+    for (std.enums.values(fx.Status)) |s| {
+        const turns = status.get(s);
+        if (turns == 0) continue;
+        rl.drawRectangle(x, y, STATUS_PX, STATUS_PX, PLATE);
+        rl.drawRectangleLinesEx(look.rect(x, y, STATUS_PX, STATUS_PX), 1, s.ink());
+        statusIcon(s, x + 12, y + 13);
+        var buf: [4]u8 = undefined;
+        const label = std.fmt.bufPrintZ(&buf, "{d}", .{turns}) catch "";
+        face.text(label, x + STATUS_PX - face.width(label, font.SMALL) - 3, y + STATUS_PX - font.SMALL - 1, font.SMALL, look.TEXT);
+        x += STATUS_PX + STATUS_GAP;
+    }
+}
+
+fn statusIcon(status: fx.Status, x: i32, y: i32) void {
+    const colour = status.ink();
+    switch (status) {
+        .bleeding => {
+            rl.drawCircle(x, y + 3, 5, colour);
+            rl.drawTriangle(.{ .x = @floatFromInt(x), .y = @floatFromInt(y - 7) }, .{ .x = @floatFromInt(x - 5), .y = @floatFromInt(y + 3) }, .{ .x = @floatFromInt(x + 5), .y = @floatFromInt(y + 3) }, colour);
+        },
+        .burning => {
+            rl.drawCircle(x, y + 3, 6, colour);
+            rl.drawTriangle(.{ .x = @floatFromInt(x + 2), .y = @floatFromInt(y - 8) }, .{ .x = @floatFromInt(x - 6), .y = @floatFromInt(y + 3) }, .{ .x = @floatFromInt(x + 5), .y = @floatFromInt(y + 4) }, colour);
+            rl.drawCircle(x, y + 5, 3, look.FIRE_CORE);
+        },
+        .chilled => {
+            rl.drawLine(x, y - 8, x, y + 8, colour);
+            rl.drawLine(x - 7, y - 4, x + 7, y + 4, colour);
+            rl.drawLine(x - 7, y + 4, x + 7, y - 4, colour);
+            rl.drawCircle(x, y, 2, colour);
+        },
+    }
+}
+
+test "the HUD stays centered at a fixed width with room between orbs and skills" {
+    const widths = [_]mathx.P{ .{ .x = 1280, .y = 720 }, .{ .x = 1600, .y = 900 }, .{ .x = 1920, .y = 1080 }, .{ .x = 2560, .y = 1440 } };
+    for (widths) |screen| {
+        const layout = Layout.of(screen, 456);
+        try std.testing.expectEqual(screen.x, layout.left * 2 + WIDTH);
+        try std.testing.expectEqual(screen.x, layout.life.x + layout.mana.x);
+        try std.testing.expect(layout.life.x + ORB_R < layout.skills.x - 18);
+        try std.testing.expect(layout.skills.x + layout.skills_w + 18 < layout.mana.x - ORB_R);
+        try std.testing.expect(layout.top > 0 and layout.life.y + ORB_R < screen.y);
+    }
+    std.debug.print("HUD: {d}px centered assembly verified at {d} resolutions\n", .{ WIDTH, widths.len });
+}
+
+test "orb fill clamps values and gives full half and empty reservoirs" {
+    const cases = [_]struct { value: i32, max: i32, want: i32 }{
+        .{ .value = 100, .max = 100, .want = FILL_R * 2 },
+        .{ .value = 50, .max = 100, .want = FILL_R },
+        .{ .value = 0, .max = 100, .want = 0 },
+        .{ .value = -5, .max = 100, .want = 0 },
+        .{ .value = 110, .max = 100, .want = FILL_R * 2 },
+        .{ .value = 5, .max = 0, .want = 0 },
+        .{ .value = std.math.maxInt(i32), .max = std.math.maxInt(i32), .want = FILL_R * 2 },
+    };
+    for (cases) |c| try std.testing.expectEqual(c.want, fillHeight(c.value, c.max));
+    std.debug.print("orbs: {d} resource fill cases verified\n", .{cases.len});
+}

@@ -1963,7 +1963,7 @@ fn thumb(ed: *Editor, n: usize) ?rl.Texture2D {
                 m.look().fg
             else if (unrolled)
                 look.UNROLLED
-            else if (if (lv.shape[i]) |s| s.solid() else false)
+            else if (if (lv.wallShape(grid.Level.of(i))) |s| s.solid() else false)
                 look.BG
             else
                 look.mini(lv.tile[i], true);
