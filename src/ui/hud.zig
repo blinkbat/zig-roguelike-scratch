@@ -44,14 +44,14 @@ pub const Layout = struct {
 };
 
 pub fn frame(layout: Layout) void {
-    const x = layout.left;
+    const x = layout.life.x;
     const y = layout.skills.y - 10;
-    const width = WIDTH;
-    rl.drawRectangle(x - 3, y + 3, width + 6, 94, look.fade(rl.Color.black, 0.5));
-    rl.drawRectangle(x, y, width, 92, PLATE);
-    rl.drawRectangleLinesEx(look.rect(x, y, width, 92), 2, FRAME);
+    const width = layout.mana.x - x;
+    rl.drawRectangle(x - 3, y + 3, width + 6, 90, look.fade(rl.Color.black, 0.5));
+    rl.drawRectangle(x, y, width, 88, PLATE);
+    rl.drawRectangleLinesEx(look.rect(x, y, width, 88), 2, FRAME);
     rl.drawLine(x + 8, y + 5, x + width - 8, y + 5, FRAME_DARK);
-    rl.drawLine(x + 8, y + 86, x + width - 8, y + 86, FRAME_DARK);
+    rl.drawLine(x + 8, y + 82, x + width - 8, y + 82, FRAME_DARK);
 }
 
 pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32) void {

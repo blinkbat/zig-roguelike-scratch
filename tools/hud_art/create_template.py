@@ -1,8 +1,10 @@
+import argparse
 import json
 import math
 from pathlib import Path
 import re
 import tempfile
+import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -13,9 +15,13 @@ OUTPUT = DESKTOP / 'hud-elements.aseprite'
 SOURCE = ROOT / 'assets/source/hud-elements.aseprite'
 WORK = Path(tempfile.gettempdir()) / 'hud-template'
 SIZE = (1024, 1024)
-for destination in (OUTPUT, SOURCE):
-    if destination.exists():
-        raise SystemExit(f'Refusing to overwrite editable artwork: {destination}')
+parser = argparse.ArgumentParser()
+parser.add_argument('--guides-only', action='store_true')
+args = parser.parse_args()
+if not args.guides_only:
+    for destination in (OUTPUT, SOURCE):
+        if destination.exists():
+            raise SystemExit(f'Refusing to overwrite editable artwork: {destination}')
 WORK.mkdir(parents=True, exist_ok=True)
 
 paper = Image.new('RGBA', SIZE, (28, 30, 34, 255))
@@ -93,7 +99,7 @@ text(24, 16, 'HUD ELEMENTS / PAINT TEMPLATE', 24, True)
 text(24, 51, 'Paint on DRAW HERE. Faint locked layers are guides only. All component sizes are native game pixels.', 14)
 text(24, 84, '01  ASSEMBLED REFERENCE / 744 x 172', 16, True)
 ox, oy = cell('REFERENCE_ONLY_assembled', 24, 112, 744, 172, 'Guide only. Do not export as artwork.')
-ud.rectangle((ox, oy + 66, ox + 743, oy + 157), fill=(16, 17, 20), outline=INK, width=2)
+ud.rectangle((ox + 64, oy + 66, ox + 679, oy + 153), fill=(16, 17, 20), outline=INK, width=2)
 for cx, core, edge in ((ox + 64, (184, 59, 50), (84, 20, 18)), (ox + 680, (55, 110, 180), (20, 41, 77))):
     ud.ellipse((cx - 52, oy + 52, cx + 51, oy + 155), fill=(8, 10, 16), outline=INK, width=2)
     reservoir(cx - 44, oy + 60, core, edge)
@@ -176,6 +182,9 @@ text(24, 993, 'Underdrawing 25%  /  alignment 22%  /  labels + separators 45%  /
 for name, image in (('paper', paper), ('under', under), ('guides', guides), ('labels', labels)):
     image.save(WORK / (name + '.png'))
 (WORK / 'slices.json').write_text(json.dumps(slices, indent=2), encoding='utf-8')
+if args.guides_only:
+    print(f'Prepared guide PNGs only in {WORK}; editable sources unchanged.')
+    sys.exit(0)
 
 
 def quote(value):

@@ -26,7 +26,7 @@ Remove the live HUD's hero-name label, enemy population counters, gold tally, pe
 ## Layout and placeholder art
 
 - Target a 744-pixel-wide assembly, horizontally centered from `Game.screen`. Its width does not grow on a wider display.
-- Two matching 104-pixel orb frames flank the existing seven-slot skill strip. One continuous backing plate extends behind both orbs and the skills across the full assembly width, seating them together. The orbs sit snug against the skills, with their bases aligned to the plate.
+- Two matching 104-pixel orb frames flank the existing seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs completely cover its ends. The plate is 88px tall and its lower edge sits just above the orb bases; no square endcaps project beyond the orbs.
 - Mount the assembly close to the bottom edge. Draw the world behind it and at both sides instead of reserving a full-width black footer.
 - Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
 - Use the current Balthazar face for small resource values, button captions and cooldowns. Avoid extra explanatory prose in play.
