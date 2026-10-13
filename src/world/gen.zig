@@ -49,7 +49,6 @@ pub const Params = struct {
         return mathx.span(i32, r, ROOM_MIN, most);
     }
 
-    /// Where the rooms fall: `size`, centred on the map, inside its margin.
     fn area(p: Params) grid.Box {
         return grid.Box.centred(p.size.x, p.size.y).shrunk(MARGIN);
     }
@@ -67,7 +66,6 @@ pub fn build(lv: *grid.Level, seed: u64) Floor {
     return around(lv, seed, &.{}, .{});
 }
 
-/// Drops the torches no wall bears any more, the rest kept in order.
 pub fn keepTorches(lv: *grid.Level) void {
     lv.torch.keep(@as(*const grid.Level, lv), bearsTorch);
 }

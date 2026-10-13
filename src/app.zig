@@ -95,7 +95,6 @@ const App = struct {
         } else app.say("{s} picks a world in {s}", .{ MainRow.new.label(), atlas.DIR });
     }
 
-    /// A page that shows `note` opens on it cleared.
     fn goPage(app: *App, p: Page) void {
         app.note.clear();
         app.page = p;

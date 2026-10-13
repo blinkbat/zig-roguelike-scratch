@@ -64,7 +64,7 @@ pub const Entry = struct {
         if (st.walk) |d| self.move(d);
         if (menu.backed(st)) return .back;
         if (!st.hit(menu.CONFIRM)) return null;
-        switch (self.key()) {
+        switch (if (st.device == .keys) .done else self.key()) {
             .ch => |c| _ = self.name.push(c),
             .space => _ = self.name.push(' '),
             .rub => self.name.pop(),
@@ -153,4 +153,15 @@ test "the grid types a name, the keyboard types into it, and done waits for a na
     try std.testing.expectEqual(@as(?Outcome, .done), e.step(&st));
     var blank = Entry{ .row = ROWS - 1, .col = DONE_AT };
     try std.testing.expectEqual(@as(?Outcome, null), blank.step(&st));
+}
+
+test "on the keyboard Enter is done wherever the grid's cursor sits" {
+    var e = Entry{ .name = hero.Name.of("Ann") };
+    var st = input.State{ .device = .keys };
+    st.pressed.insert(menu.CONFIRM);
+    try std.testing.expectEqual(@as(?Outcome, .done), e.step(&st));
+    try std.testing.expectEqualStrings("Ann", e.name.text());
+    var blank = Entry{};
+    try std.testing.expectEqual(@as(?Outcome, null), blank.step(&st));
+    try std.testing.expectEqualStrings("", blank.name.text());
 }

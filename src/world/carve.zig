@@ -13,7 +13,6 @@ const NONE = std.math.maxInt(u16);
 const NO_CELL = std.math.maxInt(u32);
 /// A meander's bend changes by up to half this a step, in radians, at full wander.
 const MEANDER: f32 = 0.55;
-/// The most steps a meander takes.
 const MEANDER_STEPS: usize = 4 * (grid.W + grid.H);
 
 /// Smooth value noise in 0..1, summed over octaves; a seed is a field.
@@ -128,7 +127,6 @@ pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: 
     }
 }
 
-/// Only over the tiles `over` allows.
 pub fn disc(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime over: ?fn (grid.Tile) bool) void {
     discOf(lv, c, r, t, false, false, over);
 }
@@ -148,7 +146,6 @@ pub const Lane = enum {
     road,
 };
 
-/// `width` cells wide along a `Meander` from `a` to `b`.
 pub fn lane(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, t: grid.Tile, comptime how: Lane) void {
     std.debug.assert(width >= LANE_MIN);
     const r = @as(f32, @floatFromInt(width - 1)) / 2 + 0.5;
@@ -181,7 +178,6 @@ pub fn blob(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, sp
     blobIn(lv, noise, c, r, scale, lo, span, t, grid.Box.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span)))));
 }
 
-/// `blob`, cut to `within`.
 pub fn blobIn(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile, within: grid.Box) void {
     var cells = within.cells();
     while (cells.next()) |q| {
@@ -222,7 +218,6 @@ pub fn seal(lv: *grid.Level, t: grid.Tile) void {
 pub const Palette = struct {
     open: grid.Tile,
     solid: grid.Tile,
-    /// What a trail lays.
     path: grid.Tile,
     /// What fills a small doorless pocket; null gives every pocket a trail.
     pocket: ?grid.Tile = null,
@@ -232,12 +227,10 @@ pub const Palette = struct {
     pub const WILD = Palette{ .open = .grass, .solid = .shrub, .path = .grass };
     pub const TRAILED = Palette{ .open = .grass, .solid = .shrub, .path = .dirt };
 
-    /// Its trails laid in its own open ground.
     pub fn on(open: grid.Tile, solid: grid.Tile) Palette {
         return .{ .open = open, .solid = solid, .path = open };
     }
 
-    /// Its small doorless pockets filled with its solid.
     pub fn pocketed(p: Palette) Palette {
         var q = p;
         q.pocket = p.solid;
@@ -441,7 +434,6 @@ fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
     if (t.solid()) lv.set(p, paved(t, path));
 }
 
-/// What a way laid over `t` leaves: a bridge over a liquid or a bridge, else `put`.
 pub fn paved(t: grid.Tile, put: grid.Tile) grid.Tile {
     return if (t.liquid() or t == .bridge) .bridge else put;
 }
@@ -599,7 +591,6 @@ pub const Decor = struct {
     }
 };
 
-/// `p` with its litter and decor, where it has them, in range.
 pub fn fitDress(p: anytype) @TypeOf(p) {
     var q = p;
     if (@hasField(@TypeOf(p), "litter")) q.litter = p.litter.fit();
@@ -607,7 +598,6 @@ pub fn fitDress(p: anytype) @TypeOf(p) {
     return q;
 }
 
-/// Litter, then decor, for a base whose `Params` has them.
 pub fn dress(p: anytype, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
     if (@hasField(@TypeOf(p), "litter")) p.litter.strew(lv, rng);
     if (@hasField(@TypeOf(p), "decor")) p.decor.strew(lv, rng, seed);
@@ -617,7 +607,6 @@ fn strewn(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, put: grid.Tile) void
     scatter(lv, rng, per_mille, .{ .tile = put.ground().? }, put, put.solid());
 }
 
-/// The tile an enum of tiles names.
 pub fn tileOf(e: anytype) grid.Tile {
     return switch (e) {
         inline else => |t| @field(grid.Tile, @tagName(t)),

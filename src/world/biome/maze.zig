@@ -76,7 +76,6 @@ const Plan = struct {
         return self.mask[r * COLS_MAX + c];
     }
 
-    /// The slot at column `cr.x`, row `cr.y`; null off the plan.
     fn slot(self: *const Plan, cr: P) ?usize {
         if (cr.x < 0 or cr.y < 0 or cr.x >= self.cols or cr.y >= self.rows) return null;
         return @as(usize, @intCast(cr.y)) * COLS_MAX + @as(usize, @intCast(cr.x));

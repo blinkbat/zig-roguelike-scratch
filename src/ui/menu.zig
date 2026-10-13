@@ -161,7 +161,6 @@ pub fn capital(comptime s: [:0]const u8) [:0]const u8 {
     return &out;
 }
 
-/// An enum value's tag, `capital`ised: a row's label.
 pub fn named(e: anytype) [:0]const u8 {
     return switch (e) {
         inline else => |t| comptime capital(@tagName(t)),

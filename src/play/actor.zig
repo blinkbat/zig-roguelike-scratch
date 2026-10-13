@@ -248,7 +248,6 @@ pub const Pool = struct {
     }
 };
 
-/// A step `id` might take from `from`.
 const Step = struct {
     lv: *const grid.Level,
     from: P,

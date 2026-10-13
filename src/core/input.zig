@@ -264,8 +264,6 @@ fn types(k: rl.KeyboardKey) bool {
 pub const State = struct {
     pressed: std.EnumSet(Button) = .initEmpty(),
     down: std.EnumSet(Button) = .initEmpty(),
-    /// Set on the frame a button has been down `HOLD_S`, unless it was `spend`t.
-    long_held: std.EnumSet(Button) = .initEmpty(),
     down_s: std.EnumArray(Button, f32) = .initFill(0),
     device: Device = .pad,
     fullscreen: bool = false,
@@ -291,11 +289,12 @@ pub const State = struct {
         return self.down.contains(b);
     }
 
+    /// Down `HOLD_S` and not yet `spend`t: whatever takes it spends it.
     pub fn long(self: State, b: Button) bool {
-        return self.long_held.contains(b);
+        return self.down_s.get(b) >= HOLD_S;
     }
 
-    /// A press used for something else: holding it on reports no `long` until it is let go.
+    /// A press used: holding it on reports no `long` until it is let go.
     pub fn spend(self: *State, b: Button) void {
         self.down_s.set(b, SPENT);
     }
@@ -381,16 +380,9 @@ pub const State = struct {
     }
 
     fn time(self: *State, dt: f32) void {
-        self.long_held = .initEmpty();
         for (BUTTONS) |b| {
             const t = self.down_s.getPtr(b);
-            if (!self.down.contains(b)) {
-                t.* = 0;
-                continue;
-            }
-            const was = t.*;
-            t.* += dt;
-            if (was < HOLD_S and t.* >= HOLD_S) self.long_held.insert(b);
+            t.* = if (self.down.contains(b)) t.* + dt else 0;
         }
     }
 };
@@ -817,27 +809,19 @@ test "every direction walks on exactly one entry, and every bound key a name typ
     }
 }
 
-test "a held button reports long once at HOLD_S, and a spent one not until it is let go" {
+test "a held button reports long from HOLD_S until it is spent, and not again until it is let go" {
     const dt = mathx.FRAME_DT;
     var s = State{};
     s.down.insert(.view);
-    var fired: usize = 0;
-    var at: f32 = 0;
     var t: f32 = 0;
-    while (t < 1) {
+    while (!s.long(.view)) {
         t += dt;
         s.time(dt);
-        if (s.long(.view)) {
-            fired += 1;
-            at = t;
-        }
     }
-    std.debug.print("held a second: long once at {d:.3} s\n", .{at});
-    try std.testing.expectEqual(@as(usize, 1), fired);
-    try std.testing.expect(at >= HOLD_S and at - HOLD_S <= dt * 1.5);
-    s.down = .initEmpty();
-    s.time(dt);
-    s.down.insert(.view);
+    std.debug.print("held: long from {d:.3} s\n", .{t});
+    try std.testing.expect(t >= HOLD_S and t - HOLD_S <= dt * 1.5);
+    for (0..30) |_| s.time(dt);
+    try std.testing.expect(s.long(.view));
     s.spend(.view);
     for (0..120) |_| {
         s.time(dt);
@@ -846,12 +830,8 @@ test "a held button reports long once at HOLD_S, and a spent one not until it is
     s.down = .initEmpty();
     s.time(dt);
     s.down.insert(.view);
-    fired = 0;
-    for (0..60) |_| {
-        s.time(dt);
-        if (s.long(.view)) fired += 1;
-    }
-    try std.testing.expectEqual(@as(usize, 1), fired);
+    for (0..60) |_| s.time(dt);
+    try std.testing.expect(s.long(.view));
 }
 
 test "the last device pressed is the one named, and the keyboard when no pad is plugged in" {

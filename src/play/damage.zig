@@ -14,7 +14,6 @@ pub const Damage = struct {
         return @intCast(@min(sum, std.math.maxInt(i32)));
     }
 
-    /// Some of its `e` gets past `resists`.
     pub fn reaches(self: Damage, resists: Resists, e: Element) bool {
         return resisted(self.elements.get(e), resists.get(e)) > 0;
     }

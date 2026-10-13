@@ -8,6 +8,8 @@ const fx = @import("../gfx/fx.zig");
 pub const WIDTH: i32 = 744;
 pub const HEIGHT: i32 = 172;
 const BOTTOM: i32 = 12;
+/// How far up from the screen's foot the hud covers the world.
+pub const COVER: i32 = BOTTOM + HEIGHT;
 const ORB_R: i32 = 52;
 const FILL_R: i32 = 44;
 const FRAME = look.rgb(0x625a48);
@@ -31,7 +33,7 @@ pub const Layout = struct {
 
     pub fn of(screen: mathx.P, skills_w: i32) Layout {
         const left = @divTrunc(screen.x - WIDTH, 2);
-        const top = screen.y - BOTTOM - HEIGHT;
+        const top = screen.y - COVER;
         return .{
             .left = left,
             .top = top,

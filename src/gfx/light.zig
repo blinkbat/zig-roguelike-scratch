@@ -20,7 +20,6 @@ const TEXELS: usize = @intCast(MAP_W * MAP_H);
 /// The map is drawn with (DST_COLOR, SRC_COLOR) blending, so a texel stores half the light and reaches twice the art.
 const OVERBRIGHT: f32 = 2.0;
 
-/// Cells.
 pub const REACH: i32 = lume.TORCH_REACH;
 const REACH2: f32 = @floatFromInt(REACH * REACH);
 const SPAN: i32 = grid.Cells.span(REACH);
@@ -39,7 +38,6 @@ const FACE_GAIN: f32 = 1.25;
 const CEILING_CATCH: f32 = 0.2;
 const BODY_Z: f32 = 0.4;
 
-/// The archer's own light; `CARRY_R` is cells.
 const CARRY: Rgb = .{ 0.92, 0.88, 0.80 };
 /// A cell past what the archer's light lets it see, so its glow fades out on the edge of sight.
 const CARRY_R: f32 = @floatFromInt(actor.row(actor.HERO).light + 1);
@@ -246,7 +244,6 @@ fn faceCatch(cos: f32) f32 {
     return wrapped(cos, FACE_WRAP) * FACE_GAIN;
 }
 
-/// Worked out once per bake rather than per texel.
 const SunRay = struct {
     k: sky.Sky,
     flat: f32,
@@ -339,7 +336,6 @@ fn faceZ(fy: f32) f32 {
     return (1 - fy) / FACE_H * WALL_H;
 }
 
-/// Where height `z` up the face of the wall at row `top` is drawn.
 fn faceY(top: f32, z: f32) f32 {
     return top + 1 - z / WALL_H * FACE_H;
 }
@@ -365,7 +361,6 @@ const Torch = struct {
         return .{ mathx.centre(t.wall)[0], @as(f32, @floatFromInt(t.wall.y)) + 1 + STANDOFF, FLAME_Z };
     }
 
-    /// Where the flame is drawn: up its wall's foreshortened face.
     fn drawn(t: Torch) [2]f32 {
         return .{ mathx.centre(t.wall)[0], faceY(@floatFromInt(t.wall.y), FLAME_Z) };
     }
@@ -444,7 +439,7 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
     return mathx.bilerp(.{ texel(f, w, h, x0, y0), texel(f, w, h, x0 + 1, y0), texel(f, w, h, x0, y0 + 1), texel(f, w, h, x0 + 1, y0 + 1) }, u - fx, v - fy);
 }
 
-/// A point's own texel weighs a quarter at least in `bilinear`, so on wholly remembered open ground `open_sight` holds whole; toward a shrub clump's middle, where nothing open weighs, or ground still coming into memory, `sightAt` eases to `soft_sight`.
+/// A point's own texel weighs a quarter at least in `bilinear`, so on wholly remembered open ground `open_sight` holds whole.
 const OPEN_WHOLE: f32 = 4;
 
 /// A map-sized field at a point on the screen, cells.
@@ -452,7 +447,6 @@ fn sample(f: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
     return bilinear(f, grid.W, grid.H, x - 0.5, y - 0.5);
 }
 
-/// `occluded` over map-sized fields at a point on the screen, as `sample`.
 fn sampleOccluded(reach: *const [grid.CELLS]f32, open: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
     return occluded(reach, open, grid.W, grid.H, x - 0.5, y - 0.5);
 }
@@ -467,12 +461,10 @@ fn occluded(reach: []const f32, open: []const f32, w: i32, h: i32, u: f32, v: f3
     return bilinear(if (own) reach else open, w, h, u, v);
 }
 
-/// 1 where `on`, else 0: a mask to multiply by.
 fn mask(on: bool) f32 {
     return @floatFromInt(@intFromBool(on));
 }
 
-/// Blocks sight and stands over its whole cell, its ground never showing: a wall or rock, not a shrub or reeds.
 fn hidesGround(t: grid.Tile) bool {
     return t.blind() and t.upright() and !look.stands(t);
 }
@@ -902,7 +894,6 @@ pub const Light = struct {
         return .{ .lo = lo.sub(.{ .x = 1, .y = 1 }), .hi = hi.add(.{ .x = 2, .y = 2 }) };
     }
 
-    /// Of the cells from `x0, y0` up to `x1, y1`, clipped to the map, how many cast.
     fn castersIn(self: *const Light, x0: i32, y0: i32, x1: i32, y1: i32) u16 {
         const w = CAST_W;
         const a: usize = @intCast(std.math.clamp(x0, 0, grid.W));

@@ -29,25 +29,20 @@ pub const Tile = enum(u8) {
     dirt,
     sand,
     snow,
-    /// Deep: no step crosses it, but sight and an arrow do.
     water,
     shallows,
     bridge,
-    /// Tall: a step goes in, sight does not go through.
     reeds,
     rubble,
     fence,
     lava,
     fungus,
-    /// A drop no step crosses; sight and an arrow go over.
     chasm,
     ice,
     grave,
-    /// Tall wheat: a step goes in, sight does not go through.
     crop,
     tiny_shrub,
     boulder,
-    /// Decor: a step goes in, sight and an arrow go through.
     tall_grass,
     shrooms,
 
@@ -69,7 +64,6 @@ pub const Tile = enum(u8) {
         return TERRAIN.get(t).liquid;
     }
 
-    /// Blocks a step and stands up off the ground, as a liquid does not.
     pub fn upright(t: Tile) bool {
         return t.solid() and !t.liquid();
     }
@@ -114,7 +108,6 @@ pub const Tile = enum(u8) {
 /// Floor with a barrel on it.
 pub const BARREL_LETTER = '0';
 
-/// The tile under a letter of `Tile.letter`'s legend or `BARREL_LETTER`.
 pub fn groundOf(c: u8) ?Tile {
     return if (c == BARREL_LETTER) .floor else Tile.ofLetter(c);
 }
@@ -198,7 +191,6 @@ pub const WallShape = packed struct(u8) {
     }
 };
 
-/// Walls a torch hangs on, each once.
 pub const Torches = struct {
     at: [MAX_TORCHES]P = undefined,
     n: usize = 0,
@@ -214,7 +206,6 @@ pub const Torches = struct {
         return null;
     }
 
-    /// False when full or already hung there.
     pub fn add(self: *Torches, p: P) bool {
         if (self.n == MAX_TORCHES or self.find(p) != null) return false;
         self.at[self.n] = p;
@@ -222,7 +213,6 @@ pub const Torches = struct {
         return true;
     }
 
-    /// False when none hangs there.
     pub fn remove(self: *Torches, p: P) bool {
         const i = self.find(p) orelse return false;
         self.n -= 1;
@@ -230,7 +220,6 @@ pub const Torches = struct {
         return true;
     }
 
-    /// Those `fits` keeps, in order.
     pub fn keep(self: *Torches, ctx: anytype, comptime fits: fn (@TypeOf(ctx), P) bool) void {
         var kept: usize = 0;
         for (self.slice()) |t| {
@@ -258,7 +247,6 @@ pub const Level = struct {
     door: [CELLS]u8,
     /// Caustic gas, Brogue's volume.
     gas: [CELLS]u16,
-    /// Walls with a torch on their face.
     torch: Torches,
 
     pub fn blank() Level {
@@ -297,7 +285,6 @@ pub const Level = struct {
         return p.x >= 0 and p.y >= 0 and p.x < W and p.y < H;
     }
 
-    /// The nearest cell on the map.
     pub fn clamp(p: P) P {
         return .{ .x = std.math.clamp(p.x, 0, W - 1), .y = std.math.clamp(p.y, 0, H - 1) };
     }
@@ -497,7 +484,6 @@ pub const Box = struct {
         return .{ .lo = .{ .x = m, .y = m }, .hi = .{ .x = W - m, .y = H - m } };
     }
 
-    /// `w` by `h` in the middle of the map.
     pub fn centred(w: i32, h: i32) Box {
         return inMap(0).centredIn(w, h);
     }
@@ -541,12 +527,10 @@ pub const Box = struct {
         return b.shrunk(1);
     }
 
-    /// `by` cells in each way.
     pub fn shrunk(b: Box, by: i32) Box {
         return .{ .lo = b.lo.add(.{ .x = by, .y = by }), .hi = b.hi.sub(.{ .x = by, .y = by }) };
     }
 
-    /// `by` cells out each way, kept on the map.
     pub fn grown(b: Box, by: i32) Box {
         return .{
             .lo = .{ .x = @max(0, b.lo.x - by), .y = @max(0, b.lo.y - by) },
@@ -554,7 +538,6 @@ pub const Box = struct {
         };
     }
 
-    /// Whether `b` comes within `pad` cells of `o`.
     pub fn overlaps(b: Box, o: Box, pad: i32) bool {
         return b.lo.x - pad < o.hi.x and b.hi.x + pad > o.lo.x and b.lo.y - pad < o.hi.y and b.hi.y + pad > o.lo.y;
     }

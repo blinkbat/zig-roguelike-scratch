@@ -9,7 +9,7 @@ A blow that leaves a slime alive under half its hp splits it (`Pool.split`, `Row
 one that leaves either half under half its own splits that half into two quarters, so a slime ends as four; each is
 on half what it split from had left (at least 1), the new one on a free cell beside it and acting from the next turn;
 with no free cell it splits on a later blow. A slime's splits are of its `Kind.family` and count
-as slimes. The hero also has mana for Juke, shown beside HP in the HUD.
+as slimes. The hero also has mana for Juke, its orb opposite life's in the HUD.
 
 Prefer no comments in code. Don't make product/design decisions — ask. Don't commit, push or branch unless asked.
 
@@ -133,7 +133,7 @@ for the change asked for.
   The bleed shows as drops on the body, a drip and stain each tick, and the hero's statuses (bleeding, burning,
   chilled, with turns left) appear as icons above the skill strip.
 - **THE LAYOUT READS `Game.screen`, NEVER A WINDOW CONSTANT**, because fullscreen changes it at runtime.
-- **THE HUD (`ui/hud.zig`) FOLLOWS `docs/HUD_LAYOUT.md`**: one 744-pixel assembly centered at the bottom, with filled life and mana orbs around the skill strip, live input captions, cooldowns and active ailments. The world fills the viewport behind it; the minimap stays at the top right. No live hero-name label, enemy/gold counters, log strip or permanent control instructions. `shot.cmd` captures full, partial, critical and empty orbs, both devices, secondary skills and the bind overlay across 720p, 900p and 1080p (`shots/hud-*.png`).
+- **THE HUD (`ui/hud.zig`) FOLLOWS `docs/HUD_LAYOUT.md`**: one 744-pixel assembly centered at the bottom, with filled life and mana orbs around the skill strip, live input captions, cooldowns and active ailments. The world fills the viewport behind it, the camera scrolling past the floor's foot by `hud.COVER` so the bottom rows clear it; the minimap stays at the top right. No live hero-name label, enemy/gold counters, log strip or permanent control instructions. `shot.cmd` captures full, partial, critical and empty orbs, both devices, secondary skills and the bind overlay across 720p, 900p and 1080p (`shots/hud-*.png`).
 - **`gfx/look.zig` IS EVERY PICTURE.** A thing with a texture in `Sprites` draws it; the rest draw their glyph.
   Ability slots use monochrome line placeholders through `look.drawSkill`, shared by the HUD and bind picker.
   `skillbar.Act.cost` supplies mana checks, spending and slot dimming; ability descriptions use their mechanic constants.
@@ -266,7 +266,7 @@ for the change asked for.
   archer's step, kick or arrow, then each foe in sight, or stepping out of it, a `STAGGER_S` behind the one before, the
   first a `STAGGER_S` after the kick or arrow lands (`Game.lead`); a foe is drawn turning at its place. A body a blow
   kills, or a barrel, stands until the blow lands, its flash is gone and its last step is drawn. A body as drawn
-  (`Game.pictured`: its kind, and its hp in bars, hud and vignette) takes each blow on it as that blow lands
+  (`Game.pictured`: its kind, and its hp in the life orb and vignette) takes each blow on it as that blow lands
   (`fx.After`, in the order they were dealt), and a slime split off one is drawn from when the blow that split it
   lands, sliding out of it. Each frame moves on what earlier frames set going before it deals anything new. A
   turn takes as long as its slowest glide, arrow or flash (`Game.busy`); a walk due before then waits for it, the latest

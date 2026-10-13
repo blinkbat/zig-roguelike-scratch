@@ -521,7 +521,6 @@ pub const Editor = struct {
         ed.drag = null;
     }
 
-    /// `drop`, and the link half made.
     fn release(ed: *Editor) void {
         ed.drop();
         ed.pick = null;
@@ -601,7 +600,6 @@ pub const Editor = struct {
         };
     }
 
-    /// The node's generator, when the Generator tab is the one showing.
     fn generator(ed: *Editor) ?*atlas.Procgen {
         return if (ed.lower == .generator) ed.rolled() else null;
     }
@@ -1186,7 +1184,6 @@ fn buttonOn(ed: *Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on
     return h.hit;
 }
 
-/// Pixels for text in `r`, a `GAP` in from each side.
 fn insetW(r: rl.Rectangle) i32 {
     return @as(i32, @intFromFloat(r.width)) - 2 * GAP;
 }
@@ -2072,7 +2069,6 @@ fn sprite(t: rl.Texture2D, r: rl.Rectangle) void {
     look.stretch(t, r, look.LIT);
 }
 
-/// Its sprite where it has one, else its glyph, as `game.drawFigure` draws it.
 fn figure(ed: *const Editor, g: *game.Game, tex: ?rl.Texture2D, l: look.Look, r: rl.Rectangle) void {
     if (tex) |t| sprite(t, r) else glyph(ed, g, l.ch, r, l.fg);
 }

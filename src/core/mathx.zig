@@ -62,7 +62,6 @@ pub fn centre(p: P) [2]f32 {
     return .{ @as(f32, @floatFromInt(p.x)) + 0.5, @as(f32, @floatFromInt(p.y)) + 0.5 };
 }
 
-/// The cell a point measured in cells lies in.
 pub fn cellOf(q: [2]f32) P {
     return .{ .x = @intFromFloat(@floor(q[0])), .y = @intFromFloat(@floor(q[1])) };
 }

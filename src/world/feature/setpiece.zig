@@ -136,7 +136,6 @@ pub fn size(art: []const []const u8) P {
     return .{ .x = @intCast(art[0].len), .y = @intCast(art.len) };
 }
 
-/// Where `art` centred on `mid` has its top left.
 pub fn cornerFor(mid: P, art: []const []const u8) P {
     const s = size(art);
     return mid.sub(.{ .x = @divTrunc(s.x, 2), .y = @divTrunc(s.y, 2) });

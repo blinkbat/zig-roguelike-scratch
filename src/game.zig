@@ -40,7 +40,6 @@ const CELL: i32 = 64;
 const CELL_F: f32 = @floatFromInt(CELL);
 const HALF_CELL: i32 = @divTrunc(CELL, 2);
 
-/// `px` at the sprites' authored size, at `CELL`.
 fn authored(comptime px: i32) i32 {
     return @divExact(CELL * px, look.SPRITE_PX);
 }
@@ -216,7 +215,6 @@ pub const Shot = struct {
     }
 };
 
-/// Seconds from the loose until the arrow is at the `n`th cell of its flight.
 fn flown(n: usize) f32 {
     return @as(f32, @floatFromInt(n)) * FLIGHT_S;
 }
@@ -758,7 +756,6 @@ fn blocked(g: *const Game, act: skillbar.Act) ?Blocked {
     return null;
 }
 
-/// Quiet, cooled down and with the mana for it; said when it is not.
 fn ready(g: *Game, act: skillbar.Act) bool {
     if (!quiet(g)) return false;
     switch (blocked(g, act) orelse return true) {
@@ -961,7 +958,6 @@ fn rollArrow(rng: *mathx.Rng, comptime act: skillbar.Act, body: bool) damage.Dam
     return hit;
 }
 
-/// `blow` on the body, the arrow's element afflicting it on the element's chance.
 fn elementHit(g: *Game, id: u16, blow: damage.Damage, comptime act: skillbar.Act, s: Stroke) void {
     const arrow = arrowOf(act);
     const el = arrow.ELEMENT;
@@ -995,7 +991,6 @@ fn elementOf(act: skillbar.Act) ?damage.Element {
     };
 }
 
-/// The arrow bursts in a cone where it strikes, as the reticle previews.
 fn cones(act: skillbar.Act) bool {
     return switch (act) {
         .glacial_shot => true,
@@ -1082,7 +1077,6 @@ fn wound(g: *Game, id: u16, dmg: i32, comptime verb: []const u8, s: Stroke) void
     if (lethal) fell(g, kind, at);
 }
 
-/// The body as a blow left it, a slime it left under half its hp split.
 fn afterBlow(g: *Game, id: u16, lethal: bool) fx.After {
     const other = if (lethal) null else split(g, id);
     return .{ .body = snap(g, actor.Pool.slot(id)), .reveals = other };
@@ -1116,7 +1110,6 @@ fn fell(g: *Game, kind: actor.Kind, at: P) void {
     scare(g, at);
 }
 
-/// A foe that flees and sees a death within its fright's reach runs, refreshed by each one.
 fn scare(g: *Game, at: P) void {
     for (g.pool.slice()) |*a| {
         const row = actor.row(a.kind);
@@ -1183,7 +1176,6 @@ fn hurt(g: *Game, id: u16, dmg: i32) Hurt {
     return .{ .dmg = taken, .lethal = g.pool.damage(&g.lv, id, taken) };
 }
 
-/// What eats at a body once it has acted: the gas, then its burn, then its bleed.
 fn harmAfter(g: *Game, id: u16, moved: bool) void {
     gasHarm(g, id);
     burnHarm(g, id);
@@ -1315,7 +1307,6 @@ fn foeWay(g: *Game, at: P, id: u16, hero: P) ?mathx.Dir {
     return besideWay(g, at, hero) orelse actor.chase(&g.lv, at, id, flowTo(g, hero));
 }
 
-/// The step onto `hero` when it stands beside `at`, no corner cut.
 fn besideWay(g: *const Game, at: P, hero: P) ?mathx.Dir {
     const d = mathx.dirTo(at, hero) orelse return null;
     return if (g.lv.passOk(at, d)) d else null;
@@ -1394,7 +1385,7 @@ fn camWant(g: *Game) rl.Vector2 {
     const half: f32 = @floatFromInt(HALF_CELL);
     return .{
         .x = camAxis(at.x + half, @floatFromInt(g.screen.x), @floatFromInt(grid.W * CELL)),
-        .y = camAxis(at.y + half, @floatFromInt(g.viewH()), @floatFromInt(grid.H * CELL)),
+        .y = camAxis(at.y + half, @floatFromInt(g.viewH()), @floatFromInt(grid.H * CELL + hud.COVER)),
     };
 }
 
@@ -1522,6 +1513,7 @@ pub fn update(g: *Game, dt: f32) void {
                 if (g.st.walk) |d| g.pending = d;
                 if (quiet(g)) goThrough(g, l);
             } else if (g.st.long(BINDS)) {
+                g.st.spend(BINDS);
                 g.pending = null;
                 openBinds(g);
             } else if (usedSkill(g)) |u| {
@@ -2091,8 +2083,18 @@ fn drawSlot(g: *Game, x: i32, y: i32, s: SlotLook) void {
     g.face.draw(k, g.face.leftFor(k, x + SLOT_MID, SLOT_TEXT), y + SLOT_PX + KEY_GAP, SLOT_TEXT, look.fade(look.DIM, a));
 }
 
+/// While aiming, the set the reticle's skill was taken from, whatever is held now.
+fn shownSet(g: *const Game) skillbar.Set {
+    const held = g.bar.active(g.st.down);
+    if (g.mode != .aim) return held;
+    for (skillbar.SETS) |s| {
+        if (g.bar.at(.{ .set = s, .button = g.aim_by }) == g.aim_act) return s;
+    }
+    return held;
+}
+
 fn drawSkills(g: *Game, top: i32) void {
-    const set = g.bar.active(g.st.down);
+    const set = shownSet(g);
     const x0 = skillsX(g);
     for (skillbar.SLOTS, SLOT_XS) |b, dx| {
         const held = (g.st.held(b) and g.mode == .play) or (g.mode == .aim and g.aim_by == b);
@@ -2252,6 +2254,7 @@ pub fn frame(g: *Game) void {
     g.st.update(dt);
     syncScreen(g, g.st.fullscreen);
     update(g, dt);
+    g.st.modifier = g.bar.modifier;
     rl.beginDrawing();
     drawFrame(g);
     rl.endDrawing();
@@ -2427,7 +2430,7 @@ fn shootHud(g: *Game) !void {
         g.screen = study.screen;
         poseForest(g);
         g.bar = .{};
-        g.st = .{ .device = study.device };
+        g.st = .{ .device = study.device, .modifier = g.bar.modifier };
         const body = &g.pictured[heroSlot(g).?];
         body.hp = @divTrunc(body.max * study.hp, 100);
         g.mana = study.mana;
@@ -2455,7 +2458,6 @@ fn shootHud(g: *Game) !void {
     std.debug.print("HUD: {d} resource states, 3 resolutions, both caption devices, secondary set and bind picker captured\n", .{studies.len});
 }
 
-/// DEV ONLY: the button the default bar binds `act` to.
 fn boundTo(g: *const Game, act: skillbar.Act) input.Button {
     return g.bar.buttonOf(.primary, act).?;
 }
@@ -2463,14 +2465,12 @@ fn boundTo(g: *const Game, act: skillbar.Act) input.Button {
 const POSE_BURST = P{ .x = 25, .y = 15 };
 const POSE_GAS_TURNS: usize = 3;
 
-/// DEV ONLY: the bind screen's picker open on the slot under `button`.
 fn posePicker(g: *Game, button: input.Button) void {
     openBinds(g);
     g.binds.col = Binds.colOf(button);
     g.binds.menu = .{ .pick = pickOf(g.bar.at(g.binds.slot())) };
 }
 
-/// DEV ONLY: wall from `x0` to `x1` along row `y`.
 fn wallRow(lv: *grid.Level, y: i32, x0: i32, x1: i32) void {
     var x = x0;
     while (x <= x1) : (x += 1) lv.set(.{ .x = x, .y = y }, .wall);
@@ -2662,7 +2662,6 @@ const SHOT_HOURS = [_]struct { hour: f32, path: [:0]const u8 }{
     .{ .hour = SHOT_NIGHT, .path = SHOTS_DIR ++ "/night.png" },
 };
 
-/// DEV ONLY.
 fn overviews(g: *Game, w: *atlas.Atlas) !void {
     const target = try rl.loadRenderTexture(grid.W * OVERVIEW_CELL, grid.H * OVERVIEW_CELL);
     defer rl.unloadRenderTexture(target);
@@ -2833,7 +2832,6 @@ fn wakeFoes(g: *Game) void {
 
 const TRIES: usize = 300;
 
-/// Within 8 points of `rate` over `TRIES`.
 fn aboutRate(hits: usize, rate: f32) bool {
     const got = @as(f32, @floatFromInt(hits)) / @as(f32, @floatFromInt(TRIES));
     return @abs(got - rate) < 0.08;
@@ -2885,7 +2883,6 @@ fn drawn(g: *Game, slot: usize) bool {
     return !gone(g, slot);
 }
 
-/// Enough to outlast any test's blows.
 const TEST_HP: i32 = 100;
 
 fn toughen(a: *actor.Actor) void {
@@ -2893,7 +2890,6 @@ fn toughen(a: *actor.Actor) void {
     a.max = TEST_HP;
 }
 
-/// Gas thick enough to sting for many turns.
 const TEST_GAS = 100;
 const SLIME_HALF = actor.row(.slime_half).hp;
 
@@ -2931,7 +2927,7 @@ fn holdLong(g: *Game, a: input.Button) void {
     calm(g);
     g.st = .{};
     g.st.down.insert(a);
-    g.st.long_held.insert(a);
+    g.st.down_s.set(a, input.HOLD_S);
     update(g, 0);
 }
 
@@ -3651,12 +3647,12 @@ test "X aims at a barrel when no rat is in reach, and the arrow breaks it" {
     try std.testing.expect(g.gold >= GOLD_LO);
 }
 
-test "the camera never shows past the edge of the floor, and centres it on a screen bigger than it" {
+test "the camera shows past the floor only under the hud, keeps the archer clear of it, and centres a small floor" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     begin(g, 4321);
     const world_w = @as(f32, @floatFromInt(grid.W)) * CELL_F;
-    const world_h = @as(f32, @floatFromInt(grid.H)) * CELL_F;
+    const world_h = @as(f32, @floatFromInt(grid.H)) * CELL_F + @as(f32, @floatFromInt(hud.COVER));
     for ([_]P{ .{ .x = WINDOW_W, .y = WINDOW_H }, .{ .x = 2560, .y = 1440 } }) |screen| {
         g.screen = screen;
         for ([_]P{ .{ .x = 0, .y = 0 }, .{ .x = grid.W - 1, .y = grid.H - 1 }, .{ .x = 48, .y = 32 } }) |p| {
@@ -3666,9 +3662,12 @@ test "the camera never shows past the edge of the floor, and centres it on a scr
             try std.testing.expect(v.x >= 0 and v.y >= 0);
             try std.testing.expect(v.x + @as(f32, @floatFromInt(screen.x)) <= world_w);
             try std.testing.expect(v.y + @as(f32, @floatFromInt(g.viewH())) <= world_h);
+            const foot = @as(f32, @floatFromInt((p.y + 1) * CELL)) - v.y;
+            if (p.y == grid.H - 1) std.debug.print("{d}x{d}: bottom-row archer's foot at {d:.0}, hud top {d}\n", .{ screen.x, screen.y, foot, hud.Layout.of(screen, SKILLS_W).top });
+            try std.testing.expect(foot <= @as(f32, @floatFromInt(hud.Layout.of(screen, SKILLS_W).top)));
         }
     }
-    g.screen = .{ .x = grid.W * CELL + 200, .y = grid.H * CELL + 100 };
+    g.screen = .{ .x = grid.W * CELL + 200, .y = grid.H * CELL + hud.COVER + 100 };
     const v = camWant(g);
     try std.testing.expectEqual((world_w - @as(f32, @floatFromInt(g.screen.x))) * 0.5, v.x);
     try std.testing.expectEqual((world_h - @as(f32, @floatFromInt(g.viewH()))) * 0.5, v.y);

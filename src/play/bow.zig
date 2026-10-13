@@ -21,7 +21,6 @@ pub const Flight = struct {
     len: usize = 0,
     struck: ?Hit = null,
 
-    /// The cell of what it struck.
     pub fn impact(f: *const Flight) ?P {
         if (f.struck == null) return null;
         return f.path[f.len - 1];

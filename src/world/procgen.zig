@@ -211,7 +211,6 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     settle(lv);
 }
 
-/// A base's shape on a blank map, dressed.
 fn lay(comptime base: type, lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: anytype) void {
     lv.* = grid.Level.blank();
     base.shape(lv, rng, seed, p);
@@ -549,7 +548,6 @@ test "a house or set piece is raised clear of what an earlier feature laid" {
     }
 }
 
-/// Some cell of `cells` is solid now.
 fn filled(lv: *const grid.Level, cells: *const std.StaticBitSet(grid.CELLS)) bool {
     var it = cells.iterator(.{});
     while (it.next()) |k| {

@@ -19,7 +19,6 @@ pub const Look = struct {
 
 pub const Bodies = std.EnumArray(actor.Kind, ?rl.Texture2D);
 
-/// How a standing tile casts: its silhouette, as a body does, or a tree's canopy pool.
 pub const Shadow = enum { silhouette, canopy };
 
 const STANDS = std.EnumArray(grid.Tile, ?Shadow).initDefault(@as(?Shadow, null), .{
@@ -107,7 +106,9 @@ pub const Sprites = struct {
         }
         if (t == .shrub) {
             if (shape) |s| {
-                if (s.mask() != 0) return self.forest[WALL_CELL[s.mask()]] orelse self.tiles.get(.shrub);
+                const m = s.mask();
+                const i = WALL_CELL[m];
+                if (m != 0) return self.forest[i] orelse self.tiles.get(.shrub);
             }
         }
         return self.tiles.getPtrConst(t).*;
@@ -214,7 +215,6 @@ pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
     rl.drawTexturePro(t, whole(t), dest, .{ .x = 0, .y = 0 }, 0, tint);
 }
 
-/// Stretched over the whole floor, its top-left corner at `ox, oy`.
 pub fn overFloor(t: rl.Texture2D, ox: i32, oy: i32, cell: i32) void {
     stretch(t, rect(ox, oy, grid.W * cell, grid.H * cell), LIT);
 }
@@ -312,7 +312,6 @@ fn unloadEach(held: []?rl.Texture2D) void {
     }
 }
 
-/// Each texture, render texture and shader `v` holds, a `program`'s too, unloaded and nulled.
 pub fn unloadAll(v: anytype) void {
     inline for (std.meta.fields(@TypeOf(v.*))) |f| {
         if (comptime @typeInfo(f.type) == .@"struct" and @hasField(f.type, "values") and @hasDecl(f.type, "Key")) {
@@ -362,9 +361,6 @@ pub const UNROLLED = rgb(0x1b2330);
 pub const TEXT = rgb(0xd8cdb4);
 pub const DIM = rgb(0x8c8672);
 pub const LIFE = rgb(0x9c2f2a);
-pub const LIFE_BG = fade(LIFE, 0.25);
-pub const MANA = rgb(0x326cb5);
-pub const MANA_BG = fade(MANA, 0.25);
 pub const FIRE = rgb(0xff8a32);
 pub const FIRE_CORE = rgb(0xffe6a0);
 pub const BLEED = rgb(0xd8483a);
@@ -439,7 +435,6 @@ pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
-pub const COIN = GOLD;
 
 /// What a picture of the whole map marks a cell with over its tile, a door before a barrel.
 pub const Mark = enum {
@@ -603,7 +598,6 @@ pub fn drawSkill(sprites: *const Sprites, a: skillbar.Act, x: i32, y: i32, alpha
     rl.drawTexturePro(t, rect(skillX(a), 0, SKILL_PX, SKILL_PX), rect(x, y, SKILL_PX, SKILL_PX), .{ .x = 0, .y = 0 }, 0, ink);
 }
 
-/// Its cell's left edge in `Sprites.skills`.
 fn skillX(a: skillbar.Act) i32 {
     return @as(i32, @intCast(a.index())) * SKILL_PX;
 }

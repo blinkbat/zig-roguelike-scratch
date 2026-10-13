@@ -95,7 +95,6 @@ pub const Lots = struct {
     }
 };
 
-/// The doorway's cell gets `inside`, and the cell outside it `outside` where that is solid.
 pub fn openWay(lv: *grid.Level, way: [2]P, inside: grid.Tile, outside: grid.Tile) void {
     lv.set(way[0], inside);
     if (lv.at(way[1]).solid()) lv.set(way[1], outside);
@@ -151,12 +150,10 @@ fn dry(lv: *const grid.Level, way: [2]P) bool {
     return !lv.at(way[1]).liquid();
 }
 
-/// A side `len` long has room for a cut with `least` on each side of it.
 pub fn cuttable(len: i32, least: i32) bool {
     return len >= 2 * least + 1;
 }
 
-/// A cut across `lo` up to `hi`, `least` in from either end.
 pub fn cutAt(rng: *mathx.Rng, lo: i32, hi: i32, least: i32) i32 {
     return rng.range(lo + least, hi - least - 1);
 }

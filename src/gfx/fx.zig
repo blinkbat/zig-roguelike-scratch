@@ -318,7 +318,6 @@ pub const Fx = struct {
         return self.flash[slot] > 0 or self.pending(slot);
     }
 
-    /// A blow is still to land on the barrel at `p`.
     pub fn breaking(self: *const Fx, p: mathx.P) bool {
         if (self.barrels_due == 0) return false;
         for (self.due[0..self.due_n]) |d| {

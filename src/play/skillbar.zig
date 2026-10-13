@@ -51,7 +51,6 @@ pub const Act = enum {
 
     pub const Reticle = enum { bow, leap };
 
-    /// What it aims with, if it aims.
     pub fn reticle(a: Act) ?Reticle {
         return switch (a) {
             .shoot, .burning_arrow, .glacial_shot => .bow,
@@ -77,7 +76,6 @@ pub const Act = enum {
         };
     }
 
-    /// Its place in `ACTS`.
     pub fn index(a: Act) usize {
         return std.enums.EnumIndexer(Act).indexOf(a);
     }
