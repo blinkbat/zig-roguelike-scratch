@@ -64,7 +64,7 @@ for i,mask in ipairs(masks) do
   atlas:drawImage(tile,Point(x,y))
   if i>1 then sheet:drawImage(tile,Point(x,y+64)) end
 end
-local backup=backups..'forest-tree-walls.'..os.date('%Y%m%d-%H%M%S')..'.aseprite'
+local backup=(app.params.install=='yes' and backups or work)..'forest-tree-walls.'..os.date('%Y%m%d-%H%M%S')..'.aseprite'
 sprite:saveCopyAs(backup)
 local extension=sprite:newLayer()
 extension.name='Forest extensions'

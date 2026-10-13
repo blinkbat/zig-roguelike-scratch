@@ -100,9 +100,6 @@ const App = struct {
         app.page = p;
     }
 
-    fn toClass(app: *App) void {
-        app.goPage(.class);
-    }
 
     fn fromClass(app: *App) void {
         if (app.generated()) return app.toTitle();
@@ -164,6 +161,7 @@ const App = struct {
     fn playTest(app: *App, from: atlas.Start) void {
         game.beginWorldAt(app.g, app.ed.?.world, from, game.freshSeed());
         app.leaveRun();
+        app.g.st.device = .keys;
         app.play(.editor, hero.DEFAULT.unnamed());
     }
 
@@ -261,8 +259,11 @@ const App = struct {
         const back = menu.backed(&g.st);
         switch (app.page) {
             .main => {
-                var rows: [MAIN_ROWS.len][:0]const u8 = undefined;
-                for (MAIN_ROWS, &rows) |r, *l| l.* = r.label();
+                const rows = comptime blk: {
+                    var ls: [MAIN_ROWS.len][:0]const u8 = undefined;
+                    for (MAIN_ROWS, &ls) |r, *l| l.* = r.label();
+                    break :blk ls;
+                };
                 const picked = app.title.step(&g.st, MAIN_ROWS.len);
                 menu.draw(g.face, g.screen, g.st.device, comptime menu.caps(NAME), &rows, app.title.at, note, null);
                 switch (MAIN_ROWS[picked orelse return true]) {
@@ -292,7 +293,7 @@ const App = struct {
                 menu.draw(g.face, g.screen, g.st.device, "CHOOSE A WORLD", rows[0..n], app.worlds.at, app.listing.at(app.worlds.at), menu.BACK_LABEL);
                 if (back) {
                     app.toTitle();
-                } else if (picked) |_| app.toClass();
+                } else if (picked) |_| app.goPage(.class);
             },
             .class => {
                 var rows: [hero.CLASSES.len][:0]const u8 = undefined;
@@ -304,7 +305,7 @@ const App = struct {
                 } else if (picked) |i| {
                     app.class = hero.CLASSES[i];
                     app.entry = .{};
-                    app.page = .name;
+                    app.goPage(.name);
                 }
             },
             .name => {
@@ -313,7 +314,7 @@ const App = struct {
                 const outcome = app.entry.step(&g.st);
                 naming.draw(&app.entry, g.face, g.screen, g.st.device, title);
                 switch (outcome orelse return true) {
-                    .back => app.page = .class,
+                    .back => app.goPage(.class),
                     .done => app.newRun(app.entry.name.done()),
                 }
             },
@@ -362,7 +363,7 @@ const App = struct {
                     app.toTitle();
                 } else if (picked) |i| switch (OPTION_ROWS[i]) {
                     .fullscreen => game.syncScreen(g, true),
-                    .debug => app.page = .debug,
+                    .debug => app.goPage(.debug),
                 };
             },
             .debug => {
@@ -373,7 +374,7 @@ const App = struct {
                 const picked = app.debugs.step(&g.st, rows.len);
                 menu.draw(g.face, g.screen, g.st.device, comptime menu.caps(OptionRow.debug.label()), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note(), menu.BACK_LABEL);
                 if (back) {
-                    app.page = .options;
+                    app.goPage(.options);
                 } else if (picked) |i| switch (DEBUG_ROWS[i]) {
                     .unkillable => g.unkillable = !g.unkillable,
                 };

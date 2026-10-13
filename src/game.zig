@@ -126,7 +126,6 @@ const PACE_SLACK: f32 = 1e-4;
 const SLIDE_BACK: f32 = 1.165;
 /// `gen.build` rolls from the bare seed; without the salt the packs replay the floor's rolls.
 const PLAY_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
-const LINE_BUF: usize = 128;
 
 const CONFIRM = menu.CONFIRM;
 const BACK = menu.BACK;
@@ -137,7 +136,8 @@ const BINDS = skillbar.BINDS;
 comptime {
     std.debug.assert(@mod(CELL, look.SPRITE_PX) == 0);
     std.debug.assert(GLYPH <= CELL);
-    std.debug.assert(SKILLS_W + 2 * 144 <= hud.WIDTH);
+    std.debug.assert(SKILLS_W <= hud.SKILLS_MAX_W);
+    std.debug.assert(hud.PLATE_PAD + SLOT_PX + KEY_GAP + SLOT_TEXT <= hud.PLATE_H);
 }
 
 pub const Mode = enum { play, aim, bind, dead, pause };
@@ -182,7 +182,6 @@ fn pickAct(i: usize) ?skillbar.Act {
 
 pub const Log = struct {
     pub const LINES: usize = 32;
-    pub const SHOWN: usize = 4;
     pub const COLS: usize = 96;
     lines: [LINES]menu.Note(COLS - 1) = @splat(.{}),
     head: usize = 0,
@@ -417,6 +416,7 @@ pub const Game = struct {
     binds: Binds = .{},
     aim_by: input.Button = .x,
     aim_act: skillbar.Act = .shoot,
+    aim_set: skillbar.Set = .primary,
     mark: P = .{ .x = 0, .y = 0 },
     /// World pixels, eased toward the archer. Nothing in the simulation reads it.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
@@ -463,10 +463,6 @@ pub const Game = struct {
 
     pub fn archer(self: *Game) ?*actor.Actor {
         return self.pool.get(self.hero);
-    }
-
-    pub fn viewH(self: *const Game) i32 {
-        return self.screen.y;
     }
 };
 
@@ -646,9 +642,9 @@ fn settle(g: *Game) void {
 }
 
 pub fn resumeRun(g: *Game) void {
-    gen.restoreForestShapes(&g.lv);
+    gen.restoreShapes(&g.lv);
     var visits = g.visited.iterator(.{});
-    while (visits.next()) |n| gen.restoreForestShapes(&g.visits[n].lv);
+    while (visits.next()) |n| gen.restoreShapes(&g.visits[n].lv);
     g.mode = .play;
     g.exit = null;
     g.unsaved = false;
@@ -797,7 +793,7 @@ fn leap(g: *Game, from: P) void {
     castSight(g, to);
 }
 
-const Use = struct { act: skillbar.Act, by: input.Button };
+const Use = struct { act: skillbar.Act, by: input.Button, set: skillbar.Set = .primary };
 
 /// Since PoE2 0.2.0, pressing the modifier while a button is already held fires that button's secondary skill.
 fn usedSkill(g: *Game) ?Use {
@@ -817,7 +813,7 @@ fn usedSkill(g: *Game) ?Use {
 
 fn skillOn(g: *const Game, set: skillbar.Set, b: input.Button) ?Use {
     const a = g.bar.at(.{ .set = set, .button = b }) orelse return null;
-    return if (a == .secondary) null else .{ .act = a, .by = b };
+    return if (a == .secondary) null else .{ .act = a, .by = b, .set = set };
 }
 
 fn useSkill(g: *Game, u: Use) void {
@@ -828,6 +824,7 @@ fn useSkill(g: *Game, u: Use) void {
         .shoot, .burning_arrow, .glacial_shot, .juke => unreachable,
     };
     if (!ready(g, u.act)) return;
+    g.aim_set = u.set;
     switch (r) {
         .bow => openAim(g, u.by, u.act),
         .leap => openLeap(g, u.by, u.act),
@@ -1027,12 +1024,12 @@ const KICK = actor.row(HERO).blow.strike;
 const Stroke = struct { from: P, wait: f32, fire: bool = false };
 
 /// On the body in `slot`, or on the barrel at `at` when there is none.
-fn strike(g: *Game, slot: ?usize, s: Stroke, at: P, lethal: bool, after: ?fx.After, gold: i32) void {
+fn strike(g: *Game, slot: ?usize, s: Stroke, at: P, lethal: bool, after: ?fx.After) void {
     const len = mathx.distEuclid(at, s.from);
     const dir: ?[2]f32 = if (len == 0) null else .{ @as(f32, @floatFromInt(at.x - s.from.x)) / len, @as(f32, @floatFromInt(at.y - s.from.y)) / len };
     const kind: ?actor.Kind = if (slot) |i| g.pool.items[i].kind else null;
     if (slot == null or slot == heroSlot(g) or g.lv.isLit(at)) {
-        g.fx.strike(s.wait, .{ .slot = slot, .at = mathx.centre(at), .dir = dir, .matter = fx.matterOf(kind), .lethal = lethal, .after = after, .gold = gold, .fire = s.fire });
+        g.fx.strike(s.wait, .{ .slot = slot, .at = mathx.centre(at), .dir = dir, .matter = fx.matterOf(kind), .lethal = lethal, .after = after, .fire = s.fire });
         flashes(g, s.wait);
     } else if (after) |a| g.fx.settle(s.wait, .{ .slot = slot.?, .after = a });
     const k = kind orelse return;
@@ -1062,7 +1059,7 @@ fn smash(g: *Game, p: P, comptime verb: []const u8, s: Stroke) void {
     const gold = g.rng.range(GOLD_LO, GOLD_HI);
     g.gold += gold;
     g.log.say("{s} " ++ verb ++ " the barrel. It breaks: {d} gold.", .{ g.name.text(), gold });
-    strike(g, null, s, p, true, null, gold);
+    strike(g, null, s, p, true, null);
 }
 
 fn wound(g: *Game, id: u16, dmg: i32, comptime verb: []const u8, s: Stroke) void {
@@ -1073,7 +1070,7 @@ fn wound(g: *Game, id: u16, dmg: i32, comptime verb: []const u8, s: Stroke) void
     const name = actor.row(kind).name;
     const lethal = hurt(g, id, dmg).lethal;
     sayAt(g, at, "{s} " ++ verb ++ " the {s} for {d}.{s}", .{ g.name.text(), name, dmg, if (lethal) IT_DIES else "" });
-    strike(g, i, s, at, lethal, afterBlow(g, id, lethal), 0);
+    strike(g, i, s, at, lethal, afterBlow(g, id, lethal));
     if (lethal) fell(g, kind, at);
 }
 
@@ -1385,7 +1382,7 @@ fn camWant(g: *Game) rl.Vector2 {
     const half: f32 = @floatFromInt(HALF_CELL);
     return .{
         .x = camAxis(at.x + half, @floatFromInt(g.screen.x), @floatFromInt(grid.W * CELL)),
-        .y = camAxis(at.y + half, @floatFromInt(g.viewH()), @floatFromInt(grid.H * CELL + hud.COVER)),
+        .y = camAxis(at.y + half, @floatFromInt(g.screen.y), @floatFromInt(grid.H * CELL + hud.COVER)),
     };
 }
 
@@ -1444,8 +1441,8 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     }
     const hits = wait + BUMP_LANDS - late;
     if (bit) |b| switch (b.blow) {
-        .hurt, .kill => strike(g, hero, .{ .from = a.at, .wait = hits }, hero_at, b.blow == .kill, b.after, 0),
-        .burst => if (shown) strike(g, i, .{ .from = hero_at, .wait = hits }, a.at, true, b.after, 0),
+        .hurt, .kill => strike(g, hero, .{ .from = a.at, .wait = hits }, hero_at, b.blow == .kill, b.after),
+        .burst => if (shown) strike(g, i, .{ .from = hero_at, .wait = hits }, a.at, true, b.after),
     };
     if (owed.chilled) |c| g.fx.settle(lands, .{ .slot = i, .after = c });
     const mark: ?[2]f32 = if (shown) mathx.centre(a.at) else null;
@@ -1460,7 +1457,7 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
 /// A tick's harm as it lands on the body at `at`: the blow that kills it, a sting, or on a body not drawn its aftermath alone.
 fn harmShown(g: *Game, at: P, lands: f32, h: Harm, fire: bool, in_view: bool, s: fx.Sting) void {
     if (h.kill) {
-        strike(g, s.slot, .{ .from = at, .wait = lands, .fire = fire }, at, true, h.after, 0);
+        strike(g, s.slot, .{ .from = at, .wait = lands, .fire = fire }, at, true, h.after);
     } else if (in_view) {
         sting(g, lands, s);
     } else g.fx.settle(lands, .{ .slot = s.slot, .after = h.after });
@@ -1539,6 +1536,7 @@ pub fn update(g: *Game, dt: f32) void {
         },
         .pause => pauseStep(g),
     }
+    if (g.mode != .play) g.st.spend(BINDS);
     stepGlide(g, late);
     catchUp(g);
     stepVignette(g, dt);
@@ -1597,12 +1595,12 @@ fn pauseLabel(g: *const Game, r: PauseRow) [:0]const u8 {
     };
 }
 
-pub fn veil(g: *const Game, h: i32) void {
-    rl.drawRectangle(0, 0, g.screen.x, h, look.VEIL);
+pub fn veil(g: *const Game) void {
+    rl.drawRectangle(0, 0, g.screen.x, g.screen.y, look.VEIL);
 }
 
 fn drawPause(g: *Game) void {
-    veil(g, g.screen.y);
+    veil(g);
     var rows: [PAUSE_ROWS.len][:0]const u8 = undefined;
     for (PAUSE_ROWS, &rows) |r, *l| l.* = pauseLabel(g, r);
     menu.draw(g.face, g.screen, g.st.device, "PAUSED", &rows, g.pause_menu.at, null, "resume");
@@ -1818,6 +1816,14 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: 
     }
 }
 
+/// Every shadow cast into `view`, multiplied over what `framebuffer` holds; false with no shader for it.
+fn shadowPass(g: *Game, c: Cam, view: grid.Box, framebuffer: u32) bool {
+    if (!g.light.beginShadows(g.screen, framebuffer)) return false;
+    drawShadows(g, c, view.grown(CAST_MARGIN));
+    g.light.endShadows(-c.x, -c.y, CELL);
+    return true;
+}
+
 fn drawShadows(g: *Game, c: Cam, cast: grid.Box) void {
     var props = cast.cells();
     while (props.next()) |p| {
@@ -1829,10 +1835,11 @@ fn drawShadows(g: *Game, c: Cam, cast: grid.Box) void {
         }
         const kind = g.lv.at(p);
         if (!look.stands(kind)) continue;
-        const t = g.sprites.tileAt(&g.lv, p) orelse continue;
+        const forest = g.sprites.forestTile(&g.lv, p);
+        const t = forest orelse g.sprites.tileAt(&g.lv, p) orelse continue;
         const pr = Prop.at(g, c, p, true);
         const rect = spriteRect(t, pr.s.x, pr.s.y);
-        if (look.forestAt(&g.lv, p)) {
+        if (forest != null) {
             g.light.drawForestShadows(t, rect, pr.mid, pr.shine, g.lv.tileShape(p) orelse .{});
         } else if (look.canopied(kind)) {
             g.light.drawCanopy(t, rect, pr.mid, pr.shine);
@@ -1853,7 +1860,7 @@ fn viewBox(g: *const Game, c: Cam) grid.Box {
         .lo = .{ .x = @max(0, @divFloor(c.x, CELL)), .y = @max(0, @divFloor(c.y, CELL)) },
         .hi = .{
             .x = @min(grid.W, @divFloor(c.x + g.screen.x, CELL) + 1),
-            .y = @min(grid.H, @divFloor(c.y + g.viewH(), CELL) + 1),
+            .y = @min(grid.H, @divFloor(c.y + g.screen.y, CELL) + 1),
         },
     };
 }
@@ -1886,11 +1893,8 @@ fn drawWorld(g: *Game) void {
 
     g.light.bake(&g.lv, lo, hi);
     drawTerrain(g, c, lo, hi, .ground, arrow_at, &stood);
-    if (g.light.beginShadows(g.screen, g.framebuffer)) {
-        drawShadows(g, c, view.grown(CAST_MARGIN));
-        g.light.endShadows(-c.x, -c.y, CELL);
-    }
-    g.cloud.draw(&g.lv, lo, hi, -c.x, -c.y, CELL);
+    _ = shadowPass(g, c, view, g.framebuffer);
+    g.cloud.draw(&g.lv, view, -c.x, -c.y, CELL);
     drawTerrain(g, c, lo, hi, .solid, arrow_at, &stood);
     g.fx.draw(@floatFromInt(-c.x), @floatFromInt(-c.y), CELL_F);
     g.light.drawMap(-c.x, -c.y, CELL);
@@ -2034,8 +2038,15 @@ fn drawMinimap(g: *Game) void {
         miniDot(o, cellUnder(at), 0, look.MINI_FOE);
     }
     if (heroNow(g)) |at| miniDot(o, cellUnder(at), MINI_HERO_GROW, look.MINI_HERO);
-    const c = Cam.of(g);
-    rl.drawRectangleLines(o.x + toMini(c.x), o.y + toMini(c.y), toMini(g.screen.x), toMini(g.viewH()), look.MINI_VIEW);
+    const v = miniView(Cam.of(g), g.screen);
+    rl.drawRectangleLines(o.x + v.lo.x, o.y + v.lo.y, v.hi.x - v.lo.x, v.hi.y - v.lo.y, look.MINI_VIEW);
+}
+
+fn miniView(c: Cam, screen: P) grid.Box {
+    return .{
+        .lo = .{ .x = @max(0, toMini(c.x)), .y = @max(0, toMini(c.y)) },
+        .hi = .{ .x = @min(MINI_W, toMini(c.x + screen.x)), .y = @min(MINI_H, toMini(c.y + screen.y)) },
+    };
 }
 
 fn toMini(px: i32) i32 {
@@ -2048,13 +2059,16 @@ fn bindRowY(y0: i32, row: usize) i32 {
 
 const SEP = menu.SEP;
 
-/// `closed` takes either; the keyboard's B is a key nobody reaches for.
+fn closeItem(comptime d: input.Device) [:0]const u8 {
+    return menu.backName(d) ++ " close";
+}
+
 fn legendEmpty(comptime d: input.Device) [:0]const u8 {
-    return CONFIRM.name(d) ++ " select skill" ++ SEP ++ CHANGE.name(d) ++ " select skill" ++ SEP ++ menu.backName(d) ++ " close";
+    return CONFIRM.name(d) ++ " select skill" ++ SEP ++ CHANGE.name(d) ++ " select skill" ++ SEP ++ closeItem(d);
 }
 
 fn legendBound(comptime d: input.Device) [:0]const u8 {
-    return CONFIRM.name(d) ++ " pick up" ++ SEP ++ CHANGE.name(d) ++ " change skill" ++ SEP ++ REMOVE.name(d) ++ " remove" ++ SEP ++ menu.backName(d) ++ " close";
+    return CONFIRM.name(d) ++ " pick up" ++ SEP ++ CHANGE.name(d) ++ " change skill" ++ SEP ++ REMOVE.name(d) ++ " remove" ++ SEP ++ closeItem(d);
 }
 
 fn legendCarry(comptime d: input.Device) [:0]const u8 {
@@ -2063,10 +2077,6 @@ fn legendCarry(comptime d: input.Device) [:0]const u8 {
 
 fn legendPick(comptime d: input.Device) [:0]const u8 {
     return CONFIRM.name(d) ++ " bind" ++ SEP ++ menu.backItem(d);
-}
-
-fn skillsX(g: *Game) i32 {
-    return @divTrunc(g.screen.x - SKILLS_W, 2);
 }
 
 const SlotLook = struct { act: ?skillbar.Act, key: ?input.Button, edge: rl.Color, faded: bool = false };
@@ -2080,27 +2090,22 @@ fn drawSlot(g: *Game, x: i32, y: i32, s: SlotLook) void {
         look.drawSkill(&g.sprites, act, x + inset, y + inset, a);
     }
     const k = g.st.slotCaption(s.key orelse return);
-    g.face.draw(k, g.face.leftFor(k, x + SLOT_MID, SLOT_TEXT), y + SLOT_PX + KEY_GAP, SLOT_TEXT, look.fade(look.DIM, a));
+    g.face.text(k, g.face.leftFor(k, x + SLOT_MID, SLOT_TEXT), y + SLOT_PX + KEY_GAP, SLOT_TEXT, look.fade(look.DIM, a));
 }
 
 /// While aiming, the set the reticle's skill was taken from, whatever is held now.
 fn shownSet(g: *const Game) skillbar.Set {
-    const held = g.bar.active(g.st.down);
-    if (g.mode != .aim) return held;
-    for (skillbar.SETS) |s| {
-        if (g.bar.at(.{ .set = s, .button = g.aim_by }) == g.aim_act) return s;
-    }
-    return held;
+    return if (g.mode == .aim) g.aim_set else g.bar.active(g.st.down);
 }
 
-fn drawSkills(g: *Game, top: i32) void {
+fn drawSkills(g: *Game, at: P) void {
     const set = shownSet(g);
-    const x0 = skillsX(g);
+    const x0 = at.x;
     for (skillbar.SLOTS, SLOT_XS) |b, dx| {
         const held = (g.st.held(b) and g.mode == .play) or (g.mode == .aim and g.aim_by == b);
         const act = g.bar.at(.{ .set = set, .button = b });
         const cooling = cooldownOf(g, act);
-        drawSlot(g, x0 + dx, top, .{
+        drawSlot(g, x0 + dx, at.y, .{
             .act = act,
             .key = b,
             .edge = if (held) look.SLOT_HELD else look.EDGE,
@@ -2109,17 +2114,17 @@ fn drawSkills(g: *Game, top: i32) void {
         if (cooling > 0) {
             var buf: [16]u8 = undefined;
             const label = std.fmt.bufPrintZ(&buf, "{d}", .{cooling}) catch "";
-            g.face.text(label, x0 + dx + SLOT_PX - COOLDOWN_DX, top + COOLDOWN_DY, SLOT_TEXT, look.TEXT);
+            g.face.text(label, x0 + dx + SLOT_PX - COOLDOWN_DX, at.y + COOLDOWN_DY, SLOT_TEXT, look.TEXT);
         }
     }
 }
 
 fn drawBinds(g: *Game) void {
-    var buf: [LINE_BUF]u8 = undefined;
+    var buf: [menu.NOTE_MAX + 1]u8 = undefined;
     const b = g.binds;
-    const x0 = skillsX(g);
+    const x0 = hud.Layout.of(g.screen, SKILLS_W).skills.x;
     const y0 = @divTrunc(hud.Layout.of(g.screen, SKILLS_W).top, 2) + BIND_TOP_DY;
-    veil(g, g.viewH());
+    veil(g);
     textMid(g, "BIND SKILLS", y0, BIND_TITLE, look.TEXT);
     var cursor = P{ .x = 0, .y = 0 };
     for (skillbar.SETS, 0..) |set, row| {
@@ -2185,14 +2190,14 @@ fn drawHud(g: *Game) void {
     const max = if (shown) |h| h.max else actor.row(HERO).hp;
     const hp = if (shown) |h| h.hp else 0;
     hud.resources(layout, &g.face, hp, max, g.mana, heroes.MANA);
-    drawSkills(g, layout.skills.y);
+    drawSkills(g, layout.skills);
     if (shown) |h| hud.statuses(layout, &g.face, h.status);
 }
 
 fn drawDead(g: *Game) void {
-    var buf: [LINE_BUF]u8 = undefined;
-    const mid = @divTrunc(g.viewH(), 2);
-    veil(g, g.viewH());
+    var buf: [menu.NOTE_MAX + 1]u8 = undefined;
+    const mid = @divTrunc(g.screen.y, 2);
+    veil(g);
     const DIED = " DIED";
     var died: [heroes.Name.MAX + DIED.len + 1]u8 = undefined;
     const said = menu.shout(&died, "{s}" ++ DIED, .{g.name.text()});
@@ -2205,7 +2210,7 @@ fn drawDead(g: *Game) void {
 pub fn drawFrame(g: *Game) void {
     rl.clearBackground(look.BG);
     drawWorld(g);
-    g.vignette.draw(g.screen.x, g.viewH());
+    g.vignette.draw(g.screen.x, g.screen.y);
     drawMinimap(g);
     drawHud(g);
     if (g.mode == .bind) drawBinds(g);
@@ -2346,7 +2351,7 @@ fn shoot(g: *Game) !void {
         .{ .hour = 9, .name = SHOTS_DIR ++ "/shadows-morning.png" },
         .{ .hour = day.NOON, .name = SHOTS_DIR ++ "/shadows-noon.png" },
         .{ .hour = 17, .name = SHOTS_DIR ++ "/shadows-evening.png" },
-        .{ .hour = 1, .name = SHOTS_DIR ++ "/shadows-moon.png" },
+        .{ .hour = day.DEAD_OF_NIGHT, .name = SHOTS_DIR ++ "/shadows-moon.png" },
     }) |study| {
         poseShadowStudy(g, study.hour, true);
         try capture(g, target, study.name);
@@ -2393,7 +2398,7 @@ fn shoot(g: *Game) !void {
             }
             g.clock = day.Clock.at(day.NOON);
             settle(g);
-            g.clock = day.Clock.at(SHOT_NIGHT);
+            g.clock = day.Clock.at(day.DEAD_OF_NIGHT);
             settle(g);
             try capture(g, target, SHOTS_DIR ++ "/night-memory.png");
         }
@@ -2420,9 +2425,9 @@ fn shootHud(g: *Game) !void {
     var saved_state: input.State = .{};
     saved_state = g.st;
     defer g.st = saved_state;
-    const studies = [_]struct { screen: P, hp: i32, mana: i32, device: input.Device, path: [:0]const u8 }{
-        .{ .screen = .{ .x = 1280, .y = 720 }, .hp = 100, .mana = 100, .device = .keys, .path = SHOTS_DIR ++ "/hud-full-1280.png" },
-        .{ .screen = .{ .x = 1600, .y = 900 }, .hp = 50, .mana = 35, .device = .pad, .path = SHOTS_DIR ++ "/hud-partial-1600.png" },
+    const studies = [_]struct { screen: P, hp: i32, mana: i32, device: input.Device, path: [:0]const u8, ailing: bool = false, bind: bool = false }{
+        .{ .screen = .{ .x = 1280, .y = 720 }, .hp = 100, .mana = 100, .device = .keys, .path = SHOTS_DIR ++ "/hud-full-1280.png", .bind = true },
+        .{ .screen = .{ .x = 1600, .y = 900 }, .hp = 50, .mana = 35, .device = .pad, .path = SHOTS_DIR ++ "/hud-partial-1600.png", .ailing = true },
         .{ .screen = .{ .x = 1920, .y = 1080 }, .hp = 10, .mana = 0, .device = .keys, .path = SHOTS_DIR ++ "/hud-critical-1920.png" },
         .{ .screen = .{ .x = 1600, .y = 900 }, .hp = 0, .mana = 0, .device = .keys, .path = SHOTS_DIR ++ "/hud-empty-1600.png" },
     };
@@ -2434,18 +2439,18 @@ fn shootHud(g: *Game) !void {
         const body = &g.pictured[heroSlot(g).?];
         body.hp = @divTrunc(body.max * study.hp, 100);
         g.mana = study.mana;
-        if (study.hp == 50) {
+        if (study.ailing) {
             body.status = .init(.{ .bleeding = 5, .burning = 3, .chilled = 2 });
             g.cooldown.set(.juke, 3);
         }
         const target = try renderTarget(g);
         defer rl.unloadRenderTexture(target);
         try capture(g, target, study.path);
-        if (study.screen.y == 720) {
+        if (study.bind) {
             posePicker(g, boundTo(g, .shoot));
             try capture(g, target, SHOTS_DIR ++ "/hud-bind-720.png");
         }
-        if (study.hp == 50) {
+        if (study.ailing) {
             g.bar.bind(.{ .set = .secondary, .button = .x }, .glacial_shot);
             g.bar.bind(.{ .set = .secondary, .button = .b }, .burning_arrow);
             g.st.down.insert(g.bar.modifier.?);
@@ -2455,7 +2460,7 @@ fn shootHud(g: *Game) !void {
             try capture(g, target, SHOTS_DIR ++ "/hud-bind-pad.png");
         }
     }
-    std.debug.print("HUD: {d} resource states, 3 resolutions, both caption devices, secondary set and bind picker captured\n", .{studies.len});
+    std.debug.print("HUD: {d} resource states captured, with both caption devices, the secondary set and the bind picker\n", .{studies.len});
 }
 
 fn boundTo(g: *const Game, act: skillbar.Act) input.Button {
@@ -2498,9 +2503,7 @@ const POSE_TORCH = P{ .x = 20, .y = 10 };
 
 fn poseForest(g: *Game) void {
     arena(g, .{ .x = 24, .y = 18 }, &.{});
-    for (&g.lv.tile) |*t| {
-        if (t.* == .floor) t.* = .grass;
-    }
+    grassOver(&g.lv);
     const rows = [_][]const u8{
         "...................",
         ".#####...####......",
@@ -2523,9 +2526,7 @@ fn poseForest(g: *Game) void {
 
 fn poseShadowStudy(g: *Game, hour: f32, outdoors: bool) void {
     arena(g, .{ .x = 24, .y = 21 }, &.{.{ .x = 29, .y = 22 }});
-    for (&g.lv.tile) |*t| {
-        if (t.* == .floor) t.* = .grass;
-    }
+    grassOver(&g.lv);
     wallRow(&g.lv, 16, 22, 26);
     if (!outdoors) g.lv.addTorch(.{ .x = 24, .y = 16 });
     const props = [_]struct { t: grid.Tile, p: P }{
@@ -2548,15 +2549,20 @@ fn poseShadowStudy(g: *Game, hour: f32, outdoors: bool) void {
         .{ .t = .crop, .p = .{ .x = 31, .y = 16 } },
     };
     for (props) |prop| g.lv.set(prop.p, prop.t);
-    g.lv.barrel[grid.Level.idx(.{ .x = 32, .y = 23 })] = true;
+    g.lv.putBarrel(.{ .x = 32, .y = 23 });
     _ = spawnAt(g, .slime, .{ .x = 31, .y = 22 }, false);
+    studyAt(g, outdoors, hour);
+    @memset(&g.lv.seen, true);
+    @memset(&g.lv.lit, true);
+    g.light.settle(&g.lv);
+}
+
+/// A posed study's floor shaped and settled, at `hour` under the sky or a roof.
+fn studyAt(g: *Game, outdoors: bool, hour: f32) void {
     g.outdoors = outdoors;
     g.clock = day.Clock.at(hour);
     gen.shapeWalls(&g.lv);
     settle(g);
-    @memset(&g.lv.seen, true);
-    @memset(&g.lv.lit, true);
-    g.light.settle(&g.lv);
 }
 
 fn poseTorch(g: *Game) void {
@@ -2575,29 +2581,30 @@ const HIDDEN_SHADOW_ROWS = [_]i32{ 14, 17, 20, 23 };
 fn poseHiddenShadows(g: *Game, hour: ?f32) void {
     const x = HIDDEN_SHADOW_X;
     arena(g, .{ .x = 22, .y = 19 }, &.{.{ .x = x, .y = HIDDEN_SHADOW_ROWS[3] }});
-    for (&g.lv.tile) |*t| {
-        if (t.* == .floor) t.* = .grass;
-    }
+    grassOver(&g.lv);
     g.lv.set(.{ .x = x, .y = HIDDEN_SHADOW_ROWS[0] }, .shrub);
     g.lv.set(.{ .x = x, .y = HIDDEN_SHADOW_ROWS[0] + 1 }, .shrub);
     g.lv.set(.{ .x = x, .y = HIDDEN_SHADOW_ROWS[1] }, .shrub);
-    g.lv.barrel[grid.Level.idx(.{ .x = x, .y = HIDDEN_SHADOW_ROWS[2] })] = true;
+    g.lv.putBarrel(.{ .x = x, .y = HIDDEN_SHADOW_ROWS[2] });
     if (hour == null) {
         wallRow(&g.lv, 12, 29, 31);
         g.lv.addTorch(.{ .x = 30, .y = 12 });
         wallRow(&g.lv, 18, 29, 31);
         g.lv.addTorch(.{ .x = 30, .y = 18 });
     }
-    g.outdoors = hour != null;
-    g.clock = day.Clock.at(hour orelse day.NOON);
-    gen.shapeWalls(&g.lv);
-    settle(g);
+    studyAt(g, hour != null, hour orelse day.NOON);
     for (0..grid.CELLS) |i| {
         const visible = grid.Level.of(i).x < x;
         g.lv.seen[i] = visible;
         g.lv.lit[i] = visible;
     }
     g.light.settle(&g.lv);
+}
+
+fn grassOver(lv: *grid.Level) void {
+    for (&lv.tile) |*t| {
+        if (t.* == .floor) t.* = .grass;
+    }
 }
 
 fn checkHiddenShadowMask(g: *Game, target: rl.RenderTexture2D, visible: bool) !void {
@@ -2608,9 +2615,7 @@ fn checkHiddenShadowMask(g: *Game, target: rl.RenderTexture2D, visible: bool) !v
         rl.beginTextureMode(target);
         defer rl.endTextureMode();
         rl.clearBackground(rl.Color.white);
-        if (!g.light.beginShadows(g.screen, target.id)) return error.ShadowShaderMissing;
-        drawShadows(g, c, view.grown(CAST_MARGIN));
-        g.light.endShadows(-c.x, -c.y, CELL);
+        if (!shadowPass(g, c, view, target.id)) return error.ShadowShaderMissing;
     }
     var img = try rl.loadImageFromTexture(target.texture);
     defer rl.unloadImage(img);
@@ -2618,7 +2623,7 @@ fn checkHiddenShadowMask(g: *Game, target: rl.RenderTexture2D, visible: bool) !v
     var hits = [_]usize{0} ** HIDDEN_SHADOW_ROWS.len;
     var leaked: usize = 0;
     var y: i32 = 0;
-    while (y < g.viewH()) : (y += 1) {
+    while (y < g.screen.y) : (y += 1) {
         var x: i32 = 0;
         while (x < g.screen.x) : (x += 1) {
             const rgb = rl.getImageColor(img, x, y);
@@ -2653,13 +2658,12 @@ const OVERVIEW_MID: i32 = @divTrunc(OVERVIEW_CELL, 2);
 const OVERVIEW_INK: i32 = OVERVIEW_CELL + 2;
 const SHOT_BIOME = "qud_salt_marsh";
 const SHOT_OUTDOOR = "wilds";
-const SHOT_NIGHT: f32 = 1.0;
 const SHOT_HOURS = [_]struct { hour: f32, path: [:0]const u8 }{
     .{ .hour = 7.0, .path = SHOTS_DIR ++ "/dawn.png" },
     .{ .hour = day.NOON, .path = SHOTS_DIR ++ "/noon.png" },
     .{ .hour = 16.5, .path = SHOTS_DIR ++ "/day.png" },
     .{ .hour = 19.3, .path = SHOTS_DIR ++ "/dusk.png" },
-    .{ .hour = SHOT_NIGHT, .path = SHOTS_DIR ++ "/night.png" },
+    .{ .hour = day.DEAD_OF_NIGHT, .path = SHOTS_DIR ++ "/night.png" },
 };
 
 fn overviews(g: *Game, w: *atlas.Atlas) !void {
@@ -3411,6 +3415,32 @@ test "the bind screen picks, carries and removes bindings, and spends no turn" {
     try std.testing.expectEqual(P{ .x = 30, .y = 20 }, g.pool.get(2).?.at);
 }
 
+fn holdingView(g: *Game, more_s: f32, a: ?input.Button) void {
+    calm(g);
+    const was = g.st.down_s.get(BINDS);
+    g.st = .{};
+    g.st.down.insert(BINDS);
+    g.st.down_s.set(BINDS, was + more_s);
+    if (a) |b| {
+        g.st.pressed.insert(b);
+        g.st.down.insert(b);
+    }
+    update(g, 0);
+}
+
+test "View held through an aim opens no bind screen once the shot is confirmed" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
+    g.st = .{};
+    holdingView(g, input.HOLD_S / 4, .x);
+    try std.testing.expectEqual(Mode.aim, g.mode);
+    holdingView(g, input.HOLD_S, .x);
+    try std.testing.expectEqual(Mode.play, g.mode);
+    holdingView(g, TEST_DT, null);
+    try std.testing.expectEqual(Mode.play, g.mode);
+}
+
 test "a new floor has every pack placed, no foe in sight or on a barrel" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
@@ -3661,7 +3691,7 @@ test "the camera shows past the floor only under the hud, keeps the archer clear
             const v = camWant(g);
             try std.testing.expect(v.x >= 0 and v.y >= 0);
             try std.testing.expect(v.x + @as(f32, @floatFromInt(screen.x)) <= world_w);
-            try std.testing.expect(v.y + @as(f32, @floatFromInt(g.viewH())) <= world_h);
+            try std.testing.expect(v.y + @as(f32, @floatFromInt(g.screen.y)) <= world_h);
             const foot = @as(f32, @floatFromInt((p.y + 1) * CELL)) - v.y;
             if (p.y == grid.H - 1) std.debug.print("{d}x{d}: bottom-row archer's foot at {d:.0}, hud top {d}\n", .{ screen.x, screen.y, foot, hud.Layout.of(screen, SKILLS_W).top });
             try std.testing.expect(foot <= @as(f32, @floatFromInt(hud.Layout.of(screen, SKILLS_W).top)));
@@ -3670,7 +3700,7 @@ test "the camera shows past the floor only under the hud, keeps the archer clear
     g.screen = .{ .x = grid.W * CELL + 200, .y = grid.H * CELL + hud.COVER + 100 };
     const v = camWant(g);
     try std.testing.expectEqual((world_w - @as(f32, @floatFromInt(g.screen.x))) * 0.5, v.x);
-    try std.testing.expectEqual((world_h - @as(f32, @floatFromInt(g.viewH()))) * 0.5, v.y);
+    try std.testing.expectEqual((world_h - @as(f32, @floatFromInt(g.screen.y))) * 0.5, v.y);
 }
 
 test "packs land on the floor as the floor is, not where its own rolls put the rooms" {
@@ -4077,7 +4107,7 @@ test "hidden and offscreen objects keep casting without being drawn" {
     g.split_from[i] = null;
     g.pool.items[i].alive = false;
     try std.testing.expect(casterAt(g, i, cast) == null);
-    g.lv.barrel[grid.Level.idx(p)] = true;
+    g.lv.putBarrel(p);
     try std.testing.expect(!barrelShownAt(g, p));
     try std.testing.expect(barrelPresent(g, p));
     std.debug.print("hidden actor and barrel still cast within {d} cells of the view; dead actors and unborn splits do not\n", .{CAST_MARGIN});
@@ -4087,7 +4117,7 @@ test "the minimap fits in the top right, clear of the hud" {
     for ([_]P{ .{ .x = WINDOW_W, .y = WINDOW_H }, .{ .x = 1920, .y = 1080 }, .{ .x = 2560, .y = 1440 } }) |screen| {
         const o = miniOrigin(screen.x);
         try std.testing.expect(o.x > @divTrunc(screen.x, 2));
-        try std.testing.expect(o.y + MINI_H + MINI_FRAME < screen.y - hud.HEIGHT);
+        try std.testing.expect(o.y + MINI_H + MINI_FRAME < hud.Layout.of(screen, SKILLS_W).top);
     }
 }
 

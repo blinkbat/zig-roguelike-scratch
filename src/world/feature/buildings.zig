@@ -119,13 +119,7 @@ pub fn doorway(rng: *mathx.Rng, b: Box) [2]P {
 }
 
 fn doorwayOn(b: Box, side: mathx.Dir, k: i32) [2]P {
-    const w: P = switch (side) {
-        .n => .{ .x = b.lo.x + 1 + k, .y = b.lo.y },
-        .s => .{ .x = b.lo.x + 1 + k, .y = b.hi.y - 1 },
-        .w => .{ .x = b.lo.x, .y = b.lo.y + 1 + k },
-        .e => .{ .x = b.hi.x - 1, .y = b.lo.y + 1 + k },
-        .ne, .se, .sw, .nw => unreachable,
-    };
+    const w = carve.sideAt(b, side, (if (side == .n or side == .s) b.lo.x else b.lo.y) + 1 + k);
     return .{ w, w.add(side.delta()) };
 }
 

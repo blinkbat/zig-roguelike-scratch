@@ -41,7 +41,7 @@ Use the existing check, test, shot and build scripts. Inspect full, partial, cri
 
 Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Captions come from `State.slotCaption`; this pass adds no input handling.
 
-`Game.viewH` now spans the full screen. The bind overlay is centered in the space above the HUD so its instructions remain clear at 720p. The former bar, counter, log and permanent-hint renderers are removed; their gameplay and save data remain intact.
+The world now spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind overlay is centered in the space above the HUD so its instructions remain clear at 720p. The former bar, counter, log and permanent-hint renderers are removed; their gameplay and save data remain intact.
 
 Verification completed:
 

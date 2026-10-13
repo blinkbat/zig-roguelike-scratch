@@ -6,15 +6,34 @@ const look = @import("../gfx/look.zig");
 const fx = @import("../gfx/fx.zig");
 
 pub const WIDTH: i32 = 744;
-pub const HEIGHT: i32 = 172;
+const HEIGHT: i32 = 172;
 const BOTTOM: i32 = 12;
 /// How far up from the screen's foot the hud covers the world.
 pub const COVER: i32 = BOTTOM + HEIGHT;
 const ORB_R: i32 = 52;
 const FILL_R: i32 = 44;
+/// The orbs' centres, in from the assembly's sides and down from its top.
+const ORB_INSET: i32 = 64;
+const ORB_Y: i32 = 104;
+/// Clear space between an orb's rim and the skill strip.
+const ORB_GAP: i32 = 18;
+pub const SKILLS_MAX_W: i32 = WIDTH - 2 * (ORB_INSET + ORB_R + ORB_GAP);
+const PLATE_Y: i32 = 66;
+pub const PLATE_PAD: i32 = 10;
+pub const PLATE_H: i32 = 88;
+const PLATE_RULE: i32 = 5;
+const SHADOW_DROP: i32 = 3;
+const STATUS_Y: i32 = 20;
+
+comptime {
+    std.debug.assert(PLATE_Y + PLATE_H < ORB_Y + ORB_R);
+    std.debug.assert(ORB_Y + ORB_R + 2 * SHADOW_DROP <= HEIGHT);
+}
+
 const FRAME = look.rgb(0x625a48);
 const FRAME_DARK = look.rgb(0x22211f);
 const WELL = look.rgb(0x080a10);
+const WELL_RIM = look.rgb(0x020305);
 const PLATE = look.rgb(0x101114);
 const LIFE_CORE = look.rgb(0xb83b32);
 const LIFE_EDGE = look.rgb(0x541412);
@@ -37,9 +56,9 @@ pub const Layout = struct {
         return .{
             .left = left,
             .top = top,
-            .life = .{ .x = left + 64, .y = top + 104 },
-            .mana = .{ .x = left + WIDTH - 64, .y = top + 104 },
-            .skills = .{ .x = @divTrunc(screen.x - skills_w, 2), .y = top + 76 },
+            .life = .{ .x = left + ORB_INSET, .y = top + ORB_Y },
+            .mana = .{ .x = left + WIDTH - ORB_INSET, .y = top + ORB_Y },
+            .skills = .{ .x = @divTrunc(screen.x - skills_w, 2), .y = top + PLATE_Y + PLATE_PAD },
             .skills_w = skills_w,
         };
     }
@@ -47,13 +66,13 @@ pub const Layout = struct {
 
 pub fn frame(layout: Layout) void {
     const x = layout.life.x;
-    const y = layout.skills.y - 10;
+    const y = layout.top + PLATE_Y;
     const width = layout.mana.x - x;
-    rl.drawRectangle(x - 3, y + 3, width + 6, 90, look.fade(rl.Color.black, 0.5));
-    rl.drawRectangle(x, y, width, 88, PLATE);
-    rl.drawRectangleLinesEx(look.rect(x, y, width, 88), 2, FRAME);
-    rl.drawLine(x + 8, y + 5, x + width - 8, y + 5, FRAME_DARK);
-    rl.drawLine(x + 8, y + 82, x + width - 8, y + 82, FRAME_DARK);
+    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, PLATE_H + 2, look.fade(rl.Color.black, 0.5));
+    rl.drawRectangle(x, y, width, PLATE_H, PLATE);
+    rl.drawRectangleLinesEx(look.rect(x, y, width, PLATE_H), 2, FRAME);
+    rl.drawLine(x + 8, y + PLATE_RULE, x + width - 8, y + PLATE_RULE, FRAME_DARK);
+    rl.drawLine(x + 8, y + PLATE_H - 1 - PLATE_RULE, x + width - 8, y + PLATE_H - 1 - PLATE_RULE, FRAME_DARK);
 }
 
 pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32) void {
@@ -74,7 +93,7 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, ma
     rl.drawCircle(x, y, ORB_R, FRAME_DARK);
     rl.drawCircle(x, y, ORB_R - 2, FRAME);
     rl.drawCircle(x, y, ORB_R - 5, FRAME_DARK);
-    rl.drawCircle(x, y, FILL_R + 2, look.rgb(0x020305));
+    rl.drawCircle(x, y, FILL_R + 2, WELL_RIM);
     rl.drawCircle(x, y, FILL_R, WELL);
     const filled = fillHeight(value, max);
     if (filled > 0) {
@@ -98,7 +117,7 @@ pub fn statuses(layout: Layout, face: *const font.Face, status: std.EnumArray(fx
     var count: i32 = 0;
     for (status.values) |turns| count += @intFromBool(turns > 0);
     var x = layout.left + @divTrunc(WIDTH - count * (STATUS_PX + STATUS_GAP) + STATUS_GAP, 2);
-    const y = layout.top + 20;
+    const y = layout.top + STATUS_Y;
     for (std.enums.values(fx.Status)) |s| {
         const turns = status.get(s);
         if (turns == 0) continue;
@@ -136,11 +155,11 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
 test "the HUD stays centered at a fixed width with room between orbs and skills" {
     const widths = [_]mathx.P{ .{ .x = 1280, .y = 720 }, .{ .x = 1600, .y = 900 }, .{ .x = 1920, .y = 1080 }, .{ .x = 2560, .y = 1440 } };
     for (widths) |screen| {
-        const layout = Layout.of(screen, 456);
+        const layout = Layout.of(screen, SKILLS_MAX_W);
         try std.testing.expectEqual(screen.x, layout.left * 2 + WIDTH);
         try std.testing.expectEqual(screen.x, layout.life.x + layout.mana.x);
-        try std.testing.expect(layout.life.x + ORB_R < layout.skills.x - 18);
-        try std.testing.expect(layout.skills.x + layout.skills_w + 18 < layout.mana.x - ORB_R);
+        try std.testing.expect(layout.life.x + ORB_R + ORB_GAP <= layout.skills.x);
+        try std.testing.expect(layout.skills.x + layout.skills_w + ORB_GAP <= layout.mana.x - ORB_R);
         try std.testing.expect(layout.top > 0 and layout.life.y + ORB_R < screen.y);
     }
     std.debug.print("HUD: {d}px centered assembly verified at {d} resolutions\n", .{ WIDTH, widths.len });

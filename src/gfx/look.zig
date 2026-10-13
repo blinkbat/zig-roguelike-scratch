@@ -55,6 +55,8 @@ pub fn canopied(t: grid.Tile) bool {
 
 /// Every sprite that throws a shadow from its feet: bodies, barrel, standing tiles and forest shapes.
 pub const FIGURES: usize = Bodies.len + 1 + STANDING.len + WALL_MASKS.len;
+/// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
+pub const LIT_FIGURES: usize = Bodies.len + 1;
 
 /// Needs a live GL context.
 pub const Sprites = struct {
@@ -91,25 +93,21 @@ pub const Sprites = struct {
     }
 
     pub fn tileAt(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
-        const t = lv.at(p);
-        const shape = lv.tileShape(p);
-        if (t == .shrub and (shape orelse grid.WallShape{}).mask() == 0 and forestAt(lv, p)) {
-            return self.forest[WALL_CELL[0]] orelse self.tiles.get(.shrub);
-        }
-        return self.tileOf(t, shape);
+        if (self.forestTile(lv, p)) |f| return f;
+        return self.tileOf(lv.at(p), lv.tileShape(p));
+    }
+
+    /// A forest cell's cut of the forest sheet, its lone tree at mask 0; null off a forest or with the sheet unloaded.
+    pub fn forestTile(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
+        if (!forestAt(lv, p)) return null;
+        const i = WALL_CELL[lv.tileMask(p)];
+        return self.forest[i];
     }
 
     pub fn tileOf(self: *const Sprites, t: grid.Tile, shape: ?grid.WallShape) ?rl.Texture2D {
         if (t == .wall) {
             const i = WALL_CELL[(shape orelse return null).mask()];
             return self.wall[i];
-        }
-        if (t == .shrub) {
-            if (shape) |s| {
-                const m = s.mask();
-                const i = WALL_CELL[m];
-                if (m != 0) return self.forest[i] orelse self.tiles.get(.shrub);
-            }
         }
         return self.tiles.getPtrConst(t).*;
     }
@@ -142,7 +140,7 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .pib = @embedFile("pib.png"),
 });
 
-/// A wall's are cut from `WALLS_PNG` by its shape instead.
+/// A wall's are cut from `WALLS_PNG` by its shape instead, and a forest's shrubs from `FOREST_PNG`.
 const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const u8, null), .{
     .floor = @embedFile("floor.png"),
     .grass = @embedFile("grass.png"),
@@ -161,16 +159,24 @@ comptime {
 const WALLS_PNG = @embedFile("walls.png");
 const FOREST_PNG = @embedFile("forest-tree-walls.png");
 
+comptime {
+    std.debug.assert(std.meta.eql(pngSize(WALLS_PNG), pngSize(FOREST_PNG)));
+}
+
+/// One lone shrub in this many is a forest clump, the rest `shrub.png`; which ones by a hash of the cell.
+const LONE_CLUMP_IN: u64 = 3;
+const LONE_CLUMP_SEED: u64 = 0xF02E57;
+
 fn loneClump(p: mathx.P) bool {
     const coordinates = [2]i32{ p.x, p.y };
-    return std.hash.Wyhash.hash(0xF02E57, std.mem.asBytes(&coordinates)) % 3 == 0;
+    return std.hash.Wyhash.hash(LONE_CLUMP_SEED, std.mem.asBytes(&coordinates)) % LONE_CLUMP_IN == 0;
 }
 
 pub fn forestAt(lv: *const grid.Level, p: mathx.P) bool {
-    return lv.at(p) == .shrub and ((lv.tileShape(p) orelse grid.WallShape{}).mask() != 0 or loneClump(p));
+    return lv.at(p) == .shrub and (lv.tileMask(p) != 0 or loneClump(p));
 }
 
-/// Each cell of `walls.png`'s, read across its rows, is the shape with this mask; `tools/tile_art/wall_masks.lua` lists them in this order.
+/// Each cell of `walls.png`'s and `forest-tree-walls.png`'s, read across its rows, is the shape with this mask; `tools/tile_art/wall_masks.lua` lists them in this order.
 const WALL_MASKS = [_]u8{ 0, 1, 2, 4, 8, 3, 19, 5, 6, 38, 9, 137, 10, 12, 76, 7, 23, 39, 55, 11, 27, 139, 155, 13, 77, 141, 205, 14, 46, 78, 110, 15, 31, 47, 63, 79, 95, 111, 127, 143, 159, 175, 191, 207, 223, 239, 255 };
 const WALL_COLS: usize = @divExact(pngSize(WALLS_PNG).x, SPRITE_PX);
 
@@ -689,7 +695,7 @@ test "every wall and forest cell lies inside its PNG, and one past its end is re
         const sheet = rl.genImageColor(w, h, rl.Color.white);
         defer rl.unloadImage(sheet);
         try std.testing.expectEqual(@as(i32, SPRITE_PX * WALL_COLS), w);
-        try std.testing.expectEqual(@as(i32, SPRITE_PX * 6), h);
+        try std.testing.expectEqual(@as(i32, SPRITE_PX * ((WALL_MASKS.len + WALL_COLS - 1) / WALL_COLS)), h);
         for (0..WALL_MASKS.len) |i| rl.unloadImage(wallCell(sheet, i) orelse return error.CellOffSheet);
         std.debug.print("{s}.png {d}x{d}: {d} shapes cut from it\n", .{ name, w, h, WALL_MASKS.len });
         try std.testing.expect(wallCell(sheet, @intCast(@divTrunc(w, SPRITE_PX) * @divTrunc(h, SPRITE_PX))) == null);

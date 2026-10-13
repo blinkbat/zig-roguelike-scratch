@@ -107,8 +107,6 @@ pub const Blow = struct {
     matter: Matter,
     lethal: bool,
     after: ?After = null,
-    /// What a barrel breaks for, shown as the blow lands.
-    gold: i32 = 0,
     fire: bool = false,
 };
 
@@ -324,15 +322,6 @@ pub const Fx = struct {
             if (d.what.onBarrel() and mathx.cellOf(d.what.blowOf().?.at).eq(p)) return true;
         }
         return false;
-    }
-
-    /// Dealt, and not yet shown: its blow is still to land.
-    pub fn goldDue(self: *const Fx) i32 {
-        var n: i32 = 0;
-        for (self.due[0..self.due_n]) |d| {
-            if (d.what.blowOf()) |b| n += b.gold;
-        }
-        return n;
     }
 
     /// Eased out, so it holds near full before it fades.

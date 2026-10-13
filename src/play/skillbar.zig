@@ -26,18 +26,6 @@ pub const Act = enum {
         };
     }
 
-    /// What confirming it does, as a hint says it.
-    pub fn verb(a: Act) [:0]const u8 {
-        return switch (a) {
-            .shoot => "shoot",
-            .wait => "wait",
-            .secondary => "hold",
-            .juke => "juke",
-            .burning_arrow => "fire burning arrow",
-            .glacial_shot => "fire glacial shot",
-        };
-    }
-
     pub fn desc(a: Act) [:0]const u8 {
         return switch (a) {
             .shoot => "Aim an arrow at a target in range; press again to loose it.",

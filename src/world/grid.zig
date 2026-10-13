@@ -68,6 +68,11 @@ pub const Tile = enum(u8) {
         return t.solid() and !t.liquid();
     }
 
+    /// Given a `WallShape` by `gen.shapeWalls`, joining its own kind.
+    pub fn shaped(t: Tile) bool {
+        return t == .wall or t == .shrub;
+    }
+
     pub fn letter(t: Tile) u8 {
         return switch (t) {
             .wall => '#',
@@ -279,6 +284,11 @@ pub const Level = struct {
 
     pub fn tileShape(self: *const Level, p: P) ?WallShape {
         return cellOr(?WallShape, &self.shape, p, null);
+    }
+
+    /// Its shape's mask, 0 for a cell with none.
+    pub fn tileMask(self: *const Level, p: P) u8 {
+        return (self.tileShape(p) orelse WallShape{}).mask();
     }
 
     pub fn inside(p: P) bool {

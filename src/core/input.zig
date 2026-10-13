@@ -5,7 +5,9 @@ const mathx = @import("mathx.zig");
 const PAD: i32 = 0;
 const ENTER_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
 const LEAN: rl.GamepadButton = .left_trigger_2;
-const LEAN_KEYS = [_]rl.KeyboardKey{ .left_shift, .right_shift };
+const SHIFT_KEYS = [_]rl.KeyboardKey{ .left_shift, .right_shift };
+const CTRL_KEYS = [_]rl.KeyboardKey{ .left_control, .right_control };
+const LEAN_KEYS = SHIFT_KEYS;
 
 /// What the player last pressed, which every caption names.
 pub const Device = enum { pad, keys };
@@ -20,26 +22,22 @@ pub fn per(d: Device, comptime f: fn (comptime Device) [:0]const u8) [:0]const u
 pub fn moveName(comptime d: Device) [:0]const u8 {
     return switch (d) {
         .pad => "D-pad",
-        .keys => comptime blk: {
-            var letters: []const u8 = "";
-            for ([_]mathx.Dir{ .n, .w, .s, .e }) |dir| {
-                const w = for (WALKS) |x| {
-                    if (x.d == dir) break x;
-                } else unreachable;
-                for (w.keys) |k| {
-                    if (@tagName(k).len == 1) letters = letters ++ keyName(k);
-                }
-            }
-            break :blk std.fmt.comptimePrint("{s}", .{letters});
-        },
+        .keys => comptime letters(&WALKS),
     };
 }
 
-pub fn leanName(comptime d: Device) [:0]const u8 {
-    return switch (d) {
-        .pad => padName(LEAN),
-        .keys => keyName(LEAN_KEYS[0]),
-    };
+/// The letter keys that walk up, left, down and right, as "WASD" reads.
+fn letters(comptime walks: []const Walk) [:0]const u8 {
+    var out: []const u8 = "";
+    for ([_]mathx.Dir{ .n, .w, .s, .e }) |dir| {
+        const w = for (walks) |x| {
+            if (x.d == dir) break x;
+        } else unreachable;
+        for (w.keys) |k| {
+            if (@tagName(k).len == 1) out = out ++ keyName(k);
+        }
+    }
+    return std.fmt.comptimePrint("{s}", .{out});
 }
 
 fn padName(comptime b: rl.GamepadButton) [:0]const u8 {
@@ -158,7 +156,7 @@ const SLOT_CAPTIONS = blk: {
     for (SLOT_KEYS, &out) |k, *c| c.* = keyName(k);
     break :blk out;
 };
-const SECOND_KEYS = [_]rl.KeyboardKey{ .left_control, .right_control };
+const SECOND_KEYS = CTRL_KEYS;
 pub const SECOND_CAPTION = keyName(SECOND_KEYS[0]);
 
 const BUTTONS = std.enums.values(Button);
@@ -335,7 +333,7 @@ pub const State = struct {
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();
-        self.lean = (pad and rl.isGamepadButtonDown(PAD, LEAN)) or (!self.typing and either(LEAN_KEYS[0], LEAN_KEYS[1]));
+        self.lean = (pad and rl.isGamepadButtonDown(PAD, LEAN)) or (self.playing and either(LEAN_KEYS));
         self.typed.n = 0;
         self.rub = false;
         if (self.typing) {
@@ -450,9 +448,9 @@ pub const Desk = struct {
     pub const BACK_KEY: rl.KeyboardKey = .escape;
     pub const SMALLER_KEY: rl.KeyboardKey = .left_bracket;
     pub const BIGGER_KEY: rl.KeyboardKey = .right_bracket;
-    const CTRL = "Ctrl+";
+    const CTRL = keyName(CTRL_KEYS[0]) ++ "+";
     const ALT = "Alt+";
-    pub const SHIFT_CAPTION = "Shift";
+    pub const SHIFT_CAPTION = keyName(SHIFT_KEYS[0]);
     const CTRL_SHIFT = CTRL ++ SHIFT_CAPTION ++ "+";
     pub const PLAY_CAPTION = keyName(PLAY_KEY);
     pub const PLAY_HERE_CAPTION = keyName(PLAY_HERE_KEY);
@@ -468,20 +466,12 @@ pub const Desk = struct {
     pub const RECT_CAPTION = SHIFT_CAPTION ++ "+drag";
     pub const BRUSH_CAPTION = keyName(SMALLER_KEY) ++ " " ++ keyName(BIGGER_KEY);
     pub const PAN_CAPTION = blk: {
-        var letters: []const u8 = "";
-        for ([_]mathx.Dir{ .n, .w, .s, .e }) |d| {
-            const w = for (PAN_KEYS) |p| {
-                if (p.d == d) break p;
-            } else unreachable;
-            var arrow = false;
+        for (PAN_KEYS) |w| {
             for (w.keys) |k| {
-                if (k == .up or k == .down or k == .left or k == .right) {
-                    arrow = true;
-                } else letters = letters ++ keyName(k);
-            }
-            if (!arrow) @compileError("no arrow pans " ++ @tagName(d));
+                if (k == .up or k == .down or k == .left or k == .right) break;
+            } else @compileError("no arrow pans " ++ @tagName(w.d));
         }
-        break :blk mouseName(GRAB_BUTTON) ++ " drag / " ++ letters ++ " / arrows";
+        break :blk mouseName(GRAB_BUTTON) ++ " drag / " ++ letters(&PAN_KEYS) ++ " / arrows";
     };
     pub const WHEEL_CAPTION = "wheel";
     pub const GRAPH_CAPTION = keyName(GRAPH_KEY);
@@ -562,8 +552,8 @@ pub const Desk = struct {
         self.erase = rl.isMouseButtonDown(ERASE_BUTTON);
         self.erase_hit = rl.isMouseButtonPressed(ERASE_BUTTON);
         self.grab = rl.isMouseButtonDown(GRAB_BUTTON);
-        const ctrl = either(.left_control, .right_control);
-        self.shift = either(.left_shift, .right_shift);
+        const ctrl = either(CTRL_KEYS);
+        self.shift = either(SHIFT_KEYS);
         self.pan = if (ctrl) .{ .x = 0, .y = 0 } else heldWalk(&PAN_KEYS, false);
         const hit = struct {
             fn f(k: rl.KeyboardKey) bool {
@@ -598,12 +588,12 @@ pub const Desk = struct {
     }
 };
 
-fn either(l: rl.KeyboardKey, r: rl.KeyboardKey) bool {
-    return rl.isKeyDown(l) or rl.isKeyDown(r);
+fn either(pair: [2]rl.KeyboardKey) bool {
+    return rl.isKeyDown(pair[0]) or rl.isKeyDown(pair[1]);
 }
 
 fn altDown() bool {
-    return either(.left_alt, .right_alt);
+    return either(.{ .left_alt, .right_alt });
 }
 
 fn fullscreenHit() bool {
@@ -626,7 +616,6 @@ fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
         .escape => "Esc",
         .enter => "Enter",
         .space => "Space",
-        .period => "Period",
         .backspace => "Backspace",
         .delete => "Del",
         .left_control => "Ctrl",
@@ -860,9 +849,8 @@ test "the keyboard numbers the slots past the modifier, which Ctrl holds" {
     try std.testing.expectEqualStrings("RT", s.slotCaption(.rt));
 }
 
-test "menus name dedicated keys, and the walk names WASD and Shift" {
+test "menus name dedicated keys, and the walk names WASD" {
     try std.testing.expectEqualStrings("WASD", moveName(.keys));
-    try std.testing.expectEqualStrings("Shift", leanName(.keys));
     try std.testing.expectEqualStrings("Enter", Button.a.caption(.keys));
     try std.testing.expectEqualStrings("Space", Button.x.caption(.keys));
     try std.testing.expectEqualStrings("Del", Button.y.caption(.keys));

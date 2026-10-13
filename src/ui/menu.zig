@@ -84,7 +84,7 @@ pub fn moveItem(comptime d: input.Device) [:0]const u8 {
 
 pub const BACK_LABEL = "back";
 
-/// `backed` takes either; the keyboard's B is a key nobody reaches for.
+/// `backed` takes either; the keyboard has no B.
 pub fn backName(comptime d: input.Device) [:0]const u8 {
     return switch (d) {
         .pad => BACK.name(d),

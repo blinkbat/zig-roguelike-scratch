@@ -5,7 +5,7 @@ Extend the owner's pixel art by copying and manipulating the actual painted piec
 ## Start from the editable source
 
 1. Locate the file the owner is actually editing and inspect its layers. Do not assume the layer named "Draw here" contains the drawing.
-2. Save a dated backup to `%TEMP%\wall-mocks\` (Aseprite's `app.fs.tempPath`) before changing it, never into the repository.
+2. Save a dated backup to `%TEMP%\wall-mocks\` (Aseprite's `app.fs.tempPath`) before changing it, never into the repository; forest art is the owner's one exception (`assets/backup/`, below).
 3. Export the painted layers alone and inspect them at native resolution and an integer zoom. Record the cell size, source rectangles and layer names.
 4. Preserve the original painted layer and its position exactly. Put extensions on a separate editable layer. Update the original working Aseprite file so the owner sees the changes there.
 
@@ -107,6 +107,6 @@ $process.ExitCode
 
 The port copies horizontal outlines, vertical outlines, rounded corners, brick runs, face ends and complete 10 by 10 cap-detail patches. Plain interior space uses the sampled cap colour. Source strips repeat without scaling or rotation. Vertical strips share their endpoint sample so stacked tiles meet. Cell 02 had an empty first row at its north connection; the extension repairs this by copying its next row beneath the untouched original layer.
 
-Validation artifacts go to `%TEMP%\wall-mocks\`. `port_walls.lua` writes `ported-pixel-validation.txt` there; the committed copy in `output/wall-mocks/` predates the 47-shape export and still describes the old 14-shape atlas, so rerun the port before citing it. `export_walls.lua` asserts its own palette, alpha, connection coverage and distinct cells, and `look.zig`'s tests check `WALL_MASKS` and `WALL_FACE_PX` against `wall_masks.lua` and its `FACE`. Inspecting shots for seam gaps is not exhaustive coverage of every generated map.
+Validation artifacts go to `%TEMP%\wall-mocks\`. `port_walls.lua` writes `ported-pixel-validation.txt` there; the committed copy in `output/wall-mocks/` predates the 47-shape export and still describes the old 14-shape atlas, so rerun the port before citing it. `export_walls.lua` asserts its own palette, alpha, connection coverage and distinct cells, and `look.zig`'s tests check `WALL_MASKS` and `WALL_FACE_PX` against `wall_masks.lua` and `export_walls.lua`'s `FACE`. Inspecting shots for seam gaps is not exhaustive coverage of every generated map.
 
 Current correction notes: the generated approximation changed the drawing; resizing then distorted its pixel scale. A subsequent native-colour draft still replaced the uneven borders with straight lines. Neither palette matching nor native resolution alone is enough. Preserve the actual painted edge sequences and verify their joins.

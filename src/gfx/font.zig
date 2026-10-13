@@ -9,8 +9,8 @@ const SHADOW_A: u16 = 200;
 const SHADOW_STEP: i32 = 14;
 pub const BODY: i32 = 20;
 pub const SMALL: i32 = 16;
-const ASCII_LO: i32 = 32;
-const ASCII_N: usize = 95;
+const ASCII_LO: i32 = ' ';
+const ASCII_N: usize = '~' + 1 - ASCII_LO;
 const SYMBOLS_MAX: usize = 16;
 const ELLIPSIS = "...";
 

@@ -6,6 +6,9 @@ pub const HOURS: f32 = 24;
 pub const SUNRISE: f32 = 6;
 pub const SUNSET: f32 = 20;
 pub const NOON: f32 = 12;
+/// Midway between sunrise and sunset, where the sun stands highest; not `NOON`, as the day is lopsided.
+pub const SOLAR_NOON: f32 = (SUNRISE + SUNSET) / 2;
+pub const DEAD_OF_NIGHT: f32 = 1;
 const PER_HOUR: u16 = 60;
 const MINUTES: u16 = @as(u16, @intFromFloat(HOURS)) * PER_HOUR;
 pub const TURN_MINUTES: u16 = 6;

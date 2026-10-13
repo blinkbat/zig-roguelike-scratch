@@ -15,11 +15,12 @@ Prefer no comments in code. Don't make product/design decisions — ask. Don't c
 
 **NOTHING SCRATCH GOES IN THE REPO.** Backups, previews, mocks, validation reports, timing roots and throwaway
 scripts go to `%TEMP%` or the session scratchpad, never under this directory (`output/` included). A tool that
-writes one writes it there (`tools/tile_art/*.lua` use `app.fs.tempPath`). Leave `git status` as you found it but
+writes one writes it there (`tools/tile_art/*.lua` use `app.fs.tempPath`); the one exception is the forest art's
+backups in `assets/backup/`, at the owner's request. Leave `git status` as you found it but
 for the change asked for.
 
 - Wall and repeating tile workflow: `docs/TILE_ART_WORKFLOW.md`. Port the owner's actual pixels and uneven outlines at native scale; preserve authored layers, update the canonical Aseprite file, and inspect connected game tiles. Regular walls use Desktop `regular-walls.aseprite`, painted on `Layer 1`; cave and forest are separate.
-- Forest artwork uses `assets/source/forest-tree-walls.aseprite` and `assets/backup/` at the owner's request. `export_forest.lua` exports its two art layers; the Desktop source keeps `Draw here` and separate `Forest extensions`. `.shrub` connections use the 47-cell forest atlas; isolated blockers mix `shrub.png` and forest cell 01 by stable position hash. The owner requested darker forest foliage and grass pixels; before-tone sources are backed up, and `tone_forest.lua` records the palette change. `shot.cmd` includes `shots/forest.png` and five `shadows-*.png` lighting studies.
+- Forest artwork uses `assets/source/forest-tree-walls.aseprite` and `assets/backup/` at the owner's request. `export_forest.lua` exports its two art layers; the Desktop source keeps `Draw here` and separate `Forest extensions`. `.shrub` connections use the 47-cell forest atlas; isolated blockers mix `shrub.png` and forest cell 01 by stable position hash. The owner requested darker forest foliage and grass pixels; before-tone sources are backed up, and `tone_forest.lua` records the palette change. `shot.cmd` includes `shots/forest.png` and nine `shadows-*.png` lighting studies (morning, noon, evening, moon, torch, three hidden casters, offscreen).
 
 ## Build & verify
 
@@ -219,7 +220,7 @@ for the change asked for.
   block a step but not sight or an arrow, and the liquids not gas; reeds and crop block sight but not a step; tiny shrubs, tall grass and shrooms are decor,
   blocking nothing, on grass drawn under them. `.wall` and `.shrub` are shaped, each joining its own material.
 - **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** in `gen.around`, before the torches and barrels, again before each feature and once settled (`procgen.reshape`), or by `Node.stamp` for a bespoke node
-  (`shapeWalls` alone), and stored in `Level.shape`: which of its eight neighbours are walls too (`grid.WallShape`,
+  (`shapeWalls` alone), and stored in `Level.shape`: which of its eight neighbours are of its own kind (`grid.WallShape`,
   off the map counting), a corner only where both sides beside it are (`WallShape.joined`), so one of 47 shapes.
   Nothing recomputes it once the floor is built, and nothing about what has been revealed touches it (owner's call). Forests use the same stored masks, joining shrubs alone; older saves acquire missing forest masks once on resume. `Level.wallShape` still returns brick walls alone, `Level.tileShape` either material. A brick wall's picture is the
   atlas's cell for it (`look.WALL_MASKS`, `walls.png` read across its rows), filling the cell, built by

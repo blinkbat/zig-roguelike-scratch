@@ -63,21 +63,31 @@ pub const SEA = 20;
 pub const MOUNTAIN = 90;
 /// At this heat and under is tundra or glacier.
 pub const FROST = 10;
+const COAST = 23;
+const FOOTHILLS = 84;
+const GLACIAL_DRAIN = 75;
+const ARID = 10;
+const DRY = 20;
+/// Rain or drainage under this is low.
+const LOW = 33;
+/// Rain or drainage over this is high.
+const HIGH = 65;
+const TAIGA_HEAT = 25;
 
 /// DF v50's order: lake and mountain and ocean by height, then cold, then rain against drainage.
 pub fn classify(height: f32, rain: f32, drain: f32, heat: f32) Biome {
     if (height < SEA) return .ocean;
-    if (height < 23) return .coast;
+    if (height < COAST) return .coast;
     if (height < SHORE) return .beach;
     if (height >= MOUNTAIN) return .mountain;
-    if (height >= 84) return .foothills;
-    if (heat <= FROST) return if (drain < 75) .tundra else .glacier;
-    if (rain < 10) return if (drain < 33) .desert else if (drain <= 65) .wasteland else .badlands;
-    if (rain < 20) return .grassland;
-    if (rain < 33) return .savanna;
-    if (rain <= 65) return if (drain > 32) .shrubland else .marsh;
-    if (drain < 33) return .swamp;
-    return if (heat > 25) .forest else .taiga;
+    if (height >= FOOTHILLS) return .foothills;
+    if (heat <= FROST) return if (drain < GLACIAL_DRAIN) .tundra else .glacier;
+    if (rain < ARID) return if (drain < LOW) .desert else if (drain <= HIGH) .wasteland else .badlands;
+    if (rain < DRY) return .grassland;
+    if (rain < LOW) return .savanna;
+    if (rain <= HIGH) return if (drain >= LOW) .shrubland else .marsh;
+    if (drain < LOW) return .swamp;
+    return if (heat > TAIGA_HEAT) .forest else .taiga;
 }
 
 /// `v` is its fine noise there, `roll` a die from 0 to 1.

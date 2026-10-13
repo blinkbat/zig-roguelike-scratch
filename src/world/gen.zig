@@ -207,16 +207,14 @@ const Reached = struct {
 
 pub fn shapeWalls(lv: *grid.Level) void {
     for (0..grid.CELLS) |i| {
-        lv.shape[i] = switch (lv.tile[i]) {
-            .wall, .shrub => wallShape(lv, grid.Level.of(i)),
-            else => null,
-        };
+        lv.shape[i] = if (lv.tile[i].shaped()) wallShape(lv, grid.Level.of(i)) else null;
     }
 }
 
-pub fn restoreForestShapes(lv: *grid.Level) void {
+/// An older save's level, shaped before forests were.
+pub fn restoreShapes(lv: *grid.Level) void {
     for (lv.tile, lv.shape, 0..) |t, s, i| {
-        if (t == .shrub and s == null) lv.shape[i] = wallShape(lv, grid.Level.of(i));
+        if (t.shaped() and s == null) lv.shape[i] = wallShape(lv, grid.Level.of(i));
     }
 }
 
@@ -257,10 +255,10 @@ test "forest shapes join their own material, continue over the rim and never hol
     const wall = p.add(.{ .x = -1, .y = 0 });
     try std.testing.expectEqual(@as(u8, 0), lv.wallShape(wall).?.mask());
     lv.shape[grid.Level.idx(p)] = null;
-    restoreForestShapes(&lv);
+    restoreShapes(&lv);
     try std.testing.expectEqual(@as(u8, 19), lv.tileShape(p).?.mask());
     try std.testing.expectEqual(@as(u8, 0), lv.wallShape(wall).?.mask());
-    std.debug.print("forest shapes: 2 corner forms, 1 map rim, 1 separate brick wall, 1 restored legacy shape\n", .{});
+    std.debug.print("forest masks: corner {d}, rim {d}, brick wall beside {d}, restored {d}\n", .{ 3, lv.tileShape(.{ .x = 0, .y = 0 }).?.mask(), lv.wallShape(wall).?.mask(), lv.tileShape(p).?.mask() });
 }
 
 test "every floor connects" {

@@ -106,13 +106,12 @@ fn wallBox() grid.Box {
 }
 
 fn gates() [4]Gate {
-    const wl = wallBox().lo;
-    const wh = wallBox().hi;
+    const w = wallBox();
     return .{
-        .{ .at = .{ .x = grid.MIDDLE.x, .y = wl.y }, .in = .s },
-        .{ .at = .{ .x = grid.MIDDLE.x, .y = wh.y - 1 }, .in = .n },
-        .{ .at = .{ .x = wl.x, .y = grid.MIDDLE.y }, .in = .e },
-        .{ .at = .{ .x = wh.x - 1, .y = grid.MIDDLE.y }, .in = .w },
+        .{ .at = carve.sideAt(w, .n, grid.MIDDLE.x), .in = .s },
+        .{ .at = carve.sideAt(w, .s, grid.MIDDLE.x), .in = .n },
+        .{ .at = carve.sideAt(w, .w, grid.MIDDLE.y), .in = .e },
+        .{ .at = carve.sideAt(w, .e, grid.MIDDLE.y), .in = .w },
     };
 }
 

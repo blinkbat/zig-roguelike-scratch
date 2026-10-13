@@ -16,6 +16,8 @@ const mix = sky.mix;
 pub const SUB: i32 = 4;
 const MAP_W: i32 = grid.W * SUB;
 const MAP_H: i32 = grid.H * SUB;
+/// `Light.baked` with no row waiting to be sent.
+const NONE_BAKED = [2]i32{ MAP_H, 0 };
 const TEXELS: usize = @intCast(MAP_W * MAP_H);
 /// The map is drawn with (DST_COLOR, SRC_COLOR) blending, so a texel stores half the light and reaches twice the art.
 const OVERBRIGHT: f32 = 2.0;
@@ -654,7 +656,7 @@ pub const Light = struct {
     casting: [CAST_W * CAST_H]u16,
     t: mathx.Seconds,
     map: [TEXELS]rl.Color,
-    /// The rows of `map` the last `bake` wrote, all the texture needs sent.
+    /// The rows of `map` baked since the texture was last sent, all it needs sent.
     baked: [2]i32,
     scratch: grid.Level,
     gpu: Gpu,
@@ -881,12 +883,12 @@ pub const Light = struct {
     fn sunAt(self: *const Light, lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
         if (sky.upright(ray.flat)) return 1;
         const b = sunBox(ray, x, y, z);
-        if (self.castersIn(b.lo.x, b.lo.y, b.hi.x, b.hi.y) == 0) return 1;
+        if (self.castersIn(b) == 0) return 1;
         return sunlit(lv, ray, x, y, z);
     }
 
     /// The cells a ray toward the light from `x, y, z` could cross, and a cell round them.
-    fn sunBox(ray: SunRay, x: f32, y: f32, z: f32) struct { lo: P, hi: P } {
+    fn sunBox(ray: SunRay, x: f32, y: f32, z: f32) grid.Box {
         const far = ray.far(z);
         const e = [2]f32{ x + ray.u[0] * far, y + ray.u[1] * far };
         const lo = mathx.cellOf(.{ @min(x, e[0]), @min(y, e[1]) });
@@ -894,12 +896,12 @@ pub const Light = struct {
         return .{ .lo = lo.sub(.{ .x = 1, .y = 1 }), .hi = hi.add(.{ .x = 2, .y = 2 }) };
     }
 
-    fn castersIn(self: *const Light, x0: i32, y0: i32, x1: i32, y1: i32) u16 {
+    fn castersIn(self: *const Light, box: grid.Box) u16 {
         const w = CAST_W;
-        const a: usize = @intCast(std.math.clamp(x0, 0, grid.W));
-        const b: usize = @intCast(std.math.clamp(y0, 0, grid.H));
-        const c: usize = @intCast(std.math.clamp(x1, 0, grid.W));
-        const d: usize = @intCast(std.math.clamp(y1, 0, grid.H));
+        const a: usize = @intCast(std.math.clamp(box.lo.x, 0, grid.W));
+        const b: usize = @intCast(std.math.clamp(box.lo.y, 0, grid.H));
+        const c: usize = @intCast(std.math.clamp(box.hi.x, 0, grid.W));
+        const d: usize = @intCast(std.math.clamp(box.hi.y, 0, grid.H));
         if (c <= a or d <= b) return 0;
         return self.casting[d * w + c] + self.casting[b * w + a] - self.casting[b * w + c] - self.casting[d * w + a];
     }
@@ -951,7 +953,7 @@ pub const Light = struct {
         const t0 = P{ .x = @max(0, lo.x * SUB - 1), .y = @max(0, lo.y * SUB - 1) };
         const t1 = P{ .x = @min(MAP_W, hi.x * SUB + 1), .y = @min(MAP_H, hi.y * SUB + 1) };
         const ray: ?SunRay = if (self.sky) |k| SunRay.of(k) else null;
-        self.baked = .{ t0.y, t1.y };
+        self.baked = .{ @min(self.baked[0], t0.y), @max(self.baked[1], t1.y) };
         var c = P{ .x = 0, .y = @divFloor(t0.y, SUB) };
         while (c.y * SUB < t1.y) : (c.y += 1) {
             c.x = @divFloor(t0.x, SUB);
@@ -1095,7 +1097,7 @@ pub const Light = struct {
         const tex = self.gpu.map orelse return;
         const from, const to = self.baked;
         if (to > from) rl.updateTextureRec(tex, look.rect(0, from, MAP_W, to - from), &self.map[@intCast(from * MAP_W)]);
-        self.baked = .{ 0, 0 };
+        self.baked = NONE_BAKED;
     }
 
     /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
@@ -1199,27 +1201,18 @@ pub const Light = struct {
         const f = self.footOf(tex, dest, s, 1) orelse return;
         const fx = f.x;
         const fy = f.y;
-        const sh = self.gpu.shadow orelse return;
         var buf: [BODY_LIGHTS]Cast = undefined;
         const cs = casts(s, centre, f.height, &buf);
         if (cs.len == 0) return;
-        const size = [2]f32{ @floatFromInt(tex.width), @floatFromInt(tex.height) };
-        const foot = self.gpu.art(tex).foot / size[1];
-        rl.beginShaderMode(sh.shader);
-        rl.setShaderValue(sh.shader, sh.size, &size, .vec2);
-        rl.setShaderValue(sh.shader, sh.foot, &foot, .float);
-        const joined = [4]f32{ 0, 0, 0, 0 };
-        rl.setShaderValue(sh.shader, sh.joined, &joined, .vec4);
-        const softness = [2]f32{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT };
-        rl.setShaderValue(sh.shader, sh.softness, &softness, .vec2);
+        const foot = self.gpu.art(tex).foot / @as(f32, @floatFromInt(tex.height));
+        if (!self.beginSilhouettes(tex, foot, .{ 0, 0, 0, 0 }, .{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT })) return;
         for (cs) |c| {
             if (c.solid <= 0) continue;
             var full = c;
             full.alpha *= c.solid;
             silhouette(tex, fx, fy, dest.width, foot, left, full);
         }
-        rl.gl.rlDrawRenderBatchActive();
-        rl.beginShaderMode(self.gpu.shade.?);
+        self.endSilhouettes();
         const g = self.gpu.streak orelse return;
         for (cs) |c| {
             if (c.solid < 1) streak(g, fx, fy, dest.width, c);
@@ -1244,19 +1237,11 @@ pub const Light = struct {
 
     pub fn drawForestShadows(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: Shine, shape: grid.WallShape) void {
         _ = self.footOf(tex, dest, s, 1) orelse return;
-        const sh = self.gpu.shadow orelse return;
         var buf: [BODY_LIGHTS]Cast = undefined;
         const cs = casts(s, centre, dest.height, &buf);
         if (cs.len == 0) return;
-        const size = [2]f32{ @floatFromInt(tex.width), @floatFromInt(tex.height) };
-        const foot: f32 = 1;
-        rl.beginShaderMode(sh.shader);
-        rl.setShaderValue(sh.shader, sh.size, &size, .vec2);
-        rl.setShaderValue(sh.shader, sh.foot, &foot, .float);
         const joined = [4]f32{ @floatFromInt(@intFromBool(shape.w)), @floatFromInt(@intFromBool(shape.e)), @floatFromInt(@intFromBool(shape.n)), @floatFromInt(@intFromBool(shape.s)) };
-        rl.setShaderValue(sh.shader, sh.joined, &joined, .vec4);
-        const softness = [2]f32{ FOREST_SOFT, FOREST_SOFT };
-        rl.setShaderValue(sh.shader, sh.softness, &softness, .vec2);
+        if (!self.beginSilhouettes(tex, 1, joined, .{ FOREST_SOFT, FOREST_SOFT })) return;
         for (cs) |c| {
             const ink = colourOf(c.shade, @min(FOREST_MAX, c.alpha * FOREST_A));
             for (0..FOREST_STEPS + 1) |i| {
@@ -1264,6 +1249,23 @@ pub const Light = struct {
                 forestQuad(tex, dest, centre, c, along, ink);
             }
         }
+        self.endSilhouettes();
+    }
+
+    /// The shadow shader on `tex` until `endSilhouettes`: `foot` its feet's share of its height, `joined` the sides it runs on past (w, e, n, s), `softness` its blur at tip and foot; false with no shader.
+    fn beginSilhouettes(self: *const Light, tex: rl.Texture2D, foot: f32, joined: [4]f32, softness: [2]f32) bool {
+        const sh = self.gpu.shadow orelse return false;
+        const size = [2]f32{ @floatFromInt(tex.width), @floatFromInt(tex.height) };
+        rl.beginShaderMode(sh.shader);
+        rl.setShaderValue(sh.shader, sh.size, &size, .vec2);
+        rl.setShaderValue(sh.shader, sh.foot, &foot, .float);
+        rl.setShaderValue(sh.shader, sh.joined, &joined, .vec4);
+        rl.setShaderValue(sh.shader, sh.softness, &softness, .vec2);
+        return true;
+    }
+
+    /// Back to the mask's own shader.
+    fn endSilhouettes(self: *const Light) void {
         rl.gl.rlDrawRenderBatchActive();
         rl.beginShaderMode(self.gpu.shade.?);
     }
@@ -1331,14 +1333,23 @@ fn forestTip(c: Cast, centre: [2]f32, uv: [2]f32, height: f32) [2]f32 {
 
 fn forestQuad(tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, c: Cast, along: f32, ink: rl.Color) void {
     const pad = FOREST_PAD / @as(f32, @floatFromInt(tex.width));
-    const corners = [4][2]f32{ .{ -pad, -pad }, .{ -pad, 1 + pad }, .{ 1 + pad, 1 + pad }, .{ 1 + pad, -pad } };
+    const uvs = [4][2]f32{ .{ -pad, -pad }, .{ -pad, 1 + pad }, .{ 1 + pad, 1 + pad }, .{ 1 + pad, -pad } };
+    var corners: [4][4]f32 = undefined;
+    for (uvs, &corners) |uv, *v| {
+        const lean = forestTip(c, centre, uv, dest.height);
+        v.* = .{ uv[0], uv[1], dest.x + uv[0] * dest.width + lean[0] * along, dest.y + uv[1] * dest.height + lean[1] * along };
+    }
+    texQuad(tex, ink, corners);
+}
+
+/// Each corner its texture's u, v, then the screen's x, y.
+fn texQuad(tex: rl.Texture2D, ink: rl.Color, corners: [4][4]f32) void {
     rl.gl.rlSetTexture(tex.id);
     rl.gl.rlBegin(rl.gl.rl_quads);
     rl.gl.rlColor4ub(ink.r, ink.g, ink.b, ink.a);
-    for (corners) |uv| {
-        const lean = forestTip(c, centre, uv, dest.height);
-        rl.gl.rlTexCoord2f(uv[0], uv[1]);
-        rl.gl.rlVertex2f(dest.x + uv[0] * dest.width + lean[0] * along, dest.y + uv[1] * dest.height + lean[1] * along);
+    for (corners) |v| {
+        rl.gl.rlTexCoord2f(v[0], v[1]);
+        rl.gl.rlVertex2f(v[2], v[3]);
     }
     rl.gl.rlEnd();
     rl.gl.rlSetTexture(0);
@@ -1390,17 +1401,7 @@ fn silhouette(tex: rl.Texture2D, fx: f32, fy: f32, width: f32, foot: f32, left: 
         .{ east, foot, fx + half, fy },
         .{ east, -pad, tip[0] + half, tip[1] },
     };
-    rl.gl.rlSetTexture(tex.id);
-    rl.gl.rlBegin(rl.gl.rl_quads);
-    const shade = colourOf(c.shade, c.alpha);
-    rl.gl.rlColor4ub(shade.r, shade.g, shade.b, shade.a);
-    for (0..4) |k| {
-        const v = corners[if (mirrored) 3 - k else k];
-        rl.gl.rlTexCoord2f(v[0], v[1]);
-        rl.gl.rlVertex2f(v[2], v[3]);
-    }
-    rl.gl.rlEnd();
-    rl.gl.rlSetTexture(0);
+    texQuad(tex, colourOf(c.shade, c.alpha), if (mirrored) .{ corners[3], corners[2], corners[1], corners[0] } else corners);
 }
 
 /// The edges repeat their own cell. `out` may be `src`.
@@ -1584,16 +1585,16 @@ const Gpu = struct {
 
     fn load(figures: *const [look.FIGURES]?rl.Texture2D) Gpu {
         var g = Gpu{};
-        g.map = look.canvas(MAP_W, MAP_H, rl.Color.black, .bilinear);
+        g.map = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
         g.glow = look.radial(GLOW_PX, glowAlpha);
         g.streak = look.field(STREAK_PX[0], STREAK_PX[1], streakAlpha);
         g.body = look.program(BodyShader, BODY_FS);
         g.shadow = look.program(ShadowShader, SHADOW_FS);
         g.receiver = look.program(ReceiverShader, RECEIVER_FS);
         g.shade = look.shader(SHADE_FS);
-        for (figures) |b| {
+        for (figures, 0..) |b, i| {
             const t = b orelse continue;
-            g.arts[g.art_n] = artOf(t);
+            g.arts[g.art_n] = artOf(t, i < look.LIT_FIGURES);
             g.art_n += 1;
         }
         return g;
@@ -1614,7 +1615,8 @@ const Gpu = struct {
     }
 };
 
-fn artOf(t: rl.Texture2D) Art {
+/// Normals only when `lit`: nothing but the body shader reads them.
+fn artOf(t: rl.Texture2D, lit: bool) Art {
     var a = Art.bare(t);
     if (t.width > ART_MAX or t.height > ART_MAX) return a;
     const img = rl.loadImageFromTexture(t) catch return a;
@@ -1631,7 +1633,7 @@ fn artOf(t: rl.Texture2D) Art {
             break;
         }
     }
-    a.normals = bevelNormals(&solid, t.width, t.height);
+    if (lit) a.normals = bevelNormals(&solid, t.width, t.height);
     return a;
 }
 
@@ -1804,7 +1806,7 @@ test "shadow casters keep their light outside sight and memory" {
     l.carrier = .{ 22.5, 14.5 };
     @memset(&lv.los, true);
     var checked: usize = 0;
-    for ([_]?f32{ day.NOON, 1, null }) |hour| {
+    for ([_]?f32{ day.NOON, day.DEAD_OF_NIGHT, null }) |hour| {
         l.sky = if (hour) |h| sky.at(h) else null;
         @memset(&lv.lit, true);
         @memset(&lv.seen, true);
@@ -2140,7 +2142,7 @@ test "night lantern on explored ground fades into memory without a dark ring" {
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     l.carrier = mathx.centre(at);
-    l.sky = sky.at(1);
+    l.sky = sky.at(day.DEAD_OF_NIGHT);
     var lowest = lum(MEMORY);
     var rise: f32 = 0;
     var last = lum(l.at(&lv, &.{}, l.carrier.?));
@@ -2164,7 +2166,7 @@ test "moving night light stays above memory at 60 and 144 Hz" {
         lume.see(&lv, from, actor.row(.archer).sight, 0, &.{.{ .at = from, .reach = actor.row(.archer).light }});
         const l = try testLight(&lv);
         defer std.testing.allocator.destroy(l);
-        l.sky = sky.at(1);
+        l.sky = sky.at(day.DEAD_OF_NIGHT);
         const to = from.add(.{ .x = 1, .y = 1 });
         lume.see(&lv, to, actor.row(.archer).sight, 0, &.{.{ .at = to, .reach = actor.row(.archer).light }});
         var lowest = lum(MEMORY);
@@ -2625,7 +2627,7 @@ test "skipping the sun's march where nothing that casts is near changes nothing 
                 checked += 1;
                 try std.testing.expectEqual(sunlit(&lv, SunRay.of(k), q[0], q[1], z), l.sunAt(&lv, SunRay.of(k), q[0], q[1], z));
                 const b = Light.sunBox(SunRay.of(k), q[0], q[1], z);
-                if (l.castersIn(b.lo.x, b.lo.y, b.hi.x, b.hi.y) == 0) skipped += 1;
+                if (l.castersIn(b) == 0) skipped += 1;
             }
         }
     }
@@ -2697,7 +2699,7 @@ test "the moon throws a cold shadow as deep as the sun's, over the archer's own 
     const foe = mathx.centre(.{ .x = 40, .y = 30 });
     var depth: [2]f32 = undefined;
     var blue: [2]f32 = undefined;
-    for ([_]f32{ day.NOON, 1 }, 0..) |h, i| {
+    for ([_]f32{ day.NOON, day.DEAD_OF_NIGHT }, 0..) |h, i| {
         l.sky = sky.at(h);
         var buf: [BODY_LIGHTS]Cast = undefined;
         const cs = casts(l.onBody(foe, false), foe, ART_H, &buf);

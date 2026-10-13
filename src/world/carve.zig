@@ -13,6 +13,8 @@ const NONE = std.math.maxInt(u16);
 const NO_CELL = std.math.maxInt(u32);
 /// A meander's bend changes by up to half this a step, in radians, at full wander.
 const MEANDER: f32 = 0.55;
+/// The most a meander's bend runs off its heading, in radians, at full wander.
+const BEND_MAX: f32 = 1.1;
 const MEANDER_STEPS: usize = 4 * (grid.W + grid.H);
 
 /// Smooth value noise in 0..1, summed over octaves; a seed is a field.
@@ -58,13 +60,13 @@ pub fn fill(lv: *grid.Level, t: grid.Tile) void {
 
 pub fn rim(lv: *grid.Level, t: grid.Tile) void {
     for (0..grid.CELLS) |i| {
-        if (grid.Level.onRim(grid.Level.of(i))) lv.tile[i] = t;
+        if (rimAt(i)) lv.tile[i] = t;
     }
 }
 
 pub fn sow(lv: *grid.Level, rng: *mathx.Rng, pc: u32, solid: grid.Tile, open: grid.Tile) void {
     for (0..grid.CELLS) |i| {
-        lv.tile[i] = if (grid.Level.onRim(grid.Level.of(i)) or rng.percent(pc)) solid else open;
+        lv.tile[i] = if (rimAt(i) or rng.percent(pc)) solid else open;
     }
 }
 
@@ -191,9 +193,29 @@ pub fn field(lv: *grid.Level, pal: Palette) void {
     rim(lv, pal.solid);
 }
 
+fn rimAt(i: usize) bool {
+    return grid.Level.onRim(grid.Level.of(i));
+}
+
 pub fn box(lv: *grid.Level, b: grid.Box, t: grid.Tile) void {
     var cells = b.cells();
     while (cells.next()) |q| lv.set(q, t);
+}
+
+/// Top left, top right, bottom left, bottom right.
+pub fn corners(b: grid.Box) [4]P {
+    return .{ b.lo, .{ .x = b.hi.x - 1, .y = b.lo.y }, .{ .x = b.lo.x, .y = b.hi.y - 1 }, b.hi.sub(.{ .x = 1, .y = 1 }) };
+}
+
+/// The cell of `b`'s outermost row on `side` at `along`: an x on the north or south, a y on the west or east.
+pub fn sideAt(b: grid.Box, side: mathx.Dir, along: i32) P {
+    return switch (side) {
+        .n => .{ .x = along, .y = b.lo.y },
+        .s => .{ .x = along, .y = b.hi.y - 1 },
+        .w => .{ .x = b.lo.x, .y = along },
+        .e => .{ .x = b.hi.x - 1, .y = along },
+        .ne, .se, .sw, .nw => unreachable,
+    };
 }
 
 /// The cell inside an edge door is opened too.
@@ -210,7 +232,7 @@ pub fn openDoors(lv: *grid.Level, doors: []const P, ground: grid.Tile) void {
 /// No open ground on the map's edge but its doors: a step there would walk off.
 pub fn seal(lv: *grid.Level, t: grid.Tile) void {
     for (0..grid.CELLS) |i| {
-        if (grid.Level.onRim(grid.Level.of(i)) and !lv.tile[i].solid() and lv.door[i] == grid.NO_DOOR) lv.tile[i] = t;
+        if (rimAt(i) and !lv.tile[i].solid() and lv.door[i] == grid.NO_DOOR) lv.tile[i] = t;
     }
 }
 
@@ -359,7 +381,7 @@ const InStretch = struct {
     r: u16,
 
     pub fn has(s: InStretch, i: usize) bool {
-        return s.st.region[i] == s.r and !grid.Level.onRim(grid.Level.of(i));
+        return s.st.region[i] == s.r and !rimAt(i);
     }
 };
 
@@ -463,7 +485,7 @@ pub const Meander = struct {
             self.done = true;
             return c;
         }
-        self.bend = std.math.clamp(self.bend + (rng.unit() - 0.5) * MEANDER * self.wander, -1.1 * self.wander, 1.1 * self.wander);
+        self.bend = std.math.clamp(self.bend + (rng.unit() - 0.5) * MEANDER * self.wander, -BEND_MAX * self.wander, BEND_MAX * self.wander);
         const h = std.math.atan2(dy, dx) + self.bend;
         self.x += @cos(h);
         self.y += @sin(h);
@@ -518,13 +540,7 @@ fn notLiquid(t: grid.Tile) bool {
 }
 
 fn edge(rng: *mathx.Rng, side: mathx.Dir) P {
-    return switch (side) {
-        .w => .{ .x = 0, .y = middleHalf(rng, grid.H) },
-        .e => .{ .x = grid.W - 1, .y = middleHalf(rng, grid.H) },
-        .n => .{ .x = middleHalf(rng, grid.W), .y = 0 },
-        .s => .{ .x = middleHalf(rng, grid.W), .y = grid.H - 1 },
-        .ne, .se, .sw, .nw => unreachable,
-    };
+    return sideAt(grid.Box.inMap(0), side, middleHalf(rng, if (side == .w or side == .e) grid.H else grid.W));
 }
 
 fn middleHalf(rng: *mathx.Rng, span: i32) i32 {
@@ -578,9 +594,7 @@ pub const Decor = struct {
 
     pub fn fit(d: Decor) Decor {
         var q = d;
-        q.tiny_shrubs = @min(d.tiny_shrubs, DECOR_MAX);
-        q.tall_grass = @min(d.tall_grass, DECOR_MAX);
-        q.shrooms = @min(d.shrooms, DECOR_MAX);
+        inline for (std.meta.fields(Decor)) |f| @field(q, f.name) = @min(@field(d, f.name), DECOR_MAX);
         return q;
     }
 
@@ -665,7 +679,7 @@ pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: Ove
     var hist = [_]u32{0} ** BUCKETS;
     var n: u32 = 0;
     for (0..grid.CELLS) |i| {
-        if (!on.has(lv.tile[i]) or grid.Level.onRim(grid.Level.of(i))) continue;
+        if (!on.has(lv.tile[i]) or rimAt(i)) continue;
         hist[bucket(noise.at(grid.Level.of(i), scale, 3), BUCKETS)] += 1;
         n += 1;
     }
@@ -674,7 +688,7 @@ pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: Ove
     var taken: u32 = 0;
     while (cut > 0 and taken + hist[cut - 1] <= want) : (cut -= 1) taken += hist[cut - 1];
     for (0..grid.CELLS) |i| {
-        if (!on.has(lv.tile[i]) or grid.Level.onRim(grid.Level.of(i))) continue;
+        if (!on.has(lv.tile[i]) or rimAt(i)) continue;
         if (bucket(noise.at(grid.Level.of(i), scale, 3), BUCKETS) >= cut) lv.tile[i] = put;
     }
 }

@@ -88,6 +88,18 @@ skill_lines = {}
 for name, body in re.findall(r'\.(\w+)\s*=>\s*&\.\{(.*?)\n        \},', skill_source, re.S):
     skill_lines[name] = [tuple(map(float, row)) for row in re.findall(r'\.\{\s*([\d.]+),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\s*\}', body)]
 assert len(skill_lines) == 6
+hud_source = (ROOT / 'src/ui/hud.zig').read_text(encoding='utf-8')
+
+
+def hud_rgb(name):
+    hex_ = re.search(rf'const {name} = look\.rgb\(0x([0-9a-fA-F]{{6}})\)', hud_source).group(1)
+    return tuple(int(hex_[i:i + 2], 16) for i in (0, 2, 4))
+
+
+LIFE = (hud_rgb('LIFE_CORE'), hud_rgb('LIFE_EDGE'))
+MANA = (hud_rgb('MANA_CORE'), hud_rgb('MANA_EDGE'))
+PLATE = hud_rgb('PLATE')
+WELL = hud_rgb('WELL')
 
 
 def skill(name, x, y):
@@ -99,9 +111,9 @@ text(24, 16, 'HUD ELEMENTS / PAINT TEMPLATE', 24, True)
 text(24, 51, 'Paint on DRAW HERE. Faint locked layers are guides only. All component sizes are native game pixels.', 14)
 text(24, 84, '01  ASSEMBLED REFERENCE / 744 x 172', 16, True)
 ox, oy = cell('REFERENCE_ONLY_assembled', 24, 112, 744, 172, 'Guide only. Do not export as artwork.')
-ud.rectangle((ox + 64, oy + 66, ox + 679, oy + 153), fill=(16, 17, 20), outline=INK, width=2)
-for cx, core, edge in ((ox + 64, (184, 59, 50), (84, 20, 18)), (ox + 680, (55, 110, 180), (20, 41, 77))):
-    ud.ellipse((cx - 52, oy + 52, cx + 51, oy + 155), fill=(8, 10, 16), outline=INK, width=2)
+ud.rectangle((ox + 64, oy + 66, ox + 679, oy + 153), fill=PLATE, outline=INK, width=2)
+for cx, core, edge in ((ox + 64, *LIFE), (ox + 680, *MANA)):
+    ud.ellipse((cx - 52, oy + 52, cx + 51, oy + 155), fill=WELL, outline=INK, width=2)
     reservoir(cx - 44, oy + 60, core, edge)
 for dx, act in zip((0, 76, 138, 200, 262, 338, 400), ('secondary', None, 'shoot', 'wait', 'juke', 'burning_arrow', 'glacial_shot')):
     x, y = ox + 144 + dx, oy + 76
@@ -152,7 +164,7 @@ for x, title, name, size in orbs:
         gd.ellipse((x + 8, 634, x + 95, 721), outline=CYAN)
         ud.ellipse((x + 29, 648, x + 34, 659), fill=INK)
     else:
-        colours = ((184, 59, 50), (84, 20, 18)) if name == 'orb_fill_life' else ((55, 110, 180), (20, 41, 77)) if name == 'orb_fill_mana' else ((54, 60, 75), (24, 29, 40))
+        colours = LIFE if name == 'orb_fill_life' else MANA if name == 'orb_fill_mana' else ((54, 60, 75), (24, 29, 40))
         reservoir(x, 626, *colours)
         gd.ellipse((x, 626, x + 87, 713), outline=CYAN)
 text(24, 750, 'Frames: keep the cyan opening clear. Fills: paint FULL orbs; the game clips the fill height as life or mana changes.', 13)
@@ -202,6 +214,6 @@ for s in slices:
         lua.append('slice.center=Rectangle(' + ','.join(map(str, s['center'])) + ')')
     lua.append('end')
 lua.extend([f'sprite.data={quote("HUD component template. Native pixels; only Draw here is artwork. See docs/HUD_LAYOUT.md. Named slices exclude labels. Assembled reference is not an export.")}', f'sprite:saveAs({quote(OUTPUT)})', f'sprite:saveCopyAs({quote(SOURCE)})', f'sprite:saveCopyAs({quote(WORK / "hud-elements-preview.png")})', 'sprite:close()'])
-lua.extend([f'for _,path in ipairs({{{quote(OUTPUT)},{quote(SOURCE)}}}) do', 'local saved=assert(app.open(path))', 'assert(saved.width==1024 and saved.height==1024 and #saved.frames==1)', 'assert(#saved.layers==5 and #saved.slices==21)', 'for i,want in ipairs(expected) do', 'local layer=saved.layers[i]', 'assert(layer.name==want.name and layer.opacity==want.opacity and not layer.isEditable)', 'local image=Image(saved.width,saved.height,ColorMode.RGB)', 'local cel=assert(layer:cel(1))', 'image:drawImage(cel.image,cel.position)', 'assert(image:isEqual(want.image),"Guide pixels changed on save")', 'end', 'local paint=saved.layers[5]', 'assert(paint.name=="Draw here" and paint.opacity==255 and paint.isEditable)', 'if paint:cel(1) then assert(paint:cel(1).image:isEmpty(),"Paint layer is not blank") end', 'local borders=0', 'for _,slice in ipairs(saved.slices) do', 'assert(slice.bounds.x>=0 and slice.bounds.y>=0 and slice.bounds.x+slice.bounds.width<=1024 and slice.bounds.y+slice.bounds.height<=1024)', 'if slice.name=="hud_border_9slice" then assert(slice.center.x==16 and slice.center.y==16 and slice.center.width==16 and slice.center.height==16); borders=borders+1 end', 'end', 'assert(borders==1)', 'saved:close()', 'end', f'local report=assert(io.open({quote(WORK / "validation.txt")},"w"))', 'report:write("Verified both Aseprite files after reopening: 1024x1024, 5 layers, 20 component slices plus 1 reference; 16px nine-slice center; faint guides locked, paint layer blank and editable. Guide pixels unchanged.\\n")', 'report:close()'])
+lua.extend([f'for _,path in ipairs({{{quote(OUTPUT)},{quote(SOURCE)}}}) do', 'local saved=assert(app.open(path))', f'assert(saved.width=={SIZE[0]} and saved.height=={SIZE[1]} and #saved.frames==1)', f'assert(#saved.layers=={len(layers) + 1} and #saved.slices=={len(slices)})', 'for i,want in ipairs(expected) do', 'local layer=saved.layers[i]', 'assert(layer.name==want.name and layer.opacity==want.opacity and not layer.isEditable)', 'local image=Image(saved.width,saved.height,ColorMode.RGB)', 'local cel=assert(layer:cel(1))', 'image:drawImage(cel.image,cel.position)', 'assert(image:isEqual(want.image),"Guide pixels changed on save")', 'end', f'local paint=saved.layers[{len(layers) + 1}]', 'assert(paint.name=="Draw here" and paint.opacity==255 and paint.isEditable)', 'if paint:cel(1) then assert(paint:cel(1).image:isEmpty(),"Paint layer is not blank") end', 'local borders=0', 'for _,slice in ipairs(saved.slices) do', f'assert(slice.bounds.x>=0 and slice.bounds.y>=0 and slice.bounds.x+slice.bounds.width<={SIZE[0]} and slice.bounds.y+slice.bounds.height<={SIZE[1]})', 'if slice.name=="hud_border_9slice" then assert(slice.center.x==16 and slice.center.y==16 and slice.center.width==16 and slice.center.height==16); borders=borders+1 end', 'end', 'assert(borders==1)', 'saved:close()', 'end', f'local report=assert(io.open({quote(WORK / "validation.txt")},"w"))', f'report:write("Verified both Aseprite files after reopening: {SIZE[0]}x{SIZE[1]}, {len(layers) + 1} layers, {len(slices) - 1} component slices plus 1 reference; 16px nine-slice center; faint guides locked, paint layer blank and editable. Guide pixels unchanged.\\n")', 'report:close()'])
 (WORK / 'assemble.lua').write_text('\n'.join(lua) + '\n', encoding='utf-8')
 print(f'Prepared {len(slices) - 1} component guides and native Aseprite assembly: {WORK / "assemble.lua"}')

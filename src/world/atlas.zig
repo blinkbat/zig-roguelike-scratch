@@ -712,7 +712,7 @@ fn takeFeatureKnob(ft: *Feature, word: []const u8, f: *std.mem.TokenIterator(u8,
 /// The knob named `word` of the union's arm, if it has one.
 fn takeArm(u: anytype, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), knobbed: anytype) Error!bool {
     switch (u.*) {
-        inline else => |*p| inline for (comptime knobsOf(@TypeOf(p.*), &.{}), 0..) |k, i| {
+        inline else => |*p, t| inline for (comptime armKnobs(@TypeOf(u.*), t), 0..) |k, i| {
             if (std.mem.eql(u8, word, k)) {
                 try takeOnce(p, k, i, f, knobbed);
                 return true;
@@ -724,7 +724,7 @@ fn takeArm(u: anytype, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar),
 
 fn putArm(w: anytype, u: anytype) !void {
     switch (u.*) {
-        inline else => |*p| inline for (comptime knobsOf(@TypeOf(p.*), &.{})) |k| try putKnob(w, k, @field(p.*, k)),
+        inline else => |*p, t| inline for (comptime armKnobs(@TypeOf(u.*), t)) |k| try putKnob(w, k, @field(p.*, k)),
     }
 }
 

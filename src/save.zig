@@ -27,7 +27,7 @@ const HEAD_FIELDS = .{ "seed", "world", "node", "visited", "visits" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
     "mode",   "paused_from", "pause_menu", "back",     "exit",    "permadeath", "outdoors", "hour_shown", "unkillable",  "unsaved",
-    "travel", "st",          "binds",      "aim_by",   "aim_act", "mark",       "cam",      "screen",     "framebuffer", "shot",
+    "travel", "st",          "binds",      "aim_by",   "aim_act", "aim_set", "mark",       "cam",      "screen",     "framebuffer", "shot",
     "glide",  "turning",     "order",      "order_n",  "busy",    "pending",    "lead",     "owed",       "ran",         "pictured",
     "seq",    "split_from",  "fx",         "vignette", "mini",    "sprites",    "face",     "light",      "cloud",       "flowed",
     "flow",   "queue",
@@ -339,13 +339,14 @@ test "an unfinished autosave defers the next snapshot without consuming dirty st
     try std.testing.expectEqual(@as(?anyerror, null), a.failed);
     try std.testing.expectEqual(@as(usize, 0), a.bytes.items.len);
     try std.testing.expectEqual(GAP_S * 2, a.since);
+    const deferred = a.since;
 
     a.finished.store(true, .release);
     a.step(g, 0);
     try std.testing.expectEqual(@as(?anyerror, error.OutOfMemory), a.failed);
     a.step(g, 0);
     try std.testing.expect(g.unsaved);
-    std.debug.print("autosave deferred for {d:.0} save intervals; completion resumes capture and failure rearms it\n", .{GAP_S * 2 / GAP_S});
+    std.debug.print("autosave deferred {d:.1} s; completion resumes capture and failure rearms it\n", .{deferred});
 }
 
 test "a failed autosave marks an idle run dirty again without another turn" {
@@ -361,7 +362,7 @@ test "a failed autosave marks an idle run dirty again without another turn" {
     try std.testing.expect(g.unsaved);
     try std.testing.expectEqual(@as(?anyerror, error.AccessDenied), a.failed);
     try std.testing.expectEqual(@as(usize, 0), a.bytes.items.len);
-    std.debug.print("failed autosave rearmed after 0 turns; retry remains throttled\n", .{});
+    std.debug.print("failed autosave rearmed with no turn taken; retry remains throttled\n", .{});
 }
 
 test "a save that keeps failing is said once, not once a retry" {
@@ -456,11 +457,13 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqual(g.pool.n, back.pool.n);
     try std.testing.expectEqualSlices(grid.Tile, &g.lv.tile, &back.lv.tile);
     try std.testing.expectEqualSlices(grid.Tile, &g.visits[0].lv.tile, &back.visits[0].lv.tile);
+    var restored: usize = 0;
     for ([_]*const grid.Level{ &back.lv, &back.visits[0].lv }) |lv| {
         try std.testing.expectEqual(@as(u8, 2), lv.shape[forest].?.mask());
         try std.testing.expectEqual(@as(u8, 8), lv.shape[forest + 1].?.mask());
+        restored += 2;
     }
-    std.debug.print("save reload restored 4 absent forest shapes across the active and visited nodes\n", .{});
+    std.debug.print("save reload restored {d} absent forest shapes across the active and visited nodes\n", .{restored});
     try std.testing.expectEqualStrings("A line to keep.", back.log.line(0).?);
     const s = try peek(buf.items);
     var line: [128]u8 = undefined;

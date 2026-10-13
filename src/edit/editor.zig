@@ -389,17 +389,19 @@ pub const Editor = struct {
     /// Loads `p`, or starts a world there when it is not yet; a file that does not parse is left alone.
     pub fn open(ed: *Editor, p: []const u8) !void {
         if (p.len > PATH_MAX) return error.NameTooLong;
+        var fresh = false;
         ed.scratch.load(ed.alloc, p) catch |e| {
             if (e != error.FileNotFound) {
                 ed.scratch.* = ed.world.*;
                 return e;
             }
             freshWorld(ed.scratch);
+            fresh = true;
         };
         ed.world.* = ed.scratch.*;
         ed.setPath(p);
         ed.settle();
-        ed.say("{s} {s}", .{ if (std.fs.cwd().access(p, .{})) "Opened" else |_| "New world; it saves to", p });
+        ed.say("{s} {s}", .{ if (fresh) "New world; it saves to" else "Opened", p });
     }
 
     fn settle(ed: *Editor) void {
@@ -968,19 +970,26 @@ fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
 fn brushAt(ed: *Editor, p: P) void {
     const erase = ed.stroke == .erase;
     if (!ed.tool.broad()) return apply(ed, p, erase);
-    const box = brushBox(p, ed.brushSize());
-    fillRect(ed, .{ .from = box.lo, .erase = erase }, box.hi);
+    fillBox(ed, brushBox(p, ed.brushSize()), erase);
 }
 
-fn brushBox(p: P, n: i32) struct { lo: P, hi: P } {
-    const lo = p.sub(.{ .x = @divTrunc(n - 1, 2), .y = @divTrunc(n - 1, 2) });
-    return .{ .lo = lo, .hi = lo.add(.{ .x = n - 1, .y = n - 1 }) };
+fn brushBox(p: P, n: i32) grid.Box {
+    return grid.Box.sized(p.sub(.{ .x = @divTrunc(n - 1, 2), .y = @divTrunc(n - 1, 2) }), n, n);
+}
+
+/// The cells from `a` to `b` inclusive, whichever corners they are.
+fn between(a: P, b: P) grid.Box {
+    return .{ .lo = a.min(b), .hi = a.max(b).add(.{ .x = 1, .y = 1 }) };
 }
 
 fn fillRect(ed: *Editor, r: Rect, to: P) void {
-    var cells = grid.Cells.of(r.from.min(to), r.from.max(to).add(.{ .x = 1, .y = 1 }));
+    fillBox(ed, between(r.from, to), r.erase);
+}
+
+fn fillBox(ed: *Editor, b: grid.Box, erase: bool) void {
+    var cells = b.cells();
     while (cells.next()) |p| {
-        if (grid.Level.inside(p)) apply(ed, p, r.erase);
+        if (grid.Level.inside(p)) apply(ed, p, erase);
     }
 }
 
@@ -1250,6 +1259,10 @@ fn draw(ed: *Editor, g: *game.Game) void {
     drawStatus(ed, g, c);
 }
 
+fn keyed(comptime what: []const u8, comptime key: []const u8) [:0]const u8 {
+    return what ++ " (" ++ key ++ ")";
+}
+
 fn drawPanel(ed: *Editor, g: *game.Game) void {
     var buf: [LINE]u8 = undefined;
     rl.drawRectangle(0, 0, PANEL_W, g.screen.y, PANEL_BG);
@@ -1259,25 +1272,25 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     g.face.draw(fitBefore(g, &buf, &fit_buf, ed.path(), if (ed.dirty) " *" else "", INNER_W), PAD, y, TEXT, look.TEXT);
     y += HEAD + GAP;
     var file = Across{ .y = y, .n = 4 };
-    if (button(ed, g, file.next(), "New", false, true, "New world (" ++ Desk.NEW_CAPTION ++ ")")) ed.askName(.new);
-    if (button(ed, g, file.next(), "Open", false, true, "Open a world (" ++ Desk.OPEN_CAPTION ++ ")")) ed.askOpen();
-    if (button(ed, g, file.next(), "Save", false, true, "Save (" ++ Desk.SAVE_CAPTION ++ ")")) _ = ed.save();
-    if (button(ed, g, file.next(), "Save as", false, true, "Save under a new name (" ++ Desk.SAVE_AS_CAPTION ++ ")")) ed.askName(.save_as);
+    if (button(ed, g, file.next(), "New", false, true, keyed("New world", Desk.NEW_CAPTION))) ed.askName(.new);
+    if (button(ed, g, file.next(), "Open", false, true, keyed("Open a world", Desk.OPEN_CAPTION))) ed.askOpen();
+    if (button(ed, g, file.next(), "Save", false, true, keyed("Save", Desk.SAVE_CAPTION))) _ = ed.save();
+    if (button(ed, g, file.next(), "Save as", false, true, keyed("Save under a new name", Desk.SAVE_AS_CAPTION))) ed.askName(.save_as);
     file.done();
     y += ROW_STEP;
     var views = Across{ .y = y, .n = 4 };
     const other = ed.view.other().label();
-    if (button(ed, g, views.next(), other, false, true, "The map of one node, or every node and how they link (" ++ Desk.GRAPH_CAPTION ++ ")")) {
+    if (button(ed, g, views.next(), other, false, true, keyed("The map of one node, or every node and how they link", Desk.GRAPH_CAPTION))) {
         ed.setView(ed.view.other());
     }
-    if (button(ed, g, views.next(), "Undo", false, ed.hist_at > 0, "Undo (" ++ Desk.UNDO_CAPTION ++ ")")) ed.undo();
+    if (button(ed, g, views.next(), "Undo", false, ed.hist_at > 0, keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
     if (button(ed, g, views.next(), "Play", false, true, "Play from the world start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_CAPTION ++ " or " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) {
         ed.playStart();
     }
-    if (button(ed, g, views.next(), "Title", false, true, "Back to the title (" ++ Desk.BACK_CAPTION ++ ")")) ed.request(.leave);
+    if (button(ed, g, views.next(), "Title", false, true, keyed("Back to the title", Desk.BACK_CAPTION))) ed.request(.leave);
     views.done();
     y += ROW_H + SECTION_GAP;
-    const rows = (TOOLS.len + TOOL_COLS - 1) / TOOL_COLS;
+    const rows = comptime std.math.divCeil(usize, TOOLS.len, TOOL_COLS) catch unreachable;
     for (TOOLS, Desk.TOOL_CAPTIONS, 0..) |t, key, i| {
         const n = ed.brushSize();
         const label = if (t.broad())
@@ -1299,7 +1312,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
         fieldRow(ed, g, cellOfRow(y, 0, 1));
     } else {
         var node = Across{ .y = y, .n = 2 };
-        if (button(ed, g, node.next(), "Rename", false, true, "Name this node (" ++ Desk.RENAME_CAPTION ++ ")")) ed.startRename();
+        if (button(ed, g, node.next(), "Rename", false, true, keyed("Name this node", Desk.RENAME_CAPTION))) ed.startRename();
         if (button(ed, g, node.next(), "Delete", false, ed.world.node_n > 1, "Delete this node; its doors' links go with it")) deleteNode(ed);
         node.done();
     }
@@ -1910,17 +1923,16 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     if (ed.start_at) |s| glyph(ed, g, START.ch, ed.cellRect(c, s), START.fg);
     const m = ed.mouseCell(c);
     if (ed.rect) |r| {
-        outlineCells(ed, c, r.from, grid.Level.clamp(m), PICKED);
+        outlineCells(ed, c, between(r.from, grid.Level.clamp(m)), PICKED);
     } else if (grid.Level.inside(m)) {
-        const box = brushBox(m, if (ed.tool.broad() and ed.tool.fits(ed.here())) ed.brushSize() else 1);
-        outlineCells(ed, c, box.lo, box.hi, HOVER);
+        outlineCells(ed, c, brushBox(m, if (ed.tool.broad() and ed.tool.fits(ed.here())) ed.brushSize() else 1), HOVER);
     }
 }
 
-fn outlineCells(ed: *const Editor, c: rl.Rectangle, a: P, b: P, col: rl.Color) void {
-    const lo = ed.cellRect(c, a.min(b));
-    const hi = ed.cellRect(c, a.max(b));
-    rl.drawRectangleLinesEx(.{ .x = lo.x, .y = lo.y, .width = hi.x + hi.width - lo.x, .height = hi.y + hi.height - lo.y }, 1, col);
+fn outlineCells(ed: *const Editor, c: rl.Rectangle, b: grid.Box, col: rl.Color) void {
+    const lo = ed.cellRect(c, b.lo);
+    const hi = ed.cellRect(c, b.hi);
+    rl.drawRectangleLinesEx(.{ .x = lo.x, .y = lo.y, .width = hi.x - lo.x, .height = hi.y - lo.y }, 1, col);
 }
 
 fn drawGraph(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
@@ -1976,7 +1988,7 @@ fn thumb(ed: *Editor, n: usize) ?rl.Texture2D {
 
 fn drawModal(ed: *Editor, g: *game.Game) void {
     var buf: [LINE]u8 = undefined;
-    game.veil(g, g.screen.y);
+    game.veil(g);
     const body = modalBody(ed);
     const h = PAD + HEAD + PAD + body + ROW_H + PAD;
     const x = @divTrunc(g.screen.x - MODAL_W, 2);
@@ -2000,7 +2012,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
             g.face.draw(fitBefore(g, &buf, &fit_buf, ed.path(), " has changes that are not saved.", MODAL_INNER_W), x + PAD, y, TEXT, look.TEXT);
             std.debug.assert(y + TEXT <= buttons_y);
             y = buttons_y;
-            if (buttonOn(ed, g, modalButton(bx, y, 2), "Save (" ++ Desk.ENTER_CAPTION ++ ")", false, true, true, null) and ed.save()) ed.commit();
+            if (buttonOn(ed, g, modalButton(bx, y, 2), keyed("Save", Desk.ENTER_CAPTION), false, true, true, null) and ed.save()) ed.commit();
             if (buttonOn(ed, g, modalButton(bx, y, 1), "Discard", false, true, true, null)) ed.commit();
             cancelButton(ed, g, bx, y);
         },
@@ -2013,7 +2025,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
             g.face.draw(g.face.fit(&fit_buf, note, SMALL, MODAL_INNER_W, false), x + PAD, y, SMALL, look.DIM);
             std.debug.assert(y + SMALL <= buttons_y);
             y = buttons_y;
-            if (buttonOn(ed, g, modalButton(bx, y, 1), "OK (" ++ Desk.ENTER_CAPTION ++ ")", false, true, true, null)) ed.named();
+            if (buttonOn(ed, g, modalButton(bx, y, 1), keyed("OK", Desk.ENTER_CAPTION), false, true, true, null)) ed.named();
             cancelButton(ed, g, bx, y);
         },
         .open => {
@@ -2062,7 +2074,7 @@ fn titleColor(ed: *const Editor, n: usize) rl.Color {
 }
 
 fn cancelButton(ed: *Editor, g: *game.Game, bx: i32, y: i32) void {
-    if (buttonOn(ed, g, modalButton(bx, y, 0), "Cancel (" ++ Desk.BACK_CAPTION ++ ")", false, true, true, null)) ed.modal = .none;
+    if (buttonOn(ed, g, modalButton(bx, y, 0), keyed("Cancel", Desk.BACK_CAPTION), false, true, true, null)) ed.modal = .none;
 }
 
 fn sprite(t: rl.Texture2D, r: rl.Rectangle) void {

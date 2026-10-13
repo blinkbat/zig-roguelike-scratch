@@ -12,10 +12,6 @@ pub const SIZE_MAX: u8 = 20;
 pub const ROOMS_MAX: u8 = 48;
 const TRIES: usize = 2000;
 const DOOR_W: i32 = 3;
-const W_BIT: u4 = 1;
-const E_BIT: u4 = 2;
-const S_BIT: u4 = 4;
-const N_BIT: u4 = 8;
 
 pub const Style = enum {
     caves,
@@ -90,12 +86,17 @@ const Plan = struct {
     }
 };
 
-const SIDES = [4]struct { d: mathx.Dir, bit: u4, back: u4 }{
-    .{ .d = .w, .bit = W_BIT, .back = E_BIT },
-    .{ .d = .e, .bit = E_BIT, .back = W_BIT },
-    .{ .d = .s, .bit = S_BIT, .back = N_BIT },
-    .{ .d = .n, .bit = N_BIT, .back = S_BIT },
-};
+const SIDES = [_]mathx.Dir{ .w, .e, .s, .n };
+
+fn bitOf(d: mathx.Dir) u4 {
+    return switch (d) {
+        .w => 1,
+        .e => 2,
+        .s => 4,
+        .n => 8,
+        else => unreachable,
+    };
+}
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const pal = palette(p);
@@ -116,16 +117,16 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     while (n < p.rooms and tries < TRIES) : (tries += 1) {
         const from = placed[rng.below(@intCast(n))];
         const side = SIDES[rng.below(SIDES.len)];
-        const cr = Plan.place(from).add(side.d.delta());
+        const cr = Plan.place(from).add(side.delta());
         const k = pl.slot(cr) orelse continue;
         if (pl.mask[k] != null) continue;
-        pl.mask[k] = side.back;
-        pl.mask[from].? |= side.bit;
+        pl.mask[k] = bitOf(side.opposite());
+        pl.mask[from].? |= bitOf(side);
         for (SIDES) |s| {
-            const o = pl.slot(cr.add(s.d.delta())) orelse continue;
+            const o = pl.slot(cr.add(s.delta())) orelse continue;
             if (o == from or pl.mask[o] == null or !rng.perMille(p.merge)) continue;
-            pl.mask[k].? |= s.bit;
-            pl.mask[o].? |= s.back;
+            pl.mask[k].? |= bitOf(s);
+            pl.mask[o].? |= bitOf(s.opposite());
         }
         placed[n] = k;
         n += 1;
@@ -150,8 +151,8 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
         carve.blobIn(lv, noise, mid, @as(f32, @floatFromInt(size)) / 2 - 1, 3, 0.55, 0.6, pal.open, inside);
     }
     for (SIDES) |s| {
-        if (mask & s.bit == 0) continue;
-        const step = s.d.delta();
+        if (mask & bitOf(s) == 0) continue;
+        const step = s.delta();
         const edge = mid.add(.{ .x = step.x * @divTrunc(size, 2), .y = step.y * @divTrunc(size, 2) });
         var m = carve.Meander.init(mid, edge.add(step), if (style.built()) 0 else CAVE_WANDER);
         while (m.next(rng)) |q| {
@@ -164,12 +165,12 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
     const inner = size - 2;
     switch (style) {
         .tombs => if (inner >= 8) {
-            for ([_]P{ .{ .x = 2, .y = 2 }, .{ .x = inner - 1, .y = 2 }, .{ .x = 2, .y = inner - 1 }, .{ .x = inner - 1, .y = inner - 1 } }) |o| lv.set(lo.add(o), .wall);
+            for (carve.corners(whole.shrunk(2))) |c| lv.set(c, .wall);
             if (rng.chance(0.4)) lv.set(mid, .grave) else if (rng.chance(0.5)) lv.putBarrel(lo.add(.{ .x = 2, .y = 3 }));
-            if (mask & N_BIT == 0) lv.addTorch(.{ .x = mid.x, .y = lo.y });
+            if (mask & bitOf(.n) == 0) lv.addTorch(.{ .x = mid.x, .y = lo.y });
         },
         .sewers => {
-            const across = mask & (W_BIT | E_BIT) != 0;
+            const across = mask & (bitOf(.w) | bitOf(.e)) != 0;
             var cells = inside.cells();
             while (cells.next()) |q| {
                 const off = if (across) q.y - mid.y else q.x - mid.x;

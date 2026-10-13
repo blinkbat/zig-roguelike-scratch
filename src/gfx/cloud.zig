@@ -91,15 +91,15 @@ pub const Cloud = struct {
         look.unloadAll(self);
     }
 
-    /// Cells `lo` up to `hi` are on screen; `ox, oy` is where the floor's top-left corner lands.
-    pub fn draw(self: *Cloud, lv: *const grid.Level, lo: P, hi: P, ox: i32, oy: i32, cell: i32) void {
+    /// `ox, oy` is where the floor's top-left corner lands.
+    pub fn draw(self: *Cloud, lv: *const grid.Level, on_screen: grid.Box, ox: i32, oy: i32, cell: i32) void {
         const tex = self.tex orelse return;
         if (std.mem.allEqual(f32, &self.tint, 0)) {
             self.t = .{};
             return;
         }
-        const view = (grid.Box{ .lo = lo, .hi = hi }).grown(1);
-        if (self.stale or !view.lo.eq(self.baked.lo) or !view.hi.eq(self.baked.hi)) {
+        const view = on_screen.grown(1);
+        if (self.stale or !std.meta.eql(view, self.baked)) {
             self.bake(lv, view);
             rl.updateTexture(tex, &self.px);
             self.stale = false;

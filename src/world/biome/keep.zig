@@ -60,8 +60,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const out = pal.open;
     carve.field(lv, pal);
     const curtain = curtainOf(p);
-    const lo = curtain.lo;
-    const hi = curtain.hi;
     const m: i32 = p.moat;
     const berm = bermOf(p);
     if (m > 0) {
@@ -73,7 +71,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     carve.box(lv, yard, p.yard.tile());
     const t: f32 = @floatFromInt(p.towers);
     if (p.towers > 0) {
-        for (towersOf(curtain)) |c| {
+        for (carve.corners(curtain)) |c| {
             carve.disc(lv, c, @floatFromInt(towerReach(p.towers)), .wall, null);
             carve.disc(lv, c, t - 0.5, .floor, null);
             const toward = P{ .x = std.math.sign(grid.MIDDLE.x - c.x), .y = std.math.sign(grid.MIDDLE.y - c.y) };
@@ -87,10 +85,10 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         }
     }
     const across = rng.chance(0.5);
-    const mid = grid.MIDDLE;
-    for ([_]i32{ -1, 1 }) |side| {
-        const gate_at = if (across) P{ .x = if (side < 0) lo.x else hi.x - 1, .y = mid.y } else P{ .x = mid.x, .y = if (side < 0) lo.y else hi.y - 1 };
-        const out_dir = if (across) P{ .x = side, .y = 0 } else P{ .x = 0, .y = side };
+    const sides: [2]mathx.Dir = if (across) .{ .w, .e } else .{ .n, .s };
+    for (sides) |side| {
+        const gate_at = carve.sideAt(curtain, side, if (across) grid.MIDDLE.y else grid.MIDDLE.x);
+        const out_dir = side.delta();
         const span = P{ .x = if (across) 0 else 1, .y = if (across) 1 else 0 };
         var k: i32 = -CURTAIN - reachOf(p.towers, p.moat);
         while (k <= CURTAIN) : (k += 1) {
@@ -130,7 +128,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
 fn clearOfTowers(curtain: grid.Box, towers: u8, at: P, size: P) bool {
     if (towers == 0) return true;
     const r = towerReach(towers) + WELL_GAP;
-    for (towersOf(curtain)) |c| {
+    for (carve.corners(curtain)) |c| {
         const q = P{ .x = std.math.clamp(c.x, at.x, at.x + size.x - 1), .y = std.math.clamp(c.y, at.y, at.y + size.y - 1) };
         if (carve.inDisc(c, q, @floatFromInt(r))) return false;
     }
@@ -154,10 +152,6 @@ fn reachOf(towers: u8, moat: u8) i32 {
 
 fn towerReach(towers: u8) i32 {
     return if (towers > 0) @as(i32, towers) + TOWER_WALL else 0;
-}
-
-fn towersOf(b: grid.Box) [4]P {
-    return .{ b.lo, .{ .x = b.hi.x - 1, .y = b.lo.y }, .{ .x = b.lo.x, .y = b.hi.y - 1 }, b.hi.sub(.{ .x = 1, .y = 1 }) };
 }
 
 fn keepOf(p: Params) grid.Box {
@@ -200,7 +194,7 @@ test "every corner tower opens onto the yard, however wide" {
         _ = st.label(&lv);
         const curtain = curtainOf(p);
         const yard = st.of(.{ .x = grid.MIDDLE.x, .y = curtain.lo.y + CURTAIN });
-        for (towersOf(curtain)) |c| {
+        for (carve.corners(curtain)) |c| {
             towers += 1;
             if (st.of(c) != yard) sealed += 1;
         }
@@ -221,7 +215,7 @@ test "the well never stands in a corner tower" {
             var rng = mathx.Rng.init(i * 7 + t);
             shape(&lv, &rng, 0, p);
             keeps += 1;
-            const hit = towers: for (towersOf(curtainOf(p))) |c| {
+            const hit = towers: for (carve.corners(curtainOf(p))) |c| {
                 var cells = grid.Cells.around(c, reach);
                 while (cells.next()) |q| {
                     if (!carve.inDisc(c, q, @floatFromInt(reach))) continue;

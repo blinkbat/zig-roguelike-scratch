@@ -73,7 +73,7 @@ fn dirFrom(az_deg: f32, alt_deg: f32) [3]f32 {
 }
 
 /// The sun's true path: under the ground at night, the bearing going all the way round once a day.
-pub fn sunDir(hour: f32) [3]f32 {
+fn sunDir(hour: f32) [3]f32 {
     const u = dayU(hour);
     const alt = SUN_ALT_MAX * @sin(std.math.pi * u);
     const az = if (u <= 1) AZ_RISE + (AZ_SET - AZ_RISE) * u else AZ_SET + (360 - (AZ_SET - AZ_RISE)) * (u - 1);
@@ -81,7 +81,7 @@ pub fn sunDir(hour: f32) [3]f32 {
 }
 
 /// The one light that casts, altitude floored; it changes hands over the zenith in the sun's vertical plane, so laid across the screen (`at`) its shadow keeps `KEY_ALT_MAX`'s length and flips while `keyDim` fades it out and back in.
-pub fn keyDir(hour: f32) [3]f32 {
+fn keyDir(hour: f32) [3]f32 {
     const s = sunDir(hour);
     const flat = flatOf(s);
     const h = [2]f32{ s[0] / flat, s[1] / flat };
@@ -94,7 +94,7 @@ pub fn keyDir(hour: f32) [3]f32 {
 }
 
 /// The key's strength through the swap: 1 either side of it, 0 at the crossing.
-pub fn keyDim(hour: f32) f32 {
+fn keyDim(hour: f32) f32 {
     const k = 1 - 2 * moonShare(hour);
     return k * k;
 }
@@ -208,7 +208,7 @@ test "a noon shadow reaches beyond a cell-tall sprite" {
 
 test "the sun rises in the east, stands in the south at noon, sets in the west and is under the ground at midnight" {
     const rise = sunDir(SUNRISE);
-    const noon = sunDir((day.SUNRISE + day.SUNSET) / 2);
+    const noon = sunDir(day.SOLAR_NOON);
     const set = sunDir(SUNSET);
     try std.testing.expect(@abs(rise[2]) < 1e-4 and rise[0] > 0.9);
     try std.testing.expect(@abs(set[2]) < 1e-4 and set[0] < -0.9);
@@ -229,8 +229,8 @@ test "one light always casts, its altitude floored, and it changes hands at the 
     std.debug.print("a shadow is at most {d:.2} cells long a cell of height\n", .{longest});
     try std.testing.expect(longest <= REACH_MAX + 1e-3);
     try std.testing.expect(keyDir(KEY_SWAP_DUSK)[2] > 0.9 and keyDim(KEY_SWAP_DUSK) < 1e-4);
-    const moon = keyDir(1);
-    const sun = sunDir(1);
+    const moon = keyDir(day.DEAD_OF_NIGHT);
+    const sun = sunDir(day.DEAD_OF_NIGHT);
     try std.testing.expect(moon[0] * sun[0] + moon[1] * sun[1] < 0);
 }
 
