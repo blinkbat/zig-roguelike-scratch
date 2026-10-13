@@ -2,15 +2,30 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
-const PAD: i32 = 0;
 const ENTER_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
 const LEAN: rl.GamepadButton = .left_trigger_2;
 const SHIFT_KEYS = [_]rl.KeyboardKey{ .left_shift, .right_shift };
 const CTRL_KEYS = [_]rl.KeyboardKey{ .left_control, .right_control };
 const LEAN_KEYS = SHIFT_KEYS;
 
-/// What the player last pressed, which every caption names.
-pub const Device = enum { pad, keys };
+/// What the player last pressed, which every caption names: a pad by its maker's names for the buttons.
+pub const Device = enum {
+    xbox,
+    ps4,
+    ps5,
+    keys,
+
+    pub fn pad(d: Device) bool {
+        return d != .keys;
+    }
+
+    fn playstation(d: Device) bool {
+        return switch (d) {
+            .ps4, .ps5 => true,
+            .xbox, .keys => false,
+        };
+    }
+};
 
 /// A caption built at compile time for each device, picked for `d`.
 pub fn per(d: Device, comptime f: fn (comptime Device) [:0]const u8) [:0]const u8 {
@@ -20,10 +35,130 @@ pub fn per(d: Device, comptime f: fn (comptime Device) [:0]const u8) [:0]const u
 }
 
 pub fn moveName(comptime d: Device) [:0]const u8 {
-    return switch (d) {
-        .pad => "D-pad",
-        .keys => comptime letters(&WALKS),
-    };
+    return if (d.pad()) "D-pad" else comptime letters(&WALKS);
+}
+
+extern fn glfwGetJoystickGUID(jid: c_int) ?[*:0]const u8;
+extern fn glfwJoystickIsGamepad(jid: c_int) c_int;
+
+/// raylib's MAX_GAMEPADS, the slots it polls.
+const PADS: usize = 4;
+
+/// One raylib calls available but GLFW has no mapping for (a wheel, a flight stick, an unknown pad) reads nothing, and is passed over.
+fn mapped(at: i32) bool {
+    return rl.isGamepadAvailable(at) and glfwJoystickIsGamepad(at) != 0;
+}
+
+/// The pad whose button or trigger was pressed last drives; one that has not keeps driving while it is plugged in, else the first mapped.
+fn choosePad(was: ?i32, before: *const [PADS]Triggers, now: *const [PADS]Triggers) ?i32 {
+    for (0..PADS) |i| {
+        const at: i32 = @intCast(i);
+        if (mapped(at) and struck(at, before, now)) return at;
+    }
+    if (was) |w| {
+        if (mapped(w)) return w;
+    }
+    for (0..PADS) |i| {
+        const at: i32 = @intCast(i);
+        if (mapped(at)) return at;
+    }
+    return null;
+}
+
+fn kindAt(at: i32) Device {
+    return padOf(std.mem.span(glfwGetJoystickGUID(at) orelse return .xbox));
+}
+
+const SONY = "4c05";
+const PS5_PRODUCTS = [_]*const [4]u8{ "e60c", "f20d" };
+
+/// GLFW's GUID spells the USB vendor, then the product, each byte-swapped in hex, from its ninth and seventeenth digit; XInput's spells neither, and reads as Xbox.
+fn padOf(guid: []const u8) Device {
+    if (guid.len < 20 or !std.mem.eql(u8, guid[8..12], SONY)) return .xbox;
+    for (PS5_PRODUCTS) |p| {
+        if (std.mem.eql(u8, guid[16..20], p)) return .ps5;
+    }
+    return .ps4;
+}
+
+/// SDL_GameControllerDB (`assets/gamecontrollerdb-LICENSE`), newer than the copy GLFW ships; then SDL's own override, then a database beside the exe, each taking over the pads it names.
+const MAPPINGS_FILE = "gamecontrollerdb.txt";
+const MAPPINGS = @embedFile(MAPPINGS_FILE);
+const MAPPINGS_ENV = "SDL_GAMECONTROLLERCONFIG";
+const MAPPINGS_MAX: usize = 4 << 20;
+
+/// Needs the window open.
+pub fn mapPads() void {
+    _ = rl.setGamepadMappings(MAPPINGS);
+    const a = std.heap.page_allocator;
+    if (std.process.getEnvVarOwned(a, MAPPINGS_ENV)) |env| {
+        defer a.free(env);
+        if (a.dupeZ(u8, env)) |z| {
+            defer a.free(z);
+            _ = rl.setGamepadMappings(z);
+        } else |_| {}
+    } else |_| {}
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const here = std.fs.selfExeDirPath(&buf) catch return;
+    var dir = std.fs.openDirAbsolute(here, .{}) catch return;
+    defer dir.close();
+    const file = dir.readFileAllocOptions(a, MAPPINGS_FILE, MAPPINGS_MAX, null, 1, 0) catch return;
+    defer a.free(file);
+    _ = rl.setGamepadMappings(file);
+}
+
+const Trigger = enum {
+    left,
+    right,
+
+    fn axis(t: Trigger) rl.GamepadAxis {
+        return switch (t) {
+            .left => .left_trigger,
+            .right => .right_trigger,
+        };
+    }
+
+    fn of(b: rl.GamepadButton) ?Trigger {
+        return switch (b) {
+            .left_trigger_2 => .left,
+            .right_trigger_2 => .right,
+            else => null,
+        };
+    }
+};
+
+/// Shares of a trigger's travel past which it presses and under which it lets go: raylib's one line at 55% chatters under a resting finger, and a slot on RT would fire. An unmapped trigger reads half, between the two.
+const TRIGGER_ON: f32 = 0.6;
+const TRIGGER_OFF: f32 = 0.4;
+
+const Triggers = std.EnumArray(Trigger, bool);
+
+fn pulled(at: i32, was: Triggers) Triggers {
+    var now = Triggers.initFill(false);
+    if (!mapped(at)) return now;
+    for (std.enums.values(Trigger)) |t| now.set(t, latch((rl.getGamepadAxisMovement(at, t.axis()) + 1) / 2, was.get(t)));
+    return now;
+}
+
+fn edge(was: Triggers, now: Triggers, t: Trigger) bool {
+    return now.get(t) and !was.get(t);
+}
+
+fn rose(was: Triggers, now: Triggers) bool {
+    for (std.enums.values(Trigger)) |t| {
+        if (edge(was, now, t)) return true;
+    }
+    return false;
+}
+
+/// A button or a latched trigger pressed on pad `at` this frame.
+fn struck(at: i32, before: *const [PADS]Triggers, now: *const [PADS]Triggers) bool {
+    const i: usize = @intCast(at);
+    return padPressed(at) or rose(before[i], now[i]);
+}
+
+fn latch(travel: f32, was: bool) bool {
+    return travel >= if (was) TRIGGER_OFF else TRIGGER_ON;
 }
 
 /// The letter keys that walk up, left, down and right, as "WASD" reads.
@@ -40,18 +175,24 @@ fn letters(comptime walks: []const Walk) [:0]const u8 {
     return std.fmt.comptimePrint("{s}", .{out});
 }
 
-fn padName(comptime b: rl.GamepadButton) [:0]const u8 {
+/// raylib names a pad's buttons by place, as GLFW maps every pad onto Xbox's.
+fn padName(comptime b: rl.GamepadButton, comptime d: Device) [:0]const u8 {
+    const ps = d.playstation();
     return switch (b) {
-        .right_face_down => "A",
-        .right_face_right => "B",
-        .right_face_left => "X",
-        .right_face_up => "Y",
-        .left_trigger_1 => "LB",
-        .left_trigger_2 => "LT",
-        .right_trigger_1 => "RB",
-        .right_trigger_2 => "RT",
-        .middle_left => "View",
-        .middle_right => "Menu",
+        .right_face_down => if (ps) "Cross" else "A",
+        .right_face_right => if (ps) "Circle" else "B",
+        .right_face_left => if (ps) "Square" else "X",
+        .right_face_up => if (ps) "Triangle" else "Y",
+        .left_trigger_1 => if (ps) "L1" else "LB",
+        .left_trigger_2 => if (ps) "L2" else "LT",
+        .right_trigger_1 => if (ps) "R1" else "RB",
+        .right_trigger_2 => if (ps) "R2" else "RT",
+        .middle_left => switch (d) {
+            .ps5 => "Create",
+            .ps4 => "Share",
+            .xbox, .keys => "View",
+        },
+        .middle_right => if (ps) "Options" else "Menu",
         else => @compileError("no caption for " ++ @tagName(b)),
     };
 }
@@ -129,10 +270,9 @@ pub const Button = enum {
     }
 
     pub fn name(comptime b: Button, comptime d: Device) [:0]const u8 {
-        return switch (d) {
-            .pad => padName(b.pad()),
-            .keys => if (b.keys().len == 0) @compileError(@tagName(b) ++ " has no key in menus") else keyName(b.keys()[0]),
-        };
+        if (d.pad()) return padName(b.pad(), d);
+        if (b.keys().len == 0) @compileError(@tagName(b) ++ " has no key in menus");
+        return keyName(b.keys()[0]);
     }
 
     pub fn caption(b: Button, d: Device) [:0]const u8 {
@@ -263,7 +403,7 @@ pub const State = struct {
     pressed: std.EnumSet(Button) = .initEmpty(),
     down: std.EnumSet(Button) = .initEmpty(),
     down_s: std.EnumArray(Button, f32) = .initFill(0),
-    device: Device = .pad,
+    device: Device = .xbox,
     fullscreen: bool = false,
     walk: ?mathx.Dir = null,
     lean: bool = false,
@@ -278,6 +418,10 @@ pub const State = struct {
     playing: bool = false,
     /// Set before each `update`: the slot Ctrl holds, which the number keys skip.
     modifier: ?Button = null,
+    /// The pad read (`choosePad`), which names the captions though the window has lost focus and nothing is read.
+    pad_at: ?i32 = null,
+    /// Each pad's latched triggers, read though the window has lost focus so a pull held across it is not pressed again.
+    triggers: [PADS]Triggers = @splat(.initFill(false)),
 
     pub fn hit(self: State, b: Button) bool {
         return self.pressed.contains(b);
@@ -302,7 +446,7 @@ pub const State = struct {
     }
 
     pub fn slotCaption(self: State, b: Button) [:0]const u8 {
-        if (self.device == .pad or !b.isSlot()) return b.caption(self.device);
+        if (self.device.pad() or !b.isSlot()) return b.caption(self.device);
         if (b == self.modifier) return SECOND_CAPTION;
         return SLOT_CAPTIONS[numberOf(self.modifier, b).?];
     }
@@ -313,11 +457,19 @@ pub const State = struct {
     }
 
     pub fn update(self: *State, dt: f32) void {
-        const pad = rl.isGamepadAvailable(PAD);
+        const before = self.triggers;
+        for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
+        self.pad_at = choosePad(self.pad_at, &before, &self.triggers);
+        const kind: ?Device = if (self.pad_at) |at| kindAt(at) else null;
+        const live: ?i32 = if (rl.isWindowFocused()) self.pad_at else null;
         const alt_down = altDown();
         for (BUTTONS) |b| {
-            var on = pad and rl.isGamepadButtonPressed(PAD, b.pad());
-            var hold = pad and rl.isGamepadButtonDown(PAD, b.pad());
+            var on = false;
+            var hold = false;
+            if (live) |at| {
+                on = self.padHit(at, b.pad(), &before);
+                hold = self.padHeld(at, b.pad());
+            }
             if (!alt_down and !(self.playing and b.isSlot())) {
                 for (b.keys()) |k| {
                     if (self.typing and types(k)) continue;
@@ -333,7 +485,7 @@ pub const State = struct {
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();
-        self.lean = (pad and rl.isGamepadButtonDown(PAD, LEAN)) or (self.playing and either(LEAN_KEYS));
+        self.lean = (if (live) |at| self.padHeld(at, LEAN) else false) or (self.playing and either(LEAN_KEYS));
         self.typed.n = 0;
         self.rub = false;
         if (self.typing) {
@@ -343,9 +495,9 @@ pub const State = struct {
 
         var x: f32 = 0;
         var y: f32 = 0;
-        if (pad) {
-            x = rl.getGamepadAxisMovement(PAD, .left_x);
-            y = rl.getGamepadAxisMovement(PAD, .left_y);
+        if (live) |at| {
+            x = rl.getGamepadAxisMovement(at, .left_x);
+            y = rl.getGamepadAxisMovement(at, .left_y);
         }
         var defl = mathx.deflection(x, y);
         var heading = mathx.headingOf(x, y);
@@ -354,7 +506,7 @@ pub const State = struct {
         self.stick = stickWalks(defl, self.stick);
         if (!self.stick) {
             defl = 0;
-            const digital = if (pad) dpadWalk() else null;
+            const digital = if (live) |at| dpadWalk(at) else null;
             if (digital orelse keyWalk(self.typing)) |p| {
                 const d = if (self.lean) leanOf(mathx.dirTo(.{ .x = 0, .y = 0 }, p).?).delta() else p;
                 defl = 1;
@@ -364,7 +516,18 @@ pub const State = struct {
         }
         self.walk = self.step.tick(dt, defl, heading, settle);
         self.typing = false;
-        self.device = deviceOf(self.device, pad, (self.stick and !was_stick) or padPressed(pad), keyed);
+        const pad_hit = if (live) |at| struck(at, &before, &self.triggers) else false;
+        self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit, keyed);
+    }
+
+    fn padHeld(self: *const State, at: i32, b: rl.GamepadButton) bool {
+        if (Trigger.of(b)) |t| return self.triggers[@intCast(at)].get(t);
+        return rl.isGamepadButtonDown(at, b);
+    }
+
+    fn padHit(self: *const State, at: i32, b: rl.GamepadButton, before: *const [PADS]Triggers) bool {
+        if (Trigger.of(b)) |t| return edge(before[@intCast(at)], self.triggers[@intCast(at)], t);
+        return rl.isGamepadButtonPressed(at, b);
     }
 
     fn slotKeys(self: *State) void {
@@ -396,28 +559,34 @@ fn numberOf(modifier: ?Button, b: Button) ?usize {
     return null;
 }
 
-fn deviceOf(was: Device, pad: bool, pad_hit: bool, keyed: bool) Device {
-    if (!pad) return .keys;
-    if (pad_hit) return .pad;
-    return if (keyed) .keys else was;
+fn deviceOf(was: Device, pad: ?Device, pad_hit: bool, keyed: bool) Device {
+    const kind = pad orelse return .keys;
+    if (pad_hit) return kind;
+    if (keyed) return .keys;
+    return if (was.pad()) kind else was;
 }
 
-fn padPressed(pad: bool) bool {
-    if (!pad) return false;
+/// The triggers are `pulled`'s: raylib's own press for them is its unlatched 55% line.
+fn padPressed(at: i32) bool {
     for (std.enums.values(rl.GamepadButton)) |b| {
-        if (b != .unknown and rl.isGamepadButtonPressed(PAD, b)) return true;
+        if (b != .unknown and Trigger.of(b) == null and rl.isGamepadButtonPressed(at, b)) return true;
     }
     return false;
 }
 
 /// The editor's, and the only mouse: it is a desk tool, so it names keys.
 pub const Desk = struct {
-    pub const TOOL_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero, .minus };
-    pub const TOOL_CAPTIONS = blk: {
-        var out: [TOOL_KEYS.len][:0]const u8 = undefined;
-        for (TOOL_KEYS, &out) |k, *c| c.* = keyName(k);
-        break :blk out;
-    };
+    pub const TOOL_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
+    pub const TOOL_CAPTIONS = captions(&TOOL_KEYS);
+    /// The editor's shapes in its `Shape` order: brush, line, rectangle, box, fill, select.
+    pub const SHAPE_KEYS = [_]rl.KeyboardKey{ .b, .l, .r, .o, .f, .m };
+    pub const SHAPE_CAPTIONS = captions(&SHAPE_KEYS);
+
+    fn captions(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const u8 {
+        var out: [keys.len][:0]const u8 = undefined;
+        for (keys, &out) |k, *c| c.* = keyName(k);
+        return out;
+    }
     const PAN_KEYS = blk: {
         var out: [DPAD.len]Walk = undefined;
         var n: usize = 0;
@@ -448,6 +617,17 @@ pub const Desk = struct {
     pub const BACK_KEY: rl.KeyboardKey = .escape;
     pub const SMALLER_KEY: rl.KeyboardKey = .left_bracket;
     pub const BIGGER_KEY: rl.KeyboardKey = .right_bracket;
+    pub const ZOOM_OUT_KEY: rl.KeyboardKey = .minus;
+    pub const ZOOM_IN_KEY: rl.KeyboardKey = .equal;
+    pub const FIT_KEY: rl.KeyboardKey = .home;
+    pub const HELP_KEY: rl.KeyboardKey = .f1;
+    pub const OBJECTS_KEY: rl.KeyboardKey = .f3;
+    pub const REROLL_KEY: rl.KeyboardKey = .e;
+    pub const DELETE_KEY: rl.KeyboardKey = .delete;
+    pub const COPY_KEY: rl.KeyboardKey = .c;
+    pub const CUT_KEY: rl.KeyboardKey = .x;
+    pub const PASTE_KEY: rl.KeyboardKey = .v;
+    const NAV_KEYS = [2]rl.KeyboardKey{ .up, .down };
     const CTRL = keyName(CTRL_KEYS[0]) ++ "+";
     const ALT = "Alt+";
     pub const SHIFT_CAPTION = keyName(SHIFT_KEYS[0]);
@@ -465,6 +645,22 @@ pub const Desk = struct {
     pub const ERASE_CAPTION = mouseName(ERASE_BUTTON);
     pub const RECT_CAPTION = SHIFT_CAPTION ++ "+drag";
     pub const BRUSH_CAPTION = keyName(SMALLER_KEY) ++ " " ++ keyName(BIGGER_KEY);
+    pub const SHAPES_CAPTION = blk: {
+        var s: [:0]const u8 = SHAPE_CAPTIONS[0];
+        for (SHAPE_CAPTIONS[1..]) |c| s = s ++ " " ++ c;
+        break :blk s;
+    };
+    pub const PICK_CAPTION = ALT ++ "click";
+    pub const ZOOM_CAPTION = keyName(ZOOM_OUT_KEY) ++ " " ++ keyName(ZOOM_IN_KEY);
+    pub const FIT_CAPTION = keyName(FIT_KEY);
+    pub const HELP_CAPTION = keyName(HELP_KEY);
+    pub const OBJECTS_CAPTION = keyName(OBJECTS_KEY);
+    pub const REROLL_CAPTION = keyName(REROLL_KEY);
+    pub const DELETE_CAPTION = keyName(DELETE_KEY);
+    pub const COPY_CAPTION = CTRL ++ keyName(COPY_KEY);
+    pub const CUT_CAPTION = CTRL ++ keyName(CUT_KEY);
+    pub const PASTE_CAPTION = CTRL ++ keyName(PASTE_KEY);
+    pub const NAV_CAPTION = keyName(NAV_KEYS[0]) ++ " " ++ keyName(NAV_KEYS[1]);
     pub const PAN_CAPTION = blk: {
         for (PAN_KEYS) |w| {
             for (w.keys) |k| {
@@ -482,7 +678,8 @@ pub const Desk = struct {
     pub const FULLSCREEN_CAPTION = ALT ++ ENTER_CAPTION;
 
     comptime {
-        var bare: []const rl.KeyboardKey = &TOOL_KEYS;
+        @setEvalBranchQuota(10_000);
+        var bare: []const rl.KeyboardKey = &TOOL_KEYS ++ &SHAPE_KEYS;
         for (PAN_KEYS) |w| bare = bare ++ w.keys;
         var ctrl: []const rl.KeyboardKey = &.{};
         for (@typeInfo(Desk).@"struct".decls) |d| {
@@ -530,7 +727,21 @@ pub const Desk = struct {
     rub: bool = false,
     smaller: bool = false,
     bigger: bool = false,
+    alt: bool = false,
+    zoom_in: bool = false,
+    zoom_out: bool = false,
+    fit: bool = false,
+    help: bool = false,
+    objects: bool = false,
+    reroll: bool = false,
+    delete: bool = false,
+    copy: bool = false,
+    cut: bool = false,
+    paste: bool = false,
+    /// Up -1 or down 1, as pressed or repeated.
+    nav: i32 = 0,
     tool: ?usize = null,
+    shape: ?usize = null,
     typed: Typed = .{},
 
     pub fn text(self: *const Desk) []const u8 {
@@ -578,10 +789,29 @@ pub const Desk = struct {
         self.rub = rubbed();
         self.smaller = bare and hit(SMALLER_KEY);
         self.bigger = bare and hit(BIGGER_KEY);
+        self.alt = altDown();
+        self.zoom_in = bare and hit(ZOOM_IN_KEY);
+        self.zoom_out = bare and hit(ZOOM_OUT_KEY);
+        self.fit = bare and hit(FIT_KEY);
+        self.help = bare and hit(HELP_KEY);
+        self.objects = bare and hit(OBJECTS_KEY);
+        self.reroll = bare and hit(REROLL_KEY);
+        self.delete = bare and hit(DELETE_KEY);
+        self.copy = ctrl and hit(COPY_KEY);
+        self.cut = ctrl and hit(CUT_KEY);
+        self.paste = ctrl and hit(PASTE_KEY);
+        self.nav = 0;
+        for (NAV_KEYS, [2]i32{ -1, 1 }) |k, by| {
+            if (rl.isKeyPressed(k) or rl.isKeyPressedRepeat(k)) self.nav = by;
+        }
         self.tool = null;
+        self.shape = null;
         if (bare) {
             for (TOOL_KEYS, 0..) |k, i| {
                 if (hit(k)) self.tool = i;
+            }
+            for (SHAPE_KEYS, 0..) |k, i| {
+                if (hit(k)) self.shape = i;
             }
         }
         self.typed.read();
@@ -623,6 +853,12 @@ fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
         .left_bracket => "[",
         .right_bracket => "]",
         .minus => "-",
+        .equal => "=",
+        .home => "Home",
+        .f1 => "F1",
+        .f3 => "F3",
+        .up => "Up",
+        .down => "Down",
         .a, .b, .c, .d, .e, .f, .g, .h, .i, .j, .k, .l, .m, .n, .o, .p, .q, .r, .s, .t, .u, .v, .w, .x, .y, .z => &[_:0]u8{std.ascii.toUpper(@tagName(k)[0])},
         .zero, .one, .two, .three, .four, .five, .six, .seven, .eight, .nine => &[_:0]u8{'0' + @intFromEnum(k) - @intFromEnum(rl.KeyboardKey.zero)},
         else => @compileError("no caption for " ++ @tagName(k)),
@@ -640,11 +876,11 @@ fn nonZero(p: mathx.P) ?mathx.P {
     return if (p.x == 0 and p.y == 0) null else p;
 }
 
-fn dpadWalk() ?mathx.P {
+fn dpadWalk(at: i32) ?mathx.P {
     var p = mathx.P{ .x = 0, .y = 0 };
     for (WALKS) |w| {
         const b = w.pad orelse continue;
-        if (rl.isGamepadButtonDown(PAD, b)) p = p.add(w.d.delta());
+        if (rl.isGamepadButtonDown(at, b)) p = p.add(w.d.delta());
     }
     return nonZero(p);
 }
@@ -824,11 +1060,60 @@ test "a held button reports long from HOLD_S until it is spent, and not again un
 }
 
 test "the last device pressed is the one named, and the keyboard when no pad is plugged in" {
-    try std.testing.expectEqual(Device.keys, deviceOf(.pad, true, false, true));
-    try std.testing.expectEqual(Device.pad, deviceOf(.keys, true, true, true));
-    try std.testing.expectEqual(Device.keys, deviceOf(.keys, true, false, false));
-    try std.testing.expectEqual(Device.pad, deviceOf(.pad, true, false, false));
-    try std.testing.expectEqual(Device.keys, deviceOf(.pad, false, false, false));
+    try std.testing.expectEqual(Device.keys, deviceOf(.xbox, .xbox, false, true));
+    try std.testing.expectEqual(Device.xbox, deviceOf(.keys, .xbox, true, true));
+    try std.testing.expectEqual(Device.keys, deviceOf(.keys, .xbox, false, false));
+    try std.testing.expectEqual(Device.xbox, deviceOf(.xbox, .xbox, false, false));
+    try std.testing.expectEqual(Device.keys, deviceOf(.xbox, null, false, false));
+    try std.testing.expectEqual(Device.ps5, deviceOf(.xbox, .ps5, false, false));
+    try std.testing.expectEqual(Device.keys, deviceOf(.keys, .ps5, false, false));
+}
+
+test "a Sony pad is told by its GUID, a DualSense from the rest" {
+    try std.testing.expectEqual(Device.ps5, padOf("030000004c050000e60c000000000000"));
+    try std.testing.expectEqual(Device.ps5, padOf("030000004c050000f20d000000000000"));
+    try std.testing.expectEqual(Device.ps4, padOf("030000004c050000cc09000000000000"));
+    try std.testing.expectEqual(Device.xbox, padOf("78696e707574010000000000000000000"));
+    try std.testing.expectEqual(Device.xbox, padOf("030000005e0400008e02000000000000"));
+    try std.testing.expectEqual(Device.xbox, padOf(""));
+    for (PS5_PRODUCTS) |p| try std.testing.expect(std.mem.indexOf(u8, MAPPINGS, "\n03000000" ++ SONY ++ "0000" ++ p ++ "000000000000,") != null);
+}
+
+test "a trigger presses past most of its travel and lets go under less, so a resting finger does not chatter" {
+    var presses: usize = 0;
+    var was = false;
+    for ([_]f32{ 0, 0.53, 0.57, 0.54, 0.56, 0.5, 0.7, 0.45, 0.65, 0.42, 0.3, 0.5 }) |travel| {
+        const now = latch(travel, was);
+        if (now and !was) presses += 1;
+        was = now;
+    }
+    std.debug.print("a trigger hovering at raylib's 55% then pulled once, wavering, and let go: {d} press\n", .{presses});
+    try std.testing.expectEqual(@as(usize, 1), presses);
+    try std.testing.expect(!latch(0.5, false));
+    const off = Triggers.initFill(false);
+    var rt = off;
+    rt.set(.right, true);
+    try std.testing.expect(rose(off, rt) and !rose(rt, rt) and !rose(rt, off));
+    try std.testing.expectEqual(@as(?Trigger, .right), Trigger.of(Button.rt.pad()));
+    try std.testing.expectEqual(@as(?Trigger, .left), Trigger.of(LEAN));
+    try std.testing.expectEqual(@as(?Trigger, null), Trigger.of(Button.lb.pad()));
+}
+
+test "every pad button has a name on each maker's pad, a PlayStation's by its own" {
+    try std.testing.expectEqualStrings("Cross", Button.a.caption(.ps5));
+    try std.testing.expectEqualStrings("Circle", Button.b.caption(.ps4));
+    try std.testing.expectEqualStrings("Square", Button.x.caption(.ps5));
+    try std.testing.expectEqualStrings("Triangle", Button.y.caption(.ps5));
+    try std.testing.expectEqualStrings("L1", Button.lb.caption(.ps5));
+    try std.testing.expectEqualStrings("R2", Button.rt.caption(.ps4));
+    try std.testing.expectEqualStrings("Create", Button.view.caption(.ps5));
+    try std.testing.expectEqualStrings("Share", Button.view.caption(.ps4));
+    try std.testing.expectEqualStrings("Options", Button.pause.caption(.ps5));
+    try std.testing.expectEqualStrings("View", Button.view.caption(.xbox));
+    for (std.enums.values(Device)) |d| {
+        if (!d.pad()) continue;
+        for (BUTTONS) |b| try std.testing.expect(b.caption(d).len > 0);
+    }
 }
 
 test "the keyboard numbers the slots past the modifier, which Ctrl holds" {
@@ -845,7 +1130,7 @@ test "the keyboard numbers the slots past the modifier, which Ctrl holds" {
     s.modifier = null;
     try std.testing.expectEqualStrings("7", s.slotCaption(.rt));
     try std.testing.expectEqualStrings("Tab", s.slotCaption(.view));
-    s.device = .pad;
+    s.device = .xbox;
     try std.testing.expectEqualStrings("RT", s.slotCaption(.rt));
 }
 

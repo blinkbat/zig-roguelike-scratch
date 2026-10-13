@@ -14,6 +14,7 @@ const Scene = enum { title, play, edit };
 const Page = enum { main, world, class, name, load, options, debug };
 const MainRow = enum {
     new,
+    worlds,
     load,
     options,
     editor,
@@ -66,6 +67,9 @@ const App = struct {
     title: menu.Menu = .{},
     worlds: menu.Menu = .{},
     listing: atlas.Listing = .{},
+    /// The world picked in Worlds; null plays `atlas.START`.
+    chosen: ?[]const u8 = null,
+    chosen_buf: [atlas.PATH_MAX]u8 = undefined,
     classes: menu.Menu = .{},
     loads: menu.Menu = .{},
     options: menu.Menu = .{},
@@ -82,17 +86,9 @@ const App = struct {
         app.note.say(fmt, args);
     }
 
-    fn generated(app: *const App) bool {
-        return app.listing.n == 0;
-    }
-
     fn toTitle(app: *App) void {
         app.scene = .title;
-        app.page = .main;
-        app.listing.scan();
-        if (app.generated()) {
-            app.say(atlas.NO_WORLDS ++ ": {s} makes one generated floor", .{MainRow.new.label()});
-        } else app.say("{s} picks a world in {s}", .{ MainRow.new.label(), atlas.DIR });
+        app.goPage(.main);
     }
 
     fn goPage(app: *App, p: Page) void {
@@ -100,21 +96,28 @@ const App = struct {
         app.page = p;
     }
 
+    fn choose(app: *App, path: []const u8) void {
+        const n = @min(path.len, app.chosen_buf.len);
+        @memcpy(app.chosen_buf[0..n], path[0..n]);
+        app.chosen = app.chosen_buf[0..n];
+    }
 
     fn fromClass(app: *App) void {
-        if (app.generated()) return app.toTitle();
+        if (app.chosen == null) return app.toTitle();
         app.goPage(.world);
     }
 
+    /// On the world it last had open, read afresh; the first time on `edit_path`.
     fn toEdit(app: *App) void {
+        const again = app.ed != null;
         const ed = app.ed orelse blk: {
             const e = editor.Editor.create(app.alloc) catch return app.say("The editor did not start (out of memory)", .{});
             app.ed = e;
             break :blk e;
         };
-        ed.open(app.edit_path) catch |e| {
+        (if (again) ed.reopen() else ed.open(app.edit_path)) catch |e| {
             app.toTitle();
-            return app.say(atlas.NOT_LOADED ++ "; the editor will not open over it", .{ app.edit_path, @errorName(e) });
+            return app.say(atlas.NOT_LOADED ++ "; the editor will not open over it", .{ if (again) ed.path() else app.edit_path, @errorName(e) });
         };
         app.scene = .edit;
     }
@@ -127,21 +130,19 @@ const App = struct {
     fn newRun(app: *App, name: hero.Name) void {
         const g = app.g;
         const slot = save.free(&app.list) orelse return app.toTitle();
-        if (app.generated()) {
-            game.begin(g, game.freshSeed());
-        } else {
-            var buf: [atlas.PATH_MAX]u8 = undefined;
-            const path = buf[0..app.listing.at(app.worlds.at).len];
-            @memcpy(path, app.listing.at(app.worlds.at));
-            app.world.load(app.alloc, path) catch |e| {
-                app.toTitle();
-                return app.say(atlas.NOT_LOADED, .{ path, @errorName(e) });
-            };
+        const path = app.chosen orelse atlas.START;
+        if (app.world.load(app.alloc, path)) {
             if (!app.world.standable(app.world.start, &g.lv)) {
                 app.toTitle();
                 return app.say(atlas.NO_FLOOR, .{path});
             }
             game.beginWorld(g, app.world);
+        } else |e| {
+            if (app.chosen != null or e != error.FileNotFound) {
+                app.toTitle();
+                return app.say(atlas.NOT_LOADED, .{ path, @errorName(e) });
+            }
+            game.begin(g, game.freshSeed());
         }
         app.inSlot(slot, name);
         app.autosave.?.flush(g);
@@ -197,6 +198,7 @@ const App = struct {
                 d.play = false;
                 d.play_here = false;
                 app.scene = .edit;
+                if (closing) app.ed.?.request(.quit);
             }
         } else if (closing and app.scene != .edit) {
             app.leaveRun();
@@ -270,8 +272,16 @@ const App = struct {
                     .new => {
                         app.rescan();
                         if (save.free(&app.list) == null) return app.refuse();
+                        app.chosen = null;
+                        app.goPage(.class);
+                    },
+                    .worlds => {
+                        app.rescan();
+                        if (save.free(&app.list) == null) return app.refuse();
                         app.listing.scan();
-                        app.goPage(if (app.generated()) .class else .world);
+                        if (app.listing.n == 0) {
+                            app.say(atlas.NO_WORLDS, .{});
+                        } else app.goPage(.world);
                     },
                     .load => {
                         app.rescan();
@@ -288,12 +298,27 @@ const App = struct {
                 var names: [atlas.Listing.MAX][atlas.PATH_MAX + 1]u8 = undefined;
                 var rows: [atlas.Listing.MAX][:0]const u8 = undefined;
                 const n = app.listing.n;
-                for (names[0..n], rows[0..n], 0..) |*b, *l, i| l.* = std.fmt.bufPrintZ(b, "{s}", .{app.listing.stem(i)}) catch "";
-                const picked = app.worlds.step(&g.st, n);
-                menu.draw(g.face, g.screen, g.st.device, "CHOOSE A WORLD", rows[0..n], app.worlds.at, app.listing.at(app.worlds.at), menu.BACK_LABEL);
-                if (back) {
+                if (n == 0) {
                     app.toTitle();
-                } else if (picked) |_| app.goPage(.class);
+                    return true;
+                }
+                for (names[0..n], rows[0..n], 0..) |*b, *l, i| l.* = std.fmt.bufPrintZ(b, "{s}", .{app.listing.label(i)}) catch "";
+                const picked = app.worlds.step(&g.st, n);
+                var where: [atlas.PATH_MAX + 1]u8 = undefined;
+                const shown = if (app.listing.entry(app.worlds.at) == .up) std.fmt.bufPrintZ(&where, "Up from {s}/{s}", .{ atlas.DIR, app.listing.here() }) catch "" else app.listing.at(app.worlds.at);
+                menu.draw(g.face, g.screen, g.st.device, "CHOOSE A WORLD", rows[0..n], app.worlds.at, shown, menu.BACK_LABEL);
+                if (back) {
+                    if (app.listing.up()) {
+                        app.worlds = .{};
+                    } else app.toTitle();
+                } else if (picked) |i| {
+                    if (app.listing.open(i)) {
+                        app.worlds = .{};
+                    } else {
+                        app.choose(app.listing.at(i));
+                        app.goPage(.class);
+                    }
+                }
             },
             .class => {
                 var rows: [hero.CLASSES.len][:0]const u8 = undefined;

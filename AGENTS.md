@@ -27,13 +27,14 @@ for the change asked for.
 - `zig` is NOT on PATH. `check.cmd` (type-check, the error loop) · `build.cmd` · `run.cmd` · `test.cmd [filter]` ·
   `shot.cmd` (headless frames into `shots\lean.png`, `shots\aim.png`, `shots\torch.png`, a posed torch with rats
   under it, `shots\bind.png`, the bind screen with its picker open, and `shots\gas.png`, a room a few turns after a
-  bloat burst in it, `shots\pause.png`, the pause menu over it, `shots\biome.png`, the archer arrived in `qud_salt_marsh`, `shots\dawn.png`, `noon.png`, `day.png`, `dusk.png` and `night.png`, the wilds at 7.00, 12.00, 16.30, 19.18 and 1.00;
+  bloat burst in it, `shots\pause.png`, the pause menu over it, `shots\biome.png`, the archer arrived in `qud_salt_marsh`, `shots\strand.png`, the start's rainy beach, `shots\dawn.png`, `noon.png`, `day.png`, `dusk.png` and `night.png`, the wilds at 7.00, 12.00, 16.30, 19.18 and 1.00;
   `shots\night-memory.png` keeps the noon exploration at 1.00 to check the lantern's fade into memory; each
   world's start node rolled whole a glyph a cell into `shots\worlds\<name>.png`, and `shots\edit.png`, `shots\edit-graph.png` and
   `shots\edit-gen.png`, the editor's map, graph and a procgen node's generator on a posed three-node world, and `shots\name.png`, the hero's name being typed; built
   into `zig-out-dev` so a running game is untouched).
   `edit.cmd [path]` opens the world editor (`--edit`) on `worlds\main.world` or the `.world` named.
-  `zig-out-dev\bin\roguelike.exe --bench` (after `shot.cmd` builds it) prints per-frame CPU time of a headless walk.
+  `zig-out-dev\bin\roguelike.exe --bench` (after `shot.cmd` builds it) prints startup, per-frame CPU time of a headless walk,
+  and map texture residency/loading/reuse checks. `run.cmd` and `edit.cmd` use ReleaseFast; `build.cmd`, checks and tests keep Debug.
   The toolchain is named once, in `_zig.cmd`. From PowerShell, call them as `.\check.cmd` from this directory.
 - **EVERY MODULE MUST BE NAMED IN `main.zig`'s `test {}` BLOCK** — `build.zig` panics otherwise,
   and on any `src/**/*.zig` under 512 bytes.
@@ -45,7 +46,7 @@ for the change asked for.
 
 - **`core/input.zig` IS THE ONLY FILE THAT TOUCHES A DEVICE.** The controller is the primary input; the keyboard
   mirrors it, a key for every action (`docs/CONTROLLER.md`, after PoE2). Every caption names the device last pressed
-  (`State.device`, `input.per`). D-pad moves, LT (Shift) held puts it on diagonals (`leanOf`). Skills sit
+  (`State.device`, `input.per`), a Sony pad in PlayStation's words (`input.padOf`). D-pad moves, LT (Shift) held puts it on diagonals (`leanOf`). Skills sit
   on PoE2's controller skill bar (`play/skillbar.zig`): LB, A, X, Y, B, RB and RT are slots in a primary and a
   secondary set, the secondary set is used while the button bound to "Activate Secondary Skill Set" (LB) is held, and
   View held `input.HOLD_S` opens the bind screen (a press that closes or cancels is `spend`t) (A select or pick up, X change, Y remove, B close). Defaults: X Shoot, B Juke, Y Wait, RB Burning Arrow, RT Glacial Shot. The button
@@ -58,8 +59,10 @@ for the change asked for.
   then type (`State.typed`, Backspace `rub`) and press no button nor walk. The editor is a desk tool: its mouse and
   keys are `input.Desk`, and it names them.
 - **`app.zig` IS THE WAY BETWEEN THE TITLE, THE GAME AND THE EDITOR.** The title (`ui/menu.zig`, as the pause menu
-  is): New picks a world, one of the `.world` files in `worlds\` (`atlas.Listing`, a long list scrolling with
-  `menu.window`; one generated floor when there are none), then a hero's class (`play/hero.zig`; the archer alone so far) and has it named on a grid of keys the
+  is): New plays the default start, `worlds\start.world` (`atlas.START`, the Strand: washed up on a rainy coast, the
+  one exit east through the forest; one generated floor when the file is missing); Worlds browses `worlds\` a folder
+  at a time (`atlas.Listing`: `..` first below the top, then folders, then worlds; A opens, B goes up, a long list
+  scrolling with `menu.window`) and plays the world picked. Either then takes a hero's class (`play/hero.zig`; the archer alone so far) and has it named on a grid of keys the
   d-pad walks and the keyboard types into (`ui/naming.zig`), then plays the world read fresh from disk in
   the first free save slot (refused when all are taken); Load plays or deletes (Y, twice) a slot; Options toggles
   fullscreen and opens Debug (Unkillable: the hero keeps 1 hp whatever strikes it, `Game.unkillable`, never saved); Editor opens the editor; Quit quits. The hero's name is said in the log and the death screen,
@@ -79,22 +82,33 @@ for the change asked for.
   procgen (a base biome and the features laid over it, `world/procgen.zig`), each with doors. A procgen node
   holds no seed, but holds its base's settings (`procgen.Floor`), its features' (`procgen.Feature`, `MAX_FEATURES`)
   and its foes' `pack.Spec` (packs,
-  a few of each kind, makeups, reach, gap from the arrival, apart from each other); its floor is rolled round its doors each run, from the run's seed and the node (`game.rollOf`), so a world plays differently
+  a few of each kind, makeups, reach, gap from the arrival, apart from each other), and its sky (`climate.Climate`:
+  `light` clear or bleak, `weather` clear or drizzle; shown only open to the sky); its floor is rolled round its doors each run, from the run's seed and the node (`game.rollOf`), so a world plays differently
   every time. A door links both ways to one door on any node (`Atlas.link`). `Node.stamp` builds a node's `Level`:
-  procgen generates round its doors, tunnelling each into the floor; bespoke opens each door's cell. The world New picks is played when it loads, one
-  generated floor when `worlds\` holds none, and New refuses one that will not parse or whose start has no open floor. Stepping onto a linked door takes the archer, once the turn is drawn, to the door it leads to
+  procgen generates round its doors, tunnelling each into the floor; bespoke opens each door's cell. The world picked is played when it loads, one
+  generated floor when New finds no `worlds\start.world`, and the title refuses one that will not parse or whose start has no open floor. Stepping onto a linked door takes the archer, once the turn is drawn, to the door it leads to
   (`atlas.landing` when that is taken), hp carried; a node left is kept as it was for the run, and death restarts
   the world. The file is text (`Atlas.write` / `parse`), strict, saved beside itself and renamed over. A node also
   keeps a name and its box's place on the editor's graph. Tests never write a world file.
-- **THE EDITOR (`edit/editor.zig`) EDITS THE WORLD AND NOTHING ELSE READS IT.** A map of one node, a bespoke one drawn
-  as it will play and a procgen one as its doors alone (`Node.sketch`; its floor is only rolled in play, from the
-  settings on the panel's Generator tab), or a graph
-  of every node, its floor, its doors and their links, the boxes
-  dragged where the owner wants them. Every press is a gesture, and all a gesture changes is one undo
-  (`Editor.gesture` then `bank` on its first change; whole-world snapshots, `UNDO_CAP` of them). Leaving, quitting,
-  opening and New ask first when there are unsaved changes (`Editor.request`). Esc backs out one step at a time,
-  the last out to the title. F5 plays the world from its start and F6 from the cursor, unsaved; F5, F6 or the
-  pause menu comes back. The status line's crib names every key and gesture, and a button's tip shows as it is hovered.
+- **THE EDITOR (`edit/editor.zig`) EDITS THE WORLD AND NOTHING ELSE READS IT.** A map of one node drawn as play
+  draws it (ground, `drawGround`'s edges, then what stands), a bespoke one as it will play and a procgen one as one
+  roll of it with its packs placed (`Editor.roll`, `reroll` rolls another; in play it is rolled afresh each run), or a
+  graph of every node, its roll, its doors and their links, the boxes dragged where the owner wants them and a door's
+  dot dragged onto another's to link them. Tools are pictures on the panel (`Desk.TOOL_KEYS`): paint lays the
+  palette's two inks, the first with LMB and the second with RMB, in a shape (`Shape`: brush, line, rectangle, box,
+  fill, select; `Desk.SHAPE_KEYS`), and Alt+click picks up the tile or the thing under the cursor; a selection copies,
+  cuts, clears and pastes (`Board`, tiles, barrels, torches and foes). The cursor ghosts what a press would lay, red
+  where it may not. The Things tab lists what is wrong with the node (`Issues`: unlinked doors, ground no walk from
+  the start or a door reaches, shaded on the map, foes on it) and everything on it, a row showing it on the map; the
+  object viewer (`Desk.OBJECTS_CAPTION`) shows every tile, body and prop with what the game holds it to be. Every
+  press is a gesture, and all a gesture changes is one undo (`Editor.gesture` then `bank` on its first change;
+  whole-world snapshots, `UNDO_CAP` of them); a gesture let go of, as a graph drag Esc or RMB ends, is put back with
+  no undo (`abandon`). Leaving, quitting, opening and New ask first when there are unsaved changes
+  (`Editor.request`); New and Save as name a world beside the one open, and Open starts in its folder. Esc backs out
+  one step at a time, the last out to the title. F5 plays the world from its start and F6 from the cursor, unsaved;
+  F5, F6 or the pause menu comes back. The status line names what is under the cursor and the tool's state, then a
+  message or a short crib; F1 lists every key (`HELP`, checked against every `Desk` caption), and a button's tip
+  shows by the cursor. `shot.cmd` writes `shots\edit.png`, `edit-graph.png`, `edit-gen.png` and `edit-objects.png`.
 - **NOTHING IS SPENT UNTIL THE SHOT IS CONFIRMED.** `bow.aimable` is both the reticle's legal cells and the
   shot's legality — one call, so the highlight cannot disagree with the resolver. Every cell the arrow crosses to a
   legal mark is in sight: a line slips past a wall's corner where sight does not.
@@ -134,8 +148,11 @@ for the change asked for.
   The bleed shows as drops on the body, a drip and stain each tick, and the hero's statuses (bleeding, burning,
   chilled, with turns left) appear as icons above the skill strip.
 - **THE LAYOUT READS `Game.screen`, NEVER A WINDOW CONSTANT**, because fullscreen changes it at runtime.
-- **THE HUD (`ui/hud.zig`) FOLLOWS `docs/HUD_LAYOUT.md`**: one 744-pixel assembly centered at the bottom, with filled life and mana orbs around the skill strip, live input captions, cooldowns and active ailments. The world fills the viewport behind it, the camera scrolling past the floor's foot by `hud.COVER` so the bottom rows clear it; the minimap stays at the top right. No live hero-name label, enemy/gold counters, log strip or permanent control instructions. `shot.cmd` captures full, partial, critical and empty orbs, both devices, secondary skills and the bind overlay across 720p, 900p and 1080p (`shots/hud-*.png`).
+- **THE HUD (`ui/hud.zig`) FOLLOWS `docs/HUD_LAYOUT.md`**: one 744-pixel assembly centered at the bottom, with filled life and mana orbs around the skill strip, live input captions, cooldowns and active ailments. The world fills the viewport behind it, the camera scrolling past the floor's foot by `hud.COVER` so the bottom rows clear it; the minimap stays at the top right. No live hero-name label, enemy/gold counters, log strip or permanent control instructions. `shot.cmd` captures full, partial, critical and empty orbs, Xbox, PS5 and keyboard captions, secondary skills and the bind overlay across 720p, 900p and 1080p (`shots/hud-*.png`).
 - **`gfx/look.zig` IS EVERY PICTURE.** A thing with a texture in `Sprites` draws it; the rest draw their glyph.
+  Map textures load before drawing that map, from `look.Assets`: its terrain, underlays, wall/forest shapes, barrels and
+  bodies (including later slime forms and delayed deaths). Common textures and normals survive transitions; unused ones
+  unload. The title loads only its font; shared play graphics load on first play. Editor previews use their node's assets.
   Ability slots use monochrome line placeholders through `look.drawSkill`, shared by the HUD and bind picker.
   `skillbar.Act.cost` supplies mana checks, spending and slot dimming; ability descriptions use their mechanic constants.
 - **`gfx/light.zig` IS EVERY LIGHT, AND THE FOG IS PART OF IT.** Terrain draws at full brightness; one pass of the
@@ -180,6 +197,21 @@ for the change asked for.
   running nearly straight across the screen gives way to a soft streak darkest at the feet (`light.solidity`), for
   torches as well as sky lights. A torch shadow fades to zero as its caster passes directly under the light. Everything
   that blocks a step but a liquid casts one way or the other (asserted). Nothing in the simulation reads the light.
+  A procgen node's `light` profile (`world/climate.zig`) reshapes the hour's palette (`sky.under`, `sky.LOOKS`):
+  clear is the day as keyed; bleak is an overcast, most of the sun spread into the sky, greyed and cooled, so open
+  ground stands at about three quarters of clear and shadows go soft. Sight is unchanged.
+- **`gfx/ground.zig` IS WHERE GROUNDS MEET**, on a dual grid: after the ground pass draws each cell, each ground
+  with a sheet (`assets/<ground>-ground.png`, exported by `tools/tile_art/export_ground.lua` from the Desktop's
+  `<ground>.aseprite`; `look.GROUND_SHEETS`, optional until painted, through build.zig's `@import("assets").names`)
+  lays a piece on every corner point, lowest first (`ground.Ground`: water, dirt, grass, cobble, the `.floor`
+  tile), its mask the corners holding it or a ground over it (`Corners.mask`), so each ground's 16 pieces meet every
+  ground below it; then the doors' glyphs. A cell's ground is the tile at its foot (`look.under`). Play leaves out
+  cells never seen; the editor draws them all. A sheet's whole texture is drawn a piece at a time, a ground at a
+  time, so each batches. With no sheet the ground draws cell by cell as before.
+- **`gfx/weather.zig` IS WHAT FALLS FROM THE SKY**: a procgen node's `weather` (`climate.Weather`; drizzle is a very
+  soft rain of faint streaks and splash rings) over the world out of doors, after the torches, only on cells lit in
+  sight, its drops fixed to the ground as the camera moves and fainter as the sky darkens (`sky.brightness`).
+  `shot.cmd` writes `shots\strand.png`, the archer washed up on it. Nothing in the simulation reads it.
 - **`gfx/fx.zig` IS EVERY BLOW'S AFTERMATH**, after zig-soulslike's and fainter: the struck body flashes toward
   `light.FLASH_RGB` (drawn by the body shader), a pinprick of light marks the contact, and the body's matter
   (`fx.matterOf`: blood, ooze, a bloat's purple ichor, a barrel's splinters) sprays along the blow and lies a moment as a stain. Motes draw
@@ -190,7 +222,7 @@ for the change asked for.
 - **`gfx/vignette.zig` IS THE ARCHER'S DANGER**: the view's edge reddens as a blow on the archer lands (its flash
   rising, so a bite and the gas's sting alike) and glows, throbbing, while its hp is under a third. Drawn over the
   world, under the minimap and hud. Nothing in the simulation reads it.
-- **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG and TTF there under its file name, read with
+- **ART LIVES IN `assets/` AND IS EMBEDDED** (`build.zig` embeds every PNG, TTF and TXT there, SDL's controller database among them, under its file name, read with
   `@embedFile`), so the exe runs from any directory. A body's PNG is a file in `assets/` and its entry in
   `look.BODY_PNGS`; a tile's is a file and its entry in `look.TILE_PNGS` (a wall's are cut from `walls.png`); the barrel's is a `Sprites` field in `Sprites.figures`, the sprites that throw a shadow from their feet; the body shader lights the bodies and the barrel among them.
   Sprites are authored at `look.SPRITE_PX` (64), facing right; `Game.facing` mirrors a body
@@ -205,8 +237,9 @@ for the change asked for.
   strata (Qud's NoiseMap), labyrinth, hall (ADOM's Big Room, grove, graveyard), maze (Diablo II's DrlgMaze),
   topology (Path of Exile's graphs), terrain (Dwarf Fortress's fields and biome checks), keep, town, dunes, site
   (Qud's segmented WFC). Features: river (any band: water, lava, chasm, a rock cliff, with fords), lake (any blob),
-  road, scatter (any tile on any tile, alone or clumped), border, buildings (decay makes ruins), farms, setpiece.
-  `carve.zig` is their shared toolkit. Each `worlds\<game>_<place>.world` is one touchstone's example, written as
+  road, scatter (any tile on any tile, alone or clumped), border, buildings (decay makes ruins), farms, setpiece,
+  coast (the sea along one side, shallows, then a beach, its lines wandering).
+  `carve.zig` is their shared toolkit. Each `worlds\<game>\<game>_<place>.world` is one touchstone's example, written as
   text. A knob is a field of a base's or feature's `Params`: whole numbers, or an enum written by name. The outdoor
   bases with `litter` (open, wilds, topology, terrain) strew lone boulders over their grass (`carve.Litter`),
   each where it closes no way, then tiny shrubs, tall grass in patches and shrooms (`carve.Decor`, the

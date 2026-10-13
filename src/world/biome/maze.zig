@@ -89,13 +89,7 @@ const Plan = struct {
 const SIDES = [_]mathx.Dir{ .w, .e, .s, .n };
 
 fn bitOf(d: mathx.Dir) u4 {
-    return switch (d) {
-        .w => 1,
-        .e => 2,
-        .s => 4,
-        .n => 8,
-        else => unreachable,
-    };
+    return @as(u4, 1) << @intCast(std.mem.indexOfScalar(mathx.Dir, &SIDES, d).?);
 }
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {

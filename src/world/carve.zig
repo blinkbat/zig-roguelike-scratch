@@ -547,8 +547,8 @@ fn middleHalf(rng: *mathx.Rng, span: i32) i32 {
     return rng.range(@divTrunc(span, 4), @divTrunc(span * 3, 4));
 }
 
-const ACROSS = [_]mathx.Dir{ .w, .e };
-const DOWN = [_]mathx.Dir{ .n, .s };
+pub const ACROSS = [_]mathx.Dir{ .w, .e };
+pub const DOWN = [_]mathx.Dir{ .n, .s };
 const EDGES = ACROSS ++ DOWN;
 
 pub const Course = enum {

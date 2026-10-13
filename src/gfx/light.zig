@@ -547,9 +547,7 @@ fn texelOf(c: Rgb, sight: f32) rl.Color {
     return colourOf(knee(c) / splat(OVERBRIGHT), sight);
 }
 
-fn lum(c: Rgb) f32 {
-    return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
-}
+const lum = sky.luma;
 
 /// Cells: `drawn` as on screen, `ground` where it stands.
 const Lamp = struct {
@@ -1074,8 +1072,16 @@ pub const Light = struct {
     }
 
     /// Needs a live GL context.
-    pub fn load(self: *Light, figures: *const [look.FIGURES]?rl.Texture2D) void {
-        self.gpu = Gpu.load(figures);
+    pub fn load(self: *Light) void {
+        self.gpu = Gpu.load();
+    }
+
+    pub fn syncFigures(self: *Light, figures: *const [look.FIGURES]?rl.Texture2D) void {
+        self.gpu.syncFigures(figures);
+    }
+
+    pub fn clearFigures(self: *Light) void {
+        self.gpu.syncFigures(&NO_FIGURES);
     }
 
     pub fn unload(self: *Light) void {
@@ -1568,6 +1574,8 @@ const ART_MAX: i32 = 2 * look.SPRITE_PX;
 /// Alpha above which a texel is part of the silhouette.
 const SOLID_A: u8 = 25;
 
+const NO_FIGURES: [look.FIGURES]?rl.Texture2D = @splat(null);
+
 const Gpu = struct {
     map: ?rl.Texture2D = null,
     glow: ?rl.Texture2D = null,
@@ -1580,10 +1588,9 @@ const Gpu = struct {
     mask: ?rl.RenderTexture2D = null,
     /// The framebuffer the mask was drawn from, to go back to.
     outer: u32 = 0,
-    arts: [look.FIGURES]Art = undefined,
-    art_n: usize = 0,
+    arts: [look.FIGURES]?Art = @splat(null),
 
-    fn load(figures: *const [look.FIGURES]?rl.Texture2D) Gpu {
+    fn load() Gpu {
         var g = Gpu{};
         g.map = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
         g.glow = look.radial(GLOW_PX, glowAlpha);
@@ -1592,23 +1599,29 @@ const Gpu = struct {
         g.shadow = look.program(ShadowShader, SHADOW_FS);
         g.receiver = look.program(ReceiverShader, RECEIVER_FS);
         g.shade = look.shader(SHADE_FS);
-        for (figures, 0..) |b, i| {
-            const t = b orelse continue;
-            g.arts[g.art_n] = artOf(t, i < look.LIT_FIGURES);
-            g.art_n += 1;
-        }
         return g;
+    }
+
+    fn syncFigures(g: *Gpu, figures: *const [look.FIGURES]?rl.Texture2D) void {
+        for (&g.arts, figures, 0..) |*held, tex, i| {
+            if (held.*) |a| {
+                if (tex) |t| {
+                    if (a.id == t.id) continue;
+                }
+                if (a.normals) |t| rl.unloadTexture(t);
+            }
+            held.* = if (tex) |t| artOf(t, i < look.LIT_FIGURES) else null;
+        }
     }
 
     fn unload(g: *Gpu) void {
         look.unloadAll(g);
-        for (g.arts[0..g.art_n]) |a| {
-            if (a.normals) |t| rl.unloadTexture(t);
-        }
+        g.syncFigures(&NO_FIGURES);
     }
 
     fn art(g: *const Gpu, t: rl.Texture2D) Art {
-        for (g.arts[0..g.art_n]) |a| {
+        for (g.arts) |held| {
+            const a = held orelse continue;
             if (a.id == t.id) return a;
         }
         return Art.bare(t);

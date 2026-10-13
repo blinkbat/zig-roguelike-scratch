@@ -86,10 +86,7 @@ pub const BACK_LABEL = "back";
 
 /// `backed` takes either; the keyboard has no B.
 pub fn backName(comptime d: input.Device) [:0]const u8 {
-    return switch (d) {
-        .pad => BACK.name(d),
-        .keys => PAUSE.name(d),
-    };
+    return if (d.pad()) BACK.name(d) else PAUSE.name(d);
 }
 
 pub fn backItem(comptime d: input.Device) [:0]const u8 {

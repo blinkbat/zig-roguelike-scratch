@@ -33,6 +33,21 @@ Every captioned string names the device last pressed (`State.device`): any gamep
 walking makes it the pad, any key the keyboard, and no pad plugged in is always the keyboard. This is where we go past
 PoE2, after Diablo IV. The mouse names nothing; the game has no mouse.
 
+GLFW maps every pad onto Xbox's buttons by place, so the table names Xbox's. A Sony pad (vendor `054c` in the
+joystick's GUID, `input.padOf`) is named in PlayStation's words instead: Cross A, Circle B, Square X, Triangle Y,
+L1/R1 the bumpers, L2/R2 the triggers, Options Menu, and Create (DualSense) or Share (DualShock 4) View. The touchpad,
+PS button and stick clicks do nothing; GLFW reads no touchpad.
+
+- **Mappings** (`input.mapPads`): `assets/gamecontrollerdb.txt` is SDL_GameControllerDB at commit `c1d5289`
+  (2026-10-02, zlib, `assets/gamecontrollerdb-LICENSE`), embedded and newer than the copy GLFW ships (which lacks the
+  DualSense Edge). `SDL_GAMECONTROLLERCONFIG`, then a `gamecontrollerdb.txt` beside the exe, take over the pads they
+  name, so a new pad needs no rebuild. To update, replace the asset from the repo's `gamecontrollerdb.txt`.
+- **Which pad**: the first of raylib's four slots that GLFW has a mapping for, until another pad presses a button or
+  pulls a trigger past its latch (`input.choosePad`). A wheel or an unmapped joystick is passed over.
+- **Focus**: nothing is read from a pad while the window is out of focus; the captions keep naming it.
+- **Triggers** press past 60% of their travel and let go under 40% (`input.TRIGGER_ON`/`OFF`), not raylib's one line
+  at 55%, so a finger resting on RT does not fire its slot over and over.
+
 | Action | Pad | Keyboard |
 |---|---|---|
 | Move | D-pad, left stick | WASD, arrows, numpad |

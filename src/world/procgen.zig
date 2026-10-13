@@ -25,6 +25,7 @@ const border = @import("feature/border.zig");
 const buildings = @import("feature/buildings.zig");
 const farms = @import("feature/farms.zig");
 const setpiece = @import("feature/setpiece.zig");
+const coast = @import("feature/coast.zig");
 
 const P = mathx.P;
 
@@ -116,6 +117,7 @@ const FEATURES = .{
     .buildings = buildings,
     .farms = farms,
     .setpiece = setpiece,
+    .coast = coast,
 };
 
 /// Every module listed is an arm of its union, holding the module's `Params`.
@@ -139,6 +141,7 @@ pub const Feature = union(enum) {
     buildings: buildings.Params,
     farms: farms.Params,
     setpiece: setpiece.Params,
+    coast: coast.Params,
 
     pub fn of(k: Kind) Feature {
         return switch (k) {

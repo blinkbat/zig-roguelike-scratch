@@ -29,6 +29,9 @@ const fx = @import("gfx/fx.zig");
 const cloud = @import("gfx/cloud.zig");
 const vignette = @import("gfx/vignette.zig");
 const sky = @import("gfx/sky.zig");
+const weather = @import("gfx/weather.zig");
+const dual = @import("gfx/ground.zig");
+const climate = @import("world/climate.zig");
 const day = @import("world/day.zig");
 const lume = @import("world/lume.zig");
 
@@ -43,6 +46,8 @@ const HALF_CELL: i32 = @divTrunc(CELL, 2);
 fn authored(comptime px: i32) i32 {
     return @divExact(CELL * px, look.SPRITE_PX);
 }
+/// Screen pixels to a sprite's pixel.
+const PX_SCALE: f32 = @floatFromInt(@divExact(CELL, look.SPRITE_PX));
 const GLYPH: i32 = authored(look.GLYPH_PX);
 const CARET: i32 = authored(30);
 const TORCH_GLYPH: i32 = authored(30);
@@ -451,8 +456,11 @@ pub const Game = struct {
     split_from: [actor.MAX]?usize = @splat(null),
     fx: fx.Fx = .{},
     vignette: vignette.Vignette = .{},
+    rain: weather.Weather = .{},
     mini: Minimap = .{},
     sprites: look.Sprites = .{},
+    graphics_ready: bool = false,
+    art_ready: bool = false,
     face: font.Face = .{},
     light: *light.Light,
     cloud: *cloud.Cloud,
@@ -630,6 +638,7 @@ fn freshTurn(g: *Game) void {
 }
 
 fn settle(g: *Game) void {
+    g.art_ready = false;
     castSight(g, g.archer().?.at);
     g.cloud.settle(&g.lv);
     snapGlide(g);
@@ -837,7 +846,6 @@ fn closed(st: *input.State) bool {
     st.spend(BINDS);
     return true;
 }
-
 
 fn openBinds(g: *Game) void {
     g.binds.menu = .browse;
@@ -1548,10 +1556,24 @@ pub fn update(g: *Game, dt: f32) void {
     g.light.sky = skyNow(g);
     g.light.step(&g.lv, dt);
     g.light.carrier = carrierAt(g);
+    g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, PX_SCALE);
 }
 
 fn skyNow(g: *const Game) ?sky.Sky {
-    return if (g.outdoors) sky.at(g.hour_shown) else null;
+    return if (g.outdoors) sky.under(g.hour_shown, climateNow(g).light) else null;
+}
+
+/// What falls on the node played: nothing under a roof.
+fn weatherNow(g: *const Game) ?climate.Weather {
+    return if (g.outdoors) climateNow(g).weather else null;
+}
+
+fn climateNow(g: *const Game) climate.Climate {
+    const w = g.world orelse return .{};
+    return switch (w.node[g.node].plan) {
+        .procgen => |*pg| pg.sky,
+        .bespoke => .{},
+    };
 }
 
 /// Per second, how fast the sky drawn catches the hour a turn moved on.
@@ -1794,6 +1816,31 @@ const Stood = std.StaticBitSet(grid.CELLS);
 
 /// At full light, over the seen cells from `lo` up to `hi`.
 fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: *const Stood) void {
+    drawCells(g, c, lo, hi, pass, arrow_at, stood);
+    if (pass != .ground) return;
+    drawGround(g, c, lo, hi);
+    var cells = grid.Cells.of(lo, hi);
+    while (cells.next()) |p| {
+        if (g.lv.isSeen(p) and g.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
+    }
+}
+
+/// Each ground with a sheet, lowest first, a piece on each corner point of the cells from `lo` up to `hi`, over what the cells drew.
+fn drawGround(g: *Game, c: Cam, lo: P, hi: P) void {
+    const sheets = g.sprites.sheets();
+    var it = sheets.iterator();
+    while (it.next()) |gr| {
+        var points = grid.Cells.of(lo, hi.add(.{ .x = 1, .y = 1 }));
+        while (points.next()) |p| {
+            const mask = dual.Corners.at(&g.lv, p, sheets, true).mask(gr);
+            if (mask == 0) continue;
+            const piece = g.sprites.groundPiece(gr, mask) orelse continue;
+            rl.drawTextureRec(piece.tex, piece.src, .{ .x = @floatFromInt(c.sx(p) - HALF_CELL), .y = @floatFromInt(c.sy(p) - HALF_CELL) }, look.LIT);
+        }
+    }
+}
+
+fn drawCells(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: *const Stood) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
         if (!g.lv.isSeen(p)) continue;
@@ -1802,7 +1849,6 @@ fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: 
             .ground => look.under(here) orelse if (here.upright()) continue else here,
             .solid => if (here.upright() or here.ground() != null) here else continue,
         };
-        defer if (g.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
         if (if (kind == here) g.sprites.tileAt(&g.lv, p) else g.sprites.tileOf(kind, null)) |t| {
             drawSprite(t, c.sx(p), c.sy(p));
             continue;
@@ -1935,6 +1981,7 @@ fn drawWorld(g: *Game) void {
     }
 
     drawTorches(g, c);
+    if (g.light.sky) |k| g.rain.draw(weatherNow(g), &g.lv, @floatFromInt(-c.x), @floatFromInt(-c.y), CELL_F, PX_SCALE, sky.brightness(k));
 
     for (bodies) |b| {
         if (!b.pic.kind.foe() or !b.pic.hurt()) continue;
@@ -2218,28 +2265,61 @@ pub fn drawFrame(g: *Game) void {
     if (g.mode == .pause) drawPause(g);
 }
 
+fn loadGraphics(g: *Game) void {
+    g.sprites.loadSkills();
+    g.light.load();
+    g.cloud.load();
+    g.vignette.load();
+    g.mini.load();
+    g.graphics_ready = true;
+}
+
+/// Safe whether or not anything was loaded.
+fn unloadGraphics(g: *Game) void {
+    g.sprites.unload();
+    g.light.unload();
+    g.cloud.unload();
+    g.vignette.unload();
+    g.mini.unload();
+    g.graphics_ready = false;
+    g.art_ready = false;
+}
+
+fn prepare(g: *Game) void {
+    if (!g.graphics_ready) loadGraphics(g);
+    if (g.art_ready) return;
+    const need = mapAssets(g);
+    g.sprites.sync(need);
+    const figures = g.sprites.figures();
+    g.light.syncFigures(&figures);
+    g.art_ready = true;
+}
+
+fn mapAssets(g: *Game) look.Assets {
+    var need = look.Assets.of(&g.lv);
+    need.barrel = need.barrel or g.fx.barrels_due > 0;
+    for (g.pool.slice(), 0..) |a, i| {
+        if (a.alive) need.body(a.kind);
+        if (standing(g, i)) need.body(g.pictured[i].kind);
+    }
+    return need;
+}
+
 pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*Game) anyerror!void) !void {
+    var startup = try std.time.Timer.start();
     const alloc = std.heap.c_allocator;
     rl.setConfigFlags(flags);
     rl.initWindow(WINDOW_W, WINDOW_H, title);
     if (!rl.isWindowReady()) return error.WindowFailed;
     defer rl.closeWindow();
     input.claimKeys();
+    input.mapPads();
     const g = try boot(alloc);
     defer shut(alloc, g);
-    g.sprites = look.Sprites.load();
-    defer g.sprites.unload();
+    defer unloadGraphics(g);
     g.face = font.Face.load(look.TILE_CODEPOINTS);
     defer g.face.unload();
-    const figures = g.sprites.figures();
-    g.light.load(&figures);
-    defer g.light.unload();
-    g.cloud.load();
-    defer g.cloud.unload();
-    g.vignette.load();
-    defer g.vignette.unload();
-    g.mini.load();
-    defer g.mini.unload();
+    if (comptime body == benchWalk) std.debug.print("startup: {d:.3} ms, {d} map textures\n", .{ ms(startup.read()), g.sprites.count() });
     try body(g);
 }
 
@@ -2259,6 +2339,7 @@ pub fn frame(g: *Game) void {
     g.st.update(dt);
     syncScreen(g, g.st.fullscreen);
     update(g, dt);
+    prepare(g);
     g.st.modifier = g.bar.modifier;
     rl.beginDrawing();
     drawFrame(g);
@@ -2388,6 +2469,12 @@ fn shoot(g: *Game) !void {
             try capture(g, target, SHOTS_DIR ++ "/biome.png");
         }
         {
+            try w.load(std.heap.c_allocator, atlas.START);
+            beginWorldAt(g, w, w.start, SHOT_SEED);
+            for (0..RAIN_FRAMES) |_| update(g, mathx.FRAME_DT);
+            try capture(g, target, SHOTS_DIR ++ "/strand.png");
+        }
+        {
             try w.load(std.heap.c_allocator, atlas.worldPath(SHOT_OUTDOOR));
             for (SHOT_HOURS) |s| {
                 beginWorldAt(g, w, w.start, SHOT_SEED);
@@ -2405,7 +2492,7 @@ fn shoot(g: *Game) !void {
         begin(g, SHOT_SEED);
     }
 
-    try editor.shoot(g, target, SHOTS_DIR ++ "/edit.png", SHOTS_DIR ++ "/edit-graph.png", SHOTS_DIR ++ "/edit-gen.png");
+    try editor.shoot(g, target, SHOTS_DIR ++ "/edit.png", SHOTS_DIR ++ "/edit-graph.png", SHOTS_DIR ++ "/edit-gen.png", SHOTS_DIR ++ "/edit-objects.png");
 
     const entry = naming.Entry{ .name = heroes.Name.of("Arwen"), .row = 2, .col = 4 };
     rl.beginTextureMode(target);
@@ -2425,9 +2512,10 @@ fn shootHud(g: *Game) !void {
     var saved_state: input.State = .{};
     saved_state = g.st;
     defer g.st = saved_state;
-    const studies = [_]struct { screen: P, hp: i32, mana: i32, device: input.Device, path: [:0]const u8, ailing: bool = false, bind: bool = false }{
-        .{ .screen = .{ .x = 1280, .y = 720 }, .hp = 100, .mana = 100, .device = .keys, .path = SHOTS_DIR ++ "/hud-full-1280.png", .bind = true },
-        .{ .screen = .{ .x = 1600, .y = 900 }, .hp = 50, .mana = 35, .device = .pad, .path = SHOTS_DIR ++ "/hud-partial-1600.png", .ailing = true },
+    const studies = [_]struct { screen: P, hp: i32, mana: i32, device: input.Device, path: [:0]const u8, ailing: bool = false, bind: ?[:0]const u8 = null }{
+        .{ .screen = .{ .x = 1280, .y = 720 }, .hp = 100, .mana = 100, .device = .keys, .path = SHOTS_DIR ++ "/hud-full-1280.png", .bind = SHOTS_DIR ++ "/hud-bind-720.png" },
+        .{ .screen = .{ .x = 1280, .y = 720 }, .hp = 75, .mana = 60, .device = .ps5, .path = SHOTS_DIR ++ "/hud-ps5-1280.png", .bind = SHOTS_DIR ++ "/hud-bind-ps5.png" },
+        .{ .screen = .{ .x = 1600, .y = 900 }, .hp = 50, .mana = 35, .device = .xbox, .path = SHOTS_DIR ++ "/hud-partial-1600.png", .ailing = true },
         .{ .screen = .{ .x = 1920, .y = 1080 }, .hp = 10, .mana = 0, .device = .keys, .path = SHOTS_DIR ++ "/hud-critical-1920.png" },
         .{ .screen = .{ .x = 1600, .y = 900 }, .hp = 0, .mana = 0, .device = .keys, .path = SHOTS_DIR ++ "/hud-empty-1600.png" },
     };
@@ -2446,9 +2534,9 @@ fn shootHud(g: *Game) !void {
         const target = try renderTarget(g);
         defer rl.unloadRenderTexture(target);
         try capture(g, target, study.path);
-        if (study.bind) {
+        if (study.bind) |path| {
             posePicker(g, boundTo(g, .shoot));
-            try capture(g, target, SHOTS_DIR ++ "/hud-bind-720.png");
+            try capture(g, target, path);
         }
         if (study.ailing) {
             g.bar.bind(.{ .set = .secondary, .button = .x }, .glacial_shot);
@@ -2460,7 +2548,26 @@ fn shootHud(g: *Game) !void {
             try capture(g, target, SHOTS_DIR ++ "/hud-bind-pad.png");
         }
     }
-    std.debug.print("HUD: {d} resource states captured, with both caption devices, the secondary set and the bind picker\n", .{studies.len});
+    std.debug.print("HUD: {d} resource states captured, with every caption device, the secondary set and the bind picker\n", .{studies.len});
+    captionRoom(g);
+}
+
+const CAPTION_GAP_MIN: i32 = 4;
+
+/// The narrowest space between two neighbouring slots' captions on any pad, in the font as drawn.
+fn captionRoom(g: *const Game) void {
+    var least: i32 = std.math.maxInt(i32);
+    for (std.enums.values(input.Device)) |d| {
+        if (!d.pad()) continue;
+        const st = input.State{ .device = d };
+        for (skillbar.SLOTS[0 .. skillbar.SLOTS.len - 1], skillbar.SLOTS[1..], SLOT_XS[0 .. SLOT_XS.len - 1], SLOT_XS[1..]) |a, b, xa, xb| {
+            const wa = g.face.width(st.slotCaption(a), SLOT_TEXT);
+            const wb = g.face.width(st.slotCaption(b), SLOT_TEXT);
+            least = @min(least, xb - xa - @divTrunc(wa + wb, 2));
+        }
+    }
+    std.debug.print("slot captions: {d} px apart at the closest\n", .{least});
+    std.debug.assert(least >= CAPTION_GAP_MIN);
 }
 
 fn boundTo(g: *const Game, act: skillbar.Act) input.Button {
@@ -2608,6 +2715,7 @@ fn grassOver(lv: *grid.Level) void {
 }
 
 fn checkHiddenShadowMask(g: *Game, target: rl.RenderTexture2D, visible: bool) !void {
+    prepare(g);
     const c = Cam.of(g);
     const view = viewBox(g, c);
     g.light.bake(&g.lv, view.lo, view.hi);
@@ -2645,6 +2753,7 @@ fn checkHiddenShadowMask(g: *Game, target: rl.RenderTexture2D, visible: bool) !v
 }
 
 fn drawInto(g: *Game, target: rl.RenderTexture2D) void {
+    prepare(g);
     rl.beginTextureMode(target);
     g.framebuffer = target.id;
     defer g.framebuffer = 0;
@@ -2656,7 +2765,9 @@ const OVERVIEW_CELL: i32 = 10;
 const OVERVIEW_MID: i32 = @divTrunc(OVERVIEW_CELL, 2);
 /// A glyph a little bigger than its cell, so the font's side bearings leave no gaps.
 const OVERVIEW_INK: i32 = OVERVIEW_CELL + 2;
-const SHOT_BIOME = "qud_salt_marsh";
+const SHOT_BIOME = "qud/qud_salt_marsh";
+/// Frames the strand's shot lets its rain fall first, so drops and splashes are both under way.
+const RAIN_FRAMES: usize = 90;
 const SHOT_OUTDOOR = "wilds";
 const SHOT_HOURS = [_]struct { hour: f32, path: [:0]const u8 }{
     .{ .hour = 7.0, .path = SHOTS_DIR ++ "/dawn.png" },
@@ -2671,7 +2782,7 @@ fn overviews(g: *Game, w: *atlas.Atlas) !void {
     defer rl.unloadRenderTexture(target);
     try std.fs.cwd().makePath(SHOTS_WORLDS);
     var list = atlas.Listing{};
-    list.scan();
+    list.scanAll();
     for (0..list.n) |i| {
         try w.load(std.heap.c_allocator, list.at(i));
         w.node[w.start.node].stamp(&g.lv, SHOT_SEED +% i);
@@ -2720,11 +2831,17 @@ pub fn bench() !void {
 
 const BENCH_FRAMES: usize = 3600;
 
+fn ms(ns: u64) f64 {
+    return @as(f64, @floatFromInt(ns)) / std.time.ns_per_ms;
+}
+
 fn benchWalk(g: *Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
     var t = try std.time.Timer.start();
     begin(g, SHOT_SEED);
+    prepare(g);
+    std.debug.print("first map: {d:.3} ms, {d} map textures\n", .{ ms(t.read()), g.sprites.count() });
     var rng = mathx.Rng.init(SHOT_SEED);
     var d: mathx.Dir = .e;
     const dt = mathx.FRAME_DT;
@@ -2746,12 +2863,30 @@ fn benchWalk(g: *Game) !void {
         std.mem.sort(u64, xs, {}, std.sort.asc(u64));
         var sum: u64 = 0;
         for (xs) |x| sum += x;
-        const ms = struct {
-            fn f(ns: u64) f64 {
-                return @as(f64, @floatFromInt(ns)) / 1e6;
-            }
-        }.f;
         std.debug.print("{s}: mean {d:.3} ms, p99 {d:.3} ms, max {d:.3} ms\n", .{ name, ms(sum / xs.len), ms(xs[xs.len * 99 / 100]), ms(xs[xs.len - 1]) });
+    }
+    try benchAssets(g);
+}
+
+fn benchAssets(g: *Game) !void {
+    const alloc = std.heap.c_allocator;
+    const w = try alloc.create(atlas.Atlas);
+    defer alloc.destroy(w);
+    defer g.world = null;
+    inline for ([_][]const u8{ SHOT_OUTDOOR, SHOT_BIOME, SHOT_OUTDOOR }) |name| {
+        try w.load(alloc, atlas.worldPath(name));
+        beginWorldAt(g, w, w.start, SHOT_SEED);
+        var t = try std.time.Timer.start();
+        prepare(g);
+        const loaded = t.read();
+        if (!std.meta.eql(mapAssets(g), g.sprites.resident())) return error.MissingMapAsset;
+        const held = g.sprites;
+        g.art_ready = false;
+        t.reset();
+        prepare(g);
+        const reused = t.read();
+        if (!std.meta.eql(held, g.sprites)) return error.ReloadedMapAsset;
+        std.debug.print("assets {s}: {d} textures, {d:.3} ms; unchanged map {d:.3} ms, all textures reused\n", .{ name, g.sprites.count(), ms(loaded), ms(reused) });
     }
 }
 
@@ -4306,7 +4441,9 @@ test "a barrel the arrow breaks stands until the arrow reaches it" {
     press(g, .x);
     press(g, .x);
     try std.testing.expect(!g.lv.hasBarrel(Gone.at) and !Gone.f(g, 0));
+    try std.testing.expect(mapAssets(g).barrel);
     const t = framesUntil(g, 0, Gone.f);
+    try std.testing.expect(!mapAssets(g).barrel);
     const lands = flown(bow.RANGE - 1);
     std.debug.print("a barrel shot {d} cells out breaks {d:.3} s on; the arrow lands at {d:.3} s\n", .{ bow.RANGE, t, lands });
     try std.testing.expectApproxEqAbs(lands, t, TEST_TOL);
@@ -4359,12 +4496,15 @@ test "an arrow that splits a slime shows it as the arrow lands, the new half sli
     try std.testing.expectEqual(actor.Kind.slime_half, g.pool.get(id).?.kind);
     try std.testing.expectEqual(actor.Kind.slime_half, g.pool.items[other].kind);
     try std.testing.expectEqual(actor.Kind.slime, g.pictured[slime].kind);
+    try std.testing.expect(mapAssets(g).bodies.contains(.slime));
     try std.testing.expect(drawnAt(g, other) == null);
     try std.testing.expectEqual(fx.Body.of(g.pool.items[other], g.pictured[other].seq), g.pictured[other]);
     try std.testing.expectEqualStrings("The slime splits in two!", g.log.line(0).?);
     const t = framesUntil(g, other, drawn);
     const lands = flown(6);
     try std.testing.expectEqual(actor.Kind.slime_half, g.pictured[slime].kind);
+    try std.testing.expect(!mapAssets(g).bodies.contains(.slime));
+    try std.testing.expect(mapAssets(g).bodies.contains(.slime_quarter));
     try std.testing.expect(samePx(g.glide[other].now(), cellPx(at)));
     try std.testing.expect(g.busy >= SLIDE_S);
     const slid = framesUntil(g, other, struct {
@@ -4892,6 +5032,33 @@ fn idle(g: *Game) void {
     calm(g);
     g.st = .{};
     update(g, 0);
+}
+
+test "a node's sky shows its light and its weather out of doors, and neither under a roof" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const w = try std.testing.allocator.create(atlas.Atlas);
+    defer std.testing.allocator.destroy(w);
+    w.* = .{};
+    const wet: climate.Climate = .{ .light = .bleak, .weather = .drizzle };
+    const strand = w.add(.{ .procgen = .{ .floor = .{ .wilds = .{} }, .sky = wet } }).?;
+    const cave = w.add(.{ .procgen = .{ .floor = .{ .caves = .{} }, .sky = wet } }).?;
+    g.screen = .{ .x = 1920, .y = 1080 };
+    for ([_]usize{ strand, cave }) |n| {
+        w.start = .{ .node = n, .at = grid.MIDDLE };
+        beginWorld(g, w);
+        for (0..10) |_| update(g, mathx.FRAME_DT);
+        if (n == strand) {
+            const bright = sky.brightness(g.light.sky.?);
+            const clear = sky.brightness(sky.at(g.hour_shown));
+            std.debug.print("a bleak, drizzling wilds at {d:.2}: {d:.2} of a clear noon's light against {d:.2} clear; {d} drops\n", .{ g.hour_shown, bright, clear, g.rain.n });
+            try std.testing.expect(bright < clear * 0.9);
+            try std.testing.expect(g.rain.n > 0);
+        } else {
+            try std.testing.expect(g.light.sky == null);
+            try std.testing.expectEqual(@as(usize, 0), g.rain.n);
+        }
+    }
 }
 
 test "a door takes the archer to the door it leads to, and a node left is found as it was" {

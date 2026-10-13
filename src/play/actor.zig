@@ -37,12 +37,28 @@ pub const Kind = enum {
     }
 };
 
+/// A kind and every form it splits into.
+const DESCENT = blk: {
+    var t = std.EnumArray(Kind, std.EnumSet(Kind)).initUndefined();
+    for (std.enums.values(Kind)) |k| {
+        var s = std.EnumSet(Kind).initEmpty();
+        var c: ?Kind = k;
+        while (c) |x| : (c = row(x).splits) s.insert(x);
+        t.set(k, s);
+    }
+    break :blk t;
+};
+
+pub fn descent(k: Kind) std.EnumSet(Kind) {
+    return DESCENT.get(k);
+}
+
 const FAMILY = blk: {
     var t = std.EnumArray(Kind, Kind).initUndefined();
     for (std.enums.values(Kind)) |k| t.set(k, k);
     for (std.enums.values(Kind)) |k| {
-        var c = row(k).splits;
-        while (c) |x| : (c = row(x).splits) t.set(x, t.get(k));
+        var forms = DESCENT.get(k).iterator();
+        while (forms.next()) |x| t.set(x, t.get(k));
     }
     break :blk t;
 };

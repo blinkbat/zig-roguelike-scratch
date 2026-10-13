@@ -85,7 +85,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         }
     }
     const across = rng.chance(0.5);
-    const sides: [2]mathx.Dir = if (across) .{ .w, .e } else .{ .n, .s };
+    const sides = if (across) carve.ACROSS else carve.DOWN;
     for (sides) |side| {
         const gate_at = carve.sideAt(curtain, side, if (across) grid.MIDDLE.y else grid.MIDDLE.x);
         const out_dir = side.delta();

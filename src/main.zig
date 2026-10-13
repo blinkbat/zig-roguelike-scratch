@@ -40,6 +40,7 @@ test {
     _ = @import("world/biome/town.zig");
     _ = @import("world/biome/wilds.zig");
     _ = @import("world/feature/border.zig");
+    _ = @import("world/feature/coast.zig");
     _ = @import("world/feature/buildings.zig");
     _ = @import("world/feature/farms.zig");
     _ = @import("world/feature/lake.zig");
@@ -49,6 +50,7 @@ test {
     _ = @import("world/feature/setpiece.zig");
     _ = @import("world/gas.zig");
     _ = @import("world/day.zig");
+    _ = @import("world/climate.zig");
     _ = @import("world/lume.zig");
     _ = @import("world/atlas.zig");
     _ = @import("play/actor.zig");
@@ -63,10 +65,12 @@ test {
     _ = @import("play/hero.zig");
     _ = @import("gfx/look.zig");
     _ = @import("gfx/font.zig");
+    _ = @import("gfx/ground.zig");
     _ = @import("gfx/fx.zig");
     _ = @import("gfx/cloud.zig");
     _ = @import("gfx/sky.zig");
     _ = @import("gfx/vignette.zig");
+    _ = @import("gfx/weather.zig");
     _ = @import("gfx/light.zig");
     _ = @import("ui/menu.zig");
     _ = @import("ui/hud.zig");

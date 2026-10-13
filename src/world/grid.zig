@@ -110,11 +110,12 @@ pub const Tile = enum(u8) {
     }
 };
 
-/// Floor with a barrel on it.
+/// `BARREL_GROUND` with a barrel on it.
 pub const BARREL_LETTER = '0';
+pub const BARREL_GROUND: Tile = .floor;
 
 pub fn groundOf(c: u8) ?Tile {
-    return if (c == BARREL_LETTER) .floor else Tile.ofLetter(c);
+    return if (c == BARREL_LETTER) BARREL_GROUND else Tile.ofLetter(c);
 }
 
 comptime {
@@ -209,6 +210,10 @@ pub const Torches = struct {
             if (t.eq(p)) return i;
         }
         return null;
+    }
+
+    pub fn has(self: *const Torches, p: P) bool {
+        return self.find(p) != null;
     }
 
     pub fn add(self: *Torches, p: P) bool {

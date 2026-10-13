@@ -33,10 +33,10 @@ const LEGEND_DY: i32 = 200;
 const CARET = menu.CARET;
 
 fn legendOf(comptime d: input.Device) [:0]const u8 {
-    return switch (d) {
-        .pad => menu.CONFIRM.name(d) ++ " type" ++ menu.SEP ++ RUB.name(d) ++ " delete" ++ menu.SEP ++ menu.moveItem(d),
-        .keys => "Type a name" ++ menu.SEP ++ input.RUB_CAPTION ++ " delete" ++ menu.SEP ++ menu.CONFIRM.name(d) ++ " done",
-    } ++ menu.SEP ++ menu.backItem(d);
+    return (if (d.pad())
+        menu.CONFIRM.name(d) ++ " type" ++ menu.SEP ++ RUB.name(d) ++ " delete" ++ menu.SEP ++ menu.moveItem(d)
+    else
+        "Type a name" ++ menu.SEP ++ input.RUB_CAPTION ++ " delete" ++ menu.SEP ++ menu.CONFIRM.name(d) ++ " done") ++ menu.SEP ++ menu.backItem(d);
 }
 
 pub const Outcome = enum { done, back };

@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const day = @import("../world/day.zig");
+const climate = @import("../world/climate.zig");
 
 // zig-soulslike's `world/daynight.zig` seen from above. Directions point toward the light: x east, y south (down the screen), z up.
 
@@ -175,12 +176,44 @@ pub fn upright(flat: f32) bool {
     return flat < OVERHEAD;
 }
 
+/// What a `climate.Light` does to the day's palette: the key's and the sky's strength, how far each is greyed, then a tint.
+const Look = struct { key: f32 = 1, sky: f32 = 1, grey: f32 = 0, tint: Rgb = splat(1) };
+
+/// Bleak is an overcast: most of the sun's light spread into the sky, so shadows go soft and the day a little dark.
+const LOOKS = std.EnumArray(climate.Light, Look).init(.{
+    .clear = .{},
+    .bleak = .{ .key = 0.3, .sky = 1.75, .grey = 0.55, .tint = .{ 0.92, 0.98, 1.06 } },
+});
+
+pub fn luma(c: Rgb) f32 {
+    return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
+}
+
+fn looked(c: Rgb, strength: f32, l: Look) Rgb {
+    return mix(c, splat(luma(c)), l.grey) * l.tint * splat(strength);
+}
+
+/// Open ground's light under `s`, the sun straight on it as high as it stands.
+fn lit(s: Sky) f32 {
+    return luma(s.ambient) + luma(s.key) * s.dir[2];
+}
+
+/// Open ground's light under `s`, 1 at a clear noon.
+pub fn brightness(s: Sky) f32 {
+    return lit(s) / lit(at(day.NOON));
+}
+
 pub fn at(hour: f32) Sky {
+    return under(hour, .clear);
+}
+
+pub fn under(hour: f32, light: climate.Light) Sky {
     const p = paletteAt(hour);
+    const l = LOOKS.get(light);
     return .{
         .dir = acrossScreen(keyDir(hour)),
-        .key = p.key * splat(keyDim(hour) * KEY_GAIN),
-        .ambient = p.sky * splat(SKY_GAIN),
+        .key = looked(p.key, keyDim(hour) * KEY_GAIN * l.key, l),
+        .ambient = looked(p.sky, SKY_GAIN * l.sky, l),
         .carry = 1 - day.daylight(hour),
         .moon = moonShare(hour),
     };
@@ -198,6 +231,27 @@ fn acrossScreen(d: [3]f32) [3]f32 {
     }
     const n = @sqrt(x * x + y * y + d[2] * d[2]);
     return .{ x / n, y / n, d[2] / n };
+}
+
+test "a bleak sky is a little darker than a clear one, greyer, and its shadows softer" {
+    const spread = struct {
+        fn f(c: Rgb) f32 {
+            return @reduce(.Max, c) - @reduce(.Min, c);
+        }
+    }.f;
+    for ([_]f32{ 8.5, day.NOON, 17.45 }) |h| {
+        const clear = under(h, .clear);
+        const bleak = under(h, .bleak);
+        const lit_clear = lit(clear);
+        const lit_bleak = lit(bleak);
+        const share_clear = luma(clear.key) / (luma(clear.key) + luma(clear.ambient));
+        const share_bleak = luma(bleak.key) / (luma(bleak.key) + luma(bleak.ambient));
+        std.debug.print("at {d:.2}: open ground {d:.2} clear, {d:.2} bleak ({d:.0}%); the sun's share {d:.2} against {d:.2}\n", .{ h, lit_clear, lit_bleak, lit_bleak / lit_clear * 100, share_clear, share_bleak });
+        try std.testing.expect(lit_bleak > lit_clear * 0.6 and lit_bleak < lit_clear * 0.9);
+        try std.testing.expect(share_bleak < share_clear * 0.6);
+        try std.testing.expect(spread(bleak.key) / luma(bleak.key) < spread(clear.key) / luma(clear.key));
+    }
+    try std.testing.expectEqual(at(day.NOON), under(day.NOON, .clear));
 }
 
 test "a noon shadow reaches beyond a cell-tall sprite" {

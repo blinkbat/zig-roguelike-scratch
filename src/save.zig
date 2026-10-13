@@ -26,11 +26,11 @@ const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar
 const HEAD_FIELDS = .{ "seed", "world", "node", "visited", "visits" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
-    "mode",   "paused_from", "pause_menu", "back",     "exit",    "permadeath", "outdoors", "hour_shown", "unkillable",  "unsaved",
-    "travel", "st",          "binds",      "aim_by",   "aim_act", "aim_set", "mark",       "cam",      "screen",     "framebuffer", "shot",
-    "glide",  "turning",     "order",      "order_n",  "busy",    "pending",    "lead",     "owed",       "ran",         "pictured",
-    "seq",    "split_from",  "fx",         "vignette", "mini",    "sprites",    "face",     "light",      "cloud",       "flowed",
-    "flow",   "queue",
+    "mode",     "paused_from", "pause_menu", "back",           "exit",      "permadeath", "outdoors", "hour_shown", "unkillable", "unsaved",
+    "travel",   "st",          "binds",      "aim_by",         "aim_act",   "aim_set",    "mark",     "cam",        "screen",     "framebuffer",
+    "shot",     "glide",       "turning",    "order",          "order_n",   "busy",       "pending",  "lead",       "owed",       "ran",
+    "pictured", "seq",         "split_from", "fx",             "vignette",  "mini",       "sprites",  "face",       "light",      "cloud",
+    "flowed",   "flow",        "queue",      "graphics_ready", "art_ready",  "rain",
 };
 
 comptime {

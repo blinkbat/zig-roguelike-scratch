@@ -50,7 +50,7 @@ Verification completed:
 - Inspected full resources at 1280x720, partial resources and all three ailments at 1600x900, critical life and zero mana at 1920x1080, and both empty orbs at 1600x900.
 - Inspected controller and keyboard captions, cooldown dimming, insufficient-mana dimming, the highlighted aiming slot, secondary skills, and bind pickers at 720p and 900p.
 
-The dedicated captures are `shots/hud-full-1280.png`, `hud-partial-1600.png`, `hud-critical-1920.png`, `hud-empty-1600.png`, `hud-secondary-pad.png`, `hud-bind-pad.png` and `hud-bind-720.png`. `shot.cmd` regenerates all seven; previews and logs remain outside tracked source.
+The dedicated captures are `shots/hud-full-1280.png`, `hud-partial-1600.png`, `hud-critical-1920.png`, `hud-empty-1600.png`, `hud-ps5-1280.png`, `hud-secondary-pad.png`, `hud-bind-pad.png`, `hud-bind-ps5.png` and `hud-bind-720.png`. `shot.cmd` regenerates all nine; previews and logs remain outside tracked source.
 
 ## Aseprite paint template
 

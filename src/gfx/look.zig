@@ -5,6 +5,8 @@ const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
 const skillbar = @import("../play/skillbar.zig");
 const font = @import("font.zig");
+const ground = @import("ground.zig");
+const embedded = @import("assets").names;
 
 pub const SPRITE_PX: i32 = 64;
 /// A faced wall's bottom rows of brick, as `tools/tile_art/export_walls.lua` paints them.
@@ -58,6 +60,97 @@ pub const FIGURES: usize = Bodies.len + 1 + STANDING.len + WALL_MASKS.len;
 /// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
 pub const LIT_FIGURES: usize = Bodies.len + 1;
 
+pub const Assets = struct {
+    bodies: std.EnumSet(actor.Kind) = .initEmpty(),
+    tiles: std.EnumSet(grid.Tile) = .initEmpty(),
+    wall: std.StaticBitSet(WALL_MASKS.len) = .initEmpty(),
+    forest: std.StaticBitSet(WALL_MASKS.len) = .initEmpty(),
+    grounds: ground.Grounds = .initEmpty(),
+    barrel: bool = false,
+
+    pub fn of(lv: *const grid.Level) Assets {
+        var need = Assets{};
+        for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
+            const p = grid.Level.of(i);
+            need.barrel = need.barrel or barrel;
+            if (under(t)) |u| need.add(.{ .tile = u });
+            if (cutAt(lv, p)) |c| need.add(c);
+            if (ground.groundAt(lv, p)) |g| {
+                if (GROUND_SHEETS.contains(g)) need.grounds.insert(g);
+            }
+        }
+        return need;
+    }
+
+    fn add(need: *Assets, c: Cut) void {
+        switch (c) {
+            .tile => |t| if (TILE_PNGS.get(t) != null) need.tiles.insert(t),
+            .wall => |i| need.wall.set(i),
+            .forest => |i| need.forest.set(i),
+        }
+    }
+
+    pub fn body(need: *Assets, k: actor.Kind) void {
+        need.bodies.setUnion(actor.descent(k).intersectWith(PICTURED));
+    }
+
+    /// Every picture a tile, body or prop has, a wall and a forest clump alone: what a palette shows.
+    pub fn everything() Assets {
+        var all = Assets{ .barrel = true, .grounds = GROUND_SHEETS, .bodies = PICTURED };
+        for (std.enums.values(grid.Tile)) |t| all.add(.{ .tile = t });
+        all.wall.set(WALL_CELL[0]);
+        all.forest.set(WALL_CELL[0]);
+        return all;
+    }
+
+    pub fn merge(a: Assets, b: Assets) Assets {
+        return .{
+            .bodies = a.bodies.unionWith(b.bodies),
+            .tiles = a.tiles.unionWith(b.tiles),
+            .wall = a.wall.unionWith(b.wall),
+            .forest = a.forest.unionWith(b.forest),
+            .grounds = a.grounds.unionWith(b.grounds),
+            .barrel = a.barrel or b.barrel,
+        };
+    }
+
+    pub fn count(need: Assets) usize {
+        return need.bodies.count() + need.tiles.count() + need.wall.count() + need.forest.count() + need.grounds.count() + @intFromBool(need.barrel);
+    }
+};
+
+fn listed(comptime name: []const u8) bool {
+    for (embedded) |n| {
+        if (std.mem.eql(u8, n, name)) return true;
+    }
+    return false;
+}
+
+/// Art that may not be painted yet: null until its PNG is in `assets/`.
+fn optionalPng(comptime name: []const u8) ?[]const u8 {
+    return if (comptime listed(name)) @embedFile(name) else null;
+}
+
+/// Each ground's 4x4 sheet of dual-grid pieces, in `ground.ORDER`; a ground without one draws cell by cell as before.
+const GROUND_PNGS = blk: {
+    var pngs = std.EnumArray(ground.Ground, ?[]const u8).initFill(null);
+    for (std.enums.values(ground.Ground)) |g| pngs.set(g, optionalPng(g.png()));
+    break :blk pngs;
+};
+
+pub const GROUND_SHEETS = blk: {
+    var s = ground.Grounds.initEmpty();
+    for (std.enums.values(ground.Ground)) |g| {
+        const png = GROUND_PNGS.get(g) orelse continue;
+        std.debug.assert(std.meta.eql(pngSize(png), mathx.P{ .x = ground.COLS * SPRITE_PX, .y = ground.COLS * SPRITE_PX }));
+        s.insert(g);
+    }
+    break :blk s;
+};
+
+/// A ground's piece for a mask: its sheet and where in it.
+pub const Piece = struct { tex: rl.Texture2D, src: rl.Rectangle };
+
 /// Needs a live GL context.
 pub const Sprites = struct {
     bodies: Bodies = .initFill(null),
@@ -66,15 +159,34 @@ pub const Sprites = struct {
     /// In the sheet's order, `WALL_MASKS`.
     wall: [WALL_MASKS.len]?rl.Texture2D = @splat(null),
     forest: [WALL_MASKS.len]?rl.Texture2D = @splat(null),
+    /// Each ground's whole sheet, drawn a piece at a time so a ground's pieces batch.
+    grounds: std.EnumArray(ground.Ground, ?rl.Texture2D) = .initFill(null),
     /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
     skills: ?rl.Texture2D = null,
 
-    pub fn load() Sprites {
-        var s = Sprites{ .barrel = texture(@embedFile("barrel.png")), .skills = skillIcons() };
-        for (std.enums.values(actor.Kind)) |k| s.bodies.set(k, texture(BODY_PNGS.get(k) orelse continue));
-        for (std.enums.values(grid.Tile)) |t| s.tiles.set(t, texture(TILE_PNGS.get(t) orelse continue));
-        s.wall = shapeTextures(WALLS_PNG);
-        s.forest = shapeTextures(FOREST_PNG);
+    pub fn loadSkills(self: *Sprites) void {
+        self.skills = skillIcons();
+    }
+
+    pub fn sync(self: *Sprites, need: Assets) void {
+        for (std.enums.values(actor.Kind)) |k| syncTexture(self.bodies.getPtr(k), need.bodies.contains(k), BODY_PNGS.get(k));
+        for (std.enums.values(grid.Tile)) |t| syncTexture(self.tiles.getPtr(t), need.tiles.contains(t), TILE_PNGS.get(t));
+        for (std.enums.values(ground.Ground)) |g| syncTexture(self.grounds.getPtr(g), need.grounds.contains(g), GROUND_PNGS.get(g));
+        syncTexture(&self.barrel, need.barrel, @embedFile("barrel.png"));
+        syncShapes(&self.wall, need.wall, WALLS_PNG);
+        syncShapes(&self.forest, need.forest, FOREST_PNG);
+    }
+
+    pub fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4) ?Piece {
+        const tex = self.grounds.getPtrConst(g).* orelse return null;
+        const at = ground.CELL_OF[mask];
+        return .{ .tex = tex, .src = rect(at.x * SPRITE_PX, at.y * SPRITE_PX, SPRITE_PX, SPRITE_PX) };
+    }
+
+    /// The grounds with a sheet loaded.
+    pub fn sheets(self: *const Sprites) ground.Grounds {
+        var s = ground.Grounds.initEmpty();
+        for (std.enums.values(ground.Ground)) |g| s.setPresent(g, self.grounds.get(g) != null);
         return s;
     }
 
@@ -86,38 +198,79 @@ pub const Sprites = struct {
         return self.bodies.getPtrConst(k).*;
     }
 
-    pub fn figures(self: Sprites) [FIGURES]?rl.Texture2D {
+    pub fn figures(self: *const Sprites) [FIGURES]?rl.Texture2D {
         var standing: [STANDING.len]?rl.Texture2D = undefined;
         for (STANDING, &standing) |t, *s| s.* = self.tiles.get(t);
         return self.bodies.values ++ [_]?rl.Texture2D{self.barrel} ++ standing ++ self.forest;
     }
 
     pub fn tileAt(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
-        if (self.forestTile(lv, p)) |f| return f;
-        return self.tileOf(lv.at(p), lv.tileShape(p));
+        return self.cut(cutAt(lv, p) orelse return null);
     }
 
     /// A forest cell's cut of the forest sheet, its lone tree at mask 0; null off a forest or with the sheet unloaded.
     pub fn forestTile(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
         if (!forestAt(lv, p)) return null;
-        const i = WALL_CELL[lv.tileMask(p)];
-        return self.forest[i];
+        return self.tileAt(lv, p);
     }
 
     pub fn tileOf(self: *const Sprites, t: grid.Tile, shape: ?grid.WallShape) ?rl.Texture2D {
-        if (t == .wall) {
-            const i = WALL_CELL[(shape orelse return null).mask()];
-            return self.wall[i];
-        }
-        return self.tiles.getPtrConst(t).*;
+        return self.cut(cutOf(t, shape) orelse return null);
     }
 
-    fn shapeTextures(png: []const u8) [WALL_MASKS.len]?rl.Texture2D {
-        var out: [WALL_MASKS.len]?rl.Texture2D = @splat(null);
-        const sheet = rl.loadImageFromMemory(".png", png) catch return out;
+    fn cut(self: *const Sprites, c: Cut) ?rl.Texture2D {
+        return switch (c) {
+            .tile => |t| self.tiles.getPtrConst(t).*,
+            .wall => |i| self.wall[i],
+            .forest => |i| self.forest[i],
+        };
+    }
+
+    pub fn count(self: *const Sprites) usize {
+        return self.resident().count();
+    }
+
+    pub fn resident(self: *const Sprites) Assets {
+        var held = Assets{ .barrel = self.barrel != null };
+        for (std.enums.values(actor.Kind)) |k| {
+            if (self.bodies.get(k) != null) held.bodies.insert(k);
+        }
+        for (std.enums.values(grid.Tile)) |t| {
+            if (self.tiles.get(t) != null) held.tiles.insert(t);
+        }
+        for (self.wall, 0..) |t, i| {
+            if (t != null) held.wall.set(i);
+        }
+        for (self.forest, 0..) |t, i| {
+            if (t != null) held.forest.set(i);
+        }
+        held.grounds = self.sheets();
+        return held;
+    }
+
+    fn keep(t: *?rl.Texture2D, needed: bool) void {
+        if (needed) return;
+        if (t.*) |held| rl.unloadTexture(held);
+        t.* = null;
+    }
+
+    fn syncTexture(t: *?rl.Texture2D, needed: bool, png: ?[]const u8) void {
+        keep(t, needed);
+        if (needed and t.* == null) t.* = texture(png orelse return);
+    }
+
+    fn syncShapes(held: *[WALL_MASKS.len]?rl.Texture2D, need: std.StaticBitSet(WALL_MASKS.len), png: []const u8) void {
+        var missing = false;
+        for (held, 0..) |*t, i| {
+            keep(t, need.isSet(i));
+            missing = missing or (need.isSet(i) and t.* == null);
+        }
+        if (!missing) return;
+        const sheet = rl.loadImageFromMemory(".png", png) catch return;
         defer rl.unloadImage(sheet);
-        for (&out, 0..) |*t, i| t.* = toTexture(wallCell(sheet, i) orelse continue);
-        return out;
+        for (held, 0..) |*t, i| {
+            if (need.isSet(i) and t.* == null) t.* = toTexture(wallCell(sheet, i) orelse continue);
+        }
     }
 
     fn texture(png: []const u8) ?rl.Texture2D {
@@ -139,6 +292,13 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .bloat = @embedFile("bloat.png"),
     .pib = @embedFile("pib.png"),
 });
+
+/// The kinds `BODY_PNGS` holds a picture for.
+const PICTURED = blk: {
+    var s = std.EnumSet(actor.Kind).initEmpty();
+    for (std.enums.values(actor.Kind)) |k| s.setPresent(k, BODY_PNGS.get(k) != null);
+    break :blk s;
+};
 
 /// A wall's are cut from `WALLS_PNG` by its shape instead, and a forest's shrubs from `FOREST_PNG`.
 const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const u8, null), .{
@@ -174,6 +334,19 @@ fn loneClump(p: mathx.P) bool {
 
 pub fn forestAt(lv: *const grid.Level, p: mathx.P) bool {
     return lv.at(p) == .shrub and (lv.tileMask(p) != 0 or loneClump(p));
+}
+
+/// Which texture a cell draws: a tile's own, or a cell of the wall or forest sheet.
+const Cut = union(enum) { tile: grid.Tile, wall: usize, forest: usize };
+
+fn cutAt(lv: *const grid.Level, p: mathx.P) ?Cut {
+    if (forestAt(lv, p)) return .{ .forest = WALL_CELL[lv.tileMask(p)] };
+    return cutOf(lv.at(p), lv.tileShape(p));
+}
+
+fn cutOf(t: grid.Tile, shape: ?grid.WallShape) ?Cut {
+    if (t == .wall) return .{ .wall = WALL_CELL[(shape orelse return null).mask()] };
+    return .{ .tile = t };
 }
 
 /// Each cell of `walls.png`'s and `forest-tree-walls.png`'s, read across its rows, is the shape with this mask; `tools/tile_art/wall_masks.lua` lists them in this order.
@@ -674,6 +847,37 @@ pub const EDIT_WARN = FOE;
 pub const EDIT_HOVER = fade(TEXT, 0.6);
 pub const EDIT_UNLINKED = DIM;
 
+test "map assets include unseen shapes, ground under props and future slime forms" {
+    const gen = @import("../world/gen.zig");
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .rock);
+    lv.set(.{ .x = 20, .y = 20 }, .wall);
+    lv.set(.{ .x = 23, .y = 20 }, .shrub);
+    lv.set(.{ .x = 24, .y = 20 }, .shrub);
+    lv.set(.{ .x = 30, .y = 20 }, .boulder);
+    gen.shapeWalls(&lv);
+    var need = Assets.of(&lv);
+    need.body(.archer);
+    need.body(.slime_half);
+    try std.testing.expect(need.tiles.contains(.floor) and need.tiles.contains(.grass));
+    try std.testing.expect(need.tiles.contains(.boulder) and !need.tiles.contains(.shrub));
+    try std.testing.expectEqual(@as(usize, 1), need.wall.count());
+    try std.testing.expect(need.wall.isSet(WALL_CELL[0]));
+    try std.testing.expectEqual(@as(usize, 2), need.forest.count());
+    try std.testing.expect(need.forest.isSet(WALL_CELL[2]) and need.forest.isSet(WALL_CELL[8]));
+    try std.testing.expect(need.bodies.contains(.slime_half) and need.bodies.contains(.slime_quarter));
+    try std.testing.expect(!need.bodies.contains(.slime) and !need.bodies.contains(.rat));
+    try std.testing.expect(!need.barrel);
+    need.body(.slime);
+    try std.testing.expectEqual(@as(usize, 4), need.bodies.count());
+    lv = grid.openFloor();
+    lv.putBarrel(grid.MIDDLE);
+    const next = Assets.of(&lv);
+    try std.testing.expect(next.barrel and next.forest.count() == 0 and next.bodies.count() == 0);
+    try std.testing.expect(next.tiles.contains(.floor) and !next.tiles.contains(.grass));
+    std.debug.print("map assets: hidden walls and forest, 2 underlays, slime descendants and map replacement checked\n", .{});
+}
+
 test "every glyph is printable ascii" {
     const inked = struct {
         fn f(c: u8) bool {
@@ -731,6 +935,8 @@ test "forest sprites follow connections and isolated trees mix with clumps witho
         lv.set(p, .shrub);
     }
     gen.shapeWalls(&lv);
+    const need = Assets.of(&lv);
+    try std.testing.expect(need.tiles.contains(.shrub) and need.forest.isSet(WALL_CELL[0]));
     for (lv.tile, 0..) |t, i| {
         if (t != .shrub) continue;
         const p = grid.Level.of(i);

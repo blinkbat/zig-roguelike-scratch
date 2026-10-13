@@ -58,11 +58,16 @@ const Root = struct {
         m.linkLibrary(r.raylib.artifact("raylib"));
         m.addImport("raylib", r.raylib.module("raylib"));
         for (r.assets) |name| m.addAnonymousImport(name, .{ .root_source_file = r.b.path(r.b.fmt(ASSETS ++ "/{s}", .{name})) });
+        const listed = r.b.addOptions();
+        listed.addOption([]const []const u8, "names", r.assets);
+        m.addImport("assets", listed.createModule());
         return m;
     }
 };
 
-/// Every PNG and TTF in `assets/` is embedded under its file name, so the exe runs from any directory. `@embedFile("<name>")` reads one.
+const EMBEDDED = [_][]const u8{ ".png", ".ttf", ".txt" };
+
+/// Every PNG, TTF and TXT in `assets/` is embedded under its file name, so the exe runs from any directory. `@embedFile("<name>")` reads one; `@import("assets").names` lists them, for art that may not be painted yet.
 fn assetNames(b: *std.Build) []const []const u8 {
     var dir = b.build_root.handle.openDir(ASSETS, .{ .iterate = true }) catch |e|
         std.debug.panic(ASSETS ++ "/ could not be opened ({s})", .{@errorName(e)});
@@ -70,10 +75,17 @@ fn assetNames(b: *std.Build) []const []const u8 {
     var names = std.ArrayList([]const u8).init(b.allocator);
     var it = dir.iterate();
     while (it.next() catch |e| std.debug.panic(ASSETS ++ "/ could not be listed ({s})", .{@errorName(e)})) |ent| {
-        if (ent.kind != .file or !(std.mem.endsWith(u8, ent.name, ".png") or std.mem.endsWith(u8, ent.name, ".ttf"))) continue;
+        if (ent.kind != .file or !embedded(ent.name)) continue;
         names.append(b.dupe(ent.name)) catch @panic("OOM listing " ++ ASSETS ++ "/");
     }
     return names.items;
+}
+
+fn embedded(name: []const u8) bool {
+    for (EMBEDDED) |ext| {
+        if (std.mem.endsWith(u8, name, ext)) return true;
+    }
+    return false;
 }
 
 const MIN_SRC: u64 = 512;

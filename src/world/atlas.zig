@@ -7,6 +7,7 @@ const procgen = @import("procgen.zig");
 const actor = @import("../play/actor.zig");
 const store = @import("../core/store.zig");
 const pack = @import("../play/pack.zig");
+const climate = @import("climate.zig");
 
 const P = mathx.P;
 
@@ -16,6 +17,8 @@ pub const MAX_FOES: usize = actor.MAX - 1;
 pub const DIR = "worlds";
 pub const EXT = ".world";
 pub const MAIN = worldPath("main");
+/// The world New plays.
+pub const START = worldPath("start");
 
 /// Printable ascii, as every drawn string is.
 pub fn plain(s: []const u8) bool {
@@ -51,7 +54,9 @@ pub const POS_MAX: u32 = 1 << 24;
 const FILE_MAX: usize = 64;
 /// A world file's name before `.world`, as `pathFor` makes it.
 pub const STEM_MAX = FILE_MAX - EXT.len;
-pub const PATH_MAX = PREFIX.len + FILE_MAX;
+/// The folders a listed world lies in below `DIR`, names and '/'s.
+const FOLDER_MAX: usize = 64;
+pub const PATH_MAX = PREFIX.len + FOLDER_MAX + FILE_MAX;
 const ListedPath = [PATH_MAX + 1]u8;
 
 pub const Link = struct {
@@ -80,6 +85,7 @@ pub const Procgen = struct {
     feature: [MAX_FEATURES]Feature = @splat(Feature.of(FIRST_FEATURE)),
     feature_n: usize = 0,
     foes: pack.Spec = .{},
+    sky: climate.Climate = .{},
 
     pub fn features(self: *const Procgen) []const Feature {
         return self.feature[0..self.feature_n];
@@ -263,9 +269,9 @@ pub const Node = struct {
         return b.tileAt(p) == .wall and self.doorAt(p) == null and self.opens(b, lume.torchFloor(p));
     }
 
-    /// Only `.floor`: the one ground a row's `grid.BARREL_LETTER` stands on.
+    /// Only `grid.BARREL_GROUND`: the one ground a row's `grid.BARREL_LETTER` stands on.
     pub fn barrelFits(self: *const Node, b: *const Bespoke, p: P) bool {
-        return b.tileAt(p) == .floor and self.doorAt(p) == null;
+        return b.tileAt(p) == grid.BARREL_GROUND and self.doorAt(p) == null;
     }
 
     pub fn foeFits(self: *const Node, b: *const Bespoke, p: P) bool {
@@ -424,6 +430,7 @@ pub const Atlas = struct {
                     try w.print(says(.node) ++ "{s} {s}\n", .{ @tagName(nd.plan), @tagName(pg.floor) });
                     try putArm(w, &pg.floor);
                     inline for (FOE_KNOBS) |k| try putKnob(w, k, @field(pg.foes, k));
+                    inline for (SKY_KNOBS) |k| try putKnob(w, k, @field(pg.sky, k));
                     for (pg.foes.makeups()) |*m| {
                         try w.print(says(.makeup) ++ "{d}", .{m.weight});
                         for (m.kinds()) |k| try w.print(" {s}", .{@tagName(k)});
@@ -641,6 +648,8 @@ pub fn floorKnobs(comptime a: Algo) []const []const u8 {
 }
 const FLOOR_KNOBS_MAX = mostKnobs(Floor);
 pub const FOE_KNOBS = knobsOf(pack.Spec, MAKEUP_FIELDS);
+/// Its sky's lines, `climate.Climate`'s fields.
+pub const SKY_KNOBS = knobsOf(climate.Climate, &.{});
 /// Every other line's first word, which no knob may take.
 const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe };
 const ONCE_FILE = std.EnumSet(Word).initOne(.start);
@@ -652,8 +661,8 @@ pub fn featureKnobs(comptime k: Kind) []const []const u8 {
 }
 const FEATURE_KNOBS_MAX = mostKnobs(Feature);
 const FeatureKnobSet = std.StaticBitSet(FEATURE_KNOBS_MAX);
-/// An algorithm's knobs by place, then the foes' after `FLOOR_KNOBS_MAX`.
-const KnobSet = std.StaticBitSet(FLOOR_KNOBS_MAX + FOE_KNOBS.len);
+/// An algorithm's knobs by place, then the foes' after `FLOOR_KNOBS_MAX`, then the sky's.
+const KnobSet = std.StaticBitSet(FLOOR_KNOBS_MAX + FOE_KNOBS.len + SKY_KNOBS.len);
 const MAKEUP = @tagName(Word.makeup);
 /// `pack.Spec`'s makeups, which are lines of their own.
 const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
@@ -665,7 +674,7 @@ fn says(comptime w: Word) []const u8 {
 comptime {
     @setEvalBranchQuota(1_000_000);
     for (MAKEUP_FIELDS) |m| std.debug.assert(@hasField(pack.Spec, m));
-    for (std.enums.values(Algo)) |algo| distinct(floorKnobs(algo) ++ FOE_KNOBS ++ knobsOf(Word, &.{}));
+    for (std.enums.values(Algo)) |algo| distinct(floorKnobs(algo) ++ FOE_KNOBS ++ SKY_KNOBS ++ knobsOf(Word, &.{}));
     for (std.enums.values(Kind)) |kind| distinct(featureKnobs(kind) ++ knobsOf(Word, &.{}));
 }
 
@@ -701,6 +710,9 @@ fn takeKnob(pg: *Procgen, word: []const u8, f: *std.mem.TokenIterator(u8, .scala
     if (try takeArm(&pg.floor, word, f, knobbed)) return;
     inline for (FOE_KNOBS, 0..) |k, i| {
         if (std.mem.eql(u8, word, k)) return takeOnce(&pg.foes, k, FLOOR_KNOBS_MAX + i, f, knobbed);
+    }
+    inline for (SKY_KNOBS, 0..) |k, i| {
+        if (std.mem.eql(u8, word, k)) return takeOnce(&pg.sky, k, FLOOR_KNOBS_MAX + FOE_KNOBS.len + i, f, knobbed);
     }
     return error.BadLine;
 }
@@ -788,7 +800,16 @@ fn cell(f: *std.mem.TokenIterator(u8, .scalar)) Error!P {
     return if (grid.Level.inside(p)) p else error.BadLine;
 }
 
-pub fn pathFor(buf: []u8, name: []const u8) ?[]const u8 {
+/// The folder below `DIR` a world's path lies in, its '/' kept; none for a path outside `DIR`.
+pub fn folderOf(path: []const u8) []const u8 {
+    if (!std.mem.startsWith(u8, path, PREFIX)) return "";
+    const rest = path[PREFIX.len..];
+    const end = std.mem.lastIndexOfScalar(u8, rest, '/') orelse return "";
+    return rest[0 .. end + 1];
+}
+
+/// In `folder`, as `folderOf` gives it.
+pub fn pathFor(buf: []u8, folder: []const u8, name: []const u8) ?[]const u8 {
     var stem: [STEM_MAX]u8 = undefined;
     var n: usize = 0;
     for (std.mem.trim(u8, name, " ")) |c| {
@@ -798,59 +819,186 @@ pub fn pathFor(buf: []u8, name: []const u8) ?[]const u8 {
         stem[n] = if (k == ' ') '_' else k;
         n += 1;
     }
-    if (n == 0) return null;
-    return std.fmt.bufPrint(buf, PREFIX ++ "{s}" ++ EXT, .{stem[0..n]}) catch null;
+    if (n == 0 or folder.len > FOLDER_MAX) return null;
+    return std.fmt.bufPrint(buf, PREFIX ++ "{s}{s}" ++ EXT, .{ folder, stem[0..n] }) catch null;
 }
 
-/// The world files in `DIR`, sorted; past `MAX`, the first `MAX` of them.
+/// One folder of `DIR` at a time: below `DIR` the way back up first, then its folders, then its worlds, each sorted;
+/// past `MAX`, the first `MAX` of them.
 pub const Listing = struct {
     pub const MAX: usize = 128;
+    pub const UP = "..";
+    /// Folders below `DIR` a walk of every world goes, at most.
+    const DEPTH_MAX: usize = 8;
     file: [MAX]Listed = undefined,
     n: usize = 0,
+    /// The folder listed, below `DIR`: each folder's name and a '/', none at `DIR` itself.
+    folder: [FOLDER_MAX]u8 = undefined,
+    folder_n: usize = 0,
+
+    pub const Entry = enum { up, folder, world };
 
     const Listed = struct {
         buf: ListedPath,
         n: usize,
+        entry: Entry,
 
         fn text(l: *const Listed) [:0]const u8 {
             return l.buf[0..l.n :0];
         }
 
         fn before(_: void, a: Listed, b: Listed) bool {
+            if (a.entry != b.entry) return @intFromEnum(a.entry) < @intFromEnum(b.entry);
             return std.mem.lessThan(u8, a.text(), b.text());
         }
     };
 
+    /// A world's file, a folder's path and its '/', or `UP`.
     pub fn at(self: *const Listing, i: usize) [:0]const u8 {
         return self.file[i].text();
     }
 
-    pub fn stem(self: *const Listing, i: usize) []const u8 {
-        const p = self.at(i);
-        return p[PREFIX.len .. p.len - EXT.len];
+    pub fn entry(self: *const Listing, i: usize) Entry {
+        return self.file[i].entry;
     }
 
+    /// What its row shows: a world's stem, a folder's name and its '/', or `UP`.
+    pub fn label(self: *const Listing, i: usize) []const u8 {
+        const p = self.at(i);
+        return switch (self.entry(i)) {
+            .up => p,
+            .folder => p[PREFIX.len + self.folder_n ..],
+            .world => self.stem(i),
+        };
+    }
+
+    /// A world's file name before `EXT`.
+    pub fn stem(self: *const Listing, i: usize) []const u8 {
+        const p = self.at(i);
+        const from = if (std.mem.lastIndexOfScalar(u8, p, '/')) |k| k + 1 else 0;
+        return p[from .. p.len - EXT.len];
+    }
+
+    /// The folder listed, below `DIR`.
+    pub fn here(self: *const Listing) []const u8 {
+        return self.folder[0..self.folder_n];
+    }
+
+    /// Into the folder at `i`, or up from `UP`; false for a world.
+    pub fn open(self: *Listing, i: usize) bool {
+        switch (self.entry(i)) {
+            .world => return false,
+            .up => _ = self.up(),
+            .folder => {
+                const name = self.label(i);
+                if (self.folder_n + name.len <= FOLDER_MAX) {
+                    @memcpy(self.folder[self.folder_n..][0..name.len], name);
+                    self.folder_n += name.len;
+                }
+                self.scan();
+            },
+        }
+        return true;
+    }
+
+    /// To the folder above; false at `DIR` itself.
+    pub fn up(self: *Listing) bool {
+        if (self.folder_n == 0) return false;
+        const inner = self.folder[0 .. self.folder_n - 1];
+        self.folder_n = if (std.mem.lastIndexOfScalar(u8, inner, '/')) |k| k + 1 else 0;
+        self.scan();
+        return true;
+    }
+
+    /// `folder`, as `folderOf` gives it; `DIR` itself if it is not there.
+    pub fn scanAt(self: *Listing, folder: []const u8) void {
+        self.folder_n = 0;
+        if (folder.len <= FOLDER_MAX) {
+            @memcpy(self.folder[0..folder.len], folder);
+            self.folder_n = folder.len;
+        }
+        self.scan();
+    }
+
+    /// The folder listed; `DIR` itself if that folder is gone.
     pub fn scan(self: *Listing) void {
         self.n = 0;
-        var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return;
+        if (self.folder_n > 0) self.add(.up, "{s}", .{UP});
+        if (!self.gather(false)) {
+            if (self.folder_n == 0) return;
+            self.folder_n = 0;
+            return self.scan();
+        }
+        self.sort();
+    }
+
+    /// Every world in every folder of `DIR`, by path.
+    pub fn scanAll(self: *Listing) void {
+        self.n = 0;
+        self.folder_n = 0;
+        self.walk(0);
+        self.sort();
+    }
+
+    fn walk(self: *Listing, depth: usize) void {
+        if (!self.gather(true) or depth == DEPTH_MAX) return;
+        var buf: [PATH_MAX]u8 = undefined;
+        var dir = std.fs.cwd().openDir(self.dirPath(&buf), .{ .iterate = true }) catch return;
         defer dir.close();
         var it = dir.iterate();
         while (it.next() catch null) |e| {
-            if (e.kind != .file or !std.mem.endsWith(u8, e.name, EXT) or e.name.len > FILE_MAX) continue;
-            if (!plain(e.name)) continue;
-            var l: Listed = undefined;
-            l.n = (std.fmt.bufPrintZ(&l.buf, PREFIX ++ "{s}", .{e.name}) catch continue).len;
-            if (self.n < MAX) {
-                self.file[self.n] = l;
-                self.n += 1;
-                continue;
-            }
-            var last: usize = 0;
-            for (self.file[1..], 1..) |*o, i| {
-                if (Listed.before({}, self.file[last], o.*)) last = i;
-            }
-            if (Listed.before({}, l, self.file[last])) self.file[last] = l;
+            if (e.kind != .directory or !shown(e.name) or self.folder_n + e.name.len + 1 > FOLDER_MAX) continue;
+            const was = self.folder_n;
+            @memcpy(self.folder[was..][0..e.name.len], e.name);
+            self.folder[was + e.name.len] = '/';
+            self.folder_n += e.name.len + 1;
+            self.walk(depth + 1);
+            self.folder_n = was;
         }
+    }
+
+    /// The listed folder's own entries; with `worlds_only`, its folders left out. False when it will not open.
+    fn gather(self: *Listing, worlds_only: bool) bool {
+        var buf: [PATH_MAX]u8 = undefined;
+        var dir = std.fs.cwd().openDir(self.dirPath(&buf), .{ .iterate = true }) catch return false;
+        defer dir.close();
+        var it = dir.iterate();
+        while (it.next() catch null) |e| {
+            if (!shown(e.name)) continue;
+            switch (e.kind) {
+                .directory => if (!worlds_only and self.folder_n + e.name.len + 1 <= FOLDER_MAX) self.add(.folder, PREFIX ++ "{s}{s}/", .{ self.here(), e.name }),
+                .file => if (std.mem.endsWith(u8, e.name, EXT) and e.name.len <= FILE_MAX) self.add(.world, PREFIX ++ "{s}{s}", .{ self.here(), e.name }),
+                else => {},
+            }
+        }
+        return true;
+    }
+
+    fn dirPath(self: *const Listing, buf: []u8) []const u8 {
+        return std.fmt.bufPrint(buf, DIR ++ "/{s}", .{self.here()}) catch DIR;
+    }
+
+    fn shown(name: []const u8) bool {
+        return name.len > 0 and name[0] != '.' and plain(name);
+    }
+
+    fn add(self: *Listing, e: Entry, comptime fmt: []const u8, args: anytype) void {
+        var l: Listed = undefined;
+        l.entry = e;
+        l.n = (std.fmt.bufPrintZ(&l.buf, fmt, args) catch return).len;
+        if (self.n < MAX) {
+            self.file[self.n] = l;
+            self.n += 1;
+            return;
+        }
+        var last: usize = 0;
+        for (self.file[1..], 1..) |*o, i| {
+            if (Listed.before({}, self.file[last], o.*)) last = i;
+        }
+        if (Listed.before({}, l, self.file[last])) self.file[last] = l;
+    }
+
+    fn sort(self: *Listing) void {
         std.sort.insertion(Listed, self.file[0..self.n], {}, Listed.before);
     }
 };
@@ -1091,13 +1239,67 @@ test "a body lands on the side of a wall it arrived on, however near the far sid
 
 test "a world file is named from anything typed, and nothing left of it is no name" {
     var buf: [128]u8 = undefined;
-    try std.testing.expectEqualStrings(DIR ++ "/the_deepcave2" ++ EXT, pathFor(&buf, " The Deep/Cave2! ").?);
-    try std.testing.expectEqual(@as(?[]const u8, null), pathFor(&buf, "../"));
+    try std.testing.expectEqualStrings(DIR ++ "/the_deepcave2" ++ EXT, pathFor(&buf, "", " The Deep/Cave2! ").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), pathFor(&buf, "", "../"));
+    try std.testing.expectEqualStrings("qud/", folderOf(DIR ++ "/qud/qud_strata" ++ EXT));
+    try std.testing.expectEqualStrings("", folderOf(MAIN));
+    try std.testing.expectEqualStrings(DIR ++ "/qud/bog" ++ EXT, pathFor(&buf, folderOf(DIR ++ "/qud/qud_strata" ++ EXT), "Bog").?);
+}
+
+test "the worlds folder lists its folders before its worlds, and a folder opens with the way back up first" {
+    var list = Listing{};
+    list.scan();
+    try std.testing.expect(list.n > 0 and list.entry(0) == .folder);
+    const qud = for (0..list.n) |i| {
+        if (std.mem.eql(u8, list.label(i), "qud/")) break i;
+    } else return error.NoFolder;
+    const top = list.n;
+    try std.testing.expect(list.open(qud));
+    try std.testing.expectEqualStrings("qud/", list.here());
+    try std.testing.expectEqual(Listing.Entry.up, list.entry(0));
+    try std.testing.expectEqual(Listing.Entry.world, list.entry(1));
+    try std.testing.expect(std.mem.startsWith(u8, list.at(1), DIR ++ "/qud/qud_"));
+    try std.testing.expect(std.mem.startsWith(u8, list.label(1), "qud_"));
+    try std.testing.expect(!list.open(1));
+    const inside = list.n;
+    try std.testing.expect(list.open(0));
+    try std.testing.expectEqual(@as(usize, 0), list.here().len);
+    try std.testing.expect(!list.up());
+    var all = Listing{};
+    all.scanAll();
+    std.debug.print("{d} rows in {s}, {d} in qud/ with the way up, {d} worlds in all\n", .{ top, DIR, inside, all.n });
+    try std.testing.expect(all.n > top);
+}
+
+test "the strand: the archer washes up on the beach, and the exit is reached through the trees" {
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    try a.load(std.testing.allocator, START);
+    var lv: grid.Level = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    const nd = &a.node[a.start.node];
+    const exit = nd.doors()[0].at;
+    var sandy: usize = 0;
+    var wound: f32 = 0;
+    const RUNS = 50;
+    for (0..RUNS) |i| {
+        nd.stamp(&lv, 0x57A2D +% i *% 7919);
+        const at = landing(&lv, a.start.at, &.{}) orelse return error.NoFloor;
+        if (lv.at(at) == .sand or lv.at(at) == .shallows) sandy += 1;
+        try std.testing.expectEqual(lv.openCount(), grid.distances(&lv, at, &dist, &queue));
+        const walked = dist[grid.Level.idx(exit)];
+        try std.testing.expect(walked > 0);
+        wound += @as(f32, @floatFromInt(walked)) / @as(f32, @floatFromInt(mathx.dist(at, exit)));
+    }
+    std.debug.print("the strand over {d} rolls: {d} land on the beach; the exit walks {d:.2} times the straight line\n", .{ RUNS, sandy, wound / RUNS });
+    try std.testing.expect(sandy * 10 >= RUNS * 9);
+    try std.testing.expect(wound / RUNS > 1.1);
 }
 
 test "every world in the worlds folder parses, and each procgen node rolls its ground whole" {
     var list = Listing{};
-    list.scan();
+    list.scanAll();
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);
     var lv: grid.Level = undefined;
