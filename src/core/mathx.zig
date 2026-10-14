@@ -99,6 +99,13 @@ pub fn wrap(i: usize, by: i32, n: usize) usize {
     return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
 }
 
+/// The first of `rows` shown, moved the least that shows row `at`.
+pub fn reveal(top: usize, at: usize, rows: usize) usize {
+    if (at < top) return at;
+    if (at >= top + rows) return at + 1 - rows;
+    return top;
+}
+
 /// The value `by` places on from `v` in `list`, wrapping round; counted from `missing` when `v` is not in it.
 pub fn stepIn(comptime T: type, list: []const T, v: T, by: i32, missing: ?usize) T {
     const at = std.mem.indexOfScalar(T, list, v) orelse missing.?;

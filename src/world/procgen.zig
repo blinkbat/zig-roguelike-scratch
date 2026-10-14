@@ -232,7 +232,7 @@ fn settle(lv: *grid.Level) void {
 }
 
 /// Walls shaped afresh and the torches they no longer bear dropped, so a buried torch frees its slot.
-fn reshape(lv: *grid.Level) void {
+pub fn reshape(lv: *grid.Level) void {
     gen.shapeWalls(lv);
     gen.keepTorches(lv);
 }

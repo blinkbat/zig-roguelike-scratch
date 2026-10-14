@@ -36,7 +36,7 @@ pub fn palette(_: Params) carve.Palette {
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const pal = palette(p);
     carve.fill(lv, pal.solid);
-    const noise = carve.Noise.init(seed ^ 0xCA4E);
+    const noise = carve.Noise.init(seed, .cavern);
     const fray = mathx.fraction(p.fray);
     var centre: [CHAMBERS_MAX]P = undefined;
     var radius: [CHAMBERS_MAX]i32 = undefined;

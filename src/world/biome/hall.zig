@@ -7,6 +7,8 @@ const carve = @import("../carve.zig");
 
 pub const MARGIN_MAX: u8 = 16;
 const PILLAR_STEP: i32 = 4;
+/// Cells between the floor's edge and the outermost pillars.
+const PILLAR_GAP: i32 = 2;
 const ALCOVE_W: i32 = 3;
 const ALCOVE_D: i32 = 3;
 /// The Animated Forest's plant share, and the rows left clear below it, of the hall's height.
@@ -44,10 +46,11 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     switch (p.style) {
         .bare => {},
         .pillars => {
-            var y = lo.y + 2;
-            while (y < hi.y - 2) : (y += PILLAR_STEP) {
-                var x = lo.x + 2;
-                while (x < hi.x - 2) : (x += PILLAR_STEP) lv.set(.{ .x = x, .y = y }, pal.solid);
+            const rows = floor.shrunk(PILLAR_GAP);
+            var y = rows.lo.y;
+            while (y < rows.hi.y) : (y += PILLAR_STEP) {
+                var x = rows.lo.x;
+                while (x < rows.hi.x) : (x += PILLAR_STEP) lv.set(.{ .x = x, .y = y }, pal.solid);
             }
         },
         .graves => {

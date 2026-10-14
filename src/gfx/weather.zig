@@ -17,7 +17,9 @@ const FALLS = std.EnumArray(climate.Weather, ?Fall).init(.{
     .drizzle = .{ .drops = 130, .speed = 760, .drift = 110, .len = 16, .width = 1, .alpha = 0.3, .splash_s = 0.22, .ring = 4 },
 });
 
-const AREA: f32 = 1920 * 1080;
+/// The screen a weather's `drops` fill.
+const AREA_AT = mathx.P{ .x = 1920, .y = 1080 };
+const AREA: f32 = @floatFromInt(AREA_AT.x * AREA_AT.y);
 /// A 4K screen holds four `AREA`s.
 const SCREENS_MOST: u32 = 4;
 const DROPS_MAX: usize = blk: {
@@ -117,24 +119,24 @@ pub const Weather = struct {
 
 test "a drizzle keeps its drops falling and landing, none for a clear sky, and as many for a bigger screen's area" {
     var w = Weather{};
-    w.step(1.0 / 60.0, .drizzle, 1920, 1080, 1);
+    w.step(mathx.FRAME_DT, .drizzle, AREA_AT.x, AREA_AT.y, 1);
     const at_1080 = w.n;
     var landed: usize = 0;
     for (0..600) |_| {
-        w.step(1.0 / 60.0, .drizzle, 1920, 1080, 1);
+        w.step(mathx.FRAME_DT, .drizzle, AREA_AT.x, AREA_AT.y, 1);
         for (w.drop[0..w.n]) |d| {
             if (d.since >= 0) landed += 1;
             try std.testing.expect(d.y <= d.land + 1e-3);
         }
     }
-    w.step(1.0 / 60.0, .drizzle, 1280, 720, 1);
+    w.step(mathx.FRAME_DT, .drizzle, 1280, 720, 1);
     const at_720 = w.n;
     std.debug.print("a drizzle: {d} drops at 1080p, {d} at 720p, {d} drop-frames spent splashing over 10 s\n", .{ at_1080, at_720, landed });
     try std.testing.expectEqual(@as(usize, FALLS.get(.drizzle).?.drops), at_1080);
     try std.testing.expect(at_720 * 2 < at_1080 + at_1080 / 4 and at_720 * 2 > at_1080 - at_1080 / 4);
     try std.testing.expect(landed > 0);
-    w.step(1.0 / 60.0, .clear, 1920, 1080, 1);
+    w.step(mathx.FRAME_DT, .clear, AREA_AT.x, AREA_AT.y, 1);
     try std.testing.expectEqual(@as(usize, 0), w.n);
-    w.step(1.0 / 60.0, null, 1920, 1080, 1);
+    w.step(mathx.FRAME_DT, null, AREA_AT.x, AREA_AT.y, 1);
     try std.testing.expectEqual(@as(usize, 0), w.n);
 }

@@ -314,9 +314,8 @@ pub const Node = struct {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;
                 self.openDoors(lv);
-                gen.shapeWalls(lv);
                 lv.torch = b.torch;
-                gen.keepTorches(lv);
+                procgen.reshape(lv);
                 for (0..grid.CELLS) |i| {
                     if (b.barrel[i] and self.barrelFits(b, grid.Level.of(i))) lv.barrel[i] = true;
                 }

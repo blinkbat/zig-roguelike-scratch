@@ -23,11 +23,16 @@ pub const PLATE_PAD: i32 = 10;
 pub const PLATE_H: i32 = 88;
 const PLATE_RULE: i32 = 5;
 const SHADOW_DROP: i32 = 3;
+/// How far an orb's shadow falls below it, and how much wider it is.
+const ORB_SHADOW_DY: i32 = 4;
+const ORB_SHADOW_GROW: i32 = 2;
+/// How far in from the plate's sides its rules stop.
+const RULE_INSET: i32 = 8;
 const STATUS_Y: i32 = 20;
 
 comptime {
     std.debug.assert(PLATE_Y + PLATE_H < ORB_Y + ORB_R);
-    std.debug.assert(ORB_Y + ORB_R + 2 * SHADOW_DROP <= HEIGHT);
+    std.debug.assert(ORB_Y + ORB_R + ORB_SHADOW_DY + ORB_SHADOW_GROW <= HEIGHT);
 }
 
 const FRAME = look.rgb(0x625a48);
@@ -71,8 +76,8 @@ pub fn frame(layout: Layout) void {
     rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, PLATE_H + 2, look.fade(rl.Color.black, 0.5));
     rl.drawRectangle(x, y, width, PLATE_H, PLATE);
     rl.drawRectangleLinesEx(look.rect(x, y, width, PLATE_H), 2, FRAME);
-    rl.drawLine(x + 8, y + PLATE_RULE, x + width - 8, y + PLATE_RULE, FRAME_DARK);
-    rl.drawLine(x + 8, y + PLATE_H - 1 - PLATE_RULE, x + width - 8, y + PLATE_H - 1 - PLATE_RULE, FRAME_DARK);
+    rl.drawLine(x + RULE_INSET, y + PLATE_RULE, x + width - RULE_INSET, y + PLATE_RULE, FRAME_DARK);
+    rl.drawLine(x + RULE_INSET, y + PLATE_H - 1 - PLATE_RULE, x + width - RULE_INSET, y + PLATE_H - 1 - PLATE_RULE, FRAME_DARK);
 }
 
 pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32) void {
@@ -89,7 +94,7 @@ fn fillHeight(value: i32, max: i32) i32 {
 fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, max: i32, core: rl.Color, edge: rl.Color) void {
     const x = centre.x;
     const y = centre.y;
-    rl.drawCircle(x, y + 4, ORB_R + 2, look.fade(rl.Color.black, 0.6));
+    rl.drawCircle(x, y + ORB_SHADOW_DY, ORB_R + ORB_SHADOW_GROW, look.fade(rl.Color.black, 0.6));
     rl.drawCircle(x, y, ORB_R, FRAME_DARK);
     rl.drawCircle(x, y, ORB_R - 2, FRAME);
     rl.drawCircle(x, y, ORB_R - 5, FRAME_DARK);

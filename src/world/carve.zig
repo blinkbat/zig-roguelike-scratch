@@ -18,11 +18,30 @@ const BEND_MAX: f32 = 1.1;
 const MEANDER_STEPS: usize = 4 * (grid.W + grid.H);
 
 /// Smooth value noise in 0..1, summed over octaves; a seed is a field.
+/// Each noise field's own, so no two fields of one seed move together.
+pub const Salt = enum(u64) {
+    tall_grass = 0x7A11,
+    border = 0xB02D,
+    cavern = 0xCA4E,
+    coast = 0xC0A5,
+    lake = 0x1A4E,
+    scatter = 0x5CA7,
+    dune_crest = 0xD0E5,
+    dune_break = 0xB20C,
+    topology = 0x70B0,
+    maze = 0x3A2E,
+    elevation = 0x4E16,
+    rainfall = 0x2A1F,
+    drainage = 0xD2A1,
+    warmth = 0x4EA7,
+    grain = 0xF1E1,
+};
+
 pub const Noise = struct {
     seed: u64,
 
-    pub fn init(seed: u64) Noise {
-        return .{ .seed = seed };
+    pub fn init(seed: u64, salt: Salt) Noise {
+        return .{ .seed = seed ^ @intFromEnum(salt) };
     }
 
     fn lattice(self: Noise, x: i32, y: i32) f32 {
@@ -207,7 +226,6 @@ pub fn corners(b: grid.Box) [4]P {
     return .{ b.lo, .{ .x = b.hi.x - 1, .y = b.lo.y }, .{ .x = b.lo.x, .y = b.hi.y - 1 }, b.hi.sub(.{ .x = 1, .y = 1 }) };
 }
 
-/// The cell of `b`'s outermost row on `side` at `along`: an x on the north or south, a y on the west or east.
 /// `p`'s part along `side`: its x on the north and south, its y on the west and east.
 pub fn alongOf(side: mathx.Dir, p: P) i32 {
     return switch (side) {
@@ -217,6 +235,18 @@ pub fn alongOf(side: mathx.Dir, p: P) i32 {
     };
 }
 
+/// Cells `p` lies in from the map's edge on `side`.
+pub fn inFrom(side: mathx.Dir, p: P) i32 {
+    return switch (side) {
+        .w => p.x,
+        .e => grid.W - 1 - p.x,
+        .n => p.y,
+        .s => grid.H - 1 - p.y,
+        .ne, .se, .sw, .nw => unreachable,
+    };
+}
+
+/// The cell of `b`'s outermost row on `side` at `along`: an x on the north or south, a y on the west or east.
 pub fn sideAt(b: grid.Box, side: mathx.Dir, along: i32) P {
     return switch (side) {
         .n => .{ .x = along, .y = b.lo.y },
@@ -402,18 +432,47 @@ pub fn unbar(lv: *grid.Level) void {
         const n = st.labelBy(lv, true);
         if (n <= 1) return;
         const main = st.biggest();
-        const cut = for (0..grid.CELLS) |i| {
-            if (!lv.barrel[i]) continue;
-            const p = grid.Level.of(i);
-            for (mathx.ALL_DIRS) |d| {
-                if (!lv.passOk(p, d)) continue;
-                const k = grid.Level.idx(p.add(d.delta()));
-                if (region[k] != NONE and region[k] != main) break;
-            } else continue;
-            break i;
-        } else return;
+        const cut = barBetween(lv, region, main, true) orelse barBetween(lv, region, main, false) orelse return;
         lv.barrel[cut] = false;
     }
+}
+
+test "unbar takes the barrel in the doorway, not the ones in the room behind it" {
+    var lv = grid.openFloor();
+    const room = grid.Box{ .lo = .{ .x = 10, .y = 5 }, .hi = .{ .x = 21, .y = 13 } };
+    var cells = room.cells();
+    while (cells.next()) |p| {
+        if (room.onEdge(p)) lv.set(p, .wall);
+    }
+    const doorway = P{ .x = 15, .y = 12 };
+    lv.set(doorway, .floor);
+    lv.barrel[grid.Level.idx(doorway)] = true;
+    lv.barrel[grid.Level.idx(.{ .x = 12, .y = 7 })] = true;
+    lv.barrel[grid.Level.idx(.{ .x = 13, .y = 7 })] = true;
+    unbar(&lv);
+    var left: usize = 0;
+    for (lv.barrel) |b| left += @intFromBool(b);
+    std.debug.print("a room barred at its doorway with 2 barrels inside: {d} of 3 kept\n", .{left});
+    try std.testing.expect(!lv.barrel[grid.Level.idx(doorway)]);
+    try std.testing.expectEqual(@as(usize, 2), left);
+}
+
+/// The first barrel beside a stretch other than `main`, and beside `main` too when `bridging`.
+fn barBetween(lv: *const grid.Level, region: *const [grid.CELLS]u16, main: u16, bridging: bool) ?usize {
+    for (0..grid.CELLS) |i| {
+        if (!lv.barrel[i]) continue;
+        const p = grid.Level.of(i);
+        var other = false;
+        var by_main = false;
+        for (mathx.ALL_DIRS) |d| {
+            if (!lv.passOk(p, d)) continue;
+            const r = region[grid.Level.idx(p.add(d.delta()))];
+            if (r == NONE) continue;
+            if (r == main) by_main = true else other = true;
+        }
+        if (other and (by_main or !bridging)) return i;
+    }
+    return null;
 }
 
 /// The stretches no pocket fill takes: one holding a door, one by a liquid, as an island is, one holding ground other than the base's open, decor or path, ground a feature opened, as a ford is, or one in a lot, as a house is.
@@ -583,7 +642,7 @@ pub const Litter = struct {
 
     pub fn fit(l: Litter) Litter {
         var q = l;
-        q.boulders = @min(l.boulders, LITTER_MAX);
+        inline for (std.meta.fields(Litter)) |f| @field(q, f.name) = @min(@field(l, f.name), LITTER_MAX);
         return q;
     }
 
@@ -609,7 +668,7 @@ pub const Decor = struct {
 
     pub fn strew(d: Decor, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
         strewn(lv, rng, d.tiny_shrubs, .tiny_shrub);
-        clumps(lv, Noise.init(seed ^ 0x7A11), TALL_GRASS_SCALE, d.tall_grass, .{ .tile = grid.Tile.tall_grass.ground().? }, .tall_grass);
+        clumps(lv, Noise.init(seed, .tall_grass), TALL_GRASS_SCALE, d.tall_grass, .{ .tile = grid.Tile.tall_grass.ground().? }, .tall_grass);
         strewn(lv, rng, d.shrooms, .shrooms);
     }
 };
@@ -715,8 +774,8 @@ pub fn count(lv: *const grid.Level, t: grid.Tile) usize {
 }
 
 test "noise is smooth, in range, and a seed is a field" {
-    const a = Noise.init(7);
-    const b = Noise.init(7);
+    const a = Noise.init(7, .grain);
+    const b = Noise.init(7, .grain);
     var lo: f32 = 1;
     var hi: f32 = 0;
     var jump: f32 = 0;

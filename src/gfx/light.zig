@@ -47,9 +47,9 @@ const CARRY_FADE: f32 = 0.3;
 const CARRY_CEILING: f32 = 0.7;
 const CARRY_FACE_WRAP: f32 = 0.6;
 
-const AMBIENT: Rgb = .{ 0.10, 0.11, 0.17 };
 /// The light remembered terrain is drawn under, after Brogue's memory colour.
 const MEMORY = rgbOf(look.rgb(0x33385c));
+const CLOUDS_W: i32 = grid.COLS + 1;
 const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
@@ -293,9 +293,6 @@ fn sunFacing(sk: sky.Sky, s: Spot) f32 {
         .floor, .ceiling => wrapped(sk.dir[2], GROUND_WRAP),
         .face => faceCatch(sk.dir[1]),
     };
-}
-
-comptime {
 }
 
 const Surface = enum { floor, face, ceiling };
@@ -578,6 +575,8 @@ fn skyShade(k: sky.Sky) Rgb {
 
 pub const Shine = struct {
     ambient: Rgb = @splat(0),
+    /// Of `ambient`, what memory's floor lifts it by: no light reaches with it.
+    floor: Rgb = @splat(0),
     /// How far in sight times how far remembered the ground under the body is.
     sight: f32 = 1,
     n: usize = 0,
@@ -606,6 +605,10 @@ pub const Shine = struct {
 
     fn lit(self: Shine) f32 {
         return lum(self.ambient + self.total());
+    }
+
+    fn reached(self: Shine) f32 {
+        return lum(self.ambient - self.floor + self.total());
     }
 
     pub fn tint(self: Shine, c: rl.Color) rl.Color {
@@ -651,6 +654,8 @@ pub const Light = struct {
     sky: ?sky.Sky,
     /// How many of the cells above and left of each corner cast, so a box of them is counted in four reads.
     casting: [CAST_W * CAST_H]u16,
+    /// `clouded` at each cell corner a bake reaches, read by `bakeCell`: a corner is shared by four cells.
+    clouds: [CLOUDS_W * (grid.ROWS + 1)]f32,
     t: mathx.Seconds,
     map: [TEXELS]rl.Color,
     /// The rows of `map` baked since the texture was last sent, all it needs sent.
@@ -907,8 +912,13 @@ pub const Light = struct {
         return if (self.sky) |k| k.carry else 1;
     }
 
+    /// The sky's ambient; none under a roof.
+    fn ambientOf(self: *const Light) Rgb {
+        return if (self.sky) |k| k.ambient else splat(0);
+    }
+
     fn base(self: *const Light) Rgb {
-        return @max(MEMORY, if (self.sky) |k| k.ambient else AMBIENT);
+        return @max(MEMORY, self.ambientOf());
     }
 
     /// `q` is in cells.
@@ -951,10 +961,22 @@ pub const Light = struct {
         const t1 = P{ .x = @min(MAP_W, hi.x * SUB + 1), .y = @min(MAP_H, hi.y * SUB + 1) };
         const ray: ?SunRay = if (self.sky) |k| SunRay.of(k) else null;
         self.baked = .{ @min(self.baked[0], t0.y), @max(self.baked[1], t1.y) };
-        var c = P{ .x = 0, .y = @divFloor(t0.y, SUB) };
+        const c0 = P{ .x = @divFloor(t0.x, SUB), .y = @divFloor(t0.y, SUB) };
+        if (ray != null) self.cloudsOver(c0, .{ .x = std.math.divCeil(i32, t1.x, SUB) catch unreachable, .y = std.math.divCeil(i32, t1.y, SUB) catch unreachable });
+        var c = P{ .x = 0, .y = c0.y };
         while (c.y * SUB < t1.y) : (c.y += 1) {
-            c.x = @divFloor(t0.x, SUB);
+            c.x = c0.x;
             while (c.x * SUB < t1.x) : (c.x += 1) self.bakeCell(lv, torches, c, t0, t1, ray);
+        }
+    }
+
+    /// The corners from `lo` to `hi`, both inclusive.
+    fn cloudsOver(self: *Light, lo: P, hi: P) void {
+        const t = self.t.at();
+        var y = lo.y;
+        while (y <= hi.y) : (y += 1) {
+            var x = lo.x;
+            while (x <= hi.x) : (x += 1) self.clouds[@intCast(y * CLOUDS_W + x)] = clouded(@floatFromInt(x), @floatFromInt(y), t);
         }
     }
 
@@ -980,7 +1002,8 @@ pub const Light = struct {
         const fade = self.fadeOf(c);
         const dark = if (fade.flat) |v| v == 0 else false;
         const sub: f32 = @floatFromInt(SUB);
-        const corners: [4]f32 = if (ray != null and !dark) self.cloudCorners(c) else @splat(1);
+        const k: usize = @intCast(c.y * CLOUDS_W + c.x);
+        const corners: [4]f32 = if (ray != null and !dark) .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + CLOUDS_W], self.clouds[k + CLOUDS_W + 1] } else @splat(1);
         var ty = @max(t0.y, c.y * SUB);
         while (ty < @min(t1.y, (c.y + 1) * SUB)) : (ty += 1) {
             var tx = @max(t0.x, c.x * SUB);
@@ -1021,6 +1044,7 @@ pub const Light = struct {
         var s = Shine{ .sight = lit };
         const night: Rgb = if (self.sky) |k| self.sunOnBody(&s, k, centre, lit) else splat(1);
         s.ambient = remembered(self.base() * night, v.sight, v.memory);
+        s.floor = remembered((self.base() - self.ambientOf()) * night, v.sight, v.memory);
         if (self.carryToward(centre[0], centre[1], fogged)) |f| {
             const k = f.k * lit;
             if (carrier) {
@@ -1143,18 +1167,21 @@ pub const Light = struct {
         rl.gl.rlDrawRenderBatchActive();
     }
 
-    /// Draws the foot's contact pool, `contact` times a body's, and returns the foot and its height; null where nothing lights it.
-    fn footOf(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, s: Shine, contact: f32) ?struct { x: f32, y: f32, height: f32 } {
-        const lit = s.lit();
-        if (lit <= 0) return null;
-        const height = self.gpu.art(tex).foot * dest.height / @as(f32, @floatFromInt(tex.height));
+    /// Draws the foot's contact pool, `contact` times a body's, and returns the foot, its height and its share of the art's; null where nothing lights it.
+    fn footOf(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, s: Shine, contact: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
+        const lit = s.reached();
+        if (lit <= FAINT) return null;
+        const foot = self.gpu.art(tex).foot;
+        const tall: f32 = @floatFromInt(tex.height);
+        const share = foot / tall;
+        const height = foot * dest.height / tall;
         const x = dest.x + dest.width * 0.5;
         const y = dest.y + height;
         if (self.gpu.glow) |g| {
             const a = CONTACT_A * @min(1, lit / lum(CARRY));
             glowAt(g, x, y, dest.width * CONTACT_W * 0.5 * contact, dest.width * CONTACT_H * 0.5 * contact, colourOf(SHADE_RGB, a));
         }
-        return .{ .x = x, .y = y, .height = height };
+        return .{ .x = x, .y = y, .height = height, .share = share };
     }
 
     /// Shadows until `endShadows` go into a mask of the screen, the darker winning; false with no GL. `outer` is the framebuffer being drawn into.
@@ -1189,7 +1216,8 @@ pub const Light = struct {
         const t = self.gpu.mask.?.texture;
         self.uploadMap();
         const receiver = self.gpu.receiver.?;
-        const map_rect = [4]f32{ @floatFromInt(ox), @floatFromInt(oy), @floatFromInt(grid.W * cell), @floatFromInt(grid.H * cell) };
+        const floor = look.floorRect(ox, oy, cell);
+        const map_rect = [4]f32{ floor.x, floor.y, floor.width, floor.height };
         const screen = [2]f32{ @floatFromInt(t.width), @floatFromInt(t.height) };
         rl.beginBlendMode(.multiplied);
         defer rl.endBlendMode();
@@ -1209,7 +1237,7 @@ pub const Light = struct {
         var buf: [BODY_LIGHTS]Cast = undefined;
         const cs = casts(s, centre, f.height, &buf);
         if (cs.len == 0) return;
-        const foot = self.gpu.art(tex).foot / @as(f32, @floatFromInt(tex.height));
+        const foot = f.share;
         if (!self.beginSilhouettes(tex, foot, .{ 0, 0, 0, 0 }, .{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT })) return;
         for (cs) |c| {
             if (c.solid <= 0) continue;
@@ -1619,8 +1647,8 @@ const Gpu = struct {
     }
 
     fn art(g: *const Gpu, t: rl.Texture2D) Art {
-        for (g.arts) |held| {
-            const a = held orelse continue;
+        for (&g.arts) |*held| {
+            const a = held.* orelse continue;
             if (a.id == t.id) return a;
         }
         return Art.bare(t);
@@ -1838,6 +1866,32 @@ test "shadow casters keep their light outside sight and memory" {
         }
     }
     std.debug.print("{d} sun, moon and torch casts unchanged outside sight and memory; hidden bodies cast none through their draw lighting\n", .{checked});
+}
+
+test "a contact pool needs a light: memory's floor reaches nothing" {
+    var lv = grid.openFloor();
+    @memset(&lv.los, true);
+    @memset(&lv.lit, true);
+    @memset(&lv.seen, true);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const centre = [2]f32{ 20.5, 13.5 };
+    l.sky = null;
+    l.carrier = null;
+    l.settle(&lv);
+    const dark = l.onCaster(centre, false);
+    l.carrier = .{ 21.5, 13.5 };
+    l.settle(&lv);
+    const lantern = l.onCaster(centre, false);
+    l.carrier = null;
+    l.sky = sky.at(day.NOON);
+    l.settle(&lv);
+    const noon = l.onCaster(centre, false);
+    std.debug.print("light reaching a body: dark {d:.3} (drawn {d:.3}), lantern {d:.3}, noon {d:.3}\n", .{ dark.reached(), dark.lit(), lantern.reached(), noon.reached() });
+    try std.testing.expect(dark.reached() <= FAINT);
+    try std.testing.expect(dark.lit() > FAINT);
+    try std.testing.expect(lantern.reached() > FAINT);
+    try std.testing.expect(noon.reached() > FAINT);
 }
 
 test "shadow receivers fade at sight and disappear in remembered or unseen ground" {
@@ -2111,7 +2165,7 @@ test "a flame flickers within a tenth or so either way and never jumps" {
 }
 
 test "a shadow fades through zero as a body passes directly under a torch" {
-    var s = Shine{ .ambient = AMBIENT };
+    var s = Shine{ .ambient = MEMORY };
     s.add(.{ .drawn = .{ 40.5, 30.5 }, .ground = .{ 40.5, 30.5 }, .colour = splat(1), .casts = true });
     var last: f32 = 0;
     var worst: f32 = 0;
@@ -2129,7 +2183,7 @@ test "a shadow fades through zero as a body passes directly under a torch" {
 }
 
 test "torch shadow crosses its light's horizontal line without flipping" {
-    var s = Shine{ .ambient = AMBIENT };
+    var s = Shine{ .ambient = MEMORY };
     s.add(.{ .drawn = .{ 43.5, 30.5 }, .ground = .{ 43.5, 30.5 }, .colour = splat(1), .casts = true });
     var last: ?[2]f32 = null;
     var worst: f32 = 0;
@@ -2515,7 +2569,7 @@ test "a body takes its torch's light from where the flame is drawn, and none fro
     try std.testing.expect(!near_carrier.lamp[0].casts);
     try std.testing.expect(open.lamp[0].casts);
     try std.testing.expectEqual(@as(usize, 0), carrying.n);
-    try std.testing.expect(lum(carrying.ambient) > lum(AMBIENT + CARRY) * 0.95);
+    try std.testing.expect(lum(carrying.ambient) > lum(MEMORY + CARRY) * 0.95);
 }
 
 const ART_H: f32 = @floatFromInt(look.SPRITE_PX);

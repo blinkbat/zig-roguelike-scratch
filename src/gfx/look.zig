@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
+const damage = @import("../play/damage.zig");
 const skillbar = @import("../play/skillbar.zig");
 const font = @import("font.zig");
 const ground = @import("ground.zig");
@@ -94,28 +95,31 @@ pub const Assets = struct {
         need.bodies.setUnion(actor.descent(k).intersectWith(PICTURED));
     }
 
-    /// Every picture a tile, body or prop has, a wall and a forest clump alone: what a palette shows.
+    /// Every picture a tile, body or prop has, every wall and forest shape among them: what an editor stroke may lay, so a
+    /// stroke never decodes a sheet again.
     pub fn everything() Assets {
-        var all = Assets{ .barrel = true, .grounds = GROUND_SHEETS, .bodies = PICTURED };
+        var all = Assets{ .barrel = true, .grounds = GROUND_SHEETS, .bodies = PICTURED, .wall = .initFull(), .forest = .initFull() };
         for (std.enums.values(grid.Tile)) |t| all.add(.{ .tile = t });
-        all.wall.set(WALL_CELL[0]);
-        all.forest.set(WALL_CELL[0]);
         return all;
     }
 
     pub fn merge(a: Assets, b: Assets) Assets {
-        return .{
-            .bodies = a.bodies.unionWith(b.bodies),
-            .tiles = a.tiles.unionWith(b.tiles),
-            .wall = a.wall.unionWith(b.wall),
-            .forest = a.forest.unionWith(b.forest),
-            .grounds = a.grounds.unionWith(b.grounds),
-            .barrel = a.barrel or b.barrel,
-        };
+        var out: Assets = undefined;
+        inline for (std.meta.fields(Assets)) |f| {
+            const x = @field(a, f.name);
+            const y = @field(b, f.name);
+            @field(out, f.name) = if (f.type == bool) x or y else x.unionWith(y);
+        }
+        return out;
     }
 
     pub fn count(need: Assets) usize {
-        return need.bodies.count() + need.tiles.count() + need.wall.count() + need.forest.count() + need.grounds.count() + @intFromBool(need.barrel);
+        var n: usize = 0;
+        inline for (std.meta.fields(Assets)) |f| {
+            const x = @field(need, f.name);
+            n += if (f.type == bool) @intFromBool(x) else x.count();
+        }
+        return n;
     }
 };
 
@@ -411,7 +415,12 @@ pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
 }
 
 pub fn overFloor(t: rl.Texture2D, ox: i32, oy: i32, cell: i32) void {
-    stretch(t, rect(ox, oy, grid.W * cell, grid.H * cell), LIT);
+    stretch(t, floorRect(ox, oy, cell), LIT);
+}
+
+/// The whole floor on screen, its top-left at `ox, oy`.
+pub fn floorRect(ox: i32, oy: i32, cell: i32) rl.Rectangle {
+    return rect(ox, oy, grid.W * cell, grid.H * cell);
 }
 
 /// Borrows `px`, packed `w` to a row: nothing to unload.
@@ -551,7 +560,6 @@ const FLOOR_BG = rgb(0x121116);
 const GRASS_BG = rgb(0x111a0e);
 /// The editor's wall where it has no texture.
 pub const BARE_WALL = rgb(0x1e1c24);
-/// The editor's ground of a procgen node, whose floor is only rolled in play.
 pub const TEXT = rgb(0xd8cdb4);
 pub const DIM = rgb(0x8c8672);
 pub const LIFE = rgb(0x9c2f2a);
@@ -788,10 +796,14 @@ fn skillLines(a: skillbar.Act) []const [4]f32 {
 }
 
 pub fn arrowInk(a: skillbar.Act) rl.Color {
-    return switch (a) {
-        .burning_arrow => FIRE,
-        .glacial_shot => COLD,
-        .shoot, .wait, .secondary, .juke => ARROW,
+    return elementInk(a.element() orelse return ARROW);
+}
+
+pub fn elementInk(e: damage.Element) rl.Color {
+    return switch (e) {
+        .fire => FIRE,
+        .cold => COLD,
+        .chaos, .lightning => ARROW,
     };
 }
 
@@ -985,16 +997,7 @@ test "floor shows through a wall's gaps; a tile with its own ground or backgroun
 
 test "the wall sheet's masks and face height are the ones its export script paints" {
     const alloc = std.testing.allocator;
-    const masks = try std.fs.cwd().readFileAlloc(alloc, "tools/tile_art/wall_masks.lua", 4096);
-    defer alloc.free(masks);
-    const list = masks[(std.mem.indexOf(u8, masks, "return {") orelse return error.NoList) + "return {".len ..];
-    var nums = std.mem.tokenizeAny(u8, list[0 .. std.mem.indexOfScalar(u8, list, '}') orelse return error.NoList], ", ");
-    var n: usize = 0;
-    while (nums.next()) |m| : (n += 1) {
-        try std.testing.expect(n < WALL_MASKS.len);
-        try std.testing.expectEqual(WALL_MASKS[n], try std.fmt.parseInt(u8, m, 10));
-    }
-    try std.testing.expectEqual(WALL_MASKS.len, n);
+    try ground.expectLuaList(u8, &WALL_MASKS, "tools/tile_art/wall_masks.lua");
     const script = try std.fs.cwd().readFileAlloc(alloc, "tools/tile_art/export_walls.lua", 1 << 16);
     defer alloc.free(script);
     const face = script[(std.mem.indexOf(u8, script, "local FACE=") orelse return error.NoFace) + "local FACE=".len ..];

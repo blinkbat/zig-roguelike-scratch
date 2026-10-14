@@ -30,7 +30,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: P
         carve.scatter(lv, rng, p.amount, on, p.tile, p.tile.solid() and p.amount < AMOUNT_MAX);
         return;
     }
-    carve.clumps(lv, carve.Noise.init(seed ^ 0x5CA7), @floatFromInt(p.clump), p.amount, on, p.tile);
+    carve.clumps(lv, carve.Noise.init(seed, .scatter), @floatFromInt(p.clump), p.amount, on, p.tile);
 }
 
 test "clumps take the share asked of the ground, and lone solids never touch" {

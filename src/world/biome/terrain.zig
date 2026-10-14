@@ -115,11 +115,11 @@ fn groundOf(b: Biome, v: f32, roll: f32) grid.Tile {
 
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const s: f32 = @floatFromInt(p.scale);
-    const elevation = carve.Noise.init(seed ^ 0x4E16);
-    const rainfall = carve.Noise.init(seed ^ 0x2A1F);
-    const drainage = carve.Noise.init(seed ^ 0xD2A1);
-    const warmth = carve.Noise.init(seed ^ 0x4EA7);
-    const grain = carve.Noise.init(seed ^ 0xF1E1);
+    const elevation = carve.Noise.init(seed, .elevation);
+    const rainfall = carve.Noise.init(seed, .rainfall);
+    const drainage = carve.Noise.init(seed, .drainage);
+    const warmth = carve.Noise.init(seed, .warmth);
+    const grain = carve.Noise.init(seed, .grain);
     var height: [grid.CELLS]f32 = undefined;
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);

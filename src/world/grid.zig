@@ -9,9 +9,6 @@ pub const CELLS: usize = @intCast(W * H);
 pub const COLS: usize = @intCast(W);
 pub const ROWS: usize = @intCast(H);
 pub const MIDDLE = P{ .x = @divTrunc(W, 2), .y = @divTrunc(H, 2) };
-/// The corners of the map inside its edge, both inclusive.
-pub const INNER_LO = P{ .x = 1, .y = 1 };
-pub const INNER_HI = P{ .x = W - 2, .y = H - 2 };
 
 pub const NO_ONE: u16 = 0;
 pub const MAX_TORCHES: usize = 32;
@@ -305,12 +302,12 @@ pub const Level = struct {
     }
 
     pub fn clamp(p: P) P {
-        return .{ .x = std.math.clamp(p.x, 0, W - 1), .y = std.math.clamp(p.y, 0, H - 1) };
+        return Box.inMap(0).clamp(p);
     }
 
     /// The nearest cell off the map's edge.
     pub fn inset(p: P) P {
-        return .{ .x = std.math.clamp(p.x, INNER_LO.x, INNER_HI.x), .y = std.math.clamp(p.y, INNER_LO.y, INNER_HI.y) };
+        return Box.inMap(1).clamp(p);
     }
 
     /// Cells in from the nearest edge: 0 on the rim.
@@ -563,6 +560,11 @@ pub const Box = struct {
 
     pub fn onEdge(b: Box, p: P) bool {
         return b.holds(p) and (p.x == b.lo.x or p.y == b.lo.y or p.x == b.hi.x - 1 or p.y == b.hi.y - 1);
+    }
+
+    /// Its cell nearest `p`.
+    pub fn clamp(b: Box, p: P) P {
+        return .{ .x = std.math.clamp(p.x, b.lo.x, b.hi.x - 1), .y = std.math.clamp(p.y, b.lo.y, b.hi.y - 1) };
     }
 };
 

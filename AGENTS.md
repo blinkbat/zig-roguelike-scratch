@@ -104,8 +104,8 @@ for the change asked for.
   the start or a door reaches, shaded on the map, foes on it) and everything on it, a row showing it on the map; the
   object viewer (`Desk.OBJECTS_CAPTION`) shows every tile, body and prop with what the game holds it to be. Every
   press is a gesture, and all a gesture changes is one undo (`Editor.gesture` then `bank` on its first change;
-  whole-world snapshots, `UNDO_CAP` of them); a gesture let go of, as a graph drag Esc or RMB ends, is put back with
-  no undo (`abandon`). Leaving, quitting, opening and New ask first when there are unsaved changes
+  whole-world snapshots, `UNDO_CAP` of them); a graph drag banks once released (`keepDrag`), and one Esc or RMB ends
+  is put back with no undo and the redo kept (`drop`). Leaving, quitting, opening and New ask first when there are unsaved changes
   (`Editor.request`); New and Save as name a world beside the one open, and Open starts in its folder. Esc backs out
   one step at a time, the last out to the title. F5 plays the world from its start and F6 from the cursor, unsaved;
   F5, F6 or the pause menu comes back. The status line names what is under the cursor and the tool's state, then a

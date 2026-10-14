@@ -123,8 +123,8 @@ pub const Status = enum {
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
             .bleeding => look.BLEED,
-            .burning => look.FIRE,
-            .chilled => look.COLD,
+            .burning => look.elementInk(.fire),
+            .chilled => look.elementInk(.cold),
         };
     }
 

@@ -129,7 +129,7 @@ fn clearOfTowers(curtain: grid.Box, towers: u8, at: P, size: P) bool {
     if (towers == 0) return true;
     const r = towerReach(towers) + WELL_GAP;
     for (carve.corners(curtain)) |c| {
-        const q = P{ .x = std.math.clamp(c.x, at.x, at.x + size.x - 1), .y = std.math.clamp(c.y, at.y, at.y + size.y - 1) };
+        const q = grid.Box.sized(at, size.x, size.y).clamp(c);
         if (carve.inDisc(c, q, @floatFromInt(r))) return false;
     }
     return true;

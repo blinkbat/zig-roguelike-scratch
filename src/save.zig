@@ -131,8 +131,12 @@ fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
 
 /// Ends a file `write` began in `out` with its sum, in the room `write` kept, so it may run off the frame.
 fn seal(out: *std.ArrayList(u8)) void {
-    const sum = std.hash.Wyhash.hash(0, out.items[HEAD..]);
+    const sum = sumOf(out.items[HEAD..]);
     out.appendSliceAssumeCapacity(std.mem.asBytes(&sum));
+}
+
+fn sumOf(bytes: []const u8) u64 {
+    return std.hash.Wyhash.hash(0, bytes);
 }
 
 fn header(bytes: *[]const u8) Error!void {
@@ -153,7 +157,7 @@ fn payload(bytes: []const u8) Error![]const u8 {
     var sum: u64 = undefined;
     _ = store.take(&tail, &sum);
     b = b[0 .. b.len - SUM];
-    if (sum != std.hash.Wyhash.hash(0, b)) return error.Damaged;
+    if (sum != sumOf(b)) return error.Damaged;
     return b;
 }
 

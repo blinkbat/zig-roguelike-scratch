@@ -1,6 +1,7 @@
 const std = @import("std");
 const input = @import("../core/input.zig");
 const burning = @import("burning.zig");
+const damage = @import("damage.zig");
 const glacial = @import("glacial.zig");
 const juke = @import("juke.zig");
 const menu = @import("../ui/menu.zig");
@@ -53,6 +54,22 @@ pub const Act = enum {
             .burning_arrow => burning.COST,
             .glacial_shot => glacial.COST,
             .shoot, .wait, .secondary => 0,
+        };
+    }
+
+    /// An elemental arrow's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
+    pub fn arrow(comptime a: Act) type {
+        return switch (a) {
+            .burning_arrow => burning,
+            .glacial_shot => glacial,
+            .shoot, .juke, .wait, .secondary => @compileError("no element"),
+        };
+    }
+
+    pub fn element(a: Act) ?damage.Element {
+        return switch (a) {
+            inline .burning_arrow, .glacial_shot => |e| arrow(e).ELEMENT,
+            .shoot, .juke, .wait, .secondary => null,
         };
     }
 

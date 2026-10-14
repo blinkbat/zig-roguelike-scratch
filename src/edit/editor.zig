@@ -95,6 +95,12 @@ const WARN = look.EDIT_WARN;
 const START = look.body(actor.HERO);
 const START_MARK = [_]u8{ START.ch, ' ' };
 
+fn kindName(k: actor.Kind) [:0]const u8 {
+    return switch (k) {
+        inline else => |f| comptime menu.capital(actor.row(f).name),
+    };
+}
+
 /// A foe's tool for each kind in `actor.FOES`, among the rest.
 const Tool = union(enum) {
     /// The palette's tiles: the first ink with `Desk.PAINT_CAPTION`, the second with `Desk.ERASE_CAPTION`.
@@ -150,9 +156,7 @@ const Tool = union(enum) {
 
     fn name(t: Tool) [:0]const u8 {
         return switch (t) {
-            .foe => |k| switch (k) {
-                inline else => |f| comptime menu.capital(actor.row(f).name),
-            },
+            .foe => |k| kindName(k),
             inline else => |_, tag| comptime menu.named(tag),
         };
     }
@@ -230,19 +234,24 @@ const Shape = enum {
         };
     }
 
-    /// Laid when the press that began it lets go.
-    fn dragged(s: Shape) bool {
+    /// What it drags out, laid when the press that began it lets go.
+    fn dragged(s: Shape) ?Spanned {
         return switch (s) {
-            .line, .rect, .box, .select => true,
-            .brush, .fill => false,
+            inline .line, .rect, .box, .select => |t| @field(Spanned, @tagName(t)),
+            .brush, .fill => null,
         };
     }
 };
 
+/// The shapes dragged out from corner to corner or end to end.
+const Spanned = enum { line, rect, box, select };
+
 const SHAPES = std.enums.values(Shape);
 
 comptime {
-    std.debug.assert(SHAPES.len == Desk.SHAPE_KEYS.len);
+    const named = std.meta.fields(@TypeOf(Desk.SHAPE_KEYS_BY));
+    std.debug.assert(SHAPES.len == named.len);
+    for (SHAPES, named) |s, f| std.debug.assert(std.mem.eql(u8, @tagName(s), f.name));
 }
 
 const SEP = menu.SEP;
@@ -346,10 +355,10 @@ fn Text(comptime N: usize) type {
 const Field = Text(FIELD_MAX);
 const Path = Text(PATH_MAX);
 
-/// A node's box dragged on the graph; `was` is where it stood, for a drag let go of.
+/// A node's box dragged on the graph; `was` is where it stood, which `drop` puts it back to.
 const Drag = struct { node: usize, grab: P, from: P, was: P, moved: bool = false };
 /// A shape dragged on the map, laid when its press lets go: with the second ink when `erase`.
-const Span = struct { from: P, erase: bool, shape: Shape };
+const Span = struct { from: P, erase: bool, shape: Spanned };
 
 /// Cells copied off a bespoke node, from its top-left: tiles, barrels, torches and foes.
 const Board = struct {
@@ -412,8 +421,6 @@ pub const Editor = struct {
     /// The step the file on disk matches; null once no step does.
     saved_at: ?usize = 0,
     banked: bool = true,
-    /// The world as it was banked by the gesture under way, for a gesture let go of; false once none was.
-    gesture_banked: bool = false,
     file: Path = .{},
     node: usize = 0,
     tool: Tool = .paint,
@@ -426,7 +433,7 @@ pub const Editor = struct {
     /// The panel's lower part: its top, and how many node rows fit it.
     lower_top: i32 = 0,
     node_rows: usize = 1,
-    /// Pixels of the generator scrolled off the top of its part of the panel, and the most there are.
+    /// Pixels of the generator or the Things list scrolled off the top of the panel's lower part, and the most there are.
     gen_top: i32 = 0,
     gen_most: i32 = 0,
     /// Set while a part of the panel that scrolls is drawn: nothing outside it is hot.
@@ -496,8 +503,6 @@ pub const Editor = struct {
     desk: Desk = .{},
     action: Action = .none,
     tip: ?[:0]const u8 = null,
-    /// A tip made as it is drawn, which `drawTip` reads after its maker returns.
-    tip_buf: [LINE]u8 = undefined,
     said: menu.Note(LINE) = .{},
     said_t: f32 = 0,
 
@@ -596,6 +601,11 @@ pub const Editor = struct {
         return BRUSHES[ed.brush];
     }
 
+    /// One size bigger or smaller, as `by`'s sign says, within `BRUSHES`.
+    fn stepBrush(ed: *Editor, by: i32) void {
+        ed.brush = @intCast(std.math.clamp(@as(i32, @intCast(ed.brush)) + std.math.sign(by), 0, @as(i32, BRUSHES.len - 1)));
+    }
+
     fn say(ed: *Editor, comptime fmt: []const u8, args: anytype) void {
         ed.said.say(fmt, args);
         ed.said_t = SAY_S;
@@ -605,19 +615,6 @@ pub const Editor = struct {
     fn gesture(ed: *Editor) void {
         ed.scratch.* = ed.world.*;
         ed.banked = false;
-        ed.gesture_banked = false;
-    }
-
-    /// The gesture under way let go of: the world as it found it, and no undo step for it.
-    fn abandon(ed: *Editor) void {
-        if (!ed.gesture_banked) return;
-        ed.world.* = ed.scratch.*;
-        ed.hist_len -= 1;
-        ed.hist_at = ed.hist_len;
-        ed.dirty = ed.saved_at != ed.hist_at;
-        ed.gesture_banked = false;
-        ed.banked = true;
-        ed.restamp();
     }
 
     fn bank(ed: *Editor) void {
@@ -627,7 +624,6 @@ pub const Editor = struct {
             return;
         }
         ed.banked = true;
-        ed.gesture_banked = true;
         ed.hist_len = ed.hist_at;
         if (ed.saved_at) |s| {
             if (s > ed.hist_len) ed.saved_at = null;
@@ -660,20 +656,19 @@ pub const Editor = struct {
 
     /// The world and the step swap places, so the same step redoes it.
     fn swapStep(ed: *Editor, k: usize) void {
-        ed.drag = null;
-        ed.gesture_banked = false;
+        ed.release();
         ed.selection = null;
         ed.delete_armed = null;
         ed.scratch.* = ed.world.*;
         ed.world.* = ed.kept(k).*;
         ed.kept(k).* = ed.scratch.*;
         ed.banked = true;
-        ed.release();
         ed.clampSelection();
         ed.restamp();
     }
 
     fn undo(ed: *Editor) void {
+        ed.keepDrag();
         if (ed.hist_at == 0) return ed.say("Nothing to undo", .{});
         ed.hist_at -= 1;
         ed.swapStep(ed.hist_at);
@@ -682,6 +677,7 @@ pub const Editor = struct {
     }
 
     fn redo(ed: *Editor) void {
+        ed.keepDrag();
         if (ed.hist_at == ed.hist_len) return ed.say("Nothing to redo", .{});
         ed.swapStep(ed.hist_at);
         ed.hist_at += 1;
@@ -689,12 +685,17 @@ pub const Editor = struct {
         ed.say("Redone ({d} more)", .{ed.hist_len - ed.hist_at});
     }
 
+    /// A box dragged on the graph kept where it stands, its own undo step.
+    fn keepDrag(ed: *Editor) void {
+        const dr = ed.drag orelse return;
+        if (dr.moved and !ed.world.node[dr.node].pos.eq(dr.was)) ed.bank();
+        ed.drag = null;
+    }
+
     /// A box dragged on the graph is put back where it stood.
     fn drop(ed: *Editor) void {
         ed.letGo();
-        if (ed.drag) |dr| {
-            if (dr.moved) ed.abandon();
-        }
+        if (ed.drag) |dr| ed.world.node[dr.node].pos = dr.was;
         ed.drag = null;
         ed.linking = null;
         ed.popup = null;
@@ -715,7 +716,7 @@ pub const Editor = struct {
     fn setShape(ed: *Editor, s: Shape) void {
         if (s != ed.shape) ed.release();
         ed.shape = s;
-        if (s != .select and !ed.tool.broad() and @as(Tool, .paint).fits(ed.here())) ed.setTool(.paint);
+        if (s != .select and !ed.tool.broad() and ed.paintable()) ed.setTool(.paint);
     }
 
     fn setView(ed: *Editor, v: View) void {
@@ -798,7 +799,7 @@ pub const Editor = struct {
         var f = flood orelse return is;
         while (f.next()) |_| {}
         for (0..grid.CELLS) |i| {
-            if (ed.lv.tile[i].solid() or f.dist[i] >= 0) continue;
+            if (!ed.cutOff(i)) continue;
             is.cut_off += 1;
             if (is.reach_from == null) is.reach_from = grid.Level.of(i);
         }
@@ -806,6 +807,11 @@ pub const Editor = struct {
             if (f.dist[grid.Level.idx(foe.at)] < 0) is.foes_cut_off += 1;
         }
         return is;
+    }
+
+    /// Open ground `issuesOf`' walk did not reach; `reach_dist` is its flood's.
+    fn cutOff(ed: *const Editor, i: usize) bool {
+        return !ed.lv.tile[i].solid() and ed.reach_dist[i] < 0;
     }
 
     fn standable(ed: *Editor, from: atlas.Start) bool {
@@ -837,6 +843,11 @@ pub const Editor = struct {
 
     fn here(ed: *Editor) *atlas.Node {
         return &ed.world.node[ed.node];
+    }
+
+    /// Whether the node shown takes ink, as a bespoke node does.
+    fn paintable(ed: *Editor) bool {
+        return @as(Tool, .paint).fits(ed.here());
     }
 
     fn rolled(ed: *Editor) ?*atlas.Procgen {
@@ -879,6 +890,7 @@ pub const Editor = struct {
     }
 
     fn save(ed: *Editor) bool {
+        ed.keepDrag();
         ed.world.save(ed.alloc, ed.path()) catch |e| {
             ed.say("{s} did not save ({s})", .{ ed.path(), @errorName(e) });
             return false;
@@ -988,12 +1000,12 @@ pub const Editor = struct {
         });
     }
 
-    /// The map's own press let go: no stroke nor shape under way.
     fn putAwayPaste(ed: *Editor) void {
         ed.pasting = false;
         ed.say("Paste put away", .{});
     }
 
+    /// The map's own press let go: no stroke nor shape under way.
     fn letGo(ed: *Editor) void {
         ed.stroke = .none;
         ed.stroke_at = null;
@@ -1153,8 +1165,8 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     if (d.reroll) reroll(ed);
     if (d.fit) fitView(ed, c);
     if (d.zoom_in or d.zoom_out) zoom(ed, c, if (d.zoom_in) 1 else -1, .{ .x = @intFromFloat(c.x + c.width / 2), .y = @intFromFloat(c.y + c.height / 2) });
-    if (d.smaller) ed.brush -|= 1;
-    if (d.bigger) ed.brush = @min(ed.brush + 1, BRUSHES.len - 1);
+    if (d.smaller) ed.stepBrush(-1);
+    if (d.bigger) ed.stepBrush(1);
     if (d.tool) |i| ed.setTool(TOOLS[i]);
     if (d.shape) |i| ed.setShape(SHAPES[i]);
     if (ed.view == .map) {
@@ -1163,7 +1175,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
         if (d.delete) clearSelection(ed);
         if (d.paste) startPaste(ed);
     }
-    if (d.erase_hit and ed.drag != null) ed.drop();
+    if (d.erase_hit and ed.drag != null) return ed.drop();
     if (ed.modal != .none or ed.renaming) return;
     if (ed.popup) |pp| {
         if (d.clicked() and !ed.mouseIn(popupRect(pp, g.screen.y))) {
@@ -1239,8 +1251,7 @@ fn modalKeys(ed: *Editor) void {
             if (d.wheel != 0) ed.listed_top = if (d.wheel > 0) ed.listed_top -| 1 else @min(ed.listed_top + 1, ed.listing.n -| MODAL_ROWS);
             if (d.nav != 0 and ed.listing.n > 0) {
                 ed.listed_at = mathx.wrap(ed.listed_at, d.nav, ed.listing.n);
-                if (ed.listed_at < ed.listed_top) ed.listed_top = ed.listed_at;
-                if (ed.listed_at >= ed.listed_top + MODAL_ROWS) ed.listed_top = ed.listed_at + 1 - MODAL_ROWS;
+                ed.listed_top = mathx.reveal(ed.listed_top, ed.listed_at, MODAL_ROWS);
             }
             if (d.enter and ed.listed_at < ed.listing.n) ed.openListed(ed.listed_at);
         },
@@ -1276,7 +1287,7 @@ fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const p = ed.mouseCell(c);
     if (ed.pasting) {
         if (over and d.paint_hit and grid.Level.inside(p)) {
-            if (@as(Tool, .paint).fits(ed.here())) layBoard(ed, p) else ed.say(GENERATED, .{});
+            if (ed.paintable()) layBoard(ed, p) else ed.say(GENERATED, .{});
         }
         if (d.erase_hit) ed.putAwayPaste();
         return;
@@ -1341,11 +1352,11 @@ fn brushWith(ed: *Editor, p: P, erase: bool) void {
 }
 
 /// The shape a press begins dragging out: a selection with any tool, a rectangle with Shift.
-fn spanOf(ed: *Editor, shift: bool) ?Shape {
+fn spanOf(ed: *Editor, shift: bool) ?Spanned {
     if (ed.shape == .select) return .select;
     if (!ed.tool.broad() or !ed.tool.fits(ed.here())) return null;
     if (shift) return .rect;
-    return if (ed.shape.dragged()) ed.shape else null;
+    return ed.shape.dragged();
 }
 
 /// From `s.from` to `to`, as the press let go there.
@@ -1368,14 +1379,14 @@ fn laySpan(ed: *Editor, s: Span, to: P) void {
             ed.selection = b;
             ed.say("{d} by {d} selected: {s} copies, {s} cuts, {s} clears", .{ b.width(), b.height(), Desk.COPY_CAPTION, Desk.CUT_CAPTION, Desk.DELETE_CAPTION });
         },
-        .brush, .fill => unreachable,
     }
 }
 
 /// The ground of one tile joined to `p` side by side, painted the ink; doors keep theirs.
 fn fill(ed: *Editor, p: P, second: bool) void {
     const b = &ed.plan().bespoke;
-    const from = b.tile[grid.Level.idx(p)];
+    const at = grid.Level.idx(p);
+    const from = b.tile[at];
     const to = ed.ink[@intFromBool(second)];
     if (from == to) return;
     var seen = std.StaticBitSet(grid.CELLS).initEmpty();
@@ -1405,8 +1416,9 @@ fn pickUp(ed: *Editor, p: P, second: bool) void {
     if (!grid.Level.inside(p)) return;
     ed.stroke = .none;
     const nd = ed.here();
+    const i = grid.Level.idx(p);
     const picked: ?Tool = switch (nd.plan) {
-        .bespoke => |*b| if (b.foeAt(p)) |f| .{ .foe = b.foe[f].kind } else if (b.barrel[grid.Level.idx(p)]) .barrel else if (b.torch.has(p)) .torch else if (nd.doorAt(p) != null) .door else null,
+        .bespoke => |*b| if (b.foeAt(p)) |f| .{ .foe = b.foe[f].kind } else if (b.barrel[i]) .barrel else if (b.torch.has(p)) .torch else if (nd.doorAt(p) != null) .door else null,
         .procgen => if (nd.doorAt(p) != null) .door else null,
     };
     if (picked) |t| {
@@ -1475,16 +1487,15 @@ fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
             .x = std.math.clamp(d.mouse.x - dr.grab.x - @as(i32, @intFromFloat(c.x)) + @as(i32, @intFromFloat(ed.gcam[0])), -lim, lim),
             .y = std.math.clamp(d.mouse.y - dr.grab.y - @as(i32, @intFromFloat(c.y)) + @as(i32, @intFromFloat(ed.gcam[1])), -lim, lim),
         };
-        const nd = &ed.world.node[dr.node];
-        if (nd.pos.eq(at)) return;
-        nd.pos = at;
-        ed.bank();
+        ed.world.node[dr.node].pos = at;
         return;
     }
     if (!dr.moved) {
-        ed.goTo(dr.node);
-    } else if (ed.world.node[dr.node].pos.eq(dr.was)) ed.abandon();
-    ed.drag = null;
+        const n = dr.node;
+        ed.drag = null;
+        return ed.goTo(n);
+    }
+    ed.keepDrag();
 }
 
 /// Both the graph drag and the map's link tool.
@@ -1506,6 +1517,7 @@ fn zoom(ed: *Editor, c: rl.Rectangle, by: i32, anchor: P) void {
     const was = ed.px();
     ed.zoom = @intCast(next);
     for (0..2) |k| ed.cam[k] += m[k] / was - m[k] / ed.px();
+    ed.stroke_at = null;
 }
 
 /// The biggest zoom the whole map fits the canvas at, centred.
@@ -1515,6 +1527,7 @@ fn fitView(ed: *Editor, c: rl.Rectangle) void {
         if (@as(f32, grid.W) * z <= c.width and @as(f32, grid.H) * z <= c.height) ed.zoom = i;
     }
     ed.lookAt(c, grid.MIDDLE);
+    ed.stroke_at = null;
 }
 
 /// A procgen node's preview rolled again; nothing it holds changes.
@@ -1649,8 +1662,9 @@ fn copySelection(ed: *Editor, cut: bool) void {
     var cells = s.cells();
     while (cells.next()) |p| {
         const at = bd.at(p.sub(s.lo));
-        bd.tile[at] = b.tile[grid.Level.idx(p)];
-        bd.barrel[at] = b.barrel[grid.Level.idx(p)];
+        const i = grid.Level.idx(p);
+        bd.tile[at] = b.tile[i];
+        bd.barrel[at] = b.barrel[i];
     }
     for (b.torches()) |t| {
         if (s.holds(t)) _ = bd.torch.add(t.sub(s.lo));
@@ -1692,7 +1706,7 @@ fn clearSelection(ed: *Editor) void {
 
 fn startPaste(ed: *Editor) void {
     if (ed.board.size.x == 0) return ed.say("Nothing copied yet", .{});
-    if (!@as(Tool, .paint).fits(ed.here())) return ed.say(GENERATED, .{});
+    if (!ed.paintable()) return ed.say(GENERATED, .{});
     ed.drop();
     ed.pasting = true;
     ed.say("{s} lays the copy with its corner at the cursor; {s} or {s} puts it away", .{ Desk.PAINT_CAPTION, Desk.ERASE_CAPTION, Desk.BACK_CAPTION });
@@ -1706,9 +1720,10 @@ fn layBoard(ed: *Editor, at: P) void {
     while (cells.next()) |q| {
         const p = at.add(q);
         if (!grid.Level.inside(p)) continue;
-        paintTile(ed, p, bd.tile[bd.at(q)]);
+        const k = bd.at(q);
+        paintTile(ed, p, bd.tile[k]);
         const i = grid.Level.idx(p);
-        if (bd.barrel[bd.at(q)] and !b.barrel[i] and ed.here().barrelGoes(b, p)) {
+        if (bd.barrel[k] and !b.barrel[i] and ed.here().barrelGoes(b, p)) {
             b.barrel[i] = true;
             ed.changed();
         }
@@ -2002,8 +2017,7 @@ fn drawNodes(ed: *Editor, g: *game.Game, top: i32) void {
     var detail_buf: [LINE]u8 = undefined;
     ed.node_rows = @max(1, @as(usize, @intCast(@divTrunc(@max(0, g.screen.y - top), NODE_H))));
     if (ed.revealed != ed.node) {
-        if (ed.node < ed.scroll) ed.scroll = ed.node;
-        if (ed.node >= ed.scroll + ed.node_rows) ed.scroll = ed.node + 1 - ed.node_rows;
+        ed.scroll = mathx.reveal(ed.scroll, ed.node, ed.node_rows);
         ed.revealed = ed.node;
     }
     ed.scroll = @min(ed.scroll, ed.world.node_n -| ed.node_rows);
@@ -2065,7 +2079,7 @@ fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
         .{ .tip = keyed("Smaller", Desk.BRUSH_CAPTION), .live = ed.brush > 0 },
         .{ .tip = keyed("Bigger", Desk.BRUSH_CAPTION), .live = ed.brush < BRUSHES.len - 1 },
     });
-    if (by != 0) ed.brush = @intCast(std.math.clamp(@as(i32, @intCast(ed.brush)) + std.math.sign(by), 0, @as(i32, BRUSHES.len - 1)));
+    if (by != 0) ed.stepBrush(by);
     const inks_x = PAD + INNER_W - 2 * SWATCH - GAP;
     for (ed.ink, 0..) |t, k| {
         const r = look.rect(inks_x + @as(i32, @intCast(k)) * (SWATCH + GAP), y - 4, SWATCH, SWATCH);
@@ -2109,16 +2123,8 @@ const PALETTE_TIPS = blk: {
 fn drawThings(ed: *Editor, g: *game.Game, top: i32) void {
     var buf: [LINE]u8 = undefined;
     var name: [atlas.TITLE_MAX]u8 = undefined;
-    const area = lowerArea(g, top);
-    const shown: i32 = @intFromFloat(area.height);
-    ed.clip = area;
-    scissor(area);
-    defer {
-        rl.endScissorMode();
-        ed.clip = null;
-    }
-    ed.gen_top = std.math.clamp(ed.gen_top, 0, ed.gen_most);
-    var y = top - ed.gen_top;
+    var y = beginScroll(ed, g, top);
+    defer endScroll(ed);
     const is = ed.issues;
     section(g, &y, "Problems");
     var wrong = false;
@@ -2151,19 +2157,19 @@ fn drawThings(ed: *Editor, g: *game.Game, top: i32) void {
     }
     switch (ed.plan().*) {
         .bespoke => |*b| {
-            for (b.foes()) |f| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{}  {d},{d}", .{ Capital{ .s = actor.row(f.kind).name }, f.at.x, f.at.y }) catch "", look.TEXT, f.at);
+            for (b.foes()) |f| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}", .{ kindName(f.kind), f.at.x, f.at.y }) catch "", look.TEXT, f.at);
             for (b.torches()) |t| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "Torch  {d},{d}", .{ t.x, t.y }) catch "", look.TEXT, t);
-            for (b.barrel, 0..) |on, i| {
-                if (!on) continue;
+            for (&b.barrel, 0..) |*on, i| {
+                if (!on.*) continue;
                 const p = grid.Level.of(i);
                 thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "Barrel  {d},{d}", .{ p.x, p.y }) catch "", look.TEXT, p);
             }
         },
         .procgen => for (ed.rolled_foes.slice()) |a| {
-            thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{}  {d},{d}", .{ Capital{ .s = actor.row(a.kind).name }, a.at.x, a.at.y }) catch "", look.TEXT, a.at);
+            thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}", .{ kindName(a.kind), a.at.x, a.at.y }) catch "", look.TEXT, a.at);
         },
     }
-    ed.gen_most = @max(0, y + ed.gen_top - top - shown + PAD);
+    scrolledTo(ed, g, top, y);
 }
 
 fn thingRow(ed: *Editor, g: *game.Game, y: *i32, line: [:0]const u8, col: rl.Color, at: ?P) void {
@@ -2213,19 +2219,31 @@ fn lowerArea(g: *const game.Game, top: i32) rl.Rectangle {
     return look.rect(0, top, PANEL_W, @max(0, g.screen.y - top));
 }
 
+/// The panel's lower part clipped for a list scrolled by `gen_top`: where its first row goes.
+fn beginScroll(ed: *Editor, g: *const game.Game, top: i32) i32 {
+    const area = lowerArea(g, top);
+    ed.clip = area;
+    scissor(area);
+    ed.gen_top = std.math.clamp(ed.gen_top, 0, ed.gen_most);
+    return top - ed.gen_top;
+}
+
+fn endScroll(ed: *Editor) void {
+    rl.endScissorMode();
+    ed.clip = null;
+}
+
+/// The list drawn from `beginScroll` ends at `end`, scrolled as it is.
+fn scrolledTo(ed: *Editor, g: *const game.Game, top: i32, end: i32) void {
+    const shown: i32 = @intFromFloat(lowerArea(g, top).height);
+    ed.gen_most = @max(0, end + PAD + ed.gen_top - top - shown);
+}
+
 fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void {
     const was = pg.*;
     const fo = &pg.foes;
-    const area = lowerArea(g, top);
-    const shown: i32 = @intFromFloat(area.height);
-    ed.clip = area;
-    scissor(area);
-    defer {
-        rl.endScissorMode();
-        ed.clip = null;
-    }
-    ed.gen_top = std.math.clamp(ed.gen_top, 0, ed.gen_most);
-    var y = top - ed.gen_top;
+    var y = beginScroll(ed, g, top);
+    defer endScroll(ed);
     if (nodeSwitch(ed, g, &y)) return;
     y += BLOCK_GAP;
     section(g, &y, "Base");
@@ -2259,7 +2277,7 @@ fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void 
     }
     if (drop) |i| _ = fo.dropMakeup(i);
     if (button(ed, g, cellOfRow(y, 0, 1), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
-    ed.gen_most = @max(0, y + ROW_H + PAD + ed.gen_top - top - shown);
+    scrolledTo(ed, g, top, y + ROW_H);
     refit(ed, pg, was);
 }
 
@@ -2815,7 +2833,8 @@ fn hover(ed: *Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
     if (nd.unrolled()) wr.writeAll(" (this roll)") catch {};
     switch (nd.plan) {
         .bespoke => |*b| {
-            if (b.barrel[grid.Level.idx(p)]) wr.writeAll(", a barrel") catch {};
+            const i = grid.Level.idx(p);
+            if (b.barrel[i]) wr.writeAll(", a barrel") catch {};
             if (b.torch.has(p)) wr.writeAll(", a torch") catch {};
             if (b.foeAt(p)) |f| wr.print(", a {s}", .{actor.row(b.foe[f].kind).name}) catch {};
         },
@@ -2881,7 +2900,7 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     if (ed.lower == .things and ed.issues.cut_off > 0) {
         var cells = grid.Cells.of(v.lo, v.hi);
         while (cells.next()) |p| {
-            if (!ed.lv.tile[grid.Level.idx(p)].solid() and ed.reach_dist[grid.Level.idx(p)] < 0) rl.drawRectangleRec(ed.cellRect(c, p), CUT_OFF);
+            if (ed.cutOff(grid.Level.idx(p))) rl.drawRectangleRec(ed.cellRect(c, p), CUT_OFF);
         }
     }
     if (ed.px() >= GRID_PX) drawGrid(ed, c, v);
@@ -2960,9 +2979,10 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         var cells = grid.Box.sized(.{ .x = 0, .y = 0 }, bd.size.x, bd.size.y).cells();
         while (cells.next()) |q| {
             const p = m.add(q);
-            if (grid.Level.inside(p)) ghostTile(g, bd.tile[bd.at(q)], ed.cellRect(c, p));
+            const k = bd.at(q);
+            if (grid.Level.inside(p)) ghostInk(ed, g, c, p, bd.tile[k]);
         }
-        outlineCells(ed, c, grid.Box.sized(m, bd.size.x, bd.size.y), PICKED);
+        outlineCells(ed, c, grid.Box.sized(m, bd.size.x, bd.size.y), if (ed.paintable()) PICKED else WARN);
         return;
     }
     if (ed.span) |s| {
@@ -2973,7 +2993,7 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
             .rect, .box => {
                 var cells = b.cells();
                 while (cells.next()) |p| {
-                    if (s.shape == .rect or b.onEdge(p)) ghostTile(g, ed.ink[@intFromBool(s.erase)], ed.cellRect(c, p));
+                    if (s.shape == .rect or b.onEdge(p)) ghostInk(ed, g, c, p, ed.ink[@intFromBool(s.erase)]);
                 }
             },
             .line => {
@@ -2981,7 +3001,6 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
                 var ray = grid.Ray.init(s.from, to);
                 while (ray.next()) |q| ghostBrush(ed, g, c, q, s.erase);
             },
-            .brush, .fill => unreachable,
         }
         outlineCells(ed, c, b, PICKED);
         return;
@@ -3005,12 +3024,16 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
 }
 
 fn ghostBrush(ed: *Editor, g: *game.Game, c: rl.Rectangle, p: P, second: bool) void {
-    const ok = ed.tool.fits(ed.here());
     var cells = brushBox(p, ed.brushSize()).cells();
     while (cells.next()) |q| {
-        if (!grid.Level.inside(q)) continue;
-        if (ok) ghostTile(g, ed.ink[@intFromBool(second)], ed.cellRect(c, q)) else rl.drawRectangleRec(ed.cellRect(c, q), CUT_OFF);
+        if (grid.Level.inside(q)) ghostInk(ed, g, c, q, ed.ink[@intFromBool(second)]);
     }
+}
+
+/// As `paintTile` would lay `t` at `p`.
+fn ghostInk(ed: *Editor, g: *game.Game, c: rl.Rectangle, p: P, t: grid.Tile) void {
+    const r = ed.cellRect(c, p);
+    if (ed.paintable() and ed.doorAt(p) == null) ghostTile(g, t, r) else rl.drawRectangleRec(r, CUT_OFF);
 }
 
 fn ghostTile(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
@@ -3218,7 +3241,6 @@ const VIEW_BIG: f32 = 192;
 
 /// Every tile, body and prop as the game draws it, and what each is; `Desk.NAV_CAPTION` or a click picks one.
 fn drawObjects(ed: *Editor, g: *game.Game) void {
-    var buf: [LINE]u8 = undefined;
     const rows: i32 = @intCast(std.math.divCeil(usize, SEEN.len, VIEW_COLS) catch unreachable);
     const grid_w = @as(i32, VIEW_COLS) * VIEW_CELL;
     const h = PAD * 2 + HEAD + PAD + rows * VIEW_CELL + ROW_STEP;
@@ -3228,13 +3250,14 @@ fn drawObjects(ed: *Editor, g: *game.Game) void {
     rl.drawRectangle(x, y, w, h, PANEL_BG);
     rl.drawRectangleLines(x, y, w, h, look.EDGE);
     y += PAD;
-    g.face.draw("Objects", x + PAD, y, HEAD, look.TEXT);
-    g.face.draw(Desk.NAV_CAPTION ++ " or a click picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes", x + PAD + 140, y + 4, SMALL, look.DIM);
+    const title = "Objects";
+    g.face.draw(title, x + PAD, y, HEAD, look.TEXT);
+    g.face.draw(Desk.NAV_CAPTION ++ " or a click picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes", x + PAD + g.face.width(title, HEAD) + PAD, y + 4, SMALL, look.DIM);
     y += HEAD + PAD;
     for (SEEN, 0..) |s, i| {
         const r = look.rect(x + PAD + @as(i32, @intCast(i % VIEW_COLS)) * VIEW_CELL, y + @as(i32, @intCast(i / VIEW_COLS)) * VIEW_CELL, VIEW_CELL - GAP, VIEW_CELL - GAP);
         const hh = hot(ed, r, true, true, null);
-        if (hh.hot) ed.tip = seenName(s, &ed.tip_buf);
+        if (hh.hot) ed.tip = seenName(s);
         plate(r, i == ed.seen_at, hh.hot);
         seenPicture(g, s, .{ .x = r.x + (r.width - VIEW_PIC) / 2, .y = r.y + 4, .width = VIEW_PIC, .height = VIEW_PIC });
         if (hh.hit) ed.seen_at = i;
@@ -3245,7 +3268,7 @@ fn drawObjects(ed: *Editor, g: *game.Game) void {
     seenPicture(g, s, .{ .x = @floatFromInt(dx), .y = @floatFromInt(dy), .width = VIEW_BIG, .height = VIEW_BIG });
     rl.drawRectangleLines(dx, dy, @intFromFloat(VIEW_BIG), @intFromFloat(VIEW_BIG), look.EDGE);
     dy += @as(i32, @intFromFloat(VIEW_BIG)) + PAD;
-    g.face.draw(seenName(s, &buf), dx, dy, HEAD, look.TEXT);
+    g.face.draw(seenName(s), dx, dy, HEAD, look.TEXT);
     dy += HEAD + GAP;
     var facts = Facts{};
     seenFacts(s, &facts);
@@ -3257,13 +3280,11 @@ fn drawObjects(ed: *Editor, g: *game.Game) void {
     backButton(ed, g, x + w - PAD - MODAL_BTN_W, y + rows * VIEW_CELL, "Close");
 }
 
-fn seenName(s: Seen, buf: []u8) [:0]const u8 {
+fn seenName(s: Seen) [:0]const u8 {
     return switch (s) {
-        .tile => |t| std.fmt.bufPrintZ(buf, "{}", .{Capital{ .s = @tagName(t) }}) catch "",
-        .body => |k| std.fmt.bufPrintZ(buf, "{}", .{Capital{ .s = actor.row(k).name }}) catch "",
-        .barrel => "Barrel",
-        .torch => "Torch",
-        .door => "Door",
+        .tile => |t| menu.named(t),
+        .body => |k| kindName(k),
+        inline else => |_, tag| comptime menu.named(tag),
     };
 }
 
@@ -3276,17 +3297,6 @@ fn seenPicture(g: *game.Game, s: Seen, r: rl.Rectangle) void {
         .door => glyph(g, look.DOOR.ch, r, look.DOOR.fg),
     }
 }
-
-/// A name printed with its first letter up, as `menu.capital` makes one at compile time.
-const Capital = struct {
-    s: []const u8,
-
-    pub fn format(self: Capital, comptime _: []const u8, _: std.fmt.FormatOptions, w: anytype) !void {
-        if (self.s.len == 0) return;
-        try w.writeByte(std.ascii.toUpper(self.s[0]));
-        try w.writeAll(self.s[1..]);
-    }
-};
 
 const FACTS_MAX: usize = 8;
 
@@ -3397,7 +3407,7 @@ fn tileGlyph(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
 const SHOT_ZOOM = zoomOf(32);
 const SHOT_BRUSH = std.mem.indexOfScalar(i32, &BRUSHES, 3).?;
 
-/// DEV ONLY: the posed world's map mid link-pick, its graph, then its procgen node's generator.
+/// DEV ONLY: the posed world's map mid link-pick, its graph, its procgen node's generator, then the object viewer.
 pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8, objects_path: [:0]const u8) !void {
     const ed = try Editor.create(std.heap.c_allocator);
     defer ed.destroy();
@@ -3798,9 +3808,7 @@ test "the other button pressed mid graph drag puts the box back, and leaves no u
     graphMouse(ed, c, true);
     try std.testing.expect(!ed.world.node[0].pos.eq(was));
     ed.desk = .{ .paint = true, .erase = true, .erase_hit = true, .mouse = .{ .x = 300, .y = 100 } };
-    if (ed.desk.erase_hit and ed.drag != null) ed.drop();
-    ed.gesture();
-    graphMouse(ed, c, true);
+    ed.drop();
     ed.desk = .{ .paint = true, .erase = true, .mouse = .{ .x = 400, .y = 100 } };
     graphMouse(ed, c, true);
     ed.desk = .{ .mouse = .{ .x = 400, .y = 100 } };
@@ -4055,6 +4063,35 @@ test "undo mid graph drag takes the drag back as its own step, and the world aft
     ed.redo();
     try std.testing.expect(!ed.world.node[0].pos.eq(was));
     try std.testing.expect(ed.dirty);
+}
+
+test "a graph drag put back keeps what there was to redo" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    _ = ed.world.add(.{ .bespoke = .{} });
+    _ = ed.world.add(.{ .bespoke = .{} });
+    ed.select(1);
+    for (0..UNDO_CAP) |_| {
+        ed.gesture();
+        ed.world.node[1].pos.x += 1;
+        ed.bank();
+    }
+    ed.undo();
+    ed.undo();
+    const hist = .{ ed.hist_base, ed.hist_len, ed.hist_at };
+    const was = ed.world.node[0].pos;
+    ed.view = .graph;
+    ed.gesture();
+    ed.drag = .{ .node = 0, .grab = .{ .x = 0, .y = 0 }, .from = .{ .x = 100, .y = 100 }, .was = was };
+    ed.desk = .{ .paint = true, .mouse = .{ .x = 200, .y = 100 } };
+    graphMouse(ed, TEST_CANVAS, true);
+    try std.testing.expect(!ed.world.node[0].pos.eq(was));
+    ed.drop();
+    try std.testing.expect(ed.world.node[0].pos.eq(was));
+    try std.testing.expectEqual(hist, .{ ed.hist_base, ed.hist_len, ed.hist_at });
+    ed.redo();
+    ed.redo();
+    try std.testing.expectEqual(ed.hist_len, ed.hist_at);
 }
 
 test "a graph drag let go of where it began leaves no undo and nothing unsaved" {

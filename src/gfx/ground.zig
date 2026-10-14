@@ -151,13 +151,21 @@ test "under a tree is grass and under a wall cobble, and the sheet's cells match
     try std.testing.expectEqual(@as(?Ground, .cobble), groundAt(&lv, .{ .x = 4, .y = 3 }));
     try std.testing.expectEqual(@as(?Ground, null), groundAt(&lv, .{ .x = 5, .y = 3 }));
     try std.testing.expectEqual(@as(?Ground, null), groundAt(&lv, .{ .x = 6, .y = 3 }));
+    try expectLuaList(u4, &ORDER, "tools/tile_art/ground_corners.lua");
+    try std.testing.expectEqual(P{ .x = 1, .y = 1 }, CELL_OF[FULL]);
+}
+
+/// The numbers a tile-art script's `return { ... }` lists are `want`, in order.
+pub fn expectLuaList(comptime T: type, want: []const T, path: []const u8) !void {
     const alloc = std.testing.allocator;
-    const lua = try std.fs.cwd().readFileAlloc(alloc, "tools/tile_art/ground_corners.lua", 4096);
+    const lua = try std.fs.cwd().readFileAlloc(alloc, path, 4096);
     defer alloc.free(lua);
     const list = lua[(std.mem.indexOf(u8, lua, "return {") orelse return error.NoList) + "return {".len ..];
     var nums = std.mem.tokenizeAny(u8, list[0 .. std.mem.indexOfScalar(u8, list, '}') orelse return error.NoList], ", \r\n");
     var n: usize = 0;
-    while (nums.next()) |m| : (n += 1) try std.testing.expectEqual(ORDER[n], try std.fmt.parseInt(u4, m, 10));
-    try std.testing.expectEqual(ORDER.len, n);
-    try std.testing.expectEqual(P{ .x = 1, .y = 1 }, CELL_OF[FULL]);
+    while (nums.next()) |m| : (n += 1) {
+        try std.testing.expect(n < want.len);
+        try std.testing.expectEqual(want[n], try std.fmt.parseInt(T, m, 10));
+    }
+    try std.testing.expectEqual(want.len, n);
 }

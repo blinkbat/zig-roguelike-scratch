@@ -16,7 +16,21 @@ const WANDER: f32 = 9;
 /// Noise rows far enough apart that the waterline and the beach's inland edge wander apart.
 const BEACH_ROW: i32 = 1 << 10;
 
-pub const Side = enum { west, east, north, south };
+pub const Side = enum {
+    west,
+    east,
+    north,
+    south,
+
+    fn dir(s: Side) mathx.Dir {
+        return switch (s) {
+            .west => .w,
+            .east => .e,
+            .north => .n,
+            .south => .s,
+        };
+    }
+};
 
 pub const Params = struct {
     side: Side = .west,
@@ -39,28 +53,17 @@ pub const Params = struct {
     }
 };
 
-/// Cells in from `side`'s edge, and along it.
-fn inFrom(q: P, side: Side) struct { in: i32, along: i32 } {
-    return switch (side) {
-        .west => .{ .in = q.x, .along = q.y },
-        .east => .{ .in = grid.W - 1 - q.x, .along = q.y },
-        .north => .{ .in = q.y, .along = q.x },
-        .south => .{ .in = grid.H - 1 - q.y, .along = q.x },
-    };
-}
 
 fn wander(noise: carve.Noise, along: usize, row: i32, rough: f32) f32 {
     return (noise.at(.{ .x = @intCast(along), .y = row }, WANDER, 2) * 2 - 1) * rough;
 }
 
 pub fn apply(lv: *grid.Level, _: *mathx.Rng, seed: u64, _: carve.Palette, p: Params) void {
-    const noise = carve.Noise.init(seed ^ 0xC0A5);
+    const noise = carve.Noise.init(seed, .coast);
     const rough: f32 = @floatFromInt(p.rough);
     var edges: [@max(grid.W, grid.H)]struct { water: f32, shallows: f32, sand: f32 } = undefined;
-    const len: usize = switch (p.side) {
-        .west, .east => grid.H,
-        .north, .south => grid.W,
-    };
+    const side = p.side.dir();
+    const len: usize = @intCast(carve.alongOf(side, .{ .x = grid.W, .y = grid.H }));
     for (edges[0..len], 0..) |*edge, along| {
         const surf = wander(noise, along, 0, rough);
         const dune = wander(noise, along, BEACH_ROW, rough);
@@ -73,9 +76,9 @@ pub fn apply(lv: *grid.Level, _: *mathx.Rng, seed: u64, _: carve.Palette, p: Par
         };
     }
     for (0..grid.CELLS) |i| {
-        const c = inFrom(grid.Level.of(i), p.side);
-        const edge = edges[@intCast(c.along)];
-        const in: f32 = @floatFromInt(c.in);
+        const q = grid.Level.of(i);
+        const edge = edges[@intCast(carve.alongOf(side, q))];
+        const in: f32 = @floatFromInt(carve.inFrom(side, q));
         if (in < edge.water) {
             lv.tile[i] = .water;
         } else if (in < edge.shallows) {
@@ -93,11 +96,11 @@ test "a coast lies deep water, then shallows, then sand, in from its own side al
         apply(&lv, &rng, 7, carve.Palette.WILD, p);
         var far: i32 = 0;
         for (0..grid.CELLS) |k| {
-            const c = inFrom(grid.Level.of(k), side);
+            const in = carve.inFrom(side.dir(), grid.Level.of(k));
             const t = lv.tile[k];
-            if (c.in < p.sea - p.rough) try std.testing.expectEqual(grid.Tile.water, t);
-            if (t == .water or t == .shallows or t == .sand) far = @max(far, c.in);
-            if (t == .shallows) try std.testing.expect(c.in >= 1);
+            if (in < p.sea - p.rough) try std.testing.expectEqual(grid.Tile.water, t);
+            if (t == .water or t == .shallows or t == .sand) far = @max(far, in);
+            if (t == .shallows) try std.testing.expect(in >= 1);
         }
         std.debug.print("a coast on the {s}: {d} water, {d} shallows, {d} sand, reaching {d} cells in\n", .{ @tagName(side), carve.count(&lv, .water), carve.count(&lv, .shallows), carve.count(&lv, .sand), far });
         try std.testing.expect(far <= p.sea + p.shore + p.beach + 2 * p.rough);

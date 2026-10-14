@@ -33,8 +33,8 @@ pub fn palette(p: Params) carve.Palette {
 
 pub fn shape(lv: *grid.Level, _: *mathx.Rng, seed: u64, p: Params) void {
     const pal = palette(p);
-    const crest = carve.Noise.init(seed ^ 0xD0E5);
-    const broken = carve.Noise.init(seed ^ 0xB20C);
+    const crest = carve.Noise.init(seed, .dune_crest);
+    const broken = carve.Noise.init(seed, .dune_break);
     const s: f32 = @floatFromInt(p.scale);
     const band = mathx.fraction(p.ridges);
     const high = 1 - mathx.fraction(p.mesas) * 2.5;

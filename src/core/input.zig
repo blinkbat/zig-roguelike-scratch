@@ -487,7 +487,7 @@ pub const State = struct {
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();
-        self.lean = (if (live) |at| self.padHeld(at, LEAN) else false) or (self.playing and either(LEAN_KEYS));
+        self.lean = self.playing and ((if (live) |at| self.padHeld(at, LEAN) else false) or either(LEAN_KEYS));
         self.typed.n = 0;
         self.rub = false;
         if (self.typing) {
@@ -580,8 +580,14 @@ fn padPressed(at: i32) bool {
 pub const Desk = struct {
     pub const TOOL_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
     pub const TOOL_CAPTIONS = captions(&TOOL_KEYS);
-    /// The editor's shapes in its `Shape` order: brush, line, rectangle, box, fill, select.
-    pub const SHAPE_KEYS = [_]rl.KeyboardKey{ .b, .l, .r, .o, .f, .m };
+    /// The editor's shapes, named and ordered as its `Shape` is.
+    pub const SHAPE_KEYS_BY = .{ .brush = rl.KeyboardKey.b, .line = rl.KeyboardKey.l, .rect = rl.KeyboardKey.r, .box = rl.KeyboardKey.o, .fill = rl.KeyboardKey.f, .select = rl.KeyboardKey.m };
+    pub const SHAPE_KEYS = blk: {
+        const fs = std.meta.fields(@TypeOf(SHAPE_KEYS_BY));
+        var out: [fs.len]rl.KeyboardKey = undefined;
+        for (fs, 0..) |f, i| out[i] = @field(SHAPE_KEYS_BY, f.name);
+        break :blk out;
+    };
     pub const SHAPE_CAPTIONS = captions(&SHAPE_KEYS);
 
 

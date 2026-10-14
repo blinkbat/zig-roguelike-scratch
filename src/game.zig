@@ -501,15 +501,10 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
 }
 
 fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
+    toDefaults(g, &.{ "visited", "node", "outdoors", "pool", "hero", "clock" });
     g.world = w;
-    g.visited = .initEmpty();
-    g.node = 0;
-    g.outdoors = false;
     g.seed = seed;
     g.rng = mathx.Rng.init(seed ^ PLAY_SALT);
-    g.pool = .{};
-    g.hero = grid.NO_ONE;
-    g.clock = .{};
     g.unsaved = true;
 }
 
@@ -609,9 +604,8 @@ fn restart(g: *Game) void {
 }
 
 fn spawnHero(g: *Game, at: P) void {
-    g.pool = .{};
+    toDefaults(g, &.{ "pool", "facing" });
     g.hero = g.pool.spawn(&g.lv, actor.Actor.of(HERO, at));
-    g.facing = @splat(.right);
 }
 
 fn reset(g: *Game, hero: P) void {
@@ -653,9 +647,7 @@ pub fn resumeRun(g: *Game) void {
     gen.restoreShapes(&g.lv);
     var visits = g.visited.iterator(.{});
     while (visits.next()) |n| gen.restoreShapes(&g.visits[n].lv);
-    g.mode = .play;
-    g.exit = null;
-    g.unsaved = false;
+    toDefaults(g, &.{ "mode", "exit", "unsaved" });
     g.outdoors = outdoorsNow(g);
     freshTurn(g);
     settle(g);
@@ -936,7 +928,7 @@ fn loose(g: *Game, from: P, act: skillbar.Act) void {
     const f = bow.fly(&g.lv, from, to);
     g.shot = .{ .flight = f, .glyph = look.arrow(to.x - from.x, to.y - from.y), .act = act };
     holdUntil(g, flown(f.len));
-    const s = Stroke{ .from = from, .wait = flown(f.len -| 1), .fire = elementOf(act) == .fire };
+    const s = Stroke{ .from = from, .wait = flown(f.len -| 1), .fire = act.element() == .fire };
     if (f.struck) |hit| switch (act) {
         .glacial_shot => glacialHit(g, hit, f.impact().?, s),
         inline .shoot, .burning_arrow => |a| switch (hit) {
@@ -958,12 +950,12 @@ const IT_DIES = " It dies.";
 /// An arrow's physical roll, on a body, then its element's, in the order every shot draws them.
 fn rollArrow(rng: *mathx.Rng, comptime act: skillbar.Act, body: bool) damage.Damage {
     var hit = damage.Damage{ .physical = if (body) bow.roll(rng) else 0 };
-    if (act != .shoot) hit.elements.set(arrowOf(act).ELEMENT, arrowOf(act).roll(rng));
+    if (act != .shoot) hit.elements.set(skillbar.Act.arrow(act).ELEMENT, skillbar.Act.arrow(act).roll(rng));
     return hit;
 }
 
 fn elementHit(g: *Game, id: u16, blow: damage.Damage, comptime act: skillbar.Act, s: Stroke) void {
-    const arrow = arrowOf(act);
+    const arrow = skillbar.Act.arrow(act);
     const el = arrow.ELEMENT;
     const a = g.pool.get(id) orelse return;
     const dealt = blow.total(a.resists);
@@ -977,22 +969,6 @@ fn elementHit(g: *Game, id: u16, blow: damage.Damage, comptime act: skillbar.Act
     };
     if (dealt > 0) wound(g, id, dealt, arrow.VERB, s);
     if (takes) sayAt(g, at, "The {s} " ++ arrow.TAKES ++ "!", .{name});
-}
-
-/// An elemental arrow's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
-fn arrowOf(comptime act: skillbar.Act) type {
-    return switch (act) {
-        .burning_arrow => burning,
-        .glacial_shot => glacial,
-        .shoot, .juke, .wait, .secondary => @compileError("no element"),
-    };
-}
-
-fn elementOf(act: skillbar.Act) ?damage.Element {
-    return switch (act) {
-        inline .burning_arrow, .glacial_shot => |a| arrowOf(a).ELEMENT,
-        .shoot, .juke, .wait, .secondary => null,
-    };
 }
 
 fn cones(act: skillbar.Act) bool {
@@ -1416,6 +1392,9 @@ fn stepGlide(g: *Game, late: f32) void {
 
 /// A tick's harm or a chill wearing down on a body with no place lands at `start`, after the archer's part, which may burst its bloat. Returns when this body's part is drawn.
 fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
+    comptime for (std.enums.values(Tick)) |t| switch (t) {
+        .bit, .gassed, .burned, .bled, .chilled => {},
+    };
     const i = actor.Pool.slot(id);
     const a = g.pool.items[i];
     const gl = &g.glide[i];
@@ -2907,7 +2886,7 @@ fn procRng(comptime act: skillbar.Act, procs: usize) mathx.Rng {
         var rng = mathx.Rng.init(seed);
         _ = rollArrow(&rng, act, true);
         const all = for (0..procs) |_| {
-            if (!arrowOf(act).procs(&rng, 0)) break false;
+            if (!skillbar.Act.arrow(act).procs(&rng, 0)) break false;
         } else true;
         if (all) return mathx.Rng.init(seed);
     }
@@ -5180,7 +5159,7 @@ test "a pib's stab bleeds the archer about three times in ten, drawn once the st
         try std.testing.expectEqual(bleeding.TURNS, g.pictured[0].status.get(.bleeding));
     }
     std.debug.print("a pib beside the archer opens a bleed on {d} of {d} stabs\n", .{ bled, TRIES });
-    try std.testing.expect(aboutRate(bled, @as(f32, @floatFromInt(actor.row(.pib).blow.strike.bleeds)) / mathx.PERCENT));
+    try std.testing.expect(aboutRate(bled, mathx.fraction(actor.row(.pib).blow.strike.bleeds)));
 }
 
 test "a bleed costs the archer 1 a turn standing and 2 a turn it steps, and stops after five" {

@@ -125,7 +125,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         placed[n] = k;
         n += 1;
     }
-    const noise = carve.Noise.init(seed ^ 0x3A2E);
+    const noise = carve.Noise.init(seed, .maze);
     for (0..pl.rows) |r| {
         for (0..pl.cols) |c| {
             const mask = pl.at(c, r) orelse continue;

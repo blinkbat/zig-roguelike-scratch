@@ -36,7 +36,7 @@ pub const Params = struct {
 };
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: Params) void {
-    const noise = carve.Noise.init(seed ^ 0x1A4E);
+    const noise = carve.Noise.init(seed, .lake);
     const most: i32 = p.size;
     for (0..p.count) |_| {
         const c = for (0..TRIES) |_| {
