@@ -23,14 +23,18 @@ for i,m in ipairs(order) do
   assert(s.bounds.x==((i-1)%COLS)*CELL and s.bounds.y==HEAD+((i-1)//COLS)*CELL,'slice '..m..' moved')
 end
 local want=stand_in and 'Underdrawing (25%)' or 'Draw here'
-local layer
-for _,l in ipairs(sprite.layers) do
-  if l.name==want then layer=l end
-end
-assert(layer and layer:cel(1),'no '..want..' in '..source)
-local cel=layer:cel(1)
+local extension=name:gsub('^%l',string.upper)..' extensions'
+local found=false
 local sheet=Image(COLS*CELL,COLS*CELL,ColorMode.RGB)
-sheet:drawImage(cel.image,Point(cel.position.x,cel.position.y-HEAD))
+for _,l in ipairs(sprite.layers) do
+  if l.name==want or (not stand_in and l.name==extension) then
+    local cel=assert(l:cel(1),'no cel on '..l.name)
+    assert(stand_in or (l.opacity==255 and cel.opacity==255),'Art layer opacity: '..l.name)
+    sheet:drawImage(cel.image,Point(cel.position.x,cel.position.y-HEAD))
+    if l.name==want then found=true end
+  end
+end
+assert(found,'no '..want..' in '..source)
 local painted=0
 for it in sheet:pixels() do
   if app.pixelColor.rgbaA(it())>0 then painted=painted+1 end

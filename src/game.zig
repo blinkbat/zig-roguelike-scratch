@@ -30,7 +30,6 @@ const cloud = @import("gfx/cloud.zig");
 const vignette = @import("gfx/vignette.zig");
 const sky = @import("gfx/sky.zig");
 const weather = @import("gfx/weather.zig");
-const dual = @import("gfx/ground.zig");
 const climate = @import("world/climate.zig");
 const day = @import("world/day.zig");
 const lume = @import("world/lume.zig");
@@ -1809,8 +1808,7 @@ fn drawFigure(g: *Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid:
     } else drawGlyph(g, l.ch, s.x, s.y, shine.drawn(l.fg, flash));
 }
 
-/// The solid pass covers the shadows cast between the two.
-const Pass = enum { ground, solid };
+const Pass = look.Pass;
 
 const Stood = std.StaticBitSet(grid.CELLS);
 
@@ -1818,25 +1816,10 @@ const Stood = std.StaticBitSet(grid.CELLS);
 fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: *const Stood) void {
     drawCells(g, c, lo, hi, pass, arrow_at, stood);
     if (pass != .ground) return;
-    drawGround(g, c, lo, hi);
+    g.sprites.drawGround(&g.lv, lo, hi, true, .{ @floatFromInt(-c.x), @floatFromInt(-c.y) }, CELL_F);
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
         if (g.lv.isSeen(p) and g.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
-    }
-}
-
-/// Each ground with a sheet, lowest first, a piece on each corner point of the cells from `lo` up to `hi`, over what the cells drew.
-fn drawGround(g: *Game, c: Cam, lo: P, hi: P) void {
-    const sheets = g.sprites.sheets();
-    var it = sheets.iterator();
-    while (it.next()) |gr| {
-        var points = grid.Cells.of(lo, hi.add(.{ .x = 1, .y = 1 }));
-        while (points.next()) |p| {
-            const mask = dual.Corners.at(&g.lv, p, sheets, true).mask(gr);
-            if (mask == 0) continue;
-            const piece = g.sprites.groundPiece(gr, mask) orelse continue;
-            rl.drawTextureRec(piece.tex, piece.src, .{ .x = @floatFromInt(c.sx(p) - HALF_CELL), .y = @floatFromInt(c.sy(p) - HALF_CELL) }, look.LIT);
-        }
     }
 }
 
@@ -1845,11 +1828,8 @@ fn drawCells(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: *c
     while (cells.next()) |p| {
         if (!g.lv.isSeen(p)) continue;
         const here = g.lv.at(p);
-        const kind = switch (pass) {
-            .ground => look.under(here) orelse if (here.upright()) continue else here,
-            .solid => if (here.upright() or here.ground() != null) here else continue,
-        };
-        if (if (kind == here) g.sprites.tileAt(&g.lv, p) else g.sprites.tileOf(kind, null)) |t| {
+        const kind = look.passKind(here, pass) orelse continue;
+        if (g.sprites.passTile(&g.lv, p, kind)) |t| {
             drawSprite(t, c.sx(p), c.sy(p));
             continue;
         }
@@ -1881,11 +1861,11 @@ fn drawShadows(g: *Game, c: Cam, cast: grid.Box) void {
         }
         const kind = g.lv.at(p);
         if (!look.stands(kind)) continue;
-        const forest = g.sprites.forestTile(&g.lv, p);
-        const t = forest orelse g.sprites.tileAt(&g.lv, p) orelse continue;
+        const forest = look.forestAt(&g.lv, p);
+        const t = g.sprites.tileAt(&g.lv, p) orelse continue;
         const pr = Prop.at(g, c, p, true);
         const rect = spriteRect(t, pr.s.x, pr.s.y);
-        if (forest != null) {
+        if (forest) {
             g.light.drawForestShadows(t, rect, pr.mid, pr.shine, g.lv.tileShape(p) orelse .{});
         } else if (look.canopied(kind)) {
             g.light.drawCanopy(t, rect, pr.mid, pr.shine);
@@ -1981,7 +1961,7 @@ fn drawWorld(g: *Game) void {
     }
 
     drawTorches(g, c);
-    if (g.light.sky) |k| g.rain.draw(weatherNow(g), &g.lv, @floatFromInt(-c.x), @floatFromInt(-c.y), CELL_F, PX_SCALE, sky.brightness(k));
+    if (g.light.sky) |k| g.rain.draw(weatherNow(g), &g.light.sight, @floatFromInt(-c.x), @floatFromInt(-c.y), CELL_F, PX_SCALE, sky.brightness(k));
 
     for (bodies) |b| {
         if (!b.pic.kind.foe() or !b.pic.hurt()) continue;
@@ -2169,8 +2149,9 @@ fn drawSkills(g: *Game, at: P) void {
 fn drawBinds(g: *Game) void {
     var buf: [menu.NOTE_MAX + 1]u8 = undefined;
     const b = g.binds;
-    const x0 = hud.Layout.of(g.screen, SKILLS_W).skills.x;
-    const y0 = @divTrunc(hud.Layout.of(g.screen, SKILLS_W).top, 2) + BIND_TOP_DY;
+    const layout = hud.Layout.of(g.screen, SKILLS_W);
+    const x0 = layout.skills.x;
+    const y0 = @divTrunc(layout.top, 2) + BIND_TOP_DY;
     veil(g);
     textMid(g, "BIND SKILLS", y0, BIND_TITLE, look.TEXT);
     var cursor = P{ .x = 0, .y = 0 };
@@ -2225,7 +2206,7 @@ fn drawBinds(g: *Game) void {
     } else if (b.menu == .pick) {
         textMid(g, "Clear slot", info_y, TEXT, look.TEXT);
     }
-    const hold = if (g.bar.modifier) |m| std.fmt.bufPrintZ(&buf, "Hold {s} for the Secondary Skill Set", .{g.st.slotCaption(m)}) catch "" else "No button holds the Secondary Skill Set";
+    const hold = if (g.bar.modifier) |m| std.fmt.bufPrintZ(&buf, "Hold {s} for the " ++ comptime skillbar.Set.secondary.name(), .{g.st.slotCaption(m)}) catch "" else "No button holds the " ++ comptime skillbar.Set.secondary.name();
     textMid(g, hold, info_y + TEXT_LINE * 2, TEXT, look.DIM);
     textMid(g, legend, info_y + TEXT_LINE * 4, TEXT, look.DIM);
 }

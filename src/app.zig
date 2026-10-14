@@ -127,6 +127,11 @@ const App = struct {
         app.armed = null;
     }
 
+    fn slotFree(app: *App) bool {
+        app.rescan();
+        return save.free(&app.list) != null;
+    }
+
     fn newRun(app: *App, name: hero.Name) void {
         const g = app.g;
         const slot = save.free(&app.list) orelse return app.toTitle();
@@ -270,14 +275,12 @@ const App = struct {
                 menu.draw(g.face, g.screen, g.st.device, comptime menu.caps(NAME), &rows, app.title.at, note, null);
                 switch (MAIN_ROWS[picked orelse return true]) {
                     .new => {
-                        app.rescan();
-                        if (save.free(&app.list) == null) return app.refuse();
+                        if (!app.slotFree()) return app.refuse();
                         app.chosen = null;
                         app.goPage(.class);
                     },
                     .worlds => {
-                        app.rescan();
-                        if (save.free(&app.list) == null) return app.refuse();
+                        if (!app.slotFree()) return app.refuse();
                         app.listing.scan();
                         if (app.listing.n == 0) {
                             app.say(atlas.NO_WORLDS, .{});
@@ -305,7 +308,7 @@ const App = struct {
                 for (names[0..n], rows[0..n], 0..) |*b, *l, i| l.* = std.fmt.bufPrintZ(b, "{s}", .{app.listing.label(i)}) catch "";
                 const picked = app.worlds.step(&g.st, n);
                 var where: [atlas.PATH_MAX + 1]u8 = undefined;
-                const shown = if (app.listing.entry(app.worlds.at) == .up) std.fmt.bufPrintZ(&where, "Up from {s}/{s}", .{ atlas.DIR, app.listing.here() }) catch "" else app.listing.at(app.worlds.at);
+                const shown = if (app.listing.entry(app.worlds.at) == .up) std.fmt.bufPrintZ(&where, "Up from " ++ atlas.PREFIX ++ "{s}", .{app.listing.here()}) catch "" else app.listing.at(app.worlds.at);
                 menu.draw(g.face, g.screen, g.st.device, "CHOOSE A WORLD", rows[0..n], app.worlds.at, shown, menu.BACK_LABEL);
                 if (back) {
                     if (app.listing.up()) {

@@ -19,7 +19,7 @@ pub const Act = enum {
         return switch (a) {
             .shoot => "Shoot",
             .wait => "Wait",
-            .secondary => "Activate Secondary Skill Set",
+            .secondary => "Activate " ++ comptime Set.secondary.name(),
             .juke => "Juke",
             .burning_arrow => "Burning Arrow",
             .glacial_shot => "Glacial Shot",

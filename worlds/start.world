@@ -38,6 +38,10 @@ tile reeds
 on grass
 amount 110
 clump 4
+feature scatter
+tile dirt
+on sand
+amount 1000
 name The Strand
 at 0 0
 door 95 32

@@ -101,7 +101,7 @@ const SHADOW_SQUASH: f32 = 0.55;
 const SHADOW_OVERHEAD: f32 = 0.05;
 const SHADOW_NEAR: f32 = 0.5;
 /// Texels of blur room round a shadow's silhouette.
-const SHADOW_PAD: f32 = 6;
+const SHADOW_PAD: f32 = SHADOW_SOFT_TIP * @as(f32, @floatFromInt(SHADOW_TAPS));
 /// Texels between the shadow shader's blur taps, at its tip and at its foot.
 const SHADOW_SOFT_TIP: f32 = 2.0;
 const SHADOW_SOFT_FOOT: f32 = 0.6;
@@ -296,7 +296,6 @@ fn sunFacing(sk: sky.Sky, s: Spot) f32 {
 }
 
 comptime {
-    std.debug.assert(SHADOW_PAD >= SHADOW_SOFT_TIP * @as(f32, @floatFromInt(SHADOW_TAPS)));
 }
 
 const Surface = enum { floor, face, ceiling };
@@ -1246,7 +1245,7 @@ pub const Light = struct {
         var buf: [BODY_LIGHTS]Cast = undefined;
         const cs = casts(s, centre, dest.height, &buf);
         if (cs.len == 0) return;
-        const joined = [4]f32{ @floatFromInt(@intFromBool(shape.w)), @floatFromInt(@intFromBool(shape.e)), @floatFromInt(@intFromBool(shape.n)), @floatFromInt(@intFromBool(shape.s)) };
+        const joined = [4]f32{ mask(shape.w), mask(shape.e), mask(shape.n), mask(shape.s) };
         if (!self.beginSilhouettes(tex, 1, joined, .{ FOREST_SOFT, FOREST_SOFT })) return;
         for (cs) |c| {
             const ink = colourOf(c.shade, @min(FOREST_MAX, c.alpha * FOREST_A));
@@ -1800,8 +1799,8 @@ test "forest shadow edges project together under torches and the sky" {
                 var buv = auv;
                 auv[axis] = 1;
                 buv[axis] = 0;
-                const left = forestTip(cast, a, auv, 64);
-                const right = forestTip(cast, b, buv, 64);
+                const left = forestTip(cast, a, auv, ART_H);
+                const right = forestTip(cast, b, buv, ART_H);
                 for (0..2) |k| try std.testing.expectApproxEqAbs(left[k], right[k], 1e-5);
                 checked += 1;
             }

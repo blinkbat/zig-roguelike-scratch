@@ -291,11 +291,13 @@ const SLOT_KEYS = blk: {
     for (&out, 0..) |*k, i| k.* = @enumFromInt(@intFromEnum(rl.KeyboardKey.one) + i);
     break :blk out;
 };
-const SLOT_CAPTIONS = blk: {
-    var out: [SLOT_KEYS.len][:0]const u8 = undefined;
-    for (SLOT_KEYS, &out) |k, *c| c.* = keyName(k);
-    break :blk out;
-};
+const SLOT_CAPTIONS = captions(&SLOT_KEYS);
+
+fn captions(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const u8 {
+    var out: [keys.len][:0]const u8 = undefined;
+    for (keys, &out) |k, *c| c.* = keyName(k);
+    return out;
+}
 const SECOND_KEYS = CTRL_KEYS;
 pub const SECOND_CAPTION = keyName(SECOND_KEYS[0]);
 
@@ -582,11 +584,7 @@ pub const Desk = struct {
     pub const SHAPE_KEYS = [_]rl.KeyboardKey{ .b, .l, .r, .o, .f, .m };
     pub const SHAPE_CAPTIONS = captions(&SHAPE_KEYS);
 
-    fn captions(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const u8 {
-        var out: [keys.len][:0]const u8 = undefined;
-        for (keys, &out) |k, *c| c.* = keyName(k);
-        return out;
-    }
+
     const PAN_KEYS = blk: {
         var out: [DPAD.len]Walk = undefined;
         var n: usize = 0;

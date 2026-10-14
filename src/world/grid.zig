@@ -216,8 +216,12 @@ pub const Torches = struct {
         return self.find(p) != null;
     }
 
+    pub fn takes(self: *const Torches, p: P) bool {
+        return self.n < MAX_TORCHES and self.find(p) == null;
+    }
+
     pub fn add(self: *Torches, p: P) bool {
-        if (self.n == MAX_TORCHES or self.find(p) != null) return false;
+        if (!self.takes(p)) return false;
         self.at[self.n] = p;
         self.n += 1;
         return true;
@@ -608,14 +612,22 @@ pub const Flood = struct {
     dist: *[CELLS]i32,
     queue: *[CELLS]u32,
     head: usize = 0,
-    tail: usize = 1,
+    tail: usize = 0,
 
     pub fn init(lv: *const Level, from: P, dist: *[CELLS]i32, queue: *[CELLS]u32) Flood {
         @memset(dist, -1);
+        var f = Flood{ .lv = lv, .dist = dist, .queue = queue };
+        f.seed(from);
+        return f;
+    }
+
+    /// Another cell the flood starts from, unless it already reached it.
+    pub fn seed(self: *Flood, from: P) void {
         const s = Level.idx(from);
-        dist[s] = 0;
-        queue[0] = @intCast(s);
-        return .{ .lv = lv, .dist = dist, .queue = queue };
+        if (self.dist[s] >= 0) return;
+        self.dist[s] = 0;
+        self.queue[self.tail] = @intCast(s);
+        self.tail += 1;
     }
 
     pub fn next(self: *Flood) ?P {

@@ -20,6 +20,7 @@ backups in `assets/backup/`, at the owner's request. Leave `git status` as you f
 for the change asked for.
 
 - Wall and repeating tile workflow: `docs/TILE_ART_WORKFLOW.md`. Port the owner's actual pixels and uneven outlines at native scale; preserve authored layers, update the canonical Aseprite file, and inspect connected game tiles. Regular walls use Desktop `regular-walls.aseprite`, painted on `Layer 1`; cave and forest are separate.
+- Grass and dirt ground use Desktop `<name>.aseprite` and `assets/source/<name>.aseprite`: preserve `Draw here`, with completion on `Grass extensions` / `Dirt extensions`. `port_ground.lua name=grass|dirt` records the source crops; export both art layers with `export_ground.lua name=<name>` to `assets/<name>-ground.png` (16 dual-grid masks, 64px cells). Dirt was transferred from a mistaken grass-file edit; green grass was restored. Backups and previews go to TEMP; inspect later owner edits before regenerating.
 - Forest artwork uses `assets/source/forest-tree-walls.aseprite` and `assets/backup/` at the owner's request. `export_forest.lua` exports its two art layers; the Desktop source keeps `Draw here` and separate `Forest extensions`. `.shrub` connections use the 47-cell forest atlas; isolated blockers mix `shrub.png` and forest cell 01 by stable position hash. The owner requested darker forest foliage and grass pixels; before-tone sources are backed up, and `tone_forest.lua` records the palette change. `shot.cmd` includes `shots/forest.png` and nine `shadows-*.png` lighting studies (morning, noon, evening, moon, torch, three hidden casters, offscreen).
 
 ## Build & verify
@@ -38,7 +39,8 @@ for the change asked for.
   The toolchain is named once, in `_zig.cmd`. From PowerShell, call them as `.\check.cmd` from this directory.
 - **EVERY MODULE MUST BE NAMED IN `main.zig`'s `test {}` BLOCK** — `build.zig` panics otherwise,
   and on any `src/**/*.zig` under 512 bytes.
-- Verify with tests that print the number. Do NOT launch the interactive window; the owner plays it.
+- Verify with tests that print the number. Do NOT launch the interactive window; the owner plays it. For audit
+  screenshots, run the built exe's `--shot` from a `%TEMP%` directory with a copy of `worlds/`; its `shots/` stays there.
 - When carrying an actor across `enter` replacing its pool, use an initialized `var` snapshot assigned from the
   actor. A `const` conditional of `h.*` aliased the replaced storage on Zig 0.14.1; door/save tests caught it.
 

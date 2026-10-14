@@ -208,6 +208,15 @@ pub fn corners(b: grid.Box) [4]P {
 }
 
 /// The cell of `b`'s outermost row on `side` at `along`: an x on the north or south, a y on the west or east.
+/// `p`'s part along `side`: its x on the north and south, its y on the west and east.
+pub fn alongOf(side: mathx.Dir, p: P) i32 {
+    return switch (side) {
+        .n, .s => p.x,
+        .w, .e => p.y,
+        .ne, .se, .sw, .nw => unreachable,
+    };
+}
+
 pub fn sideAt(b: grid.Box, side: mathx.Dir, along: i32) P {
     return switch (side) {
         .n => .{ .x = along, .y = b.lo.y },
@@ -540,7 +549,7 @@ fn notLiquid(t: grid.Tile) bool {
 }
 
 fn edge(rng: *mathx.Rng, side: mathx.Dir) P {
-    return sideAt(grid.Box.inMap(0), side, middleHalf(rng, if (side == .w or side == .e) grid.H else grid.W));
+    return sideAt(grid.Box.inMap(0), side, middleHalf(rng, alongOf(side, .{ .x = grid.W, .y = grid.H })));
 }
 
 fn middleHalf(rng: *mathx.Rng, span: i32) i32 {

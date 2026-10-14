@@ -56,7 +56,7 @@ pub fn canopied(t: grid.Tile) bool {
 }
 
 /// Every sprite that throws a shadow from its feet: bodies, barrel, standing tiles and forest shapes.
-pub const FIGURES: usize = Bodies.len + 1 + STANDING.len + WALL_MASKS.len;
+pub const FIGURES: usize = LIT_FIGURES + STANDING.len + WALL_MASKS.len;
 /// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
 pub const LIT_FIGURES: usize = Bodies.len + 1;
 
@@ -190,6 +190,27 @@ pub const Sprites = struct {
         return s;
     }
 
+    /// Each ground with a sheet, lowest first, a piece on each corner point of the cells from `lo` up to `hi`, cell 0,0's top-left at `origin`, `px` a cell.
+    pub fn drawGround(self: *const Sprites, lv: *const grid.Level, lo: mathx.P, hi: mathx.P, seen_only: bool, origin: [2]f32, px: f32) void {
+        const all = self.sheets();
+        var it = all.iterator();
+        while (it.next()) |gr| {
+            var points = grid.Cells.of(lo, hi.add(.{ .x = 1, .y = 1 }));
+            while (points.next()) |p| {
+                const mask = ground.Corners.at(lv, p, all, seen_only).mask(gr);
+                if (mask == 0) continue;
+                const piece = self.groundPiece(gr, mask) orelse continue;
+                const at = rl.Vector2{ .x = origin[0] + (@as(f32, @floatFromInt(p.x)) - 0.5) * px, .y = origin[1] + (@as(f32, @floatFromInt(p.y)) - 0.5) * px };
+                rl.drawTexturePro(piece.tex, piece.src, .{ .x = at.x, .y = at.y, .width = px, .height = px }, .{ .x = 0, .y = 0 }, 0, LIT);
+            }
+        }
+    }
+
+    /// `kind`'s picture at `p` in a pass: the cell's own cut where `kind` is its tile, else `kind`'s plain one.
+    pub fn passTile(self: *const Sprites, lv: *const grid.Level, p: mathx.P, kind: grid.Tile) ?rl.Texture2D {
+        return if (kind == lv.at(p)) self.tileAt(lv, p) else self.tileOf(kind, null);
+    }
+
     pub fn unload(self: *Sprites) void {
         unloadAll(self);
     }
@@ -208,11 +229,6 @@ pub const Sprites = struct {
         return self.cut(cutAt(lv, p) orelse return null);
     }
 
-    /// A forest cell's cut of the forest sheet, its lone tree at mask 0; null off a forest or with the sheet unloaded.
-    pub fn forestTile(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
-        if (!forestAt(lv, p)) return null;
-        return self.tileAt(lv, p);
-    }
 
     pub fn tileOf(self: *const Sprites, t: grid.Tile, shape: ?grid.WallShape) ?rl.Texture2D {
         return self.cut(cutOf(t, shape) orelse return null);
@@ -536,7 +552,6 @@ const GRASS_BG = rgb(0x111a0e);
 /// The editor's wall where it has no texture.
 pub const BARE_WALL = rgb(0x1e1c24);
 /// The editor's ground of a procgen node, whose floor is only rolled in play.
-pub const UNROLLED = rgb(0x1b2330);
 pub const TEXT = rgb(0xd8cdb4);
 pub const DIM = rgb(0x8c8672);
 pub const LIFE = rgb(0x9c2f2a);
@@ -561,6 +576,17 @@ pub fn tileBg(t: grid.Tile) ?rl.Color {
 /// What draws under `t`: its own ground, or floor under an upright tile with no ground or background to hide its gaps.
 pub fn under(t: grid.Tile) ?grid.Tile {
     return t.ground() orelse if (t.upright() and tileBg(t) == null) .floor else null;
+}
+
+/// The terrain is drawn in two passes, so the solid one covers the shadows cast between them.
+pub const Pass = enum { ground, solid };
+
+/// What `here` draws in `pass`: the ground at its foot, or itself where it stands; null for nothing.
+pub fn passKind(here: grid.Tile, pass: Pass) ?grid.Tile {
+    return switch (pass) {
+        .ground => under(here) orelse if (here.upright()) null else here,
+        .solid => if (here.upright() or here.ground() != null) here else null,
+    };
 }
 
 const TileLook = struct { sym: [:0]const u8, ch: u8, fg: rl.Color, bg: ?rl.Color, mini: rl.Color, mini_dim: rl.Color };
@@ -943,7 +969,7 @@ test "forest sprites follow connections and isolated trees mix with clumps witho
         const id = sprites.tileAt(&lv, p).?.id;
         try std.testing.expectEqual(id, sprites.tileAt(&lv, p).?.id);
         try std.testing.expect(t.solid() and t.blind());
-        if (id == tree.id) trees += 1 else if (id == sprites.forest[0].?.id) clumps += 1 else return error.NotAnIsolatedSprite;
+        if (id == tree.id) trees += 1 else if (id == sprites.forest[WALL_CELL[0]].?.id) clumps += 1 else return error.NotAnIsolatedSprite;
     }
     std.debug.print("100 isolated blockers: {d} lone trees, {d} forest clumps; 2 connected tiles keep their shapes\n", .{ trees, clumps });
     try std.testing.expect(trees > 40 and clumps > 15 and clumps < trees);

@@ -206,15 +206,14 @@ const Reached = struct {
 };
 
 pub fn shapeWalls(lv: *grid.Level) void {
-    for (0..grid.CELLS) |i| {
-        lv.shape[i] = if (lv.tile[i].shaped()) wallShape(lv, grid.Level.of(i)) else null;
-    }
+    @memset(&lv.shape, null);
+    restoreShapes(lv);
 }
 
 /// An older save's level, shaped before forests were.
 pub fn restoreShapes(lv: *grid.Level) void {
-    for (lv.tile, lv.shape, 0..) |t, s, i| {
-        if (t.shaped() and s == null) lv.shape[i] = wallShape(lv, grid.Level.of(i));
+    for (&lv.tile, &lv.shape, 0..) |t, *s, i| {
+        if (t.shaped() and s.* == null) s.* = wallShape(lv, grid.Level.of(i));
     }
 }
 

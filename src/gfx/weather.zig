@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const climate = @import("../world/climate.zig");
 const grid = @import("../world/grid.zig");
+const look = @import("look.zig");
 
 // What falls from a node's sky, drawn over the world as it lies: drops keep their place on the ground as the camera
 // moves, wrapping round the screen, and show only where the archer sees. Nothing in the simulation reads it.
@@ -19,7 +20,13 @@ const FALLS = std.EnumArray(climate.Weather, ?Fall).init(.{
 const AREA: f32 = 1920 * 1080;
 /// A 4K screen holds four `AREA`s.
 const SCREENS_MOST: u32 = 4;
-pub const DROPS_MAX: usize = 600;
+const DROPS_MAX: usize = blk: {
+    var most: u32 = 0;
+    for (FALLS.values) |f| {
+        if (f) |fall| most = @max(most, fall.drops * SCREENS_MOST);
+    }
+    break :blk most;
+};
 /// Of the screen's height, the least and the most a drop falls before it lands.
 const FALL_LEAST: f32 = 0.2;
 const FALL_MOST: f32 = 0.6;
@@ -28,11 +35,6 @@ const INK = rl.Color{ .r = 196, .g = 208, .b = 226, .a = 255 };
 const DIM_FLOOR: f32 = 0.25;
 const SEED: u64 = 0x5A1_2A17;
 
-comptime {
-    for (FALLS.values) |f| {
-        if (f) |fall| std.debug.assert(fall.drops * SCREENS_MOST <= DROPS_MAX);
-    }
-}
 
 const Drop = struct {
     /// Screen pixels from the wrapped origin, where it is now.
@@ -83,39 +85,35 @@ pub const Weather = struct {
     fn fresh(self: *Weather, starting: bool) Drop {
         const x = self.rng.unit() * self.w;
         const land = self.rng.unit() * self.h;
-        const drop = (FALL_LEAST + self.rng.unit() * (FALL_MOST - FALL_LEAST)) * self.h;
+        const drop = mathx.lerpF(FALL_LEAST, FALL_MOST, self.rng.unit()) * self.h;
         const y = land - drop * (if (starting) self.rng.unit() else 1);
         return .{ .x = x, .y = y, .land = land, .since = -1 };
     }
 
-    /// Over the cells of `lv` in sight, its top-left landing at `ox, oy`, `cell` pixels a cell; `bright` is the sky's light, 1 at full day.
-    pub fn draw(self: *const Weather, kind: ?climate.Weather, lv: *const grid.Level, ox: f32, oy: f32, cell: f32, scale: f32, bright: f32) void {
+    /// Over each cell as far as it is eased into sight (`sight`, 1 lit), its top-left landing at `ox, oy`, `cell` pixels a cell; `bright` is the sky's light, 1 at full day.
+    pub fn draw(self: *const Weather, kind: ?climate.Weather, sight: *const [grid.CELLS]f32, ox: f32, oy: f32, cell: f32, scale: f32, bright: f32) void {
         const fall = FALLS.get(kind orelse .clear) orelse return;
         if (self.n == 0 or self.w <= 0 or self.h <= 0) return;
-        const a = fall.alpha * std.math.clamp(bright, DIM_FLOOR, 1);
         const lean = fall.drift / fall.speed;
         const len = fall.len * scale;
         for (self.drop[0..self.n]) |d| {
             const x = @mod(d.x + ox, self.w);
             const y = @mod(d.y + oy, self.h);
-            const at = mathx.P{ .x = @intFromFloat(@floor((x - ox) / cell)), .y = @intFromFloat(@floor((y - oy) / cell)) };
-            if (!lv.isLit(at)) continue;
+            const at = mathx.cellOf(.{ (x - ox) / cell, (y - oy) / cell });
+            const seen = grid.cellOr(f32, sight, at, 0);
+            if (seen <= 0) continue;
+            const a = fall.alpha * std.math.clamp(bright, DIM_FLOOR, 1) * seen;
             if (d.since < 0) {
                 const tail = rl.Vector2{ .x = x - lean * len, .y = y - len };
-                rl.drawLineEx(tail, .{ .x = x, .y = y }, fall.width * scale, fade(a));
+                rl.drawLineEx(tail, .{ .x = x, .y = y }, fall.width * scale, look.fade(INK, a));
             } else {
                 const k = d.since / fall.splash_s;
-                rl.drawCircleLinesV(.{ .x = x, .y = y }, (1 + k * (fall.ring - 1)) * scale, fade(a * (1 - k)));
+                rl.drawCircleLinesV(.{ .x = x, .y = y }, mathx.lerpF(1, fall.ring, k) * scale, look.fade(INK, a * (1 - k)));
             }
         }
     }
 };
 
-fn fade(a: f32) rl.Color {
-    var c = INK;
-    c.a = @intFromFloat(std.math.clamp(a, 0, 1) * 255);
-    return c;
-}
 
 test "a drizzle keeps its drops falling and landing, none for a clear sky, and as many for a bigger screen's area" {
     var w = Weather{};

@@ -87,7 +87,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const across = rng.chance(0.5);
     const sides = if (across) carve.ACROSS else carve.DOWN;
     for (sides) |side| {
-        const gate_at = carve.sideAt(curtain, side, if (across) grid.MIDDLE.y else grid.MIDDLE.x);
+        const gate_at = carve.sideAt(curtain, side, carve.alongOf(side, grid.MIDDLE));
         const out_dir = side.delta();
         const span = P{ .x = if (across) 0 else 1, .y = if (across) 1 else 0 };
         var k: i32 = -CURTAIN - reachOf(p.towers, p.moat);

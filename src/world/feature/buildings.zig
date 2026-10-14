@@ -119,12 +119,12 @@ pub fn doorway(rng: *mathx.Rng, b: Box) [2]P {
 }
 
 fn doorwayOn(b: Box, side: mathx.Dir, k: i32) [2]P {
-    const w = carve.sideAt(b, side, (if (side == .n or side == .s) b.lo.x else b.lo.y) + 1 + k);
+    const w = carve.sideAt(b, side, carve.alongOf(side, b.lo) + 1 + k);
     return .{ w, w.add(side.delta()) };
 }
 
 fn spanOf(b: Box, side: mathx.Dir) i32 {
-    return (if (side == .n or side == .s) b.width() else b.height()) - 2;
+    return carve.alongOf(side, .{ .x = b.width(), .y = b.height() }) - 2;
 }
 
 fn dryDoorway(lv: *const grid.Level, rng: *mathx.Rng, b: Box) ?[2]P {
