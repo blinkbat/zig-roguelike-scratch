@@ -63,7 +63,7 @@ pub fn apply(lv: *grid.Level, _: *mathx.Rng, seed: u64, _: carve.Palette, p: Par
     const rough: f32 = @floatFromInt(p.rough);
     var edges: [@max(grid.W, grid.H)]struct { water: f32, shallows: f32, sand: f32 } = undefined;
     const side = p.side.dir();
-    const len: usize = @intCast(carve.alongOf(side, .{ .x = grid.W, .y = grid.H }));
+    const len: usize = @intCast(carve.alongOf(side, grid.SIZE));
     for (edges[0..len], 0..) |*edge, along| {
         const surf = wander(noise, along, 0, rough);
         const dune = wander(noise, along, BEACH_ROW, rough);

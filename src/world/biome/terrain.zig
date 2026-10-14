@@ -5,6 +5,7 @@ const carve = @import("../carve.zig");
 
 // Dwarf Fortress's fields, classed by its getBiomeType checks; narrow the ranges for one biome, widen them for many.
 
+const GRAIN_SCALE: f32 = 5;
 const P = mathx.P;
 
 pub const SCALE_MIN: u8 = 6;
@@ -131,7 +132,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         height[i] = h;
         const heat = lerp(p.heat, stretch(warmth.at(q, s * 2, 2))) - @max(0, h - LAPSE_FROM);
         const b = classify(h, lerp(p.rain, stretch(rainfall.at(q, s, 3))), lerp(p.drain, stretch(drainage.at(q, s, 3))), heat);
-        lv.tile[i] = groundOf(b, grain.at(q, 5, 2), rng.unit());
+        lv.tile[i] = groundOf(b, grain.at(q, GRAIN_SCALE, 2), rng.unit());
     }
     for (0..p.rivers) |_| river(lv, rng, &height);
     carve.rim(lv, palette(p).solid);

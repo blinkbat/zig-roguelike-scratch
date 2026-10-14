@@ -23,6 +23,9 @@ pub const PLATE_PAD: i32 = 10;
 pub const PLATE_H: i32 = 88;
 const PLATE_RULE: i32 = 5;
 const SHADOW_DROP: i32 = 3;
+const PLATE_SHADOW_GROW: i32 = 2;
+const FRAME_W: f32 = 2;
+const STATUS_EDGE_W: f32 = 1;
 /// How far an orb's shadow falls below it, and how much wider it is.
 const ORB_SHADOW_DY: i32 = 4;
 const ORB_SHADOW_GROW: i32 = 2;
@@ -89,9 +92,9 @@ pub fn frame(layout: Layout) void {
     const x = layout.life.x;
     const y = layout.top + PLATE_Y;
     const width = layout.mana.x - x;
-    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, PLATE_H + 2, look.fade(rl.Color.black, PLATE_SHADOW_A));
+    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, PLATE_H + PLATE_SHADOW_GROW, look.fade(rl.Color.black, PLATE_SHADOW_A));
     rl.drawRectangle(x, y, width, PLATE_H, PLATE);
-    rl.drawRectangleLinesEx(look.rect(x, y, width, PLATE_H), 2, FRAME);
+    rl.drawRectangleLinesEx(look.rect(x, y, width, PLATE_H), FRAME_W, FRAME);
     rl.drawLine(x + RULE_INSET, y + PLATE_RULE, x + width - RULE_INSET, y + PLATE_RULE, FRAME_DARK);
     rl.drawLine(x + RULE_INSET, y + PLATE_H - 1 - PLATE_RULE, x + width - RULE_INSET, y + PLATE_H - 1 - PLATE_RULE, FRAME_DARK);
 }
@@ -143,7 +146,8 @@ pub fn statuses(layout: Layout, face: *const font.Face, status: std.EnumArray(fx
         const turns = status.get(s);
         if (turns == 0) continue;
         rl.drawRectangle(x, y, STATUS_PX, STATUS_PX, PLATE);
-        rl.drawRectangleLinesEx(look.rect(x, y, STATUS_PX, STATUS_PX), 1, s.ink());
+        rl.drawRectangleLinesEx(look.rect(x, y, STATUS_PX, STATUS_PX), STATUS_EDGE_W, s.ink());
+
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         var buf: [4]u8 = undefined;
         const label = std.fmt.bufPrintZ(&buf, "{d}", .{turns}) catch "";

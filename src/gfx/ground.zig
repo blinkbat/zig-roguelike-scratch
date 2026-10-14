@@ -28,7 +28,7 @@ pub const Ground = enum {
     bridge,
     cobble,
 
-    /// The Desktop template, `<name>.aseprite`, exported to `assets/<name>-ground.png`.
+    /// Exported to `assets/<name>-ground.png` by `export_ground.lua`, which names its Desktop source.
     pub fn png(comptime g: Ground) []const u8 {
         return @tagName(g) ++ "-ground.png";
     }
@@ -44,7 +44,7 @@ pub const Ground = enum {
     fn bears(g: Ground) bool {
         return switch (g) {
             .ice, .snow, .sand, .dirt, .grass, .rubble, .cobble => true,
-            else => false,
+            .chasm, .lava, .water, .shallows, .reeds, .crop, .bridge => false,
         };
     }
 
@@ -58,6 +58,9 @@ pub const Ground = enum {
 };
 
 pub const Grounds = std.EnumSet(Ground);
+
+const RANKS = std.enums.values(Ground).len + 1;
+const Ranks = std.meta.Int(.unsigned, RANKS);
 
 const RANK = blk: {
     var r = std.EnumArray(Ground, u8).initFill(0);
@@ -73,10 +76,13 @@ const RANK = blk: {
 };
 
 const BY_RANK = blk: {
-    var by: [std.enums.values(Ground).len + 1]Ground = undefined;
+    var by: [RANKS]Ground = undefined;
     for (std.enums.values(Ground)) |g| by[RANK.get(g)] = g;
     break :blk by;
 };
+
+/// Every ground, lowest first, as they draw.
+pub const LAYERS: []const Ground = BY_RANK[1..];
 
 pub fn of(t: grid.Tile) ?Ground {
     return switch (t) {
@@ -98,7 +104,7 @@ pub fn bedAt(lv: *const grid.Level, p: P) ?Ground {
     const t = lv.at(p);
     if (of(t)) |g| return g;
     const fallback = look.under(t) orelse return null;
-    var votes = [_]u8{0} ** 16;
+    var votes = [_]u8{0} ** RANKS;
     var best = of(fallback).?;
     var most: u8 = 0;
     for (mathx.ALL_DIRS) |d| {
@@ -118,6 +124,10 @@ pub fn bedAt(lv: *const grid.Level, p: P) ?Ground {
 /// A cell's place in the stack: a ground's `rank`, `OVER` where its tile covers it whole, `NONE` where nothing is drawn.
 const NONE: u8 = 0;
 const OVER: u8 = std.math.maxInt(u8);
+
+fn isGround(r: u8) bool {
+    return r != NONE and r != OVER;
+}
 
 /// Each cell's ground over the cells drawn and one round them, and each of their corner points, worked out once a
 /// frame for every layer.
@@ -143,10 +153,10 @@ pub const Beds = struct {
     pub const Point = struct {
         corners: Corners,
         /// A bit for each rank among them.
-        holds: u16,
+        holds: Ranks,
 
         pub fn has(self: Point, g: Ground) bool {
-            return self.holds & (@as(u16, 1) << @intCast(g.rank())) != 0;
+            return self.holds & (@as(Ranks, 1) << @intCast(g.rank())) != 0;
         }
     };
 
@@ -177,9 +187,9 @@ pub const Beds = struct {
         while (points.next()) |c| : (n += 1) {
             const se = slot(c);
             const k = Corners{ .rank = .{ b.rank[se - SPAN - 1], b.rank[se - SPAN], b.rank[se - 1], b.rank[se] } };
-            var holds: u16 = 0;
+            var holds: Ranks = 0;
             for (k.rank) |r| {
-                if (r != NONE and r != OVER) holds |= @as(u16, 1) << @intCast(r);
+                if (isGround(r)) holds |= @as(Ranks, 1) << @intCast(r);
             }
             b.point[n] = .{ .corners = k, .holds = holds };
         }
@@ -193,7 +203,7 @@ pub const Beds = struct {
 
     pub fn ground(self: *const Beds, p: P) ?Ground {
         const r = self.at(p);
-        return if (r == NONE or r == OVER) null else Ground.ofRank(r);
+        return if (isGround(r)) Ground.ofRank(r) else null;
     }
 
     /// Point `c`, from `lo` to `hi`.
@@ -204,7 +214,7 @@ pub const Beds = struct {
 };
 
 comptime {
-    std.debug.assert(std.enums.values(Ground).len < 16);
+    for (std.enums.values(Ground)) |g| std.debug.assert(of(g.tile()).? == g);
 }
 
 pub const NW: u4 = 1;
@@ -243,7 +253,7 @@ comptime {
 }
 
 /// The four cells round point `c`, which lies at the top-left corner of cell `c`, with their bits.
-const AROUND = [4]struct { d: P, bit: u4 }{
+pub const AROUND = [4]struct { d: P, bit: u4 }{
     .{ .d = .{ .x = -1, .y = -1 }, .bit = NW },
     .{ .d = .{ .x = 0, .y = -1 }, .bit = NE },
     .{ .d = .{ .x = -1, .y = 0 }, .bit = SW },
@@ -274,19 +284,12 @@ pub const Corners = struct {
         if (!self.holds(g)) return 0;
         var m: u4 = 0;
         for (AROUND, self.rank) |a, r| {
-            if (r == NONE or r == OVER or r <= g.rank()) continue;
+            if (!isGround(r) or r <= g.rank()) continue;
             if (sheets.contains(Ground.ofRank(r))) m |= a.bit;
         }
         return m;
     }
 
-    /// Where corner `bit`'s cell lies from the point.
-    pub fn cellOf(bit: u4) P {
-        for (AROUND) |a| {
-            if (a.bit == bit) return a.d;
-        }
-        unreachable;
-    }
 };
 
 test "every ground without a sheet lies under every ground with one, and each keeps its order among its own" {
@@ -299,6 +302,8 @@ test "every ground without a sheet lies under every ground with one, and each ke
         }
         try std.testing.expectEqual(a, Ground.ofRank(a.rank()));
     }
+    try std.testing.expectEqual(std.enums.values(Ground).len, LAYERS.len);
+    for (LAYERS[1..], LAYERS[0 .. LAYERS.len - 1]) |a, b| try std.testing.expect(b.rank() < a.rank());
 }
 
 /// The sheets the layering tests are written for.
@@ -315,7 +320,7 @@ test "a corner's pieces stack: each ground covers its own corners and those of e
     lv.set(.{ .x = 10, .y = 10 }, .water);
     lv.set(.{ .x = 11, .y = 10 }, .dirt);
     lv.set(.{ .x = 10, .y = 11 }, .floor);
-    const all = bedsOf(&lv, .{ .x = 0, .y = 0 }, .{ .x = grid.W, .y = grid.H }, true);
+    const all = bedsOf(&lv, .{ .x = 0, .y = 0 }, grid.SIZE, true);
     const c = all.pointAt(.{ .x = 11, .y = 11 }).corners;
     try std.testing.expectEqual(FULL, c.mask(.cobble));
     try std.testing.expectEqual(NW | NE | SE, c.mask(.water));
@@ -361,7 +366,9 @@ test "what stands takes the ground its neighbours bear, and the sheet's cells ma
     try std.testing.expectEqual(@as(?Ground, .dirt), bedAt(&lv, boulder));
     lv.set(.{ .x = 20, .y = 19 }, .grass);
     try std.testing.expectEqual(@as(?Ground, .sand), bedAt(&lv, boulder));
-    try expectLuaList(u4, &ORDER, "tools/tile_art/ground_corners.lua");
+    try expectLuaList(u4, &ORDER, "tools/tile_art/ground_corners.lua", "return {");
+    try expectLuaList(u4, &.{ NW, NE, SW, SE }, "tools/tile_art/ground_sheet.lua", "local NW,NE,SW,SE=");
+
     try std.testing.expectEqual(P{ .x = 1, .y = 1 }, CELL_OF[FULL]);
 }
 
@@ -374,13 +381,15 @@ test "a ground with no sheet lies under the edges round it of a higher one that 
     lv.set(.{ .x = 11, .y = 12 }, .shrub);
     lv.set(.{ .x = 9, .y = 11 }, .rock);
     const sheets = Grounds.initMany(&.{ .dirt, .grass });
-    const b = bedsOf(&lv, .{ .x = 0, .y = 0 }, .{ .x = grid.W, .y = grid.H }, false);
+    const b = bedsOf(&lv, .{ .x = 0, .y = 0 }, grid.SIZE, false);
     try std.testing.expectEqual(NW | NE | SE, b.pointAt(.{ .x = 11, .y = 10 }).corners.under(.sand, sheets));
     try std.testing.expectEqual(NW | SE, b.pointAt(.{ .x = 10, .y = 11 }).corners.under(.sand, sheets));
     try std.testing.expectEqual(NW | NE | SW, b.pointAt(.{ .x = 12, .y = 10 }).corners.under(.cobble, sheets));
     try std.testing.expectEqual(@as(u4, 0), b.pointAt(.{ .x = 12, .y = 10 }).corners.under(.sand, sheets));
     try std.testing.expectEqual(@as(u4, 0), b.pointAt(.{ .x = 11, .y = 10 }).corners.under(.sand, Grounds.initOne(.dirt)));
-    try std.testing.expectEqual(P{ .x = -1, .y = 0 }, Corners.cellOf(SW));
+    try std.testing.expectEqual(P{ .x = -1, .y = 0 }, AROUND[2].d);
+    try std.testing.expectEqual(SW, AROUND[2].bit);
+
     try std.testing.expectEqual(@as(?Ground, .grass), b.ground(.{ .x = 11, .y = 12 }));
     try std.testing.expect(b.shown.contains(.sand) and b.shown.contains(.cobble) and !b.shown.contains(.dirt));
 }
@@ -392,12 +401,13 @@ fn bedsOf(lv: *const grid.Level, lo: P, hi: P, seen_only: bool) Beds {
 }
 
 /// The numbers a tile-art script's `return { ... }` lists are `want`, in order.
-pub fn expectLuaList(comptime T: type, want: []const T, path: []const u8) !void {
+pub fn expectLuaList(comptime T: type, want: []const T, path: []const u8, after: []const u8) !void {
     const alloc = std.testing.allocator;
-    const lua = try std.fs.cwd().readFileAlloc(alloc, path, 4096);
+    const lua = try std.fs.cwd().readFileAlloc(alloc, path, 1 << 16);
     defer alloc.free(lua);
-    const list = lua[(std.mem.indexOf(u8, lua, "return {") orelse return error.NoList) + "return {".len ..];
-    var nums = std.mem.tokenizeAny(u8, list[0 .. std.mem.indexOfScalar(u8, list, '}') orelse return error.NoList], ", \r\n");
+    const list = lua[(std.mem.indexOf(u8, lua, after) orelse return error.NoList) + after.len ..];
+    const end = if (std.mem.endsWith(u8, after, "{")) std.mem.indexOfScalar(u8, list, '}') else std.mem.indexOfAny(u8, list, "\r\n");
+    var nums = std.mem.tokenizeAny(u8, list[0 .. end orelse return error.NoList], ", \r\n");
     var n: usize = 0;
     while (nums.next()) |m| : (n += 1) {
         try std.testing.expect(n < want.len);

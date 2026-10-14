@@ -77,9 +77,9 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     }
     const plaza = grid.MIDDLE;
     carve.disc(lv, plaza, @as(f32, @floatFromInt(p.block)) * PLAZA_OF, street, null);
-    setpiece.stampAround(lv, plaza, setpiece.rows(.well));
     var x = lo.x;
-    while (x < hi.x) : (x += step) carve.bridge(lv, .{ .x = x, .y = lo.y }, .{ .x = x + s, .y = hi.y }, null);
+    while (x < hi.x) : (x += step) carve.bridge(lv, .{ .lo = .{ .x = x, .y = lo.y }, .hi = .{ .x = x + s, .y = hi.y } }, null);
+    setpiece.stampAround(lv, plaza, setpiece.rows(.well));
     const ring: grid.Tile = switch (p.wall) {
         .none => return,
         .wall => .wall,
@@ -96,7 +96,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         const deep = g.at.add(g.in.delta().scaled(s));
         const a = g.at.sub(side);
         const b = deep.add(side);
-        carve.bridge(lv, a.min(b), a.max(b).add(.{ .x = 1, .y = 1 }), null);
+        carve.bridge(lv, grid.Box.between(a, b), null);
+
     }
 }
 
@@ -205,6 +206,19 @@ test "every gate of a walled town leads to its plaza, its top street a canal or 
     }
     std.debug.print("{d} walled towns all canals: {d} gates leading nowhere\n", .{ TOWNS, dead });
     try std.testing.expectEqual(@as(usize, 0), dead);
+}
+
+test "the plaza's well holds its water whatever street crosses it" {
+    var lv = grid.Level.blank();
+    var dry: usize = 0;
+    for (BLOCK_MIN..BLOCK_MAX + 1) |blk| {
+        for (1..STREET_MAX + 1) |s| {
+            var rng = mathx.Rng.init(blk * 7 + s);
+            shape(&lv, &rng, 0, (Params{ .block = @intCast(blk), .street = @intCast(s) }).fit());
+            if (lv.at(grid.MIDDLE) != .water) dry += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), dry);
 }
 
 test "a town's houses each open onto its streets" {

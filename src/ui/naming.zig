@@ -19,7 +19,8 @@ comptime {
     for (LETTERS) |row| std.debug.assert(row.len == COLS);
 }
 
-pub const RUB = input.Button.x;
+const RUB = input.Button.x;
+
 
 const FIELD: i32 = 36;
 const KEY: i32 = 30;

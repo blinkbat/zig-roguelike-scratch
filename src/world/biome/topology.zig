@@ -5,6 +5,7 @@ const carve = @import("../carve.zig");
 
 // Path of Exile's topology graphs; the layouts are Grim Tangle, Red Vale, Keth, Manor Ramparts, the Crossroads, Mawdun Quarry, Jungle Ruins and Dried Lake.
 
+const CLEARING_SCALE: f32 = 4;
 const P = mathx.P;
 
 pub const CLEARING_MIN: u8 = 2;
@@ -110,15 +111,15 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     for (0..p.sides) |_| {
         const pick = rng.below(@intCast(g.spots.len));
         const from = at[pick];
-        const dx = rng.range(-SIDE_REACH, SIDE_REACH);
-        const to = grid.Box.inMap(inset).clamp(from.add(.{ .x = dx, .y = rng.range(-SIDE_REACH, SIDE_REACH) }));
+        const to = grid.Box.inMap(inset).clamp(grid.Box.around(from, SIDE_REACH).roll(rng));
+
         path(lv, rng, from, to, p.path, pal.open);
         clearing(lv, noise, to, @as(f32, @floatFromInt(p.clearing)) * SIDE_CLEARING, FRAY, pal.open);
     }
 }
 
 fn clearing(lv: *grid.Level, noise: carve.Noise, c: P, r: f32, fray: f32, open: grid.Tile) void {
-    carve.blob(lv, noise, c, r, 4, 1 - fray / 2, fray, open);
+    carve.blob(lv, noise, c, r, CLEARING_SCALE, 1 - fray / 2, fray, open);
 }
 
 const PATH_WANDER: f32 = 0.7;

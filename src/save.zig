@@ -93,7 +93,8 @@ pub const Unreadable = enum {
 pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
 
 const FINGERPRINT = store.fingerprint([_]type{ Summary, Seed, bool, atlas.Atlas, Node, Visited, game.Visit, Tail });
-const HEAD = MAGIC.len + @sizeOf(u64);
+const Print = @TypeOf(FINGERPRINT);
+const HEAD = MAGIC.len + @sizeOf(Print);
 /// The payload's hash ends the file, so a file damaged or cut short is refused before any of it is believed.
 const SUM = @sizeOf(u64);
 
@@ -142,7 +143,7 @@ fn sumOf(bytes: []const u8) u64 {
 fn header(bytes: *[]const u8) Error!void {
     if (bytes.len < HEAD or !std.mem.eql(u8, bytes.*[0..MAGIC.len], MAGIC)) return error.NotASave;
     var b = bytes.*[MAGIC.len..];
-    var print: u64 = undefined;
+    var print: Print = undefined;
     _ = store.take(&b, &print);
     if (print != FINGERPRINT) return error.OtherBuild;
     bytes.* = b;

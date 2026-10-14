@@ -5,6 +5,7 @@ const carve = @import("../carve.zig");
 
 // Path of Exile's outer buffer, Diablo II's border blocks.
 
+const ROUGH_SCALE: f32 = 6;
 pub const WIDTH_MAX: u8 = 12;
 pub const ROUGH_MAX: u8 = 12;
 
@@ -27,7 +28,7 @@ pub fn apply(lv: *grid.Level, _: *mathx.Rng, seed: u64, _: carve.Palette, p: Par
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
         const in = grid.Level.edgeDist(q);
-        const reach = @as(f32, @floatFromInt(p.width)) + noise.at(q, 6, 2) * @as(f32, @floatFromInt(p.rough));
+        const reach = @as(f32, @floatFromInt(p.width)) + noise.at(q, ROUGH_SCALE, 2) * @as(f32, @floatFromInt(p.rough));
         if (@as(f32, @floatFromInt(in)) + 0.5 < reach) lv.tile[i] = p.tile;
     }
 }

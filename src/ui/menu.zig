@@ -8,6 +8,9 @@ const font = @import("../gfx/font.zig");
 pub const CONFIRM = input.Button.a;
 pub const BACK = input.Button.b;
 pub const PAUSE = input.Button.pause;
+pub const CHANGE = input.Button.x;
+pub const REMOVE = input.Button.y;
+
 
 pub const TITLE: i32 = 60;
 const ROW: i32 = 30;

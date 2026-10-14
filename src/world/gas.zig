@@ -66,7 +66,7 @@ fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
 
 /// A cell wider than the gas all round; the high corner exclusive.
 fn reach(lv: *const grid.Level) ?grid.Box {
-    var lo = P{ .x = grid.W, .y = grid.H };
+    var lo = grid.SIZE;
     var hi = P{ .x = -1, .y = -1 };
     for (&lv.gas, 0..) |v, i| {
         if (v == 0) continue;
@@ -75,7 +75,7 @@ fn reach(lv: *const grid.Level) ?grid.Box {
         hi = hi.max(p);
     }
     if (hi.x < 0) return null;
-    return (grid.Box{ .lo = lo, .hi = hi.add(.{ .x = 1, .y = 1 }) }).grown(1);
+    return grid.Box.between(lo, hi).grown(1);
 }
 
 const Life = struct { turns: usize = 0, most: usize = 0 };

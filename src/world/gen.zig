@@ -24,7 +24,7 @@ comptime {
 }
 
 pub const Params = struct {
-    size: P = .{ .x = grid.W, .y = grid.H },
+    size: P = grid.SIZE,
     rooms: usize = MAX_ROOMS,
     /// Lowest and highest, both inclusive.
     room_w: [2]i32 = .{ 5, 13 },

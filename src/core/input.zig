@@ -39,10 +39,10 @@ fn mapped(at: i32) bool {
 }
 
 /// The pad whose button or trigger was pressed last drives; one that has not keeps driving while it is plugged in, else the first mapped.
-fn choosePad(was: ?i32, before: *const [PADS]Triggers, now: *const [PADS]Triggers) ?i32 {
+fn choosePad(was: ?i32, focused: bool, before: *const [PADS]Triggers, now: *const [PADS]Triggers) ?i32 {
     for (0..PADS) |i| {
         const at: i32 = @intCast(i);
-        if (mapped(at) and struck(at, before, now)) return at;
+        if (focused and mapped(at) and struck(at, before, now)) return at;
     }
     if (was) |w| {
         if (mapped(w)) return w;
@@ -451,9 +451,10 @@ pub const State = struct {
     pub fn update(self: *State, dt: f32) void {
         const before = self.triggers;
         for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
-        self.pad_at = choosePad(self.pad_at, &before, &self.triggers);
+        const focused = rl.isWindowFocused();
+        self.pad_at = choosePad(self.pad_at, focused, &before, &self.triggers);
         const kind: ?Device = if (self.pad_at) |at| kindAt(at) else null;
-        const live: ?i32 = if (rl.isWindowFocused()) self.pad_at else null;
+        const live: ?i32 = if (focused) self.pad_at else null;
         const alt_down = altDown();
         for (BUTTONS) |b| {
             var on = false;
@@ -473,7 +474,7 @@ pub const State = struct {
             self.down.setPresent(b, hold);
         }
         if (self.playing and !alt_down) self.slotKeys();
-        self.time(dt);
+        if (focused) self.time(dt);
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();

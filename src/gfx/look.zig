@@ -191,7 +191,7 @@ pub const Sprites = struct {
     /// The grounds with a sheet loaded.
     pub fn sheets(self: *const Sprites) ground.Grounds {
         var s = ground.Grounds.initEmpty();
-        for (std.enums.values(ground.Ground)) |g| s.setPresent(g, self.grounds.get(g) != null);
+        for (std.enums.values(ground.Ground)) |g| s.setPresent(g, self.grounds.getPtrConst(g).* != null);
         return s;
     }
 
@@ -199,8 +199,8 @@ pub const Sprites = struct {
     /// its square on each cell it holds and a quarter under the edges over it; cell 0,0's top-left at `origin`, `px` a cell.
     pub fn drawGround(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32) void {
         const sheeted = self.sheets();
-        var it = beds.shown.iterator();
-        while (it.next()) |gr| {
+        for (ground.LAYERS) |gr| {
+            if (!beds.shown.contains(gr)) continue;
             const sheet = sheeted.contains(gr);
             if (!sheet) {
                 var cells = grid.Cells.of(beds.lo, beds.hi);
@@ -220,10 +220,10 @@ pub const Sprites = struct {
                 }
                 const under_ = here.corners.under(gr, sheeted);
                 if (under_ == 0) continue;
-                for (QUARTERS) |q| {
-                    if (under_ & q.bit == 0) continue;
-                    const cell = p.add(ground.Corners.cellOf(q.bit));
-                    self.squarePart(gr.tile(), cellAt(origin, cell, px), px, QUARTERS[3 - q.at].uv, 0.5);
+                for (ground.AROUND) |a| {
+                    if (under_ & a.bit == 0) continue;
+                    const toward: [2]f32 = .{ @floatFromInt(-a.d.x), @floatFromInt(-a.d.y) };
+                    self.squarePart(gr.tile(), cellAt(origin, p.add(a.d), px), px, .{ toward[0] / 2, toward[1] / 2 }, 0.5);
                 }
             }
         }
@@ -236,7 +236,7 @@ pub const Sprites = struct {
     /// The part of a ground's square from `uv` across `span`, fractions of the cell: its picture, else its colour.
     fn squarePart(self: *const Sprites, t: grid.Tile, cell: [2]f32, px: f32, uv: [2]f32, span: f32) void {
         const dest = rl.Rectangle{ .x = cell[0] + uv[0] * px, .y = cell[1] + uv[1] * px, .width = span * px, .height = span * px };
-        if (self.tiles.get(t)) |tex| {
+        if (self.tiles.getPtrConst(t).*) |tex| {
             const w: f32 = @floatFromInt(tex.width);
             const h: f32 = @floatFromInt(tex.height);
             rl.drawTexturePro(tex, .{ .x = uv[0] * w, .y = uv[1] * h, .width = span * w, .height = span * h }, dest, .{ .x = 0, .y = 0 }, 0, LIT);
@@ -253,7 +253,7 @@ pub const Sprites = struct {
 
     pub fn figures(self: *const Sprites) [FIGURES]?rl.Texture2D {
         var standing: [STANDING.len]?rl.Texture2D = undefined;
-        for (STANDING, &standing) |t, *s| s.* = self.tiles.get(t);
+        for (STANDING, &standing) |t, *s| s.* = self.tiles.getPtrConst(t).*;
         return self.bodies.values ++ [_]?rl.Texture2D{self.barrel} ++ standing ++ self.forest;
     }
 
@@ -281,10 +281,10 @@ pub const Sprites = struct {
     pub fn resident(self: *const Sprites) Assets {
         var held = Assets{ .barrel = self.barrel != null };
         for (std.enums.values(actor.Kind)) |k| {
-            if (self.bodies.get(k) != null) held.bodies.insert(k);
+            if (self.bodies.getPtrConst(k).* != null) held.bodies.insert(k);
         }
         for (std.enums.values(grid.Tile)) |t| {
-            if (self.tiles.get(t) != null) held.tiles.insert(t);
+            if (self.tiles.getPtrConst(t).* != null) held.tiles.insert(t);
         }
         for (self.wall, 0..) |t, i| {
             if (t != null) held.wall.set(i);
@@ -604,14 +604,6 @@ pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32
     face.symbol(l.sym, l.ch, cx, cy, size, l.fg);
 }
 
-/// Opposite corners sum to 3, so a point's corner cell meets it with quarter `3 - at`.
-const QUARTERS = [4]struct { at: usize, bit: u4, uv: [2]f32 }{
-    .{ .at = 0, .bit = ground.NW, .uv = .{ 0, 0 } },
-    .{ .at = 1, .bit = ground.NE, .uv = .{ 0.5, 0 } },
-    .{ .at = 2, .bit = ground.SW, .uv = .{ 0, 0.5 } },
-    .{ .at = 3, .bit = ground.SE, .uv = .{ 0.5, 0.5 } },
-};
-
 /// Under a tile's glyph where it has no sprite; null leaves the background.
 pub fn tileBg(t: grid.Tile) ?rl.Color {
     return TILES.get(t).bg;
@@ -631,7 +623,7 @@ pub fn standsOver(t: grid.Tile) bool {
 /// A ground with neither a sheet nor a picture, which shows its glyph.
 pub fn glyphGround(t: grid.Tile, sprites: *const Sprites) bool {
     const g = ground.of(t) orelse return false;
-    return sprites.grounds.get(g) == null and sprites.tiles.get(t) == null;
+    return sprites.grounds.getPtrConst(g).* == null and sprites.tiles.getPtrConst(t).* == null;
 }
 
 const TileLook = struct { sym: [:0]const u8, ch: u8, fg: rl.Color, bg: ?rl.Color, mini: rl.Color, mini_dim: rl.Color };
@@ -1197,12 +1189,9 @@ test "floor shows through a wall's gaps; a tile with its own ground or backgroun
 }
 
 test "the wall sheet's masks and face height are the ones its export script paints" {
-    const alloc = std.testing.allocator;
-    try ground.expectLuaList(u8, &WALL_MASKS, "tools/tile_art/wall_masks.lua");
-    const script = try std.fs.cwd().readFileAlloc(alloc, "tools/tile_art/export_walls.lua", 1 << 16);
-    defer alloc.free(script);
-    const face = script[(std.mem.indexOf(u8, script, "local FACE=") orelse return error.NoFace) + "local FACE=".len ..];
-    try std.testing.expectEqual(WALL_FACE_PX, try std.fmt.parseInt(i32, face[0 .. std.mem.indexOfAny(u8, face, "\r\n") orelse return error.NoFace], 10));
+    try ground.expectLuaList(u8, &WALL_MASKS, "tools/tile_art/wall_masks.lua", "return {");
+    try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/export_walls.lua", "local FACE=");
+
 }
 
 test "an arrow's glyph follows its slope" {

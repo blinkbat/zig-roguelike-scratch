@@ -555,9 +555,10 @@ pub fn paved(t: grid.Tile, put: grid.Tile) grid.Tile {
     return if (t.liquid() or t == .bridge) .bridge else put;
 }
 
-/// From `lo` to `hi` (not included) a liquid bridged; with `open`, a wall there opened to it.
-pub fn bridge(lv: *grid.Level, lo: P, hi: P, open: ?grid.Tile) void {
-    var cells = grid.Cells.of(lo, hi);
+/// A liquid in `b` bridged; with `open`, a wall there opened to it.
+pub fn bridge(lv: *grid.Level, b: grid.Box, open: ?grid.Tile) void {
+    var cells = b.cells();
+
     while (cells.next()) |q| {
         const was = lv.at(q);
         lv.set(q, paved(was, if (open != null and was == .wall) open.? else was));
@@ -644,7 +645,7 @@ fn notLiquid(t: grid.Tile) bool {
 }
 
 fn edge(rng: *mathx.Rng, side: mathx.Dir) P {
-    return sideAt(grid.Box.inMap(0), side, middleHalf(rng, alongOf(side, .{ .x = grid.W, .y = grid.H })));
+    return sideAt(grid.Box.inMap(0), side, middleHalf(rng, alongOf(side, grid.SIZE)));
 }
 
 fn middleHalf(rng: *mathx.Rng, span: i32) i32 {
@@ -677,12 +678,10 @@ pub const Litter = struct {
     boulders: u16 = 4,
 
     pub fn fit(l: Litter) Litter {
-        var q = l;
-        inline for (std.meta.fields(Litter)) |f| @field(q, f.name) = @min(@field(l, f.name), LITTER_MAX);
-        return q;
+        return capped(l, LITTER_MAX);
     }
 
-    pub fn strew(l: Litter, lv: *grid.Level, rng: *mathx.Rng) void {
+    pub fn strew(l: Litter, lv: *grid.Level, rng: *mathx.Rng, _: u64) void {
         strewn(lv, rng, l.boulders, .boulder);
     }
 };
@@ -697,9 +696,7 @@ pub const Decor = struct {
     shrooms: u16 = 6,
 
     pub fn fit(d: Decor) Decor {
-        var q = d;
-        inline for (std.meta.fields(Decor)) |f| @field(q, f.name) = @min(@field(d, f.name), DECOR_MAX);
-        return q;
+        return capped(d, DECOR_MAX);
     }
 
     pub fn strew(d: Decor, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
@@ -709,17 +706,29 @@ pub const Decor = struct {
     }
 };
 
+fn capped(v: anytype, max: u16) @TypeOf(v) {
+    var q = v;
+    inline for (std.meta.fields(@TypeOf(v))) |f| @field(q, f.name) = @min(@field(v, f.name), max);
+    return q;
+}
+
+/// In the rng's order: reordering changes every seed's floor.
+const DRESSES = .{ "litter", "decor" };
+
 pub fn fitDress(p: anytype) @TypeOf(p) {
     var q = p;
-    if (@hasField(@TypeOf(p), "litter")) q.litter = p.litter.fit();
-    if (@hasField(@TypeOf(p), "decor")) q.decor = p.decor.fit();
+    inline for (DRESSES) |n| {
+        if (@hasField(@TypeOf(p), n)) @field(q, n) = @field(p, n).fit();
+    }
     return q;
 }
 
 pub fn dress(p: anytype, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
-    if (@hasField(@TypeOf(p), "litter")) p.litter.strew(lv, rng);
-    if (@hasField(@TypeOf(p), "decor")) p.decor.strew(lv, rng, seed);
+    inline for (DRESSES) |n| {
+        if (@hasField(@TypeOf(p), n)) @field(p, n).strew(lv, rng, seed);
+    }
 }
+
 
 fn strewn(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, put: grid.Tile) void {
     scatter(lv, rng, per_mille, .{ .tile = put.ground().? }, put, put.solid());

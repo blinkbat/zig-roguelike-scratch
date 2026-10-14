@@ -5,6 +5,7 @@ const carve = @import("../carve.zig");
 
 // Dwarf Fortress's pools and cavern lakes, ADOM's ponds; filled with rock, Diablo II's Act 4 mesas.
 
+const SHORE_SCALE: f32 = 4;
 const P = mathx.P;
 
 pub const COUNT_MAX: u8 = 12;
@@ -54,7 +55,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: P
             if (grid.Level.onRim(q) or !lv.walkable(q)) continue;
             const d = mathx.distEuclid(q, c) / rf;
             if (isle and d < ISLAND_OF) continue;
-            const v = noise.at(q, 4, 2) * (FALLOFF - d);
+            const v = noise.at(q, SHORE_SCALE, 2) * (FALLOFF - d);
             if (v > EDGE) {
                 lv.set(q, p.fill);
             } else if (v > EDGE - RING) {

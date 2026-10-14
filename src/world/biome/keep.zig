@@ -92,7 +92,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         const half = side.across().scaled(@divTrunc(GATE_W, 2));
         const outer = gate_at.add(out_dir.scaled(CURTAIN + reachOf(p.towers, p.moat))).sub(half);
         const inner = gate_at.sub(out_dir.scaled(CURTAIN)).add(half);
-        carve.bridge(lv, outer.min(inner), outer.max(inner).add(.{ .x = 1, .y = 1 }), .floor);
+        carve.bridge(lv, grid.Box.between(outer, inner), .floor);
+
     }
     const keep = keepOf(p);
     carve.box(lv, keep, .wall);

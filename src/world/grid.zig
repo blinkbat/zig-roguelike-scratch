@@ -8,6 +8,7 @@ pub const H: i32 = 64;
 pub const CELLS: usize = @intCast(W * H);
 pub const COLS: usize = @intCast(W);
 pub const ROWS: usize = @intCast(H);
+pub const SIZE = P{ .x = W, .y = H };
 pub const MIDDLE = P{ .x = @divTrunc(W, 2), .y = @divTrunc(H, 2) };
 
 pub const NO_ONE: u16 = 0;
@@ -488,8 +489,14 @@ pub const Box = struct {
         return .{ .lo = lo, .hi = lo.add(.{ .x = w, .y = h }) };
     }
 
+    /// The cells from `a` to `b`, both included, whichever corners they are.
+    pub fn between(a: P, b: P) Box {
+        return .{ .lo = a.min(b), .hi = a.max(b).add(.{ .x = 1, .y = 1 }) };
+    }
+
     /// Every cell within `r` of `c`, on the map or off it.
     pub fn around(c: P, r: i32) Box {
+
         return .{ .lo = c.sub(.{ .x = r, .y = r }), .hi = c.add(.{ .x = r + 1, .y = r + 1 }) };
     }
 

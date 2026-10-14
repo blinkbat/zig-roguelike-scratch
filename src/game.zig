@@ -108,7 +108,7 @@ const MINI_PAD: i32 = 12;
 const CAST_MARGIN: i32 = @intFromFloat(@ceil(light.CAST_REACH));
 const MINI_FRAME: i32 = 4;
 const MINI_HERO_GROW: i32 = 1;
-pub const SHOT_SEED: u64 = 0x5EED_1234;
+const SHOT_SEED: u64 = 0x5EED_1234;
 const GOLD_LO: i32 = 3;
 const GOLD_HI: i32 = 12;
 const SHOTS_DIR = "shots";
@@ -135,8 +135,8 @@ const PLAY_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
 
 const CONFIRM = menu.CONFIRM;
 const BACK = menu.BACK;
-const CHANGE = input.Button.x;
-const REMOVE = input.Button.y;
+const CHANGE = menu.CHANGE;
+const REMOVE = menu.REMOVE;
 const BINDS = skillbar.BINDS;
 
 comptime {
@@ -1633,7 +1633,7 @@ fn deathShown(g: *const Game) bool {
     return g.mode == .dead and quiet(g);
 }
 
-/// The death screen's way on: A, Menu, B, or X, which Space presses.
+/// The death screen's way on: A, Menu, B, or X.
 const DISMISS = [_]input.Button{ CONFIRM, PAUSE, BACK, .x };
 
 fn dismissed(st: *const input.State) bool {
@@ -1727,11 +1727,12 @@ fn shownAt(g: *Game, stood: *const Stood, p: P) bool {
 
 fn stoodNow(g: *Game) Stood {
     var stood = Stood.initEmpty();
-    for (0..g.pool.n) |i| {
-        const under = cellUnder(drawnAt(g, i) orelse continue);
-        if (grid.Level.inside(under)) stood.set(grid.Level.idx(under));
-    }
+    for (0..g.pool.n) |i| stand(&stood, cellUnder(drawnAt(g, i) orelse continue));
     return stood;
+}
+
+fn stand(stood: *Stood, under: P) void {
+    if (grid.Level.inside(under)) stood.set(grid.Level.idx(under));
 }
 
 fn bar(x: i32, y: i32, w: i32, h: i32, v: i32, max: i32, back: rl.Color, fill: rl.Color) void {
@@ -1885,8 +1886,8 @@ fn drawWorld(g: *Game) void {
     for (0..g.pool.n) |i| {
         const at = drawnAt(g, i) orelse continue;
         const mid = middle(at);
-        const under = mathx.cellOf(mid);
-        if (grid.Level.inside(under)) stood.set(grid.Level.idx(under));
+        stand(&stood, mathx.cellOf(mid));
+
         shown[n] = .{
             .pic = g.pictured[i],
             .slot = i,
@@ -2185,7 +2186,7 @@ fn drawDead(g: *Game) void {
     textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
 }
 
-pub fn drawFrame(g: *Game) void {
+fn drawFrame(g: *Game) void {
     rl.clearBackground(look.BG);
     drawWorld(g);
     g.vignette.draw(g.screen.x, g.screen.y);
@@ -2453,7 +2454,8 @@ fn shootHud(g: *Game) !void {
         g.bar = .{};
         g.st = .{ .device = study.device, .modifier = g.bar.modifier };
         const body = &g.pictured[heroSlot(g).?];
-        body.hp = @divTrunc(body.max * study.hp, 100);
+        body.hp = @divTrunc(body.max * study.hp, mathx.PERCENT);
+
         g.mana = study.mana;
         if (study.ailing) {
             body.status = .init(.{ .bleeding = 5, .burning = 3, .chilled = 2 });

@@ -1001,7 +1001,7 @@ pub const Listing = struct {
         return true;
     }
 
-    fn dirPath(self: *const Listing, buf: []u8) []const u8 {
+    pub fn dirPath(self: *const Listing, buf: []u8) []const u8 {
         return std.fmt.bufPrint(buf, PREFIX ++ "{s}", .{self.here()}) catch DIR;
     }
 

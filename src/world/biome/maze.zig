@@ -191,7 +191,8 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
                 lv.set(q, if (@abs(along) <= BRIDGE_REACH) .bridge else .water);
             }
         },
-        .lava => if (rng.chance(LAVA_CHANCE)) pool(lv, mid.add(.{ .x = rng.range(-LAVA_JITTER, LAVA_JITTER), .y = rng.range(-LAVA_JITTER, LAVA_JITTER) })),
+        .lava => if (rng.chance(LAVA_CHANCE)) pool(lv, grid.Box.around(mid, LAVA_JITTER).roll(rng)),
+
         .caves => {},
         .ice => carve.disc(lv, mid, @as(f32, @floatFromInt(size)) / SNOW_PER, .snow, null),
     }

@@ -188,8 +188,9 @@ comptime {
 /// Reproducible from the seed, the doors and the plan; the edge sealed, then every open cell joined, each door too.
 pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features: []const Feature) void {
     std.debug.assert(doors.len <= grid.MAX_DOORS);
-    const pal = floor.palette();
-    switch (floor.fit()) {
+    const fitted = floor.fit();
+    const pal = fitted.palette();
+    switch (fitted) {
         .rooms => |p| {
             _ = gen.around(lv, seed, doors, p);
             if (features.len == 0) return;

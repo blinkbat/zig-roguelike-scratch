@@ -1052,10 +1052,7 @@ pub const Light = struct {
     fn cloudCorners(self: *const Light, c: P) [4]f32 {
         const t = self.t.at();
         if (self.clouds_held) |h| {
-            if (h.t == t and c.x >= h.box.lo.x and c.y >= h.box.lo.y and c.x < h.box.hi.x and c.y < h.box.hi.y) {
-                const k = cornerAt(c);
-                return .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + CORNERS_W], self.clouds[k + CORNERS_W + 1] };
-            }
+            if (h.t == t and c.x >= h.box.lo.x and c.y >= h.box.lo.y and c.x < h.box.hi.x and c.y < h.box.hi.y) return self.heldCorners(c);
         }
         const cx: f32 = @floatFromInt(c.x);
         const cy: f32 = @floatFromInt(c.y);
@@ -1067,12 +1064,17 @@ pub const Light = struct {
         };
     }
 
+    fn heldCorners(self: *const Light, c: P) [4]f32 {
+        const k = cornerAt(c);
+        return .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + CORNERS_W], self.clouds[k + CORNERS_W + 1] };
+    }
+
     fn bakeCell(self: *Light, lv: *const grid.Level, torches: []const TorchIx, c: P, t0: P, t1: P, ray: ?SunRay) void {
         const fade = self.fadeOf(c);
         const dark = if (fade.flat) |v| v == 0 else false;
         const sub: f32 = @floatFromInt(SUB);
-        const k = cornerAt(c);
-        const corners: [4]f32 = if (ray != null and !dark) .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + CORNERS_W], self.clouds[k + CORNERS_W + 1] } else @splat(1);
+        const corners: [4]f32 = if (ray != null and !dark) self.heldCorners(c) else @splat(1);
+
         const patch = Patch.of(self, c);
         const ground = self.groundAt(c);
         var ty = @max(t0.y, c.y * SUB);
@@ -2105,7 +2107,7 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     fov.cast(&lv, f.rooms[1].centre(), actor.row(.archer).sight);
     l.carrier = mathx.centre(f.start);
     for (0..4) |_| l.step(&lv, mathx.FRAME_DT);
-    l.bake(&lv, .{ .x = 0, .y = 0 }, .{ .x = grid.W, .y = grid.H });
+    l.bake(&lv, .{ .x = 0, .y = 0 }, grid.SIZE);
     var ids: [grid.MAX_TORCHES]TorchIx = undefined;
     const torches = l.near(grid.Box.inMap(-1), &ids);
     const sub: f32 = @floatFromInt(SUB);

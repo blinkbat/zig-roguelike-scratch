@@ -48,7 +48,8 @@ const DebugRow = enum {
     }
 };
 const DEBUG_ROWS = std.enums.values(DebugRow);
-const DELETE = input.Button.y;
+const DELETE = menu.REMOVE;
+
 const NAME = "roguelike";
 const LINE = menu.NOTE_MAX;
 
@@ -105,7 +106,7 @@ const App = struct {
 
     /// On the world it last had open, read afresh; the first time on `edit_path`.
     fn toEdit(app: *App) void {
-        const again = app.ed != null;
+        const again = if (app.ed) |e| e.path().len > 0 else false;
         const ed = app.ed orelse blk: {
             const e = editor.Editor.create(app.alloc) catch return app.say("The editor did not start (out of memory)", .{});
             app.ed = e;
@@ -304,7 +305,8 @@ const App = struct {
                 for (names[0..n], rows[0..n], 0..) |*b, *l, i| l.* = std.fmt.bufPrintZ(b, "{s}", .{app.listing.label(i)}) catch "";
                 const picked = app.worlds.step(&g.st, n);
                 var where: [atlas.PATH_MAX + 1]u8 = undefined;
-                const shown = if (app.listing.entry(app.worlds.at) == .up) std.fmt.bufPrintZ(&where, "Up from " ++ atlas.PREFIX ++ "{s}", .{app.listing.here()}) catch "" else app.listing.at(app.worlds.at);
+                var dir: [atlas.PATH_MAX]u8 = undefined;
+                const shown = if (app.listing.entry(app.worlds.at) == .up) std.fmt.bufPrintZ(&where, "Up from {s}", .{app.listing.dirPath(&dir)}) catch "" else app.listing.at(app.worlds.at);
                 menu.draw(g.face, g.screen, "CHOOSE A WORLD", rows[0..n], app.worlds.at, shown);
                 if (back) {
                     if (app.listing.up()) {
