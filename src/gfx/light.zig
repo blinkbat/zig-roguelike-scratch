@@ -49,7 +49,6 @@ const CARRY_FACE_WRAP: f32 = 0.6;
 
 /// The light remembered terrain is drawn under, after Brogue's memory colour.
 const MEMORY = rgbOf(look.rgb(0x33385c));
-const CLOUDS_W: i32 = grid.COLS + 1;
 const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
@@ -65,9 +64,9 @@ const VOID_FADE: f32 = 1.5;
 const SIGHT_FADE: f32 = 0.4;
 const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
 const VOID_SPAN: usize = @intCast(grid.Cells.span(VOID_REACH));
-/// `Light.casting`'s corners: one more than the cells each way.
-const CAST_W: usize = grid.COLS + 1;
-const CAST_H: usize = grid.ROWS + 1;
+/// The cells' corners, which `Light.casting` and `Light.clouds` hold: one more than the cells each way.
+const CORNERS_W: usize = grid.COLS + 1;
+const CORNERS_H: usize = grid.ROWS + 1;
 const FLICKER: f32 = 0.14;
 const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
     .{ .hz = 1.5, .weight = 0.6 },
@@ -285,8 +284,6 @@ fn cloudIn(corners: [4]f32, c: P, q: [2]f32) f32 {
     return mathx.bilerp(corners, u, v);
 }
 
-const Sun = struct { ray: SunRay, cloud: f32 };
-
 /// Ignores what stands in the way.
 fn sunFacing(sk: sky.Sky, s: Spot) f32 {
     return switch (s.surface) {
@@ -444,6 +441,53 @@ const OPEN_WHOLE: f32 = 4;
 fn sample(f: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
     return bilinear(f, grid.W, grid.H, x - 0.5, y - 0.5);
 }
+
+const SightField = enum { soft, weight, open };
+
+/// `sees` reads each field at a point: `Whole` samples the map, `Patch` the cells round one cell.
+fn sightOf(sees: anytype, ground: bool, x: f32, y: f32) f32 {
+    const soft = sees.at(.soft, x, y);
+    if (!ground) return soft;
+    const weight = sees.at(.weight, x, y);
+    if (weight <= 0) return soft;
+    return mathx.lerpF(soft, sees.at(.open, x, y) / weight, @min(1, weight * OPEN_WHOLE));
+}
+
+const Whole = struct {
+    l: *const Light,
+
+    fn at(w: Whole, k: SightField, x: f32, y: f32) f32 {
+        return sample(w.l.sightField(k), x, y);
+    }
+};
+
+/// The fields round one cell, read once for every texel in it: `sample` there, as exactly.
+const Patch = struct {
+    lo: P,
+    v: std.EnumArray(SightField, [9]f32),
+
+    fn of(l: *const Light, c: P) Patch {
+        var p = Patch{ .lo = c.sub(.{ .x = 1, .y = 1 }), .v = undefined };
+        for (std.enums.values(SightField)) |k| {
+            const f = l.sightField(k);
+            const out = p.v.getPtr(k);
+            for (0..9) |i| out[i] = texel(f, grid.W, grid.H, p.lo.x + @as(i32, @intCast(i % 3)), p.lo.y + @as(i32, @intCast(i / 3)));
+        }
+        return p;
+    }
+
+    fn at(p: *const Patch, k: SightField, x: f32, y: f32) f32 {
+        const u = x - 0.5;
+        const v = y - 0.5;
+        const fx = @floor(u);
+        const fy = @floor(v);
+        const ix: usize = @intCast(@as(i32, @intFromFloat(fx)) - p.lo.x);
+        const iy: usize = @intCast(@as(i32, @intFromFloat(fy)) - p.lo.y);
+        const f = p.v.getPtrConst(k);
+        const i = iy * 3 + ix;
+        return mathx.bilerp(.{ f[i], f[i + 1], f[i + 3], f[i + 4] }, u - fx, v - fy);
+    }
+};
 
 fn sampleOccluded(reach: *const [grid.CELLS]f32, open: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
     return occluded(reach, open, grid.W, grid.H, x - 0.5, y - 0.5);
@@ -653,9 +697,11 @@ pub const Light = struct {
     /// Open to the sky: its light and shadows, and its ambient for the dark's.
     sky: ?sky.Sky,
     /// How many of the cells above and left of each corner cast, so a box of them is counted in four reads.
-    casting: [CAST_W * CAST_H]u16,
+    casting: [CORNERS_W * CORNERS_H]u16,
     /// `clouded` at each cell corner a bake reaches, read by `bakeCell`: a corner is shared by four cells.
-    clouds: [CLOUDS_W * (grid.ROWS + 1)]f32,
+    clouds: [CORNERS_W * CORNERS_H]f32,
+    /// The corners `clouds` holds, both inclusive, and the light's seconds they were read at.
+    clouds_held: ?struct { box: grid.Box, t: f32 } = null,
     t: mathx.Seconds,
     map: [TEXELS]rl.Color,
     /// The rows of `map` baked since the texture was last sent, all it needs sent.
@@ -669,6 +715,7 @@ pub const Light = struct {
         l.torch_n = 0;
         l.carrier = null;
         l.sky = null;
+        l.clouds_held = null;
         @memset(&l.casting, 0);
         l.t = .{};
         l.gpu = .{};
@@ -793,11 +840,20 @@ pub const Light = struct {
 
     /// A point on the screen, cells.
     fn sightAt(self: *const Light, x: f32, y: f32) f32 {
-        const soft = sample(&self.soft_sight, x, y);
-        if (grid.cellOr(f32, &self.ground, mathx.cellOf(.{ x, y }), 0) <= 0) return soft;
-        const weight = sample(&self.open_weight, x, y);
-        if (weight <= 0) return soft;
-        return mathx.lerpF(soft, sample(&self.open_sight, x, y) / weight, @min(1, weight * OPEN_WHOLE));
+        return sightOf(Whole{ .l = self }, self.groundAt(mathx.cellOf(.{ x, y })), x, y);
+    }
+
+    fn groundAt(self: *const Light, c: P) bool {
+        return grid.cellOr(f32, &self.ground, c, 0) > 0;
+    }
+
+    /// The fields sight is read from, in `SightField`'s order.
+    fn sightField(self: *const Light, k: SightField) *const [grid.CELLS]f32 {
+        return switch (k) {
+            .soft => &self.soft_sight,
+            .weight => &self.open_weight,
+            .open => &self.open_sight,
+        };
     }
 
     /// By distance, not a blur: a blur is not black on the edge of an unseen cell that seen ground wraps round.
@@ -869,7 +925,7 @@ pub const Light = struct {
     }
 
     fn countCasters(self: *Light, lv: *const grid.Level) void {
-        const w = CAST_W;
+        const w = CORNERS_W;
         @memset(self.casting[0..w], 0);
         for (0..grid.ROWS) |y| {
             var row: u16 = 0;
@@ -882,11 +938,11 @@ pub const Light = struct {
     }
 
     /// `sunlit`, but 1 at once where nothing that casts stands anywhere the ray toward the light could cross.
-    fn sunAt(self: *const Light, lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
+    fn sunAt(self: *const Light, lv: *const grid.Level, ray: *const SunRay, x: f32, y: f32, z: f32) f32 {
         if (sky.upright(ray.flat)) return 1;
-        const b = sunBox(ray, x, y, z);
+        const b = sunBox(ray.*, x, y, z);
         if (self.castersIn(b) == 0) return 1;
-        return sunlit(lv, ray, x, y, z);
+        return sunlit(lv, ray.*, x, y, z);
     }
 
     /// The cells a ray toward the light from `x, y, z` could cross, and a cell round them.
@@ -899,7 +955,7 @@ pub const Light = struct {
     }
 
     fn castersIn(self: *const Light, box: grid.Box) u16 {
-        const w = CAST_W;
+        const w = CORNERS_W;
         const a: usize = @intCast(std.math.clamp(box.lo.x, 0, grid.W));
         const b: usize = @intCast(std.math.clamp(box.lo.y, 0, grid.H));
         const c: usize = @intCast(std.math.clamp(box.hi.x, 0, grid.W));
@@ -925,11 +981,13 @@ pub const Light = struct {
     pub fn at(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32) Rgb {
         const c = mathx.cellOf(q);
         const fade = self.fadeOf(c);
-        const sun: ?Sun = if (self.sky) |k| .{ .ray = SunRay.of(k), .cloud = self.cloudAt(q) } else null;
-        return self.shade(lv, torches, q, self.viewIn(q, &fade), sun);
+        const ray: ?SunRay = if (self.sky) |k| SunRay.of(k) else null;
+        const cloud = if (ray != null) self.cloudAt(q) else 1;
+        return self.shade(lv, torches, q, self.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
     }
 
-    fn shade(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32, v: View, sun: ?Sun) Rgb {
+    /// `cloud` is the share of the sky's light the clouds let through, read only with a `ray`.
+    fn shade(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32, v: View, ray: ?*const SunRay, cloud: f32) Rgb {
         const sight = v.sight;
         const memory = v.memory;
         if (memory <= FAINT) return @splat(0);
@@ -941,12 +999,12 @@ pub const Light = struct {
                 const t = &self.torch[i];
                 view += t.colour * splat(t.shine(s));
             }
-            if (sun) |n| {
-                const facing = sunFacing(n.ray.k, s);
-                if (facing > 0 or n.ray.night > 0) {
-                    const on = self.sunAt(lv, n.ray, s.x, s.y, s.z);
-                    if (facing > 0) view += n.ray.k.key * splat(facing * reaching(on, n.cloud));
-                    view *= n.ray.dim(on, n.cloud);
+            if (ray) |r| {
+                const facing = sunFacing(r.k, s);
+                if (facing > 0 or r.night > 0) {
+                    const on = self.sunAt(lv, r, s.x, s.y, s.z);
+                    if (facing > 0) view += r.k.key * splat(facing * reaching(on, cloud));
+                    view *= r.dim(on, cloud);
                 }
             }
         }
@@ -976,8 +1034,13 @@ pub const Light = struct {
         var y = lo.y;
         while (y <= hi.y) : (y += 1) {
             var x = lo.x;
-            while (x <= hi.x) : (x += 1) self.clouds[@intCast(y * CLOUDS_W + x)] = clouded(@floatFromInt(x), @floatFromInt(y), t);
+            while (x <= hi.x) : (x += 1) self.clouds[cornerAt(.{ .x = x, .y = y })] = clouded(@floatFromInt(x), @floatFromInt(y), t);
         }
+        self.clouds_held = .{ .box = .{ .lo = lo, .hi = hi }, .t = t };
+    }
+
+    fn cornerAt(p: P) usize {
+        return @as(usize, @intCast(p.y)) * CORNERS_W + @as(usize, @intCast(p.x));
     }
 
     fn cloudAt(self: *const Light, q: [2]f32) f32 {
@@ -987,9 +1050,15 @@ pub const Light = struct {
 
     /// A cloud's shadow is cells across, so it is read at a cell's corners and eased between them.
     fn cloudCorners(self: *const Light, c: P) [4]f32 {
+        const t = self.t.at();
+        if (self.clouds_held) |h| {
+            if (h.t == t and c.x >= h.box.lo.x and c.y >= h.box.lo.y and c.x < h.box.hi.x and c.y < h.box.hi.y) {
+                const k = cornerAt(c);
+                return .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + CORNERS_W], self.clouds[k + CORNERS_W + 1] };
+            }
+        }
         const cx: f32 = @floatFromInt(c.x);
         const cy: f32 = @floatFromInt(c.y);
-        const t = self.t.at();
         return .{
             clouded(cx, cy, t),
             clouded(cx + 1, cy, t),
@@ -1002,16 +1071,23 @@ pub const Light = struct {
         const fade = self.fadeOf(c);
         const dark = if (fade.flat) |v| v == 0 else false;
         const sub: f32 = @floatFromInt(SUB);
-        const k: usize = @intCast(c.y * CLOUDS_W + c.x);
-        const corners: [4]f32 = if (ray != null and !dark) .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + CLOUDS_W], self.clouds[k + CLOUDS_W + 1] } else @splat(1);
+        const k = cornerAt(c);
+        const corners: [4]f32 = if (ray != null and !dark) .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + CORNERS_W], self.clouds[k + CORNERS_W + 1] } else @splat(1);
+        const patch = Patch.of(self, c);
+        const ground = self.groundAt(c);
         var ty = @max(t0.y, c.y * SUB);
         while (ty < @min(t1.y, (c.y + 1) * SUB)) : (ty += 1) {
             var tx = @max(t0.x, c.x * SUB);
             while (tx < @min(t1.x, (c.x + 1) * SUB)) : (tx += 1) {
+                const i: usize = @intCast(ty * MAP_W + tx);
+                if (dark) {
+                    self.map[i] = rl.Color.blank;
+                    continue;
+                }
                 const q = [2]f32{ (@as(f32, @floatFromInt(tx)) + 0.5) / sub, (@as(f32, @floatFromInt(ty)) + 0.5) / sub };
-                const sun: ?Sun = if (ray) |r| .{ .ray = r, .cloud = cloudIn(corners, c, q) } else null;
-                const v = if (dark) View{ .sight = 0, .memory = 0, .lit = 0 } else self.viewIn(q, &fade);
-                self.map[@intCast(ty * MAP_W + tx)] = if (dark) rl.Color.blank else texelOf(self.shade(lv, torches, q, v, sun), v.lit);
+                const v = viewOf(sightOf(&patch, ground, q[0], q[1]), q, &fade);
+                const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
+                self.map[i] = texelOf(self.shade(lv, torches, q, v, if (ray) |*r| r else null, cloud), v.lit);
             }
         }
     }
@@ -1024,7 +1100,10 @@ pub const Light = struct {
     }
 
     fn viewIn(self: *const Light, q: [2]f32, fade: *const Fade) View {
-        const sight = self.sightAt(q[0], q[1]);
+        return viewOf(self.sightAt(q[0], q[1]), q, fade);
+    }
+
+    fn viewOf(sight: f32, q: [2]f32, fade: *const Fade) View {
         const memory = fade.at(q[0], q[1], sight);
         return .{ .sight = sight, .memory = memory, .lit = sight * memory };
     }
@@ -1068,7 +1147,7 @@ pub const Light = struct {
     fn sunOnBody(self: *const Light, s: *Shine, k: sky.Sky, centre: [2]f32, lit: f32) Rgb {
         const ray = SunRay.of(k);
         const toward = ray.u;
-        const sun = self.sunAt(&self.scratch, ray, centre[0], centre[1], BODY_Z);
+        const sun = self.sunAt(&self.scratch, &ray, centre[0], centre[1], BODY_Z);
         const cloud = self.cloudAt(centre);
         const on = reaching(sun, cloud);
         if (lit > 0) s.add(.{
@@ -2691,7 +2770,7 @@ test "skipping the sun's march where nothing that casts is near changes nothing 
             for ([_]f32{ 0, 0.4 }) |z| {
                 const q = [2]f32{ c[0] + 0.3, c[1] - 0.2 };
                 checked += 1;
-                try std.testing.expectEqual(sunlit(&lv, SunRay.of(k), q[0], q[1], z), l.sunAt(&lv, SunRay.of(k), q[0], q[1], z));
+                try std.testing.expectEqual(sunlit(&lv, SunRay.of(k), q[0], q[1], z), l.sunAt(&lv, &SunRay.of(k), q[0], q[1], z));
                 const b = Light.sunBox(SunRay.of(k), q[0], q[1], z);
                 if (l.castersIn(b) == 0) skipped += 1;
             }

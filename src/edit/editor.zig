@@ -69,6 +69,8 @@ const WEIGHT_W: i32 = 30;
 const MEMBER_W: i32 = 24;
 const MEMBER_GAP: i32 = 2;
 const WEIGHT_SPAN: i32 = 2 * STEP_W + WEIGHT_W;
+const BRUSH_W: i32 = 48;
+const BRUSH_SPAN: i32 = 2 * STEP_W + BRUSH_W;
 const MEMBERS_X: i32 = WEIGHT_SPAN + BLOCK_GAP;
 const MAKEUP_TOOLS_X: i32 = INNER_W - @as(i32, MAKEUP_TOOLS.len) * STEP_PITCH + GAP;
 const TORCH_STEP: i32 = 10;
@@ -223,14 +225,27 @@ const Shape = enum {
     fill,
     select,
 
+    fn noun(s: Shape) [:0]const u8 {
+        return switch (s) {
+            .rect => "rectangle",
+            inline else => |t| @tagName(t),
+        };
+    }
+
     fn tip(s: Shape) [:0]const u8 {
         return switch (s) {
-            .brush => "Brush: paints every cell it passes, the brush's size",
-            .line => "Line: drag from one end to the other",
-            .rect => "Rectangle: drag corner to corner, filled",
-            .box => "Box: drag corner to corner, its edge alone",
-            .fill => "Fill: the ground of one tile joined to the cell clicked",
-            .select => "Select: drag a rectangle; " ++ Desk.COPY_CAPTION ++ " copies, " ++ Desk.CUT_CAPTION ++ " cuts, " ++ Desk.DELETE_CAPTION ++ " clears it, " ++ Desk.PASTE_CAPTION ++ " pastes",
+            inline else => |t| comptime menu.capital(t.noun()) ++ ": " ++ t.rule(),
+        };
+    }
+
+    fn rule(s: Shape) [:0]const u8 {
+        return switch (s) {
+            .brush => "paints every cell it passes, the brush's size",
+            .line => "drag from one end to the other",
+            .rect => "drag corner to corner, filled",
+            .box => "drag corner to corner, its edge alone",
+            .fill => "the ground of one tile joined to the cell clicked",
+            .select => "drag a rectangle; " ++ Desk.COPY_CAPTION ++ " copies, " ++ Desk.CUT_CAPTION ++ " cuts, " ++ Desk.DELETE_CAPTION ++ " clears it, " ++ Desk.PASTE_CAPTION ++ " pastes",
         };
     }
 
@@ -247,6 +262,11 @@ const Shape = enum {
 const Spanned = enum { line, rect, box, select };
 
 const SHAPES = std.enums.values(Shape);
+const SHAPE_NOUNS = blk: {
+    var s: [:0]const u8 = "";
+    for (SHAPES, 0..) |sh, i| s = s ++ (if (i == 0) "" else ", ") ++ sh.noun();
+    break :blk s;
+};
 
 comptime {
     const named = std.meta.fields(@TypeOf(Desk.SHAPE_KEYS_BY));
@@ -263,7 +283,7 @@ const CRIB_GRAPH = Desk.PAINT_CAPTION ++ " open a node" ++ SEP ++ "drag it to mo
 const HELP = [_][:0]const u8{
     "PAINTING",
     Desk.PAINT_CAPTION ++ " places with the tool, or paints the first ink" ++ SEP ++ Desk.ERASE_CAPTION ++ " paints the second ink, or takes away",
-    Desk.TOOLS_CAPTION ++ " tool" ++ SEP ++ Desk.SHAPES_CAPTION ++ " brush, line, rectangle, box, fill, select" ++ SEP ++ Desk.RECT_CAPTION ++ " a rectangle with any shape",
+    Desk.TOOLS_CAPTION ++ " tool" ++ SEP ++ Desk.SHAPES_CAPTION ++ " " ++ SHAPE_NOUNS ++ SEP ++ Desk.RECT_CAPTION ++ " a rectangle with any shape",
     Desk.BRUSH_CAPTION ++ " brush size" ++ SEP ++ Desk.PICK_CAPTION ++ " picks up what is under the cursor" ++ SEP ++ "the palette: " ++ Desk.PAINT_CAPTION ++ " first ink, " ++ Desk.ERASE_CAPTION ++ " second",
     Desk.COPY_CAPTION ++ " copy" ++ SEP ++ Desk.CUT_CAPTION ++ " cut" ++ SEP ++ Desk.PASTE_CAPTION ++ " paste, then " ++ Desk.PAINT_CAPTION ++ " lays it" ++ SEP ++ Desk.DELETE_CAPTION ++ " clears the selection",
     "VIEW",
@@ -372,6 +392,11 @@ const Board = struct {
     fn at(b: *const Board, p: P) usize {
         return @intCast(p.y * b.size.x + p.x);
     }
+
+    /// Its cells with the top-left at `lo`.
+    fn box(b: *const Board, lo: P) grid.Box {
+        return grid.Box.sized(lo, b.size.x, b.size.y);
+    }
 };
 
 /// What is wrong with the node shown, found as its preview is made.
@@ -402,7 +427,7 @@ const SEEN = blk: {
 };
 
 /// The open list a value row's own click shows over everything.
-const Popup = struct { slot: rl.Rectangle, which: Which, hover: ?usize = null };
+const Popup = struct { slot: rl.Rectangle, which: Which };
 const Which = union(enum) { algo, feature: usize };
 
 /// A procgen node's preview is rolled from this, and on from it by `Desk.REROLL_CAPTION`.
@@ -454,6 +479,9 @@ pub const Editor = struct {
     /// A procgen node's preview: the roll, and the foes its packs placed.
     roll: u64 = PREVIEW_ROLL,
     rolled_foes: actor.Pool = .{},
+    /// The foes the map shows: a bespoke node's, or those `rolled_foes` holds.
+    shown: [actor.MAX]atlas.Foe = undefined,
+    shown_n: usize = 0,
     issues: Issues = .{},
     selection: ?grid.Box = null,
     /// What was copied: empty until something is.
@@ -572,8 +600,7 @@ pub const Editor = struct {
         ed.modal = .none;
         ed.view = .map;
         ed.recentre = true;
-        ed.selection = null;
-        ed.delete_armed = null;
+        ed.forgetNode();
         ed.gen_top = 0;
         ed.roll = PREVIEW_ROLL;
         ed.fitTool();
@@ -603,7 +630,7 @@ pub const Editor = struct {
 
     /// One size bigger or smaller, as `by`'s sign says, within `BRUSHES`.
     fn stepBrush(ed: *Editor, by: i32) void {
-        ed.brush = @intCast(std.math.clamp(@as(i32, @intCast(ed.brush)) + std.math.sign(by), 0, @as(i32, BRUSHES.len - 1)));
+        ed.brush = mathx.nudge(ed.brush, std.math.sign(by), BRUSHES.len);
     }
 
     fn say(ed: *Editor, comptime fmt: []const u8, args: anytype) void {
@@ -648,6 +675,12 @@ pub const Editor = struct {
         ed.thumb_ok.unset(ed.node);
     }
 
+    /// Doors linked or unlinked: no node's floor changed, only what leads nowhere.
+    fn relinked(ed: *Editor) void {
+        ed.bank();
+        ed.issues.unlinked = ed.here().unlinked();
+    }
+
     /// Every node may have changed, or moved to another index.
     fn restamp(ed: *Editor) void {
         ed.stale = true;
@@ -657,14 +690,22 @@ pub const Editor = struct {
     /// The world and the step swap places, so the same step redoes it.
     fn swapStep(ed: *Editor, k: usize) void {
         ed.release();
-        ed.selection = null;
-        ed.delete_armed = null;
+        ed.forgetNode();
         ed.scratch.* = ed.world.*;
         ed.world.* = ed.kept(k).*;
         ed.kept(k).* = ed.scratch.*;
         ed.banked = true;
         ed.clampSelection();
-        ed.restamp();
+        ed.restampSwapped();
+    }
+
+    /// After `swapStep`, with `scratch` the world it left: a thumbnail rolled again only where its node is not the same bytes.
+    fn restampSwapped(ed: *Editor) void {
+        if (ed.world.node_n != ed.scratch.node_n) return ed.restamp();
+        ed.stale = true;
+        for (ed.world.nodes(), ed.scratch.nodes(), 0..) |*now, *was, n| {
+            if (!std.mem.eql(u8, std.mem.asBytes(now), std.mem.asBytes(was))) ed.thumb_ok.unset(n);
+        }
     }
 
     fn undo(ed: *Editor) void {
@@ -677,7 +718,7 @@ pub const Editor = struct {
     }
 
     fn redo(ed: *Editor) void {
-        ed.keepDrag();
+        if (ed.hist_at < ed.hist_len) ed.drop() else ed.keepDrag();
         if (ed.hist_at == ed.hist_len) return ed.say("Nothing to redo", .{});
         ed.swapStep(ed.hist_at);
         ed.hist_at += 1;
@@ -690,6 +731,11 @@ pub const Editor = struct {
         const dr = ed.drag orelse return;
         if (dr.moved and !ed.world.node[dr.node].pos.eq(dr.was)) ed.bank();
         ed.drag = null;
+    }
+
+    /// A press under way, or a popup open: what `drop` lets go.
+    fn holding(ed: *const Editor) bool {
+        return ed.popup != null or ed.span != null or ed.stroke != .none or ed.drag != null or ed.linking != null;
     }
 
     /// A box dragged on the graph is put back where it stood.
@@ -742,9 +788,14 @@ pub const Editor = struct {
         ed.stale = true;
         ed.recentre = true;
         ed.gen_top = 0;
+        ed.forgetNode();
+        ed.fitTool();
+    }
+
+    /// What belongs to the node shown: let go when another is shown or the world under it is swapped.
+    fn forgetNode(ed: *Editor) void {
         ed.selection = null;
         ed.delete_armed = null;
-        ed.fitTool();
     }
 
     /// A bespoke node as it plays; a procgen node as one roll of it, its packs placed.
@@ -760,13 +811,24 @@ pub const Editor = struct {
                 pack.place(&ed.lv, &ed.rolled_foes, &rng, ed.arrival(), &pg.foes);
             },
         }
+        ed.shown_n = 0;
+        for (nd.placed()) |f| ed.show(f);
+        for (ed.rolled_foes.slice()) |a| ed.show(.{ .kind = a.kind, .at = a.at });
         ed.assets = look.Assets.of(&ed.lv).merge(look.Assets.everything());
-        for (nd.placed()) |f| ed.assets.body(f.kind);
-        for (ed.rolled_foes.slice()) |a| ed.assets.body(a.kind);
+        for (ed.shownFoes()) |f| ed.assets.body(f.kind);
         ed.assets_stale = true;
         ed.start_at = ed.startOn();
         ed.issues = ed.issuesOf();
         ed.stale = false;
+    }
+
+    fn show(ed: *Editor, f: atlas.Foe) void {
+        ed.shown[ed.shown_n] = f;
+        ed.shown_n += 1;
+    }
+
+    fn shownFoes(ed: *const Editor) []const atlas.Foe {
+        return ed.shown[0..ed.shown_n];
     }
 
     /// Where the archer comes into the node, which a procgen node's packs keep their gap from.
@@ -1041,10 +1103,8 @@ pub const Editor = struct {
     }
 
     fn lookAt(ed: *Editor, c: rl.Rectangle, p: P) void {
-        ed.cam = .{
-            @as(f32, @floatFromInt(p.x)) + 0.5 - c.width / ed.px() * 0.5,
-            @as(f32, @floatFromInt(p.y)) + 0.5 - c.height / ed.px() * 0.5,
-        };
+        const at = mathx.centre(p);
+        ed.cam = .{ at[0] - c.width / ed.px() * 0.5, at[1] - c.height / ed.px() * 0.5 };
     }
 
     fn boxAt(ed: *const Editor, c: rl.Rectangle, n: usize) rl.Rectangle {
@@ -1110,14 +1170,13 @@ pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
     ed.fresh = false;
     ed.renamed = false;
     if (ed.action == .play) {
-        ed.drop();
         for ([_]atlas.Start{ ed.action.play, ed.world.start }) |from| {
             if (ed.standable(from)) continue;
             var buf: [atlas.TITLE_MAX]u8 = undefined;
             ed.say(atlas.NO_FLOOR, .{ed.nodeName(from.node, &buf)});
             ed.action = .none;
             break;
-        }
+        } else ed.drop();
     }
     return ed.action;
 }
@@ -1175,7 +1234,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
         if (d.delete) clearSelection(ed);
         if (d.paste) startPaste(ed);
     }
-    if (d.erase_hit and ed.drag != null) return ed.drop();
+    if (d.erase_hit and (ed.drag != null or ed.linking != null)) return ed.drop();
     if (ed.modal != .none or ed.renaming) return;
     if (ed.popup) |pp| {
         if (d.clicked() and !ed.mouseIn(popupRect(pp, g.screen.y))) {
@@ -1218,7 +1277,7 @@ fn panBy(cam: *[2]f32, d: *const Desk, dt: f32, px: f32) void {
 
 /// A step back: what is open or held, then the selection, the graph, then the editor itself.
 fn escape(ed: *Editor) void {
-    if (ed.popup != null or ed.span != null or ed.drag != null or ed.linking != null) {
+    if (ed.holding()) {
         ed.drop();
     } else if (ed.pasting) {
         ed.putAwayPaste();
@@ -1248,7 +1307,7 @@ fn modalKeys(ed: *Editor) void {
             if (d.enter) ed.named();
         },
         .open => {
-            if (d.wheel != 0) ed.listed_top = if (d.wheel > 0) ed.listed_top -| 1 else @min(ed.listed_top + 1, ed.listing.n -| MODAL_ROWS);
+            if (d.wheel != 0) ed.listed_top = mathx.nudge(ed.listed_top, if (d.wheel > 0) -1 else 1, (ed.listing.n -| MODAL_ROWS) + 1);
             if (d.nav != 0 and ed.listing.n > 0) {
                 ed.listed_at = mathx.wrap(ed.listed_at, d.nav, ed.listing.n);
                 ed.listed_top = mathx.reveal(ed.listed_top, ed.listed_at, MODAL_ROWS);
@@ -1286,7 +1345,7 @@ fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const d = &ed.desk;
     const p = ed.mouseCell(c);
     if (ed.pasting) {
-        if (over and d.paint_hit and grid.Level.inside(p)) {
+        if (over and d.paint_hit) {
             if (ed.paintable()) layBoard(ed, p) else ed.say(GENERATED, .{});
         }
         if (d.erase_hit) ed.putAwayPaste();
@@ -1347,8 +1406,61 @@ fn brushAt(ed: *Editor, p: P) void {
 }
 
 fn brushWith(ed: *Editor, p: P, erase: bool) void {
-    if (!ed.tool.broad()) return apply(ed, p, erase);
-    fillBox(ed, brushBox(p, ed.brushSize()), erase);
+    eachBrushCell(ed, p, Laid{ .ed = ed, .erase = erase });
+}
+
+/// What a press lays at a cell: `Laid` applies it, `Ghost` draws it.
+const Laid = struct {
+    ed: *Editor,
+    erase: bool,
+
+    fn at(l: Laid, p: P) void {
+        apply(l.ed, p, l.erase);
+    }
+};
+
+const Ghost = struct {
+    ed: *Editor,
+    g: *game.Game,
+    c: rl.Rectangle,
+    ink: grid.Tile,
+    view: grid.Box,
+
+    fn of(ed: *Editor, g: *game.Game, c: rl.Rectangle, ink: grid.Tile) Ghost {
+        return .{ .ed = ed, .g = g, .c = c, .ink = ink, .view = visible(ed, c) };
+    }
+
+    fn at(h: Ghost, p: P) void {
+        if (h.view.holds(p)) ghostInk(h.ed, h.g, h.c, p, h.ink);
+    }
+};
+
+/// The cells on the map a brush at `p` covers; one alone for a tool that takes no brush.
+fn eachBrushCell(ed: *const Editor, p: P, to: anytype) void {
+    if (!ed.tool.broad()) return to.at(p);
+    var cells = brushBox(p, ed.brushSize()).cells();
+    while (cells.next()) |q| {
+        if (grid.Level.inside(q)) to.at(q);
+    }
+}
+
+/// The cells a span laid from `s.from` to `to` covers; a selection covers none.
+fn eachSpanCell(ed: *const Editor, s: Span, end: P, to: anytype) void {
+    const b = between(s.from, end);
+    switch (s.shape) {
+        .select => {},
+        .rect, .box => {
+            var cells = b.cells();
+            while (cells.next()) |p| {
+                if (grid.Level.inside(p) and (s.shape == .rect or b.onEdge(p))) to.at(p);
+            }
+        },
+        .line => {
+            eachBrushCell(ed, s.from, to);
+            var ray = grid.Ray.init(s.from, end);
+            while (ray.next()) |q| eachBrushCell(ed, q, to);
+        },
+    }
 }
 
 /// The shape a press begins dragging out: a selection with any tool, a rectangle with Shift.
@@ -1361,25 +1473,11 @@ fn spanOf(ed: *Editor, shift: bool) ?Spanned {
 
 /// From `s.from` to `to`, as the press let go there.
 fn laySpan(ed: *Editor, s: Span, to: P) void {
+    eachSpanCell(ed, s, to, Laid{ .ed = ed, .erase = s.erase });
+    if (s.shape != .select) return;
     const b = between(s.from, to);
-    switch (s.shape) {
-        .rect => fillBox(ed, b, s.erase),
-        .box => {
-            var cells = b.cells();
-            while (cells.next()) |p| {
-                if (b.onEdge(p)) apply(ed, p, s.erase);
-            }
-        },
-        .line => {
-            brushWith(ed, s.from, s.erase);
-            var ray = grid.Ray.init(s.from, to);
-            while (ray.next()) |q| brushWith(ed, q, s.erase);
-        },
-        .select => {
-            ed.selection = b;
-            ed.say("{d} by {d} selected: {s} copies, {s} cuts, {s} clears", .{ b.width(), b.height(), Desk.COPY_CAPTION, Desk.CUT_CAPTION, Desk.DELETE_CAPTION });
-        },
-    }
+    ed.selection = b;
+    ed.say("{d} by {d} selected: {s} copies, {s} cuts, {s} clears", .{ b.width(), b.height(), Desk.COPY_CAPTION, Desk.CUT_CAPTION, Desk.DELETE_CAPTION });
 }
 
 /// The ground of one tile joined to `p` side by side, painted the ink; doors keep theirs.
@@ -1440,13 +1538,6 @@ fn between(a: P, b: P) grid.Box {
     return .{ .lo = a.min(b), .hi = a.max(b).add(.{ .x = 1, .y = 1 }) };
 }
 
-fn fillBox(ed: *Editor, b: grid.Box, erase: bool) void {
-    var cells = b.cells();
-    while (cells.next()) |p| {
-        if (grid.Level.inside(p)) apply(ed, p, erase);
-    }
-}
-
 fn apply(ed: *Editor, p: P, erase: bool) void {
     if (erase) remove(ed, p) else place(ed, p);
 }
@@ -1463,8 +1554,7 @@ fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
         if (ed.dotUnder(c, d.mouse)) |l| {
             if (ed.world.door(l).to == null) return;
             ed.world.unlink(l);
-            ed.bank();
-            ed.restamp();
+            ed.relinked();
             return ed.say("Node {d} door {d} unlinked", .{ l.node, l.door });
         }
     }
@@ -1505,17 +1595,15 @@ fn linkDoors(ed: *Editor, from: atlas.Link, to: atlas.Link) void {
         if (t.eq(to)) return ed.say("Those doors lead to each other already", .{});
     }
     ed.world.link(from, to);
-    ed.bank();
-    ed.restamp();
+    ed.relinked();
     ed.say("Node {d} door {d} and node {d} door {d} lead to each other", .{ from.node, from.door, to.node, to.door });
 }
 
 /// `anchor` stays over the same cell.
 fn zoom(ed: *Editor, c: rl.Rectangle, by: i32, anchor: P) void {
-    const next = std.math.clamp(@as(i32, @intCast(ed.zoom)) + by, 0, @as(i32, ZOOMS.len - 1));
     const m = [2]f32{ @as(f32, @floatFromInt(anchor.x)) - c.x, @as(f32, @floatFromInt(anchor.y)) - c.y };
     const was = ed.px();
-    ed.zoom = @intCast(next);
+    ed.zoom = mathx.nudge(ed.zoom, by, ZOOMS.len);
     for (0..2) |k| ed.cam[k] += m[k] / was - m[k] / ed.px();
     ed.stroke_at = null;
 }
@@ -1539,8 +1627,7 @@ fn reroll(ed: *Editor) void {
 }
 
 fn scrollNodes(ed: *Editor, by: i32) void {
-    const most: i32 = @intCast(ed.world.node_n -| ed.node_rows);
-    ed.scroll = @intCast(std.math.clamp(@as(i32, @intCast(ed.scroll)) + by, 0, @max(0, most)));
+    ed.scroll = mathx.nudge(ed.scroll, by, (ed.world.node_n -| ed.node_rows) + 1);
 }
 
 fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
@@ -1552,16 +1639,33 @@ fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
     ed.changed();
 }
 
-fn place(ed: *Editor, p: P) void {
+fn putBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) void {
     const i = grid.Level.idx(p);
+    if (b.barrel[i] or !ed.here().barrelGoes(b, p)) return;
+    b.barrel[i] = true;
+    ed.changed();
+}
+
+fn takeBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) void {
+    const i = grid.Level.idx(p);
+    if (!b.barrel[i]) return;
+    b.barrel[i] = false;
+    ed.changed();
+}
+
+fn takeTorch(ed: *Editor, b: *atlas.Bespoke, p: P) void {
+    if (b.torch.remove(p)) ed.changed();
+}
+
+fn takeFoe(ed: *Editor, b: *atlas.Bespoke, p: P) void {
+    b.dropFoe(b.foeAt(p) orelse return);
+    ed.changed();
+}
+
+fn place(ed: *Editor, p: P) void {
     switch (ed.tool) {
         .paint => paintTile(ed, p, ed.ink[0]),
-        .barrel => {
-            const b = &ed.plan().bespoke;
-            if (b.barrel[i] or !ed.here().barrelGoes(b, p)) return;
-            b.barrel[i] = true;
-            ed.changed();
-        },
+        .barrel => putBarrel(ed, &ed.plan().bespoke, p),
         .torch => {
             const b = &ed.plan().bespoke;
             if (!ed.here().torchFits(b, p)) return ed.say("A torch " ++ TORCH_RULE, .{});
@@ -1582,7 +1686,7 @@ fn place(ed: *Editor, p: P) void {
             const k = ed.world.addDoor(ed.node, p) orelse return ed.say("That cell is a door or a map corner, or the node holds {d}", .{grid.MAX_DOORS});
             switch (ed.plan().*) {
                 .bespoke => |*b| {
-                    b.tile[i] = .floor;
+                    b.tile[grid.Level.idx(p)] = .floor;
                     ed.here().pruneAt(b, p);
                 },
                 .procgen => {},
@@ -1609,25 +1713,11 @@ fn place(ed: *Editor, p: P) void {
 }
 
 fn remove(ed: *Editor, p: P) void {
-    const i = grid.Level.idx(p);
     switch (ed.tool) {
         .paint => paintTile(ed, p, ed.ink[1]),
-        .barrel => {
-            const b = &ed.plan().bespoke;
-            if (!b.barrel[i]) return;
-            b.barrel[i] = false;
-            ed.changed();
-        },
-        .torch => {
-            const b = &ed.plan().bespoke;
-            if (!b.torch.remove(p)) return;
-            ed.changed();
-        },
-        .foe => {
-            const b = &ed.plan().bespoke;
-            b.dropFoe(b.foeAt(p) orelse return);
-            ed.changed();
-        },
+        .barrel => takeBarrel(ed, &ed.plan().bespoke, p),
+        .torch => takeTorch(ed, &ed.plan().bespoke, p),
+        .foe => takeFoe(ed, &ed.plan().bespoke, p),
         .door => {
             const k = ed.doorAt(p) orelse return;
             ed.world.removeDoor(.{ .node = ed.node, .door = k });
@@ -1637,14 +1727,12 @@ fn remove(ed: *Editor, p: P) void {
             }
             ed.pick = null;
             ed.changed();
-            ed.restamp();
         },
         .link => {
             const k = ed.doorAt(p) orelse return;
             if (ed.here().door[k].to == null) return;
             ed.world.unlink(.{ .node = ed.node, .door = k });
-            ed.changed();
-            ed.restamp();
+            ed.relinked();
         },
         .start => {},
     }
@@ -1689,16 +1777,9 @@ fn clearSelection(ed: *Editor) void {
     ed.gesture();
     var cells = s.cells();
     while (cells.next()) |p| {
-        const i = grid.Level.idx(p);
-        if (b.barrel[i]) {
-            b.barrel[i] = false;
-            ed.changed();
-        }
-        if (b.torch.remove(p)) ed.changed();
-        if (b.foeAt(p)) |f| {
-            b.dropFoe(f);
-            ed.changed();
-        }
+        takeBarrel(ed, b, p);
+        takeTorch(ed, b, p);
+        takeFoe(ed, b, p);
         paintTile(ed, p, ed.ink[1]);
     }
     ed.say("Cleared to {s}", .{@tagName(ed.ink[1])});
@@ -1716,17 +1797,13 @@ fn startPaste(ed: *Editor) void {
 fn layBoard(ed: *Editor, at: P) void {
     const b = &ed.plan().bespoke;
     const bd = &ed.board;
-    var cells = grid.Box.sized(.{ .x = 0, .y = 0 }, bd.size.x, bd.size.y).cells();
+    var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
     while (cells.next()) |q| {
         const p = at.add(q);
         if (!grid.Level.inside(p)) continue;
         const k = bd.at(q);
         paintTile(ed, p, bd.tile[k]);
-        const i = grid.Level.idx(p);
-        if (bd.barrel[k] and !b.barrel[i] and ed.here().barrelGoes(b, p)) {
-            b.barrel[i] = true;
-            ed.changed();
-        }
+        if (bd.barrel[k]) putBarrel(ed, b, p);
     }
     var left: usize = 0;
     for (bd.torch.slice()) |t| {
@@ -1743,8 +1820,7 @@ fn layBoard(ed: *Editor, at: P) void {
 fn deleteNode(ed: *Editor) void {
     ed.world.remove(ed.node);
     ed.release();
-    ed.delete_armed = null;
-    ed.selection = null;
+    ed.forgetNode();
     ed.renaming = false;
     ed.clampSelection();
     ed.bank();
@@ -1777,8 +1853,7 @@ fn buttonOn(ed: *Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on
     const h = hot(ed, r, live, modal, tip);
     plate(r, on, h.hot);
     const y: i32 = @intFromFloat(r.y);
-    var fit_buf: [LINE]u8 = undefined;
-    g.face.draw(g.face.fit(&fit_buf, label, TEXT, insetW(r), false), textX(r), y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), TEXT, if (live) look.TEXT else look.DIM);
+    drawFit(g, label, TEXT, insetW(r), false, textX(r), y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), if (live) look.TEXT else look.DIM);
     return h.hit;
 }
 
@@ -1887,11 +1962,10 @@ fn drawPopup(ed: *Editor, g: *game.Game) void {
     };
     const was = pg.*;
     const box = popupRect(p, g.screen.y);
-    rl.drawRectangleRec(box, PANEL_BG);
-    rl.drawRectangleLinesEx(box, 1, look.EDGE);
     var y: i32 = @intFromFloat(box.y);
     const x: i32 = @intFromFloat(box.x);
     const w: i32 = @intFromFloat(box.width);
+    framed(x, y, w, @intFromFloat(box.height));
     switch (p.which) {
         .algo => for (std.enums.values(atlas.Algo)) |a| {
             if (buttonOn(ed, g, row(x, y, w), @tagName(a), a == pg.floor, true, true, null)) {
@@ -1927,9 +2001,28 @@ fn drawTip(ed: *const Editor, g: *game.Game) void {
     const h = SMALL + 2 * GAP;
     const x = std.math.clamp(ed.desk.mouse.x + TIP_DX, 0, @max(0, g.screen.x - w));
     const y = if (ed.desk.mouse.y + TIP_DY + h > g.screen.y) ed.desk.mouse.y - TIP_DY - h else ed.desk.mouse.y + TIP_DY;
+    framed(x, y, w, h);
+    g.face.draw(s, x + GAP, y + GAP, SMALL, look.TEXT);
+}
+
+/// A box in the panel's colour, edged.
+fn framed(x: i32, y: i32, w: i32, h: i32) void {
     rl.drawRectangle(x, y, w, h, PANEL_BG);
     rl.drawRectangleLines(x, y, w, h, look.EDGE);
-    g.face.draw(s, x + GAP, y + GAP, SMALL, look.TEXT);
+}
+
+/// A window centred on the screen: its left, width, the title's y and the y below the title.
+const Frame = struct { x: i32, w: i32, top: i32, y: i32 };
+
+/// `want_w` wide where the screen allows, `h` high, framed with its title fitted, `keep_end` keeping the title's end.
+fn modalFrame(g: *game.Game, want_w: i32, h: i32, title: [:0]const u8, keep_end: bool) Frame {
+    const w = @min(want_w, g.screen.x - 2 * PAD);
+    const x = @divTrunc(g.screen.x - w, 2);
+    const y = @max(0, @divTrunc(g.screen.y - h, 2));
+    framed(x, y, w, h);
+    const top = y + PAD;
+    drawFit(g, title, HEAD, w - 2 * PAD, keep_end, x + PAD, top, look.TEXT);
+    return .{ .x = x, .w = w, .top = top, .y = top + HEAD + PAD };
 }
 
 fn keyed(comptime what: []const u8, comptime key: []const u8) [:0]const u8 {
@@ -2012,8 +2105,6 @@ const LOWER_TIPS = std.EnumArray(Lower, [:0]const u8).init(.{
 });
 
 fn drawNodes(ed: *Editor, g: *game.Game, top: i32) void {
-    var buf: [LINE]u8 = undefined;
-    var fit_buf: [LINE]u8 = undefined;
     var detail_buf: [LINE]u8 = undefined;
     ed.node_rows = @max(1, @as(usize, @intCast(@divTrunc(@max(0, g.screen.y - top), NODE_H))));
     if (ed.revealed != ed.node) {
@@ -2029,7 +2120,7 @@ fn drawNodes(ed: *Editor, g: *game.Game, top: i32) void {
         const r = look.rect(PAD, y, INNER_W, NODE_H - NODE_GAP);
         const h = hot(ed, r, true, false, "Open this node");
         plate(r, n == ed.node, h.hot);
-        g.face.draw(fitTitle(ed, g, n, &buf, &fit_buf, insetW(r)), textX(r), y + TITLE_DY, TEXT, titleColor(ed, n));
+        drawNodeTitle(ed, g, n, r, y + TITLE_DY);
         g.face.draw(nodeDetail(nd, &detail_buf), textX(r), y + TITLE_DY + DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
         if (h.hit) ed.goTo(n);
         y += NODE_H;
@@ -2056,7 +2147,7 @@ fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
         plate(icon, t.eql(ed.tool), h.hot);
         const pic = rl.Rectangle{ .x = icon.x + (icon.width - ICON_PIC) / 2, .y = icon.y + 3, .width = ICON_PIC, .height = ICON_PIC };
         if (t == .paint) swatch(g, ed.ink[0], pic) else figure(g, toolPicture(g, t), t.look_(), pic);
-        if (!live) rl.drawRectangleRec(icon, look.fade(look.BG, 0.6));
+        if (!live) rl.drawRectangleRec(icon, UNLIVE);
         g.face.draw(key, @as(i32, @intFromFloat(icon.x)) + 3, @as(i32, @intFromFloat(icon.y)) + 1, SMALL, look.DIM);
         if (h.hit) ed.setTool(t);
     }
@@ -2068,14 +2159,14 @@ fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
         const live = s == .select or ed.tool.broad();
         const h = hot(ed, r, true, false, s.tip());
         plate(r, ed.shape == s and live, h.hot);
-        g.face.draw(label, g.face.leftFor(label, @as(i32, @intFromFloat(r.x + r.width / 2)), SMALL), @as(i32, @intFromFloat(r.y)) + SMALL_DY, SMALL, if (live) look.TEXT else look.DIM);
+        g.face.drawMid(label, @as(i32, @intFromFloat(r.x + r.width / 2)), @as(i32, @intFromFloat(r.y)) + SMALL_DY, SMALL, if (live) look.TEXT else look.DIM);
         if (h.hit) ed.setShape(s);
     }
     shapes.done();
     y += ROW_STEP;
     rowLabel(g, y, "Brush");
     const n = ed.brushSize();
-    const by = stepper(ed, g, row(PAD + LABEL_W, y, STEP_W * 2 + 48), std.fmt.bufPrintZ(&buf, "{d}x{d}", .{ n, n }) catch "", .{
+    const by = stepper(ed, g, row(PAD + LABEL_W, y, BRUSH_SPAN), std.fmt.bufPrintZ(&buf, "{d}x{d}", .{ n, n }) catch "", .{
         .{ .tip = keyed("Smaller", Desk.BRUSH_CAPTION), .live = ed.brush > 0 },
         .{ .tip = keyed("Bigger", Desk.BRUSH_CAPTION), .live = ed.brush < BRUSHES.len - 1 },
     });
@@ -2084,25 +2175,43 @@ fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
     for (ed.ink, 0..) |t, k| {
         const r = look.rect(inks_x + @as(i32, @intCast(k)) * (SWATCH + GAP), y - 4, SWATCH, SWATCH);
         swatch(g, t, r);
-        rl.drawRectangleLinesEx(r, 2, if (k == 0) ON else WARN);
+        rl.drawRectangleLinesEx(r, INK_EDGE, if (k == 0) ON else WARN);
         _ = hot(ed, r, true, false, if (k == 0) INK_TIPS[0] else INK_TIPS[1]);
     }
     g.face.draw("Inks", inks_x - g.face.width("Inks", SMALL) - GAP, y + SMALL_DY, SMALL, look.DIM);
     y += ROW_STEP + GAP;
+    const swatches = Tiles{ .x = PAD, .y = y, .cols = PALETTE_COLS, .pitch = SWATCH + SWATCH_GAP, .size = SWATCH };
     for (PALETTE, 0..) |t, i| {
-        const r = look.rect(PAD + @as(i32, @intCast(i % PALETTE_COLS)) * (SWATCH + SWATCH_GAP), y + @as(i32, @intCast(i / PALETTE_COLS)) * (SWATCH + SWATCH_GAP), SWATCH, SWATCH);
+        const r = swatches.at(i);
         const h = hot(ed, r, true, false, PALETTE_TIPS.get(t));
         swatch(g, t, r);
-        if (t == ed.ink[0]) rl.drawRectangleLinesEx(r, 2, ON) else if (t == ed.ink[1]) rl.drawRectangleLinesEx(r, 2, WARN) else if (h.hot) rl.drawRectangleLinesEx(r, 1, HOVER);
+        if (t == ed.ink[0]) rl.drawRectangleLinesEx(r, INK_EDGE, ON) else if (t == ed.ink[1]) rl.drawRectangleLinesEx(r, INK_EDGE, WARN) else if (h.hot) rl.drawRectangleLinesEx(r, 1, HOVER);
         const second = h.hot and ed.desk.erase_hit;
         if (h.hit or second) {
             ed.ink[@intFromBool(second)] = t;
             if (ed.shape == .select) ed.setShape(.brush) else ed.setShape(ed.shape);
         }
     }
-    y += @as(i32, @intCast(std.math.divCeil(usize, PALETTE.len, PALETTE_COLS) catch unreachable)) * (SWATCH + SWATCH_GAP) + SECTION_GAP;
+    y += swatches.height(PALETTE.len) + SECTION_GAP;
     return y;
 }
+
+/// Squares `size` wide laid in rows of `cols`, `pitch` apart, from `x`, `y`.
+const Tiles = struct {
+    x: i32,
+    y: i32,
+    cols: usize,
+    pitch: i32,
+    size: i32,
+
+    fn at(t: Tiles, i: usize) rl.Rectangle {
+        return look.rect(t.x + @as(i32, @intCast(i % t.cols)) * t.pitch, t.y + @as(i32, @intCast(i / t.cols)) * t.pitch, t.size, t.size);
+    }
+
+    fn height(t: Tiles, n: usize) i32 {
+        return @as(i32, @intCast(std.math.divCeil(usize, n, t.cols) catch unreachable)) * t.pitch;
+    }
+};
 
 const ICON_PIC: f32 = 30;
 const SHAPE_LABELS = std.EnumArray(Shape, [:0]const u8).init(.{ .brush = "Brush", .line = "Line", .rect = "Rect", .box = "Box", .fill = "Fill", .select = "Sel" });
@@ -2155,9 +2264,9 @@ fn drawThings(ed: *Editor, g: *game.Game, top: i32) void {
             std.fmt.bufPrintZ(&buf, "Door {d}  {d},{d}  leads nowhere", .{ k, d.at.x, d.at.y }) catch "";
         thingRow(ed, g, &y, line, if (d.to == null) WARN else look.TEXT, d.at);
     }
+    for (ed.shownFoes()) |f| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}", .{ kindName(f.kind), f.at.x, f.at.y }) catch "", look.TEXT, f.at);
     switch (ed.plan().*) {
         .bespoke => |*b| {
-            for (b.foes()) |f| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}", .{ kindName(f.kind), f.at.x, f.at.y }) catch "", look.TEXT, f.at);
             for (b.torches()) |t| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "Torch  {d},{d}", .{ t.x, t.y }) catch "", look.TEXT, t);
             for (&b.barrel, 0..) |*on, i| {
                 if (!on.*) continue;
@@ -2165,19 +2274,27 @@ fn drawThings(ed: *Editor, g: *game.Game, top: i32) void {
                 thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "Barrel  {d},{d}", .{ p.x, p.y }) catch "", look.TEXT, p);
             }
         },
-        .procgen => for (ed.rolled_foes.slice()) |a| {
-            thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}", .{ kindName(a.kind), a.at.x, a.at.y }) catch "", look.TEXT, a.at);
-        },
+        .procgen => {},
     }
     scrolledTo(ed, g, top, y);
 }
 
+/// A row from `y` scrolled wholly out of the part of the panel that scrolls: nothing of it shows and nothing in it is hot.
+fn clipped(ed: *const Editor, y: i32) bool {
+    const c = ed.clip orelse return false;
+    const top: f32 = @floatFromInt(y);
+    return top + ROW_H <= c.y or top >= c.y + c.height;
+}
+
 fn thingRow(ed: *Editor, g: *game.Game, y: *i32, line: [:0]const u8, col: rl.Color, at: ?P) void {
+    if (clipped(ed, y.*)) {
+        y.* += ROW_H;
+        return;
+    }
     const r = row(PAD, y.*, INNER_W);
     const h = hot(ed, r, at != null, false, if (at != null) "Show it on the map" else null);
     plate(r, false, h.hot);
-    var fit_buf: [LINE]u8 = undefined;
-    g.face.draw(g.face.fit(&fit_buf, line, SMALL, insetW(r), false), textX(r), y.* + SMALL_DY, SMALL, col);
+    drawFit(g, line, SMALL, insetW(r), false, textX(r), y.* + SMALL_DY, col);
     if (h.hit) {
         const p = at.?;
         ed.setView(.map);
@@ -2201,18 +2318,27 @@ fn toolPicture(g: *const game.Game, t: Tool) ?rl.Texture2D {
 
 /// A tile as the map draws a lone one: its picture, else its ground and glyph.
 fn swatch(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
-    if (look.under(t)) |u| {
-        if (g.sprites.tileOf(u, null)) |tex| sprite(tex, r) else if (look.tileBg(u)) |bg| rl.drawRectangleRec(r, bg);
+    const u = look.under(t);
+    if (u) |b| {
+        if (g.sprites.tileOf(b, null)) |tex| sprite(tex, r) else if (look.tileBg(b)) |bg| rl.drawRectangleRec(r, bg);
     }
     if (g.sprites.tileOf(t, .{})) |tex| return sprite(tex, r);
-    rl.drawRectangleRec(r, look.tileBg(t) orelse look.BARE_WALL);
+    if (u == null) rl.drawRectangleRec(r, look.tileBg(t) orelse look.BARE_WALL);
     const m = inkIn(r);
     look.inkTile(&g.face, t, m.x, m.y, m.size);
 }
 
-/// A name being typed keeps its end, where the caret is.
-fn fitTitle(ed: *Editor, g: *const game.Game, n: usize, buf: []u8, fit_buf: []u8, max: i32) [:0]const u8 {
-    return g.face.fit(fit_buf, ed.nodeTitle(n, buf), TEXT, max, ed.renamingNode(n));
+/// `s` cut to `max` pixels wide, its end kept when `keep_end`.
+fn drawFit(g: *const game.Game, s: []const u8, size: i32, max: i32, keep_end: bool, x: i32, y: i32, col: rl.Color) void {
+    var fit_buf: [atlas.PATH_MAX + LINE]u8 = undefined;
+    g.face.draw(g.face.fit(&fit_buf, s, size, max, keep_end), x, y, size, col);
+}
+
+/// Node `n`'s title in `r` at `y`; a name being typed keeps its end, where the caret is.
+fn drawNodeTitle(ed: *Editor, g: *const game.Game, n: usize, r: rl.Rectangle, y: i32) void {
+    var buf: [LINE]u8 = undefined;
+    const typing = ed.renamingNode(n);
+    drawFit(g, ed.nodeTitle(n, &buf), TEXT, insetW(r), typing, textX(r), y, if (typing) look.RETICLE else look.TEXT);
 }
 
 fn lowerArea(g: *const game.Game, top: i32) rl.Rectangle {
@@ -2329,7 +2455,7 @@ fn choiceRow(ed: *Editor, g: *game.Game, y: *i32, comptime U: type, v: *U, compt
     stepChoice(ed, g, y.*, std.meta.Tag(U), &tag, c.tip, true);
     if (tag != std.meta.activeTag(v.*)) v.* = U.of(tag);
     const slot = valueSlot(y.*, 0, 1);
-    const value = rl.Rectangle{ .x = slot.x + STEP_W + GAP, .y = slot.y, .width = slot.width - 2 * (STEP_W + GAP), .height = slot.height };
+    const value = valueRect(slot);
     const h = hot(ed, value, true, false, "Every choice; " ++ c.tip);
     if (h.hot) rl.drawRectangleLinesEx(value, 1, HOVER);
     if (h.hit) {
@@ -2695,6 +2821,7 @@ fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []cons
 
 /// `live` false dims every step of it; a number's step is dim too where its owner's `fit` would take it back.
 fn knobRow(ed: *Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob, live: bool) void {
+    if (clipped(ed, y)) return;
     rowLabel(g, y, comptime k.caption());
     const v = &@field(owner.*, k.field);
     const T = @TypeOf(v.*);
@@ -2768,9 +2895,15 @@ fn stepper(ed: *Editor, g: *game.Game, r: rl.Rectangle, value: [:0]const u8, ste
     if (button(ed, g, row(x, y, STEP_W), "-", false, steps[0].live, steps[0].tip)) by = -1;
     if (button(ed, g, row(x + w - STEP_W, y, STEP_W), "+", false, steps[1].live, steps[1].tip)) by = 1;
     var fit_buf: [LINE]u8 = undefined;
-    const shown = g.face.fit(&fit_buf, value, TEXT, w - 2 * STEP_PITCH, false);
-    g.face.draw(shown, g.face.leftFor(shown, x + @divTrunc(w, 2), TEXT), y + TEXT_DY, TEXT, look.TEXT);
+    const shown = g.face.fit(&fit_buf, value, TEXT, @intFromFloat(valueRect(r).width), false);
+    g.face.drawMid(shown, x + @divTrunc(w, 2), y + TEXT_DY, TEXT, look.TEXT);
     return if (ed.desk.shift) by * SHIFT_STEP else by;
+}
+
+/// A stepper's middle, between its two steps.
+fn valueRect(r: rl.Rectangle) rl.Rectangle {
+    const pitch: f32 = @floatFromInt(STEP_PITCH);
+    return .{ .x = r.x + pitch, .y = r.y, .width = r.width - 2 * pitch, .height = r.height };
 }
 
 /// By `by`, not below 0; the range is the caller's to fit.
@@ -2784,7 +2917,6 @@ fn bump(comptime T: type, v: *T, by: i32) void {
 fn drawStatus(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     var buf: [LINE + 1]u8 = undefined;
     var state_buf: [LINE + 1]u8 = undefined;
-    var fit_buf: [LINE + 1]u8 = undefined;
     const top = g.screen.y - STATUS_H;
     const x = PANEL_W + PAD;
     const w = g.screen.x - PANEL_W - 2 * PAD;
@@ -2793,12 +2925,12 @@ fn drawStatus(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     const state = toolState(ed, &state_buf);
     const state_w = g.face.width(state, TEXT);
     var y = top + GAP;
-    g.face.draw(g.face.fit(&fit_buf, hover(ed, c, &buf), TEXT, w - state_w - BLOCK_GAP, false), x, y, TEXT, look.TEXT);
+    drawFit(g, hover(ed, c, &buf), TEXT, w - state_w - BLOCK_GAP, false, x, y, look.TEXT);
     g.face.draw(state, x + w - state_w, y, TEXT, look.DIM);
     y += TEXT + GAP;
     const said = ed.said_t > 0;
     const line: []const u8 = if (said) ed.said.text() else if (ed.view == .map) CRIB_MAP else CRIB_GRAPH;
-    g.face.draw(g.face.fit(&fit_buf, line, TEXT, w, false), x, y, TEXT, if (said) look.RETICLE else look.DIM);
+    drawFit(g, line, TEXT, w, false, x, y, if (said) look.RETICLE else look.DIM);
 }
 
 /// The tool, the inks and shape it paints with, the brush and the zoom.
@@ -2836,11 +2968,11 @@ fn hover(ed: *Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
             const i = grid.Level.idx(p);
             if (b.barrel[i]) wr.writeAll(", a barrel") catch {};
             if (b.torch.has(p)) wr.writeAll(", a torch") catch {};
-            if (b.foeAt(p)) |f| wr.print(", a {s}", .{actor.row(b.foe[f].kind).name}) catch {};
         },
-        .procgen => for (ed.rolled_foes.slice()) |f| {
-            if (f.at.eq(p)) wr.print(", a {s}", .{actor.row(f.kind).name}) catch {};
-        },
+        .procgen => {},
+    }
+    for (ed.shownFoes()) |f| {
+        if (f.at.eq(p)) wr.print(", a {s}", .{actor.row(f.kind).name}) catch {};
     }
     if (ed.start_at) |s| {
         if (s.eq(p)) wr.writeAll(", the start") catch {};
@@ -2875,18 +3007,23 @@ fn visible(ed: *const Editor, c: rl.Rectangle) grid.Box {
     };
 }
 
-/// The cells of `v` as play draws them: the ground, the grounds' edges over it, then what stands.
-fn drawCells(ed: *Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box, pass: look.Pass) void {
+/// The cells of `v` as play draws them: the grounds in their layers, then what stands.
+fn drawCells(ed: *Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) void {
+    var beds: dual.Beds = undefined;
+    beds.fill(&ed.lv, v.lo, v.hi, false);
+    g.sprites.drawGround(&beds, ed.origin(c), ed.px());
     var cells = grid.Cells.of(v.lo, v.hi);
     while (cells.next()) |p| {
         const r = ed.cellRect(c, p);
-        const kind = look.passKind(ed.lv.at(p), pass) orelse continue;
-        if (g.sprites.passTile(&ed.lv, p, kind)) |t| {
+        const here = ed.lv.at(p);
+        if (look.glyphGround(here, &g.sprites)) tileGlyph(g, here, r);
+        if (!look.standsOver(here)) continue;
+        if (g.sprites.tileAt(&ed.lv, p)) |t| {
             sprite(t, r);
             continue;
         }
-        if (look.tileBg(kind) orelse if (kind.upright()) look.BARE_WALL else null) |bg| rl.drawRectangleRec(r, bg);
-        if (kind != .wall) tileGlyph(g, kind, r);
+        if (look.tileBg(here) orelse if (here == .wall) look.BARE_WALL else null) |bg| rl.drawRectangleRec(r, bg);
+        if (here != .wall) tileGlyph(g, here, r);
     }
 }
 
@@ -2894,9 +3031,7 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     scissor(c);
     defer rl.endScissorMode();
     const v = visible(ed, c);
-    drawCells(ed, g, c, v, .ground);
-    g.sprites.drawGround(&ed.lv, v.lo, v.hi, false, ed.origin(c), ed.px());
-    drawCells(ed, g, c, v, .solid);
+    drawCells(ed, g, c, v);
     if (ed.lower == .things and ed.issues.cut_off > 0) {
         var cells = grid.Cells.of(v.lo, v.hi);
         while (cells.next()) |p| {
@@ -2911,10 +3046,7 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         if (ed.lv.hasBarrel(p)) figure(g, g.sprites.barrel, look.BARREL, ed.cellRect(c, p));
     }
     for (ed.lv.torches()) |t| glyph(g, look.TORCH.ch, ed.cellRect(c, t), look.TORCH.fg);
-    switch (ed.plan().*) {
-        .bespoke => |*b| for (b.foes()) |f| figure(g, g.sprites.body(f.kind), look.body(f.kind), ed.cellRect(c, f.at)),
-        .procgen => for (ed.rolled_foes.slice()) |a| figure(g, g.sprites.body(a.kind), look.body(a.kind), ed.cellRect(c, a.at)),
-    }
+    for (ed.shownFoes()) |f| figure(g, g.sprites.body(f.kind), look.body(f.kind), ed.cellRect(c, f.at));
     drawDoors(ed, g, c);
     if (ed.start_at) |s| figure(g, g.sprites.body(actor.HERO), START, ed.cellRect(c, s));
     if (ed.selection) |s| {
@@ -2934,9 +3066,16 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
 const GRID_PX: f32 = 32;
 const FLASH_PX: f32 = 4;
 const GHOST_A: f32 = 0.5;
-const CUT_OFF = look.fade(look.EDIT_WARN, 0.35);
-const SELECTED = look.fade(look.EDIT_PICKED, 0.15);
+const CUT_OFF = look.fade(WARN, 0.35);
+const SELECTED = look.fade(PICKED, 0.15);
 const GRID_INK = look.fade(look.EDGE, 0.35);
+/// Over a tool a procgen node does not take.
+const UNLIVE = look.fade(look.BG, 0.6);
+/// Behind a door's glyph, so it reads over any ground.
+const DOOR_BACK = look.fade(look.BG, 0.55);
+const PLAQUE_BG = look.fade(PANEL_BG, 0.85);
+const INK_EDGE: f32 = 2;
+const PICK_EDGE: f32 = 3;
 
 fn drawGrid(ed: *const Editor, c: rl.Rectangle, v: grid.Box) void {
     const lo = ed.cellRect(c, v.lo);
@@ -2957,7 +3096,7 @@ fn drawDoors(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     var buf: [8]u8 = undefined;
     for (ed.here().doors(), 0..) |d, k| {
         const r = ed.cellRect(c, d.at);
-        rl.drawRectangleRec(r, look.fade(look.BG, 0.55));
+        rl.drawRectangleRec(r, DOOR_BACK);
         glyph(g, look.DOOR.ch, r, if (d.to == null) UNLINKED else look.DOOR.fg);
         rl.drawRectangleLinesEx(r, 1, if (d.to == null) WARN else look.DOOR.fg);
         if (ed.px() >= LABEL_PX) {
@@ -2967,7 +3106,7 @@ fn drawDoors(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
             g.face.draw(label, @as(i32, @intFromFloat(r.x)) + 2, @as(i32, @intFromFloat(r.y)) + 1, SMALL, look.TEXT);
         }
         const pk = ed.pick orelse continue;
-        if (pk.eq(.{ .node = ed.node, .door = k })) rl.drawRectangleLinesEx(r, 3, PICKED);
+        if (pk.eq(.{ .node = ed.node, .door = k })) rl.drawRectangleLinesEx(r, PICK_EDGE, PICKED);
     }
 }
 
@@ -2975,40 +3114,28 @@ fn drawDoors(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
 fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     const m = ed.mouseCell(c);
     if (ed.pasting) {
+        if (!ed.mouseIn(c)) return;
         const bd = &ed.board;
-        var cells = grid.Box.sized(.{ .x = 0, .y = 0 }, bd.size.x, bd.size.y).cells();
+        const view = visible(ed, c);
+        var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
         while (cells.next()) |q| {
             const p = m.add(q);
             const k = bd.at(q);
-            if (grid.Level.inside(p)) ghostInk(ed, g, c, p, bd.tile[k]);
+            if (view.holds(p)) ghostInk(ed, g, c, p, bd.tile[k]);
         }
-        outlineCells(ed, c, grid.Box.sized(m, bd.size.x, bd.size.y), if (ed.paintable()) PICKED else WARN);
+        outlineCells(ed, c, bd.box(m), if (ed.paintable()) PICKED else WARN);
         return;
     }
     if (ed.span) |s| {
         const to = grid.Level.clamp(m);
-        const b = between(s.from, to);
-        switch (s.shape) {
-            .select => {},
-            .rect, .box => {
-                var cells = b.cells();
-                while (cells.next()) |p| {
-                    if (s.shape == .rect or b.onEdge(p)) ghostInk(ed, g, c, p, ed.ink[@intFromBool(s.erase)]);
-                }
-            },
-            .line => {
-                ghostBrush(ed, g, c, s.from, s.erase);
-                var ray = grid.Ray.init(s.from, to);
-                while (ray.next()) |q| ghostBrush(ed, g, c, q, s.erase);
-            },
-        }
-        outlineCells(ed, c, b, PICKED);
+        eachSpanCell(ed, s, to, Ghost.of(ed, g, c, ed.ink[@intFromBool(s.erase)]));
+        outlineCells(ed, c, between(s.from, to), PICKED);
         return;
     }
     if (!grid.Level.inside(m) or !ed.mouseIn(c)) return;
     if (ed.shape == .select) return outlineCells(ed, c, brushBox(m, 1), PICKED);
     if (ed.tool.broad()) {
-        if (ed.shape != .fill) ghostBrush(ed, g, c, m, ed.desk.erase);
+        if (ed.shape != .fill) eachBrushCell(ed, m, Ghost.of(ed, g, c, ed.ink[@intFromBool(ed.desk.erase)]));
         return outlineCells(ed, c, brushBox(m, if (ed.shape == .fill) 1 else ed.brushSize()), if (ed.tool.fits(ed.here())) HOVER else WARN);
     }
     const r = ed.cellRect(c, m);
@@ -3019,15 +3146,8 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         const l = ed.tool.look_();
         glyph(g, l.ch, r, look.fade(l.fg, GHOST_A));
     }
-    rl.drawRectangleLinesEx(r, 2, if (ok) HOVER else WARN);
+    rl.drawRectangleLinesEx(r, INK_EDGE, if (ok) HOVER else WARN);
     if (!ok) rl.drawRectangleRec(r, CUT_OFF);
-}
-
-fn ghostBrush(ed: *Editor, g: *game.Game, c: rl.Rectangle, p: P, second: bool) void {
-    var cells = brushBox(p, ed.brushSize()).cells();
-    while (cells.next()) |q| {
-        if (grid.Level.inside(q)) ghostInk(ed, g, c, q, ed.ink[@intFromBool(second)]);
-    }
 }
 
 /// As `paintTile` would lay `t` at `p`.
@@ -3073,7 +3193,7 @@ fn plaque(g: *game.Game, c: rl.Rectangle, s: [:0]const u8) void {
     const w = g.face.width(s, SMALL) + 2 * GAP;
     const x: i32 = @as(i32, @intFromFloat(c.x)) + GAP;
     const y: i32 = @as(i32, @intFromFloat(c.y)) + GAP;
-    rl.drawRectangle(x, y, w, SMALL + 2 * GAP, look.fade(PANEL_BG, 0.85));
+    rl.drawRectangle(x, y, w, SMALL + 2 * GAP, PLAQUE_BG);
     g.face.draw(s, x + GAP, y + GAP, SMALL, look.TEXT);
 }
 
@@ -3084,13 +3204,11 @@ fn outlineCells(ed: *const Editor, c: rl.Rectangle, b: grid.Box, col: rl.Color) 
 fn drawGraph(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     scissor(c);
     defer rl.endScissorMode();
-    var buf: [LINE]u8 = undefined;
-    var fit_buf: [LINE]u8 = undefined;
     for (0..ed.world.node_n) |n| {
         const b = ed.boxAt(c, n);
         rl.drawRectangleRec(b, PANEL_BG);
         if (thumb(ed, n)) |t| sprite(t, .{ .x = b.x, .y = b.y + @as(f32, @floatFromInt(BOX_TOP)), .width = @floatFromInt(BOX_W), .height = @floatFromInt(BOX_H - BOX_TOP) });
-        g.face.draw(fitTitle(ed, g, n, &buf, &fit_buf, insetW(b)), textX(b), @as(i32, @intFromFloat(b.y)) + TITLE_DY, TEXT, titleColor(ed, n));
+        drawNodeTitle(ed, g, n, b, @as(i32, @intFromFloat(b.y)) + TITLE_DY);
         rl.drawRectangleLinesEx(b, 1, if (n == ed.node) ON else look.EDGE);
     }
     for (ed.world.nodes(), 0..) |*nd, n| {
@@ -3140,24 +3258,18 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
         .none, .confirm, .name, .open => {},
     }
     const body = modalBody(ed);
-    const h = PAD + HEAD + PAD + body + ROW_H + PAD;
-    const x = @divTrunc(g.screen.x - MODAL_W, 2);
-    var y = @divTrunc(g.screen.y - h, 2);
-    rl.drawRectangle(x, y, MODAL_W, h, PANEL_BG);
-    rl.drawRectangleLines(x, y, MODAL_W, h, look.EDGE);
-    y += PAD;
     var title_buf: [atlas.PATH_MAX + LINE]u8 = undefined;
-    var title_fit: [atlas.PATH_MAX + LINE]u8 = undefined;
     const title: [:0]const u8 = switch (ed.modal) {
         .confirm => "Unsaved changes",
         .name => if (ed.naming == .new) "New world" else "Save the world as",
         .open => std.fmt.bufPrintZ(&title_buf, "Open: " ++ atlas.PREFIX ++ "{s}", .{ed.listing.here()}) catch "Open",
         .none, .help, .objects => "",
     };
-    g.face.draw(g.face.fit(&title_fit, title, HEAD, MODAL_INNER_W, true), x + PAD, y, HEAD, look.TEXT);
-    y += HEAD + PAD;
+    const f = modalFrame(g, MODAL_W, PAD + HEAD + PAD + body + ROW_H + PAD, title, true);
+    const x = f.x;
+    var y = f.y;
     const buttons_y = y + body;
-    const bx = x + MODAL_W - PAD - MODAL_BTN_W;
+    const bx = x + f.w - PAD - MODAL_BTN_W;
     switch (ed.modal) {
         .confirm => {
             var fit_buf: [LINE]u8 = undefined;
@@ -3173,8 +3285,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
             y += ROW_STEP;
             var pbuf: [atlas.PATH_MAX]u8 = undefined;
             const note = if (ed.namedPath(&pbuf)) |p| std.fmt.bufPrintZ(&buf, "Makes {s}", .{p}) catch "" else "Type a name";
-            var fit_buf: [LINE]u8 = undefined;
-            g.face.draw(g.face.fit(&fit_buf, note, SMALL, MODAL_INNER_W, false), x + PAD, y, SMALL, look.DIM);
+            drawFit(g, note, SMALL, MODAL_INNER_W, false, x + PAD, y, look.DIM);
             std.debug.assert(y + SMALL <= buttons_y);
             y = buttons_y;
             if (buttonOn(ed, g, modalButton(bx, y, 1), keyed("OK", Desk.ENTER_CAPTION), false, true, true, null)) ed.named();
@@ -3215,19 +3326,13 @@ const HELP_W: i32 = 1000;
 /// Every key, `HELP`'s lines; Esc closes it.
 fn drawHelp(ed: *Editor, g: *game.Game) void {
     const line_h = TEXT + GAP;
-    const h = PAD * 2 + HEAD + PAD + @as(i32, HELP.len) * line_h + ROW_H + PAD;
-    const w = @min(HELP_W, g.screen.x - 2 * PAD);
-    const x = @divTrunc(g.screen.x - w, 2);
-    var y = @max(0, @divTrunc(g.screen.y - h, 2));
-    rl.drawRectangle(x, y, w, h, PANEL_BG);
-    rl.drawRectangleLines(x, y, w, h, look.EDGE);
-    y += PAD;
-    g.face.draw("Every key", x + PAD, y, HEAD, look.TEXT);
-    y += HEAD + PAD;
-    var fit_buf: [LINE]u8 = undefined;
+    const f = modalFrame(g, HELP_W, PAD * 2 + HEAD + PAD + @as(i32, HELP.len) * line_h + ROW_H + PAD, "Every key", false);
+    const x = f.x;
+    const w = f.w;
+    var y = f.y;
     for (HELP) |l| {
         const head = std.ascii.isUpper(l[0]) and std.mem.indexOfScalar(u8, l, ' ') == null;
-        g.face.draw(g.face.fit(&fit_buf, l, TEXT, w - 2 * PAD, false), x + PAD, y, TEXT, if (head) look.DIM else look.TEXT);
+        drawFit(g, l, TEXT, w - 2 * PAD, false, x + PAD, y, if (head) look.DIM else look.TEXT);
         y += line_h;
     }
     backButton(ed, g, x + w - PAD - MODAL_BTN_W, y, "Close");
@@ -3241,21 +3346,19 @@ const VIEW_BIG: f32 = 192;
 
 /// Every tile, body and prop as the game draws it, and what each is; `Desk.NAV_CAPTION` or a click picks one.
 fn drawObjects(ed: *Editor, g: *game.Game) void {
-    const rows: i32 = @intCast(std.math.divCeil(usize, SEEN.len, VIEW_COLS) catch unreachable);
     const grid_w = @as(i32, VIEW_COLS) * VIEW_CELL;
-    const h = PAD * 2 + HEAD + PAD + rows * VIEW_CELL + ROW_STEP;
-    const w = @min(VIEW_W, g.screen.x - 2 * PAD);
-    const x = @divTrunc(g.screen.x - w, 2);
-    var y = @max(0, @divTrunc(g.screen.y - h, 2));
-    rl.drawRectangle(x, y, w, h, PANEL_BG);
-    rl.drawRectangleLines(x, y, w, h, look.EDGE);
-    y += PAD;
     const title = "Objects";
-    g.face.draw(title, x + PAD, y, HEAD, look.TEXT);
-    g.face.draw(Desk.NAV_CAPTION ++ " or a click picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes", x + PAD + g.face.width(title, HEAD) + PAD, y + 4, SMALL, look.DIM);
-    y += HEAD + PAD;
+    var cells = Tiles{ .x = 0, .y = 0, .cols = VIEW_COLS, .pitch = VIEW_CELL, .size = VIEW_CELL - GAP };
+    const cells_h = cells.height(SEEN.len);
+    const f = modalFrame(g, VIEW_W, PAD * 2 + HEAD + PAD + cells_h + ROW_STEP, title, false);
+    const x = f.x;
+    const w = f.w;
+    const y = f.y;
+    cells.x = x + PAD;
+    cells.y = y;
+    g.face.draw(Desk.NAV_CAPTION ++ " or a click picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes", x + PAD + g.face.width(title, HEAD) + PAD, f.top + 4, SMALL, look.DIM);
     for (SEEN, 0..) |s, i| {
-        const r = look.rect(x + PAD + @as(i32, @intCast(i % VIEW_COLS)) * VIEW_CELL, y + @as(i32, @intCast(i / VIEW_COLS)) * VIEW_CELL, VIEW_CELL - GAP, VIEW_CELL - GAP);
+        const r = cells.at(i);
         const hh = hot(ed, r, true, true, null);
         if (hh.hot) ed.tip = seenName(s);
         plate(r, i == ed.seen_at, hh.hot);
@@ -3272,12 +3375,11 @@ fn drawObjects(ed: *Editor, g: *game.Game) void {
     dy += HEAD + GAP;
     var facts = Facts{};
     seenFacts(s, &facts);
-    var fit_buf: [LINE]u8 = undefined;
     for (facts.all()) |l| {
-        g.face.draw(g.face.fit(&fit_buf, l, TEXT, x + w - PAD - dx, false), dx, dy, TEXT, look.DIM);
+        drawFit(g, l, TEXT, x + w - PAD - dx, false, dx, dy, look.DIM);
         dy += TEXT + GAP;
     }
-    backButton(ed, g, x + w - PAD - MODAL_BTN_W, y + rows * VIEW_CELL, "Close");
+    backButton(ed, g, x + w - PAD - MODAL_BTN_W, y + cells_h, "Close");
 }
 
 fn seenName(s: Seen) [:0]const u8 {
@@ -3323,7 +3425,7 @@ fn seenFacts(s: Seen, f: *Facts) void {
             f.put("Letter '{c}' in a world file", .{t.letter()});
             f.put("{s}; {s}", .{ if (t.solid()) "Blocks a step" else "Walked on", if (t.blind()) "blocks sight" else "seen through" });
             if (t.liquid()) f.put("A liquid: gas spreads over it, a trail bridges it", .{});
-            if (look.under(t)) |u| f.put("Drawn over {s}", .{@tagName(u)});
+            if (look.under(t)) |u| f.put("Drawn over the ground beside it, else {s}", .{@tagName(u)});
             if (dual.of(t)) |gr| if (look.GROUND_SHEETS.contains(gr)) f.put("Ground {s}: its edges meet the grounds below it", .{@tagName(gr)});
             if (look.stands(t)) f.put("Stands up and throws a shadow", .{});
         },
@@ -3365,14 +3467,9 @@ fn modalButton(bx: i32, y: i32, k: i32) rl.Rectangle {
 
 fn fieldRow(ed: *Editor, g: *game.Game, r: rl.Rectangle) void {
     var buf: [LINE]u8 = undefined;
-    var fit_buf: [LINE]u8 = undefined;
     rl.drawRectangleRec(r, ROW_ON);
     const typed = std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "";
-    g.face.draw(g.face.fit(&fit_buf, typed, TEXT, insetW(r), true), textX(r), @as(i32, @intFromFloat(r.y)) + TEXT_DY, TEXT, look.RETICLE);
-}
-
-fn titleColor(ed: *const Editor, n: usize) rl.Color {
-    return if (ed.renamingNode(n)) look.RETICLE else look.TEXT;
+    drawFit(g, typed, TEXT, insetW(r), true, textX(r), @as(i32, @intFromFloat(r.y)) + TEXT_DY, look.RETICLE);
 }
 
 fn backButton(ed: *Editor, g: *game.Game, bx: i32, y: i32, comptime label: []const u8) void {
@@ -3496,6 +3593,24 @@ fn testEditor() !*Editor {
     return ed;
 }
 
+/// With one bespoke node, all wall.
+fn testBespoke() !*Editor {
+    const ed = try testEditor();
+    _ = ed.world.add(.{ .bespoke = .{} });
+    return ed;
+}
+
+/// Node 0's box pressed at 100,100 on the graph and dragged 100 right; where it stood.
+fn dragFirstBox(ed: *Editor) P {
+    const was = ed.world.node[0].pos;
+    ed.view = .graph;
+    ed.gesture();
+    ed.drag = .{ .node = 0, .grab = .{ .x = 0, .y = 0 }, .from = .{ .x = 100, .y = 100 }, .was = was };
+    ed.desk = .{ .paint = true, .mouse = .{ .x = 200, .y = 100 } };
+    graphMouse(ed, TEST_CANVAS, true);
+    return was;
+}
+
 fn mouseOn(ed: *const Editor, c: rl.Rectangle, p: P) P {
     const r = ed.cellRect(c, p);
     return .{ .x = @as(i32, @intFromFloat(r.x)) + 1, .y = @as(i32, @intFromFloat(r.y)) + 1 };
@@ -3563,9 +3678,8 @@ test "the link tool joins doors on two nodes, and a procgen node takes doors but
 }
 
 test "a gesture is one undo however much it paints, and redo puts it back" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     const b = &ed.world.node[0].plan.bespoke;
     const open = struct {
         fn n(bs: *const atlas.Bespoke) usize {
@@ -3600,9 +3714,8 @@ test "a gesture is one undo however much it paints, and redo puts it back" {
 }
 
 test "undo keeps no more than its cap, dropping the oldest" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     ed.tool = .paint;
     for (0..UNDO_CAP + 5) |i| {
         ed.gesture();
@@ -3610,14 +3723,13 @@ test "undo keeps no more than its cap, dropping the oldest" {
     }
     try std.testing.expectEqual(UNDO_CAP, ed.hist_len);
     for (0..UNDO_CAP) |_| ed.undo();
-    try std.testing.expectEqual(grid.Tile.floor, ed.world.node[0].plan.bespoke.tile[grid.Level.idx(.{ .x = 5, .y = 1 })]);
-    try std.testing.expectEqual(grid.Tile.wall, ed.world.node[0].plan.bespoke.tile[grid.Level.idx(.{ .x = 6, .y = 1 })]);
+    try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 5, .y = 1 }));
+    try std.testing.expectEqual(grid.Tile.wall, tileAt(ed, .{ .x = 6, .y = 1 }));
 }
 
 test "undoing back to what was saved leaves nothing unsaved, and a press held through New lets go" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     click(ed, .paint, .{ .x = 3, .y = 3 });
     ed.saved_at = ed.hist_at;
     ed.dirty = false;
@@ -3638,41 +3750,31 @@ test "undoing back to what was saved leaves nothing unsaved, and a press held th
 const TEST_CANVAS = rl.Rectangle{ .x = 0, .y = 0, .width = 2000, .height = 2000 };
 
 test "a fast stroke paints every cell it passes, and Esc mid-rectangle lets the press go" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     const c = TEST_CANVAS;
     ed.cam = .{ 0, 0 };
     ed.tool = .paint;
-    const at = struct {
-        fn f(e: *Editor, p: P) P {
-            return mouseOn(e, TEST_CANVAS, p);
-        }
-    }.f;
-    ed.desk = .{ .paint = true, .paint_hit = true, .mouse = at(ed, .{ .x = 2, .y = 2 }) };
+    ed.desk = .{ .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = 2, .y = 2 }) };
     ed.gesture();
     mapMouse(ed, c, true);
-    ed.desk = .{ .paint = true, .mouse = at(ed, .{ .x = 12, .y = 2 }) };
+    ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = 12, .y = 2 }) };
     mapMouse(ed, c, true);
-    var row_n: usize = 0;
-    var x: i32 = 0;
-    while (x < grid.W) : (x += 1) {
-        if (ed.world.node[0].plan.bespoke.tile[grid.Level.idx(.{ .x = x, .y = 2 })] == .floor) row_n += 1;
-    }
+    const row_n = rowCount(ed, 2, .floor);
     mapMouse(ed, c, false);
-    ed.desk = .{ .paint = true, .mouse = at(ed, .{ .x = 4, .y = 4 }) };
+    ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = 4, .y = 4 }) };
     mapMouse(ed, c, true);
-    try std.testing.expectEqual(grid.Tile.floor, ed.world.node[0].plan.bespoke.tile[grid.Level.idx(.{ .x = 4, .y = 4 })]);
+    try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 4, .y = 4 }));
     ed.desk = .{};
     mapMouse(ed, c, true);
-    ed.desk = .{ .paint = true, .paint_hit = true, .shift = true, .mouse = at(ed, .{ .x = 2, .y = 6 }) };
+    ed.desk = .{ .paint = true, .paint_hit = true, .shift = true, .mouse = mouseOn(ed, c, .{ .x = 2, .y = 6 }) };
     ed.gesture();
     mapMouse(ed, c, true);
     try std.testing.expect(ed.span != null);
     escape(ed);
-    ed.desk = .{ .paint = true, .mouse = at(ed, .{ .x = 8, .y = 6 }) };
+    ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = 8, .y = 6 }) };
     mapMouse(ed, c, true);
-    const stray = ed.world.node[0].plan.bespoke.tile[grid.Level.idx(.{ .x = 8, .y = 6 })];
+    const stray = tileAt(ed, .{ .x = 8, .y = 6 });
     std.debug.print("a stroke dragged 10 cells in one frame: {d} cells painted\n", .{row_n});
     try std.testing.expectEqual(@as(usize, 11), row_n);
     try std.testing.expectEqual(grid.Tile.wall, stray);
@@ -3682,9 +3784,8 @@ test "a fast stroke paints every cell it passes, and Esc mid-rectangle lets the 
 }
 
 test "a stroke leaving the map paints up to its edge, and it ends with the button that began it" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     const b = &ed.world.node[0].plan.bespoke;
     const c = TEST_CANVAS;
     ed.cam = .{ -4, 0 };
@@ -3694,18 +3795,14 @@ test "a stroke leaving the map paints up to its edge, and it ends with the butto
     mapMouse(ed, c, true);
     ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = -3, .y = 10 }) };
     mapMouse(ed, c, true);
-    var row_n: usize = 0;
-    var x: i32 = 0;
-    while (x < grid.W) : (x += 1) {
-        if (b.tile[grid.Level.idx(.{ .x = x, .y = 10 })] == .floor) row_n += 1;
-    }
+    const row_n = rowCount(ed, 10, .floor);
     ed.desk = .{ .paint = true, .erase = true, .erase_hit = true, .mouse = mouseOn(ed, c, .{ .x = 20, .y = 20 }) };
     mapMouse(ed, c, true);
     ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = 4, .y = 10 }) };
     mapMouse(ed, c, true);
     std.debug.print("a stroke from x 5 to x -3 in one frame: {d} cells painted to the edge\n", .{row_n});
     try std.testing.expectEqual(@as(usize, 6), row_n);
-    try std.testing.expectEqual(grid.Tile.floor, b.tile[grid.Level.idx(.{ .x = 4, .y = 10 })]);
+    try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 4, .y = 10 }));
     click(ed, .torch, .{ .x = 3, .y = 9 });
     try std.testing.expectEqual(@as(usize, 1), b.torch.n);
     paintClick(ed, .wall, .{ .x = 3, .y = 10 });
@@ -3717,10 +3814,8 @@ test "a stroke leaving the map paints up to its edge, and it ends with the butto
 }
 
 test "a click off the map ends the stroke held through it" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
-    const b = &ed.world.node[0].plan.bespoke;
     const c = TEST_CANVAS;
     ed.cam = .{ 0, 0 };
     ed.tool = .paint;
@@ -3733,14 +3828,12 @@ test "a click off the map ends the stroke held through it" {
     ed.desk = .{ .paint = true, .erase = true, .mouse = mouseOn(ed, c, .{ .x = 4, .y = 2 }) };
     mapMouse(ed, c, true);
     try std.testing.expectEqual(@as(usize, 1), ed.hist_at);
-    try std.testing.expectEqual(grid.Tile.wall, b.tile[grid.Level.idx(.{ .x = 4, .y = 2 })]);
+    try std.testing.expectEqual(grid.Tile.wall, tileAt(ed, .{ .x = 4, .y = 2 }));
 }
 
 test "a rectangle begun off the map fills from its edge" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
-    const b = &ed.world.node[0].plan.bespoke;
     const c = TEST_CANVAS;
     ed.cam = .{ -4, -4 };
     ed.tool = .paint;
@@ -3751,19 +3844,14 @@ test "a rectangle begun off the map fills from its edge" {
     mapMouse(ed, c, true);
     ed.desk = .{ .mouse = mouseOn(ed, c, .{ .x = 4, .y = 4 }) };
     mapMouse(ed, c, true);
-    var n: usize = 0;
-    for (b.tile) |t| {
-        if (t == .floor) n += 1;
-    }
+    const n = count(ed, .floor);
     std.debug.print("a rectangle from -2,-2 to 4,4: {d} cells of floor\n", .{n});
     try std.testing.expectEqual(@as(usize, 25), n);
 }
 
 test "a click on the frame a rectangle is let go is an undo of its own" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
-    const b = &ed.world.node[0].plan.bespoke;
     const c = TEST_CANVAS;
     ed.cam = .{ 0, 0 };
     ed.tool = .paint;
@@ -3773,16 +3861,15 @@ test "a click on the frame a rectangle is let go is an undo of its own" {
     ed.desk = .{ .erase = true, .erase_hit = true, .mouse = mouseOn(ed, c, .{ .x = 6, .y = 4 }) };
     ed.gesture();
     mapMouse(ed, c, true);
-    try std.testing.expectEqual(grid.Tile.wall, b.tile[grid.Level.idx(.{ .x = 6, .y = 4 })]);
-    try std.testing.expectEqual(grid.Tile.floor, b.tile[grid.Level.idx(.{ .x = 5, .y = 4 })]);
+    try std.testing.expectEqual(grid.Tile.wall, tileAt(ed, .{ .x = 6, .y = 4 }));
+    try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 5, .y = 4 }));
     ed.undo();
-    try std.testing.expectEqual(grid.Tile.floor, ed.world.node[0].plan.bespoke.tile[grid.Level.idx(.{ .x = 6, .y = 4 })]);
+    try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 6, .y = 4 }));
 }
 
 test "a door on a wall taken away takes the torch it held up" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     const b = &ed.world.node[0].plan.bespoke;
     const door = P{ .x = 6, .y = 5 };
     const torch = lume.torchWall(door);
@@ -3796,16 +3883,10 @@ test "a door on a wall taken away takes the torch it held up" {
 }
 
 test "the other button pressed mid graph drag puts the box back, and leaves no undo" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
-    const was = ed.world.node[0].pos;
     const c = TEST_CANVAS;
-    ed.view = .graph;
-    ed.gesture();
-    ed.drag = .{ .node = 0, .grab = .{ .x = 0, .y = 0 }, .from = .{ .x = 100, .y = 100 }, .was = was };
-    ed.desk = .{ .paint = true, .mouse = .{ .x = 200, .y = 100 } };
-    graphMouse(ed, c, true);
+    const was = dragFirstBox(ed);
     try std.testing.expect(!ed.world.node[0].pos.eq(was));
     ed.desk = .{ .paint = true, .erase = true, .erase_hit = true, .mouse = .{ .x = 300, .y = 100 } };
     ed.drop();
@@ -3819,9 +3900,8 @@ test "the other button pressed mid graph drag puts the box back, and leaves no u
 }
 
 test "leaving with unsaved changes asks first, and leaving a saved world does not" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     ed.request(.leave);
     try std.testing.expect(ed.action == .leave);
     ed.action = .none;
@@ -3880,9 +3960,8 @@ test "undo and redo disarm deletion when a node index changes owners" {
 }
 
 test "a node added is named as it is added, one undo for both" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     const before = ed.world.node_n;
     ed.gesture();
     addNode(ed, .{ .procgen = .{} });
@@ -3900,6 +3979,13 @@ fn tileAt(ed: *Editor, p: P) grid.Tile {
     return ed.world.node[ed.node].plan.bespoke.tile[grid.Level.idx(p)];
 }
 
+fn rowCount(ed: *Editor, y: i32, t: grid.Tile) usize {
+    var n: usize = 0;
+    var x: i32 = 0;
+    while (x < grid.W) : (x += 1) n += @intFromBool(tileAt(ed, .{ .x = x, .y = y }) == t);
+    return n;
+}
+
 fn count(ed: *Editor, t: grid.Tile) usize {
     var n: usize = 0;
     for (ed.world.node[ed.node].plan.bespoke.tile) |x| n += @intFromBool(x == t);
@@ -3907,9 +3993,8 @@ fn count(ed: *Editor, t: grid.Tile) usize {
 }
 
 test "a line, a box and a fill lay the inks, each one undo, and the eyedropper picks a tile or what stands on it" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     ed.tool = .paint;
     ed.gesture();
     laySpan(ed, .{ .from = .{ .x = 2, .y = 2 }, .erase = false, .shape = .line }, .{ .x = 12, .y = 7 });
@@ -3940,9 +4025,8 @@ test "a line, a box and a fill lay the inks, each one undo, and the eyedropper p
 }
 
 test "a selection copied pastes with what stood on it, and cut leaves the second ink" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     ed.tool = .paint;
     ed.gesture();
     laySpan(ed, .{ .from = .{ .x = 4, .y = 4 }, .erase = false, .shape = .rect }, .{ .x = 9, .y = 8 });
@@ -3972,9 +4056,8 @@ test "a selection copied pastes with what stood on it, and cut leaves the second
 }
 
 test "a door's dot dragged onto another's on the graph links them, and the other button on one unlinks it" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     _ = ed.world.add(.{ .bespoke = .{} });
     _ = ed.world.addDoor(0, .{ .x = 10, .y = 10 });
     _ = ed.world.addDoor(1, .{ .x = 20, .y = 20 });
@@ -3999,9 +4082,8 @@ test "a door's dot dragged onto another's on the graph links them, and the other
 }
 
 test "Open lists the edited world's folder and Esc goes up a folder before it closes; a new name goes beside the world" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     ed.setPath(".\\" ++ comptime atlas.worldPath("qud\\qud_strata"));
     try std.testing.expectEqualStrings(atlas.DIR ++ "/qud/qud_strata" ++ atlas.EXT, ed.path());
     ed.askOpen();
@@ -4047,16 +4129,9 @@ test "a procgen node shows a roll of it with its packs, and a bespoke one counts
 }
 
 test "undo mid graph drag takes the drag back as its own step, and the world after it is unsaved" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
-    const was = ed.world.node[0].pos;
-    const c = TEST_CANVAS;
-    ed.view = .graph;
-    ed.gesture();
-    ed.drag = .{ .node = 0, .grab = .{ .x = 0, .y = 0 }, .from = .{ .x = 100, .y = 100 }, .was = was };
-    ed.desk = .{ .paint = true, .mouse = .{ .x = 200, .y = 100 } };
-    graphMouse(ed, c, true);
+    const was = dragFirstBox(ed);
     ed.undo();
     try std.testing.expect(ed.world.node[0].pos.eq(was));
     try std.testing.expect(ed.drag == null);
@@ -4066,9 +4141,8 @@ test "undo mid graph drag takes the drag back as its own step, and the world aft
 }
 
 test "a graph drag put back keeps what there was to redo" {
-    const ed = try testEditor();
+    const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
     _ = ed.world.add(.{ .bespoke = .{} });
     ed.select(1);
     for (0..UNDO_CAP) |_| {
@@ -4079,12 +4153,7 @@ test "a graph drag put back keeps what there was to redo" {
     ed.undo();
     ed.undo();
     const hist = .{ ed.hist_base, ed.hist_len, ed.hist_at };
-    const was = ed.world.node[0].pos;
-    ed.view = .graph;
-    ed.gesture();
-    ed.drag = .{ .node = 0, .grab = .{ .x = 0, .y = 0 }, .from = .{ .x = 100, .y = 100 }, .was = was };
-    ed.desk = .{ .paint = true, .mouse = .{ .x = 200, .y = 100 } };
-    graphMouse(ed, TEST_CANVAS, true);
+    const was = dragFirstBox(ed);
     try std.testing.expect(!ed.world.node[0].pos.eq(was));
     ed.drop();
     try std.testing.expect(ed.world.node[0].pos.eq(was));
@@ -4094,17 +4163,57 @@ test "a graph drag put back keeps what there was to redo" {
     try std.testing.expectEqual(ed.hist_len, ed.hist_at);
 }
 
-test "a graph drag let go of where it began leaves no undo and nothing unsaved" {
-    const ed = try testEditor();
+test "redo mid graph drag puts the box back and redoes" {
+    const ed = try testBespoke();
     defer ed.destroy();
     _ = ed.world.add(.{ .bespoke = .{} });
-    const was = ed.world.node[0].pos;
-    const c = TEST_CANVAS;
-    ed.view = .graph;
     ed.gesture();
-    ed.drag = .{ .node = 0, .grab = .{ .x = 0, .y = 0 }, .from = .{ .x = 100, .y = 100 }, .was = was };
-    ed.desk = .{ .paint = true, .mouse = .{ .x = 200, .y = 100 } };
-    graphMouse(ed, c, true);
+    ed.world.node[1].pos.x += 40;
+    ed.bank();
+    const moved = ed.world.node[1].pos;
+    ed.undo();
+    const was = dragFirstBox(ed);
+    ed.redo();
+    try std.testing.expect(ed.world.node[0].pos.eq(was));
+    try std.testing.expect(ed.world.node[1].pos.eq(moved));
+    try std.testing.expectEqual(ed.hist_len, ed.hist_at);
+}
+
+test "Esc mid stroke ends it, and a paste hanging off the map lays what lands on it" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const c = TEST_CANVAS;
+    ed.cam = .{ 0, 0 };
+    ed.tool = .paint;
+    ed.selection = grid.Box.sized(.{ .x = 0, .y = 0 }, 2, 2);
+    ed.desk = .{ .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = 2, .y = 2 }) };
+    ed.gesture();
+    mapMouse(ed, c, true);
+    escape(ed);
+    try std.testing.expect(ed.selection != null);
+    ed.desk = .{ .paint = true, .mouse = mouseOn(ed, c, .{ .x = 6, .y = 2 }) };
+    mapMouse(ed, c, true);
+    try std.testing.expectEqual(grid.Tile.wall, tileAt(ed, .{ .x = 6, .y = 2 }));
+    ed.desk = .{};
+    mapMouse(ed, c, true);
+    ed.gesture();
+    laySpan(ed, .{ .from = .{ .x = 10, .y = 10 }, .erase = false, .shape = .rect }, .{ .x = 12, .y = 12 });
+    ed.gesture();
+    laySpan(ed, .{ .from = .{ .x = 10, .y = 10 }, .erase = false, .shape = .select }, .{ .x = 12, .y = 12 });
+    copySelection(ed, false);
+    startPaste(ed);
+    ed.desk = .{ .paint = true, .paint_hit = true, .mouse = mouseOn(ed, c, .{ .x = -1, .y = -1 }) };
+    ed.gesture();
+    mapMouse(ed, c, true);
+    try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 0, .y = 0 }));
+    try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 1, .y = 1 }));
+}
+
+test "a graph drag let go of where it began leaves no undo and nothing unsaved" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const c = TEST_CANVAS;
+    const was = dragFirstBox(ed);
     try std.testing.expect(!ed.world.node[0].pos.eq(was));
     const back = P{ .x = was.x + @as(i32, @intFromFloat(c.x - ed.gcam[0])), .y = was.y + @as(i32, @intFromFloat(c.y - ed.gcam[1])) };
     ed.desk = .{ .paint = true, .mouse = back };

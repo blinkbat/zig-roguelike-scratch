@@ -103,6 +103,16 @@ pub const Face = struct {
         return cx - @divTrunc(self.width(s, size), 2);
     }
 
+    /// `draw`, its middle on `cx`.
+    pub fn drawMid(self: *const Face, s: [:0]const u8, cx: i32, y: i32, size: i32, col: rl.Color) void {
+        self.draw(s, self.leftFor(s, cx, size), y, size, col);
+    }
+
+    /// `text`, its middle on `cx`.
+    pub fn textMid(self: *const Face, s: [:0]const u8, cx: i32, y: i32, size: i32, col: rl.Color) void {
+        self.text(s, self.leftFor(s, cx, size), y, size, col);
+    }
+
     /// One character, its middle on `cx`, `cy`.
     pub fn glyph(self: *const Face, ch: u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         const s = [_:0]u8{ch};
@@ -110,7 +120,7 @@ pub const Face = struct {
     }
 
     fn centred(self: *const Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
-        self.draw(s, self.leftFor(s, cx, size), topFor(cy, size), size, col);
+        self.drawMid(s, cx, topFor(cy, size), size, col);
     }
 
     fn topFor(cy: i32, size: i32) i32 {

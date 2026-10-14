@@ -5,7 +5,6 @@ const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
 const glacial = @import("../play/glacial.zig");
 const look = @import("look.zig");
-const menu = @import("../ui/menu.zig");
 
 /// `ichor` is Brogue's purple blood.
 pub const Matter = enum { blood, ooze, wood, ichor };
@@ -115,10 +114,6 @@ pub const Status = enum {
     bleeding,
     burning,
     chilled,
-
-    pub fn caption(s: Status) [:0]const u8 {
-        return menu.named(s);
-    }
 
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
@@ -390,8 +385,8 @@ pub const Fx = struct {
         const at = d.at;
         for (0..DRIP_MOTES) |_| {
             self.emit(.{
-                .p = .{ at[0] + (self.rng.unit() - 0.5) * 0.4, at[1] + (self.rng.unit() - 0.5) * 0.2, STRIKE_Z + self.rng.unit() * 0.2 },
-                .v = .{ (self.rng.unit() - 0.5) * 0.3, (self.rng.unit() - 0.5) * 0.3, 0 },
+                .p = .{ at[0] + self.rng.spread(0.4), at[1] + self.rng.spread(0.2), STRIKE_Z + self.rng.unit() * 0.2 },
+                .v = .{ self.rng.spread(0.3), self.rng.spread(0.3), 0 },
                 .life = s.life_hi,
                 .r = mathx.lerpF(s.r_lo, s.r_hi, self.rng.unit()),
                 .col = s.col,

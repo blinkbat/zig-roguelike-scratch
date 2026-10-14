@@ -16,12 +16,12 @@ Only display the corresponding systems this game actually has. Do not fill the l
 |---|---|
 | Life | Red circular reservoir, filled from the bottom; current / maximum above the orb |
 | Mana | Matching blue reservoir and current / maximum |
-| Assigned skills | Existing skill pictures and current input captions; active secondary set uses the same slots |
+| Assigned skills | Existing skill pictures and each slot's input icon (`look.Prompt`); active secondary set uses the same slots |
 | Skill availability | Existing held/aimed state, dimming when unavailable, remaining cooldown on the skill |
 | Active ailments | Small icons with remaining turns, only while active, just above the central strip |
 | Minimap | Existing upper-right map, outside the bottom assembly |
 
-Remove the live HUD's hero-name label, enemy population counters, gold tally, permanent movement/pause/binding instructions and scrolling combat log. Keep their simulation and saved data. Binding and menu instructions remain in their own screens. Do not add flasks, charms, experience, levels, spirit, energy shield, inventory or quest widgets: those systems do not exist here.
+Remove the live HUD's hero-name label, enemy population counters, gold tally, permanent movement/pause/binding instructions and scrolling combat log. Keep their simulation and saved data. No screen names a key or button in words; menus and the bind screen carry no instructions. Do not add flasks, charms, experience, levels, spirit, energy shield, inventory or quest widgets: those systems do not exist here.
 
 ## Layout and placeholder art
 
@@ -29,7 +29,7 @@ Remove the live HUD's hero-name label, enemy population counters, gold tally, pe
 - Two matching 104-pixel orb frames flank the existing seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs completely cover its ends. The plate is 88px tall and its lower edge sits just above the orb bases; no square endcaps project beyond the orbs.
 - Mount the assembly close to the bottom edge. Draw the world behind it and at both sides instead of reserving a full-width black footer.
 - Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
-- Use the current Balthazar face for small resource values, button captions and cooldowns. Avoid extra explanatory prose in play.
+- Use the current Balthazar face for small resource values and cooldowns; inputs are icons, not captions. Avoid extra explanatory prose in play.
 - Keep geometry, colours and draw functions together so authored orb/frame art can replace the primitives later. Reuse the existing skill images.
 - Life follows the presented HP (`Game.pictured`), so it changes when a hit lands. Mana and cooldowns keep their existing timing. Layout code does not change gameplay.
 
@@ -39,9 +39,9 @@ Use the existing check, test, shot and build scripts. Inspect full, partial, cri
 
 ## Implementation
 
-Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Captions come from `State.slotCaption`; this pass adds no input handling.
+Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Each slot's input is a `look.Prompt` icon under it.
 
-The world now spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind overlay is centered in the space above the HUD so its instructions remain clear at 720p. The former bar, counter, log and permanent-hint renderers are removed; their gameplay and save data remain intact.
+The world now spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind overlay is centered in the space above the HUD. The former bar, counter, log and permanent-hint renderers are removed; their gameplay and save data remain intact.
 
 Verification completed:
 

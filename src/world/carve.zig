@@ -17,7 +17,6 @@ const MEANDER: f32 = 0.55;
 const BEND_MAX: f32 = 1.1;
 const MEANDER_STEPS: usize = 4 * (grid.W + grid.H);
 
-/// Smooth value noise in 0..1, summed over octaves; a seed is a field.
 /// Each noise field's own, so no two fields of one seed move together.
 pub const Salt = enum(u64) {
     tall_grass = 0x7A11,
@@ -37,6 +36,7 @@ pub const Salt = enum(u64) {
     grain = 0xF1E1,
 };
 
+/// Smooth value noise in 0..1, summed over octaves; a seed is a field.
 pub const Noise = struct {
     seed: u64,
 
@@ -424,20 +424,19 @@ const InStretch = struct {
     }
 };
 
-/// Barrels taken away, one a pass, each beside ground they cut off from the biggest stretch, till none does.
+/// Barrels taken away, one a pass, each the first of a run of them parting the biggest stretch from another, till none does.
 pub fn unbar(lv: *grid.Level) void {
+    if (std.mem.indexOfScalar(bool, &lv.barrel, true) == null) return;
     var st: Stretches = .{};
-    const region = &st.region;
     while (true) {
         const n = st.labelBy(lv, true);
         if (n <= 1) return;
-        const main = st.biggest();
-        const cut = barBetween(lv, region, main, true) orelse barBetween(lv, region, main, false) orelse return;
+        const cut = barBetween(lv, &st, st.biggest()) orelse return;
         lv.barrel[cut] = false;
     }
 }
 
-test "unbar takes the barrel in the doorway, not the ones in the room behind it" {
+test "unbar takes the barrels plugging the doorway, not the ones in the room behind it" {
     var lv = grid.openFloor();
     const room = grid.Box{ .lo = .{ .x = 10, .y = 5 }, .hi = .{ .x = 21, .y = 13 } };
     var cells = room.cells();
@@ -455,22 +454,50 @@ test "unbar takes the barrel in the doorway, not the ones in the room behind it"
     std.debug.print("a room barred at its doorway with 2 barrels inside: {d} of 3 kept\n", .{left});
     try std.testing.expect(!lv.barrel[grid.Level.idx(doorway)]);
     try std.testing.expectEqual(@as(usize, 2), left);
+    lv.barrel[grid.Level.idx(doorway)] = true;
+    const porch = P{ .x = 15, .y = 13 };
+    lv.barrel[grid.Level.idx(porch)] = true;
+    lv.set(.{ .x = 14, .y = 13 }, .wall);
+    lv.set(.{ .x = 16, .y = 13 }, .wall);
+    unbar(&lv);
+    left = 0;
+    for (lv.barrel) |b| left += @intFromBool(b);
+    std.debug.print("a room barred two deep with 2 barrels inside: {d} of 4 kept\n", .{left});
+    try std.testing.expect(!lv.barrel[grid.Level.idx(doorway)] and !lv.barrel[grid.Level.idx(porch)]);
+    try std.testing.expectEqual(@as(usize, 2), left);
 }
 
-/// The first barrel beside a stretch other than `main`, and beside `main` too when `bridging`.
-fn barBetween(lv: *const grid.Level, region: *const [grid.CELLS]u16, main: u16, bridging: bool) ?usize {
+/// The barrel beside `main` that begins the shortest run of barrels from it to another stretch.
+fn barBetween(lv: *const grid.Level, st: *Stretches, main: u16) ?usize {
+    const region = &st.region;
+    const queue = &st.queue;
+    var first: [grid.CELLS]u16 = @splat(NONE);
+    var tail: usize = 0;
     for (0..grid.CELLS) |i| {
         if (!lv.barrel[i]) continue;
         const p = grid.Level.of(i);
-        var other = false;
-        var by_main = false;
+        for (mathx.ALL_DIRS) |d| {
+            if (!lv.passOk(p, d) or region[grid.Level.idx(p.add(d.delta()))] != main) continue;
+            first[i] = @intCast(i);
+            queue[tail] = @intCast(i);
+            tail += 1;
+            break;
+        }
+    }
+    var head: usize = 0;
+    while (head < tail) : (head += 1) {
+        const i = queue[head];
+        const p = grid.Level.of(i);
         for (mathx.ALL_DIRS) |d| {
             if (!lv.passOk(p, d)) continue;
-            const r = region[grid.Level.idx(p.add(d.delta()))];
-            if (r == NONE) continue;
-            if (r == main) by_main = true else other = true;
+            const k = grid.Level.idx(p.add(d.delta()));
+            const r = region[k];
+            if (r != NONE and r != main) return first[i];
+            if (!lv.barrel[k] or first[k] != NONE) continue;
+            first[k] = first[i];
+            queue[tail] = @intCast(k);
+            tail += 1;
         }
-        if (other and (by_main or !bridging)) return i;
     }
     return null;
 }
@@ -528,6 +555,15 @@ pub fn paved(t: grid.Tile, put: grid.Tile) grid.Tile {
     return if (t.liquid() or t == .bridge) .bridge else put;
 }
 
+/// From `lo` to `hi` (not included) a liquid bridged; with `open`, a wall there opened to it.
+pub fn bridge(lv: *grid.Level, lo: P, hi: P, open: ?grid.Tile) void {
+    var cells = grid.Cells.of(lo, hi);
+    while (cells.next()) |q| {
+        const was = lv.at(q);
+        lv.set(q, paved(was, if (open != null and was == .wall) open.? else was));
+    }
+}
+
 /// A course from `a` that bends at random but always comes round to `b`; `wander` 0 runs straight.
 pub const Meander = struct {
     x: f32,
@@ -553,7 +589,7 @@ pub const Meander = struct {
             self.done = true;
             return c;
         }
-        self.bend = std.math.clamp(self.bend + (rng.unit() - 0.5) * MEANDER * self.wander, -BEND_MAX * self.wander, BEND_MAX * self.wander);
+        self.bend = std.math.clamp(self.bend + rng.spread(MEANDER) * self.wander, -BEND_MAX * self.wander, BEND_MAX * self.wander);
         const h = std.math.atan2(dy, dx) + self.bend;
         self.x += @cos(h);
         self.y += @sin(h);
@@ -745,19 +781,21 @@ pub const Bank = enum {
 pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: Over, put: grid.Tile) void {
     const BUCKETS = 256;
     var hist = [_]u32{0} ** BUCKETS;
+    var of: [grid.CELLS]u16 = @splat(BUCKETS);
     var n: u32 = 0;
     for (0..grid.CELLS) |i| {
         if (!on.has(lv.tile[i]) or rimAt(i)) continue;
-        hist[bucket(noise.at(grid.Level.of(i), scale, 3), BUCKETS)] += 1;
+        const b = bucket(noise.at(grid.Level.of(i), scale, 3), BUCKETS);
+        of[i] = @intCast(b);
+        hist[b] += 1;
         n += 1;
     }
     const want = n * @min(per_mille, mathx.MILLE) / mathx.MILLE;
     var cut: usize = BUCKETS;
     var taken: u32 = 0;
     while (cut > 0 and taken + hist[cut - 1] <= want) : (cut -= 1) taken += hist[cut - 1];
-    for (0..grid.CELLS) |i| {
-        if (!on.has(lv.tile[i]) or rimAt(i)) continue;
-        if (bucket(noise.at(grid.Level.of(i), scale, 3), BUCKETS) >= cut) lv.tile[i] = put;
+    for (&of, 0..) |b, i| {
+        if (b < BUCKETS and b >= cut) lv.tile[i] = put;
     }
 }
 

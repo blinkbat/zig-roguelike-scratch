@@ -272,7 +272,10 @@ fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, 
             spots[n] = p;
             n += 1;
         }
-        if (n > 0) return spots[rng.below(@intCast(n))];
+        if (n > 0) {
+            const pick = rng.below(@intCast(n));
+            return spots[pick];
+        }
     }
     return null;
 }

@@ -29,6 +29,22 @@ const ORB_SHADOW_GROW: i32 = 2;
 /// How far in from the plate's sides its rules stop.
 const RULE_INSET: i32 = 8;
 const STATUS_Y: i32 = 20;
+const PLATE_SHADOW_A: f32 = 0.5;
+const ORB_SHADOW_A: f32 = 0.6;
+/// Insets of the orb's bright rim and the dark ring inside it, and the well's rim past the fill.
+const ORB_RIM: i32 = 2;
+const ORB_RING: i32 = 5;
+const WELL_RIM_W: i32 = 2;
+const SURFACE_A: f32 = 0.8;
+/// The glint on an orb's glass: up and left of its middle, its radii and alpha.
+const GLINT_AT = mathx.P{ .x = -20, .y = -24 };
+const GLINT_R = [2]f32{ 3, 6 };
+const GLINT_A: f32 = 0.16;
+/// Above an orb's rim, its label's top.
+const LABEL_RISE: i32 = 23;
+/// A status icon's middle in its square, and its count's inset from the square's corner.
+const ICON_AT = mathx.P{ .x = 12, .y = 13 };
+const COUNT_INSET = mathx.P{ .x = 3, .y = 1 };
 
 comptime {
     std.debug.assert(PLATE_Y + PLATE_H < ORB_Y + ORB_R);
@@ -73,7 +89,7 @@ pub fn frame(layout: Layout) void {
     const x = layout.life.x;
     const y = layout.top + PLATE_Y;
     const width = layout.mana.x - x;
-    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, PLATE_H + 2, look.fade(rl.Color.black, 0.5));
+    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, PLATE_H + 2, look.fade(rl.Color.black, PLATE_SHADOW_A));
     rl.drawRectangle(x, y, width, PLATE_H, PLATE);
     rl.drawRectangleLinesEx(look.rect(x, y, width, PLATE_H), 2, FRAME);
     rl.drawLine(x + RULE_INSET, y + PLATE_RULE, x + width - RULE_INSET, y + PLATE_RULE, FRAME_DARK);
@@ -94,11 +110,11 @@ fn fillHeight(value: i32, max: i32) i32 {
 fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, max: i32, core: rl.Color, edge: rl.Color) void {
     const x = centre.x;
     const y = centre.y;
-    rl.drawCircle(x, y + ORB_SHADOW_DY, ORB_R + ORB_SHADOW_GROW, look.fade(rl.Color.black, 0.6));
+    rl.drawCircle(x, y + ORB_SHADOW_DY, ORB_R + ORB_SHADOW_GROW, look.fade(rl.Color.black, ORB_SHADOW_A));
     rl.drawCircle(x, y, ORB_R, FRAME_DARK);
-    rl.drawCircle(x, y, ORB_R - 2, FRAME);
-    rl.drawCircle(x, y, ORB_R - 5, FRAME_DARK);
-    rl.drawCircle(x, y, FILL_R + 2, WELL_RIM);
+    rl.drawCircle(x, y, ORB_R - ORB_RIM, FRAME);
+    rl.drawCircle(x, y, ORB_R - ORB_RING, FRAME_DARK);
+    rl.drawCircle(x, y, FILL_R + WELL_RIM_W, WELL_RIM);
     rl.drawCircle(x, y, FILL_R, WELL);
     const filled = fillHeight(value, max);
     if (filled > 0) {
@@ -109,13 +125,13 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, ma
         if (filled < FILL_R * 2) {
             const dy: f32 = @floatFromInt(surface - y);
             const half: i32 = @intFromFloat(@sqrt(@max(0, FILL_R * FILL_R - dy * dy)));
-            rl.drawLine(x - half + 1, surface, x + half - 1, surface, look.fade(core, 0.8));
+            rl.drawLine(x - half + 1, surface, x + half - 1, surface, look.fade(core, SURFACE_A));
         }
     }
-    rl.drawEllipse(x - 20, y - 24, 3, 6, look.fade(look.TEXT, 0.16));
+    rl.drawEllipse(x + GLINT_AT.x, y + GLINT_AT.y, GLINT_R[0], GLINT_R[1], look.fade(look.TEXT, GLINT_A));
     var buf: [48]u8 = undefined;
     const label = std.fmt.bufPrintZ(&buf, "{s} {d}/{d}", .{ name, @max(0, value), @max(0, max) }) catch "";
-    face.text(label, face.leftFor(label, x, font.BODY), y - ORB_R - 23, font.BODY, look.TEXT);
+    face.textMid(label, x, y - ORB_R - LABEL_RISE, font.BODY, look.TEXT);
 }
 
 pub fn statuses(layout: Layout, face: *const font.Face, status: std.EnumArray(fx.Status, u8)) void {
@@ -128,10 +144,10 @@ pub fn statuses(layout: Layout, face: *const font.Face, status: std.EnumArray(fx
         if (turns == 0) continue;
         rl.drawRectangle(x, y, STATUS_PX, STATUS_PX, PLATE);
         rl.drawRectangleLinesEx(look.rect(x, y, STATUS_PX, STATUS_PX), 1, s.ink());
-        statusIcon(s, x + 12, y + 13);
+        statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         var buf: [4]u8 = undefined;
         const label = std.fmt.bufPrintZ(&buf, "{d}", .{turns}) catch "";
-        face.text(label, x + STATUS_PX - face.width(label, font.SMALL) - 3, y + STATUS_PX - font.SMALL - 1, font.SMALL, look.TEXT);
+        face.text(label, x + STATUS_PX - face.width(label, font.SMALL) - COUNT_INSET.x, y + STATUS_PX - font.SMALL - COUNT_INSET.y, font.SMALL, look.TEXT);
         x += STATUS_PX + STATUS_GAP;
     }
 }

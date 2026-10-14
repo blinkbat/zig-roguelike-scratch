@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
+const input = @import("../core/input.zig");
 const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
@@ -74,11 +75,11 @@ pub const Assets = struct {
         for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
             const p = grid.Level.of(i);
             need.barrel = need.barrel or barrel;
-            if (under(t)) |u| need.add(.{ .tile = u });
-            if (cutAt(lv, p)) |c| need.add(c);
-            if (ground.groundAt(lv, p)) |g| {
-                if (GROUND_SHEETS.contains(g)) need.grounds.insert(g);
+            if (ground.of(t) == null) {
+                if (cutAt(lv, p)) |c| need.add(c);
             }
+            const g = ground.bedAt(lv, p) orelse continue;
+            if (GROUND_SHEETS.contains(g)) need.grounds.insert(g) else need.add(.{ .tile = g.tile() });
         }
         return need;
     }
@@ -194,25 +195,52 @@ pub const Sprites = struct {
         return s;
     }
 
-    /// Each ground with a sheet, lowest first, a piece on each corner point of the cells from `lo` up to `hi`, cell 0,0's top-left at `origin`, `px` a cell.
-    pub fn drawGround(self: *const Sprites, lv: *const grid.Level, lo: mathx.P, hi: mathx.P, seen_only: bool, origin: [2]f32, px: f32) void {
-        const all = self.sheets();
-        var it = all.iterator();
+    /// Every ground of the cells `beds` draws, lowest first: one with a sheet a piece on each corner point, one without
+    /// its square on each cell it holds and a quarter under the edges over it; cell 0,0's top-left at `origin`, `px` a cell.
+    pub fn drawGround(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32) void {
+        const sheeted = self.sheets();
+        var it = beds.shown.iterator();
         while (it.next()) |gr| {
-            var points = grid.Cells.of(lo, hi.add(.{ .x = 1, .y = 1 }));
+            const sheet = sheeted.contains(gr);
+            if (!sheet) {
+                var cells = grid.Cells.of(beds.lo, beds.hi);
+                while (cells.next()) |p| {
+                    if (beds.ground(p) == gr) self.squarePart(gr.tile(), cellAt(origin, p, px), px, .{ 0, 0 }, 1);
+                }
+            }
+            var points = grid.Cells.of(beds.lo, beds.hi.add(.{ .x = 1, .y = 1 }));
             while (points.next()) |p| {
-                const mask = ground.Corners.at(lv, p, all, seen_only).mask(gr);
-                if (mask == 0) continue;
-                const piece = self.groundPiece(gr, mask) orelse continue;
-                const at = rl.Vector2{ .x = origin[0] + (@as(f32, @floatFromInt(p.x)) - 0.5) * px, .y = origin[1] + (@as(f32, @floatFromInt(p.y)) - 0.5) * px };
-                rl.drawTexturePro(piece.tex, piece.src, .{ .x = at.x, .y = at.y, .width = px, .height = px }, .{ .x = 0, .y = 0 }, 0, LIT);
+                const here = beds.pointAt(p);
+                if (!here.has(gr)) continue;
+                if (sheet) {
+                    const piece = self.groundPiece(gr, here.corners.mask(gr)) orelse continue;
+                    const at = cellAt(origin, p, px);
+                    rl.drawTexturePro(piece.tex, piece.src, .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px }, .{ .x = 0, .y = 0 }, 0, LIT);
+                    continue;
+                }
+                const under_ = here.corners.under(gr, sheeted);
+                if (under_ == 0) continue;
+                for (QUARTERS) |q| {
+                    if (under_ & q.bit == 0) continue;
+                    const cell = p.add(ground.Corners.cellOf(q.bit));
+                    self.squarePart(gr.tile(), cellAt(origin, cell, px), px, QUARTERS[3 - q.at].uv, 0.5);
+                }
             }
         }
     }
 
-    /// `kind`'s picture at `p` in a pass: the cell's own cut where `kind` is its tile, else `kind`'s plain one.
-    pub fn passTile(self: *const Sprites, lv: *const grid.Level, p: mathx.P, kind: grid.Tile) ?rl.Texture2D {
-        return if (kind == lv.at(p)) self.tileAt(lv, p) else self.tileOf(kind, null);
+    fn cellAt(origin: [2]f32, p: mathx.P, px: f32) [2]f32 {
+        return .{ origin[0] + @as(f32, @floatFromInt(p.x)) * px, origin[1] + @as(f32, @floatFromInt(p.y)) * px };
+    }
+
+    /// The part of a ground's square from `uv` across `span`, fractions of the cell: its picture, else its colour.
+    fn squarePart(self: *const Sprites, t: grid.Tile, cell: [2]f32, px: f32, uv: [2]f32, span: f32) void {
+        const dest = rl.Rectangle{ .x = cell[0] + uv[0] * px, .y = cell[1] + uv[1] * px, .width = span * px, .height = span * px };
+        if (self.tiles.get(t)) |tex| {
+            const w: f32 = @floatFromInt(tex.width);
+            const h: f32 = @floatFromInt(tex.height);
+            rl.drawTexturePro(tex, .{ .x = uv[0] * w, .y = uv[1] * h, .width = span * w, .height = span * h }, dest, .{ .x = 0, .y = 0 }, 0, LIT);
+        } else if (tileBg(t)) |bg| rl.drawRectangleRec(dest, bg);
     }
 
     pub fn unload(self: *Sprites) void {
@@ -576,25 +604,34 @@ pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32
     face.symbol(l.sym, l.ch, cx, cy, size, l.fg);
 }
 
+/// Opposite corners sum to 3, so a point's corner cell meets it with quarter `3 - at`.
+const QUARTERS = [4]struct { at: usize, bit: u4, uv: [2]f32 }{
+    .{ .at = 0, .bit = ground.NW, .uv = .{ 0, 0 } },
+    .{ .at = 1, .bit = ground.NE, .uv = .{ 0.5, 0 } },
+    .{ .at = 2, .bit = ground.SW, .uv = .{ 0, 0.5 } },
+    .{ .at = 3, .bit = ground.SE, .uv = .{ 0.5, 0.5 } },
+};
+
 /// Under a tile's glyph where it has no sprite; null leaves the background.
 pub fn tileBg(t: grid.Tile) ?rl.Color {
     return TILES.get(t).bg;
 }
 
-/// What draws under `t`: its own ground, or floor under an upright tile with no ground or background to hide its gaps.
+/// What a tile standing on ground is drawn over where nothing beside it lends a ground (`ground.bedAt`): its own, or
+/// floor under an upright tile with no background to cover its cell.
 pub fn under(t: grid.Tile) ?grid.Tile {
     return t.ground() orelse if (t.upright() and tileBg(t) == null) .floor else null;
 }
 
-/// The terrain is drawn in two passes, so the solid one covers the shadows cast between them.
-pub const Pass = enum { ground, solid };
+/// Drawn in the solid pass, over the ground and the shadows cast on it: everything that is not itself a ground.
+pub fn standsOver(t: grid.Tile) bool {
+    return ground.of(t) == null;
+}
 
-/// What `here` draws in `pass`: the ground at its foot, or itself where it stands; null for nothing.
-pub fn passKind(here: grid.Tile, pass: Pass) ?grid.Tile {
-    return switch (pass) {
-        .ground => under(here) orelse if (here.upright()) null else here,
-        .solid => if (here.upright() or here.ground() != null) here else null,
-    };
+/// A ground with neither a sheet nor a picture, which shows its glyph.
+pub fn glyphGround(t: grid.Tile, sprites: *const Sprites) bool {
+    const g = ground.of(t) orelse return false;
+    return sprites.grounds.get(g) == null and sprites.tiles.get(t) == null;
 }
 
 const TileLook = struct { sym: [:0]const u8, ch: u8, fg: rl.Color, bg: ?rl.Color, mini: rl.Color, mini_dim: rl.Color };
@@ -613,7 +650,7 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .bridge = .{ .sym = "=", .ch = '=', .fg = rgb(0xa87c48), .bg = rgb(0x1e160e), .mini = rgb(0x7a5a36), .mini_dim = rgb(0x3a2c1c) },
     .reeds = .{ .sym = "¦", .ch = '|', .fg = rgb(0xa8b24a), .bg = rgb(0x161a0c), .mini = rgb(0x6a7030), .mini_dim = rgb(0x32361a) },
     .rubble = .{ .sym = "•", .ch = ',', .fg = rgb(0x8a7f6a), .bg = rgb(0x18161a), .mini = rgb(0x4e4840), .mini_dim = rgb(0x26241f) },
-    .fence = .{ .sym = "∏", .ch = '#', .fg = rgb(0x9a6638), .bg = GRASS_BG, .mini = rgb(0x7a5030), .mini_dim = rgb(0x3a2818) },
+    .fence = .{ .sym = "∏", .ch = '#', .fg = rgb(0x9a6638), .bg = null, .mini = rgb(0x7a5030), .mini_dim = rgb(0x3a2818) },
     .lava = .{ .sym = "≈", .ch = '~', .fg = rgb(0xff8a30), .bg = rgb(0x501406), .mini = rgb(0xc8501a), .mini_dim = rgb(0x5a240c) },
     .fungus = .{ .sym = "¶", .ch = 'T', .fg = rgb(0xb882e0), .bg = null, .mini = rgb(0x7a4e9a), .mini_dim = rgb(0x3a2a48) },
     .chasm = .{ .sym = "·", .ch = ':', .fg = rgb(0x24222a), .bg = rgb(0x030305), .mini = rgb(0x0c0c10), .mini_dim = rgb(0x060608) },
@@ -848,6 +885,149 @@ fn inkSkill(a: skillbar.Act, x: i32, y: i32, ink: rl.Color) void {
     }
 }
 
+/// A button's icon as the device last pressed draws it: a face button a disc with its letter, or PlayStation's
+/// shape; a shoulder or trigger a pill with its name; View and Menu a pill with their marks; a key a cap with its legend.
+pub const Prompt = union(enum) {
+    face: struct { button: input.Button, sony: bool },
+    pill: [:0]const u8,
+    view,
+    menu,
+    key: [:0]const u8,
+
+    pub fn of(st: *const input.State, b: input.Button) Prompt {
+        if (!st.device.pad()) return .{ .key = st.slotCaption(b) };
+        return switch (b) {
+            .a, .b, .x, .y => .{ .face = .{ .button = b, .sony = st.device.playstation() } },
+            .lb, .rb, .rt => .{ .pill = st.caption(b) },
+            .view => .view,
+            .pause => .menu,
+        };
+    }
+
+    /// Across, at `h` tall.
+    pub fn width(p: Prompt, face: *const font.Face, h: i32) i32 {
+        return switch (p) {
+            .face => h,
+            .pill => |s| face.width(s, labelPx(h)) + h,
+            .view, .menu => h + @divTrunc(h, 2),
+            .key => |s| @max(h, face.width(s, labelPx(h)) + @divTrunc(h, 2)),
+        };
+    }
+
+    /// Its middle on `cx`, `cy`, `h` tall, faded to `alpha`.
+    pub fn draw(p: Prompt, face: *const font.Face, cx: i32, cy: i32, h: i32, alpha: f32) void {
+        const w = p.width(face, h);
+        const box = rect(cx - @divTrunc(w, 2), cy - @divTrunc(h, 2), w, h);
+        switch (p) {
+            .face => |f| faceButton(face, f.button, f.sony, cx, cy, h, alpha),
+            .pill => |s| {
+                pill(box, alpha);
+                legend(face, s, cx, cy, labelPx(h), fade(PROMPT_INK, alpha));
+            },
+            .view => {
+                pill(box, alpha);
+                viewMark(cx, cy, h, alpha);
+            },
+            .menu => {
+                pill(box, alpha);
+                menuMark(cx, cy, h, alpha);
+            },
+            .key => |s| {
+                keycap(box, alpha);
+                legend(face, s, cx, cy - @divTrunc(h, 12), labelPx(h), fade(PROMPT_INK, alpha));
+            },
+        }
+    }
+};
+
+fn labelPx(h: i32) i32 {
+    return @divTrunc(h * 11, 16);
+}
+
+fn legend(face: *const font.Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+    face.drawMid(s, cx, cy - @divTrunc(size, 2), size, col);
+}
+
+const PROMPT_BODY = rgb(0x1b1713);
+const PROMPT_FACE = rgb(0x28221c);
+const PROMPT_EDGE = rgb(0x6a604e);
+const PROMPT_LIP = rgb(0x0c0a08);
+const PROMPT_INK = rgb(0xe2d2b4);
+
+/// Each maker's colours for its face buttons, Xbox's by letter and PlayStation's by shape.
+fn faceInk(b: input.Button, sony: bool) rl.Color {
+    return switch (b) {
+        .a => if (sony) rgb(0x7cb2e8) else rgb(0x5eb242),
+        .b => if (sony) rgb(0xea6060) else rgb(0xd63e34),
+        .x => if (sony) rgb(0xd686c4) else rgb(0x2e78cd),
+        .y => if (sony) rgb(0x40c4a0) else rgb(0xeabe3a),
+        else => unreachable,
+    };
+}
+
+fn faceButton(face: *const font.Face, b: input.Button, sony: bool, cx: i32, cy: i32, h: i32, alpha: f32) void {
+    const r: f32 = @as(f32, @floatFromInt(h)) / 2;
+    const c = rl.Vector2{ .x = @floatFromInt(cx), .y = @floatFromInt(cy) };
+    const ink = faceInk(b, sony);
+    rl.drawCircleV(c, r, fade(PROMPT_LIP, alpha));
+    rl.drawCircleV(c, r - 1, fade(PROMPT_BODY, alpha));
+    rl.drawCircleV(.{ .x = c.x, .y = c.y - r * 0.12 }, r * 0.78, fade(PROMPT_FACE, alpha));
+    rl.drawRing(c, r - 2.6, r - 1, 0, 360, 32, fade(ink, alpha));
+    if (!sony) {
+        const letter = [_:0]u8{std.ascii.toUpper(@tagName(b)[0])};
+        return legend(face, &letter, cx, cy, labelPx(h), fade(ink, alpha));
+    }
+    const s = r * 0.42;
+    const line = @max(1.5, r * 0.16);
+    const col = fade(ink, alpha);
+    switch (b) {
+        .a => {
+            rl.drawLineEx(.{ .x = c.x - s, .y = c.y - s }, .{ .x = c.x + s, .y = c.y + s }, line, col);
+            rl.drawLineEx(.{ .x = c.x - s, .y = c.y + s }, .{ .x = c.x + s, .y = c.y - s }, line, col);
+        },
+        .b => rl.drawRing(c, s - line / 2, s + line / 2, 0, 360, 24, col),
+        .x => rl.drawRectangleLinesEx(.{ .x = c.x - s, .y = c.y - s, .width = s * 2, .height = s * 2 }, line, col),
+        .y => {
+            const top = rl.Vector2{ .x = c.x, .y = c.y - s * 1.1 };
+            const left = rl.Vector2{ .x = c.x - s * 1.1, .y = c.y + s * 0.8 };
+            const right = rl.Vector2{ .x = c.x + s * 1.1, .y = c.y + s * 0.8 };
+            rl.drawLineEx(top, left, line, col);
+            rl.drawLineEx(left, right, line, col);
+            rl.drawLineEx(right, top, line, col);
+        },
+        else => unreachable,
+    }
+}
+
+fn pill(box: rl.Rectangle, alpha: f32) void {
+    rl.drawRectangleRounded(box, 0.6, 8, fade(PROMPT_BODY, alpha));
+    rl.drawRectangleRoundedLinesEx(box, 0.6, 8, 1, fade(PROMPT_EDGE, alpha));
+}
+
+fn keycap(box: rl.Rectangle, alpha: f32) void {
+    const lip = @max(2, box.height / 8);
+    rl.drawRectangleRounded(box, 0.3, 6, fade(PROMPT_LIP, alpha));
+    const top = rl.Rectangle{ .x = box.x, .y = box.y, .width = box.width, .height = box.height - lip };
+    rl.drawRectangleRounded(top, 0.3, 6, fade(PROMPT_FACE, alpha));
+    rl.drawRectangleRoundedLinesEx(top, 0.3, 6, 1, fade(PROMPT_EDGE, alpha));
+}
+
+fn viewMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
+    const s: f32 = @as(f32, @floatFromInt(h)) * 0.22;
+    const x: f32 = @floatFromInt(cx);
+    const y: f32 = @floatFromInt(cy);
+    const col = fade(PROMPT_INK, alpha);
+    rl.drawRectangleLinesEx(.{ .x = x - s * 1.3, .y = y - s * 1.1, .width = s * 1.6, .height = s * 1.4 }, 1.2, col);
+    rl.drawRectangleLinesEx(.{ .x = x - s * 0.3, .y = y - s * 0.3, .width = s * 1.6, .height = s * 1.4 }, 1.2, col);
+}
+
+fn menuMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
+    const s: f32 = @as(f32, @floatFromInt(h)) * 0.24;
+    const x: f32 = @floatFromInt(cx);
+    const y: f32 = @floatFromInt(cy);
+    for ([_]f32{ -1, 0, 1 }) |k| rl.drawLineEx(.{ .x = x - s, .y = y + k * s * 0.7 }, .{ .x = x + s, .y = y + k * s * 0.7 }, 1.5, fade(PROMPT_INK, alpha));
+}
+
 const PANEL = rgb(0x0e0d12);
 const RAISED = rgb(0x1a1820);
 
@@ -897,7 +1077,7 @@ test "map assets include unseen shapes, ground under props and future slime form
     var need = Assets.of(&lv);
     need.body(.archer);
     need.body(.slime_half);
-    try std.testing.expect(need.tiles.contains(.floor) and need.tiles.contains(.grass));
+    try std.testing.expect(need.tiles.contains(.floor) and need.grounds.contains(.grass) and !need.tiles.contains(.grass));
     try std.testing.expect(need.tiles.contains(.boulder) and !need.tiles.contains(.shrub));
     try std.testing.expectEqual(@as(usize, 1), need.wall.count());
     try std.testing.expect(need.wall.isSet(WALL_CELL[0]));
@@ -914,6 +1094,27 @@ test "map assets include unseen shapes, ground under props and future slime form
     try std.testing.expect(next.barrel and next.forest.count() == 0 and next.bodies.count() == 0);
     try std.testing.expect(next.tiles.contains(.floor) and !next.tiles.contains(.grass));
     std.debug.print("map assets: hidden walls and forest, 2 underlays, slime descendants and map replacement checked\n", .{});
+}
+
+test "a slot's prompt is its maker's face button or shoulder on a pad, and its key's cap on the keyboard" {
+    _ = Prompt.draw;
+    var st = input.State{ .device = .xbox };
+    try std.testing.expectEqual(input.Button.a, Prompt.of(&st, .a).face.button);
+    try std.testing.expect(!Prompt.of(&st, .y).face.sony);
+    try std.testing.expectEqualStrings("RB", Prompt.of(&st, .rb).pill);
+    try std.testing.expect(Prompt.of(&st, .view) == .view);
+    st.device = .ps5;
+    try std.testing.expect(Prompt.of(&st, .x).face.sony);
+    try std.testing.expectEqualStrings("L1", Prompt.of(&st, .lb).pill);
+    st = .{ .device = .keys, .modifier = .lb };
+    try std.testing.expectEqualStrings(input.SECOND_CAPTION, Prompt.of(&st, .lb).key);
+    try std.testing.expectEqualStrings("1", Prompt.of(&st, .a).key);
+    for (input.SLOT_ORDER) |b| {
+        for ([_]input.Device{ .xbox, .ps4 }) |d| {
+            st.device = d;
+            if (Prompt.of(&st, b) == .face) try std.testing.expect(faceInk(b, d.playstation()).a == 255);
+        }
+    }
 }
 
 test "every glyph is printable ascii" {

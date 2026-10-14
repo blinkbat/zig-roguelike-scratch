@@ -89,16 +89,10 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     for (sides) |side| {
         const gate_at = carve.sideAt(curtain, side, carve.alongOf(side, grid.MIDDLE));
         const out_dir = side.delta();
-        const span = P{ .x = if (across) 0 else 1, .y = if (across) 1 else 0 };
-        var k: i32 = -CURTAIN - reachOf(p.towers, p.moat);
-        while (k <= CURTAIN) : (k += 1) {
-            var s: i32 = -@divTrunc(GATE_W, 2);
-            while (s <= @divTrunc(GATE_W, 2)) : (s += 1) {
-                const q = gate_at.add(.{ .x = out_dir.x * -k + span.x * s, .y = out_dir.y * -k + span.y * s });
-                const was = lv.at(q);
-                lv.set(q, carve.paved(was, if (was == .wall) .floor else was));
-            }
-        }
+        const half = side.across().scaled(@divTrunc(GATE_W, 2));
+        const outer = gate_at.add(out_dir.scaled(CURTAIN + reachOf(p.towers, p.moat))).sub(half);
+        const inner = gate_at.sub(out_dir.scaled(CURTAIN)).add(half);
+        carve.bridge(lv, outer.min(inner), outer.max(inner).add(.{ .x = 1, .y = 1 }), .floor);
     }
     const keep = keepOf(p);
     carve.box(lv, keep, .wall);

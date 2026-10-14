@@ -468,18 +468,15 @@ pub const Level = struct {
 
 /// Of the cells `set.has` takes, the nearest `from`, the first of any tie.
 pub fn nearest(from: P, set: anytype) ?P {
-    var best: ?P = null;
-    var best_d: i32 = std.math.maxInt(i32);
-    for (0..CELLS) |i| {
-        const q = Level.of(i);
-        if (!set.has(i)) continue;
-        const d = mathx.dist(q, from);
-        if (d < best_d) {
-            best_d = d;
-            best = q;
+    const far: i32 = @intCast(@max(@abs(from.x), @abs(W - 1 - from.x), @abs(from.y), @abs(H - 1 - from.y)));
+    var r: i32 = 0;
+    while (r <= far) : (r += 1) {
+        var ring = mathx.Ring.init(from, r);
+        while (ring.next()) |q| {
+            if (Level.inside(q) and set.has(Level.idx(q))) return q;
         }
     }
-    return best;
+    return null;
 }
 
 /// `hi` exclusive.

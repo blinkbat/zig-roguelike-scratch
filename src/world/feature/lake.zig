@@ -15,6 +15,8 @@ const EDGE: f32 = 0.42;
 const RING: f32 = 0.12;
 /// An island's share of a blob's size.
 const ISLAND_OF: f32 = 0.35;
+/// The noise is weighed by this less a cell's distance over the radius, so the middle fills and the edge frays.
+const FALLOFF: f32 = 1.4;
 const TRIES: usize = 80;
 
 pub const Params = struct {
@@ -52,7 +54,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: P
             if (grid.Level.onRim(q) or !lv.walkable(q)) continue;
             const d = mathx.distEuclid(q, c) / rf;
             if (isle and d < ISLAND_OF) continue;
-            const v = noise.at(q, 4, 2) * (1.4 - d);
+            const v = noise.at(q, 4, 2) * (FALLOFF - d);
             if (v > EDGE) {
                 lv.set(q, p.fill);
             } else if (v > EDGE - RING) {

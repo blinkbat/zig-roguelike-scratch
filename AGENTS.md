@@ -20,7 +20,7 @@ backups in `assets/backup/`, at the owner's request. Leave `git status` as you f
 for the change asked for.
 
 - Wall and repeating tile workflow: `docs/TILE_ART_WORKFLOW.md`. Port the owner's actual pixels and uneven outlines at native scale; preserve authored layers, update the canonical Aseprite file, and inspect connected game tiles. Regular walls use Desktop `regular-walls.aseprite`, painted on `Layer 1`; cave and forest are separate.
-- Grass and dirt ground use Desktop `<name>.aseprite` and `assets/source/<name>.aseprite`: preserve `Draw here`, with completion on `Grass extensions` / `Dirt extensions`. `port_ground.lua name=grass|dirt` records the source crops; export both art layers with `export_ground.lua name=<name>` to `assets/<name>-ground.png` (16 dual-grid masks, 64px cells). Dirt was transferred from a mistaken grass-file edit; green grass was restored. Backups and previews go to TEMP; inspect later owner edits before regenerating.
+- Grass, dirt and water ground use Desktop `<name>.aseprite` and `assets/source/<name>.aseprite`: preserve `Draw here`, with completion on the material's named extensions layer. `port_ground.lua name=grass|dirt|water` records the crops. Water's original colours are for shallows: `export_ground.lua name=shallows` reads `water.aseprite` into `assets/shallows-ground.png`; `name=water` reads `deep-water.aseprite` into `assets/water-ground.png`. The deep copy has 60% RGB, identical alpha and shapes, made by `deepen_water.lua`; both keep `Water extensions`. Other materials export under their own names. Dirt was transferred from a mistaken grass-file edit; green grass was restored. All atlases have 16 dual-grid masks, 64px cells. Backups and previews go to TEMP; inspect later owner edits before regenerating.
 - Forest artwork uses `assets/source/forest-tree-walls.aseprite` and `assets/backup/` at the owner's request. `export_forest.lua` exports its two art layers; the Desktop source keeps `Draw here` and separate `Forest extensions`. `.shrub` connections use the 47-cell forest atlas; isolated blockers mix `shrub.png` and forest cell 01 by stable position hash. The owner requested darker forest foliage and grass pixels; before-tone sources are backed up, and `tone_forest.lua` records the palette change. `shot.cmd` includes `shots/forest.png` and nine `shadows-*.png` lighting studies (morning, noon, evening, moon, torch, three hidden casters, offscreen).
 
 ## Build & verify
@@ -47,15 +47,17 @@ for the change asked for.
 ## Laws
 
 - **`core/input.zig` IS THE ONLY FILE THAT TOUCHES A DEVICE.** The controller is the primary input; the keyboard
-  mirrors it, a key for every action (`docs/CONTROLLER.md`, after PoE2). Every caption names the device last pressed
-  (`State.device`, `input.per`), a Sony pad in PlayStation's words (`input.padOf`). D-pad moves, LT (Shift) held puts it on diagonals (`leanOf`). Skills sit
+  mirrors it, a key for every action (`docs/CONTROLLER.md`, after PoE2). NO SCREEN NAMES A KEY OR BUTTON IN WORDS (no
+  "Enter confirm" legends, hints or footers); only the skill bar and bind screen show inputs, as icons of the device
+  last pressed (`look.Prompt`, `State.device`): Xbox's lettered discs, a Sony pad's shapes (`input.padOf`), shoulder
+  pills, keycaps. D-pad moves, LT (Shift) held puts it on diagonals (`leanOf`). Skills sit
   on PoE2's controller skill bar (`play/skillbar.zig`): LB, A, X, Y, B, RB and RT are slots in a primary and a
   secondary set, the secondary set is used while the button bound to "Activate Secondary Skill Set" (LB) is held, and
   View held `input.HOLD_S` opens the bind screen (a press that closes or cancels is `spend`t) (A select or pick up, X change, Y remove, B close). Defaults: X Shoot, B Juke, Y Wait, RB Burning Arrow, RT Glacial Shot. The button
   that opened the reticle confirms; B or Menu cancels, or View when B opened it. A, B, X or Menu restarts after death (or, in a save slot,
   goes back to the title), and Menu opens no pause menu over it. On the keyboard a slot is a number (`input.SLOT_ORDER`,
-  skipping the modifier's, which Ctrl holds) and menus have their own keys (Enter, Space, Del), dead in play
-  (`State.playing`). Esc backs out of anything open, a step at a time.
+  skipping the modifier's, which Ctrl holds) and menus have their own keys (Enter, Space or Z confirm, X or Esc back
+  out, C change, Del remove), dead in play (`State.playing`). Esc backs out of anything open, a step at a time.
   Alt+Enter toggles borderless fullscreen. Menu (Esc) opens the pause menu from play; raylib's exit key is cleared
   (`input.claimKeys`), so Esc never closes the window. A field being typed in sets `State.typing`: the keys that type
   then type (`State.typed`, Backspace `rub`) and press no button nor walk. The editor is a desk tool: its mouse and
@@ -159,7 +161,7 @@ for the change asked for.
   `skillbar.Act.cost` supplies mana checks, spending and slot dimming; ability descriptions use their mechanic constants.
 - **`gfx/light.zig` IS EVERY LIGHT, AND THE FOG IS PART OF IT.** Terrain draws at full brightness; one pass of the
   light map (2x modulate, so it can brighten) lights it, and nothing else tints terrain. Open ground and liquids, and the ground under
-  anything solid or standing on it (floor under a wall, `look.under`), go down first, then body shadows, then the solid and standing tiles, so a wall
+  anything solid or standing on it (`ground.bedAt`), go down first, then body shadows, then the solid and standing tiles, so a wall
   covers any shadow that reaches it.
   Every shadow and contact pool is drawn into a mask of the screen (`Light.beginShadows`), the darker winning where they
   overlap (Photoshop's Darken, `GL_MIN`, channel by channel), and the mask multiplies the ground under it: however many
@@ -202,14 +204,18 @@ for the change asked for.
   A procgen node's `light` profile (`world/climate.zig`) reshapes the hour's palette (`sky.under`, `sky.LOOKS`):
   clear is the day as keyed; bleak is an overcast, most of the sun spread into the sky, greyed and cooled, so open
   ground stands at about three quarters of clear and shadows go soft. Sight is unchanged.
-- **`gfx/ground.zig` IS WHERE GROUNDS MEET**, on a dual grid: after the ground pass draws each cell, each ground
-  with a sheet (`assets/<ground>-ground.png`, exported by `tools/tile_art/export_ground.lua` from the Desktop's
-  `<ground>.aseprite`; `look.GROUND_SHEETS`, optional until painted, through build.zig's `@import("assets").names`)
-  lays a piece on every corner point, lowest first (`ground.Ground`: water, dirt, grass, cobble, the `.floor`
-  tile), its mask the corners holding it or a ground over it (`Corners.mask`), so each ground's 16 pieces meet every
-  ground below it; then the doors' glyphs. A cell's ground is the tile at its foot (`look.under`). Play leaves out
-  cells never seen; the editor draws them all. A sheet's whole texture is drawn a piece at a time, a ground at a
-  time, so each batches. With no sheet the ground draws cell by cell as before.
+- **`gfx/ground.zig` IS WHERE GROUNDS MEET, IN TRUE LAYERS**: nothing fills a cell under a picture. Every ground tile
+  is a `ground.Ground` (the `.floor` tile is cobble); what stands on ground (walls, trees, stones, graves, fences,
+  decor) stands on the one most of its neighbours bear, the lowest on a tie, else its `look.under` (`ground.bedAt`),
+  and that ground runs on under it; rock covers its own cell. `Beds` ranks the cells drawn once a frame, and the
+  grounds draw lowest first, a ground at a time so each batches: every ground without a sheet under every one with
+  a sheet (`assets/<ground>-ground.png`, exported by `tools/tile_art/export_ground.lua` from the Desktop's
+  `<ground>.aseprite`; `look.GROUND_SHEETS`, optional until painted, through build.zig's `@import("assets").names`),
+  since only a sheet has edges to draw, each keeping `Ground`'s order among its own. A ground with a sheet lays a
+  piece on every corner point holding it, its mask the corners holding it or anything over it (`Corners.mask`); one
+  without lays its square on each cell it holds and a quarter under each edge of a higher ground with a sheet
+  (`Corners.under`), so a receding edge shows what lies beneath. Then the glyphs of grounds with neither sheet nor
+  picture, and the doors'. Play leaves out cells never seen; the editor draws them all.
 - **`gfx/weather.zig` IS WHAT FALLS FROM THE SKY**: a procgen node's `weather` (`climate.Weather`; drizzle is a very
   soft rain of faint streaks and splash rings) over the world out of doors, after the torches, only on cells lit in
   sight, its drops fixed to the ground as the camera moves and fainter as the sky darkens (`sky.brightness`).

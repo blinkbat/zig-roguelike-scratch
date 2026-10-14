@@ -272,20 +272,25 @@ fn templateOf(t: Template, rng: *mathx.Rng) usize {
     return if (t == .mixed) rng.below(TEMPLATES.len) else @intFromEnum(t);
 }
 
+/// Each template's model, built the first time a roll needs it: it reads no rng, so every roll may share it.
+var models: [TEMPLATES.len]?Model = @splat(null);
+
+fn modelOf(k: usize) *const Model {
+    if (models[k] == null) models[k] = Model.of(TEMPLATES[k]);
+    return &models[k].?;
+}
+
 pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const pal = palette(p);
     carve.field(lv, pal);
     var out: [CELLS_MAX]u8 = undefined;
-    var models: [TEMPLATES.len]?Model = @splat(null);
     var y: i32 = MARGIN;
     while (y + SECTION_MIN <= grid.H - MARGIN) {
         const sh = @min(SECTION_H, grid.H - MARGIN - y);
         var x: i32 = MARGIN;
         while (x + SECTION_MIN <= grid.W - MARGIN) {
             const sw = @min(SECTION_W, grid.W - MARGIN - x);
-            const k = templateOf(p.template, rng);
-            if (models[k] == null) models[k] = Model.of(TEMPLATES[k]);
-            const m = &models[k].?;
+            const m = modelOf(templateOf(p.template, rng));
             const w: usize = @intCast(sw);
             const h: usize = @intCast(sh);
             const solved = for (0..ATTEMPTS) |_| {

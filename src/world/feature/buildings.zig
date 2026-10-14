@@ -110,7 +110,7 @@ fn fits(lv: *const grid.Level, b: Box, pal: carve.Palette) bool {
     return true;
 }
 
-const SIDES = [_]mathx.Dir{ .n, .s, .w, .e };
+pub const SIDES = [_]mathx.Dir{ .n, .s, .w, .e };
 
 /// A cell on the box's outline, not a corner, and the cell outside it.
 pub fn doorway(rng: *mathx.Rng, b: Box) [2]P {

@@ -29,13 +29,14 @@ Sources: [Steam: hold back for the mini menu](https://steamcommunity.com/app/269
 
 ## Ours
 
-Every captioned string names the device last pressed (`State.device`): any gamepad button or the stick pushed past
-walking makes it the pad, any key the keyboard, and no pad plugged in is always the keyboard. This is where we go past
-PoE2, after Diablo IV. The mouse names nothing; the game has no mouse.
+No screen names a key or button in words. The skill bar and bind screen show each slot's input as an icon of the
+device last pressed (`State.device`, `look.Prompt`): any gamepad button or the stick pushed past walking makes it the
+pad, any key the keyboard, and no pad plugged in is always the keyboard. This is where we go past PoE2, after Diablo
+IV. The mouse names nothing; the game has no mouse.
 
 GLFW maps every pad onto Xbox's buttons by place, so the table names Xbox's. A Sony pad (vendor `054c` in the
-joystick's GUID, `input.padOf`) is named in PlayStation's words instead: Cross A, Circle B, Square X, Triangle Y,
-L1/R1 the bumpers, L2/R2 the triggers, Options Menu, and Create (DualSense) or Share (DualShock 4) View. The touchpad,
+joystick's GUID, `input.padOf`) shows PlayStation's icons instead: Cross A, Circle B, Square X, Triangle Y, L1/R1 the
+bumpers, L2/R2 the triggers. The touchpad,
 PS button and stick clicks do nothing; GLFW reads no touchpad.
 
 - **Mappings** (`input.mapPads`): `assets/gamecontrollerdb.txt` is SDL_GameControllerDB at commit `c1d5289`
@@ -44,7 +45,7 @@ PS button and stick clicks do nothing; GLFW reads no touchpad.
   name, so a new pad needs no rebuild. To update, replace the asset from the repo's `gamecontrollerdb.txt`.
 - **Which pad**: the first of raylib's four slots that GLFW has a mapping for, until another pad presses a button or
   pulls a trigger past its latch (`input.choosePad`). A wheel or an unmapped joystick is passed over.
-- **Focus**: nothing is read from a pad while the window is out of focus; the captions keep naming it.
+- **Focus**: nothing is read from a pad while the window is out of focus; the icons keep showing it.
 - **Triggers** press past 60% of their travel and let go under 40% (`input.TRIGGER_ON`/`OFF`), not raylib's one line
   at 55%, so a finger resting on RT does not fire its slot over and over.
 
@@ -56,9 +57,9 @@ PS button and stick clicks do nothing; GLFW reads no touchpad.
 | Secondary skill set | hold the slot bound to it (LB) | hold Ctrl |
 | Bind screen | hold View (`input.HOLD_S`, 0.4 s) | hold Tab |
 | Pause (from play) | Menu | Esc |
-| Get out (reticle, binds, menus, pause) | B or Menu | Esc |
-| Confirm, select | A | Enter |
-| Bind screen: change, remove | X, Y | Space, Del |
+| Get out (reticle, binds, menus, pause) | B or Menu | X or Esc (Esc alone in play) |
+| Confirm, select | A | Enter, Space or Z |
+| Bind screen: change, remove | X, Y | C, Del |
 | Delete a save | Y | Del |
 | Fullscreen | Options > Fullscreen | Alt+Enter, or Options |
 | Name the hero | walk the letter grid, A types, X deletes | type it; Backspace deletes, Enter is done |
@@ -68,9 +69,10 @@ keyboard that is Ctrl, then 1 to 6 for A, X, Y, B, RB, RT.
 
 - **Everything is slots.** On the pad a slot is its button. On the keyboard it is a number (`input.SLOT_ORDER`), and
   the slot holding "Activate Secondary Skill Set" is Ctrl instead, so moving the modifier renumbers the rest. The bar
-  and bind screen name whichever the device is.
+  and bind screen show whichever the device is, as icons.
 - **Menus have their own keys.** In play only the numbers, Ctrl, Tab and Esc press anything (`State.playing`); Enter,
-  Space and Del work in menus and never fire a slot. Esc gets out of whatever is open, a step at a time.
+  Space, Z, X, C and Del work in menus and never fire a slot. While a name is typed the letters and Space type, so
+  Enter is done there. Esc gets out of whatever is open, a step at a time.
 - **Hold View for binds, no radial.** A tap of View does nothing in play. A press of View that closes the bind screen or
   cancels a reticle is spent (`State.spend`), so holding it on does not open the binds again.
 - **Menu taps to pause** from play, as PoE2's taps to the inventory; anywhere else it backs out, as Esc does.

@@ -48,6 +48,10 @@ pub const P = struct {
         return .{ .x = a.x - b.x, .y = a.y - b.y };
     }
 
+    pub fn scaled(a: P, k: i32) P {
+        return .{ .x = a.x * k, .y = a.y * k };
+    }
+
     pub fn min(a: P, b: P) P {
         return .{ .x = @min(a.x, b.x), .y = @min(a.y, b.y) };
     }
@@ -97,6 +101,12 @@ pub fn span(comptime T: type, r: [2]T, lo: T, hi: T) [2]T {
 
 pub fn wrap(i: usize, by: i32, n: usize) usize {
     return @intCast(@mod(@as(i32, @intCast(i)) + by, @as(i32, @intCast(n))));
+}
+
+/// As `wrap`, but held at the first and the last instead.
+pub fn nudge(i: usize, by: i32, n: usize) usize {
+    if (n == 0) return 0;
+    return @intCast(std.math.clamp(@as(i32, @intCast(i)) + by, 0, @as(i32, @intCast(n - 1))));
 }
 
 /// The first of `rows` shown, moved the least that shows row `at`.
@@ -239,6 +249,12 @@ pub const Dir = enum(u3) {
     pub fn turned(d: Dir, eighths: u3) Dir {
         return @enumFromInt(@intFromEnum(d) +% eighths);
     }
+
+    /// A cardinal's crosswise axis, as a step: east-west for north or south.
+    pub fn across(d: Dir) P {
+        const v = d.delta();
+        return .{ .x = @intCast(@abs(v.y)), .y = @intCast(@abs(v.x)) };
+    }
 };
 
 const SECTOR: f32 = TAU / @as(f32, @floatFromInt(ALL_DIRS.len));
@@ -332,6 +348,11 @@ pub const Rng = struct {
     /// [0, 1).
     pub fn unit(self: *Rng) f32 {
         return self.r().float(f32);
+    }
+
+    /// Within `k` wide, centred on 0.
+    pub fn spread(self: *Rng, k: f32) f32 {
+        return (self.unit() - 0.5) * k;
     }
 
     /// An index under `n`, each as likely as its `weight`; null when all weigh nothing.

@@ -19,24 +19,13 @@ pub const Device = enum {
         return d != .keys;
     }
 
-    fn playstation(d: Device) bool {
+    pub fn playstation(d: Device) bool {
         return switch (d) {
             .ps4, .ps5 => true,
             .xbox, .keys => false,
         };
     }
 };
-
-/// A caption built at compile time for each device, picked for `d`.
-pub fn per(d: Device, comptime f: fn (comptime Device) [:0]const u8) [:0]const u8 {
-    return switch (d) {
-        inline else => |c| comptime f(c),
-    };
-}
-
-pub fn moveName(comptime d: Device) [:0]const u8 {
-    return if (d.pad()) "D-pad" else comptime letters(&WALKS);
-}
 
 extern fn glfwGetJoystickGUID(jid: c_int) ?[*:0]const u8;
 extern fn glfwJoystickIsGamepad(jid: c_int) c_int;
@@ -256,10 +245,11 @@ pub const Button = enum {
     /// Its keys in menus, the first naming it; a slot's own key is its number (`SLOT_KEYS`).
     fn keys(b: Button) []const rl.KeyboardKey {
         return switch (b) {
-            .a => &ENTER_KEYS,
-            .x => &.{.space},
+            .a => &(ENTER_KEYS ++ [_]rl.KeyboardKey{ .space, .z }),
+            .b => &.{.x},
+            .x => &.{.c},
             .y => &.{.delete},
-            .b, .lb, .rb, .rt => &.{},
+            .lb, .rb, .rt => &.{},
             .view => &.{.tab},
             .pause => &.{.escape},
         };
@@ -681,16 +671,42 @@ pub const Desk = struct {
     pub const ENTER_CAPTION = keyName(ENTER_KEYS[0]);
     pub const FULLSCREEN_CAPTION = ALT ++ ENTER_CAPTION;
 
+    /// The fields `update` sets from their `<FIELD>_KEY` pressed alone, and pressed with Ctrl.
+    const BARE = [_][]const u8{ "play", "play_here", "graph", "go", "rename", "back", "smaller", "bigger", "zoom_in", "zoom_out", "fit", "help", "objects", "reroll", "delete" };
+    const WITH_CTRL = [_][]const u8{ "open", "new", "copy", "cut", "paste" };
+    /// Ctrl keys `update` reads by hand, Shift telling them apart.
+    const SHIFTED = [_][]const u8{ "save", "undo", "redo" };
+
+    fn keyOf(comptime field: []const u8) rl.KeyboardKey {
+        comptime {
+            var name: [field.len]u8 = undefined;
+            _ = std.ascii.upperString(&name, field);
+            return @field(Desk, name ++ "_KEY");
+        }
+    }
+
     comptime {
-        @setEvalBranchQuota(10_000);
+        @setEvalBranchQuota(20_000);
         var bare: []const rl.KeyboardKey = &TOOL_KEYS ++ &SHAPE_KEYS;
         for (PAN_KEYS) |w| bare = bare ++ w.keys;
         var ctrl: []const rl.KeyboardKey = &.{};
+        var named: []const rl.KeyboardKey = &.{};
+        for (BARE ++ WITH_CTRL ++ SHIFTED) |f| {
+            const k = [_]rl.KeyboardKey{keyOf(f)};
+            named = named ++ &k;
+            var up: [f.len]u8 = undefined;
+            _ = std.ascii.upperString(&up, f);
+            const caption = up ++ "_CAPTION";
+            const with_ctrl = @hasDecl(Desk, caption) and std.mem.startsWith(u8, @field(Desk, caption), CTRL);
+            const listed_ctrl = for (BARE) |b| {
+                if (std.mem.eql(u8, b, f)) break false;
+            } else true;
+            if (with_ctrl != listed_ctrl) @compileError(f ++ "'s caption and list disagree on Ctrl");
+            if (listed_ctrl) ctrl = ctrl ++ &k else bare = bare ++ &k;
+        }
         for (@typeInfo(Desk).@"struct".decls) |d| {
             if (!std.mem.endsWith(u8, d.name, "_KEY")) continue;
-            const k = [_]rl.KeyboardKey{@field(Desk, d.name)};
-            const caption = d.name[0 .. d.name.len - "_KEY".len] ++ "_CAPTION";
-            if (@hasDecl(Desk, caption) and std.mem.startsWith(u8, @field(Desk, caption), CTRL)) ctrl = ctrl ++ &k else bare = bare ++ &k;
+            if (std.mem.indexOfScalar(rl.KeyboardKey, named, @field(Desk, d.name)) == null) @compileError(d.name ++ " is in no list update reads");
         }
         distinct(bare);
         distinct(ctrl);
@@ -776,34 +792,16 @@ pub const Desk = struct {
             }
         }.f;
         const bare = !ctrl;
-        self.play = bare and hit(PLAY_KEY);
-        self.play_here = bare and hit(PLAY_HERE_KEY);
+        inline for (BARE) |f| @field(self, f) = bare and hit(comptime keyOf(f));
+        inline for (WITH_CTRL) |f| @field(self, f) = ctrl and hit(comptime keyOf(f));
         self.save = ctrl and !self.shift and hit(SAVE_KEY);
         self.save_as = ctrl and self.shift and hit(SAVE_KEY);
-        self.open = ctrl and hit(OPEN_KEY);
-        self.new = ctrl and hit(NEW_KEY);
         self.undo = ctrl and !self.shift and hit(UNDO_KEY);
         self.redo = ctrl and (hit(REDO_KEY) or (self.shift and hit(UNDO_KEY)));
-        self.graph = bare and hit(GRAPH_KEY);
-        self.go = bare and hit(GO_KEY);
-        self.rename = bare and hit(RENAME_KEY);
-        self.back = bare and hit(BACK_KEY);
         self.fullscreen = fullscreenHit();
         self.enter = !altDown() and anyHit(&ENTER_KEYS);
         self.rub = rubbed();
-        self.smaller = bare and hit(SMALLER_KEY);
-        self.bigger = bare and hit(BIGGER_KEY);
         self.alt = altDown();
-        self.zoom_in = bare and hit(ZOOM_IN_KEY);
-        self.zoom_out = bare and hit(ZOOM_OUT_KEY);
-        self.fit = bare and hit(FIT_KEY);
-        self.help = bare and hit(HELP_KEY);
-        self.objects = bare and hit(OBJECTS_KEY);
-        self.reroll = bare and hit(REROLL_KEY);
-        self.delete = bare and hit(DELETE_KEY);
-        self.copy = ctrl and hit(COPY_KEY);
-        self.cut = ctrl and hit(CUT_KEY);
-        self.paste = ctrl and hit(PASTE_KEY);
         self.nav = 0;
         for (NAV_KEYS, [2]i32{ -1, 1 }) |k, by| {
             if (rl.isKeyPressed(k) or rl.isKeyPressedRepeat(k)) self.nav = by;
@@ -876,8 +874,9 @@ fn anyHit(keys: []const rl.KeyboardKey) bool {
     return false;
 }
 
-fn nonZero(p: mathx.P) ?mathx.P {
-    return if (p.x == 0 and p.y == 0) null else p;
+/// A cardinal key held with a numpad diagonal sums past a step; each axis is its sign.
+fn stepOf(p: mathx.P) ?mathx.P {
+    return if (p.x == 0 and p.y == 0) null else .{ .x = std.math.sign(p.x), .y = std.math.sign(p.y) };
 }
 
 fn dpadWalk(at: i32) ?mathx.P {
@@ -886,11 +885,11 @@ fn dpadWalk(at: i32) ?mathx.P {
         const b = w.pad orelse continue;
         if (rl.isGamepadButtonDown(at, b)) p = p.add(w.d.delta());
     }
-    return nonZero(p);
+    return stepOf(p);
 }
 
 fn keyWalk(typing: bool) ?mathx.P {
-    return nonZero(heldWalk(&WALKS, typing));
+    return stepOf(heldWalk(&WALKS, typing));
 }
 
 fn heldWalk(walks: []const Walk, typing: bool) mathx.P {
@@ -1038,6 +1037,14 @@ test "every direction walks on exactly one entry, and every bound key a name typ
     }
 }
 
+test "walk keys held together sum to one step a lean can turn" {
+    for ([_]mathx.P{ .{ .x = 1, .y = -2 }, .{ .x = 2, .y = -1 }, .{ .x = 0, .y = -2 }, .{ .x = 2, .y = 0 } }) |held| {
+        const p = stepOf(held).?;
+        try std.testing.expect(mathx.dirTo(.{ .x = 0, .y = 0 }, p) != null);
+    }
+    try std.testing.expectEqual(@as(?mathx.P, null), stepOf(.{ .x = 0, .y = 0 }));
+}
+
 test "a held button reports long from HOLD_S until it is spent, and not again until it is let go" {
     const dt = mathx.FRAME_DT;
     var s = State{};
@@ -1138,12 +1145,16 @@ test "the keyboard numbers the slots past the modifier, which Ctrl holds" {
     try std.testing.expectEqualStrings("RT", s.slotCaption(.rt));
 }
 
-test "menus name dedicated keys, and the walk names WASD" {
-    try std.testing.expectEqualStrings("WASD", moveName(.keys));
-    try std.testing.expectEqualStrings("Enter", Button.a.caption(.keys));
-    try std.testing.expectEqualStrings("Space", Button.x.caption(.keys));
-    try std.testing.expectEqualStrings("Del", Button.y.caption(.keys));
-    try std.testing.expectEqualStrings("Esc", Button.pause.caption(.keys));
+test "on the keyboard Enter, Space and Z confirm in menus, and X and Esc back out" {
+    try std.testing.expectEqualSlices(rl.KeyboardKey, &.{ .enter, .kp_enter, .space, .z }, Button.a.keys());
+    try std.testing.expectEqualSlices(rl.KeyboardKey, &.{.x}, Button.b.keys());
+    try std.testing.expectEqualSlices(rl.KeyboardKey, &.{.escape}, Button.pause.keys());
+    for (BUTTONS) |b| {
+        for (BUTTONS) |o| {
+            if (b == o) continue;
+            for (b.keys()) |k| try std.testing.expect(std.mem.indexOfScalar(rl.KeyboardKey, o.keys(), k) == null);
+        }
+    }
 }
 
 test "the lean layer puts each d-pad button on its own diagonal" {

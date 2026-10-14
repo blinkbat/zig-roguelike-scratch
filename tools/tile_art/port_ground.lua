@@ -1,6 +1,10 @@
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local name=app.params.name or 'grass'
-local material=assert(({grass={pixels=9375,ne=true,west_y=98},dirt={pixels=8314,ne=false,west_y=101}})[name],'name=grass|dirt')
+local material=assert(({
+  grass={pixels=9375,ne=true,west_y=98},
+  dirt={pixels=8314,ne=false,west_y=101},
+  water={pixels=15304,ne=true,west_y=128,west_h=64,complete={[4]=true,[6]=true,[10]=true,[11]=true}},
+})[name],'name=grass|dirt|water')
 local title=name:gsub('^%l',string.upper)
 local path=app.params.source or ('C:/Users/DavidBennett/Desktop/'..name..'.aseprite')
 local art_path=app.params.art or path
@@ -47,16 +51,21 @@ local function pixel(x,y)
 end
 local function opaque(v) return pc.rgbaA(v)>0 end
 local fill=Image(painted,Rectangle(64,128,64,64))
+if name=='water' then
+  assert(not opaque(fill:getPixel(63,1)),'Water fill repair changed')
+  fill:putPixel(63,1,pixel(126,129))
+end
 for it in fill:pixels() do assert(pc.rgbaA(it())==255,'Fill cell is incomplete') end
 local function texture(x,y) return fill:getPixel(x%64,y%64) end
 local function north(x,y)
-  if y<16 then return 0 end
+  if y<(name=='water' and 24 or 16) then return 0 end
   if y>44 then return texture(x,y) end
   return pixel(64+x,64+y)
 end
 local function south(x,y)
   if y>40 then return 0 end
   if y<22 then return texture(x,y) end
+  if name=='water' then return pixel(64+x%24,192+y) end
   local sx=x%24
   return pixel(sx,64+y)
 end
@@ -68,9 +77,9 @@ end
 local function west(x,y)
   if x<24 then return 0 end
   if x>46 then return texture(x,y) end
-  return pixel(x,material.west_y+y%24)
+  return pixel(x,material.west_y+y%(material.west_h or 24))
 end
-local function component(x,y,w,h,seedx,seedy)
+local function component(x,y,w,h,seedx,seedy,row)
   local out=Image(64,64,ColorMode.RGB)
   local todo={{seedx,seedy}}
   local seen={}
@@ -80,8 +89,8 @@ local function component(x,y,w,h,seedx,seedy)
     local key=yy*64+xx
     if xx>=x and xx<x+w and yy>=y and yy<y+h and not seen[key] then
       seen[key]=true
-      if opaque(pixel(xx,64+yy)) then
-        out:putPixel(xx,yy,pixel(xx,64+yy))
+      if opaque(pixel(xx,(row or 64)+yy)) then
+        out:putPixel(xx,yy,pixel(xx,(row or 64)+yy))
         for _,d in ipairs({{-1,0},{1,0},{0,-1},{0,1}}) do todo[#todo+1]={xx+d[1],yy+d[2]} end
       end
     end
@@ -91,10 +100,15 @@ end
 local outer_nw=component(0,0,40,40,2,2)
 local outer_se=component(24,20,40,44,60,60)
 local outer_ne=Image(painted,Rectangle(0,192,64,64))
+local outer_sw
+if name=='water' then
+  outer_ne=component(24,0,40,40,60,2,192)
+  outer_sw=Image(painted,Rectangle(128,64,64,64))
+end
 local corners={
   {bit=1,h=2,v=4,x=0,y=0,outer=outer_nw},
   {bit=2,h=1,v=8,x=32,y=0,outer=material.ne and outer_ne or nil},
-  {bit=4,h=8,v=1,x=0,y=32},
+  {bit=4,h=8,v=1,x=0,y=32,outer=outer_sw},
   {bit=8,h=4,v=2,x=32,y=32,outer=outer_se},
 }
 local cells={}
@@ -102,7 +116,9 @@ local extension=Image(512,320,ColorMode.RGB)
 local atlas=Image(256,256,ColorMode.RGB)
 for i,m in ipairs(order) do
   local tile=Image(64,64,ColorMode.RGB)
-  if m==9 or m==12 or m==15 then
+  if m==15 then
+    tile=Image(fill)
+  elseif m==9 or m==12 or (material.complete and material.complete[m]) then
     tile=Image(painted,Rectangle(((i-1)%4)*64,64+((i-1)//4)*64,64,64))
   else
     for _,q in ipairs(corners) do
@@ -143,11 +159,9 @@ for i,m in ipairs(order) do
   for it in tile:pixels() do assert(not opaque(it()) or palette[it()],'New colour') end
   cells[m]=tile
   atlas:drawImage(tile,Point(ox,oy-64))
-  if m~=9 and m~=12 and m~=15 then
-    for y=0,63 do for x=0,63 do
-      if not opaque(pixel(ox+x,oy+y)) then extension:putPixel(ox+x,oy+y,tile:getPixel(x,y)) end
-    end end
-  end
+  for y=0,63 do for x=0,63 do
+    if not opaque(pixel(ox+x,oy+y)) then extension:putPixel(ox+x,oy+y,tile:getPixel(x,y)) end
+  end end
 end
 local function bit(m,b) return (m&b)~=0 end
 for i,m in ipairs(order) do
@@ -257,10 +271,18 @@ preview:saveAs(work..name..'-connected.png')
 local report=assert(io.open(work..name..'-validation.txt','w'))
 report:write('Source: '..path..'\nPainting: '..art_path..'\nSaved: '..dest..'\nBackup: '..backup..'\nOriginal image and position verified after reopening. Source palette retained.\n')
 report:write('15 painted 64x64 cells; mask 0 empty; mask 15 fully opaque. All 128 legal adjacent pairs checked at their quarter cores.\n')
-report:write('Finished source cells 9, 12, 15 retained. Original '..painted_count..' pixels and cel position untouched.\n')
+report:write('Original '..painted_count..' pixels and cel position untouched.\n')
 report:write('Fill: (64,128,64,64). NW/SE corners: isolated components of cell 9.\n')
-report:write(material.ne and 'NE corner: (0,192,64,64).\n' or 'NE corner intersects the west/south strips.\n')
-report:write('North: cell 12 rows 16..44. South: source x 0..23, y 86..104. East: x 20..40, y 64..87. West: x 24..46, y '..material.west_y..'..'..(material.west_y+23)..'.\n')
-report:write('Strips repeat at native scale; the missing SW corner intersects the north/east strips. No rotation, mirroring, recolouring, smoothing or scaling.\n')
+if name=='water' then
+  report:write('Complete source cells 4, 6, 9, 10, 11, 12 retained. Fill hole at (127,129) completed beneath the original with (126,129).\n')
+  report:write('NE corner: isolated upper-right component of cell 6. SW corner: cell 4.\n')
+  report:write('North: cell 12 rows 24..44. South: source x 64..87, y 214..232. East: x 20..40, y 64..87. West: x 24..46, y 128..191.\n')
+  report:write('Strips repeat at native scale. No rotation, mirroring, recolouring, smoothing or scaling.\n')
+else
+  report:write('Finished source cells 9, 12, 15 retained.\n')
+  report:write(material.ne and 'NE corner: (0,192,64,64).\n' or 'NE corner intersects the west/south strips.\n')
+  report:write('North: cell 12 rows 16..44. South: source x 0..23, y 86..104. East: x 20..40, y 64..87. West: x 24..46, y '..material.west_y..'..'..(material.west_y+23)..'.\n')
+  report:write('Strips repeat at native scale; the missing SW corner intersects the north/east strips. No rotation, mirroring, recolouring, smoothing or scaling.\n')
+end
 report:write('Preview: '..name..'-connected.png. Art: '..name..'-atlas.png. Guides excluded; only the art layers export.\n')
 report:close()

@@ -77,7 +77,8 @@ pub fn apply(lv: *grid.Level, _: *mathx.Rng, seed: u64, _: carve.Palette, p: Par
     }
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
-        const edge = edges[@intCast(carve.alongOf(side, q))];
+        const along: usize = @intCast(carve.alongOf(side, q));
+        const edge = edges[along];
         const in: f32 = @floatFromInt(carve.inFrom(side, q));
         if (in < edge.water) {
             lv.tile[i] = .water;

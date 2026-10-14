@@ -32,10 +32,23 @@ pub const Act = enum {
             .shoot => "Aim an arrow at a target in range; press again to loose it.",
             .wait => "Let a turn pass.",
             .secondary => "Hold to use Skills in your Secondary Skill Set. Takes up this slot in both Skill Sets.",
-            .juke => juke.DESCRIPTION,
-            .burning_arrow => burning.DESCRIPTION,
-            .glacial_shot => glacial.DESCRIPTION,
+            inline else => |t| comptime module(t).?.DESCRIPTION,
         };
+    }
+
+    /// A skill's own module: its description, its cost, and its cooldown or element where it has one.
+    fn module(comptime a: Act) ?type {
+        return switch (a) {
+            .juke => juke,
+            .burning_arrow => burning,
+            .glacial_shot => glacial,
+            .shoot, .wait, .secondary => null,
+        };
+    }
+
+    fn has(comptime a: Act, comptime decl: []const u8) bool {
+        const m = module(a) orelse return false;
+        return @hasDecl(m, decl);
     }
 
     pub const Reticle = enum { bow, leap };
@@ -50,34 +63,33 @@ pub const Act = enum {
 
     pub fn cost(a: Act) i32 {
         return switch (a) {
-            .juke => juke.COST,
-            .burning_arrow => burning.COST,
-            .glacial_shot => glacial.COST,
-            .shoot, .wait, .secondary => 0,
+            inline else => |t| if (comptime has(t, "COST")) module(t).?.COST else 0,
         };
     }
 
     /// An elemental arrow's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
     pub fn arrow(comptime a: Act) type {
-        return switch (a) {
-            .burning_arrow => burning,
-            .glacial_shot => glacial,
-            .shoot, .juke, .wait, .secondary => @compileError("no element"),
-        };
+        if (!has(a, "ELEMENT")) @compileError("no element");
+        return module(a).?;
     }
 
     pub fn element(a: Act) ?damage.Element {
         return switch (a) {
-            inline .burning_arrow, .glacial_shot => |e| arrow(e).ELEMENT,
-            .shoot, .juke, .wait, .secondary => null,
+            inline else => |t| if (comptime has(t, "ELEMENT")) module(t).?.ELEMENT else null,
+        };
+    }
+
+    /// Its arrow bursts in a cone behind what it strikes.
+    pub fn cones(a: Act) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, "cone"),
         };
     }
 
     /// Turns after it is used before it can be again.
     pub fn cooldown(a: Act) u8 {
         return switch (a) {
-            .juke => juke.COOLDOWN,
-            .shoot, .wait, .secondary, .burning_arrow, .glacial_shot => 0,
+            inline else => |t| if (comptime has(t, "COOLDOWN")) module(t).?.COOLDOWN else 0,
         };
     }
 

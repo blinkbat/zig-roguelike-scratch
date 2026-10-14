@@ -26,6 +26,23 @@ pub const Style = enum {
 };
 
 const CAVE_WANDER: f32 = 0.6;
+/// A cave room's blob: its noise's scale, and its edge's least and spread.
+const CAVE_SCALE: f32 = 3;
+const CAVE_LO: f32 = 0.55;
+const CAVE_SPAN: f32 = 0.6;
+/// The least inner size a tomb room takes its pillars in.
+const TOMB_INNER: i32 = 8;
+const GRAVE_CHANCE: f32 = 0.4;
+const TOMB_BARREL_CHANCE: f32 = 0.5;
+const TOMB_BARREL_AT = P{ .x = 2, .y = 3 };
+/// The rows of a sewer room's canal off its middle, and how far along its bridge reaches.
+const CANAL_FROM: i32 = 2;
+const CANAL_TO: i32 = 3;
+const BRIDGE_REACH: i32 = 1;
+const LAVA_CHANCE: f32 = 0.6;
+const LAVA_JITTER: i32 = 2;
+/// A snowfield's radius is the room's size over this.
+const SNOW_PER: f32 = 5;
 
 pub const Params = struct {
     style: Style = .caves,
@@ -109,7 +126,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     pl.mask[placed[0]] = 0;
     var tries: usize = 0;
     while (n < p.rooms and tries < TRIES) : (tries += 1) {
-        const from = placed[rng.below(@intCast(n))];
+        const pick = rng.below(@intCast(n));
+        const from = placed[pick];
         const side = SIDES[rng.below(SIDES.len)];
         const cr = Plan.place(from).add(side.delta());
         const k = pl.slot(cr) orelse continue;
@@ -142,7 +160,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
     if (style.built()) {
         carve.box(lv, inside, pal.open);
     } else {
-        carve.blobIn(lv, noise, mid, @as(f32, @floatFromInt(size)) / 2 - 1, 3, 0.55, 0.6, pal.open, inside);
+        carve.blobIn(lv, noise, mid, @as(f32, @floatFromInt(size)) / 2 - 1, CAVE_SCALE, CAVE_LO, CAVE_SPAN, pal.open, inside);
     }
     for (SIDES) |s| {
         if (mask & bitOf(s) == 0) continue;
@@ -158,9 +176,9 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
     }
     const inner = size - 2;
     switch (style) {
-        .tombs => if (inner >= 8) {
+        .tombs => if (inner >= TOMB_INNER) {
             for (carve.corners(whole.shrunk(2))) |c| lv.set(c, .wall);
-            if (rng.chance(0.4)) lv.set(mid, .grave) else if (rng.chance(0.5)) lv.putBarrel(lo.add(.{ .x = 2, .y = 3 }));
+            if (rng.chance(GRAVE_CHANCE)) lv.set(mid, .grave) else if (rng.chance(TOMB_BARREL_CHANCE)) lv.putBarrel(lo.add(TOMB_BARREL_AT));
             if (mask & bitOf(.n) == 0) lv.addTorch(.{ .x = mid.x, .y = lo.y });
         },
         .sewers => {
@@ -169,13 +187,13 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
             while (cells.next()) |q| {
                 const off = if (across) q.y - mid.y else q.x - mid.x;
                 const along = if (across) q.x - mid.x else q.y - mid.y;
-                if (off != 2 and off != 3) continue;
-                lv.set(q, if (@abs(along) <= 1) .bridge else .water);
+                if (off < CANAL_FROM or off > CANAL_TO) continue;
+                lv.set(q, if (@abs(along) <= BRIDGE_REACH) .bridge else .water);
             }
         },
-        .lava => if (rng.chance(0.6)) pool(lv, mid.add(.{ .x = rng.range(-2, 2), .y = rng.range(-2, 2) })),
+        .lava => if (rng.chance(LAVA_CHANCE)) pool(lv, mid.add(.{ .x = rng.range(-LAVA_JITTER, LAVA_JITTER), .y = rng.range(-LAVA_JITTER, LAVA_JITTER) })),
         .caves => {},
-        .ice => carve.disc(lv, mid, @as(f32, @floatFromInt(size)) / 5, .snow, null),
+        .ice => carve.disc(lv, mid, @as(f32, @floatFromInt(size)) / SNOW_PER, .snow, null),
     }
 }
 

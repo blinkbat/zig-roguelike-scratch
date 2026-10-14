@@ -16,6 +16,10 @@ const MARGIN: i32 = 4;
 const HOUSE_LEAST: i32 = 5;
 /// How often a block is cut by an alley each way.
 const SPLIT_CHANCE: f32 = 0.7;
+/// The plaza's radius, a share of a block's side.
+const PLAZA_OF: f32 = 0.55;
+/// The street cleared round each gate.
+const GATE_R: f32 = 1.5;
 const HOUSE = buildings.Params{ .barrels = 1, .torches = 30 };
 
 pub const Wall = enum { none, wall, fence };
@@ -72,10 +76,10 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         }
     }
     const plaza = grid.MIDDLE;
-    carve.disc(lv, plaza, @as(f32, @floatFromInt(p.block)) * 0.55, street, null);
+    carve.disc(lv, plaza, @as(f32, @floatFromInt(p.block)) * PLAZA_OF, street, null);
     setpiece.stampAround(lv, plaza, setpiece.rows(.well));
     var x = lo.x;
-    while (x < hi.x) : (x += step) bridge(lv, .{ .x = x, .y = lo.y }, .{ .x = x + s, .y = hi.y });
+    while (x < hi.x) : (x += step) carve.bridge(lv, .{ .x = x, .y = lo.y }, .{ .x = x + s, .y = hi.y }, null);
     const ring: grid.Tile = switch (p.wall) {
         .none => return,
         .wall => .wall,
@@ -87,13 +91,12 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         if (walled.onEdge(q)) lv.set(q, ring);
     }
     for (gates()) |g| {
-        carve.disc(lv, g.at, 1.5, street, null);
-        const in = g.in.delta();
-        const side = P{ .x = in.y, .y = in.x };
-        const deep = g.at.add(.{ .x = in.x * s, .y = in.y * s });
+        carve.disc(lv, g.at, GATE_R, street, null);
+        const side = g.in.across();
+        const deep = g.at.add(g.in.delta().scaled(s));
         const a = g.at.sub(side);
         const b = deep.add(side);
-        bridge(lv, a.min(b), a.max(b).add(.{ .x = 1, .y = 1 }));
+        carve.bridge(lv, a.min(b), a.max(b).add(.{ .x = 1, .y = 1 }), null);
     }
 }
 
@@ -107,17 +110,10 @@ fn wallBox() grid.Box {
 
 fn gates() [4]Gate {
     var out: [4]Gate = undefined;
-    for (&out, [_]mathx.Dir{ .n, .s, .w, .e }) |*g, side| {
+    for (&out, buildings.SIDES) |*g, side| {
         g.* = .{ .at = carve.sideAt(wallBox(), side, carve.alongOf(side, grid.MIDDLE)), .in = side.opposite() };
     }
     return out;
-}
-
-fn bridge(lv: *grid.Level, lo: P, hi: P) void {
-    var cells = grid.Cells.of(lo, hi);
-    while (cells.next()) |q| {
-        lv.set(q, carve.paved(lv.at(q), lv.at(q)));
-    }
 }
 
 /// An alley from top to bottom with a canal at both ends gets one across, to the streets either side.

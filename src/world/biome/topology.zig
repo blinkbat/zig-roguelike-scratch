@@ -15,6 +15,10 @@ pub const SIDES_MAX: u8 = 10;
 /// A spot lands within this share of the box from where its layout puts it.
 const JITTER: f32 = 0.06;
 const SIDE_REACH: i32 = 14;
+/// A side path's clearing, a share of a spot's.
+const SIDE_CLEARING: f32 = 0.6;
+/// A grid layout's paths left out, so it is no lattice.
+const GRID_GAP: f32 = 0.3;
 /// Cells between a clearing's rim and the map's edge.
 const RIM_GAP: i32 = 2;
 /// Of the box's shorter side, a bowl's and the lakebed's half-width.
@@ -90,8 +94,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     const span = P{ .x = grid.W - 1 - 2 * inset, .y = grid.H - 1 - 2 * inset };
     var at: [NODES_MAX]P = undefined;
     for (g.spots, 0..) |s, i| {
-        const fx = std.math.clamp(s.x + (rng.unit() - 0.5) * 2 * JITTER, 0, 1);
-        const fy = std.math.clamp(s.y + (rng.unit() - 0.5) * 2 * JITTER, 0, 1);
+        const fx = std.math.clamp(s.x + rng.spread(2 * JITTER), 0, 1);
+        const fy = std.math.clamp(s.y + rng.spread(2 * JITTER), 0, 1);
         at[i] = .{ .x = inset + @as(i32, @intFromFloat(fx * @as(f32, @floatFromInt(span.x)))), .y = inset + @as(i32, @intFromFloat(fy * @as(f32, @floatFromInt(span.y)))) };
     }
     const short: f32 = @floatFromInt(@min(grid.W, grid.H));
@@ -100,15 +104,16 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         clearing(lv, noise, at[i], r, if (s.big) BIG_FRAY else FRAY, pal.open);
     }
     for (g.edges) |e| {
-        if (p.layout == .grid and rng.chance(0.3)) continue;
+        if (p.layout == .grid and rng.chance(GRID_GAP)) continue;
         path(lv, rng, at[e[0]], at[e[1]], p.path, pal.open);
     }
     for (0..p.sides) |_| {
-        const from = at[rng.below(@intCast(g.spots.len))];
+        const pick = rng.below(@intCast(g.spots.len));
+        const from = at[pick];
         const dx = rng.range(-SIDE_REACH, SIDE_REACH);
         const to = grid.Box.inMap(inset).clamp(from.add(.{ .x = dx, .y = rng.range(-SIDE_REACH, SIDE_REACH) }));
         path(lv, rng, from, to, p.path, pal.open);
-        clearing(lv, noise, to, @as(f32, @floatFromInt(p.clearing)) * 0.6, FRAY, pal.open);
+        clearing(lv, noise, to, @as(f32, @floatFromInt(p.clearing)) * SIDE_CLEARING, FRAY, pal.open);
     }
 }
 

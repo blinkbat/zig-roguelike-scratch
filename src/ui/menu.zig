@@ -16,13 +16,12 @@ pub const NOTE: i32 = font.BODY;
 const TITLE_DY: i32 = -60;
 const ROWS_DY: i32 = 20;
 const NOTE_GAP: i32 = 30;
-const LEGEND_DY: i32 = 60;
 const MARK_GAP: i32 = 18;
 const MARK_L = ">";
 const MARK_R = "<";
-/// `draw`'s, from the title's top to the first row, and from under the last row to the legend's foot.
+/// `draw`'s, from the title's top to the first row, and from under the last row to the note's foot.
 const ABOVE: i32 = TITLE - TITLE_DY + ROWS_DY;
-const BELOW: i32 = NOTE_GAP + LEGEND_DY + NOTE;
+const BELOW: i32 = NOTE_GAP + NOTE;
 /// The rows sit at the middle, so either side takes the more of the two.
 const CHROME_H: i32 = 2 * @as(i32, @max(ABOVE, BELOW));
 pub const NOTE_MAX: usize = 160;
@@ -78,25 +77,6 @@ pub fn backed(st: *const input.State) bool {
     return st.hit(BACK) or st.hit(PAUSE);
 }
 
-pub fn moveItem(comptime d: input.Device) [:0]const u8 {
-    return input.moveName(d) ++ " move";
-}
-
-pub const BACK_LABEL = "back";
-
-/// `backed` takes either; the keyboard has no B.
-pub fn backName(comptime d: input.Device) [:0]const u8 {
-    return if (d.pad()) BACK.name(d) else PAUSE.name(d);
-}
-
-pub fn backItem(comptime d: input.Device) [:0]const u8 {
-    return backName(d) ++ " " ++ BACK_LABEL;
-}
-
-fn legendOf(comptime d: input.Device) [:0]const u8 {
-    return CONFIRM.name(d) ++ " select" ++ SEP ++ moveItem(d);
-}
-
 fn window(screen_h: i32, n: usize, at: usize) struct { from: usize, len: usize } {
     const room: usize = @intCast(@max(1, @divTrunc(screen_h - CHROME_H, ROW_STEP)));
     const len = @min(n, room);
@@ -104,7 +84,7 @@ fn window(screen_h: i32, n: usize, at: usize) struct { from: usize, len: usize }
     return .{ .from = from, .len = len };
 }
 
-pub fn draw(face: font.Face, screen: mathx.P, d: input.Device, title: [:0]const u8, all: []const [:0]const u8, at: usize, note: ?[:0]const u8, back: ?[:0]const u8) void {
+pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const [:0]const u8, at: usize, note: ?[:0]const u8) void {
     const win = window(screen.y, all.len, at);
     const rows = all[win.from..][0..win.len];
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(rows.len)) * ROW_STEP, 2);
@@ -124,15 +104,7 @@ pub fn draw(face: font.Face, screen: mathx.P, d: input.Device, title: [:0]const 
             face.text(MARK_R, x + w + MARK_GAP, y, ROW, look.RETICLE);
         }
     }
-    var y = top + ROWS_DY + @as(i32, @intCast(rows.len)) * ROW_STEP + NOTE_GAP;
-    if (note) |n| {
-        mid(face, screen, n, y, NOTE, look.DIM);
-        y += NOTE_GAP;
-    }
-    var buf: [NOTE_MAX + 1]u8 = undefined;
-    const plain = input.per(d, legendOf);
-    const legend = if (back) |b| std.fmt.bufPrintZ(&buf, "{s}" ++ SEP ++ "{s} {s}", .{ plain, input.per(d, backName), b }) catch plain else plain;
-    mid(face, screen, legend, y + LEGEND_DY - NOTE_GAP, NOTE, look.DIM);
+    if (note) |n| mid(face, screen, n, top + ROWS_DY + @as(i32, @intCast(rows.len)) * ROW_STEP + NOTE_GAP, NOTE, look.DIM);
 }
 
 /// Printed into `buf` upper-cased, as a title is; empty if it does not fit.
@@ -171,7 +143,7 @@ pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
 pub fn mid(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
     var buf: [NOTE_MAX + 1]u8 = undefined;
     const t = face.fit(&buf, s, size, screen.x - 2 * MARK_GAP, false);
-    face.text(t, face.leftFor(t, @divTrunc(screen.x, 2), size), y, size, col);
+    face.textMid(t, @divTrunc(screen.x, 2), y, size, col);
 }
 
 test "a long menu shows the rows that fit, the one it is on among them" {

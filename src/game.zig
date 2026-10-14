@@ -6,6 +6,7 @@ const input = @import("core/input.zig");
 const grid = @import("world/grid.zig");
 const fov = @import("world/fov.zig");
 const gen = @import("world/gen.zig");
+const carve = @import("world/carve.zig");
 const gas = @import("world/gas.zig");
 const atlas = @import("world/atlas.zig");
 const editor = @import("edit/editor.zig");
@@ -23,6 +24,7 @@ const juke = @import("play/juke.zig");
 const pack = @import("play/pack.zig");
 const skillbar = @import("play/skillbar.zig");
 const look = @import("gfx/look.zig");
+const dual = @import("gfx/ground.zig");
 const light = @import("gfx/light.zig");
 const font = @import("gfx/font.zig");
 const fx = @import("gfx/fx.zig");
@@ -61,7 +63,6 @@ const CARET_PAD_Y: i32 = authored(2);
 const TEXT_LINE: i32 = 26;
 const DEAD_TITLE_DY: i32 = -100;
 const DEAD_SCORE_DY: i32 = -10;
-const DEAD_HINT_DY: i32 = 30;
 const SLOT_PX: i32 = 56;
 const SLOT_MID: i32 = @divTrunc(SLOT_PX, 2);
 const CLEAR_GLYPH: i32 = @divTrunc(SLOT_PX, 2);
@@ -71,6 +72,7 @@ const CARRIED_A: f32 = 0.35;
 const GROUP_GAP: i32 = 20;
 const SLOT_TEXT = font.SMALL;
 const KEY_GAP: i32 = 2;
+const PROMPT_PX: i32 = 18;
 /// From a slot's top right corner to its cooldown's turns.
 const COOLDOWN_DX: i32 = 18;
 const COOLDOWN_DY: i32 = 2;
@@ -95,7 +97,7 @@ const BIND_TOP_DY: i32 = -230;
 const BIND_ROWS_DY: i32 = BIND_TITLE + BIND_POP_DY + SLOT_PX;
 const BIND_LABEL_GAP: i32 = 6;
 const BIND_ROW_GAP: i32 = 24;
-const BIND_ROW_H: i32 = TEXT + BIND_LABEL_GAP + SLOT_PX + KEY_GAP + SLOT_TEXT + BIND_ROW_GAP;
+const BIND_ROW_H: i32 = TEXT + BIND_LABEL_GAP + SLOT_PX + KEY_GAP + PROMPT_PX + BIND_ROW_GAP;
 const BIND_POP_DY: i32 = 10;
 const BIND_INFO_DY: i32 = 8;
 const MINI: i32 = 3;
@@ -141,7 +143,7 @@ comptime {
     std.debug.assert(@mod(CELL, look.SPRITE_PX) == 0);
     std.debug.assert(GLYPH <= CELL);
     std.debug.assert(SKILLS_W <= hud.SKILLS_MAX_W);
-    std.debug.assert(hud.PLATE_PAD + SLOT_PX + KEY_GAP + SLOT_TEXT <= hud.PLATE_H);
+    std.debug.assert(hud.PLATE_PAD + SLOT_PX + KEY_GAP + PROMPT_PX <= hud.PLATE_H);
 }
 
 pub const Mode = enum { play, aim, bind, dead, pause };
@@ -971,13 +973,6 @@ fn elementHit(g: *Game, id: u16, blow: damage.Damage, comptime act: skillbar.Act
     if (takes) sayAt(g, at, "The {s} " ++ arrow.TAKES ++ "!", .{name});
 }
 
-fn cones(act: skillbar.Act) bool {
-    return switch (act) {
-        .glacial_shot => true,
-        .shoot, .burning_arrow, .juke, .wait, .secondary => false,
-    };
-}
-
 fn glacialHit(g: *Game, hit: bow.Hit, impact: P, s: Stroke) void {
     const direct: ?u16 = switch (hit) {
         .body => |id| id,
@@ -1603,7 +1598,7 @@ fn drawPause(g: *Game) void {
     veil(g);
     var rows: [PAUSE_ROWS.len][:0]const u8 = undefined;
     for (PAUSE_ROWS, &rows) |r, *l| l.* = pauseLabel(g, r);
-    menu.draw(g.face, g.screen, g.st.device, "PAUSED", &rows, g.pause_menu.at, null, "resume");
+    menu.draw(g.face, g.screen, "PAUSED", &rows, g.pause_menu.at, null);
 }
 
 fn stepTurning(g: *Game, dt: f32) void {
@@ -1787,38 +1782,44 @@ fn drawFigure(g: *Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid:
     } else drawGlyph(g, l.ch, s.x, s.y, shine.drawn(l.fg, flash));
 }
 
-const Pass = look.Pass;
-
 const Stood = std.StaticBitSet(grid.CELLS);
 
-/// At full light, over the seen cells from `lo` up to `hi`.
-fn drawTerrain(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: *const Stood) void {
-    drawCells(g, c, lo, hi, pass, arrow_at, stood);
-    if (pass != .ground) return;
-    g.sprites.drawGround(&g.lv, lo, hi, true, .{ @floatFromInt(-c.x), @floatFromInt(-c.y) }, CELL_F);
-    var cells = grid.Cells.of(lo, hi);
-    while (cells.next()) |p| {
-        if (g.lv.isSeen(p) and g.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
-    }
-}
-
-fn drawCells(g: *Game, c: Cam, lo: P, hi: P, pass: Pass, arrow_at: ?P, stood: *const Stood) void {
+/// At full light, over the seen cells from `lo` up to `hi`: the grounds in their layers, their glyphs and the doors.
+fn drawGroundPass(g: *Game, c: Cam, lo: P, hi: P, arrow_at: ?P, stood: *const Stood) void {
+    var beds: dual.Beds = undefined;
+    beds.fill(&g.lv, lo, hi, true);
+    g.sprites.drawGround(&beds, .{ @floatFromInt(-c.x), @floatFromInt(-c.y) }, CELL_F);
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
         if (!g.lv.isSeen(p)) continue;
         const here = g.lv.at(p);
-        const kind = look.passKind(here, pass) orelse continue;
-        if (g.sprites.passTile(&g.lv, p, kind)) |t| {
+        if (look.glyphGround(here, &g.sprites)) inkCell(g, c, p, here, arrow_at, stood);
+        if (g.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
+    }
+}
+
+/// At full light, what stands on the seen cells from `lo` up to `hi`, over the shadows cast on the ground.
+fn drawSolidPass(g: *Game, c: Cam, lo: P, hi: P, arrow_at: ?P, stood: *const Stood) void {
+    var cells = grid.Cells.of(lo, hi);
+    while (cells.next()) |p| {
+        if (!g.lv.isSeen(p)) continue;
+        const here = g.lv.at(p);
+        if (!look.standsOver(here)) continue;
+        if (g.sprites.tileAt(&g.lv, p)) |t| {
             drawSprite(t, c.sx(p), c.sy(p));
             continue;
         }
-        if (look.tileBg(kind)) |bg| fillCell(c, p, bg);
-        if (kind != here or shownAt(g, stood, p)) continue;
-        if (arrow_at) |a| {
-            if (a.eq(p)) continue;
-        }
-        look.inkTile(&g.face, kind, c.sx(p) + HALF_CELL, c.sy(p) + HALF_CELL, GLYPH);
+        if (look.tileBg(here)) |bg| fillCell(c, p, bg);
+        inkCell(g, c, p, here, arrow_at, stood);
     }
+}
+
+fn inkCell(g: *Game, c: Cam, p: P, here: grid.Tile, arrow_at: ?P, stood: *const Stood) void {
+    if (shownAt(g, stood, p)) return;
+    if (arrow_at) |a| {
+        if (a.eq(p)) return;
+    }
+    look.inkTile(&g.face, here, c.sx(p) + HALF_CELL, c.sy(p) + HALF_CELL, GLYPH);
 }
 
 /// Every shadow cast into `view`, multiplied over what `framebuffer` holds; false with no shader for it.
@@ -1879,11 +1880,13 @@ fn drawWorld(g: *Game) void {
     const aim_from: ?P = if (g.mode != .aim) null else if (g.archer()) |a| a.at else null;
 
     var shown: [actor.MAX]Shown = undefined;
-    const stood = stoodNow(g);
+    var stood = Stood.initEmpty();
     var n: usize = 0;
     for (0..g.pool.n) |i| {
         const at = drawnAt(g, i) orelse continue;
         const mid = middle(at);
+        const under = mathx.cellOf(mid);
+        if (grid.Level.inside(under)) stood.set(grid.Level.idx(under));
         shown[n] = .{
             .pic = g.pictured[i],
             .slot = i,
@@ -1897,10 +1900,10 @@ fn drawWorld(g: *Game) void {
     const bodies = shown[0..n];
 
     g.light.bake(&g.lv, lo, hi);
-    drawTerrain(g, c, lo, hi, .ground, arrow_at, &stood);
+    drawGroundPass(g, c, lo, hi, arrow_at, &stood);
     _ = shadowPass(g, c, view, g.framebuffer);
     g.cloud.draw(&g.lv, view, -c.x, -c.y, CELL);
-    drawTerrain(g, c, lo, hi, .solid, arrow_at, &stood);
+    drawSolidPass(g, c, lo, hi, arrow_at, &stood);
     g.fx.draw(@floatFromInt(-c.x), @floatFromInt(-c.y), CELL_F);
     g.light.drawMap(-c.x, -c.y, CELL);
 
@@ -1912,7 +1915,7 @@ fn drawWorld(g: *Game) void {
         if (g.aim_act.reticle() == .bow) {
             const f = bow.fly(&g.lv, from, g.mark);
             for (f.path[0..f.len]) |p| fillCell(c, p, look.AIM_PATH);
-            const impact = if (cones(g.aim_act)) f.impact() else null;
+            const impact = if (g.aim_act.cones()) f.impact() else null;
             if (impact) |at| {
                 const area = glacial.cone(&g.lv, from, at);
                 for (area.cells[0..area.n]) |p| {
@@ -2063,28 +2066,6 @@ fn bindRowY(y0: i32, row: usize) i32 {
     return y0 + BIND_ROWS_DY + @as(i32, @intCast(row)) * BIND_ROW_H;
 }
 
-const SEP = menu.SEP;
-
-fn closeItem(comptime d: input.Device) [:0]const u8 {
-    return menu.backName(d) ++ " close";
-}
-
-fn legendEmpty(comptime d: input.Device) [:0]const u8 {
-    return CONFIRM.name(d) ++ " select skill" ++ SEP ++ CHANGE.name(d) ++ " select skill" ++ SEP ++ closeItem(d);
-}
-
-fn legendBound(comptime d: input.Device) [:0]const u8 {
-    return CONFIRM.name(d) ++ " pick up" ++ SEP ++ CHANGE.name(d) ++ " change skill" ++ SEP ++ REMOVE.name(d) ++ " remove" ++ SEP ++ closeItem(d);
-}
-
-fn legendCarry(comptime d: input.Device) [:0]const u8 {
-    return CONFIRM.name(d) ++ " put down" ++ SEP ++ menu.backName(d) ++ " cancel";
-}
-
-fn legendPick(comptime d: input.Device) [:0]const u8 {
-    return CONFIRM.name(d) ++ " bind" ++ SEP ++ menu.backItem(d);
-}
-
 const SlotLook = struct { act: ?skillbar.Act, key: ?input.Button, edge: rl.Color, faded: bool = false };
 
 fn drawSlot(g: *Game, x: i32, y: i32, s: SlotLook) void {
@@ -2095,8 +2076,8 @@ fn drawSlot(g: *Game, x: i32, y: i32, s: SlotLook) void {
         const inset = @divTrunc(SLOT_PX - look.SKILL_PX, 2);
         look.drawSkill(&g.sprites, act, x + inset, y + inset, a);
     }
-    const k = g.st.slotCaption(s.key orelse return);
-    g.face.text(k, g.face.leftFor(k, x + SLOT_MID, SLOT_TEXT), y + SLOT_PX + KEY_GAP, SLOT_TEXT, look.fade(look.DIM, a));
+    const p = look.Prompt.of(&g.st, s.key orelse return);
+    p.draw(&g.face, x + SLOT_MID, y + SLOT_PX + KEY_GAP + @divTrunc(PROMPT_PX, 2), PROMPT_PX, a);
 }
 
 /// While aiming, the set the reticle's skill was taken from, whatever is held now.
@@ -2126,7 +2107,6 @@ fn drawSkills(g: *Game, at: P) void {
 }
 
 fn drawBinds(g: *Game) void {
-    var buf: [menu.NOTE_MAX + 1]u8 = undefined;
     const b = g.binds;
     const layout = hud.Layout.of(g.screen, SKILLS_W);
     const x0 = layout.skills.x;
@@ -2156,17 +2136,13 @@ fn drawBinds(g: *Game) void {
     const info_y = bindRowY(y0, skillbar.SETS.len) + BIND_INFO_DY;
     const pop_y = cursor.y - SLOT_PX - BIND_POP_DY;
     var shown: ?skillbar.Act = g.bar.at(b.slot());
-    const d = g.st.device;
-    var legend: [:0]const u8 = if (shown == null) input.per(d, legendEmpty) else input.per(d, legendBound);
     switch (b.menu) {
         .browse => {},
         .carry => |from| {
             shown = g.bar.at(from);
-            legend = input.per(d, legendCarry);
             if (shown) |a| drawSlot(g, cursor.x, pop_y, .{ .act = a, .key = from.button, .edge = look.SLOT_CURSOR });
         },
         .pick => |pick| {
-            legend = input.per(d, legendPick);
             shown = pickAct(pick);
             const w = @as(i32, @intCast(PICKS)) * SLOT_STEP - SLOT_GAP;
             const px = cursor.x + @divTrunc(SLOT_PX - w, 2);
@@ -2185,9 +2161,6 @@ fn drawBinds(g: *Game) void {
     } else if (b.menu == .pick) {
         textMid(g, "Clear slot", info_y, TEXT, look.TEXT);
     }
-    const hold = if (g.bar.modifier) |m| std.fmt.bufPrintZ(&buf, "Hold {s} for the " ++ comptime skillbar.Set.secondary.name(), .{g.st.slotCaption(m)}) catch "" else "No button holds the " ++ comptime skillbar.Set.secondary.name();
-    textMid(g, hold, info_y + TEXT_LINE * 2, TEXT, look.DIM);
-    textMid(g, legend, info_y + TEXT_LINE * 4, TEXT, look.DIM);
 }
 
 fn drawHud(g: *Game) void {
@@ -2210,8 +2183,6 @@ fn drawDead(g: *Game) void {
     const said = menu.shout(&died, "{s}" ++ DIED, .{g.name.text()});
     textMid(g, said, mid + DEAD_TITLE_DY, menu.TITLE, look.LIFE);
     textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
-    const again = if (g.permadeath) pauseLabel(g, .back) else againLabel(g);
-    textMid(g, std.fmt.bufPrintZ(&buf, "{s} {c}{s}", .{ g.st.caption(CONFIRM), std.ascii.toLower(again[0]), again[1..] }) catch "", mid + DEAD_HINT_DY, TEXT, look.DIM);
 }
 
 pub fn drawFrame(g: *Game) void {
@@ -2225,22 +2196,19 @@ pub fn drawFrame(g: *Game) void {
     if (g.mode == .pause) drawPause(g);
 }
 
+/// The parts that load and unload their own graphics, besides the sprites.
+const GRAPHICS = .{ "light", "cloud", "vignette", "mini" };
+
 fn loadGraphics(g: *Game) void {
     g.sprites.loadSkills();
-    g.light.load();
-    g.cloud.load();
-    g.vignette.load();
-    g.mini.load();
+    inline for (GRAPHICS) |f| @field(g, f).load();
     g.graphics_ready = true;
 }
 
 /// Safe whether or not anything was loaded.
 fn unloadGraphics(g: *Game) void {
     g.sprites.unload();
-    g.light.unload();
-    g.cloud.unload();
-    g.vignette.unload();
-    g.mini.unload();
+    inline for (GRAPHICS) |f| @field(g, f).unload();
     g.graphics_ready = false;
     g.art_ready = false;
 }
@@ -2389,7 +2357,7 @@ fn shoot(g: *Game) !void {
     poseForest(g);
     try capture(g, target, SHOTS_DIR ++ "/forest.png");
     for ([_]struct { hour: f32, name: [:0]const u8 }{
-        .{ .hour = 9, .name = SHOTS_DIR ++ "/shadows-morning.png" },
+        .{ .hour = MORNING, .name = SHOTS_DIR ++ "/shadows-morning.png" },
         .{ .hour = day.NOON, .name = SHOTS_DIR ++ "/shadows-noon.png" },
         .{ .hour = 17, .name = SHOTS_DIR ++ "/shadows-evening.png" },
         .{ .hour = day.DEAD_OF_NIGHT, .name = SHOTS_DIR ++ "/shadows-moon.png" },
@@ -2400,7 +2368,7 @@ fn shoot(g: *Game) !void {
     poseShadowStudy(g, day.NOON, false);
     try capture(g, target, SHOTS_DIR ++ "/shadows-torch.png");
     for ([_]struct { hour: ?f32, path: [:0]const u8 }{
-        .{ .hour = 9, .path = SHOTS_DIR ++ "/shadows-hidden-sun.png" },
+        .{ .hour = MORNING, .path = SHOTS_DIR ++ "/shadows-hidden-sun.png" },
         .{ .hour = 22.5, .path = SHOTS_DIR ++ "/shadows-hidden-moon.png" },
         .{ .hour = null, .path = SHOTS_DIR ++ "/shadows-hidden-torch.png" },
     }) |study| {
@@ -2412,7 +2380,7 @@ fn shoot(g: *Game) !void {
         g.light.settle(&g.lv);
         try checkHiddenShadowMask(g, target, false);
     }
-    poseHiddenShadows(g, 9);
+    poseHiddenShadows(g, MORNING);
     g.cam.x = @floatFromInt(HIDDEN_SHADOW_X * CELL - g.screen.x);
     try checkHiddenShadowMask(g, target, true);
     try capture(g, target, SHOTS_DIR ++ "/shadows-offscreen.png");
@@ -2458,7 +2426,7 @@ fn shoot(g: *Game) !void {
     rl.beginTextureMode(target);
     rl.clearBackground(look.BG);
     var title: [naming.TITLE_MAX]u8 = undefined;
-    naming.draw(&entry, g.face, g.screen, g.st.device, naming.titleOf(heroes.DEFAULT, &title));
+    naming.draw(&entry, g.face, g.screen, naming.titleOf(heroes.DEFAULT, &title));
     rl.endTextureMode();
     try exportTarget(target, SHOTS_DIR ++ "/name.png");
 }
@@ -2508,26 +2476,25 @@ fn shootHud(g: *Game) !void {
             try capture(g, target, SHOTS_DIR ++ "/hud-bind-pad.png");
         }
     }
-    std.debug.print("HUD: {d} resource states captured, with every caption device, the secondary set and the bind picker\n", .{studies.len});
-    captionRoom(g);
+    std.debug.print("HUD: {d} resource states captured, with every prompt device, the secondary set and the bind picker\n", .{studies.len});
+    promptRoom(g);
 }
 
-const CAPTION_GAP_MIN: i32 = 4;
+const PROMPT_GAP_MIN: i32 = 4;
 
-/// The narrowest space between two neighbouring slots' captions on any pad, in the font as drawn.
-fn captionRoom(g: *const Game) void {
+/// The narrowest space between two neighbouring slots' prompts on any device, in the font as drawn.
+fn promptRoom(g: *const Game) void {
     var least: i32 = std.math.maxInt(i32);
     for (std.enums.values(input.Device)) |d| {
-        if (!d.pad()) continue;
-        const st = input.State{ .device = d };
+        const st = input.State{ .device = d, .modifier = g.bar.modifier };
         for (skillbar.SLOTS[0 .. skillbar.SLOTS.len - 1], skillbar.SLOTS[1..], SLOT_XS[0 .. SLOT_XS.len - 1], SLOT_XS[1..]) |a, b, xa, xb| {
-            const wa = g.face.width(st.slotCaption(a), SLOT_TEXT);
-            const wb = g.face.width(st.slotCaption(b), SLOT_TEXT);
+            const wa = look.Prompt.of(&st, a).width(&g.face, PROMPT_PX);
+            const wb = look.Prompt.of(&st, b).width(&g.face, PROMPT_PX);
             least = @min(least, xb - xa - @divTrunc(wa + wb, 2));
         }
     }
-    std.debug.print("slot captions: {d} px apart at the closest\n", .{least});
-    std.debug.assert(least >= CAPTION_GAP_MIN);
+    std.debug.print("slot prompts: {d} px apart at the closest\n", .{least});
+    std.debug.assert(least >= PROMPT_GAP_MIN);
 }
 
 fn boundTo(g: *const Game, act: skillbar.Act) input.Button {
@@ -2535,6 +2502,8 @@ fn boundTo(g: *const Game, act: skillbar.Act) input.Button {
 }
 
 const POSE_BURST = P{ .x = 25, .y = 15 };
+/// The hour the morning shadow studies are posed at.
+const MORNING: f32 = 9;
 const POSE_GAS_TURNS: usize = 3;
 
 fn posePicker(g: *Game, button: input.Button) void {
@@ -2543,27 +2512,27 @@ fn posePicker(g: *Game, button: input.Button) void {
     g.binds.menu = .{ .pick = pickOf(g.bar.at(g.binds.slot())) };
 }
 
+/// Wall from `lo` to `hi`, both inclusive.
+fn wallIn(lv: *grid.Level, lo: P, hi: P) void {
+    carve.box(lv, .{ .lo = lo, .hi = hi.add(.{ .x = 1, .y = 1 }) }, .wall);
+}
+
 fn wallRow(lv: *grid.Level, y: i32, x0: i32, x1: i32) void {
-    var x = x0;
-    while (x <= x1) : (x += 1) lv.set(.{ .x = x, .y = y }, .wall);
+    wallIn(lv, .{ .x = x0, .y = y }, .{ .x = x1, .y = y });
 }
 
 fn poseGas(g: *Game) void {
     arena(g, .{ .x = 18, .y = 16 }, &.{});
-    g.outdoors = false;
     wallRow(&g.lv, 10, 13, 31);
     wallRow(&g.lv, 21, 13, 31);
-    var y: i32 = 10;
-    while (y <= 21) : (y += 1) {
-        g.lv.set(.{ .x = 13, .y = y }, .wall);
-        if (y != POSE_BURST.y) g.lv.set(.{ .x = 31, .y = y }, .wall);
-    }
-    gen.shapeWalls(&g.lv);
+    wallIn(&g.lv, .{ .x = 13, .y = 10 }, .{ .x = 13, .y = 21 });
+    wallIn(&g.lv, .{ .x = 31, .y = 10 }, .{ .x = 31, .y = POSE_BURST.y - 1 });
+    wallIn(&g.lv, .{ .x = 31, .y = POSE_BURST.y + 1 }, .{ .x = 31, .y = 21 });
     g.lv.addTorch(.{ .x = 22, .y = 10 });
     _ = g.pool.spawn(&g.lv, actor.Actor.of(.bloat, .{ .x = 16, .y = 12 }));
     g.lv.addGas(POSE_BURST, gas.BURST);
     for (0..POSE_GAS_TURNS) |_| gas.turn(&g.lv, &g.rng);
-    settle(g);
+    posed(g, false);
 }
 
 const POSE_TORCH = P{ .x = 20, .y = 10 };
@@ -2587,8 +2556,7 @@ fn poseForest(g: *Game) void {
             if (ch == '#') g.lv.set(.{ .x = 16 + @as(i32, @intCast(x)), .y = 12 + @as(i32, @intCast(y)) }, .shrub);
         }
     }
-    gen.shapeWalls(&g.lv);
-    settle(g);
+    posed(g, g.outdoors);
 }
 
 fn poseShadowStudy(g: *Game, hour: f32, outdoors: bool) void {
@@ -2626,20 +2594,23 @@ fn poseShadowStudy(g: *Game, hour: f32, outdoors: bool) void {
 
 /// A posed study's floor shaped and settled, at `hour` under the sky or a roof.
 fn studyAt(g: *Game, outdoors: bool, hour: f32) void {
-    g.outdoors = outdoors;
     g.clock = day.Clock.at(hour);
+    posed(g, outdoors);
+}
+
+/// A posed floor shaped and settled, under the sky or a roof.
+fn posed(g: *Game, outdoors: bool) void {
+    g.outdoors = outdoors;
     gen.shapeWalls(&g.lv);
     settle(g);
 }
 
 fn poseTorch(g: *Game) void {
     arena(g, .{ .x = 20, .y = 15 }, &.{ .{ .x = 17, .y = 12 }, .{ .x = 23, .y = 13 } });
-    g.outdoors = false;
     wallRow(&g.lv, POSE_TORCH.y, 12, 28);
     g.lv.set(.{ .x = 22, .y = 12 }, .wall);
-    gen.shapeWalls(&g.lv);
     g.lv.addTorch(POSE_TORCH);
-    settle(g);
+    posed(g, false);
 }
 
 const HIDDEN_SHADOW_X: i32 = 27;
@@ -2685,9 +2656,8 @@ fn checkHiddenShadowMask(g: *Game, target: rl.RenderTexture2D, visible: bool) !v
         rl.clearBackground(rl.Color.white);
         if (!shadowPass(g, c, view, target.id)) return error.ShadowShaderMissing;
     }
-    var img = try rl.loadImageFromTexture(target.texture);
+    const img = try readTarget(target);
     defer rl.unloadImage(img);
-    rl.imageFlipVertical(&img);
     var hits = [_]usize{0} ** HIDDEN_SHADOW_ROWS.len;
     var leaked: usize = 0;
     var y: i32 = 0;
@@ -2774,11 +2744,17 @@ fn capture(g: *Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {
     try exportTarget(target, path);
 }
 
+/// The target's pixels, top row first; the caller unloads it.
+fn readTarget(target: rl.RenderTexture2D) !rl.Image {
+    var img = try rl.loadImageFromTexture(target.texture);
+    rl.imageFlipVertical(&img);
+    return img;
+}
+
 pub fn exportTarget(target: rl.RenderTexture2D, path: [:0]const u8) !void {
     errdefer std.debug.print("{s} FAILED\n", .{path});
-    var img = try rl.loadImageFromTexture(target.texture);
+    var img = try readTarget(target);
     defer rl.unloadImage(img);
-    rl.imageFlipVertical(&img);
     // Blending leaves alpha in the target that a window never shows.
     rl.imageFormat(&img, .uncompressed_r8g8b8);
     if (!rl.exportImage(img, path)) return error.ExportFailed;
@@ -3022,14 +2998,6 @@ fn pressHolding(g: *Game, a: input.Button, held: []const input.Button) void {
     update(g, 0);
 }
 
-fn holdLong(g: *Game, a: input.Button) void {
-    calm(g);
-    g.st = .{};
-    g.st.down.insert(a);
-    g.st.down_s.set(a, input.HOLD_S);
-    update(g, 0);
-}
-
 test "glacial shot spends only on confirmation and bursts at the first body with delayed chill and cone damage" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
@@ -3166,9 +3134,8 @@ test "glacial chill and its cadence follow slime splits without hitting newborn 
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{});
-    const id = spawnAt(g, .slime, .{ .x = 26, .y = 20 }, true);
+    const id = splittable(g, .{ .x = 26, .y = 20 }, true);
     const a = g.pool.get(id).?;
-    a.hp = 21;
     a.chill = .{ .turns = 1, .phase = glacial.CYCLE - 1 };
     a.resists.set(.cold, -100);
     glacialHit(g, .{ .body = id }, a.at, .{ .from = g.archer().?.at, .wait = 0.2 });
@@ -3271,9 +3238,8 @@ test "burning follows both slime halves without an extra application turn or tic
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{});
-    const id = spawnAt(g, .slime, .{ .x = 28, .y = 20 }, false);
+    const id = splittable(g, .{ .x = 28, .y = 20 }, false);
     const a = g.pool.get(id).?;
-    a.hp = 21;
     a.burn.start();
     a.resists.set(.fire, 50);
     wound(g, id, 4, SHOOT, .{ .from = g.archer().?.at, .wait = 0 });
@@ -3313,9 +3279,8 @@ test "a half split off a burning, chilled slime ticks and skips in step with it 
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{});
-    const id = spawnAt(g, .slime, .{ .x = 28, .y = 20 }, false);
+    const id = splittable(g, .{ .x = 28, .y = 20 }, false);
     const a = g.pool.get(id).?;
-    a.hp = 21;
     a.burn = .{ .turns = burning.TURNS };
     a.chill.apply();
     wound(g, id, 4, SHOOT, .{ .from = g.archer().?.at, .wait = 0 });
@@ -3338,7 +3303,7 @@ test "a half the gas or a burn splits off on the foes' turn keeps the ticks its 
         const at = P{ .x = 30, .y = 20 };
         const id = spawnAt(g, .slime, at, false);
         const a = g.pool.get(id).?;
-        a.hp = if (gassed) 21 else 23;
+        a.hp = SLIME_HALF + @as(i32, if (gassed) 1 else 3);
         a.burn = .{ .turns = 2 };
         a.chill.apply();
         if (gassed) g.lv.addGas(at, gas.BURST);
@@ -3360,7 +3325,7 @@ test "a half a burn splits off a slime in clean air into gas takes the gas on it
         const at = P{ .x = 30, .y = 20 };
         const id = spawnAt(g, .slime, at, false);
         const a = g.pool.get(id).?;
-        a.hp = 23;
+        a.hp = SLIME_HALF + 3;
         a.burn = .{ .turns = 2 };
         if (gassed) for (mathx.ALL_DIRS) |d| g.lv.addGas(at.add(d.delta()), gas.GASSED_UP - 1);
         endTurn(g);
@@ -3378,7 +3343,7 @@ test "juke targets across obstacles, lands instantly and spends mana but no turn
     const to = P{ .x = 23, .y = 20 };
     const rat = P{ .x = 26, .y = 20 };
     arena(g, from, &.{rat});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     g.lv.set(.{ .x = 21, .y = 20 }, .water);
     const clock = g.clock;
     const rng = g.rng;
@@ -3486,11 +3451,11 @@ test "the bind screen picks, carries and removes bindings, and spends no turn" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 30, .y = 20 }});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     g.bar.clear(.{ .set = .primary, .button = .y });
     press(g, .view);
     try std.testing.expectEqual(Mode.play, g.mode);
-    holdLong(g, .view);
+    holdingView(g, input.HOLD_S, null);
     try std.testing.expectEqual(Mode.bind, g.mode);
     g.binds.col = Binds.colOf(.y);
     press(g, .a);
@@ -3652,7 +3617,7 @@ test "the archer sees further by day than by night out of doors, and as little a
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 40, .y = 30 }, &.{});
     var seen: [4]usize = undefined;
-    for ([_]f32{ 12, 19.5, 0 }, 0..) |h, i| {
+    for ([_]f32{ day.NOON, 19.5, 0 }, 0..) |h, i| {
         g.clock = day.Clock.at(h);
         settle(g);
         seen[i] = std.mem.count(bool, &g.lv.lit, &.{true});
@@ -3669,7 +3634,7 @@ test "a step into a wall turns no one and spends no turn" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     g.lv.set(.{ .x = 19, .y = 20 }, .wall);
     nudge(g, .w);
     try std.testing.expectEqual(Facing.right, g.facing[actor.Pool.slot(g.hero)]);
@@ -3695,7 +3660,7 @@ test "B cancels aim and costs no turn" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     press(g, .x);
     press(g, .b);
     try std.testing.expectEqual(Mode.play, g.mode);
@@ -3736,7 +3701,7 @@ test "X with nothing in sight stays in play and spends no turn" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 40, .y = 20 }});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     press(g, .x);
     try std.testing.expectEqual(Mode.play, g.mode);
     try std.testing.expectEqual(@as(i32, 40), g.pool.get(2).?.at.x);
@@ -3880,7 +3845,7 @@ test "every step is one hop that peaks mid-glide and lands as the glide ends, an
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 32 }, &.{.{ .x = 50, .y = 32 }});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     g.st = .{};
     const hero = actor.Pool.slot(g.hero);
     const dt = TEST_DT;
@@ -4010,7 +3975,7 @@ test "after an arrow the foes act a stagger after it lands, so the rat it strike
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     press(g, .x);
     press(g, .x);
     const lands = flown(6);
@@ -4040,10 +4005,7 @@ test "a body the arrow kills stands until the arrow reaches it and its flash is 
 test "the bite that kills the archer leaves it standing and followed until it lands, and the veil waits for the turn" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
-    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
-    g.pool.get(2).?.awake = true;
-    g.archer().?.hp = 1;
-    nudge(g, .e);
+    bittenToDeath(g);
     try std.testing.expectEqual(Mode.dead, g.mode);
     const hero = actor.Pool.slot(g.hero);
     try std.testing.expect(drawnAt(g, hero) != null and carrierAt(g) != null);
@@ -4057,7 +4019,7 @@ test "a foe whose bite kills the archer is not then killed by the gas it stands 
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     g.pool.get(2).?.hp = 1;
     g.archer().?.hp = 1;
     g.lv.addGas(.{ .x = 21, .y = 20 }, TEST_GAS);
@@ -4089,7 +4051,7 @@ test "a kick bumps the rat and lands at the bump's height, and the rat bites bac
     defer shut(std.testing.allocator, g);
     const at = P{ .x = 20, .y = 20 };
     arena(g, at, &.{.{ .x = 21, .y = 20 }});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     const cam = g.cam;
     nudge(g, .e);
     const hero = actor.Pool.slot(g.hero);
@@ -4216,6 +4178,40 @@ test "the minimap fits in the top right, clear of the hud" {
     }
 }
 
+/// Seconds of frames till a split-off half in `slot` is drawn, and till what is owed it lands.
+fn showsAndLands(g: *Game, slot: usize) struct { shows: f32, lands: f32 } {
+    var shows: ?f32 = null;
+    var lands: ?f32 = null;
+    var t: f32 = 0;
+    while ((shows == null or lands == null) and t < 1) : (t += TEST_DT) {
+        update(g, TEST_DT);
+        if (shows == null and drawn(g, slot)) shows = t;
+        if (lands == null and !g.fx.pending(slot)) lands = t;
+    }
+    return .{ .shows = shows.?, .lands = lands.? };
+}
+
+/// Floor along row 5 from x 2 to 12 of a bespoke node otherwise wall.
+fn corridor(b: *atlas.Bespoke) void {
+    var x: i32 = 2;
+    while (x <= 12) : (x += 1) b.tile[grid.Level.idx(.{ .x = x, .y = 5 })] = .floor;
+}
+
+/// A slime one blow short of splitting.
+fn splittable(g: *Game, at: P, awake: bool) u16 {
+    const id = spawnAt(g, .slime, at, awake);
+    g.pool.get(id).?.hp = SLIME_HALF + 1;
+    return id;
+}
+
+/// The archer at 1 hp steps beside an awake rat, which bites it dead.
+fn bittenToDeath(g: *Game) void {
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
+    wakeFoes(g);
+    g.archer().?.hp = 1;
+    nudge(g, .e);
+}
+
 fn spawnAt(g: *Game, k: actor.Kind, at: P, awake: bool) u16 {
     const id = g.pool.spawn(&g.lv, actor.Actor.of(k, at));
     g.pool.get(id).?.awake = awake;
@@ -4322,7 +4318,7 @@ test "a foe the gas kills after it steps keeps its place in the turn, and its de
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
     const was = g.pool.get(2).?.at;
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     g.pool.get(2).?.hp = 1;
     g.lv.addGas(was, TEST_GAS);
     nudge(g, .w);
@@ -4446,8 +4442,7 @@ test "an arrow that splits a slime shows it as the arrow lands, the new half sli
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{});
     const at = P{ .x = 27, .y = 20 };
-    const id = spawnAt(g, .slime, at, false);
-    g.pool.get(id).?.hp = SLIME_HALF + 1;
+    const id = splittable(g, at, false);
     catchUp(g);
     press(g, .x);
     press(g, .x);
@@ -4587,8 +4582,7 @@ test "a slime an arrow splits shows split as the arrow lands, though the gas eat
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{});
     const at = P{ .x = 25, .y = 20 };
-    const id = spawnAt(g, .slime, at, true);
-    g.pool.get(id).?.hp = SLIME_HALF + 1;
+    const id = splittable(g, at, true);
     for ([_]P{ at, .{ .x = 24, .y = 20 } }) |p| g.lv.addGas(p, TEST_GAS);
     catchUp(g);
     press(g, .x);
@@ -4609,25 +4603,17 @@ test "a half the gas splits off a burning slime on the foes' turn burns no soone
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{});
     const at = P{ .x = 25, .y = 20 };
-    const id = spawnAt(g, .slime, at, true);
+    const id = splittable(g, at, true);
     const a = g.pool.get(id).?;
-    a.hp = SLIME_HALF + 1;
     a.burn = .{ .turns = 2 };
     for ([_]P{ at, .{ .x = 24, .y = 20 } }) |p| g.lv.addGas(p, TEST_GAS);
     catchUp(g);
     press(g, .y);
     const half = actor.Pool.slot(id) + 1;
     try std.testing.expect(g.split_from[half] != null and g.fx.pending(half));
-    var shows: ?f32 = null;
-    var burns: ?f32 = null;
-    var t: f32 = 0;
-    while ((shows == null or burns == null) and t < 1) : (t += TEST_DT) {
-        update(g, TEST_DT);
-        if (shows == null and drawn(g, half)) shows = t;
-        if (burns == null and !g.fx.pending(half)) burns = t;
-    }
-    std.debug.print("a half the gas splits off a burning slime on the foes' turn: shows {d:.3} s in, its burn lands {d:.3} s in\n", .{ shows.?, burns.? });
-    try std.testing.expect(burns.? >= shows.?);
+    const when = showsAndLands(g, half);
+    std.debug.print("a half the gas splits off a burning slime on the foes' turn: shows {d:.3} s in, its burn lands {d:.3} s in\n", .{ when.shows, when.lands });
+    try std.testing.expect(when.lands >= when.shows);
 }
 
 test "a half an arrow splits off into gas takes the gas on its waiting turn, no sooner than it shows" {
@@ -4635,8 +4621,7 @@ test "a half an arrow splits off into gas takes the gas on its waiting turn, no 
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{});
     const at = P{ .x = 25, .y = 20 };
-    const id = spawnAt(g, .slime, at, true);
-    g.pool.get(id).?.hp = SLIME_HALF + 1;
+    const id = splittable(g, at, true);
     var cells = grid.Cells.around(at, 2);
     while (cells.next()) |p| g.lv.addGas(p, TEST_GAS);
     catchUp(g);
@@ -4644,18 +4629,11 @@ test "a half an arrow splits off into gas takes the gas on its waiting turn, no 
     press(g, .x);
     const half = actor.Pool.slot(id) + 1;
     try std.testing.expect(g.split_from[half] != null);
-    var shows: ?f32 = null;
-    var stung: ?f32 = null;
-    var t: f32 = 0;
-    while ((shows == null or stung == null) and t < 1) : (t += TEST_DT) {
-        update(g, TEST_DT);
-        if (shows == null and drawn(g, half)) shows = t;
-        if (stung == null and !g.fx.pending(half)) stung = t;
-    }
+    const when = showsAndLands(g, half);
     const b = g.pool.items[half];
-    std.debug.print("a half split off into gas: shows {d:.3} s in, stung {d:.3} s in, {s} on {d} of {d} hp\n", .{ shows.?, stung.?, actor.row(b.kind).name, b.hp, b.max });
+    std.debug.print("a half split off into gas: shows {d:.3} s in, stung {d:.3} s in, {s} on {d} of {d} hp\n", .{ when.shows, when.lands, actor.row(b.kind).name, b.hp, b.max });
     try std.testing.expect(b.kind != .slime_half or b.hp < b.max);
-    try std.testing.expect(stung.? >= shows.?);
+    try std.testing.expect(when.lands >= when.shows);
 }
 
 /// A wall south of the archer at 20,20 whose far side is out of sight.
@@ -4717,8 +4695,7 @@ test "a split nobody sees holds no one's walk" {
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{});
     const at = P{ .x = 40, .y = 20 };
-    const id = spawnAt(g, .slime, at, false);
-    g.pool.get(id).?.hp = SLIME_HALF + 1;
+    const id = splittable(g, at, false);
     g.lv.addGas(at, TEST_GAS);
     catchUp(g);
     press(g, .y);
@@ -4882,10 +4859,7 @@ test "a slime split off one not yet drawn waits for it" {
 test "the dead archer's floor restarts only once the death is shown" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
-    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
-    g.pool.get(2).?.awake = true;
-    g.archer().?.hp = 1;
-    nudge(g, .e);
+    bittenToDeath(g);
     try std.testing.expectEqual(Mode.dead, g.mode);
     g.st = .{};
     g.st.pressed.insert(CONFIRM);
@@ -4900,10 +4874,7 @@ test "Start, B or Space leaves the death screen as A does, and none of them paus
     for (DISMISS) |b| {
         const g = try boot(std.testing.allocator);
         defer shut(std.testing.allocator, g);
-        arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
-        g.pool.get(2).?.awake = true;
-        g.archer().?.hp = 1;
-        nudge(g, .e);
+        bittenToDeath(g);
         _ = framesUntil(g, 0, deathDrawn);
         press(g, b);
         try std.testing.expectEqual(Mode.play, g.mode);
@@ -4957,7 +4928,7 @@ test "an unkillable archer keeps 1 hp through gas and bites that would kill it" 
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 21, .y = 20 }, .{ .x = 19, .y = 20 } });
-    for ([_]u16{ 2, 3 }) |id| g.pool.get(id).?.awake = true;
+    wakeFoes(g);
     g.unkillable = true;
     g.lv.addGas(.{ .x = 20, .y = 20 }, TEST_GAS);
     g.archer().?.hp = 2;
@@ -4973,7 +4944,7 @@ test "a bloat that bursts on the archer takes its place in the turn as a bite do
     var seed: u64 = 0;
     while (seed < 50) : (seed += 1) {
         arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 19, .y = 20 }});
-        g.pool.get(2).?.awake = true;
+        wakeFoes(g);
         const id = spawnAt(g, .bloat, .{ .x = 21, .y = 20 }, true);
         g.rng = mathx.Rng.init(seed);
         press(g, .y);
@@ -5030,8 +5001,7 @@ test "a door takes the archer to the door it leads to, and a node left is found 
     const room = w.add(.{ .bespoke = .{} }).?;
     const cave = w.add(.{ .procgen = .{} }).?;
     const b = &w.node[room].plan.bespoke;
-    var x: i32 = 2;
-    while (x <= 12) : (x += 1) b.tile[grid.Level.idx(.{ .x = x, .y = 5 })] = .floor;
+    corridor(b);
     const slime = P{ .x = 2, .y = 5 };
     _ = b.addFoe(.{ .kind = .slime, .at = slime });
     const d0 = w.addDoor(room, .{ .x = 12, .y = 5 }).?;
@@ -5092,10 +5062,7 @@ test "a door keeps the low glow, the archer's facing and a walk pressed while th
     w.* = .{};
     const a = w.add(.{ .bespoke = .{} }).?;
     const b = w.add(.{ .bespoke = .{} }).?;
-    for ([_]usize{ a, b }) |n| {
-        var x: i32 = 2;
-        while (x <= 12) : (x += 1) w.node[n].plan.bespoke.tile[grid.Level.idx(.{ .x = x, .y = 5 })] = .floor;
-    }
+    for ([_]usize{ a, b }) |n| corridor(&w.node[n].plan.bespoke);
     _ = w.node[b].plan.bespoke.addFoe(.{ .kind = .rat, .at = .{ .x = 11, .y = 5 } });
     const da = w.addDoor(a, .{ .x = 2, .y = 5 }).?;
     const db = w.addDoor(b, .{ .x = 11, .y = 5 }).?;
@@ -5123,7 +5090,7 @@ test "the pause menu spends no turn, and its way out leads back to where the gam
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
-    g.pool.get(2).?.awake = true;
+    wakeFoes(g);
     press(g, .pause);
     try std.testing.expectEqual(Mode.pause, g.mode);
     press(g, .pause);

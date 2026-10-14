@@ -4,19 +4,14 @@ const grid = @import("grid.zig");
 
 const P = mathx.P;
 
-const Cardinal = enum { north, south, east, west };
+const QUADS = [_]mathx.Dir{ .n, .s, .e, .w };
 
 const Quad = struct {
     origin: P,
-    card: Cardinal,
+    card: mathx.Dir,
 
     fn at(q: Quad, depth: i32, col: i32) P {
-        return switch (q.card) {
-            .north => .{ .x = q.origin.x + col, .y = q.origin.y - depth },
-            .south => .{ .x = q.origin.x + col, .y = q.origin.y + depth },
-            .east => .{ .x = q.origin.x + depth, .y = q.origin.y + col },
-            .west => .{ .x = q.origin.x - depth, .y = q.origin.y + col },
-        };
+        return q.origin.add(q.card.delta().scaled(depth)).add(q.card.across().scaled(col));
     }
 };
 
@@ -69,7 +64,7 @@ const Into = struct {
 
 fn castWith(lv: *const grid.Level, origin: P, radius: i32, sink: anytype) void {
     sink.mark(origin);
-    for (std.enums.values(Cardinal)) |c| {
+    for (QUADS) |c| {
         scan(lv, sink, .{ .origin = origin, .card = c }, .{ .depth = 1, .start = -1, .end = 1 }, radius);
     }
 }
