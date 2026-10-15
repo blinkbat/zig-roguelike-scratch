@@ -6,6 +6,8 @@ const burning = @import("burning.zig");
 const glacial = @import("glacial.zig");
 const bleeding = @import("bleeding.zig");
 const clock = @import("clock.zig");
+const pinning = @import("pinning.zig");
+const ward = @import("ward.zig");
 
 const P = mathx.P;
 
@@ -187,6 +189,8 @@ pub const Actor = struct {
     chill: glacial.Chill = .{},
     bleed: bleeding.Bleed = .{},
     clock: clock.Clock = .{},
+    pin: pinning.Pin = .{},
+    ward: ward.Ward = .{},
     /// Its turns left running from the archer.
     fright: u8 = 0,
 

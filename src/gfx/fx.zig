@@ -4,8 +4,12 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
 const glacial = @import("../play/glacial.zig");
+const burning = @import("../play/burning.zig");
+const bleeding = @import("../play/bleeding.zig");
 const look = @import("look.zig");
 const font = @import("font.zig");
+const menu = @import("../ui/menu.zig");
+
 
 /// `ichor` is Brogue's purple blood.
 pub const Matter = enum { blood, ooze, wood, ichor };
@@ -115,12 +119,34 @@ pub const Status = enum {
     bleeding,
     burning,
     chilled,
+    pinned,
+    warded,
 
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
             .bleeding => look.BLEED,
             .burning => look.elementInk(.fire),
             .chilled => look.elementInk(.cold),
+            .pinned => look.PIN,
+            .warded => look.WARD,
+        };
+    }
+
+    pub fn title(s: Status) [:0]const u8 {
+        return switch (s) {
+            .warded => "Mana Shield",
+            inline else => |t| comptime menu.capital(@tagName(t)),
+        };
+    }
+
+    /// What it does to the body it is on, as an inspected status says.
+    pub fn blurb(s: Status) [:0]const u8 {
+        return switch (s) {
+            .bleeding => std.fmt.comptimePrint("Loses {d} life a turn, {d} on a turn it moves.", .{ bleeding.STILL, bleeding.MOVING }),
+            .burning => std.fmt.comptimePrint("Takes {d} fire damage a turn, less its fire resistance.", .{burning.PER_TURN}),
+            .chilled => std.fmt.comptimePrint("Skips one action in {d}.", .{glacial.CYCLE}),
+            .pinned => "Cannot leave its cell, but strikes what stands beside it.",
+            .warded => "Harm is taken from mana before life.",
         };
     }
 
@@ -129,6 +155,8 @@ pub const Status = enum {
             .bleeding => a.bleed.turns,
             .burning => a.burn.turns,
             .chilled => a.chill.turns,
+            .pinned => a.pin.turns,
+            .warded => a.ward.turns,
         };
     }
 };
@@ -160,7 +188,7 @@ pub const Body = struct {
 };
 
 /// What landing shows: the body as the blow left it, and the slot of one it split off, drawn from then.
-pub const After = struct { body: Body, reveals: ?usize = null };
+pub const After = struct { body: Body, reveals: ?usize = null, mana: i32 = 0 };
 
 pub const Drip = struct { at: [2]f32, matter: Matter };
 
@@ -171,15 +199,23 @@ pub const Settle = struct { slot: usize, after: After };
 
 pub const MOTES: usize = 320;
 /// A turn's worth: on every body, what its turn owes the picture and the archer's blow; then the frost and a barrel's blow.
-pub const DUE: usize = actor.MAX * 6 + 2;
+pub const DUE: usize = actor.MAX * 7 + 2;
 
-pub const Frost = struct { at: mathx.P, area: glacial.Cone };
+/// A missile's or a spell's burst over `area`, spreading out from `at`.
+pub const Burst = struct { at: mathx.P, area: glacial.Cone, col: rl.Color };
+
+/// A bolt's leap from one body to the next.
+pub const Zap = struct { from: [2]f32, to: [2]f32 };
 
 pub const JUKE_S: f32 = 0.6;
 const JUKE_R = [2]f32{ 2, 5 };
 const ICE_MOTES: usize = 12;
 const TRAIL_MOTES: usize = 20;
 const DUST_MOTES: usize = 24;
+/// Motes a cell of a zap's line.
+const ZAP_MOTES: usize = 8;
+/// How far a zap's motes stray off its line, in cells.
+const ZAP_JITTER: f32 = 0.18;
 const EMBERS = Spray{ .col = look.FIRE, .hit = 18, .kill = 18, .along_lo = 0.4, .along_hi = 1.4, .fan = 0, .up_lo = 0.5, .up_hi = 1.5, .grav = 0, .drag = 2, .life_lo = 0.25, .life_hi = 0.55, .r_lo = 1.5, .r_hi = 3.5, .stains = false };
 const DRIP_MOTES: usize = 5;
 const WATER_MOTES: usize = 4;
@@ -191,6 +227,13 @@ pub const SPLASH_RY: f32 = 0.08;
 const BLEED_DROPS = 4;
 const CHILL_FLAKES = 5;
 const BURN_FLAMES = 7;
+/// A pin's stakes: where across the cell each stands and how far its top leans, in cells; how high they stand and
+/// where their feet are.
+const PIN_STAKES = [_][2]f32{ .{ 0.24, -0.06 }, .{ 0.5, 0 }, .{ 0.76, 0.06 } };
+const PIN_H: f32 = 0.16;
+const PIN_FOOT: f32 = 0.92;
+/// A ward's ring, out from the body's middle in cells.
+const WARD_R: f32 = 0.46;
 /// Where across a body's cell chill's flakes and burn's flames begin, and how far they spread.
 const MARKS_FROM: f32 = 0.22;
 const MARKS_SPAN: f32 = 0.56;
@@ -218,21 +261,22 @@ const Due = union(enum) {
     blow: Blow,
     sting: Sting,
     settle: Settle,
-    frost: Frost,
+    burst: Burst,
+    zap: Zap,
 
     fn on(d: Due) ?usize {
         return switch (d) {
             .blow => |b| b.slot,
             .sting => |s| s.slot,
             .settle => |s| s.slot,
-            .frost => null,
+            .burst, .zap => null,
         };
     }
 
     fn blowOf(d: Due) ?Blow {
         return switch (d) {
             .blow => |b| b,
-            .sting, .settle, .frost => null,
+            .sting, .settle, .burst, .zap => null,
         };
     }
 
@@ -246,7 +290,7 @@ const Due = union(enum) {
             .blow => |b| b.after,
             .sting => |s| s.after,
             .settle => |s| s.after,
-            .frost => null,
+            .burst, .zap => null,
         };
     }
 };
@@ -261,6 +305,7 @@ pub const Fx = struct {
     barrels_due: usize = 0,
     /// Indexed by pool slot: the body as the latest-dealt of the blows landed on it left it.
     landed: [actor.MAX]?Body = @splat(null),
+    mana_landed: i32 = 0,
     speech: [actor.MAX]Speech = @splat(.{}),
     rng: mathx.Rng = mathx.Rng.init(0xF1A5),
     seconds: mathx.Seconds = .{},
@@ -271,6 +316,7 @@ pub const Fx = struct {
         self.due_n = 0;
         self.barrels_due = 0;
         self.landed = @splat(null);
+        self.mana_landed = 0;
         self.speech = @splat(.{});
     }
 
@@ -313,8 +359,12 @@ pub const Fx = struct {
         self.later(wait, .{ .settle = s });
     }
 
-    pub fn frost(self: *Fx, wait: f32, f: Frost) void {
-        self.later(wait, .{ .frost = f });
+    pub fn burst(self: *Fx, wait: f32, b: Burst) void {
+        self.later(wait, .{ .burst = b });
+    }
+
+    pub fn zap(self: *Fx, wait: f32, z: Zap) void {
+        self.later(wait, .{ .zap = z });
     }
 
     fn later(self: *Fx, wait: f32, what: Due) void {
@@ -327,7 +377,8 @@ pub const Fx = struct {
     fn fire(self: *Fx, what: Due) void {
         switch (what) {
             .blow => |b| self.land(b),
-            .frost => |f| self.ice(f),
+            .burst => |b| self.spill(b),
+            .zap => |z| self.arc(z),
             .settle => {},
             .sting => |s| {
                 self.flash[s.slot] = FLASH_S;
@@ -337,6 +388,7 @@ pub const Fx = struct {
         }
         const slot = what.on() orelse return;
         const a = what.after() orelse return;
+        self.mana_landed += a.mana;
         if (self.landed[slot]) |was| {
             if (was.seq >= a.body.seq) return;
         }
@@ -466,9 +518,9 @@ pub const Fx = struct {
         }
     }
 
-    fn ice(self: *Fx, f: Frost) void {
-        const from = mathx.centre(f.at);
-        for (f.area.cells[0..f.area.n]) |p| {
+    fn spill(self: *Fx, b: Burst) void {
+        const from = mathx.centre(b.at);
+        for (b.area.cells[0..b.area.n]) |p| {
             const to = mathx.centre(p);
             for (0..ICE_MOTES) |_| {
                 const life = 0.22 + self.rng.unit() * 0.18;
@@ -477,9 +529,26 @@ pub const Fx = struct {
                     .v = .{ (to[0] - from[0]) * 0.25, (to[1] - from[1]) * 0.25, self.rng.unit() * 0.3 },
                     .life = life,
                     .r = 2 + self.rng.unit() * 4,
-                    .col = look.COLD,
+                    .col = b.col,
                 });
             }
+        }
+    }
+
+    fn arc(self: *Fx, z: Zap) void {
+        const len = @max(1, mathx.len(z.to[0] - z.from[0], z.to[1] - z.from[1]));
+        const count: usize = @intFromFloat(@ceil(len * ZAP_MOTES));
+        for (0..count) |i| {
+            const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(count));
+            self.emit(.{
+                .p = .{ mathx.lerpF(z.from[0], z.to[0], t) + self.rng.spread(ZAP_JITTER), mathx.lerpF(z.from[1], z.to[1], t) + self.rng.spread(ZAP_JITTER), STRIKE_Z },
+                .v = .{ 0, 0, 0.1 },
+                .life = 0.12 + t * 0.1,
+                .r = 1.5 + self.rng.unit() * 2,
+                .col = look.LIGHTNING,
+                .add = true,
+                .terrain = false,
+            });
         }
     }
 
@@ -494,6 +563,22 @@ pub const Fx = struct {
             rl.drawLineEx(.{ .x = cx - r, .y = cy }, .{ .x = cx + r, .y = cy }, cell * 0.012, col);
             rl.drawLineEx(.{ .x = cx, .y = cy - r }, .{ .x = cx, .y = cy + r }, cell * 0.012, col);
         }
+    }
+
+    /// Stakes driven in round its feet.
+    pub fn drawPinned(_: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
+        for (PIN_STAKES) |s| {
+            const foot = rl.Vector2{ .x = x + cell * s[0], .y = y + cell * PIN_FOOT };
+            const top = rl.Vector2{ .x = foot.x + cell * s[1], .y = foot.y - cell * PIN_H };
+            rl.drawLineEx(top, foot, cell * 0.022, ink);
+        }
+    }
+
+    /// A ring round it, breathing.
+    pub fn drawWarded(self: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
+        const t = self.seconds.at();
+        const r = cell * (WARD_R + @sin(t * 2.4) * 0.02);
+        rl.drawRing(.{ .x = x + cell * 0.5, .y = y + cell * 0.5 }, r - cell * 0.018, r, 0, 360, 48, look.fade(ink, 0.55 + @sin(t * 2.4) * 0.15));
     }
 
     pub fn drawBurning(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, alpha: f32) void {
@@ -669,7 +754,7 @@ test "glacial frost waits for impact then fills only its cone and clears without
     var fx = Fx{};
     const at = mathx.P{ .x = 20, .y = 20 };
     const area = glacial.cone(&lv, .{ .x = 15, .y = 20 }, at);
-    fx.frost(0.2, .{ .at = at, .area = area });
+    fx.burst(0.2, .{ .at = at, .area = area, .col = look.COLD });
     fx.step(&lv, 0.1);
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying);
     fx.step(&lv, 0.11);

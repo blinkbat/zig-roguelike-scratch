@@ -173,10 +173,12 @@ pub const Sprites = struct {
     grounds: std.EnumArray(ground.Ground, ?rl.Texture2D) = .initFill(null),
     /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
     skills: ?rl.Texture2D = null,
+    hud_border: ?rl.Texture2D = null,
     water: ?WaterShader = null,
 
     pub fn loadCommon(self: *Sprites) void {
         self.skills = skillIcons();
+        self.hud_border = texture(HUD_BORDER_PNG);
         self.water = program(WaterShader, WATER_FS);
     }
 
@@ -357,6 +359,41 @@ pub const Sprites = struct {
         return rl.loadTextureFromImage(img) catch null;
     }
 };
+
+const HUD_BORDER_PNG = @embedFile("hud-border.png");
+pub const HUD_BORDER_CUT: i32 = 9;
+
+pub fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, tint: rl.Color) void {
+    const tex = sprites.hud_border orelse {
+        rl.drawRectangleLines(x, y, width, height, tint);
+        return;
+    };
+    const cut = HUD_BORDER_CUT;
+    if (width < cut * 2 or height < cut * 2) return;
+    const size = comptime pngSize(HUD_BORDER_PNG);
+    const sx = [_]i32{ 0, cut, size.x - cut };
+    const sy = [_]i32{ 0, cut, size.y - cut };
+    const sw = [_]i32{ cut, size.x - cut * 2, cut };
+    const sh = [_]i32{ cut, size.y - cut * 2, cut };
+    const dx = [_]i32{ x, x + cut, x + width - cut };
+    const dy = [_]i32{ y, y + cut, y + height - cut };
+    const dw = [_]i32{ cut, width - cut * 2, cut };
+    const dh = [_]i32{ cut, height - cut * 2, cut };
+    for (0..3) |row| {
+        for (0..3) |col| {
+            if (row == 1 and col == 1) continue;
+            var yy: i32 = 0;
+            while (yy < dh[row]) : (yy += sh[row]) {
+                var xx: i32 = 0;
+                while (xx < dw[col]) : (xx += sw[col]) {
+                    const w = @min(sw[col], dw[col] - xx);
+                    const h = @min(sh[row], dh[row] - yy);
+                    rl.drawTextureRec(tex, rect(sx[col], sy[row], w, h), .{ .x = @floatFromInt(dx[col] + xx), .y = @floatFromInt(dy[row] + yy) }, tint);
+                }
+            }
+        }
+    }
+}
 
 const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .archer = @embedFile("archer.png"),
@@ -823,21 +860,42 @@ pub fn mini(t: grid.Tile, lit: bool) rl.Color {
 pub const AIM_REACH = fade(GOLD, 0.10);
 pub const AIM_PATH = fade(GOLD, 0.28);
 pub const COLD = rgb(0x8cddf5);
-pub const AIM_COLD = fade(COLD, 0.24);
+pub const PIN = rgb(0xc8c2b4);
+pub const WARD = rgb(0x6fa8f0);
+const AIM_AREA_A: f32 = 0.24;
 pub const RETICLE = rgb(0xe8c25a);
+
+/// A burst's cells, shaded while it is aimed.
+pub fn aimArea(e: ?damage.Element) rl.Color {
+    return fade(if (e) |el| elementInk(el) else ARROW, AIM_AREA_A);
+}
 pub const RETICLE_BLOCKED = SHADE;
 pub const LEAN_OPEN = GOLD;
 pub const LEAN_FOE = FOE;
 pub const LEAN_BLOCKED = SHADE;
 
-pub fn caret(d: mathx.Dir) u8 {
-    return switch (d) {
-        .n => '^',
-        .e => '>',
-        .s => 'v',
-        .w => '<',
-        .ne, .se, .sw, .nw => '+',
-    };
+pub fn drawDirection(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+    const delta = d.delta();
+    const unit: f32 = if (d.diagonal()) std.math.sqrt1_2 else 1;
+    const dx = @as(f32, @floatFromInt(delta.x)) * unit;
+    const dy = @as(f32, @floatFromInt(delta.y)) * unit;
+    const scale = @as(f32, @floatFromInt(size)) / 32;
+    const x: f32 = @floatFromInt(cx);
+    const y: f32 = @floatFromInt(cy);
+    const lines = [_][4]f32{ .{ -12, 0, 12, 0 }, .{ 4, -8, 12, 0 }, .{ 12, 0, 4, 8 } };
+    for (lines) |line| {
+        const from = rl.Vector2{
+            .x = x + (dx * line[0] - dy * line[1]) * scale,
+            .y = y + (dy * line[0] + dx * line[1]) * scale,
+        };
+        const to = rl.Vector2{
+            .x = x + (dx * line[2] - dy * line[3]) * scale,
+            .y = y + (dy * line[2] + dx * line[3]) * scale,
+        };
+        rl.drawLineEx(from, to, 2 * scale, col);
+        rl.drawCircleV(from, scale, col);
+        rl.drawCircleV(to, scale, col);
+    }
 }
 
 const FLASK = [_][4]f32{
@@ -911,6 +969,74 @@ fn skillLines(a: skillbar.Act) []const [4]f32 {
             .{ 16, 28, 6, 16 },
             .{ 6, 16, 6, 5 },
             .{ 16, 9, 16, 22 },
+        },
+        .pinning_shot => &.{
+            .{ 16, 4, 16, 24 },
+            .{ 11, 19, 16, 24 },
+            .{ 21, 19, 16, 24 },
+            .{ 12, 4, 16, 8 },
+            .{ 20, 4, 16, 8 },
+            .{ 5, 27, 27, 27 },
+        },
+        .barbed_arrow => &.{
+            .{ 6, 26, 26, 6 },
+            .{ 16, 6, 26, 6 },
+            .{ 26, 6, 26, 16 },
+            .{ 11, 21, 7, 21 },
+            .{ 11, 21, 11, 25 },
+            .{ 16, 16, 12, 16 },
+            .{ 16, 16, 16, 20 },
+        },
+        .frost_nova => &.{
+            .{ 16, 3, 16, 29 },
+            .{ 3, 16, 29, 16 },
+            .{ 7, 7, 25, 25 },
+            .{ 7, 25, 25, 7 },
+            .{ 13, 4, 16, 7 },
+            .{ 19, 4, 16, 7 },
+            .{ 13, 28, 16, 25 },
+            .{ 19, 28, 16, 25 },
+        },
+        .fireball => &.{
+            .{ 14, 10, 20, 12 },
+            .{ 20, 12, 22, 18 },
+            .{ 22, 18, 20, 24 },
+            .{ 20, 24, 14, 26 },
+            .{ 14, 26, 8, 24 },
+            .{ 8, 24, 6, 18 },
+            .{ 6, 18, 8, 12 },
+            .{ 8, 12, 14, 10 },
+            .{ 20, 12, 27, 5 },
+            .{ 22, 18, 29, 13 },
+            .{ 14, 10, 18, 3 },
+        },
+        .chain_lightning => &.{
+            .{ 4, 27, 11, 15 },
+            .{ 11, 15, 17, 21 },
+            .{ 17, 21, 22, 9 },
+            .{ 22, 9, 28, 14 },
+            .{ 9, 13, 13, 17 },
+            .{ 15, 19, 19, 23 },
+            .{ 20, 7, 24, 11 },
+        },
+        .mana_shield => &.{
+            .{ 6, 5, 26, 5 },
+            .{ 26, 5, 26, 16 },
+            .{ 26, 16, 16, 28 },
+            .{ 16, 28, 6, 16 },
+            .{ 6, 16, 6, 5 },
+            .{ 16, 9, 21, 15 },
+            .{ 21, 15, 16, 21 },
+            .{ 16, 21, 11, 15 },
+            .{ 11, 15, 16, 9 },
+        },
+        .charge => &.{
+            .{ 14, 16, 28, 16 },
+            .{ 22, 10, 28, 16 },
+            .{ 28, 16, 22, 22 },
+            .{ 4, 10, 12, 10 },
+            .{ 2, 16, 10, 16 },
+            .{ 4, 22, 12, 22 },
         },
         .life_flask => &(FLASK ++ [_][4]f32{
             .{ 16, 17, 16, 25 },
@@ -1021,7 +1147,7 @@ pub const Prompt = union(enum) {
         if (!st.device.pad()) return .{ .key = st.slotCaption(b) };
         return switch (b) {
             .a, .b, .x, .y => .{ .face = .{ .button = b, .sony = st.device.playstation() } },
-            .lb, .rb, .rt => .{ .pill = st.caption(b) },
+            .lb, .rb, .rt, .inspect => .{ .pill = st.caption(b) },
             .view => .view,
             .pause => .menu,
         };
@@ -1159,6 +1285,7 @@ pub const SLOT_EMPTY = PANEL;
 pub const SLOT_HELD = GOLD;
 pub const SLOT_CURSOR = RETICLE;
 pub const SLOT_CLEAR = FOE;
+pub const PICK_BG = PANEL;
 pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 
 /// The alpha below which nothing is drawn.

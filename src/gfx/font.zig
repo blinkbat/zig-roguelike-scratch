@@ -2,8 +2,8 @@ const std = @import("std");
 const rl = @import("raylib");
 
 const TTF = "Balthazar-Regular.ttf";
-/// One atlas this big, mipmapped, reads clean at every size drawn.
 const ATLAS_PX: i32 = 96;
+const NATIVE_SIZES = [_]i32{ 12, 15, 16, 20, 24 };
 const SHADOW_A: u16 = 200;
 /// Text size per pixel the shadow sits down and right.
 const SHADOW_STEP: i32 = 14;
@@ -17,6 +17,7 @@ const ELLIPSIS = "...";
 /// Until `load` succeeds, raylib's built-in font stands in.
 pub const Face = struct {
     font: ?rl.Font = null,
+    native: [NATIVE_SIZES.len]?rl.Font = @splat(null),
     /// `load`'s symbols, whose glyphs follow the ASCII in the atlas; none when the atlas came out in another order.
     symbols: [SYMBOLS_MAX]i32 = undefined,
     symbol_n: usize = 0,
@@ -36,14 +37,30 @@ pub const Face = struct {
         rl.genTextureMipmaps(&f.texture);
         rl.setTextureFilter(f.texture, .trilinear);
         var face = Face{ .font = f };
-        if (f.glyphCount != all.len) return face;
-        for (all, 0..) |cp, i| {
-            if (f.glyphs[i].value != cp) return face;
-        }
+        if (!orderedGlyphs(f, &all)) return face;
         @memcpy(face.symbols[0..symbols.len], symbols);
         face.symbol_n = symbols.len;
         face.ordered = true;
+        var ascii_cps = all[0..ASCII_N].*;
+        for (NATIVE_SIZES, &face.native) |size, *held| {
+            const small = rl.loadFontFromMemory(".ttf", @embedFile(TTF), size, &ascii_cps) catch continue;
+            if (!orderedGlyphs(small, &ascii_cps)) {
+                rl.unloadFont(small);
+                continue;
+            }
+            rl.setTextureFilter(small.texture, .point);
+            held.* = small;
+        }
         return face;
+    }
+
+    fn atSize(self: *const Face, size: i32, plain: bool) ?rl.Font {
+        if (plain) {
+            for (NATIVE_SIZES, self.native) |px, held| {
+                if (px == size) return held orelse self.font;
+            }
+        }
+        return self.font;
     }
 
     /// Its glyph's place in the atlas, found without raylib's search of every glyph.
@@ -57,14 +74,19 @@ pub const Face = struct {
     }
 
     pub fn unload(self: *Face) void {
+        for (&self.native) |*held| {
+            if (held.*) |f| rl.unloadFont(f);
+            held.* = null;
+        }
         if (self.font) |f| rl.unloadFont(f);
         self.font = null;
     }
 
     /// raylib's MeasureTextEx at no spacing, its glyph search skipped for printable ASCII.
     pub fn width(self: *const Face, s: [:0]const u8, size: i32) i32 {
-        const f = self.font orelse return rl.measureText(s, size);
-        if (!self.ordered or !printable(s)) return @intFromFloat(rl.measureTextEx(f, s, @floatFromInt(size), 0).x);
+        const plain = printable(s);
+        const f = self.atSize(size, plain) orelse return rl.measureText(s, size);
+        if (!self.ordered or !plain) return @intFromFloat(rl.measureTextEx(f, s, @floatFromInt(size), 0).x);
         var w: f32 = 0;
         for (s) |c| w += measured(f, ascii(c));
         return @intFromFloat(w * scaleOf(f, size));
@@ -72,9 +94,10 @@ pub const Face = struct {
 
     /// raylib's DrawTextEx at no spacing, its glyph search skipped for printable ASCII.
     pub fn draw(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
-        const f = self.font orelse return rl.drawText(s, x, y, size, col);
+        const plain = printable(s);
+        const f = self.atSize(size, plain) orelse return rl.drawText(s, x, y, size, col);
         const at = rl.Vector2{ .x = @floatFromInt(x), .y = @floatFromInt(y) };
-        if (!self.ordered or !printable(s)) return rl.drawTextEx(f, s, at, @floatFromInt(size), 0, col);
+        if (!self.ordered or !plain) return rl.drawTextEx(f, s, at, @floatFromInt(size), 0, col);
         const scale = scaleOf(f, size);
         var off: f32 = 0;
         for (s) |c| {
@@ -144,6 +167,14 @@ pub const Face = struct {
         self.draw(s, x, y, size, col);
     }
 };
+
+fn orderedGlyphs(f: rl.Font, cps: []const i32) bool {
+    if (f.glyphCount != cps.len) return false;
+    for (cps, 0..) |cp, i| {
+        if (f.glyphs[i].value != cp) return false;
+    }
+    return true;
+}
 
 fn printable(s: []const u8) bool {
     for (s) |c| {

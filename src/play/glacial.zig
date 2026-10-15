@@ -47,41 +47,58 @@ pub fn procs(rng: *mathx.Rng, resist: i16) bool {
     return rng.percent(chance(resist));
 }
 
-pub fn afflict(a: anytype) void {
+pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.chill.apply();
 }
 
 pub const Cone = grid.Area(grid.Cells.span(RANGE) * grid.Cells.span(RANGE));
 
-/// The least sight radius `mathx.reaches` takes to every corner of the `RANGE` box.
-const CAST_R: i32 = mathx.roundTiesDown(@as(f32, @floatFromInt(RANGE)) * std.math.sqrt2);
-
-comptime {
-    std.debug.assert(mathx.reaches(.{ .x = 0, .y = 0 }, .{ .x = RANGE, .y = RANGE }, CAST_R));
+/// The least sight radius `mathx.reaches` takes to every corner of a `range` box.
+fn castR(range: i32) i32 {
+    return mathx.roundTiesDown(@as(f32, @floatFromInt(range)) * std.math.sqrt2);
 }
 
-pub fn cone(lv: *const grid.Level, from: P, impact: P) Cone {
+comptime {
+    for (1..RANGE + 1) |r| std.debug.assert(mathx.reaches(.{ .x = 0, .y = 0 }, .{ .x = r, .y = r }, castR(r)));
+}
+
+/// The walkable cells within `range` of `at` that a burst there reaches past the terrain, those `keep` takes.
+pub fn spread(lv: *const grid.Level, at: P, range: i32, ctx: anytype, comptime keep: fn (@TypeOf(ctx), P) bool) Cone {
+    std.debug.assert(range <= RANGE);
     var out = Cone{};
-    if (from.eq(impact)) return out;
     var visible: [grid.CELLS]bool = @splat(false);
-    fov.castInto(lv, impact, CAST_R, &visible);
-    const dx = impact.x - from.x;
-    const dy = impact.y - from.y;
-    var cells = grid.Cells.around(impact, RANGE);
+    fov.castInto(lv, at, castR(range), &visible);
+    var cells = grid.Cells.around(at, range);
     while (cells.next()) |p| {
-        if (!lv.walkable(p)) continue;
-        const i = grid.Level.idx(p);
-        if (!visible[i]) continue;
-        const x = p.x - impact.x;
-        const y = p.y - impact.y;
-        const along = dx * x + dy * y;
-        const across = dx * y - dy * x;
-        if (!p.eq(impact) and (along <= 0 or @abs(across) > along)) continue;
+        if (!lv.walkable(p) or !visible[grid.Level.idx(p)] or !keep(ctx, p)) continue;
         out.cells[out.n] = p;
         out.n += 1;
     }
     return out;
 }
+
+const Ahead = struct {
+    impact: P,
+    dx: i32,
+    dy: i32,
+
+    fn holds(a: Ahead, p: P) bool {
+        if (p.eq(a.impact)) return true;
+        const x = p.x - a.impact.x;
+        const y = p.y - a.impact.y;
+        const along = a.dx * x + a.dy * y;
+        const across = a.dx * y - a.dy * x;
+        return along > 0 and @abs(across) <= along;
+    }
+};
+
+pub fn cone(lv: *const grid.Level, from: P, impact: P) Cone {
+    if (from.eq(impact)) return .{};
+    return spread(lv, impact, RANGE, Ahead{ .impact = impact, .dx = impact.x - from.x, .dy = impact.y - from.y }, Ahead.holds);
+}
+
+/// What its arrow bursts into where it strikes.
+pub const burst = cone;
 
 test "chill skips one action in three and refreshing never postpones the skipped action" {
     var chill = Chill{};

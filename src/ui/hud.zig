@@ -18,20 +18,15 @@ const ORB_Y: i32 = 104;
 /// Clear space between an orb's rim and the skill strip.
 const ORB_GAP: i32 = 18;
 pub const SKILLS_MAX_W: i32 = WIDTH - 2 * (ORB_INSET + ORB_R + ORB_GAP);
-const PLATE_Y: i32 = 66;
-pub const PLATE_PAD: i32 = 10;
-pub const PLATE_H: i32 = 88;
-const PLATE_RULE: i32 = 5;
+const PLATE_Y: i32 = 54;
+pub const PLATE_PAD: i32 = 8;
+pub const PLATE_H: i32 = 100;
 const SHADOW_DROP: i32 = 3;
 const PLATE_SHADOW_GROW: i32 = 2;
-const FRAME_W: f32 = 2;
-const STATUS_EDGE_W: f32 = 1;
 /// How far an orb's shadow falls below it, and how much wider it is.
 const ORB_SHADOW_DY: i32 = 4;
 const ORB_SHADOW_GROW: i32 = 2;
-/// How far in from the plate's sides its rules stop.
-const RULE_INSET: i32 = 8;
-const STATUS_Y: i32 = 20;
+const STATUS_Y: i32 = 4;
 const PLATE_SHADOW_A: f32 = 0.5;
 const ORB_SHADOW_A: f32 = 0.6;
 /// Insets of the orb's bright rim and the dark ring inside it, and the well's rim past the fill.
@@ -46,10 +41,11 @@ const GLINT_A: f32 = 0.16;
 /// Above an orb's rim, its label's top.
 const LABEL_RISE: i32 = 23;
 /// A status icon's middle in its square, and its count's inset from the square's corner.
-const ICON_AT = mathx.P{ .x = 12, .y = 13 };
-const COUNT_INSET = mathx.P{ .x = 3, .y = 1 };
+const ICON_AT = mathx.P{ .x = 14, .y = 15 };
+const COUNT_INSET = mathx.P{ .x = 7, .y = 6 };
 
 comptime {
+    std.debug.assert(STATUS_Y + STATUS_PX < PLATE_Y);
     std.debug.assert(PLATE_Y + PLATE_H < ORB_Y + ORB_R);
     std.debug.assert(ORB_Y + ORB_R + ORB_SHADOW_DY + ORB_SHADOW_GROW <= HEIGHT);
 }
@@ -63,7 +59,7 @@ const LIFE_CORE = look.rgb(0xb83b32);
 const LIFE_EDGE = look.rgb(0x541412);
 const MANA_CORE = look.rgb(0x376eb4);
 const MANA_EDGE = look.rgb(0x14294d);
-const STATUS_PX: i32 = 32;
+const STATUS_PX: i32 = 40;
 const STATUS_GAP: i32 = 8;
 
 pub const Layout = struct {
@@ -88,15 +84,13 @@ pub const Layout = struct {
     }
 };
 
-pub fn frame(layout: Layout) void {
+pub fn frame(layout: Layout, sprites: *const look.Sprites) void {
     const x = layout.life.x;
     const y = layout.top + PLATE_Y;
     const width = layout.mana.x - x;
     rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, PLATE_H + PLATE_SHADOW_GROW, look.fade(rl.Color.black, PLATE_SHADOW_A));
     rl.drawRectangle(x, y, width, PLATE_H, PLATE);
-    rl.drawRectangleLinesEx(look.rect(x, y, width, PLATE_H), FRAME_W, FRAME);
-    rl.drawLine(x + RULE_INSET, y + PLATE_RULE, x + width - RULE_INSET, y + PLATE_RULE, FRAME_DARK);
-    rl.drawLine(x + RULE_INSET, y + PLATE_H - 1 - PLATE_RULE, x + width - RULE_INSET, y + PLATE_H - 1 - PLATE_RULE, FRAME_DARK);
+    look.hudBorder(sprites, x, y, width, PLATE_H, look.LIT);
 }
 
 pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32) void {
@@ -137,23 +131,136 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, ma
     face.textMid(label, x, y - ORB_R - LABEL_RISE, font.BODY, look.TEXT);
 }
 
-pub fn statuses(layout: Layout, face: *const font.Face, status: std.EnumArray(fx.Status, u8)) void {
-    var count: i32 = 0;
-    for (status.values) |turns| count += @intFromBool(turns > 0);
-    var x = layout.left + @divTrunc(WIDTH - count * (STATUS_PX + STATUS_GAP) + STATUS_GAP, 2);
-    const y = layout.top + STATUS_Y;
+/// The statuses shown, in the order they are drawn.
+pub fn shownStatuses(status: std.EnumArray(fx.Status, u8), out: *[std.enums.values(fx.Status).len]fx.Status) []const fx.Status {
+    var n: usize = 0;
     for (std.enums.values(fx.Status)) |s| {
+        if (status.get(s) == 0) continue;
+        out[n] = s;
+        n += 1;
+    }
+    return out[0..n];
+}
+
+/// The square of the `k`th of `count` statuses shown.
+pub fn statusBox(layout: Layout, count: usize, k: usize) rl.Rectangle {
+    const n: i32 = @intCast(count);
+    const x = layout.left + @divTrunc(WIDTH - n * (STATUS_PX + STATUS_GAP) + STATUS_GAP, 2) + @as(i32, @intCast(k)) * (STATUS_PX + STATUS_GAP);
+    return look.rect(x, layout.top + STATUS_Y, STATUS_PX, STATUS_PX);
+}
+
+pub fn orbBox(centre: mathx.P) rl.Rectangle {
+    return look.rect(centre.x - ORB_R, centre.y - ORB_R, 2 * ORB_R, 2 * ORB_R);
+}
+
+pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.Face, status: std.EnumArray(fx.Status, u8)) void {
+    var buf_shown: [std.enums.values(fx.Status).len]fx.Status = undefined;
+    const shown = shownStatuses(status, &buf_shown);
+    for (shown, 0..) |s, k| {
         const turns = status.get(s);
-        if (turns == 0) continue;
+        const box = statusBox(layout, shown.len, k);
+        const x: i32 = @intFromFloat(box.x);
+        const y: i32 = @intFromFloat(box.y);
         rl.drawRectangle(x, y, STATUS_PX, STATUS_PX, PLATE);
-        rl.drawRectangleLinesEx(look.rect(x, y, STATUS_PX, STATUS_PX), STATUS_EDGE_W, s.ink());
+        look.hudBorder(sprites, x, y, STATUS_PX, STATUS_PX, look.LIT);
 
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         var buf: [4]u8 = undefined;
         const label = std.fmt.bufPrintZ(&buf, "{d}", .{turns}) catch "";
         face.text(label, x + STATUS_PX - face.width(label, font.SMALL) - COUNT_INSET.x, y + STATUS_PX - font.SMALL - COUNT_INSET.y, font.SMALL, look.TEXT);
-        x += STATUS_PX + STATUS_GAP;
     }
+}
+
+/// Out from what is inspected, the mark round it.
+const FOCUS_GROW: f32 = 4;
+const FOCUS_W: f32 = 2;
+const TIP_W: i32 = 380;
+const TIP_PAD: i32 = 12;
+const TIP_GAP: i32 = 8;
+const TIP_LINE: i32 = font.SMALL + 4;
+const TIP_MARGIN: i32 = 8;
+const TIP_LINES_MAX: usize = 8;
+const TIP_COLS_MAX: usize = 96;
+
+/// The mark round what is inspected: a ring round an orb, a frame round anything else.
+pub fn focus(box: rl.Rectangle, round: bool) void {
+    if (round) {
+        const r = box.width / 2 + FOCUS_GROW;
+        rl.drawRing(.{ .x = box.x + box.width / 2, .y = box.y + box.height / 2 }, r - FOCUS_W, r, 0, 360, 64, look.RETICLE);
+        return;
+    }
+    rl.drawRectangleLinesEx(.{ .x = box.x - FOCUS_GROW, .y = box.y - FOCUS_GROW, .width = box.width + 2 * FOCUS_GROW, .height = box.height + 2 * FOCUS_GROW }, FOCUS_W, look.RETICLE);
+}
+
+/// `body` broken at spaces into lines no wider than `w` in `size`; each line's text is nul-ended in `buf`.
+fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *[TIP_LINES_MAX][TIP_COLS_MAX + 1]u8, lines: *[TIP_LINES_MAX][:0]const u8) usize {
+    var n: usize = 0;
+    var words = std.mem.tokenizeScalar(u8, body, ' ');
+    var len: usize = 0;
+    while (words.next()) |word| {
+        if (n == TIP_LINES_MAX) break;
+        const line = &buf[n];
+        const with = len + @intFromBool(len > 0) + word.len;
+        if (with <= TIP_COLS_MAX) {
+            var try_buf: [TIP_COLS_MAX + 1]u8 = undefined;
+            @memcpy(try_buf[0..len], line[0..len]);
+            if (len > 0) try_buf[len] = ' ';
+            @memcpy(try_buf[with - word.len .. with], word);
+            try_buf[with] = 0;
+            if (len == 0 or face.width(try_buf[0..with :0], size) <= w) {
+                @memcpy(line[0 .. with + 1], try_buf[0 .. with + 1]);
+                len = with;
+                lines[n] = line[0..len :0];
+                continue;
+            }
+        }
+        n += 1;
+        if (n == TIP_LINES_MAX) break;
+        const fit = @min(word.len, TIP_COLS_MAX);
+        @memcpy(buf[n][0..fit], word[0..fit]);
+        buf[n][fit] = 0;
+        len = fit;
+        lines[n] = buf[n][0..len :0];
+    }
+    return if (len > 0) @min(n + 1, TIP_LINES_MAX) else n;
+}
+
+/// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does.
+pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8) void {
+    var buf: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
+    var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
+    const n = wrap(face, body, font.SMALL, TIP_W - 2 * TIP_PAD, &buf, &lines);
+    const h = 2 * TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(n)) * TIP_LINE;
+    const mid: i32 = @intFromFloat(over.x + over.width / 2);
+    const x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
+    const y = @max(TIP_MARGIN, @min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y) - TIP_GAP - h);
+    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, TIP_W + 2 * SHADOW_DROP, h + PLATE_SHADOW_GROW, look.fade(rl.Color.black, PLATE_SHADOW_A));
+    rl.drawRectangle(x, y, TIP_W, h, PLATE);
+    rl.drawRectangleLinesEx(look.rect(x, y, TIP_W, h), FOCUS_W, FRAME);
+    face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.RETICLE);
+    for (lines[0..n], 0..) |l, i| face.text(l, x + TIP_PAD, y + TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(i)) * TIP_LINE, font.SMALL, look.TEXT);
+}
+
+test "a tooltip's body breaks at spaces into lines that each fit" {
+    const Fixed = struct {
+        fn width(_: @This(), s: [:0]const u8, size: i32) i32 {
+            return @as(i32, @intCast(s.len)) * @divTrunc(size, 2);
+        }
+    };
+    const face = Fixed{};
+    var buf: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
+    var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
+    const body = "Recover 50% of life over 3 turns. Uses 20 of 60 charges; kills refill 5. Takes a turn.";
+    const w = TIP_W - 2 * TIP_PAD;
+    const n = wrap(&face, body, font.SMALL, w, &buf, &lines);
+    var words: usize = 0;
+    for (lines[0..n]) |l| {
+        try std.testing.expect(face.width(l, font.SMALL) <= w);
+        words += std.mem.count(u8, l, " ") + 1;
+    }
+    try std.testing.expect(n > 1);
+    try std.testing.expectEqual(std.mem.count(u8, body, " ") + 1, words);
+    std.debug.print("tooltip: a {d}-word description in {d} lines of {d} px at most\n", .{ words, n, w });
 }
 
 fn statusIcon(status: fx.Status, x: i32, y: i32) void {
@@ -173,6 +280,14 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
             rl.drawLine(x - 7, y - 4, x + 7, y + 4, colour);
             rl.drawLine(x - 7, y + 4, x + 7, y - 4, colour);
             rl.drawCircle(x, y, 2, colour);
+        },
+        .pinned => {
+            rl.drawLine(x - 7, y + 8, x + 7, y + 8, colour);
+            for ([_]i32{ -5, 0, 5 }) |dx| rl.drawLine(x + dx, y - 6, x + dx, y + 8, colour);
+        },
+        .warded => {
+            rl.drawCircleLines(x, y, 8, colour);
+            rl.drawCircleLines(x, y, 5, colour);
         },
     }
 }

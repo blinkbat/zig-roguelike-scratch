@@ -186,6 +186,7 @@ fn padName(comptime b: rl.GamepadButton, comptime d: Device) [:0]const u8 {
             .xbox, .keys => "View",
         },
         .middle_right => if (ps) "Options" else "Menu",
+        .right_thumb => if (ps) "R3" else "RS",
         else => @compileError("no caption for " ++ @tagName(b)),
     };
 }
@@ -231,6 +232,8 @@ pub const Button = enum {
     rt,
     view,
     pause,
+    /// The right stick pressed in.
+    inspect,
 
     fn pad(b: Button) rl.GamepadButton {
         return switch (b) {
@@ -243,6 +246,7 @@ pub const Button = enum {
             .rt => .right_trigger_2,
             .view => .middle_left,
             .pause => .middle_right,
+            .inspect => .right_thumb,
         };
     }
 
@@ -256,6 +260,7 @@ pub const Button = enum {
             .lb, .rb, .rt => &.{},
             .view => &.{.tab},
             .pause => &.{.escape},
+            .inspect => &.{.i},
         };
     }
 
@@ -418,6 +423,8 @@ pub const State = struct {
     pad_at: ?i32 = null,
     /// Each pad's latched triggers, read though the window has lost focus so a pull held across it is not pressed again.
     triggers: [PADS]Triggers = @splat(.initFill(false)),
+    /// Where the mouse rests on the window, when focused and over it.
+    pointer: ?mathx.P = null,
 
     pub fn hit(self: State, b: Button) bool {
         return self.pressed.contains(b);
@@ -459,6 +466,7 @@ pub const State = struct {
         self.pad_at = choosePad(self.pad_at, focused, &before, &self.triggers);
         const kind: ?Device = if (self.pad_at) |at| kindAt(at) else null;
         const live: ?i32 = if (focused) self.pad_at else null;
+        self.pointer = if (focused and rl.isCursorOnScreen()) mouseAt() else null;
         const alt_down = altDown();
         for (BUTTONS) |b| {
             var on = false;
@@ -477,7 +485,7 @@ pub const State = struct {
             self.pressed.setPresent(b, on);
             self.down.setPresent(b, hold);
         }
-        if (self.playing and !alt_down) self.slotKeys();
+        if (self.playing and !self.typing and !alt_down) self.slotKeys();
         if (focused) self.time(dt);
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
@@ -571,7 +579,12 @@ fn padPressed(at: i32) bool {
     return false;
 }
 
-/// The editor's, and the only mouse: it is a desk tool, so it names keys.
+fn mouseAt() mathx.P {
+    const m = rl.getMousePosition();
+    return .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
+}
+
+/// The editor's mouse and keys: it is a desk tool, so it names them.
 pub const Desk = struct {
     pub const TOOL_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
     pub const TOOL_CAPTIONS = captions(&TOOL_KEYS);
@@ -778,9 +791,8 @@ pub const Desk = struct {
     }
 
     pub fn update(self: *Desk) void {
-        const m = rl.getMousePosition();
         const d = rl.getMouseDelta();
-        self.mouse = .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
+        self.mouse = mouseAt();
         self.moved = .{ .x = @intFromFloat(d.x), .y = @intFromFloat(d.y) };
         self.wheel = rl.getMouseWheelMove();
         self.paint = rl.isMouseButtonDown(PAINT_BUTTON);

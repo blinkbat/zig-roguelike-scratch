@@ -86,11 +86,19 @@ pub fn backed(st: *const input.State) bool {
     return st.hit(BACK) or st.hit(PAUSE);
 }
 
-fn window(screen_h: i32, n: usize, at: usize) struct { from: usize, len: usize } {
+pub const Window = struct {
+    from: usize,
+    len: usize,
+
+    pub fn of(n: usize, at: usize, room: usize) Window {
+        const len = @min(n, room);
+        return .{ .from = @min(at -| len / 2, n - len), .len = len };
+    }
+};
+
+fn window(screen_h: i32, n: usize, at: usize) Window {
     const room: usize = @intCast(@max(1, @divTrunc(screen_h - CHROME_H, ROW_STEP)));
-    const len = @min(n, room);
-    const from = @min(at -| len / 2, n - len);
-    return .{ .from = from, .len = len };
+    return Window.of(n, at, room);
 }
 
 pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const []const u8, at: usize, note: ?[:0]const u8) void {

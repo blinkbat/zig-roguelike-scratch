@@ -21,17 +21,17 @@ Only display the corresponding systems this game actually has. Do not fill the l
 | Active ailments | Small icons with remaining turns, only while active, just above the central strip |
 | Minimap | Existing upper-right map, outside the bottom assembly |
 
-Remove the live HUD's hero-name label, enemy population counters, gold tally, permanent movement/pause/binding instructions and scrolling combat log. Keep their simulation and saved data. No screen names a key or button in words; menus and the bind screen carry no instructions. Do not add flasks, charms, experience, levels, spirit, energy shield, inventory or quest widgets: those systems do not exist here.
+Remove the live HUD's hero-name label, enemy population counters, gold tally, permanent movement/pause/binding instructions and scrolling combat log. Keep their simulation and saved data. No screen names a key or button in words; menus and the bind screen carry no instructions. Life and mana flasks use assigned skill slots, including their remaining drinks; there is no separate flask bar. Do not add charms, experience, levels, spirit, energy shield, inventory or quest widgets: those systems do not exist here.
 
 ## Layout and placeholder art
 
 - Target a 744-pixel-wide assembly, horizontally centered from `Game.screen`. Its width does not grow on a wider display.
-- Two matching 104-pixel orb frames flank the existing seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs completely cover its ends. The plate is 88px tall and its lower edge sits just above the orb bases; no square endcaps project beyond the orbs.
+- Two matching 104-pixel orb frames flank the existing seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs completely cover its ends. The plate is 100px tall and its lower edge sits just above the orb bases; no square endcaps project beyond the orbs.
 - Mount the assembly close to the bottom edge. Draw the world behind it and at both sides instead of reserving a full-width black footer.
 - Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
 - Use the current Balthazar face for small resource values and cooldowns; inputs are icons, not captions. Avoid extra explanatory prose in play.
 - Keep geometry, colours and draw functions together so authored orb/frame art can replace the primitives later. Reuse the existing skill images.
-- Life follows the presented HP (`Game.pictured`), so it changes when a hit lands. Mana and cooldowns keep their existing timing. Layout code does not change gameplay.
+- Life follows the presented HP (`Game.pictured`), so it changes when a hit lands. Mana spent by Mana Shield follows each hit's impact; other mana changes and cooldowns follow the turn. Layout code does not change gameplay.
 
 ## Verification
 
@@ -40,6 +40,8 @@ Use the existing check, test, shot and build scripts. Inspect full, partial, cri
 ## Implementation
 
 Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Each slot's input is a `look.Prompt` icon under it.
+
+Small Balthazar text is rasterized at its displayed size (12, 15, 16, 20 and 24px) with point filtering, measured and drawn from the same atlas. Larger text and map symbols retain the 96px mipmapped atlas. Input icons are 22px tall with 15px labels, 6px below their slots. Slots have 10px gaps within groups and 20px between groups; the assembly remains 744px wide. The taller plate and raised status row keep these larger captions clear of the painted rails.
 
 The world now spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind overlay is centered in the space above the HUD. The former bar, counter, log and permanent-hint renderers are removed; their gameplay and save data remain intact.
 
@@ -71,6 +73,12 @@ The locked guide layers are **underdrawing (25%)**, **alignment (22%)**, and **l
 | Six `skill_*` icons | 40x40 | Shoot, Wait, Secondary Set, Juke, Burning Arrow and Glacial Shot. |
 | Three `ailment_*` icons | 24x24 | Bleeding, burning and chilled. |
 
-Numbers, resource labels, button captions and cooldowns remain code-rendered. These are painting sources; the game currently uses the simple procedural HUD until the owner's finished artwork is ported.
+Numbers, resource labels, button captions and cooldowns remain code-rendered. The rectangular frames now use the owner's border artwork described below; the other components retain their procedural graphics until painted.
 
 `tools/hud_art/create_template.py` prepares the guides and a native Aseprite Lua assembly in `%TEMP%/hud-template/`. It refuses to overwrite either editable source. Run that assembly with the Aseprite batch command from `TILE_ART_WORKFLOW.md`; it saves both sources, reopens them, and verifies all guide pixels, layer opacity and editability, the blank paint layer, 21 named slices (20 components plus the reference), and the nine-slice center. Previews and validation reports stay in TEMP. Before later ports, read the Desktop file for new owner painting and back it up; do not regenerate over it.
+
+## Painted border
+
+`C:/Users/DavidBennett/Desktop/border.aseprite` holds the owner's gold border on `Layer 1`, a 73x55 cel at (1,1) on a 128x128 canvas. `tools/hud_art/export_border.lua` preserves that source and copies it to `assets/source/hud-border.aseprite`, exporting the native 73x55 rectangle to `assets/hud-border.png`. It backs up existing files in `%TEMP%/hud-border-export/` and checks the reopened pixels and clear center. Run it with the Aseprite batch command in `TILE_ART_WORKFLOW.md`; inspect later owner edits before exporting again.
+
+`look.hudBorder` keeps the four original 9x9 corner regions and repeats the matching horizontal and vertical strips, clipping the last repeat without scaling, mirroring, rotating or recolouring the art. Nine-pixel cuts keep the dark corner-to-rail transition out of the repeated bottom edge. The texture loads with common play graphics and is shared by the bottom plate, skill slots and bind picker, status boxes, and minimap. Selected slots retain a coloured inner outline; unavailable slots retain their opacity fade. Status boxes are 40px to keep their icons and counts clear of the painted trim, and the minimap reserves a 9px frame. Orb rims and resource fills remain procedural.

@@ -64,6 +64,13 @@ test {
     _ = @import("play/spark.zig");
     _ = @import("play/bash.zig");
     _ = @import("play/cleave.zig");
+    _ = @import("play/pinning.zig");
+    _ = @import("play/barbed.zig");
+    _ = @import("play/nova.zig");
+    _ = @import("play/fireball.zig");
+    _ = @import("play/chain.zig");
+    _ = @import("play/ward.zig");
+    _ = @import("play/charge.zig");
     _ = @import("play/clock.zig");
     _ = @import("play/flask.zig");
     _ = @import("play/pack.zig");

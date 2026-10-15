@@ -11,6 +11,13 @@ const blink = @import("blink.zig");
 const spark = @import("spark.zig");
 const bash = @import("bash.zig");
 const cleave = @import("cleave.zig");
+const pinning = @import("pinning.zig");
+const barbed = @import("barbed.zig");
+const nova = @import("nova.zig");
+const fireball = @import("fireball.zig");
+const chain = @import("chain.zig");
+const ward = @import("ward.zig");
+const charge = @import("charge.zig");
 const hero = @import("hero.zig");
 const flask = @import("flask.zig");
 const menu = @import("../ui/menu.zig");
@@ -28,6 +35,13 @@ pub const Act = enum {
     blink,
     shield_bash,
     cleave,
+    pinning_shot,
+    barbed_arrow,
+    frost_nova,
+    fireball,
+    chain_lightning,
+    mana_shield,
+    charge,
     life_flask,
     mana_flask,
 
@@ -43,6 +57,13 @@ pub const Act = enum {
             .blink => "Blink",
             .shield_bash => "Shield Bash",
             .cleave => "Cleave",
+            .pinning_shot => "Pinning Shot",
+            .barbed_arrow => "Barbed Arrow",
+            .frost_nova => "Frost Nova",
+            .fireball => "Fireball",
+            .chain_lightning => "Chain Lightning",
+            .mana_shield => "Mana Shield",
+            .charge => "Charge",
             .life_flask => "Life Flask",
             .mana_flask => "Mana Flask",
         };
@@ -67,6 +88,13 @@ pub const Act = enum {
             .blink => blink,
             .shield_bash => bash,
             .cleave => cleave,
+            .pinning_shot => pinning,
+            .barbed_arrow => barbed,
+            .frost_nova => nova,
+            .fireball => fireball,
+            .chain_lightning => chain,
+            .mana_shield => ward,
+            .charge => charge,
             .life_flask => flask.Life,
             .mana_flask => flask.Mana,
             .shoot, .wait, .secondary => null,
@@ -78,15 +106,17 @@ pub const Act = enum {
         return @hasDecl(m, decl);
     }
 
-    /// `bow` a missile along a lit line, `leap` a landing, `swing` a melee blow on a tile beside the hero.
-    pub const Reticle = enum { bow, leap, swing };
+    /// `bow` a missile along a lit line, `leap` a landing, `swing` a melee blow on a tile beside the hero, `rush` a body
+    /// down a line the hero runs to.
+    pub const Reticle = enum { bow, leap, swing, rush };
 
     pub fn reticle(a: Act) ?Reticle {
         return switch (a) {
-            .shoot, .burning_arrow, .glacial_shot, .spark => .bow,
+            .shoot, .burning_arrow, .glacial_shot, .spark, .pinning_shot, .barbed_arrow, .fireball, .chain_lightning => .bow,
             .juke, .blink => .leap,
             .shield_bash, .cleave => .swing,
-            .wait, .secondary, .life_flask, .mana_flask => null,
+            .charge => .rush,
+            .wait, .secondary, .life_flask, .mana_flask, .frost_nova, .mana_shield => null,
         };
     }
 
@@ -104,19 +134,19 @@ pub const Act = enum {
         };
     }
 
-    /// A leap's furthest landing.
+    /// A leap's furthest landing, or a rush's furthest mark.
     pub fn reach(a: Act) i32 {
         return switch (a) {
-            inline else => |t| if (comptime reticle(t) == .leap) module(t).?.RANGE else 0,
+            inline else => |t| if (comptime reticle(t) == .leap or reticle(t) == .rush) module(t).?.RANGE else 0,
         };
     }
 
-    /// A missile's marks, a leap's landings, or a swing's: what its reticle holds legal.
+    /// A missile's marks, a leap's landings, a swing's or a rush's: what its reticle holds legal.
     pub fn aimable(a: Act, lv: *const grid.Level, from: mathx.P, to: mathx.P) bool {
         return switch (a) {
             inline else => |t| if (comptime reticle(t)) |r| switch (r) {
                 .bow => bow.aimable(lv, from, to),
-                .leap, .swing => module(t).?.aimable(lv, from, to),
+                .leap, .swing, .rush => module(t).?.aimable(lv, from, to),
             } else unreachable,
         };
     }
@@ -157,10 +187,24 @@ pub const Act = enum {
         };
     }
 
-    /// Its arrow bursts in a cone behind what it strikes.
-    pub fn cones(a: Act) bool {
+    /// Its missile bursts over an area where it strikes.
+    pub fn bursts(a: Act) bool {
         return switch (a) {
-            inline else => |t| comptime has(t, "cone"),
+            inline else => |t| comptime has(t, "burst"),
+        };
+    }
+
+    /// Its bolt leaps on from what it strikes to other foes.
+    pub fn chains(a: Act) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, "JUMPS"),
+        };
+    }
+
+    /// What it strikes may be afflicted, by its own roll.
+    pub fn afflicts(a: Act) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, "afflict"),
         };
     }
 
@@ -176,7 +220,7 @@ pub const Act = enum {
     }
 
     /// Every decl probed by name above, so renaming one in its module fails the build.
-    const PROBED = .{ "DESCRIPTION", "FREE", "KIND", "BOLT", "arc", "COST", "ELEMENT", "cone", "COOLDOWN" };
+    const PROBED = .{ "DESCRIPTION", "FREE", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "COOLDOWN" };
 
     comptime {
         for (PROBED) |decl| {
@@ -192,9 +236,9 @@ pub const ACTS = std.enums.values(Act);
 /// The skills a class may bind, in the bind picker's order.
 pub fn kit(c: hero.Class) []const Act {
     return switch (c) {
-        .archer => &.{ .shoot, .wait, .secondary, .juke, .burning_arrow, .glacial_shot, .life_flask, .mana_flask },
-        .wizard => &.{ .spark, .wait, .secondary, .blink, .life_flask, .mana_flask },
-        .knight => &.{ .cleave, .wait, .secondary, .shield_bash, .life_flask, .mana_flask },
+        .archer => &.{ .shoot, .wait, .secondary, .juke, .burning_arrow, .glacial_shot, .pinning_shot, .barbed_arrow, .life_flask, .mana_flask },
+        .wizard => &.{ .spark, .wait, .secondary, .blink, .fireball, .chain_lightning, .frost_nova, .mana_shield, .life_flask, .mana_flask },
+        .knight => &.{ .cleave, .wait, .secondary, .shield_bash, .charge, .life_flask, .mana_flask },
     };
 }
 
@@ -322,8 +366,17 @@ fn setsOf(c: hero.Class) std.EnumArray(Set, Row) {
 fn secondary(c: hero.Class) Row {
     var r = flasks();
     switch (c) {
-        .archer => r.set(.x, .glacial_shot),
-        .wizard, .knight => {},
+        .archer => {
+            r.set(.x, .glacial_shot);
+            r.set(.a, .pinning_shot);
+            r.set(.b, .barbed_arrow);
+        },
+        .wizard => {
+            r.set(.x, .chain_lightning);
+            r.set(.a, .frost_nova);
+            r.set(.b, .mana_shield);
+        },
+        .knight => {},
     }
     return r;
 }
@@ -340,10 +393,12 @@ fn primary(c: hero.Class) Row {
         .wizard => {
             r.set(.x, .spark);
             r.set(.b, .blink);
+            r.set(.a, .fireball);
         },
         .knight => {
             r.set(.x, .cleave);
             r.set(.b, .shield_bash);
+            r.set(.a, .charge);
         },
     }
     return r;
@@ -365,7 +420,8 @@ test "each class starts with its own skills bound, and only skills of its kit" {
 }
 
 pub const BINDS = Button.view;
-const NOT_SLOTS = [_]Button{ BINDS, menu.PAUSE };
+pub const INSPECT = Button.inspect;
+const NOT_SLOTS = [_]Button{ BINDS, menu.PAUSE, INSPECT };
 
 comptime {
     if (!std.mem.eql(Button, &SLOTS, &input.SLOT_ORDER)) @compileError("the keyboard numbers the slots out of their order");
@@ -422,7 +478,7 @@ test "a skill bound over the modifier unbinds it, and removing a slot empties it
 test "picking a slot up and putting it down on another swaps the two, across sets too" {
     var bar = Bar{};
     bar.swap(.{ .set = .primary, .button = .x }, .{ .set = .secondary, .button = .b });
-    try std.testing.expectEqual(@as(?Act, null), bar.at(.{ .set = .primary, .button = .x }));
+    try std.testing.expectEqual(@as(?Act, .barbed_arrow), bar.at(.{ .set = .primary, .button = .x }));
     try std.testing.expectEqual(@as(?Act, .shoot), bar.at(.{ .set = .secondary, .button = .b }));
     bar.swap(.{ .set = .primary, .button = .lb }, .{ .set = .secondary, .button = .b });
     try std.testing.expectEqual(@as(?Button, .b), bar.modifier);

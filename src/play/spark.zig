@@ -21,7 +21,7 @@ pub fn procs(rng: *mathx.Rng, _: i16) bool {
     return rng.percent(CHANCE);
 }
 
-pub fn afflict(a: anytype) void {
+pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.clock.stun();
 }
 

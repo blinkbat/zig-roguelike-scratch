@@ -34,7 +34,7 @@ const UNSAVED = .{
     "shot",     "glide",       "turning",    "order",          "order_n",   "busy",       "pending",  "lead",       "owed",       "ran",
     "pictured", "seq",         "split_from", "fx",             "vignette",  "mini",       "sprites",  "face",       "light",      "cloud",
     "flowed",   "flow",        "queue",      "graphics_ready", "art_ready",  "rain",
-    "flasks_shown",
+    "flasks_shown", "mana_held", "inspecting",
 };
 
 comptime {
