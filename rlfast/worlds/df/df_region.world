@@ -1,0 +1,10 @@
+roguelike-world 1
+start 0 48 32
+node procgen terrain
+rivers 2
+feature lake
+count 4
+size 2
+ring none
+name DF Region
+at 0 0

@@ -1,0 +1,9 @@
+roguelike-world 1
+start 0 48 6
+node procgen topology
+layout diamond
+filler rock
+ground sand
+path 4
+name PoE2 Keth
+at 0 0

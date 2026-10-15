@@ -185,8 +185,11 @@ const LOOKS = std.EnumArray(climate.Light, Look).init(.{
     .bleak = .{ .key = 0.3, .sky = 1.75, .grey = 0.55, .tint = .{ 0.92, 0.98, 1.06 } },
 });
 
+/// Rec. 709's weights of red, green and blue in what the eye reads as brightness.
+pub const LUMA = [3]f32{ 0.2126, 0.7152, 0.0722 };
+
 pub fn luma(c: Rgb) f32 {
-    return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
+    return c[0] * LUMA[0] + c[1] * LUMA[1] + c[2] * LUMA[2];
 }
 
 fn looked(c: Rgb, strength: f32, l: Look) Rgb {

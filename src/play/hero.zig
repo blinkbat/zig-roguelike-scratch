@@ -1,18 +1,20 @@
 const std = @import("std");
+const actor = @import("actor.zig");
+const menu = @import("../ui/menu.zig");
 
 pub const MANA: i32 = 100;
-pub const MANA_REGEN: i32 = 5;
+pub const MANA_REGEN: i32 = 1;
 /// Hp then most hp, as a save slot reads it.
 pub const HP_FMT = "HP {d}/{d}";
 pub const GOLD_FMT = "Gold {d}";
 
 pub const Class = enum {
     archer,
+    wizard,
+    knight,
 
     pub fn title(c: Class) [:0]const u8 {
-        return switch (c) {
-            .archer => "Archer",
-        };
+        return menu.named(c);
     }
 
     pub fn unnamed(c: Class) Name {
@@ -22,12 +24,20 @@ pub const Class = enum {
     pub fn blurb(c: Class) [:0]const u8 {
         return switch (c) {
             .archer => "A bow that reaches what it sees, and a kick for what comes close",
+            .wizard => "Sparks that stun what they strike, and a blink to be elsewhere",
+            .knight => "A shield that knocks foes back stunned, and a blade that sweeps three at once",
+        };
+    }
+
+    pub fn kind(c: Class) actor.Kind {
+        return switch (c) {
+            inline else => |t| @field(actor.Kind, @tagName(t)),
         };
     }
 };
 
 pub const CLASSES = std.enums.values(Class);
-pub const DEFAULT: Class = .archer;
+pub const DEFAULT: Class = @field(Class, @tagName(actor.HERO));
 
 pub const Name = struct {
     pub const MAX: usize = 16;

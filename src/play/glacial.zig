@@ -6,7 +6,7 @@ const damage = @import("damage.zig");
 
 const P = mathx.P;
 
-pub const COST: i32 = 15;
+pub const COST: i32 = 20;
 pub const COLD_LO: i32 = 2;
 pub const COLD_HI: i32 = 4;
 pub const CHANCE: i32 = 50;
@@ -47,17 +47,7 @@ pub fn procs(rng: *mathx.Rng, resist: i16) bool {
     return rng.percent(chance(resist));
 }
 
-pub const Cone = struct {
-    cells: [grid.Cells.span(RANGE) * grid.Cells.span(RANGE)]P = undefined,
-    n: usize = 0,
-
-    pub fn has(self: *const Cone, p: P) bool {
-        for (self.cells[0..self.n]) |c| {
-            if (c.eq(p)) return true;
-        }
-        return false;
-    }
-};
+pub const Cone = grid.Area(grid.Cells.span(RANGE) * grid.Cells.span(RANGE));
 
 /// The least sight radius `mathx.reaches` takes to every corner of the `RANGE` box.
 const CAST_R: i32 = mathx.roundTiesDown(@as(f32, @floatFromInt(RANGE)) * std.math.sqrt2);
@@ -135,11 +125,11 @@ test "glacial cone follows cardinal diagonal and oblique shots and stops at wall
     const impact = P{ .x = 20, .y = 20 };
     for (mathx.ALL_DIRS) |dir| {
         const d = dir.delta();
-        const from = P{ .x = impact.x - d.x * 5, .y = impact.y - d.y * 5 };
+        const from = impact.sub(d.scaled(5));
         const area = cone(&lv, from, impact);
         try std.testing.expect(area.has(impact));
-        try std.testing.expect(area.has(impact.add(.{ .x = d.x * 2, .y = d.y * 2 })));
-        try std.testing.expect(!area.has(impact.add(.{ .x = -d.x, .y = -d.y })));
+        try std.testing.expect(area.has(impact.add(d.scaled(2))));
+        try std.testing.expect(!area.has(impact.sub(d)));
         for (area.cells[0..area.n]) |p| try std.testing.expect(mathx.dist(impact, p) <= RANGE);
     }
     const from = P{ .x = 15, .y = 18 };

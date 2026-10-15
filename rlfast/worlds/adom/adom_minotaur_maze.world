@@ -1,0 +1,7 @@
+roguelike-world 1
+start 0 47 31
+node procgen labyrinth
+style walls
+braid 0
+name ADOM Minotaur Maze
+at 0 0

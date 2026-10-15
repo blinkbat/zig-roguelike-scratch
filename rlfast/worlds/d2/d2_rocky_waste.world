@@ -1,0 +1,15 @@
+roguelike-world 1
+start 0 4 32
+node procgen dunes
+ridges 5
+mesas 3
+feature border
+tile rock
+width 2
+rough 3
+feature scatter
+tile rubble
+on sand
+amount 12
+name D2 Rocky Waste
+at 0 0

@@ -1,0 +1,11 @@
+roguelike-world 1
+start 0 12 6
+node procgen topology
+layout u
+filler wall
+ground floor
+clearing 4
+path 3
+sides 2
+name PoE2 Manor Ramparts
+at 0 0

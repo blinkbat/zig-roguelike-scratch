@@ -1,0 +1,23 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground snow
+edge rock
+feature river
+fill rock
+width 3
+bank none
+course down
+count 3
+fords 3
+feature lake
+fill ice
+count 3
+size 5
+ring none
+feature scatter
+tile shrub
+on snow
+amount 15
+name D2 Frigid Highlands
+at 0 0

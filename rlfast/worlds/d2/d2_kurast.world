@@ -1,0 +1,9 @@
+roguelike-world 1
+start 0 48 32
+node procgen town
+wall none
+canals 50
+ground floor
+outside grass
+name D2 Kurast
+at 0 0

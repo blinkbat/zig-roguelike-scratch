@@ -60,6 +60,12 @@ test {
     _ = @import("play/burning.zig");
     _ = @import("play/glacial.zig");
     _ = @import("play/juke.zig");
+    _ = @import("play/blink.zig");
+    _ = @import("play/spark.zig");
+    _ = @import("play/bash.zig");
+    _ = @import("play/cleave.zig");
+    _ = @import("play/clock.zig");
+    _ = @import("play/flask.zig");
     _ = @import("play/pack.zig");
     _ = @import("play/skillbar.zig");
     _ = @import("play/hero.zig");

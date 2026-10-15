@@ -5,11 +5,14 @@ const damage = @import("damage.zig");
 const burning = @import("burning.zig");
 const glacial = @import("glacial.zig");
 const bleeding = @import("bleeding.zig");
+const clock = @import("clock.zig");
 
 const P = mathx.P;
 
 pub const Kind = enum {
     archer,
+    wizard,
+    knight,
     rat,
     slime,
     slime_half,
@@ -18,10 +21,7 @@ pub const Kind = enum {
     pib,
 
     pub fn foe(k: Kind) bool {
-        return switch (k) {
-            .archer => false,
-            .rat, .slime, .slime_half, .slime_quarter, .bloat, .pib => true,
-        };
+        return row(k).foe_type != null;
     }
 
     pub fn stocked(k: Kind) bool {
@@ -63,7 +63,12 @@ const FAMILY = blk: {
     break :blk t;
 };
 
+/// The hero a world's start is drawn as.
 pub const HERO: Kind = .archer;
+
+comptime {
+    for (std.enums.values(Kind)) |k| std.debug.assert(row(k).pace >= clock.TURN);
+}
 
 pub const FOES = blk: {
     var ks: []const Kind = &.{};
@@ -99,8 +104,13 @@ pub const Blow = union(enum) {
     burst,
 };
 
+pub const Movement = enum { ground, flying };
+pub const FoeType = enum { beast, humanoid, aberration, undead, construct };
+
 pub const Row = struct {
     name: [:0]const u8,
+    movement: Movement,
+    foe_type: ?FoeType,
     /// A fresh body's; one split off a slime has half what that slime had left.
     hp: i32,
     /// Cells its eyes reach, where there is light to see by.
@@ -115,6 +125,8 @@ pub const Row = struct {
     /// What it splits into, two of them, when a blow leaves it under half its hp.
     splits: ?Kind = null,
     resists: damage.Resists = .initFill(0),
+    /// Ticks each of its actions takes (Brogue's `movementDuration`); a turn is drawn with one action at most.
+    pace: i32 = clock.TURN,
 };
 
 pub const FLIT: f32 = 0.33;
@@ -125,14 +137,30 @@ const SLAM = Blow{ .strike = .{ .lo = 2, .hi = 5, .verb = "slams" } };
 
 pub fn row(k: Kind) Row {
     return switch (k) {
-        .archer => .{ .name = "archer", .hp = 24, .sight = 10, .light = 5, .blow = .{ .strike = .{ .lo = 1, .hi = 2, .verb = "kicks" } } },
-        .rat => .{ .name = "rat", .hp = 6, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "bites" } } },
-        .slime => .{ .name = "slime", .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half },
-        .slime_half => .{ .name = "half slime", .hp = @divTrunc(row(.slime).hp, 2), .sight = row(.slime).sight, .blow = SLAM, .splits = .slime_quarter },
-        .slime_quarter => .{ .name = "quarter slime", .hp = @divTrunc(row(.slime_half).hp, 2), .sight = row(.slime).sight, .blow = SLAM },
-        .bloat => .{ .name = "bloat", .hp = 4, .sight = 7, .blow = .burst, .flits = true },
-        .pib => .{ .name = "pib", .hp = 10, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "stabs", .bleeds = 30 } }, .flees = true },
+        .archer => heroRow("archer", 24, .{ .lo = 1, .hi = 2, .verb = "kicks" }),
+        .wizard => heroRow("wizard", 18, .{ .lo = 1, .hi = 2, .verb = "bonks" }),
+        .knight => heroRow("knight", 30, .{ .lo = 2, .hi = 4, .verb = "slashes" }),
+        .rat => .{ .name = "rat", .movement = .ground, .foe_type = .beast, .hp = 6, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "bites" } } },
+        .slime => .{ .name = "slime", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half },
+        .slime_half => smaller(.slime, "half slime", .slime_quarter),
+        .slime_quarter => smaller(.slime_half, "quarter slime", null),
+        .bloat => .{ .name = "bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .burst, .flits = true },
+        .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "stabs", .bleeds = 30 } }, .flees = true },
     };
+}
+
+/// Every hero's sight and the light it carries, whatever its class.
+fn heroRow(name: [:0]const u8, hp: i32, blow: Strike) Row {
+    return .{ .name = name, .movement = .ground, .foe_type = null, .hp = hp, .sight = 10, .light = 5, .blow = .{ .strike = blow } };
+}
+
+/// What `of` splits into: it, on half its hp.
+fn smaller(of: Kind, name: [:0]const u8, splits: ?Kind) Row {
+    var r = row(of);
+    r.name = name;
+    r.hp = @divTrunc(r.hp, 2);
+    r.splits = splits;
+    return r;
 }
 
 pub fn plural(k: Kind) [:0]const u8 {
@@ -158,6 +186,7 @@ pub const Actor = struct {
     burn: burning.Burn = .{},
     chill: glacial.Chill = .{},
     bleed: bleeding.Bleed = .{},
+    clock: clock.Clock = .{},
     /// Its turns left running from the archer.
     fright: u8 = 0,
 

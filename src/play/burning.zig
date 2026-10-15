@@ -2,7 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const damage = @import("damage.zig");
 
-pub const COST: i32 = 15;
+pub const COST: i32 = 20;
 pub const FIRE_LO: i32 = 2;
 pub const FIRE_HI: i32 = 4;
 pub const CHANCE: u32 = 50;

@@ -4,7 +4,7 @@ local desktop='C:/Users/DavidBennett/Desktop/deep-water.aseprite'
 local canonical=root..'assets/source/deep-water.aseprite'
 local work=(app.params.work or app.fs.joinPath(app.fs.tempPath,'wall-mocks'))..'/'
 app.fs.makeAllDirectories(work)
-local percent=tonumber(app.params.percent or '60')
+local percent=tonumber(app.params.percent) or 60
 assert(percent and percent>0 and percent<100,'percent must be between 0 and 100')
 local install=app.params.install=='yes'
 local pc=app.pixelColor

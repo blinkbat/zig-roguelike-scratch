@@ -21,11 +21,10 @@ comptime {
 
 const RUB = input.Button.x;
 
-
 const FIELD: i32 = 36;
-const KEY: i32 = 30;
+const KEY = menu.ROW;
 const KEY_W: i32 = 44;
-const KEY_H: i32 = 46;
+const KEY_H = menu.ROW_STEP;
 const WIDE_W: i32 = KEY_W * 4;
 const TITLE_DY: i32 = -230;
 const FIELD_DY: i32 = -150;

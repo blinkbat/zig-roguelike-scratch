@@ -1,0 +1,9 @@
+roguelike-world 1
+start 0 48 32
+node procgen terrain
+height 30 70
+drain 0 74
+heat 0 10
+rivers 0
+name DF Tundra
+at 0 0

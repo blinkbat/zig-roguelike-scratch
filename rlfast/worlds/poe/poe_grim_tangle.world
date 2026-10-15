@@ -1,0 +1,11 @@
+roguelike-world 1
+start 0 4 32
+node procgen topology
+layout line
+filler shrub
+ground grass
+clearing 4
+path 2
+sides 2
+name PoE2 Grim Tangle
+at 0 0

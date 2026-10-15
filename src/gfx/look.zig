@@ -8,6 +8,7 @@ const damage = @import("../play/damage.zig");
 const skillbar = @import("../play/skillbar.zig");
 const font = @import("font.zig");
 const ground = @import("ground.zig");
+const sky = @import("sky.zig");
 const embedded = @import("assets").names;
 
 pub const SPRITE_PX: i32 = 64;
@@ -136,7 +137,7 @@ fn optionalPng(comptime name: []const u8) ?[]const u8 {
     return if (comptime listed(name)) @embedFile(name) else null;
 }
 
-/// Each ground's 4x4 sheet of dual-grid pieces, in `ground.ORDER`; a ground without one draws cell by cell as before.
+/// Each ground's 4x4 sheet of dual-grid pieces; a ground without one draws cell by cell as before.
 const GROUND_PNGS = blk: {
     var pngs = std.EnumArray(ground.Ground, ?[]const u8).initFill(null);
     for (std.enums.values(ground.Ground)) |g| pngs.set(g, optionalPng(g.png()));
@@ -147,7 +148,7 @@ pub const GROUND_SHEETS = blk: {
     var s = ground.Grounds.initEmpty();
     for (std.enums.values(ground.Ground)) |g| {
         const png = GROUND_PNGS.get(g) orelse continue;
-        std.debug.assert(std.meta.eql(pngSize(png), mathx.P{ .x = ground.COLS * SPRITE_PX, .y = ground.COLS * SPRITE_PX }));
+        std.debug.assert(std.meta.eql(pngSize(png), mathx.P{ .x = ground.COLS * SPRITE_PX, .y = ground.ROWS * SPRITE_PX }));
         s.insert(g);
     }
     break :blk s;
@@ -155,6 +156,10 @@ pub const GROUND_SHEETS = blk: {
 
 /// A ground's piece for a mask: its sheet and where in it.
 pub const Piece = struct { tex: rl.Texture2D, src: rl.Rectangle };
+
+pub const WaterView = struct { seconds: f32, screen_h: f32, visibility: rl.Texture2D };
+
+const WaterShader = struct { shader: rl.Shader, time: i32, origin: i32, cell: i32, screen_h: i32, depth: i32, visibility: i32 };
 
 /// Needs a live GL context.
 pub const Sprites = struct {
@@ -168,9 +173,11 @@ pub const Sprites = struct {
     grounds: std.EnumArray(ground.Ground, ?rl.Texture2D) = .initFill(null),
     /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
     skills: ?rl.Texture2D = null,
+    water: ?WaterShader = null,
 
-    pub fn loadSkills(self: *Sprites) void {
+    pub fn loadCommon(self: *Sprites) void {
         self.skills = skillIcons();
+        self.water = program(WaterShader, WATER_FS);
     }
 
     pub fn sync(self: *Sprites, need: Assets) void {
@@ -197,18 +204,21 @@ pub const Sprites = struct {
 
     /// Every ground of the cells `beds` draws, lowest first: one with a sheet a piece on each corner point, one without
     /// its square on each cell it holds and a quarter under the edges over it; cell 0,0's top-left at `origin`, `px` a cell.
-    pub fn drawGround(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32) void {
+    pub fn drawGround(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
         const sheeted = self.sheets();
         for (ground.LAYERS) |gr| {
             if (!beds.shown.contains(gr)) continue;
             const sheet = sheeted.contains(gr);
+            const depth = if (sheet) waterDepth(gr) else null;
+            const shimmer = if (depth) |d| self.beginWater(water, origin, px, d) else false;
+            defer if (shimmer) rl.endShaderMode();
             if (!sheet) {
                 var cells = grid.Cells.of(beds.lo, beds.hi);
                 while (cells.next()) |p| {
                     if (beds.ground(p) == gr) self.squarePart(gr.tile(), cellAt(origin, p, px), px, .{ 0, 0 }, 1);
                 }
             }
-            var points = grid.Cells.of(beds.lo, beds.hi.add(.{ .x = 1, .y = 1 }));
+            var points = beds.points();
             while (points.next()) |p| {
                 const here = beds.pointAt(p);
                 if (!here.has(gr)) continue;
@@ -227,6 +237,19 @@ pub const Sprites = struct {
                 }
             }
         }
+    }
+
+    fn beginWater(self: *const Sprites, view: ?WaterView, origin: [2]f32, px: f32, depth: f32) bool {
+        const v = view orelse return false;
+        const s = self.water orelse return false;
+        rl.beginShaderMode(s.shader);
+        rl.setShaderValue(s.shader, s.time, &v.seconds, .float);
+        rl.setShaderValue(s.shader, s.origin, &origin, .vec2);
+        rl.setShaderValue(s.shader, s.cell, &px, .float);
+        rl.setShaderValue(s.shader, s.screen_h, &v.screen_h, .float);
+        rl.setShaderValue(s.shader, s.depth, &depth, .float);
+        rl.setShaderValueTexture(s.shader, s.visibility, v.visibility);
+        return true;
     }
 
     fn cellAt(origin: [2]f32, p: mathx.P, px: f32) [2]f32 {
@@ -333,6 +356,8 @@ pub const Sprites = struct {
 
 const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .archer = @embedFile("archer.png"),
+    .wizard = null,
+    .knight = null,
     .rat = @embedFile("rat.png"),
     .slime = @embedFile("slime.png"),
     .slime_half = @embedFile("slime-half.png"),
@@ -700,6 +725,8 @@ pub const Mark = enum {
 pub fn body(k: actor.Kind) Look {
     return switch (k) {
         .archer => .{ .ch = '@', .fg = rgb(0x7cc86e) },
+        .wizard => .{ .ch = '@', .fg = rgb(0x8f9cf2) },
+        .knight => .{ .ch = '@', .fg = rgb(0xd6d9e0) },
         .rat => .{ .ch = 'r', .fg = rgb(0xb07a4e) },
         .slime, .slime_half, .slime_quarter => .{ .ch = 's', .fg = rgb(0x6fae5a) },
         .bloat => .{ .ch = 'b', .fg = GAS },
@@ -721,12 +748,13 @@ const GORE_A: u8 = 220;
 pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
 pub const JUKE_TRAIL = rl.Color{ .r = 196, .g = 212, .b = 218, .a = 140 };
 pub const JUKE_DUST = rl.Color{ .r = 184, .g = 161, .b = 125, .a = 170 };
+pub const WATER_DROP = rl.Color{ .r = 166, .g = 197, .b = 242, .a = 150 };
 
 pub const Gait = enum { hop, slide };
 
 pub fn gait(k: actor.Kind) Gait {
     return switch (k) {
-        .archer, .rat, .pib => .hop,
+        .archer, .wizard, .knight, .rat, .pib => .hop,
         .slime, .slime_half, .slime_quarter, .bloat => .slide,
     };
 }
@@ -767,6 +795,17 @@ pub fn caret(d: mathx.Dir) u8 {
     };
 }
 
+const FLASK = [_][4]f32{
+    .{ 13, 4, 19, 4 },
+    .{ 13, 4, 13, 11 },
+    .{ 19, 4, 19, 11 },
+    .{ 13, 11, 6, 18 },
+    .{ 19, 11, 26, 18 },
+    .{ 6, 18, 6, 26 },
+    .{ 26, 18, 26, 26 },
+    .{ 6, 28, 26, 28 },
+};
+
 fn skillLines(a: skillbar.Act) []const [4]f32 {
     return switch (a) {
         .shoot => &.{
@@ -803,6 +842,49 @@ fn skillLines(a: skillbar.Act) []const [4]f32 {
             .{ 17, 7, 26, 16 },
             .{ 26, 16, 17, 25 },
         },
+        .spark => &.{
+            .{ 19, 3, 9, 17 },
+            .{ 9, 17, 17, 17 },
+            .{ 17, 17, 12, 29 },
+            .{ 12, 29, 24, 13 },
+            .{ 24, 13, 16, 13 },
+            .{ 16, 13, 19, 3 },
+        },
+        .blink => &.{
+            .{ 4, 16, 8, 16 },
+            .{ 6, 14, 6, 18 },
+            .{ 12, 16, 16, 16 },
+            .{ 20, 16, 28, 16 },
+            .{ 24, 10, 24, 22 },
+            .{ 20, 12, 28, 20 },
+            .{ 20, 20, 28, 12 },
+        },
+        .shield_bash => &.{
+            .{ 6, 5, 26, 5 },
+            .{ 26, 5, 26, 16 },
+            .{ 26, 16, 16, 28 },
+            .{ 16, 28, 6, 16 },
+            .{ 6, 16, 6, 5 },
+            .{ 16, 9, 16, 22 },
+        },
+        .life_flask => &(FLASK ++ [_][4]f32{
+            .{ 16, 17, 16, 25 },
+            .{ 12, 21, 20, 21 },
+        }),
+        .mana_flask => &(FLASK ++ [_][4]f32{
+            .{ 11, 21, 14, 18 },
+            .{ 14, 18, 18, 24 },
+            .{ 18, 24, 21, 21 },
+        }),
+        .cleave => &.{
+            .{ 4, 26, 24, 6 },
+            .{ 20, 4, 27, 11 },
+            .{ 8, 20, 12, 24 },
+            .{ 6, 10, 4, 16 },
+            .{ 22, 28, 16, 28 },
+            .{ 4, 16, 6, 22 },
+            .{ 16, 28, 10, 26 },
+        },
         .wait => &.{
             .{ 7, 5, 25, 5 },
             .{ 7, 27, 25, 27 },
@@ -832,9 +914,13 @@ pub fn elementInk(e: damage.Element) rl.Color {
     return switch (e) {
         .fire => FIRE,
         .cold => COLD,
-        .chaos, .lightning => ARROW,
+        .lightning => LIGHTNING,
+        .chaos => ARROW,
     };
 }
+
+pub const LIGHTNING = rgb(0xf4e872);
+pub const SPARK_GLYPH: u8 = '*';
 
 pub const SKILL_PX: i32 = 40;
 
@@ -1033,7 +1119,7 @@ pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 /// The alpha below which nothing is drawn.
 pub const CLEAR_A: f32 = 0.004;
 
-/// What every fragment shader opens with: raylib's inputs and output, and `CLEAR_A`.
+/// What every fragment shader opens with: raylib's inputs and output, `CLEAR_A`, and the map's size in cells.
 pub const FS_HEAD = std.fmt.comptimePrint(
     \\#version 330
     \\in vec2 fragTexCoord;
@@ -1041,8 +1127,57 @@ pub const FS_HEAD = std.fmt.comptimePrint(
     \\uniform sampler2D texture0;
     \\out vec4 finalColor;
     \\const float CLEAR_A = {d};
+    \\const vec2 CELLS = vec2({d}.0, {d}.0);
     \\
-, .{CLEAR_A});
+, .{ CLEAR_A, grid.W, grid.H });
+
+/// Of the shallows' colours, what deep water's art keeps: `tools/tile_art/deepen_water.lua`.
+pub const WATER_DEEP_PERCENT = 60;
+const WATER_DEEP: f32 = mathx.fraction(WATER_DEEP_PERCENT);
+const WATER_HIGHLIGHT = [2]f32{ 0.65, 0.82 };
+const WATER_SHIMMER: f32 = 0.20;
+const WATER_SPEED: f32 = 0.40;
+const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
+    "const vec2 HIGHLIGHT = vec2({d}, {d});\nconst float SHIMMER = {d};\nconst float SPEED = {d};\nconst vec3 LUMA = vec3({d}, {d}, {d});\n",
+    .{ WATER_HIGHLIGHT[0], WATER_HIGHLIGHT[1], WATER_SHIMMER, WATER_SPEED, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2] },
+) ++
+    \\uniform float time;
+    \\uniform vec2 origin;
+    \\uniform float cell;
+    \\uniform float screen_h;
+    \\uniform float depth;
+    \\uniform sampler2D visibility;
+    \\void main() {
+    \\    vec4 art = texture(texture0, fragTexCoord) * fragColor;
+    \\    vec2 at = (vec2(gl_FragCoord.x, screen_h - gl_FragCoord.y) - origin) / cell;
+    \\    float bright = dot(art.rgb / depth, LUMA);
+    \\    float highlight = smoothstep(HIGHLIGHT.x, HIGHLIGHT.y, bright);
+    \\    float seen = texture(visibility, at / CELLS).a;
+    \\    float phase = time * SPEED;
+    \\    float wave = sin(at.x * 5.7 + at.y * 2.3 + phase * 4.25)
+    \\               * sin(at.x * 2.1 - at.y * 4.3 - phase * 2.75);
+    \\    finalColor = vec4(clamp(art.rgb * (1.0 + SHIMMER * highlight * wave * seen), 0.0, 1.0), art.a);
+    \\}
+;
+
+/// The water grounds that shimmer, each by how far its art is darkened from the shallows'.
+fn waterDepth(gr: ground.Ground) ?f32 {
+    return switch (gr) {
+        .water => WATER_DEEP,
+        .shallows => 1,
+        else => null,
+    };
+}
+
+/// Whether `WATER_FS` may brighten or darken this pixel of `gr`'s art.
+pub fn shimmers(gr: ground.Ground, art: rl.Color) bool {
+    const depth = waterDepth(gr) orelse return false;
+    return sky.luma(rgbOf(art) / sky.splat(depth)) > WATER_HIGHLIGHT[0];
+}
+
+pub fn rgbOf(c: rl.Color) sky.Rgb {
+    return sky.Rgb{ @floatFromInt(c.r), @floatFromInt(c.g), @floatFromInt(c.b) } / sky.splat(255);
+}
 
 pub const MINI_BG = fade(BG, 0.9);
 pub const MINI_HERO = rgb(0x9cf08a);
@@ -1191,7 +1326,34 @@ test "floor shows through a wall's gaps; a tile with its own ground or backgroun
 test "the wall sheet's masks and face height are the ones its export script paints" {
     try ground.expectLuaList(u8, &WALL_MASKS, "tools/tile_art/wall_masks.lua", "return {");
     try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/export_walls.lua", "local FACE=");
+    try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/guide_walls.lua", "local FACE=tonumber(app.params.rows) or ");
+    try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/idea_walls.lua", "local FACE=");
+}
 
+test "the deep water sheet is the shallows' at WATER_DEEP_PERCENT, as deepen_water.lua rounds it" {
+    try ground.expectLuaList(i32, &.{WATER_DEEP_PERCENT}, "tools/tile_art/deepen_water.lua", "local percent=tonumber(app.params.percent) or ");
+    const shallow = try rl.loadImageFromMemory(".png", GROUND_PNGS.get(.shallows).?);
+    defer rl.unloadImage(shallow);
+    const deep = try rl.loadImageFromMemory(".png", GROUND_PNGS.get(.water).?);
+    defer rl.unloadImage(deep);
+    try std.testing.expectEqual(shallow.width, deep.width);
+    try std.testing.expectEqual(shallow.height, deep.height);
+    const Lua = struct {
+        fn channel(v: u8) u8 {
+            return @intCast((@as(u32, v) * WATER_DEEP_PERCENT + mathx.PERCENT / 2) / mathx.PERCENT);
+        }
+    };
+    var y: i32 = 0;
+    while (y < shallow.height) : (y += 1) {
+        var x: i32 = 0;
+        while (x < shallow.width) : (x += 1) {
+            const s = rl.getImageColor(shallow, x, y);
+            const d = rl.getImageColor(deep, x, y);
+            try std.testing.expectEqual(s.a, d.a);
+            if (s.a == 0) continue;
+            try std.testing.expectEqual([3]u8{ Lua.channel(s.r), Lua.channel(s.g), Lua.channel(s.b) }, [3]u8{ d.r, d.g, d.b });
+        }
+    }
 }
 
 test "an arrow's glyph follows its slope" {

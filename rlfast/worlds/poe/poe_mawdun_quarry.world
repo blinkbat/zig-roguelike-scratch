@@ -1,0 +1,9 @@
+roguelike-world 1
+start 0 4 32
+node procgen topology
+layout bowls
+filler chasm
+ground dirt
+path 3
+name PoE2 Mawdun Quarry
+at 0 0

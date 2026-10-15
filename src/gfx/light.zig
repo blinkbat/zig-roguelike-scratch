@@ -65,8 +65,8 @@ const SIGHT_FADE: f32 = 0.4;
 const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
 const VOID_SPAN: usize = @intCast(grid.Cells.span(VOID_REACH));
 /// The cells' corners, which `Light.casting` and `Light.clouds` hold: one more than the cells each way.
-const CORNERS_W: usize = grid.COLS + 1;
-const CORNERS_H: usize = grid.ROWS + 1;
+const CORNERS_W = grid.CORNERS_W;
+const CORNERS_H = grid.CORNERS_H;
 const FLICKER: f32 = 0.14;
 const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
     .{ .hz = 1.5, .weight = 0.6 },
@@ -574,9 +574,7 @@ const FACE_EPS: f32 = 1e-2;
 
 const splat = sky.splat;
 
-fn rgbOf(c: rl.Color) Rgb {
-    return Rgb{ @floatFromInt(c.r), @floatFromInt(c.g), @floatFromInt(c.b) } / splat(255);
-}
+const rgbOf = look.rgbOf;
 
 fn colourOf(c: Rgb, a: f32) rl.Color {
     const k = @max(splat(0), @min(splat(1), c)) * splat(255) + splat(0.5);
@@ -708,10 +706,15 @@ pub const Light = struct {
     baked: [2]i32,
     scratch: grid.Level,
     gpu: Gpu,
+    forest: [FOREST_QUEUE]ForestCast,
+    forest_n: usize,
+    /// `forest`'s order to draw in, joined sides then texture, each beside its index.
+    forest_order: [FOREST_QUEUE]u64,
 
     /// Set field by field: built as one value, it is a temporary bigger than a thread's stack.
     pub fn create(alloc: std.mem.Allocator) !*Light {
         const l = try alloc.create(Light);
+        l.forest_n = 0;
         l.torch_n = 0;
         l.carrier = null;
         l.sky = null;
@@ -894,12 +897,14 @@ pub const Light = struct {
     /// Cells across the ground from the carried light, how far of that is southward, and how much of it reaches there, fallen off and occluded.
     fn carryToward(self: *const Light, x: f32, y: f32, fogged: bool) ?struct { at: [2]f32, flat: f32, dy: f32, k: f32 } {
         const c = self.carrier orelse return null;
+        const share = self.carryShare();
+        if (share <= 0) return null;
         const dx = c[0] - x;
         const dy = c[1] - y;
         const flat = mathx.len(dx, dy);
-        if (flat >= CARRY_R or self.carryShare() <= 0) return null;
+        if (flat >= CARRY_R) return null;
         const reach = if (fogged) sampleOccluded(&self.sight, &self.carry_open, x, y) else self.carryReach(x, y);
-        return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat) * self.carryShare() * reach };
+        return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat) * share * reach };
     }
 
     fn carried(self: *const Light, s: Spot) f32 {
@@ -1195,12 +1200,16 @@ pub const Light = struct {
 
     /// `ox, oy` is where the map's top-left corner lands on screen.
     pub fn drawMap(self: *Light, ox: i32, oy: i32, cell: i32) void {
-        const tex = self.gpu.map orelse return;
-        self.uploadMap();
+        const tex = self.mapTexture() orelse return;
         rl.gl.rlSetBlendFactors(rl.gl.rl_dst_color, rl.gl.rl_src_color, rl.gl.rl_func_add);
         rl.beginBlendMode(.custom);
         defer rl.endBlendMode();
         look.overFloor(tex, ox, oy, cell);
+    }
+
+    pub fn mapTexture(self: *Light) ?rl.Texture2D {
+        self.uploadMap();
+        return self.gpu.map;
     }
 
     fn uploadMap(self: *Light) void {
@@ -1291,6 +1300,7 @@ pub const Light = struct {
     }
 
     pub fn endShadows(self: *Light, ox: i32, oy: i32, cell: i32) void {
+        self.flushForest();
         rl.endShaderMode();
         rl.endBlendMode();
         rl.gl.rlEnableFramebuffer(self.gpu.outer);
@@ -1319,7 +1329,7 @@ pub const Light = struct {
         const cs = casts(s, centre, f.height, &buf);
         if (cs.len == 0) return;
         const foot = f.share;
-        if (!self.beginSilhouettes(tex, foot, .{ 0, 0, 0, 0 }, .{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT })) return;
+        if (!self.beginSilhouettes(tex, foot, (Sides{}).uniform(), .{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT })) return;
         for (cs) |c| {
             if (c.solid <= 0) continue;
             var full = c;
@@ -1349,21 +1359,38 @@ pub const Light = struct {
         }
     }
 
-    pub fn drawForestShadows(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: Shine, shape: grid.WallShape) void {
+    /// Its contact pool now; its silhouette waits for `endShadows`, drawn with every forest cell joined on the same sides under one set of uniforms.
+    pub fn drawForestShadows(self: *Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: Shine, shape: grid.WallShape) void {
         _ = self.footOf(tex, dest, s, 1) orelse return;
-        var buf: [BODY_LIGHTS]Cast = undefined;
-        const cs = casts(s, centre, dest.height, &buf);
-        if (cs.len == 0) return;
-        const joined = [4]f32{ mask(shape.w), mask(shape.e), mask(shape.n), mask(shape.s) };
-        if (!self.beginSilhouettes(tex, 1, joined, .{ FOREST_SOFT, FOREST_SOFT })) return;
-        for (cs) |c| {
-            const ink = colourOf(c.shade, @min(FOREST_MAX, c.alpha * FOREST_A));
-            for (0..FOREST_STEPS + 1) |i| {
-                const along = @as(f32, @floatFromInt(i)) / FOREST_STEPS;
-                forestQuad(tex, dest, centre, c, along, ink);
-            }
+        var f = ForestCast{ .tex = tex, .dest = dest, .centre = centre, .cast = undefined, .n = 0, .joined = .of(shape) };
+        f.n = casts(s, centre, dest.height, &f.cast).len;
+        if (f.n == 0) return;
+        if (self.forest_n == FOREST_QUEUE) self.flushForest();
+        self.forest[self.forest_n] = f;
+        self.forest_n += 1;
+    }
+
+    /// The mask takes the darker of what overlaps, so the order drawn changes nothing but how often the texture and uniforms switch.
+    fn flushForest(self: *Light) void {
+        defer self.forest_n = 0;
+        const order = self.forest_order[0..self.forest_n];
+        for (self.forest[0..self.forest_n], order, 0..) |*f, *o, i| {
+            const bits: u64 = @as(u4, @bitCast(f.joined));
+            o.* = bits << JOINED_AT | @as(u64, f.tex.id) << INDEX_BITS | i;
         }
-        self.endSilhouettes();
+        std.sort.pdq(u64, order, {}, std.sort.asc(u64));
+        var drawing: ?struct { joined: Sides, size: [2]i32 } = null;
+        for (order) |o| {
+            const f = &self.forest[@as(std.meta.Int(.unsigned, INDEX_BITS), @truncate(o))];
+            const size = [2]i32{ f.tex.width, f.tex.height };
+            if (drawing == null or drawing.?.joined != f.joined or !std.meta.eql(drawing.?.size, size)) {
+                if (drawing != null) self.endSilhouettes();
+                if (!self.beginSilhouettes(f.tex, 1, f.joined.uniform(), .{ FOREST_SOFT, FOREST_SOFT })) return;
+                drawing = .{ .joined = f.joined, .size = size };
+            }
+            for (f.cast[0..f.n]) |c| forestQuads(f.tex, f.dest, f.centre, c, colourOf(c.shade, @min(FOREST_MAX, c.alpha * FOREST_A)));
+        }
+        if (drawing != null) self.endSilhouettes();
     }
 
     /// The shadow shader on `tex` until `endSilhouettes`: `foot` its feet's share of its height, `joined` the sides it runs on past (w, e, n, s), `softness` its blur at tip and foot; false with no shader.
@@ -1407,6 +1434,37 @@ pub fn flashed(c: rl.Color, k: f32) rl.Color {
 /// Pixels: `lean` from the feet to the tip; `solid` the share that is silhouette, the rest a streak.
 const Cast = struct { lean: [2]f32, len: f32, solid: f32, alpha: f32, shade: Rgb, source: ?[2]f32 = null };
 
+/// The sides a forest cell's shadow runs on past, as the shadow shader's `joined` takes them.
+const Sides = packed struct(u4) {
+    w: bool = false,
+    e: bool = false,
+    n: bool = false,
+    s: bool = false,
+
+    fn of(shape: grid.WallShape) Sides {
+        var out: Sides = .{};
+        inline for (std.meta.fields(Sides)) |f| @field(out, f.name) = @field(shape, f.name);
+        return out;
+    }
+
+    fn uniform(self: Sides) [4]f32 {
+        var out: [4]f32 = undefined;
+        inline for (std.meta.fields(Sides), &out) |f, *o| o.* = mask(@field(self, f.name));
+        return out;
+    }
+};
+const ForestCast = struct { tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, cast: [BODY_LIGHTS]Cast, n: usize, joined: Sides };
+/// More forest cells than any view casts from; a fuller frame draws them in more batches.
+const FOREST_QUEUE: usize = 2048;
+/// `flushForest`'s sort key: the queue index below, the texture id over it, the joined sides on top.
+const INDEX_BITS = 16;
+const JOINED_AT = INDEX_BITS + @bitSizeOf(u32);
+
+comptime {
+    std.debug.assert(FOREST_QUEUE <= 1 << INDEX_BITS);
+    std.debug.assert(JOINED_AT + @bitSizeOf(Sides) <= @bitSizeOf(u64));
+}
+
 /// `height` is pixels from the feet to the top of the art.
 fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const Cast {
     const lit = s.lit();
@@ -1445,15 +1503,19 @@ fn forestTip(c: Cast, centre: [2]f32, uv: [2]f32, height: f32) [2]f32 {
     return lampLean(.{ centre[0] + uv[0] - 0.5 - source[0], centre[1] + uv[1] - 0.5 - source[1] }, height);
 }
 
-fn forestQuad(tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, c: Cast, along: f32, ink: rl.Color) void {
+fn forestQuads(tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, c: Cast, ink: rl.Color) void {
     const pad = FOREST_PAD / @as(f32, @floatFromInt(tex.width));
     const uvs = [4][2]f32{ .{ -pad, -pad }, .{ -pad, 1 + pad }, .{ 1 + pad, 1 + pad }, .{ 1 + pad, -pad } };
-    var corners: [4][4]f32 = undefined;
-    for (uvs, &corners) |uv, *v| {
-        const lean = forestTip(c, centre, uv, dest.height);
-        v.* = .{ uv[0], uv[1], dest.x + uv[0] * dest.width + lean[0] * along, dest.y + uv[1] * dest.height + lean[1] * along };
+    var leans: [4][2]f32 = undefined;
+    for (uvs, &leans) |uv, *l| l.* = forestTip(c, centre, uv, dest.height);
+    for (0..FOREST_STEPS + 1) |i| {
+        const along = @as(f32, @floatFromInt(i)) / FOREST_STEPS;
+        var corners: [4][4]f32 = undefined;
+        for (uvs, leans, &corners) |uv, lean, *v| {
+            v.* = .{ uv[0], uv[1], dest.x + uv[0] * dest.width + lean[0] * along, dest.y + uv[1] * dest.height + lean[1] * along };
+        }
+        texQuad(tex, ink, corners);
     }
-    texQuad(tex, ink, corners);
 }
 
 /// Each corner its texture's u, v, then the screen's x, y.

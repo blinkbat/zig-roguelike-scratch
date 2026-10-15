@@ -1,0 +1,13 @@
+roguelike-world 1
+start 0 4 32
+node procgen open
+ground grass
+feature farms
+count 8
+feature buildings
+count 2
+size 6 9
+feature road
+course across
+name PoE2 Ogham Farmlands
+at 0 0

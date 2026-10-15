@@ -1,0 +1,15 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground grass
+edge rock
+feature border
+tile rock
+width 2
+rough 3
+feature setpiece
+piece graveyard
+count 3
+apart 3
+name D2 Burial Grounds
+at 0 0

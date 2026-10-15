@@ -165,7 +165,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
     for (SIDES) |s| {
         if (mask & bitOf(s) == 0) continue;
         const step = s.delta();
-        const edge = mid.add(.{ .x = step.x * @divTrunc(size, 2), .y = step.y * @divTrunc(size, 2) });
+        const edge = mid.add(step.scaled(@divTrunc(size, 2)));
         var m = carve.Meander.init(mid, edge.add(step), if (style.built()) 0 else CAVE_WANDER);
         while (m.next(rng)) |q| {
             var cells = grid.Cells.around(q, @divTrunc(DOOR_W, 2));

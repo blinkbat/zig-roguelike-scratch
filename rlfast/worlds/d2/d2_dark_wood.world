@@ -1,0 +1,14 @@
+roguelike-world 1
+start 0 48 32
+node procgen wilds
+thicket 50
+strays 30
+feature border
+tile shrub
+width 2
+rough 4
+feature buildings
+count 2
+decay 50
+name D2 Dark Wood
+at 0 0

@@ -1,0 +1,8 @@
+roguelike-world 1
+start 0 48 32
+node procgen terrain
+height 70 100
+heat 10 50
+rivers 1
+name DF Mountains
+at 0 0

@@ -105,7 +105,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     if (p.chamber > 0) {
         const h: i32 = p.chamber;
         const w = @divTrunc(h * 3, 2);
-        carve.box(lv, .{ .lo = grid.MIDDLE.sub(.{ .x = w, .y = h }), .hi = grid.MIDDLE.add(.{ .x = w + 1, .y = h + 1 }) }, pal.open);
+        carve.box(lv, grid.Box.between(grid.MIDDLE.sub(.{ .x = w, .y = h }), grid.MIDDLE.add(.{ .x = w, .y = h })), pal.open);
     }
 }
 

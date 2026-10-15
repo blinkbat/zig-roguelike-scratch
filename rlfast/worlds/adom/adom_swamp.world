@@ -1,0 +1,15 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground grass
+feature scatter
+tile reeds
+on grass
+amount 300
+clump 4
+feature lake
+count 12
+size 3
+ring none
+name ADOM Swamp
+at 0 0

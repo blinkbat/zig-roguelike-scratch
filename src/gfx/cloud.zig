@@ -24,7 +24,7 @@ pub fn tintOf(volume: u16) f32 {
     return @min(TINT_HI, TINT_LO + TINT_PER * @as(f32, @floatFromInt(volume)));
 }
 
-const Shade = struct { shader: rl.Shader, time: i32, cells: i32 };
+const Shade = struct { shader: rl.Shader, time: i32 };
 
 pub const Cloud = struct {
     tint: [grid.CELLS]f32,
@@ -105,12 +105,10 @@ pub const Cloud = struct {
             self.stale = false;
         }
         const s = self.shade orelse return look.overFloor(tex, ox, oy, cell);
-        const cells = [2]f32{ @floatFromInt(grid.W), @floatFromInt(grid.H) };
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
         const time = self.t.at();
         rl.setShaderValue(s.shader, s.time, &time, .float);
-        rl.setShaderValue(s.shader, s.cells, &cells, .vec2);
         look.overFloor(tex, ox, oy, cell);
         rl.gl.rlDrawRenderBatchActive();
     }
@@ -163,7 +161,6 @@ const CLOUD_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     .{ TINT_HI, WARP, SOFT, OCTAVES, FBM_GAIN, FBM_MAX, CENTRE_W, SIDE_W },
 ) ++
     \\uniform float time;
-    \\uniform vec2 cells;
     \\const vec2 DRIFT = vec2(0.21, 0.13);
     \\float hash(vec2 p) {
     \\    p = fract(p * vec2(123.34, 456.21));
@@ -187,10 +184,10 @@ const CLOUD_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     \\    return v / FBM_MAX;
     \\}
     \\float density(vec2 c) {
-    \\    return texture(texture0, c / cells).a;
+    \\    return texture(texture0, c / CELLS).a;
     \\}
     \\void main() {
-    \\    vec2 c = fragTexCoord * cells;
+    \\    vec2 c = fragTexCoord * CELLS;
     \\    vec2 drift = DRIFT * time;
     \\    vec2 w = vec2(fbm(c * 0.7 + drift), fbm(c * 0.7 - drift.yx + 4.0)) - 0.5;
     \\    vec2 q = c + w * WARP * 2.0;
@@ -199,7 +196,7 @@ const CLOUD_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     \\        + density(q + vec2(0.0, SOFT)) + density(q - vec2(0.0, SOFT))) * SIDE_W;
     \\    if (d < CLEAR_A) discard;
     \\    float n = fbm(c * 1.3 + w * 1.5 - drift * 0.6);
-    \\    vec3 col = texture(texture0, q / cells).rgb * mix(0.75, 1.2, n);
+    \\    vec3 col = texture(texture0, q / CELLS).rgb * mix(0.75, 1.2, n);
     \\    finalColor = vec4(col, clamp(d * mix(0.5, 1.1, n), 0.0, TINT_HI)) * fragColor;
     \\}
 ;

@@ -5,6 +5,7 @@ const grid = @import("../world/grid.zig");
 const actor = @import("../play/actor.zig");
 const glacial = @import("../play/glacial.zig");
 const look = @import("look.zig");
+const font = @import("font.zig");
 
 /// `ichor` is Brogue's purple blood.
 pub const Matter = enum { blood, ooze, wood, ichor };
@@ -13,7 +14,7 @@ pub const Matter = enum { blood, ooze, wood, ichor };
 pub fn matterOf(kind: ?actor.Kind) Matter {
     const k = kind orelse return .wood;
     return switch (k) {
-        .archer, .rat, .pib => .blood,
+        .archer, .wizard, .knight, .rat, .pib => .blood,
         .slime, .slime_half, .slime_quarter => .ooze,
         .bloat => .ichor,
     };
@@ -152,6 +153,10 @@ pub const Body = struct {
     pub fn hurt(self: Body) bool {
         return self.hp < self.max;
     }
+
+    pub fn down(self: Body) bool {
+        return self.hp <= 0;
+    }
 };
 
 /// What landing shows: the body as the blow left it, and the slot of one it split off, drawn from then.
@@ -177,6 +182,11 @@ const TRAIL_MOTES: usize = 20;
 const DUST_MOTES: usize = 24;
 const EMBERS = Spray{ .col = look.FIRE, .hit = 18, .kill = 18, .along_lo = 0.4, .along_hi = 1.4, .fan = 0, .up_lo = 0.5, .up_hi = 1.5, .grav = 0, .drag = 2, .life_lo = 0.25, .life_hi = 0.55, .r_lo = 1.5, .r_hi = 3.5, .stains = false };
 const DRIP_MOTES: usize = 5;
+const WATER_MOTES: usize = 4;
+/// Cells below a body's middle its splash rises from, and how far across and down it spreads.
+pub const SPLASH_FOOT: f32 = 0.32;
+pub const SPLASH_R: f32 = 0.22;
+pub const SPLASH_RY: f32 = 0.08;
 /// The marks a status draws on a body.
 const BLEED_DROPS = 4;
 const CHILL_FLAKES = 5;
@@ -184,6 +194,25 @@ const BURN_FLAMES = 7;
 /// Where across a body's cell chill's flakes and burn's flames begin, and how far they spread.
 const MARKS_FROM: f32 = 0.22;
 const MARKS_SPAN: f32 = 0.56;
+
+/// The `i`th of `n` headings round a ring, each pushed on up to `jitter` of the gap to the next.
+fn ringDir(rng: *mathx.Rng, i: usize, n: usize, jitter: f32) [2]f32 {
+    return heading((@as(f32, @floatFromInt(i)) + rng.unit() * jitter) * mathx.TAU / @as(f32, @floatFromInt(n)));
+}
+
+pub const FRIGHT_WORDS = [_][:0]const u8{ "Eek!", "Ah!", "[snorts]", "[squeals]" };
+pub const SPEECH_S: f32 = 1.1;
+/// Its last seconds, fading out.
+pub const SPEECH_FADE_S: f32 = 0.4;
+/// Cells over the body's head it starts, and how far it rises by its end.
+const SPEECH_LIFT: f32 = 0.04;
+const SPEECH_RISE: f32 = 0.3;
+
+const Speech = struct {
+    after: ?usize = null,
+    life: f32 = 0,
+    word: usize = 0,
+};
 
 const Due = union(enum) {
     blow: Blow,
@@ -232,6 +261,7 @@ pub const Fx = struct {
     barrels_due: usize = 0,
     /// Indexed by pool slot: the body as the latest-dealt of the blows landed on it left it.
     landed: [actor.MAX]?Body = @splat(null),
+    speech: [actor.MAX]Speech = @splat(.{}),
     rng: mathx.Rng = mathx.Rng.init(0xF1A5),
     seconds: mathx.Seconds = .{},
 
@@ -241,6 +271,33 @@ pub const Fx = struct {
         self.due_n = 0;
         self.barrels_due = 0;
         self.landed = @splat(null);
+        self.speech = @splat(.{});
+    }
+
+    pub fn frighten(self: *Fx, slot: usize, fallen: usize) void {
+        self.speech[slot].after = fallen;
+    }
+
+    pub fn react(self: *Fx, bodies: []const Body) void {
+        for (self.speech[0..bodies.len], bodies) |*s, b| {
+            if (b.down()) {
+                s.* = .{};
+                continue;
+            }
+            const fallen = s.after orelse continue;
+            if (!bodies[fallen].down()) continue;
+            s.* = .{ .life = SPEECH_S, .word = @intCast(self.rng.below(FRIGHT_WORDS.len)) };
+        }
+    }
+
+    pub fn drawSpeech(self: *const Fx, face: *const font.Face, slot: usize, x: i32, y: i32, cell: f32, sight: f32) void {
+        const s = self.speech[slot];
+        if (s.life <= 0) return;
+        const age = 1 - s.life / SPEECH_S;
+        const size: i32 = @intFromFloat(cell * font.SMALL / look.SPRITE_PX);
+        const cx = x + @as(i32, @intFromFloat(cell * 0.5));
+        const top = y - size - @as(i32, @intFromFloat(cell * (SPEECH_LIFT + age * SPEECH_RISE)));
+        face.textMid(FRIGHT_WORDS[s.word], cx, top, size, look.fade(look.TEXT, sight * @min(1, s.life / SPEECH_FADE_S)));
     }
 
     /// `wait` seconds from now, when the picture reaches the blow the simulation already dealt.
@@ -328,6 +385,7 @@ pub const Fx = struct {
     pub fn step(self: *Fx, lv: *const grid.Level, dt: f32) void {
         self.seconds.step(dt);
         for (&self.flash) |*f| f.* = @max(0, f.* - dt);
+        for (&self.speech) |*s| s.life = @max(0, s.life - dt);
         var i: usize = 0;
         while (i < self.due_n) {
             self.due[i].t -= dt;
@@ -361,7 +419,7 @@ pub const Fx = struct {
         for (0..n) |_| {
             const d = dir orelse heading(rng.unit() * mathx.TAU);
             const along = mathx.lerpF(s.along_lo, s.along_hi, rng.unit());
-            const across = (rng.unit() * 2 - 1) * s.fan;
+            const across = rng.spread(2 * s.fan);
             self.emit(.{
                 .p = .{ at[0], at[1], STRIKE_Z },
                 .v = .{ d[0] * along - d[1] * across, d[1] * along + d[0] * across, mathx.lerpF(s.up_lo, s.up_hi, rng.unit()) },
@@ -415,7 +473,7 @@ pub const Fx = struct {
             for (0..ICE_MOTES) |_| {
                 const life = 0.22 + self.rng.unit() * 0.18;
                 self.emit(.{
-                    .p = .{ to[0] - 0.25 + self.rng.unit() * 0.5, to[1] - 0.25 + self.rng.unit() * 0.5, STRIKE_Z },
+                    .p = .{ to[0] + self.rng.spread(0.5), to[1] + self.rng.spread(0.5), STRIKE_Z },
                     .v = .{ (to[0] - from[0]) * 0.25, (to[1] - from[1]) * 0.25, self.rng.unit() * 0.3 },
                     .life = life,
                     .r = 2 + self.rng.unit() * 4,
@@ -451,6 +509,21 @@ pub const Fx = struct {
         }
     }
 
+    pub fn splash(self: *Fx, at: [2]f32) void {
+        for (0..WATER_MOTES) |i| {
+            const dir = ringDir(&self.rng, i, WATER_MOTES, 0.5);
+            self.emit(.{
+                .p = .{ at[0] + dir[0] * SPLASH_R, at[1] + SPLASH_FOOT + dir[1] * SPLASH_RY, 0.025 },
+                .v = .{ dir[0] * 0.55, dir[1] * 0.3, 0.45 + self.rng.unit() * 0.3 },
+                .life = 0.24 + self.rng.unit() * 0.1,
+                .r = 0.8 + self.rng.unit() * 0.5,
+                .col = look.WATER_DROP,
+                .grav = 5,
+                .drag = 3,
+            });
+        }
+    }
+
     pub fn juke(self: *Fx, from: mathx.P, to: mathx.P) void {
         const a = mathx.centre(from);
         const b = mathx.centre(to);
@@ -467,7 +540,7 @@ pub const Fx = struct {
             });
         }
         for (0..DUST_MOTES) |i| {
-            const dir = heading((@as(f32, @floatFromInt(i)) + self.rng.unit()) * mathx.TAU / @as(f32, DUST_MOTES));
+            const dir = ringDir(&self.rng, i, DUST_MOTES, 1);
             const speed = 0.8 + self.rng.unit() * 1.8;
             self.emit(.{
                 .p = .{ b[0] + dir[0] * 0.28, b[1] + dir[1] * 0.28, 0.04 },
@@ -565,6 +638,31 @@ fn live(fx: *const Fx) Live {
 }
 
 const TEST_BLOW = Blow{ .slot = 3, .at = .{ 20.5, 20.5 }, .dir = .{ 1, 0 }, .matter = .blood, .lethal = false };
+
+test "water footsteps make a few small droplets that vanish without stains or flashes" {
+    for ([_]grid.Tile{ .shallows, .water }) |water| {
+        var lv = grid.openFloor();
+        lv.set(.{ .x = 20, .y = 20 }, water);
+        var effects = Fx{};
+        effects.splash(.{ 20.5, 20.5 });
+        const n = live(&effects).flying;
+        try std.testing.expectEqual(WATER_MOTES, n);
+        var peak: f32 = 0;
+        for (0..120) |_| {
+            for (effects.motes) |m| {
+                if (m.life <= 0) continue;
+                try std.testing.expect(!m.stains and !m.add);
+                try std.testing.expect(m.r <= 1.5 and m.col.a <= look.WATER_DROP.a);
+                peak = @max(peak, m.p[2]);
+            }
+            effects.step(&lv, mathx.TEST_DT);
+        }
+        try std.testing.expect(peak < 0.12);
+        try std.testing.expectEqual(@as(usize, 0), live(&effects).flying + live(&effects).stains);
+        for (effects.flash) |f| try std.testing.expectEqual(@as(f32, 0), f);
+        std.debug.print("water footsteps on {s}: {d} small drops, peak {d:.3} cells, no stains or flashes\n", .{ @tagName(water), n, peak });
+    }
+}
 
 test "glacial frost waits for impact then fills only its cone and clears without stains" {
     const lv = grid.openFloor();

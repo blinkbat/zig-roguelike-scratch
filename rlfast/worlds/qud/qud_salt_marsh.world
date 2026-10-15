@@ -1,0 +1,20 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground grass
+edge shrub
+feature scatter
+tile shallows
+on grass
+amount 220
+clump 6
+feature lake
+count 9
+size 4
+feature scatter
+tile reeds
+on grass
+amount 180
+clump 4
+name Qud Salt Marsh
+at 0 0

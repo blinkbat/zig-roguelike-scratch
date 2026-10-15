@@ -95,13 +95,7 @@ pub fn around(lv: *grid.Level, seed: u64, doors: []const P, params: Params) Floo
         const b = rng.below(@intCast(f.room_n));
         if (a != b) tunnel(lv, f.rooms[a].centre(), f.rooms[b].centre(), &rng);
     }
-    for (doors, 0..) |d, k| {
-        lv.putDoor(d, k);
-        // A door on the map's edge is reached from the cell inside it, so no corridor runs along the edge.
-        const in = grid.Level.inset(d);
-        runX(lv, d.x, in.x, d.y);
-        runY(lv, d.y, in.y, in.x);
-    }
+    carve.openDoors(lv, doors, .floor);
     connect(lv, &rng);
     shapeWalls(lv);
     for (f.rooms[0..f.room_n]) |r| {
@@ -160,23 +154,14 @@ fn addRoom(f: *Floor, r: Room) bool {
 }
 
 fn tunnel(lv: *grid.Level, a: P, b: P, rng: *mathx.Rng) void {
-    if (rng.chance(0.5)) {
-        runX(lv, a.x, b.x, a.y);
-        runY(lv, a.y, b.y, b.x);
-    } else {
-        runY(lv, a.y, b.y, a.x);
-        runX(lv, a.x, b.x, b.y);
-    }
+    bend(lv, a, b, rng.chance(0.5));
 }
 
-fn runX(lv: *grid.Level, x0: i32, x1: i32, y: i32) void {
-    var x = @min(x0, x1);
-    while (x <= @max(x0, x1)) : (x += 1) lv.set(.{ .x = x, .y = y }, .floor);
-}
-
-fn runY(lv: *grid.Level, y0: i32, y1: i32, x: i32) void {
-    var y = @min(y0, y1);
-    while (y <= @max(y0, y1)) : (y += 1) lv.set(.{ .x = x, .y = y }, .floor);
+/// Floor from `a` to `b` along two straight runs, across first or down first.
+fn bend(lv: *grid.Level, a: P, b: P, across_first: bool) void {
+    const corner: P = if (across_first) .{ .x = b.x, .y = a.y } else .{ .x = a.x, .y = b.y };
+    carve.box(lv, grid.Box.between(a, corner), .floor);
+    carve.box(lv, grid.Box.between(corner, b), .floor);
 }
 
 fn connect(lv: *grid.Level, rng: *mathx.Rng) void {
@@ -210,7 +195,7 @@ pub fn shapeWalls(lv: *grid.Level) void {
     restoreShapes(lv);
 }
 
-/// An older save's level, shaped before forests were.
+/// Every shaped tile without a shape given one, leaving the rest: all of a fresh level, or an older save's forests.
 pub fn restoreShapes(lv: *grid.Level) void {
     for (&lv.tile, &lv.shape, 0..) |t, *s, i| {
         if (t.shaped() and s.* == null) s.* = wallShape(lv, grid.Level.of(i));
@@ -299,7 +284,7 @@ test "the rim stays solid and the start is floor" {
 }
 
 fn room(lv: *grid.Level, x0: i32, y0: i32, x1: i32, y1: i32) void {
-    carve.box(lv, .{ .lo = .{ .x = x0, .y = y0 }, .hi = .{ .x = x1 + 1, .y = y1 + 1 } }, .floor);
+    carve.box(lv, grid.Box.between(.{ .x = x0, .y = y0 }, .{ .x = x1, .y = y1 }), .floor);
 }
 
 fn shapeAt(lv: *const grid.Level, x: i32, y: i32) grid.WallShape {
@@ -479,10 +464,7 @@ test "a door on the map's edge is the only floor on the edge" {
         const f = around(&lv, 0xED6E5 +% i *% 7919, &doors, .{});
         _ = grid.distances(&lv, f.start, &dist, &queue);
         for (doors) |d| try std.testing.expect(dist[grid.Level.idx(d)] >= 0);
-        for (0..grid.CELLS) |k| {
-            const p = grid.Level.of(k);
-            if (grid.Level.onRim(p) and lv.walkable(p) and lv.doorAt(p) == null) rim += 1;
-        }
+        rim += carve.leaks(&lv);
     }
     std.debug.print("200 floors with a door on each edge: {d} edge cells of floor that are not doors\n", .{rim});
     try std.testing.expectEqual(@as(usize, 0), rim);

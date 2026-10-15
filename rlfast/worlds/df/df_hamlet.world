@@ -1,0 +1,16 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground grass
+feature farms
+count 6
+feature road
+course across
+feature buildings
+count 8
+size 5 9
+feature setpiece
+piece well
+count 1
+name DF Hamlet
+at 0 0

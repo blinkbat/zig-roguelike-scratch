@@ -1,0 +1,17 @@
+roguelike-world 1
+start 0 48 32
+node procgen caves
+fill 42
+feature lake
+fill lava
+count 5
+size 9
+ring rock
+feature river
+fill lava
+width 3
+bank none
+course down
+fords 1
+name DF Magma Sea
+at 0 0

@@ -4,6 +4,7 @@ const grid = @import("grid.zig");
 const lume = @import("lume.zig");
 const gen = @import("gen.zig");
 const procgen = @import("procgen.zig");
+const carve = @import("carve.zig");
 const actor = @import("../play/actor.zig");
 const store = @import("../core/store.zig");
 const pack = @import("../play/pack.zig");
@@ -229,6 +230,14 @@ pub const Node = struct {
         };
     }
 
+    /// A bespoke node keeps the default sky; it is under a roof, so none of it shows.
+    pub fn sky(self: *const Node) climate.Climate {
+        return switch (self.plan) {
+            .procgen => |*pg| pg.sky,
+            .bespoke => .{},
+        };
+    }
+
     pub fn unrolled(self: *const Node) bool {
         return switch (self.plan) {
             .procgen => true,
@@ -286,7 +295,7 @@ pub const Node = struct {
     }
 
     pub fn takesDoor(self: *const Node, p: P) bool {
-        return self.door_n < grid.MAX_DOORS and self.doorAt(p) == null and grid.Level.inside(p) and !grid.Level.cornered(p);
+        return self.door_n < grid.MAX_DOORS and self.doorAt(p) == null and grid.Level.inside(p);
     }
 
     pub fn foeFits(self: *const Node, b: *const Bespoke, p: P) bool {
@@ -313,7 +322,7 @@ pub const Node = struct {
             .bespoke => |*b| {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;
-                self.openDoors(lv);
+                self.markDoors(lv);
                 lv.torch = b.torch;
                 procgen.reshape(lv);
                 for (0..grid.CELLS) |i| {
@@ -328,12 +337,12 @@ pub const Node = struct {
             .bespoke => self.stamp(lv, 0),
             .procgen => {
                 lv.* = grid.Level.blank();
-                self.openDoors(lv);
+                self.markDoors(lv);
             },
         }
     }
 
-    fn openDoors(self: *const Node, lv: *grid.Level) void {
+    fn markDoors(self: *const Node, lv: *grid.Level) void {
         for (self.doors(), 0..) |d, i| lv.putDoor(d.at, i);
     }
 };
@@ -1229,14 +1238,27 @@ test "a bespoke node takes no more slimes than the pool holds once every one has
     try std.testing.expect(b.bodies() <= actor.MAX);
 }
 
-test "no door goes in a map corner, which no step reaches" {
+test "tight diagonals reach doors in all four map corners" {
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);
     const n = a.add(.{ .procgen = .{} }).?;
     for ([_]P{ .{ .x = 0, .y = 0 }, .{ .x = grid.W - 1, .y = 0 }, .{ .x = 0, .y = grid.H - 1 }, .{ .x = grid.W - 1, .y = grid.H - 1 } }) |p| {
-        try std.testing.expectEqual(@as(?usize, null), a.addDoor(n, p));
+        try std.testing.expect(a.addDoor(n, p) != null);
     }
-    try std.testing.expect(a.addDoor(n, .{ .x = 1, .y = 0 }) != null);
+    for (std.enums.values(procgen.Algo)) |base| {
+        a.node[n].plan.procgen.floor = procgen.Floor.of(base);
+        var lv: grid.Level = undefined;
+        a.node[n].stamp(&lv, 0xD1A6);
+        var dist: [grid.CELLS]i32 = undefined;
+        var queue: [grid.CELLS]u32 = undefined;
+        _ = grid.distances(&lv, lv.firstOpen().?, &dist, &queue);
+        for (a.node[n].doors()) |door| {
+            const inside = grid.Level.inset(door.at);
+            try std.testing.expect(lv.stepOk(inside, mathx.dirTo(inside, door.at).?, grid.NO_ONE));
+            try std.testing.expect(dist[grid.Level.idx(door.at)] >= 0);
+        }
+        try std.testing.expectEqual(@as(usize, 0), carve.leaks(&lv));
+    }
 }
 
 test "a body lands on the nearest open cell no one holds" {

@@ -1,0 +1,14 @@
+roguelike-world 1
+start 0 4 32
+node procgen topology
+layout line
+filler water
+ground sand
+clearing 9
+path 6
+feature scatter
+tile rock
+on sand
+amount 10
+name PoE1 Coast
+at 0 0

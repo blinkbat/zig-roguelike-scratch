@@ -86,15 +86,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     }
     const across = rng.chance(0.5);
     const sides = if (across) carve.ACROSS else carve.DOWN;
-    for (sides) |side| {
-        const gate_at = carve.sideAt(curtain, side, carve.alongOf(side, grid.MIDDLE));
-        const out_dir = side.delta();
-        const half = side.across().scaled(@divTrunc(GATE_W, 2));
-        const outer = gate_at.add(out_dir.scaled(CURTAIN + reachOf(p.towers, p.moat))).sub(half);
-        const inner = gate_at.sub(out_dir.scaled(CURTAIN)).add(half);
-        carve.bridge(lv, grid.Box.between(outer, inner), .floor);
-
-    }
+    for (sides) |side| carve.gateway(lv, carve.sideMid(curtain, side), side.opposite(), CURTAIN + reachOf(p.towers, p.moat), CURTAIN, @divTrunc(GATE_W, 2), .floor);
     const keep = keepOf(p);
     carve.box(lv, keep, .wall);
     const in = keep.inner();

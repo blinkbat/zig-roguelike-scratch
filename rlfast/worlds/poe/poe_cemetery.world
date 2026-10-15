@@ -1,0 +1,18 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground grass
+edge wall
+feature border
+tile wall
+width 2
+rough 0
+feature setpiece
+piece graveyard
+count 4
+apart 2
+feature buildings
+count 3
+size 6 8
+name PoE2 Cemetery
+at 0 0

@@ -1,7 +1,7 @@
 # AGENTS.md — roguelike-scratch
 
 A grid roguelike in **Zig 0.14.1 + raylib**, built from `..\__archive\zig-grid-roguelike`'s foundation (grid, symmetric
-FOV, room generator, input stepper) with every system stripped out. One archer, four foes (the rat and the tougher
+FOV, room generator, input stepper) with every system stripped out. Three heroes (the archer, the wizard and the knight, `play/hero.zig`), four foes (the rat and the tougher
 slime, both melee, Brogue's bloat, which flits and bursts into caustic gas, and the pib, whose stab may open a bleed
 and who runs when it sees a foe die) placed in packs by `play/pack.zig` (a `pack.Spec`: its makeups, drawn by weight, `pack.KINDS` by default; each kind's quota of `few` is filled first, from the makeups holding it; never more bodies than the pool holds once every slime has split to quarters, `actor.roomFor`, which a bespoke node's foes keep to too), barrels that break for gold, no items, HP and mana. Art is enlarged ASCII, replaced one PNG at a time as the owner makes them.
 
@@ -10,6 +10,10 @@ one that leaves either half under half its own splits that half into two quarter
 on half what it split from had left (at least 1), the new one on a free cell beside it and acting from the next turn;
 with no free cell it splits on a later blow. A slime's splits are of its `Kind.family` and count
 as slimes. The hero also has mana for Juke, its orb opposite life's in the HUD.
+
+Every unit kind declares `Row.movement`: `ground` or `flying` (the bloat flies; the current others are grounded).
+`Row.foe_type` is `beast`, `humanoid`, `aberration`, `undead` or `construct`, null for the hero. Rats and pibs are
+beasts; bloats and every slime form are aberrations. The object viewer shows both fields.
 
 Prefer no comments in code. Don't make product/design decisions — ask. Don't commit, push or branch unless asked.
 
@@ -21,6 +25,7 @@ for the change asked for.
 
 - Wall and repeating tile workflow: `docs/TILE_ART_WORKFLOW.md`. Port the owner's actual pixels and uneven outlines at native scale; preserve authored layers, update the canonical Aseprite file, and inspect connected game tiles. Regular walls use Desktop `regular-walls.aseprite`, painted on `Layer 1`; cave and forest are separate.
 - Grass, dirt and water ground use Desktop `<name>.aseprite` and `assets/source/<name>.aseprite`: preserve `Draw here`, with completion on the material's named extensions layer. `port_ground.lua name=grass|dirt|water` records the crops. Water's original colours are for shallows: `export_ground.lua name=shallows` reads `water.aseprite` into `assets/shallows-ground.png`; `name=water` reads `deep-water.aseprite` into `assets/water-ground.png`. The deep copy has 60% RGB, identical alpha and shapes, made by `deepen_water.lua`; both keep `Water extensions`. Other materials export under their own names. Dirt was transferred from a mistaken grass-file edit; green grass was restored. All atlases have 16 dual-grid masks, 64px cells. Backups and previews go to TEMP; inspect later owner edits before regenerating.
+- Water shimmers in play through `look.WATER_FS`: only the normalized highlight range changes brightness, at most 20%, with `WATER_SPEED` 0.40, anchored to map coordinates and faded by sight. Source art and the editor preview stay static. `--shot` checks visible contrast in both depths, fixed base/outline/grass/memory pixels and camera anchoring, exporting `water-shimmer-a.png` and `water-shimmer-b.png`, plus four seconds of actual idle play as `water-shimmer/00.png` through `39.png`. Ground units make four small fading droplets near the visible footfall in water (`game.splashSteps`, `Fx.splash`); flying units, idle bodies and melee bumps do not. `water-steps.png` shows every current unit kind wading together.
 - Forest artwork uses `assets/source/forest-tree-walls.aseprite` and `assets/backup/` at the owner's request. `export_forest.lua` exports its two art layers; the Desktop source keeps `Draw here` and separate `Forest extensions`. `.shrub` connections use the 47-cell forest atlas; isolated blockers mix `shrub.png` and forest cell 01 by stable position hash. The owner requested darker forest foliage and grass pixels; before-tone sources are backed up, and `tone_forest.lua` records the palette change. `shot.cmd` includes `shots/forest.png` and nine `shadows-*.png` lighting studies (morning, noon, evening, moon, torch, three hidden casters, offscreen).
 
 ## Build & verify
@@ -35,7 +40,8 @@ for the change asked for.
   into `zig-out-dev` so a running game is untouched).
   `edit.cmd [path]` opens the world editor (`--edit`) on `worlds\main.world` or the `.world` named.
   `zig-out-dev\bin\roguelike.exe --bench` (after `shot.cmd` builds it) prints startup, per-frame CPU time of a headless walk,
-  and map texture residency/loading/reuse checks. `run.cmd` and `edit.cmd` use ReleaseFast; `build.cmd`, checks and tests keep Debug.
+  and map texture residency/loading/reuse checks. `run.cmd`, `edit.cmd` and `build.cmd` share Debug, as in `zig-soulslike`; checks and tests also keep Debug. `run.cmd -Doptimize=ReleaseFast` or `build-release.cmd` explicitly selects the optimized build.
+  For normal play handoffs, finish with `build.cmd` so the next `run.cmd` reuses that build. After the same small source edit with raylib cached, Debug took 6.5 s versus ReleaseFast's 25.4 s; Debug's headless update and draw averaged 1.54 ms of CPU work per frame. Use `_zig.cmd`'s toolchain with `build --prefix zig-out-dev` if the running game locks the normal executable.
   The toolchain is named once, in `_zig.cmd`. From PowerShell, call them as `.\check.cmd` from this directory.
 - **EVERY MODULE MUST BE NAMED IN `main.zig`'s `test {}` BLOCK** — `build.zig` panics otherwise,
   and on any `src/**/*.zig` under 512 bytes.
@@ -53,7 +59,7 @@ for the change asked for.
   pills, keycaps. D-pad moves, LT (Shift) held puts it on diagonals (`leanOf`). Skills sit
   on PoE2's controller skill bar (`play/skillbar.zig`): LB, A, X, Y, B, RB and RT are slots in a primary and a
   secondary set, the secondary set is used while the button bound to "Activate Secondary Skill Set" (LB) is held, and
-  View held `input.HOLD_S` opens the bind screen (a press that closes or cancels is `spend`t) (A select or pick up, X change, Y remove, B close). Defaults: X Shoot, B Juke, Y Wait, RB Burning Arrow, RT Glacial Shot. The button
+  View held `input.HOLD_S` opens the bind screen (a press that closes or cancels is `spend`t) (A select or pick up, X change, Y remove, B close). Defaults (`skillbar.Bar.of`): RB Life Flask and RT Mana Flask in both sets for every class, Y Wait; the archer X Shoot, B Juke, A Burning Arrow, LB+X Glacial Shot; the wizard X Spark, B Blink; the knight X Cleave, B Shield Bash. The button
   that opened the reticle confirms; B or Menu cancels, or View when B opened it. A, B, X or Menu restarts after death (or, in a save slot,
   goes back to the title), and Menu opens no pause menu over it. On the keyboard a slot is a number (`input.SLOT_ORDER`,
   skipping the modifier's, which Ctrl holds) and menus have their own keys (Enter, Space or Z confirm, X or Esc back
@@ -66,7 +72,7 @@ for the change asked for.
   is): New plays the default start, `worlds\start.world` (`atlas.START`, the Strand: washed up on a rainy coast, the
   one exit east through the forest; one generated floor when the file is missing); Worlds browses `worlds\` a folder
   at a time (`atlas.Listing`: `..` first below the top, then folders, then worlds; A opens, B goes up, a long list
-  scrolling with `menu.window`) and plays the world picked. Either then takes a hero's class (`play/hero.zig`; the archer alone so far) and has it named on a grid of keys the
+  scrolling with `menu.window`) and plays the world picked. Either then takes a hero's class (`play/hero.zig`: archer, wizard or knight; `Game.class`, saved) and has it named on a grid of keys the
   d-pad walks and the keyboard types into (`ui/naming.zig`), then plays the world read fresh from disk in
   the first free save slot (refused when all are taken); Load plays or deletes (Y, twice) a slot; Options toggles
   fullscreen and opens Debug (Unkillable: the hero keeps 1 hp whatever strikes it, `Game.unkillable`, never saved); Editor opens the editor; Quit quits. The hero's name is said in the log and the death screen,
@@ -106,7 +112,7 @@ for the change asked for.
   the start or a door reaches, shaded on the map, foes on it) and everything on it, a row showing it on the map; the
   object viewer (`Desk.OBJECTS_CAPTION`) shows every tile, body and prop with what the game holds it to be. Every
   press is a gesture, and all a gesture changes is one undo (`Editor.gesture` then `bank` on its first change;
-  whole-world snapshots, `UNDO_CAP` of them); a graph drag banks once released (`keepDrag`), and one Esc or RMB ends
+  whole-world snapshots, `UNDO_CAP` of them); a graph drag banks once released (`keepDrag`), and one that Esc or RMB ends
   is put back with no undo and the redo kept (`drop`). Leaving, quitting, opening and New ask first when there are unsaved changes
   (`Editor.request`); New and Save as name a world beside the one open, and Open starts in its folder. Esc backs out
   one step at a time, the last out to the title. F5 plays the world from its start and F6 from the cursor, unsaved;
@@ -116,13 +122,13 @@ for the change asked for.
 - **NOTHING IS SPENT UNTIL THE SHOT IS CONFIRMED.** `bow.aimable` is both the reticle's legal cells and the
   shot's legality — one call, so the highlight cannot disagree with the resolver. Every cell the arrow crosses to a
   legal mark is in sight: a line slips past a wall's corner where sight does not.
-- **JUKE (`play/juke.zig`) JUMPS INSTANTLY**, across obstacles to visible vacant ground within 3 Chebyshev tiles.
+- **JUKE (`play/juke.zig`) JUMPS INSTANTLY**, across obstacles to visible vacant ground within 2 Chebyshev tiles (`juke.FREE`: the one leap that spends no turn).
   Targeting starts on the hero and can cross invalid cells; only `juke.aimable` landings confirm. It spends no turn,
-  costs 20 mana and starts a 3-turn cooldown. The hero has 100 mana and recovers 5 per spent turn; idle frames do
-  neither. Life and mana orbs flank the HUD's skills, with cooldown turns on each bound Juke slot. Mana and cooldown
+  costs 25 mana and starts a 3-turn cooldown. The hero has 100 mana and recovers 1 per spent turn; idle frames do
+  neither. Life and mana orbs flank the HUD's skills, with cooldown turns on each bound slot cooling down and drinks left on each flask's. Mana and cooldown
   persist across doors and saves, reset on a new run. `gfx/fx.zig` draws its fading trail and landing dust.
   `shot.cmd` also writes `shots/juke-aim.png` and `shots/juke.png` for targeting, effects and resources.
-- **BURNING ARROW (`play/burning.zig`) ADDS FIRE** to the normal arrow: 2-4 added fire damage, 15 mana, one turn,
+- **BURNING ARROW (`play/burning.zig`) ADDS FIRE** to the normal arrow: 2-4 added fire damage, 20 mana, one turn,
   a 50% chance to ignite a surviving target that took fire damage. Burning deals 4 fire damage on each of the next
   3 turns after the body's action and gas harm; reapplying refreshes duration without stacking or delaying a due tick.
   `play/damage.zig` defines cold, fire, chaos and lightning damage and percent resistances. Physical damage stays
@@ -134,7 +140,7 @@ for the change asked for.
 - **GLACIAL SHOT (`play/glacial.zig`) BURSTS AT THE FIRST BODY OR BARREL HIT**: normal physical arrow damage to
   that body, plus 2-4 cold damage to it and foes in a 90-degree cone extending 2 Chebyshev tiles behind the impact,
   along the shot's direction. `glacial.cone` is shared by damage, the aiming preview and the delayed frost burst;
-  `fov.castInto` blocks it behind terrain without changing sight or memory. It costs 15 mana and one turn, only on
+  `fov.castInto` blocks it behind terrain without changing sight or memory. It costs 20 mana and one turn, only on
   confirmation. An empty shot has no burst. Each surviving foe taking cold damage rolls independently for chill:
   50% base chance scaled by clamped cold resistance (50% resistance gives 25% chance; immunity prevents chill).
   Chill lasts 3 enemy turns including the shot's response: act, act, skip. Refreshing keeps the cadence and resets
@@ -145,12 +151,39 @@ for the change asked for.
   body's place in the stagger (`fx.Settle`).
   `shot.cmd` writes `shots/glacial-aim.png`, `shots/glacial-arrow.png`, `shots/glacial.png` and `shots/glacial-bind.png`.
 - **THE PIB (`Row.flees`) BLEEDS AND RUNS.** Its stab (`Strike.bleeds`, 30%) opens a bleed on a target it leaves
-  alive (`play/bleeding.zig`): physical, unresisted, 1 a turn, or 2 on a turn the body moved (the archer's step or
-  juke, `Game.stepped`), for 5 turns from the next, ticking after burn; reopening refreshes it without stacking.
+  alive (`play/bleeding.zig`): physical, unresisted, 1 a turn, or 2 on a turn the body moved (the hero's step or
+  leap, `Game.stepped`), for 5 turns from the next, ticking after burn; reopening refreshes it without stacking.
   A pib that sees a foe die within `actor.FRIGHT_REACH` (5, a clear line) wakes and runs for `actor.FLEE_TURNS` (4)
   of its turns, uphill on the walk from the archer (`actor.flee`); cornered, it holds its cell and strikes an archer beside it; each death refreshes it.
+  Its first fright floats "Eek!", "Ah!", "[snorts]" or "[squeals]" above it for 1.1 seconds, waiting for the death's
+  presented impact, following its retreat and fading in sight (`fx.Fx.speech`, cosmetic RNG). `--shot` captures
+  `shots/pib-fright.png` and `shots/pib-fright-fade.png`.
   The bleed shows as drops on the body, a drip and stain each tick, and the hero's statuses (bleeding, burning,
   chilled, with turns left) appear as icons above the skill strip.
+- **A CLASS IS ITS HERO KIND AND ITS KIT.** `Class.kind` is the body it spawns as (`actor.Row`: the archer 24 hp and a
+  kick, the wizard 18 and a staff's bonk, the knight 30 and a slash; one sight and light, `actor.heroRow`). `skillbar.kit`
+  is all its bar may bind, the bind picker's cells; `Bar.of` its fresh bar. The wizard and knight are glyphs (`@`) until
+  the owner paints them. A play-test from the editor is the archer.
+- **EVERY FOE KEEPS A HIDDEN CLOCK (`play/clock.zig`), BROGUE'S TICKS.** A turn is `clock.TURN` (100) ticks; before
+  the foes act, each pays a turn off its `Actor.clock` and, still owing, loses that turn (`Clock.stalled`, after its
+  chill and before anything else; gas, burn and bleed still tick). An action costs its kind's `Row.pace` (all `TURN`
+  so far; never less, asserted, for a turn is drawn with one action at most). `Clock.delay` adds ticks, the way to
+  manipulate a turn; a body owing a whole turn loses one. `Clock.stun` is the one stun, whatever deals it: a turn's
+  delay, so the next turn is lost. There is no other status for it; the log says "is stunned", and nothing on
+  screen shows the clock. A half split off copies the clock.
+- **SPARK (`play/spark.zig`), THE WIZARD'S BOLT**, aims as an arrow does (`bow.aimable`, `bow.fly`, drawn as `*` in
+  `look.LIGHTNING`): 3-6 lightning, no physical, 10 mana, a turn; 50% to stun a target it leaves alive. **BLINK (`play/blink.zig`)** is Juke's leap
+  (`juke.lands`) to 4 tiles for 35 mana, a turn, 3-turn cooldown.
+- **THE KNIGHT SWINGS ON A TILE BESIDE IT** (`Reticle.swing`: the mark opens on a foe beside it, the d-pad sets it to
+  that way). **SHIELD BASH (`play/bash.zig`)** strikes a body or barrel there for 2-4, knocks a body it leaves alive a
+  tile on the same way where it could step (`bash.knocked`; sliding as the bash lands), and stuns it
+  half the time; 20 mana, a turn, 3-turn cooldown. **CLEAVE (`play/cleave.zig`)** sweeps the tile aimed at and the
+  two either side of it (`cleave.arc`, walls left out), 2-4 to each body and breaking each barrel; it needs something
+  in the arc, and costs 15 mana and a turn. The arc is shaded while aiming.
+- **FLASKS (`play/flask.zig`), AFTER POE2'S**: a life and a mana flask (`Game.flasks`, saved, fresh each run), bound as
+  skills. Each holds 60 charges and a drink spends 20; every foe's death refills 5. A drink takes a turn and recovers
+  50% of max life, or 50 mana, over 3 turns from the end of that turn (`recover`, in `endTurn`); drinking again starts
+  over on the new amount. The slot shows the drinks left and fades when empty.
 - **THE LAYOUT READS `Game.screen`, NEVER A WINDOW CONSTANT**, because fullscreen changes it at runtime.
 - **THE HUD (`ui/hud.zig`) FOLLOWS `docs/HUD_LAYOUT.md`**: one 744-pixel assembly centered at the bottom, with filled life and mana orbs around the skill strip, live input captions, cooldowns and active ailments. The world fills the viewport behind it, the camera scrolling past the floor's foot by `hud.COVER` so the bottom rows clear it; the minimap stays at the top right. No live hero-name label, enemy/gold counters, log strip or permanent control instructions. `shot.cmd` captures full, partial, critical and empty orbs, Xbox, PS5 and keyboard captions, secondary skills and the bind overlay across 720p, 900p and 1080p (`shots/hud-*.png`).
 - **`gfx/look.zig` IS EVERY PICTURE.** A thing with a texture in `Sprites` draws it; the rest draw their glyph.
@@ -261,7 +294,7 @@ for the change asked for.
   block a step but not sight or an arrow, and the liquids not gas; reeds and crop block sight but not a step; tiny shrubs, tall grass and shrooms are decor,
   blocking nothing, on grass drawn under them. `.wall` and `.shrub` are shaped, each joining its own material.
 - **A WALL'S SHAPE IS DECIDED BY THE GENERATOR** in `gen.around`, before the torches and barrels, again before each feature and once settled (`procgen.reshape`), or by `Node.stamp` for a bespoke node
-  (`shapeWalls` alone), and stored in `Level.shape`: which of its eight neighbours are of its own kind (`grid.WallShape`,
+  (`procgen.reshape`: `shapeWalls`, then `gen.keepTorches`), and stored in `Level.shape`: which of its eight neighbours are of its own kind (`grid.WallShape`,
   off the map counting), a corner only where both sides beside it are (`WallShape.joined`), so one of 47 shapes.
   Nothing recomputes it once the floor is built, and nothing about what has been revealed touches it (owner's call). Forests use the same stored masks, joining shrubs alone; older saves acquire missing forest masks once on resume. `Level.wallShape` still returns brick walls alone, `Level.tileShape` either material. A brick wall's picture is the
   atlas's cell for it (`look.WALL_MASKS`, `walls.png` read across its rows), filling the cell, built by
@@ -277,7 +310,7 @@ for the change asked for.
   atlas as `zig-soulslike` draws it, so any size reads clean; hud text sits on a drop shadow. raylib's built-in font
   stands in only when the atlas fails to load, which is every test.
 - **`CELL` IS A WHOLE MULTIPLE OF 64**, the sprites' authored size; they draw at `CELL / 64`, never fractional.
-- **THE GRID IS y-DOWN** and **Chebyshev is the only metric**. **A diagonal may not cut a corner** (`passOk`).
+- **THE GRID IS y-DOWN** and **Chebyshev is the only metric**. **Diagonals pass between blocked side cells, even when both are blocked**: movement checks its destination (`passOk`); sight, projectiles and effects also pass through that tight diagonal gap.
 - **`fov.cast` IS THE ONLY LINE OF SIGHT, AND `world/lume.zig` THE ONLY LIGHT THAT DECIDES WHAT IS SEEN.** The archer's
   pass (`lume.see`, from `game.castSight`) keeps its line of sight, as far as its eyes reach (`Row.sight`), in
   `Level.los`, and of that leaves lit (`Level.lit`, and seen) only what is light enough: within the sky's reach

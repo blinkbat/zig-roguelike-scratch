@@ -1,0 +1,8 @@
+roguelike-world 1
+start 0 48 32
+node procgen dunes
+ridges 3
+mesas 1
+scale 24
+name Qud Salt Dunes
+at 0 0

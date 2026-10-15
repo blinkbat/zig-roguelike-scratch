@@ -1,0 +1,20 @@
+roguelike-world 1
+start 0 4 32
+node procgen open
+ground grass
+edge shrub
+feature scatter
+tile shallows
+on grass
+amount 300
+clump 7
+feature scatter
+tile reeds
+on grass
+amount 150
+clump 4
+feature setpiece
+piece tower
+count 1
+name D2 Black Marsh
+at 0 0

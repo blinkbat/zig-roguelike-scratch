@@ -1,0 +1,9 @@
+roguelike-world 1
+start 0 48 32
+node procgen topology
+layout plus
+filler shrub
+ground dirt
+path 4
+name PoE1 Crossroads
+at 0 0

@@ -1,0 +1,6 @@
+roguelike-world 1
+start 0 48 58
+node procgen hall
+style grove
+name ADOM Animated Forest
+at 0 0

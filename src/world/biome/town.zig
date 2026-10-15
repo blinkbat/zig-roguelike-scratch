@@ -20,6 +20,8 @@ const SPLIT_CHANCE: f32 = 0.7;
 const PLAZA_OF: f32 = 0.55;
 /// The street cleared round each gate.
 const GATE_R: f32 = 1.5;
+/// Cells either side of a gate's middle its way through the wall opens.
+const GATE_HALF: i32 = 1;
 const HOUSE = buildings.Params{ .barrels = 1, .torches = 30 };
 
 pub const Wall = enum { none, wall, fence };
@@ -85,19 +87,10 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         .wall => .wall,
         .fence => .fence,
     };
-    const walled = wallBox();
-    var cells = walled.cells();
-    while (cells.next()) |q| {
-        if (walled.onEdge(q)) lv.set(q, ring);
-    }
+    carve.outline(lv, wallBox(), ring);
     for (gates()) |g| {
         carve.disc(lv, g.at, GATE_R, street, null);
-        const side = g.in.across();
-        const deep = g.at.add(g.in.delta().scaled(s));
-        const a = g.at.sub(side);
-        const b = deep.add(side);
-        carve.bridge(lv, grid.Box.between(a, b), null);
-
+        carve.gateway(lv, g.at, g.in, 0, s, GATE_HALF, null);
     }
 }
 
@@ -109,10 +102,10 @@ fn wallBox() grid.Box {
     return grid.Box.inMap(MARGIN - 1);
 }
 
-fn gates() [4]Gate {
-    var out: [4]Gate = undefined;
-    for (&out, buildings.SIDES) |*g, side| {
-        g.* = .{ .at = carve.sideAt(wallBox(), side, carve.alongOf(side, grid.MIDDLE)), .in = side.opposite() };
+fn gates() [carve.SIDES.len]Gate {
+    var out: [carve.SIDES.len]Gate = undefined;
+    for (&out, carve.SIDES) |*g, side| {
+        g.* = .{ .at = carve.sideMid(wallBox(), side), .in = side.opposite() };
     }
     return out;
 }
@@ -125,14 +118,13 @@ fn block(lv: *grid.Level, rng: *mathx.Rng, b: grid.Box, p: Params, street: grid.
     const crosses = buildings.cuttable(h, HOUSE_LEAST);
     var split_y = crosses and rng.chance(SPLIT_CHANCE);
     const mx = if (split_x) buildings.cutAt(rng, b.lo.x, b.hi.x, HOUSE_LEAST) else b.hi.x;
-    if (split_x and crosses and lv.at(.{ .x = mx, .y = b.lo.y - 1 }).liquid() and lv.at(.{ .x = mx, .y = b.hi.y }).liquid()) split_y = true;
+    if (split_x and crosses) {
+        const ends = buildings.cutEnds(b, true, mx);
+        if (lv.at(ends[0]).liquid() and lv.at(ends[1]).liquid()) split_y = true;
+    }
     const my = if (split_y) buildings.cutAt(rng, b.lo.y, b.hi.y, HOUSE_LEAST) else b.hi.y;
-    const lots = [_]grid.Box{
-        .{ .lo = b.lo, .hi = .{ .x = mx, .y = my } },
-        .{ .lo = .{ .x = mx + 1, .y = b.lo.y }, .hi = .{ .x = b.hi.x, .y = my } },
-        .{ .lo = .{ .x = b.lo.x, .y = my + 1 }, .hi = .{ .x = mx, .y = b.hi.y } },
-        .{ .lo = .{ .x = mx + 1, .y = my + 1 }, .hi = b.hi },
-    };
+    const rows = buildings.cutBoxes(b, false, my);
+    const lots = buildings.cutBoxes(rows[0], true, mx) ++ buildings.cutBoxes(rows[1], true, mx);
     for (lots) |lot| {
         if (lot.width() < HOUSE_LEAST or lot.height() < HOUSE_LEAST) continue;
         if (!rng.percent(p.houses)) {
@@ -177,7 +169,7 @@ test "every town gate steps across its street, canal or not" {
         for (gates()) |g| {
             var k: i32 = 0;
             while (k <= s) : (k += 1) {
-                if (!lv.walkable(g.at.add(.{ .x = g.in.delta().x * k, .y = g.in.delta().y * k }))) wet += 1;
+                if (!lv.walkable(g.at.add(g.in.delta().scaled(k)))) wet += 1;
             }
         }
     }
@@ -194,9 +186,9 @@ test "every gate of a walled town leads to its plaza, its top street a canal or 
         var rng = mathx.Rng.init(i);
         shape(&lv, &rng, 0, (Params{ .canals = 100, .street = @intCast(1 + i % STREET_MAX) }).fit());
         for (gates()) |g| {
-            const side = P{ .x = g.in.delta().y, .y = g.in.delta().x };
+            const side = g.in.across();
             var d: i32 = -2;
-            while (d <= 2) : (d += 1) lv.set(g.at.add(.{ .x = side.x * d, .y = side.y * d }), .wall);
+            while (d <= 2) : (d += 1) lv.set(g.at.add(side.scaled(d)), .wall);
         }
         _ = st.label(&lv);
         const plaza = st.biggest();

@@ -8,6 +8,9 @@ pub const H: i32 = 64;
 pub const CELLS: usize = @intCast(W * H);
 pub const COLS: usize = @intCast(W);
 pub const ROWS: usize = @intCast(H);
+/// The points where cells meet, the map's edges included.
+pub const CORNERS_W: usize = COLS + 1;
+pub const CORNERS_H: usize = ROWS + 1;
 pub const SIZE = P{ .x = W, .y = H };
 pub const MIDDLE = P{ .x = @divTrunc(W, 2), .y = @divTrunc(H, 2) };
 
@@ -333,11 +336,6 @@ pub const Level = struct {
         return !inset(p).eq(p);
     }
 
-    /// No step reaches a map corner: a diagonal into it cuts the rim's corner.
-    pub fn cornered(p: P) bool {
-        return (p.x == 0 or p.x == W - 1) and (p.y == 0 or p.y == H - 1);
-    }
-
     /// Bind it before reading: `self.tile[idx(p)]` makes Zig 0.14 copy the whole array to honour the call's order.
     pub fn idx(p: P) usize {
         std.debug.assert(inside(p));
@@ -451,10 +449,7 @@ pub const Level = struct {
 
     /// Terrain only.
     pub fn passOk(self: *const Level, from: P, d: mathx.Dir) bool {
-        const to = from.add(d.delta());
-        if (!self.walkable(to)) return false;
-        if (!d.diagonal()) return true;
-        return self.walkable(.{ .x = to.x, .y = from.y }) and self.walkable(.{ .x = from.x, .y = to.y });
+        return self.walkable(from.add(d.delta()));
     }
 
     /// `ignore` is the mover's own id.
@@ -481,6 +476,21 @@ pub fn nearest(from: P, set: anytype) ?P {
 }
 
 /// `hi` exclusive.
+/// Up to `N` cells.
+pub fn Area(comptime N: usize) type {
+    return struct {
+        cells: [N]P = undefined,
+        n: usize = 0,
+
+        pub fn has(self: *const @This(), p: P) bool {
+            for (self.cells[0..self.n]) |c| {
+                if (c.eq(p)) return true;
+            }
+            return false;
+        }
+    };
+}
+
 pub const Box = struct {
     lo: P,
     hi: P,
@@ -742,13 +752,25 @@ test "outside the map reads as wall" {
     try std.testing.expectEqual(Tile.wall, lv.at(.{ .x = -3, .y = 2 }));
 }
 
-test "a diagonal cannot cut the corner of a single wall" {
-    var lv = openFloor();
+test "tight diagonals ignore both side cells but still require an open destination" {
     const from = P{ .x = 10, .y = 10 };
-    try std.testing.expect(lv.stepOk(from, .se, NO_ONE));
-    lv.set(.{ .x = 11, .y = 10 }, .wall);
-    try std.testing.expect(!lv.stepOk(from, .se, NO_ONE));
-    try std.testing.expect(lv.stepOk(from, .s, NO_ONE));
+    for ([_]mathx.Dir{ .ne, .se, .sw, .nw }) |d| {
+        var lv = openFloor();
+        const to = from.add(d.delta());
+        lv.set(.{ .x = to.x, .y = from.y }, .wall);
+        try std.testing.expect(lv.stepOk(from, d, NO_ONE));
+        lv.set(.{ .x = from.x, .y = to.y }, .wall);
+        try std.testing.expect(lv.stepOk(from, d, NO_ONE));
+        try std.testing.expect(lv.stepOk(to, d.opposite(), NO_ONE));
+        lv.set(to, .wall);
+        try std.testing.expect(!lv.stepOk(from, d, NO_ONE));
+        lv.set(to, .floor);
+        lv.putBarrel(to);
+        try std.testing.expect(!lv.stepOk(from, d, NO_ONE));
+        _ = lv.breakBarrel(to);
+        lv.stand(to, 7);
+        try std.testing.expect(!lv.stepOk(from, d, NO_ONE));
+    }
 }
 
 test "a body blocks a step but never itself" {

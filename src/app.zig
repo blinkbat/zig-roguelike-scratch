@@ -9,6 +9,7 @@ const look = @import("gfx/look.zig");
 const hero = @import("play/hero.zig");
 const save = @import("save.zig");
 const input = @import("core/input.zig");
+const skillbar = @import("play/skillbar.zig");
 
 const Scene = enum { title, play, edit };
 const Page = enum { main, world, class, name, load, options, debug };
@@ -19,31 +20,19 @@ const MainRow = enum {
     options,
     editor,
     quit,
-
-    fn label(r: MainRow) [:0]const u8 {
-        return menu.named(r);
-    }
 };
 const MAIN_ROWS = std.enums.values(MainRow);
 const OptionRow = enum {
     fullscreen,
     debug,
-
-    fn label(r: OptionRow) [:0]const u8 {
-        return menu.named(r);
-    }
 };
 const OPTION_ROWS = std.enums.values(OptionRow);
 const DebugRow = enum {
     unkillable,
 
-    fn label(r: DebugRow) [:0]const u8 {
-        return menu.named(r);
-    }
-
     fn note(r: DebugRow) [:0]const u8 {
         return switch (r) {
-            .unkillable => comptime std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ DebugRow.unkillable.label(), game.UNKILLABLE_HP }),
+            .unkillable => comptime std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.named(DebugRow.unkillable), game.UNKILLABLE_HP }),
         };
     }
 };
@@ -77,6 +66,7 @@ const App = struct {
     armed: ?usize = null,
     /// The run being played in a slot; null for a play-test.
     autosave: ?save.Autosave = null,
+    undeleted: ?anyerror = null,
     note: menu.Note(menu.NOTE_MAX) = .{},
 
     fn say(app: *App, comptime fmt: []const u8, args: anytype) void {
@@ -133,6 +123,7 @@ const App = struct {
         const g = app.g;
         const slot = save.free(&app.list) orelse return app.toTitle();
         const path = app.chosen orelse atlas.START;
+        g.class = app.class;
         if (app.world.load(app.alloc, path)) {
             if (!app.world.standable(app.world.start, &g.lv)) {
                 app.toTitle();
@@ -162,8 +153,9 @@ const App = struct {
     }
 
     fn playTest(app: *App, from: atlas.Start) void {
-        game.beginWorldAt(app.g, app.ed.?.world, from, game.freshSeed());
         app.leaveRun();
+        app.g.class = hero.DEFAULT;
+        game.beginWorldAt(app.g, app.ed.?.world, from, game.freshSeed());
         app.g.st.device = .keys;
         app.play(.editor, hero.DEFAULT.unnamed());
     }
@@ -172,7 +164,7 @@ const App = struct {
         const g = app.g;
         if (fresh) |name| {
             g.name = name;
-            g.bar = .{};
+            g.bar = skillbar.Bar.of(g.class);
         }
         g.permadeath = back == .title;
         g.back = back;
@@ -200,7 +192,6 @@ const App = struct {
                 d.play = false;
                 d.play_here = false;
                 app.scene = .edit;
-                if (closing) app.ed.?.request(.quit);
             }
         } else if (closing and app.scene != .edit) {
             app.leaveRun();
@@ -212,7 +203,7 @@ const App = struct {
                 game.frame(g);
                 if (app.autosave) |*a| {
                     if (g.mode == .dead) {
-                        a.end(g);
+                        app.undeleted = a.end();
                         a.deinit();
                         app.autosave = null;
                     } else a.step(g, rl.getFrameTime());
@@ -224,6 +215,8 @@ const App = struct {
                         .title => {
                             app.toTitle();
                             app.leaveRun();
+                            if (app.undeleted) |e| app.say(save.NOT_DELETED, .{@errorName(e)});
+                            app.undeleted = null;
                         },
                         .editor => app.scene = .edit,
                     },
@@ -255,6 +248,7 @@ const App = struct {
         g.st.typing = app.page == .name;
         g.st.playing = false;
         g.st.update(rl.getFrameTime());
+        g.st.spend(skillbar.BINDS);
         game.syncScreen(g, g.st.fullscreen);
         rl.beginDrawing();
         defer rl.endDrawing();
@@ -265,7 +259,7 @@ const App = struct {
             .main => {
                 const rows = comptime blk: {
                     var ls: [MAIN_ROWS.len][:0]const u8 = undefined;
-                    for (MAIN_ROWS, &ls) |r, *l| l.* = r.label();
+                    for (MAIN_ROWS, &ls) |r, *l| l.* = menu.named(r);
                     break :blk ls;
                 };
                 const picked = app.title.step(&g.st, MAIN_ROWS.len);
@@ -354,7 +348,7 @@ const App = struct {
                     app.armed = null;
                     app.note.clear();
                 }
-                menu.draw(g.face, g.screen, comptime menu.caps(MainRow.load.label()), &rows, app.loads.at, note);
+                menu.draw(g.face, g.screen, comptime menu.caps(menu.named(MainRow.load)), &rows, app.loads.at, note);
                 const at = app.loads.at;
                 if (back) {
                     app.toTitle();
@@ -380,11 +374,11 @@ const App = struct {
                 const full = game.fullscreen();
                 var rows: [OPTION_ROWS.len][:0]const u8 = undefined;
                 for (OPTION_ROWS, &rows) |r, *l| l.* = switch (r) {
-                    .fullscreen => menu.toggle(OptionRow.fullscreen.label(), full),
-                    .debug => r.label(),
+                    .fullscreen => menu.toggle(menu.named(OptionRow.fullscreen), full),
+                    .debug => menu.named(r),
                 };
                 const picked = app.options.step(&g.st, rows.len);
-                menu.draw(g.face, g.screen, comptime menu.caps(MainRow.options.label()), &rows, app.options.at, null);
+                menu.draw(g.face, g.screen, comptime menu.caps(menu.named(MainRow.options)), &rows, app.options.at, null);
                 if (back) {
                     app.toTitle();
                 } else if (picked) |i| switch (OPTION_ROWS[i]) {
@@ -395,10 +389,10 @@ const App = struct {
             .debug => {
                 var rows: [DEBUG_ROWS.len][:0]const u8 = undefined;
                 for (DEBUG_ROWS, &rows) |r, *l| l.* = switch (r) {
-                    .unkillable => menu.toggle(DebugRow.unkillable.label(), g.unkillable),
+                    .unkillable => menu.toggle(menu.named(DebugRow.unkillable), g.unkillable),
                 };
                 const picked = app.debugs.step(&g.st, rows.len);
-                menu.draw(g.face, g.screen, comptime menu.caps(OptionRow.debug.label()), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note());
+                menu.draw(g.face, g.screen, comptime menu.caps(menu.named(OptionRow.debug)), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note());
                 if (back) {
                     app.goPage(.options);
                 } else if (picked) |i| switch (DEBUG_ROWS[i]) {
@@ -410,7 +404,7 @@ const App = struct {
     }
 
     fn refuse(app: *App) bool {
-        app.say("All {d} save slots hold a run: {s} is where one is deleted", .{ save.SLOTS, MainRow.load.label() });
+        app.say("All {d} save slots hold a run: {s} is where one is deleted", .{ save.SLOTS, menu.named(MainRow.load) });
         return true;
     }
 };
@@ -443,7 +437,7 @@ fn body(g: *game.Game) !void {
     defer app.leaveRun();
     app.toTitle();
     if (!plain) {
-        app.say("The world to edit is named in letters the game cannot draw; {s} opens {s}", .{ MainRow.editor.label(), atlas.MAIN });
+        app.say("The world to edit is named in letters the game cannot draw; {s} opens {s}", .{ menu.named(MainRow.editor), atlas.MAIN });
     } else if (start_edit != null) app.toEdit();
     while (app.frame()) {}
 }

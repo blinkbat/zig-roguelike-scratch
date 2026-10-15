@@ -1,0 +1,13 @@
+roguelike-world 1
+start 0 48 32
+node procgen maze
+style lava
+rooms 10
+size 16
+feature river
+fill lava
+width 3
+bank none
+course across
+name D2 River of Flame
+at 0 0

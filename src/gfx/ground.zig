@@ -139,12 +139,11 @@ pub const Beds = struct {
     rank: [SPAN * (grid.ROWS + 2)]u8,
     shown: Grounds,
     /// The corner points from `lo` to `hi`, both included, row by row.
-    point: [POINTS]Point,
+    point: [grid.CORNERS_W * grid.CORNERS_H]Point,
     across: usize,
 
     const Box = grid.Box;
     const SPAN: usize = grid.COLS + 2;
-    const POINTS: usize = (grid.COLS + 1) * (grid.ROWS + 1);
 
     fn slot(p: P) usize {
         return @as(usize, @intCast(p.y + 1)) * SPAN + @as(usize, @intCast(p.x + 1));
@@ -182,9 +181,9 @@ pub const Beds = struct {
             b.rank[s] = g.rank();
             b.shown.insert(g);
         }
-        var points = grid.Cells.of(lo, hi.add(.{ .x = 1, .y = 1 }));
+        var corners = b.points();
         var n: usize = 0;
-        while (points.next()) |c| : (n += 1) {
+        while (corners.next()) |c| : (n += 1) {
             const se = slot(c);
             const k = Corners{ .rank = .{ b.rank[se - SPAN - 1], b.rank[se - SPAN], b.rank[se - 1], b.rank[se] } };
             var holds: Ranks = 0;
@@ -206,6 +205,11 @@ pub const Beds = struct {
         return if (isGround(r)) Ground.ofRank(r) else null;
     }
 
+    /// Every point from `lo` to `hi`, both included, row by row as `point` holds them.
+    pub fn points(self: *const Beds) grid.Cells {
+        return grid.Cells.of(self.lo, self.hi.add(.{ .x = 1, .y = 1 }));
+    }
+
     /// Point `c`, from `lo` to `hi`.
     pub fn pointAt(self: *const Beds, c: P) Point {
         const i = @as(usize, @intCast(c.y - self.lo.y)) * self.across + @as(usize, @intCast(c.x - self.lo.x));
@@ -224,13 +228,15 @@ pub const SE: u4 = 8;
 pub const FULL: u4 = NW | NE | SW | SE;
 
 /// A ground sheet's 16 cells, read across its 4x4 block, by mask: `tools/tile_art/ground_corners.lua`.
-pub const ORDER = [16]u4{ 9, 12, 4, 8, 10, 15, 13, 14, 6, 11, 7, 3, 5, 2, 1, 0 };
+pub const ORDER = [MASKS]u4{ 9, 12, 4, 8, 10, 15, 13, 14, 6, 11, 7, 3, 5, 2, 1, 0 };
+pub const MASKS: usize = @as(usize, FULL) + 1;
 pub const COLS: usize = 4;
+pub const ROWS: usize = MASKS / COLS;
 
 /// Where each mask's piece lies in its sheet, cells across and down.
 pub const CELL_OF = blk: {
-    var at: [16]P = undefined;
-    var seen = [_]bool{false} ** 16;
+    var at: [MASKS]P = undefined;
+    var seen = [_]bool{false} ** MASKS;
     for (ORDER, 0..) |m, i| {
         std.debug.assert(!seen[m]);
         seen[m] = true;
@@ -245,7 +251,7 @@ comptime {
             const e = ORDER[i + 1];
             std.debug.assert((m & NE != 0) == (e & NW != 0) and (m & SE != 0) == (e & SW != 0));
         }
-        if (i / COLS < COLS - 1) {
+        if (i / COLS < ROWS - 1) {
             const s = ORDER[i + COLS];
             std.debug.assert((m & SW != 0) == (s & NW != 0) and (m & SE != 0) == (s & NE != 0));
         }

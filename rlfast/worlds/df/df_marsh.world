@@ -1,0 +1,10 @@
+roguelike-world 1
+start 0 48 32
+node procgen terrain
+height 30 60
+rain 33 65
+drain 0 32
+heat 40 80
+rivers 0
+name DF Marsh
+at 0 0

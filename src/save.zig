@@ -9,6 +9,7 @@ const menu = @import("ui/menu.zig");
 
 pub const SLOTS: usize = 3;
 pub const NOT_WRITTEN = "The last save did not write ({s})";
+pub const NOT_DELETED = "The dead run's save did not delete ({s})";
 const DIR = "saves";
 const EXT = ".save";
 const MAGIC = "roguelike-save\n";
@@ -21,7 +22,7 @@ const Seed = @FieldType(game.Game, "seed");
 const Node = @FieldType(game.Game, "node");
 const Visited = @FieldType(game.Game, "visited");
 /// Written after the visited nodes, in this order.
-const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "cooldown", "stepped" };
+const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "flasks", "cooldown", "stepped", "class" };
 /// Written before the tail, by hand.
 const HEAD_FIELDS = .{ "seed", "world", "node", "visited", "visits" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
@@ -323,11 +324,12 @@ pub const Autosave = struct {
     }
 
     /// A slot that will not delete is emptied, so it holds no run that would load.
-    pub fn end(self: *Autosave, g: *game.Game) void {
+    pub fn end(self: *Autosave) ?anyerror {
         self.wait();
         remove(self.slot) catch |e| {
-            writeFile("", self.slot) catch g.log.say("The save did not delete ({s}).", .{@errorName(e)});
+            writeFile("", self.slot) catch return e;
         };
+        return null;
     }
 };
 

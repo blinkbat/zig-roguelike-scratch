@@ -42,7 +42,7 @@ fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, 
 }
 
 /// Takes `lv.lit` as `fov.cast` left it and keeps it as `los`.
-pub fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool, was_seen: *const [grid.CELLS]bool) void {
+fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool, was_seen: *const [grid.CELLS]bool) void {
     lv.los = lv.lit;
     for (0..grid.CELLS) |i| {
         if (!lv.lit[i]) continue;

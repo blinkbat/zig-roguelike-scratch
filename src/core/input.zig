@@ -6,6 +6,7 @@ const ENTER_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
 const LEAN: rl.GamepadButton = .left_trigger_2;
 const SHIFT_KEYS = [_]rl.KeyboardKey{ .left_shift, .right_shift };
 const CTRL_KEYS = [_]rl.KeyboardKey{ .left_control, .right_control };
+const ALT_KEYS = [_]rl.KeyboardKey{ .left_alt, .right_alt };
 const LEAN_KEYS = SHIFT_KEYS;
 
 /// What the player last pressed, which every caption names: a pad by its maker's names for the buttons.
@@ -59,13 +60,16 @@ fn kindAt(at: i32) Device {
 }
 
 const SONY = "4c05";
-const PS5_PRODUCTS = [_]*const [4]u8{ "e60c", "f20d" };
+const PS5_PRODUCTS = [_]*const [USB_ID]u8{ "e60c", "f20d" };
+const USB_ID = SONY.len;
+const VENDOR_AT = 8;
+const PRODUCT_AT = 16;
 
 /// GLFW's GUID spells the USB vendor, then the product, each byte-swapped in hex, from its ninth and seventeenth digit; XInput's spells neither, and reads as Xbox.
 fn padOf(guid: []const u8) Device {
-    if (guid.len < 20 or !std.mem.eql(u8, guid[8..12], SONY)) return .xbox;
+    if (guid.len < PRODUCT_AT + USB_ID or !std.mem.eql(u8, guid[VENDOR_AT..][0..USB_ID], SONY)) return .xbox;
     for (PS5_PRODUCTS) |p| {
-        if (std.mem.eql(u8, guid[16..20], p)) return .ps5;
+        if (std.mem.eql(u8, guid[PRODUCT_AT..][0..USB_ID], p)) return .ps5;
     }
     return .ps4;
 }
@@ -624,7 +628,7 @@ pub const Desk = struct {
     pub const PASTE_KEY: rl.KeyboardKey = .v;
     const NAV_KEYS = [2]rl.KeyboardKey{ .up, .down };
     const CTRL = keyName(CTRL_KEYS[0]) ++ "+";
-    const ALT = "Alt+";
+    const ALT = keyName(ALT_KEYS[0]) ++ "+";
     pub const SHIFT_CAPTION = keyName(SHIFT_KEYS[0]);
     const CTRL_SHIFT = CTRL ++ SHIFT_CAPTION ++ "+";
     pub const PLAY_CAPTION = keyName(PLAY_KEY);
@@ -826,7 +830,7 @@ fn either(pair: [2]rl.KeyboardKey) bool {
 }
 
 fn altDown() bool {
-    return either(.{ .left_alt, .right_alt });
+    return either(ALT_KEYS);
 }
 
 fn fullscreenHit() bool {
@@ -842,9 +846,7 @@ fn rubbed() bool {
 
 fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
     return switch (k) {
-        .f2 => "F2",
-        .f5 => "F5",
-        .f6 => "F6",
+        .f1, .f2, .f3, .f4, .f5, .f6, .f7, .f8, .f9, .f10, .f11, .f12 => comptime upper(@tagName(k)),
         .tab => "Tab",
         .escape => "Esc",
         .enter => "Enter",
@@ -853,19 +855,26 @@ fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
         .delete => "Del",
         .left_control => "Ctrl",
         .left_shift => "Shift",
+        .left_alt => "Alt",
         .left_bracket => "[",
         .right_bracket => "]",
         .minus => "-",
         .equal => "=",
         .home => "Home",
-        .f1 => "F1",
-        .f3 => "F3",
         .up => "Up",
         .down => "Down",
         .a, .b, .c, .d, .e, .f, .g, .h, .i, .j, .k, .l, .m, .n, .o, .p, .q, .r, .s, .t, .u, .v, .w, .x, .y, .z => &[_:0]u8{std.ascii.toUpper(@tagName(k)[0])},
         .zero, .one, .two, .three, .four, .five, .six, .seven, .eight, .nine => &[_:0]u8{'0' + @intFromEnum(k) - @intFromEnum(rl.KeyboardKey.zero)},
         else => @compileError("no caption for " ++ @tagName(k)),
     };
+}
+
+/// Call it `comptime`.
+pub fn upper(comptime s: []const u8) [:0]const u8 {
+    var b: [s.len:0]u8 = undefined;
+    _ = std.ascii.upperString(&b, s);
+    const out = b;
+    return &out;
 }
 
 fn anyHit(keys: []const rl.KeyboardKey) bool {

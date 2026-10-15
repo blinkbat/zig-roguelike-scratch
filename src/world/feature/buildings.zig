@@ -110,11 +110,10 @@ fn fits(lv: *const grid.Level, b: Box, pal: carve.Palette) bool {
     return true;
 }
 
-pub const SIDES = [_]mathx.Dir{ .n, .s, .w, .e };
 
 /// A cell on the box's outline, not a corner, and the cell outside it.
 pub fn doorway(rng: *mathx.Rng, b: Box) [2]P {
-    const side = SIDES[rng.below(SIDES.len)];
+    const side = carve.SIDES[rng.below(carve.SIDES.len)];
     return doorwayOn(b, side, rng.range(0, spanOf(b, side) - 1));
 }
 
@@ -130,7 +129,7 @@ fn spanOf(b: Box, side: mathx.Dir) i32 {
 fn dryDoorway(lv: *const grid.Level, rng: *mathx.Rng, b: Box) ?[2]P {
     var all: [2 * (grid.W + grid.H)][2]P = undefined;
     var n: usize = 0;
-    for (SIDES) |side| {
+    for (carve.SIDES) |side| {
         var k: i32 = 0;
         while (k < spanOf(b, side) and n < all.len) : (k += 1) {
             all[n] = doorwayOn(b, side, k);
@@ -158,13 +157,34 @@ fn splitAt(lv: *const grid.Level, rng: *mathx.Rng, b: Box, across: bool, least: 
     const hi = if (across) b.hi.x else b.hi.y;
     for (0..SPLIT_TRIES) |_| {
         const at = cutAt(rng, lo, hi, least);
-        const ends: [2]P = if (across)
-            .{ .{ .x = at, .y = b.lo.y - 1 }, .{ .x = at, .y = b.hi.y } }
-        else
-            .{ .{ .x = b.lo.x - 1, .y = at }, .{ .x = b.hi.x, .y = at } };
+        const ends = cutEnds(b, across, at);
         if (lv.at(ends[0]) == walls and lv.at(ends[1]) == walls) return at;
     }
     return null;
+}
+
+/// The two cells just outside `b` that a cut at `at` runs between: above and below it `across`, else either side.
+pub fn cutEnds(b: Box, across: bool, at: i32) [2]P {
+    return if (across)
+        .{ .{ .x = at, .y = b.lo.y - 1 }, .{ .x = at, .y = b.hi.y } }
+    else
+        .{ .{ .x = b.lo.x - 1, .y = at }, .{ .x = b.hi.x, .y = at } };
+}
+
+/// The line of cells a cut at `at` takes out of `b`: a column `across`, else a row.
+fn cutLine(b: Box, across: bool, at: i32) Box {
+    return if (across)
+        .{ .lo = .{ .x = at, .y = b.lo.y }, .hi = .{ .x = at + 1, .y = b.hi.y } }
+    else
+        .{ .lo = .{ .x = b.lo.x, .y = at }, .hi = .{ .x = b.hi.x, .y = at + 1 } };
+}
+
+/// What is left of `b` either side of a cut at `at`, left then right `across`, else top then bottom.
+pub fn cutBoxes(b: Box, across: bool, at: i32) [2]Box {
+    return if (across)
+        .{ .{ .lo = b.lo, .hi = .{ .x = at, .y = b.hi.y } }, .{ .lo = .{ .x = at + 1, .y = b.lo.y }, .hi = b.hi } }
+    else
+        .{ .{ .lo = b.lo, .hi = .{ .x = b.hi.x, .y = at } }, .{ .lo = .{ .x = b.lo.x, .y = at + 1 }, .hi = b.hi } };
 }
 
 /// Cut by walls, each with a doorway, till no room is wider than twice `least`.
@@ -180,19 +200,11 @@ pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, wall
         const across = if (cuttable(w, least) and cuttable(h, least)) rng.chance(@as(f32, @floatFromInt(w)) / @as(f32, @floatFromInt(w + h))) else cuttable(w, least);
         if (!across and !cuttable(h, least)) continue;
         if (n + 2 > stack.len) continue;
-        if (across) {
-            const x = splitAt(lv, rng, b, true, least, walls) orelse continue;
-            carve.box(lv, .{ .lo = .{ .x = x, .y = b.lo.y }, .hi = .{ .x = x + 1, .y = b.hi.y } }, walls);
-            lv.set(.{ .x = x, .y = rng.range(b.lo.y, b.hi.y - 1) }, .floor);
-            stack[n] = .{ .lo = b.lo, .hi = .{ .x = x, .y = b.hi.y } };
-            stack[n + 1] = .{ .lo = .{ .x = x + 1, .y = b.lo.y }, .hi = b.hi };
-        } else {
-            const y = splitAt(lv, rng, b, false, least, walls) orelse continue;
-            carve.box(lv, .{ .lo = .{ .x = b.lo.x, .y = y }, .hi = .{ .x = b.hi.x, .y = y + 1 } }, walls);
-            lv.set(.{ .x = rng.range(b.lo.x, b.hi.x - 1), .y = y }, .floor);
-            stack[n] = .{ .lo = b.lo, .hi = .{ .x = b.hi.x, .y = y } };
-            stack[n + 1] = .{ .lo = .{ .x = b.lo.x, .y = y + 1 }, .hi = b.hi };
-        }
+        const at = splitAt(lv, rng, b, across, least, walls) orelse continue;
+        const wall = cutLine(b, across, at);
+        carve.box(lv, wall, walls);
+        lv.set(wall.roll(rng), .floor);
+        stack[n..][0..2].* = cutBoxes(b, across, at);
         n += 2;
     }
 }

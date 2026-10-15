@@ -1,0 +1,10 @@
+roguelike-world 1
+start 0 48 32
+node procgen dunes
+ridges 4
+mesas 2
+feature setpiece
+piece oasis
+count 3
+name D2 Far Oasis
+at 0 0

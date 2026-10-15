@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../world/grid.zig");
 const actor = @import("actor.zig");
+const fov = @import("../world/fov.zig");
 
 const P = mathx.P;
 
@@ -102,7 +103,6 @@ test "a wall stops an arrow short of it" {
 }
 
 test "a foe standing in reeds is aimable and the arrow reaches it" {
-    const fov = @import("../world/fov.zig");
     var lv = grid.openFloor();
     var pool = actor.Pool{};
     const hero = P{ .x = 10, .y = 10 };
@@ -110,13 +110,12 @@ test "a foe standing in reeds is aimable and the arrow reaches it" {
     _ = pool.spawn(&lv, actor.Actor.of(.archer, hero));
     lv.set(at, .reeds);
     const rat = pool.spawn(&lv, actor.Actor.of(.rat, at));
-    fov.cast(&lv, hero, actor.row(.archer).sight);
+    fov.cast(&lv, hero, actor.row(actor.HERO).sight);
     try std.testing.expect(aimable(&lv, hero, at));
     try std.testing.expectEqual(@as(?Hit, .{ .body = rat }), fly(&lv, hero, at).struck);
 }
 
 test "an arrow flies over water to the rat across it" {
-    const fov = @import("../world/fov.zig");
     var lv = grid.openFloor();
     var pool = actor.Pool{};
     const hero = P{ .x = 10, .y = 10 };
@@ -124,7 +123,7 @@ test "an arrow flies over water to the rat across it" {
     _ = pool.spawn(&lv, actor.Actor.of(.archer, hero));
     for (0..3) |k| lv.set(.{ .x = 12 + @as(i32, @intCast(k)), .y = 10 }, .water);
     const rat = pool.spawn(&lv, actor.Actor.of(.rat, at));
-    fov.cast(&lv, hero, actor.row(.archer).sight);
+    fov.cast(&lv, hero, actor.row(actor.HERO).sight);
     try std.testing.expect(aimable(&lv, hero, at));
     try std.testing.expectEqual(@as(?Hit, .{ .body = rat }), fly(&lv, hero, at).struck);
 }
@@ -140,21 +139,19 @@ test "a barrel in the line takes the arrow meant for the rat behind it" {
 }
 
 test "pick takes a barrel only when no foe is in reach" {
-    const fov = @import("../world/fov.zig");
     var lv = grid.openFloor();
     var pool = actor.Pool{};
     const hero = P{ .x = 30, .y = 30 };
     _ = pool.spawn(&lv, actor.Actor.of(.archer, hero));
     lv.putBarrel(.{ .x = 32, .y = 30 });
     lv.putBarrel(.{ .x = 30, .y = 30 - RANGE - 1 });
-    fov.cast(&lv, hero, actor.row(.archer).sight);
+    fov.cast(&lv, hero, actor.row(actor.HERO).sight);
     try std.testing.expectEqual(@as(?P, .{ .x = 32, .y = 30 }), pick(&lv, &pool, hero));
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 36, .y = 30 }));
     try std.testing.expectEqual(@as(?P, .{ .x = 36, .y = 30 }), pick(&lv, &pool, hero));
 }
 
 test "pick takes the nearest visible rat in range and ignores the dark" {
-    const fov = @import("../world/fov.zig");
     var lv = grid.openFloor();
     var pool = actor.Pool{};
     const hero = P{ .x = 30, .y = 30 };
@@ -162,7 +159,7 @@ test "pick takes the nearest visible rat in range and ignores the dark" {
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 36, .y = 30 }));
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 27, .y = 32 }));
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 30, .y = 30 + RANGE + 1 }));
-    const sight = actor.row(.archer).sight;
+    const sight = actor.row(actor.HERO).sight;
     fov.cast(&lv, hero, sight);
     try std.testing.expectEqual(@as(?P, .{ .x = 27, .y = 32 }), pick(&lv, &pool, hero));
     var y: i32 = 25;
@@ -172,7 +169,6 @@ test "pick takes the nearest visible rat in range and ignores the dark" {
 }
 
 test "pick takes the rat fewest steps away, not the one nearest as the crow flies" {
-    const fov = @import("../world/fov.zig");
     var lv = grid.openFloor();
     var pool = actor.Pool{};
     const hero = P{ .x = 30, .y = 30 };
@@ -180,19 +176,18 @@ test "pick takes the rat fewest steps away, not the one nearest as the crow flie
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 35, .y = 30 }));
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 34, .y = 34 }));
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 34, .y = 27 }));
-    fov.cast(&lv, hero, actor.row(.archer).sight);
+    fov.cast(&lv, hero, actor.row(actor.HERO).sight);
     try std.testing.expectEqual(@as(?P, .{ .x = 34, .y = 27 }), pick(&lv, &pool, hero));
 }
 
 test "no mark is legal whose line crosses a cell out of sight, though the mark is lit and no wall stands on the line" {
-    const fov = @import("../world/fov.zig");
     const gen = @import("../world/gen.zig");
     var lv: grid.Level = undefined;
     _ = gen.build(&lv, 41120);
     const from = P{ .x = 37, .y = 28 };
     const mark = P{ .x = 45, .y = 27 };
     const past = P{ .x = 42, .y = 27 };
-    fov.cast(&lv, from, actor.row(.archer).sight);
+    fov.cast(&lv, from, actor.row(actor.HERO).sight);
     try std.testing.expect(lv.isLit(mark) and grid.clearLine(&lv, from, mark));
     try std.testing.expect(lv.walkable(past) and !lv.isLit(past));
     try std.testing.expect(!aimable(&lv, from, mark));
@@ -204,7 +199,7 @@ test "no mark is legal whose line crosses a cell out of sight, though the mark i
         while (k < grid.CELLS) : (k += 7) {
             const at = grid.Level.of(k);
             if (!lv.walkable(at)) continue;
-            fov.cast(&lv, at, actor.row(.archer).sight);
+            fov.cast(&lv, at, actor.row(actor.HERO).sight);
             var y = at.y - RANGE;
             while (y <= at.y + RANGE) : (y += 1) {
                 var x = at.x - RANGE;

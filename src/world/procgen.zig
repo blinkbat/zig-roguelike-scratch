@@ -272,10 +272,9 @@ test "every base, bare and under every feature, joins its ground, reaches its do
             const open_n = lv.openCount();
             try std.testing.expectEqual(open_n, grid.distances(&lv, doors[0], &dist, &queue));
             for (doors, 0..) |d, k| try std.testing.expectEqual(@as(?usize, k), lv.doorAt(d));
+            try std.testing.expectEqual(@as(usize, 0), carve.leaks(&lv));
             for (0..grid.CELLS) |k| {
-                const p = grid.Level.of(k);
-                if (grid.Level.onRim(p) and lv.walkable(p)) try std.testing.expect(lv.doorAt(p) != null);
-                if (lv.barrel[k]) try std.testing.expect(lv.walkable(p));
+                if (lv.barrel[k]) try std.testing.expect(lv.walkable(grid.Level.of(k)));
             }
             var again: grid.Level = undefined;
             roll(&again, seed, &doors, Floor.of(a), features);

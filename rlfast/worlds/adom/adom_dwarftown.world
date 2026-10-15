@@ -1,0 +1,10 @@
+roguelike-world 1
+start 0 48 32
+node procgen town
+wall wall
+block 12
+houses 90
+ground floor
+outside rubble
+name ADOM Dwarftown
+at 0 0

@@ -11,10 +11,9 @@ pub const PAUSE = input.Button.pause;
 pub const CHANGE = input.Button.x;
 pub const REMOVE = input.Button.y;
 
-
 pub const TITLE: i32 = 60;
-const ROW: i32 = 30;
-const ROW_STEP: i32 = 46;
+pub const ROW: i32 = 30;
+pub const ROW_STEP: i32 = 46;
 pub const NOTE: i32 = font.BODY;
 const TITLE_DY: i32 = -60;
 const ROWS_DY: i32 = 20;
@@ -56,6 +55,13 @@ pub fn Note(comptime N: usize) type {
 }
 
 pub const Conjunction = enum { @"and", @"or" };
+
+pub fn joined(comptime names: anytype, comptime last: Conjunction) [:0]const u8 {
+    comptime var s: [:0]const u8 = "";
+    inline for (names, 0..) |nm, i| s = s ++ listSep(i, names.len, last) ++ nm;
+    const out = s;
+    return out;
+}
 
 pub fn listSep(i: usize, n: usize, last: Conjunction) []const u8 {
     if (i == 0) return "";
@@ -118,12 +124,7 @@ pub fn shout(buf: []u8, comptime fmt: []const u8, args: anytype) [:0]const u8 {
 }
 
 /// `shout` for a string known at compile time; call it `comptime`.
-pub fn caps(comptime s: []const u8) [:0]const u8 {
-    var b: [s.len:0]u8 = undefined;
-    _ = std.ascii.upperString(&b, s);
-    const out = b;
-    return &out;
-}
+pub const caps = input.upper;
 
 /// "Rat" from "rat"; call it `comptime`.
 pub fn capital(comptime s: [:0]const u8) [:0]const u8 {

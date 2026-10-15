@@ -1,0 +1,13 @@
+roguelike-world 1
+start 0 48 32
+node procgen caves
+spires 12
+feature lake
+count 4
+size 7
+feature scatter
+tile fungus
+on dirt
+amount 18
+name DF Cavern Layer
+at 0 0

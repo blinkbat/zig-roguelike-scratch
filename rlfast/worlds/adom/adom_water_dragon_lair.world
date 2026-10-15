@@ -1,0 +1,11 @@
+roguelike-world 1
+start 0 48 32
+node procgen labyrinth
+style rock
+chamber 8
+braid 20
+feature lake
+count 2
+size 6
+name ADOM Dragon Lair
+at 0 0

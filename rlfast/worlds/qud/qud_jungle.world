@@ -1,0 +1,16 @@
+roguelike-world 1
+start 0 48 32
+node procgen wilds
+thicket 52
+smooth 3
+strays 40
+feature scatter
+tile reeds
+on grass
+amount 120
+clump 5
+feature river
+width 3
+course any
+name Qud Jungle
+at 0 0

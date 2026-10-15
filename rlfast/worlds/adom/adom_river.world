@@ -1,0 +1,14 @@
+roguelike-world 1
+start 0 48 32
+node procgen open
+ground grass
+feature river
+width 2
+bank none
+course any
+feature scatter
+tile shrub
+on grass
+amount 15
+name ADOM River Square
+at 0 0

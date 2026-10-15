@@ -83,7 +83,7 @@ pub fn rim(lv: *grid.Level, t: grid.Tile) void {
     }
 }
 
-pub fn sow(lv: *grid.Level, rng: *mathx.Rng, pc: u32, solid: grid.Tile, open: grid.Tile) void {
+fn sow(lv: *grid.Level, rng: *mathx.Rng, pc: u32, solid: grid.Tile, open: grid.Tile) void {
     for (0..grid.CELLS) |i| {
         lv.tile[i] = if (rimAt(i) or rng.percent(pc)) solid else open;
     }
@@ -157,7 +157,6 @@ fn discAll(lv: *grid.Level, c: P, r: f32, t: grid.Tile) void {
     discOf(lv, c, r, t, true, false, null);
 }
 
-/// Narrower, a lane would be gapped on a diagonal.
 pub const LANE_MIN: u8 = 2;
 
 pub const Lane = enum {
@@ -221,6 +220,14 @@ pub fn box(lv: *grid.Level, b: grid.Box, t: grid.Tile) void {
     while (cells.next()) |q| lv.set(q, t);
 }
 
+/// `box`'s edge alone.
+pub fn outline(lv: *grid.Level, b: grid.Box, t: grid.Tile) void {
+    var cells = b.cells();
+    while (cells.next()) |q| {
+        if (b.onEdge(q)) lv.set(q, t);
+    }
+}
+
 /// Top left, top right, bottom left, bottom right.
 pub fn corners(b: grid.Box) [4]P {
     return .{ b.lo, .{ .x = b.hi.x - 1, .y = b.lo.y }, .{ .x = b.lo.x, .y = b.hi.y - 1 }, b.hi.sub(.{ .x = 1, .y = 1 }) };
@@ -257,6 +264,11 @@ pub fn sideAt(b: grid.Box, side: mathx.Dir, along: i32) P {
     };
 }
 
+/// `sideAt` level with the map's middle.
+pub fn sideMid(b: grid.Box, side: mathx.Dir) P {
+    return sideAt(b, side, alongOf(side, grid.MIDDLE));
+}
+
 /// The cell inside an edge door is opened too.
 pub fn openDoors(lv: *grid.Level, doors: []const P, ground: grid.Tile) void {
     for (doors, 0..) |d, k| {
@@ -273,6 +285,15 @@ pub fn seal(lv: *grid.Level, t: grid.Tile) void {
     for (0..grid.CELLS) |i| {
         if (rimAt(i) and !lv.tile[i].solid() and lv.door[i] == grid.NO_DOOR) lv.tile[i] = t;
     }
+}
+
+/// Walkable cells on the rim that are not doors; none once sealed.
+pub fn leaks(lv: *const grid.Level) usize {
+    var n: usize = 0;
+    for (0..grid.CELLS) |i| {
+        if (rimAt(i) and lv.walkable(grid.Level.of(i)) and lv.door[i] == grid.NO_DOOR) n += 1;
+    }
+    return n;
 }
 
 /// A base's own ground, which its features and the finishing passes draw from.
@@ -438,11 +459,7 @@ pub fn unbar(lv: *grid.Level) void {
 
 test "unbar takes the barrels plugging the doorway, not the ones in the room behind it" {
     var lv = grid.openFloor();
-    const room = grid.Box{ .lo = .{ .x = 10, .y = 5 }, .hi = .{ .x = 21, .y = 13 } };
-    var cells = room.cells();
-    while (cells.next()) |p| {
-        if (room.onEdge(p)) lv.set(p, .wall);
-    }
+    outline(&lv, .{ .lo = .{ .x = 10, .y = 5 }, .hi = .{ .x = 21, .y = 13 } }, .wall);
     const doorway = P{ .x = 15, .y = 12 };
     lv.set(doorway, .floor);
     lv.barrel[grid.Level.idx(doorway)] = true;
@@ -551,8 +568,15 @@ fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
     if (t.solid()) lv.set(p, paved(t, path));
 }
 
-pub fn paved(t: grid.Tile, put: grid.Tile) grid.Tile {
+fn paved(t: grid.Tile, put: grid.Tile) grid.Tile {
     return if (t.liquid() or t == .bridge) .bridge else put;
+}
+
+/// A way through a wall at `at`, `half` cells either side of its middle, from `outside` cells out to `inside` cells in along `in`.
+pub fn gateway(lv: *grid.Level, at: P, in: mathx.Dir, outside: i32, inside: i32, half: i32, open: ?grid.Tile) void {
+    const side = in.across().scaled(half);
+    const step = in.delta();
+    bridge(lv, grid.Box.between(at.sub(step.scaled(outside)).sub(side), at.add(step.scaled(inside)).add(side)), open);
 }
 
 /// A liquid in `b` bridged; with `open`, a wall there opened to it.
@@ -655,6 +679,7 @@ fn middleHalf(rng: *mathx.Rng, span: i32) i32 {
 pub const ACROSS = [_]mathx.Dir{ .w, .e };
 pub const DOWN = [_]mathx.Dir{ .n, .s };
 const EDGES = ACROSS ++ DOWN;
+pub const SIDES = DOWN ++ ACROSS;
 
 pub const Course = enum {
     across,

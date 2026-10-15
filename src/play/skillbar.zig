@@ -1,9 +1,18 @@
 const std = @import("std");
 const input = @import("../core/input.zig");
+const mathx = @import("../core/mathx.zig");
+const grid = @import("../world/grid.zig");
+const bow = @import("bow.zig");
 const burning = @import("burning.zig");
 const damage = @import("damage.zig");
 const glacial = @import("glacial.zig");
 const juke = @import("juke.zig");
+const blink = @import("blink.zig");
+const spark = @import("spark.zig");
+const bash = @import("bash.zig");
+const cleave = @import("cleave.zig");
+const hero = @import("hero.zig");
+const flask = @import("flask.zig");
 const menu = @import("../ui/menu.zig");
 
 const Button = input.Button;
@@ -15,6 +24,12 @@ pub const Act = enum {
     juke,
     burning_arrow,
     glacial_shot,
+    spark,
+    blink,
+    shield_bash,
+    cleave,
+    life_flask,
+    mana_flask,
 
     pub fn name(a: Act) [:0]const u8 {
         return switch (a) {
@@ -24,6 +39,12 @@ pub const Act = enum {
             .juke => "Juke",
             .burning_arrow => "Burning Arrow",
             .glacial_shot => "Glacial Shot",
+            .spark => "Spark",
+            .blink => "Blink",
+            .shield_bash => "Shield Bash",
+            .cleave => "Cleave",
+            .life_flask => "Life Flask",
+            .mana_flask => "Mana Flask",
         };
     }
 
@@ -42,6 +63,12 @@ pub const Act = enum {
             .juke => juke,
             .burning_arrow => burning,
             .glacial_shot => glacial,
+            .spark => spark,
+            .blink => blink,
+            .shield_bash => bash,
+            .cleave => cleave,
+            .life_flask => flask.Life,
+            .mana_flask => flask.Mana,
             .shoot, .wait, .secondary => null,
         };
     }
@@ -51,13 +78,62 @@ pub const Act = enum {
         return @hasDecl(m, decl);
     }
 
-    pub const Reticle = enum { bow, leap };
+    /// `bow` a missile along a lit line, `leap` a landing, `swing` a melee blow on a tile beside the hero.
+    pub const Reticle = enum { bow, leap, swing };
 
     pub fn reticle(a: Act) ?Reticle {
         return switch (a) {
-            .shoot, .burning_arrow, .glacial_shot => .bow,
-            .juke => .leap,
-            .wait, .secondary => null,
+            .shoot, .burning_arrow, .glacial_shot, .spark => .bow,
+            .juke, .blink => .leap,
+            .shield_bash, .cleave => .swing,
+            .wait, .secondary, .life_flask, .mana_flask => null,
+        };
+    }
+
+    /// Spends no turn: Juke alone.
+    pub fn free(a: Act) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, "FREE"),
+        };
+    }
+
+    /// The flask it drinks.
+    pub fn flaskOf(a: Act) ?flask.Kind {
+        return switch (a) {
+            .life_flask => .life,
+            .mana_flask => .mana,
+            else => null,
+        };
+    }
+
+    /// A leap's furthest landing.
+    pub fn reach(a: Act) i32 {
+        return switch (a) {
+            inline else => |t| if (comptime reticle(t) == .leap) module(t).?.RANGE else 0,
+        };
+    }
+
+    /// A missile's marks, a leap's landings, or a swing's: what its reticle holds legal.
+    pub fn aimable(a: Act, lv: *const grid.Level, from: mathx.P, to: mathx.P) bool {
+        return switch (a) {
+            inline else => |t| if (comptime reticle(t)) |r| switch (r) {
+                .bow => bow.aimable(lv, from, to),
+                .leap, .swing => module(t).?.aimable(lv, from, to),
+            } else unreachable,
+        };
+    }
+
+    /// Not an arrow: what it is called, and it has no arrow's physical hit nor picture.
+    pub fn bolt(a: Act) ?[]const u8 {
+        return switch (a) {
+            inline else => |t| if (comptime has(t, "BOLT")) module(t).?.BOLT else null,
+        };
+    }
+
+    /// Its swing strikes an arc round the tile aimed at.
+    pub fn sweeps(a: Act) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, "arc"),
         };
     }
 
@@ -100,6 +176,25 @@ pub const Act = enum {
 
 pub const ACTS = std.enums.values(Act);
 
+/// The skills a class may bind, in the bind picker's order.
+pub fn kit(c: hero.Class) []const Act {
+    return switch (c) {
+        .archer => &.{ .shoot, .wait, .secondary, .juke, .burning_arrow, .glacial_shot, .life_flask, .mana_flask },
+        .wizard => &.{ .spark, .wait, .secondary, .blink, .life_flask, .mana_flask },
+        .knight => &.{ .cleave, .wait, .secondary, .shield_bash, .life_flask, .mana_flask },
+    };
+}
+
+comptime {
+    for (ACTS) |a| {
+        var n: usize = 0;
+        for (hero.CLASSES) |c| {
+            if (std.mem.indexOfScalar(Act, kit(c), a) != null) n += 1;
+        }
+        std.debug.assert(n >= 1);
+    }
+}
+
 pub const Set = enum {
     primary,
     secondary,
@@ -128,8 +223,13 @@ pub const Slot = struct { set: Set, button: Button };
 const Row = std.EnumArray(Button, ?Act);
 
 pub const Bar = struct {
-    set: std.EnumArray(Set, Row) = .init(.{ .primary = PRIMARY, .secondary = .initFill(null) }),
+    set: std.EnumArray(Set, Row) = setsOf(hero.DEFAULT),
     modifier: ?Button = .lb,
+
+    /// A fresh hero's of the class.
+    pub fn of(c: hero.Class) Bar {
+        return .{ .set = setsOf(c) };
+    }
 
     pub fn at(self: Bar, s: Slot) ?Act {
         if (self.modifier == s.button) return .secondary;
@@ -194,15 +294,62 @@ pub const Bar = struct {
     }
 };
 
-const PRIMARY = blk: {
+/// The flasks on RB and RT in either set, as PoE2 keeps them out of the skill sets.
+fn flasks() Row {
     var r = Row.initFill(null);
-    r.set(.x, .shoot);
-    r.set(.b, .juke);
+    r.set(.rb, .life_flask);
+    r.set(.rt, .mana_flask);
+    return r;
+}
+
+fn setsOf(c: hero.Class) std.EnumArray(Set, Row) {
+    return .init(.{ .primary = primary(c), .secondary = secondary(c) });
+}
+
+fn secondary(c: hero.Class) Row {
+    var r = flasks();
+    switch (c) {
+        .archer => r.set(.x, .glacial_shot),
+        .wizard, .knight => {},
+    }
+    return r;
+}
+
+fn primary(c: hero.Class) Row {
+    var r = flasks();
     r.set(.y, .wait);
-    r.set(.rb, .burning_arrow);
-    r.set(.rt, .glacial_shot);
-    break :blk r;
-};
+    switch (c) {
+        .archer => {
+            r.set(.x, .shoot);
+            r.set(.b, .juke);
+            r.set(.a, .burning_arrow);
+        },
+        .wizard => {
+            r.set(.x, .spark);
+            r.set(.b, .blink);
+        },
+        .knight => {
+            r.set(.x, .cleave);
+            r.set(.b, .shield_bash);
+        },
+    }
+    return r;
+}
+
+test "each class starts with its own skills bound, and only skills of its kit" {
+    for (hero.CLASSES) |c| {
+        const bar = Bar.of(c);
+        var bound: usize = 0;
+        for (SETS) |s| for (SLOTS) |b| {
+            const a = bar.at(.{ .set = s, .button = b }) orelse continue;
+            try std.testing.expect(std.mem.indexOfScalar(Act, kit(c), a) != null);
+            bound += 1;
+        };
+        std.debug.print("{s}: {d} slots bound from a kit of {d}\n", .{ c.title(), bound, kit(c).len });
+    }
+    try std.testing.expectEqual(@as(?Act, .spark), Bar.of(.wizard).at(.{ .set = .primary, .button = .x }));
+    try std.testing.expectEqual(@as(?Act, .shield_bash), Bar.of(.knight).at(.{ .set = .primary, .button = .b }));
+}
 
 pub const BINDS = Button.view;
 const NOT_SLOTS = [_]Button{ BINDS, menu.PAUSE };
@@ -218,15 +365,19 @@ comptime {
     }
 }
 
-test "the bar starts with Shoot on X, Juke on B, Wait on Y and the secondary set held on LB" {
+test "the bar starts with Shoot on X, Juke on B, Wait on Y, the flasks on RB and RT and the secondary set held on LB" {
     const bar = Bar{};
     try std.testing.expectEqual(@as(?Act, .shoot), bar.at(.{ .set = .primary, .button = .x }));
     try std.testing.expectEqual(@as(?Act, .juke), bar.at(.{ .set = .primary, .button = .b }));
     try std.testing.expectEqual(@as(?Act, .wait), bar.at(.{ .set = .primary, .button = .y }));
-    try std.testing.expectEqual(@as(?Act, .burning_arrow), bar.at(.{ .set = .primary, .button = .rb }));
-    try std.testing.expectEqual(@as(?Act, .glacial_shot), bar.at(.{ .set = .primary, .button = .rt }));
+    try std.testing.expectEqual(@as(?Act, .burning_arrow), bar.at(.{ .set = .primary, .button = .a }));
+    try std.testing.expectEqual(@as(?Act, .glacial_shot), bar.at(.{ .set = .secondary, .button = .x }));
+    for (SETS) |s| {
+        try std.testing.expectEqual(@as(?Act, .life_flask), bar.at(.{ .set = s, .button = .rb }));
+        try std.testing.expectEqual(@as(?Act, .mana_flask), bar.at(.{ .set = s, .button = .rt }));
+    }
     try std.testing.expectEqual(@as(?Act, .secondary), bar.at(.{ .set = .secondary, .button = .lb }));
-    try std.testing.expectEqual(@as(?Act, null), bar.at(.{ .set = .secondary, .button = .x }));
+    try std.testing.expectEqual(@as(?Act, null), bar.at(.{ .set = .secondary, .button = .y }));
     var down = std.EnumSet(Button).initEmpty();
     try std.testing.expectEqual(Set.primary, bar.active(down));
     down.insert(.lb);

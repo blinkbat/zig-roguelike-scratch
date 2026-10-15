@@ -66,13 +66,21 @@ pub const Makeup = struct {
         return self.kind[0..self.n];
     }
 
+    fn lead(self: *const Makeup) actor.Kind {
+        return self.kind[0];
+    }
+
+    fn followers(self: *const Makeup) []const actor.Kind {
+        return self.kinds()[1..];
+    }
+
     fn holds(self: *const Makeup, k: actor.Kind) bool {
         return std.mem.indexOfScalar(actor.Kind, self.kinds(), k) != null;
     }
 
     /// Its lead fits a pool `bodies` full, and `k` too after the members `placeOne` spawns before it.
     fn fits(self: *const Makeup, bodies: usize, k: ?actor.Kind) bool {
-        if (!actor.roomFor(bodies, self.kind[0])) return false;
+        if (!actor.roomFor(bodies, self.lead())) return false;
         const want = k orelse return true;
         var n = bodies;
         for (self.kinds()) |m| {
@@ -229,8 +237,8 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, give
 fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec, m: *const Makeup, bodies: *usize) bool {
     const others = pool.n;
     const lead = leadSpot(lv, pool, rng, start, spec, others) orelse return false;
-    spawnCounted(lv, pool, m.kind[0], lead, bodies);
-    for (m.kinds()[1..]) |k| {
+    spawnCounted(lv, pool, m.lead(), lead, bodies);
+    for (m.followers()) |k| {
         if (!actor.roomFor(bodies.*, k)) continue;
         const at = spotNear(lv, pool, rng, lead, start, spec, others) orelse break;
         spawnCounted(lv, pool, k, at, bodies);
@@ -398,10 +406,10 @@ test "a makeup grows, shrinks to its lead and turns round the foe kinds; the las
     try std.testing.expectEqual(@as(usize, 1), m.n);
     for (actor.FOES[1..]) |k| {
         m.turn(0);
-        try std.testing.expectEqual(k, m.kind[0]);
+        try std.testing.expectEqual(k, m.lead());
     }
     m.turn(0);
-    try std.testing.expectEqual(actor.FOES[0], m.kind[0]);
+    try std.testing.expectEqual(actor.FOES[0], m.lead());
     try std.testing.expect(s.dropMakeup(0));
     try std.testing.expectEqualSlices(actor.Kind, KINDS[1], s.makeup[0].kinds());
     while (s.dropMakeup(0)) {}

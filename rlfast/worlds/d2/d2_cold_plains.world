@@ -1,0 +1,21 @@
+roguelike-world 1
+start 0 4 32
+node procgen open
+ground grass
+edge rock
+feature border
+tile rock
+width 2
+rough 3
+feature setpiece
+piece camp
+count 1
+feature buildings
+count 3
+size 5 8
+feature scatter
+tile shrub
+on grass
+amount 10
+name D2 Cold Plains
+at 0 0

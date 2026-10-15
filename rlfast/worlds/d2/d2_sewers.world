@@ -1,0 +1,8 @@
+roguelike-world 1
+start 0 48 32
+node procgen maze
+style sewers
+rooms 14
+merge 800
+name D2 Sewers
+at 0 0
