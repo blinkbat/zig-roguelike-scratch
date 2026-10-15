@@ -47,6 +47,10 @@ pub fn procs(rng: *mathx.Rng, resist: i16) bool {
     return rng.percent(chance(resist));
 }
 
+pub fn afflict(a: anytype) void {
+    a.chill.apply();
+}
+
 pub const Cone = grid.Area(grid.Cells.span(RANGE) * grid.Cells.span(RANGE));
 
 /// The least sight radius `mathx.reaches` takes to every corner of the `RANGE` box.

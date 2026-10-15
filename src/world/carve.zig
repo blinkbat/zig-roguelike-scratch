@@ -622,28 +622,15 @@ pub const Meander = struct {
     }
 };
 
-/// The cells a river's middle steps through, off the rim, to cross it at.
-pub const Bed = struct {
-    cell: [MEANDER_STEPS]P = undefined,
-    n: usize = 0,
-
-    fn add(self: *Bed, c: P) void {
-        if (self.n == MEANDER_STEPS or grid.Level.onRim(c)) return;
-        self.cell[self.n] = c;
-        self.n += 1;
-    }
-};
-
 /// A river's middle from edge to edge, the rim too.
 pub const Flow = struct {
     cell: [MEANDER_STEPS]P = undefined,
     n: usize = 0,
 
-    pub fn of(rng: *mathx.Rng, a: P, b: P, bed: ?*Bed) Flow {
+    pub fn of(rng: *mathx.Rng, a: P, b: P) Flow {
         var f = Flow{};
         var m = Meander.init(a, b, 1);
         while (m.next(rng)) |c| {
-            if (bed) |k| k.add(c);
             f.cell[f.n] = c;
             f.n += 1;
         }
@@ -738,19 +725,30 @@ fn capped(v: anytype, max: u16) @TypeOf(v) {
 }
 
 /// In the rng's order: reordering changes every seed's floor.
-const DRESSES = .{ "litter", "decor" };
+const DRESSES = [_]type{ Litter, Decor };
+
+/// The field of `T` holding a `D`, if it has one.
+fn dressOf(comptime T: type, comptime D: type) ?[:0]const u8 {
+    var found: ?[:0]const u8 = null;
+    for (std.meta.fields(T)) |f| {
+        if (f.type != D) continue;
+        if (found != null) @compileError(@typeName(T) ++ " holds two " ++ @typeName(D));
+        found = f.name;
+    }
+    return found;
+}
 
 pub fn fitDress(p: anytype) @TypeOf(p) {
     var q = p;
-    inline for (DRESSES) |n| {
-        if (@hasField(@TypeOf(p), n)) @field(q, n) = @field(p, n).fit();
+    inline for (DRESSES) |D| {
+        if (comptime dressOf(@TypeOf(p), D)) |n| @field(q, n) = @field(p, n).fit();
     }
     return q;
 }
 
 pub fn dress(p: anytype, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
-    inline for (DRESSES) |n| {
-        if (@hasField(@TypeOf(p), n)) @field(p, n).strew(lv, rng, seed);
+    inline for (DRESSES) |D| {
+        if (comptime dressOf(@TypeOf(p), D)) |n| @field(p, n).strew(lv, rng, seed);
     }
 }
 
@@ -880,7 +878,7 @@ test "a river runs edge to edge and parts the ground, and a join bridges it" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x21E);
     field(&lv, Palette.WILD);
-    const f = Flow.of(&rng, .{ .x = 0, .y = 32 }, .{ .x = grid.W - 1, .y = 30 }, null);
+    const f = Flow.of(&rng, .{ .x = 0, .y = 32 }, .{ .x = grid.W - 1, .y = 30 });
     f.bank(&lv, 3, .shallows);
     f.fill(&lv, 3, .water);
     var st: Stretches = .{};

@@ -29,40 +29,44 @@ pub const Params = struct {
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Params) void {
     const w: f32 = @floatFromInt(p.width);
-    var beds = [_]carve.Bed{.{}} ** COUNT_MAX;
     var flows: [COUNT_MAX]carve.Flow = undefined;
-    for (flows[0..p.count], beds[0..p.count]) |*f, *bed| {
+    for (flows[0..p.count]) |*f| {
         const ends = p.course.ends(rng);
-        f.* = carve.Flow.of(rng, ends[0], ends[1], bed);
+        f.* = carve.Flow.of(rng, ends[0], ends[1]);
     }
     const bank = p.bank.tile();
+    var native = std.StaticBitSet(grid.CELLS).initEmpty();
+    for (lv.tile, 0..) |t, i| native.setValue(i, t == bank);
     if (bank) |bk| for (flows[0..p.count]) |*f| f.bank(lv, w, bk);
     for (flows[0..p.count]) |*f| f.fill(lv, w, p.fill);
     const across = fordOf(p.fill, pal);
     const ford_r: i32 = @intFromFloat(@floor(carve.bankReach(w)));
     const bank_r: i32 = @intFromFloat(@ceil(carve.bankReach(w)));
     for (0..p.fords) |k| {
-        const c = fordAt(&beds[k % p.count], rng, bank_r + ford_r) orelse continue;
+        const c = fordAt(&flows[k % p.count], rng, bank_r + ford_r) orelse continue;
         var cells = grid.Cells.around(c, bank_r);
         while (cells.next()) |q| {
             if (grid.Level.onRim(q)) continue;
             const t = lv.at(q);
             if (t == p.fill and mathx.dist(q, c) <= ford_r) {
                 lv.set(q, across);
-            } else if (t == bank and t.solid()) lv.set(q, pal.path);
+            } else if (t == bank and t.solid() and !native.isSet(grid.Level.idx(q))) lv.set(q, pal.path);
         }
     }
 }
 
-/// A cell of the bed, `clear` cells off the map's edge if the bed has one, so the ford crosses to the map.
-fn fordAt(bed: *const carve.Bed, rng: *mathx.Rng, clear: i32) ?mathx.P {
-    const cells = bed.cell[0..bed.n];
-    if (cells.len == 0) return null;
-    return rng.pickWhere(mathx.P, cells, clear, offEdge) orelse cells[rng.below(@intCast(cells.len))];
+/// A cell of the river's middle off the rim, `clear` cells off the map's edge if it has one, so the ford crosses to the map.
+fn fordAt(f: *const carve.Flow, rng: *mathx.Rng, clear: i32) ?mathx.P {
+    const cells = f.cell[0..f.n];
+    return rng.pickWhere(mathx.P, cells, clear, offEdge) orelse rng.pickWhere(mathx.P, cells, {}, offRim);
 }
 
 fn offEdge(clear: i32, c: mathx.P) bool {
     return grid.Level.edgeDist(c) > clear;
+}
+
+fn offRim(_: void, c: mathx.P) bool {
+    return !grid.Level.onRim(c);
 }
 
 fn fordOf(fill: grid.Tile, pal: carve.Palette) grid.Tile {
@@ -101,9 +105,22 @@ test "a ford crosses a river's rock bank as it does a walkable one" {
     try std.testing.expectEqual(shallows, rock);
 }
 
+test "a ford through a rock bank cuts the bank, never the rock the river ran through" {
+    const pal = carve.Palette.TRAILED;
+    var cut: usize = 0;
+    for (0..50) |s| {
+        var lv = grid.Level.blank();
+        @memset(&lv.tile, .rock);
+        var rng = mathx.Rng.init(0xF02D + s);
+        apply(&lv, &rng, 0, pal, .{ .bank = .rock, .width = WIDTH_MAX, .fords = FORDS_MAX });
+        cut += carve.count(&lv, pal.path);
+    }
+    std.debug.print("50 rivers through solid rock, banked with rock, {d} fords each: {d} rock cells cut to path\n", .{ FORDS_MAX, cut });
+    try std.testing.expectEqual(@as(usize, 0), cut);
+}
+
 test "a ford lands off the map's edge whenever its river runs there" {
-    var bed = carve.Bed{};
-    bed.n = 0;
+    var bed = carve.Flow{};
     var y: i32 = 1;
     while (y < grid.H - 1) : (y += 1) {
         bed.cell[bed.n] = .{ .x = 1, .y = y };
@@ -146,7 +163,7 @@ test "crossing cliffs with banks keep each other's rock" {
         var again = mathx.Rng.init(0xC4055 + s);
         for (0..p.count) |_| {
             const ends = p.course.ends(&again);
-            carve.Flow.of(&again, ends[0], ends[1], null).fill(&cliffs, @floatFromInt(p.width), .rock);
+            carve.Flow.of(&again, ends[0], ends[1]).fill(&cliffs, @floatFromInt(p.width), .rock);
         }
         var here: usize = 0;
         for (cliffs.tile, lv.tile) |want, got| {

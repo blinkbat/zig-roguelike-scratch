@@ -93,7 +93,7 @@ fn window(screen_h: i32, n: usize, at: usize) struct { from: usize, len: usize }
     return .{ .from = from, .len = len };
 }
 
-pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const [:0]const u8, at: usize, note: ?[:0]const u8) void {
+pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const []const u8, at: usize, note: ?[:0]const u8) void {
     const win = window(screen.y, all.len, at);
     const rows = all[win.from..][0..win.len];
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(rows.len)) * ROW_STEP, 2);

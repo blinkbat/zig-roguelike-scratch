@@ -50,7 +50,7 @@ test "a road crosses the map whole and bridges a river" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x20AD);
     carve.fill(&lv, .shrub);
-    carve.Flow.of(&rng, .{ .x = 40, .y = 0 }, .{ .x = 44, .y = grid.H - 1 }, null).fill(&lv, 3, .water);
+    carve.Flow.of(&rng, .{ .x = 40, .y = 0 }, .{ .x = 44, .y = grid.H - 1 }).fill(&lv, 3, .water);
     apply(&lv, &rng, 0, carve.Palette.WILD, .{ .course = .across, .wander = 0 });
     var st: carve.Stretches = .{};
     const parts = st.label(&lv);

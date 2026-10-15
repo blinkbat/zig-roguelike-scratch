@@ -939,6 +939,13 @@ pub const Editor = struct {
         };
     }
 
+    fn painted(ed: *Editor) ?*atlas.Bespoke {
+        return switch (ed.plan().*) {
+            .bespoke => |*b| b,
+            .procgen => null,
+        };
+    }
+
     fn generator(ed: *Editor) ?*atlas.Procgen {
         return if (ed.lower == .generator) ed.rolled() else null;
     }
@@ -1368,7 +1375,7 @@ fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
         if (over and d.paint_hit) {
             if (ed.paintable()) layBoard(ed, p) else ed.say(GENERATED, .{});
         }
-        if (d.erase_hit) ed.putAwayPaste();
+        if (over and d.erase_hit) ed.putAwayPaste();
         return;
     }
     const held = switch (ed.stroke) {
@@ -1706,12 +1713,9 @@ fn place(ed: *Editor, p: P) void {
         },
         .door => {
             const k = ed.world.addDoor(ed.node, p) orelse return ed.say("That cell is a door, or the node holds {d}", .{grid.MAX_DOORS});
-            switch (ed.plan().*) {
-                .bespoke => |*b| {
-                    b.tile[grid.Level.idx(p)] = .floor;
-                    ed.here().pruneAt(b, p);
-                },
-                .procgen => {},
+            if (ed.painted()) |b| {
+                b.tile[grid.Level.idx(p)] = .floor;
+                ed.here().pruneAt(b, p);
             }
             ed.say("Door {d}; the {s} tool joins it to another", .{ k, @as(Tool, .link).name() });
             ed.changed();
@@ -1743,10 +1747,7 @@ fn remove(ed: *Editor, p: P) void {
         .door => {
             const k = ed.doorAt(p) orelse return;
             ed.world.removeDoor(.{ .node = ed.node, .door = k });
-            switch (ed.plan().*) {
-                .bespoke => |*b| ed.here().pruneAt(b, p),
-                .procgen => {},
-            }
+            if (ed.painted()) |b| ed.here().pruneAt(b, p);
             ed.pick = null;
             ed.changed();
         },
@@ -1763,10 +1764,7 @@ fn remove(ed: *Editor, p: P) void {
 /// The selection onto the board; cut clears it after, as one undo.
 fn copySelection(ed: *Editor, cut: bool) void {
     const s = ed.selection orelse return ed.say("Nothing selected: {s} then drag", .{Desk.SHAPE_CAPTIONS[@intFromEnum(Shape.select)]});
-    const b = switch (ed.plan().*) {
-        .bespoke => |*x| x,
-        .procgen => return ed.say("A procgen node's cells are rolled; there is nothing to copy", .{}),
-    };
+    const b = ed.painted() orelse return ed.say("A procgen node's cells are rolled; there is nothing to copy", .{});
     const bd = &ed.board;
     bd.* = .{ .size = s.hi.sub(s.lo) };
     var cells = s.cells();
@@ -1791,10 +1789,7 @@ fn copySelection(ed: *Editor, cut: bool) void {
 /// The second ink over the selection, and nothing standing on it.
 fn clearSelection(ed: *Editor) void {
     const s = ed.selection orelse return;
-    const b = switch (ed.plan().*) {
-        .bespoke => |*x| x,
-        .procgen => return ed.say(GENERATED, .{}),
-    };
+    const b = ed.painted() orelse return ed.say(GENERATED, .{});
     ed.drop();
     ed.gesture();
     var cells = s.cells();
@@ -1833,7 +1828,7 @@ fn layBoard(ed: *Editor, at: P) void {
         if (!grid.Level.inside(p)) {
             left += 1;
         } else if (!b.torch.has(p)) {
-            if (ed.here().torchFits(b, p) and b.torch.add(p)) ed.changed() else left += 1;
+            if (ed.here().torchGoes(b, p) and b.torch.add(p)) ed.changed() else left += 1;
         }
     }
     for (bd.foe[0..bd.foe_n]) |f| {
@@ -1842,7 +1837,7 @@ fn layBoard(ed: *Editor, at: P) void {
             left += 1;
         } else if (b.foeAt(p)) |i| {
             if (b.foe[i].kind != f.kind) left += 1;
-        } else if (ed.here().foeFits(b, p) and b.addFoe(.{ .kind = f.kind, .at = p })) ed.changed() else left += 1;
+        } else if (ed.here().foeGoes(b, p, f.kind) and b.addFoe(.{ .kind = f.kind, .at = p })) ed.changed() else left += 1;
     }
     if (left > 0) ed.say("Pasted; {d} torch(es), barrel(s) or foe(s) did not fit there", .{left}) else ed.say("Pasted", .{});
 }
@@ -2455,13 +2450,12 @@ fn drawGenerator(ed: *Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void 
 
 /// `- node +` through the procgen nodes, so another's generator is a click away; true when it went to one.
 fn nodeSwitch(ed: *Editor, g: *game.Game, y: *i32) bool {
-    var buf: [atlas.TITLE_MAX + 1]u8 = undefined;
     var name: [atlas.TITLE_MAX]u8 = undefined;
     rowLabel(g, y.*, "Node");
     var procgen: usize = 0;
     for (ed.world.nodes()) |*nd| procgen += @intFromBool(nd.unrolled());
     const tip = "The next or last procgen node's generator";
-    const by = stepper(ed, g, valueSlot(y.*, 0, 1), std.fmt.bufPrintZ(&buf, "{s}", .{ed.nodeName(ed.node, &name)}) catch "", .{
+    const by = stepper(ed, g, valueSlot(y.*, 0, 1), ed.nodeName(ed.node, &name), .{
         .{ .tip = tip, .live = procgen > 1 },
         .{ .tip = tip, .live = procgen > 1 },
     });
@@ -2929,7 +2923,7 @@ fn cycle(comptime T: type, v: T, by: i32) T {
 const Step = struct { tip: [:0]const u8, live: bool = true };
 
 /// `- value +` across `r`, the minus then the plus: the step it was clicked by, `SHIFT_STEP` times over with Shift held.
-fn stepper(ed: *Editor, g: *game.Game, r: rl.Rectangle, value: [:0]const u8, steps: [2]Step) i32 {
+fn stepper(ed: *Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, steps: [2]Step) i32 {
     const x: i32 = @intFromFloat(r.x);
     const y: i32 = @intFromFloat(r.y);
     const w: i32 = @intFromFloat(r.width);
@@ -3214,11 +3208,8 @@ fn legal(ed: *Editor, p: P) bool {
     return switch (ed.tool) {
         .paint, .start => true,
         .barrel => nd.barrelGoes(&nd.plan.bespoke, p),
-        .torch => nd.torchFits(&nd.plan.bespoke, p) and nd.plan.bespoke.torch.takes(p),
-        .foe => |k| blk: {
-            const b = &nd.plan.bespoke;
-            break :blk nd.foeFits(b, p) and b.roomAt(p, k);
-        },
+        .torch => nd.torchGoes(&nd.plan.bespoke, p),
+        .foe => |k| nd.foeGoes(&nd.plan.bespoke, p, k),
         .door => nd.takesDoor(p),
         .link => nd.doorAt(p) != null,
     };

@@ -48,21 +48,21 @@ pub const Tile = enum(u8) {
     shrooms,
 
     pub fn solid(t: Tile) bool {
-        return TERRAIN.get(t).solid;
+        return TERRAIN.getPtrConst(t).solid;
     }
 
     pub fn blind(t: Tile) bool {
-        return TERRAIN.get(t).blind;
+        return TERRAIN.getPtrConst(t).blind;
     }
 
     /// What lies under it: drawn first, beneath its own picture.
     pub fn ground(t: Tile) ?Tile {
-        return TERRAIN.get(t).ground;
+        return TERRAIN.getPtrConst(t).ground;
     }
 
     /// Water, lava or a chasm, which a trail crosses by a bridge.
     pub fn liquid(t: Tile) bool {
-        return TERRAIN.get(t).liquid;
+        return TERRAIN.getPtrConst(t).liquid;
     }
 
     pub fn upright(t: Tile) bool {
@@ -475,7 +475,6 @@ pub fn nearest(from: P, set: anytype) ?P {
     return null;
 }
 
-/// `hi` exclusive.
 /// Up to `N` cells.
 pub fn Area(comptime N: usize) type {
     return struct {

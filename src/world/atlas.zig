@@ -302,6 +302,16 @@ pub const Node = struct {
         return b.floorAt(p) and self.doorAt(p) == null and !grid.cellOr(bool, &b.barrel, p, false);
     }
 
+    /// Where a `k` may be laid: it fits, and the node has room for it there.
+    pub fn foeGoes(self: *const Node, b: *const Bespoke, p: P, k: actor.Kind) bool {
+        return self.foeFits(b, p) and b.roomAt(p, k);
+    }
+
+    /// Where a torch may be hung: it fits, and the wall and the node have room for it.
+    pub fn torchGoes(self: *const Node, b: *const Bespoke, p: P) bool {
+        return self.torchFits(b, p) and b.torch.takes(p);
+    }
+
     /// After `p`'s tile or door changed: takes away the torch, barrel and foe it no longer fits, as `parse` would refuse them.
     pub fn pruneAt(self: *const Node, b: *Bespoke, p: P) void {
         for ([_]P{ p, lume.torchWall(p) }) |w| {
@@ -542,7 +552,7 @@ pub const Atlas = struct {
                     knobbed = KnobSet.initEmpty();
                 },
                 .name => {
-                    _ = (try self.last()).rename(f.rest()) orelse return error.BadLine;
+                    if ((try self.last()).rename(f.rest()) != true) return error.BadLine;
                     continue;
                 },
                 .at => {
@@ -1164,6 +1174,7 @@ test "a world file with a one-way link, a door linked to itself, a stray word or
         head ++ "node bespoke\n" ++ ("row " ++ "0" ** COLS ++ "\n") ** ROWS ++ "door 3 3\n",
         head ++ "start 0 6 6\nnode procgen rooms\n",
         head ++ "node procgen rooms\nname A\nname B\n",
+        head ++ "node procgen rooms\nname   \n",
         head ++ "node procgen rooms\nat 0 0\nat 1 1\n",
         head ++ "node procgen rooms\napart 4\napart 5\n",
         head ++ "node procgen wilds\nrooms 4\n",

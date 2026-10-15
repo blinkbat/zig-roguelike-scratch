@@ -27,6 +27,10 @@ pub fn procs(rng: *mathx.Rng, _: i16) bool {
     return rng.percent(CHANCE);
 }
 
+pub fn afflict(a: anytype) void {
+    a.burn.start();
+}
+
 test "burning begins next turn, lasts three ticks and refreshes without stacking or postponing a tick" {
     var b = Burn{};
     b.start();

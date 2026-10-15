@@ -258,7 +258,7 @@ const App = struct {
         switch (app.page) {
             .main => {
                 const rows = comptime blk: {
-                    var ls: [MAIN_ROWS.len][:0]const u8 = undefined;
+                    var ls: [MAIN_ROWS.len][]const u8 = undefined;
                     for (MAIN_ROWS, &ls) |r, *l| l.* = menu.named(r);
                     break :blk ls;
                 };
@@ -289,14 +289,13 @@ const App = struct {
                 }
             },
             .world => {
-                var names: [atlas.Listing.MAX][atlas.PATH_MAX + 1]u8 = undefined;
-                var rows: [atlas.Listing.MAX][:0]const u8 = undefined;
+                var rows: [atlas.Listing.MAX][]const u8 = undefined;
                 const n = app.listing.n;
                 if (n == 0) {
                     app.toTitle();
                     return true;
                 }
-                for (names[0..n], rows[0..n], 0..) |*b, *l, i| l.* = std.fmt.bufPrintZ(b, "{s}", .{app.listing.label(i)}) catch "";
+                for (rows[0..n], 0..) |*l, i| l.* = app.listing.label(i);
                 const picked = app.worlds.step(&g.st, n);
                 var where: [atlas.PATH_MAX + 1]u8 = undefined;
                 var dir: [atlas.PATH_MAX]u8 = undefined;
@@ -316,7 +315,7 @@ const App = struct {
                 }
             },
             .class => {
-                var rows: [hero.CLASSES.len][:0]const u8 = undefined;
+                var rows: [hero.CLASSES.len][]const u8 = undefined;
                 for (hero.CLASSES, &rows) |c, *l| l.* = c.title();
                 const picked = app.classes.step(&g.st, rows.len);
                 menu.draw(g.face, g.screen, "CHOOSE A HERO", &rows, app.classes.at, hero.CLASSES[app.classes.at].blurb());
@@ -340,7 +339,7 @@ const App = struct {
             },
             .load => {
                 var lines: [save.SLOTS][LINE]u8 = undefined;
-                var rows: [save.SLOTS][:0]const u8 = undefined;
+                var rows: [save.SLOTS][]const u8 = undefined;
                 for (&app.list, &lines, &rows, 0..) |*s, *b, *l, i| l.* = slotLine(s, b, i);
                 const was = app.loads.at;
                 const picked = app.loads.step(&g.st, rows.len);
@@ -372,7 +371,7 @@ const App = struct {
             },
             .options => {
                 const full = game.fullscreen();
-                var rows: [OPTION_ROWS.len][:0]const u8 = undefined;
+                var rows: [OPTION_ROWS.len][]const u8 = undefined;
                 for (OPTION_ROWS, &rows) |r, *l| l.* = switch (r) {
                     .fullscreen => menu.toggle(menu.named(OptionRow.fullscreen), full),
                     .debug => menu.named(r),
@@ -387,7 +386,7 @@ const App = struct {
                 };
             },
             .debug => {
-                var rows: [DEBUG_ROWS.len][:0]const u8 = undefined;
+                var rows: [DEBUG_ROWS.len][]const u8 = undefined;
                 for (DEBUG_ROWS, &rows) |r, *l| l.* = switch (r) {
                     .unkillable => menu.toggle(menu.named(DebugRow.unkillable), g.unkillable),
                 };

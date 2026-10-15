@@ -13,10 +13,12 @@ pub const LIFE_PCT: i32 = 50;
 pub const MANA_GAIN: i32 = 50;
 
 pub const Life = struct {
+    pub const KIND: Kind = .life;
     pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d}% of life over {d} turns. Uses {d} of {d} charges; kills refill {d}. Takes a turn.", .{ LIFE_PCT, TURNS, USE, CHARGES, PER_KILL });
 };
 
 pub const Mana = struct {
+    pub const KIND: Kind = .mana;
     pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d} mana over {d} turns. Uses {d} of {d} charges; kills refill {d}. Takes a turn.", .{ MANA_GAIN, TURNS, USE, CHARGES, PER_KILL });
 };
 

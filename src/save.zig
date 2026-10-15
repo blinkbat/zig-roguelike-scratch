@@ -21,6 +21,8 @@ const GAP_S: f32 = 1;
 const Seed = @FieldType(game.Game, "seed");
 const Node = @FieldType(game.Game, "node");
 const Visited = @FieldType(game.Game, "visited");
+const Visit = std.meta.Elem(@FieldType(game.Game, "visits"));
+const World = std.meta.Child(std.meta.Child(@FieldType(game.Game, "world")));
 /// Written after the visited nodes, in this order.
 const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "flasks", "cooldown", "stepped", "class" };
 /// Written before the tail, by hand.
@@ -32,6 +34,7 @@ const UNSAVED = .{
     "shot",     "glide",       "turning",    "order",          "order_n",   "busy",       "pending",  "lead",       "owed",       "ran",
     "pictured", "seq",         "split_from", "fx",             "vignette",  "mini",       "sprites",  "face",       "light",      "cloud",
     "flowed",   "flow",        "queue",      "graphics_ready", "art_ready",  "rain",
+    "flasks_shown",
 };
 
 comptime {
@@ -93,7 +96,7 @@ pub const Unreadable = enum {
 
 pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
 
-const FINGERPRINT = store.fingerprint([_]type{ Summary, Seed, bool, atlas.Atlas, Node, Visited, game.Visit, Tail });
+const FINGERPRINT = store.fingerprint([_]type{ Summary, Seed, bool, World, Node, Visited, Visit, Tail });
 const Print = @TypeOf(FINGERPRINT);
 const HEAD = MAGIC.len + @sizeOf(Print);
 /// The payload's hash ends the file, so a file damaged or cut short is refused before any of it is believed.
@@ -175,18 +178,18 @@ fn peek(bytes: []const u8) Error!Summary {
 }
 
 /// All of it is measured before any of it reaches `g`, so a file that does not read leaves the game as it was.
-fn read(bytes: []const u8, g: *game.Game, world: *atlas.Atlas) Error!void {
+fn read(bytes: []const u8, g: *game.Game, world: *World) Error!void {
     var b = try payload(bytes);
     var s: Summary = undefined;
     var seed: Seed = undefined;
     var has_world: bool = undefined;
     if (!store.take(&b, &s) or !store.take(&b, &seed) or !store.take(&b, &has_world)) return error.Short;
-    const at_visited = @as(usize, if (has_world) @sizeOf(atlas.Atlas) else 0) + @sizeOf(Node);
+    const at_visited = @as(usize, if (has_world) @sizeOf(World) else 0) + @sizeOf(Node);
     if (b.len < at_visited + @sizeOf(Visited)) return error.Short;
     var visited: Visited = undefined;
     var vb = b[at_visited..];
     _ = store.take(&vb, &visited);
-    if (b.len != at_visited + @sizeOf(Visited) + visited.count() * @sizeOf(game.Visit) + TAIL) return error.Short;
+    if (b.len != at_visited + @sizeOf(Visited) + visited.count() * @sizeOf(Visit) + TAIL) return error.Short;
 
     if (has_world) _ = store.take(&b, world);
     g.world = if (has_world) world else null;

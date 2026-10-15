@@ -93,16 +93,14 @@ pub const Act = enum {
     /// Spends no turn: Juke alone.
     pub fn free(a: Act) bool {
         return switch (a) {
-            inline else => |t| comptime has(t, "FREE"),
+            inline else => |t| if (comptime has(t, "FREE")) module(t).?.FREE else false,
         };
     }
 
     /// The flask it drinks.
     pub fn flaskOf(a: Act) ?flask.Kind {
         return switch (a) {
-            .life_flask => .life,
-            .mana_flask => .mana,
-            else => null,
+            inline else => |t| if (comptime has(t, "KIND")) module(t).?.KIND else null,
         };
     }
 
@@ -149,6 +147,10 @@ pub const Act = enum {
         return module(a).?;
     }
 
+    pub fn skill(comptime a: Act) type {
+        return module(a) orelse @compileError(@tagName(a) ++ " has no module");
+    }
+
     pub fn element(a: Act) ?damage.Element {
         return switch (a) {
             inline else => |t| if (comptime has(t, "ELEMENT")) module(t).?.ELEMENT else null,
@@ -171,6 +173,17 @@ pub const Act = enum {
 
     pub fn index(a: Act) usize {
         return std.enums.EnumIndexer(Act).indexOf(a);
+    }
+
+    /// Every decl probed by name above, so renaming one in its module fails the build.
+    const PROBED = .{ "DESCRIPTION", "FREE", "KIND", "BOLT", "arc", "COST", "ELEMENT", "cone", "COOLDOWN" };
+
+    comptime {
+        for (PROBED) |decl| {
+            var found = false;
+            for (std.enums.values(Act)) |a| found = found or has(a, decl);
+            if (!found) @compileError("skillbar: no skill module declares " ++ decl);
+        }
     }
 };
 
@@ -248,7 +261,7 @@ pub const Bar = struct {
         return if (down.contains(m)) .secondary else .primary;
     }
 
-    /// The secondary set's modifier moves by swapping whole columns, so no binding is lost to it.
+    /// The secondary set's modifier moves by swapping whole columns; bound with none set, it clears its button's column.
     pub fn bind(self: *Bar, s: Slot, a: Act) void {
         if (a == .secondary) {
             if (self.modifier) |m| {

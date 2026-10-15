@@ -41,6 +41,7 @@ pub const Cloud = struct {
 
     pub fn create(alloc: std.mem.Allocator) !*Cloud {
         const c = try alloc.create(Cloud);
+        mathx.defaults(c);
         c.tex = null;
         c.shade = null;
         c.baked = .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 0, .y = 0 } };
@@ -107,8 +108,7 @@ pub const Cloud = struct {
         const s = self.shade orelse return look.overFloor(tex, ox, oy, cell);
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
-        const time = self.t.at();
-        rl.setShaderValue(s.shader, s.time, &time, .float);
+        look.setUniform(s.shader, s.time, self.t.at());
         look.overFloor(tex, ox, oy, cell);
         rl.gl.rlDrawRenderBatchActive();
     }
@@ -143,7 +143,7 @@ const SOFT: f32 = 0.12;
 
 comptime {
     // Past a quarter cell a pixel beside a wall reads the gas of the room behind the wall.
-    std.debug.assert(WARP + SOFT < 0.25);
+    std.debug.assert(WARP + SOFT < 0.5 / @as(f32, SUB));
 }
 
 const OCTAVES: u32 = 3;

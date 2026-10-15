@@ -21,6 +21,10 @@ pub fn procs(rng: *mathx.Rng, _: i16) bool {
     return rng.percent(CHANCE);
 }
 
+pub fn afflict(a: anytype) void {
+    a.clock.stun();
+}
+
 test "a spark stuns about half the time" {
     var rng = mathx.Rng.init(813);
     var hits: usize = 0;

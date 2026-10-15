@@ -714,11 +714,11 @@ pub const Light = struct {
     /// Set field by field: built as one value, it is a temporary bigger than a thread's stack.
     pub fn create(alloc: std.mem.Allocator) !*Light {
         const l = try alloc.create(Light);
+        mathx.defaults(l);
         l.forest_n = 0;
         l.torch_n = 0;
         l.carrier = null;
         l.sky = null;
-        l.clouds_held = null;
         @memset(&l.casting, 0);
         l.t = .{};
         l.gpu = .{};
@@ -1243,15 +1243,15 @@ pub const Light = struct {
         const b = sh.?;
         rl.beginShaderMode(b.shader);
         defer rl.endShaderMode();
-        rl.setShaderValue(b.shader, b.size, &size, .vec2);
-        rl.setShaderValue(b.shader, b.flip, &flip, .float);
-        rl.setShaderValue(b.shader, b.ambient, &ambient, .vec3);
-        rl.setShaderValue(b.shader, b.count, &n, .int);
-        rl.setShaderValue(b.shader, b.flash, &flash, .float);
+        look.setUniform(b.shader, b.size, size);
+        look.setUniform(b.shader, b.flip, flip);
+        look.setUniform(b.shader, b.ambient, ambient);
+        look.setUniform(b.shader, b.count, n);
+        look.setUniform(b.shader, b.flash, flash);
         rl.setShaderValueTexture(b.shader, b.normals, normals.?);
         if (s.n > 0) {
-            rl.setShaderValueV(b.shader, b.lpos, &pos, .vec3, n);
-            rl.setShaderValueV(b.shader, b.lcol, &col, .vec3, n);
+            look.setUniforms(b.shader, b.lpos, &pos, n);
+            look.setUniforms(b.shader, b.lcol, &col, n);
         }
         rl.drawTexturePro(tex, src, dest, .{ .x = 0, .y = 0 }, 0, rl.Color.white);
         rl.gl.rlDrawRenderBatchActive();
@@ -1315,8 +1315,8 @@ pub const Light = struct {
         rl.beginShaderMode(receiver.shader);
         defer rl.endShaderMode();
         rl.setShaderValueTexture(receiver.shader, receiver.lightmap, self.gpu.map.?);
-        rl.setShaderValue(receiver.shader, receiver.map_rect, &map_rect, .vec4);
-        rl.setShaderValue(receiver.shader, receiver.screen, &screen, .vec2);
+        look.setUniform(receiver.shader, receiver.map_rect, map_rect);
+        look.setUniform(receiver.shader, receiver.screen, screen);
         rl.drawTextureRec(t, look.rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);
     }
 
@@ -1398,10 +1398,10 @@ pub const Light = struct {
         const sh = self.gpu.shadow orelse return false;
         const size = [2]f32{ @floatFromInt(tex.width), @floatFromInt(tex.height) };
         rl.beginShaderMode(sh.shader);
-        rl.setShaderValue(sh.shader, sh.size, &size, .vec2);
-        rl.setShaderValue(sh.shader, sh.foot, &foot, .float);
-        rl.setShaderValue(sh.shader, sh.joined, &joined, .vec4);
-        rl.setShaderValue(sh.shader, sh.softness, &softness, .vec2);
+        look.setUniform(sh.shader, sh.size, size);
+        look.setUniform(sh.shader, sh.foot, foot);
+        look.setUniform(sh.shader, sh.joined, joined);
+        look.setUniform(sh.shader, sh.softness, softness);
         return true;
     }
 
@@ -1461,6 +1461,9 @@ const INDEX_BITS = 16;
 const JOINED_AT = INDEX_BITS + @bitSizeOf(u32);
 
 comptime {
+    for (.{ "w", "e", "n", "s" }, std.meta.fieldNames(Sides)) |want, got| {
+        if (!std.mem.eql(u8, want, got)) @compileError("SHADOW_FS reads joined as x w, y e, z n, w s");
+    }
     std.debug.assert(FOREST_QUEUE <= 1 << INDEX_BITS);
     std.debug.assert(JOINED_AT + @bitSizeOf(Sides) <= @bitSizeOf(u64));
 }

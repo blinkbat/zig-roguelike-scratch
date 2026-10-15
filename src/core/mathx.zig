@@ -189,6 +189,13 @@ pub fn reaches(a: P, b: P, r: f32) bool {
     return distEuclid(a, b) <= r + 0.5;
 }
 
+/// Every field of `p.*` that declares a default set to it, as `alloc.create` does not.
+pub fn defaults(p: anytype) void {
+    inline for (std.meta.fields(@TypeOf(p.*))) |f| {
+        if (comptime f.defaultValue()) |d| @field(p.*, f.name) = d;
+    }
+}
+
 /// Takes `items[i]` out of the first `n.*`, the rest keeping their order, and leaves `blank` in the slot freed at the end.
 pub fn removeAt(comptime T: type, items: []T, n: *usize, i: usize, blank: ?T) void {
     std.mem.copyForwards(T, items[i .. n.* - 1], items[i + 1 .. n.*]);

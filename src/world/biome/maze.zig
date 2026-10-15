@@ -11,7 +11,7 @@ pub const SIZE_MIN: u8 = 8;
 pub const SIZE_MAX: u8 = 20;
 pub const ROOMS_MAX: u8 = 48;
 const TRIES: usize = 2000;
-const DOOR_W: i32 = 3;
+const DOOR_W: u8 = 3;
 
 pub const Style = enum {
     caves,
@@ -166,13 +166,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
         if (mask & bitOf(s) == 0) continue;
         const step = s.delta();
         const edge = mid.add(step.scaled(@divTrunc(size, 2)));
-        var m = carve.Meander.init(mid, edge.add(step), if (style.built()) 0 else CAVE_WANDER);
-        while (m.next(rng)) |q| {
-            var cells = grid.Cells.around(q, @divTrunc(DOOR_W, 2));
-            while (cells.next()) |d| {
-                if (!grid.Level.onRim(d)) lv.set(d, pal.open);
-            }
-        }
+        carve.lane(lv, rng, mid, edge.add(step), DOOR_W, if (style.built()) 0 else CAVE_WANDER, pal.open, .cut);
     }
     const inner = size - 2;
     switch (style) {

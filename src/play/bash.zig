@@ -22,6 +22,10 @@ pub fn procs(rng: *mathx.Rng, _: i16) bool {
     return rng.percent(CHANCE);
 }
 
+pub fn afflict(a: anytype) void {
+    a.clock.stun();
+}
+
 /// A body or barrel beside `from`.
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     const d = mathx.dirTo(from, to) orelse return false;

@@ -181,12 +181,16 @@ pub const Sprites = struct {
     }
 
     pub fn sync(self: *Sprites, need: Assets) void {
-        for (std.enums.values(actor.Kind)) |k| syncTexture(self.bodies.getPtr(k), need.bodies.contains(k), BODY_PNGS.get(k));
-        for (std.enums.values(grid.Tile)) |t| syncTexture(self.tiles.getPtr(t), need.tiles.contains(t), TILE_PNGS.get(t));
-        for (std.enums.values(ground.Ground)) |g| syncTexture(self.grounds.getPtr(g), need.grounds.contains(g), GROUND_PNGS.get(g));
-        syncTexture(&self.barrel, need.barrel, @embedFile("barrel.png"));
-        syncShapes(&self.wall, need.wall, WALLS_PNG);
-        syncShapes(&self.forest, need.forest, FOREST_PNG);
+        inline for (comptime std.meta.fieldNames(@TypeOf(SOURCES))) |name| {
+            const held = &@field(self, name);
+            const wants = @field(need, name);
+            const src = @field(SOURCES, name);
+            switch (@typeInfo(@TypeOf(held.*))) {
+                .optional => syncTexture(held, wants, src),
+                .array => syncShapes(held, wants, src),
+                else => for (std.enums.values(@TypeOf(wants).Key)) |k| syncTexture(held.getPtr(k), wants.contains(k), src.get(k)),
+            }
+        }
     }
 
     pub fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4) ?Piece {
@@ -243,11 +247,11 @@ pub const Sprites = struct {
         const v = view orelse return false;
         const s = self.water orelse return false;
         rl.beginShaderMode(s.shader);
-        rl.setShaderValue(s.shader, s.time, &v.seconds, .float);
-        rl.setShaderValue(s.shader, s.origin, &origin, .vec2);
-        rl.setShaderValue(s.shader, s.cell, &px, .float);
-        rl.setShaderValue(s.shader, s.screen_h, &v.screen_h, .float);
-        rl.setShaderValue(s.shader, s.depth, &depth, .float);
+        setUniform(s.shader, s.time, v.seconds);
+        setUniform(s.shader, s.origin, origin);
+        setUniform(s.shader, s.cell, px);
+        setUniform(s.shader, s.screen_h, v.screen_h);
+        setUniform(s.shader, s.depth, depth);
         rl.setShaderValueTexture(s.shader, s.visibility, v.visibility);
         return true;
     }
@@ -277,7 +281,11 @@ pub const Sprites = struct {
     pub fn figures(self: *const Sprites) [FIGURES]?rl.Texture2D {
         var standing: [STANDING.len]?rl.Texture2D = undefined;
         for (STANDING, &standing) |t, *s| s.* = self.tiles.getPtrConst(t).*;
-        return self.bodies.values ++ [_]?rl.Texture2D{self.barrel} ++ standing ++ self.forest;
+        return self.litFigures() ++ standing ++ self.forest;
+    }
+
+    fn litFigures(self: *const Sprites) [LIT_FIGURES]?rl.Texture2D {
+        return self.bodies.values ++ [_]?rl.Texture2D{self.barrel};
     }
 
     pub fn tileAt(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
@@ -302,20 +310,16 @@ pub const Sprites = struct {
     }
 
     pub fn resident(self: *const Sprites) Assets {
-        var held = Assets{ .barrel = self.barrel != null };
-        for (std.enums.values(actor.Kind)) |k| {
-            if (self.bodies.getPtrConst(k).* != null) held.bodies.insert(k);
+        var held = Assets{};
+        inline for (std.meta.fields(Assets)) |f| {
+            const have = &@field(self, f.name);
+            const out = &@field(held, f.name);
+            switch (@typeInfo(@TypeOf(have.*))) {
+                .optional => out.* = have.* != null,
+                .array => for (have.*, 0..) |t, i| out.setValue(i, t != null),
+                else => for (std.enums.values(@TypeOf(out.*).Key)) |k| out.setPresent(k, have.getPtrConst(k).* != null),
+            }
         }
-        for (std.enums.values(grid.Tile)) |t| {
-            if (self.tiles.getPtrConst(t).* != null) held.tiles.insert(t);
-        }
-        for (self.wall, 0..) |t, i| {
-            if (t != null) held.wall.set(i);
-        }
-        for (self.forest, 0..) |t, i| {
-            if (t != null) held.forest.set(i);
-        }
-        held.grounds = self.sheets();
         return held;
     }
 
@@ -387,10 +391,29 @@ const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const
 
 comptime {
     std.debug.assert(TILE_PNGS.get(.wall) == null);
+    for (STANDING) |t| {
+        if (TILE_PNGS.get(t) == null) @compileError("a standing tile casts from its picture: " ++ @tagName(t));
+    }
 }
 
 const WALLS_PNG = @embedFile("walls.png");
 const FOREST_PNG = @embedFile("forest-tree-walls.png");
+
+/// Each `Assets` field's art, in the order `Sprites.sync` loads it.
+const SOURCES = .{
+    .bodies = BODY_PNGS,
+    .tiles = TILE_PNGS,
+    .grounds = GROUND_PNGS,
+    .barrel = @as([]const u8, @embedFile("barrel.png")),
+    .wall = @as([]const u8, WALLS_PNG),
+    .forest = @as([]const u8, FOREST_PNG),
+};
+
+comptime {
+    const want = std.meta.fieldNames(Assets);
+    std.debug.assert(want.len == std.meta.fieldNames(@TypeOf(SOURCES)).len);
+    for (want) |n| std.debug.assert(@hasField(@TypeOf(SOURCES), n));
+}
 
 comptime {
     std.debug.assert(std.meta.eql(pngSize(WALLS_PNG), pngSize(FOREST_PNG)));
@@ -549,6 +572,27 @@ pub fn program(comptime T: type, comptime fs: [:0]const u8) ?T {
     return uniforms(T, shader(fs) orelse return null);
 }
 
+/// `value` to the uniform at `loc`, its GLSL type read off its Zig type.
+pub fn setUniform(s: rl.Shader, loc: i32, value: anytype) void {
+    rl.setShaderValue(s, loc, &value, comptime uniformType(@TypeOf(value)));
+}
+
+/// The first `n` of `values` to the uniform array at `loc`.
+pub fn setUniforms(s: rl.Shader, loc: i32, values: anytype, n: i32) void {
+    rl.setShaderValueV(s, loc, values, comptime uniformType(std.meta.Elem(@TypeOf(values.*))), n);
+}
+
+fn uniformType(comptime T: type) rl.ShaderUniformDataType {
+    return switch (T) {
+        f32 => .float,
+        [2]f32 => .vec2,
+        [3]f32 => .vec3,
+        [4]f32 => .vec4,
+        i32 => .int,
+        else => @compileError("no uniform type for " ++ @typeName(T)),
+    };
+}
+
 fn declares(comptime fs: []const u8, comptime name: []const u8) bool {
     var lines = std.mem.splitScalar(u8, fs, '\n');
     while (lines.next()) |l| {
@@ -585,6 +629,7 @@ pub fn unloadAll(v: anytype) void {
         };
         const program_ = @typeInfo(Child) == .@"struct" and @hasField(Child, "shader");
         const resource = Child == rl.Texture2D or Child == rl.RenderTexture2D or Child == rl.Shader or program_;
+        if (!resource and comptime std.mem.startsWith(u8, @typeName(Child), "raylib.")) @compileError("unloadAll frees no " ++ @typeName(Child));
         if (resource) {
             const held = &@field(v.*, f.name);
             if (held.*) |r| {
@@ -625,13 +670,13 @@ pub const VEIL = fade(BG, 0.72);
 
 /// Its symbol, centred on `cx, cy`; its ASCII `ch` where the font has no atlas.
 pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32) void {
-    const l = TILES.get(t);
+    const l = TILES.getPtrConst(t);
     face.symbol(l.sym, l.ch, cx, cy, size, l.fg);
 }
 
 /// Under a tile's glyph where it has no sprite; null leaves the background.
 pub fn tileBg(t: grid.Tile) ?rl.Color {
-    return TILES.get(t).bg;
+    return TILES.getPtrConst(t).bg;
 }
 
 /// What a tile standing on ground is drawn over where nothing beside it lends a ground (`ground.bedAt`): its own, or
@@ -771,7 +816,7 @@ pub fn arrow(dx: i32, dy: i32) u8 {
 }
 
 pub fn mini(t: grid.Tile, lit: bool) rl.Color {
-    const l = TILES.get(t);
+    const l = TILES.getPtrConst(t);
     return if (lit) l.mini else l.mini_dim;
 }
 
@@ -1165,7 +1210,7 @@ fn waterDepth(gr: ground.Ground) ?f32 {
     return switch (gr) {
         .water => WATER_DEEP,
         .shallows => 1,
-        else => null,
+        .chasm, .lava, .reeds, .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .bridge, .cobble => null,
     };
 }
 
