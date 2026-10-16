@@ -152,7 +152,6 @@ pub fn disc(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime over: ?fn (gri
     discOf(lv, c, r, t, false, false, over);
 }
 
-/// `disc`, the rim too, so a river runs off the map.
 fn discAll(lv: *grid.Level, c: P, r: f32, t: grid.Tile) void {
     discOf(lv, c, r, t, true, false, null);
 }
@@ -193,7 +192,6 @@ fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, 
     }
 }
 
-/// The noise scale a cave's blob frays its edge at.
 pub const CAVE_SCALE: f32 = 3;
 
 /// `t` round `c` off the rim, its edge frayed: in where a cell's distance over `r` is under `lo + span` times the noise.
@@ -323,7 +321,7 @@ pub const Palette = struct {
     }
 };
 
-/// Opens the ring round `b`, so what stands in it never gives onto a thicket or rock that seals it in, or is filled as a pocket.
+/// Clear a ring to prevent surrounding terrain from sealing or pocket-filling the lot.
 pub fn clearRound(lv: *grid.Level, b: grid.Box, pal: Palette) void {
     var cells = b.grown(1).cells();
     while (cells.next()) |q| {
@@ -336,7 +334,7 @@ pub fn closes(t: grid.Tile, pal: Palette) bool {
     return t == pal.solid or (t.solid() and t.ground() != null);
 }
 
-/// What the features laid over a base, so `connect` fills no ground of theirs as a pocket.
+/// Preserve feature-opened ground and lots during pocket filling.
 pub const Laid = struct {
     /// What they raised: houses, fields, set pieces.
     lots: []const grid.Box = &.{},
@@ -448,7 +446,7 @@ const InStretch = struct {
     }
 };
 
-/// Barrels taken away, one a pass, each the first of a run of them parting the biggest stretch from another, till none does.
+/// Remove barrels until every open region reconnects, choosing the shortest separating run.
 pub fn unbar(lv: *grid.Level) void {
     if (std.mem.indexOfScalar(bool, &lv.barrel, true) == null) return;
     var st: Stretches = .{};
@@ -522,7 +520,6 @@ fn barBetween(lv: *const grid.Level, st: *Stretches, main: u16) ?usize {
     return null;
 }
 
-/// The stretches no pocket fill takes: one holding a door, one by a liquid, as an island is, one holding ground other than the base's open, decor or path, ground a feature opened, as a ford is, or one in a lot, as a house is.
 fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, laid: Laid) Regions {
     const base = Over{ .tile = pal.open, .decked = true };
     var out = Regions.initEmpty();
@@ -730,7 +727,6 @@ fn capped(v: anytype, max: u16) @TypeOf(v) {
 /// In the rng's order: reordering changes every seed's floor.
 const DRESSES = [_]type{ Litter, Decor };
 
-/// The field of `T` holding a `D`, if it has one.
 fn dressOf(comptime T: type, comptime D: type) ?[:0]const u8 {
     var found: ?[:0]const u8 = null;
     for (std.meta.fields(T)) |f| {

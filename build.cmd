@@ -1,6 +1,5 @@
 @echo off
-REM build.cmd - compile roguelike to zig-out\bin without launching. Type "build". Pass -Doptimize=ReleaseFast for an optimized build.
-REM Zig static-links raylib into a single exe (no raylib.dll).
+REM Pass -Doptimize=ReleaseFast for an optimized build; raylib is linked statically.
 setlocal
 call "%~dp0_zig.cmd" || exit /b 1
 "%ZIG%" build %*

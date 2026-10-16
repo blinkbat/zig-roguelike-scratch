@@ -55,7 +55,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
     }
 }
 
-/// A cell of the river's middle off the rim, `clear` cells off the map's edge if it has one, so the ford crosses to the map.
+/// Prefer `clear` cells from the edge so the ford reaches land.
 fn fordAt(f: *const carve.Flow, rng: *mathx.Rng, clear: i32) ?mathx.P {
     const cells = f.cell[0..f.n];
     return rng.pickWhere(mathx.P, cells, clear, offEdge) orelse rng.pickWhere(mathx.P, cells, @as(i32, 0), offEdge);

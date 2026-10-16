@@ -61,7 +61,6 @@ pub const Act = enum {
         };
     }
 
-    /// A skill's own module: its description, its cost, and its cooldown or element where it has one.
     fn module(comptime a: Act) ?type {
         return switch (a) {
             .juke => juke,
@@ -89,8 +88,7 @@ pub const Act = enum {
         return @hasDecl(m, decl);
     }
 
-    /// `bow` a missile along a lit line, `leap` a landing, `swing` a melee blow on a tile beside the hero, `rush` a body
-    /// down a line the hero runs to.
+    /// Bow targets a lit line; leap a landing; swing an adjacent tile; rush a body down a running line.
     pub const Reticle = enum { bow, leap, swing, rush };
 
     pub fn reticle(a: Act) ?Reticle {

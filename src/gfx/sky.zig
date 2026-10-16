@@ -3,7 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const day = @import("../world/day.zig");
 const climate = @import("../world/climate.zig");
 
-// zig-soulslike's `world/daynight.zig` seen from above. Directions point toward the light: x east, y south (down the screen), z up.
+// Directions point toward light: x east, y south (screen-down), z up.
 
 pub const Rgb = @Vector(3, f32);
 
@@ -29,7 +29,7 @@ const NIGHT_SPAN: f32 = HOURS - DAY_SPAN;
 const AZ_RISE: f32 = 100;
 const AZ_SET: f32 = 262;
 const SUN_ALT_MAX: f32 = 60;
-/// The casting light's altitude is clamped to these, so a shadow neither outruns the screen nor hides under its caster; the sun's own is not.
+/// Clamp casting altitude to keep shadows visible and on screen; leave the true sun altitude unchanged.
 const KEY_ALT_MIN = std.math.degreesToRadians(@as(f32, 35));
 const KEY_ALT_MAX = std.math.degreesToRadians(@as(f32, 42));
 /// Cells the longest shadow the sky throws runs along the ground per cell of height.
@@ -81,7 +81,7 @@ fn sunDir(hour: f32) [3]f32 {
     return dirFrom(az, alt);
 }
 
-/// The one light that casts, altitude floored; it changes hands over the zenith in the sun's vertical plane, so laid across the screen (`acrossScreen`) its shadow keeps `KEY_ALT_MAX`'s length and flips while `keyDim` fades it out and back in.
+/// Swap sun and moon through the zenith while `keyDim` hides the shadow flip.
 fn keyDir(hour: f32) [3]f32 {
     const s = sunDir(hour);
     const flat = flatOf(s);
@@ -103,11 +103,10 @@ fn keyDim(hour: f32) f32 {
 const Palette = struct { key: Rgb, sky: Rgb };
 const Key = struct { at: f32, key: Rgb, sky: Rgb };
 
-/// Night, darker than zig-soulslike's so the dark outdoors reads as dark, and darkest at midnight.
 const NIGHT = Palette{ .key = .{ 0.022, 0.030, 0.060 }, .sky = .{ 0.014, 0.018, 0.034 } };
 const MIDNIGHT = Palette{ .key = .{ 0.006, 0.008, 0.018 }, .sky = .{ 0.004, 0.005, 0.011 } };
 
-/// zig-soulslike's key and sky rows, 0 and 24 equal so midnight is no seam; sunrise and sunset keys warmed to gold, as its deep orange takes the green out of grass seen flat.
+/// Equal midnight endpoints avoid a seam; gold keys preserve the grass's green.
 const KEYS = [_]Key{
     .{ .at = 0, .key = MIDNIGHT.key, .sky = MIDNIGHT.sky },
     .{ .at = 2.5, .key = NIGHT.key, .sky = NIGHT.sky },
@@ -176,7 +175,6 @@ pub fn upright(flat: f32) bool {
     return flat < OVERHEAD;
 }
 
-/// What a `climate.Light` does to the day's palette: the key's and the sky's strength, how far each is greyed, then a tint.
 const Look = struct { key: f32 = 1, sky: f32 = 1, grey: f32 = 0, tint: Rgb = splat(1) };
 
 /// Bleak is an overcast: most of the sun's light spread into the sky, so shadows go soft and the day a little dark.
@@ -196,7 +194,6 @@ fn looked(c: Rgb, strength: f32, l: Look) Rgb {
     return mix(c, splat(luma(c)), l.grey) * l.tint * splat(strength);
 }
 
-/// Open ground's light under `s`, the sun straight on it as high as it stands.
 fn lit(s: Sky) f32 {
     return luma(s.ambient) + luma(s.key) * s.dir[2];
 }
@@ -222,7 +219,6 @@ pub fn under(hour: f32, light: climate.Light) Sky {
     };
 }
 
-/// Its north-south lean squashed, then laid no steeper than `KEY_ALT_MAX`; only one leaning less than `OVERHEAD` stays upright.
 fn acrossScreen(d: [3]f32) [3]f32 {
     var x = d[0];
     var y = d[1] * NORTH_SOUTH;

@@ -87,14 +87,14 @@ pub fn palette(p: Params) carve.Palette {
 
 const Pattern = [N * N]u8;
 
-/// Every N x N window, wrapping round its edges as Qud reads its own, in all eight rotations and reflections, counted.
+/// Qud's overlapping WFC: count wrapped N x N windows in all eight orientations.
 const Model = struct {
     pat: [PATTERNS_MAX]Pattern = undefined,
     weight: [PATTERNS_MAX]u32 = undefined,
     n: usize = 0,
     /// `fits[p][d]`: the patterns that may sit one step in direction `d` from `p`.
     fits: [PATTERNS_MAX][DIRS.len]Bits = undefined,
-    /// `fits` of every pattern together, each way: what a cell any pattern may yet be allows its neighbours.
+    /// Neighbour constraints for an unresolved cell.
     any: [DIRS.len]Bits = @splat(Bits.initEmpty()),
 
     fn of(art: []const []const u8) Model {
@@ -162,7 +162,6 @@ fn reflect(p: Pattern) Pattern {
     return q;
 }
 
-/// `b` set `dx, dy` from `a` agrees with it wherever the two overlap.
 fn agrees(a: Pattern, b: Pattern, dx: i32, dy: i32) bool {
     const n: i32 = N;
     var y: i32 = @max(0, dy);
@@ -246,7 +245,6 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
     return true;
 }
 
-/// Each template's art, at its place in `Template`; `mixed`, last, picks one.
 const TEMPLATES = blk: {
     var a: [@intFromEnum(Template.mixed)][]const []const u8 = undefined;
     for (&a, 0..) |*s, i| s.* = switch (@as(Template, @enumFromInt(i))) {
@@ -272,7 +270,7 @@ fn templateOf(t: Template, rng: *mathx.Rng) usize {
     return if (t == .mixed) rng.below(TEMPLATES.len) else @intFromEnum(t);
 }
 
-/// Each template's model, built the first time a roll needs it: it reads no rng, so every roll may share it.
+/// Lazy models use no RNG and may be shared by all rolls.
 var models: [TEMPLATES.len]?Model = @splat(null);
 
 fn modelOf(k: usize) *const Model {

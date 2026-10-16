@@ -5,8 +5,7 @@ pub const TURN: i32 = 100;
 const STUN: i32 = TURN;
 pub const STUNNED = "is stunned";
 
-/// Brogue's `ticksUntilTurn`: what a body owes before it may act. Every turn pays `TURN` off it; a turn it is still
-/// owing is lost.
+/// Brogue's `ticksUntilTurn`: each turn pays `TURN`; a body still owing ticks loses its action.
 pub const Clock = struct {
     ticks: i32 = 0,
     /// This turn found it still owing, so it does not act.

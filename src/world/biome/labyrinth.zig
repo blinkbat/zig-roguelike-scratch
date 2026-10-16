@@ -40,7 +40,6 @@ fn cellAt(cx: usize, cy: usize) P {
     return .{ .x = @intCast(cx * 2 + 1), .y = @intCast(cy * 2 + 1) };
 }
 
-/// A step from cell `cx, cy` to one on the map not yet carved.
 const Unseen = struct {
     seen: *const [CELLS_X * CELLS_Y]bool,
     cx: i32,

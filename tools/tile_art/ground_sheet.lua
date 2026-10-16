@@ -1,4 +1,3 @@
--- A ground terrain's template for the owner to paint: the 16 dual-grid cells of ground_corners.lua in a 4x4 block.
 -- params: out=<sheet.aseprite> labels=<ground_labels.py png> tint=r,g,b [replace=yes]
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local path=assert(app.params.out,'out=<sheet.aseprite>')
@@ -14,7 +13,6 @@ assert(#order==16)
 local W,H,HEAD,CELL,HALF,LINE=512,320,64,64,32,2
 local NW,NE,SW,SE=1,2,4,8
 
--- Neighbouring cells agree on the corners they share, so the block is one picture.
 for i,m in ipairs(order) do
   local col,row=(i-1)%4,(i-1)//4
   if col<3 then

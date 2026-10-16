@@ -97,8 +97,7 @@ pub const Assets = struct {
         need.bodies.setUnion(actor.descent(k).intersectWith(PICTURED));
     }
 
-    /// Every picture a tile, body or prop has, every wall and forest shape among them: what an editor stroke may lay, so a
-    /// stroke never decodes a sheet again.
+    /// Preload every editor asset so painting does not decode sheets mid-stroke.
     pub fn everything() Assets {
         var all = Assets{ .barrel = true, .grounds = GROUND_SHEETS, .bodies = PICTURED, .wall = .initFull(), .forest = .initFull() };
         for (std.enums.values(grid.Tile)) |t| all.add(.{ .tile = t });
@@ -132,12 +131,10 @@ fn listed(comptime name: []const u8) bool {
     return false;
 }
 
-/// Art that may not be painted yet: null until its PNG is in `assets/`.
 fn optionalPng(comptime name: []const u8) ?[]const u8 {
     return if (comptime listed(name)) @embedFile(name) else null;
 }
 
-/// Each ground's 4x4 sheet of dual-grid pieces; a ground without one draws cell by cell.
 const GROUND_PNGS = blk: {
     var pngs = std.EnumArray(ground.Ground, ?[]const u8).initFill(null);
     for (std.enums.values(ground.Ground)) |g| pngs.set(g, optionalPng(g.png()));
@@ -154,7 +151,6 @@ pub const GROUND_SHEETS = blk: {
     break :blk s;
 };
 
-/// A ground's piece for a mask: its sheet and where in it.
 pub const Piece = struct { tex: rl.Texture2D, src: rl.Rectangle };
 
 pub const WaterView = struct { seconds: f32, screen_h: f32, visibility: rl.Texture2D };
@@ -208,8 +204,7 @@ pub const Sprites = struct {
         return s;
     }
 
-    /// Every ground of the cells `beds` draws, lowest first: one with a sheet a piece on each corner point, one without
-    /// its square on each cell it holds and a quarter under the edges over it; cell 0,0's top-left at `origin`, `px` a cell.
+    /// Draw lowest layers first; `origin` is cell (0, 0)'s top-left and `px` is pixels per cell.
     pub fn drawGround(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
         const sheeted = self.sheets();
         for (ground.LAYERS) |gr| {
@@ -411,7 +406,6 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .pib = @embedFile("pib.png"),
 });
 
-/// The kinds `BODY_PNGS` holds a picture for.
 const PICTURED = blk: {
     var s = std.EnumSet(actor.Kind).initEmpty();
     for (std.enums.values(actor.Kind)) |k| s.setPresent(k, BODY_PNGS.get(k) != null);
@@ -440,7 +434,6 @@ comptime {
 const WALLS_PNG = @embedFile("walls.png");
 const FOREST_PNG = @embedFile("forest-tree-walls.png");
 
-/// Each `Assets` field's art, in the order `Sprites.sync` loads it.
 const SOURCES = .{
     .bodies = BODY_PNGS,
     .tiles = TILE_PNGS,
@@ -473,7 +466,6 @@ pub fn forestAt(lv: *const grid.Level, p: mathx.P) bool {
     return lv.at(p) == .shrub and (lv.tileMask(p) != 0 or loneClump(p));
 }
 
-/// Which texture a cell draws: a tile's own, or a cell of the wall or forest sheet.
 const Cut = union(enum) { tile: grid.Tile, wall: usize, forest: usize };
 
 fn cutAt(lv: *const grid.Level, p: mathx.P) ?Cut {
@@ -486,16 +478,14 @@ fn cutOf(t: grid.Tile, shape: ?grid.WallShape) ?Cut {
     return .{ .tile = t };
 }
 
-/// Each cell of `walls.png`'s and `forest-tree-walls.png`'s, read across its rows, is the shape with this mask; `tools/tile_art/wall_masks.lua` lists them in this order.
+/// Row-major masks shared with `tools/tile_art/wall_masks.lua` for both wall and forest sheets.
 const WALL_MASKS = [_]u8{ 0, 1, 2, 4, 8, 3, 19, 5, 6, 38, 9, 137, 10, 12, 76, 7, 23, 39, 55, 11, 27, 139, 155, 13, 77, 141, 205, 14, 46, 78, 110, 15, 31, 47, 63, 79, 95, 111, 127, 143, 159, 175, 191, 207, 223, 239, 255 };
 const WALL_COLS: usize = @divExact(pngSize(WALLS_PNG).x, SPRITE_PX);
 
-/// From the PNG's IHDR.
 fn pngSize(png: []const u8) mathx.P {
     return .{ .x = std.mem.readInt(i32, png[16..20], .big), .y = std.mem.readInt(i32, png[20..24], .big) };
 }
 
-/// Every shape's cell, an unjoined one its joined shape's.
 const WALL_CELL = blk: {
     @setEvalBranchQuota(10_000);
     var at = [_]u8{0xFF} ** 256;
@@ -601,7 +591,6 @@ pub fn shader(fs: [:0]const u8) ?rl.Shader {
     return if (s.id == rl.gl.rlGetShaderIdDefault()) null else s;
 }
 
-/// Every field but `shader` is the location of the GLSL uniform it is named for.
 fn uniforms(comptime T: type, s: rl.Shader) T {
     var u: T = undefined;
     u.shader = s;
@@ -612,8 +601,7 @@ fn uniforms(comptime T: type, s: rl.Shader) T {
     return u;
 }
 
-/// `fs` loaded with `uniforms` found in it; a field it declares no uniform for, or a uniform with no field, is a
-/// compile error.
+/// Shader uniforms and `T`'s fields must match in both directions at compile time.
 pub fn program(comptime T: type, comptime fs: [:0]const u8) ?T {
     comptime {
         @setEvalBranchQuota(100_000);
@@ -658,7 +646,6 @@ fn declares(comptime fs: []const u8, comptime name: []const u8) bool {
     return false;
 }
 
-/// The name a `uniform` line declares.
 fn uniformOf(comptime l: []const u8) ?[]const u8 {
     const line = std.mem.trim(u8, l, " \t\r");
     if (!std.mem.startsWith(u8, line, "uniform ")) return null;
@@ -741,8 +728,7 @@ pub fn tileBg(t: grid.Tile) ?rl.Color {
     return TILES.getPtrConst(t).bg;
 }
 
-/// What a tile standing on ground is drawn over where nothing beside it lends a ground (`ground.bedAt`): its own, or
-/// floor under an upright tile with no background to cover its cell.
+/// Fallback underlay when `ground.bedAt` finds no suitable neighbour.
 pub fn under(t: grid.Tile) ?grid.Tile {
     return t.ground() orelse if (t.upright() and tileBg(t) == null) .floor else null;
 }
@@ -791,7 +777,6 @@ comptime {
     for (TILES.values) |l| std.debug.assert(l.sym.len != 1 or l.sym[0] == l.ch);
 }
 
-/// Every symbol a tile draws, for the font to bake.
 pub const TILE_CODEPOINTS = blk: {
     var out: []const i32 = &.{};
     for (TILES.values) |l| {
@@ -849,9 +834,7 @@ pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = GORE_A };
 pub const SPLINTER = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
 /// Brogue's purple blood: the gas's, darker.
 pub const ICHOR = rl.Color{ .r = GAS.r / 2, .g = GAS.g / 2, .b = GAS.b / 2, .a = GORE_A };
-/// What a body sprays, as against a barrel's splinters.
 const GORE_A: u8 = 220;
-/// The pinprick where a blow lands.
 pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
 pub const JUKE_TRAIL = rl.Color{ .r = 196, .g = 212, .b = 218, .a = 140 };
 pub const JUKE_DUST = rl.Color{ .r = 184, .g = 161, .b = 125, .a = 170 };
@@ -1141,7 +1124,6 @@ fn skillIcons() ?rl.Texture2D {
     return Sprites.toTexture(img);
 }
 
-/// The grid `skillLines` and `drawDirection` are drawn on.
 const SKILL_GRID: f32 = 32;
 
 fn inkSkill(a: skillbar.Act, x: i32, y: i32, ink: rl.Color) void {
@@ -1155,15 +1137,14 @@ fn inkSkill(a: skillbar.Act, x: i32, y: i32, ink: rl.Color) void {
     }
 }
 
-/// A round-capped pen stroke, two grid units wide.
+/// Two grid units wide, with round caps.
 fn stroke(from: rl.Vector2, to: rl.Vector2, scale: f32, col: rl.Color) void {
     rl.drawLineEx(from, to, 2 * scale, col);
     rl.drawCircleV(from, scale, col);
     rl.drawCircleV(to, scale, col);
 }
 
-/// A button's icon as the device last pressed draws it: a face button a disc with its letter, or PlayStation's
-/// shape; a shoulder or trigger a pill with its name; View and Menu a pill with their marks; a key a cap with its legend.
+/// Device-specific input icons: PlayStation shapes, Xbox letters, or keyboard caps.
 pub const Prompt = union(enum) {
     face: struct { button: FaceButton, sony: bool },
     pill: [:0]const u8,
@@ -1232,10 +1213,8 @@ const PROMPT_EDGE = rgb(0x6a604e);
 const PROMPT_LIP = rgb(0x0c0a08);
 const PROMPT_INK = rgb(0xe2d2b4);
 
-/// The pad's four face buttons, named as `input.Button` names them.
 const FaceButton = enum { a, b, x, y };
 
-/// Each maker's colours for its face buttons, Xbox's by letter and PlayStation's by shape.
 fn faceInk(b: FaceButton, sony: bool) rl.Color {
     return switch (b) {
         .a => if (sony) rgb(0x7cb2e8) else rgb(0x5eb242),
@@ -1362,7 +1341,6 @@ const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
     \\}
 ;
 
-/// The water grounds that shimmer, each by how far its art is darkened from the shallows'.
 fn waterDepth(gr: ground.Ground) ?f32 {
     return switch (gr) {
         .water => WATER_DEEP,

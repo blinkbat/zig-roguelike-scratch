@@ -72,7 +72,6 @@ pub const Face = struct {
         return self.font;
     }
 
-    /// Its glyph's place in the atlas, found without raylib's search of every glyph.
     fn indexOf(self: *const Face, cp: i32) ?usize {
         if (!self.ordered) return null;
         if (cp >= ASCII_LO and cp < ASCII_LO + ASCII_N) return @intCast(cp - ASCII_LO);
@@ -91,7 +90,7 @@ pub const Face = struct {
         self.font = null;
     }
 
-    /// raylib's MeasureTextEx at no spacing, its glyph search skipped for printable ASCII.
+    /// raylib's MeasureTextEx with zero spacing.
     pub fn width(self: *const Face, s: [:0]const u8, size: i32) i32 {
         const plain = printable(s);
         const f = self.atSize(size, plain) orelse return rl.measureText(s, size);
@@ -101,7 +100,7 @@ pub const Face = struct {
         return @intFromFloat(w * scaleOf(f, size));
     }
 
-    /// raylib's DrawTextEx at no spacing, its glyph search skipped for printable ASCII.
+    /// raylib's DrawTextEx with zero spacing.
     pub fn draw(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
         const plain = printable(s);
         const f = self.atSize(size, plain) orelse return rl.drawText(s, x, y, size, col);

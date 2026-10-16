@@ -3,7 +3,7 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
-// Dwarf Fortress's fields, classed by its getBiomeType checks; narrow the ranges for one biome, widen them for many.
+// Biome fields and classification follow Dwarf Fortress's getBiomeType.
 
 const GRAIN_SCALE: f32 = 5;
 const P = mathx.P;
@@ -143,7 +143,6 @@ fn stretch(v: f32) f32 {
     return std.math.clamp((v - 0.5) * 1.8 + 0.5, 0, 1);
 }
 
-/// From a high cell, each step to the lowest neighbour, digging where none is lower, until water or the edge.
 fn river(lv: *grid.Level, rng: *mathx.Rng, height: *[grid.CELLS]f32) void {
     var top: f32 = 0;
     for (height) |h| top = @max(top, h);

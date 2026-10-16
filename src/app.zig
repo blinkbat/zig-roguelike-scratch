@@ -95,7 +95,6 @@ const App = struct {
         app.goPage(.world);
     }
 
-    /// On the world it last had open, read afresh; the first time on `edit_path`.
     fn toEdit(app: *App) void {
         const again = if (app.ed) |e| e.path().len > 0 else false;
         const ed = app.ed orelse blk: {

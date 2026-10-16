@@ -336,7 +336,7 @@ pub const Level = struct {
         return !inset(p).eq(p);
     }
 
-    /// Bind it before reading: `self.tile[idx(p)]` makes Zig 0.14 copy the whole array to honour the call's order.
+    /// Bind the index before reading: Zig 0.14 copies the array in `self.tile[idx(p)]` to preserve call order.
     pub fn idx(p: P) usize {
         std.debug.assert(inside(p));
         return @intCast(p.y * W + p.x);

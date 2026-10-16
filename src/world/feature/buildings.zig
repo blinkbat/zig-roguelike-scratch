@@ -43,7 +43,6 @@ pub const Params = struct {
 
 const Box = grid.Box;
 
-/// Room for every lot a floor's features take, as `procgen` asserts.
 pub const LOTS_MAX: usize = @import("../procgen.zig").MAX_FEATURES * COUNT_MAX;
 
 /// Every lot a floor's features take, so no feature raises one over another's.
@@ -77,7 +76,7 @@ pub const Lots = struct {
         return b;
     }
 
-    /// A `w` by `h` box clear of liquid, doors, bridges and any solid `carve.clearRound` leaves standing, a cell of margin round it, and clear of every lot taken.
+    /// Keep a clear ring around the site without opening protected terrain or another lot.
     fn site(self: *const Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
         if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
         for (0..TRIES) |_| {
@@ -150,7 +149,7 @@ pub fn cutAt(rng: *mathx.Rng, lo: i32, hi: i32, least: i32) i32 {
     return rng.range(lo + least, hi - least - 1);
 }
 
-/// Where a wall cutting `b` may stand, `least` in from its sides: both its ends meet `walls`, not a doorway.
+/// Both ends must meet walls, not doorways.
 fn splitAt(lv: *const grid.Level, rng: *mathx.Rng, b: Box, across: bool, least: i32, walls: grid.Tile) ?i32 {
     const lo = if (across) b.lo.x else b.lo.y;
     const hi = if (across) b.hi.x else b.hi.y;

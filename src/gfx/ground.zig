@@ -3,11 +3,8 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../world/grid.zig");
 const look = @import("look.zig");
 
-// The ground drawn in layers: a ground with a sheet on a dual grid, a piece on each point where four cells meet, its
-// mask the corners round it that hold it or anything over it (NW 1, NE 2, SW 4, SE 8); one without a sheet a square a
-// cell, and a quarter under each edge of a higher ground that has one. Every ground without a sheet lies under every
-// ground with one, whose edges are the only ones drawn, and each keeps `Ground`'s order among its own. Nothing in the
-// simulation reads it.
+// Dual-grid masks use NW 1, NE 2, SW 4, SE 8 and include higher layers.
+// Unsheeted grounds draw below sheeted grounds; each group retains Ground order. Presentation only.
 
 const P = mathx.P;
 
@@ -40,7 +37,6 @@ pub const Ground = enum {
         };
     }
 
-    /// Firm and dry enough for a wall, tree or stone to stand on.
     fn bears(g: Ground) bool {
         return switch (g) {
             .ice, .snow, .sand, .dirt, .grass, .rubble, .cobble => true,
@@ -98,8 +94,7 @@ comptime {
     }
 }
 
-/// The ground a cell shows: its own; under what stands on it, the one most of its neighbours bear, the lowest on a
-/// tie, else what it is drawn over (`look.under`); null where its tile covers the whole cell.
+/// Under standing tiles, choose the neighbours' majority ground, lowest rank on ties; otherwise `look.under`.
 pub fn bedAt(lv: *const grid.Level, p: P) ?Ground {
     const t = lv.at(p);
     if (of(t)) |g| return g;
@@ -121,7 +116,6 @@ pub fn bedAt(lv: *const grid.Level, p: P) ?Ground {
     return best;
 }
 
-/// A cell's place in the stack: a ground's `rank`, `OVER` where its tile covers it whole, `NONE` where nothing is drawn.
 const NONE: u8 = 0;
 const OVER: u8 = std.math.maxInt(u8);
 
@@ -129,8 +123,7 @@ fn isGround(r: u8) bool {
     return r != NONE and r != OVER;
 }
 
-/// Each cell's ground over the cells drawn and one round them, and each of their corner points, worked out once a
-/// frame for every layer.
+/// Cache visible ground ranks and corner points for all layers in a frame.
 pub const Beds = struct {
     lo: P,
     hi: P,
@@ -284,8 +277,7 @@ pub const Corners = struct {
         return m;
     }
 
-    /// The corners `g`, a ground with no sheet, lies under: those of a higher ground with a sheet, whose edges show
-    /// what lies under them; 0 where `g` is not here.
+    /// Unsheeted `g` fills beneath higher sheeted corners; zero if `g` is absent.
     pub fn under(self: Corners, g: Ground, sheets: Grounds) u4 {
         if (!self.holds(g)) return 0;
         var m: u4 = 0;
@@ -311,7 +303,6 @@ test "every ground without a sheet lies under every ground with one, and each ke
     for (LAYERS[1..], LAYERS[0 .. LAYERS.len - 1]) |a, b| try std.testing.expect(b.rank() < a.rank());
 }
 
-/// The sheets the layering tests are written for.
 fn paintedAsTested() !void {
     const s = look.GROUND_SHEETS;
     if (!(s.contains(.water) and s.contains(.dirt) and s.contains(.grass)) or s.contains(.cobble) or s.contains(.sand)) return error.SkipZigTest;

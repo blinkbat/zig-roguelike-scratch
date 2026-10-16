@@ -120,7 +120,6 @@ const FEATURES = .{
     .coast = coast,
 };
 
-/// Every module listed is an arm of its union, holding the module's `Params`.
 fn armsOf(comptime U: type, comptime modules: anytype) void {
     for (std.meta.fieldNames(@TypeOf(modules))) |name| {
         if (!@hasField(U, name) or @FieldType(U, name) != @field(modules, name).Params) @compileError(name ++ " is no arm of " ++ @typeName(U));
@@ -168,7 +167,6 @@ pub const Feature = union(enum) {
     }
 };
 
-/// A feature that raises things on lots, clear of every other feature's.
 fn takesLots(comptime m: type) bool {
     for (@typeInfo(@TypeOf(m.apply)).@"fn".params) |a| {
         if (a.type == *buildings.Lots) return true;
@@ -239,7 +237,6 @@ pub fn reshape(lv: *grid.Level) void {
 }
 
 const TEST_RUNS: usize = 12;
-/// Maps a count test rolls to say how many of them go wrong.
 const COUNT_RUNS: usize = 200;
 const SMALL_HOUSES = (buildings.Params{ .count = buildings.COUNT_MAX, .size = .{ 5, 6 } }).fit();
 const PACKED_SHRINES = (setpiece.Params{ .piece = .shrine, .count = setpiece.COUNT_MAX, .apart = 0 }).fit();
@@ -559,7 +556,7 @@ fn filled(lv: *const grid.Level, cells: *const std.StaticBitSet(grid.CELLS)) boo
     return false;
 }
 
-/// A cell an earlier feature laid, more than the base's open ground, changed since `was`.
+/// Excludes changes to the base's open ground.
 fn laidOver(lv: *const grid.Level, was: *const [grid.CELLS]grid.Tile, base: *const [grid.CELLS]grid.Tile, pal: carve.Palette) bool {
     for (lv.tile, was, base) |t, w, s| {
         if (w != s and w != pal.open and t != w) return true;

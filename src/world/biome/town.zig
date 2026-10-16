@@ -14,7 +14,6 @@ pub const BLOCK_MAX: u8 = 24;
 pub const STREET_MAX: u8 = 4;
 const MARGIN: i32 = 4;
 const HOUSE_LEAST: i32 = 5;
-/// How often a block is cut by an alley each way.
 const SPLIT_CHANCE: f32 = 0.7;
 /// The plaza's radius, a share of a block's side.
 const PLAZA_OF: f32 = 0.55;
@@ -97,7 +96,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
 /// `in` is the way into the town.
 const Gate = struct { at: P, in: mathx.Dir };
 
-/// A cell outside the streets all round.
 fn wallBox() grid.Box {
     return grid.Box.inMap(MARGIN - 1);
 }
@@ -110,7 +108,7 @@ fn gates() [carve.SIDES.len]Gate {
     return out;
 }
 
-/// An alley from top to bottom with a canal at both ends gets one across, to the streets either side.
+/// A canal at both alley ends requires a crossing to keep the block connected.
 fn block(lv: *grid.Level, rng: *mathx.Rng, b: grid.Box, p: Params, street: grid.Tile) void {
     const w = b.width();
     const h = b.height();

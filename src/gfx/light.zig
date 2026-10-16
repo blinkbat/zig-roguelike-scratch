@@ -16,7 +16,6 @@ const mix = sky.mix;
 pub const SUB: i32 = 4;
 const MAP_W: i32 = grid.W * SUB;
 const MAP_H: i32 = grid.H * SUB;
-/// `Light.baked` with no row waiting to be sent.
 const NONE_BAKED = [2]i32{ MAP_H, 0 };
 const TEXELS: usize = @intCast(MAP_W * MAP_H);
 /// The map is drawn with (DST_COLOR, SRC_COLOR) blending, so a texel stores half the light and reaches twice the art.
@@ -64,7 +63,6 @@ const VOID_FADE: f32 = 1.5;
 const SIGHT_FADE: f32 = 0.4;
 const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
 const VOID_SPAN: usize = @intCast(grid.Cells.span(VOID_REACH));
-/// The cells' corners, which `Light.casting` and `Light.clouds` hold: one more than the cells each way.
 const CORNERS_W = grid.CORNERS_W;
 const CORNERS_H = grid.CORNERS_H;
 const FLICKER: f32 = 0.14;
@@ -77,7 +75,7 @@ const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
 const KNEE: f32 = 1.5;
 
 pub const BODY_LIGHTS: usize = 4;
-/// zig-soulslike's hit flash, pale arterial rather than blood red so it reads on a red body.
+/// A pale flash remains visible over red bodies.
 pub const FLASH_RGB = Rgb{ 0.88, 0.38, 0.30 };
 /// Texels toward the viewer, for the side-lighting of a body.
 const BODY_LIGHT_Z: f32 = 40.0;
@@ -99,7 +97,6 @@ const SHADOW_SQUASH: f32 = 0.55;
 /// Cells: a light this close to a body's middle stands over it and casts no shadow.
 const SHADOW_OVERHEAD: f32 = 0.05;
 const SHADOW_NEAR: f32 = 0.5;
-/// Texels of blur room round a shadow's silhouette.
 const SHADOW_PAD: f32 = SHADOW_SOFT_TIP * @as(f32, @floatFromInt(SHADOW_TAPS));
 /// Texels between the shadow shader's blur taps, at its tip and at its foot.
 const SHADOW_SOFT_TIP: f32 = 2.0;
@@ -126,7 +123,7 @@ const GLOW_HALO: f32 = 2.6;
 const GLOW_CORE_A: f32 = 0.85;
 const GLOW_HALO_A: f32 = 0.2;
 const GLOW_TINT: Rgb = .{ 1.0, 0.52, 0.22 };
-/// Cells between a sun ray's samples; a shadow eases in over `SUN_SOFT` of its caster's height under its top, and `SUN_EDGE` cells in from a round one's edge.
+/// Cells between ray samples; softness is a fraction of caster height and a cell distance from round edges.
 const SUN_STEP: f32 = 0.1;
 const SUN_SOFT: f32 = 0.7;
 const SUN_EDGE: f32 = 0.2;
@@ -134,7 +131,7 @@ const SUN_EDGE: f32 = 0.2;
 const SUN_SHADE: f32 = 0.45;
 const SUN_SHADOW_A: f32 = 0.4;
 const SKY_SHADOW = SHADOW_MAX * SUN_SHADOW_A;
-/// A tree's shadow: canopy radius (of sprite width), squash, place along a full-height shadow, stretch per height it runs, darkness; trunk contact of a body's.
+/// Canopy radius uses sprite width; trunk contact is relative to a body's.
 const CANOPY_R: f32 = 0.55;
 const CANOPY_SQUASH: f32 = 0.7;
 const CANOPY_AT: f32 = 0.45;
@@ -267,7 +264,6 @@ const SunRay = struct {
         };
     }
 
-    /// What a moon shadow leaves of all the light at a point `sun` of the ray reaches, under `cloud`.
     fn dim(ray: SunRay, sun: f32, cloud: f32) Rgb {
         return mix(splat(1), ray.shade, (1 - sun) * cloud * ray.night);
     }
@@ -326,7 +322,6 @@ const Spot = struct {
     }
 };
 
-/// The height a wall's face shows `fy` down its cell; `faceY` is its inverse.
 fn faceZ(fy: f32) f32 {
     return (1 - fy) / FACE_H * WALL_H;
 }
@@ -444,7 +439,6 @@ fn sample(f: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
 
 const SightField = enum { soft, weight, open };
 
-/// `sees` reads each field at a point: `Whole` samples the map, `Patch` the cells round one cell.
 fn sightOf(sees: anytype, ground: bool, x: f32, y: f32) f32 {
     const soft = sees.at(.soft, x, y);
     if (!ground) return soft;
@@ -461,7 +455,6 @@ const Whole = struct {
     }
 };
 
-/// The fields round one cell, read once for every texel in it: `sample` there, as exactly.
 const Patch = struct {
     lo: P,
     v: std.EnumArray(SightField, [9]f32),
@@ -497,7 +490,7 @@ fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32) f32 {
     return f[mathx.slot(x, y, @intCast(w), @intCast(h)) orelse return 0];
 }
 
-/// A light's reach at `(u, v)`: blended over `reach` inside a cell it reaches, over `open` in one it misses, so no wall passes its light on.
+/// Blend unreachable cells over `open` so walls cannot pass light onward.
 fn occluded(reach: []const f32, open: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
     const own = texel(reach, w, h, mathx.roundTiesUp(u), mathx.roundTiesUp(v)) > 0;
     return bilinear(if (own) reach else open, w, h, u, v);
@@ -511,7 +504,6 @@ fn hidesGround(t: grid.Tile) bool {
     return t.blind() and t.upright() and !look.stands(t);
 }
 
-/// A cell's memory at each point in it, from the cells round it short of wholly remembered.
 const Fade = struct {
     flat: ?f32 = null,
     n: usize = 0,
@@ -600,13 +592,11 @@ const Lamp = struct {
 /// The sky's light, far off: its shadow runs `reach` body heights whatever the distance, `depth` dark in `shade`.
 const SkyCast = struct { reach: f32, depth: f32, shade: Rgb };
 
-/// As the key's share of the sky's light, so none as the sun and moon swap; `lit` is the share of the key reaching.
 fn skyDepth(k: sky.Sky, lit: f32) f32 {
     const key = lum(k.key) * lit;
     return SKY_SHADOW * castShare(key, key + lum(k.ambient));
 }
 
-/// A light with `own` of the `all` that reaches a body: how much of its darkest shadow it casts.
 fn castShare(own: f32, all: f32) f32 {
     return smooth(own / @max(all, 1e-6) / SHADOW_FULL);
 }
@@ -674,13 +664,13 @@ pub const Light = struct {
     sight: [grid.CELLS]f32,
     memory: [grid.CELLS]f32,
     soft_sight: [grid.CELLS]f32,
-    /// `soft_sight` over open ground alone, so no cell that blocks sight lends ground its light or dims it; times `open_weight`, which `sightAt` divides back out.
+    /// Weighted sight over open ground only, preventing light leaks through walls.
     open_sight: [grid.CELLS]f32,
     /// 1 on a cell that blocks no sight; set from the tiles in `settle`.
     see_through: [grid.CELLS]f32,
-    /// How far `open_sight` counts: open ground, by how well it is remembered. `sightAt` blends over these alone.
+    /// Open-ground memory weights; `sightAt` divides weighted sight by these.
     open_weight: [grid.CELLS]f32,
-    /// 1 on a cell whose ground shows, where `sightAt` blends `open_sight`, so a shrub's edge is one field with the ground beside it; set from the tiles in `settle`.
+    /// Ground visibility includes shrub edges, keeping them continuous with adjacent ground.
     ground: [grid.CELLS]f32,
     blur: [grid.CELLS]f32,
     share: [grid.CELLS]f32,
@@ -692,11 +682,9 @@ pub const Light = struct {
     torch_n: usize,
     /// The archer's centre as drawn, cells.
     carrier: ?[2]f32,
-    /// Open to the sky: its light and shadows, and its ambient for the dark's.
     sky: ?sky.Sky,
-    /// How many of the cells above and left of each corner cast, so a box of them is counted in four reads.
+    /// Integral image of caster counts at cell corners.
     casting: [CORNERS_W * CORNERS_H]u16,
-    /// `clouded` at each cell corner a bake reaches, read by `bakeCell`: a corner is shared by four cells.
     clouds: [CORNERS_W * CORNERS_H]f32,
     /// The corners `clouds` holds, both inclusive, and the light's seconds they were read at.
     clouds_held: ?struct { box: grid.Box, t: f32 } = null,
@@ -708,7 +696,6 @@ pub const Light = struct {
     gpu: Gpu,
     forest: [FOREST_QUEUE]ForestCast,
     forest_n: usize,
-    /// `forest`'s order to draw in, joined sides then texture, each beside its index.
     forest_order: [FOREST_QUEUE]u64,
 
     /// Set field by field: built as one value, it is a temporary bigger than a thread's stack.
@@ -796,7 +783,7 @@ pub const Light = struct {
         }
     }
 
-    /// Sight blurs over seen ground only, so a cell never seen does not dim the ground in sight round it, and over open ground alone for ground, so nothing that blocks sight lends it light.
+    /// Blur only seen cells, and ground sight only over open ground, to prevent dim rims and wall leaks.
     fn soften(self: *Light) void {
         for (&self.soft_sight, &self.open_sight, &self.open_weight, &self.carry_open, &self.sight, &self.memory, &self.see_through) |*seen, *open, *w, *carry, s, m, k| {
             seen.* = s * m;
@@ -810,7 +797,6 @@ pub const Light = struct {
         self.markClear();
     }
 
-    /// `clear` from `memory`, by the run of wholly remembered cells ending at each: a span ends there when the run is as long.
     fn markClear(self: *Light) void {
         const r: usize = VOID_REACH;
         const span = VOID_SPAN;
@@ -834,7 +820,7 @@ pub const Light = struct {
         }
     }
 
-    /// `num` blurred over `den` blurred, in place: each cell's share of what counts round it.
+    /// Normalized blur, in place.
     fn blurShare(self: *Light, num: *[grid.CELLS]f32, den: *const [grid.CELLS]f32) void {
         blur121(num, &self.blur, num);
         blur121(den, &self.blur, &self.share);
@@ -850,7 +836,6 @@ pub const Light = struct {
         return grid.cellOr(f32, &self.ground, c, 0) > 0;
     }
 
-    /// The fields sight is read from, in `SightField`'s order.
     fn sightField(self: *const Light, k: SightField) *const [grid.CELLS]f32 {
         return switch (k) {
             .soft => &self.soft_sight,
@@ -879,7 +864,6 @@ pub const Light = struct {
         return grid.cellOr(f32, &self.memory, p, 0);
     }
 
-    /// Nothing within reach of `fadeOf`'s fade round cell `p` is short of wholly remembered.
     fn whole(self: *const Light, p: P) bool {
         return grid.cellOr(bool, &self.clear, p, false);
     }
@@ -894,7 +878,7 @@ pub const Light = struct {
         return out[0..n];
     }
 
-    /// Cells across the ground from the carried light, how far of that is southward, and how much of it reaches there, fallen off and occluded.
+    /// Ground distance and southward offset in cells, plus attenuated visibility.
     fn carryToward(self: *const Light, x: f32, y: f32, fogged: bool) ?struct { at: [2]f32, flat: f32, dy: f32, k: f32 } {
         const c = self.carrier orelse return null;
         const share = self.carryShare();
@@ -942,7 +926,6 @@ pub const Light = struct {
         }
     }
 
-    /// `sunlit`, but 1 at once where nothing that casts stands anywhere the ray toward the light could cross.
     fn sunAt(self: *const Light, lv: *const grid.Level, ray: *const SunRay, x: f32, y: f32, z: f32) f32 {
         if (sky.upright(ray.flat)) return 1;
         const b = sunBox(ray.*, x, y, z);
@@ -950,7 +933,6 @@ pub const Light = struct {
         return sunlit(lv, ray.*, x, y, z);
     }
 
-    /// The cells a ray toward the light from `x, y, z` could cross, and a cell round them.
     fn sunBox(ray: SunRay, x: f32, y: f32, z: f32) grid.Box {
         const far = ray.far(z);
         const e = [2]f32{ x + ray.u[0] * far, y + ray.u[1] * far };
@@ -973,7 +955,6 @@ pub const Light = struct {
         return if (self.sky) |k| k.carry else 1;
     }
 
-    /// The sky's ambient; none under a roof.
     fn ambientOf(self: *const Light) Rgb {
         return if (self.sky) |k| k.ambient else splat(0);
     }
@@ -1053,7 +1034,6 @@ pub const Light = struct {
         return cloudIn(self.cloudCorners(c), c, q);
     }
 
-    /// A cloud's shadow is cells across, so it is read at a cell's corners and eased between them.
     fn cloudCorners(self: *const Light, c: P) [4]f32 {
         const t = self.t.at();
         if (self.clouds_held) |h| {
@@ -1099,7 +1079,6 @@ pub const Light = struct {
         }
     }
 
-    /// `q` in cells, as the light map has the ground there.
     const View = struct { sight: f32, memory: f32, lit: f32 };
 
     fn viewAt(self: *const Light, q: [2]f32) View {
@@ -1150,7 +1129,6 @@ pub const Light = struct {
         return s;
     }
 
-    /// The sky's light from off the body's side; returns what a moon shadow over the body leaves of every light on it.
     fn sunOnBody(self: *const Light, s: *Shine, k: sky.Sky, centre: [2]f32, lit: f32) Rgb {
         const ray = SunRay.of(k);
         const toward = ray.u;
@@ -1257,7 +1235,6 @@ pub const Light = struct {
         rl.gl.rlDrawRenderBatchActive();
     }
 
-    /// Draws the foot's contact pool, `contact` times a body's, and returns the foot, its height and its share of the art's; null where nothing lights it.
     fn footOf(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *const Shine, contact: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
         const lit = s.reached();
         if (lit <= FAINT) return null;
@@ -1359,7 +1336,7 @@ pub const Light = struct {
         }
     }
 
-    /// Its contact pool now; its silhouette waits for `endShadows`, drawn with every forest cell joined on the same sides under one set of uniforms.
+    /// Contact draws now; silhouettes batch by joined sides at `endShadows`.
     pub fn drawForestShadows(self: *Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: *const Shine, shape: grid.WallShape) void {
         _ = self.footOf(tex, dest, s, 1) orelse return;
         var f = ForestCast{ .tex = tex, .dest = dest, .centre = centre, .cast = undefined, .n = 0, .joined = .of(shape) };
@@ -1370,7 +1347,6 @@ pub const Light = struct {
         self.forest_n += 1;
     }
 
-    /// The mask takes the darker of what overlaps, so the order drawn changes nothing but how often the texture and uniforms switch.
     fn flushForest(self: *Light) void {
         defer self.forest_n = 0;
         const order = self.forest_order[0..self.forest_n];
@@ -1393,7 +1369,7 @@ pub const Light = struct {
         if (drawing != null) self.endSilhouettes();
     }
 
-    /// The shadow shader on `tex` until `endSilhouettes`: `foot` its feet's share of its height, `joined` the sides it runs on past (w, e, n, s), `softness` its blur at tip and foot; false with no shader.
+    /// `joined` is (w, e, n, s); `softness` is (tip, foot). End with `endSilhouettes`.
     fn beginSilhouettes(self: *const Light, tex: rl.Texture2D, foot: f32, joined: [4]f32, softness: [2]f32) bool {
         const sh = self.gpu.shadow orelse return false;
         const size = [2]f32{ @floatFromInt(tex.width), @floatFromInt(tex.height) };
@@ -1405,7 +1381,6 @@ pub const Light = struct {
         return true;
     }
 
-    /// Back to the mask's own shader.
     fn endSilhouettes(self: *const Light) void {
         rl.gl.rlDrawRenderBatchActive();
         rl.beginShaderMode(self.gpu.shade.?);
@@ -1434,7 +1409,6 @@ pub fn flashed(c: rl.Color, k: f32) rl.Color {
 /// Pixels: `lean` from the feet to the tip; `solid` the share that is silhouette, the rest a streak.
 const Cast = struct { lean: [2]f32, len: f32, solid: f32, alpha: f32, shade: Rgb, source: ?[2]f32 = null };
 
-/// The sides a forest cell's shadow runs on past, as the shadow shader's `joined` takes them.
 const Sides = packed struct(u4) {
     w: bool = false,
     e: bool = false,
@@ -1454,7 +1428,6 @@ const Sides = packed struct(u4) {
     }
 };
 const ForestCast = struct { tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, cast: [BODY_LIGHTS]Cast, n: usize, joined: Sides };
-/// More forest cells than any view casts from; a fuller frame draws them in more batches.
 const FOREST_QUEUE: usize = 2048;
 /// `flushForest`'s sort key: the queue index below, the texture id over it, the joined sides on top.
 const INDEX_BITS = 16;
@@ -1564,7 +1537,7 @@ fn glowAt(g: rl.Texture2D, x: f32, y: f32, rx: f32, ry: f32, c: rl.Color) void {
     look.stretch(g, .{ .x = x - rx, .y = y - ry, .width = rx * 2, .height = ry * 2 }, c);
 }
 
-/// `lean` is pixels, feet to head. Leaning down the screen mirrors the quad, so its corners reverse to keep the winding the rasteriser does not cull.
+/// Downward lean reverses the quad's winding; reverse its corners to avoid back-face culling.
 fn silhouette(tex: rl.Texture2D, fx: f32, fy: f32, width: f32, foot: f32, left: bool, c: Cast) void {
     const lean = c.lean;
     const pad = SHADOW_PAD / @as(f32, @floatFromInt(tex.width));
@@ -1649,7 +1622,6 @@ const BODY_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     \\}
 ;
 
-/// A pool's alpha as the factor it darkens the ground by, toward its colour, the shade.
 const POOL_HEAD = look.FS_HEAD ++
     \\vec4 pool(float a) {
     \\    return vec4(mix(vec3(1.0), fragColor.rgb, a * fragColor.a), 1.0);
@@ -1744,7 +1716,6 @@ const Art = struct {
 const BEVEL_PX: i32 = 5;
 const BEVEL_DEPTH: f32 = 2.0;
 const ART_MAX: i32 = 2 * look.SPRITE_PX;
-/// Alpha above which a texel is part of the silhouette.
 const SOLID_A: u8 = 25;
 
 const NO_FIGURES: [look.FIGURES]?rl.Texture2D = @splat(null);
@@ -1801,7 +1772,6 @@ const Gpu = struct {
     }
 };
 
-/// Normals only when `lit`: nothing but the body shader reads them.
 fn artOf(t: rl.Texture2D, lit: bool) Art {
     var a = Art.bare(t);
     if (t.width > ART_MAX or t.height > ART_MAX) return a;

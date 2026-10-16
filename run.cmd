@@ -1,5 +1,5 @@
 @echo off
-REM run.cmd - build Debug and launch. Pass -Doptimize=ReleaseFast for an optimized run.
+REM Pass -Doptimize=ReleaseFast for an optimized run.
 setlocal
 call "%~dp0_zig.cmd" || exit /b 1
 taskkill /IM %EXE% /F >nul 2>&1

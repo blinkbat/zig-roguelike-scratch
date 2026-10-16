@@ -1,5 +1,5 @@
 @echo off
-REM shot.cmd - build then render every shots\*.png headless (window hidden). Leaves a running game alone.
+REM Headless captures use a separate executable so a running game stays open.
 setlocal
 call "%~dp0_zig.cmd" || exit /b 1
 "%ZIG%" build --prefix %DEV%

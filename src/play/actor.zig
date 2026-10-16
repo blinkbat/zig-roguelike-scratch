@@ -39,7 +39,6 @@ pub const Kind = enum {
     }
 };
 
-/// A kind and every form it splits into.
 const DESCENT = blk: {
     var t = std.EnumArray(Kind, std.EnumSet(Kind)).initUndefined();
     for (std.enums.values(Kind)) |k| {
@@ -151,12 +150,10 @@ pub fn row(k: Kind) Row {
     };
 }
 
-/// Every hero's sight and the light it carries, whatever its class.
 fn heroRow(name: [:0]const u8, hp: i32, blow: Strike) Row {
     return .{ .name = name, .movement = .ground, .foe_type = null, .hp = hp, .sight = 10, .light = 5, .blow = .{ .strike = blow } };
 }
 
-/// What `of` splits into: it, on half its hp.
 fn smaller(of: Kind, name: [:0]const u8, splits: ?Kind) Row {
     var r = row(of);
     r.name = name;
@@ -328,7 +325,6 @@ pub fn flee(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i3
     return climb(lv, from, id, flow, 1);
 }
 
-/// The step that most gains on `flow` the way `sign` goes, the first of any tie.
 fn climb(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32, comptime sign: i32) ?mathx.Dir {
     var best: ?mathx.Dir = null;
     var best_d = flow[grid.Level.idx(from)];

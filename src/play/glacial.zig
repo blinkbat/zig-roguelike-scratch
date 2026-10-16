@@ -53,7 +53,6 @@ pub fn afflict(a: anytype, _: *mathx.Rng) void {
 
 pub const Cone = grid.Area(grid.Cells.span(RANGE) * grid.Cells.span(RANGE));
 
-/// The least sight radius `mathx.reaches` takes to every corner of a `range` box.
 fn castR(range: i32) i32 {
     return mathx.roundTiesDown(@as(f32, @floatFromInt(range)) * std.math.sqrt2);
 }

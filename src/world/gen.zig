@@ -157,7 +157,6 @@ fn tunnel(lv: *grid.Level, a: P, b: P, rng: *mathx.Rng) void {
     bend(lv, a, b, rng.chance(0.5));
 }
 
-/// Floor from `a` to `b` along two straight runs, across first or down first.
 fn bend(lv: *grid.Level, a: P, b: P, across_first: bool) void {
     const corner: P = if (across_first) .{ .x = b.x, .y = a.y } else .{ .x = a.x, .y = b.y };
     carve.box(lv, grid.Box.between(a, corner), .floor);

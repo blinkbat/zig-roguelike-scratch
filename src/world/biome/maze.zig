@@ -71,7 +71,6 @@ pub fn palette(p: Params) carve.Palette {
 const COLS_MAX: usize = slotsFor(SIZE_MIN).x;
 const ROWS_MAX: usize = slotsFor(SIZE_MIN).y;
 
-/// Rooms of side `size` across and down inside the rim.
 fn slotsFor(size: i32) struct { x: usize, y: usize } {
     return .{ .x = @intCast(@divTrunc(grid.W - 2, size)), .y = @intCast(@divTrunc(grid.H - 2, size)) };
 }

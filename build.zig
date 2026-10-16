@@ -67,7 +67,7 @@ const Root = struct {
 
 const EMBEDDED = [_][]const u8{ ".png", ".ttf", ".txt" };
 
-/// Every PNG, TTF and TXT in `assets/` is embedded under its file name, so the exe runs from any directory. `@embedFile("<name>")` reads one; `@import("assets").names` lists them, for art that may not be painted yet.
+/// Embedded by filename; `assets.names` lets callers check for optional artwork.
 fn assetNames(b: *std.Build) []const []const u8 {
     var dir = b.build_root.handle.openDir(ASSETS, .{ .iterate = true }) catch |e|
         std.debug.panic(ASSETS ++ "/ could not be opened ({s})", .{@errorName(e)});

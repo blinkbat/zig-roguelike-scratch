@@ -116,7 +116,6 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots:
     }
 }
 
-/// A lot whose margin of `apart` keeps clear of the others', the gap halved till one fits.
 fn spaced(lots: *buildings.Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, apart: i32, pal: carve.Palette) ?grid.Box {
     const least = buildings.Lots.GAP;
     var gap = @max(least, 2 * apart);

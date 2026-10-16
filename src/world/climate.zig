@@ -1,7 +1,6 @@
 const std = @import("std");
 
-// A procgen node's sky: how its daylight looks and what falls from it. Only a node open to the sky shows either, and
-// nothing in the simulation reads them: `gfx/sky.zig` turns `Light` into the sky's colours, `gfx/weather.zig` draws `Weather`.
+// Outdoor appearance only; the simulation never reads climate.
 
 /// How the day's light looks under this sky.
 pub const Light = enum {

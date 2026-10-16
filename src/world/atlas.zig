@@ -46,10 +46,9 @@ const ROWS = grid.ROWS;
 pub const NAME_MAX: usize = 20;
 const UNNAMED = "node ";
 pub const TITLE_MAX: usize = @max(NAME_MAX, UNNAMED.len + std.fmt.count("{d}", .{MAX_NODES - 1}));
-/// A new node's box takes the first free place on a grid of the editor's graph this many boxes wide.
 const GRAPH_COLS: usize = 4;
 pub const GRAPH_STEP = P{ .x = 240, .y = 200 };
-/// A box's place on the graph, either way on either axis; far enough that i32 sums of places never overflow.
+/// Symmetric graph-coordinate bound that keeps i32 position sums safe.
 pub const POS_MAX: u32 = 1 << 24;
 
 /// `p` brought within `POS_MAX` either way on each axis.
@@ -85,10 +84,10 @@ pub const Kind = procgen.Kind;
 pub const Feature = procgen.Feature;
 pub const MAX_FEATURES = procgen.MAX_FEATURES;
 
-/// Rolled round its doors each run: its base, then each of its features over it, in order.
+/// Base generation precedes ordered features; doors stay fixed across run rolls.
 pub const Procgen = struct {
     floor: Floor = .{ .rooms = .{} },
-    /// Past `feature_n`, each slot as `Feature.of` leaves it, so two plans compare by what they hold.
+    /// Unused slots retain defaults so plans compare by content.
     feature: [MAX_FEATURES]Feature = @splat(Feature.of(FIRST_FEATURE)),
     feature_n: usize = 0,
     foes: pack.Spec = .{},
@@ -415,7 +414,6 @@ pub const Atlas = struct {
         self.renumber(at, Atlas.pastDoor);
     }
 
-    /// Every link, once `gone` is taken away.
     fn renumber(self: *Atlas, gone: Link, comptime past: fn (*Link, Link) void) void {
         for (self.nodes()) |*nd| {
             for (nd.doorsMut()) |*d| {
@@ -544,7 +542,7 @@ pub const Atlas = struct {
                     const plan: Plan = switch (kind) {
                         .procgen => blk: {
                             const algo = try takeValue(Algo, &f);
-                            // Written before procgen nodes were rolled each run: the seed they kept is let go.
+                            // Accept and discard seeds from older world files.
                             if (f.peek() != null) _ = try int(u64, &f);
                             break :blk .{ .procgen = .{ .floor = Floor.of(algo) } };
                         },
@@ -688,7 +686,6 @@ pub fn floorKnobs(comptime a: Algo) []const []const u8 {
 }
 const FLOOR_KNOBS_MAX = mostKnobs(Floor);
 pub const FOE_KNOBS = knobsOf(pack.Spec, MAKEUP_FIELDS);
-/// Its sky's lines, `climate.Climate`'s fields.
 pub const SKY_KNOBS = knobsOf(climate.Climate, &.{});
 /// Every other line's first word, which no knob may take.
 const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe };
@@ -701,7 +698,6 @@ pub fn featureKnobs(comptime k: Kind) []const []const u8 {
 }
 const FEATURE_KNOBS_MAX = mostKnobs(Feature);
 const FeatureKnobSet = std.StaticBitSet(FEATURE_KNOBS_MAX);
-/// A procgen node's other knobs, each group a field of `Procgen`.
 const GROUPS = [_]struct { field: []const u8, knobs: []const []const u8 }{
     .{ .field = "foes", .knobs = FOE_KNOBS },
     .{ .field = "sky", .knobs = SKY_KNOBS },
@@ -776,7 +772,6 @@ fn takeFeatureKnob(ft: *Feature, word: []const u8, f: *std.mem.TokenIterator(u8,
     if (!try takeArm(ft, word, f, set)) return error.BadLine;
 }
 
-/// The knob named `word` of the union's arm, if it has one.
 fn takeArm(u: anytype, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), knobbed: anytype) Error!bool {
     switch (u.*) {
         inline else => |*p, t| inline for (comptime armKnobs(@TypeOf(u.*), t), 0..) |k, i| {
@@ -878,12 +873,10 @@ pub fn pathFor(buf: []u8, folder: []const u8, name: []const u8) ?[]const u8 {
     return std.fmt.bufPrint(buf, PREFIX ++ "{s}{s}" ++ EXT, .{ folder, stem[0..n] }) catch null;
 }
 
-/// One folder of `DIR` at a time: below `DIR` the way back up first, then its folders, then its worlds, each sorted;
-/// past `MAX`, the first `MAX` of them.
+/// Folder listing: parent first, then sorted folders and worlds; overflow keeps the first `MAX`.
 pub const Listing = struct {
     pub const MAX: usize = 128;
     pub const UP = "..";
-    /// Folders below `DIR` a walk of every world goes, at most.
     const DEPTH_MAX: usize = 8;
     file: [MAX]Listed = undefined,
     n: usize = 0,
@@ -996,7 +989,6 @@ pub const Listing = struct {
         return self.folder_n + name.len + 1 <= FOLDER_MAX;
     }
 
-    /// Below the listed folder into `name`; false, and still here, when the path would not fit.
     fn enter(self: *Listing, name: []const u8) bool {
         if (!self.fits(name)) return false;
         @memcpy(self.folder[self.folder_n..][0..name.len], name);
@@ -1005,7 +997,7 @@ pub const Listing = struct {
         return true;
     }
 
-    /// The listed folder's own entries; `walking` from a depth, its worlds and those of the folders below it to `DEPTH_MAX` instead. False when it will not open.
+    /// `walking` recursively collects worlds from this depth, capped at `DEPTH_MAX`.
     fn gather(self: *Listing, walking: ?usize) bool {
         var buf: [PATH_MAX]u8 = undefined;
         var dir = std.fs.cwd().openDir(self.dirPath(&buf), .{ .iterate = true }) catch return false;
@@ -1076,7 +1068,6 @@ fn free(lv: *const grid.Level, q: P, foes: []const Foe) bool {
     return true;
 }
 
-/// From a cell no one can stand on: the nearest open one, through rock.
 fn nearest(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
     const Free = struct {
         lv: *const grid.Level,

@@ -78,7 +78,6 @@ pub const Makeup = struct {
         return std.mem.indexOfScalar(actor.Kind, self.kinds(), k) != null;
     }
 
-    /// Its lead fits a pool `bodies` full, and `k` too after the members `placeOne` spawns before it.
     fn fits(self: *const Makeup, bodies: usize, k: ?actor.Kind) bool {
         if (!actor.roomFor(bodies, self.lead())) return false;
         const want = k orelse return true;
@@ -251,7 +250,7 @@ fn spawnCounted(lv: *grid.Level, pool: *actor.Pool, k: actor.Kind, at: P, bodies
     bodies.* += actor.most(k);
 }
 
-/// Free, `spec.gap` from the start, and `spec.apart` from every foe of the packs placed before, the first `others`.
+/// `others` bounds the previously placed packs.
 fn clear(lv: *const grid.Level, pool: *actor.Pool, p: P, start: P, spec: *const Spec, others: usize) bool {
     if (!lv.vacant(p) or mathx.dist(p, start) < spec.gap) return false;
     if (spec.apart == 0) return true;

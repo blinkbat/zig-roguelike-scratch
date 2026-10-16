@@ -25,7 +25,7 @@ pub fn matterOf(kind: ?actor.Kind) Matter {
     };
 }
 
-/// The flash's colour is `light.FLASH_RGB`, since the body shader draws it. Longer holds every turn with a blow in it.
+/// Longer flashes hold every turn containing a blow.
 pub const FLASH_S: f32 = 0.16;
 pub const FLASH_GAIN: f32 = 0.75;
 
@@ -140,7 +140,6 @@ pub const Status = enum {
         };
     }
 
-    /// What it does to the body it is on, as an inspected status says.
     pub fn blurb(s: Status) [:0]const u8 {
         return switch (s) {
             .bleeding => std.fmt.comptimePrint("Loses {d} life a turn, {d} on a turn it moves.", .{ bleeding.STILL, bleeding.MOVING }),
@@ -151,7 +150,6 @@ pub const Status = enum {
         };
     }
 
-    /// The `Actor` field whose turns it counts.
     fn field(comptime s: Status) []const u8 {
         return switch (s) {
             .bleeding => "bleed",
@@ -215,14 +213,11 @@ pub const Sting = struct { slot: usize, after: ?After = null, fire_at: ?[2]f32 =
 pub const Settle = struct { slot: usize, after: After };
 
 pub const MOTES: usize = 320;
-/// A turn's worth: on every body, what its turn owes the picture and the archer's blow; then a burst and a barrel's
-/// blow, or a chain's leaps.
+/// Capacity for every body's turn effects and hero hit, plus a burst or chain jumps.
 pub const DUE: usize = actor.MAX * 6 + 2;
 
-/// A missile's or a spell's burst over `area`, spreading out from `at`.
 pub const Burst = struct { at: mathx.P, area: glacial.Cone, col: rl.Color };
 
-/// A bolt's leap from one body to the next.
 pub const Zap = struct { from: [2]f32, to: [2]f32 };
 
 pub const JUKE_S: f32 = 0.6;
@@ -247,12 +242,10 @@ const WATER_MOTES: usize = 4;
 pub const SPLASH_FOOT: f32 = 0.32;
 pub const SPLASH_R: f32 = 0.22;
 pub const SPLASH_RY: f32 = 0.08;
-/// The marks a status draws on a body.
 const BLEED_DROPS = 4;
 const CHILL_FLAKES = 5;
 const BURN_FLAMES = 7;
-/// A pin's stakes: where across the cell each stands and how far its top leans, in cells; how high they stand and
-/// where their feet are.
+/// Stake (horizontal position, lean) pairs in cell units.
 const PIN_STAKES = [_][2]f32{ .{ 0.24, -0.06 }, .{ 0.5, 0 }, .{ 0.76, 0.06 } };
 const PIN_H: f32 = 0.16;
 const PIN_FOOT: f32 = 0.92;
@@ -264,7 +257,7 @@ const WARD_HZ: f32 = 2.4;
 const MARKS_FROM: f32 = 0.22;
 const MARKS_SPAN: f32 = 0.56;
 
-/// The `i`th of `n` headings round a ring, each pushed on up to `jitter` of the gap to the next.
+/// `jitter` is a fraction of the gap between headings.
 fn ringDir(rng: *mathx.Rng, i: usize, n: usize, jitter: f32) [2]f32 {
     return heading((@as(f32, @floatFromInt(i)) + rng.unit() * jitter) * mathx.TAU / @as(f32, @floatFromInt(n)));
 }
@@ -506,7 +499,6 @@ pub const Fx = struct {
         self.spray(b.at, b.dir, s, if (b.lethal) s.kill else s.hit);
     }
 
-    /// Along `dir`, or all round for none.
     fn spray(self: *Fx, at: [2]f32, dir: ?[2]f32, s: Spray, n: usize) void {
         const rng = &self.rng;
         for (0..n) |_| {

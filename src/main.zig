@@ -9,7 +9,6 @@ pub fn main() !void {
     defer std.process.argsFree(alloc, argv);
     for (argv[1..], 1..) |a, i| {
         if (std.mem.eql(u8, a, "--edit")) return app.run(if (i + 1 < argv.len) argv[i + 1] else atlas.MAIN);
-        // DEV ONLY.
         if (std.mem.eql(u8, a, "--shot")) return game.shot();
         if (std.mem.eql(u8, a, "--bench")) return game.bench();
     }

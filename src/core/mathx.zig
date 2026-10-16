@@ -226,7 +226,7 @@ pub const Seconds = struct {
     }
 };
 
-/// `std.math.hypot` without its guard against overflow, which costs in a per-texel loop.
+/// Unlike `std.math.hypot`, this does not guard against overflow.
 pub fn len(x: f32, y: f32) f32 {
     return @sqrt(x * x + y * y);
 }

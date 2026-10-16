@@ -9,7 +9,7 @@ const CTRL_KEYS = [_]rl.KeyboardKey{ .left_control, .right_control };
 const ALT_KEYS = [_]rl.KeyboardKey{ .left_alt, .right_alt };
 const LEAN_KEYS = SHIFT_KEYS;
 
-/// What the player last pressed, which every caption names: a pad by its maker's names for the buttons.
+/// Last active device; selects maker-specific button captions.
 pub const Device = enum {
     xbox,
     ps4,
@@ -34,12 +34,12 @@ extern fn glfwJoystickIsGamepad(jid: c_int) c_int;
 /// raylib's MAX_GAMEPADS, the slots it polls.
 const PADS: usize = 4;
 
-/// One raylib calls available but GLFW has no mapping for (a wheel, a flight stick, an unknown pad) reads nothing, and is passed over.
+/// Ignore available joysticks without a GLFW gamepad mapping.
 fn mapped(at: i32) bool {
     return rl.isGamepadAvailable(at) and glfwJoystickIsGamepad(at) != 0;
 }
 
-/// The pad whose button or trigger was pressed last drives; one that has not keeps driving while it is plugged in, else the first mapped.
+/// A newly pressed mapped pad takes over; otherwise retain the connected pad or choose the first.
 fn choosePad(was: ?i32, focused: bool, before: *const [PADS]Triggers, now: *const [PADS]Triggers) ?i32 {
     for (0..PADS) |i| {
         const at: i32 = @intCast(i);
@@ -65,7 +65,7 @@ const USB_ID = SONY.len;
 const VENDOR_AT = 8;
 const PRODUCT_AT = 16;
 
-/// GLFW's GUID spells the USB vendor, then the product, each byte-swapped in hex, from its ninth and seventeenth digit; XInput's spells neither, and reads as Xbox.
+/// GLFW GUID vendor/product bytes are swapped at offsets 8/16; XInput omits them and defaults to Xbox.
 fn padOf(guid: []const u8) Device {
     if (guid.len < PRODUCT_AT + USB_ID or !std.mem.eql(u8, guid[VENDOR_AT..][0..USB_ID], SONY)) return .xbox;
     for (PS5_PRODUCTS) |p| {
@@ -74,7 +74,7 @@ fn padOf(guid: []const u8) Device {
     return .ps4;
 }
 
-/// SDL_GameControllerDB (`assets/gamecontrollerdb-LICENSE`), newer than the copy GLFW ships; then SDL's own override, then a database beside the exe, each taking over the pads it names.
+/// SDL_GameControllerDB (see assets/gamecontrollerdb-LICENSE); environment and adjacent file override it.
 const MAPPINGS_FILE = "gamecontrollerdb.txt";
 const MAPPINGS = @embedFile(MAPPINGS_FILE);
 const MAPPINGS_ENV = "SDL_GAMECONTROLLERCONFIG";
@@ -120,7 +120,7 @@ const Trigger = enum {
     }
 };
 
-/// Shares of a trigger's travel past which it presses and under which it lets go: raylib's one line at 55% chatters under a resting finger, and a slot on RT would fire. An unmapped trigger reads half, between the two.
+/// Hysteresis avoids raylib's 55% trigger chatter; an unmapped trigger rests between the thresholds.
 const TRIGGER_ON: f32 = 0.6;
 const TRIGGER_OFF: f32 = 0.4;
 
@@ -144,7 +144,6 @@ fn rose(was: Triggers, now: Triggers) bool {
     return false;
 }
 
-/// A button or a latched trigger pressed on pad `at` this frame.
 fn struck(at: i32, before: *const [PADS]Triggers, now: *const [PADS]Triggers) bool {
     const i: usize = @intCast(at);
     return padPressed(at) or rose(before[i], now[i]);
@@ -154,7 +153,6 @@ fn latch(travel: f32, was: bool) bool {
     return travel >= if (was) TRIGGER_OFF else TRIGGER_ON;
 }
 
-/// The letter keys that walk up, left, down and right, as "WASD" reads.
 fn letters(comptime walks: []const Walk) [:0]const u8 {
     var out: []const u8 = "";
     for ([_]mathx.Dir{ .n, .w, .s, .e }) |dir| {
@@ -372,7 +370,6 @@ pub const Stepper = struct {
     }
 };
 
-/// The stick walks once pushed past `FIRE` and holds the walk down to `REARM`; short of that the d-pad and keys walk, the stick resting off centre or not.
 fn stickWalks(defl: f32, was: bool) bool {
     return defl >= Stepper.FIRE or (was and defl >= Stepper.REARM);
 }
@@ -422,7 +419,7 @@ pub const State = struct {
     walk: ?mathx.Dir = null,
     lean: bool = false,
     step: Stepper = .{},
-    /// The stick holds the walk, from passing `FIRE` until under `REARM`: the d-pad and keys walk only when it does not.
+    /// A latched stick takes priority over digital movement.
     stick: bool = false,
     /// Set before each `update`, which clears it: typing keys then type, and press no button.
     typing: bool = false,
@@ -434,9 +431,9 @@ pub const State = struct {
     sets: bool = false,
     /// Set before each `update`: the slot Ctrl holds, which the number keys skip.
     modifier: ?Button = null,
-    /// The pad read (`choosePad`), which names the captions though the window has lost focus and nothing is read.
+    /// Retained for captions while unfocused.
     pad_at: ?i32 = null,
-    /// Each pad's latched triggers, read though the window has lost focus so a pull held across it is not pressed again.
+    /// Poll even unfocused so a held pull does not fire again on focus.
     triggers: [PADS]Triggers = @splat(.initFill(false)),
     /// Where the mouse rests on the window, when focused and over it.
     pointer: ?mathx.P = null,
@@ -580,7 +577,6 @@ pub const State = struct {
     }
 };
 
-/// Its place among the slots the number keys reach, which skip the modifier's.
 fn numberOf(modifier: ?Button, b: Button) ?usize {
     var n: usize = 0;
     for (SLOT_ORDER) |s| {
@@ -715,10 +711,8 @@ pub const Desk = struct {
     pub const ENTER_CAPTION = keyName(ENTER_KEYS[0]);
     pub const FULLSCREEN_CAPTION = ALT ++ ENTER_CAPTION;
 
-    /// The fields `update` sets from their `<FIELD>_KEY` pressed alone, and pressed with Ctrl.
     const BARE = [_][]const u8{ "play", "play_here", "graph", "go", "rename", "back", "smaller", "bigger", "zoom_in", "zoom_out", "fit", "help", "objects", "reroll", "delete" };
     const WITH_CTRL = [_][]const u8{ "open", "new", "copy", "cut", "paste" };
-    /// Ctrl keys `update` reads by hand, Shift telling them apart.
     const SHIFTED = [_][]const u8{ "save", "undo", "redo" };
 
     fn keyOf(comptime field: []const u8) rl.KeyboardKey {
@@ -922,7 +916,6 @@ fn anyHit(keys: []const rl.KeyboardKey) bool {
     return false;
 }
 
-/// A cardinal key held with a numpad diagonal sums past a step; each axis is its sign.
 fn stepOf(p: mathx.P) ?mathx.P {
     return if (p.x == 0 and p.y == 0) null else p.sign();
 }

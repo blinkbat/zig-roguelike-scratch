@@ -5,11 +5,9 @@ const climate = @import("../world/climate.zig");
 const grid = @import("../world/grid.zig");
 const look = @import("look.zig");
 
-// What falls from a node's sky, drawn over the world as it lies: drops keep their place on the ground as the camera
-// moves, wrapping round the screen, and show only where the archer sees. Nothing in the simulation reads it.
+// Cosmetic, map-anchored weather shows only in visible cells.
 
-/// A weather's drops on `AREA` pixels of screen, how fast they fall and drift (px a second, at one pixel a sprite
-/// pixel), each streak's length and width, its alpha in full daylight, and how long its splash rings.
+/// Drops per `AREA`; speed/drift in sprite pixels per second, lengths/widths in sprite pixels; alpha at full day.
 const Fall = struct { drops: u32, speed: f32, drift: f32, len: f32, width: f32, alpha: f32, splash_s: f32, ring: f32 };
 
 const FALLS = std.EnumArray(climate.Weather, ?Fall).init(.{
@@ -82,7 +80,7 @@ pub const Weather = struct {
         }
     }
 
-    /// Partway down its fall when the rain starts, so it does not arrive as one sheet; else at the top of it.
+    /// Start partway down so fresh rain does not arrive as one sheet.
     fn fresh(self: *Weather, starting: bool) Drop {
         const x = self.rng.unit() * self.w;
         const land = self.rng.unit() * self.h;

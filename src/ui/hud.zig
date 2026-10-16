@@ -201,7 +201,7 @@ pub fn focus(box: rl.Rectangle, round: bool) void {
     rl.drawRectangleLinesEx(look.grown(box, FOCUS_GROW), FOCUS_W, look.RETICLE);
 }
 
-/// `body` broken at spaces into lines no wider than `w` in `size`; each line's text is nul-ended in `buf`.
+/// Each line in `buf` is nul-terminated; wrapping breaks only at spaces.
 fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *[TIP_LINES_MAX][TIP_COLS_MAX + 1]u8, lines: *[TIP_LINES_MAX][:0]const u8) usize {
     var n: usize = 0;
     var words = std.mem.tokenizeScalar(u8, body, ' ');

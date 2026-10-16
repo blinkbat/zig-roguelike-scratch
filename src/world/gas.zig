@@ -30,7 +30,7 @@ pub fn turn(lv: *grid.Level, rng: *mathx.Rng) void {
     for (0..PASSES) |_| spread(lv, rng);
 }
 
-/// What a gassed-up cell cannot share evenly goes a unit at a time to any of its cells at random, so spreading loses none.
+/// Randomly distribute remainders so spreading conserves gas.
 fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
     const box = reach(lv) orelse return;
     var next = [_]u32{0} ** grid.CELLS;

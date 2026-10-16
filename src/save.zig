@@ -33,7 +33,7 @@ const UNSAVED = .{
     "travel",   "st",          "binds",      "aim_by",         "aim_act",   "aim_set",    "mark",         "cam",        "screen",     "framebuffer",
     "shot",     "glide",       "turning",    "order",          "order_n",   "busy",       "pending",      "lead",       "owed",       "ran",
     "pictured", "seq",         "split_from", "fx",             "vignette",  "mini",       "sprites",      "face",       "light",      "cloud",
-    "flowed",   "flow",        "queue",      "graphics_ready", "art_ready", "rain",       "flasks_shown", "mana_held",  "inspecting",
+    "flowed",   "flow",        "queue",      "graphics_ready", "art_ready", "rain",       "flasks_shown", "mana_held",  "inspecting", "displaced",
 };
 
 comptime {
@@ -95,7 +95,6 @@ pub const Unreadable = enum {
 
 pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
 
-/// What `HEAD_FIELDS` write, in their order.
 const HEAD_TYPES = [_]type{ Seed, World, Node, Visited, Visit };
 comptime {
     std.debug.assert(HEAD_TYPES.len == HEAD_FIELDS.len);
@@ -103,7 +102,7 @@ comptime {
 const FINGERPRINT = store.fingerprint([_]type{ Summary, HEAD_TYPES[0], bool } ++ HEAD_TYPES[1..].* ++ [_]type{Tail});
 const Print = @TypeOf(FINGERPRINT);
 const HEAD = MAGIC.len + @sizeOf(Print);
-/// The payload's hash ends the file, so a file damaged or cut short is refused before any of it is believed.
+/// A trailing payload hash rejects damaged or truncated files before loading.
 const SUM = @sizeOf(u64);
 
 pub const Error = error{ NotASave, OtherBuild, Short, Damaged };
@@ -157,7 +156,6 @@ fn header(bytes: *[]const u8) Error!void {
     bytes.* = b;
 }
 
-/// The bytes between the header and the sum, once the sum vouches for them.
 fn payload(bytes: []const u8) Error![]const u8 {
     var b = bytes;
     try header(&b);
@@ -171,6 +169,12 @@ fn payload(bytes: []const u8) Error![]const u8 {
 }
 
 fn peek(bytes: []const u8) Error!Summary {
+    return (try inspect(bytes)).summary;
+}
+
+const Contents = struct { summary: Summary, seed: Seed, has_world: bool, body: []const u8 };
+
+fn inspect(bytes: []const u8) Error!Contents {
     var b = try payload(bytes);
     var s: Summary = undefined;
     if (!store.take(&b, &s)) return error.Short;
@@ -178,26 +182,28 @@ fn peek(bytes: []const u8) Error!Summary {
     if (s.node) |n| {
         if (n >= atlas.MAX_NODES) return error.Damaged;
     }
-    return s;
-}
-
-/// All of it is measured before any of it reaches `g`, so a file that does not read leaves the game as it was.
-fn read(bytes: []const u8, g: *game.Game, world: *World) Error!void {
-    var b = try payload(bytes);
-    var s: Summary = undefined;
     var seed: Seed = undefined;
-    var has_world: bool = undefined;
-    if (!store.take(&b, &s) or !store.take(&b, &seed) or !store.take(&b, &has_world)) return error.Short;
+    var world_flag: u8 = undefined;
+    comptime std.debug.assert(@sizeOf(bool) == @sizeOf(u8));
+    if (!store.take(&b, &seed) or !store.take(&b, &world_flag)) return error.Short;
+    if (world_flag > 1) return error.Damaged;
+    const has_world = world_flag != 0;
     const at_visited = @as(usize, if (has_world) @sizeOf(World) else 0) + @sizeOf(Node);
     if (b.len < at_visited + @sizeOf(Visited)) return error.Short;
     var visited: Visited = undefined;
     var vb = b[at_visited..];
     _ = store.take(&vb, &visited);
     if (b.len != at_visited + @sizeOf(Visited) + visited.count() * @sizeOf(Visit) + TAIL) return error.Short;
+    return .{ .summary = s, .seed = seed, .has_world = has_world, .body = b };
+}
 
-    if (has_world) _ = store.take(&b, world);
-    g.world = if (has_world) world else null;
-    g.seed = seed;
+/// All of it is measured before any of it reaches `g`, so a file that does not read leaves the game as it was.
+fn read(bytes: []const u8, g: *game.Game, world: *World) Error!void {
+    const c = try inspect(bytes);
+    var b = c.body;
+    if (c.has_world) _ = store.take(&b, world);
+    g.world = if (c.has_world) world else null;
+    g.seed = c.seed;
     _ = store.take(&b, &g.node);
     _ = store.take(&b, &g.visited);
     var it = g.visited.iterator(.{});
@@ -262,7 +268,7 @@ pub const Autosave = struct {
     slot: usize,
     bytes: std.ArrayList(u8),
     since: f32 = GAP_S,
-    /// A write takes milliseconds of disk, so it is done off the frame; the run is copied into `bytes` first.
+    /// Copy the run on the frame, then write the snapshot off-thread.
     writer: ?std.Thread = null,
     finished: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
     failed: ?anyerror = null,
@@ -491,4 +497,36 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     buf.shrinkRetainingCapacity(buf.items.len - SUM);
     seal(&buf);
     try std.testing.expectError(error.Damaged, peek(buf.items));
+}
+
+test "a listed save must have the complete run that loading requires" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.begin(g, 1);
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    defer buf.deinit();
+    try write(g, &buf);
+    const full = try std.testing.allocator.dupe(u8, buf.items);
+    defer std.testing.allocator.free(full);
+    const world = try std.testing.allocator.create(World);
+    defer std.testing.allocator.destroy(world);
+    const hp = g.archer().?.hp;
+    const seed = g.seed;
+    const cuts = [_]usize{ HEAD + @sizeOf(Summary), HEAD + @sizeOf(Summary) + @sizeOf(Seed) + @sizeOf(bool), full.len - 1 };
+    for (cuts) |cut| {
+        buf.clearRetainingCapacity();
+        try buf.appendSlice(full[0..cut]);
+        seal(&buf);
+        try std.testing.expectError(error.Short, peek(buf.items));
+        try std.testing.expectError(error.Short, read(buf.items, g, world));
+        try std.testing.expectEqual(hp, g.archer().?.hp);
+        try std.testing.expectEqual(seed, g.seed);
+    }
+    buf.clearRetainingCapacity();
+    try buf.appendSlice(full);
+    buf.items[HEAD + @sizeOf(Summary) + @sizeOf(Seed)] = 2;
+    seal(&buf);
+    try std.testing.expectError(error.Damaged, peek(buf.items));
+    try std.testing.expectError(error.Damaged, read(buf.items, g, world));
+    std.debug.print("{d} checksummed incomplete saves and an invalid world flag refused before loading\n", .{cuts.len});
 }

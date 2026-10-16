@@ -30,7 +30,6 @@ pub const Cloud = struct {
     tint: [grid.CELLS]f32,
     px: [TEXELS]rl.Color,
     stale: bool,
-    /// The cells last baked into `px`.
     baked: grid.Box,
     /// Seconds, for the drift.
     t: mathx.Seconds,
@@ -149,7 +148,6 @@ comptime {
 const OCTAVES: u32 = 3;
 /// Each of `fbm`'s octaves weighs this much of the last, the first this much of one.
 const FBM_GAIN: f32 = 0.5;
-/// The most `fbm`'s octaves sum to.
 const FBM_MAX: f32 = FBM_GAIN * (1 - std.math.pow(f32, FBM_GAIN, OCTAVES)) / (1 - FBM_GAIN);
 /// The softened density's share from its own texel; the four `SOFT` round it split the rest.
 const CENTRE_W: f32 = 0.4;

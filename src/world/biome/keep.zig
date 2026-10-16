@@ -111,7 +111,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     if (keep.lo.x - well.x >= room.x and clearOfTowers(curtain, p.towers, well, setpiece.size(art))) setpiece.stamp(lv, well, art);
 }
 
-/// The cell of a box at `at` nearest each corner tower lies past its wall and `WELL_GAP` more.
 fn clearOfTowers(curtain: grid.Box, towers: u8, at: P, size: P) bool {
     if (towers == 0) return true;
     const r = towerReach(towers) + WELL_GAP;
@@ -122,7 +121,6 @@ fn clearOfTowers(curtain: grid.Box, towers: u8, at: P, size: P) bool {
     return true;
 }
 
-/// The curtain wall's outside, in the middle of the map.
 fn curtainOf(p: Params) grid.Box {
     return grid.Box.centred(p.size[0], p.size[1]);
 }

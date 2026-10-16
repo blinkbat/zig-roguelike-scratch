@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
-# A ground sheet's labels layer: the header as sheet_title.py draws it, each cell's mask, and the rules beside the block.
 out, title = sys.argv[1], sys.argv[2]
 order = [int(n) for n in re.findall(r'\d+', (Path(__file__).parent / 'ground_corners.lua').read_text().split('return', 1)[1])]
 assert sorted(order) == list(range(16))
