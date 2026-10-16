@@ -32,6 +32,6 @@ test "bleeding begins next turn, lasts five ticks, doubles on a turn moved and r
     var moving: i32 = 0;
     for (0..TURNS) |_| moving += b.tick(true).?;
     std.debug.print("bleeding: {d} damage over {d} turns standing, {d} moving every turn\n", .{ still, TURNS, moving });
-    try std.testing.expectEqual(@as(i32, 5), still);
-    try std.testing.expectEqual(@as(i32, 10), moving);
+    try std.testing.expectEqual(STILL * TURNS, still);
+    try std.testing.expectEqual(MOVING * TURNS, moving);
 }

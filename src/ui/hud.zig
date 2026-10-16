@@ -96,9 +96,12 @@ fn shadow(x: i32, y: i32, width: i32, height: i32) void {
     rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, height + PLATE_SHADOW_GROW, look.fade(rl.Color.black, PLATE_SHADOW_A));
 }
 
+pub const LIFE = "Life";
+pub const MANA = "Mana";
+
 pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32) void {
-    orb(face, layout.life, "Life", hp, hp_max, LIFE_CORE, LIFE_EDGE);
-    orb(face, layout.mana, "Mana", mana, mana_max, MANA_CORE, MANA_EDGE);
+    orb(face, layout.life, LIFE, hp, hp_max, LIFE_CORE, LIFE_EDGE);
+    orb(face, layout.mana, MANA, mana, mana_max, MANA_CORE, MANA_EDGE);
 }
 
 fn fillHeight(value: i32, max: i32) i32 {
@@ -134,8 +137,11 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, ma
     face.textMid(label, x, y - ORB_R - LABEL_RISE, font.BODY, look.TEXT);
 }
 
+/// Room for every status shown at once.
+pub const Shown = [std.enums.values(fx.Status).len]fx.Status;
+
 /// The statuses shown, in the order they are drawn.
-pub fn shownStatuses(status: std.EnumArray(fx.Status, u8), out: *[std.enums.values(fx.Status).len]fx.Status) []const fx.Status {
+pub fn shownStatuses(status: std.EnumArray(fx.Status, u8), out: *Shown) []const fx.Status {
     var n: usize = 0;
     for (std.enums.values(fx.Status)) |s| {
         if (status.get(s) == 0) continue;
@@ -157,7 +163,7 @@ pub fn orbBox(centre: mathx.P) rl.Rectangle {
 }
 
 pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.Face, status: std.EnumArray(fx.Status, u8)) void {
-    var buf_shown: [std.enums.values(fx.Status).len]fx.Status = undefined;
+    var buf_shown: Shown = undefined;
     const shown = shownStatuses(status, &buf_shown);
     for (shown, 0..) |s, k| {
         const turns = status.get(s);
@@ -192,7 +198,7 @@ pub fn focus(box: rl.Rectangle, round: bool) void {
         rl.drawRing(.{ .x = box.x + box.width / 2, .y = box.y + box.height / 2 }, r - FOCUS_W, r, 0, 360, 64, look.RETICLE);
         return;
     }
-    rl.drawRectangleLinesEx(.{ .x = box.x - FOCUS_GROW, .y = box.y - FOCUS_GROW, .width = box.width + 2 * FOCUS_GROW, .height = box.height + 2 * FOCUS_GROW }, FOCUS_W, look.RETICLE);
+    rl.drawRectangleLinesEx(look.grown(box, FOCUS_GROW), FOCUS_W, look.RETICLE);
 }
 
 /// `body` broken at spaces into lines no wider than `w` in `size`; each line's text is nul-ended in `buf`.

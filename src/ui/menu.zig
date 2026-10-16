@@ -142,6 +142,18 @@ pub fn capital(comptime s: [:0]const u8) [:0]const u8 {
     return &out;
 }
 
+/// "Burning Arrow" from "burning_arrow"; call it `comptime`.
+pub fn titled(comptime s: [:0]const u8) [:0]const u8 {
+    comptime var c: [s.len:0]u8 = s[0..s.len].*;
+    for (&c, 0..) |*ch, i| {
+        if (ch.* == '_') {
+            ch.* = ' ';
+        } else if (i == 0 or s[i - 1] == '_') ch.* = std.ascii.toUpper(ch.*);
+    }
+    const out = c;
+    return &out;
+}
+
 pub fn named(e: anytype) [:0]const u8 {
     return switch (e) {
         inline else => |t| comptime capital(@tagName(t)),
@@ -164,6 +176,11 @@ test "a long menu shows the rows that fit, the one it is on among them" {
     try std.testing.expect(w.len < 40 and w.from + w.len == 40);
     try std.testing.expectEqual(@as(usize, 0), window(900, 40, 0).from);
     try std.testing.expectEqual(@as(usize, 3), window(900, 3, 2).len);
+}
+
+test "a tag is titled word by word" {
+    try std.testing.expectEqualStrings("Chain Lightning", comptime titled("chain_lightning"));
+    try std.testing.expectEqualStrings("Fireball", comptime titled("fireball"));
 }
 
 test "the menu walks round its rows and picks the one it is on" {

@@ -14,9 +14,7 @@ pub const VERB = "shield-bashes";
 pub const TAKES = clock.STUNNED;
 pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} damage to an adjacent foe and knocks it back a tile. {d}% chance to stun. {d} mana, {d}-turn cooldown.", .{ DMG_LO, DMG_HI, CHANCE, COST, COOLDOWN });
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(DMG_LO, DMG_HI);
-}
+pub const roll = mathx.Rng.rolls(DMG_LO, DMG_HI);
 
 pub fn procs(rng: *mathx.Rng, _: i16) bool {
     return rng.percent(CHANCE);

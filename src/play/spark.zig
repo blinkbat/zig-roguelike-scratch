@@ -13,9 +13,7 @@ pub const TAKES = clock.STUNNED;
 pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} lightning damage to a target in sight. {d}% chance to stun. {d} mana.", .{ LIGHTNING_LO, LIGHTNING_HI, CHANCE, COST });
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(LIGHTNING_LO, LIGHTNING_HI);
-}
+pub const roll = mathx.Rng.rolls(LIGHTNING_LO, LIGHTNING_HI);
 
 pub fn procs(rng: *mathx.Rng, _: i16) bool {
     return rng.percent(CHANCE);

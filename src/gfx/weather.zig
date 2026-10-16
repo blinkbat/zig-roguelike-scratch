@@ -32,11 +32,10 @@ const DROPS_MAX: usize = blk: {
 /// Of the screen's height, the least and the most a drop falls before it lands.
 const FALL_LEAST: f32 = 0.2;
 const FALL_MOST: f32 = 0.6;
-const INK = rl.Color{ .r = 196, .g = 208, .b = 226, .a = 255 };
+const INK = look.rgb(0xc4d0e2);
 /// Drops are drawn no fainter than this share of their daylight alpha, so rain still shows at night.
 const DIM_FLOOR: f32 = 0.25;
 const SEED: u64 = 0x5A1_2A17;
-
 
 const Drop = struct {
     /// Screen pixels from the wrapped origin, where it is now.
@@ -115,7 +114,6 @@ pub const Weather = struct {
         }
     }
 };
-
 
 test "a drizzle keeps its drops falling and landing, none for a clear sky, and as many for a bigger screen's area" {
     var w = Weather{};

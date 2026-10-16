@@ -76,7 +76,7 @@ pub const Assets = struct {
         for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
             const p = grid.Level.of(i);
             need.barrel = need.barrel or barrel;
-            if (ground.of(t) == null) {
+            if (standsOver(t)) {
                 if (cutAt(lv, p)) |c| need.add(c);
             }
             const g = ground.bedAt(lv, p) orelse continue;
@@ -137,7 +137,7 @@ fn optionalPng(comptime name: []const u8) ?[]const u8 {
     return if (comptime listed(name)) @embedFile(name) else null;
 }
 
-/// Each ground's 4x4 sheet of dual-grid pieces; a ground without one draws cell by cell as before.
+/// Each ground's 4x4 sheet of dual-grid pieces; a ground without one draws cell by cell.
 const GROUND_PNGS = blk: {
     var pngs = std.EnumArray(ground.Ground, ?[]const u8).initFill(null);
     for (std.enums.values(ground.Ground)) |g| pngs.set(g, optionalPng(g.png()));
@@ -231,7 +231,7 @@ pub const Sprites = struct {
                 if (sheet) {
                     const piece = self.groundPiece(gr, here.corners.mask(gr)) orelse continue;
                     const at = cellAt(origin, p, px);
-                    rl.drawTexturePro(piece.tex, piece.src, .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px }, .{ .x = 0, .y = 0 }, 0, LIT);
+                    blit(piece.tex, piece.src, .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px }, LIT);
                     continue;
                 }
                 const under_ = here.corners.under(gr, sheeted);
@@ -268,7 +268,7 @@ pub const Sprites = struct {
         if (self.tiles.getPtrConst(t).*) |tex| {
             const w: f32 = @floatFromInt(tex.width);
             const h: f32 = @floatFromInt(tex.height);
-            rl.drawTexturePro(tex, .{ .x = uv[0] * w, .y = uv[1] * h, .width = span * w, .height = span * h }, dest, .{ .x = 0, .y = 0 }, 0, LIT);
+            blit(tex, .{ .x = uv[0] * w, .y = uv[1] * h, .width = span * w, .height = span * h }, dest, LIT);
         } else if (tileBg(t)) |bg| rl.drawRectangleRec(dest, bg);
     }
 
@@ -293,7 +293,6 @@ pub const Sprites = struct {
     pub fn tileAt(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
         return self.cut(cutAt(lv, p) orelse return null);
     }
-
 
     pub fn tileOf(self: *const Sprites, t: grid.Tile, shape: ?grid.WallShape) ?rl.Texture2D {
         return self.cut(cutOf(t, shape) orelse return null);
@@ -529,7 +528,17 @@ pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
 }
 
 pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
-    rl.drawTexturePro(t, whole(t), dest, .{ .x = 0, .y = 0 }, 0, tint);
+    blit(t, whole(t), dest, tint);
+}
+
+/// `r` grown `by` pixels on every side.
+pub fn grown(r: rl.Rectangle, by: f32) rl.Rectangle {
+    return .{ .x = r.x - by, .y = r.y - by, .width = r.width + 2 * by, .height = r.height + 2 * by };
+}
+
+/// `src` of `t` drawn over `dest`, unturned.
+pub fn blit(t: rl.Texture2D, src: rl.Rectangle, dest: rl.Rectangle, tint: rl.Color) void {
+    rl.drawTexturePro(t, src, dest, .{ .x = 0, .y = 0 }, 0, tint);
 }
 
 pub fn overFloor(t: rl.Texture2D, ox: i32, oy: i32, cell: i32) void {
@@ -603,12 +612,18 @@ fn uniforms(comptime T: type, s: rl.Shader) T {
     return u;
 }
 
-/// `fs` loaded with `uniforms` found in it; a field it declares no uniform for is a compile error.
+/// `fs` loaded with `uniforms` found in it; a field it declares no uniform for, or a uniform with no field, is a
+/// compile error.
 pub fn program(comptime T: type, comptime fs: [:0]const u8) ?T {
     comptime {
         @setEvalBranchQuota(100_000);
         for (std.meta.fields(T)) |f| {
             if (!std.mem.eql(u8, f.name, "shader") and !declares(fs, f.name)) @compileError("no uniform " ++ f.name ++ " in the shader for " ++ @typeName(T));
+        }
+        var lines = std.mem.splitScalar(u8, fs, '\n');
+        while (lines.next()) |l| {
+            const name = uniformOf(l) orelse continue;
+            if (!std.mem.eql(u8, name, "texture0") and !@hasField(T, name)) @compileError("uniform " ++ name ++ " has no field in " ++ @typeName(T));
         }
     }
     return uniforms(T, shader(fs) orelse return null);
@@ -638,14 +653,19 @@ fn uniformType(comptime T: type) rl.ShaderUniformDataType {
 fn declares(comptime fs: []const u8, comptime name: []const u8) bool {
     var lines = std.mem.splitScalar(u8, fs, '\n');
     while (lines.next()) |l| {
-        const line = std.mem.trim(u8, l, " \t\r");
-        if (!std.mem.startsWith(u8, line, "uniform ")) continue;
-        const end = std.mem.indexOfAny(u8, line, "[;") orelse continue;
-        const head = std.mem.trimRight(u8, line[0..end], " ");
-        const at = std.mem.lastIndexOfScalar(u8, head, ' ') orelse continue;
-        if (std.mem.eql(u8, head[at + 1 ..], name)) return true;
+        if (std.mem.eql(u8, uniformOf(l) orelse continue, name)) return true;
     }
     return false;
+}
+
+/// The name a `uniform` line declares.
+fn uniformOf(comptime l: []const u8) ?[]const u8 {
+    const line = std.mem.trim(u8, l, " \t\r");
+    if (!std.mem.startsWith(u8, line, "uniform ")) return null;
+    const end = std.mem.indexOfAny(u8, line, "[;") orelse return null;
+    const head = std.mem.trimRight(u8, line[0..end], " ");
+    const at = std.mem.lastIndexOfScalar(u8, head, ' ') orelse return null;
+    return head[at + 1 ..];
 }
 
 fn unloadEach(held: []?rl.Texture2D) void {
@@ -884,7 +904,7 @@ pub fn drawDirection(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) v
     const unit: f32 = if (d.diagonal()) std.math.sqrt1_2 else 1;
     const dx = @as(f32, @floatFromInt(delta.x)) * unit;
     const dy = @as(f32, @floatFromInt(delta.y)) * unit;
-    const scale = @as(f32, @floatFromInt(size)) / 32;
+    const scale = @as(f32, @floatFromInt(size)) / SKILL_GRID;
     const x: f32 = @floatFromInt(cx);
     const y: f32 = @floatFromInt(cy);
     const lines = [_][4]f32{ .{ -12, 0, 12, 0 }, .{ 4, -8, 12, 0 }, .{ 12, 0, 4, 8 } };
@@ -897,9 +917,7 @@ pub fn drawDirection(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) v
             .x = x + (dx * line[2] - dy * line[3]) * scale,
             .y = y + (dy * line[2] + dx * line[3]) * scale,
         };
-        rl.drawLineEx(from, to, 2 * scale, col);
-        rl.drawCircleV(from, scale, col);
-        rl.drawCircleV(to, scale, col);
+        stroke(from, to, scale, col);
     }
 }
 
@@ -1103,7 +1121,7 @@ pub const SKILL_PX: i32 = 40;
 pub fn drawSkill(sprites: *const Sprites, a: skillbar.Act, x: i32, y: i32, alpha: f32) void {
     const ink = fade(rl.Color.white, alpha);
     const t = sprites.skills orelse return inkSkill(a, x, y, ink);
-    rl.drawTexturePro(t, rect(skillX(a), 0, SKILL_PX, SKILL_PX), rect(x, y, SKILL_PX, SKILL_PX), .{ .x = 0, .y = 0 }, 0, ink);
+    blit(t, rect(skillX(a), 0, SKILL_PX, SKILL_PX), rect(x, y, SKILL_PX, SKILL_PX), ink);
 }
 
 fn skillX(a: skillbar.Act) i32 {
@@ -1123,7 +1141,7 @@ fn skillIcons() ?rl.Texture2D {
     return Sprites.toTexture(img);
 }
 
-/// The grid `skillLines` is drawn on.
+/// The grid `skillLines` and `drawDirection` are drawn on.
 const SKILL_GRID: f32 = 32;
 
 fn inkSkill(a: skillbar.Act, x: i32, y: i32, ink: rl.Color) void {
@@ -1133,16 +1151,21 @@ fn inkSkill(a: skillbar.Act, x: i32, y: i32, ink: rl.Color) void {
     for (skillLines(a)) |line| {
         const from = rl.Vector2{ .x = ox + line[0] * scale, .y = oy + line[1] * scale };
         const to = rl.Vector2{ .x = ox + line[2] * scale, .y = oy + line[3] * scale };
-        rl.drawLineEx(from, to, 2 * scale, ink);
-        rl.drawCircleV(from, scale, ink);
-        rl.drawCircleV(to, scale, ink);
+        stroke(from, to, scale, ink);
     }
+}
+
+/// A round-capped pen stroke, two grid units wide.
+fn stroke(from: rl.Vector2, to: rl.Vector2, scale: f32, col: rl.Color) void {
+    rl.drawLineEx(from, to, 2 * scale, col);
+    rl.drawCircleV(from, scale, col);
+    rl.drawCircleV(to, scale, col);
 }
 
 /// A button's icon as the device last pressed draws it: a face button a disc with its letter, or PlayStation's
 /// shape; a shoulder or trigger a pill with its name; View and Menu a pill with their marks; a key a cap with its legend.
 pub const Prompt = union(enum) {
-    face: struct { button: input.Button, sony: bool },
+    face: struct { button: FaceButton, sony: bool },
     pill: [:0]const u8,
     view,
     menu,
@@ -1151,7 +1174,7 @@ pub const Prompt = union(enum) {
     pub fn of(st: *const input.State, b: input.Button) Prompt {
         if (!st.device.pad()) return .{ .key = st.slotCaption(b) };
         return switch (b) {
-            .a, .b, .x, .y => .{ .face = .{ .button = b, .sony = st.device.playstation() } },
+            inline .a, .b, .x, .y => |f| .{ .face = .{ .button = @field(FaceButton, @tagName(f)), .sony = st.device.playstation() } },
             .lb, .rb, .rt, .inspect => .{ .pill = st.caption(b) },
             .view => .view,
             .pause => .menu,
@@ -1209,18 +1232,20 @@ const PROMPT_EDGE = rgb(0x6a604e);
 const PROMPT_LIP = rgb(0x0c0a08);
 const PROMPT_INK = rgb(0xe2d2b4);
 
+/// The pad's four face buttons, named as `input.Button` names them.
+const FaceButton = enum { a, b, x, y };
+
 /// Each maker's colours for its face buttons, Xbox's by letter and PlayStation's by shape.
-fn faceInk(b: input.Button, sony: bool) rl.Color {
+fn faceInk(b: FaceButton, sony: bool) rl.Color {
     return switch (b) {
         .a => if (sony) rgb(0x7cb2e8) else rgb(0x5eb242),
         .b => if (sony) rgb(0xea6060) else rgb(0xd63e34),
         .x => if (sony) rgb(0xd686c4) else rgb(0x2e78cd),
         .y => if (sony) rgb(0x40c4a0) else rgb(0xeabe3a),
-        else => unreachable,
     };
 }
 
-fn faceButton(face: *const font.Face, b: input.Button, sony: bool, cx: i32, cy: i32, h: i32, alpha: f32) void {
+fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i32, h: i32, alpha: f32) void {
     const r: f32 = @as(f32, @floatFromInt(h)) / 2;
     const c = rl.Vector2{ .x = @floatFromInt(cx), .y = @floatFromInt(cy) };
     const ink = faceInk(b, sony);
@@ -1250,7 +1275,6 @@ fn faceButton(face: *const font.Face, b: input.Button, sony: bool, cx: i32, cy: 
             rl.drawLineEx(left, right, line, col);
             rl.drawLineEx(right, top, line, col);
         },
-        else => unreachable,
     }
 }
 
@@ -1404,7 +1428,7 @@ test "map assets include unseen shapes, ground under props and future slime form
 test "a slot's prompt is its maker's face button or shoulder on a pad, and its key's cap on the keyboard" {
     _ = Prompt.draw;
     var st = input.State{ .device = .xbox };
-    try std.testing.expectEqual(input.Button.a, Prompt.of(&st, .a).face.button);
+    try std.testing.expectEqual(FaceButton.a, Prompt.of(&st, .a).face.button);
     try std.testing.expect(!Prompt.of(&st, .y).face.sony);
     try std.testing.expectEqualStrings("RB", Prompt.of(&st, .rb).pill);
     try std.testing.expect(Prompt.of(&st, .view) == .view);
@@ -1417,7 +1441,10 @@ test "a slot's prompt is its maker's face button or shoulder on a pad, and its k
     for (input.SLOT_ORDER) |b| {
         for ([_]input.Device{ .xbox, .ps4 }) |d| {
             st.device = d;
-            if (Prompt.of(&st, b) == .face) try std.testing.expect(faceInk(b, d.playstation()).a == 255);
+            switch (Prompt.of(&st, b)) {
+                .face => |f| try std.testing.expect(faceInk(f.button, d.playstation()).a == 255),
+                else => {},
+            }
         }
     }
 }

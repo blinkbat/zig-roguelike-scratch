@@ -47,25 +47,8 @@ pub const Act = enum {
 
     pub fn name(a: Act) [:0]const u8 {
         return switch (a) {
-            .shoot => "Shoot",
-            .wait => "Wait",
             .secondary => "Activate " ++ comptime Set.secondary.name(),
-            .juke => "Juke",
-            .burning_arrow => "Burning Arrow",
-            .glacial_shot => "Glacial Shot",
-            .spark => "Spark",
-            .blink => "Blink",
-            .shield_bash => "Shield Bash",
-            .cleave => "Cleave",
-            .pinning_shot => "Pinning Shot",
-            .barbed_arrow => "Barbed Arrow",
-            .frost_nova => "Frost Nova",
-            .fireball => "Fireball",
-            .chain_lightning => "Chain Lightning",
-            .mana_shield => "Mana Shield",
-            .charge => "Charge",
-            .life_flask => "Life Flask",
-            .mana_flask => "Mana Flask",
+            inline else => |t| comptime menu.titled(@tagName(t)),
         };
     }
 
@@ -73,7 +56,7 @@ pub const Act = enum {
         return switch (a) {
             .shoot => "Aim an arrow at a target in range; press again to loose it.",
             .wait => "Let a turn pass.",
-            .secondary => "Hold to use Skills in your Secondary Skill Set. Takes up this slot in both Skill Sets.",
+            .secondary => "Hold to use Skills in your " ++ comptime Set.secondary.name() ++ ". Takes up this slot in both Skill Sets.",
             inline else => |t| comptime module(t).?.DESCRIPTION,
         };
     }
@@ -138,6 +121,13 @@ pub const Act = enum {
     pub fn reach(a: Act) i32 {
         return switch (a) {
             inline else => |t| if (comptime reticle(t) == .leap or reticle(t) == .rush) module(t).?.RANGE else 0,
+        };
+    }
+
+    /// A rush's nearest mark.
+    pub fn nearest(a: Act) i32 {
+        return switch (a) {
+            inline else => |t| if (comptime has(t, "MIN_RANGE")) module(t).?.MIN_RANGE else 1,
         };
     }
 
@@ -241,7 +231,7 @@ pub const Act = enum {
     }
 
     /// Every decl probed by name above, so renaming one in its module fails the build.
-    const PROBED = .{ "DESCRIPTION", "FREE", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN" };
+    const PROBED = .{ "DESCRIPTION", "FREE", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE" };
 
     comptime {
         for (PROBED) |decl| {

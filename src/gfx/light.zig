@@ -193,7 +193,7 @@ fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
         const py = y + uy * t;
         const c = mathx.cellOf(.{ px, py });
         if (!grid.Level.inside(c)) break;
-        const k = CASTERS.get(lv.at(c)) orelse continue;
+        const k = CASTERS.getPtrConst(lv.at(c)).* orelse continue;
         var over = (k.h - z - t * rise) / (SUN_SOFT * k.h);
         if (k.r) |r| over = @min(over, (r - offMiddle(c, .{ px, py })) / SUN_EDGE);
         if (over <= 0) continue;
@@ -295,7 +295,7 @@ fn sunFacing(sk: sky.Sky, s: Spot) f32 {
 const Surface = enum { floor, face, ceiling };
 
 fn topOf(t: grid.Tile, cell: P, q: [2]f32) f32 {
-    const k = CASTERS.get(t) orelse return 0;
+    const k = CASTERS.getPtrConst(t).* orelse return 0;
     const r = k.r orelse return k.h;
     return if (offMiddle(cell, q) < r) k.h else 0;
 }
@@ -347,16 +347,16 @@ const Torch = struct {
     colour: Rgb = FLAME,
     glow: f32 = 1,
 
-    fn floor(t: Torch) P {
+    fn floor(t: *const Torch) P {
         return lume.torchFloor(t.wall);
     }
 
     /// On the ground plane.
-    fn flame(t: Torch) [3]f32 {
+    fn flame(t: *const Torch) [3]f32 {
         return .{ mathx.centre(t.wall)[0], @as(f32, @floatFromInt(t.wall.y)) + 1 + STANDOFF, FLAME_Z };
     }
 
-    fn drawn(t: Torch) [2]f32 {
+    fn drawn(t: *const Torch) [2]f32 {
         return .{ mathx.centre(t.wall)[0], faceY(@floatFromInt(t.wall.y), FLAME_Z) };
     }
 
@@ -639,26 +639,26 @@ pub const Shine = struct {
         self.lamp[i] = l;
     }
 
-    fn total(self: Shine) Rgb {
+    fn total(self: *const Shine) Rgb {
         var c: Rgb = @splat(0);
         for (self.lamp[0..self.n]) |l| c += l.colour;
         return c;
     }
 
-    fn lit(self: Shine) f32 {
+    fn lit(self: *const Shine) f32 {
         return lum(self.ambient + self.total());
     }
 
-    fn reached(self: Shine) f32 {
+    fn reached(self: *const Shine) f32 {
         return lum(self.ambient - self.floor + self.total());
     }
 
-    pub fn tint(self: Shine, c: rl.Color) rl.Color {
+    pub fn tint(self: *const Shine, c: rl.Color) rl.Color {
         return recolour(c, rgbOf(c) * (self.ambient + self.total() * splat(TINT_DIRECT)));
     }
 
     /// As the body shader would draw `c`, for what is drawn without it.
-    pub fn drawn(self: Shine, c: rl.Color, flash: f32) rl.Color {
+    pub fn drawn(self: *const Shine, c: rl.Color, flash: f32) rl.Color {
         return flashed(self.tint(c), flash);
     }
 };
@@ -936,7 +936,7 @@ pub const Light = struct {
             var row: u16 = 0;
             self.casting[(y + 1) * w] = 0;
             for (0..grid.COLS) |x| {
-                row += @intFromBool(CASTERS.get(lv.tile[y * grid.COLS + x]) != null);
+                row += @intFromBool(CASTERS.getPtrConst(lv.tile[y * grid.COLS + x]).* != null);
                 self.casting[(y + 1) * w + x + 1] = self.casting[y * w + x + 1] + row;
             }
         }
@@ -1220,14 +1220,14 @@ pub const Light = struct {
     }
 
     /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
-    pub fn drawBody(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: Shine, flash: f32) void {
+    pub fn drawBody(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const Shine, flash: f32) void {
         const w: f32 = @floatFromInt(tex.width);
         const h: f32 = @floatFromInt(tex.height);
         const src = look.rect(0, 0, if (left) -tex.width else tex.width, tex.height);
         const normals = self.gpu.art(tex).normals;
         const sh = self.gpu.body;
         if (sh == null or normals == null) {
-            rl.drawTexturePro(tex, src, dest, .{ .x = 0, .y = 0 }, 0, s.drawn(rl.Color.white, flash));
+            look.blit(tex, src, dest, s.drawn(rl.Color.white, flash));
             return;
         }
         var pos: [BODY_LIGHTS][3]f32 = undefined;
@@ -1253,12 +1253,12 @@ pub const Light = struct {
             look.setUniforms(b.shader, b.lpos, &pos, n);
             look.setUniforms(b.shader, b.lcol, &col, n);
         }
-        rl.drawTexturePro(tex, src, dest, .{ .x = 0, .y = 0 }, 0, rl.Color.white);
+        look.blit(tex, src, dest, rl.Color.white);
         rl.gl.rlDrawRenderBatchActive();
     }
 
     /// Draws the foot's contact pool, `contact` times a body's, and returns the foot, its height and its share of the art's; null where nothing lights it.
-    fn footOf(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, s: Shine, contact: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
+    fn footOf(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *const Shine, contact: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
         const lit = s.reached();
         if (lit <= FAINT) return null;
         const foot = self.gpu.art(tex).foot;
@@ -1321,7 +1321,7 @@ pub const Light = struct {
     }
 
     /// Between `beginShadows` and `endShadows`, before the walls, which cover whatever of it reaches them.
-    pub fn drawShadows(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: Shine) void {
+    pub fn drawShadows(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const Shine) void {
         const f = self.footOf(tex, dest, s, 1) orelse return;
         const fx = f.x;
         const fy = f.y;
@@ -1344,7 +1344,7 @@ pub const Light = struct {
     }
 
     /// Between `beginShadows` and `endShadows`: a tree's canopy pool thrown away from each light, a soft pool over its trunk's foot.
-    pub fn drawCanopy(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: Shine) void {
+    pub fn drawCanopy(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: *const Shine) void {
         const g = self.gpu.glow orelse return;
         const f = self.footOf(tex, dest, s, TRUNK_OF) orelse return;
         const fx = f.x;
@@ -1360,7 +1360,7 @@ pub const Light = struct {
     }
 
     /// Its contact pool now; its silhouette waits for `endShadows`, drawn with every forest cell joined on the same sides under one set of uniforms.
-    pub fn drawForestShadows(self: *Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: Shine, shape: grid.WallShape) void {
+    pub fn drawForestShadows(self: *Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: *const Shine, shape: grid.WallShape) void {
         _ = self.footOf(tex, dest, s, 1) orelse return;
         var f = ForestCast{ .tex = tex, .dest = dest, .centre = centre, .cast = undefined, .n = 0, .joined = .of(shape) };
         f.n = casts(s, centre, dest.height, &f.cast).len;
@@ -1469,7 +1469,7 @@ comptime {
 }
 
 /// `height` is pixels from the feet to the top of the art.
-fn casts(s: Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const Cast {
+fn casts(s: *const Shine, centre: [2]f32, height: f32, out: *[BODY_LIGHTS]Cast) []const Cast {
     const lit = s.lit();
     if (lit <= 0) return out[0..0];
     var n: usize = 0;
@@ -1998,16 +1998,16 @@ test "shadow casters keep their light outside sight and memory" {
         @memset(&lv.seen, true);
         l.settle(&lv);
         var before: [BODY_LIGHTS]Cast = undefined;
-        const expected = casts(l.onCaster(centre, false), centre, ART_H, &before);
+        const expected = casts(&l.onCaster(centre, false), centre, ART_H, &before);
         try std.testing.expect(expected.len > 0);
         for ([_]bool{ false, true }) |remembered_| {
             @memset(&lv.lit, false);
             @memset(&lv.seen, remembered_);
             l.settle(&lv);
             var after: [BODY_LIGHTS]Cast = undefined;
-            const actual = casts(l.onCaster(centre, false), centre, ART_H, &after);
+            const actual = casts(&l.onCaster(centre, false), centre, ART_H, &after);
             try std.testing.expectEqualSlices(Cast, expected, actual);
-            try std.testing.expectEqual(@as(usize, 0), casts(l.onBody(centre, false), centre, ART_H, &after).len);
+            try std.testing.expectEqual(@as(usize, 0), casts(&l.onBody(centre, false), centre, ART_H, &after).len);
             checked += actual.len;
         }
     }
@@ -2318,7 +2318,7 @@ test "a shadow fades through zero as a body passes directly under a torch" {
     for (0..201) |i| {
         const dx = (@as(f32, @floatFromInt(i)) - 100) / 100;
         var buf: [BODY_LIGHTS]Cast = undefined;
-        const cs = casts(s, .{ 40.5 + dx, 30.5 }, ART_H, &buf);
+        const cs = casts(&s, .{ 40.5 + dx, 30.5 }, ART_H, &buf);
         const alpha = if (cs.len == 0) 0 else cs[0].alpha;
         if (i > 0) worst = @max(worst, @abs(alpha - last));
         if (@abs(dx) <= SHADOW_OVERHEAD) try std.testing.expectEqual(@as(f32, 0), alpha);
@@ -2336,7 +2336,7 @@ test "torch shadow crosses its light's horizontal line without flipping" {
     for (0..41) |i| {
         const dy = (@as(f32, @floatFromInt(i)) - 20) / 1000;
         var buf: [BODY_LIGHTS]Cast = undefined;
-        const cs = casts(s, .{ 40.5, 30.5 + dy }, ART_H, &buf);
+        const cs = casts(&s, .{ 40.5, 30.5 + dy }, ART_H, &buf);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         try std.testing.expectEqual(@as(f32, 0), cs[0].solid);
         if (last) |was| worst = @max(worst, mathx.len(cs[0].lean[0] - was[0], cs[0].lean[1] - was[1]));
@@ -2634,7 +2634,7 @@ test "a torch seen only from behind its wall has no flame, and a remembered one 
 
 fn castAlpha(l: *const Light, at: [2]f32, carrier: bool) [2]f32 {
     var buf: [BODY_LIGHTS]Cast = undefined;
-    const cs = casts(l.onBody(at, carrier), at, ART_H, &buf);
+    const cs = casts(&l.onBody(at, carrier), at, ART_H, &buf);
     if (cs.len == 0) return .{ 0, 0 };
     return .{ cs[0].alpha, cs[0].len };
 }
@@ -2791,7 +2791,7 @@ test "a standing shrub takes the sun as a body does, and throws its shadow the s
     var lean: [2][2]f32 = undefined;
     for ([_]P{ shrub, foe }, 0..) |c, i| {
         const s = l.onBody(mathx.centre(c), false);
-        const cs = casts(s, mathx.centre(c), ART_H, &out[i]);
+        const cs = casts(&s, mathx.centre(c), ART_H, &out[i]);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         lean[i] = cs[0].lean;
     }
@@ -2810,7 +2810,7 @@ test "a body's sun shadow runs the way the ground's do, its height times the hou
     for ([_]f32{ 9, 13, 16.5 }) |hour| {
         l.sky = sky.at(hour);
         var buf: [BODY_LIGHTS]Cast = undefined;
-        const cs = casts(l.onBody(at, false), at, ART_H, &buf);
+        const cs = casts(&l.onBody(at, false), at, ART_H, &buf);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         const u = l.sky.?.across();
         const want = ART_H * l.sky.?.reach();
@@ -2861,7 +2861,7 @@ test "a sun shadow turns smoothly through due east and due west, never flipping 
         while (h < span[1]) : (h += 0.005) {
             l.sky = sky.at(h);
             var buf: [BODY_LIGHTS]Cast = undefined;
-            const cs = casts(l.onBody(at, false), at, ART_H, &buf);
+            const cs = casts(&l.onBody(at, false), at, ART_H, &buf);
             if (cs.len == 0) {
                 was = null;
                 continue;
@@ -2914,7 +2914,7 @@ test "the moon throws a cold shadow as deep as the sun's, over the archer's own 
     for ([_]f32{ day.NOON, day.DEAD_OF_NIGHT }, 0..) |h, i| {
         l.sky = sky.at(h);
         var buf: [BODY_LIGHTS]Cast = undefined;
-        const cs = casts(l.onBody(foe, false), foe, ART_H, &buf);
+        const cs = casts(&l.onBody(foe, false), foe, ART_H, &buf);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         depth[i] = cs[0].alpha;
         blue[i] = cs[0].shade[2] / cs[0].shade[0];
@@ -2948,7 +2948,7 @@ test "sun and torch shadows thinned to slivers give way to soft streaks" {
     for ([_]f32{ day.SUNRISE, 8, day.NOON }, &silhouette_at) |h, *k| {
         l.sky = sky.at(h);
         var buf: [BODY_LIGHTS]Cast = undefined;
-        const cs = casts(l.onBody(at, false), at, ART_H, &buf);
+        const cs = casts(&l.onBody(at, false), at, ART_H, &buf);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         k.* = cs[0].solid;
     }
@@ -2971,7 +2971,7 @@ test "a streak is darkest at the feet and gone at the tip, and a sideways sun sh
     while (h <= 20.5) : (h += 0.1) {
         l.sky = sky.at(h);
         var buf: [BODY_LIGHTS]Cast = undefined;
-        for (casts(l.onBody(at, false), at, ART_H, &buf)) |c| longest = @max(longest, c.len / ART_H);
+        for (casts(&l.onBody(at, false), at, ART_H, &buf)) |c| longest = @max(longest, c.len / ART_H);
     }
     const mid = 0.5;
     var peak_u: f32 = 0;

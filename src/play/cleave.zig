@@ -13,9 +13,7 @@ const SPREAD = [_]u3{ 7, 0, 1 };
 pub const WIDTH: usize = SPREAD.len;
 pub const DESCRIPTION = std.fmt.comptimePrint("Swing through the {d} tiles in an arc before you: {d}-{d} damage to each foe there. {d} mana.", .{ WIDTH, DMG_LO, DMG_HI, COST });
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(DMG_LO, DMG_HI);
-}
+pub const roll = mathx.Rng.rolls(DMG_LO, DMG_HI);
 
 pub const Arc = grid.Area(WIDTH);
 

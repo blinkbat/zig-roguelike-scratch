@@ -12,7 +12,6 @@ const menu = @import("../ui/menu.zig");
 const skillbar = @import("../play/skillbar.zig");
 const nova = @import("../play/nova.zig");
 
-
 /// `ichor` is Brogue's purple blood.
 pub const Matter = enum { blood, ooze, wood, ichor };
 
@@ -259,6 +258,8 @@ const PIN_H: f32 = 0.16;
 const PIN_FOOT: f32 = 0.92;
 /// A ward's ring, out from the body's middle in cells.
 const WARD_R: f32 = 0.46;
+/// Its breathing, radians a second.
+const WARD_HZ: f32 = 2.4;
 /// Where across a body's cell chill's flakes and burn's flames begin, and how far they spread.
 const MARKS_FROM: f32 = 0.22;
 const MARKS_SPAN: f32 = 0.56;
@@ -289,32 +290,32 @@ const Due = union(enum) {
     burst: Burst,
     zap: Zap,
 
-    fn on(d: Due) ?usize {
-        return switch (d) {
-            .blow => |b| b.slot,
-            .sting => |s| s.slot,
-            .settle => |s| s.slot,
+    fn on(d: *const Due) ?usize {
+        return switch (d.*) {
+            .blow => |*b| b.slot,
+            .sting => |*s| s.slot,
+            .settle => |*s| s.slot,
             .burst, .zap => null,
         };
     }
 
-    fn blowOf(d: Due) ?Blow {
-        return switch (d) {
-            .blow => |b| b,
+    fn blowOf(d: *const Due) ?*const Blow {
+        return switch (d.*) {
+            .blow => |*b| b,
             .sting, .settle, .burst, .zap => null,
         };
     }
 
-    fn onBarrel(d: Due) bool {
+    fn onBarrel(d: *const Due) bool {
         const b = d.blowOf() orelse return false;
         return b.slot == null;
     }
 
-    fn after(d: Due) ?After {
-        return switch (d) {
-            .blow => |b| b.after,
-            .sting => |s| s.after,
-            .settle => |s| s.after,
+    fn after(d: *const Due) ?After {
+        return switch (d.*) {
+            .blow => |*b| b.after,
+            .sting => |*s| s.after,
+            .settle => |*s| s.after,
             .burst, .zap => null,
         };
     }
@@ -443,6 +444,21 @@ pub const Fx = struct {
 
     pub fn holds(self: *const Fx, slot: usize) bool {
         return self.flash[slot] > 0 or self.pending(slot);
+    }
+
+    /// Seconds until the last blow or sting due on the slot lands.
+    pub fn landsIn(self: *const Fx, slot: usize) f32 {
+        var t: f32 = 0;
+        for (self.due[0..self.due_n]) |*d| {
+            if (d.what.on() == slot) t = @max(t, d.t);
+        }
+        return t;
+    }
+
+    /// Seconds until the slot is held no longer: its last due landed and flashed.
+    pub fn heldIn(self: *const Fx, slot: usize) f32 {
+        const due = if (self.pending(slot)) self.landsIn(slot) + FLASH_S else 0;
+        return @max(self.flash[slot], due);
     }
 
     pub fn breaking(self: *const Fx, p: mathx.P) bool {
@@ -601,9 +617,9 @@ pub const Fx = struct {
 
     /// A ring round it, breathing.
     pub fn drawWarded(self: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
-        const t = self.seconds.at();
-        const r = cell * (WARD_R + @sin(t * 2.4) * 0.02);
-        rl.drawRing(.{ .x = x + cell * 0.5, .y = y + cell * 0.5 }, r - cell * 0.018, r, 0, 360, 48, look.fade(ink, 0.55 + @sin(t * 2.4) * 0.15));
+        const breath = @sin(self.seconds.at() * WARD_HZ);
+        const r = cell * (WARD_R + breath * 0.02);
+        rl.drawRing(.{ .x = x + cell * 0.5, .y = y + cell * 0.5 }, r - cell * 0.018, r, 0, 360, 48, look.fade(ink, 0.55 + breath * 0.15));
     }
 
     pub fn drawBurning(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, alpha: f32) void {

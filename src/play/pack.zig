@@ -20,7 +20,7 @@ pub const KINDS = [_][]const actor.Kind{
     &.{ .rat, .slime, .pib },
 };
 pub const REACH: i32 = 2;
-/// Past the archer's sight, so by default none starts in view.
+/// Past the hero's sight, so by default none starts in view.
 pub const GAP: i32 = 12;
 pub const BIGGEST: usize = blk: {
     var most: usize = 0;
@@ -130,7 +130,7 @@ pub const Spec = struct {
     few: usize = FEW,
     /// Cells from its lead to the rest of a pack, at most.
     reach: i32 = REACH,
-    /// Cells from where the archer arrives to every foe, at least.
+    /// Cells from where the hero arrives to every foe, at least.
     gap: i32 = GAP,
     /// Cells from every member of one pack to every member of another, at least.
     apart: i32 = 0,

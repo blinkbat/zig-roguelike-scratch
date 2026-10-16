@@ -295,7 +295,6 @@ pub const Corners = struct {
         }
         return m;
     }
-
 };
 
 test "every ground without a sheet lies under every ground with one, and each keeps its order among its own" {

@@ -18,9 +18,7 @@ pub const TAKES = spark.TAKES;
 pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("A bolt of {d}-{d} lightning that leaps on to {d} more foes, each within {d} tiles of the last. {d}% chance to stun each. {d} mana.", .{ LIGHTNING_LO, LIGHTNING_HI, JUMPS, JUMP_RANGE, spark.CHANCE, COST });
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(LIGHTNING_LO, LIGHTNING_HI);
-}
+pub const roll = mathx.Rng.rolls(LIGHTNING_LO, LIGHTNING_HI);
 
 pub const procs = spark.procs;
 pub const afflict = spark.afflict;

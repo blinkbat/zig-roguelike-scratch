@@ -1,7 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 
-
 pub const HOURS: f32 = 24;
 pub const SUNRISE: f32 = 6;
 pub const SUNSET: f32 = 20;

@@ -193,6 +193,9 @@ fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, 
     }
 }
 
+/// The noise scale a cave's blob frays its edge at.
+pub const CAVE_SCALE: f32 = 3;
+
 /// `t` round `c` off the rim, its edge frayed: in where a cell's distance over `r` is under `lo + span` times the noise.
 pub fn blob(lv: *grid.Level, noise: Noise, c: P, r: f32, scale: f32, lo: f32, span: f32, t: grid.Tile) void {
     blobIn(lv, noise, c, r, scale, lo, span, t, grid.Box.around(c, @intFromFloat(@ceil(r * @max(lo, lo + span)))));
@@ -751,7 +754,6 @@ pub fn dress(p: anytype, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
         if (comptime dressOf(@TypeOf(p), D)) |n| @field(p, n).strew(lv, rng, seed);
     }
 }
-
 
 fn strewn(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, put: grid.Tile) void {
     scatter(lv, rng, per_mille, .{ .tile = put.ground().? }, put, put.solid());

@@ -12,11 +12,9 @@ pub const MIN_RANGE: i32 = 2;
 pub const DMG_LO: i32 = 3;
 pub const DMG_HI: i32 = 5;
 pub const VERB = "charges into";
-pub const DESCRIPTION = std.fmt.comptimePrint("Rush up to {d} tiles in a straight line at a foe: {d}-{d} damage, and it is knocked back a tile. {d} mana, {d}-turn cooldown.", .{ RANGE, DMG_LO, DMG_HI, COST, COOLDOWN });
+pub const DESCRIPTION = std.fmt.comptimePrint("Rush in a straight line at a foe {d} to {d} tiles away: {d}-{d} damage, and it is knocked back a tile. {d} mana, {d}-turn cooldown.", .{ MIN_RANGE, RANGE, DMG_LO, DMG_HI, COST, COOLDOWN });
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(DMG_LO, DMG_HI);
-}
+pub const roll = mathx.Rng.rolls(DMG_LO, DMG_HI);
 
 pub const knocked = bash.knocked;
 
@@ -32,7 +30,7 @@ pub fn stop(from: P, to: P) P {
     return to.sub(wayTo(from, to).?.delta());
 }
 
-/// A lit body in a line, two tiles off at least, with open ground to it that nothing stands on.
+/// A lit body in a line, `MIN_RANGE` tiles off at least, with open ground to it that nothing stands on.
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     const d = wayTo(from, to) orelse return false;
     const n = mathx.dist(from, to);

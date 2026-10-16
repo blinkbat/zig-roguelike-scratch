@@ -122,7 +122,7 @@ pub const Row = struct {
     light: i32 = 0,
     /// Brogue's `MONST_FLITS`: a third of its moves go a random way.
     flits: bool = false,
-    /// Runs from the archer for `FLEE_TURNS` of its turns when it sees a foe die within `FRIGHT_REACH`.
+    /// Runs from the hero for `FLEE_TURNS` of its turns when it sees a foe die within `FRIGHT_REACH`.
     flees: bool = false,
     /// What it splits into, two of them, when a blow leaves it under half its hp.
     splits: ?Kind = null,
@@ -191,7 +191,7 @@ pub const Actor = struct {
     clock: clock.Clock = .{},
     pin: pinning.Pin = .{},
     ward: ward.Ward = .{},
-    /// Its turns left running from the archer.
+    /// Its turns left running from the hero.
     fright: u8 = 0,
 
     pub fn of(k: Kind, at: P) Actor {

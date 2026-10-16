@@ -1,6 +1,9 @@
 const std = @import("std");
 const actor = @import("actor.zig");
 const menu = @import("../ui/menu.zig");
+const cleave = @import("cleave.zig");
+
+const NUMBERS = [_][]const u8{ "none", "one", "two", "three", "four", "five", "six", "seven", "eight" };
 
 pub const MANA: i32 = 100;
 pub const MANA_REGEN: i32 = 1;
@@ -25,7 +28,7 @@ pub const Class = enum {
         return switch (c) {
             .archer => "A bow that reaches what it sees, and a kick for what comes close",
             .wizard => "Sparks that stun what they strike, and a blink to be elsewhere",
-            .knight => "A shield that knocks foes back stunned, and a blade that sweeps three at once",
+            .knight => std.fmt.comptimePrint("A shield that knocks foes back stunned, and a blade that sweeps {s} at once", .{NUMBERS[cleave.WIDTH]}),
         };
     }
 

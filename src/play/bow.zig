@@ -11,9 +11,7 @@ pub const DMG_LO: i32 = 3;
 pub const DMG_HI: i32 = 5;
 pub const VERB = "shoots";
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(DMG_LO, DMG_HI);
-}
+pub const roll = mathx.Rng.rolls(DMG_LO, DMG_HI);
 
 pub const Hit = union(enum) { body: u16, barrel: P };
 

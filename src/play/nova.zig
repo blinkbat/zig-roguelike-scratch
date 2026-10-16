@@ -15,15 +15,13 @@ pub const COLD_HI: i32 = 5;
 pub const VERB = "freezes";
 pub const TAKES = glacial.TAKES;
 pub const ELEMENT: damage.Element = .cold;
-pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} cold to every foe within {d} tiles. {d}% chill (cold resistance lowers chance). {d} mana, {d}-turn cooldown.", .{ COLD_LO, COLD_HI, RANGE, glacial.CHANCE, COST, COOLDOWN });
+pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} cold to every foe within {d} tiles. {s}. {d} mana, {d}-turn cooldown.", .{ COLD_LO, COLD_HI, RANGE, glacial.CHILL_NOTE, COST, COOLDOWN });
 
 comptime {
     std.debug.assert(RANGE <= glacial.RANGE);
 }
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(COLD_LO, COLD_HI);
-}
+pub const roll = mathx.Rng.rolls(COLD_LO, COLD_HI);
 
 pub const procs = glacial.procs;
 pub const afflict = glacial.afflict;

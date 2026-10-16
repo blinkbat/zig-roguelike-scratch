@@ -19,9 +19,7 @@ fn seared(fire_resist: i16) i32 {
     return damage.resisted(PER_TURN, fire_resist);
 }
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(FIRE_LO, FIRE_HI);
-}
+pub const roll = mathx.Rng.rolls(FIRE_LO, FIRE_HI);
 
 pub fn procs(rng: *mathx.Rng, _: i16) bool {
     return rng.percent(CHANCE);
@@ -39,7 +37,7 @@ test "burning begins next turn, lasts three ticks and refreshes without stacking
     b.start();
     var total: i32 = 0;
     for (0..TURNS) |_| total += b.tick(50).?;
-    try std.testing.expectEqual(@as(i32, 6), total);
+    try std.testing.expectEqual(damage.resisted(PER_TURN, 50) * TURNS, total);
     try std.testing.expectEqual(@as(?i32, null), b.tick(0));
     var rng = mathx.Rng.init(811);
     var hits: usize = 0;

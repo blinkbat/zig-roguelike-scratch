@@ -243,7 +243,7 @@ pub const Dir = enum(u3) {
     nw = 7,
 
     pub fn delta(d: Dir) P {
-        return DELTAS.get(d);
+        return DELTAS.getPtrConst(d).*;
     }
 
     pub fn diagonal(d: Dir) bool {
@@ -343,6 +343,15 @@ pub const Rng = struct {
     pub fn range(self: *Rng, lo: i32, hi: i32) i32 {
         if (hi <= lo) return lo;
         return lo + @as(i32, @intCast(self.below(@intCast(hi - lo + 1))));
+    }
+
+    /// A skill's `roll`: `lo` to `hi`, both included.
+    pub fn rolls(comptime lo: i32, comptime hi: i32) fn (*Rng) i32 {
+        return struct {
+            fn roll(rng: *Rng) i32 {
+                return rng.range(lo, hi);
+            }
+        }.roll;
     }
 
     pub fn chance(self: *Rng, p: f32) bool {

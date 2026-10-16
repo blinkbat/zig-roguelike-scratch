@@ -53,7 +53,6 @@ pub const Params = struct {
     }
 };
 
-
 fn wander(noise: carve.Noise, along: usize, row: i32, rough: f32) f32 {
     return (noise.at(.{ .x = @intCast(along), .y = row }, WANDER, 2) * 2 - 1) * rough;
 }

@@ -65,8 +65,8 @@ pub const Face = struct {
 
     fn atSize(self: *const Face, size: i32, plain: bool) ?rl.Font {
         if (plain) {
-            for (NATIVE_SIZES, self.native) |px, held| {
-                if (px == size) return held orelse self.font;
+            for (NATIVE_SIZES, &self.native) |px, *held| {
+                if (px == size) return held.* orelse self.font;
             }
         }
         return self.font;

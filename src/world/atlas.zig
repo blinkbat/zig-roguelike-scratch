@@ -13,8 +13,8 @@ const climate = @import("climate.zig");
 const P = mathx.P;
 
 pub const MAX_NODES: usize = 32;
-/// Every placed foe and the archer fit the pool.
-pub const MAX_FOES: usize = actor.MAX - 1;
+/// Every placed foe and the hero fit the pool.
+pub const MAX_FOES: usize = actor.MAX - actor.most(actor.HERO);
 pub const DIR = "worlds";
 pub const EXT = ".world";
 pub const MAIN = worldPath("main");
@@ -51,6 +51,12 @@ const GRAPH_COLS: usize = 4;
 pub const GRAPH_STEP = P{ .x = 240, .y = 200 };
 /// A box's place on the graph, either way on either axis; far enough that i32 sums of places never overflow.
 pub const POS_MAX: u32 = 1 << 24;
+
+/// `p` brought within `POS_MAX` either way on each axis.
+pub fn clampPos(p: P) P {
+    const lim: i32 = @intCast(POS_MAX);
+    return .{ .x = std.math.clamp(p.x, -lim, lim), .y = std.math.clamp(p.y, -lim, lim) };
+}
 /// A world file's name, `.world` and all.
 const FILE_MAX: usize = 64;
 /// A world file's name before `.world`, as `pathFor` makes it.
@@ -557,7 +563,7 @@ pub const Atlas = struct {
                 },
                 .at => {
                     const pos = P{ .x = try int(i32, &f), .y = try int(i32, &f) };
-                    if (@abs(pos.x) > POS_MAX or @abs(pos.y) > POS_MAX) return error.BadLine;
+                    if (!clampPos(pos).eq(pos)) return error.BadLine;
                     (try self.last()).pos = pos;
                 },
                 .door => {
@@ -999,7 +1005,7 @@ pub const Listing = struct {
         return true;
     }
 
-    /// The listed folder's own entries; walking from `depth`, its worlds and those of the folders below it to `DEPTH_MAX` instead. False when it will not open.
+    /// The listed folder's own entries; `walking` from a depth, its worlds and those of the folders below it to `DEPTH_MAX` instead. False when it will not open.
     fn gather(self: *Listing, walking: ?usize) bool {
         var buf: [PATH_MAX]u8 = undefined;
         var dir = std.fs.cwd().openDir(self.dirPath(&buf), .{ .iterate = true }) catch return false;

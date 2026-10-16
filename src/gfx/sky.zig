@@ -81,7 +81,7 @@ fn sunDir(hour: f32) [3]f32 {
     return dirFrom(az, alt);
 }
 
-/// The one light that casts, altitude floored; it changes hands over the zenith in the sun's vertical plane, so laid across the screen (`at`) its shadow keeps `KEY_ALT_MAX`'s length and flips while `keyDim` fades it out and back in.
+/// The one light that casts, altitude floored; it changes hands over the zenith in the sun's vertical plane, so laid across the screen (`acrossScreen`) its shadow keeps `KEY_ALT_MAX`'s length and flips while `keyDim` fades it out and back in.
 fn keyDir(hour: f32) [3]f32 {
     const s = sunDir(hour);
     const flat = flatOf(s);

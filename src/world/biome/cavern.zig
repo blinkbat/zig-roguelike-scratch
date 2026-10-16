@@ -5,7 +5,6 @@ const carve = @import("../carve.zig");
 
 // ADOM's cavernous levels: large circular rooms joined by short corridors, each to the nearest before it.
 
-const CAVE_SCALE: f32 = 3;
 const P = mathx.P;
 
 pub const CHAMBERS_MAX: u8 = 40;
@@ -53,7 +52,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         centre[n] = c;
         radius[n] = r;
         n += 1;
-        carve.blob(lv, noise, c, @floatFromInt(r), CAVE_SCALE, 1, -fray, pal.open);
+        carve.blob(lv, noise, c, @floatFromInt(r), carve.CAVE_SCALE, 1, -fray, pal.open);
     }
     for (1..n) |i| {
         var best: usize = 0;

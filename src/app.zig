@@ -74,6 +74,7 @@ const App = struct {
     }
 
     fn toTitle(app: *App) void {
+        game.holdWalk(app.g);
         app.scene = .title;
         app.goPage(.main);
     }
@@ -168,6 +169,7 @@ const App = struct {
         }
         g.permadeath = back == .title;
         g.back = back;
+        game.holdWalk(g);
         app.scene = .play;
     }
 

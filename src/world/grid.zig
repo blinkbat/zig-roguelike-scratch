@@ -505,7 +505,6 @@ pub const Box = struct {
 
     /// Every cell within `r` of `c`, on the map or off it.
     pub fn around(c: P, r: i32) Box {
-
         return .{ .lo = c.sub(.{ .x = r, .y = r }), .hi = c.add(.{ .x = r + 1, .y = r + 1 }) };
     }
 

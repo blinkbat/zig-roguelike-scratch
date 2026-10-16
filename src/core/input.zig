@@ -335,6 +335,12 @@ pub const Stepper = struct {
         }
         const now = mathx.dirOf(heading, self.latched);
         if (self.latched != now) {
+            if (self.latched) |last| {
+                if (self.due == HELD and partOf(now, last)) {
+                    self.latched = now;
+                    return null;
+                }
+            }
             const owed = self.owe(now);
             self.* = .{ .latched = now, .due = settle, .owed = owed };
         } else {
@@ -349,6 +355,13 @@ pub const Stepper = struct {
         self.owed = null;
         return now;
     }
+
+    /// The way held now steps no more until it is let go or turned; a diagonal let go one key at a time stays held.
+    pub fn hold(self: *Stepper) void {
+        self.* = .{ .latched = self.latched, .held = self.held, .due = HELD, .fired = 1 };
+    }
+
+    const HELD = std.math.inf(f32);
 
     /// A diagonal that has not stepped survives one of its keys coming up first.
     fn owe(self: Stepper, now: mathx.Dir) ?mathx.Dir {
@@ -454,6 +467,12 @@ pub const State = struct {
         if (self.device.pad() or !b.isSlot()) return b.caption(self.device);
         if (b == self.modifier) return SECOND_CAPTION;
         return SLOT_CAPTIONS[numberOf(self.modifier, b).?];
+    }
+
+    /// A way held over from a screen that used it walks nobody.
+    pub fn holdWalk(self: *State) void {
+        self.step.hold();
+        self.walk = null;
     }
 
     /// Seconds since this frame's walk step was due; 0 when none fired.
@@ -605,7 +624,6 @@ pub const Desk = struct {
         break :blk out;
     };
     pub const SHAPE_CAPTIONS = captions(&SHAPE_KEYS);
-
 
     const PAN_KEYS = blk: {
         var out: [DPAD.len]Walk = undefined;
@@ -1053,6 +1071,26 @@ test "a held walk that has stepped owes nothing when it is let go" {
     }
     if (s.tick(dt, 0, 0, Stepper.SETTLE) != null) steps += 1;
     try std.testing.expectEqual(@as(usize, 2), steps);
+}
+
+test "a held diagonal let go one key at a time steps nowhere, and a new way walks" {
+    var s = Stepper{};
+    const dt = mathx.FRAME_DT;
+    const settle = Stepper.SETTLE;
+    for (0..30) |_| _ = s.tick(dt, 1, mathx.Dir.ne.heading(), settle);
+    s.hold();
+    var steps: usize = 0;
+    for ([_]mathx.Dir{ .ne, .e }) |d| {
+        for (0..30) |_| {
+            if (s.tick(dt, 1, d.heading(), settle) != null) steps += 1;
+        }
+    }
+    if (s.tick(dt, 0, 0, settle) != null) steps += 1;
+    try std.testing.expectEqual(@as(usize, 0), steps);
+    for (0..30) |_| {
+        if (s.tick(dt, 1, mathx.Dir.s.heading(), settle) != null) steps += 1;
+    }
+    try std.testing.expect(steps > 0);
 }
 
 test "every direction walks on exactly one entry, and every bound key a name types into is taken from its button" {

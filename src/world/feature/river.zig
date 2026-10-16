@@ -58,15 +58,11 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
 /// A cell of the river's middle off the rim, `clear` cells off the map's edge if it has one, so the ford crosses to the map.
 fn fordAt(f: *const carve.Flow, rng: *mathx.Rng, clear: i32) ?mathx.P {
     const cells = f.cell[0..f.n];
-    return rng.pickWhere(mathx.P, cells, clear, offEdge) orelse rng.pickWhere(mathx.P, cells, {}, offRim);
+    return rng.pickWhere(mathx.P, cells, clear, offEdge) orelse rng.pickWhere(mathx.P, cells, @as(i32, 0), offEdge);
 }
 
 fn offEdge(clear: i32, c: mathx.P) bool {
     return grid.Level.edgeDist(c) > clear;
-}
-
-fn offRim(_: void, c: mathx.P) bool {
-    return !grid.Level.onRim(c);
 }
 
 fn fordOf(fill: grid.Tile, pal: carve.Palette) grid.Tile {

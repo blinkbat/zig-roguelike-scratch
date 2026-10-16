@@ -26,8 +26,7 @@ pub const Style = enum {
 };
 
 const CAVE_WANDER: f32 = 0.6;
-/// A cave room's blob: its noise's scale, and its edge's least and spread.
-const CAVE_SCALE: f32 = 3;
+/// A cave room's blob: its edge's least and spread.
 const CAVE_LO: f32 = 0.55;
 const CAVE_SPAN: f32 = 0.6;
 /// The least inner size a tomb room takes its pillars in.
@@ -160,7 +159,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
     if (style.built()) {
         carve.box(lv, inside, pal.open);
     } else {
-        carve.blobIn(lv, noise, mid, @as(f32, @floatFromInt(size)) / 2 - 1, CAVE_SCALE, CAVE_LO, CAVE_SPAN, pal.open, inside);
+        carve.blobIn(lv, noise, mid, @as(f32, @floatFromInt(size)) / 2 - 1, carve.CAVE_SCALE, CAVE_LO, CAVE_SPAN, pal.open, inside);
     }
     for (SIDES) |s| {
         if (mask & bitOf(s) == 0) continue;

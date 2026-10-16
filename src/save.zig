@@ -29,12 +29,11 @@ const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar
 const HEAD_FIELDS = .{ "seed", "world", "node", "visited", "visits" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
-    "mode",     "paused_from", "pause_menu", "back",           "exit",      "permadeath", "outdoors", "hour_shown", "unkillable", "unsaved",
-    "travel",   "st",          "binds",      "aim_by",         "aim_act",   "aim_set",    "mark",     "cam",        "screen",     "framebuffer",
-    "shot",     "glide",       "turning",    "order",          "order_n",   "busy",       "pending",  "lead",       "owed",       "ran",
-    "pictured", "seq",         "split_from", "fx",             "vignette",  "mini",       "sprites",  "face",       "light",      "cloud",
-    "flowed",   "flow",        "queue",      "graphics_ready", "art_ready",  "rain",
-    "flasks_shown", "mana_held", "inspecting",
+    "mode",     "paused_from", "pause_menu", "back",           "exit",      "permadeath", "outdoors",     "hour_shown", "unkillable", "unsaved",
+    "travel",   "st",          "binds",      "aim_by",         "aim_act",   "aim_set",    "mark",         "cam",        "screen",     "framebuffer",
+    "shot",     "glide",       "turning",    "order",          "order_n",   "busy",       "pending",      "lead",       "owed",       "ran",
+    "pictured", "seq",         "split_from", "fx",             "vignette",  "mini",       "sprites",      "face",       "light",      "cloud",
+    "flowed",   "flow",        "queue",      "graphics_ready", "art_ready", "rain",       "flasks_shown", "mana_held",  "inspecting",
 };
 
 comptime {
@@ -96,7 +95,12 @@ pub const Unreadable = enum {
 
 pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
 
-const FINGERPRINT = store.fingerprint([_]type{ Summary, Seed, bool, World, Node, Visited, Visit, Tail });
+/// What `HEAD_FIELDS` write, in their order.
+const HEAD_TYPES = [_]type{ Seed, World, Node, Visited, Visit };
+comptime {
+    std.debug.assert(HEAD_TYPES.len == HEAD_FIELDS.len);
+}
+const FINGERPRINT = store.fingerprint([_]type{ Summary, HEAD_TYPES[0], bool } ++ HEAD_TYPES[1..].* ++ [_]type{Tail});
 const Print = @TypeOf(FINGERPRINT);
 const HEAD = MAGIC.len + @sizeOf(Print);
 /// The payload's hash ends the file, so a file damaged or cut short is refused before any of it is believed.
@@ -279,7 +283,7 @@ pub const Autosave = struct {
         return self.failed;
     }
 
-    /// Not mid-door, nor mid-turn: a foe's turn to face the archer is only in `facing` once it is drawn.
+    /// Not mid-door, nor mid-turn: a foe's turn to face the hero is only in `facing` once it is drawn.
     pub fn step(self: *Autosave, g: *game.Game, dt: f32) void {
         self.since += dt;
         if (!self.finished.load(.acquire)) return;

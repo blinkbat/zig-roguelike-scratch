@@ -16,15 +16,13 @@ pub const VERB = "blasts";
 pub const BOLT = "fireball";
 pub const TAKES = burning.TAKES;
 pub const ELEMENT: damage.Element = .fire;
-pub const DESCRIPTION = std.fmt.comptimePrint("A bolt that bursts on what it strikes: {d}-{d} fire to every foe within {d} tile of it. {d}% burn chance. {d} mana.", .{ FIRE_LO, FIRE_HI, BLAST, burning.CHANCE, COST });
+pub const DESCRIPTION = std.fmt.comptimePrint("A bolt that bursts on what it strikes: {d}-{d} fire to every foe within {d} tile{s} of it. {d}% burn chance. {d} mana.", .{ FIRE_LO, FIRE_HI, BLAST, if (BLAST == 1) "" else "s", burning.CHANCE, COST });
 
 comptime {
     std.debug.assert(BLAST <= glacial.RANGE);
 }
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(FIRE_LO, FIRE_HI);
-}
+pub const roll = mathx.Rng.rolls(FIRE_LO, FIRE_HI);
 
 pub const procs = burning.procs;
 pub const afflict = burning.afflict;

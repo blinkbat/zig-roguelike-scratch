@@ -64,11 +64,11 @@ pub fn lifeOf(max: i32) i32 {
 
 test "a flask holds three drinks, each recovering its amount whole over three turns, and kills refill it" {
     var f = Flask{};
-    try std.testing.expectEqual(@as(u8, 3), f.uses());
+    try std.testing.expectEqual(CHARGES / USE, f.uses());
     f.drink(lifeOf(24));
     var total: i32 = 0;
     for (0..TURNS + 2) |_| total += f.tick();
-    try std.testing.expectEqual(@as(i32, 12), total);
+    try std.testing.expectEqual(lifeOf(24), total);
     f.drink(10);
     f.drink(10);
     try std.testing.expect(!f.full());
@@ -76,5 +76,5 @@ test "a flask holds three drinks, each recovering its amount whole over three tu
     try std.testing.expect(f.full());
     for (0..100) |_| f.fill(PER_KILL);
     try std.testing.expectEqual(CHARGES, f.charges);
-    std.debug.print("flask: {d} drinks from full, 50% of 24 hp is {d} over {d} turns, {d} kills refill a drink\n", .{ CHARGES / USE, total, TURNS, USE / PER_KILL });
+    std.debug.print("flask: {d} drinks from full, {d}% of 24 hp is {d} over {d} turns, {d} kills refill a drink\n", .{ CHARGES / USE, LIFE_PCT, total, TURNS, USE / PER_KILL });
 }

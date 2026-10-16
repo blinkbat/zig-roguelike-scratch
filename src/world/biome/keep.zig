@@ -107,7 +107,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     }
     const art = setpiece.rows(.well);
     const room = setpiece.size(art).add(.{ .x = WELL_GAP, .y = WELL_GAP });
-    const well = P{ .x = rng.range(yard.lo.x + WELL_GAP, @max(yard.lo.x + WELL_GAP, keep.lo.x - room.x)), .y = rng.range(yard.lo.y + WELL_GAP, yard.hi.y - room.y) };
+    const well = (grid.Box{ .lo = yard.lo.add(.{ .x = WELL_GAP, .y = WELL_GAP }), .hi = .{ .x = keep.lo.x, .y = yard.hi.y } }).rollFor(rng, room.x, room.y);
     if (keep.lo.x - well.x >= room.x and clearOfTowers(curtain, p.towers, well, setpiece.size(art))) setpiece.stamp(lv, well, art);
 }
 
@@ -142,8 +142,9 @@ fn towerReach(towers: u8) i32 {
 }
 
 fn keepOf(p: Params) grid.Box {
-    const kw: i32 = @intFromFloat(@as(f32, @floatFromInt(@as(i32, p.size[0]) - 2 * CURTAIN)) * KEEP_OF);
-    const kh: i32 = @intFromFloat(@as(f32, @floatFromInt(@as(i32, p.size[1]) - 2 * CURTAIN)) * KEEP_OF);
+    const yard = curtainOf(p).shrunk(CURTAIN);
+    const kw: i32 = @intFromFloat(@as(f32, @floatFromInt(yard.width())) * KEEP_OF);
+    const kh: i32 = @intFromFloat(@as(f32, @floatFromInt(yard.height())) * KEEP_OF);
     return grid.Box.centred(kw, kh);
 }
 

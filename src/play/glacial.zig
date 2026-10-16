@@ -16,7 +16,9 @@ pub const CYCLE: u8 = 3;
 pub const VERB = "frosts";
 pub const TAKES = "is chilled";
 pub const ELEMENT: damage.Element = .cold;
-pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} cold in a {d}-tile cone. {d}% chill (cold resistance lowers chance): skip 1 in {d} turns for {d} turns. {d} mana.", .{ COLD_LO, COLD_HI, RANGE, CHANCE, CYCLE, TURNS, COST });
+/// Its chance to chill, as every cold skill's description says it.
+pub const CHILL_NOTE = std.fmt.comptimePrint("{d}% chill (cold resistance lowers chance)", .{CHANCE});
+pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} cold in a {d}-tile cone. {s}: skip 1 in {d} turns for {d} turns. {d} mana.", .{ COLD_LO, COLD_HI, RANGE, CHILL_NOTE, CYCLE, TURNS, COST });
 
 pub const Chill = struct {
     turns: u8 = 0,
@@ -35,9 +37,7 @@ pub const Chill = struct {
     }
 };
 
-pub fn roll(rng: *mathx.Rng) i32 {
-    return rng.range(COLD_LO, COLD_HI);
-}
+pub const roll = mathx.Rng.rolls(COLD_LO, COLD_HI);
 
 pub fn chance(resist: i16) u32 {
     return @intCast(@min(mathx.PERCENT, damage.resisted(CHANCE, resist)));
