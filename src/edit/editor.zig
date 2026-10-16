@@ -971,6 +971,7 @@ pub const Editor = struct {
     }
 
     pub fn request(ed: *Editor, p: Pending) void {
+        ed.keepDrag();
         if (ed.renaming) ed.commitRename();
         ed.pending = p;
         if (!ed.dirty) return ed.commit();
@@ -3972,6 +3973,27 @@ test "leaving with unsaved changes asks first, and leaving a saved world does no
     try std.testing.expect(ed.action == .none);
     ed.commit();
     try std.testing.expect(ed.action == .leave);
+}
+
+test "leaving or closing mid graph drag keeps the move and asks before discarding it" {
+    for ([_]Pending{ .leave, .quit }) |pending| {
+        const ed = try testBespoke();
+        defer ed.destroy();
+        const was = dragFirstBox(ed);
+        const moved = ed.world.node[0].pos;
+        try std.testing.expect(!moved.eq(was));
+        ed.request(pending);
+        try std.testing.expectEqual(Modal.confirm, ed.modal);
+        try std.testing.expect(ed.action == .none);
+        try std.testing.expect(ed.drag == null);
+        try std.testing.expectEqual(moved, ed.world.node[0].pos);
+        try std.testing.expect(ed.dirty);
+        ed.modal = .none;
+        ed.undo();
+        try std.testing.expectEqual(was, ed.world.node[0].pos);
+        try std.testing.expect(!ed.dirty);
+    }
+    std.debug.print("2 departure paths preserve an active graph move, prompt, and undo to the saved state\n", .{});
 }
 
 test "a rename is one undo, and deleting a node renumbers the list round it" {
