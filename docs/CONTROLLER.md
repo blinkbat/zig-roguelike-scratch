@@ -78,5 +78,6 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
   cancels a reticle is spent (`State.spend`), so holding it on does not open the binds again.
 - **Menu taps to pause** from play, as PoE2's taps to the inventory; anywhere else it backs out, as Esc does.
 - **Inspect** walks the life orb, skill slots, mana orb and active statuses without spending a turn. B, Menu or
-  another right-stick click closes it; keyboard X, Esc or I does the same.
+  another right-stick click closes it; keyboard X, Esc or I does the same. Holding the modifier (or Ctrl) shows the
+  secondary set's slots there too (`State.sets`).
 - **The editor is a desk tool** (`input.Desk`): keyboard and mouse only, by design.

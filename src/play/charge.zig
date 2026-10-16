@@ -8,6 +8,7 @@ const P = mathx.P;
 pub const COST: i32 = 20;
 pub const COOLDOWN: u8 = 4;
 pub const RANGE: i32 = 3;
+pub const MIN_RANGE: i32 = 2;
 pub const DMG_LO: i32 = 3;
 pub const DMG_HI: i32 = 5;
 pub const VERB = "charges into";
@@ -21,10 +22,9 @@ pub const knocked = bash.knocked;
 
 /// The way from `from` to `to` along a row, a column or a diagonal; null off them.
 pub fn wayTo(from: P, to: P) ?mathx.Dir {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    if ((dx == 0 and dy == 0) or (dx != 0 and dy != 0 and @abs(dx) != @abs(dy))) return null;
-    return mathx.dirTo(from, from.add(.{ .x = std.math.sign(dx), .y = std.math.sign(dy) }));
+    const d = to.sub(from);
+    if (d.x != 0 and d.y != 0 and @abs(d.x) != @abs(d.y)) return null;
+    return mathx.dirTo(from, from.add(d.sign()));
 }
 
 /// Where the hero stops: the cell before the body it charges.
@@ -36,7 +36,7 @@ pub fn stop(from: P, to: P) P {
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     const d = wayTo(from, to) orelse return false;
     const n = mathx.dist(from, to);
-    if (n < 2 or n > RANGE or !lv.isLit(to) or lv.who(to) == grid.NO_ONE) return false;
+    if (n < MIN_RANGE or n > RANGE or !lv.isLit(to) or lv.who(to) == grid.NO_ONE) return false;
     var at = from;
     for (0..@intCast(n - 1)) |_| {
         if (!lv.passOk(at, d)) return false;
@@ -68,5 +68,5 @@ test "a charge runs a straight open line of two or three tiles to a lit body, an
     lv.stand(.{ .x = 24, .y = 20 }, 6);
     lv.lit[grid.Level.idx(.{ .x = 23, .y = 20 })] = false;
     try std.testing.expect(!aimable(&lv, from, .{ .x = 23, .y = 20 }));
-    std.debug.print("charge: 2 to {d} tiles in 8 lines, blocked by a barrel, water, a body or darkness\n", .{RANGE});
+    std.debug.print("charge: {d} to {d} tiles in 8 lines, blocked by a barrel, water, a body or darkness\n", .{ MIN_RANGE, RANGE });
 }

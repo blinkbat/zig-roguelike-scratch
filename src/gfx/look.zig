@@ -363,6 +363,11 @@ pub const Sprites = struct {
 const HUD_BORDER_PNG = @embedFile("hud-border.png");
 pub const HUD_BORDER_CUT: i32 = 9;
 
+pub fn hudPanel(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, fill: rl.Color, tint: rl.Color) void {
+    rl.drawRectangle(x, y, width, height, fill);
+    hudBorder(sprites, x, y, width, height, tint);
+}
+
 pub fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, tint: rl.Color) void {
     const tex = sprites.hud_border orelse {
         rl.drawRectangleLines(x, y, width, height, tint);
@@ -866,8 +871,8 @@ const AIM_AREA_A: f32 = 0.24;
 pub const RETICLE = rgb(0xe8c25a);
 
 /// A burst's cells, shaded while it is aimed.
-pub fn aimArea(e: ?damage.Element) rl.Color {
-    return fade(if (e) |el| elementInk(el) else ARROW, AIM_AREA_A);
+pub fn aimArea(a: skillbar.Act) rl.Color {
+    return fade(arrowInk(a), AIM_AREA_A);
 }
 pub const RETICLE_BLOCKED = SHADE;
 pub const LEAN_OPEN = GOLD;
@@ -1189,7 +1194,8 @@ pub const Prompt = union(enum) {
     }
 };
 
-fn labelPx(h: i32) i32 {
+/// An input icon `h` tall: its caption's text size.
+pub fn labelPx(h: i32) i32 {
     return @divTrunc(h * 11, 16);
 }
 
@@ -1500,6 +1506,14 @@ test "the wall sheet's masks and face height are the ones its export script pain
     try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/export_walls.lua", "local FACE=");
     try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/guide_walls.lua", "local FACE=tonumber(app.params.rows) or ");
     try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/idea_walls.lua", "local FACE=");
+}
+
+test "the hud border's size and corner cut are the ones its export script checks" {
+    const path = "tools/hud_art/export_border.lua";
+    const size = comptime pngSize(HUD_BORDER_PNG);
+    try ground.expectLuaList(i32, &.{size.x}, path, "local W=");
+    try ground.expectLuaList(i32, &.{size.y}, path, "local H=");
+    try ground.expectLuaList(i32, &.{HUD_BORDER_CUT}, path, "local CUT=");
 }
 
 test "the deep water sheet is the shallows' at WATER_DEEP_PERCENT, as deepen_water.lua rounds it" {

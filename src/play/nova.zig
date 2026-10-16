@@ -9,6 +9,7 @@ const P = mathx.P;
 pub const COST: i32 = 30;
 pub const COOLDOWN: u8 = 3;
 pub const RANGE: i32 = 2;
+pub const OPEN_CELLS: usize = @intCast(grid.Cells.span(RANGE) * grid.Cells.span(RANGE) - 1);
 pub const COLD_LO: i32 = 3;
 pub const COLD_HI: i32 = 5;
 pub const VERB = "freezes";
@@ -40,12 +41,12 @@ test "a frost nova reaches every open cell within two tiles but the caster's, an
     var lv = grid.openFloor();
     const from = P{ .x = 20, .y = 20 };
     var area = around(&lv, from);
-    try std.testing.expectEqual(@as(usize, @intCast(grid.Cells.span(RANGE) * grid.Cells.span(RANGE) - 1)), area.n);
+    try std.testing.expectEqual(OPEN_CELLS, area.n);
     try std.testing.expect(!area.has(from));
     lv.set(.{ .x = 21, .y = 20 }, .wall);
     area = around(&lv, from);
     try std.testing.expect(!area.has(.{ .x = 21, .y = 20 }));
     try std.testing.expect(!area.has(.{ .x = 22, .y = 20 }));
     try std.testing.expect(area.has(.{ .x = 22, .y = 22 }));
-    std.debug.print("frost nova: {d} cells round the caster on open ground, a wall shading the cell behind it\n", .{grid.Cells.span(RANGE) * grid.Cells.span(RANGE) - 1});
+    std.debug.print("frost nova: {d} cells round the caster on open ground, a wall shading the cell behind it\n", .{OPEN_CELLS});
 }

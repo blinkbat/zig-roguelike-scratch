@@ -417,6 +417,8 @@ pub const State = struct {
     rub: bool = false,
     /// Set before each `update`: the number keys press the slots and the menu keys press none.
     playing: bool = false,
+    /// Set before each `update`: Ctrl holds the modifier though the number keys press no slot.
+    sets: bool = false,
     /// Set before each `update`: the slot Ctrl holds, which the number keys skip.
     modifier: ?Button = null,
     /// The pad read (`choosePad`), which names the captions though the window has lost focus and nothing is read.
@@ -485,7 +487,13 @@ pub const State = struct {
             self.pressed.setPresent(b, on);
             self.down.setPresent(b, hold);
         }
-        if (self.playing and !self.typing and !alt_down) self.slotKeys();
+        if (self.playing and !self.typing and !alt_down) {
+            self.slotKeys();
+        } else if (self.sets and !self.typing and !alt_down) {
+            if (self.modifier) |m| {
+                if (either(SECOND_KEYS)) self.down.insert(m);
+            }
+        }
         if (focused) self.time(dt);
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
@@ -898,7 +906,7 @@ fn anyHit(keys: []const rl.KeyboardKey) bool {
 
 /// A cardinal key held with a numpad diagonal sums past a step; each axis is its sign.
 fn stepOf(p: mathx.P) ?mathx.P {
-    return if (p.x == 0 and p.y == 0) null else .{ .x = std.math.sign(p.x), .y = std.math.sign(p.y) };
+    return if (p.x == 0 and p.y == 0) null else p.sign();
 }
 
 fn dpadWalk(at: i32) ?mathx.P {

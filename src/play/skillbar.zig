@@ -171,7 +171,7 @@ pub const Act = enum {
         };
     }
 
-    /// An elemental arrow's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
+    /// An elemental skill's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
     pub fn arrow(comptime a: Act) type {
         if (!has(a, "ELEMENT")) @compileError("no element");
         return module(a).?;
@@ -208,6 +208,27 @@ pub const Act = enum {
         };
     }
 
+    /// Cast at once, it strikes the cells round the hero.
+    pub fn surrounds(a: Act) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, "around"),
+        };
+    }
+
+    /// Cast at once, it shields the hero.
+    pub fn wards(a: Act) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, "Ward"),
+        };
+    }
+
+    /// A body its blow leaves alive is knocked back.
+    pub fn knocks(a: Act) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, "knocked"),
+        };
+    }
+
     /// Turns after it is used before it can be again.
     pub fn cooldown(a: Act) u8 {
         return switch (a) {
@@ -220,7 +241,7 @@ pub const Act = enum {
     }
 
     /// Every decl probed by name above, so renaming one in its module fails the build.
-    const PROBED = .{ "DESCRIPTION", "FREE", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "COOLDOWN" };
+    const PROBED = .{ "DESCRIPTION", "FREE", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN" };
 
     comptime {
         for (PROBED) |decl| {

@@ -247,6 +247,7 @@ const App = struct {
         const g = app.g;
         g.st.typing = app.page == .name;
         g.st.playing = false;
+        g.st.sets = false;
         g.st.update(rl.getFrameTime());
         g.st.spend(skillbar.BINDS);
         game.syncScreen(g, g.st.fullscreen);

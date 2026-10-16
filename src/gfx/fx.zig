@@ -9,6 +9,8 @@ const bleeding = @import("../play/bleeding.zig");
 const look = @import("look.zig");
 const font = @import("font.zig");
 const menu = @import("../ui/menu.zig");
+const skillbar = @import("../play/skillbar.zig");
+const nova = @import("../play/nova.zig");
 
 
 /// `ichor` is Brogue's purple blood.
@@ -125,8 +127,8 @@ pub const Status = enum {
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
             .bleeding => look.BLEED,
-            .burning => look.elementInk(.fire),
-            .chilled => look.elementInk(.cold),
+            .burning => look.elementInk(burning.ELEMENT),
+            .chilled => look.elementInk(glacial.ELEMENT),
             .pinned => look.PIN,
             .warded => look.WARD,
         };
@@ -134,7 +136,7 @@ pub const Status = enum {
 
     pub fn title(s: Status) [:0]const u8 {
         return switch (s) {
-            .warded => "Mana Shield",
+            .warded => skillbar.Act.mana_shield.name(),
             inline else => |t| comptime menu.capital(@tagName(t)),
         };
     }
@@ -150,14 +152,30 @@ pub const Status = enum {
         };
     }
 
+    /// The `Actor` field whose turns it counts.
+    fn field(comptime s: Status) []const u8 {
+        return switch (s) {
+            .bleeding => "bleed",
+            .burning => "burn",
+            .chilled => "chill",
+            .pinned => "pin",
+            .warded => "ward",
+        };
+    }
+
     fn turnsOf(s: Status, a: actor.Actor) u8 {
         return switch (s) {
-            .bleeding => a.bleed.turns,
-            .burning => a.burn.turns,
-            .chilled => a.chill.turns,
-            .pinned => a.pin.turns,
-            .warded => a.ward.turns,
+            inline else => |t| @field(a, field(t)).turns,
         };
+    }
+
+    comptime {
+        for (std.meta.fields(actor.Actor)) |f| {
+            if (@typeInfo(f.type) != .@"struct" or !@hasField(f.type, "turns")) continue;
+            var claimed = false;
+            for (std.enums.values(Status)) |s| claimed = claimed or std.mem.eql(u8, field(s), f.name);
+            if (!claimed) @compileError("fx.Status: no status shows Actor." ++ f.name);
+        }
     }
 };
 
@@ -198,8 +216,9 @@ pub const Sting = struct { slot: usize, after: ?After = null, fire_at: ?[2]f32 =
 pub const Settle = struct { slot: usize, after: After };
 
 pub const MOTES: usize = 320;
-/// A turn's worth: on every body, what its turn owes the picture and the archer's blow; then the frost and a barrel's blow.
-pub const DUE: usize = actor.MAX * 7 + 2;
+/// A turn's worth: on every body, what its turn owes the picture and the archer's blow; then a burst and a barrel's
+/// blow, or a chain's leaps.
+pub const DUE: usize = actor.MAX * 6 + 2;
 
 /// A missile's or a spell's burst over `area`, spreading out from `at`.
 pub const Burst = struct { at: mathx.P, area: glacial.Cone, col: rl.Color };
@@ -209,7 +228,13 @@ pub const Zap = struct { from: [2]f32, to: [2]f32 };
 
 pub const JUKE_S: f32 = 0.6;
 const JUKE_R = [2]f32{ 2, 5 };
-const ICE_MOTES: usize = 12;
+const CELL_MOTES: usize = 12;
+/// One burst's motes at most, so a wide one leaves the stains and blows their share of `MOTES`.
+const BURST_MOTES: usize = 144;
+
+fn burstMotes(cells: usize) usize {
+    return std.math.clamp(BURST_MOTES / @max(cells, 1), 1, CELL_MOTES);
+}
 const TRAIL_MOTES: usize = 20;
 const DUST_MOTES: usize = 24;
 /// Motes a cell of a zap's line.
@@ -397,7 +422,7 @@ pub const Fx = struct {
 
     /// A blow or sting is still to land on the slot.
     pub fn pending(self: *const Fx, slot: usize) bool {
-        for (self.due[0..self.due_n]) |d| {
+        for (self.due[0..self.due_n]) |*d| {
             if (d.what.on() == slot) return true;
         }
         return false;
@@ -409,7 +434,7 @@ pub const Fx = struct {
 
     /// The blow that split the body in `slot` off another is still to land.
     pub fn revealing(self: *const Fx, slot: usize) bool {
-        for (self.due[0..self.due_n]) |d| {
+        for (self.due[0..self.due_n]) |*d| {
             const a = d.what.after() orelse continue;
             if (a.reveals == slot) return true;
         }
@@ -422,7 +447,7 @@ pub const Fx = struct {
 
     pub fn breaking(self: *const Fx, p: mathx.P) bool {
         if (self.barrels_due == 0) return false;
-        for (self.due[0..self.due_n]) |d| {
+        for (self.due[0..self.due_n]) |*d| {
             if (d.what.onBarrel() and mathx.cellOf(d.what.blowOf().?.at).eq(p)) return true;
         }
         return false;
@@ -522,7 +547,7 @@ pub const Fx = struct {
         const from = mathx.centre(b.at);
         for (b.area.cells[0..b.area.n]) |p| {
             const to = mathx.centre(p);
-            for (0..ICE_MOTES) |_| {
+            for (0..burstMotes(b.area.n)) |_| {
                 const life = 0.22 + self.rng.unit() * 0.18;
                 self.emit(.{
                     .p = .{ to[0] + self.rng.spread(0.5), to[1] + self.rng.spread(0.5), STRIKE_Z },
@@ -759,7 +784,8 @@ test "glacial frost waits for impact then fills only its cone and clears without
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying);
     fx.step(&lv, 0.11);
     const n = live(&fx).flying;
-    try std.testing.expectEqual(area.n * ICE_MOTES, n);
+    try std.testing.expectEqual(area.n * burstMotes(area.n), n);
+    try std.testing.expect(nova.OPEN_CELLS * burstMotes(nova.OPEN_CELLS) <= BURST_MOTES);
     for (fx.motes) |m| {
         if (m.life <= 0) continue;
         try std.testing.expect(std.meta.eql(look.COLD, m.col));

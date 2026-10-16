@@ -52,6 +52,11 @@ pub const P = struct {
         return .{ .x = a.x * k, .y = a.y * k };
     }
 
+    /// Each axis's sign: a step toward `a` from the origin.
+    pub fn sign(a: P) P {
+        return .{ .x = std.math.sign(a.x), .y = std.math.sign(a.y) };
+    }
+
     pub fn min(a: P, b: P) P {
         return .{ .x = @min(a.x, b.x), .y = @min(a.y, b.y) };
     }

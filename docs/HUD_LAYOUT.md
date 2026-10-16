@@ -4,7 +4,7 @@
 
 Use Path of Exile 2 as the reference. Build one fixed-width HUD centered at the bottom, with a filled red life orb on the left, skills in the middle, and a filled blue mana orb on the right. Use simple graphics that David can paint over later.
 
-This document was written before implementation. Claude owns keybinds and input behaviour; this pass owns HUD composition and rendering. Read the current bindings and device captions, without changing their controls, defaults, secondary-set behaviour or binding interactions. See [CONTROLLER.md](CONTROLLER.md).
+Claude owns keybinds and input behaviour; this pass owns HUD composition and rendering. Read the current bindings and device captions, without changing their controls, defaults, secondary-set behaviour or binding interactions. See [CONTROLLER.md](CONTROLLER.md).
 
 ## Reference and adaptation
 
@@ -45,14 +45,7 @@ Small Balthazar text is rasterized at its displayed size (12, 15, 16, 20 and 24p
 
 The world now spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind overlay is centered in the space above the HUD. The former bar, counter, log and permanent-hint renderers are removed; their gameplay and save data remain intact.
 
-Verification completed:
-
-- Type check and full unit suite passed, including 4 layout resolutions and 7 resource-fill cases.
-- Headless shots passed, including the existing hidden/offscreen shadow checks with the taller world viewport.
-- Inspected full resources at 1280x720, partial resources and all three ailments at 1600x900, critical life and zero mana at 1920x1080, and both empty orbs at 1600x900.
-- Inspected controller and keyboard captions, cooldown dimming, insufficient-mana dimming, the highlighted aiming slot, secondary skills, and bind pickers at 720p and 900p.
-
-The dedicated captures are `shots/hud-full-1280.png`, `hud-partial-1600.png`, `hud-critical-1920.png`, `hud-empty-1600.png`, `hud-ps5-1280.png`, `hud-secondary-pad.png`, `hud-bind-pad.png`, `hud-bind-ps5.png` and `hud-bind-720.png`. `shot.cmd` regenerates all nine; previews and logs remain outside tracked source.
+The dedicated captures are `shots/hud-full-1280.png`, `hud-partial-1600.png`, `hud-critical-1920.png`, `hud-empty-1600.png`, `hud-ps5-1280.png`, `hud-secondary-pad.png`, `hud-bind-pad.png`, `hud-bind-ps5.png`, `hud-bind-720.png`, `hud-inspect-skill.png`, `hud-inspect-status.png` and `hud-inspect-mana.png`. `shot.cmd` regenerates them all; previews and logs remain outside tracked source.
 
 ## Aseprite paint template
 

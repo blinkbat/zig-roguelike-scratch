@@ -88,9 +88,12 @@ pub fn frame(layout: Layout, sprites: *const look.Sprites) void {
     const x = layout.life.x;
     const y = layout.top + PLATE_Y;
     const width = layout.mana.x - x;
-    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, PLATE_H + PLATE_SHADOW_GROW, look.fade(rl.Color.black, PLATE_SHADOW_A));
-    rl.drawRectangle(x, y, width, PLATE_H, PLATE);
-    look.hudBorder(sprites, x, y, width, PLATE_H, look.LIT);
+    shadow(x, y, width, PLATE_H);
+    look.hudPanel(sprites, x, y, width, PLATE_H, PLATE, look.LIT);
+}
+
+fn shadow(x: i32, y: i32, width: i32, height: i32) void {
+    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, height + PLATE_SHADOW_GROW, look.fade(rl.Color.black, PLATE_SHADOW_A));
 }
 
 pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32) void {
@@ -161,9 +164,7 @@ pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.
         const box = statusBox(layout, shown.len, k);
         const x: i32 = @intFromFloat(box.x);
         const y: i32 = @intFromFloat(box.y);
-        rl.drawRectangle(x, y, STATUS_PX, STATUS_PX, PLATE);
-        look.hudBorder(sprites, x, y, STATUS_PX, STATUS_PX, look.LIT);
-
+        look.hudPanel(sprites, x, y, STATUS_PX, STATUS_PX, PLATE, look.LIT);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         var buf: [4]u8 = undefined;
         const label = std.fmt.bufPrintZ(&buf, "{d}", .{turns}) catch "";
@@ -177,7 +178,9 @@ const FOCUS_W: f32 = 2;
 const TIP_W: i32 = 380;
 const TIP_PAD: i32 = 12;
 const TIP_GAP: i32 = 8;
-const TIP_LINE: i32 = font.SMALL + 4;
+const TIP_LEADING: i32 = 4;
+const TIP_LINE: i32 = font.SMALL + TIP_LEADING;
+const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
 const TIP_LINES_MAX: usize = 8;
 const TIP_COLS_MAX: usize = 96;
@@ -214,7 +217,7 @@ fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *[TIP_LINES_MAX
                 continue;
             }
         }
-        n += 1;
+        if (len > 0) n += 1;
         if (n == TIP_LINES_MAX) break;
         const fit = @min(word.len, TIP_COLS_MAX);
         @memcpy(buf[n][0..fit], word[0..fit]);
@@ -234,9 +237,9 @@ pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl
     const mid: i32 = @intFromFloat(over.x + over.width / 2);
     const x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
     const y = @max(TIP_MARGIN, @min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y) - TIP_GAP - h);
-    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, TIP_W + 2 * SHADOW_DROP, h + PLATE_SHADOW_GROW, look.fade(rl.Color.black, PLATE_SHADOW_A));
+    shadow(x, y, TIP_W, h);
     rl.drawRectangle(x, y, TIP_W, h, PLATE);
-    rl.drawRectangleLinesEx(look.rect(x, y, TIP_W, h), FOCUS_W, FRAME);
+    rl.drawRectangleLinesEx(look.rect(x, y, TIP_W, h), TIP_FRAME_W, FRAME);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.RETICLE);
     for (lines[0..n], 0..) |l, i| face.text(l, x + TIP_PAD, y + TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(i)) * TIP_LINE, font.SMALL, look.TEXT);
 }
@@ -260,6 +263,10 @@ test "a tooltip's body breaks at spaces into lines that each fit" {
     }
     try std.testing.expect(n > 1);
     try std.testing.expectEqual(std.mem.count(u8, body, " ") + 1, words);
+    const long = "x" ** (TIP_COLS_MAX + 4) ++ " y";
+    try std.testing.expectEqual(@as(usize, 2), wrap(&face, long, font.SMALL, w, &buf, &lines));
+    try std.testing.expectEqual(TIP_COLS_MAX, lines[0].len);
+    try std.testing.expectEqualStrings("y", lines[1]);
     std.debug.print("tooltip: a {d}-word description in {d} lines of {d} px at most\n", .{ words, n, w });
 }
 

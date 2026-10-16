@@ -74,7 +74,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         for (carve.corners(curtain)) |c| {
             carve.disc(lv, c, @floatFromInt(towerReach(p.towers)), .wall, null);
             carve.disc(lv, c, t - 0.5, .floor, null);
-            const toward = P{ .x = std.math.sign(grid.MIDDLE.x - c.x), .y = std.math.sign(grid.MIDDLE.y - c.y) };
+            const toward = grid.MIDDLE.sub(c).sign();
             var q = c;
             for (0..@intCast(towerReach(p.towers) + CURTAIN)) |_| {
                 for ([_]P{ .{ .x = toward.x, .y = 0 }, .{ .x = 0, .y = toward.y } }) |d| {

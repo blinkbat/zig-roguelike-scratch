@@ -29,6 +29,10 @@ const ROW_STEP: i32 = ROW_H + GAP;
 const TEXT: i32 = font.BODY;
 const SMALL = font.SMALL;
 const HEAD: i32 = 24;
+
+comptime {
+    std.debug.assert(font.isNative(HEAD));
+}
 const INNER_W: i32 = PANEL_W - PAD * 2;
 const ZOOMS = [_]f32{ 8, 16, 32, 64 };
 const ZOOM_AT = zoomOf(16);

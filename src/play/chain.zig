@@ -4,8 +4,7 @@ const grid = @import("../world/grid.zig");
 const damage = @import("damage.zig");
 const actor = @import("actor.zig");
 const spark = @import("spark.zig");
-
-const P = mathx.P;
+const bow = @import("bow.zig");
 
 pub const COST: i32 = 20;
 pub const LIGHTNING_LO: i32 = 2;
@@ -41,22 +40,14 @@ pub fn chain(lv: *const grid.Level, pool: *actor.Pool, first: u16) Chain {
     c.id[0] = first;
     c.n = 1;
     while (c.n <= JUMPS) {
-        const from = pool.items[actor.Pool.slot(c.id[c.n - 1])].at;
-        var best: ?u16 = null;
-        var best_d: i32 = JUMP_RANGE + 1;
-        var best_line: f32 = std.math.floatMax(f32);
+        const last = actor.Pool.slot(c.id[c.n - 1]);
+        const from = pool.items[last].at;
+        var near = bow.Nearest{ .from = from, .reach = JUMP_RANGE };
         for (pool.slice(), 0..) |a, i| {
-            const id = actor.Pool.idOf(i);
-            if (!a.alive or !a.foe() or std.mem.indexOfScalar(u16, c.slice(), id) != null) continue;
-            const d = mathx.dist(from, a.at);
-            const line = mathx.distEuclid(from, a.at);
-            if (d > JUMP_RANGE or d > best_d or (d == best_d and line >= best_line)) continue;
-            if (!lv.isLit(a.at) or !grid.clearLine(lv, from, a.at)) continue;
-            best = id;
-            best_d = d;
-            best_line = line;
+            if (!a.alive or !a.foe() or std.mem.indexOfScalar(u16, c.slice(), actor.Pool.idOf(i)) != null) continue;
+            if (lv.isLit(a.at) and grid.clearLine(lv, from, a.at)) near.offer(a.at);
         }
-        c.id[c.n] = best orelse break;
+        c.id[c.n] = lv.who(near.best orelse break);
         c.n += 1;
     }
     return c;

@@ -88,6 +88,8 @@ const PROMPT_PX: i32 = 22;
 /// From a slot's top right corner to its cooldown's turns, or a flask's drinks left.
 const COOLDOWN_DX: i32 = 18;
 const COOLDOWN_DY: i32 = 2;
+/// A marked slot's edge, inside the painted border's rail.
+const SLOT_EDGE_INSET: i32 = look.HUD_BORDER_CUT - 3;
 const SLOT_XS = blk: {
     var xs: [skillbar.SLOTS.len]i32 = undefined;
     var x: i32 = 0;
@@ -108,7 +110,9 @@ const BIND_TOP_DY: i32 = -230;
 const BIND_ROWS_DY: i32 = BIND_TITLE + BIND_POP_DY + SLOT_PX;
 const BIND_LABEL_GAP: i32 = 6;
 const BIND_ROW_GAP: i32 = 24;
-const BIND_ROW_H: i32 = TEXT + BIND_LABEL_GAP + SLOT_PX + KEY_GAP + PROMPT_PX + BIND_ROW_GAP;
+/// A slot and the input icon under it.
+const SLOT_COLUMN_H: i32 = SLOT_PX + KEY_GAP + PROMPT_PX;
+const BIND_ROW_H: i32 = TEXT + BIND_LABEL_GAP + SLOT_COLUMN_H + BIND_ROW_GAP;
 const BIND_POP_DY: i32 = 10;
 const BIND_INFO_DY: i32 = 8;
 const PICK_MARGIN: i32 = 16;
@@ -158,7 +162,8 @@ comptime {
     std.debug.assert(@mod(CELL, look.SPRITE_PX) == 0);
     std.debug.assert(GLYPH <= CELL);
     std.debug.assert(SKILLS_W <= hud.SKILLS_MAX_W);
-    std.debug.assert(hud.PLATE_PAD + SLOT_PX + KEY_GAP + PROMPT_PX <= hud.PLATE_H);
+    std.debug.assert(hud.PLATE_PAD + SLOT_COLUMN_H <= hud.PLATE_H);
+    std.debug.assert(font.isNative(look.labelPx(PROMPT_PX)));
 }
 
 pub const Mode = enum { play, aim, bind, dead, pause, inspect };
@@ -232,10 +237,10 @@ fn pickStep(i: usize, d: P, n: usize) usize {
     return @min(row * PICK_COLS + at % PICK_COLS, n - 1);
 }
 
-/// The rows shown, as many as fit between the screen's top and the slot's, holding the cursor's.
-fn pickWindow(bottom_y: i32, n: usize, at: usize) menu.Window {
+/// The rows shown, as many as fit between `top_y` and the slot's, holding the cursor's.
+fn pickWindow(top_y: i32, bottom_y: i32, n: usize, at: usize) menu.Window {
     const rows = pickRows(n);
-    const room: usize = @intCast(@max(1, @divTrunc(bottom_y - SLOT_GAP - PICK_MARGIN, SLOT_STEP) + 1));
+    const room: usize = @intCast(@max(1, @divTrunc(bottom_y - SLOT_GAP - top_y - PICK_MARGIN, SLOT_STEP) + 1));
     return menu.Window.of(rows, at / PICK_COLS, room);
 }
 
@@ -425,14 +430,13 @@ pub const Facing = enum { right, left };
 const Bite = struct { blow: enum { hurt, kill, burst }, after: fx.After };
 
 /// What a body's turn left to draw: its blow, at its place in the stagger; the gas's, the fire's and the bleed's harm
-/// and its chill wearing down, as it arrives there, or after the archer's part for one with no place.
+/// and its pin and chill wearing down, as it arrives there, or after the archer's part for one with no place.
 const Owed = struct {
     bit: ?Bite = null,
     gassed: ?Harm = null,
     burned: ?Harm = null,
     bled: ?Harm = null,
-    chilled: ?fx.After = null,
-    pinned: ?fx.After = null,
+    worn: ?fx.After = null,
 
     fn any(o: Owed) bool {
         inline for (std.meta.fields(Owed)) |f| {
@@ -443,7 +447,7 @@ const Owed = struct {
 };
 
 comptime {
-    std.debug.assert(fx.DUE >= actor.MAX * (std.meta.fields(Owed).len + 1) + 2);
+    std.debug.assert(fx.DUE >= actor.MAX * (std.meta.fields(Owed).len + 1) + @max(2, chain.JUMPS));
 }
 
 const Harm = struct { kill: bool, after: fx.After };
@@ -862,11 +866,16 @@ fn openSwing(g: *Game, by: input.Button, act: skillbar.Act) void {
         if (foe or mark == null) mark = p;
         if (foe) break;
     }
+    aimAt(g, by, act, h.at, mark);
+}
+
+/// A reticle opened on `mark`, the hero turned to it; with none, nothing opens.
+fn aimAt(g: *Game, by: input.Button, act: skillbar.Act, from: P, mark: ?P) void {
     g.mark = mark orelse {
         g.log.say("Nothing in reach.", .{});
         return;
     };
-    turnToward(g, g.hero, g.mark.x - h.at.x);
+    turnToward(g, g.hero, g.mark.x - from.x);
     aiming(g, by, act);
 }
 
@@ -878,21 +887,26 @@ fn aiming(g: *Game, by: input.Button, act: skillbar.Act) void {
 
 const Blocked = enum { cooling, mana, empty };
 
-fn blocked(g: *const Game, act: skillbar.Act, flasks: *const Flasks) ?Blocked {
+fn blocked(g: *const Game, act: skillbar.Act, flasks: *const Flasks, mana: i32) ?Blocked {
     if (g.cooldown.get(act) > 0) return .cooling;
     if (act.flaskOf()) |k| {
         if (!flasks.get(k).full()) return .empty;
     }
-    if (g.mana < act.cost()) return .mana;
+    if (mana < act.cost()) return .mana;
     return null;
+}
+
+/// The mana the orb shows: what a mana shield has taken stays until its blow lands.
+fn manaShown(g: *const Game) i32 {
+    return @min(heroes.MANA, g.mana + g.mana_held);
 }
 
 fn ready(g: *Game, act: skillbar.Act) bool {
     if (!quiet(g)) return false;
-    switch (blocked(g, act, &g.flasks) orelse return true) {
+    switch (blocked(g, act, &g.flasks, g.mana) orelse return true) {
         .cooling => {
             const left = g.cooldown.get(act);
-            g.log.say("{s} is ready in {d} turn{s}.", .{ act.name(), left, if (left == 1) "" else "s" });
+            g.log.say("{s} is ready in {d} turn{s}.", .{ act.name(), left, plural(left) });
         },
         .mana => g.log.say("{s} needs {d} mana.", .{ act.name(), act.cost() }),
         .empty => g.log.say("{s} is empty.", .{act.name()}),
@@ -905,8 +919,8 @@ fn spend(g: *Game, act: skillbar.Act) void {
     g.cooldown.set(act, act.cooldown());
 }
 
-fn cooldownOf(g: *const Game, act: ?skillbar.Act) u8 {
-    return if (act) |a| g.cooldown.get(a) else 0;
+fn plural(n: u8) []const u8 {
+    return if (n == 1) "" else "s";
 }
 
 fn aimable(g: *const Game, from: P, to: P) bool {
@@ -1003,18 +1017,20 @@ fn spell(g: *Game, comptime act: skillbar.Act) void {
     const h = g.archer() orelse return;
     spend(g, act);
     g.log.say("{s} casts {s}.", .{ g.name.text(), act.name() });
-    if (comptime @hasDecl(M, "around")) {
+    if (comptime act.surrounds()) {
         const at = h.at;
         const area = M.around(&g.lv, at);
         const s = Stroke{ .from = at, .wait = CAST_S };
         const struck = foesIn(g, area);
-        g.fx.burst(s.wait, .{ .at = at, .area = area, .col = look.elementInk(M.ELEMENT) });
+        g.fx.burst(s.wait, .{ .at = at, .area = area, .col = look.arrowInk(act) });
         holdUntil(g, s.wait);
         const rolled = rollArrow(&g.rng, act, false);
         for (struck.slice()) |id| arrowHit(g, id, rolled, act, s);
         g.lead = s.wait;
-    } else if (comptime @hasDecl(M, "Ward")) {
+    } else if (comptime act.wards()) {
         h.ward.raise();
+        const i = heroSlot(g).?;
+        g.fx.settle(0, .{ .slot = i, .after = .{ .body = snap(g, i) } });
         g.lead = 0;
     } else @compileError(@tagName(act) ++ " has no reticle and no use");
     endTurn(g);
@@ -1043,18 +1059,12 @@ fn foesIn(g: *Game, area: glacial.Cone) Struck {
 /// On the nearest body the rush can reach, else nothing opens.
 fn openRush(g: *Game, by: input.Button, act: skillbar.Act) void {
     const h = g.archer() orelse return;
-    var best: ?P = null;
+    var near = bow.Nearest{ .from = h.at };
     var cells = grid.Cells.around(h.at, act.reach());
     while (cells.next()) |p| {
-        if (!act.aimable(&g.lv, h.at, p)) continue;
-        if (best == null or mathx.dist(h.at, p) < mathx.dist(h.at, best.?)) best = p;
+        if (act.aimable(&g.lv, h.at, p)) near.offer(p);
     }
-    g.mark = best orelse {
-        g.log.say("Nothing in reach.", .{});
-        return;
-    };
-    turnToward(g, g.hero, g.mark.x - h.at.x);
-    aiming(g, by, act);
+    aimAt(g, by, act, h.at, near.best);
 }
 
 /// The hero runs down the line to the body at the mark, striking it as it arrives.
@@ -1069,7 +1079,7 @@ fn rush(g: *Game, from: P, act: skillbar.Act) void {
             g.glide[i] = g.glide[i].toward(stop, 0);
             const s = Stroke{ .from = stop, .wait = g.glide[i].left() };
             holdUntil(g, s.wait);
-            knock(g, M, d, s);
+            knock(g, a, d, s);
             turnToward(g, g.hero, d.delta().x);
             g.lead = s.wait;
         },
@@ -1199,17 +1209,18 @@ fn loose(g: *Game, from: P, act: skillbar.Act) void {
 
 /// A bolt's own verb on the barrel it strikes; an arrow shoots it.
 fn barrelVerb(comptime act: skillbar.Act) []const u8 {
-    return if (comptime act.bolt() != null) skillbar.Act.arrow(act).VERB else SHOOT;
+    return if (comptime act.bolt() != null) skillbar.Act.skill(act).VERB else SHOOT;
 }
 
 /// Each body the bolt leaps on to, chosen before any is struck, struck a leap after the last; the stagger starts from the last.
 fn chainHit(g: *Game, comptime act: skillbar.Act, first: u16, s: Stroke) void {
-    const M = skillbar.Act.arrow(act);
+    const M = skillbar.Act.skill(act);
     const c = M.chain(&g.lv, &g.pool, first);
     var from = s.from;
     var wait = s.wait;
     for (c.slice(), 0..) |id, k| {
-        const at = g.pool.items[actor.Pool.slot(id)].at;
+        const slot = actor.Pool.slot(id);
+        const at = g.pool.items[slot].at;
         if (k > 0) {
             g.fx.zap(wait, .{ .from = mathx.centre(from), .to = mathx.centre(at) });
             wait += ZAP_S;
@@ -1233,8 +1244,8 @@ fn swing(g: *Game, from: P, act: skillbar.Act) void {
             unreachable
         else if (comptime a.sweeps())
             sweep(g, skillbar.Act.skill(a), s)
-        else if (comptime @hasDecl(skillbar.Act.skill(a), "knocked"))
-            knock(g, skillbar.Act.skill(a), d, s)
+        else if (comptime a.knocks())
+            knock(g, a, d, s)
         else
             @compileError(@tagName(a) ++ " swings at nothing"),
     }
@@ -1254,13 +1265,14 @@ fn sweep(g: *Game, comptime M: type, s: Stroke) void {
 }
 
 /// A body it leaves alive is knocked back a tile where it can be, sliding as the blow lands, and may be afflicted.
-fn knock(g: *Game, comptime M: type, d: mathx.Dir, s: Stroke) void {
+fn knock(g: *Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) void {
+    const M = skillbar.Act.skill(act);
     const to = s.from.add(d.delta());
     const id = g.lv.who(to);
     if (id == grid.NO_ONE) return smash(g, to, M.VERB, s);
     const a = g.pool.get(id).?;
     const dmg = M.roll(&g.rng);
-    const takes = if (comptime @hasDecl(M, "afflict")) afflicted(g, a, M, dmg < a.hp, 0) else false;
+    const takes = if (comptime act.afflicts()) afflicted(g, a, M, dmg < a.hp, 0) else false;
     wound(g, id, dmg, M.VERB, s);
     if (g.pool.get(id) == null) return;
     const name = actor.row(a.kind).name;
@@ -1272,9 +1284,11 @@ fn knock(g: *Game, comptime M: type, d: mathx.Dir, s: Stroke) void {
         holdUntil(g, g.glide[i].left());
         sayAt(g, b, "The {s} is knocked back.", .{name});
     }
-    if (comptime @hasDecl(M, "afflict")) {
-        if (takes) sayAt(g, a.at, "The {s} " ++ M.TAKES ++ "!", .{name});
-    }
+    if (takes) sayTakes(g, M, a.at, name);
+}
+
+fn sayTakes(g: *Game, comptime M: type, at: P, name: []const u8) void {
+    sayAt(g, at, "The {s} " ++ M.TAKES ++ "!", .{name});
 }
 
 /// Rolled only for a blow that `lands` and leaves the body alive, before the blow, so a half split off takes it too.
@@ -1306,7 +1320,7 @@ fn arrowHit(g: *Game, id: u16, blow: damage.Damage, comptime act: skillbar.Act, 
     const lands = if (el) |e| blow.afflicts(a.resists, e, a.hp) else dealt < a.hp;
     const takes = afflicted(g, a, M, lands, if (el) |e| a.resists.get(e) else 0);
     if (dealt > 0) wound(g, id, dealt, M.VERB, s);
-    if (takes) sayAt(g, at, "The {s} " ++ M.TAKES ++ "!", .{name});
+    if (takes) sayTakes(g, M, at, name);
 }
 
 /// Every foe in the burst where the missile strikes, the one it strikes taking its arrow as well.
@@ -1318,7 +1332,7 @@ fn burstHit(g: *Game, comptime act: skillbar.Act, hit: bow.Hit, impact: P, s: St
     };
     const area = M.burst(&g.lv, s.from, impact);
     const struck = foesIn(g, area);
-    g.fx.burst(s.wait, .{ .at = impact, .area = area, .col = look.elementInk(M.ELEMENT) });
+    g.fx.burst(s.wait, .{ .at = impact, .area = area, .col = look.arrowInk(act) });
     const rolled = rollArrow(&g.rng, act, direct != null);
     if (hit == .barrel) smash(g, impact, barrelVerb(act), s);
     for (struck.slice()) |id| {
@@ -1482,8 +1496,7 @@ fn endTurn(g: *Game) void {
         const a = g.pool.items[i];
         if (!a.alive or !a.waits) continue;
         const id = actor.Pool.idOf(i);
-        _ = pinTurn(g, id);
-        _ = chillTurn(g, id);
+        _ = wearTurn(g, id);
         harmAfter(g, id, false);
     }
     if (g.archer()) |a| {
@@ -1576,24 +1589,17 @@ fn harmTick(g: *Game, id: u16, dmg: i32, comptime owed: Tick, comptime said: Sai
     return h;
 }
 
-/// Whether a chilled body skips this turn; its chill wearing down shows at its place in the stagger.
-fn chillTurn(g: *Game, id: u16) bool {
-    const a = g.pool.get(id) orelse return false;
-    const i = actor.Pool.slot(id);
-    if (ranAlready(g, id, .chilled) or a.chill.turns == 0) return false;
-    const skips = a.chill.skip();
-    g.owed[i].chilled = .{ .body = snap(g, i) };
-    return skips;
-}
+const Worn = struct { held: bool = false, skips: bool = false };
 
-/// Whether a pinned body is held to its cell this turn; its pin wearing down shows at its place in the stagger.
-fn pinTurn(g: *Game, id: u16) bool {
-    const a = g.pool.get(id) orelse return false;
+/// Whether a pinned body is held to its cell and a chilled one skips this turn; their wearing down shows at its place
+/// in the stagger.
+fn wearTurn(g: *Game, id: u16) Worn {
+    const a = g.pool.get(id) orelse return .{};
     const i = actor.Pool.slot(id);
-    if (ranAlready(g, id, .pinned) or a.pin.turns == 0) return false;
-    const held = a.pin.hold();
-    g.owed[i].pinned = .{ .body = snap(g, i) };
-    return held;
+    if (ranAlready(g, id, .worn) or (a.pin.turns == 0 and a.chill.turns == 0)) return .{};
+    const w = Worn{ .held = a.pin.hold(), .skips = a.chill.turns > 0 and a.chill.skip() };
+    g.owed[i].worn = .{ .body = snap(g, i) };
+    return w;
 }
 
 fn orderFoes(g: *Game, from: P) void {
@@ -1621,8 +1627,9 @@ fn orderFoes(g: *Game, from: P) void {
 /// A pinned body strikes what stands beside it but takes no step.
 fn foeTurn(g: *Game, id: u16) void {
     const stalled = (g.pool.get(id) orelse return).clock.stalled;
-    const held = pinTurn(g, id);
-    if (chillTurn(g, id) or stalled) return;
+    const worn = wearTurn(g, id);
+    const held = worn.held;
+    if (worn.skips or stalled) return;
     const r = g.pool.get(id) orelse return;
     const h = g.archer() orelse return;
     const row = actor.row(r.kind);
@@ -1678,9 +1685,9 @@ fn reach(g: *Game, id: u16, row: actor.Row) void {
             const h = hurt(g, g.hero, s.roll(&g.rng));
             const lethal = h.lethal;
             g.log.say("The {s} {s} {s} for {d}.", .{ row.name, s.verb, g.name.text(), h.dmg });
-            if (!lethal and bleeding.procs(&g.rng, s.bleeds)) {
+            if (!lethal and h.dmg > 0 and bleeding.procs(&g.rng, s.bleeds)) {
                 const b = &g.archer().?.bleed;
-                g.log.say("{s} {s}!", .{ g.name.text(), if (b.turns == 0) "starts bleeding" else "bleeds anew" });
+                g.log.say("{s} {s}!", .{ g.name.text(), if (b.turns == 0) bleeding.TAKES else "bleeds anew" });
                 b.start();
             }
             g.owed[i].bit = .{ .blow = if (lethal) .kill else .hurt, .after = afterBlow(g, g.hero, h) };
@@ -1710,7 +1717,7 @@ pub fn heroSlot(g: *const Game) ?usize {
     return if (g.hero == grid.NO_ONE) null else actor.Pool.slot(g.hero);
 }
 
-/// The archer as drawn, its hp held back till each blow lands.
+/// The hero as drawn, its hp held back till each blow lands.
 fn heroShown(g: *const Game) ?fx.Body {
     const i = heroSlot(g) orelse return null;
     return g.pictured[i];
@@ -1781,10 +1788,10 @@ fn splashSteps(g: *Game) void {
     }
 }
 
-/// A tick's harm or a chill wearing down on a body with no place lands at `start`, after the archer's part, which may burst its bloat. Returns when this body's part is drawn.
+/// A tick's harm or a pin or chill wearing down on a body with no place lands at `start`, after the archer's part, which may burst its bloat, or once a knock slide still running ends. Returns when this body's part is drawn.
 fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     comptime for (std.enums.values(Tick)) |t| switch (t) {
-        .bit, .gassed, .burned, .bled, .chilled, .pinned => {},
+        .bit, .gassed, .burned, .bled, .worn => {},
     };
     const i = actor.Pool.slot(id);
     const a = g.pool.items[i];
@@ -1807,7 +1814,7 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     if (g.turning[i]) |*t| t.in = if (placed) wait - late else start;
     const hero = heroSlot(g).?;
     const hero_at = g.pool.items[hero].at;
-    var lands = if (placed) wait else start;
+    var lands = if (placed) wait else if (moved) start else @max(start, gl.left());
     if (moved) {
         gl.* = gl.toward(a.at, late - wait);
     } else if (bit != null) {
@@ -1822,8 +1829,7 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
         .hurt, .kill => strike(g, hero, .{ .from = a.at, .wait = hits }, hero_at, b.blow == .kill, b.after),
         .burst => if (shown) strike(g, i, .{ .from = hero_at, .wait = hits }, a.at, true, b.after),
     };
-    if (owed.chilled) |c| g.fx.settle(lands, .{ .slot = i, .after = c });
-    if (owed.pinned) |c| g.fx.settle(lands, .{ .slot = i, .after = c });
+    if (owed.worn) |c| g.fx.settle(lands, .{ .slot = i, .after = c });
     const mark: ?[2]f32 = if (shown) mathx.centre(a.at) else null;
     const drip: ?fx.Drip = if (mark) |m| .{ .at = m, .matter = fx.matterOf(a.kind) } else null;
     const in_view = shown or placed;
@@ -2336,7 +2342,7 @@ fn drawWorld(g: *Game) void {
                 inline else => |a| if (comptime a.bursts()) if (f.impact()) |at| {
                     const area = skillbar.Act.arrow(a).burst(&g.lv, from, at);
                     for (area.cells[0..area.n]) |p| {
-                        if (g.lv.isSeen(p)) fillCell(c, p, look.aimArea(a.element()));
+                        if (g.lv.isSeen(p)) fillCell(c, p, look.aimArea(a));
                     }
                 },
             }
@@ -2459,8 +2465,7 @@ fn drawMinimap(g: *Game) void {
     const f = MINI_FRAME;
     const fw = MINI_W + f * 2;
     const fh = MINI_H + f * 2;
-    rl.drawRectangle(o.x - f, o.y - f, fw, fh, look.MINI_BG);
-    look.hudBorder(&g.sprites, o.x - f, o.y - f, fw, fh, look.LIT);
+    look.hudPanel(&g.sprites, o.x - f, o.y - f, fw, fh, look.MINI_BG, look.LIT);
     if (g.mini.tex) |t| {
         if (g.mini.stale) {
             for (&g.mini.px, &g.lv.tile, &g.lv.seen, &g.lv.lit) |*c, tile, seen, lit| c.* = if (seen) look.mini(tile, lit) else rl.Color.blank;
@@ -2494,15 +2499,14 @@ fn bindRowY(y0: i32, row: usize) i32 {
     return y0 + BIND_ROWS_DY + @as(i32, @intCast(row)) * BIND_ROW_H;
 }
 
-const SlotLook = struct { act: ?skillbar.Act, key: ?input.Button, edge: rl.Color, faded: bool = false };
+const SlotLook = struct { act: ?skillbar.Act, key: ?input.Button, edge: ?rl.Color = null, faded: bool = false };
 
 fn drawSlot(g: *Game, x: i32, y: i32, s: SlotLook) void {
     const a: f32 = if (s.faded) CARRIED_A else 1;
-    rl.drawRectangle(x, y, SLOT_PX, SLOT_PX, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a));
-    look.hudBorder(&g.sprites, x, y, SLOT_PX, SLOT_PX, look.fade(look.LIT, a));
-    if (!std.meta.eql(s.edge, look.EDGE)) {
-        const inset = look.HUD_BORDER_CUT - 3;
-        rl.drawRectangleLinesEx(look.rect(x + inset, y + inset, SLOT_PX - 2 * inset, SLOT_PX - 2 * inset), @floatFromInt(LINE_W), look.fade(s.edge, a));
+    look.hudPanel(&g.sprites, x, y, SLOT_PX, SLOT_PX, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a), look.fade(look.LIT, a));
+    if (s.edge) |edge| {
+        const inset = SLOT_EDGE_INSET;
+        rl.drawRectangleLinesEx(look.rect(x + inset, y + inset, SLOT_PX - 2 * inset, SLOT_PX - 2 * inset), @floatFromInt(LINE_W), look.fade(edge, a));
     }
     if (s.act) |act| {
         const inset = @divTrunc(SLOT_PX - look.SKILL_PX, 2);
@@ -2517,31 +2521,47 @@ fn shownSet(g: *const Game) skillbar.Set {
     return if (g.mode == .aim) g.aim_set else g.bar.active(g.st.down);
 }
 
-fn drawSkills(g: *Game, at: P) void {
-    const set = shownSet(g);
-    const x0 = at.x;
-    for (skillbar.SLOTS, SLOT_XS) |b, dx| {
+/// What the hud's `i`th slot holds now: its skill, its turns of cooldown, a flask's drinks left.
+const SlotShown = struct { act: skillbar.Act, cooling: u8, drinks: ?u8 };
+
+fn slotShown(g: *const Game, i: usize) ?SlotShown {
+    const act = g.bar.at(.{ .set = shownSet(g), .button = skillbar.SLOTS[i] }) orelse return null;
+    return .{ .act = act, .cooling = g.cooldown.get(act), .drinks = if (act.flaskOf()) |k| g.flasks_shown.get(k).uses() else null };
+}
+
+fn hudLayout(g: *const Game) hud.Layout {
+    return hud.Layout.of(g.screen, SKILLS_W);
+}
+
+fn slotBox(layout: hud.Layout, i: usize) rl.Rectangle {
+    return look.rect(layout.skills.x + SLOT_XS[i], layout.skills.y, SLOT_PX, SLOT_PX);
+}
+
+fn drawSkills(g: *Game, layout: hud.Layout) void {
+    for (skillbar.SLOTS, 0..) |b, i| {
+        const box = slotBox(layout, i);
+        const x: i32 = @intFromFloat(box.x);
+        const y: i32 = @intFromFloat(box.y);
         const held = (g.st.held(b) and g.mode == .play) or (g.mode == .aim and g.aim_by == b);
-        const act = g.bar.at(.{ .set = set, .button = b });
-        const cooling = cooldownOf(g, act);
-        drawSlot(g, x0 + dx, at.y, .{
-            .act = act,
+        const s = slotShown(g, i);
+        drawSlot(g, x, y, .{
+            .act = if (s) |v| v.act else null,
             .key = b,
-            .edge = if (held) look.SLOT_HELD else look.EDGE,
-            .faded = if (act) |a| blocked(g, a, &g.flasks_shown) != null else false,
+            .edge = if (held) look.SLOT_HELD else null,
+            .faded = if (s) |v| blocked(g, v.act, &g.flasks_shown, manaShown(g)) != null else false,
         });
-        const drinks: ?u8 = if (act) |a| if (a.flaskOf()) |k| g.flasks_shown.get(k).uses() else null else null;
-        if (cooling > 0 or drinks != null) {
+        const v = s orelse continue;
+        if (v.cooling > 0 or v.drinks != null) {
             var buf: [16]u8 = undefined;
-            const label = std.fmt.bufPrintZ(&buf, "{d}", .{drinks orelse cooling}) catch "";
-            g.face.text(label, x0 + dx + SLOT_PX - COOLDOWN_DX, at.y + COOLDOWN_DY, SLOT_TEXT, look.TEXT);
+            const label = std.fmt.bufPrintZ(&buf, "{d}", .{v.drinks orelse v.cooling}) catch "";
+            g.face.text(label, x + SLOT_PX - COOLDOWN_DX, y + COOLDOWN_DY, SLOT_TEXT, look.TEXT);
         }
     }
 }
 
 fn drawBinds(g: *Game) void {
     const b = g.binds;
-    const layout = hud.Layout.of(g.screen, SKILLS_W);
+    const layout = hudLayout(g);
     const x0 = layout.skills.x;
     const y0 = @divTrunc(layout.top, 2) + BIND_TOP_DY;
     veil(g);
@@ -2561,7 +2581,7 @@ fn drawBinds(g: *Game) void {
             drawSlot(g, x0 + dx, sy, .{
                 .act = g.bar.at(.{ .set = set, .button = key }),
                 .key = key,
-                .edge = if (here) look.SLOT_CURSOR else look.EDGE,
+                .edge = if (here) look.SLOT_CURSOR else null,
                 .faded = carried,
             });
         }
@@ -2579,7 +2599,7 @@ fn drawBinds(g: *Game) void {
             const kit = skillbar.kit(g.class);
             const picks = picksOf(kit);
             shown = pickAct(kit, pick);
-            const win = pickWindow(pop_y, picks, pick);
+            const win = pickWindow(y0 + BIND_TITLE, pop_y, picks, pick);
             const cols: i32 = @intCast(@min(picks, PICK_COLS));
             const w = cols * SLOT_STEP - SLOT_GAP;
             const px = std.math.clamp(cursor.x + @divTrunc(SLOT_PX - w, 2), x0, x0 + SKILLS_W - w);
@@ -2590,7 +2610,7 @@ fn drawBinds(g: *Game) void {
                 const x = px + @as(i32, @intCast(i % PICK_COLS)) * SLOT_STEP;
                 const y = py + @as(i32, @intCast(i / PICK_COLS - win.from)) * SLOT_STEP;
                 const act = pickAct(kit, i);
-                const edge = if (i == pick) look.SLOT_CURSOR else if (act == null) look.SLOT_CLEAR else look.EDGE;
+                const edge: ?rl.Color = if (i == pick) look.SLOT_CURSOR else if (act == null) look.SLOT_CLEAR else null;
                 drawSlot(g, x, y, .{ .act = act, .key = null, .edge = edge });
                 if (act == null) g.face.glyph(look.CLEAR.ch, x + SLOT_MID, y + SLOT_MID, CLEAR_GLYPH, look.CLEAR.fg);
             }
@@ -2604,28 +2624,35 @@ fn drawBinds(g: *Game) void {
     }
 }
 
+const Life = struct { hp: i32, max: i32 };
+
+/// The hero's life as the orb shows it, held back till each blow lands.
+fn lifeShown(g: *const Game) Life {
+    const h = heroShown(g) orelse return .{ .hp = 0, .max = heroRow(g).hp };
+    return .{ .hp = h.hp, .max = h.max };
+}
+
 fn drawHud(g: *Game) void {
-    const layout = hud.Layout.of(g.screen, SKILLS_W);
+    const layout = hudLayout(g);
     hud.frame(layout, &g.sprites);
-    const shown = heroShown(g);
-    const max = if (shown) |h| h.max else heroRow(g).hp;
-    const hp = if (shown) |h| h.hp else 0;
-    hud.resources(layout, &g.face, hp, max, @min(heroes.MANA, g.mana + g.mana_held), heroes.MANA);
-    drawSkills(g, layout.skills);
-    if (shown) |h| hud.statuses(layout, &g.sprites, &g.face, h.status);
+    const life = lifeShown(g);
+    hud.resources(layout, &g.face, life.hp, life.max, manaShown(g), heroes.MANA);
+    drawSkills(g, layout);
+    if (heroShown(g)) |h| hud.statuses(layout, &g.sprites, &g.face, h.status);
 }
 
 const Part = struct { spot: Spot, box: rl.Rectangle };
-const SPOTS_MAX = 2 + skillbar.SLOTS.len + std.enums.values(fx.Status).len;
+const ORBS = 2;
+const SPOTS_MAX = ORBS + skillbar.SLOTS.len + std.enums.values(fx.Status).len;
 
 /// Every part of the hud inspect mode can be on, where each is drawn.
 fn spotsOf(g: *const Game, out: *[SPOTS_MAX]Part) []const Part {
-    const layout = hud.Layout.of(g.screen, SKILLS_W);
+    const layout = hudLayout(g);
     var n: usize = 0;
     out[n] = .{ .spot = .life, .box = hud.orbBox(layout.life) };
     n += 1;
-    for (SLOT_XS, 0..) |dx, i| {
-        out[n] = .{ .spot = .{ .slot = i }, .box = look.rect(layout.skills.x + dx, layout.skills.y, SLOT_PX, SLOT_PX) };
+    for (0..skillbar.SLOTS.len) |i| {
+        out[n] = .{ .spot = .{ .slot = i }, .box = slotBox(layout, i) };
         n += 1;
     }
     out[n] = .{ .spot = .mana, .box = hud.orbBox(layout.mana) };
@@ -2683,10 +2710,15 @@ fn inspectStep(g: *Game) void {
     }
     var buf: [SPOTS_MAX]Part = undefined;
     const spots = spotsOf(g, &buf);
-    const here = spotAt(spots, g.inspecting) orelse spots[1];
+    const here = inspected(g, spots);
     g.inspecting = here.spot;
     const d = g.st.walk orelse return;
     g.inspecting = toward(spots, here, d) orelse here.spot;
+}
+
+/// What inspect is on; a status worn off since falls back to the first slot.
+fn inspected(g: *const Game, spots: []const Part) Part {
+    return spotAt(spots, g.inspecting) orelse spotAt(spots, .{ .slot = 0 }).?;
 }
 
 fn round(s: Spot) bool {
@@ -2711,7 +2743,7 @@ fn drawTips(g: *Game) void {
     if (g.mode == .inspect) {
         var buf: [SPOTS_MAX]Part = undefined;
         const spots = spotsOf(g, &buf);
-        drawTip(g, spotAt(spots, g.inspecting) orelse spots[1]);
+        drawTip(g, inspected(g, spots));
     } else if (hovered(g)) |here| drawTip(g, here);
 }
 
@@ -2720,7 +2752,7 @@ fn drawTip(g: *Game, here: Part) void {
     var title_buf: [64]u8 = undefined;
     var body_buf: [menu.NOTE_MAX * 2]u8 = undefined;
     const tip = tipOf(g, here.spot, &title_buf, &body_buf);
-    hud.tooltip(&g.face, hud.Layout.of(g.screen, SKILLS_W), g.screen, here.box, tip.title, tip.body);
+    hud.tooltip(&g.face, hudLayout(g), g.screen, here.box, tip.title, tip.body);
 }
 
 const Tip = struct { title: [:0]const u8, body: []const u8 };
@@ -2729,23 +2761,23 @@ const Tip = struct { title: [:0]const u8, body: []const u8 };
 fn tipOf(g: *const Game, s: Spot, title_buf: []u8, body_buf: []u8) Tip {
     return switch (s) {
         .life => blk: {
-            const h = heroShown(g);
+            const life = lifeShown(g);
             break :blk .{
                 .title = "Life",
-                .body = std.fmt.bufPrint(body_buf, "{d} of {d}. Lost to blows, gas, fire and bleeding, and restored by a life flask. At none, the run ends.", .{ if (h) |b| b.hp else 0, if (h) |b| b.max else heroRow(g).hp }) catch "",
+                .body = std.fmt.bufPrint(body_buf, "{d} of {d}. Lost to blows, gas, fire and bleeding, and restored by a life flask. At none, the run ends.", .{ life.hp, life.max }) catch "",
             };
         },
         .mana => .{
             .title = "Mana",
-            .body = std.fmt.bufPrint(body_buf, "{d} of {d}. Spent on skills; {d} returns every turn, and a mana flask restores more.", .{ @min(heroes.MANA, g.mana + g.mana_held), heroes.MANA, heroes.MANA_REGEN }) catch "",
+            .body = std.fmt.bufPrint(body_buf, "{d} of {d}. Spent on skills; {d} returns every turn, and a mana flask restores more.", .{ manaShown(g), heroes.MANA, heroes.MANA_REGEN }) catch "",
         },
         .slot => |i| blk: {
-            const act = g.bar.at(.{ .set = shownSet(g), .button = skillbar.SLOTS[i] }) orelse break :blk .{ .title = "Empty", .body = "No skill is bound here." };
-            const cooling = g.cooldown.get(act);
-            const extra = if (act.flaskOf()) |k|
-                std.fmt.bufPrint(body_buf, "{s} {d} drink{s} left.", .{ act.desc(), g.flasks_shown.get(k).uses(), if (g.flasks_shown.get(k).uses() == 1) "" else "s" })
-            else if (cooling > 0)
-                std.fmt.bufPrint(body_buf, "{s} Ready in {d} turn{s}.", .{ act.desc(), cooling, if (cooling == 1) "" else "s" })
+            const v = slotShown(g, i) orelse break :blk .{ .title = "Empty", .body = "No skill is bound here." };
+            const act = v.act;
+            const extra = if (v.drinks) |n|
+                std.fmt.bufPrint(body_buf, "{s} {d} drink{s} left.", .{ act.desc(), n, plural(n) })
+            else if (v.cooling > 0)
+                std.fmt.bufPrint(body_buf, "{s} Ready in {d} turn{s}.", .{ act.desc(), v.cooling, plural(v.cooling) })
             else
                 std.fmt.bufPrint(body_buf, "{s}", .{act.desc()});
             break :blk .{ .title = act.name(), .body = extra catch act.desc() };
@@ -2753,7 +2785,7 @@ fn tipOf(g: *const Game, s: Spot, title_buf: []u8, body_buf: []u8) Tip {
         .status => |st| blk: {
             const turns = if (heroShown(g)) |h| h.status.get(st) else 0;
             break :blk .{
-                .title = std.fmt.bufPrintZ(title_buf, "{s}, {d} turn{s}", .{ st.title(), turns, if (turns == 1) "" else "s" }) catch st.title(),
+                .title = std.fmt.bufPrintZ(title_buf, "{s}, {d} turn{s}", .{ st.title(), turns, plural(turns) }) catch st.title(),
                 .body = st.blurb(),
             };
         },
@@ -2850,6 +2882,7 @@ pub fn syncScreen(g: *Game, toggle: bool) void {
 pub fn frame(g: *Game) void {
     const dt = rl.getFrameTime();
     g.st.playing = g.mode == .play or g.mode == .aim;
+    g.st.sets = g.mode == .inspect;
     g.st.modifier = g.bar.modifier;
     g.st.update(dt);
     syncScreen(g, g.st.fullscreen);
@@ -3054,7 +3087,7 @@ fn shootHud(g: *Game) !void {
         body.hp = @divTrunc(body.max * study.hp, mathx.PERCENT);
         g.mana = @divTrunc(heroes.MANA * study.mana, mathx.PERCENT);
         if (study.ailing) {
-            body.status = .init(.{ .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1, .pinned = 0, .warded = 0 });
+            body.status = .initDefault(0, .{ .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1 });
             g.cooldown.set(.juke, juke.COOLDOWN);
         }
         const target = try renderTarget(g);
@@ -3836,7 +3869,7 @@ test "glacial shot spends only on confirmation and bursts at the first body with
     try std.testing.expect(TEST_HP - splash.hp >= glacial.COLD_LO and TEST_HP - splash.hp <= glacial.COLD_HI);
     for ([_]u16{ 4, 5, 6 }) |id| try std.testing.expectEqual(TEST_HP, g.pool.get(id).?.hp);
     try std.testing.expectEqual(@as(u8, 0), g.pool.get(6).?.chill.turns);
-    try std.testing.expectEqual(heroes.MANA - glacial.COST + heroes.MANA_REGEN, g.mana);
+    try std.testing.expectEqual(manaAfter(.glacial_shot), g.mana);
     try std.testing.expectEqual(glacial.TURNS - 1, direct.chill.turns);
     try std.testing.expectEqual(@as(u8, 0), g.pictured[actor.Pool.slot(2)].status.get(.chilled));
     try std.testing.expectEqual(TEST_HP, g.pictured[actor.Pool.slot(3)].hp);
@@ -3934,7 +3967,7 @@ test "glacial chill and its cadence follow slime splits without hitting newborn 
     arena(g, .{ .x = 20, .y = 20 }, &.{});
     const id = splittable(g, .{ .x = 26, .y = 20 }, true);
     const a = g.pool.get(id).?;
-    a.chill = .{ .turns = 1, .phase = glacial.CYCLE - 1 };
+    skipsNext(a);
     a.resists.set(.cold, -100);
     burstHit(g, .glacial_shot, .{ .body = id }, a.at, .{ .from = g.archer().?.at, .wait = 0.2 });
     try std.testing.expectEqual(@as(usize, 3), g.pool.n);
@@ -3968,7 +4001,7 @@ test "burning arrow spends mana only on confirmation and shows burning when its 
     press(g, .a);
     const dealt = TEST_HP - rat.hp;
     try std.testing.expect(dealt >= bow.DMG_LO + burning.FIRE_LO and dealt <= bow.DMG_HI + burning.FIRE_HI);
-    try std.testing.expectEqual(heroes.MANA - burning.COST + heroes.MANA_REGEN, g.mana);
+    try std.testing.expectEqual(manaAfter(.burning_arrow), g.mana);
     try std.testing.expectEqual(burning.TURNS, rat.burn.turns);
     try std.testing.expectEqual(@as(u8, 0), g.pictured[actor.Pool.slot(2)].status.get(.burning));
     try std.testing.expectEqual(skillbar.Act.burning_arrow, g.shot.?.act);
@@ -3984,7 +4017,7 @@ test "burning arrow spends mana only on confirmation and shows burning when its 
     const after = rat.hp;
     press(g, .y);
     try std.testing.expectEqual(after, rat.hp);
-    std.debug.print("Burning Arrow: {d} on hit, then {d} over {d} later turns; mana {d}, flames delayed until impact\n", .{ dealt, before - after, burning.TURNS, heroes.MANA - burning.COST + heroes.MANA_REGEN });
+    std.debug.print("Burning Arrow: {d} on hit, then {d} over {d} later turns; mana {d}, flames delayed until impact\n", .{ dealt, before - after, burning.TURNS, manaAfter(.burning_arrow) });
 }
 
 test "burning arrow honors fire resistance, refuses insufficient mana and uses the first body in its path" {
@@ -4286,14 +4319,15 @@ test "a pool longer than the bar wraps into rows the d-pad walks, and the rows s
     try std.testing.expectEqual(PICK_COLS + 1, pickStep(0, .{ .x = 1, .y = 1 }, n));
     const one_row = PICK_MARGIN + SLOT_GAP;
     for (0..n) |at| {
-        const win = pickWindow(one_row, n, at);
+        const win = pickWindow(0, one_row, n, at);
         try std.testing.expectEqual(@as(usize, 1), win.len);
         try std.testing.expectEqual(at / PICK_COLS, win.from);
     }
     const two_rows = one_row + SLOT_STEP;
-    try std.testing.expectEqual(@as(usize, 2), pickWindow(two_rows, n, last).len);
-    try std.testing.expectEqual(pickRows(n) - 2, pickWindow(two_rows, n, last).from);
-    try std.testing.expectEqual(pickRows(n), pickWindow(10_000, n, 0).len);
+    try std.testing.expectEqual(@as(usize, 2), pickWindow(0, two_rows, n, last).len);
+    try std.testing.expectEqual(pickRows(n) - 2, pickWindow(0, two_rows, n, last).from);
+    try std.testing.expectEqual(@as(usize, 1), pickWindow(two_rows - one_row, two_rows, n, last).len);
+    try std.testing.expectEqual(pickRows(n), pickWindow(0, 10_000, n, 0).len);
 }
 
 fn holdingView(g: *Game, more_s: f32, a: ?input.Button) void {
@@ -6250,7 +6284,7 @@ test "a knight's shield bash knocks a foe back a tile, and its stun keeps the fo
         const dealt = TEST_HP - rat.hp;
         try std.testing.expect(dealt >= bash.DMG_LO and dealt <= bash.DMG_HI);
         try std.testing.expectEqual(hp, g.archer().?.hp);
-        try std.testing.expectEqual(heroes.MANA - bash.COST + heroes.MANA_REGEN, g.mana);
+        try std.testing.expectEqual(manaAfter(.shield_bash), g.mana);
         try std.testing.expectEqual(bash.COOLDOWN - 1, g.cooldown.get(.shield_bash));
         x.* = rat.at.x;
         drawnOut(g);
@@ -6337,7 +6371,7 @@ test "a knight's cleave strikes the three tiles of its arc and nothing outside i
             hit += 1;
         } else try std.testing.expectEqual(@as(i32, 0), lost);
     }
-    try std.testing.expectEqual(heroes.MANA - cleave.COST + heroes.MANA_REGEN, g.mana);
+    try std.testing.expectEqual(manaAfter(.cleave), g.mana);
     std.debug.print("cleave: {d} of {d} rats struck, the {d} outside its arc untouched\n", .{ hit, arc.len + outside.len, outside.len });
 }
 
@@ -6358,7 +6392,7 @@ test "a wizard's blink lands further than juke and takes a turn" {
     try std.testing.expect(g.glide[actor.Pool.slot(2)].t <= -STAGGER_S + TEST_TOL);
     try std.testing.expect(!std.meta.eql(hour, g.clock));
     try std.testing.expectEqual(@as(i32, 29), rat.at.x);
-    try std.testing.expectEqual(heroes.MANA - blink.COST + heroes.MANA_REGEN, g.mana);
+    try std.testing.expectEqual(manaAfter(.blink), g.mana);
     try std.testing.expectEqual(blink.COOLDOWN - 1, g.cooldown.get(.blink));
     std.debug.print("blink: {d} tiles in a turn; the rat stepped once\n", .{blink.RANGE});
 }
@@ -6415,6 +6449,10 @@ test "a kill's flask refill shows as the kill is drawn, not as the arrow leaves"
 }
 
 /// Its next turn is the one a chill skips.
+fn manaAfter(act: skillbar.Act) i32 {
+    return heroes.MANA - act.cost() + heroes.MANA_REGEN;
+}
+
 fn skipsNext(a: *actor.Actor) void {
     a.chill = .{ .turns = 1, .phase = glacial.CYCLE - 1 };
 }
@@ -6431,7 +6469,7 @@ test "a pinning shot holds a chasing rat to its cell for two to four of its turn
     pressHolding(g, .a, &.{.lb});
     const dealt = TEST_HP - rat.hp;
     try std.testing.expect(dealt >= bow.DMG_LO and dealt <= bow.DMG_HI);
-    try std.testing.expectEqual(heroes.MANA - pinning.COST + heroes.MANA_REGEN, g.mana);
+    try std.testing.expectEqual(manaAfter(.pinning_shot), g.mana);
     var held: usize = 1;
     while (rat.at.x == 26 and held < 10) {
         press(g, .y);
@@ -6461,7 +6499,7 @@ test "a barbed arrow always opens a bleed on a body it leaves alive" {
     const dealt = TEST_HP - rat.hp;
     try std.testing.expect(dealt >= bow.DMG_LO and dealt <= bow.DMG_HI);
     try std.testing.expectEqual(bleeding.TURNS, rat.bleed.turns);
-    try std.testing.expectEqual(heroes.MANA - barbed.COST + heroes.MANA_REGEN, g.mana);
+    try std.testing.expectEqual(manaAfter(.barbed_arrow), g.mana);
     press(g, .y);
     try std.testing.expect(TEST_HP - rat.hp > dealt);
     std.debug.print("barbed arrow: {d} damage, a {d}-turn bleed, which bled {d} the next turn\n", .{ dealt, bleeding.TURNS, TEST_HP - rat.hp - dealt });
@@ -6477,7 +6515,7 @@ test "a frost nova freezes every foe within two tiles, the same roll for each, a
     try std.testing.expect(near >= nova.COLD_LO and near <= nova.COLD_HI);
     try std.testing.expectEqual(near, TEST_HP - g.pool.get(3).?.hp);
     try std.testing.expectEqual(TEST_HP, g.pool.get(4).?.hp);
-    try std.testing.expectEqual(heroes.MANA - nova.COST + heroes.MANA_REGEN, g.mana);
+    try std.testing.expectEqual(manaAfter(.frost_nova), g.mana);
     try std.testing.expectEqual(nova.COOLDOWN - 1, g.cooldown.get(.frost_nova));
     std.debug.print("frost nova: {d} cold to the foes 1 and 2 tiles off, none to the one 3 off\n", .{near});
 }
@@ -6494,7 +6532,7 @@ test "a fireball bursts on the first foe it strikes, burning the foes round it a
     try std.testing.expect(struck >= fireball.FIRE_LO and struck <= fireball.FIRE_HI);
     try std.testing.expectEqual(struck, TEST_HP - g.pool.get(3).?.hp);
     try std.testing.expectEqual(TEST_HP, g.pool.get(4).?.hp);
-    try std.testing.expectEqual(heroes.MANA - fireball.COST + heroes.MANA_REGEN, g.mana);
+    try std.testing.expectEqual(manaAfter(.fireball), g.mana);
     std.debug.print("fireball: {d} fire to the struck rat and the one beside it, none to the rat 3 tiles on\n", .{struck});
 }
 
@@ -6513,7 +6551,7 @@ test "chain lightning leaps from the struck foe to two more, each within three t
         hit += 1;
     }
     try std.testing.expectEqual(TEST_HP, g.pool.get(5).?.hp);
-    try std.testing.expectEqual(heroes.MANA - chain.COST + heroes.MANA_REGEN, g.mana);
+    try std.testing.expectEqual(manaAfter(.chain_lightning), g.mana);
     std.debug.print("chain lightning: {d} rats struck, the fourth 4 tiles from each left whole\n", .{hit});
 }
 
@@ -6543,12 +6581,16 @@ test "a mana shield turns a bite onto mana, the orb dropping as the bite lands, 
     const h = g.archer().?;
     const hp = h.hp;
     pressHolding(g, .b, &.{.lb});
-    const after_cast = heroes.MANA - ward.COST + heroes.MANA_REGEN;
+    const after_cast = manaAfter(.mana_shield);
     const bitten = after_cast - g.mana;
     try std.testing.expectEqual(hp, h.hp);
     try std.testing.expect(bitten >= 1 and bitten <= 3);
     try std.testing.expectEqual(ward.TURNS - 1, h.ward.turns);
     try std.testing.expectEqual(after_cast, g.mana + g.mana_held);
+    g.st = .{};
+    update(g, mathx.TEST_DT);
+    try std.testing.expectEqual(ward.TURNS, g.pictured[heroSlot(g).?].status.get(.warded));
+    try std.testing.expect(g.mana_held > 0);
     drawnOut(g);
     try std.testing.expectEqual(@as(i32, 0), g.mana_held);
     for (1..ward.TURNS) |_| press(g, .y);
@@ -6565,7 +6607,7 @@ test "mana shield deductions follow each staggered hit" {
     heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{ .{ .x = 21, .y = 20 }, .{ .x = 20, .y = 21 } });
     wakeFoes(g);
     pressHolding(g, .b, &.{.lb});
-    const before = heroes.MANA - ward.COST + heroes.MANA_REGEN;
+    const before = manaAfter(.mana_shield);
     try std.testing.expectEqual(before, g.mana + g.mana_held);
     g.st = .{};
     update(g, BUMP_LANDS + STAGGER_S * 1.5);
@@ -6594,13 +6636,35 @@ test "a charge runs the knight down a line to the foe, striking it and knocking 
         try std.testing.expectEqual(P{ .x = 22, .y = 20 }, g.archer().?.at);
         const dealt = TEST_HP - rat.hp;
         try std.testing.expect(dealt >= charge.DMG_LO and dealt <= charge.DMG_HI);
-        try std.testing.expectEqual(heroes.MANA - charge.COST + heroes.MANA_REGEN, g.mana);
+        try std.testing.expectEqual(manaAfter(.charge), g.mana);
         try std.testing.expectEqual(charge.COOLDOWN - 1, g.cooldown.get(.charge));
         x.* = rat.at.x;
     }
     try std.testing.expectEqual(@as(i32, 24), stood[0]);
     try std.testing.expectEqual(@as(i32, 23), stood[1]);
     std.debug.print("charge: 2 tiles run, the rat knocked to x {d}; pinned, it stood at x {d}\n", .{ stood[0], stood[1] });
+}
+
+test "a knocked rat's bleed lands once its knock slide has ended" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
+    const rat = g.pool.get(2).?;
+    toughen(rat);
+    skipsNext(rat);
+    rat.bleed.start();
+    rat.bleed.fresh = false;
+    press(g, .a);
+    press(g, .a);
+    const i = actor.Pool.slot(2);
+    try std.testing.expectEqual(@as(i32, 24), rat.at.x);
+    const bled = rat.hp;
+    g.st = .{};
+    var t: f32 = 0;
+    while (g.pictured[i].hp != bled and t < 2) : (t += TEST_DT) update(g, TEST_DT);
+    try std.testing.expectEqual(bled, g.pictured[i].hp);
+    try std.testing.expect(g.glide[i].left() <= TEST_TOL);
+    std.debug.print("knocked and bleeding: the tick landed {d:.3} s in, the slide done\n", .{t});
 }
 
 test "inspect walks the orbs, the slots and the statuses, spends no turn, and backs out by any way back or its own button" {
@@ -6648,7 +6712,7 @@ test "the mouse over an orb, a slot or a status shows its tooltip while playing,
         g.st.pointer = .{ .x = @intFromFloat(c[0]), .y = @intFromFloat(c[1]) };
         try std.testing.expectEqual(s.spot, hovered(g).?.spot);
     }
-    const orb = hud.orbBox(hud.Layout.of(g.screen, SKILLS_W).life);
+    const orb = hud.orbBox(hudLayout(g).life);
     g.st.pointer = .{ .x = @intFromFloat(orb.x + 1), .y = @intFromFloat(orb.y + 1) };
     try std.testing.expectEqual(@as(?Part, null), hovered(g));
     g.st.pointer = .{ .x = 0, .y = 0 };

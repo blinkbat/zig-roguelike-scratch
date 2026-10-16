@@ -9,6 +9,15 @@ const SHADOW_A: u16 = 200;
 const SHADOW_STEP: i32 = 14;
 pub const BODY: i32 = 20;
 pub const SMALL: i32 = 16;
+
+/// Drawn from its own point-filtered atlas, not the mipmapped one.
+pub fn isNative(size: i32) bool {
+    return std.mem.indexOfScalar(i32, &NATIVE_SIZES, size) != null;
+}
+
+comptime {
+    std.debug.assert(isNative(BODY) and isNative(SMALL));
+}
 const ASCII_LO: i32 = ' ';
 const ASCII_N: usize = '~' + 1 - ASCII_LO;
 const SYMBOLS_MAX: usize = 16;
