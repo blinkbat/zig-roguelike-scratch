@@ -2,7 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
-const grid = @import("../world/grid.zig");
+const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -33,6 +33,8 @@ const STANDS = std.EnumArray(grid.Tile, ?Shadow).initDefault(@as(?Shadow, null),
     .fungus = .silhouette,
     .tall_grass = .silhouette,
     .shrooms = .silhouette,
+    .chest = .silhouette,
+    .chest_open = .silhouette,
 });
 
 pub const STANDING = blk: {
@@ -76,6 +78,7 @@ pub const Assets = struct {
         for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
             const p = grid.Level.of(i);
             need.barrel = need.barrel or barrel;
+            if (t == .chest) need.add(.{ .tile = .chest_open });
             if (standsOver(t)) {
                 if (cutAt(lv, p)) |c| need.add(c);
             }
@@ -153,9 +156,16 @@ pub const GROUND_SHEETS = blk: {
 
 pub const Piece = struct { tex: rl.Texture2D, src: rl.Rectangle };
 
-pub const WaterView = struct { seconds: f32, screen_h: f32, visibility: rl.Texture2D };
+pub const Mirrors = struct { live: rl.Texture2D, memory: rl.Texture2D };
 
-const WaterShader = struct { shader: rl.Shader, time: i32, origin: i32, cell: i32, screen_h: i32, depth: i32, visibility: i32 };
+pub const WaterView = struct {
+    screen: [2]f32,
+    visibility: rl.Texture2D,
+    glints: rl.Texture2D,
+    mirror: ?Mirrors = null,
+};
+
+const WaterShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, depth: i32, visibility: i32, glints: i32, mirror: i32, memory: i32, mirrored: i32 };
 
 /// Needs a live GL context.
 pub const Sprites = struct {
@@ -171,6 +181,8 @@ pub const Sprites = struct {
     skills: ?rl.Texture2D = null,
     hud_border: ?rl.Texture2D = null,
     water: ?WaterShader = null,
+    mirror: ?rl.RenderTexture2D = null,
+    mirror_memory: ?rl.RenderTexture2D = null,
 
     pub fn loadCommon(self: *Sprites) void {
         self.skills = skillIcons();
@@ -211,8 +223,8 @@ pub const Sprites = struct {
             if (!beds.shown.contains(gr)) continue;
             const sheet = sheeted.contains(gr);
             const depth = if (sheet) waterDepth(gr) else null;
-            const shimmer = if (depth) |d| self.beginWater(water, origin, px, d) else false;
-            defer if (shimmer) rl.endShaderMode();
+            const reflective = if (depth) |d| self.beginWater(water, origin, px, d) else false;
+            defer if (reflective) rl.endShaderMode();
             if (!sheet) {
                 var cells = grid.Cells.of(beds.lo, beds.hi);
                 while (cells.next()) |p| {
@@ -244,13 +256,32 @@ pub const Sprites = struct {
         const v = view orelse return false;
         const s = self.water orelse return false;
         rl.beginShaderMode(s.shader);
-        setUniform(s.shader, s.time, v.seconds);
         setUniform(s.shader, s.origin, origin);
         setUniform(s.shader, s.cell, px);
-        setUniform(s.shader, s.screen_h, v.screen_h);
+        setUniform(s.shader, s.screen, v.screen);
         setUniform(s.shader, s.depth, depth);
+        setUniform(s.shader, s.mirrored, @as(i32, @intFromBool(v.mirror != null)));
         rl.setShaderValueTexture(s.shader, s.visibility, v.visibility);
+        rl.setShaderValueTexture(s.shader, s.glints, v.glints);
+        if (v.mirror) |m| {
+            rl.setShaderValueTexture(s.shader, s.mirror, m.live);
+            rl.setShaderValueTexture(s.shader, s.memory, m.memory);
+        }
         return true;
+    }
+
+    pub fn beginMirror(self: *Sprites, screen: mathx.P, outer: u32, memory: bool) bool {
+        if (self.water == null) return false;
+        if (!beginTarget(if (memory) &self.mirror_memory else &self.mirror, screen, outer, rl.Color.blank)) return false;
+        rl.gl.rlDisableBackfaceCulling();
+        return true;
+    }
+
+    pub fn endMirror(self: *const Sprites, outer: u32) Mirrors {
+        rl.gl.rlDrawRenderBatchActive();
+        rl.gl.rlEnableBackfaceCulling();
+        rl.gl.rlEnableFramebuffer(outer);
+        return .{ .live = self.mirror.?.texture, .memory = self.mirror_memory.?.texture };
     }
 
     fn cellAt(origin: [2]f32, p: mathx.P, px: f32) [2]f32 {
@@ -396,7 +427,7 @@ pub fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i3
 
 const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .archer = @embedFile("archer.png"),
-    .wizard = null,
+    .wizard = @embedFile("wizard.png"),
     .knight = null,
     .rat = @embedFile("rat.png"),
     .slime = @embedFile("slime.png"),
@@ -416,12 +447,15 @@ const PICTURED = blk: {
 const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const u8, null), .{
     .floor = @embedFile("floor.png"),
     .grass = @embedFile("grass.png"),
+    .reeds = @embedFile("reeds.png"),
     .shrub = @embedFile("shrub.png"),
     .tiny_shrub = @embedFile("tiny-shrub.png"),
     .boulder = @embedFile("boulder.png"),
     .fungus = @embedFile("tall-shroom.png"),
     .tall_grass = @embedFile("tall-grass.png"),
     .shrooms = @embedFile("small-shrooms.png"),
+    .chest = @embedFile("chest.png"),
+    .chest_open = @embedFile("chest-open.png"),
 });
 
 comptime {
@@ -558,6 +592,23 @@ pub fn canvas(w: i32, h: i32, c: rl.Color, filter: rl.TextureFilter) ?rl.Texture
     const img = rl.genImageColor(w, h, c);
     defer rl.unloadImage(img);
     return clamped(img, filter);
+}
+
+pub fn beginTarget(target: *?rl.RenderTexture2D, screen: mathx.P, outer: u32, clear: rl.Color) bool {
+    rl.gl.rlDrawRenderBatchActive();
+    if (target.*) |t| {
+        if (t.texture.width != screen.x or t.texture.height != screen.y) {
+            rl.unloadRenderTexture(t);
+            target.* = null;
+        }
+    }
+    if (target.* == null) target.* = rl.loadRenderTexture(screen.x, screen.y) catch {
+        rl.gl.rlEnableFramebuffer(outer);
+        return false;
+    };
+    rl.gl.rlEnableFramebuffer(target.*.?.id);
+    rl.clearBackground(clear);
+    return true;
 }
 
 /// White, its alpha `alphaAt(r)` at `r` from the middle, 1 at the middle of each edge. Needs a live GL context.
@@ -758,7 +809,7 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .water = .{ .sym = "≈", .ch = '~', .fg = rgb(0x4a80d0), .bg = rgb(0x0e1a36), .mini = rgb(0x24508a), .mini_dim = rgb(0x142640) },
     .shallows = .{ .sym = "~", .ch = '~', .fg = rgb(0x78b0d4), .bg = rgb(0x14283c), .mini = rgb(0x3e6e8e), .mini_dim = rgb(0x1e3444) },
     .bridge = .{ .sym = "=", .ch = '=', .fg = rgb(0xa87c48), .bg = rgb(0x1e160e), .mini = rgb(0x7a5a36), .mini_dim = rgb(0x3a2c1c) },
-    .reeds = .{ .sym = "¦", .ch = '|', .fg = rgb(0xa8b24a), .bg = rgb(0x161a0c), .mini = rgb(0x6a7030), .mini_dim = rgb(0x32361a) },
+    .reeds = .{ .sym = "¦", .ch = '|', .fg = rgb(0xa8b24a), .bg = null, .mini = rgb(0x6a7030), .mini_dim = rgb(0x32361a) },
     .rubble = .{ .sym = "•", .ch = ',', .fg = rgb(0x8a7f6a), .bg = rgb(0x18161a), .mini = rgb(0x4e4840), .mini_dim = rgb(0x26241f) },
     .fence = .{ .sym = "∏", .ch = '#', .fg = rgb(0x9a6638), .bg = null, .mini = rgb(0x7a5030), .mini_dim = rgb(0x3a2818) },
     .lava = .{ .sym = "≈", .ch = '~', .fg = rgb(0xff8a30), .bg = rgb(0x501406), .mini = rgb(0xc8501a), .mini_dim = rgb(0x5a240c) },
@@ -771,6 +822,8 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .boulder = .{ .sym = "o", .ch = 'o', .fg = rgb(0x9a8e90), .bg = null, .mini = rgb(0x7a7072), .mini_dim = rgb(0x3c3638) },
     .tall_grass = .{ .sym = "\"", .ch = '"', .fg = rgb(0x7aa84e), .bg = null, .mini = rgb(0x3a5630), .mini_dim = rgb(0x1c2818) },
     .shrooms = .{ .sym = "•", .ch = ',', .fg = rgb(0xd8ccb4), .bg = null, .mini = rgb(0x3c4a30), .mini_dim = rgb(0x1e241a) },
+    .chest = .{ .sym = "C", .ch = 'C', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = rgb(0x66502b) },
+    .chest_open = .{ .sym = "O", .ch = 'O', .fg = rgb(0x96724d), .bg = null, .mini = rgb(0x96724d), .mini_dim = rgb(0x443422) },
 });
 
 comptime {
@@ -847,17 +900,6 @@ pub fn gait(k: actor.Kind) Gait {
         .archer, .wizard, .knight, .rat, .pib => .hop,
         .slime, .slime_half, .slime_quarter, .bloat => .slide,
     };
-}
-
-/// y-down, so a delta whose signs agree runs top-left to bottom-right.
-pub fn arrow(dx: i32, dy: i32) u8 {
-    if (dy == 0) return '-';
-    if (dx == 0) return '|';
-    const steep = @abs(dy) > @abs(dx) * 2;
-    const flat = @abs(dx) > @abs(dy) * 2;
-    if (steep) return '|';
-    if (flat) return '-';
-    return if ((dx > 0) == (dy > 0)) '\\' else '/';
 }
 
 pub fn mini(t: grid.Tile, lit: bool) rl.Color {
@@ -1097,7 +1139,6 @@ pub fn elementInk(e: damage.Element) rl.Color {
 }
 
 pub const LIGHTNING = rgb(0xf4e872);
-pub const SPARK_GLYPH: u8 = '*';
 
 pub const SKILL_PX: i32 = 40;
 
@@ -1315,29 +1356,37 @@ pub const FS_HEAD = std.fmt.comptimePrint(
 /// Of the shallows' colours, what deep water's art keeps: `tools/tile_art/deepen_water.lua`.
 pub const WATER_DEEP_PERCENT = 60;
 const WATER_DEEP: f32 = mathx.fraction(WATER_DEEP_PERCENT);
-const WATER_HIGHLIGHT = [2]f32{ 0.65, 0.82 };
-const WATER_SHIMMER: f32 = 0.20;
-const WATER_SPEED: f32 = 0.40;
+const WATER_SATURATION: f32 = 0.8;
 const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
-    "const vec2 HIGHLIGHT = vec2({d}, {d});\nconst float SHIMMER = {d};\nconst float SPEED = {d};\nconst vec3 LUMA = vec3({d}, {d}, {d});\n",
-    .{ WATER_HIGHLIGHT[0], WATER_HIGHLIGHT[1], WATER_SHIMMER, WATER_SPEED, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2] },
+    "const float SATURATION = {d};\nconst vec3 LUMA = vec3({d}, {d}, {d});\nconst float OVERBRIGHT = {d:.1};\n",
+    .{ WATER_SATURATION, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2], @import("light.zig").OVERBRIGHT },
 ) ++
-    \\uniform float time;
     \\uniform vec2 origin;
     \\uniform float cell;
-    \\uniform float screen_h;
+    \\uniform vec2 screen;
     \\uniform float depth;
     \\uniform sampler2D visibility;
+    \\uniform sampler2D glints;
+    \\uniform sampler2D mirror;
+    \\uniform sampler2D memory;
+    \\uniform int mirrored;
     \\void main() {
     \\    vec4 art = texture(texture0, fragTexCoord) * fragColor;
-    \\    vec2 at = (vec2(gl_FragCoord.x, screen_h - gl_FragCoord.y) - origin) / cell;
-    \\    float bright = dot(art.rgb / depth, LUMA);
-    \\    float highlight = smoothstep(HIGHLIGHT.x, HIGHLIGHT.y, bright);
-    \\    float seen = texture(visibility, at / CELLS).a;
-    \\    float phase = time * SPEED;
-    \\    float wave = sin(at.x * 5.7 + at.y * 2.3 + phase * 4.25)
-    \\               * sin(at.x * 2.1 - at.y * 4.3 - phase * 2.75);
-    \\    finalColor = vec4(clamp(art.rgb * (1.0 + SHIMMER * highlight * wave * seen), 0.0, 1.0), art.a);
+    \\    vec2 at = (vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y) - origin) / cell;
+    \\    vec4 light = texture(visibility, at / CELLS);
+    \\    vec4 reflected = vec4(0.0);
+    \\    if (mirrored != 0) {
+    \\        vec2 uv = gl_FragCoord.xy / screen;
+    \\        vec4 remembered = texture(memory, uv);
+    \\        remembered.rgb *= light.rgb * OVERBRIGHT;
+    \\        reflected = mix(remembered, texture(mirror, uv), light.a);
+    \\    }
+    \\    float strength = mix(0.42, 0.28, smoothstep(0.6, 1.0, depth));
+    \\    vec3 shine = reflected.rgb * vec3(0.80, 0.90, 1.0) * strength;
+    \\    shine = mix(vec3(dot(shine, LUMA)), shine, SATURATION);
+    \\    shine += texture(glints, at / CELLS).rgb * light.a;
+    \\    vec3 base = art.rgb * (1.0 - reflected.a * strength);
+    \\    finalColor = vec4(clamp(base + shine / max(light.rgb * OVERBRIGHT, vec3(0.06)), 0.0, 1.0), art.a);
     \\}
 ;
 
@@ -1345,14 +1394,21 @@ fn waterDepth(gr: ground.Ground) ?f32 {
     return switch (gr) {
         .water => WATER_DEEP,
         .shallows => 1,
-        .chasm, .lava, .reeds, .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .bridge, .cobble => null,
+        .chasm, .lava, .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .bridge, .cobble => null,
     };
 }
 
-/// Whether `WATER_FS` may brighten or darken this pixel of `gr`'s art.
-pub fn shimmers(gr: ground.Ground, art: rl.Color) bool {
-    const depth = waterDepth(gr) orelse return false;
-    return sky.luma(rgbOf(art) / sky.splat(depth)) > WATER_HIGHLIGHT[0];
+/// The grounds that mirror the scene and glint.
+pub const REFLECTIVE = blk: {
+    var set = std.EnumSet(ground.Ground).initEmpty();
+    for (std.enums.values(ground.Ground)) |gr| {
+        if (waterDepth(gr) != null) set.insert(gr);
+    }
+    break :blk set;
+};
+
+pub fn reflects(t: grid.Tile) bool {
+    return REFLECTIVE.contains(ground.of(t) orelse return false);
 }
 
 pub fn rgbOf(c: rl.Color) sky.Rgb {
@@ -1373,7 +1429,7 @@ pub const EDIT_HOVER = fade(TEXT, 0.6);
 pub const EDIT_UNLINKED = DIM;
 
 test "map assets include unseen shapes, ground under props and future slime forms" {
-    const gen = @import("../world/gen.zig");
+    const gen = @import("../map/gen.zig");
     var lv = grid.Level.blank();
     @memset(&lv.tile, .rock);
     lv.set(.{ .x = 20, .y = 20 }, .wall);
@@ -1456,7 +1512,7 @@ test "every wall and forest cell lies inside its PNG, and one past its end is re
 }
 
 test "forest sprites follow connections and isolated trees mix with clumps without changing visibility" {
-    const gen = @import("../world/gen.zig");
+    const gen = @import("../map/gen.zig");
     var lv = grid.Level.blank();
     @memset(&lv.tile, .grass);
     var sprites = Sprites{};
@@ -1545,12 +1601,4 @@ test "the deep water sheet is the shallows' at WATER_DEEP_PERCENT, as deepen_wat
             try std.testing.expectEqual([3]u8{ Lua.channel(s.r), Lua.channel(s.g), Lua.channel(s.b) }, [3]u8{ d.r, d.g, d.b });
         }
     }
-}
-
-test "an arrow's glyph follows its slope" {
-    try std.testing.expectEqual(@as(u8, '-'), arrow(5, 0));
-    try std.testing.expectEqual(@as(u8, '|'), arrow(0, -3));
-    try std.testing.expectEqual(@as(u8, '\\'), arrow(3, 3));
-    try std.testing.expectEqual(@as(u8, '/'), arrow(3, -3));
-    try std.testing.expectEqual(@as(u8, '-'), arrow(7, 1));
 }

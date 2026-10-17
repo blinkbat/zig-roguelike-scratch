@@ -1,6 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
+const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
 const burning = @import("burning.zig");
 const glacial = @import("glacial.zig");
@@ -64,7 +64,7 @@ const FAMILY = blk: {
     break :blk t;
 };
 
-/// The hero a world's start is drawn as.
+/// The hero a map's start is drawn as.
 pub const HERO: Kind = .archer;
 
 comptime {

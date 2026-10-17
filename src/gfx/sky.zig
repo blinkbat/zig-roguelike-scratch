@@ -1,7 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const day = @import("../world/day.zig");
-const climate = @import("../world/climate.zig");
+const day = @import("../map/day.zig");
+const climate = @import("../map/climate.zig");
 
 // Directions point toward light: x east, y south (screen-down), z up.
 
@@ -44,6 +44,7 @@ pub const OVERHEAD: f32 = 1e-4;
 const SKY_GAIN: f32 = 1.6;
 /// The palette's key is a 3D scene's; on art drawn flat it is this strong.
 const KEY_GAIN: f32 = 0.85;
+const NIGHT_FILL_MIN: f32 = 0.72;
 /// Of the casting light's lean north or south, the share the map shows, so shadows run mostly across the screen.
 const NORTH_SOUTH: f32 = 0.35;
 
@@ -103,31 +104,32 @@ fn keyDim(hour: f32) f32 {
 const Palette = struct { key: Rgb, sky: Rgb };
 const Key = struct { at: f32, key: Rgb, sky: Rgb };
 
-const NIGHT = Palette{ .key = .{ 0.022, 0.030, 0.060 }, .sky = .{ 0.014, 0.018, 0.034 } };
-const MIDNIGHT = Palette{ .key = .{ 0.006, 0.008, 0.018 }, .sky = .{ 0.004, 0.005, 0.011 } };
+const NIGHT = Palette{ .key = .{ 0.018, 0.036, 0.100 }, .sky = .{ 0.008, 0.018, 0.050 } };
+const DEEPEST_NIGHT = Palette{ .key = .{ 0.003, 0.006, 0.020 }, .sky = .{ 0.002, 0.004, 0.012 } };
 
-/// Equal midnight endpoints avoid a seam; gold keys preserve the grass's green.
+/// Equal endpoints at the middle of the night avoid a seam.
 const KEYS = [_]Key{
-    .{ .at = 0, .key = MIDNIGHT.key, .sky = MIDNIGHT.sky },
-    .{ .at = 2.5, .key = NIGHT.key, .sky = NIGHT.sky },
+    .{ .at = day.DEAD_OF_NIGHT, .key = DEEPEST_NIGHT.key, .sky = DEEPEST_NIGHT.sky },
+    .{ .at = 3.5, .key = NIGHT.key, .sky = NIGHT.sky },
     .{ .at = KEY_SWAP_DAWN, .key = .{ 0.088, 0.104, 0.168 }, .sky = .{ 0.046, 0.056, 0.088 } },
     .{ .at = SUNRISE, .key = .{ 1.100, 0.620, 0.340 }, .sky = .{ 0.120, 0.124, 0.166 } },
-    .{ .at = 8.5, .key = .{ 1.250, 1.070, 0.860 }, .sky = .{ 0.176, 0.208, 0.276 } },
-    .{ .at = day.NOON, .key = .{ 1.310, 1.280, 1.180 }, .sky = .{ 0.196, 0.232, 0.310 } },
+    .{ .at = 8.5, .key = .{ 1.300, 1.070, 0.800 }, .sky = .{ 0.196, 0.208, 0.250 } },
+    .{ .at = day.NOON, .key = .{ 1.380, 1.250, 1.040 }, .sky = .{ 0.220, 0.230, 0.260 } },
     .{ .at = 17.45, .key = .{ 1.320, 1.100, 0.800 }, .sky = .{ 0.168, 0.188, 0.244 } },
     .{ .at = 19.4, .key = .{ 1.180, 0.660, 0.320 }, .sky = .{ 0.132, 0.136, 0.186 } },
     .{ .at = KEY_SWAP_DUSK, .key = .{ 0.130, 0.150, 0.230 }, .sky = .{ 0.058, 0.068, 0.102 } },
-    .{ .at = 21.5, .key = NIGHT.key, .sky = NIGHT.sky },
-    .{ .at = HOURS, .key = MIDNIGHT.key, .sky = MIDNIGHT.sky },
+    .{ .at = 22.5, .key = NIGHT.key, .sky = NIGHT.sky },
+    .{ .at = HOURS + day.DEAD_OF_NIGHT, .key = DEEPEST_NIGHT.key, .sky = DEEPEST_NIGHT.sky },
 };
 
 comptime {
-    std.debug.assert(KEYS[0].at == 0 and KEYS[KEYS.len - 1].at == HOURS);
+    std.debug.assert(KEYS[0].at == day.DEAD_OF_NIGHT and KEYS[KEYS.len - 1].at == HOURS + day.DEAD_OF_NIGHT);
     for (KEYS[1..], 0..) |k, i| std.debug.assert(k.at > KEYS[i].at);
 }
 
 fn paletteAt(hour: f32) Palette {
-    const h = wrapHour(hour);
+    const wrapped = wrapHour(hour);
+    const h = if (wrapped < KEYS[0].at) wrapped + HOURS else wrapped;
     var i: usize = 0;
     while (i + 2 < KEYS.len and KEYS[i + 1].at <= h) i += 1;
     const a = KEYS[i];
@@ -210,12 +212,16 @@ pub fn at(hour: f32) Sky {
 pub fn under(hour: f32, light: climate.Light) Sky {
     const p = paletteAt(hour);
     const l = LOOKS.get(light);
+    const dir = acrossScreen(keyDir(hour));
+    const moon = moonShare(hour);
+    const gain = mathx.lerpF(1, 0.7 / dir[2], moon);
+    const night_fill = mathx.lerpF(NIGHT_FILL_MIN, 1, mathx.smoothstep(0, NIGHT_SPAN * 0.4, @abs(day.toward(day.DEAD_OF_NIGHT, hour))));
     return .{
-        .dir = acrossScreen(keyDir(hour)),
-        .key = looked(p.key, keyDim(hour) * KEY_GAIN * l.key, l),
+        .dir = dir,
+        .key = looked(p.key, keyDim(hour) * KEY_GAIN * l.key * gain, l),
         .ambient = looked(p.sky, SKY_GAIN * l.sky, l),
-        .carry = 1 - day.daylight(hour),
-        .moon = moonShare(hour),
+        .carry = (1 - day.daylight(hour)) * night_fill,
+        .moon = moon,
     };
 }
 
@@ -259,6 +265,29 @@ test "a noon shadow reaches beyond a cell-tall sprite" {
     try std.testing.expect(reach > 1.05 and reach < 1.3);
 }
 
+test "each climate is darkest halfway through the night, blue at night and warmer by day" {
+    const middle = day.DEAD_OF_NIGHT;
+    try std.testing.expectApproxEqAbs(day.toward(SUNSET, middle), day.toward(middle, SUNRISE), 1e-5);
+    for (std.enums.values(climate.Light)) |profile| {
+        const darkest = lit(under(middle, profile));
+        for (0..1440) |minute| {
+            const hour = @as(f32, @floatFromInt(minute)) / 60;
+            try std.testing.expect(lit(under(hour, profile)) >= darkest - 1e-6);
+        }
+        const night = under(middle, profile);
+        const noon = under(day.NOON, profile);
+        try std.testing.expect(night.key[2] > night.key[0] * 2);
+        try std.testing.expect(night.ambient[2] > night.ambient[0] * 2);
+        try std.testing.expectEqual(NIGHT_FILL_MIN, night.carry);
+        try std.testing.expect(under(middle - 3, profile).carry > night.carry and under(middle + 3, profile).carry > night.carry);
+        try std.testing.expect(noon.key[0] / noon.key[2] > night.key[0] / night.key[2] * 2);
+        const before = lit(under(middle - 0.01, profile));
+        const after = lit(under(middle + 0.01, profile));
+        try std.testing.expectApproxEqAbs(before, after, 1e-5);
+        std.debug.print("{s} sky: 1440 minutes checked; minimum at {d:.1}h, night blue/red {d:.2}, noon key red/blue {d:.2}\n", .{ @tagName(profile), middle, night.key[2] / night.key[0], noon.key[0] / noon.key[2] });
+    }
+}
+
 test "the sun rises in the east, stands in the south at noon, sets in the west and is under the ground at midnight" {
     const rise = sunDir(SUNRISE);
     const noon = sunDir(day.SOLAR_NOON);
@@ -293,7 +322,7 @@ test "noon is bright and midnight dark, the day turns in a ramp, and midnight is
     std.debug.print("key at noon {d:.2} {d:.2} {d:.2}, at midnight {d:.3} {d:.3} {d:.3}; shade at noon {d:.2}, at midnight {d:.3}\n", .{ noon.key[0], noon.key[1], noon.key[2], night.key[0], night.key[1], night.key[2], noon.ambient[1], night.ambient[1] });
     try std.testing.expect(noon.key[0] > 1.0 and night.key[0] < 0.1);
     try std.testing.expectEqual(@as(f32, 0), noon.carry);
-    try std.testing.expectEqual(@as(f32, 1), night.carry);
+    try std.testing.expect(night.carry >= NIGHT_FILL_MIN and night.carry < 1);
     var h: f32 = 0;
     var was = at(0);
     while (h <= HOURS) : (h += 0.02) {

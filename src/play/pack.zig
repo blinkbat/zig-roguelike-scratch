@@ -1,7 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
-const gen = @import("../world/gen.zig");
+const grid = @import("../map/grid.zig");
+const gen = @import("../map/gen.zig");
 const actor = @import("actor.zig");
 
 const P = mathx.P;

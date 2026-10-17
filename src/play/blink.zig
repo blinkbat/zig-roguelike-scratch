@@ -1,6 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
+const grid = @import("../map/grid.zig");
 const juke = @import("juke.zig");
 
 pub const RANGE: i32 = 4;

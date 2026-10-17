@@ -1,7 +1,7 @@
 # AGENTS.md — roguelike-scratch
 
 Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats and pibs;
-breakable barrels, gold, HP and mana, with no items. Art starts as glyphs, replaced by the owner's PNGs.
+breakable barrels, openable treasure chests, gold, HP and mana, with no items. Art starts as glyphs, replaced by the owner's PNGs.
 Source paths below are relative to `src/`; scripts, docs and assets are relative to the repository root.
 
 ## Working rules
@@ -25,18 +25,18 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Finish code/art handoffs with `./build.cmd` so the owner's next run reuses it. If the normal executable is
   locked, use `./build.cmd --prefix zig-out-dev`. **Do not launch interactive play for verification.**
   `run.cmd` builds and launches, killing an existing game first; `edit.cmd [path]` uses it for `--edit`
-  (default `worlds/main.world`). These are owner-facing entry points.
+  (default `maps/main.map`). These are owner-facing entry points.
 - Every `src/**/*.zig` module except the root `main.zig` must be imported in `main.zig`'s `test {}` block.
   `build.zig` checks this on every build step and rejects those modules if smaller than 512 bytes.
 - `shot.cmd` builds into `zig-out-dev` but writes `shots/` under its working directory. For audits, build
   with `./build.cmd --prefix zig-out-dev`, then run the executable from a fresh `%TEMP%` directory containing
-  a copy of `worlds/`. This keeps generated frames outside the repo:
+  a copy of `maps/`. This keeps generated frames outside the repo:
 
   ```powershell
   $projectRoot = (Get-Location).Path
   $shotRoot = Join-Path $env:TEMP ('roguelike-shots-' + [guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $shotRoot | Out-Null
-  Copy-Item -LiteralPath (Join-Path $projectRoot 'worlds') -Destination $shotRoot -Recurse
+  Copy-Item -LiteralPath (Join-Path $projectRoot 'maps') -Destination $shotRoot -Recurse
   Push-Location $shotRoot
   try {
       & (Join-Path $projectRoot 'zig-out-dev/bin/roguelike.exe') --shot
@@ -45,10 +45,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   ```
 
 - Inspect actual headless PNGs. `game.zig`'s `shoot` and helpers define the coverage: abilities, editor,
-  worlds, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
-  `water-shimmer/00.png` through `39.png` cover four seconds of idle play. The same executable's `--bench`
-  reports startup, headless CPU frame time and texture residency/loading/reuse.
-- Tests must not write save or world files. No interactive window is needed for unit tests.
+  maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
+  `water-reflections/00.png` through `39.png` cover four seconds of idle play; `water-mirrors-*.png`
+  show day/night/torch reflections. The same executable's `--bench`
+  reports startup, headless CPU frame time, texture residency/loading/reuse and draw cost with 0/8/32 effect lights.
+- Tests must not write save or map files. No interactive window is needed for unit tests.
   If a full run stalls with an idle `test.exe --listen=-`, stop that run and execute its exact compiled
   `.zig-cache/o/<hash>/test.exe` without `--listen`; this completed the full suite when the runner stalled.
 - When `game.enter` replaces an actor pool, copy the carried actor into an initialized `var` before
@@ -65,53 +66,56 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   exception: `input.Desk` owns its keyboard/mouse controls and captions.
 - `play/skillbar.zig` owns primary/secondary sets, the bindable secondary modifier and class kits.
   `input.SLOT_ORDER` numbers keyboard slots while skipping the modifier, which uses Ctrl. Menu keys are
-  inactive in play; typing (`State.typing`) must not activate slots or movement. A close/cancel press that
+  inactive in play; targeting uses menu confirm/back keys (`State.context`). Typing (`State.typing`) must not activate slots or movement. A close/cancel press that
   could reopen binds is consumed with `State.spend`.
-- The button that opened a reticle confirms it; cancellation must still work when B opened it.
+- Reticles use standard confirm/back controls, regardless of the skill binding. B always cancels targeting,
+  including a skill opened with B; the opening press never confirms or cancels the new reticle.
   Esc backs out one layer at a time and opens pause only from play. Clear raylib's exit key with
   `input.claimKeys`; Esc must never close the window. Menu does not open pause over death.
+  Pause's Debug submenu contains Restart Map and Reveal Map. Reveal shows terrain and minimap without changing
+  gameplay sight or saved exploration; turning it off restores the normal view. Debug settings are not saved.
 - Inspect (`Mode.inspect`, R3 or I) is the HUD's tooltips: the stick/d-pad walks the orbs, slots and shown
   statuses (`game.spotsOf`, nearest along the way pushed), `hud.tooltip` names and describes the one it is
   on, without naming any input. Any back-out or the same button again closes it; it spends no turn.
   In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `game.hovered`).
 - `app.zig` owns title/game/editor transitions; the game requests `Game.exit`, and `Game.back` identifies
-  its caller. New reads `atlas.START` (`worlds/start.world`) fresh, falling back to a generated floor only
-  when that default file is missing. Reject malformed worlds and starts without open floor.
+  its caller. New reads `atlas.START` (`maps/start.map`) fresh, falling back to a generated floor only
+  when that default file is missing. Reject malformed maps and starts without open floor.
 - New runs select class and name, then use a free save slot; refuse when all slots are occupied.
   Saved-run death deletes the slot and returns to title on restart input; unsaved play can restart.
   Editor play-tests use the archer and no save slot. `Game.unkillable` is a debug option, never saved.
   Use the hero's name in the log/death screen, never "you".
 - `Game.screen` controls layout; fullscreen can change it at runtime. `ui/hud.zig` follows
   `docs/HUD_LAYOUT.md`: a centered 744px assembly, life/mana orbs, skill icons, cooldowns and ailments;
-  minimap at top right. The world continues behind it, with `hud.COVER` allowing bottom rows to clear it.
+  minimap at top right. The map continues behind it, with `hud.COVER` allowing bottom rows to clear it.
   No live name label, counters, log strip, clock display or permanent control instructions.
 - `gfx/font.zig` draws small Balthazar text from native-size, point-filtered atlases; larger text and
   symbols use the mipmapped atlas. It falls back to raylib's font in tests/load failure.
   Drawn strings are ASCII except tile symbols baked through `look.TILE_CODEPOINTS`; those use
   their ASCII fallback without the atlas.
 
-## World, editor and saves
+## Map, editor and saves
 
-- `world/atlas.zig` owns the world: bespoke/procgen nodes and reciprocal door links. Procgen nodes store
+- `map/atlas.zig` owns the map: bespoke/procgen nodes and reciprocal door links. Procgen nodes store
   settings, features, packs and climate, not seeds; `game.rollOf` derives each roll from the run seed and
   node. Keep visited nodes as left. Travel waits for the turn's presentation, preserves the hero's state,
-  and uses `atlas.landing` when the destination is occupied. World text is parsed strictly and saved by
+  and uses `atlas.landing` when the destination is occupied. Map text is parsed strictly and saved by
   writing beside the original and renaming over it.
-- `edit/editor.zig` edits the world; gameplay must not depend on editor state. Preview uses the same
+- `edit/editor.zig` edits the map; gameplay must not depend on editor state. Preview uses the same
   terrain drawing and pack placement as play, but procgen rolls afresh for a run. One gesture is one undo:
   `gesture` then `bank` on the first change; graph drags bank on release (`keepDrag`). Cancel (`drop`)
   restores the drag without consuming undo or losing redo. `Editor.request` guards leaving, quitting,
   opening and New when dirty, including window close. F5/F6 play-test unsaved; `HELP` stays checked against
-  `Desk` captions. Keep Things/issues, object-viewer metadata and cursor previews consistent with the world.
-- `save.zig` freezes the whole run: world, visited/current nodes, actors, class/name, resources/statuses,
+  `Desk` captions. Keep Things/issues, object-viewer metadata and cursor previews consistent with the map.
+- `save.zig` freezes the whole run: map, visited/current nodes, actors, class/name, resources/statuses,
   RNG, log, skill bar and time. `core/store.zig` fingerprints types; reject incompatible or incomplete
   saves before mutating the game. Autosave snapshots on the frame and writes on a thread, only while
   quiet and outside door travel; flush again on departure. Atomic completion gates reuse of the buffer.
   Failed writes rearm dirty state even while idle and retry on `GAP_S`; death ends the save.
-- `world/procgen.zig` rolls a base, then ordered features on a separately salted RNG stream, so adding
+- `map/procgen.zig` rolls a base, then ordered features on a separately salted RNG stream, so adding
   features leaves the base roll unchanged. Preserve bare rooms' `gen.around` path. Seal edges, reopen
   doors, supply a clearing if needed, connect open regions, then remove invalid/path-blocking props and
-  reshape walls. `world/carve.zig` is the shared toolkit; biome/feature `Params` own generator settings.
+  reshape walls. `map/carve.zig` is the shared toolkit; biome/feature `Params` own generator settings.
   `Floor.outdoor` decides sky exposure, independently of decoration.
 - `grid.TERRAIN` owns tile solidity, sight blocking, underlay and liquid properties; `Tile.letter` owns
   serialization; `look.TILES` owns appearance. Keep these distinct. The grid is y-down and gameplay
@@ -122,6 +126,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Brick walls join walls, forests join shrubs. `Level.wallShape` is brick-only; `tileShape` handles both.
   Missing forest masks are restored on save resume. Torch/barrel placement must preserve routes;
   barrels stop movement/arrows and break for gold in one hit, with no HP.
+  Chests spawn closed, open when stepped toward for more gold than barrels, and stay empty and walkable
+  afterward. Attacks never open them. Wilds' `loops` reconnects side paths; `rewards chests` rewards remaining
+  substantial branches. The Strand enables both, with chests placed without blocking routes.
 
 ## Combat and simulation
 
@@ -152,7 +159,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   foe type. Bloats fly; ground-only water footsteps must not be added to flying bodies.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
   each followed by gas, burn and bleed. Bloats burst however killed; foes do not enter gas from clean air.
-  `world/gas.zig` alone advances gas; it spreads through open cells, including liquids.
+  `map/gas.zig` alone advances gas; it spreads through open cells, including liquids.
 - Burn/bleed begin next turn; refreshing does not stack or postpone a due tick. Bleed doubles on movement,
   including hero leaps. Chill advances on enemy turns, preserving its act/act/skip cadence on refresh.
   A skipped action still takes gas/burn/bleed; waiting newborn halves process inherited status ticks
@@ -163,9 +170,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - A pib witnessing a nearby foe death wakes and flees (`FRIGHT_REACH`, `FLEE_TURNS`); subsequent deaths
   refresh it. Cornered beside the hero, it attacks. Fright speech waits for the death's presented impact
   and uses cosmetic RNG.
-- `world/day.zig`'s `Game.clock` is simulation: saved whole minutes, advanced by spent turns on every
-  node. `world/lume.zig` uses it for outdoor sight; `Game.hour_shown` only eases the rendered lighting.
-- `world/fov.zig` owns line of sight; `world/lume.zig` owns visibility from light. `Level.los` is geometric
+- `map/day.zig`'s `Game.clock` is simulation: saved whole minutes, advanced by spent turns on every
+  node. `map/lume.zig` uses it for outdoor sight; `Game.hour_shown` only eases the rendered lighting.
+- `map/fov.zig` owns line of sight; `map/lume.zig` owns visibility from light. `Level.los` is geometric
   sight; `Level.lit` additionally requires sky, torch or carried light. Terrain is remembered; bodies are
   shown only where lit at their presented center. Rendering never decides visibility.
 
@@ -199,10 +206,17 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Sun shadows remove at most 45% of sky light; moon shadows also darken carried light. Forest shadows
   keep joined footprints continuous; canopy pools and near-horizontal streaks remain soft. Torch shadows
   fade beneath the source. Every step-blocking non-liquid tile casts. Climate changes appearance, not sight.
-- Weather, water shimmer, FX and vignette are cosmetic. Weather stays fixed to map coordinates and visible
-  lit outdoor cells. Water shimmer affects only highlights, at most 20%, anchored to the map and faded by
-  sight; source art/editor preview remain static. `game.splashSteps`/`Fx.splash` follows visible ground
+- Weather, water reflections, FX and vignette are cosmetic. Weather stays fixed to map coordinates and visible
+  lit outdoor cells. Water stays smooth: fixed art/UVs, subtle light glints and undistorted mirrored scenery,
+  bodies and flames, clipped by the authored water alpha and dry ground layers. Static scenery reflections
+  persist in explored fog under memory lighting; bodies, animated flames and glints require live visibility.
+  Mirrors follow presented feet/facing/lift and exclude unexplored sources; glints obey light occlusion.
+  Source art/editor preview remain static. `game.splashSteps`/`Fx.splash` follows visible ground
   footsteps in water, excluding idle bodies and melee bumps. Vignette draws under minimap/HUD.
+- `gfx/pixel.zig` draws crisp FX shapes with smooth map motion. Missiles arrive at the existing impact
+  time; electrical arcs, trails and light use cosmetic state. `Light.emit` lights terrain and body normals
+  through a bounded, wall-occluded pool, never revealing memory or changing visibility. Night's darkest
+  point is `day.DEAD_OF_NIGHT`, derived from the midpoint of sunset to sunrise; sky colours retain climate.
 
 ## Art workflow
 
@@ -222,7 +236,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   cell 01 by stable position hash. `tone_forest.lua` records the darker foliage/grass palette; inspect
   existing tone and `assets/backup/` before applying it again.
 - `build.zig` embeds top-level PNG/TTF/TXT files in `assets/` by filename (`@embedFile`,
-  `@import("assets").names`), including controller mappings. Worlds/saves still use the working directory.
+  `@import("assets").names`), including controller mappings. Maps/saves still use the working directory.
   Register body/tile PNGs in `look.BODY_PNGS`/`TILE_PNGS`. Sprites are 64px, facing right; `Game.facing`
   mirrors leftward movement/strikes/aim and retains facing for vertical motion. `CELL` must be a whole
   multiple of 64, never fractional sprite scaling. Rebuild after installing assets.

@@ -1,8 +1,8 @@
 const std = @import("std");
 const store = @import("core/store.zig");
 const game = @import("game.zig");
-const atlas = @import("world/atlas.zig");
-const grid = @import("world/grid.zig");
+const atlas = @import("map/atlas.zig");
+const grid = @import("map/grid.zig");
 const actor = @import("play/actor.zig");
 const hero = @import("play/hero.zig");
 const menu = @import("ui/menu.zig");
@@ -22,13 +22,14 @@ const Seed = @FieldType(game.Game, "seed");
 const Node = @FieldType(game.Game, "node");
 const Visited = @FieldType(game.Game, "visited");
 const Visit = std.meta.Elem(@FieldType(game.Game, "visits"));
-const World = std.meta.Child(std.meta.Child(@FieldType(game.Game, "world")));
+const Map = std.meta.Child(std.meta.Child(@FieldType(game.Game, "map")));
 /// Written after the visited nodes, in this order.
 const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "flasks", "cooldown", "stepped", "class" };
 /// Written before the tail, by hand.
-const HEAD_FIELDS = .{ "seed", "world", "node", "visited", "visits" };
+const HEAD_FIELDS = .{ "seed", "map", "node", "visited", "visits" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
+    "pause_page",
     "mode",     "paused_from", "pause_menu", "back",           "exit",      "permadeath", "outdoors",     "hour_shown", "unkillable", "unsaved",
     "travel",   "st",          "binds",      "aim_by",         "aim_act",   "aim_set",    "mark",         "cam",        "screen",     "framebuffer",
     "shot",     "glide",       "turning",    "order",          "order_n",   "busy",       "pending",      "lead",       "owed",       "ran",
@@ -95,7 +96,7 @@ pub const Unreadable = enum {
 
 pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
 
-const HEAD_TYPES = [_]type{ Seed, World, Node, Visited, Visit };
+const HEAD_TYPES = [_]type{ Seed, Map, Node, Visited, Visit };
 comptime {
     std.debug.assert(HEAD_TYPES.len == HEAD_FIELDS.len);
 }
@@ -111,7 +112,7 @@ fn summaryOf(g: *game.Game) Summary {
     const i = game.heroSlot(g).?;
     const h = g.pool.items[i];
     var s = Summary{ .name = g.name, .hp = h.hp, .max = h.max, .gold = g.gold, .node = null };
-    if (g.world) |w| {
+    if (g.map) |w| {
         s.node = g.node;
         s.place = w.node[g.node].label;
     }
@@ -126,9 +127,9 @@ fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
     try store.put(w, &FINGERPRINT);
     try store.put(w, &summaryOf(g));
     try store.put(w, &g.seed);
-    const has_world = g.world != null;
-    try store.put(w, &has_world);
-    if (g.world) |a| try store.put(w, a);
+    const has_map = g.map != null;
+    try store.put(w, &has_map);
+    if (g.map) |a| try store.put(w, a);
     try store.put(w, &g.node);
     try store.put(w, &g.visited);
     var it = g.visited.iterator(.{});
@@ -172,7 +173,7 @@ fn peek(bytes: []const u8) Error!Summary {
     return (try inspect(bytes)).summary;
 }
 
-const Contents = struct { summary: Summary, seed: Seed, has_world: bool, body: []const u8 };
+const Contents = struct { summary: Summary, seed: Seed, has_map: bool, body: []const u8 };
 
 fn inspect(bytes: []const u8) Error!Contents {
     var b = try payload(bytes);
@@ -183,26 +184,26 @@ fn inspect(bytes: []const u8) Error!Contents {
         if (n >= atlas.MAX_NODES) return error.Damaged;
     }
     var seed: Seed = undefined;
-    var world_flag: u8 = undefined;
+    var map_flag: u8 = undefined;
     comptime std.debug.assert(@sizeOf(bool) == @sizeOf(u8));
-    if (!store.take(&b, &seed) or !store.take(&b, &world_flag)) return error.Short;
-    if (world_flag > 1) return error.Damaged;
-    const has_world = world_flag != 0;
-    const at_visited = @as(usize, if (has_world) @sizeOf(World) else 0) + @sizeOf(Node);
+    if (!store.take(&b, &seed) or !store.take(&b, &map_flag)) return error.Short;
+    if (map_flag > 1) return error.Damaged;
+    const has_map = map_flag != 0;
+    const at_visited = @as(usize, if (has_map) @sizeOf(Map) else 0) + @sizeOf(Node);
     if (b.len < at_visited + @sizeOf(Visited)) return error.Short;
     var visited: Visited = undefined;
     var vb = b[at_visited..];
     _ = store.take(&vb, &visited);
     if (b.len != at_visited + @sizeOf(Visited) + visited.count() * @sizeOf(Visit) + TAIL) return error.Short;
-    return .{ .summary = s, .seed = seed, .has_world = has_world, .body = b };
+    return .{ .summary = s, .seed = seed, .has_map = has_map, .body = b };
 }
 
 /// All of it is measured before any of it reaches `g`, so a file that does not read leaves the game as it was.
-fn read(bytes: []const u8, g: *game.Game, world: *World) Error!void {
+fn read(bytes: []const u8, g: *game.Game, map: *Map) Error!void {
     const c = try inspect(bytes);
     var b = c.body;
-    if (c.has_world) _ = store.take(&b, world);
-    g.world = if (c.has_world) world else null;
+    if (c.has_map) _ = store.take(&b, map);
+    g.map = if (c.has_map) map else null;
     g.seed = c.seed;
     _ = store.take(&b, &g.node);
     _ = store.take(&b, &g.visited);
@@ -230,10 +231,10 @@ fn readSlot(alloc: std.mem.Allocator, slot: usize) ![]u8 {
     return std.fs.cwd().readFileAlloc(alloc, path(&buf, slot), FILE_CAP);
 }
 
-pub fn load(alloc: std.mem.Allocator, slot: usize, g: *game.Game, world: *atlas.Atlas) !void {
+pub fn load(alloc: std.mem.Allocator, slot: usize, g: *game.Game, map: *atlas.Atlas) !void {
     const bytes = try readSlot(alloc, slot);
     defer alloc.free(bytes);
-    try read(bytes, g, world);
+    try read(bytes, g, map);
 }
 
 pub fn remove(slot: usize) !void {
@@ -398,7 +399,7 @@ test "a save that keeps failing is said once, not once a retry" {
     std.debug.print("a save failing {d} retries in a row: {d} log line\n", .{ RETRIES, g.log.n - said });
 }
 
-fn testWorld() !*atlas.Atlas {
+fn testMap() !*atlas.Atlas {
     const w = try std.testing.allocator.create(atlas.Atlas);
     w.* = .{};
     const a = w.add(.{ .procgen = .{} }).?;
@@ -413,11 +414,11 @@ fn testWorld() !*atlas.Atlas {
 
 test "a run reads back as it was written, and a short or foreign file leaves the game alone" {
     const alloc = std.testing.allocator;
-    const w = try testWorld();
+    const w = try testMap();
     defer alloc.destroy(w);
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
-    game.beginWorld(g, w);
+    game.beginMap(g, w);
     g.name = hero.Name.of("Arwen");
     g.gold = 17;
     g.mana = 37;
@@ -437,6 +438,8 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     for ([_]*grid.Level{ &g.lv, &g.visits[0].lv }) |lv| {
         var cells = (grid.Box{ .lo = .{ .x = 69, .y = 49 }, .hi = .{ .x = 73, .y = 52 } }).cells();
         while (cells.next()) |p| lv.set(p, .grass);
+        lv.set(.{ .x = 72, .y = 49 }, .chest);
+        lv.set(.{ .x = 72, .y = 51 }, .chest_open);
         for (forest..forest + 2) |i| {
             lv.tile[i] = .shrub;
             lv.shape[i] = null;
@@ -459,7 +462,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     buf.items[buf.items.len / 2] +%= 1;
     try std.testing.expectError(error.Damaged, read(buf.items, back, into));
     buf.items[buf.items.len / 2] -%= 1;
-    try std.testing.expectEqual(@as(?*const atlas.Atlas, null), back.world);
+    try std.testing.expectEqual(@as(?*const atlas.Atlas, null), back.map);
     try read(buf.items, back, into);
     try std.testing.expectEqualStrings("Arwen", back.name.text());
     try std.testing.expectEqual(@as(usize, 1), back.node);
@@ -484,6 +487,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
         restored += 2;
     }
     std.debug.print("save reload restored {d} absent forest shapes across the active and visited nodes\n", .{restored});
+    std.debug.print("closed and opened chests preserved on both active and visited nodes\n", .{});
     try std.testing.expectEqualStrings("A line to keep.", back.log.line(0).?);
     const s = try peek(buf.items);
     var line: [128]u8 = undefined;
@@ -508,8 +512,8 @@ test "a listed save must have the complete run that loading requires" {
     try write(g, &buf);
     const full = try std.testing.allocator.dupe(u8, buf.items);
     defer std.testing.allocator.free(full);
-    const world = try std.testing.allocator.create(World);
-    defer std.testing.allocator.destroy(world);
+    const map = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(map);
     const hp = g.archer().?.hp;
     const seed = g.seed;
     const cuts = [_]usize{ HEAD + @sizeOf(Summary), HEAD + @sizeOf(Summary) + @sizeOf(Seed) + @sizeOf(bool), full.len - 1 };
@@ -518,7 +522,7 @@ test "a listed save must have the complete run that loading requires" {
         try buf.appendSlice(full[0..cut]);
         seal(&buf);
         try std.testing.expectError(error.Short, peek(buf.items));
-        try std.testing.expectError(error.Short, read(buf.items, g, world));
+        try std.testing.expectError(error.Short, read(buf.items, g, map));
         try std.testing.expectEqual(hp, g.archer().?.hp);
         try std.testing.expectEqual(seed, g.seed);
     }
@@ -527,6 +531,6 @@ test "a listed save must have the complete run that loading requires" {
     buf.items[HEAD + @sizeOf(Summary) + @sizeOf(Seed)] = 2;
     seal(&buf);
     try std.testing.expectError(error.Damaged, peek(buf.items));
-    try std.testing.expectError(error.Damaged, read(buf.items, g, world));
-    std.debug.print("{d} checksummed incomplete saves and an invalid world flag refused before loading\n", .{cuts.len});
+    try std.testing.expectError(error.Damaged, read(buf.items, g, map));
+    std.debug.print("{d} checksummed incomplete saves and an invalid map flag refused before loading\n", .{cuts.len});
 }

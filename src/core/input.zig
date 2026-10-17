@@ -411,6 +411,8 @@ fn types(k: rl.KeyboardKey) bool {
 }
 
 pub const State = struct {
+    pub const Context = enum { menu, play, target };
+
     pressed: std.EnumSet(Button) = .initEmpty(),
     down: std.EnumSet(Button) = .initEmpty(),
     down_s: std.EnumArray(Button, f32) = .initFill(0),
@@ -425,8 +427,8 @@ pub const State = struct {
     typing: bool = false,
     typed: Typed = .{},
     rub: bool = false,
-    /// Set before each `update`: the number keys press the slots and the menu keys press none.
-    playing: bool = false,
+    /// Play uses numbered slots; menus and targeting use standard confirm/back keys.
+    context: Context = .menu,
     /// Set before each `update`: Ctrl holds the modifier though the number keys press no slot.
     sets: bool = false,
     /// Set before each `update`: the slot Ctrl holds, which the number keys skip.
@@ -477,6 +479,13 @@ pub const State = struct {
         return if (self.walk != null) self.step.late else 0;
     }
 
+    fn keysFor(self: State, b: Button) []const rl.KeyboardKey {
+        if (self.context != .play or !b.isSlot()) return b.keys();
+        if (self.typing) return &.{};
+        if (b == self.modifier) return &SECOND_KEYS;
+        return SLOT_KEYS[numberOf(self.modifier, b).?..][0..1];
+    }
+
     pub fn update(self: *State, dt: f32) void {
         const before = self.triggers;
         for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
@@ -493,8 +502,8 @@ pub const State = struct {
                 on = self.padHit(at, b.pad(), &before);
                 hold = self.padHeld(at, b.pad());
             }
-            if (!alt_down and !(self.playing and b.isSlot())) {
-                for (b.keys()) |k| {
+            if (!alt_down) {
+                for (self.keysFor(b)) |k| {
                     if (self.typing and types(k)) continue;
                     on = on or rl.isKeyPressed(k);
                     hold = hold or rl.isKeyDown(k);
@@ -503,9 +512,7 @@ pub const State = struct {
             self.pressed.setPresent(b, on);
             self.down.setPresent(b, hold);
         }
-        if (self.playing and !self.typing and !alt_down) {
-            self.slotKeys();
-        } else if (self.sets and !self.typing and !alt_down) {
+        if (self.context != .play and self.sets and !self.typing and !alt_down) {
             if (self.modifier) |m| {
                 if (either(SECOND_KEYS)) self.down.insert(m);
             }
@@ -514,7 +521,7 @@ pub const State = struct {
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();
-        self.lean = self.playing and ((if (live) |at| self.padHeld(at, LEAN) else false) or either(LEAN_KEYS));
+        self.lean = self.context != .menu and ((if (live) |at| self.padHeld(at, LEAN) else false) or either(LEAN_KEYS));
         self.typed.n = 0;
         self.rub = false;
         if (self.typing) {
@@ -557,16 +564,6 @@ pub const State = struct {
     fn padHit(self: *const State, at: i32, b: rl.GamepadButton, before: *const [PADS]Triggers) bool {
         if (Trigger.of(b)) |t| return edge(before[@intCast(at)], self.triggers[@intCast(at)], t);
         return rl.isGamepadButtonPressed(at, b);
-    }
-
-    fn slotKeys(self: *State) void {
-        for (SLOT_ORDER) |b| {
-            const keys: []const rl.KeyboardKey = if (b == self.modifier) &SECOND_KEYS else SLOT_KEYS[numberOf(self.modifier, b).?..][0..1];
-            for (keys) |k| {
-                if (rl.isKeyPressed(k)) self.pressed.insert(b);
-                if (rl.isKeyDown(k)) self.down.insert(b);
-            }
-        }
     }
 
     fn time(self: *State, dt: f32) void {
@@ -1216,6 +1213,27 @@ test "on the keyboard Enter, Space and Z confirm in menus, and X and Esc back ou
             for (b.keys()) |k| try std.testing.expect(std.mem.indexOfScalar(rl.KeyboardKey, o.keys(), k) == null);
         }
     }
+}
+
+test "targeting uses confirm and back keys instead of numbered skills for every modifier binding" {
+    for (SLOT_ORDER) |modifier| {
+        var s = State{ .context = .target, .modifier = modifier };
+        try std.testing.expectEqualSlices(rl.KeyboardKey, &.{ .enter, .kp_enter, .space, .z }, s.keysFor(.a));
+        try std.testing.expectEqualSlices(rl.KeyboardKey, &.{.x}, s.keysFor(.b));
+        try std.testing.expectEqualSlices(rl.KeyboardKey, &.{.escape}, s.keysFor(.pause));
+        for (BUTTONS) |b| {
+            for (s.keysFor(b)) |k| try std.testing.expect(std.mem.indexOfScalar(rl.KeyboardKey, &SLOT_KEYS, k) == null);
+        }
+        s.context = .play;
+        try std.testing.expectEqualSlices(rl.KeyboardKey, &SECOND_KEYS, s.keysFor(modifier));
+        for (SLOT_ORDER) |b| {
+            if (b == modifier) continue;
+            try std.testing.expectEqualSlices(rl.KeyboardKey, SLOT_KEYS[numberOf(modifier, b).?..][0..1], s.keysFor(b));
+        }
+        s.typing = true;
+        for (SLOT_ORDER) |b| try std.testing.expectEqual(@as(usize, 0), s.keysFor(b).len);
+    }
+    std.debug.print("{d} modifier bindings: targeting confirms/backs out with menu keys, play uses numbered slots, typing fires none\n", .{SLOT_ORDER.len});
 }
 
 test "the lean layer puts each d-pad button on its own diagonal" {

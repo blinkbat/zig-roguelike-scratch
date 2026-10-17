@@ -1,8 +1,9 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
+const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
+const damage = @import("../play/damage.zig");
 const glacial = @import("../play/glacial.zig");
 const burning = @import("../play/burning.zig");
 const bleeding = @import("../play/bleeding.zig");
@@ -11,6 +12,8 @@ const font = @import("font.zig");
 const menu = @import("../ui/menu.zig");
 const skillbar = @import("../play/skillbar.zig");
 const nova = @import("../play/nova.zig");
+const pixel = @import("pixel.zig");
+const light = @import("light.zig");
 
 /// `ichor` is Brogue's purple blood.
 pub const Matter = enum { blood, ooze, wood, ichor };
@@ -70,6 +73,7 @@ const Spray = struct {
     r_hi: f32,
     stains: bool,
     bounce: f32 = 0,
+    add: bool = false,
 };
 
 fn sprayOf(m: Matter) Spray {
@@ -216,9 +220,30 @@ pub const MOTES: usize = 320;
 /// Capacity for every body's turn effects and hero hit, plus a burst or chain jumps.
 pub const DUE: usize = actor.MAX * 6 + 2;
 
-pub const Burst = struct { at: mathx.P, area: glacial.Cone, col: rl.Color };
+pub const Burst = struct { at: mathx.P, area: glacial.Cone, element: damage.Element };
 
 pub const Zap = struct { from: [2]f32, to: [2]f32 };
+
+const ARC_S: f32 = 0.18;
+const ARC_POINTS = 25;
+const Arc = struct {
+    points: [ARC_POINTS][2]f32 = undefined,
+    life: f32 = 0,
+};
+
+/// A brief light an effect casts: reach in cells, peak gain, and seconds to fade.
+pub const Glow = struct { radius: f32, gain: f32, life: f32 };
+pub const EMBER_GLOW = Glow{ .radius = 2.2, .gain = 0.8, .life = 0.32 };
+const SHIMMER_GLOW = Glow{ .radius = 2.2, .gain = 0.65, .life = 0.4 };
+const FIRE_BURST_GLOW = Glow{ .radius = 3.5, .gain = 1.4, .life = 0.35 };
+const COLD_BURST_GLOW = Glow{ .radius = 3, .gain = 0.6, .life = 0.35 };
+const ARC_GLOW = Glow{ .radius = 1.8, .gain = 0.85, .life = ARC_S };
+
+const Pulse = struct {
+    source: light.Emission = .{ .at = @splat(0), .col = rl.Color.blank, .radius = 0, .gain = 0 },
+    life: f32 = 0,
+    max: f32 = 1,
+};
 
 pub const JUKE_S: f32 = 0.6;
 const JUKE_R = [2]f32{ 2, 5 };
@@ -232,10 +257,10 @@ fn burstMotes(cells: usize) usize {
 const TRAIL_MOTES: usize = 20;
 const DUST_MOTES: usize = 24;
 /// Motes a cell of a zap's line.
-const ZAP_MOTES: usize = 8;
+const ZAP_MOTES: usize = 5;
 /// How far a zap's motes stray off its line, in cells.
 const ZAP_JITTER: f32 = 0.18;
-const EMBERS = Spray{ .col = look.FIRE, .hit = 18, .kill = 18, .along_lo = 0.4, .along_hi = 1.4, .fan = 0, .up_lo = 0.5, .up_hi = 1.5, .grav = 0, .drag = 2, .life_lo = 0.25, .life_hi = 0.55, .r_lo = 1.5, .r_hi = 3.5, .stains = false };
+const EMBERS = Spray{ .col = look.FIRE, .hit = 18, .kill = 18, .along_lo = 0.4, .along_hi = 1.4, .fan = 0, .up_lo = 0.5, .up_hi = 1.5, .grav = 0, .drag = 2, .life_lo = 0.25, .life_hi = 0.55, .r_lo = 1, .r_hi = 2.5, .stains = false, .add = true };
 const DRIP_MOTES: usize = 5;
 const WATER_MOTES: usize = 4;
 /// Cells below a body's middle its splash rises from, and how far across and down it spreads.
@@ -315,6 +340,10 @@ const Due = union(enum) {
 };
 
 pub const Fx = struct {
+    arcs: [12]Arc = @splat(.{}),
+    arc_head: usize = 0,
+    pulses: [32]Pulse = @splat(.{}),
+    pulse_head: usize = 0,
     motes: [MOTES]Mote = @splat(.{ .p = @splat(0), .v = @splat(0), .r = 0, .col = rl.Color.blank }),
     head: usize = 0,
     flash: [actor.MAX]f32 = @splat(0),
@@ -330,6 +359,8 @@ pub const Fx = struct {
     seconds: mathx.Seconds = .{},
 
     pub fn clear(self: *Fx) void {
+        for (&self.arcs) |*a| a.life = 0;
+        for (&self.pulses) |*p| p.life = 0;
         for (&self.motes) |*m| m.life = 0;
         self.flash = @splat(0);
         self.due_n = 0;
@@ -387,25 +418,28 @@ pub const Fx = struct {
     }
 
     fn later(self: *Fx, wait: f32, what: Due) void {
-        if (wait <= 0 or self.due_n == DUE) return self.fire(what);
+        if (wait <= 0 or self.due_n == DUE) return self.fire(what, @max(0, -wait));
         self.due[self.due_n] = .{ .t = wait, .what = what };
         self.due_n += 1;
         if (what.onBarrel()) self.barrels_due += 1;
     }
 
-    fn fire(self: *Fx, what: Due) void {
+    fn fire(self: *Fx, what: Due, late: f32) void {
         switch (what) {
             .blow => |b| self.land(b),
             .burst => |b| self.spill(b),
             .zap => |z| self.arc(z),
             .settle => {},
             .sting => |s| {
-                self.flash[s.slot] = FLASH_S;
                 if (s.fire_at) |at| self.embers(at);
                 if (s.drip) |d| self.drip(d);
             },
         }
         const slot = what.on() orelse return;
+        switch (what) {
+            .blow, .sting => self.flash[slot] = @max(self.flash[slot], FLASH_S - late),
+            .settle, .burst, .zap => {},
+        }
         const a = what.after() orelse return;
         self.mana_landed += a.mana;
         if (self.landed[slot]) |was| {
@@ -470,8 +504,11 @@ pub const Fx = struct {
 
     pub fn step(self: *Fx, lv: *const grid.Level, dt: f32) void {
         self.seconds.step(dt);
+        for (&self.arcs) |*a| a.life = @max(0, a.life - dt);
+        for (&self.pulses) |*p| p.life = @max(0, p.life - dt);
         for (&self.flash) |*f| f.* = @max(0, f.* - dt);
         for (&self.speech) |*s| s.life = @max(0, s.life - dt);
+        for (&self.motes) |*m| advance(m, lv, dt);
         var i: usize = 0;
         while (i < self.due_n) {
             self.due[i].t -= dt;
@@ -480,20 +517,16 @@ pub const Fx = struct {
                 continue;
             }
             const what = self.due[i].what;
+            const late = -self.due[i].t;
             self.due_n -= 1;
             self.due[i] = self.due[self.due_n];
             if (what.onBarrel()) self.barrels_due -= 1;
-            self.fire(what);
-        }
-        var left = dt;
-        while (left > 0) : (left -= MOTE_STEP) {
-            for (&self.motes) |*m| tick(m, lv, @min(left, MOTE_STEP));
+            self.fire(what, late);
         }
     }
 
     fn land(self: *Fx, b: Blow) void {
         if (b.fire) self.embers(b.at);
-        if (b.slot) |s| self.flash[s] = FLASH_S;
         self.emit(.{ .p = .{ b.at[0], b.at[1], STRIKE_Z }, .v = .{ 0, 0, 0 }, .life = CONTACT_S, .r = CONTACT_R * (if (b.lethal) KILL_POP else 1), .col = CONTACT, .add = true });
         const s = sprayOf(b.matter);
         self.spray(b.at, b.dir, s, if (b.lethal) s.kill else s.hit);
@@ -515,12 +548,55 @@ pub const Fx = struct {
                 .drag = s.drag,
                 .bounce = s.bounce,
                 .stains = s.stains,
+                .add = s.add,
             });
         }
     }
 
     fn embers(self: *Fx, at: [2]f32) void {
         self.spray(at, null, EMBERS, EMBERS.hit);
+        self.glow(at, look.FIRE, EMBER_GLOW);
+    }
+
+    pub fn glow(self: *Fx, at: [2]f32, col: rl.Color, g: Glow) void {
+        self.pulses[self.pulse_head] = .{ .source = .{ .at = .{ at[0], at[1], STRIKE_Z }, .col = col, .radius = g.radius, .gain = g.gain }, .life = g.life, .max = g.life };
+        self.pulse_head = (self.pulse_head + 1) % self.pulses.len;
+    }
+
+    pub fn illuminate(self: *const Fx, lv: *const grid.Level, lamps: *light.Light) void {
+        lamps.clearEffects();
+        for (self.pulses) |p| {
+            if (p.life <= 0) continue;
+            var source = p.source;
+            source.gain *= p.life / p.max;
+            lamps.emit(lv, source);
+        }
+    }
+
+    pub fn trail(self: *Fx, lv: *const grid.Level, at: [2]f32, dir: [2]f32, act: skillbar.Act, age: f32) void {
+        const element = trailed(act) orelse return;
+        const fiery = element == .fire;
+        const life: f32 = if (fiery) 0.24 else 0.18;
+        if (age >= life) return;
+        const slot = self.head;
+        self.emit(.{
+            .p = .{ at[0] + self.rng.spread(0.08), at[1] + self.rng.spread(0.08), STRIKE_Z },
+            .v = .{ -dir[0] * 0.8 + self.rng.spread(0.6), -dir[1] * 0.8 + self.rng.spread(0.6), if (fiery) 0.5 else 0.12 },
+            .life = life,
+            .r = if (act == .fireball) 1.5 + self.rng.unit() * 2 else 0.7 + self.rng.unit(),
+            .col = look.arrowInk(act),
+            .drag = 3,
+            .add = fiery,
+        });
+        advance(&self.motes[slot], lv, age);
+    }
+
+    pub fn shimmer(self: *Fx, at: [2]f32, col: rl.Color) void {
+        for (0..24) |i| {
+            const d = ringDir(&self.rng, i, 24, 0.6);
+            self.emit(.{ .p = .{ at[0] + d[0] * 0.3, at[1] + d[1] * 0.18, self.rng.unit() * 0.65 }, .v = .{ d[0] * 0.45, d[1] * 0.3, 0.4 + self.rng.unit() * 0.5 }, .life = 0.25 + self.rng.unit() * 0.25, .r = 0.7 + self.rng.unit(), .col = col, .drag = 2, .add = true });
+        }
+        self.glow(at, col, SHIMMER_GLOW);
     }
 
     fn drip(self: *Fx, d: Drip) void {
@@ -547,12 +623,15 @@ pub const Fx = struct {
             const age = @mod(t * 0.9 + phase + @as(f32, @floatFromInt(seed)) * 0.23, 1);
             const at = rl.Vector2{ .x = x + cell * (0.3 + phase * 0.4), .y = y + cell * (0.45 + age * 0.4) };
             const r = cell * (0.022 + age * 0.012);
-            rl.drawCircleV(at, r, look.fade(ink, (1 - age * age) * 0.9));
+            pixel.rect(at, r * look.SPRITE_PX / cell, r * 1.8 * look.SPRITE_PX / cell, cell / look.SPRITE_PX, look.fade(ink, (1 - age * age) * 0.9));
         }
     }
 
     fn spill(self: *Fx, b: Burst) void {
         const from = mathx.centre(b.at);
+        const fiery = b.element == .fire;
+        const col = look.elementInk(b.element);
+        self.glow(from, col, if (fiery) FIRE_BURST_GLOW else COLD_BURST_GLOW);
         for (b.area.cells[0..b.area.n]) |p| {
             const to = mathx.centre(p);
             for (0..burstMotes(b.area.n)) |_| {
@@ -561,23 +640,33 @@ pub const Fx = struct {
                     .p = .{ to[0] + self.rng.spread(0.5), to[1] + self.rng.spread(0.5), STRIKE_Z },
                     .v = .{ (to[0] - from[0]) * 0.25, (to[1] - from[1]) * 0.25, self.rng.unit() * 0.3 },
                     .life = life,
-                    .r = 2 + self.rng.unit() * 4,
-                    .col = b.col,
+                    .r = 0.8 + self.rng.unit() * 2,
+                    .col = col,
+                    .add = fiery,
                 });
             }
         }
     }
 
     fn arc(self: *Fx, z: Zap) void {
+        const a = &self.arcs[self.arc_head];
+        self.arc_head = (self.arc_head + 1) % self.arcs.len;
+        a.life = ARC_S;
+        for (&a.points, 0..) |*p, i| {
+            const t = @as(f32, @floatFromInt(i)) / (ARC_POINTS - 1);
+            const spread: f32 = if (i == 0 or i == ARC_POINTS - 1) 0 else ZAP_JITTER;
+            p.* = .{ mathx.lerpF(z.from[0], z.to[0], t) + self.rng.spread(spread), mathx.lerpF(z.from[1], z.to[1], t) + self.rng.spread(spread) };
+        }
+        for ([_]f32{ 0.25, 0.65, 1 }) |t| self.glow(.{ mathx.lerpF(z.from[0], z.to[0], t), mathx.lerpF(z.from[1], z.to[1], t) }, look.LIGHTNING, ARC_GLOW);
         const len = @max(1, mathx.len(z.to[0] - z.from[0], z.to[1] - z.from[1]));
         const count: usize = @intFromFloat(@ceil(len * ZAP_MOTES));
         for (0..count) |i| {
             const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(count));
             self.emit(.{
                 .p = .{ mathx.lerpF(z.from[0], z.to[0], t) + self.rng.spread(ZAP_JITTER), mathx.lerpF(z.from[1], z.to[1], t) + self.rng.spread(ZAP_JITTER), STRIKE_Z },
-                .v = .{ 0, 0, 0.1 },
+                .v = .{ self.rng.spread(2.8), self.rng.spread(2.8), 0.3 + self.rng.unit() },
                 .life = 0.12 + t * 0.1,
-                .r = 1.5 + self.rng.unit() * 2,
+                .r = 0.6 + self.rng.unit(),
                 .col = look.LIGHTNING,
                 .add = true,
                 .terrain = false,
@@ -593,8 +682,8 @@ pub const Fx = struct {
             const cy = y + cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
             const r = cell * 0.035;
             const col = look.fade(ink, 0.7 + @sin(t * 3 + phase) * 0.2);
-            rl.drawLineEx(.{ .x = cx - r, .y = cy }, .{ .x = cx + r, .y = cy }, cell * 0.012, col);
-            rl.drawLineEx(.{ .x = cx, .y = cy - r }, .{ .x = cx, .y = cy + r }, cell * 0.012, col);
+            pixel.rect(.{ .x = cx, .y = cy }, r * 2 * look.SPRITE_PX / cell, 1, cell / look.SPRITE_PX, col);
+            pixel.rect(.{ .x = cx, .y = cy }, 1, r * 2 * look.SPRITE_PX / cell, cell / look.SPRITE_PX, col);
         }
     }
 
@@ -603,7 +692,7 @@ pub const Fx = struct {
         for (PIN_STAKES) |s| {
             const foot = rl.Vector2{ .x = x + cell * s[0], .y = y + cell * PIN_FOOT };
             const top = rl.Vector2{ .x = foot.x + cell * s[1], .y = foot.y - cell * PIN_H };
-            rl.drawLineEx(top, foot, cell * 0.022, ink);
+            pixel.line(top, foot, 2, cell / look.SPRITE_PX, ink);
         }
     }
 
@@ -611,7 +700,11 @@ pub const Fx = struct {
     pub fn drawWarded(self: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
         const breath = @sin(self.seconds.at() * WARD_HZ);
         const r = cell * (WARD_R + breath * 0.02);
-        rl.drawRing(.{ .x = x + cell * 0.5, .y = y + cell * 0.5 }, r - cell * 0.018, r, 0, 360, 48, look.fade(ink, 0.55 + breath * 0.15));
+        for (0..48) |i| {
+            const a = @as(f32, @floatFromInt(i)) * mathx.TAU / 48;
+            const k = 0.35 + 0.25 * @sin(a * 3 + self.seconds.at() * 2);
+            pixel.rect(.{ .x = x + cell * 0.5 + @cos(a) * r, .y = y + cell * 0.5 + @sin(a) * r }, 1, 2, cell / look.SPRITE_PX, look.fade(ink, k));
+        }
     }
 
     pub fn drawBurning(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, alpha: f32) void {
@@ -622,8 +715,22 @@ pub const Fx = struct {
             const sway = @sin(t * 6 + phase * mathx.TAU) * 0.04;
             const at = rl.Vector2{ .x = x + cell * (MARKS_FROM + phase * MARKS_SPAN + sway), .y = y + cell * (0.82 - age * 0.65) };
             const r = cell * (0.065 - age * 0.045);
-            rl.drawCircleV(at, r, look.fade(Status.burning.ink(), (1 - age) * 0.85 * alpha));
-            rl.drawCircleV(at, r * 0.45, look.fade(look.FIRE_CORE, (1 - age) * 0.9 * alpha));
+            pixel.fleck(at, r * look.SPRITE_PX / cell, cell / look.SPRITE_PX, look.fade(Status.burning.ink(), (1 - age) * 0.85 * alpha));
+            pixel.rect(at, r * look.SPRITE_PX / cell, r * 1.5 * look.SPRITE_PX / cell, cell / look.SPRITE_PX, look.fade(look.FIRE_CORE, (1 - age) * 0.9 * alpha));
+        }
+    }
+
+    pub fn drawTorch(self: *const Fx, x: f32, y: f32, cell: f32, seed: f32, lit: f32, memory: f32) void {
+        const k = cell / look.SPRITE_PX;
+        pixel.rect(.{ .x = x, .y = y + 7 * k }, 3, 12, k, look.fade(look.SPLINTER, memory * 0.7));
+        pixel.rect(.{ .x = x, .y = y + k }, 7, 3, k, look.fade(look.TORCH_DIM, memory));
+        const t = self.seconds.at();
+        for (0..7) |i| {
+            const f: f32 = @floatFromInt(i);
+            const age = @mod(t * 1.7 + f / 7 + seed, 1);
+            const p = rl.Vector2{ .x = x + @sin(t * 7 + f * 3 + seed) * (1 + age * 2) * k, .y = y - age * 16 * k };
+            pixel.fleck(p, 3.5 - age * 2.8, k, look.fade(look.FIRE, (1 - age) * lit));
+            pixel.rect(p, 2 - age, 3 - age * 2, k, look.fade(look.FIRE_CORE, (1 - age) * lit));
         }
     }
 
@@ -684,37 +791,116 @@ pub const Fx = struct {
         for (&self.motes) |*m| {
             if (m.life <= 0 or !m.landed) continue;
             const a = m.life / (m.max * STAIN_FADE);
-            const s = screen(m.*, ox, oy, cell);
-            rl.drawEllipse(@intFromFloat(s.x), @intFromFloat(s.y), m.r * k * STAIN_W, m.r * k * STAIN_H, look.fade(m.col, a));
+            const s = screen(m.p, ox, oy, cell);
+            pixel.rect(s, m.r * STAIN_W * 2, m.r * STAIN_H * 2, k, look.fade(m.col, a));
         }
         for (&self.motes) |*m| {
             if (m.life <= 0 or m.landed or m.add) continue;
             const a = if (m.stains) 1 else m.life / (m.max * FLY_FADE);
-            rl.drawCircleV(screen(m.*, ox, oy, cell), m.r * k, look.fade(m.col, a));
+            pixel.fleck(screen(m.p, ox, oy, cell), m.r, k, look.fade(m.col, a));
         }
-        rl.beginBlendMode(.additive);
-        defer rl.endBlendMode();
+    }
+
+    pub fn drawGlow(self: *const Fx, lv: *const grid.Level, sight: *const [grid.CELLS]f32, ox: f32, oy: f32, cell: f32) void {
+        const k = cell / look.SPRITE_PX;
         for (&self.motes) |*m| {
             if (m.life <= 0 or !m.add) continue;
+            const p = mathx.cellOf(.{ m.p[0], m.p[1] });
+            if (!lv.isLit(p)) continue;
             const t = m.life / m.max;
-            rl.drawCircleV(screen(m.*, ox, oy, cell), m.r * k * t, look.fade(m.col, t));
+            const alpha = t * grid.cellOr(f32, sight, p, 0);
+            const at = screen(m.p, ox, oy, cell);
+            pixel.fleck(at, m.r * (0.5 + t * 0.5), k, look.fade(m.col, alpha));
+            if (m.r >= 2) pixel.rect(at, 1, 1, k, look.fade(look.FIRE_CORE, alpha));
+        }
+        for (&self.arcs) |*a| {
+            if (a.life <= 0) continue;
+            for (a.points[1..], a.points[0 .. ARC_POINTS - 1], 0..) |p, from, i| {
+                if (!lv.isLit(mathx.cellOf(p)) or !lv.isLit(mathx.cellOf(from))) continue;
+                const alpha = @min(1, a.life / (ARC_S * 0.5)) * grid.cellOr(f32, sight, mathx.cellOf(p), 0);
+                const v = projected(from, ox, oy, cell);
+                const w = projected(p, ox, oy, cell);
+                pixel.line(v, w, 3, k, look.fade(look.LIGHTNING, alpha * 0.28));
+                pixel.line(v, w, 1, k, look.fade(look.FIRE_CORE, alpha));
+                if (i % 6 == 3) {
+                    const tip = rl.Vector2{ .x = w.x + (w.y - v.y) * 1.8, .y = w.y - (w.x - v.x) * 1.8 };
+                    const at = mathx.cellOf(unprojected(tip, ox, oy, cell));
+                    if (lv.isLit(at) and grid.clearLine(lv, mathx.cellOf(p), at)) pixel.line(w, tip, 1, k, look.fade(look.LIGHTNING, alpha * 0.65));
+                }
+            }
         }
     }
 };
+
+fn projected(at: [2]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {
+    return screen(.{ at[0], at[1], STRIKE_Z }, ox, oy, cell);
+}
+
+/// The ground point under a spot drawn at strike height, `projected`'s inverse.
+fn unprojected(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
+    return .{ (v.x - ox) / cell, (v.y - oy) / cell + STRIKE_Z };
+}
+
+/// The element of a missile that sheds a trail and lights its way.
+fn trailed(act: skillbar.Act) ?damage.Element {
+    const element = act.element() orelse return null;
+    return switch (element) {
+        .fire, .cold => element,
+        else => null,
+    };
+}
+
+pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
+    const element = trailed(act) orelse return null;
+    return .{
+        .at = .{ at[0], at[1], STRIKE_Z },
+        .col = look.arrowInk(act),
+        .radius = if (act == .fireball) 2.8 else 1.6,
+        .gain = if (element == .fire) 0.85 else 0.35,
+    };
+}
+
+pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, oy: f32, cell: f32) void {
+    if (act.element() == .lightning) return;
+    const p = projected(at, ox, oy, cell);
+    const k = cell / look.SPRITE_PX;
+    const col = look.arrowInk(act);
+    if (act == .fireball) {
+        for (0..6) |i| {
+            const f: f32 = @floatFromInt(i);
+            const w = rl.Vector2{ .x = p.x - dir[0] * f * 4 * k, .y = p.y - dir[1] * f * 4 * k + @sin(t * 65 + f * 2) * 2 * k };
+            pixel.fleck(w, 5.5 - f * 0.7, k, look.fade(look.FIRE, 1 - f * 0.13));
+        }
+        pixel.fleck(p, 3, k, look.FIRE_CORE);
+        pixel.rect(p, 2, 2, k, rl.Color.white);
+        return;
+    }
+    const tail = rl.Vector2{ .x = p.x - dir[0] * 16 * k, .y = p.y - dir[1] * 16 * k };
+    pixel.line(tail, p, 1, k, look.SPLINTER);
+    const back = rl.Vector2{ .x = p.x - dir[0] * 4 * k, .y = p.y - dir[1] * 4 * k };
+    pixel.line(p, .{ .x = back.x - dir[1] * 3 * k, .y = back.y + dir[0] * 3 * k }, 1, k, col);
+    pixel.line(p, .{ .x = back.x + dir[1] * 3 * k, .y = back.y - dir[0] * 3 * k }, 1, k, col);
+    pixel.line(tail, .{ .x = tail.x + (dir[0] - dir[1]) * 4 * k, .y = tail.y + (dir[1] + dir[0]) * 4 * k }, 1, k, col);
+}
 
 fn heading(a: f32) [2]f32 {
     return .{ @cos(a), @sin(a) };
 }
 
-fn screen(m: Mote, ox: f32, oy: f32, cell: f32) rl.Vector2 {
-    return .{ .x = ox + m.p[0] * cell, .y = oy + (m.p[1] - m.p[2]) * cell };
+fn screen(p: [3]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {
+    return .{ .x = ox + p[0] * cell, .y = oy + (p[1] - p[2]) * cell };
+}
+
+fn advance(m: *Mote, lv: *const grid.Level, dt: f32) void {
+    var left = dt;
+    while (left > 0) : (left -= MOTE_STEP) tick(m, lv, @min(left, MOTE_STEP));
 }
 
 /// A drop that will stain does not age in the air, so every one that lands leaves its stain.
 fn tick(m: *Mote, lv: *const grid.Level, dt: f32) void {
     if (m.life <= 0) return;
     if (!m.stains or m.landed) m.life -= dt;
-    if (m.landed or m.add) return;
+    if (m.landed) return;
     const k = 1 / (1 + m.drag * dt);
     for (0..3) |i| m.p[i] += m.v[i] * dt;
     m.v[0] *= k;
@@ -757,6 +943,45 @@ fn live(fx: *const Fx) Live {
 
 const TEST_BLOW = Blow{ .slot = 3, .at = .{ 20.5, 20.5 }, .dir = .{ 1, 0 }, .matter = .blood, .lethal = false };
 
+test "a delayed effect starts its particles and light together after a long frame" {
+    const lv = grid.openFloor();
+    var effects = Fx{};
+    effects.zap(0.2, .{ .from = .{ 20.5, 20.5 }, .to = .{ 24.5, 20.5 } });
+    effects.step(&lv, 0.4);
+    var particles: usize = 0;
+    for (effects.motes) |m| {
+        if (m.life > 0) particles += 1;
+    }
+    try std.testing.expect(particles > 0);
+    try std.testing.expectEqual(ARC_S, effects.arcs[0].life);
+    try std.testing.expectEqual(ARC_S, effects.pulses[0].life);
+    effects.step(&lv, 1);
+    for (effects.motes) |m| try std.testing.expect(m.life <= 0);
+    try std.testing.expectEqual(@as(f32, 0), effects.arcs[0].life);
+    try std.testing.expectEqual(@as(f32, 0), effects.pulses[0].life);
+    std.debug.print("delayed effect: {d} particles start with arc and light after a 400 ms frame; all expire\n", .{particles});
+}
+
+test "electrical particles move between tiles and delayed arcs and light expire together" {
+    const lv = grid.openFloor();
+    var effects = Fx{};
+    effects.zap(0.1, .{ .from = .{ 20.5, 20.5 }, .to = .{ 24.5, 20.5 } });
+    effects.step(&lv, 0.05);
+    try std.testing.expectEqual(@as(f32, 0), effects.arcs[0].life);
+    effects.step(&lv, 0.05);
+    try std.testing.expect(effects.arcs[0].life > 0 and effects.pulses[0].life > 0);
+    const at = effects.motes[0].p;
+    effects.step(&lv, 1.0 / 120.0);
+    const moved = effects.motes[0].p;
+    try std.testing.expect(!std.meta.eql(at, moved));
+    try std.testing.expect(mathx.len(at[0] - moved[0], at[1] - moved[1]) < 0.05);
+    effects.step(&lv, 1);
+    for (effects.arcs) |a| try std.testing.expect(a.life <= 0);
+    for (effects.pulses) |p| try std.testing.expect(p.life <= 0);
+    for (effects.motes) |m| try std.testing.expect(m.life <= 0);
+    std.debug.print("electric arc: delayed onset, sub-tile particle motion, all light and particles expired\n", .{});
+}
+
 test "water footsteps make a few small droplets that vanish without stains or flashes" {
     for ([_]grid.Tile{ .shallows, .water }) |water| {
         var lv = grid.openFloor();
@@ -787,7 +1012,7 @@ test "glacial frost waits for impact then fills only its cone and clears without
     var fx = Fx{};
     const at = mathx.P{ .x = 20, .y = 20 };
     const area = glacial.cone(&lv, .{ .x = 15, .y = 20 }, at);
-    fx.burst(0.2, .{ .at = at, .area = area, .col = look.COLD });
+    fx.burst(0.2, .{ .at = at, .area = area, .element = .cold });
     fx.step(&lv, 0.1);
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying);
     fx.step(&lv, 0.11);
@@ -949,6 +1174,21 @@ test "a blow dealt now lands when the picture gets there" {
     try std.testing.expectEqual(@as(f32, 0), fx.flashOf(3));
     fx.step(&lv, 0.06);
     try std.testing.expect(fx.flashOf(3) > 0);
+}
+
+test "overdue flashes keep the latest impact time regardless of queue order" {
+    const lv = grid.openFloor();
+    var fx = Fx{};
+    fx.sting(0.12, .{ .slot = 3 });
+    fx.strike(0.02, TEST_BLOW);
+    fx.sting(0.08, .{ .slot = 3 });
+    fx.step(&lv, 0.15);
+    try std.testing.expectApproxEqAbs(FLASH_S - 0.03, fx.flash[3], 1e-6);
+    fx.step(&lv, FLASH_S);
+    try std.testing.expect(!fx.holds(3));
+    fx.strike(-FLASH_S, TEST_BLOW);
+    try std.testing.expect(!fx.holds(3));
+    std.debug.print("flash timing: 3 unordered impacts and an overdue immediate blow checked\n", .{});
 }
 
 test "a sting flashes its body when the picture gets there and sprays nothing" {

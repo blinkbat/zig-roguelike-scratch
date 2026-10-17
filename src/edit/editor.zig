@@ -2,11 +2,11 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
-const grid = @import("../world/grid.zig");
-const atlas = @import("../world/atlas.zig");
-const lume = @import("../world/lume.zig");
-const terrain = @import("../world/biome/terrain.zig");
-const scatter = @import("../world/feature/scatter.zig");
+const grid = @import("../map/grid.zig");
+const atlas = @import("../map/atlas.zig");
+const lume = @import("../map/lume.zig");
+const terrain = @import("../map/biome/terrain.zig");
+const scatter = @import("../map/feature/scatter.zig");
 const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
 const look = @import("../gfx/look.zig");
@@ -181,7 +181,7 @@ const Tool = union(enum) {
             .foe => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
             .door => "any cell of any node; a procgen node's floor is rolled round its doors each run",
             .link => "click a door, then the door it leads to on any node; " ++ Desk.ERASE_CAPTION ++ " unlinks",
-            .start => "where the world begins, and " ++ Desk.PLAY_CAPTION ++ " plays from",
+            .start => "where the map begins, and " ++ Desk.PLAY_CAPTION ++ " plays from",
         };
     }
 };
@@ -289,7 +289,7 @@ const HELP = [_]HelpSection{
         Desk.GO_CAPTION ++ " through the door under the cursor" ++ SEP ++ Desk.REROLL_CAPTION ++ " rolls a procgen node again" ++ SEP ++ Desk.OBJECTS_CAPTION ++ " every tile and body" ++ SEP ++
             Desk.HELP_CAPTION ++ " this list",
     } },
-    .{ .head = "WORLD", .lines = &.{
+    .{ .head = "MAP", .lines = &.{
         Desk.SAVE_CAPTION ++ " save" ++ SEP ++ Desk.SAVE_AS_CAPTION ++ " save as" ++ SEP ++ Desk.OPEN_CAPTION ++ " open" ++ SEP ++ Desk.NEW_CAPTION ++ " new" ++ SEP ++
             Desk.UNDO_CAPTION ++ " undo" ++ SEP ++ Desk.REDO_CAPTION ++ " redo",
         Desk.RENAME_CAPTION ++ " rename the node" ++ SEP ++ Desk.ENTER_CAPTION ++ " names it" ++ SEP ++ Desk.NAV_CAPTION ++ " move through a list" ++ SEP ++ input.RUB_CAPTION ++ " a folder up",
@@ -447,7 +447,7 @@ const PREVIEW_ROLL: u64 = 0x5EE;
 
 pub const Editor = struct {
     alloc: std.mem.Allocator,
-    world: *atlas.Atlas,
+    map: *atlas.Atlas,
     /// Pre-gesture snapshot; also the parse and undo swap buffer.
     scratch: *atlas.Atlas,
     hist: *[UNDO_CAP]atlas.Atlas,
@@ -542,8 +542,8 @@ pub const Editor = struct {
         const h = try alloc.create([UNDO_CAP]atlas.Atlas);
         errdefer alloc.destroy(h);
         const ed = try alloc.create(Editor);
-        ed.* = .{ .alloc = alloc, .world = w, .scratch = s, .hist = h };
-        freshWorld(w);
+        ed.* = .{ .alloc = alloc, .map = w, .scratch = s, .hist = h };
+        freshMap(w);
         return ed;
     }
 
@@ -555,7 +555,7 @@ pub const Editor = struct {
         const alloc = ed.alloc;
         alloc.destroy(ed.hist);
         alloc.destroy(ed.scratch);
-        alloc.destroy(ed.world);
+        alloc.destroy(ed.map);
         alloc.destroy(ed);
     }
 
@@ -563,28 +563,28 @@ pub const Editor = struct {
         return ed.file.text();
     }
 
-    /// The world it has open, read afresh from its file.
+    /// The map it has open, read afresh from its file.
     pub fn reopen(ed: *Editor) !void {
         const keep = ed.file;
         return ed.open(keep.text());
     }
 
-    /// Loads `p`, or starts a world there when it is not yet; a file that does not parse is left alone.
+    /// Loads `p`, or starts a map there when it is not yet; a file that does not parse is left alone.
     pub fn open(ed: *Editor, p: []const u8) !void {
         if (p.len > PATH_FIELD_MAX) return error.NameTooLong;
         var fresh = false;
         ed.scratch.load(ed.alloc, p) catch |e| {
             if (e != error.FileNotFound) {
-                ed.scratch.* = ed.world.*;
+                ed.scratch.* = ed.map.*;
                 return e;
             }
-            freshWorld(ed.scratch);
+            freshMap(ed.scratch);
             fresh = true;
         };
-        ed.world.* = ed.scratch.*;
+        ed.map.* = ed.scratch.*;
         ed.setPath(p);
         ed.settle();
-        ed.say("{s} {s}", .{ if (fresh) "New world; it saves to" else "Opened", p });
+        ed.say("{s} {s}", .{ if (fresh) "New map; it saves to" else "Opened", p });
     }
 
     fn settle(ed: *Editor) void {
@@ -638,7 +638,7 @@ pub const Editor = struct {
 
     /// A press begins a gesture; everything it changes is one undo.
     fn gesture(ed: *Editor) void {
-        ed.scratch.* = ed.world.*;
+        ed.scratch.* = ed.map.*;
         ed.banked = false;
     }
 
@@ -686,8 +686,8 @@ pub const Editor = struct {
     fn swapStep(ed: *Editor, k: usize) void {
         ed.release();
         ed.forgetNode();
-        ed.scratch.* = ed.world.*;
-        ed.world.* = ed.kept(k).*;
+        ed.scratch.* = ed.map.*;
+        ed.map.* = ed.kept(k).*;
         ed.kept(k).* = ed.scratch.*;
         ed.banked = true;
         ed.clampSelection();
@@ -695,9 +695,9 @@ pub const Editor = struct {
     }
 
     fn restampSwapped(ed: *Editor) void {
-        if (ed.world.node_n != ed.scratch.node_n) return ed.restamp();
+        if (ed.map.node_n != ed.scratch.node_n) return ed.restamp();
         ed.stale = true;
-        for (ed.world.nodes(), ed.scratch.nodes(), 0..) |*now, *was, n| {
+        for (ed.map.nodes(), ed.scratch.nodes(), 0..) |*now, *was, n| {
             if (!std.mem.eql(u8, std.mem.asBytes(now), std.mem.asBytes(was))) ed.thumb_ok.unset(n);
         }
     }
@@ -723,7 +723,7 @@ pub const Editor = struct {
     /// A box dragged on the graph kept where it stands, its own undo step.
     fn keepDrag(ed: *Editor) void {
         const dr = ed.drag orelse return;
-        if (dr.moved and !ed.world.node[dr.node].pos.eq(dr.was)) ed.bank();
+        if (dr.moved and !ed.map.node[dr.node].pos.eq(dr.was)) ed.bank();
         ed.drag = null;
     }
 
@@ -733,7 +733,7 @@ pub const Editor = struct {
 
     fn drop(ed: *Editor) void {
         ed.letGo();
-        if (ed.drag) |dr| ed.world.node[dr.node].pos = dr.was;
+        if (ed.drag) |dr| ed.map.node[dr.node].pos = dr.was;
         ed.drag = null;
         ed.linking = null;
         ed.popup = null;
@@ -763,8 +763,8 @@ pub const Editor = struct {
     }
 
     fn clampSelection(ed: *Editor) void {
-        ed.node = @min(ed.node, ed.world.node_n - 1);
-        ed.scroll = @min(ed.scroll, ed.world.node_n - 1);
+        ed.node = @min(ed.node, ed.map.node_n - 1);
+        ed.scroll = @min(ed.scroll, ed.map.node_n - 1);
         ed.fitTool();
     }
 
@@ -824,13 +824,13 @@ pub const Editor = struct {
     }
 
     fn arrival(ed: *Editor) P {
-        if (ed.world.start.node == ed.node) return ed.world.start.at;
+        if (ed.map.start.node == ed.node) return ed.map.start.at;
         const ds = ed.here().doors();
         return if (ds.len > 0) ds[0].at else grid.MIDDLE;
     }
 
     fn startOn(ed: *Editor) ?P {
-        const s = ed.world.start;
+        const s = ed.map.start;
         if (s.node != ed.node) return null;
         return atlas.landing(&ed.lv, s.at, ed.here().placed());
     }
@@ -838,7 +838,7 @@ pub const Editor = struct {
     fn issuesOf(ed: *Editor) Issues {
         const nd = ed.here();
         var is = Issues{ .unlinked = nd.unlinked() };
-        const s = ed.world.start;
+        const s = ed.map.start;
         if (s.node == ed.node) is.start_walled = !ed.lv.walkable(s.at);
         var flood: ?grid.Flood = null;
         if (ed.start_at) |at| flood = grid.Flood.init(&ed.lv, at, &ed.reach_dist, &ed.reach_queue);
@@ -869,7 +869,7 @@ pub const Editor = struct {
     }
 
     fn standable(ed: *Editor, from: atlas.Start) bool {
-        return ed.world.standable(from, &ed.thumb_lv);
+        return ed.map.standable(from, &ed.thumb_lv);
     }
 
     fn doorAt(ed: *Editor, p: P) ?usize {
@@ -878,7 +878,7 @@ pub const Editor = struct {
 
     fn nodeTitle(ed: *Editor, n: usize, buf: []u8) [:0]const u8 {
         var name: [atlas.TITLE_MAX]u8 = undefined;
-        const mark: []const u8 = if (ed.world.start.node == n) &START_MARK else "";
+        const mark: []const u8 = if (ed.map.start.node == n) &START_MARK else "";
         if (ed.renamingNode(n)) return std.fmt.bufPrintZ(buf, "{s}{d}  {s}" ++ menu.CARET, .{ mark, n, ed.field.text() }) catch "";
         return std.fmt.bufPrintZ(buf, "{s}{d}  {s}", .{ mark, n, ed.nodeName(n, &name) }) catch "";
     }
@@ -888,15 +888,15 @@ pub const Editor = struct {
     }
 
     fn playStart(ed: *Editor) void {
-        ed.action = .{ .play = ed.world.start };
+        ed.action = .{ .play = ed.map.start };
     }
 
     fn nodeName(ed: *Editor, n: usize, buf: *[atlas.TITLE_MAX]u8) []const u8 {
-        return ed.world.node[n].title(n, buf);
+        return ed.map.node[n].title(n, buf);
     }
 
     fn here(ed: *Editor) *atlas.Node {
-        return &ed.world.node[ed.node];
+        return &ed.map.node[ed.node];
     }
 
     fn paintable(ed: *Editor) bool {
@@ -942,17 +942,17 @@ pub const Editor = struct {
             .quit => ed.action = .quit,
             .open => ed.open(p) catch |e| ed.say(atlas.NOT_LOADED, .{ p, @errorName(e) }),
             .new => {
-                freshWorld(ed.world);
+                freshMap(ed.map);
                 ed.setPath(p);
                 ed.settle();
-                ed.say("New world; {s} saves it to {s}", .{ Desk.SAVE_CAPTION, p });
+                ed.say("New map; {s} saves it to {s}", .{ Desk.SAVE_CAPTION, p });
             },
         }
     }
 
     fn save(ed: *Editor) bool {
         ed.keepDrag();
-        ed.world.save(ed.alloc, ed.path()) catch |e| {
+        ed.map.save(ed.alloc, ed.path()) catch |e| {
             ed.say("{s} did not save ({s})", .{ ed.path(), @errorName(e) });
             return false;
         };
@@ -1069,8 +1069,8 @@ pub const Editor = struct {
     }
 
     fn dotUnder(ed: *const Editor, c: rl.Rectangle, m: P) ?atlas.Link {
-        for (0..ed.world.node_n) |n| {
-            for (0..ed.world.node[n].door_n) |k| {
+        for (0..ed.map.node_n) |n| {
+            for (0..ed.map.node[n].door_n) |k| {
                 const l = atlas.Link{ .node = n, .door = k };
                 if (rl.checkCollisionPointCircle(vec(m), ed.dotAt(c, l), DOT_R + DOT_SLOP)) return l;
             }
@@ -1102,7 +1102,7 @@ pub const Editor = struct {
     }
 
     fn boxAt(ed: *const Editor, c: rl.Rectangle, n: usize) rl.Rectangle {
-        const pos = ed.world.node[n].pos;
+        const pos = ed.map.node[n].pos;
         return .{
             .x = c.x + @as(f32, @floatFromInt(pos.x)) - ed.gcam[0],
             .y = c.y + @as(f32, @floatFromInt(pos.y)) - ed.gcam[1],
@@ -1112,7 +1112,7 @@ pub const Editor = struct {
     }
 
     fn boxUnder(ed: *const Editor, c: rl.Rectangle, m: P) ?usize {
-        var n = ed.world.node_n;
+        var n = ed.map.node_n;
         while (n > 0) {
             n -= 1;
             if (rl.checkCollisionPointRec(vec(m), ed.boxAt(c, n))) return n;
@@ -1122,7 +1122,7 @@ pub const Editor = struct {
 
     fn dotAt(ed: *const Editor, c: rl.Rectangle, l: atlas.Link) rl.Vector2 {
         const b = ed.boxAt(c, l.node);
-        const d = ed.world.door(l).at;
+        const d = ed.map.door(l).at;
         return .{
             .x = b.x + @as(f32, @floatFromInt(d.x * THUMB + @divTrunc(THUMB, 2))),
             .y = b.y + @as(f32, @floatFromInt(BOX_TOP + d.y * THUMB + @divTrunc(THUMB, 2))),
@@ -1130,7 +1130,7 @@ pub const Editor = struct {
     }
 };
 
-fn freshWorld(w: *atlas.Atlas) void {
+fn freshMap(w: *atlas.Atlas) void {
     w.* = .{};
     const n = w.add(.{ .bespoke = .{} }).?;
     const b = &w.node[n].plan.bespoke;
@@ -1163,7 +1163,7 @@ pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
     ed.fresh = false;
     ed.renamed = false;
     if (ed.action == .play) {
-        for ([_]atlas.Start{ ed.action.play, ed.world.start }) |from| {
+        for ([_]atlas.Start{ ed.action.play, ed.map.start }) |from| {
             if (ed.standable(from)) continue;
             var buf: [atlas.TITLE_MAX]u8 = undefined;
             ed.say(atlas.NO_FLOOR, .{ed.nodeName(from.node, &buf)});
@@ -1328,7 +1328,7 @@ fn goThrough(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const to = ed.here().door[k].to orelse return ed.say("Door {d} leads nowhere yet", .{k});
     ed.select(to.node);
     ed.recentre = false;
-    ed.lookAt(c, ed.world.door(to).at);
+    ed.lookAt(c, ed.map.door(to).at);
     var buf: [atlas.TITLE_MAX]u8 = undefined;
     ed.say("Through door {d} to {s}, door {d}", .{ k, ed.nodeName(to.node, &buf), to.door });
 }
@@ -1531,8 +1531,8 @@ fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     }
     if (over and d.erase_hit) {
         if (ed.dotUnder(c, d.mouse)) |l| {
-            if (ed.world.door(l).to == null) return;
-            ed.world.unlink(l);
+            if (ed.map.door(l).to == null) return;
+            ed.map.unlink(l);
             ed.relinked();
             return ed.say("Node {d} door {d} unlinked", .{ l.node, l.door });
         }
@@ -1543,7 +1543,7 @@ fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
             return ed.say("Linking node {d} door {d}: let go on the door it leads to", .{ l.node, l.door });
         }
         if (ed.boxUnder(c, d.mouse)) |n| {
-            const was = ed.world.node[n].pos;
+            const was = ed.map.node[n].pos;
             ed.drag = .{ .node = n, .from = d.mouse, .was = was, .grab = graphAt(ed, c, d.mouse).sub(was) };
         }
     }
@@ -1551,7 +1551,7 @@ fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (d.paint) {
         if (!dr.moved and mathx.dist(d.mouse, dr.from) > DRAG_PX) dr.moved = true;
         if (!dr.moved) return;
-        ed.world.node[dr.node].pos = atlas.clampPos(graphAt(ed, c, d.mouse).sub(dr.grab));
+        ed.map.node[dr.node].pos = atlas.clampPos(graphAt(ed, c, d.mouse).sub(dr.grab));
         return;
     }
     if (!dr.moved) {
@@ -1569,10 +1569,10 @@ fn graphAt(ed: *const Editor, c: rl.Rectangle, m: P) P {
 
 fn linkDoors(ed: *Editor, from: atlas.Link, to: atlas.Link) void {
     if (from.eq(to)) return ed.say(LINK_CANCELLED, .{});
-    if (ed.world.door(from).to) |t| {
+    if (ed.map.door(from).to) |t| {
         if (t.eq(to)) return ed.say("Those doors lead to each other already", .{});
     }
-    ed.world.link(from, to);
+    ed.map.link(from, to);
     ed.relinked();
     ed.say("Node {d} door {d} and node {d} door {d} lead to each other", .{ from.node, from.door, to.node, to.door });
 }
@@ -1603,7 +1603,7 @@ fn reroll(ed: *Editor) void {
 }
 
 fn scrollNodes(ed: *Editor, by: i32) void {
-    ed.scroll = mathx.nudge(ed.scroll, by, (ed.world.node_n -| ed.node_rows) + 1);
+    ed.scroll = mathx.nudge(ed.scroll, by, (ed.map.node_n -| ed.node_rows) + 1);
 }
 
 fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
@@ -1663,7 +1663,7 @@ fn place(ed: *Editor, p: P) void {
             ed.changed();
         },
         .door => {
-            const k = ed.world.addDoor(ed.node, p) orelse return ed.say("That cell is a door, or the node holds {d}", .{grid.MAX_DOORS});
+            const k = ed.map.addDoor(ed.node, p) orelse return ed.say("That cell is a door, or the node holds {d}", .{grid.MAX_DOORS});
             if (ed.painted()) |b| {
                 b.tile[grid.Level.idx(p)] = .floor;
                 ed.here().pruneAt(b, p);
@@ -1682,8 +1682,8 @@ fn place(ed: *Editor, p: P) void {
             linkDoors(ed, from, here);
         },
         .start => {
-            if (ed.world.start.node == ed.node and ed.world.start.at.eq(p)) return;
-            ed.world.start = .{ .node = ed.node, .at = p };
+            if (ed.map.start.node == ed.node and ed.map.start.at.eq(p)) return;
+            ed.map.start = .{ .node = ed.node, .at = p };
             ed.changed();
         },
     }
@@ -1697,7 +1697,7 @@ fn remove(ed: *Editor, p: P) void {
         .foe => takeFoe(ed, &ed.plan().bespoke, p),
         .door => {
             const k = ed.doorAt(p) orelse return;
-            ed.world.removeDoor(.{ .node = ed.node, .door = k });
+            ed.map.removeDoor(.{ .node = ed.node, .door = k });
             if (ed.painted()) |b| ed.here().pruneAt(b, p);
             ed.pick = null;
             ed.changed();
@@ -1705,7 +1705,7 @@ fn remove(ed: *Editor, p: P) void {
         .link => {
             const k = ed.doorAt(p) orelse return;
             if (ed.here().door[k].to == null) return;
-            ed.world.unlink(.{ .node = ed.node, .door = k });
+            ed.map.unlink(.{ .node = ed.node, .door = k });
             ed.relinked();
         },
         .start => {},
@@ -1791,7 +1791,7 @@ fn layBoard(ed: *Editor, at: P) void {
 }
 
 fn deleteNode(ed: *Editor) void {
-    ed.world.remove(ed.node);
+    ed.map.remove(ed.node);
     ed.release();
     ed.forgetNode();
     ed.renaming = false;
@@ -1801,7 +1801,7 @@ fn deleteNode(ed: *Editor) void {
 }
 
 fn addNode(ed: *Editor, plan: atlas.Plan) void {
-    const n = ed.world.add(plan) orelse return ed.say("The world holds {d} nodes", .{atlas.MAX_NODES});
+    const n = ed.map.add(plan) orelse return ed.say("The map holds {d} nodes", .{atlas.MAX_NODES});
     ed.select(n);
     ed.changed();
     ed.typeName();
@@ -2014,8 +2014,8 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     g.face.draw(fitBefore(g, &buf, &fit_buf, ed.path(), if (ed.dirty) " *" else "", INNER_W), PAD, y, TEXT, look.TEXT);
     y += HEAD + GAP;
     var file = Across{ .y = y, .n = 4 };
-    if (button(ed, g, file.next(), "New", false, true, keyed("New world", Desk.NEW_CAPTION))) ed.askName(.new);
-    if (button(ed, g, file.next(), "Open", false, true, keyed("Open a world", Desk.OPEN_CAPTION))) ed.askOpen();
+    if (button(ed, g, file.next(), "New", false, true, keyed("New map", Desk.NEW_CAPTION))) ed.askName(.new);
+    if (button(ed, g, file.next(), "Open", false, true, keyed("Open a map", Desk.OPEN_CAPTION))) ed.askOpen();
     if (button(ed, g, file.next(), "Save", false, true, keyed("Save", Desk.SAVE_CAPTION))) _ = ed.save();
     if (button(ed, g, file.next(), "Save as", false, true, keyed("Save under a new name", Desk.SAVE_AS_CAPTION))) ed.askName(.save_as);
     file.done();
@@ -2031,7 +2031,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     var acts = Across{ .y = y, .n = 4 };
     if (button(ed, g, acts.next(), "Undo", false, ed.hist_at > 0, keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
     if (button(ed, g, acts.next(), "Redo", false, ed.hist_at < ed.hist_len, keyed("Redo", Desk.REDO_CAPTION))) ed.redo();
-    if (button(ed, g, acts.next(), "Play", false, true, "Play from the world start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_CAPTION ++ " or " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) {
+    if (button(ed, g, acts.next(), "Play", false, true, "Play from the map start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_CAPTION ++ " or " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) {
         ed.playStart();
     }
     if (button(ed, g, acts.next(), "Title", false, true, keyed("Back to the title", Desk.BACK_CAPTION))) ed.request(.leave);
@@ -2049,7 +2049,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
         var node = Across{ .y = y, .n = 2 };
         if (button(ed, g, node.next(), "Rename", false, true, keyed("Name this node", Desk.RENAME_CAPTION))) ed.startRename();
         const armed = ed.delete_armed == ed.node;
-        if (button(ed, g, node.next(), if (armed) "Delete it?" else "Delete", armed, ed.world.node_n > 1, if (armed) "Again deletes it; its doors' links go with it" else "Delete this node; it asks first")) {
+        if (button(ed, g, node.next(), if (armed) "Delete it?" else "Delete", armed, ed.map.node_n > 1, if (armed) "Again deletes it; its doors' links go with it" else "Delete this node; it asks first")) {
             if (armed) deleteNode(ed) else ed.delete_armed = ed.node;
         }
         node.done();
@@ -2075,7 +2075,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
 }
 
 const LOWER_TIPS = std.EnumArray(Lower, [:0]const u8).init(.{
-    .nodes = "Every node of the world",
+    .nodes = "Every node of the map",
     .things = "What is on this node and what is wrong with it; a row shows it on the map",
     .generator = "What this procgen node's floor, sky and foes are rolled from",
 });
@@ -2088,11 +2088,11 @@ fn drawNodes(ed: *Editor, g: *game.Game, top: i32) void {
         ed.scroll = mathx.reveal(ed.scroll, ed.node, ed.node_rows);
         ed.revealed = ed.node;
     }
-    ed.scroll = @min(ed.scroll, ed.world.node_n -| ed.node_rows);
+    ed.scroll = @min(ed.scroll, ed.map.node_n -| ed.node_rows);
     scissor(lowerArea(g, top));
     defer rl.endScissorMode();
     var y = top;
-    for (ed.world.nodes()[ed.scroll..], ed.scroll..) |*nd, n| {
+    for (ed.map.nodes()[ed.scroll..], ed.scroll..) |*nd, n| {
         if (y >= g.screen.y) break;
         const r = look.rect(PAD, y, INNER_W, NODE_H - NODE_GAP);
         const h = hot(ed, r, true, false, "Open this node");
@@ -2109,7 +2109,13 @@ const TOOL_ROW: usize = 5;
 const SWATCH: i32 = 34;
 const SWATCH_GAP: i32 = 3;
 const PALETTE_COLS: usize = @intCast(@divTrunc(INNER_W + SWATCH_GAP, SWATCH + SWATCH_GAP));
-const PALETTE = std.enums.values(grid.Tile);
+const PALETTE = blk: {
+    var tiles: []const grid.Tile = &.{};
+    for (std.enums.values(grid.Tile)) |t| {
+        if (t != .chest_open) tiles = tiles ++ &[_]grid.Tile{t};
+    }
+    break :blk tiles;
+};
 
 fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
     var buf: [LINE]u8 = undefined;
@@ -2221,7 +2227,7 @@ fn drawThings(ed: *Editor, g: *game.Game, top: i32) void {
     var wrong = false;
     if (is.start_walled) {
         wrong = true;
-        thingRow(ed, g, &y, "The start is on solid ground", WARN, ed.world.start.at);
+        thingRow(ed, g, &y, "The start is on solid ground", WARN, ed.map.start.at);
     }
     if (is.unlinked > 0) {
         wrong = true;
@@ -2390,7 +2396,7 @@ fn nodeSwitch(ed: *Editor, g: *game.Game, y: *i32) bool {
     var name: [atlas.TITLE_MAX]u8 = undefined;
     rowLabel(g, y.*, "Node");
     var procgen: usize = 0;
-    for (ed.world.nodes()) |*nd| procgen += @intFromBool(nd.unrolled());
+    for (ed.map.nodes()) |*nd| procgen += @intFromBool(nd.unrolled());
     const tip = "The next or last procgen node's generator";
     const by = stepper(ed, g, valueSlot(y.*, 0, 1), ed.nodeName(ed.node, &name), .{
         .{ .tip = tip, .live = procgen > 1 },
@@ -2400,8 +2406,8 @@ fn nodeSwitch(ed: *Editor, g: *game.Game, y: *i32) bool {
     if (by == 0) return false;
     var n = ed.node;
     while (true) {
-        n = mathx.wrap(n, std.math.sign(by), ed.world.node_n);
-        if (ed.world.node[n].unrolled()) break;
+        n = mathx.wrap(n, std.math.sign(by), ed.map.node_n);
+        if (ed.map.node[n].unrolled()) break;
     }
     if (n == ed.node) return false;
     ed.select(n);
@@ -2544,6 +2550,8 @@ const ROOMS_ROWS = [_]Knob{
 };
 
 const WILDS_ROWS = [_]Knob{
+    .{ .field = "loops", .tips = &.{"Side branches to try reconnecting to another path"}, .fmt = PERCENT_FMT },
+    .{ .field = "rewards", .tips = &.{"Closed treasure chests at the ends of substantial remaining branches"} },
     .{ .field = "thicket", .tips = &.{"Of the ground, how much is sown with shrub before it is smoothed"}, .fmt = PERCENT_FMT },
     .{ .field = "smooth", .tips = &.{"Smoothing passes: more, rounder thickets and wider glades"} },
     .{ .field = "strays", .tips = &.{"Lone shrubs, a thousandth of the open grass each"} },
@@ -2910,12 +2918,12 @@ fn hover(ed: *Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
     var a: [atlas.TITLE_MAX]u8 = undefined;
     if (ed.view == .graph) {
         if (ed.dotUnder(c, ed.desk.mouse)) |l| {
-            const to = ed.world.door(l).to orelse return std.fmt.bufPrintZ(buf, "Node {d} door {d}: leads nowhere; drag to another door's dot to link it", .{ l.node, l.door }) catch "";
+            const to = ed.map.door(l).to orelse return std.fmt.bufPrintZ(buf, "Node {d} door {d}: leads nowhere; drag to another door's dot to link it", .{ l.node, l.door }) catch "";
             return std.fmt.bufPrintZ(buf, "Node {d} door {d} leads to {s}, door {d}; {s} unlinks", .{ l.node, l.door, ed.nodeName(to.node, &a), to.door, Desk.ERASE_CAPTION }) catch "";
         }
         const n = ed.boxUnder(c, ed.desk.mouse) orelse return "";
         var d: [LINE]u8 = undefined;
-        return std.fmt.bufPrintZ(buf, "{s} (node {d}): {s}", .{ ed.nodeName(n, &a), n, nodeDetail(&ed.world.node[n], &d) }) catch "";
+        return std.fmt.bufPrintZ(buf, "{s} (node {d}): {s}", .{ ed.nodeName(n, &a), n, nodeDetail(&ed.map.node[n], &d) }) catch "";
     }
     const p = ed.mouseCell(c);
     if (!grid.Level.inside(p)) return "";
@@ -3161,14 +3169,14 @@ fn outlineCells(ed: *const Editor, c: rl.Rectangle, b: grid.Box, col: rl.Color) 
 fn drawGraph(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     scissor(c);
     defer rl.endScissorMode();
-    for (0..ed.world.node_n) |n| {
+    for (0..ed.map.node_n) |n| {
         const b = ed.boxAt(c, n);
         rl.drawRectangleRec(b, PANEL_BG);
         if (thumb(ed, n)) |t| sprite(t, .{ .x = b.x, .y = b.y + @as(f32, @floatFromInt(BOX_TOP)), .width = @floatFromInt(BOX_W), .height = @floatFromInt(BOX_H - BOX_TOP) });
         drawNodeTitle(ed, g, n, b, @as(i32, @intFromFloat(b.y)) + TITLE_DY);
         rl.drawRectangleLinesEx(b, 1, if (n == ed.node) ON else look.EDGE);
     }
-    for (ed.world.nodes(), 0..) |*nd, n| {
+    for (ed.map.nodes(), 0..) |*nd, n| {
         for (nd.doors(), 0..) |d, k| {
             const here = atlas.Link{ .node = n, .door = k };
             const at = ed.dotAt(c, here);
@@ -3187,7 +3195,7 @@ fn drawGraph(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
 fn thumb(ed: *Editor, n: usize) ?rl.Texture2D {
     if (!ed.thumb_ok.isSet(n)) {
         const lv = if (n == ed.node and !ed.stale) &ed.lv else blk: {
-            ed.world.node[n].stamp(&ed.thumb_lv, ed.roll);
+            ed.map.node[n].stamp(&ed.thumb_lv, ed.roll);
             break :blk &ed.thumb_lv;
         };
         var px: [grid.CELLS]rl.Color = undefined;
@@ -3221,7 +3229,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
     var dir_buf: [atlas.PATH_MAX]u8 = undefined;
     const title: [:0]const u8 = switch (ed.modal) {
         .confirm => "Unsaved changes",
-        .name => if (ed.naming == .new) "New world" else "Save the world as",
+        .name => if (ed.naming == .new) "New map" else "Save the map as",
         .open => std.fmt.bufPrintZ(&title_buf, "Open: {s}", .{ed.listing.dirPath(&dir_buf)}) catch "Open",
         .none, .help, .objects => "",
     };
@@ -3253,12 +3261,12 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
             backButton(ed, g, bx, y, "Cancel");
         },
         .open => {
-            if (ed.listing.n == 0) g.face.draw(atlas.NO_WORLDS, x + PAD, y, TEXT, look.DIM);
+            if (ed.listing.n == 0) g.face.draw(atlas.NO_MAPS, x + PAD, y, TEXT, look.DIM);
             for (ed.listed_top..@min(ed.listing.n, ed.listed_top + MODAL_ROWS)) |i| {
                 const label = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ switch (ed.listing.entry(i)) {
                     .up => "^  ",
                     .folder => "+  ",
-                    .world => "   ",
+                    .map => "   ",
                 }, ed.listing.label(i) }) catch "";
                 const r = row(x + PAD, y, inner);
                 if (i == ed.listed_at) rl.drawRectangleLinesEx(r, 1, HOVER);
@@ -3278,7 +3286,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
 const OPEN_TIPS = std.EnumArray(atlas.Listing.Entry, [:0]const u8).init(.{
     .up = "The folder above (" ++ input.RUB_CAPTION ++ ")",
     .folder = "Into this folder",
-    .world = "Open this world",
+    .map = "Open this map",
 });
 const OPEN_CRIB = Desk.NAV_CAPTION ++ " pick" ++ SEP ++ Desk.ENTER_CAPTION ++ " open" ++ SEP ++ input.RUB_CAPTION ++ " up";
 
@@ -3382,12 +3390,14 @@ const Facts = struct {
 fn seenFacts(s: Seen, f: *Facts) void {
     switch (s) {
         .tile => |t| {
-            f.put("Letter '{c}' in a world file", .{t.letter()});
+            f.put("Letter '{c}' in a map file", .{t.letter()});
             f.put("{s}; {s}", .{ if (t.solid()) "Blocks a step" else "Walked on", if (t.blind()) "blocks sight" else "seen through" });
             if (t.liquid()) f.put("A liquid: gas spreads over it, a trail bridges it", .{});
             if (look.under(t)) |u| f.put("Drawn over the ground beside it, else {s}", .{@tagName(u)});
             if (dual.of(t)) |gr| if (look.GROUND_SHEETS.contains(gr)) f.put("Ground {s}: its edges meet the grounds below it", .{@tagName(gr)});
             if (look.stands(t)) f.put("Stands up and throws a shadow", .{});
+            if (t == .chest) f.put("Opened by stepping toward it; contains gold, never broken by attacks", .{});
+            if (t == .chest_open) f.put("Already opened and empty; may be walked over", .{});
         },
         .body => |k| {
             const r = actor.row(k);
@@ -3467,18 +3477,18 @@ fn tileGlyph(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
 const SHOT_ZOOM = zoomOf(32);
 const SHOT_BRUSH = std.mem.indexOfScalar(i32, &BRUSHES, 3).?;
 
-/// DEV ONLY: the posed world's map mid link-pick, its graph, its procgen node's generator, then the object viewer.
+/// DEV ONLY: the posed map's map mid link-pick, its graph, its procgen node's generator, then the object viewer.
 pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8, objects_path: [:0]const u8) !void {
     const ed = try Editor.create(std.heap.c_allocator);
     defer ed.destroy();
-    const w = ed.world;
+    const w = ed.map;
     w.* = .{};
     _ = w.add(.{ .bespoke = .{} });
     _ = w.add(.{ .procgen = .{} });
     _ = w.add(.{ .procgen = .{} });
     _ = w.node[0].rename("Gatehouse");
     _ = w.node[1].rename("The Warrens");
-    ed.setPath(atlas.worldPath("test_shot"));
+    ed.setPath(atlas.mapPath("test_shot"));
     ed.zoom = SHOT_ZOOM;
     ed.brush = SHOT_BRUSH;
     ed.tool = .paint;
@@ -3502,7 +3512,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
         place(ed, .{ .x = 5, .y = 5 });
         place(ed, .{ .x = 60, .y = 40 });
     }
-    ed.world.link(.{ .node = 1, .door = 1 }, .{ .node = 2, .door = 0 });
+    ed.map.link(.{ .node = 1, .door = 1 }, .{ .node = 2, .door = 0 });
     ed.select(1);
     ed.tool = .link;
     place(ed, .{ .x = 5, .y = 5 });
@@ -3526,7 +3536,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     ed.view = .map;
     ed.select(1);
     ed.lower = .generator;
-    const fo = &ed.world.node[1].plan.procgen.foes;
+    const fo = &ed.map.node[1].plan.procgen.foes;
     _ = fo.addMakeup();
     fo.makeup[fo.makeup_n - 1] = pack.Makeup.of(&.{ .slime, .bloat, .rat, .rat, .rat });
     fo.makeup[fo.makeup_n - 1].weight = 3;
@@ -3551,19 +3561,19 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
 
 fn testEditor() !*Editor {
     const ed = try Editor.create(std.testing.allocator);
-    ed.world.* = .{};
-    ed.setPath(atlas.worldPath("test_editor"));
+    ed.map.* = .{};
+    ed.setPath(atlas.mapPath("test_editor"));
     return ed;
 }
 
 fn testBespoke() !*Editor {
     const ed = try testEditor();
-    _ = ed.world.add(.{ .bespoke = .{} });
+    _ = ed.map.add(.{ .bespoke = .{} });
     return ed;
 }
 
 fn dragFirstBox(ed: *Editor) P {
-    const was = ed.world.node[0].pos;
+    const was = ed.map.node[0].pos;
     ed.view = .graph;
     ed.gesture();
     ed.drag = .{ .node = 0, .grab = .{ .x = 0, .y = 0 }, .from = .{ .x = 100, .y = 100 }, .was = was };
@@ -3592,7 +3602,7 @@ fn paintClick(ed: *Editor, t: grid.Tile, p: P) void {
 test "painting a bespoke node: a door opens its wall and no wall paints over it" {
     const ed = try testEditor();
     defer ed.destroy();
-    const w = ed.world;
+    const w = ed.map;
     _ = w.add(.{ .bespoke = .{} });
     ed.tool = .paint;
     laySpan(ed, .{ .from = .{ .x = 4, .y = 5 }, .erase = false, .shape = .rect }, .{ .x = 9, .y = 5 });
@@ -3620,7 +3630,7 @@ test "painting a bespoke node: a door opens its wall and no wall paints over it"
 test "the link tool joins doors on two nodes, and a procgen node takes doors but no floor" {
     const ed = try testEditor();
     defer ed.destroy();
-    const w = ed.world;
+    const w = ed.map;
     _ = w.add(.{ .bespoke = .{} });
     _ = w.add(.{ .procgen = .{} });
     click(ed, .door, .{ .x = 3, .y = 3 });
@@ -3730,14 +3740,14 @@ test "a fast stroke paints every cell it passes, and Esc mid-rectangle lets the 
     try std.testing.expectEqual(@as(usize, 11), row_n);
     try std.testing.expectEqual(grid.Tile.wall, stray);
     try std.testing.expect(ed.standable(.{ .node = 0, .at = .{ .x = 30, .y = 30 } }));
-    _ = ed.world.add(.{ .bespoke = .{} });
+    _ = ed.map.add(.{ .bespoke = .{} });
     try std.testing.expect(!ed.standable(.{ .node = 1, .at = .{ .x = 30, .y = 30 } }));
 }
 
 test "a stroke leaving the map paints up to its edge, and it ends with the button that began it" {
     const ed = try testBespoke();
     defer ed.destroy();
-    const b = &ed.world.node[0].plan.bespoke;
+    const b = &ed.map.node[0].plan.bespoke;
     const c = TEST_CANVAS;
     ed.cam = .{ -4, 0 };
     ed.tool = .paint;
@@ -3821,10 +3831,10 @@ test "a click on the frame a rectangle is let go is an undo of its own" {
 test "a door on a wall taken away takes the torch it held up" {
     const ed = try testBespoke();
     defer ed.destroy();
-    const b = &ed.world.node[0].plan.bespoke;
+    const b = &ed.map.node[0].plan.bespoke;
     const door = P{ .x = 6, .y = 5 };
     const torch = lume.torchWall(door);
-    _ = ed.world.addDoor(0, door);
+    _ = ed.map.addDoor(0, door);
     try std.testing.expect(b.torch.add(torch));
     try std.testing.expect(ed.here().torchFits(b, torch));
     ed.gesture();
@@ -3838,7 +3848,7 @@ test "the other button pressed mid graph drag puts the box back, and leaves no u
     defer ed.destroy();
     const c = TEST_CANVAS;
     const was = dragFirstBox(ed);
-    try std.testing.expect(!ed.world.node[0].pos.eq(was));
+    try std.testing.expect(!ed.map.node[0].pos.eq(was));
     ed.desk = .{ .paint = true, .erase = true, .erase_hit = true, .mouse = .{ .x = 300, .y = 100 } };
     ed.drop();
     ed.desk = .{ .paint = true, .erase = true, .mouse = .{ .x = 400, .y = 100 } };
@@ -3846,11 +3856,11 @@ test "the other button pressed mid graph drag puts the box back, and leaves no u
     ed.desk = .{ .mouse = .{ .x = 400, .y = 100 } };
     graphMouse(ed, c, true);
     try std.testing.expectEqual(@as(usize, 0), ed.hist_at);
-    try std.testing.expect(ed.world.node[0].pos.eq(was));
+    try std.testing.expect(ed.map.node[0].pos.eq(was));
     try std.testing.expect(!ed.dirty);
 }
 
-test "leaving with unsaved changes asks first, and leaving a saved world does not" {
+test "leaving with unsaved changes asks first, and leaving a saved map does not" {
     const ed = try testBespoke();
     defer ed.destroy();
     ed.request(.leave);
@@ -3869,17 +3879,17 @@ test "leaving or closing mid graph drag keeps the move and asks before discardin
         const ed = try testBespoke();
         defer ed.destroy();
         const was = dragFirstBox(ed);
-        const moved = ed.world.node[0].pos;
+        const moved = ed.map.node[0].pos;
         try std.testing.expect(!moved.eq(was));
         ed.request(pending);
         try std.testing.expectEqual(Modal.confirm, ed.modal);
         try std.testing.expect(ed.action == .none);
         try std.testing.expect(ed.drag == null);
-        try std.testing.expectEqual(moved, ed.world.node[0].pos);
+        try std.testing.expectEqual(moved, ed.map.node[0].pos);
         try std.testing.expect(ed.dirty);
         ed.modal = .none;
         ed.undo();
-        try std.testing.expectEqual(was, ed.world.node[0].pos);
+        try std.testing.expectEqual(was, ed.map.node[0].pos);
         try std.testing.expect(!ed.dirty);
     }
     std.debug.print("2 departure paths preserve an active graph move, prompt, and undo to the saved state\n", .{});
@@ -3888,28 +3898,28 @@ test "leaving or closing mid graph drag keeps the move and asks before discardin
 test "a rename is one undo, and deleting a node renumbers the list round it" {
     const ed = try testEditor();
     defer ed.destroy();
-    for (0..3) |_| _ = ed.world.add(.{ .bespoke = .{} });
+    for (0..3) |_| _ = ed.map.add(.{ .bespoke = .{} });
     ed.select(1);
     ed.startRename();
     ed.field.set("Crypt", atlas.NAME_MAX);
     ed.commitRename();
-    try std.testing.expectEqualStrings("Crypt", ed.world.node[1].name());
+    try std.testing.expectEqualStrings("Crypt", ed.map.node[1].name());
     ed.select(0);
     ed.gesture();
     deleteNode(ed);
-    try std.testing.expectEqualStrings("Crypt", ed.world.node[0].name());
+    try std.testing.expectEqualStrings("Crypt", ed.map.node[0].name());
     ed.undo();
     ed.undo();
-    try std.testing.expectEqual(@as(usize, 3), ed.world.node_n);
-    try std.testing.expectEqual(@as(usize, 0), ed.world.node[1].label.n);
+    try std.testing.expectEqual(@as(usize, 3), ed.map.node_n);
+    try std.testing.expectEqual(@as(usize, 0), ed.map.node[1].label.n);
 }
 
 test "undo and redo disarm deletion when a node index changes owners" {
     const ed = try testEditor();
     defer ed.destroy();
     for ([_][]const u8{ "First", "Second", "Third" }) |name| {
-        const n = ed.world.add(.{ .bespoke = .{} }).?;
-        _ = ed.world.node[n].rename(name);
+        const n = ed.map.add(.{ .bespoke = .{} }).?;
+        _ = ed.map.node[n].rename(name);
     }
     ed.gesture();
     deleteNode(ed);
@@ -3934,7 +3944,7 @@ test "undo and redo disarm deletion when a node index changes owners" {
 test "a node added is named as it is added, one undo for both" {
     const ed = try testBespoke();
     defer ed.destroy();
-    const before = ed.world.node_n;
+    const before = ed.map.node_n;
     ed.gesture();
     addNode(ed, .{ .procgen = .{} });
     try std.testing.expect(ed.renaming);
@@ -3942,13 +3952,13 @@ test "a node added is named as it is added, one undo for both" {
     ed.field.set("Pit", atlas.NAME_MAX);
     try std.testing.expect(std.mem.endsWith(u8, ed.nodeTitle(ed.node, &buf), "Pit" ++ menu.CARET));
     ed.commitRename();
-    try std.testing.expectEqualStrings("Pit", ed.world.node[before].name());
+    try std.testing.expectEqualStrings("Pit", ed.map.node[before].name());
     ed.undo();
-    try std.testing.expectEqual(before, ed.world.node_n);
+    try std.testing.expectEqual(before, ed.map.node_n);
 }
 
 fn tileAt(ed: *Editor, p: P) grid.Tile {
-    return ed.world.node[ed.node].plan.bespoke.tile[grid.Level.idx(p)];
+    return ed.map.node[ed.node].plan.bespoke.tile[grid.Level.idx(p)];
 }
 
 fn rowCount(ed: *Editor, y: i32, t: grid.Tile) usize {
@@ -3960,7 +3970,7 @@ fn rowCount(ed: *Editor, y: i32, t: grid.Tile) usize {
 
 fn count(ed: *Editor, t: grid.Tile) usize {
     var n: usize = 0;
-    for (ed.world.node[ed.node].plan.bespoke.tile) |x| n += @intFromBool(x == t);
+    for (ed.map.node[ed.node].plan.bespoke.tile) |x| n += @intFromBool(x == t);
     return n;
 }
 
@@ -4013,7 +4023,7 @@ test "a selection copied pastes with what stood on it, and cut leaves the second
     try std.testing.expect(ed.pasting);
     ed.gesture();
     layBoard(ed, .{ .x = 30, .y = 20 });
-    const b = &ed.world.node[0].plan.bespoke;
+    const b = &ed.map.node[0].plan.bespoke;
     try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 32, .y = 23 }));
     try std.testing.expect(b.foeAt(.{ .x = 32, .y = 23 }) != null);
     try std.testing.expect(b.barrel[grid.Level.idx(.{ .x = 30, .y = 21 })]);
@@ -4033,9 +4043,9 @@ test "a selection copied pastes with what stood on it, and cut leaves the second
 test "a door's dot dragged onto another's on the graph links them, and the other button on one unlinks it" {
     const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
-    _ = ed.world.addDoor(0, .{ .x = 10, .y = 10 });
-    _ = ed.world.addDoor(1, .{ .x = 20, .y = 20 });
+    _ = ed.map.add(.{ .bespoke = .{} });
+    _ = ed.map.addDoor(0, .{ .x = 10, .y = 10 });
+    _ = ed.map.addDoor(1, .{ .x = 20, .y = 20 });
     const c = TEST_CANVAS;
     ed.view = .graph;
     const a = ed.dotAt(c, .{ .node = 0, .door = 0 });
@@ -4047,19 +4057,19 @@ test "a door's dot dragged onto another's on the graph links them, and the other
     graphMouse(ed, c, true);
     ed.desk = .{ .mouse = .{ .x = @intFromFloat(b.x), .y = @intFromFloat(b.y) } };
     graphMouse(ed, c, true);
-    try std.testing.expectEqual(@as(?atlas.Link, .{ .node = 1, .door = 0 }), ed.world.node[0].door[0].to);
+    try std.testing.expectEqual(@as(?atlas.Link, .{ .node = 1, .door = 0 }), ed.map.node[0].door[0].to);
     try std.testing.expectEqual(@as(usize, 1), ed.hist_at);
     ed.gesture();
     ed.desk = .{ .erase = true, .erase_hit = true, .mouse = .{ .x = @intFromFloat(a.x), .y = @intFromFloat(a.y) } };
     graphMouse(ed, c, true);
-    try std.testing.expectEqual(@as(?atlas.Link, null), ed.world.node[1].door[0].to);
+    try std.testing.expectEqual(@as(?atlas.Link, null), ed.map.node[1].door[0].to);
     try std.testing.expectEqual(@as(usize, 2), ed.hist_at);
 }
 
-test "Open lists the edited world's folder and Esc goes up a folder before it closes; a new name goes beside the world" {
+test "Open lists the edited map's folder and Esc goes up a folder before it closes; a new name goes beside the map" {
     const ed = try testBespoke();
     defer ed.destroy();
-    ed.setPath(".\\" ++ comptime atlas.worldPath("qud\\qud_strata"));
+    ed.setPath(".\\" ++ comptime atlas.mapPath("qud\\qud_strata"));
     try std.testing.expectEqualStrings(atlas.DIR ++ "/qud/qud_strata" ++ atlas.EXT, ed.path());
     ed.askOpen();
     try std.testing.expectEqualStrings("qud/", ed.listing.here());
@@ -4080,7 +4090,7 @@ test "a full procgen preview keeps the hero's place in the pool, as play does" {
     defer ed.destroy();
     var foes = pack.Spec{ .packs = pack.PACKS_MAX, .few = 0, .gap = 0, .makeup_n = 1 };
     foes.makeup[0] = pack.Makeup.of(&(.{.rat} ** pack.MAKEUP_MAX));
-    const n = ed.world.add(.{ .procgen = .{ .floor = .{ .wilds = .{} }, .foes = foes } }).?;
+    const n = ed.map.add(.{ .procgen = .{ .floor = .{ .wilds = .{} }, .foes = foes } }).?;
     ed.select(n);
     ed.preview();
     try std.testing.expectEqual(actor.MAX - actor.most(actor.HERO), ed.shown_n);
@@ -4090,7 +4100,7 @@ test "a full procgen preview keeps the hero's place in the pool, as play does" {
 test "a procgen node shows a roll of it with its packs, and a bespoke one counts the ground no walk reaches" {
     const ed = try testEditor();
     defer ed.destroy();
-    const n = ed.world.add(.{ .procgen = .{ .floor = .{ .wilds = .{} } } }).?;
+    const n = ed.map.add(.{ .procgen = .{ .floor = .{ .wilds = .{} } } }).?;
     ed.select(n);
     ed.preview();
     const open = ed.lv.openCount();
@@ -4099,13 +4109,13 @@ test "a procgen node shows a roll of it with its packs, and a bespoke one counts
     reroll(ed);
     ed.preview();
     try std.testing.expect(!std.mem.eql(grid.Tile, &first, &ed.lv.tile));
-    const b = ed.world.add(.{ .bespoke = .{} }).?;
+    const b = ed.map.add(.{ .bespoke = .{} }).?;
     ed.select(b);
     ed.tool = .paint;
     ed.gesture();
     laySpan(ed, .{ .from = .{ .x = 2, .y = 2 }, .erase = false, .shape = .rect }, .{ .x = 6, .y = 6 });
     laySpan(ed, .{ .from = .{ .x = 20, .y = 2 }, .erase = false, .shape = .rect }, .{ .x = 22, .y = 4 });
-    ed.world.start = .{ .node = b, .at = .{ .x = 3, .y = 3 } };
+    ed.map.start = .{ .node = b, .at = .{ .x = 3, .y = 3 } };
     click(ed, .{ .foe = .rat }, .{ .x = 21, .y = 3 });
     ed.preview();
     std.debug.print("a wilds roll: {d} open cells, {d} foes placed; two rooms apart: {d} cells and {d} foe cut off\n", .{ open, foes, ed.issues.cut_off, ed.issues.foes_cut_off });
@@ -4115,35 +4125,35 @@ test "a procgen node shows a roll of it with its packs, and a bespoke one counts
     try std.testing.expect(!ed.issues.start_walled);
 }
 
-test "undo mid graph drag takes the drag back as its own step, and the world after it is unsaved" {
+test "undo mid graph drag takes the drag back as its own step, and the map after it is unsaved" {
     const ed = try testBespoke();
     defer ed.destroy();
     const was = dragFirstBox(ed);
     ed.undo();
-    try std.testing.expect(ed.world.node[0].pos.eq(was));
+    try std.testing.expect(ed.map.node[0].pos.eq(was));
     try std.testing.expect(ed.drag == null);
     ed.redo();
-    try std.testing.expect(!ed.world.node[0].pos.eq(was));
+    try std.testing.expect(!ed.map.node[0].pos.eq(was));
     try std.testing.expect(ed.dirty);
 }
 
 test "a graph drag put back keeps what there was to redo" {
     const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
+    _ = ed.map.add(.{ .bespoke = .{} });
     ed.select(1);
     for (0..UNDO_CAP) |_| {
         ed.gesture();
-        ed.world.node[1].pos.x += 1;
+        ed.map.node[1].pos.x += 1;
         ed.bank();
     }
     ed.undo();
     ed.undo();
     const hist = .{ ed.hist_base, ed.hist_len, ed.hist_at };
     const was = dragFirstBox(ed);
-    try std.testing.expect(!ed.world.node[0].pos.eq(was));
+    try std.testing.expect(!ed.map.node[0].pos.eq(was));
     ed.drop();
-    try std.testing.expect(ed.world.node[0].pos.eq(was));
+    try std.testing.expect(ed.map.node[0].pos.eq(was));
     try std.testing.expectEqual(hist, .{ ed.hist_base, ed.hist_len, ed.hist_at });
     ed.redo();
     ed.redo();
@@ -4153,16 +4163,16 @@ test "a graph drag put back keeps what there was to redo" {
 test "redo mid graph drag puts the box back and redoes" {
     const ed = try testBespoke();
     defer ed.destroy();
-    _ = ed.world.add(.{ .bespoke = .{} });
+    _ = ed.map.add(.{ .bespoke = .{} });
     ed.gesture();
-    ed.world.node[1].pos.x += 40;
+    ed.map.node[1].pos.x += 40;
     ed.bank();
-    const moved = ed.world.node[1].pos;
+    const moved = ed.map.node[1].pos;
     ed.undo();
     const was = dragFirstBox(ed);
     ed.redo();
-    try std.testing.expect(ed.world.node[0].pos.eq(was));
-    try std.testing.expect(ed.world.node[1].pos.eq(moved));
+    try std.testing.expect(ed.map.node[0].pos.eq(was));
+    try std.testing.expect(ed.map.node[1].pos.eq(moved));
     try std.testing.expectEqual(ed.hist_len, ed.hist_at);
 }
 
@@ -4201,11 +4211,11 @@ test "a graph drag let go of where it began leaves no undo and nothing unsaved" 
     defer ed.destroy();
     const c = TEST_CANVAS;
     const was = dragFirstBox(ed);
-    try std.testing.expect(!ed.world.node[0].pos.eq(was));
+    try std.testing.expect(!ed.map.node[0].pos.eq(was));
     const back = P{ .x = was.x + @as(i32, @intFromFloat(c.x - ed.gcam[0])), .y = was.y + @as(i32, @intFromFloat(c.y - ed.gcam[1])) };
     ed.desk = .{ .paint = true, .mouse = back };
     graphMouse(ed, c, true);
-    try std.testing.expect(ed.world.node[0].pos.eq(was));
+    try std.testing.expect(ed.map.node[0].pos.eq(was));
     ed.desk = .{ .mouse = back };
     graphMouse(ed, c, true);
     try std.testing.expectEqual(@as(usize, 0), ed.hist_at);
@@ -4215,7 +4225,7 @@ test "a graph drag let go of where it began leaves no undo and nothing unsaved" 
 test "deleting a node leaves the next unarmed and nothing selected, and the cursor refuses a foe with no room" {
     const ed = try testEditor();
     defer ed.destroy();
-    for (0..3) |_| _ = ed.world.add(.{ .bespoke = .{} });
+    for (0..3) |_| _ = ed.map.add(.{ .bespoke = .{} });
     ed.select(1);
     ed.delete_armed = 1;
     ed.selection = grid.Box.sized(.{ .x = 1, .y = 1 }, 2, 2);
@@ -4229,7 +4239,7 @@ test "deleting a node leaves the next unarmed and nothing selected, and the curs
     laySpan(ed, .{ .from = room.lo, .erase = false, .shape = .rect }, room.hi.sub(.{ .x = 1, .y = 1 }));
     var cells = room.cells();
     while (cells.next()) |p| {
-        if (!actor.roomFor(ed.world.node[ed.node].plan.bespoke.bodies(), .rat)) break;
+        if (!actor.roomFor(ed.map.node[ed.node].plan.bespoke.bodies(), .rat)) break;
         click(ed, .{ .foe = .rat }, p);
     }
     ed.tool = .{ .foe = .slime };

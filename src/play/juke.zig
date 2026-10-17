@@ -1,6 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
+const grid = @import("../map/grid.zig");
 
 pub const RANGE: i32 = 2;
 /// The one leap that spends no turn.

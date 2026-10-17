@@ -1,7 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
+const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
 
 // After Brogue's `getCellAppearance`.

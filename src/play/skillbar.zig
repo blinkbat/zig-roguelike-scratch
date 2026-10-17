@@ -1,7 +1,7 @@
 const std = @import("std");
 const input = @import("../core/input.zig");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
+const grid = @import("../map/grid.zig");
 const bow = @import("bow.zig");
 const burning = @import("burning.zig");
 const damage = @import("damage.zig");
@@ -54,7 +54,7 @@ pub const Act = enum {
 
     pub fn desc(a: Act) [:0]const u8 {
         return switch (a) {
-            .shoot => "Aim an arrow at a target in range; press again to loose it.",
+            .shoot => "Aim an arrow at a target in range; confirm to loose it.",
             .wait => "Let a turn pass.",
             .secondary => "Hold to use Skills in your " ++ comptime Set.secondary.name() ++ ". Takes up this slot in both Skill Sets.",
             inline else => |t| comptime module(t).?.DESCRIPTION,

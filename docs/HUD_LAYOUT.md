@@ -27,7 +27,7 @@ Remove the live HUD's hero-name label, enemy population counters, gold tally, pe
 
 - Target a 744-pixel-wide assembly, horizontally centered from `Game.screen`. Its width does not grow on a wider display.
 - Two matching 104-pixel orb frames flank the existing seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs completely cover its ends. The plate is 100px tall and its lower edge sits just above the orb bases; no square endcaps project beyond the orbs.
-- Mount the assembly close to the bottom edge. Draw the world behind it and at both sides instead of reserving a full-width black footer.
+- Mount the assembly close to the bottom edge. Draw the map behind it and at both sides instead of reserving a full-width black footer.
 - Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
 - Use the current Balthazar face for small resource values and cooldowns; inputs are icons, not captions. Avoid extra explanatory prose in play.
 - Keep geometry, colours and draw functions together so authored orb/frame art can replace the primitives later. Reuse the existing skill images.
@@ -43,7 +43,7 @@ Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawS
 
 Small Balthazar text is rasterized at its displayed size (12, 15, 16, 20 and 24px) with point filtering, measured and drawn from the same atlas. Larger text and map symbols retain the 96px mipmapped atlas. Input icons are 22px tall with 15px labels, 6px below their slots. Slots have 10px gaps within groups and 20px between groups; the assembly remains 744px wide. The taller plate and raised status row keep these larger captions clear of the painted rails.
 
-The world now spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind overlay is centered in the space above the HUD. The former bar, counter, log and permanent-hint renderers are removed; their gameplay and save data remain intact.
+The map now spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind overlay is centered in the space above the HUD. The former bar, counter, log and permanent-hint renderers are removed; their gameplay and save data remain intact.
 
 The dedicated captures are `shots/hud-full-1280.png`, `hud-partial-1600.png`, `hud-critical-1920.png`, `hud-empty-1600.png`, `hud-ps5-1280.png`, `hud-secondary-pad.png`, `hud-bind-pad.png`, `hud-bind-ps5.png`, `hud-bind-720.png`, `hud-inspect-skill.png`, `hud-inspect-status.png` and `hud-inspect-mana.png`. `shot.cmd` regenerates them all; previews and logs remain outside tracked source.
 

@@ -1,0 +1,49 @@
+roguelike-map 1
+start 0 11 32
+node procgen wilds
+thicket 50
+smooth 4
+strays 20
+loops 80
+rewards chests
+packs 8
+few 2
+reach 2
+gap 14
+apart 4
+light bleak
+weather drizzle
+makeup 3 rat rat
+makeup 2 rat
+makeup 3 pib
+makeup 2 pib rat
+makeup 1 bloat
+feature coast
+side west
+sea 6
+shore 2
+beach 6
+rough 3
+feature lake
+fill water
+count 3
+size 5
+ring reeds
+island 0
+feature scatter
+tile shallows
+on grass
+amount 90
+clump 5
+feature scatter
+tile reeds
+on grass
+amount 110
+clump 4
+feature scatter
+tile dirt
+on sand
+amount 1000
+name The Strand
+at 0 0
+door 95 32

@@ -1,11 +1,11 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
-const fov = @import("../world/fov.zig");
+const grid = @import("../map/grid.zig");
+const fov = @import("../map/fov.zig");
 const look = @import("look.zig");
 const sky = @import("sky.zig");
-const lume = @import("../world/lume.zig");
+const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 
 const P = mathx.P;
@@ -19,7 +19,7 @@ const MAP_H: i32 = grid.H * SUB;
 const NONE_BAKED = [2]i32{ MAP_H, 0 };
 const TEXELS: usize = @intCast(MAP_W * MAP_H);
 /// The map is drawn with (DST_COLOR, SRC_COLOR) blending, so a texel stores half the light and reaches twice the art.
-const OVERBRIGHT: f32 = 2.0;
+pub const OVERBRIGHT: f32 = 2.0;
 
 pub const REACH: i32 = lume.TORCH_REACH;
 const REACH2: f32 = @floatFromInt(REACH * REACH);
@@ -37,7 +37,7 @@ const FLOOR_WRAP: f32 = 1.0;
 const FACE_WRAP: f32 = 0.35;
 const FACE_GAIN: f32 = 1.25;
 const CEILING_CATCH: f32 = 0.2;
-const BODY_Z: f32 = 0.4;
+pub const BODY_Z: f32 = 0.4;
 
 const CARRY: Rgb = .{ 0.92, 0.88, 0.80 };
 /// A cell past what the archer's light lets it see, so its glow fades out on the edge of sight.
@@ -301,7 +301,7 @@ fn offMiddle(c: P, q: [2]f32) f32 {
     return mathx.len(q[0] - m[0], q[1] - m[1]);
 }
 
-/// Where a light-map texel sits in the world: the screen shows a wall's face and ceiling lifted off the ground.
+/// Where a light-map texel sits in the map: the screen shows a wall's face and ceiling lifted off the ground.
 const Spot = struct {
     x: f32,
     y: f32,
@@ -394,6 +394,15 @@ const Torch = struct {
         return r.k * facing;
     }
 };
+
+fn smoothSpecular(toward: [3]f32, power: f32) f32 {
+    const d: Rgb = toward;
+    const len = @sqrt(@reduce(.Add, d * d));
+    if (len <= 1e-5 or d[2] <= 0) return 0;
+    const half = d / splat(len) + Rgb{ 0, 0.70710678, 0.70710678 };
+    const h = half / splat(@sqrt(@reduce(.Add, half * half)));
+    return std.math.pow(f32, @max(0, h[2]), power);
+}
 
 fn remembered(view: Rgb, sight: f32, memory: f32) Rgb {
     return mix(MEMORY, view, sight) * splat(memory);
@@ -658,9 +667,43 @@ fn recolour(c: rl.Color, rgb: Rgb) rl.Color {
 }
 
 /// `lit` is how far in sight times how far remembered the flame is, `memory` how far remembered, as the ground under a body is.
-pub const Flame = struct { at: [2]f32, glow: f32, lit: f32, memory: f32 };
+pub const Flame = struct { at: [2]f32, foot: f32, glow: f32, lit: f32, memory: f32 };
+
+pub const Emission = struct {
+    at: [3]f32,
+    col: rl.Color,
+    radius: f32,
+    gain: f32,
+};
+
+const EFFECTS = 48;
+const EffectSet = std.StaticBitSet(EFFECTS);
+const EFFECT_REACH = 5;
+const EFFECT_SPAN = EFFECT_REACH * 2 + 1;
+
+const Effect = struct {
+    source: Emission,
+    origin: P,
+    reach: [EFFECT_SPAN * EFFECT_SPAN]bool,
+
+    fn strength(e: *const Effect, x: f32, y: f32, z: f32) f32 {
+        const s = e.source;
+        const dx = s.at[0] - x;
+        const dy = s.at[1] - y;
+        const dz = s.at[2] - z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 >= s.radius * s.radius) return 0;
+        const p = mathx.cellOf(.{ x, y });
+        const i = mathx.slot(p.x - e.origin.x + EFFECT_REACH, p.y - e.origin.y + EFFECT_REACH, EFFECT_SPAN, EFFECT_SPAN) orelse return 0;
+        if (!e.reach[i]) return 0;
+        const k = 1 - d2 / (s.radius * s.radius);
+        return s.gain * k * k;
+    }
+};
 
 pub const Light = struct {
+    effects: [EFFECTS]Effect = undefined,
+    effect_n: usize = 0,
     sight: [grid.CELLS]f32,
     memory: [grid.CELLS]f32,
     soft_sight: [grid.CELLS]f32,
@@ -690,6 +733,7 @@ pub const Light = struct {
     clouds_held: ?struct { box: grid.Box, t: f32 } = null,
     t: mathx.Seconds,
     map: [TEXELS]rl.Color,
+    glints: [TEXELS]rl.Color,
     /// The rows of `map` baked since the texture was last sent, all it needs sent.
     baked: [2]i32,
     scratch: grid.Level,
@@ -697,6 +741,7 @@ pub const Light = struct {
     forest: [FOREST_QUEUE]ForestCast,
     forest_n: usize,
     forest_order: [FOREST_QUEUE]u64,
+    reveal_map: bool = false,
 
     /// Set field by field: built as one value, it is a temporary bigger than a thread's stack.
     pub fn create(alloc: std.mem.Allocator) !*Light {
@@ -715,12 +760,14 @@ pub const Light = struct {
         @memset(&l.scratch.los, false);
         l.grounded();
         @memset(&l.map, rl.Color.blank);
+        @memset(&l.glints, rl.Color.blank);
         l.baked = .{ 0, MAP_H };
         l.soften();
         return l;
     }
 
     pub fn settle(self: *Light, lv: *const grid.Level) void {
+        self.effect_n = 0;
         self.scratch = lv.*;
         self.grounded();
         self.countCasters(lv);
@@ -740,7 +787,7 @@ pub const Light = struct {
         }
         for (0..grid.CELLS) |i| {
             self.sight[i] = mask(lv.lit[i]);
-            self.memory[i] = mask(lv.seen[i]);
+            self.memory[i] = mask(self.recalls(lv, i));
         }
         self.soften();
         self.t = .{};
@@ -754,7 +801,7 @@ pub const Light = struct {
         var moved = false;
         for (0..grid.CELLS) |i| {
             const want_s = mask(lv.lit[i]);
-            const want_m = mask(lv.seen[i]);
+            const want_m = mask(self.recalls(lv, i));
             if (self.sight[i] == want_s and self.memory[i] == want_m) continue;
             const s = mathx.ease(self.sight[i], want_s, up, down);
             const m = mathx.ease(self.memory[i], want_m, up, down);
@@ -765,6 +812,21 @@ pub const Light = struct {
         if (moved) self.soften();
         self.t.step(dt);
         self.fan();
+    }
+
+    pub fn reveal(self: *Light, lv: *const grid.Level, enabled: bool) void {
+        self.reveal_map = enabled;
+        for (0..grid.CELLS) |i| self.memory[i] = mask(self.recalls(lv, i));
+        self.soften();
+    }
+
+    fn recalls(self: *const Light, lv: *const grid.Level, i: usize) bool {
+        return self.reveal_map or lv.seen[i];
+    }
+
+    /// Drawn as terrain: explored, or everything while the debug reveal is on.
+    pub fn remembers(self: *const Light, lv: *const grid.Level, p: P) bool {
+        return self.reveal_map or lv.isSeen(p);
     }
 
     fn fan(self: *Light) void {
@@ -963,24 +1025,62 @@ pub const Light = struct {
         return @max(MEMORY, self.ambientOf());
     }
 
+    fn carryColour(self: *const Light) Rgb {
+        return if (self.sky) |k| mix(CARRY, .{ 0.52, 0.68, 1.0 }, k.moon) else CARRY;
+    }
+
+    /// Before a frame's `emit`s: effect lights last one frame.
+    pub fn clearEffects(self: *Light) void {
+        self.effect_n = 0;
+    }
+
+    pub fn emit(self: *Light, lv: *const grid.Level, source: Emission) void {
+        const origin = mathx.cellOf(.{ source.at[0], source.at[1] });
+        if (self.effect_n == EFFECTS or source.gain <= FAINT or source.radius <= 0 or !lv.isLit(origin)) return;
+        const e = &self.effects[self.effect_n];
+        self.effect_n += 1;
+        e.source = source;
+        e.source.radius = @min(source.radius, EFFECT_REACH - 1);
+        e.origin = origin;
+        @memset(&e.reach, false);
+        var cells = grid.Cells.around(origin, @intFromFloat(@ceil(e.source.radius)));
+        while (cells.next()) |p| {
+            const i: usize = @intCast((p.y - origin.y + EFFECT_REACH) * EFFECT_SPAN + p.x - origin.x + EFFECT_REACH);
+            e.reach[i] = grid.Level.inside(p) and grid.clearLine(lv, origin, p);
+        }
+    }
+
+    fn effectsNear(self: *const Light, c: P) EffectSet {
+        var kept = EffectSet.initEmpty();
+        const x: f32 = @floatFromInt(c.x);
+        const y: f32 = @floatFromInt(c.y);
+        for (self.effects[0..self.effect_n], 0..) |*e, i| {
+            const s = e.source;
+            if (s.at[0] + s.radius <= x or s.at[0] - s.radius >= x + 1 or
+                s.at[1] + s.radius <= y or s.at[1] - s.radius >= y + 1 + FACE_H) continue;
+            kept.set(i);
+        }
+        return kept;
+    }
+
     /// `q` is in cells.
     pub fn at(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32) Rgb {
         const c = mathx.cellOf(q);
         const fade = self.fadeOf(c);
         const ray: ?SunRay = if (self.sky) |k| SunRay.of(k) else null;
         const cloud = if (ray != null) self.cloudAt(q) else 1;
-        return self.shade(lv, torches, q, self.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
+        return self.shade(lv, torches, self.effectsNear(c), q, self.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
     }
 
     /// `cloud` is the share of the sky's light the clouds let through, read only with a `ray`.
-    fn shade(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32, v: View, ray: ?*const SunRay, cloud: f32) Rgb {
+    fn shade(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, effects: EffectSet, q: [2]f32, v: View, ray: ?*const SunRay, cloud: f32) Rgb {
         const sight = v.sight;
         const memory = v.memory;
         if (memory <= FAINT) return @splat(0);
         var view = self.base();
         if (sight > FAINT) {
             const s = Spot.of(lv, q);
-            view += CARRY * splat(self.carried(s));
+            view += self.carryColour() * splat(self.carried(s));
             for (torches) |i| {
                 const t = &self.torch[i];
                 view += t.colour * splat(t.shine(s));
@@ -991,6 +1091,20 @@ pub const Light = struct {
                     const on = self.sunAt(lv, r, s.x, s.y, s.z);
                     if (facing > 0) view += r.k.key * splat(facing * reaching(on, cloud));
                     view *= r.dim(on, cloud);
+                }
+            }
+            if (lv.isLit(mathx.cellOf(q))) {
+                var it = effects.iterator(.{});
+                while (it.next()) |i| {
+                    const e = &self.effects[i];
+                    const strength = e.strength(s.x, s.y, s.z);
+                    if (strength <= 0) continue;
+                    const facing: f32 = switch (s.surface) {
+                        .floor => 1,
+                        .face => faceCatch(faceCos(e.source.at[1] - s.y, mathx.len(e.source.at[0] - s.x, e.source.at[1] - s.y))),
+                        .ceiling => CEILING_CATCH,
+                    };
+                    view += rgbOf(e.source.col) * splat(strength * facing);
                 }
             }
         }
@@ -1062,11 +1176,21 @@ pub const Light = struct {
 
         const patch = Patch.of(self, c);
         const ground = self.groundAt(c);
+        const effects = self.effectsNear(c);
+        var wet = false;
+        var neighbours = grid.Cells.around(c, 1);
+        while (neighbours.next()) |p| {
+            if (look.reflects(lv.at(p))) {
+                wet = true;
+                break;
+            }
+        }
         var ty = @max(t0.y, c.y * SUB);
         while (ty < @min(t1.y, (c.y + 1) * SUB)) : (ty += 1) {
             var tx = @max(t0.x, c.x * SUB);
             while (tx < @min(t1.x, (c.x + 1) * SUB)) : (tx += 1) {
                 const i: usize = @intCast(ty * MAP_W + tx);
+                self.glints[i] = rl.Color.blank;
                 if (dark) {
                     self.map[i] = rl.Color.blank;
                     continue;
@@ -1074,9 +1198,35 @@ pub const Light = struct {
                 const q = [2]f32{ (@as(f32, @floatFromInt(tx)) + 0.5) / sub, (@as(f32, @floatFromInt(ty)) + 0.5) / sub };
                 const v = viewOf(sightOf(&patch, ground, q[0], q[1]), q, &fade);
                 const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
-                self.map[i] = texelOf(self.shade(lv, torches, q, v, if (ray) |*r| r else null, cloud), v.lit);
+                self.map[i] = texelOf(self.shade(lv, torches, effects, q, v, if (ray) |*r| r else null, cloud), v.lit);
+                if (wet and v.lit > FAINT and lv.isLit(c))
+                    self.glints[i] = colourOf(self.waterGlint(torches, effects, q, if (ray) |*r| r else null, cloud), 1);
             }
         }
+    }
+
+    fn waterGlint(self: *const Light, torches: []const TorchIx, effects: EffectSet, q: [2]f32, ray: ?*const SunRay, cloud: f32) Rgb {
+        var gleam: Rgb = @splat(0);
+        if (ray) |r| {
+            const on = self.sunAt(&self.scratch, r, q[0], q[1], 0);
+            gleam += r.k.key * splat(smoothSpecular(r.k.dir, 24) * reaching(on, cloud) * 0.05);
+        }
+        if (self.carryToward(q[0], q[1], true)) |f|
+            gleam += self.carryColour() * splat(smoothSpecular(.{ f.at[0] - q[0], f.at[1] - q[1], BODY_Z }, 80) * f.k * 0.08);
+        for (torches) |i| {
+            const t = &self.torch[i];
+            const r = t.toward(q[0], q[1], 0) orelse continue;
+            gleam += t.colour * splat(smoothSpecular(r.d, 80) * r.k * 0.12);
+        }
+        var it = effects.iterator(.{});
+        while (it.next()) |i| {
+            const e = &self.effects[i];
+            const s = e.source;
+            const k = e.strength(q[0], q[1], 0);
+            if (k <= FAINT) continue;
+            gleam += rgbOf(s.col) * splat(smoothSpecular(.{ s.at[0] - q[0], s.at[1] - q[1], s.at[2] }, 80) * k * 0.11);
+        }
+        return gleam;
     }
 
     const View = struct { sight: f32, memory: f32, lit: f32 };
@@ -1113,9 +1263,9 @@ pub const Light = struct {
         if (self.carryToward(centre[0], centre[1], fogged)) |f| {
             const k = f.k * lit;
             if (carrier) {
-                s.ambient += CARRY * splat(k) * night;
+                s.ambient += self.carryColour() * splat(k) * night;
             } else if (k > FAINT) {
-                s.add(.{ .drawn = f.at, .ground = f.at, .colour = CARRY * splat(k), .casts = false });
+                s.add(.{ .drawn = f.at, .ground = f.at, .colour = self.carryColour() * splat(k), .casts = false });
             }
         }
         for (self.torch[0..self.torch_n]) |*t| {
@@ -1126,6 +1276,12 @@ pub const Light = struct {
             s.add(.{ .drawn = t.drawn(), .ground = .{ fl[0], fl[1] }, .colour = t.colour * splat(k), .casts = true });
         }
         for (s.lamp[0..s.n]) |*l| l.colour *= night;
+        for (self.effects[0..self.effect_n]) |*e| {
+            const k = e.strength(centre[0], centre[1], BODY_Z) * lit;
+            if (k <= FAINT) continue;
+            const p = e.source.at;
+            s.add(.{ .drawn = .{ p[0], p[1] - p[2] }, .ground = .{ p[0], p[1] }, .colour = rgbOf(e.source.col) * splat(k), .casts = true });
+        }
         return s;
     }
 
@@ -1149,10 +1305,10 @@ pub const Light = struct {
     pub fn flames(self: *const Light, lv: *const grid.Level, out: *[grid.MAX_TORCHES]Flame) []const Flame {
         var n: usize = 0;
         for (self.torch[0..self.torch_n]) |*t| {
-            if (!lv.isSeen(t.wall) or !lv.isSeen(t.floor())) continue;
+            if (!self.remembers(lv, t.wall) or !self.remembers(lv, t.floor())) continue;
             const d = t.drawn();
             const v = self.viewAt(d);
-            out[n] = .{ .at = d, .glow = t.glow, .lit = v.lit, .memory = v.memory };
+            out[n] = .{ .at = d, .foot = t.flame()[1], .glow = t.glow, .lit = v.lit, .memory = v.memory };
             n += 1;
         }
         return out[0..n];
@@ -1190,10 +1346,19 @@ pub const Light = struct {
         return self.gpu.map;
     }
 
+    pub fn glintTexture(self: *Light) ?rl.Texture2D {
+        self.uploadMap();
+        return self.gpu.glints;
+    }
+
     fn uploadMap(self: *Light) void {
         const tex = self.gpu.map orelse return;
         const from, const to = self.baked;
-        if (to > from) rl.updateTextureRec(tex, look.rect(0, from, MAP_W, to - from), &self.map[@intCast(from * MAP_W)]);
+        if (to > from) {
+            const rect = look.rect(0, from, MAP_W, to - from);
+            rl.updateTextureRec(tex, rect, &self.map[@intCast(from * MAP_W)]);
+            if (self.gpu.glints) |g| rl.updateTextureRec(g, rect, &self.glints[@intCast(from * MAP_W)]);
+        }
         self.baked = NONE_BAKED;
     }
 
@@ -1235,6 +1400,10 @@ pub const Light = struct {
         rl.gl.rlDrawRenderBatchActive();
     }
 
+    pub fn footY(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle) f32 {
+        return dest.y + self.gpu.art(tex).foot * dest.height / @as(f32, @floatFromInt(tex.height));
+    }
+
     fn footOf(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *const Shine, contact: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
         const lit = s.reached();
         if (lit <= FAINT) return null;
@@ -1255,21 +1424,8 @@ pub const Light = struct {
     pub fn beginShadows(self: *Light, screen: P, outer: u32) bool {
         const pool = self.gpu.shade orelse return false;
         if (self.gpu.shadow == null or self.gpu.receiver == null or self.gpu.map == null) return false;
-        rl.gl.rlDrawRenderBatchActive();
         self.gpu.outer = outer;
-        if (self.gpu.mask) |m| {
-            if (m.texture.width != screen.x or m.texture.height != screen.y) {
-                rl.unloadRenderTexture(m);
-                self.gpu.mask = null;
-            }
-        }
-        // Loading or unloading a render texture leaves framebuffer 0 bound, whatever was drawing.
-        if (self.gpu.mask == null) self.gpu.mask = rl.loadRenderTexture(screen.x, screen.y) catch {
-            rl.gl.rlEnableFramebuffer(self.gpu.outer);
-            return false;
-        };
-        rl.gl.rlEnableFramebuffer(self.gpu.mask.?.id);
-        rl.clearBackground(rl.Color.white);
+        if (!look.beginTarget(&self.gpu.mask, screen, outer, rl.Color.white)) return false;
         rl.gl.rlSetBlendFactors(rl.gl.rl_one, rl.gl.rl_one, rl.gl.rl_min);
         rl.beginBlendMode(.custom);
         rl.beginShaderMode(pool);
@@ -1722,6 +1878,7 @@ const NO_FIGURES: [look.FIGURES]?rl.Texture2D = @splat(null);
 
 const Gpu = struct {
     map: ?rl.Texture2D = null,
+    glints: ?rl.Texture2D = null,
     glow: ?rl.Texture2D = null,
     streak: ?rl.Texture2D = null,
     body: ?BodyShader = null,
@@ -1737,6 +1894,7 @@ const Gpu = struct {
     fn load() Gpu {
         var g = Gpu{};
         g.map = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
+        g.glints = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
         g.glow = look.radial(GLOW_PX, glowAlpha);
         g.streak = look.field(STREAK_PX[0], STREAK_PX[1], streakAlpha);
         g.body = look.program(BodyShader, BODY_FS);
@@ -1765,8 +1923,7 @@ const Gpu = struct {
 
     fn art(g: *const Gpu, t: rl.Texture2D) Art {
         for (&g.arts) |*held| {
-            const a = held.* orelse continue;
-            if (a.id == t.id) return a;
+            if (held.*) |*a| if (a.id == t.id) return a.*;
         }
         return Art.bare(t);
     }
@@ -1848,8 +2005,8 @@ fn glowAlpha(r: f32) f32 {
     return (1 - r2) * (1 - r2) * @exp(-3 * r2);
 }
 
-const gen = @import("../world/gen.zig");
-const day = @import("../world/day.zig");
+const gen = @import("../map/gen.zig");
+const day = @import("../map/day.zig");
 
 const TORCH_AT = P{ .x = 20, .y = 10 };
 /// Cells in from an edge, so a sample on it reads the seen cell and not the unseen one past it.
@@ -1875,6 +2032,154 @@ fn testLight(lv: *const grid.Level) !*Light {
 fn added(l: *const Light, lv: *const grid.Level, q: [2]f32) f32 {
     var ids: [grid.MAX_TORCHES]TorchIx = undefined;
     return lum(l.at(lv, l.near(grid.Box.inMap(0), &ids), q)) - lum(l.at(lv, &.{}, q));
+}
+
+test "effect lights shade terrain and bodies without revealing memory or crossing walls" {
+    var lv = grid.openFloor();
+    @memset(&lv.lit, true);
+    @memset(&lv.seen, true);
+    for (0..grid.H) |y| lv.set(.{ .x = 22, .y = @intCast(y) }, .wall);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const near = [2]f32{ 21.5, 20.5 };
+    const far = [2]f32{ 23.5, 20.5 };
+    const before = l.at(&lv, &.{}, near);
+    const hidden = l.at(&lv, &.{}, far);
+    const sight = lv.lit;
+    const seen = lv.seen;
+    l.emit(&lv, .{ .at = .{ 20.5, 20.5, 0.4 }, .col = look.FIRE, .radius = 4, .gain = 1 });
+    try std.testing.expect(lum(l.at(&lv, &.{}, near)) > lum(before) + 0.1);
+    try std.testing.expectEqual(hidden, l.at(&lv, &.{}, far));
+    try std.testing.expect(l.onBody(near, false).n > 0);
+    try std.testing.expectEqual(@as(usize, 0), l.onBody(far, false).n);
+    try std.testing.expectEqualSlices(bool, &sight, &lv.lit);
+    try std.testing.expectEqualSlices(bool, &seen, &lv.seen);
+    lv.lit[grid.Level.idx(.{ .x = 21, .y = 20 })] = false;
+    l.settle(&lv);
+    const memory = l.at(&lv, &.{}, near);
+    l.emit(&lv, .{ .at = .{ 20.5, 20.5, 0.4 }, .col = look.COLD, .radius = 4, .gain = 1 });
+    try std.testing.expectEqual(memory, l.at(&lv, &.{}, near));
+    l.effect_n = 0;
+    lv.lit[grid.Level.idx(.{ .x = 20, .y = 20 })] = false;
+    l.emit(&lv, .{ .at = .{ 20.5, 20.5, 0.4 }, .col = look.FIRE, .radius = 4, .gain = 1 });
+    try std.testing.expectEqual(@as(usize, 0), l.effect_n);
+    std.debug.print("effect lighting: floor and body lit; wall, memory and hidden source blocked; visibility unchanged\n", .{});
+}
+
+test "effect reach bounds preserve lighting at fractional positions and map edges" {
+    var lv = grid.openFloor();
+    @memset(&lv.lit, true);
+    for (18..25) |x| lv.set(.{ .x = @intCast(x), .y = 21 }, .wall);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const positions = [_][2]f32{ .{ 0.01, 0.99 }, .{ 20.5, 20.5 }, .{ 21.001, 20.999 }, .{ @as(f32, @floatFromInt(grid.W)) - 0.01, @as(f32, @floatFromInt(grid.H)) - 0.01 } };
+    const radii = [_]f32{ 0.1, 0.6, 1, 1.6, 2.2, 2.8, 4, 8 };
+    const offsets = [_]f32{ 0.001, 0.5, 0.999 };
+    const heights = [_]f32{ 0, 0.4, 1.4 };
+    var samples: usize = 0;
+    var lit: usize = 0;
+    for (positions) |at| {
+        for (radii) |radius| {
+            l.effect_n = 0;
+            l.emit(&lv, .{ .at = .{ at[0], at[1], 0.4 }, .col = look.FIRE, .radius = radius, .gain = 1 });
+            try std.testing.expectEqual(@as(usize, 1), l.effect_n);
+            const bounded = &l.effects[0];
+            var reference = bounded.*;
+            for (&reference.reach, 0..) |*reached, i| {
+                const p = P{ .x = reference.origin.x + @as(i32, @intCast(i % EFFECT_SPAN)) - EFFECT_REACH, .y = reference.origin.y + @as(i32, @intCast(i / EFFECT_SPAN)) - EFFECT_REACH };
+                reached.* = grid.Level.inside(p) and grid.clearLine(&lv, reference.origin, p);
+                for (offsets) |dx| {
+                    for (offsets) |dy| {
+                        for (heights) |z| {
+                            const x = @as(f32, @floatFromInt(p.x)) + dx;
+                            const y = @as(f32, @floatFromInt(p.y)) + dy;
+                            const expected = reference.strength(x, y, z);
+                            try std.testing.expectEqual(expected, bounded.strength(x, y, z));
+                            samples += 1;
+                            if (expected > 0) lit += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    try std.testing.expect(lit > 0);
+    std.debug.print("effect reach bounds: {d} samples unchanged, including {d} lit samples across {d} positions and {d} radii\n", .{ samples, lit, positions.len, radii.len });
+}
+
+test "cell effect culling preserves floor wall and water lighting" {
+    var lv = grid.openFloor();
+    @memset(&lv.lit, true);
+    @memset(&lv.seen, true);
+    for (18..25) |x| lv.set(.{ .x = @intCast(x), .y = 21 }, .wall);
+    @import("../map/procgen.zig").reshape(&lv);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const radii = [_]f32{ 0.6, 1.6, 2.8, 4 };
+    const heights = [_]f32{ 0, 0.3, 1.4 };
+    var all = EffectSet.initEmpty();
+    for (0..EFFECTS) |i| {
+        l.emit(&lv, .{
+            .at = .{ 16.2 + @as(f32, @floatFromInt(i % 8)) * 2.4, 14.9 + @as(f32, @floatFromInt(i / 8)) * 2.7, heights[i % heights.len] },
+            .col = if (i % 2 == 0) look.FIRE else look.COLD,
+            .radius = radii[i % radii.len],
+            .gain = 0.8,
+        });
+        all.set(i);
+    }
+    var cells = grid.Cells.of(.{ .x = 14, .y = 14 }, .{ .x = 38, .y = 32 });
+    var samples: usize = 0;
+    var candidates: usize = 0;
+    var surfaces = std.EnumSet(Surface).initEmpty();
+    const sub: usize = SUB;
+    while (cells.next()) |c| {
+        const kept = l.effectsNear(c);
+        for (0..sub * sub) |i| {
+            const q = [2]f32{
+                @as(f32, @floatFromInt(c.x)) + (@as(f32, @floatFromInt(i % sub)) + 0.5) / SUB,
+                @as(f32, @floatFromInt(c.y)) + (@as(f32, @floatFromInt(i / sub)) + 0.5) / SUB,
+            };
+            const v = l.viewAt(q);
+            surfaces.insert(Spot.of(&lv, q).surface);
+            try std.testing.expectEqual(l.shade(&lv, &.{}, all, q, v, null, 1), l.shade(&lv, &.{}, kept, q, v, null, 1));
+            try std.testing.expectEqual(l.waterGlint(&.{}, all, q, null, 1), l.waterGlint(&.{}, kept, q, null, 1));
+            samples += 1;
+            candidates += kept.count();
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), surfaces.count());
+    try std.testing.expect(candidates < samples * EFFECTS / 4);
+    std.debug.print("effect culling: {d} floor/wall/glint samples unchanged; {d} of {d} light candidates retained\n", .{ samples, candidates, samples * EFFECTS });
+}
+
+test "smooth water glints follow light direction and respect walls and memory" {
+    try std.testing.expectApproxEqAbs(@as(f32, 1), smoothSpecular(.{ 0, -1, 1 }, 80), 1e-4);
+    try std.testing.expect(smoothSpecular(.{ 1, -1, 1 }, 80) < 0.03);
+    var lv: grid.Level = undefined;
+    testRoom(&lv, &.{});
+    for (&lv.tile) |*tile| {
+        if (tile.* == .floor) tile.* = .shallows;
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const flame = l.torch[0].flame();
+    const at = [2]f32{ flame[0], flame[1] + flame[2] };
+    const lit = lum(l.waterGlint(&.{0}, .initEmpty(), at, null, 1));
+    try std.testing.expect(lit > 0.01 and lit < 0.2);
+    try std.testing.expectEqual(@as(f32, 0), lum(l.waterGlint(&.{0}, .initEmpty(), .{ flame[0], 9.5 }, null, 1)));
+    const before = lv.lit;
+    l.bake(&lv, .{ .x = 18, .y = 10 }, .{ .x = 23, .y = 15 });
+    var hits: usize = 0;
+    for (l.glints) |pixel| {
+        if (pixel.r > 0 or pixel.g > 0 or pixel.b > 0) hits += 1;
+    }
+    try std.testing.expect(hits > 0);
+    try std.testing.expectEqualSlices(bool, &before, &lv.lit);
+    @memset(&lv.lit, false);
+    l.settle(&lv);
+    l.bake(&lv, .{ .x = 18, .y = 10 }, .{ .x = 23, .y = 15 });
+    for (l.glints) |pixel| try std.testing.expectEqual(rl.Color.blank, pixel);
+    std.debug.print("smooth water: {d} glint texels, peak {d:.3}; wall and memory blocked; visibility unchanged\n", .{ hits, lit });
 }
 
 test "a torch pools light on the floor below it, fading to nothing at its reach" {
@@ -2790,7 +3095,7 @@ test "a body's sun shadow runs the way the ground's do, its height times the hou
 }
 
 test "skipping the sun's march where nothing that casts is near changes nothing it would have found" {
-    const procgen = @import("../world/procgen.zig");
+    const procgen = @import("../map/procgen.zig");
     var lv: grid.Level = undefined;
     procgen.roll(&lv, 0x5A7, &.{}, procgen.Floor.of(.wilds), &.{});
     lv.set(.{ .x = 40, .y = 30 }, .rock);

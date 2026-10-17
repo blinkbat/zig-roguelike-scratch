@@ -1,7 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
-const fov = @import("../world/fov.zig");
+const grid = @import("../map/grid.zig");
+const fov = @import("../map/fov.zig");
 const damage = @import("damage.zig");
 
 const P = mathx.P;

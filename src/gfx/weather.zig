@@ -1,9 +1,10 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
-const climate = @import("../world/climate.zig");
-const grid = @import("../world/grid.zig");
+const climate = @import("../map/climate.zig");
+const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
+const pixel = @import("pixel.zig");
 
 // Cosmetic, map-anchored weather shows only in visible cells.
 
@@ -104,10 +105,14 @@ pub const Weather = struct {
             const a = fall.alpha * std.math.clamp(bright, DIM_FLOOR, 1) * seen;
             if (d.since < 0) {
                 const tail = rl.Vector2{ .x = x - lean * len, .y = y - len };
-                rl.drawLineEx(tail, .{ .x = x, .y = y }, fall.width * scale, look.fade(INK, a));
+                pixel.line(tail, .{ .x = x, .y = y }, fall.width, scale, look.fade(INK, a));
             } else {
                 const k = d.since / fall.splash_s;
-                rl.drawCircleLinesV(.{ .x = x, .y = y }, mathx.lerpF(1, fall.ring, k) * scale, look.fade(INK, a * (1 - k)));
+                const r = mathx.lerpF(1, fall.ring, k) * scale;
+                for (0..4) |i| {
+                    const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / 4;
+                    pixel.rect(.{ .x = x + @cos(angle) * r, .y = y + @sin(angle) * r * 0.5 }, 1, 1, scale, look.fade(INK, a * (1 - k)));
+                }
             }
         }
     }

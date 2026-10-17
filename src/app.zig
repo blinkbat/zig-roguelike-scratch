@@ -2,7 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const game = @import("game.zig");
 const editor = @import("edit/editor.zig");
-const atlas = @import("world/atlas.zig");
+const atlas = @import("map/atlas.zig");
 const menu = @import("ui/menu.zig");
 const naming = @import("ui/naming.zig");
 const look = @import("gfx/look.zig");
@@ -12,10 +12,10 @@ const input = @import("core/input.zig");
 const skillbar = @import("play/skillbar.zig");
 
 const Scene = enum { title, play, edit };
-const Page = enum { main, world, class, name, load, options, debug };
+const Page = enum { main, map, class, name, load, options, debug };
 const MainRow = enum {
     new,
-    worlds,
+    maps,
     load,
     options,
     editor,
@@ -45,15 +45,15 @@ const LINE = menu.NOTE_MAX;
 const App = struct {
     alloc: std.mem.Allocator,
     g: *game.Game,
-    world: *atlas.Atlas,
+    map: *atlas.Atlas,
     ed: ?*editor.Editor = null,
     edit_path: []const u8,
     scene: Scene = .title,
     page: Page = .main,
     title: menu.Menu = .{},
-    worlds: menu.Menu = .{},
+    maps: menu.Menu = .{},
     listing: atlas.Listing = .{},
-    /// The world picked in Worlds; null plays `atlas.START`.
+    /// The map picked in Maps; null plays `atlas.START`.
     chosen: ?[]const u8 = null,
     chosen_buf: [atlas.PATH_MAX]u8 = undefined,
     classes: menu.Menu = .{},
@@ -92,7 +92,7 @@ const App = struct {
 
     fn fromClass(app: *App) void {
         if (app.chosen == null) return app.toTitle();
-        app.goPage(.world);
+        app.goPage(.map);
     }
 
     fn toEdit(app: *App) void {
@@ -124,12 +124,12 @@ const App = struct {
         const slot = save.free(&app.list) orelse return app.toTitle();
         const path = app.chosen orelse atlas.START;
         g.class = app.class;
-        if (app.world.load(app.alloc, path)) {
-            if (!app.world.standable(app.world.start, &g.lv)) {
+        if (app.map.load(app.alloc, path)) {
+            if (!app.map.standable(app.map.start, &g.lv)) {
                 app.toTitle();
                 return app.say(atlas.NO_FLOOR, .{path});
             }
-            game.beginWorld(g, app.world);
+            game.beginMap(g, app.map);
         } else |e| {
             if (app.chosen != null or e != error.FileNotFound) {
                 app.toTitle();
@@ -142,7 +142,7 @@ const App = struct {
     }
 
     fn loadRun(app: *App, slot: usize) void {
-        save.load(app.alloc, slot, app.g, app.world) catch |e| return app.say("Slot {d} did not load ({s})", .{ save.number(slot), @errorName(e) });
+        save.load(app.alloc, slot, app.g, app.map) catch |e| return app.say("Slot {d} did not load ({s})", .{ save.number(slot), @errorName(e) });
         app.inSlot(slot, null);
     }
 
@@ -155,7 +155,7 @@ const App = struct {
     fn playTest(app: *App, from: atlas.Start) void {
         app.leaveRun();
         app.g.class = hero.DEFAULT;
-        game.beginWorldAt(app.g, app.ed.?.world, from, game.freshSeed());
+        game.beginMapAt(app.g, app.ed.?.map, from, game.freshSeed());
         app.g.st.device = .keys;
         app.play(.editor, hero.DEFAULT.unnamed());
     }
@@ -247,7 +247,7 @@ const App = struct {
     fn titleFrame(app: *App) bool {
         const g = app.g;
         g.st.typing = app.page == .name;
-        g.st.playing = false;
+        g.st.context = .menu;
         g.st.sets = false;
         g.st.update(rl.getFrameTime());
         g.st.spend(skillbar.BINDS);
@@ -272,12 +272,12 @@ const App = struct {
                         app.chosen = null;
                         app.goPage(.class);
                     },
-                    .worlds => {
+                    .maps => {
                         if (!app.slotFree()) return app.refuse();
                         app.listing.scan();
                         if (app.listing.n == 0) {
-                            app.say(atlas.NO_WORLDS, .{});
-                        } else app.goPage(.world);
+                            app.say(atlas.NO_MAPS, .{});
+                        } else app.goPage(.map);
                     },
                     .load => {
                         app.rescan();
@@ -290,7 +290,7 @@ const App = struct {
                     .quit => return false,
                 }
             },
-            .world => {
+            .map => {
                 var rows: [atlas.Listing.MAX][]const u8 = undefined;
                 const n = app.listing.n;
                 if (n == 0) {
@@ -298,18 +298,18 @@ const App = struct {
                     return true;
                 }
                 for (rows[0..n], 0..) |*l, i| l.* = app.listing.label(i);
-                const picked = app.worlds.step(&g.st, n);
+                const picked = app.maps.step(&g.st, n);
                 var where: [atlas.PATH_MAX + 1]u8 = undefined;
                 var dir: [atlas.PATH_MAX]u8 = undefined;
-                const shown = if (app.listing.entry(app.worlds.at) == .up) std.fmt.bufPrintZ(&where, "Up from {s}", .{app.listing.dirPath(&dir)}) catch "" else app.listing.at(app.worlds.at);
-                menu.draw(g.face, g.screen, "CHOOSE A WORLD", rows[0..n], app.worlds.at, shown);
+                const shown = if (app.listing.entry(app.maps.at) == .up) std.fmt.bufPrintZ(&where, "Up from {s}", .{app.listing.dirPath(&dir)}) catch "" else app.listing.at(app.maps.at);
+                menu.draw(g.face, g.screen, "CHOOSE A MAP", rows[0..n], app.maps.at, shown);
                 if (back) {
                     if (app.listing.up()) {
-                        app.worlds = .{};
+                        app.maps = .{};
                     } else app.toTitle();
                 } else if (picked) |i| {
                     if (app.listing.open(i)) {
-                        app.worlds = .{};
+                        app.maps = .{};
                     } else {
                         app.choose(app.listing.at(i));
                         app.goPage(.class);
@@ -422,7 +422,7 @@ fn slotLine(s: *const save.Slot, buf: *[LINE]u8, i: usize) [:0]const u8 {
 
 var start_edit: ?[]const u8 = null;
 
-/// `edit` opens the editor on that world first; null opens the title.
+/// `edit` opens the editor on that map first; null opens the title.
 pub fn run(edit: ?[]const u8) !void {
     start_edit = edit;
     try game.withGame(.{ .vsync_hint = true }, NAME, body);
@@ -433,12 +433,12 @@ fn body(g: *game.Game) !void {
     const w = try alloc.create(atlas.Atlas);
     defer alloc.destroy(w);
     const plain = if (start_edit) |p| atlas.plain(p) else true;
-    var app = App{ .alloc = alloc, .g = g, .world = w, .edit_path = if (plain) start_edit orelse atlas.MAIN else atlas.MAIN };
+    var app = App{ .alloc = alloc, .g = g, .map = w, .edit_path = if (plain) start_edit orelse atlas.MAIN else atlas.MAIN };
     defer if (app.ed) |e| e.destroy();
     defer app.leaveRun();
     app.toTitle();
     if (!plain) {
-        app.say("The world to edit is named in letters the game cannot draw; {s} opens {s}", .{ menu.named(MainRow.editor), atlas.MAIN });
+        app.say("The map to edit is named in letters the game cannot draw; {s} opens {s}", .{ menu.named(MainRow.editor), atlas.MAIN });
     } else if (start_edit != null) app.toEdit();
     while (app.frame()) {}
 }

@@ -1,6 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
+const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
 
 // Dual-grid masks use NW 1, NE 2, SW 4, SE 8 and include higher layers.
@@ -14,7 +14,6 @@ pub const Ground = enum {
     lava,
     water,
     shallows,
-    reeds,
     ice,
     snow,
     sand,
@@ -37,10 +36,14 @@ pub const Ground = enum {
         };
     }
 
-    fn bears(g: Ground) bool {
+    fn bears(g: Ground, t: grid.Tile) bool {
+        if (t == .reeds) return switch (g) {
+            .grass, .dirt, .shallows => true,
+            else => false,
+        };
         return switch (g) {
             .ice, .snow, .sand, .dirt, .grass, .rubble, .cobble => true,
-            .chasm, .lava, .water, .shallows, .reeds, .crop, .bridge => false,
+            .chasm, .lava, .water, .shallows, .crop, .bridge => false,
         };
     }
 
@@ -104,7 +107,7 @@ pub fn bedAt(lv: *const grid.Level, p: P) ?Ground {
     var most: u8 = 0;
     for (mathx.ALL_DIRS) |d| {
         const g = of(lv.at(p.add(d.delta()))) orelse continue;
-        if (!g.bears()) continue;
+        if (!g.bears(t)) continue;
         const r = g.rank();
         votes[r] += 1;
         const n = votes[r];

@@ -71,12 +71,17 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
 - **Everything is slots.** On the pad a slot is its button. On the keyboard it is a number (`input.SLOT_ORDER`), and
   the slot holding "Activate Secondary Skill Set" is Ctrl instead, so moving the modifier renumbers the rest. The bar
   and bind screen show whichever the device is, as icons.
-- **Menus have their own keys.** In play the numbers, Ctrl, Tab, Esc and I handle skills and screens (`State.playing`); Enter,
-  Space, Z, X, C and Del work in menus and never fire a slot. While a name is typed the letters and Space type, so
+- **Menus and targeting have their own keys.** In play the numbers, Ctrl, Tab, Esc and I handle skills and screens (`State.context`); Enter,
+  Space, Z, X, C and Del work in menus or targeting and never fire a slot. While a name is typed the letters and Space type, so
   Enter is done there. Esc gets out of whatever is open, a step at a time.
+- **Target once, then confirm or back out.** A (Cross), Enter, Space or Z confirms a target; B (Circle), Menu, X or
+  Esc cancels. Pressing the skill again does not confirm it unless that button is also the standard confirm.
+  B always cancels, even when it opened the skill. Secondary skills keep their selected set after the modifier is released.
 - **Hold View for binds, no radial.** A tap of View does nothing in play. A press of View that closes the bind screen or
   cancels a reticle is spent (`State.spend`), so holding it on does not open the binds again.
 - **Menu taps to pause** from play, as PoE2's taps to the inventory; anywhere else it backs out, as Esc does.
+- **Pause > Debug** contains Restart Map and Reveal Map. Reveal shows terrain and the minimap without changing
+  normal sight or saved exploration; switching it off restores the normal view. Back exits Debug to Pause first.
 - **Inspect** walks the life orb, skill slots, mana orb and active statuses without spending a turn. B, Menu or
   another right-stick click closes it; keyboard X, Esc or I does the same. Holding the modifier (or Ctrl) shows the
   secondary set's slots there too (`State.sets`).

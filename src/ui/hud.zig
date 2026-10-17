@@ -8,7 +8,7 @@ const fx = @import("../gfx/fx.zig");
 pub const WIDTH: i32 = 744;
 const HEIGHT: i32 = 172;
 const BOTTOM: i32 = 12;
-/// How far up from the screen's foot the hud covers the world.
+/// How far up from the screen's foot the hud covers the map.
 pub const COVER: i32 = BOTTOM + HEIGHT;
 const ORB_R: i32 = 52;
 const FILL_R: i32 = 44;

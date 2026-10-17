@@ -1,8 +1,8 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../world/grid.zig");
+const grid = @import("../map/grid.zig");
 const actor = @import("actor.zig");
-const fov = @import("../world/fov.zig");
+const fov = @import("../map/fov.zig");
 
 const P = mathx.P;
 
@@ -70,6 +70,7 @@ pub fn fly(lv: *const grid.Level, from: P, to: P) Flight {
         if (f.len == f.path.len or (!c.eq(to) and lv.at(c).blind())) break;
         f.path[f.len] = c;
         f.len += 1;
+        if (lv.at(c) == .chest) break;
         const w = lv.who(c);
         if (w != grid.NO_ONE) {
             f.struck = .{ .body = w };
@@ -138,6 +139,23 @@ test "a barrel in the line takes the arrow meant for the rat behind it" {
     try std.testing.expectEqual(@as(usize, 2), f.len);
 }
 
+test "a closed chest stops an arrow without opening, while an opened chest lets it pass" {
+    var lv = grid.openFloor();
+    var pool = actor.Pool{};
+    const from = P{ .x = 10, .y = 10 };
+    const to = P{ .x = 16, .y = 10 };
+    const at = P{ .x = 12, .y = 10 };
+    const rat = pool.spawn(&lv, actor.Actor.of(.rat, to));
+    lv.set(at, .chest);
+    const stopped = fly(&lv, from, to);
+    try std.testing.expectEqual(@as(?Hit, null), stopped.struck);
+    try std.testing.expectEqual(@as(usize, 2), stopped.len);
+    try std.testing.expectEqual(grid.Tile.chest, lv.at(at));
+    lv.set(at, .chest_open);
+    try std.testing.expectEqual(@as(?Hit, .{ .body = rat }), fly(&lv, from, to).struck);
+    std.debug.print("closed chest intercepts an arrow at 2 cells; opened chest passes it to the foe at 6\n", .{});
+}
+
 test "pick takes a barrel only when no foe is in reach" {
     var lv = grid.openFloor();
     var pool = actor.Pool{};
@@ -181,7 +199,7 @@ test "pick takes the rat fewest steps away, not the one nearest as the crow flie
 }
 
 test "no mark is legal whose line crosses a cell out of sight, though the mark is lit and no wall stands on the line" {
-    const gen = @import("../world/gen.zig");
+    const gen = @import("../map/gen.zig");
     var lv: grid.Level = undefined;
     _ = gen.build(&lv, 41120);
     const from = P{ .x = 37, .y = 28 };
