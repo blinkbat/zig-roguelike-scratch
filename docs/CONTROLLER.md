@@ -82,7 +82,13 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
 - **Menu taps to pause** from play, as PoE2's taps to the inventory; anywhere else it backs out, as Esc does.
 - **Pause > Debug** contains Restart Map and Reveal Map. Reveal shows terrain and the minimap without changing
   normal sight or saved exploration; switching it off restores the normal view. Back exits Debug to Pause first.
+- **Pause > Character** opens the equipment, inventory, stats and passives UI. Move left/right on the tabs,
+  down into the equipment or inventory slots, and up past the top row to the tabs. Confirm on an equipment
+  slot browses the inventory; mouse clicks also select tabs, slots and the inventory shortcut. Back returns
+  to Pause. Equipment, inventory and passives are empty; Stats shows the existing life and mana caps.
 - **Inspect** walks the life orb, skill slots, mana orb and active statuses without spending a turn. B, Menu or
   another right-stick click closes it; keyboard X, Esc or I does the same. Holding the modifier (or Ctrl) shows the
   secondary set's slots there too (`State.sets`).
 - **The editor is a desk tool** (`input.Desk`): keyboard and mouse only, by design.
+  In Objects, select a foe and choose Fight (or Enter) to test it in an arena. The pause menu returns to the
+  unchanged editor; death retry or Debug > Restart Map resets the fight.

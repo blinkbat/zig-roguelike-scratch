@@ -3,6 +3,8 @@ const rl = @import("raylib");
 const game = @import("game.zig");
 const editor = @import("edit/editor.zig");
 const atlas = @import("map/atlas.zig");
+const spar = @import("map/spar.zig");
+const actor = @import("play/actor.zig");
 const menu = @import("ui/menu.zig");
 const naming = @import("ui/naming.zig");
 const look = @import("gfx/look.zig");
@@ -160,6 +162,15 @@ const App = struct {
         app.play(.editor, hero.DEFAULT.unnamed());
     }
 
+    fn fight(app: *App, kind: actor.Kind) void {
+        app.leaveRun();
+        spar.author(app.map, kind);
+        app.g.class = hero.DEFAULT;
+        game.beginMap(app.g, app.map);
+        app.g.st.device = .keys;
+        app.play(.editor, hero.DEFAULT.unnamed());
+    }
+
     fn play(app: *App, back: game.Back, fresh: ?hero.Name) void {
         const g = app.g;
         if (fresh) |name| {
@@ -236,6 +247,7 @@ const App = struct {
                 switch (editor.frame(app.ed.?, g, closing)) {
                     .none => {},
                     .play => |from| app.playTest(from),
+                    .fight => |kind| app.fight(kind),
                     .leave => app.toTitle(),
                     .quit => return false,
                 }
@@ -421,6 +433,32 @@ fn slotLine(s: *const save.Slot, buf: *[LINE]u8, i: usize) [:0]const u8 {
 }
 
 var start_edit: ?[]const u8 = null;
+
+test "an editor arena uses a separate map and never opens a save slot" {
+    const alloc = std.testing.allocator;
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    const w = try alloc.create(atlas.Atlas);
+    defer alloc.destroy(w);
+    const ed = try editor.Editor.create(alloc);
+    defer ed.destroy();
+    ed.dirty = true;
+    ed.hist_at = 2;
+    ed.hist_len = 3;
+    const tiles = ed.map.node[0].plan.bespoke.tile;
+    var app = App{ .alloc = alloc, .g = g, .map = w, .ed = ed, .edit_path = atlas.MAIN, .scene = .edit };
+    app.fight(.slime);
+    try std.testing.expectEqual(Scene.play, app.scene);
+    try std.testing.expectEqual(game.Back.editor, g.back);
+    try std.testing.expect(!g.permadeath and app.autosave == null);
+    try std.testing.expect(g.map == w and g.map != ed.map);
+    try std.testing.expect(ed.dirty and ed.hist_at == 2 and ed.hist_len == 3);
+    try std.testing.expectEqualSlices(@import("map/grid.zig").Tile, &tiles, &ed.map.node[0].plan.bespoke.tile);
+    try std.testing.expectEqual(@as(usize, 2), g.pool.n);
+    try std.testing.expectEqual(actor.Kind.slime, g.pool.items[1].kind);
+    try std.testing.expect(g.lv.isLit(spar.FOE));
+    std.debug.print("arena launch: selected slime visible, no save slot, edited tiles and undo position unchanged\n", .{});
+}
 
 /// `edit` opens the editor on that map first; null opens the title.
 pub fn run(edit: ?[]const u8) !void {

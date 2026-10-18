@@ -53,6 +53,7 @@ test {
     _ = @import("map/climate.zig");
     _ = @import("map/lume.zig");
     _ = @import("map/atlas.zig");
+    _ = @import("map/spar.zig");
     _ = @import("play/actor.zig");
     _ = @import("play/bow.zig");
     _ = @import("play/damage.zig");
@@ -88,6 +89,7 @@ test {
     _ = @import("gfx/light.zig");
     _ = @import("ui/menu.zig");
     _ = @import("ui/hud.zig");
+    _ = @import("ui/book.zig");
     _ = @import("ui/naming.zig");
     _ = @import("game.zig");
     _ = @import("edit/editor.zig");

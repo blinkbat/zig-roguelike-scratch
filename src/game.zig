@@ -9,9 +9,11 @@ const gen = @import("map/gen.zig");
 const carve = @import("map/carve.zig");
 const gas = @import("map/gas.zig");
 const atlas = @import("map/atlas.zig");
+const spar = @import("map/spar.zig");
 const editor = @import("edit/editor.zig");
 const menu = @import("ui/menu.zig");
 const hud = @import("ui/hud.zig");
+const book = @import("ui/book.zig");
 const heroes = @import("play/hero.zig");
 const naming = @import("ui/naming.zig");
 const actor = @import("play/actor.zig");
@@ -181,8 +183,8 @@ pub const Back = enum { title, editor };
 pub const Exit = enum { back, quit };
 
 const PAUSE = menu.PAUSE;
-const PausePage = enum { main, debug };
-const PauseRow = enum { resume_, debug, back, quit };
+const PausePage = enum { main, debug, character };
+const PauseRow = enum { resume_, character, debug, back, quit };
 const PAUSE_ROWS = std.enums.values(PauseRow);
 const DebugRow = enum { restart_map, reveal_map };
 const DEBUG_ROWS = std.enums.values(DebugRow);
@@ -525,6 +527,7 @@ pub const Game = struct {
     paused_from: Mode = .play,
     pause_menu: menu.Menu = .{},
     pause_page: PausePage = .main,
+    character: book.Book = .{},
     back: Back = .title,
     exit: ?Exit = null,
     name: heroes.Name = heroes.DEFAULT.unnamed(),
@@ -650,7 +653,7 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
 }
 
 fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
-    toDefaults(g, &.{ "visited", "node", "outdoors", "pool", "hero", "clock" });
+    toDefaults(g, &.{ "visited", "node", "outdoors", "pool", "hero", "clock", "character" });
     g.map = w;
     g.seed = seed;
     g.rng = mathx.Rng.init(seed ^ PLAY_SALT);
@@ -796,7 +799,7 @@ pub fn resumeRun(g: *Game) void {
     gen.restoreShapes(&g.lv);
     var visits = g.visited.iterator(.{});
     while (visits.next()) |n| gen.restoreShapes(&g.visits[n].lv);
-    toDefaults(g, &.{ "mode", "exit", "unsaved" });
+    toDefaults(g, &.{ "mode", "exit", "unsaved", "character" });
     g.outdoors = outdoorsNow(g);
     freshTurn(g);
     settle(g);
@@ -2037,6 +2040,13 @@ fn openPause(g: *Game) void {
 }
 
 fn pauseStep(g: *Game) void {
+    if (g.pause_page == .character) {
+        if (g.character.step(&g.st, g.screen)) {
+            g.pause_page = .main;
+            g.pause_menu.at = @intFromEnum(PauseRow.character);
+        }
+        return;
+    }
     if (menu.backed(&g.st)) {
         if (g.pause_page == .debug) {
             g.pause_page = .main;
@@ -2055,6 +2065,10 @@ fn pauseStep(g: *Game) void {
     const i = g.pause_menu.step(&g.st, PAUSE_ROWS.len) orelse return;
     switch (PAUSE_ROWS[i]) {
         .resume_ => g.mode = g.paused_from,
+        .character => {
+            g.character.open();
+            g.pause_page = .character;
+        },
         .debug => {
             g.pause_page = .debug;
             g.pause_menu = .{};
@@ -2082,7 +2096,7 @@ fn terrainSeen(g: *const Game, p: P) bool {
 fn pauseLabel(g: *const Game, r: PauseRow) [:0]const u8 {
     return switch (r) {
         .resume_ => "Resume",
-        .debug => menu.named(PauseRow.debug),
+        .debug, .character => menu.named(r),
         .back => switch (g.back) {
             .title => "Title",
             .editor => "Back to the editor",
@@ -2097,6 +2111,11 @@ pub fn veil(g: *const Game) void {
 
 fn drawPause(g: *Game) void {
     veil(g);
+    if (g.pause_page == .character) {
+        const hp = if (g.heroActor()) |h| h.max else heroRow(g).hp;
+        g.character.draw(&g.face, &g.sprites, g.screen, .{ .class = g.class, .name = g.name.text(), .life = hp, .mana = heroes.MANA });
+        return;
+    }
     if (g.pause_page == .debug) {
         var rows: [DEBUG_ROWS.len][]const u8 = undefined;
         for (DEBUG_ROWS, &rows) |r, *l| l.* = switch (r) {
@@ -3301,6 +3320,7 @@ fn shoot(g: *Game) !void {
     }
 
     try editor.shoot(g, target, SHOTS_DIR ++ "/edit.png", SHOTS_DIR ++ "/edit-graph.png", SHOTS_DIR ++ "/edit-gen.png", SHOTS_DIR ++ "/edit-objects.png");
+    try shootCharacter(g);
 
     const entry = naming.Entry{ .name = heroes.Name.of("Arwen"), .row = 2, .col = 4 };
     rl.beginTextureMode(target);
@@ -3309,6 +3329,32 @@ fn shoot(g: *Game) !void {
     naming.draw(&entry, g.face, g.screen, naming.titleOf(heroes.DEFAULT, &title));
     rl.endTextureMode();
     try exportTarget(target, SHOTS_DIR ++ "/name.png");
+}
+
+fn shootCharacter(g: *Game) !void {
+    const w = try std.heap.c_allocator.create(atlas.Atlas);
+    defer std.heap.c_allocator.destroy(w);
+    defer g.map = null;
+    const screen = g.screen;
+    defer g.screen = screen;
+    g.screen = .{ .x = 1280, .y = 720 };
+    const target = try renderTarget(g);
+    defer rl.unloadRenderTexture(target);
+    spar.author(w, .slime);
+    g.class = heroes.DEFAULT;
+    beginMapAt(g, w, w.start, SHOT_SEED);
+    g.back = .editor;
+    try capture(g, target, SHOTS_DIR ++ "/arena.png");
+    openPause(g);
+    g.pause_menu.at = @intFromEnum(PauseRow.character);
+    press(g, CONFIRM);
+    inline for (comptime std.enums.values(book.Page)) |page| {
+        g.character.page = page;
+        g.character.cursor = 0;
+        g.character.tabs = true;
+        try capture(g, target, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ ".png");
+    }
+    g.mode = .play;
 }
 
 fn shootEffects(g: *Game, target: rl.RenderTexture2D) !void {
@@ -6765,6 +6811,53 @@ test "the pause menu spends no turn, and its way out leads back to where the gam
     try std.testing.expectEqual(P{ .x = 26, .y = 20 }, g.pool.get(2).?.at);
 }
 
+test "the character screens return through pause without changing the fight or consuming turns" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
+    const clock = g.clock;
+    const hp = g.heroActor().?.hp;
+    const mana = g.mana;
+    press(g, PAUSE);
+    g.pause_menu.at = @intFromEnum(PauseRow.character);
+    press(g, CONFIRM);
+    try std.testing.expectEqual(PausePage.character, g.pause_page);
+    g.character.page = .inventory;
+    g.character.cursor = 8;
+    g.character.tabs = false;
+    press(g, CONFIRM);
+    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(hp, g.heroActor().?.hp);
+    try std.testing.expectEqual(mana, g.mana);
+    try std.testing.expectEqual(P{ .x = 26, .y = 20 }, g.pool.items[1].at);
+    press(g, PAUSE);
+    try std.testing.expectEqual(PausePage.main, g.pause_page);
+    try std.testing.expectEqual(Mode.pause, g.mode);
+    press(g, PAUSE);
+    try std.testing.expectEqual(Mode.play, g.mode);
+    std.debug.print("character screens: empty inventory confirmed without a turn or combat change; back closes one layer at a time\n", .{});
+}
+
+test "an arena restart restores its selected opponent and hero" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const map = try std.testing.allocator.create(atlas.Atlas);
+    defer std.testing.allocator.destroy(map);
+    spar.author(map, .bloat);
+    beginMap(g, map);
+    _ = g.pool.damage(&g.lv, 2, 100);
+    _ = g.pool.damage(&g.lv, g.hero, 3);
+    g.mana = 0;
+    restart(g);
+    try std.testing.expectEqual(@as(usize, 2), g.pool.n);
+    try std.testing.expectEqual(actor.Kind.bloat, g.pool.items[1].kind);
+    try std.testing.expect(g.pool.items[1].alive);
+    try std.testing.expectEqual(actor.row(HERO).hp, g.heroActor().?.hp);
+    try std.testing.expectEqual(heroes.MANA, g.mana);
+    try std.testing.expectEqual(spar.HERO, g.heroActor().?.at);
+    std.debug.print("arena retry: bloat and hero restored at their starting positions with full resources\n", .{});
+}
+
 test "Debug reveal toggles map terrain without spending turns or changing explored cells" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
@@ -6776,7 +6869,7 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
     const rng = g.rng;
     try std.testing.expect(!terrainSeen(g, far));
     press(g, PAUSE);
-    nudge(g, .s);
+    for (0..@intFromEnum(PauseRow.debug)) |_| nudge(g, .s);
     press(g, CONFIRM);
     try std.testing.expectEqual(PausePage.debug, g.pause_page);
     try std.testing.expectEqual(Mode.pause, g.mode);
@@ -6813,7 +6906,7 @@ test "Debug restart begins the map anew and clears visited nodes" {
     g.gold = 99;
     g.heroActor().?.hp = 1;
     press(g, PAUSE);
-    nudge(g, .s);
+    for (0..@intFromEnum(PauseRow.debug)) |_| nudge(g, .s);
     press(g, CONFIRM);
     try std.testing.expectEqual(PausePage.debug, g.pause_page);
     press(g, CONFIRM);

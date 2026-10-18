@@ -327,7 +327,7 @@ fn namesKey(comptime crib: []const u8, comptime key: []const u8) bool {
 }
 const LINK_CANCELLED = "Link cancelled";
 
-pub const Action = union(enum) { none, play: atlas.Start, leave, quit };
+pub const Action = union(enum) { none, play: atlas.Start, fight: actor.Kind, leave, quit };
 
 const View = enum {
     map,
@@ -1306,8 +1306,9 @@ fn modalKeys(ed: *Editor) void {
             }
             if (d.enter and ed.listed_at < ed.listing.n) ed.openListed(ed.listed_at);
         },
-        .objects => if (d.nav != 0) {
-            ed.seen_at = mathx.wrap(ed.seen_at, d.nav, SEEN.len);
+        .objects => {
+            if (d.nav != 0) ed.seen_at = mathx.wrap(ed.seen_at, d.nav, SEEN.len);
+            if (d.enter) fightSeen(ed);
         },
         .help, .none => {},
     }
@@ -3354,6 +3355,21 @@ fn drawObjects(ed: *Editor, g: *game.Game) void {
         dy += TEXT + GAP;
     }
     backButton(ed, g, f.buttonX(), y + cells_h, "Close");
+    if (seenFoe(s) != null) {
+        if (buttonOn(ed, g, modalButton(f.buttonX(), y + cells_h, 1), keyed("Fight", Desk.ENTER_CAPTION), false, true, true, "Fight this foe in an arena; return through the pause menu")) fightSeen(ed);
+    }
+}
+
+fn seenFoe(s: Seen) ?actor.Kind {
+    return switch (s) {
+        .body => |kind| if (kind.foe()) kind else null,
+        else => null,
+    };
+}
+
+fn fightSeen(ed: *Editor) void {
+    const kind = seenFoe(SEEN[ed.seen_at]) orelse return;
+    ed.action = .{ .fight = kind };
 }
 
 fn seenName(s: Seen) [:0]const u8 {
@@ -3569,6 +3585,27 @@ fn testEditor() !*Editor {
     ed.map.* = .{};
     ed.setPath(atlas.mapPath("test_editor"));
     return ed;
+}
+
+test "the object viewer fights only foes without changing the edited map" {
+    const ed = try Editor.create(std.testing.allocator);
+    defer ed.destroy();
+    const before = ed.map.node[0].plan.bespoke.tile;
+    var fights: usize = 0;
+    for (SEEN, 0..) |seen, i| {
+        ed.seen_at = i;
+        ed.action = .none;
+        ed.modal = .objects;
+        ed.desk = .{ .enter = true };
+        modalKeys(ed);
+        if (seenFoe(seen)) |kind| {
+            try std.testing.expectEqual(kind, ed.action.fight);
+            fights += 1;
+        } else try std.testing.expect(ed.action == .none);
+    }
+    try std.testing.expect(!ed.dirty);
+    try std.testing.expectEqualSlices(grid.Tile, &before, &ed.map.node[0].plan.bespoke.tile);
+    std.debug.print("object viewer: {d} foe forms can launch a fight; terrain and hero entries cannot\n", .{fights});
 }
 
 fn testBespoke() !*Editor {

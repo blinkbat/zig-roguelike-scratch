@@ -36,6 +36,7 @@ const HEAD_FIELDS = std.meta.fieldNames(Header);
 const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "flasks", "cooldown", "stepped", "class" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
+    "character",
     "pause_page",
     "mode",     "paused_from", "pause_menu", "back",           "exit",      "permadeath", "outdoors",     "hour_shown", "unkillable", "unsaved",
     "travel",   "st",          "binds",      "aim_by",         "aim_act",   "aim_set",    "mark",         "cam",        "screen",     "framebuffer",

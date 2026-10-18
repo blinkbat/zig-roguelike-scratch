@@ -78,6 +78,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   statuses (`game.spotsOf`, nearest along the way pushed), `hud.tooltip` names and describes the one it is
   on, without naming any input. Any back-out or the same button again closes it; it spends no turn.
   In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `game.hovered`).
+- Pause > Character opens `ui/book.zig`'s UI shell: empty equipment slots, an empty inventory, existing
+  life/mana stats and a blank passives panel. Equipment and progression systems remain undefined.
+  `Game.character` holds only unsaved navigation state; `input.State` owns its mouse clicks too.
 - `app.zig` owns title/game/editor transitions; the game requests `Game.exit`, and `Game.back` identifies
   its caller. New reads `atlas.START` (`maps/start.map`) fresh, falling back to a generated floor only
   when that default file is missing. Reject malformed maps and starts without open floor.
@@ -107,6 +110,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   restores the drag without consuming undo or losing redo. `Editor.request` guards leaving, quitting,
   opening and New when dirty, including window close. F5/F6 play-test unsaved; `HELP` stays checked against
   `Desk` captions. Keep Things/issues, object-viewer metadata and cursor previews consistent with the map.
+- Objects > select a foe > Fight launches `map/spar.zig`'s arena using the app's separate map, with the
+  normal editor-test archer and no save slot. Returning preserves the editor map, modal and undo history;
+  death retry and Debug > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
 - `save.zig` freezes the whole run: map, visited/current nodes, actors, class/name, resources/statuses,
   RNG, log, skill bar and time. `core/store.zig` fingerprints types; reject incompatible or incomplete
   saves before mutating the game. Autosave snapshots on the frame and writes on a thread, only while

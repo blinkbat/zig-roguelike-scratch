@@ -439,6 +439,7 @@ pub const State = struct {
     triggers: [PADS]Triggers = @splat(.initFill(false)),
     /// Where the mouse rests on the window, when focused and over it.
     pointer: ?mathx.P = null,
+    click: bool = false,
 
     pub fn hit(self: State, b: Button) bool {
         return self.pressed.contains(b);
@@ -494,6 +495,7 @@ pub const State = struct {
         const kind: ?Device = if (self.pad_at) |at| kindAt(at) else null;
         const live: ?i32 = if (focused) self.pad_at else null;
         self.pointer = if (focused and rl.isCursorOnScreen()) mouseAt() else null;
+        self.click = self.pointer != null and rl.isMouseButtonPressed(.left);
         const alt_down = altDown();
         for (BUTTONS) |b| {
             var on = false;
