@@ -94,15 +94,11 @@ pub const Book = struct {
                 if (d.x != 0) self.choose(PAGES[mathx.wrap(@intFromEnum(self.page), d.x, PAGES.len)]);
                 if (d.y > 0 and self.count() > 0) self.tabs = false;
             } else {
-                const from = centre(self.cellBox(origin, self.cursor));
+                const from = self.cellBox(origin, self.cursor);
                 var best: ?usize = null;
-                var score: i32 = std.math.maxInt(i32);
+                var score = std.math.floatMax(f32);
                 for (0..self.count()) |i| {
-                    const delta = centre(self.cellBox(origin, i)).sub(from);
-                    const along = delta.x * d.x + delta.y * d.y;
-                    if (along <= 0) continue;
-                    const across = @abs(delta.x * d.y - delta.y * d.x);
-                    const cost = along + @as(i32, @intCast(across)) * 3;
+                    const cost = menu.directionScore(from, self.cellBox(origin, i), dir, 3) orelse continue;
                     if (cost < score) {
                         best = i;
                         score = cost;

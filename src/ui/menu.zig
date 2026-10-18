@@ -87,6 +87,17 @@ pub fn backed(st: *const input.State) bool {
     return st.hit(BACK) or st.hit(PAUSE);
 }
 
+pub fn directionScore(from: rl.Rectangle, to: rl.Rectangle, dir: mathx.Dir, across_weight: f32) ?f32 {
+    const vx = to.x + to.width / 2 - (from.x + from.width / 2);
+    const vy = to.y + to.height / 2 - (from.y + from.height / 2);
+    const d = dir.delta();
+    const wx: f32 = @floatFromInt(d.x);
+    const wy: f32 = @floatFromInt(d.y);
+    const along = vx * wx + vy * wy;
+    if (along <= 0) return null;
+    return along + across_weight * @abs(vx * wy - vy * wx);
+}
+
 pub const Window = struct {
     from: usize,
     len: usize,

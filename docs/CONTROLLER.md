@@ -45,7 +45,9 @@ PS button do nothing; GLFW reads no touchpad.
   name, so a new pad needs no rebuild. To update, replace the asset from the repo's `gamecontrollerdb.txt`.
 - **Which pad**: the first of raylib's four slots that GLFW has a mapping for, until another pad presses a button or
   pulls a trigger past its latch (`input.choosePad`). A wheel or an unmapped joystick is passed over.
-- **Focus**: nothing is read from a pad while the window is out of focus; the icons keep showing it.
+- **Focus**: play input is cleared while the window is out of focus, including unsettled taps and queued walks;
+  the current turn's presentation finishes without spending another turn. Device icons are retained, and trigger
+  latches keep polling so a held trigger does not register a new press on return.
 - **Triggers** press past 60% of their travel and let go under 40% (`input.TRIGGER_ON`/`OFF`), not raylib's one line
   at 55%, so a finger resting on RT does not fire its slot over and over.
 

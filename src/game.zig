@@ -1939,6 +1939,7 @@ fn sinceQuiet(g: *const Game) f32 {
 
 /// What the last frames set going moves on before this frame deals any more, so a blow dealt now lands `wait` on.
 pub fn update(g: *Game, dt: f32) void {
+    if (!g.st.focused) holdWalk(g);
     g.busy -= dt;
     for (g.glide[0..g.pool.n]) |*gl| gl.t += dt;
     g.fx.step(&g.lv, dt);
@@ -2909,19 +2910,10 @@ fn centreOf(r: rl.Rectangle) [2]f32 {
 }
 
 fn toward(spots: []const Part, from: Part, d: mathx.Dir) ?Spot {
-    const c = centreOf(from.box);
-    const way = d.delta();
-    const wx: f32 = @floatFromInt(way.x);
-    const wy: f32 = @floatFromInt(way.y);
     var best: ?Spot = null;
     var best_score = std.math.floatMax(f32);
     for (spots) |s| {
-        const p = centreOf(s.box);
-        const vx = p[0] - c[0];
-        const vy = p[1] - c[1];
-        const along = vx * wx + vy * wy;
-        if (along <= 0) continue;
-        const score = along + 2 * @abs(vx * wy - vy * wx);
+        const score = menu.directionScore(from.box, s.box, d, 2) orelse continue;
         if (score < best_score) {
             best_score = score;
             best = s.spot;
@@ -6496,6 +6488,27 @@ test "a kick due late in a frame puts the foes a stagger after it lands, late on
     const t = framesUntil(g, heroSlot(g).?, reddened);
     std.debug.print("a kick due {d:.3} s late: the first bite lands {d:.3} s on\n", .{ late, t });
     try std.testing.expectApproxEqAbs(2 * BUMP_LANDS + STAGGER_S - late, t, TEST_TOL);
+}
+
+test "losing focus discards a queued walk while the current turn finishes drawing" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    arena(g, at, &.{});
+    g.busy = GLIDE_S;
+    g.st = .{ .walk = .e };
+    update(g, 0);
+    try std.testing.expectEqual(@as(?mathx.Dir, .e), g.pending);
+    const minute = g.clock.minute;
+    g.st = .{ .focused = false };
+    update(g, GLIDE_S + mathx.FRAME_DT);
+    try std.testing.expect(quiet(g) and g.pending == null);
+    try std.testing.expectEqual(at, g.heroActor().?.at);
+    try std.testing.expectEqual(minute, g.clock.minute);
+    g.st = .{};
+    update(g, mathx.FRAME_DT);
+    try std.testing.expectEqual(at, g.heroActor().?.at);
+    std.debug.print("focus loss: queued walk discarded, presentation finishes, no extra turn on return\n", .{});
 }
 
 test "a walk due just before the last turn is drawn out starts as it ends" {

@@ -417,6 +417,7 @@ pub const State = struct {
     down: std.EnumSet(Button) = .initEmpty(),
     down_s: std.EnumArray(Button, f32) = .initFill(0),
     device: Device = .xbox,
+    focused: bool = true,
     fullscreen: bool = false,
     walk: ?mathx.Dir = null,
     lean: bool = false,
@@ -492,9 +493,11 @@ pub const State = struct {
         for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
         const focused = rl.isWindowFocused();
         self.pad_at = choosePad(self.pad_at, focused, &before, &self.triggers);
+        self.focus(focused);
+        if (!focused) return;
         const kind: ?Device = if (self.pad_at) |at| kindAt(at) else null;
-        const live: ?i32 = if (focused) self.pad_at else null;
-        self.pointer = if (focused and rl.isCursorOnScreen()) mouseAt() else null;
+        const live = self.pad_at;
+        self.pointer = if (rl.isCursorOnScreen()) mouseAt() else null;
         self.click = self.pointer != null and rl.isMouseButtonPressed(.left);
         const alt_down = altDown();
         for (BUTTONS) |b| {
@@ -519,7 +522,7 @@ pub const State = struct {
                 if (either(SECOND_KEYS)) self.down.insert(m);
             }
         }
-        if (focused) self.time(dt);
+        self.time(dt);
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();
@@ -561,6 +564,24 @@ pub const State = struct {
     fn padHeld(self: *const State, at: i32, b: rl.GamepadButton) bool {
         if (Trigger.of(b)) |t| return self.triggers[@intCast(at)].get(t);
         return rl.isGamepadButtonDown(at, b);
+    }
+
+    fn focus(self: *State, focused: bool) void {
+        self.focused = focused;
+        if (focused) return;
+        self.pressed = .initEmpty();
+        self.down = .initEmpty();
+        self.down_s = .initFill(0);
+        self.fullscreen = false;
+        self.walk = null;
+        self.lean = false;
+        self.step = .{};
+        self.stick = false;
+        self.typing = false;
+        self.typed.n = 0;
+        self.rub = false;
+        self.pointer = null;
+        self.click = false;
     }
 
     fn padHit(self: *const State, at: i32, b: rl.GamepadButton, before: *const [PADS]Triggers) bool {
@@ -1025,6 +1046,26 @@ test "a d-pad diagonal pressed and released a frame apart is one diagonal step" 
         }
     }
     try std.testing.expectEqual(@as(usize, 1), got);
+}
+
+test "losing focus cancels unsettled movement and held actions without forgetting the controller" {
+    var st = State{ .device = .ps5, .pad_at = 1, .context = .play };
+    st.triggers[1].set(.left, true);
+    st.pressed.insert(.a);
+    st.down.insert(.a);
+    st.down_s.set(.a, HOLD_S);
+    st.walk = st.step.tick(mathx.FRAME_DT, 1, mathx.Dir.n.heading(), Stepper.SETTLE);
+    try std.testing.expect(st.step.owed != null);
+    st.focus(false);
+    try std.testing.expect(!st.focused and st.walk == null);
+    try std.testing.expect(!st.hit(.a) and !st.held(.a) and !st.long(.a));
+    try std.testing.expectEqual(@as(?mathx.Dir, null), st.step.tick(mathx.FRAME_DT, 0, 0, Stepper.SETTLE));
+    try std.testing.expectEqual(Device.ps5, st.device);
+    try std.testing.expectEqual(@as(?i32, 1), st.pad_at);
+    try std.testing.expect(st.triggers[1].get(.left));
+    st.focus(true);
+    try std.testing.expect(st.focused and st.walk == null);
+    std.debug.print("focus loss: pending tap and held action cancelled; controller and trigger latch retained\n", .{});
 }
 
 test "a tap let go before it settles steps once, on release" {
