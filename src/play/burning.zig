@@ -21,9 +21,7 @@ fn seared(fire_resist: i16) i32 {
 
 pub const roll = mathx.Rng.rolls(FIRE_LO, FIRE_HI);
 
-pub fn procs(rng: *mathx.Rng, _: i16) bool {
-    return rng.percent(CHANCE);
-}
+pub const procs = damage.chance(CHANCE);
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.burn.start();

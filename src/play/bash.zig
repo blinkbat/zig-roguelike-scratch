@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const clock = @import("clock.zig");
+const damage = @import("damage.zig");
 
 const P = mathx.P;
 
@@ -16,13 +17,8 @@ pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} damage to an adjacent foe
 
 pub const roll = mathx.Rng.rolls(DMG_LO, DMG_HI);
 
-pub fn procs(rng: *mathx.Rng, _: i16) bool {
-    return rng.percent(CHANCE);
-}
-
-pub fn afflict(a: anytype, _: *mathx.Rng) void {
-    a.clock.stun();
-}
+pub const procs = damage.chance(CHANCE);
+pub const afflict = clock.stuns;
 
 /// A body or barrel beside `from`.
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {

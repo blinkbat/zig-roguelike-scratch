@@ -10,6 +10,7 @@ pub const BACK = input.Button.b;
 pub const PAUSE = input.Button.pause;
 pub const CHANGE = input.Button.x;
 pub const REMOVE = input.Button.y;
+pub const RUB = input.Button.x;
 
 pub const TITLE: i32 = 60;
 pub const ROW: i32 = 30;

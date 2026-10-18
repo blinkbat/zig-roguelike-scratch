@@ -15,13 +15,8 @@ pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} lightning damage to a tar
 
 pub const roll = mathx.Rng.rolls(LIGHTNING_LO, LIGHTNING_HI);
 
-pub fn procs(rng: *mathx.Rng, _: i16) bool {
-    return rng.percent(CHANCE);
-}
-
-pub fn afflict(a: anytype, _: *mathx.Rng) void {
-    a.clock.stun();
-}
+pub const procs = damage.chance(CHANCE);
+pub const afflict = clock.stuns;
 
 test "a spark stuns about half the time" {
     var rng = mathx.Rng.init(813);

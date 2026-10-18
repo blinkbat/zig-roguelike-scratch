@@ -1,6 +1,9 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
+const lume = @import("lume.zig");
+const carve = @import("carve.zig");
+const wilds = @import("biome/wilds.zig");
 
 const P = mathx.P;
 const BLOCK = 2;
@@ -60,9 +63,8 @@ const Graph = struct {
             const a = cell(p);
             g.weight[a] += 1;
             for (mathx.ALL_DIRS) |d| {
-                const q = p.add(d.delta());
-                if (!lv.walkable(q)) continue;
-                const dir = mathx.dirTo(blockOf(p), blockOf(q)) orelse continue;
+                if (!lv.passOk(p, d)) continue;
+                const dir = mathx.dirTo(blockOf(p), blockOf(p.add(d.delta()))) orelse continue;
                 g.edges[a] |= @as(u8, 1) << @intFromEnum(dir);
             }
         }
@@ -141,8 +143,11 @@ const Graph = struct {
 
 pub const Result = struct { loops: usize = 0, chests: usize = 0 };
 
-pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, loops: u8, rewards: bool) Result {
+pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Params) Result {
     var result = Result{};
+    const loops = params.loops;
+    if (loops == 0 and params.rewards == .none) return result;
+    const pal = wilds.palette(params);
     var rng = mathx.Rng.init(seed ^ SALT);
     var g: Graph = .{};
     var attempted: [N]bool = @splat(false);
@@ -165,13 +170,14 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, loops: u8, rewards:
         if (!rng.percent(loops)) continue;
         const neck = Graph.first(lv, b.neck) orelse continue;
         _ = grid.distances(lv, neck, &distances, &queue);
-        if (rejoin(lv, &g, b, &distances)) {
+        if (rejoin(lv, &g, b, &distances, &queue, pal)) {
             result.loops += 1;
             g.build(lv, doors);
         }
     }
-    if (rewards) {
+    if (params.rewards == .chests) {
         var reached: [grid.CELLS]i32 = undefined;
+        var open = lv.openCount();
         for (g.branch[0..g.n]) |b| {
             const neck = Graph.first(lv, b.neck) orelse continue;
             _ = grid.distances(lv, neck, &distances, &queue);
@@ -187,8 +193,9 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, loops: u8, rewards:
                 const p = far orelse break;
                 const was = lv.at(p);
                 lv.set(p, .chest);
-                if (grid.distances(lv, neck, &reached, &queue) == lv.openCount()) {
+                if (grid.distances(lv, neck, &reached, &queue) == open - 1) {
                     result.chests += 1;
+                    open -= 1;
                     break;
                 }
                 lv.set(p, was);
@@ -200,15 +207,14 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, loops: u8, rewards:
 }
 
 fn rewardAt(lv: *const grid.Level, p: P) bool {
-    if (grid.Level.onRim(p) or !lv.vacant(p) or lv.doorAt(p) != null) return false;
+    if (grid.Level.onRim(p) or !lv.vacant(p) or lv.doorAt(p) != null or lv.torch.has(lume.torchWall(p))) return false;
     return switch (lv.at(p)) {
         .grass, .dirt, .sand, .floor, .rubble, .tiny_shrub, .tall_grass, .shrooms => true,
         .wall, .shrub, .rock, .snow, .water, .shallows, .bridge, .reeds, .fence, .lava, .fungus, .chasm, .ice, .grave, .crop, .boulder, .chest, .chest_open => false,
     };
 }
 
-fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.CELLS]i32) bool {
-    var queue: [grid.CELLS]u32 = undefined;
+fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.CELLS]i32, queue: *[grid.CELLS]u32, pal: carve.Palette) bool {
     var previous: [grid.CELLS]u32 = @splat(std.math.maxInt(u32));
     var depth: [grid.CELLS]u8 = @splat(0);
     var head: usize = 0;
@@ -218,7 +224,7 @@ fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.C
         if (!lv.walkable(p) or distances[i] < MIN_DEPTH or !g.contains(b.root, Graph.cell(p))) continue;
         for (mathx.ALL_DIRS) |dir| {
             const q = p.add(dir.delta());
-            if (grid.Level.onRim(q) or lv.at(q) != .shrub) continue;
+            if (grid.Level.onRim(q) or lv.at(q) != pal.solid) continue;
             const k = grid.Level.idx(q);
             if (depth[k] != 0) continue;
             depth[k] = 1;
@@ -237,12 +243,12 @@ fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.C
             if (lv.walkable(q) and !g.contains(b.root, Graph.cell(q)) and distances[k] >= LOOP_REACH) {
                 var back = i;
                 while (depth[back] != 0) {
-                    lv.tile[back] = .dirt;
+                    lv.tile[back] = carve.Palette.TRAILED.path;
                     back = previous[back];
                 }
                 return true;
             }
-            if (lv.at(q) != .shrub or depth[k] != 0 or depth[i] == DIG_MAX) continue;
+            if (lv.at(q) != pal.solid or depth[k] != 0 or depth[i] == DIG_MAX) continue;
             depth[k] = depth[i] + 1;
             previous[k] = i;
             queue[tail] = @intCast(k);
@@ -253,7 +259,6 @@ fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.C
 }
 
 test "side paths rejoin through forest and true dead ends receive closed chests" {
-    const carve = @import("carve.zig");
     var base = grid.Level.blank();
     carve.box(&base, .{ .lo = .{ .x = 8, .y = 8 }, .hi = .{ .x = 42, .y = 38 } }, .shrub);
     carve.box(&base, .{ .lo = .{ .x = 10, .y = 10 }, .hi = .{ .x = 40, .y = 12 } }, .grass);
@@ -263,7 +268,7 @@ test "side paths rejoin through forest and true dead ends receive closed chests"
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var joined = base;
-    const loops = improve(&joined, 44, &doors, 100, false);
+    const loops = improve(&joined, 44, &doors, .{ .loops = 100 });
     try std.testing.expect(loops.loops > 0);
     try std.testing.expect(joined.openCount() > base.openCount());
     try std.testing.expectEqual(joined.openCount(), grid.distances(&joined, doors[0], &dist, &queue));
@@ -274,7 +279,7 @@ test "side paths rejoin through forest and true dead ends receive closed chests"
         }
     }
     var rewarded = base;
-    const rewards = improve(&rewarded, 44, &doors, 0, true);
+    const rewards = improve(&rewarded, 44, &doors, .{ .rewards = .chests });
     var deep: usize = 0;
     for (rewarded.tile, 0..) |t, i| {
         if (t == .chest) {
@@ -288,4 +293,13 @@ test "side paths rejoin through forest and true dead ends receive closed chests"
     try std.testing.expectEqual(rewarded.openCount(), grid.distances(&rewarded, doors[0], &dist, &queue));
     for (doors) |p| try std.testing.expect(rewarded.walkable(p));
     std.debug.print("two side paths: {d} connection(s) through forest, or {d} closed rewards at their ends; both exits preserved\n", .{ loops.loops, rewards.chests });
+}
+
+test "a chest never takes the floor a torch hangs over" {
+    var lv = grid.openFloor();
+    const p = P{ .x = 10, .y = 10 };
+    lv.set(lume.torchWall(p), .wall);
+    try std.testing.expect(rewardAt(&lv, p));
+    try std.testing.expect(lv.torch.add(lume.torchWall(p)));
+    try std.testing.expect(!rewardAt(&lv, p));
 }

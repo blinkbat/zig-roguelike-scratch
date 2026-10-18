@@ -284,15 +284,19 @@ pub fn openDoors(lv: *grid.Level, doors: []const P, ground: grid.Tile) void {
 /// No open ground on the map's edge but its doors: a step there would walk off.
 pub fn seal(lv: *grid.Level, t: grid.Tile) void {
     for (0..grid.CELLS) |i| {
-        if (rimAt(i) and !lv.tile[i].solid() and lv.door[i] == grid.NO_DOOR) lv.tile[i] = t;
+        if (leaky(lv, i)) lv.tile[i] = t;
     }
+}
+
+fn leaky(lv: *const grid.Level, i: usize) bool {
+    return rimAt(i) and !lv.tile[i].solid() and lv.door[i] == grid.NO_DOOR;
 }
 
 /// Walkable cells on the rim that are not doors; none once sealed.
 pub fn leaks(lv: *const grid.Level) usize {
     var n: usize = 0;
     for (0..grid.CELLS) |i| {
-        if (rimAt(i) and lv.walkable(grid.Level.of(i)) and lv.door[i] == grid.NO_DOOR) n += 1;
+        n += @intFromBool(leaky(lv, i));
     }
     return n;
 }
@@ -569,7 +573,11 @@ fn lay(lv: *grid.Level, p: P, path: grid.Tile) void {
 }
 
 fn paved(t: grid.Tile, put: grid.Tile) grid.Tile {
-    return if (t.liquid() or t == .bridge) .bridge else put;
+    return if (crossing(t)) .bridge else put;
+}
+
+pub fn crossing(t: grid.Tile) bool {
+    return t.liquid() or t == .bridge;
 }
 
 /// A way through a wall at `at`, `half` cells either side of its middle, from `outside` cells out to `inside` cells in along `in`.

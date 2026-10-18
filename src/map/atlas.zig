@@ -266,7 +266,7 @@ pub const Node = struct {
         return self.door[0..self.door_n];
     }
 
-    /// The foes placed on it, where the archer never lands; a procgen node's are rolled in play.
+    /// The foes placed on it, where the hero never lands; a procgen node's are rolled in play.
     pub fn placed(self: *const Node) []const Foe {
         return switch (self.plan) {
             .bespoke => |*b| b.foes(),
@@ -329,11 +329,16 @@ pub const Node = struct {
         }
     }
 
+    pub fn doorCells(self: *const Node, out: *[grid.MAX_DOORS]P) []const P {
+        for (self.doors(), 0..) |d, i| out[i] = d.at;
+        return out[0..self.door_n];
+    }
+
     pub fn stamp(self: *const Node, lv: *grid.Level, roll: u64) void {
-        var cells: [grid.MAX_DOORS]P = undefined;
-        for (self.doors(), 0..) |d, i| cells[i] = d.at;
+        var buf: [grid.MAX_DOORS]P = undefined;
+        const cells = self.doorCells(&buf);
         switch (self.plan) {
-            .procgen => |*pg| procgen.roll(lv, roll, cells[0..self.door_n], pg.floor, pg.features()),
+            .procgen => |*pg| procgen.roll(lv, roll, cells, pg.floor, pg.features()),
             .bespoke => |*b| {
                 lv.* = grid.Level.blank();
                 lv.tile = b.tile;
@@ -1362,8 +1367,8 @@ test "the strand reconnects side paths and rewards remaining branches with close
     try a.load(std.testing.allocator, START);
     const nd = &a.node[a.start.node];
     const settings = nd.plan.procgen.floor.wilds;
-    var doors: [grid.MAX_DOORS]P = undefined;
-    for (nd.doors(), 0..) |d, i| doors[i] = d.at;
+    var buf: [grid.MAX_DOORS]P = undefined;
+    const doors = nd.doorCells(&buf);
     var lv: grid.Level = undefined;
     var expected: grid.Level = undefined;
     var dist: [grid.CELLS]i32 = undefined;
@@ -1380,7 +1385,7 @@ test "the strand reconnects side paths and rewards remaining branches with close
         nd.plan.procgen.floor.wilds.rewards = .none;
         nd.stamp(&lv, seed);
         nd.plan.procgen.floor.wilds = settings;
-        const result = branches.improve(&lv, seed, doors[0..nd.doors().len], settings.loops, settings.rewards == .chests);
+        const result = branches.improve(&lv, seed, doors, settings);
         try std.testing.expectEqualSlices(grid.Tile, &expected.tile, &lv.tile);
         try std.testing.expectEqual(lv.openCount(), grid.distances(&lv, doors[0], &dist, &queue));
         try std.testing.expect(std.mem.indexOfScalar(grid.Tile, &lv.tile, .chest_open) == null);

@@ -39,7 +39,7 @@ pub const Ground = enum {
     fn bears(g: Ground, t: grid.Tile) bool {
         if (t == .reeds) return switch (g) {
             .grass, .dirt, .shallows => true,
-            else => false,
+            .ice, .snow, .sand, .rubble, .cobble, .chasm, .lava, .water, .crop, .bridge => false,
         };
         return switch (g) {
             .ice, .snow, .sand, .dirt, .grass, .rubble, .cobble => true,

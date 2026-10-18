@@ -103,7 +103,7 @@ fn fits(lv: *const grid.Level, b: Box, pal: carve.Palette) bool {
     var cells = b.grown(1).cells();
     while (cells.next()) |q| {
         const t = lv.at(q);
-        if (t.liquid() or t == .bridge or lv.doorAt(q) != null) return false;
+        if (carve.crossing(t) or lv.doorAt(q) != null) return false;
         if (t.solid() and !carve.closes(t, pal)) return false;
     }
     return true;

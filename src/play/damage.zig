@@ -2,6 +2,15 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 
 pub const Element = enum { cold, fire, chaos, lightning };
+
+/// A skill's `procs` landing `pc` percent of the time, whatever the resistance.
+pub fn chance(comptime pc: u32) fn (*mathx.Rng, i16) bool {
+    return struct {
+        fn procs(rng: *mathx.Rng, _: i16) bool {
+            return rng.percent(pc);
+        }
+    }.procs;
+}
 pub const Resists = std.EnumArray(Element, i16);
 
 pub const Damage = struct {

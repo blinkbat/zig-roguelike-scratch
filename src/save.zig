@@ -18,15 +18,22 @@ const PATH_FMT = DIR ++ "/slot{d}" ++ EXT;
 const PATH_MAX: usize = std.fmt.count(PATH_FMT, .{SLOTS});
 const GAP_S: f32 = 1;
 
-const Seed = @FieldType(game.Game, "seed");
-const Node = @FieldType(game.Game, "node");
-const Visited = @FieldType(game.Game, "visited");
-const Visit = std.meta.Elem(@FieldType(game.Game, "visits"));
-const Map = std.meta.Child(std.meta.Child(@FieldType(game.Game, "map")));
+/// Written before the tail, by hand, in this order: the map behind a flag, then each visited node's visit.
+const Header = struct {
+    seed: @FieldType(game.Game, "seed"),
+    map: std.meta.Child(std.meta.Child(@FieldType(game.Game, "map"))),
+    node: @FieldType(game.Game, "node"),
+    visited: @FieldType(game.Game, "visited"),
+    visits: std.meta.Elem(@FieldType(game.Game, "visits")),
+};
+const Seed = @FieldType(Header, "seed");
+const Map = @FieldType(Header, "map");
+const Node = @FieldType(Header, "node");
+const Visited = @FieldType(Header, "visited");
+const Visit = @FieldType(Header, "visits");
+const HEAD_FIELDS = std.meta.fieldNames(Header);
 /// Written after the visited nodes, in this order.
 const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "flasks", "cooldown", "stepped", "class" };
-/// Written before the tail, by hand.
-const HEAD_FIELDS = .{ "seed", "map", "node", "visited", "visits" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
     "pause_page",
@@ -41,12 +48,18 @@ comptime {
     @setEvalBranchQuota(100_000);
     for (std.meta.fields(game.Game)) |f| {
         var n: usize = 0;
-        for (TAIL_FIELDS ++ HEAD_FIELDS ++ UNSAVED) |name| {
+        for (TAIL_FIELDS ++ UNSAVED) |name| {
+            if (std.mem.eql(u8, f.name, name)) n += 1;
+        }
+        for (HEAD_FIELDS) |name| {
             if (std.mem.eql(u8, f.name, name)) n += 1;
         }
         if (n != 1) @compileError("save.zig: say whether game.Game." ++ f.name ++ " is saved");
     }
-    for (TAIL_FIELDS ++ HEAD_FIELDS ++ UNSAVED) |name| {
+    for (TAIL_FIELDS ++ UNSAVED) |name| {
+        if (!@hasField(game.Game, name)) @compileError("save.zig: game.Game has no field " ++ name);
+    }
+    for (HEAD_FIELDS) |name| {
         if (!@hasField(game.Game, name)) @compileError("save.zig: game.Game has no field " ++ name);
     }
 }
@@ -96,11 +109,16 @@ pub const Unreadable = enum {
 
 pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
 
-const HEAD_TYPES = [_]type{ Seed, Map, Node, Visited, Visit };
-comptime {
-    std.debug.assert(HEAD_TYPES.len == HEAD_FIELDS.len);
-}
-const FINGERPRINT = store.fingerprint([_]type{ Summary, HEAD_TYPES[0], bool } ++ HEAD_TYPES[1..].* ++ [_]type{Tail});
+const FINGERPRINT = blk: {
+    const head = std.meta.fields(Header);
+    var types: [head.len + 3]type = undefined;
+    types[0] = Summary;
+    types[1] = head[0].type;
+    types[2] = bool;
+    for (head[1..], 3..) |f, i| types[i] = f.type;
+    types[types.len - 1] = Tail;
+    break :blk store.fingerprint(types);
+};
 const Print = @TypeOf(FINGERPRINT);
 const HEAD = MAGIC.len + @sizeOf(Print);
 /// A trailing payload hash rejects damaged or truncated files before loading.
@@ -112,9 +130,9 @@ fn summaryOf(g: *game.Game) Summary {
     const i = game.heroSlot(g).?;
     const h = g.pool.items[i];
     var s = Summary{ .name = g.name, .hp = h.hp, .max = h.max, .gold = g.gold, .node = null };
-    if (g.map) |w| {
+    if (g.map) |a| {
         s.node = g.node;
-        s.place = w.node[g.node].label;
+        s.place = a.node[g.node].label;
     }
     return s;
 }
@@ -231,7 +249,7 @@ fn readSlot(alloc: std.mem.Allocator, slot: usize) ![]u8 {
     return std.fs.cwd().readFileAlloc(alloc, path(&buf, slot), FILE_CAP);
 }
 
-pub fn load(alloc: std.mem.Allocator, slot: usize, g: *game.Game, map: *atlas.Atlas) !void {
+pub fn load(alloc: std.mem.Allocator, slot: usize, g: *game.Game, map: *Map) !void {
     const bytes = try readSlot(alloc, slot);
     defer alloc.free(bytes);
     try read(bytes, g, map);
@@ -399,17 +417,17 @@ test "a save that keeps failing is said once, not once a retry" {
     std.debug.print("a save failing {d} retries in a row: {d} log line\n", .{ RETRIES, g.log.n - said });
 }
 
-fn testMap() !*atlas.Atlas {
-    const w = try std.testing.allocator.create(atlas.Atlas);
-    w.* = .{};
-    const a = w.add(.{ .procgen = .{} }).?;
-    const b = w.add(.{ .procgen = .{} }).?;
-    const da = w.addDoor(a, .{ .x = 30, .y = 30 }).?;
-    const db = w.addDoor(b, .{ .x = 40, .y = 20 }).?;
-    w.link(.{ .node = a, .door = da }, .{ .node = b, .door = db });
-    _ = w.node[b].rename("The Warrens");
-    w.start = .{ .node = a, .at = .{ .x = 30, .y = 30 } };
-    return w;
+fn testMap() !*Map {
+    const m = try std.testing.allocator.create(Map);
+    m.* = .{};
+    const a = m.add(.{ .procgen = .{} }).?;
+    const b = m.add(.{ .procgen = .{} }).?;
+    const da = m.addDoor(a, .{ .x = 30, .y = 30 }).?;
+    const db = m.addDoor(b, .{ .x = 40, .y = 20 }).?;
+    m.link(.{ .node = a, .door = da }, .{ .node = b, .door = db });
+    _ = m.node[b].rename("The Warrens");
+    m.start = .{ .node = a, .at = .{ .x = 30, .y = 30 } };
+    return m;
 }
 
 test "a run reads back as it was written, and a short or foreign file leaves the game alone" {
@@ -423,10 +441,10 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     g.gold = 17;
     g.mana = 37;
     g.cooldown.set(.juke, 2);
-    g.archer().?.resists.set(.fire, 50);
-    g.archer().?.resists.set(.cold, 25);
-    g.archer().?.burn = .{ .turns = 2 };
-    g.archer().?.chill = .{ .turns = 2, .phase = 1 };
+    g.heroActor().?.resists.set(.fire, 50);
+    g.heroActor().?.resists.set(.cold, 25);
+    g.heroActor().?.burn = .{ .turns = 2 };
+    g.heroActor().?.chill = .{ .turns = 2, .phase = 1 };
     if (g.pool.n > 1) g.pool.items[1].chill = .{ .turns = 1, .phase = 2 };
     _ = g.pool.damage(&g.lv, g.hero, 5);
     g.travel = .{ .node = 1, .door = 0 };
@@ -454,7 +472,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
 
     const back = try game.boot(alloc);
     defer game.shut(alloc, back);
-    const into = try alloc.create(atlas.Atlas);
+    const into = try alloc.create(Map);
     defer alloc.destroy(into);
     game.begin(back, 1);
     try std.testing.expectError(error.Damaged, read(buf.items[0 .. buf.items.len - 1], back, into));
@@ -462,20 +480,20 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     buf.items[buf.items.len / 2] +%= 1;
     try std.testing.expectError(error.Damaged, read(buf.items, back, into));
     buf.items[buf.items.len / 2] -%= 1;
-    try std.testing.expectEqual(@as(?*const atlas.Atlas, null), back.map);
+    try std.testing.expectEqual(@as(?*const Map, null), back.map);
     try read(buf.items, back, into);
     try std.testing.expectEqualStrings("Arwen", back.name.text());
     try std.testing.expectEqual(@as(usize, 1), back.node);
-    try std.testing.expectEqual(g.archer().?.at, back.archer().?.at);
-    try std.testing.expectEqual(g.archer().?.hp, back.archer().?.hp);
+    try std.testing.expectEqual(g.heroActor().?.at, back.heroActor().?.at);
+    try std.testing.expectEqual(g.heroActor().?.hp, back.heroActor().?.hp);
     try std.testing.expectEqual(@as(i32, 37), back.mana);
     try std.testing.expectEqual(@as(u8, 2), back.cooldown.get(.juke));
     try std.testing.expect(back.stepped);
-    try std.testing.expectEqual(@as(i16, 50), back.archer().?.resists.get(.fire));
-    try std.testing.expectEqual(@as(i16, 25), back.archer().?.resists.get(.cold));
-    try std.testing.expectEqual(@as(u8, 2), back.archer().?.burn.turns);
-    try std.testing.expectEqual(@as(u8, 2), back.archer().?.chill.turns);
-    try std.testing.expectEqual(@as(u8, 1), back.archer().?.chill.phase);
+    try std.testing.expectEqual(@as(i16, 50), back.heroActor().?.resists.get(.fire));
+    try std.testing.expectEqual(@as(i16, 25), back.heroActor().?.resists.get(.cold));
+    try std.testing.expectEqual(@as(u8, 2), back.heroActor().?.burn.turns);
+    try std.testing.expectEqual(@as(u8, 2), back.heroActor().?.chill.turns);
+    try std.testing.expectEqual(@as(u8, 1), back.heroActor().?.chill.phase);
     for (g.visits[0].pool.slice(), back.visits[0].pool.slice()) |before, after| try std.testing.expectEqual(before.chill, after.chill);
     try std.testing.expectEqual(g.pool.n, back.pool.n);
     try std.testing.expectEqualSlices(grid.Tile, &g.lv.tile, &back.lv.tile);
@@ -514,7 +532,7 @@ test "a listed save must have the complete run that loading requires" {
     defer std.testing.allocator.free(full);
     const map = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(map);
-    const hp = g.archer().?.hp;
+    const hp = g.heroActor().?.hp;
     const seed = g.seed;
     const cuts = [_]usize{ HEAD + @sizeOf(Summary), HEAD + @sizeOf(Summary) + @sizeOf(Seed) + @sizeOf(bool), full.len - 1 };
     for (cuts) |cut| {
@@ -523,7 +541,7 @@ test "a listed save must have the complete run that loading requires" {
         seal(&buf);
         try std.testing.expectError(error.Short, peek(buf.items));
         try std.testing.expectError(error.Short, read(buf.items, g, map));
-        try std.testing.expectEqual(hp, g.archer().?.hp);
+        try std.testing.expectEqual(hp, g.heroActor().?.hp);
         try std.testing.expectEqual(seed, g.seed);
     }
     buf.clearRetainingCapacity();

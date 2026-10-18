@@ -19,7 +19,7 @@ const TINT_HI: f32 = 0.90;
 /// Per second.
 const EASE: f32 = 8.0;
 
-pub fn tintOf(volume: u16) f32 {
+fn tintOf(volume: u16) f32 {
     if (volume == 0) return 0;
     return @min(TINT_HI, TINT_LO + TINT_PER * @as(f32, @floatFromInt(volume)));
 }

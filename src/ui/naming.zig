@@ -19,8 +19,6 @@ comptime {
     for (LETTERS) |row| std.debug.assert(row.len == COLS);
 }
 
-const RUB = input.Button.x;
-
 const FIELD: i32 = 36;
 const KEY = menu.ROW;
 const KEY_W: i32 = 44;
@@ -52,7 +50,7 @@ pub const Entry = struct {
         for (st.typed.text()) |c| {
             if (self.name.push(c)) self.onDone();
         }
-        if (st.rub or st.hit(RUB)) self.name.pop();
+        if (st.rub or st.hit(menu.RUB)) self.name.pop();
         if (st.walk) |d| self.move(d);
         if (menu.backed(st)) return .back;
         if (!st.hit(menu.CONFIRM)) return null;

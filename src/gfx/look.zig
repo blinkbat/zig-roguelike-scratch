@@ -24,7 +24,7 @@ pub const Look = struct {
 
 pub const Bodies = std.EnumArray(actor.Kind, ?rl.Texture2D);
 
-pub const Shadow = enum { silhouette, canopy };
+const Shadow = enum { silhouette, canopy };
 
 const STANDS = std.EnumArray(grid.Tile, ?Shadow).initDefault(@as(?Shadow, null), .{
     .shrub = .canopy,
@@ -37,7 +37,7 @@ const STANDS = std.EnumArray(grid.Tile, ?Shadow).initDefault(@as(?Shadow, null),
     .chest_open = .silhouette,
 });
 
-pub const STANDING = blk: {
+const STANDING = blk: {
     var n: usize = 0;
     for (STANDS.values) |s| {
         if (s != null) n += 1;
@@ -78,7 +78,7 @@ pub const Assets = struct {
         for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
             const p = grid.Level.of(i);
             need.barrel = need.barrel or barrel;
-            if (t == .chest) need.add(.{ .tile = .chest_open });
+            if (t.opened()) |open| need.add(.{ .tile = open });
             if (standsOver(t)) {
                 if (cutAt(lv, p)) |c| need.add(c);
             }
@@ -203,7 +203,7 @@ pub const Sprites = struct {
         }
     }
 
-    pub fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4) ?Piece {
+    fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4) ?Piece {
         const tex = self.grounds.getPtrConst(g).* orelse return null;
         const at = ground.CELL_OF[mask];
         return .{ .tex = tex, .src = rect(at.x * SPRITE_PX, at.y * SPRITE_PX, SPRITE_PX, SPRITE_PX) };
@@ -393,7 +393,7 @@ pub fn hudPanel(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32
     hudBorder(sprites, x, y, width, height, tint);
 }
 
-pub fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, tint: rl.Color) void {
+fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, tint: rl.Color) void {
     const tex = sprites.hud_border orelse {
         rl.drawRectangleLines(x, y, width, height, tint);
         return;
@@ -765,7 +765,7 @@ pub const FIRE = rgb(0xff8a32);
 pub const FIRE_CORE = rgb(0xffe6a0);
 pub const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
-pub const ARROW = rgb(0xe6dcb4);
+const ARROW = rgb(0xe6dcb4);
 pub const VEIL = fade(BG, 0.72);
 
 /// Its symbol, centred on `cx, cy`; its ASCII `ch` where the font has no atlas.
@@ -1354,7 +1354,7 @@ pub const FS_HEAD = std.fmt.comptimePrint(
 , .{ CLEAR_A, grid.W, grid.H });
 
 /// Of the shallows' colours, what deep water's art keeps: `tools/tile_art/deepen_water.lua`.
-pub const WATER_DEEP_PERCENT = 60;
+const WATER_DEEP_PERCENT = 60;
 const WATER_DEEP: f32 = mathx.fraction(WATER_DEEP_PERCENT);
 const WATER_SATURATION: f32 = 0.8;
 const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(

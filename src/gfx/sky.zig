@@ -145,7 +145,7 @@ pub const Sky = struct {
     key: Rgb,
     /// What reaches ground in shade.
     ambient: Rgb,
-    /// How much of the archer's own light still shows: none by day.
+    /// How much of the hero's own light still shows: none by day.
     carry: f32,
     /// How far the light that casts is the moon's: 0 by day, 1 by night.
     moon: f32,

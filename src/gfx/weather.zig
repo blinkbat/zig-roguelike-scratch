@@ -34,6 +34,7 @@ const FALL_MOST: f32 = 0.6;
 const INK = look.rgb(0xc4d0e2);
 /// Drops are drawn no fainter than this share of their daylight alpha, so rain still shows at night.
 const DIM_FLOOR: f32 = 0.25;
+const SPLASH_DROPS = 4;
 const SEED: u64 = 0x5A1_2A17;
 
 const Drop = struct {
@@ -109,8 +110,8 @@ pub const Weather = struct {
             } else {
                 const k = d.since / fall.splash_s;
                 const r = mathx.lerpF(1, fall.ring, k) * scale;
-                for (0..4) |i| {
-                    const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / 4;
+                for (0..SPLASH_DROPS) |i| {
+                    const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / SPLASH_DROPS;
                     pixel.rect(.{ .x = x + @cos(angle) * r, .y = y + @sin(angle) * r * 0.5 }, 1, 1, scale, look.fade(INK, a * (1 - k)));
                 }
             }

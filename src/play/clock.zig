@@ -1,4 +1,5 @@
 const std = @import("std");
+const mathx = @import("../core/mathx.zig");
 
 /// Brogue's ticks: a turn is `TURN` of them, and an action costs its body's pace.
 pub const TURN: i32 = 100;
@@ -26,6 +27,11 @@ pub const Clock = struct {
         if (!self.stalled) self.ticks += pace;
     }
 };
+
+/// A skill's `afflict` that stuns.
+pub fn stuns(a: anytype, _: *mathx.Rng) void {
+    a.clock.stun();
+}
 
 fn lost(c: *Clock, pace: i32, turns: usize) usize {
     var n: usize = 0;

@@ -130,7 +130,7 @@ pub const Face = struct {
         }
     }
 
-    pub fn leftFor(self: *const Face, s: [:0]const u8, cx: i32, size: i32) i32 {
+    fn leftFor(self: *const Face, s: [:0]const u8, cx: i32, size: i32) i32 {
         return cx - @divTrunc(self.width(s, size), 2);
     }
 

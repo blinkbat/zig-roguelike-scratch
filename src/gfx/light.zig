@@ -40,7 +40,8 @@ const CEILING_CATCH: f32 = 0.2;
 pub const BODY_Z: f32 = 0.4;
 
 const CARRY: Rgb = .{ 0.92, 0.88, 0.80 };
-/// A cell past what the archer's light lets it see, so its glow fades out on the edge of sight.
+const MOON_CARRY: Rgb = .{ 0.52, 0.68, 1.0 };
+/// A cell past what the hero's light lets it see, so its glow fades out on the edge of sight.
 const CARRY_R: f32 = @floatFromInt(actor.row(actor.HERO).light + 1);
 const CARRY_FADE: f32 = 0.3;
 const CARRY_CEILING: f32 = 0.7;
@@ -74,14 +75,14 @@ const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
 /// Per channel, light past this bends toward a square root instead of clipping (Brogue's `adjustedLightValue`).
 const KNEE: f32 = 1.5;
 
-pub const BODY_LIGHTS: usize = 4;
+const BODY_LIGHTS: usize = 4;
 /// A pale flash remains visible over red bodies.
-pub const FLASH_RGB = Rgb{ 0.88, 0.38, 0.30 };
+const FLASH_RGB = Rgb{ 0.88, 0.38, 0.30 };
 /// Texels toward the viewer, for the side-lighting of a body.
 const BODY_LIGHT_Z: f32 = 40.0;
 /// What a shadow at its darkest leaves of the ground, a little cool; overlaps keep the darker (Photoshop's Darken).
 const SHADE_RGB = Rgb{ 0.42, 0.45, 0.54 };
-/// Darkens whatever lights the ground, the archer's own light too.
+/// Darkens whatever lights the ground, the hero's own light too.
 const MOON_SHADE_RGB = Rgb{ 0.34, 0.40, 0.62 };
 const SHADOW_MAX: f32 = 0.85;
 /// A light with this share of all that reaches a body casts its darkest shadow; under it the shadow eases out to none.
@@ -251,6 +252,7 @@ const SunRay = struct {
     /// How deep the moon's shadows darken the ground, whatever lights it, and in what.
     night: f32,
     shade: Rgb,
+    glint: f32,
 
     fn of(k: sky.Sky) SunRay {
         const flat = k.flat();
@@ -261,6 +263,7 @@ const SunRay = struct {
             .rise = k.rise(),
             .night = k.moon * skyDepth(k, 1),
             .shade = skyShade(k),
+            .glint = smoothSpecular(k.dir, SUN_GLINT_POWER),
         };
     }
 
@@ -388,18 +391,34 @@ const Torch = struct {
         const r = t.toward(s.x, s.y, s.z) orelse return 0;
         const facing = switch (s.surface) {
             .floor => wrapped(r.d[2] / @sqrt(r.d2), FLOOR_WRAP),
-            .face => faceCatch(faceCos(r.d[1], mathx.len(r.d[0], r.d[1]))),
-            .ceiling => CEILING_CATCH,
+            .face, .ceiling => upright(s.surface, r.d[0], r.d[1]),
         };
         return r.k * facing;
     }
 };
 
+fn upright(surface: Surface, dx: f32, dy: f32) f32 {
+    return switch (surface) {
+        .floor => unreachable,
+        .face => faceCatch(faceCos(dy, mathx.len(dx, dy))),
+        .ceiling => CEILING_CATCH,
+    };
+}
+
+/// From the water toward the viewer, who looks down at 45 degrees from the south.
+const VIEWER: Rgb = .{ 0, std.math.sqrt1_2, std.math.sqrt1_2 };
+const SUN_GLINT_POWER: f32 = 24;
+const GLINT_POWER: f32 = 80;
+const SUN_GLINT: f32 = 0.05;
+const CARRY_GLINT: f32 = 0.08;
+const TORCH_GLINT: f32 = 0.12;
+const EFFECT_GLINT: f32 = 0.11;
+
 fn smoothSpecular(toward: [3]f32, power: f32) f32 {
     const d: Rgb = toward;
     const len = @sqrt(@reduce(.Add, d * d));
     if (len <= 1e-5 or d[2] <= 0) return 0;
-    const half = d / splat(len) + Rgb{ 0, 0.70710678, 0.70710678 };
+    const half = d / splat(len) + VIEWER;
     const h = half / splat(@sqrt(@reduce(.Add, half * half)));
     return std.math.pow(f32, @max(0, h[2]), power);
 }
@@ -679,7 +698,7 @@ pub const Emission = struct {
 const EFFECTS = 48;
 const EffectSet = std.StaticBitSet(EFFECTS);
 const EFFECT_REACH = 5;
-const EFFECT_SPAN = EFFECT_REACH * 2 + 1;
+const EFFECT_SPAN: comptime_int = grid.Cells.span(EFFECT_REACH);
 
 const Effect = struct {
     source: Emission,
@@ -693,11 +712,14 @@ const Effect = struct {
         const dz = s.at[2] - z;
         const d2 = dx * dx + dy * dy + dz * dz;
         if (d2 >= s.radius * s.radius) return 0;
-        const p = mathx.cellOf(.{ x, y });
-        const i = mathx.slot(p.x - e.origin.x + EFFECT_REACH, p.y - e.origin.y + EFFECT_REACH, EFFECT_SPAN, EFFECT_SPAN) orelse return 0;
+        const i = e.texel(mathx.cellOf(.{ x, y })) orelse return 0;
         if (!e.reach[i]) return 0;
         const k = 1 - d2 / (s.radius * s.radius);
         return s.gain * k * k;
+    }
+
+    fn texel(e: *const Effect, p: P) ?usize {
+        return mathx.slot(p.x - e.origin.x + EFFECT_REACH, p.y - e.origin.y + EFFECT_REACH, EFFECT_SPAN, EFFECT_SPAN);
     }
 };
 
@@ -723,7 +745,7 @@ pub const Light = struct {
     clear_row: [grid.CELLS]bool,
     torch: [grid.MAX_TORCHES]Torch,
     torch_n: usize,
-    /// The archer's centre as drawn, cells.
+    /// The hero's centre as drawn, cells.
     carrier: ?[2]f32,
     sky: ?sky.Sky,
     /// Integral image of caster counts at cell corners.
@@ -1026,7 +1048,7 @@ pub const Light = struct {
     }
 
     fn carryColour(self: *const Light) Rgb {
-        return if (self.sky) |k| mix(CARRY, .{ 0.52, 0.68, 1.0 }, k.moon) else CARRY;
+        return if (self.sky) |k| mix(CARRY, MOON_CARRY, k.moon) else CARRY;
     }
 
     /// Before a frame's `emit`s: effect lights last one frame.
@@ -1045,8 +1067,7 @@ pub const Light = struct {
         @memset(&e.reach, false);
         var cells = grid.Cells.around(origin, @intFromFloat(@ceil(e.source.radius)));
         while (cells.next()) |p| {
-            const i: usize = @intCast((p.y - origin.y + EFFECT_REACH) * EFFECT_SPAN + p.x - origin.x + EFFECT_REACH);
-            e.reach[i] = grid.Level.inside(p) and grid.clearLine(lv, origin, p);
+            e.reach[e.texel(p).?] = grid.Level.inside(p) and grid.clearLine(lv, origin, p);
         }
     }
 
@@ -1101,8 +1122,7 @@ pub const Light = struct {
                     if (strength <= 0) continue;
                     const facing: f32 = switch (s.surface) {
                         .floor => 1,
-                        .face => faceCatch(faceCos(e.source.at[1] - s.y, mathx.len(e.source.at[0] - s.x, e.source.at[1] - s.y))),
-                        .ceiling => CEILING_CATCH,
+                        .face, .ceiling => upright(s.surface, e.source.at[0] - s.x, e.source.at[1] - s.y),
                     };
                     view += rgbOf(e.source.col) * splat(strength * facing);
                 }
@@ -1209,14 +1229,14 @@ pub const Light = struct {
         var gleam: Rgb = @splat(0);
         if (ray) |r| {
             const on = self.sunAt(&self.scratch, r, q[0], q[1], 0);
-            gleam += r.k.key * splat(smoothSpecular(r.k.dir, 24) * reaching(on, cloud) * 0.05);
+            gleam += r.k.key * splat(r.glint * reaching(on, cloud) * SUN_GLINT);
         }
         if (self.carryToward(q[0], q[1], true)) |f|
-            gleam += self.carryColour() * splat(smoothSpecular(.{ f.at[0] - q[0], f.at[1] - q[1], BODY_Z }, 80) * f.k * 0.08);
+            gleam += self.carryColour() * splat(smoothSpecular(.{ f.at[0] - q[0], f.at[1] - q[1], BODY_Z }, GLINT_POWER) * f.k * CARRY_GLINT);
         for (torches) |i| {
             const t = &self.torch[i];
             const r = t.toward(q[0], q[1], 0) orelse continue;
-            gleam += t.colour * splat(smoothSpecular(r.d, 80) * r.k * 0.12);
+            gleam += t.colour * splat(smoothSpecular(r.d, GLINT_POWER) * r.k * TORCH_GLINT);
         }
         var it = effects.iterator(.{});
         while (it.next()) |i| {
@@ -1224,7 +1244,7 @@ pub const Light = struct {
             const s = e.source;
             const k = e.strength(q[0], q[1], 0);
             if (k <= FAINT) continue;
-            gleam += rgbOf(s.col) * splat(smoothSpecular(.{ s.at[0] - q[0], s.at[1] - q[1], s.at[2] }, 80) * k * 0.11);
+            gleam += rgbOf(s.col) * splat(smoothSpecular(.{ s.at[0] - q[0], s.at[1] - q[1], s.at[2] }, GLINT_POWER) * k * EFFECT_GLINT);
         }
         return gleam;
     }
@@ -2153,8 +2173,8 @@ test "cell effect culling preserves floor wall and water lighting" {
 }
 
 test "smooth water glints follow light direction and respect walls and memory" {
-    try std.testing.expectApproxEqAbs(@as(f32, 1), smoothSpecular(.{ 0, -1, 1 }, 80), 1e-4);
-    try std.testing.expect(smoothSpecular(.{ 1, -1, 1 }, 80) < 0.03);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), smoothSpecular(.{ 0, -1, 1 }, GLINT_POWER), 1e-4);
+    try std.testing.expect(smoothSpecular(.{ 1, -1, 1 }, GLINT_POWER) < 0.03);
     var lv: grid.Level = undefined;
     testRoom(&lv, &.{});
     for (&lv.tile) |*tile| {

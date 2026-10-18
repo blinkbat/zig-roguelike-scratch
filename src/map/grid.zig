@@ -71,6 +71,15 @@ pub const Tile = enum(u8) {
         return t.solid() and !t.liquid();
     }
 
+    /// Seen past, but stops a missile.
+    pub fn halts(t: Tile) bool {
+        return TERRAIN.getPtrConst(t).halts;
+    }
+
+    pub fn opened(t: Tile) ?Tile {
+        return if (t == .chest) .chest_open else null;
+    }
+
     /// Given a `WallShape` by `gen.shapeWalls`, joining its own kind.
     pub fn shaped(t: Tile) bool {
         return t == .wall or t == .shrub;
@@ -132,7 +141,7 @@ comptime {
     }
 }
 
-const Terrain = struct { solid: bool, blind: bool, ground: ?Tile = null, liquid: bool = false };
+const Terrain = struct { solid: bool, blind: bool, ground: ?Tile = null, liquid: bool = false, halts: bool = false };
 const OPEN = Terrain{ .solid = false, .blind = false };
 const SHUT = Terrain{ .solid = true, .blind = true };
 const MOAT = Terrain{ .solid = true, .blind = false };
@@ -166,7 +175,7 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .boulder = TALL_PROP,
     .tall_grass = DECOR,
     .shrooms = DECOR,
-    .chest = LOW_PROP,
+    .chest = .{ .solid = true, .blind = false, .ground = .grass, .halts = true },
     .chest_open = DECOR,
 });
 
@@ -258,9 +267,9 @@ pub const Level = struct {
     /// Null on anything that is neither a wall nor a forest tile.
     shape: [CELLS]?WallShape,
     seen: [CELLS]bool,
-    /// In the archer's sight: in its line of sight and light enough to see.
+    /// In the hero's sight: in its line of sight and light enough to see.
     lit: [CELLS]bool,
-    /// In the archer's line of sight, light or dark.
+    /// In the hero's line of sight, light or dark.
     los: [CELLS]bool,
     /// 1-based into the actor pool; `NO_ONE` is empty.
     occupant: [CELLS]u16,

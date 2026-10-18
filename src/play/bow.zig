@@ -70,7 +70,7 @@ pub fn fly(lv: *const grid.Level, from: P, to: P) Flight {
         if (f.len == f.path.len or (!c.eq(to) and lv.at(c).blind())) break;
         f.path[f.len] = c;
         f.len += 1;
-        if (lv.at(c) == .chest) break;
+        if (lv.at(c).halts()) break;
         const w = lv.who(c);
         if (w != grid.NO_ONE) {
             f.struck = .{ .body = w };

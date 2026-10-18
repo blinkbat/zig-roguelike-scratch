@@ -212,9 +212,9 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     if (lv.firstOpen() == null) carve.disc(lv, grid.MIDDLE, CLEARING_R, pal.open, null);
     carve.connect(lv, &rng, pal, .{ .lots = lots.slice(), .before = &base });
     settle(lv);
-    if (fitted == .wilds and (fitted.wilds.loops > 0 or fitted.wilds.rewards == .chests)) {
-        _ = branches.improve(lv, seed, doors, fitted.wilds.loops, fitted.wilds.rewards == .chests);
-        reshape(lv);
+    if (fitted == .wilds) {
+        _ = branches.improve(lv, seed, doors, fitted.wilds);
+        settle(lv);
     }
 }
 

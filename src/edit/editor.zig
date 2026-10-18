@@ -1967,12 +1967,23 @@ fn drawTip(ed: *const Editor, g: *game.Game) void {
     const tip = ed.tip orelse return;
     var fit_buf: [LINE]u8 = undefined;
     const s = g.face.fit(&fit_buf, tip, SMALL, TIP_MAX_W, false);
-    const w = g.face.width(s, SMALL) + 2 * GAP;
-    const h = SMALL + 2 * GAP;
-    const x = std.math.clamp(ed.desk.mouse.x + TIP_DX, 0, @max(0, g.screen.x - w));
-    const y = if (ed.desk.mouse.y + TIP_DY + h > g.screen.y) ed.desk.mouse.y - TIP_DY - h else ed.desk.mouse.y + TIP_DY;
-    framed(x, y, w, h);
-    g.face.draw(s, x + GAP, y + GAP, SMALL, look.TEXT);
+    const size = tagSize(g, s, GAPS);
+    const x = std.math.clamp(ed.desk.mouse.x + TIP_DX, 0, @max(0, g.screen.x - size.x));
+    const y = if (ed.desk.mouse.y + TIP_DY + size.y > g.screen.y) ed.desk.mouse.y - TIP_DY - size.y else ed.desk.mouse.y + TIP_DY;
+    drawTag(g, s, .{ .x = x, .y = y }, GAPS, PANEL_BG, look.EDGE);
+}
+
+const GAPS = P{ .x = GAP, .y = GAP };
+
+fn tagSize(g: *game.Game, s: [:0]const u8, pad: P) P {
+    return .{ .x = g.face.width(s, SMALL) + 2 * pad.x, .y = SMALL + 2 * pad.y };
+}
+
+fn drawTag(g: *game.Game, s: [:0]const u8, at: P, pad: P, bg: rl.Color, edge: ?rl.Color) void {
+    const size = tagSize(g, s, pad);
+    rl.drawRectangle(at.x, at.y, size.x, size.y, bg);
+    if (edge) |e| rl.drawRectangleLines(at.x, at.y, size.x, size.y, e);
+    g.face.draw(s, at.x + pad.x, at.y + pad.y, SMALL, look.TEXT);
 }
 
 fn framed(x: i32, y: i32, w: i32, h: i32) void {
@@ -3066,9 +3077,7 @@ fn drawDoors(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         rl.drawRectangleLinesEx(r, 1, if (d.to == null) WARN else look.DOOR.fg);
         if (ed.px() >= LABEL_PX) {
             const label = std.fmt.bufPrintZ(&buf, "{d}", .{k}) catch "";
-            const lw = g.face.width(label, SMALL) + 2 * LABEL_PAD.x;
-            rl.drawRectangle(@intFromFloat(r.x), @intFromFloat(r.y), lw, SMALL + 2 * LABEL_PAD.y, PANEL_BG);
-            g.face.draw(label, @as(i32, @intFromFloat(r.x)) + LABEL_PAD.x, @as(i32, @intFromFloat(r.y)) + LABEL_PAD.y, SMALL, look.TEXT);
+            drawTag(g, label, .{ .x = @intFromFloat(r.x), .y = @intFromFloat(r.y) }, LABEL_PAD, PANEL_BG, null);
         }
         const pk = ed.pick orelse continue;
         if (pk.eq(.{ .node = ed.node, .door = k })) rl.drawRectangleLinesEx(r, PICK_EDGE, PICKED);
@@ -3155,11 +3164,7 @@ fn fillCells(ed: *const Editor, c: rl.Rectangle, b: grid.Box, col: rl.Color) voi
 }
 
 fn plaque(g: *game.Game, c: rl.Rectangle, s: [:0]const u8) void {
-    const w = g.face.width(s, SMALL) + 2 * GAP;
-    const x: i32 = @as(i32, @intFromFloat(c.x)) + GAP;
-    const y: i32 = @as(i32, @intFromFloat(c.y)) + GAP;
-    rl.drawRectangle(x, y, w, SMALL + 2 * GAP, PLAQUE_BG);
-    g.face.draw(s, x + GAP, y + GAP, SMALL, look.TEXT);
+    drawTag(g, s, .{ .x = @as(i32, @intFromFloat(c.x)) + GAP, .y = @as(i32, @intFromFloat(c.y)) + GAP }, GAPS, PLAQUE_BG, null);
 }
 
 fn outlineCells(ed: *const Editor, c: rl.Rectangle, b: grid.Box, col: rl.Color) void {

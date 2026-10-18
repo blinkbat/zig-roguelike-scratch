@@ -301,7 +301,7 @@ pub fn headingOf(dx: f32, dy: f32) f32 {
     return if (a < 0) a + TAU else a;
 }
 
-pub const HYST: f32 = 0.14;
+const HYST: f32 = 0.14;
 
 /// `bias` is the sector currently held, kept for an extra `HYST` radians so a thumb on a boundary does not flicker.
 pub fn dirOf(heading: f32, bias: ?Dir) Dir {
@@ -312,7 +312,7 @@ pub fn dirOf(heading: f32, bias: ?Dir) Dir {
     return if (off <= SECTOR * 0.5 + HYST) b else raw;
 }
 
-pub fn angleDelta(a: f32, b: f32) f32 {
+fn angleDelta(a: f32, b: f32) f32 {
     var d = @mod(a - b, TAU);
     if (d > TAU / 2.0) d -= TAU;
     return d;

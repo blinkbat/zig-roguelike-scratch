@@ -73,17 +73,66 @@ pub fn fleck(at: rl.Vector2, r: f32, scale: f32, col: rl.Color) void {
     for (fleckBoxes(at, r, scale)) |b| fill(b, col);
 }
 
+const Stamps = struct {
+    a: rl.Vector2,
+    d: rl.Vector2,
+    steps: usize,
+    width: f32,
+    scale: f32,
+    tall: bool,
+    back: bool,
+
+    fn of(a: rl.Vector2, b: rl.Vector2, width: f32, scale: f32) Stamps {
+        const d = b.subtract(a);
+        const tall = @abs(d.y) > @abs(d.x);
+        return .{
+            .a = a,
+            .d = d,
+            .steps = @intFromFloat(@ceil(@max(@abs(d.x), @abs(d.y)) / scale)),
+            .width = width,
+            .scale = scale,
+            .tall = tall,
+            .back = (if (tall) d.y else d.x) < 0,
+        };
+    }
+
+    fn box(s: Stamps, i: usize) Box {
+        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(@max(1, s.steps)));
+        return boxOf(.{ .x = s.a.x + s.d.x * t, .y = s.a.y + s.d.y * t }, s.width, s.width, s.scale);
+    }
+
+    /// The `i`th stamp in order along the major axis, as its major then minor corner.
+    fn corner(s: Stamps, i: usize) [2]i32 {
+        const b = s.box(if (s.back) s.steps - i else i);
+        return if (s.tall) .{ b.y, b.x } else .{ b.x, b.y };
+    }
+};
+
+/// The pixels the line's square stamps cover, each column (row, if tall) put once as the span of the stamps over it.
 fn trace(a: rl.Vector2, b: rl.Vector2, width: f32, scale: f32, sink: anytype) void {
-    const d = b.subtract(a);
-    const steps: usize = @intFromFloat(@ceil(@max(@abs(d.x), @abs(d.y)) / scale));
-    var last: ?Box = null;
+    const s = Stamps.of(a, b, width, scale);
+    const size = s.box(0).w;
     var run = Run(@TypeOf(sink)){ .sink = sink };
-    for (0..steps + 1) |i| {
-        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(@max(1, steps)));
-        const box = boxOf(.{ .x = a.x + d.x * t, .y = a.y + d.y * t }, width, width, scale);
-        if (last) |l| if (l.x == box.x and l.y == box.y) continue;
-        run.add(box);
-        last = box;
+    var lo: usize = 0;
+    var hi: usize = 0;
+    var first = s.corner(0);
+    var last = first;
+    var next = if (s.steps > 0) s.corner(1) else last;
+    var c = first[0];
+    const end = s.corner(s.steps)[0] + size;
+    while (c < end) : (c += 1) {
+        while (hi < s.steps and next[0] <= c) {
+            hi += 1;
+            last = next;
+            if (hi < s.steps) next = s.corner(hi + 1);
+        }
+        while (lo < hi and first[0] + size <= c) {
+            lo += 1;
+            first = s.corner(lo);
+        }
+        const top = @min(first[1], last[1]);
+        const span = @max(first[1], last[1]) + size - top;
+        run.add(if (s.tall) .{ .x = top, .y = c, .w = span, .h = 1 } else .{ .x = c, .y = top, .w = 1, .h = span });
     }
     run.flush();
 }
@@ -135,24 +184,33 @@ test "a fleck covers each of its pixels once" {
     std.debug.print("flecks: {d} pixels over 8 sizes and scales, none drawn twice, corners cut\n", .{drawn});
 }
 
-test "a thin line covers each pixel once, its touching stamps put as one" {
-    const from = rl.Vector2{ .x = 5.4, .y = 8.2 };
-    var stamps: usize = 0;
+test "a line of any width and scale covers its stamps' pixels once each, in fewer rects than pixels" {
+    var pixels: usize = 0;
     var rects: usize = 0;
-    for ([_]rl.Vector2{ .{ .x = 50.1, .y = 12.7 }, .{ .x = 9.3, .y = 58.6 }, .{ .x = 40.5, .y = 41.2 }, .{ .x = 5.4, .y = 8.2 } }) |to| {
-        var canvas = Canvas{};
-        trace(from, to, 1, 1, Canvas.Sink{ .c = &canvas });
-        var cells: usize = 0;
-        for (canvas.covered) |row| for (row) |c| {
-            try std.testing.expect(c <= 1);
-            cells += c;
-        };
-        const d = to.subtract(from);
-        const major: usize = @intFromFloat(@ceil(@max(@abs(d.x), @abs(d.y))));
-        try std.testing.expect(cells >= major and cells <= major + 1);
-        stamps += cells;
-        rects += canvas.rects;
-    }
-    try std.testing.expect(rects < stamps);
-    std.debug.print("thin lines: {d} pixels, each once, in {d} rects\n", .{ stamps, rects });
+    var overlapped: usize = 0;
+    for ([_]f32{ 1, 2, 3 }) |width| for ([_]f32{ 1, 2 }) |scale| {
+        for ([_][2]rl.Vector2{
+            .{ .{ .x = 5.4, .y = 8.2 }, .{ .x = 50.1, .y = 12.7 } },
+            .{ .{ .x = 5.4, .y = 8.2 }, .{ .x = 9.3, .y = 52.6 } },
+            .{ .{ .x = 5.4, .y = 8.2 }, .{ .x = 40.5, .y = 41.2 } },
+            .{ .{ .x = 50.1, .y = 40.7 }, .{ .x = 8.6, .y = 9.3 } },
+            .{ .{ .x = 30.2, .y = 50.5 }, .{ .x = 36.7, .y = 7.1 } },
+            .{ .{ .x = 5.4, .y = 8.2 }, .{ .x = 5.4, .y = 8.2 } },
+        }) |ends| {
+            var canvas = Canvas{};
+            trace(ends[0], ends[1], width, scale, Canvas.Sink{ .c = &canvas });
+            var stamped = Canvas{};
+            const s = Stamps.of(ends[0], ends[1], width, scale);
+            for (0..s.steps + 1) |i| stamped.add(s.box(i));
+            for (canvas.covered, stamped.covered) |row, want| for (row, want) |c, w| {
+                try std.testing.expect(c <= 1);
+                try std.testing.expectEqual(@intFromBool(w > 0), c);
+                pixels += c;
+                overlapped += @intFromBool(w > 1);
+            };
+            rects += canvas.rects;
+        }
+    };
+    try std.testing.expect(rects < pixels);
+    std.debug.print("lines: {d} pixels, each once, in {d} rects; {d} of them stamped more than once\n", .{ pixels, rects, overlapped });
 }

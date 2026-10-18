@@ -146,6 +146,13 @@ pub const Act = enum {
         };
     }
 
+    /// It vanishes and reappears rather than jumps.
+    pub fn teleports(a: Act) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, "TELEPORTS"),
+        };
+    }
+
     /// Its swing strikes an arc round the tile aimed at.
     pub fn sweeps(a: Act) bool {
         return switch (a) {
@@ -229,7 +236,7 @@ pub const Act = enum {
     }
 
     /// Every decl probed by name above, so renaming one in its module fails the build.
-    const PROBED = .{ "DESCRIPTION", "FREE", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE" };
+    const PROBED = .{ "DESCRIPTION", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE" };
 
     comptime {
         for (PROBED) |decl| {

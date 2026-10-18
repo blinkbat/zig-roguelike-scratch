@@ -312,7 +312,7 @@ pub fn claimKeys() void {
 /// Schmitt trigger, then DAS and ARR; `settle` holds a new direction back so two keys a frame apart read as one diagonal.
 pub const Stepper = struct {
     pub const FIRE: f32 = 0.50;
-    pub const REARM: f32 = 0.32;
+    const REARM: f32 = 0.32;
     pub const DAS: f32 = 0.28;
     pub const ARR: f32 = 0.13;
     pub const SETTLE: f32 = 0.05;
