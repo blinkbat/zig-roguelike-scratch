@@ -7,7 +7,7 @@ pub const RANGE: i32 = 4;
 pub const COOLDOWN: u8 = 3;
 pub const COST: i32 = 35;
 pub const TELEPORTS = true;
-pub const DESCRIPTION = std.fmt.comptimePrint("Teleport to visible empty ground within {d} tiles. {d} mana, a turn, {d}-turn cooldown.", .{ RANGE, COST, COOLDOWN });
+pub const DESCRIPTION = std.fmt.comptimePrint("Teleport to visible empty ground within {d} tiles.", .{RANGE});
 
 comptime {
     std.debug.assert(RANGE > juke.RANGE and COST > juke.COST);

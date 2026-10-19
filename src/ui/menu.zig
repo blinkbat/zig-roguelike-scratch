@@ -5,7 +5,7 @@ const input = @import("../core/input.zig");
 const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
 
-pub const CONFIRM = input.Button.a;
+pub const CONFIRM = input.CONFIRM;
 pub const BACK = input.Button.b;
 pub const PAUSE = input.Button.pause;
 pub const CHANGE = input.Button.x;
@@ -87,9 +87,25 @@ pub fn backed(st: *const input.State) bool {
     return st.hit(BACK) or st.hit(PAUSE);
 }
 
-pub fn directionScore(from: rl.Rectangle, to: rl.Rectangle, dir: mathx.Dir, across_weight: f32) ?f32 {
-    const vx = to.x + to.width / 2 - (from.x + from.width / 2);
-    const vy = to.y + to.height / 2 - (from.y + from.height / 2);
+/// The box in `boxes` a move `dir` from `from` lands on: nearest ahead, sideways distance costing `across_weight` times as much.
+pub fn nearest(from: rl.Rectangle, boxes: []const rl.Rectangle, dir: mathx.Dir, across_weight: f32) ?usize {
+    var best: ?usize = null;
+    var best_score = std.math.floatMax(f32);
+    for (boxes, 0..) |to, i| {
+        const score = directionScore(from, to, dir, across_weight) orelse continue;
+        if (score < best_score) {
+            best_score = score;
+            best = i;
+        }
+    }
+    return best;
+}
+
+fn directionScore(from: rl.Rectangle, to: rl.Rectangle, dir: mathx.Dir, across_weight: f32) ?f32 {
+    const a = look.middle(from);
+    const b = look.middle(to);
+    const vx = b.x - a.x;
+    const vy = b.y - a.y;
     const d = dir.delta();
     const wx: f32 = @floatFromInt(d.x);
     const wy: f32 = @floatFromInt(d.y);

@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
+const damage = @import("damage.zig");
 const bash = @import("bash.zig");
 
 const P = mathx.P;
@@ -12,9 +13,9 @@ pub const MIN_RANGE: i32 = 2;
 pub const DMG_LO: i32 = 3;
 pub const DMG_HI: i32 = 5;
 pub const VERB = "charges into";
-pub const DESCRIPTION = std.fmt.comptimePrint("Rush in a straight line at a foe {d} to {d} tiles away: {d}-{d} damage, and it is knocked back a tile. {d} mana, {d}-turn cooldown.", .{ MIN_RANGE, RANGE, DMG_LO, DMG_HI, COST, COOLDOWN });
+pub const DESCRIPTION = std.fmt.comptimePrint("Rush along a clear line {d} to {d} tiles away. A foe at the end takes {s} and is knocked back a tile. Empty ground is a valid destination.", .{ MIN_RANGE, RANGE, BASE.text(null) });
 
-pub const roll = mathx.Rng.rolls(DMG_LO, DMG_HI);
+pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };
 
 pub const knocked = bash.knocked;
 
@@ -22,7 +23,7 @@ pub const knocked = bash.knocked;
 pub fn wayTo(from: P, to: P) ?mathx.Dir {
     const d = to.sub(from);
     if (d.x != 0 and d.y != 0 and @abs(d.x) != @abs(d.y)) return null;
-    return mathx.dirTo(from, from.add(d.sign()));
+    return mathx.stepDir(d.sign());
 }
 
 /// Where the hero stops: the cell before the body it charges.
@@ -30,16 +31,16 @@ pub fn stop(from: P, to: P) P {
     return to.sub(wayTo(from, to).?.delta());
 }
 
-/// A lit body in a line, `MIN_RANGE` tiles off at least, with open ground to it that nothing stands on.
+/// A lit body or empty landing in a straight line; every intervening cell must be lit and vacant.
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     const d = wayTo(from, to) orelse return false;
     const n = mathx.dist(from, to);
-    if (n < MIN_RANGE or n > RANGE or !lv.isLit(to) or lv.who(to) == grid.NO_ONE) return false;
+    if (n < MIN_RANGE or n > RANGE or !lv.isLit(to) or (!lv.vacant(to) and lv.who(to) == grid.NO_ONE)) return false;
     var at = from;
     for (0..@intCast(n - 1)) |_| {
         if (!lv.passOk(at, d)) return false;
         at = at.add(d.delta());
-        if (!lv.vacant(at)) return false;
+        if (!lv.vacant(at) or !lv.isLit(at)) return false;
     }
     return true;
 }

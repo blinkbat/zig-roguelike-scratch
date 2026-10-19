@@ -1,12 +1,13 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const damage = @import("damage.zig");
 
 pub const COST: i32 = 30;
 pub const TURNS_LO: u8 = 2;
 pub const TURNS_HI: u8 = 4;
 pub const VERB = "pins";
 pub const TAKES = "is pinned";
-pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A target it leaves alive is pinned for {d}-{d} turns: it cannot move, but strikes what stands beside it. {d} mana.", .{ TURNS_LO, TURNS_HI, COST });
+pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A target it leaves alive is pinned for {d}-{d} turns: it cannot move, but strikes what stands beside it.", .{ TURNS_LO, TURNS_HI });
 
 /// Its turns left held to its cell.
 pub const Pin = struct {
@@ -20,9 +21,7 @@ pub const Pin = struct {
     }
 };
 
-pub fn procs(_: *mathx.Rng, _: i16) bool {
-    return true;
-}
+pub const procs = damage.always;
 
 /// Pinned again, it is held for the longer of the two.
 pub fn afflict(a: anytype, rng: *mathx.Rng) void {

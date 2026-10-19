@@ -11,7 +11,30 @@ pub fn chance(comptime pc: u32) fn (*mathx.Rng, i16) bool {
         }
     }.procs;
 }
+/// A skill's `procs` landing every time, drawing nothing.
+pub fn always(_: *mathx.Rng, _: i16) bool {
+    return true;
+}
+
 pub const Resists = std.EnumArray(Element, i16);
+
+/// A skill's damage roll before its attribute, `lo` to `hi`, both included.
+pub const Base = struct {
+    lo: i32,
+    hi: i32,
+
+    pub fn roll(b: Base, rng: *mathx.Rng) i32 {
+        return rng.range(b.lo, b.hi);
+    }
+
+    /// A skill description's "lo-hi base [element ]damage".
+    pub fn text(comptime b: Base, comptime el: ?Element) []const u8 {
+        return std.fmt.comptimePrint("{d}-{d} base {s}damage", .{ b.lo, b.hi, if (el) |e| @tagName(e) ++ " " else "" });
+    }
+};
+
+/// The least and most a scaled roll deals.
+pub const Span = struct { lo: i32, hi: i32 };
 
 pub const Damage = struct {
     physical: i32 = 0,
@@ -20,7 +43,7 @@ pub const Damage = struct {
     pub fn total(self: Damage, resists: Resists) i32 {
         var sum: i64 = @max(0, self.physical);
         for (std.enums.values(Element)) |e| sum += resisted(self.elements.get(e), resists.get(e));
-        return @intCast(@min(sum, std.math.maxInt(i32)));
+        return std.math.lossyCast(i32, sum);
     }
 
     pub fn reaches(self: Damage, resists: Resists, e: Element) bool {
@@ -63,7 +86,7 @@ pub fn Lasting(comptime TURNS: u8, comptime Arg: type, comptime amount: fn (Arg)
 
 pub fn resisted(amount: i32, resist: i16) i32 {
     const scale: i64 = mathx.PERCENT - @as(i64, std.math.clamp(resist, -mathx.PERCENT, mathx.PERCENT));
-    return @intCast(@min(@divTrunc(@as(i64, @max(0, amount)) * scale, mathx.PERCENT), std.math.maxInt(i32)));
+    return std.math.lossyCast(i32, @divTrunc(@as(i64, @max(0, amount)) * scale, mathx.PERCENT));
 }
 
 test "each elemental resistance reduces only its own damage and leaves physical damage whole" {

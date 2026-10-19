@@ -13,9 +13,9 @@ pub const DMG_HI: i32 = 4;
 pub const CHANCE: u32 = 50;
 pub const VERB = "shield-bashes";
 pub const TAKES = clock.STUNNED;
-pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} damage to an adjacent foe and knocks it back a tile. {d}% chance to stun. {d} mana, {d}-turn cooldown.", .{ DMG_LO, DMG_HI, CHANCE, COST, COOLDOWN });
+pub const DESCRIPTION = std.fmt.comptimePrint("{s} to an adjacent foe and knocks it back a tile. {s}.", .{ BASE.text(null), clock.stunNote(CHANCE) });
 
-pub const roll = mathx.Rng.rolls(DMG_LO, DMG_HI);
+pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };
 
 pub const procs = damage.chance(CHANCE);
 pub const afflict = clock.stuns;

@@ -1,15 +1,14 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const bleeding = @import("bleeding.zig");
+const damage = @import("damage.zig");
 
 pub const COST: i32 = 30;
 pub const VERB = "shoots a barbed arrow into";
 pub const TAKES = bleeding.TAKES;
-pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A target it leaves alive always bleeds: {d} a turn, {d} on a turn it moves, for {d} turns. {d} mana.", .{ bleeding.STILL, bleeding.MOVING, bleeding.TURNS, COST });
+pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A target it leaves alive always bleeds: {d} a turn, {d} on a turn it moves, for {d} turns.", .{ bleeding.STILL, bleeding.MOVING, bleeding.TURNS });
 
-pub fn procs(_: *mathx.Rng, _: i16) bool {
-    return true;
-}
+pub const procs = damage.always;
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.bleed.start();

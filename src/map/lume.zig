@@ -32,7 +32,7 @@ pub fn skyReach(outdoors: bool, hour: f32, sight: i32) f32 {
     return day.daylight(hour) * @as(f32, @floatFromInt(sight));
 }
 
-/// Only as far as `sight` of `viewer` reaches: nothing past it is read.
+/// Only light pools overlapping the viewer's sight can affect visibility.
 fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, out: *[grid.CELLS]bool) void {
     @memset(out, false);
     for (lv.torches()) |t| {
@@ -41,7 +41,6 @@ fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, 
     for (carried) |s| fov.castInto(lv, s.at, s.reach, out);
 }
 
-/// Takes `lv.lit` as `fov.cast` left it and keeps it as `los`.
 fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool, was_seen: *const [grid.CELLS]bool) void {
     lv.los = lv.lit;
     for (0..grid.CELLS) |i| {

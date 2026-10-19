@@ -9,6 +9,8 @@ const SHADOW_A: u16 = 200;
 const SHADOW_STEP: i32 = 14;
 pub const BODY: i32 = 20;
 pub const SMALL: i32 = 16;
+pub const HEAD: i32 = 24;
+pub const TINY: i32 = 12;
 
 /// Drawn from its own point-filtered atlas, not the mipmapped one.
 pub fn isNative(size: i32) bool {
@@ -16,7 +18,7 @@ pub fn isNative(size: i32) bool {
 }
 
 comptime {
-    std.debug.assert(isNative(BODY) and isNative(SMALL));
+    std.debug.assert(isNative(BODY) and isNative(SMALL) and isNative(HEAD) and isNative(TINY));
 }
 const ASCII_LO: i32 = ' ';
 const ASCII_N: usize = '~' + 1 - ASCII_LO;
@@ -150,8 +152,14 @@ pub const Face = struct {
         self.centred(&s, cx, cy, size, col);
     }
 
-    fn centred(self: *const Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+    /// `draw`, its middle on `cx`, `cy`.
+    pub fn centred(self: *const Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
         self.drawMid(s, cx, topFor(cy, size), size, col);
+    }
+
+    /// `text`, its middle on `cx`, `cy`.
+    pub fn textCentred(self: *const Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+        self.textMid(s, cx, topFor(cy, size), size, col);
     }
 
     fn topFor(cy: i32, size: i32) i32 {

@@ -18,7 +18,7 @@ pub const TAKES = "is chilled";
 pub const ELEMENT: damage.Element = .cold;
 /// Its chance to chill, as every cold skill's description says it.
 pub const CHILL_NOTE = std.fmt.comptimePrint("{d}% chill (cold resistance lowers chance)", .{CHANCE});
-pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} cold in a {d}-tile cone. {s}: skip 1 in {d} turns for {d} turns. {d} mana.", .{ COLD_LO, COLD_HI, RANGE, CHILL_NOTE, CYCLE, TURNS, COST });
+pub const DESCRIPTION = std.fmt.comptimePrint("{s} in a {d}-tile cone. {s}: skip 1 in {d} turns for {d} turns.", .{ BASE.text(ELEMENT), RANGE, CHILL_NOTE, CYCLE, TURNS });
 
 pub const Chill = struct {
     turns: u8 = 0,
@@ -37,7 +37,7 @@ pub const Chill = struct {
     }
 };
 
-pub const roll = mathx.Rng.rolls(COLD_LO, COLD_HI);
+pub const BASE = damage.Base{ .lo = COLD_LO, .hi = COLD_HI };
 
 pub fn chance(resist: i16) u32 {
     return @intCast(@min(mathx.PERCENT, damage.resisted(CHANCE, resist)));
@@ -51,7 +51,7 @@ pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.chill.apply();
 }
 
-pub const Cone = grid.Area(grid.Cells.span(RANGE) * grid.Cells.span(RANGE));
+pub const Cone = grid.Area(grid.Cells.square(RANGE));
 
 fn castR(range: i32) i32 {
     return mathx.roundTiesDown(@as(f32, @floatFromInt(range)) * std.math.sqrt2);
@@ -69,9 +69,7 @@ pub fn spread(lv: *const grid.Level, at: P, range: i32, ctx: anytype, comptime k
     fov.castInto(lv, at, castR(range), &visible);
     var cells = grid.Cells.around(at, range);
     while (cells.next()) |p| {
-        if (!lv.walkable(p) or !visible[grid.Level.idx(p)] or !keep(ctx, p)) continue;
-        out.cells[out.n] = p;
-        out.n += 1;
+        if (lv.walkable(p) and visible[grid.Level.idx(p)] and keep(ctx, p)) out.push(p);
     }
     return out;
 }
@@ -150,7 +148,7 @@ test "glacial cone follows cardinal diagonal and oblique shots and stops at wall
         try std.testing.expect(area.has(impact));
         try std.testing.expect(area.has(impact.add(d.scaled(2))));
         try std.testing.expect(!area.has(impact.sub(d)));
-        for (area.cells[0..area.n]) |p| try std.testing.expect(mathx.dist(impact, p) <= RANGE);
+        for (area.slice()) |p| try std.testing.expect(mathx.dist(impact, p) <= RANGE);
     }
     const from = P{ .x = 15, .y = 18 };
     var area = cone(&lv, from, impact);

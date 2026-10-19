@@ -497,8 +497,17 @@ pub fn Area(comptime N: usize) type {
         cells: [N]P = undefined,
         n: usize = 0,
 
+        pub fn slice(self: *const @This()) []const P {
+            return self.cells[0..self.n];
+        }
+
+        pub fn push(self: *@This(), p: P) void {
+            self.cells[self.n] = p;
+            self.n += 1;
+        }
+
         pub fn has(self: *const @This(), p: P) bool {
-            for (self.cells[0..self.n]) |c| {
+            for (self.slice()) |c| {
                 if (c.eq(p)) return true;
             }
             return false;
@@ -608,6 +617,11 @@ pub const Cells = struct {
 
     pub fn span(r: i32) i32 {
         return r * 2 + 1;
+    }
+
+    /// How many cells `around` a cell `r` out walks.
+    pub fn square(r: i32) i32 {
+        return span(r) * span(r);
     }
 
     pub fn around(c: P, r: i32) Cells {

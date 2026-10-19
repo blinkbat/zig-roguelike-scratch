@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
+const damage = @import("damage.zig");
 
 const P = mathx.P;
 
@@ -11,9 +12,9 @@ pub const VERB = "cleaves";
 /// Turns off the way aimed, round the hero, of the tiles it sweeps.
 const SPREAD = [_]u3{ 7, 0, 1 };
 pub const WIDTH: usize = SPREAD.len;
-pub const DESCRIPTION = std.fmt.comptimePrint("Swing through the {d} tiles in an arc before you: {d}-{d} damage to each foe there. {d} mana.", .{ WIDTH, DMG_LO, DMG_HI, COST });
+pub const DESCRIPTION = std.fmt.comptimePrint("Swing through the {d} tiles in an arc before you: {s} to each foe there.", .{ WIDTH, BASE.text(null) });
 
-pub const roll = mathx.Rng.rolls(DMG_LO, DMG_HI);
+pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };
 
 pub const Arc = grid.Area(WIDTH);
 
@@ -23,9 +24,7 @@ pub fn arc(lv: *const grid.Level, from: P, to: P) Arc {
     const d = mathx.dirTo(from, to) orelse return out;
     for (SPREAD) |turn| {
         const s = d.turned(turn);
-        if (!lv.passOk(from, s)) continue;
-        out.cells[out.n] = from.add(s.delta());
-        out.n += 1;
+        if (lv.passOk(from, s)) out.push(from.add(s.delta()));
     }
     return out;
 }
@@ -33,7 +32,7 @@ pub fn arc(lv: *const grid.Level, from: P, to: P) Arc {
 /// An arc with a body or barrel in it.
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     const a = arc(lv, from, to);
-    for (a.cells[0..a.n]) |p| {
+    for (a.slice()) |p| {
         if (lv.taken(p)) return true;
     }
     return false;

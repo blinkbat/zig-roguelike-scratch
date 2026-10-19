@@ -6,6 +6,11 @@ pub const TURN: i32 = 100;
 const STUN: i32 = TURN;
 pub const STUNNED = "is stunned";
 
+/// A stunning skill's chance, as its description says it.
+pub fn stunNote(comptime pc: u32) []const u8 {
+    return std.fmt.comptimePrint("{d}% chance to stun", .{pc});
+}
+
 /// Brogue's `ticksUntilTurn`: each turn pays `TURN`; a body still owing ticks loses its action.
 pub const Clock = struct {
     ticks: i32 = 0,

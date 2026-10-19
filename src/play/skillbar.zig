@@ -5,6 +5,7 @@ const grid = @import("../map/grid.zig");
 const bow = @import("bow.zig");
 const burning = @import("burning.zig");
 const damage = @import("damage.zig");
+const attrs = @import("attrs.zig");
 const glacial = @import("glacial.zig");
 const juke = @import("juke.zig");
 const blink = @import("blink.zig");
@@ -62,25 +63,7 @@ pub const Act = enum {
     }
 
     fn module(comptime a: Act) ?type {
-        return switch (a) {
-            .juke => juke,
-            .burning_arrow => burning,
-            .glacial_shot => glacial,
-            .spark => spark,
-            .blink => blink,
-            .shield_bash => bash,
-            .cleave => cleave,
-            .pinning_shot => pinning,
-            .barbed_arrow => barbed,
-            .frost_nova => nova,
-            .fireball => fireball,
-            .chain_lightning => chain,
-            .mana_shield => ward,
-            .charge => charge,
-            .life_flask => flask.Life,
-            .mana_flask => flask.Mana,
-            .shoot, .wait, .secondary => null,
-        };
+        return SKILLS.get(a).module;
     }
 
     fn has(comptime a: Act, comptime decl: []const u8) bool {
@@ -88,16 +71,19 @@ pub const Act = enum {
         return @hasDecl(m, decl);
     }
 
-    /// Bow targets a lit line; leap a landing; swing an adjacent tile; rush a body down a running line.
+    /// Bow targets a lit line; leap a landing; swing an adjacent tile; rush a body or empty landing down a running line.
     pub const Reticle = enum { bow, leap, swing, rush };
 
     pub fn reticle(a: Act) ?Reticle {
         return switch (a) {
-            .shoot, .burning_arrow, .glacial_shot, .spark, .pinning_shot, .barbed_arrow, .fireball, .chain_lightning => .bow,
-            .juke, .blink => .leap,
-            .shield_bash, .cleave => .swing,
-            .charge => .rush,
-            .wait, .secondary, .life_flask, .mana_flask, .frost_nova, .mana_shield => null,
+            inline else => |t| comptime SKILLS.get(t).reticle,
+        };
+    }
+
+    /// The style its damage scales by; null for skills that deal none.
+    pub fn style(a: Act) ?attrs.Style {
+        return switch (a) {
+            inline else => |t| comptime SKILLS.get(t).style,
         };
     }
 
@@ -108,6 +94,11 @@ pub const Act = enum {
         };
     }
 
+    /// Turns using it spends: none for a free action or the set modifier.
+    pub fn turns(a: Act) u8 {
+        return @intFromBool(a != .secondary and !a.free());
+    }
+
     /// The flask it drinks.
     pub fn flaskOf(a: Act) ?flask.Kind {
         return switch (a) {
@@ -115,17 +106,21 @@ pub const Act = enum {
         };
     }
 
-    /// A leap's furthest landing, or a rush's furthest mark.
+    /// Furthest target in cells; zero for actions without a reticle.
     pub fn reach(a: Act) i32 {
         return switch (a) {
-            inline else => |t| if (comptime reticle(t) == .leap or reticle(t) == .rush) module(t).?.RANGE else 0,
+            inline else => |t| if (comptime reticle(t)) |r| switch (r) {
+                .bow => bow.RANGE,
+                .swing => MELEE_REACH,
+                .leap, .rush => module(t).?.RANGE,
+            } else 0,
         };
     }
 
     /// A rush's nearest mark.
     pub fn nearest(a: Act) i32 {
         return switch (a) {
-            inline else => |t| if (comptime has(t, "MIN_RANGE")) module(t).?.MIN_RANGE else 1,
+            inline else => |t| if (comptime has(t, "MIN_RANGE")) module(t).?.MIN_RANGE else MELEE_REACH,
         };
     }
 
@@ -182,6 +177,18 @@ pub const Act = enum {
         };
     }
 
+    /// Its physical and elemental rolls before its attribute; an arrow's physical is the bow's.
+    pub fn bases(a: Act) Bases {
+        return switch (a) {
+            inline else => |t| comptime .{
+                .physical = if (reticle(t) == .bow and bolt(t) == null) bow.BASE else if (has(t, "BASE") and !has(t, "ELEMENT")) module(t).?.BASE else null,
+                .element = if (has(t, "ELEMENT")) module(t).?.BASE else null,
+            },
+        };
+    }
+
+    pub const Bases = struct { physical: ?damage.Base, element: ?damage.Base };
+
     /// Its missile bursts over an area where it strikes.
     pub fn bursts(a: Act) bool {
         return switch (a) {
@@ -236,9 +243,10 @@ pub const Act = enum {
     }
 
     /// Every decl probed by name above, so renaming one in its module fails the build.
-    const PROBED = .{ "DESCRIPTION", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE" };
+    const PROBED = .{ "DESCRIPTION", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE", "BASE" };
 
     comptime {
+        @setEvalBranchQuota(10_000);
         for (PROBED) |decl| {
             var found = false;
             for (std.enums.values(Act)) |a| found = found or has(a, decl);
@@ -248,6 +256,31 @@ pub const Act = enum {
 };
 
 pub const ACTS = std.enums.values(Act);
+/// A swing's reach, and a rush's nearest mark unless its module says otherwise.
+const MELEE_REACH: i32 = 1;
+
+const Skill = struct { module: ?type, reticle: ?Act.Reticle = null, style: ?attrs.Style = null };
+const SKILLS = std.EnumArray(Act, Skill).init(.{
+    .shoot = .{ .module = null, .reticle = .bow, .style = .ranged },
+    .wait = .{ .module = null },
+    .secondary = .{ .module = null },
+    .juke = .{ .module = juke, .reticle = .leap },
+    .burning_arrow = .{ .module = burning, .reticle = .bow, .style = .ranged },
+    .glacial_shot = .{ .module = glacial, .reticle = .bow, .style = .ranged },
+    .spark = .{ .module = spark, .reticle = .bow, .style = .spell },
+    .blink = .{ .module = blink, .reticle = .leap },
+    .shield_bash = .{ .module = bash, .reticle = .swing, .style = .melee },
+    .cleave = .{ .module = cleave, .reticle = .swing, .style = .melee },
+    .pinning_shot = .{ .module = pinning, .reticle = .bow, .style = .ranged },
+    .barbed_arrow = .{ .module = barbed, .reticle = .bow, .style = .ranged },
+    .frost_nova = .{ .module = nova, .style = .spell },
+    .fireball = .{ .module = fireball, .reticle = .bow, .style = .spell },
+    .chain_lightning = .{ .module = chain, .reticle = .bow, .style = .spell },
+    .mana_shield = .{ .module = ward },
+    .charge = .{ .module = charge, .reticle = .rush, .style = .melee },
+    .life_flask = .{ .module = flask.Life },
+    .mana_flask = .{ .module = flask.Mana },
+});
 
 /// The skills a class may bind, in the bind picker's order.
 pub fn kit(c: hero.Class) []const Act {
@@ -259,7 +292,9 @@ pub fn kit(c: hero.Class) []const Act {
 }
 
 comptime {
+    @setEvalBranchQuota(10_000);
     for (ACTS) |a| {
+        if ((a.reticle() == .bow or Act.has(a, "BASE")) != (a.style() != null)) @compileError(@tagName(a) ++ ": damage skills must declare their style");
         var n: usize = 0;
         for (hero.CLASSES) |c| {
             if (std.mem.indexOfScalar(Act, kit(c), a) != null) n += 1;
@@ -334,6 +369,15 @@ pub const Bar = struct {
         }
         if (self.modifier == s.button) self.modifier = null;
         self.set.getPtr(s.set).set(s.button, a);
+    }
+
+    /// The first slot with nothing bound, primary set first.
+    pub fn firstEmpty(self: Bar) ?Slot {
+        for (SETS) |set| for (SLOTS) |button| {
+            const s = Slot{ .set = set, .button = button };
+            if (self.at(s) == null) return s;
+        };
+        return null;
     }
 
     pub fn clear(self: *Bar, s: Slot) void {
@@ -413,8 +457,8 @@ fn primary(c: hero.Class) Row {
         },
         .knight => {
             r.set(.x, .cleave);
-            r.set(.b, .shield_bash);
-            r.set(.a, .charge);
+            r.set(.b, .charge);
+            r.set(.a, .shield_bash);
         },
     }
     return r;
@@ -432,7 +476,7 @@ test "each class starts with its own skills bound, and only skills of its kit" {
         std.debug.print("{s}: {d} slots bound from a kit of {d}\n", .{ c.title(), bound, kit(c).len });
     }
     try std.testing.expectEqual(@as(?Act, .spark), Bar.of(.wizard).at(.{ .set = .primary, .button = .x }));
-    try std.testing.expectEqual(@as(?Act, .shield_bash), Bar.of(.knight).at(.{ .set = .primary, .button = .b }));
+    try std.testing.expectEqual(@as(?Act, .charge), Bar.of(.knight).at(.{ .set = .primary, .button = .b }));
 }
 
 pub const BINDS = Button.view;

@@ -385,6 +385,18 @@ pub const Atlas = struct {
         return self.node_n - 1;
     }
 
+    /// Replaced by one bespoke node floored over `room`, starting at `at`; returns that node.
+    pub fn oneRoom(self: *Atlas, room: grid.Box, at: P) usize {
+        std.debug.assert(room.holds(at));
+        self.* = .{};
+        const n = self.add(.{ .bespoke = .{} }).?;
+        const b = &self.node[n].plan.bespoke;
+        var cells = room.cells();
+        while (cells.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
+        self.start = .{ .node = n, .at = at };
+        return n;
+    }
+
     fn freeSlot(self: *Atlas) P {
         const cols: i32 = @intCast(GRAPH_COLS);
         var i: i32 = 0;
@@ -1360,7 +1372,7 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
     try std.testing.expect(wound / RUNS > 1.1);
 }
 
-test "the strand reconnects side paths and rewards remaining branches with closed chests" {
+test "the strand reconnects side paths and reliably supplies reachable chests and barrels" {
     const branches = @import("branches.zig");
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);
@@ -1375,9 +1387,13 @@ test "the strand reconnects side paths and rewards remaining branches with close
     var queue: [grid.CELLS]u32 = undefined;
     var loops: usize = 0;
     var chests: usize = 0;
+    var barrels: usize = 0;
     var least: usize = grid.CELLS;
     var most: usize = 0;
-    const RUNS = 32;
+    var barrel_least: usize = grid.CELLS;
+    var barrel_most: usize = 0;
+    var farthest_first: i32 = 0;
+    const RUNS = 128;
     for (0..RUNS) |i| {
         const seed = 0xC4E57 +% i *% 7919;
         nd.stamp(&expected, seed);
@@ -1387,24 +1403,49 @@ test "the strand reconnects side paths and rewards remaining branches with close
         nd.plan.procgen.floor.wilds = settings;
         const result = branches.improve(&lv, seed, doors, settings);
         try std.testing.expectEqualSlices(grid.Tile, &expected.tile, &lv.tile);
-        try std.testing.expectEqual(lv.openCount(), grid.distances(&lv, doors[0], &dist, &queue));
+        try std.testing.expectEqualSlices(bool, &expected.barrel, &lv.barrel);
+        var blocked = lv;
+        for (blocked.barrel, 0..) |on, k| {
+            if (on) blocked.tile[k] = .wall;
+        }
+        const start = landing(&lv, a.start.at, &.{}) orelse return error.NoFloor;
+        try std.testing.expectEqual(blocked.openCount(), grid.distances(&blocked, start, &dist, &queue));
+        for (doors) |door| try std.testing.expect(dist[grid.Level.idx(door)] >= 0);
         try std.testing.expect(std.mem.indexOfScalar(grid.Tile, &lv.tile, .chest_open) == null);
+        var counted_chests: usize = 0;
+        var counted_barrels: usize = 0;
+        var first_barrel: i32 = grid.CELLS;
         for (lv.tile, 0..) |t, k| {
-            if (t != .chest) continue;
+            if (t != .chest and !lv.barrel[k]) continue;
+            counted_chests += @intFromBool(t == .chest);
+            counted_barrels += @intFromBool(lv.barrel[k]);
             const p = grid.Level.of(k);
+            try std.testing.expect(lv.doorAt(p) == null and !grid.Level.onRim(p));
+            try std.testing.expect(!lv.torch.has(lume.torchWall(p)));
             var reachable = false;
             for (mathx.ALL_DIRS) |d| {
                 const q = p.add(d.delta());
-                if (grid.Level.inside(q) and dist[grid.Level.idx(q)] >= 0) reachable = true;
+                if (grid.Level.inside(q) and dist[grid.Level.idx(q)] >= 0) {
+                    reachable = true;
+                    if (lv.barrel[k]) first_barrel = @min(first_barrel, dist[grid.Level.idx(q)] + 1);
+                }
             }
             try std.testing.expect(reachable);
         }
+        try std.testing.expectEqual(result.chests, counted_chests);
+        try std.testing.expectEqual(result.barrels, counted_barrels);
+        try std.testing.expect(counted_chests >= 3);
+        try std.testing.expect(counted_barrels >= 12);
         loops += result.loops;
         chests += result.chests;
+        barrels += result.barrels;
         least = @min(least, result.chests);
         most = @max(most, result.chests);
+        barrel_least = @min(barrel_least, result.barrels);
+        barrel_most = @max(barrel_most, result.barrels);
+        farthest_first = @max(farthest_first, first_barrel);
     }
-    std.debug.print("the strand over {d} rolls: {d} paths rejoined, {d} closed chests ({d} to {d} per map); every chest and exit reachable\n", .{ RUNS, loops, chests, least, most });
+    std.debug.print("the strand over {d} rolls: {d} paths rejoined, {d} closed chests ({d} to {d}), {d} barrels ({d} to {d}); first barrel within {d} steps; every reward and exit reachable without breaking barrels\n", .{ RUNS, loops, chests, least, most, barrels, barrel_least, barrel_most, farthest_first });
     try std.testing.expect(loops > RUNS);
     try std.testing.expect(chests > 0);
 }

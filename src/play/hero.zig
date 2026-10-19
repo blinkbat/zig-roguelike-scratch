@@ -2,10 +2,10 @@ const std = @import("std");
 const actor = @import("actor.zig");
 const menu = @import("../ui/menu.zig");
 const cleave = @import("cleave.zig");
+const attr = @import("attrs.zig");
 
 const NUMBERS = [_][]const u8{ "none", "one", "two", "three", "four", "five", "six", "seven", "eight" };
 
-pub const MANA: i32 = 100;
 pub const MANA_REGEN: i32 = 1;
 /// Hp then most hp, as a save slot reads it.
 pub const HP_FMT = "HP {d}/{d}";
@@ -25,11 +25,16 @@ pub const Class = enum {
     }
 
     pub fn blurb(c: Class) [:0]const u8 {
-        return switch (c) {
-            .archer => "A bow that reaches what it sees, and a kick for what comes close",
-            .wizard => "Sparks that stun what they strike, and a blink to be elsewhere",
-            .knight => std.fmt.comptimePrint("A shield that knocks foes back stunned, and a blade that sweeps {s} at once", .{NUMBERS[cleave.WIDTH]}),
-        };
+        return SPECS.getPtrConst(c).blurb;
+    }
+
+    pub fn attrs(c: Class) attr.Attrs {
+        return SPECS.getPtrConst(c).attrs;
+    }
+
+    /// Its bump at a foe beside it.
+    pub fn strike(c: Class) actor.Strike {
+        return SPECS.getPtrConst(c).strike;
     }
 
     pub fn kind(c: Class) actor.Kind {
@@ -38,6 +43,25 @@ pub const Class = enum {
         };
     }
 };
+
+const Spec = struct { attrs: attr.Attrs, strike: actor.Strike, blurb: [:0]const u8 };
+const SPECS = std.EnumArray(Class, Spec).init(.{
+    .archer = .{
+        .attrs = .of(.{ .strength = 14, .dexterity = 20, .intelligence = 10 }),
+        .strike = .{ .lo = 1, .hi = 2, .verb = "kicks" },
+        .blurb = "A bow that reaches what it sees, and a kick for what comes close",
+    },
+    .wizard = .{
+        .attrs = .of(.{ .strength = 8, .dexterity = 10, .intelligence = 20 }),
+        .strike = .{ .lo = 1, .hi = 2, .verb = "bonks" },
+        .blurb = "Sparks that stun what they strike, and a blink to be elsewhere",
+    },
+    .knight = .{
+        .attrs = .of(.{ .strength = 20, .dexterity = 10, .intelligence = 10 }),
+        .strike = .{ .lo = 2, .hi = 4, .verb = "slashes" },
+        .blurb = std.fmt.comptimePrint("A shield that knocks foes back stunned, and a blade that sweeps {s} at once", .{NUMBERS[cleave.WIDTH]}),
+    },
+});
 
 pub const CLASSES = std.enums.values(Class);
 pub const DEFAULT: Class = @field(Class, @tagName(actor.HERO));

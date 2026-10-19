@@ -8,6 +8,7 @@ const bleeding = @import("bleeding.zig");
 const clock = @import("clock.zig");
 const pinning = @import("pinning.zig");
 const ward = @import("ward.zig");
+const heroes = @import("hero.zig");
 
 const P = mathx.P;
 
@@ -138,9 +139,7 @@ const SLAM = Blow{ .strike = .{ .lo = 2, .hi = 5, .verb = "slams" } };
 
 pub fn row(k: Kind) Row {
     return switch (k) {
-        .archer => heroRow("archer", 24, .{ .lo = 1, .hi = 2, .verb = "kicks" }),
-        .wizard => heroRow("wizard", 18, .{ .lo = 1, .hi = 2, .verb = "bonks" }),
-        .knight => heroRow("knight", 30, .{ .lo = 2, .hi = 4, .verb = "slashes" }),
+        inline .archer, .wizard, .knight => |h| heroRow(@field(heroes.Class, @tagName(h))),
         .rat => .{ .name = "rat", .movement = .ground, .foe_type = .beast, .hp = 6, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "bites" } } },
         .slime => .{ .name = "slime", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half },
         .slime_half => smaller(.slime, "half slime", .slime_quarter),
@@ -150,8 +149,8 @@ pub fn row(k: Kind) Row {
     };
 }
 
-fn heroRow(name: [:0]const u8, hp: i32, blow: Strike) Row {
-    return .{ .name = name, .movement = .ground, .foe_type = null, .hp = hp, .sight = 10, .light = 5, .blow = .{ .strike = blow } };
+fn heroRow(comptime c: heroes.Class) Row {
+    return .{ .name = @tagName(c), .movement = .ground, .foe_type = null, .hp = c.attrs().life(), .sight = 10, .light = 5, .blow = .{ .strike = c.strike() } };
 }
 
 fn smaller(of: Kind, name: [:0]const u8, splits: ?Kind) Row {

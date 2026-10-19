@@ -45,7 +45,10 @@ PS button do nothing; GLFW reads no touchpad.
   name, so a new pad needs no rebuild. To update, replace the asset from the repo's `gamecontrollerdb.txt`.
 - **Which pad**: the first of raylib's four slots that GLFW has a mapping for, until another pad presses a button or
   pulls a trigger past its latch (`input.choosePad`). A wheel or an unmapped joystick is passed over.
-- **Focus**: play input is cleared while the window is out of focus, including unsettled taps and queued walks;
+- **Queued input**: movement, skills and interactions asked for while the last turn is still drawn run once it is quiet;
+  the latest wins, except that a held walk repeating does not displace a queued skill or interaction.
+  Interactions queued during door travel open the nearby menu after arrival.
+- **Focus**: play input is cleared while the window is out of focus, including unsettled taps and queued actions;
   the current turn's presentation finishes without spending another turn. Device icons are retained, and trigger
   latches keep polling so a held trigger does not register a new press on return.
 - **Triggers** press past 60% of their travel and let go under 40% (`input.TRIGGER_ON`/`OFF`), not raylib's one line
@@ -62,33 +65,38 @@ PS button do nothing; GLFW reads no touchpad.
 | Inspect HUD (from play) | Right-stick click (RS/R3) | I |
 | Get out (reticle, binds, menus, pause) | B or Menu | X or Esc (Esc alone in play) |
 | Confirm, select | A | Enter, Space or Z |
+| Interact in play | A / Cross | Enter or Space |
+| Scroll event log | Inspect log, up/down | Wheel over log, or Inspect then up/down |
 | Bind screen: change, remove | X, Y | C, Del |
 | Delete a save | Y | Del |
 | Fullscreen | Options > Fullscreen | Alt+Enter, or Options |
 | Name the hero | walk the letter grid, A types, X deletes | type it; Backspace deletes, Enter is done |
 
-Class defaults and both skill sets live in `skillbar.Bar.of`; available skills live in `skillbar.kit`.
+Class kits and template bindings live in `skillbar`; `progress.State` filters new-run defaults and the bind picker to learned skills.
 With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B, RB, RT.
 
 - **Everything is slots.** On the pad a slot is its button. On the keyboard it is a number (`input.SLOT_ORDER`), and
   the slot holding "Activate Secondary Skill Set" is Ctrl instead, so moving the modifier renumbers the rest. The bar
   and bind screen show whichever the device is, as icons.
-- **Menus and targeting have their own keys.** In play the numbers, Ctrl, Tab, Esc and I handle skills and screens (`State.context`); Enter,
-  Space, Z, X, C and Del work in menus or targeting and never fire a slot. While a name is typed the letters and Space type, so
+- **Menus and targeting have their own keys.** In play the numbers, Ctrl, Tab, Esc and I handle skills and screens (`State.context`); Enter and Space interact with visible objects underfoot or adjacent, while menu letters never fire a slot. While a name is typed the letters and Space type, so
   Enter is done there. Esc gets out of whatever is open, a step at a time.
 - **Target once, then confirm or back out.** A (Cross), Enter, Space or Z confirms a target; B (Circle), Menu, X or
-  Esc cancels. Pressing the skill again does not confirm it unless that button is also the standard confirm.
-  B always cancels, even when it opened the skill. Secondary skills keep their selected set after the modifier is released.
+  Esc cancels. On the keyboard the skill's own number confirms too (1, then 1); on the pad pressing the skill again
+  does not confirm it unless that button is also the standard confirm. B always cancels, even when it opened the skill. Secondary skills keep their selected set after the modifier is released.
 - **Hold View for binds, no radial.** A tap of View does nothing in play. A press of View that closes the bind screen or
   cancels a reticle is spent (`State.spend`), so holding it on does not open the binds again.
 - **Menu taps to pause** from play, as PoE2's taps to the inventory; anywhere else it backs out, as Esc does.
 - **Pause > Debug** contains Restart Map and Reveal Map. Reveal shows terrain and the minimap without changing
   normal sight or saved exploration; switching it off restores the normal view. Back exits Debug to Pause first.
-- **Pause > Character** opens the equipment, inventory, stats and passives UI. Move left/right on the tabs,
-  down into the equipment or inventory slots, and up past the top row to the tabs. Confirm on an equipment
-  slot browses the inventory; mouse clicks also select tabs, slots and the inventory shortcut. Back returns
-  to Pause. Equipment, inventory and passives are empty; Stats shows the existing life and mana caps.
-- **Inspect** walks the life orb, skill slots, mana orb and active statuses without spending a turn. B, Menu or
+- **Pause > Character** opens equipment, the inventory list, stats, shared passives and class skills. Move left/right
+  across tabs, down into content, or click a row/node. Back exits the current confirmation/action/content layer first,
+  then returns to Pause. Equipment uses the inspected D2 paperdoll; item details show worn/item/delta columns.
+  Item changes require a separate Cancel-first confirmation and spend one turn; point allocation spends points.
+- **Interact** opens a list of visible items, chests and doors on the hero's cell or adjacent cells. Selecting an entry
+  opens a Cancel-first confirmation; browsing and canceling are free. A / Cross prioritizes nearby interaction over
+  its skill binding. Gold collects automatically when stepping or arriving onto it.
+- **Inspect** walks the life orb, skill slots, mana orb, active statuses and event log without spending a turn. The
+  log scrolls up/down while selected; move sideways to leave it. B, Menu or
   another right-stick click closes it; keyboard X, Esc or I does the same. Holding the modifier (or Ctrl) shows the
   secondary set's slots there too (`State.sets`).
 - **The editor is a desk tool** (`input.Desk`): keyboard and mouse only, by design.

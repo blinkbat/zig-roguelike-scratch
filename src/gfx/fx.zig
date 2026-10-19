@@ -6,7 +6,6 @@ const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
 const glacial = @import("../play/glacial.zig");
 const burning = @import("../play/burning.zig");
-const bleeding = @import("../play/bleeding.zig");
 const look = @import("look.zig");
 const font = @import("font.zig");
 const menu = @import("../ui/menu.zig");
@@ -42,7 +41,7 @@ const STAIN_W: f32 = 1.5;
 const STAIN_H: f32 = 0.8;
 /// Of a flight that leaves no stain, the last part over which the mote fades.
 const FLY_FADE: f32 = 0.5;
-/// Seconds: a long frame moves the motes in steps this short, so none flies past a wall in one.
+/// Maximum simulation step in seconds; prevents motes tunnelling through walls.
 const MOTE_STEP: f32 = 1.0 / 30.0;
 /// Of its speed along the ground a mote keeps through each bounce.
 const SKID: f32 = 0.6;
@@ -111,7 +110,7 @@ pub const Blow = struct {
     slot: ?usize,
     /// Cells, the middle of the struck cell on the ground.
     at: [2]f32,
-    /// Unit, the way the blow travelled; null for one from nowhere, the gas's, which sprays all round.
+    /// Unit travel direction; null scatters a directionless hit such as gas.
     dir: ?[2]f32,
     matter: Matter,
     lethal: bool,
@@ -144,16 +143,6 @@ pub const Status = enum {
         };
     }
 
-    pub fn blurb(s: Status) [:0]const u8 {
-        return switch (s) {
-            .bleeding => std.fmt.comptimePrint("Loses {d} life a turn, {d} on a turn it moves.", .{ bleeding.STILL, bleeding.MOVING }),
-            .burning => std.fmt.comptimePrint("Takes {d} fire damage a turn, less its fire resistance.", .{burning.PER_TURN}),
-            .chilled => std.fmt.comptimePrint("Skips one action in {d}.", .{glacial.CYCLE}),
-            .pinned => "Cannot leave its cell, but strikes what stands beside it.",
-            .warded => "Harm is taken from mana before life.",
-        };
-    }
-
     fn field(comptime s: Status) []const u8 {
         return switch (s) {
             .bleeding => "bleed",
@@ -180,7 +169,7 @@ pub const Status = enum {
     }
 };
 
-/// A body as the picture has it; `seq` is the order the simulation dealt the blows that left it so.
+/// Presented body state; `seq` preserves simulation hit order.
 pub const Body = struct {
     kind: actor.Kind,
     hp: i32,
@@ -206,7 +195,7 @@ pub const Body = struct {
     }
 };
 
-/// What landing shows: the body as the blow left it, and the slot of one it split off, drawn from then.
+/// State at impact; `reveals` is the newly visible split-half pool slot.
 pub const After = struct { body: Body, reveals: ?usize = null, mana: i32 = 0 };
 
 pub const Drip = struct { at: [2]f32, matter: Matter };
@@ -248,7 +237,7 @@ const Pulse = struct {
 pub const JUKE_S: f32 = 0.6;
 const JUKE_R = [2]f32{ 2, 5 };
 const CELL_MOTES: usize = 12;
-/// One burst's motes at most, so a wide one leaves the stains and blows their share of `MOTES`.
+/// Cap burst motes so wide bursts leave room for stains and hit effects.
 const BURST_MOTES: usize = 144;
 
 fn burstMotes(cells: usize) usize {
@@ -399,7 +388,7 @@ pub const Fx = struct {
         face.textMid(FRIGHT_WORDS[s.word], cx, top, size, look.fade(look.TEXT, sight * @min(1, s.life / SPEECH_FADE_S)));
     }
 
-    /// `wait` seconds from now, when the picture reaches the blow the simulation already dealt.
+    /// Schedule a resolved blow `wait` seconds ahead.
     pub fn strike(self: *Fx, wait: f32, b: Blow) void {
         self.later(wait, .{ .blow = b });
     }
@@ -626,7 +615,7 @@ pub const Fx = struct {
             const age = @mod(t * 0.9 + phase + @as(f32, @floatFromInt(seed)) * 0.23, 1);
             const at = rl.Vector2{ .x = x + cell * (0.3 + phase * 0.4), .y = y + cell * (0.45 + age * 0.4) };
             const r = look.SPRITE_PX * (0.022 + age * 0.012);
-            pixel.rect(at, r, r * 1.8, cell / look.SPRITE_PX, look.fade(ink, (1 - age * age) * 0.9));
+            pixel.rect(at, r, r * 1.8, pxScale(cell), look.fade(ink, (1 - age * age) * 0.9));
         }
     }
 
@@ -635,7 +624,7 @@ pub const Fx = struct {
         const fiery = b.element == .fire;
         const col = look.elementInk(b.element);
         self.glow(from, col, if (fiery) FIRE_BURST_GLOW else COLD_BURST_GLOW);
-        for (b.area.cells[0..b.area.n]) |p| {
+        for (b.area.slice()) |p| {
             const to = mathx.centre(p);
             for (0..burstMotes(b.area.n)) |_| {
                 const life = 0.22 + self.rng.unit() * 0.18;
@@ -658,15 +647,15 @@ pub const Fx = struct {
         for (&a.points, 0..) |*p, i| {
             const t = @as(f32, @floatFromInt(i)) / (ARC_POINTS - 1);
             const spread: f32 = if (i == 0 or i == ARC_POINTS - 1) 0 else ZAP_JITTER;
-            const on = lerp2(z.from, z.to, t);
+            const on = mathx.lerp2(z.from, z.to, t);
             p.* = .{ on[0] + self.rng.spread(spread), on[1] + self.rng.spread(spread) };
         }
-        for ([_]f32{ 0.25, 0.65, 1 }) |t| self.glow(lerp2(z.from, z.to, t), look.LIGHTNING, ARC_GLOW);
+        for ([_]f32{ 0.25, 0.65, 1 }) |t| self.glow(mathx.lerp2(z.from, z.to, t), look.LIGHTNING, ARC_GLOW);
         const len = @max(1, mathx.len(z.to[0] - z.from[0], z.to[1] - z.from[1]));
         const count: usize = @intFromFloat(@ceil(len * ZAP_MOTES));
         for (0..count) |i| {
             const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(count));
-            const on = lerp2(z.from, z.to, t);
+            const on = mathx.lerp2(z.from, z.to, t);
             self.emit(.{
                 .p = .{ on[0] + self.rng.spread(ZAP_JITTER), on[1] + self.rng.spread(ZAP_JITTER), STRIKE_Z },
                 .v = .{ self.rng.spread(2.8), self.rng.spread(2.8), 0.3 + self.rng.unit() },
@@ -687,8 +676,8 @@ pub const Fx = struct {
             const cy = y + cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
             const across = @as(f32, look.SPRITE_PX) * 0.07;
             const col = look.fade(ink, 0.7 + @sin(t * 3 + phase) * 0.2);
-            pixel.rect(.{ .x = cx, .y = cy }, across, 1, cell / look.SPRITE_PX, col);
-            pixel.rect(.{ .x = cx, .y = cy }, 1, across, cell / look.SPRITE_PX, col);
+            pixel.rect(.{ .x = cx, .y = cy }, across, 1, pxScale(cell), col);
+            pixel.rect(.{ .x = cx, .y = cy }, 1, across, pxScale(cell), col);
         }
     }
 
@@ -697,7 +686,7 @@ pub const Fx = struct {
         for (PIN_STAKES) |s| {
             const foot = rl.Vector2{ .x = x + cell * s[0], .y = y + cell * PIN_FOOT };
             const top = rl.Vector2{ .x = foot.x + cell * s[1], .y = foot.y - cell * PIN_H };
-            pixel.line(top, foot, 2, cell / look.SPRITE_PX, ink);
+            pixel.line(top, foot, 2, pxScale(cell), ink);
         }
     }
 
@@ -708,7 +697,7 @@ pub const Fx = struct {
         for (0..WARD_DOTS) |i| {
             const a = @as(f32, @floatFromInt(i)) * mathx.TAU / WARD_DOTS;
             const k = 0.35 + 0.25 * @sin(a * 3 + self.seconds.at() * 2);
-            pixel.rect(.{ .x = x + cell * 0.5 + @cos(a) * r, .y = y + cell * 0.5 + @sin(a) * r }, 1, 2, cell / look.SPRITE_PX, look.fade(ink, k));
+            pixel.rect(.{ .x = x + cell * 0.5 + @cos(a) * r, .y = y + cell * 0.5 + @sin(a) * r }, 1, 2, pxScale(cell), look.fade(ink, k));
         }
     }
 
@@ -720,13 +709,13 @@ pub const Fx = struct {
             const sway = @sin(t * 6 + phase * mathx.TAU) * 0.04;
             const at = rl.Vector2{ .x = x + cell * (MARKS_FROM + phase * MARKS_SPAN + sway), .y = y + cell * (0.82 - age * 0.65) };
             const r = look.SPRITE_PX * (0.065 - age * 0.045);
-            pixel.fleck(at, r, cell / look.SPRITE_PX, look.fade(Status.burning.ink(), (1 - age) * 0.85 * alpha));
-            pixel.rect(at, r, r * 1.5, cell / look.SPRITE_PX, look.fade(look.FIRE_CORE, (1 - age) * 0.9 * alpha));
+            pixel.fleck(at, r, pxScale(cell), look.fade(Status.burning.ink(), (1 - age) * 0.85 * alpha));
+            pixel.rect(at, r, r * 1.5, pxScale(cell), look.fade(look.FIRE_CORE, (1 - age) * 0.9 * alpha));
         }
     }
 
     pub fn drawTorch(self: *const Fx, x: f32, y: f32, cell: f32, seed: f32, lit: f32, memory: f32) void {
-        const k = cell / look.SPRITE_PX;
+        const k = pxScale(cell);
         pixel.rect(.{ .x = x, .y = y + 7 * k }, 3, 12, k, look.fade(look.SPLINTER, memory * 0.7));
         pixel.rect(.{ .x = x, .y = y + k }, 7, 3, k, look.fade(look.TORCH_DIM, memory));
         const t = self.seconds.at();
@@ -760,7 +749,7 @@ pub const Fx = struct {
         const count = @as(usize, @intCast(mathx.dist(from, to))) * TRAIL_MOTES;
         for (0..count) |i| {
             const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(count));
-            const on = lerp2(a, b, t);
+            const on = mathx.lerp2(a, b, t);
             self.emit(.{
                 .p = .{ on[0], on[1], 0.15 + self.rng.unit() * 0.35 },
                 .v = .{ 0, 0, 0.12 },
@@ -791,9 +780,9 @@ pub const Fx = struct {
         self.head = (self.head + 1) % MOTES;
     }
 
-    /// Before the light map, which lights and fogs the motes as it does the floor under them; stains under the rest.
+    /// Draw before lighting/fog; stains precede airborne motes.
     pub fn draw(self: *const Fx, ox: f32, oy: f32, cell: f32) void {
-        const k = cell / @as(f32, @floatFromInt(look.SPRITE_PX));
+        const k = pxScale(cell);
         for (&self.motes) |*m| {
             if (m.life <= 0 or !m.landed) continue;
             const a = m.life / (m.max * STAIN_FADE);
@@ -808,7 +797,7 @@ pub const Fx = struct {
     }
 
     pub fn drawGlow(self: *const Fx, lv: *const grid.Level, sight: *const [grid.CELLS]f32, ox: f32, oy: f32, cell: f32) void {
-        const k = cell / look.SPRITE_PX;
+        const k = pxScale(cell);
         for (&self.motes) |*m| {
             if (m.life <= 0 or !m.add) continue;
             const p = mathx.cellOf(.{ m.p[0], m.p[1] });
@@ -847,7 +836,6 @@ fn unprojected(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
     return .{ (v.x - ox) / cell, (v.y - oy) / cell + STRIKE_Z };
 }
 
-/// The element of a missile that sheds a trail and lights its way.
 fn trailed(act: skillbar.Act) ?damage.Element {
     const element = act.element() orelse return null;
     return switch (element) {
@@ -856,8 +844,8 @@ fn trailed(act: skillbar.Act) ?damage.Element {
     };
 }
 
-fn lerp2(a: [2]f32, b: [2]f32, t: f32) [2]f32 {
-    return .{ mathx.lerpF(a[0], b[0], t), mathx.lerpF(a[1], b[1], t) };
+fn pxScale(cell: f32) f32 {
+    return cell / look.SPRITE_PX;
 }
 
 pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
@@ -873,7 +861,7 @@ pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
 pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, oy: f32, cell: f32) void {
     if (act.element() == .lightning) return;
     const p = projected(at, ox, oy, cell);
-    const k = cell / look.SPRITE_PX;
+    const k = pxScale(cell);
     const col = look.arrowInk(act);
     if (act == .fireball) {
         for (0..6) |i| {
@@ -906,7 +894,7 @@ fn advance(m: *Mote, lv: *const grid.Level, dt: f32) void {
     while (left > 0) : (left -= MOTE_STEP) tick(m, lv, @min(left, MOTE_STEP));
 }
 
-/// A drop that will stain does not age in the air, so every one that lands leaves its stain.
+/// Airborne staining motes do not age, ensuring they leave a stain.
 fn tick(m: *Mote, lv: *const grid.Level, dt: f32) void {
     if (m.life <= 0) return;
     if (!m.stains or m.landed) m.life -= dt;

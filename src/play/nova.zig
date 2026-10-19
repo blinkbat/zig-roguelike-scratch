@@ -9,19 +9,19 @@ const P = mathx.P;
 pub const COST: i32 = 30;
 pub const COOLDOWN: u8 = 3;
 pub const RANGE: i32 = 2;
-pub const OPEN_CELLS: usize = @intCast(grid.Cells.span(RANGE) * grid.Cells.span(RANGE) - 1);
+pub const OPEN_CELLS: usize = @intCast(grid.Cells.square(RANGE) - 1);
 pub const COLD_LO: i32 = 3;
 pub const COLD_HI: i32 = 5;
 pub const VERB = "freezes";
 pub const TAKES = glacial.TAKES;
 pub const ELEMENT: damage.Element = .cold;
-pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} cold to every foe within {d} tiles. {s}. {d} mana, {d}-turn cooldown.", .{ COLD_LO, COLD_HI, RANGE, glacial.CHILL_NOTE, COST, COOLDOWN });
+pub const DESCRIPTION = std.fmt.comptimePrint("{s} to every foe within {d} tiles. {s}.", .{ BASE.text(ELEMENT), RANGE, glacial.CHILL_NOTE });
 
 comptime {
     std.debug.assert(RANGE <= glacial.RANGE);
 }
 
-pub const roll = mathx.Rng.rolls(COLD_LO, COLD_HI);
+pub const BASE = damage.Base{ .lo = COLD_LO, .hi = COLD_HI };
 
 pub const procs = glacial.procs;
 pub const afflict = glacial.afflict;

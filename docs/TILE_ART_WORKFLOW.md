@@ -125,7 +125,7 @@ Shadow casters use the actual light at their position without fog or memory fadi
 2. Compare exported art with the intended visible art layers. Exclude grid, text, paper, guides and the unused X. Verify 64-pixel cells and the complete runtime mapping.
 3. Check alpha and colour values. Check connected edge coverage separately from exposed contours; forcing every tile opaque can destroy intentional uneven edges.
 4. Inspect repeated pieces together. Look for floor slits, outline discontinuities, doubled seams, clipped brick courses and misplaced faces. A count of exported tiles is not a seam test.
-5. Run the relevant project checks. Use `.\check.cmd` and `.\test.cmd` when code changes. Use `.\shot.cmd` for actual headless game frames and inspect `shots/lean.png`, `shots/torch.png` and relevant map shots.
+5. Run the relevant project checks. Use `.\check.cmd` and `.\test.cmd` when code changes. Render actual headless game frames as `AGENTS.md` describes (a `zig-out-dev` build run with `--shot` from a fresh `%TEMP%` copy of `maps/`) and inspect `shots/lean.png`, `shots/torch.png` and relevant map shots there.
 6. Run `.\build.cmd` after final assets are installed: PNGs are embedded in the executable. A correct source PNG does not update an already-built game. Do not launch the interactive game for verification.
 
 Inspect both the unlit artwork and the lit game. Lighting can conceal a gap or make a correct outline appear different. Keep final previews beside validation reports so a later pass can distinguish an inspected result from an unfinished draft.

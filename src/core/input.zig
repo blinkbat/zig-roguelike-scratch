@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
 const ENTER_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
+const INTERACT_KEYS = ENTER_KEYS ++ [_]rl.KeyboardKey{.space};
 const LEAN: rl.GamepadButton = .left_trigger_2;
 const SHIFT_KEYS = [_]rl.KeyboardKey{ .left_shift, .right_shift };
 const CTRL_KEYS = [_]rl.KeyboardKey{ .left_control, .right_control };
@@ -34,12 +35,10 @@ extern fn glfwJoystickIsGamepad(jid: c_int) c_int;
 /// raylib's MAX_GAMEPADS, the slots it polls.
 const PADS: usize = 4;
 
-/// Ignore available joysticks without a GLFW gamepad mapping.
 fn mapped(at: i32) bool {
     return rl.isGamepadAvailable(at) and glfwJoystickIsGamepad(at) != 0;
 }
 
-/// A newly pressed mapped pad takes over; otherwise retain the connected pad or choose the first.
 fn choosePad(was: ?i32, focused: bool, before: *const [PADS]Triggers, now: *const [PADS]Triggers) ?i32 {
     for (0..PADS) |i| {
         const at: i32 = @intCast(i);
@@ -65,7 +64,7 @@ const USB_ID = SONY.len;
 const VENDOR_AT = 8;
 const PRODUCT_AT = 16;
 
-/// GLFW GUID vendor/product bytes are swapped at offsets 8/16; XInput omits them and defaults to Xbox.
+/// GLFW GUID vendor/product bytes are little-endian at offsets 8/16; XInput defaults to Xbox.
 fn padOf(guid: []const u8) Device {
     if (guid.len < PRODUCT_AT + USB_ID or !std.mem.eql(u8, guid[VENDOR_AT..][0..USB_ID], SONY)) return .xbox;
     for (PS5_PRODUCTS) |p| {
@@ -120,7 +119,7 @@ const Trigger = enum {
     }
 };
 
-/// Hysteresis avoids raylib's 55% trigger chatter; an unmapped trigger rests between the thresholds.
+/// Trigger hysteresis avoids raylib's 55% threshold chatter.
 const TRIGGER_ON: f32 = 0.6;
 const TRIGGER_OFF: f32 = 0.4;
 
@@ -251,7 +250,7 @@ pub const Button = enum {
     /// Its keys in menus, the first naming it; a slot's own key is its number (`SLOT_KEYS`).
     fn keys(b: Button) []const rl.KeyboardKey {
         return switch (b) {
-            .a => &(ENTER_KEYS ++ [_]rl.KeyboardKey{ .space, .z }),
+            .a => &(INTERACT_KEYS ++ [_]rl.KeyboardKey{.z}),
             .b => &.{.x},
             .x => &.{.c},
             .y => &.{.delete},
@@ -281,6 +280,8 @@ pub const Button = enum {
     }
 };
 
+pub const CONFIRM = Button.a;
+
 /// The slots left to right, as the keyboard numbers them.
 pub const SLOT_ORDER = [_]Button{ .lb, .a, .x, .y, .b, .rb, .rt };
 const SLOT_KEYS = blk: {
@@ -309,7 +310,7 @@ pub fn claimKeys() void {
     rl.setExitKey(.null);
 }
 
-/// Schmitt trigger, then DAS and ARR; `settle` holds a new direction back so two keys a frame apart read as one diagonal.
+/// Schmitt trigger plus DAS/ARR; `settle` merges staggered key presses into diagonals.
 pub const Stepper = struct {
     pub const FIRE: f32 = 0.50;
     const REARM: f32 = 0.32;
@@ -354,7 +355,7 @@ pub const Stepper = struct {
         return now;
     }
 
-    /// The way held now steps no more until it is let go or turned; a diagonal let go one key at a time stays held.
+    /// Rearm only on release or direction change; staggered diagonal release stays held.
     pub fn hold(self: *Stepper) void {
         self.* = .{ .latched = self.latched, .held = self.held, .due = HELD, .fired = 1 };
     }
@@ -434,6 +435,8 @@ pub const State = struct {
     sets: bool = false,
     /// Set before each `update`: the slot Ctrl holds, which the number keys skip.
     modifier: ?Button = null,
+    /// Set before each `update`: in targeting, the slot whose own number key confirms too.
+    aimed: ?Button = null,
     /// Retained for captions while unfocused.
     pad_at: ?i32 = null,
     /// Poll even unfocused so a held pull does not fire again on focus.
@@ -441,6 +444,10 @@ pub const State = struct {
     /// Where the mouse rests on the window, when focused and over it.
     pointer: ?mathx.P = null,
     click: bool = false,
+    interact: bool = false,
+    scroll: i32 = 0,
+    /// Touchpads and smooth wheels report fractions of a notch; they add up to whole scrolls.
+    wheel: f32 = 0,
 
     pub fn hit(self: State, b: Button) bool {
         return self.pressed.contains(b);
@@ -481,6 +488,13 @@ pub const State = struct {
         return if (self.walk != null) self.step.late else 0;
     }
 
+    /// The aimed slot's number key, which confirms its reticle; pads have no such repeat.
+    fn againKey(self: State) ?rl.KeyboardKey {
+        if (self.context != .target) return null;
+        const b = self.aimed orelse return null;
+        return SLOT_KEYS[numberOf(self.modifier, b) orelse return null];
+    }
+
     fn keysFor(self: State, b: Button) []const rl.KeyboardKey {
         if (self.context != .play or !b.isSlot()) return b.keys();
         if (self.typing) return &.{};
@@ -492,6 +506,7 @@ pub const State = struct {
         const before = self.triggers;
         for (&self.triggers, 0..) |*pad, i| pad.* = pulled(@intCast(i), pad.*);
         const focused = rl.isWindowFocused();
+        const was_focused = self.focused;
         self.pad_at = choosePad(self.pad_at, focused, &before, &self.triggers);
         self.focus(focused);
         if (!focused) return;
@@ -499,7 +514,13 @@ pub const State = struct {
         const live = self.pad_at;
         self.pointer = if (rl.isCursorOnScreen()) mouseAt() else null;
         self.click = self.pointer != null and rl.isMouseButtonPressed(.left);
+        self.wheel += rl.getMouseWheelMove();
+        self.scroll = @intFromFloat(self.wheel);
+        self.wheel -= @floatFromInt(self.scroll);
         const alt_down = altDown();
+        self.interact = self.context == .play and !self.typing and !alt_down and
+            (anyHit(&INTERACT_KEYS) or
+                (if (live) |at| self.padHit(at, CONFIRM.pad(), &before) else false));
         for (BUTTONS) |b| {
             var on = false;
             var hold = false;
@@ -516,6 +537,11 @@ pub const State = struct {
             }
             self.pressed.setPresent(b, on);
             self.down.setPresent(b, hold);
+        }
+        if (!self.typing and !alt_down) {
+            if (self.againKey()) |k| {
+                if (rl.isKeyPressed(k)) self.pressed.insert(CONFIRM);
+            }
         }
         if (self.context != .play and self.sets and !self.typing and !alt_down) {
             if (self.modifier) |m| {
@@ -549,13 +575,14 @@ pub const State = struct {
             defl = 0;
             const digital = if (live) |at| dpadWalk(at) else null;
             if (digital orelse keyWalk(self.typing)) |p| {
-                const d = if (self.lean) leanOf(mathx.dirTo(.{ .x = 0, .y = 0 }, p).?).delta() else p;
+                const d = if (self.lean) leanOf(mathx.stepDir(p).?).delta() else p;
                 defl = 1;
                 heading = mathx.headingOf(@floatFromInt(d.x), @floatFromInt(d.y));
                 settle = Stepper.SETTLE;
             }
         }
         self.walk = self.step.tick(dt, defl, heading, settle);
+        if (!was_focused) self.holdWalk();
         self.typing = false;
         const pad_hit = if (live) |at| struck(at, &before, &self.triggers) else false;
         self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit, keyed);
@@ -567,21 +594,22 @@ pub const State = struct {
     }
 
     fn focus(self: *State, focused: bool) void {
-        self.focused = focused;
-        if (focused) return;
-        self.pressed = .initEmpty();
-        self.down = .initEmpty();
-        self.down_s = .initFill(0);
-        self.fullscreen = false;
-        self.walk = null;
-        self.lean = false;
-        self.step = .{};
-        self.stick = false;
-        self.typing = false;
-        self.typed.n = 0;
-        self.rub = false;
-        self.pointer = null;
-        self.click = false;
+        if (focused) {
+            self.focused = true;
+            return;
+        }
+        const kept = self.*;
+        self.* = .{
+            .down_s = .initFill(SPENT),
+            .device = kept.device,
+            .focused = false,
+            .context = kept.context,
+            .sets = kept.sets,
+            .modifier = kept.modifier,
+            .aimed = kept.aimed,
+            .pad_at = kept.pad_at,
+            .triggers = kept.triggers,
+        };
     }
 
     fn padHit(self: *const State, at: i32, b: rl.GamepadButton, before: *const [PADS]Triggers) bool {
@@ -736,11 +764,7 @@ pub const Desk = struct {
     const SHIFTED = [_][]const u8{ "save", "undo", "redo" };
 
     fn keyOf(comptime field: []const u8) rl.KeyboardKey {
-        comptime {
-            var name: [field.len]u8 = undefined;
-            _ = std.ascii.upperString(&name, field);
-            return @field(Desk, name ++ "_KEY");
-        }
+        return @field(Desk, upper(field) ++ "_KEY");
     }
 
     comptime {
@@ -752,9 +776,7 @@ pub const Desk = struct {
         for (BARE ++ WITH_CTRL ++ SHIFTED) |f| {
             const k = [_]rl.KeyboardKey{keyOf(f)};
             named = named ++ &k;
-            var up: [f.len]u8 = undefined;
-            _ = std.ascii.upperString(&up, f);
-            const caption = up ++ "_CAPTION";
+            const caption = upper(f) ++ "_CAPTION";
             const with_ctrl = @hasDecl(Desk, caption) and std.mem.startsWith(u8, @field(Desk, caption), CTRL);
             const listed_ctrl = for (BARE) |b| {
                 if (std.mem.eql(u8, b, f)) break false;
@@ -861,7 +883,7 @@ pub const Desk = struct {
         self.alt = altDown();
         self.nav = 0;
         for (NAV_KEYS, [2]i32{ -1, 1 }) |k, by| {
-            if (rl.isKeyPressed(k) or rl.isKeyPressedRepeat(k)) self.nav = by;
+            if (repeated(k)) self.nav = by;
         }
         self.tool = null;
         self.shape = null;
@@ -893,7 +915,11 @@ const RUB_KEY: rl.KeyboardKey = .backspace;
 pub const RUB_CAPTION = keyName(RUB_KEY);
 
 fn rubbed() bool {
-    return rl.isKeyPressed(RUB_KEY) or rl.isKeyPressedRepeat(RUB_KEY);
+    return repeated(RUB_KEY);
+}
+
+fn repeated(k: rl.KeyboardKey) bool {
+    return rl.isKeyPressed(k) or rl.isKeyPressedRepeat(k);
 }
 
 fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
@@ -921,7 +947,7 @@ fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
     };
 }
 
-/// Call it `comptime`.
+/// Uppercase text at compile time.
 pub fn upper(comptime s: []const u8) [:0]const u8 {
     var b: [s.len:0]u8 = undefined;
     _ = std.ascii.upperString(&b, s);
@@ -1065,6 +1091,9 @@ test "losing focus cancels unsettled movement and held actions without forgettin
     try std.testing.expect(st.triggers[1].get(.left));
     st.focus(true);
     try std.testing.expect(st.focused and st.walk == null);
+    st.down.insert(.a);
+    st.time(HOLD_S * 2);
+    try std.testing.expect(!st.long(.a));
     std.debug.print("focus loss: pending tap and held action cancelled; controller and trigger latch retained\n", .{});
 }
 
@@ -1141,7 +1170,7 @@ test "every direction walks on exactly one entry, and every bound key a name typ
 test "walk keys held together sum to one step a lean can turn" {
     for ([_]mathx.P{ .{ .x = 1, .y = -2 }, .{ .x = 2, .y = -1 }, .{ .x = 0, .y = -2 }, .{ .x = 2, .y = 0 } }) |held| {
         const p = stepOf(held).?;
-        try std.testing.expect(mathx.dirTo(.{ .x = 0, .y = 0 }, p) != null);
+        try std.testing.expect(mathx.stepDir(p) != null);
     }
     try std.testing.expectEqual(@as(?mathx.P, null), stepOf(.{ .x = 0, .y = 0 }));
 }
@@ -1267,7 +1296,15 @@ test "targeting uses confirm and back keys instead of numbered skills for every 
         for (BUTTONS) |b| {
             for (s.keysFor(b)) |k| try std.testing.expect(std.mem.indexOfScalar(rl.KeyboardKey, &SLOT_KEYS, k) == null);
         }
+        try std.testing.expectEqual(@as(?rl.KeyboardKey, null), s.againKey());
+        for (SLOT_ORDER) |b| {
+            if (b == modifier) continue;
+            s.aimed = b;
+            try std.testing.expectEqual(@as(?rl.KeyboardKey, SLOT_KEYS[numberOf(modifier, b).?]), s.againKey());
+        }
         s.context = .play;
+        try std.testing.expectEqual(@as(?rl.KeyboardKey, null), s.againKey());
+        s.aimed = null;
         try std.testing.expectEqualSlices(rl.KeyboardKey, &SECOND_KEYS, s.keysFor(modifier));
         for (SLOT_ORDER) |b| {
             if (b == modifier) continue;
@@ -1276,7 +1313,7 @@ test "targeting uses confirm and back keys instead of numbered skills for every 
         s.typing = true;
         for (SLOT_ORDER) |b| try std.testing.expectEqual(@as(usize, 0), s.keysFor(b).len);
     }
-    std.debug.print("{d} modifier bindings: targeting confirms/backs out with menu keys, play uses numbered slots, typing fires none\n", .{SLOT_ORDER.len});
+    std.debug.print("{d} modifier bindings: targeting confirms/backs out with menu keys or the aimed slot's own number, play uses numbered slots, typing fires none\n", .{SLOT_ORDER.len});
 }
 
 test "the lean layer puts each d-pad button on its own diagonal" {

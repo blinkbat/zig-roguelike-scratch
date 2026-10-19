@@ -3,6 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const actor = @import("actor.zig");
 const fov = @import("../map/fov.zig");
+const damage = @import("damage.zig");
 
 const P = mathx.P;
 
@@ -11,7 +12,7 @@ pub const DMG_LO: i32 = 3;
 pub const DMG_HI: i32 = 5;
 pub const VERB = "shoots";
 
-pub const roll = mathx.Rng.rolls(DMG_LO, DMG_HI);
+pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };
 
 pub const Hit = union(enum) { body: u16, barrel: P };
 

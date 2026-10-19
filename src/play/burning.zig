@@ -11,7 +11,9 @@ pub const PER_TURN: i32 = 4;
 pub const VERB = "shoots a burning arrow into";
 pub const TAKES = "catches fire";
 pub const ELEMENT: damage.Element = .fire;
-pub const DESCRIPTION = std.fmt.comptimePrint("Adds {d}-{d} fire damage. {d}% burn chance: {d} fire damage for {d} turns. {d} mana.", .{ FIRE_LO, FIRE_HI, CHANCE, PER_TURN, TURNS, COST });
+/// Its chance to burn, as every fire skill's description says it.
+pub const BURN_NOTE = std.fmt.comptimePrint("{d}% burn chance", .{CHANCE});
+pub const DESCRIPTION = std.fmt.comptimePrint("Adds {s}. {s}: {d} fire damage for {d} turns.", .{ BASE.text(ELEMENT), BURN_NOTE, PER_TURN, TURNS });
 
 pub const Burn = damage.Lasting(TURNS, i16, seared);
 
@@ -19,7 +21,7 @@ fn seared(fire_resist: i16) i32 {
     return damage.resisted(PER_TURN, fire_resist);
 }
 
-pub const roll = mathx.Rng.rolls(FIRE_LO, FIRE_HI);
+pub const BASE = damage.Base{ .lo = FIRE_LO, .hi = FIRE_HI };
 
 pub const procs = damage.chance(CHANCE);
 

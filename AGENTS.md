@@ -1,7 +1,7 @@
 # AGENTS.md — roguelike-scratch
 
 Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats and pibs;
-breakable barrels, openable treasure chests, gold, HP and mana, with no items. Art starts as glyphs, replaced by the owner's PNGs.
+breakable barrels, treasure chests, equipment, XP and class progression. Art starts as glyphs, replaced by the owner's PNGs.
 Source paths below are relative to `src/`; scripts, docs and assets are relative to the repository root.
 
 ## Working rules
@@ -24,7 +24,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   25.4 s in ReleaseFast; Debug's headless update/draw averaged 1.54 ms CPU per frame.
 - Finish code/art handoffs with `./build.cmd` so the owner's next run reuses it. If the normal executable is
   locked, use `./build.cmd --prefix zig-out-dev`. **Do not launch interactive play for verification.**
-  `run.cmd` builds and launches, killing an existing game first; `edit.cmd [path]` uses it for `--edit`
+  `run.cmd` builds, then launches the exe directly (`zig build run` can hang after the game exits), killing an
+  existing game first; `edit.cmd [path]` uses it for `--edit`
   (default `maps/main.map`). These are owner-facing entry points.
 - Every `src/**/*.zig` module except the root `main.zig` must be imported in `main.zig`'s `test {}` block.
   `build.zig` checks this on every build step and rejects those modules if smaller than 512 bytes.
@@ -44,14 +45,17 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   } finally { Pop-Location }
   ```
 
+- For concurrent owner play, copy the built executable into the temporary shot directory with a distinct
+  basename before `--shot`; `run.cmd` kills every process named `roguelike.exe`, including headless captures.
 - Inspect actual headless PNGs. `game.zig`'s `shoot` and helpers define the coverage: abilities, editor,
   maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
   `water-reflections/00.png` through `39.png` cover four seconds of idle play; `water-mirrors-*.png`
   show day/night/torch reflections. The same executable's `--bench`
   reports startup, headless CPU frame time, texture residency/loading/reuse and draw cost with 0/8/32 effect lights.
-- Tests must not write save or map files. No interactive window is needed for unit tests.
-  If a full run stalls with an idle `test.exe --listen=-`, stop that run and execute its exact compiled
-  `.zig-cache/o/<hash>/test.exe` without `--listen`; this completed the full suite when the runner stalled.
+- Tests must not write save or map files. No interactive window is needed for unit tests. The full Debug
+  suite exercises thousands of generated maps and can take several minutes; check CPU activity before
+  treating it as stalled. `build.zig` runs the test artifact directly with inherited output: raylib image
+  logs write to stdout and corrupt Zig 0.14.1's `--listen=-` test protocol, causing a deadlock.
 - When `game.enter` replaces an actor pool, copy the carried actor into an initialized `var` before
   replacing storage. A conditional `const` copy of `h.*` aliased the replaced pool on Zig 0.14.1;
   door/save tests caught it. Preserve this workaround.
@@ -59,7 +63,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 ## Input, UI and application
 
 - **`core/input.zig` alone reads input devices.** Controller is primary; keyboard mirrors every action.
-  `docs/CONTROLLER.md` describes the scheme; current mappings/defaults live in `input` and `skillbar.Bar.of`.
+  `docs/CONTROLLER.md` describes the scheme; current mappings/defaults live in `input`, `skillbar.Bar.of` and `progress.State.bar`.
   Keep skill lists and balance values in their source modules instead of duplicating them here.
 - Play/menu screens never name keys or buttons in prose. Only the skill bar and bind screen show input
   icons, following the last device (`State.device`, `look.Prompt`, `input.padOf`). The desk editor is the
@@ -68,19 +72,24 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `input.SLOT_ORDER` numbers keyboard slots while skipping the modifier, which uses Ctrl. Menu keys are
   inactive in play; targeting uses menu confirm/back keys (`State.context`). Typing (`State.typing`) must not activate slots or movement. A close/cancel press that
   could reopen binds is consumed with `State.spend`.
-- Reticles use standard confirm/back controls, regardless of the skill binding. B always cancels targeting,
+- Reticles use standard confirm/back controls; on the keyboard alone the aimed slot's number also confirms
+  (`State.aimed`), while a pad's skill button never does. B always cancels targeting,
   including a skill opened with B; the opening press never confirms or cancels the new reticle.
   Esc backs out one layer at a time and opens pause only from play. Clear raylib's exit key with
   `input.claimKeys`; Esc must never close the window. Menu does not open pause over death.
   Pause's Debug submenu contains Restart Map and Reveal Map. Reveal shows terrain and minimap without changing
   gameplay sight or saved exploration; turning it off restores the normal view. Debug settings are not saved.
-- Inspect (`Mode.inspect`, R3 or I) is the HUD's tooltips: the stick/d-pad walks the orbs, slots and shown
-  statuses (`game.spotsOf`, nearest along the way pushed), `hud.tooltip` names and describes the one it is
+- Inspect (`Mode.inspect`, R3 or I) is the HUD's tooltips: the stick/d-pad walks the orbs, slots, shown
+  statuses and the event log (`game.spotsOf`, nearest along the way pushed), `hud.tooltip` names and describes the one it is
   on, without naming any input. Any back-out or the same button again closes it; it spends no turn.
   In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `game.hovered`).
-- Pause > Character opens `ui/book.zig`'s UI shell: empty equipment slots, an empty inventory, existing
-  life/mana stats and a blank passives panel. Equipment and progression systems remain undefined.
-  `Game.character` holds only unsaved navigation state; `input.State` owns its mouse clicks too.
+- Pause > Character opens equipment, the inventory list, stats, passives and class skills in `ui/book.zig`.
+  `play/items.zig` owns slot/requirement transactions; `play/progress.zig` owns XP, point pools and trees.
+  `Game.character` holds only unsaved navigation state; item/point actions are commands resolved by the game.
+  Item changes spend one turn after a separate Cancel-first confirmation; point allocation is free.
+  Interact includes underfoot and adjacent visible objects; a press while busy waits for `quiet` (`Queued.interact`)
+  instead of queuing its button's skill. Item commands wait out door travel. Gold collects automatically on movement.
+  See `docs/PROGRESSION.md` for rules and the inspected D2/PoE2 paperdoll references.
 - `app.zig` owns title/game/editor transitions; the game requests `Game.exit`, and `Game.back` identifies
   its caller. New reads `atlas.START` (`maps/start.map`) fresh, falling back to a generated floor only
   when that default file is missing. Reject malformed maps and starts without open floor.
@@ -89,9 +98,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Editor play-tests use the archer and no save slot. `Game.unkillable` is a debug option, never saved.
   Use the hero's name in the log/death screen, never "you".
 - `Game.screen` controls layout; fullscreen can change it at runtime. `ui/hud.zig` follows
-  `docs/HUD_LAYOUT.md`: a centered 744px assembly, life/mana orbs, skill icons, cooldowns and ailments;
+  `docs/HUD_LAYOUT.md`: a centered 640px assembly, life/mana orbs, skill icons, cooldowns, an experience bar and ailments;
   minimap at top right. The map continues behind it, with `hud.COVER` allowing bottom rows to clear it.
-  No live name label, counters, log strip, clock display or permanent control instructions.
+  No live name label, counters, clock display or permanent control instructions. The persistent event log
+  occupies the bottom-left gutter without a heading; newest entries append at the bottom, with text,
+  background and border fading out toward the top. Details/comparisons use tables.
 - `gfx/font.zig` draws small Balthazar text from native-size, point-filtered atlases; larger text and
   symbols use the mipmapped atlas. It falls back to raylib's font in tests/load failure.
   Drawn strings are ASCII except tile symbols baked through `look.TILE_CODEPOINTS`; those use
@@ -114,7 +125,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   normal editor-test archer and no save slot. Returning preserves the editor map, modal and undo history;
   death retry and Debug > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
 - `save.zig` freezes the whole run: map, visited/current nodes, actors, class/name, resources/statuses,
-  RNG, log, skill bar and time. `core/store.zig` fingerprints types; reject incompatible or incomplete
+  RNG, log, skill bar, time, gold, inventory, progression and each node's ground drops. `core/store.zig`
+  fingerprints types, plus the passive tree's layout (`save.TREE`); reject incompatible or incomplete
   saves before mutating the game. Autosave snapshots on the frame and writes on a thread, only while
   quiet and outside door travel; flush again on departure. Atomic completion gates reuse of the buffer.
   Failed writes rearm dirty state even while idle and retry on `GAP_S`; death ends the save.
@@ -132,15 +144,25 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Brick walls join walls, forests join shrubs. `Level.wallShape` is brick-only; `tileShape` handles both.
   Missing forest masks are restored on save resume. Torch/barrel placement must preserve routes;
   barrels stop movement/arrows and break for gold in one hit, with no HP.
-  Chests spawn closed, open when stepped toward for more gold than barrels, and stay empty and walkable
-  afterward. Attacks never open them. Wilds' `loops` reconnects side paths; `rewards chests` rewards remaining
-  substantial branches. The Strand enables both, with chests placed without blocking routes.
+  Chests spawn closed, open when stepped toward or through Interact for more gold than barrels and an item,
+  and stay empty and walkable afterward. Attacks never open them. Wilds' `loops` reconnects side paths;
+  `rewards chests` rewards substantial branches, fills sparse maps with spaced chests in sheltered alcoves,
+  and scatters barrels as minor gold rewards. The Strand enables both; rewards must preserve routes.
 
 ## Combat and simulation
 
-- `play/hero.zig` maps class to body; `skillbar.kit` restricts bindings and `Bar.of` supplies defaults.
-  `skillbar.Act` derives costs, cooldowns, descriptions and targeting from each skill module. Mana checks,
-  spending, slot dimming and descriptions must agree. Preserve resources/statuses across doors and saves.
+- `play/attrs.zig` owns Strength/Dexterity/Intelligence and what they derive: life, mana, per-style damage
+  (`skillbar.Act.style`), crit and dodge. Class bases feed passive allocations and equipped modifiers;
+  `game.heroAttrs` is the runtime source. Armour reduces physical bites before mana shield; elemental/status
+  damage keeps its separate rules. Equipped weapons and skill ranks affect hero damage and its previews.
+  Every hero blow goes through `game.scaled` (via `heroRoll`/`heroScaled`), which draws the crit after the
+  damage roll, then rounds each part up as often as its fraction. Skill rolls are `damage.Base` (`Act.bases`); an area
+  blow rolls its base once and scales, crits and rounds per foe. Skill tooltips show the scaled non-critical range.
+- `play/hero.zig` maps class to body; `skillbar.kit` restricts bindings and `Bar.of` supplies defaults, both
+  narrowed to learned skills by `progress.State.kit/bar`. `skillbar.Act` derives base costs, cooldowns,
+  descriptions and targeting from each skill module; `progress.State.cost/cooldown` apply rank. Module
+  descriptions say only what a skill does: `game.describe` appends mana, turn and cooldown at the hero's rank.
+  Mana checks, spending, slot dimming, tooltips and descriptions must agree. Preserve resources/statuses across doors and saves.
 - **Target previews and resolution share legality.** `bow.aimable` requires the mark and every traversed
   cell to be lit; geometric line clearance alone is insufficient. Spend nothing before confirmation.
   Area previews/damage/effects share geometry (each module's `burst`/`around`, `glacial.spread`, `cleave.arc`); use `fov.castInto` for
@@ -149,8 +171,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Juke is the free leap (`juke.FREE`); Blink spends a turn. Leap cursors may cross invalid cells but
   confirm only visible vacant landings. Idle frames advance no simulation, mana recovery or cooldowns.
   Flasks take a turn, recover from that turn's end, and restart recovery when drunk again; kills refill them.
-- Skills dispatch by what their module declares (`afflict`, `burst`, `JUMPS`, `around`, `Ward`, `knocked`),
-  so a new skill is a module plus its `Act` row. A pin (`pinning.Pin`) holds a body to its cell on its
+- `skillbar.SKILLS` owns each action's module, reticle and damage style; damaging actions must declare a
+  style. Skills dispatch by module declarations (`afflict`, `burst`, `JUMPS`, `around`, `Ward`, `knocked`).
+  A pin (`pinning.Pin`) holds a body to its cell on its
   turns, counting down like chill; it still strikes the hero beside it and cannot be knocked back.
   A mana shield (`ward.Ward`) takes the hero's harm from mana first, in `game.hurt`; the orb shows that
   mana through `Game.mana_held` until the blow lands, as `flasks_shown` holds a kill's refill.
@@ -186,9 +209,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 
 - **The picture lags the mechanic.** Simulation never reads presentation. `Game.pictured`/`fx.After`
   apply each visible blow when it lands; HUD life and vignette use presented HP. Deaths, barrel removal,
-  slime births, status markers and speech follow that timing. Foes turn/move at their stagger position.
+  slime births, status markers and speech follow that timing. Event-log lines said while a turn resolves stay
+  hidden (`Log.held`) until it is `quiet`; gold taken on a step stays drawn while the hero glides there. Foes turn/move at their stagger position.
   Update ongoing effects before starting new ones. `Game.busy` covers the slowest glide/projectile/flash;
-  walking queues the latest request, and skill activation/confirmation (including Wait/Shoot) requires `quiet`.
+  movement, skills and interactions pressed while busy are queued (`Game.pending`, the latest wins, but a repeating
+  held walk never displaces a skill or interaction). Queued interactions survive door travel and open nearby after arrival.
+  Skill activation/confirmation (including Wait/Shoot) requires `quiet`.
 - `gfx/look.zig` owns pictures and `look.Assets` map residency. Load required textures before drawing,
   including later slime forms and delayed deaths; retain common textures/normals and unload unused map
   assets. Title loads only the font; play graphics load lazily. HUD and bind picker share `look.drawSkill`.
@@ -196,14 +222,15 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   lowest rank on ties, then `look.under`; rock covers its cell. Grounds without sheets draw below those
   with sheets, each group retaining rank order. `Corners.mask` includes higher layers; `Corners.under`
   fills beneath their receding edges. Preserve transparency and underlays; never substitute opaque
-  cell fills beneath artwork. Play omits unseen cells; editor shows all.
+  cell fills beneath artwork. Play omits unseen cells and clips ground overhang to the map boundary;
+  editor shows all.
 - `gfx/light.zig` owns cosmetic light and fog. Draw ground/underlays, shadow mask, then standing tiles,
   so walls cover shadows. Terrain gets one 2x-modulate light-map pass, with no extra terrain tint.
   Body normals shade per pixel; motes/gas draw before lighting, flames/glow afterward.
 - Shadows/contact pools combine by channelwise `GL_MIN`, never stacking darker than the darkest source.
   `Light.onCaster` ignores fog: unseen/offscreen casters still cast when lit. Receiver visibility in the
-  light-map alpha fades shadows, keeping unseen/remembered ground unchanged. Keep the three-cell culling
-  margin and presented actor position/birth/death. Bind the receiver light-map sampler after blend-mode
+  light-map alpha fades shadows, keeping unseen/remembered ground unchanged. Keep the `CAST_MARGIN` culling
+  margin (from `light.CAST_REACH`) and presented actor position/birth/death. Bind the receiver light-map sampler after blend-mode
   changes, which flush raylib's auxiliary texture bindings.
 - Floor ambient at memory RGB before adding lights, preventing a dark ring around the lantern. Memory
   reaches black at the unseen boundary. Blur sight only over seen cells, and open-ground sight only over
@@ -216,7 +243,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   lit outdoor cells. Water stays smooth: fixed art/UVs, subtle light glints and undistorted mirrored scenery,
   bodies and flames, clipped by the authored water alpha and dry ground layers. Static scenery reflections
   persist in explored fog under memory lighting; bodies, animated flames and glints require live visibility.
-  Mirrors follow presented feet/facing/lift and exclude unexplored sources; glints obey light occlusion.
+  Mirrors follow presented feet/facing/lift, fade out toward their reflected tops, and exclude unexplored
+  sources; glints obey light occlusion.
   Source art/editor preview remain static. `game.splashSteps`/`Fx.splash` follows visible ground
   footsteps in water, excluding idle bodies and melee bumps. Vignette draws under minimap/HUD.
 - `gfx/pixel.zig` draws crisp FX shapes with smooth map motion. Missiles arrive at the existing impact
@@ -226,7 +254,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 
 ## Art workflow
 
-- Follow `docs/TILE_ART_WORKFLOW.md`. Preserve the owner's actual pixels, uneven outlines, native scale
+- Follow `docs/TILE_ART_WORKFLOW.md` and maintain `docs/ART_PROVENANCE.md`: distinguish owner originals,
+  assistant extensions, procedural placeholders and unverified legacy assets. Keep icons very basic.
+  Preserve the owner's actual pixels, uneven outlines, native scale
   and authored layers; update canonical Aseprite sources and inspect connected tiles in game. Inspect later
   owner edits before regenerating extensions. Palette matching alone is not a faithful port.
 - Regular walls use Desktop `regular-walls.aseprite`, `Layer 1`; cave/forest art is separate.

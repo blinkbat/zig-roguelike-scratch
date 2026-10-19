@@ -6,6 +6,10 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
+pub fn lerp2(a: [2]f32, b: [2]f32, t: f32) [2]f32 {
+    return .{ lerpF(a[0], b[0], t), lerpF(a[1], b[1], t) };
+}
+
 /// Within this of its target an ease lands on it exactly.
 pub const SETTLE: f32 = 1e-3;
 
@@ -80,6 +84,18 @@ pub const MILLE = 1000;
 
 pub fn fraction(pc: anytype) f32 {
     return @as(f32, @floatFromInt(pc)) / PERCENT;
+}
+
+/// `pc` percent of `v`, rounded toward zero.
+pub fn percentOf(v: i32, pc: i32) i32 {
+    return @divTrunc(v * pc, PERCENT);
+}
+
+/// How much of `full` a `value` out of `max` fills, held to 0..`full`.
+pub fn filled(value: i32, max: i32, full: i32) i32 {
+    if (max <= 0) return 0;
+    const clamped: i64 = std.math.clamp(value, 0, max);
+    return @intCast(@divTrunc(clamped * full, max));
 }
 
 pub fn smoothstep(lo: f32, hi: f32, x: f32) f32 {
@@ -287,12 +303,16 @@ pub const ALL_DIRS = std.enums.values(Dir);
 /// The four straight steps, east, west, south, north: generators draw in this order.
 pub const CARDINALS = [_]P{ Dir.e.delta(), Dir.w.delta(), Dir.s.delta(), Dir.n.delta() };
 
-pub fn dirTo(a: P, b: P) ?Dir {
-    const d = b.sub(a);
+/// The step `d` is, if it is one.
+pub fn stepDir(d: P) ?Dir {
     for (ALL_DIRS) |dir| {
         if (dir.delta().eq(d)) return dir;
     }
     return null;
+}
+
+pub fn dirTo(a: P, b: P) ?Dir {
+    return stepDir(b.sub(a));
 }
 
 /// 0 is north, growing clockwise.
@@ -343,15 +363,6 @@ pub const Rng = struct {
     pub fn range(self: *Rng, lo: i32, hi: i32) i32 {
         if (hi <= lo) return lo;
         return lo + @as(i32, @intCast(self.below(@intCast(hi - lo + 1))));
-    }
-
-    /// A skill's `roll`: `lo` to `hi`, both included.
-    pub fn rolls(comptime lo: i32, comptime hi: i32) fn (*Rng) i32 {
-        return struct {
-            fn roll(rng: *Rng) i32 {
-                return rng.range(lo, hi);
-            }
-        }.roll;
     }
 
     pub fn chance(self: *Rng, p: f32) bool {

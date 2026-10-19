@@ -5,6 +5,7 @@ const atlas = @import("map/atlas.zig");
 const grid = @import("map/grid.zig");
 const actor = @import("play/actor.zig");
 const hero = @import("play/hero.zig");
+const progress = @import("play/progress.zig");
 const menu = @import("ui/menu.zig");
 
 pub const SLOTS: usize = 3;
@@ -33,16 +34,66 @@ const Visited = @FieldType(Header, "visited");
 const Visit = @FieldType(Header, "visits");
 const HEAD_FIELDS = std.meta.fieldNames(Header);
 /// Written after the visited nodes, in this order.
-const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "flasks", "cooldown", "stepped", "class" };
+const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "flasks", "cooldown", "stepped", "class", "inventory", "growth", "ground", "loot_rng" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
     "character",
     "pause_page",
-    "mode",     "paused_from", "pause_menu", "back",           "exit",      "permadeath", "outdoors",     "hour_shown", "unkillable", "unsaved",
-    "travel",   "st",          "binds",      "aim_by",         "aim_act",   "aim_set",    "mark",         "cam",        "screen",     "framebuffer",
-    "shot",     "glide",       "turning",    "order",          "order_n",   "busy",       "pending",      "lead",       "owed",       "ran",
-    "pictured", "seq",         "split_from", "fx",             "vignette",  "mini",       "sprites",      "face",       "light",      "cloud",
-    "flowed",   "flow",        "queue",      "graphics_ready", "art_ready", "rain",       "flasks_shown", "mana_held",  "inspecting", "displaced",
+    "mode",
+    "paused_from",
+    "pause_menu",
+    "back",
+    "exit",
+    "permadeath",
+    "outdoors",
+    "hour_shown",
+    "unkillable",
+    "unsaved",
+    "travel",
+    "st",
+    "binds",
+    "aim_by",
+    "aim_act",
+    "aim_set",
+    "mark",
+    "cam",
+    "screen",
+    "framebuffer",
+    "shot",
+    "glide",
+    "turning",
+    "order",
+    "order_n",
+    "busy",
+    "pending",
+    "lead",
+    "owed",
+    "ran",
+    "pictured",
+    "seq",
+    "split_from",
+    "fx",
+    "vignette",
+    "mini",
+    "sprites",
+    "face",
+    "light",
+    "cloud",
+    "flowed",
+    "flow",
+    "queue",
+    "graphics_ready",
+    "art_ready",
+    "rain",
+    "flasks_shown",
+    "mana_held",
+    "inspecting",
+    "displaced",
+    "gold_taken",
+    "xp_aim",
+    "xp_shown",
+    "growth_shown",
+    "gold_shown",
 };
 
 comptime {
@@ -118,7 +169,18 @@ const FINGERPRINT = blk: {
     types[2] = bool;
     for (head[1..], 3..) |f, i| types[i] = f.type;
     types[types.len - 1] = Tail;
-    break :blk store.fingerprint(types);
+    break :blk store.fingerprint(types) ^ TREE;
+};
+/// The passive tree's layout, which saved allocations index by node.
+const TREE = blk: {
+    @setEvalBranchQuota(100_000);
+    var h = std.hash.Wyhash.init(0);
+    for (progress.NODES) |n| for (std.meta.fields(progress.Node)) |f| {
+        const v = @field(n, f.name);
+        h.update(&std.mem.toBytes(if (@typeInfo(f.type) == .@"enum") @intFromEnum(v) else v));
+    };
+    for (hero.CLASSES) |c| h.update(&std.mem.toBytes(progress.start(c)));
+    break :blk h.final();
 };
 const Print = @TypeOf(FINGERPRINT);
 const HEAD = MAGIC.len + @sizeOf(Print);
@@ -439,6 +501,13 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     defer game.shut(alloc, g);
     game.beginMap(g, w);
     g.name = hero.Name.of("Arwen");
+    try std.testing.expect(g.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .intelligence, .value = 2 }, null } }));
+    try g.inventory.equip(0, .right_ring, g.growth.attributes(g.class));
+    try std.testing.expect(g.inventory.add(.{ .kind = .sword }));
+    _ = g.growth.gain(100);
+    try std.testing.expect(g.growth.learn(g.class, .burning_arrow));
+    try std.testing.expect(g.ground.add(.{ .item = .{ .kind = .boots }, .at = g.heroActor().?.at }));
+    try std.testing.expect(g.ground.gold(g.heroActor().?.at, 12));
     g.gold = 17;
     g.mana = 37;
     g.cooldown.set(.juke, 2);
@@ -484,6 +553,12 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqual(@as(?*const Map, null), back.map);
     try read(buf.items, back, into);
     try std.testing.expectEqualStrings("Arwen", back.name.text());
+    try std.testing.expectEqual(g.growth, back.growth);
+    try std.testing.expectEqual(g.inventory.gear, back.inventory.gear);
+    try std.testing.expectEqualSlices(@import("play/items.zig").Item, g.inventory.bag[0..g.inventory.n], back.inventory.bag[0..back.inventory.n]);
+    try std.testing.expectEqual(@as(usize, 1), back.visits[0].ground.n);
+    try std.testing.expectEqual(@as(i32, 12), back.visits[0].ground.coins[0].amount);
+    try std.testing.expectEqual(g.loot_rng, back.loot_rng);
     try std.testing.expectEqual(@as(usize, 1), back.node);
     try std.testing.expectEqual(g.heroActor().?.at, back.heroActor().?.at);
     try std.testing.expectEqual(g.heroActor().?.hp, back.heroActor().?.hp);
@@ -510,7 +585,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqualStrings("A line to keep.", back.log.line(0).?);
     const s = try peek(buf.items);
     var line: [128]u8 = undefined;
-    try std.testing.expectEqualStrings("Arwen" ++ menu.SEP ++ "HP 19/24" ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.line(&line));
+    try std.testing.expectEqualStrings("Arwen" ++ menu.SEP ++ comptime std.fmt.comptimePrint(hero.HP_FMT, .{ 19, actor.row(actor.HERO).hp }) ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.line(&line));
     const at = HEAD + @offsetOf(Summary, "node");
     buf.items[at + @sizeOf(usize)] +%= 2;
     try std.testing.expectError(error.Damaged, peek(buf.items));

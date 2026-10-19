@@ -28,11 +28,7 @@ const BLOCK_GAP: i32 = GAP * 2;
 const ROW_STEP: i32 = ROW_H + GAP;
 const TEXT: i32 = font.BODY;
 const SMALL = font.SMALL;
-const HEAD: i32 = 24;
-
-comptime {
-    std.debug.assert(font.isNative(HEAD));
-}
+const HEAD = font.HEAD;
 const INNER_W: i32 = PANEL_W - PAD * 2;
 const ZOOMS = [_]f32{ 8, 16, 32, 64 };
 const ZOOM_AT = zoomOf(16);
@@ -316,7 +312,6 @@ comptime {
     }
 }
 
-/// `key` in `crib` as a word of its own, not inside another key's caption.
 fn namesKey(comptime crib: []const u8, comptime key: []const u8) bool {
     var from: usize = 0;
     while (std.mem.indexOfPos(u8, crib, from, key)) |i| : (from = i + 1) {
@@ -392,7 +387,7 @@ fn Text(comptime N: usize) type {
 const Field = Text(FIELD_MAX);
 const Path = Text(PATH_FIELD_MAX);
 
-/// A node's box dragged on the graph; `was` is where it stood, which `drop` puts it back to.
+/// Graph drag; cancellation restores `was`.
 const Drag = struct { node: usize, grab: P, from: P, was: P, moved: bool = false };
 const Span = struct { from: P, erase: bool, shape: Spanned };
 
@@ -636,7 +631,7 @@ pub const Editor = struct {
         ed.said_t = SAY_S;
     }
 
-    /// A press begins a gesture; everything it changes is one undo.
+    /// All changes between press and release form one undo step.
     fn gesture(ed: *Editor) void {
         ed.scratch.* = ed.map.*;
         ed.banked = false;
@@ -772,7 +767,7 @@ pub const Editor = struct {
         if (!ed.tool.fits(ed.here())) ed.tool = .door;
     }
 
-    /// The link tool's first door and a paste carry over: either may end on another node.
+    /// Preserve pending links and paste across node selection.
     fn select(ed: *Editor, n: usize) void {
         if (ed.renaming) ed.commitRename();
         ed.drop();
@@ -1044,7 +1039,7 @@ pub const Editor = struct {
         return look.rect(PANEL_W, 0, @max(0, g.screen.x - PANEL_W), @max(0, g.screen.y - STATUS_H));
     }
 
-    /// Where cell 0,0's corner lands, on a whole pixel so sprites never straddle one.
+    /// Screen origin rounded to whole pixels to keep sprites aligned.
     fn origin(ed: *const Editor, c: rl.Rectangle) [2]f32 {
         return .{ c.x - @round(ed.cam[0] * ed.px()), c.y - @round(ed.cam[1] * ed.px()) };
     }
@@ -1083,7 +1078,7 @@ pub const Editor = struct {
     }
 
     fn mouseIn(ed: *const Editor, r: rl.Rectangle) bool {
-        return rl.checkCollisionPointRec(vec(ed.desk.mouse), r);
+        return look.holds(r, ed.desk.mouse);
     }
 
     fn cellRect(ed: *const Editor, c: rl.Rectangle, p: P) rl.Rectangle {
@@ -1115,7 +1110,7 @@ pub const Editor = struct {
         var n = ed.map.node_n;
         while (n > 0) {
             n -= 1;
-            if (rl.checkCollisionPointRec(vec(m), ed.boxAt(c, n))) return n;
+            if (look.holds(ed.boxAt(c, n), m)) return n;
         }
         return null;
     }
@@ -1131,19 +1126,13 @@ pub const Editor = struct {
 };
 
 fn freshMap(w: *atlas.Atlas) void {
-    w.* = .{};
-    const n = w.add(.{ .bespoke = .{} }).?;
-    const b = &w.node[n].plan.bespoke;
-    var cells = grid.Box.centred(FRESH_ROOM.x, FRESH_ROOM.y).cells();
-    while (cells.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
-    w.start = .{ .node = n, .at = grid.MIDDLE };
+    const room = grid.Box.centred(FRESH_ROOM.x, FRESH_ROOM.y);
+    _ = w.oneRoom(room, room.centre());
 }
 
 const FRESH_ROOM = P{ .x = 15, .y = 9 };
 
-fn vec(p: P) rl.Vector2 {
-    return .{ .x = @floatFromInt(p.x), .y = @floatFromInt(p.y) };
-}
+const vec = look.vec;
 
 /// Caller updates `desk` and `g.screen` first; `closing` is the window close request.
 pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
@@ -1221,7 +1210,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     if (d.shape) |i| ed.setShape(SHAPES[i]);
     if (ed.view == .map) {
         if (d.fit) fitView(ed, c);
-        if (d.zoom_in or d.zoom_out) zoom(ed, c, if (d.zoom_in) 1 else -1, .{ .x = @intFromFloat(c.x + c.width / 2), .y = @intFromFloat(c.y + c.height / 2) });
+        if (d.zoom_in or d.zoom_out) zoom(ed, c, if (d.zoom_in) 1 else -1, look.middleAt(c));
         if (d.copy) copySelection(ed, false);
         if (d.cut) copySelection(ed, true);
         if (d.delete) clearSelection(ed);
@@ -1808,7 +1797,7 @@ fn addNode(ed: *Editor, plan: atlas.Plan) void {
     ed.typeName();
 }
 
-/// Modal controls alone are live under a modal; opening it suppresses hits for the frame.
+/// Modals disable underlying hits; opening one suppresses its own first-frame hits.
 fn hot(ed: *Editor, r: rl.Rectangle, live: bool, modal: bool, tip: ?[:0]const u8) struct { hot: bool, hit: bool } {
     const on_layer = !ed.fresh and ed.action == .none and (modal or (ed.modal == .none and ed.popup == null));
     const in_clip = if (ed.clip) |c| ed.mouseIn(c) else true;
@@ -2153,7 +2142,7 @@ fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
         const live = s == .select or ed.tool.broad();
         const h = hot(ed, r, true, false, s.tip());
         plate(r, ed.shape == s and live, h.hot);
-        g.face.drawMid(label, @as(i32, @intFromFloat(r.x + r.width / 2)), @as(i32, @intFromFloat(r.y)) + SMALL_DY, SMALL, if (live) look.TEXT else look.DIM);
+        g.face.drawMid(label, look.middleAt(r).x, @as(i32, @intFromFloat(r.y)) + SMALL_DY, SMALL, if (live) look.TEXT else look.DIM);
         if (h.hit) ed.setShape(s);
     }
     shapes.done();
@@ -2475,7 +2464,8 @@ fn drawMakeup(ed: *Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bo
         const h = hot(ed, r, true, false, if (i == 0) "The lead: click for the next foe" else "A member: click for the next foe");
         plate(r, false, h.hot);
         const l = look.body(m.kind[i]);
-        g.face.glyph(l.ch, @intFromFloat(r.x + r.width / 2), @intFromFloat(r.y + r.height / 2), TEXT, l.fg);
+        const at = look.middleAt(r);
+        g.face.glyph(l.ch, at.x, at.y, TEXT, l.fg);
         if (h.hit) m.turn(i);
     }
     var dropped = false;
@@ -2563,7 +2553,7 @@ const ROOMS_ROWS = [_]Knob{
 
 const WILDS_ROWS = [_]Knob{
     .{ .field = "loops", .tips = &.{"Side branches to try reconnecting to another path"}, .fmt = PERCENT_FMT },
-    .{ .field = "rewards", .tips = &.{"Closed treasure chests at the ends of substantial remaining branches"} },
+    .{ .field = "rewards", .tips = &.{"Chests in deep branches and sheltered spots, with scattered barrels for small gold rewards"} },
     .{ .field = "thicket", .tips = &.{"Of the ground, how much is sown with shrub before it is smoothed"}, .fmt = PERCENT_FMT },
     .{ .field = "smooth", .tips = &.{"Smoothing passes: more, rounder thickets and wider glades"} },
     .{ .field = "strays", .tips = &.{"Lone shrubs, a thousandth of the open grass each"} },
@@ -3482,7 +3472,8 @@ fn figure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, r: rl.Rectangle) void
 const GlyphBox = struct { x: i32, y: i32, size: i32 };
 
 fn inkIn(r: rl.Rectangle) GlyphBox {
-    return .{ .x = @intFromFloat(r.x + r.width * 0.5), .y = @intFromFloat(r.y + r.height * 0.5), .size = @intFromFloat(r.width * GLYPH_OF_CELL) };
+    const at = look.middleAt(r);
+    return .{ .x = at.x, .y = at.y, .size = @intFromFloat(r.width * GLYPH_OF_CELL) };
 }
 
 fn glyph(g: *game.Game, ch: u8, r: rl.Rectangle, col: rl.Color) void {

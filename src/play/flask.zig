@@ -59,7 +59,7 @@ pub const Flask = struct {
 };
 
 pub fn lifeOf(max: i32) i32 {
-    return @divTrunc(max * LIFE_PCT, mathx.PERCENT);
+    return mathx.percentOf(max, LIFE_PCT);
 }
 
 test "a flask holds three drinks, each recovering its amount whole over three turns, and kills refill it" {

@@ -11,9 +11,9 @@ pub const VERB = "sparks";
 pub const BOLT = "spark";
 pub const TAKES = clock.STUNNED;
 pub const ELEMENT: damage.Element = .lightning;
-pub const DESCRIPTION = std.fmt.comptimePrint("{d}-{d} lightning damage to a target in sight. {d}% chance to stun. {d} mana.", .{ LIGHTNING_LO, LIGHTNING_HI, CHANCE, COST });
+pub const DESCRIPTION = std.fmt.comptimePrint("{s} to a target in sight. {s}.", .{ BASE.text(ELEMENT), clock.stunNote(CHANCE) });
 
-pub const roll = mathx.Rng.rolls(LIGHTNING_LO, LIGHTNING_HI);
+pub const BASE = damage.Base{ .lo = LIGHTNING_LO, .hi = LIGHTNING_HI };
 
 pub const procs = damage.chance(CHANCE);
 pub const afflict = clock.stuns;

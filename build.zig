@@ -33,7 +33,8 @@ pub fn build(b: *std.Build) void {
         .root_module = root.module(),
         .filters = if (test_filter) |f| &.{f} else &.{},
     });
-    const run_tests = b.addRunArtifact(unit_tests);
+    const run_tests = std.Build.Step.Run.create(b, "run test");
+    run_tests.addArtifactArg(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     checkTestRoster(b);
     test_step.dependOn(&run_tests.step);

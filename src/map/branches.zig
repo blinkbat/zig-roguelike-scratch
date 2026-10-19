@@ -18,6 +18,12 @@ const LOOP_REACH = 10;
 const DIG_MAX = 8;
 const PASSES = 64;
 const SALT = 0xB2A6_C4E5;
+const CHEST_AREA = 500;
+const CHEST_MIN = 3;
+const CHEST_GAP = 14;
+const BARREL_AREA = 150;
+const BARREL_MAX = 24;
+const BARREL_GAP = 8;
 
 const Branch = struct { root: u16, neck: u16 };
 
@@ -141,12 +147,16 @@ const Graph = struct {
     }
 };
 
-pub const Result = struct { loops: usize = 0, chests: usize = 0 };
+pub const Result = struct { loops: usize = 0, chests: usize = 0, barrels: usize = 0 };
+
+pub fn improves(params: wilds.Params) bool {
+    return params.loops > 0 or params.rewards != .none;
+}
 
 pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Params) Result {
     var result = Result{};
     const loops = params.loops;
-    if (loops == 0 and params.rewards == .none) return result;
+    if (!improves(params)) return result;
     const pal = wilds.palette(params);
     var rng = mathx.Rng.init(seed ^ SALT);
     var g: Graph = .{};
@@ -202,12 +212,94 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
                 distances[grid.Level.idx(p)] = -1;
             }
         }
+        var blocked = lv.*;
+        for (blocked.barrel, 0..) |on, i| {
+            if (on) blocked.tile[i] = .wall;
+        }
+        const origin = blocked.firstOpen() orelse return result;
+        const available = blocked.openCount();
+        result.chests += stock(lv, &blocked, origin, doors, &rng, .chest, @min(CHEST_MIN, available / CHEST_AREA), CHEST_GAP);
+        result.barrels = stock(lv, &blocked, origin, doors, &rng, .barrel, @min(BARREL_MAX, available / BARREL_AREA), BARREL_GAP);
     }
     return result;
 }
 
+const Reward = enum {
+    chest,
+    barrel,
+
+    fn has(kind: Reward, lv: *const grid.Level, p: P) bool {
+        return switch (kind) {
+            .chest => lv.at(p) == .chest,
+            .barrel => lv.hasBarrel(p),
+        };
+    }
+};
+
+fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng: *mathx.Rng, kind: Reward, target: usize, gap: i32) usize {
+    var spots: [grid.CELLS]P = undefined;
+    var count: usize = 0;
+    var placed: [grid.CELLS]P = undefined;
+    var have: usize = 0;
+    for (0..grid.CELLS) |i| {
+        const p = grid.Level.of(i);
+        if (kind.has(lv, p)) {
+            placed[have] = p;
+            have += 1;
+        }
+        if (!rewardAt(lv, p) or p.eq(origin)) continue;
+        var near_door = false;
+        for (doors) |door| {
+            if (mathx.dist(p, door) < MIN_DEPTH) near_door = true;
+        }
+        if (near_door) continue;
+        var edges: usize = 0;
+        for (mathx.CARDINALS) |d| {
+            const q = p.add(d);
+            if (!grid.Level.onRim(q) and lv.at(q).solid() and lv.at(q) != .chest) edges += 1;
+        }
+        if (edges < @as(usize, if (kind == .chest) 2 else 1)) continue;
+        spots[count] = p;
+        count += 1;
+    }
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    var open = blocked.openCount();
+    var added: usize = 0;
+    while (have < target and count > 0) {
+        const pick = rng.below(@intCast(count));
+        const p = spots[pick];
+        count -= 1;
+        spots[pick] = spots[count];
+        var near = false;
+        for (placed[0..have]) |other| {
+            if (mathx.dist(p, other) < gap) near = true;
+        }
+        if (near) continue;
+        const was = blocked.at(p);
+        blocked.set(p, .chest);
+        if (grid.distances(blocked, origin, &dist, &queue) != open - 1) {
+            blocked.set(p, was);
+            continue;
+        }
+        switch (kind) {
+            .chest => lv.set(p, .chest),
+            .barrel => lv.putBarrel(p),
+        }
+        placed[have] = p;
+        have += 1;
+        added += 1;
+        open -= 1;
+    }
+    return added;
+}
+
 fn rewardAt(lv: *const grid.Level, p: P) bool {
     if (grid.Level.onRim(p) or !lv.vacant(p) or lv.doorAt(p) != null or lv.torch.has(lume.torchWall(p))) return false;
+    for (mathx.ALL_DIRS) |d| {
+        const q = p.add(d.delta());
+        if (lv.at(q) == .chest or lv.hasBarrel(q)) return false;
+    }
     return switch (lv.at(p)) {
         .grass, .dirt, .sand, .floor, .rubble, .tiny_shrub, .tall_grass, .shrooms => true,
         .wall, .shrub, .rock, .snow, .water, .shallows, .bridge, .reeds, .fence, .lava, .fungus, .chasm, .ice, .grave, .crop, .boulder, .chest, .chest_open => false,
@@ -302,4 +394,49 @@ test "a chest never takes the floor a torch hangs over" {
     try std.testing.expect(rewardAt(&lv, p));
     try std.testing.expect(lv.torch.add(lume.torchWall(p)));
     try std.testing.expect(!rewardAt(&lv, p));
+}
+
+test "scattered rewards leave narrow routes and the approach to existing treasure open" {
+    var lv = grid.Level.blank();
+    carve.box(&lv, grid.Box.sized(.{ .x = 10, .y = 10 }, 60, 1), .grass);
+    const doors = [_]P{ .{ .x = 10, .y = 10 }, .{ .x = 69, .y = 10 } };
+    for (doors, 0..) |p, i| lv.putDoor(p, i);
+    var blocked = lv;
+    var rng = mathx.Rng.init(44);
+    try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, .chest, 3, CHEST_GAP));
+    try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, .barrel, 12, BARREL_GAP));
+    const at = P{ .x = 40, .y = 10 };
+    lv.set(at.add(.{ .x = 0, .y = 1 }), .chest);
+    try std.testing.expect(!rewardAt(&lv, at));
+    lv.set(at.add(.{ .x = 0, .y = 1 }), .grass);
+    lv.putBarrel(at.add(.{ .x = 0, .y = 1 }));
+    try std.testing.expect(!rewardAt(&lv, at));
+    std.debug.print("60-cell route: no chest or barrel blocks it; neither can take the sole approach to existing treasure\n", .{});
+}
+
+test "a clearing without dead ends puts chests in sheltered corners and barrels along its edges" {
+    var lv = grid.Level.blank();
+    const room = grid.Box.sized(.{ .x = 8, .y = 8 }, 80, 48);
+    carve.box(&lv, room, .grass);
+    const origin = P{ .x = 8, .y = 32 };
+    lv.putDoor(origin, 0);
+    var g: Graph = .{};
+    g.build(&lv, &.{origin});
+    try std.testing.expectEqual(@as(usize, 0), g.n);
+    const result = improve(&lv, 44, &.{origin}, .{ .rewards = .chests });
+    try std.testing.expectEqual(@as(usize, 3), result.chests);
+    try std.testing.expect(result.barrels >= 12);
+    var blocked = lv;
+    for (lv.tile, 0..) |t, i| {
+        if (t == .chest) {
+            const p = grid.Level.of(i);
+            try std.testing.expect(p.x == room.lo.x or p.x == room.hi.x - 1);
+            try std.testing.expect(p.y == room.lo.y or p.y == room.hi.y - 1);
+        }
+        if (lv.barrel[i]) blocked.tile[i] = .wall;
+    }
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    try std.testing.expectEqual(blocked.openCount(), grid.distances(&blocked, origin, &dist, &queue));
+    std.debug.print("clearing with no dead ends: {d} corner chests and {d} edge barrels, every route open\n", .{ result.chests, result.barrels });
 }

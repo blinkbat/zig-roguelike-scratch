@@ -114,7 +114,7 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
                 .ch => unreachable,
             };
             const cx = @divTrunc(screen.x, 2) + @divTrunc((2 * @as(i32, @intCast(c)) + 1 - @as(i32, LAST.len)) * WIDE_W, 2);
-            face.textMid(label, cx, y + @divTrunc(KEY_H - KEY, 2), KEY, col);
+            face.textCentred(label, cx, y + @divTrunc(KEY_H, 2), KEY, col);
         }
     }
 }

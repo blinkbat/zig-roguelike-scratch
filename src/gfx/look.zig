@@ -180,6 +180,7 @@ pub const Sprites = struct {
     /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
     skills: ?rl.Texture2D = null,
     hud_border: ?rl.Texture2D = null,
+    log_fade: ?FadeShader = null,
     water: ?WaterShader = null,
     mirror: ?rl.RenderTexture2D = null,
     mirror_memory: ?rl.RenderTexture2D = null,
@@ -187,6 +188,7 @@ pub const Sprites = struct {
     pub fn loadCommon(self: *Sprites) void {
         self.skills = skillIcons();
         self.hud_border = texture(HUD_BORDER_PNG);
+        self.log_fade = program(FadeShader, FADE_FS);
         self.water = program(WaterShader, WATER_FS);
     }
 
@@ -393,6 +395,10 @@ pub fn hudPanel(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32
     hudBorder(sprites, x, y, width, height, tint);
 }
 
+pub fn hudPanelIn(sprites: *const Sprites, r: rl.Rectangle, fill: rl.Color, tint: rl.Color) void {
+    hudPanel(sprites, @intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height), fill, tint);
+}
+
 fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, tint: rl.Color) void {
     const tex = sprites.hud_border orelse {
         rl.drawRectangleLines(x, y, width, height, tint);
@@ -549,6 +555,24 @@ pub fn whole(t: rl.Texture2D) rl.Rectangle {
 
 pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
     return .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(w), .height = @floatFromInt(h) };
+}
+
+pub fn vec(p: mathx.P) rl.Vector2 {
+    return .{ .x = @floatFromInt(p.x), .y = @floatFromInt(p.y) };
+}
+
+pub fn holds(r: rl.Rectangle, p: mathx.P) bool {
+    return rl.checkCollisionPointRec(vec(p), r);
+}
+
+pub fn middle(r: rl.Rectangle) rl.Vector2 {
+    return .{ .x = r.x + r.width / 2, .y = r.y + r.height / 2 };
+}
+
+/// The pixel at `r`'s middle.
+pub fn middleAt(r: rl.Rectangle) mathx.P {
+    const m = middle(r);
+    return .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
 }
 
 pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
@@ -957,15 +981,26 @@ const FLASK = [_][4]f32{
     .{ 6, 28, 26, 28 },
 };
 
+const ARROW_LINES = [_][4]f32{
+    .{ 6, 26, 26, 6 },
+    .{ 16, 6, 26, 6 },
+    .{ 26, 6, 26, 16 },
+};
+
+const SHIELD_LINES = [_][4]f32{
+    .{ 6, 5, 26, 5 },
+    .{ 26, 5, 26, 16 },
+    .{ 26, 16, 16, 28 },
+    .{ 16, 28, 6, 16 },
+    .{ 6, 16, 6, 5 },
+};
+
 fn skillLines(a: skillbar.Act) []const [4]f32 {
     return switch (a) {
-        .shoot => &.{
-            .{ 6, 26, 26, 6 },
-            .{ 16, 6, 26, 6 },
-            .{ 26, 6, 26, 16 },
+        .shoot => &(ARROW_LINES ++ [_][4]f32{
             .{ 5, 19, 12, 19 },
             .{ 12, 19, 12, 26 },
-        },
+        }),
         .burning_arrow => &.{
             .{ 13, 26, 27, 12 },
             .{ 19, 12, 27, 12 },
@@ -1010,14 +1045,9 @@ fn skillLines(a: skillbar.Act) []const [4]f32 {
             .{ 20, 12, 28, 20 },
             .{ 20, 20, 28, 12 },
         },
-        .shield_bash => &.{
-            .{ 6, 5, 26, 5 },
-            .{ 26, 5, 26, 16 },
-            .{ 26, 16, 16, 28 },
-            .{ 16, 28, 6, 16 },
-            .{ 6, 16, 6, 5 },
+        .shield_bash => &(SHIELD_LINES ++ [_][4]f32{
             .{ 16, 9, 16, 22 },
-        },
+        }),
         .pinning_shot => &.{
             .{ 16, 4, 16, 24 },
             .{ 11, 19, 16, 24 },
@@ -1026,15 +1056,12 @@ fn skillLines(a: skillbar.Act) []const [4]f32 {
             .{ 20, 4, 16, 8 },
             .{ 5, 27, 27, 27 },
         },
-        .barbed_arrow => &.{
-            .{ 6, 26, 26, 6 },
-            .{ 16, 6, 26, 6 },
-            .{ 26, 6, 26, 16 },
+        .barbed_arrow => &(ARROW_LINES ++ [_][4]f32{
             .{ 11, 21, 7, 21 },
             .{ 11, 21, 11, 25 },
             .{ 16, 16, 12, 16 },
             .{ 16, 16, 16, 20 },
-        },
+        }),
         .frost_nova => &.{
             .{ 16, 3, 16, 29 },
             .{ 3, 16, 29, 16 },
@@ -1067,17 +1094,12 @@ fn skillLines(a: skillbar.Act) []const [4]f32 {
             .{ 15, 19, 19, 23 },
             .{ 20, 7, 24, 11 },
         },
-        .mana_shield => &.{
-            .{ 6, 5, 26, 5 },
-            .{ 26, 5, 26, 16 },
-            .{ 26, 16, 16, 28 },
-            .{ 16, 28, 6, 16 },
-            .{ 6, 16, 6, 5 },
+        .mana_shield => &(SHIELD_LINES ++ [_][4]f32{
             .{ 16, 9, 21, 15 },
             .{ 21, 15, 16, 21 },
             .{ 16, 21, 11, 15 },
             .{ 11, 15, 16, 9 },
-        },
+        }),
         .charge => &.{
             .{ 14, 16, 28, 16 },
             .{ 22, 10, 28, 16 },
@@ -1140,7 +1162,7 @@ pub fn elementInk(e: damage.Element) rl.Color {
 
 pub const LIGHTNING = rgb(0xf4e872);
 
-pub const SKILL_PX: i32 = 40;
+pub const SKILL_PX: i32 = 30;
 
 pub fn drawSkill(sprites: *const Sprites, a: skillbar.Act, x: i32, y: i32, alpha: f32) void {
     const ink = fade(rl.Color.white, alpha);
@@ -1221,7 +1243,7 @@ pub const Prompt = union(enum) {
             .face => |f| faceButton(face, f.button, f.sony, cx, cy, h, alpha),
             .pill => |s| {
                 pill(box, alpha);
-                legend(face, s, cx, cy, labelPx(h), fade(PROMPT_INK, alpha));
+                face.centred(s, cx, cy, labelPx(h), fade(PROMPT_INK, alpha));
             },
             .view => {
                 pill(box, alpha);
@@ -1233,7 +1255,7 @@ pub const Prompt = union(enum) {
             },
             .key => |s| {
                 keycap(box, alpha);
-                legend(face, s, cx, cy - @divTrunc(h, 12), labelPx(h), fade(PROMPT_INK, alpha));
+                face.centred(s, cx, cy - @divTrunc(h, 12), labelPx(h), fade(PROMPT_INK, alpha));
             },
         }
     }
@@ -1242,10 +1264,6 @@ pub const Prompt = union(enum) {
 /// An input icon `h` tall: its caption's text size.
 pub fn labelPx(h: i32) i32 {
     return @divTrunc(h * 11, 16);
-}
-
-fn legend(face: *const font.Face, s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
-    face.drawMid(s, cx, cy - @divTrunc(size, 2), size, col);
 }
 
 const PROMPT_BODY = rgb(0x1b1713);
@@ -1275,7 +1293,7 @@ fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i3
     rl.drawRing(c, r - 2.6, r - 1, 0, 360, 32, fade(ink, alpha));
     if (!sony) {
         const letter = [_:0]u8{std.ascii.toUpper(@tagName(b)[0])};
-        return legend(face, &letter, cx, cy, labelPx(h), fade(ink, alpha));
+        return face.centred(&letter, cx, cy, labelPx(h), fade(ink, alpha));
     }
     const s = r * 0.42;
     const line = @max(1.5, r * 0.16);
@@ -1336,6 +1354,7 @@ pub const SLOT_HELD = GOLD;
 pub const SLOT_CURSOR = RETICLE;
 pub const SLOT_CLEAR = FOE;
 pub const PICK_BG = PANEL;
+pub const CARD_BG = PANEL;
 pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 
 /// The alpha below which nothing is drawn.
@@ -1353,13 +1372,27 @@ pub const FS_HEAD = std.fmt.comptimePrint(
     \\
 , .{ CLEAR_A, grid.W, grid.H });
 
+const FadeShader = struct { shader: rl.Shader, bounds: i32 };
+const FADE_FS = FS_HEAD ++
+    \\uniform vec2 bounds;
+    \\void main() {
+    \\    vec4 ink = texture(texture0, fragTexCoord) * fragColor;
+    \\    ink.a *= 1.0 - smoothstep(bounds.x, bounds.y, gl_FragCoord.y);
+    \\    finalColor = ink;
+    \\}
+;
+
 /// Of the shallows' colours, what deep water's art keeps: `tools/tile_art/deepen_water.lua`.
 const WATER_DEEP_PERCENT = 60;
 const WATER_DEEP: f32 = mathx.fraction(WATER_DEEP_PERCENT);
+const WATER_SHALLOW: f32 = 1;
 const WATER_SATURATION: f32 = 0.8;
+const MIRROR_DEEP: f32 = 0.42;
+const MIRROR_SHALLOW: f32 = 0.28;
 const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
-    "const float SATURATION = {d};\nconst vec3 LUMA = vec3({d}, {d}, {d});\nconst float OVERBRIGHT = {d:.1};\n",
-    .{ WATER_SATURATION, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2], @import("light.zig").OVERBRIGHT },
+    "const float SATURATION = {d};\nconst vec3 LUMA = vec3({d}, {d}, {d});\nconst float OVERBRIGHT = {d:.1};\n" ++
+        "const float DEEP = {d:.2};\nconst float SHALLOW = {d:.2};\nconst float MIRROR_DEEP = {d:.2};\nconst float MIRROR_SHALLOW = {d:.2};\n",
+    .{ WATER_SATURATION, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2], @import("light.zig").OVERBRIGHT, WATER_DEEP, WATER_SHALLOW, MIRROR_DEEP, MIRROR_SHALLOW },
 ) ++
     \\uniform vec2 origin;
     \\uniform float cell;
@@ -1381,7 +1414,7 @@ const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
     \\        remembered.rgb *= light.rgb * OVERBRIGHT;
     \\        reflected = mix(remembered, texture(mirror, uv), light.a);
     \\    }
-    \\    float strength = mix(0.42, 0.28, smoothstep(0.6, 1.0, depth));
+    \\    float strength = mix(MIRROR_DEEP, MIRROR_SHALLOW, smoothstep(DEEP, SHALLOW, depth));
     \\    vec3 shine = reflected.rgb * vec3(0.80, 0.90, 1.0) * strength;
     \\    shine = mix(vec3(dot(shine, LUMA)), shine, SATURATION);
     \\    shine += texture(glints, at / CELLS).rgb * light.a;
@@ -1393,7 +1426,7 @@ const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
 fn waterDepth(gr: ground.Ground) ?f32 {
     return switch (gr) {
         .water => WATER_DEEP,
-        .shallows => 1,
+        .shallows => WATER_SHALLOW,
         .chasm, .lava, .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .bridge, .cobble => null,
     };
 }

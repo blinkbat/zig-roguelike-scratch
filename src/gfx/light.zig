@@ -18,7 +18,7 @@ const MAP_W: i32 = grid.W * SUB;
 const MAP_H: i32 = grid.H * SUB;
 const NONE_BAKED = [2]i32{ MAP_H, 0 };
 const TEXELS: usize = @intCast(MAP_W * MAP_H);
-/// The map is drawn with (DST_COLOR, SRC_COLOR) blending, so a texel stores half the light and reaches twice the art.
+/// DST_COLOR/SRC_COLOR blending doubles the stored light.
 pub const OVERBRIGHT: f32 = 2.0;
 
 pub const REACH: i32 = lume.TORCH_REACH;
@@ -26,12 +26,12 @@ const REACH2: f32 = @floatFromInt(REACH * REACH);
 const SPAN: i32 = grid.Cells.span(REACH);
 /// Cells: the inverse square's reference distance.
 const FALLOFF_D0: f32 = 2.5;
-/// A wall is this tall; its brick face fills the cell below `FACE_FROM`, so the face is drawn foreshortened.
+/// Wall height in cells; the brick face below `FACE_FROM` is foreshortened.
 const WALL_H: f32 = 1.0;
 const FACE_FROM: f32 = 1 - @as(f32, @floatFromInt(look.WALL_FACE_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
 const FACE_H: f32 = 1 - FACE_FROM;
 const FLAME_Z: f32 = 0.6;
-/// How far the flame stands out from its wall, so the bricks beside it are not lit edge-on.
+/// Flame offset from its wall, preventing edge-on lighting of neighbouring bricks.
 const STANDOFF: f32 = 0.3;
 const FLOOR_WRAP: f32 = 1.0;
 const FACE_WRAP: f32 = 0.35;
@@ -53,14 +53,13 @@ const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
 const FAINT: f32 = 0.002;
-/// A body drawn without its shader takes this share of its direct light.
 const TINT_DIRECT: f32 = 0.6;
 /// Per second.
 const REVEAL: f32 = 14.0;
 const FORGET: f32 = 5.0;
 /// Cells: memory is black on the edge of anything unseen and full this far from it.
 const VOID_FADE: f32 = 1.5;
-/// The same fade on ground in sight: short of a neighbour's middle, so nothing seen is darkened past the unseen cell's rim.
+/// Keep the sight fade inside unseen cell rims so visible ground stays bright.
 const SIGHT_FADE: f32 = 0.4;
 const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
 const VOID_SPAN: usize = @intCast(grid.Cells.span(VOID_REACH));
@@ -72,7 +71,7 @@ const FLICKER_BANDS = [_]struct { hz: f32, weight: f32 }{
     .{ .hz = 5.0, .weight = 0.3 },
     .{ .hz = 11.0, .weight = 0.1 },
 };
-/// Per channel, light past this bends toward a square root instead of clipping (Brogue's `adjustedLightValue`).
+/// Brogue's `adjustedLightValue`: bend channels above this knee toward sqrt.
 const KNEE: f32 = 1.5;
 
 const BODY_LIGHTS: usize = 4;
@@ -80,7 +79,7 @@ const BODY_LIGHTS: usize = 4;
 const FLASH_RGB = Rgb{ 0.88, 0.38, 0.30 };
 /// Texels toward the viewer, for the side-lighting of a body.
 const BODY_LIGHT_Z: f32 = 40.0;
-/// What a shadow at its darkest leaves of the ground, a little cool; overlaps keep the darker (Photoshop's Darken).
+/// Darkest ground tint; overlapping shadows take the channelwise minimum.
 const SHADE_RGB = Rgb{ 0.42, 0.45, 0.54 };
 /// Darkens whatever lights the ground, the hero's own light too.
 const MOON_SHADE_RGB = Rgb{ 0.34, 0.40, 0.62 };
@@ -103,7 +102,7 @@ const SHADOW_PAD: f32 = SHADOW_SOFT_TIP * @as(f32, @floatFromInt(SHADOW_TAPS));
 const SHADOW_SOFT_TIP: f32 = 2.0;
 const SHADOW_SOFT_FOOT: f32 = 0.6;
 const SHADOW_TAPS: i32 = 3;
-/// Of a shadow's length, its run up or down the screen: under `THIN_HI` its silhouette gives way to a soft streak, wholly by `THIN_LO`.
+/// Vertical shadow share: silhouettes fade to streaks from `THIN_HI` to `THIN_LO`.
 const THIN_LO: f32 = 0.06;
 const THIN_HI: f32 = 0.28;
 /// The streak's half-width, a share of the sprite's width, and its darkness against the silhouette's.
@@ -143,7 +142,7 @@ const FOREST_A: f32 = 1.3;
 const FOREST_MAX: f32 = 0.75;
 const FOREST_SOFT: f32 = 3.0;
 const FOREST_PAD: f32 = FOREST_SOFT * SHADOW_TAPS;
-/// Cells from a cell-tall caster its longest shadow, sky's or torch's, silhouette or canopy, reaches.
+/// Maximum ground reach, in cells, of a cell-tall sky or torch caster.
 pub const CAST_REACH: f32 = blk: {
     const l = @max(sky.REACH_MAX, SHADOW_LEN_HI);
     const pad = @max(SHADOW_PAD, FOREST_PAD) / look.SPRITE_PX;
@@ -153,7 +152,7 @@ const TRUNK_OF: f32 = 0.6;
 /// Cells to the side the sun lights a body from, as the body shader takes a lamp.
 const SUN_LAMP_D: f32 = 3;
 
-/// What stands in the sun's way: cells tall, and how far from its middle a round one reaches; square fills its cell.
+/// Height and optional circular radius in cells; null radius fills a square cell.
 const Caster = struct { h: f32, r: ?f32 = null };
 
 const CASTERS = std.EnumArray(grid.Tile, ?Caster).initDefault(@as(?Caster, null), .{
@@ -201,7 +200,7 @@ fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
     return lit;
 }
 
-/// Ground under a low sun keeps this much of a high one's light, so morning and evening stay warm and not dim.
+/// Low-sun ground light floor relative to a high sun.
 const GROUND_WRAP: f32 = 0.5;
 /// Cloud shadows: cells across, cells a second drifting, share of sky covered, edge softness, share of the sun taken.
 const CLOUD_SCALE: f32 = 14;
@@ -209,7 +208,6 @@ const CLOUD_DRIFT = [2]f32{ 0.35, 0.12 };
 const CLOUD_COVER: f32 = 0.52;
 const CLOUD_SOFT: f32 = 0.3;
 const CLOUD_DEPTH: f32 = 0.18;
-/// Of the noise, the broad octave's share and the fine one's, the fine one this many times finer.
 const CLOUD_OCTAVES = [2]f32{ 0.65, 0.35 };
 const CLOUD_LACUNARITY: f32 = 2.3;
 
@@ -304,7 +302,7 @@ fn offMiddle(c: P, q: [2]f32) f32 {
     return mathx.len(q[0] - m[0], q[1] - m[1]);
 }
 
-/// Where a light-map texel sits in the map: the screen shows a wall's face and ceiling lifted off the ground.
+/// Light-map coordinates account for walls drawn above their ground cell.
 const Spot = struct {
     x: f32,
     y: f32,
@@ -339,7 +337,7 @@ const Torch = struct {
     wall: P,
     /// 1 where the flame's light gets to, over the box of cells centred on the floor below the flame.
     reach: [SPAN * SPAN]f32,
-    /// `reach` but for what blocks sight: all a cell the flame misses blends from, so no wall passes its light on.
+    /// Sight-blocking mask for interpolation; prevents walls passing light onward.
     open: [SPAN * SPAN]f32,
     seed: u32,
     colour: Rgb = FLAME,
@@ -457,7 +455,7 @@ fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
     return mathx.bilerp(.{ texel(f, w, h, x0, y0), texel(f, w, h, x0 + 1, y0), texel(f, w, h, x0, y0 + 1), texel(f, w, h, x0 + 1, y0 + 1) }, u - fx, v - fy);
 }
 
-/// A point's own texel weighs a quarter at least in `bilinear`, so on wholly remembered open ground `open_sight` holds whole.
+/// Bilinear self-weight is at least 1/4, keeping remembered open ground whole.
 const OPEN_WHOLE: f32 = 4;
 
 /// A map-sized field at a point on the screen, cells.
@@ -617,7 +615,7 @@ const Lamp = struct {
     sky: ?SkyCast = null,
 };
 
-/// The sky's light, far off: its shadow runs `reach` body heights whatever the distance, `depth` dark in `shade`.
+/// Distant sky shadow: `reach` body heights, `depth` intensity in `shade`.
 const SkyCast = struct { reach: f32, depth: f32, shade: Rgb };
 
 fn skyDepth(k: sky.Sky, lit: f32) f32 {
@@ -685,7 +683,7 @@ fn recolour(c: rl.Color, rgb: Rgb) rl.Color {
     return colourOf(rgb, @as(f32, @floatFromInt(c.a)) / 255);
 }
 
-/// `lit` is how far in sight times how far remembered the flame is, `memory` how far remembered, as the ground under a body is.
+/// `lit` combines sight and memory; `memory` retains only exploration visibility.
 pub const Flame = struct { at: [2]f32, foot: f32, glow: f32, lit: f32, memory: f32 };
 
 pub const Emission = struct {
@@ -751,7 +749,7 @@ pub const Light = struct {
     /// Integral image of caster counts at cell corners.
     casting: [CORNERS_W * CORNERS_H]u16,
     clouds: [CORNERS_W * CORNERS_H]f32,
-    /// The corners `clouds` holds, both inclusive, and the light's seconds they were read at.
+    /// Cached inclusive cloud corners and sample time in seconds.
     clouds_held: ?struct { box: grid.Box, t: f32 } = null,
     t: mathx.Seconds,
     map: [TEXELS]rl.Color,
@@ -765,7 +763,7 @@ pub const Light = struct {
     forest_order: [FOREST_QUEUE]u64,
     reveal_map: bool = false,
 
-    /// Set field by field: built as one value, it is a temporary bigger than a thread's stack.
+    /// Initialize fields separately to avoid a temporary larger than the thread stack.
     pub fn create(alloc: std.mem.Allocator) !*Light {
         const l = try alloc.create(Light);
         mathx.defaults(l);
@@ -904,7 +902,6 @@ pub const Light = struct {
         }
     }
 
-    /// Normalized blur, in place.
     fn blurShare(self: *Light, num: *[grid.CELLS]f32, den: *const [grid.CELLS]f32) void {
         blur121(num, &self.blur, num);
         blur121(den, &self.blur, &self.share);
@@ -928,7 +925,7 @@ pub const Light = struct {
         };
     }
 
-    /// By distance, not a blur: a blur is not black on the edge of an unseen cell that seen ground wraps round.
+    /// Distance fade reaches black at unseen rims; a blur leaks around corners.
     fn fadeOf(self: *const Light, c: P) Fade {
         const own = self.memoryAt(c);
         if (own <= 0) return .{ .flat = 0 };
@@ -1264,7 +1261,7 @@ pub const Light = struct {
         return .{ .sight = sight, .memory = memory, .lit = sight * memory };
     }
 
-    /// `centre` is on the ground, cells. The carried light lights its own `carrier` flat. Faded as the ground under it is.
+    /// Ground centre in cells; self-carried light is flat, visibility follows the ground.
     pub fn onBody(self: *const Light, centre: [2]f32, carrier: bool) Shine {
         return self.bodyLight(centre, carrier, true);
     }
@@ -1383,13 +1380,15 @@ pub const Light = struct {
     }
 
     /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
-    pub fn drawBody(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const Shine, flash: f32) void {
+    pub fn drawBody(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const Shine, flash: f32, fade_bounds: [2]f32) void {
         const w: f32 = @floatFromInt(tex.width);
         const h: f32 = @floatFromInt(tex.height);
         const src = look.rect(0, 0, if (left) -tex.width else tex.width, tex.height);
         const normals = self.gpu.art(tex).normals;
         const sh = self.gpu.body;
         if (sh == null or normals == null) {
+            const fading = self.beginMirrorFade(fade_bounds);
+            defer if (fading) rl.endShaderMode();
             look.blit(tex, src, dest, s.drawn(rl.Color.white, flash));
             return;
         }
@@ -1411,6 +1410,7 @@ pub const Light = struct {
         look.setUniform(b.shader, b.ambient, ambient);
         look.setUniform(b.shader, b.count, n);
         look.setUniform(b.shader, b.flash, flash);
+        look.setUniform(b.shader, b.fade_bounds, fade_bounds);
         rl.setShaderValueTexture(b.shader, b.normals, normals.?);
         if (s.n > 0) {
             look.setUniforms(b.shader, b.lpos, &pos, n);
@@ -1422,6 +1422,18 @@ pub const Light = struct {
 
     pub fn footY(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle) f32 {
         return dest.y + self.gpu.art(tex).foot * dest.height / @as(f32, @floatFromInt(tex.height));
+    }
+
+    pub fn topY(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle) f32 {
+        return dest.y + self.gpu.art(tex).top * dest.height / @as(f32, @floatFromInt(tex.height));
+    }
+
+    pub fn beginMirrorFade(self: *const Light, bounds: [2]f32) bool {
+        if (bounds[0] >= bounds[1]) return false;
+        const s = self.gpu.mirror_fade orelse return false;
+        rl.beginShaderMode(s.shader);
+        look.setUniform(s.shader, s.fade_bounds, bounds);
+        return true;
     }
 
     fn footOf(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *const Shine, contact: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
@@ -1440,7 +1452,7 @@ pub const Light = struct {
         return .{ .x = x, .y = y, .height = height, .share = share };
     }
 
-    /// Shadows until `endShadows` go into a mask of the screen, the darker winning; false with no GL. `outer` is the framebuffer being drawn into.
+    /// Shadows accumulate by minimum in a screen mask; `outer` restores the framebuffer. False without GL.
     pub fn beginShadows(self: *Light, screen: P, outer: u32) bool {
         const pool = self.gpu.shade orelse return false;
         if (self.gpu.shadow == null or self.gpu.receiver == null or self.gpu.map == null) return false;
@@ -1751,7 +1763,22 @@ fn blur121(src: *const [grid.CELLS]f32, tmp: *[grid.CELLS]f32, out: *[grid.CELLS
     }
 }
 
-const BODY_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
+const MIRROR_HEAD = look.FS_HEAD ++
+    \\uniform vec2 fade_bounds;
+    \\float mirrorFade() {
+    \\    if (fade_bounds.x >= fade_bounds.y) return 1.0;
+    \\    return smoothstep(fade_bounds.x, fade_bounds.y, gl_FragCoord.y);
+    \\}
+++ "\n";
+
+const MIRROR_FS = MIRROR_HEAD ++
+    \\void main() {
+    \\    finalColor = texture(texture0, fragTexCoord) * fragColor;
+    \\    finalColor.a *= mirrorFade();
+    \\}
+;
+
+const BODY_FS = MIRROR_HEAD ++ std.fmt.comptimePrint(
     "#define LIGHTS {d}\nconst float KNEE = {d:.4};\nconst vec3 FLASH = vec3({d:.4}, {d:.4}, {d:.4});\n",
     .{ BODY_LIGHTS, KNEE, FLASH_RGB[0], FLASH_RGB[1], FLASH_RGB[2] },
 ) ++
@@ -1795,6 +1822,7 @@ const BODY_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     \\    }
     \\    light = mix(light, KNEE * sqrt(light / KNEE), step(KNEE, light));
     \\    finalColor = vec4(mix(c.rgb * light + sheen, FLASH, flash), c.a) * fragColor;
+    \\    finalColor.a *= mirrorFade();
     \\}
 ;
 
@@ -1867,7 +1895,10 @@ const BodyShader = struct {
     lcol: i32,
     normals: i32,
     flash: i32,
+    fade_bounds: i32,
 };
+
+const MirrorShader = struct { shader: rl.Shader, fade_bounds: i32 };
 
 const ShadowShader = struct {
     shader: rl.Shader,
@@ -1879,12 +1910,13 @@ const ShadowShader = struct {
 
 const Art = struct {
     id: u32,
+    top: f32,
     /// Texel rows from the sprite's top to just under its lowest opaque row.
     foot: f32,
     normals: ?rl.Texture2D,
 
     fn bare(t: rl.Texture2D) Art {
-        return .{ .id = t.id, .foot = @floatFromInt(t.height), .normals = null };
+        return .{ .id = t.id, .top = 0, .foot = @floatFromInt(t.height), .normals = null };
     }
 };
 
@@ -1902,6 +1934,7 @@ const Gpu = struct {
     glow: ?rl.Texture2D = null,
     streak: ?rl.Texture2D = null,
     body: ?BodyShader = null,
+    mirror_fade: ?MirrorShader = null,
     shadow: ?ShadowShader = null,
     receiver: ?ReceiverShader = null,
     shade: ?rl.Shader = null,
@@ -1918,6 +1951,7 @@ const Gpu = struct {
         g.glow = look.radial(GLOW_PX, glowAlpha);
         g.streak = look.field(STREAK_PX[0], STREAK_PX[1], streakAlpha);
         g.body = look.program(BodyShader, BODY_FS);
+        g.mirror_fade = look.program(MirrorShader, MIRROR_FS);
         g.shadow = look.program(ShadowShader, SHADOW_FS);
         g.receiver = look.program(ReceiverShader, RECEIVER_FS);
         g.shade = look.shader(SHADE_FS);
@@ -1959,6 +1993,12 @@ fn artOf(t: rl.Texture2D, lit: bool) Art {
     for (0..@intCast(t.height)) |y| {
         for (0..w) |x| solid[y * w + x] = rl.getImageColor(img, @intCast(x), @intCast(y)).a > SOLID_A;
     }
+    for (0..@intCast(t.height)) |top| {
+        if (rowSolid(&solid, t.width, @intCast(top))) {
+            a.top = @floatFromInt(top);
+            break;
+        }
+    }
     var y: i32 = t.height - 1;
     while (y >= 0) : (y -= 1) {
         if (rowSolid(&solid, t.width, y)) {
@@ -1978,7 +2018,7 @@ fn rowSolid(solid: *const [ART_MAX * ART_MAX]bool, w: i32, y: i32) bool {
     return false;
 }
 
-/// Laigter's soft bevel: distance to the nearest clear texel (outside counts as clear), raised on a quarter circle; `solid` packed `w` to a row.
+/// Laigter soft bevel: quarter-circle height from clear-pixel distance; `solid` is packed width-first.
 fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Texture2D {
     var height: [ART_MAX * ART_MAX]f32 = undefined;
     const reach = BEVEL_PX + 1;

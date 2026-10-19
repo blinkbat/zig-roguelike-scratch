@@ -76,14 +76,19 @@ const App = struct {
     }
 
     fn toTitle(app: *App) void {
-        game.holdWalk(app.g);
         app.scene = .title;
         app.goPage(.main);
     }
 
     fn goPage(app: *App, p: Page) void {
+        game.holdWalk(app.g);
         app.note.clear();
         app.page = p;
+    }
+
+    fn folderOpened(app: *App) void {
+        game.holdWalk(app.g);
+        app.maps = .{};
     }
 
     fn choose(app: *App, path: []const u8) void {
@@ -156,27 +161,25 @@ const App = struct {
 
     fn playTest(app: *App, from: atlas.Start) void {
         app.leaveRun();
-        app.g.class = hero.DEFAULT;
-        game.beginMapAt(app.g, app.ed.?.map, from, game.freshSeed());
-        app.g.st.device = .keys;
-        app.play(.editor, hero.DEFAULT.unnamed());
+        app.testOn(app.ed.?.map, from);
     }
 
     fn fight(app: *App, kind: actor.Kind) void {
         app.leaveRun();
         spar.author(app.map, kind);
+        app.testOn(app.map, app.map.start);
+    }
+
+    fn testOn(app: *App, map: *const atlas.Atlas, from: atlas.Start) void {
         app.g.class = hero.DEFAULT;
-        game.beginMap(app.g, app.map);
+        game.beginMapAt(app.g, map, from, game.freshSeed());
         app.g.st.device = .keys;
         app.play(.editor, hero.DEFAULT.unnamed());
     }
 
     fn play(app: *App, back: game.Back, fresh: ?hero.Name) void {
         const g = app.g;
-        if (fresh) |name| {
-            g.name = name;
-            g.bar = skillbar.Bar.of(g.class);
-        }
+        if (fresh) |name| g.name = name;
         g.permadeath = back == .title;
         g.back = back;
         game.holdWalk(g);
@@ -317,11 +320,11 @@ const App = struct {
                 menu.draw(g.face, g.screen, "CHOOSE A MAP", rows[0..n], app.maps.at, shown);
                 if (back) {
                     if (app.listing.up()) {
-                        app.maps = .{};
+                        app.folderOpened();
                     } else app.toTitle();
                 } else if (picked) |i| {
                     if (app.listing.open(i)) {
-                        app.maps = .{};
+                        app.folderOpened();
                     } else {
                         app.choose(app.listing.at(i));
                         app.goPage(.class);

@@ -4,6 +4,7 @@ const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
 const actor = @import("actor.zig");
 const spark = @import("spark.zig");
+const clock = @import("clock.zig");
 const bow = @import("bow.zig");
 
 pub const COST: i32 = 20;
@@ -16,9 +17,9 @@ pub const VERB = "shocks";
 pub const BOLT = "chain lightning";
 pub const TAKES = spark.TAKES;
 pub const ELEMENT: damage.Element = .lightning;
-pub const DESCRIPTION = std.fmt.comptimePrint("A bolt of {d}-{d} lightning that leaps on to {d} more foes, each within {d} tiles of the last. {d}% chance to stun each. {d} mana.", .{ LIGHTNING_LO, LIGHTNING_HI, JUMPS, JUMP_RANGE, spark.CHANCE, COST });
+pub const DESCRIPTION = std.fmt.comptimePrint("{s}. Leaps to {d} more foes, each within {d} tiles of the last. {s} each.", .{ BASE.text(ELEMENT), JUMPS, JUMP_RANGE, clock.stunNote(spark.CHANCE) });
 
-pub const roll = mathx.Rng.rolls(LIGHTNING_LO, LIGHTNING_HI);
+pub const BASE = damage.Base{ .lo = LIGHTNING_LO, .hi = LIGHTNING_HI };
 
 pub const procs = spark.procs;
 pub const afflict = spark.afflict;

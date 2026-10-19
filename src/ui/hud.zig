@@ -5,22 +5,24 @@ const font = @import("../gfx/font.zig");
 const look = @import("../gfx/look.zig");
 const fx = @import("../gfx/fx.zig");
 
-pub const WIDTH: i32 = 744;
-const HEIGHT: i32 = 172;
+pub const WIDTH: i32 = 640;
+const HEIGHT: i32 = 160;
 const BOTTOM: i32 = 12;
 /// How far up from the screen's foot the hud covers the map.
 pub const COVER: i32 = BOTTOM + HEIGHT;
-const ORB_R: i32 = 52;
-const FILL_R: i32 = 44;
+const ORB_R: i32 = 48;
+/// The template's opening sits this far inside the orb's rim.
+const FILL_INSET: i32 = 8;
+const FILL_R: i32 = ORB_R - FILL_INSET;
 /// The orbs' centres, in from the assembly's sides and down from its top.
-const ORB_INSET: i32 = 64;
-const ORB_Y: i32 = 104;
+const ORB_INSET: i32 = 60;
+const ORB_Y: i32 = 101;
 /// Clear space between an orb's rim and the skill strip.
-const ORB_GAP: i32 = 18;
+const ORB_GAP: i32 = 12;
 pub const SKILLS_MAX_W: i32 = WIDTH - 2 * (ORB_INSET + ORB_R + ORB_GAP);
 const PLATE_Y: i32 = 54;
 pub const PLATE_PAD: i32 = 8;
-pub const PLATE_H: i32 = 100;
+pub const PLATE_H: i32 = 94;
 const SHADOW_DROP: i32 = 3;
 const PLATE_SHADOW_GROW: i32 = 2;
 /// How far an orb's shadow falls below it, and how much wider it is.
@@ -46,7 +48,7 @@ const COUNT_INSET = mathx.P{ .x = 7, .y = 6 };
 
 comptime {
     std.debug.assert(STATUS_Y + STATUS_PX < PLATE_Y);
-    std.debug.assert(PLATE_Y + PLATE_H < ORB_Y + ORB_R);
+    std.debug.assert(ORB_Y - ORB_R <= PLATE_Y and PLATE_Y + PLATE_H < ORB_Y + ORB_R);
     std.debug.assert(ORB_Y + ORB_R + ORB_SHADOW_DY + ORB_SHADOW_GROW <= HEIGHT);
 }
 
@@ -54,7 +56,7 @@ const FRAME = look.rgb(0x625a48);
 const FRAME_DARK = look.rgb(0x22211f);
 const WELL = look.rgb(0x080a10);
 const WELL_RIM = look.rgb(0x020305);
-const PLATE = look.rgb(0x101114);
+pub const PLATE = look.rgb(0x101114);
 const LIFE_CORE = look.rgb(0xb83b32);
 const LIFE_EDGE = look.rgb(0x541412);
 const MANA_CORE = look.rgb(0x376eb4);
@@ -105,9 +107,7 @@ pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, m
 }
 
 fn fillHeight(value: i32, max: i32) i32 {
-    if (max <= 0) return 0;
-    const clamped: i64 = std.math.clamp(value, 0, max);
-    return @intCast(@divTrunc(clamped * FILL_R * 2, max));
+    return mathx.filled(value, max, FILL_R * 2);
 }
 
 fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, max: i32, core: rl.Color, edge: rl.Color) void {
@@ -135,6 +135,33 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, ma
     var buf: [48]u8 = undefined;
     const label = std.fmt.bufPrintZ(&buf, "{s} {d}/{d}", .{ name, @max(0, value), @max(0, max) }) catch "";
     face.textMid(label, x, y - ORB_R - LABEL_RISE, font.BODY, look.TEXT);
+}
+
+/// The experience bar, between the statuses and the plate, as wide as the skills.
+const XP_SEGMENTS = 10;
+const XP_H: i32 = 3;
+const XP_Y: i32 = PLATE_Y - 4 - XP_H;
+const XP_GAP: i32 = 3;
+const XP_TRACK = look.fade(rl.Color.white, 0.18);
+const XP_BACK = look.fade(rl.Color.black, 0.6);
+
+comptime {
+    std.debug.assert(STATUS_Y + STATUS_PX < XP_Y - 1);
+}
+
+/// `fill` of the way through the current level, in `XP_SEGMENTS` parts.
+pub fn experience(layout: Layout, fill: f32) void {
+    const seg_w = @divTrunc(layout.skills_w - (XP_SEGMENTS - 1) * XP_GAP, XP_SEGMENTS);
+    const x0 = layout.skills.x + @divTrunc(layout.skills_w - (XP_SEGMENTS * seg_w + (XP_SEGMENTS - 1) * XP_GAP), 2);
+    const y = layout.top + XP_Y;
+    for (0..XP_SEGMENTS) |i| {
+        const x = x0 + @as(i32, @intCast(i)) * (seg_w + XP_GAP);
+        rl.drawRectangle(x - 1, y - 1, seg_w + 2, XP_H + 2, XP_BACK);
+        rl.drawRectangle(x, y, seg_w, XP_H, XP_TRACK);
+        const part = std.math.clamp(fill * XP_SEGMENTS - @as(f32, @floatFromInt(i)), 0, 1);
+        const w: i32 = @intFromFloat(@round(part * @as(f32, @floatFromInt(seg_w))));
+        if (w > 0) rl.drawRectangle(x, y, w, XP_H, rl.Color.white);
+    }
 }
 
 /// Room for every status shown at once.
@@ -170,7 +197,7 @@ pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.
         const box = statusBox(layout, shown.len, k);
         const x: i32 = @intFromFloat(box.x);
         const y: i32 = @intFromFloat(box.y);
-        look.hudPanel(sprites, x, y, STATUS_PX, STATUS_PX, PLATE, look.LIT);
+        look.hudPanelIn(sprites, box, PLATE, look.LIT);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         var buf: [4]u8 = undefined;
         const label = std.fmt.bufPrintZ(&buf, "{d}", .{turns}) catch "";
@@ -188,21 +215,21 @@ const TIP_LEADING: i32 = 4;
 const TIP_LINE: i32 = font.SMALL + TIP_LEADING;
 const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
-const TIP_LINES_MAX: usize = 8;
-const TIP_COLS_MAX: usize = 96;
+pub const TIP_LINES_MAX: usize = 12;
+pub const TIP_COLS_MAX: usize = 96;
 
 /// The mark round what is inspected: a ring round an orb, a frame round anything else.
 pub fn focus(box: rl.Rectangle, round: bool) void {
     if (round) {
         const r = box.width / 2 + FOCUS_GROW;
-        rl.drawRing(.{ .x = box.x + box.width / 2, .y = box.y + box.height / 2 }, r - FOCUS_W, r, 0, 360, 64, look.RETICLE);
+        rl.drawRing(look.middle(box), r - FOCUS_W, r, 0, 360, 64, look.RETICLE);
         return;
     }
     rl.drawRectangleLinesEx(look.grown(box, FOCUS_GROW), FOCUS_W, look.RETICLE);
 }
 
 /// Each line in `buf` is nul-terminated; wrapping breaks only at spaces.
-fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *[TIP_LINES_MAX][TIP_COLS_MAX + 1]u8, lines: *[TIP_LINES_MAX][:0]const u8) usize {
+pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *[TIP_LINES_MAX][TIP_COLS_MAX + 1]u8, lines: *[TIP_LINES_MAX][:0]const u8) usize {
     var n: usize = 0;
     var words = std.mem.tokenizeScalar(u8, body, ' ');
     var len: usize = 0;
@@ -234,20 +261,45 @@ fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *[TIP_LINES_MAX
     return if (len > 0) @min(n + 1, TIP_LINES_MAX) else n;
 }
 
+/// A body with this splits into "label|value" rows, drawn as a table.
+pub const TIP_SEP = '|';
+const TIP_VALUE_X = @divTrunc(TIP_W, 2) + 24;
+
 /// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does.
 pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8) void {
     var buf: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
-    const n = wrap(face, body, font.SMALL, TIP_W - 2 * TIP_PAD, &buf, &lines);
+    const tabular = std.mem.indexOfScalar(u8, body, TIP_SEP) != null;
+    var n: usize = 0;
+    if (tabular) {
+        var rows = std.mem.splitScalar(u8, body, '\n');
+        while (rows.next()) |r| {
+            if (n == TIP_LINES_MAX) break;
+            const len = @min(r.len, TIP_COLS_MAX);
+            @memcpy(buf[n][0..len], r[0..len]);
+            buf[n][len] = 0;
+            lines[n] = buf[n][0..len :0];
+            n += 1;
+        }
+    } else n = wrap(face, body, font.SMALL, TIP_W - 2 * TIP_PAD, &buf, &lines);
     const h = 2 * TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(n)) * TIP_LINE;
-    const mid: i32 = @intFromFloat(over.x + over.width / 2);
+    const mid = look.middleAt(over).x;
     const x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
     const y = @max(TIP_MARGIN, @min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y) - TIP_GAP - h);
     shadow(x, y, TIP_W, h);
     rl.drawRectangle(x, y, TIP_W, h, PLATE);
     rl.drawRectangleLinesEx(look.rect(x, y, TIP_W, h), TIP_FRAME_W, FRAME);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.RETICLE);
-    for (lines[0..n], 0..) |l, i| face.text(l, x + TIP_PAD, y + TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(i)) * TIP_LINE, font.SMALL, look.TEXT);
+    for (lines[0..n], 0..) |l, i| {
+        const top = y + TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(i)) * TIP_LINE;
+        if (tabular) {
+            if (std.mem.indexOfScalar(u8, l, TIP_SEP)) |split| {
+                buf[i][split] = 0;
+                face.text(buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM);
+                face.text(buf[i][split + 1 .. l.len :0], x + TIP_VALUE_X, top, font.SMALL, look.TEXT);
+            }
+        } else face.text(l, x + TIP_PAD, top, font.SMALL, look.TEXT);
+    }
 }
 
 test "a tooltip's body breaks at spaces into lines that each fit" {

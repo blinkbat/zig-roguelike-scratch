@@ -16,13 +16,13 @@ pub const VERB = "blasts";
 pub const BOLT = "fireball";
 pub const TAKES = burning.TAKES;
 pub const ELEMENT: damage.Element = .fire;
-pub const DESCRIPTION = std.fmt.comptimePrint("A bolt that bursts on what it strikes: {d}-{d} fire to every foe within {d} tile{s} of it. {d}% burn chance. {d} mana.", .{ FIRE_LO, FIRE_HI, BLAST, if (BLAST == 1) "" else "s", burning.CHANCE, COST });
+pub const DESCRIPTION = std.fmt.comptimePrint("A bolt that bursts on what it strikes: {s} to every foe within {d} tile{s} of it. {s}.", .{ BASE.text(ELEMENT), BLAST, if (BLAST == 1) "" else "s", burning.BURN_NOTE });
 
 comptime {
     std.debug.assert(BLAST <= glacial.RANGE);
 }
 
-pub const roll = mathx.Rng.rolls(FIRE_LO, FIRE_HI);
+pub const BASE = damage.Base{ .lo = FIRE_LO, .hi = FIRE_HI };
 
 pub const procs = burning.procs;
 pub const afflict = burning.afflict;
@@ -38,7 +38,7 @@ fn every(_: void, _: P) bool {
 test "a fireball's blast takes the cell it strikes and the eight round it, but not past a wall" {
     var lv = grid.openFloor();
     const at = P{ .x = 20, .y = 20 };
-    const open: usize = @intCast(grid.Cells.span(BLAST) * grid.Cells.span(BLAST));
+    const open: usize = @intCast(grid.Cells.square(BLAST));
     var area = burst(&lv, .{ .x = 14, .y = 20 }, at);
     try std.testing.expectEqual(open, area.n);
     try std.testing.expect(area.has(at));

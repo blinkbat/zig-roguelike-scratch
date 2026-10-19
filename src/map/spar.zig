@@ -1,23 +1,25 @@
 const std = @import("std");
 const atlas = @import("atlas.zig");
 const grid = @import("grid.zig");
+const mathx = @import("../core/mathx.zig");
 const actor = @import("../play/actor.zig");
 
-pub const ROOM = grid.Box.centred(19, 9);
-pub const HERO = grid.MIDDLE.sub(.{ .x = 3, .y = 0 });
-pub const FOE = grid.MIDDLE.add(.{ .x = 3, .y = 0 });
+const ROOM = grid.Box.centred(19, 9);
+const MIDDLE = ROOM.centre();
+/// How far either side of the middle the hero and foe begin.
+const APART = mathx.P{ .x = 3, .y = 0 };
+pub const HERO = MIDDLE.sub(APART);
+pub const FOE = MIDDLE.add(APART);
+/// Between torches along the top wall.
+const TORCH_STEP: i32 = 6;
 
 pub fn author(map: *atlas.Atlas, kind: actor.Kind) void {
     std.debug.assert(kind.foe());
-    map.* = .{};
-    const node = map.add(.{ .bespoke = .{} }).?;
+    const node = map.oneRoom(ROOM, HERO);
     _ = map.node[node].rename("Arena");
     const room = &map.node[node].plan.bespoke;
-    var cells = ROOM.cells();
-    while (cells.next()) |p| room.tile[grid.Level.idx(p)] = .floor;
-    for ([_]i32{ -6, 0, 6 }) |dx| std.debug.assert(room.torch.add(.{ .x = grid.MIDDLE.x + dx, .y = ROOM.lo.y - 1 }));
+    for ([_]i32{ -TORCH_STEP, 0, TORCH_STEP }) |dx| std.debug.assert(room.torch.add(.{ .x = MIDDLE.x + dx, .y = ROOM.lo.y - 1 }));
     std.debug.assert(room.addFoe(.{ .kind = kind, .at = FOE }));
-    map.start = .{ .node = node, .at = HERO };
 }
 
 test "the arena contains one selected foe, a sealed room and an open start" {
@@ -32,6 +34,7 @@ test "the arena contains one selected foe, a sealed room and an open start" {
         try std.testing.expectEqual(@as(usize, 1), room.foe_n);
         try std.testing.expectEqual(kind, room.foe[0].kind);
         try std.testing.expect(room.floorAt(HERO) and room.floorAt(FOE));
+        try std.testing.expectEqual(HERO.x - ROOM.lo.x, ROOM.hi.x - 1 - FOE.x);
         try std.testing.expect(room.bodies() <= actor.MAX);
         for (room.tile, 0..) |tile, i| try std.testing.expectEqual(ROOM.holds(grid.Level.of(i)), tile == .floor);
         for (room.torches()) |torch| try std.testing.expect(map.node[0].torchFits(room, torch));

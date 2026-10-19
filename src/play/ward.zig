@@ -3,7 +3,7 @@ const std = @import("std");
 pub const COST: i32 = 30;
 pub const COOLDOWN: u8 = 8;
 pub const TURNS: u8 = 5;
-pub const DESCRIPTION = std.fmt.comptimePrint("For {d} turns, harm is taken from mana before life, a point for a point. {d} mana, {d}-turn cooldown.", .{ TURNS, COST, COOLDOWN });
+pub const DESCRIPTION = std.fmt.comptimePrint("For {d} turns, harm is taken from mana before life, a point for a point.", .{TURNS});
 
 /// Its turns left: the turn it is raised in is the first, the foes' blows in it already turned.
 pub const Ward = struct {
