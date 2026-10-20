@@ -34,7 +34,12 @@ pub const Page = enum {
         };
     }
 };
-pub const PAGES = [_]Page{ .equipment, .inventory, .stats, .passives, .skills };
+pub const PAGES = blk: {
+    const keyed = std.enums.values(input.CharacterPage);
+    var out: [keyed.len]Page = undefined;
+    for (keyed, &out) |k, *p| p.* = Page.of(k);
+    break :blk out;
+};
 const W = 1100;
 const H = 640;
 pub const SIZE = P{ .x = W, .y = H };
@@ -156,6 +161,8 @@ fn verbOf(c: std.meta.Tag(Command)) [:0]const u8 {
 pub const Book = struct {
     page: Page = .equipment,
     cursor: usize = 0,
+    /// The first list row shown.
+    top: usize = 0,
     last_page: Page = .equipment,
     last_cursor: usize = 0,
     zoom: f32 = trees.ZOOM_START,
@@ -181,6 +188,7 @@ pub const Book = struct {
         }
         self.page = page;
         self.cursor = 0;
+        self.top = 0;
         self.zoom = trees.ZOOM_START;
         self.pan = .{ .x = 0, .y = 0 };
         self.destination_index = 0;
@@ -197,7 +205,7 @@ pub const Book = struct {
         };
     }
     fn first(self: *const Book) usize {
-        return self.cursor -| (VISIBLE - 1);
+        return mathx.reveal(self.top, self.cursor, VISIBLE);
     }
     /// A scrolling list rather than laid-out cells.
     fn listed(self: *const Book) bool {
@@ -270,7 +278,13 @@ pub const Book = struct {
         const st = &local;
         const previous_cursor = self.cursor;
         const previous_page = self.page;
-        defer if (self.cursor != previous_cursor or self.page != previous_page) self.message.clear();
+        defer {
+            if (self.cursor != previous_cursor or self.page != previous_page) {
+                self.message.clear();
+                self.destination_index = 0;
+            }
+            self.top = self.first();
+        }
         const o = P{ .x = 0, .y = 0 };
         self.cursor = @min(self.cursor, self.count(v) -| 1);
         if (menu.closed(st)) return .close;
@@ -314,7 +328,7 @@ pub const Book = struct {
             if (look.holds(closeBox(o), p)) return .close;
             if (!self.direct) for (PAGES, 0..) |page, i| if (look.holds(tabBox(o, i), p)) {
                 self.choose(page);
-                if (page == .passives) self.cursor = progress.start(v.class);
+                self.enter(v);
                 return null;
             };
             if (self.page == .passives) {
@@ -400,7 +414,7 @@ pub const Book = struct {
         xp.say("Level  {d}     XP  {d} / {d}", .{ v.growth.level, v.growth.xp, v.growth.needed() });
         face.draw(xp.text(), o.x + RIGHT, o.y + 24, font.BODY, look.TEXT);
         const st = input.State{ .device = v.device };
-        menu.action(face, closeBox(o), look.Prompt.menuOf(&st, menu.BACK), "Close");
+        menu.action(face, closeBox(o), look.Prompt.menuOf(&st, menu.BACK), verbOf(.close));
         if (self.direct) face.draw("NEARBY", o.x + LIST_X, o.y + TAB_Y + (TAB_H - font.HEAD) / 2, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| tab(face, tabBox(o, i), page, self.page == page, v.device);
         if (self.treePanel() == null) rl.drawLine(o.x + DIVIDER_X, o.y + TOP, o.x + DIVIDER_X, o.y + H - 30, look.EDGE);
         if (self.treePanel()) |panel| {
@@ -415,12 +429,10 @@ pub const Book = struct {
             if (self.treePanel() != null) trees.note(face, o, self.message.text()) else face.draw(self.message.text(), o.x + RIGHT, o.y + H - 32, font.SMALL, look.TEXT);
         }
         if (self.treePanel() != null) {
-            const r = trees.actionBox(o);
-            const prompt = look.Prompt.menuOf(&st, menu.CONFIRM);
             const enabled = if (self.page == .passives) v.growth.canAllocate(self.cursor) else v.growth.canLearn(v.class, progress.skills(v.class)[self.cursor].act);
-            prompt.draw(face, @as(i32, @intFromFloat(r.x)) + 10 + @divTrunc(prompt.width(face, font.BODY), 2), @as(i32, @intFromFloat(r.y + r.height / 2)), font.BODY, if (enabled) 1 else 0.35);
+            _ = menu.actionPrompt(face, trees.actionBox(o), look.Prompt.menuOf(&st, menu.CONFIRM), if (enabled) 1 else 0.35);
         }
-        if (self.page == .skills) menu.action(face, trees.bindBox(o), look.Prompt.menuOf(&st, menu.CHANGE), if (v.growth.unlocked(progress.skills(v.class)[self.cursor].act)) "Bind skill" else "Bindings");
+        if (self.page == .skills) menu.action(face, trees.bindBox(o), look.Prompt.menuOf(&st, menu.CHANGE), if (v.growth.unlocked(progress.skills(v.class)[self.cursor].act)) verbOf(.bindings) else "Bindings");
         if (!self.direct) {
             const y = o.y + TAB_Y + TAB_H / 2;
             look.Prompt.menuOf(&st, .lb).draw(face, o.x + LIST_X + SHOULDER_W / 2, y, font.BODY, 1);
@@ -478,8 +490,12 @@ pub const Book = struct {
         }
     }
     fn requirementAttrs(self: *const Book, v: View, slot: items.Slot) attr.Attrs {
-        const gear = if (self.page == .inventory) v.inventory.swapped(self.cursor, slot) catch v.inventory.gear else v.inventory.gear;
-        return if (self.page == .inventory or self.page == .equipment) gear.statsWithout(slot, v.base) else v.stats();
+        const gear = switch (self.page) {
+            .inventory => v.inventory.swapped(self.cursor, slot) catch v.inventory.gear,
+            .nearby => v.inventory.gear.wearing(self.selected(v).?, slot),
+            else => v.inventory.gear,
+        };
+        return gear.statsWithout(slot, v.base);
     }
     fn drawDetail(self: *const Book, face: *const font.Face, o: P, v: View) void {
         const x = o.x + RIGHT;
@@ -490,7 +506,7 @@ pub const Book = struct {
                 face.draw("Both hands in use", x, y, font.HEAD, look.TEXT);
                 var held: menu.Note(128) = .{};
                 held.say("{s} uses both hands. Equipping an offhand returns it to inventory.", .{weapon.name()});
-                _ = textBlock(face, held.text(), x, y + 42, CARD_W * 2 + CARD_GAP, font.SMALL, look.DIM);
+                _ = trees.paragraph(face, held.text(), x, y + 42, CARD_W * 2 + CARD_GAP, look.DIM);
                 menu.action(face, actionBox(o, 0), look.Prompt.menuOf(&.{ .device = v.device }, menu.CONFIRM), "Inventory");
                 return;
             };
@@ -516,20 +532,12 @@ pub const Book = struct {
                 }
             } else |err| {
                 var reason: menu.Note(140) = .{};
-                reason.say("{s}", .{items.caption(err)});
-                if (err == error.Requirements) {
-                    reason.say("Cannot equip: requirements not met.", .{});
-                    if (v.inventory.swapped(self.cursor, slot)) |after| {
-                        for (items.SLOTS) |s| {
-                            if (s == slot) continue;
-                            if (after.slots.get(s)) |other| if (!after.wornMeets(s, v.base)) {
-                                reason.say("Would leave {s} without its required attributes.", .{other.name()});
-                                break;
-                            };
-                        }
-                    } else |_| {}
-                }
-                _ = textBlock(face, reason.text(), x, at, CARD_W * 2 + CARD_GAP, font.SMALL, LOSS);
+                if (err != error.Requirements) {
+                    reason.say("{s}", .{items.caption(err)});
+                } else if (dependent(v, self.cursor, slot)) |other| {
+                    reason.say("Would leave {s} without its required attributes.", .{other.name()});
+                } else reason.say("Cannot equip: requirements not met.", .{});
+                _ = trees.paragraph(face, reason.text(), x, at, CARD_W * 2 + CARD_GAP, LOSS);
             }
         }
         const st = input.State{ .device = v.device };
@@ -541,7 +549,7 @@ pub const Book = struct {
         });
         if (self.page == .inventory) {
             if (slots.len > 1) menu.action(face, actionBox(o, 1), look.Prompt.menuOf(&st, menu.CHANGE), slotLabel(slot));
-            menu.action(face, actionBox(o, 2), look.Prompt.menuOf(&st, menu.REMOVE), "Drop");
+            menu.action(face, actionBox(o, 2), look.Prompt.menuOf(&st, menu.REMOVE), verbOf(.drop));
         }
     }
 };
@@ -579,13 +587,21 @@ fn offhandWeapon(gear: items.Gear, slot: items.Slot) ?items.Item {
     return if (slot == .left_hand) gear.twoHander() else null;
 }
 
-fn textBlock(face: *const font.Face, text: []const u8, x: i32, y: i32, width: i32, size: i32, ink: rl.Color) i32 {
-    return hud.paragraph(face, text, x, y, width, size, size + 4, ink);
+/// Something else worn that equipping bag item `at` in `slot` would leave unmet.
+fn dependent(v: View, at: usize, slot: items.Slot) ?items.Item {
+    const after = v.inventory.swapped(at, slot) catch return null;
+    for (items.SLOTS) |s| {
+        if (s == slot) continue;
+        if (after.slots.get(s)) |other| if (!after.wornMeets(s, v.base)) return other;
+    }
+    return null;
 }
+
+const CARD_LINE = 22;
 
 fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.Item, slot: items.Slot, available: attr.Attrs, caption: [:0]const u8) void {
     const mid = x + @divTrunc(width, 2);
-    face.drawMid(caption, mid, y, 16, look.DIM);
+    face.drawMid(caption, mid, y, font.SMALL, look.DIM);
     rl.drawLine(x, y + 20, x + width, y + 20, look.EDGE);
     const it = maybe orelse {
         face.drawMid("Empty slot", mid, y + 35, font.BODY, look.DIM);
@@ -601,18 +617,18 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     if (spec.damage) |hit| {
         line.say("Physical damage: {d}-{d}", .{ hit.lo, hit.hi });
         face.drawMid(line.text(), mid, top, font.SMALL, look.TEXT);
-        top += 22;
+        top += CARD_LINE;
         line.say("Scales with {s}", .{menu.named(spec.style.attr())});
         face.drawMid(line.text(), mid, top, font.SMALL, look.DIM);
-        top += 22;
+        top += CARD_LINE;
     } else if (slot == .right_hand) {
         face.drawMid("No weapon damage", mid, top, font.SMALL, look.DIM);
-        top += 22;
+        top += CARD_LINE;
     }
     if (spec.armour > 0) {
         line.say("Physical damage reduced by {d}%", .{spec.armour});
         face.drawMid(line.text(), mid, top, font.SMALL, look.TEXT);
-        top += 22;
+        top += CARD_LINE;
     }
     inline for (attr.ATTRS) |at| {
         const required = @field(spec.needs, @tagName(at));
@@ -620,11 +636,11 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
             line.say("Requires {d} {s}", .{ required, menu.named(at) });
             const met = available.get(at) >= required;
             face.drawMid(line.text(), mid, top, font.SMALL, if (met) look.DIM else LOSS);
-            top += 22;
+            top += CARD_LINE;
             if (!met) {
                 line.say("({d} available)", .{available.get(at)});
                 face.drawMid(line.text(), mid, top, font.SMALL, LOSS);
-                top += 22;
+                top += CARD_LINE;
             }
         }
     }
@@ -635,13 +651,9 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
         for (items.MODS) |m| {
             const n = it.value(m);
             if (n == 0) continue;
-            line.say("+{d} to {s}", .{ n, switch (m) {
-                .life => @as([:0]const u8, "maximum life"),
-                .mana => "maximum mana",
-                else => menu.named(m),
-            } });
+            line.say("+{d} to {s}", .{ n, m.label() });
             face.drawMid(line.text(), mid, top, font.SMALL, look.WARD);
-            top += 22;
+            top += CARD_LINE;
         }
     }
 }
@@ -659,11 +671,11 @@ const CHANGE_ROW = 20;
 
 /// The foot of the change list.
 fn drawChanges(face: *const font.Face, x: i32, y: i32, was: attr.Attrs, now: attr.Attrs) i32 {
-    face.draw("IF EQUIPPED", x, y, 16, look.DIM);
+    face.draw("IF EQUIPPED", x, y, font.SMALL, look.DIM);
     var n: usize = 0;
-    const top = y + 22;
-    change(face, x, top, &n, "maximum life", was.life(), now.life(), false);
-    change(face, x, top, &n, "maximum mana", was.mana(), now.mana(), false);
+    const top = y + CARD_LINE;
+    change(face, x, top, &n, attr.Bonus.life.label(), was.life(), now.life(), false);
+    change(face, x, top, &n, attr.Bonus.mana.label(), was.mana(), now.mana(), false);
     for (attr.ATTRS) |at| change(face, x, top, &n, menu.named(at), was.get(at), now.get(at), false);
     change(face, x, top, &n, "physical reduction", was.reduction(), now.reduction(), true);
     change(face, x, top, &n, "critical chance", @intCast(was.crit()), @intCast(now.crit()), true);
@@ -678,22 +690,30 @@ fn drawChanges(face: *const font.Face, x: i32, y: i32, was: attr.Attrs, now: att
 
 fn damageLabel(s: attr.Style) [:0]const u8 {
     return switch (s) {
-        .heavy => "heavy damage bonus",
-        .light => "light damage bonus",
-        .spell => "spell damage bonus",
+        inline else => |t| @tagName(t) ++ " damage bonus",
     };
+}
+
+const STAT_W = 440;
+/// A section's title to its first row, and row to row.
+const SECTION_ROWS = 38;
+const STAT_ROW = 30;
+const ATTR_ROW = 58;
+
+fn row(top: i32, i: usize, step: i32) i32 {
+    return top + SECTION_ROWS + @as(i32, @intCast(i)) * step;
 }
 
 fn stat(face: *const font.Face, x: i32, y: i32, label: [:0]const u8, number: i32, prefix: []const u8, suffix: []const u8) void {
     face.draw(label, x, y, font.BODY, look.TEXT);
     var text: menu.Note(48) = .{};
     text.say("{s}{d}{s}", .{ prefix, number, suffix });
-    face.draw(text.text(), x + 440 - face.width(text.text(), font.BODY), y, font.BODY, look.TEXT);
+    face.draw(text.text(), x + STAT_W - face.width(text.text(), font.BODY), y, font.BODY, look.TEXT);
 }
 
 fn section(face: *const font.Face, x: i32, y: i32, title: [:0]const u8) void {
     face.draw(title, x, y, font.SMALL, look.UI_FOCUS);
-    rl.drawLine(x, y + 25, x + 440, y + 25, look.EDGE);
+    rl.drawLine(x, y + 25, x + STAT_W, y + 25, look.EDGE);
 }
 
 fn drawStats(face: *const font.Face, o: P, v: View) void {
@@ -703,7 +723,7 @@ fn drawStats(face: *const font.Face, o: P, v: View) void {
     const y = o.y + TOP;
     section(face, x, y, "ATTRIBUTES");
     for (attr.ATTRS, 0..) |at, i| {
-        const top = y + 38 + @as(i32, @intCast(i)) * 58;
+        const top = row(y, i, ATTR_ROW);
         stat(face, x, top, menu.named(at), a.get(at), "", "");
         face.draw(switch (at) {
             .strength => "Life and heavy weapon damage",
@@ -711,24 +731,25 @@ fn drawStats(face: *const font.Face, o: P, v: View) void {
             .intelligence => "Mana and spell damage",
         }, x, top + 25, font.SMALL, look.DIM);
     }
-    section(face, x, y + 226, "SURVIVAL");
-    stat(face, x, y + 264, "Maximum life", a.life(), "", "");
-    stat(face, x, y + 294, "Maximum mana", a.mana(), "", "");
-    stat(face, x, y + 324, "Physical damage reduction", a.reduction(), "", "%");
-    stat(face, x, y + 354, "Chance to dodge", @intCast(a.dodge()), "", "%");
+    const survival = y + 226;
+    section(face, x, survival, "SURVIVAL");
+    stat(face, x, row(survival, 0, STAT_ROW), "Maximum life", a.life(), "", "");
+    stat(face, x, row(survival, 1, STAT_ROW), "Maximum mana", a.mana(), "", "");
+    stat(face, x, row(survival, 2, STAT_ROW), "Physical damage reduction", a.reduction(), "", "%");
+    stat(face, x, row(survival, 3, STAT_ROW), "Chance to dodge", @intCast(a.dodge()), "", "%");
     var note: menu.Note(100) = .{};
     note.say("Physical reduction is capped at {d}%.", .{attr.ARMOUR_MAX});
-    face.draw(note.text(), x, y + 391, font.SMALL, look.DIM);
+    face.draw(note.text(), x, row(survival, 4, STAT_ROW) + 7, font.SMALL, look.DIM);
     section(face, right, y, "DAMAGE BONUSES");
-    const names = [_][:0]const u8{ "Heavy weapon damage", "Light weapon damage", "Spell damage" };
-    for (attr.STYLES, names, 0..) |s, name, i| stat(face, right, y + 38 + @as(i32, @intCast(i)) * 30, name, a.increase(s), "+", "%");
-    face.draw("Bonuses to base damage; skill ranks add their own.", right, y + 139, font.SMALL, look.DIM);
+    for (attr.STYLES, 0..) |s, i| stat(face, right, row(y, i, STAT_ROW), s.label(), a.increase(s), "+", "%");
+    face.draw("Bonuses to base damage; skill ranks add their own.", right, row(y, attr.STYLES.len, STAT_ROW) + 11, font.SMALL, look.DIM);
     stat(face, right, y + 180, "Critical strike chance", @intCast(a.crit()), "", "%");
-    stat(face, right, y + 210, "Critical damage multiplier", attr.CRIT_MULTI, "", "%");
-    section(face, right, y + 272, "PROGRESSION");
-    stat(face, right, y + 310, "Passive points available", v.growth.passive_points, "", "");
-    stat(face, right, y + 340, "Active skill points available", v.growth.active_points, "", "");
-    stat(face, right, y + 390, "Gold", v.gold, "", "");
+    stat(face, right, y + 180 + STAT_ROW, "Critical damage multiplier", attr.CRIT_MULTI, "", "%");
+    const progression = y + 272;
+    section(face, right, progression, "PROGRESSION");
+    stat(face, right, row(progression, 0, STAT_ROW), "Passive points available", v.growth.passive_points, "", "");
+    stat(face, right, row(progression, 1, STAT_ROW), "Active skill points available", v.growth.active_points, "", "");
+    stat(face, right, row(progression, 3, STAT_ROW) - 10, "Gold", v.gold, "", "");
 }
 
 test "character actions need one press and tabs are directly reachable" {
@@ -778,7 +799,12 @@ test "item card requirements exclude the item itself and every displaced hand" {
     try std.testing.expectEqual(@as(i32, 13), book.requirementAttrs(v, .right_ring).get(.strength));
     book.page = .equipment;
     try std.testing.expectEqual(@as(i32, 17), book.requirementAttrs(v, .left_ring).get(.strength));
-    std.debug.print("item cards: 2-hand displacement, self-funding and both ring destinations; inventory unchanged\n", .{});
+    inv.gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .strength, .value = 10 }, null } });
+    var ground = v;
+    ground.nearby = &.{.{ .kind = .loot, .at = .{ .x = 0, .y = 0 }, .item = .{ .kind = .axe, .mods = .{ null, null } } }};
+    book.choose(.nearby);
+    try std.testing.expectEqual(@as(i32, 20), book.requirementAttrs(ground, .right_hand).get(.strength));
+    std.debug.print("item cards: 2-hand displacement, self-funding, both ring destinations and ground items; inventory unchanged\n", .{});
 }
 
 test "tree browsing is free and point actions issue one command" {

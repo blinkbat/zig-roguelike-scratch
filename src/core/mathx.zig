@@ -91,6 +91,11 @@ pub fn percentOf(v: i32, pc: i32) i32 {
     return @divTrunc(v * pc, PERCENT);
 }
 
+/// The ending a noun counted `n` times takes.
+pub fn plural(n: anytype) []const u8 {
+    return if (n == 1) "" else "s";
+}
+
 /// How much of `full` a `value` out of `max` fills, held to 0..`full`.
 pub fn filled(value: i32, max: i32, full: i32) i32 {
     if (max <= 0) return 0;

@@ -29,10 +29,10 @@ pub const PAN_RATE: f32 = 3.4;
 const CANVAS = look.rect(24, 132, 696, 458);
 const DETAIL = look.rect(744, 132, 332, 458);
 const WHEEL = look.rect(44, 194, 656, 352);
-const TEXT_X: i32 = 764;
-const TEXT_W: i32 = 292;
 /// Text and controls keep this far inside the canvas.
 const INSET: i32 = 20;
+const TEXT_X: i32 = @as(i32, @intFromFloat(DETAIL.x)) + INSET;
+const TEXT_W: i32 = @as(i32, @intFromFloat(DETAIL.width)) - 2 * INSET;
 const CANVAS_RIGHT: i32 = @as(i32, @intFromFloat(CANVAS.x + CANVAS.width)) - INSET;
 const CANVAS_LEFT: i32 = @as(i32, @intFromFloat(CANVAS.x)) + INSET;
 /// The middle of the canvas's foot row: legend and zoom.
@@ -112,10 +112,11 @@ fn treeHints(face: *const font.Face, o: P, device: input.Device) void {
         hint(face, x + 328, y, &.{.dpad}, "Zoom");
         hint(face, x + 492, y, &.{look.Prompt.menuOf(&st, .inspect)}, "Overview");
     } else {
-        hint(face, x, y, &.{.{ .key = "WASD" }}, "Browse");
+        const keys = input.TreeKeys;
+        hint(face, x, y, &.{.{ .key = keys.BROWSE_CAPTION }}, "Browse");
         hint(face, x + 164, y, &.{ .{ .key = input.Desk.SHIFT_NAME }, .arrows }, "Pan");
-        hint(face, x + 328, y, &.{ .{ .key = "-" }, .{ .key = "+" } }, "Zoom");
-        hint(face, x + 492, y, &.{.{ .key = "Home" }}, "Overview");
+        hint(face, x + 328, y, &.{ .{ .key = keys.ZOOM_OUT_CAPTION }, .{ .key = keys.ZOOM_IN_CAPTION } }, "Zoom");
+        hint(face, x + 492, y, &.{.{ .key = keys.OVERVIEW_CAPTION }}, "Overview");
     }
 }
 
@@ -156,7 +157,7 @@ fn frame(face: *const font.Face, o: P, title: [:0]const u8, points: u16) void {
     }
     face.draw(title, o.x + CANVAS_LEFT, o.y + 150, font.SMALL, look.TEXT);
     var line: menu.Note(64) = .{};
-    line.say("{d} point{s} available", .{ points, if (points == 1) @as([]const u8, "") else "s" });
+    line.say("{d} point{s} available", .{ points, mathx.plural(points) });
     face.draw(line.text(), o.x + CANVAS_RIGHT - face.width(line.text(), font.SMALL), o.y + 150, font.SMALL, if (points > 0) OWNED else look.DIM);
 }
 
@@ -171,8 +172,8 @@ fn legend(face: *const font.Face, o: P, entries: []const Legend, round: bool) vo
     }
 }
 
-fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, width: i32, ink: rl.Color) i32 {
-    return hud.paragraph(face, text, x, y, width, font.SMALL, font.SMALL + 4, ink);
+pub fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, width: i32, ink: rl.Color) i32 {
+    return hud.paragraph(face, text, x, y, width, font.SMALL, font.SMALL + hud.LEADING, ink);
 }
 
 fn arrow(from: rl.Rectangle, to: rl.Rectangle, ink: rl.Color) void {
@@ -186,8 +187,32 @@ fn arrow(from: rl.Rectangle, to: rl.Rectangle, ink: rl.Color) void {
     rl.drawLineEx(.{ .x = b.x + 4, .y = b.y - 5 }, b, 1, ink);
 }
 
+const SkillState = enum {
+    learned,
+    available,
+    locked,
+
+    fn of(class: hero.Class, growth: *const progress.State, s: progress.Skill) SkillState {
+        return if (growth.unlocked(s.act)) .learned else if (growth.canLearn(class, s.act)) .available else .locked;
+    }
+
+    fn ink(self: SkillState) rl.Color {
+        return switch (self) {
+            .learned => OWNED,
+            .available => AVAILABLE,
+            .locked => LOCKED,
+        };
+    }
+
+    const LEGEND = blk: {
+        var out: [std.enums.values(SkillState).len]Legend = undefined;
+        for (std.enums.values(SkillState), &out) |s, *l| l.* = .{ .name = menu.named(s), .color = s.ink() };
+        break :blk out;
+    };
+};
+
 fn skillInk(class: hero.Class, growth: *const progress.State, s: progress.Skill) rl.Color {
-    return if (growth.unlocked(s.act)) OWNED else if (growth.canLearn(class, s.act)) AVAILABLE else LOCKED;
+    return SkillState.of(class, growth, s).ink();
 }
 
 fn skillAlpha(class: hero.Class, growth: *const progress.State, s: progress.Skill) f32 {
@@ -222,11 +247,7 @@ fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, o: P, class:
         face.centred(rank.text(), pm.x, pm.y, font.SMALL, ink);
         face.drawMid(s.act.name(), mid.x, mid.y + 46, font.SMALL, if (growth.unlocked(s.act) or i == cursor) look.TEXT else LOCKED);
     }
-    legend(face, o, &.{
-        .{ .name = "Learned", .color = OWNED },
-        .{ .name = "Available", .color = AVAILABLE },
-        .{ .name = "Locked", .color = LOCKED },
-    }, false);
+    legend(face, o, &SkillState.LEGEND, false);
     skillDetails(face, o, class, growth, skills[cursor], loadout);
 }
 
@@ -277,13 +298,13 @@ fn skillDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const 
     var top = @max(o.y + 284, end + 12);
     rl.drawLine(x, top, x + TEXT_W, top, BORDER);
     top += 12;
-    face.draw(if (learned) "CURRENT RANK" else "FIRST RANK", x, top, 16, look.DIM);
+    face.draw(if (learned) "CURRENT RANK" else "FIRST RANK", x, top, font.SMALL, look.DIM);
     top += 21;
     var text: menu.Note(128) = .{};
     const hit = skillHit(growth, s.act, loadout);
     if (hit) |h| {
         top = paragraph(face, hitText(s.act, h, &text), x, top, TEXT_W, look.TEXT);
-        face.draw("Before critical hits and defenses.", x, top, 16, look.DIM);
+        face.draw("Before critical hits and defenses.", x, top, font.SMALL, look.DIM);
         top += 18;
     }
     var usage: [64]u8 = undefined;
@@ -298,7 +319,7 @@ fn skillDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const 
     if (learned and !maximum) {
         top += 8;
         text.say("NEXT RANK  {d}", .{next.ranks.get(s.act)});
-        face.draw(text.text(), x, top, 16, OWNED);
+        face.draw(text.text(), x, top, font.SMALL, OWNED);
         top += 21;
         const changes = top;
         if (next.damageBonus(s.act) != growth.damageBonus(s.act)) {
@@ -405,8 +426,8 @@ fn armInitial(arm: passives.Arm) [:0]const u8 {
     };
 }
 
-const ACTIVE_COST = std.fmt.comptimePrint("{d} active point{s}", .{ progress.POINT_COST, if (progress.POINT_COST == 1) "" else "s" });
-const PASSIVE_COST = std.fmt.comptimePrint("{d} passive point{s}", .{ progress.POINT_COST, if (progress.POINT_COST == 1) "" else "s" });
+const ACTIVE_COST = std.fmt.comptimePrint("{d} active point{s}", .{ progress.POINT_COST, mathx.plural(progress.POINT_COST) });
+const PASSIVE_COST = std.fmt.comptimePrint("{d} passive point{s}", .{ progress.POINT_COST, mathx.plural(progress.POINT_COST) });
 
 fn ring(p: rl.Vector2, radius: f32, ink: rl.Color) void {
     rl.drawCircleLines(@intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), radius, ink);
@@ -440,7 +461,7 @@ const Positions = [passives.N + 1]rl.Vector2;
 
 fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, view: View, surface: menu.Surface) void {
     frame(face, o, "PASSIVE TREE", growth.passive_points);
-    face.draw("Small: stat   Medium: interest   Double: capstone", o.x + 44, o.y + 174, 16, look.DIM);
+    face.draw("Small: stat   Medium: interest   Double: capstone", o.x + 44, o.y + 174, font.SMALL, look.DIM);
     const layout = wheelLayout(o, view);
     var pos: Positions = undefined;
     for (&pos, 0..) |*q, i| q.* = layout.at(i);
@@ -464,7 +485,7 @@ fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const 
         ring(p, r, ink);
         if (n.tier == .capstone) ring(p, r - 3, ink);
         if (n.ring == 0) {
-            face.centred(armInitial(n.arm), @intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), 16, ink);
+            face.centred(armInitial(n.arm), @intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), font.SMALL, ink);
         } else if (n.seam) |s| {
             for ([_]f32{ -2, 2 }) |dy| rl.drawLineEx(.{ .x = p.x - 3, .y = p.y + dy }, .{ .x = p.x + 3, .y = p.y + dy }, 1, if (allocated) OWNED else armInk(s.to()));
         } else if (allocated) {
@@ -517,7 +538,7 @@ fn passiveDetails(face: *const font.Face, o: P, class: hero.Class, growth: *cons
         .stat => "STAT NODE",
         .interest => "INTEREST NODE",
         .capstone => "CAPSTONE",
-    }, x, o.y + 150, 16, look.DIM);
+    }, x, o.y + 150, font.SMALL, look.DIM);
     face.draw(n.name, x, o.y + 177, font.HEAD, look.TEXT);
     var path: menu.Note(96) = .{};
     if (n.branch) |branch| {
@@ -530,7 +551,7 @@ fn passiveDetails(face: *const font.Face, o: P, class: hero.Class, growth: *cons
     face.draw(path.text(), x, o.y + 214, font.SMALL, armInk(n.arm));
     face.draw(if (origin) "Free class origin" else if (allocated) "Allocated" else if (reachable) "Reachable" else "Distant", x, o.y + 247, font.BODY, nodeInk(growth, i));
     rl.drawLine(x, o.y + 283, x + TEXT_W, o.y + 283, BORDER);
-    face.draw("BONUSES", x, o.y + 304, 16, look.DIM);
+    face.draw("BONUSES", x, o.y + 304, font.SMALL, look.DIM);
     if (origin) {
         _ = paragraph(face, "Class attributes already include this starting point. No extra bonus is added here.", x, o.y + 334, TEXT_W, look.TEXT);
     } else {

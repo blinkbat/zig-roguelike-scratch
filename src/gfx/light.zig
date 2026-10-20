@@ -687,11 +687,26 @@ fn recolour(c: rl.Color, rgb: Rgb) rl.Color {
 /// `lit` combines sight and memory; `memory` retains only exploration visibility.
 pub const Flame = struct { at: [2]f32, foot: f32, glow: f32, lit: f32, memory: f32 };
 
+/// Composed daylight warms the sun and cools the shade.
+const COMPOSED_KEY: Rgb = .{ 1.035, 1.005, 0.96 };
+const COMPOSED_AMBIENT: Rgb = .{ 0.94, 0.98, 1.04 };
+/// Composed sun through cloud: lifted in the open, deeper under cloud, dappled under crowns.
+const PATCH_LIFT: f32 = 1.045;
+const PATCH_CLOUD: f32 = 1.6;
+const DAPPLE_WAVE = [3]f32{ 2.1, 1.6, 1.2 };
+const DAPPLE_MIN: f32 = 0.07;
+const DAPPLE_SPAN: f32 = 0.10;
+
 pub const Emission = struct {
     at: [3]f32,
     col: rl.Color,
     radius: f32,
     gain: f32,
+
+    /// Where the source shows on the map, lifted by its height.
+    pub fn drawn(e: Emission) [2]f32 {
+        return .{ e.at[0], e.at[1] - e.at[2] };
+    }
 };
 
 const EFFECTS = 48;
@@ -787,7 +802,7 @@ pub const Light = struct {
         l.grounded();
         @memset(&l.map, rl.Color.blank);
         @memset(&l.glints, rl.Color.blank);
-        @memset(&l.fog, look.FOG);
+        @memset(&l.fog, rl.Color.white);
         l.baked = .{ 0, MAP_H };
         l.soften();
         return l;
@@ -882,7 +897,7 @@ pub const Light = struct {
             var neighbours = grid.Cells.around(p, 2);
             var cover: f32 = 0;
             while (neighbours.next()) |q| {
-                if (!look.canopy(self.scratch.at(q))) continue;
+                if (!look.crowned(self.scratch.at(q))) continue;
                 const d = p.sub(q);
                 cover += 1 / @as(f32, @floatFromInt(1 + d.x * d.x + d.y * d.y));
             }
@@ -1069,29 +1084,19 @@ pub const Light = struct {
     fn profile(self: *const Light) ?sky.Sky {
         var k = self.sky orelse return null;
         if (self.composed) {
-            const daylight = 1 - k.moon;
-            k.key *= mix(splat(1), .{ 1.035, 1.005, 0.96 }, daylight);
-            k.ambient *= mix(splat(1), .{ 0.94, 0.98, 1.04 }, daylight);
+            k.key *= mix(splat(1), COMPOSED_KEY, k.sun());
+            k.ambient *= mix(splat(1), COMPOSED_AMBIENT, k.sun());
         }
         return k;
     }
 
-    fn composedCloud(self: *const Light, q: [2]f32, cloud: f32) f32 {
-        if (!self.composed or self.sky == null) return cloud;
-        return self.composedWith(self.dapplingAt(q), cloud);
-    }
-
-    /// `composedCloud` at `q`, from the cached dappling when `q` is light-map texel `map_at`'s centre.
+    /// The sun the clouds let through at `q`, composed; from the cached dappling when `q` is light-map texel `map_at`'s centre.
     fn composedAt(self: *const Light, map_at: ?usize, q: [2]f32, cloud: f32) f32 {
-        const i = map_at orelse return self.composedCloud(q, cloud);
-        if (!self.composed or self.sky == null) return cloud;
-        return self.composedWith(self.dappling[i], cloud);
-    }
-
-    fn composedWith(self: *const Light, dappling: f32, cloud: f32) f32 {
-        const k = self.sky.?;
-        const patch = 1.045 - (1 - cloud) * 1.6 - dappling;
-        return mathx.lerpF(cloud, patch, 1 - k.moon);
+        const k = self.sky orelse return cloud;
+        if (!self.composed or k.sun() == 0) return cloud;
+        const dappling = if (map_at) |i| self.dappling[i] else self.dapplingAt(q);
+        const patch = PATCH_LIFT - (1 - cloud) * PATCH_CLOUD - dappling;
+        return mathx.lerpF(cloud, patch, k.sun());
     }
 
     /// How much the canopy's dappled shade takes from the sun at `q`.
@@ -1102,8 +1107,9 @@ pub const Light = struct {
             c.* = grid.cellOr(f32, &self.canopy, p.add(.{ .x = @intCast(i % 2), .y = @intCast(i / 2) }), 0);
         }
         const cover = mathx.bilerp(corners, q[0] - 0.5 - @as(f32, @floatFromInt(p.x)), q[1] - 0.5 - @as(f32, @floatFromInt(p.y)));
-        const dapple = 0.5 + 0.5 * @sin(q[0] * 2.1 + q[1] * 1.6 + @sin(q[1] * 1.2));
-        return cover * (0.07 + 0.10 * dapple);
+        if (cover == 0) return 0;
+        const dapple = 0.5 + 0.5 * @sin(q[0] * DAPPLE_WAVE[0] + q[1] * DAPPLE_WAVE[1] + @sin(q[1] * DAPPLE_WAVE[2]));
+        return cover * (DAPPLE_MIN + DAPPLE_SPAN * dapple);
     }
 
     fn base(self: *const Light) Rgb {
@@ -1254,7 +1260,6 @@ pub const Light = struct {
     fn bakeCell(self: *Light, lv: *const grid.Level, torches: []const TorchIx, c: P, t0: P, t1: P, ray: ?SunRay) void {
         const fade = self.fadeOf(c);
         const dark = if (fade.flat) |v| v == 0 else false;
-        const sub: f32 = @floatFromInt(SUB);
         const corners: [4]f32 = if (ray != null and !dark) self.heldCorners(c) else @splat(1);
 
         const patch = Patch.of(self, c);
@@ -1276,12 +1281,12 @@ pub const Light = struct {
                 self.glints[i] = rl.Color.blank;
                 if (dark) {
                     self.map[i] = rl.Color.blank;
-                    self.fog[i] = look.FOG;
+                    self.fog[i] = rl.Color.white;
                     continue;
                 }
-                const q = [2]f32{ (@as(f32, @floatFromInt(tx)) + 0.5) / sub, (@as(f32, @floatFromInt(ty)) + 0.5) / sub };
+                const q = texelCentre(@intCast(tx), @intCast(ty));
                 const v = viewOf(sightOf(&patch, ground, q[0], q[1]), q, &fade);
-                self.fog[i] = look.fade(look.FOG, 1 - v.memory);
+                self.fog[i] = look.fade(rl.Color.white, 1 - v.memory);
                 const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
                 self.map[i] = texelOf(self.shade(lv, torches, effects, q, i, v, if (ray) |*r| r else null, cloud), v.lit);
                 if (wet and v.lit > FAINT and lv.isLit(c))
@@ -1365,7 +1370,7 @@ pub const Light = struct {
             const k = e.strength(centre[0], centre[1], BODY_Z) * lit;
             if (k <= FAINT) continue;
             const p = e.source.at;
-            s.add(.{ .drawn = .{ p[0], p[1] - p[2] }, .ground = .{ p[0], p[1] }, .colour = rgbOf(e.source.col) * splat(k), .casts = true });
+            s.add(.{ .drawn = e.source.drawn(), .ground = .{ p[0], p[1] }, .colour = rgbOf(e.source.col) * splat(k), .casts = true });
         }
         return s;
     }
@@ -1375,7 +1380,7 @@ pub const Light = struct {
         const toward = ray.u;
         const sun = self.sunAt(&self.scratch, &ray, centre[0], centre[1], BODY_Z);
         const cloud = self.cloudAt(centre);
-        const on = reaching(sun, self.composedCloud(centre, cloud));
+        const on = reaching(sun, self.composedAt(null, centre, cloud));
         if (lit > 0) s.add(.{
             .drawn = .{ centre[0] + toward[0] * SUN_LAMP_D, centre[1] + toward[1] * SUN_LAMP_D },
             .ground = .{ centre[0] + toward[0], centre[1] + toward[1] },
@@ -1426,7 +1431,7 @@ pub const Light = struct {
         rl.endBlendMode();
         if (self.gpu.fog) |fog| {
             rl.beginBlendMode(.additive);
-            look.overFloor(fog, ox, oy, cell);
+            look.stretch(fog, look.floorRect(ox, oy, cell), look.FOG);
             rl.endBlendMode();
         }
     }
@@ -2027,7 +2032,7 @@ const Gpu = struct {
         var g = Gpu{};
         g.map = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
         g.glints = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
-        g.fog = look.canvas(MAP_W, MAP_H, look.FOG, .bilinear);
+        g.fog = look.canvas(MAP_W, MAP_H, rl.Color.white, .bilinear);
         g.glow = look.radial(GLOW_PX, glowAlpha);
         g.streak = look.field(STREAK_PX[0], STREAK_PX[1], streakAlpha);
         g.body = look.program(BodyShader, BODY_FS);
@@ -2590,14 +2595,11 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     l.bake(&lv, .{ .x = 0, .y = 0 }, grid.SIZE);
     var ids: [grid.MAX_TORCHES]TorchIx = undefined;
     const torches = l.near(grid.Box.inMap(-1), &ids);
-    const sub: f32 = @floatFromInt(SUB);
     var dark: usize = 0;
     var fading: usize = 0;
     var off: usize = 0;
     for (0..TEXELS) |i| {
-        const tx: f32 = @floatFromInt(i % @as(usize, @intCast(MAP_W)));
-        const ty: f32 = @floatFromInt(i / @as(usize, @intCast(MAP_W)));
-        const q = [2]f32{ (tx + 0.5) / sub, (ty + 0.5) / sub };
+        const q = Light.texelCentre(i % Light.TEXELS_W, i / Light.TEXELS_W);
         const m = l.memoryAt(mathx.cellOf(q));
         if (m == 0) dark += 1;
         if (m > 0 and m < 1) fading += 1;
@@ -2626,9 +2628,9 @@ test "fog tint follows the soft exploration edge without changing visibility" {
     for (20 * SUB..21 * SUB) |y| {
         for (18 * SUB..22 * SUB) |x| {
             const pixel = l.fog[y * MAP_W + x];
-            try std.testing.expectEqual(look.FOG.r, pixel.r);
-            try std.testing.expectEqual(look.FOG.g, pixel.g);
-            try std.testing.expectEqual(look.FOG.b, pixel.b);
+            try std.testing.expectEqual(rl.Color.white.r, pixel.r);
+            try std.testing.expectEqual(rl.Color.white.g, pixel.g);
+            try std.testing.expectEqual(rl.Color.white.b, pixel.b);
             if (pixel.a == 0) clear += 1 else if (pixel.a == 255) covered += 1 else soft += 1;
             if (x >= 20 * SUB) try std.testing.expectEqual(@as(u8, 255), pixel.a);
             if (x < 19 * SUB) try std.testing.expectEqual(@as(u8, 0), pixel.a);

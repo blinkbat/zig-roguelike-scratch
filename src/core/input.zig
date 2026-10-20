@@ -473,11 +473,30 @@ pub const CharacterPage = enum {
         };
     }
 
+    comptime {
+        for (std.enums.values(CharacterPage)) |p| {
+            if (p.key() == Desk.PLAY_HERE_KEY) @compileError("a play-test's way back to the editor opens " ++ @tagName(p));
+        }
+    }
+
     pub fn caption(self: CharacterPage) [:0]const u8 {
         return switch (self) {
             inline else => |page| keyName(page.key()),
         };
     }
+};
+
+/// The passive tree's keyboard zoom and overview; browsing walks and panning shifts the walk.
+pub const TreeKeys = struct {
+    const ZOOM_IN = [2]rl.KeyboardKey{ .equal, .kp_add };
+    const ZOOM_OUT = [2]rl.KeyboardKey{ .minus, .kp_subtract };
+    const PAGE_IN: rl.KeyboardKey = .page_up;
+    const PAGE_OUT: rl.KeyboardKey = .page_down;
+    const OVERVIEW: rl.KeyboardKey = .home;
+    pub const BROWSE_CAPTION = letters(&WALKS);
+    pub const ZOOM_IN_CAPTION = keyName(ZOOM_IN[0]);
+    pub const ZOOM_OUT_CAPTION = keyName(ZOOM_OUT[0]);
+    pub const OVERVIEW_CAPTION = keyName(OVERVIEW);
 };
 
 pub const State = struct {
@@ -589,13 +608,14 @@ pub const State = struct {
         self.scroll = @intFromFloat(self.wheel);
         self.wheel -= @floatFromInt(self.scroll);
         const alt_down = altDown();
+        const free_keys = !self.typing and !alt_down;
         self.character_page = null;
-        if (!self.typing and !alt_down) {
+        if (free_keys) {
             for (std.enums.values(CharacterPage)) |page| {
                 if (rl.isKeyPressed(page.key())) self.character_page = page;
             }
         }
-        self.interact = self.context == .play and !self.typing and !alt_down and
+        self.interact = self.context == .play and free_keys and
             (anyHit(&INTERACT_KEYS) or
                 (if (live) |at| self.padHit(at, CONFIRM.pad(), &before) else false));
         for (BUTTONS) |b| {
@@ -615,12 +635,12 @@ pub const State = struct {
             self.pressed.setPresent(b, on);
             self.down.setPresent(b, hold);
         }
-        if (!self.typing and !alt_down) {
+        if (free_keys) {
             if (self.againKey()) |k| {
                 if (rl.isKeyPressed(k)) self.pressed.insert(CONFIRM);
             }
         }
-        if (self.context != .play and self.sets and !self.typing and !alt_down) {
+        if (self.context != .play and self.sets and free_keys) {
             if (self.modifier) |m| {
                 if (either(SECOND_KEYS)) self.down.insert(m);
             }
@@ -638,8 +658,8 @@ pub const State = struct {
 
         self.tree = .{};
         const on_tree = self.context == .tree;
-        const pan_keys = on_tree and !self.typing and !alt_down and either(SHIFT_KEYS);
-        if (on_tree and !self.typing and !alt_down) {
+        const pan_keys = on_tree and free_keys and either(SHIFT_KEYS);
+        if (on_tree and free_keys) {
             self.tree.dt = dt;
             if (live) |at| {
                 const px = rl.getGamepadAxisMovement(at, .right_x);
@@ -653,9 +673,9 @@ pub const State = struct {
                 const length = @max(1, std.math.hypot(@as(f32, @floatFromInt(p.x)), @as(f32, @floatFromInt(p.y))));
                 self.tree.pan = .{ .x = @as(f32, @floatFromInt(p.x)) / length, .y = @as(f32, @floatFromInt(p.y)) / length };
             }
-            if (either(.{ .equal, .kp_add }) or rl.isKeyDown(.page_up)) self.tree.zoom += 1;
-            if (either(.{ .minus, .kp_subtract }) or rl.isKeyDown(.page_down)) self.tree.zoom -= 1;
-            self.tree.reset = self.tree.reset or rl.isKeyPressed(.home);
+            if (either(TreeKeys.ZOOM_IN) or rl.isKeyDown(TreeKeys.PAGE_IN)) self.tree.zoom += 1;
+            if (either(TreeKeys.ZOOM_OUT) or rl.isKeyDown(TreeKeys.PAGE_OUT)) self.tree.zoom -= 1;
+            self.tree.reset = self.tree.reset or rl.isKeyPressed(TreeKeys.OVERVIEW);
         }
         var x: f32 = 0;
         var y: f32 = 0;

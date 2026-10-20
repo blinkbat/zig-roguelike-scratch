@@ -294,7 +294,7 @@ const HELP = [_]HelpSection{
         Desk.SAVE_CAPTION ++ " save" ++ SEP ++ Desk.SAVE_AS_CAPTION ++ " save as" ++ SEP ++ Desk.OPEN_CAPTION ++ " open" ++ SEP ++ Desk.NEW_CAPTION ++ " new" ++ SEP ++
             Desk.UNDO_CAPTION ++ " undo" ++ SEP ++ Desk.REDO_CAPTION ++ " redo",
         Desk.RENAME_CAPTION ++ " rename the node" ++ SEP ++ Desk.ENTER_CAPTION ++ " names it" ++ SEP ++ Desk.NAV_CAPTION ++ " move through a list" ++ SEP ++ input.RUB_CAPTION ++ " a folder up",
-        Desk.PLAY_CAPTION ++ " play from the start" ++ SEP ++ Desk.PLAY_HERE_CAPTION ++ " from the cursor, and either back" ++ SEP ++ Desk.FULLSCREEN_CAPTION ++ " fullscreen" ++ SEP ++
+        Desk.PLAY_CAPTION ++ " play from the start" ++ SEP ++ Desk.PLAY_HERE_CAPTION ++ " from the cursor, and back" ++ SEP ++ Desk.FULLSCREEN_CAPTION ++ " fullscreen" ++ SEP ++
             Desk.BACK_CAPTION ++ " back a step",
     } },
 };
@@ -772,7 +772,7 @@ pub const Editor = struct {
         if (!ed.tool.fits(ed.here())) ed.tool = .door;
     }
 
-    /// Preserve pending links and paste across node selection.
+    /// Preserve paste across node selection; cancel pending links and gestures.
     fn select(ed: *Editor, n: usize) void {
         if (ed.renaming) ed.commitRename();
         ed.drop();
@@ -2037,7 +2037,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     var acts = Across{ .y = y, .n = 4 };
     if (button(ed, g, acts.next(), "Undo", false, ed.hist_at > 0, keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
     if (button(ed, g, acts.next(), "Redo", false, ed.hist_at < ed.hist_len, keyed("Redo", Desk.REDO_CAPTION))) ed.redo();
-    if (button(ed, g, acts.next(), "Play", false, true, "Play from the map start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_CAPTION ++ " or " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) {
+    if (button(ed, g, acts.next(), "Play", false, true, "Play from the map start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) {
         ed.playStart();
     }
     if (button(ed, g, acts.next(), "Title", false, true, keyed("Back to the title", Desk.BACK_CAPTION))) ed.request(.leave);

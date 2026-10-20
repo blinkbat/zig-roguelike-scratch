@@ -14,6 +14,18 @@ pub const Bonus = enum {
     life,
     mana,
     armour,
+
+    /// What "+N to" raises.
+    pub fn label(b: Bonus) [:0]const u8 {
+        return switch (b) {
+            .strength => "Strength",
+            .dexterity => "Dexterity",
+            .intelligence => "Intelligence",
+            .life => "maximum life",
+            .mana => "maximum mana",
+            .armour => "Armour",
+        };
+    }
 };
 comptime {
     for (ATTRS) |at| _ = @field(Bonus, @tagName(at));
@@ -29,6 +41,14 @@ pub const Style = enum {
             .heavy => .strength,
             .light => .dexterity,
             .spell => .intelligence,
+        };
+    }
+
+    pub fn label(s: Style) [:0]const u8 {
+        return switch (s) {
+            .heavy => "Heavy weapon damage",
+            .light => "Light weapon damage",
+            .spell => "Spell damage",
         };
     }
 };

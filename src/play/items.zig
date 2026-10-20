@@ -211,6 +211,15 @@ pub const Gear = struct {
         return true;
     }
 
+    /// `it` worn in `slot`, with the hands it displaces emptied.
+    pub fn wearing(self: Gear, it: Item, slot: Slot) Gear {
+        var after = self;
+        after.slots.set(slot, it);
+        if (spec(it.kind).two_handed) after.slots.set(.left_hand, null);
+        if (slot == .left_hand and self.twoHander() != null) after.slots.set(.right_hand, null);
+        return after;
+    }
+
     /// What everything else worn gives, with `slot` emptied.
     pub fn statsWithout(self: Gear, slot: Slot, base: attrs.Attrs) attrs.Attrs {
         var without = self;
@@ -271,11 +280,7 @@ pub const Inventory = struct {
         if (at >= self.n) return error.Missing;
         const it = self.bag[at];
         if (!it.fits(slot)) return error.WrongSlot;
-        var after = self.gear;
-        after.slots.set(slot, it);
-        if (spec(it.kind).two_handed) after.slots.set(.left_hand, null);
-        if (slot == .left_hand and self.gear.twoHander() != null) after.slots.set(.right_hand, null);
-        return after;
+        return self.gear.wearing(it, slot);
     }
 
     pub fn preview(self: *const Inventory, at: usize, slot: Slot, base: attrs.Attrs) Failure!Gear {

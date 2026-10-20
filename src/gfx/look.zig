@@ -259,9 +259,7 @@ pub const Sprites = struct {
         const v = view orelse return false;
         const s = self.water orelse return false;
         rl.beginShaderMode(s.shader);
-        setUniform(s.shader, s.origin, origin);
-        setUniform(s.shader, s.cell, px);
-        setUniform(s.shader, s.screen, v.screen);
+        setMapView(s, origin, px, v.screen);
         setUniform(s.shader, s.depth, depth);
         setUniform(s.shader, s.mirrored, @as(i32, @intFromBool(v.mirror != null)));
         rl.setShaderValueTexture(s.shader, s.visibility, v.visibility);
@@ -795,6 +793,8 @@ pub const DIM = rgb(0x8c8672);
 pub const LIFE = rgb(0x9c2f2a);
 pub const FIRE = rgb(0xff8a32);
 pub const FIRE_CORE = rgb(0xffe6a0);
+pub const LEVEL_GOLD = rgb(0xe6c57c);
+pub const LEVEL_CORE = rgb(0xffedbd);
 pub const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
 pub const UI_GOLD = rgb(0xbca06b);
@@ -823,7 +823,13 @@ const CROWNS = std.EnumSet(grid.Tile).init(.{ .shrub = true, .swamp_tree = true 
 /// Scenery depth of field softens: the crowns and the small plants.
 pub const SOFTENED = CROWNS.unionWith(.init(.{ .tiny_shrub = true, .tall_grass = true, .shrooms = true }));
 
-pub fn canopy(t: grid.Tile) bool {
+comptime {
+    for (std.enums.values(grid.Tile)) |t| {
+        if (SOFTENED.contains(t) and !stands(t)) @compileError(@tagName(t) ++ " is softened but stands in no STANDS row");
+    }
+}
+
+pub fn crowned(t: grid.Tile) bool {
     return CROWNS.contains(t);
 }
 
@@ -1441,7 +1447,7 @@ pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 /// The alpha below which nothing is drawn.
 pub const CLEAR_A: f32 = 0.004;
 
-/// What every fragment shader opens with: raylib's inputs and output, `CLEAR_A`, and the map's size in cells.
+/// What every fragment shader opens with: raylib's inputs and output, `CLEAR_A`, the map's size in cells and `sky.LUMA`.
 pub const FS_HEAD = std.fmt.comptimePrint(
     \\#version 330
     \\in vec2 fragTexCoord;
@@ -1453,6 +1459,24 @@ pub const FS_HEAD = std.fmt.comptimePrint(
     \\const vec3 LUMA = vec3({d}, {d}, {d});
     \\
 , .{ CLEAR_A, grid.W, grid.H, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2] });
+
+/// The map's place on screen; `cellAtFrag()` is the map position under the fragment, in cells.
+pub const MAP_VIEW_FS =
+    \\uniform vec2 origin;
+    \\uniform float cell;
+    \\uniform vec2 screen;
+    \\vec2 cellAtFrag() {
+    \\    return (vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y) - origin) / cell;
+    \\}
+    \\
+;
+
+/// Sets `MAP_VIEW_FS`'s uniforms on a program with `origin`, `cell` and `screen` locations.
+pub fn setMapView(p: anytype, origin: [2]f32, cell: f32, screen: [2]f32) void {
+    setUniform(p.shader, p.origin, origin);
+    setUniform(p.shader, p.cell, cell);
+    setUniform(p.shader, p.screen, screen);
+}
 
 /// How far a sprite is softened; a shader drawing over it again (the gas veil) softens its own alpha alike.
 pub const Focused = struct {
@@ -1509,10 +1533,7 @@ const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
     "const float SATURATION = {d};\nconst float OVERBRIGHT = {d:.1};\n" ++
         "const float DEEP = {d:.2};\nconst float SHALLOW = {d:.2};\nconst float MIRROR_DEEP = {d:.2};\nconst float MIRROR_SHALLOW = {d:.2};\n",
     .{ WATER_SATURATION, @import("light.zig").OVERBRIGHT, WATER_DEEP, WATER_SHALLOW, MIRROR_DEEP, MIRROR_SHALLOW },
-) ++
-    \\uniform vec2 origin;
-    \\uniform float cell;
-    \\uniform vec2 screen;
+) ++ MAP_VIEW_FS ++
     \\uniform float depth;
     \\uniform sampler2D visibility;
     \\uniform sampler2D glints;
@@ -1521,7 +1542,7 @@ const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
     \\uniform int mirrored;
     \\void main() {
     \\    vec4 art = texture(texture0, fragTexCoord) * fragColor;
-    \\    vec2 at = (vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y) - origin) / cell;
+    \\    vec2 at = cellAtFrag();
     \\    vec4 light = texture(visibility, at / CELLS);
     \\    vec4 reflected = vec4(0.0);
     \\    if (mirrored != 0) {

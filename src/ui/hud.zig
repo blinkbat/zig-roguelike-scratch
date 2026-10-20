@@ -44,7 +44,7 @@ const GLINT_R = [2]f32{ 3, 6 };
 const GLINT_A: f32 = 0.16;
 /// Above an orb's rim, its label's top.
 const LABEL_RISE: i32 = 23;
-/// A status icon's middle in its square, and its count's inset from the square's corner.
+/// A status icon's middle in its square; a status or slot count's inset from its box's corner.
 const ICON_AT = mathx.P{ .x = 14, .y = 15 };
 const COUNT_INSET = mathx.P{ .x = 7, .y = 6 };
 
@@ -220,8 +220,9 @@ const FOCUS_W: f32 = 2;
 const TIP_W: i32 = 380;
 const TIP_PAD: i32 = 12;
 const TIP_GAP: i32 = 8;
-const TIP_LEADING: i32 = 4;
-const TIP_LINE: i32 = font.SMALL + TIP_LEADING;
+/// Between wrapped lines of text, past the text's size.
+pub const LEADING: i32 = 4;
+const TIP_LINE: i32 = font.SMALL + LEADING;
 const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
 pub const TIP_LINES_MAX: usize = 18;
@@ -281,6 +282,13 @@ pub fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, w: i3
 
 /// A body with this splits into "label|value" rows, drawn as a table.
 pub const TIP_SEP = '|';
+
+/// A tooltip body of `.{ label, value }` rows, the values `std.fmt` patterns.
+pub fn table(comptime rows: anytype) []const u8 {
+    comptime var out: []const u8 = "";
+    inline for (rows, 0..) |r, i| out = out ++ (if (i > 0) "\n" else "") ++ r[0] ++ [_]u8{TIP_SEP} ++ r[1];
+    return out;
+}
 const TIP_VALUE_X = @divTrunc(TIP_W, 2) + 24;
 
 /// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does.

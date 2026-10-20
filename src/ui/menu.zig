@@ -61,16 +61,24 @@ pub const Surface = struct {
     }
 };
 
+/// Inside an action box, its edge to the prompt and to the label's far side, and the prompt to the label.
+const ACTION_PAD: i32 = 10;
+const ACTION_GAP: i32 = 8;
+
 pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, label: [:0]const u8) void {
     rl.drawRectangleRec(r, look.PICK_BG);
     rl.drawRectangleLinesEx(r, 1, look.EDGE);
-    const p = look.middle(r);
+    const text_x = actionPrompt(face, r, prompt, 1);
+    const text_w = @as(i32, @intFromFloat(r.x + r.width)) - ACTION_PAD - text_x;
+    face.centred(label, text_x + @divTrunc(text_w, 2), @intFromFloat(look.middle(r).y), font.BODY, look.TEXT);
+}
+
+/// An action box's prompt; returns where its label starts.
+pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, alpha: f32) i32 {
     const glyph_w = prompt.width(face, font.BODY);
-    const left = @as(i32, @intFromFloat(r.x)) + 10;
-    prompt.draw(face, left + @divTrunc(glyph_w, 2), @intFromFloat(p.y), font.BODY, 1);
-    const text_x = left + glyph_w + 8;
-    const text_w = @as(i32, @intFromFloat(r.x + r.width)) - 10 - text_x;
-    face.centred(label, text_x + @divTrunc(text_w, 2), @intFromFloat(p.y), 20, look.TEXT);
+    const left = @as(i32, @intFromFloat(r.x)) + ACTION_PAD;
+    prompt.draw(face, left + @divTrunc(glyph_w, 2), @intFromFloat(look.middle(r).y), font.BODY, alpha);
+    return left + glyph_w + ACTION_GAP;
 }
 
 pub fn Note(comptime N: usize) type {

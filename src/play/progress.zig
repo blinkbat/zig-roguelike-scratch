@@ -13,7 +13,7 @@ const RANK_DAMAGE_PERCENT: i32 = 20;
 const RANK_COST_PERCENT: i32 = 10;
 const XP_BASE: u64 = 40;
 const XP_STEP: u64 = 20;
-pub const POINTS_PER_LEVEL: u16 = 1;
+const POINTS_PER_LEVEL: u16 = 1;
 /// Points a passive node or a skill rank costs.
 pub const POINT_COST: u16 = 1;
 pub const passives = @import("passives.zig");
@@ -25,7 +25,7 @@ pub fn xpOf(k: actor.Kind) u32 {
     return @intCast(actor.row(k).hp);
 }
 
-pub fn bonusAt(c: hero.Class, i: usize) ?Node {
+fn bonusAt(c: hero.Class, i: usize) ?Node {
     return if (i == start(c)) null else NODES[i];
 }
 
@@ -194,7 +194,7 @@ pub const State = struct {
         const c = self.cost(act);
         if (c > 0) w.print("{d} mana, ", .{c}) catch {};
         const turns = act.turns();
-        if (turns == 0) w.writeAll("no turn cost") catch {} else w.print("{d} turn{s}", .{ turns, if (turns == 1) "" else "s" }) catch {};
+        if (turns == 0) w.writeAll("no turn cost") catch {} else w.print("{d} turn{s}", .{ turns, mathx.plural(turns) }) catch {};
         const cd = self.cooldown(act);
         if (cd > 0) w.print(", {d}-turn cooldown", .{cd}) catch {};
     }

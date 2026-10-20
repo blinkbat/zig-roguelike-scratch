@@ -203,7 +203,7 @@ const App = struct {
         }
         if (app.scene == .play and g.back == .editor) {
             const d = &app.ed.?.desk;
-            if (closing or d.play or d.play_here) {
+            if (closing or d.play_here) {
                 d.play = false;
                 d.play_here = false;
                 app.scene = .edit;

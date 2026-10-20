@@ -11,15 +11,16 @@ pub const PER_KILL: u8 = 5;
 pub const TURNS: u8 = 3;
 pub const LIFE_PCT: i32 = 50;
 pub const MANA_GAIN: i32 = 50;
+const CHARGE_NOTE = std.fmt.comptimePrint("Uses {d} of {d} charges; kills refill {d}.", .{ USE, CHARGES, PER_KILL });
 
 pub const Life = struct {
     pub const KIND: Kind = .life;
-    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d}% of life over {d} turns. Uses {d} of {d} charges; kills refill {d}. Takes a turn.", .{ LIFE_PCT, TURNS, USE, CHARGES, PER_KILL });
+    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d}% of life over {d} turns. {s}", .{ LIFE_PCT, TURNS, CHARGE_NOTE });
 };
 
 pub const Mana = struct {
     pub const KIND: Kind = .mana;
-    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d} mana over {d} turns. Uses {d} of {d} charges; kills refill {d}. Takes a turn.", .{ MANA_GAIN, TURNS, USE, CHARGES, PER_KILL });
+    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d} mana over {d} turns. {s}", .{ MANA_GAIN, TURNS, CHARGE_NOTE });
 };
 
 pub const Flask = struct {

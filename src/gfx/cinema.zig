@@ -37,21 +37,25 @@ const EMISSIVE_REACH: f32 = 1.5;
 /// Cells past the view the field covers: the shafts look up to 2.3 cells upwind, softened over one more.
 const FIELD_MARGIN: i32 = 4;
 
-pub fn focusStrength(t: grid.Tile, at: [2]f32, hero: ?[2]f32) f32 {
+fn focusStrength(t: grid.Tile, at: [2]f32, hero: ?[2]f32) f32 {
     if (!look.SOFTENED.contains(t)) return 0;
     const h = hero orelse return 0;
     return FOCUS_MAX * mathx.smoothstep(SHARP_ROWS, SOFT_ROWS, @abs(at[1] - h[1]));
 }
+
+/// The field texture's channel for each fact about a cell: in sight now, water, near an emissive light, under a crown.
+const FIELD = .{ .lit = "r", .water = "g", .emissive = "b", .crown = "a" };
+const FIELD_DEFINES = std.fmt.comptimePrint("#define LIT {s}\n#define WATER {s}\n#define EMISSIVE {s}\n#define CROWN {s}\n", .{ FIELD.lit, FIELD.water, FIELD.emissive, FIELD.crown });
 
 fn markEmissive(pixels: *[grid.CELLS]rl.Color, at: [2]f32) bool {
     var marked = false;
     var cells = grid.Box.around(mathx.cellOf(at), @intFromFloat(@ceil(EMISSIVE_REACH))).grown(0).cells();
     while (cells.next()) |p| {
         const pixel = &pixels[grid.Level.idx(p)];
-        if (pixel.r == 0) continue;
+        if (@field(pixel, FIELD.lit) == 0) continue;
         const q = mathx.centre(p);
         if (mathx.len(q[0] - at[0], q[1] - at[1]) >= EMISSIVE_REACH) continue;
-        pixel.b = 255;
+        @field(pixel, FIELD.emissive) = 255;
         marked = true;
     }
     return marked;
@@ -87,19 +91,17 @@ pub const Cinema = struct {
         while (cells.next()) |p| {
             if (!lv.isLit(p)) continue;
             const t = lv.at(p);
-            pixels[grid.Level.idx(p)] = .{
-                .r = 255,
-                .g = if (look.reflects(t)) 255 else 0,
-                .b = 0,
-                .a = if (look.canopy(t)) 255 else 0,
-            };
+            const pixel = &pixels[grid.Level.idx(p)];
+            @field(pixel, FIELD.lit) = 255;
+            if (look.reflects(t)) @field(pixel, FIELD.water) = 255;
+            if (look.crowned(t)) @field(pixel, FIELD.crown) = 255;
             self.active_bloom = self.active_bloom or look.reflects(t);
         }
         for (flames) |f| {
             if (f.lit > look.CLEAR_A and markEmissive(&pixels, f.at)) self.active_bloom = true;
         }
         for (l.effects[0..l.effect_n]) |*e| {
-            if (markEmissive(&pixels, .{ e.source.at[0], e.source.at[1] - e.source.at[2] })) self.active_bloom = true;
+            if (markEmissive(&pixels, e.source.drawn())) self.active_bloom = true;
         }
         rl.updateTexture(tex, &pixels);
     }
@@ -137,9 +139,7 @@ pub const Cinema = struct {
         rl.setShaderValueTexture(b.shader, b.field, self.field.?);
         rl.setShaderValueTexture(b.shader, b.visibility, visibility);
         rl.setShaderValueTexture(b.shader, b.glints, glints);
-        look.setUniform(b.shader, b.origin, origin);
-        look.setUniform(b.shader, b.cell, cell);
-        look.setUniform(b.shader, b.screen, [2]f32{ @floatFromInt(scene.width), @floatFromInt(scene.height) });
+        look.setMapView(b, origin, cell, .{ @floatFromInt(scene.width), @floatFromInt(scene.height) });
         look.setUniform(b.shader, b.direction, direction);
         look.setUniform(b.shader, b.extract, extract);
     }
@@ -164,11 +164,9 @@ pub const Cinema = struct {
         rl.beginShaderMode(a.shader);
         rl.setShaderValueTexture(a.shader, a.field, field);
         rl.setShaderValueTexture(a.shader, a.visibility, visibility);
-        look.setUniform(a.shader, a.origin, origin);
-        look.setUniform(a.shader, a.cell, cell);
-        look.setUniform(a.shader, a.screen, [2]f32{ @floatFromInt(screen.x), @floatFromInt(screen.y) });
+        look.setMapView(a, origin, cell, .{ @floatFromInt(screen.x), @floatFromInt(screen.y) });
         look.setUniform(a.shader, a.time, l.t.at());
-        look.setUniform(a.shader, a.daylight, (1 - k.moon) * std.math.clamp(sky.luma(k.key), 0, 1));
+        look.setUniform(a.shader, a.daylight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
         look.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), 0.06, 1));
         look.setUniform(a.shader, a.direction, k.across());
         rl.drawRectangle(0, 0, screen.x, screen.y, rl.Color.white);
@@ -192,18 +190,15 @@ const FOCUS_FS = look.FS_HEAD ++ look.FOCUS_TAPS ++
     \\}
 ;
 
-const FIELD_FS =
+const FIELD_FS = look.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\uniform sampler2D field;
     \\uniform sampler2D visibility;
-    \\uniform vec2 origin;
-    \\uniform float cell;
-    \\uniform vec2 screen;
     \\vec4 fieldAt(vec2 p) {
     \\    if (any(lessThan(p, vec2(0.0))) || any(greaterThanEqual(p, CELLS))) return vec4(0.0);
     \\    return texture(field, (floor(p) + 0.5) / CELLS);
     \\}
     \\float liveAt(vec2 p) {
-    \\    return fieldAt(p).r * texture(visibility, p / CELLS).a;
+    \\    return fieldAt(p).LIT * texture(visibility, p / CELLS).a;
     \\}
     \\
 ;
@@ -222,8 +217,8 @@ const BLOOM_FS = look.FS_HEAD ++ FIELD_FS ++
     \\    float lum = dot(c, LUMA);
     \\    float core = max(smoothstep(0.80, 1.0, lum), smoothstep(0.92, 1.0, high) * 0.65);
     \\    vec3 glint = texture(glints, p / CELLS).rgb;
-    \\    float water = f.g * smoothstep(0.015, 0.12, max(glint.r, max(glint.g, glint.b)));
-    \\    return c * core * max(water, f.b) * liveAt(p);
+    \\    float water = f.WATER * smoothstep(0.015, 0.12, max(glint.r, max(glint.g, glint.b)));
+    \\    return c * core * max(water, f.EMISSIVE) * liveAt(p);
     \\}
     \\void main() {
     \\    vec2 d = direction / screen;
@@ -232,7 +227,7 @@ const BLOOM_FS = look.FS_HEAD ++ FIELD_FS ++
     \\    sum += (sampleLight(fragTexCoord + d * 2.0) + sampleLight(fragTexCoord - d * 2.0)) * 0.121622;
     \\    sum += (sampleLight(fragTexCoord + d * 3.0) + sampleLight(fragTexCoord - d * 3.0)) * 0.054054;
     \\    sum += (sampleLight(fragTexCoord + d * 4.0) + sampleLight(fragTexCoord - d * 4.0)) * 0.016216;
-    \\    vec2 p = (vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y) - origin) / cell;
+    \\    vec2 p = cellAtFrag();
     \\    float gain = extract != 0 ? 1.0 : 0.22 * liveAt(p);
     \\    finalColor = vec4(sum * gain, 1.0);
     \\}
@@ -254,16 +249,16 @@ const AIR_FS = look.FS_HEAD ++ FIELD_FS ++
     \\    return mix(mix(fieldAt(i), fieldAt(i + vec2(1.0, 0.0)), f.x), mix(fieldAt(i + vec2(0.0, 1.0)), fieldAt(i + vec2(1.0)), f.x), f.y);
     \\}
     \\void main() {
-    \\    vec2 p = (vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y) - origin) / cell;
+    \\    vec2 p = cellAtFrag();
     \\    float live = liveAt(p);
     \\    if (live < CLEAR_A) { finalColor = vec4(0.0); return; }
     \\    vec4 f = softField(p);
-    \\    float mist = f.g * (0.35 + 0.65 * noise(p * vec2(0.7, 2.2) + vec2(time * 0.025, time * 0.012)));
+    \\    float mist = f.WATER * (0.35 + 0.65 * noise(p * vec2(0.7, 2.2) + vec2(time * 0.025, time * 0.012)));
     \\    mist *= 0.065 * brightness;
-    \\    float trees = (softField(p + direction * 1.1).a + softField(p + direction * 2.3).a) * 0.5;
+    \\    float trees = (softField(p + direction * 1.1).CROWN + softField(p + direction * 2.3).CROWN) * 0.5;
     \\    float band = dot(p, vec2(-direction.y, direction.x));
     \\    float shafts = pow(max(0.0, sin(band * 4.7 + noise(p * 0.3) * 2.0)), 10.0);
-    \\    shafts *= trees * (1.0 - f.a) * daylight * 0.035;
+    \\    shafts *= trees * (1.0 - f.CROWN) * daylight * 0.035;
     \\    vec2 drift = vec2(time * 0.025, sin(time * 0.18) * 0.06);
     \\    vec2 dustCell = floor(p - drift);
     \\    float seed = hash(dustCell);
@@ -284,11 +279,11 @@ test "cinema focus preserves nearby scenery and every gameplay tile" {
         const far = focusStrength(t, .{ 20.5, 30.5 }, h);
         if (far > 0) {
             focused += 1;
-            try std.testing.expect(t == .shrub or t == .swamp_tree or t == .tiny_shrub or t == .tall_grass or t == .shrooms);
+            try std.testing.expect(look.SOFTENED.contains(t));
             try std.testing.expect(far <= FOCUS_MAX);
         }
     }
-    try std.testing.expectEqual(@as(usize, 5), focused);
+    try std.testing.expectEqual(look.SOFTENED.count(), focused);
     std.debug.print("cinema focus: {d} scenery kinds soften only beyond {d} rows of the hero; ground and interactables stay sharp\n", .{ focused, SHARP_ROWS });
 }
 

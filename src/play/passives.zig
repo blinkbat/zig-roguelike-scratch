@@ -108,11 +108,20 @@ pub const Kind = enum {
     /// The damage it raises by a percentage, for a damage kind.
     pub fn style(k: Kind) ?attrs.Style {
         return switch (k) {
-            .heavy_damage => .heavy,
-            .light_damage => .light,
-            .spell_damage => .spell,
-            .strength, .dexterity, .intelligence, .life, .mana, .armour => null,
+            inline else => |t| if (comptime std.mem.endsWith(u8, @tagName(t), DAMAGE)) @field(attrs.Style, @tagName(t)[0 .. @tagName(t).len - DAMAGE.len]) else null,
         };
+    }
+    const DAMAGE = "_damage";
+
+    /// What it adds to, for a kind that is not a damage percentage.
+    pub fn bonus(k: Kind) ?attrs.Bonus {
+        return switch (k) {
+            inline else => |t| if (@hasField(attrs.Bonus, @tagName(t))) @field(attrs.Bonus, @tagName(t)) else null,
+        };
+    }
+
+    comptime {
+        for (std.enums.values(Kind)) |k| std.debug.assert((k.style() == null) != (k.bonus() == null));
     }
 
     /// The attribute it raises, for a pure attribute kind.
@@ -129,17 +138,7 @@ pub const Grant = struct {
     amount: i32,
 
     pub fn label(g: Grant) [:0]const u8 {
-        return switch (g.kind) {
-            .strength => "Strength",
-            .dexterity => "Dexterity",
-            .intelligence => "Intelligence",
-            .life => "Maximum life",
-            .mana => "Maximum mana",
-            .armour => "Armour",
-            .heavy_damage => "Heavy weapon damage",
-            .light_damage => "Light weapon damage",
-            .spell_damage => "Spell damage",
-        };
+        return if (g.kind.style()) |s| s.label() else g.kind.bonus().?.label();
     }
     pub fn isPercent(g: Grant) bool {
         return g.kind.style() != null;
@@ -147,12 +146,7 @@ pub const Grant = struct {
     pub fn apply(g: Grant, a: *attrs.Attrs) void {
         if (g.kind.style()) |s| {
             a.damage_bonus.getPtr(s).* += g.amount;
-            return;
-        }
-        switch (g.kind) {
-            .heavy_damage, .light_damage, .spell_damage => unreachable,
-            inline else => |k| a.add(@field(attrs.Bonus, @tagName(k)), g.amount),
-        }
+        } else a.add(g.kind.bonus().?, g.amount);
     }
 };
 pub const Node = struct {
@@ -180,14 +174,14 @@ pub const PER_BRANCH = blk: {
     for (BRANCH_RINGS) |width| count += width;
     break :blk count;
 };
-pub const PER_ARM = 1 + BRANCHES.values[0].len * PER_BRANCH;
-pub const NTREE = std.enums.values(Arm).len * PER_ARM;
+const PER_ARM = 1 + BRANCHES.values[0].len * PER_BRANCH;
+const NTREE = std.enums.values(Arm).len * PER_ARM;
 pub const N = NTREE + std.enums.values(Seam).len * BRIDGE_RINGS.len;
 pub const RINGS = BRANCH_RINGS.len + 1;
 pub const HUB = N;
 pub const Point = struct { x: f32, y: f32 };
 
-pub fn armFirst(a: Arm) usize {
+fn armFirst(a: Arm) usize {
     return @as(usize, @intFromEnum(a)) * PER_ARM;
 }
 pub fn branchFirst(b: Branch) usize {

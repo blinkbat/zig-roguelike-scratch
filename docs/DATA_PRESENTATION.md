@@ -121,8 +121,8 @@ the player's build.
 7. **Actions:** show the object and consequence before one deliberate action. Use direct
    commands, controller navigation and input glyphs; no secondary confirmation modal.
 8. **Hands:** say Main hand and Offhand. The main hand is on the viewer's left of the
-   paperdoll; the offhand is on the right. Great axe, greatclub and greatsword use
-   both hands. Lists say Both hands and cards say Two-handed; an occupied offhand
+   paperdoll; the offhand is on the right. Great weapons, bows, crossbows and staves
+   use both hands. Lists say Both hands and cards say Two-handed; an occupied offhand
    names the weapon using it instead of looking empty. Ring destinations remain
    left/right because either ring can use either slot.
 

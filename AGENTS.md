@@ -204,8 +204,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   turns, counting down like chill; it still strikes the hero beside it and cannot be knocked back.
   A mana shield (`ward.Ward`) takes the hero's harm from mana first, in `game.hurt`; the orb shows that
   mana through `Game.mana_held` until the blow lands, as `flasks_shown` holds a kill's refill.
-- **`Pool.damage` is the only HP-loss path**, apart from splitting a slime's remaining HP and restoring
-  carried state. Elemental resistance applies separately per element, rounding down, clamped to
+- **`Pool.damage` is the only HP-loss path**, apart from splitting a slime's remaining HP, restoring
+  carried state and clamping to a lowered maximum (`syncStats`). Elemental resistance applies separately per element, rounding down, clamped to
   -100..100; physical damage is unresisted (`play/damage.zig`).
 - `Row.splits` splits a surviving slime below half HP, down to quarters. Each half gets half the remaining
   HP (minimum 1), with inherited statuses/clock; the new half acts next turn. If no adjacent cell is free,
@@ -254,7 +254,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   cell fills beneath artwork. Play omits unseen cells and clips ground overhang to the map boundary;
   editor shows all.
 - `gfx/light.zig` owns cosmetic light and fog. Draw ground/underlays, shadow mask, then standing tiles,
-  so walls cover shadows. Terrain gets one 2x-modulate light-map pass, with no extra terrain tint.
+  so walls cover shadows. Terrain gets one 2x-modulate light-map pass, then only the additive fog pass.
   Body normals shade per pixel; motes/ground gas draw before lighting, flames/glow afterward.
   Gas also veils prop/body artwork at half its ground opacity (45% maximum), respecting sprite alpha
   and presented positions; brick and rock walls stay clear. This overlay does not change gas spread.
@@ -264,7 +264,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   margin (from `light.CAST_REACH`) and presented actor position/birth/death. Bind the receiver light-map sampler after blend-mode
   changes, which flush raylib's auxiliary texture bindings.
 - Floor ambient at memory RGB before adding lights, preventing a dark ring around the lantern. Memory
-  fades into `look.FOG` dark gray at the unseen boundary; the minimap uses the same unexplored color.
+  fades into `look.FOG` dark gray at the unseen boundary; the minimap's panel is that gray at 70% (`look.MINI_BG`).
   Blur sight only over seen cells, and open-ground sight only over
   open ground, so unseen cells do not dim visible ground and walls do not leak sight behind them.
 - `gfx/sky.zig` lights outdoor nodes only; `sky.keyDir` chooses sun/moon and limits shadow length.

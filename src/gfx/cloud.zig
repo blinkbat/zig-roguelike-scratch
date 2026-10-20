@@ -137,6 +137,12 @@ pub const Cloud = struct {
         return true;
     }
 
+    /// Once what `beginVeil` veils is drawn again: flushed while the veil is still bound.
+    pub fn endVeil() void {
+        rl.gl.rlDrawRenderBatchActive();
+        rl.endShaderMode();
+    }
+
     fn bake(self: *Cloud, lv: *const grid.Level, view: grid.Box) void {
         var ty = view.lo.y * SUB;
         while (ty < view.hi.y * SUB) : (ty += 1) {

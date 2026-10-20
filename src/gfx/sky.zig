@@ -150,6 +150,11 @@ pub const Sky = struct {
     /// How far the light that casts is the moon's: 0 by day, 1 by night.
     moon: f32,
 
+    /// How far the light that casts is the sun's.
+    pub fn sun(s: Sky) f32 {
+        return 1 - s.moon;
+    }
+
     /// The length of `dir` along the ground.
     pub fn flat(s: Sky) f32 {
         return flatOf(s.dir);
