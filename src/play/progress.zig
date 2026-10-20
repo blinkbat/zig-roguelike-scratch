@@ -149,7 +149,7 @@ pub const State = struct {
     }
 
     pub fn damageBonus(self: *const State, act: skillbar.Act) i32 {
-        if (act.style() == null) return 0;
+        if (act.attack() == null) return 0;
         return @as(i32, self.ranks.get(act) -| 1) * RANK_DAMAGE_PERCENT;
     }
 
@@ -158,7 +158,7 @@ pub const State = struct {
     }
 
     pub fn cooldown(self: *const State, act: skillbar.Act) u8 {
-        if (act.style() != null or act.cooldown() == 0) return act.cooldown();
+        if (act.attack() != null or act.cooldown() == 0) return act.cooldown();
         // A cooldown of 1 runs out in the turn the skill took, so a turn-taking skill keeps 2.
         const floor = @min(act.cooldown(), 1 + act.turns());
         return @max(floor, act.cooldown() -| (self.ranks.get(act) -| 1));
@@ -300,9 +300,9 @@ test "passive branch gates advance one layer and apply exact stat interest and c
         damage: i32 = 0,
     };
     const cases = [_]Case{
-        .{ .class = .knight, .branch = .warrior_life, .attr = .strength, .points = 9, .life = 12, .armour = 11, .style = .melee },
-        .{ .class = .knight, .branch = .warrior_berserk, .attr = .strength, .points = 9, .style = .melee, .damage = 30 },
-        .{ .class = .archer, .branch = .rogue_ranged, .attr = .dexterity, .points = 8, .style = .ranged, .damage = 34 },
+        .{ .class = .knight, .branch = .warrior_life, .attr = .strength, .points = 9, .life = 12, .armour = 11, .style = .heavy },
+        .{ .class = .knight, .branch = .warrior_berserk, .attr = .strength, .points = 9, .style = .heavy, .damage = 30 },
+        .{ .class = .archer, .branch = .rogue_ranged, .attr = .dexterity, .points = 8, .style = .light, .damage = 34 },
         .{ .class = .wizard, .branch = .wizard_cast, .attr = .intelligence, .points = 11, .mana = 6, .style = .spell, .damage = 19 },
     };
     for (cases) |case| {

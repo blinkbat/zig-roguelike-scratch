@@ -995,7 +995,7 @@ fn syncStats(g: *Game) void {
 
 fn skillAttrs(g: *const Game, act: skillbar.Act) attrs.Attrs {
     var a = heroAttrs(g);
-    if (act.style()) |s| a.damage_bonus.getPtr(s).* += g.growth.damageBonus(act);
+    if (act.attack()) |attack| a.damage_bonus.getPtr(g.inventory.gear.scaling(attack)).* += g.growth.damageBonus(act);
     return a;
 }
 
@@ -1432,13 +1432,13 @@ const Rolled = struct {
 };
 
 /// The crit is drawn after the damage it scales.
-fn scaled(rng: *mathx.Rng, by: attrs.Attrs, comptime style: attrs.Style, hit: damage.Damage) Rolled {
+fn scaled(rng: *mathx.Rng, by: attrs.Attrs, style: attrs.Style, hit: damage.Damage) Rolled {
     const crit = by.crits(rng);
     return .{ .blow = by.blow(style, hit, crit, rng), .crit = crit };
 }
 
-fn heroRoll(g: *Game, comptime style: attrs.Style, raw: i32) Roll {
-    return scaled(&g.rng, heroAttrs(g), style, .{ .physical = raw }).physical();
+fn heroRoll(g: *Game, comptime attack: attrs.Attack, raw: i32) Roll {
+    return scaled(&g.rng, heroAttrs(g), g.inventory.gear.scaling(attack), .{ .physical = raw }).physical();
 }
 
 fn heroSkill(g: *Game, comptime act: skillbar.Act) Roll {
@@ -1451,10 +1451,10 @@ fn heroArrow(g: *Game, comptime act: skillbar.Act, body: bool) Rolled {
 
 /// A raw `act` roll scaled by the hero's attributes and its rank, with its crit.
 fn heroScaled(g: *Game, comptime act: skillbar.Act, raw: damage.Damage) Rolled {
-    return scaled(&g.rng, skillAttrs(g, act), comptime act.style().?, raw);
+    return scaled(&g.rng, skillAttrs(g, act), g.inventory.gear.scaling(comptime act.attack().?), raw);
 }
 
-/// A bow replaces an arrow's physical roll; any other weapon adds to its skill's.
+/// Ranged weapons replace the physical roll; melee weapons add to their skill's.
 const SkillBases = struct {
     skill: ?damage.Base,
     weapon: ?damage.Base = null,
@@ -1473,9 +1473,9 @@ const SkillBases = struct {
 fn basesOf(gear: *const items.Gear, act: skillbar.Act) SkillBases {
     const bases = act.bases();
     var out = SkillBases{ .skill = bases.physical, .element = bases.element };
-    const style = act.style() orelse return out;
-    if (gear.weapon(style)) |weapon| {
-        if (style == .ranged) out.skill = weapon else out.weapon = weapon;
+    const attack = act.attack() orelse return out;
+    if (gear.weapon(attack)) |weapon| {
+        if (attack == .ranged) out.skill = weapon else out.weapon = weapon;
     }
     return out;
 }
@@ -2364,7 +2364,7 @@ fn anyNearby(g: *Game) bool {
 fn bookView(g: *Game, nearby: *NearbyBuf) book.View {
     const now = quiet(g);
     const growth = if (now) &g.growth else &g.growth_shown;
-    return .{ .class = g.class, .name = g.name.text(), .inventory = &g.inventory, .growth = growth, .base = growth.attributes(g.class), .gold = if (now) g.gold else g.gold_shown, .nearby = nearbyOf(g, nearby) };
+    return .{ .class = g.class, .name = g.name.text(), .inventory = &g.inventory, .growth = growth, .base = growth.attributes(g.class), .gold = if (now) g.gold else g.gold_shown, .nearby = nearbyOf(g, nearby), .device = g.st.device };
 }
 
 fn openNearby(g: *Game) bool {
@@ -2757,6 +2757,12 @@ fn drawFigure(g: *Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid:
     if (tex) |t| {
         g.light.drawBody(t, spriteRect(t, s.x, s.y), left, mid, shine, flash, .{ 0, 0 });
     } else drawGlyph(g, l.ch, s.x, s.y, shine.drawn(l.fg, flash));
+    if (!g.cloud.beginVeil(shine.tint(look.GAS))) return;
+    defer rl.endShaderMode();
+    if (tex) |t| {
+        look.blit(t, look.rect(0, 0, if (left) -t.width else t.width, t.height), spriteRect(t, s.x, s.y), rl.Color.white);
+    } else drawGlyph(g, l.ch, s.x, s.y, rl.Color.white);
+    rl.gl.rlDrawRenderBatchActive();
 }
 
 const Stood = std.StaticBitSet(grid.CELLS);
@@ -2793,10 +2799,20 @@ fn drawSolidPass(g: *Game, c: Cam, lo: P, hi: P, stood: *const Stood) void {
         if (!look.standsOver(here)) continue;
         if (g.sprites.tileAt(&g.lv, p)) |t| {
             drawSprite(t, c.sx(p), c.sy(p));
+            if (here != .wall and here != .rock and g.cloud.beginVeil(look.GAS)) {
+                drawSprite(t, c.sx(p), c.sy(p));
+                rl.gl.rlDrawRenderBatchActive();
+                rl.endShaderMode();
+            }
             continue;
         }
         if (look.tileBg(here)) |bg| fillCell(c, p, bg);
         inkCell(g, c, p, here, stood);
+        if (here != .wall and here != .rock and g.cloud.beginVeil(look.GAS)) {
+            inkCell(g, c, p, here, stood);
+            rl.gl.rlDrawRenderBatchActive();
+            rl.endShaderMode();
+        }
     }
 }
 
@@ -3008,7 +3024,7 @@ fn drawMap(g: *Game) void {
         g.face.centred("*", c.sx(drop.at) + HALF_CELL + DROP_DX, c.sy(drop.at) + HALF_CELL + LOOT_DY, LOOT_PX, if (drop.item.magical()) look.WARD else look.TEXT);
     }
     _ = shadowPass(g, c, view, g.framebuffer);
-    g.cloud.draw(&g.lv, view, -c.x, -c.y, CELL);
+    g.cloud.draw(&g.lv, view, -c.x, -c.y, CELL, g.screen.y);
     drawSolidPass(g, c, lo, hi, &stood);
     const o = c.origin();
     g.fx.draw(o[0], o[1], CELL_F);
@@ -3504,7 +3520,9 @@ fn tipOf(g: *const Game, s: Spot, title_buf: []u8, body_buf: []u8) Tip {
             if (act == .secondary) break :blk .{ .title = act.name(), .body = std.fmt.bufPrint(body_buf, "While held|Secondary skill set\nTurns|{d}", .{act.turns()}) catch "" };
             w.print("Rank|{d}\nMana|{d}\nCooldown|{d}\nTurns|{d}", .{ g.growth.ranks.get(act), g.growth.cost(act), g.growth.cooldown(act), act.turns() }) catch {};
             if (act.reticle() != null) w.print("\nRange|{d}", .{act.reach()}) catch {};
-            if (act.style()) |style| {
+            if (act.attack()) |attack| {
+                const style = g.inventory.gear.scaling(attack);
+                w.print("\nScaling|{s} / {s}", .{ menu.named(style), menu.named(style.attr()) }) catch {};
                 const bases = basesFor(g, act);
                 const by = skillAttrs(g, act);
                 const physical = bases.physical();
@@ -3630,7 +3648,8 @@ pub fn frame(g: *Game) void {
     g.st.context = switch (g.mode) {
         .play => .play,
         .aim => .target,
-        .bind, .dead, .pause, .inspect => .menu,
+        .pause => if (g.pause_page == .character and g.character.treeActive()) .tree else .menu,
+        .bind, .dead, .inspect => .menu,
     };
     g.st.sets = g.mode == .inspect;
     g.st.modifier = g.bar.modifier;
@@ -3740,6 +3759,9 @@ fn shoot(g: *Game) !void {
 
     poseGas(g);
     try capture(g, target, SHOTS_DIR ++ "/gas.png");
+    g.cloud.clear();
+    try capture(g, target, SHOTS_DIR ++ "/gas-clear.png");
+    g.cloud.settle(&g.lv);
 
     openPause(g);
     try capture(g, target, SHOTS_DIR ++ "/pause.png");
@@ -3902,6 +3924,22 @@ fn shootCharacter(g: *Game) !void {
         try capture(g, target, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ ".png");
     }
     {
+        const device = g.st.device;
+        defer g.st.device = device;
+        inline for ([_]input.Device{ .keys, .xbox, .ps5 }) |d| {
+            g.st.device = d;
+            g.character.choose(.passives);
+            g.character.tabs = false;
+            g.character.cursor = progress.start(g.class);
+            try capture(g, target, SHOTS_DIR ++ "/tree-controls-" ++ @tagName(d) ++ ".png");
+        }
+        g.character.pan = .{ .x = 1.5, .y = -0.8 };
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-pan.png");
+        g.character.pan = .{ .x = 0, .y = 0 };
+        g.character.zoom = 1;
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-overview.png");
+    }
+    {
         const was_class = g.class;
         const was_growth = g.growth;
         defer g.class = was_class;
@@ -3954,6 +3992,17 @@ fn shootCharacter(g: *Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/character-nearby.png");
     g.mode = .play;
     try capture(g, target, SHOTS_DIR ++ "/event-log.png");
+    g.inventory = .{};
+    for (std.enums.values(items.Kind)) |kind| _ = g.inventory.add(.{ .kind = kind });
+    g.mode = .pause;
+    g.pause_page = .character;
+    g.character.open();
+    g.character.choose(.inventory);
+    g.character.tabs = false;
+    inline for ([_]items.Kind{ .crossbow, .dagger, .staff, .wand, .tome, .orb, .buckler, .shield, .totem }) |kind| {
+        g.character.cursor = @intFromEnum(kind);
+        try capture(g, target, SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ ".png");
+    }
 }
 
 fn shootEffects(g: *Game, target: rl.RenderTexture2D) !void {
@@ -4125,7 +4174,7 @@ fn speechLeft(g: *const Game) f32 {
 }
 
 fn poseGas(g: *Game) void {
-    arena(g, .{ .x = 18, .y = 16 }, &.{});
+    arena(g, .{ .x = 23, .y = 16 }, &.{.{ .x = 24, .y = 15 }});
     wallRow(&g.lv, 10, 13, 31);
     wallRow(&g.lv, 21, 13, 31);
     wallIn(&g.lv, .{ .x = 13, .y = 10 }, .{ .x = 13, .y = 21 });
@@ -4133,6 +4182,11 @@ fn poseGas(g: *Game) void {
     wallIn(&g.lv, .{ .x = 31, .y = POSE_BURST.y + 1 }, .{ .x = 31, .y = 21 });
     g.lv.addTorch(.{ .x = 22, .y = 10 });
     _ = g.pool.spawn(&g.lv, actor.Actor.of(.bloat, .{ .x = 16, .y = 12 }));
+    _ = g.pool.spawn(&g.lv, actor.Actor.of(.bloat, .{ .x = 26, .y = 14 }));
+    g.lv.putBarrel(.{ .x = 26, .y = 16 });
+    g.lv.set(.{ .x = 24, .y = 14 }, .chest);
+    g.lv.set(.{ .x = 25, .y = 17 }, .boulder);
+    wallIn(&g.lv, .{ .x = 28, .y = 13 }, .{ .x = 28, .y = 17 });
     g.lv.addGas(POSE_BURST, gas.BURST);
     for (0..POSE_GAS_TURNS) |_| gas.turn(&g.lv, &g.rng);
     posed(g, false);
@@ -4810,19 +4864,20 @@ fn rngWhere(want: anytype) mathx.Rng {
 fn procRng(g: *const Game, comptime act: skillbar.Act, procs: usize) mathx.Rng {
     const Procs = struct {
         by: attrs.Attrs,
+        style: attrs.Style,
         bases: SkillBases,
         n: usize,
         fn holds(p: @This(), rng: *mathx.Rng) bool {
             var raw = rollRaw(rng, act, p.bases, true);
             for (0..p.n) |_| {
-                _ = scaled(rng, p.by, comptime act.style().?, raw);
+                _ = scaled(rng, p.by, p.style, raw);
                 if (!skillbar.Act.arrow(act).procs(rng, 0)) return false;
                 raw.physical = 0;
             }
             return true;
         }
     };
-    return rngWhere(Procs{ .by = skillAttrs(g, act), .bases = basesFor(g, act), .n = procs });
+    return rngWhere(Procs{ .by = skillAttrs(g, act), .style = g.inventory.gear.scaling(comptime act.attack().?), .bases = basesFor(g, act), .n = procs });
 }
 
 test "skills cannot start a second turn while the first is still being drawn" {
@@ -4920,7 +4975,7 @@ fn expectWithin(v: anytype, lo: @TypeOf(v), hi: @TypeOf(v)) !void {
 
 fn expectDamage(g: *const Game, comptime act: skillbar.Act, dealt: i32, ranges: []const [2]i32) !void {
     const a = heroAttrs(g);
-    const style = comptime act.style().?;
+    const style = g.inventory.gear.scaling(comptime act.attack().?);
     var lo: i32 = 0;
     var hi: i32 = 0;
     for (ranges) |r| {
@@ -4955,7 +5010,7 @@ fn meleeThenBites(g: *const Game, count: usize) mathx.Rng {
         n: usize,
         fn holds(s: @This(), rng: *mathx.Rng) bool {
             const raw = s.strike.roll(rng);
-            _ = scaled(rng, s.by, .melee, .{ .physical = raw });
+            _ = scaled(rng, s.by, .heavy, .{ .physical = raw });
             for (0..s.n) |_| if (bite(rng, s.by, actor.row(.rat).blow.strike) == null) return false;
             return true;
         }
@@ -8119,7 +8174,7 @@ test "attribute damage and critical rolls reach melee, arrows, mixed arrows and 
             }
             const critical = c[0].attrs().crits(&expected_rng);
             criticals += @intFromBool(critical);
-            const expected = c[0].attrs().blow(comptime c[1].style().?, raw, critical, &expected_rng).total(target.resists);
+            const expected = c[0].attrs().blow(comptime c[1].defaultStyle().?, raw, critical, &expected_rng).total(target.resists);
             use(g, c[1]);
             try std.testing.expectEqual(Mode.aim, g.mode);
             confirmAim(g);
@@ -8146,6 +8201,58 @@ test "live skill tables include equipped damage, ranks and the actual targeting 
     g.bar.bind(.{ .set = .primary, .button = skillbar.SLOTS[0] }, .secondary);
     try std.testing.expect(std.mem.indexOf(u8, tipOf(g, .{ .slot = 0 }, &title, &body).body, "Turns|0") != null);
     std.debug.print("live tooltips: equipment, rank damage, bow/swing ranges and modifier turn cost checked\n", .{});
+}
+
+test "weapon weight controls live damage and its preview independently of attack range" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    inline for (.{
+        .{ items.Kind.crossbow, skillbar.Act.shoot, attrs.Style.heavy },
+        .{ items.Kind.bow, skillbar.Act.shoot, attrs.Style.light },
+        .{ items.Kind.sling, skillbar.Act.shoot, attrs.Style.light },
+        .{ items.Kind.dagger, skillbar.Act.cleave, attrs.Style.light },
+        .{ items.Kind.longsword, skillbar.Act.cleave, attrs.Style.heavy },
+    }) |case| {
+        const act = case[1];
+        const style = case[2];
+        heroArena(g, if (act == .shoot) .archer else .knight, .{ .x = 20, .y = 20 }, &.{});
+        g.inventory.gear.slots.set(.right_hand, .{ .kind = case[0] });
+        g.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 70 }, null } });
+        g.growth.ranks.set(act, 2);
+        var expected_attrs = heroAttrs(g);
+        expected_attrs.damage_bonus.getPtr(style).* += g.growth.damageBonus(act);
+        try std.testing.expectEqualDeep(expected_attrs, skillAttrs(g, act));
+        const raw = damage.Damage{ .physical = 100 };
+        g.rng = mathx.Rng.init(0xDA6);
+        var expected_rng = g.rng;
+        const critical = expected_attrs.crits(&expected_rng);
+        const expected = expected_attrs.blow(style, raw, critical, &expected_rng);
+        try std.testing.expectEqualDeep(expected, heroScaled(g, act, raw).blow);
+        g.bar.bind(.{ .set = .primary, .button = skillbar.SLOTS[0] }, act);
+        var title: [TIP_TITLE_MAX]u8 = undefined;
+        var body: [menu.NOTE_MAX * 2]u8 = undefined;
+        const tip = tipOf(g, .{ .slot = 0 }, &title, &body);
+        const scaling_label = comptime "Scaling|" ++ menu.named(case[2]) ++ " / " ++ menu.named(case[2].attr());
+        try std.testing.expect(std.mem.indexOf(u8, tip.body, scaling_label) != null);
+        const span = expected_attrs.span(style, basesFor(g, act).physical());
+        var wanted: [64]u8 = undefined;
+        try std.testing.expect(std.mem.indexOf(u8, tip.body, try std.fmt.bufPrint(&wanted, "Physical|{d}-{d}", .{ span.lo, span.hi })) != null);
+        if (act == .cleave) {
+            g.rng = mathx.Rng.init(0xDA6);
+            expected_rng = g.rng;
+            const by = heroAttrs(g);
+            const crit = by.crits(&expected_rng);
+            try std.testing.expectEqual(by.blow(style, raw, crit, &expected_rng).physical, heroRoll(g, .melee, 100).dmg);
+        }
+    }
+    for ([_]items.Kind{ .wand, .staff }) |kind| {
+        var gear = items.Gear{};
+        gear.slots.set(.right_hand, .{ .kind = kind });
+        inline for ([_]skillbar.Act{ .shoot, .cleave, .spark }) |act| {
+            try std.testing.expectEqualDeep(basesOf(&.{}, act), basesOf(&gear, act));
+        }
+    }
+    std.debug.print("weapon scaling: 5 ranged/melee skill and tooltip cases, 2 bump attacks, 6 zero-innate-damage checks\n", .{});
 }
 
 test "dodging spends the foe turn without damage, bleeding or mana shield loss" {
@@ -8191,7 +8298,7 @@ fn bashRng(stuns: bool) mathx.Rng {
     const Stuns = struct {
         stuns: bool,
         fn holds(s: @This(), rng: *mathx.Rng) bool {
-            _ = scaled(rng, heroes.Class.knight.attrs(), .melee, rollRaw(rng, .shield_bash, basesOf(&.{}, .shield_bash), true));
+            _ = scaled(rng, heroes.Class.knight.attrs(), .heavy, rollRaw(rng, .shield_bash, basesOf(&.{}, .shield_bash), true));
             return bash.procs(rng, 0) == s.stuns;
         }
     };

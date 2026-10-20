@@ -13,6 +13,11 @@ const look = @import("../gfx/look.zig");
 const dual = @import("../gfx/ground.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
+const prompt_text = @import("../gfx/prompt_text.zig");
+
+fn textFace(g: *const game.Game) prompt_text.Face {
+    return .{ .face = &g.face };
+}
 const game = @import("../game.zig");
 
 const P = mathx.P;
@@ -176,7 +181,7 @@ const Tool = union(enum) {
             .torch => TORCH_RULE,
             .foe => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
             .door => "any cell of any node; a procgen node's floor is rolled round its doors each run",
-            .link => "click a door, then the door it leads to on any node; " ++ Desk.ERASE_CAPTION ++ " unlinks",
+            .link => Desk.PAINT_CAPTION ++ " a door, then the door it leads to on any node; " ++ Desk.ERASE_CAPTION ++ " unlinks",
             .start => "where the map begins, and " ++ Desk.PLAY_CAPTION ++ " plays from",
         };
     }
@@ -1666,7 +1671,7 @@ fn place(ed: *Editor, p: P) void {
             const here = atlas.Link{ .node = ed.node, .door = k };
             const from = ed.pick orelse {
                 ed.pick = here;
-                return ed.say("Linking node {d} door {d}: click the door it leads to, on any node", .{ here.node, here.door });
+                return ed.say("Linking node {d} door {d}: " ++ Desk.PAINT_CAPTION ++ " the destination door on any node", .{ here.node, here.door });
             };
             ed.pick = null;
             linkDoors(ed, from, here);
@@ -1828,7 +1833,7 @@ fn textX(r: rl.Rectangle) i32 {
 
 /// `s` fitted ahead of `suffix`, which is kept whole.
 fn fitBefore(g: *const game.Game, buf: []u8, fit_buf: []u8, s: []const u8, suffix: [:0]const u8, max: i32) [:0]const u8 {
-    const head = g.face.fit(fit_buf, s, TEXT, max - g.face.width(suffix, TEXT), false);
+    const head = textFace(g).fit(fit_buf, s, TEXT, max - textFace(g).width(suffix, TEXT), false);
     return std.fmt.bufPrintZ(buf, "{s}{s}", .{ head, suffix }) catch "";
 }
 
@@ -1956,7 +1961,7 @@ fn refit(ed: *Editor, pg: *atlas.Procgen, was: atlas.Procgen) void {
 fn drawTip(ed: *const Editor, g: *game.Game) void {
     const tip = ed.tip orelse return;
     var fit_buf: [LINE]u8 = undefined;
-    const s = g.face.fit(&fit_buf, tip, SMALL, TIP_MAX_W, false);
+    const s = textFace(g).fit(&fit_buf, tip, SMALL, TIP_MAX_W, false);
     const size = tagSize(g, s, GAPS);
     const x = std.math.clamp(ed.desk.mouse.x + TIP_DX, 0, @max(0, g.screen.x - size.x));
     const y = if (ed.desk.mouse.y + TIP_DY + size.y > g.screen.y) ed.desk.mouse.y - TIP_DY - size.y else ed.desk.mouse.y + TIP_DY;
@@ -1966,14 +1971,14 @@ fn drawTip(ed: *const Editor, g: *game.Game) void {
 const GAPS = P{ .x = GAP, .y = GAP };
 
 fn tagSize(g: *game.Game, s: [:0]const u8, pad: P) P {
-    return .{ .x = g.face.width(s, SMALL) + 2 * pad.x, .y = SMALL + 2 * pad.y };
+    return .{ .x = textFace(g).width(s, SMALL) + 2 * pad.x, .y = SMALL + 2 * pad.y };
 }
 
 fn drawTag(g: *game.Game, s: [:0]const u8, at: P, pad: P, bg: rl.Color, edge: ?rl.Color) void {
     const size = tagSize(g, s, pad);
     rl.drawRectangle(at.x, at.y, size.x, size.y, bg);
     if (edge) |e| rl.drawRectangleLines(at.x, at.y, size.x, size.y, e);
-    g.face.draw(s, at.x + pad.x, at.y + pad.y, SMALL, look.TEXT);
+    textFace(g).draw(s, at.x + pad.x, at.y + pad.y, SMALL, look.TEXT);
 }
 
 fn framed(x: i32, y: i32, w: i32, h: i32) void {
@@ -2012,7 +2017,7 @@ fn drawPanel(ed: *Editor, g: *game.Game) void {
     rl.drawRectangle(PANEL_W - 1, 0, 1, g.screen.y, look.EDGE);
     var y = PAD;
     var fit_buf: [LINE]u8 = undefined;
-    g.face.draw(fitBefore(g, &buf, &fit_buf, ed.path(), if (ed.dirty) " *" else "", INNER_W), PAD, y, TEXT, look.TEXT);
+    textFace(g).draw(fitBefore(g, &buf, &fit_buf, ed.path(), if (ed.dirty) " *" else "", INNER_W), PAD, y, TEXT, look.TEXT);
     y += HEAD + GAP;
     var file = Across{ .y = y, .n = 4 };
     if (button(ed, g, file.next(), "New", false, true, keyed("New map", Desk.NEW_CAPTION))) ed.askName(.new);
@@ -2099,7 +2104,7 @@ fn drawNodes(ed: *Editor, g: *game.Game, top: i32) void {
         const h = hot(ed, r, true, false, "Open this node");
         plate(r, n == ed.node, h.hot);
         drawNodeTitle(ed, g, n, r, y + TITLE_DY);
-        g.face.draw(nodeDetail(nd, &detail_buf), textX(r), y + TITLE_DY + DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
+        textFace(g).draw(nodeDetail(nd, &detail_buf), textX(r), y + TITLE_DY + DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
         if (h.hit) ed.goTo(n);
         y += NODE_H;
     }
@@ -2131,7 +2136,7 @@ fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
         const pic = rl.Rectangle{ .x = icon.x + (icon.width - ICON_PIC) / 2, .y = icon.y + 3, .width = ICON_PIC, .height = ICON_PIC };
         if (t == .paint) swatch(g, ed.ink.get(.first), pic) else figure(g, toolPicture(g, t), t.look_(), pic);
         if (!live) rl.drawRectangleRec(icon, UNLIVE);
-        g.face.draw(key, @as(i32, @intFromFloat(icon.x)) + 3, @as(i32, @intFromFloat(icon.y)) + 1, SMALL, look.DIM);
+        textFace(g).draw(key, @as(i32, @intFromFloat(icon.x)) + 3, @as(i32, @intFromFloat(icon.y)) + 1, SMALL, look.DIM);
         if (h.hit) ed.setTool(t);
     }
     y += @as(i32, @intCast(rows)) * (ICON_H + GAP) + GAP;
@@ -2142,7 +2147,7 @@ fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
         const live = s == .select or ed.tool.broad();
         const h = hot(ed, r, true, false, s.tip());
         plate(r, ed.shape == s and live, h.hot);
-        g.face.drawMid(label, look.middleAt(r).x, @as(i32, @intFromFloat(r.y)) + SMALL_DY, SMALL, if (live) look.TEXT else look.DIM);
+        textFace(g).drawMid(label, look.middleAt(r).x, @as(i32, @intFromFloat(r.y)) + SMALL_DY, SMALL, if (live) look.TEXT else look.DIM);
         if (h.hit) ed.setShape(s);
     }
     shapes.done();
@@ -2161,7 +2166,7 @@ fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
         rl.drawRectangleLinesEx(r, INK_EDGE, INK_EDGES.get(k));
         _ = hot(ed, r, true, false, INK_TIPS.get(k));
     }
-    g.face.draw("Inks", inks_x - g.face.width("Inks", SMALL) - GAP, y + SMALL_DY, SMALL, look.DIM);
+    textFace(g).draw("Inks", inks_x - textFace(g).width("Inks", SMALL) - GAP, y + SMALL_DY, SMALL, look.DIM);
     y += ROW_STEP + GAP;
     const swatches = Tiles{ .x = PAD, .y = y, .cols = PALETTE_COLS, .pitch = SWATCH + SWATCH_GAP, .size = SWATCH };
     for (PALETTE, 0..) |t, i| {
@@ -2320,7 +2325,7 @@ fn swatch(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
 
 fn drawFit(g: *const game.Game, s: []const u8, size: i32, max: i32, keep_end: bool, x: i32, y: i32, col: rl.Color) void {
     var fit_buf: [atlas.PATH_MAX + LINE]u8 = undefined;
-    g.face.draw(g.face.fit(&fit_buf, s, size, max, keep_end), x, y, size, col);
+    textFace(g).draw(textFace(g).fit(&fit_buf, s, size, max, keep_end), x, y, size, col);
 }
 
 fn drawNodeTitle(ed: *Editor, g: *const game.Game, n: usize, r: rl.Rectangle, y: i32) void {
@@ -2416,7 +2421,7 @@ fn nodeSwitch(ed: *Editor, g: *game.Game, y: *i32) bool {
 }
 
 fn section(g: *game.Game, y: *i32, title: [:0]const u8) void {
-    g.face.draw(title, PAD, y.*, TEXT, look.DIM);
+    textFace(g).draw(title, PAD, y.*, TEXT, look.DIM);
     y.* += HEAD;
 }
 
@@ -2461,7 +2466,7 @@ fn drawMakeup(ed: *Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bo
         const r = row(x, y, MEMBER_W);
         x += MEMBER_W + MEMBER_GAP;
         if (i >= m.n) continue;
-        const h = hot(ed, r, true, false, if (i == 0) "The lead: click for the next foe" else "A member: click for the next foe");
+        const h = hot(ed, r, true, false, if (i == 0) "The lead: " ++ Desk.PAINT_CAPTION ++ " for the next foe" else "A member: " ++ Desk.PAINT_CAPTION ++ " for the next foe");
         plate(r, false, h.hot);
         const l = look.body(m.kind[i]);
         const at = look.middleAt(r);
@@ -2513,7 +2518,7 @@ const MakeupTool = enum {
 const MAKEUP_TOOLS = std.enums.values(MakeupTool);
 
 fn rowLabel(g: *game.Game, y: i32, s: [:0]const u8) void {
-    g.face.draw(s, PAD, y + TEXT_DY, TEXT, look.TEXT);
+    textFace(g).draw(s, PAD, y + TEXT_DY, TEXT, look.TEXT);
 }
 
 fn num(buf: []u8, comptime fmt: []const u8, v: anytype) [:0]const u8 {
@@ -2870,8 +2875,8 @@ fn stepper(ed: *Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, steps
     if (button(ed, g, row(x, y, STEP_W), "-", false, steps[0].live, steps[0].tip)) by = -1;
     if (button(ed, g, row(x + w - STEP_W, y, STEP_W), "+", false, steps[1].live, steps[1].tip)) by = 1;
     var fit_buf: [LINE]u8 = undefined;
-    const shown = g.face.fit(&fit_buf, value, TEXT, @intFromFloat(valueRect(r).width), false);
-    g.face.drawMid(shown, x + @divTrunc(w, 2), y + TEXT_DY, TEXT, look.TEXT);
+    const shown = textFace(g).fit(&fit_buf, value, TEXT, @intFromFloat(valueRect(r).width), false);
+    textFace(g).drawMid(shown, x + @divTrunc(w, 2), y + TEXT_DY, TEXT, look.TEXT);
     return if (ed.desk.shift) by * SHIFT_STEP else by;
 }
 
@@ -2896,10 +2901,10 @@ fn drawStatus(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     rl.drawRectangle(PANEL_W, top, g.screen.x - PANEL_W, STATUS_H, PANEL_BG);
     rl.drawRectangle(PANEL_W, top, g.screen.x - PANEL_W, 1, look.EDGE);
     const state = toolState(ed, &state_buf);
-    const state_w = g.face.width(state, TEXT);
+    const state_w = textFace(g).width(state, TEXT);
     var y = top + GAP;
     drawFit(g, hover(ed, c, &buf), TEXT, w - state_w - BLOCK_GAP, false, x, y, look.TEXT);
-    g.face.draw(state, x + w - state_w, y, TEXT, look.DIM);
+    textFace(g).draw(state, x + w - state_w, y, TEXT, look.DIM);
     y += TEXT + GAP;
     const said = ed.said_t > 0;
     const line: []const u8 = if (said) ed.said.text() else if (ed.view == .map) CRIB_MAP else CRIB_GRAPH;
@@ -3238,7 +3243,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
     switch (ed.modal) {
         .confirm => {
             var fit_buf: [LINE]u8 = undefined;
-            g.face.draw(fitBefore(g, &buf, &fit_buf, ed.path(), " has changes that are not saved.", inner), x + PAD, y, TEXT, look.TEXT);
+            textFace(g).draw(fitBefore(g, &buf, &fit_buf, ed.path(), " has changes that are not saved.", inner), x + PAD, y, TEXT, look.TEXT);
             std.debug.assert(y + TEXT <= buttons_y);
             y = buttons_y;
             if (buttonOn(ed, g, modalButton(bx, y, 2), keyed("Save", Desk.ENTER_CAPTION), false, true, true, null) and ed.save()) ed.commit();
@@ -3257,7 +3262,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
             backButton(ed, g, bx, y, "Cancel");
         },
         .open => {
-            if (ed.listing.n == 0) g.face.draw(atlas.NO_MAPS, x + PAD, y, TEXT, look.DIM);
+            if (ed.listing.n == 0) textFace(g).draw(atlas.NO_MAPS, x + PAD, y, TEXT, look.DIM);
             for (ed.listed_top..@min(ed.listing.n, ed.listed_top + MODAL_ROWS)) |i| {
                 const label = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ switch (ed.listing.entry(i)) {
                     .up => "^  ",
@@ -3272,7 +3277,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
                 y += ROW_H;
             }
             std.debug.assert(y + @as(i32, if (ed.listing.n == 0) TEXT else 0) <= buttons_y);
-            g.face.draw(OPEN_CRIB, x + PAD, buttons_y + TEXT_DY, SMALL, look.DIM);
+            textFace(g).draw(OPEN_CRIB, x + PAD, buttons_y + TEXT_DY, SMALL, look.DIM);
             backButton(ed, g, bx, buttons_y, "Cancel");
         },
         .none, .help, .objects => {},
@@ -3322,7 +3327,7 @@ fn drawObjects(ed: *Editor, g: *game.Game) void {
     const y = f.y;
     cells.x = x + PAD;
     cells.y = y;
-    g.face.draw(Desk.NAV_CAPTION ++ " or a click picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes", x + PAD + g.face.width(title, HEAD) + PAD, f.top + @divTrunc(HEAD - SMALL, 2), SMALL, look.DIM);
+    textFace(g).draw(Desk.NAV_CAPTION ++ " or " ++ Desk.PAINT_CAPTION ++ " picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes", x + PAD + textFace(g).width(title, HEAD) + PAD, f.top + @divTrunc(HEAD - SMALL, 2), SMALL, look.DIM);
     for (SEEN, 0..) |s, i| {
         const r = cells.at(i);
         const hh = hot(ed, r, true, true, seenName(s));
@@ -3336,7 +3341,7 @@ fn drawObjects(ed: *Editor, g: *game.Game) void {
     seenPicture(g, s, .{ .x = @floatFromInt(dx), .y = @floatFromInt(dy), .width = VIEW_BIG, .height = VIEW_BIG });
     rl.drawRectangleLines(dx, dy, @intFromFloat(VIEW_BIG), @intFromFloat(VIEW_BIG), look.EDGE);
     dy += @as(i32, @intFromFloat(VIEW_BIG)) + PAD;
-    g.face.draw(seenName(s), dx, dy, HEAD, look.TEXT);
+    textFace(g).draw(seenName(s), dx, dy, HEAD, look.TEXT);
     dy += HEAD + GAP;
     var facts = Facts{};
     seenFacts(s, &facts);
@@ -3569,6 +3574,13 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     draw(ed, g);
     rl.endTextureMode();
     try game.exportTarget(target, objects_path);
+    ed.modal = .help;
+    prepare(ed, g);
+    rl.beginTextureMode(target);
+    draw(ed, g);
+    rl.endTextureMode();
+    var path: [512]u8 = undefined;
+    try game.exportTarget(target, try std.fmt.bufPrintZ(&path, "{s}/edit-help.png", .{std.fs.path.dirname(map_path) orelse "."}));
 }
 
 fn testEditor() !*Editor {

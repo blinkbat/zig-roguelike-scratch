@@ -5,7 +5,7 @@
 | Persistence | Whole run saved; death loses equipment, inventory and progression |
 | Inventory | Item list; no weight or stash |
 | Slots | Left/right hand, helm, chest, belt, gloves, boots, two rings, amulet |
-| Equipment rules | Attribute requirements, one weapon plus shield or a two-handed weapon |
+| Equipment rules | Attribute requirements, one main-hand item plus an offhand, or a two-handed item |
 | Requirements | Final loadout must remain valid; an item cannot fund its own requirement |
 | Loot | Normal or magic; at most two distinct modifiers |
 | Modifier pool | Life, mana, Strength, Dexterity, Intelligence |
@@ -25,6 +25,32 @@ prototype pools, not full Diablo/PoE itemization. Rank upgrades improve damage a
 non-damaging skills with cooldowns also recover sooner, down to 2 turns (1 for a skill that takes
 no turn, since a 1-turn cooldown ends in the turn the skill used). Equipping or allocating life does not
 heal current HP.
+
+## Weapons and offhands
+
+Strength scales **heavy** weapon damage; Dexterity scales **light** weapon damage.
+Melee versus ranged determines which equipped weapon a skill uses, independently of
+its scaling attribute. Spells still scale with Intelligence. The same weapon lookup
+governs basic melee, skill damage, rank bonuses and live damage previews.
+
+| Scaling | Basic weapon types |
+|---|---|
+| Heavy / Strength | Longsword, mace, greatsword, crossbow, greatclub; the existing great axe |
+| Light / Dexterity | Bow, sling, dagger, short sword, handaxe |
+| No innate attack | Wand, staff |
+| Offhand | Tome, orb, buckler, shield, totem |
+
+Each type has one basic item in the loot pool. One-handed melee weapons reuse the
+existing short-sword tier, two-handed heavy melee weapons the great-axe tier, and
+ranged weapons the bow tier. Requirements follow the scaling attribute. Greatsword,
+greatclub, great axe, bow, crossbow and staff use both hands; sling and wand allow
+an offhand. Wands and staves add no weapon damage to melee, ranged skills or spells;
+the hero's existing unarmed fallback and spell bases remain separate.
+Offhands use the existing requirement/armour tiers and can roll the ordinary modifier
+pool. Inventory details identify weapon scaling or the absence of innate attack.
+
+The expanded item enum and updated passive grants change the save fingerprint;
+older saves are rejected by the existing compatibility check.
 
 ## Tree panels and maintained references
 
@@ -49,7 +75,8 @@ incoming feeder; branches climb outward, while bridges unlock their two endpoint
 Each allocation costs one passive point, never a turn or gold. XP still awards the two point pools;
 Soulslike's purchase-to-level economy is not imported. Selection, zoom and browsing spend nothing.
 
-The full board fits initially; zoom follows the selected node. The sidebar names node tier, branch,
+The board opens zoomed in; zoom follows the selected node, with pan and a full-board overview control.
+The sidebar names node tier, branch,
 grants, point cost and allocation state. Separate confirmation still defaults to Cancel. Node-index
 layout, grants and feeder wiring participate in the save fingerprint; saves from the old hex tree are
 rejected as incompatible rather than interpreting their allocations as different nodes.

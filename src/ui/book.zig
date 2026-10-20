@@ -97,6 +97,7 @@ pub const View = struct {
     base: attr.Attrs,
     gold: i32 = 0,
     nearby: []const Nearby = &.{},
+    device: input.Device = .keys,
     fn stats(v: View) attr.Attrs {
         return v.inventory.gear.stats(v.base);
     }
@@ -133,7 +134,8 @@ pub const Book = struct {
     page: Page = .equipment,
     tabs: bool = true,
     cursor: usize = 0,
-    zoom: f32 = 1,
+    zoom: f32 = trees.ZOOM_START,
+    pan: rl.Vector2 = .{ .x = 0, .y = 0 },
     actions: ?usize = null,
     prompt: ?Command = null,
     yes: bool = false,
@@ -151,7 +153,8 @@ pub const Book = struct {
     pub fn choose(self: *Book, page: Page) void {
         self.page = page;
         self.cursor = 0;
-        self.zoom = 1;
+        self.zoom = trees.ZOOM_START;
+        self.pan = .{ .x = 0, .y = 0 };
         self.tabs = page != .nearby;
         self.actions = null;
         self.prompt = null;
@@ -188,10 +191,20 @@ pub const Book = struct {
         };
     }
     fn treeView(self: *const Book) trees.View {
-        return .{ .cursor = self.cursor, .zoom = self.zoom };
+        return .{ .cursor = self.cursor, .zoom = self.zoom, .pan = self.pan };
     }
     fn zoomBy(self: *Book, amount: f32) void {
         self.zoom = std.math.clamp(self.zoom + amount, trees.ZOOM_MIN, trees.ZOOM_MAX);
+        if (self.zoom == trees.ZOOM_MIN) self.pan = .{ .x = 0, .y = 0 };
+        self.clampPan();
+    }
+    fn clampPan(self: *Book) void {
+        const limit = 1.6 + 6 * (1 - 1 / self.zoom);
+        self.pan.x = std.math.clamp(self.pan.x, -limit, limit);
+        self.pan.y = std.math.clamp(self.pan.y, -limit, limit);
+    }
+    pub fn treeActive(self: *const Book) bool {
+        return self.page == .passives and !self.tabs and self.prompt == null and self.actions == null;
     }
     fn inWindow(self: *const Book, i: usize) bool {
         return !self.listed() or (i >= self.first() and i < self.first() + VISIBLE);
@@ -200,7 +213,10 @@ pub const Book = struct {
     fn enter(self: *Book, v: View) void {
         if (self.count(v) == 0) return;
         self.tabs = false;
-        if (self.page == .passives) self.cursor = progress.start(v.class);
+        if (self.page == .passives) {
+            self.cursor = progress.start(v.class);
+            self.pan = .{ .x = 0, .y = 0 };
+        }
     }
     fn selected(self: *const Book, v: View) ?items.Item {
         return switch (self.page) {
@@ -294,8 +310,25 @@ pub const Book = struct {
         if (self.page == .passives and !self.tabs) {
             if (st.hit(menu.CHANGE)) self.zoomBy(0.4);
             if (st.hit(menu.REMOVE)) self.zoomBy(-0.4);
+            if (st.tree.zoom != 0) self.zoomBy(st.tree.zoom * trees.ZOOM_RATE * st.tree.dt);
+            self.pan.x += st.tree.pan.x * trees.PAN_RATE * st.tree.dt / self.zoom;
+            self.pan.y += st.tree.pan.y * trees.PAN_RATE * st.tree.dt / self.zoom;
+            self.clampPan();
+            if (st.tree.reset) {
+                self.zoom = trees.ZOOM_MIN;
+                self.pan = .{ .x = 0, .y = 0 };
+            }
+            if (st.tree.move) |d| {
+                self.cursor = progress.passives.step(self.cursor, d.x, d.y);
+                self.pan = .{ .x = 0, .y = 0 };
+            }
+        }
+        if (self.page == .passives) {
             if (st.pointer) |p| if (trees.onCanvas(o, p)) {
-                if (st.scroll != 0) self.zoomBy(@as(f32, @floatFromInt(st.scroll)) * 0.2);
+                if (st.scroll != 0) {
+                    self.tabs = false;
+                    self.zoomBy(@as(f32, @floatFromInt(st.scroll)) * 0.2);
+                }
             };
         }
         if (self.listed() and st.scroll != 0 and self.count(v) > 0) {
@@ -340,7 +373,10 @@ pub const Book = struct {
                 if (d.y < 0 and self.cursor == 0 and !self.direct) self.tabs = true else if (d.y != 0 and self.count(v) > 0) self.cursor = mathx.wrap(self.cursor, d.y, self.count(v));
             } else if (self.page == .passives) {
                 const next = progress.passives.step(self.cursor, @floatFromInt(d.x), @floatFromInt(d.y));
-                if (next != self.cursor) self.cursor = next else if (d.y < 0) self.tabs = true;
+                if (next != self.cursor) {
+                    self.cursor = next;
+                    self.pan = .{ .x = 0, .y = 0 };
+                }
             } else if (self.count(v) > 0) {
                 var boxes: [CELLS_MAX]rl.Rectangle = undefined;
                 for (0..self.count(v)) |i| boxes[i] = self.cellBox(o, i, v);
@@ -377,7 +413,7 @@ pub const Book = struct {
         if (self.direct) face.draw("NEARBY", o.x + LIST_X, o.y + 82, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| button(face, tabBox(o, i), menu.named(page), self.page == page);
         if (self.treePanel() == null) rl.drawLine(o.x + DIVIDER_X, o.y + TOP, o.x + DIVIDER_X, o.y + H - 30, look.EDGE);
         if (self.treePanel()) |panel| {
-            trees.draw(panel, face, sprites, o, v.class, v.growth, self.treeView(), !self.tabs);
+            trees.draw(panel, face, sprites, o, v.class, v.growth, self.treeView(), !self.tabs, v.device);
         } else if (self.page == .stats) {
             const a = v.stats();
             var left = Rows{ .x = o.x + 40, .y = o.y + TOP };
@@ -494,7 +530,10 @@ pub const Book = struct {
         const slot = asked orelse if (self.page == .equipment) items.SLOTS[self.cursor] else if (self.actions) |a| slots[if (a < slots.len) a else 0] else slots[0];
         const worn = v.inventory.gear.slots.get(slot);
         face.draw(it.name(), x, y, font.HEAD, look.TEXT);
-        face.draw(if (spec.two_handed) "Two hands" else slot.name(), x, y + 32, font.SMALL, look.DIM);
+        var handling: menu.Note(120) = .{};
+        const hands = if (spec.two_handed) @as([:0]const u8, "Two hands") else slot.name();
+        if (spec.damage != null) handling.say("{s} / {s} / {s}", .{ hands, menu.named(spec.style), menu.named(spec.style.attr()) }) else if (slot == .right_hand) handling.say("{s} / No innate attack", .{hands}) else handling.say("{s}", .{hands});
+        face.draw(handling.text(), x, y + 32, font.SMALL, look.DIM);
         header(face, x, rows.next(), "WORN", "ITEM");
         const was = if (worn) |w| items.spec(w.kind) else null;
         const hit = spec.damage orelse NO_DAMAGE;
@@ -644,6 +683,21 @@ test "tree browsing zooms without spending and point prompts default to cancel" 
     const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = growth.attributes(.archer) };
     const screen = P{ .x = 1280, .y = 720 };
     var book = Book{ .page = .passives, .tabs = false, .cursor = progress.passives.branchFirst(.rogue_evade) };
+    try std.testing.expectEqual(trees.ZOOM_START, book.zoom);
+    try std.testing.expect(book.treeActive());
+    const original_cursor = book.cursor;
+    _ = book.step(&.{ .tree = .{ .zoom = -1, .pan = .{ .x = 1, .y = -1 }, .dt = 0.25 } }, screen, v);
+    try std.testing.expect(book.zoom < trees.ZOOM_START and book.pan.x > 0 and book.pan.y < 0);
+    try std.testing.expectEqual(original_cursor, book.cursor);
+    _ = book.step(&.{ .tree = .{ .move = .{ .x = 1, .y = 0 } } }, screen, v);
+    try std.testing.expectEqual(progress.passives.step(original_cursor, 1, 0), book.cursor);
+    try std.testing.expectEqual(@as(f32, 0), book.pan.x);
+    _ = book.step(&.{ .tree = .{ .zoom = 1, .dt = 100 } }, screen, v);
+    try std.testing.expectEqual(trees.ZOOM_MAX, book.zoom);
+    _ = book.step(&.{ .tree = .{ .reset = true } }, screen, v);
+    try std.testing.expectEqual(trees.ZOOM_MIN, book.zoom);
+    try std.testing.expectEqual(@as(f32, 0), book.pan.y);
+    book.cursor = original_cursor;
     var zoom = input.State{};
     zoom.pressed.insert(menu.CHANGE);
     _ = book.step(&zoom, screen, v);
@@ -652,6 +706,10 @@ test "tree browsing zooms without spending and point prompts default to cancel" 
     confirm.pressed.insert(menu.CONFIRM);
     _ = book.step(&confirm, screen, v);
     try std.testing.expect(book.prompt != null and !book.yes);
+    try std.testing.expect(!book.treeActive());
+    const held_zoom = book.zoom;
+    _ = book.step(&.{ .tree = .{ .zoom = 1, .dt = 100 } }, screen, v);
+    try std.testing.expectEqual(held_zoom, book.zoom);
     _ = book.step(&confirm, screen, v);
     try std.testing.expect(book.prompt == null);
     try std.testing.expectEqual(@as(u16, 2), growth.passive_points);
@@ -666,5 +724,10 @@ test "tree browsing zooms without spending and point prompts default to cancel" 
     _ = book.step(&confirm, screen, v);
     try std.testing.expect(book.prompt == null);
     try std.testing.expectEqual(@as(u16, 2), growth.active_points);
+    book.choose(.passives);
+    try std.testing.expectEqual(trees.ZOOM_START, book.zoom);
+    const canvas = trees.zoomBox(originOf(screen), true);
+    _ = book.step(&.{ .pointer = .{ .x = @intFromFloat(canvas.x), .y = @intFromFloat(canvas.y) }, .scroll = -1 }, screen, v);
+    try std.testing.expect(book.treeActive() and book.zoom < trees.ZOOM_START);
     std.debug.print("tree book: spatial browsing and zoom spend no points; passive and skill prompts default to cancel\n", .{});
 }

@@ -16,6 +16,7 @@ pub fn main() !void {
 }
 
 test {
+    _ = @import("gfx/prompt_text.zig");
     _ = @import("core/mathx.zig");
     _ = @import("core/input.zig");
     _ = @import("core/store.zig");

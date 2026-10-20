@@ -187,7 +187,7 @@ changing the authoring code so saved allocations keep the same meaning.
 | Wizard | Well and casting | A resource route and a magical offense route |
 
 Our class names are Knight, Archer and Wizard. The adapted branch names are
-Fortitude, Might, Agility, Marksmanship, Reserves and Sorcery. Branch effects must
+Fortitude, Might, Agility, Finesse, Reserves and Sorcery. Branch effects must
 suit our existing systems; the sibling's branch themes are not permission to invent
 stamina, real-time movement speed, poise, or new combat triggers.
 
@@ -238,6 +238,10 @@ not copy the sibling economy or all its grants.
 
 Supported reward vocabulary comes from the local implementation: Strength,
 Dexterity, Intelligence, life, mana, armour, and the existing damage-by-style bonus.
+Heavy weapon damage scales with Strength and light weapon damage with Dexterity;
+either group can contain melee and ranged weapons. The Might and Finesse damage
+grants follow those groups, so crossbows can benefit from Strength and daggers
+from Dexterity. Spell damage retains Intelligence scaling.
 Values, stacking and descriptions must come from source. Do not translate a
 real-time sibling bonus into a turn-based one by guesswork. No life allocation
 heals current HP merely because the maximum rises.
@@ -347,8 +351,9 @@ gestures were not tested here. Do not claim to reproduce those bindings.
 The sibling provides a concrete local navigation model: geometric directional
 selection, a centered overview, bounded pan and zoom, and focus-aware framing.
 Its tests check directional consistency and access to all selectable locations.
-Those are useful contracts even if our smaller panel initially fits the whole tree
-without camera controls.
+The local tree now follows its left-stick selection, right-stick pan and D-pad
+zoom arrangement. Keyboard navigation also supports shifted pan, zoom and an
+overview reset; exact bindings live in [CONTROLLER.md](CONTROLLER.md).
 [Sibling navigation](../../zig-soulslike/src/play/passivetree.zig).
 
 For this adaptation, prioritize complete visibility and useful node sizes at the
@@ -358,12 +363,14 @@ locked nodes; allocation legality must not filter navigation. A direction should
 move toward a nearby candidate in that direction rather than jumping by array
 index across the canvas.
 
-If the complete tree fits legibly, a fixed overview is an honest simplification.
-If it does not, add camera behavior deliberately rather than shrinking every target
-below usability. Pan and zoom should affect presentation only, preserve selection,
-share the hit-test transform, clip to the graph canvas, and provide a reliable way
-back to the overview. Newly focused nodes must not remain offscreen. Camera state
-belongs to unsaved navigation, not the character's progression.
+The tree opens zoomed in at the class origin. Its initial magnification and limits
+live in `ui/trees.zig`; the complete overview remains available through a reset and
+minimum zoom. Pan and zoom affect presentation only, preserve selection, share the
+hit-test transform and clip to the graph canvas. Directional selection recenters
+the view so newly focused nodes remain visible; manual pan may inspect away from
+the selection. Camera state belongs to unsaved navigation, not progression.
+Control hints always use device glyphs, including keyboard keycaps, rather than
+spelling controls in prose. Mouse wheel and on-screen zoom controls remain usable.
 
 Search, if later justified, should highlight real matches, allow inspection of each,
 and retain enough surrounding routes to orient the player. It must not allocate

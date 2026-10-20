@@ -80,10 +80,13 @@ pub const Act = enum {
         };
     }
 
-    /// The style its damage scales by; null for skills that deal none.
-    pub fn style(a: Act) ?attrs.Style {
+    pub fn defaultStyle(a: Act) ?attrs.Style {
+        return (a.attack() orelse return null).defaultStyle();
+    }
+
+    pub fn attack(a: Act) ?attrs.Attack {
         return switch (a) {
-            inline else => |t| comptime SKILLS.get(t).style,
+            inline else => |t| comptime SKILLS.get(t).attack,
         };
     }
 
@@ -266,25 +269,25 @@ pub const ACTS = std.enums.values(Act);
 /// A swing's reach, and a rush's nearest mark unless its module says otherwise.
 const MELEE_REACH: i32 = 1;
 
-const Skill = struct { module: ?type, reticle: ?Act.Reticle = null, style: ?attrs.Style = null };
+const Skill = struct { module: ?type, reticle: ?Act.Reticle = null, attack: ?attrs.Attack = null };
 const SKILLS = std.EnumArray(Act, Skill).init(.{
-    .shoot = .{ .module = null, .reticle = .bow, .style = .ranged },
+    .shoot = .{ .module = null, .reticle = .bow, .attack = .ranged },
     .wait = .{ .module = null },
     .secondary = .{ .module = null },
     .juke = .{ .module = juke, .reticle = .leap },
-    .burning_arrow = .{ .module = burning, .reticle = .bow, .style = .ranged },
-    .glacial_shot = .{ .module = glacial, .reticle = .bow, .style = .ranged },
-    .spark = .{ .module = spark, .reticle = .bow, .style = .spell },
+    .burning_arrow = .{ .module = burning, .reticle = .bow, .attack = .ranged },
+    .glacial_shot = .{ .module = glacial, .reticle = .bow, .attack = .ranged },
+    .spark = .{ .module = spark, .reticle = .bow, .attack = .spell },
     .blink = .{ .module = blink, .reticle = .leap },
-    .shield_bash = .{ .module = bash, .reticle = .swing, .style = .melee },
-    .cleave = .{ .module = cleave, .reticle = .swing, .style = .melee },
-    .pinning_shot = .{ .module = pinning, .reticle = .bow, .style = .ranged },
-    .barbed_arrow = .{ .module = barbed, .reticle = .bow, .style = .ranged },
-    .frost_nova = .{ .module = nova, .style = .spell },
-    .fireball = .{ .module = fireball, .reticle = .bow, .style = .spell },
-    .chain_lightning = .{ .module = chain, .reticle = .bow, .style = .spell },
+    .shield_bash = .{ .module = bash, .reticle = .swing, .attack = .melee },
+    .cleave = .{ .module = cleave, .reticle = .swing, .attack = .melee },
+    .pinning_shot = .{ .module = pinning, .reticle = .bow, .attack = .ranged },
+    .barbed_arrow = .{ .module = barbed, .reticle = .bow, .attack = .ranged },
+    .frost_nova = .{ .module = nova, .attack = .spell },
+    .fireball = .{ .module = fireball, .reticle = .bow, .attack = .spell },
+    .chain_lightning = .{ .module = chain, .reticle = .bow, .attack = .spell },
     .mana_shield = .{ .module = ward },
-    .charge = .{ .module = charge, .reticle = .rush, .style = .melee },
+    .charge = .{ .module = charge, .reticle = .rush, .attack = .melee },
     .life_flask = .{ .module = flask.Life },
     .mana_flask = .{ .module = flask.Mana },
 });
@@ -301,7 +304,7 @@ pub fn kit(c: hero.Class) []const Act {
 comptime {
     @setEvalBranchQuota(10_000);
     for (ACTS) |a| {
-        if ((a.reticle() == .bow or Act.has(a, "BASE")) != (a.style() != null)) @compileError(@tagName(a) ++ ": damage skills must declare their style");
+        if ((a.reticle() == .bow or Act.has(a, "BASE")) != (a.attack() != null)) @compileError(@tagName(a) ++ ": damage skills must declare their attack type");
         var n: usize = 0;
         for (hero.CLASSES) |c| {
             if (std.mem.indexOfScalar(Act, kit(c), a) != null) n += 1;

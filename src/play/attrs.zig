@@ -26,19 +26,33 @@ comptime {
 }
 /// What a blow is, and so which attribute raises it.
 pub const Style = enum {
-    melee,
-    ranged,
+    heavy,
+    light,
     spell,
 
     pub fn attr(s: Style) Attr {
         return switch (s) {
-            .melee => .strength,
-            .ranged => .dexterity,
+            .heavy => .strength,
+            .light => .dexterity,
             .spell => .intelligence,
         };
     }
 };
 pub const STYLES = std.enums.values(Style);
+
+pub const Attack = enum {
+    melee,
+    ranged,
+    spell,
+
+    pub fn defaultStyle(a: Attack) Style {
+        return switch (a) {
+            .melee => .heavy,
+            .ranged => .light,
+            .spell => .spell,
+        };
+    }
+};
 
 const LIFE_BASE: i32 = 10;
 const LIFE_PER_STR: i32 = 1;
@@ -168,10 +182,10 @@ test "attributes raise life, mana, their own style's damage, crits and dodge" {
     const a = Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 10 });
     try std.testing.expectEqual(@as(i32, 30), a.life());
     try std.testing.expectEqual(@as(i32, 100), a.mana());
-    try std.testing.expectEqual(Dealt{ .whole = 12, .part = 0 }, a.dealt(.melee, 10, false));
+    try std.testing.expectEqual(Dealt{ .whole = 12, .part = 0 }, a.dealt(.heavy, 10, false));
     try std.testing.expectEqual(Dealt{ .whole = 11, .part = 0 }, a.dealt(.spell, 10, false));
-    try std.testing.expectEqual(Dealt{ .whole = 18, .part = 0 }, a.dealt(.ranged, 10, true));
-    try std.testing.expectEqual(damage.Span{ .lo = 2, .hi = 5 }, a.span(.melee, .{ .lo = 2, .hi = 4 }));
+    try std.testing.expectEqual(Dealt{ .whole = 18, .part = 0 }, a.dealt(.light, 10, true));
+    try std.testing.expectEqual(damage.Span{ .lo = 2, .hi = 5 }, a.span(.heavy, .{ .lo = 2, .hi = 4 }));
     try std.testing.expectEqual(@as(u32, 10), a.crit());
     try std.testing.expectEqual(@as(u32, 10), a.dodge());
     try std.testing.expectEqual(@as(u32, DODGE_MAX), Attrs.of(.{ .strength = 0, .dexterity = 1000, .intelligence = 0 }).dodge());
@@ -179,7 +193,7 @@ test "attributes raise life, mana, their own style's damage, crits and dodge" {
     const ROLLS = 10_000;
     var sum: i64 = 0;
     for (0..ROLLS) |_| {
-        const v = a.dealt(.melee, 2, false).roll(&rng);
+        const v = a.dealt(.heavy, 2, false).roll(&rng);
         try std.testing.expect(v == 2 or v == 3);
         sum += v;
     }
@@ -187,8 +201,8 @@ test "attributes raise life, mana, their own style's damage, crits and dodge" {
     try std.testing.expect(@abs(mean - 2.4) < 0.03);
     var hit = damage.Damage{ .physical = 10 };
     hit.elements.set(.fire, 20);
-    const b = a.blow(.ranged, hit, false, &rng);
+    const b = a.blow(.light, hit, false, &rng);
     try std.testing.expectEqual(@as(i32, 12), b.physical);
     try std.testing.expectEqual(@as(i32, 24), b.elements.get(.fire));
-    std.debug.print("attributes 20/20/10: life {d}, mana {d}, crit {d}%, dodge {d}%; 2 melee at +20% averages {d:.3} over {d} rolls\n", .{ a.life(), a.mana(), a.crit(), a.dodge(), mean, ROLLS });
+    std.debug.print("attributes 20/20/10: life {d}, mana {d}, crit {d}%, dodge {d}%; 2 heavy at +20% averages {d:.3} over {d} rolls\n", .{ a.life(), a.mana(), a.crit(), a.dodge(), mean, ROLLS });
 }

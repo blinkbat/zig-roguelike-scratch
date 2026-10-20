@@ -27,6 +27,7 @@ documented scripts; it does not mean every resulting tile has been hand-painted 
 
 | Runtime asset | Owner original | Assistant contribution | Owner review target |
 |---|---|---|---|
+| `assets/knight.png` | Desktop `knight.aseprite`, `Layer 1`; byte-for-byte canonical copy at `assets/source/knight.aseprite` | Native 64x64 visible-layer export, with pixels, transparency and placement unchanged; registered for the knight body | Original sprite is owner-painted |
 | `assets/hud-border.png` | Desktop `border.aseprite`, `Layer 1`; canonical `assets/source/hud-border.aseprite` | Crop/export and nine-slice placement | Original border is owner-painted |
 | `assets/walls.png` | Desktop `regular-walls.aseprite`, `Layer 1` | `port_walls.lua`, `export_walls.lua`; assembled 47-mask runtime sheet in `assets/source/walls.aseprite` | Generated connections, corners and faces |
 | `assets/grass-ground.png` | `assets/source/grass.aseprite`, `Draw here` | `Grass extensions` via `port_ground.lua` | Extension layer and joins |

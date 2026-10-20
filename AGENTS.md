@@ -65,9 +65,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - **`core/input.zig` alone reads input devices.** Controller is primary; keyboard mirrors every action.
   `docs/CONTROLLER.md` describes the scheme; current mappings/defaults live in `input`, `skillbar.Bar.of` and `progress.State.bar`.
   Keep skill lists and balance values in their source modules instead of duplicating them here.
-- Play/menu screens never name keys or buttons in prose. Only the skill bar and bind screen show input
-  icons, following the last device (`State.device`, `look.Prompt`, `input.padOf`). The desk editor is the
-  exception: `input.Desk` owns its keyboard/mouse controls and captions.
+- Always show input controls as glyphs, never as key/button names in prose. Use `look.Prompt`,
+  following the last device (`State.device`, `input.padOf`), including tree hints. The desk editor uses
+  keyboard/mouse glyphs through `gfx/prompt_text.zig`; `input.Desk` owns its marked shortcut captions.
 - `play/skillbar.zig` owns primary/secondary sets, the bindable secondary modifier and class kits.
   `input.SLOT_ORDER` numbers keyboard slots while skipping the modifier, which uses Ctrl. Menu keys are
   inactive in play; targeting uses menu confirm/back keys (`State.context`). Typing (`State.typing`) must not activate slots or movement. A close/cancel press that
@@ -88,6 +88,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `play/passives.zig` owns the radial passive graph and grants; `ui/trees.zig` draws both tree panels.
   Before changing either panel, read its maintained reference: `docs/DIABLO2_SKILL_TREE.md` for skills,
   `docs/POE2_PASSIVE_TREE.md` for passives. Keep those documents aligned with subsequent changes.
+  Passives open zoomed in. The left stick browses on its actual bearing, the right stick pans, and
+  D-pad up/down zooms. Keyboard navigation, shifted pan, zoom and overview mirror those actions;
+  keep device reads in `input` and the control reference in `docs/CONTROLLER.md`.
   Passives lift the Soulslike three-arm, six-branch layout: small stat nodes, larger interest nodes,
   paired-stat bridges and six double-ring capstones. Use very simple graphics. All three origins open
   from the central hub; the class origin is free and grants no bonus. Branches follow outward feeders;
@@ -158,8 +161,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 
 ## Combat and simulation
 
-- `play/attrs.zig` owns Strength/Dexterity/Intelligence and what they derive: life, mana, per-style damage
-  (`skillbar.Act.style`), crit and dodge. Class bases feed passive allocations and equipped modifiers;
+- `play/attrs.zig` owns Strength/Dexterity/Intelligence and what they derive: life, mana, heavy/light/spell
+  damage, crit and dodge. Strength scales heavy weapons; Dexterity scales light weapons, regardless of range.
+  `skillbar.Act.attack` selects melee/ranged/spell delivery; `items.Gear.scaling` selects the matching
+  weapon's scaling for both live damage and previews. Wands and staves have no innate attack damage.
+  Offhands include tomes, orbs, bucklers, shields and totems; two-handed weapons clear that slot.
+  Class bases feed passive allocations and equipped modifiers;
   `game.heroAttrs` is the runtime source. Armour reduces physical bites before mana shield; elemental/status
   damage keeps its separate rules. Equipped weapons and skill ranks affect hero damage and its previews.
   Every hero blow goes through `game.scaled` (via `heroRoll`/`heroScaled`), which draws the crit after the
@@ -178,8 +185,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Juke is the free leap (`juke.FREE`); Blink spends a turn. Leap cursors may cross invalid cells but
   confirm only visible vacant landings. Idle frames advance no simulation, mana recovery or cooldowns.
   Flasks take a turn, recover from that turn's end, and restart recovery when drunk again; kills refill them.
-- `skillbar.SKILLS` owns each action's module, reticle and damage style; damaging actions must declare a
-  style. Skills dispatch by module declarations (`afflict`, `burst`, `JUMPS`, `around`, `Ward`, `knocked`).
+- `skillbar.SKILLS` owns each action's module, reticle and attack type; damaging actions must declare one.
+  Skills dispatch by module declarations (`afflict`, `burst`, `JUMPS`, `around`, `Ward`, `knocked`).
   A pin (`pinning.Pin`) holds a body to its cell on its
   turns, counting down like chill; it still strikes the hero beside it and cannot be knocked back.
   A mana shield (`ward.Ward`) takes the hero's harm from mana first, in `game.hurt`; the orb shows that
@@ -233,7 +240,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   editor shows all.
 - `gfx/light.zig` owns cosmetic light and fog. Draw ground/underlays, shadow mask, then standing tiles,
   so walls cover shadows. Terrain gets one 2x-modulate light-map pass, with no extra terrain tint.
-  Body normals shade per pixel; motes/gas draw before lighting, flames/glow afterward.
+  Body normals shade per pixel; motes/ground gas draw before lighting, flames/glow afterward.
+  Gas also veils prop/body artwork at half its ground opacity (45% maximum), respecting sprite alpha
+  and presented positions; brick and rock walls stay clear. This overlay does not change gas spread.
 - Shadows/contact pools combine by channelwise `GL_MIN`, never stacking darker than the darkest source.
   `Light.onCaster` ignores fog: unseen/offscreen casters still cast when lit. Receiver visibility in the
   light-map alpha fades shadows, keeping unseen/remembered ground unchanged. Keep the `CAST_MARGIN` culling

@@ -50,6 +50,19 @@ pub const Kind = enum {
     axe,
     bow,
     staff,
+    longsword,
+    mace,
+    greatsword,
+    crossbow,
+    greatclub,
+    sling,
+    dagger,
+    handaxe,
+    wand,
+    tome,
+    orb,
+    buckler,
+    totem,
     shield,
     cap,
     helmet,
@@ -75,15 +88,29 @@ pub const Spec = struct {
     slots: []const Slot,
     needs: attrs.Needs = .{},
     damage: ?damage.Base = null,
-    style: attrs.Style = .melee,
+    style: attrs.Style = .heavy,
+    attack: attrs.Attack = .melee,
     two_handed: bool = false,
     armour: i16 = 0,
 };
 const SPECS = std.EnumArray(Kind, Spec).init(.{
-    .sword = .{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 } },
+    .sword = .{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light },
     .axe = .{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true },
-    .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .ranged, .two_handed = true },
-    .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .damage = .{ .lo = 2, .hi = 4 }, .two_handed = true },
+    .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
+    .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .two_handed = true },
+    .longsword = .{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 } },
+    .mace = .{ .name = "Mace", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 } },
+    .greatsword = .{ .name = "Greatsword", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true },
+    .crossbow = .{ .name = "Crossbow", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true },
+    .greatclub = .{ .name = "Greatclub", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true },
+    .sling = .{ .name = "Sling", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged },
+    .dagger = .{ .name = "Dagger", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light },
+    .handaxe = .{ .name = "Handaxe", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light },
+    .wand = .{ .name = "Wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 } },
+    .tome = .{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } },
+    .orb = .{ .name = "Orb", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } },
+    .buckler = .{ .name = "Buckler", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2 },
+    .totem = .{ .name = "Totem", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } },
     .shield = .{ .name = "Wooden shield", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6 },
     .cap = .{ .name = "Leather cap", .slots = &.{.helm}, .armour = 2 },
     .helmet = .{ .name = "Iron helm", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4 },
@@ -175,10 +202,15 @@ pub const Gear = struct {
         return it.meets(without.stats(base));
     }
 
-    pub fn weapon(self: Gear, style: attrs.Style) ?damage.Base {
+    pub fn weapon(self: Gear, attack: attrs.Attack) ?damage.Base {
         const it = self.slots.get(.right_hand) orelse return null;
         const s = spec(it.kind);
-        return if (s.style == style) s.damage else null;
+        return if (s.attack == attack) s.damage else null;
+    }
+
+    pub fn scaling(self: Gear, attack: attrs.Attack) attrs.Style {
+        if (self.weapon(attack) != null) return spec(self.slots.get(.right_hand).?.kind).style;
+        return attack.defaultStyle();
     }
 };
 
@@ -307,6 +339,51 @@ pub const Ground = struct {
         return true;
     }
 };
+
+test "weapon weights cross melee and range while caster implements have no innate attack" {
+    const heavy = [_]Kind{ .longsword, .mace, .greatsword, .crossbow, .greatclub, .axe };
+    const light = [_]Kind{ .bow, .sling, .dagger, .sword, .handaxe };
+    var gear = Gear{};
+    const strong = attrs.Attrs.of(.{ .strength = 60, .dexterity = 10, .intelligence = 20 });
+    for (heavy ++ light) |kind| {
+        gear.slots.set(.right_hand, .{ .kind = kind });
+        const s = spec(kind);
+        const is_heavy = std.mem.indexOfScalar(Kind, &heavy, kind) != null;
+        try std.testing.expectEqual(if (is_heavy) attrs.Style.heavy else .light, gear.scaling(s.attack));
+        try std.testing.expectEqual(@as(i32, if (is_heavy) 60 else 10), strong.increase(gear.scaling(s.attack)));
+        try std.testing.expect(s.damage != null);
+        try std.testing.expectEqual(s.damage, gear.weapon(s.attack));
+        try std.testing.expect(gear.weapon(if (s.attack == .ranged) .melee else .ranged) == null);
+    }
+    for ([_]Kind{ .wand, .staff }) |kind| {
+        gear.slots.set(.right_hand, .{ .kind = kind });
+        try std.testing.expect(spec(kind).damage == null);
+        for (std.enums.values(attrs.Attack)) |attack| {
+            try std.testing.expect(gear.weapon(attack) == null);
+            try std.testing.expectEqual(attack.defaultStyle(), gear.scaling(attack));
+        }
+    }
+    const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
+    for ([_]Kind{ .tome, .orb, .buckler, .shield, .totem }) |kind| {
+        var inv = Inventory{};
+        try std.testing.expect(inv.add(.{ .kind = .wand }));
+        try inv.equip(0, .right_hand, base);
+        try std.testing.expect(inv.add(.{ .kind = kind }));
+        try inv.equip(0, .left_hand, base);
+        try std.testing.expect(inv.gear.valid(base));
+        try std.testing.expectEqual(Kind.wand, inv.gear.slots.get(.right_hand).?.kind);
+        try std.testing.expect(spec(kind).damage == null);
+        try std.testing.expect(inv.add(.{ .kind = .staff }));
+        try inv.equip(0, .right_hand, base);
+        try std.testing.expect(inv.gear.slots.get(.left_hand) == null);
+        try std.testing.expectEqual(@as(usize, 2), inv.n);
+    }
+    var seen = std.EnumSet(Kind).initEmpty();
+    var rng = mathx.Rng.init(0x17E);
+    for (0..2000) |_| seen.insert(roll(&rng).kind);
+    try std.testing.expectEqual(KINDS.len, seen.count());
+    std.debug.print("items: {d} heavy, {d} light, 2 non-attacking implements, 5 offhand swaps; all {d} kinds roll as loot\n", .{ heavy.len, light.len, KINDS.len });
+}
 
 test "equipment swaps preserve both hands, reject self-funded requirements and keep dependent gear valid" {
     const base = attrs.Attrs.of(.{ .strength = 18, .dexterity = 20, .intelligence = 10 });

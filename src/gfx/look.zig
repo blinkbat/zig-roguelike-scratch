@@ -434,7 +434,7 @@ fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, t
 const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .archer = @embedFile("archer.png"),
     .wizard = @embedFile("wizard.png"),
-    .knight = null,
+    .knight = @embedFile("knight.png"),
     .rat = @embedFile("rat.png"),
     .slime = @embedFile("slime.png"),
     .slime_half = @embedFile("slime-half.png"),
@@ -1214,6 +1214,14 @@ pub const Prompt = union(enum) {
     view,
     menu,
     key: [:0]const u8,
+    stick: enum { left, right },
+    dpad,
+    arrows,
+    mouse: enum { left, right, middle, wheel },
+
+    pub fn menuOf(st: *const input.State, b: input.Button) Prompt {
+        return if (st.device.pad()) of(st, b) else .{ .key = st.caption(b) };
+    }
 
     pub fn of(st: *const input.State, b: input.Button) Prompt {
         if (!st.device.pad()) return .{ .key = st.slotCaption(b) };
@@ -1228,7 +1236,7 @@ pub const Prompt = union(enum) {
     /// Across, at `h` tall.
     pub fn width(p: Prompt, face: *const font.Face, h: i32) i32 {
         return switch (p) {
-            .face => h,
+            .face, .stick, .dpad, .arrows, .mouse => h,
             .pill => |s| face.width(s, labelPx(h)) + h,
             .view, .menu => h + @divTrunc(h, 2),
             .key => |s| @max(h, face.width(s, labelPx(h)) + @divTrunc(h, 2)),
@@ -1240,6 +1248,37 @@ pub const Prompt = union(enum) {
         const w = p.width(face, h);
         const box = rect(cx - @divTrunc(w, 2), cy - @divTrunc(h, 2), w, h);
         switch (p) {
+            .stick => |side| {
+                const c = rl.Vector2{ .x = @floatFromInt(cx), .y = @floatFromInt(cy) };
+                const radius: f32 = @as(f32, @floatFromInt(h)) * 0.46;
+                rl.drawCircleV(c, radius, fade(PROMPT_BODY, alpha));
+                rl.drawRing(c, radius - 1.5, radius, 0, 360, 24, fade(PROMPT_EDGE, alpha));
+                face.centred(if (side == .left) "L" else "R", cx, cy, labelPx(h), fade(PROMPT_INK, alpha));
+            },
+            .dpad, .arrows => {
+                const step = @divTrunc(h, 3);
+                for ([_]mathx.Dir{ .n, .e, .s, .w }) |d| {
+                    const offset = d.delta();
+                    const ink = if (p == .dpad and offset.x != 0) PROMPT_EDGE else PROMPT_INK;
+                    promptArrow(d, cx + offset.x * step, cy + offset.y * step, @max(6, @divTrunc(h, 3)), fade(ink, alpha));
+                }
+            },
+            .mouse => |button| {
+                const shell = rect(cx - @divTrunc(h, 3), cy - @divTrunc(h, 2), @divTrunc(h * 2, 3), h);
+                rl.drawRectangleRounded(shell, 0.65, 8, fade(PROMPT_BODY, alpha));
+                rl.drawRectangleRoundedLinesEx(shell, 0.65, 8, 1, fade(PROMPT_EDGE, alpha));
+                const x: f32 = @floatFromInt(cx);
+                const y: f32 = @floatFromInt(cy);
+                const s: f32 = @floatFromInt(h);
+                if (button == .left or button == .right) {
+                    rl.drawRectangleRec(.{ .x = x + (if (button == .left) -s * 0.24 else @as(f32, 0.04)), .y = y - s * 0.33, .width = s * 0.2, .height = s * 0.3 }, fade(PROMPT_INK, alpha));
+                } else {
+                    rl.drawRectangleRounded(.{ .x = x - 1.5, .y = y - s * 0.3, .width = 3, .height = s * 0.3 }, 0.5, 4, fade(PROMPT_INK, alpha));
+                    if (button == .wheel) for ([_]mathx.Dir{ .n, .s }) |d| {
+                        promptArrow(d, cx, cy + d.delta().y * @divTrunc(h, 3), @max(6, @divTrunc(h, 3)), fade(PROMPT_INK, alpha));
+                    };
+                }
+            },
             .face => |f| faceButton(face, f.button, f.sony, cx, cy, h, alpha),
             .pill => |s| {
                 pill(box, alpha);
@@ -1255,11 +1294,24 @@ pub const Prompt = union(enum) {
             },
             .key => |s| {
                 keycap(box, alpha);
-                face.centred(s, cx, cy - @divTrunc(h, 12), labelPx(h), fade(PROMPT_INK, alpha));
+                const direction: ?mathx.Dir = if (std.mem.eql(u8, s, "Up")) .n else if (std.mem.eql(u8, s, "Down")) .s else if (std.mem.eql(u8, s, "Left")) .w else if (std.mem.eql(u8, s, "Right")) .e else null;
+                if (direction) |d| promptArrow(d, cx, cy - @divTrunc(h, 12), @divTrunc(h, 2), fade(PROMPT_INK, alpha)) else face.centred(s, cx, cy - @divTrunc(h, 12), labelPx(h), fade(PROMPT_INK, alpha));
             },
         }
     }
 };
+
+fn promptArrow(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+    const delta = d.delta();
+    const dx: f32 = @floatFromInt(delta.x);
+    const dy: f32 = @floatFromInt(delta.y);
+    const radius = @as(f32, @floatFromInt(size)) / 2;
+    const x: f32 = @floatFromInt(cx);
+    const y: f32 = @floatFromInt(cy);
+    const tip = rl.Vector2{ .x = x + dx * radius, .y = y + dy * radius };
+    rl.drawLineEx(.{ .x = x - dx * radius, .y = y - dy * radius }, tip, 1.2, col);
+    for ([_]f32{ -1, 1 }) |side| rl.drawLineEx(.{ .x = x - dy * radius * side, .y = y + dx * radius * side }, tip, 1.2, col);
+}
 
 /// An input icon `h` tall: its caption's text size.
 pub fn labelPx(h: i32) i32 {
@@ -1505,6 +1557,7 @@ test "a slot's prompt is its maker's face button or shoulder on a pad, and its k
     st = .{ .device = .keys, .modifier = .lb };
     try std.testing.expectEqualStrings(input.SECOND_CAPTION, Prompt.of(&st, .lb).key);
     try std.testing.expectEqualStrings("1", Prompt.of(&st, .a).key);
+    try std.testing.expectEqualStrings("Enter", Prompt.menuOf(&st, .a).key);
     for (input.SLOT_ORDER) |b| {
         for ([_]input.Device{ .xbox, .ps4 }) |d| {
             st.device = d;

@@ -296,6 +296,20 @@ fn captions(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const u8 {
     for (keys, &out) |k, *c| c.* = keyName(k);
     return out;
 }
+
+pub fn glyphCaption(comptime text: []const u8) [:0]const u8 {
+    return "\x1e" ++ text ++ "\x1f";
+}
+
+fn keyGlyph(comptime key: rl.KeyboardKey) [:0]const u8 {
+    return glyphCaption(keyName(key));
+}
+
+fn glyphCaptions(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const u8 {
+    var out: [keys.len][:0]const u8 = undefined;
+    for (keys, &out) |key, *text| text.* = keyGlyph(key);
+    return out;
+}
 const SECOND_KEYS = CTRL_KEYS;
 pub const SECOND_CAPTION = keyName(SECOND_KEYS[0]);
 
@@ -411,8 +425,41 @@ fn types(k: rl.KeyboardKey) bool {
         k == .space or k == .period or k == .apostrophe or k == .minus;
 }
 
+pub const TreeInput = struct {
+    move: ?rl.Vector2 = null,
+    pan: rl.Vector2 = .{ .x = 0, .y = 0 },
+    zoom: f32 = 0,
+    reset: bool = false,
+    dt: f32 = 0,
+};
+
+const RadialStepper = struct {
+    direction: ?rl.Vector2 = null,
+    wait: f32 = 0,
+
+    fn tick(self: *RadialStepper, dt: f32, x: f32, y: f32) ?rl.Vector2 {
+        const magnitude = std.math.hypot(x, y);
+        if (!stickWalks(magnitude, self.direction != null)) {
+            self.* = .{};
+            return null;
+        }
+        const next = rl.Vector2{ .x = x / magnitude, .y = y / magnitude };
+        const turned = if (self.direction) |old| old.x * next.x + old.y * next.y < 0.766 else true;
+        if (turned) {
+            self.direction = next;
+            self.wait = Stepper.DAS;
+            return next;
+        }
+        self.wait -= dt;
+        if (self.wait > 0) return null;
+        self.wait = Stepper.ARR;
+        self.direction = next;
+        return next;
+    }
+};
+
 pub const State = struct {
-    pub const Context = enum { menu, play, target };
+    pub const Context = enum { menu, play, target, tree };
 
     pressed: std.EnumSet(Button) = .initEmpty(),
     down: std.EnumSet(Button) = .initEmpty(),
@@ -423,6 +470,8 @@ pub const State = struct {
     walk: ?mathx.Dir = null,
     lean: bool = false,
     step: Stepper = .{},
+    radial: RadialStepper = .{},
+    tree: TreeInput = .{},
     /// A latched stick takes priority over digital movement.
     stick: bool = false,
     /// Set before each `update`, which clears it: typing keys then type, and press no button.
@@ -480,6 +529,8 @@ pub const State = struct {
     /// A way held over from a screen that used it walks nobody.
     pub fn holdWalk(self: *State) void {
         self.step.hold();
+        self.radial.wait = std.math.inf(f32);
+        self.tree.move = null;
         self.walk = null;
     }
 
@@ -552,7 +603,7 @@ pub const State = struct {
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();
-        self.lean = self.context != .menu and ((if (live) |at| self.padHeld(at, LEAN) else false) or either(LEAN_KEYS));
+        self.lean = (self.context == .play or self.context == .target) and ((if (live) |at| self.padHeld(at, LEAN) else false) or either(LEAN_KEYS));
         self.typed.n = 0;
         self.rub = false;
         if (self.typing) {
@@ -560,6 +611,27 @@ pub const State = struct {
             self.rub = rubbed();
         }
 
+        self.tree = .{};
+        const on_tree = self.context == .tree;
+        const pan_keys = on_tree and !self.typing and !alt_down and either(SHIFT_KEYS);
+        if (on_tree and !self.typing and !alt_down) {
+            self.tree.dt = dt;
+            if (live) |at| {
+                const px = rl.getGamepadAxisMovement(at, .right_x);
+                const py = rl.getGamepadAxisMovement(at, .right_y);
+                if (std.math.hypot(px, py) >= 0.18) self.tree.pan = .{ .x = px, .y = py };
+                self.tree.zoom = @as(f32, if (rl.isGamepadButtonDown(at, .left_face_up)) 1 else 0) - @as(f32, if (rl.isGamepadButtonDown(at, .left_face_down)) 1 else 0);
+                self.tree.reset = self.padHit(at, .right_thumb, &before);
+            }
+            if (pan_keys) {
+                const p = heldWalk(&WALKS, false);
+                const length = @max(1, std.math.hypot(@as(f32, @floatFromInt(p.x)), @as(f32, @floatFromInt(p.y))));
+                self.tree.pan = .{ .x = @as(f32, @floatFromInt(p.x)) / length, .y = @as(f32, @floatFromInt(p.y)) / length };
+            }
+            if (either(.{ .equal, .kp_add }) or rl.isKeyDown(.page_up)) self.tree.zoom += 1;
+            if (either(.{ .minus, .kp_subtract }) or rl.isKeyDown(.page_down)) self.tree.zoom -= 1;
+            self.tree.reset = self.tree.reset or rl.isKeyPressed(.home);
+        }
         var x: f32 = 0;
         var y: f32 = 0;
         if (live) |at| {
@@ -573,8 +645,8 @@ pub const State = struct {
         self.stick = stickWalks(defl, self.stick);
         if (!self.stick) {
             defl = 0;
-            const digital = if (live) |at| dpadWalk(at) else null;
-            if (digital orelse keyWalk(self.typing)) |p| {
+            const digital = if (!on_tree) (if (live) |at| dpadWalk(at) else null) else null;
+            if (digital orelse (if (pan_keys or alt_down) null else keyWalk(self.typing))) |p| {
                 const d = if (self.lean) leanOf(mathx.stepDir(p).?).delta() else p;
                 defl = 1;
                 heading = mathx.headingOf(@floatFromInt(d.x), @floatFromInt(d.y));
@@ -582,10 +654,14 @@ pub const State = struct {
             }
         }
         self.walk = self.step.tick(dt, defl, heading, settle);
+        if (on_tree) {
+            self.tree.move = self.radial.tick(dt, x, y);
+            if (self.stick) self.walk = null;
+        } else self.radial = .{};
         if (!was_focused) self.holdWalk();
         self.typing = false;
         const pad_hit = if (live) |at| struck(at, &before, &self.triggers) else false;
-        self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit, keyed);
+        self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit or (on_tree and !pan_keys and (self.tree.pan.x != 0 or self.tree.pan.y != 0)), keyed);
     }
 
     fn padHeld(self: *const State, at: i32, b: rl.GamepadButton) bool {
@@ -658,7 +734,7 @@ fn mouseAt() mathx.P {
 /// The editor's mouse and keys: it is a desk tool, so it names them.
 pub const Desk = struct {
     pub const TOOL_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
-    pub const TOOL_CAPTIONS = captions(&TOOL_KEYS);
+    pub const TOOL_CAPTIONS = glyphCaptions(&TOOL_KEYS);
     /// The editor's shapes, named and ordered as its `Shape` is.
     pub const SHAPE_KEYS_BY = .{ .brush = rl.KeyboardKey.b, .line = rl.KeyboardKey.l, .rect = rl.KeyboardKey.r, .box = rl.KeyboardKey.o, .fill = rl.KeyboardKey.f, .select = rl.KeyboardKey.m };
     pub const SHAPE_KEYS = blk: {
@@ -667,7 +743,7 @@ pub const Desk = struct {
         for (fs, 0..) |f, i| out[i] = @field(SHAPE_KEYS_BY, f.name);
         break :blk out;
     };
-    pub const SHAPE_CAPTIONS = captions(&SHAPE_KEYS);
+    pub const SHAPE_CAPTIONS = glyphCaptions(&SHAPE_KEYS);
 
     const PAN_KEYS = blk: {
         var out: [DPAD.len]Walk = undefined;
@@ -710,53 +786,54 @@ pub const Desk = struct {
     pub const CUT_KEY: rl.KeyboardKey = .x;
     pub const PASTE_KEY: rl.KeyboardKey = .v;
     const NAV_KEYS = [2]rl.KeyboardKey{ .up, .down };
-    const CTRL = keyName(CTRL_KEYS[0]) ++ "+";
-    const ALT = keyName(ALT_KEYS[0]) ++ "+";
-    pub const SHIFT_CAPTION = keyName(SHIFT_KEYS[0]);
+    const CTRL = keyGlyph(CTRL_KEYS[0]) ++ "+";
+    const ALT = keyGlyph(ALT_KEYS[0]) ++ "+";
+    pub const SHIFT_NAME = keyName(SHIFT_KEYS[0]);
+    pub const SHIFT_CAPTION = keyGlyph(SHIFT_KEYS[0]);
     const CTRL_SHIFT = CTRL ++ SHIFT_CAPTION ++ "+";
-    pub const PLAY_CAPTION = keyName(PLAY_KEY);
-    pub const PLAY_HERE_CAPTION = keyName(PLAY_HERE_KEY);
-    pub const SAVE_CAPTION = CTRL ++ keyName(SAVE_KEY);
-    pub const SAVE_AS_CAPTION = CTRL_SHIFT ++ keyName(SAVE_KEY);
-    pub const OPEN_CAPTION = CTRL ++ keyName(OPEN_KEY);
-    pub const NEW_CAPTION = CTRL ++ keyName(NEW_KEY);
-    pub const UNDO_CAPTION = CTRL ++ keyName(UNDO_KEY);
-    pub const REDO_CAPTION = CTRL ++ keyName(REDO_KEY) ++ " / " ++ CTRL_SHIFT ++ keyName(UNDO_KEY);
+    pub const PLAY_CAPTION = keyGlyph(PLAY_KEY);
+    pub const PLAY_HERE_CAPTION = keyGlyph(PLAY_HERE_KEY);
+    pub const SAVE_CAPTION = CTRL ++ keyGlyph(SAVE_KEY);
+    pub const SAVE_AS_CAPTION = CTRL_SHIFT ++ keyGlyph(SAVE_KEY);
+    pub const OPEN_CAPTION = CTRL ++ keyGlyph(OPEN_KEY);
+    pub const NEW_CAPTION = CTRL ++ keyGlyph(NEW_KEY);
+    pub const UNDO_CAPTION = CTRL ++ keyGlyph(UNDO_KEY);
+    pub const REDO_CAPTION = CTRL ++ keyGlyph(REDO_KEY) ++ " / " ++ CTRL_SHIFT ++ keyGlyph(UNDO_KEY);
     pub const TOOLS_CAPTION = TOOL_CAPTIONS[0] ++ " to " ++ TOOL_CAPTIONS[TOOL_KEYS.len - 1];
-    pub const PAINT_CAPTION = mouseName(PAINT_BUTTON);
-    pub const ERASE_CAPTION = mouseName(ERASE_BUTTON);
+    pub const PAINT_CAPTION = glyphCaption(mouseName(PAINT_BUTTON));
+    pub const ERASE_CAPTION = glyphCaption(mouseName(ERASE_BUTTON));
     pub const RECT_CAPTION = SHIFT_CAPTION ++ "+drag";
-    pub const BRUSH_CAPTION = keyName(SMALLER_KEY) ++ " " ++ keyName(BIGGER_KEY);
+    pub const BRUSH_CAPTION = keyGlyph(SMALLER_KEY) ++ " " ++ keyGlyph(BIGGER_KEY);
     pub const SHAPES_CAPTION = blk: {
         var s: [:0]const u8 = SHAPE_CAPTIONS[0];
         for (SHAPE_CAPTIONS[1..]) |c| s = s ++ " " ++ c;
         break :blk s;
     };
-    pub const PICK_CAPTION = ALT ++ "click";
-    pub const ZOOM_CAPTION = keyName(ZOOM_OUT_KEY) ++ " " ++ keyName(ZOOM_IN_KEY);
-    pub const FIT_CAPTION = keyName(FIT_KEY);
-    pub const HELP_CAPTION = keyName(HELP_KEY);
-    pub const OBJECTS_CAPTION = keyName(OBJECTS_KEY);
-    pub const REROLL_CAPTION = keyName(REROLL_KEY);
-    pub const DELETE_CAPTION = keyName(DELETE_KEY);
-    pub const COPY_CAPTION = CTRL ++ keyName(COPY_KEY);
-    pub const CUT_CAPTION = CTRL ++ keyName(CUT_KEY);
-    pub const PASTE_CAPTION = CTRL ++ keyName(PASTE_KEY);
-    pub const NAV_CAPTION = keyName(NAV_KEYS[0]) ++ " " ++ keyName(NAV_KEYS[1]);
+    pub const PICK_CAPTION = ALT ++ PAINT_CAPTION;
+    pub const ZOOM_CAPTION = keyGlyph(ZOOM_OUT_KEY) ++ " " ++ keyGlyph(ZOOM_IN_KEY);
+    pub const FIT_CAPTION = keyGlyph(FIT_KEY);
+    pub const HELP_CAPTION = keyGlyph(HELP_KEY);
+    pub const OBJECTS_CAPTION = keyGlyph(OBJECTS_KEY);
+    pub const REROLL_CAPTION = keyGlyph(REROLL_KEY);
+    pub const DELETE_CAPTION = keyGlyph(DELETE_KEY);
+    pub const COPY_CAPTION = CTRL ++ keyGlyph(COPY_KEY);
+    pub const CUT_CAPTION = CTRL ++ keyGlyph(CUT_KEY);
+    pub const PASTE_CAPTION = CTRL ++ keyGlyph(PASTE_KEY);
+    pub const NAV_CAPTION = keyGlyph(NAV_KEYS[0]) ++ " " ++ keyGlyph(NAV_KEYS[1]);
     pub const PAN_CAPTION = blk: {
         for (PAN_KEYS) |w| {
             for (w.keys) |k| {
                 if (k == .up or k == .down or k == .left or k == .right) break;
             } else @compileError("no arrow pans " ++ @tagName(w.d));
         }
-        break :blk mouseName(GRAB_BUTTON) ++ " drag / " ++ letters(&PAN_KEYS) ++ " / arrows";
+        break :blk glyphCaption(mouseName(GRAB_BUTTON)) ++ " drag / " ++ glyphCaption(letters(&PAN_KEYS)) ++ " / " ++ glyphCaption("arrows");
     };
-    pub const WHEEL_CAPTION = "wheel";
-    pub const GRAPH_CAPTION = keyName(GRAPH_KEY);
-    pub const GO_CAPTION = keyName(GO_KEY);
-    pub const RENAME_CAPTION = keyName(RENAME_KEY);
-    pub const BACK_CAPTION = keyName(BACK_KEY);
-    pub const ENTER_CAPTION = keyName(ENTER_KEYS[0]);
+    pub const WHEEL_CAPTION = glyphCaption("wheel");
+    pub const GRAPH_CAPTION = keyGlyph(GRAPH_KEY);
+    pub const GO_CAPTION = keyGlyph(GO_KEY);
+    pub const RENAME_CAPTION = keyGlyph(RENAME_KEY);
+    pub const BACK_CAPTION = keyGlyph(BACK_KEY);
+    pub const ENTER_CAPTION = keyGlyph(ENTER_KEYS[0]);
     pub const FULLSCREEN_CAPTION = ALT ++ ENTER_CAPTION;
 
     const BARE = [_][]const u8{ "play", "play_here", "graph", "go", "rename", "back", "smaller", "bigger", "zoom_in", "zoom_out", "fit", "help", "objects", "reroll", "delete" };
@@ -912,7 +989,7 @@ fn fullscreenHit() bool {
 }
 
 const RUB_KEY: rl.KeyboardKey = .backspace;
-pub const RUB_CAPTION = keyName(RUB_KEY);
+pub const RUB_CAPTION = keyGlyph(RUB_KEY);
 
 fn rubbed() bool {
     return repeated(RUB_KEY);
@@ -1035,6 +1112,26 @@ test "a stalled frame does not bank repeats" {
     }
     std.debug.print("a 1 s stall, then 4 frames: {d} step(s)\n", .{steps});
     try std.testing.expectEqual(@as(usize, 1), steps);
+}
+
+test "tree stick follows the bearing with hysteresis, turn edges and repeat" {
+    var radial = RadialStepper{};
+    try std.testing.expect(radial.tick(0.01, 0.1, 0.1) == null);
+    const first = radial.tick(0.01, 0.6, 0.8).?;
+    try std.testing.expectApproxEqAbs(@as(f32, 0.6), first.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.8), first.y, 0.001);
+    try std.testing.expect(radial.tick(0.01, 0.62, 0.78) == null);
+    try std.testing.expect(radial.tick(Stepper.DAS, 0.62, 0.78) != null);
+    try std.testing.expect(radial.tick(0.01, -0.6, 0.8) != null);
+    try std.testing.expect(radial.tick(0.01, 0, 0) == null);
+    try std.testing.expect(radial.tick(0.01, -0.6, 0.8) != null);
+    var state = State{ .context = .tree, .radial = radial, .tree = .{ .move = first, .pan = first, .zoom = 1 } };
+    state.holdWalk();
+    try std.testing.expect(state.tree.move == null);
+    try std.testing.expect(state.radial.tick(1, -0.6, 0.8) == null);
+    state.focus(false);
+    try std.testing.expect(state.tree.move == null and state.tree.zoom == 0 and state.tree.pan.x == 0);
+    std.debug.print("tree input: raw bearing, deadzone, repeat, turning, release, held navigation and focus loss checked\n", .{});
 }
 
 test "a stick resting off centre leaves the d-pad and keys to walk, and a pushed one holds its walk down to rearming" {

@@ -29,7 +29,8 @@ Sources: [Steam: hold back for the mini menu](https://steamcommunity.com/app/269
 
 ## Ours
 
-No screen names a key or button in words. The skill bar and bind screen show each slot's input as an icon of the
+No screen names a key or button in prose. Control hints use glyphs throughout, including the editor.
+The skill bar and bind screen show each slot's input as an icon of the
 device last pressed (`State.device`, `look.Prompt`): any gamepad button or the stick pushed past walking makes it the
 pad, any key the keyboard, and no pad plugged in is always the keyboard. This is where we go past PoE2, after Diablo
 IV. Hovering over the HUD shows a tooltip without changing the device icons or spending a turn.
@@ -68,6 +69,10 @@ PS button do nothing; GLFW reads no touchpad.
 | Interact in play | A / Cross | Enter or Space |
 | Scroll event log | Inspect log, up/down | Wheel over log, or Inspect then up/down |
 | Bind screen: change, remove | X, Y | C, Del |
+| Passive tree: browse | Left stick, actual bearing | WASD, arrows, numpad |
+| Passive tree: pan | Right stick | Shift + WASD/arrows/numpad |
+| Passive tree: zoom | D-pad up/down; X/Y steps | +/-, keypad +/-, Page Up/Down; C/Del steps |
+| Passive tree: overview | Right-stick click | Home |
 | Delete a save | Y | Del |
 | Fullscreen | Options > Fullscreen | Alt+Enter, or Options |
 | Name the hero | walk the letter grid, A types, X deletes | type it; Backspace deletes, Enter is done |
@@ -92,9 +97,13 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
   across tabs, down into content, or click a row/node. Back exits the current confirmation/action/content layer first,
   then returns to Pause. Equipment uses the inspected D2 paperdoll; item details show worn/item/delta columns.
   Item changes require a separate Cancel-first confirmation and spend one turn; point allocation spends points.
-  The passive tree uses spatial navigation and follows the selected node when zoomed. X / Square zooms in,
-  Y / Triangle zooms out; keyboard C / Delete mirrors them. Mouse wheel over the tree and its plus/minus
-  controls also zoom. Back returns to tabs without allocating anything.
+  The passive tree opens at 2.2x on the class origin. Its controls follow the Soulslike reference:
+  left-stick bearing selects nodes, right stick pans, and D-pad up/down zooms continuously.
+  Shift turns keyboard navigation into pan; +/-, keypad +/-, and Page Up/Down zoom.
+  X/Y and C/Delete retain stepped zoom. Mouse wheel over the tree works even while tabs have focus,
+  and its plus/minus controls also zoom. Right-stick click or Home returns to the full overview.
+  Directional node selection recenters the view; reaching a tree edge keeps focus on the tree.
+  Back returns to tabs without allocating anything. Pan and zoom never spend points or turns.
 - **Interact** opens a list of visible items, chests and doors on the hero's cell or adjacent cells. Selecting an entry
   opens a Cancel-first confirmation; browsing and canceling are free. A / Cross prioritizes nearby interaction over
   its skill binding. Gold collects automatically when stepping or arriving onto it.
@@ -103,5 +112,7 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
   another right-stick click closes it; keyboard X, Esc or I does the same. Holding the modifier (or Ctrl) shows the
   secondary set's slots there too (`State.sets`).
 - **The editor is a desk tool** (`input.Desk`): keyboard and mouse only, by design.
+  Its help, tooltips, status messages, tool shortcuts and modal shortcuts use the same keycap and
+  mouse glyph styles as the game. `gfx/prompt_text.zig` measures and clips marked captions as whole glyphs.
   In Objects, select a foe and choose Fight (or Enter) to test it in an arena. The pause menu returns to the
   unchanged editor; death retry or Debug > Restart Map resets the fight.

@@ -9,15 +9,19 @@ const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
 const hud = @import("hud.zig");
 const menu = @import("menu.zig");
+const input = @import("../core/input.zig");
 
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
-pub const View = struct { cursor: usize = 0, zoom: f32 = 1 };
+pub const View = struct { cursor: usize = 0, zoom: f32 = 1, pan: rl.Vector2 = .{ .x = 0, .y = 0 } };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
+pub const ZOOM_START: f32 = 2.2;
+pub const ZOOM_RATE: f32 = 1.7;
+pub const PAN_RATE: f32 = 3.4;
 const CANVAS = look.rect(24, 132, 696, 458);
 const DETAIL = look.rect(744, 132, 332, 458);
-const WHEEL = look.rect(44, 180, 656, 366);
+const WHEEL = look.rect(44, 194, 656, 352);
 const TEXT_X: i32 = 764;
 const TEXT_W: i32 = 292;
 const SKILL_SIZE: i32 = 56;
@@ -56,10 +60,39 @@ pub fn zoomBox(o: P, increase: bool) rl.Rectangle {
     return look.rect(o.x + @as(i32, if (increase) 664 else 622), o.y + 551, 28, 28);
 }
 
-pub fn draw(panel: Panel, face: *const font.Face, sprites: *const look.Sprites, o: P, class: hero.Class, growth: *const progress.State, view: View, focused: bool) void {
+pub fn draw(panel: Panel, face: *const font.Face, sprites: *const look.Sprites, o: P, class: hero.Class, growth: *const progress.State, view: View, focused: bool, device: input.Device) void {
     switch (panel) {
         .skills => drawSkills(face, sprites, o, class, growth, view.cursor, focused),
-        .passives => drawPassives(face, o, class, growth, view, focused),
+        .passives => {
+            drawPassives(face, o, class, growth, view, focused);
+            treeHints(face, o, device);
+        },
+    }
+}
+
+fn hint(face: *const font.Face, x: i32, y: i32, prompts: []const look.Prompt, label: [:0]const u8) void {
+    var next = x;
+    for (prompts) |prompt| {
+        const w = prompt.width(face, 22);
+        prompt.draw(face, next + @divTrunc(w, 2), y, 22, 1);
+        next += w + 4;
+    }
+    face.draw(label, next + 2, y - 8, font.SMALL, look.DIM);
+}
+
+fn treeHints(face: *const font.Face, o: P, device: input.Device) void {
+    const y = o.y + 602;
+    if (device.pad()) {
+        const st = input.State{ .device = device };
+        hint(face, o.x + 44, y, &.{.{ .stick = .left }}, "Browse");
+        hint(face, o.x + 208, y, &.{.{ .stick = .right }}, "Pan");
+        hint(face, o.x + 372, y, &.{.dpad}, "Zoom");
+        hint(face, o.x + 536, y, &.{look.Prompt.menuOf(&st, .inspect)}, "Overview");
+    } else {
+        hint(face, o.x + 44, y, &.{.{ .key = "WASD" }}, "Browse");
+        hint(face, o.x + 208, y, &.{ .{ .key = input.Desk.SHIFT_NAME }, .arrows }, "Pan");
+        hint(face, o.x + 372, y, &.{ .{ .key = "-" }, .{ .key = "+" } }, "Zoom");
+        hint(face, o.x + 536, y, &.{.{ .key = "Home" }}, "Overview");
     }
 }
 
@@ -251,6 +284,8 @@ fn wheelLayout(o: P, view: View) Layout {
     const margin = nodeRadius(view.cursor, unit) + 7;
     layout.centre.x += std.math.clamp(selected.x, box.x + margin, box.x + box.width - margin) - selected.x;
     layout.centre.y += std.math.clamp(selected.y, box.y + margin, box.y + box.height - margin) - selected.y;
+    layout.centre.x -= view.pan.x * unit;
+    layout.centre.y -= view.pan.y * unit;
     return layout;
 }
 

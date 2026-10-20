@@ -16,6 +16,7 @@ const TEXELS: usize = @intCast(TEX_W * TEX_H);
 const TINT_LO: f32 = 0.30;
 const TINT_PER: f32 = 0.01;
 const TINT_HI: f32 = 0.90;
+const FIGURE_SHARE: f32 = 0.5;
 /// Per second.
 const EASE: f32 = 8.0;
 
@@ -25,6 +26,7 @@ fn tintOf(volume: u16) f32 {
 }
 
 const Shade = struct { shader: rl.Shader, time: i32 };
+const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, field: i32, ink: i32 };
 
 pub const Cloud = struct {
     tint: [grid.CELLS]f32,
@@ -37,12 +39,16 @@ pub const Cloud = struct {
     held: f32,
     tex: ?rl.Texture2D,
     shade: ?Shade,
+    veil: ?Veil,
+    field: [4]f32,
+    visible: bool,
 
     pub fn create(alloc: std.mem.Allocator) !*Cloud {
         const c = try alloc.create(Cloud);
         mathx.defaults(c);
         c.tex = null;
         c.shade = null;
+        c.veil = null;
         c.baked = .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 0, .y = 0 } };
         c.clear();
         return c;
@@ -54,6 +60,7 @@ pub const Cloud = struct {
         self.stale = true;
         self.t = .{};
         self.held = 0;
+        self.visible = false;
     }
 
     /// As if long eased: the gas in sight, and nothing remembered.
@@ -85,6 +92,7 @@ pub const Cloud = struct {
     pub fn load(self: *Cloud) void {
         self.tex = look.canvas(TEX_W, TEX_H, rl.Color.blank, .bilinear);
         self.shade = look.program(Shade, CLOUD_FS);
+        self.veil = look.program(Veil, VEIL_FS);
     }
 
     pub fn unload(self: *Cloud) void {
@@ -92,12 +100,15 @@ pub const Cloud = struct {
     }
 
     /// `ox, oy` is where the floor's top-left corner lands.
-    pub fn draw(self: *Cloud, lv: *const grid.Level, on_screen: grid.Box, ox: i32, oy: i32, cell: i32) void {
+    pub fn draw(self: *Cloud, lv: *const grid.Level, on_screen: grid.Box, ox: i32, oy: i32, cell: i32, screen_h: i32) void {
+        self.visible = false;
         const tex = self.tex orelse return;
         if (std.mem.allEqual(f32, &self.tint, 0)) {
             self.t = .{};
             return;
         }
+        self.visible = true;
+        self.field = .{ @floatFromInt(ox), @floatFromInt(oy), @floatFromInt(cell), @floatFromInt(screen_h) };
         const view = on_screen.grown(1);
         if (self.stale or !std.meta.eql(view, self.baked)) {
             self.bake(lv, view);
@@ -110,6 +121,18 @@ pub const Cloud = struct {
         look.setUniform(s.shader, s.time, self.t.at());
         look.overFloor(tex, ox, oy, cell);
         rl.gl.rlDrawRenderBatchActive();
+    }
+
+    pub fn beginVeil(self: *const Cloud, ink: rl.Color) bool {
+        if (!self.visible) return false;
+        const tex = self.tex orelse return false;
+        const s = self.veil orelse return false;
+        rl.beginShaderMode(s.shader);
+        look.setUniform(s.shader, s.time, self.t.at());
+        look.setUniform(s.shader, s.field, self.field);
+        look.setUniform(s.shader, s.ink, [3]f32{ @as(f32, @floatFromInt(ink.r)) / 255, @as(f32, @floatFromInt(ink.g)) / 255, @as(f32, @floatFromInt(ink.b)) / 255 });
+        rl.setShaderValueTexture(s.shader, s.cloud, tex);
+        return true;
     }
 
     fn bake(self: *Cloud, lv: *const grid.Level, view: grid.Box) void {
@@ -153,7 +176,7 @@ const FBM_MAX: f32 = FBM_GAIN * (1 - std.math.pow(f32, FBM_GAIN, OCTAVES)) / (1 
 const CENTRE_W: f32 = 0.4;
 const SIDE_W: f32 = (1 - CENTRE_W) / 4;
 
-const CLOUD_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
+const CLOUD_NOISE = std.fmt.comptimePrint(
     "const float TINT_HI = {d:.4};\nconst float WARP = {d:.4};\nconst float SOFT = {d:.4};\n" ++
         "const int OCTAVES = {d};\nconst float FBM_GAIN = {d:.4};\nconst float FBM_MAX = {d:.4};\nconst float CENTRE_W = {d:.4};\nconst float SIDE_W = {d:.4};\n",
     .{ TINT_HI, WARP, SOFT, OCTAVES, FBM_GAIN, FBM_MAX, CENTRE_W, SIDE_W },
@@ -181,21 +204,39 @@ const CLOUD_FS = look.FS_HEAD ++ std.fmt.comptimePrint(
     \\    }
     \\    return v / FBM_MAX;
     \\}
-    \\float density(vec2 c) {
-    \\    return texture(texture0, c / CELLS).a;
+    \\float density(sampler2D field, vec2 c) {
+    \\    return texture(field, c / CELLS).a;
     \\}
-    \\void main() {
-    \\    vec2 c = fragTexCoord * CELLS;
+    \\vec4 cloudAt(sampler2D field, vec2 c) {
     \\    vec2 drift = DRIFT * time;
     \\    vec2 w = vec2(fbm(c * 0.7 + drift), fbm(c * 0.7 - drift.yx + 4.0)) - 0.5;
     \\    vec2 q = c + w * WARP * 2.0;
-    \\    float d = density(q) * CENTRE_W
-    \\        + (density(q + vec2(SOFT, 0.0)) + density(q - vec2(SOFT, 0.0))
-    \\        + density(q + vec2(0.0, SOFT)) + density(q - vec2(0.0, SOFT))) * SIDE_W;
+    \\    float d = density(field, q) * CENTRE_W
+    \\        + (density(field, q + vec2(SOFT, 0.0)) + density(field, q - vec2(SOFT, 0.0))
+    \\        + density(field, q + vec2(0.0, SOFT)) + density(field, q - vec2(0.0, SOFT))) * SIDE_W;
     \\    if (d < CLEAR_A) discard;
     \\    float n = fbm(c * 1.3 + w * 1.5 - drift * 0.6);
-    \\    vec3 col = texture(texture0, q / CELLS).rgb * mix(0.75, 1.2, n);
-    \\    finalColor = vec4(col, clamp(d * mix(0.5, 1.1, n), 0.0, TINT_HI)) * fragColor;
+    \\    return vec4(vec3(mix(0.75, 1.2, n)), clamp(d * mix(0.5, 1.1, n), 0.0, TINT_HI));
+    \\}
+;
+
+const CLOUD_FS = look.FS_HEAD ++ CLOUD_NOISE ++
+    \\void main() {
+    \\    vec4 gas = cloudAt(texture0, fragTexCoord * CELLS);
+    \\    finalColor = vec4(gas.rgb * texture(texture0, fragTexCoord).rgb, gas.a) * fragColor;
+    \\}
+;
+
+const VEIL_FS = look.FS_HEAD ++ CLOUD_NOISE ++ std.fmt.comptimePrint("const float FIGURE_SHARE = {d:.4};\n", .{FIGURE_SHARE}) ++
+    \\uniform sampler2D cloud;
+    \\uniform vec4 field;
+    \\uniform vec3 ink;
+    \\void main() {
+    \\    float a = texture(texture0, fragTexCoord).a * fragColor.a;
+    \\    if (a < CLEAR_A) discard;
+    \\    vec2 pixel = vec2(gl_FragCoord.x, field.w - gl_FragCoord.y);
+    \\    vec4 gas = cloudAt(cloud, (pixel - field.xy) / field.z);
+    \\    finalColor = vec4(gas.rgb * ink, gas.a * a * FIGURE_SHARE);
     \\}
 ;
 

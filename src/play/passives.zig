@@ -37,7 +37,7 @@ pub const Branch = enum {
             .warrior_life => "Fortitude",
             .warrior_berserk => "Might",
             .rogue_evade => "Agility",
-            .rogue_ranged => "Marksmanship",
+            .rogue_ranged => "Finesse",
             .wizard_well => "Reserves",
             .wizard_cast => "Sorcery",
         };
@@ -78,7 +78,7 @@ const SEAMS = std.EnumArray(Seam, [2]Arm).init(.{
     .wizard_warrior = .{ .wizard, .warrior },
 });
 pub const Tier = enum { stat, interest, capstone };
-pub const Kind = enum { strength, dexterity, intelligence, life, mana, armour, melee_damage, ranged_damage, spell_damage };
+pub const Kind = enum { strength, dexterity, intelligence, life, mana, armour, heavy_damage, light_damage, spell_damage };
 pub const Grant = struct {
     kind: Kind,
     amount: i32,
@@ -91,21 +91,21 @@ pub const Grant = struct {
             .life => "Maximum life",
             .mana => "Maximum mana",
             .armour => "Armour",
-            .melee_damage => "Melee damage",
-            .ranged_damage => "Ranged damage",
+            .heavy_damage => "Heavy weapon damage",
+            .light_damage => "Light weapon damage",
             .spell_damage => "Spell damage",
         };
     }
     pub fn isPercent(g: Grant) bool {
         return switch (g.kind) {
-            .melee_damage, .ranged_damage, .spell_damage => true,
+            .heavy_damage, .light_damage, .spell_damage => true,
             else => false,
         };
     }
     pub fn apply(g: Grant, a: *attrs.Attrs) void {
         switch (g.kind) {
-            .melee_damage => a.damage_bonus.getPtr(.melee).* += g.amount,
-            .ranged_damage => a.damage_bonus.getPtr(.ranged).* += g.amount,
+            .heavy_damage => a.damage_bonus.getPtr(.heavy).* += g.amount,
+            .light_damage => a.damage_bonus.getPtr(.light).* += g.amount,
             .spell_damage => a.damage_bonus.getPtr(.spell).* += g.amount,
             inline else => |k| a.add(@field(attrs.Bonus, @tagName(k)), g.amount),
         }
@@ -232,17 +232,17 @@ const BANK = std.EnumArray(Branch, [PER_BRANCH]Entry).init(.{
     },
     .warrior_berserk = .{
         .{ .name = "Reaver", .kind = .strength, .amount = 2 },
-        .{ .name = "Heavy Hands", .kind = .melee_damage, .amount = 4, .rider = 1 },
+        .{ .name = "Heavy Hands", .kind = .heavy_damage, .amount = 4, .rider = 1 },
         .{ .name = "Hard Knocks", .kind = .life, .amount = 3 },
         .{ .name = "Brute Force", .kind = .strength, .amount = 3 },
-        .{ .name = "Crushing Blows", .kind = .melee_damage, .amount = 4, .rider = 1 },
+        .{ .name = "Crushing Blows", .kind = .heavy_damage, .amount = 4, .rider = 1 },
         .{ .name = "Firm Grip", .kind = .strength, .amount = 2 },
-        .{ .name = "Red Harvest", .kind = .melee_damage, .amount = 5 },
+        .{ .name = "Red Harvest", .kind = .heavy_damage, .amount = 5 },
         .{ .name = "Battle Hardened", .kind = .armour, .amount = 3 },
-        .{ .name = "Executioner", .kind = .melee_damage, .amount = 5, .rider = 1 },
-        .{ .name = "Frenzy", .kind = .melee_damage, .amount = 6, .rider = 1 },
+        .{ .name = "Executioner", .kind = .heavy_damage, .amount = 5, .rider = 1 },
+        .{ .name = "Frenzy", .kind = .heavy_damage, .amount = 6, .rider = 1 },
         .{ .name = "Blood Rush", .kind = .strength, .amount = 3 },
-        .{ .name = "Overwhelming Force", .kind = .melee_damage, .amount = 15, .rider = 2 },
+        .{ .name = "Overwhelming Force", .kind = .heavy_damage, .amount = 15, .rider = 2 },
     },
     .rogue_evade = .{
         .{ .name = "Fleet", .kind = .dexterity, .amount = 2 },
@@ -260,17 +260,17 @@ const BANK = std.EnumArray(Branch, [PER_BRANCH]Entry).init(.{
     },
     .rogue_ranged = .{
         .{ .name = "Keen Eye", .kind = .dexterity, .amount = 2 },
-        .{ .name = "Practised Arm", .kind = .ranged_damage, .amount = 4, .rider = 1 },
+        .{ .name = "Practised Arm", .kind = .light_damage, .amount = 4, .rider = 1 },
         .{ .name = "Wayfinder", .kind = .dexterity, .amount = 2 },
-        .{ .name = "Fletcher", .kind = .ranged_damage, .amount = 4, .rider = 1 },
+        .{ .name = "Light Touch", .kind = .light_damage, .amount = 4, .rider = 1 },
         .{ .name = "Steady Hand", .kind = .dexterity, .amount = 3 },
         .{ .name = "Hunter's Vigor", .kind = .life, .amount = 4 },
-        .{ .name = "Broadhead", .kind = .ranged_damage, .amount = 5 },
+        .{ .name = "Precision", .kind = .light_damage, .amount = 5 },
         .{ .name = "Strong Draw", .kind = .strength, .amount = 2 },
-        .{ .name = "True Flight", .kind = .ranged_damage, .amount = 5, .rider = 1 },
-        .{ .name = "Marksman", .kind = .ranged_damage, .amount = 6, .rider = 2 },
+        .{ .name = "Deft Strikes", .kind = .light_damage, .amount = 5, .rider = 1 },
+        .{ .name = "Expert Handling", .kind = .light_damage, .amount = 6, .rider = 2 },
         .{ .name = "Watchful", .kind = .dexterity, .amount = 3 },
-        .{ .name = "Perfect Aim", .kind = .ranged_damage, .amount = 15, .rider = 2 },
+        .{ .name = "Perfect Technique", .kind = .light_damage, .amount = 15, .rider = 2 },
     },
     .wizard_well = .{
         .{ .name = "Open Mind", .kind = .intelligence, .amount = 2 },
