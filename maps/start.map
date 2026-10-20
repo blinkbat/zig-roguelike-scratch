@@ -28,7 +28,7 @@ feature lake
 fill water
 count 3
 size 5
-ring reeds
+ring dirt
 island 0
 feature scatter
 tile shallows
@@ -44,6 +44,11 @@ feature scatter
 tile dirt
 on sand
 amount 1000
+feature scatter
+tile swamp_tree
+on dirt
+amount 180
+water_range 3
 name The Strand
 at 0 0
 door 95 32

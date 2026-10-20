@@ -119,6 +119,19 @@ At the owner's request, `tone_forest.lua` lowered the forest foliage palette in 
 
 Shadow casters use the actual light at their position without fog or memory fading; unseen props, barrels and actors remain eligible. The mask is faded by visibility where it lands, using the light map's alpha. The camera margin includes the silhouette and blur, and actor birth/death timing remains shared with the visible presentation. `shadows-hidden-sun.png`, `shadows-hidden-moon.png`, `shadows-hidden-torch.png` and `shadows-offscreen.png` exercise these boundaries. Their GPU checks count contributions from each hidden caster and require zero shadow in unseen or fully remembered ground. Bind the receiver shader's light-map sampler after changing blend mode: raylib flushes and clears auxiliary texture bindings on a blend change.
 
+## Waterside trees
+
+`assets/swamp-tree.png` is the supplied 64x64 standalone tree, installed unchanged.
+`grid.Tile.swamp_tree` blocks movement and sight like a tree, uses dirt as its fallback
+ground, and is registered for the normal canopy shadow, lighting, fog and water-reflection
+paths. It does not join the forest-wall sheet. The editor exposes it as Swamp Tree.
+
+The default `maps/start.map` (The Strand) uses dirt around its ponds and a final
+scatter of swamp trees on dirt within three cells of water or shallows. Single-tree
+placement preserves open routes and leaves spacing between trees. Other maps retain
+their settings. Scatter's optional `water_range` knob (Near water in the editor)
+defaults to zero for unrestricted placement and applies to both single cells and clumps.
+
 ## Validate the saved result
 
 1. Reopen the saved Aseprite file. Compare the original painted layer's image and position with the backup, and verify that the extension is in the file the owner uses.

@@ -151,7 +151,7 @@ This section describes the source as researched, not a request to change it. Rec
 each node's action, parent, initial flag, and logical `at` position. `State.canLearn` and
 `State.learn` own whether a point may be spent. The renderer must not reconstruct a
 second allocation policy. [trees.zig](../src/ui/trees.zig) draws the panels, while
-[book.zig](../src/ui/book.zig) owns their navigation and confirmation flow.
+[book.zig](../src/ui/book.zig) owns their navigation and direct actions.
 
 | Concept | Diablo II reference | Current prototype treatment |
 |---|---|---|
@@ -282,41 +282,36 @@ button in prose; existing input-icon rules continue to apply.
 
 The detail panel should answer five questions: what the skill does, what is currently
 owned, what the next point changes, why spending is or is not possible, and how many
-points remain. Its main title is the skill name. Put its effect description immediately
-below, then concise rows for rank, prerequisite/state, and the point budget. Use a table
-for current-versus-next values, matching the project's existing comparison convention.
+points remain. Its main title is the skill name, with rank just below. Explain its
+effect before the numeric properties, then show prerequisite/state and the point budget. Follow
+[DATA_PRESENTATION.md](DATA_PRESENTATION.md): the 2026-10-20 pass replaces the fixed
+current/next table with labelled current/first-rank properties and a separate next-rank
+section containing only changes. This leaves utility skills and maximum ranks free of
+irrelevant zeroes and empty columns.
 
 Use `Act.desc()` or the established description source for behavior. Mana and cooldown
 must come from the hero's progression state. Show turn cost in turns, not seconds.
 Where actual damage ranges are displayed, share gameplay's attribute/weapon/rank
-calculation; do not label raw base damage as the hero's final result. A table that says
-`Rank damage bonus` is acceptable if it is accurately named. It should not masquerade as
-the whole damage calculation.
+calculation through `Act.equippedBases` and `State.skillAttrs`; do not label raw base
+damage as the hero's final result. Show actual physical/elemental ranges before
+critical hits and defenses. When a rank improves average damage but its integer
+range endpoints stay unchanged, show the old/new `Rank damage bonus` explicitly.
 
 For an unlearned skill, label the available values as the first rank's preview. For a
-maximum skill, omit or clearly mark the next column rather than duplicating the current
+maximum skill, omit the next-rank section rather than duplicating the current
 numbers under a misleading upgrade heading. Unchanged values should remain calm and
 readable; the one value affected by the next point should be easy to compare. Any
-description wrapping must account for the action footer and confirmation overlay.
+description wrapping must account for the action footer.
 
-The existing interaction remains a two-stage spend: focus/inspect, then request the
-action, then confirm through the separate Cancel-first prompt. This differs from the
-old manual's direct-click behavior on purpose: it preserves this game's established
-point transaction. Inspecting, moving focus, cancelling, and allocating a point spend
-no simulation turn. Only a confirmed successful `State.learn` may reduce active points.
+The selected eligible skill spends one point on one deliberate confirm press. There is no secondary confirmation modal. Browsing, backing out and allocation spend no simulation turn; only a successful `State.learn` reduces the point pool. Details show the result before spending.
 
 Controller movement should follow visible geometry via the existing directional
 navigation helper, including locked nodes. A player must be able to inspect future
 skills before acquiring their parents. Pointer and keyboard navigation should converge
 on the same selected node and details. Focus must survive a successful allocation so
-the player can immediately inspect its result. Returning to tabs and closing the book
-must continue to respect the existing one-layer-at-a-time back behavior.
+the player can immediately inspect its result. Shoulders change tabs directly and Back closes the book. The centered panel grows at half the window-fitting rate, capped at 1.25x, with 16px detail and 20px body text before scaling. Scaled text uses the mipmapped font atlas; native-size panels retain the crisp native atlases.
 
-Do not copy the original no-points-click-to-bind behavior into this panel. The game
-already has a dedicated bind screen and primary/secondary sets. D2R's controller design
-demonstrates that adapting input can preserve the underlying skill system; it does not
-require reproducing twelve slots here. Readability improvements are also consistent
-with Blizzard's stated use of larger text and UI scaling.
+The separate Bind skill action carries the selected learned skill straight into the slot picker. Binding is available regardless of unspent points, and returns to Skills. The utility-skill picker remains available. This keeps learning and binding explicit while removing the hidden hold entry. Larger text and UI scaling also follow Blizzard's stated readability work.
 [D2R accessibility article](https://news.blizzard.com/en-us/article/23700733/how-were-making-diablo-ii-resurrectedtm-more-accessible-to-everyone).
 
 ## Acceptance and future work
@@ -337,7 +332,7 @@ the repository. The completed UI should meet these checks:
   source code. The Wizard's two paths do not accidentally connect.
 - Controller direction and pointer hit regions match what is drawn. No invisible old
   card-sized targets survive a change to square nodes.
-- Cancelling the confirmation changes neither ranks nor points. Confirming once spends
+- Browsing/backing out changes neither ranks nor points. One deliberate confirmation spends
   exactly one point; repeat input does not silently allocate several ranks.
 - No point allocation advances foes, recovery, cooldowns, travel, or the hidden clock.
 - New skills remain governed by existing bind availability. Revisiting the panel and

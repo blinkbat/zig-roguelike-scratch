@@ -17,8 +17,8 @@ pub const Slot = enum {
     amulet,
     pub fn name(s: Slot) [:0]const u8 {
         return switch (s) {
-            .left_hand => "Left hand",
-            .right_hand => "Right hand",
+            .left_hand => "Offhand",
+            .right_hand => "Main hand",
             .helm => "Helm",
             .chest => "Chest",
             .belt => "Belt",
@@ -409,12 +409,32 @@ test "equipment swaps preserve both hands, reject self-funded requirements and k
     try std.testing.expectEqual(n + 2, inv.n);
     try std.testing.expect(inv.gear.slots.get(.left_hand) == null);
     try std.testing.expectEqual(Kind.bow, inv.gear.slots.get(.right_hand).?.kind);
+    const strong = attrs.Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 10 });
+    for ([_]Kind{ .axe, .greatclub, .greatsword }) |kind| {
+        var hands = Inventory{};
+        hands.gear.slots.set(.right_hand, .{ .kind = .sword });
+        hands.gear.slots.set(.left_hand, .{ .kind = .shield });
+        try std.testing.expect(hands.add(.{ .kind = kind }));
+        const after = try hands.preview(0, .right_hand, strong);
+        try std.testing.expect(after.slots.get(.left_hand) == null);
+        try std.testing.expectEqual(@as(usize, 1), hands.n);
+        try std.testing.expect(hands.gear.slots.get(.left_hand) != null);
+        try hands.equip(0, .right_hand, strong);
+        try std.testing.expectEqual(@as(usize, 2), hands.n);
+        try std.testing.expectEqual(Kind.sword, hands.bag[1].kind);
+        try std.testing.expectEqual(Kind.shield, hands.bag[0].kind);
+        try std.testing.expectEqual(kind, hands.gear.slots.get(.right_hand).?.kind);
+        try std.testing.expect(hands.gear.slots.get(.left_hand) == null);
+        try hands.equip(0, .left_hand, strong);
+        try std.testing.expect(hands.gear.slots.get(.right_hand) == null);
+        try std.testing.expectEqual(kind, hands.bag[hands.n - 1].kind);
+    }
     var rng = mathx.Rng.init(123);
     for (0..2000) |_| {
         const it = roll(&rng);
         if (it.mods[1]) |b| try std.testing.expect(it.mods[0].?.kind != b.kind);
     }
-    std.debug.print("equipment: 2-hand swaps, dependency checks, atomic failures and 2000 bounded modifier rolls\n", .{});
+    std.debug.print("equipment: bow plus all 3 great weapons occupy both hands; reverse swaps, dependency checks, atomic failures and 2000 bounded modifier rolls\n", .{});
 }
 
 test "ground gold accommodates every cell and full pickup leaves its item intact" {

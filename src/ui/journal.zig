@@ -20,7 +20,7 @@ pub const Kind = enum {
             .damage => look.rgb(0xf0ba87),
             .danger => look.rgb(0xf08080),
             .recovery => look.rgb(0x8bcf9d),
-            .loot => look.RETICLE,
+            .loot => look.UI_FOCUS,
             .progress => look.rgb(0xc6a0ed),
             .status => look.WARD,
         };

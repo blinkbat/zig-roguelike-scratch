@@ -19,14 +19,14 @@ comptime {
     for (LETTERS) |row| std.debug.assert(row.len == COLS);
 }
 
-const FIELD: i32 = 36;
+const FIELD: i32 = 30;
 const KEY = menu.ROW;
-const KEY_W: i32 = 44;
+const KEY_W: i32 = 38;
 const KEY_H = menu.ROW_STEP;
 const WIDE_W: i32 = KEY_W * 4;
-const TITLE_DY: i32 = -230;
-const FIELD_DY: i32 = -150;
-const GRID_DY: i32 = -70;
+const TITLE_DY: i32 = -198;
+const FIELD_DY: i32 = -130;
+const GRID_DY: i32 = -62;
 const CARET = menu.CARET;
 
 pub const Outcome = enum { done, back };
@@ -94,7 +94,7 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
     const mid = @divTrunc(screen.y, 2);
     menu.mid(face, screen, title, mid + TITLE_DY, menu.TITLE, look.TEXT);
     var buf: [hero.Name.MAX + CARET.len + 1]u8 = undefined;
-    menu.mid(face, screen, std.fmt.bufPrintZ(&buf, "{s}" ++ CARET, .{e.name.text()}) catch "", mid + FIELD_DY, FIELD, look.RETICLE);
+    menu.mid(face, screen, std.fmt.bufPrintZ(&buf, "{s}" ++ CARET, .{e.name.text()}) catch "", mid + FIELD_DY, FIELD, look.UI_FOCUS);
     const grid_w: i32 = COLS * KEY_W;
     const x0 = @divTrunc(screen.x - grid_w, 2);
     const y0 = mid + GRID_DY;
@@ -102,7 +102,7 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
         const y = y0 + @as(i32, @intCast(r)) * KEY_H;
         for (0..Entry.width(r)) |c| {
             const on = r == e.row and c == e.col;
-            const col = if (on) look.RETICLE else look.DIM;
+            const col = if (on) look.UI_FOCUS else look.DIM;
             if (r < LETTERS.len) {
                 face.glyph(LETTERS[r][c], x0 + @as(i32, @intCast(c)) * KEY_W + @divTrunc(KEY_W, 2), y + @divTrunc(KEY_H, 2), KEY, col);
                 continue;

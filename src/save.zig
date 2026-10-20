@@ -74,6 +74,7 @@ const UNSAVED = .{
     "split_from",
     "fx",
     "vignette",
+    "cinema",
     "mini",
     "sprites",
     "face",
@@ -92,6 +93,8 @@ const UNSAVED = .{
     "gold_taken",
     "xp_aim",
     "xp_shown",
+    "life_fill",
+    "mana_fill",
     "growth_shown",
     "gold_shown",
 };

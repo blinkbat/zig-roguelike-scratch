@@ -6,6 +6,7 @@ const bow = @import("bow.zig");
 const burning = @import("burning.zig");
 const damage = @import("damage.zig");
 const attrs = @import("attrs.zig");
+const items = @import("items.zig");
 const glacial = @import("glacial.zig");
 const juke = @import("juke.zig");
 const blink = @import("blink.zig");
@@ -24,6 +25,21 @@ const flask = @import("flask.zig");
 const menu = @import("../ui/menu.zig");
 
 const Button = input.Button;
+
+pub const EquippedBases = struct {
+    skill: ?damage.Base,
+    weapon: ?damage.Base = null,
+    element: ?damage.Base,
+
+    pub fn physical(b: EquippedBases) damage.Base {
+        var out = damage.Base{ .lo = 0, .hi = 0 };
+        for ([_]?damage.Base{ b.skill, b.weapon }) |maybe| if (maybe) |p| {
+            out.lo += p.lo;
+            out.hi += p.hi;
+        };
+        return out;
+    }
+};
 
 pub const Act = enum {
     shoot,
@@ -198,6 +214,16 @@ pub const Act = enum {
     }
 
     pub const Bases = struct { physical: ?damage.Base, element: ?damage.Base };
+
+    pub fn equippedBases(a: Act, gear: items.Gear) EquippedBases {
+        const b = a.bases();
+        var out = EquippedBases{ .skill = b.physical, .element = b.element };
+        const attack_ = a.attack() orelse return out;
+        if (gear.weapon(attack_)) |weapon| {
+            if (attack_ == .ranged) out.skill = weapon else out.weapon = weapon;
+        }
+        return out;
+    }
 
     /// Its missile bursts over an area where it strikes.
     pub fn bursts(a: Act) bool {
@@ -489,9 +515,9 @@ test "each class starts with its own skills bound, and only skills of its kit" {
     try std.testing.expectEqual(@as(?Act, .charge), Bar.of(.knight).at(.{ .set = .primary, .button = .b }));
 }
 
-pub const BINDS = Button.view;
+pub const CHARACTER = Button.character;
 pub const INSPECT = Button.inspect;
-const NOT_SLOTS = [_]Button{ BINDS, menu.PAUSE, INSPECT };
+const NOT_SLOTS = [_]Button{ CHARACTER, menu.PAUSE, INSPECT };
 
 comptime {
     if (!std.mem.eql(Button, &SLOTS, &input.SLOT_ORDER)) @compileError("the keyboard numbers the slots out of their order");

@@ -8,18 +8,19 @@ const font = @import("../gfx/font.zig");
 pub const CONFIRM = input.CONFIRM;
 pub const BACK = input.Button.b;
 pub const PAUSE = input.Button.pause;
+pub const CHARACTER = input.Button.character;
 pub const CHANGE = input.Button.x;
 pub const REMOVE = input.Button.y;
 pub const RUB = input.Button.x;
 
-pub const TITLE: i32 = 60;
-pub const ROW: i32 = 30;
-pub const ROW_STEP: i32 = 46;
-pub const NOTE: i32 = font.BODY;
-const TITLE_DY: i32 = -60;
-const ROWS_DY: i32 = 20;
-const NOTE_GAP: i32 = 30;
-const MARK_GAP: i32 = 18;
+pub const TITLE: i32 = 54;
+pub const ROW: i32 = 28;
+pub const ROW_STEP: i32 = 38;
+pub const NOTE: i32 = 18;
+const TITLE_DY: i32 = -44;
+const ROWS_DY: i32 = 16;
+const NOTE_GAP: i32 = 24;
+const MARK_GAP: i32 = 14;
 const MARK_L = ">";
 const MARK_R = "<";
 /// `draw`'s, from the title's top to the first row, and from under the last row to the note's foot.
@@ -30,6 +31,47 @@ const CHROME_H: i32 = 2 * @as(i32, @max(ABOVE, BELOW));
 pub const NOTE_MAX: usize = 160;
 pub const SEP = "   ";
 pub const CARET = "_";
+
+pub const Surface = struct {
+    scale: f32,
+    offset: rl.Vector2,
+
+    pub fn of(screen: mathx.P, size: mathx.P) Surface {
+        const fit = @min(@as(f32, @floatFromInt(screen.x - 32)) / @as(f32, @floatFromInt(size.x)), @as(f32, @floatFromInt(screen.y - 32)) / @as(f32, @floatFromInt(size.y)));
+        const scale = if (fit <= 1) fit else @min(1.25, 1 + (fit - 1) * 0.5);
+        return .{ .scale = scale, .offset = .{
+            .x = @round((@as(f32, @floatFromInt(screen.x)) - @as(f32, @floatFromInt(size.x)) * scale) / 2),
+            .y = @round((@as(f32, @floatFromInt(screen.y)) - @as(f32, @floatFromInt(size.y)) * scale) / 2),
+        } };
+    }
+
+    pub fn point(self: Surface, p: mathx.P) mathx.P {
+        return .{
+            .x = @intFromFloat((@as(f32, @floatFromInt(p.x)) - self.offset.x) / self.scale),
+            .y = @intFromFloat((@as(f32, @floatFromInt(p.y)) - self.offset.y) / self.scale),
+        };
+    }
+
+    pub fn begin(self: Surface) void {
+        rl.beginMode2D(.{ .target = .{ .x = 0, .y = 0 }, .offset = self.offset, .rotation = 0, .zoom = self.scale });
+    }
+
+    pub fn clip(self: Surface, r: rl.Rectangle) void {
+        rl.beginScissorMode(@intFromFloat(@floor(self.offset.x + r.x * self.scale)), @intFromFloat(@floor(self.offset.y + r.y * self.scale)), @intFromFloat(@ceil(r.width * self.scale)), @intFromFloat(@ceil(r.height * self.scale)));
+    }
+};
+
+pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, label: [:0]const u8) void {
+    rl.drawRectangleRec(r, look.PICK_BG);
+    rl.drawRectangleLinesEx(r, 1, look.EDGE);
+    const p = look.middle(r);
+    const glyph_w = prompt.width(face, font.BODY);
+    const left = @as(i32, @intFromFloat(r.x)) + 10;
+    prompt.draw(face, left + @divTrunc(glyph_w, 2), @intFromFloat(p.y), font.BODY, 1);
+    const text_x = left + glyph_w + 8;
+    const text_w = @as(i32, @intFromFloat(r.x + r.width)) - 10 - text_x;
+    face.centred(label, text_x + @divTrunc(text_w, 2), @intFromFloat(p.y), 20, look.TEXT);
+}
 
 pub fn Note(comptime N: usize) type {
     return struct {
@@ -143,10 +185,10 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const 
         const on = i == at;
         const w = face.width(r, ROW);
         const x = @divTrunc(screen.x - w, 2);
-        face.text(r, x, y, ROW, if (on) look.RETICLE else look.DIM);
+        face.text(r, x, y, ROW, if (on) look.UI_FOCUS else look.DIM);
         if (on) {
-            face.text(MARK_L, x - MARK_GAP - mark_w, y, ROW, look.RETICLE);
-            face.text(MARK_R, x + w + MARK_GAP, y, ROW, look.RETICLE);
+            face.text(MARK_L, x - MARK_GAP - mark_w, y, ROW, look.UI_FOCUS);
+            face.text(MARK_R, x + w + MARK_GAP, y, ROW, look.UI_FOCUS);
         }
     }
     if (note) |n| mid(face, screen, n, top + ROWS_DY + @as(i32, @intCast(rows.len)) * ROW_STEP + NOTE_GAP, NOTE, look.DIM);

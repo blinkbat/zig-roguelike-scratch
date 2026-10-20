@@ -13,7 +13,7 @@ pub const TAKES = "catches fire";
 pub const ELEMENT: damage.Element = .fire;
 /// Its chance to burn, as every fire skill's description says it.
 pub const BURN_NOTE = std.fmt.comptimePrint("{d}% burn chance", .{CHANCE});
-pub const DESCRIPTION = std.fmt.comptimePrint("Adds {s}. {s}: {d} fire damage for {d} turns.", .{ BASE.text(ELEMENT), BURN_NOTE, PER_TURN, TURNS });
+pub const DESCRIPTION = std.fmt.comptimePrint("Add fire damage to an arrow. {s}: {d} fire damage per turn for {d} turns.", .{ BURN_NOTE, PER_TURN, TURNS });
 
 pub const Burn = damage.Lasting(TURNS, i16, seared);
 

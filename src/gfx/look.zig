@@ -28,6 +28,7 @@ const Shadow = enum { silhouette, canopy };
 
 const STANDS = std.EnumArray(grid.Tile, ?Shadow).initDefault(@as(?Shadow, null), .{
     .shrub = .canopy,
+    .swamp_tree = .canopy,
     .tiny_shrub = .canopy,
     .boulder = .silhouette,
     .fungus = .silhouette,
@@ -455,6 +456,7 @@ const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const
     .grass = @embedFile("grass.png"),
     .reeds = @embedFile("reeds.png"),
     .shrub = @embedFile("shrub.png"),
+    .swamp_tree = @embedFile("swamp-tree.png"),
     .tiny_shrub = @embedFile("tiny-shrub.png"),
     .boulder = @embedFile("boulder.png"),
     .fungus = @embedFile("tall-shroom.png"),
@@ -789,6 +791,8 @@ pub const FIRE = rgb(0xff8a32);
 pub const FIRE_CORE = rgb(0xffe6a0);
 pub const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
+pub const UI_GOLD = rgb(0xbca06b);
+pub const UI_FOCUS = rgb(0xd0b581);
 const ARROW = rgb(0xe6dcb4);
 pub const VEIL = fade(BG, 0.72);
 
@@ -809,6 +813,10 @@ pub fn under(t: grid.Tile) ?grid.Tile {
 }
 
 /// Drawn in the solid pass, over the ground and the shadows cast on it: everything that is not itself a ground.
+pub fn canopy(t: grid.Tile) bool {
+    return t == .shrub or t == .swamp_tree;
+}
+
 pub fn standsOver(t: grid.Tile) bool {
     return ground.of(t) == null;
 }
@@ -848,6 +856,7 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .shrooms = .{ .sym = "•", .ch = ',', .fg = rgb(0xd8ccb4), .bg = null, .mini = rgb(0x3c4a30), .mini_dim = rgb(0x1e241a) },
     .chest = .{ .sym = "C", .ch = 'C', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = rgb(0x66502b) },
     .chest_open = .{ .sym = "O", .ch = 'O', .fg = rgb(0x96724d), .bg = null, .mini = rgb(0x96724d), .mini_dim = rgb(0x443422) },
+    .swamp_tree = .{ .sym = "S", .ch = 'S', .fg = rgb(0x788650), .bg = null, .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) },
 });
 
 comptime {
@@ -1225,11 +1234,15 @@ pub const Prompt = union(enum) {
 
     pub fn of(st: *const input.State, b: input.Button) Prompt {
         if (!st.device.pad()) return .{ .key = st.slotCaption(b) };
-        return switch (b) {
-            inline .a, .b, .x, .y => |f| .{ .face = .{ .button = @field(FaceButton, @tagName(f)), .sony = st.device.playstation() } },
-            .lb, .rb, .rt, .inspect => .{ .pill = st.caption(b) },
-            .view => .view,
-            .pause => .menu,
+        return switch (b.pad()) {
+            .right_face_down => .{ .face = .{ .button = .a, .sony = st.device.playstation() } },
+            .right_face_right => .{ .face = .{ .button = .b, .sony = st.device.playstation() } },
+            .right_face_left => .{ .face = .{ .button = .x, .sony = st.device.playstation() } },
+            .right_face_up => .{ .face = .{ .button = .y, .sony = st.device.playstation() } },
+            .left_trigger_1, .right_trigger_1, .right_trigger_2, .right_thumb => .{ .pill = st.caption(b) },
+            .middle_right => if (st.device.playstation()) .{ .pill = st.caption(b) } else .menu,
+            .middle_left => if (st.device.playstation()) .{ .pill = st.caption(b) } else .view,
+            else => unreachable,
         };
     }
 
@@ -1331,7 +1344,7 @@ fn faceInk(b: FaceButton, sony: bool) rl.Color {
         .a => if (sony) rgb(0x7cb2e8) else rgb(0x5eb242),
         .b => if (sony) rgb(0xea6060) else rgb(0xd63e34),
         .x => if (sony) rgb(0xd686c4) else rgb(0x2e78cd),
-        .y => if (sony) rgb(0x40c4a0) else rgb(0xeabe3a),
+        .y => if (sony) rgb(0x40c4a0) else UI_FOCUS,
     };
 }
 
@@ -1402,8 +1415,8 @@ const RAISED = rgb(0x1a1820);
 
 pub const SLOT_BG = RAISED;
 pub const SLOT_EMPTY = PANEL;
-pub const SLOT_HELD = GOLD;
-pub const SLOT_CURSOR = RETICLE;
+pub const SLOT_HELD = UI_GOLD;
+pub const SLOT_CURSOR = UI_FOCUS;
 pub const SLOT_CLEAR = FOE;
 pub const PICK_BG = PANEL;
 pub const CARD_BG = PANEL;
@@ -1507,8 +1520,8 @@ pub const MINI_VIEW = fade(GOLD, 0.7);
 
 pub const EDIT_PANEL = PANEL;
 pub const EDIT_ROW_ON = RAISED;
-pub const EDIT_ON = GOLD;
-pub const EDIT_PICKED = RETICLE;
+pub const EDIT_ON = UI_GOLD;
+pub const EDIT_PICKED = UI_FOCUS;
 pub const EDIT_WARN = FOE;
 pub const EDIT_HOVER = fade(TEXT, 0.6);
 pub const EDIT_UNLINKED = DIM;
@@ -1550,14 +1563,22 @@ test "a slot's prompt is its maker's face button or shoulder on a pad, and its k
     try std.testing.expectEqual(FaceButton.a, Prompt.of(&st, .a).face.button);
     try std.testing.expect(!Prompt.of(&st, .y).face.sony);
     try std.testing.expectEqualStrings("RB", Prompt.of(&st, .rb).pill);
-    try std.testing.expect(Prompt.of(&st, .view) == .view);
+    try std.testing.expect(Prompt.of(&st, .character) == .menu);
+    try std.testing.expect(Prompt.of(&st, .pause) == .view);
     st.device = .ps5;
     try std.testing.expect(Prompt.of(&st, .x).face.sony);
     try std.testing.expectEqualStrings("L1", Prompt.of(&st, .lb).pill);
+    try std.testing.expectEqualStrings("Options", Prompt.of(&st, .character).pill);
+    try std.testing.expectEqualStrings("Create", Prompt.of(&st, .pause).pill);
+    st.device = .ps4;
+    try std.testing.expectEqualStrings("Share", Prompt.of(&st, .pause).pill);
     st = .{ .device = .keys, .modifier = .lb };
     try std.testing.expectEqualStrings(input.SECOND_CAPTION, Prompt.of(&st, .lb).key);
     try std.testing.expectEqualStrings("1", Prompt.of(&st, .a).key);
     try std.testing.expectEqualStrings("Enter", Prompt.menuOf(&st, .a).key);
+    try std.testing.expectEqualStrings("Esc", Prompt.menuOf(&st, .b).key);
+    try std.testing.expectEqualStrings("Q", Prompt.menuOf(&st, .lb).key);
+    try std.testing.expectEqualStrings("E", Prompt.menuOf(&st, .rb).key);
     for (input.SLOT_ORDER) |b| {
         for ([_]input.Device{ .xbox, .ps4 }) |d| {
             st.device = d;
@@ -1643,6 +1664,7 @@ test "forest sprites follow connections and isolated trees mix with clumps witho
 test "floor shows through a wall's gaps; a tile with its own ground or background keeps it" {
     try std.testing.expectEqual(@as(?grid.Tile, .floor), under(.wall));
     try std.testing.expectEqual(@as(?grid.Tile, .grass), under(.shrub));
+    try std.testing.expectEqual(@as(?grid.Tile, .dirt), under(.swamp_tree));
     try std.testing.expectEqual(@as(?grid.Tile, null), under(.rock));
     try std.testing.expectEqual(@as(?grid.Tile, null), under(.floor));
     try std.testing.expectEqual(@as(?grid.Tile, null), under(.water));

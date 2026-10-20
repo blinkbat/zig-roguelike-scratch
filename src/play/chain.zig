@@ -17,7 +17,7 @@ pub const VERB = "shocks";
 pub const BOLT = "chain lightning";
 pub const TAKES = spark.TAKES;
 pub const ELEMENT: damage.Element = .lightning;
-pub const DESCRIPTION = std.fmt.comptimePrint("{s}. Leaps to {d} more foes, each within {d} tiles of the last. {s} each.", .{ BASE.text(ELEMENT), JUMPS, JUMP_RANGE, clock.stunNote(spark.CHANCE) });
+pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {s} each.", .{ JUMPS, JUMP_RANGE, clock.stunNote(spark.CHANCE) });
 
 pub const BASE = damage.Base{ .lo = LIGHTNING_LO, .hi = LIGHTNING_HI };
 

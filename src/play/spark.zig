@@ -11,7 +11,7 @@ pub const VERB = "sparks";
 pub const BOLT = "spark";
 pub const TAKES = clock.STUNNED;
 pub const ELEMENT: damage.Element = .lightning;
-pub const DESCRIPTION = std.fmt.comptimePrint("{s} to a target in sight. {s}.", .{ BASE.text(ELEMENT), clock.stunNote(CHANCE) });
+pub const DESCRIPTION = std.fmt.comptimePrint("Strike a target in sight with lightning. {s}.", .{clock.stunNote(CHANCE)});
 
 pub const BASE = damage.Base{ .lo = LIGHTNING_LO, .hi = LIGHTNING_HI };
 

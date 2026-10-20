@@ -48,6 +48,7 @@ pub const Tile = enum(u8) {
     shrooms,
     chest,
     chest_open,
+    swamp_tree,
 
     pub fn solid(t: Tile) bool {
         return TERRAIN.getPtrConst(t).solid;
@@ -113,6 +114,7 @@ pub const Tile = enum(u8) {
             .shrooms => 'm',
             .chest => 'C',
             .chest_open => 'O',
+            .swamp_tree => 'S',
         };
     }
 
@@ -177,6 +179,7 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .shrooms = DECOR,
     .chest = .{ .solid = true, .blind = false, .ground = .grass, .halts = true },
     .chest_open = DECOR,
+    .swamp_tree = .{ .solid = true, .blind = true, .ground = .dirt },
 });
 
 /// Same-material neighbours, stamped by `gen.shapeWalls`; its bits are the wall sheets' masks.

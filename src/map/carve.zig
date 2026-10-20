@@ -132,17 +132,32 @@ pub fn clearAround(lv: *const grid.Level, p: P) bool {
 pub const Over = struct {
     tile: grid.Tile,
     decked: bool = false,
+    water_range: u8 = 0,
 
     fn has(o: Over, t: grid.Tile) bool {
         return t == o.tile or (o.decked and !t.solid() and t.ground() == o.tile);
     }
+
+    fn at(o: Over, lv: *const grid.Level, p: P) bool {
+        return o.has(lv.at(p)) and (o.water_range == 0 or nearWater(lv, p, o.water_range));
+    }
 };
+
+pub fn nearWater(lv: *const grid.Level, p: P, range: u8) bool {
+    var cells = grid.Cells.around(p, range);
+    while (cells.next()) |q| {
+        if (!grid.Level.inside(q)) continue;
+        const t = lv.at(q);
+        if (t == .water or t == .shallows) return true;
+    }
+    return false;
+}
 
 /// `lone` puts it only where it closes no way.
 pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool) void {
     for (0..grid.CELLS) |i| {
-        if (!on.has(lv.tile[i])) continue;
         const p = grid.Level.of(i);
+        if (!on.at(lv, p)) continue;
         if (grid.Level.onRim(p) or (lone and !clearAround(lv, p))) continue;
         if (rng.perMille(per_mille)) lv.tile[i] = put;
     }
@@ -822,7 +837,7 @@ pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: Ove
     var of: [grid.CELLS]u16 = @splat(BUCKETS);
     var n: u32 = 0;
     for (0..grid.CELLS) |i| {
-        if (!on.has(lv.tile[i]) or rimAt(i)) continue;
+        if (!on.at(lv, grid.Level.of(i)) or rimAt(i)) continue;
         const b = bucket(noise.at(grid.Level.of(i), scale, 3), BUCKETS);
         of[i] = @intCast(b);
         hist[b] += 1;

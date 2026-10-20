@@ -227,12 +227,12 @@ pub const Button = enum {
     lb,
     rb,
     rt,
-    view,
+    character,
     pause,
     /// The right stick pressed in.
     inspect,
 
-    fn pad(b: Button) rl.GamepadButton {
+    pub fn pad(b: Button) rl.GamepadButton {
         return switch (b) {
             .a => .right_face_down,
             .b => .right_face_right,
@@ -241,8 +241,8 @@ pub const Button = enum {
             .lb => .left_trigger_1,
             .rb => .right_trigger_1,
             .rt => .right_trigger_2,
-            .view => .middle_left,
-            .pause => .middle_right,
+            .character => .middle_right,
+            .pause => .middle_left,
             .inspect => .right_thumb,
         };
     }
@@ -251,11 +251,13 @@ pub const Button = enum {
     fn keys(b: Button) []const rl.KeyboardKey {
         return switch (b) {
             .a => &(INTERACT_KEYS ++ [_]rl.KeyboardKey{.z}),
-            .b => &.{.x},
+            .b => &.{ .escape, .x },
             .x => &.{.c},
             .y => &.{.delete},
-            .lb, .rb, .rt => &.{},
-            .view => &.{.tab},
+            .lb => &.{.q},
+            .rb => &.{.e},
+            .rt => &.{},
+            .character => &.{.tab},
             .pause => &.{.escape},
             .inspect => &.{.i},
         };
@@ -661,7 +663,7 @@ pub const State = struct {
         if (!was_focused) self.holdWalk();
         self.typing = false;
         const pad_hit = if (live) |at| struck(at, &before, &self.triggers) else false;
-        self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit or (on_tree and !pan_keys and (self.tree.pan.x != 0 or self.tree.pan.y != 0)), keyed);
+        self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit or (on_tree and !pan_keys and (self.tree.pan.x != 0 or self.tree.pan.y != 0)), keyed or self.click or self.scroll != 0);
     }
 
     fn padHeld(self: *const State, at: i32, b: rl.GamepadButton) bool {
@@ -1275,26 +1277,26 @@ test "walk keys held together sum to one step a lean can turn" {
 test "a held button reports long from HOLD_S until it is spent, and not again until it is let go" {
     const dt = mathx.FRAME_DT;
     var s = State{};
-    s.down.insert(.view);
+    s.down.insert(.character);
     var t: f32 = 0;
-    while (!s.long(.view)) {
+    while (!s.long(.character)) {
         t += dt;
         s.time(dt);
     }
     std.debug.print("held: long from {d:.3} s\n", .{t});
     try std.testing.expect(t >= HOLD_S and t - HOLD_S <= dt * 1.5);
     for (0..30) |_| s.time(dt);
-    try std.testing.expect(s.long(.view));
-    s.spend(.view);
+    try std.testing.expect(s.long(.character));
+    s.spend(.character);
     for (0..120) |_| {
         s.time(dt);
-        try std.testing.expect(!s.long(.view));
+        try std.testing.expect(!s.long(.character));
     }
     s.down = .initEmpty();
     s.time(dt);
-    s.down.insert(.view);
+    s.down.insert(.character);
     for (0..60) |_| s.time(dt);
-    try std.testing.expect(s.long(.view));
+    try std.testing.expect(s.long(.character));
 }
 
 test "the last device pressed is the one named, and the keyboard when no pad is plugged in" {
@@ -1344,10 +1346,10 @@ test "every pad button has a name on each maker's pad, a PlayStation's by its ow
     try std.testing.expectEqualStrings("Triangle", Button.y.caption(.ps5));
     try std.testing.expectEqualStrings("L1", Button.lb.caption(.ps5));
     try std.testing.expectEqualStrings("R2", Button.rt.caption(.ps4));
-    try std.testing.expectEqualStrings("Create", Button.view.caption(.ps5));
-    try std.testing.expectEqualStrings("Share", Button.view.caption(.ps4));
-    try std.testing.expectEqualStrings("Options", Button.pause.caption(.ps5));
-    try std.testing.expectEqualStrings("View", Button.view.caption(.xbox));
+    try std.testing.expectEqualStrings("Options", Button.character.caption(.ps5));
+    try std.testing.expectEqualStrings("Options", Button.character.caption(.ps4));
+    try std.testing.expectEqualStrings("Create", Button.pause.caption(.ps5));
+    try std.testing.expectEqualStrings("Menu", Button.character.caption(.xbox));
     for (std.enums.values(Device)) |d| {
         if (!d.pad()) continue;
         for (BUTTONS) |b| try std.testing.expect(b.caption(d).len > 0);
@@ -1367,18 +1369,18 @@ test "the keyboard numbers the slots past the modifier, which Ctrl holds" {
     try std.testing.expectEqualStrings("3", s.slotCaption(.y));
     s.modifier = null;
     try std.testing.expectEqualStrings("7", s.slotCaption(.rt));
-    try std.testing.expectEqualStrings("Tab", s.slotCaption(.view));
+    try std.testing.expectEqualStrings("Tab", s.slotCaption(.character));
     s.device = .xbox;
     try std.testing.expectEqualStrings("RT", s.slotCaption(.rt));
 }
 
 test "on the keyboard Enter, Space and Z confirm in menus, and X and Esc back out" {
     try std.testing.expectEqualSlices(rl.KeyboardKey, &.{ .enter, .kp_enter, .space, .z }, Button.a.keys());
-    try std.testing.expectEqualSlices(rl.KeyboardKey, &.{.x}, Button.b.keys());
+    try std.testing.expectEqualSlices(rl.KeyboardKey, &.{ .escape, .x }, Button.b.keys());
     try std.testing.expectEqualSlices(rl.KeyboardKey, &.{.escape}, Button.pause.keys());
     for (BUTTONS) |b| {
         for (BUTTONS) |o| {
-            if (b == o) continue;
+            if (b == o or (b == .b and o == .pause) or (b == .pause and o == .b)) continue;
             for (b.keys()) |k| try std.testing.expect(std.mem.indexOfScalar(rl.KeyboardKey, o.keys(), k) == null);
         }
     }
@@ -1388,7 +1390,7 @@ test "targeting uses confirm and back keys instead of numbered skills for every 
     for (SLOT_ORDER) |modifier| {
         var s = State{ .context = .target, .modifier = modifier };
         try std.testing.expectEqualSlices(rl.KeyboardKey, &.{ .enter, .kp_enter, .space, .z }, s.keysFor(.a));
-        try std.testing.expectEqualSlices(rl.KeyboardKey, &.{.x}, s.keysFor(.b));
+        try std.testing.expectEqualSlices(rl.KeyboardKey, &.{ .escape, .x }, s.keysFor(.b));
         try std.testing.expectEqualSlices(rl.KeyboardKey, &.{.escape}, s.keysFor(.pause));
         for (BUTTONS) |b| {
             for (s.keysFor(b)) |k| try std.testing.expect(std.mem.indexOfScalar(rl.KeyboardKey, &SLOT_KEYS, k) == null);

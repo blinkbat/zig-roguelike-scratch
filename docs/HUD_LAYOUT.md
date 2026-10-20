@@ -23,7 +23,7 @@ Only display the corresponding systems this game actually has. Do not fill the l
 | Minimap | Existing upper-right map, outside the bottom assembly |
 | Event log | Bottom-left panel, newest at bottom, color-coded events during exploration and combat |
 
-The live HUD omits the hero-name label, enemy counters, gold tally and permanent control instructions. No screen names a key or button in words; menus and the bind screen carry no instructions. Life and mana flasks use assigned skill slots, including remaining drinks. Exact XP, levels, equipment and both skill trees appear in Character.
+The live HUD omits the hero-name label, enemy counters, gold tally and permanent control instructions. No screen names a key or button in words; menus and the bind screen show concise action labels beside device glyphs. Life and mana flasks use assigned skill slots, including remaining drinks. Exact XP, levels, equipment and both skill trees appear in Character.
 
 ## Layout and placeholder art
 
@@ -49,6 +49,16 @@ Small Balthazar text is rasterized at its displayed size (12, 15, 16, 20 and 24p
 The map spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind overlay is centered above the HUD. `ui/journal.zig` owns the saved event history and its bottom-left panel; the wheel or HUD inspector scrolls it.
 
 The dedicated captures are `shots/hud-full-1280.png`, `hud-partial-1600.png`, `hud-critical-1920.png`, `hud-empty-1600.png`, `hud-ps5-1280.png`, `hud-secondary-pad.png`, `hud-bind-pad.png`, `hud-bind-ps5.png`, `hud-bind-720.png`, `hud-inspect-skill.png`, `hud-inspect-status.png` and `hud-inspect-mana.png`. `shot.cmd` regenerates them all; previews and logs remain outside tracked source.
+
+## Inspection wording
+
+Follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md). The 2026-10-20 pass puts a skill's
+effect before its resource cost, cooldown, targeting range and actual damage ranges.
+Ranks belong in the title when applicable. Free actions, remaining drinks and turns
+until ready use ordinary phrases. Ailments describe their consequence directly.
+Resource orbs retain compact label/value pairs. The tooltip supports wrapped
+paragraphs, explicit line breaks and these pairs together; no empty damage, rank,
+mana or cooldown table is added for utility actions.
 
 ## Aseprite paint template
 
@@ -80,3 +90,5 @@ Numbers, resource labels, button captions and cooldowns remain code-rendered. Th
 `C:/Users/DavidBennett/Desktop/border.aseprite` holds the owner's gold border on `Layer 1`, a 73x55 cel at (1,1) on a 128x128 canvas. `tools/hud_art/export_border.lua` preserves that source and copies it to `assets/source/hud-border.aseprite`, exporting the native 73x55 rectangle to `assets/hud-border.png`. It backs up existing files in `%TEMP%/hud-border-export/` and checks the reopened pixels and clear center. Run it with the Aseprite batch command in `TILE_ART_WORKFLOW.md`; inspect later owner edits before exporting again.
 
 `look.hudBorder` keeps the four original 9x9 corner regions and repeats the matching horizontal and vertical strips, clipping the last repeat without scaling, mirroring, rotating or recolouring the art. Nine-pixel cuts keep the dark corner-to-rail transition out of the repeated bottom edge. The texture loads with common play graphics and is shared by the bottom plate, skill slots and bind picker, status boxes, minimap, and the character card and its cells. Selected slots retain a coloured inner outline; unavailable slots retain their opacity fade. Status boxes are 40px to keep their icons and counts clear of the painted trim, and the minimap reserves a 9px frame. Orb rims and resource fills remain procedural.
+
+Life and mana fill levels ease both upward and downward using the XP bar's exponential rate (8/s). Labels remain exact. Fill targets use presented life and held mana: a pending bite cannot drain either orb before impact. New floors and resumed saves settle the fills immediately; these two floats are presentation only, never saved. The regression test checks held impact, exact easing in both directions, and convergence without overshoot.

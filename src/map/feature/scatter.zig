@@ -7,6 +7,7 @@ const carve = @import("../carve.zig");
 
 pub const AMOUNT_MAX: u16 = mathx.MILLE;
 pub const CLUMP_MAX: u8 = 32;
+pub const WATER_RANGE_MAX: u8 = 12;
 
 pub const Params = struct {
     tile: grid.Tile = .shrub,
@@ -15,17 +16,19 @@ pub const Params = struct {
     amount: u16 = 20,
     /// Clumps about this many cells across; 0 lays it a cell at a time, where it closes no way if it is solid.
     clump: u8 = 0,
+    water_range: u8 = 0,
 
     pub fn fit(p: Params) Params {
         var q = p;
         q.amount = @min(p.amount, AMOUNT_MAX);
         q.clump = @min(p.clump, CLUMP_MAX);
+        q.water_range = @min(p.water_range, WATER_RANGE_MAX);
         return q;
     }
 };
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: Params) void {
-    const on = carve.Over{ .tile = p.on, .decked = true };
+    const on = carve.Over{ .tile = p.on, .decked = true, .water_range = p.water_range };
     if (p.clump == 0) {
         carve.scatter(lv, rng, p.amount, on, p.tile, p.tile.solid() and p.amount < AMOUNT_MAX);
         return;
@@ -45,4 +48,28 @@ test "clumps take the share asked of the ground, and lone solids never touch" {
     try std.testing.expect(reeds * 1000 / open > 200 and reeds * 1000 / open < 300);
     apply(&lv, &rng, 3, pal, .{ .tile = .snow, .on = .grass, .amount = AMOUNT_MAX });
     try std.testing.expectEqual(@as(usize, 0), carve.count(&lv, .grass));
+}
+
+test "water-limited scatter keeps single trees and clumps on dry nearby ground" {
+    var checked: usize = 0;
+    for ([_]u8{ 0, 5 }) |clump| {
+        var lv = grid.Level.blank();
+        var rng = mathx.Rng.init(0x5A4D);
+        carve.fill(&lv, .dirt);
+        apply(&lv, &rng, 7, carve.Palette.WILD, .{ .tile = .swamp_tree, .on = .dirt, .amount = 500, .clump = clump, .water_range = 3 });
+        try std.testing.expectEqual(@as(usize, 0), carve.count(&lv, .swamp_tree));
+        lv.set(.{ .x = 24, .y = 24 }, .water);
+        lv.set(.{ .x = 60, .y = 40 }, .shallows);
+        apply(&lv, &rng, 7, carve.Palette.WILD, .{ .tile = .swamp_tree, .on = .dirt, .amount = 500, .clump = clump, .water_range = 3 });
+        const count = carve.count(&lv, .swamp_tree);
+        try std.testing.expect(count > 0);
+        for (lv.tile, 0..) |t, i| {
+            if (t != .swamp_tree) continue;
+            try std.testing.expect(carve.nearWater(&lv, grid.Level.of(i), 3));
+            checked += 1;
+        }
+        try std.testing.expectEqual(grid.Tile.water, lv.at(.{ .x = 24, .y = 24 }));
+        try std.testing.expectEqual(grid.Tile.shallows, lv.at(.{ .x = 60, .y = 40 }));
+    }
+    std.debug.print("waterside scatter: {d} trees/clump cells within 3 cells of water; dry maps and both water depths preserved\n", .{checked});
 }

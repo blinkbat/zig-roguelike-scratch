@@ -12,7 +12,7 @@ pub const VERB = "cleaves";
 /// Turns off the way aimed, round the hero, of the tiles it sweeps.
 const SPREAD = [_]u3{ 7, 0, 1 };
 pub const WIDTH: usize = SPREAD.len;
-pub const DESCRIPTION = std.fmt.comptimePrint("Swing through the {d} tiles in an arc before you: {s} to each foe there.", .{ WIDTH, BASE.text(null) });
+pub const DESCRIPTION = std.fmt.comptimePrint("Swing through the {d} tiles in an arc ahead, striking each foe there.", .{WIDTH});
 
 pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };
 

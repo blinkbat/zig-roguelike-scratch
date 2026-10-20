@@ -1,0 +1,179 @@
+# Item and character information
+
+Research and implementation pass: **2026-10-20**. Diablo II is the main reference for
+the amount of information shown at once. PoE2 informs the separation of ordinary
+inspection from specialist detail. This governs items, the character sheet, skill
+and passive inspection, confirmations and HUD tooltips. Keep balance in source.
+
+## Reference evidence
+
+- Blizzard's [item overview](https://classic.battle.net/diablo2exp/items/) describes
+  blue magic item names and distinguishes item quality from the actual properties.
+  Its [sword listings](https://classic.battle.net/diablo2exp/items/normal/uswords.shtml)
+  group damage, requirements and modifiers into complete item descriptions. These
+  are historical reference material, not current D2R balance recommendations.
+- Blizzard's [character guide](https://classic.battle.net/diablo2exp/basics/characters.shtml)
+  distinguishes character attributes from attack damage, life, mana and defenses.
+  Its [item basics](https://classic.battle.net/diablo2exp/items/basics.shtml) also
+  records limits of the character damage display. We should copy the hierarchy,
+  not preserve an incomplete or misleading damage estimate for authenticity.
+- The inspected [original D2 inventory image](https://www.game-over.net/review/july2000/diablo2/Screen0.JPG)
+  uses stable equipment positions and a restrained gold/dark shell. Item identity
+  remains recognizable within a dense inventory. No Blizzard artwork is copied.
+- An inspected [D2 Spirit sword card](https://i.ibb.co/KWW6mL2/Untitled.png) puts
+  identity above ordinary weapon properties and requirements, then blue modifier
+  lines. Centered text and gaps separate the groups without a grid. This is a
+  third-party-hosted game capture used for layout, not a balance source.
+- The inspected [PoE2 vendor screenshot](https://i.imgur.com/MYfchKw.png), published
+  in this [gold guide](https://dving.net/guides/path-of-exile-2-guides/gold), shows a
+  compact Wooden Club card: title, weapon class, a damage range, critical chance
+  and attack rate. It does not pad the card with unrelated defensive attributes.
+  This is a visual observation of that capture, not a current-client interaction test.
+- GGG's [May 2025 plans](https://www.pathofexile.com/forum/view-thread/3783548/filter-account-type/staff)
+  explicitly discuss modifier tiers in advanced item display and separating modifier
+  sources. Borrow that distinction between everyday reading and specialist detail;
+  our prototype does not need tier ratings, crafting metadata or a build calculator.
+
+## Judgment for this game
+
+An item should read like an object with properties. It should not require the player
+to reconstruct it from a spreadsheet. First identify it, then read what it does,
+then see whether it can be equipped. Keep a stable order and use short, complete
+phrases. Dense information is useful when every line earns its place.
+
+The previous helmet panel showed minimum damage, maximum damage, all five possible
+modifiers and three requirement attributes, including zeroes. Its WORN/ITEM/DELTA
+columns gave a two-modifier item the visual weight of an endgame spreadsheet.
+The character sheet's bare `Heavy 14` was ambiguous between damage and a bonus.
+Skill tables included zero rank bonuses on utility skills; HUD skill tooltips listed
+numbers before explaining the skill. These are the problems this pass addresses.
+
+### The useful complexity
+
+D2's useful density comes from a stable reading order and familiar vocabulary.
+Many independent properties can coexist because each line describes one property.
+Players can recognize a useful item before doing every calculation. Our basic item
+has zero to two modifiers, so it should be especially quick to read.
+
+For example, the captured magic Iron helm now reads:
+
+```text
+Iron helm
+Helm
+
+Physical damage reduced by 4%
+Requires 16 Strength
+(14 available)
+
++6 to maximum life
++10 to maximum mana
+```
+
+The worn Leather cap remains a separate, much shorter card. This preserves the
+objects' identities and shows the real equipping blocker. Once an equip is valid,
+the small change list explains its effects on the character, including attributes
+from any displaced offhand. It does not repeat every unchanged stat.
+
+PoE2's source/tier metadata becomes useful when a player needs to inspect a roll or
+craft an item. This prototype has no crafting and a small fixed modifier pool.
+Keep that extra detail out of ordinary inspection. If the pool later grows enough
+to need roll ranges or provenance, add a deliberate details layer and retain this
+short ordinary view.
+
+Keep the character sheet honest: damage bonuses are percentages, critical damage
+is a multiplier, and armour is physical reduction. The skill panel supplies actual
+hit ranges for the current weapon and rank. There is no invented DPS metric in a
+turn-based game, and no single score can decide a Strength/Dexterity tradeoff for
+the player's build.
+
+## Presentation contract
+
+1. **Item cards:** name in the existing magic blue or normal pale text; quiet slot
+   and handling information; only applicable base properties; only nonzero
+   requirements; then actual modifiers in blue. Damage is one range. A requirement
+   uses its full attribute name and red only when unmet. Ordinary items do not need
+   an empty modifier section. Do not invent affix names, rarity grades or stats.
+2. **Comparisons:** selected and equipped items retain separate identities. Show
+   a compact, explicitly labelled preview of character changes only when equip is
+   legal. Preserve real loadout validation, ring destination and displaced-hand
+   reporting. Positive and negative changes carry signs, not color alone. No gear
+   score and no universal better/worse verdict.
+3. **Character sheet:** group attributes, survival, damage bonuses and progression.
+   Attach units to values. Explain what each attribute affects. Damage bonuses
+   explicitly say bonus; critical damage explicitly says multiplier. Our armour
+   is physical damage reduction, unlike D2 defense: never relabel it Defense.
+4. **Skills:** effect first, rank second, current or first-rank properties together,
+   then a separate next-rank section containing only changes. Actual hit ranges
+   include equipment, attributes and rank, before critical hits and defenses.
+   Combat, HUD and tree share `Act.equippedBases` and `State.skillAttrs`.
+   If an upgrade changes average damage without changing the integer range endpoints,
+   show the old/new rank bonus explicitly. State mana, turn and range units. A utility
+   skill has no damage line. At maximum rank, remove the empty next-rank section.
+   Skill descriptions explain behavior without repeating raw base-hit ranges.
+   Preserve fixed status damage, duration, area and proc chance because these do
+   not appear in the direct-hit range.
+5. **Passives:** name and actual grants lead. Write complete modifier phrases;
+   use plain language for the next action or blocker. Topological terms are secondary
+   to the grant. Preserve origins, feeders and point costs exactly.
+6. **HUD inspection:** behavior before metrics. Resources can use a small labelled
+   pair list; skills and ailments need readable descriptions. Omit irrelevant zero
+   cost/cooldown/rank lines. Cooldowns and remaining durations always say turns.
+7. **Actions:** show the object and consequence before one deliberate action. Use direct
+   commands, controller navigation and input glyphs; no secondary confirmation modal.
+8. **Hands:** say Main hand and Offhand. The main hand is on the viewer's left of the
+   paperdoll; the offhand is on the right. Great axe, greatclub and greatsword use
+   both hands. Lists say Both hands and cards say Two-handed; an occupied offhand
+   names the weapon using it instead of looking empty. Ring destinations remain
+   left/right because either ring can use either slot.
+
+Use dark, quiet surfaces, the existing Balthazar font, native text sizes and spare
+dividers. Gold marks focus or section hierarchy, blue marks magic, muted text carries
+supporting information, and red marks a real blocker or loss. Do not shrink text to
+fit a table that should have been removed. Tables remain appropriate when the reader
+actually needs aligned values; they are not the default container for all information.
+
+The owner's global menu direction is **muted gold, never bright yellow**.
+`look.UI_GOLD` (`#bca06b`) and `look.UI_FOCUS` (`#d0b581`) are shared by
+menus, character pages, trees, naming, binding, HUD inspection and editor controls.
+The yellow controller face glyph uses the focus gold too. Keep magic blue and actual
+gain/loss colors distinct. UI selection no longer borrows the world targeting color.
+
+## Verification
+
+Inspect real headless captures at 1280x720 and the larger HUD capture sizes. Cover
+normal and magic items, unmet and met requirements, both ring destinations,
+two-handed displacement, empty slots, each class's skill states, and passive grants.
+Check that comparisons do not mutate inventory and that browsing/cancelling spends
+nothing. Reuse source calculations and test any new requirement/preview derivation.
+Keep screenshots and research downloads in the temporary directory.
+
+Implemented in `ui/book.zig`, `ui/trees.zig` and `ui/hud.zig`, with shared
+damage inputs in `play/skillbar.zig`/`play/progress.zig`, role names in
+`play/items.zig`, and the global menu palette in `gfx/look.zig`.
+
+Verified on 2026-10-20:
+
+- `check.cmd` and the normal Debug `build.cmd` pass.
+- Focused suites `tooltip`, `book`, `trees`, `weapon`, `equipment` and
+  `attribute` pass: 17 substantive tests, plus the root import checks.
+  These include 256 exact combat outcomes across melee, arrows, mixed arrows and
+  resisted spells, both ring destinations, displaced-hand requirements, and
+  forward/reverse swaps for all three great weapons.
+- After the size adjustment, `ui.` and `binding` suites pass: 17 substantive tests
+  plus root import checks, including scaled pointer targets and tree navigation.
+- The full headless capture harness completes. Character pages are captured at
+  1280x720, 1600x900 and 1920x1080. Inspected equipment, comparisons, stats, both
+  trees, all three classes' skill details, bindings, naming and editor help.
+  Damage and cost lines fit above the action footer.
+- Final capture set: `%TEMP%/cistern-ui-audit-758b01f7f45a453eb57ad0fa0eab8231/shots/`.
+  Captures are disposable evidence; no generated images were added to the repo.
+
+## Direct manipulation and readable scale (2026-10-20)
+
+The input audit found four confirmations to equip, a forced return to play after every item action, a hidden hold to bind, and two back presses just to leave content. These were interface costs without a useful decision.
+
+Character now opens directly on Start; Select owns the game menu. Equip, unequip, drop, pickup and point spending have one explicit action. Shoulder buttons change pages without moving focus through a tab row. Back closes Character. Binding starts from Skills, with the selected learned skill already chosen. A sole nearby item or chest is handled directly; multiple objects still get a choice list. Item transactions retain their one-turn cost.
+
+Character and binding panels stay centered and grow at half the rate needed to fill the window, capped at 1.25x. Smaller windows still fit within a 16px margin. At 1600x900 the 1100x620 panel is 1320x744, leaving space around it; 16px detail text and 20px body text become about 19px and 24px. Menu titles, rows and spacing are restrained too. Hit regions and passive clipping use the same transform. Scaled panels use mipmapped type; native-size panels retain the crisp native atlases.
+
+Blizzard explicitly discusses larger type, UI scaling, reducing repeated clicks, bindable interactions and alternatives to holds in its [D2R accessibility article](https://news.blizzard.com/en-us/article/23700733/how-were-making-diablo-ii-resurrectedtm-more-accessible-to-everyone). The [original D2 manual](https://download.blizzard.com/pub/misc/Diablo%20II%20Manual.pdf) describes direct manipulation of equipment. These support the direction; the exact shortcuts above are this project's choices. GGG's [0.2.1 plans](https://www.pathofexile.com/forum/view-thread/3783548/filter-account-type/staff) describe passive search and navigation improvements; they support keeping navigation cheap, without establishing today's controller bindings. Historical player reports in CONTROLLER.md are not treated as an official current map.

@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
         .assets = assetNames(b),
     };
 
-    const exe = b.addExecutable(.{ .name = "roguelike", .root_module = root.module() });
+    const exe = b.addExecutable(.{ .name = "cistern", .root_module = root.module() });
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

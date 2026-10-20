@@ -101,16 +101,16 @@ fn shadow(x: i32, y: i32, width: i32, height: i32) void {
 pub const LIFE = "Life";
 pub const MANA = "Mana";
 
-pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32) void {
-    orb(face, layout.life, LIFE, hp, hp_max, LIFE_CORE, LIFE_EDGE);
-    orb(face, layout.mana, MANA, mana, mana_max, MANA_CORE, MANA_EDGE);
+pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, mana: i32, mana_max: i32, life_fill: f32, mana_fill: f32) void {
+    orb(face, layout.life, LIFE, hp, hp_max, life_fill, LIFE_CORE, LIFE_EDGE);
+    orb(face, layout.mana, MANA, mana, mana_max, mana_fill, MANA_CORE, MANA_EDGE);
 }
 
-fn fillHeight(value: i32, max: i32) i32 {
-    return mathx.filled(value, max, FILL_R * 2);
+fn fillHeight(fill: f32) i32 {
+    return @intFromFloat(@round(std.math.clamp(fill, 0, 1) * (FILL_R * 2)));
 }
 
-fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, max: i32, core: rl.Color, edge: rl.Color) void {
+fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, max: i32, fill: f32, core: rl.Color, edge: rl.Color) void {
     const x = centre.x;
     const y = centre.y;
     rl.drawCircle(x, y + ORB_SHADOW_DY, ORB_R + ORB_SHADOW_GROW, look.fade(rl.Color.black, ORB_SHADOW_A));
@@ -119,7 +119,7 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, ma
     rl.drawCircle(x, y, ORB_R - ORB_RING, FRAME_DARK);
     rl.drawCircle(x, y, FILL_R + WELL_RIM_W, WELL_RIM);
     rl.drawCircle(x, y, FILL_R, WELL);
-    const filled = fillHeight(value, max);
+    const filled = fillHeight(fill);
     if (filled > 0) {
         const surface = y + FILL_R - filled;
         rl.beginScissorMode(x - FILL_R, surface, FILL_R * 2, filled);
@@ -215,17 +215,17 @@ const TIP_LEADING: i32 = 4;
 const TIP_LINE: i32 = font.SMALL + TIP_LEADING;
 const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
-pub const TIP_LINES_MAX: usize = 12;
+pub const TIP_LINES_MAX: usize = 18;
 pub const TIP_COLS_MAX: usize = 96;
 
 /// The mark round what is inspected: a ring round an orb, a frame round anything else.
 pub fn focus(box: rl.Rectangle, round: bool) void {
     if (round) {
         const r = box.width / 2 + FOCUS_GROW;
-        rl.drawRing(look.middle(box), r - FOCUS_W, r, 0, 360, 64, look.RETICLE);
+        rl.drawRing(look.middle(box), r - FOCUS_W, r, 0, 360, 64, look.UI_FOCUS);
         return;
     }
-    rl.drawRectangleLinesEx(look.grown(box, FOCUS_GROW), FOCUS_W, look.RETICLE);
+    rl.drawRectangleLinesEx(look.grown(box, FOCUS_GROW), FOCUS_W, look.UI_FOCUS);
 }
 
 /// Each line in `buf` is nul-terminated; wrapping breaks only at spaces.
@@ -269,19 +269,27 @@ const TIP_VALUE_X = @divTrunc(TIP_W, 2) + 24;
 pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8) void {
     var buf: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
-    const tabular = std.mem.indexOfScalar(u8, body, TIP_SEP) != null;
     var n: usize = 0;
-    if (tabular) {
-        var rows = std.mem.splitScalar(u8, body, '\n');
-        while (rows.next()) |r| {
-            if (n == TIP_LINES_MAX) break;
+    var rows = std.mem.splitScalar(u8, body, '\n');
+    while (rows.next()) |r| {
+        if (n == TIP_LINES_MAX) break;
+        if (std.mem.indexOfScalar(u8, r, TIP_SEP) != null or r.len == 0) {
             const len = @min(r.len, TIP_COLS_MAX);
             @memcpy(buf[n][0..len], r[0..len]);
             buf[n][len] = 0;
             lines[n] = buf[n][0..len :0];
             n += 1;
+        } else {
+            var wrapped: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
+            var parts: [TIP_LINES_MAX][:0]const u8 = undefined;
+            const count = wrap(face, r, font.SMALL, TIP_W - 2 * TIP_PAD, &wrapped, &parts);
+            for (parts[0..@min(count, TIP_LINES_MAX - n)]) |part| {
+                @memcpy(buf[n][0 .. part.len + 1], part[0 .. part.len + 1]);
+                lines[n] = buf[n][0..part.len :0];
+                n += 1;
+            }
         }
-    } else n = wrap(face, body, font.SMALL, TIP_W - 2 * TIP_PAD, &buf, &lines);
+    }
     const h = 2 * TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(n)) * TIP_LINE;
     const mid = look.middleAt(over).x;
     const x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
@@ -289,15 +297,13 @@ pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl
     shadow(x, y, TIP_W, h);
     rl.drawRectangle(x, y, TIP_W, h, PLATE);
     rl.drawRectangleLinesEx(look.rect(x, y, TIP_W, h), TIP_FRAME_W, FRAME);
-    face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.RETICLE);
+    face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
     for (lines[0..n], 0..) |l, i| {
         const top = y + TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(i)) * TIP_LINE;
-        if (tabular) {
-            if (std.mem.indexOfScalar(u8, l, TIP_SEP)) |split| {
-                buf[i][split] = 0;
-                face.text(buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM);
-                face.text(buf[i][split + 1 .. l.len :0], x + TIP_VALUE_X, top, font.SMALL, look.TEXT);
-            }
+        if (std.mem.indexOfScalar(u8, l, TIP_SEP)) |split| {
+            buf[i][split] = 0;
+            face.text(buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM);
+            face.text(buf[i][split + 1 .. l.len :0], x + TIP_VALUE_X, top, font.SMALL, look.TEXT);
         } else face.text(l, x + TIP_PAD, top, font.SMALL, look.TEXT);
     }
 }
@@ -380,6 +386,6 @@ test "orb fill clamps values and gives full half and empty reservoirs" {
         .{ .value = 5, .max = 0, .want = 0 },
         .{ .value = std.math.maxInt(i32), .max = std.math.maxInt(i32), .want = FILL_R * 2 },
     };
-    for (cases) |c| try std.testing.expectEqual(c.want, fillHeight(c.value, c.max));
+    for (cases) |c| try std.testing.expectEqual(c.want, fillHeight(if (c.max > 0) @as(f32, @floatFromInt(c.value)) / @as(f32, @floatFromInt(c.max)) else 0));
     std.debug.print("orbs: {d} resource fill cases verified\n", .{cases.len});
 }

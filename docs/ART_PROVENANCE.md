@@ -35,6 +35,7 @@ documented scripts; it does not mean every resulting tile has been hand-painted 
 | `assets/shallows-ground.png` | `assets/source/water.aseprite`, `Draw here` | `Water extensions`, exported as shallows | Extension layer and shore joins |
 | `assets/water-ground.png` | Derived from the owner's shallow-water source | `deepen_water.lua` 60% RGB transform; `assets/source/deep-water.aseprite` | Whole derived deep-water sheet, including its `Draw here` layer |
 | `assets/forest-tree-walls.png` | `assets/source/forest-tree-walls.aseprite`, `Draw here` | `Forest extensions`; documented owner-requested palette transform | Generated canopy/trunk connections and recolor |
+| `assets/swamp-tree.png` | Owner-supplied 64x64 raster; editable source and individual authorship not verified | Registered as a standalone tree and placed near water on the default map; original pixels unchanged | Supplied raster preserved |
 | `assets/grass.png` | Existing grass raster; original source not recorded here | Documented 15% RGB reduction in `tone_forest.lua` | Preserve owner backup; verify original attribution |
 | `assets/source/hud-elements.aseprite` | Paint on the Desktop working copy must be inspected before export | Initial template, guides, reference assembly and named slices from `create_template.py` | Original paint layer versus generated guides |
 | Desktop cave/forest guide sheets | Owner paint on `Draw here`, if present | `guide_walls.lua` guides and `idea_walls.lua` rough ideas | `Ideas - hide before export` is assistant work, not shipping art |

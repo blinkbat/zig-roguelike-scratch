@@ -1,6 +1,6 @@
-# AGENTS.md — roguelike-scratch
+# AGENTS.md — Cistern
 
-Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats and pibs;
+Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats and pibs;
 breakable barrels, treasure chests, equipment, XP and class progression. Art starts as glyphs, replaced by the owner's PNGs.
 Source paths below are relative to `src/`; scripts, docs and assets are relative to the repository root.
 
@@ -35,22 +35,25 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 
   ```powershell
   $projectRoot = (Get-Location).Path
-  $shotRoot = Join-Path $env:TEMP ('roguelike-shots-' + [guid]::NewGuid().ToString('N'))
+  $shotRoot = Join-Path $env:TEMP ('cistern-shots-' + [guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $shotRoot | Out-Null
   Copy-Item -LiteralPath (Join-Path $projectRoot 'maps') -Destination $shotRoot -Recurse
   Push-Location $shotRoot
   try {
-      & (Join-Path $projectRoot 'zig-out-dev/bin/roguelike.exe') --shot
+      & (Join-Path $projectRoot 'zig-out-dev/bin/cistern.exe') --shot
       if ($LASTEXITCODE -ne 0) { throw "Shots failed: $LASTEXITCODE" }
   } finally { Pop-Location }
   ```
 
 - For concurrent owner play, copy the built executable into the temporary shot directory with a distinct
-  basename before `--shot`; `run.cmd` kills every process named `roguelike.exe`, including headless captures.
+  basename before `--shot`; `run.cmd` kills every process named `cistern.exe`, including headless captures.
+- `--shot-ui` runs only Character/HUD captures; use the same temporary-directory procedure as `--shot`.
 - Inspect actual headless PNGs. `game.zig`'s `shoot` and helpers define the coverage: abilities, editor,
   maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
   `water-reflections/00.png` through `39.png` cover four seconds of idle play; `water-mirrors-*.png`
-  show day/night/torch reflections. The same executable's `--bench`
+  show day/night/torch reflections. `--shot-cinema` captures `cinema/` off/individual/all comparisons,
+  checks hidden pixels, exact restoration and resized targets, and times effects on/off; use the same temporary-directory workflow.
+  The same executable's `--bench`
   reports startup, headless CPU frame time, texture residency/loading/reuse and draw cost with 0/8/32 effect lights.
 - Tests must not write save or map files. No interactive window is needed for unit tests. The full Debug
   suite exercises thousands of generated maps and can take several minutes; check CPU activity before
@@ -70,20 +73,25 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   keyboard/mouse glyphs through `gfx/prompt_text.zig`; `input.Desk` owns its marked shortcut captions.
 - `play/skillbar.zig` owns primary/secondary sets, the bindable secondary modifier and class kits.
   `input.SLOT_ORDER` numbers keyboard slots while skipping the modifier, which uses Ctrl. Menu keys are
-  inactive in play; targeting uses menu confirm/back keys (`State.context`). Typing (`State.typing`) must not activate slots or movement. A close/cancel press that
-  could reopen binds is consumed with `State.spend`.
+  inactive in play; targeting uses menu confirm/back keys (`State.context`). Typing (`State.typing`) must not activate slots or movement. Character toggles on a press, never on a hidden hold.
 - Reticles use standard confirm/back controls; on the keyboard alone the aimed slot's number also confirms
   (`State.aimed`), while a pad's skill button never does. B always cancels targeting,
   including a skill opened with B; the opening press never confirms or cancels the new reticle.
   Esc backs out one layer at a time and opens pause only from play. Clear raylib's exit key with
   `input.claimKeys`; Esc must never close the window. Menu does not open pause over death.
-  Pause's Debug submenu contains Restart Map and Reveal Map. Reveal shows terrain and minimap without changing
-  gameplay sight or saved exploration; turning it off restores the normal view. Debug settings are not saved.
+  Pause's Debug submenu contains Restart Map, Reveal Map, Composed Lighting, Bloom, Atmosphere and Depth Of Field.
+  Reveal shows terrain and minimap without changing gameplay sight or saved exploration; turning it off restores
+  the normal view. The four cosmetic effects default on. Debug settings are not saved.
 - Inspect (`Mode.inspect`, R3 or I) is the HUD's tooltips: the stick/d-pad walks the orbs, slots, shown
   statuses and the event log (`game.spotsOf`, nearest along the way pushed), `hud.tooltip` names and describes the one it is
   on, without naming any input. Any back-out or the same button again closes it; it spends no turn.
   In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `game.hovered`).
-- Pause > Character opens equipment, the inventory list, stats, passives and class skills in `ui/book.zig`.
+- Start / Menu / Options opens Character directly; Select / View opens the game menu. Keyboard Tab / Esc mirror them. Character opens equipment, the inventory list, stats, passives and class skills in `ui/book.zig`.
+  Player-facing hand slots are Main hand (viewer-left) and Offhand (viewer-right).
+  Two-handers identify the occupied offhand. Menu accents share `look.UI_GOLD/UI_FOCUS`:
+  muted gold, never bright yellow.
+  Character/binding panels share `menu.Surface`: half-rate growth, capped at 1.25x,
+  with 16px detail and 20px body text before scaling. Keep panels centered with margins.
   `play/items.zig` owns slot/requirement transactions; `play/progress.zig` owns XP, point pools and skill ranks;
   `play/passives.zig` owns the radial passive graph and grants; `ui/trees.zig` draws both tree panels.
   Before changing either panel, read its maintained reference: `docs/DIABLO2_SKILL_TREE.md` for skills,
@@ -96,8 +104,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   from the central hub; the class origin is free and grants no bonus. Branches follow outward feeders;
   bridges work both ways. The same feeders must govern eligibility and drawn links.
   `Game.character` holds only unsaved navigation state; item/point actions are commands resolved by the game.
-  Item changes spend one turn after a separate Cancel-first confirmation; point allocation is free.
-  Interact includes underfoot and adjacent visible objects; a press while busy waits for `quiet` (`Queued.interact`)
+  Item actions and point allocation execute on one press; item changes spend one turn and keep Character open.
+  Shoulders / Q and E change tabs; Back closes Character directly. Skills owns binding. Point allocation is free.
+  Interact directly handles a sole object, or lists multiple underfoot and adjacent visible objects; a press while busy waits for `quiet` (`Queued.interact`)
   instead of queuing its button's skill. Item commands wait out door travel. Gold collects automatically on movement.
   See `docs/PROGRESSION.md` for rules and the inspected D2/PoE2 paperdoll references.
 - `app.zig` owns title/game/editor transitions; the game requests `Game.exit`, and `Game.back` identifies
@@ -112,7 +121,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   minimap at top right. The map continues behind it, with `hud.COVER` allowing bottom rows to clear it.
   No live name label, counters, clock display or permanent control instructions. The persistent event log
   occupies the bottom-left gutter without a heading; newest entries append at the bottom, with text,
-  background and border fading out toward the top. Details/comparisons use tables.
+  background and border fading out toward the top. Follow `docs/DATA_PRESENTATION.md` for item cards,
+  comparisons and stat wording: relevant properties only, explicit units, and effects before metrics.
 - `gfx/font.zig` draws small Balthazar text from native-size, point-filtered atlases; larger text and
   symbols use the mipmapped atlas. It falls back to raylib's font in tests/load failure.
   Drawn strings are ASCII except tile symbols baked through `look.TILE_CODEPOINTS`; those use
@@ -158,6 +168,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   and stay empty and walkable afterward. Attacks never open them. Wilds' `loops` reconnects side paths;
   `rewards chests` rewards substantial branches, fills sparse maps with spaced chests in sheltered alcoves,
   and scatters barrels as minor gold rewards. The Strand enables both; rewards must preserve routes.
+  Its swamp trees (`assets/swamp-tree.png`, standalone `swamp_tree` tiles) scatter on dirt
+  within three cells of water/shallows. Scatter's `water_range = 0` leaves other maps unrestricted.
 
 ## Combat and simulation
 
@@ -255,6 +267,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Sun shadows remove at most 45% of sky light; moon shadows also darken carried light. Forest shadows
   keep joined footprints continuous; canopy pools and near-horizontal streaks remain soft. Torch shadows
   fade beneath the source. Every step-blocking non-liquid tile casts. Climate changes appearance, not sight.
+- `gfx/cinema.zig` owns subtle bloom, water mist/canopy shafts/dust, and scenery-only depth of field;
+  `gfx/light.zig` applies the composed daylight profile to terrain, bodies and glints together.
+  Bloom uses bright visible light sources and actual water glints; atmosphere is outdoor and live-visible only.
+  Composite before bars, reticle outlines, speech and HUD. Copy scene RGB without applying its lighting alpha again.
+  Depth of field affects only foliage/decorative sprites beyond the hero's sharp band, never ground, bodies or interactables.
 - Weather, water reflections, FX and vignette are cosmetic. Weather stays fixed to map coordinates and visible
   lit outdoor cells. Water stays smooth: fixed art/UVs, subtle light glints and undistorted mirrored scenery,
   bodies and flames, clipped by the authored water alpha and dry ground layers. Static scenery reflections

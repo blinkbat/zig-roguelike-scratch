@@ -16,7 +16,7 @@ pub const VERB = "blasts";
 pub const BOLT = "fireball";
 pub const TAKES = burning.TAKES;
 pub const ELEMENT: damage.Element = .fire;
-pub const DESCRIPTION = std.fmt.comptimePrint("A bolt that bursts on what it strikes: {s} to every foe within {d} tile{s} of it. {s}.", .{ BASE.text(ELEMENT), BLAST, if (BLAST == 1) "" else "s", burning.BURN_NOTE });
+pub const DESCRIPTION = std.fmt.comptimePrint("A fire bolt bursts on impact, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, if (BLAST == 1) "" else "s", burning.BURN_NOTE });
 
 comptime {
     std.debug.assert(BLAST <= glacial.RANGE);

@@ -762,6 +762,8 @@ pub const Light = struct {
     forest_n: usize,
     forest_order: [FOREST_QUEUE]u64,
     reveal_map: bool = false,
+    composed: bool = false,
+    canopy: [grid.CELLS]f32,
 
     /// Initialize fields separately to avoid a temporary larger than the thread stack.
     pub fn create(alloc: std.mem.Allocator) !*Light {
@@ -862,6 +864,17 @@ pub const Light = struct {
         for (&self.see_through, &self.ground, &self.scratch.tile) |*k, *g, t| {
             k.* = mask(!t.blind());
             g.* = mask(!hidesGround(t));
+        }
+        var cells = grid.Cells.of(.{ .x = 0, .y = 0 }, grid.SIZE);
+        while (cells.next()) |p| {
+            var neighbours = grid.Cells.around(p, 2);
+            var cover: f32 = 0;
+            while (neighbours.next()) |q| {
+                if (!look.canopy(self.scratch.at(q))) continue;
+                const d = p.sub(q);
+                cover += 1 / @as(f32, @floatFromInt(1 + d.x * d.x + d.y * d.y));
+            }
+            self.canopy[grid.Level.idx(p)] = @min(1, cover * 0.3);
         }
     }
 
@@ -1037,7 +1050,31 @@ pub const Light = struct {
     }
 
     fn ambientOf(self: *const Light) Rgb {
-        return if (self.sky) |k| k.ambient else splat(0);
+        return if (self.profile()) |k| k.ambient else splat(0);
+    }
+
+    fn profile(self: *const Light) ?sky.Sky {
+        var k = self.sky orelse return null;
+        if (self.composed) {
+            const daylight = 1 - k.moon;
+            k.key *= mix(splat(1), .{ 1.035, 1.005, 0.96 }, daylight);
+            k.ambient *= mix(splat(1), .{ 0.94, 0.98, 1.04 }, daylight);
+        }
+        return k;
+    }
+
+    fn composedCloud(self: *const Light, q: [2]f32, cloud: f32) f32 {
+        if (!self.composed) return cloud;
+        const k = self.sky orelse return cloud;
+        const p = mathx.cellOf(.{ q[0] - 0.5, q[1] - 0.5 });
+        var corners: [4]f32 = undefined;
+        for (&corners, 0..) |*c, i| {
+            c.* = grid.cellOr(f32, &self.canopy, p.add(.{ .x = @intCast(i % 2), .y = @intCast(i / 2) }), 0);
+        }
+        const cover = mathx.bilerp(corners, q[0] - 0.5 - @as(f32, @floatFromInt(p.x)), q[1] - 0.5 - @as(f32, @floatFromInt(p.y)));
+        const dapple = 0.5 + 0.5 * @sin(q[0] * 2.1 + q[1] * 1.6 + @sin(q[1] * 1.2));
+        const patch = 1.045 - (1 - cloud) * 1.6 - cover * (0.07 + 0.10 * dapple);
+        return mathx.lerpF(cloud, patch, 1 - k.moon);
     }
 
     fn base(self: *const Light) Rgb {
@@ -1085,7 +1122,7 @@ pub const Light = struct {
     pub fn at(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32) Rgb {
         const c = mathx.cellOf(q);
         const fade = self.fadeOf(c);
-        const ray: ?SunRay = if (self.sky) |k| SunRay.of(k) else null;
+        const ray: ?SunRay = if (self.profile()) |k| SunRay.of(k) else null;
         const cloud = if (ray != null) self.cloudAt(q) else 1;
         return self.shade(lv, torches, self.effectsNear(c), q, self.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
     }
@@ -1107,7 +1144,7 @@ pub const Light = struct {
                 const facing = sunFacing(r.k, s);
                 if (facing > 0 or r.night > 0) {
                     const on = self.sunAt(lv, r, s.x, s.y, s.z);
-                    if (facing > 0) view += r.k.key * splat(facing * reaching(on, cloud));
+                    if (facing > 0) view += r.k.key * splat(facing * reaching(on, self.composedCloud(q, cloud)));
                     view *= r.dim(on, cloud);
                 }
             }
@@ -1134,7 +1171,7 @@ pub const Light = struct {
         const torches = self.near((grid.Box{ .lo = lo, .hi = hi }).grown(1), &ids);
         const t0 = P{ .x = @max(0, lo.x * SUB - 1), .y = @max(0, lo.y * SUB - 1) };
         const t1 = P{ .x = @min(MAP_W, hi.x * SUB + 1), .y = @min(MAP_H, hi.y * SUB + 1) };
-        const ray: ?SunRay = if (self.sky) |k| SunRay.of(k) else null;
+        const ray: ?SunRay = if (self.profile()) |k| SunRay.of(k) else null;
         self.baked = .{ @min(self.baked[0], t0.y), @max(self.baked[1], t1.y) };
         const c0 = P{ .x = @divFloor(t0.x, SUB), .y = @divFloor(t0.y, SUB) };
         if (ray != null) self.cloudsOver(c0, .{ .x = std.math.divCeil(i32, t1.x, SUB) catch unreachable, .y = std.math.divCeil(i32, t1.y, SUB) catch unreachable });
@@ -1226,7 +1263,7 @@ pub const Light = struct {
         var gleam: Rgb = @splat(0);
         if (ray) |r| {
             const on = self.sunAt(&self.scratch, r, q[0], q[1], 0);
-            gleam += r.k.key * splat(r.glint * reaching(on, cloud) * SUN_GLINT);
+            gleam += r.k.key * splat(r.glint * reaching(on, self.composedCloud(q, cloud)) * SUN_GLINT);
         }
         if (self.carryToward(q[0], q[1], true)) |f|
             gleam += self.carryColour() * splat(smoothSpecular(.{ f.at[0] - q[0], f.at[1] - q[1], BODY_Z }, GLINT_POWER) * f.k * CARRY_GLINT);
@@ -1274,7 +1311,7 @@ pub const Light = struct {
         const v = if (fogged) self.viewAt(centre) else View{ .sight = 1, .memory = 1, .lit = 1 };
         const lit = v.lit;
         var s = Shine{ .sight = lit };
-        const night: Rgb = if (self.sky) |k| self.sunOnBody(&s, k, centre, lit) else splat(1);
+        const night: Rgb = if (self.profile()) |k| self.sunOnBody(&s, k, centre, lit) else splat(1);
         s.ambient = remembered(self.base() * night, v.sight, v.memory);
         s.floor = remembered((self.base() - self.ambientOf()) * night, v.sight, v.memory);
         if (self.carryToward(centre[0], centre[1], fogged)) |f| {
@@ -1307,7 +1344,7 @@ pub const Light = struct {
         const toward = ray.u;
         const sun = self.sunAt(&self.scratch, &ray, centre[0], centre[1], BODY_Z);
         const cloud = self.cloudAt(centre);
-        const on = reaching(sun, cloud);
+        const on = reaching(sun, self.composedCloud(centre, cloud));
         if (lit > 0) s.add(.{
             .drawn = .{ centre[0] + toward[0] * SUN_LAMP_D, centre[1] + toward[1] * SUN_LAMP_D },
             .ground = .{ centre[0] + toward[0], centre[1] + toward[1] },
@@ -2738,6 +2775,41 @@ test "moving night light stays above memory at 60 and 144 Hz" {
         try std.testing.expect(lowest >= lum(MEMORY) - 0.002);
         try std.testing.expect(worst < 0.08);
     }
+}
+
+test "cinema lighting stays subtle and leaves night and indoor light unchanged" {
+    var lv = grid.openFloor();
+    lv.set(.{ .x = 20, .y = 20 }, .shrub);
+    lv.set(.{ .x = 21, .y = 20 }, .swamp_tree);
+    @memset(&lv.lit, true);
+    @memset(&lv.seen, true);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    l.carrier = null;
+    var changed: usize = 0;
+    var lowest: f32 = 1;
+    var highest: f32 = 1;
+    for ([_]?sky.Sky{ null, sky.at(day.NOON), sky.at(day.DEAD_OF_NIGHT) }) |k| {
+        l.sky = k;
+        for (0..100) |i| {
+            const q = [2]f32{ 17 + @as(f32, @floatFromInt(i % 10)) * 0.5, 18 + @as(f32, @floatFromInt(i / 10)) * 0.5 };
+            l.composed = false;
+            const plain = l.at(&lv, &.{}, q);
+            l.composed = true;
+            const composed = l.at(&lv, &.{}, q);
+            if (k == null or k.?.moon == 1) {
+                try std.testing.expectEqual(plain, composed);
+            } else {
+                const ratio = lum(composed) / lum(plain);
+                lowest = @min(lowest, ratio);
+                highest = @max(highest, ratio);
+                try std.testing.expect(ratio > 0.75 and ratio < 1.1);
+                changed += @intFromBool(@abs(ratio - 1) > 0.002);
+            }
+        }
+    }
+    try std.testing.expect(changed > 50);
+    std.debug.print("cinema lighting: {d} daylight samples changed, {d:.1}-{d:.1}% of baseline; 200 night/indoor samples identical\n", .{ changed, lowest * 100, highest * 100 });
 }
 
 test "the carried light fades across what it lets the archer see and leaves that edge above memory" {

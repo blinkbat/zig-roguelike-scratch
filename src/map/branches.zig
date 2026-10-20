@@ -302,7 +302,7 @@ fn rewardAt(lv: *const grid.Level, p: P) bool {
     }
     return switch (lv.at(p)) {
         .grass, .dirt, .sand, .floor, .rubble, .tiny_shrub, .tall_grass, .shrooms => true,
-        .wall, .shrub, .rock, .snow, .water, .shallows, .bridge, .reeds, .fence, .lava, .fungus, .chasm, .ice, .grave, .crop, .boulder, .chest, .chest_open => false,
+        .wall, .shrub, .swamp_tree, .rock, .snow, .water, .shallows, .bridge, .reeds, .fence, .lava, .fungus, .chasm, .ice, .grave, .crop, .boulder, .chest, .chest_open => false,
     };
 }
 

@@ -232,7 +232,7 @@ importance; it must not promise an absent special mechanic.
 ### Rules that stay local
 
 The sibling buys nodes with souls and couples purchases to its level economy.
-Roguelike-scratch instead keeps XP progression, separate passive and active point
+Cistern instead keeps XP progression, separate passive and active point
 pools, and its selected class's free starting allocation. Copying the graph does
 not copy the sibling economy or all its grants.
 
@@ -272,6 +272,8 @@ Give the graph the majority of the panel, with a persistent inspection area on t
 right. Keep the page title and available points compact. The graph should read as
 one connected landscape, not a collection of large buttons. All node centers,
 edges, hit targets and focus motion must use the same layout transformation.
+The shared character panel grows at half the window-fitting rate, capped at 1.25x;
+the graph's own pan and zoom stay independent of this restrained outer scale.
 
 Use a near-black flat canvas. Draw distant edges first in a low-contrast neutral
 or restrained arm tint, then emphasize invested routes. Place filled circles over
@@ -300,7 +302,7 @@ them look allocated.
 | State | Visual treatment | Inspection meaning |
 |---|---|---|
 | Allocated | Solid or strongly lit center, definite warm rim | Already contributes its actual grant |
-| Reachable and affordable | Dark center with clearly readable rim | Can allocate one point after confirmation |
+| Reachable and affordable | Dark center with clearly readable rim | One deliberate press allocates one point |
 | Reachable, no points | Recognizable frontier with subdued availability emphasis | Connected, but needs a passive point |
 | Unreached | Muted center and rim, still visible and inspectable | Requires a connecting allocation |
 | Focused | Separate outer ring or small brackets | Current inspection target, regardless of other state |
@@ -320,6 +322,11 @@ later introduced, it must not obscure status or alter game state.
 
 ### Inspection hierarchy
 
+The 2026-10-20 presentation pass follows [DATA_PRESENTATION.md](DATA_PRESENTATION.md).
+Grants read as complete modifier phrases, with their amount and units beside the
+benefit. Armour grants explicitly say physical damage reduction; attribute grants
+say what they add to. Keep the supported mechanics and allocation rules unchanged.
+
 The details area should answer, in order: what is this, what does it grant, and what
 can be done with it now? Show the node name first, then its role and branch when
 useful, then every grant including any rider. Present status and the allocation
@@ -338,7 +345,7 @@ health. Unknown or unsupported effects must be removed from the authored grant,
 not described as though they work.
 
 Keep action text short. Disabled actions need a specific reason such as no points,
-an unconnected path, or already allocated. Respect the existing confirmation flow
+an unconnected path, or already allocated. Use the direct allocation action
 and cancellation behavior. Keep key and button names out of panel prose, following
 the project's input presentation rules.
 
@@ -397,7 +404,7 @@ repository, following [`AGENTS.md`](../AGENTS.md).
 - Every grant and rider shown in details contributes through the real runtime path.
 - Capstone descriptions contain no unimplemented special effect or implied tradeoff.
 - Controller directions and mouse targeting can inspect every node.
-- The graph, details and confirmation fit the smallest supported capture size.
+- The graph, details and action footer fit the smallest supported capture size.
 - Branch names, longer node names and multiple grants do not overlap or truncate
   critical information.
 - Allocation consumes the proper point pool once; cancel consumes nothing and

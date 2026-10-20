@@ -2331,7 +2331,7 @@ fn drawFit(g: *const game.Game, s: []const u8, size: i32, max: i32, keep_end: bo
 fn drawNodeTitle(ed: *Editor, g: *const game.Game, n: usize, r: rl.Rectangle, y: i32) void {
     var buf: [LINE]u8 = undefined;
     const typing = ed.renamingNode(n);
-    drawFit(g, ed.nodeTitle(n, &buf), TEXT, insetW(r), typing, textX(r), y, if (typing) look.RETICLE else look.TEXT);
+    drawFit(g, ed.nodeTitle(n, &buf), TEXT, insetW(r), typing, textX(r), y, if (typing) look.UI_FOCUS else look.TEXT);
 }
 
 fn lowerArea(g: *const game.Game, top: i32) rl.Rectangle {
@@ -2708,6 +2708,7 @@ const SCATTER_ROWS = [_]Knob{
     .{ .field = "on", .tips = &.{"What it lays it on"} },
     .{ .field = "amount", .tips = &.{std.fmt.comptimePrint("A thousandth of those cells; {d} lays it on all of them", .{scatter.AMOUNT_MAX})} },
     .{ .field = "clump", .tips = &.{"Clumps this many cells across; 0 lays it a cell at a time"} },
+    .{ .field = "water_range", .label = "Near water", .tips = &.{"Within this many cells of water or shallows; 0 allows any distance"} },
 };
 
 const BORDER_ROWS = [_]Knob{
@@ -2908,7 +2909,7 @@ fn drawStatus(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     y += TEXT + GAP;
     const said = ed.said_t > 0;
     const line: []const u8 = if (said) ed.said.text() else if (ed.view == .map) CRIB_MAP else CRIB_GRAPH;
-    drawFit(g, line, TEXT, w, false, x, y, if (said) look.RETICLE else look.DIM);
+    drawFit(g, line, TEXT, w, false, x, y, if (said) look.UI_FOCUS else look.DIM);
 }
 
 fn toolState(ed: *const Editor, buf: []u8) [:0]const u8 {
@@ -3029,7 +3030,7 @@ fn drawMap(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     if (ed.flash_t > 0) {
         if (ed.flash) |p| {
             const r = ed.cellRect(c, p);
-            rl.drawRectangleLinesEx(look.grown(r, FLASH_PX), PICK_EDGE, look.RETICLE);
+            rl.drawRectangleLinesEx(look.grown(r, FLASH_PX), PICK_EDGE, look.UI_FOCUS);
         }
     }
     drawCursor(ed, g, c);
@@ -3189,7 +3190,7 @@ fn drawGraph(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
             rl.drawCircleV(at, DOT_R, look.DOOR.fg);
         }
     }
-    if (ed.dotUnder(c, ed.desk.mouse)) |l| rl.drawCircleLinesV(ed.dotAt(c, l), DOT_R + DOT_SLOP, look.RETICLE);
+    if (ed.dotUnder(c, ed.desk.mouse)) |l| rl.drawCircleLinesV(ed.dotAt(c, l), DOT_R + DOT_SLOP, look.UI_FOCUS);
     if (ed.linking) |from| rl.drawLineEx(ed.dotAt(c, from), vec(ed.desk.mouse), LINK_W, PICKED);
 }
 
@@ -3459,7 +3460,7 @@ fn fieldRow(ed: *Editor, g: *game.Game, r: rl.Rectangle) void {
     var buf: [LINE]u8 = undefined;
     rl.drawRectangleRec(r, ROW_ON);
     const typed = std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "";
-    drawFit(g, typed, TEXT, insetW(r), true, textX(r), @as(i32, @intFromFloat(r.y)) + TEXT_DY, look.RETICLE);
+    drawFit(g, typed, TEXT, insetW(r), true, textX(r), @as(i32, @intFromFloat(r.y)) + TEXT_DY, look.UI_FOCUS);
 }
 
 fn backButton(ed: *Editor, g: *game.Game, bx: i32, y: i32, comptime label: []const u8) void {

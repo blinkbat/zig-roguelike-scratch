@@ -10,6 +10,8 @@ pub fn main() !void {
     for (argv[1..], 1..) |a, i| {
         if (std.mem.eql(u8, a, "--edit")) return app.run(if (i + 1 < argv.len) argv[i + 1] else atlas.MAIN);
         if (std.mem.eql(u8, a, "--shot")) return game.shot();
+        if (std.mem.eql(u8, a, "--shot-ui")) return game.shotUi();
+        if (std.mem.eql(u8, a, "--shot-cinema")) return game.shotCinema();
         if (std.mem.eql(u8, a, "--bench")) return game.bench();
     }
     try app.run(null);
@@ -88,6 +90,7 @@ test {
     _ = @import("gfx/fx.zig");
     _ = @import("gfx/pixel.zig");
     _ = @import("gfx/cloud.zig");
+    _ = @import("gfx/cinema.zig");
     _ = @import("gfx/sky.zig");
     _ = @import("gfx/vignette.zig");
     _ = @import("gfx/weather.zig");

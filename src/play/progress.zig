@@ -3,6 +3,7 @@ const attrs = @import("attrs.zig");
 const hero = @import("hero.zig");
 const actor = @import("actor.zig");
 const skillbar = @import("skillbar.zig");
+const items = @import("items.zig");
 const mathx = @import("../core/mathx.zig");
 
 pub const RANKS: u8 = 3;
@@ -151,6 +152,12 @@ pub const State = struct {
     pub fn damageBonus(self: *const State, act: skillbar.Act) i32 {
         if (act.attack() == null) return 0;
         return @as(i32, self.ranks.get(act) -| 1) * RANK_DAMAGE_PERCENT;
+    }
+
+    pub fn skillAttrs(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) attrs.Attrs {
+        var out = equipped;
+        if (act.attack()) |attack| out.damage_bonus.getPtr(gear.scaling(attack)).* += self.damageBonus(act);
+        return out;
     }
 
     pub fn cost(self: *const State, act: skillbar.Act) i32 {

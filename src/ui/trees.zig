@@ -5,6 +5,9 @@ const hero = @import("../play/hero.zig");
 const progress = @import("../play/progress.zig");
 const passives = @import("../play/passives.zig");
 const attrs = @import("../play/attrs.zig");
+const items = @import("../play/items.zig");
+const skillbar = @import("../play/skillbar.zig");
+const damage = @import("../play/damage.zig");
 const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
 const hud = @import("hud.zig");
@@ -14,6 +17,7 @@ const input = @import("../core/input.zig");
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
 pub const View = struct { cursor: usize = 0, zoom: f32 = 1, pan: rl.Vector2 = .{ .x = 0, .y = 0 } };
+pub const Loadout = struct { stats: attrs.Attrs, gear: items.Gear };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
 pub const ZOOM_START: f32 = 2.2;
@@ -34,8 +38,8 @@ const TILE = look.rgb(0x15171c);
 const BORDER = look.rgb(0x34373d);
 const LOCKED = look.rgb(0x656773);
 const AVAILABLE = look.rgb(0xbcc9ba);
-const OWNED = look.rgb(0xc9ac69);
-const FOCUS = look.rgb(0xf2e5ba);
+const OWNED = look.UI_GOLD;
+const FOCUS = look.UI_FOCUS;
 const LINE = look.rgb(0x42413d);
 
 pub fn cellBox(panel: Panel, o: P, class: hero.Class, i: usize, view: View) rl.Rectangle {
@@ -60,11 +64,11 @@ pub fn zoomBox(o: P, increase: bool) rl.Rectangle {
     return look.rect(o.x + @as(i32, if (increase) 664 else 622), o.y + 551, 28, 28);
 }
 
-pub fn draw(panel: Panel, face: *const font.Face, sprites: *const look.Sprites, o: P, class: hero.Class, growth: *const progress.State, view: View, focused: bool, device: input.Device) void {
+pub fn draw(panel: Panel, face: *const font.Face, sprites: *const look.Sprites, o: P, class: hero.Class, growth: *const progress.State, view: View, focused: bool, device: input.Device, loadout: Loadout, surface: menu.Surface) void {
     switch (panel) {
-        .skills => drawSkills(face, sprites, o, class, growth, view.cursor, focused),
+        .skills => drawSkills(face, sprites, o, class, growth, view.cursor, focused, loadout),
         .passives => {
-            drawPassives(face, o, class, growth, view, focused);
+            drawPassives(face, o, class, growth, view, focused, surface);
             treeHints(face, o, device);
         },
     }
@@ -73,8 +77,8 @@ pub fn draw(panel: Panel, face: *const font.Face, sprites: *const look.Sprites, 
 fn hint(face: *const font.Face, x: i32, y: i32, prompts: []const look.Prompt, label: [:0]const u8) void {
     var next = x;
     for (prompts) |prompt| {
-        const w = prompt.width(face, 22);
-        prompt.draw(face, next + @divTrunc(w, 2), y, 22, 1);
+        const w = prompt.width(face, font.BODY);
+        prompt.draw(face, next + @divTrunc(w, 2), y, font.BODY, 1);
         next += w + 4;
     }
     face.draw(label, next + 2, y - 8, font.SMALL, look.DIM);
@@ -163,7 +167,7 @@ fn skillAlpha(class: hero.Class, growth: *const progress.State, s: progress.Skil
     return 0.55;
 }
 
-fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, o: P, class: hero.Class, growth: *const progress.State, cursor: usize, focused: bool) void {
+fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, o: P, class: hero.Class, growth: *const progress.State, cursor: usize, focused: bool, loadout: Loadout) void {
     frame(face, o, "CLASS SKILLS", growth.active_points);
     const skills = progress.skills(class);
     for (skills, 0..) |s, i| if (s.parent) |parent| {
@@ -189,7 +193,7 @@ fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, o: P, class:
         face.drawMid(s.act.name(), mid.x, mid.y + 46, font.SMALL, if (growth.unlocked(s.act) or i == cursor) look.TEXT else LOCKED);
     }
     skillLegend(face, o);
-    skillDetails(face, o, class, growth, skills[cursor], focused);
+    skillDetails(face, o, class, growth, skills[cursor], focused, loadout);
 }
 
 fn skillLegend(face: *const font.Face, o: P) void {
@@ -216,15 +220,6 @@ fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Ski
     return if (growth.unlocked(s.act)) "Ready to upgrade. Costs 1 active point." else "Ready to learn. Costs 1 active point.";
 }
 
-fn compare(face: *const font.Face, o: P, y: i32, label: [:0]const u8, now: ?i32, next: ?i32, percent: bool) void {
-    face.draw(label, o.x + TEXT_X, o.y + y, font.SMALL, look.DIM);
-    for ([_]?i32{ now, next }, 0..) |v, i| {
-        var text: menu.Note(24) = .{};
-        if (v) |n| text.say("{d}{s}", .{ n, if (percent) @as([]const u8, "%") else "" }) else text.say("-", .{});
-        face.drawMid(text.text(), o.x + 959 + @as(i32, @intCast(i)) * 76, o.y + y, font.SMALL, if (i == 1 and next != now) OWNED else look.TEXT);
-    }
-}
-
 fn drawAction(face: *const font.Face, o: P, label: [:0]const u8, enabled: bool, focused: bool) void {
     const box = actionBox(o);
     rl.drawRectangleRec(box, TILE);
@@ -233,27 +228,78 @@ fn drawAction(face: *const font.Face, o: P, label: [:0]const u8, enabled: bool, 
     face.centred(label, mid.x, mid.y, font.BODY, if (enabled) look.TEXT else LOCKED);
 }
 
-fn skillDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, s: progress.Skill, focused: bool) void {
+const Hit = struct { physical: damage.Span, element: ?damage.Span };
+
+fn skillHit(growth: *const progress.State, act: skillbar.Act, loadout: Loadout) ?Hit {
+    const attack = act.attack() orelse return null;
+    const bases = act.equippedBases(loadout.gear);
+    const by = growth.skillAttrs(loadout.stats, loadout.gear, act);
+    const style = loadout.gear.scaling(attack);
+    return .{ .physical = by.span(style, bases.physical()), .element = if (bases.element) |b| by.span(style, b) else null };
+}
+
+fn hitText(act: skillbar.Act, hit: Hit, text: *menu.Note(128)) [:0]const u8 {
+    if (hit.element) |e| {
+        if (hit.physical.hi > 0) {
+            text.say("Damage: {d}-{d} physical, {d}-{d} {s}", .{ hit.physical.lo, hit.physical.hi, e.lo, e.hi, @tagName(act.element().?) });
+        } else {
+            text.say("{s} damage: {d}-{d}", .{ menu.named(act.element().?), e.lo, e.hi });
+        }
+    } else text.say("Physical damage: {d}-{d}", .{ hit.physical.lo, hit.physical.hi });
+    return text.text();
+}
+
+fn skillDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, s: progress.Skill, focused: bool, loadout: Loadout) void {
     const x = o.x + TEXT_X;
-    face.draw("SELECTED SKILL", x, o.y + 150, font.TINY, look.DIM);
-    face.draw(s.act.name(), x, o.y + 177, font.HEAD, look.TEXT);
+    face.draw(s.act.name(), x, o.y + 154, font.HEAD, look.TEXT);
     var rank: menu.Note(64) = .{};
-    rank.say("Rank {d} / {d}", .{ growth.ranks.get(s.act), progress.RANKS });
-    face.draw(rank.text(), x, o.y + 211, font.SMALL, skillInk(class, growth, s));
-    _ = paragraph(face, s.act.desc(), x, o.y + 243, TEXT_W, look.TEXT);
-    rl.drawLine(x, o.y + 365, x + TEXT_W, o.y + 365, BORDER);
-    face.drawMid("CURRENT", o.x + 959, o.y + 376, font.TINY, look.DIM);
     const learned = growth.unlocked(s.act);
-    face.drawMid(if (learned) "NEXT" else "FIRST", o.x + 1035, o.y + 376, font.TINY, look.DIM);
+    if (learned) rank.say("Rank {d} of {d}", .{ growth.ranks.get(s.act), progress.RANKS }) else rank.say("Not learned", .{});
+    face.draw(rank.text(), x, o.y + 188, font.SMALL, skillInk(class, growth, s));
+    const end = paragraph(face, s.act.desc(), x, o.y + 218, TEXT_W, look.TEXT);
+    var top = @max(o.y + 284, end + 12);
+    rl.drawLine(x, top, x + TEXT_W, top, BORDER);
+    top += 12;
+    face.draw(if (learned) "CURRENT RANK" else "FIRST RANK", x, top, 16, look.DIM);
+    top += 21;
+    var text: menu.Note(128) = .{};
+    const hit = skillHit(growth, s.act, loadout);
+    if (hit) |h| {
+        top = paragraph(face, hitText(s.act, h, &text), x, top, TEXT_W, look.TEXT);
+        face.draw("Before critical hits and defenses.", x, top, 16, look.DIM);
+        top += 18;
+    }
+    var usage: menu.Note(64) = .{};
+    const turn: []const u8 = if (s.act.turns() == 0) "Free action" else "1 turn";
+    if (growth.cost(s.act) > 0) usage.say("{d} mana / {s}", .{ growth.cost(s.act), turn }) else usage.say("{s}", .{turn});
+    if (growth.cooldown(s.act) > 0) text.say("{s} / {d}-turn cooldown", .{ usage.text(), growth.cooldown(s.act) }) else text.say("{s}", .{usage.text()});
+    top = paragraph(face, text.text(), x, top, TEXT_W, look.TEXT);
     const maximum = growth.ranks.get(s.act) == progress.RANKS;
     var next = growth.*;
     if (!maximum) next.ranks.getPtr(s.act).* += 1;
-    compare(face, o, 397, "Mana", if (learned) growth.cost(s.act) else null, if (!maximum) next.cost(s.act) else null, false);
-    compare(face, o, 421, "Cooldown", if (learned) growth.cooldown(s.act) else null, if (!maximum) next.cooldown(s.act) else null, false);
-    compare(face, o, 445, "Rank bonus", if (learned) growth.damageBonus(s.act) else null, if (!maximum) next.damageBonus(s.act) else null, true);
-    var turns: menu.Note(64) = .{};
-    turns.say("Use: {d} turn{s}", .{ s.act.turns(), if (s.act.turns() == 1) @as([]const u8, "") else "s" });
-    face.draw(turns.text(), x, o.y + 470, font.SMALL, look.DIM);
+    if (learned and !maximum) {
+        top += 8;
+        text.say("NEXT RANK  {d}", .{next.ranks.get(s.act)});
+        face.draw(text.text(), x, top, 16, OWNED);
+        top += 21;
+        const changes = top;
+        if (next.damageBonus(s.act) != growth.damageBonus(s.act)) {
+            const next_hit = skillHit(&next, s.act, loadout).?;
+            if (std.meta.eql(hit.?, next_hit)) {
+                text.say("Rank damage bonus: +{d}% (was +{d}%)", .{ next.damageBonus(s.act), growth.damageBonus(s.act) });
+            } else _ = hitText(s.act, next_hit, &text);
+            top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
+        }
+        if (next.cost(s.act) != growth.cost(s.act)) {
+            text.say("Mana cost: {d}", .{next.cost(s.act)});
+            top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
+        }
+        if (next.cooldown(s.act) != growth.cooldown(s.act)) {
+            text.say("Cooldown: {d} turns", .{next.cooldown(s.act)});
+            top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
+        }
+        if (top == changes) face.draw("No further stat changes.", x, top, font.SMALL, look.DIM);
+    }
     var reason: menu.Note(128) = .{};
     _ = paragraph(face, skillReason(class, growth, s, &reason), x, o.y + 499, TEXT_W, if (growth.canLearn(class, s.act)) OWNED else look.DIM);
     drawAction(face, o, if (maximum) "Maximum rank" else if (learned) "Upgrade skill" else "Learn skill", growth.canLearn(class, s.act), focused);
@@ -344,11 +390,11 @@ fn passiveLink(layout: Layout, growth: *const progress.State, from: usize, to: u
     }
 }
 
-fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, view: View, focused: bool) void {
+fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, view: View, focused: bool, surface: menu.Surface) void {
     frame(face, o, "PASSIVE TREE", growth.passive_points);
-    face.draw("Small: stat   Medium: interest   Double: capstone", o.x + 44, o.y + 174, font.TINY, look.DIM);
+    face.draw("Small: stat   Medium: interest   Double: capstone", o.x + 44, o.y + 174, 16, look.DIM);
     const layout = wheelLayout(o, view);
-    rl.beginScissorMode(@intFromFloat(layout.box.x), @intFromFloat(layout.box.y), @intFromFloat(layout.box.width), @intFromFloat(layout.box.height));
+    surface.clip(layout.box);
     for (passives.NODES, 0..) |n, i| {
         if (n.ring == 0) passiveLink(layout, growth, passives.HUB, i);
         var buf: [passives.MAX_FEED]usize = undefined;
@@ -374,7 +420,7 @@ fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const 
                 .warrior => "K",
                 .rogue => "A",
                 .wizard => "W",
-            }, @intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), font.TINY, ink);
+            }, @intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), 16, ink);
         } else if (n.seam) |s| {
             for ([_]f32{ -2, 2 }) |dy| rl.drawLineEx(.{ .x = p.x - 3, .y = p.y + dy }, .{ .x = p.x + 3, .y = p.y + dy }, 1, if (allocated) OWNED else armInk(s.to()));
         } else if (allocated) {
@@ -417,10 +463,11 @@ fn passiveLegend(face: *const font.Face, o: P) void {
 }
 
 fn grantRow(face: *const font.Face, o: P, y: i32, grant: passives.Grant) void {
-    face.draw(grant.label(), o.x + TEXT_X, o.y + y, font.BODY, look.TEXT);
-    var amount: menu.Note(24) = .{};
-    amount.say("+{d}{s}", .{ grant.amount, if (grant.isPercent()) @as([]const u8, "%") else "" });
-    face.draw(amount.text(), o.x + TEXT_X + TEXT_W - face.width(amount.text(), font.BODY), o.y + y, font.BODY, OWNED);
+    var text: menu.Note(100) = .{};
+    if (grant.kind == .armour) {
+        text.say("+{d}% physical damage reduction", .{grant.amount});
+    } else text.say("+{d}{s} {s}", .{ grant.amount, if (grant.isPercent()) @as([]const u8, "%") else " to", grant.label() });
+    _ = paragraph(face, text.text(), o.x + TEXT_X, o.y + y, TEXT_W, look.WARD);
 }
 
 fn passiveDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, i: usize, focused: bool) void {
@@ -434,7 +481,7 @@ fn passiveDetails(face: *const font.Face, o: P, class: hero.Class, growth: *cons
         .stat => "STAT NODE",
         .interest => "INTEREST NODE",
         .capstone => "CAPSTONE",
-    }, x, o.y + 150, font.TINY, look.DIM);
+    }, x, o.y + 150, 16, look.DIM);
     face.draw(n.name, x, o.y + 177, font.HEAD, look.TEXT);
     var path: menu.Note(96) = .{};
     if (n.branch) |branch| {
@@ -447,7 +494,7 @@ fn passiveDetails(face: *const font.Face, o: P, class: hero.Class, growth: *cons
     face.draw(path.text(), x, o.y + 214, font.SMALL, armInk(n.arm));
     face.draw(if (origin) "Free class origin" else if (allocated) "Allocated" else if (reachable) "Reachable" else "Distant", x, o.y + 247, font.BODY, nodeInk(growth, i));
     rl.drawLine(x, o.y + 283, x + TEXT_W, o.y + 283, BORDER);
-    face.draw("BONUSES", x, o.y + 304, font.TINY, look.DIM);
+    face.draw("BONUSES", x, o.y + 304, 16, look.DIM);
     if (origin) {
         _ = paragraph(face, "Class attributes already include this starting point. No extra bonus is added here.", x, o.y + 334, TEXT_W, look.TEXT);
     } else {

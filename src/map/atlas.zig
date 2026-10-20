@@ -1356,6 +1356,9 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
     const exit = nd.doors()[0].at;
     var on_shore: usize = 0;
     var wound: f32 = 0;
+    var swamp_trees: usize = 0;
+    var dirt_trees: usize = 0;
+    var inland_trees: usize = 0;
     const RUNS = 50;
     for (0..RUNS) |i| {
         nd.stamp(&lv, 0x57A2D +% i *% 7919);
@@ -1366,10 +1369,23 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
         const walked = dist[grid.Level.idx(exit)];
         try std.testing.expect(walked > 0);
         wound += @as(f32, @floatFromInt(walked)) / @as(f32, @floatFromInt(mathx.dist(at, exit)));
+        var trees: usize = 0;
+        for (lv.tile, 0..) |t, k| {
+            if (t != .swamp_tree) continue;
+            const p = grid.Level.of(k);
+            try std.testing.expect(@import("carve.zig").nearWater(&lv, p, 4));
+            dirt_trees += @intFromBool(@import("../gfx/ground.zig").bedAt(&lv, p) == .dirt);
+            inland_trees += @intFromBool(p.x > 20);
+            trees += 1;
+        }
+        try std.testing.expect(trees > 0);
+        swamp_trees += trees;
     }
     std.debug.print("the strand over {d} rolls: {d} land on the dirt shore, no sand; the exit walks {d:.2} times the straight line\n", .{ RUNS, on_shore, wound / RUNS });
     try std.testing.expect(on_shore * 10 >= RUNS * 9);
     try std.testing.expect(wound / RUNS > 1.1);
+    std.debug.print("the strand: {d} swamp trees near water, {d} on dirt, {d} at inland ponds across {d} rolls\n", .{ swamp_trees, dirt_trees, inland_trees, RUNS });
+    try std.testing.expect(dirt_trees * 10 >= swamp_trees * 8 and inland_trees > 0);
 }
 
 test "the strand reconnects side paths and reliably supplies reachable chests and barrels" {

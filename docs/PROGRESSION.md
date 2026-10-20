@@ -4,14 +4,14 @@
 |---|---|
 | Persistence | Whole run saved; death loses equipment, inventory and progression |
 | Inventory | Item list; no weight or stash |
-| Slots | Left/right hand, helm, chest, belt, gloves, boots, two rings, amulet |
+| Slots | Main hand, offhand, helm, chest, belt, gloves, boots, two rings, amulet |
 | Equipment rules | Attribute requirements, one main-hand item plus an offhand, or a two-handed item |
 | Requirements | Final loadout must remain valid; an item cannot fund its own requirement |
 | Loot | Normal or magic; at most two distinct modifiers |
 | Modifier pool | Life, mana, Strength, Dexterity, Intelligence |
 | Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
 | Gold | Drops from barrels/chests; collected automatically on movement, without an extra turn |
-| Item actions | Pick up, drop, equip and unequip cost one turn; separate confirmation defaults to Cancel |
+| Item actions | Pick up, drop, equip and unequip cost one turn; one direct action, screen stays open |
 | Interact | Includes underfoot and adjacent visible objects; browsing/canceling costs no turn |
 | XP | Foe kills grant XP; each level grants one passive and one active point |
 | Passive tree | 81-node radial graph lifted from Soulslike; three origins, six branches and six bridges |
@@ -77,11 +77,15 @@ Soulslike's purchase-to-level economy is not imported. Selection, zoom and brows
 
 The board opens zoomed in; zoom follows the selected node, with pan and a full-board overview control.
 The sidebar names node tier, branch,
-grants, point cost and allocation state. Separate confirmation still defaults to Cancel. Node-index
+grants, point cost and allocation state. One deliberate action allocates the selected eligible node. Node-index
 layout, grants and feeder wiring participate in the save fingerprint; saves from the old hex tree are
 rejected as incompatible rather than interpreting their allocations as different nodes.
 
 ## Equipment layout references
+
+Item text, comparisons, character stats and inspection follow
+[DATA_PRESENTATION.md](DATA_PRESENTATION.md). Its 2026-10-20 research pass uses Diablo II
+as the complexity target and PoE2 as a reference for separating advanced detail.
 
 The paperdoll follows the actual Diablo II slot arrangement, inspected against this
 [Diablo II inventory screenshot](https://www.game-over.net/review/july2000/diablo2/Screen0.JPG).
@@ -95,13 +99,20 @@ rings beside the body, while D2 puts rings alongside the belt. This implementati
 | Upper center | Helm |
 | Upper center-right | Small amulet slot |
 | Center | Tall chest slot, beneath helm |
-| Outer left / outer right | Tall right-hand weapon / left-hand offhand slots |
+| Outer left / outer right | Tall Main hand / Offhand slots |
 | Lower row, left to right | Gloves, right ring, belt, left ring, boots |
 
-Left/right name the character's hands, so the right-hand weapon appears on the viewer's
-left. Slot size and position follow the reference; inventory remains the agreed list.
-The details table compares worn/item/delta values and reports final loadout requirements
-and any opposite-hand item returned to storage. Placeholder artwork is indexed in
+The main hand is on the viewer's left and the offhand on the right, matching D2/PoE2.
+Use role names in all player-facing labels. The stored `right_hand`/`left_hand` enum
+values remain unchanged. A two-hander marks the offhand with Both hands and the held
+weapon's name; it is not presented as an empty slot. Slot size and position follow
+the reference; inventory remains the agreed list.
+Selected and equipped items use separate cards with only applicable base properties,
+nonzero requirements and actual magic modifiers. Legal equip previews list changed character
+bonuses with signs; unmet requirements show the available attribute after displacement,
+excluding the item's own bonus. Opposite-hand items returned to storage are named.
+The Stats page separates attributes, survival, damage bonuses and progression, with
+percent units on the values. Placeholder artwork is indexed in
 [ART_PROVENANCE.md](ART_PROVENANCE.md).
 
 ## Event log

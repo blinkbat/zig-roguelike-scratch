@@ -41,7 +41,7 @@ const DebugRow = enum {
 const DEBUG_ROWS = std.enums.values(DebugRow);
 const DELETE = menu.REMOVE;
 
-const NAME = "roguelike";
+const NAME = "Cistern";
 const LINE = menu.NOTE_MAX;
 
 const App = struct {
@@ -265,7 +265,7 @@ const App = struct {
         g.st.context = .menu;
         g.st.sets = false;
         g.st.update(rl.getFrameTime());
-        g.st.spend(skillbar.BINDS);
+        g.st.spend(skillbar.CHARACTER);
         game.syncScreen(g, g.st.fullscreen);
         rl.beginDrawing();
         defer rl.endDrawing();
