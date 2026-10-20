@@ -55,10 +55,10 @@ const LIST_W = 510;
 const TEXT_X = 8;
 const SECOND_X = 336;
 /// Sideways distance between cells costs this much more than distance ahead.
-const CELL_ACROSS: f32 = 2;
+pub const CELL_ACROSS: f32 = 2;
 const CARD_W = 246;
 const CARD_GAP = 16;
-const CARD_H = 240;
+const CARD_H = 252;
 const TAB_Y = 76;
 const TAB_W = 184;
 const TAB_H = 34;
@@ -88,7 +88,7 @@ const SLOT_BOX = std.EnumArray(items.Slot, struct { at: P, w: i32, h: i32 }).ini
     .left_ring = .{ .at = .{ .x = 347, .y = 320 }, .w = 54, .h = 54 },
     .boots = .{ .at = .{ .x = 413, .y = 320 }, .w = 96, .h = 96 },
 });
-const SLOT_LABEL = 16;
+const SLOT_LABEL = font.SMALL;
 const SLOT_INSET = 4;
 pub const Nearby = struct {
     kind: enum { loot, chest, door },
@@ -207,6 +207,9 @@ pub const Book = struct {
     fn first(self: *const Book) usize {
         return mathx.reveal(self.top, self.cursor, VISIBLE);
     }
+    fn settledTop(self: *const Book, v: View) usize {
+        return @min(self.first(), self.count(v) -| VISIBLE);
+    }
     /// A scrolling list rather than laid-out cells.
     fn listed(self: *const Book) bool {
         return self.page == .inventory or self.page == .nearby;
@@ -283,10 +286,14 @@ pub const Book = struct {
                 self.message.clear();
                 self.destination_index = 0;
             }
-            self.top = self.first();
+            self.top = self.settledTop(v);
         }
         const o = P{ .x = 0, .y = 0 };
         self.cursor = @min(self.cursor, self.count(v) -| 1);
+        if (local.click) if (local.pointer) |p| if (self.buttonAt(o, p, v)) |b| {
+            local.pressed.insert(b);
+            local.click = false;
+        };
         if (menu.closed(st)) return .close;
         if (!self.direct and (st.hit(.lb) or st.hit(.rb))) {
             self.choose(mathx.stepIn(Page, &PAGES, self.page, if (st.hit(.lb)) -1 else 1, 0));
@@ -325,30 +332,11 @@ pub const Book = struct {
             self.cursor = mathx.nudge(self.cursor, -st.scroll, self.count(v));
         }
         if (st.click) if (st.pointer) |p| {
-            if (look.holds(closeBox(o), p)) return .close;
             if (!self.direct) for (PAGES, 0..) |page, i| if (look.holds(tabBox(o, i), p)) {
                 self.choose(page);
                 self.enter(v);
                 return null;
             };
-            if (self.page == .passives) {
-                for ([_]bool{ false, true }) |increase| if (look.holds(trees.zoomBox(o, increase), p)) {
-                    self.zoomBy(if (increase) trees.ZOOM_STEP else -trees.ZOOM_STEP);
-                    return null;
-                };
-            }
-            if (self.page == .skills and look.holds(trees.bindBox(o), p)) return .{ .bindings = progress.skills(v.class)[self.cursor].act };
-            if (self.page == .inventory and self.selected(v) != null) {
-                if (look.holds(actionBox(o, 2), p)) return .{ .drop = self.cursor };
-                if (look.holds(actionBox(o, 1), p)) {
-                    self.destination_index = mathx.wrap(self.destination_index, 1, self.selected(v).?.kind.slots().len);
-                    return null;
-                }
-            }
-            const primary = if (self.treePanel() != null) trees.actionBox(o) else actionBox(o, 0);
-            if (look.holds(primary, p)) {
-                return self.select(v);
-            }
             for (0..self.count(v)) |i| {
                 if (!self.inWindow(i)) continue;
                 if (self.page == .passives and !trees.onCanvas(o, p)) continue;
@@ -380,6 +368,22 @@ pub const Book = struct {
         }
         return null;
     }
+    /// The button whose box is under `p`, so a click there is that button's press.
+    fn buttonAt(self: *const Book, o: P, p: P, v: View) ?input.Button {
+        if (look.holds(closeBox(o), p)) return menu.BACK;
+        switch (self.page) {
+            .passives => for ([_]bool{ false, true }) |increase| {
+                if (look.holds(trees.zoomBox(o, increase), p)) return if (increase) menu.CHANGE else menu.REMOVE;
+            },
+            .skills => if (look.holds(trees.bindBox(o), p)) return menu.CHANGE,
+            .inventory => if (self.selected(v) != null) for (ACTIONS[1..]) |b| {
+                if (look.holds(actionBox(o, b), p)) return b;
+            },
+            else => {},
+        }
+        const primary = if (self.treePanel() != null) trees.actionBox(o) else actionBox(o, menu.CONFIRM);
+        return if (look.holds(primary, p)) menu.CONFIRM else null;
+    }
     fn cellBox(self: *const Book, o: P, i: usize, v: View) rl.Rectangle {
         const y = o.y + TOP;
         return switch (self.page) {
@@ -396,6 +400,7 @@ pub const Book = struct {
     pub fn draw(self: *const Book, source_face: *const font.Face, sprites: *const look.Sprites, screen: P, v: View) void {
         var shown = self.*;
         shown.cursor = @min(self.cursor, self.count(v) -| 1);
+        shown.top = shown.settledTop(v);
         shown.drawClamped(source_face, sprites, screen, v);
     }
     fn drawClamped(self: *const Book, source_face: *const font.Face, sprites: *const look.Sprites, screen: P, v: View) void {
@@ -413,8 +418,7 @@ pub const Book = struct {
         var xp: menu.Note(100) = .{};
         xp.say("Level  {d}     XP  {d} / {d}", .{ v.growth.level, v.growth.xp, v.growth.needed() });
         face.draw(xp.text(), o.x + RIGHT, o.y + 24, font.BODY, look.TEXT);
-        const st = input.State{ .device = v.device };
-        menu.action(face, closeBox(o), look.Prompt.menuOf(&st, menu.BACK), verbOf(.close));
+        menu.action(face, closeBox(o), look.Prompt.menuOn(v.device, menu.BACK), verbOf(.close));
         if (self.direct) face.draw("NEARBY", o.x + LIST_X, o.y + TAB_Y + (TAB_H - font.HEAD) / 2, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| tab(face, tabBox(o, i), page, self.page == page, v.device);
         if (self.treePanel() == null) rl.drawLine(o.x + DIVIDER_X, o.y + TOP, o.x + DIVIDER_X, o.y + H - 30, look.EDGE);
         if (self.treePanel()) |panel| {
@@ -430,13 +434,13 @@ pub const Book = struct {
         }
         if (self.treePanel() != null) {
             const enabled = if (self.page == .passives) v.growth.canAllocate(self.cursor) else v.growth.canLearn(v.class, progress.skills(v.class)[self.cursor].act);
-            _ = menu.actionPrompt(face, trees.actionBox(o), look.Prompt.menuOf(&st, menu.CONFIRM), if (enabled) 1 else 0.35);
+            _ = menu.actionPrompt(face, trees.actionBox(o), look.Prompt.menuOn(v.device, menu.CONFIRM), if (enabled) 1 else look.FADED_A);
         }
-        if (self.page == .skills) menu.action(face, trees.bindBox(o), look.Prompt.menuOf(&st, menu.CHANGE), if (v.growth.unlocked(progress.skills(v.class)[self.cursor].act)) verbOf(.bindings) else "Bindings");
+        if (self.page == .skills) menu.action(face, trees.bindBox(o), look.Prompt.menuOn(v.device, menu.CHANGE), if (v.growth.unlocked(progress.skills(v.class)[self.cursor].act)) verbOf(.bindings) else "Bindings");
         if (!self.direct) {
             const y = o.y + TAB_Y + TAB_H / 2;
-            look.Prompt.menuOf(&st, .lb).draw(face, o.x + LIST_X + SHOULDER_W / 2, y, font.BODY, 1);
-            look.Prompt.menuOf(&st, .rb).draw(face, o.x + W - LIST_X - SHOULDER_W / 2, y, font.BODY, 1);
+            look.Prompt.menuOn(v.device, .lb).draw(face, o.x + LIST_X + SHOULDER_W / 2, y, font.BODY, 1);
+            look.Prompt.menuOn(v.device, .rb).draw(face, o.x + W - LIST_X - SHOULDER_W / 2, y, font.BODY, 1);
         }
     }
 
@@ -471,18 +475,18 @@ pub const Book = struct {
                         face.centred(face.fit(&fitted, weapon.name(), font.SMALL, inner, false), mid.x, mid.y + 12, font.SMALL, look.DIM);
                     } else {
                         const name = if (it) |a| (if (slot == .right_hand or slot == .left_hand) a.name() else menu.named(a.kind)) else "-";
-                        face.centred(face.fit(&fitted, name, font.SMALL, inner, false), mid.x, mid.y + 8, font.SMALL, if (it != null and it.?.magical()) look.WARD else look.TEXT);
+                        face.centred(face.fit(&fitted, name, font.SMALL, inner, false), mid.x, mid.y + 8, font.SMALL, look.itemInk(it != null and it.?.magical()));
                     }
                 },
                 .inventory => {
                     const it = v.inventory.bag[i];
                     const slots = it.kind.slots();
-                    face.draw(it.name(), x + TEXT_X, y + 4, font.BODY, if (it.magical()) look.WARD else look.TEXT);
+                    face.draw(it.name(), x + TEXT_X, y + 4, font.BODY, look.itemInk(it.magical()));
                     face.draw(if (items.spec(it.kind).two_handed) "Both hands" else if (slots.len > 1) menu.named(it.kind) else slots[0].name(), x + SECOND_X, y + 5, font.SMALL, look.DIM);
                 },
                 .nearby => {
                     const n = v.nearby[i];
-                    face.draw(n.label(), x + TEXT_X, y + 4, font.BODY, if (n.item != null and n.item.?.magical()) look.WARD else look.TEXT);
+                    face.draw(n.label(), x + TEXT_X, y + 4, font.BODY, look.itemInk(n.item != null and n.item.?.magical()));
                     face.draw(n.command().verb(), x + SECOND_X, y + 5, font.SMALL, look.DIM);
                 },
                 .passives, .skills, .stats => unreachable,
@@ -507,11 +511,11 @@ pub const Book = struct {
                 var held: menu.Note(128) = .{};
                 held.say("{s} uses both hands. Equipping an offhand returns it to inventory.", .{weapon.name()});
                 _ = trees.paragraph(face, held.text(), x, y + 42, CARD_W * 2 + CARD_GAP, look.DIM);
-                menu.action(face, actionBox(o, 0), look.Prompt.menuOf(&.{ .device = v.device }, menu.CONFIRM), "Inventory");
+                menu.action(face, actionBox(o, menu.CONFIRM), look.Prompt.menuOn(v.device, menu.CONFIRM), "Inventory");
                 return;
             };
             face.draw(if (self.page == .nearby) v.nearby[self.cursor].label() else "Empty slot", x, y, font.HEAD, look.TEXT);
-            menu.action(face, actionBox(o, 0), look.Prompt.menuOf(&.{ .device = v.device }, menu.CONFIRM), if (self.page == .nearby) v.nearby[self.cursor].command().verb() else "Inventory");
+            menu.action(face, actionBox(o, menu.CONFIRM), look.Prompt.menuOn(v.device, menu.CONFIRM), if (self.page == .nearby) v.nearby[self.cursor].command().verb() else "Inventory");
             return;
         };
         const slots = it.kind.slots();
@@ -540,24 +544,26 @@ pub const Book = struct {
                 _ = trees.paragraph(face, reason.text(), x, at, CARD_W * 2 + CARD_GAP, LOSS);
             }
         }
-        const st = input.State{ .device = v.device };
-        menu.action(face, actionBox(o, 0), look.Prompt.menuOf(&st, menu.CONFIRM), switch (self.page) {
+        menu.action(face, actionBox(o, menu.CONFIRM), look.Prompt.menuOn(v.device, menu.CONFIRM), switch (self.page) {
             .equipment => verbOf(.unequip),
             .inventory => verbOf(.equip),
             .nearby => verbOf(.pickup),
             .stats, .passives, .skills => unreachable,
         });
         if (self.page == .inventory) {
-            if (slots.len > 1) menu.action(face, actionBox(o, 1), look.Prompt.menuOf(&st, menu.CHANGE), slotLabel(slot));
-            menu.action(face, actionBox(o, 2), look.Prompt.menuOf(&st, menu.REMOVE), verbOf(.drop));
+            if (slots.len > 1) menu.action(face, actionBox(o, menu.CHANGE), look.Prompt.menuOn(v.device, menu.CHANGE), slotLabel(slot));
+            menu.action(face, actionBox(o, menu.REMOVE), look.Prompt.menuOn(v.device, menu.REMOVE), verbOf(.drop));
         }
     }
 };
 fn tabBox(o: P, i: usize) rl.Rectangle {
     return look.rect(o.x + TABS_X + @as(i32, @intCast(i)) * (TAB_W + TAB_GAP), o.y + TAB_Y, TAB_W, TAB_H);
 }
-fn actionBox(o: P, i: usize) rl.Rectangle {
-    return look.rect(o.x + RIGHT + @as(i32, @intCast(i)) * (ACTION_W + ACTION_GAP), o.y + H - 82, ACTION_W, ACTION_H);
+/// The detail panel's buttons, left to right.
+const ACTIONS = [_]input.Button{ menu.CONFIRM, menu.CHANGE, menu.REMOVE };
+fn actionBox(o: P, b: input.Button) rl.Rectangle {
+    const i: i32 = @intCast(std.mem.indexOfScalar(input.Button, &ACTIONS, b).?);
+    return look.rect(o.x + RIGHT + i * (ACTION_W + ACTION_GAP), o.y + H - 82, ACTION_W, ACTION_H);
 }
 fn closeBox(o: P) rl.Rectangle {
     return look.rect(o.x + W - 132, o.y + 18, 108, 32);
@@ -578,9 +584,9 @@ fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: in
     if (!device.pad()) {
         const prompt = look.Prompt{ .key = page.shortcut().?.caption() };
         const w = prompt.width(face, font.BODY);
-        const left = m.x - @divTrunc(w + 8 + face.width(text, font.BODY), 2);
+        const left = m.x - @divTrunc(w + menu.PROMPT_GAP + face.width(text, font.BODY), 2);
         prompt.draw(face, left + @divTrunc(w, 2), m.y, font.BODY, if (on) 1 else 0.7);
-        face.draw(text, left + w + 8, m.y - font.BODY / 2, font.BODY, ink);
+        face.draw(text, left + w + menu.PROMPT_GAP, m.y - font.BODY / 2, font.BODY, ink);
     } else face.centred(text, m.x, m.y, font.BODY, ink);
 }
 fn offhandWeapon(gear: items.Gear, slot: items.Slot) ?items.Item {
@@ -609,10 +615,11 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
         return;
     };
     const spec = items.spec(it.kind);
-    const ink = if (it.magical()) look.WARD else look.TEXT;
+    const ink = look.itemInk(it.magical());
     face.drawMid(it.name(), mid, y + 32, font.HEAD, ink);
     face.drawMid(if (slot == .right_hand) (if (spec.two_handed) "Two-handed" else "One-handed") else slot.name(), mid, y + 62, font.SMALL, look.DIM);
-    var top = y + 92;
+    face.drawMid(it.flavor(), mid, y + 82, font.SMALL, look.DIM);
+    var top = y + 104;
     var line: menu.Note(120) = .{};
     if (spec.damage) |hit| {
         line.say("Physical damage: {d}-{d}", .{ hit.lo, hit.hi });
@@ -768,7 +775,7 @@ test "character actions need one press and tabs are directly reachable" {
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, v).? == .close);
     book.choose(.inventory);
     const surface = menu.Surface.of(screen, SIZE);
-    const box = actionBox(.{ .x = 0, .y = 0 }, 0);
+    const box = actionBox(.{ .x = 0, .y = 0 }, menu.CONFIRM);
     const p = P{ .x = @intFromFloat(surface.offset.x + (box.x + 20) * surface.scale), .y = @intFromFloat(surface.offset.y + (box.y + 20) * surface.scale) };
     try std.testing.expect(book.step(&.{ .click = true, .pointer = p }, screen, v).? == .equip);
     book.choose(.skills);
@@ -778,6 +785,22 @@ test "character actions need one press and tabs are directly reachable" {
     try std.testing.expectEqual(Page.skills, book.page);
     try std.testing.expectEqual(@as(usize, 2), book.cursor);
     std.debug.print("character actions: direct equip/drop, shoulder tabs, one-step close, scaled mouse hit; commands leave inventory untouched\n", .{});
+}
+
+test "the inventory list scrolls back when the bag shrinks" {
+    var inv = items.Inventory{};
+    for (0..VISIBLE + 6) |_| try std.testing.expect(inv.add(.{ .kind = .cap }));
+    var growth = progress.State.of(.archer);
+    const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = growth.attributes(.archer) };
+    const screen = P{ .x = 1600, .y = 900 };
+    var book = Book{ .page = .inventory, .cursor = VISIBLE + 5 };
+    _ = book.step(&.{}, screen, v);
+    try std.testing.expectEqual(@as(usize, 6), book.top);
+    for (0..6) |_| _ = inv.remove(inv.n - 1);
+    _ = book.step(&.{}, screen, v);
+    try std.testing.expectEqual(@as(usize, 0), book.top);
+    try std.testing.expectEqual(@as(usize, VISIBLE - 1), book.cursor);
+    std.debug.print("inventory scroll: top 6 of {d}, back to {d} once {d} remain\n", .{ VISIBLE + 6, book.top, inv.n });
 }
 
 test "item card requirements exclude the item itself and every displaced hand" {

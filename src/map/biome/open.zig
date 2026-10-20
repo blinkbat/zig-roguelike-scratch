@@ -25,8 +25,7 @@ pub fn shape(lv: *grid.Level, _: *mathx.Rng, _: u64, p: Params) void {
 }
 
 fn dressed(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
-    shape(lv, rng, seed, p);
-    carve.dress(p, lv, rng, seed);
+    @import("../procgen.zig").lay(@This(), lv, rng, seed, p);
 }
 
 test "a field strews lone boulders, open ground all round each" {

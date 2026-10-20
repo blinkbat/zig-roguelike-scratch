@@ -128,12 +128,7 @@ fn stackBarrels(lv: *grid.Level, r: Room, rng: *mathx.Rng, most: u32) void {
         n += 1;
     }
     var left = rng.below(most + 1);
-    while (left > 0 and n > 0) : (left -= 1) {
-        const k = rng.below(@intCast(n));
-        lv.putBarrel(spots[k]);
-        n -= 1;
-        spots[k] = spots[n];
-    }
+    while (left > 0 and n > 0) : (left -= 1) lv.putBarrel(rng.takeFrom(P, &spots, &n));
 }
 
 fn besideDoor(lv: *const grid.Level, r: Room, p: P) bool {

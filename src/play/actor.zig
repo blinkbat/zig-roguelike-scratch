@@ -90,13 +90,12 @@ pub fn roomFor(bodies: usize, k: Kind) bool {
 
 /// `bleeds`: percent chance a blow that leaves its mark alive opens a bleed.
 pub const Strike = struct {
-    lo: i32,
-    hi: i32,
+    hit: damage.Base,
     verb: [:0]const u8,
     bleeds: u32 = 0,
 
     pub fn roll(s: Strike, rng: *mathx.Rng) i32 {
-        return rng.range(s.lo, s.hi);
+        return s.hit.roll(rng);
     }
 };
 
@@ -135,17 +134,17 @@ pub const FLIT: f32 = 0.33;
 pub const FRIGHT_REACH: i32 = 5;
 pub const FLEE_TURNS: u8 = 4;
 
-const SLAM = Blow{ .strike = .{ .lo = 2, .hi = 5, .verb = "slams" } };
+const SLAM = Blow{ .strike = .{ .hit = .{ .lo = 2, .hi = 5 }, .verb = "slams" } };
 
 pub fn row(k: Kind) Row {
     return switch (k) {
         inline .archer, .wizard, .knight => |h| heroRow(@field(heroes.Class, @tagName(h))),
-        .rat => .{ .name = "rat", .movement = .ground, .foe_type = .beast, .hp = 6, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "bites" } } },
+        .rat => .{ .name = "rat", .movement = .ground, .foe_type = .beast, .hp = 6, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "bites" } } },
         .slime => .{ .name = "slime", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half },
         .slime_half => smaller(.slime, "half slime", .slime_quarter),
         .slime_quarter => smaller(.slime_half, "quarter slime", null),
         .bloat => .{ .name = "bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .burst, .flits = true },
-        .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .lo = 1, .hi = 3, .verb = "stabs", .bleeds = 30 } }, .flees = true },
+        .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .bleeds = 30 } }, .flees = true },
     };
 }
 

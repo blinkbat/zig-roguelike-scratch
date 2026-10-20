@@ -209,7 +209,7 @@ const MOTES: usize = 320;
 /// Capacity for every body's turn effects and hero hit, plus a burst or chain jumps.
 pub const DUE: usize = actor.MAX * 6 + 2;
 
-pub const Burst = struct { at: mathx.P, area: glacial.Cone, element: damage.Element };
+pub const Burst = struct { at: mathx.P, area: glacial.Burst, element: damage.Element };
 
 pub const Zap = struct { from: [2]f32, to: [2]f32 };
 
@@ -669,7 +669,7 @@ pub const Fx = struct {
     pub fn trail(self: *Fx, lv: *const grid.Level, at: [2]f32, dir: [2]f32, act: skillbar.Act, age: f32) void {
         const element = trailed(act) orelse return;
         const fiery = element == .fire;
-        const life: f32 = if (fiery) 0.24 else 0.18;
+        const life = missileOf(element).trail_s;
         if (age >= life) return;
         const slot = self.head;
         self.emit(.{
@@ -949,13 +949,27 @@ fn pxScale(cell: f32) f32 {
     return cell / look.SPRITE_PX;
 }
 
+/// A trailed missile's light by element, and how long the motes it sheds live; a fireball's light reaches further.
+const Missile = struct { radius: f32, gain: f32, trail_s: f32 };
+const FIRE_MISSILE = Missile{ .radius = 1.6, .gain = 0.85, .trail_s = 0.24 };
+const COLD_MISSILE = Missile{ .radius = 1.6, .gain = 0.35, .trail_s = 0.18 };
+const FIREBALL_REACH: f32 = 2.8;
+
+fn missileOf(element: damage.Element) Missile {
+    return switch (element) {
+        .fire => FIRE_MISSILE,
+        .cold => COLD_MISSILE,
+        .chaos, .lightning => unreachable,
+    };
+}
+
 pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
-    const element = trailed(act) orelse return null;
+    const m = missileOf(trailed(act) orelse return null);
     return .{
         .at = .{ at[0], at[1], STRIKE_Z },
         .col = look.arrowInk(act),
-        .radius = if (act == .fireball) 2.8 else 1.6,
-        .gain = if (element == .fire) 0.85 else 0.35,
+        .radius = if (act == .fireball) FIREBALL_REACH else m.radius,
+        .gain = m.gain,
     };
 }
 

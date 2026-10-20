@@ -8,14 +8,13 @@ const P = mathx.P;
 
 pub const COST: i32 = 20;
 pub const COOLDOWN: u8 = 3;
-pub const DMG_LO: i32 = 2;
-pub const DMG_HI: i32 = 4;
 pub const CHANCE: u32 = 50;
 pub const VERB = "shield-bashes";
 pub const TAKES = clock.STUNNED;
 pub const DESCRIPTION = std.fmt.comptimePrint("Strike an adjacent foe and knock it back a tile. {s}.", .{clock.stunNote(CHANCE)});
+pub const FLAVOR = "Oak and iron make a fine argument.";
 
-pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };
+pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const procs = damage.chance(CHANCE);
 pub const afflict = clock.stuns;

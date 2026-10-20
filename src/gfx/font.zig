@@ -23,7 +23,7 @@ comptime {
 const ASCII_LO: i32 = ' ';
 const ASCII_N: usize = '~' + 1 - ASCII_LO;
 const SYMBOLS_MAX: usize = 16;
-const ELLIPSIS = "...";
+pub const ELLIPSIS = "...";
 
 /// Until `load` succeeds, raylib's built-in font stands in.
 pub const Face = struct {

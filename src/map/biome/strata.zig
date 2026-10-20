@@ -51,7 +51,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, pm: Params) void {
     const n: usize = pm.sectors;
     var order: [SECTORS_MAX * SECTORS_MAX]usize = undefined;
     for (order[0 .. n * n], 0..) |*o, i| o.* = i;
-    shuffle(rng, order[0 .. n * n]);
+    rng.shuffle(usize, order[0 .. n * n]);
     const sw = @divTrunc(grid.W - 2 * BORDER, @as(i32, @intCast(n)));
     const sh = @divTrunc(grid.H - 2 * BORDER, @as(i32, @intCast(n)));
     for (order[0 .. n * n]) |s| {
@@ -82,15 +82,6 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, pm: Params) void {
         const p = grid.Level.of(i);
         const inner = grid.Level.edgeDist(p) >= BORDER;
         lv.tile[i] = if (inner and depth[i] > OPEN_OVER) pal.open else pal.solid;
-    }
-}
-
-fn shuffle(rng: *mathx.Rng, xs: []usize) void {
-    var i = xs.len;
-    while (i > 1) {
-        i -= 1;
-        const j = rng.below(@intCast(i + 1));
-        std.mem.swap(usize, &xs[i], &xs[j]);
     }
 }
 

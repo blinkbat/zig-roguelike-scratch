@@ -299,8 +299,19 @@ fn captions(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const u8 {
     return out;
 }
 
+/// Drawn text marks a glyph's caption between these; `prompt_text` draws it as a key, mouse or arrows icon.
+pub const GLYPH_OPEN = '\x1e';
+pub const GLYPH_CLOSE = '\x1f';
+pub const WHEEL = "wheel";
+pub const ARROWS = "arrows";
+/// Key captions a prompt draws as an arrow.
+pub const ARROW_KEYS = [_]struct { caption: [:0]const u8, d: mathx.Dir }{
+    .{ .caption = keyName(.up), .d = .n },
+    .{ .caption = keyName(.down), .d = .s },
+};
+
 pub fn glyphCaption(comptime text: []const u8) [:0]const u8 {
-    return "\x1e" ++ text ++ "\x1f";
+    return std.fmt.comptimePrint("{c}{s}{c}", .{ GLYPH_OPEN, text, GLYPH_CLOSE });
 }
 
 fn keyGlyph(comptime key: rl.KeyboardKey) [:0]const u8 {
@@ -435,6 +446,9 @@ const RadialStepper = struct {
     direction: ?rl.Vector2 = null,
     wait: f32 = 0,
 
+    /// Cosine of 40 degrees: a bearing turned further than this is a fresh press, not a hold.
+    const TURN_COS: f32 = 0.766;
+
     fn tick(self: *RadialStepper, dt: f32, x: f32, y: f32) ?rl.Vector2 {
         const magnitude = std.math.hypot(x, y);
         if (!stickWalks(magnitude, self.direction != null)) {
@@ -442,7 +456,7 @@ const RadialStepper = struct {
             return null;
         }
         const next = rl.Vector2{ .x = x / magnitude, .y = y / magnitude };
-        const turned = if (self.direction) |old| old.x * next.x + old.y * next.y < 0.766 else true;
+        const turned = if (self.direction) |old| old.x * next.x + old.y * next.y < TURN_COS else true;
         if (turned) {
             self.direction = next;
             self.wait = Stepper.DAS;
@@ -486,8 +500,14 @@ pub const CharacterPage = enum {
     }
 };
 
-/// The passive tree's keyboard zoom and overview; browsing walks and panning shifts the walk.
+/// The passive tree's zoom and overview; browsing walks and panning shifts the walk.
 pub const TreeKeys = struct {
+    /// The right stick pans past this deflection; the d-pad zooms; Inspect's button shows the whole tree.
+    const PAN_DEADZONE: f32 = 0.18;
+    const PAD_ZOOM_IN: rl.GamepadButton = .left_face_up;
+    const PAD_ZOOM_OUT: rl.GamepadButton = .left_face_down;
+    pub const PAD_OVERVIEW: Button = .inspect;
+    pub const PAN_CAPTION = keyName(SHIFT_KEYS[0]);
     const ZOOM_IN = [2]rl.KeyboardKey{ .equal, .kp_add };
     const ZOOM_OUT = [2]rl.KeyboardKey{ .minus, .kp_subtract };
     const PAGE_IN: rl.KeyboardKey = .page_up;
@@ -664,9 +684,9 @@ pub const State = struct {
             if (live) |at| {
                 const px = rl.getGamepadAxisMovement(at, .right_x);
                 const py = rl.getGamepadAxisMovement(at, .right_y);
-                if (std.math.hypot(px, py) >= 0.18) self.tree.pan = .{ .x = px, .y = py };
-                self.tree.zoom = @as(f32, if (rl.isGamepadButtonDown(at, .left_face_up)) 1 else 0) - @as(f32, if (rl.isGamepadButtonDown(at, .left_face_down)) 1 else 0);
-                self.tree.reset = self.padHit(at, .right_thumb, &before);
+                if (std.math.hypot(px, py) >= TreeKeys.PAN_DEADZONE) self.tree.pan = .{ .x = px, .y = py };
+                self.tree.zoom = @as(f32, if (rl.isGamepadButtonDown(at, TreeKeys.PAD_ZOOM_IN)) 1 else 0) - @as(f32, if (rl.isGamepadButtonDown(at, TreeKeys.PAD_ZOOM_OUT)) 1 else 0);
+                self.tree.reset = self.padHit(at, TreeKeys.PAD_OVERVIEW.pad(), &before);
             }
             if (pan_keys) {
                 const p = heldWalk(&WALKS, false);
@@ -688,10 +708,12 @@ pub const State = struct {
         var settle: f32 = 0;
         const was_stick = self.stick;
         self.stick = stickWalks(defl, self.stick);
+        var muted = false;
         if (!self.stick) {
             defl = 0;
-            const digital = if (!on_tree) (if (live) |at| dpadWalk(at) else null) else null;
-            if (digital orelse (if (pan_keys or alt_down) null else keyWalk(self.typing))) |p| {
+            const source = walkSource(on_tree, pan_keys, if (live) |at| dpadWalk(at) else null, if (alt_down) null else keyWalk(self.typing));
+            muted = source.muted;
+            if (source.p) |p| {
                 const d = if (self.lean) leanOf(mathx.stepDir(p).?).delta() else p;
                 defl = 1;
                 heading = mathx.headingOf(@floatFromInt(d.x), @floatFromInt(d.y));
@@ -699,6 +721,7 @@ pub const State = struct {
             }
         }
         self.walk = self.step.tick(dt, defl, heading, settle);
+        if (muted) self.walk = null;
         self.treeWalk(dt, x, y);
         if (!was_focused) self.holdWalk();
         self.typing = false;
@@ -860,9 +883,9 @@ pub const Desk = struct {
                 if (k == .up or k == .down or k == .left or k == .right) break;
             } else @compileError("no arrow pans " ++ @tagName(w.d));
         }
-        break :blk glyphCaption(mouseName(GRAB_BUTTON)) ++ " drag / " ++ glyphCaption(letters(&PAN_KEYS)) ++ " / " ++ glyphCaption("arrows");
+        break :blk glyphCaption(mouseName(GRAB_BUTTON)) ++ " drag / " ++ glyphCaption(letters(&PAN_KEYS)) ++ " / " ++ glyphCaption(ARROWS);
     };
-    pub const WHEEL_CAPTION = glyphCaption("wheel");
+    pub const WHEEL_CAPTION = glyphCaption(WHEEL);
     pub const GRAPH_CAPTION = keyGlyph(GRAPH_KEY);
     pub const GO_CAPTION = keyGlyph(GO_KEY);
     pub const RENAME_CAPTION = keyGlyph(RENAME_KEY);
@@ -1086,6 +1109,13 @@ fn dpadWalk(at: i32) ?mathx.P {
     return stepOf(p);
 }
 
+/// On the tree the d-pad zooms and Shift pans; they still latch the stepper so leaving the tree does not walk.
+fn walkSource(on_tree: bool, pan_keys: bool, pad: ?mathx.P, keys: ?mathx.P) struct { p: ?mathx.P, muted: bool } {
+    if (!on_tree) return .{ .p = pad orelse keys, .muted = false };
+    if (!pan_keys) if (keys) |k| return .{ .p = k, .muted = false };
+    return .{ .p = pad orelse keys, .muted = true };
+}
+
 fn keyWalk(typing: bool) ?mathx.P {
     return stepOf(heldWalk(&WALKS, typing));
 }
@@ -1102,7 +1132,7 @@ fn heldWalk(walks: []const Walk, typing: bool) mathx.P {
     return p;
 }
 
-fn mouseName(comptime b: rl.MouseButton) [:0]const u8 {
+pub fn mouseName(comptime b: rl.MouseButton) [:0]const u8 {
     return switch (b) {
         .left => "LMB",
         .right => "RMB",
@@ -1300,6 +1330,22 @@ test "a held diagonal let go one key at a time steps nowhere, and a new way walk
         if (s.tick(dt, 1, mathx.Dir.s.heading(), settle) != null) steps += 1;
     }
     try std.testing.expect(steps > 0);
+}
+
+test "a d-pad zoom or Shift pan held on the tree does not walk after the tree closes" {
+    const up = mathx.Dir.n.delta();
+    const dt = mathx.FRAME_DT;
+    for ([_][2]?mathx.P{ .{ up, null }, .{ null, up } }, [_]bool{ false, true }) |held, pan| {
+        var s = Stepper{};
+        const on = walkSource(true, pan, held[0], held[1]);
+        try std.testing.expect(on.muted and on.p != null);
+        for (0..30) |_| _ = s.tick(dt, 1, mathx.Dir.n.heading(), Stepper.SETTLE);
+        s.hold();
+        const off = walkSource(false, false, held[0], held[1]);
+        try std.testing.expect(!off.muted);
+        for (0..30) |_| try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(dt, 1, mathx.Dir.n.heading(), Stepper.SETTLE));
+    }
+    try std.testing.expect(!walkSource(true, false, up, up).muted);
 }
 
 test "every direction walks on exactly one entry, and every bound key a name types into is taken from its button" {

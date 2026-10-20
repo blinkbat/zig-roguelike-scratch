@@ -17,8 +17,11 @@ const MEANDER: f32 = 0.55;
 const BEND_MAX: f32 = 1.1;
 const MEANDER_STEPS: usize = 4 * (grid.W + grid.H);
 
-/// Each noise field's own, so no two fields of one seed move together.
+/// Each noise field's and RNG stream's own, so no two of one seed move together.
 pub const Salt = enum(u64) {
+    /// Also the stride between features' seeds.
+    features = 0xFEA7_0BE5,
+    branches = 0xB2A6_C4E5,
     tall_grass = 0x7A11,
     border = 0xB02D,
     cavern = 0xCA4E,

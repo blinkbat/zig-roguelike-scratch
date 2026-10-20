@@ -26,11 +26,6 @@ pub const Base = struct {
     pub fn roll(b: Base, rng: *mathx.Rng) i32 {
         return rng.range(b.lo, b.hi);
     }
-
-    /// A skill description's "lo-hi base [element ]damage".
-    pub fn text(comptime b: Base, comptime el: ?Element) []const u8 {
-        return std.fmt.comptimePrint("{d}-{d} base {s}damage", .{ b.lo, b.hi, if (el) |e| @tagName(e) ++ " " else "" });
-    }
 };
 
 /// The least and most a scaled roll deals.

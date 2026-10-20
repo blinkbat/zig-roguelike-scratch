@@ -281,7 +281,7 @@ pub const Sprites = struct {
     pub fn endMirror(self: *const Sprites, outer: u32) Mirrors {
         rl.gl.rlDrawRenderBatchActive();
         rl.gl.rlEnableBackfaceCulling();
-        rl.gl.rlEnableFramebuffer(outer);
+        endTarget(outer);
         return .{ .live = self.mirror.?.texture, .memory = self.mirror_memory.?.texture };
     }
 
@@ -627,12 +627,18 @@ pub fn beginTarget(target: *?rl.RenderTexture2D, screen: mathx.P, outer: u32, cl
         }
     }
     if (target.* == null) target.* = rl.loadRenderTexture(screen.x, screen.y) catch {
-        rl.gl.rlEnableFramebuffer(outer);
+        endTarget(outer);
         return false;
     };
     rl.gl.rlEnableFramebuffer(target.*.?.id);
     rl.clearBackground(clear);
     return true;
+}
+
+/// Back to `outer` after `beginTarget`, with what was drawn flushed into the target.
+pub fn endTarget(outer: u32) void {
+    rl.gl.rlDrawRenderBatchActive();
+    rl.gl.rlEnableFramebuffer(outer);
 }
 
 /// A render texture over the whole frame, flipped the right way up.
@@ -902,6 +908,9 @@ pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
+/// Gold on the ground, in the reticle's gold, and an item, in `itemInk`.
+pub const COIN_MARK = "$";
+pub const DROP_MARK = "*";
 
 /// What a picture of the whole map marks a cell with over its tile, a door before a barrel.
 pub const Mark = enum {
@@ -967,6 +976,11 @@ pub const AIM_PATH = fade(GOLD, 0.28);
 pub const COLD = rgb(0x8cddf5);
 pub const PIN = rgb(0xc8c2b4);
 pub const WARD = rgb(0x6fa8f0);
+
+/// An item's name and mark: magic ones in the ward's blue.
+pub fn itemInk(magical: bool) rl.Color {
+    return if (magical) WARD else TEXT;
+}
 const AIM_AREA_A: f32 = 0.24;
 pub const RETICLE = rgb(0xe8c25a);
 
@@ -1254,6 +1268,11 @@ pub const Prompt = union(enum) {
         return if (st.device.pad()) of(st, b) else .{ .key = st.caption(b) };
     }
 
+    /// A menu button as `device` shows it, outside any live input state.
+    pub fn menuOn(device: input.Device, b: input.Button) Prompt {
+        return menuOf(&.{ .device = device }, b);
+    }
+
     pub fn of(st: *const input.State, b: input.Button) Prompt {
         if (!st.device.pad()) return .{ .key = st.slotCaption(b) };
         return switch (b.pad()) {
@@ -1329,7 +1348,9 @@ pub const Prompt = union(enum) {
             },
             .key => |s| {
                 keycap(box, alpha);
-                const direction: ?mathx.Dir = if (std.mem.eql(u8, s, "Up")) .n else if (std.mem.eql(u8, s, "Down")) .s else if (std.mem.eql(u8, s, "Left")) .w else if (std.mem.eql(u8, s, "Right")) .e else null;
+                const direction: ?mathx.Dir = for (input.ARROW_KEYS) |a| {
+                    if (std.mem.eql(u8, s, a.caption)) break a.d;
+                } else null;
                 if (direction) |d| promptArrow(d, cx, cy - @divTrunc(h, 12), @divTrunc(h, 2), fade(PROMPT_INK, alpha)) else face.centred(s, cx, cy - @divTrunc(h, 12), labelPx(h), fade(PROMPT_INK, alpha));
             },
         }
@@ -1446,6 +1467,8 @@ pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 
 /// The alpha below which nothing is drawn.
 pub const CLEAR_A: f32 = 0.004;
+/// The alpha of a skill or action that cannot be used now.
+pub const FADED_A: f32 = 0.35;
 
 /// What every fragment shader opens with: raylib's inputs and output, `CLEAR_A`, the map's size in cells and `sky.LUMA`.
 pub const FS_HEAD = std.fmt.comptimePrint(
@@ -1460,13 +1483,16 @@ pub const FS_HEAD = std.fmt.comptimePrint(
     \\
 , .{ CLEAR_A, grid.W, grid.H, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2] });
 
-/// The map's place on screen; `cellAtFrag()` is the map position under the fragment, in cells.
+/// The map's place on screen; `cellAtFrag()` is the map position under the fragment, in cells, and `cellAtPixel` under a y-down screen pixel.
 pub const MAP_VIEW_FS =
     \\uniform vec2 origin;
     \\uniform float cell;
     \\uniform vec2 screen;
+    \\vec2 cellAtPixel(vec2 pixel) {
+    \\    return (pixel - origin) / cell;
+    \\}
     \\vec2 cellAtFrag() {
-    \\    return (vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y) - origin) / cell;
+    \\    return cellAtPixel(vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y));
     \\}
     \\
 ;

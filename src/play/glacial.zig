@@ -7,8 +7,6 @@ const damage = @import("damage.zig");
 const P = mathx.P;
 
 pub const COST: i32 = 20;
-pub const COLD_LO: i32 = 2;
-pub const COLD_HI: i32 = 4;
 pub const CHANCE: i32 = 50;
 pub const TURNS: u8 = 3;
 pub const RANGE: i32 = 2;
@@ -19,6 +17,7 @@ pub const ELEMENT: damage.Element = .cold;
 /// Its chance to chill, as every cold skill's description says it.
 pub const CHILL_NOTE = std.fmt.comptimePrint("{d}% chill (cold resistance lowers chance)", .{CHANCE});
 pub const DESCRIPTION = std.fmt.comptimePrint("An arrow bursts into a {d}-tile cone of cold. {s}: skip 1 in {d} turns for {d} turns.", .{ RANGE, CHILL_NOTE, CYCLE, TURNS });
+pub const FLAVOR = "Winter, fletched and loosed.";
 
 pub const Chill = struct {
     turns: u8 = 0,
@@ -37,7 +36,7 @@ pub const Chill = struct {
     }
 };
 
-pub const BASE = damage.Base{ .lo = COLD_LO, .hi = COLD_HI };
+pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub fn chance(resist: i16) u32 {
     return @intCast(@min(mathx.PERCENT, damage.resisted(CHANCE, resist)));
@@ -51,20 +50,23 @@ pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.chill.apply();
 }
 
-pub const Cone = grid.Area(grid.Cells.square(RANGE));
+/// The widest any burst reaches, this cone's, a fireball's or a nova's; `Burst` holds the cells of one.
+pub const BURST_MAX: i32 = 2;
+pub const Burst = grid.Area(grid.Cells.square(BURST_MAX));
 
 fn castR(range: i32) i32 {
     return mathx.roundTiesDown(@as(f32, @floatFromInt(range)) * std.math.sqrt2);
 }
 
 comptime {
-    for (1..RANGE + 1) |r| std.debug.assert(mathx.reaches(.{ .x = 0, .y = 0 }, .{ .x = r, .y = r }, castR(r)));
+    std.debug.assert(RANGE <= BURST_MAX);
+    for (1..BURST_MAX + 1) |r| std.debug.assert(mathx.reaches(.{ .x = 0, .y = 0 }, .{ .x = r, .y = r }, castR(r)));
 }
 
 /// The walkable cells within `range` of `at` that a burst there reaches past the terrain, those `keep` takes.
-pub fn spread(lv: *const grid.Level, at: P, range: i32, ctx: anytype, comptime keep: fn (@TypeOf(ctx), P) bool) Cone {
-    std.debug.assert(range <= RANGE);
-    var out = Cone{};
+pub fn spread(lv: *const grid.Level, at: P, range: i32, ctx: anytype, comptime keep: fn (@TypeOf(ctx), P) bool) Burst {
+    std.debug.assert(range <= BURST_MAX);
+    var out = Burst{};
     var visible: [grid.CELLS]bool = @splat(false);
     fov.castInto(lv, at, castR(range), &visible);
     var cells = grid.Cells.around(at, range);
@@ -89,7 +91,7 @@ const Ahead = struct {
     }
 };
 
-pub fn cone(lv: *const grid.Level, from: P, impact: P) Cone {
+pub fn cone(lv: *const grid.Level, from: P, impact: P) Burst {
     if (from.eq(impact)) return .{};
     return spread(lv, impact, RANGE, Ahead{ .impact = impact, .dx = impact.x - from.x, .dy = impact.y - from.y }, Ahead.holds);
 }

@@ -10,24 +10,23 @@ const P = mathx.P;
 pub const COST: i32 = 25;
 /// Tiles round what it strikes that its blast reaches.
 pub const BLAST: i32 = 1;
-pub const FIRE_LO: i32 = 3;
-pub const FIRE_HI: i32 = 6;
 pub const VERB = "blasts";
 pub const BOLT = "fireball";
 pub const TAKES = burning.TAKES;
 pub const ELEMENT: damage.Element = .fire;
 pub const DESCRIPTION = std.fmt.comptimePrint("A fire bolt bursts on impact, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), burning.BURN_NOTE });
+pub const FLAVOR = "Light enough to see by, briefly.";
 
 comptime {
-    std.debug.assert(BLAST <= glacial.RANGE);
+    std.debug.assert(BLAST <= glacial.BURST_MAX);
 }
 
-pub const BASE = damage.Base{ .lo = FIRE_LO, .hi = FIRE_HI };
+pub const BASE = damage.Base{ .lo = 3, .hi = 6 };
 
 pub const procs = burning.procs;
 pub const afflict = burning.afflict;
 
-pub fn burst(lv: *const grid.Level, _: P, impact: P) glacial.Cone {
+pub fn burst(lv: *const grid.Level, _: P, impact: P) glacial.Burst {
     return glacial.spread(lv, impact, BLAST, {}, every);
 }
 

@@ -35,8 +35,10 @@ const KEY_ALT_MAX = std.math.degreesToRadians(@as(f32, 42));
 /// Cells the longest shadow the sky throws runs along the ground per cell of height.
 pub const REACH_MAX: f32 = 1 / @tan(KEY_ALT_MIN);
 /// Where the moon takes over from the sun as the light that casts, and back.
-const KEY_SWAP_DAWN: f32 = 5.0;
-const KEY_SWAP_DUSK: f32 = 20.8;
+const KEY_SWAP_DAWN: f32 = SUNRISE - 1.0;
+const KEY_SWAP_DUSK: f32 = SUNSET + 0.8;
+/// Hours from the horizon over which night gives way to dawn's colours, and morning's to full day.
+const GLOW_HOURS: f32 = 2.5;
 const KEY_SWAP_FADE: f32 = 0.45;
 /// A light leaning along the ground less than this stands straight up.
 pub const OVERHEAD: f32 = 1e-4;
@@ -45,6 +47,10 @@ const SKY_GAIN: f32 = 1.6;
 /// The palette's key is a 3D scene's; on art drawn flat it is this strong.
 const KEY_GAIN: f32 = 0.85;
 const NIGHT_FILL_MIN: f32 = 0.72;
+/// The share of the night either side of its dead point over which the carried light's fill climbs back to whole.
+const NIGHT_FILL_SPREAD: f32 = 0.4;
+/// The moon's key as if it stood this high, whatever its true altitude.
+const MOON_LIFT: f32 = 0.7;
 /// Of the casting light's lean north or south, the share the map shows, so shadows run mostly across the screen.
 const NORTH_SOUTH: f32 = 0.35;
 
@@ -110,15 +116,15 @@ const DEEPEST_NIGHT = Palette{ .key = .{ 0.003, 0.006, 0.020 }, .sky = .{ 0.002,
 /// Equal endpoints at the middle of the night avoid a seam.
 const KEYS = [_]Key{
     .{ .at = day.DEAD_OF_NIGHT, .key = DEEPEST_NIGHT.key, .sky = DEEPEST_NIGHT.sky },
-    .{ .at = 3.5, .key = NIGHT.key, .sky = NIGHT.sky },
+    .{ .at = SUNRISE - GLOW_HOURS, .key = NIGHT.key, .sky = NIGHT.sky },
     .{ .at = KEY_SWAP_DAWN, .key = .{ 0.088, 0.104, 0.168 }, .sky = .{ 0.046, 0.056, 0.088 } },
     .{ .at = SUNRISE, .key = .{ 1.100, 0.620, 0.340 }, .sky = .{ 0.120, 0.124, 0.166 } },
-    .{ .at = 8.5, .key = .{ 1.300, 1.070, 0.800 }, .sky = .{ 0.196, 0.208, 0.250 } },
+    .{ .at = SUNRISE + GLOW_HOURS, .key = .{ 1.300, 1.070, 0.800 }, .sky = .{ 0.196, 0.208, 0.250 } },
     .{ .at = day.NOON, .key = .{ 1.380, 1.250, 1.040 }, .sky = .{ 0.220, 0.230, 0.260 } },
-    .{ .at = 17.45, .key = .{ 1.320, 1.100, 0.800 }, .sky = .{ 0.168, 0.188, 0.244 } },
-    .{ .at = 19.4, .key = .{ 1.180, 0.660, 0.320 }, .sky = .{ 0.132, 0.136, 0.186 } },
+    .{ .at = SUNSET - 2.55, .key = .{ 1.320, 1.100, 0.800 }, .sky = .{ 0.168, 0.188, 0.244 } },
+    .{ .at = SUNSET - 0.6, .key = .{ 1.180, 0.660, 0.320 }, .sky = .{ 0.132, 0.136, 0.186 } },
     .{ .at = KEY_SWAP_DUSK, .key = .{ 0.130, 0.150, 0.230 }, .sky = .{ 0.058, 0.068, 0.102 } },
-    .{ .at = 22.5, .key = NIGHT.key, .sky = NIGHT.sky },
+    .{ .at = SUNSET + GLOW_HOURS, .key = NIGHT.key, .sky = NIGHT.sky },
     .{ .at = HOURS + day.DEAD_OF_NIGHT, .key = DEEPEST_NIGHT.key, .sky = DEEPEST_NIGHT.sky },
 };
 
@@ -219,8 +225,8 @@ pub fn under(hour: f32, light: climate.Light) Sky {
     const l = LOOKS.get(light);
     const dir = acrossScreen(keyDir(hour));
     const moon = moonShare(hour);
-    const gain = mathx.lerpF(1, 0.7 / dir[2], moon);
-    const night_fill = mathx.lerpF(NIGHT_FILL_MIN, 1, mathx.smoothstep(0, NIGHT_SPAN * 0.4, @abs(day.toward(day.DEAD_OF_NIGHT, hour))));
+    const gain = mathx.lerpF(1, MOON_LIFT / dir[2], moon);
+    const night_fill = mathx.lerpF(NIGHT_FILL_MIN, 1, mathx.smoothstep(0, NIGHT_SPAN * NIGHT_FILL_SPREAD, @abs(day.toward(day.DEAD_OF_NIGHT, hour))));
     return .{
         .dir = dir,
         .key = looked(p.key, keyDim(hour) * KEY_GAIN * l.key * gain, l),

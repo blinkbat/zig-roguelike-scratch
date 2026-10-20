@@ -25,7 +25,8 @@ pub fn xpOf(k: actor.Kind) u32 {
     return @intCast(actor.row(k).hp);
 }
 
-fn bonusAt(c: hero.Class, i: usize) ?Node {
+/// What allocating node `i` grants `c`: nothing at its own free origin.
+pub fn bonusAt(c: hero.Class, i: usize) ?Node {
     return if (i == start(c)) null else NODES[i];
 }
 
@@ -139,6 +140,14 @@ pub const State = struct {
         return out;
     }
 
+    /// Origins grant only attributes, so a class's free one adds nothing here.
+    pub fn perks(self: *const State) passives.Perks {
+        var out = passives.Perks{};
+        var it = self.nodes.iterator(.{});
+        while (it.next()) |i| NODES[i].perk(&out);
+        return out;
+    }
+
     pub fn unlocked(self: *const State, act: skillbar.Act) bool {
         return innate(act) or self.ranks.get(act) > 0;
     }
@@ -179,7 +188,7 @@ pub const State = struct {
     }
 
     pub fn cost(self: *const State, act: skillbar.Act) i32 {
-        return mathx.percentOf(act.cost(), mathx.PERCENT - @as(i32, self.ranks.get(act) -| 1) * RANK_COST_PERCENT);
+        return mathx.percentOf(act.cost(), @max(0, mathx.PERCENT - @as(i32, self.ranks.get(act) -| 1) * RANK_COST_PERCENT - self.perks().mana_cost));
     }
 
     pub fn cooldown(self: *const State, act: skillbar.Act) u8 {
@@ -275,16 +284,11 @@ test "passive origins preserve class bases and failed purchases preserve the who
             try std.testing.expectEqual(@as(u16, 0), state.passive_points);
             try std.testing.expectEqual(@as(u16, 7), state.active_points);
             var want = before;
-            const at: attrs.Attr = switch (other) {
-                .knight => .strength,
-                .archer => .dexterity,
-                .wizard => .intelligence,
-            };
-            want.points.getPtr(at).* += passives.ROOT_GRANT;
+            want.points.getPtr(passives.Arm.of(other).stat().attr().?).* += passives.ROOT_GRANT;
             try std.testing.expectEqualDeep(want, state.attributes(c));
         }
         state.passive_points = 3;
-        for ([_]usize{ start(c), NODES.len, passives.branchFirst(.warrior_life) + 11 }) |blocked| {
+        for ([_]usize{ start(c), NODES.len, passives.branchFirst(.warrior_life) + passives.PER_BRANCH - 1 }) |blocked| {
             const before = state;
             try std.testing.expect(!state.allocate(blocked));
             try std.testing.expectEqualDeep(before, state);
@@ -294,7 +298,15 @@ test "passive origins preserve class bases and failed purchases preserve the who
 }
 
 test "passive branch gates advance one layer and apply exact stat interest and capstone packages" {
-    const route = [_]usize{ 0, 1, 3, 6, 9, 11 };
+    const route = comptime blk: {
+        var out: [passives.BRANCH_RINGS.len]usize = undefined;
+        var at: usize = 0;
+        for (passives.BRANCH_RINGS, &out) |wide, *first| {
+            first.* = at;
+            at += wide;
+        }
+        break :blk out;
+    };
     for (std.enums.values(passives.Branch)) |b| {
         const c = b.arm().class();
         var state = State.of(c);
@@ -329,12 +341,14 @@ test "passive branch gates advance one layer and apply exact stat interest and c
         armour: i32 = 0,
         style: attrs.Style,
         damage: i32 = 0,
+        crit: i32 = 0,
+        perks: passives.Perks = .{},
     };
     const cases = [_]Case{
-        .{ .class = .knight, .branch = .warrior_life, .attr = .strength, .points = 9, .life = 12, .armour = 11, .style = .heavy },
-        .{ .class = .knight, .branch = .warrior_berserk, .attr = .strength, .points = 9, .style = .heavy, .damage = 30 },
-        .{ .class = .archer, .branch = .rogue_ranged, .attr = .dexterity, .points = 8, .style = .light, .damage = 34 },
-        .{ .class = .wizard, .branch = .wizard_cast, .attr = .intelligence, .points = 11, .mana = 6, .style = .spell, .damage = 19 },
+        .{ .class = .knight, .branch = .warrior_life, .attr = .strength, .points = 9, .armour = 11, .style = .heavy, .perks = .{ .life_on_hit = 1 } },
+        .{ .class = .knight, .branch = .warrior_berserk, .attr = .strength, .points = 5, .style = .heavy, .damage = 25, .perks = .{ .life_on_kill = 3, .cull = 10 } },
+        .{ .class = .archer, .branch = .rogue_ranged, .attr = .dexterity, .points = 4, .style = .light, .damage = 24, .crit = 13 },
+        .{ .class = .wizard, .branch = .wizard_cast, .attr = .intelligence, .points = 7, .style = .spell, .damage = 19, .perks = .{ .mana_cost = 30 } },
     };
     for (cases) |case| {
         var state = State.of(case.class);
@@ -347,13 +361,15 @@ test "passive branch gates advance one layer and apply exact stat interest and c
         want.mana_bonus += case.mana;
         want.armour += case.armour;
         want.damage_bonus.getPtr(case.style).* += case.damage;
+        want.crit_bonus += case.crit;
         const actual = state.attributes(case.class);
         try std.testing.expectEqualDeep(want, actual);
+        try std.testing.expectEqualDeep(case.perks, state.perks());
         try std.testing.expectEqual(base.increase(case.style) + case.points + case.damage, actual.increase(case.style));
         try std.testing.expectEqual(want.life(), actual.life());
         try std.testing.expectEqual(want.mana(), actual.mana());
     }
-    std.debug.print("passive branches: 36 one-point layer gates, 30 blocked skips; exact totals cover all 9 grant kinds, riders and 4 capstone routes\n", .{});
+    std.debug.print("passive branches: 36 one-point layer gates, 30 blocked skips; exact attribute and perk totals on 4 capstone routes\n", .{});
 }
 
 test "passive bridges pay both attributes and cross either way without opening inward prerequisites" {

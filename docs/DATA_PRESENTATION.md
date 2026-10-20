@@ -60,6 +60,7 @@ For example, the captured magic Iron helm now reads:
 ```text
 Iron helm
 Helm
+Cold iron and a narrow view.
 
 Physical damage reduced by 4%
 Requires 16 Strength
@@ -68,6 +69,10 @@ Requires 16 Strength
 +6 to maximum life
 +10 to maximum mana
 ```
+
+Every item kind carries one dim flavor line under its type (`items.Spec.flavor`, at most
+`items.FLAVOR_MAX` characters so it fits the compared card), and every skill one under its
+description on the Skills page (`FLAVOR` in its module). Flavor never states a mechanic.
 
 The worn Leather cap remains a separate, much shorter card. This preserves the
 objects' identities and shows the real equipping blocker. Once an equip is valid,

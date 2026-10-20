@@ -78,11 +78,26 @@ pub const Act = enum {
         };
     }
 
+    pub fn flavor(a: Act) ?[:0]const u8 {
+        return switch (a) {
+            .shoot => "Every arrow is a promise kept at a distance.",
+            .wait => "The dark is patient. So can you be.",
+            .secondary => null,
+            inline else => |t| comptime module(t).?.FLAVOR,
+        };
+    }
+
     fn module(comptime a: Act) ?type {
         return SKILLS.get(a).module;
     }
 
     fn has(comptime a: Act, comptime decl: []const u8) bool {
+        comptime {
+            @setEvalBranchQuota(10_000);
+            for (PROBED) |p| {
+                if (std.mem.eql(u8, p, decl)) break;
+            } else @compileError("skillbar: " ++ decl ++ " is probed but not listed in PROBED");
+        }
         const m = module(a) orelse return false;
         return @hasDecl(m, decl);
     }
@@ -100,10 +115,20 @@ pub const Act = enum {
         return (a.attack() orelse return null).defaultStyle();
     }
 
+    /// An arrow is ranged, a bolt or an unaimed element a spell, a swing or a rush melee.
     pub fn attack(a: Act) ?attrs.Attack {
         return switch (a) {
-            inline else => |t| comptime SKILLS.get(t).attack,
+            inline else => |t| comptime if (t.isArrow()) .ranged else if (t.bolt() != null) .spell else if (reticle(t)) |r| switch (r) {
+                .bow => unreachable,
+                .swing, .rush => .melee,
+                .leap => null,
+            } else if (has(t, "ELEMENT")) .spell else null,
         };
+    }
+
+    /// Loosed from the bow, with the bow's physical hit.
+    pub fn isArrow(a: Act) bool {
+        return a.reticle() == .bow and a.bolt() == null;
     }
 
     /// Spends no turn: Juke alone.
@@ -181,7 +206,7 @@ pub const Act = enum {
     }
 
     /// An elemental skill's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
-    pub fn arrow(comptime a: Act) type {
+    pub fn elemental(comptime a: Act) type {
         if (!has(a, "ELEMENT")) @compileError("no element");
         return module(a).?;
     }
@@ -207,7 +232,7 @@ pub const Act = enum {
     pub fn bases(a: Act) Bases {
         return switch (a) {
             inline else => |t| comptime .{
-                .physical = if (reticle(t) == .bow and bolt(t) == null) bow.BASE else if (has(t, "BASE") and !has(t, "ELEMENT")) module(t).?.BASE else null,
+                .physical = if (t.isArrow()) bow.BASE else if (has(t, "BASE") and !has(t, "ELEMENT")) module(t).?.BASE else null,
                 .element = if (has(t, "ELEMENT")) module(t).?.BASE else null,
             },
         };
@@ -295,25 +320,25 @@ pub const ACTS = std.enums.values(Act);
 /// A swing's reach, and a rush's nearest mark unless its module says otherwise.
 const MELEE_REACH: i32 = 1;
 
-const Skill = struct { module: ?type, reticle: ?Act.Reticle = null, attack: ?attrs.Attack = null };
+const Skill = struct { module: ?type, reticle: ?Act.Reticle = null };
 const SKILLS = std.EnumArray(Act, Skill).init(.{
-    .shoot = .{ .module = null, .reticle = .bow, .attack = .ranged },
+    .shoot = .{ .module = null, .reticle = .bow },
     .wait = .{ .module = null },
     .secondary = .{ .module = null },
     .juke = .{ .module = juke, .reticle = .leap },
-    .burning_arrow = .{ .module = burning, .reticle = .bow, .attack = .ranged },
-    .glacial_shot = .{ .module = glacial, .reticle = .bow, .attack = .ranged },
-    .spark = .{ .module = spark, .reticle = .bow, .attack = .spell },
+    .burning_arrow = .{ .module = burning, .reticle = .bow },
+    .glacial_shot = .{ .module = glacial, .reticle = .bow },
+    .spark = .{ .module = spark, .reticle = .bow },
     .blink = .{ .module = blink, .reticle = .leap },
-    .shield_bash = .{ .module = bash, .reticle = .swing, .attack = .melee },
-    .cleave = .{ .module = cleave, .reticle = .swing, .attack = .melee },
-    .pinning_shot = .{ .module = pinning, .reticle = .bow, .attack = .ranged },
-    .barbed_arrow = .{ .module = barbed, .reticle = .bow, .attack = .ranged },
-    .frost_nova = .{ .module = nova, .attack = .spell },
-    .fireball = .{ .module = fireball, .reticle = .bow, .attack = .spell },
-    .chain_lightning = .{ .module = chain, .reticle = .bow, .attack = .spell },
+    .shield_bash = .{ .module = bash, .reticle = .swing },
+    .cleave = .{ .module = cleave, .reticle = .swing },
+    .pinning_shot = .{ .module = pinning, .reticle = .bow },
+    .barbed_arrow = .{ .module = barbed, .reticle = .bow },
+    .frost_nova = .{ .module = nova },
+    .fireball = .{ .module = fireball, .reticle = .bow },
+    .chain_lightning = .{ .module = chain, .reticle = .bow },
     .mana_shield = .{ .module = ward },
-    .charge = .{ .module = charge, .reticle = .rush, .attack = .melee },
+    .charge = .{ .module = charge, .reticle = .rush },
     .life_flask = .{ .module = flask.Life },
     .mana_flask = .{ .module = flask.Mana },
 });
@@ -330,7 +355,7 @@ pub fn kit(c: hero.Class) []const Act {
 comptime {
     @setEvalBranchQuota(10_000);
     for (ACTS) |a| {
-        if ((a.reticle() == .bow or Act.has(a, "BASE")) != (a.attack() != null)) @compileError(@tagName(a) ++ ": damage skills must declare their attack type");
+        if ((a.reticle() == .bow or Act.has(a, "BASE")) != (a.attack() != null)) @compileError(@tagName(a) ++ ": a damage skill has no attack type to scale by");
         var n: usize = 0;
         for (hero.CLASSES) |c| {
             if (std.mem.indexOfScalar(Act, kit(c), a) != null) n += 1;
@@ -484,6 +509,31 @@ fn primary(c: hero.Class) Row {
         },
     }
     return r;
+}
+
+test "arrows scale as ranged, bolts and novas as spells, swings and rushes as melee" {
+    const want = std.EnumArray(Act, ?attrs.Attack).init(.{
+        .shoot = .ranged,
+        .wait = null,
+        .secondary = null,
+        .juke = null,
+        .burning_arrow = .ranged,
+        .glacial_shot = .ranged,
+        .spark = .spell,
+        .blink = null,
+        .shield_bash = .melee,
+        .cleave = .melee,
+        .pinning_shot = .ranged,
+        .barbed_arrow = .ranged,
+        .frost_nova = .spell,
+        .fireball = .spell,
+        .chain_lightning = .spell,
+        .mana_shield = null,
+        .charge = .melee,
+        .life_flask = null,
+        .mana_flask = null,
+    });
+    for (ACTS) |a| try std.testing.expectEqual(want.get(a), a.attack());
 }
 
 test "each class starts with its own skills bound, and only skills of its kit" {

@@ -42,11 +42,11 @@ pub const Branch = enum {
     pub fn arm(b: Branch) Arm {
         return BRANCH_POSITIONS.get(b).arm;
     }
-    pub fn lane(b: Branch) usize {
+    pub fn lane(b: Branch) Lane {
         return BRANCH_POSITIONS.get(b).lane;
     }
-    pub fn on(a: Arm, lane_: usize) Branch {
-        return BRANCHES.get(a)[lane_];
+    pub fn on(a: Arm, lane_: Lane) Branch {
+        return BRANCHES.get(a)[@intFromEnum(lane_)];
     }
     pub fn name(b: Branch) [:0]const u8 {
         return switch (b) {
@@ -70,18 +70,20 @@ pub const Seam = enum {
         return SEAMS.get(s)[1];
     }
 };
-const BRANCHES = std.EnumArray(Arm, [2]Branch).init(.{
+/// An arm's two branches: the one whose bridges reach the next arm in `Arm`'s order, then the one reached from the previous.
+pub const Lane = enum { next, previous };
+const BRANCHES = std.EnumArray(Arm, [std.enums.values(Lane).len]Branch).init(.{
     .warrior = .{ .warrior_life, .warrior_berserk },
     .rogue = .{ .rogue_evade, .rogue_ranged },
     .wizard = .{ .wizard_well, .wizard_cast },
 });
 const BRANCH_POSITIONS = blk: {
-    var out = std.EnumArray(Branch, struct { arm: Arm, lane: usize }).initUndefined();
+    var out = std.EnumArray(Branch, struct { arm: Arm, lane: Lane }).initUndefined();
     var seen = std.EnumSet(Branch).initEmpty();
     for (std.enums.values(Arm)) |a| for (BRANCHES.get(a), 0..) |b, lane| {
         if (seen.contains(b)) @compileError(@tagName(b) ++ " belongs to more than one passive branch");
         seen.insert(b);
-        out.set(b, .{ .arm = a, .lane = lane });
+        out.set(b, .{ .arm = a, .lane = @enumFromInt(lane) });
     };
     for (std.enums.values(Branch)) |b| {
         if (!seen.contains(b)) @compileError(@tagName(b) ++ " has no passive arm");
@@ -94,6 +96,17 @@ const SEAMS = std.EnumArray(Seam, [2]Arm).init(.{
     .wizard_warrior = .{ .wizard, .warrior },
 });
 pub const Tier = enum { stat, interest, capstone };
+/// What a grant is about, which colours its node.
+pub const Group = enum { attribute, life, mana, offense, defense };
+/// Effects the game reads off the allocated tree rather than off the attributes.
+pub const Perks = struct {
+    life_on_hit: i32 = 0,
+    life_on_kill: i32 = 0,
+    life_flask: i32 = 0,
+    cull: i32 = 0,
+    mana_regen: i32 = 0,
+    mana_cost: i32 = 0,
+};
 pub const Kind = enum {
     strength,
     dexterity,
@@ -104,6 +117,39 @@ pub const Kind = enum {
     heavy_damage,
     light_damage,
     spell_damage,
+    crit,
+    dodge,
+    life_on_hit,
+    life_on_kill,
+    life_flask,
+    cull,
+    mana_regen,
+    mana_cost,
+
+    pub fn perk(k: Kind) bool {
+        return switch (k) {
+            inline else => |t| @hasField(Perks, @tagName(t)),
+        };
+    }
+
+    pub fn group(k: Kind) Group {
+        return switch (k) {
+            .strength, .dexterity, .intelligence => .attribute,
+            .life, .life_on_hit, .life_on_kill, .life_flask => .life,
+            .mana, .mana_regen, .mana_cost => .mana,
+            .heavy_damage, .light_damage, .spell_damage, .crit, .cull => .offense,
+            .armour, .dodge => .defense,
+        };
+    }
+
+    pub fn abbrev(k: Kind) [:0]const u8 {
+        return switch (k) {
+            .strength => "Str",
+            .dexterity => "Dex",
+            .intelligence => "Int",
+            else => unreachable,
+        };
+    }
 
     /// The damage it raises by a percentage, for a damage kind.
     pub fn style(k: Kind) ?attrs.Style {
@@ -121,13 +167,16 @@ pub const Kind = enum {
     }
 
     comptime {
-        for (std.enums.values(Kind)) |k| std.debug.assert((k.style() == null) != (k.bonus() == null));
+        for (std.enums.values(Kind)) |k| {
+            const homes = @as(u8, @intFromBool(k.style() != null)) + @intFromBool(k.bonus() != null) + @intFromBool(k.perk()) + @intFromBool(k == .crit or k == .dodge);
+            std.debug.assert(homes == 1);
+        }
     }
 
     /// The attribute it raises, for a pure attribute kind.
     pub fn attr(k: Kind) ?attrs.Attr {
         return switch (k) {
-            inline else => |t| comptime std.meta.stringToEnum(attrs.Attr, @tagName(t)),
+            inline else => |t| comptime if (@hasField(attrs.Attr, @tagName(t))) @field(attrs.Attr, @tagName(t)) else null,
         };
     }
 };
@@ -137,16 +186,73 @@ pub const Grant = struct {
     kind: Kind,
     amount: i32,
 
-    pub fn label(g: Grant) [:0]const u8 {
-        return if (g.kind.style()) |s| s.label() else g.kind.bonus().?.label();
-    }
-    pub fn isPercent(g: Grant) bool {
-        return g.kind.style() != null;
-    }
     pub fn apply(g: Grant, a: *attrs.Attrs) void {
-        if (g.kind.style()) |s| {
-            a.damage_bonus.getPtr(s).* += g.amount;
-        } else a.add(g.kind.bonus().?, g.amount);
+        switch (g.kind) {
+            .crit => a.crit_bonus += g.amount,
+            .dodge => a.dodge_bonus += g.amount,
+            else => if (g.kind.style()) |s| {
+                a.damage_bonus.getPtr(s).* += g.amount;
+            } else if (g.kind.bonus()) |b| a.add(b, g.amount),
+        }
+    }
+
+    pub fn perk(g: Grant, p: *Perks) void {
+        switch (g.kind) {
+            inline else => |t| if (comptime @hasField(Perks, @tagName(t))) {
+                @field(p, @tagName(t)) += g.amount;
+            },
+        }
+    }
+
+    /// The whole modifier: "+4% Heavy weapon damage".
+    pub fn write(g: Grant, w: anytype) void {
+        const n = g.amount;
+        (switch (g.kind) {
+            .armour => w.print("+{d}% physical damage reduction", .{n}),
+            .crit => w.print("+{d}% critical strike chance", .{n}),
+            .dodge => w.print("+{d}% chance to dodge attacks", .{n}),
+            .life_on_hit => w.print("Heal {d} life for each foe a blow damages", .{n}),
+            .life_on_kill => w.print("Heal {d} life for each foe a blow kills", .{n}),
+            .life_flask => w.print("+{d}% life flask recovery", .{n}),
+            .cull => w.print("Blows kill foes left at {d}% life or less", .{n}),
+            .mana_regen => w.print("+{d} mana recovered per turn", .{n}),
+            .mana_cost => w.print("Skills cost {d}% less mana", .{n}),
+            else => if (g.kind.style()) |s| w.print("+{d}% {s}", .{ n, s.label() }) else w.print("+{d} to {s}", .{ n, g.kind.bonus().?.label() }),
+        }) catch {};
+    }
+
+    /// The tree's label is this over `word`: "+4%" over "Heavy".
+    pub fn writeAmount(g: Grant, w: anytype) void {
+        const sign: []const u8 = switch (g.kind) {
+            .mana_cost => "-",
+            .cull => "",
+            else => "+",
+        };
+        const percent = g.kind.style() != null or switch (g.kind) {
+            .armour, .crit, .dodge, .life_flask, .cull, .mana_cost => true,
+            else => false,
+        };
+        w.print("{s}{d}{s}", .{ sign, g.amount, if (percent) "%" else "" }) catch {};
+    }
+
+    pub fn word(g: Grant) [:0]const u8 {
+        return switch (g.kind) {
+            .strength, .dexterity, .intelligence => g.kind.abbrev(),
+            .life => "Life",
+            .mana => "Mana",
+            .armour => "Armour",
+            .heavy_damage => "Heavy",
+            .light_damage => "Light",
+            .spell_damage => "Spell",
+            .crit => "Crit",
+            .dodge => "Dodge",
+            .life_on_hit => "Leech",
+            .life_on_kill => "On kill",
+            .life_flask => "Flask",
+            .cull => "Cull",
+            .mana_regen => "Regen",
+            .mana_cost => "Cost",
+        };
     }
 };
 pub const Node = struct {
@@ -164,6 +270,19 @@ pub const Node = struct {
         n.grant.apply(a);
         if (n.bump) |g| g.apply(a);
     }
+
+    pub fn perk(n: Node, p: *Perks) void {
+        n.grant.perk(p);
+        if (n.bump) |g| g.perk(p);
+    }
+
+    /// Its grant's, or both attributes of a bridge.
+    pub fn word(n: Node) [:0]const u8 {
+        const s = n.seam orelse return n.grant.word();
+        return switch (s) {
+            inline else => |t| comptime t.from().stat().abbrev() ++ "/" ++ t.to().stat().abbrev(),
+        };
+    }
 };
 
 pub const BRANCH_RINGS = [_]u8{ 1, 2, 3, 3, 2, 1 };
@@ -174,7 +293,7 @@ pub const PER_BRANCH = blk: {
     for (BRANCH_RINGS) |width| count += width;
     break :blk count;
 };
-const PER_ARM = 1 + BRANCHES.values[0].len * PER_BRANCH;
+const PER_ARM = 1 + std.enums.values(Lane).len * PER_BRANCH;
 const NTREE = std.enums.values(Arm).len * PER_ARM;
 pub const N = NTREE + std.enums.values(Seam).len * BRIDGE_RINGS.len;
 pub const RINGS = BRANCH_RINGS.len + 1;
@@ -185,7 +304,7 @@ fn armFirst(a: Arm) usize {
     return @as(usize, @intFromEnum(a)) * PER_ARM;
 }
 pub fn branchFirst(b: Branch) usize {
-    return armFirst(b.arm()) + 1 + b.lane() * PER_BRANCH;
+    return armFirst(b.arm()) + 1 + @as(usize, @intFromEnum(b.lane())) * PER_BRANCH;
 }
 pub fn bridgeFirst(s: Seam) usize {
     return NTREE + @intFromEnum(s) * BRIDGE_RINGS.len;
@@ -200,7 +319,7 @@ fn ringFirst(b: Branch, br: usize) usize {
 }
 pub fn bridgeAnchors(s: Seam, ring: u8) [2]usize {
     const br = ring - 1;
-    return .{ ringFirst(Branch.on(s.from(), 0), br), ringFirst(Branch.on(s.to(), 1), br) + BRANCH_RINGS[br] - 1 };
+    return .{ ringFirst(Branch.on(s.from(), .next), br), ringFirst(Branch.on(s.to(), .previous), br) + BRANCH_RINGS[br] - 1 };
 }
 fn overlaps(p: usize, wp: usize, s: usize, wc: usize) bool {
     return p * wc < (s + 1) * wp and s * wp < (p + 1) * wc;
@@ -266,91 +385,104 @@ pub fn linked(a: usize, b: usize) bool {
     return false;
 }
 
-const Entry = struct { name: [:0]const u8, kind: Kind, amount: i32, rider: i32 = 0 };
+const Entry = struct {
+    name: [:0]const u8,
+    grant: Grant,
+    rider: ?Grant = null,
+
+    fn ride(e: Entry, kind: Kind, amount: i32) Entry {
+        var out = e;
+        out.rider = .{ .kind = kind, .amount = amount };
+        return out;
+    }
+};
+fn entry(name: [:0]const u8, kind: Kind, amount: i32) Entry {
+    return .{ .name = name, .grant = .{ .kind = kind, .amount = amount } };
+}
 const BANK = std.EnumArray(Branch, [PER_BRANCH]Entry).init(.{
     .warrior_life = .{
-        .{ .name = "Warrior's Blood", .kind = .strength, .amount = 2 },
-        .{ .name = "Thick Hide", .kind = .armour, .amount = 2, .rider = 1 },
-        .{ .name = "Stout Heart", .kind = .life, .amount = 3, .rider = 1 },
-        .{ .name = "Boiled Leather", .kind = .armour, .amount = 2, .rider = 1 },
-        .{ .name = "Stubborn Flesh", .kind = .strength, .amount = 3 },
-        .{ .name = "Scar Tissue", .kind = .life, .amount = 4, .rider = 1 },
-        .{ .name = "Stalwart", .kind = .armour, .amount = 3 },
-        .{ .name = "Unshaken", .kind = .strength, .amount = 3 },
-        .{ .name = "Deep Roots", .kind = .life, .amount = 5 },
-        .{ .name = "Ironbound", .kind = .armour, .amount = 4, .rider = 2 },
-        .{ .name = "Lasting Vigor", .kind = .life, .amount = 5, .rider = 1 },
-        .{ .name = "Living Fortress", .kind = .life, .amount = 12, .rider = 3 },
+        entry("Warrior's Blood", .strength, 2),
+        entry("Thick Hide", .armour, 2).ride(.strength, 1),
+        entry("Stout Heart", .life, 3).ride(.strength, 1),
+        entry("Boiled Leather", .armour, 2).ride(.strength, 1),
+        entry("Stubborn Flesh", .strength, 3),
+        entry("Scar Tissue", .life_flask, 20).ride(.strength, 1),
+        entry("Stalwart", .armour, 3),
+        entry("Unshaken", .strength, 3),
+        entry("Deep Roots", .life, 5),
+        entry("Ironbound", .armour, 4).ride(.strength, 2),
+        entry("Long Draught", .life_flask, 25).ride(.strength, 1),
+        entry("Sanguine Pact", .life_on_hit, 1).ride(.strength, 3),
     },
     .warrior_berserk = .{
-        .{ .name = "Reaver", .kind = .strength, .amount = 2 },
-        .{ .name = "Heavy Hands", .kind = .heavy_damage, .amount = 4, .rider = 1 },
-        .{ .name = "Hard Knocks", .kind = .life, .amount = 3 },
-        .{ .name = "Brute Force", .kind = .strength, .amount = 3 },
-        .{ .name = "Crushing Blows", .kind = .heavy_damage, .amount = 4, .rider = 1 },
-        .{ .name = "Firm Grip", .kind = .strength, .amount = 2 },
-        .{ .name = "Red Harvest", .kind = .heavy_damage, .amount = 5 },
-        .{ .name = "Battle Hardened", .kind = .armour, .amount = 3 },
-        .{ .name = "Executioner", .kind = .heavy_damage, .amount = 5, .rider = 1 },
-        .{ .name = "Frenzy", .kind = .heavy_damage, .amount = 6, .rider = 1 },
-        .{ .name = "Blood Rush", .kind = .strength, .amount = 3 },
-        .{ .name = "Overwhelming Force", .kind = .heavy_damage, .amount = 15, .rider = 2 },
+        entry("Reaver", .life_on_kill, 1),
+        entry("Heavy Hands", .heavy_damage, 4).ride(.strength, 1),
+        entry("Culling Blow", .cull, 5),
+        entry("Brute Force", .strength, 3),
+        entry("Crushing Blows", .heavy_damage, 4).ride(.strength, 1),
+        entry("Butcher's Eye", .crit, 3).ride(.strength, 1),
+        entry("Red Harvest", .life_on_kill, 2),
+        entry("Battle Hardened", .armour, 3),
+        entry("Executioner", .cull, 5).ride(.strength, 1),
+        entry("Frenzy", .heavy_damage, 6).ride(.strength, 1),
+        entry("Blood Rush", .strength, 3),
+        entry("Berserk", .heavy_damage, 15).ride(.cull, 10),
     },
     .rogue_evade = .{
-        .{ .name = "Fleet", .kind = .dexterity, .amount = 2 },
-        .{ .name = "Second Wind", .kind = .life, .amount = 3, .rider = 1 },
-        .{ .name = "Light Step", .kind = .dexterity, .amount = 2 },
-        .{ .name = "Sure Feet", .kind = .dexterity, .amount = 3 },
-        .{ .name = "Tumbler", .kind = .life, .amount = 4, .rider = 1 },
-        .{ .name = "Long Stride", .kind = .dexterity, .amount = 2 },
-        .{ .name = "Wind at Heel", .kind = .dexterity, .amount = 3 },
-        .{ .name = "Deep Lungs", .kind = .life, .amount = 5, .rider = 1 },
-        .{ .name = "Warded Blood", .kind = .armour, .amount = 3 },
-        .{ .name = "Slip", .kind = .dexterity, .amount = 3 },
-        .{ .name = "Survivor", .kind = .life, .amount = 5, .rider = 2 },
-        .{ .name = "Untouchable", .kind = .dexterity, .amount = 6 },
+        entry("Fleet", .dodge, 3),
+        entry("Second Wind", .life, 3).ride(.dexterity, 1),
+        entry("Light Step", .dexterity, 2),
+        entry("Sure Feet", .dexterity, 3),
+        entry("Tumbler", .dodge, 3).ride(.dexterity, 1),
+        entry("Long Stride", .dexterity, 2),
+        entry("Wind at Heel", .dodge, 4),
+        entry("Deep Lungs", .life, 5).ride(.dexterity, 1),
+        entry("Warded Blood", .armour, 3),
+        entry("Slip", .dodge, 4).ride(.dexterity, 1),
+        entry("Survivor", .life_flask, 25).ride(.dexterity, 2),
+        entry("Untouchable", .dodge, 10).ride(.dexterity, 4),
     },
     .rogue_ranged = .{
-        .{ .name = "Keen Eye", .kind = .dexterity, .amount = 2 },
-        .{ .name = "Practised Arm", .kind = .light_damage, .amount = 4, .rider = 1 },
-        .{ .name = "Wayfinder", .kind = .dexterity, .amount = 2 },
-        .{ .name = "Light Touch", .kind = .light_damage, .amount = 4, .rider = 1 },
-        .{ .name = "Steady Hand", .kind = .dexterity, .amount = 3 },
-        .{ .name = "Hunter's Vigor", .kind = .life, .amount = 4 },
-        .{ .name = "Precision", .kind = .light_damage, .amount = 5 },
-        .{ .name = "Strong Draw", .kind = .strength, .amount = 2 },
-        .{ .name = "Deft Strikes", .kind = .light_damage, .amount = 5, .rider = 1 },
-        .{ .name = "Expert Handling", .kind = .light_damage, .amount = 6, .rider = 2 },
-        .{ .name = "Watchful", .kind = .dexterity, .amount = 3 },
-        .{ .name = "Perfect Technique", .kind = .light_damage, .amount = 15, .rider = 2 },
+        entry("Keen Eye", .crit, 2),
+        entry("Practised Arm", .light_damage, 4).ride(.dexterity, 1),
+        entry("Wayfinder", .dexterity, 2),
+        entry("Light Touch", .light_damage, 4).ride(.dexterity, 1),
+        entry("Steady Hand", .dexterity, 3),
+        entry("Hunter's Vigor", .life_on_kill, 1),
+        entry("Precision", .crit, 3),
+        entry("Strong Draw", .strength, 2),
+        entry("Deft Strikes", .light_damage, 5).ride(.dexterity, 1),
+        entry("Expert Handling", .light_damage, 6).ride(.dexterity, 2),
+        entry("Watchful", .crit, 4),
+        entry("Deadeye", .crit, 8).ride(.light_damage, 10),
     },
     .wizard_well = .{
-        .{ .name = "Open Mind", .kind = .intelligence, .amount = 2 },
-        .{ .name = "Deep Well", .kind = .mana, .amount = 5, .rider = 1 },
-        .{ .name = "Slow Tide", .kind = .life, .amount = 3 },
-        .{ .name = "Wider Mind", .kind = .intelligence, .amount = 3 },
-        .{ .name = "Runic Skin", .kind = .armour, .amount = 2, .rider = 1 },
-        .{ .name = "Still Water", .kind = .mana, .amount = 6, .rider = 1 },
-        .{ .name = "Veil", .kind = .armour, .amount = 3 },
-        .{ .name = "Warded", .kind = .life, .amount = 5 },
-        .{ .name = "Brimming", .kind = .mana, .amount = 8, .rider = 2 },
-        .{ .name = "Sealed Mind", .kind = .intelligence, .amount = 3 },
-        .{ .name = "Overflow", .kind = .mana, .amount = 8, .rider = 1 },
-        .{ .name = "Wellspring", .kind = .mana, .amount = 20, .rider = 2 },
+        entry("Open Mind", .intelligence, 2),
+        entry("Deep Well", .mana, 5).ride(.intelligence, 1),
+        entry("Slow Tide", .mana_regen, 1),
+        entry("Wider Mind", .intelligence, 3),
+        entry("Runic Skin", .armour, 2).ride(.intelligence, 1),
+        entry("Still Water", .mana, 6).ride(.intelligence, 1),
+        entry("Veil", .armour, 3),
+        entry("Warded", .life, 5),
+        entry("Brimming", .mana, 8).ride(.intelligence, 2),
+        entry("Sealed Mind", .intelligence, 3),
+        entry("Overflow", .mana_regen, 1).ride(.intelligence, 1),
+        entry("Wellspring", .mana_regen, 2).ride(.mana, 10),
     },
     .wizard_cast = .{
-        .{ .name = "Attuned", .kind = .intelligence, .amount = 2 },
-        .{ .name = "Charged Words", .kind = .spell_damage, .amount = 4, .rider = 1 },
-        .{ .name = "Arcana", .kind = .mana, .amount = 5 },
-        .{ .name = "Deeper Lore", .kind = .intelligence, .amount = 3 },
-        .{ .name = "Potent Runes", .kind = .spell_damage, .amount = 4, .rider = 1 },
-        .{ .name = "Sigil Craft", .kind = .spell_damage, .amount = 4 },
-        .{ .name = "Inner Quiet", .kind = .mana, .amount = 6 },
-        .{ .name = "Focused", .kind = .intelligence, .amount = 3 },
-        .{ .name = "Runewright", .kind = .spell_damage, .amount = 5, .rider = 1 },
-        .{ .name = "Adept", .kind = .intelligence, .amount = 3 },
-        .{ .name = "Spellweaver", .kind = .spell_damage, .amount = 6, .rider = 1 },
-        .{ .name = "Arcane Dominion", .kind = .spell_damage, .amount = 15, .rider = 2 },
+        entry("Attuned", .mana_cost, 10),
+        entry("Charged Words", .spell_damage, 4).ride(.intelligence, 1),
+        entry("Arcana", .mana, 5),
+        entry("Deeper Lore", .intelligence, 3),
+        entry("Potent Runes", .spell_damage, 4).ride(.intelligence, 1),
+        entry("Sigil Craft", .crit, 3).ride(.intelligence, 1),
+        entry("Inner Quiet", .mana_cost, 10),
+        entry("Focused", .intelligence, 3),
+        entry("Runewright", .spell_damage, 5).ride(.intelligence, 1),
+        entry("Adept", .intelligence, 3),
+        entry("Spellweaver", .spell_damage, 6).ride(.intelligence, 1),
+        entry("Arcane Dominion", .spell_damage, 15).ride(.mana_cost, 10),
     },
 });
 
@@ -368,16 +500,20 @@ pub const NODES: [N]Node = blk: {
             var i: usize = 0;
             for (BRANCH_RINGS, 0..) |wide, r| for (0..wide) |slot| {
                 const e = BANK.get(b)[i];
-                const pure = e.kind.attr() != null;
+                const capstone = r == BRANCH_RINGS.len - 1;
+                if (e.rider) |rider| {
+                    if (rider.kind == e.grant.kind) @compileError(e.name ++ " rides its own grant twice");
+                    if (!capstone and rider.kind.attr() == null) @compileError(e.name ++ ": only a capstone's rider may be more than an attribute");
+                }
                 out[branchFirst(b) + i] = .{
                     .arm = a,
                     .branch = b,
                     .ring = @intCast(r + 1),
                     .slot = @intCast(slot),
                     .name = e.name,
-                    .tier = if (r == BRANCH_RINGS.len - 1) .capstone else if (pure) .stat else .interest,
-                    .grant = .{ .kind = e.kind, .amount = e.amount },
-                    .bump = if (e.rider == 0) null else .{ .kind = a.stat(), .amount = e.rider },
+                    .tier = if (capstone) .capstone else if (e.grant.kind.attr() != null) .stat else .interest,
+                    .grant = e.grant,
+                    .bump = e.rider,
                 };
                 i += 1;
             };
@@ -403,6 +539,14 @@ pub const NODES: [N]Node = blk: {
     break :blk out;
 };
 
+/// Radians a branch turns off its arm's bearing, and its ring's slots spread either side, wider further out.
+const LANE_TURN: f32 = 0.42;
+const SLOT_TURN: f32 = 0.130;
+const SLOT_TURN_PER_RING: f32 = 0.032;
+/// A step browses only to nodes within 60 degrees of the push, sideways distance costing more than distance ahead.
+const STEP_COS: f32 = 0.5;
+const STEP_AHEAD: f32 = 0.65;
+
 fn armAngle(a: Arm) f32 {
     return switch (a) {
         .wizard => 0,
@@ -417,11 +561,11 @@ pub fn unitPos(i: usize) Point {
     if (n.seam) |s| {
         angle = armAngle(s.from()) - std.math.tau / 6.0;
     } else if (n.branch) |b| {
-        angle += if (b.lane() == 0) @as(f32, -0.42) else 0.42;
+        angle += if (b.lane() == .next) -LANE_TURN else LANE_TURN;
         const slots = BRANCH_RINGS[n.ring - 1];
         if (slots > 1) {
             const t = @as(f32, @floatFromInt(n.slot)) / @as(f32, @floatFromInt(slots - 1));
-            angle += (t * 2 - 1) * (0.130 + 0.032 * @as(f32, @floatFromInt(n.ring)));
+            angle += (t * 2 - 1) * (SLOT_TURN + SLOT_TURN_PER_RING * @as(f32, @floatFromInt(n.ring)));
         }
     }
     const radius: f32 = @floatFromInt(n.ring + 1);
@@ -440,8 +584,8 @@ pub fn step(cur: usize, dx: f32, dy: f32) usize {
         const ay = p.y - from.y;
         const dist = std.math.hypot(ax, ay);
         const along = (ax * dx + ay * dy) / push;
-        if (dist < 1e-5 or along / dist < 0.5) continue;
-        const s = @abs(ax * dy - ay * dx) / push + 0.65 * along;
+        if (dist < 1e-5 or along / dist < STEP_COS) continue;
+        const s = @abs(ax * dy - ay * dx) / push + STEP_AHEAD * along;
         if (s < score) {
             score = s;
             best = i;
@@ -456,9 +600,17 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
     for (NODES, 0..) |n, i| {
         tiers[@intFromEnum(n.tier)] += 1;
         kinds.set(@intFromEnum(n.grant.kind));
-        var a = attrs.Attrs.of(.{ .strength = 0, .dexterity = 0, .intelligence = 0 });
-        n.apply(&a);
-        try std.testing.expect(!std.meta.eql(a, attrs.Attrs.of(.{ .strength = 0, .dexterity = 0, .intelligence = 0 })));
+        for ([_]?Grant{ n.grant, n.bump }) |maybe| {
+            const g = maybe orelse continue;
+            var a = attrs.Attrs.of(.{ .strength = 0, .dexterity = 0, .intelligence = 0 });
+            var p = Perks{};
+            g.apply(&a);
+            g.perk(&p);
+            const changed = !std.meta.eql(a, attrs.Attrs.of(.{ .strength = 0, .dexterity = 0, .intelligence = 0 })) or !std.meta.eql(p, Perks{});
+            try std.testing.expect(changed);
+            try std.testing.expectEqual(g.kind.perk(), !std.meta.eql(p, Perks{}));
+        }
+        if (n.ring == 0) try std.testing.expect(!n.grant.kind.perk() and n.bump == null);
         var buf: [MAX_FEED]usize = undefined;
         const fs = feeders(i, &buf);
         try std.testing.expect(fs.len <= MAX_FEED);
@@ -491,5 +643,5 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
         };
     }
     try std.testing.expectEqual(@as(usize, N), seen.count());
-    std.debug.print("passives: {d} nodes, {d} stat / {d} interest / {d} capstone; 6 two-way bridges; all nine grant kinds and 81 directional targets checked\n", .{ N, tiers[0], tiers[1], tiers[2] });
+    std.debug.print("passives: {d} nodes, {d} stat / {d} interest / {d} capstone; 6 two-way bridges; all {d} grant kinds and 81 directional targets checked\n", .{ N, tiers[0], tiers[1], tiers[2], kinds.count() });
 }

@@ -6,15 +6,14 @@ const damage = @import("damage.zig");
 const P = mathx.P;
 
 pub const COST: i32 = 15;
-pub const DMG_LO: i32 = 2;
-pub const DMG_HI: i32 = 4;
 pub const VERB = "cleaves";
 /// Turns off the way aimed, round the hero, of the tiles it sweeps.
 const SPREAD = [_]u3{ 7, 0, 1 };
 pub const WIDTH: usize = SPREAD.len;
 pub const DESCRIPTION = std.fmt.comptimePrint("Swing through the {d} tiles in an arc ahead, striking each foe there.", .{WIDTH});
+pub const FLAVOR = "One swing, many regrets.";
 
-pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };
+pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const Arc = grid.Area(WIDTH);
 

@@ -63,7 +63,7 @@ pub const Surface = struct {
 
 /// Inside an action box, its edge to the prompt and to the label's far side, and the prompt to the label.
 const ACTION_PAD: i32 = 10;
-const ACTION_GAP: i32 = 8;
+pub const PROMPT_GAP: i32 = 8;
 
 pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, label: [:0]const u8) void {
     rl.drawRectangleRec(r, look.PICK_BG);
@@ -78,7 +78,7 @@ pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt
     const glyph_w = prompt.width(face, font.BODY);
     const left = @as(i32, @intFromFloat(r.x)) + ACTION_PAD;
     prompt.draw(face, left + @divTrunc(glyph_w, 2), @intFromFloat(look.middle(r).y), font.BODY, alpha);
-    return left + glyph_w + ACTION_GAP;
+    return left + glyph_w + PROMPT_GAP;
 }
 
 pub fn Note(comptime N: usize) type {

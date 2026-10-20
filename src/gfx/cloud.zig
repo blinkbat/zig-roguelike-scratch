@@ -26,7 +26,8 @@ fn tintOf(volume: u16) f32 {
 }
 
 const Shade = struct { shader: rl.Shader, time: i32 };
-const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, field: i32, ink: i32, texel: i32, strength: i32 };
+const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, origin: i32, cell: i32, screen: i32, ink: i32, texel: i32, strength: i32 };
+const MapView = struct { origin: [2]f32, cell: f32, screen: [2]f32 };
 
 pub const Cloud = struct {
     tint: [grid.CELLS]f32,
@@ -40,7 +41,7 @@ pub const Cloud = struct {
     tex: ?rl.Texture2D,
     shade: ?Shade,
     veil: ?Veil,
-    field: [4]f32,
+    map_view: MapView,
     visible: bool,
 
     pub fn create(alloc: std.mem.Allocator) !*Cloud {
@@ -50,6 +51,7 @@ pub const Cloud = struct {
         c.shade = null;
         c.veil = null;
         c.baked = .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 0, .y = 0 } };
+        @memset(&c.px, rl.Color.blank);
         c.clear();
         return c;
     }
@@ -100,7 +102,7 @@ pub const Cloud = struct {
     }
 
     /// `ox, oy` is where the floor's top-left corner lands.
-    pub fn draw(self: *Cloud, lv: *const grid.Level, on_screen: grid.Box, ox: i32, oy: i32, cell: i32, screen_h: i32) void {
+    pub fn draw(self: *Cloud, lv: *const grid.Level, on_screen: grid.Box, ox: i32, oy: i32, cell: i32, screen: mathx.P) void {
         self.visible = false;
         const tex = self.tex orelse return;
         if (std.mem.allEqual(f32, &self.tint, 0)) {
@@ -108,7 +110,7 @@ pub const Cloud = struct {
             return;
         }
         self.visible = true;
-        self.field = .{ @floatFromInt(ox), @floatFromInt(oy), @floatFromInt(cell), @floatFromInt(screen_h) };
+        self.map_view = .{ .origin = .{ @floatFromInt(ox), @floatFromInt(oy) }, .cell = @floatFromInt(cell), .screen = .{ @floatFromInt(screen.x), @floatFromInt(screen.y) } };
         const view = on_screen.grown(1);
         if (self.stale or !std.meta.eql(view, self.baked)) {
             self.bake(lv, view);
@@ -130,7 +132,7 @@ pub const Cloud = struct {
         rl.beginShaderMode(s.shader);
         focus.set(s.shader, s.texel, s.strength);
         look.setUniform(s.shader, s.time, self.t.at());
-        look.setUniform(s.shader, s.field, self.field);
+        look.setMapView(s, self.map_view.origin, self.map_view.cell, self.map_view.screen);
         const rgb: [3]f32 = look.rgbOf(ink);
         look.setUniform(s.shader, s.ink, rgb);
         rl.setShaderValueTexture(s.shader, s.cloud, tex);
@@ -235,15 +237,13 @@ const CLOUD_FS = look.FS_HEAD ++ CLOUD_NOISE ++
     \\}
 ;
 
-const VEIL_FS = look.FS_HEAD ++ look.FOCUS_TAPS ++ CLOUD_NOISE ++ std.fmt.comptimePrint("const float FIGURE_SHARE = {d:.4};\n", .{FIGURE_SHARE}) ++
+const VEIL_FS = look.FS_HEAD ++ look.FOCUS_TAPS ++ look.MAP_VIEW_FS ++ CLOUD_NOISE ++ std.fmt.comptimePrint("const float FIGURE_SHARE = {d:.4};\n", .{FIGURE_SHARE}) ++
     \\uniform sampler2D cloud;
-    \\uniform vec4 field;
     \\uniform vec3 ink;
     \\void main() {
     \\    float a = focused().a * fragColor.a;
     \\    if (a < CLEAR_A) discard;
-    \\    vec2 pixel = vec2(gl_FragCoord.x, field.w - gl_FragCoord.y);
-    \\    vec4 gas = cloudAt(cloud, (pixel - field.xy) / field.z);
+    \\    vec4 gas = cloudAt(cloud, cellAtFrag());
     \\    finalColor = vec4(gas.rgb * ink, gas.a * a * FIGURE_SHARE);
     \\}
 ;

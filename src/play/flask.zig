@@ -16,11 +16,13 @@ const CHARGE_NOTE = std.fmt.comptimePrint("Uses {d} of {d} charges; kills refill
 pub const Life = struct {
     pub const KIND: Kind = .life;
     pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d}% of life over {d} turns. {s}", .{ LIFE_PCT, TURNS, CHARGE_NOTE });
+    pub const FLAVOR = "Bitter, red, and better than bleeding.";
 };
 
 pub const Mana = struct {
     pub const KIND: Kind = .mana;
     pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d} mana over {d} turns. {s}", .{ MANA_GAIN, TURNS, CHARGE_NOTE });
+    pub const FLAVOR = "Tastes of cold stone and clear thought.";
 };
 
 pub const Flask = struct {

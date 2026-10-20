@@ -10,25 +10,24 @@ pub const COST: i32 = 30;
 pub const COOLDOWN: u8 = 3;
 pub const RANGE: i32 = 2;
 pub const OPEN_CELLS: usize = @intCast(grid.Cells.square(RANGE) - 1);
-pub const COLD_LO: i32 = 3;
-pub const COLD_HI: i32 = 5;
 pub const VERB = "freezes";
 pub const DONE = "casts a frost nova";
 pub const TAKES = glacial.TAKES;
 pub const ELEMENT: damage.Element = .cold;
 pub const DESCRIPTION = std.fmt.comptimePrint("A cold blast hits every foe within {d} tiles. {s}.", .{ RANGE, glacial.CHILL_NOTE });
+pub const FLAVOR = "The cold arrives all at once, and stays.";
 
 comptime {
-    std.debug.assert(RANGE <= glacial.RANGE);
+    std.debug.assert(RANGE <= glacial.BURST_MAX);
 }
 
-pub const BASE = damage.Base{ .lo = COLD_LO, .hi = COLD_HI };
+pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
 
 pub const procs = glacial.procs;
 pub const afflict = glacial.afflict;
 
 /// Every cell within `RANGE` of `from` the burst reaches past the terrain, `from` aside.
-pub fn around(lv: *const grid.Level, from: P) glacial.Cone {
+pub fn around(lv: *const grid.Level, from: P) glacial.Burst {
     return glacial.spread(lv, from, RANGE, from, notAt);
 }
 

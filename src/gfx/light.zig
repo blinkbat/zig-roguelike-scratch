@@ -52,7 +52,7 @@ const MEMORY = rgbOf(look.rgb(0x33385c));
 const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
-const FAINT: f32 = 0.002;
+pub const FAINT: f32 = 0.002;
 const TINT_DIRECT: f32 = 0.6;
 /// Per second.
 const REVEAL: f32 = 14.0;
@@ -671,7 +671,7 @@ pub const Shine = struct {
     }
 
     pub fn tint(self: *const Shine, c: rl.Color) rl.Color {
-        return recolour(c, rgbOf(c) * (self.ambient + self.total() * splat(TINT_DIRECT)));
+        return recolour(c, rgbOf(c) * knee(self.ambient + self.total() * splat(TINT_DIRECT)));
     }
 
     /// As the body shader would draw `c`, for what is drawn without it.
@@ -696,6 +696,9 @@ const PATCH_CLOUD: f32 = 1.6;
 const DAPPLE_WAVE = [3]f32{ 2.1, 1.6, 1.2 };
 const DAPPLE_MIN: f32 = 0.07;
 const DAPPLE_SPAN: f32 = 0.10;
+/// Crowns within this many cells shade a cell's sun, each by this much over one plus its squared distance.
+const DAPPLE_REACH = 2;
+const DAPPLE_COVER: f32 = 0.3;
 
 pub const Emission = struct {
     at: [3]f32,
@@ -894,14 +897,14 @@ pub const Light = struct {
         }
         var cells = grid.Cells.of(.{ .x = 0, .y = 0 }, grid.SIZE);
         while (cells.next()) |p| {
-            var neighbours = grid.Cells.around(p, 2);
+            var neighbours = grid.Cells.around(p, DAPPLE_REACH);
             var cover: f32 = 0;
             while (neighbours.next()) |q| {
                 if (!look.crowned(self.scratch.at(q))) continue;
                 const d = p.sub(q);
                 cover += 1 / @as(f32, @floatFromInt(1 + d.x * d.x + d.y * d.y));
             }
-            self.canopy[grid.Level.idx(p)] = @min(1, cover * 0.3);
+            self.canopy[grid.Level.idx(p)] = @min(1, cover * DAPPLE_COVER);
         }
         for (&self.dappling, 0..) |*d, i| d.* = self.dapplingAt(texelCentre(i % TEXELS_W, i / TEXELS_W));
     }
@@ -1101,12 +1104,7 @@ pub const Light = struct {
 
     /// How much the canopy's dappled shade takes from the sun at `q`.
     fn dapplingAt(self: *const Light, q: [2]f32) f32 {
-        const p = mathx.cellOf(.{ q[0] - 0.5, q[1] - 0.5 });
-        var corners: [4]f32 = undefined;
-        for (&corners, 0..) |*c, i| {
-            c.* = grid.cellOr(f32, &self.canopy, p.add(.{ .x = @intCast(i % 2), .y = @intCast(i / 2) }), 0);
-        }
-        const cover = mathx.bilerp(corners, q[0] - 0.5 - @as(f32, @floatFromInt(p.x)), q[1] - 0.5 - @as(f32, @floatFromInt(p.y)));
+        const cover = sample(&self.canopy, q[0], q[1]);
         if (cover == 0) return 0;
         const dapple = 0.5 + 0.5 * @sin(q[0] * DAPPLE_WAVE[0] + q[1] * DAPPLE_WAVE[1] + @sin(q[1] * DAPPLE_WAVE[2]));
         return cover * (DAPPLE_MIN + DAPPLE_SPAN * dapple);
@@ -1391,14 +1389,15 @@ pub const Light = struct {
         return ray.dim(sun, cloud);
     }
 
-    /// A flame hangs on its wall's south face, so a wall seen only from behind shows none.
+    /// A flame hangs on its wall's south face, so a wall seen only from behind shows none, and burns live only while that face's floor is in sight.
     pub fn flames(self: *const Light, lv: *const grid.Level, out: *[grid.MAX_TORCHES]Flame) []const Flame {
         var n: usize = 0;
         for (self.torch[0..self.torch_n]) |*t| {
             if (!self.remembers(lv, t.wall) or !self.remembers(lv, t.floor())) continue;
             const d = t.drawn();
             const v = self.viewAt(d);
-            out[n] = .{ .at = d, .foot = t.flame()[1], .glow = t.glow, .lit = v.lit, .memory = v.memory };
+            const face = self.viewAt(mathx.centre(t.floor()));
+            out[n] = .{ .at = d, .foot = t.flame()[1], .glow = t.glow, .lit = @min(v.lit, face.lit), .memory = v.memory };
             n += 1;
         }
         return out[0..n];
@@ -1549,7 +1548,7 @@ pub const Light = struct {
         self.flushForest();
         rl.endShaderMode();
         rl.endBlendMode();
-        rl.gl.rlEnableFramebuffer(self.gpu.outer);
+        look.endTarget(self.gpu.outer);
         const t = self.gpu.mask.?.texture;
         self.uploadMap();
         const receiver = self.gpu.receiver.?;
@@ -1928,7 +1927,8 @@ const RECEIVER_FS = look.FS_HEAD ++
     \\void main() {
     \\    vec2 pixel = vec2(fragTexCoord.x, 1.0 - fragTexCoord.y) * screen;
     \\    vec2 uv = (pixel - map_rect.xy) / map_rect.zw;
-    \\    float sight = texture(lightmap, uv).a;
+    \\    vec2 inside = step(vec2(0.0), uv) * step(uv, vec2(1.0));
+    \\    float sight = texture(lightmap, uv).a * inside.x * inside.y;
     \\    vec3 shadow = texture(texture0, fragTexCoord).rgb;
     \\    finalColor = vec4(mix(vec3(1.0), shadow, sight), 1.0);
     \\}
@@ -3113,6 +3113,25 @@ test "a torch seen only from behind its wall has no flame, and a remembered one 
     std.debug.print("a torch coming into sight: its remembered flame at {d:.3} the first frame, {d:.3} two seconds on\n", .{ first, settled });
     try std.testing.expect(first < 0.3);
     try std.testing.expectEqual(@as(f32, 1), settled);
+}
+
+test "a remembered torch seen again from behind its wall burns at memory, not live" {
+    var lv: grid.Level = undefined;
+    testRoom(&lv, &.{});
+    lv.lightless();
+    @memset(&lv.seen, true);
+    for (0..grid.CELLS) |i| {
+        if (grid.Level.of(i).y <= TORCH_AT.y) lv.light(grid.Level.of(i));
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    l.settle(&lv);
+    for (0..240) |_| l.step(&lv, mathx.FRAME_DT);
+    var buf: [grid.MAX_TORCHES]Flame = undefined;
+    const got = l.flames(&lv, &buf);
+    try std.testing.expectEqual(@as(usize, 1), got.len);
+    std.debug.print("remembered torch from behind its wall: flame lit {d:.3}, memory {d:.3}\n", .{ got[0].lit, got[0].memory });
+    try std.testing.expect(got[0].lit <= FAINT);
 }
 
 fn castAlpha(l: *const Light, at: [2]f32, carrier: bool) [2]f32 {

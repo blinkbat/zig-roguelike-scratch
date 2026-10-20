@@ -8,8 +8,6 @@ const clock = @import("clock.zig");
 const bow = @import("bow.zig");
 
 pub const COST: i32 = 20;
-pub const LIGHTNING_LO: i32 = 2;
-pub const LIGHTNING_HI: i32 = 5;
 /// Foes it leaps on to after the first, each the nearest unstruck foe to the last within `JUMP_RANGE`.
 pub const JUMPS: usize = 2;
 pub const JUMP_RANGE: i32 = 3;
@@ -18,8 +16,9 @@ pub const BOLT = "chain lightning";
 pub const TAKES = spark.TAKES;
 pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {s} each.", .{ JUMPS, JUMP_RANGE, clock.stunNote(spark.CHANCE) });
+pub const FLAVOR = "The storm never settles for one.";
 
-pub const BASE = damage.Base{ .lo = LIGHTNING_LO, .hi = LIGHTNING_HI };
+pub const BASE = damage.Base{ .lo = 2, .hi = 5 };
 
 pub const procs = spark.procs;
 pub const afflict = spark.afflict;

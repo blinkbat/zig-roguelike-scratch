@@ -64,10 +64,13 @@ progression remain authoritative; unimplemented D2 categories or level gates are
 
 Passives use the existing `zig-soulslike` graph construction and radial positions: three arms, two
 branches per arm, branch widths 1/2/3/3/2/1 and six cross-arm bridges at branch rings three and five.
-Small stat nodes grant attributes. Larger interest nodes grant life, mana, armour or damage for a
-specific style, sometimes with an attribute rider. Each branch ends at a larger double-ring capstone.
-Bridges grant attributes from both neighboring arms. These capstones are numerical endpoints, not
-PoE2 rule-changing keystones. Every printed grant is applied through the actual attribute/damage system.
+Small stat nodes grant attributes. Larger interest nodes carry the Soulslike tree's effects, translated
+to turns: life, mana, armour, style damage, critical and dodge chance, leech (life per foe a blow
+damages), life per kill, cull (blows kill foes left at or below a share of life), life flask recovery,
+mana per turn and cheaper skills; usually with an attribute rider. Each branch ends at a larger
+double-ring capstone whose rider may be a second effect. Bridges grant attributes from both
+neighboring arms. Attribute-side grants go through `attrs`; the rest are `passives.Perks`, read by
+`progress.State.perks` and applied in `game` (`wound`, `recover`, `drink`) and `State.cost`.
 
 The chosen class's origin is allocated free and gives no extra bonus. The other two origins are
 immediately purchasable from the hub for one point each. Further nodes require any one allocated
@@ -76,8 +79,9 @@ Each allocation costs one passive point, never a turn or gold. XP still awards t
 Soulslike's purchase-to-level economy is not imported. Selection, zoom and browsing spend nothing.
 
 The board opens zoomed in; zoom follows the selected node, with pan and a full-board overview control.
-The sidebar names node tier, branch,
-grants, point cost and allocation state. One deliberate action allocates the selected eligible node. Node-index
+Node fill colour names its grant group (attribute, life, mana, offense, defense); from the opening
+zoom each node carries its amount and stat under it. The sidebar leads with the grants, then the
+de-emphasized name and branch, allocation state, point cost and a note where a grant needs one. One deliberate action allocates the selected eligible node. Node-index
 layout, grants and feeder wiring participate in the save fingerprint; saves from the old hex tree are
 rejected as incompatible rather than interpreting their allocations as different nodes.
 

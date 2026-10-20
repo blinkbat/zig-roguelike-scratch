@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
+const carve = @import("../map/carve.zig");
 const lume = @import("../map/lume.zig");
 const terrain = @import("../map/biome/terrain.zig");
 const scatter = @import("../map/feature/scatter.zig");
@@ -2116,9 +2117,10 @@ const SWATCH: i32 = 34;
 const SWATCH_GAP: i32 = 3;
 const PALETTE_COLS: usize = @intCast(@divTrunc(INNER_W + SWATCH_GAP, SWATCH + SWATCH_GAP));
 const PALETTE = blk: {
+    @setEvalBranchQuota(10_000);
     var tiles: []const grid.Tile = &.{};
     for (std.enums.values(grid.Tile)) |t| {
-        if (t != .chest_open) tiles = tiles ++ &[_]grid.Tile{t};
+        if (!t.isOpened()) tiles = tiles ++ &[_]grid.Tile{t};
     }
     break :blk tiles;
 };
@@ -2844,6 +2846,7 @@ fn moves(owner: anytype, comptime k: Knob, comptime i: usize, by: i32) bool {
     const p = numberOf(&o, k, i);
     bump(@TypeOf(p.*), p, k.unit * by);
     if (@hasDecl(@TypeOf(o), "fit")) o = o.fit();
+    o = carve.fitDress(o);
     return !std.meta.eql(o, owner.*);
 }
 
@@ -3413,8 +3416,8 @@ fn seenFacts(s: Seen, f: *Facts) void {
             if (look.under(t)) |u| f.put("Drawn over the ground beside it, else {s}", .{@tagName(u)});
             if (dual.of(t)) |gr| if (look.GROUND_SHEETS.contains(gr)) f.put("Ground {s}: its edges meet the grounds below it", .{@tagName(gr)});
             if (look.stands(t)) f.put("Stands up and throws a shadow", .{});
-            if (t == .chest) f.put("Opened by stepping toward it; contains gold, never broken by attacks", .{});
-            if (t == .chest_open) f.put("Already opened and empty; may be walked over", .{});
+            if (t.opened() != null) f.put("Opened by stepping toward it; contains gold, never broken by attacks", .{});
+            if (t.isOpened()) f.put("Already opened and empty; may be walked over", .{});
         },
         .body => |k| {
             const r = actor.row(k);
@@ -3423,7 +3426,7 @@ fn seenFacts(s: Seen, f: *Facts) void {
             f.put("{d} hp, sees {d} cells", .{ r.hp, r.sight });
             switch (r.blow) {
                 .strike => |st| {
-                    f.put("Its blow: it {s} for {d} to {d}", .{ st.verb, st.lo, st.hi });
+                    f.put("Its blow: it {s} for {d} to {d}", .{ st.verb, st.hit.lo, st.hit.hi });
                     if (st.bleeds > 0) f.put("{d}% of its blows open a bleed", .{st.bleeds});
                 },
                 .burst => f.put("Bursts into caustic gas instead of striking", .{}),
@@ -4303,4 +4306,15 @@ test "a knob's step is dim where its owner's fit would take it back" {
     try std.testing.expect(moves(&spec, reach, 0, -1));
     spec.reach = pack.REACH_MIN;
     try std.testing.expect(!moves(&spec, reach, 0, -1));
+    const open = @import("../map/biome/open.zig");
+    var floor = open.Params{};
+    floor.decor = carve.fitDress(open.Params{ .decor = .{ .tall_grass = std.math.maxInt(@FieldType(carve.Decor, "tall_grass")) } }).decor;
+    const decor = comptime for (rowsOf(.open)) |k| {
+        if (std.mem.eql(u8, k.field, "decor")) break k;
+    } else unreachable;
+    const grass = comptime for (std.meta.fieldNames(carve.Decor), 0..) |name, i| {
+        if (std.mem.eql(u8, name, "tall_grass")) break i;
+    } else unreachable;
+    try std.testing.expect(!moves(&floor, decor, grass, 1));
+    try std.testing.expect(moves(&floor, decor, grass, -1));
 }

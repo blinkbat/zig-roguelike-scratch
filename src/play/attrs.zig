@@ -79,7 +79,7 @@ const DEX_PER_CRIT: i32 = 4;
 /// Percent of the blow a critical strike deals.
 pub const CRIT_MULTI: i32 = 150;
 const DEX_PER_DODGE: i32 = 2;
-const DODGE_MAX: i32 = 75;
+pub const DODGE_MAX: i32 = 75;
 /// Percent of a physical blow armour may take at most.
 pub const ARMOUR_MAX: i32 = 75;
 
@@ -89,6 +89,8 @@ pub const Attrs = struct {
     mana_bonus: i32 = 0,
     armour: i32 = 0,
     damage_bonus: std.EnumArray(Style, i32) = .initFill(0),
+    crit_bonus: i32 = 0,
+    dodge_bonus: i32 = 0,
 
     pub fn of(points: std.enums.EnumFieldStruct(Attr, i32, null)) Attrs {
         return .{ .points = .init(points) };
@@ -134,11 +136,11 @@ pub const Attrs = struct {
     }
 
     pub fn crit(a: Attrs) u32 {
-        return @intCast(std.math.clamp(CRIT_BASE + @divTrunc(a.get(.dexterity), DEX_PER_CRIT), 0, mathx.PERCENT));
+        return @intCast(std.math.clamp(CRIT_BASE + @divTrunc(a.get(.dexterity), DEX_PER_CRIT) + a.crit_bonus, 0, mathx.PERCENT));
     }
 
     pub fn dodge(a: Attrs) u32 {
-        return @intCast(std.math.clamp(@divTrunc(a.get(.dexterity), DEX_PER_DODGE), 0, DODGE_MAX));
+        return @intCast(std.math.clamp(@divTrunc(a.get(.dexterity), DEX_PER_DODGE) + a.dodge_bonus, 0, DODGE_MAX));
     }
 
     pub fn crits(a: Attrs, rng: *mathx.Rng) bool {

@@ -164,25 +164,35 @@ pub const Unreadable = enum {
 
 pub const Slot = union(enum) { empty, unreadable: Unreadable, run: Summary };
 
+/// The file's types in order: the summary, the header with the map's flag before it, then the tail.
 const FINGERPRINT = blk: {
     const head = std.meta.fields(Header);
     var types: [head.len + 3]type = undefined;
     types[0] = Summary;
-    types[1] = head[0].type;
-    types[2] = bool;
-    for (head[1..], 3..) |f, i| types[i] = f.type;
-    types[types.len - 1] = Tail;
+    var i: usize = 1;
+    for (head) |f| {
+        if (std.mem.eql(u8, f.name, "map")) {
+            types[i] = bool;
+            i += 1;
+        }
+        types[i] = f.type;
+        i += 1;
+    }
+    types[i] = Tail;
+    std.debug.assert(i + 1 == types.len);
     break :blk store.fingerprint(types) ^ TREE;
 };
+/// What the tree's hash takes for a node's missing branch, seam or rider.
+const NO_PART: u8 = 255;
 /// The passive tree's layout, which saved allocations index by node.
 const TREE = blk: {
     @setEvalBranchQuota(100_000);
     var h = std.hash.Wyhash.init(0);
     for (progress.NODES, 0..) |n, i| {
         h.update(n.name);
-        h.update(&.{ @intFromEnum(n.arm), if (n.branch) |v| @intFromEnum(v) else 255, if (n.seam) |v| @intFromEnum(v) else 255, n.ring, n.slot, @intFromEnum(n.tier), @intFromEnum(n.grant.kind) });
+        h.update(&.{ @intFromEnum(n.arm), if (n.branch) |v| @intFromEnum(v) else NO_PART, if (n.seam) |v| @intFromEnum(v) else NO_PART, n.ring, n.slot, @intFromEnum(n.tier), @intFromEnum(n.grant.kind) });
         h.update(&std.mem.toBytes(n.grant.amount));
-        h.update(&.{if (n.bump) |g| @intFromEnum(g.kind) else 255});
+        h.update(&.{if (n.bump) |g| @intFromEnum(g.kind) else NO_PART});
         if (n.bump) |g| h.update(&std.mem.toBytes(g.amount));
         var buf: [progress.passives.MAX_FEED]usize = undefined;
         const fs = progress.passives.feeders(i, &buf);

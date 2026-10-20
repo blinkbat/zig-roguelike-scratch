@@ -8,11 +8,9 @@ const damage = @import("damage.zig");
 const P = mathx.P;
 
 pub const RANGE: i32 = 9;
-pub const DMG_LO: i32 = 3;
-pub const DMG_HI: i32 = 5;
 pub const VERB = "shoots";
 
-pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };
+pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
 
 pub const Hit = union(enum) { body: u16, barrel: P };
 
@@ -243,21 +241,21 @@ test "no mark is legal whose line crosses a cell out of sight, though the mark i
 
 test "a rat takes exactly two arrows" {
     const hp = actor.row(.rat).hp;
-    try std.testing.expect(DMG_HI < hp);
-    try std.testing.expect(DMG_LO * 2 >= hp);
+    try std.testing.expect(BASE.hi < hp);
+    try std.testing.expect(BASE.lo * 2 >= hp);
 }
 
 test "a slime outlasts two arrows and hits harder than a rat" {
     const s = actor.row(.slime);
     const slam = s.blow.strike;
     const bite = actor.row(.rat).blow.strike;
-    std.debug.print("slime: {d} hp, {d}-{d} arrows to kill\n", .{ s.hp, std.math.divCeil(i32, s.hp, DMG_HI) catch 0, std.math.divCeil(i32, s.hp, DMG_LO) catch 0 });
-    try std.testing.expect(DMG_HI * 2 < s.hp);
-    try std.testing.expect(slam.lo > bite.lo and slam.hi > bite.hi);
+    std.debug.print("slime: {d} hp, {d}-{d} arrows to kill\n", .{ s.hp, std.math.divCeil(i32, s.hp, BASE.hi) catch 0, std.math.divCeil(i32, s.hp, BASE.lo) catch 0 });
+    try std.testing.expect(BASE.hi * 2 < s.hp);
+    try std.testing.expect(slam.hit.lo > bite.hit.lo and slam.hit.hi > bite.hit.hi);
 }
 
 test "one arrow bursts a bloat two times in three, and one that lives is left on 1 hp" {
     const hp = actor.row(.bloat).hp;
-    try std.testing.expectEqual(2 * (DMG_HI - DMG_LO + 1), 3 * (DMG_HI - hp + 1));
-    try std.testing.expectEqual(@as(i32, 1), hp - DMG_LO);
+    try std.testing.expectEqual(2 * (BASE.hi - BASE.lo + 1), 3 * (BASE.hi - hp + 1));
+    try std.testing.expectEqual(@as(i32, 1), hp - BASE.lo);
 }

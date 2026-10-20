@@ -32,7 +32,7 @@ const P = mathx.P;
 
 pub const MAX_FEATURES: usize = 6;
 /// Its features draw from another stream than the base, so adding one leaves the base as it was.
-const FEATURE_SALT: u64 = 0xFEA7_0BE5;
+const FEATURE_SALT: u64 = @intFromEnum(carve.Salt.features);
 
 /// A base biome: `gen.around`'s rooms, or a module with `Params`, `shape` and `palette`.
 pub const Algo = std.meta.Tag(Floor);
@@ -218,7 +218,7 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     }
 }
 
-fn lay(comptime base: type, lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: anytype) void {
+pub fn lay(comptime base: type, lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: anytype) void {
     lv.* = grid.Level.blank();
     base.shape(lv, rng, seed, p);
     carve.dress(p, lv, rng, seed);

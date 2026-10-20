@@ -237,7 +237,12 @@ pools, and its selected class's free starting allocation. Copying the graph does
 not copy the sibling economy or all its grants.
 
 Supported reward vocabulary comes from the local implementation: Strength,
-Dexterity, Intelligence, life, mana, armour, and the existing damage-by-style bonus.
+Dexterity, Intelligence, life, mana, armour, the existing damage-by-style bonus,
+critical and dodge chance, and the 2026-10-20 translations of the sibling's
+sustain and casting grants (`passives.Perks`): leech per foe a blow damages, life
+per foe a blow kills, cull, life flask recovery, mana per turn and skill mana cost.
+Sibling grants with no turn-based home here (stamina, poise, roll frames, cast
+speed, move speed, resistances, sacrifice) stay out.
 Heavy weapon damage scales with Strength and light weapon damage with Dexterity;
 either group can contain melee and ranged weapons. The Might and Finesse damage
 grants follow those groups, so crossbows can benefit from Strength and daggers
@@ -286,8 +291,11 @@ class origin needs an identifiable center or rim. Branch labels may orient the
 overview, but should not overlap routes or become competing headings for every
 layer. Do not display every reward sentence directly on the graph.
 
-Stat symbols should be elementary and consistent. Interest symbols may identify
-life, mana, armour or damage, using the project's existing basic visual language.
+A node's fill colour names its grant group: attribute, life, mana, offense or
+defense, with a legend above the canvas. Allocated nodes fill solid; others show
+the colour as a small core. From the opening zoom (`trees.LABEL_UNIT`, checked by a
+test against label/node overlap) every node carries its amount over a one-word
+stat ("+4%" over "Heavy") on a dark plate. Names never appear on the graph.
 The capstone's size and rim supply hierarchy; there is no need for a unique painting.
 Limit accent colors so arm identity does not overwhelm allocation status. Check
 that fill, rim and size still distinguish important states without relying solely
@@ -327,10 +335,10 @@ Grants read as complete modifier phrases, with their amount and units beside the
 benefit. Armour grants explicitly say physical damage reduction; attribute grants
 say what they add to. Keep the supported mechanics and allocation rules unchanged.
 
-The details area should answer, in order: what is this, what does it grant, and what
-can be done with it now? Show the node name first, then its role and branch when
-useful, then every grant including any rider. Present status and the allocation
-action together. The point counter should remain visible when a node is blocked.
+The details area should answer, in order: what does it grant, where is it, and what
+can be done with it now? Show its role, then every grant including any rider in
+large modifier text, then the name and branch small and dim. Names are flavour;
+the grants are the decision. Present status and the allocation action together. The point counter should remain visible when a node is blocked.
 
 Use exact descriptions generated from real grants. A stat node names the attribute
 and amount. An interest node explains its supported benefit before its rider.

@@ -48,17 +48,17 @@ const Spec = struct { attrs: attr.Attrs, strike: actor.Strike, blurb: [:0]const 
 const SPECS = std.EnumArray(Class, Spec).init(.{
     .archer = .{
         .attrs = .of(.{ .strength = 14, .dexterity = 20, .intelligence = 10 }),
-        .strike = .{ .lo = 1, .hi = 2, .verb = "kicks" },
+        .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "kicks" },
         .blurb = "A bow that reaches what it sees, and a kick for what comes close",
     },
     .wizard = .{
         .attrs = .of(.{ .strength = 8, .dexterity = 10, .intelligence = 20 }),
-        .strike = .{ .lo = 1, .hi = 2, .verb = "bonks" },
+        .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "bonks" },
         .blurb = "Sparks that stun what they strike, and a blink to be elsewhere",
     },
     .knight = .{
         .attrs = .of(.{ .strength = 20, .dexterity = 10, .intelligence = 10 }),
-        .strike = .{ .lo = 2, .hi = 4, .verb = "slashes" },
+        .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "slashes" },
         .blurb = std.fmt.comptimePrint("A shield that knocks foes back stunned, and a blade that sweeps {s} at once", .{NUMBERS[cleave.WIDTH]}),
     },
 });

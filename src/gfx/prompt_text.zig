@@ -2,6 +2,10 @@ const std = @import("std");
 const rl = @import("raylib");
 const font = @import("font.zig");
 const look = @import("look.zig");
+const input = @import("../core/input.zig");
+const OPEN = input.GLYPH_OPEN;
+const CLOSE = input.GLYPH_CLOSE;
+const ELLIPSIS = font.ELLIPSIS;
 
 const Part = struct {
     text: []const u8,
@@ -11,20 +15,20 @@ const Part = struct {
 
 fn next(s: []const u8, at: usize) ?Part {
     if (at >= s.len) return null;
-    if (s[at] == '\x1e') {
-        const end = std.mem.indexOfScalarPos(u8, s, at + 1, '\x1f') orelse return null;
+    if (s[at] == OPEN) {
+        const end = std.mem.indexOfScalarPos(u8, s, at + 1, CLOSE) orelse return null;
         return .{ .text = s[at + 1 .. end], .control = true, .end = end + 1 };
     }
-    const end = std.mem.indexOfScalarPos(u8, s, at, '\x1e') orelse s.len;
+    const end = std.mem.indexOfScalarPos(u8, s, at, OPEN) orelse s.len;
     return .{ .text = s[at..@min(end, at + 256)], .control = false, .end = @min(end, at + 256) };
 }
 
 fn icon(text: [:0]const u8) look.Prompt {
-    if (std.mem.eql(u8, text, "LMB")) return .{ .mouse = .left };
-    if (std.mem.eql(u8, text, "RMB")) return .{ .mouse = .right };
-    if (std.mem.eql(u8, text, "MMB")) return .{ .mouse = .middle };
-    if (std.mem.eql(u8, text, "wheel")) return .{ .mouse = .wheel };
-    if (std.mem.eql(u8, text, "arrows")) return .arrows;
+    inline for (.{ .left, .right, .middle }) |b| {
+        if (std.mem.eql(u8, text, input.mouseName(b))) return .{ .mouse = b };
+    }
+    if (std.mem.eql(u8, text, input.WHEEL)) return .{ .mouse = .wheel };
+    if (std.mem.eql(u8, text, input.ARROWS)) return .arrows;
     return .{ .key = text };
 }
 
@@ -64,18 +68,18 @@ pub const Face = struct {
     }
 
     pub fn fit(self: Face, buf: []u8, s: []const u8, size: i32, max: i32, keep_end: bool) [:0]const u8 {
-        if (std.mem.indexOfScalar(u8, s, '\x1e') == null) return self.face.fit(buf, s, size, max, keep_end);
+        if (std.mem.indexOfScalar(u8, s, OPEN) == null) return self.face.fit(buf, s, size, max, keep_end);
         const whole = std.fmt.bufPrintZ(buf, "{s}", .{s}) catch "";
         if (whole.len == s.len and self.width(whole, size) <= max) return whole;
         var edge: usize = if (keep_end) s.len else 0;
         var at: usize = 0;
         while (at < s.len) {
-            const end = if (s[at] == '\x1e') (next(s, at) orelse break).end else at + 1;
+            const end = if (s[at] == OPEN) (next(s, at) orelse break).end else at + 1;
             const candidate = if (keep_end) s[at..] else s[0..end];
             const text = (if (keep_end)
-                std.fmt.bufPrintZ(buf, "...{s}", .{candidate})
+                std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{candidate})
             else
-                std.fmt.bufPrintZ(buf, "{s}...", .{candidate})) catch {
+                std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{candidate})) catch {
                 if (keep_end) {
                     at = end;
                     continue;
@@ -89,9 +93,9 @@ pub const Face = struct {
             at = end;
         }
         return (if (keep_end)
-            std.fmt.bufPrintZ(buf, "...{s}", .{s[edge..]})
+            std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{s[edge..]})
         else
-            std.fmt.bufPrintZ(buf, "{s}...", .{s[0..edge]})) catch "";
+            std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{s[0..edge]})) catch "";
     }
 };
 
@@ -108,8 +112,8 @@ test "input glyph markup keeps chords and ordinary text separate" {
     try std.testing.expectEqual(@as(usize, 3), words);
     try std.testing.expectEqual(text.len, at);
     try std.testing.expect(next("\x1eCtrl", 0) == null);
-    try std.testing.expect(icon("LMB") == .mouse);
-    try std.testing.expect(icon("arrows") == .arrows);
+    try std.testing.expect(icon(input.mouseName(.left)) == .mouse);
+    try std.testing.expect(icon(input.ARROWS) == .arrows);
     try std.testing.expect(icon("Enter") == .key);
     std.debug.print("input glyph text: 2 chord glyphs, 3 text runs, incomplete token and mouse/keyboard dispatch checked\n", .{});
 }

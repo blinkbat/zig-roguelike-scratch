@@ -10,13 +10,12 @@ pub const COST: i32 = 20;
 pub const COOLDOWN: u8 = 4;
 pub const RANGE: i32 = 3;
 pub const MIN_RANGE: i32 = 2;
-pub const DMG_LO: i32 = 3;
-pub const DMG_HI: i32 = 5;
 pub const VERB = "charges into";
 pub const DONE = "charges";
 pub const DESCRIPTION = std.fmt.comptimePrint("Rush {d}-{d} tiles along a clear line. Strike a foe at the end and knock it back a tile, or retreat to empty ground.", .{ MIN_RANGE, RANGE });
+pub const FLAVOR = "Distance is only a matter of resolve.";
 
-pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };
+pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
 
 pub const knocked = bash.knocked;
 

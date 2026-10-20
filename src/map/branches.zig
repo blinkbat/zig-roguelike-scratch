@@ -17,7 +17,11 @@ const MIN_DEPTH = 6;
 const LOOP_REACH = 10;
 const DIG_MAX = 8;
 const PASSES = 64;
-const SALT = 0xB2A6_C4E5;
+const SALT: u64 = @intFromEnum(carve.Salt.branches);
+/// Cells from a door no chest or barrel is stocked.
+const DOOR_CLEAR = 6;
+/// Rejoined side paths are trodden whatever the ground they cut through.
+const REJOIN_PATH = carve.Palette.TRAILED.path;
 const CHEST_AREA = 500;
 const CHEST_MIN = 3;
 const CHEST_GAP = 14;
@@ -201,14 +205,11 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
                     far = p;
                 }
                 const p = far orelse break;
-                const was = lv.at(p);
-                lv.set(p, .chest);
-                if (grid.distances(lv, neck, &reached, &queue) == open - 1) {
+                if (chestKeepsRoute(lv, p, neck, open, &reached, &queue)) {
                     result.chests += 1;
                     open -= 1;
                     break;
                 }
-                lv.set(p, was);
                 distances[grid.Level.idx(p)] = -1;
             }
         }
@@ -250,7 +251,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
         if (!rewardAt(lv, p) or p.eq(origin)) continue;
         var near_door = false;
         for (doors) |door| {
-            if (mathx.dist(p, door) < MIN_DEPTH) near_door = true;
+            if (mathx.dist(p, door) < DOOR_CLEAR) near_door = true;
         }
         if (near_door) continue;
         var edges: usize = 0;
@@ -267,21 +268,13 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
     var open = blocked.openCount();
     var added: usize = 0;
     while (have < target and count > 0) {
-        const pick = rng.below(@intCast(count));
-        const p = spots[pick];
-        count -= 1;
-        spots[pick] = spots[count];
+        const p = rng.takeFrom(P, &spots, &count);
         var near = false;
         for (placed[0..have]) |other| {
             if (mathx.dist(p, other) < gap) near = true;
         }
         if (near) continue;
-        const was = blocked.at(p);
-        blocked.set(p, .chest);
-        if (grid.distances(blocked, origin, &dist, &queue) != open - 1) {
-            blocked.set(p, was);
-            continue;
-        }
+        if (!chestKeepsRoute(blocked, p, origin, open, &dist, &queue)) continue;
         switch (kind) {
             .chest => lv.set(p, .chest),
             .barrel => lv.putBarrel(p),
@@ -294,16 +287,22 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
     return added;
 }
 
+/// A chest at `p` if the `open` cells less that one all still reach `from`; otherwise `lv` as it was.
+fn chestKeepsRoute(lv: *grid.Level, p: P, from: P, open: usize, dist: *[grid.CELLS]i32, queue: *[grid.CELLS]u32) bool {
+    const was = lv.at(p);
+    lv.set(p, .chest);
+    if (grid.distances(lv, from, dist, queue) == open - 1) return true;
+    lv.set(p, was);
+    return false;
+}
+
 fn rewardAt(lv: *const grid.Level, p: P) bool {
     if (grid.Level.onRim(p) or !lv.vacant(p) or lv.doorAt(p) != null or lv.torch.has(lume.torchWall(p))) return false;
     for (mathx.ALL_DIRS) |d| {
         const q = p.add(d.delta());
         if (lv.at(q) == .chest or lv.hasBarrel(q)) return false;
     }
-    return switch (lv.at(p)) {
-        .grass, .dirt, .sand, .floor, .rubble, .tiny_shrub, .tall_grass, .shrooms => true,
-        .wall, .shrub, .swamp_tree, .rock, .snow, .water, .shallows, .bridge, .reeds, .fence, .lava, .fungus, .chasm, .ice, .grave, .crop, .boulder, .chest, .chest_open => false,
-    };
+    return lv.at(p).rewards();
 }
 
 fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.CELLS]i32, queue: *[grid.CELLS]u32, pal: carve.Palette) bool {
@@ -335,7 +334,7 @@ fn rejoin(lv: *grid.Level, g: *const Graph, b: Branch, distances: *const [grid.C
             if (lv.walkable(q) and !g.contains(b.root, Graph.cell(q)) and distances[k] >= LOOP_REACH) {
                 var back = i;
                 while (depth[back] != 0) {
-                    lv.tile[back] = carve.Palette.TRAILED.path;
+                    lv.tile[back] = REJOIN_PATH;
                     back = previous[back];
                 }
                 return true;

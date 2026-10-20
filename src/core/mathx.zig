@@ -406,6 +406,25 @@ pub const Rng = struct {
         unreachable;
     }
 
+    /// One of the first `n.*` items at random, taken out by moving the last into its place.
+    pub fn takeFrom(self: *Rng, comptime T: type, items: []T, n: *usize) T {
+        const k = self.below(@intCast(n.*));
+        const out = items[k];
+        n.* -= 1;
+        items[k] = items[n.*];
+        return out;
+    }
+
+    /// Fisher-Yates, from the back.
+    pub fn shuffle(self: *Rng, comptime T: type, xs: []T) void {
+        var i = xs.len;
+        while (i > 1) {
+            i -= 1;
+            const j = self.below(@intCast(i + 1));
+            std.mem.swap(T, &xs[i], &xs[j]);
+        }
+    }
+
     pub fn pickWhere(self: *Rng, comptime T: type, items: []const T, ctx: anytype, comptime ok: fn (@TypeOf(ctx), T) bool) ?T {
         var n: u32 = 0;
         for (items) |it| {

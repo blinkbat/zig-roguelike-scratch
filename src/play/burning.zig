@@ -3,8 +3,6 @@ const mathx = @import("../core/mathx.zig");
 const damage = @import("damage.zig");
 
 pub const COST: i32 = 20;
-pub const FIRE_LO: i32 = 2;
-pub const FIRE_HI: i32 = 4;
 pub const CHANCE: u32 = 50;
 pub const TURNS: u8 = 3;
 pub const PER_TURN: i32 = 4;
@@ -14,6 +12,7 @@ pub const ELEMENT: damage.Element = .fire;
 /// Its chance to burn, as every fire skill's description says it.
 pub const BURN_NOTE = std.fmt.comptimePrint("{d}% burn chance", .{CHANCE});
 pub const DESCRIPTION = std.fmt.comptimePrint("Add fire damage to an arrow. {s}: {d} fire damage per turn for {d} turns.", .{ BURN_NOTE, PER_TURN, TURNS });
+pub const FLAVOR = "Pitch, rag and a spark of spite.";
 
 pub const Burn = damage.Lasting(TURNS, i16, seared);
 
@@ -21,7 +20,7 @@ fn seared(fire_resist: i16) i32 {
     return damage.resisted(PER_TURN, fire_resist);
 }
 
-pub const BASE = damage.Base{ .lo = FIRE_LO, .hi = FIRE_HI };
+pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const procs = damage.chance(CHANCE);
 

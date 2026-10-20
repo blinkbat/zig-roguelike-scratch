@@ -82,8 +82,21 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).halts;
     }
 
+    /// Plain dry ground a chest or barrel may be placed on.
+    pub fn rewards(t: Tile) bool {
+        return TERRAIN.getPtrConst(t).rewards;
+    }
+
     pub fn opened(t: Tile) ?Tile {
         return if (t == .chest) .chest_open else null;
+    }
+
+    /// What another tile becomes when opened, never placed as it is.
+    pub fn isOpened(t: Tile) bool {
+        for (std.enums.values(Tile)) |s| {
+            if (s.opened() == t) return true;
+        }
+        return false;
     }
 
     /// Given a `WallShape` by `gen.shapeWalls`, joining its own kind.
@@ -148,8 +161,10 @@ comptime {
     }
 }
 
-const Terrain = struct { solid: bool, blind: bool, ground: ?Tile = null, liquid: bool = false, halts: bool = false };
+const Terrain = struct { solid: bool, blind: bool, ground: ?Tile = null, liquid: bool = false, halts: bool = false, rewards: bool = false };
 const OPEN = Terrain{ .solid = false, .blind = false };
+const BARE = Terrain{ .solid = false, .blind = false, .rewards = true };
+const LITTER = Terrain{ .solid = false, .blind = false, .ground = .grass, .rewards = true };
 const SHUT = Terrain{ .solid = true, .blind = true };
 const MOAT = Terrain{ .solid = true, .blind = false };
 const LIQUID = Terrain{ .solid = true, .blind = false, .liquid = true };
@@ -159,18 +174,18 @@ const LOW_PROP = Terrain{ .solid = true, .blind = false, .ground = .grass };
 
 const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .wall = SHUT,
-    .floor = OPEN,
-    .grass = OPEN,
+    .floor = BARE,
+    .grass = BARE,
     .shrub = TALL_PROP,
     .rock = SHUT,
-    .dirt = OPEN,
-    .sand = OPEN,
+    .dirt = BARE,
+    .sand = BARE,
     .snow = OPEN,
     .water = LIQUID,
     .shallows = OPEN,
     .bridge = OPEN,
     .reeds = .{ .solid = false, .blind = true, .ground = .grass },
-    .rubble = OPEN,
+    .rubble = BARE,
     .fence = MOAT,
     .lava = LIQUID,
     .fungus = .{ .solid = true, .blind = true, .ground = .dirt },
@@ -178,10 +193,10 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .ice = OPEN,
     .grave = LOW_PROP,
     .crop = .{ .solid = false, .blind = true },
-    .tiny_shrub = DECOR,
+    .tiny_shrub = LITTER,
     .boulder = TALL_PROP,
-    .tall_grass = DECOR,
-    .shrooms = DECOR,
+    .tall_grass = LITTER,
+    .shrooms = LITTER,
     .chest = .{ .solid = true, .blind = false, .ground = .grass, .halts = true },
     .chest_open = DECOR,
     .swamp_tree = .{ .solid = true, .blind = true, .ground = .dirt },

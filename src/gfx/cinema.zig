@@ -34,8 +34,13 @@ const SHARP_ROWS: f32 = 3.5;
 const SOFT_ROWS: f32 = 7.5;
 /// From a flame or a spell's light, how far its glow blooms.
 const EMISSIVE_REACH: f32 = 1.5;
-/// Cells past the view the field covers: the shafts look up to 2.3 cells upwind, softened over one more.
-const FIELD_MARGIN: i32 = 4;
+/// The dimmest sky the water mist is still drawn under, as a share of a clear noon.
+const AIR_DARKEST: f32 = 0.06;
+/// Cells upwind the light shafts look for crowns.
+const SHAFT_NEAR: f32 = 1.1;
+const SHAFT_FAR: f32 = 2.3;
+/// Cells past the view the field covers: the farthest shaft lookup, softened over one more.
+const FIELD_MARGIN: i32 = @intFromFloat(@ceil(SHAFT_FAR + 1));
 
 fn focusStrength(t: grid.Tile, at: [2]f32, hero: ?[2]f32) f32 {
     if (!look.SOFTENED.contains(t)) return 0;
@@ -98,7 +103,7 @@ pub const Cinema = struct {
             self.active_bloom = self.active_bloom or look.reflects(t);
         }
         for (flames) |f| {
-            if (f.lit > look.CLEAR_A and markEmissive(&pixels, f.at)) self.active_bloom = true;
+            if (f.lit > light.FAINT and markEmissive(&pixels, f.at)) self.active_bloom = true;
         }
         for (l.effects[0..l.effect_n]) |*e| {
             if (markEmissive(&pixels, e.source.drawn())) self.active_bloom = true;
@@ -112,8 +117,7 @@ pub const Cinema = struct {
     }
 
     pub fn endScene(self: *Cinema, outer: u32, origin: [2]f32, cell: f32, l: *light.Light) void {
-        rl.gl.rlDrawRenderBatchActive();
-        rl.gl.rlEnableFramebuffer(outer);
+        look.endTarget(outer);
         const scene = self.scene.?.texture;
         const size = mathx.P{ .x = scene.width, .y = scene.height };
         const b = self.bloom.?;
@@ -124,7 +128,7 @@ pub const Cinema = struct {
             self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ 2.0, 0 }, 1);
             drawTarget(scene);
             rl.endShaderMode();
-            rl.gl.rlEnableFramebuffer(outer);
+            look.endTarget(outer);
             copyTarget(scene);
             rl.beginBlendMode(.additive);
             rl.beginShaderMode(b.shader);
@@ -167,7 +171,7 @@ pub const Cinema = struct {
         look.setMapView(a, origin, cell, .{ @floatFromInt(screen.x), @floatFromInt(screen.y) });
         look.setUniform(a.shader, a.time, l.t.at());
         look.setUniform(a.shader, a.daylight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
-        look.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), 0.06, 1));
+        look.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));
         look.setUniform(a.shader, a.direction, k.across());
         rl.drawRectangle(0, 0, screen.x, screen.y, rl.Color.white);
         rl.endShaderMode();
@@ -211,7 +215,7 @@ const BLOOM_FS = look.FS_HEAD ++ FIELD_FS ++
     \\    uv = clamp(uv, 0.5 / screen, vec2(1.0) - 0.5 / screen);
     \\    vec3 c = texture(texture0, uv).rgb;
     \\    if (extract == 0) return c;
-    \\    vec2 p = (vec2(uv.x, 1.0 - uv.y) * screen - origin) / cell;
+    \\    vec2 p = cellAtPixel(vec2(uv.x, 1.0 - uv.y) * screen);
     \\    vec4 f = fieldAt(p);
     \\    float high = max(c.r, max(c.g, c.b));
     \\    float lum = dot(c, LUMA);
@@ -233,7 +237,7 @@ const BLOOM_FS = look.FS_HEAD ++ FIELD_FS ++
     \\}
 ;
 
-const AIR_FS = look.FS_HEAD ++ FIELD_FS ++
+const AIR_FS = look.FS_HEAD ++ FIELD_FS ++ std.fmt.comptimePrint("const float SHAFT_NEAR = {d};\nconst float SHAFT_FAR = {d};\n", .{ SHAFT_NEAR, SHAFT_FAR }) ++
     \\uniform float time;
     \\uniform float daylight;
     \\uniform float brightness;
@@ -255,7 +259,7 @@ const AIR_FS = look.FS_HEAD ++ FIELD_FS ++
     \\    vec4 f = softField(p);
     \\    float mist = f.WATER * (0.35 + 0.65 * noise(p * vec2(0.7, 2.2) + vec2(time * 0.025, time * 0.012)));
     \\    mist *= 0.065 * brightness;
-    \\    float trees = (softField(p + direction * 1.1).CROWN + softField(p + direction * 2.3).CROWN) * 0.5;
+    \\    float trees = (softField(p + direction * SHAFT_NEAR).CROWN + softField(p + direction * SHAFT_FAR).CROWN) * 0.5;
     \\    float band = dot(p, vec2(-direction.y, direction.x));
     \\    float shafts = pow(max(0.0, sin(band * 4.7 + noise(p * 0.3) * 2.0)), 10.0);
     \\    shafts *= trees * (1.0 - f.CROWN) * daylight * 0.035;

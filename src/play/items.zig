@@ -81,12 +81,14 @@ pub const Kind = enum {
 const KINDS = std.enums.values(Kind);
 /// Percent of slain foes that drop an item.
 pub const DROP_PERCENT = 25;
-/// Gold a broken barrel and an opened chest drop, both inclusive.
-pub const BARREL_GOLD = [2]i32{ 3, 12 };
-pub const CHEST_GOLD = [2]i32{ 18, 36 };
+/// Gold a broken barrel and an opened chest drop, both ends inclusive.
+pub const Gold = struct { lo: i32, hi: i32 };
+pub const BARREL_GOLD = Gold{ .lo = 3, .hi = 12 };
+pub const CHEST_GOLD = Gold{ .lo = 18, .hi = 36 };
 pub const Affix = struct { kind: Mod, value: i16 };
 pub const Spec = struct {
     name: [:0]const u8,
+    flavor: [:0]const u8,
     /// Where it may be worn.
     slots: []const Slot,
     needs: attrs.Needs = .{},
@@ -96,45 +98,52 @@ pub const Spec = struct {
     two_handed: bool = false,
     armour: i16 = 0,
 
-    fn named(s: Spec, name: [:0]const u8) Spec {
+    fn named(s: Spec, name: [:0]const u8, flavor: [:0]const u8) Spec {
         var out = s;
         out.name = name;
+        out.flavor = flavor;
         return out;
     }
 };
-const LIGHT_MELEE = Spec{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light };
-const HEAVY_MELEE = Spec{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 } };
-const GREAT_WEAPON = Spec{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true };
-const MAGIC_OFFHAND = Spec{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } };
+const LIGHT_MELEE = Spec{ .name = "Short sword", .flavor = "Quick answers in tight tunnels.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light };
+const HEAVY_MELEE = Spec{ .name = "Longsword", .flavor = "A knight's blade, well notched.", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 } };
+const GREAT_WEAPON = Spec{ .name = "Great axe", .flavor = "Built to fell trees. Not picky.", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true };
+const MAGIC_OFFHAND = Spec{ .name = "Tome", .flavor = "Its scorched pages whisper.", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } };
 const SPECS = std.EnumArray(Kind, Spec).init(.{
     .sword = LIGHT_MELEE,
     .axe = GREAT_WEAPON,
-    .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
-    .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .two_handed = true },
+    .bow = .{ .name = "Short bow", .flavor = "Yew, gut string, a steady nerve.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
+    .staff = .{ .name = "Oak staff", .flavor = "Old wood remembers its spells.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .two_handed = true },
     .longsword = HEAVY_MELEE,
-    .mace = HEAVY_MELEE.named("Mace"),
-    .greatsword = GREAT_WEAPON.named("Greatsword"),
-    .crossbow = .{ .name = "Crossbow", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true },
-    .greatclub = GREAT_WEAPON.named("Greatclub"),
-    .sling = .{ .name = "Sling", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged },
-    .dagger = LIGHT_MELEE.named("Dagger"),
-    .handaxe = LIGHT_MELEE.named("Handaxe"),
-    .wand = .{ .name = "Wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 } },
+    .mace = HEAVY_MELEE.named("Mace", "Armour only makes it louder."),
+    .greatsword = GREAT_WEAPON.named("Greatsword", "Rarely needs drawing twice."),
+    .crossbow = .{ .name = "Crossbow", .flavor = "Slow to wind, quick to end it.", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true },
+    .greatclub = GREAT_WEAPON.named("Greatclub", "The oldest weapon. Still works."),
+    .sling = .{ .name = "Sling", .flavor = "A stone, a strap, a grudge.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged },
+    .dagger = LIGHT_MELEE.named("Dagger", "For close work, closer secrets."),
+    .handaxe = LIGHT_MELEE.named("Handaxe", "Splits kindling and skulls."),
+    .wand = .{ .name = "Wand", .flavor = "Its tip stays warm, remembering.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 } },
     .tome = MAGIC_OFFHAND,
-    .orb = MAGIC_OFFHAND.named("Orb"),
-    .buckler = .{ .name = "Buckler", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2 },
-    .totem = MAGIC_OFFHAND.named("Totem"),
-    .shield = .{ .name = "Wooden shield", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6 },
-    .cap = .{ .name = "Leather cap", .slots = &.{.helm}, .armour = 2 },
-    .helmet = .{ .name = "Iron helm", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4 },
-    .leather = .{ .name = "Leather armour", .slots = &.{.chest}, .needs = .{ .strength = 10 }, .armour = 5 },
-    .mail = .{ .name = "Mail armour", .slots = &.{.chest}, .needs = .{ .strength = 20 }, .armour = 10 },
-    .belt = .{ .name = "Leather belt", .slots = &.{.belt}, .armour = 1 },
-    .gloves = .{ .name = "Leather gloves", .slots = &.{.gloves}, .armour = 2 },
-    .boots = .{ .name = "Leather boots", .slots = &.{.boots}, .armour = 2 },
-    .ring = .{ .name = "Copper ring", .slots = &.{ .left_ring, .right_ring } },
-    .amulet = .{ .name = "Bronze amulet", .slots = &.{.amulet} },
+    .orb = MAGIC_OFFHAND.named("Orb", "Something stirs in the glass."),
+    .buckler = .{ .name = "Buckler", .flavor = "Small, until it saves your life.", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2 },
+    .totem = MAGIC_OFFHAND.named("Totem", "Carved faces watch the dark."),
+    .shield = .{ .name = "Wooden shield", .flavor = "Splintered at the rim. Standing.", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6 },
+    .cap = .{ .name = "Leather cap", .flavor = "Better than nothing. Barely.", .slots = &.{.helm}, .armour = 2 },
+    .helmet = .{ .name = "Iron helm", .flavor = "Cold iron and a narrow view.", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4 },
+    .leather = .{ .name = "Leather armour", .flavor = "Stiff, scarred, smells of rain.", .slots = &.{.chest}, .needs = .{ .strength = 10 }, .armour = 5 },
+    .mail = .{ .name = "Mail armour", .flavor = "Each ring a vow to stay alive.", .slots = &.{.chest}, .needs = .{ .strength = 20 }, .armour = 10 },
+    .belt = .{ .name = "Leather belt", .flavor = "Holds up trousers, and hope.", .slots = &.{.belt}, .armour = 1 },
+    .gloves = .{ .name = "Leather gloves", .flavor = "Worn thin at the knuckles.", .slots = &.{.gloves}, .armour = 2 },
+    .boots = .{ .name = "Leather boots", .flavor = "They have walked out of worse.", .slots = &.{.boots}, .armour = 2 },
+    .ring = .{ .name = "Copper ring", .flavor = "Green at the edges, warm inside.", .slots = &.{ .left_ring, .right_ring } },
+    .amulet = .{ .name = "Bronze amulet", .flavor = "Wards off the dark. Mostly.", .slots = &.{.amulet} },
 });
+
+/// Characters of flavor a compared item card holds on one line.
+pub const FLAVOR_MAX = 32;
+comptime {
+    for (SPECS.values) |s| if (s.flavor.len > FLAVOR_MAX) @compileError(s.name ++ ": flavor longer than a card line");
+}
 
 pub fn spec(k: Kind) Spec {
     return SPECS.getPtrConst(k).*;
@@ -146,6 +155,10 @@ pub const Item = struct {
 
     pub fn name(self: Item) [:0]const u8 {
         return spec(self.kind).name;
+    }
+
+    pub fn flavor(self: Item) [:0]const u8 {
+        return spec(self.kind).flavor;
     }
 
     pub fn fits(self: Item, slot: Slot) bool {

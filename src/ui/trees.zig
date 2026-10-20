@@ -20,7 +20,7 @@ pub const View = struct { cursor: usize = 0, zoom: f32 = 1, pan: rl.Vector2 = .{
 pub const Loadout = struct { stats: attrs.Attrs, gear: items.Gear };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
-pub const ZOOM_START: f32 = 2.2;
+pub const ZOOM_START: f32 = 2.4;
 pub const ZOOM_RATE: f32 = 1.7;
 /// A press of a zoom button, and a notch of the wheel.
 pub const ZOOM_STEP: f32 = 0.4;
@@ -45,6 +45,9 @@ const ACTION_Y: i32 = 540;
 const BIND_Y: i32 = 470;
 const REASON_Y: i32 = 512;
 const HINT_Y: i32 = 610;
+const HINT_STEP: i32 = 164;
+/// The canvas's title row.
+const TITLE_Y: i32 = 150;
 const SKILL_SIZE: i32 = 56;
 const SKILL_MID_X: i32 = 372;
 const SKILL_STEP_X: i32 = 248;
@@ -105,19 +108,15 @@ fn hint(face: *const font.Face, x: i32, y: i32, prompts: []const look.Prompt, la
 fn treeHints(face: *const font.Face, o: P, device: input.Device) void {
     const y = o.y + HINT_Y;
     const x = o.x + CANVAS_LEFT;
-    if (device.pad()) {
-        const st = input.State{ .device = device };
-        hint(face, x, y, &.{.{ .stick = .left }}, "Browse");
-        hint(face, x + 164, y, &.{.{ .stick = .right }}, "Pan");
-        hint(face, x + 328, y, &.{.dpad}, "Zoom");
-        hint(face, x + 492, y, &.{look.Prompt.menuOf(&st, .inspect)}, "Overview");
-    } else {
-        const keys = input.TreeKeys;
-        hint(face, x, y, &.{.{ .key = keys.BROWSE_CAPTION }}, "Browse");
-        hint(face, x + 164, y, &.{ .{ .key = input.Desk.SHIFT_NAME }, .arrows }, "Pan");
-        hint(face, x + 328, y, &.{ .{ .key = keys.ZOOM_OUT_CAPTION }, .{ .key = keys.ZOOM_IN_CAPTION } }, "Zoom");
-        hint(face, x + 492, y, &.{.{ .key = keys.OVERVIEW_CAPTION }}, "Overview");
-    }
+    const keys = input.TreeKeys;
+    const pad = device.pad();
+    const hints = [_]struct { pad: []const look.Prompt, keys: []const look.Prompt, label: [:0]const u8 }{
+        .{ .pad = &.{.{ .stick = .left }}, .keys = &.{.{ .key = keys.BROWSE_CAPTION }}, .label = "Browse" },
+        .{ .pad = &.{.{ .stick = .right }}, .keys = &.{ .{ .key = keys.PAN_CAPTION }, .arrows }, .label = "Pan" },
+        .{ .pad = &.{.dpad}, .keys = &.{ .{ .key = keys.ZOOM_OUT_CAPTION }, .{ .key = keys.ZOOM_IN_CAPTION } }, .label = "Zoom" },
+        .{ .pad = &.{look.Prompt.menuOn(device, keys.PAD_OVERVIEW)}, .keys = &.{.{ .key = keys.OVERVIEW_CAPTION }}, .label = "Overview" },
+    };
+    for (hints, 0..) |h, i| hint(face, x + @as(i32, @intCast(i)) * HINT_STEP, y, if (pad) h.pad else h.keys, h.label);
 }
 
 pub fn actionBox(o: P) rl.Rectangle {
@@ -155,10 +154,10 @@ fn frame(face: *const font.Face, o: P, title: [:0]const u8, points: u16) void {
         rl.drawRectangleRec(box, BACK);
         rl.drawRectangleLinesEx(box, 1, BORDER);
     }
-    face.draw(title, o.x + CANVAS_LEFT, o.y + 150, font.SMALL, look.TEXT);
+    face.draw(title, o.x + CANVAS_LEFT, o.y + TITLE_Y, font.SMALL, look.TEXT);
     var line: menu.Note(64) = .{};
     line.say("{d} point{s} available", .{ points, mathx.plural(points) });
-    face.draw(line.text(), o.x + CANVAS_RIGHT - face.width(line.text(), font.SMALL), o.y + 150, font.SMALL, if (points > 0) OWNED else look.DIM);
+    face.draw(line.text(), o.x + CANVAS_RIGHT - face.width(line.text(), font.SMALL), o.y + TITLE_Y, font.SMALL, if (points > 0) OWNED else look.DIM);
 }
 
 const Legend = struct { name: [:0]const u8, color: rl.Color };
@@ -294,7 +293,8 @@ fn skillDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const 
     const learned = growth.unlocked(s.act);
     if (learned) rank.say("Rank {d} of {d}", .{ growth.ranks.get(s.act), progress.RANKS }) else rank.say("Not learned", .{});
     face.draw(rank.text(), x, o.y + 188, font.SMALL, skillInk(class, growth, s));
-    const end = paragraph(face, s.act.desc(), x, o.y + 218, TEXT_W, look.TEXT);
+    var end = paragraph(face, s.act.desc(), x, o.y + 218, TEXT_W, look.TEXT);
+    if (s.act.flavor()) |line| end = paragraph(face, line, x, end + 4, TEXT_W, look.DIM);
     var top = @max(o.y + 284, end + 12);
     rl.drawLine(x, top, x + TEXT_W, top, BORDER);
     top += 12;
@@ -374,7 +374,7 @@ pub fn clampPan(view: View) rl.Vector2 {
 
 /// A Character message, over the tree canvas where no button covers it.
 pub fn note(face: *const font.Face, o: P, text: [:0]const u8) void {
-    face.drawMid(text, o.x + @as(i32, @intFromFloat(CANVAS.x + CANVAS.width / 2)), o.y + 150, font.SMALL, look.TEXT);
+    face.drawMid(text, o.x + @as(i32, @intFromFloat(CANVAS.x + CANVAS.width / 2)), o.y + TITLE_Y, font.SMALL, look.TEXT);
 }
 
 fn wheelLayout(o: P, view: View) Layout {
@@ -433,10 +433,80 @@ fn ring(p: rl.Vector2, radius: f32, ink: rl.Color) void {
     rl.drawCircleLines(@intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), radius, ink);
 }
 
+const NodeState = enum {
+    allocated,
+    reachable,
+    distant,
+
+    fn of(growth: *const progress.State, i: usize) NodeState {
+        return if (growth.nodes.isSet(i)) .allocated else if (growth.available(i)) .reachable else .distant;
+    }
+
+    /// A distant node on the wheel takes its arm's ink; the legend shows it locked.
+    fn ink(self: NodeState) rl.Color {
+        return switch (self) {
+            .allocated => OWNED,
+            .reachable => AVAILABLE,
+            .distant => LOCKED,
+        };
+    }
+
+    const LEGEND = blk: {
+        var out: [std.enums.values(NodeState).len]Legend = undefined;
+        for (std.enums.values(NodeState), &out) |s, *l| l.* = .{ .name = menu.named(s), .color = s.ink() };
+        break :blk out;
+    };
+};
+
 fn nodeInk(growth: *const progress.State, i: usize) rl.Color {
-    if (growth.nodes.isSet(i)) return OWNED;
-    if (growth.available(i)) return AVAILABLE;
-    return armInk(passives.NODES[i].arm);
+    const state = NodeState.of(growth, i);
+    return if (state == .distant) armInk(passives.NODES[i].arm) else state.ink();
+}
+
+fn groupInk(g: passives.Group) rl.Color {
+    return switch (g) {
+        .attribute => look.rgb(0xb3a888),
+        .life => look.rgb(0xb24a40),
+        .mana => look.rgb(0x5b8bd0),
+        .offense => look.rgb(0xc98a3a),
+        .defense => look.rgb(0x8d98a4),
+    };
+}
+
+const GROUP_LEGEND = blk: {
+    var out: [std.enums.values(passives.Group).len]Legend = undefined;
+    for (std.enums.values(passives.Group), &out) |g, *l| l.* = .{ .name = menu.named(g), .color = groupInk(g) };
+    break :blk out;
+};
+const GROUP_STEP: i32 = 112;
+
+fn grantNote(g: passives.Grant, whole: bool) menu.Note(100) {
+    var out: menu.Note(100) = .{};
+    var s = std.io.fixedBufferStream(out.buf[0..100]);
+    if (whole) g.write(s.writer()) else g.writeAmount(s.writer());
+    out.n = s.pos;
+    out.buf[out.n] = 0;
+    return out;
+}
+
+/// Stat labels show from this many pixels per ring, where none overlaps another label or node.
+const LABEL_UNIT: f32 = 55;
+/// What a TINY character is taken to span when testing label room.
+const LABEL_CHAR_PX: f32 = 6.5;
+const LABEL_GAP: f32 = 2;
+
+fn labelTop(p: rl.Vector2, r: f32) f32 {
+    return p.y + r + LABEL_GAP;
+}
+
+fn nodeLabel(face: *const font.Face, n: passives.Node, p: rl.Vector2, r: f32, state: NodeState) void {
+    var amount = grantNote(n.grant, false);
+    const top: i32 = @intFromFloat(@round(labelTop(p, r)));
+    const x: i32 = @intFromFloat(@round(p.x));
+    const w = @max(face.width(amount.text(), font.TINY), face.width(n.word(), font.TINY)) + 4;
+    rl.drawRectangle(x - @divTrunc(w, 2), top, w, 2 * font.TINY + 1, look.fade(BACK, 0.85));
+    face.drawMid(amount.text(), x, top, font.TINY, if (state == .distant) LOCKED else look.TEXT);
+    face.drawMid(n.word(), x, top + font.TINY, font.TINY, if (state == .distant) LOCKED else look.DIM);
 }
 
 fn passiveLink(layout: Layout, pos: *const Positions, growth: *const progress.State, from: usize, to: usize) void {
@@ -461,7 +531,11 @@ const Positions = [passives.N + 1]rl.Vector2;
 
 fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, view: View, surface: menu.Surface) void {
     frame(face, o, "PASSIVE TREE", growth.passive_points);
-    face.draw("Small: stat   Medium: interest   Double: capstone", o.x + 44, o.y + 174, font.SMALL, look.DIM);
+    for (GROUP_LEGEND, 0..) |l, k| {
+        const x = o.x + 44 + @as(i32, @intCast(k)) * GROUP_STEP;
+        rl.drawCircle(x + 5, o.y + 182, 5, l.color);
+        face.draw(l.name, x + 16, o.y + 174, font.SMALL, look.DIM);
+    }
     const layout = wheelLayout(o, view);
     var pos: Positions = undefined;
     for (&pos, 0..) |*q, i| q.* = layout.at(i);
@@ -476,34 +550,33 @@ fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const 
     rl.drawCircleV(hub, nodeRadius(passives.HUB, layout.unit), TILE);
     ring(hub, nodeRadius(passives.HUB, layout.unit), BORDER);
     rl.drawCircleV(hub, 2, OWNED);
+    const labelled = layout.unit >= LABEL_UNIT;
     for (passives.NODES, 0..) |n, i| {
         const p = pos[i];
         const r = nodeRadius(i, layout.unit);
         const ink = nodeInk(growth, i);
-        const allocated = growth.nodes.isSet(i);
-        rl.drawCircleV(p, r, if (allocated) look.rgb(0x3e3526) else TILE);
-        ring(p, r, ink);
-        if (n.tier == .capstone) ring(p, r - 3, ink);
-        if (n.ring == 0) {
-            face.centred(armInitial(n.arm), @intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), font.SMALL, ink);
-        } else if (n.seam) |s| {
-            for ([_]f32{ -2, 2 }) |dy| rl.drawLineEx(.{ .x = p.x - 3, .y = p.y + dy }, .{ .x = p.x + 3, .y = p.y + dy }, 1, if (allocated) OWNED else armInk(s.to()));
-        } else if (allocated) {
-            const a = rl.Vector2{ .x = p.x - 3, .y = p.y };
-            const b = rl.Vector2{ .x = p.x - 1, .y = p.y + 2 };
-            rl.drawLineEx(a, b, 1, OWNED);
-            rl.drawLineEx(b, .{ .x = p.x + 3, .y = p.y - 2 }, 1, OWNED);
-        } else if (growth.available(i)) {
-            rl.drawCircleV(p, 2, AVAILABLE);
+        const state = NodeState.of(growth, i);
+        const fill = groupInk(n.grant.kind.group());
+        if (state == .allocated) {
+            rl.drawCircleV(p, r, fill);
+            ring(p, r + 1, OWNED);
+        } else {
+            rl.drawCircleV(p, r, TILE);
+            rl.drawCircleV(p, r * 0.55, if (state == .distant) look.fade(fill, 0.45) else fill);
         }
+        ring(p, r, ink);
+        const mark = if (state == .allocated) BACK else ink;
+        if (n.tier == .capstone) ring(p, r - 3, mark);
+        if (n.ring == 0) {
+            face.centred(armInitial(n.arm), @intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), font.SMALL, if (state == .allocated) BACK else look.TEXT);
+        } else if (n.seam) |s| {
+            for ([_]f32{ -2, 2 }) |dy| rl.drawLineEx(.{ .x = p.x - 3, .y = p.y + dy }, .{ .x = p.x + 3, .y = p.y + dy }, 1, if (state == .allocated) BACK else armInk(s.to()));
+        }
+        if (labelled and progress.bonusAt(class, i) != null) nodeLabel(face, n, p, r, state);
     }
     ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + 5, FOCUS);
     rl.endScissorMode();
-    legend(face, o, &.{
-        .{ .name = "Allocated", .color = OWNED },
-        .{ .name = "Reachable", .color = AVAILABLE },
-        .{ .name = "Distant", .color = LOCKED },
-    }, true);
+    legend(face, o, &NodeState.LEGEND, true);
     for ([_]bool{ false, true }) |increase| {
         const box = zoomBox(o, increase);
         const enabled = if (increase) view.zoom < ZOOM_MAX else view.zoom > ZOOM_MIN;
@@ -519,12 +592,35 @@ fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const 
     passiveDetails(face, o, class, growth, view.cursor);
 }
 
-fn grantRow(face: *const font.Face, o: P, y: i32, grant: passives.Grant) void {
-    var text: menu.Note(100) = .{};
-    if (grant.kind == .armour) {
-        text.say("+{d}% physical damage reduction", .{grant.amount});
-    } else text.say("+{d}{s} {s}", .{ grant.amount, if (grant.isPercent()) @as([]const u8, "%") else " to", grant.label() });
-    _ = paragraph(face, text.text(), o.x + TEXT_X, o.y + y, TEXT_W, look.WARD);
+fn grantRow(face: *const font.Face, x: i32, y: i32, grant: passives.Grant) i32 {
+    var text = grantNote(grant, true);
+    return hud.paragraph(face, text.text(), x, y, TEXT_W, font.BODY, font.BODY + hud.LEADING, look.WARD);
+}
+
+/// What the grants alone leave unsaid.
+fn grantNoteOf(n: passives.Node, origin: bool, out: *menu.Note(128)) ?[:0]const u8 {
+    if (n.seam != null) return "Connects both paths. Reach this bridge from either side.";
+    if (n.ring == 0 and !origin) return "Another class origin can be allocated directly.";
+    for ([_]?passives.Grant{ n.grant, n.bump }) |maybe| {
+        const g = maybe orelse continue;
+        switch (g.kind) {
+            .armour => {
+                out.say("Armour reduces physical harm by 1% per point, up to {d}% total.", .{attrs.ARMOUR_MAX});
+                return out.text();
+            },
+            .dodge => {
+                out.say("Dodge is capped at {d}%.", .{attrs.DODGE_MAX});
+                return out.text();
+            },
+            .life_on_kill => return "Kills by burning, bleeding or gas do not heal.",
+            .cull => return "Applies to every foe a blow damages.",
+            .mana_regen => return "Added to the base recovery of 1 mana per turn.",
+            .mana_cost => return "Adds to the reduction from skill ranks.",
+            .life_flask => return "Increases what each life flask drink recovers.",
+            else => {},
+        }
+    }
+    return null;
 }
 
 fn passiveDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, i: usize) void {
@@ -532,43 +628,36 @@ fn passiveDetails(face: *const font.Face, o: P, class: hero.Class, growth: *cons
     const x = o.x + TEXT_X;
     const allocated = growth.nodes.isSet(i);
     const reachable = growth.available(i);
-    const origin = i == progress.start(class);
+    const origin = progress.bonusAt(class, i) == null;
     const enabled = growth.canAllocate(i);
     face.draw(if (n.ring == 0) "CLASS ORIGIN" else if (n.seam != null) "BRIDGE NODE" else switch (n.tier) {
         .stat => "STAT NODE",
         .interest => "INTEREST NODE",
         .capstone => "CAPSTONE",
-    }, x, o.y + 150, font.SMALL, look.DIM);
-    face.draw(n.name, x, o.y + 177, font.HEAD, look.TEXT);
+    }, x, o.y + TITLE_Y, font.SMALL, look.DIM);
+    var y = o.y + 177;
+    if (origin) {
+        y = hud.paragraph(face, "No bonus: your class attributes already include it.", x, y, TEXT_W, font.BODY, font.BODY + hud.LEADING, look.TEXT);
+    } else {
+        y = grantRow(face, x, y, n.grant);
+        if (n.bump) |bump| y = grantRow(face, x, y, bump);
+    }
+    y += 10;
     var path: menu.Note(96) = .{};
     if (n.branch) |branch| {
-        path.say("{s} / {s}", .{ armName(n.arm), branch.name() });
+        path.say("{s}  -  {s} / {s}", .{ n.name, armName(n.arm), branch.name() });
     } else if (n.seam) |s| {
-        path.say("{s} / {s} bridge", .{ armName(s.from()), armName(s.to()) });
+        path.say("{s}  -  {s} / {s} bridge", .{ n.name, armName(s.from()), armName(s.to()) });
     } else {
-        path.say("{s} origin", .{armName(n.arm)});
+        path.say("{s}  -  {s} origin", .{ n.name, armName(n.arm) });
     }
-    face.draw(path.text(), x, o.y + 214, font.SMALL, armInk(n.arm));
-    face.draw(if (origin) "Free class origin" else if (allocated) "Allocated" else if (reachable) "Reachable" else "Distant", x, o.y + 247, font.BODY, nodeInk(growth, i));
-    rl.drawLine(x, o.y + 283, x + TEXT_W, o.y + 283, BORDER);
-    face.draw("BONUSES", x, o.y + 304, font.SMALL, look.DIM);
-    if (origin) {
-        _ = paragraph(face, "Class attributes already include this starting point. No extra bonus is added here.", x, o.y + 334, TEXT_W, look.TEXT);
-    } else {
-        grantRow(face, o, 334, n.grant);
-        if (n.bump) |bump| grantRow(face, o, 366, bump);
-    }
-    if (n.tier == .capstone) {
-        _ = paragraph(face, "Branch capstone. Grants the listed bonuses when allocated.", x, o.y + 417, TEXT_W, look.DIM);
-    } else if (n.seam != null) {
-        _ = paragraph(face, "Connects both paths. Reach this bridge from either side.", x, o.y + 417, TEXT_W, look.DIM);
-    } else if (n.ring == 0 and !origin) {
-        _ = paragraph(face, "Another class origin can be allocated directly.", x, o.y + 417, TEXT_W, look.DIM);
-    } else if (n.grant.kind == .armour) {
-        var armour: menu.Note(128) = .{};
-        armour.say("Armour reduces physical harm by 1% per point, up to {d}% total.", .{attrs.ARMOUR_MAX});
-        _ = paragraph(face, armour.text(), x, o.y + 417, TEXT_W, look.DIM);
-    }
+    y = paragraph(face, path.text(), x, y, TEXT_W, look.DIM);
+    y += 6;
+    face.draw(if (origin) "Free class origin" else menu.named(NodeState.of(growth, i)), x, y, font.SMALL, nodeInk(growth, i));
+    y += font.SMALL + 14;
+    rl.drawLine(x, y, x + TEXT_W, y, BORDER);
+    var note_buf: menu.Note(128) = .{};
+    if (grantNoteOf(n, origin, &note_buf)) |line| _ = paragraph(face, line, x, y + 12, TEXT_W, look.DIM);
     const reason: []const u8 = if (origin) "Your class starts here for free." else if (allocated) "This passive is already allocated." else if (!reachable) "Allocate a prerequisite first." else if (growth.passive_points < progress.POINT_COST) "Requires " ++ PASSIVE_COST ++ "." else "Ready to allocate. Costs " ++ PASSIVE_COST ++ ".";
     _ = paragraph(face, reason, x, o.y + REASON_Y, TEXT_W, if (enabled) OWNED else look.DIM);
     drawAction(face, o, if (origin) "Class origin" else if (allocated) "Allocated" else "Allocate passive", enabled);
@@ -599,7 +688,7 @@ test "every class skill stays in its canvas and is reachable by directional sele
             for (boxes[0..skills.len], 0..) |box, i| {
                 if (!reached.isSet(i)) continue;
                 for (mathx.ALL_DIRS) |dir| {
-                    if (menu.nearest(box, boxes[0..skills.len], dir, 2)) |next| reached.set(next);
+                    if (menu.nearest(box, boxes[0..skills.len], dir, @import("book.zig").CELL_ACROSS)) |next| reached.set(next);
                 }
             }
         }
@@ -641,6 +730,41 @@ test "passive diagram fits all nodes and retains its selected node through zoom"
         }
     }
     std.debug.print("passive diagram: all {d} nodes fit without overlap; selected node and clipped hit targets checked at six zoom levels\n", .{passives.N});
+}
+
+fn labelBox(layout: Layout, i: usize) rl.Rectangle {
+    const n = passives.NODES[i];
+    var amount = grantNote(n.grant, false);
+    const chars = @max(amount.text().len, n.word().len);
+    const w = @as(f32, @floatFromInt(chars)) * LABEL_CHAR_PX;
+    const p = layout.at(i);
+    return .{ .x = p.x - w / 2, .y = labelTop(p, nodeRadius(i, layout.unit)), .width = w, .height = 2 * font.TINY };
+}
+
+fn labelsClear(unit: f32) bool {
+    const layout = Layout{ .box = look.rect(0, 0, 1, 1), .centre = .{ .x = 0, .y = 0 }, .unit = unit };
+    for (0..passives.N) |i| {
+        const box = labelBox(layout, i);
+        for (0..passives.N + 1) |j| {
+            const p = layout.at(j);
+            const r = nodeRadius(j, unit);
+            if (rl.checkCollisionCircleRec(p, r, box)) return false;
+            if (j != i and j < passives.N and rl.checkCollisionRecs(box, labelBox(layout, j))) return false;
+        }
+    }
+    return true;
+}
+
+test "stat labels show only where none overlaps another label or node" {
+    var least: f32 = 10;
+    while (!labelsClear(least)) least += 1;
+    const o = P{ .x = 0, .y = 0 };
+    const start = wheelLayout(o, .{ .zoom = ZOOM_START }).unit;
+    const overview = wheelLayout(o, .{ .zoom = ZOOM_MIN }).unit;
+    std.debug.print("passive labels: clear from {d:.0} px per ring; shown from {d:.0}; opening view {d:.1}, overview {d:.1}\n", .{ least, LABEL_UNIT, start, overview });
+    try std.testing.expect(LABEL_UNIT >= least);
+    try std.testing.expect(start >= LABEL_UNIT);
+    for ([_]f32{ LABEL_UNIT, LABEL_UNIT * 1.5, 200 }) |unit| try std.testing.expect(labelsClear(unit));
 }
 
 test "panning as far as it goes from any node never leaves the canvas empty" {

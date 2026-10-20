@@ -198,7 +198,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Juke is the free leap (`juke.FREE`); Blink spends a turn. Leap cursors may cross invalid cells but
   confirm only visible vacant landings. Idle frames advance no simulation, mana recovery or cooldowns.
   Flasks take a turn, recover from that turn's end, and restart recovery when drunk again; kills refill them.
-- `skillbar.SKILLS` owns each action's module, reticle and attack type; damaging actions must declare one.
+- `skillbar.SKILLS` owns each action's module and reticle; `Act.attack` derives the attack type from them
+  (arrow ranged, bolt or unaimed element spell, swing or rush melee), and every damaging action must have one.
   Skills dispatch by module declarations (`afflict`, `burst`, `JUMPS`, `around`, `Ward`, `knocked`).
   A pin (`pinning.Pin`) holds a body to its cell on its
   turns, counting down like chill; it still strikes the hero beside it and cannot be knocked back.
