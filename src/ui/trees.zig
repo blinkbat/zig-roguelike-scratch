@@ -13,10 +13,11 @@ const font = @import("../gfx/font.zig");
 const hud = @import("hud.zig");
 const menu = @import("menu.zig");
 const input = @import("../core/input.zig");
+const book = @import("book.zig");
 
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
-pub const View = struct { cursor: usize = 0, zoom: f32 = 1, pan: rl.Vector2 = .{ .x = 0, .y = 0 } };
+pub const View = struct { cursor: usize = 0, zoom: f32 = ZOOM_MIN, pan: rl.Vector2 = .{ .x = 0, .y = 0 } };
 pub const Loadout = struct { stats: attrs.Attrs, gear: items.Gear };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
@@ -26,11 +27,16 @@ pub const ZOOM_RATE: f32 = 1.7;
 pub const ZOOM_STEP: f32 = 0.4;
 pub const ZOOM_WHEEL: f32 = 0.2;
 pub const PAN_RATE: f32 = 3.4;
-const CANVAS = look.rect(24, 132, 696, 458);
-const DETAIL = look.rect(744, 132, 332, 458);
-const WHEEL = look.rect(44, 194, 656, 352);
 /// Text and controls keep this far inside the canvas.
 const INSET: i32 = 20;
+const DETAIL_W: f32 = 332;
+const PANEL_GAP: f32 = 24;
+const CANVAS = rl.Rectangle{ .x = book.AREA.x, .y = book.AREA.y, .width = book.AREA.width - DETAIL_W - PANEL_GAP, .height = book.AREA.height };
+const DETAIL = rl.Rectangle{ .x = book.AREA.x + book.AREA.width - DETAIL_W, .y = book.AREA.y, .width = DETAIL_W, .height = book.AREA.height };
+/// The wheel's room on the canvas, below the title and group legend and above the foot row.
+const WHEEL_TOP: f32 = 62;
+const WHEEL_FOOT: f32 = 44;
+const WHEEL = rl.Rectangle{ .x = CANVAS.x + @as(f32, @floatFromInt(INSET)), .y = CANVAS.y + WHEEL_TOP, .width = CANVAS.width - 2 * @as(f32, @floatFromInt(INSET)), .height = CANVAS.height - WHEEL_TOP - WHEEL_FOOT };
 const TEXT_X: i32 = @as(i32, @intFromFloat(DETAIL.x)) + INSET;
 const TEXT_W: i32 = @as(i32, @intFromFloat(DETAIL.width)) - 2 * INSET;
 const CANVAS_RIGHT: i32 = @as(i32, @intFromFloat(CANVAS.x + CANVAS.width)) - INSET;
@@ -44,8 +50,15 @@ const BUTTON_H: i32 = 34;
 const ACTION_Y: i32 = 540;
 const BIND_Y: i32 = 470;
 const REASON_Y: i32 = 512;
+comptime {
+    std.debug.assert(BIND_Y + BUTTON_H <= REASON_Y and REASON_Y + font.SMALL <= ACTION_Y);
+    std.debug.assert(@as(f32, @floatFromInt(ACTION_Y + BUTTON_H)) <= DETAIL.y + DETAIL.height);
+}
 const HINT_Y: i32 = 610;
 const HINT_STEP: i32 = 164;
+/// In a hint, between one glyph and the next, and past the last before the label.
+const HINT_GLYPH_GAP: i32 = 4;
+const HINT_LABEL_GAP: i32 = 2;
 /// The canvas's title row.
 const TITLE_Y: i32 = 150;
 const SKILL_SIZE: i32 = 56;
@@ -53,6 +66,30 @@ const SKILL_MID_X: i32 = 372;
 const SKILL_STEP_X: i32 = 248;
 const SKILL_TOP: i32 = 218;
 const SKILL_STEP_Y: i32 = 126;
+/// A diagram of two rows or fewer: its first row's middle and the step between rows.
+const SPARSE_TOP: i32 = SKILL_TOP + 40;
+const SPARSE_STEP_Y: i32 = 164;
+/// Down from a skill tile's middle to its name's top.
+const SKILL_NAME_DY: i32 = 46;
+/// A link arrow keeps this clear of the name above and the tile below.
+const ARROW_CLEAR: i32 = 8;
+/// The rank plaque's corner, out from its tile's middle, and its size.
+const PLAQUE_AT = P{ .x = 10, .y = 16 };
+const PLAQUE_W: i32 = 42;
+const PLAQUE_H: i32 = 22;
+/// The selected tile's frame, out from the tile.
+const SKILL_FOCUS_GROW: f32 = 5;
+/// Detail rows: name, rank or kind, description, the earliest rule, and a passive's first grant.
+const NAME_Y: i32 = 154;
+const RANK_Y: i32 = 188;
+const DESC_Y: i32 = 218;
+const RULE_MIN_Y: i32 = 284;
+const GRANT_Y: i32 = 177;
+/// Either side of a detail rule, and a caption to its first line.
+const RULE_GAP: i32 = 12;
+const CAPTION_STEP: i32 = 21;
+/// Under a passive's allocation state, before its rule.
+const STATE_RULE_GAP: i32 = 14;
 const BACK = look.rgb(0x0c0e12);
 const TILE = look.rgb(0x15171c);
 const BORDER = look.rgb(0x34373d);
@@ -61,6 +98,16 @@ const AVAILABLE = look.rgb(0xbcc9ba);
 const OWNED = look.UI_GOLD;
 const FOCUS = look.UI_FOCUS;
 const LINE = look.rgb(0x42413d);
+/// A link with one allocated end, or reaching an allocated bridge.
+const OPEN_LINE = look.rgb(0x77705a);
+/// Out from a node's rim: its hit box, an incoming arrow's tip, its focus ring, and its centre's margin from the wheel's edge.
+const NODE_HIT_GROW: f32 = 3;
+const ARROW_TIP_GAP: f32 = 3;
+const NODE_FOCUS_GROW: f32 = 5;
+const NODE_KEEP_IN: f32 = 7;
+/// An allocated node's outer ring, and a capstone's inner ring, from its rim.
+const OWNED_RING: f32 = 1;
+const CAPSTONE_RING: f32 = 3;
 
 pub fn cellBox(panel: Panel, o: P, class: hero.Class, i: usize, view: View) rl.Rectangle {
     return switch (panel) {
@@ -68,7 +115,7 @@ pub fn cellBox(panel: Panel, o: P, class: hero.Class, i: usize, view: View) rl.R
         .passives => blk: {
             const layout = wheelLayout(o, view);
             const p = layout.at(i);
-            const r = nodeRadius(i, layout.unit) + 3;
+            const r = nodeRadius(i, layout.unit) + NODE_HIT_GROW;
             const x = @max(layout.box.x, p.x - r);
             const y = @max(layout.box.y, p.y - r);
             break :blk .{ .x = x, .y = y, .width = @max(0, @min(layout.box.x + layout.box.width, p.x + r) - x), .height = @max(0, @min(layout.box.y + layout.box.height, p.y + r) - y) };
@@ -100,9 +147,9 @@ fn hint(face: *const font.Face, x: i32, y: i32, prompts: []const look.Prompt, la
     for (prompts) |prompt| {
         const w = prompt.width(face, font.BODY);
         prompt.draw(face, next + @divTrunc(w, 2), y, font.BODY, 1);
-        next += w + 4;
+        next += w + HINT_GLYPH_GAP;
     }
-    face.draw(label, next + 2, y - 8, font.SMALL, look.DIM);
+    face.drawMiddle(label, next + HINT_LABEL_GAP, y, font.SMALL, look.DIM);
 }
 
 fn treeHints(face: *const font.Face, o: P, device: input.Device) void {
@@ -144,7 +191,7 @@ fn skillBox(o: P, class: hero.Class, i: usize) rl.Rectangle {
         across += @intFromBool(s.at.y == at.y);
     }
     const x = if (across == 1) SKILL_MID_X else SKILL_MID_X + (2 * at.x - 1) * @divExact(SKILL_STEP_X, 2);
-    const y = if (last < 2) SKILL_TOP + 40 + at.y * 164 else SKILL_TOP + at.y * SKILL_STEP_Y;
+    const y = if (last < 2) SPARSE_TOP + at.y * SPARSE_STEP_Y else SKILL_TOP + at.y * SKILL_STEP_Y;
     return look.rect(o.x + x - SKILL_SIZE / 2, o.y + y - SKILL_SIZE / 2, SKILL_SIZE, SKILL_SIZE);
 }
 
@@ -162,22 +209,45 @@ fn frame(face: *const font.Face, o: P, title: [:0]const u8, points: u16) void {
 
 const Legend = struct { name: [:0]const u8, color: rl.Color };
 
-fn legend(face: *const font.Face, o: P, entries: []const Legend, round: bool) void {
+fn legendOf(comptime E: type, comptime inkOf: fn (E) rl.Color) [std.enums.values(E).len]Legend {
+    var out: [std.enums.values(E).len]Legend = undefined;
+    for (std.enums.values(E), &out) |e, *l| l.* = .{ .name = menu.named(e), .color = inkOf(e) };
+    return out;
+}
+
+/// Where a legend's row sits and how each entry looks; `text` null inks a name as its mark.
+const LegendStyle = struct {
+    y: i32,
+    step: i32,
+    mark: enum { ring, square, dot },
+    text_dx: i32,
+    text: ?rl.Color = null,
+};
+/// Half a legend mark's width.
+const MARK_HALF: i32 = 5;
+/// A foot legend entry's left to its name.
+const LEGEND_TEXT_DX: i32 = 20;
+
+fn legend(face: *const font.Face, o: P, entries: []const Legend, style: LegendStyle) void {
     for (entries, 0..) |l, i| {
-        const x = o.x + CANVAS_LEFT + @as(i32, @intCast(i)) * LEGEND_STEP;
-        const y = o.y + FOOT_Y;
-        if (round) ring(.{ .x = @floatFromInt(x + 5), .y = @floatFromInt(y) }, 4, l.color) else rl.drawRectangleLinesEx(look.rect(x, y - 5, 11, 11), 1, l.color);
-        face.centred(l.name, x + 20 + @divTrunc(face.width(l.name, font.SMALL), 2), y, font.SMALL, l.color);
+        const x = o.x + CANVAS_LEFT + @as(i32, @intCast(i)) * style.step;
+        const y = o.y + style.y;
+        switch (style.mark) {
+            .ring => ring(.{ .x = @floatFromInt(x + MARK_HALF), .y = @floatFromInt(y) }, @floatFromInt(MARK_HALF - 1), l.color),
+            .square => rl.drawRectangleLinesEx(look.rect(x, y - MARK_HALF, 2 * MARK_HALF + 1, 2 * MARK_HALF + 1), 1, l.color),
+            .dot => rl.drawCircle(x + MARK_HALF, y, MARK_HALF, l.color),
+        }
+        face.drawMiddle(l.name, x + style.text_dx, y, font.SMALL, style.text orelse l.color);
     }
 }
 
-pub fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, width: i32, ink: rl.Color) i32 {
-    return hud.paragraph(face, text, x, y, width, font.SMALL, font.SMALL + hud.LEADING, ink);
+fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, width: i32, ink: rl.Color) i32 {
+    return hud.paragraph(face, text, x, y, width, font.SMALL, ink);
 }
 
 fn arrow(from: rl.Rectangle, to: rl.Rectangle, ink: rl.Color) void {
-    const a = rl.Vector2{ .x = from.x + from.width / 2, .y = from.y + from.height + 42 };
-    const b = rl.Vector2{ .x = to.x + to.width / 2, .y = to.y - 8 };
+    const a = rl.Vector2{ .x = from.x + from.width / 2, .y = from.y + from.height / 2 + @as(f32, @floatFromInt(SKILL_NAME_DY + font.SMALL + ARROW_CLEAR)) };
+    const b = rl.Vector2{ .x = to.x + to.width / 2, .y = to.y - @as(f32, @floatFromInt(ARROW_CLEAR)) };
     const elbow = (a.y + b.y) / 2;
     rl.drawLineEx(a, .{ .x = a.x, .y = elbow }, 1, ink);
     rl.drawLineEx(.{ .x = a.x, .y = elbow }, .{ .x = b.x, .y = elbow }, 1, ink);
@@ -203,11 +273,7 @@ const SkillState = enum {
         };
     }
 
-    const LEGEND = blk: {
-        var out: [std.enums.values(SkillState).len]Legend = undefined;
-        for (std.enums.values(SkillState), &out) |s, *l| l.* = .{ .name = menu.named(s), .color = s.ink() };
-        break :blk out;
-    };
+    const LEGEND = legendOf(SkillState, ink);
 };
 
 fn skillInk(class: hero.Class, growth: *const progress.State, s: progress.Skill) rl.Color {
@@ -235,18 +301,18 @@ fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, o: P, class:
         const ink = skillInk(class, growth, s);
         rl.drawRectangleRec(box, TILE);
         rl.drawRectangleLinesEx(box, 2, ink);
-        if (i == cursor) rl.drawRectangleLinesEx(look.grown(box, 5), 2, FOCUS);
+        if (i == cursor) rl.drawRectangleLinesEx(look.grown(box, SKILL_FOCUS_GROW), 2, FOCUS);
         look.drawSkill(sprites, s.act, mid.x - look.SKILL_PX / 2, mid.y - look.SKILL_PX / 2, skillAlpha(class, growth, s));
-        const plaque = look.rect(mid.x + 10, mid.y + 16, 42, 22);
+        const plaque = look.rect(mid.x + PLAQUE_AT.x, mid.y + PLAQUE_AT.y, PLAQUE_W, PLAQUE_H);
         rl.drawRectangleRec(plaque, BACK);
         rl.drawRectangleLinesEx(plaque, 1, ink);
         var rank: menu.Note(16) = .{};
         rank.say("{d}/{d}", .{ growth.ranks.get(s.act), progress.RANKS });
         const pm = look.middleAt(plaque);
         face.centred(rank.text(), pm.x, pm.y, font.SMALL, ink);
-        face.drawMid(s.act.name(), mid.x, mid.y + 46, font.SMALL, if (growth.unlocked(s.act) or i == cursor) look.TEXT else LOCKED);
+        face.drawMid(s.act.name(), mid.x, mid.y + SKILL_NAME_DY, font.SMALL, if (growth.unlocked(s.act) or i == cursor) look.TEXT else LOCKED);
     }
-    legend(face, o, &SkillState.LEGEND, false);
+    legend(face, o, &SkillState.LEGEND, .{ .y = FOOT_Y, .step = LEGEND_STEP, .mark = .square, .text_dx = LEGEND_TEXT_DX });
     skillDetails(face, o, class, growth, skills[cursor], loadout);
 }
 
@@ -288,18 +354,20 @@ fn hitText(act: skillbar.Act, hit: Hit, text: *menu.Note(128)) [:0]const u8 {
 
 fn skillDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, s: progress.Skill, loadout: Loadout) void {
     const x = o.x + TEXT_X;
-    face.draw(s.act.name(), x, o.y + 154, font.HEAD, look.TEXT);
+    face.draw(s.act.name(), x, o.y + NAME_Y, font.HEAD, look.TEXT);
     var rank: menu.Note(64) = .{};
     const learned = growth.unlocked(s.act);
     if (learned) rank.say("Rank {d} of {d}", .{ growth.ranks.get(s.act), progress.RANKS }) else rank.say("Not learned", .{});
-    face.draw(rank.text(), x, o.y + 188, font.SMALL, skillInk(class, growth, s));
-    var end = paragraph(face, s.act.desc(), x, o.y + 218, TEXT_W, look.TEXT);
+    face.draw(rank.text(), x, o.y + RANK_Y, font.SMALL, skillInk(class, growth, s));
+    var desc: menu.Note(256) = .{};
+    growth.writeDescription(s.act, desc.writer());
+    var end = paragraph(face, desc.text(), x, o.y + DESC_Y, TEXT_W, look.TEXT);
     if (s.act.flavor()) |line| end = paragraph(face, line, x, end + 4, TEXT_W, look.DIM);
-    var top = @max(o.y + 284, end + 12);
+    var top = @max(o.y + RULE_MIN_Y, end + RULE_GAP);
     rl.drawLine(x, top, x + TEXT_W, top, BORDER);
-    top += 12;
+    top += RULE_GAP;
     face.draw(if (learned) "CURRENT RANK" else "FIRST RANK", x, top, font.SMALL, look.DIM);
-    top += 21;
+    top += CAPTION_STEP;
     var text: menu.Note(128) = .{};
     const hit = skillHit(growth, s.act, loadout);
     if (hit) |h| {
@@ -307,10 +375,8 @@ fn skillDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const 
         face.draw("Before critical hits and defenses.", x, top, font.SMALL, look.DIM);
         top += 18;
     }
-    var usage: [64]u8 = undefined;
-    var used = std.io.fixedBufferStream(&usage);
-    growth.writeUsage(s.act, used.writer());
-    text.say("{s}", .{used.getWritten()});
+    text.clear();
+    growth.writeUsage(s.act, text.writer());
     text.buf[0] = std.ascii.toUpper(text.buf[0]);
     top = paragraph(face, text.text(), x, top, TEXT_W, look.TEXT);
     const maximum = growth.ranks.get(s.act) == progress.RANKS;
@@ -320,7 +386,7 @@ fn skillDetails(face: *const font.Face, o: P, class: hero.Class, growth: *const 
         top += 8;
         text.say("NEXT RANK  {d}", .{next.ranks.get(s.act)});
         face.draw(text.text(), x, top, font.SMALL, OWNED);
-        top += 21;
+        top += CAPTION_STEP;
         const changes = top;
         if (next.damageBonus(s.act) != growth.damageBonus(s.act)) {
             const next_hit = skillHit(&next, s.act, loadout).?;
@@ -388,7 +454,7 @@ fn wheelLayout(o: P, view: View) Layout {
         .y = box.y + box.height / 2 - focus.y * unit * pull,
     } };
     const selected = layout.at(view.cursor);
-    const margin = nodeRadius(view.cursor, unit) + 7;
+    const margin = nodeRadius(view.cursor, unit) + NODE_KEEP_IN;
     layout.centre.x += std.math.clamp(selected.x, box.x + margin, box.x + box.width - margin) - selected.x;
     layout.centre.y += std.math.clamp(selected.y, box.y + margin, box.y + box.height - margin) - selected.y;
     layout.centre.x -= view.pan.x * unit;
@@ -451,11 +517,7 @@ const NodeState = enum {
         };
     }
 
-    const LEGEND = blk: {
-        var out: [std.enums.values(NodeState).len]Legend = undefined;
-        for (std.enums.values(NodeState), &out) |s, *l| l.* = .{ .name = menu.named(s), .color = s.ink() };
-        break :blk out;
-    };
+    const LEGEND = legendOf(NodeState, ink);
 };
 
 fn nodeInk(growth: *const progress.State, i: usize) rl.Color {
@@ -473,19 +535,15 @@ fn groupInk(g: passives.Group) rl.Color {
     };
 }
 
-const GROUP_LEGEND = blk: {
-    var out: [std.enums.values(passives.Group).len]Legend = undefined;
-    for (std.enums.values(passives.Group), &out) |g, *l| l.* = .{ .name = menu.named(g), .color = groupInk(g) };
-    break :blk out;
-};
+const GROUP_LEGEND = legendOf(passives.Group, groupInk);
+/// The group legend's row, under the canvas title, its step and an entry's left to its name.
+const GROUP_LEGEND_Y: i32 = 182;
 const GROUP_STEP: i32 = 112;
+const GROUP_TEXT_DX: i32 = 16;
 
 fn grantNote(g: passives.Grant, whole: bool) menu.Note(100) {
     var out: menu.Note(100) = .{};
-    var s = std.io.fixedBufferStream(out.buf[0..100]);
-    if (whole) g.write(s.writer()) else g.writeAmount(s.writer());
-    out.n = s.pos;
-    out.buf[out.n] = 0;
+    if (whole) g.write(out.writer()) else g.writeAmount(out.writer());
     return out;
 }
 
@@ -495,16 +553,24 @@ const LABEL_UNIT: f32 = 55;
 const LABEL_CHAR_PX: f32 = 6.5;
 const LABEL_GAP: f32 = 2;
 
+/// A label's plate past its text's width.
+const LABEL_PAD: i32 = 4;
+
 fn labelTop(p: rl.Vector2, r: f32) f32 {
     return p.y + r + LABEL_GAP;
 }
 
+/// The plate a label `w` wide sits on, under a node at `p`, radius `r`.
+fn labelRect(p: rl.Vector2, r: f32, w: i32) rl.Rectangle {
+    return look.rect(@as(i32, @intFromFloat(@round(p.x))) - @divTrunc(w, 2), @intFromFloat(@round(labelTop(p, r))), w, 2 * font.TINY + 1);
+}
+
 fn nodeLabel(face: *const font.Face, n: passives.Node, p: rl.Vector2, r: f32, state: NodeState) void {
     var amount = grantNote(n.grant, false);
-    const top: i32 = @intFromFloat(@round(labelTop(p, r)));
+    const plate = labelRect(p, r, @max(face.width(amount.text(), font.TINY), face.width(n.word(), font.TINY)) + LABEL_PAD);
     const x: i32 = @intFromFloat(@round(p.x));
-    const w = @max(face.width(amount.text(), font.TINY), face.width(n.word(), font.TINY)) + 4;
-    rl.drawRectangle(x - @divTrunc(w, 2), top, w, 2 * font.TINY + 1, look.fade(BACK, 0.85));
+    const top: i32 = @intFromFloat(plate.y);
+    rl.drawRectangleRec(plate, look.fade(BACK, 0.85));
     face.drawMid(amount.text(), x, top, font.TINY, if (state == .distant) LOCKED else look.TEXT);
     face.drawMid(n.word(), x, top + font.TINY, font.TINY, if (state == .distant) LOCKED else look.DIM);
 }
@@ -513,7 +579,7 @@ fn passiveLink(layout: Layout, pos: *const Positions, growth: *const progress.St
     const before = from == passives.HUB or growth.nodes.isSet(from);
     const after = growth.nodes.isSet(to);
     const bridge = from != passives.HUB and passives.NODES[from].seam != null;
-    const ink = if (before and after) OWNED else if (before or (bridge and after)) look.rgb(0x77705a) else LINE;
+    const ink = if (before and after) OWNED else if (before or (bridge and after)) OPEN_LINE else LINE;
     const a = pos[from];
     const b = pos[to];
     rl.drawLineEx(a, b, if (before and after) 2 else 1, ink);
@@ -521,7 +587,7 @@ fn passiveLink(layout: Layout, pos: *const Positions, growth: *const progress.St
         const length = std.math.hypot(b.x - a.x, b.y - a.y);
         const dx = (b.x - a.x) / length;
         const dy = (b.y - a.y) / length;
-        const tip = rl.Vector2{ .x = b.x - dx * (nodeRadius(to, layout.unit) + 3), .y = b.y - dy * (nodeRadius(to, layout.unit) + 3) };
+        const tip = rl.Vector2{ .x = b.x - dx * (nodeRadius(to, layout.unit) + ARROW_TIP_GAP), .y = b.y - dy * (nodeRadius(to, layout.unit) + ARROW_TIP_GAP) };
         for ([_]f32{ -1, 1 }) |side| rl.drawLineEx(.{ .x = tip.x - dx * 4 - dy * side * 2.5, .y = tip.y - dy * 4 + dx * side * 2.5 }, tip, 1, ink);
     }
 }
@@ -531,11 +597,7 @@ const Positions = [passives.N + 1]rl.Vector2;
 
 fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const progress.State, view: View, surface: menu.Surface) void {
     frame(face, o, "PASSIVE TREE", growth.passive_points);
-    for (GROUP_LEGEND, 0..) |l, k| {
-        const x = o.x + 44 + @as(i32, @intCast(k)) * GROUP_STEP;
-        rl.drawCircle(x + 5, o.y + 182, 5, l.color);
-        face.draw(l.name, x + 16, o.y + 174, font.SMALL, look.DIM);
-    }
+    legend(face, o, &GROUP_LEGEND, .{ .y = GROUP_LEGEND_Y, .step = GROUP_STEP, .mark = .dot, .text_dx = GROUP_TEXT_DX, .text = look.DIM });
     const layout = wheelLayout(o, view);
     var pos: Positions = undefined;
     for (&pos, 0..) |*q, i| q.* = layout.at(i);
@@ -559,14 +621,14 @@ fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const 
         const fill = groupInk(n.grant.kind.group());
         if (state == .allocated) {
             rl.drawCircleV(p, r, fill);
-            ring(p, r + 1, OWNED);
+            ring(p, r + OWNED_RING, OWNED);
         } else {
             rl.drawCircleV(p, r, TILE);
             rl.drawCircleV(p, r * 0.55, if (state == .distant) look.fade(fill, 0.45) else fill);
         }
         ring(p, r, ink);
         const mark = if (state == .allocated) BACK else ink;
-        if (n.tier == .capstone) ring(p, r - 3, mark);
+        if (n.tier == .capstone) ring(p, r - CAPSTONE_RING, mark);
         if (n.ring == 0) {
             face.centred(armInitial(n.arm), @intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), font.SMALL, if (state == .allocated) BACK else look.TEXT);
         } else if (n.seam) |s| {
@@ -574,9 +636,9 @@ fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const 
         }
         if (labelled and progress.bonusAt(class, i) != null) nodeLabel(face, n, p, r, state);
     }
-    ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + 5, FOCUS);
+    ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + NODE_FOCUS_GROW, FOCUS);
     rl.endScissorMode();
-    legend(face, o, &NodeState.LEGEND, true);
+    legend(face, o, &NodeState.LEGEND, .{ .y = FOOT_Y, .step = LEGEND_STEP, .mark = .ring, .text_dx = LEGEND_TEXT_DX });
     for ([_]bool{ false, true }) |increase| {
         const box = zoomBox(o, increase);
         const enabled = if (increase) view.zoom < ZOOM_MAX else view.zoom > ZOOM_MIN;
@@ -594,7 +656,7 @@ fn drawPassives(face: *const font.Face, o: P, class: hero.Class, growth: *const 
 
 fn grantRow(face: *const font.Face, x: i32, y: i32, grant: passives.Grant) i32 {
     var text = grantNote(grant, true);
-    return hud.paragraph(face, text.text(), x, y, TEXT_W, font.BODY, font.BODY + hud.LEADING, look.WARD);
+    return hud.paragraph(face, text.text(), x, y, TEXT_W, font.BODY, look.WARD);
 }
 
 /// What the grants alone leave unsaid.
@@ -614,7 +676,7 @@ fn grantNoteOf(n: passives.Node, origin: bool, out: *menu.Note(128)) ?[:0]const 
             },
             .life_on_kill => return "Kills by burning, bleeding or gas do not heal.",
             .cull => return "Applies to every foe a blow damages.",
-            .mana_regen => return "Added to the base recovery of 1 mana per turn.",
+            .mana_regen => return std.fmt.comptimePrint("Added to the base recovery of {d} mana per turn.", .{hero.MANA_REGEN}),
             .mana_cost => return "Adds to the reduction from skill ranks.",
             .life_flask => return "Increases what each life flask drink recovers.",
             else => {},
@@ -635,9 +697,9 @@ fn passiveDetails(face: *const font.Face, o: P, class: hero.Class, growth: *cons
         .interest => "INTEREST NODE",
         .capstone => "CAPSTONE",
     }, x, o.y + TITLE_Y, font.SMALL, look.DIM);
-    var y = o.y + 177;
+    var y = o.y + GRANT_Y;
     if (origin) {
-        y = hud.paragraph(face, "No bonus: your class attributes already include it.", x, y, TEXT_W, font.BODY, font.BODY + hud.LEADING, look.TEXT);
+        y = hud.paragraph(face, "No bonus: your class attributes already include it.", x, y, TEXT_W, font.BODY, look.TEXT);
     } else {
         y = grantRow(face, x, y, n.grant);
         if (n.bump) |bump| y = grantRow(face, x, y, bump);
@@ -654,10 +716,10 @@ fn passiveDetails(face: *const font.Face, o: P, class: hero.Class, growth: *cons
     y = paragraph(face, path.text(), x, y, TEXT_W, look.DIM);
     y += 6;
     face.draw(if (origin) "Free class origin" else menu.named(NodeState.of(growth, i)), x, y, font.SMALL, nodeInk(growth, i));
-    y += font.SMALL + 14;
+    y += font.SMALL + STATE_RULE_GAP;
     rl.drawLine(x, y, x + TEXT_W, y, BORDER);
     var note_buf: menu.Note(128) = .{};
-    if (grantNoteOf(n, origin, &note_buf)) |line| _ = paragraph(face, line, x, y + 12, TEXT_W, look.DIM);
+    if (grantNoteOf(n, origin, &note_buf)) |line| _ = paragraph(face, line, x, y + RULE_GAP, TEXT_W, look.DIM);
     const reason: []const u8 = if (origin) "Your class starts here for free." else if (allocated) "This passive is already allocated." else if (!reachable) "Allocate a prerequisite first." else if (growth.passive_points < progress.POINT_COST) "Requires " ++ PASSIVE_COST ++ "." else "Ready to allocate. Costs " ++ PASSIVE_COST ++ ".";
     _ = paragraph(face, reason, x, o.y + REASON_Y, TEXT_W, if (enabled) OWNED else look.DIM);
     drawAction(face, o, if (origin) "Class origin" else if (allocated) "Allocated" else "Allocate passive", enabled);
@@ -688,7 +750,7 @@ test "every class skill stays in its canvas and is reachable by directional sele
             for (boxes[0..skills.len], 0..) |box, i| {
                 if (!reached.isSet(i)) continue;
                 for (mathx.ALL_DIRS) |dir| {
-                    if (menu.nearest(box, boxes[0..skills.len], dir, @import("book.zig").CELL_ACROSS)) |next| reached.set(next);
+                    if (menu.nearest(box, boxes[0..skills.len], dir, book.CELL_ACROSS)) |next| reached.set(next);
                 }
             }
         }
@@ -698,12 +760,20 @@ test "every class skill stays in its canvas and is reachable by directional sele
     std.debug.print("class skill diagrams: {d} non-overlapping tiles within their canvas; all reachable in 8 directions\n", .{checked});
 }
 
+/// Every zoom a button press reaches from the overview, the closest and the opening one.
+const TEST_ZOOMS = blk: {
+    var out: []const f32 = &.{ ZOOM_START, ZOOM_MAX };
+    var z: f32 = ZOOM_MIN;
+    while (z < ZOOM_MAX) : (z += ZOOM_STEP) out = out ++ &[_]f32{z};
+    break :blk out[0..out.len].*;
+};
+
 test "passive diagram fits all nodes and retains its selected node through zoom" {
     const o = P{ .x = 73, .y = 41 };
     const layout = wheelLayout(o, .{});
     for (passives.NODES, 0..) |_, i| {
         const p = layout.at(i);
-        const r = nodeRadius(i, layout.unit) + 5;
+        const r = nodeRadius(i, layout.unit) + NODE_FOCUS_GROW;
         try std.testing.expect(p.x - r >= layout.box.x and p.y - r >= layout.box.y);
         try std.testing.expect(p.x + r <= layout.box.x + layout.box.width and p.y + r <= layout.box.y + layout.box.height);
         for (0..i) |j| {
@@ -711,11 +781,11 @@ test "passive diagram fits all nodes and retains its selected node through zoom"
             const distance = std.math.hypot(p.x - other.x, p.y - other.y);
             try std.testing.expect(distance > nodeRadius(i, layout.unit) + nodeRadius(j, layout.unit) + 2);
         }
-        for ([_]f32{ 1, 1.4, 1.8, 2.2, 2.6, 3.2 }) |zoom| {
+        for (TEST_ZOOMS) |zoom| {
             const view = View{ .cursor = i, .zoom = zoom };
             const zoomed = wheelLayout(o, view);
             const at = zoomed.at(i);
-            const radius = nodeRadius(i, zoomed.unit) + 5;
+            const radius = nodeRadius(i, zoomed.unit) + NODE_FOCUS_GROW;
             try std.testing.expect(at.x - radius >= zoomed.box.x and at.y - radius >= zoomed.box.y);
             try std.testing.expect(at.x + radius <= zoomed.box.x + zoomed.box.width and at.y + radius <= zoomed.box.y + zoomed.box.height);
             const hit = cellBox(.passives, o, .knight, i, view);
@@ -729,7 +799,7 @@ test "passive diagram fits all nodes and retains its selected node through zoom"
             }
         }
     }
-    std.debug.print("passive diagram: all {d} nodes fit without overlap; selected node and clipped hit targets checked at six zoom levels\n", .{passives.N});
+    std.debug.print("passive diagram: all {d} nodes fit without overlap; selected node and clipped hit targets checked at {d} zoom levels\n", .{ passives.N, TEST_ZOOMS.len });
 }
 
 fn labelBox(layout: Layout, i: usize) rl.Rectangle {
@@ -771,7 +841,7 @@ test "panning as far as it goes from any node never leaves the canvas empty" {
     const o = P{ .x = 0, .y = 0 };
     var fewest: usize = passives.N;
     for (0..passives.N) |i| {
-        for ([_]f32{ 1, 2.2, 3.2 }) |zoom| {
+        for ([_]f32{ ZOOM_MIN, ZOOM_START, ZOOM_MAX }) |zoom| {
             for ([_][2]f32{ .{ -1, -1 }, .{ 1, -1 }, .{ -1, 1 }, .{ 1, 1 }, .{ 1, 0 }, .{ 0, 1 } }) |way| {
                 var view = View{ .cursor = i, .zoom = zoom, .pan = .{ .x = way[0] * 100, .y = way[1] * 100 } };
                 view.pan = clampPan(view);

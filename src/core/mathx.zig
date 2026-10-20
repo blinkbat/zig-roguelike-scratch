@@ -406,6 +406,10 @@ pub const Rng = struct {
         unreachable;
     }
 
+    pub fn pick(self: *Rng, comptime T: type, items: []const T) T {
+        return items[self.below(@intCast(items.len))];
+    }
+
     /// One of the first `n.*` items at random, taken out by moving the last into its place.
     pub fn takeFrom(self: *Rng, comptime T: type, items: []T, n: *usize) T {
         const k = self.below(@intCast(n.*));

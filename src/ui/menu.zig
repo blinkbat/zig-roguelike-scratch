@@ -32,13 +32,18 @@ pub const NOTE_MAX: usize = 160;
 pub const SEP = "   ";
 pub const CARET = "_";
 
+/// A surface keeps this far inside the screen; past its own size it grows at `GROWTH` of the room, up to `SCALE_MAX`.
+const SURFACE_MARGIN: i32 = 16;
+const GROWTH: f32 = 0.5;
+const SCALE_MAX: f32 = 1.25;
+
 pub const Surface = struct {
     scale: f32,
     offset: rl.Vector2,
 
     pub fn of(screen: mathx.P, size: mathx.P) Surface {
-        const fit = @min(@as(f32, @floatFromInt(screen.x - 32)) / @as(f32, @floatFromInt(size.x)), @as(f32, @floatFromInt(screen.y - 32)) / @as(f32, @floatFromInt(size.y)));
-        const scale = if (fit <= 1) fit else @min(1.25, 1 + (fit - 1) * 0.5);
+        const fit = @min(@as(f32, @floatFromInt(screen.x - 2 * SURFACE_MARGIN)) / @as(f32, @floatFromInt(size.x)), @as(f32, @floatFromInt(screen.y - 2 * SURFACE_MARGIN)) / @as(f32, @floatFromInt(size.y)));
+        const scale = if (fit <= 1) fit else @min(SCALE_MAX, 1 + (fit - 1) * GROWTH);
         return .{ .scale = scale, .offset = .{
             .x = @round((@as(f32, @floatFromInt(screen.x)) - @as(f32, @floatFromInt(size.x)) * scale) / 2),
             .y = @round((@as(f32, @floatFromInt(screen.y)) - @as(f32, @floatFromInt(size.y)) * scale) / 2),
@@ -50,6 +55,11 @@ pub const Surface = struct {
             .x = @intFromFloat((@as(f32, @floatFromInt(p.x)) - self.offset.x) / self.scale),
             .y = @intFromFloat((@as(f32, @floatFromInt(p.y)) - self.offset.y) / self.scale),
         };
+    }
+
+    /// The screen pixel over surface point `p`; `point` undoes it.
+    pub fn screenOf(self: Surface, p: rl.Vector2) mathx.P {
+        return .{ .x = @intFromFloat(self.offset.x + p.x * self.scale), .y = @intFromFloat(self.offset.y + p.y * self.scale) };
     }
 
     pub fn begin(self: Surface) void {
@@ -97,6 +107,22 @@ pub fn Note(comptime N: usize) type {
         pub fn clear(self: *Self) void {
             self.n = 0;
             self.buf[0] = 0;
+        }
+
+        pub const Writer = std.io.GenericWriter(*Self, error{NoSpaceLeft}, append);
+
+        /// Appends to the text, as much as fits.
+        pub fn writer(self: *Self) Writer {
+            return .{ .context = self };
+        }
+
+        fn append(self: *Self, bytes: []const u8) error{NoSpaceLeft}!usize {
+            const n = @min(bytes.len, N - self.n);
+            if (n == 0 and bytes.len > 0) return error.NoSpaceLeft;
+            @memcpy(self.buf[self.n..][0..n], bytes[0..n]);
+            self.n += n;
+            self.buf[self.n] = 0;
+            return n;
         }
 
         pub fn text(self: *const Self) [:0]const u8 {
@@ -259,6 +285,17 @@ test "a long menu shows the rows that fit, the one it is on among them" {
     try std.testing.expect(w.len < 40 and w.from + w.len == 40);
     try std.testing.expectEqual(@as(usize, 0), window(900, 40, 0).from);
     try std.testing.expectEqual(@as(usize, 3), window(900, 3, 2).len);
+}
+
+test "a note's writer appends what fits and stays terminated" {
+    var note: Note(8) = .{};
+    note.writer().print("{d} of {d}", .{ 12, 34 }) catch {};
+    note.writer().writeAll("overflow") catch {};
+    try std.testing.expectEqualStrings("12 of 34", note.text());
+    note.clear();
+    note.writer().writeAll("ab") catch {};
+    try std.testing.expectEqualStrings("ab", note.text());
+    std.debug.print("note writer: {d}-byte note truncates and re-terminates after clear\n", .{8});
 }
 
 test "a tag is titled word by word" {

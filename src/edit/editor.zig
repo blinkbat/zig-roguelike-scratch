@@ -2117,7 +2117,6 @@ const SWATCH: i32 = 34;
 const SWATCH_GAP: i32 = 3;
 const PALETTE_COLS: usize = @intCast(@divTrunc(INNER_W + SWATCH_GAP, SWATCH + SWATCH_GAP));
 const PALETTE = blk: {
-    @setEvalBranchQuota(10_000);
     var tiles: []const grid.Tile = &.{};
     for (std.enums.values(grid.Tile)) |t| {
         if (!t.isOpened()) tiles = tiles ++ &[_]grid.Tile{t};
@@ -2845,9 +2844,7 @@ fn moves(owner: anytype, comptime k: Knob, comptime i: usize, by: i32) bool {
     var o = owner.*;
     const p = numberOf(&o, k, i);
     bump(@TypeOf(p.*), p, k.unit * by);
-    if (@hasDecl(@TypeOf(o), "fit")) o = o.fit();
-    o = carve.fitDress(o);
-    return !std.meta.eql(o, owner.*);
+    return !std.meta.eql(carve.fitted(o), owner.*);
 }
 
 fn stepNumber(ed: *Editor, g: *game.Game, y: i32, comptime i: usize, n: usize, v: anytype, comptime k: Knob, reach: [2]bool) void {

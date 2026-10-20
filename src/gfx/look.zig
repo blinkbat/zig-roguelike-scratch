@@ -827,7 +827,7 @@ pub fn under(t: grid.Tile) ?grid.Tile {
 /// Tree crowns: ground the light shades beneath them, and the atmosphere's shafts fall between.
 const CROWNS = std.EnumSet(grid.Tile).init(.{ .shrub = true, .swamp_tree = true });
 /// Scenery depth of field softens: the crowns and the small plants.
-pub const SOFTENED = CROWNS.unionWith(.init(.{ .tiny_shrub = true, .tall_grass = true, .shrooms = true }));
+pub const SOFTENED = CROWNS.unionWith(grid.LITTER_TILES);
 
 comptime {
     for (std.enums.values(grid.Tile)) |t| {
@@ -1470,20 +1470,40 @@ pub const CLEAR_A: f32 = 0.004;
 /// The alpha of a skill or action that cannot be used now.
 pub const FADED_A: f32 = 0.35;
 
+/// GLSL `const`s named for `values`' fields: floats at full precision, integers, and three-float vectors.
+pub fn glslConsts(comptime values: anytype) [:0]const u8 {
+    comptime {
+        var out: [:0]const u8 = "";
+        for (std.meta.fields(@TypeOf(values))) |f| {
+            const v = @field(values, f.name);
+            out = out ++ switch (@typeInfo(@TypeOf(v))) {
+                .int, .comptime_int => std.fmt.comptimePrint("const int {s} = {d};\n", .{ f.name, v }),
+                .float, .comptime_float => "const float " ++ f.name ++ " = " ++ glslFloat(v) ++ ";\n",
+                .array, .vector => "const vec3 " ++ f.name ++ " = vec3(" ++ glslFloat(v[0]) ++ ", " ++ glslFloat(v[1]) ++ ", " ++ glslFloat(v[2]) ++ ");\n",
+                else => @compileError(f.name ++ " is no GLSL constant"),
+            };
+        }
+        return out;
+    }
+}
+
+fn glslFloat(comptime v: anytype) [:0]const u8 {
+    const s = std.fmt.comptimePrint("{d}", .{@as(f32, v)});
+    return if (std.mem.indexOfAny(u8, s, ".e") == null) s ++ ".0" else s;
+}
+
 /// What every fragment shader opens with: raylib's inputs and output, `CLEAR_A`, the map's size in cells and `sky.LUMA`.
-pub const FS_HEAD = std.fmt.comptimePrint(
+pub const FS_HEAD =
     \\#version 330
     \\in vec2 fragTexCoord;
     \\in vec4 fragColor;
     \\uniform sampler2D texture0;
     \\out vec4 finalColor;
-    \\const float CLEAR_A = {d};
-    \\const vec2 CELLS = vec2({d}.0, {d}.0);
-    \\const vec3 LUMA = vec3({d}, {d}, {d});
     \\
-, .{ CLEAR_A, grid.W, grid.H, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2] });
+++ glslConsts(.{ .CLEAR_A = CLEAR_A }) ++ std.fmt.comptimePrint("const vec2 CELLS = vec2({d}.0, {d}.0);\n", .{ grid.W, grid.H }) ++ glslConsts(.{ .LUMA = sky.LUMA });
 
-/// The map's place on screen; `cellAtFrag()` is the map position under the fragment, in cells, and `cellAtPixel` under a y-down screen pixel.
+/// The map's place on screen: `cellAtFrag()` is the map position under the fragment, in cells, `cellAtPixel` under a y-down screen pixel,
+/// `targetPixel` the y-down screen pixel at a render target's uv, and `insideMap` whether a map position lies on the map.
 pub const MAP_VIEW_FS =
     \\uniform vec2 origin;
     \\uniform float cell;
@@ -1493,6 +1513,12 @@ pub const MAP_VIEW_FS =
     \\}
     \\vec2 cellAtFrag() {
     \\    return cellAtPixel(vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y));
+    \\}
+    \\vec2 targetPixel(vec2 uv) {
+    \\    return vec2(uv.x, 1.0 - uv.y) * screen;
+    \\}
+    \\bool insideMap(vec2 c) {
+    \\    return all(greaterThanEqual(c, vec2(0.0))) && all(lessThan(c, CELLS));
     \\}
     \\
 ;
@@ -1518,10 +1544,10 @@ pub const Focused = struct {
 };
 
 /// `texture0` here and at its four sides, premultiplied; the sides share what the centre leaves.
-const FOCUS_CENTRE_W: f32 = 0.4;
-const FOCUS_SIDE_W: f32 = (1 - FOCUS_CENTRE_W) / 4;
+pub const FOCUS_CENTRE_W = 0.4;
+pub const FOCUS_SIDE_W = (1 - FOCUS_CENTRE_W) / 4.0;
 /// `focused()`: `texture0` softened by `Focused`'s uniforms, premultiplied.
-pub const FOCUS_TAPS = std.fmt.comptimePrint("const float FOCUS_CENTRE_W = {d:.4};\nconst float FOCUS_SIDE_W = {d:.4};\n", .{ FOCUS_CENTRE_W, FOCUS_SIDE_W }) ++
+pub const FOCUS_TAPS = glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W }) ++
     \\uniform vec2 texel;
     \\uniform float strength;
     \\vec4 tap(vec2 offset) {
@@ -1555,11 +1581,14 @@ const WATER_SHALLOW: f32 = 1;
 const WATER_SATURATION: f32 = 0.8;
 const MIRROR_DEEP: f32 = 0.42;
 const MIRROR_SHALLOW: f32 = 0.28;
-const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
-    "const float SATURATION = {d};\nconst float OVERBRIGHT = {d:.1};\n" ++
-        "const float DEEP = {d:.2};\nconst float SHALLOW = {d:.2};\nconst float MIRROR_DEEP = {d:.2};\nconst float MIRROR_SHALLOW = {d:.2};\n",
-    .{ WATER_SATURATION, @import("light.zig").OVERBRIGHT, WATER_DEEP, WATER_SHALLOW, MIRROR_DEEP, MIRROR_SHALLOW },
-) ++ MAP_VIEW_FS ++
+const WATER_FS = FS_HEAD ++ glslConsts(.{
+    .SATURATION = WATER_SATURATION,
+    .OVERBRIGHT = @import("light.zig").OVERBRIGHT,
+    .DEEP = WATER_DEEP,
+    .SHALLOW = WATER_SHALLOW,
+    .MIRROR_DEEP = MIRROR_DEEP,
+    .MIRROR_SHALLOW = MIRROR_SHALLOW,
+}) ++ MAP_VIEW_FS ++
     \\uniform float depth;
     \\uniform sampler2D visibility;
     \\uniform sampler2D glints;

@@ -111,7 +111,7 @@ fn fits(lv: *const grid.Level, b: Box, pal: carve.Palette) bool {
 
 /// A cell on the box's outline, not a corner, and the cell outside it.
 pub fn doorway(rng: *mathx.Rng, b: Box) [2]P {
-    const side = carve.SIDES[rng.below(carve.SIDES.len)];
+    const side = rng.pick(mathx.Dir, &carve.SIDES);
     return doorwayOn(b, side, rng.range(0, spanOf(b, side) - 1));
 }
 

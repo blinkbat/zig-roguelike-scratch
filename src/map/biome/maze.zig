@@ -124,9 +124,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     pl.mask[placed[0]] = 0;
     var tries: usize = 0;
     while (n < p.rooms and tries < TRIES) : (tries += 1) {
-        const pick = rng.below(@intCast(n));
-        const from = placed[pick];
-        const side = SIDES[rng.below(SIDES.len)];
+        const from = rng.pick(usize, placed[0..n]);
+        const side = rng.pick(mathx.Dir, &SIDES);
         const cr = Plan.place(from).add(side.delta());
         const k = pl.slot(cr) orelse continue;
         if (pl.mask[k] != null) continue;

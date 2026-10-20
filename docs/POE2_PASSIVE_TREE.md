@@ -292,10 +292,11 @@ overview, but should not overlap routes or become competing headings for every
 layer. Do not display every reward sentence directly on the graph.
 
 A node's fill colour names its grant group: attribute, life, mana, offense or
-defense, with a legend above the canvas. Allocated nodes fill solid; others show
-the colour as a small core. From the opening zoom (`trees.LABEL_UNIT`, checked by a
-test against label/node overlap) every node carries its amount over a one-word
-stat ("+4%" over "Heavy") on a dark plate. Names never appear on the graph.
+defense, with a legend inside the canvas frame, under its title. Allocated nodes fill
+solid; others show the colour as a small core. From the opening zoom (`trees.LABEL_UNIT`,
+checked by a test against label/node overlap) every node except the hero's own class
+origin, which grants nothing, carries its amount over a one-word stat ("+4%" over
+"Heavy") on a dark plate. Names never appear on the graph.
 The capstone's size and rim supply hierarchy; there is no need for a unique painting.
 Limit accent colors so arm identity does not overwhelm allocation status. Check
 that fill, rim and size still distinguish important states without relying solely

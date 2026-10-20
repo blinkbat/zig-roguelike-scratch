@@ -205,6 +205,12 @@ const WALKS = [_]Walk{
     .{ .d = .nw, .keys = &.{.kp_7} },
 };
 
+fn walkPad(comptime d: mathx.Dir) rl.GamepadButton {
+    return for (WALKS) |w| {
+        if (w.d == d) break w.pad.?;
+    } else unreachable;
+}
+
 pub const DPAD = blk: {
     var ds: []const mathx.Dir = &.{};
     for (WALKS) |w| {
@@ -504,8 +510,8 @@ pub const CharacterPage = enum {
 pub const TreeKeys = struct {
     /// The right stick pans past this deflection; the d-pad zooms; Inspect's button shows the whole tree.
     const PAN_DEADZONE: f32 = 0.18;
-    const PAD_ZOOM_IN: rl.GamepadButton = .left_face_up;
-    const PAD_ZOOM_OUT: rl.GamepadButton = .left_face_down;
+    const PAD_ZOOM_IN = walkPad(.n);
+    const PAD_ZOOM_OUT = walkPad(.s);
     pub const PAD_OVERVIEW: Button = .inspect;
     pub const PAN_CAPTION = keyName(SHIFT_KEYS[0]);
     const ZOOM_IN = [2]rl.KeyboardKey{ .equal, .kp_add };
@@ -685,7 +691,7 @@ pub const State = struct {
                 const px = rl.getGamepadAxisMovement(at, .right_x);
                 const py = rl.getGamepadAxisMovement(at, .right_y);
                 if (std.math.hypot(px, py) >= TreeKeys.PAN_DEADZONE) self.tree.pan = .{ .x = px, .y = py };
-                self.tree.zoom = @as(f32, if (rl.isGamepadButtonDown(at, TreeKeys.PAD_ZOOM_IN)) 1 else 0) - @as(f32, if (rl.isGamepadButtonDown(at, TreeKeys.PAD_ZOOM_OUT)) 1 else 0);
+                self.tree.zoom = @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_IN)) 1 else 0) - @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_OUT)) 1 else 0);
                 self.tree.reset = self.padHit(at, TreeKeys.PAD_OVERVIEW.pad(), &before);
             }
             if (pan_keys) {
@@ -845,7 +851,6 @@ pub const Desk = struct {
     const NAV_KEYS = [2]rl.KeyboardKey{ .up, .down };
     const CTRL = keyGlyph(CTRL_KEYS[0]) ++ "+";
     const ALT = keyGlyph(ALT_KEYS[0]) ++ "+";
-    pub const SHIFT_NAME = keyName(SHIFT_KEYS[0]);
     pub const SHIFT_CAPTION = keyGlyph(SHIFT_KEYS[0]);
     const CTRL_SHIFT = CTRL ++ SHIFT_CAPTION ++ "+";
     pub const PLAY_CAPTION = keyGlyph(PLAY_KEY);

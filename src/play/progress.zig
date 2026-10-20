@@ -198,6 +198,10 @@ pub const State = struct {
         return @max(floor, act.cooldown() -| (self.ranks.get(act) -| 1));
     }
 
+    pub fn writeDescription(self: *const State, act: skillbar.Act, w: anytype) void {
+        act.describe(w, self.perks());
+    }
+
     /// What using it costs at its rank: "3 mana, 1 turn, 2-turn cooldown".
     pub fn writeUsage(self: *const State, act: skillbar.Act, w: anytype) void {
         const c = self.cost(act);
@@ -260,10 +264,12 @@ test "experience awards both point pools; passive paths cross class regions; act
     try std.testing.expectEqual(@as(u8, 1), top.cooldown(.juke));
     try std.testing.expectEqual(@as(u8, 2), top.cooldown(.blink));
     try std.testing.expectEqual(@as(i32, 0), top.damageBonus(.blink));
-    std.debug.print("progression: 3 classes traverse all {d} passive nodes; 3 ranks, prerequisites and separate point pools checked; top-rank blink cools {d}, juke {d}, ward {d}\n", .{ NODES.len, top.cooldown(.blink), top.cooldown(.juke), top.cooldown(.mana_shield) });
+    std.debug.print("progression: {d} classes traverse all {d} passive nodes; {d} ranks, prerequisites and separate point pools checked; top-rank blink cools {d}, juke {d}, ward {d}\n", .{ std.enums.values(hero.Class).len, NODES.len, RANKS, top.cooldown(.blink), top.cooldown(.juke), top.cooldown(.mana_shield) });
 }
 
 test "passive origins preserve class bases and failed purchases preserve the whole state" {
+    var paid: usize = 0;
+    var failed: usize = 0;
     for (hero.CLASSES) |c| {
         var state = State.of(c);
         try std.testing.expectEqual(@as(usize, 1), state.nodes.count());
@@ -276,6 +282,7 @@ test "passive origins preserve class bases and failed purchases preserve the who
             const poor = state;
             try std.testing.expect(!state.allocate(root));
             try std.testing.expectEqualDeep(poor, state);
+            failed += 1;
 
             state.passive_points = 1;
             state.active_points = 7;
@@ -286,15 +293,17 @@ test "passive origins preserve class bases and failed purchases preserve the who
             var want = before;
             want.points.getPtr(passives.Arm.of(other).stat().attr().?).* += passives.ROOT_GRANT;
             try std.testing.expectEqualDeep(want, state.attributes(c));
+            paid += 1;
         }
         state.passive_points = 3;
         for ([_]usize{ start(c), NODES.len, passives.branchFirst(.warrior_life) + passives.PER_BRANCH - 1 }) |blocked| {
             const before = state;
             try std.testing.expect(!state.allocate(blocked));
             try std.testing.expectEqualDeep(before, state);
+            failed += 1;
         }
     }
-    std.debug.print("passive origins: 3 free class starts, 6 paid alternate starts, and 15 failed purchases preserve point pools and state\n", .{});
+    std.debug.print("passive origins: {d} free class starts, {d} paid alternate starts, and {d} failed purchases preserve point pools and state\n", .{ hero.CLASSES.len, paid, failed });
 }
 
 test "passive branch gates advance one layer and apply exact stat interest and capstone packages" {
@@ -328,7 +337,7 @@ test "passive branch gates advance one layer and apply exact stat interest and c
             try std.testing.expectEqual(@as(u16, 9), state.active_points);
         }
         try std.testing.expectEqual(@as(u16, 0), state.passive_points);
-        try std.testing.expectEqual(@as(usize, 7), state.nodes.count());
+        try std.testing.expectEqual(route.len + 1, state.nodes.count());
     }
 
     const Case = struct {
@@ -369,7 +378,8 @@ test "passive branch gates advance one layer and apply exact stat interest and c
         try std.testing.expectEqual(want.life(), actual.life());
         try std.testing.expectEqual(want.mana(), actual.mana());
     }
-    std.debug.print("passive branches: 36 one-point layer gates, 30 blocked skips; exact attribute and perk totals on 4 capstone routes\n", .{});
+    const branches = std.enums.values(passives.Branch).len;
+    std.debug.print("passive branches: {d} one-point layer gates, {d} blocked skips; exact attribute and perk totals on {d} capstone routes\n", .{ branches * route.len, branches * (route.len - 1), cases.len });
 }
 
 test "passive bridges pay both attributes and cross either way without opening inward prerequisites" {
@@ -393,21 +403,8 @@ test "passive bridges pay both attributes and cross either way without opening i
                 try std.testing.expect(state.allocate(bridge));
                 try std.testing.expectEqual(points - 1, state.passive_points);
                 var want = before;
-                const amount: i32 = if (ring == 3) 1 else 2;
-                switch (seam) {
-                    .warrior_rogue => {
-                        want.points.getPtr(.strength).* += amount;
-                        want.points.getPtr(.dexterity).* += amount;
-                    },
-                    .rogue_wizard => {
-                        want.points.getPtr(.dexterity).* += amount;
-                        want.points.getPtr(.intelligence).* += amount;
-                    },
-                    .wizard_warrior => {
-                        want.points.getPtr(.intelligence).* += amount;
-                        want.points.getPtr(.strength).* += amount;
-                    },
-                }
+                const amount: i32 = @intCast(bridge_at + 1);
+                for ([_]passives.Arm{ seam.from(), seam.to() }) |arm| want.points.getPtr(arm.stat().attr().?).* += amount;
                 try std.testing.expectEqualDeep(want, state.attributes(c));
                 try std.testing.expect(state.available(far));
                 try std.testing.expect(state.allocate(far));
@@ -429,6 +426,6 @@ test "passive bridges pay both attributes and cross either way without opening i
             }
         }
     }
-    try std.testing.expectEqual(@as(usize, 12), crossings);
-    std.debug.print("passive bridges: all 12 directional crossings apply exact paired stats, open the far anchor and advance outward only\n", .{});
+    try std.testing.expectEqual(std.enums.values(passives.Seam).len * passives.BRIDGE_RINGS.len * 2, crossings);
+    std.debug.print("passive bridges: all {d} directional crossings apply exact paired stats, open the far anchor and advance outward only\n", .{crossings});
 }

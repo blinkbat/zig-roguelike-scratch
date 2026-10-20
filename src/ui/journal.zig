@@ -71,7 +71,9 @@ const MAX_W: i32 = 440;
 /// Kept clear between the box and the hud's assembly.
 const HUD_GAP: i32 = 24;
 const ROWS_Y: i32 = 10;
-const ROWS_BOTTOM: i32 = BOX_H - 16;
+/// Rows clip this far above the box's foot; the last row's leading falls inside it.
+const CLIP_BOTTOM: i32 = 12;
+const ROWS_BOTTOM: i32 = BOX_H - CLIP_BOTTOM - hud.LEADING;
 const CLIP_X: i32 = 10;
 const TEXT_X: i32 = 14;
 const LINE_H: i32 = font.SMALL + hud.LEADING;
@@ -84,7 +86,7 @@ const BG = blk: {
 };
 
 pub fn box(screen: mathx.P) rl.Rectangle {
-    const beside = @divTrunc(screen.x - hud.WIDTH, 2) - HUD_GAP;
+    const beside = hud.leftOf(screen) - HUD_GAP;
     const width = @max(MIN_W, @min(MAX_W, beside));
     return look.rect(MARGIN, screen.y - MARGIN - BOX_H, width, BOX_H);
 }
@@ -104,9 +106,9 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
     defer if (sprites.log_fade != null) rl.endShaderMode();
     var bottom = y + ROWS_BOTTOM;
     var back = log.held + log.scroll;
-    rl.beginScissorMode(x + CLIP_X, y + ROWS_Y, w - 2 * CLIP_X, BOX_H - ROWS_Y - MARGIN);
+    rl.beginScissorMode(x + CLIP_X, y + ROWS_Y, w - 2 * CLIP_X, BOX_H - ROWS_Y - CLIP_BOTTOM);
     defer rl.endScissorMode();
-    var buf: [hud.TIP_LINES_MAX][hud.TIP_COLS_MAX + 1]u8 = undefined;
+    var buf: hud.Wrapped = undefined;
     var rows: [hud.TIP_LINES_MAX][:0]const u8 = undefined;
     while (back < log.n and bottom > y + ROWS_Y) : (back += 1) {
         const count = hud.wrap(face, log.line(back).?, font.SMALL, w - 2 * TEXT_X, &buf, &rows);

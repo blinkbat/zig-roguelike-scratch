@@ -54,7 +54,7 @@ fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
         }
         const share: u32 = v / @as(u32, @intCast(n));
         for (to[0..n]) |t| next[t] += share;
-        for (0..v % n) |_| next[to[rng.below(@intCast(n))]] += 1;
+        for (0..v % n) |_| next[rng.pick(usize, to[0..n])] += 1;
     }
     cells = box.cells();
     while (cells.next()) |p| {

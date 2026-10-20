@@ -37,6 +37,14 @@ pub const Salt = enum(u64) {
     drainage = 0xD2A1,
     warmth = 0x4EA7,
     grain = 0xF1E1,
+
+    pub fn of(salt: Salt, seed: u64) u64 {
+        return seed ^ @intFromEnum(salt);
+    }
+
+    pub fn rng(salt: Salt, seed: u64) mathx.Rng {
+        return mathx.Rng.init(salt.of(seed));
+    }
 };
 
 /// Smooth value noise in 0..1, summed over octaves; a seed is a field.
@@ -44,7 +52,7 @@ pub const Noise = struct {
     seed: u64,
 
     pub fn init(seed: u64, salt: Salt) Noise {
-        return .{ .seed = seed ^ @intFromEnum(salt) };
+        return .{ .seed = salt.of(seed) };
     }
 
     fn lattice(self: Noise, x: i32, y: i32) f32 {
@@ -701,9 +709,9 @@ pub const Course = enum {
 
     pub fn ends(c: Course, rng: *mathx.Rng) [2]P {
         const side = switch (c) {
-            .across => ACROSS[rng.below(ACROSS.len)],
-            .down => DOWN[rng.below(DOWN.len)],
-            .any => EDGES[rng.below(EDGES.len)],
+            .across => rng.pick(mathx.Dir, &ACROSS),
+            .down => rng.pick(mathx.Dir, &DOWN),
+            .any => rng.pick(mathx.Dir, &EDGES),
         };
         return .{ edge(rng, side), edge(rng, side.opposite()) };
     }
@@ -769,6 +777,11 @@ pub fn fitDress(p: anytype) @TypeOf(p) {
         if (comptime dressOf(@TypeOf(p), D)) |n| @field(q, n) = @field(p, n).fit();
     }
     return q;
+}
+
+/// Its own `fit`, if it has one, then its dressing's.
+pub fn fitted(p: anytype) @TypeOf(p) {
+    return fitDress(if (comptime @hasDecl(@TypeOf(p), "fit")) p.fit() else p);
 }
 
 pub fn dress(p: anytype, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {

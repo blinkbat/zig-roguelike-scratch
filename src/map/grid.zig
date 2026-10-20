@@ -88,15 +88,12 @@ pub const Tile = enum(u8) {
     }
 
     pub fn opened(t: Tile) ?Tile {
-        return if (t == .chest) .chest_open else null;
+        return TERRAIN.getPtrConst(t).opens;
     }
 
     /// What another tile becomes when opened, never placed as it is.
     pub fn isOpened(t: Tile) bool {
-        for (std.enums.values(Tile)) |s| {
-            if (s.opened() == t) return true;
-        }
-        return false;
+        return OPENED.contains(t);
     }
 
     /// Given a `WallShape` by `gen.shapeWalls`, joining its own kind.
@@ -161,10 +158,19 @@ comptime {
     }
 }
 
-const Terrain = struct { solid: bool, blind: bool, ground: ?Tile = null, liquid: bool = false, halts: bool = false, rewards: bool = false };
+const Terrain = struct {
+    solid: bool,
+    blind: bool,
+    ground: ?Tile = null,
+    liquid: bool = false,
+    halts: bool = false,
+    rewards: bool = false,
+    litter: bool = false,
+    opens: ?Tile = null,
+};
 const OPEN = Terrain{ .solid = false, .blind = false };
 const BARE = Terrain{ .solid = false, .blind = false, .rewards = true };
-const LITTER = Terrain{ .solid = false, .blind = false, .ground = .grass, .rewards = true };
+const LITTER = Terrain{ .solid = false, .blind = false, .ground = .grass, .rewards = true, .litter = true };
 const SHUT = Terrain{ .solid = true, .blind = true };
 const MOAT = Terrain{ .solid = true, .blind = false };
 const LIQUID = Terrain{ .solid = true, .blind = false, .liquid = true };
@@ -197,10 +203,32 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .boulder = TALL_PROP,
     .tall_grass = LITTER,
     .shrooms = LITTER,
-    .chest = .{ .solid = true, .blind = false, .ground = .grass, .halts = true },
+    .chest = .{ .solid = true, .blind = false, .ground = .grass, .halts = true, .opens = .chest_open },
     .chest_open = DECOR,
     .swamp_tree = .{ .solid = true, .blind = true, .ground = .dirt },
 });
+
+fn tilesWhere(comptime has: fn (Tile) bool) std.EnumSet(Tile) {
+    var set = std.EnumSet(Tile).initEmpty();
+    for (std.enums.values(Tile)) |t| set.setPresent(t, has(t));
+    return set;
+}
+
+const OPENED = tilesWhere(struct {
+    fn of(t: Tile) bool {
+        for (TERRAIN.values) |r| {
+            if (r.opens == t) return true;
+        }
+        return false;
+    }
+}.of);
+
+/// Small plants strewn over grass, stepped through.
+pub const LITTER_TILES = tilesWhere(struct {
+    fn of(t: Tile) bool {
+        return TERRAIN.getPtrConst(t).litter;
+    }
+}.of);
 
 /// Same-material neighbours, stamped by `gen.shapeWalls`; its bits are the wall sheets' masks.
 pub const WallShape = packed struct(u8) {

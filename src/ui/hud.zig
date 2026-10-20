@@ -75,7 +75,7 @@ pub const Layout = struct {
     skills_w: i32,
 
     pub fn of(screen: mathx.P, skills_w: i32) Layout {
-        const left = @divTrunc(screen.x - WIDTH, 2);
+        const left = leftOf(screen);
         const top = screen.y - COVER;
         return .{
             .left = left,
@@ -87,6 +87,11 @@ pub const Layout = struct {
         };
     }
 };
+
+/// The assembly's left edge, centred on the screen.
+pub fn leftOf(screen: mathx.P) i32 {
+    return @divTrunc(screen.x - WIDTH, 2);
+}
 
 pub fn frame(layout: Layout, sprites: *const look.Sprites) void {
     const x = layout.life.x;
@@ -227,6 +232,8 @@ const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
 pub const TIP_LINES_MAX: usize = 18;
 pub const TIP_COLS_MAX: usize = 96;
+/// `wrap`'s lines, each nul-terminated.
+pub const Wrapped = [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8;
 
 /// The mark round what is inspected: a ring round an orb, a frame round anything else.
 pub fn focus(box: rl.Rectangle, round: bool) void {
@@ -239,7 +246,7 @@ pub fn focus(box: rl.Rectangle, round: bool) void {
 }
 
 /// Each line in `buf` is nul-terminated; wrapping breaks only at spaces.
-pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *[TIP_LINES_MAX][TIP_COLS_MAX + 1]u8, lines: *[TIP_LINES_MAX][:0]const u8) usize {
+pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, lines: *[TIP_LINES_MAX][:0]const u8) usize {
     var n: usize = 0;
     var words = std.mem.tokenizeScalar(u8, body, ' ');
     var len: usize = 0;
@@ -271,9 +278,10 @@ pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *[TIP_LINES
     return if (len > 0) @min(n + 1, TIP_LINES_MAX) else n;
 }
 
-/// `text` wrapped to `w`, a line every `step` from `y`; returns the y below it.
-pub fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, w: i32, size: i32, step: i32, ink: rl.Color) i32 {
-    var buf: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
+/// `text` wrapped to `w`, a line every `size + LEADING` from `y`; returns the y below it.
+pub fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, w: i32, size: i32, ink: rl.Color) i32 {
+    const step = size + LEADING;
+    var buf: Wrapped = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
     const n = wrap(face, text, size, w, &buf, &lines);
     for (lines[0..n], 0..) |line, i| face.draw(line, x, y + @as(i32, @intCast(i)) * step, size, ink);
@@ -293,9 +301,9 @@ const TIP_VALUE_X = @divTrunc(TIP_W, 2) + 24;
 
 /// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does.
 pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8) void {
-    var buf: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
+    var buf: Wrapped = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
-    var wrapped: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
+    var wrapped: Wrapped = undefined;
     var parts: [TIP_LINES_MAX][:0]const u8 = undefined;
     var n: usize = 0;
     var rows = std.mem.splitScalar(u8, body, '\n');
@@ -341,7 +349,7 @@ test "a tooltip's body breaks at spaces into lines that each fit" {
         }
     };
     const face = Fixed{};
-    var buf: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
+    var buf: Wrapped = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
     const body = "Recover 50% of life over 3 turns. Uses 20 of 60 charges; kills refill 5. Takes a turn.";
     const w = TIP_W - 2 * TIP_PAD;

@@ -96,8 +96,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
                 }
             }
             if (opens == 1 and n > 0 and rng.percent(p.braid)) {
-                const pick = rng.below(@intCast(n));
-                lv.set(walls[pick], pal.open);
+                lv.set(rng.pick(P, walls[0..n]), pal.open);
             }
         }
     }

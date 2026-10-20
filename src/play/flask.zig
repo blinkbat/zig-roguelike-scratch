@@ -1,5 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const passives = @import("passives.zig");
 
 pub const Kind = enum { life, mana };
 
@@ -9,14 +10,19 @@ pub const USE: u8 = 20;
 pub const PER_KILL: u8 = 5;
 /// Turns its recovery runs, from the end of the turn it is drunk in.
 pub const TURNS: u8 = 3;
-pub const LIFE_PCT: i32 = 50;
+const LIFE_PCT: i32 = 50;
 pub const MANA_GAIN: i32 = 50;
 const CHARGE_NOTE = std.fmt.comptimePrint("Uses {d} of {d} charges; kills refill {d}.", .{ USE, CHARGES, PER_KILL });
 
 pub const Life = struct {
     pub const KIND: Kind = .life;
-    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d}% of life over {d} turns. {s}", .{ LIFE_PCT, TURNS, CHARGE_NOTE });
+    const TEXT = "Recover {d}% of life over {d} turns. {s}";
+    pub const DESCRIPTION = std.fmt.comptimePrint(TEXT, .{ LIFE_PCT, TURNS, CHARGE_NOTE });
     pub const FLAVOR = "Bitter, red, and better than bleeding.";
+
+    pub fn describe(w: anytype, perks: passives.Perks) void {
+        w.print(TEXT, .{ lifePercent(perks.life_flask), TURNS, CHARGE_NOTE }) catch {};
+    }
 };
 
 pub const Mana = struct {
@@ -61,17 +67,22 @@ pub const Flask = struct {
     }
 };
 
-pub fn lifeOf(max: i32) i32 {
-    return mathx.percentOf(max, LIFE_PCT);
+/// The share of life a drink recovers with `bonus` percent more recovery.
+fn lifePercent(bonus: i32) i32 {
+    return mathx.percentOf(LIFE_PCT, mathx.PERCENT + bonus);
+}
+
+pub fn lifeOf(max: i32, bonus: i32) i32 {
+    return mathx.percentOf(max, lifePercent(bonus));
 }
 
 test "a flask holds three drinks, each recovering its amount whole over three turns, and kills refill it" {
     var f = Flask{};
     try std.testing.expectEqual(CHARGES / USE, f.uses());
-    f.drink(lifeOf(24));
+    f.drink(lifeOf(24, 0));
     var total: i32 = 0;
     for (0..TURNS + 2) |_| total += f.tick();
-    try std.testing.expectEqual(lifeOf(24), total);
+    try std.testing.expectEqual(lifeOf(24, 0), total);
     f.drink(10);
     f.drink(10);
     try std.testing.expect(!f.full());

@@ -1,6 +1,7 @@
 const std = @import("std");
 const attrs = @import("attrs.zig");
 const hero = @import("hero.zig");
+const mathx = @import("../core/mathx.zig");
 
 pub const Arm = enum {
     warrior,
@@ -106,6 +107,11 @@ pub const Perks = struct {
     cull: i32 = 0,
     mana_regen: i32 = 0,
     mana_cost: i32 = 0,
+
+    /// A blow that leaves a foe `left` of `max` life kills it instead.
+    pub fn culls(p: Perks, left: i32, max: i32) bool {
+        return left > 0 and left * mathx.PERCENT <= max * p.cull;
+    }
 };
 pub const Kind = enum {
     strength,
@@ -133,22 +139,12 @@ pub const Kind = enum {
     }
 
     pub fn group(k: Kind) Group {
-        return switch (k) {
-            .strength, .dexterity, .intelligence => .attribute,
-            .life, .life_on_hit, .life_on_kill, .life_flask => .life,
-            .mana, .mana_regen, .mana_cost => .mana,
-            .heavy_damage, .light_damage, .spell_damage, .crit, .cull => .offense,
-            .armour, .dodge => .defense,
-        };
+        return INFO.get(k).group;
     }
 
-    pub fn abbrev(k: Kind) [:0]const u8 {
-        return switch (k) {
-            .strength => "Str",
-            .dexterity => "Dex",
-            .intelligence => "Int",
-            else => unreachable,
-        };
+    /// Its tree label's stat: "Heavy", or "Str" for an attribute.
+    pub fn word(k: Kind) [:0]const u8 {
+        return INFO.get(k).word;
     }
 
     /// The damage it raises by a percentage, for a damage kind.
@@ -170,7 +166,12 @@ pub const Kind = enum {
         for (std.enums.values(Kind)) |k| {
             const homes = @as(u8, @intFromBool(k.style() != null)) + @intFromBool(k.bonus() != null) + @intFromBool(k.perk()) + @intFromBool(k == .crit or k == .dodge);
             std.debug.assert(homes == 1);
+            const info = INFO.get(k);
+            if (k.style() != null) std.debug.assert(info.percent and info.text == null);
+            if (info.text) |t| std.debug.assert(info.percent == (std.mem.indexOf(u8, t, "%") != null));
+            if (k.style() == null and k.bonus() == null) std.debug.assert(info.text != null);
         }
+        for (std.meta.fields(Perks)) |f| _ = @field(Kind, f.name);
     }
 
     /// The attribute it raises, for a pure attribute kind.
@@ -180,6 +181,33 @@ pub const Kind = enum {
         };
     }
 };
+const Info = struct {
+    group: Group,
+    word: [:0]const u8,
+    percent: bool = false,
+    sign: []const u8 = "+",
+    /// The whole modifier, for a kind that is neither a damage style nor an attribute bonus.
+    text: ?[]const u8 = null,
+};
+const INFO = std.EnumArray(Kind, Info).init(.{
+    .strength = .{ .group = .attribute, .word = "Str" },
+    .dexterity = .{ .group = .attribute, .word = "Dex" },
+    .intelligence = .{ .group = .attribute, .word = "Int" },
+    .life = .{ .group = .life, .word = "Life" },
+    .mana = .{ .group = .mana, .word = "Mana" },
+    .armour = .{ .group = .defense, .word = "Armour", .percent = true, .text = "+{d}% physical damage reduction" },
+    .heavy_damage = .{ .group = .offense, .word = "Heavy", .percent = true },
+    .light_damage = .{ .group = .offense, .word = "Light", .percent = true },
+    .spell_damage = .{ .group = .offense, .word = "Spell", .percent = true },
+    .crit = .{ .group = .offense, .word = "Crit", .percent = true, .text = "+{d}% critical strike chance" },
+    .dodge = .{ .group = .defense, .word = "Dodge", .percent = true, .text = "+{d}% chance to dodge attacks" },
+    .life_on_hit = .{ .group = .life, .word = "Leech", .text = "Heal {d} life for each foe a blow damages" },
+    .life_on_kill = .{ .group = .life, .word = "On kill", .text = "Heal {d} life for each foe a blow kills" },
+    .life_flask = .{ .group = .life, .word = "Flask", .percent = true, .text = "+{d}% life flask recovery" },
+    .cull = .{ .group = .offense, .word = "Cull", .percent = true, .sign = "", .text = "Blows kill foes left at {d}% life or less" },
+    .mana_regen = .{ .group = .mana, .word = "Regen", .text = "+{d} mana recovered per turn" },
+    .mana_cost = .{ .group = .mana, .word = "Cost", .percent = true, .sign = "-", .text = "Skills cost {d}% less mana" },
+});
 /// What each class origin grants of its arm's attribute.
 pub const ROOT_GRANT: i32 = 2;
 pub const Grant = struct {
@@ -208,51 +236,23 @@ pub const Grant = struct {
     pub fn write(g: Grant, w: anytype) void {
         const n = g.amount;
         (switch (g.kind) {
-            .armour => w.print("+{d}% physical damage reduction", .{n}),
-            .crit => w.print("+{d}% critical strike chance", .{n}),
-            .dodge => w.print("+{d}% chance to dodge attacks", .{n}),
-            .life_on_hit => w.print("Heal {d} life for each foe a blow damages", .{n}),
-            .life_on_kill => w.print("Heal {d} life for each foe a blow kills", .{n}),
-            .life_flask => w.print("+{d}% life flask recovery", .{n}),
-            .cull => w.print("Blows kill foes left at {d}% life or less", .{n}),
-            .mana_regen => w.print("+{d} mana recovered per turn", .{n}),
-            .mana_cost => w.print("Skills cost {d}% less mana", .{n}),
-            else => if (g.kind.style()) |s| w.print("+{d}% {s}", .{ n, s.label() }) else w.print("+{d} to {s}", .{ n, g.kind.bonus().?.label() }),
+            inline else => |t| if (comptime INFO.get(t).text) |text|
+                w.print(text, .{n})
+            else if (comptime t.style()) |s|
+                w.print("+{d}% {s}", .{ n, s.label() })
+            else
+                w.print("+{d} to {s}", .{ n, comptime t.bonus().?.label() }),
         }) catch {};
     }
 
     /// The tree's label is this over `word`: "+4%" over "Heavy".
     pub fn writeAmount(g: Grant, w: anytype) void {
-        const sign: []const u8 = switch (g.kind) {
-            .mana_cost => "-",
-            .cull => "",
-            else => "+",
-        };
-        const percent = g.kind.style() != null or switch (g.kind) {
-            .armour, .crit, .dodge, .life_flask, .cull, .mana_cost => true,
-            else => false,
-        };
-        w.print("{s}{d}{s}", .{ sign, g.amount, if (percent) "%" else "" }) catch {};
+        const info = INFO.get(g.kind);
+        w.print("{s}{d}{s}", .{ info.sign, g.amount, if (info.percent) "%" else "" }) catch {};
     }
 
     pub fn word(g: Grant) [:0]const u8 {
-        return switch (g.kind) {
-            .strength, .dexterity, .intelligence => g.kind.abbrev(),
-            .life => "Life",
-            .mana => "Mana",
-            .armour => "Armour",
-            .heavy_damage => "Heavy",
-            .light_damage => "Light",
-            .spell_damage => "Spell",
-            .crit => "Crit",
-            .dodge => "Dodge",
-            .life_on_hit => "Leech",
-            .life_on_kill => "On kill",
-            .life_flask => "Flask",
-            .cull => "Cull",
-            .mana_regen => "Regen",
-            .mana_cost => "Cost",
-        };
+        return g.kind.word();
     }
 };
 pub const Node = struct {
@@ -280,7 +280,7 @@ pub const Node = struct {
     pub fn word(n: Node) [:0]const u8 {
         const s = n.seam orelse return n.grant.word();
         return switch (s) {
-            inline else => |t| comptime t.from().stat().abbrev() ++ "/" ++ t.to().stat().abbrev(),
+            inline else => |t| comptime t.from().stat().word() ++ "/" ++ t.to().stat().word(),
         };
     }
 };
@@ -643,5 +643,5 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
         };
     }
     try std.testing.expectEqual(@as(usize, N), seen.count());
-    std.debug.print("passives: {d} nodes, {d} stat / {d} interest / {d} capstone; 6 two-way bridges; all {d} grant kinds and 81 directional targets checked\n", .{ N, tiers[0], tiers[1], tiers[2], kinds.count() });
+    std.debug.print("passives: {d} nodes, {d} stat / {d} interest / {d} capstone; {d} two-way bridges; all {d} grant kinds and {d} directional targets checked\n", .{ N, tiers[0], tiers[1], tiers[2], std.enums.values(Seam).len * BRIDGE_RINGS.len, kinds.count(), seen.count() });
 }

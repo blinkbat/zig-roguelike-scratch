@@ -202,6 +202,21 @@ const TREE = blk: {
     for (hero.CLASSES) |c| h.update(&std.mem.toBytes(progress.start(c)));
     break :blk h.final();
 };
+
+comptime {
+    for (.{
+        .{ progress.passives.Node, .{ "arm", "branch", "seam", "ring", "slot", "name", "tier", "grant", "bump" } },
+        .{ progress.passives.Grant, .{ "kind", "amount" } },
+    }) |pair| {
+        const fields = std.meta.fields(pair[0]);
+        if (fields.len != pair[1].len) @compileError("save.TREE hashes a different field list than " ++ @typeName(pair[0]));
+        for (fields) |f| {
+            for (pair[1]) |name| {
+                if (std.mem.eql(u8, f.name, name)) break;
+            } else @compileError("save.TREE does not hash " ++ @typeName(pair[0]) ++ "." ++ f.name);
+        }
+    }
+}
 const Print = @TypeOf(FINGERPRINT);
 const HEAD = MAGIC.len + @sizeOf(Print);
 /// A trailing payload hash rejects damaged or truncated files before loading.

@@ -79,7 +79,7 @@ pub const Floor = union(enum) {
 
     pub fn fit(f: Floor) Floor {
         return switch (f) {
-            inline else => |p, t| @unionInit(Floor, @tagName(t), carve.fitDress(p.fit())),
+            inline else => |p, t| @unionInit(Floor, @tagName(t), carve.fitted(p)),
         };
     }
 
@@ -200,7 +200,7 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
             carve.openDoors(lv, doors, pal.open);
         },
     }
-    var rng = mathx.Rng.init(seed ^ FEATURE_SALT);
+    var rng = carve.Salt.features.rng(seed);
     const base = lv.tile;
     var lots: buildings.Lots = .{};
     for (features, 0..) |f, i| {
@@ -573,7 +573,9 @@ test "a scatter over grass takes the decor standing on it too" {
     var lv: grid.Level = undefined;
     const frozen = [_]Feature{.{ .scatter = .{ .tile = .snow, .on = .grass, .amount = scatter.AMOUNT_MAX } }};
     roll(&lv, 0xF0, &.{}, Floor.of(.open), &frozen);
-    const decor = carve.count(&lv, .tall_grass) + carve.count(&lv, .tiny_shrub) + carve.count(&lv, .shrooms);
+    var decor: usize = 0;
+    var plants = grid.LITTER_TILES.iterator();
+    while (plants.next()) |t| decor += carve.count(&lv, t);
     std.debug.print("open ground but frozen: {d} decor left, {d} snow\n", .{ decor, carve.count(&lv, .snow) });
     try std.testing.expectEqual(@as(usize, 0), decor);
 }

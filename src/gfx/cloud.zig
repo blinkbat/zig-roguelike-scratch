@@ -182,15 +182,18 @@ const OCTAVES: u32 = 3;
 /// Each of `fbm`'s octaves weighs this much of the last, the first this much of one.
 const FBM_GAIN: f32 = 0.5;
 const FBM_MAX: f32 = FBM_GAIN * (1 - std.math.pow(f32, FBM_GAIN, OCTAVES)) / (1 - FBM_GAIN);
-/// The softened density's share from its own texel; the four `SOFT` round it split the rest.
-const CENTRE_W: f32 = 0.4;
-const SIDE_W: f32 = (1 - CENTRE_W) / 4;
 
-const CLOUD_NOISE = std.fmt.comptimePrint(
-    "const float TINT_HI = {d:.4};\nconst float WARP = {d:.4};\nconst float SOFT = {d:.4};\n" ++
-        "const int OCTAVES = {d};\nconst float FBM_GAIN = {d:.4};\nconst float FBM_MAX = {d:.4};\nconst float CENTRE_W = {d:.4};\nconst float SIDE_W = {d:.4};\n",
-    .{ TINT_HI, WARP, SOFT, OCTAVES, FBM_GAIN, FBM_MAX, CENTRE_W, SIDE_W },
-) ++
+/// The softened density weighs its own texel and the four `SOFT` round it as `look.FOCUS_TAPS` does.
+const CLOUD_NOISE = look.glslConsts(.{
+    .TINT_HI = TINT_HI,
+    .WARP = WARP,
+    .SOFT = SOFT,
+    .OCTAVES = OCTAVES,
+    .FBM_GAIN = FBM_GAIN,
+    .FBM_MAX = FBM_MAX,
+    .CENTRE_W = look.FOCUS_CENTRE_W,
+    .SIDE_W = look.FOCUS_SIDE_W,
+}) ++
     \\uniform float time;
     \\const vec2 DRIFT = vec2(0.21, 0.13);
     \\float hash(vec2 p) {
@@ -237,7 +240,7 @@ const CLOUD_FS = look.FS_HEAD ++ CLOUD_NOISE ++
     \\}
 ;
 
-const VEIL_FS = look.FS_HEAD ++ look.FOCUS_TAPS ++ look.MAP_VIEW_FS ++ CLOUD_NOISE ++ std.fmt.comptimePrint("const float FIGURE_SHARE = {d:.4};\n", .{FIGURE_SHARE}) ++
+const VEIL_FS = look.FS_HEAD ++ look.FOCUS_TAPS ++ look.MAP_VIEW_FS ++ CLOUD_NOISE ++ look.glslConsts(.{ .FIGURE_SHARE = FIGURE_SHARE }) ++
     \\uniform sampler2D cloud;
     \\uniform vec3 ink;
     \\void main() {

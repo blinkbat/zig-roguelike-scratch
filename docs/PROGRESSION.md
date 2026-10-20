@@ -70,7 +70,8 @@ damages), life per kill, cull (blows kill foes left at or below a share of life)
 mana per turn and cheaper skills; usually with an attribute rider. Each branch ends at a larger
 double-ring capstone whose rider may be a second effect. Bridges grant attributes from both
 neighboring arms. Attribute-side grants go through `attrs`; the rest are `passives.Perks`, read by
-`progress.State.perks` and applied in `game` (`wound`, `recover`, `drink`) and `State.cost`.
+`progress.State.perks` and applied in `game` (`wound`, `manaRegen`, `drink`), `State.cost` and the
+life flask's description (`flask.Life.describe`). `passives.INFO` holds each grant kind's group, label and wording.
 
 The chosen class's origin is allocated free and gives no extra bonus. The other two origins are
 immediately purchasable from the hub for one point each. Further nodes require any one allocated
@@ -80,7 +81,7 @@ Soulslike's purchase-to-level economy is not imported. Selection, zoom and brows
 
 The board opens zoomed in; zoom follows the selected node, with pan and a full-board overview control.
 Node fill colour names its grant group (attribute, life, mana, offense, defense); from the opening
-zoom each node carries its amount and stat under it. The sidebar leads with the grants, then the
+zoom each node but the hero's own class origin carries its amount and stat under it. The sidebar leads with the grants, then the
 de-emphasized name and branch, allocation state, point cost and a note where a grant needs one. One deliberate action allocates the selected eligible node. Node-index
 layout, grants and feeder wiring participate in the save fingerprint; saves from the old hex tree are
 rejected as incompatible rather than interpreting their allocations as different nodes.

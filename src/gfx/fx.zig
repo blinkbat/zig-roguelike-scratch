@@ -202,7 +202,7 @@ pub const Drip = struct { at: [2]f32, matter: Matter };
 
 pub const Sting = struct { slot: usize, after: ?After = null, fire_at: ?[2]f32 = null, drip: ?Drip = null };
 
-/// A body changed by no blow, as a chill wearing off: it catches up unflashed.
+/// A body changed by no seen blow, as a chill wearing off or a heal: it catches up unflashed.
 pub const Settle = struct { slot: usize, after: After };
 
 const MOTES: usize = 320;
@@ -332,6 +332,7 @@ const Due = union(enum) {
 };
 
 pub const LEVEL_UP_S: f32 = 2;
+const LEVEL_UP_TEXT = "Level up!";
 /// Seconds the effect, and each glint, takes to show; and the effect, and the shaft, to fade.
 const LEVEL_IN_S: f32 = 0.12;
 const LEVEL_OUT_S: f32 = 0.65;
@@ -419,9 +420,9 @@ pub const LevelUp = struct {
         const top = screen(.{ at[0], at[1], 0.85 + self.age() * 0.25 }, ox, oy, cell);
         const x: i32 = @intFromFloat(top.x);
         const y: i32 = @intFromFloat(top.y);
-        const size: i32 = @intFromFloat(cell * font.HEAD / look.SPRITE_PX);
-        face.textMid("Level up!", x + 1, y + 2, size, look.fade(look.BG, self.alpha() * 0.85));
-        face.textMid("Level up!", x, y, size, look.fade(look.LEVEL_CORE, self.alpha()));
+        const size: i32 = @intFromFloat(pxScale(cell) * font.HEAD);
+        face.textMid(LEVEL_UP_TEXT, x + 1, y + 2, size, look.fade(look.BG, self.alpha() * 0.85));
+        face.textMid(LEVEL_UP_TEXT, x, y, size, look.fade(look.LEVEL_CORE, self.alpha()));
     }
 };
 
@@ -482,7 +483,7 @@ pub const Fx = struct {
         const s = self.speech[slot];
         if (s.life <= 0) return;
         const age = 1 - s.life / SPEECH_S;
-        const size: i32 = @intFromFloat(cell * font.SMALL / look.SPRITE_PX);
+        const size: i32 = @intFromFloat(pxScale(cell) * font.SMALL);
         const cx = x + @as(i32, @intFromFloat(cell * 0.5));
         const top = y - size - @as(i32, @intFromFloat(cell * (SPEECH_LIFT + age * SPEECH_RISE)));
         face.textMid(FRIGHT_WORDS[s.word], cx, top, size, look.fade(look.TEXT, sight * @min(1, s.life / SPEECH_FADE_S)));
@@ -540,7 +541,7 @@ pub const Fx = struct {
         self.landed[slot] = a.body;
     }
 
-    /// A blow or sting is still to land on the slot.
+    /// A blow, sting or settle is still to land on the slot.
     pub fn pending(self: *const Fx, slot: usize) bool {
         for (self.due[0..self.due_n]) |*d| {
             if (d.what.on() == slot) return true;
@@ -565,7 +566,7 @@ pub const Fx = struct {
         return self.flash[slot] > 0 or self.pending(slot);
     }
 
-    /// Seconds until the last blow or sting due on the slot lands.
+    /// Seconds until the last blow, sting or settle due on the slot lands.
     pub fn landsIn(self: *const Fx, slot: usize) f32 {
         var t: f32 = 0;
         for (self.due[0..self.due_n]) |*d| {
@@ -667,19 +668,18 @@ pub const Fx = struct {
     }
 
     pub fn trail(self: *Fx, lv: *const grid.Level, at: [2]f32, dir: [2]f32, act: skillbar.Act, age: f32) void {
-        const element = trailed(act) orelse return;
-        const fiery = element == .fire;
-        const life = missileOf(element).trail_s;
+        const m = missileOf(act.element()) orelse return;
+        const life = m.trail_s;
         if (age >= life) return;
         const slot = self.head;
         self.emit(.{
             .p = .{ at[0] + self.rng.spread(0.08), at[1] + self.rng.spread(0.08), STRIKE_Z },
-            .v = .{ -dir[0] * 0.8 + self.rng.spread(0.6), -dir[1] * 0.8 + self.rng.spread(0.6), if (fiery) 0.5 else 0.12 },
+            .v = .{ -dir[0] * 0.8 + self.rng.spread(0.6), -dir[1] * 0.8 + self.rng.spread(0.6), m.rise },
             .life = life,
             .r = if (act == .fireball) 1.5 + self.rng.unit() * 2 else 0.7 + self.rng.unit(),
             .col = look.arrowInk(act),
             .drag = 3,
-            .add = fiery,
+            .add = m.add,
         });
         advance(&self.motes[slot], lv, age);
     }
@@ -722,9 +722,9 @@ pub const Fx = struct {
 
     fn spill(self: *Fx, b: Burst) void {
         const from = mathx.centre(b.at);
-        const fiery = b.element == .fire;
+        const m = missileOf(b.element).?;
         const col = look.elementInk(b.element);
-        self.glow(from, col, if (fiery) FIRE_BURST_GLOW else COLD_BURST_GLOW);
+        self.glow(from, col, m.burst);
         for (b.area.slice()) |p| {
             const to = mathx.centre(p);
             for (0..burstMotes(b.area.n)) |_| {
@@ -735,7 +735,7 @@ pub const Fx = struct {
                     .life = life,
                     .r = 0.8 + self.rng.unit() * 2,
                     .col = col,
-                    .add = fiery,
+                    .add = m.add,
                 });
             }
         }
@@ -937,34 +937,27 @@ fn unprojected(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
     return .{ (v.x - ox) / cell, (v.y - oy) / cell + STRIKE_Z };
 }
 
-fn trailed(act: skillbar.Act) ?damage.Element {
-    const element = act.element() orelse return null;
-    return switch (element) {
-        .fire, .cold => element,
-        .chaos, .lightning => null,
-    };
-}
-
 fn pxScale(cell: f32) f32 {
     return cell / look.SPRITE_PX;
 }
 
-/// A trailed missile's light by element, and how long the motes it sheds live; a fireball's light reaches further.
-const Missile = struct { radius: f32, gain: f32, trail_s: f32 };
-const FIRE_MISSILE = Missile{ .radius = 1.6, .gain = 0.85, .trail_s = 0.24 };
-const COLD_MISSILE = Missile{ .radius = 1.6, .gain = 0.35, .trail_s = 0.18 };
+/// A trailed missile's light by element, how long the motes it sheds live, how fast they rise and whether they
+/// add light, and the glow of its element's burst; a fireball's light reaches further.
+const Missile = struct { radius: f32, gain: f32, trail_s: f32, rise: f32, add: bool, burst: Glow };
+const FIRE_MISSILE = Missile{ .radius = 1.6, .gain = 0.85, .trail_s = 0.24, .rise = 0.5, .add = true, .burst = FIRE_BURST_GLOW };
+const COLD_MISSILE = Missile{ .radius = 1.6, .gain = 0.35, .trail_s = 0.18, .rise = 0.12, .add = false, .burst = COLD_BURST_GLOW };
 const FIREBALL_REACH: f32 = 2.8;
 
-fn missileOf(element: damage.Element) Missile {
-    return switch (element) {
+fn missileOf(element: ?damage.Element) ?Missile {
+    return switch (element orelse return null) {
         .fire => FIRE_MISSILE,
         .cold => COLD_MISSILE,
-        .chaos, .lightning => unreachable,
+        .chaos, .lightning => null,
     };
 }
 
 pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
-    const m = missileOf(trailed(act) orelse return null);
+    const m = missileOf(act.element()) orelse return null;
     return .{
         .at = .{ at[0], at[1], STRIKE_Z },
         .col = look.arrowInk(act),

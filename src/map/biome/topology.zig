@@ -109,8 +109,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
         path(lv, rng, at[e[0]], at[e[1]], p.path, pal.open);
     }
     for (0..p.sides) |_| {
-        const pick = rng.below(@intCast(g.spots.len));
-        const from = at[pick];
+        const from = rng.pick(P, at[0..g.spots.len]);
         const to = grid.Box.inMap(inset).clamp(grid.Box.around(from, SIDE_REACH).roll(rng));
 
         path(lv, rng, from, to, p.path, pal.open);

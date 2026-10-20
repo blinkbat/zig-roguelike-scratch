@@ -124,12 +124,14 @@ pub const Face = struct {
         if (whole.len == s.len and self.width(whole, size) <= max) return whole;
         var n = @min(s.len, buf.len -| (ELLIPSIS.len + 1));
         while (true) : (n -= 1) {
-            const t = (if (keep_end)
-                std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{s[s.len - n ..]})
-            else
-                std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{s[0..n]})) catch return whole;
+            const t = elided(buf, if (keep_end) s[s.len - n ..] else s[0..n], keep_end) catch return whole;
             if (n == 0 or self.width(t, size) <= max) return t;
         }
+    }
+
+    /// `draw`, its left on `x` and its middle on `cy`.
+    pub fn drawMiddle(self: *const Face, s: [:0]const u8, x: i32, cy: i32, size: i32, col: rl.Color) void {
+        self.draw(s, x, topFor(cy, size), size, col);
     }
 
     fn leftFor(self: *const Face, s: [:0]const u8, cx: i32, size: i32) i32 {
@@ -183,6 +185,11 @@ pub const Face = struct {
         self.draw(s, x, y, size, col);
     }
 };
+
+/// `kept` in `buf` with "..." where the rest was cut: before it when `keep_end`, else after.
+pub fn elided(buf: []u8, kept: []const u8, keep_end: bool) std.fmt.BufPrintError![:0]u8 {
+    return if (keep_end) std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{kept}) else std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{kept});
+}
 
 fn orderedGlyphs(f: rl.Font, cps: []const i32) bool {
     if (f.glyphCount != cps.len) return false;

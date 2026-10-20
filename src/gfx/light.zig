@@ -685,7 +685,18 @@ fn recolour(c: rl.Color, rgb: Rgb) rl.Color {
 }
 
 /// `lit` combines sight and memory; `memory` retains only exploration visibility.
-pub const Flame = struct { at: [2]f32, foot: f32, glow: f32, lit: f32, memory: f32 };
+pub const Flame = struct {
+    at: [2]f32,
+    foot: f32,
+    glow: f32,
+    lit: f32,
+    memory: f32,
+
+    /// Seen enough to glow and bloom.
+    pub fn live(f: Flame) bool {
+        return f.lit > FAINT;
+    }
+};
 
 /// Composed daylight warms the sun and cools the shade.
 const COMPOSED_KEY: Rgb = .{ 1.035, 1.005, 0.96 };
@@ -1552,16 +1563,12 @@ pub const Light = struct {
         const t = self.gpu.mask.?.texture;
         self.uploadMap();
         const receiver = self.gpu.receiver.?;
-        const floor = look.floorRect(ox, oy, cell);
-        const map_rect = [4]f32{ floor.x, floor.y, floor.width, floor.height };
-        const screen = [2]f32{ @floatFromInt(t.width), @floatFromInt(t.height) };
         rl.beginBlendMode(.multiplied);
         defer rl.endBlendMode();
         rl.beginShaderMode(receiver.shader);
         defer rl.endShaderMode();
         rl.setShaderValueTexture(receiver.shader, receiver.lightmap, self.gpu.map.?);
-        look.setUniform(receiver.shader, receiver.map_rect, map_rect);
-        look.setUniform(receiver.shader, receiver.screen, screen);
+        look.setMapView(receiver, .{ @floatFromInt(ox), @floatFromInt(oy) }, @floatFromInt(cell), .{ @floatFromInt(t.width), @floatFromInt(t.height) });
         look.drawTarget(t);
     }
 
@@ -1659,7 +1666,7 @@ pub const Light = struct {
         rl.beginBlendMode(.additive);
         defer rl.endBlendMode();
         for (flames_) |f| {
-            if (f.lit <= FAINT) continue;
+            if (!f.live()) continue;
             const x = ox + f.at[0] * cell;
             const y = oy + f.at[1] * cell;
             glowAt(g, x, y, cell * GLOW_HALO, cell * GLOW_HALO, colourOf(GLOW_TINT, GLOW_HALO_A * f.glow * f.lit));
@@ -1858,10 +1865,7 @@ const MIRROR_FS = MIRROR_HEAD ++
     \\}
 ;
 
-const BODY_FS = MIRROR_HEAD ++ std.fmt.comptimePrint(
-    "#define LIGHTS {d}\nconst float KNEE = {d:.4};\nconst vec3 FLASH = vec3({d:.4}, {d:.4}, {d:.4});\n",
-    .{ BODY_LIGHTS, KNEE, FLASH_RGB[0], FLASH_RGB[1], FLASH_RGB[2] },
-) ++
+const BODY_FS = MIRROR_HEAD ++ std.fmt.comptimePrint("#define LIGHTS {d}\n", .{BODY_LIGHTS}) ++ look.glslConsts(.{ .KNEE = KNEE, .FLASH = FLASH_RGB }) ++
     \\uniform sampler2D normals;
     \\uniform vec2 size;
     \\uniform float flip;
@@ -1920,15 +1924,11 @@ const SHADE_FS = POOL_HEAD ++
     \\}
 ;
 
-const RECEIVER_FS = look.FS_HEAD ++
+const RECEIVER_FS = look.FS_HEAD ++ look.MAP_VIEW_FS ++
     \\uniform sampler2D lightmap;
-    \\uniform vec4 map_rect;
-    \\uniform vec2 screen;
     \\void main() {
-    \\    vec2 pixel = vec2(fragTexCoord.x, 1.0 - fragTexCoord.y) * screen;
-    \\    vec2 uv = (pixel - map_rect.xy) / map_rect.zw;
-    \\    vec2 inside = step(vec2(0.0), uv) * step(uv, vec2(1.0));
-    \\    float sight = texture(lightmap, uv).a * inside.x * inside.y;
+    \\    vec2 p = cellAtPixel(targetPixel(fragTexCoord));
+    \\    float sight = texture(lightmap, p / CELLS).a * float(insideMap(p));
     \\    vec3 shadow = texture(texture0, fragTexCoord).rgb;
     \\    finalColor = vec4(mix(vec3(1.0), shadow, sight), 1.0);
     \\}
@@ -1937,14 +1937,12 @@ const RECEIVER_FS = look.FS_HEAD ++
 const ReceiverShader = struct {
     shader: rl.Shader,
     lightmap: i32,
-    map_rect: i32,
+    origin: i32,
+    cell: i32,
     screen: i32,
 };
 
-const SHADOW_FS = POOL_HEAD ++ std.fmt.comptimePrint(
-    "const int TAPS = {d};\n",
-    .{SHADOW_TAPS},
-) ++
+const SHADOW_FS = POOL_HEAD ++ look.glslConsts(.{ .TAPS = SHADOW_TAPS }) ++
     \\uniform vec2 size;
     \\uniform float foot;
     \\uniform vec4 joined;

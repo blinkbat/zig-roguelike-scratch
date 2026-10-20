@@ -22,6 +22,7 @@ const ward = @import("ward.zig");
 const charge = @import("charge.zig");
 const hero = @import("hero.zig");
 const flask = @import("flask.zig");
+const passives = @import("passives.zig");
 const menu = @import("../ui/menu.zig");
 
 const Button = input.Button;
@@ -76,6 +77,13 @@ pub const Act = enum {
             .secondary => "Hold to use Skills in your " ++ comptime Set.secondary.name() ++ ". Takes up this slot in both Skill Sets.",
             inline else => |t| comptime module(t).?.DESCRIPTION,
         };
+    }
+
+    /// Its description as the passives `perks` change it.
+    pub fn describe(a: Act, w: anytype, perks: passives.Perks) void {
+        switch (a) {
+            inline else => |t| if (comptime has(t, "describe")) module(t).?.describe(w, perks) else w.writeAll(t.desc()) catch {},
+        }
     }
 
     pub fn flavor(a: Act) ?[:0]const u8 {
@@ -304,7 +312,7 @@ pub const Act = enum {
     }
 
     /// Every decl probed by name above, so renaming one in its module fails the build.
-    const PROBED = .{ "DESCRIPTION", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE", "BASE", "DONE" };
+    const PROBED = .{ "describe", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE", "BASE", "DONE" };
 
     comptime {
         @setEvalBranchQuota(10_000);

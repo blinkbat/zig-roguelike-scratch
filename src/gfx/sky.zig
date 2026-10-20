@@ -34,11 +34,17 @@ const KEY_ALT_MIN = std.math.degreesToRadians(@as(f32, 35));
 const KEY_ALT_MAX = std.math.degreesToRadians(@as(f32, 42));
 /// Cells the longest shadow the sky throws runs along the ground per cell of height.
 pub const REACH_MAX: f32 = 1 / @tan(KEY_ALT_MIN);
-/// Where the moon takes over from the sun as the light that casts, and back.
-const KEY_SWAP_DAWN: f32 = SUNRISE - 1.0;
-const KEY_SWAP_DUSK: f32 = SUNSET + 0.8;
+/// Hours before sunrise the moon hands the casting light to the sun, and after sunset it takes it back.
+const KEY_SWAP_LEAD: f32 = 1.0;
+const KEY_SWAP_LAG: f32 = 0.8;
+const KEY_SWAP_DAWN: f32 = SUNRISE - KEY_SWAP_LEAD;
+const KEY_SWAP_DUSK: f32 = SUNSET + KEY_SWAP_LAG;
 /// Hours from the horizon over which night gives way to dawn's colours, and morning's to full day.
 const GLOW_HOURS: f32 = 2.5;
+const FULL_MORNING: f32 = SUNRISE + GLOW_HOURS;
+/// The afternoon's last full light, and sunset's orange glow.
+const LATE_DAY: f32 = SUNSET - 2.55;
+const DUSK_GLOW: f32 = SUNSET - 0.6;
 const KEY_SWAP_FADE: f32 = 0.45;
 /// A light leaning along the ground less than this stands straight up.
 pub const OVERHEAD: f32 = 1e-4;
@@ -119,10 +125,10 @@ const KEYS = [_]Key{
     .{ .at = SUNRISE - GLOW_HOURS, .key = NIGHT.key, .sky = NIGHT.sky },
     .{ .at = KEY_SWAP_DAWN, .key = .{ 0.088, 0.104, 0.168 }, .sky = .{ 0.046, 0.056, 0.088 } },
     .{ .at = SUNRISE, .key = .{ 1.100, 0.620, 0.340 }, .sky = .{ 0.120, 0.124, 0.166 } },
-    .{ .at = SUNRISE + GLOW_HOURS, .key = .{ 1.300, 1.070, 0.800 }, .sky = .{ 0.196, 0.208, 0.250 } },
+    .{ .at = FULL_MORNING, .key = .{ 1.300, 1.070, 0.800 }, .sky = .{ 0.196, 0.208, 0.250 } },
     .{ .at = day.NOON, .key = .{ 1.380, 1.250, 1.040 }, .sky = .{ 0.220, 0.230, 0.260 } },
-    .{ .at = SUNSET - 2.55, .key = .{ 1.320, 1.100, 0.800 }, .sky = .{ 0.168, 0.188, 0.244 } },
-    .{ .at = SUNSET - 0.6, .key = .{ 1.180, 0.660, 0.320 }, .sky = .{ 0.132, 0.136, 0.186 } },
+    .{ .at = LATE_DAY, .key = .{ 1.320, 1.100, 0.800 }, .sky = .{ 0.168, 0.188, 0.244 } },
+    .{ .at = DUSK_GLOW, .key = .{ 1.180, 0.660, 0.320 }, .sky = .{ 0.132, 0.136, 0.186 } },
     .{ .at = KEY_SWAP_DUSK, .key = .{ 0.130, 0.150, 0.230 }, .sky = .{ 0.058, 0.068, 0.102 } },
     .{ .at = SUNSET + GLOW_HOURS, .key = NIGHT.key, .sky = NIGHT.sky },
     .{ .at = HOURS + day.DEAD_OF_NIGHT, .key = DEEPEST_NIGHT.key, .sky = DEEPEST_NIGHT.sky },
@@ -255,7 +261,7 @@ test "a bleak sky is a little darker than a clear one, greyer, and its shadows s
             return @reduce(.Max, c) - @reduce(.Min, c);
         }
     }.f;
-    for ([_]f32{ 8.5, day.NOON, 17.45 }) |h| {
+    for ([_]f32{ FULL_MORNING, day.NOON, LATE_DAY }) |h| {
         const clear = under(h, .clear);
         const bleak = under(h, .bleak);
         const lit_clear = lit(clear);

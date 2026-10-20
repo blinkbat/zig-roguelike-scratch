@@ -17,7 +17,6 @@ const MIN_DEPTH = 6;
 const LOOP_REACH = 10;
 const DIG_MAX = 8;
 const PASSES = 64;
-const SALT: u64 = @intFromEnum(carve.Salt.branches);
 /// Cells from a door no chest or barrel is stocked.
 const DOOR_CLEAR = 6;
 /// Rejoined side paths are trodden whatever the ground they cut through.
@@ -162,7 +161,7 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
     const loops = params.loops;
     if (!improves(params)) return result;
     const pal = wilds.palette(params);
-    var rng = mathx.Rng.init(seed ^ SALT);
+    var rng = carve.Salt.branches.rng(seed);
     var g: Graph = .{};
     var attempted: [N]bool = @splat(false);
     var distances: [grid.CELLS]i32 = undefined;
@@ -179,7 +178,7 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
             }
         }
         if (n == 0) break;
-        const b = choices[rng.below(@intCast(n))];
+        const b = rng.pick(Branch, choices[0..n]);
         attempted[b.root] = true;
         if (!rng.percent(loops)) continue;
         const neck = Graph.first(lv, b.neck) orelse continue;
@@ -205,7 +204,7 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
                     far = p;
                 }
                 const p = far orelse break;
-                if (chestKeepsRoute(lv, p, neck, open, &reached, &queue)) {
+                if (keepsRoute(lv, p, neck, open, &reached, &queue)) {
                     result.chests += 1;
                     open -= 1;
                     break;
@@ -257,7 +256,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
         var edges: usize = 0;
         for (mathx.CARDINALS) |d| {
             const q = p.add(d);
-            if (!grid.Level.onRim(q) and lv.at(q).solid() and lv.at(q) != .chest) edges += 1;
+            if (!grid.Level.onRim(q) and lv.at(q).solid() and !Reward.chest.has(lv, q)) edges += 1;
         }
         if (edges < @as(usize, if (kind == .chest) 2 else 1)) continue;
         spots[count] = p;
@@ -274,7 +273,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
             if (mathx.dist(p, other) < gap) near = true;
         }
         if (near) continue;
-        if (!chestKeepsRoute(blocked, p, origin, open, &dist, &queue)) continue;
+        if (!keepsRoute(blocked, p, origin, open, &dist, &queue)) continue;
         switch (kind) {
             .chest => lv.set(p, .chest),
             .barrel => lv.putBarrel(p),
@@ -287,8 +286,8 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
     return added;
 }
 
-/// A chest at `p` if the `open` cells less that one all still reach `from`; otherwise `lv` as it was.
-fn chestKeepsRoute(lv: *grid.Level, p: P, from: P, open: usize, dist: *[grid.CELLS]i32, queue: *[grid.CELLS]u32) bool {
+/// A chest at `p`, standing in for any reward, if the `open` cells less that one all still reach `from`; otherwise `lv` as it was.
+fn keepsRoute(lv: *grid.Level, p: P, from: P, open: usize, dist: *[grid.CELLS]i32, queue: *[grid.CELLS]u32) bool {
     const was = lv.at(p);
     lv.set(p, .chest);
     if (grid.distances(lv, from, dist, queue) == open - 1) return true;
@@ -300,7 +299,9 @@ fn rewardAt(lv: *const grid.Level, p: P) bool {
     if (grid.Level.onRim(p) or !lv.vacant(p) or lv.doorAt(p) != null or lv.torch.has(lume.torchWall(p))) return false;
     for (mathx.ALL_DIRS) |d| {
         const q = p.add(d.delta());
-        if (lv.at(q) == .chest or lv.hasBarrel(q)) return false;
+        for (std.enums.values(Reward)) |r| {
+            if (r.has(lv, q)) return false;
+        }
     }
     return lv.at(p).rewards();
 }

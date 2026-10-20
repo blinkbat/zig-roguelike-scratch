@@ -59,8 +59,8 @@ const P = mathx.P;
 
 const WINDOW_W: i32 = 1600;
 const WINDOW_H: i32 = 900;
-/// Screens the shots and layout tests cover besides the window's.
 const WINDOW = P{ .x = WINDOW_W, .y = WINDOW_H };
+/// Screens the shots and layout tests cover besides the window's.
 const SCREEN_720 = P{ .x = 1280, .y = 720 };
 const SCREEN_1080 = P{ .x = 1920, .y = 1080 };
 const SCREEN_1440 = P{ .x = 2560, .y = 1440 };
@@ -874,7 +874,7 @@ fn castSight(g: *Game, from: P) void {
     for (g.pool.slice(), 0..) |a, i| {
         const r = actor.row(a.kind).light;
         if (!a.alive or r <= 0) continue;
-        carried[n] = .{ .at = if (actor.Pool.idOf(i) == g.hero) from else a.at, .reach = r };
+        carried[n] = .{ .at = if (isHero(g, i)) from else a.at, .reach = r };
         n += 1;
     }
     const sight = heroRow(g).sight;
@@ -1016,7 +1016,7 @@ fn syncStats(g: *Game) void {
     h.max = lifeMax(g);
     h.hp = @min(h.hp, h.max);
     g.mana = @min(g.mana, manaMax(g));
-    settleNow(g, heroSlot(g).?);
+    settleHero(g, 0);
 }
 
 fn skillAttrs(g: *const Game, act: skillbar.Act) attrs.Attrs {
@@ -1096,7 +1096,7 @@ fn drink(g: *Game, act: skillbar.Act, k: flask.Kind) void {
     const h = g.heroActor() orelse return;
     spend(g, act);
     g.flasks.getPtr(k).drink(switch (k) {
-        .life => mathx.percentOf(flask.lifeOf(h.max), mathx.PERCENT + g.growth.perks().life_flask),
+        .life => flask.lifeOf(h.max, g.growth.perks().life_flask),
         .mana => flask.MANA_GAIN,
     });
     g.flasks_shown.set(k, g.flasks.get(k));
@@ -1109,17 +1109,14 @@ fn drink(g: *Game, act: skillbar.Act, k: flask.Kind) void {
 }
 
 fn recover(g: *Game) void {
-    const h = g.heroActor() orelse return;
-    const hp = h.hp;
     gainMana(g, manaRegen(g));
     for (std.enums.values(flask.Kind)) |k| {
         const n = g.flasks.getPtr(k).tick();
         switch (k) {
-            .life => h.hp = @min(h.max, h.hp + n),
+            .life => heal(g, n, g.lead orelse 0),
             .mana => gainMana(g, n),
         }
     }
-    if (h.hp != hp) settleNow(g, heroSlot(g).?);
 }
 
 const Use = struct { act: skillbar.Act, by: input.Button, set: skillbar.Set = .primary };
@@ -1181,7 +1178,7 @@ fn spell(g: *Game, comptime act: skillbar.Act) void {
         sayDone(g, act);
         h.ward.raise();
         g.fx.shimmer(mathx.centre(h.at), look.WARD);
-        settleNow(g, heroSlot(g).?);
+        settleHero(g, 0);
         g.lead = 0;
     } else @compileError(@tagName(act) ++ " has no reticle and no use");
     endTurn(g);
@@ -1474,6 +1471,7 @@ fn afflicted(g: *Game, a: *actor.Actor, comptime M: type, lands: bool, resist: i
 
 const SHOOT = bow.VERB;
 const IT_DIES = " It dies.";
+const CUT_DOWN = " It is cut down.";
 
 const Roll = struct { dmg: i32, crit: bool = false };
 const Rolled = struct {
@@ -1542,7 +1540,7 @@ fn arrowHit(g: *Game, id: u16, hit: Rolled, comptime act: skillbar.Act, s: Strok
     const lands = if (el) |e| hit.blow.afflicts(a.resists, e, a.hp) else dealt < a.hp;
     const takes = afflicted(g, a, M, lands, if (el) |e| a.resists.get(e) else 0);
     if (dealt > 0) wound(g, id, .{ .dmg = dealt, .crit = hit.crit }, M.VERB, s);
-    if (takes) sayTakes(g, M, at, name);
+    if (takes and g.pool.get(id) != null) sayTakes(g, M, at, name);
 }
 
 fn burstHit(g: *Game, comptime act: skillbar.Act, hit: bow.Hit, impact: P, s: Stroke) void {
@@ -1596,8 +1594,9 @@ fn snap(g: *Game, slot: usize) fx.Body {
     return fx.Body.of(g.pool.items[slot], g.seq);
 }
 
-fn settleNow(g: *Game, slot: usize) void {
-    g.fx.settle(0, .{ .slot = slot, .after = .{ .body = snap(g, slot) } });
+fn settleHero(g: *Game, wait: f32) void {
+    const slot = heroSlot(g).?;
+    g.fx.settle(wait, .{ .slot = slot, .after = .{ .body = snap(g, slot) } });
 }
 
 fn flashes(g: *Game, wait: f32) void {
@@ -1666,11 +1665,10 @@ fn wound(g: *Game, id: u16, r: Roll, comptime verb: []const u8, s: Stroke) void 
     const i = actor.Pool.slot(id);
     const name = actor.row(kind).name;
     const perks = g.growth.perks();
-    const left = a.hp - r.dmg;
-    const culled = left > 0 and left * mathx.PERCENT <= a.max * perks.cull;
+    const culled = perks.culls(a.hp - r.dmg, a.max);
     const h = hurt(g, id, if (culled) a.hp else r.dmg);
     const lethal = h.lethal;
-    sayAs(g, .damage, at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.name.text(), name, if (r.crit) " critically" else "", r.dmg, if (culled) " It is cut down." else if (lethal) IT_DIES else "" });
+    sayAs(g, .damage, at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.name.text(), name, if (r.crit) " critically" else "", r.dmg, if (culled) CUT_DOWN else if (lethal) IT_DIES else "" });
     strike(g, i, s, at, lethal, afterBlow(g, id, h));
     if (lethal) fell(g, id);
     if (h.dmg > 0) heal(g, perks.life_on_hit + if (lethal) perks.life_on_kill else 0, s.wait);
@@ -1681,8 +1679,7 @@ fn heal(g: *Game, n: i32, wait: f32) void {
     const h = g.heroActor() orelse return;
     if (n <= 0 or h.hp >= h.max) return;
     h.hp = @min(h.max, h.hp + n);
-    const slot = heroSlot(g).?;
-    g.fx.settle(wait, .{ .slot = slot, .after = .{ .body = snap(g, slot) } });
+    settleHero(g, wait);
 }
 
 fn afterBlow(g: *Game, id: u16, h: Hurt) fx.After {
@@ -2024,6 +2021,10 @@ fn standing(g: *Game, i: usize) bool {
 
 pub fn heroSlot(g: *const Game) ?usize {
     return if (g.hero == grid.NO_ONE) null else actor.Pool.slot(g.hero);
+}
+
+fn isHero(g: *const Game, slot: usize) bool {
+    return actor.Pool.idOf(slot) == g.hero;
 }
 
 fn heroShown(g: *const Game) ?fx.Body {
@@ -2970,7 +2971,7 @@ fn drawShadows(g: *Game, c: Cam, cast: grid.Box) void {
         const t = g.sprites.body(g.pictured[i].kind) orelse continue;
         const s = c.px(at);
         const mid = middle(at);
-        const shine = g.light.onCaster(mid, actor.Pool.idOf(i) == g.hero);
+        const shine = g.light.onCaster(mid, isHero(g, i));
         g.light.drawShadows(t, spriteRect(t, s.x, s.y), g.facing[i] == .left, mid, &shine);
     }
 }
@@ -3115,7 +3116,7 @@ fn drawMap(g: *Game) void {
             .lifted = c.px(at).sub(.{ .x = 0, .y = g.glide[i].lift() }),
             .mid = mid,
             .left = g.facing[i] == .left,
-            .shine = g.light.onBody(mid, actor.Pool.idOf(i) == g.hero),
+            .shine = g.light.onBody(mid, isHero(g, i)),
         };
         n += 1;
     }
@@ -3530,7 +3531,7 @@ fn drawBinds(g: *Game) void {
         var desc: [TIP_BODY_MAX + 1]u8 = undefined;
         const text = describe(g, a, &desc);
         var lines: [hud.TIP_LINES_MAX][:0]const u8 = undefined;
-        var buf: [hud.TIP_LINES_MAX][hud.TIP_COLS_MAX + 1]u8 = undefined;
+        var buf: hud.Wrapped = undefined;
         const n = hud.wrap(&g.face, text, font.BODY, BIND_DESC_W, &buf, &lines);
         for (lines[0..n], 0..) |line, i| bindText(g, line, info_y + TEXT_LINE + @as(i32, @intCast(i)) * BIND_DESC_LINE, font.BODY, look.DIM);
     } else if (b.menu == .pick) {
@@ -3553,7 +3554,8 @@ fn describe(g: *const Game, act: skillbar.Act, buf: []u8) [:0]const u8 {
 }
 
 fn writeDescription(g: *const Game, act: skillbar.Act, w: anytype) void {
-    w.print("{s} ", .{act.desc()}) catch {};
+    g.growth.writeDescription(act, w);
+    w.writeAll(" ") catch {};
     g.growth.writeUsage(act, w);
     w.writeAll(".") catch {};
 }
@@ -4168,7 +4170,7 @@ fn captureCinema(g: *Game, target: rl.RenderTexture2D, comptime name: []const u8
                 const y = q.y;
                 const a = rl.getImageColor(base, x, y);
                 const b = rl.getImageColor(img, x, y);
-                const same = a.r == b.r and a.g == b.g and a.b == b.b;
+                const same = sameRgb(a, b);
                 changed += @intFromBool(!same);
                 const p = mathx.cellOf(.{ @as(f32, @floatFromInt(x + c.x)) / CELL_F, @as(f32, @floatFromInt(y + c.y)) / CELL_F });
                 const live_only = comptime cinema.LIVE_ONLY.contains(@field(cinema.Effect, f.name));
@@ -4954,7 +4956,7 @@ fn checkMapEdge(g: *Game, target: rl.RenderTexture2D) !void {
                 const x = q.x;
                 const y = q.y;
                 const pixel = rl.getImageColor(img, x, y);
-                if (pixel.r != look.FOG.r or pixel.g != look.FOG.g or pixel.b != look.FOG.b) return error.MapEdgeOverhang;
+                if (!sameRgb(pixel, look.FOG)) return error.MapEdgeOverhang;
                 compared += 1;
             }
         }
@@ -5144,10 +5146,14 @@ fn meanDraw(g: *Game, target: rl.RenderTexture2D, warm: usize, n: usize) !f64 {
     return ms(timer.read() / n);
 }
 
-/// Draws into `target`, whose batch raylib flushes at `endTextureMode`, and saves it.
 /// The fewest pixels a shot check counts as an effect drawn at all.
 const MIN_PIXELS = 100;
 
+fn sameRgb(a: rl.Color, b: rl.Color) bool {
+    return a.r == b.r and a.g == b.g and a.b == b.b;
+}
+
+/// Draws into `target`, whose batch raylib flushes at `endTextureMode`, and saves it.
 fn capture(g: *Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {
     drawInto(g, target);
     try exportTarget(target, path);
@@ -9060,7 +9066,7 @@ test "a flask drink takes a turn, recovers over the next turns, and kills refill
     const per = firstLifeTick(h.max);
     try std.testing.expectEqual(1 + per, h.hp);
     for (1..flask.TURNS) |_| use(g, .wait);
-    try std.testing.expectEqual(1 + flask.lifeOf(h.max), h.hp);
+    try std.testing.expectEqual(1 + flask.lifeOf(h.max, 0), h.hp);
     press(g, .rt);
     for (1..flask.TURNS + 2) |_| use(g, .wait);
     try std.testing.expectEqual(@min(manaMax(g), flask.MANA_GAIN + heroes.MANA_REGEN * (flask.TURNS + flask.TURNS + 2)), g.mana);
@@ -9073,12 +9079,12 @@ test "a flask drink takes a turn, recovers over the next turns, and kills refill
     try std.testing.expectEqual(@as(u8, 0), g.flasks.get(.life).uses());
     for (0..flask.USE / flask.PER_KILL) |_| fell(g, 2);
     try std.testing.expectEqual(@as(u8, 1), g.flasks.get(.life).uses());
-    std.debug.print("life flask: {d} hp over {d} turns on a knight of {d}; empty after {d} drinks; {d} kills refill one\n", .{ flask.lifeOf(h.max), flask.TURNS, h.max, flask.CHARGES / flask.USE, flask.USE / flask.PER_KILL });
+    std.debug.print("life flask: {d} hp over {d} turns on a knight of {d}; empty after {d} drinks; {d} kills refill one\n", .{ flask.lifeOf(h.max, 0), flask.TURNS, h.max, flask.CHARGES / flask.USE, flask.USE / flask.PER_KILL });
 }
 
 fn firstLifeTick(max: i32) i32 {
     var f = flask.Flask{};
-    f.drink(flask.lifeOf(max));
+    f.drink(flask.lifeOf(max, 0));
     return f.tick();
 }
 
@@ -9111,6 +9117,20 @@ fn takeNode(g: *Game, name: []const u8) void {
     unreachable;
 }
 
+fn takeCull(g: *Game) void {
+    takeNode(g, "Culling Blow");
+    takeNode(g, "Executioner");
+}
+
+fn setLife(a: *actor.Actor, hp: i32, max: i32) void {
+    a.hp = hp;
+    a.max = max;
+}
+
+fn caughtUp(g: *Game, slot: usize) bool {
+    return g.pictured[slot].hp == g.pool.items[slot].hp;
+}
+
 test "passive leech and kill healing land on the drawn hero with the arrow" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
@@ -9127,12 +9147,7 @@ test "passive leech and kill healing land on the drawn hero with the arrow" {
     try std.testing.expectEqual(@as(i32, 5 + 1 + 2), h.hp);
     const hero = heroSlot(g).?;
     try std.testing.expectEqual(@as(i32, 5), g.pictured[hero].hp);
-    const Healed = struct {
-        fn f(game: *Game, slot: usize) bool {
-            return game.pictured[slot].hp == 8;
-        }
-    };
-    const t = framesUntil(g, hero, Healed.f);
+    const t = framesUntil(g, hero, caughtUp);
     std.debug.print("leech 1 + kill heal 2: drawn hero 5 -> 8 at {d:.3} s, as the arrow lands at {d:.3} s\n", .{ t, flown(6) });
     try std.testing.expectApproxEqAbs(flown(6), t, TEST_TOL);
 }
@@ -9141,20 +9156,45 @@ test "passive cull finishes a foe left at its threshold and spares one above it"
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 22, .y = 20 }, .{ .x = 22, .y = 22 } });
-    takeNode(g, "Culling Blow");
-    takeNode(g, "Executioner");
+    takeCull(g);
     try std.testing.expectEqual(@as(i32, 10), g.growth.perks().cull);
-    for ([_]u16{ 2, 3 }) |id| {
-        const a = g.pool.get(id).?;
-        a.max = 20;
-        a.hp = 20;
-    }
+    for ([_]u16{ 2, 3 }) |id| setLife(g.pool.get(id).?, 20, 20);
     const from = g.heroActor().?.at;
     wound(g, 2, .{ .dmg = 18 }, SHOOT, .{ .from = from, .wait = 0 });
     wound(g, 3, .{ .dmg = 17 }, SHOOT, .{ .from = from, .wait = 0 });
     try std.testing.expect(g.pool.get(2) == null);
     try std.testing.expectEqual(@as(i32, 3), g.pool.get(3).?.hp);
     std.debug.print("cull 10%: a 20-life foe left at 2 is cut down, one left at 3 survives\n", .{});
+}
+
+test "a culled foe is not said to take the arrow's status" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
+    takeCull(g);
+    setLife(g.pool.get(2).?, 3, 20);
+    arrowHit(g, 2, .{ .blow = .{ .physical = 1 } }, .pinning_shot, .{ .from = g.heroActor().?.at, .wait = 0 });
+    try std.testing.expect(g.pool.get(2) == null);
+    for (0..g.log.n) |i| try std.testing.expect(std.mem.indexOf(u8, g.log.line(i).?, pinning.TAKES) == null);
+}
+
+test "passive leech waits for the arrow while a life flask recovers" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
+    takeNode(g, "Sanguine Pact");
+    const h = g.heroActor().?;
+    h.hp = 5;
+    setLife(g.pool.get(2).?, 50, 50);
+    press(g, .rb);
+    catchUp(g);
+    const hero = heroSlot(g).?;
+    press(g, .x);
+    press(g, CONFIRM);
+    try std.testing.expect(g.pool.get(2) != null);
+    const t = framesUntil(g, hero, caughtUp);
+    std.debug.print("leech under a ticking flask: drawn hero reaches {d} at {d:.3} s, as the arrow lands at {d:.3} s\n", .{ h.hp, t, flown(6) });
+    try std.testing.expectApproxEqAbs(flown(6), t, TEST_TOL);
 }
 
 test "passive mana recovery, skill cost and flask recovery reach the live numbers" {
@@ -9173,9 +9213,11 @@ test "passive mana recovery, skill cost and flask recovery reach the live number
     h.hp = 1;
     press(g, .rb);
     for (1..flask.TURNS) |_| use(g, .wait);
-    const healed = mathx.percentOf(flask.lifeOf(h.max), 120);
+    const healed = flask.lifeOf(h.max, 20);
     try std.testing.expectEqual(1 + healed, h.hp);
-    std.debug.print("passives: mana {d}/turn, charge {d} -> {d} mana, life flask {d} -> {d} on {d} life\n", .{ g.growth.perks().mana_regen + heroes.MANA_REGEN, cost, g.growth.cost(.charge), flask.lifeOf(h.max), healed, h.max });
+    var desc: [256]u8 = undefined;
+    try std.testing.expect(std.mem.indexOf(u8, describe(g, .life_flask, &desc), "Recover 60% of life") != null);
+    std.debug.print("passives: mana {d}/turn, charge {d} -> {d} mana, life flask {d} -> {d} on {d} life\n", .{ manaRegen(g), cost, g.growth.cost(.charge), flask.lifeOf(h.max, 0), healed, h.max });
 }
 
 test "a kill's flask refill shows as the kill is drawn, not as the arrow leaves" {
@@ -9201,7 +9243,7 @@ test "a kill's flask refill shows as the kill is drawn, not as the arrow leaves"
 }
 
 fn manaAfter(g: *const Game, act: skillbar.Act) i32 {
-    return manaMax(g) - g.growth.cost(act) + heroes.MANA_REGEN;
+    return manaMax(g) - g.growth.cost(act) + manaRegen(g);
 }
 
 fn skipsNext(a: *actor.Actor) void {

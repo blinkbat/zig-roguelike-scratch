@@ -103,7 +103,7 @@ pub const Cinema = struct {
             self.active_bloom = self.active_bloom or look.reflects(t);
         }
         for (flames) |f| {
-            if (f.lit > light.FAINT and markEmissive(&pixels, f.at)) self.active_bloom = true;
+            if (f.live() and markEmissive(&pixels, f.at)) self.active_bloom = true;
         }
         for (l.effects[0..l.effect_n]) |*e| {
             if (markEmissive(&pixels, e.source.drawn())) self.active_bloom = true;
@@ -198,7 +198,7 @@ const FIELD_FS = look.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\uniform sampler2D field;
     \\uniform sampler2D visibility;
     \\vec4 fieldAt(vec2 p) {
-    \\    if (any(lessThan(p, vec2(0.0))) || any(greaterThanEqual(p, CELLS))) return vec4(0.0);
+    \\    if (!insideMap(p)) return vec4(0.0);
     \\    return texture(field, (floor(p) + 0.5) / CELLS);
     \\}
     \\float liveAt(vec2 p) {
@@ -215,7 +215,7 @@ const BLOOM_FS = look.FS_HEAD ++ FIELD_FS ++
     \\    uv = clamp(uv, 0.5 / screen, vec2(1.0) - 0.5 / screen);
     \\    vec3 c = texture(texture0, uv).rgb;
     \\    if (extract == 0) return c;
-    \\    vec2 p = cellAtPixel(vec2(uv.x, 1.0 - uv.y) * screen);
+    \\    vec2 p = cellAtPixel(targetPixel(uv));
     \\    vec4 f = fieldAt(p);
     \\    float high = max(c.r, max(c.g, c.b));
     \\    float lum = dot(c, LUMA);
@@ -237,7 +237,7 @@ const BLOOM_FS = look.FS_HEAD ++ FIELD_FS ++
     \\}
 ;
 
-const AIR_FS = look.FS_HEAD ++ FIELD_FS ++ std.fmt.comptimePrint("const float SHAFT_NEAR = {d};\nconst float SHAFT_FAR = {d};\n", .{ SHAFT_NEAR, SHAFT_FAR }) ++
+const AIR_FS = look.FS_HEAD ++ FIELD_FS ++ look.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR }) ++
     \\uniform float time;
     \\uniform float daylight;
     \\uniform float brightness;

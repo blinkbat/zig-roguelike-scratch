@@ -5,7 +5,10 @@ const look = @import("look.zig");
 const input = @import("../core/input.zig");
 const OPEN = input.GLYPH_OPEN;
 const CLOSE = input.GLYPH_CLOSE;
-const ELLIPSIS = font.ELLIPSIS;
+/// The longest run of plain text laid out at once.
+const RUN_MAX: usize = 256;
+/// Beside an inline glyph's own width, the room it takes.
+const GLYPH_PAD: i32 = 4;
 
 const Part = struct {
     text: []const u8,
@@ -20,7 +23,7 @@ fn next(s: []const u8, at: usize) ?Part {
         return .{ .text = s[at + 1 .. end], .control = true, .end = end + 1 };
     }
     const end = std.mem.indexOfScalarPos(u8, s, at, OPEN) orelse s.len;
-    return .{ .text = s[at..@min(end, at + 256)], .control = false, .end = @min(end, at + 256) };
+    return .{ .text = s[at..@min(end, at + RUN_MAX)], .control = false, .end = @min(end, at + RUN_MAX) };
 }
 
 fn icon(text: [:0]const u8) look.Prompt {
@@ -51,11 +54,11 @@ pub const Face = struct {
         var at: usize = 0;
         var offset: i32 = 0;
         while (next(s, at)) |part| {
-            var buffer: [257]u8 = undefined;
+            var buffer: [RUN_MAX + 1]u8 = undefined;
             const text = std.fmt.bufPrintZ(&buffer, "{s}", .{part.text}) catch return offset;
             if (part.control) {
                 const prompt = icon(text);
-                const w = prompt.width(self.face, size) + 4;
+                const w = prompt.width(self.face, size) + GLYPH_PAD;
                 if (y) |top| prompt.draw(self.face, x + offset + @divTrunc(w, 2), top + @divTrunc(size, 2), size, @as(f32, @floatFromInt(col.a)) / 255);
                 offset += w;
             } else {
@@ -75,11 +78,7 @@ pub const Face = struct {
         var at: usize = 0;
         while (at < s.len) {
             const end = if (s[at] == OPEN) (next(s, at) orelse break).end else at + 1;
-            const candidate = if (keep_end) s[at..] else s[0..end];
-            const text = (if (keep_end)
-                std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{candidate})
-            else
-                std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{candidate})) catch {
+            const text = font.elided(buf, if (keep_end) s[at..] else s[0..end], keep_end) catch {
                 if (keep_end) {
                     at = end;
                     continue;
@@ -92,10 +91,7 @@ pub const Face = struct {
             } else if (!keep_end) break;
             at = end;
         }
-        return (if (keep_end)
-            std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{s[edge..]})
-        else
-            std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{s[0..edge]})) catch "";
+        return font.elided(buf, if (keep_end) s[edge..] else s[0..edge], keep_end) catch "";
     }
 };
 
