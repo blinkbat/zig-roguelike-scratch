@@ -26,7 +26,7 @@ fn tintOf(volume: u16) f32 {
 }
 
 const Shade = struct { shader: rl.Shader, time: i32 };
-const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, field: i32, ink: i32 };
+const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, field: i32, ink: i32, texel: i32, strength: i32 };
 
 pub const Cloud = struct {
     tint: [grid.CELLS]f32,
@@ -123,14 +123,16 @@ pub const Cloud = struct {
         rl.gl.rlDrawRenderBatchActive();
     }
 
-    pub fn beginVeil(self: *const Cloud, ink: rl.Color) bool {
+    pub fn beginVeil(self: *const Cloud, ink: rl.Color, focus: look.Focused) bool {
         if (!self.visible) return false;
         const tex = self.tex orelse return false;
         const s = self.veil orelse return false;
         rl.beginShaderMode(s.shader);
+        focus.set(s.shader, s.texel, s.strength);
         look.setUniform(s.shader, s.time, self.t.at());
         look.setUniform(s.shader, s.field, self.field);
-        look.setUniform(s.shader, s.ink, [3]f32{ @as(f32, @floatFromInt(ink.r)) / 255, @as(f32, @floatFromInt(ink.g)) / 255, @as(f32, @floatFromInt(ink.b)) / 255 });
+        const rgb: [3]f32 = look.rgbOf(ink);
+        look.setUniform(s.shader, s.ink, rgb);
         rl.setShaderValueTexture(s.shader, s.cloud, tex);
         return true;
     }
@@ -227,12 +229,12 @@ const CLOUD_FS = look.FS_HEAD ++ CLOUD_NOISE ++
     \\}
 ;
 
-const VEIL_FS = look.FS_HEAD ++ CLOUD_NOISE ++ std.fmt.comptimePrint("const float FIGURE_SHARE = {d:.4};\n", .{FIGURE_SHARE}) ++
+const VEIL_FS = look.FS_HEAD ++ look.FOCUS_TAPS ++ CLOUD_NOISE ++ std.fmt.comptimePrint("const float FIGURE_SHARE = {d:.4};\n", .{FIGURE_SHARE}) ++
     \\uniform sampler2D cloud;
     \\uniform vec4 field;
     \\uniform vec3 ink;
     \\void main() {
-    \\    float a = texture(texture0, fragTexCoord).a * fragColor.a;
+    \\    float a = focused().a * fragColor.a;
     \\    if (a < CLEAR_A) discard;
     \\    vec2 pixel = vec2(gl_FragCoord.x, field.w - gl_FragCoord.y);
     \\    vec4 gas = cloudAt(cloud, (pixel - field.xy) / field.z);

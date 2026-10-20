@@ -81,6 +81,9 @@ pub const Kind = enum {
 const KINDS = std.enums.values(Kind);
 /// Percent of slain foes that drop an item.
 pub const DROP_PERCENT = 25;
+/// Gold a broken barrel and an opened chest drop, both inclusive.
+pub const BARREL_GOLD = [2]i32{ 3, 12 };
+pub const CHEST_GOLD = [2]i32{ 18, 36 };
 pub const Affix = struct { kind: Mod, value: i16 };
 pub const Spec = struct {
     name: [:0]const u8,
@@ -184,22 +187,31 @@ pub const Gear = struct {
         return out;
     }
 
+    /// The main hand's weapon, when it takes both hands.
+    pub fn twoHander(self: Gear) ?Item {
+        const it = self.slots.get(.right_hand) orelse return null;
+        return if (spec(it.kind).two_handed) it else null;
+    }
+
     pub fn valid(self: Gear, base: attrs.Attrs) bool {
-        if (self.slots.get(.right_hand)) |it| {
-            if (spec(it.kind).two_handed and self.slots.get(.left_hand) != null) return false;
-        }
+        if (self.twoHander() != null and self.slots.get(.left_hand) != null) return false;
         for (SLOTS) |slot| if (self.slots.get(slot)) |it| {
             if (!it.fits(slot) or !self.wornMeets(slot, base)) return false;
         };
         return true;
     }
 
+    /// What everything else worn gives, with `slot` emptied.
+    pub fn statsWithout(self: Gear, slot: Slot, base: attrs.Attrs) attrs.Attrs {
+        var without = self;
+        without.slots.set(slot, null);
+        return without.stats(base);
+    }
+
     /// An item cannot fund its own requirement.
     pub fn wornMeets(self: Gear, slot: Slot, base: attrs.Attrs) bool {
         const it = self.slots.get(slot) orelse return true;
-        var without = self;
-        without.slots.set(slot, null);
-        return it.meets(without.stats(base));
+        return it.meets(self.statsWithout(slot, base));
     }
 
     pub fn weapon(self: Gear, attack: attrs.Attack) ?damage.Base {
@@ -252,9 +264,7 @@ pub const Inventory = struct {
         var after = self.gear;
         after.slots.set(slot, it);
         if (spec(it.kind).two_handed) after.slots.set(.left_hand, null);
-        if (slot == .left_hand) if (after.slots.get(.right_hand)) |held| {
-            if (spec(held.kind).two_handed) after.slots.set(.right_hand, null);
-        };
+        if (slot == .left_hand and self.gear.twoHander() != null) after.slots.set(.right_hand, null);
         return after;
     }
 

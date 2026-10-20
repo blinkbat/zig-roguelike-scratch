@@ -14,6 +14,22 @@ pub const Arm = enum {
             .wizard => .intelligence,
         };
     }
+
+    /// The class that starts on it.
+    pub fn class(a: Arm) hero.Class {
+        return switch (a) {
+            .warrior => .knight,
+            .rogue => .archer,
+            .wizard => .wizard,
+        };
+    }
+
+    pub fn of(c: hero.Class) Arm {
+        for (std.enums.values(Arm)) |a| {
+            if (a.class() == c) return a;
+        }
+        unreachable;
+    }
 };
 pub const Branch = enum {
     warrior_life,
@@ -78,7 +94,36 @@ const SEAMS = std.EnumArray(Seam, [2]Arm).init(.{
     .wizard_warrior = .{ .wizard, .warrior },
 });
 pub const Tier = enum { stat, interest, capstone };
-pub const Kind = enum { strength, dexterity, intelligence, life, mana, armour, heavy_damage, light_damage, spell_damage };
+pub const Kind = enum {
+    strength,
+    dexterity,
+    intelligence,
+    life,
+    mana,
+    armour,
+    heavy_damage,
+    light_damage,
+    spell_damage,
+
+    /// The damage it raises by a percentage, for a damage kind.
+    pub fn style(k: Kind) ?attrs.Style {
+        return switch (k) {
+            .heavy_damage => .heavy,
+            .light_damage => .light,
+            .spell_damage => .spell,
+            .strength, .dexterity, .intelligence, .life, .mana, .armour => null,
+        };
+    }
+
+    /// The attribute it raises, for a pure attribute kind.
+    pub fn attr(k: Kind) ?attrs.Attr {
+        return switch (k) {
+            inline else => |t| comptime std.meta.stringToEnum(attrs.Attr, @tagName(t)),
+        };
+    }
+};
+/// What each class origin grants of its arm's attribute.
+pub const ROOT_GRANT: i32 = 2;
 pub const Grant = struct {
     kind: Kind,
     amount: i32,
@@ -97,16 +142,15 @@ pub const Grant = struct {
         };
     }
     pub fn isPercent(g: Grant) bool {
-        return switch (g.kind) {
-            .heavy_damage, .light_damage, .spell_damage => true,
-            else => false,
-        };
+        return g.kind.style() != null;
     }
     pub fn apply(g: Grant, a: *attrs.Attrs) void {
+        if (g.kind.style()) |s| {
+            a.damage_bonus.getPtr(s).* += g.amount;
+            return;
+        }
         switch (g.kind) {
-            .heavy_damage => a.damage_bonus.getPtr(.heavy).* += g.amount,
-            .light_damage => a.damage_bonus.getPtr(.light).* += g.amount,
-            .spell_damage => a.damage_bonus.getPtr(.spell).* += g.amount,
+            .heavy_damage, .light_damage, .spell_damage => unreachable,
             inline else => |k| a.add(@field(attrs.Bonus, @tagName(k)), g.amount),
         }
     }
@@ -153,11 +197,7 @@ pub fn bridgeFirst(s: Seam) usize {
     return NTREE + @intFromEnum(s) * BRIDGE_RINGS.len;
 }
 pub fn start(c: hero.Class) usize {
-    return armFirst(switch (c) {
-        .knight => .warrior,
-        .archer => .rogue,
-        .wizard => .wizard,
-    });
+    return armFirst(Arm.of(c));
 }
 fn ringFirst(b: Branch, br: usize) usize {
     var at = branchFirst(b);
@@ -182,6 +222,24 @@ fn bridgeOn(i: usize, out: *[MAX_FEED]usize, k: usize) usize {
     return n;
 }
 pub fn feeders(i: usize, out: *[MAX_FEED]usize) []const usize {
+    const f = &FEEDS[i];
+    out.* = f.at;
+    return out[0..f.n];
+}
+
+const Feeds = struct { at: [MAX_FEED]usize, n: usize };
+const FEEDS: [N]Feeds = blk: {
+    @setEvalBranchQuota(200_000);
+    var out: [N]Feeds = undefined;
+    for (0..N) |i| {
+        var buf: [MAX_FEED]usize = @splat(0);
+        const n = feedersOf(i, &buf).len;
+        out[i] = .{ .at = buf, .n = n };
+    }
+    break :blk out;
+};
+
+fn feedersOf(i: usize, out: *[MAX_FEED]usize) []const usize {
     const n = NODES[i];
     if (n.seam) |s| {
         const a = bridgeAnchors(s, n.ring);
@@ -311,12 +369,12 @@ pub const NODES: [N]Node = blk: {
         .wizard = "Lore",
     });
     for (std.enums.values(Arm)) |a| {
-        out[armFirst(a)] = .{ .arm = a, .ring = 0, .name = roots.get(a), .grant = .{ .kind = a.stat(), .amount = 2 } };
+        out[armFirst(a)] = .{ .arm = a, .ring = 0, .name = roots.get(a), .grant = .{ .kind = a.stat(), .amount = ROOT_GRANT } };
         for (BRANCHES.get(a)) |b| {
             var i: usize = 0;
             for (BRANCH_RINGS, 0..) |wide, r| for (0..wide) |slot| {
                 const e = BANK.get(b)[i];
-                const pure = e.kind == .strength or e.kind == .dexterity or e.kind == .intelligence;
+                const pure = e.kind.attr() != null;
                 out[branchFirst(b) + i] = .{
                     .arm = a,
                     .branch = b,
@@ -400,7 +458,7 @@ pub fn step(cur: usize, dx: f32, dy: f32) usize {
 
 test "radial branches preserve capstone routes, bridge crossings, live grants and directional reach" {
     var kinds = std.StaticBitSet(std.enums.values(Kind).len).initEmpty();
-    var tiers = [_]usize{0} ** 3;
+    var tiers = [_]usize{0} ** std.enums.values(Tier).len;
     for (NODES, 0..) |n, i| {
         tiers[@intFromEnum(n.tier)] += 1;
         kinds.set(@intFromEnum(n.grant.kind));
@@ -421,7 +479,7 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
             try std.testing.expect(std.mem.indexOfScalar(usize, feeders(anchor, &back), i) != null);
         };
     }
-    try std.testing.expectEqual(@as(usize, 6), tiers[@intFromEnum(Tier.capstone)]);
+    try std.testing.expectEqual(std.enums.values(Branch).len, tiers[@intFromEnum(Tier.capstone)]);
     try std.testing.expectEqual(std.enums.values(Kind).len, kinds.count());
     var seen = std.StaticBitSet(N).initEmpty();
     seen.set(start(.knight));

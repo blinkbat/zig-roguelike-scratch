@@ -12,22 +12,45 @@ pub const Options = struct {
     atmosphere: bool = true,
     depth_of_field: bool = true,
 
-    pub const off: Options = .{
-        .composed_lighting = false,
-        .bloom = false,
-        .atmosphere = false,
-        .depth_of_field = false,
+    pub const off: Options = blk: {
+        var o: Options = .{};
+        for (std.meta.fields(Options)) |f| @field(o, f.name) = false;
+        break :blk o;
     };
 };
+pub const Effect = std.meta.FieldEnum(Options);
+/// Drawn only over cells in sight now, not remembered ones.
+pub const LIVE_ONLY = std.EnumSet(Effect).init(.{ .bloom = true, .atmosphere = true });
 
 const Focus = struct { shader: rl.Shader, texel: i32, strength: i32 };
+
+const Focused = look.Focused;
 const Bloom = struct { shader: rl.Shader, field: i32, visibility: i32, glints: i32, origin: i32, cell: i32, screen: i32, direction: i32, extract: i32 };
 const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, daylight: i32, brightness: i32, direction: i32 };
 
+const FOCUS_MAX: f32 = 0.24;
+/// Rows from the hero that stay sharp, and from which scenery is softened fully.
+const SHARP_ROWS: f32 = 3.5;
+const SOFT_ROWS: f32 = 7.5;
+/// From a flame or a spell's light, how far its glow blooms.
+const EMISSIVE_REACH: f32 = 1.5;
+/// Cells past the view the field covers: the shafts look up to 2.3 cells upwind, softened over one more.
+const FIELD_MARGIN: i32 = 4;
+
 pub fn focusStrength(t: grid.Tile, at: [2]f32, hero: ?[2]f32) f32 {
-    if (!look.canopy(t) and t != .tiny_shrub and t != .tall_grass and t != .shrooms) return 0;
+    if (!look.SOFTENED.contains(t)) return 0;
     const h = hero orelse return 0;
-    return 0.24 * mathx.smoothstep(3.5, 7.5, @abs(at[1] - h[1]));
+    return FOCUS_MAX * mathx.smoothstep(SHARP_ROWS, SOFT_ROWS, @abs(at[1] - h[1]));
+}
+
+fn emissiveAt(at: [2]f32, l: *const light.Light, flames: []const light.Flame) bool {
+    for (flames) |f| {
+        if (f.lit > look.CLEAR_A and mathx.len(at[0] - f.at[0], at[1] - f.at[1]) < EMISSIVE_REACH) return true;
+    }
+    for (l.effects[0..l.effect_n]) |*e| {
+        if (mathx.len(at[0] - e.source.at[0], at[1] - (e.source.at[1] - e.source.at[2])) < EMISSIVE_REACH) return true;
+    }
+    return false;
 }
 
 pub const Cinema = struct {
@@ -56,24 +79,11 @@ pub const Cinema = struct {
         if (!self.options.bloom and !self.options.atmosphere) return;
         const tex = self.field orelse return;
         var pixels: [grid.CELLS]rl.Color = @splat(rl.Color.blank);
-        var cells = view.grown(4).cells();
+        var cells = view.grown(FIELD_MARGIN).cells();
         while (cells.next()) |p| {
             if (!lv.isLit(p)) continue;
             const t = lv.at(p);
-            const at = mathx.centre(p);
-            var emissive = false;
-            for (flames) |f| {
-                if (f.lit > look.CLEAR_A and mathx.len(at[0] - f.at[0], at[1] - f.at[1]) < 1.5) {
-                    emissive = true;
-                    break;
-                }
-            }
-            if (!emissive) for (l.effects[0..l.effect_n]) |e| {
-                if (mathx.len(at[0] - e.source.at[0], at[1] - (e.source.at[1] - e.source.at[2])) < 1.5) {
-                    emissive = true;
-                    break;
-                }
-            };
+            const emissive = emissiveAt(mathx.centre(p), l, flames);
             pixels[grid.Level.idx(p)] = .{
                 .r = 255,
                 .g = if (look.reflects(t)) 255 else 0,
@@ -125,15 +135,15 @@ pub const Cinema = struct {
         look.setUniform(b.shader, b.extract, extract);
     }
 
-    pub fn beginFocus(self: *Cinema, t: grid.Tile, tex: rl.Texture2D, at: [2]f32, hero: ?[2]f32) bool {
-        if (!self.options.depth_of_field) return false;
+    pub fn beginFocus(self: *Cinema, t: grid.Tile, tex: rl.Texture2D, at: [2]f32, hero: ?[2]f32) ?Focused {
+        if (!self.options.depth_of_field) return null;
         const strength = focusStrength(t, at, hero);
-        if (strength <= 0) return false;
-        const f = self.focus orelse return false;
+        if (strength <= 0) return null;
+        const f = self.focus orelse return null;
+        const focused = Focused{ .texel = .{ 1 / @as(f32, @floatFromInt(tex.width)), 1 / @as(f32, @floatFromInt(tex.height)) }, .strength = strength };
         rl.beginShaderMode(f.shader);
-        look.setUniform(f.shader, f.texel, [2]f32{ 1 / @as(f32, @floatFromInt(tex.width)), 1 / @as(f32, @floatFromInt(tex.height)) });
-        look.setUniform(f.shader, f.strength, strength);
-        return true;
+        focused.set(f.shader, f.texel, f.strength);
+        return focused;
     }
 
     pub fn drawAir(self: *Cinema, l: *light.Light, origin: [2]f32, cell: f32, screen: mathx.P) void {
@@ -157,9 +167,7 @@ pub const Cinema = struct {
     }
 };
 
-fn drawTarget(t: rl.Texture2D) void {
-    rl.drawTextureRec(t, look.rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);
-}
+const drawTarget = look.drawTarget;
 
 fn copyTarget(t: rl.Texture2D) void {
     rl.gl.rlSetBlendFactors(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
@@ -168,18 +176,9 @@ fn copyTarget(t: rl.Texture2D) void {
     rl.endBlendMode();
 }
 
-const FOCUS_FS = look.FS_HEAD ++
-    \\uniform vec2 texel;
-    \\uniform float strength;
-    \\vec4 tap(vec2 offset) {
-    \\    vec4 c = texture(texture0, clamp(fragTexCoord + offset * texel, texel * 0.5, vec2(1.0) - texel * 0.5));
-    \\    return vec4(c.rgb * c.a, c.a);
-    \\}
+const FOCUS_FS = look.FS_HEAD ++ look.FOCUS_TAPS ++
     \\void main() {
-    \\    vec4 base = tap(vec2(0.0));
-    \\    vec4 blur = base * 0.4;
-    \\    blur += (tap(vec2(1.0, 0.0)) + tap(vec2(-1.0, 0.0)) + tap(vec2(0.0, 1.0)) + tap(vec2(0.0, -1.0))) * 0.15;
-    \\    vec4 c = mix(base, blur, strength);
+    \\    vec4 c = focused();
     \\    finalColor = vec4(c.rgb / max(c.a, 0.0001), c.a) * fragColor;
     \\}
 ;
@@ -205,12 +204,13 @@ const BLOOM_FS = look.FS_HEAD ++ FIELD_FS ++
     \\uniform vec2 direction;
     \\uniform int extract;
     \\vec3 sampleLight(vec2 uv) {
+    \\    uv = clamp(uv, 0.5 / screen, vec2(1.0) - 0.5 / screen);
     \\    vec3 c = texture(texture0, uv).rgb;
     \\    if (extract == 0) return c;
     \\    vec2 p = (vec2(uv.x, 1.0 - uv.y) * screen - origin) / cell;
     \\    vec4 f = fieldAt(p);
     \\    float high = max(c.r, max(c.g, c.b));
-    \\    float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    \\    float lum = dot(c, LUMA);
     \\    float core = max(smoothstep(0.80, 1.0, lum), smoothstep(0.92, 1.0, high) * 0.65);
     \\    vec3 glint = texture(glints, p / CELLS).rgb;
     \\    float water = f.g * smoothstep(0.015, 0.12, max(glint.r, max(glint.g, glint.b)));
@@ -276,9 +276,9 @@ test "cinema focus preserves nearby scenery and every gameplay tile" {
         if (far > 0) {
             focused += 1;
             try std.testing.expect(t == .shrub or t == .swamp_tree or t == .tiny_shrub or t == .tall_grass or t == .shrooms);
-            try std.testing.expect(far <= 0.24);
+            try std.testing.expect(far <= FOCUS_MAX);
         }
     }
     try std.testing.expectEqual(@as(usize, 5), focused);
-    std.debug.print("cinema focus: {d} scenery kinds soften only beyond the sharp 7-cell band; ground and interactables stay sharp\n", .{focused});
+    std.debug.print("cinema focus: {d} scenery kinds soften only beyond {d} rows of the hero; ground and interactables stay sharp\n", .{ focused, SHARP_ROWS });
 }

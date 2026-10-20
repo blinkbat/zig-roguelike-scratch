@@ -317,10 +317,6 @@ pub const SECOND_CAPTION = keyName(SECOND_KEYS[0]);
 
 const BUTTONS = std.enums.values(Button);
 
-/// How long a button is held before `State.long` reports it.
-pub const HOLD_S: f32 = 0.4;
-const SPENT: f32 = -std.math.inf(f32);
-
 /// raylib closes the window on Esc unless its exit key is cleared. Needs the window open.
 pub fn claimKeys() void {
     rl.setExitKey(.null);
@@ -465,7 +461,6 @@ pub const State = struct {
 
     pressed: std.EnumSet(Button) = .initEmpty(),
     down: std.EnumSet(Button) = .initEmpty(),
-    down_s: std.EnumArray(Button, f32) = .initFill(0),
     device: Device = .xbox,
     focused: bool = true,
     fullscreen: bool = false,
@@ -508,16 +503,6 @@ pub const State = struct {
         return self.down.contains(b);
     }
 
-    /// Down `HOLD_S` and not yet `spend`t: whatever takes it spends it.
-    pub fn long(self: State, b: Button) bool {
-        return self.down_s.get(b) >= HOLD_S;
-    }
-
-    /// A press used: holding it on reports no `long` until it is let go.
-    pub fn spend(self: *State, b: Button) void {
-        self.down_s.set(b, SPENT);
-    }
-
     pub fn caption(self: State, b: Button) [:0]const u8 {
         return b.caption(self.device);
     }
@@ -534,6 +519,14 @@ pub const State = struct {
         self.radial.wait = std.math.inf(f32);
         self.tree.move = null;
         self.walk = null;
+    }
+
+    fn treeWalk(self: *State, dt: f32, x: f32, y: f32) void {
+        const move = self.radial.tick(dt, x, y);
+        if (self.context == .tree) {
+            self.tree.move = move;
+            if (self.stick) self.walk = null;
+        }
     }
 
     /// Seconds since this frame's walk step was due; 0 when none fired.
@@ -601,7 +594,6 @@ pub const State = struct {
                 if (either(SECOND_KEYS)) self.down.insert(m);
             }
         }
-        self.time(dt);
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();
@@ -656,10 +648,7 @@ pub const State = struct {
             }
         }
         self.walk = self.step.tick(dt, defl, heading, settle);
-        if (on_tree) {
-            self.tree.move = self.radial.tick(dt, x, y);
-            if (self.stick) self.walk = null;
-        } else self.radial = .{};
+        self.treeWalk(dt, x, y);
         if (!was_focused) self.holdWalk();
         self.typing = false;
         const pad_hit = if (live) |at| struck(at, &before, &self.triggers) else false;
@@ -678,7 +667,6 @@ pub const State = struct {
         }
         const kept = self.*;
         self.* = .{
-            .down_s = .initFill(SPENT),
             .device = kept.device,
             .focused = false,
             .context = kept.context,
@@ -693,13 +681,6 @@ pub const State = struct {
     fn padHit(self: *const State, at: i32, b: rl.GamepadButton, before: *const [PADS]Triggers) bool {
         if (Trigger.of(b)) |t| return edge(before[@intCast(at)], self.triggers[@intCast(at)], t);
         return rl.isGamepadButtonPressed(at, b);
-    }
-
-    fn time(self: *State, dt: f32) void {
-        for (BUTTONS) |b| {
-            const t = self.down_s.getPtr(b);
-            t.* = if (self.down.contains(b)) t.* + dt else 0;
-        }
     }
 };
 
@@ -1144,6 +1125,24 @@ test "a stick resting off centre leaves the d-pad and keys to walk, and a pushed
     try std.testing.expect(!stickWalks(Stepper.REARM / 2, true));
 }
 
+test "a held stick cannot move the tree when opening it from another screen" {
+    for ([_]State.Context{ .play, .menu, .target }) |context| {
+        var state = State{ .context = context, .stick = true };
+        state.treeWalk(0.01, 0.6, 0.8);
+        state.holdWalk();
+        state.context = .tree;
+        state.treeWalk(1, 0.6, 0.8);
+        try std.testing.expect(state.tree.move == null);
+        state.treeWalk(0.01, -0.6, 0.8);
+        try std.testing.expect(state.tree.move != null);
+        state.holdWalk();
+        state.treeWalk(0.01, 0, 0);
+        state.treeWalk(0.01, -0.6, 0.8);
+        try std.testing.expect(state.tree.move != null);
+    }
+    std.debug.print("3 tree entry contexts suppress held movement and rearm on turn or release\n", .{});
+}
+
 test "a stick is steered, not re-pressed" {
     var s = Stepper{};
     try std.testing.expectEqual(@as(?mathx.Dir, .n), s.tick(mathx.FRAME_DT, 0.9, mathx.Dir.n.heading(), 0));
@@ -1178,21 +1177,17 @@ test "losing focus cancels unsettled movement and held actions without forgettin
     st.triggers[1].set(.left, true);
     st.pressed.insert(.a);
     st.down.insert(.a);
-    st.down_s.set(.a, HOLD_S);
     st.walk = st.step.tick(mathx.FRAME_DT, 1, mathx.Dir.n.heading(), Stepper.SETTLE);
     try std.testing.expect(st.step.owed != null);
     st.focus(false);
     try std.testing.expect(!st.focused and st.walk == null);
-    try std.testing.expect(!st.hit(.a) and !st.held(.a) and !st.long(.a));
+    try std.testing.expect(!st.hit(.a) and !st.held(.a));
     try std.testing.expectEqual(@as(?mathx.Dir, null), st.step.tick(mathx.FRAME_DT, 0, 0, Stepper.SETTLE));
     try std.testing.expectEqual(Device.ps5, st.device);
     try std.testing.expectEqual(@as(?i32, 1), st.pad_at);
     try std.testing.expect(st.triggers[1].get(.left));
     st.focus(true);
     try std.testing.expect(st.focused and st.walk == null);
-    st.down.insert(.a);
-    st.time(HOLD_S * 2);
-    try std.testing.expect(!st.long(.a));
     std.debug.print("focus loss: pending tap and held action cancelled; controller and trigger latch retained\n", .{});
 }
 
@@ -1272,31 +1267,6 @@ test "walk keys held together sum to one step a lean can turn" {
         try std.testing.expect(mathx.stepDir(p) != null);
     }
     try std.testing.expectEqual(@as(?mathx.P, null), stepOf(.{ .x = 0, .y = 0 }));
-}
-
-test "a held button reports long from HOLD_S until it is spent, and not again until it is let go" {
-    const dt = mathx.FRAME_DT;
-    var s = State{};
-    s.down.insert(.character);
-    var t: f32 = 0;
-    while (!s.long(.character)) {
-        t += dt;
-        s.time(dt);
-    }
-    std.debug.print("held: long from {d:.3} s\n", .{t});
-    try std.testing.expect(t >= HOLD_S and t - HOLD_S <= dt * 1.5);
-    for (0..30) |_| s.time(dt);
-    try std.testing.expect(s.long(.character));
-    s.spend(.character);
-    for (0..120) |_| {
-        s.time(dt);
-        try std.testing.expect(!s.long(.character));
-    }
-    s.down = .initEmpty();
-    s.time(dt);
-    s.down.insert(.character);
-    for (0..60) |_| s.time(dt);
-    try std.testing.expect(s.long(.character));
 }
 
 test "the last device pressed is the one named, and the keyboard when no pad is plugged in" {

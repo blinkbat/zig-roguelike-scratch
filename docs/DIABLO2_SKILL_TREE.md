@@ -240,7 +240,7 @@ edge can suggest a shallow inset. Do not add stone bitmaps, elaborate frames, pa
 glow, animated flourishes, or replacement AI-generated icons.
 
 The rank plaque is a small attached rectangle containing `rank / maximum`, for example
-`1 / 3`. Derive both values. Keep it readable on locked and maximum nodes. Its placement
+`1/3`. Derive both values. Keep it readable on locked and maximum nodes. Its placement
 and denominator are an adaptation for this small rank system, not a documented exact
 copy of the archived diagrams. A visible numeral is more dependable than color alone.
 

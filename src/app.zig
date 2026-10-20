@@ -265,7 +265,6 @@ const App = struct {
         g.st.context = .menu;
         g.st.sets = false;
         g.st.update(rl.getFrameTime());
-        g.st.spend(skillbar.CHARACTER);
         game.syncScreen(g, g.st.fullscreen);
         rl.beginDrawing();
         defer rl.endDrawing();
@@ -348,7 +347,7 @@ const App = struct {
                 var buf: [naming.TITLE_MAX]u8 = undefined;
                 const title = naming.titleOf(app.class, &buf);
                 const outcome = app.entry.step(&g.st);
-                naming.draw(&app.entry, g.face, g.screen, title);
+                naming.draw(&app.entry, g.face, g.screen, title, g.st.device);
                 switch (outcome orelse return true) {
                     .back => app.goPage(.class),
                     .done => app.newRun(app.entry.name.done()),

@@ -106,7 +106,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `Game.character` holds only unsaved navigation state; item/point actions are commands resolved by the game.
   Item actions and point allocation execute on one press; item changes spend one turn and keep Character open.
   Shoulders / Q and E change tabs; Back closes Character directly. Skills owns binding. Point allocation is free.
-  Interact directly handles a sole object, or lists multiple underfoot and adjacent visible objects; a press while busy waits for `quiet` (`Queued.interact`)
+  Interact directly handles a sole item or chest (a door always lists), or lists multiple underfoot and adjacent visible objects; a press while busy waits for `quiet` (`Queued.interact`)
   instead of queuing its button's skill. Item commands wait out door travel. Gold collects automatically on movement.
   See `docs/PROGRESSION.md` for rules and the inspected D2/PoE2 paperdoll references.
 - `app.zig` owns title/game/editor transitions; the game requests `Game.exit`, and `Game.back` identifies

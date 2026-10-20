@@ -38,9 +38,9 @@ const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
     "character",
+    "nearby",
     "pause_page",
     "mode",
-    "paused_from",
     "pause_menu",
     "back",
     "exit",

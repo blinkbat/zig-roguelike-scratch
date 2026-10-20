@@ -90,7 +90,9 @@ pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
     return menu.shout(buf, ASK ++ "{s}", .{c.title()});
 }
 
-pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8) void {
+/// On the keyboard Enter is done, so Done is what is focused.
+pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8, device: input.Device) void {
+    const at = if (device == .keys) Entry{ .row = ROWS - 1, .col = DONE_AT } else e.*;
     const mid = @divTrunc(screen.y, 2);
     menu.mid(face, screen, title, mid + TITLE_DY, menu.TITLE, look.TEXT);
     var buf: [hero.Name.MAX + CARET.len + 1]u8 = undefined;
@@ -101,7 +103,7 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
     for (0..ROWS) |r| {
         const y = y0 + @as(i32, @intCast(r)) * KEY_H;
         for (0..Entry.width(r)) |c| {
-            const on = r == e.row and c == e.col;
+            const on = r == at.row and c == at.col;
             const col = if (on) look.UI_FOCUS else look.DIM;
             if (r < LETTERS.len) {
                 face.glyph(LETTERS[r][c], x0 + @as(i32, @intCast(c)) * KEY_W + @divTrunc(KEY_W, 2), y + @divTrunc(KEY_H, 2), KEY, col);

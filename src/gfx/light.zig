@@ -764,6 +764,8 @@ pub const Light = struct {
     reveal_map: bool = false,
     composed: bool = false,
     canopy: [grid.CELLS]f32,
+    /// Per light-map texel, `dapplingAt` its centre: fixed while the ground is.
+    dappling: [TEXELS]f32,
 
     /// Initialize fields separately to avoid a temporary larger than the thread stack.
     pub fn create(alloc: std.mem.Allocator) !*Light {
@@ -860,6 +862,13 @@ pub const Light = struct {
         }
     }
 
+    const TEXELS_W: usize = @intCast(MAP_W);
+
+    fn texelCentre(tx: usize, ty: usize) [2]f32 {
+        const sub: f32 = @floatFromInt(SUB);
+        return .{ (@as(f32, @floatFromInt(tx)) + 0.5) / sub, (@as(f32, @floatFromInt(ty)) + 0.5) / sub };
+    }
+
     fn grounded(self: *Light) void {
         for (&self.see_through, &self.ground, &self.scratch.tile) |*k, *g, t| {
             k.* = mask(!t.blind());
@@ -876,6 +885,7 @@ pub const Light = struct {
             }
             self.canopy[grid.Level.idx(p)] = @min(1, cover * 0.3);
         }
+        for (&self.dappling, 0..) |*d, i| d.* = self.dapplingAt(texelCentre(i % TEXELS_W, i / TEXELS_W));
     }
 
     /// Blur only seen cells, and ground sight only over open ground, to prevent dim rims and wall leaks.
@@ -1064,8 +1074,25 @@ pub const Light = struct {
     }
 
     fn composedCloud(self: *const Light, q: [2]f32, cloud: f32) f32 {
-        if (!self.composed) return cloud;
-        const k = self.sky orelse return cloud;
+        if (!self.composed or self.sky == null) return cloud;
+        return self.composedWith(self.dapplingAt(q), cloud);
+    }
+
+    /// `composedCloud` at `q`, from the cached dappling when `q` is light-map texel `map_at`'s centre.
+    fn composedAt(self: *const Light, map_at: ?usize, q: [2]f32, cloud: f32) f32 {
+        const i = map_at orelse return self.composedCloud(q, cloud);
+        if (!self.composed or self.sky == null) return cloud;
+        return self.composedWith(self.dappling[i], cloud);
+    }
+
+    fn composedWith(self: *const Light, dappling: f32, cloud: f32) f32 {
+        const k = self.sky.?;
+        const patch = 1.045 - (1 - cloud) * 1.6 - dappling;
+        return mathx.lerpF(cloud, patch, 1 - k.moon);
+    }
+
+    /// How much the canopy's dappled shade takes from the sun at `q`.
+    fn dapplingAt(self: *const Light, q: [2]f32) f32 {
         const p = mathx.cellOf(.{ q[0] - 0.5, q[1] - 0.5 });
         var corners: [4]f32 = undefined;
         for (&corners, 0..) |*c, i| {
@@ -1073,8 +1100,7 @@ pub const Light = struct {
         }
         const cover = mathx.bilerp(corners, q[0] - 0.5 - @as(f32, @floatFromInt(p.x)), q[1] - 0.5 - @as(f32, @floatFromInt(p.y)));
         const dapple = 0.5 + 0.5 * @sin(q[0] * 2.1 + q[1] * 1.6 + @sin(q[1] * 1.2));
-        const patch = 1.045 - (1 - cloud) * 1.6 - cover * (0.07 + 0.10 * dapple);
-        return mathx.lerpF(cloud, patch, 1 - k.moon);
+        return cover * (0.07 + 0.10 * dapple);
     }
 
     fn base(self: *const Light) Rgb {
@@ -1124,11 +1150,11 @@ pub const Light = struct {
         const fade = self.fadeOf(c);
         const ray: ?SunRay = if (self.profile()) |k| SunRay.of(k) else null;
         const cloud = if (ray != null) self.cloudAt(q) else 1;
-        return self.shade(lv, torches, self.effectsNear(c), q, self.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
+        return self.shade(lv, torches, self.effectsNear(c), q, null, self.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
     }
 
     /// `cloud` is the share of the sky's light the clouds let through, read only with a `ray`.
-    fn shade(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, effects: EffectSet, q: [2]f32, v: View, ray: ?*const SunRay, cloud: f32) Rgb {
+    fn shade(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, effects: EffectSet, q: [2]f32, map_at: ?usize, v: View, ray: ?*const SunRay, cloud: f32) Rgb {
         const sight = v.sight;
         const memory = v.memory;
         if (memory <= FAINT) return @splat(0);
@@ -1144,7 +1170,7 @@ pub const Light = struct {
                 const facing = sunFacing(r.k, s);
                 if (facing > 0 or r.night > 0) {
                     const on = self.sunAt(lv, r, s.x, s.y, s.z);
-                    if (facing > 0) view += r.k.key * splat(facing * reaching(on, self.composedCloud(q, cloud)));
+                    if (facing > 0) view += r.k.key * splat(facing * reaching(on, self.composedAt(map_at, q, cloud)));
                     view *= r.dim(on, cloud);
                 }
             }
@@ -1252,18 +1278,18 @@ pub const Light = struct {
                 const q = [2]f32{ (@as(f32, @floatFromInt(tx)) + 0.5) / sub, (@as(f32, @floatFromInt(ty)) + 0.5) / sub };
                 const v = viewOf(sightOf(&patch, ground, q[0], q[1]), q, &fade);
                 const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
-                self.map[i] = texelOf(self.shade(lv, torches, effects, q, v, if (ray) |*r| r else null, cloud), v.lit);
+                self.map[i] = texelOf(self.shade(lv, torches, effects, q, i, v, if (ray) |*r| r else null, cloud), v.lit);
                 if (wet and v.lit > FAINT and lv.isLit(c))
-                    self.glints[i] = colourOf(self.waterGlint(torches, effects, q, if (ray) |*r| r else null, cloud), 1);
+                    self.glints[i] = colourOf(self.waterGlint(torches, effects, q, i, if (ray) |*r| r else null, cloud), 1);
             }
         }
     }
 
-    fn waterGlint(self: *const Light, torches: []const TorchIx, effects: EffectSet, q: [2]f32, ray: ?*const SunRay, cloud: f32) Rgb {
+    fn waterGlint(self: *const Light, torches: []const TorchIx, effects: EffectSet, q: [2]f32, map_at: ?usize, ray: ?*const SunRay, cloud: f32) Rgb {
         var gleam: Rgb = @splat(0);
         if (ray) |r| {
             const on = self.sunAt(&self.scratch, r, q[0], q[1], 0);
-            gleam += r.k.key * splat(r.glint * reaching(on, self.composedCloud(q, cloud)) * SUN_GLINT);
+            gleam += r.k.key * splat(r.glint * reaching(on, self.composedAt(map_at, q, cloud)) * SUN_GLINT);
         }
         if (self.carryToward(q[0], q[1], true)) |f|
             gleam += self.carryColour() * splat(smoothSpecular(.{ f.at[0] - q[0], f.at[1] - q[1], BODY_Z }, GLINT_POWER) * f.k * CARRY_GLINT);
@@ -1519,7 +1545,7 @@ pub const Light = struct {
         rl.setShaderValueTexture(receiver.shader, receiver.lightmap, self.gpu.map.?);
         look.setUniform(receiver.shader, receiver.map_rect, map_rect);
         look.setUniform(receiver.shader, receiver.screen, screen);
-        rl.drawTextureRec(t, look.rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);
+        look.drawTarget(t);
     }
 
     /// Between `beginShadows` and `endShadows`, before the walls, which cover whatever of it reaches them.
@@ -2238,8 +2264,8 @@ test "cell effect culling preserves floor wall and water lighting" {
             };
             const v = l.viewAt(q);
             surfaces.insert(Spot.of(&lv, q).surface);
-            try std.testing.expectEqual(l.shade(&lv, &.{}, all, q, v, null, 1), l.shade(&lv, &.{}, kept, q, v, null, 1));
-            try std.testing.expectEqual(l.waterGlint(&.{}, all, q, null, 1), l.waterGlint(&.{}, kept, q, null, 1));
+            try std.testing.expectEqual(l.shade(&lv, &.{}, all, q, null, v, null, 1), l.shade(&lv, &.{}, kept, q, null, v, null, 1));
+            try std.testing.expectEqual(l.waterGlint(&.{}, all, q, null, null, 1), l.waterGlint(&.{}, kept, q, null, null, 1));
             samples += 1;
             candidates += kept.count();
         }
@@ -2261,9 +2287,9 @@ test "smooth water glints follow light direction and respect walls and memory" {
     defer std.testing.allocator.destroy(l);
     const flame = l.torch[0].flame();
     const at = [2]f32{ flame[0], flame[1] + flame[2] };
-    const lit = lum(l.waterGlint(&.{0}, .initEmpty(), at, null, 1));
+    const lit = lum(l.waterGlint(&.{0}, .initEmpty(), at, null, null, 1));
     try std.testing.expect(lit > 0.01 and lit < 0.2);
-    try std.testing.expectEqual(@as(f32, 0), lum(l.waterGlint(&.{0}, .initEmpty(), .{ flame[0], 9.5 }, null, 1)));
+    try std.testing.expectEqual(@as(f32, 0), lum(l.waterGlint(&.{0}, .initEmpty(), .{ flame[0], 9.5 }, null, null, 1)));
     const before = lv.lit;
     l.bake(&lv, .{ .x = 18, .y = 10 }, .{ .x = 23, .y = 15 });
     var hits: usize = 0;

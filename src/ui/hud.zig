@@ -199,10 +199,17 @@ pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.
         const y: i32 = @intFromFloat(box.y);
         look.hudPanelIn(sprites, box, PLATE, look.LIT);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
-        var buf: [4]u8 = undefined;
-        const label = std.fmt.bufPrintZ(&buf, "{d}", .{turns}) catch "";
-        face.text(label, x + STATUS_PX - face.width(label, font.SMALL) - COUNT_INSET.x, y + STATUS_PX - font.SMALL - COUNT_INSET.y, font.SMALL, look.TEXT);
+        counter(face, box, turns);
     }
+}
+
+/// `n` in the bottom right corner of `box`, inside its frame.
+pub fn counter(face: *const font.Face, box: rl.Rectangle, n: u32) void {
+    var buf: [12]u8 = undefined;
+    const label = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch "";
+    const right: i32 = @intFromFloat(box.x + box.width);
+    const bottom: i32 = @intFromFloat(box.y + box.height);
+    face.text(label, right - face.width(label, font.SMALL) - COUNT_INSET.x, bottom - font.SMALL - COUNT_INSET.y, font.SMALL, look.TEXT);
 }
 
 /// Out from what is inspected, the mark round it.
@@ -261,6 +268,15 @@ pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *[TIP_LINES
     return if (len > 0) @min(n + 1, TIP_LINES_MAX) else n;
 }
 
+/// `text` wrapped to `w`, a line every `step` from `y`; returns the y below it.
+pub fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, w: i32, size: i32, step: i32, ink: rl.Color) i32 {
+    var buf: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
+    var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
+    const n = wrap(face, text, size, w, &buf, &lines);
+    for (lines[0..n], 0..) |line, i| face.draw(line, x, y + @as(i32, @intCast(i)) * step, size, ink);
+    return y + @as(i32, @intCast(n)) * step;
+}
+
 /// A body with this splits into "label|value" rows, drawn as a table.
 pub const TIP_SEP = '|';
 const TIP_VALUE_X = @divTrunc(TIP_W, 2) + 24;
@@ -269,6 +285,8 @@ const TIP_VALUE_X = @divTrunc(TIP_W, 2) + 24;
 pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8) void {
     var buf: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
+    var wrapped: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
+    var parts: [TIP_LINES_MAX][:0]const u8 = undefined;
     var n: usize = 0;
     var rows = std.mem.splitScalar(u8, body, '\n');
     while (rows.next()) |r| {
@@ -280,8 +298,6 @@ pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl
             lines[n] = buf[n][0..len :0];
             n += 1;
         } else {
-            var wrapped: [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8 = undefined;
-            var parts: [TIP_LINES_MAX][:0]const u8 = undefined;
             const count = wrap(face, r, font.SMALL, TIP_W - 2 * TIP_PAD, &wrapped, &parts);
             for (parts[0..@min(count, TIP_LINES_MAX - n)]) |part| {
                 @memcpy(buf[n][0 .. part.len + 1], part[0 .. part.len + 1]);

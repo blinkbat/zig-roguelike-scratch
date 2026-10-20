@@ -73,3 +73,19 @@ test "water-limited scatter keeps single trees and clumps on dry nearby ground" 
     }
     std.debug.print("waterside scatter: {d} trees/clump cells within 3 cells of water; dry maps and both water depths preserved\n", .{checked});
 }
+
+test "scattered water reaches only from the water there before it, not from what it lays" {
+    var lv = grid.Level.blank();
+    var rng = mathx.Rng.init(0x5A4E);
+    carve.fill(&lv, .dirt);
+    const pool = mathx.P{ .x = 24, .y = 24 };
+    lv.set(pool, .water);
+    apply(&lv, &rng, 7, carve.Palette.WILD, .{ .tile = .shallows, .on = .dirt, .amount = AMOUNT_MAX, .water_range = 1 });
+    var far: usize = 0;
+    for (lv.tile, 0..) |t, i| {
+        if (t == .shallows and mathx.dist(grid.Level.of(i), pool) > 1) far += 1;
+    }
+    std.debug.print("water scatter at range 1: {d} shallows, {d} beyond the pool's ring\n", .{ carve.count(&lv, .shallows), far });
+    try std.testing.expectEqual(@as(usize, 8), carve.count(&lv, .shallows));
+    try std.testing.expectEqual(@as(usize, 0), far);
+}

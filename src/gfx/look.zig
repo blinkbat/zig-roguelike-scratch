@@ -637,6 +637,11 @@ pub fn beginTarget(target: *?rl.RenderTexture2D, screen: mathx.P, outer: u32, cl
     return true;
 }
 
+/// A render texture over the whole frame, flipped the right way up.
+pub fn drawTarget(t: rl.Texture2D) void {
+    rl.drawTextureRec(t, rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);
+}
+
 /// White, its alpha `alphaAt(r)` at `r` from the middle, 1 at the middle of each edge. Needs a live GL context.
 pub fn radial(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
     const round = struct {
@@ -812,11 +817,21 @@ pub fn under(t: grid.Tile) ?grid.Tile {
     return t.ground() orelse if (t.upright() and tileBg(t) == null) .floor else null;
 }
 
-/// Drawn in the solid pass, over the ground and the shadows cast on it: everything that is not itself a ground.
+/// Tree crowns: ground the light shades beneath them, and the atmosphere's shafts fall between.
+const CROWNS = std.EnumSet(grid.Tile).init(.{ .shrub = true, .swamp_tree = true });
+/// Scenery depth of field softens: the crowns and the small plants.
+pub const SOFTENED = CROWNS.unionWith(.init(.{ .tiny_shrub = true, .tall_grass = true, .shrooms = true }));
+
 pub fn canopy(t: grid.Tile) bool {
-    return t == .shrub or t == .swamp_tree;
+    return CROWNS.contains(t);
 }
 
+/// Gas veils what stands in it; brick and rock walls stay clear.
+pub fn veiled(t: grid.Tile) bool {
+    return t != .wall and t != .rock;
+}
+
+/// Drawn in the solid pass, over the ground and the shadows cast on it: everything that is not itself a ground.
 pub fn standsOver(t: grid.Tile) bool {
     return ground.of(t) == null;
 }
@@ -1434,8 +1449,42 @@ pub const FS_HEAD = std.fmt.comptimePrint(
     \\out vec4 finalColor;
     \\const float CLEAR_A = {d};
     \\const vec2 CELLS = vec2({d}.0, {d}.0);
+    \\const vec3 LUMA = vec3({d}, {d}, {d});
     \\
-, .{ CLEAR_A, grid.W, grid.H });
+, .{ CLEAR_A, grid.W, grid.H, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2] });
+
+/// How far a sprite is softened; a shader drawing over it again (the gas veil) softens its own alpha alike.
+pub const Focused = struct {
+    texel: [2]f32 = .{ 0, 0 },
+    strength: f32 = 0,
+
+    pub const sharp: Focused = .{};
+
+    pub fn set(self: Focused, s: rl.Shader, texel: i32, strength: i32) void {
+        setUniform(s, texel, self.texel);
+        setUniform(s, strength, self.strength);
+    }
+};
+
+/// `texture0` here and at its four sides, premultiplied; the sides share what the centre leaves.
+const FOCUS_CENTRE_W: f32 = 0.4;
+const FOCUS_SIDE_W: f32 = (1 - FOCUS_CENTRE_W) / 4;
+/// `focused()`: `texture0` softened by `Focused`'s uniforms, premultiplied.
+pub const FOCUS_TAPS = std.fmt.comptimePrint("const float FOCUS_CENTRE_W = {d:.4};\nconst float FOCUS_SIDE_W = {d:.4};\n", .{ FOCUS_CENTRE_W, FOCUS_SIDE_W }) ++
+    \\uniform vec2 texel;
+    \\uniform float strength;
+    \\vec4 tap(vec2 offset) {
+    \\    vec4 c = texture(texture0, clamp(fragTexCoord + offset * texel, texel * 0.5, vec2(1.0) - texel * 0.5));
+    \\    return vec4(c.rgb * c.a, c.a);
+    \\}
+    \\vec4 focused() {
+    \\    vec4 base = tap(vec2(0.0));
+    \\    vec4 blur = base * FOCUS_CENTRE_W;
+    \\    blur += (tap(vec2(1.0, 0.0)) + tap(vec2(-1.0, 0.0)) + tap(vec2(0.0, 1.0)) + tap(vec2(0.0, -1.0))) * FOCUS_SIDE_W;
+    \\    return mix(base, blur, strength);
+    \\}
+    \\
+;
 
 const FadeShader = struct { shader: rl.Shader, bounds: i32 };
 const FADE_FS = FS_HEAD ++
@@ -1455,9 +1504,9 @@ const WATER_SATURATION: f32 = 0.8;
 const MIRROR_DEEP: f32 = 0.42;
 const MIRROR_SHALLOW: f32 = 0.28;
 const WATER_FS = FS_HEAD ++ std.fmt.comptimePrint(
-    "const float SATURATION = {d};\nconst vec3 LUMA = vec3({d}, {d}, {d});\nconst float OVERBRIGHT = {d:.1};\n" ++
+    "const float SATURATION = {d};\nconst float OVERBRIGHT = {d:.1};\n" ++
         "const float DEEP = {d:.2};\nconst float SHALLOW = {d:.2};\nconst float MIRROR_DEEP = {d:.2};\nconst float MIRROR_SHALLOW = {d:.2};\n",
-    .{ WATER_SATURATION, sky.LUMA[0], sky.LUMA[1], sky.LUMA[2], @import("light.zig").OVERBRIGHT, WATER_DEEP, WATER_SHALLOW, MIRROR_DEEP, MIRROR_SHALLOW },
+    .{ WATER_SATURATION, @import("light.zig").OVERBRIGHT, WATER_DEEP, WATER_SHALLOW, MIRROR_DEEP, MIRROR_SHALLOW },
 ) ++
     \\uniform vec2 origin;
     \\uniform float cell;

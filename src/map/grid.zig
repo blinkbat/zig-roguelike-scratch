@@ -68,6 +68,11 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).liquid;
     }
 
+    /// Deep water or shallows.
+    pub fn wet(t: Tile) bool {
+        return t == .water or t == .shallows;
+    }
+
     pub fn upright(t: Tile) bool {
         return t.solid() and !t.liquid();
     }

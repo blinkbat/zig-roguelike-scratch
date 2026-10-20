@@ -129,6 +129,11 @@ pub fn backed(st: *const input.State) bool {
     return st.hit(BACK) or st.hit(PAUSE);
 }
 
+/// Backed out, or Character pressed to shut what it opened over.
+pub fn closed(st: *const input.State) bool {
+    return backed(st) or st.hit(CHARACTER);
+}
+
 /// The box in `boxes` a move `dir` from `from` lands on: nearest ahead, sideways distance costing `across_weight` times as much.
 pub fn nearest(from: rl.Rectangle, boxes: []const rl.Rectangle, dir: mathx.Dir, across_weight: f32) ?usize {
     var best: ?usize = null;

@@ -6,7 +6,7 @@ pub const Attr = enum { strength, dexterity, intelligence };
 pub const ATTRS = std.enums.values(Attr);
 pub const Needs = std.enums.EnumFieldStruct(Attr, i32, 0);
 
-/// What a passive node or an item modifier adds to.
+/// What an item modifier adds to; a passive's `Kind` adds to these or to a `Style`'s damage.
 pub const Bonus = enum {
     strength,
     dexterity,
@@ -14,12 +14,6 @@ pub const Bonus = enum {
     life,
     mana,
     armour,
-
-    pub fn letter(b: Bonus) [:0]const u8 {
-        return switch (b) {
-            inline else => |t| comptime &[_:0]u8{std.ascii.toUpper(@tagName(t)[0])},
-        };
-    }
 };
 comptime {
     for (ATTRS) |at| _ = @field(Bonus, @tagName(at));

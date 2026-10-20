@@ -4,6 +4,7 @@ const hero = @import("hero.zig");
 const actor = @import("actor.zig");
 const skillbar = @import("skillbar.zig");
 const items = @import("items.zig");
+const damage = @import("damage.zig");
 const mathx = @import("../core/mathx.zig");
 
 pub const RANKS: u8 = 3;
@@ -13,10 +14,11 @@ const RANK_COST_PERCENT: i32 = 10;
 const XP_BASE: u64 = 40;
 const XP_STEP: u64 = 20;
 pub const POINTS_PER_LEVEL: u16 = 1;
+/// Points a passive node or a skill rank costs.
+pub const POINT_COST: u16 = 1;
 pub const passives = @import("passives.zig");
-pub const Node = passives.Node;
+const Node = passives.Node;
 pub const NODES = passives.NODES;
-pub const adjacent = passives.linked;
 pub const start = passives.start;
 
 pub fn xpOf(k: actor.Kind) u32 {
@@ -74,6 +76,8 @@ comptime {
     };
 }
 
+pub const Hit = struct { physical: damage.Span, element: ?damage.Span, style: attrs.Style };
+
 pub const State = struct {
     level: u16 = 1,
     xp: u64 = 0,
@@ -116,10 +120,15 @@ pub const State = struct {
         return false;
     }
 
+    /// Reachable, with a point to spend on it.
+    pub fn canAllocate(self: *const State, i: usize) bool {
+        return self.passive_points >= POINT_COST and self.available(i);
+    }
+
     pub fn allocate(self: *State, i: usize) bool {
-        if (self.passive_points == 0 or !self.available(i)) return false;
+        if (!self.canAllocate(i)) return false;
         self.nodes.set(i);
-        self.passive_points -= 1;
+        self.passive_points -= POINT_COST;
         return true;
     }
 
@@ -135,7 +144,7 @@ pub const State = struct {
     }
 
     pub fn canLearn(self: *const State, c: hero.Class, act: skillbar.Act) bool {
-        if (self.active_points == 0 or self.ranks.get(act) >= RANKS) return false;
+        if (self.active_points < POINT_COST or self.ranks.get(act) >= RANKS) return false;
         for (skills(c)) |s| if (s.act == act) {
             return if (s.parent) |p| self.unlocked(p) else true;
         };
@@ -145,7 +154,7 @@ pub const State = struct {
     pub fn learn(self: *State, c: hero.Class, act: skillbar.Act) bool {
         if (!self.canLearn(c, act)) return false;
         self.ranks.getPtr(act).* += 1;
-        self.active_points -= 1;
+        self.active_points -= POINT_COST;
         return true;
     }
 
@@ -160,6 +169,15 @@ pub const State = struct {
         return out;
     }
 
+    /// Its blow's non-critical spans with `gear`, as live damage rolls them.
+    pub fn hit(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) ?Hit {
+        const attack = act.attack() orelse return null;
+        const bases = act.equippedBases(gear);
+        const by = self.skillAttrs(equipped, gear, act);
+        const style = gear.scaling(attack);
+        return .{ .physical = by.span(style, bases.physical()), .element = if (bases.element) |b| by.span(style, b) else null, .style = style };
+    }
+
     pub fn cost(self: *const State, act: skillbar.Act) i32 {
         return mathx.percentOf(act.cost(), mathx.PERCENT - @as(i32, self.ranks.get(act) -| 1) * RANK_COST_PERCENT);
     }
@@ -169,6 +187,16 @@ pub const State = struct {
         // A cooldown of 1 runs out in the turn the skill took, so a turn-taking skill keeps 2.
         const floor = @min(act.cooldown(), 1 + act.turns());
         return @max(floor, act.cooldown() -| (self.ranks.get(act) -| 1));
+    }
+
+    /// What using it costs at its rank: "3 mana, 1 turn, 2-turn cooldown".
+    pub fn writeUsage(self: *const State, act: skillbar.Act, w: anytype) void {
+        const c = self.cost(act);
+        if (c > 0) w.print("{d} mana, ", .{c}) catch {};
+        const turns = act.turns();
+        if (turns == 0) w.writeAll("no turn cost") catch {} else w.print("{d} turn{s}", .{ turns, if (turns == 1) "" else "s" }) catch {};
+        const cd = self.cooldown(act);
+        if (cd > 0) w.print(", {d}-turn cooldown", .{cd}) catch {};
     }
 
     pub fn kit(self: *const State, c: hero.Class, out: *[skillbar.ACTS.len]skillbar.Act) []const skillbar.Act {
@@ -252,7 +280,7 @@ test "passive origins preserve class bases and failed purchases preserve the who
                 .archer => .dexterity,
                 .wizard => .intelligence,
             };
-            want.points.getPtr(at).* += 2;
+            want.points.getPtr(at).* += passives.ROOT_GRANT;
             try std.testing.expectEqualDeep(want, state.attributes(c));
         }
         state.passive_points = 3;
@@ -268,11 +296,7 @@ test "passive origins preserve class bases and failed purchases preserve the who
 test "passive branch gates advance one layer and apply exact stat interest and capstone packages" {
     const route = [_]usize{ 0, 1, 3, 6, 9, 11 };
     for (std.enums.values(passives.Branch)) |b| {
-        const c: hero.Class = switch (b.arm()) {
-            .warrior => .knight,
-            .rogue => .archer,
-            .wizard => .wizard,
-        };
+        const c = b.arm().class();
         var state = State.of(c);
         state.passive_points = route.len;
         state.active_points = 9;
@@ -341,11 +365,7 @@ test "passive bridges pay both attributes and cross either way without opening i
             for (0..2) |side| {
                 const near = anchors[side];
                 const far = anchors[1 - side];
-                const c: hero.Class = switch (NODES[near].arm) {
-                    .warrior => .knight,
-                    .rogue => .archer,
-                    .wizard => .wizard,
-                };
+                const c = NODES[near].arm.class();
                 var state = State.of(c);
                 state.passive_points = 100;
                 try std.testing.expect(!state.available(bridge));

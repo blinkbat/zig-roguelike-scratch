@@ -104,9 +104,9 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
     var back = log.held + log.scroll;
     rl.beginScissorMode(x + CLIP_X, y + ROWS_Y, w - 2 * CLIP_X, BOX_H - ROWS_Y - MARGIN);
     defer rl.endScissorMode();
+    var buf: [hud.TIP_LINES_MAX][hud.TIP_COLS_MAX + 1]u8 = undefined;
+    var rows: [hud.TIP_LINES_MAX][:0]const u8 = undefined;
     while (back < log.n and bottom > y + ROWS_Y) : (back += 1) {
-        var buf: [hud.TIP_LINES_MAX][hud.TIP_COLS_MAX + 1]u8 = undefined;
-        var rows: [hud.TIP_LINES_MAX][:0]const u8 = undefined;
         const count = hud.wrap(face, log.line(back).?, font.SMALL, w - 2 * TEXT_X, &buf, &rows);
         bottom -= @as(i32, @intCast(count)) * LINE_H;
         const at = log.index(back);

@@ -424,20 +424,6 @@ pub const Bar = struct {
         self.set.getPtr(s.set).set(s.button, null);
     }
 
-    pub fn swap(self: *Bar, from: Slot, to: Slot) void {
-        if (from.set == to.set and from.button == to.button) return;
-        if (self.modifier == from.button or self.modifier == to.button) {
-            const m = self.modifier.?;
-            const other = if (m == from.button) to.button else from.button;
-            self.swapColumns(m, other);
-            self.modifier = other;
-            return;
-        }
-        const a = self.at(from);
-        self.set.getPtr(from.set).set(from.button, self.at(to));
-        self.set.getPtr(to.set).set(to.button, a);
-    }
-
     fn swapColumns(self: *Bar, p: Button, q: Button) void {
         for (&self.set.values) |*row| {
             const a = row.get(p);
@@ -515,9 +501,8 @@ test "each class starts with its own skills bound, and only skills of its kit" {
     try std.testing.expectEqual(@as(?Act, .charge), Bar.of(.knight).at(.{ .set = .primary, .button = .b }));
 }
 
-pub const CHARACTER = Button.character;
 pub const INSPECT = Button.inspect;
-const NOT_SLOTS = [_]Button{ CHARACTER, menu.PAUSE, INSPECT };
+const NOT_SLOTS = [_]Button{ menu.CHARACTER, menu.PAUSE, INSPECT };
 
 comptime {
     if (!std.mem.eql(Button, &SLOTS, &input.SLOT_ORDER)) @compileError("the keyboard numbers the slots out of their order");
@@ -569,15 +554,4 @@ test "a skill bound over the modifier unbinds it, and removing a slot empties it
     try std.testing.expectEqual(@as(?Act, .shoot), bar.at(.{ .set = .primary, .button = .x }));
     bar.clear(.{ .set = .primary, .button = .x });
     try std.testing.expectEqual(@as(?Act, null), bar.at(.{ .set = .primary, .button = .x }));
-}
-
-test "picking a slot up and putting it down on another swaps the two, across sets too" {
-    var bar = Bar{};
-    bar.swap(.{ .set = .primary, .button = .x }, .{ .set = .secondary, .button = .b });
-    try std.testing.expectEqual(@as(?Act, .barbed_arrow), bar.at(.{ .set = .primary, .button = .x }));
-    try std.testing.expectEqual(@as(?Act, .shoot), bar.at(.{ .set = .secondary, .button = .b }));
-    bar.swap(.{ .set = .primary, .button = .lb }, .{ .set = .secondary, .button = .b });
-    try std.testing.expectEqual(@as(?Button, .b), bar.modifier);
-    try std.testing.expectEqual(@as(?Act, .juke), bar.at(.{ .set = .primary, .button = .lb }));
-    try std.testing.expectEqual(@as(?Act, .shoot), bar.at(.{ .set = .secondary, .button = .lb }));
 }
