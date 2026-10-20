@@ -13,7 +13,27 @@ const menu = @import("menu.zig");
 const trees = @import("trees.zig");
 const hud = @import("hud.zig");
 const P = mathx.P;
-pub const Page = enum { equipment, inventory, stats, passives, skills, nearby };
+pub const Page = enum {
+    equipment,
+    inventory,
+    stats,
+    passives,
+    skills,
+    nearby,
+
+    pub fn of(key_page: input.CharacterPage) Page {
+        return switch (key_page) {
+            inline else => |page| @field(Page, @tagName(page)),
+        };
+    }
+
+    fn shortcut(self: Page) ?input.CharacterPage {
+        return switch (self) {
+            .nearby => null,
+            inline else => |page| @field(input.CharacterPage, @tagName(page)),
+        };
+    }
+};
 pub const PAGES = [_]Page{ .equipment, .inventory, .stats, .passives, .skills };
 const W = 1100;
 const H = 640;
@@ -207,7 +227,7 @@ pub const Book = struct {
     fn inWindow(self: *const Book, i: usize) bool {
         return !self.listed() or (i >= self.first() and i < self.first() + VISIBLE);
     }
-    fn enter(self: *Book, v: View) void {
+    pub fn enter(self: *Book, v: View) void {
         if (self.count(v) == 0) return;
         if (self.page == .passives) {
             self.cursor = progress.start(v.class);
@@ -381,7 +401,7 @@ pub const Book = struct {
         face.draw(xp.text(), o.x + RIGHT, o.y + 24, font.BODY, look.TEXT);
         const st = input.State{ .device = v.device };
         menu.action(face, closeBox(o), look.Prompt.menuOf(&st, menu.BACK), "Close");
-        if (self.direct) face.draw("NEARBY", o.x + LIST_X, o.y + TAB_Y + (TAB_H - font.HEAD) / 2, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| button(face, tabBox(o, i), menu.named(page), self.page == page);
+        if (self.direct) face.draw("NEARBY", o.x + LIST_X, o.y + TAB_Y + (TAB_H - font.HEAD) / 2, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| tab(face, tabBox(o, i), page, self.page == page, v.device);
         if (self.treePanel() == null) rl.drawLine(o.x + DIVIDER_X, o.y + TOP, o.x + DIVIDER_X, o.y + H - 30, look.EDGE);
         if (self.treePanel()) |panel| {
             trees.draw(panel, face, sprites, o, v.class, v.growth, self.treeView(), v.device, .{ .stats = v.stats(), .gear = v.inventory.gear }, surface);
@@ -542,10 +562,18 @@ fn slotLabel(s: items.Slot) [:0]const u8 {
         .left_hand, .right_hand, .helm, .chest, .belt, .gloves, .boots, .amulet => s.name(),
     };
 }
-fn button(face: *const font.Face, r: rl.Rectangle, text: [:0]const u8, on: bool) void {
+fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: input.Device) void {
     rl.drawRectangleLinesEx(r, if (on) 2 else 1, if (on) look.UI_FOCUS else look.EDGE);
     const m = look.middleAt(r);
-    face.centred(text, m.x, m.y, font.BODY, if (on) look.TEXT else look.DIM);
+    const text = menu.named(page);
+    const ink = if (on) look.TEXT else look.DIM;
+    if (!device.pad()) {
+        const prompt = look.Prompt{ .key = page.shortcut().?.caption() };
+        const w = prompt.width(face, font.BODY);
+        const left = m.x - @divTrunc(w + 8 + face.width(text, font.BODY), 2);
+        prompt.draw(face, left + @divTrunc(w, 2), m.y, font.BODY, if (on) 1 else 0.7);
+        face.draw(text, left + w + 8, m.y - font.BODY / 2, font.BODY, ink);
+    } else face.centred(text, m.x, m.y, font.BODY, ink);
 }
 fn offhandWeapon(gear: items.Gear, slot: items.Slot) ?items.Item {
     return if (slot == .left_hand) gear.twoHander() else null;

@@ -47,7 +47,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 
 - For concurrent owner play, copy the built executable into the temporary shot directory with a distinct
   basename before `--shot`; `run.cmd` kills every process named `cistern.exe`, including headless captures.
-- `--shot-ui` runs only Character/HUD captures; use the same temporary-directory procedure as `--shot`.
+- `--shot-ui` runs Character/HUD and day/night level-up captures; use the same temporary-directory procedure as `--shot`.
 - Inspect actual headless PNGs. `game.zig`'s `shoot` and helpers define the coverage: abilities, editor,
   maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
   `water-reflections/00.png` through `39.png` cover four seconds of idle play; `water-mirrors-*.png`
@@ -105,7 +105,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   bridges work both ways. The same feeders must govern eligibility and drawn links.
   `Game.character` holds only unsaved navigation state; item/point actions are commands resolved by the game.
   Item actions and point allocation execute on one press; item changes spend one turn and keep Character open.
-  Shoulders / Q and E change tabs; Back closes Character directly. Skills owns binding. Point allocation is free.
+  Shoulders / Q and E change tabs; F1–F5 directly toggle Equipment, Inventory, Stats, Passives and Skills.
+  Keyboard tab headers show their shortcut glyphs. Back closes Character directly. Skills owns binding. Point allocation is free.
   Interact directly handles a sole item or chest (a door always lists), or lists multiple underfoot and adjacent visible objects; a press while busy waits for `quiet` (`Queued.interact`)
   instead of queuing its button's skill. Item commands wait out door travel. Gold collects automatically on movement.
   See `docs/PROGRESSION.md` for rules and the inspected D2/PoE2 paperdoll references.
@@ -121,7 +122,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   minimap at top right. The map continues behind it, with `hud.COVER` allowing bottom rows to clear it.
   No live name label, counters, clock display or permanent control instructions. The persistent event log
   occupies the bottom-left gutter without a heading; newest entries append at the bottom, with text,
-  background and border fading out toward the top. Follow `docs/DATA_PRESENTATION.md` for item cards,
+  background and border fading to 10% of their base opacity at the top. Follow `docs/DATA_PRESENTATION.md` for item cards,
   comparisons and stat wording: relevant properties only, explicit units, and effects before metrics.
 - `gfx/font.zig` draws small Balthazar text from native-size, point-filtered atlases; larger text and
   symbols use the mipmapped atlas. It falls back to raylib's font in tests/load failure.
@@ -237,7 +238,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   apply each visible blow when it lands; HUD life and vignette use presented HP. Deaths, barrel removal,
   slime births, status markers and speech follow that timing. Event-log lines said while a turn resolves stay
   hidden (`Log.held`) until it is `quiet`; gold taken on a step stays drawn while the hero glides there. Foes turn/move at their stagger position.
-  Update ongoing effects before starting new ones. `Game.busy` covers the slowest glide/projectile/flash;
+  Level gains start a brief gold shaft, rising glints, a soft character glow with nearby golden light,
+  and floating "Level up!" text when progression is presented;
+  loading a run does not replay them. Update ongoing effects before starting new ones. `Game.busy` covers the slowest glide/projectile/flash;
   movement, skills and interactions pressed while busy are queued (`Game.pending`, the latest wins, but a repeating
   held walk never displaces a skill or interaction). Queued interactions survive door travel and open nearby after arrival.
   Skill activation/confirmation (including Wait/Shoot) requires `quiet`.
@@ -261,7 +264,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   margin (from `light.CAST_REACH`) and presented actor position/birth/death. Bind the receiver light-map sampler after blend-mode
   changes, which flush raylib's auxiliary texture bindings.
 - Floor ambient at memory RGB before adding lights, preventing a dark ring around the lantern. Memory
-  reaches black at the unseen boundary. Blur sight only over seen cells, and open-ground sight only over
+  fades into `look.FOG` dark gray at the unseen boundary; the minimap uses the same unexplored color.
+  Blur sight only over seen cells, and open-ground sight only over
   open ground, so unseen cells do not dim visible ground and walls do not leak sight behind them.
 - `gfx/sky.zig` lights outdoor nodes only; `sky.keyDir` chooses sun/moon and limits shadow length.
   Sun shadows remove at most 45% of sky light; moon shadows also darken carried light. Forest shadows

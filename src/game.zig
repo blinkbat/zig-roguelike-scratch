@@ -2205,13 +2205,14 @@ pub fn update(g: *Game, dt: f32) void {
     }
     const death_drawn = deathShown(g);
     g.busy -= dt;
-    if (quiet(g)) {
+    const turn_drawn = quiet(g);
+    if (turn_drawn) {
         g.log.release();
         g.gold_taken = null;
-        drawnTurn(g);
     }
     for (g.glide[0..g.pool.n]) |*gl| gl.t += dt;
     g.fx.step(&g.lv, dt);
+    if (turn_drawn) drawnTurn(g);
     g.cloud.step(&g.lv, dt);
     splashSteps(g);
     if (g.shot) |*s| {
@@ -2225,7 +2226,16 @@ pub fn update(g: *Game, dt: f32) void {
     stepTurning(g, dt);
     var late: f32 = 0;
     const was = screenOf(g);
-    if (g.mode != .dead and g.st.hit(menu.CHARACTER) and (g.mode == .play or (g.mode == .pause and (g.pause_page != .character or g.character.direct)))) {
+    if (g.mode != .dead and g.st.character_page != null) {
+        const page = book.Page.of(g.st.character_page.?);
+        if (g.mode == .pause and g.pause_page == .character and !g.character.direct and g.character.page == page) {
+            g.mode = .play;
+        } else {
+            openCharacter(g);
+            g.character.choose(page);
+            g.character.enter(bookView(g, &g.nearby));
+        }
+    } else if (g.mode != .dead and g.st.hit(menu.CHARACTER) and (g.mode == .play or (g.mode == .pause and (g.pause_page != .character or g.character.direct)))) {
         openCharacter(g);
     } else if (g.mode == .play and g.st.hit(PAUSE)) {
         openPause(g);
@@ -2310,13 +2320,20 @@ fn xpLevels(g: *const Game) f32 {
 }
 
 fn drawnTurn(g: *Game) void {
+    if (g.growth.level > g.growth_shown.level and g.mode != .dead) {
+        if (g.heroActor()) |h| g.fx.levelUp(mathx.centre(h.at));
+    }
+    showProgress(g);
+}
+
+fn showProgress(g: *Game) void {
     g.growth_shown = g.growth;
     g.gold_shown = g.gold;
     g.xp_aim = xpLevels(g);
 }
 
 fn settleXp(g: *Game) void {
-    drawnTurn(g);
+    showProgress(g);
     g.xp_shown = g.xp_aim;
 }
 
@@ -2968,7 +2985,9 @@ fn drawBody(g: *Game, b: *const Shown, mirrored: bool) void {
     const tex = g.sprites.body(b.pic.kind);
     const l = look.body(b.pic.kind);
     const flash = g.fx.flashOf(b.slot);
-    if (mirrored) drawMirrored(g, tex, l, b.s, b.lifted, b.left, b.mid, &b.shine, flash) else drawFigure(g, tex, l, b.lifted, b.left, b.mid, &b.shine, flash);
+    var shine = b.shine;
+    if (actor.Pool.idOf(b.slot) == g.hero) shine.emission = g.fx.level_up.bodyGlow();
+    if (mirrored) drawMirrored(g, tex, l, b.s, b.lifted, b.left, b.mid, &shine, flash) else drawFigure(g, tex, l, b.lifted, b.left, b.mid, &shine, flash);
 }
 
 fn drawBarrel(g: *Game, b: *const Prop, mirrored: bool) void {
@@ -3094,6 +3113,8 @@ fn drawMap(g: *Game) void {
     g.fx.draw(o[0], o[1], CELL_F);
     g.light.drawMap(-c.x, -c.y, CELL);
     g.cinema.drawAir(g.light, o, CELL_F, g.screen);
+    const level_up_visible = g.lv.isLit(mathx.cellOf(g.fx.level_up.at));
+    if (level_up_visible) g.fx.level_up.drawBeam(o[0], o[1], CELL_F);
 
     if (aim_from) |from| {
         var cells = grid.Cells.of(lo, hi);
@@ -3141,6 +3162,7 @@ fn drawMap(g: *Game) void {
 
     drawTorches(g, c, flames);
     g.fx.drawGlow(&g.lv, &g.light.sight, o[0], o[1], CELL_F);
+    if (level_up_visible) g.fx.level_up.drawSparks(o[0], o[1], CELL_F);
     if (g.light.sky) |k| g.rain.draw(weatherNow(g), &g.light.sight, o[0], o[1], CELL_F, PX_SCALE, sky.brightness(k));
 
     if (g.shot) |s| {
@@ -3164,10 +3186,14 @@ fn drawMap(g: *Game) void {
     for (bodies) |*b| {
         g.fx.drawSpeech(&g.face, b.slot, b.lifted.x, b.lifted.y, CELL_F, b.shine.sight);
     }
+    if (level_up_visible) g.fx.level_up.drawText(&g.face, o[0], o[1], CELL_F);
 }
 
 fn effectLights(g: *Game) void {
     g.fx.illuminate(&g.lv, g.light);
+    if (heroNow(g)) |at| {
+        if (g.fx.level_up.emission(middle(at))) |source| g.light.emit(&g.lv, source);
+    }
     if (g.shot) |s| {
         if (fx.missileLight(s.position(s.t), s.act)) |source| g.light.emit(&g.lv, source);
     }
@@ -3686,7 +3712,7 @@ const DEAD_ACTION = P{ .x = 220, .y = 40 };
 const DEAD_ACTION_DY: i32 = 40;
 
 fn drawFrame(g: *Game) void {
-    rl.clearBackground(look.BG);
+    rl.clearBackground(look.FOG);
     drawMap(g);
     g.vignette.draw(g.screen.x, g.screen.y);
     drawMinimap(g);
@@ -3941,6 +3967,8 @@ fn shoot(g: *Game) !void {
 
     try shootHud(g);
 
+    try shootLevelUp(g);
+
     {
         const w = try std.heap.c_allocator.create(atlas.Atlas);
         defer std.heap.c_allocator.destroy(w);
@@ -4010,6 +4038,28 @@ fn shootUi(g: *Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR);
     try shootCharacter(g);
     try shootHud(g);
+    try shootLevelUp(g);
+}
+
+fn shootLevelUp(g: *Game) !void {
+    const target = try renderTarget(g);
+    defer rl.unloadRenderTexture(target);
+    try std.fs.cwd().makePath(SHOTS_DIR ++ "/level-up");
+    inline for (.{ .{ "day", day.NOON }, .{ "night", NIGHT } }) |scene| {
+        poseForest(g);
+        studyAt(g, true, scene[1]);
+        g.st = .{ .device = .keys };
+        settleXp(g);
+        try capture(g, target, SHOTS_DIR ++ "/level-up/" ++ scene[0] ++ "-before.png");
+        _ = g.growth.gain(@intCast(g.growth.needed()));
+        update(g, 0);
+        var elapsed: f32 = 0;
+        inline for (.{ 0.12, 0.4, 0.9, 1.5, 2.1 }, 0..) |time, i| {
+            update(g, time - elapsed);
+            elapsed = time;
+            try capture(g, target, std.fmt.comptimePrint(SHOTS_DIR ++ "/level-up/{s}-{d}.png", .{ scene[0], i }));
+        }
+    }
 }
 
 pub fn shotCinema() !void {
@@ -4164,6 +4214,13 @@ fn shootCharacter(g: *Game) !void {
         try capture(g, target, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ ".png");
     }
     {
+        const device = g.st.device;
+        defer g.st.device = device;
+        g.st.device = .keys;
+        g.character.choose(.equipment);
+        try capture(g, target, SHOTS_DIR ++ "/character-keyboard.png");
+    }
+    {
         const gear = g.inventory.gear;
         defer g.inventory.gear = gear;
         const bag_n = g.inventory.n;
@@ -4286,6 +4343,7 @@ fn shootCharacter(g: *Game) !void {
     _ = openNearby(g);
     try capture(g, target, SHOTS_DIR ++ "/character-nearby.png");
     g.mode = .play;
+    g.log.release();
     try capture(g, target, SHOTS_DIR ++ "/event-log.png");
     g.inventory = .{};
     for (std.enums.values(items.Kind)) |kind| _ = g.inventory.add(.{ .kind = kind });
@@ -7990,6 +8048,41 @@ test "Character and Game have separate shortcuts and never spend a turn" {
     std.debug.print("Character: direct toggle, retained page, one-step back; Game: separate menu; zero turns\n", .{});
 }
 
+test "Character page shortcuts open switch and close without acting or carrying movement" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
+    const at = g.heroActor().?.at;
+    const clock = g.clock;
+    const mana = g.mana;
+    var checked: usize = 0;
+    for ([_]Mode{ .play, .aim, .inspect, .bind, .pause }) |mode| {
+        g.mode = mode;
+        g.pause_page = .main;
+        for (std.enums.values(input.CharacterPage)) |page| {
+            g.st = .{ .device = .keys, .character_page = page, .walk = .s };
+            update(g, 0);
+            try std.testing.expectEqual(Mode.pause, g.mode);
+            try std.testing.expectEqual(PausePage.character, g.pause_page);
+            try std.testing.expectEqual(book.Page.of(page), g.character.page);
+            try std.testing.expect(g.st.walk == null and g.pending == null);
+            if (page == .passives) try std.testing.expectEqual(progress.start(g.class), g.character.cursor);
+            try std.testing.expectEqual(at, g.heroActor().?.at);
+            checked += 1;
+        }
+        g.st = .{ .device = .keys, .character_page = .skills };
+        update(g, 0);
+        try std.testing.expectEqual(Mode.play, g.mode);
+    }
+    g.mode = .dead;
+    g.st = .{ .character_page = .equipment };
+    update(g, 0);
+    try std.testing.expectEqual(Mode.dead, g.mode);
+    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(mana, g.mana);
+    std.debug.print("Character shortcuts: {d} page openings, 5 toggles, death guarded; no turns or mana spent\n", .{checked});
+}
+
 test "an arena restart restores its selected opponent and hero" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
@@ -8422,6 +8515,50 @@ test "a level reached exactly empties the bar, and the book shows it only once t
     try std.testing.expectEqual(@as(u16, 2), bookView(g, &nearby).growth.level);
     try std.testing.expectEqual(@as(i32, 7), bookView(g, &nearby).gold);
     std.debug.print("exact level-up: bar fill {d} after {d:.2} s\n", .{ g.xp_shown - @floor(g.xp_shown), t });
+}
+
+test "level-up celebrates presented progression once without holding play or replaying on load" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
+    const clock = g.clock;
+    const rng = g.rng;
+    const seen = g.lv.seen;
+    g.busy = GLIDE_S;
+    _ = g.growth.gain(@intCast(g.growth.needed()));
+    update(g, 0);
+    try std.testing.expectEqual(@as(f32, 0), g.fx.level_up.life);
+    update(g, GLIDE_S + 0.01);
+    try std.testing.expectEqual(fx.LEVEL_UP_S, g.fx.level_up.life);
+    try std.testing.expectEqual(mathx.centre(g.heroActor().?.at), g.fx.level_up.at);
+    try std.testing.expect(quiet(g));
+    update(g, 0.5);
+    try std.testing.expectEqual(fx.LEVEL_UP_S - 0.5, g.fx.level_up.life);
+    effectLights(g);
+    try std.testing.expectEqual(@as(usize, 1), g.light.effect_n);
+    const peak_light = g.light.effects[0].source.gain;
+    const glow = g.fx.level_up.bodyGlow();
+    try std.testing.expect(glow[0] > glow[1] and glow[1] > glow[2] and glow[2] > 0);
+    update(g, 1.25);
+    effectLights(g);
+    try std.testing.expect(g.light.effects[0].source.gain < peak_light);
+    try std.testing.expect(g.fx.level_up.bodyGlow()[0] < glow[0]);
+    update(g, fx.LEVEL_UP_S);
+    try std.testing.expectEqual(@as(f32, 0), g.fx.level_up.life);
+    effectLights(g);
+    try std.testing.expectEqual(@as(usize, 0), g.light.effect_n);
+    try std.testing.expectEqual([_]f32{ 0, 0, 0 }, g.fx.level_up.bodyGlow());
+    _ = g.growth.gain(@intCast(g.growth.needed()));
+    settleXp(g);
+    update(g, 0);
+    try std.testing.expectEqual(@as(f32, 0), g.fx.level_up.life);
+    g.fx.levelUp(mathx.centre(g.heroActor().?.at));
+    g.fx.clear();
+    try std.testing.expectEqual(@as(f32, 0), g.fx.level_up.life);
+    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqualDeep(rng, g.rng);
+    try std.testing.expectEqualDeep(seen, g.lv.seen);
+    std.debug.print("level-up: delayed, one-shot, nonblocking; gold body glow and local light fade and expire together; load suppressed and reset; clock/RNG/exploration unchanged\n", .{});
 }
 
 test "the log says the blow and the experience it awards, a juke as itself, and never a bare skill use" {

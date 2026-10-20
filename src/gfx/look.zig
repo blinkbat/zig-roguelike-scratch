@@ -784,6 +784,7 @@ const FOE = rgb(0xe0503a);
 const SHADE = rgb(0x3e3c46);
 
 pub const BG = rgb(0x07070a);
+pub const FOG = rgb(0x0a0a0a);
 pub const LIT = rl.Color.white;
 const FLOOR_BG = rgb(0x121116);
 const GRASS_BG = rgb(0x111a0e);
@@ -1486,12 +1487,13 @@ pub const FOCUS_TAPS = std.fmt.comptimePrint("const float FOCUS_CENTRE_W = {d:.4
     \\
 ;
 
-const FadeShader = struct { shader: rl.Shader, bounds: i32 };
+const FadeShader = struct { shader: rl.Shader, bounds: i32, minimum: i32 };
 const FADE_FS = FS_HEAD ++
     \\uniform vec2 bounds;
+    \\uniform float minimum;
     \\void main() {
     \\    vec4 ink = texture(texture0, fragTexCoord) * fragColor;
-    \\    ink.a *= 1.0 - smoothstep(bounds.x, bounds.y, gl_FragCoord.y);
+    \\    ink.a *= mix(1.0, minimum, smoothstep(bounds.x, bounds.y, gl_FragCoord.y));
     \\    finalColor = ink;
     \\}
 ;
@@ -1562,7 +1564,7 @@ pub fn rgbOf(c: rl.Color) sky.Rgb {
     return sky.Rgb{ @floatFromInt(c.r), @floatFromInt(c.g), @floatFromInt(c.b) } / sky.splat(255);
 }
 
-pub const MINI_BG = fade(BG, 0.9);
+pub const MINI_BG = fade(FOG, 0.7);
 pub const MINI_HERO = rgb(0x9cf08a);
 pub const MINI_FOE = FOE;
 pub const MINI_VIEW = fade(GOLD, 0.7);

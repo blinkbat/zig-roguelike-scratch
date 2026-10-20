@@ -43,14 +43,18 @@ pub fn focusStrength(t: grid.Tile, at: [2]f32, hero: ?[2]f32) f32 {
     return FOCUS_MAX * mathx.smoothstep(SHARP_ROWS, SOFT_ROWS, @abs(at[1] - h[1]));
 }
 
-fn emissiveAt(at: [2]f32, l: *const light.Light, flames: []const light.Flame) bool {
-    for (flames) |f| {
-        if (f.lit > look.CLEAR_A and mathx.len(at[0] - f.at[0], at[1] - f.at[1]) < EMISSIVE_REACH) return true;
+fn markEmissive(pixels: *[grid.CELLS]rl.Color, at: [2]f32) bool {
+    var marked = false;
+    var cells = grid.Box.around(mathx.cellOf(at), @intFromFloat(@ceil(EMISSIVE_REACH))).grown(0).cells();
+    while (cells.next()) |p| {
+        const pixel = &pixels[grid.Level.idx(p)];
+        if (pixel.r == 0) continue;
+        const q = mathx.centre(p);
+        if (mathx.len(q[0] - at[0], q[1] - at[1]) >= EMISSIVE_REACH) continue;
+        pixel.b = 255;
+        marked = true;
     }
-    for (l.effects[0..l.effect_n]) |*e| {
-        if (mathx.len(at[0] - e.source.at[0], at[1] - (e.source.at[1] - e.source.at[2])) < EMISSIVE_REACH) return true;
-    }
-    return false;
+    return marked;
 }
 
 pub const Cinema = struct {
@@ -83,21 +87,26 @@ pub const Cinema = struct {
         while (cells.next()) |p| {
             if (!lv.isLit(p)) continue;
             const t = lv.at(p);
-            const emissive = emissiveAt(mathx.centre(p), l, flames);
             pixels[grid.Level.idx(p)] = .{
                 .r = 255,
                 .g = if (look.reflects(t)) 255 else 0,
-                .b = if (emissive) 255 else 0,
+                .b = 0,
                 .a = if (look.canopy(t)) 255 else 0,
             };
-            self.active_bloom = self.active_bloom or look.reflects(t) or emissive;
+            self.active_bloom = self.active_bloom or look.reflects(t);
+        }
+        for (flames) |f| {
+            if (f.lit > look.CLEAR_A and markEmissive(&pixels, f.at)) self.active_bloom = true;
+        }
+        for (l.effects[0..l.effect_n]) |*e| {
+            if (markEmissive(&pixels, .{ e.source.at[0], e.source.at[1] - e.source.at[2] })) self.active_bloom = true;
         }
         rl.updateTexture(tex, &pixels);
     }
 
     pub fn beginScene(self: *Cinema, screen: mathx.P, outer: u32) bool {
         if (!self.options.bloom or !self.active_bloom or self.bloom == null or self.field == null) return false;
-        return look.beginTarget(&self.scene, screen, outer, look.BG);
+        return look.beginTarget(&self.scene, screen, outer, look.FOG);
     }
 
     pub fn endScene(self: *Cinema, outer: u32, origin: [2]f32, cell: f32, l: *light.Light) void {
@@ -281,4 +290,33 @@ test "cinema focus preserves nearby scenery and every gameplay tile" {
     }
     try std.testing.expectEqual(@as(usize, 5), focused);
     std.debug.print("cinema focus: {d} scenery kinds soften only beyond {d} rows of the hero; ground and interactables stay sharp\n", .{ focused, SHARP_ROWS });
+}
+
+test "cinema emissive bounds preserve fractional lights and visible map edges" {
+    const width: f32 = @floatFromInt(grid.W);
+    const height: f32 = @floatFromInt(grid.H);
+    const offsets = [_]f32{ -1.5, -0.01, 0, 0.5, 1.49, 1.5, 20.01, 20.5, height - 0.5, height + 0.01, width - 0.5, width + 0.01 };
+    var checked: usize = 0;
+    for (offsets) |x| {
+        for (offsets) |y| {
+            var pixels: [grid.CELLS]rl.Color = undefined;
+            for (&pixels, 0..) |*pixel, i| {
+                pixel.* = .{ .r = if (i % 5 == 0) 0 else 255, .g = 97, .b = 0, .a = 39 };
+            }
+            const marked = markEmissive(&pixels, .{ x, y });
+            var expected_count: usize = 0;
+            for (pixels, 0..) |pixel, i| {
+                const q = mathx.centre(grid.Level.of(i));
+                const expected = i % 5 != 0 and mathx.len(q[0] - x, q[1] - y) < EMISSIVE_REACH;
+                try std.testing.expectEqual(@as(u8, if (expected) 255 else 0), pixel.b);
+                try std.testing.expectEqual(@as(u8, if (i % 5 == 0) 0 else 255), pixel.r);
+                try std.testing.expectEqual(@as(u8, 97), pixel.g);
+                try std.testing.expectEqual(@as(u8, 39), pixel.a);
+                expected_count += @intFromBool(expected);
+                checked += 1;
+            }
+            try std.testing.expectEqual(expected_count > 0, marked);
+        }
+    }
+    std.debug.print("cinema emissive bounds: {d} cells match full-map distance checks; hidden cells and other channels stay unchanged\n", .{checked});
 }

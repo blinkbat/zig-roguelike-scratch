@@ -456,6 +456,30 @@ const RadialStepper = struct {
     }
 };
 
+pub const CharacterPage = enum {
+    equipment,
+    inventory,
+    stats,
+    passives,
+    skills,
+
+    pub fn key(self: CharacterPage) rl.KeyboardKey {
+        return switch (self) {
+            .equipment => .f1,
+            .inventory => .f2,
+            .stats => .f3,
+            .passives => .f4,
+            .skills => .f5,
+        };
+    }
+
+    pub fn caption(self: CharacterPage) [:0]const u8 {
+        return switch (self) {
+            inline else => |page| keyName(page.key()),
+        };
+    }
+};
+
 pub const State = struct {
     pub const Context = enum { menu, play, target, tree };
 
@@ -464,6 +488,7 @@ pub const State = struct {
     device: Device = .xbox,
     focused: bool = true,
     fullscreen: bool = false,
+    character_page: ?CharacterPage = null,
     walk: ?mathx.Dir = null,
     lean: bool = false,
     step: Stepper = .{},
@@ -564,6 +589,12 @@ pub const State = struct {
         self.scroll = @intFromFloat(self.wheel);
         self.wheel -= @floatFromInt(self.scroll);
         const alt_down = altDown();
+        self.character_page = null;
+        if (!self.typing and !alt_down) {
+            for (std.enums.values(CharacterPage)) |page| {
+                if (rl.isKeyPressed(page.key())) self.character_page = page;
+            }
+        }
         self.interact = self.context == .play and !self.typing and !alt_down and
             (anyHit(&INTERACT_KEYS) or
                 (if (live) |at| self.padHit(at, CONFIRM.pad(), &before) else false));
@@ -1174,6 +1205,7 @@ test "a d-pad diagonal pressed and released a frame apart is one diagonal step" 
 
 test "losing focus cancels unsettled movement and held actions without forgetting the controller" {
     var st = State{ .device = .ps5, .pad_at = 1, .context = .play };
+    st.character_page = .skills;
     st.triggers[1].set(.left, true);
     st.pressed.insert(.a);
     st.down.insert(.a);
@@ -1181,6 +1213,7 @@ test "losing focus cancels unsettled movement and held actions without forgettin
     try std.testing.expect(st.step.owed != null);
     st.focus(false);
     try std.testing.expect(!st.focused and st.walk == null);
+    try std.testing.expect(st.character_page == null);
     try std.testing.expect(!st.hit(.a) and !st.held(.a));
     try std.testing.expectEqual(@as(?mathx.Dir, null), st.step.tick(mathx.FRAME_DT, 0, 0, Stepper.SETTLE));
     try std.testing.expectEqual(Device.ps5, st.device);

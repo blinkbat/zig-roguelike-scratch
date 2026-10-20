@@ -95,25 +95,35 @@ pub const Spec = struct {
     attack: attrs.Attack = .melee,
     two_handed: bool = false,
     armour: i16 = 0,
+
+    fn named(s: Spec, name: [:0]const u8) Spec {
+        var out = s;
+        out.name = name;
+        return out;
+    }
 };
+const LIGHT_MELEE = Spec{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light };
+const HEAVY_MELEE = Spec{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 } };
+const GREAT_WEAPON = Spec{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true };
+const MAGIC_OFFHAND = Spec{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } };
 const SPECS = std.EnumArray(Kind, Spec).init(.{
-    .sword = .{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light },
-    .axe = .{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true },
+    .sword = LIGHT_MELEE,
+    .axe = GREAT_WEAPON,
     .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
     .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .two_handed = true },
-    .longsword = .{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 } },
-    .mace = .{ .name = "Mace", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 } },
-    .greatsword = .{ .name = "Greatsword", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true },
+    .longsword = HEAVY_MELEE,
+    .mace = HEAVY_MELEE.named("Mace"),
+    .greatsword = GREAT_WEAPON.named("Greatsword"),
     .crossbow = .{ .name = "Crossbow", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true },
-    .greatclub = .{ .name = "Greatclub", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true },
+    .greatclub = GREAT_WEAPON.named("Greatclub"),
     .sling = .{ .name = "Sling", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged },
-    .dagger = .{ .name = "Dagger", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light },
-    .handaxe = .{ .name = "Handaxe", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light },
+    .dagger = LIGHT_MELEE.named("Dagger"),
+    .handaxe = LIGHT_MELEE.named("Handaxe"),
     .wand = .{ .name = "Wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 } },
-    .tome = .{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } },
-    .orb = .{ .name = "Orb", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } },
+    .tome = MAGIC_OFFHAND,
+    .orb = MAGIC_OFFHAND.named("Orb"),
     .buckler = .{ .name = "Buckler", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2 },
-    .totem = .{ .name = "Totem", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } },
+    .totem = MAGIC_OFFHAND.named("Totem"),
     .shield = .{ .name = "Wooden shield", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6 },
     .cap = .{ .name = "Leather cap", .slots = &.{.helm}, .armour = 2 },
     .helmet = .{ .name = "Iron helm", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4 },

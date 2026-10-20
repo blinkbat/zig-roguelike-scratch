@@ -76,6 +76,7 @@ const CLIP_X: i32 = 10;
 const TEXT_X: i32 = 14;
 const LINE_H: i32 = 20;
 const ENTRY_GAP: i32 = 4;
+const TOP_OPACITY: f32 = 0.1;
 const BG = blk: {
     var c = hud.PLATE;
     c.a = 210;
@@ -95,9 +96,10 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
     if (sprites.log_fade) |fade| {
         rl.beginShaderMode(fade.shader);
         look.setUniform(fade.shader, fade.bounds, [2]f32{ @floatFromInt(screen.y - y - BOX_H), @floatFromInt(screen.y - y) });
+        look.setUniform(fade.shader, fade.minimum, TOP_OPACITY);
         look.hudPanelIn(sprites, r, BG, look.LIT);
     } else {
-        rl.drawRectangleGradientV(x, y, w, BOX_H, look.fade(BG, 0), BG);
+        rl.drawRectangleGradientV(x, y, w, BOX_H, look.fade(BG, TOP_OPACITY), BG);
     }
     defer if (sprites.log_fade != null) rl.endShaderMode();
     var bottom = y + ROWS_BOTTOM;
@@ -113,7 +115,7 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
         const ink = log.kinds[at].ink();
         for (rows[0..count], 0..) |text, i| {
             const row = bottom + @as(i32, @intCast(i)) * LINE_H;
-            const alpha = std.math.clamp(@as(f32, @floatFromInt(row - y)) / BOX_H, 0, 1);
+            const alpha = mathx.lerpF(TOP_OPACITY, 1, std.math.clamp(@as(f32, @floatFromInt(row - y)) / BOX_H, 0, 1));
             face.draw(text, x + TEXT_X, row, font.SMALL, if (sprites.log_fade != null) ink else look.fade(ink, alpha));
         }
         bottom -= ENTRY_GAP;

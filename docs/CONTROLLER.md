@@ -63,6 +63,7 @@ PS button do nothing; GLFW reads no touchpad.
 | Character | Start / Menu / Options | Tab |
 | Game menu (from play) | Select / View / Share / Create | Esc |
 | Character tabs | LB / RB | Q / E |
+| Equipment / Inventory / Stats / Passives / Skills directly | Character tabs | F1 / F2 / F3 / F4 / F5 |
 | Skills: bind selected skill | X | C |
 | Inventory: equip / drop / change ring | A / Y / X | Enter / Del / C |
 | Inspect HUD (from play) | Right-stick click (RS/R3) | I |
@@ -90,7 +91,7 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
 - **Target once, then confirm or back out.** A (Cross), Enter, Space or Z confirms a target; B (Circle), Select, X or
   Esc cancels. On the keyboard the skill's own number confirms too (1, then 1); on the pad pressing the skill again
   does not confirm it unless that button is also the standard confirm. B always cancels, even when it opened the skill. Secondary skills keep their selected set after the modifier is released.
-- **Character and Game are separate.** Start opens Character directly on its last page, already focused on content; another press closes it. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
+- **Character and Game are separate.** Start opens Character directly on its last page, already focused on content; another press closes it. F1–F5 open the corresponding Character page, switch pages directly, and close an already open matching page. Their glyphs appear on the tabs when using the keyboard. These shortcuts cancel an unconfirmed reticle and spend no turn. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
 - **Binding belongs to Skills.** Its bind action carries a learned skill to the slot screen; select a destination and confirm once. Back returns to Skills. The picker remains available for utility skills and the secondary-set modifier. Clearing a slot is direct. Binding spends no turn.
 - **Pause > Debug** contains Restart Map, Reveal Map and the four cinema toggles (`cinema.Options`). Reveal shows terrain and the minimap without changing
   normal sight or saved exploration; switching it off restores the normal view. Back exits Debug to Pause first.

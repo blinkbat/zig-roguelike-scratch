@@ -331,7 +331,88 @@ const Due = union(enum) {
     }
 };
 
+pub const LEVEL_UP_S: f32 = 2;
+const LEVEL_GOLD = look.rgb(0xe6c57c);
+const LEVEL_CORE = look.rgb(0xffedbd);
+
+pub const LevelUp = struct {
+    at: [2]f32 = @splat(0),
+    life: f32 = 0,
+
+    fn alpha(self: LevelUp) f32 {
+        return std.math.clamp((LEVEL_UP_S - self.life) / 0.12, 0, 1) * std.math.clamp(self.life / 0.65, 0, 1);
+    }
+
+    pub fn bodyGlow(self: LevelUp) [3]f32 {
+        const gain = self.alpha() * 0.18;
+        return .{ gain, gain * 0.72, gain * 0.28 };
+    }
+
+    pub fn emission(self: LevelUp, at: [2]f32) ?light.Emission {
+        const gain = self.alpha() * 0.65;
+        if (gain <= 0) return null;
+        return .{ .at = .{ at[0], at[1], light.BODY_Z }, .col = LEVEL_GOLD, .radius = 2.5, .gain = gain };
+    }
+
+    pub fn drawBeam(self: LevelUp, ox: f32, oy: f32, cell: f32) void {
+        if (self.life <= 0) return;
+        const age = LEVEL_UP_S - self.life;
+        const a = self.alpha() * std.math.clamp((1.55 - age) / 0.65, 0, 1);
+        const base = screen(.{ self.at[0], self.at[1], -0.28 }, ox, oy, cell);
+        const h: i32 = @intFromFloat(@max(0, base.y));
+        if (h == 0 or a <= 0) return;
+        const bands = [_]struct { width: f32, alpha: f32 }{
+            .{ .width = 0.48, .alpha = 0.025 },
+            .{ .width = 0.32, .alpha = 0.045 },
+            .{ .width = 0.19, .alpha = 0.08 },
+            .{ .width = 0.09, .alpha = 0.14 },
+            .{ .width = 0.025, .alpha = 0.35 },
+        };
+        for (bands) |band| {
+            const w: i32 = @intFromFloat(@max(1, cell * band.width));
+            rl.drawRectangleGradientV(@as(i32, @intFromFloat(base.x)) - @divTrunc(w, 2), 0, w, h, look.fade(LEVEL_GOLD, a * band.alpha * 0.1), look.fade(LEVEL_CORE, a * band.alpha));
+        }
+    }
+
+    pub fn drawSparks(self: LevelUp, ox: f32, oy: f32, cell: f32) void {
+        if (self.life <= 0) return;
+        const age = LEVEL_UP_S - self.life;
+        const k = pxScale(cell);
+        for (0..18) |i| {
+            const seed: f32 = @floatFromInt(i);
+            const phase = @mod(seed * 0.618034, 1);
+            const t = @max(0, age - phase * 0.3);
+            const theta = seed * 2.399963 + t * 0.3;
+            const radius = 0.22 + phase * 0.24 + t * 0.12;
+            const at = screen(.{
+                self.at[0] + @cos(theta) * radius,
+                self.at[1] + @sin(theta) * radius * 0.45,
+                0.1 + phase * 0.4 + t * (0.45 + phase * 0.4),
+            }, ox, oy, cell);
+            const shine = @max(0, @sin(t * 7 + seed * 1.7));
+            const a = self.alpha() * std.math.clamp(t / 0.12, 0, 1) * (0.4 + shine * 0.6);
+            pixel.fleck(at, 0.7 + phase * 0.45, k, look.fade(LEVEL_GOLD, a));
+            if (shine > 0.85) {
+                pixel.rect(at, 3, 1, k, look.fade(LEVEL_CORE, a * 0.65));
+                pixel.rect(at, 1, 3, k, look.fade(LEVEL_CORE, a * 0.65));
+            }
+        }
+    }
+
+    pub fn drawText(self: LevelUp, face: *const font.Face, ox: f32, oy: f32, cell: f32) void {
+        if (self.life <= 0) return;
+        const age = LEVEL_UP_S - self.life;
+        const at = screen(.{ self.at[0], self.at[1], 0.85 + age * 0.25 }, ox, oy, cell);
+        const x: i32 = @intFromFloat(at.x);
+        const y: i32 = @intFromFloat(at.y);
+        const size: i32 = @intFromFloat(cell * font.HEAD / look.SPRITE_PX);
+        face.textMid("Level up!", x + 1, y + 2, size, look.fade(look.BG, self.alpha() * 0.85));
+        face.textMid("Level up!", x, y, size, look.fade(LEVEL_CORE, self.alpha()));
+    }
+};
+
 pub const Fx = struct {
+    level_up: LevelUp = .{},
     arcs: [12]Arc = @splat(.{}),
     arc_head: usize = 0,
     pulses: [32]Pulse = @splat(.{}),
@@ -351,6 +432,7 @@ pub const Fx = struct {
     seconds: mathx.Seconds = .{},
 
     pub fn clear(self: *Fx) void {
+        self.level_up = .{};
         for (&self.arcs) |*a| a.life = 0;
         for (&self.pulses) |*p| p.life = 0;
         for (&self.motes) |*m| m.life = 0;
@@ -360,6 +442,10 @@ pub const Fx = struct {
         self.landed = @splat(null);
         self.mana_landed = 0;
         self.speech = @splat(.{});
+    }
+
+    pub fn levelUp(self: *Fx, at: [2]f32) void {
+        self.level_up = .{ .at = at, .life = LEVEL_UP_S };
     }
 
     pub fn frighten(self: *Fx, slot: usize, fallen: usize) void {
@@ -496,6 +582,7 @@ pub const Fx = struct {
 
     pub fn step(self: *Fx, lv: *const grid.Level, dt: f32) void {
         self.seconds.step(dt);
+        self.level_up.life = @max(0, self.level_up.life - dt);
         for (&self.arcs) |*a| a.life = @max(0, a.life - dt);
         for (&self.pulses) |*p| p.life = @max(0, p.life - dt);
         for (&self.flash) |*f| f.* = @max(0, f.* - dt);

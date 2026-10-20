@@ -28,8 +28,9 @@ The live HUD omits the hero-name label, enemy counters, gold tally and permanent
 ## Layout and placeholder art
 
 - Target a 640-pixel-wide assembly, horizontally centered from `Game.screen`. Its width does not grow on a wider display.
-- Two matching 96-pixel orb frames flank the seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs cover its ends. The plate is 94px tall.
-- Keep the log 12px from the left and bottom edges, 270px tall. Its width follows the free gutter beside the HUD, capped at 440px. It has no heading; text, background and border fade together toward transparency at the top. Tooltips and item comparisons use aligned table rows.
+- Two matching 96-pixel orb frames flank the seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs cover its ends. The plate is 94px tall, at 70% opacity with a 25% shadow.
+- The minimap background uses the shared fog gray at 70% opacity. Unexplored texture cells are transparent so they do not obscure that background; terrain and markers retain their contrast.
+- Keep the log 12px from the left and bottom edges, 270px tall. Its width follows the free gutter beside the HUD, capped at 440px. It has no heading; text, background and border fade together to 10% of their base opacity at the top. Tooltips and item comparisons use aligned table rows.
 - Mount the assembly close to the bottom edge. Draw the map behind it and at both sides instead of reserving a full-width black footer.
 - Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
 - Use the current Balthazar face for small resource values and cooldowns; inputs are icons, not captions. Avoid extra explanatory prose in play.

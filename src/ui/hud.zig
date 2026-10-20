@@ -29,7 +29,9 @@ const PLATE_SHADOW_GROW: i32 = 2;
 const ORB_SHADOW_DY: i32 = 4;
 const ORB_SHADOW_GROW: i32 = 2;
 const STATUS_Y: i32 = 4;
-const PLATE_SHADOW_A: f32 = 0.5;
+const PLATE_A: f32 = 0.7;
+const PLATE_SHADOW_A: f32 = 0.25;
+const TIP_SHADOW_A: f32 = 0.5;
 const ORB_SHADOW_A: f32 = 0.6;
 /// Insets of the orb's bright rim and the dark ring inside it, and the well's rim past the fill.
 const ORB_RIM: i32 = 2;
@@ -90,12 +92,12 @@ pub fn frame(layout: Layout, sprites: *const look.Sprites) void {
     const x = layout.life.x;
     const y = layout.top + PLATE_Y;
     const width = layout.mana.x - x;
-    shadow(x, y, width, PLATE_H);
-    look.hudPanel(sprites, x, y, width, PLATE_H, PLATE, look.LIT);
+    shadow(x, y, width, PLATE_H, PLATE_SHADOW_A);
+    look.hudPanel(sprites, x, y, width, PLATE_H, look.fade(PLATE, PLATE_A), look.LIT);
 }
 
-fn shadow(x: i32, y: i32, width: i32, height: i32) void {
-    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, height + PLATE_SHADOW_GROW, look.fade(rl.Color.black, PLATE_SHADOW_A));
+fn shadow(x: i32, y: i32, width: i32, height: i32, opacity: f32) void {
+    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, height + PLATE_SHADOW_GROW, look.fade(rl.Color.black, opacity));
 }
 
 pub const LIFE = "Life";
@@ -310,7 +312,7 @@ pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl
     const mid = look.middleAt(over).x;
     const x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
     const y = @max(TIP_MARGIN, @min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y) - TIP_GAP - h);
-    shadow(x, y, TIP_W, h);
+    shadow(x, y, TIP_W, h, TIP_SHADOW_A);
     rl.drawRectangle(x, y, TIP_W, h, PLATE);
     rl.drawRectangleLinesEx(look.rect(x, y, TIP_W, h), TIP_FRAME_W, FRAME);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);

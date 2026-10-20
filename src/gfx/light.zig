@@ -633,6 +633,7 @@ fn skyShade(k: sky.Sky) Rgb {
 
 pub const Shine = struct {
     ambient: Rgb = @splat(0),
+    emission: Rgb = @splat(0),
     /// Of `ambient`, what memory's floor lifts it by: no light reaches with it.
     floor: Rgb = @splat(0),
     /// How far in sight times how far remembered the ground under the body is.
@@ -675,7 +676,7 @@ pub const Shine = struct {
 
     /// As the body shader would draw `c`, for what is drawn without it.
     pub fn drawn(self: *const Shine, c: rl.Color, flash: f32) rl.Color {
-        return flashed(self.tint(c), flash);
+        return flashed(recolour(c, rgbOf(self.tint(c)) + self.emission * splat(self.sight)), flash);
     }
 };
 
@@ -754,6 +755,7 @@ pub const Light = struct {
     t: mathx.Seconds,
     map: [TEXELS]rl.Color,
     glints: [TEXELS]rl.Color,
+    fog: [TEXELS]rl.Color,
     /// The rows of `map` baked since the texture was last sent, all it needs sent.
     baked: [2]i32,
     scratch: grid.Level,
@@ -785,6 +787,7 @@ pub const Light = struct {
         l.grounded();
         @memset(&l.map, rl.Color.blank);
         @memset(&l.glints, rl.Color.blank);
+        @memset(&l.fog, look.FOG);
         l.baked = .{ 0, MAP_H };
         l.soften();
         return l;
@@ -1273,10 +1276,12 @@ pub const Light = struct {
                 self.glints[i] = rl.Color.blank;
                 if (dark) {
                     self.map[i] = rl.Color.blank;
+                    self.fog[i] = look.FOG;
                     continue;
                 }
                 const q = [2]f32{ (@as(f32, @floatFromInt(tx)) + 0.5) / sub, (@as(f32, @floatFromInt(ty)) + 0.5) / sub };
                 const v = viewOf(sightOf(&patch, ground, q[0], q[1]), q, &fade);
+                self.fog[i] = look.fade(look.FOG, 1 - v.memory);
                 const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
                 self.map[i] = texelOf(self.shade(lv, torches, effects, q, i, v, if (ray) |*r| r else null, cloud), v.lit);
                 if (wet and v.lit > FAINT and lv.isLit(c))
@@ -1417,8 +1422,13 @@ pub const Light = struct {
         const tex = self.mapTexture() orelse return;
         rl.gl.rlSetBlendFactors(rl.gl.rl_dst_color, rl.gl.rl_src_color, rl.gl.rl_func_add);
         rl.beginBlendMode(.custom);
-        defer rl.endBlendMode();
         look.overFloor(tex, ox, oy, cell);
+        rl.endBlendMode();
+        if (self.gpu.fog) |fog| {
+            rl.beginBlendMode(.additive);
+            look.overFloor(fog, ox, oy, cell);
+            rl.endBlendMode();
+        }
     }
 
     pub fn mapTexture(self: *Light) ?rl.Texture2D {
@@ -1438,6 +1448,7 @@ pub const Light = struct {
             const rect = look.rect(0, from, MAP_W, to - from);
             rl.updateTextureRec(tex, rect, &self.map[@intCast(from * MAP_W)]);
             if (self.gpu.glints) |g| rl.updateTextureRec(g, rect, &self.glints[@intCast(from * MAP_W)]);
+            if (self.gpu.fog) |f| rl.updateTextureRec(f, rect, &self.fog[@intCast(from * MAP_W)]);
         }
         self.baked = NONE_BAKED;
     }
@@ -1464,6 +1475,7 @@ pub const Light = struct {
         const size = [2]f32{ w, h };
         const flip: f32 = if (left) -1 else 1;
         const ambient: [3]f32 = s.ambient;
+        const emission: [3]f32 = s.emission * splat(s.sight);
         const n: i32 = @intCast(s.n);
         const b = sh.?;
         rl.beginShaderMode(b.shader);
@@ -1471,6 +1483,7 @@ pub const Light = struct {
         look.setUniform(b.shader, b.size, size);
         look.setUniform(b.shader, b.flip, flip);
         look.setUniform(b.shader, b.ambient, ambient);
+        look.setUniform(b.shader, b.emission, emission);
         look.setUniform(b.shader, b.count, n);
         look.setUniform(b.shader, b.flash, flash);
         look.setUniform(b.shader, b.fade_bounds, fade_bounds);
@@ -1849,6 +1862,7 @@ const BODY_FS = MIRROR_HEAD ++ std.fmt.comptimePrint(
     \\uniform vec2 size;
     \\uniform float flip;
     \\uniform vec3 ambient;
+    \\uniform vec3 emission;
     \\uniform int count;
     \\uniform vec3 lpos[LIGHTS];
     \\uniform vec3 lcol[LIGHTS];
@@ -1884,7 +1898,7 @@ const BODY_FS = MIRROR_HEAD ++ std.fmt.comptimePrint(
     \\        sheen += lcol[i] * rim * SHEEN;
     \\    }
     \\    light = mix(light, KNEE * sqrt(light / KNEE), step(KNEE, light));
-    \\    finalColor = vec4(mix(c.rgb * light + sheen, FLASH, flash), c.a) * fragColor;
+    \\    finalColor = vec4(mix(c.rgb * light + sheen + emission, FLASH, flash), c.a) * fragColor;
     \\    finalColor.a *= mirrorFade();
     \\}
 ;
@@ -1953,6 +1967,7 @@ const BodyShader = struct {
     size: i32,
     flip: i32,
     ambient: i32,
+    emission: i32,
     count: i32,
     lpos: i32,
     lcol: i32,
@@ -1994,6 +2009,7 @@ const NO_FIGURES: [look.FIGURES]?rl.Texture2D = @splat(null);
 const Gpu = struct {
     map: ?rl.Texture2D = null,
     glints: ?rl.Texture2D = null,
+    fog: ?rl.Texture2D = null,
     glow: ?rl.Texture2D = null,
     streak: ?rl.Texture2D = null,
     body: ?BodyShader = null,
@@ -2011,6 +2027,7 @@ const Gpu = struct {
         var g = Gpu{};
         g.map = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
         g.glints = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
+        g.fog = look.canvas(MAP_W, MAP_H, look.FOG, .bilinear);
         g.glow = look.radial(GLOW_PX, glowAlpha);
         g.streak = look.field(STREAK_PX[0], STREAK_PX[1], streakAlpha);
         g.body = look.program(BodyShader, BODY_FS);
@@ -2590,6 +2607,37 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     std.debug.print("whole floor baked: {d} texels never seen, {d} fading in, {d} off what `at` gives\n", .{ dark, fading, off });
     try std.testing.expect(dark > 0 and fading > 0);
     try std.testing.expectEqual(@as(usize, 0), off);
+}
+
+test "fog tint follows the soft exploration edge without changing visibility" {
+    var lv = grid.openFloor();
+    for (0..grid.CELLS) |i| {
+        lv.seen[i] = grid.Level.of(i).x < 20;
+        lv.lit[i] = lv.seen[i];
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const seen = lv.seen;
+    const lit = lv.lit;
+    l.bake(&lv, .{ .x = 18, .y = 20 }, .{ .x = 22, .y = 21 });
+    var clear: usize = 0;
+    var soft: usize = 0;
+    var covered: usize = 0;
+    for (20 * SUB..21 * SUB) |y| {
+        for (18 * SUB..22 * SUB) |x| {
+            const pixel = l.fog[y * MAP_W + x];
+            try std.testing.expectEqual(look.FOG.r, pixel.r);
+            try std.testing.expectEqual(look.FOG.g, pixel.g);
+            try std.testing.expectEqual(look.FOG.b, pixel.b);
+            if (pixel.a == 0) clear += 1 else if (pixel.a == 255) covered += 1 else soft += 1;
+            if (x >= 20 * SUB) try std.testing.expectEqual(@as(u8, 255), pixel.a);
+            if (x < 19 * SUB) try std.testing.expectEqual(@as(u8, 0), pixel.a);
+        }
+    }
+    try std.testing.expect(clear > 0 and soft > 0 and covered > 0);
+    try std.testing.expectEqualSlices(bool, &seen, &lv.seen);
+    try std.testing.expectEqualSlices(bool, &lit, &lv.lit);
+    std.debug.print("fog tint: {d} clear, {d} soft and {d} opaque texels; sight and exploration unchanged\n", .{ clear, soft, covered });
 }
 
 test "remembered ground fades to black exactly at the edge of what was ever seen" {
