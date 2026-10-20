@@ -175,10 +175,17 @@ const FINGERPRINT = blk: {
 const TREE = blk: {
     @setEvalBranchQuota(100_000);
     var h = std.hash.Wyhash.init(0);
-    for (progress.NODES) |n| for (std.meta.fields(progress.Node)) |f| {
-        const v = @field(n, f.name);
-        h.update(&std.mem.toBytes(if (@typeInfo(f.type) == .@"enum") @intFromEnum(v) else v));
-    };
+    for (progress.NODES, 0..) |n, i| {
+        h.update(n.name);
+        h.update(&.{ @intFromEnum(n.arm), if (n.branch) |v| @intFromEnum(v) else 255, if (n.seam) |v| @intFromEnum(v) else 255, n.ring, n.slot, @intFromEnum(n.tier), @intFromEnum(n.grant.kind) });
+        h.update(&std.mem.toBytes(n.grant.amount));
+        h.update(&.{if (n.bump) |g| @intFromEnum(g.kind) else 255});
+        if (n.bump) |g| h.update(&std.mem.toBytes(g.amount));
+        var buf: [progress.passives.MAX_FEED]usize = undefined;
+        const fs = progress.passives.feeders(i, &buf);
+        h.update(&std.mem.toBytes(fs.len));
+        for (fs) |f| h.update(&std.mem.toBytes(f));
+    }
     for (hero.CLASSES) |c| h.update(&std.mem.toBytes(progress.start(c)));
     break :blk h.final();
 };

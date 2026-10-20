@@ -92,6 +92,9 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
   across tabs, down into content, or click a row/node. Back exits the current confirmation/action/content layer first,
   then returns to Pause. Equipment uses the inspected D2 paperdoll; item details show worn/item/delta columns.
   Item changes require a separate Cancel-first confirmation and spend one turn; point allocation spends points.
+  The passive tree uses spatial navigation and follows the selected node when zoomed. X / Square zooms in,
+  Y / Triangle zooms out; keyboard C / Delete mirrors them. Mouse wheel over the tree and its plus/minus
+  controls also zoom. Back returns to tabs without allocating anything.
 - **Interact** opens a list of visible items, chests and doors on the hero's cell or adjacent cells. Selecting an entry
   opens a Cancel-first confirmation; browsing and canceling are free. A / Cross prioritizes nearby interaction over
   its skill binding. Gold collects automatically when stepping or arriving onto it.

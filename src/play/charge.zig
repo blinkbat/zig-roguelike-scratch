@@ -13,6 +13,7 @@ pub const MIN_RANGE: i32 = 2;
 pub const DMG_LO: i32 = 3;
 pub const DMG_HI: i32 = 5;
 pub const VERB = "charges into";
+pub const DONE = "charges";
 pub const DESCRIPTION = std.fmt.comptimePrint("Rush along a clear line {d} to {d} tiles away. A foe at the end takes {s} and is knocked back a tile. Empty ground is a valid destination.", .{ MIN_RANGE, RANGE, BASE.text(null) });
 
 pub const BASE = damage.Base{ .lo = DMG_LO, .hi = DMG_HI };

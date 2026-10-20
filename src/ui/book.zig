@@ -11,6 +11,7 @@ const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
+const trees = @import("trees.zig");
 const P = mathx.P;
 pub const Page = enum { equipment, inventory, stats, passives, skills, nearby };
 pub const PAGES = [_]Page{ .equipment, .inventory, .stats, .passives, .skills };
@@ -29,16 +30,6 @@ const TEXT_X = 8;
 const SECOND_X = 336;
 /// The value beside a label in a pair.
 const VALUE_X = 300;
-/// The passive tree's middle, the step between neighbours along a row and between rows, and a node's side.
-const TREE_MID: P = .{ .x = 270, .y = 196 };
-const HEX_STEP = 46;
-const HEX_ROW = 42;
-const NODE_PX = 26;
-/// A skill cell, from the first, and the step between tree places.
-const SKILL_AT: P = .{ .x = 40, .y = 30 };
-const SKILL_STEP: P = .{ .x = 252, .y = 130 };
-const SKILL_W = 212;
-const SKILL_H = 58;
 /// The confirmation panel, and its two buttons along its foot.
 const PROMPT_AT: P = .{ .x = 240, .y = 210 };
 const PROMPT_W = 620;
@@ -142,6 +133,7 @@ pub const Book = struct {
     page: Page = .equipment,
     tabs: bool = true,
     cursor: usize = 0,
+    zoom: f32 = 1,
     actions: ?usize = null,
     prompt: ?Command = null,
     yes: bool = false,
@@ -159,6 +151,7 @@ pub const Book = struct {
     pub fn choose(self: *Book, page: Page) void {
         self.page = page;
         self.cursor = 0;
+        self.zoom = 1;
         self.tabs = page != .nearby;
         self.actions = null;
         self.prompt = null;
@@ -186,6 +179,19 @@ pub const Book = struct {
     /// A scrolling list rather than laid-out cells.
     fn listed(self: *const Book) bool {
         return self.page == .inventory or self.page == .nearby;
+    }
+    fn treePanel(self: *const Book) ?trees.Panel {
+        return switch (self.page) {
+            .passives => .passives,
+            .skills => .skills,
+            else => null,
+        };
+    }
+    fn treeView(self: *const Book) trees.View {
+        return .{ .cursor = self.cursor, .zoom = self.zoom };
+    }
+    fn zoomBy(self: *Book, amount: f32) void {
+        self.zoom = std.math.clamp(self.zoom + amount, trees.ZOOM_MIN, trees.ZOOM_MAX);
     }
     fn inWindow(self: *const Book, i: usize) bool {
         return !self.listed() or (i >= self.first() and i < self.first() + VISIBLE);
@@ -285,6 +291,13 @@ pub const Book = struct {
             }
             return .close;
         }
+        if (self.page == .passives and !self.tabs) {
+            if (st.hit(menu.CHANGE)) self.zoomBy(0.4);
+            if (st.hit(menu.REMOVE)) self.zoomBy(-0.4);
+            if (st.pointer) |p| if (trees.onCanvas(o, p)) {
+                if (st.scroll != 0) self.zoomBy(@as(f32, @floatFromInt(st.scroll)) * 0.2);
+            };
+        }
         if (self.listed() and st.scroll != 0 and self.count(v) > 0) {
             self.cursor = mathx.nudge(self.cursor, -st.scroll, self.count(v));
             self.tabs = false;
@@ -293,14 +306,24 @@ pub const Book = struct {
             if (look.holds(closeBox(o), p)) return .close;
             if (!self.direct) for (PAGES, 0..) |page, i| if (look.holds(tabBox(o, i), p)) {
                 self.choose(page);
+                if (page == .passives) self.cursor = progress.start(v.class);
                 return null;
             };
-            if (!self.tabs and look.holds(actionBox(o, 0), p)) {
+            if (self.page == .passives) {
+                for ([_]bool{ false, true }) |increase| if (look.holds(trees.zoomBox(o, increase), p)) {
+                    self.tabs = false;
+                    self.zoomBy(if (increase) 0.4 else -0.4);
+                    return null;
+                };
+            }
+            const primary = if (self.treePanel() != null) trees.actionBox(o) else actionBox(o, 0);
+            if (!self.tabs and look.holds(primary, p)) {
                 self.select(v);
                 return null;
             }
             for (0..self.count(v)) |i| {
                 if (!self.inWindow(i)) continue;
+                if (self.page == .passives and !trees.onCanvas(o, p)) continue;
                 if (look.holds(self.cellBox(o, i, v), p)) {
                     self.cursor = i;
                     self.tabs = false;
@@ -312,8 +335,12 @@ pub const Book = struct {
             const d = dir.delta();
             if (self.tabs) {
                 if (d.x != 0) self.choose(mathx.stepIn(Page, &PAGES, self.page, d.x, 0)) else if (d.y > 0) self.enter(v);
+                if (self.tabs and self.page == .passives) self.cursor = progress.start(v.class);
             } else if (self.listed()) {
                 if (d.y < 0 and self.cursor == 0 and !self.direct) self.tabs = true else if (d.y != 0 and self.count(v) > 0) self.cursor = mathx.wrap(self.cursor, d.y, self.count(v));
+            } else if (self.page == .passives) {
+                const next = progress.passives.step(self.cursor, @floatFromInt(d.x), @floatFromInt(d.y));
+                if (next != self.cursor) self.cursor = next else if (d.y < 0) self.tabs = true;
             } else if (self.count(v) > 0) {
                 var boxes: [CELLS_MAX]rl.Rectangle = undefined;
                 for (0..self.count(v)) |i| boxes[i] = self.cellBox(o, i, v);
@@ -333,15 +360,7 @@ pub const Book = struct {
                 break :blk look.rect(o.x + s.at.x, y + s.at.y, s.w, s.h);
             },
             .inventory, .nearby => look.rect(o.x + LIST_X, y + LIST_Y + (@as(i32, @intCast(i)) - @as(i32, @intCast(self.first()))) * ROW, LIST_W, ROW),
-            .passives => blk: {
-                const n = progress.NODES[i];
-                const half = @divExact(NODE_PX, 2);
-                break :blk look.rect(o.x + TREE_MID.x + n.q * HEX_STEP + n.r * @divExact(HEX_STEP, 2) - half, y + TREE_MID.y + n.r * HEX_ROW - half, NODE_PX, NODE_PX);
-            },
-            .skills => blk: {
-                const p = progress.skills(v.class)[i].at;
-                break :blk look.rect(o.x + SKILL_AT.x + p.x * SKILL_STEP.x, y + SKILL_AT.y + p.y * SKILL_STEP.y, SKILL_W, SKILL_H);
-            },
+            .passives, .skills => trees.cellBox(self.treePanel().?, o, v.class, i, self.treeView()),
             .stats => unreachable,
         };
     }
@@ -356,8 +375,10 @@ pub const Book = struct {
         face.draw(xp.text(), o.x + RIGHT, o.y + 26, font.BODY, look.TEXT);
         button(face, closeBox(o), verbOf(.close), false);
         if (self.direct) face.draw("NEARBY", o.x + LIST_X, o.y + 82, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| button(face, tabBox(o, i), menu.named(page), self.page == page);
-        rl.drawLine(o.x + DIVIDER_X, o.y + TOP, o.x + DIVIDER_X, o.y + H - 30, look.EDGE);
-        if (self.page == .stats) {
+        if (self.treePanel() == null) rl.drawLine(o.x + DIVIDER_X, o.y + TOP, o.x + DIVIDER_X, o.y + H - 30, look.EDGE);
+        if (self.treePanel()) |panel| {
+            trees.draw(panel, face, sprites, o, v.class, v.growth, self.treeView(), !self.tabs);
+        } else if (self.page == .stats) {
             const a = v.stats();
             var left = Rows{ .x = o.x + 40, .y = o.y + TOP };
             for (attr.ATTRS) |at| left.put(face, menu.named(at), a.get(at));
@@ -380,7 +401,7 @@ pub const Book = struct {
             self.drawCells(face, o, v);
             self.drawDetail(face, o, v);
         }
-        if (self.message.n > 0) face.draw(self.message.text(), o.x + RIGHT, o.y + H - 32, font.SMALL, look.TEXT);
+        if (self.message.n > 0) face.draw(self.message.text(), o.x + (if (self.treePanel() != null) @as(i32, 764) else RIGHT), o.y + H - 32, font.SMALL, look.TEXT);
         if (self.prompt) |cmd| {
             const p = o.add(PROMPT_AT);
             look.hudPanel(sprites, p.x, p.y, PROMPT_W, PROMPT_H, look.CARD_BG, look.LIT);
@@ -389,7 +410,7 @@ pub const Book = struct {
                 .equip, .drop, .pickup => if (self.selected(v)) |it| it.name() else "Item",
                 .unequip => |s| s.name(),
                 .skill => |a| a.name(),
-                .passive => |i| menu.named(progress.NODES[i].bonus),
+                .passive => |i| progress.NODES[i].name,
                 .open_chest => CHEST,
                 .travel => DOOR,
                 .close => "",
@@ -406,16 +427,6 @@ pub const Book = struct {
         }
     }
     fn drawCells(self: *const Book, face: *const font.Face, o: P, v: View) void {
-        if (self.page == .passives) {
-            for (progress.NODES, 0..) |_, i| for (i + 1..progress.NODES.len) |j| if (progress.adjacent(i, j)) {
-                rl.drawLineEx(look.vec(look.middleAt(self.cellBox(o, i, v))), look.vec(look.middleAt(self.cellBox(o, j, v))), 1, if (v.growth.nodes.isSet(i) and v.growth.nodes.isSet(j)) look.RETICLE else look.EDGE);
-            };
-        }
-        if (self.page == .skills) for (progress.skills(v.class), 0..) |s, i| {
-            if (s.parent) |parent| for (progress.skills(v.class), 0..) |p, j| {
-                if (p.act == parent) rl.drawLineEx(look.vec(look.middleAt(self.cellBox(o, i, v))), look.vec(look.middleAt(self.cellBox(o, j, v))), 2, look.EDGE);
-            };
-        };
         if (self.listed()) {
             const text_x = o.x + LIST_X + TEXT_X;
             face.draw("ITEM", text_x, o.y + TOP, font.SMALL, look.DIM);
@@ -452,21 +463,7 @@ pub const Book = struct {
                     face.draw(n.label(), x + TEXT_X, y + 4, font.BODY, look.TEXT);
                     face.draw(n.command().verb(), x + SECOND_X, y + 5, font.SMALL, look.DIM);
                 },
-                .passives => {
-                    const active = v.growth.nodes.isSet(i);
-                    const ink = if (active) look.RETICLE else if (v.growth.available(i)) look.TEXT else look.DIM;
-                    const text: [:0]const u8 = if (progress.bonusAt(v.class, i)) |n| n.bonus.letter() else "@";
-                    const mid = look.middleAt(r);
-                    face.centred(text, mid.x, mid.y, font.SMALL, ink);
-                },
-                .skills => {
-                    const s = progress.skills(v.class)[i];
-                    face.draw(s.act.name(), x + 10, y + 8, font.BODY, if (v.growth.unlocked(s.act)) look.TEXT else look.DIM);
-                    var rank: menu.Note(32) = .{};
-                    rank.say("Rank {d} / {d}", .{ v.growth.ranks.get(s.act), progress.RANKS });
-                    face.draw(rank.text(), x + 10, y + 34, font.SMALL, look.DIM);
-                },
-                .stats => unreachable,
+                .passives, .skills, .stats => unreachable,
             }
         }
     }
@@ -483,35 +480,6 @@ pub const Book = struct {
         const y = o.y + TOP;
         if (self.count(v) == 0) return;
         var rows = Rows{ .x = x, .y = y, .n = TITLE_ROWS };
-        if (self.page == .passives) {
-            const n = progress.bonusAt(v.class, self.cursor);
-            face.draw(if (n) |b| menu.named(b.bonus) else "Class start", x, y, font.HEAD, look.TEXT);
-            rows.put(face, "Bonus", if (n) |b| b.amount else 0);
-            rows.put(face, "Passive points", v.growth.passive_points);
-            rows.put(face, "State", @as([:0]const u8, if (v.growth.nodes.isSet(self.cursor)) "Allocated" else if (v.growth.available(self.cursor)) "Connected" else "Disconnected"));
-            rows.gap();
-            rows.put(face, "Respec", @as([:0]const u8, "Unavailable"));
-            button(face, actionBox(o, 0), verbOf(.passive), !self.tabs);
-            return;
-        }
-        if (self.page == .skills) {
-            const s = progress.skills(v.class)[self.cursor];
-            face.draw(s.act.name(), x, y, font.HEAD, look.TEXT);
-            rows.put(face, "Rank", v.growth.ranks.get(s.act));
-            rows.put(face, "Active points", v.growth.active_points);
-            rows.put(face, "Requires", if (s.parent) |p| p.name() else @as([:0]const u8, "-"));
-            rows.gap();
-            header(face, x, rows.next(), "NOW", "NEXT");
-            var next = v.growth.*;
-            next.ranks.set(s.act, @min(progress.RANKS, next.ranks.get(s.act) + 1));
-            comparison(face, x, rows.next(), "Mana", v.growth.cost(s.act), next.cost(s.act));
-            comparison(face, x, rows.next(), "Cooldown", v.growth.cooldown(s.act), next.cooldown(s.act));
-            comparison(face, x, rows.next(), "Rank damage %", v.growth.damageBonus(s.act), next.damageBonus(s.act));
-            rows.gap();
-            rows.put(face, "Turns", s.act.turns());
-            button(face, actionBox(o, 0), if (v.growth.ranks.get(s.act) == progress.RANKS) "Maximum rank" else if (v.growth.unlocked(s.act)) "Upgrade" else verbOf(.skill), !self.tabs);
-            return;
-        }
         const it = self.selected(v) orelse {
             face.draw(if (self.page == .nearby) v.nearby[self.cursor].label() else "Empty slot", x, y, font.HEAD, look.TEXT);
             button(face, actionBox(o, 0), if (self.page == .nearby) "Interact" else "Inventory", !self.tabs);
@@ -666,4 +634,37 @@ test "item actions require deliberate confirmation and default to cancel" {
     _ = book.step(&.{ .walk = .e }, screen, v);
     try std.testing.expect(book.step(&confirm, screen, v).? == .equip);
     try std.testing.expectEqual(@as(usize, 1), inv.n);
+}
+
+test "tree browsing zooms without spending and point prompts default to cancel" {
+    var inv = items.Inventory{};
+    var growth = progress.State.of(.archer);
+    growth.passive_points = 2;
+    growth.active_points = 2;
+    const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = growth.attributes(.archer) };
+    const screen = P{ .x = 1280, .y = 720 };
+    var book = Book{ .page = .passives, .tabs = false, .cursor = progress.passives.branchFirst(.rogue_evade) };
+    var zoom = input.State{};
+    zoom.pressed.insert(menu.CHANGE);
+    _ = book.step(&zoom, screen, v);
+    try std.testing.expect(book.zoom > 1);
+    var confirm = input.State{};
+    confirm.pressed.insert(menu.CONFIRM);
+    _ = book.step(&confirm, screen, v);
+    try std.testing.expect(book.prompt != null and !book.yes);
+    _ = book.step(&confirm, screen, v);
+    try std.testing.expect(book.prompt == null);
+    try std.testing.expectEqual(@as(u16, 2), growth.passive_points);
+    _ = book.step(&confirm, screen, v);
+    _ = book.step(&.{ .walk = .e }, screen, v);
+    try std.testing.expectEqual(book.cursor, book.step(&confirm, screen, v).?.passive);
+    book.choose(.skills);
+    book.tabs = false;
+    book.cursor = 0;
+    _ = book.step(&confirm, screen, v);
+    try std.testing.expect(book.prompt != null and !book.yes);
+    _ = book.step(&confirm, screen, v);
+    try std.testing.expect(book.prompt == null);
+    try std.testing.expectEqual(@as(u16, 2), growth.active_points);
+    std.debug.print("tree book: spatial browsing and zoom spend no points; passive and skill prompts default to cancel\n", .{});
 }

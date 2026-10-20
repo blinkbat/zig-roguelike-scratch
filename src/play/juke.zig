@@ -5,6 +5,7 @@ const grid = @import("../map/grid.zig");
 pub const RANGE: i32 = 2;
 /// The one leap that spends no turn.
 pub const FREE = true;
+pub const DONE = "jukes away";
 pub const COOLDOWN: u8 = 3;
 pub const COST: i32 = 25;
 pub const DESCRIPTION = std.fmt.comptimePrint("Jump to visible empty ground within {d} tiles.", .{RANGE});

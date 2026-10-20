@@ -12,68 +12,19 @@ const RANK_COST_PERCENT: i32 = 10;
 const XP_BASE: u64 = 40;
 const XP_STEP: u64 = 20;
 pub const POINTS_PER_LEVEL: u16 = 1;
-const Bonus = attrs.Bonus;
-pub const Node = struct { q: i32, r: i32, bonus: Bonus, amount: i32 };
-/// The passive tree is a hexagon of axial cells this many steps from its middle.
-const RADIUS: i32 = 4;
-/// Along the tree's rows every `CYCLE`th node from each of these grants it; the rest grant their region's attribute.
-const CYCLE = 7;
-const CYCLED = [_]struct { at: usize, bonus: Bonus }{ .{ .at = 0, .bonus = .life }, .{ .at = 3, .bonus = .mana }, .{ .at = 6, .bonus = .armour } };
-const AMOUNT = std.EnumArray(Bonus, i32).init(.{ .strength = 2, .dexterity = 2, .intelligence = 2, .life = 3, .mana = 5, .armour = 2 });
-pub const NODES = blk: {
-    var nodes: [3 * RADIUS * (RADIUS + 1) + 1]Node = undefined;
-    var n: usize = 0;
-    var r: i32 = -RADIUS;
-    while (r <= RADIUS) : (r += 1) {
-        var q: i32 = -RADIUS;
-        while (q <= RADIUS) : (q += 1) {
-            if (@abs(q + r) > RADIUS) continue;
-            var bonus: Bonus = if (q < 0) .strength else if (r < 0) .dexterity else .intelligence;
-            for (CYCLED) |c| if (n % CYCLE == c.at) {
-                bonus = c.bonus;
-            };
-            nodes[n] = .{ .q = q, .r = r, .bonus = bonus, .amount = AMOUNT.get(bonus) };
-            n += 1;
-        }
-    }
-    std.debug.assert(n == nodes.len);
-    break :blk nodes;
-};
+pub const passives = @import("passives.zig");
+pub const Node = passives.Node;
+pub const NODES = passives.NODES;
+pub const adjacent = passives.linked;
+pub const start = passives.start;
 
-pub fn adjacent(a: usize, b: usize) bool {
-    const dq = NODES[a].q - NODES[b].q;
-    const dr = NODES[a].r - NODES[b].r;
-    return @max(@max(@abs(dq), @abs(dr)), @abs(dq + dr)) == 1;
-}
-
-/// A kill is worth the foe's life in experience.
 pub fn xpOf(k: actor.Kind) u32 {
     return @intCast(actor.row(k).hp);
 }
 
-/// What allocating node `i` grants; the class's start grants nothing.
 pub fn bonusAt(c: hero.Class, i: usize) ?Node {
     return if (i == start(c)) null else NODES[i];
 }
-
-pub fn start(c: hero.Class) usize {
-    return STARTS.get(c);
-}
-
-const STARTS = blk: {
-    var out = std.EnumArray(hero.Class, usize).initUndefined();
-    for (hero.CLASSES) |c| {
-        const at: [2]i32 = switch (c) {
-            .knight => .{ -RADIUS, 0 },
-            .archer => .{ RADIUS, -RADIUS },
-            .wizard => .{ 0, RADIUS },
-        };
-        out.set(c, for (NODES, 0..) |n, i| {
-            if (n.q == at[0] and n.r == at[1]) break i;
-        } else unreachable);
-    }
-    break :blk out;
-};
 
 pub const Skill = struct { act: skillbar.Act, parent: ?skillbar.Act = null, initial: bool = false, at: mathx.P };
 pub fn skills(c: hero.Class) []const Skill {
@@ -157,8 +108,10 @@ pub const State = struct {
 
     pub fn available(self: *const State, i: usize) bool {
         if (i >= NODES.len or self.nodes.isSet(i)) return false;
-        var it = self.nodes.iterator(.{});
-        while (it.next()) |j| if (adjacent(i, j)) return true;
+        var buf: [passives.MAX_FEED]usize = undefined;
+        const fs = passives.feeders(i, &buf);
+        if (fs.len == 0) return true;
+        for (fs) |j| if (self.nodes.isSet(j)) return true;
         return false;
     }
 
@@ -172,7 +125,7 @@ pub const State = struct {
     pub fn attributes(self: *const State, c: hero.Class) attrs.Attrs {
         var out = c.attrs();
         var it = self.nodes.iterator(.{});
-        while (it.next()) |i| if (bonusAt(c, i)) |n| out.add(n.bonus, n.amount);
+        while (it.next()) |i| if (bonusAt(c, i)) |n| n.apply(&out);
         return out;
     }
 
@@ -264,4 +217,175 @@ test "experience awards both point pools; passive paths cross class regions; act
     try std.testing.expectEqual(@as(u8, 2), top.cooldown(.blink));
     try std.testing.expectEqual(@as(i32, 0), top.damageBonus(.blink));
     std.debug.print("progression: 3 classes traverse all {d} passive nodes; 3 ranks, prerequisites and separate point pools checked; top-rank blink cools {d}, juke {d}, ward {d}\n", .{ NODES.len, top.cooldown(.blink), top.cooldown(.juke), top.cooldown(.mana_shield) });
+}
+
+test "passive origins preserve class bases and failed purchases preserve the whole state" {
+    for (hero.CLASSES) |c| {
+        var state = State.of(c);
+        try std.testing.expectEqual(@as(usize, 1), state.nodes.count());
+        try std.testing.expect(state.nodes.isSet(start(c)));
+        try std.testing.expectEqualDeep(c.attrs(), state.attributes(c));
+        for (hero.CLASSES) |other| {
+            if (other == c) continue;
+            const root = start(other);
+            try std.testing.expect(state.available(root));
+            const poor = state;
+            try std.testing.expect(!state.allocate(root));
+            try std.testing.expectEqualDeep(poor, state);
+
+            state.passive_points = 1;
+            state.active_points = 7;
+            const before = state.attributes(c);
+            try std.testing.expect(state.allocate(root));
+            try std.testing.expectEqual(@as(u16, 0), state.passive_points);
+            try std.testing.expectEqual(@as(u16, 7), state.active_points);
+            var want = before;
+            const at: attrs.Attr = switch (other) {
+                .knight => .strength,
+                .archer => .dexterity,
+                .wizard => .intelligence,
+            };
+            want.points.getPtr(at).* += 2;
+            try std.testing.expectEqualDeep(want, state.attributes(c));
+        }
+        state.passive_points = 3;
+        for ([_]usize{ start(c), NODES.len, passives.branchFirst(.warrior_life) + 11 }) |blocked| {
+            const before = state;
+            try std.testing.expect(!state.allocate(blocked));
+            try std.testing.expectEqualDeep(before, state);
+        }
+    }
+    std.debug.print("passive origins: 3 free class starts, 6 paid alternate starts, and 15 failed purchases preserve point pools and state\n", .{});
+}
+
+test "passive branch gates advance one layer and apply exact stat interest and capstone packages" {
+    const route = [_]usize{ 0, 1, 3, 6, 9, 11 };
+    for (std.enums.values(passives.Branch)) |b| {
+        const c: hero.Class = switch (b.arm()) {
+            .warrior => .knight,
+            .rogue => .archer,
+            .wizard => .wizard,
+        };
+        var state = State.of(c);
+        state.passive_points = route.len;
+        state.active_points = 9;
+        for (route, 0..) |offset, rung| {
+            const node = passives.branchFirst(b) + offset;
+            try std.testing.expect(state.available(node));
+            if (rung + 1 < route.len) {
+                const next = passives.branchFirst(b) + route[rung + 1];
+                const before = state;
+                try std.testing.expect(!state.available(next));
+                try std.testing.expect(!state.allocate(next));
+                try std.testing.expectEqualDeep(before, state);
+            }
+            const points = state.passive_points;
+            try std.testing.expect(state.allocate(node));
+            try std.testing.expectEqual(points - 1, state.passive_points);
+            try std.testing.expectEqual(@as(u16, 9), state.active_points);
+        }
+        try std.testing.expectEqual(@as(u16, 0), state.passive_points);
+        try std.testing.expectEqual(@as(usize, 7), state.nodes.count());
+    }
+
+    const Case = struct {
+        class: hero.Class,
+        branch: passives.Branch,
+        attr: attrs.Attr,
+        points: i32,
+        life: i32 = 0,
+        mana: i32 = 0,
+        armour: i32 = 0,
+        style: attrs.Style,
+        damage: i32 = 0,
+    };
+    const cases = [_]Case{
+        .{ .class = .knight, .branch = .warrior_life, .attr = .strength, .points = 9, .life = 12, .armour = 11, .style = .melee },
+        .{ .class = .knight, .branch = .warrior_berserk, .attr = .strength, .points = 9, .style = .melee, .damage = 30 },
+        .{ .class = .archer, .branch = .rogue_ranged, .attr = .dexterity, .points = 8, .style = .ranged, .damage = 34 },
+        .{ .class = .wizard, .branch = .wizard_cast, .attr = .intelligence, .points = 11, .mana = 6, .style = .spell, .damage = 19 },
+    };
+    for (cases) |case| {
+        var state = State.of(case.class);
+        state.passive_points = route.len;
+        for (route) |offset| try std.testing.expect(state.allocate(passives.branchFirst(case.branch) + offset));
+        const base = case.class.attrs();
+        var want = base;
+        want.points.getPtr(case.attr).* += case.points;
+        want.life_bonus += case.life;
+        want.mana_bonus += case.mana;
+        want.armour += case.armour;
+        want.damage_bonus.getPtr(case.style).* += case.damage;
+        const actual = state.attributes(case.class);
+        try std.testing.expectEqualDeep(want, actual);
+        try std.testing.expectEqual(base.increase(case.style) + case.points + case.damage, actual.increase(case.style));
+        try std.testing.expectEqual(want.life(), actual.life());
+        try std.testing.expectEqual(want.mana(), actual.mana());
+    }
+    std.debug.print("passive branches: 36 one-point layer gates, 30 blocked skips; exact totals cover all 9 grant kinds, riders and 4 capstone routes\n", .{});
+}
+
+test "passive bridges pay both attributes and cross either way without opening inward prerequisites" {
+    var crossings: usize = 0;
+    for (std.enums.values(passives.Seam)) |seam| {
+        for (passives.BRIDGE_RINGS, 0..) |ring, bridge_at| {
+            const anchors = passives.bridgeAnchors(seam, ring);
+            const bridge = passives.bridgeFirst(seam) + bridge_at;
+            for (0..2) |side| {
+                const near = anchors[side];
+                const far = anchors[1 - side];
+                const c: hero.Class = switch (NODES[near].arm) {
+                    .warrior => .knight,
+                    .rogue => .archer,
+                    .wizard => .wizard,
+                };
+                var state = State.of(c);
+                state.passive_points = 100;
+                try std.testing.expect(!state.available(bridge));
+                for (passives.branchFirst(NODES[near].branch.?)..near + 1) |i| try std.testing.expect(state.allocate(i));
+                try std.testing.expect(state.available(bridge));
+                try std.testing.expect(!state.available(far));
+                const before = state.attributes(c);
+                const points = state.passive_points;
+                try std.testing.expect(state.allocate(bridge));
+                try std.testing.expectEqual(points - 1, state.passive_points);
+                var want = before;
+                const amount: i32 = if (ring == 3) 1 else 2;
+                switch (seam) {
+                    .warrior_rogue => {
+                        want.points.getPtr(.strength).* += amount;
+                        want.points.getPtr(.dexterity).* += amount;
+                    },
+                    .rogue_wizard => {
+                        want.points.getPtr(.dexterity).* += amount;
+                        want.points.getPtr(.intelligence).* += amount;
+                    },
+                    .wizard_warrior => {
+                        want.points.getPtr(.intelligence).* += amount;
+                        want.points.getPtr(.strength).* += amount;
+                    },
+                }
+                try std.testing.expectEqualDeep(want, state.attributes(c));
+                try std.testing.expect(state.available(far));
+                try std.testing.expect(state.allocate(far));
+                try std.testing.expectEqual(points - 2, state.passive_points);
+                var buf: [passives.MAX_FEED]usize = undefined;
+                for (passives.feeders(far, &buf)) |prerequisite| {
+                    if (NODES[prerequisite].seam != null) continue;
+                    try std.testing.expect(!state.available(prerequisite));
+                }
+                var outward = false;
+                for (NODES, 0..) |n, i| {
+                    if (n.branch != NODES[far].branch or n.ring != ring + 1) continue;
+                    if (std.mem.indexOfScalar(usize, passives.feeders(i, &buf), far) == null) continue;
+                    try std.testing.expect(state.available(i));
+                    outward = true;
+                }
+                try std.testing.expect(outward);
+                crossings += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 12), crossings);
+    std.debug.print("passive bridges: all 12 directional crossings apply exact paired stats, open the far anchor and advance outward only\n", .{});
 }

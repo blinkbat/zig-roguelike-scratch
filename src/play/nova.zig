@@ -13,6 +13,7 @@ pub const OPEN_CELLS: usize = @intCast(grid.Cells.square(RANGE) - 1);
 pub const COLD_LO: i32 = 3;
 pub const COLD_HI: i32 = 5;
 pub const VERB = "freezes";
+pub const DONE = "casts a frost nova";
 pub const TAKES = glacial.TAKES;
 pub const ELEMENT: damage.Element = .cold;
 pub const DESCRIPTION = std.fmt.comptimePrint("{s} to every foe within {d} tiles. {s}.", .{ BASE.text(ELEMENT), RANGE, glacial.CHILL_NOTE });

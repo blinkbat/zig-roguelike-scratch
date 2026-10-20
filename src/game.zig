@@ -1047,6 +1047,7 @@ fn leap(g: *Game, from: P, act: skillbar.Act) void {
         g.fx.shimmer(mathx.centre(from), look.WARD);
         g.fx.shimmer(mathx.centre(to), look.WARD);
     } else g.fx.juke(from, to);
+    sayDone(g, act);
     if (g.travel != null) holdUntil(g, fx.JUKE_S);
     g.unsaved = true;
     castSight(g, to);
@@ -1134,13 +1135,15 @@ fn spell(g: *Game, comptime act: skillbar.Act) void {
     const M = skillbar.Act.skill(act);
     const h = g.heroActor() orelse return;
     spend(g, act);
-    g.log.say("{s} casts {s}.", .{ g.name.text(), act.name() });
     if (comptime act.surrounds()) {
         const s = Stroke{ .from = h.at, .wait = CAST_S };
         holdUntil(g, s.wait);
-        areaHit(g, act, h.at, M.around(&g.lv, h.at), s, null, false);
+        const area = M.around(&g.lv, h.at);
+        if (foesIn(g, area).n == 0) sayDone(g, act);
+        areaHit(g, act, h.at, area, s, null, false);
         g.lead = s.wait;
     } else if (comptime act.wards()) {
+        sayDone(g, act);
         h.ward.raise();
         g.fx.shimmer(mathx.centre(h.at), look.WARD);
         settleNow(g, heroSlot(g).?);
@@ -1192,7 +1195,7 @@ fn rush(g: *Game, from: P, act: skillbar.Act) void {
             const i = heroSlot(g).?;
             heroTo(g, stop);
             const s = Stroke{ .from = stop, .wait = glideHeld(g, i, g.glide[i].toward(stop, 0)) };
-            if (occupied) knock(g, a, d, s);
+            if (occupied) knock(g, a, d, s) else sayDone(g, a);
             turnToward(g, g.hero, d.delta().x);
             g.lead = s.wait;
         },
@@ -1321,6 +1324,11 @@ fn loose(g: *Game, from: P, act: skillbar.Act) void {
         },
     } else g.log.say("{s}'s {s} finds nothing.", .{ g.name.text(), act.bolt() orelse "arrow" });
     endTurn(g);
+}
+
+fn sayDone(g: *Game, act: skillbar.Act) void {
+    const done = act.done() orelse return;
+    g.log.say("{s} {s}.", .{ g.name.text(), done });
 }
 
 fn barrelVerb(comptime act: skillbar.Act) []const u8 {
@@ -1657,9 +1665,11 @@ fn fell(g: *Game, id: u16) void {
     const at = g.pool.items[fallen].at;
     const name = actor.row(kind).name;
     g.kills += 1;
-    const levels = g.growth.gain(progress.xpOf(kind));
-    const points = levels * progress.POINTS_PER_LEVEL;
-    if (levels > 0) g.log.push(.progress, "Level {d}: +{d} passive, +{d} active points.", .{ g.growth.level, points, points });
+    const xp = progress.xpOf(kind);
+    const was = g.growth;
+    const levels = g.growth.gain(xp);
+    g.log.push(.progress, "{s} gains {d} experience.", .{ g.name.text(), xp });
+    if (levels > 0) g.log.push(.progress, "Level {d}: +{d} passive, +{d} active points.", .{ g.growth.level, g.growth.passive_points - was.passive_points, g.growth.active_points - was.active_points });
     if (g.loot_rng.percent(items.DROP_PERCENT)) {
         const added = g.ground.add(.{ .item = items.roll(&g.loot_rng), .at = at, .source = id });
         std.debug.assert(added);
@@ -2279,7 +2289,7 @@ fn climateNow(g: *const Game) climate.Climate {
 /// Per second, how fast the sky drawn catches the hour a turn moved on.
 const HOUR_EASE: f32 = 4;
 /// Per second, how fast the experience bar fills toward a drawn turn's experience.
-const XP_EASE: f32 = 2;
+const XP_EASE: f32 = 8;
 
 /// Levels gained so far, the current one's progress as the fraction.
 fn xpLevels(g: *const Game) f32 {
@@ -2386,7 +2396,7 @@ fn characterCommand(g: *Game, command: book.Command) void {
     switch (command) {
         .passive => |i| {
             if (!g.growth.allocate(i)) return;
-            g.log.push(.progress, "{s} +{d}.", .{ menu.named(progress.NODES[i].bonus), progress.NODES[i].amount });
+            g.log.push(.progress, "{s} allocated.", .{progress.NODES[i].name});
             syncStats(g);
             g.unsaved = true;
             return;
@@ -3682,7 +3692,7 @@ fn shoot(g: *Game) !void {
     _ = g.pool.damage(&g.lv, g.hero, 6);
     settle(g);
     openLeap(g, boundTo(g, .juke).by, .juke);
-    g.mark = .{ .x = 23, .y = 15 };
+    g.mark = .{ .x = 20 + juke.RANGE, .y = 15 };
     try capture(g, target, SHOTS_DIR ++ "/juke-aim.png");
     confirmAim(g);
     g.st = .{};
@@ -3890,6 +3900,48 @@ fn shootCharacter(g: *Game) !void {
         if (page == .passives) g.character.cursor = progress.start(g.class);
         if (page == .equipment) g.character.cursor = @intFromEnum(items.Slot.helm);
         try capture(g, target, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ ".png");
+    }
+    {
+        const was_class = g.class;
+        const was_growth = g.growth;
+        defer g.class = was_class;
+        defer g.growth = was_growth;
+        inline for (heroes.CLASSES) |class| {
+            g.class = class;
+            g.growth = progress.State.of(class);
+            g.growth.active_points = 2;
+            g.character.choose(.skills);
+            g.character.tabs = false;
+            g.character.cursor = progress.skills(class).len - 1;
+            try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-future.png");
+            g.character.cursor = if (class == .wizard) 4 else 0;
+            try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-description.png");
+            g.character.cursor = progress.skills(class).len - 1;
+            g.growth.active_points = 30;
+            for (progress.skills(class)) |s| while (g.growth.learn(class, s.act)) {};
+            try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-maximum.png");
+        }
+        g.class = .knight;
+        g.growth = progress.State.of(g.class);
+        g.growth.passive_points = 30;
+        const branch = progress.passives.branchFirst(.warrior_life);
+        for (branch..branch + progress.passives.PER_BRANCH - 1) |i| _ = g.growth.allocate(i);
+        const bridge = progress.passives.bridgeFirst(.warrior_rogue);
+        _ = g.growth.allocate(bridge);
+        g.character.choose(.passives);
+        g.character.tabs = false;
+        g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-capstone.png");
+        g.character.zoom = 2.2;
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-zoom.png");
+        g.character.zoom = 1;
+        g.character.cursor = branch + 1;
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-interest.png");
+        g.character.cursor = progress.passives.bridgeFirst(.warrior_rogue);
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-bridge.png");
+        g.growth.passive_points = 0;
+        g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-no-points.png");
     }
     g.character.choose(.inventory);
     g.character.tabs = false;
@@ -6719,7 +6771,8 @@ test "a foe the gas kills out of sight leaves nothing drawn and nothing said" {
     try std.testing.expectEqual(@as(usize, 0), g.fx.due_n);
     for (g.fx.motes) |m| try std.testing.expect(m.life <= 0);
     try std.testing.expectEqualStrings("The last rat is dead.", g.log.line(0).?);
-    try std.testing.expectEqual(said + 1, g.log.n);
+    try std.testing.expect(std.mem.endsWith(u8, g.log.line(1).?, "experience."));
+    try std.testing.expectEqual(said + 2, g.log.n);
 }
 
 test "a foe the gas kills after it steps keeps its place in the turn, and its death lands as it arrives" {
@@ -7923,9 +7976,10 @@ test "the experience bar holds a turn's experience until the turn is drawn, then
     const aim = xpLevels(g);
     try std.testing.expect(g.xp_shown > 0 and g.xp_shown < aim);
     var t: f32 = 0;
-    while (g.xp_shown != aim and t < 5) : (t += TEST_DT) update(g, TEST_DT);
+    while (g.xp_shown != aim and t < 1) : (t += TEST_DT) update(g, TEST_DT);
     std.debug.print("experience bar: {d:.3} of a level drawn {d:.2} s after the turn\n", .{ g.xp_shown, t });
-    try std.testing.expect(t > 1 and t < 5);
+    try std.testing.expect(t > 0 and t < 1);
+    try std.testing.expectEqual(aim, g.xp_shown);
 }
 
 test "a level reached exactly empties the bar, and the book shows it only once the turn is drawn" {
@@ -7946,6 +8000,32 @@ test "a level reached exactly empties the bar, and the book shows it only once t
     try std.testing.expectEqual(@as(u16, 2), bookView(g, &nearby).growth.level);
     try std.testing.expectEqual(@as(i32, 7), bookView(g, &nearby).gold);
     std.debug.print("exact level-up: bar fill {d} after {d:.2} s\n", .{ g.xp_shown - @floor(g.xp_shown), t });
+}
+
+test "the log says the blow and the experience it awards, a juke as itself, and never a bare skill use" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
+    g.pool.get(2).?.hp = 1;
+    settle(g);
+    use(g, .shoot);
+    press(g, CONFIRM);
+    try std.testing.expect(g.pool.get(2) == null);
+    var buf: [64]u8 = undefined;
+    const gained = try std.fmt.bufPrint(&buf, "Archer gains {d} experience.", .{progress.xpOf(.rat)});
+    var said = false;
+    for (0..g.log.n) |i| {
+        const l = g.log.line(i).?;
+        said = said or std.mem.eql(u8, l, gained);
+        try std.testing.expect(std.mem.indexOf(u8, l, " uses ") == null);
+    }
+    try std.testing.expect(said);
+    while (!quiet(g)) update(g, TEST_DT);
+    openLeap(g, boundTo(g, .juke).by, .juke);
+    g.mark = .{ .x = 20 + juke.RANGE, .y = 20 };
+    confirmAim(g);
+    try std.testing.expectEqualStrings("Archer jukes away.", g.log.line(0).?);
+    std.debug.print("log: \"{s}\" then \"{s}\"\n", .{ gained, g.log.line(0).? });
 }
 
 test "interact during door travel stays an interaction on arrival" {

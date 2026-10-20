@@ -11,7 +11,7 @@ later owner edits.
 |---|---|---|---|
 | Skill icons and controller/key prompts | Assistant, procedural line art | `src/gfx/look.zig`: `skillLines`, `inkSkill`, `Prompt` | Replace skill glyphs when desired; input symbols stay basic |
 | Life/mana orbs and status icons | Assistant, procedural shapes | `src/ui/hud.zig` | Paint orb and ailment components in the existing HUD template |
-| Equipment slots, tree nodes and item markers | Assistant, code-drawn placeholders | `src/ui/book.zig`; `src/game.zig` loot drawing | Basic rectangles, letters, `*` items and `$` gold; no item sprites yet |
+| Equipment slots, tree nodes and item markers | Assistant, code-drawn placeholders; radial tree layout adapted from the owner's `zig-soulslike` | `src/ui/book.zig`, `src/ui/trees.zig`; `src/game.zig` loot drawing | Basic rectangles, circles, lines, shared skill glyphs, `*` items and `$` gold; no item sprites yet |
 | Event panel | Owner border, assistant layout and colors | `src/ui/journal.zig`, `assets/hud-border.png` | Layout/color review; border painting is the owner's |
 | Missing body/tile pictures | Assistant glyph fallback | `src/gfx/look.zig`: body/tile lookup | Unpainted kinds retain glyphs |
 | Combat effects, weather, lighting, water reflections | Assistant procedural rendering | `src/gfx/fx.zig`, `pixel.zig`, `weather.zig`, `light.zig`; map drawing | Effects review; these are not painted source pixels |

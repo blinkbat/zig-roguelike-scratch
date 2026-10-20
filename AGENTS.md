@@ -84,7 +84,14 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   on, without naming any input. Any back-out or the same button again closes it; it spends no turn.
   In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `game.hovered`).
 - Pause > Character opens equipment, the inventory list, stats, passives and class skills in `ui/book.zig`.
-  `play/items.zig` owns slot/requirement transactions; `play/progress.zig` owns XP, point pools and trees.
+  `play/items.zig` owns slot/requirement transactions; `play/progress.zig` owns XP, point pools and skill ranks;
+  `play/passives.zig` owns the radial passive graph and grants; `ui/trees.zig` draws both tree panels.
+  Before changing either panel, read its maintained reference: `docs/DIABLO2_SKILL_TREE.md` for skills,
+  `docs/POE2_PASSIVE_TREE.md` for passives. Keep those documents aligned with subsequent changes.
+  Passives lift the Soulslike three-arm, six-branch layout: small stat nodes, larger interest nodes,
+  paired-stat bridges and six double-ring capstones. Use very simple graphics. All three origins open
+  from the central hub; the class origin is free and grants no bonus. Branches follow outward feeders;
+  bridges work both ways. The same feeders must govern eligibility and drawn links.
   `Game.character` holds only unsaved navigation state; item/point actions are commands resolved by the game.
   Item changes spend one turn after a separate Cancel-first confirmation; point allocation is free.
   Interact includes underfoot and adjacent visible objects; a press while busy waits for `quiet` (`Queued.interact`)

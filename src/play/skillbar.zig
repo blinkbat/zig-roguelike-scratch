@@ -177,6 +177,13 @@ pub const Act = enum {
         };
     }
 
+    /// What the log says the hero did, when no blow or barrel says it.
+    pub fn done(a: Act) ?[]const u8 {
+        return switch (a) {
+            inline else => |t| if (comptime has(t, "DONE")) module(t).?.DONE else null,
+        };
+    }
+
     /// Its physical and elemental rolls before its attribute; an arrow's physical is the bow's.
     pub fn bases(a: Act) Bases {
         return switch (a) {
@@ -243,7 +250,7 @@ pub const Act = enum {
     }
 
     /// Every decl probed by name above, so renaming one in its module fails the build.
-    const PROBED = .{ "DESCRIPTION", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE", "BASE" };
+    const PROBED = .{ "DESCRIPTION", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE", "BASE", "DONE" };
 
     comptime {
         @setEvalBranchQuota(10_000);

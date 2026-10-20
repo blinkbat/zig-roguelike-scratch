@@ -60,6 +60,7 @@ test {
     _ = @import("play/attrs.zig");
     _ = @import("play/items.zig");
     _ = @import("play/progress.zig");
+    _ = @import("play/passives.zig");
     _ = @import("play/bleeding.zig");
     _ = @import("play/burning.zig");
     _ = @import("play/glacial.zig");
@@ -93,6 +94,7 @@ test {
     _ = @import("ui/menu.zig");
     _ = @import("ui/hud.zig");
     _ = @import("ui/book.zig");
+    _ = @import("ui/trees.zig");
     _ = @import("ui/journal.zig");
     _ = @import("ui/naming.zig");
     _ = @import("game.zig");
