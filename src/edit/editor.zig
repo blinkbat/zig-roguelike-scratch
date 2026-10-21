@@ -1692,25 +1692,23 @@ fn place(ed: *Editor, p: P) void {
 }
 
 fn remove(ed: *Editor, p: P) void {
+    if (!removable(ed, p)) return;
     switch (ed.tool) {
         .paint => paintTile(ed, p, ed.ink.get(.second)),
         .barrel => takeBarrel(ed, &ed.plan().bespoke, p),
         .torch => takeTorch(ed, &ed.plan().bespoke, p),
         .foe => takeFoe(ed, &ed.plan().bespoke, p),
         .door => {
-            const k = ed.doorAt(p) orelse return;
-            ed.map.removeDoor(.{ .node = ed.node, .door = k });
+            ed.map.removeDoor(.{ .node = ed.node, .door = ed.doorAt(p).? });
             if (ed.painted()) |b| ed.here().pruneAt(b, p);
             ed.pick = null;
             ed.changed();
         },
         .link => {
-            const k = ed.doorAt(p) orelse return;
-            if (ed.here().door[k].to == null) return;
-            ed.map.unlink(.{ .node = ed.node, .door = k });
+            ed.map.unlink(.{ .node = ed.node, .door = ed.doorAt(p).? });
             ed.relinked();
         },
-        .start => {},
+        .start => unreachable,
     }
 }
 
@@ -3122,9 +3120,9 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         return;
     }
     if (!grid.Level.inside(m) or !ed.mouseIn(c)) return;
-    if (ed.shape == .select) return outlineCells(ed, c, brushBox(m, 1), PICKED);
+    if (ed.shape == .select or (ed.desk.alt and ed.stroke == .none)) return outlineCells(ed, c, brushBox(m, 1), PICKED);
+    const erase = if (ed.stroke == .none) ed.desk.erase else ed.stroke == .erase;
     if (ed.tool.broad()) {
-        const erase = if (ed.stroke == .none) ed.desk.erase else ed.stroke == .erase;
         const ghost = Ghost.of(ed, g, c, ed.ink.get(.of(erase)));
         const begins = if (ed.stroke == .none) spanOf(ed, ed.desk.shift) else null;
         if (begins) |sh| {
@@ -3135,12 +3133,14 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         return outlineCells(ed, c, brushBox(m, if (ed.shape == .fill) 1 else ed.brushSize()), if (ed.tool.fits(ed.here())) HOVER else WARN);
     }
     const r = ed.cellRect(c, m);
-    const ok = legal(ed, m);
-    if (toolPicture(g, ed.tool)) |t| {
-        look.stretch(t, r, GHOST);
-    } else {
-        const l = ed.tool.look_();
-        glyph(g, l.ch, r, look.fade(l.fg, GHOST_A));
+    const ok = if (erase) removable(ed, m) else legal(ed, m);
+    if (!erase) {
+        if (toolPicture(g, ed.tool)) |t| {
+            look.stretch(t, r, GHOST);
+        } else {
+            const l = ed.tool.look_();
+            glyph(g, l.ch, r, look.fade(l.fg, GHOST_A));
+        }
     }
     rl.drawRectangleLinesEx(r, INK_EDGE, if (ok) HOVER else WARN);
     if (!ok) rl.drawRectangleRec(r, CUT_OFF);
@@ -3166,6 +3166,21 @@ fn legal(ed: *Editor, p: P) bool {
         .foe => |k| nd.foeGoes(&nd.plan.bespoke, p, k),
         .door => nd.takesDoor(p),
         .link => nd.doorAt(p) != null,
+    };
+}
+
+fn removable(ed: *Editor, p: P) bool {
+    const nd = ed.here();
+    if (!ed.tool.fits(nd)) return false;
+    const i = grid.Level.idx(p);
+    return switch (ed.tool) {
+        .paint => true,
+        .barrel => nd.plan.bespoke.barrel[i],
+        .torch => nd.plan.bespoke.torch.has(p),
+        .foe => nd.plan.bespoke.foeAt(p) != null,
+        .door => nd.doorAt(p) != null,
+        .link => if (nd.doorAt(p)) |k| nd.door[k].to != null else false,
+        .start => false,
     };
 }
 
@@ -3297,7 +3312,7 @@ fn drawModal(ed: *Editor, g: *game.Game) void {
                 y += ROW_H;
             }
             std.debug.assert(y + @as(i32, if (ed.listing.n == 0) TEXT else 0) <= buttons_y);
-            textFace(g).draw(OPEN_CRIB, x + PAD, buttons_y + TEXT_DY, SMALL, look.DIM);
+            textFace(g).draw(OPEN_CRIB, x + PAD, buttons_y + SMALL_DY, SMALL, look.DIM);
             backButton(ed, g, bx, buttons_y, "Cancel");
         },
         .none, .help, .objects => {},
@@ -3662,6 +3677,31 @@ fn paintClick(ed: *Editor, t: grid.Tile, p: P) void {
     ed.ink.set(.first, t);
     click(ed, .paint, p);
     ed.ink.set(.first, .floor);
+}
+
+test "the erasing cursor marks a cell legal exactly when erasing it there removes something" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    ed.tool = .paint;
+    laySpan(ed, .{ .from = .{ .x = 4, .y = 5 }, .erase = false, .shape = .rect }, .{ .x = 9, .y = 5 });
+    click(ed, .door, .{ .x = 10, .y = 5 });
+    click(ed, .{ .foe = .rat }, .{ .x = 5, .y = 5 });
+    click(ed, .barrel, .{ .x = 7, .y = 5 });
+    click(ed, .torch, .{ .x = 6, .y = 4 });
+    const tools = [_]Tool{ .barrel, .torch, .{ .foe = .pib }, .link, .start, .door };
+    const cells = [_]P{ .{ .x = 5, .y = 5 }, .{ .x = 7, .y = 5 }, .{ .x = 6, .y = 4 }, .{ .x = 10, .y = 5 }, .{ .x = 8, .y = 5 } };
+    var removed: usize = 0;
+    for (tools) |t| for (cells) |p| {
+        ed.tool = t;
+        ed.gesture();
+        const before = ed.hist_at;
+        const want = removable(ed, p);
+        remove(ed, p);
+        try std.testing.expectEqual(want, ed.hist_at != before);
+        if (want) removed += 1;
+    };
+    try std.testing.expectEqual(@as(usize, 4), removed);
+    std.debug.print("erase cursor: {d} tool/cell pairs agree with erasing, {d} removed\n", .{ tools.len * cells.len, removed });
 }
 
 test "painting a bespoke node: a door opens its wall and no wall paints over it" {

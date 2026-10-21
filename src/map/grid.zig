@@ -710,6 +710,8 @@ pub fn distances(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32
     return flood.tail;
 }
 
+pub const TEST_SEED_STRIDE = 7919;
+
 pub fn expectAllReached(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32) !void {
     try std.testing.expectEqual(lv.openCount(), distances(lv, from, out, queue));
 }

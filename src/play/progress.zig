@@ -173,7 +173,7 @@ pub const State = struct {
         return @as(i32, self.ranks.get(act) -| 1) * RANK_DAMAGE_PERCENT;
     }
 
-    pub fn skillAttrs(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) attrs.Attrs {
+    fn skillAttrs(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) attrs.Attrs {
         var out = equipped;
         if (act.attack()) |attack| out.damage_bonus.getPtr(gear.scaling(attack)).* += self.damageBonus(act);
         return out;

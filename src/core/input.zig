@@ -9,6 +9,9 @@ const SHIFT_KEYS = [_]rl.KeyboardKey{ .left_shift, .right_shift };
 const CTRL_KEYS = [_]rl.KeyboardKey{ .left_control, .right_control };
 const ALT_KEYS = [_]rl.KeyboardKey{ .left_alt, .right_alt };
 const LEAN_KEYS = SHIFT_KEYS;
+const ZOOM_IN_KEYS = [_]rl.KeyboardKey{ .equal, .kp_add };
+const ZOOM_OUT_KEYS = [_]rl.KeyboardKey{ .minus, .kp_subtract };
+const OVERVIEW_KEY: rl.KeyboardKey = .home;
 
 /// Last active device; selects maker-specific button captions.
 pub const Device = enum {
@@ -391,6 +394,11 @@ pub const Stepper = struct {
 
     const HELD = std.math.inf(f32);
 
+    /// A way held over from another screen, still down.
+    fn carried(self: Stepper) bool {
+        return self.due == HELD;
+    }
+
     /// A diagonal that has not stepped survives one of its keys coming up first.
     fn owe(self: Stepper, now: mathx.Dir) ?mathx.Dir {
         const last = self.latched orelse return now;
@@ -514,15 +522,12 @@ pub const TreeKeys = struct {
     const PAD_ZOOM_OUT = walkPad(.s);
     pub const PAD_OVERVIEW: Button = .inspect;
     pub const PAN_CAPTION = keyName(SHIFT_KEYS[0]);
-    const ZOOM_IN = [2]rl.KeyboardKey{ .equal, .kp_add };
-    const ZOOM_OUT = [2]rl.KeyboardKey{ .minus, .kp_subtract };
     const PAGE_IN: rl.KeyboardKey = .page_up;
     const PAGE_OUT: rl.KeyboardKey = .page_down;
-    const OVERVIEW: rl.KeyboardKey = .home;
     pub const BROWSE_CAPTION = letters(&WALKS);
-    pub const ZOOM_IN_CAPTION = keyName(ZOOM_IN[0]);
-    pub const ZOOM_OUT_CAPTION = keyName(ZOOM_OUT[0]);
-    pub const OVERVIEW_CAPTION = keyName(OVERVIEW);
+    pub const ZOOM_IN_CAPTION = keyName(ZOOM_IN_KEYS[0]);
+    pub const ZOOM_OUT_CAPTION = keyName(ZOOM_OUT_KEYS[0]);
+    pub const OVERVIEW_CAPTION = keyName(OVERVIEW_KEY);
 };
 
 pub const State = struct {
@@ -687,21 +692,22 @@ pub const State = struct {
         const pan_keys = on_tree and free_keys and either(SHIFT_KEYS);
         if (on_tree and free_keys) {
             self.tree.dt = dt;
+            const carried = self.step.carried();
             if (live) |at| {
                 const px = rl.getGamepadAxisMovement(at, .right_x);
                 const py = rl.getGamepadAxisMovement(at, .right_y);
                 if (std.math.hypot(px, py) >= TreeKeys.PAN_DEADZONE) self.tree.pan = .{ .x = px, .y = py };
-                self.tree.zoom = @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_IN)) 1 else 0) - @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_OUT)) 1 else 0);
+                if (!carried) self.tree.zoom = @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_IN)) 1 else 0) - @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_OUT)) 1 else 0);
                 self.tree.reset = self.padHit(at, TreeKeys.PAD_OVERVIEW.pad(), &before);
             }
-            if (pan_keys) {
+            if (pan_keys and !carried) {
                 const p = heldWalk(&WALKS, false);
                 const length = @max(1, std.math.hypot(@as(f32, @floatFromInt(p.x)), @as(f32, @floatFromInt(p.y))));
                 self.tree.pan = .{ .x = @as(f32, @floatFromInt(p.x)) / length, .y = @as(f32, @floatFromInt(p.y)) / length };
             }
-            if (either(TreeKeys.ZOOM_IN) or rl.isKeyDown(TreeKeys.PAGE_IN)) self.tree.zoom += 1;
-            if (either(TreeKeys.ZOOM_OUT) or rl.isKeyDown(TreeKeys.PAGE_OUT)) self.tree.zoom -= 1;
-            self.tree.reset = self.tree.reset or rl.isKeyPressed(TreeKeys.OVERVIEW);
+            if (either(ZOOM_IN_KEYS) or rl.isKeyDown(TreeKeys.PAGE_IN)) self.tree.zoom += 1;
+            if (either(ZOOM_OUT_KEYS) or rl.isKeyDown(TreeKeys.PAGE_OUT)) self.tree.zoom -= 1;
+            self.tree.reset = self.tree.reset or rl.isKeyPressed(OVERVIEW_KEY);
         }
         var x: f32 = 0;
         var y: f32 = 0;
@@ -838,9 +844,9 @@ pub const Desk = struct {
     pub const BACK_KEY: rl.KeyboardKey = .escape;
     pub const SMALLER_KEY: rl.KeyboardKey = .left_bracket;
     pub const BIGGER_KEY: rl.KeyboardKey = .right_bracket;
-    pub const ZOOM_OUT_KEY: rl.KeyboardKey = .minus;
-    pub const ZOOM_IN_KEY: rl.KeyboardKey = .equal;
-    pub const FIT_KEY: rl.KeyboardKey = .home;
+    pub const ZOOM_OUT_KEY = ZOOM_OUT_KEYS[0];
+    pub const ZOOM_IN_KEY = ZOOM_IN_KEYS[0];
+    pub const FIT_KEY = OVERVIEW_KEY;
     pub const HELP_KEY: rl.KeyboardKey = .f1;
     pub const OBJECTS_KEY: rl.KeyboardKey = .f3;
     pub const REROLL_KEY: rl.KeyboardKey = .e;
@@ -1351,6 +1357,20 @@ test "a d-pad zoom or Shift pan held on the tree does not walk after the tree cl
         for (0..30) |_| try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(dt, 1, mathx.Dir.n.heading(), Stepper.SETTLE));
     }
     try std.testing.expect(!walkSource(true, false, up, up).muted);
+}
+
+test "a way held into the tree stays carried, zooming and panning nothing, until it is let go" {
+    var s = Stepper{};
+    const dt = mathx.FRAME_DT;
+    for (0..30) |_| _ = s.tick(dt, 1, mathx.Dir.n.heading(), Stepper.SETTLE);
+    try std.testing.expect(!s.carried());
+    s.hold();
+    for (0..30) |_| _ = s.tick(dt, 1, mathx.Dir.n.heading(), Stepper.SETTLE);
+    try std.testing.expect(s.carried());
+    _ = s.tick(dt, 0, 0, Stepper.SETTLE);
+    try std.testing.expect(!s.carried());
+    _ = s.tick(dt, 1, mathx.Dir.n.heading(), Stepper.SETTLE);
+    try std.testing.expect(!s.carried());
 }
 
 test "every direction walks on exactly one entry, and every bound key a name types into is taken from its button" {

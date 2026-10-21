@@ -268,7 +268,7 @@ test "every base, bare and under every feature, joins its ground, reaches its do
                 1 => all[0 .. all.len / 2],
                 else => &all,
             };
-            const seed = 0x51ED +% i *% 7919;
+            const seed = 0x51ED +% i *% grid.TEST_SEED_STRIDE;
             roll(&lv, seed, &doors, Floor.of(a), features);
             try grid.expectAllReached(&lv, doors[0], &dist, &queue);
             const open_n = lv.openCount();
@@ -300,7 +300,7 @@ test "a torch a border buries frees its slot for the houses raised after it" {
     var least: usize = grid.MAX_TORCHES;
     var sum: usize = 0;
     for (0..COUNT_RUNS) |i| {
-        roll(&lv, 0x70C +% i *% 7919, &.{}, floor, &features);
+        roll(&lv, 0x70C +% i *% grid.TEST_SEED_STRIDE, &.{}, floor, &features);
         least = @min(least, lv.torch.n);
         sum += lv.torch.n;
     }
@@ -323,7 +323,7 @@ test "a set piece in a thicket opens onto the ground round it, so no join fills 
     for (std.enums.values(setpiece.Piece)) |pc| {
         var shut: usize = 0;
         for (0..COUNT_RUNS) |i| {
-            const seed = 0x5E7 +% i *% 7919;
+            const seed = 0x5E7 +% i *% grid.TEST_SEED_STRIDE;
             var rng = mathx.Rng.init(seed);
             lay(wilds, &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
@@ -351,7 +351,7 @@ test "a set piece in a thicket or in rock keeps its ground through the joins" {
         for (std.enums.values(setpiece.Piece)) |pc| {
             var lost: usize = 0;
             for (0..COUNT_RUNS) |i| {
-                const seed = 0x5E7 +% i *% 7919;
+                const seed = 0x5E7 +% i *% grid.TEST_SEED_STRIDE;
                 var rng = mathx.Rng.init(seed);
                 lay(base, &lv, &rng, seed, p);
                 const art = setpiece.rows(pc);
@@ -380,7 +380,7 @@ test "a house in a thicket or in rock keeps its floor through the joins" {
         const pal = base.palette(p);
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
-            const seed = 0x51ED +% i *% 7919;
+            const seed = 0x51ED +% i *% grid.TEST_SEED_STRIDE;
             var rng = mathx.Rng.init(seed);
             lay(base, &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
@@ -402,7 +402,7 @@ test "a small house or shrine walled in by an earlier feature keeps its floor th
         const pal = base.palette(p);
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
-            const seed = 0xB0DE +% i *% 7919;
+            const seed = 0xB0DE +% i *% grid.TEST_SEED_STRIDE;
             var rng = mathx.Rng.init(seed);
             lay(base, &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
@@ -428,7 +428,7 @@ test "a small house a later thicket shuts in keeps its floor through the joins" 
     for ([_]scatter.Params{ .{ .amount = 300, .clump = 6 }, .{ .amount = scatter.AMOUNT_MAX } }) |thicket| {
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
-            const seed = 0x7A1C +% i *% 7919;
+            const seed = 0x7A1C +% i *% grid.TEST_SEED_STRIDE;
             var rng = mathx.Rng.init(seed);
             lay(wilds, &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
@@ -452,7 +452,7 @@ test "a house floored as the base's own ground keeps it through the joins, a bor
         const pal = b[0].palette(p);
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
-            const seed = 0xF100 +% i *% 7919;
+            const seed = 0xF100 +% i *% grid.TEST_SEED_STRIDE;
             var rng = mathx.Rng.init(seed);
             lay(b[0], &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
@@ -481,7 +481,7 @@ test "a field in a thicket keeps its fence through the joins" {
         const pal = base.palette(p);
         var broken: usize = 0;
         for (0..COUNT_RUNS) |i| {
-            const seed = 0xFA2E +% i *% 7919;
+            const seed = 0xFA2E +% i *% grid.TEST_SEED_STRIDE;
             var rng = mathx.Rng.init(seed);
             lay(base, &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
@@ -505,7 +505,7 @@ test "a cliff's fords keep their crossing through the joins" {
         const pal = b.palette(p);
         var lost: usize = 0;
         for (0..COUNT_RUNS) |i| {
-            const seed = 0xF02D +% i *% 7919;
+            const seed = 0xF02D +% i *% grid.TEST_SEED_STRIDE;
             var rng = mathx.Rng.init(seed);
             lay(b, &lv, &rng, seed, p);
             base = lv.tile;
@@ -531,7 +531,7 @@ test "a house or set piece is raised clear of what an earlier feature laid" {
         const pal = b[0].palette(p);
         var hit: usize = 0;
         for (0..COUNT_RUNS) |i| {
-            const seed = 0x4A3 +% i *% 7919;
+            const seed = 0x4A3 +% i *% grid.TEST_SEED_STRIDE;
             var rng = mathx.Rng.init(seed);
             lay(b[0], &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};

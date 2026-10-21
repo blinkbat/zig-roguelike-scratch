@@ -91,11 +91,16 @@ const BRANCH_POSITIONS = blk: {
     }
     break :blk out;
 };
-const SEAMS = std.EnumArray(Seam, [2]Arm).init(.{
-    .warrior_rogue = .{ .warrior, .rogue },
-    .rogue_wizard = .{ .rogue, .wizard },
-    .wizard_warrior = .{ .wizard, .warrior },
-});
+const SEAMS = blk: {
+    const arms = std.enums.values(Arm);
+    if (std.enums.values(Seam).len != arms.len) @compileError("one seam joins each arm to the next");
+    var out = std.EnumArray(Seam, [2]Arm).initUndefined();
+    for (arms, 0..) |a, i| {
+        const next = arms[(i + 1) % arms.len];
+        out.set(@field(Seam, @tagName(a) ++ "_" ++ @tagName(next)), .{ a, next });
+    }
+    break :blk out;
+};
 pub const Tier = enum { stat, interest, capstone };
 /// What a grant is about, which colours its node.
 pub const Group = enum { attribute, life, mana, offense, defense };

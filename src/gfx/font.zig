@@ -65,11 +65,11 @@ pub const Face = struct {
         return face;
     }
 
-    fn atSize(self: *const Face, size: i32, plain: bool) ?rl.Font {
-        if (plain) {
-            for (NATIVE_SIZES, &self.native) |px, *held| {
-                if (px == size) return held.* orelse self.font;
-            }
+    /// The font to walk `s` glyph by glyph at `size`; null where raylib's own text calls draw it.
+    fn walkable(self: *const Face, s: []const u8, size: i32) ?rl.Font {
+        if (!self.ordered or !printable(s)) return null;
+        for (NATIVE_SIZES, &self.native) |px, *held| {
+            if (px == size) return held.* orelse self.font;
         }
         return self.font;
     }
@@ -94,9 +94,10 @@ pub const Face = struct {
 
     /// raylib's MeasureTextEx with zero spacing.
     pub fn width(self: *const Face, s: [:0]const u8, size: i32) i32 {
-        const plain = printable(s);
-        const f = self.atSize(size, plain) orelse return rl.measureText(s, size);
-        if (!self.ordered or !plain) return @intFromFloat(rl.measureTextEx(f, s, @floatFromInt(size), 0).x);
+        const f = self.walkable(s, size) orelse {
+            const whole = self.font orelse return rl.measureText(s, size);
+            return @intFromFloat(rl.measureTextEx(whole, s, @floatFromInt(size), 0).x);
+        };
         var w: f32 = 0;
         for (s) |c| w += measured(f, ascii(c));
         return @intFromFloat(w * scaleOf(f, size));
@@ -104,17 +105,17 @@ pub const Face = struct {
 
     /// raylib's DrawTextEx with zero spacing.
     pub fn draw(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
-        const plain = printable(s);
-        const f = self.atSize(size, plain) orelse return rl.drawText(s, x, y, size, col);
         const at = rl.Vector2{ .x = @floatFromInt(x), .y = @floatFromInt(y) };
-        if (!self.ordered or !plain) return rl.drawTextEx(f, s, at, @floatFromInt(size), 0, col);
+        const f = self.walkable(s, size) orelse {
+            const whole = self.font orelse return rl.drawText(s, x, y, size, col);
+            return rl.drawTextEx(whole, s, at, @floatFromInt(size), 0, col);
+        };
         const scale = scaleOf(f, size);
         var off: f32 = 0;
         for (s) |c| {
             const i = ascii(c);
             if (c != ' ') put(f, i, at.x + off, at.y, scale, col);
-            const g = f.glyphs[i];
-            off += if (g.advanceX == 0) f.recs[i].width * scale else @as(f32, @floatFromInt(g.advanceX)) * scale;
+            off += advance(f, i, scale);
         }
     }
 
@@ -127,6 +128,21 @@ pub const Face = struct {
             const t = elided(buf, if (keep_end) s[s.len - n ..] else s[0..n], keep_end) catch return whole;
             if (n == 0 or self.width(t, size) <= max) return t;
         }
+    }
+
+    /// `s` wrapped to `w`, a line every `size + LEADING` from `y`; returns the y below it.
+    pub fn paragraph(self: *const Face, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
+        return self.paragraphWith(draw, s, x, y, w, size, col);
+    }
+
+    /// `paragraph`, each line drawn by `line` at `x`.
+    pub fn paragraphWith(self: *const Face, comptime line: fn (*const Face, [:0]const u8, i32, i32, i32, rl.Color) void, s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
+        const step = size + LEADING;
+        var buf: Wrapped = undefined;
+        var lines: [WRAP_LINES_MAX][:0]const u8 = undefined;
+        const n = wrap(self, s, size, w, &buf, &lines);
+        for (lines[0..n], 0..) |l, i| line(self, l, x, y + @as(i32, @intCast(i)) * step, size, col);
+        return y + @as(i32, @intCast(n)) * step;
     }
 
     /// `draw`, its left on `x` and its middle on `cy`.
@@ -180,17 +196,15 @@ pub const Face = struct {
 
     /// Over a drop shadow, for text on the hud.
     pub fn text(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
-        const off = @max(@divTrunc(size, SHADOW_STEP), 1);
+        const off = shadowDrop(size);
         self.draw(s, x + off, y + off, size, shadowOf(col));
         self.draw(s, x, y, size, col);
     }
 
     /// `text` lit from above like struck metal: brighter over the top, `col` through the middle, deeper at the foot.
     pub fn engraved(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
-        const plain = printable(s);
-        const f = self.atSize(size, plain) orelse return self.text(s, x, y, size, col);
-        if (!self.ordered or !plain) return self.text(s, x, y, size, col);
-        const off = @max(@divTrunc(size, SHADOW_STEP), 1) + ENGRAVE_DROP;
+        const f = self.walkable(s, size) orelse return self.text(s, x, y, size, col);
+        const off = shadowDrop(size) + ENGRAVE_DROP;
         self.draw(s, x + off, y + off, size, shadowOf(col));
         const ink = Ink.of(col, @floatFromInt(y), @floatFromInt(size));
         const scale = scaleOf(f, size);
@@ -202,8 +216,7 @@ pub const Face = struct {
         for (s) |c| {
             const i = ascii(c);
             if (c != ' ') putInked(f, i, at, ink.top, scale, ink);
-            const g = f.glyphs[i];
-            at += if (g.advanceX == 0) f.recs[i].width * scale else @as(f32, @floatFromInt(g.advanceX)) * scale;
+            at += advance(f, i, scale);
         }
     }
 
@@ -212,6 +225,10 @@ pub const Face = struct {
         self.engraved(s, self.leftFor(s, cx, size), y, size, col);
     }
 };
+
+fn shadowDrop(size: i32) i32 {
+    return @max(@divTrunc(size, SHADOW_STEP), 1);
+}
 
 fn shadowOf(col: rl.Color) rl.Color {
     return .{ .r = 0, .g = 0, .b = 0, .a = @intCast(SHADOW_A * col.a / 255) };
@@ -258,16 +275,7 @@ fn mixed(a: rl.Color, b: rl.Color, t: f32) rl.Color {
 
 /// `put` as raw quads inside an open `rl_quads` batch, coloured down the line by `ink`, split where its gradient bends.
 fn putInked(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, ink: Ink) void {
-    const g = f.glyphs[i];
-    const r = f.recs[i];
-    const pad: f32 = @floatFromInt(f.glyphPadding);
-    const src = rl.Rectangle{ .x = r.x - pad, .y = r.y - pad, .width = r.width + 2 * pad, .height = r.height + 2 * pad };
-    const dst = rl.Rectangle{
-        .x = x + @as(f32, @floatFromInt(g.offsetX)) * scale - pad * scale,
-        .y = y + @as(f32, @floatFromInt(g.offsetY)) * scale - pad * scale,
-        .width = src.width * scale,
-        .height = src.height * scale,
-    };
+    const src, const dst = placed(f, i, x, y, scale);
     const tw: f32 = @floatFromInt(f.texture.width);
     const th: f32 = @floatFromInt(f.texture.height);
     const bottom = dst.y + dst.height;
@@ -316,6 +324,46 @@ pub fn elided(buf: []u8, kept: []const u8, keep_end: bool) std.fmt.BufPrintError
     return if (keep_end) std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{kept}) else std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{kept});
 }
 
+/// Between wrapped lines of text, past the text's size.
+pub const LEADING: i32 = 4;
+pub const WRAP_LINES_MAX: usize = 18;
+pub const WRAP_COLS_MAX: usize = 96;
+/// `wrap`'s lines, each nul-terminated.
+pub const Wrapped = [WRAP_LINES_MAX][WRAP_COLS_MAX + 1]u8;
+
+/// Each line in `buf` is nul-terminated; wrapping breaks only at spaces.
+pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, lines: *[WRAP_LINES_MAX][:0]const u8) usize {
+    var n: usize = 0;
+    var words = std.mem.tokenizeScalar(u8, body, ' ');
+    var len: usize = 0;
+    while (words.next()) |word| {
+        if (n == WRAP_LINES_MAX) break;
+        const line = &buf[n];
+        const with = len + @intFromBool(len > 0) + word.len;
+        if (with <= WRAP_COLS_MAX) {
+            var try_buf: [WRAP_COLS_MAX + 1]u8 = undefined;
+            @memcpy(try_buf[0..len], line[0..len]);
+            if (len > 0) try_buf[len] = ' ';
+            @memcpy(try_buf[with - word.len .. with], word);
+            try_buf[with] = 0;
+            if (len == 0 or face.width(try_buf[0..with :0], size) <= w) {
+                @memcpy(line[0 .. with + 1], try_buf[0 .. with + 1]);
+                len = with;
+                lines[n] = line[0..len :0];
+                continue;
+            }
+        }
+        if (len > 0) n += 1;
+        if (n == WRAP_LINES_MAX) break;
+        const fit = @min(word.len, WRAP_COLS_MAX);
+        @memcpy(buf[n][0..fit], word[0..fit]);
+        buf[n][fit] = 0;
+        len = fit;
+        lines[n] = buf[n][0..len :0];
+    }
+    return if (len > 0) @min(n + 1, WRAP_LINES_MAX) else n;
+}
+
 fn orderedGlyphs(f: rl.Font, cps: []const i32) bool {
     if (f.glyphCount != cps.len) return false;
     for (cps, 0..) |cp, i| {
@@ -345,8 +393,14 @@ fn measured(f: rl.Font, i: usize) f32 {
     return if (g.advanceX > 0) @floatFromInt(g.advanceX) else f.recs[i].width + @as(f32, @floatFromInt(g.offsetX));
 }
 
-/// raylib's DrawTextCodepoint, glyph `i` already found.
-fn put(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, col: rl.Color) void {
+/// Glyph `i`'s pen advance as raylib's DrawTextEx steps it.
+fn advance(f: rl.Font, i: usize, scale: f32) f32 {
+    const g = f.glyphs[i];
+    return if (g.advanceX == 0) f.recs[i].width * scale else @as(f32, @floatFromInt(g.advanceX)) * scale;
+}
+
+/// Glyph `i`'s padded atlas source and screen destination, as raylib's DrawTextCodepoint places them.
+fn placed(f: rl.Font, i: usize, x: f32, y: f32, scale: f32) struct { rl.Rectangle, rl.Rectangle } {
     const g = f.glyphs[i];
     const r = f.recs[i];
     const pad: f32 = @floatFromInt(f.glyphPadding);
@@ -357,5 +411,11 @@ fn put(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, col: rl.Color) void {
         .width = src.width * scale,
         .height = src.height * scale,
     };
+    return .{ src, dst };
+}
+
+/// raylib's DrawTextCodepoint, glyph `i` already found.
+fn put(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, col: rl.Color) void {
+    const src, const dst = placed(f, i, x, y, scale);
     rl.drawTexturePro(f.texture, src, dst, .{ .x = 0, .y = 0 }, 0, col);
 }

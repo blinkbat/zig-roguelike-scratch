@@ -62,6 +62,7 @@ fn lerp(r: [2]u8, t: f32) f32 {
 /// Below this height is sea or shore, where a river ends.
 const SHORE: f32 = 26;
 const SOURCE_TRIES: usize = 400;
+const SOURCE_MARGIN: i32 = 2;
 /// Below this height is ocean.
 pub const SEA = 20;
 /// From this height up is mountain.
@@ -147,7 +148,7 @@ fn river(lv: *grid.Level, rng: *mathx.Rng, height: *[grid.CELLS]f32) void {
     var top: f32 = 0;
     for (height) |h| top = @max(top, h);
     var at: P = for (0..SOURCE_TRIES) |_| {
-        const q = grid.Box.inMap(2).roll(rng);
+        const q = grid.Box.inMap(SOURCE_MARGIN).roll(rng);
         if (height[grid.Level.idx(q)] >= top * SOURCE_OVER) break q;
     } else return;
     const dirs = mathx.CARDINALS;

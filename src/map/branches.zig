@@ -241,6 +241,13 @@ pub const Reward = enum {
             .barrel => lv.hasBarrel(p),
         };
     }
+
+    fn put(kind: Reward, lv: *grid.Level, p: P) void {
+        switch (kind) {
+            .chest => lv.set(p, .chest),
+            .barrel => lv.putBarrel(p),
+        }
+    }
 };
 
 fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng: *mathx.Rng, kind: Reward, target: usize) usize {
@@ -282,10 +289,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
         }
         if (near) continue;
         if (!keepsRoute(blocked, p, origin, open, &dist, &queue)) continue;
-        switch (kind) {
-            .chest => lv.set(p, .chest),
-            .barrel => lv.putBarrel(p),
-        }
+        kind.put(lv, p);
         placed[have] = p;
         have += 1;
         added += 1;
@@ -411,8 +415,9 @@ test "scattered rewards leave narrow routes and the approach to existing treasur
     for (doors, 0..) |p, i| lv.putDoor(p, i);
     var blocked = lv;
     var rng = mathx.Rng.init(44);
-    try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, .chest, 3));
-    try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, .barrel, 12));
+    for ([_]Reward{ .chest, .barrel }) |kind| {
+        try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, kind, kind.rule().total));
+    }
     const at = P{ .x = 40, .y = 10 };
     lv.set(at.add(.{ .x = 0, .y = 1 }), .chest);
     try std.testing.expect(!rewardAt(&lv, at));

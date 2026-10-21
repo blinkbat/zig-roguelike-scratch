@@ -282,12 +282,13 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const pal = palette(p);
     carve.field(lv, pal);
     var out: [CELLS_MAX]u8 = undefined;
-    var y: i32 = MARGIN;
-    while (y + SECTION_MIN <= grid.H - MARGIN) {
-        const sh = @min(SECTION_H, grid.H - MARGIN - y);
-        var x: i32 = MARGIN;
-        while (x + SECTION_MIN <= grid.W - MARGIN) {
-            const sw = @min(SECTION_W, grid.W - MARGIN - x);
+    const area = grid.Box.inMap(MARGIN);
+    var y: i32 = area.lo.y;
+    while (y + SECTION_MIN <= area.hi.y) {
+        const sh = @min(SECTION_H, area.hi.y - y);
+        var x: i32 = area.lo.x;
+        while (x + SECTION_MIN <= area.hi.x) {
+            const sw = @min(SECTION_W, area.hi.x - x);
             const m = modelOf(templateOf(p.template, rng));
             const w: usize = @intCast(sw);
             const h: usize = @intCast(sh);

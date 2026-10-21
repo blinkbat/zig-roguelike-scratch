@@ -182,7 +182,9 @@ const OCTAVES: u32 = 3;
 const FBM_GAIN: f32 = 0.5;
 const FBM_MAX: f32 = FBM_GAIN * (1 - std.math.pow(f32, FBM_GAIN, OCTAVES)) / (1 - FBM_GAIN);
 
-/// The softened density weighs its own texel and the four `SOFT` round it as `look.FOCUS_TAPS` does.
+const DRIFT = [2]f32{ 0.21, 0.13 };
+
+/// The softened density weighs its own texel and the four `SOFT` round it with `look.FOCUS_WEIGHTS`, which must precede it.
 const CLOUD_NOISE = look.glslConsts(.{
     .TINT_HI = TINT_HI,
     .WARP = WARP,
@@ -190,11 +192,9 @@ const CLOUD_NOISE = look.glslConsts(.{
     .OCTAVES = OCTAVES,
     .FBM_GAIN = FBM_GAIN,
     .FBM_MAX = FBM_MAX,
-    .CENTRE_W = look.FOCUS_CENTRE_W,
-    .SIDE_W = look.FOCUS_SIDE_W,
+    .DRIFT = DRIFT,
 }) ++
     \\uniform float time;
-    \\const vec2 DRIFT = vec2(0.21, 0.13);
     \\float hash(vec2 p) {
     \\    p = fract(p * vec2(123.34, 456.21));
     \\    p += dot(p, p + 45.32);
@@ -223,16 +223,16 @@ const CLOUD_NOISE = look.glslConsts(.{
     \\    vec2 drift = DRIFT * time;
     \\    vec2 w = vec2(fbm(c * 0.7 + drift), fbm(c * 0.7 - drift.yx + 4.0)) - 0.5;
     \\    vec2 q = c + w * WARP * 2.0;
-    \\    float d = density(field, q) * CENTRE_W
+    \\    float d = density(field, q) * FOCUS_CENTRE_W
     \\        + (density(field, q + vec2(SOFT, 0.0)) + density(field, q - vec2(SOFT, 0.0))
-    \\        + density(field, q + vec2(0.0, SOFT)) + density(field, q - vec2(0.0, SOFT))) * SIDE_W;
+    \\        + density(field, q + vec2(0.0, SOFT)) + density(field, q - vec2(0.0, SOFT))) * FOCUS_SIDE_W;
     \\    if (d < CLEAR_A) discard;
     \\    float n = fbm(c * 1.3 + w * 1.5 - drift * 0.6);
     \\    return vec4(vec3(mix(0.75, 1.2, n)), clamp(d * mix(0.5, 1.1, n), 0.0, TINT_HI));
     \\}
 ;
 
-const CLOUD_FS = look.FS_HEAD ++ CLOUD_NOISE ++
+const CLOUD_FS = look.FS_HEAD ++ look.FOCUS_WEIGHTS ++ CLOUD_NOISE ++
     \\void main() {
     \\    vec4 gas = cloudAt(texture0, fragTexCoord * CELLS);
     \\    finalColor = vec4(gas.rgb * texture(texture0, fragTexCoord).rgb, gas.a) * fragColor;

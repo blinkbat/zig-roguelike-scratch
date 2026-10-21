@@ -209,7 +209,7 @@ test "shrines set wide apart land no closer than at the default margin" {
         var nearest: i32 = std.math.maxInt(i32);
         for (0..50) |seed| {
             var lv = grid.Level.blank();
-            var rng = mathx.Rng.init(0x5E7 +% seed *% 7919);
+            var rng = mathx.Rng.init(0x5E7 +% seed *% grid.TEST_SEED_STRIDE);
             carve.field(&lv, carve.Palette.WILD);
             var lots: buildings.Lots = .{};
             apply(&lv, &rng, 0, carve.Palette.WILD, &lots, (Params{ .piece = .shrine, .count = 3, .apart = apart }).fit());

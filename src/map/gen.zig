@@ -244,7 +244,7 @@ test "every floor connects" {
     var queue: [grid.CELLS]u32 = undefined;
     var worst: usize = grid.CELLS;
     for (0..200) |i| {
-        const seed: u64 = 0xBEEF +% i *% 7919;
+        const seed: u64 = 0xBEEF +% i *% grid.TEST_SEED_STRIDE;
         const f = build(&lv, seed);
         const open = lv.openCount();
         const reached = grid.distances(&lv, f.start, &dist, &queue);
@@ -338,7 +338,7 @@ test "a wall between two corridors joins only along itself, and a pillar joins n
 test "a wall's brick face shows exactly when no wall stands below it" {
     var lv: grid.Level = undefined;
     for (0..40) |i| {
-        _ = build(&lv, 0xFACE +% i *% 7919);
+        _ = build(&lv, 0xFACE +% i *% grid.TEST_SEED_STRIDE);
         for (lv.shape, 0..) |shape, k| {
             const s = shape orelse continue;
             try std.testing.expectEqual(lv.at(grid.Level.of(k).add(mathx.Dir.s.delta())) != .wall, s.faced());
@@ -350,7 +350,7 @@ test "build stamps a joined shape on every wall and on nothing else" {
     var lv: grid.Level = undefined;
     var used = std.StaticBitSet(256).initEmpty();
     for (0..40) |i| {
-        _ = build(&lv, 0xA11 +% i *% 7919);
+        _ = build(&lv, 0xA11 +% i *% grid.TEST_SEED_STRIDE);
         for (lv.tile, lv.shape) |t, s| {
             try std.testing.expectEqual(t == .wall, s != null);
             const w = s orelse continue;
@@ -367,7 +367,7 @@ test "every torch hangs on a room's wall with its face onto floor" {
     var total: usize = 0;
     var rooms: usize = 0;
     for (0..40) |i| {
-        const f = build(&lv, 0x7040 +% i *% 7919);
+        const f = build(&lv, 0x7040 +% i *% grid.TEST_SEED_STRIDE);
         rooms += f.room_n;
         total += lv.torch.n;
         for (lv.torches()) |t| try std.testing.expect(bearsTorch(&lv, t));
@@ -383,7 +383,7 @@ test "barrels stand on room floor and never cut one open cell off from the start
     var barrels: usize = 0;
     var rooms: usize = 0;
     for (0..200) |i| {
-        const f = build(&lv, 0xBA22E1 +% i *% 7919);
+        const f = build(&lv, 0xBA22E1 +% i *% grid.TEST_SEED_STRIDE);
         rooms += f.room_n;
         try std.testing.expect(!lv.hasBarrel(f.start));
         var open: usize = 0;
@@ -428,7 +428,7 @@ test "a floor generated around doors reaches every door, and no barrel stands on
             const top = @as(i32, @intCast(k)) * band;
             d.* = .{ .x = rng.range(0, grid.W - 1), .y = rng.range(top, top + band - 1) };
         }
-        const f = around(&lv, 0xD0025 +% i *% 7919, &doors, .{});
+        const f = around(&lv, 0xD0025 +% i *% grid.TEST_SEED_STRIDE, &doors, .{});
         _ = grid.distances(&lv, f.start, &dist, &queue);
         for (doors, 0..) |d, k| {
             try std.testing.expectEqual(@as(?usize, k), lv.doorAt(d));
@@ -454,7 +454,7 @@ test "a door on the map's edge is the only floor on the edge" {
             .{ .x = rng.range(1, grid.W - 2), .y = 0 },
             .{ .x = rng.range(1, grid.W - 2), .y = grid.H - 1 },
         };
-        const f = around(&lv, 0xED6E5 +% i *% 7919, &doors, .{});
+        const f = around(&lv, 0xED6E5 +% i *% grid.TEST_SEED_STRIDE, &doors, .{});
         _ = grid.distances(&lv, f.start, &dist, &queue);
         for (doors) |d| try std.testing.expect(dist[grid.Level.idx(d)] >= 0);
         rim += carve.leaks(&lv);
@@ -471,7 +471,7 @@ test "a floor rolled in a small box keeps its rooms in it, to their count and si
     const area = pm.area();
     var rooms: usize = 0;
     for (0..50) |i| {
-        const f = around(&lv, 0xB0C5 +% i *% 7919, &.{.{ .x = 2, .y = 2 }}, pm);
+        const f = around(&lv, 0xB0C5 +% i *% grid.TEST_SEED_STRIDE, &.{.{ .x = 2, .y = 2 }}, pm);
         rooms += f.room_n;
         try std.testing.expect(f.room_n >= 1 and f.room_n <= pm.rooms);
         try std.testing.expectEqual(@as(usize, 0), lv.torch.n);

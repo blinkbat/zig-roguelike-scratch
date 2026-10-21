@@ -211,7 +211,7 @@ test "no mark is legal whose line crosses a cell out of sight, though the mark i
     var marks: usize = 0;
     var dark: usize = 0;
     for (0..10) |i| {
-        _ = gen.build(&lv, 41120 +% i *% 7919);
+        _ = gen.build(&lv, 41120 +% i *% grid.TEST_SEED_STRIDE);
         var k: usize = 0;
         while (k < grid.CELLS) : (k += 7) {
             const at = grid.Level.of(k);

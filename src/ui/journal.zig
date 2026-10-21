@@ -73,15 +73,16 @@ const HUD_GAP: i32 = 24;
 const ROWS_Y: i32 = 10;
 /// Rows clip this far above the box's foot; the last row's leading falls inside it.
 const CLIP_BOTTOM: i32 = 12;
-const ROWS_BOTTOM: i32 = BOX_H - CLIP_BOTTOM - hud.LEADING;
+const ROWS_BOTTOM: i32 = BOX_H - CLIP_BOTTOM - font.LEADING;
 const CLIP_X: i32 = 10;
 const TEXT_X: i32 = 14;
-const LINE_H: i32 = font.SMALL + hud.LEADING;
+const LINE_H: i32 = font.SMALL + font.LEADING;
 const ENTRY_GAP: i32 = 4;
 const TOP_OPACITY: f32 = 0.1;
+const BG_A: u8 = 210;
 const BG = blk: {
     var c = hud.PLATE;
-    c.a = 210;
+    c.a = BG_A;
     break :blk c;
 };
 
@@ -108,10 +109,10 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
     var back = log.held + log.scroll;
     rl.beginScissorMode(x + CLIP_X, y + ROWS_Y, w - 2 * CLIP_X, BOX_H - ROWS_Y - CLIP_BOTTOM);
     defer rl.endScissorMode();
-    var buf: hud.Wrapped = undefined;
-    var rows: [hud.TIP_LINES_MAX][:0]const u8 = undefined;
+    var buf: font.Wrapped = undefined;
+    var rows: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
     while (back < log.n and bottom > y + ROWS_Y) : (back += 1) {
-        const count = hud.wrap(face, log.line(back).?, font.SMALL, w - 2 * TEXT_X, &buf, &rows);
+        const count = font.wrap(face, log.line(back).?, font.SMALL, w - 2 * TEXT_X, &buf, &rows);
         bottom -= @as(i32, @intCast(count)) * LINE_H;
         const at = log.index(back);
         const ink = log.kinds[at].ink();

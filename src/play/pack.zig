@@ -279,10 +279,7 @@ fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, 
             spots[n] = p;
             n += 1;
         }
-        if (n > 0) {
-            const pick = rng.below(@intCast(n));
-            return spots[pick];
-        }
+        if (n > 0) return rng.pick(P, spots[0..n]);
     }
     return null;
 }
@@ -293,7 +290,7 @@ test "every floor has a few of each foe at least, and every slime stands by a ra
     var fewest = std.EnumArray(actor.Kind, usize).initFill(actor.MAX);
     var lone_slimes: usize = 0;
     for (0..200) |i| {
-        const seed: u64 = 0x9AC5 +% i *% 7919;
+        const seed: u64 = 0x9AC5 +% i *% grid.TEST_SEED_STRIDE;
         const f = gen.build(&lv, seed);
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(seed);
@@ -324,7 +321,7 @@ test "a spec of its own makeups places only them, its packs kept apart and the p
     spec.makeup[0] = Makeup.of(&.{ .bloat, .bloat });
     var closest: i32 = APART_MAX;
     for (0..40) |i| {
-        const seed: u64 = 0xA9A27 +% i *% 7919;
+        const seed: u64 = 0xA9A27 +% i *% grid.TEST_SEED_STRIDE;
         const f = gen.build(&lv, seed);
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(seed);

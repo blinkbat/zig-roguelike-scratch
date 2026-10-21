@@ -143,7 +143,7 @@ test "a burst in a room of a real floor leaks out of its doorways: sooner gone t
     var real: usize = 0;
     var sealed: usize = 0;
     for (0..FLOORS) |i| {
-        const f = gen.build(&lv, 0x6A5 +% i *% 7919);
+        const f = gen.build(&lv, 0x6A5 +% i *% grid.TEST_SEED_STRIDE);
         const r = f.rooms[1];
         lv.addGas(r.centre(), BURST);
         real += (try lasts(&lv, &rng)).turns;

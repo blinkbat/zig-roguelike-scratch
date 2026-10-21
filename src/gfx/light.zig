@@ -2672,7 +2672,7 @@ test "remembered ground is black on every line where a seen cell meets an unseen
     var bright: usize = 0;
     var worst: f32 = 0;
     for (0..10) |n| {
-        const f = gen.build(&lv, 0x5EE +% n *% 7919);
+        const f = gen.build(&lv, 0x5EE +% n *% grid.TEST_SEED_STRIDE);
         for (f.rooms[0..@min(3, f.room_n)]) |r| fov.cast(&lv, r.centre(), sight);
         lv.lightless();
         l.settle(&lv);

@@ -1361,7 +1361,7 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
     var inland_trees: usize = 0;
     const RUNS = 50;
     for (0..RUNS) |i| {
-        nd.stamp(&lv, 0x57A2D +% i *% 7919);
+        nd.stamp(&lv, 0x57A2D +% i *% grid.TEST_SEED_STRIDE);
         const at = landing(&lv, a.start.at, &.{}) orelse return error.NoFloor;
         if (lv.at(at) == .dirt or lv.at(at) == .shallows) on_shore += 1;
         try std.testing.expect(std.mem.indexOfScalar(grid.Tile, &lv.tile, .sand) == null);
@@ -1411,7 +1411,7 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
     var farthest_first: i32 = 0;
     const RUNS = 128;
     for (0..RUNS) |i| {
-        const seed = 0xC4E57 +% i *% 7919;
+        const seed = 0xC4E57 +% i *% grid.TEST_SEED_STRIDE;
         nd.stamp(&expected, seed);
         nd.plan.procgen.floor.wilds.loops = 0;
         nd.plan.procgen.floor.wilds.rewards = .none;

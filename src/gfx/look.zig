@@ -976,10 +976,11 @@ pub const AIM_PATH = fade(GOLD, 0.28);
 pub const COLD = rgb(0x8cddf5);
 pub const PIN = rgb(0xc8c2b4);
 pub const WARD = rgb(0x6fa8f0);
+pub const MAGIC = WARD;
 
 /// An item's name and mark: magic ones in the ward's blue.
 pub fn itemInk(magical: bool) rl.Color {
-    return if (magical) WARD else TEXT;
+    return if (magical) MAGIC else TEXT;
 }
 const AIM_AREA_A: f32 = 0.24;
 pub const RETICLE = rgb(0xe8c25a);
@@ -1297,6 +1298,13 @@ pub const Prompt = union(enum) {
         };
     }
 
+    /// `draw`, its left on `x`; returns the x past it.
+    pub fn drawFrom(p: Prompt, face: *const font.Face, x: i32, cy: i32, h: i32, alpha: f32) i32 {
+        const w = p.width(face, h);
+        p.draw(face, x + @divTrunc(w, 2), cy, h, alpha);
+        return x + w;
+    }
+
     /// Its middle on `cx`, `cy`, `h` tall, faded to `alpha`.
     pub fn draw(p: Prompt, face: *const font.Face, cx: i32, cy: i32, h: i32, alpha: f32) void {
         const w = p.width(face, h);
@@ -1569,8 +1577,9 @@ pub const Focused = struct {
 /// `texture0` here and at its four sides, premultiplied; the sides share what the centre leaves.
 pub const FOCUS_CENTRE_W = 0.4;
 pub const FOCUS_SIDE_W = (1 - FOCUS_CENTRE_W) / 4.0;
+pub const FOCUS_WEIGHTS = glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W });
 /// `focused()`: `texture0` softened by `Focused`'s uniforms, premultiplied.
-pub const FOCUS_TAPS = glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W }) ++
+pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\uniform vec2 texel;
     \\uniform float strength;
     \\vec4 tap(vec2 offset) {

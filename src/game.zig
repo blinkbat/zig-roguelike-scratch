@@ -940,7 +940,7 @@ fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
             const s = heroBump(g, h.at, to, late);
             switch (g.class) {
                 inline else => |c| {
-                    const blow = comptime actor.row(c.kind()).blow.strike;
+                    const blow = comptime c.strike();
                     if (w != grid.NO_ONE) wound(g, w, heroRoll(g, .melee, kickRaw(&g.rng, &g.inventory.gear, blow)), blow.verb, s) else smash(g, to, blow.verb, s);
                 },
             }
@@ -1030,10 +1030,6 @@ fn syncStats(g: *Game) void {
     h.hp = @min(h.hp, h.max);
     g.mana = @min(g.mana, manaMax(g));
     settleHero(g, 0);
-}
-
-fn skillAttrs(g: *const Game, act: skillbar.Act) attrs.Attrs {
-    return g.growth.skillAttrs(heroAttrs(g), g.inventory.gear, act);
 }
 
 /// Character is open with its tabs, not as the Nearby list.
@@ -2063,6 +2059,10 @@ fn drawnAt(g: *Game, i: usize) ?rl.Vector2 {
     return if (g.lv.isLit(cellUnder(at))) at else null;
 }
 
+fn drawnCell(g: *Game, i: usize) ?P {
+    return cellUnder(drawnAt(g, i) orelse return null);
+}
+
 fn casterAt(g: *Game, i: usize, area: grid.Box) ?rl.Vector2 {
     if (!standing(g, i)) return null;
     const at = g.glide[i].now();
@@ -2252,7 +2252,7 @@ fn sinceQuiet(g: *const Game) f32 {
 /// Advance presentation before new actions so their effects start at the correct delay.
 pub fn update(g: *Game, dt: f32) void {
     if (!g.st.focused) holdWalk(g);
-    if (g.mode == .play or g.mode == .aim or g.mode == .inspect) {
+    if (playShown(g) or g.mode == .aim or g.mode == .inspect) {
         if (g.st.pointer) |p| {
             if (look.holds(journal.box(g.screen), p) and g.st.scroll != 0) g.log.move(g.st.scroll);
         }
@@ -2467,9 +2467,18 @@ fn chestReached(g: *const Game, from: P, p: P) bool {
 }
 
 /// The hero's own door, or a clear one beside.
-fn doorReached(g: *const Game, from: P, p: P) ?atlas.Link {
-    if (!withinReach(from, p) or !g.lv.isLit(p) or (!g.lv.vacant(p) and !p.eq(from))) return null;
-    return leadsTo(g, p);
+fn doorReached(g: *Game, from: P, p: P) ?atlas.Link {
+    if (!withinReach(from, p) or !g.lv.isLit(p) or !g.lv.walkable(p)) return null;
+    const link = leadsTo(g, p) orelse return null;
+    return if (!p.eq(from) and bodyShownIn(g, p)) null else link;
+}
+
+fn bodyShownIn(g: *Game, p: P) bool {
+    if (quiet(g)) return g.lv.taken(p);
+    for (0..g.pool.n) |i| {
+        if ((drawnCell(g, i) orelse continue).eq(p)) return true;
+    }
+    return barrelShownAt(g, p);
 }
 
 fn anyNearby(g: *Game) bool {
@@ -2727,6 +2736,10 @@ fn deathShown(g: *const Game) bool {
     return g.mode == .dead and quiet(g);
 }
 
+fn playShown(g: *const Game) bool {
+    return g.mode == .play or (g.mode == .dead and !quiet(g));
+}
+
 const DISMISS = [_]input.Button{ CONFIRM, PAUSE, BACK, .x };
 
 fn dismissed(st: *const input.State) bool {
@@ -2837,7 +2850,7 @@ fn shownAt(g: *Game, stood: *const Stood, p: P) bool {
 
 fn stoodNow(g: *Game) Stood {
     var stood = Stood.initEmpty();
-    for (0..g.pool.n) |i| stand(&stood, cellUnder(drawnAt(g, i) orelse continue));
+    for (0..g.pool.n) |i| stand(&stood, drawnCell(g, i) orelse continue);
     return stood;
 }
 
@@ -3239,7 +3252,7 @@ fn drawMap(g: *Game) void {
     }
 
     if (aim_from) |from| outline(c, g.mark, if (aimable(g, from, g.mark)) look.RETICLE else look.RETICLE_BLOCKED);
-    if (g.mode == .play and g.st.lean) drawLean(g, c, &stood);
+    if (playShown(g) and g.st.lean) drawLean(g, c, &stood);
 
     for (bodies) |*b| {
         g.fx.drawSpeech(&g.face, b.slot, b.lifted.x, b.lifted.y, CELL_F, b.shine.sight);
@@ -3263,8 +3276,7 @@ fn effectLights(g: *Game) void {
             if (pic.status.get(s) > 0) if (s.glow()) |glow| break .{ s, glow };
         } else continue;
         const mid = middle(at);
-        const flicker = 1 - fx.STATUS_FLICKER + fx.STATUS_FLICKER * @sin(g.fx.seconds.at() * fx.STATUS_FLICKER_HZ + @as(f32, @floatFromInt(i)));
-        g.light.emit(&g.lv, .{ .at = .{ mid[0], mid[1], light.BODY_Z }, .col = s.ink(), .radius = glow.radius, .gain = glow.gain * flicker });
+        g.light.emit(&g.lv, .{ .at = .{ mid[0], mid[1], light.BODY_Z }, .col = s.ink(), .radius = glow.radius, .gain = glow.gain * g.fx.statusFlicker(@floatFromInt(i)) });
     }
 }
 
@@ -3342,8 +3354,7 @@ fn drawMinimap(g: *Game) void {
     }
     for (g.pool.slice(), 0..) |a, i| {
         if (!a.foe()) continue;
-        const at = drawnAt(g, i) orelse continue;
-        miniDot(o, cellUnder(at), 0, look.MINI_FOE);
+        miniDot(o, drawnCell(g, i) orelse continue, 0, look.MINI_FOE);
     }
     if (heroNow(g)) |at| miniDot(o, cellUnder(at), MINI_HERO_GROW, look.MINI_HERO);
     const v = miniView(Cam.of(g), g.screen);
@@ -3446,7 +3457,6 @@ const BIND_ACTION_STEP: i32 = 250;
 const BIND_ACTION_X: i32 = @divExact(BIND_PANEL.x - (BIND_ACTIONS.len - 1) * BIND_ACTION_STEP - ACTION.x, 2);
 const BIND_ACTION_Y: i32 = BIND_PANEL.y - 68;
 const BIND_DESC_W: i32 = 900;
-const BIND_DESC_LINE: i32 = font.BODY + hud.LEADING;
 
 fn bindActionBox(i: usize) rl.Rectangle {
     return look.rect(BIND_ACTION_X + @as(i32, @intCast(i)) * BIND_ACTION_STEP, BIND_ACTION_Y, ACTION.x, ACTION.y);
@@ -3494,7 +3504,7 @@ fn drawSkills(g: *Game, layout: hud.Layout) void {
         const box = slotBox(layout, i);
         const x: i32 = @intFromFloat(box.x);
         const y: i32 = @intFromFloat(box.y);
-        const held = (g.st.held(b) and g.mode == .play) or (g.mode == .aim and g.aim_by == b);
+        const held = (g.st.held(b) and playShown(g)) or (g.mode == .aim and g.aim_by == b);
         const s = slotShown(g, i);
         drawSlot(g, x, y, .{
             .act = if (s) |v| v.act else null,
@@ -3588,10 +3598,7 @@ fn drawBinds(g: *Game) void {
         bindText(g, a.name(), info_y, TEXT, look.TEXT);
         var desc: [TIP_BODY_MAX + 1]u8 = undefined;
         const text = describe(g, a, &desc);
-        var lines: [hud.TIP_LINES_MAX][:0]const u8 = undefined;
-        var buf: hud.Wrapped = undefined;
-        const n = hud.wrap(&g.face, text, font.BODY, BIND_DESC_W, &buf, &lines);
-        for (lines[0..n], 0..) |line, i| bindText(g, line, info_y + TEXT_LINE + @as(i32, @intCast(i)) * BIND_DESC_LINE, font.BODY, look.DIM);
+        _ = g.face.paragraphWith(font.Face.textMid, text, @divTrunc(BIND_PANEL.x, 2), info_y + TEXT_LINE, BIND_DESC_W, font.BODY, look.DIM);
     } else if (b.menu == .pick) {
         bindText(g, "Clear slot", info_y, TEXT, look.TEXT);
     }
@@ -3723,7 +3730,7 @@ fn round(s: Spot) bool {
 }
 
 fn hovered(g: *const Game) ?Part {
-    if (g.mode != .play and g.mode != .aim) return null;
+    if (!playShown(g) and g.mode != .aim) return null;
     const p = g.st.pointer orelse return null;
     const at = look.vec(p);
     var buf: [SPOTS_MAX]Part = undefined;
@@ -4428,7 +4435,8 @@ fn shootCharacter(g: *Game) !void {
         g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-capstone.png");
         g.character.zoom = 2.2;
-        try capture(g, target, SHOTS_DIR ++ "/tree-passives-zoom.png");        g.character.zoom = 1;
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-zoom.png");
+        g.character.zoom = 1;
         g.character.cursor = branch + 1;
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-interest.png");
         g.character.cursor = progress.passives.bridgeFirst(.warrior_rogue);
@@ -6198,7 +6206,7 @@ test "a new floor has every pack placed, no foe in sight or on a barrel" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
     for (0..40) |i| {
-        begin(g, 0xF00D +% i *% 7919);
+        begin(g, 0xF00D +% i *% grid.TEST_SEED_STRIDE);
         var placed: usize = 0;
         for (actor.FOES) |k| {
             const t = g.pool.tally(k);
@@ -7532,7 +7540,7 @@ test "slimes split in fights on real floors, and every body keeps a cell of its 
     var quarters: usize = 0;
     const FLOORS: usize = 20;
     for (0..FLOORS) |f| {
-        begin(g, 0x511E +% f *% 7919);
+        begin(g, 0x511E +% f *% grid.TEST_SEED_STRIDE);
         wakeFoes(g);
         g.heroActor().?.hp = 1000;
         g.heroActor().?.max = 1000;
@@ -7932,6 +7940,21 @@ test "the dead archer's floor restarts only once the death is shown" {
     _ = framesUntil(g, 0, deathDrawn);
     press(g, CONFIRM);
     try std.testing.expectEqual(Mode.play, g.mode);
+}
+
+test "the hud's tooltip stays up until the lethal bite is drawn" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    bittenToDeath(g);
+    try std.testing.expect(g.mode == .dead and !deathShown(g));
+    var buf: [SPOTS_MAX]Part = undefined;
+    const spot = spotsOf(g, &buf)[0];
+    g.st.pointer = look.middleAt(spot.box);
+    try std.testing.expectEqual(spot.spot, hovered(g).?.spot);
+    const t = framesUntil(g, 0, deathDrawn);
+    g.st.pointer = look.middleAt(spot.box);
+    try std.testing.expectEqual(@as(?Part, null), hovered(g));
+    std.debug.print("dying: tooltip held {d:.3} s until the death is drawn\n", .{t});
 }
 
 test "Menu, B or X leaves the death screen as A does, and none of them pauses it" {
@@ -8736,6 +8759,25 @@ test "the log says the blow and the experience it awards, a juke as itself, and 
     std.debug.print("log: \"{s}\" then \"{s}\"\n", .{ gained, g.log.line(0).? });
 }
 
+test "a door is listed nearby only once no body is drawn on it" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const w = try std.testing.allocator.create(atlas.Atlas);
+    defer std.testing.allocator.destroy(w);
+    _ = twoRooms(w);
+    beginMapAt(g, w, w.start, 123);
+    const door = P{ .x = 2, .y = 5 };
+    const from = g.heroActor().?.at;
+    const rat = spawnAt(g, .rat, door, false);
+    try std.testing.expectEqual(@as(?atlas.Link, null), doorReached(g, from, door));
+    g.pool.move(&g.lv, rat, .{ .x = 6, .y = 5 });
+    g.busy = GLIDE_S;
+    try std.testing.expectEqual(@as(?atlas.Link, null), doorReached(g, from, door));
+    calm(g);
+    snapGlide(g);
+    try std.testing.expect(doorReached(g, from, door) != null);
+}
+
 test "interact during door travel stays an interaction on arrival" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
@@ -8903,7 +8945,7 @@ test "weapon weight controls live damage and its preview independently of attack
         g.growth.ranks.set(act, 2);
         var expected_attrs = heroAttrs(g);
         expected_attrs.damage_bonus.getPtr(style).* += g.growth.damageBonus(act);
-        try std.testing.expectEqualDeep(expected_attrs, skillAttrs(g, act));
+        try std.testing.expectEqualDeep(expected_attrs, blowFor(g, act).by);
         const raw = damage.Damage{ .physical = 100 };
         g.rng = mathx.Rng.init(0xDA6);
         var expected_rng = g.rng;

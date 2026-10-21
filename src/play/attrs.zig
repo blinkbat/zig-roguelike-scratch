@@ -6,7 +6,7 @@ pub const Attr = enum { strength, dexterity, intelligence };
 pub const ATTRS = std.enums.values(Attr);
 pub const Needs = std.enums.EnumFieldStruct(Attr, i32, 0);
 
-/// What an item modifier adds to; a passive's `Kind` adds to these or to a `Style`'s damage.
+/// What an item modifier adds to; a passive's `Kind` adds to these, a `Style`'s damage, crit, dodge or `Perks`.
 pub const Bonus = enum {
     strength,
     dexterity,

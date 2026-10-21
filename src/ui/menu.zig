@@ -97,10 +97,7 @@ pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, labe
 
 /// An action box's prompt; returns where its label starts.
 pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, alpha: f32) i32 {
-    const glyph_w = prompt.width(face, font.BODY);
-    const left = @as(i32, @intFromFloat(r.x)) + ACTION_PAD;
-    prompt.draw(face, left + @divTrunc(glyph_w, 2), @intFromFloat(look.middle(r).y), font.BODY, alpha);
-    return left + glyph_w + PROMPT_GAP;
+    return prompt.drawFrom(face, @as(i32, @intFromFloat(r.x)) + ACTION_PAD, @intFromFloat(look.middle(r).y), font.BODY, alpha) + PROMPT_GAP;
 }
 
 pub fn Note(comptime N: usize) type {

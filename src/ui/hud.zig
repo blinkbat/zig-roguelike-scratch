@@ -149,7 +149,8 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, ma
 /// The experience bar, between the statuses and the plate, as wide as the skills.
 const XP_SEGMENTS = 10;
 const XP_H: i32 = 3;
-const XP_Y: i32 = PLATE_Y - 4 - XP_H;
+const XP_PLATE_GAP: i32 = 4;
+const XP_Y: i32 = PLATE_Y - XP_PLATE_GAP - XP_H;
 const XP_GAP: i32 = 3;
 const XP_TRACK = look.fade(rl.Color.white, 0.18);
 const XP_BACK = look.fade(rl.Color.black, 0.6);
@@ -229,15 +230,9 @@ const FOCUS_W: f32 = 2;
 const TIP_W: i32 = 380;
 const TIP_PAD: i32 = 12;
 const TIP_GAP: i32 = 8;
-/// Between wrapped lines of text, past the text's size.
-pub const LEADING: i32 = 4;
-const TIP_LINE: i32 = font.SMALL + LEADING;
+const TIP_LINE: i32 = font.SMALL + font.LEADING;
 const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
-pub const TIP_LINES_MAX: usize = 18;
-pub const TIP_COLS_MAX: usize = 96;
-/// `wrap`'s lines, each nul-terminated.
-pub const Wrapped = [TIP_LINES_MAX][TIP_COLS_MAX + 1]u8;
 
 /// The mark round what is inspected: a ring round an orb, a frame round anything else.
 pub fn focus(box: rl.Rectangle, round: bool) void {
@@ -249,49 +244,6 @@ pub fn focus(box: rl.Rectangle, round: bool) void {
     rl.drawRectangleLinesEx(look.grown(box, FOCUS_GROW), FOCUS_W, look.UI_FOCUS);
 }
 
-/// Each line in `buf` is nul-terminated; wrapping breaks only at spaces.
-pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, lines: *[TIP_LINES_MAX][:0]const u8) usize {
-    var n: usize = 0;
-    var words = std.mem.tokenizeScalar(u8, body, ' ');
-    var len: usize = 0;
-    while (words.next()) |word| {
-        if (n == TIP_LINES_MAX) break;
-        const line = &buf[n];
-        const with = len + @intFromBool(len > 0) + word.len;
-        if (with <= TIP_COLS_MAX) {
-            var try_buf: [TIP_COLS_MAX + 1]u8 = undefined;
-            @memcpy(try_buf[0..len], line[0..len]);
-            if (len > 0) try_buf[len] = ' ';
-            @memcpy(try_buf[with - word.len .. with], word);
-            try_buf[with] = 0;
-            if (len == 0 or face.width(try_buf[0..with :0], size) <= w) {
-                @memcpy(line[0 .. with + 1], try_buf[0 .. with + 1]);
-                len = with;
-                lines[n] = line[0..len :0];
-                continue;
-            }
-        }
-        if (len > 0) n += 1;
-        if (n == TIP_LINES_MAX) break;
-        const fit = @min(word.len, TIP_COLS_MAX);
-        @memcpy(buf[n][0..fit], word[0..fit]);
-        buf[n][fit] = 0;
-        len = fit;
-        lines[n] = buf[n][0..len :0];
-    }
-    return if (len > 0) @min(n + 1, TIP_LINES_MAX) else n;
-}
-
-/// `text` wrapped to `w`, a line every `size + LEADING` from `y`; returns the y below it.
-pub fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, w: i32, size: i32, ink: rl.Color) i32 {
-    const step = size + LEADING;
-    var buf: Wrapped = undefined;
-    var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
-    const n = wrap(face, text, size, w, &buf, &lines);
-    for (lines[0..n], 0..) |line, i| face.draw(line, x, y + @as(i32, @intCast(i)) * step, size, ink);
-    return y + @as(i32, @intCast(n)) * step;
-}
-
 /// A body with this splits into "label|value" rows, drawn as a table.
 pub const TIP_SEP = '|';
 
@@ -301,27 +253,28 @@ pub fn table(comptime rows: anytype) []const u8 {
     inline for (rows, 0..) |r, i| out = out ++ (if (i > 0) "\n" else "") ++ r[0] ++ [_]u8{TIP_SEP} ++ r[1];
     return out;
 }
-const TIP_VALUE_X = @divTrunc(TIP_W, 2) + 24;
+const TIP_VALUE_DX = 24;
+const TIP_VALUE_X = @divTrunc(TIP_W, 2) + TIP_VALUE_DX;
 
 /// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does.
 pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8) void {
-    var buf: Wrapped = undefined;
-    var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
-    var wrapped: Wrapped = undefined;
-    var parts: [TIP_LINES_MAX][:0]const u8 = undefined;
+    var buf: font.Wrapped = undefined;
+    var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
+    var wrapped: font.Wrapped = undefined;
+    var parts: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
     var n: usize = 0;
     var rows = std.mem.splitScalar(u8, body, '\n');
     while (rows.next()) |r| {
-        if (n == TIP_LINES_MAX) break;
+        if (n == font.WRAP_LINES_MAX) break;
         if (std.mem.indexOfScalar(u8, r, TIP_SEP) != null or r.len == 0) {
-            const len = @min(r.len, TIP_COLS_MAX);
+            const len = @min(r.len, font.WRAP_COLS_MAX);
             @memcpy(buf[n][0..len], r[0..len]);
             buf[n][len] = 0;
             lines[n] = buf[n][0..len :0];
             n += 1;
         } else {
-            const count = wrap(face, r, font.SMALL, TIP_W - 2 * TIP_PAD, &wrapped, &parts);
-            for (parts[0..@min(count, TIP_LINES_MAX - n)]) |part| {
+            const count = font.wrap(face, r, font.SMALL, TIP_W - 2 * TIP_PAD, &wrapped, &parts);
+            for (parts[0..@min(count, font.WRAP_LINES_MAX - n)]) |part| {
                 @memcpy(buf[n][0 .. part.len + 1], part[0 .. part.len + 1]);
                 lines[n] = buf[n][0..part.len :0];
                 n += 1;
@@ -348,16 +301,16 @@ pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl
 
 test "a tooltip's body breaks at spaces into lines that each fit" {
     const Fixed = struct {
-        fn width(_: @This(), s: [:0]const u8, size: i32) i32 {
+        pub fn width(_: @This(), s: [:0]const u8, size: i32) i32 {
             return @as(i32, @intCast(s.len)) * @divTrunc(size, 2);
         }
     };
     const face = Fixed{};
-    var buf: Wrapped = undefined;
-    var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
+    var buf: font.Wrapped = undefined;
+    var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
     const body = "Recover 50% of life over 3 turns. Uses 20 of 60 charges; kills refill 5. Takes a turn.";
     const w = TIP_W - 2 * TIP_PAD;
-    const n = wrap(&face, body, font.SMALL, w, &buf, &lines);
+    const n = font.wrap(&face, body, font.SMALL, w, &buf, &lines);
     var words: usize = 0;
     for (lines[0..n]) |l| {
         try std.testing.expect(face.width(l, font.SMALL) <= w);
@@ -365,9 +318,9 @@ test "a tooltip's body breaks at spaces into lines that each fit" {
     }
     try std.testing.expect(n > 1);
     try std.testing.expectEqual(std.mem.count(u8, body, " ") + 1, words);
-    const long = "x" ** (TIP_COLS_MAX + 4) ++ " y";
-    try std.testing.expectEqual(@as(usize, 2), wrap(&face, long, font.SMALL, w, &buf, &lines));
-    try std.testing.expectEqual(TIP_COLS_MAX, lines[0].len);
+    const long = "x" ** (font.WRAP_COLS_MAX + 4) ++ " y";
+    try std.testing.expectEqual(@as(usize, 2), font.wrap(&face, long, font.SMALL, w, &buf, &lines));
+    try std.testing.expectEqual(font.WRAP_COLS_MAX, lines[0].len);
     try std.testing.expectEqualStrings("y", lines[1]);
     std.debug.print("tooltip: a {d}-word description in {d} lines of {d} px at most\n", .{ words, n, w });
 }
