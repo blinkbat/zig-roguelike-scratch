@@ -72,7 +72,9 @@ pub fn spread(lv: *const grid.Level, at: P, range: i32, ctx: anytype, comptime k
     fov.castInto(lv, at, castR(range), &visible);
     var cells = grid.Cells.around(at, range);
     while (cells.next()) |p| {
-        if (lv.walkable(p) and visible[grid.Level.idx(p)] and keep(ctx, p)) out.push(p);
+        if (!lv.walkable(p)) continue;
+        const k = grid.Level.idx(p);
+        if (visible[k] and keep(ctx, p)) out.push(p);
     }
     return out;
 }

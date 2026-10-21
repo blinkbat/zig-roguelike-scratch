@@ -53,8 +53,9 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, pm: Params) void {
     const sw = @divTrunc(grid.W - 2 * BORDER, @as(i32, @intCast(n)));
     const sh = @divTrunc(grid.H - 2 * BORDER, @as(i32, @intCast(n)));
     for (order[0 .. n * n]) |s| {
-        const ox = BORDER + @as(i32, @intCast(s % n)) * sw;
-        const oy = BORDER + @as(i32, @intCast(s / n)) * sh;
+        const sec = mathx.unslot(s, n);
+        const ox = BORDER + sec.x * sw;
+        const oy = BORDER + sec.y * sh;
         for (0..rng.below(@as(u32, pm.seeds) + 1)) |_| {
             const p = grid.Box.sized(.{ .x = ox, .y = oy }, sw, sh).roll(rng);
             depth[grid.Level.idx(p)] = DEPTH;

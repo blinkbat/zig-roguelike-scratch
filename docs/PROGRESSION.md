@@ -82,7 +82,7 @@ Soulslike's purchase-to-level economy is not imported. Selection, zoom and brows
 The board opens zoomed in; zoom follows the selected node, with pan and a full-board overview control.
 Node fill colour names its grant group (attribute, life, mana, offense, defense); from the opening
 zoom each node but the hero's own class origin carries its amount and stat under it. The sidebar leads with the grants, then the
-de-emphasized name and branch, allocation state, point cost and a note where a grant needs one. One deliberate action allocates the selected eligible node. Node-index
+de-emphasized name and branch, allocation state, a note where a grant needs one, then the point cost. One deliberate action allocates the selected eligible node. Node-index
 layout, grants and feeder wiring participate in the save fingerprint; saves from the old hex tree are
 rejected as incompatible rather than interpreting their allocations as different nodes.
 

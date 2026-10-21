@@ -2264,15 +2264,14 @@ pub fn update(g: *Game, dt: f32) void {
     }
     const death_drawn = deathShown(g);
     g.busy -= dt;
-    const turn_drawn = quiet(g);
-    if (turn_drawn) {
-        g.log.release();
-        g.gold_taken = null;
-    }
     for (g.glide[0..g.pool.n]) |*gl| gl.t += dt;
     g.fx.step(&g.lv, dt);
     catchUp(g);
-    if (turn_drawn) drawnTurn(g);
+    if (quiet(g)) {
+        g.log.release();
+        g.gold_taken = null;
+        drawnTurn(g);
+    }
     g.cloud.step(&g.lv, dt);
     splashSteps(g);
     if (g.shot) |*s| {
@@ -2302,13 +2301,14 @@ pub fn update(g: *Game, dt: f32) void {
     } else switch (g.mode) {
         .play => {
             if (g.travel) |l| {
-                if (queueInteract(g)) {} else if (usedSkill(g)) |u| {
+                if (queueInteract(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
+                    openInspect(g);
+                } else if (usedSkill(g)) |u| {
                     g.pending = .{ .skill = u };
                 } else if (g.st.walk) |d| queueWalk(g, d);
                 if (quiet(g)) goThrough(g, l);
             } else if (interacted(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
-                g.pending = null;
-                g.mode = .inspect;
+                openInspect(g);
             } else if (skillDue(g)) |u| {
                 useSkill(g, u);
             } else if (paced(g)) |w| {
@@ -2332,7 +2332,7 @@ pub fn update(g: *Game, dt: f32) void {
         },
         .pause => pauseStep(g),
     }
-    if (g.mode == .pause and g.pause_page == .character) if (g.travel) |l| if (quiet(g)) goThrough(g, l);
+    if ((g.mode == .pause and g.pause_page == .character) or g.mode == .inspect) if (g.travel) |l| if (quiet(g)) goThrough(g, l);
     if (!std.meta.eql(was, screenOf(g))) holdWalk(g);
     stepGlide(g, late);
     catchUp(g);
@@ -2416,6 +2416,11 @@ fn openPause(g: *Game) void {
     g.pending = null;
 }
 
+fn openInspect(g: *Game) void {
+    g.mode = .inspect;
+    g.pending = null;
+}
+
 /// A pad's View switches a screen over play to the game menu.
 fn padToGame(g: *Game) bool {
     if (!g.st.device.pad() or !g.st.hit(PAUSE)) return false;
@@ -2431,7 +2436,12 @@ fn openCharacter(g: *Game) void {
 }
 
 fn drawGold(g: *const Game, c: Cam, at: P) void {
-    g.face.centred(look.COIN_MARK, c.sx(at) + HALF_CELL + GOLD_DX, c.sy(at) + HALF_CELL + LOOT_DY, LOOT_PX, look.RETICLE);
+    drawLoot(g, c, at, look.COIN_MARK, GOLD_DX, look.RETICLE);
+}
+
+fn drawLoot(g: *const Game, c: Cam, at: P, mark: [:0]const u8, dx: i32, ink: rl.Color) void {
+    const m = c.mid(at);
+    g.face.centred(mark, m.x + dx, m.y + LOOT_DY, LOOT_PX, ink);
 }
 
 fn dropShown(g: *const Game, drop: items.Drop) bool {
@@ -3191,7 +3201,7 @@ fn drawMap(g: *Game) void {
     }
     for (g.ground.drops[0..g.ground.n]) |drop| {
         if (!dropShown(g, drop)) continue;
-        g.face.centred(look.DROP_MARK, c.sx(drop.at) + HALF_CELL + DROP_DX, c.sy(drop.at) + HALF_CELL + LOOT_DY, LOOT_PX, look.itemInk(drop.item.magical()));
+        drawLoot(g, c, drop.at, look.DROP_MARK, DROP_DX, look.itemInk(drop.item.magical()));
     }
     _ = shadowPass(g, c, view, g.framebuffer);
     g.cloud.draw(&g.lv, view, -c.x, -c.y, CELL, g.screen);
@@ -3814,13 +3824,7 @@ fn tipOf(g: *const Game, s: Spot, title_buf: []u8, body_buf: []u8) ?Tip {
             const turns = if (heroShown(g)) |h| h.status.get(st) else 0;
             break :blk .{
                 .title = std.fmt.bufPrintZ(title_buf, "{s}, {d} turn{s}", .{ st.title(), turns, plural(turns) }) catch st.title(),
-                .body = switch (st) {
-                    .bleeding => bleeding.STATUS,
-                    .burning => burning.STATUS,
-                    .chilled => glacial.STATUS,
-                    .pinned => pinning.STATUS,
-                    .warded => ward.STATUS,
-                },
+                .body = st.about(),
             };
         },
     };
@@ -4246,7 +4250,10 @@ fn captureCinema(g: *Game, target: rl.RenderTexture2D, comptime name: []const u8
         var changed: usize = 0;
         var hidden: usize = 0;
         {
-            var px = grid.Cells.of(.{ .x = 480, .y = 0 }, .{ .x = g.screen.x - 320, .y = g.screen.y - hud.COVER });
+            const log = journal.box(g.screen);
+            const lo_x: i32 = @intFromFloat(@ceil(log.x + log.width));
+            const hi_x: i32 = @intFromFloat(miniFrame(g.screen.x).x);
+            var px = grid.Cells.of(.{ .x = lo_x, .y = 0 }, .{ .x = hi_x, .y = g.screen.y - hud.COVER });
             while (px.next()) |q| {
                 const x = q.x;
                 const y = q.y;
@@ -7695,9 +7702,10 @@ fn revealed(g: *Game, slot: usize) bool {
     return g.split_from[slot] == null;
 }
 
-test "a half the gas splits off an unlit slime into sight shows as the archer's step lands, not before" {
-    const g = try boot(std.testing.allocator);
-    defer shut(std.testing.allocator, g);
+const Ledged = struct { dark: P, half: usize };
+
+/// The gas splits a half off a slime on an unlit ledge into sight as the archer steps; returns before `catchUp`.
+fn gassedOffLedge(g: *Game) Ledged {
     arena(g, .{ .x = 20, .y = 20 }, &.{});
     const dark = ledge(g);
     const id = spawnAt(g, .slime_half, dark, true);
@@ -7706,10 +7714,18 @@ test "a half the gas splits off an unlit slime into sight shows as the archer's 
     g.split_from[half] = s;
     g.pool.move(&g.lv, g.hero, .{ .x = 19, .y = 20 });
     castSight(g, .{ .x = 19, .y = 20 });
-    try std.testing.expect(!g.lv.isLit(dark) and g.lv.isLit(g.pool.items[half].at));
     g.owed[s].gassed = .{ .kill = false, .after = .{ .body = snap(g, s), .reveals = half } };
     g.order_n = 0;
     stepGlide(g, 0);
+    return .{ .dark = dark, .half = half };
+}
+
+test "a half the gas splits off an unlit slime into sight shows as the archer's step lands, not before" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const l = gassedOffLedge(g);
+    const half = l.half;
+    try std.testing.expect(!g.lv.isLit(l.dark) and g.lv.isLit(g.pool.items[half].at));
     const step = g.glide[heroSlot(g).?].left();
     catchUp(g);
     const t = framesUntil(g, half, revealed);
@@ -7721,17 +7737,7 @@ test "a half the gas splits off an unlit slime into sight shows as the archer's 
 test "a half revealed as the turn's picture ends shows before a held walk starts the next turn" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
-    arena(g, .{ .x = 20, .y = 20 }, &.{});
-    const dark = ledge(g);
-    const id = spawnAt(g, .slime_half, dark, true);
-    const half = actor.Pool.slot(spawnAt(g, .slime_quarter, .{ .x = 22, .y = 19 }, true));
-    const s = actor.Pool.slot(id);
-    g.split_from[half] = s;
-    g.pool.move(&g.lv, g.hero, .{ .x = 19, .y = 20 });
-    castSight(g, .{ .x = 19, .y = 20 });
-    g.owed[s].gassed = .{ .kill = false, .after = .{ .body = snap(g, s), .reveals = half } };
-    g.order_n = 0;
-    stepGlide(g, 0);
+    const half = gassedOffLedge(g).half;
     catchUp(g);
     const from = g.heroActor().?.at;
     var shown: ?usize = null;
@@ -7744,6 +7750,24 @@ test "a half revealed as the turn's picture ends shows before a held walk starts
     }
     std.debug.print("held walk past a reveal: half shown at frame {?d}, next step at frame {d}\n", .{ shown, n });
     try std.testing.expect(shown != null and n > shown.?);
+}
+
+test "a half revealed as the turn's picture ends holds the turn's log lines until it has slid out" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const half = gassedOffLedge(g).half;
+    catchUp(g);
+    g.log.say("held", .{});
+    var shown: ?usize = null;
+    var released: ?usize = null;
+    var n: usize = 0;
+    while (n < 400 and released == null) : (n += 1) {
+        update(g, TEST_DT);
+        if (shown == null and revealed(g, half)) shown = n;
+        if (g.log.held == 0) released = n;
+    }
+    std.debug.print("log past a reveal: half shown at frame {?d}, lines released at frame {?d}\n", .{ shown, released });
+    try std.testing.expect(shown != null and released != null and released.? > shown.?);
 }
 
 test "a quarter the gas splits off a burning half on its waiting turn burns that turn as its sibling does" {
@@ -8900,6 +8924,25 @@ test "a door trip finishes behind Character opened during it, so item commands c
     try std.testing.expectEqual(Mode.pause, g.mode);
     try std.testing.expectEqual(book.Page.inventory, g.character.page);
     std.debug.print("door behind Character: arrived at node {d} with the inventory still open\n", .{g.node});
+}
+
+test "inspect opened during a door trip opens, and the trip still finishes behind it" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const w = try std.testing.allocator.create(atlas.Atlas);
+    defer std.testing.allocator.destroy(w);
+    const b = twoRooms(w);
+    beginMapAt(g, w, w.start, 123);
+    nudge(g, .w);
+    try std.testing.expect(g.travel != null);
+    press(g, skillbar.INSPECT);
+    try std.testing.expectEqual(Mode.inspect, g.mode);
+    g.st = .{};
+    update(g, GLIDE_S + mathx.FRAME_DT);
+    try std.testing.expectEqual(b, g.node);
+    try std.testing.expect(g.travel == null);
+    try std.testing.expectEqual(Mode.inspect, g.mode);
+    std.debug.print("inspect during a door trip: arrived at node {d} with inspect open\n", .{g.node});
 }
 
 test "charge retreats down an empty line and passive and skill allocations spend points without turns" {

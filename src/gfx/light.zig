@@ -1248,7 +1248,7 @@ pub const Light = struct {
     fn cloudCorners(self: *const Light, c: P) [4]f32 {
         const t = self.t.at();
         if (self.clouds_held) |h| {
-            if (h.t == t and c.x >= h.box.lo.x and c.y >= h.box.lo.y and c.x < h.box.hi.x and c.y < h.box.hi.y) return self.heldCorners(c);
+            if (h.t == t and h.box.holds(c)) return self.heldCorners(c);
         }
         const cx: f32 = @floatFromInt(c.x);
         const cy: f32 = @floatFromInt(c.y);

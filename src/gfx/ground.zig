@@ -407,7 +407,7 @@ fn bedsOf(lv: *const grid.Level, lo: P, hi: P, seen_only: bool) Beds {
     return b;
 }
 
-/// The numbers a tile-art script's `return { ... }` lists are `want`, in order.
+/// The numbers in a tile-art script after `after`, to its `}` when it opens a table or else to the line's end, are `want`.
 pub fn expectLuaList(comptime T: type, want: []const T, path: []const u8, after: []const u8) !void {
     const alloc = std.testing.allocator;
     const lua = try std.fs.cwd().readFileAlloc(alloc, path, 1 << 16);

@@ -6,6 +6,9 @@ const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
 const glacial = @import("../play/glacial.zig");
 const burning = @import("../play/burning.zig");
+const bleeding = @import("../play/bleeding.zig");
+const pinning = @import("../play/pinning.zig");
+const ward = @import("../play/ward.zig");
 const look = @import("look.zig");
 const font = @import("font.zig");
 const menu = @import("../ui/menu.zig");
@@ -135,8 +138,7 @@ pub const Status = enum {
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
             .bleeding => look.BLEED,
-            .burning => look.elementInk(burning.ELEMENT),
-            .chilled => look.elementInk(glacial.ELEMENT),
+            inline .burning, .chilled => |t| look.elementInk(module(t).ELEMENT),
             .pinned => look.PIN,
             .warded => look.WARD,
         };
@@ -155,6 +157,23 @@ pub const Status = enum {
         return switch (s) {
             .warded => skillbar.Act.mana_shield.name(),
             inline else => |t| comptime menu.capital(@tagName(t)),
+        };
+    }
+
+    /// What it does to the body, as its tooltip says.
+    pub fn about(s: Status) []const u8 {
+        return switch (s) {
+            inline else => |t| module(t).STATUS,
+        };
+    }
+
+    fn module(comptime s: Status) type {
+        return switch (s) {
+            .bleeding => bleeding,
+            .burning => burning,
+            .chilled => glacial,
+            .pinned => pinning,
+            .warded => ward,
         };
     }
 

@@ -414,7 +414,8 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
             top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
         }
         if (next.cooldown(s.act) != growth.cooldown(s.act)) {
-            text.say("Cooldown: {d} turns", .{next.cooldown(s.act)});
+            const cd = next.cooldown(s.act);
+            text.say("Cooldown: {d} turn{s}", .{ cd, mathx.plural(cd) });
             top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
         }
         if (top == changes) face.draw("No further stat changes.", x, top, font.SMALL, look.DIM);
@@ -783,7 +784,7 @@ test "every class skill stays in its canvas and is reachable by directional sele
                 try std.testing.expect(!overlaps);
             }
         }
-        var reached = std.StaticBitSet(progress.NODES.len).initEmpty();
+        var reached = std.StaticBitSet(skillbar.ACTS.len).initEmpty();
         reached.set(0);
         for (0..skills.len) |_| {
             for (boxes[0..skills.len], 0..) |box, i| {

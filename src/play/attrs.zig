@@ -15,6 +15,9 @@ pub const Bonus = enum {
     mana,
     armour,
 
+    /// How a grant of it reads, with its amount and `label`.
+    pub const RAISE_FMT = "+{d} to {s}";
+
     /// What "+N to" raises.
     pub fn label(b: Bonus) [:0]const u8 {
         return switch (b) {

@@ -1509,6 +1509,7 @@ fn pickUp(ed: *Editor, p: P, second: bool) void {
         ed.setTool(t);
         return ed.say("Picked up the {s} tool", .{t.name()});
     }
+    ed.preview();
     const t = ed.lv.at(p);
     ed.ink.set(.of(second), t);
     ed.setTool(.paint);
@@ -4112,11 +4113,14 @@ test "a line, a box and a fill lay the inks, each one undo, and the eyedropper p
     try std.testing.expectEqual(@as(usize, 4), ed.hist_at);
     click(ed, .{ .foe = .pib }, .{ .x = 2, .y = 2 });
     ed.tool = .paint;
-    ed.preview();
     pickUp(ed, .{ .x = 22, .y = 22 }, true);
     try std.testing.expectEqual(grid.Tile.water, ed.ink.get(.second));
     pickUp(ed, .{ .x = 2, .y = 2 }, false);
     try std.testing.expect(ed.tool.eql(.{ .foe = .pib }));
+    for (0..3) |_| ed.undo();
+    pickUp(ed, .{ .x = 22, .y = 22 }, false);
+    try std.testing.expect(tileAt(ed, .{ .x = 22, .y = 22 }) != .water);
+    try std.testing.expectEqual(tileAt(ed, .{ .x = 22, .y = 22 }), ed.ink.get(.first));
 }
 
 test "a selection copied pastes with what stood on it, and cut leaves the second ink" {

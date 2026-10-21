@@ -413,8 +413,7 @@ pub const Level = struct {
     }
 
     pub fn of(i: usize) P {
-        const n: i32 = @intCast(i);
-        return .{ .x = @mod(n, W), .y = @divFloor(n, W) };
+        return mathx.unslot(i, COLS);
     }
 
     pub fn at(self: *const Level, p: P) Tile {

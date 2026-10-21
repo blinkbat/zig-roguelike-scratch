@@ -20,7 +20,7 @@ const SITE_MARGIN: i32 = 2;
 
 pub const Params = struct {
     count: u8 = 6,
-    /// Smallest and largest side, outline and all.
+    /// Smallest and largest side, outline and all; no taller than three quarters of the largest.
     size: [2]u8 = .{ 5, 11 },
     /// Percent of wall fallen to rubble, and half that of floor.
     decay: u8 = 0,

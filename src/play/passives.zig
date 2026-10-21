@@ -252,7 +252,7 @@ pub const Grant = struct {
             else if (comptime t.style()) |s|
                 w.print("+{d}% {s}", .{ n, s.label() })
             else
-                w.print("+{d} to {s}", .{ n, comptime t.bonus().?.label() }),
+                w.print(attrs.Bonus.RAISE_FMT, .{ n, comptime t.bonus().?.label() }),
         }) catch {};
     }
 
@@ -603,9 +603,9 @@ pub fn step(cur: usize, dx: f32, dy: f32) usize {
 
 test "radial branches preserve capstone routes, bridge crossings, live grants and directional reach" {
     var kinds = std.StaticBitSet(std.enums.values(Kind).len).initEmpty();
-    var tiers = [_]usize{0} ** std.enums.values(Tier).len;
+    var tiers = std.EnumArray(Tier, usize).initFill(0);
     for (NODES, 0..) |n, i| {
-        tiers[@intFromEnum(n.tier)] += 1;
+        tiers.getPtr(n.tier).* += 1;
         kinds.set(@intFromEnum(n.grant.kind));
         for ([_]?Grant{ n.grant, n.bump }) |maybe| {
             const g = maybe orelse continue;
@@ -629,7 +629,7 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
             try std.testing.expect(std.mem.indexOfScalar(usize, feeders(anchor, &back), i) != null);
         };
     }
-    try std.testing.expectEqual(std.enums.values(Branch).len, tiers[@intFromEnum(Tier.capstone)]);
+    try std.testing.expectEqual(std.enums.values(Branch).len, tiers.get(.capstone));
     try std.testing.expectEqual(std.enums.values(Kind).len, kinds.count());
     var seen = std.StaticBitSet(N).initEmpty();
     seen.set(start(.knight));
@@ -647,5 +647,5 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
         };
     }
     try std.testing.expectEqual(@as(usize, N), seen.count());
-    std.debug.print("passives: {d} nodes, {d} stat / {d} interest / {d} capstone; {d} two-way bridges; all {d} grant kinds and {d} directional targets checked\n", .{ N, tiers[0], tiers[1], tiers[2], std.enums.values(Seam).len * BRIDGE_RINGS.len, kinds.count(), seen.count() });
+    std.debug.print("passives: {d} nodes, {d} stat / {d} interest / {d} capstone; {d} two-way bridges; all {d} grant kinds and {d} directional targets checked\n", .{ N, tiers.get(.stat), tiers.get(.interest), tiers.get(.capstone), std.enums.values(Seam).len * BRIDGE_RINGS.len, kinds.count(), seen.count() });
 }

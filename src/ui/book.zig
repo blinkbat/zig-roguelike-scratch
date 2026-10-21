@@ -777,7 +777,7 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
         for (items.MODS) |m| {
             const n = it.value(m);
             if (n == 0) continue;
-            line.say("+{d} to {s}", .{ n, m.label() });
+            line.say(attr.Bonus.RAISE_FMT, .{ n, m.label() });
             face.drawMid(line.text(), mid, top, font.SMALL, look.MAGIC);
             top += CARD_LINE;
         }

@@ -398,10 +398,10 @@ pub const Atlas = struct {
     }
 
     fn freeSlot(self: *Atlas) P {
-        const cols: i32 = @intCast(GRAPH_COLS);
-        var i: i32 = 0;
+        var i: usize = 0;
         while (true) : (i += 1) {
-            const p = P{ .x = @mod(i, cols) * GRAPH_STEP.x, .y = @divTrunc(i, cols) * GRAPH_STEP.y };
+            const s = mathx.unslot(i, GRAPH_COLS);
+            const p = P{ .x = s.x * GRAPH_STEP.x, .y = s.y * GRAPH_STEP.y };
             const clear = for (self.nodes()) |*nd| {
                 if (@abs(nd.pos.x - p.x) < GRAPH_STEP.x and @abs(nd.pos.y - p.y) < GRAPH_STEP.y) break false;
             } else true;

@@ -10,6 +10,7 @@ const P = mathx.P;
 pub const CHAMBER_MAX: u8 = 20;
 const CELLS_X: usize = @intCast(@divTrunc(grid.W - 1, 2));
 const CELLS_Y: usize = @intCast(@divTrunc(grid.H - 1, 2));
+const MID = P{ .x = CELLS_X / 2, .y = CELLS_Y / 2 };
 
 pub const Style = enum { walls, rock, hedge };
 
@@ -55,7 +56,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     var seen = [_]bool{false} ** (CELLS_X * CELLS_Y);
     var stack: [CELLS_X * CELLS_Y]u16 = undefined;
     var top: usize = 1;
-    const start = (CELLS_Y / 2) * CELLS_X + CELLS_X / 2;
+    const start = mathx.slot(MID.x, MID.y, CELLS_X, CELLS_Y).?;
     stack[0] = @intCast(start);
     seen[start] = true;
     lv.set(cellAt(mathx.unslot(start, CELLS_X)), pal.open);
@@ -107,7 +108,7 @@ test "a perfect maze reaches every cell from the middle" {
     shape(&lv, &rng, 0, .{ .braid = 0 });
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
-    const reached = grid.distances(&lv, cellAt(.{ .x = CELLS_X / 2, .y = CELLS_Y / 2 }), &dist, &queue);
+    const reached = grid.distances(&lv, cellAt(MID), &dist, &queue);
     std.debug.print("a {d}x{d} maze: {d} open cells, all reached: {}\n", .{ CELLS_X, CELLS_Y, carve.count(&lv, .floor), reached == carve.count(&lv, .floor) });
     try std.testing.expectEqual(carve.count(&lv, .floor), reached);
     try std.testing.expectEqual(CELLS_X * CELLS_Y * 2 - 1, reached);

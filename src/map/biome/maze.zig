@@ -85,12 +85,12 @@ const Plan = struct {
     mask: [COLS_MAX * ROWS_MAX]?u4 = @splat(null),
 
     fn at(self: *const Plan, c: usize, r: usize) ?u4 {
-        return self.mask[r * COLS_MAX + c];
+        return self.mask[self.slot(.{ .x = @intCast(c), .y = @intCast(r) }).?];
     }
 
     fn slot(self: *const Plan, cr: P) ?usize {
-        if (cr.x < 0 or cr.y < 0 or cr.x >= self.cols or cr.y >= self.rows) return null;
-        return @as(usize, @intCast(cr.y)) * COLS_MAX + @as(usize, @intCast(cr.x));
+        if (cr.x >= self.cols or cr.y >= self.rows) return null;
+        return mathx.slot(cr.x, cr.y, COLS_MAX, ROWS_MAX);
     }
 
     fn place(k: usize) P {
@@ -121,7 +121,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     pl.origin = grid.Box.centred(@as(i32, @intCast(pl.cols)) * size, @as(i32, @intCast(pl.rows)) * size).lo;
     var placed: [COLS_MAX * ROWS_MAX]usize = undefined;
     var n: usize = 1;
-    placed[0] = (pl.rows / 2) * COLS_MAX + pl.cols / 2;
+    placed[0] = pl.slot(.{ .x = @intCast(pl.cols / 2), .y = @intCast(pl.rows / 2) }).?;
     pl.mask[placed[0]] = 0;
     var tries: usize = 0;
     while (n < p.rooms and tries < TRIES) : (tries += 1) {

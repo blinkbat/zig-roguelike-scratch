@@ -67,7 +67,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
         carve.box(lv, curtain.grown(berm), out);
     }
     carve.box(lv, curtain, .wall);
-    const yard = curtain.shrunk(CURTAIN);
+    const yard = yardOf(p);
     carve.box(lv, yard, p.yard.tile());
     const t: f32 = @floatFromInt(p.towers);
     if (p.towers > 0) {
@@ -125,6 +125,10 @@ fn curtainOf(p: Params) grid.Box {
     return grid.Box.centred(p.size[0], p.size[1]);
 }
 
+fn yardOf(p: Params) grid.Box {
+    return curtainOf(p).shrunk(CURTAIN);
+}
+
 /// Cells from the curtain out to the moat: the berm runs round the towers' outside.
 fn bermOf(p: Params) i32 {
     return BERM + towerReach(p.towers);
@@ -140,7 +144,7 @@ fn towerReach(towers: u8) i32 {
 }
 
 fn keepOf(p: Params) grid.Box {
-    const yard = curtainOf(p).shrunk(CURTAIN);
+    const yard = yardOf(p);
     const kw: i32 = @intFromFloat(@as(f32, @floatFromInt(yard.width())) * KEEP_OF);
     const kh: i32 = @intFromFloat(@as(f32, @floatFromInt(yard.height())) * KEEP_OF);
     return grid.Box.centred(kw, kh);
@@ -179,7 +183,7 @@ test "every corner tower opens onto the yard, however wide" {
         shape(&lv, &rng, 0, p);
         _ = st.label(&lv);
         const curtain = curtainOf(p);
-        const yard = st.of(.{ .x = grid.MIDDLE.x, .y = curtain.lo.y + CURTAIN });
+        const yard = st.of(.{ .x = grid.MIDDLE.x, .y = yardOf(p).lo.y });
         for (carve.corners(curtain)) |c| {
             towers += 1;
             if (st.of(c) != yard) sealed += 1;
