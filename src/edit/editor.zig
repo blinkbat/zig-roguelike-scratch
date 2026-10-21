@@ -7,6 +7,12 @@ const atlas = @import("../map/atlas.zig");
 const carve = @import("../map/carve.zig");
 const lume = @import("../map/lume.zig");
 const terrain = @import("../map/biome/terrain.zig");
+const labyrinth = @import("../map/biome/labyrinth.zig");
+const hall = @import("../map/biome/hall.zig");
+const maze = @import("../map/biome/maze.zig");
+const town = @import("../map/biome/town.zig");
+const site = @import("../map/biome/site.zig");
+const climate = @import("../map/climate.zig");
 const scatter = @import("../map/feature/scatter.zig");
 const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
@@ -2546,7 +2552,12 @@ const WIDTH_ROW = Knob{ .field = "width", .tips = &.{"Cells across"} };
 const LITTER_ROW = Knob{ .field = "litter", .tips = &.{"Lone boulders, a thousandth of the open grass each"} };
 const DECOR_ROW = Knob{ .field = "decor", .tips = &.{ "Tiny shrubs a cell at a time, a thousandth of the open grass each", "Tall grass in patches, a thousandth of the open grass each", "Shrooms a cell at a time, a thousandth of the open grass each" } };
 const GRASS_ROWS = [_]Knob{ LITTER_ROW, DECOR_ROW };
-const COURSE_ROW = Knob{ .field = "course", .tips = &.{"Across, down, or either"} };
+const COURSE_ROW = Knob{ .field = "course", .tips = &.{listing(carve.Course, 3, "Across, down, or either")} };
+
+fn listing(comptime T: type, comptime n: usize, comptime tip: [:0]const u8) [:0]const u8 {
+    if (std.meta.fields(T).len != n) @compileError(@typeName(T) ++ " has a member its tip does not name");
+    return tip;
+}
 
 const ROOMS_ROWS = [_]Knob{
     .{ .field = "size", .tips = &.{ "Width of the box the rooms fall in, centred on the map", "Height of the box the rooms fall in, centred on the map" } },
@@ -2589,18 +2600,18 @@ const STRATA_ROWS = [_]Knob{
 };
 
 const LABYRINTH_ROWS = [_]Knob{
-    .{ .field = "style", .tips = &.{"Built walls, rock, or a hedge maze"} },
+    .{ .field = "style", .tips = &.{listing(labyrinth.Style, 3, "Built walls, rock, or a hedge maze")} },
     .{ .field = "chamber", .tips = &.{"Half-height of an open chamber at the heart, half again as wide; 0 for none"} },
     .{ .field = "braid", .tips = &.{"Of the dead ends, how many are knocked through into loops"}, .fmt = PERCENT_FMT },
 };
 
 const HALL_ROWS = [_]Knob{
-    .{ .field = "style", .tips = &.{"Bare, pillared, grave alcoves, or a grove of plants"} },
+    .{ .field = "style", .tips = &.{listing(hall.Style, 4, "Bare, pillared, grave alcoves, or a grove of plants")} },
     .{ .field = "margin", .tips = &.{"Wall between the hall and the map's edge"} },
 };
 
 const MAZE_ROWS = [_]Knob{
-    .{ .field = "style", .tips = &.{"Caves, tombs, sewers, lava or ice"} },
+    .{ .field = "style", .tips = &.{menu.capital(menu.joined(std.meta.fieldNames(maze.Style), .@"or"))} },
     .{ .field = "rooms", .tips = &.{"Rooms it sets, at most"} },
     .{ .field = "size", .tips = &.{"Cells on a room's side"} },
     .{ .field = "merge", .tips = &.{"A thousandth: how often a room is joined to each one already beside it"} },
@@ -2637,7 +2648,7 @@ const KEEP_ROWS = [_]Knob{
 };
 
 const TOWN_ROWS = [_]Knob{
-    .{ .field = "wall", .tips = &.{"None, a stone wall or a fence round it"} },
+    .{ .field = "wall", .tips = &.{listing(town.Wall, 3, "None, a stone wall or a fence round it")} },
     .{ .field = "block", .tips = &.{"A block's side between streets"} },
     .{ .field = "street", .tips = &.{"A street's width"} },
     .{ .field = "houses", .tips = &.{"Of each block's lots, how many are built on"}, .fmt = PERCENT_FMT },
@@ -2654,7 +2665,7 @@ const DUNES_ROWS = [_]Knob{
 };
 
 const SITE_ROWS = [_]Knob{
-    .{ .field = "template", .tips = &.{"Huts, compound, pillars, or any one per section"} },
+    .{ .field = "template", .tips = &.{listing(site.Template, 4, "Huts, compound, pillars, or any one per section")} },
     DECAY_ROW,
     .{ .field = "ground", .tips = &.{"The ground between and round the buildings"} },
 };
@@ -2770,8 +2781,8 @@ const FEATURE_CHOICE = Choice{ .label = "Feature", .tip = "What this feature lay
 const ADD_FEATURE_TIP = "Lay another feature over the base: " ++ menu.joined(std.meta.fieldNames(atlas.Kind), .@"or");
 
 const SKY_ROWS = [_]Knob{
-    .{ .field = "light", .tips = &.{"How its daylight looks: clear, or a bleak overcast; shown only open to the sky"} },
-    .{ .field = "weather", .tips = &.{"What falls from its sky: nothing, or a soft drizzle; shown only open to the sky"} },
+    .{ .field = "light", .tips = &.{listing(climate.Light, 2, "How its daylight looks: clear, or a bleak overcast; shown only open to the sky")} },
+    .{ .field = "weather", .tips = &.{listing(climate.Weather, 2, "What falls from its sky: nothing, or a soft drizzle; shown only open to the sky")} },
 };
 
 const FOE_ROWS = [_]Knob{
@@ -2801,7 +2812,15 @@ fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []cons
         const r = for (rows) |r| {
             if (std.mem.eql(u8, r.field, name)) break r;
         } else @compileError(name ++ " has no row on the generator");
-        if (r.tips.len != atlas.knobNumbers(@FieldType(T, name))) @compileError(name ++ " wants a tip for each number in it");
+        const K = @FieldType(T, name);
+        if (r.tips.len != atlas.knobNumbers(K)) @compileError(name ++ " wants a tip for each number in it");
+        if (@typeInfo(K) == .@"struct" and K != mathx.P) {
+            for (std.meta.fieldNames(K), r.tips) |part, tip| {
+                var spoken = part[0..part.len].*;
+                std.mem.replaceScalar(u8, &spoken, '_', ' ');
+                if (std.ascii.indexOfIgnoreCase(tip, &spoken) == null) @compileError(name ++ "." ++ part ++ " has another's tip");
+            }
+        }
     }
 }
 

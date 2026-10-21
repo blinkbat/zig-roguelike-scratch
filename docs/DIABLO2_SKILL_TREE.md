@@ -204,8 +204,7 @@ a special damage bonus.
 
 `feeders` defines allocation direction. A branch normally grows outward from an owned
 feeder; bridges can be entered from either adjoining anchor and can feed either anchor
-on the far side. `linked` is symmetric for drawing connectivity and must not replace
-`feeders` in allocation checks. `State.available`, `State.allocate`, and `bonusAt` remain
+on the far side. Drawn links and allocation checks both read `feeders`. `State.available`, `State.allocate`, and `bonusAt` remain
 the transaction authority. The current class root begins owned and adds no bonus beyond
 the class's base attributes. Either other class root can be purchased for one passive
 point without a feeder. Every other purchased node also costs one passive point and

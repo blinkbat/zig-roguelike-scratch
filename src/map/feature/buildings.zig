@@ -25,7 +25,6 @@ pub const Params = struct {
     decay: u8 = 0,
     walls: grid.Tile = .wall,
     floor: grid.Tile = .floor,
-    /// The most barrels one stacks.
     barrels: u8 = 1,
     /// Percent of them that hang a torch.
     torches: u8 = 30,

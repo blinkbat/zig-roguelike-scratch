@@ -119,8 +119,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Use the hero's name in the log/death screen, never "you".
 - `Game.screen` controls layout; fullscreen can change it at runtime. `ui/hud.zig` follows
   `docs/HUD_LAYOUT.md`: a centered 640px assembly, life/mana orbs, skill icons, cooldowns, an experience bar and ailments;
-  minimap at top right. The map continues behind it, with `hud.COVER` allowing bottom rows to clear it.
-  No live name label, counters, clock display or permanent control instructions. The persistent event log
+  minimap at top right, with a sun/moon time-of-day line under it. The map continues behind it, with `hud.COVER`
+  allowing bottom rows to clear it. No live name label, counters, numeric clock or permanent control instructions. The persistent event log
   occupies the bottom-left gutter without a heading; newest entries append at the bottom, with text,
   background and border fading to 10% of their base opacity at the top. Follow `docs/DATA_PRESENTATION.md` for item cards,
   comparisons and stat wording: relevant properties only, explicit units, and effects before metrics.
@@ -228,7 +228,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   refresh it. Cornered beside the hero, it attacks. Fright speech waits for the death's presented impact
   and uses cosmetic RNG.
 - `map/day.zig`'s `Game.clock` is simulation: saved whole minutes, advanced by spent turns on every
-  node. `map/lume.zig` uses it for outdoor sight; `Game.hour_shown` only eases the rendered lighting.
+  node. `map/lume.zig` uses it for outdoor sight; `Game.hour_shown` only eases the rendered lighting and the minimap's sun/moon line.
 - `map/fov.zig` owns line of sight; `map/lume.zig` owns visibility from light. `Level.los` is geometric
   sight; `Level.lit` additionally requires sky, torch or carried light. Terrain is remembered; bodies are
   shown only where lit at their presented center. Rendering never decides visibility.

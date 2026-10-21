@@ -94,7 +94,7 @@ pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
 pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8, device: input.Device) void {
     const at = if (device == .keys) Entry{ .row = ROWS - 1, .col = DONE_AT } else e.*;
     const mid = @divTrunc(screen.y, 2);
-    menu.mid(face, screen, title, mid + TITLE_DY, menu.TITLE, look.TEXT);
+    menu.heading(face, screen, title, mid + TITLE_DY, menu.TITLE, look.TEXT, look.UI_GOLD);
     var buf: [hero.Name.MAX + CARET.len + 1]u8 = undefined;
     menu.mid(face, screen, std.fmt.bufPrintZ(&buf, "{s}" ++ CARET, .{e.name.text()}) catch "", mid + FIELD_DY, FIELD, look.UI_FOCUS);
     const grid_w: i32 = COLS * KEY_W;

@@ -78,6 +78,7 @@ comptime {
 }
 
 pub const Hit = struct { physical: damage.Span, element: ?damage.Span, style: attrs.Style };
+pub const Blow = struct { by: attrs.Attrs, style: attrs.Style, bases: skillbar.EquippedBases };
 
 pub const State = struct {
     level: u16 = 1,
@@ -178,13 +179,16 @@ pub const State = struct {
         return out;
     }
 
+    /// What scales `act`'s blow with `gear`, for previews and live rolls alike.
+    pub fn blowOf(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) ?Blow {
+        const attack = act.attack() orelse return null;
+        return .{ .by = self.skillAttrs(equipped, gear, act), .style = gear.scaling(attack), .bases = act.equippedBases(gear) };
+    }
+
     /// Its blow's non-critical spans with `gear`, as live damage rolls them.
     pub fn hit(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) ?Hit {
-        const attack = act.attack() orelse return null;
-        const bases = act.equippedBases(gear);
-        const by = self.skillAttrs(equipped, gear, act);
-        const style = gear.scaling(attack);
-        return .{ .physical = by.span(style, bases.physical()), .element = if (bases.element) |b| by.span(style, b) else null, .style = style };
+        const b = self.blowOf(equipped, gear, act) orelse return null;
+        return .{ .physical = b.by.span(b.style, b.bases.physical()), .element = if (b.bases.element) |e| b.by.span(b.style, e) else null, .style = b.style };
     }
 
     pub fn cost(self: *const State, act: skillbar.Act) i32 {

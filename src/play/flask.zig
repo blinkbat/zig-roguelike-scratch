@@ -16,12 +16,15 @@ const CHARGE_NOTE = std.fmt.comptimePrint("Uses {d} of {d} charges; kills refill
 
 pub const Life = struct {
     pub const KIND: Kind = .life;
-    const TEXT = "Recover {d}% of life over {d} turns. {s}";
-    pub const DESCRIPTION = std.fmt.comptimePrint(TEXT, .{ LIFE_PCT, TURNS, CHARGE_NOTE });
+    const TEXT = "Recover {d}{s}% of life over {d} turns. {s}";
+    pub const DESCRIPTION = std.fmt.comptimePrint(TEXT, .{ LIFE_PCT, "", TURNS, CHARGE_NOTE });
     pub const FLAVOR = "Bitter, red, and better than bleeding.";
 
     pub fn describe(w: anytype, perks: passives.Perks) void {
-        w.print(TEXT, .{ lifePercent(perks.life_flask), TURNS, CHARGE_NOTE }) catch {};
+        const tenths = lifeTenths(perks.life_flask);
+        var part: [3]u8 = undefined;
+        const fraction = if (@mod(tenths, 10) == 0) "" else std.fmt.bufPrint(&part, ".{d}", .{@mod(tenths, 10)}) catch unreachable;
+        w.print(TEXT, .{ @divTrunc(tenths, 10), fraction, TURNS, CHARGE_NOTE }) catch {};
     }
 };
 
@@ -67,13 +70,34 @@ pub const Flask = struct {
     }
 };
 
-/// The share of life a drink recovers with `bonus` percent more recovery.
-fn lifePercent(bonus: i32) i32 {
-    return mathx.percentOf(LIFE_PCT, mathx.PERCENT + bonus);
+/// The share of life a drink recovers with `bonus` percent more recovery, in hundredths of a percent.
+fn lifeShare(bonus: i32) i32 {
+    return LIFE_PCT * (mathx.PERCENT + bonus);
+}
+
+fn lifeTenths(bonus: i32) i32 {
+    return @divTrunc(lifeShare(bonus), 10);
 }
 
 pub fn lifeOf(max: i32, bonus: i32) i32 {
-    return mathx.percentOf(max, lifePercent(bonus));
+    return @divTrunc(max * lifeShare(bonus), mathx.PERCENT * mathx.PERCENT);
+}
+
+/// What a drink of `k` recovers in all.
+pub fn recovers(k: Kind, max_life: i32, perks: passives.Perks) i32 {
+    return switch (k) {
+        .life => lifeOf(max_life, perks.life_flask),
+        .mana => MANA_GAIN,
+    };
+}
+
+test "a bonused drink scales the base recovery once, without truncating its share" {
+    try std.testing.expectEqual(@as(i32, 25), lifeOf(40, 25));
+    try std.testing.expectEqual(@as(i32, 125), lifeOf(200, 25));
+    var buf: [128]u8 = undefined;
+    var s = std.io.fixedBufferStream(&buf);
+    Life.describe(s.writer(), .{ .life_flask = 25 });
+    try std.testing.expect(std.mem.startsWith(u8, s.getWritten(), "Recover 62.5% of life"));
 }
 
 test "a flask holds three drinks, each recovering its amount whole over three turns, and kills refill it" {

@@ -52,7 +52,7 @@ const MEMORY = rgbOf(look.rgb(0x33385c));
 const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
-pub const FAINT: f32 = 0.002;
+const FAINT: f32 = 0.002;
 const TINT_DIRECT: f32 = 0.6;
 /// Per second.
 const REVEAL: f32 = 14.0;
@@ -1568,7 +1568,7 @@ pub const Light = struct {
         rl.beginShaderMode(receiver.shader);
         defer rl.endShaderMode();
         rl.setShaderValueTexture(receiver.shader, receiver.lightmap, self.gpu.map.?);
-        look.setMapView(receiver, .{ @floatFromInt(ox), @floatFromInt(oy) }, @floatFromInt(cell), .{ @floatFromInt(t.width), @floatFromInt(t.height) });
+        look.setMapView(receiver, .of(ox, oy, cell, t.width, t.height));
         look.drawTarget(t);
     }
 
@@ -1865,7 +1865,7 @@ const MIRROR_FS = MIRROR_HEAD ++
     \\}
 ;
 
-const BODY_FS = MIRROR_HEAD ++ std.fmt.comptimePrint("#define LIGHTS {d}\n", .{BODY_LIGHTS}) ++ look.glslConsts(.{ .KNEE = KNEE, .FLASH = FLASH_RGB }) ++
+const BODY_FS = MIRROR_HEAD ++ look.glslConsts(.{ .LIGHTS = BODY_LIGHTS, .KNEE = KNEE, .FLASH = FLASH_RGB }) ++
     \\uniform sampler2D normals;
     \\uniform vec2 size;
     \\uniform float flip;

@@ -35,10 +35,8 @@ pub const Params = struct {
     layout: Layout = .line,
     filler: carve.Solid = .shrub,
     ground: carve.Ground = .grass,
-    /// A spot's clearing, half-width.
     clearing: u8 = 5,
     path: u8 = 3,
-    /// Side paths off to dead-end clearings.
     sides: u8 = 3,
     litter: carve.Litter = .{},
     decor: carve.Decor = .{},

@@ -23,8 +23,6 @@ const HOURS = day.HOURS;
 const SUNRISE = day.SUNRISE;
 const SUNSET = day.SUNSET;
 const wrapHour = day.wrapHour;
-const DAY_SPAN: f32 = SUNSET - SUNRISE;
-const NIGHT_SPAN: f32 = HOURS - DAY_SPAN;
 /// Bearings clockwise from north the sun rises and sets on; it stands in the south at noon.
 const AZ_RISE: f32 = 100;
 const AZ_SET: f32 = 262;
@@ -66,10 +64,8 @@ comptime {
 
 /// 0 to 1 across the day, then 1 to 2 across the night, measured on from sunset through midnight.
 fn dayU(hour: f32) f32 {
-    const h = wrapHour(hour);
-    if (h >= SUNRISE and h <= SUNSET) return (h - SUNRISE) / DAY_SPAN;
-    const past = if (h > SUNSET) h - SUNSET else h + (HOURS - SUNSET);
-    return 1 + past / NIGHT_SPAN;
+    const a = day.arc(hour);
+    return if (a.day) a.u else 1 + a.u;
 }
 
 fn moonShare(hour: f32) f32 {
@@ -232,7 +228,7 @@ pub fn under(hour: f32, light: climate.Light) Sky {
     const dir = acrossScreen(keyDir(hour));
     const moon = moonShare(hour);
     const gain = mathx.lerpF(1, MOON_LIFT / dir[2], moon);
-    const night_fill = mathx.lerpF(NIGHT_FILL_MIN, 1, mathx.smoothstep(0, NIGHT_SPAN * NIGHT_FILL_SPREAD, @abs(day.toward(day.DEAD_OF_NIGHT, hour))));
+    const night_fill = mathx.lerpF(NIGHT_FILL_MIN, 1, mathx.smoothstep(0, day.NIGHT_SPAN * NIGHT_FILL_SPREAD, @abs(day.toward(day.DEAD_OF_NIGHT, hour))));
     return .{
         .dir = dir,
         .key = looked(p.key, keyDim(hour) * KEY_GAIN * l.key * gain, l),

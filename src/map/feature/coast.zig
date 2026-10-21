@@ -34,13 +34,9 @@ pub const Side = enum {
 
 pub const Params = struct {
     side: Side = .west,
-    /// Cells of deep water in from the edge.
     sea: u8 = 6,
-    /// Cells of shallows past it.
     shore: u8 = 2,
-    /// Cells of sand past them.
     beach: u8 = 5,
-    /// Cells each line wanders either way, at most.
     rough: u8 = 3,
 
     pub fn fit(p: Params) Params {

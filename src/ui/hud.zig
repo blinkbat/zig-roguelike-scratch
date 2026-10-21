@@ -7,7 +7,9 @@ const fx = @import("../gfx/fx.zig");
 
 pub const WIDTH: i32 = 640;
 const HEIGHT: i32 = 160;
-const BOTTOM: i32 = 12;
+/// Every corner piece of the hud, the minimap and the event log keep this far from the screen's edges.
+pub const EDGE: i32 = 12;
+const BOTTOM: i32 = EDGE;
 /// How far up from the screen's foot the hud covers the map.
 pub const COVER: i32 = BOTTOM + HEIGHT;
 const ORB_R: i32 = 48;
@@ -29,7 +31,7 @@ const PLATE_SHADOW_GROW: i32 = 2;
 const ORB_SHADOW_DY: i32 = 4;
 const ORB_SHADOW_GROW: i32 = 2;
 const STATUS_Y: i32 = 4;
-const PLATE_A: f32 = 0.7;
+const PLATE_A: f32 = look.BACKING_A;
 const PLATE_SHADOW_A: f32 = 0.25;
 const TIP_SHADOW_A: f32 = 0.5;
 const ORB_SHADOW_A: f32 = 0.6;
@@ -43,7 +45,7 @@ const GLINT_AT = mathx.P{ .x = -20, .y = -24 };
 const GLINT_R = [2]f32{ 3, 6 };
 const GLINT_A: f32 = 0.16;
 /// Above an orb's rim, its label's top.
-const LABEL_RISE: i32 = 23;
+const LABEL_RISE: i32 = 19;
 /// A status icon's middle in its square; a status or slot count's inset from its box's corner.
 const ICON_AT = mathx.P{ .x = 14, .y = 15 };
 const COUNT_INSET = mathx.P{ .x = 7, .y = 6 };
@@ -141,7 +143,7 @@ fn orb(face: *const font.Face, centre: mathx.P, name: []const u8, value: i32, ma
     rl.drawEllipse(x + GLINT_AT.x, y + GLINT_AT.y, GLINT_R[0], GLINT_R[1], look.fade(look.TEXT, GLINT_A));
     var buf: [48]u8 = undefined;
     const label = std.fmt.bufPrintZ(&buf, "{s} {d}/{d}", .{ name, @max(0, value), @max(0, max) }) catch "";
-    face.textMid(label, x, y - ORB_R - LABEL_RISE, font.BODY, look.TEXT);
+    face.textMid(label, x, y - ORB_R - LABEL_RISE, font.SMALL, look.TEXT);
 }
 
 /// The experience bar, between the statuses and the plate, as wide as the skills.
@@ -151,6 +153,8 @@ const XP_Y: i32 = PLATE_Y - 4 - XP_H;
 const XP_GAP: i32 = 3;
 const XP_TRACK = look.fade(rl.Color.white, 0.18);
 const XP_BACK = look.fade(rl.Color.black, 0.6);
+const XP_TOP = look.rgb(0xd6cbb0);
+const XP_BOTTOM = look.rgb(0x7d7462);
 
 comptime {
     std.debug.assert(STATUS_Y + STATUS_PX < XP_Y - 1);
@@ -167,7 +171,7 @@ pub fn experience(layout: Layout, fill: f32) void {
         rl.drawRectangle(x, y, seg_w, XP_H, XP_TRACK);
         const part = std.math.clamp(fill * XP_SEGMENTS - @as(f32, @floatFromInt(i)), 0, 1);
         const w: i32 = @intFromFloat(@round(part * @as(f32, @floatFromInt(seg_w))));
-        if (w > 0) rl.drawRectangle(x, y, w, XP_H, rl.Color.white);
+        if (w > 0) rl.drawRectangleGradientV(x, y, w, XP_H, XP_TOP, XP_BOTTOM);
     }
 }
 

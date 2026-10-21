@@ -31,8 +31,7 @@ const coast = @import("feature/coast.zig");
 const P = mathx.P;
 
 pub const MAX_FEATURES: usize = 6;
-/// Its features draw from another stream than the base, so adding one leaves the base as it was.
-const FEATURE_SALT: u64 = @intFromEnum(carve.Salt.features);
+const FEATURE_STRIDE: u64 = @intFromEnum(carve.Salt.features);
 
 /// A base biome: `gen.around`'s rooms, or a module with `Params`, `shape` and `palette`.
 pub const Algo = std.meta.Tag(Floor);
@@ -205,7 +204,7 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     var lots: buildings.Lots = .{};
     for (features, 0..) |f, i| {
         reshape(lv);
-        f.fit().apply(lv, &rng, seed +% i *% FEATURE_SALT, pal, &lots);
+        f.fit().apply(lv, &rng, seed +% i *% FEATURE_STRIDE, pal, &lots);
     }
     carve.seal(lv, pal.solid);
     carve.openDoors(lv, doors, pal.open);
@@ -271,8 +270,8 @@ test "every base, bare and under every feature, joins its ground, reaches its do
             };
             const seed = 0x51ED +% i *% 7919;
             roll(&lv, seed, &doors, Floor.of(a), features);
+            try grid.expectAllReached(&lv, doors[0], &dist, &queue);
             const open_n = lv.openCount();
-            try std.testing.expectEqual(open_n, grid.distances(&lv, doors[0], &dist, &queue));
             for (doors, 0..) |d, k| try std.testing.expectEqual(@as(?usize, k), lv.doorAt(d));
             try std.testing.expectEqual(@as(usize, 0), carve.leaks(&lv));
             for (0..grid.CELLS) |k| {

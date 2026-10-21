@@ -33,6 +33,14 @@ const Node = @FieldType(Header, "node");
 const Visited = @FieldType(Header, "visited");
 const Visit = @FieldType(Header, "visits");
 const HEAD_FIELDS = std.meta.fieldNames(Header);
+
+comptime {
+    const by_hand = .{ "seed", "map", "node", "visited", "visits" };
+    std.debug.assert(HEAD_FIELDS.len == by_hand.len);
+    for (HEAD_FIELDS, by_hand) |f, h| {
+        if (!std.mem.eql(u8, f, h)) @compileError("save.Header: write, inspect and read take " ++ h ++ " here by hand, not " ++ f);
+    }
+}
 /// Written after the visited nodes, in this order.
 const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "flasks", "cooldown", "stepped", "class", "inventory", "growth", "ground", "loot_rng" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.

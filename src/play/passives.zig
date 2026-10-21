@@ -139,12 +139,12 @@ pub const Kind = enum {
     }
 
     pub fn group(k: Kind) Group {
-        return INFO.get(k).group;
+        return INFO.getPtrConst(k).group;
     }
 
     /// Its tree label's stat: "Heavy", or "Str" for an attribute.
     pub fn word(k: Kind) [:0]const u8 {
-        return INFO.get(k).word;
+        return INFO.getPtrConst(k).word;
     }
 
     /// The damage it raises by a percentage, for a damage kind.
@@ -162,11 +162,17 @@ pub const Kind = enum {
         };
     }
 
+    /// The `Attrs` chance it adds straight onto: `crit_bonus` for crit.
+    fn rate(comptime k: Kind) ?[]const u8 {
+        const name = @tagName(k) ++ "_bonus";
+        return if (k.bonus() == null and @hasField(attrs.Attrs, name)) name else null;
+    }
+
     comptime {
         for (std.enums.values(Kind)) |k| {
-            const homes = @as(u8, @intFromBool(k.style() != null)) + @intFromBool(k.bonus() != null) + @intFromBool(k.perk()) + @intFromBool(k == .crit or k == .dodge);
+            const homes = @as(u8, @intFromBool(k.style() != null)) + @intFromBool(k.bonus() != null) + @intFromBool(k.perk()) + @intFromBool(k.rate() != null);
             std.debug.assert(homes == 1);
-            const info = INFO.get(k);
+            const info = INFO.getPtrConst(k);
             if (k.style() != null) std.debug.assert(info.percent and info.text == null);
             if (info.text) |t| std.debug.assert(info.percent == (std.mem.indexOf(u8, t, "%") != null));
             if (k.style() == null and k.bonus() == null) std.debug.assert(info.text != null);
@@ -216,11 +222,11 @@ pub const Grant = struct {
 
     pub fn apply(g: Grant, a: *attrs.Attrs) void {
         switch (g.kind) {
-            .crit => a.crit_bonus += g.amount,
-            .dodge => a.dodge_bonus += g.amount,
-            else => if (g.kind.style()) |s| {
+            inline else => |t| if (comptime t.rate()) |field| {
+                @field(a, field) += g.amount;
+            } else if (comptime t.style()) |s| {
                 a.damage_bonus.getPtr(s).* += g.amount;
-            } else if (g.kind.bonus()) |b| a.add(b, g.amount),
+            } else if (comptime t.bonus()) |b| a.add(b, g.amount),
         }
     }
 
@@ -236,7 +242,7 @@ pub const Grant = struct {
     pub fn write(g: Grant, w: anytype) void {
         const n = g.amount;
         (switch (g.kind) {
-            inline else => |t| if (comptime INFO.get(t).text) |text|
+            inline else => |t| if (comptime INFO.getPtrConst(t).text) |text|
                 w.print(text, .{n})
             else if (comptime t.style()) |s|
                 w.print("+{d}% {s}", .{ n, s.label() })
@@ -247,7 +253,7 @@ pub const Grant = struct {
 
     /// The tree's label is this over `word`: "+4%" over "Heavy".
     pub fn writeAmount(g: Grant, w: anytype) void {
-        const info = INFO.get(g.kind);
+        const info = INFO.getPtrConst(g.kind);
         w.print("{s}{d}{s}", .{ info.sign, g.amount, if (info.percent) "%" else "" }) catch {};
     }
 
@@ -377,12 +383,6 @@ fn feedersOf(i: usize, out: *[MAX_FEED]usize) []const usize {
         k += 1;
     }
     return out[0..bridgeOn(i, out, k)];
-}
-pub fn linked(a: usize, b: usize) bool {
-    var buf: [MAX_FEED]usize = undefined;
-    for (feeders(a, &buf)) |i| if (i == b) return true;
-    for (feeders(b, &buf)) |i| if (i == a) return true;
-    return false;
 }
 
 const Entry = struct {
@@ -616,10 +616,7 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
         try std.testing.expect(fs.len <= MAX_FEED);
         try std.testing.expectEqual(n.ring == 0, fs.len == 0);
         if (n.tier == .capstone) try std.testing.expectEqual(@as(usize, 2), fs.len);
-        for (fs) |f| {
-            try std.testing.expect(f < N and f != i);
-            try std.testing.expect(linked(i, f));
-        }
+        for (fs) |f| try std.testing.expect(f < N and f != i);
         if (n.seam) |s| for (bridgeAnchors(s, n.ring)) |anchor| {
             var back: [MAX_FEED]usize = undefined;
             try std.testing.expect(std.mem.indexOfScalar(usize, feeders(anchor, &back), i) != null);

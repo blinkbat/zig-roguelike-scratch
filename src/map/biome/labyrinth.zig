@@ -15,7 +15,6 @@ pub const Style = enum { walls, rock, hedge };
 
 pub const Params = struct {
     style: Style = .walls,
-    /// Half-height of an open chamber at the heart, half again as wide; 0 has none.
     chamber: u8 = 0,
     /// Percent of dead ends knocked through.
     braid: u8 = 10,

@@ -18,9 +18,10 @@ Only display the corresponding systems this game actually has. Do not fill the l
 | Mana | Matching blue reservoir and current / maximum |
 | Assigned skills | Existing skill pictures and each slot's input icon (`look.Prompt`); active secondary set uses the same slots |
 | Skill availability | Existing held/aimed state, dimming when unavailable, remaining cooldown on the skill |
-| Experience | Thin white bar of 10 segments over the skill strip, filling through the current level |
+| Experience | Thin bar of 10 segments over the skill strip: a faint white track, filled with a warm parchment gradient through the current level |
 | Active ailments | Small icons with remaining turns, only while active, just above the central strip |
 | Minimap | Existing upper-right map, outside the bottom assembly |
+| Time of day | A thin line under the minimap: the sun rides it from sunrise to sunset, the moon from sunset to sunrise, following the drawn hour (`Game.hour_shown`) |
 | Event log | Bottom-left panel, newest at bottom, color-coded events during exploration and combat |
 
 The live HUD omits the hero-name label, enemy counters, gold tally and permanent control instructions. No screen names a key or button in words; menus and the bind screen show concise action labels beside device glyphs. Life and mana flasks use assigned skill slots, including remaining drinks. Exact XP, levels, equipment and both skill trees appear in Character.

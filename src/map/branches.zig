@@ -21,12 +21,6 @@ const PASSES = 64;
 const DOOR_CLEAR = 6;
 /// Rejoined side paths are trodden whatever the ground they cut through.
 const REJOIN_PATH = carve.Palette.TRAILED.path;
-const CHEST_AREA = 500;
-const CHEST_MIN = 3;
-const CHEST_GAP = 14;
-const BARREL_AREA = 150;
-const BARREL_MAX = 24;
-const BARREL_GAP = 8;
 
 const Branch = struct { root: u16, neck: u16 };
 
@@ -213,20 +207,33 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
             }
         }
         var blocked = lv.*;
-        for (blocked.barrel, 0..) |on, i| {
-            if (on) blocked.tile[i] = .wall;
-        }
+        blocked.wallBarrels();
         const origin = blocked.firstOpen() orelse return result;
         const available = blocked.openCount();
-        result.chests += stock(lv, &blocked, origin, doors, &rng, .chest, @min(CHEST_MIN, available / CHEST_AREA), CHEST_GAP);
-        result.barrels = stock(lv, &blocked, origin, doors, &rng, .barrel, @min(BARREL_MAX, available / BARREL_AREA), BARREL_GAP);
+        result.chests += stock(lv, &blocked, origin, doors, &rng, .chest, Reward.chest.target(available));
+        result.barrels = stock(lv, &blocked, origin, doors, &rng, .barrel, Reward.barrel.target(available));
     }
     return result;
 }
 
-const Reward = enum {
+pub const Reward = enum {
     chest,
     barrel,
+
+    /// One per `area` open cells, up to `total`, each `gap` from the next and against `walls` solid sides at least.
+    pub const Rule = struct { area: usize, total: usize, gap: i32, walls: usize };
+
+    pub fn rule(kind: Reward) Rule {
+        return switch (kind) {
+            .chest => .{ .area = 500, .total = 3, .gap = 14, .walls = 2 },
+            .barrel => .{ .area = 150, .total = 24, .gap = 8, .walls = 1 },
+        };
+    }
+
+    fn target(kind: Reward, available: usize) usize {
+        const r = kind.rule();
+        return @min(r.total, available / r.area);
+    }
 
     fn has(kind: Reward, lv: *const grid.Level, p: P) bool {
         return switch (kind) {
@@ -236,7 +243,8 @@ const Reward = enum {
     }
 };
 
-fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng: *mathx.Rng, kind: Reward, target: usize, gap: i32) usize {
+fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng: *mathx.Rng, kind: Reward, target: usize) usize {
+    const rule = kind.rule();
     var spots: [grid.CELLS]P = undefined;
     var count: usize = 0;
     var placed: [grid.CELLS]P = undefined;
@@ -258,7 +266,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
             const q = p.add(d);
             if (!grid.Level.onRim(q) and lv.at(q).solid() and !Reward.chest.has(lv, q)) edges += 1;
         }
-        if (edges < @as(usize, if (kind == .chest) 2 else 1)) continue;
+        if (edges < rule.walls) continue;
         spots[count] = p;
         count += 1;
     }
@@ -270,7 +278,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
         const p = rng.takeFrom(P, &spots, &count);
         var near = false;
         for (placed[0..have]) |other| {
-            if (mathx.dist(p, other) < gap) near = true;
+            if (mathx.dist(p, other) < rule.gap) near = true;
         }
         if (near) continue;
         if (!keepsRoute(blocked, p, origin, open, &dist, &queue)) continue;
@@ -363,7 +371,7 @@ test "side paths rejoin through forest and true dead ends receive closed chests"
     const loops = improve(&joined, 44, &doors, .{ .loops = 100 });
     try std.testing.expect(loops.loops > 0);
     try std.testing.expect(joined.openCount() > base.openCount());
-    try std.testing.expectEqual(joined.openCount(), grid.distances(&joined, doors[0], &dist, &queue));
+    try grid.expectAllReached(&joined, doors[0], &dist, &queue);
     for (base.tile, joined.tile) |before, after| {
         if (before != after) {
             try std.testing.expectEqual(grid.Tile.shrub, before);
@@ -382,7 +390,7 @@ test "side paths rejoin through forest and true dead ends receive closed chests"
     }
     try std.testing.expectEqual(@as(usize, 2), deep);
     try std.testing.expectEqual(deep, rewards.chests);
-    try std.testing.expectEqual(rewarded.openCount(), grid.distances(&rewarded, doors[0], &dist, &queue));
+    try grid.expectAllReached(&rewarded, doors[0], &dist, &queue);
     for (doors) |p| try std.testing.expect(rewarded.walkable(p));
     std.debug.print("two side paths: {d} connection(s) through forest, or {d} closed rewards at their ends; both exits preserved\n", .{ loops.loops, rewards.chests });
 }
@@ -403,8 +411,8 @@ test "scattered rewards leave narrow routes and the approach to existing treasur
     for (doors, 0..) |p, i| lv.putDoor(p, i);
     var blocked = lv;
     var rng = mathx.Rng.init(44);
-    try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, .chest, 3, CHEST_GAP));
-    try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, .barrel, 12, BARREL_GAP));
+    try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, .chest, 3));
+    try std.testing.expectEqual(@as(usize, 0), stock(&lv, &blocked, doors[0], &doors, &rng, .barrel, 12));
     const at = P{ .x = 40, .y = 10 };
     lv.set(at.add(.{ .x = 0, .y = 1 }), .chest);
     try std.testing.expect(!rewardAt(&lv, at));
@@ -424,19 +432,19 @@ test "a clearing without dead ends puts chests in sheltered corners and barrels 
     g.build(&lv, &.{origin});
     try std.testing.expectEqual(@as(usize, 0), g.n);
     const result = improve(&lv, 44, &.{origin}, .{ .rewards = .chests });
-    try std.testing.expectEqual(@as(usize, 3), result.chests);
+    try std.testing.expectEqual(Reward.chest.rule().total, result.chests);
     try std.testing.expect(result.barrels >= 12);
-    var blocked = lv;
     for (lv.tile, 0..) |t, i| {
         if (t == .chest) {
             const p = grid.Level.of(i);
             try std.testing.expect(p.x == room.lo.x or p.x == room.hi.x - 1);
             try std.testing.expect(p.y == room.lo.y or p.y == room.hi.y - 1);
         }
-        if (lv.barrel[i]) blocked.tile[i] = .wall;
     }
+    var blocked = lv;
+    blocked.wallBarrels();
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
-    try std.testing.expectEqual(blocked.openCount(), grid.distances(&blocked, origin, &dist, &queue));
+    try grid.expectAllReached(&blocked, origin, &dist, &queue);
     std.debug.print("clearing with no dead ends: {d} corner chests and {d} edge barrels, every route open\n", .{ result.chests, result.barrels });
 }

@@ -30,7 +30,6 @@ const WELL_GAP: i32 = 2;
 pub const Params = struct {
     /// The curtain's width and height.
     size: [2]u8 = .{ 60, 36 },
-    /// A corner tower's half-width; 0 has none.
     towers: u8 = 3,
     moat: u8 = 2,
     yard: carve.Ground = .dirt,

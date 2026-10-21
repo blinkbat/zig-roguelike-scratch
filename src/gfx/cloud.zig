@@ -27,7 +27,6 @@ fn tintOf(volume: u16) f32 {
 
 const Shade = struct { shader: rl.Shader, time: i32 };
 const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, origin: i32, cell: i32, screen: i32, ink: i32, texel: i32, strength: i32 };
-const MapView = struct { origin: [2]f32, cell: f32, screen: [2]f32 };
 
 pub const Cloud = struct {
     tint: [grid.CELLS]f32,
@@ -41,7 +40,7 @@ pub const Cloud = struct {
     tex: ?rl.Texture2D,
     shade: ?Shade,
     veil: ?Veil,
-    map_view: MapView,
+    map_view: look.MapView,
     visible: bool,
 
     pub fn create(alloc: std.mem.Allocator) !*Cloud {
@@ -110,7 +109,7 @@ pub const Cloud = struct {
             return;
         }
         self.visible = true;
-        self.map_view = .{ .origin = .{ @floatFromInt(ox), @floatFromInt(oy) }, .cell = @floatFromInt(cell), .screen = .{ @floatFromInt(screen.x), @floatFromInt(screen.y) } };
+        self.map_view = .of(ox, oy, cell, screen.x, screen.y);
         const view = on_screen.grown(1);
         if (self.stale or !std.meta.eql(view, self.baked)) {
             self.bake(lv, view);
@@ -132,7 +131,7 @@ pub const Cloud = struct {
         rl.beginShaderMode(s.shader);
         focus.set(s.shader, s.texel, s.strength);
         look.setUniform(s.shader, s.time, self.t.at());
-        look.setMapView(s, self.map_view.origin, self.map_view.cell, self.map_view.screen);
+        look.setMapView(s, self.map_view);
         const rgb: [3]f32 = look.rgbOf(ink);
         look.setUniform(s.shader, s.ink, rgb);
         rl.setShaderValueTexture(s.shader, s.cloud, tex);

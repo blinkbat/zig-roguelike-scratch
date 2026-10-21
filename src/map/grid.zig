@@ -70,7 +70,7 @@ pub const Tile = enum(u8) {
 
     /// Deep water or shallows.
     pub fn wet(t: Tile) bool {
-        return t == .water or t == .shallows;
+        return TERRAIN.getPtrConst(t).wet;
     }
 
     pub fn upright(t: Tile) bool {
@@ -98,7 +98,7 @@ pub const Tile = enum(u8) {
 
     /// Given a `WallShape` by `gen.shapeWalls`, joining its own kind.
     pub fn shaped(t: Tile) bool {
-        return t == .wall or t == .shrub;
+        return TERRAIN.getPtrConst(t).shaped;
     }
 
     pub fn letter(t: Tile) u8 {
@@ -154,6 +154,7 @@ comptime {
     std.debug.assert(Tile.ofLetter(BARREL_LETTER) == null);
     for (std.enums.values(Tile), 0..) |a, i| {
         std.debug.assert(std.ascii.isPrint(a.letter()) and a.letter() != ' ');
+        std.debug.assert(!a.liquid() or a.solid());
         for (std.enums.values(Tile)[0..i]) |b| std.debug.assert(a.letter() != b.letter());
     }
 }
@@ -166,6 +167,8 @@ const Terrain = struct {
     halts: bool = false,
     rewards: bool = false,
     litter: bool = false,
+    wet: bool = false,
+    shaped: bool = false,
     opens: ?Tile = null,
 };
 const OPEN = Terrain{ .solid = false, .blind = false };
@@ -179,16 +182,16 @@ const TALL_PROP = Terrain{ .solid = true, .blind = true, .ground = .grass };
 const LOW_PROP = Terrain{ .solid = true, .blind = false, .ground = .grass };
 
 const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
-    .wall = SHUT,
+    .wall = .{ .solid = true, .blind = true, .shaped = true },
     .floor = BARE,
     .grass = BARE,
-    .shrub = TALL_PROP,
+    .shrub = .{ .solid = true, .blind = true, .ground = .grass, .shaped = true },
     .rock = SHUT,
     .dirt = BARE,
     .sand = BARE,
     .snow = OPEN,
-    .water = LIQUID,
-    .shallows = OPEN,
+    .water = .{ .solid = true, .blind = false, .liquid = true, .wet = true },
+    .shallows = .{ .solid = false, .blind = false, .wet = true },
     .bridge = OPEN,
     .reeds = .{ .solid = false, .blind = true, .ground = .grass },
     .rubble = BARE,
@@ -449,6 +452,12 @@ pub const Level = struct {
         return true;
     }
 
+    pub fn wallBarrels(self: *Level) void {
+        for (self.barrel, 0..) |on, i| {
+            if (on) self.tile[i] = .wall;
+        }
+    }
+
     pub fn doorAt(self: *const Level, p: P) ?usize {
         const d = cellOr(u8, &self.door, p, NO_DOOR);
         return if (d == NO_DOOR) null else d - 1;
@@ -699,6 +708,10 @@ pub fn distances(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32
     var flood = Flood.init(lv, from, out, queue);
     while (flood.next()) |_| {}
     return flood.tail;
+}
+
+pub fn expectAllReached(lv: *const Level, from: P, out: *[CELLS]i32, queue: *[CELLS]u32) !void {
+    try std.testing.expectEqual(lv.openCount(), distances(lv, from, out, queue));
 }
 
 /// `dist` fills as it goes.

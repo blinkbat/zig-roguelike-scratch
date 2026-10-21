@@ -64,7 +64,7 @@ pub const Log = struct {
         self.scroll = @intCast(std.math.clamp(@as(i32, @intCast(self.scroll)) + delta, 0, @as(i32, @intCast(self.shown() -| 1))));
     }
 };
-const MARGIN: i32 = 12;
+const MARGIN: i32 = hud.EDGE;
 const BOX_H: i32 = 270;
 const MIN_W: i32 = 160;
 const MAX_W: i32 = 440;

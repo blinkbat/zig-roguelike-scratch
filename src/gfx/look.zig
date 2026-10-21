@@ -259,7 +259,7 @@ pub const Sprites = struct {
         const v = view orelse return false;
         const s = self.water orelse return false;
         rl.beginShaderMode(s.shader);
-        setMapView(s, origin, px, v.screen);
+        setMapView(s, .{ .origin = origin, .cell = px, .screen = v.screen });
         setUniform(s.shader, s.depth, depth);
         setUniform(s.shader, s.mirrored, @as(i32, @intFromBool(v.mirror != null)));
         rl.setShaderValueTexture(s.shader, s.visibility, v.visibility);
@@ -1470,7 +1470,7 @@ pub const CLEAR_A: f32 = 0.004;
 /// The alpha of a skill or action that cannot be used now.
 pub const FADED_A: f32 = 0.35;
 
-/// GLSL `const`s named for `values`' fields: floats at full precision, integers, and three-float vectors.
+/// GLSL `const`s named for `values`' fields: floats at full precision, integers, and two- to four-float vectors.
 pub fn glslConsts(comptime values: anytype) [:0]const u8 {
     comptime {
         var out: [:0]const u8 = "";
@@ -1479,12 +1479,24 @@ pub fn glslConsts(comptime values: anytype) [:0]const u8 {
             out = out ++ switch (@typeInfo(@TypeOf(v))) {
                 .int, .comptime_int => std.fmt.comptimePrint("const int {s} = {d};\n", .{ f.name, v }),
                 .float, .comptime_float => "const float " ++ f.name ++ " = " ++ glslFloat(v) ++ ";\n",
-                .array, .vector => "const vec3 " ++ f.name ++ " = vec3(" ++ glslFloat(v[0]) ++ ", " ++ glslFloat(v[1]) ++ ", " ++ glslFloat(v[2]) ++ ");\n",
+                .array, .vector => glslVec(f.name, v),
                 else => @compileError(f.name ++ " is no GLSL constant"),
             };
         }
         return out;
     }
+}
+
+fn glslVec(comptime name: []const u8, comptime v: anytype) [:0]const u8 {
+    const n = switch (@typeInfo(@TypeOf(v))) {
+        inline .array, .vector => |a| a.len,
+        else => unreachable,
+    };
+    if (n < 2 or n > 4) @compileError(name ++ " has no GLSL vector of its length");
+    const kind = std.fmt.comptimePrint("vec{d}", .{n});
+    var parts: [:0]const u8 = glslFloat(v[0]);
+    for (1..n) |i| parts = parts ++ ", " ++ glslFloat(v[i]);
+    return "const " ++ kind ++ " " ++ name ++ " = " ++ kind ++ "(" ++ parts ++ ");\n";
 }
 
 fn glslFloat(comptime v: anytype) [:0]const u8 {
@@ -1500,7 +1512,7 @@ pub const FS_HEAD =
     \\uniform sampler2D texture0;
     \\out vec4 finalColor;
     \\
-++ glslConsts(.{ .CLEAR_A = CLEAR_A }) ++ std.fmt.comptimePrint("const vec2 CELLS = vec2({d}.0, {d}.0);\n", .{ grid.W, grid.H }) ++ glslConsts(.{ .LUMA = sky.LUMA });
+++ glslConsts(.{ .CLEAR_A = CLEAR_A, .CELLS = [2]f32{ grid.W, grid.H }, .LUMA = sky.LUMA });
 
 /// The map's place on screen: `cellAtFrag()` is the map position under the fragment, in cells, `cellAtPixel` under a y-down screen pixel,
 /// `targetPixel` the y-down screen pixel at a render target's uv, and `insideMap` whether a map position lies on the map.
@@ -1523,11 +1535,22 @@ pub const MAP_VIEW_FS =
     \\
 ;
 
+/// `MAP_VIEW_FS`'s uniforms: where the map's top-left corner lands, a cell's pixels, and the target's size.
+pub const MapView = struct {
+    origin: [2]f32,
+    cell: f32,
+    screen: [2]f32,
+
+    pub fn of(ox: i32, oy: i32, cell: i32, w: i32, h: i32) MapView {
+        return .{ .origin = .{ @floatFromInt(ox), @floatFromInt(oy) }, .cell = @floatFromInt(cell), .screen = .{ @floatFromInt(w), @floatFromInt(h) } };
+    }
+};
+
 /// Sets `MAP_VIEW_FS`'s uniforms on a program with `origin`, `cell` and `screen` locations.
-pub fn setMapView(p: anytype, origin: [2]f32, cell: f32, screen: [2]f32) void {
-    setUniform(p.shader, p.origin, origin);
-    setUniform(p.shader, p.cell, cell);
-    setUniform(p.shader, p.screen, screen);
+pub fn setMapView(p: anytype, v: MapView) void {
+    setUniform(p.shader, p.origin, v.origin);
+    setUniform(p.shader, p.cell, v.cell);
+    setUniform(p.shader, p.screen, v.screen);
 }
 
 /// How far a sprite is softened; a shader drawing over it again (the gas veil) softens its own alpha alike.
@@ -1640,10 +1663,16 @@ pub fn rgbOf(c: rl.Color) sky.Rgb {
     return sky.Rgb{ @floatFromInt(c.r), @floatFromInt(c.g), @floatFromInt(c.b) } / sky.splat(255);
 }
 
-pub const MINI_BG = fade(FOG, 0.7);
+/// The opacity of the hud plate's and the minimap's backing.
+pub const BACKING_A: f32 = 0.7;
+pub const MINI_BG = fade(FOG, BACKING_A);
 pub const MINI_HERO = rgb(0x9cf08a);
 pub const MINI_FOE = FOE;
 pub const MINI_VIEW = fade(GOLD, 0.7);
+pub const DAY_SUN = LEVEL_GOLD;
+pub const DAY_MOON = rgb(0xc9cfdc);
+pub const DAY_PATH = fade(UI_GOLD, 0.45);
+pub const DAY_SHADOW = fade(BG, 0.75);
 
 pub const EDIT_PANEL = PANEL;
 pub const EDIT_ROW_ON = RAISED;

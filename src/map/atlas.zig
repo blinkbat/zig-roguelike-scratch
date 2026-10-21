@@ -1365,7 +1365,7 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
         const at = landing(&lv, a.start.at, &.{}) orelse return error.NoFloor;
         if (lv.at(at) == .dirt or lv.at(at) == .shallows) on_shore += 1;
         try std.testing.expect(std.mem.indexOfScalar(grid.Tile, &lv.tile, .sand) == null);
-        try std.testing.expectEqual(lv.openCount(), grid.distances(&lv, at, &dist, &queue));
+        try grid.expectAllReached(&lv, at, &dist, &queue);
         const walked = dist[grid.Level.idx(exit)];
         try std.testing.expect(walked > 0);
         wound += @as(f32, @floatFromInt(walked)) / @as(f32, @floatFromInt(mathx.dist(at, exit)));
@@ -1373,7 +1373,7 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
         for (lv.tile, 0..) |t, k| {
             if (t != .swamp_tree) continue;
             const p = grid.Level.of(k);
-            try std.testing.expect(@import("carve.zig").nearWater(&lv, p, 4));
+            try std.testing.expect(carve.nearWater(&lv, p, 4));
             dirt_trees += @intFromBool(@import("../gfx/ground.zig").bedAt(&lv, p) == .dirt);
             inland_trees += @intFromBool(p.x > 20);
             trees += 1;
@@ -1421,11 +1421,9 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
         try std.testing.expectEqualSlices(grid.Tile, &expected.tile, &lv.tile);
         try std.testing.expectEqualSlices(bool, &expected.barrel, &lv.barrel);
         var blocked = lv;
-        for (blocked.barrel, 0..) |on, k| {
-            if (on) blocked.tile[k] = .wall;
-        }
+        blocked.wallBarrels();
         const start = landing(&lv, a.start.at, &.{}) orelse return error.NoFloor;
-        try std.testing.expectEqual(blocked.openCount(), grid.distances(&blocked, start, &dist, &queue));
+        try grid.expectAllReached(&blocked, start, &dist, &queue);
         for (doors) |door| try std.testing.expect(dist[grid.Level.idx(door)] >= 0);
         try std.testing.expect(std.mem.indexOfScalar(grid.Tile, &lv.tile, .chest_open) == null);
         var counted_chests: usize = 0;
@@ -1450,7 +1448,7 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
         }
         try std.testing.expectEqual(result.chests, counted_chests);
         try std.testing.expectEqual(result.barrels, counted_barrels);
-        try std.testing.expect(counted_chests >= 3);
+        try std.testing.expect(counted_chests >= branches.Reward.chest.rule().total);
         try std.testing.expect(counted_barrels >= 12);
         loops += result.loops;
         chests += result.chests;

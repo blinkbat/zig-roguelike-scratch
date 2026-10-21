@@ -66,10 +66,22 @@ pub const Surface = struct {
         rl.beginMode2D(.{ .target = .{ .x = 0, .y = 0 }, .offset = self.offset, .rotation = 0, .zoom = self.scale });
     }
 
+    /// `f` as this surface draws it: scaled, from the mipmapped atlas rather than the native-size ones.
+    pub fn faceFor(self: Surface, f: font.Face) font.Face {
+        var out = f;
+        if (self.scale != 1) out.native = @splat(null);
+        return out;
+    }
+
     pub fn clip(self: Surface, r: rl.Rectangle) void {
         rl.beginScissorMode(@intFromFloat(@floor(self.offset.x + r.x * self.scale)), @intFromFloat(@floor(self.offset.y + r.y * self.scale)), @intFromFloat(@ceil(r.width * self.scale)), @intFromFloat(@ceil(r.height * self.scale)));
     }
 };
+
+/// A box's edge, doubled in `on_ink` when it is the one chosen.
+pub fn outline(r: rl.Rectangle, on: bool, on_ink: rl.Color, off_ink: rl.Color) void {
+    rl.drawRectangleLinesEx(r, if (on) 2 else 1, if (on) on_ink else off_ink);
+}
 
 /// Inside an action box, its edge to the prompt and to the label's far side, and the prompt to the label.
 const ACTION_PAD: i32 = 10;
@@ -168,12 +180,15 @@ pub fn closed(st: *const input.State) bool {
     return backed(st) or st.hit(CHARACTER);
 }
 
-/// The box in `boxes` a move `dir` from `from` lands on: nearest ahead, sideways distance costing `across_weight` times as much.
-pub fn nearest(from: rl.Rectangle, boxes: []const rl.Rectangle, dir: mathx.Dir, across_weight: f32) ?usize {
+/// Sideways distance between boxes costs this much more than distance ahead.
+const ACROSS: f32 = 2;
+
+/// The box in `boxes` a move `dir` from `from` lands on: nearest ahead, sideways distance costing `ACROSS` times as much.
+pub fn nearest(from: rl.Rectangle, boxes: []const rl.Rectangle, dir: mathx.Dir) ?usize {
     var best: ?usize = null;
     var best_score = std.math.floatMax(f32);
     for (boxes, 0..) |to, i| {
-        const score = directionScore(from, to, dir, across_weight) orelse continue;
+        const score = directionScore(from, to, dir, ACROSS) orelse continue;
         if (score < best_score) {
             best_score = score;
             best = i;
@@ -214,7 +229,7 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const 
     const win = window(screen.y, all.len, at);
     const rows = all[win.from..][0..win.len];
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(rows.len)) * ROW_STEP, 2);
-    mid(face, screen, title, top + TITLE_DY - TITLE, TITLE, look.TEXT);
+    heading(face, screen, title, top + TITLE_DY - TITLE, TITLE, look.TEXT, look.UI_GOLD);
     const mark_w = face.width(MARK_L, ROW);
     const widest = screen.x - 2 * (MARK_GAP * 2 + mark_w);
     var fit_buf: [NOTE_MAX + 1]u8 = undefined;
@@ -277,6 +292,36 @@ pub fn mid(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32,
     var buf: [NOTE_MAX + 1]u8 = undefined;
     const t = face.fit(&buf, s, size, screen.x - 2 * MARK_GAP, false);
     face.textMid(t, @divTrunc(screen.x, 2), y, size, col);
+}
+
+const RULE_REACH: i32 = 56;
+const RULE_GAP: i32 = 9;
+const RULE_PIP: f32 = 3;
+const RULE_A: f32 = 0.7;
+/// Of a heading's size, from its top down to its rule.
+const RULE_DROP: f32 = 1.02;
+
+/// Engraved and centred, over a rule in `accent`.
+pub fn heading(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color, accent: rl.Color) void {
+    var buf: [NOTE_MAX + 1]u8 = undefined;
+    const t = face.fit(&buf, s, size, screen.x - 2 * MARK_GAP, false);
+    const cx = @divTrunc(screen.x, 2);
+    face.engravedMid(t, cx, y, size, col);
+    const half = @min(@divTrunc(face.width(t, size), 2) + RULE_REACH, @divTrunc(screen.x, 2) - MARK_GAP);
+    rule(cx, y + @as(i32, @intFromFloat(@as(f32, @floatFromInt(size)) * RULE_DROP)), half, look.fade(accent, RULE_A * @as(f32, @floatFromInt(col.a)) / 255));
+}
+
+/// Hairlines fading out either side of a small diamond.
+pub fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
+    for ([_]bool{ true, false }) |shadow| {
+        const by: i32 = @intFromBool(shadow);
+        const ink = if (shadow) look.fade(look.BG, @as(f32, @floatFromInt(col.a)) / 255) else col;
+        const clear = look.fade(ink, 0);
+        const reach = half - RULE_GAP;
+        rl.drawRectangleGradientH(cx - half + by, y + by, reach, 1, clear, ink);
+        rl.drawRectangleGradientH(cx + RULE_GAP + by, y + by, reach, 1, ink, clear);
+        rl.drawPoly(.{ .x = @floatFromInt(cx + by), .y = @as(f32, @floatFromInt(y + by)) + 0.5 }, 4, RULE_PIP, 0, ink);
+    }
 }
 
 test "a long menu shows the rows that fit, the one it is on among them" {

@@ -143,7 +143,7 @@ pub const Cinema = struct {
         rl.setShaderValueTexture(b.shader, b.field, self.field.?);
         rl.setShaderValueTexture(b.shader, b.visibility, visibility);
         rl.setShaderValueTexture(b.shader, b.glints, glints);
-        look.setMapView(b, origin, cell, .{ @floatFromInt(scene.width), @floatFromInt(scene.height) });
+        look.setMapView(b, .{ .origin = origin, .cell = cell, .screen = .{ @floatFromInt(scene.width), @floatFromInt(scene.height) } });
         look.setUniform(b.shader, b.direction, direction);
         look.setUniform(b.shader, b.extract, extract);
     }
@@ -168,7 +168,7 @@ pub const Cinema = struct {
         rl.beginShaderMode(a.shader);
         rl.setShaderValueTexture(a.shader, a.field, field);
         rl.setShaderValueTexture(a.shader, a.visibility, visibility);
-        look.setMapView(a, origin, cell, .{ @floatFromInt(screen.x), @floatFromInt(screen.y) });
+        look.setMapView(a, .{ .origin = origin, .cell = cell, .screen = .{ @floatFromInt(screen.x), @floatFromInt(screen.y) } });
         look.setUniform(a.shader, a.time, l.t.at());
         look.setUniform(a.shader, a.daylight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
         look.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));

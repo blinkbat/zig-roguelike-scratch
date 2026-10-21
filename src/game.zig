@@ -127,11 +127,24 @@ const PICK_MARGIN: i32 = 16;
 const MINI: i32 = 3;
 const MINI_W: i32 = grid.W * MINI;
 const MINI_H: i32 = grid.H * MINI;
-const MINI_PAD: i32 = 12;
+const MINI_PAD: i32 = hud.EDGE;
 /// Cells past the view a prop's shadow can reach into it from.
 const CAST_MARGIN: i32 = @intFromFloat(@ceil(light.CAST_REACH));
 const MINI_FRAME: i32 = look.HUD_BORDER_CUT;
 const MINI_HERO_GROW: i32 = 1;
+const DAY_GAP: i32 = 12;
+const DAY_INSET: i32 = 16;
+/// Either side of the glyph's middle, the line stays clear of it.
+const DAY_CLEAR: f32 = DAY_GLYPH_R + 3;
+const DAY_DROP: i32 = 1;
+const SUN_R: f32 = 3;
+const SUN_RAY_IN: f32 = 5;
+const SUN_RAY_OUT: f32 = 7;
+const SUN_RAYS: usize = 8;
+const MOON_R: f32 = 5;
+const MOON_CUT: f32 = 2.5;
+const MOON_CUT_INSET: f32 = 0.6;
+const DAY_GLYPH_R: f32 = @max(SUN_RAY_OUT, MOON_R);
 const SHOT_SEED: u64 = 0x5EED_1234;
 const SHOTS_DIR = "shots";
 const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
@@ -1095,10 +1108,7 @@ fn leap(g: *Game, from: P, act: skillbar.Act) void {
 fn drink(g: *Game, act: skillbar.Act, k: flask.Kind) void {
     const h = g.heroActor() orelse return;
     spend(g, act);
-    g.flasks.getPtr(k).drink(switch (k) {
-        .life => flask.lifeOf(h.max, g.growth.perks().life_flask),
-        .mana => flask.MANA_GAIN,
-    });
+    g.flasks.getPtr(k).drink(flask.recovers(k, h.max, g.growth.perks()));
     g.flasks_shown.set(k, g.flasks.get(k));
     g.fx.shimmer(mathx.centre(h.at), switch (k) {
         .life => look.LIFE,
@@ -1503,10 +1513,16 @@ fn heroArrow(g: *Game, comptime act: skillbar.Act, body: bool) Rolled {
 
 /// A raw `act` roll scaled by the hero's attributes and its rank, with its crit.
 fn heroScaled(g: *Game, comptime act: skillbar.Act, raw: damage.Damage) Rolled {
-    return scaled(&g.rng, skillAttrs(g, act), g.inventory.gear.scaling(comptime act.attack().?), raw);
+    const b = blowFor(g, act);
+    return scaled(&g.rng, b.by, b.style, raw);
 }
 
 const SkillBases = skillbar.EquippedBases;
+
+fn blowFor(g: *const Game, comptime act: skillbar.Act) progress.Blow {
+    comptime std.debug.assert(act.attack() != null);
+    return g.growth.blowOf(heroAttrs(g), g.inventory.gear, act).?;
+}
 
 fn basesOf(gear: *const items.Gear, act: skillbar.Act) SkillBases {
     return act.equippedBases(gear.*);
@@ -1519,7 +1535,7 @@ fn basesFor(g: *const Game, act: skillbar.Act) SkillBases {
 /// Physical before elemental, preserving the seeded shot sequence; without `body`, no physical.
 fn rollRaw(rng: *mathx.Rng, comptime act: skillbar.Act, bases: SkillBases, body: bool) damage.Damage {
     var raw = damage.Damage{};
-    if (body) for ([_]?damage.Base{ bases.skill, bases.weapon }) |maybe| {
+    if (body) for (bases.parts()) |maybe| {
         if (maybe) |b| raw.physical += b.roll(rng);
     };
     if (comptime act.element()) |element| raw.elements.set(element, bases.element.?.roll(rng));
@@ -2348,7 +2364,7 @@ const HOUR_EASE: f32 = 4;
 /// Per second, how fast the experience bar fills toward a drawn turn's experience.
 const XP_EASE: f32 = 8;
 /// Per second, how fast the life and mana orbs fill toward what is shown.
-const RESOURCE_EASE: f32 = 8;
+const RESOURCE_EASE = XP_EASE;
 
 /// Levels gained so far, the current one's progress as the fraction.
 fn xpLevels(g: *const Game) f32 {
@@ -2560,10 +2576,13 @@ fn itemCommand(g: *Game, command: book.Command) void {
         },
         .open_chest => |p| {
             if (!chestReached(g, h.at, p) or !openChest(g, p)) return;
+            turnToward(g, g.hero, p.x - h.at.x);
         },
         .travel => |p| {
             const link = doorReached(g, h.at, p) orelse return;
+            const dx = p.x - h.at.x;
             if (p.eq(h.at)) g.travel = link else heroTo(g, p);
+            turnToward(g, g.hero, dx);
         },
     }
     syncStats(g);
@@ -3025,7 +3044,7 @@ fn drawBody(g: *Game, b: *const Shown, mirrored: bool) void {
     const l = look.body(b.pic.kind);
     const flash = g.fx.flashOf(b.slot);
     var shine = b.shine;
-    if (actor.Pool.idOf(b.slot) == g.hero) shine.emission = g.fx.level_up.bodyGlow();
+    if (isHero(g, b.slot)) shine.emission = g.fx.level_up.bodyGlow();
     if (mirrored) drawMirrored(g, tex, l, b.s, b.lifted, b.left, b.mid, &shine, flash) else drawFigure(g, tex, l, b.lifted, b.left, b.mid, &shine, flash);
 }
 
@@ -3061,7 +3080,7 @@ fn drawMirrorScenery(g: *Game, c: Cam, view: grid.Box, memory: bool) void {
 fn drawMirrorTorches(g: *Game, c: Cam, flames: []const light.Flame, memory: bool) void {
     for (flames) |f| {
         const foot = f.foot * CELL_F - @as(f32, @floatFromInt(c.y));
-        const top = f.at[1] * CELL_F - @as(f32, @floatFromInt(c.y + authored(20)));
+        const top = f.at[1] * CELL_F - @as(f32, @floatFromInt(c.y + authored(fx.TORCH_TOP_PX)));
         mirrorAt(foot);
         const fading = g.light.beginMirrorFade(mirrorFade(g, foot, top, foot));
         defer if (fading) rl.endShaderMode();
@@ -3240,27 +3259,14 @@ fn effectLights(g: *Game) void {
         const at = drawnAt(g, i) orelse continue;
         const pic = g.pictured[i];
         if (pic.down()) continue;
-        const s = for (std.enums.values(fx.Status)) |s| {
-            if (STATUS_GLOWS.get(s) != null and pic.status.get(s) > 0) break s;
+        const s, const glow = for (std.enums.values(fx.Status)) |s| {
+            if (pic.status.get(s) > 0) if (s.glow()) |glow| break .{ s, glow };
         } else continue;
-        const glow = STATUS_GLOWS.get(s).?;
         const mid = middle(at);
-        const flicker = 1 - STATUS_FLICKER + STATUS_FLICKER * @sin(g.fx.seconds.at() * STATUS_FLICKER_HZ + @as(f32, @floatFromInt(i)));
+        const flicker = 1 - fx.STATUS_FLICKER + fx.STATUS_FLICKER * @sin(g.fx.seconds.at() * fx.STATUS_FLICKER_HZ + @as(f32, @floatFromInt(i)));
         g.light.emit(&g.lv, .{ .at = .{ mid[0], mid[1], light.BODY_Z }, .col = s.ink(), .radius = glow.radius, .gain = glow.gain * flicker });
     }
 }
-
-const StatusGlow = struct { radius: f32, gain: f32 };
-/// The first status a body has, in `fx.Status` order, lights it.
-const STATUS_GLOWS = std.EnumArray(fx.Status, ?StatusGlow).init(.{
-    .bleeding = null,
-    .burning = .{ .radius = 2, .gain = 0.55 },
-    .chilled = null,
-    .pinned = null,
-    .warded = .{ .radius = 1.5, .gain = 0.25 },
-});
-const STATUS_FLICKER: f32 = 0.1;
-const STATUS_FLICKER_HZ: f32 = 11;
 
 /// Over the light map, so each flame is its own light; a remembered one stays drawn, dim and unlit.
 fn drawTorches(g: *Game, c: Cam, flames: []const light.Flame) void {
@@ -3325,7 +3331,7 @@ fn miniDot(o: P, p: P, grow: i32, col: rl.Color) void {
 fn drawMinimap(g: *Game) void {
     const o = miniOrigin(g.screen.x);
     const map = look.rect(o.x, o.y, MINI_W, MINI_H);
-    look.hudPanelIn(&g.sprites, look.grown(map, @floatFromInt(MINI_FRAME)), look.MINI_BG, look.LIT);
+    look.hudPanelIn(&g.sprites, miniFrame(g.screen.x), look.MINI_BG, look.LIT);
     if (g.mini.tex) |t| {
         if (g.mini.stale) {
             for (&g.mini.px, &g.lv.tile, &g.lv.seen, &g.lv.lit) |*c, tile, seen, lit| c.* = if (seen or g.light.reveal_map) look.mini(tile, lit) else rl.Color.blank;
@@ -3342,6 +3348,58 @@ fn drawMinimap(g: *Game) void {
     if (heroNow(g)) |at| miniDot(o, cellUnder(at), MINI_HERO_GROW, look.MINI_HERO);
     const v = miniView(Cam.of(g), g.screen);
     rl.drawRectangleLines(o.x + v.lo.x, o.y + v.lo.y, v.hi.x - v.lo.x, v.hi.y - v.lo.y, look.MINI_VIEW);
+}
+
+fn miniFrame(screen_w: i32) rl.Rectangle {
+    const o = miniOrigin(screen_w);
+    return look.grown(look.rect(o.x, o.y, MINI_W, MINI_H), @floatFromInt(MINI_FRAME));
+}
+
+fn dayLine(screen_w: i32) struct { x0: i32, x1: i32, y: i32 } {
+    const m = miniOrigin(screen_w);
+    const f = miniFrame(screen_w);
+    return .{ .x0 = m.x + DAY_INSET, .x1 = m.x + MINI_W - DAY_INSET, .y = @as(i32, @intFromFloat(f.y + f.height)) + DAY_GAP };
+}
+
+fn drawDayNight(g: *Game) void {
+    const l = dayLine(g.screen.x);
+    const now = day.arc(g.hour_shown);
+    const at = rl.Vector2{
+        .x = @round(mathx.lerpF(@floatFromInt(l.x0), @floatFromInt(l.x1), now.u)),
+        .y = @floatFromInt(l.y),
+    };
+    const left: i32 = @intFromFloat(at.x - DAY_CLEAR);
+    const right: i32 = @intFromFloat(at.x + DAY_CLEAR);
+    for ([_]bool{ true, false }) |shadow| {
+        const by: i32 = if (shadow) DAY_DROP else 0;
+        const line = if (shadow) look.DAY_SHADOW else look.DAY_PATH;
+        const clear = look.fade(line, 0);
+        if (left > l.x0) rl.drawRectangleGradientH(l.x0 + by, l.y + by, left - l.x0, 1, clear, line);
+        if (right < l.x1) rl.drawRectangleGradientH(right + by, l.y + by, l.x1 - right, 1, line, clear);
+        const p = at.add(.{ .x = @floatFromInt(by), .y = @floatFromInt(by) });
+        const ink = if (shadow) look.DAY_SHADOW else if (now.day) look.DAY_SUN else look.DAY_MOON;
+        if (now.day) sunGlyph(p, ink) else moonGlyph(p, ink);
+    }
+}
+
+fn sunGlyph(at: rl.Vector2, col: rl.Color) void {
+    rl.drawCircleV(at, SUN_R, col);
+    for (0..SUN_RAYS) |i| {
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / SUN_RAYS;
+        const d = rl.Vector2{ .x = @cos(a), .y = @sin(a) };
+        rl.drawLineEx(at.add(d.scale(SUN_RAY_IN)), at.add(d.scale(SUN_RAY_OUT)), 1, col);
+    }
+}
+
+fn moonGlyph(at: rl.Vector2, col: rl.Color) void {
+    const cut_r = MOON_R - MOON_CUT_INSET;
+    var y: f32 = -MOON_R + 0.5;
+    while (y < MOON_R) : (y += 1) {
+        const half = @sqrt(MOON_R * MOON_R - y * y);
+        const right = if (@abs(y) < cut_r) @min(half, MOON_CUT - @sqrt(cut_r * cut_r - y * y)) else half;
+        if (right <= -half) continue;
+        rl.drawRectangleRec(.{ .x = @round(at.x - half), .y = at.y + y - 0.5, .width = @round(right + half), .height = 1 }, col);
+    }
 }
 
 fn miniView(c: Cam, screen: P) grid.Box {
@@ -3488,12 +3546,12 @@ fn drawBinds(g: *Game) void {
     const surface = menu.Surface.of(g.screen, BIND_PANEL);
     surface.begin();
     defer rl.endMode2D();
-    const native = g.face.native;
-    if (surface.scale != 1) g.face.native = @splat(null);
-    defer g.face.native = native;
+    const face = g.face;
+    g.face = surface.faceFor(face);
+    defer g.face = face;
     look.hudPanel(&g.sprites, 0, 0, BIND_PANEL.x, BIND_PANEL.y, look.CARD_BG, look.LIT);
     const b = g.binds;
-    bindText(g, "BIND SKILLS", BIND_TOP, BIND_TITLE, look.TEXT);
+    menu.heading(g.face, BIND_PANEL, "BIND SKILLS", BIND_TOP, BIND_TITLE, look.TEXT, look.UI_GOLD);
     for (skillbar.SETS, 0..) |set, row| {
         g.face.text(set.name(), BIND_X0, bindRowY(row), TEXT, look.DIM);
         for (skillbar.SLOTS, 0..) |key, i| {
@@ -3632,13 +3690,10 @@ fn spotAt(spots: []const Part, s: Spot) ?Part {
     return null;
 }
 
-/// Inspect leans on rows: the orbs and slots sit side by side.
-const INSPECT_ACROSS: f32 = 2;
-
 fn toward(spots: []const Part, from: Part, d: mathx.Dir) ?Spot {
     var boxes: [SPOTS_MAX]rl.Rectangle = undefined;
     for (spots, boxes[0..spots.len]) |s, *b| b.* = s.box;
-    const i = menu.nearest(from.box, boxes[0..spots.len], d, INSPECT_ACROSS) orelse return null;
+    const i = menu.nearest(from.box, boxes[0..spots.len], d) orelse return null;
     return spots[i].spot;
 }
 
@@ -3738,11 +3793,11 @@ fn tipOf(g: *const Game, s: Spot, title_buf: []u8, body_buf: []u8) ?Tip {
             break :blk .{
                 .title = std.fmt.bufPrintZ(title_buf, "{s}, {d} turn{s}", .{ st.title(), turns, plural(turns) }) catch st.title(),
                 .body = switch (st) {
-                    .bleeding => std.fmt.bufPrint(body_buf, "Lose {d} life per turn, or {d} when moving.", .{ bleeding.STILL, bleeding.MOVING }) catch "",
-                    .burning => std.fmt.bufPrint(body_buf, "Take {d} fire damage per turn, reduced by fire resistance.", .{burning.PER_TURN}) catch "",
-                    .chilled => std.fmt.bufPrint(body_buf, "Lose 1 action in every {d}.", .{glacial.CYCLE}) catch "",
-                    .pinned => "Cannot move. Can still attack adjacent enemies.",
-                    .warded => "Damage drains mana before life.",
+                    .bleeding => bleeding.STATUS,
+                    .burning => burning.STATUS,
+                    .chilled => glacial.STATUS,
+                    .pinned => pinning.STATUS,
+                    .warded => ward.STATUS,
                 },
             };
         },
@@ -3756,7 +3811,7 @@ fn drawDead(g: *Game) void {
     const DIED = " DIED";
     var died: [heroes.Name.MAX + DIED.len + 1]u8 = undefined;
     const said = menu.shout(&died, "{s}" ++ DIED, .{g.name.text()});
-    textMid(g, said, mid + DEAD_TITLE_DY, menu.TITLE, look.LIFE);
+    menu.heading(g.face, g.screen, said, mid + DEAD_TITLE_DY, menu.TITLE, look.LIFE, look.LIFE);
     textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
     const box = look.rect(@divTrunc(g.screen.x - ACTION.x, 2), mid + DEAD_ACTION_DY, ACTION.x, ACTION.y);
     menu.action(&g.face, box, look.Prompt.menuOf(&g.st, CONFIRM), if (g.permadeath) "Title" else "Restart");
@@ -3769,6 +3824,7 @@ fn drawFrame(g: *Game) void {
     drawMap(g);
     g.vignette.draw(g.screen.x, g.screen.y);
     drawMinimap(g);
+    drawDayNight(g);
     drawHud(g);
     journal.draw(&g.face, &g.sprites, g.screen, &g.log);
     drawTips(g);
@@ -4372,8 +4428,7 @@ fn shootCharacter(g: *Game) !void {
         g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-capstone.png");
         g.character.zoom = 2.2;
-        try capture(g, target, SHOTS_DIR ++ "/tree-passives-zoom.png");
-        g.character.zoom = 1;
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-zoom.png");        g.character.zoom = 1;
         g.character.cursor = branch + 1;
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-interest.png");
         g.character.cursor = progress.passives.bridgeFirst(.warrior_rogue);
@@ -5208,7 +5263,7 @@ fn benchWalk(g: *Game) !void {
         drawInto(g, target);
         draw[i] = t.read();
         const tried = g.st.walk != null and g.pending == null;
-        if (tried and g.heroActor() != null and g.heroActor().?.at.eq(was)) d = mathx.ALL_DIRS[rng.below(mathx.ALL_DIRS.len)];
+        if (tried and g.heroActor() != null and g.heroActor().?.at.eq(was)) d = rng.pick(mathx.Dir, mathx.ALL_DIRS);
     }
     for ([_][]u64{ &sim, &draw }, [_][]const u8{ "update", "draw" }) |xs, name| {
         std.mem.sort(u64, xs, {}, std.sort.asc(u64));
@@ -5318,7 +5373,8 @@ fn procRng(g: *const Game, comptime act: skillbar.Act, procs: usize, want: bool)
             return true;
         }
     };
-    return rngWhere(Procs{ .by = skillAttrs(g, act), .style = g.inventory.gear.scaling(comptime act.attack().?), .bases = basesFor(g, act), .n = procs, .want = want });
+    const b = blowFor(g, act);
+    return rngWhere(Procs{ .by = b.by, .style = b.style, .bases = b.bases, .n = procs, .want = want });
 }
 
 test "skills cannot start a second turn while the first is still being drawn" {
@@ -5420,13 +5476,12 @@ fn expectWithin(v: anytype, lo: @TypeOf(v), hi: @TypeOf(v)) !void {
 }
 
 fn expectDamage(g: *const Game, comptime act: skillbar.Act, dealt: i32, ranges: []const damage.Base) !void {
-    const a = heroAttrs(g);
-    const style = g.inventory.gear.scaling(comptime act.attack().?);
+    const b = blowFor(g, act);
     var lo: i32 = 0;
     var hi: i32 = 0;
     for (ranges) |r| {
-        lo += a.dealt(style, r.lo, false).least();
-        hi += a.dealt(style, r.hi, true).most();
+        lo += b.by.dealt(b.style, r.lo, false).least();
+        hi += b.by.dealt(b.style, r.hi, true).most();
     }
     try expectWithin(dealt, lo, hi);
 }
@@ -7130,11 +7185,11 @@ test "hidden and offscreen objects keep casting without being drawn" {
     std.debug.print("hidden actor and barrel still cast within {d} cells of the view; dead actors and unborn splits do not\n", .{CAST_MARGIN});
 }
 
-test "the minimap fits in the top right, clear of the hud" {
-    for ([_]P{ WINDOW, SCREEN_1080, SCREEN_1440 }) |screen| {
+test "the minimap and the day beneath it fit in the top right, clear of the hud" {
+    for ([_]P{ SCREEN_720, WINDOW, SCREEN_1080, SCREEN_1440 }) |screen| {
         const o = miniOrigin(screen.x);
         try std.testing.expect(o.x > @divTrunc(screen.x, 2));
-        try std.testing.expect(o.y + MINI_H + MINI_FRAME < hud.Layout.of(screen, SKILLS_W).top);
+        try std.testing.expect(dayLine(screen.x).y + @as(i32, @intFromFloat(@ceil(DAY_GLYPH_R))) + DAY_DROP < hud.Layout.of(screen, SKILLS_W).top);
     }
 }
 
@@ -7486,7 +7541,7 @@ test "slimes split in fights on real floors, and every body keeps a cell of its 
             if (g.mode == .dead) break;
             const n = g.pool.n;
             press(g, .x);
-            if (g.mode == .aim) press(g, CONFIRM) else nudge(g, mathx.ALL_DIRS[rng.below(mathx.ALL_DIRS.len)]);
+            if (g.mode == .aim) press(g, CONFIRM) else nudge(g, rng.pick(mathx.Dir, mathx.ALL_DIRS));
             update(g, SOAK_DT);
             for (0..g.pool.n) |i| {
                 if (drawnAt(g, i) == null) continue;
@@ -8704,6 +8759,29 @@ test "interact during door travel stays an interaction on arrival" {
     try std.testing.expectEqual(book.Page.nearby, g.character.page);
     try std.testing.expectEqual(minute, g.clock.minute);
     std.debug.print("door interact: survives travel and walking repeats, opens nearby without an extra turn\n", .{});
+}
+
+test "travel and chest opening from the nearby list turn the hero toward them" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const w = try std.testing.allocator.create(atlas.Atlas);
+    defer std.testing.allocator.destroy(w);
+    _ = twoRooms(w);
+    beginMapAt(g, w, w.start, 123);
+    const at = g.heroActor().?.at;
+    const slot = heroSlot(g).?;
+    g.facing[slot] = .right;
+    characterCommand(g, .{ .travel = at.add(mathx.Dir.w.delta()) });
+    try std.testing.expectEqual(Facing.left, g.facing[slot]);
+
+    arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const chest = P{ .x = 19, .y = 20 };
+    g.lv.set(chest, .chest);
+    g.facing[heroSlot(g).?] = .right;
+    characterCommand(g, .{ .open_chest = chest });
+    try std.testing.expectEqual(grid.Tile.chest_open, g.lv.at(chest));
+    try std.testing.expectEqual(Facing.left, g.facing[heroSlot(g).?]);
+    std.debug.print("nearby travel and chest: hero turned {s} toward each\n", .{@tagName(g.facing[heroSlot(g).?])});
 }
 
 test "a door trip finishes behind Character opened during it, so item commands can act" {

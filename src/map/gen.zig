@@ -31,7 +31,6 @@ pub const Params = struct {
     room_h: [2]i32 = .{ 4, 9 },
     /// Percent of rooms that hang a torch.
     torches: u8 = 70,
-    /// The most barrels one room stacks.
     barrels: u32 = 2,
 
     pub fn fit(p: Params) Params {

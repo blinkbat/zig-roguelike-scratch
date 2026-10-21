@@ -6,6 +6,7 @@ pub const TURNS: u8 = 5;
 pub const STILL: i32 = 1;
 pub const MOVING: i32 = 2;
 pub const TAKES = "starts bleeding";
+pub const STATUS = std.fmt.comptimePrint("Lose {d} life per turn, or {d} when moving.", .{ STILL, MOVING });
 
 pub const Bleed = damage.Lasting(TURNS, bool, torn);
 

@@ -32,9 +32,14 @@ pub const EquippedBases = struct {
     weapon: ?damage.Base = null,
     element: ?damage.Base,
 
+    /// Each physical source, in roll order.
+    pub fn parts(b: EquippedBases) [2]?damage.Base {
+        return .{ b.skill, b.weapon };
+    }
+
     pub fn physical(b: EquippedBases) damage.Base {
         var out = damage.Base{ .lo = 0, .hi = 0 };
-        for ([_]?damage.Base{ b.skill, b.weapon }) |maybe| if (maybe) |p| {
+        for (b.parts()) |maybe| if (maybe) |p| {
             out.lo += p.lo;
             out.hi += p.hi;
         };

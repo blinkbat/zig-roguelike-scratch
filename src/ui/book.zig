@@ -61,8 +61,6 @@ const EMPTY_DY = 46;
 /// The area under the tabs a page lays out in.
 pub const AREA = look.rect(LIST_X, TOP, W - 2 * LIST_X, AREA_H);
 const AREA_H = 458;
-/// Sideways distance between cells costs this much more than distance ahead.
-pub const CELL_ACROSS: f32 = 2;
 const CARD_W = 246;
 const CARD_GAP = 16;
 const CARD_H = 252;
@@ -382,7 +380,7 @@ pub const Book = struct {
             } else if (self.count(v) > 0) {
                 var boxes: [CELLS_MAX]rl.Rectangle = undefined;
                 for (0..self.count(v)) |i| boxes[i] = self.cellBox(o, i, v);
-                if (menu.nearest(boxes[self.cursor], boxes[0..self.count(v)], dir, CELL_ACROSS)) |i| self.cursor = i;
+                if (menu.nearest(boxes[self.cursor], boxes[0..self.count(v)], dir)) |i| self.cursor = i;
             }
         }
         if (st.hit(menu.CONFIRM)) {
@@ -453,18 +451,17 @@ pub const Book = struct {
         const surface = menu.Surface.of(screen, SIZE);
         surface.begin();
         defer rl.endMode2D();
-        var scaled_face = source_face.*;
-        if (surface.scale != 1) scaled_face.native = @splat(null);
+        const scaled_face = surface.faceFor(source_face.*);
         const face = &scaled_face;
         const o = P{ .x = 0, .y = 0 };
         look.hudPanel(sprites, o.x, o.y, W, H, look.CARD_BG, look.LIT);
         var who: menu.Note(100) = .{};
         who.say("{s}   {s}", .{ v.name, v.class.title() });
-        face.drawMiddle(who.text(), o.x + LIST_X, o.y + HEADER_MID, font.HEAD, look.TEXT);
+        face.engraved(who.text(), o.x + LIST_X, o.y + HEADER_MID - font.HEAD / 2, font.HEAD, look.TEXT);
         var xp: menu.Note(100) = .{};
         xp.say("Level  {d}     XP  {d} / {d}", .{ v.growth.level, v.growth.xp, v.growth.needed() });
         face.drawMiddle(xp.text(), o.x + RIGHT, o.y + HEADER_MID, font.BODY, look.TEXT);
-        if (self.direct) face.drawMiddle("NEARBY", o.x + LIST_X, o.y + TAB_Y + TAB_H / 2, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| tab(face, tabBox(o, i), page, self.page == page, v.device);
+        if (self.direct) face.engraved("NEARBY", o.x + LIST_X, o.y + TAB_Y + TAB_H / 2 - font.HEAD / 2, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| tab(face, tabBox(o, i), page, self.page == page, v.device);
         if (self.treePanel() == null) rl.drawLine(o.x + DIVIDER_X, o.y + TOP, o.x + DIVIDER_X, o.y + DIVIDER_FOOT, look.EDGE);
         if (self.treePanel()) |panel| {
             trees.draw(panel, face, sprites, o, v.class, v.growth, self.treeView(), v.device, .{ .stats = v.stats(), .gear = v.inventory.gear }, surface);
@@ -510,7 +507,7 @@ pub const Book = struct {
             const y: i32 = @intFromFloat(r.y);
             const chosen = i == self.cursor;
             rl.drawRectangleRec(r, look.BG);
-            rl.drawRectangleLinesEx(r, if (chosen) 2 else 1, if (chosen) look.UI_FOCUS else look.EDGE);
+            menu.outline(r, chosen, look.UI_FOCUS, look.EDGE);
             switch (self.page) {
                 .equipment => {
                     const slot = items.SLOTS[i];
@@ -630,7 +627,7 @@ fn slotLabel(s: items.Slot) [:0]const u8 {
     };
 }
 fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: input.Device) void {
-    rl.drawRectangleLinesEx(r, if (on) 2 else 1, if (on) look.UI_FOCUS else look.EDGE);
+    menu.outline(r, on, look.UI_FOCUS, look.EDGE);
     const m = look.middleAt(r);
     const text = menu.named(page);
     const ink = if (on) look.TEXT else look.DIM;
@@ -695,7 +692,7 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     const spec = items.spec(it.kind);
     const ink = look.itemInk(it.magical());
     var fitted: [64]u8 = undefined;
-    face.drawMid(face.fit(&fitted, it.name(), font.HEAD, width, false), mid, y + CARD_NAME, font.HEAD, ink);
+    face.engravedMid(face.fit(&fitted, it.name(), font.HEAD, width, false), mid, y + CARD_NAME, font.HEAD, ink);
     face.drawMid(if (slot == .right_hand) (if (spec.two_handed) TWO_HANDED else ONE_HANDED) else slot.name(), mid, y + CARD_SLOT, font.SMALL, look.DIM);
     face.drawMid(face.fit(&fitted, it.flavor(), font.SMALL, width, false), mid, y + CARD_FLAVOR, font.SMALL, look.DIM);
     var top = y + CARD_STATS;

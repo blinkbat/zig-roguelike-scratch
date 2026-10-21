@@ -118,6 +118,10 @@ pub const Blow = struct {
     fire: bool = false,
 };
 
+pub const StatusGlow = struct { radius: f32, gain: f32 };
+pub const STATUS_FLICKER: f32 = 0.1;
+pub const STATUS_FLICKER_HZ: f32 = 11;
+
 /// What a body suffers for turns, in the order the hud names them.
 pub const Status = enum {
     bleeding,
@@ -133,6 +137,15 @@ pub const Status = enum {
             .chilled => look.elementInk(glacial.ELEMENT),
             .pinned => look.PIN,
             .warded => look.WARD,
+        };
+    }
+
+    /// The first status a body has, in this order, that glows lights it.
+    pub fn glow(s: Status) ?StatusGlow {
+        return switch (s) {
+            .burning => .{ .radius = 2, .gain = 0.55 },
+            .warded => .{ .radius = 1.5, .gain = 0.25 },
+            .bleeding, .chilled, .pinned => null,
         };
     }
 
@@ -260,6 +273,14 @@ const BLEED_DROPS = 4;
 const CHILL_FLAKES = 5;
 const BURN_FLAMES = 7;
 const TORCH_FLAMES = 7;
+const TORCH_RISE_PX: f32 = 16;
+const TORCH_FLECK_PX: f32 = 3.5;
+/// Sprite pixels above its foot the tallest flame reaches.
+pub const TORCH_TOP_PX = 20;
+
+comptime {
+    std.debug.assert(TORCH_RISE_PX + TORCH_FLECK_PX <= TORCH_TOP_PX);
+}
 const WARD_DOTS = 48;
 const SHIMMER_MOTES = 24;
 /// Stake (horizontal position, lean) pairs in cell units.
@@ -421,8 +442,7 @@ pub const LevelUp = struct {
         const x: i32 = @intFromFloat(top.x);
         const y: i32 = @intFromFloat(top.y);
         const size: i32 = @intFromFloat(pxScale(cell) * font.HEAD);
-        face.textMid(LEVEL_UP_TEXT, x + 1, y + 2, size, look.fade(look.BG, self.alpha() * 0.85));
-        face.textMid(LEVEL_UP_TEXT, x, y, size, look.fade(look.LEVEL_CORE, self.alpha()));
+        face.engravedMid(LEVEL_UP_TEXT, x, y, size, look.fade(look.LEVEL_CORE, self.alpha()));
     }
 };
 
@@ -722,9 +742,9 @@ pub const Fx = struct {
 
     fn spill(self: *Fx, b: Burst) void {
         const from = mathx.centre(b.at);
-        const m = missileOf(b.element).?;
+        const s = spillOf(b.element) orelse return;
         const col = look.elementInk(b.element);
-        self.glow(from, col, m.burst);
+        self.glow(from, col, s.glow);
         for (b.area.slice()) |p| {
             const to = mathx.centre(p);
             for (0..burstMotes(b.area.n)) |_| {
@@ -735,7 +755,7 @@ pub const Fx = struct {
                     .life = life,
                     .r = 0.8 + self.rng.unit() * 2,
                     .col = col,
-                    .add = m.add,
+                    .add = s.add,
                 });
             }
         }
@@ -823,8 +843,8 @@ pub const Fx = struct {
         for (0..TORCH_FLAMES) |i| {
             const f: f32 = @floatFromInt(i);
             const age = @mod(t * 1.7 + f / TORCH_FLAMES + seed, 1);
-            const p = rl.Vector2{ .x = x + @sin(t * 7 + f * 3 + seed) * (1 + age * 2) * k, .y = y - age * 16 * k };
-            pixel.fleck(p, 3.5 - age * 2.8, k, look.fade(look.FIRE, (1 - age) * lit));
+            const p = rl.Vector2{ .x = x + @sin(t * 7 + f * 3 + seed) * (1 + age * 2) * k, .y = y - age * TORCH_RISE_PX * k };
+            pixel.fleck(p, TORCH_FLECK_PX - age * 2.8, k, look.fade(look.FIRE, (1 - age) * lit));
             pixel.rect(p, 2 - age, 3 - age * 2, k, look.fade(look.FIRE_CORE, (1 - age) * lit));
         }
     }
@@ -942,16 +962,27 @@ fn pxScale(cell: f32) f32 {
 }
 
 /// A trailed missile's light by element, how long the motes it sheds live, how fast they rise and whether they
-/// add light, and the glow of its element's burst; a fireball's light reaches further.
-const Missile = struct { radius: f32, gain: f32, trail_s: f32, rise: f32, add: bool, burst: Glow };
-const FIRE_MISSILE = Missile{ .radius = 1.6, .gain = 0.85, .trail_s = 0.24, .rise = 0.5, .add = true, .burst = FIRE_BURST_GLOW };
-const COLD_MISSILE = Missile{ .radius = 1.6, .gain = 0.35, .trail_s = 0.18, .rise = 0.12, .add = false, .burst = COLD_BURST_GLOW };
+/// add light; a fireball's light reaches further.
+const Missile = struct { radius: f32, gain: f32, trail_s: f32, rise: f32, add: bool };
+const FIRE_MISSILE = Missile{ .radius = 1.6, .gain = 0.85, .trail_s = 0.24, .rise = 0.5, .add = true };
+const COLD_MISSILE = Missile{ .radius = 1.6, .gain = 0.35, .trail_s = 0.18, .rise = 0.12, .add = false };
 const FIREBALL_REACH: f32 = 2.8;
 
 fn missileOf(element: ?damage.Element) ?Missile {
     return switch (element orelse return null) {
         .fire => FIRE_MISSILE,
         .cold => COLD_MISSILE,
+        .chaos, .lightning => null,
+    };
+}
+
+/// An element's burst: the glow it flashes and whether the motes it spills add light.
+const Spill = struct { glow: Glow, add: bool };
+
+fn spillOf(element: damage.Element) ?Spill {
+    return switch (element) {
+        .fire => .{ .glow = FIRE_BURST_GLOW, .add = true },
+        .cold => .{ .glow = COLD_BURST_GLOW, .add = false },
         .chaos, .lightning => null,
     };
 }

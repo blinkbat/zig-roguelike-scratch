@@ -155,9 +155,14 @@ pub const Over = struct {
 };
 
 pub fn nearWater(lv: *const grid.Level, p: P, range: u8) bool {
-    var cells = grid.Cells.around(p, range);
+    return near(lv, p, range, grid.Tile.wet);
+}
+
+/// Any cell within `r` of `p`, `p` included, whose tile `has`.
+fn near(lv: *const grid.Level, p: P, r: i32, comptime has: fn (grid.Tile) bool) bool {
+    var cells = grid.Cells.around(p, r);
     while (cells.next()) |q| {
-        if (grid.Level.inside(q) and lv.at(q).wet()) return true;
+        if (grid.Level.inside(q) and has(lv.at(q))) return true;
     }
     return false;
 }
@@ -558,7 +563,7 @@ fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, l
         const t = lv.tile[i];
         const other = !base.has(t) and t != pal.path;
         const opened = if (laid.before) |b| b[i].solid() else false;
-        if (other or opened or lv.door[i] != grid.NO_DOOR or byLiquid(lv, grid.Level.of(i))) out.set(region[i]);
+        if (other or opened or lv.door[i] != grid.NO_DOOR or near(lv, grid.Level.of(i), 1, grid.Tile.liquid)) out.set(region[i]);
     }
     for (laid.lots) |lot| {
         var cells = lot.cells();
@@ -568,14 +573,6 @@ fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, l
         }
     }
     return out;
-}
-
-fn byLiquid(lv: *const grid.Level, p: P) bool {
-    for (mathx.ALL_DIRS) |d| {
-        const q = p.add(d.delta());
-        if (grid.Level.inside(q) and lv.at(q).liquid()) return true;
-    }
-    return false;
 }
 
 const Regions = std.StaticBitSet(grid.CELLS);
@@ -741,14 +738,25 @@ pub const Decor = struct {
     tall_grass: u16 = 60,
     shrooms: u16 = 6,
 
+    const TILES = .{ .tiny_shrubs = grid.Tile.tiny_shrub, .tall_grass = grid.Tile.tall_grass, .shrooms = grid.Tile.shrooms };
+
+    comptime {
+        var strewn_tiles = std.EnumSet(grid.Tile).initEmpty();
+        for (std.meta.fieldNames(Decor), std.meta.fieldNames(@TypeOf(TILES))) |a, b| {
+            std.debug.assert(std.mem.eql(u8, a, b));
+            strewn_tiles.insert(@field(TILES, a));
+        }
+        std.debug.assert(strewn_tiles.eql(grid.LITTER_TILES));
+    }
+
     pub fn fit(d: Decor) Decor {
         return capped(d, DECOR_MAX);
     }
 
     pub fn strew(d: Decor, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
-        strewn(lv, rng, d.tiny_shrubs, .tiny_shrub);
-        clumps(lv, Noise.init(seed, .tall_grass), TALL_GRASS_SCALE, d.tall_grass, .{ .tile = grid.Tile.tall_grass.ground().? }, .tall_grass);
-        strewn(lv, rng, d.shrooms, .shrooms);
+        strewn(lv, rng, d.tiny_shrubs, TILES.tiny_shrubs);
+        clumps(lv, Noise.init(seed, .tall_grass), TALL_GRASS_SCALE, d.tall_grass, .{ .tile = TILES.tall_grass.ground().? }, TILES.tall_grass);
+        strewn(lv, rng, d.shrooms, TILES.shrooms);
     }
 };
 

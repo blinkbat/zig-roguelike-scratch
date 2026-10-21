@@ -65,5 +65,6 @@ test "a field strews tiny shrubs, tall grass in patches and shrooms, and a step 
     }
     std.debug.print("a field's decor: {d} tiny shrubs, {d} tall grass, {d} of it beside more, {d} shrooms\n", .{ shrubs, tall, patched, shrooms });
     try std.testing.expect(shrubs > 10 and tall > 200 and patched * 10 > tall * 9 and shrooms > 10);
-    for ([_]grid.Tile{ .tiny_shrub, .tall_grass, .shrooms }) |t| try std.testing.expect(!t.solid() and !t.blind());
+    var litter = grid.LITTER_TILES.iterator();
+    while (litter.next()) |t| try std.testing.expect(!t.solid() and !t.blind());
 }

@@ -26,9 +26,7 @@ const KERNEL_SUM: f32 = blk: {
 const BORDER: i32 = 3;
 
 pub const Params = struct {
-    /// Sectors across and down.
     sectors: u8 = 3,
-    /// Deep points in each sector, at most.
     seeds: u8 = 2,
     blur: u8 = 5,
 

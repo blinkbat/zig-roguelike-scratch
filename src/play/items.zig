@@ -188,7 +188,7 @@ pub const Item = struct {
 };
 
 pub fn roll(rng: *mathx.Rng) Item {
-    var out = Item{ .kind = KINDS[rng.below(KINDS.len)] };
+    var out = Item{ .kind = rng.pick(Kind, KINDS) };
     const count = rng.range(0, out.mods.len);
     for (0..@intCast(count)) |i| {
         var at: usize = rng.below(AFFIXES.len);
