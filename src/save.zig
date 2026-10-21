@@ -49,6 +49,7 @@ const UNSAVED = .{
     "nearby",
     "pause_page",
     "mode",
+    "died_in",
     "pause_menu",
     "back",
     "exit",
@@ -109,20 +110,15 @@ const UNSAVED = .{
 
 comptime {
     @setEvalBranchQuota(100_000);
+    const named = HEAD_FIELDS.* ++ TAIL_FIELDS ++ UNSAVED;
     for (std.meta.fields(game.Game)) |f| {
         var n: usize = 0;
-        for (TAIL_FIELDS ++ UNSAVED) |name| {
-            if (std.mem.eql(u8, f.name, name)) n += 1;
-        }
-        for (HEAD_FIELDS) |name| {
+        for (named) |name| {
             if (std.mem.eql(u8, f.name, name)) n += 1;
         }
         if (n != 1) @compileError("save.zig: say whether game.Game." ++ f.name ++ " is saved");
     }
-    for (TAIL_FIELDS ++ UNSAVED) |name| {
-        if (!@hasField(game.Game, name)) @compileError("save.zig: game.Game has no field " ++ name);
-    }
-    for (HEAD_FIELDS) |name| {
+    for (named) |name| {
         if (!@hasField(game.Game, name)) @compileError("save.zig: game.Game has no field " ++ name);
     }
 }

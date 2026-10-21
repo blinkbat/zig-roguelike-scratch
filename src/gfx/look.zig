@@ -422,7 +422,7 @@ fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, t
                 while (xx < dw[col]) : (xx += sw[col]) {
                     const w = @min(sw[col], dw[col] - xx);
                     const h = @min(sh[row], dh[row] - yy);
-                    rl.drawTextureRec(tex, rect(sx[col], sy[row], w, h), .{ .x = @floatFromInt(dx[col] + xx), .y = @floatFromInt(dy[row] + yy) }, tint);
+                    rl.drawTextureRec(tex, rect(sx[col], sy[row], w, h), vec(.{ .x = dx[col] + xx, .y = dy[row] + yy }), tint);
                 }
             }
         }
@@ -1338,7 +1338,7 @@ pub const Prompt = union(enum) {
         const box = rect(cx - @divTrunc(w, 2), cy - @divTrunc(h, 2), w, h);
         switch (p) {
             .stick => |side| {
-                const c = rl.Vector2{ .x = @floatFromInt(cx), .y = @floatFromInt(cy) };
+                const c = vec(.{ .x = cx, .y = cy });
                 const radius: f32 = @as(f32, @floatFromInt(h)) * 0.46;
                 rl.drawCircleV(c, radius, fade(PROMPT_BODY, alpha));
                 rl.drawRing(c, radius - 1.5, radius, 0, 360, 24, fade(PROMPT_EDGE, alpha));
@@ -1433,7 +1433,7 @@ fn faceInk(b: FaceButton, sony: bool) rl.Color {
 
 fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i32, h: i32, alpha: f32) void {
     const r: f32 = @as(f32, @floatFromInt(h)) / 2;
-    const c = rl.Vector2{ .x = @floatFromInt(cx), .y = @floatFromInt(cy) };
+    const c = vec(.{ .x = cx, .y = cy });
     const ink = faceInk(b, sony);
     rl.drawCircleV(c, r, fade(PROMPT_LIP, alpha));
     rl.drawCircleV(c, r - 1, fade(PROMPT_BODY, alpha));

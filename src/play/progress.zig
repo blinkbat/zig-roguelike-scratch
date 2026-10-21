@@ -153,8 +153,12 @@ pub const State = struct {
         return innate(act) or self.ranks.get(act) > 0;
     }
 
+    pub fn maxed(self: *const State, act: skillbar.Act) bool {
+        return self.ranks.get(act) >= RANKS;
+    }
+
     pub fn canLearn(self: *const State, c: hero.Class, act: skillbar.Act) bool {
-        if (self.active_points < POINT_COST or self.ranks.get(act) >= RANKS) return false;
+        if (self.active_points < POINT_COST or self.maxed(act)) return false;
         for (skills(c)) |s| if (s.act == act) {
             return if (s.parent) |p| self.unlocked(p) else true;
         };

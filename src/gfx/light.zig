@@ -408,20 +408,20 @@ fn upright(surface: Surface, dx: f32, dy: f32) f32 {
 
 /// From the water toward the viewer, who looks down at 45 degrees from the south.
 const VIEWER: Rgb = .{ 0, std.math.sqrt1_2, std.math.sqrt1_2 };
-const SUN_GLINT_POWER: f32 = 24;
-const GLINT_POWER: f32 = 80;
+const SUN_GLINT_POWER: u32 = 24;
+const GLINT_POWER: u32 = 80;
 const SUN_GLINT: f32 = 0.05;
 const CARRY_GLINT: f32 = 0.08;
 const TORCH_GLINT: f32 = 0.12;
 const EFFECT_GLINT: f32 = 0.11;
 
-fn smoothSpecular(toward: [3]f32, power: f32) f32 {
+fn smoothSpecular(toward: [3]f32, comptime power: u32) f32 {
     const d: Rgb = toward;
     const len = @sqrt(@reduce(.Add, d * d));
     if (len <= 1e-5 or d[2] <= 0) return 0;
     const half = d / splat(len) + VIEWER;
     const h = sky.unit(half);
-    return std.math.pow(f32, @max(0, h[2]), power);
+    return mathx.powi(@max(0, h[2]), power);
 }
 
 fn remembered(view: Rgb, sight: f32, memory: f32) Rgb {
@@ -1103,6 +1103,10 @@ pub const Light = struct {
         return k;
     }
 
+    fn sunRay(self: *const Light) ?SunRay {
+        return if (self.profile()) |k| SunRay.of(k) else null;
+    }
+
     /// The sun the clouds let through at `q`, composed; from the cached dappling when `q` is light-map texel `map_at`'s centre.
     fn composedAt(self: *const Light, map_at: ?usize, q: [2]f32, cloud: f32) f32 {
         const k = self.sky orelse return cloud;
@@ -1165,7 +1169,7 @@ pub const Light = struct {
     pub fn at(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32) Rgb {
         const c = mathx.cellOf(q);
         const fade = self.fadeOf(c);
-        const ray: ?SunRay = if (self.profile()) |k| SunRay.of(k) else null;
+        const ray = self.sunRay();
         const cloud = if (ray != null) self.cloudAt(q) else 1;
         return self.shade(lv, torches, self.effectsNear(c), q, null, self.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
     }
@@ -1214,7 +1218,7 @@ pub const Light = struct {
         const torches = self.near((grid.Box{ .lo = lo, .hi = hi }).grown(1), &ids);
         const t0 = P{ .x = @max(0, lo.x * SUB - 1), .y = @max(0, lo.y * SUB - 1) };
         const t1 = P{ .x = @min(MAP_W, hi.x * SUB + 1), .y = @min(MAP_H, hi.y * SUB + 1) };
-        const ray: ?SunRay = if (self.profile()) |k| SunRay.of(k) else null;
+        const ray = self.sunRay();
         self.baked = .{ @min(self.baked[0], t0.y), @max(self.baked[1], t1.y) };
         const c0 = P{ .x = @divFloor(t0.x, SUB), .y = @divFloor(t0.y, SUB) };
         if (ray != null) self.cloudsOver(c0, .{ .x = std.math.divCeil(i32, t1.x, SUB) catch unreachable, .y = std.math.divCeil(i32, t1.y, SUB) catch unreachable });

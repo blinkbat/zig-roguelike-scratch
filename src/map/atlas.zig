@@ -170,7 +170,7 @@ pub const Bespoke = struct {
     }
 
     pub fn addFoe(self: *Bespoke, f: Foe) bool {
-        if (self.foe_n == MAX_FOES or self.foeAt(f.at) != null or !actor.roomFor(self.bodies(), f.kind)) return false;
+        if (self.foeAt(f.at) != null or !self.roomAt(f.at, f.kind)) return false;
         self.foe[self.foe_n] = f;
         self.foe_n += 1;
         return true;

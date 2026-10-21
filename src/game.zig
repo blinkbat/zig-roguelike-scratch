@@ -87,6 +87,7 @@ const TEXT_LEADING: i32 = 6;
 const TEXT_LINE: i32 = TEXT + TEXT_LEADING;
 const DEAD_TITLE_DY: i32 = -100;
 const DEAD_SCORE_DY: i32 = -10;
+const DEAD_ACTION_DY: i32 = 40;
 const SLOT_PX: i32 = 48;
 const SLOT_MID: i32 = @divTrunc(SLOT_PX, 2);
 const CLEAR_GLYPH: i32 = @divTrunc(SLOT_PX, 2);
@@ -252,10 +253,6 @@ const Binds = struct {
     fn colOf(button: input.Button) usize {
         return std.mem.indexOfScalar(input.Button, &skillbar.SLOTS, button).?;
     }
-
-    fn rowOf(s: skillbar.Set) usize {
-        return std.mem.indexOfScalar(skillbar.Set, skillbar.SETS, s).?;
-    }
 };
 
 /// Picker cell 0 clears the slot; the rest are the class's acts in order. An empty slot opens it on the first act.
@@ -352,7 +349,7 @@ test "missiles move continuously to the existing impact time in every direction"
 }
 
 fn cellPx(p: P) rl.Vector2 {
-    return .{ .x = @floatFromInt(p.x * CELL), .y = @floatFromInt(p.y * CELL) };
+    return look.vec(p.scaled(CELL));
 }
 
 /// Presentation only: the body already stands on `to`.
@@ -559,6 +556,8 @@ const Flasks = std.EnumArray(flask.Kind, flask.Flask);
 
 pub const Game = struct {
     mode: Mode = .play,
+    /// Drawn in place of `.dead` until the lethal turn is.
+    died_in: Mode = .play,
     pause_menu: menu.Menu = .{},
     pause_page: PausePage = .main,
     character: book.Book = .{},
@@ -1195,22 +1194,13 @@ fn spell(g: *Game, comptime act: skillbar.Act) void {
     endTurn(g);
 }
 
-const Struck = struct {
-    id: [actor.MAX]u16 = undefined,
-    n: usize = 0,
-
-    fn slice(self: *const Struck) []const u16 {
-        return self.id[0..self.n];
-    }
-};
+const Struck = actor.Ids(actor.MAX);
 
 /// Snapshot targets before damage so newborn slime halves are not hit twice.
 fn foesIn(g: *Game, area: glacial.Burst) Struck {
     var out = Struck{};
     for (g.pool.slice(), 0..) |a, i| {
-        if (!a.alive or !a.foe() or !area.has(a.at)) continue;
-        out.id[out.n] = actor.Pool.idOf(i);
-        out.n += 1;
+        if (a.alive and a.foe() and area.has(a.at)) out.push(actor.Pool.idOf(i));
     }
     return out;
 }
@@ -1771,6 +1761,7 @@ fn sayAs(g: *Game, kind: journal.Kind, at: P, comptime fmt: []const u8, args: an
 
 fn heroDies(g: *Game) void {
     g.log.push(.danger, "{s} dies.", .{g.name.text()});
+    g.died_in = g.mode;
     g.mode = .dead;
 }
 
@@ -2610,6 +2601,7 @@ fn itemCommand(g: *Game, command: book.Command) void {
         },
     }
     syncStats(g);
+    g.character.destination_index = 0;
     if (command == .travel or (g.character.direct() and !anyNearby(g))) g.mode = .play;
     holdWalk(g);
     endTurn(g);
@@ -2756,8 +2748,12 @@ fn deathShown(g: *const Game) bool {
     return g.mode == .dead and quiet(g);
 }
 
+fn modeShown(g: *const Game) Mode {
+    return if (g.mode == .dead and !quiet(g)) g.died_in else g.mode;
+}
+
 fn playShown(g: *const Game) bool {
-    return g.mode == .play or (g.mode == .dead and !quiet(g));
+    return modeShown(g) == .play;
 }
 
 const DISMISS = [_]input.Button{ CONFIRM, PAUSE, BACK, .x };
@@ -3298,11 +3294,11 @@ fn effectLights(g: *Game) void {
         const at = drawnAt(g, i) orelse continue;
         const pic = g.pictured[i];
         if (pic.down()) continue;
-        const s, const glow = for (std.enums.values(fx.Status)) |s| {
-            if (pic.status.get(s) > 0) if (s.glow()) |glow| break .{ s, glow };
+        const flicker = g.fx.statusFlicker(@floatFromInt(i));
+        const source = for (std.enums.values(fx.Status)) |s| {
+            if (pic.status.get(s) > 0) if (s.emission(middle(at), flicker)) |e| break e;
         } else continue;
-        const mid = middle(at);
-        g.light.emit(&g.lv, .{ .at = .{ mid[0], mid[1], light.BODY_Z }, .col = s.ink(), .radius = glow.radius, .gain = glow.gain * g.fx.statusFlicker(@floatFromInt(i)) });
+        g.light.emit(&g.lv, source);
     }
 }
 
@@ -3843,8 +3839,6 @@ fn drawDead(g: *Game) void {
     menu.action(&g.face, box, look.Prompt.menuOf(&g.st, CONFIRM), if (g.permadeath) "Title" else "Restart");
 }
 
-const DEAD_ACTION_DY: i32 = 40;
-
 fn drawFrame(g: *Game) void {
     rl.clearBackground(look.FOG);
     drawMap(g);
@@ -3856,7 +3850,7 @@ fn drawFrame(g: *Game) void {
     drawTips(g);
     if (g.mode == .bind) drawBinds(g);
     if (deathShown(g)) drawDead(g);
-    if (g.mode == .pause) drawPause(g);
+    if (modeShown(g) == .pause) drawPause(g);
 }
 
 const GRAPHICS = .{ "light", "cloud", "vignette", "mini", "cinema" };
@@ -4648,7 +4642,7 @@ const POSE_GAS_TURNS: usize = 3;
 
 fn posePicker(g: *Game, u: Use) void {
     openBinds(g);
-    g.binds.row = Binds.rowOf(u.set);
+    g.binds.row = rowAt(u.set);
     g.binds.col = Binds.colOf(u.by);
     var kit_buf: KitBuf = undefined;
     g.binds.menu = .{ .pick = pickOf(g.growth.kit(g.class, &kit_buf), g.bar.at(g.binds.slot())) };
@@ -5278,6 +5272,7 @@ pub fn exportTarget(target: rl.RenderTexture2D, path: [:0]const u8) !void {
 }
 
 const BENCH_FRAMES: usize = 3600;
+const BENCH_DRAWS: usize = BENCH_FRAMES / 6;
 
 fn ms(ns: u64) f64 {
     return @as(f64, @floatFromInt(ns)) / std.time.ns_per_ms;
@@ -5316,19 +5311,18 @@ fn benchWalk(g: *Game) !void {
     try benchAssets(g);
     try benchEffects(g, target);
     poseWaterMirrors(g, day.NOON, true);
-    std.debug.print("smooth water with mirrors and glints: {d:.3} ms mean draw over {d} frames\n", .{ try meanDraw(g, target, 1, BENCH_FRAMES / 6), BENCH_FRAMES / 6 });
+    std.debug.print("smooth water with mirrors and glints: {d:.3} ms mean draw over {d} frames\n", .{ try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
 }
 
 fn benchEffects(g: *Game, target: rl.RenderTexture2D) !void {
     poseGas(g);
-    const frames = BENCH_FRAMES / 6;
     for ([_]usize{ 0, 8, 32 }) |count| {
         g.fx.clear();
         for (0..count) |i| {
             const at = mathx.centre(.{ .x = 15 + @as(i32, @intCast(i % 8)), .y = 14 + @as(i32, @intCast(i / 8)) });
             g.fx.glow(at, look.FIRE, .{ .radius = fx.EMBER_GLOW.radius, .gain = fx.EMBER_GLOW.gain, .life = 1 });
         }
-        std.debug.print("effects {d}: {d:.3} ms mean draw over {d} frames\n", .{ count, try meanDraw(g, target, 1, frames), frames });
+        std.debug.print("effects {d}: {d:.3} ms mean draw over {d} frames\n", .{ count, try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
     }
 }
 
@@ -6169,7 +6163,7 @@ test "binding from Skills assigns the selected skill directly and spends no turn
     characterCommand(g, .{ .bindings = .shoot });
     try std.testing.expectEqual(Mode.bind, g.mode);
     g.binds.col = Binds.colOf(.y);
-    g.binds.row = Binds.rowOf(.secondary);
+    g.binds.row = rowAt(skillbar.Set.secondary);
     press(g, CONFIRM);
     try std.testing.expectEqual(@as(?skillbar.Act, .shoot), g.bar.at(g.binds.slot()));
     try std.testing.expectEqual(Mode.pause, g.mode);
@@ -8025,6 +8019,41 @@ test "the hud's tooltip stays up until the lethal bite is drawn" {
     g.st.pointer = look.middleAt(spot.box);
     try std.testing.expectEqual(@as(?Part, null), hovered(g));
     std.debug.print("dying: tooltip held {d:.3} s until the death is drawn\n", .{t});
+}
+
+test "Character stays drawn over a lethal item turn until the bite is drawn" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
+    wakeFoes(g);
+    g.heroActor().?.hp = 1;
+    openCharacter(g);
+    var turns: usize = 0;
+    while (g.mode != .dead and turns < TRIES) : (turns += 1) {
+        try std.testing.expect(g.inventory.add(.{ .kind = .ring }));
+        characterCommand(g, .{ .drop = g.inventory.n - 1 });
+        if (g.mode != .dead) drawnOut(g);
+    }
+    try std.testing.expectEqual(Mode.dead, g.mode);
+    g.st = .{};
+    update(g, 0);
+    try std.testing.expectEqual(Mode.pause, modeShown(g));
+    const t = framesUntil(g, 0, deathDrawn);
+    try std.testing.expectEqual(Mode.dead, modeShown(g));
+    std.debug.print("dying in Character: book held {d:.3} s until the death is drawn\n", .{t});
+}
+
+test "the ring slid under the cursor after an equip starts on the left ring again" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{});
+    for (0..2) |_| try std.testing.expect(g.inventory.add(.{ .kind = .ring }));
+    openCharacter(g);
+    g.character.choose(.inventory);
+    g.character.destination_index = 1;
+    characterCommand(g, .{ .equip = .{ .index = 0, .slot = .right_ring } });
+    try std.testing.expect(g.inventory.gear.slots.get(.right_ring) != null);
+    try std.testing.expectEqual(@as(usize, 0), g.character.destination_index);
 }
 
 test "Menu, B or X leaves the death screen as A does, and none of them pauses it" {

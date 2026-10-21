@@ -289,10 +289,10 @@ current/next table with labelled current/first-rank properties and a separate ne
 section containing only changes. This leaves utility skills and maximum ranks free of
 irrelevant zeroes and empty columns.
 
-Use `Act.desc()` or the established description source for behavior. Mana and cooldown
+Use `State.writeDescription` (`Act.describe`, which applies passive perks) for behavior. Mana and cooldown
 must come from the hero's progression state. Show turn cost in turns, not seconds.
 Where actual damage ranges are displayed, share gameplay's attribute/weapon/rank
-calculation through `Act.equippedBases` and `State.skillAttrs`; do not label raw base
+calculation through `State.blowOf` (and `State.hit` for its spans); do not label raw base
 damage as the hero's final result. Show actual physical/elemental ranges before
 critical hits and defenses. When a rank improves average damage but its integer
 range endpoints stay unchanged, show the old/new `Rank damage bonus` explicitly.

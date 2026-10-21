@@ -295,10 +295,11 @@ const ORPHAN_A: f32 = 0.3;
 const LOCKED_A: f32 = 0.55;
 
 fn skillAlpha(class: hero.Class, growth: *const progress.State, s: progress.Skill) f32 {
-    if (growth.unlocked(s.act)) return 1;
-    if (growth.canLearn(class, s.act)) return LEARNABLE_A;
-    if (s.parent) |p| if (!growth.unlocked(p)) return ORPHAN_A;
-    return LOCKED_A;
+    return switch (SkillState.of(class, growth, s)) {
+        .learned => 1,
+        .available => LEARNABLE_A,
+        .locked => if (s.parent) |p| (if (growth.unlocked(p)) LOCKED_A else ORPHAN_A) else LOCKED_A,
+    };
 }
 
 fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, class: hero.Class, growth: *const progress.State, cursor: usize, loadout: Loadout) void {
@@ -331,7 +332,7 @@ fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, class: hero.
 }
 
 fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Skill, buf: *menu.Note(128)) [:0]const u8 {
-    if (growth.ranks.get(s.act) == progress.RANKS) return "Maximum rank reached.";
+    if (growth.maxed(s.act)) return "Maximum rank reached.";
     if (s.parent) |p| if (!growth.unlocked(p)) {
         buf.say("Learn {s} first.", .{p.name()});
         return buf.text();
@@ -393,7 +394,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     growth.writeUsage(s.act, text.writer());
     text.buf[0] = std.ascii.toUpper(text.buf[0]);
     top = paragraph(face, text.text(), x, top, TEXT_W, look.TEXT);
-    const maximum = growth.ranks.get(s.act) == progress.RANKS;
+    const maximum = growth.maxed(s.act);
     var next = growth.*;
     if (!maximum) next.ranks.getPtr(s.act).* += 1;
     if (learned and !maximum) {
@@ -551,9 +552,8 @@ const NodeState = enum {
     const LEGEND = legendOf(NodeState, ink);
 };
 
-fn nodeInk(growth: *const progress.State, i: usize) rl.Color {
-    const state = NodeState.of(growth, i);
-    return if (state == .distant) armInk(passives.NODES[i].arm) else state.ink();
+fn nodeInk(state: NodeState, arm: passives.Arm) rl.Color {
+    return if (state == .distant) armInk(arm) else state.ink();
 }
 
 fn groupInk(g: passives.Group) rl.Color {
@@ -656,8 +656,8 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
         const p = pos[i];
         const r = nodeRadius(i, layout.unit);
         if (!layout.shows(p, p, r + NODE_REACH)) continue;
-        const ink = nodeInk(growth, i);
         const state = NodeState.of(growth, i);
+        const ink = nodeInk(state, n.arm);
         const fill = groupInk(n.grant.kind.group());
         if (state == .allocated) {
             rl.drawCircleV(p, r, fill);
@@ -728,8 +728,7 @@ fn grantNoteOf(n: passives.Node, origin: bool, out: *menu.Note(128)) ?[:0]const 
 fn passiveDetails(face: *const font.Face, class: hero.Class, growth: *const progress.State, i: usize) void {
     const n = passives.NODES[i];
     const x = TEXT_X;
-    const allocated = growth.nodes.isSet(i);
-    const reachable = growth.available(i);
+    const state = NodeState.of(growth, i);
     const origin = progress.bonusAt(class, i) == null;
     const enabled = growth.canAllocate(i);
     face.draw(if (n.ring == 0) "CLASS ORIGIN" else if (n.seam != null) "BRIDGE NODE" else switch (n.tier) {
@@ -755,14 +754,18 @@ fn passiveDetails(face: *const font.Face, class: hero.Class, growth: *const prog
     }
     y = paragraph(face, path.text(), x, y, TEXT_W, look.DIM);
     y += STATE_GAP;
-    face.draw(if (origin) "Free class origin" else menu.named(NodeState.of(growth, i)), x, y, font.SMALL, nodeInk(growth, i));
+    face.draw(if (origin) "Free class origin" else menu.named(state), x, y, font.SMALL, nodeInk(state, n.arm));
     y += font.SMALL + STATE_RULE_GAP;
     rl.drawLine(x, y, x + TEXT_W, y, BORDER);
     var note_buf: menu.Note(128) = .{};
     if (grantNoteOf(n, origin, &note_buf)) |line| _ = paragraph(face, line, x, y + RULE_GAP, TEXT_W, look.DIM);
-    const reason: []const u8 = if (origin) "Your class starts here for free." else if (allocated) "This passive is already allocated." else if (!reachable) "Allocate a prerequisite first." else if (growth.passive_points < progress.POINT_COST) PASSIVE.requires else PASSIVE.ready("allocate");
+    const reason: []const u8 = if (origin) "Your class starts here for free." else switch (state) {
+        .allocated => "This passive is already allocated.",
+        .distant => "Allocate a prerequisite first.",
+        .reachable => if (growth.passive_points < progress.POINT_COST) PASSIVE.requires else PASSIVE.ready("allocate"),
+    };
     _ = paragraph(face, reason, x, REASON_Y, TEXT_W, if (enabled) OWNED else look.DIM);
-    drawAction(face, if (origin) "Class origin" else if (allocated) "Allocated" else "Allocate passive", enabled);
+    drawAction(face, if (origin) "Class origin" else if (state == .allocated) "Allocated" else "Allocate passive", enabled);
 }
 
 test "every class skill stays in its canvas and is reachable by directional selection" {

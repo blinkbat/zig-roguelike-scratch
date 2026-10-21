@@ -385,10 +385,7 @@ test "a house in a thicket or in rock keeps its floor through the joins" {
             lay(base, &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
             buildings.apply(&lv, &rng, seed, pal, &lots, (buildings.Params{}).fit());
-            carve.seal(&lv, pal.solid);
-            const before = carve.count(&lv, .floor);
-            carve.connect(&lv, &rng, pal, .{});
-            if (carve.count(&lv, .floor) < before) lost += 1;
+            if (joinsLose(&lv, &rng, pal, .{}, .floor)) lost += 1;
         }
         std.debug.print("houses in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
@@ -411,10 +408,7 @@ test "a small house or shrine walled in by an earlier feature keeps its floor th
             buildings.apply(&lv, &rng, seed, pal, &lots, SMALL_HOUSES);
             lots.begin();
             setpiece.apply(&lv, &rng, seed, pal, &lots, PACKED_SHRINES);
-            carve.seal(&lv, pal.solid);
-            const before = carve.count(&lv, .floor);
-            carve.connect(&lv, &rng, pal, .{});
-            if (carve.count(&lv, .floor) < before) lost += 1;
+            if (joinsLose(&lv, &rng, pal, .{}, .floor)) lost += 1;
         }
         std.debug.print("small houses and shrines after a feature in {s}: {d} of {d} maps lost floor to the joins\n", .{ @typeName(base), lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
@@ -434,10 +428,7 @@ test "a small house a later thicket shuts in keeps its floor through the joins" 
             var lots: buildings.Lots = .{};
             buildings.apply(&lv, &rng, seed, pal, &lots, SMALL_HOUSES);
             scatter.apply(&lv, &rng, seed, pal, thicket.fit());
-            carve.seal(&lv, pal.solid);
-            const before = carve.count(&lv, .floor);
-            carve.connect(&lv, &rng, pal, .{});
-            if (carve.count(&lv, .floor) < before) lost += 1;
+            if (joinsLose(&lv, &rng, pal, .{}, .floor)) lost += 1;
         }
         std.debug.print("small houses under a thicket of {d} a thousand, clumps {d}: {d} of {d} maps lost floor to the joins\n", .{ thicket.amount, thicket.clump, lost, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), lost);
@@ -486,10 +477,7 @@ test "a field in a thicket keeps its fence through the joins" {
             lay(base, &lv, &rng, seed, p);
             var lots: buildings.Lots = .{};
             farms.apply(&lv, &rng, seed, pal, &lots, (farms.Params{}).fit());
-            carve.seal(&lv, pal.solid);
-            const before = carve.count(&lv, .fence);
-            carve.connect(&lv, &rng, pal, .{ .lots = lots.slice() });
-            if (carve.count(&lv, .fence) < before) broken += 1;
+            if (joinsLose(&lv, &rng, pal, .{ .lots = lots.slice() }, .fence)) broken += 1;
         }
         std.debug.print("fields in {s}: {d} of {d} maps had a join break a fence\n", .{ @typeName(base), broken, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), broken);
@@ -550,6 +538,13 @@ test "a house or set piece is raised clear of what an earlier feature laid" {
         std.debug.print("houses after fields, shrines after both, in {s}: {d} of {d} maps laid over them\n", .{ @typeName(b[0]), hit, COUNT_RUNS });
         try std.testing.expectEqual(@as(usize, 0), hit);
     }
+}
+
+fn joinsLose(lv: *grid.Level, rng: *mathx.Rng, pal: carve.Palette, laid: carve.Laid, t: grid.Tile) bool {
+    carve.seal(lv, pal.solid);
+    const before = carve.count(lv, t);
+    carve.connect(lv, rng, pal, laid);
+    return carve.count(lv, t) < before;
 }
 
 fn filled(lv: *const grid.Level, cells: *const std.StaticBitSet(grid.CELLS)) bool {

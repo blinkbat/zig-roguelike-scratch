@@ -24,29 +24,20 @@ pub const procs = spark.procs;
 pub const afflict = spark.afflict;
 
 /// The bodies it strikes, the first first: each after it the nearest lit foe to the one before, in a clear line.
-pub const Chain = struct {
-    id: [JUMPS + 1]u16 = undefined,
-    n: usize = 0,
-
-    pub fn slice(self: *const Chain) []const u16 {
-        return self.id[0..self.n];
-    }
-};
+pub const Chain = actor.Ids(JUMPS + 1);
 
 pub fn chain(lv: *const grid.Level, pool: *actor.Pool, first: u16) Chain {
     var c = Chain{};
-    c.id[0] = first;
-    c.n = 1;
+    c.push(first);
     while (c.n <= JUMPS) {
         const last = actor.Pool.slot(c.id[c.n - 1]);
         const from = pool.items[last].at;
         var near = bow.Nearest{ .from = from, .reach = JUMP_RANGE };
         for (pool.slice(), 0..) |a, i| {
-            if (!a.alive or !a.foe() or std.mem.indexOfScalar(u16, c.slice(), actor.Pool.idOf(i)) != null) continue;
+            if (!a.alive or !a.foe() or c.has(actor.Pool.idOf(i))) continue;
             if (lv.isLit(a.at) and grid.clearLine(lv, from, a.at)) near.offer(a.at);
         }
-        c.id[c.n] = lv.who(near.best orelse break);
-        c.n += 1;
+        c.push(lv.who(near.best orelse break));
     }
     return c;
 }

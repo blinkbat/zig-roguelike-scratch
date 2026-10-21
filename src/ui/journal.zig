@@ -61,7 +61,7 @@ pub const Log = struct {
         return if (back < self.n) self.lines[self.index(back)].text() else null;
     }
     pub fn move(self: *Log, delta: i32) void {
-        self.scroll = @intCast(std.math.clamp(@as(i32, @intCast(self.scroll)) + delta, 0, @as(i32, @intCast(self.shown() -| 1))));
+        self.scroll = mathx.nudge(self.scroll, delta, self.shown());
     }
 };
 const MARGIN: i32 = hud.EDGE;

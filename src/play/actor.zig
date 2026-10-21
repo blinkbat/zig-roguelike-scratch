@@ -214,6 +214,26 @@ pub const MAX: usize = 64;
 
 pub const Tally = struct { left: usize = 0, total: usize = 0 };
 
+pub fn Ids(comptime N: usize) type {
+    return struct {
+        id: [N]u16 = undefined,
+        n: usize = 0,
+
+        pub fn slice(self: *const @This()) []const u16 {
+            return self.id[0..self.n];
+        }
+
+        pub fn push(self: *@This(), id: u16) void {
+            self.id[self.n] = id;
+            self.n += 1;
+        }
+
+        pub fn has(self: *const @This(), id: u16) bool {
+            return std.mem.indexOfScalar(u16, self.slice(), id) != null;
+        }
+    };
+}
+
 /// Ids are 1-based so `grid.NO_ONE` (0) is never a body.
 pub const Pool = struct {
     items: [MAX]Actor = undefined,

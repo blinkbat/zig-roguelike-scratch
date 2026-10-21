@@ -591,7 +591,7 @@ pub const State = struct {
     /// A way held over from a screen that used it walks nobody.
     pub fn holdWalk(self: *State) void {
         self.step.hold();
-        self.radial.wait = std.math.inf(f32);
+        self.radial.wait = Stepper.HELD;
         self.tree.move = null;
         self.walk = null;
     }

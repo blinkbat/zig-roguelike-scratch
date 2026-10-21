@@ -22,6 +22,18 @@ pub fn easing(dt: f32, rate: f32) f32 {
     return 1 - @exp(-dt * rate);
 }
 
+/// `std.math.pow`'s squarings for a whole power, without its generic path; equal wherever no step goes subnormal.
+pub fn powi(x: f32, comptime n: u32) f32 {
+    var a: f32 = 1;
+    var s = x;
+    comptime var i = n;
+    inline while (i != 0) : (i >>= 1) {
+        if (i & 1 == 1) a *= s;
+        if (i > 1) s *= s;
+    }
+    return a;
+}
+
 pub fn smooth(t: f32) f32 {
     const c = std.math.clamp(t, 0, 1);
     return c * c * (3 - 2 * c);
@@ -448,6 +460,20 @@ pub const Rng = struct {
         unreachable;
     }
 };
+
+test "powi is std.math.pow bit for bit until a squaring goes subnormal" {
+    var checked: usize = 0;
+    var bits: u32 = @bitCast(@as(f32, 0.35));
+    const one: u32 = @bitCast(@as(f32, 1));
+    while (bits <= one) : (bits += 97) {
+        const x: f32 = @bitCast(bits);
+        try std.testing.expectEqual(@as(u32, @bitCast(std.math.pow(f32, x, 80))), @as(u32, @bitCast(powi(x, 80))));
+        try std.testing.expectEqual(@as(u32, @bitCast(std.math.pow(f32, x, 24))), @as(u32, @bitCast(powi(x, 24))));
+        checked += 1;
+    }
+    try std.testing.expectEqual(@as(f32, 0), powi(0, 80));
+    std.debug.print("powi: {d} inputs from 0.35 to 1 equal to std.math.pow\n", .{checked});
+}
 
 test "dir deltas run clockwise from north" {
     try std.testing.expectEqual(P{ .x = 0, .y = -1 }, Dir.n.delta());

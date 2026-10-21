@@ -499,6 +499,8 @@ pub const Editor = struct {
     issues: Issues = .{},
     selection: ?grid.Box = null,
     board: Board = .{},
+    /// The paste laid aside for its ghost.
+    trial: atlas.Bespoke = undefined,
     pasting: bool = false,
     linking: ?atlas.Link = null,
     delete_armed: ?usize = null,
@@ -1013,7 +1015,7 @@ pub const Editor = struct {
         const p = ed.namedPath(&buf) orelse return ed.say("Type a name of letters or digits", .{});
         if (std.fs.cwd().access(p, .{})) {
             return ed.say("{s} is there already; open it, or pick another name", .{p});
-        } else |_| {}
+        } else |e| if (e != error.FileNotFound) return ed.say("{s} could not be checked ({s})", .{ p, @errorName(e) });
         ed.modal = .none;
         switch (ed.naming) {
             .save_as => {
@@ -1512,6 +1514,7 @@ fn pickUp(ed: *Editor, p: P, second: bool) void {
     ed.preview();
     const t = ed.lv.at(p);
     ed.ink.set(.of(second), t);
+    if (!ed.paintable()) return ed.say(GENERATED, .{});
     ed.setTool(.paint);
     ed.say("{s} is the {s} ink", .{ @tagName(t), @tagName(Ink.of(second)) });
 }
@@ -1610,21 +1613,32 @@ fn scrollNodes(ed: *Editor, by: i32) void {
 }
 
 fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
-    const b = &ed.plan().bespoke;
+    if (paintInto(ed.here(), &ed.plan().bespoke, p, t)) ed.changed();
+}
+
+/// Whether `p`'s tile changed; a door keeps its own.
+fn paintInto(nd: *const atlas.Node, b: *atlas.Bespoke, p: P, t: grid.Tile) bool {
     const i = grid.Level.idx(p);
-    if (b.tile[i] == t or ed.doorAt(p) != null) return;
+    if (b.tile[i] == t or nd.doorAt(p) != null) return false;
     b.tile[i] = t;
-    ed.here().pruneAt(b, p);
-    ed.changed();
+    nd.pruneAt(b, p);
+    return true;
+}
+
+const Put = enum { there, laid, refused };
+
+fn barrelInto(nd: *const atlas.Node, b: *atlas.Bespoke, p: P) Put {
+    const i = grid.Level.idx(p);
+    if (b.barrel[i]) return .there;
+    if (!nd.barrelGoes(b, p)) return .refused;
+    b.barrel[i] = true;
+    return .laid;
 }
 
 fn putBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) bool {
-    const i = grid.Level.idx(p);
-    if (b.barrel[i]) return true;
-    if (!ed.here().barrelGoes(b, p)) return false;
-    b.barrel[i] = true;
-    ed.changed();
-    return true;
+    const put = barrelInto(ed.here(), b, p);
+    if (put == .laid) ed.changed();
+    return put != .refused;
 }
 
 fn takeBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) void {
@@ -1761,34 +1775,51 @@ fn startPaste(ed: *Editor) void {
 }
 
 fn layBoard(ed: *Editor, at: P) void {
-    const b = &ed.plan().bespoke;
-    const bd = &ed.board;
-    var left: usize = 0;
+    const laid = layInto(ed.here(), &ed.plan().bespoke, &ed.board, at);
+    if (laid.changed) ed.changed();
+    if (laid.left > 0) ed.say("Pasted; {d} torch(es), barrel(s) or foe(s) did not fit there", .{laid.left}) else ed.say("Pasted", .{});
+}
+
+const Pasted = struct { left: usize = 0, changed: bool = false };
+
+fn layAside(ed: *Editor, at: P) Pasted {
+    ed.trial = ed.plan().bespoke;
+    return layInto(ed.here(), &ed.trial, &ed.board, at);
+}
+
+/// The copy laid into `b` with its corner at `at`; the paste's ghost lays it aside the same way.
+fn layInto(nd: *const atlas.Node, b: *atlas.Bespoke, bd: *const Board, at: P) Pasted {
+    var laid: Pasted = .{};
     var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
     while (cells.next()) |q| {
         const p = at.add(q);
         if (!grid.Level.inside(p)) continue;
         const k = bd.at(q);
-        paintTile(ed, p, bd.tile[k]);
-        if (bd.barrel[k] and !putBarrel(ed, b, p)) left += 1;
+        if (paintInto(nd, b, p, bd.tile[k])) laid.changed = true;
+        if (!bd.barrel[k]) continue;
+        switch (barrelInto(nd, b, p)) {
+            .there => {},
+            .laid => laid.changed = true,
+            .refused => laid.left += 1,
+        }
     }
     for (bd.torch.slice()) |t| {
         const p = at.add(t);
         if (!grid.Level.inside(p)) {
-            left += 1;
+            laid.left += 1;
         } else if (!b.torch.has(p)) {
-            if (ed.here().torchGoes(b, p) and b.torch.add(p)) ed.changed() else left += 1;
+            if (nd.torchGoes(b, p) and b.torch.add(p)) laid.changed = true else laid.left += 1;
         }
     }
     for (bd.foe[0..bd.foe_n]) |f| {
         const p = at.add(f.at);
         if (!grid.Level.inside(p)) {
-            left += 1;
+            laid.left += 1;
         } else if (b.foeAt(p)) |i| {
-            if (b.foe[i].kind != f.kind) left += 1;
-        } else if (ed.here().foeGoes(b, p, f.kind) and b.addFoe(.{ .kind = f.kind, .at = p })) ed.changed() else left += 1;
+            if (b.foe[i].kind != f.kind) laid.left += 1;
+        } else if (nd.foeGoes(b, p, f.kind) and b.addFoe(.{ .kind = f.kind, .at = p })) laid.changed = true else laid.left += 1;
     }
-    if (left > 0) ed.say("Pasted; {d} torch(es), barrel(s) or foe(s) did not fit there", .{left}) else ed.say("Pasted", .{});
+    return laid;
 }
 
 fn deleteNode(ed: *Editor) void {
@@ -2198,7 +2229,8 @@ const Tiles = struct {
     size: i32,
 
     fn at(t: Tiles, i: usize) rl.Rectangle {
-        return look.rect(t.x + @as(i32, @intCast(i % t.cols)) * t.pitch, t.y + @as(i32, @intCast(i / t.cols)) * t.pitch, t.size, t.size);
+        const s = mathx.unslot(i, t.cols);
+        return look.rect(t.x + s.x * t.pitch, t.y + s.y * t.pitch, t.size, t.size);
     }
 
     fn height(t: Tiles, n: usize) i32 {
@@ -2808,9 +2840,7 @@ fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []cons
     @setEvalBranchQuota(100_000);
     if (rows.len != knobs_.len) @compileError("a generator row is for no knob");
     for (knobs_) |name| {
-        const r = for (rows) |r| {
-            if (std.mem.eql(u8, r.field, name)) break r;
-        } else @compileError(name ++ " has no row on the generator");
+        const r = rowNamed(rows, name) orelse @compileError(name ++ " has no row on the generator");
         const K = @FieldType(T, name);
         if (r.tips.len != atlas.knobNumbers(K)) @compileError(name ++ " wants a tip for each number in it");
         if (@typeInfo(K) == .@"struct" and K != mathx.P) {
@@ -2821,6 +2851,13 @@ fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []cons
             }
         }
     }
+}
+
+fn rowNamed(comptime rows: []const Knob, comptime field: []const u8) ?Knob {
+    for (rows) |r| {
+        if (std.mem.eql(u8, r.field, field)) return r;
+    }
+    return null;
 }
 
 fn knobRow(ed: *Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob, live: bool) void {
@@ -3105,17 +3142,29 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         if (!ed.mouseIn(c)) return;
         const bd = &ed.board;
         const view = visible(ed, c);
+        const lays = ed.paintable();
+        if (lays) _ = layAside(ed, m);
+        const trial = &ed.trial;
         var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
         while (cells.next()) |q| {
             const p = m.add(q);
             const k = bd.at(q);
             if (!view.holds(p)) continue;
             ghostInk(ed, g, c, p, bd.tile[k]);
-            if (bd.barrel[k]) ghostTool(g, ed.cellRect(c, p), .barrel);
+            if (!bd.barrel[k]) continue;
+            const i = grid.Level.idx(p);
+            ghostPasted(ed, g, c, p, .barrel, lays and trial.barrel[i]);
         }
-        for (bd.torch.slice()) |t| if (view.holds(m.add(t))) ghostTool(g, ed.cellRect(c, m.add(t)), .torch);
-        for (bd.foe[0..bd.foe_n]) |f| if (view.holds(m.add(f.at))) ghostTool(g, ed.cellRect(c, m.add(f.at)), .{ .foe = f.kind });
-        outlineCells(ed, c, bd.box(m), if (ed.paintable()) PICKED else WARN);
+        for (bd.torch.slice()) |t| {
+            const p = m.add(t);
+            if (view.holds(p)) ghostPasted(ed, g, c, p, .torch, lays and trial.torch.has(p));
+        }
+        for (bd.foe[0..bd.foe_n]) |f| {
+            const p = m.add(f.at);
+            const there = if (lays) trial.foeAt(p) else null;
+            if (view.holds(p)) ghostPasted(ed, g, c, p, .{ .foe = f.kind }, if (there) |i| trial.foe[i].kind == f.kind else false);
+        }
+        outlineCells(ed, c, bd.box(m), if (lays) PICKED else WARN);
         return;
     }
     if (ed.span) |s| {
@@ -3142,6 +3191,12 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     if (!erase) ghostTool(g, r, ed.tool);
     rl.drawRectangleLinesEx(r, INK_EDGE, if (ok) HOVER else WARN);
     if (!ok) rl.drawRectangleRec(r, CUT_OFF);
+}
+
+fn ghostPasted(ed: *Editor, g: *game.Game, c: rl.Rectangle, p: P, tool: Tool, lands: bool) void {
+    const r = ed.cellRect(c, p);
+    ghostTool(g, r, tool);
+    if (!lands) rl.drawRectangleRec(r, CUT_OFF);
 }
 
 fn ghostTool(g: *game.Game, r: rl.Rectangle, tool: Tool) void {
@@ -4072,7 +4127,7 @@ test "a node added is named as it is added, one undo for both" {
 }
 
 fn tileAt(ed: *Editor, p: P) grid.Tile {
-    return ed.map.node[ed.node].plan.bespoke.tile[grid.Level.idx(p)];
+    return ed.map.node[ed.node].plan.bespoke.tileAt(p);
 }
 
 fn rowCount(ed: *Editor, y: i32, t: grid.Tile) usize {
@@ -4121,6 +4176,31 @@ test "a line, a box and a fill lay the inks, each one undo, and the eyedropper p
     pickUp(ed, .{ .x = 22, .y = 22 }, false);
     try std.testing.expect(tileAt(ed, .{ .x = 22, .y = 22 }) != .water);
     try std.testing.expectEqual(tileAt(ed, .{ .x = 22, .y = 22 }), ed.ink.get(.first));
+}
+
+test "the paste's ghost lays aside what the click lays, so a door refuses the barrel in both" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    ed.tool = .paint;
+    ed.gesture();
+    laySpan(ed, .{ .from = .{ .x = 4, .y = 4 }, .erase = false, .shape = .rect }, .{ .x = 5, .y = 4 });
+    click(ed, .barrel, .{ .x = 4, .y = 4 });
+    click(ed, .{ .foe = .rat }, .{ .x = 5, .y = 4 });
+    ed.gesture();
+    laySpan(ed, .{ .from = .{ .x = 4, .y = 4 }, .erase = false, .shape = .select }, .{ .x = 5, .y = 4 });
+    copySelection(ed, false);
+    const at = P{ .x = 30, .y = 20 };
+    const beside = at.add(.{ .x = 1, .y = 0 });
+    click(ed, .door, at);
+    startPaste(ed);
+    const ghost = layAside(ed, at);
+    ed.gesture();
+    layBoard(ed, at);
+    const b = &ed.map.node[0].plan.bespoke;
+    try std.testing.expectEqual(@as(usize, 1), ghost.left);
+    try std.testing.expect(!ed.trial.barrel[grid.Level.idx(at)] and !b.barrel[grid.Level.idx(at)]);
+    try std.testing.expect(ed.trial.foeAt(beside) != null and b.foeAt(beside) != null);
+    try std.testing.expectEqualStrings("Pasted; 1 torch(es), barrel(s) or foe(s) did not fit there", ed.said.text());
 }
 
 test "a selection copied pastes with what stood on it, and cut leaves the second ink" {
@@ -4367,9 +4447,7 @@ test "deleting a node leaves the next unarmed and nothing selected, and the curs
 
 test "a knob's step is dim where its owner's fit would take it back" {
     var spec = pack.Spec{ .reach = pack.REACH_MAX };
-    const reach = comptime for (FOE_ROWS) |k| {
-        if (std.mem.eql(u8, k.field, "reach")) break k;
-    } else unreachable;
+    const reach = comptime rowNamed(&FOE_ROWS, "reach").?;
     try std.testing.expect(!moves(&spec, reach, 0, 1));
     try std.testing.expect(moves(&spec, reach, 0, -1));
     spec.reach = pack.REACH_MIN;
@@ -4377,12 +4455,8 @@ test "a knob's step is dim where its owner's fit would take it back" {
     const open = @import("../map/biome/open.zig");
     var floor = open.Params{};
     floor.decor = carve.fitDress(open.Params{ .decor = .{ .tall_grass = std.math.maxInt(@FieldType(carve.Decor, "tall_grass")) } }).decor;
-    const decor = comptime for (rowsOf(.open)) |k| {
-        if (std.mem.eql(u8, k.field, "decor")) break k;
-    } else unreachable;
-    const grass = comptime for (std.meta.fieldNames(carve.Decor), 0..) |name, i| {
-        if (std.mem.eql(u8, name, "tall_grass")) break i;
-    } else unreachable;
+    const decor = comptime rowNamed(rowsOf(.open), "decor").?;
+    const grass = comptime std.meta.fieldIndex(carve.Decor, "tall_grass").?;
     try std.testing.expect(!moves(&floor, decor, grass, 1));
     try std.testing.expect(moves(&floor, decor, grass, -1));
 }

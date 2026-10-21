@@ -153,6 +153,11 @@ pub const Status = enum {
         };
     }
 
+    pub fn emission(s: Status, at: [2]f32, flicker: f32) ?light.Emission {
+        const g = s.glow() orelse return null;
+        return .{ .at = .{ at[0], at[1], light.BODY_Z }, .col = s.ink(), .radius = g.radius, .gain = g.gain * flicker };
+    }
+
     pub fn title(s: Status) [:0]const u8 {
         return switch (s) {
             .warded => skillbar.Act.mana_shield.name(),

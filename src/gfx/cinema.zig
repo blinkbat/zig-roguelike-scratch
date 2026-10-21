@@ -142,10 +142,8 @@ pub const Cinema = struct {
     }
 
     fn bindBloom(self: *Cinema, b: Bloom, origin: [2]f32, cell: f32, visibility: rl.Texture2D, glints: rl.Texture2D, scene: rl.Texture2D, direction: [2]f32, extract: i32) void {
-        rl.setShaderValueTexture(b.shader, b.field, self.field.?);
-        rl.setShaderValueTexture(b.shader, b.visibility, visibility);
+        setField(b, self.field.?, visibility, .{ .origin = origin, .cell = cell, .screen = look.sizeOf(scene) });
         rl.setShaderValueTexture(b.shader, b.glints, glints);
-        look.setMapView(b, .{ .origin = origin, .cell = cell, .screen = look.sizeOf(scene) });
         look.setUniform(b.shader, b.direction, direction);
         look.setUniform(b.shader, b.extract, extract);
     }
@@ -169,9 +167,7 @@ pub const Cinema = struct {
         const field = self.field orelse return;
         const visibility = l.mapTexture() orelse return;
         rl.beginShaderMode(a.shader);
-        rl.setShaderValueTexture(a.shader, a.field, field);
-        rl.setShaderValueTexture(a.shader, a.visibility, visibility);
-        look.setMapView(a, .{ .origin = origin, .cell = cell, .screen = .{ @floatFromInt(screen.x), @floatFromInt(screen.y) } });
+        setField(a, field, visibility, .{ .origin = origin, .cell = cell, .screen = .{ @floatFromInt(screen.x), @floatFromInt(screen.y) } });
         look.setUniform(a.shader, a.time, l.t.at());
         look.setUniform(a.shader, a.daylight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
         look.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));
@@ -180,6 +176,13 @@ pub const Cinema = struct {
         rl.endShaderMode();
     }
 };
+
+/// Sets `FIELD_FS`'s uniforms, `MAP_VIEW_FS`'s among them, on a program with their locations.
+fn setField(p: anytype, field: rl.Texture2D, visibility: rl.Texture2D, view: look.MapView) void {
+    rl.setShaderValueTexture(p.shader, p.field, field);
+    rl.setShaderValueTexture(p.shader, p.visibility, visibility);
+    look.setMapView(p, view);
+}
 
 const drawTarget = look.drawTarget;
 

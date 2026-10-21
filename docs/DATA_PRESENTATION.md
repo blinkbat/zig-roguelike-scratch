@@ -110,7 +110,7 @@ the player's build.
 4. **Skills:** effect first, rank second, current or first-rank properties together,
    then a separate next-rank section containing only changes. Actual hit ranges
    include equipment, attributes and rank, before critical hits and defenses.
-   Combat, HUD and tree share `Act.equippedBases` and `State.skillAttrs`.
+   Combat, HUD and tree share `progress.State.blowOf` (`Act.equippedBases` plus rank bonus).
    If an upgrade changes average damage without changing the integer range endpoints,
    show the old/new rank bonus explicitly. State mana, turn and range units. A utility
    skill has no damage line. At maximum rank, remove the empty next-rank section.

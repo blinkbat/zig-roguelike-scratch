@@ -44,6 +44,7 @@ pub fn replace(path: []const u8, bytes: []const u8) !void {
     if (std.fs.path.dirname(path)) |d| try std.fs.cwd().makePath(d);
     var tmp_buf: [std.fs.max_path_bytes]u8 = undefined;
     const tmp = try std.fmt.bufPrint(&tmp_buf, "{s}.tmp", .{path});
+    errdefer std.fs.cwd().deleteFile(tmp) catch {};
     {
         var f = try std.fs.cwd().createFile(tmp, .{});
         defer f.close();
