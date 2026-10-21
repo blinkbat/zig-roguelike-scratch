@@ -182,6 +182,14 @@ pub fn bindBox() rl.Rectangle {
     return look.rect(TEXT_X, BIND_Y, TEXT_W, BUTTON_H);
 }
 
+const SKILL_COLUMNS: i32 = blk: {
+    var most: i32 = 0;
+    for (hero.CLASSES) |c| {
+        for (progress.skills(c)) |s| most = @max(most, s.at.x + 1);
+    }
+    break :blk most;
+};
+
 fn skillBox(class: hero.Class, i: usize) rl.Rectangle {
     const skills = progress.skills(class);
     const at = skills[i].at;
@@ -191,7 +199,7 @@ fn skillBox(class: hero.Class, i: usize) rl.Rectangle {
         last = @max(last, s.at.y);
         across += @intFromBool(s.at.y == at.y);
     }
-    const x = if (across == 1) SKILL_MID_X else SKILL_MID_X + (2 * at.x - 1) * @divExact(SKILL_STEP_X, 2);
+    const x = if (across == 1) SKILL_MID_X else SKILL_MID_X + (2 * at.x - (SKILL_COLUMNS - 1)) * @divExact(SKILL_STEP_X, 2);
     const y = if (last < 2) SPARSE_TOP + at.y * SPARSE_STEP_Y else SKILL_TOP + at.y * SKILL_STEP_Y;
     return look.rect(x - SKILL_SIZE / 2, y - SKILL_SIZE / 2, SKILL_SIZE, SKILL_SIZE);
 }
@@ -246,8 +254,9 @@ fn paragraph(face: *const font.Face, text: []const u8, x: i32, y: i32, width: i3
 }
 
 fn arrow(from: rl.Rectangle, to: rl.Rectangle, ink: rl.Color) void {
-    const a = rl.Vector2{ .x = from.x + from.width / 2, .y = from.y + from.height / 2 + @as(f32, @floatFromInt(SKILL_NAME_DY + font.SMALL + ARROW_CLEAR)) };
-    const b = rl.Vector2{ .x = to.x + to.width / 2, .y = to.y - @as(f32, @floatFromInt(ARROW_CLEAR)) };
+    const from_mid = look.middle(from);
+    const a = rl.Vector2{ .x = from_mid.x, .y = from_mid.y + @as(f32, @floatFromInt(SKILL_NAME_DY + font.SMALL + ARROW_CLEAR)) };
+    const b = rl.Vector2{ .x = look.middle(to).x, .y = to.y - @as(f32, @floatFromInt(ARROW_CLEAR)) };
     const elbow = (a.y + b.y) / 2;
     rl.drawLineEx(a, .{ .x = a.x, .y = elbow }, 1, ink);
     rl.drawLineEx(.{ .x = a.x, .y = elbow }, .{ .x = b.x, .y = elbow }, 1, ink);
@@ -327,9 +336,9 @@ fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Ski
         buf.say("Learn {s} first.", .{p.name()});
         return buf.text();
     };
-    if (growth.active_points < progress.POINT_COST) return "Requires " ++ ACTIVE_COST ++ ".";
+    if (growth.active_points < progress.POINT_COST) return ACTIVE.requires;
     std.debug.assert(growth.canLearn(class, s.act));
-    return if (growth.unlocked(s.act)) "Ready to upgrade. Costs " ++ ACTIVE_COST ++ "." else "Ready to learn. Costs " ++ ACTIVE_COST ++ ".";
+    return if (growth.unlocked(s.act)) ACTIVE.ready("upgrade") else ACTIVE.ready("learn");
 }
 
 fn drawAction(face: *const font.Face, label: [:0]const u8, enabled: bool) void {
@@ -451,7 +460,7 @@ pub fn clampPan(view: View) rl.Vector2 {
 
 /// A Character message, over the tree canvas where no button covers it.
 pub fn note(face: *const font.Face, text: [:0]const u8) void {
-    face.drawMid(text, @as(i32, @intFromFloat(CANVAS.x + CANVAS.width / 2)), TITLE_Y, font.SMALL, look.TEXT);
+    face.drawMid(text, look.middleAt(CANVAS).x, TITLE_Y, font.SMALL, look.TEXT);
 }
 
 fn wheelLayout(view: View) Layout {
@@ -460,9 +469,10 @@ fn wheelLayout(view: View) Layout {
     const unit = @min(box.width, box.height) / (2 * (@as(f32, @floatFromInt(passives.RINGS)) + 0.63)) * zoom;
     const focus = passives.unitPos(view.cursor);
     const pull = pullOf(zoom);
+    const mid = look.middle(box);
     var layout = Layout{ .box = box, .unit = unit, .centre = .{
-        .x = box.x + box.width / 2 - focus.x * unit * pull,
-        .y = box.y + box.height / 2 - focus.y * unit * pull,
+        .x = mid.x - focus.x * unit * pull,
+        .y = mid.y - focus.y * unit * pull,
     } };
     const selected = layout.at(view.cursor);
     const margin = nodeRadius(view.cursor, unit) + NODE_KEEP_IN;
@@ -502,8 +512,18 @@ fn armInitial(arm: passives.Arm) [:0]const u8 {
     };
 }
 
-const ACTIVE_COST = std.fmt.comptimePrint("{d} active point{s}", .{ progress.POINT_COST, mathx.plural(progress.POINT_COST) });
-const PASSIVE_COST = std.fmt.comptimePrint("{d} passive point{s}", .{ progress.POINT_COST, mathx.plural(progress.POINT_COST) });
+/// What a pool's point costs, said when short of it and when ready to spend it.
+fn Price(comptime pool: []const u8) type {
+    return struct {
+        const cost = std.fmt.comptimePrint("{d} {s} point{s}", .{ progress.POINT_COST, pool, mathx.plural(progress.POINT_COST) });
+        const requires = "Requires " ++ cost ++ ".";
+        fn ready(comptime verb: []const u8) [:0]const u8 {
+            return "Ready to " ++ verb ++ ". Costs " ++ cost ++ ".";
+        }
+    };
+}
+const ACTIVE = Price("active");
+const PASSIVE = Price("passive");
 
 fn ring(p: rl.Vector2, radius: f32, ink: rl.Color) void {
     rl.drawCircleLines(@intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), radius, ink);
@@ -739,7 +759,7 @@ fn passiveDetails(face: *const font.Face, class: hero.Class, growth: *const prog
     rl.drawLine(x, y, x + TEXT_W, y, BORDER);
     var note_buf: menu.Note(128) = .{};
     if (grantNoteOf(n, origin, &note_buf)) |line| _ = paragraph(face, line, x, y + RULE_GAP, TEXT_W, look.DIM);
-    const reason: []const u8 = if (origin) "Your class starts here for free." else if (allocated) "This passive is already allocated." else if (!reachable) "Allocate a prerequisite first." else if (growth.passive_points < progress.POINT_COST) "Requires " ++ PASSIVE_COST ++ "." else "Ready to allocate. Costs " ++ PASSIVE_COST ++ ".";
+    const reason: []const u8 = if (origin) "Your class starts here for free." else if (allocated) "This passive is already allocated." else if (!reachable) "Allocate a prerequisite first." else if (growth.passive_points < progress.POINT_COST) PASSIVE.requires else PASSIVE.ready("allocate");
     _ = paragraph(face, reason, x, REASON_Y, TEXT_W, if (enabled) OWNED else look.DIM);
     drawAction(face, if (origin) "Class origin" else if (allocated) "Allocated" else "Allocate passive", enabled);
 }
@@ -748,13 +768,14 @@ test "every class skill stays in its canvas and is reachable by directional sele
     var checked: usize = 0;
     for (hero.CLASSES) |class| {
         const skills = progress.skills(class);
-        var boxes: [progress.NODES.len]rl.Rectangle = undefined;
+        var boxes: [skillbar.ACTS.len]rl.Rectangle = undefined;
         const area = CANVAS;
+        const plaque_over: f32 = @floatFromInt(PLAQUE_AT.x + PLAQUE_W - SKILL_SIZE / 2);
         for (skills, 0..) |_, i| {
             const box = skillBox(class, i);
             boxes[i] = box;
             try std.testing.expect(box.x >= area.x and box.y >= area.y);
-            try std.testing.expect(box.x + box.width + 24 <= area.x + area.width);
+            try std.testing.expect(box.x + box.width + plaque_over <= area.x + area.width);
             try std.testing.expect(box.y + box.height + 62 <= area.y + area.height);
             for (boxes[0..i]) |other| {
                 const overlaps = box.x < other.x + other.width and other.x < box.x + box.width and

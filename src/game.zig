@@ -227,6 +227,11 @@ comptime {
     for (std.meta.fields(cinema.Options)) |f| _ = @field(DebugRow, f.name);
 }
 
+fn rowAt(row: anytype) usize {
+    const Row = @TypeOf(row);
+    return std.mem.indexOfScalar(Row, std.enums.values(Row), row).?;
+}
+
 const Binds = struct {
     row: usize = 0,
     col: usize = 0,
@@ -638,7 +643,7 @@ pub const Game = struct {
     order_n: usize = 0,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
-    /// The latest walk or skill asked for while `busy`.
+    /// The latest walk, skill or interaction asked for while `busy`.
     pending: ?Queued = null,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
     lead: ?f32 = null,
@@ -1034,7 +1039,7 @@ fn syncStats(g: *Game) void {
 
 /// Character is open with its tabs, not as the Nearby list.
 fn bookOpen(g: *const Game) bool {
-    return g.mode == .pause and g.pause_page == .character and !g.character.direct;
+    return g.mode == .pause and g.pause_page == .character and !g.character.direct();
 }
 
 fn lifeMax(g: *const Game) i32 {
@@ -1375,7 +1380,7 @@ fn loose(g: *Game, from: P, act: skillbar.Act) void {
                 chainHit(g, a, id, s)
             else if (comptime !a.afflicts()) blk: {
                 comptime std.debug.assert(a.element() == null);
-                break :blk wound(g, id, heroArrow(g, a, true).physical(), SHOOT, s);
+                break :blk wound(g, id, heroSkill(g, a), SHOOT, s);
             } else arrowHit(g, id, heroArrow(g, a, true), a, s),
             .barrel => |p| smash(g, p, barrelVerb(a), s),
         },
@@ -2088,13 +2093,13 @@ fn stepGlide(g: *Game, late: f32) void {
     const hero = heroSlot(g).?;
     const warded = g.owed[hero].worn;
     g.owed[hero].worn = null;
-    const archer_done = stagger(g, g.hero, late, g.lead orelse 0, &next);
+    const hero_done = stagger(g, g.hero, late, g.lead orelse 0, &next);
     g.lead = null;
-    var part: [actor.MAX]f32 = @splat(archer_done);
-    for (g.order[0..g.order_n]) |id| part[actor.Pool.slot(id)] = stagger(g, id, late, archer_done, &next);
+    var part: [actor.MAX]f32 = @splat(hero_done);
+    for (g.order[0..g.order_n]) |id| part[actor.Pool.slot(id)] = stagger(g, id, late, hero_done, &next);
     for (g.owed[0..g.pool.n], 0..) |*o, i| {
         if (!o.any()) continue;
-        const start = if (g.split_from[i]) |p| @max(archer_done, part[p]) else archer_done;
+        const start = if (g.split_from[i]) |p| @max(hero_done, part[p]) else hero_done;
         part[i] = stagger(g, actor.Pool.idOf(i), late, start, &next);
     }
     if (warded) |c| g.fx.settle(std.mem.max(f32, part[0..g.pool.n]), .{ .slot = hero, .after = c });
@@ -2266,6 +2271,7 @@ pub fn update(g: *Game, dt: f32) void {
     }
     for (g.glide[0..g.pool.n]) |*gl| gl.t += dt;
     g.fx.step(&g.lv, dt);
+    catchUp(g);
     if (turn_drawn) drawnTurn(g);
     g.cloud.step(&g.lv, dt);
     splashSteps(g);
@@ -2498,7 +2504,6 @@ fn openNearby(g: *Game) bool {
     if (nearby.len == 0) return false;
     openCharacter(g);
     g.character.choose(.nearby);
-    g.character.direct = true;
     if (nearby.len == 1 and nearby[0].kind != .door) characterCommand(g, nearby[0].command());
     return true;
 }
@@ -2595,7 +2600,7 @@ fn itemCommand(g: *Game, command: book.Command) void {
         },
     }
     syncStats(g);
-    if (command == .travel or (g.character.direct and !anyNearby(g))) g.mode = .play;
+    if (command == .travel or (g.character.direct() and !anyNearby(g))) g.mode = .play;
     holdWalk(g);
     endTurn(g);
 }
@@ -2604,7 +2609,12 @@ fn pauseStep(g: *Game) void {
     switch (g.pause_page) {
         .character => {
             if (padToGame(g)) return;
-            if (g.character.step(&g.st, g.screen, bookView(g, &g.nearby))) |command| characterCommand(g, command);
+            const view = bookView(g, &g.nearby);
+            if (g.character.direct() and view.nearby.len == 0) {
+                g.mode = .play;
+                return;
+            }
+            if (g.character.step(&g.st, g.screen, view)) |command| characterCommand(g, command);
         },
         .debug => {
             if (menu.backed(&g.st)) return pauseBackTo(g, .debug);
@@ -2645,7 +2655,7 @@ fn pauseStep(g: *Game) void {
 
 fn pauseBackTo(g: *Game, row: PauseRow) void {
     g.pause_page = .main;
-    g.pause_menu.at = @intFromEnum(row);
+    g.pause_menu.at = rowAt(row);
 }
 
 fn toggleReveal(g: *Game) void {
@@ -3024,6 +3034,20 @@ fn mirrorAt(foot: f32) void {
     rl.gl.rlScalef(1, -1, 1);
 }
 
+const Reflection = struct {
+    fading: bool,
+
+    fn begin(g: *const Game, foot: f32, fade: ?[2]f32) Reflection {
+        mirrorAt(foot);
+        return .{ .fading = if (fade) |b| g.light.beginMirrorFade(b) else false };
+    }
+
+    fn end(r: Reflection) void {
+        if (r.fading) rl.endShaderMode();
+        rl.gl.rlPopMatrix();
+    }
+};
+
 /// Where a glyph figure, with no art to measure, stands within its cell.
 const GLYPH_FOOT: f32 = 0.8;
 
@@ -3036,15 +3060,11 @@ fn drawMirrored(g: *Game, tex: ?rl.Texture2D, l: look.Look, stands: P, s: P, lef
     const foot = footOf(g, tex, stands);
     const top = if (tex) |t| g.light.topY(t, spriteRect(t, s.x, s.y)) else @as(f32, @floatFromInt(s.y + HALF_CELL - @divTrunc(GLYPH, 2)));
     const bounds = mirrorFade(g, foot, top, footOf(g, tex, s));
-    mirrorAt(foot);
-    defer rl.gl.rlPopMatrix();
+    const r = Reflection.begin(g, foot, if (tex == null) bounds else null);
+    defer r.end();
     if (tex) |t| {
         g.light.drawBody(t, spriteRect(t, s.x, s.y), left, mid, shine, flash, bounds);
-    } else {
-        const fading = g.light.beginMirrorFade(bounds);
-        defer if (fading) rl.endShaderMode();
-        drawGlyph(g, l.ch, s.x, s.y, shine.drawn(l.fg, flash));
-    }
+    } else drawGlyph(g, l.ch, s.x, s.y, shine.drawn(l.fg, flash));
 }
 
 fn mirrorFade(g: *const Game, foot: f32, top: f32, bottom: f32) [2]f32 {
@@ -3074,12 +3094,10 @@ fn drawMirrorScenery(g: *Game, c: Cam, view: grid.Box, memory: bool) void {
             if (g.sprites.tileAt(&g.lv, p)) |t| {
                 const rect = spriteRect(t, c.sx(p), c.sy(p));
                 const foot = footOf(g, t, c.corner(p));
-                mirrorAt(foot);
-                const fading = g.light.beginMirrorFade(mirrorFade(g, foot, g.light.topY(t, rect), foot));
-                defer if (fading) rl.endShaderMode();
+                const r = Reflection.begin(g, foot, mirrorFade(g, foot, g.light.topY(t, rect), foot));
+                defer r.end();
                 const tint = if (memory) rl.Color.white else g.light.onBody(mathx.centre(p), false).tint(rl.Color.white);
                 look.stretch(t, rect, tint);
-                rl.gl.rlPopMatrix();
             }
         }
         if (barrelPresent(g, p)) {
@@ -3094,11 +3112,9 @@ fn drawMirrorTorches(g: *Game, c: Cam, flames: []const light.Flame, memory: bool
     for (flames) |f| {
         const foot = f.foot * CELL_F - @as(f32, @floatFromInt(c.y));
         const top = f.at[1] * CELL_F - @as(f32, @floatFromInt(c.y + authored(fx.TORCH_TOP_PX)));
-        mirrorAt(foot);
-        const fading = g.light.beginMirrorFade(mirrorFade(g, foot, top, foot));
-        defer if (fading) rl.endShaderMode();
+        const r = Reflection.begin(g, foot, mirrorFade(g, foot, top, foot));
+        defer r.end();
         drawFlame(g, c, f, if (memory or !g.lv.isLit(mathx.cellOf(f.at))) 0 else flameLit(f));
-        rl.gl.rlPopMatrix();
     }
 }
 
@@ -3554,12 +3570,11 @@ fn bindText(g: *const Game, s: [:0]const u8, y: i32, size: i32, col: rl.Color) v
 fn drawBinds(g: *Game) void {
     veil(g);
     const surface = menu.Surface.of(g.screen, BIND_PANEL);
-    surface.begin();
+    surface.beginPanel(&g.sprites, BIND_PANEL);
     defer rl.endMode2D();
     const face = g.face;
     g.face = surface.faceFor(face);
     defer g.face = face;
-    look.hudPanel(&g.sprites, 0, 0, BIND_PANEL.x, BIND_PANEL.y, look.CARD_BG, look.LIT);
     const b = g.binds;
     menu.heading(g.face, BIND_PANEL, "BIND SKILLS", BIND_TOP, BIND_TITLE, look.TEXT, look.UI_GOLD);
     for (skillbar.SETS, 0..) |set, row| {
@@ -3875,7 +3890,7 @@ fn mapAssets(g: *Game) look.Assets {
     return need;
 }
 
-pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*Game) anyerror!void) !void {
+pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*Game) anyerror!void, comptime startup_shown: bool) !void {
     var startup = try std.time.Timer.start();
     const alloc = std.heap.c_allocator;
     rl.setConfigFlags(flags);
@@ -3889,8 +3904,24 @@ pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*
     defer unloadGraphics(g);
     g.face = font.Face.load(look.TILE_CODEPOINTS);
     defer g.face.unload();
-    if (comptime body == benchWalk) std.debug.print("startup: {d:.3} ms, {d} map textures\n", .{ ms(startup.read()), g.sprites.count() });
+    if (startup_shown) std.debug.print("startup: {d:.3} ms, {d} map textures\n", .{ ms(startup.read()), g.sprites.count() });
     try body(g);
+}
+
+pub const NAME = "Cistern";
+
+pub const Headless = struct { flag: [:0]const u8, body: fn (*Game) anyerror!void, startup_shown: bool = false };
+
+pub const HEADLESS = [_]Headless{
+    .{ .flag = "--shot", .body = shoot },
+    .{ .flag = "--shot-ui", .body = shootUi },
+    .{ .flag = "--shot-cinema", .body = shootCinema },
+    .{ .flag = "--bench", .body = benchWalk, .startup_shown = true },
+};
+
+pub fn headless(comptime h: Headless) !void {
+    try withGame(.{ .window_hidden = true }, NAME ++ " " ++ h.flag, h.body, h.startup_shown);
+    try look.expectShaders();
 }
 
 pub fn fullscreen() bool {
@@ -3921,10 +3952,6 @@ pub fn frame(g: *Game) void {
     rl.beginDrawing();
     drawFrame(g);
     rl.endDrawing();
-}
-
-pub fn shot() !void {
-    try withGame(.{ .window_hidden = true }, "Cistern --shot", shoot);
 }
 
 fn renderTarget(g: *Game) !rl.RenderTexture2D {
@@ -4023,7 +4050,7 @@ fn shoot(g: *Game) !void {
 
     openPause(g);
     try capture(g, target, SHOTS_DIR ++ "/pause.png");
-    g.pause_menu.at = @intFromEnum(PauseRow.debug);
+    g.pause_menu.at = rowAt(PauseRow.debug);
     press(g, CONFIRM);
     try capture(g, target, SHOTS_DIR ++ "/debug.png");
     g.mode = .play;
@@ -4050,7 +4077,7 @@ fn shoot(g: *Game) !void {
     for ([_]struct { hour: f32, name: [:0]const u8 }{
         .{ .hour = MORNING, .name = SHOTS_DIR ++ "/shadows-morning.png" },
         .{ .hour = day.NOON, .name = SHOTS_DIR ++ "/shadows-noon.png" },
-        .{ .hour = 17, .name = SHOTS_DIR ++ "/shadows-evening.png" },
+        .{ .hour = EVENING, .name = SHOTS_DIR ++ "/shadows-evening.png" },
         .{ .hour = day.DEAD_OF_NIGHT, .name = SHOTS_DIR ++ "/shadows-moon.png" },
     }) |study| {
         poseShadowStudy(g, study.hour, true);
@@ -4111,7 +4138,7 @@ fn shoot(g: *Game) !void {
                 settle(g);
                 try capture(g, target, s.path);
             }
-            inline for ([_]f32{ 8.5, day.NOON, DUSK, day.DEAD_OF_NIGHT }) |hour| {
+            inline for ([_]f32{ BLEAK_MORNING, day.NOON, DUSK, day.DEAD_OF_NIGHT }) |hour| {
                 beginMapAt(g, w, w.start, SHOT_SEED);
                 g.clock = day.Clock.at(hour);
                 settle(g);
@@ -4137,10 +4164,6 @@ fn shoot(g: *Game) !void {
     naming.draw(&entry, g.face, g.screen, naming.titleOf(heroes.DEFAULT, &title), .xbox);
     rl.endTextureMode();
     try exportTarget(target, SHOTS_DIR ++ "/name.png");
-}
-
-pub fn shotUi() !void {
-    try withGame(.{ .window_hidden = true }, "Cistern --shot-ui", shootUi);
 }
 
 fn shootUi(g: *Game) !void {
@@ -4171,10 +4194,6 @@ fn shootLevelUp(g: *Game) !void {
     }
 }
 
-pub fn shotCinema() !void {
-    try withGame(.{ .window_hidden = true }, "Cistern --shot-cinema", shootCinema);
-}
-
 fn shootCinema(g: *Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
@@ -4188,7 +4207,7 @@ fn shootCinema(g: *Game) !void {
     try cinemaWater(g, target);
     openPause(g);
     g.pause_page = .debug;
-    g.pause_menu.at = @intFromEnum(DebugRow.composed_lighting);
+    g.pause_menu.at = rowAt(DebugRow.composed_lighting);
     try capture(g, target, SHOTS_DIR ++ "/cinema/debug.png");
 }
 
@@ -4607,9 +4626,17 @@ fn boundTo(g: *const Game, act: skillbar.Act) Use {
 }
 
 const POSE_BURST = P{ .x = 25, .y = 15 };
-const MORNING: f32 = 9;
-const DUSK: f32 = 19.3;
-const NIGHT: f32 = 22.5;
+const MIDNIGHT: f32 = 0;
+const LATE_NIGHT: f32 = day.SUNRISE - 2;
+const DAWN: f32 = day.SUNRISE + 1;
+const BLEAK_MORNING: f32 = day.SUNRISE + 2.5;
+const MORNING: f32 = day.SUNRISE + 3;
+const AFTERNOON: f32 = day.SUNSET - 3.5;
+const EVENING: f32 = day.SUNSET - 3;
+const DUSK: f32 = day.SUNSET - 0.7;
+const LATE_DUSK: f32 = day.SUNSET - 0.5;
+const EARLY_NIGHT: f32 = day.SUNSET + 2;
+const NIGHT: f32 = day.SUNSET + 2.5;
 const POSE_GAS_TURNS: usize = 3;
 
 fn posePicker(g: *Game, u: Use) void {
@@ -5004,12 +5031,10 @@ fn checkMapEdge(g: *Game, target: rl.RenderTexture2D) !void {
     for ([_]bool{ true, false }) |visible| {
         @memset(&g.lv.lit, visible);
         g.light.settle(&g.lv);
-        rl.beginTextureMode(target);
-        g.framebuffer = target.id;
+        intoTarget(g, target);
         rl.clearBackground(look.FOG);
         drawMap(g);
-        rl.endTextureMode();
-        g.framebuffer = 0;
+        outOfTarget(g);
         try exportTarget(target, if (visible) SHOTS_DIR ++ "/map-bottom-edge.png" else SHOTS_DIR ++ "/map-bottom-memory.png");
         const img = try readTarget(target);
         defer rl.unloadImage(img);
@@ -5079,13 +5104,11 @@ fn checkWaterMirrors(g: *Game, target: rl.RenderTexture2D) !void {
     if (remembered < MIN_PIXELS) return error.WaterMemoryMissing;
     @memset(&g.lv.seen, false);
     g.light.settle(&g.lv);
-    rl.beginTextureMode(target);
-    g.framebuffer = target.id;
+    intoTarget(g, target);
     const c = Cam.of(g);
     var flame_buf: [grid.MAX_TORCHES]light.Flame = undefined;
     _ = drawMirrors(g, c, viewBox(g, c), &.{}, g.light.flames(&g.lv, &flame_buf));
-    rl.endTextureMode();
-    g.framebuffer = 0;
+    outOfTarget(g);
     for ([_]rl.RenderTexture2D{ g.sprites.mirror.?, g.sprites.mirror_memory.? }) |t| {
         const hidden = try readTarget(t);
         defer rl.unloadImage(hidden);
@@ -5144,11 +5167,19 @@ fn checkHiddenShadowMask(g: *Game, target: rl.RenderTexture2D, visible: bool) !v
 
 fn drawInto(g: *Game, target: rl.RenderTexture2D) void {
     prepare(g);
+    intoTarget(g, target);
+    defer outOfTarget(g);
+    drawFrame(g);
+}
+
+fn intoTarget(g: *Game, target: rl.RenderTexture2D) void {
     rl.beginTextureMode(target);
     g.framebuffer = target.id;
-    defer g.framebuffer = 0;
-    drawFrame(g);
+}
+
+fn outOfTarget(g: *Game) void {
     rl.endTextureMode();
+    g.framebuffer = 0;
 }
 
 const OVERVIEW_CELL: i32 = 10;
@@ -5160,13 +5191,13 @@ const SHOT_BIOME = "qud/qud_salt_marsh";
 const RAIN_FRAMES: usize = 90;
 const SHOT_OUTDOOR = "wilds";
 const SHOT_HOURS = [_]struct { hour: f32, path: [:0]const u8 }{
-    .{ .hour = 7.0, .path = SHOTS_DIR ++ "/dawn.png" },
+    .{ .hour = DAWN, .path = SHOTS_DIR ++ "/dawn.png" },
     .{ .hour = day.NOON, .path = SHOTS_DIR ++ "/noon.png" },
-    .{ .hour = 16.5, .path = SHOTS_DIR ++ "/day.png" },
+    .{ .hour = AFTERNOON, .path = SHOTS_DIR ++ "/day.png" },
     .{ .hour = DUSK, .path = SHOTS_DIR ++ "/dusk.png" },
-    .{ .hour = 22, .path = SHOTS_DIR ++ "/early-night.png" },
+    .{ .hour = EARLY_NIGHT, .path = SHOTS_DIR ++ "/early-night.png" },
     .{ .hour = day.DEAD_OF_NIGHT, .path = SHOTS_DIR ++ "/night.png" },
-    .{ .hour = 4, .path = SHOTS_DIR ++ "/late-night.png" },
+    .{ .hour = LATE_NIGHT, .path = SHOTS_DIR ++ "/late-night.png" },
 };
 
 fn overviews(g: *Game, w: *atlas.Atlas) !void {
@@ -5237,10 +5268,6 @@ pub fn exportTarget(target: rl.RenderTexture2D, path: [:0]const u8) !void {
     rl.imageFormat(&img, .uncompressed_r8g8b8);
     if (!rl.exportImage(img, path)) return error.ExportFailed;
     std.debug.print("{s} written\n", .{path});
-}
-
-pub fn bench() !void {
-    try withGame(.{ .window_hidden = true }, "Cistern --bench", benchWalk);
 }
 
 const BENCH_FRAMES: usize = 3600;
@@ -5580,8 +5607,7 @@ fn drawn(g: *Game, slot: usize) bool {
 const TEST_HP: i32 = 100;
 
 fn toughen(a: *actor.Actor) void {
-    a.hp = TEST_HP;
-    a.max = TEST_HP;
+    setLife(a, TEST_HP, TEST_HP);
 }
 
 const TEST_GAS = 100;
@@ -6162,13 +6188,11 @@ test "binding mouse targets follow both sets at different screen sizes" {
         for (skillbar.SETS, 0..) |_, row| for (0..SLOT_XS.len) |col| {
             openCharacter(g);
             characterCommand(g, .{ .bindings = .shoot });
-            const slot = look.middle(bindSlotBox(row, col));
-            g.st = .{ .click = true, .pointer = .{ .x = @intFromFloat(surface.offset.x + slot.x * surface.scale), .y = @intFromFloat(surface.offset.y + slot.y * surface.scale) } };
+            g.st = .{ .click = true, .pointer = surface.screenOf(look.middle(bindSlotBox(row, col))) };
             update(g, 0);
             try std.testing.expectEqual(row, g.binds.row);
             try std.testing.expectEqual(col, g.binds.col);
-            const assign = look.middle(bindActionBox(0));
-            g.st = .{ .click = true, .pointer = .{ .x = @intFromFloat(surface.offset.x + assign.x * surface.scale), .y = @intFromFloat(surface.offset.y + assign.y * surface.scale) } };
+            g.st = .{ .click = true, .pointer = surface.screenOf(look.middle(bindActionBox(0))) };
             update(g, 0);
             try std.testing.expectEqual(@as(?skillbar.Act, .shoot), g.bar.at(g.binds.slot()));
             try std.testing.expectEqual(Mode.pause, g.mode);
@@ -6318,7 +6342,7 @@ test "the archer sees further by day than by night out of doors, and as little a
     defer shut(std.testing.allocator, g);
     arena(g, .{ .x = 40, .y = 30 }, &.{});
     var seen: [4]usize = undefined;
-    for ([_]f32{ day.NOON, 19.5, 0 }, 0..) |h, i| {
+    for ([_]f32{ day.NOON, LATE_DUSK, MIDNIGHT }, 0..) |h, i| {
         g.clock = day.Clock.at(h);
         settle(g);
         seen[i] = std.mem.count(bool, &g.lv.lit, &.{true});
@@ -7542,8 +7566,7 @@ test "slimes split in fights on real floors, and every body keeps a cell of its 
     for (0..FLOORS) |f| {
         begin(g, 0x511E +% f *% grid.TEST_SEED_STRIDE);
         wakeFoes(g);
-        g.heroActor().?.hp = 1000;
-        g.heroActor().?.max = 1000;
+        setLife(g.heroActor().?, 1000, 1000);
         var rng = mathx.Rng.init(f);
         for (0..300) |_| {
             if (g.mode == .dead) break;
@@ -7595,15 +7618,10 @@ test "each bite on the archer drops its hp as drawn as that bite lands" {
             return game.pictured[i].hp < actor.row(HERO).hp;
         }
     };
-    const Both = struct {
-        fn f(game: *Game, i: usize) bool {
-            return game.pictured[i].hp == game.pool.items[i].hp;
-        }
-    };
     const t1 = framesUntil(g, hero, One.f);
     const first = g.pictured[hero].hp;
     try std.testing.expect(first > hp);
-    const t2 = t1 + framesUntil(g, hero, Both.f);
+    const t2 = t1 + framesUntil(g, hero, caughtUp);
     std.debug.print("two rats bite an archer of {d} hp: drawn on {d} as the first lands {d:.3} s in, on {d} as the second lands {d:.3} s in\n", .{ full, first, t1, hp, t2 });
     try std.testing.expectApproxEqAbs(BUMP_LANDS, t1, TEST_TOL);
     try std.testing.expectApproxEqAbs(STAGGER_S + BUMP_LANDS, t2, TEST_TOL);
@@ -7698,6 +7716,34 @@ test "a half the gas splits off an unlit slime into sight shows as the archer's 
     std.debug.print("a half split off an unlit slime by the gas: revealed {d:.3} s in, the archer's step lands at {d:.3} s\n", .{ t, step });
     try std.testing.expect(step > 0);
     try std.testing.expectApproxEqAbs(step, t, TEST_TOL);
+}
+
+test "a half revealed as the turn's picture ends shows before a held walk starts the next turn" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const dark = ledge(g);
+    const id = spawnAt(g, .slime_half, dark, true);
+    const half = actor.Pool.slot(spawnAt(g, .slime_quarter, .{ .x = 22, .y = 19 }, true));
+    const s = actor.Pool.slot(id);
+    g.split_from[half] = s;
+    g.pool.move(&g.lv, g.hero, .{ .x = 19, .y = 20 });
+    castSight(g, .{ .x = 19, .y = 20 });
+    g.owed[s].gassed = .{ .kill = false, .after = .{ .body = snap(g, s), .reveals = half } };
+    g.order_n = 0;
+    stepGlide(g, 0);
+    catchUp(g);
+    const from = g.heroActor().?.at;
+    var shown: ?usize = null;
+    var n: usize = 0;
+    while (n < 400) : (n += 1) {
+        g.st = .{ .walk = .w };
+        update(g, TEST_DT);
+        if (shown == null and revealed(g, half)) shown = n;
+        if (!g.heroActor().?.at.eq(from)) break;
+    }
+    std.debug.print("held walk past a reveal: half shown at frame {?d}, next step at frame {d}\n", .{ shown, n });
+    try std.testing.expect(shown != null and n > shown.?);
 }
 
 test "a quarter the gas splits off a burning half on its waiting turn burns that turn as its sibling does" {
@@ -8151,15 +8197,9 @@ test "a door keeps the low glow, a level-up, the archer's facing and a walk pres
     defer shut(std.testing.allocator, g);
     const w = try std.testing.allocator.create(atlas.Atlas);
     defer std.testing.allocator.destroy(w);
-    w.* = .{};
-    const a = w.add(.{ .bespoke = .{} }).?;
-    const b = w.add(.{ .bespoke = .{} }).?;
-    for ([_]usize{ a, b }) |n| corridor(&w.node[n].plan.bespoke);
+    const b = twoRooms(w);
+    const a = w.start.node;
     _ = w.node[b].plan.bespoke.addFoe(.{ .kind = .rat, .at = .{ .x = 11, .y = 5 } });
-    const da = w.addDoor(a, .{ .x = 2, .y = 5 }).?;
-    const db = w.addDoor(b, .{ .x = 11, .y = 5 }).?;
-    w.link(.{ .node = a, .door = da }, .{ .node = b, .door = db });
-    w.start = .{ .node = a, .at = .{ .x = 3, .y = 5 } };
     beginMap(g, w);
     _ = g.pool.damage(&g.lv, g.hero, actor.row(HERO).hp - 1);
     g.st = .{};
@@ -8192,7 +8232,7 @@ test "the pause menu spends no turn, and its way out leads back to where the gam
     for (std.enums.values(Back)) |back| {
         g.back = back;
         press(g, PAUSE);
-        for (0..std.mem.indexOfScalar(PauseRow, PAUSE_ROWS, .back).?) |_| nudge(g, .s);
+        for (0..rowAt(PauseRow.back)) |_| nudge(g, .s);
         press(g, .a);
         try std.testing.expectEqual(@as(?Exit, .back), g.exit);
         try std.testing.expectEqual(Mode.play, g.mode);
@@ -8290,11 +8330,11 @@ test "Debug cinema toggles are independent and spend no simulation" {
     const rng = g.rng;
     const hp = g.heroActor().?.hp;
     press(g, PAUSE);
-    g.pause_menu.at = @intFromEnum(PauseRow.debug);
+    g.pause_menu.at = rowAt(PauseRow.debug);
     press(g, CONFIRM);
     var toggles: usize = 0;
     inline for (std.meta.fields(cinema.Options)) |f| {
-        g.pause_menu.at = @intFromEnum(@field(DebugRow, f.name));
+        g.pause_menu.at = rowAt(@field(DebugRow, f.name));
         for ([_]bool{ false, true }) |on| {
             press(g, CONFIRM);
             inline for (std.meta.fields(cinema.Options)) |other| {
@@ -8325,7 +8365,7 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
     const rng = g.rng;
     try std.testing.expect(!terrainSeen(g, far));
     press(g, PAUSE);
-    for (0..@intFromEnum(PauseRow.debug)) |_| nudge(g, .s);
+    for (0..rowAt(PauseRow.debug)) |_| nudge(g, .s);
     press(g, CONFIRM);
     try std.testing.expectEqual(PausePage.debug, g.pause_page);
     try std.testing.expectEqual(Mode.pause, g.mode);
@@ -8362,7 +8402,7 @@ test "Debug restart begins the map anew and clears visited nodes" {
     g.gold = 99;
     g.heroActor().?.hp = 1;
     press(g, PAUSE);
-    for (0..@intFromEnum(PauseRow.debug)) |_| nudge(g, .s);
+    for (0..rowAt(PauseRow.debug)) |_| nudge(g, .s);
     press(g, CONFIRM);
     try std.testing.expectEqual(PausePage.debug, g.pause_page);
     press(g, CONFIRM);
@@ -8776,6 +8816,21 @@ test "a door is listed nearby only once no body is drawn on it" {
     calm(g);
     snapGlide(g);
     try std.testing.expect(doorReached(g, from, door) != null);
+}
+
+test "the nearby list closes once a body takes the last door it listed" {
+    const g = try boot(std.testing.allocator);
+    defer shut(std.testing.allocator, g);
+    const w = try std.testing.allocator.create(atlas.Atlas);
+    defer std.testing.allocator.destroy(w);
+    _ = twoRooms(w);
+    beginMapAt(g, w, w.start, 123);
+    try std.testing.expect(openNearby(g));
+    try std.testing.expectEqual(Mode.pause, g.mode);
+    _ = spawnAt(g, .rat, .{ .x = 2, .y = 5 }, false);
+    g.st = .{};
+    update(g, 0);
+    try std.testing.expectEqual(Mode.play, g.mode);
 }
 
 test "interact during door travel stays an interaction on arrival" {
@@ -9370,6 +9425,11 @@ fn skipsNext(a: *actor.Actor) void {
     a.chill = .{ .turns = 1, .phase = glacial.CYCLE - 1 };
 }
 
+fn bleedingNow(a: *actor.Actor) void {
+    a.bleed.start();
+    a.bleed.fresh = false;
+}
+
 test "a pinning shot holds a chasing rat to its cell for two to four of its turns, and a pinned rat still bites" {
     const g = try boot(std.testing.allocator);
     defer shut(std.testing.allocator, g);
@@ -9628,8 +9688,7 @@ test "a knocked rat's bleed lands once its knock slide has ended" {
     const rat = g.pool.get(2).?;
     toughen(rat);
     skipsNext(rat);
-    rat.bleed.start();
-    rat.bleed.fresh = false;
+    bleedingNow(rat);
     press(g, .b);
     press(g, .a);
     const i = actor.Pool.slot(2);
@@ -9656,10 +9715,7 @@ test "bleeding doubles after knockback even if the foe loses its action" {
             toughen(rat);
             skipsNext(rat);
             if (pinned) rat.pin.turns = pinning.TURNS_HI;
-            if (bleeds) {
-                rat.bleed.start();
-                rat.bleed.fresh = false;
-            }
+            if (bleeds) bleedingNow(rat);
             press(g, .b);
             press(g, .a);
             left.* = rat.hp;

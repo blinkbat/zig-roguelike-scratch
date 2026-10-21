@@ -15,6 +15,10 @@ pub fn splat(k: f32) Rgb {
     return @splat(k);
 }
 
+pub fn unit(v: Rgb) Rgb {
+    return v / splat(@sqrt(@reduce(.Add, v * v)));
+}
+
 fn flatOf(d: [3]f32) f32 {
     return mathx.len(d[0], d[1]);
 }

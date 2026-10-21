@@ -1,6 +1,7 @@
 const std = @import("std");
 const atlas = @import("atlas.zig");
 const grid = @import("grid.zig");
+const lume = @import("lume.zig");
 const mathx = @import("../core/mathx.zig");
 const actor = @import("../play/actor.zig");
 
@@ -18,7 +19,7 @@ pub fn author(map: *atlas.Atlas, kind: actor.Kind) void {
     const node = map.oneRoom(ROOM, HERO);
     _ = map.node[node].rename("Arena");
     const room = &map.node[node].plan.bespoke;
-    for ([_]i32{ -TORCH_STEP, 0, TORCH_STEP }) |dx| std.debug.assert(room.torch.add(.{ .x = MIDDLE.x + dx, .y = ROOM.lo.y - 1 }));
+    for ([_]i32{ -TORCH_STEP, 0, TORCH_STEP }) |dx| std.debug.assert(room.torch.add(lume.torchWall(.{ .x = MIDDLE.x + dx, .y = ROOM.lo.y })));
     std.debug.assert(room.addFoe(.{ .kind = kind, .at = FOE }));
 }
 

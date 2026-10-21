@@ -55,6 +55,12 @@ pub fn rect(at: rl.Vector2, w: f32, h: f32, scale: f32, col: rl.Color) void {
     fill(boxOf(at, w, h, scale), col);
 }
 
+/// A plus, `arm` long across and down, a pixel thick.
+pub fn cross(at: rl.Vector2, arm: f32, scale: f32, col: rl.Color) void {
+    rect(at, arm, 1, scale, col);
+    rect(at, 1, arm, scale, col);
+}
+
 fn fleckBoxes(at: rl.Vector2, r: f32, scale: f32) [3]Box {
     const size = @max(1, @round(r * 2));
     const none = Box{ .x = 0, .y = 0, .w = 0, .h = 0 };

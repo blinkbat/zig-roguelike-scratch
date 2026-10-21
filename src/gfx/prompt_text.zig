@@ -59,7 +59,7 @@ pub const Face = struct {
             if (part.control) {
                 const prompt = icon(text);
                 const w = prompt.width(self.face, size) + GLYPH_PAD;
-                if (y) |top| prompt.draw(self.face, x + offset + @divTrunc(w, 2), top + @divTrunc(size, 2), size, @as(f32, @floatFromInt(col.a)) / 255);
+                if (y) |top| prompt.draw(self.face, x + offset + @divTrunc(w, 2), top + @divTrunc(size, 2), size, look.alphaOf(col));
                 offset += w;
             } else {
                 if (y) |top| self.face.draw(text, x + offset, top, size, col);

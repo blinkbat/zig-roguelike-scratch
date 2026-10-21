@@ -145,6 +145,13 @@ pub const Beds = struct {
         return @as(usize, @intCast(p.y + 1)) * SPAN + @as(usize, @intCast(p.x + 1));
     }
 
+    /// Slots back from a point's south-east cell to each of `AROUND`, in its order.
+    const AROUND_SLOT = blk: {
+        var back: [AROUND.len]usize = undefined;
+        for (AROUND, &back) |a, *o| o.* = @intCast(-(a.d.y * @as(i32, SPAN) + a.d.x));
+        break :blk back;
+    };
+
     pub const Point = struct {
         corners: Corners,
         /// A bit for each rank among them.
@@ -181,7 +188,8 @@ pub const Beds = struct {
         var n: usize = 0;
         while (corners.next()) |c| : (n += 1) {
             const se = slot(c);
-            const k = Corners{ .rank = .{ b.rank[se - SPAN - 1], b.rank[se - SPAN], b.rank[se - 1], b.rank[se] } };
+            var k: Corners = undefined;
+            for (AROUND_SLOT, &k.rank) |back, *r| r.* = b.rank[se - back];
             var holds: Ranks = 0;
             for (k.rank) |r| {
                 if (isGround(r)) holds |= @as(Ranks, 1) << @intCast(r);

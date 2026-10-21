@@ -218,8 +218,7 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
             top -= 1;
             const c = stack[top];
             queued.unset(c);
-            const cx: i32 = @intCast(c % w);
-            const cy: i32 = @intCast(c / w);
+            const at = mathx.unslot(c, w);
             var allowed = m.any;
             if (!wave[c].eql(all)) {
                 allowed = @splat(Bits.initEmpty());
@@ -229,7 +228,7 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
                 }
             }
             for (DIRS, 0..) |d, k| {
-                const ni = mathx.slot(cx + d.x, cy + d.y, w, h) orelse continue;
+                const ni = mathx.slot(at.x + d.x, at.y + d.y, w, h) orelse continue;
                 const now = wave[ni].intersectWith(allowed[k]);
                 if (now.eql(wave[ni])) continue;
                 if (now.count() == 0) return false;

@@ -209,7 +209,7 @@ pub const Sprites = struct {
     fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4) ?Piece {
         const tex = self.grounds.getPtrConst(g).* orelse return null;
         const at = ground.CELL_OF[mask];
-        return .{ .tex = tex, .src = rect(at.x * SPRITE_PX, at.y * SPRITE_PX, SPRITE_PX, SPRITE_PX) };
+        return .{ .tex = tex, .src = sheetCell(at.x, at.y) };
     }
 
     /// The grounds with a sheet loaded.
@@ -293,8 +293,7 @@ pub const Sprites = struct {
     fn squarePart(self: *const Sprites, t: grid.Tile, cell: [2]f32, px: f32, uv: [2]f32, span: f32) void {
         const dest = rl.Rectangle{ .x = cell[0] + uv[0] * px, .y = cell[1] + uv[1] * px, .width = span * px, .height = span * px };
         if (self.tiles.getPtrConst(t).*) |tex| {
-            const w: f32 = @floatFromInt(tex.width);
-            const h: f32 = @floatFromInt(tex.height);
+            const w, const h = sizeOf(tex);
             blit(tex, .{ .x = uv[0] * w, .y = uv[1] * h, .width = span * w, .height = span * h }, dest, LIT);
         } else if (tileBg(t)) |bg| rl.drawRectangleRec(dest, bg);
     }
@@ -546,11 +545,19 @@ fn wallCell(sheet: rl.Image, i: usize) ?rl.Image {
     const col: i32 = @intCast(i % WALL_COLS);
     const row: i32 = @intCast(i / WALL_COLS);
     if ((col + 1) * SPRITE_PX > sheet.width or (row + 1) * SPRITE_PX > sheet.height) return null;
-    return rl.imageFromImage(sheet, rect(col * SPRITE_PX, row * SPRITE_PX, SPRITE_PX, SPRITE_PX));
+    return rl.imageFromImage(sheet, sheetCell(col, row));
+}
+
+fn sheetCell(col: i32, row: i32) rl.Rectangle {
+    return rect(col * SPRITE_PX, row * SPRITE_PX, SPRITE_PX, SPRITE_PX);
 }
 
 pub fn whole(t: rl.Texture2D) rl.Rectangle {
     return rect(0, 0, t.width, t.height);
+}
+
+pub fn sizeOf(t: rl.Texture2D) [2]f32 {
+    return .{ @floatFromInt(t.width), @floatFromInt(t.height) };
 }
 
 pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
@@ -641,6 +648,12 @@ pub fn endTarget(outer: u32) void {
     rl.gl.rlEnableFramebuffer(outer);
 }
 
+/// Blending by GL factors and equation, until `rl.endBlendMode`.
+pub fn beginBlend(src: i32, dst: i32, equation: i32) void {
+    rl.gl.rlSetBlendFactors(src, dst, equation);
+    rl.beginBlendMode(.custom);
+}
+
 /// A render texture over the whole frame, flipped the right way up.
 pub fn drawTarget(t: rl.Texture2D) void {
     rl.drawTextureRec(t, rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);
@@ -671,10 +684,23 @@ pub fn field(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f
     return clamped(rgba(&img, w, h), .bilinear);
 }
 
+/// Shaders `shader` has failed to compile since the process started.
+pub var shader_failures: u32 = 0;
+
 /// Null when it does not compile: raylib then hands back its default shader rather than an error.
 pub fn shader(fs: [:0]const u8) ?rl.Shader {
-    const s = rl.loadShaderFromMemory(null, fs) catch return null;
-    return if (s.id == rl.gl.rlGetShaderIdDefault()) null else s;
+    const s = rl.loadShaderFromMemory(null, fs) catch {
+        shader_failures += 1;
+        return null;
+    };
+    if (s.id != rl.gl.rlGetShaderIdDefault()) return s;
+    shader_failures += 1;
+    return null;
+}
+
+/// For headless runs, after everything they draw has loaded.
+pub fn expectShaders() error{ShaderFailed}!void {
+    if (shader_failures > 0) return error.ShaderFailed;
 }
 
 fn uniforms(comptime T: type, s: rl.Shader) T {
@@ -1207,6 +1233,7 @@ pub fn elementInk(e: damage.Element) rl.Color {
 }
 
 pub const LIGHTNING = rgb(0xf4e872);
+pub const LIGHTNING_CORE = FIRE_CORE;
 
 pub const SKILL_PX: i32 = 30;
 
@@ -1322,7 +1349,7 @@ pub const Prompt = union(enum) {
                 for ([_]mathx.Dir{ .n, .e, .s, .w }) |d| {
                     const offset = d.delta();
                     const ink = if (p == .dpad and offset.x != 0) PROMPT_EDGE else PROMPT_INK;
-                    promptArrow(d, cx + offset.x * step, cy + offset.y * step, @max(6, @divTrunc(h, 3)), fade(ink, alpha));
+                    promptArrow(d, cx + offset.x * step, cy + offset.y * step, arrowPx(h), fade(ink, alpha));
                 }
             },
             .mouse => |button| {
@@ -1337,7 +1364,7 @@ pub const Prompt = union(enum) {
                 } else {
                     rl.drawRectangleRounded(.{ .x = x - 1.5, .y = y - s * 0.3, .width = 3, .height = s * 0.3 }, 0.5, 4, fade(PROMPT_INK, alpha));
                     if (button == .wheel) for ([_]mathx.Dir{ .n, .s }) |d| {
-                        promptArrow(d, cx, cy + d.delta().y * @divTrunc(h, 3), @max(6, @divTrunc(h, 3)), fade(PROMPT_INK, alpha));
+                        promptArrow(d, cx, cy + d.delta().y * @divTrunc(h, 3), arrowPx(h), fade(PROMPT_INK, alpha));
                     };
                 }
             },
@@ -1364,6 +1391,11 @@ pub const Prompt = union(enum) {
         }
     }
 };
+
+/// The small arrows of an input icon `h` tall.
+fn arrowPx(h: i32) i32 {
+    return @max(6, @divTrunc(h, 3));
+}
 
 fn promptArrow(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) void {
     const delta = d.delta();
@@ -1595,6 +1627,17 @@ pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\
 ;
 
+/// `noise(p)`: value noise over the `float hash(vec2)` declared before it.
+pub const VALUE_NOISE_FS =
+    \\float noise(vec2 p) {
+    \\    vec2 i = floor(p);
+    \\    vec2 f = fract(p);
+    \\    vec2 u = f * f * (3.0 - 2.0 * f);
+    \\    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+    \\}
+    \\
+;
+
 const FadeShader = struct { shader: rl.Shader, bounds: i32, minimum: i32 };
 const FADE_FS = FS_HEAD ++
     \\uniform vec2 bounds;
@@ -1666,6 +1709,10 @@ pub const REFLECTIVE = blk: {
 
 pub fn reflects(t: grid.Tile) bool {
     return REFLECTIVE.contains(ground.of(t) orelse return false);
+}
+
+pub fn alphaOf(c: rl.Color) f32 {
+    return @as(f32, @floatFromInt(c.a)) / 255;
 }
 
 pub fn rgbOf(c: rl.Color) sky.Rgb {

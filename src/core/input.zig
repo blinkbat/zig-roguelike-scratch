@@ -800,7 +800,7 @@ fn mouseAt() mathx.P {
     return .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
 }
 
-/// The editor's mouse and keys: it is a desk tool, so it names them.
+/// The editor's mouse and keys, captioned with keyboard and mouse glyphs.
 pub const Desk = struct {
     pub const TOOL_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
     pub const TOOL_CAPTIONS = glyphCaptions(&TOOL_KEYS);

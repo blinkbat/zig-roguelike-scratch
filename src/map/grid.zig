@@ -616,6 +616,18 @@ pub const Box = struct {
         return .{ .x = x, .y = rng.range(b.lo.y, b.hi.y - h) };
     }
 
+    pub fn rollWhere(b: Box, rng: *mathx.Rng, tries: usize, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) ?P {
+        return b.rollForWhere(rng, 1, 1, tries, ctx, ok);
+    }
+
+    pub fn rollForWhere(b: Box, rng: *mathx.Rng, w: i32, h: i32, tries: usize, ctx: anytype, comptime ok: fn (@TypeOf(ctx), P) bool) ?P {
+        for (0..tries) |_| {
+            const p = b.rollFor(rng, w, h);
+            if (ok(ctx, p)) return p;
+        }
+        return null;
+    }
+
     pub fn width(b: Box) i32 {
         return b.hi.x - b.lo.x;
     }

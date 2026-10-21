@@ -1449,7 +1449,7 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
         try std.testing.expectEqual(result.chests, counted_chests);
         try std.testing.expectEqual(result.barrels, counted_barrels);
         try std.testing.expect(counted_chests >= branches.Reward.chest.rule().total);
-        try std.testing.expect(counted_barrels >= 12);
+        try std.testing.expect(counted_barrels >= branches.Reward.barrel.rule().total / 2);
         loops += result.loops;
         chests += result.chests;
         barrels += result.barrels;

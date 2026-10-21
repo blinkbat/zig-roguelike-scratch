@@ -110,7 +110,7 @@ fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
     var n: usize = 0;
     var x = r.lo.x;
     while (x < r.hi.x) : (x += 1) {
-        top[n] = .{ .x = x, .y = r.lo.y - 1 };
+        top[n] = lume.torchWall(.{ .x = x, .y = r.lo.y });
         n += 1;
     }
     if (rng.pickWhere(P, top[0..n], @as(*const grid.Level, lv), bearsTorch)) |p| lv.addTorch(p);
@@ -378,7 +378,7 @@ test "every torch hangs on a room's wall with its face onto floor" {
 
 test "barrels stand on room floor and never cut one open cell off from the start" {
     var lv: grid.Level = undefined;
-    var reached: [grid.CELLS]bool = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var barrels: usize = 0;
     var rooms: usize = 0;
@@ -386,30 +386,14 @@ test "barrels stand on room floor and never cut one open cell off from the start
         const f = build(&lv, 0xBA22E1 +% i *% grid.TEST_SEED_STRIDE);
         rooms += f.room_n;
         try std.testing.expect(!lv.hasBarrel(f.start));
-        var open: usize = 0;
         for (0..grid.CELLS) |c| {
-            if (lv.barrel[c]) {
-                barrels += 1;
-                try std.testing.expect(lv.walkable(grid.Level.of(c)));
-            } else if (!lv.tile[c].solid()) open += 1;
+            if (!lv.barrel[c]) continue;
+            barrels += 1;
+            try std.testing.expect(lv.walkable(grid.Level.of(c)));
         }
-        @memset(&reached, false);
-        reached[grid.Level.idx(f.start)] = true;
-        queue[0] = @intCast(grid.Level.idx(f.start));
-        var head: usize = 0;
-        var tail: usize = 1;
-        while (head < tail) : (head += 1) {
-            const here = grid.Level.of(queue[head]);
-            for (mathx.ALL_DIRS) |d| {
-                if (!lv.stepOk(here, d, grid.NO_ONE)) continue;
-                const k = grid.Level.idx(here.add(d.delta()));
-                if (reached[k]) continue;
-                reached[k] = true;
-                queue[tail] = @intCast(k);
-                tail += 1;
-            }
-        }
-        try std.testing.expectEqual(open, tail);
+        var blocked = lv;
+        blocked.wallBarrels();
+        try grid.expectAllReached(&blocked, f.start, &dist, &queue);
     }
     std.debug.print("200 floors: {d} barrels over {d} rooms, every open cell still reached\n", .{ barrels, rooms });
     try std.testing.expect(barrels > rooms / 2);

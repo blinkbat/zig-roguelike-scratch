@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
+const lume = @import("../lume.zig");
 
 // Diablo II's DrlgMaze: each room drawn by the mask of sides it opens on, as the game picks its presets.
 
@@ -93,7 +94,7 @@ const Plan = struct {
     }
 
     fn place(k: usize) P {
-        return .{ .x = @intCast(k % COLS_MAX), .y = @intCast(k / COLS_MAX) };
+        return mathx.unslot(k, COLS_MAX);
     }
 
     fn corner(self: *const Plan, c: usize, r: usize) P {
@@ -170,7 +171,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
         .tombs => if (inner >= TOMB_INNER) {
             for (carve.corners(whole.shrunk(2))) |c| lv.set(c, .wall);
             if (rng.chance(GRAVE_CHANCE)) lv.set(mid, .grave) else if (rng.chance(TOMB_BARREL_CHANCE)) lv.putBarrel(lo.add(TOMB_BARREL_AT));
-            if (mask & bitOf(.n) == 0) lv.addTorch(.{ .x = mid.x, .y = lo.y });
+            if (mask & bitOf(.n) == 0) lv.addTorch(lume.torchWall(.{ .x = mid.x, .y = inside.lo.y }));
         },
         .sewers => {
             const across = mask & (bitOf(.w) | bitOf(.e)) != 0;

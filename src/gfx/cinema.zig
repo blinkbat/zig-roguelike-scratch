@@ -29,6 +29,8 @@ const Bloom = struct { shader: rl.Shader, field: i32, visibility: i32, glints: i
 const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, daylight: i32, brightness: i32, direction: i32 };
 
 const FOCUS_MAX: f32 = 0.24;
+/// Screen pixels between the bloom blur's taps, across then down.
+const BLOOM_STEP: f32 = 2.0;
 /// Rows from the hero that stay sharp, and from which scenery is softened fully.
 const SHARP_ROWS: f32 = 3.5;
 const SOFT_ROWS: f32 = 7.5;
@@ -125,14 +127,14 @@ pub const Cinema = struct {
         const glints = l.glintTexture();
         if (visibility != null and glints != null and look.beginTarget(&self.spread, size, outer, rl.Color.black)) {
             rl.beginShaderMode(b.shader);
-            self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ 2.0, 0 }, 1);
+            self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ BLOOM_STEP, 0 }, 1);
             drawTarget(scene);
             rl.endShaderMode();
             look.endTarget(outer);
             copyTarget(scene);
             rl.beginBlendMode(.additive);
             rl.beginShaderMode(b.shader);
-            self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ 0, 2.0 }, 0);
+            self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ 0, BLOOM_STEP }, 0);
             drawTarget(self.spread.?.texture);
             rl.endShaderMode();
             rl.endBlendMode();
@@ -143,7 +145,7 @@ pub const Cinema = struct {
         rl.setShaderValueTexture(b.shader, b.field, self.field.?);
         rl.setShaderValueTexture(b.shader, b.visibility, visibility);
         rl.setShaderValueTexture(b.shader, b.glints, glints);
-        look.setMapView(b, .{ .origin = origin, .cell = cell, .screen = .{ @floatFromInt(scene.width), @floatFromInt(scene.height) } });
+        look.setMapView(b, .{ .origin = origin, .cell = cell, .screen = look.sizeOf(scene) });
         look.setUniform(b.shader, b.direction, direction);
         look.setUniform(b.shader, b.extract, extract);
     }
@@ -153,7 +155,8 @@ pub const Cinema = struct {
         const strength = focusStrength(t, at, hero);
         if (strength <= 0) return null;
         const f = self.focus orelse return null;
-        const focused = Focused{ .texel = .{ 1 / @as(f32, @floatFromInt(tex.width)), 1 / @as(f32, @floatFromInt(tex.height)) }, .strength = strength };
+        const size = look.sizeOf(tex);
+        const focused = Focused{ .texel = .{ 1 / size[0], 1 / size[1] }, .strength = strength };
         rl.beginShaderMode(f.shader);
         focused.set(f.shader, f.texel, f.strength);
         return focused;
@@ -181,8 +184,7 @@ pub const Cinema = struct {
 const drawTarget = look.drawTarget;
 
 fn copyTarget(t: rl.Texture2D) void {
-    rl.gl.rlSetBlendFactors(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
-    rl.beginBlendMode(.custom);
+    look.beginBlend(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
     drawTarget(t);
     rl.endBlendMode();
 }
@@ -243,11 +245,8 @@ const AIR_FS = look.FS_HEAD ++ FIELD_FS ++ look.glslConsts(.{ .SHAFT_NEAR = SHAF
     \\uniform float brightness;
     \\uniform vec2 direction;
     \\float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-    \\float noise(vec2 p) {
-    \\    vec2 i = floor(p), f = fract(p);
-    \\    f = f * f * (3.0 - 2.0 * f);
-    \\    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0)), f.x), f.y);
-    \\}
+    \\
+++ look.VALUE_NOISE_FS ++
     \\vec4 softField(vec2 p) {
     \\    vec2 i = floor(p - 0.5), f = smoothstep(vec2(0.0), vec2(1.0), fract(p - 0.5));
     \\    return mix(mix(fieldAt(i), fieldAt(i + vec2(1.0, 0.0)), f.x), mix(fieldAt(i + vec2(0.0, 1.0)), fieldAt(i + vec2(1.0)), f.x), f.y);

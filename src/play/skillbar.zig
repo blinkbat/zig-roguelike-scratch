@@ -144,11 +144,21 @@ pub const Act = enum {
         return a.reticle() == .bow and a.bolt() == null;
     }
 
+    fn declares(a: Act, comptime decl: []const u8) bool {
+        return switch (a) {
+            inline else => |t| comptime has(t, decl),
+        };
+    }
+
+    fn declOr(a: Act, comptime decl: []const u8, default: anytype) @TypeOf(default) {
+        return switch (a) {
+            inline else => |t| if (comptime has(t, decl)) @field(module(t).?, decl) else default,
+        };
+    }
+
     /// Spends no turn: Juke alone.
     pub fn free(a: Act) bool {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, "FREE")) module(t).?.FREE else false,
-        };
+        return a.declOr("FREE", false);
     }
 
     /// Turns using it spends: none for a free action or the set modifier.
@@ -158,9 +168,7 @@ pub const Act = enum {
 
     /// The flask it drinks.
     pub fn flaskOf(a: Act) ?flask.Kind {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, "KIND")) module(t).?.KIND else null,
-        };
+        return a.declOr("KIND", @as(?flask.Kind, null));
     }
 
     /// Furthest target in cells; zero for actions without a reticle.
@@ -176,9 +184,7 @@ pub const Act = enum {
 
     /// A rush's nearest mark.
     pub fn nearest(a: Act) i32 {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, "MIN_RANGE")) module(t).?.MIN_RANGE else MELEE_REACH,
-        };
+        return a.declOr("MIN_RANGE", MELEE_REACH);
     }
 
     /// A missile's marks, a leap's landings, a swing's or a rush's: what its reticle holds legal.
@@ -193,29 +199,21 @@ pub const Act = enum {
 
     /// Not an arrow: what it is called, and it has no arrow's physical hit nor picture.
     pub fn bolt(a: Act) ?[]const u8 {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, "BOLT")) module(t).?.BOLT else null,
-        };
+        return a.declOr("BOLT", @as(?[]const u8, null));
     }
 
     /// It vanishes and reappears rather than jumps.
     pub fn teleports(a: Act) bool {
-        return switch (a) {
-            inline else => |t| comptime has(t, "TELEPORTS"),
-        };
+        return a.declares("TELEPORTS");
     }
 
     /// Its swing strikes an arc round the tile aimed at.
     pub fn sweeps(a: Act) bool {
-        return switch (a) {
-            inline else => |t| comptime has(t, "arc"),
-        };
+        return a.declares("arc");
     }
 
     pub fn cost(a: Act) i32 {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, "COST")) module(t).?.COST else 0,
-        };
+        return a.declOr("COST", @as(i32, 0));
     }
 
     /// An elemental skill's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
@@ -229,16 +227,12 @@ pub const Act = enum {
     }
 
     pub fn element(a: Act) ?damage.Element {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, "ELEMENT")) module(t).?.ELEMENT else null,
-        };
+        return a.declOr("ELEMENT", @as(?damage.Element, null));
     }
 
     /// What the log says the hero did, when no blow or barrel says it.
     pub fn done(a: Act) ?[]const u8 {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, "DONE")) module(t).?.DONE else null,
-        };
+        return a.declOr("DONE", @as(?[]const u8, null));
     }
 
     /// Its physical and elemental rolls before its attribute; an arrow's physical is the bow's.
@@ -265,51 +259,37 @@ pub const Act = enum {
 
     /// Its missile bursts over an area where it strikes.
     pub fn bursts(a: Act) bool {
-        return switch (a) {
-            inline else => |t| comptime has(t, "burst"),
-        };
+        return a.declares("burst");
     }
 
     /// Its bolt leaps on from what it strikes to other foes.
     pub fn chains(a: Act) bool {
-        return switch (a) {
-            inline else => |t| comptime has(t, "JUMPS"),
-        };
+        return a.declares("JUMPS");
     }
 
     /// What it strikes may be afflicted, by its own roll.
     pub fn afflicts(a: Act) bool {
-        return switch (a) {
-            inline else => |t| comptime has(t, "afflict"),
-        };
+        return a.declares("afflict");
     }
 
     /// Cast at once, it strikes the cells round the hero.
     pub fn surrounds(a: Act) bool {
-        return switch (a) {
-            inline else => |t| comptime has(t, "around"),
-        };
+        return a.declares("around");
     }
 
     /// Cast at once, it shields the hero.
     pub fn wards(a: Act) bool {
-        return switch (a) {
-            inline else => |t| comptime has(t, "Ward"),
-        };
+        return a.declares("Ward");
     }
 
     /// A body its blow leaves alive is knocked back.
     pub fn knocks(a: Act) bool {
-        return switch (a) {
-            inline else => |t| comptime has(t, "knocked"),
-        };
+        return a.declares("knocked");
     }
 
     /// Turns after it is used before it can be again.
     pub fn cooldown(a: Act) u8 {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, "COOLDOWN")) module(t).?.COOLDOWN else 0,
-        };
+        return a.declOr("COOLDOWN", @as(u8, 0));
     }
 
     pub fn index(a: Act) usize {

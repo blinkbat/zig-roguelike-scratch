@@ -227,7 +227,8 @@ current number of skills, existing character book, native font, and simple artwo
 3. Center the authored graph within its region. Reserve enough room around its edges for
    names, rank plaques, arrow bends, and the focus border. Avoid stretching the Knight's
    three nodes to fill every available corner.
-4. Draw connections first, then sockets, then symbols, then rank plaques, then focus.
+4. Draw connections first, then sockets, then focus, then symbols, then rank plaques, so a
+   plaque sits over the focus border's corner.
    Lines should end outside tiles and text; they should not run through an icon.
 5. Keep explanatory text beside the graph. Compact names near tiles are acceptable, but
    full descriptions inside every tile would turn the map back into a stack of cards.

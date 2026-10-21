@@ -433,8 +433,7 @@ pub const LevelUp = struct {
             const a = self.alpha() * std.math.clamp(t / LEVEL_IN_S, 0, 1) * (0.4 + shine * 0.6);
             pixel.fleck(spark, 0.7 + phase * 0.45, k, look.fade(look.LEVEL_GOLD, a));
             if (shine > GLINT_FLASH) {
-                pixel.rect(spark, 3, 1, k, look.fade(look.LEVEL_CORE, a * GLINT_CROSS_A));
-                pixel.rect(spark, 1, 3, k, look.fade(look.LEVEL_CORE, a * GLINT_CROSS_A));
+                pixel.cross(spark, 3, k, look.fade(look.LEVEL_CORE, a * GLINT_CROSS_A));
             }
         }
     }
@@ -805,8 +804,7 @@ pub const Fx = struct {
             const cy = y + cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
             const across = @as(f32, look.SPRITE_PX) * 0.07;
             const col = look.fade(ink, 0.7 + @sin(t * 3 + phase) * 0.2);
-            pixel.rect(.{ .x = cx, .y = cy }, across, 1, pxScale(cell), col);
-            pixel.rect(.{ .x = cx, .y = cy }, 1, across, pxScale(cell), col);
+            pixel.cross(.{ .x = cx, .y = cy }, across, pxScale(cell), col);
         }
     }
 
@@ -945,7 +943,7 @@ pub const Fx = struct {
                 const v = projected(from, ox, oy, cell);
                 const w = projected(p, ox, oy, cell);
                 pixel.line(v, w, 3, k, look.fade(look.LIGHTNING, alpha * 0.28));
-                pixel.line(v, w, 1, k, look.fade(look.FIRE_CORE, alpha));
+                pixel.line(v, w, 1, k, look.fade(look.LIGHTNING_CORE, alpha));
                 if (i % 6 == 3) {
                     const tip = rl.Vector2{ .x = w.x + (w.y - v.y) * 1.8, .y = w.y - (w.x - v.x) * 1.8 };
                     const at = mathx.cellOf(unprojected(tip, ox, oy, cell));

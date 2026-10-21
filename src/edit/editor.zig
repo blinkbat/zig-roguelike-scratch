@@ -2138,7 +2138,7 @@ fn drawTools(ed: *Editor, g: *game.Game, top: i32) i32 {
         const live = t.fits(ed.here());
         const h = hot(ed, icon, live, false, t.tip());
         plate(icon, t.eql(ed.tool), h.hot);
-        const pic = rl.Rectangle{ .x = icon.x + (icon.width - ICON_PIC) / 2, .y = icon.y + 3, .width = ICON_PIC, .height = ICON_PIC };
+        const pic = pictureIn(icon, ICON_PIC, 3);
         if (t == .paint) swatch(g, ed.ink.get(.first), pic) else figure(g, toolPicture(g, t), t.look_(), pic);
         if (!live) rl.drawRectangleRec(icon, UNLIVE);
         textFace(g).draw(key, @as(i32, @intFromFloat(icon.x)) + 3, @as(i32, @intFromFloat(icon.y)) + 1, SMALL, look.DIM);
@@ -3108,8 +3108,12 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
         while (cells.next()) |q| {
             const p = m.add(q);
             const k = bd.at(q);
-            if (view.holds(p)) ghostInk(ed, g, c, p, bd.tile[k]);
+            if (!view.holds(p)) continue;
+            ghostInk(ed, g, c, p, bd.tile[k]);
+            if (bd.barrel[k]) ghostTool(g, ed.cellRect(c, p), .barrel);
         }
+        for (bd.torch.slice()) |t| if (view.holds(m.add(t))) ghostTool(g, ed.cellRect(c, m.add(t)), .torch);
+        for (bd.foe[0..bd.foe_n]) |f| if (view.holds(m.add(f.at))) ghostTool(g, ed.cellRect(c, m.add(f.at)), .{ .foe = f.kind });
         outlineCells(ed, c, bd.box(m), if (ed.paintable()) PICKED else WARN);
         return;
     }
@@ -3134,16 +3138,15 @@ fn drawCursor(ed: *Editor, g: *game.Game, c: rl.Rectangle) void {
     }
     const r = ed.cellRect(c, m);
     const ok = if (erase) removable(ed, m) else legal(ed, m);
-    if (!erase) {
-        if (toolPicture(g, ed.tool)) |t| {
-            look.stretch(t, r, GHOST);
-        } else {
-            const l = ed.tool.look_();
-            glyph(g, l.ch, r, look.fade(l.fg, GHOST_A));
-        }
-    }
+    if (!erase) ghostTool(g, r, ed.tool);
     rl.drawRectangleLinesEx(r, INK_EDGE, if (ok) HOVER else WARN);
     if (!ok) rl.drawRectangleRec(r, CUT_OFF);
+}
+
+fn ghostTool(g: *game.Game, r: rl.Rectangle, tool: Tool) void {
+    if (toolPicture(g, tool)) |t| return look.stretch(t, r, GHOST);
+    const l = tool.look_();
+    glyph(g, l.ch, r, look.fade(l.fg, GHOST_A));
 }
 
 fn ghostInk(ed: *Editor, g: *game.Game, c: rl.Rectangle, p: P, t: grid.Tile) void {
@@ -3367,7 +3370,7 @@ fn drawObjects(ed: *Editor, g: *game.Game) void {
         const r = cells.at(i);
         const hh = hot(ed, r, true, true, seenName(s));
         plate(r, i == ed.seen_at, hh.hot);
-        seenPicture(g, s, .{ .x = r.x + (r.width - VIEW_PIC) / 2, .y = r.y + 4, .width = VIEW_PIC, .height = VIEW_PIC });
+        seenPicture(g, s, pictureIn(r, VIEW_PIC, 4));
         if (hh.hit) ed.seen_at = i;
     }
     const s = SEEN[ed.seen_at];
@@ -3499,6 +3502,11 @@ fn fieldRow(ed: *Editor, g: *game.Game, r: rl.Rectangle) void {
 
 fn backButton(ed: *Editor, g: *game.Game, bx: i32, y: i32, comptime label: []const u8) void {
     if (buttonOn(ed, g, modalButton(bx, y, 0), keyed(label, Desk.BACK_CAPTION), false, true, true, null)) ed.modal = .none;
+}
+
+/// A square picture `size` across, centred in a button `top` below its edge.
+fn pictureIn(r: rl.Rectangle, size: f32, top: f32) rl.Rectangle {
+    return .{ .x = r.x + (r.width - size) / 2, .y = r.y + top, .width = size, .height = size };
 }
 
 fn sprite(t: rl.Texture2D, r: rl.Rectangle) void {

@@ -18,6 +18,9 @@ const MAP_W: i32 = grid.W * SUB;
 const MAP_H: i32 = grid.H * SUB;
 const NONE_BAKED = [2]i32{ MAP_H, 0 };
 const TEXELS: usize = @intCast(MAP_W * MAP_H);
+const Layer = enum { map, glints, fog };
+/// Each layer's texel where nothing is remembered.
+const UNSEEN = std.EnumArray(Layer, rl.Color).init(.{ .map = rl.Color.blank, .glints = rl.Color.blank, .fog = rl.Color.white });
 /// DST_COLOR/SRC_COLOR blending doubles the stored light.
 pub const OVERBRIGHT: f32 = 2.0;
 
@@ -417,7 +420,7 @@ fn smoothSpecular(toward: [3]f32, power: f32) f32 {
     const len = @sqrt(@reduce(.Add, d * d));
     if (len <= 1e-5 or d[2] <= 0) return 0;
     const half = d / splat(len) + VIEWER;
-    const h = half / splat(@sqrt(@reduce(.Add, half * half)));
+    const h = sky.unit(half);
     return std.math.pow(f32, @max(0, h[2]), power);
 }
 
@@ -681,7 +684,7 @@ pub const Shine = struct {
 };
 
 fn recolour(c: rl.Color, rgb: Rgb) rl.Color {
-    return colourOf(rgb, @as(f32, @floatFromInt(c.a)) / 255);
+    return colourOf(rgb, look.alphaOf(c));
 }
 
 /// `lit` combines sight and memory; `memory` retains only exploration visibility.
@@ -782,10 +785,8 @@ pub const Light = struct {
     /// Cached inclusive cloud corners and sample time in seconds.
     clouds_held: ?struct { box: grid.Box, t: f32 } = null,
     t: mathx.Seconds,
-    map: [TEXELS]rl.Color,
-    glints: [TEXELS]rl.Color,
-    fog: [TEXELS]rl.Color,
-    /// The rows of `map` baked since the texture was last sent, all it needs sent.
+    texels: std.EnumArray(Layer, [TEXELS]rl.Color),
+    /// The rows of `texels` baked since the texture was last sent, all it needs sent.
     baked: [2]i32,
     scratch: grid.Level,
     gpu: Gpu,
@@ -814,9 +815,7 @@ pub const Light = struct {
         @memset(&l.scratch.tile, .floor);
         @memset(&l.scratch.los, false);
         l.grounded();
-        @memset(&l.map, rl.Color.blank);
-        @memset(&l.glints, rl.Color.blank);
-        @memset(&l.fog, rl.Color.white);
+        for (std.enums.values(Layer)) |k| @memset(l.texels.getPtr(k), UNSEEN.get(k));
         l.baked = .{ 0, MAP_H };
         l.soften();
         return l;
@@ -1282,24 +1281,27 @@ pub const Light = struct {
                 break;
             }
         }
+        const map = self.texels.getPtr(.map);
+        const glints = self.texels.getPtr(.glints);
+        const fog = self.texels.getPtr(.fog);
         var ty = @max(t0.y, c.y * SUB);
         while (ty < @min(t1.y, (c.y + 1) * SUB)) : (ty += 1) {
             var tx = @max(t0.x, c.x * SUB);
             while (tx < @min(t1.x, (c.x + 1) * SUB)) : (tx += 1) {
                 const i: usize = @intCast(ty * MAP_W + tx);
-                self.glints[i] = rl.Color.blank;
+                glints[i] = UNSEEN.get(.glints);
                 if (dark) {
-                    self.map[i] = rl.Color.blank;
-                    self.fog[i] = rl.Color.white;
+                    map[i] = UNSEEN.get(.map);
+                    fog[i] = UNSEEN.get(.fog);
                     continue;
                 }
                 const q = texelCentre(@intCast(tx), @intCast(ty));
                 const v = viewOf(sightOf(&patch, ground, q[0], q[1]), q, &fade);
-                self.fog[i] = look.fade(rl.Color.white, 1 - v.memory);
+                fog[i] = look.fade(rl.Color.white, 1 - v.memory);
                 const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
-                self.map[i] = texelOf(self.shade(lv, torches, effects, q, i, v, if (ray) |*r| r else null, cloud), v.lit);
+                map[i] = texelOf(self.shade(lv, torches, effects, q, i, v, if (ray) |*r| r else null, cloud), v.lit);
                 if (wet and v.lit > FAINT and lv.isLit(c))
-                    self.glints[i] = colourOf(self.waterGlint(torches, effects, q, i, if (ray) |*r| r else null, cloud), 1);
+                    glints[i] = colourOf(self.waterGlint(torches, effects, q, i, if (ray) |*r| r else null, cloud), 1);
             }
         }
     }
@@ -1435,11 +1437,10 @@ pub const Light = struct {
     /// `ox, oy` is where the map's top-left corner lands on screen.
     pub fn drawMap(self: *Light, ox: i32, oy: i32, cell: i32) void {
         const tex = self.mapTexture() orelse return;
-        rl.gl.rlSetBlendFactors(rl.gl.rl_dst_color, rl.gl.rl_src_color, rl.gl.rl_func_add);
-        rl.beginBlendMode(.custom);
+        look.beginBlend(rl.gl.rl_dst_color, rl.gl.rl_src_color, rl.gl.rl_func_add);
         look.overFloor(tex, ox, oy, cell);
         rl.endBlendMode();
-        if (self.gpu.fog) |fog| {
+        if (self.gpu.layers.get(.fog)) |fog| {
             rl.beginBlendMode(.additive);
             look.stretch(fog, look.floorRect(ox, oy, cell), look.FOG);
             rl.endBlendMode();
@@ -1448,30 +1449,30 @@ pub const Light = struct {
 
     pub fn mapTexture(self: *Light) ?rl.Texture2D {
         self.uploadMap();
-        return self.gpu.map;
+        return self.gpu.layers.get(.map);
     }
 
     pub fn glintTexture(self: *Light) ?rl.Texture2D {
         self.uploadMap();
-        return self.gpu.glints;
+        return self.gpu.layers.get(.glints);
     }
 
     fn uploadMap(self: *Light) void {
-        const tex = self.gpu.map orelse return;
+        if (self.gpu.layers.get(.map) == null) return;
         const from, const to = self.baked;
         if (to > from) {
             const rect = look.rect(0, from, MAP_W, to - from);
-            rl.updateTextureRec(tex, rect, &self.map[@intCast(from * MAP_W)]);
-            if (self.gpu.glints) |g| rl.updateTextureRec(g, rect, &self.glints[@intCast(from * MAP_W)]);
-            if (self.gpu.fog) |f| rl.updateTextureRec(f, rect, &self.fog[@intCast(from * MAP_W)]);
+            for (std.enums.values(Layer)) |k| {
+                if (self.gpu.layers.get(k)) |t| rl.updateTextureRec(t, rect, &self.texels.getPtr(k)[@intCast(from * MAP_W)]);
+            }
         }
         self.baked = NONE_BAKED;
     }
 
     /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
     pub fn drawBody(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const Shine, flash: f32, fade_bounds: [2]f32) void {
-        const w: f32 = @floatFromInt(tex.width);
-        const h: f32 = @floatFromInt(tex.height);
+        const size = look.sizeOf(tex);
+        const w, const h = size;
         const src = look.rect(0, 0, if (left) -tex.width else tex.width, tex.height);
         const normals = self.gpu.art(tex).normals;
         const sh = self.gpu.body;
@@ -1487,7 +1488,6 @@ pub const Light = struct {
             pos[i] = .{ (l.drawn[0] - centre[0]) * w, (l.drawn[1] - centre[1]) * h, BODY_LIGHT_Z };
             col[i] = l.colour;
         }
-        const size = [2]f32{ w, h };
         const flip: f32 = if (left) -1 else 1;
         const ambient: [3]f32 = s.ambient;
         const emission: [3]f32 = s.emission * splat(s.sight);
@@ -1512,11 +1512,16 @@ pub const Light = struct {
     }
 
     pub fn footY(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle) f32 {
-        return dest.y + self.gpu.art(tex).foot * dest.height / @as(f32, @floatFromInt(tex.height));
+        return dest.y + artY(tex, dest, self.gpu.art(tex).foot);
     }
 
     pub fn topY(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle) f32 {
-        return dest.y + self.gpu.art(tex).top * dest.height / @as(f32, @floatFromInt(tex.height));
+        return dest.y + artY(tex, dest, self.gpu.art(tex).top);
+    }
+
+    /// Screen pixels below `dest`'s top that texel row `row` of `tex` lands.
+    fn artY(tex: rl.Texture2D, dest: rl.Rectangle, row: f32) f32 {
+        return row * dest.height / @as(f32, @floatFromInt(tex.height));
     }
 
     pub fn beginMirrorFade(self: *const Light, bounds: [2]f32) bool {
@@ -1533,7 +1538,7 @@ pub const Light = struct {
         const foot = self.gpu.art(tex).foot;
         const tall: f32 = @floatFromInt(tex.height);
         const share = foot / tall;
-        const height = foot * dest.height / tall;
+        const height = artY(tex, dest, foot);
         const x = dest.x + dest.width * 0.5;
         const y = dest.y + height;
         if (self.gpu.glow) |g| {
@@ -1546,11 +1551,10 @@ pub const Light = struct {
     /// Shadows accumulate by minimum in a screen mask; `outer` restores the framebuffer. False without GL.
     pub fn beginShadows(self: *Light, screen: P, outer: u32) bool {
         const pool = self.gpu.shade orelse return false;
-        if (self.gpu.shadow == null or self.gpu.receiver == null or self.gpu.map == null) return false;
+        if (self.gpu.shadow == null or self.gpu.receiver == null or self.gpu.layers.get(.map) == null) return false;
         self.gpu.outer = outer;
         if (!look.beginTarget(&self.gpu.mask, screen, outer, rl.Color.white)) return false;
-        rl.gl.rlSetBlendFactors(rl.gl.rl_one, rl.gl.rl_one, rl.gl.rl_min);
-        rl.beginBlendMode(.custom);
+        look.beginBlend(rl.gl.rl_one, rl.gl.rl_one, rl.gl.rl_min);
         rl.beginShaderMode(pool);
         return true;
     }
@@ -1567,7 +1571,7 @@ pub const Light = struct {
         defer rl.endBlendMode();
         rl.beginShaderMode(receiver.shader);
         defer rl.endShaderMode();
-        rl.setShaderValueTexture(receiver.shader, receiver.lightmap, self.gpu.map.?);
+        rl.setShaderValueTexture(receiver.shader, receiver.lightmap, self.gpu.layers.get(.map).?);
         look.setMapView(receiver, .of(ox, oy, cell, t.width, t.height));
         look.drawTarget(t);
     }
@@ -1647,7 +1651,7 @@ pub const Light = struct {
     /// `joined` is (w, e, n, s); `softness` is (tip, foot). End with `endSilhouettes`.
     fn beginSilhouettes(self: *const Light, tex: rl.Texture2D, foot: f32, joined: [4]f32, softness: [2]f32) bool {
         const sh = self.gpu.shadow orelse return false;
-        const size = [2]f32{ @floatFromInt(tex.width), @floatFromInt(tex.height) };
+        const size = look.sizeOf(tex);
         rl.beginShaderMode(sh.shader);
         look.setUniform(sh.shader, sh.size, size);
         look.setUniform(sh.shader, sh.foot, foot);
@@ -2010,9 +2014,7 @@ const SOLID_A: u8 = 25;
 const NO_FIGURES: [look.FIGURES]?rl.Texture2D = @splat(null);
 
 const Gpu = struct {
-    map: ?rl.Texture2D = null,
-    glints: ?rl.Texture2D = null,
-    fog: ?rl.Texture2D = null,
+    layers: std.EnumArray(Layer, ?rl.Texture2D) = .initFill(null),
     glow: ?rl.Texture2D = null,
     streak: ?rl.Texture2D = null,
     body: ?BodyShader = null,
@@ -2028,9 +2030,7 @@ const Gpu = struct {
 
     fn load() Gpu {
         var g = Gpu{};
-        g.map = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
-        g.glints = look.canvas(MAP_W, MAP_H, rl.Color.blank, .bilinear);
-        g.fog = look.canvas(MAP_W, MAP_H, rl.Color.white, .bilinear);
+        for (std.enums.values(Layer)) |k| g.layers.set(k, look.canvas(MAP_W, MAP_H, UNSEEN.get(k), .bilinear));
         g.glow = look.radial(GLOW_PX, glowAlpha);
         g.streak = look.field(STREAK_PX[0], STREAK_PX[1], streakAlpha);
         g.body = look.program(BodyShader, BODY_FS);
@@ -2136,8 +2136,7 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
             const gx = texel(&height, w, h, x + 1, y) - texel(&height, w, h, x - 1, y);
             const gy = texel(&height, w, h, x, y + 1) - texel(&height, w, h, x, y - 1);
             const n = Rgb{ -gx * BEVEL_DEPTH, -gy * BEVEL_DEPTH, 1 };
-            const unit = n / splat(@sqrt(@reduce(.Add, n * n)));
-            px[@intCast(y * w + x)] = colourOf(unit * splat(0.5) + splat(0.5), 1);
+            px[@intCast(y * w + x)] = colourOf(sky.unit(n) * splat(0.5) + splat(0.5), 1);
         }
     }
     return look.clamped(look.rgba(&px, w, h), .point);
@@ -2313,7 +2312,7 @@ test "smooth water glints follow light direction and respect walls and memory" {
     const before = lv.lit;
     l.bake(&lv, .{ .x = 18, .y = 10 }, .{ .x = 23, .y = 15 });
     var hits: usize = 0;
-    for (l.glints) |pixel| {
+    for (l.texels.getPtrConst(.glints)) |pixel| {
         if (pixel.r > 0 or pixel.g > 0 or pixel.b > 0) hits += 1;
     }
     try std.testing.expect(hits > 0);
@@ -2321,7 +2320,7 @@ test "smooth water glints follow light direction and respect walls and memory" {
     @memset(&lv.lit, false);
     l.settle(&lv);
     l.bake(&lv, .{ .x = 18, .y = 10 }, .{ .x = 23, .y = 15 });
-    for (l.glints) |pixel| try std.testing.expectEqual(rl.Color.blank, pixel);
+    for (l.texels.getPtrConst(.glints)) |pixel| try std.testing.expectEqual(rl.Color.blank, pixel);
     std.debug.print("smooth water: {d} glint texels, peak {d:.3}; wall and memory blocked; visibility unchanged\n", .{ hits, lit });
 }
 
@@ -2474,7 +2473,7 @@ test "shadow receivers fade at sight and disappear in remembered or unseen groun
     var remembered_: usize = 0;
     var unseen: usize = 0;
     for (10 * SUB..40 * SUB) |x| {
-        const c = l.map[20 * SUB * MAP_W + x];
+        const c = l.texels.getPtrConst(.map)[20 * SUB * MAP_W + x];
         if (x < 18 * SUB) {
             try std.testing.expectEqual(@as(u8, 255), c.a);
             live += 1;
@@ -2566,12 +2565,12 @@ test "the edge of sight ramps across texels instead of stepping at a cell" {
     const row: i32 = 30 * SUB;
     var biggest: f32 = 0;
     var ramp: usize = 0;
-    const from = lum(rgbOf(l.map[@intCast(row * MAP_W + 12 * SUB)]));
-    const to = lum(rgbOf(l.map[@intCast(row * MAP_W + 28 * SUB)]));
+    const from = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * MAP_W + 12 * SUB)]));
+    const to = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * MAP_W + 28 * SUB)]));
     var tx: i32 = 12 * SUB;
     while (tx < 28 * SUB) : (tx += 1) {
-        const a = lum(rgbOf(l.map[@intCast(row * MAP_W + tx)]));
-        const b = lum(rgbOf(l.map[@intCast(row * MAP_W + tx + 1)]));
+        const a = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * MAP_W + tx)]));
+        const b = lum(rgbOf(l.texels.getPtrConst(.map)[@intCast(row * MAP_W + tx + 1)]));
         biggest = @max(biggest, @abs(b - a));
         if (@abs(b - a) > 0.001) ramp += 1;
     }
@@ -2602,7 +2601,7 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
         if (m == 0) dark += 1;
         if (m > 0 and m < 1) fading += 1;
         const want = texelOf(l.at(&lv, torches, q), l.viewAt(q).lit);
-        if (!std.meta.eql(want, l.map[i])) off += 1;
+        if (!std.meta.eql(want, l.texels.getPtrConst(.map)[i])) off += 1;
     }
     std.debug.print("whole floor baked: {d} texels never seen, {d} fading in, {d} off what `at` gives\n", .{ dark, fading, off });
     try std.testing.expect(dark > 0 and fading > 0);
@@ -2625,7 +2624,7 @@ test "fog tint follows the soft exploration edge without changing visibility" {
     var covered: usize = 0;
     for (20 * SUB..21 * SUB) |y| {
         for (18 * SUB..22 * SUB) |x| {
-            const pixel = l.fog[y * MAP_W + x];
+            const pixel = l.texels.getPtrConst(.fog)[y * MAP_W + x];
             try std.testing.expectEqual(rl.Color.white.r, pixel.r);
             try std.testing.expectEqual(rl.Color.white.g, pixel.g);
             try std.testing.expectEqual(rl.Color.white.b, pixel.b);

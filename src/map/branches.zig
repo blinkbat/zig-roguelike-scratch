@@ -41,7 +41,7 @@ const Graph = struct {
     }
 
     fn blockAt(node: usize) P {
-        return .{ .x = @intCast(node % W), .y = @intCast(@divTrunc(node, W)) };
+        return mathx.unslot(node, W);
     }
 
     fn nodeOf(block: P) usize {
@@ -438,7 +438,7 @@ test "a clearing without dead ends puts chests in sheltered corners and barrels 
     try std.testing.expectEqual(@as(usize, 0), g.n);
     const result = improve(&lv, 44, &.{origin}, .{ .rewards = .chests });
     try std.testing.expectEqual(Reward.chest.rule().total, result.chests);
-    try std.testing.expect(result.barrels >= 12);
+    try std.testing.expect(result.barrels >= Reward.barrel.rule().total / 2);
     for (lv.tile, 0..) |t, i| {
         if (t == .chest) {
             const p = grid.Level.of(i);

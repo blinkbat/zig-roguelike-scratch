@@ -147,10 +147,15 @@ fn stretch(v: f32) f32 {
 fn river(lv: *grid.Level, rng: *mathx.Rng, height: *[grid.CELLS]f32) void {
     var top: f32 = 0;
     for (height) |h| top = @max(top, h);
-    var at: P = for (0..SOURCE_TRIES) |_| {
-        const q = grid.Box.inMap(SOURCE_MARGIN).roll(rng);
-        if (height[grid.Level.idx(q)] >= top * SOURCE_OVER) break q;
-    } else return;
+    const Source = struct {
+        height: *const [grid.CELLS]f32,
+        least: f32,
+
+        fn high(s: @This(), q: P) bool {
+            return s.height[grid.Level.idx(q)] >= s.least;
+        }
+    };
+    var at = grid.Box.inMap(SOURCE_MARGIN).rollWhere(rng, SOURCE_TRIES, Source{ .height = height, .least = top * SOURCE_OVER }, Source.high) orelse return;
     const dirs = mathx.CARDINALS;
     for (0..RIVER_STEPS) |_| {
         const i = grid.Level.idx(at);

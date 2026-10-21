@@ -86,6 +86,7 @@ const TAB_Y = 76;
 const TAB_W = 184;
 const TAB_H = 34;
 const TAB_GAP = 9;
+const TAB_MID = TAB_Y + TAB_H / 2;
 const OFF_TAB_A: f32 = 0.7;
 const TABS_X: i32 = @divExact(W - @as(i32, PAGES.len) * TAB_W - (@as(i32, PAGES.len) - 1) * TAB_GAP, 2);
 /// Room each side of the tabs for the shoulder buttons' icons.
@@ -196,17 +197,19 @@ pub const Book = struct {
     zoom: f32 = trees.ZOOM_START,
     pan: rl.Vector2 = .{ .x = 0, .y = 0 },
     destination_index: usize = 0,
-    direct: bool = false,
     message: menu.Note(80) = .{},
 
     pub fn open(self: *Book) void {
-        if (self.page == .nearby) {
+        if (self.direct()) {
             const cursor = self.last_cursor;
             self.choose(self.last_page);
             self.cursor = cursor;
         }
         self.resetView();
-        self.direct = false;
+    }
+    /// Nearby opens on its own, without the other pages' tabs.
+    pub fn direct(self: *const Book) bool {
+        return self.page == .nearby;
     }
     pub fn choose(self: *Book, page: Page) void {
         if (page == .nearby and self.page != .nearby) {
@@ -231,6 +234,14 @@ pub const Book = struct {
     fn browse(self: *Book, i: usize) void {
         self.cursor = i;
         if (self.page == .passives) self.recentre();
+    }
+    /// Browses toward a bearing; with no node there, the cursor and the pan stay.
+    fn walkTree(self: *Book, dx: f32, dy: f32) void {
+        const next = progress.passives.step(self.cursor, dx, dy);
+        if (next != self.cursor) self.browse(next);
+    }
+    fn selectedSkill(self: *const Book, v: View) skillbar.Act {
+        return progress.skills(v.class)[self.cursor].act;
     }
     fn count(self: *const Book, v: View) usize {
         return switch (self.page) {
@@ -301,7 +312,7 @@ pub const Book = struct {
             .stats => null,
             .passives => if (v.growth.canAllocate(self.cursor)) .{ .passive = self.cursor } else null,
             .skills => blk: {
-                const act = progress.skills(v.class)[self.cursor].act;
+                const act = self.selectedSkill(v);
                 break :blk if (v.growth.canLearn(v.class, act)) .{ .skill = act } else null;
             },
             .nearby => v.nearby[self.cursor].command(),
@@ -327,7 +338,7 @@ pub const Book = struct {
             local.click = false;
         };
         if (menu.closed(st)) return .close;
-        if (!self.direct and (st.hit(.lb) or st.hit(.rb))) {
+        if (!self.direct() and (st.hit(.lb) or st.hit(.rb))) {
             self.choose(mathx.stepIn(Page, &PAGES, self.page, if (st.hit(.lb)) -1 else 1, 0));
             self.enter(v);
             return null;
@@ -336,7 +347,7 @@ pub const Book = struct {
             if (st.hit(menu.REMOVE)) return .{ .drop = self.cursor };
             if (st.hit(menu.CHANGE)) self.destination_index = mathx.wrap(self.destination_index, 1, self.selected(v).?.kind.slots().len);
         }
-        if (self.page == .skills and st.hit(menu.CHANGE)) return .{ .bindings = progress.skills(v.class)[self.cursor].act };
+        if (self.page == .skills and st.hit(menu.CHANGE)) return .{ .bindings = self.selectedSkill(v) };
         if (self.page == .passives) {
             if (st.hit(menu.CHANGE)) self.zoomBy(trees.ZOOM_STEP);
             if (st.hit(menu.REMOVE)) self.zoomBy(-trees.ZOOM_STEP);
@@ -348,7 +359,7 @@ pub const Book = struct {
                 self.zoom = trees.ZOOM_MIN;
                 self.recentre();
             }
-            if (st.tree.move) |d| self.browse(progress.passives.step(self.cursor, d.x, d.y));
+            if (st.tree.move) |d| self.walkTree(d.x, d.y);
             if (st.pointer) |p| if (trees.onCanvas(p) and st.scroll != 0) {
                 self.zoomBy(@as(f32, @floatFromInt(st.scroll)) * trees.ZOOM_WHEEL);
             };
@@ -357,7 +368,7 @@ pub const Book = struct {
             self.cursor = mathx.nudge(self.cursor, -st.scroll, self.count(v));
         }
         if (st.click) if (st.pointer) |p| {
-            if (!self.direct) for (PAGES, 0..) |page, i| if (look.holds(tabBox(i), p)) {
+            if (!self.direct()) for (PAGES, 0..) |page, i| if (look.holds(tabBox(i), p)) {
                 self.choose(page);
                 self.enter(v);
                 return null;
@@ -376,8 +387,7 @@ pub const Book = struct {
             if (self.listed()) {
                 if (d.y != 0 and self.count(v) > 0) self.cursor = mathx.wrap(self.cursor, d.y, self.count(v));
             } else if (self.page == .passives) {
-                const next = progress.passives.step(self.cursor, @floatFromInt(d.x), @floatFromInt(d.y));
-                if (next != self.cursor) self.browse(next);
+                self.walkTree(@floatFromInt(d.x), @floatFromInt(d.y));
             } else if (self.count(v) > 0) {
                 var boxes: [CELLS_MAX]rl.Rectangle = undefined;
                 for (0..self.count(v)) |i| boxes[i] = self.cellBox(i, v);
@@ -405,7 +415,7 @@ pub const Book = struct {
                 c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (v.growth.canAllocate(self.cursor)) 1 else look.FADED_A });
             },
             .skills => {
-                const act = progress.skills(v.class)[self.cursor].act;
+                const act = self.selectedSkill(v);
                 c.add(trees.bindBox(), menu.CHANGE, .{ .label = if (v.growth.unlocked(act)) verbOf(.bindings) else "Bindings" });
                 c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (v.growth.canLearn(v.class, act)) 1 else look.FADED_A });
             },
@@ -450,18 +460,17 @@ pub const Book = struct {
     }
     fn drawClamped(self: *const Book, source_face: *const font.Face, sprites: *const look.Sprites, screen: P, v: View) void {
         const surface = menu.Surface.of(screen, SIZE);
-        surface.begin();
+        surface.beginPanel(sprites, SIZE);
         defer rl.endMode2D();
         const scaled_face = surface.faceFor(source_face.*);
         const face = &scaled_face;
-        look.hudPanel(sprites, 0, 0, W, H, look.CARD_BG, look.LIT);
         var who: menu.Note(100) = .{};
         who.say("{s}   {s}", .{ v.name, v.class.title() });
         face.engraved(who.text(), LIST_X, HEADER_MID - font.HEAD / 2, font.HEAD, look.TEXT);
         var xp: menu.Note(100) = .{};
         xp.say("Level  {d}     XP  {d} / {d}", .{ v.growth.level, v.growth.xp, v.growth.needed() });
         face.drawMiddle(xp.text(), RIGHT, HEADER_MID, font.BODY, look.TEXT);
-        if (self.direct) face.engraved("NEARBY", LIST_X, TAB_Y + TAB_H / 2 - font.HEAD / 2, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| tab(face, tabBox(i), page, self.page == page, v.device);
+        if (self.direct()) face.engraved("NEARBY", LIST_X, TAB_MID - font.HEAD / 2, font.HEAD, look.TEXT) else for (PAGES, 0..) |page, i| tab(face, tabBox(i), page, self.page == page, v.device);
         if (self.treePanel() == null) rl.drawLine(DIVIDER_X, TOP, DIVIDER_X, DIVIDER_FOOT, look.EDGE);
         if (self.treePanel()) |panel| {
             trees.draw(panel, face, sprites, v.class, v.growth, self.treeView(), v.device, .{ .stats = v.stats(), .gear = v.inventory.gear }, surface);
@@ -483,10 +492,9 @@ pub const Book = struct {
                 .drawn => {},
             }
         }
-        if (!self.direct) {
-            const y = TAB_Y + TAB_H / 2;
-            look.Prompt.menuOn(v.device, .lb).draw(face, LIST_X + SHOULDER_W / 2, y, font.BODY, 1);
-            look.Prompt.menuOn(v.device, .rb).draw(face, W - LIST_X - SHOULDER_W / 2, y, font.BODY, 1);
+        if (!self.direct()) {
+            look.Prompt.menuOn(v.device, .lb).draw(face, LIST_X + SHOULDER_W / 2, TAB_MID, font.BODY, 1);
+            look.Prompt.menuOn(v.device, .rb).draw(face, W - LIST_X - SHOULDER_W / 2, TAB_MID, font.BODY, 1);
         }
     }
 
@@ -1045,4 +1053,25 @@ test "tree browsing is free and point actions issue one command" {
     _ = book.step(&.{ .pointer = surface.screenOf(.{ .x = canvas.x, .y = canvas.y }), .scroll = -1 }, screen, v);
     try std.testing.expect(book.treeActive() and book.zoom < trees.ZOOM_START);
     std.debug.print("tree book: spatial browsing and zoom spend no points; passive and skill selection return one command\n", .{});
+}
+
+test "a stick pushed where no passive lies keeps the pan, as the keys do" {
+    var inv = items.Inventory{};
+    var growth = progress.State.of(.archer);
+    const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = growth.attributes(.archer) };
+    const screen = P{ .x = 1280, .y = 720 };
+    const dead_end = found: for (0..progress.NODES.len) |i| {
+        for (mathx.CARDINALS) |delta| {
+            if (progress.passives.step(i, @floatFromInt(delta.x), @floatFromInt(delta.y)) == i) break :found .{ i, delta };
+        }
+    } else unreachable;
+    var book = Book{ .page = .passives, .cursor = dead_end[0] };
+    _ = book.step(&.{ .tree = .{ .pan = .{ .x = 1, .y = 1 }, .dt = 0.25 } }, screen, v);
+    const pan = book.pan;
+    try std.testing.expect(pan.x != 0 or pan.y != 0);
+    const move: rl.Vector2 = .{ .x = @floatFromInt(dead_end[1].x), .y = @floatFromInt(dead_end[1].y) };
+    _ = book.step(&.{ .tree = .{ .move = move } }, screen, v);
+    try std.testing.expectEqual(dead_end[0], book.cursor);
+    try std.testing.expectEqual(pan, book.pan);
+    std.debug.print("dead-end stick on node {d}: pan kept at {d:.1},{d:.1}\n", .{ dead_end[0], pan.x, pan.y });
 }

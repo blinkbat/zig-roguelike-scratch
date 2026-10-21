@@ -210,6 +210,10 @@ pub fn slot(x: i32, y: i32, w: usize, h: usize) ?usize {
     return @as(usize, @intCast(y)) * w + @as(usize, @intCast(x));
 }
 
+pub fn unslot(i: usize, w: usize) P {
+    return .{ .x = @intCast(i % w), .y = @intCast(i / w) };
+}
+
 /// Sight's round reach: a cell half a cell past `r` is still in it.
 pub fn reaches(a: P, b: P, r: f32) bool {
     return distEuclid(a, b) <= r + 0.5;

@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
+const lume = @import("../lume.zig");
 const buildings = @import("../feature/buildings.zig");
 const setpiece = @import("../feature/setpiece.zig");
 
@@ -96,7 +97,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     var x = in.lo.x + 1;
     while (x < in.hi.x - 1) : (x += TORCH_EVERY) {
         if (rng.percent(p.torches) and torches < TORCHES_MOST) {
-            lv.addTorch(.{ .x = x, .y = keep.lo.y });
+            lv.addTorch(lume.torchWall(.{ .x = x, .y = in.lo.y }));
             torches += 1;
         }
     }

@@ -261,11 +261,18 @@ fn clear(lv: *const grid.Level, pool: *actor.Pool, p: P, start: P, spec: *const 
 }
 
 fn leadSpot(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec, others: usize) ?P {
-    for (0..SPOT_TRIES) |_| {
-        const p = grid.Box.inMap(1).roll(rng);
-        if (clear(lv, pool, p, start, spec, others)) return p;
-    }
-    return null;
+    const Clear = struct {
+        lv: *const grid.Level,
+        pool: *actor.Pool,
+        start: P,
+        spec: *const Spec,
+        others: usize,
+
+        fn at(c: @This(), p: P) bool {
+            return clear(c.lv, c.pool, p, c.start, c.spec, c.others);
+        }
+    };
+    return grid.Box.inMap(1).rollWhere(rng, SPOT_TRIES, Clear{ .lv = lv, .pool = pool, .start = start, .spec = spec, .others = others }, Clear.at);
 }
 
 fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, start: P, spec: *const Spec, others: usize) ?P {

@@ -552,11 +552,13 @@ const SLOT_TURN_PER_RING: f32 = 0.032;
 const STEP_COS: f32 = 0.5;
 const STEP_AHEAD: f32 = 0.65;
 
+const ARMS = std.enums.values(Arm);
+/// Radians between arms; each `Arm` stands this far anticlockwise of the next, as `SEAMS` joins them.
+const ARM_STEP = std.math.tau / @as(comptime_float, @floatFromInt(ARMS.len));
+
 fn armAngle(a: Arm) f32 {
     return switch (a) {
-        .wizard => 0,
-        .rogue => std.math.tau / 3.0,
-        .warrior => 2.0 * std.math.tau / 3.0,
+        inline else => |t| comptime ARM_STEP * @as(comptime_float, @floatFromInt(ARMS.len - 1 - @intFromEnum(t))),
     };
 }
 pub fn unitPos(i: usize) Point {
@@ -564,7 +566,7 @@ pub fn unitPos(i: usize) Point {
     const n = NODES[i];
     var angle = armAngle(n.arm);
     if (n.seam) |s| {
-        angle = armAngle(s.from()) - std.math.tau / 6.0;
+        angle = armAngle(s.from()) - ARM_STEP / 2.0;
     } else if (n.branch) |b| {
         angle += if (b.lane() == .next) -LANE_TURN else LANE_TURN;
         const slots = BRANCH_RINGS[n.ring - 1];

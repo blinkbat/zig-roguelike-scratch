@@ -66,6 +66,12 @@ pub const Surface = struct {
         rl.beginMode2D(.{ .target = .{ .x = 0, .y = 0 }, .offset = self.offset, .rotation = 0, .zoom = self.scale });
     }
 
+    /// `begin`, then a panel's card backing across `size`.
+    pub fn beginPanel(self: Surface, sprites: *const look.Sprites, size: mathx.P) void {
+        self.begin();
+        look.hudPanel(sprites, 0, 0, size.x, size.y, look.CARD_BG, look.LIT);
+    }
+
     /// `f` as this surface draws it: scaled, from the mipmapped atlas rather than the native-size ones.
     pub fn faceFor(self: Surface, f: font.Face) font.Face {
         var out = f;
@@ -305,14 +311,14 @@ pub fn heading(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: 
     const cx = @divTrunc(screen.x, 2);
     face.engravedMid(t, cx, y, size, col);
     const half = @min(@divTrunc(face.width(t, size), 2) + RULE_REACH, @divTrunc(screen.x, 2) - MARK_GAP);
-    rule(cx, y + @as(i32, @intFromFloat(@as(f32, @floatFromInt(size)) * RULE_DROP)), half, look.fade(accent, RULE_A * @as(f32, @floatFromInt(col.a)) / 255));
+    rule(cx, y + @as(i32, @intFromFloat(@as(f32, @floatFromInt(size)) * RULE_DROP)), half, look.fade(accent, RULE_A * look.alphaOf(col)));
 }
 
 /// Hairlines fading out either side of a small diamond.
 pub fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
     for ([_]bool{ true, false }) |shadow| {
         const by: i32 = @intFromBool(shadow);
-        const ink = if (shadow) look.fade(look.BG, @as(f32, @floatFromInt(col.a)) / 255) else col;
+        const ink = if (shadow) look.fade(look.BG, look.alphaOf(col)) else col;
         const clear = look.fade(ink, 0);
         const reach = half - RULE_GAP;
         rl.drawRectangleGradientH(cx - half + by, y + by, reach, 1, clear, ink);

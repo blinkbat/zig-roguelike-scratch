@@ -35,17 +35,16 @@ pub fn palette(p: Params) carve.Palette {
     };
 }
 
-fn cellAt(cx: usize, cy: usize) P {
-    return .{ .x = @intCast(cx * 2 + 1), .y = @intCast(cy * 2 + 1) };
+fn cellAt(c: P) P {
+    return c.scaled(2).add(.{ .x = 1, .y = 1 });
 }
 
 const Unseen = struct {
     seen: *const [CELLS_X * CELLS_Y]bool,
-    cx: i32,
-    cy: i32,
+    at: P,
 
     fn has(u: Unseen, s: P) bool {
-        const near = mathx.slot(u.cx + s.x, u.cy + s.y, CELLS_X, CELLS_Y) orelse return false;
+        const near = mathx.slot(u.at.x + s.x, u.at.y + s.y, CELLS_X, CELLS_Y) orelse return false;
         return !u.seen[near];
     }
 };
@@ -59,29 +58,25 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     const start = (CELLS_Y / 2) * CELLS_X + CELLS_X / 2;
     stack[0] = @intCast(start);
     seen[start] = true;
-    lv.set(cellAt(start % CELLS_X, start / CELLS_X), pal.open);
+    lv.set(cellAt(mathx.unslot(start, CELLS_X)), pal.open);
     const steps = mathx.CARDINALS;
     while (top > 0) {
-        const at = stack[top - 1];
-        const cx: i32 = @intCast(at % CELLS_X);
-        const cy: i32 = @intCast(at / CELLS_X);
-        const s = rng.pickWhere(P, &steps, Unseen{ .seen = &seen, .cx = cx, .cy = cy }, Unseen.has) orelse {
+        const at = mathx.unslot(stack[top - 1], CELLS_X);
+        const s = rng.pickWhere(P, &steps, Unseen{ .seen = &seen, .at = at }, Unseen.has) orelse {
             top -= 1;
             continue;
         };
-        const nx: usize = @intCast(cx + s.x);
-        const ny: usize = @intCast(cy + s.y);
-        const k = mathx.slot(cx + s.x, cy + s.y, CELLS_X, CELLS_Y).?;
+        const next = at.add(s);
+        const k = mathx.slot(next.x, next.y, CELLS_X, CELLS_Y).?;
         seen[k] = true;
-        const here = cellAt(@intCast(cx), @intCast(cy));
-        lv.set(here.add(s), pal.open);
-        lv.set(cellAt(nx, ny), pal.open);
+        lv.set(cellAt(at).add(s), pal.open);
+        lv.set(cellAt(next), pal.open);
         stack[top] = @intCast(k);
         top += 1;
     }
     for (0..CELLS_Y) |cy| {
         for (0..CELLS_X) |cx| {
-            const c = cellAt(cx, cy);
+            const c = cellAt(.{ .x = @intCast(cx), .y = @intCast(cy) });
             var walls: [steps.len]P = undefined;
             var n: usize = 0;
             var opens: usize = 0;
@@ -112,7 +107,7 @@ test "a perfect maze reaches every cell from the middle" {
     shape(&lv, &rng, 0, .{ .braid = 0 });
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
-    const reached = grid.distances(&lv, cellAt(CELLS_X / 2, CELLS_Y / 2), &dist, &queue);
+    const reached = grid.distances(&lv, cellAt(.{ .x = CELLS_X / 2, .y = CELLS_Y / 2 }), &dist, &queue);
     std.debug.print("a {d}x{d} maze: {d} open cells, all reached: {}\n", .{ CELLS_X, CELLS_Y, carve.count(&lv, .floor), reached == carve.count(&lv, .floor) });
     try std.testing.expectEqual(carve.count(&lv, .floor), reached);
     try std.testing.expectEqual(CELLS_X * CELLS_Y * 2 - 1, reached);

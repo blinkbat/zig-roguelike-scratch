@@ -42,11 +42,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: P
     const noise = carve.Noise.init(seed, .lake);
     const most: i32 = p.size;
     for (0..p.count) |_| {
-        const c = for (0..TRIES) |_| {
-            const half = @divTrunc(most, 2);
-            const q = grid.Box.inMap(half + 1).roll(rng);
-            if (lv.walkable(q)) break q;
-        } else continue;
+        const c = grid.Box.inMap(@divTrunc(most, 2) + 1).rollWhere(rng, TRIES, @as(*const grid.Level, lv), grid.Level.walkable) orelse continue;
         const r = rng.range(SIZE_MIN, most);
         const isle = rng.percent(p.island);
         const rf: f32 = @floatFromInt(r);

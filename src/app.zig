@@ -41,7 +41,7 @@ const DebugRow = enum {
 const DEBUG_ROWS = std.enums.values(DebugRow);
 const DELETE = menu.REMOVE;
 
-const NAME = "Cistern";
+const NAME = game.NAME;
 const LINE = menu.NOTE_MAX;
 
 const App = struct {
@@ -465,7 +465,7 @@ test "an editor arena uses a separate map and never opens a save slot" {
 /// `edit` opens the editor on that map first; null opens the title.
 pub fn run(edit: ?[]const u8) !void {
     start_edit = edit;
-    try game.withGame(.{ .vsync_hint = true }, NAME, body);
+    try game.withGame(.{ .vsync_hint = true }, NAME, body, false);
 }
 
 fn body(g: *game.Game) !void {

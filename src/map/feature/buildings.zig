@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
+const lume = @import("../lume.zig");
 
 // Dwarftown's houses, Dwarf Fortress's hamlet, Diablo II's cottages; decayed, Qud's ruins and the Lost City.
 
@@ -78,11 +79,21 @@ pub const Lots = struct {
     /// Keep a clear ring around the site without opening protected terrain or another lot.
     fn site(self: *const Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32, h: i32, gap: i32, pal: carve.Palette) ?Box {
         if (w + SITE_MARGIN * 2 > grid.W or h + SITE_MARGIN * 2 > grid.H) return null;
-        for (0..TRIES) |_| {
-            const b = Box.sized(Box.inMap(SITE_MARGIN).rollFor(rng, w, h), w, h);
-            if (self.clear(b, gap) and fits(lv, b, pal)) return b;
-        }
-        return null;
+        const Site = struct {
+            lots: *const Lots,
+            lv: *const grid.Level,
+            w: i32,
+            h: i32,
+            gap: i32,
+            pal: carve.Palette,
+
+            fn at(s: @This(), lo: P) bool {
+                const b = Box.sized(lo, s.w, s.h);
+                return s.lots.clear(b, s.gap) and fits(s.lv, b, s.pal);
+            }
+        };
+        const lo = Box.inMap(SITE_MARGIN).rollForWhere(rng, w, h, TRIES, Site{ .lots = self, .lv = lv, .w = w, .h = h, .gap = gap, .pal = pal }, Site.at) orelse return null;
+        return Box.sized(lo, w, h);
     }
 
     fn clear(self: *const Lots, b: Box, gap: i32) bool {
@@ -227,7 +238,7 @@ pub fn raise(lv: *grid.Level, rng: *mathx.Rng, b: Box, p: Params, outside: grid.
     const way = dryDoorway(lv, rng, b) orelse doorway(rng, b);
     openWay(lv, way, p.floor, outside);
     const in = b.inner();
-    if (rng.percent(p.torches) and in.width() > 2) lv.addTorch(.{ .x = rng.range(in.lo.x + 1, in.hi.x - 2), .y = b.lo.y });
+    if (rng.percent(p.torches) and in.width() > 2) lv.addTorch(lume.torchWall(.{ .x = rng.range(in.lo.x + 1, in.hi.x - 2), .y = in.lo.y }));
     var left = rng.below(@as(u32, p.barrels) + 1);
     var tries: usize = 0;
     while (left > 0 and tries < BARREL_TRIES) : (tries += 1) {
