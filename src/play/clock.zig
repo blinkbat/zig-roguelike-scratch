@@ -26,6 +26,11 @@ pub const Clock = struct {
         self.delay(STUN);
     }
 
+    /// Still paying for a stun: the hero, who keeps no pace, loses a turn to each one.
+    pub fn owes(self: Clock) bool {
+        return self.ticks > 0;
+    }
+
     pub fn pass(self: *Clock, pace: i32) void {
         self.ticks -= TURN;
         self.stalled = self.ticks >= 0;

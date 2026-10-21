@@ -794,7 +794,7 @@ fn change(face: *const font.Face, x: i32, y: i32, n: *usize, label: [:0]const u8
 }
 
 const CHANGE_ROW = 20;
-/// What a change line measures.
+/// A character stat the Stats page and the change list both show.
 const Measure = union(enum) {
     life,
     mana,
@@ -815,21 +815,46 @@ const Measure = union(enum) {
             .style => |s| a.increase(s),
         };
     }
+
+    fn percent(m: Measure) bool {
+        return switch (m) {
+            .life, .mana, .attribute => false,
+            .reduction, .crit, .dodge, .style => true,
+        };
+    }
+
+    /// Its Stats page row.
+    fn title(m: Measure) [:0]const u8 {
+        return switch (m) {
+            .life => comptime menu.capital(attr.Bonus.life.label()),
+            .mana => comptime menu.capital(attr.Bonus.mana.label()),
+            .attribute => |at| menu.named(at),
+            .reduction => comptime menu.capital(attr.REDUCTION_LABEL),
+            .crit => comptime menu.capital(attr.CRIT_LABEL),
+            .dodge => "Chance to dodge",
+            .style => |s| s.label(),
+        };
+    }
+
+    /// Its change line, short enough for half the detail panel.
+    fn label(m: Measure) [:0]const u8 {
+        return switch (m) {
+            .life => attr.Bonus.life.label(),
+            .mana => attr.Bonus.mana.label(),
+            .attribute => |at| menu.named(at),
+            .reduction => "physical reduction",
+            .crit => "critical chance",
+            .dodge => "dodge chance",
+            .style => |s| damageLabel(s),
+        };
+    }
 };
-const ChangeRow = struct { label: [:0]const u8, measure: Measure, percent: bool };
 /// Every line `drawChanges` can list, in order.
 const CHANGE_ROWS = blk: {
-    var rows: []const ChangeRow = &.{
-        .{ .label = attr.Bonus.life.label(), .measure = .life, .percent = false },
-        .{ .label = attr.Bonus.mana.label(), .measure = .mana, .percent = false },
-    };
-    for (attr.ATTRS) |at| rows = rows ++ &[_]ChangeRow{.{ .label = menu.named(at), .measure = .{ .attribute = at }, .percent = false }};
-    rows = rows ++ &[_]ChangeRow{
-        .{ .label = "physical reduction", .measure = .reduction, .percent = true },
-        .{ .label = "critical chance", .measure = .crit, .percent = true },
-        .{ .label = "dodge chance", .measure = .dodge, .percent = true },
-    };
-    for (attr.STYLES) |s| rows = rows ++ &[_]ChangeRow{.{ .label = damageLabel(s), .measure = .{ .style = s }, .percent = true }};
+    var rows: []const Measure = &.{ .life, .mana };
+    for (attr.ATTRS) |at| rows = rows ++ &[_]Measure{.{ .attribute = at }};
+    rows = rows ++ &[_]Measure{ .reduction, .crit, .dodge };
+    for (attr.STYLES) |s| rows = rows ++ &[_]Measure{.{ .style = s }};
     break :blk rows[0..rows.len].*;
 };
 
@@ -843,7 +868,7 @@ fn drawChanges(face: *const font.Face, x: i32, y: i32, was: attr.Attrs, now: att
     face.draw("IF EQUIPPED", x, y, font.SMALL, look.DIM);
     var n: usize = 0;
     const top = y + CARD_LINE;
-    for (CHANGE_ROWS) |r| change(face, x, top, &n, r.label, r.measure.of(was), r.measure.of(now), r.percent);
+    for (CHANGE_ROWS) |m| change(face, x, top, &n, m.label(), m.of(was), m.of(now), m.percent());
     if (n == 0) {
         face.draw("No attribute or defense changes.", x, top, font.SMALL, look.DIM);
         return top + CHANGE_ROW;
@@ -885,6 +910,12 @@ fn stat(face: *const font.Face, x: i32, y: i32, label: [:0]const u8, number: i32
     face.draw(text.text(), x + STAT_W - face.width(text.text(), font.BODY), y, font.BODY, look.TEXT);
 }
 
+fn measure(face: *const font.Face, x: i32, y: i32, m: Measure, a: attr.Attrs) void {
+    stat(face, x, y, m.title(), m.of(a), if (m == .style) "+" else "", if (m.percent()) "%" else "");
+}
+
+const SURVIVAL = [_]Measure{ .life, .mana, .reduction, .dodge };
+
 fn section(face: *const font.Face, x: i32, y: i32, title: [:0]const u8) void {
     face.draw(title, x, y, font.SMALL, look.UI_FOCUS);
     rl.drawLine(x, y + SECTION_RULE, x + STAT_W, y + SECTION_RULE, look.EDGE);
@@ -898,7 +929,7 @@ fn drawStats(face: *const font.Face, v: View) void {
     section(face, x, y, "ATTRIBUTES");
     for (attr.ATTRS, 0..) |at, i| {
         const top = row(y, i, ATTR_ROW);
-        stat(face, x, top, menu.named(at), a.get(at), "", "");
+        measure(face, x, top, .{ .attribute = at }, a);
         face.draw(switch (at) {
             .strength => "Life and heavy weapon damage",
             .dexterity => "Light weapons, critical chance and dodge",
@@ -907,19 +938,16 @@ fn drawStats(face: *const font.Face, v: View) void {
     }
     const survival = row(y, attr.ATTRS.len, ATTR_ROW) + SURVIVAL_GAP;
     section(face, x, survival, "SURVIVAL");
-    stat(face, x, row(survival, 0, STAT_ROW), "Maximum life", a.life(), "", "");
-    stat(face, x, row(survival, 1, STAT_ROW), "Maximum mana", a.mana(), "", "");
-    stat(face, x, row(survival, 2, STAT_ROW), "Physical damage reduction", a.reduction(), "", "%");
-    stat(face, x, row(survival, 3, STAT_ROW), "Chance to dodge", @intCast(a.dodge()), "", "%");
+    for (SURVIVAL, 0..) |m, i| measure(face, x, row(survival, i, STAT_ROW), m, a);
     var note: menu.Note(100) = .{};
     note.say("Physical reduction is capped at {d}%.", .{attr.ARMOUR_MAX});
-    face.draw(note.text(), x, row(survival, 4, STAT_ROW) + SURVIVAL_NOTE_DY, font.SMALL, look.DIM);
+    face.draw(note.text(), x, row(survival, SURVIVAL.len, STAT_ROW) + SURVIVAL_NOTE_DY, font.SMALL, look.DIM);
     section(face, right, y, "DAMAGE BONUSES");
-    for (attr.STYLES, 0..) |s, i| stat(face, right, row(y, i, STAT_ROW), s.label(), a.increase(s), "+", "%");
+    for (attr.STYLES, 0..) |s, i| measure(face, right, row(y, i, STAT_ROW), .{ .style = s }, a);
     const bonuses = row(y, attr.STYLES.len, STAT_ROW);
     face.draw("Bonuses to base damage; skill ranks add their own.", right, bonuses + BONUS_NOTE_DY, font.SMALL, look.DIM);
     const crit = bonuses + CRIT_GAP;
-    stat(face, right, crit, "Critical strike chance", @intCast(a.crit()), "", "%");
+    measure(face, right, crit, .crit, a);
     stat(face, right, crit + STAT_ROW, "Critical damage multiplier", attr.CRIT_MULTI, "", "%");
     const progression = crit + 2 * STAT_ROW + PROGRESSION_GAP;
     section(face, right, progression, "PROGRESSION");

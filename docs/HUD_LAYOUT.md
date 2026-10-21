@@ -44,7 +44,7 @@ Use the existing check, test, shot and build scripts. Inspect full, partial, cri
 
 ## Implementation
 
-Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Each slot's input is a `look.Prompt` icon under it.
+Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game/overlay.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Each slot's input is a `look.Prompt` icon under it.
 
 Small Balthazar text is rasterized at its displayed size (12, 15, 16, 20 and 24px) with point filtering, measured and drawn from the same atlas. Larger text and map symbols retain the 96px mipmapped atlas. Input icons are 22px tall with 15px labels, 6px below their slots. The 48px slots contain basic 30px procedural icons, with 8px gaps within groups and 16px between groups.
 

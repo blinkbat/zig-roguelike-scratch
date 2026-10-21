@@ -1,0 +1,302 @@
+{
+  "zig_version": "0.14.1",
+  "linux": [
+    {
+      "name": "libgl-dev",
+      "version": "1.3.2-1",
+      "sha256": "a6487873f2706bbabf9346cdb190f47f23a1464f31cecf92c363bac37c342f2f",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libg/libglvnd/libgl-dev_1.3.2-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libg/libglvnd/libgl-dev_1.3.2-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libgl1",
+      "version": "1.3.2-1",
+      "sha256": "f300f9610b5f05f1ce566c4095f1bf2170e512ac5d201c40d895b8fce29dec98",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libg/libglvnd/libgl1_1.3.2-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libg/libglvnd/libgl1_1.3.2-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libglvnd-dev",
+      "version": "1.3.2-1",
+      "sha256": "e330ccbe6338789fd63212b55009dcce733265799395ad55b300cd1427234e7f",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libg/libglvnd/libglvnd-dev_1.3.2-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libg/libglvnd/libglvnd-dev_1.3.2-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libglvnd0",
+      "version": "1.3.2-1",
+      "sha256": "52a4464d181949f5ed8f7e55cca67ba2739f019e93fcfa9d14e8d65efe98fffc",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libg/libglvnd/libglvnd0_1.3.2-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libg/libglvnd/libglvnd0_1.3.2-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libglx-dev",
+      "version": "1.3.2-1",
+      "sha256": "5a50549948bc4363eab32b1083dad2165402c3628f2ee85e9a32563228cc61c1",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libg/libglvnd/libglx-dev_1.3.2-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libg/libglvnd/libglx-dev_1.3.2-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libglx0",
+      "version": "1.3.2-1",
+      "sha256": "cb642200f7e28e6dbb4075110a0b441880eeec35c8a00a2198c59c53309e5e17",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libg/libglvnd/libglx0_1.3.2-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libg/libglvnd/libglx0_1.3.2-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libpthread-stubs0-dev",
+      "version": "0.4-1",
+      "sha256": "54632f160e1e8a43656a87195a547391038c4ca0f53291b849cd4457ba5dfde9",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libp/libpthread-stubs/libpthread-stubs0-dev_0.4-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libp/libpthread-stubs/libpthread-stubs0-dev_0.4-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libx11-6",
+      "version": "2:1.7.2-1+deb11u2",
+      "sha256": "2b3b959cb10c07be065eb638a8577fe20f282045aaef76425dbd7310d1244b8c",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libx11/libx11-6_1.7.2-1+deb11u2_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libx11/libx11-6_1.7.2-1+deb11u2_amd64.deb"
+      ]
+    },
+    {
+      "name": "libx11-data",
+      "version": "2:1.7.2-1+deb11u2",
+      "sha256": "9db24e1e7ed3cd738b503e7df5c1b9b52b1eadcb55019cd63b1409e578565d29",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libx11/libx11-data_1.7.2-1+deb11u2_all.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libx11/libx11-data_1.7.2-1+deb11u2_all.deb"
+      ]
+    },
+    {
+      "name": "libx11-dev",
+      "version": "2:1.7.2-1+deb11u2",
+      "sha256": "9fbcda6af06d8db9cd8a48b581570aa8fee862bfc43b6f569a66503ae7d83211",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libx11/libx11-dev_1.7.2-1+deb11u2_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libx11/libx11-dev_1.7.2-1+deb11u2_amd64.deb"
+      ]
+    },
+    {
+      "name": "libx11-xcb1",
+      "version": "2:1.7.2-1+deb11u2",
+      "sha256": "1ac662dec0b4db1c65668a2c62f0063f4c9cc0d9c8df15ffe735bd2d84b8ee95",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libx11/libx11-xcb1_1.7.2-1+deb11u2_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libx11/libx11-xcb1_1.7.2-1+deb11u2_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxau-dev",
+      "version": "1:1.0.9-1",
+      "sha256": "d1a7f5d484e0879b3b2e8d512894744505e53d078712ce65903fef2ecfd824bb",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxau/libxau-dev_1.0.9-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxau/libxau-dev_1.0.9-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxau6",
+      "version": "1:1.0.9-1",
+      "sha256": "679db1c4579ec7c61079adeaae8528adeb2e4bf5465baa6c56233b995d714750",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxau/libxau6_1.0.9-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxau/libxau6_1.0.9-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxcb1",
+      "version": "1.14-3",
+      "sha256": "d5e0f047ed766f45eb7473947b70f9e8fddbe45ef22ecfd92ab712c0671a93ac",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxcb/libxcb1_1.14-3_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxcb/libxcb1_1.14-3_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxcb1-dev",
+      "version": "1.14-3",
+      "sha256": "b75544f334c8963b8b7b0e8a88f8a7cde95a714dddbcda076d4beb669a961b58",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxcb/libxcb1-dev_1.14-3_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxcb/libxcb1-dev_1.14-3_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxcursor-dev",
+      "version": "1:1.2.0-2",
+      "sha256": "c84c43ad4d596bd673288f6035ced4755468b873149181936a0c1fc99cff78aa",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxcursor/libxcursor-dev_1.2.0-2_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxcursor/libxcursor-dev_1.2.0-2_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxcursor1",
+      "version": "1:1.2.0-2",
+      "sha256": "d9fee761e4c50572c3ce3c3965b70fcfecd277d0d7d598e102134d12757a3d11",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxcursor/libxcursor1_1.2.0-2_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxcursor/libxcursor1_1.2.0-2_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxdmcp-dev",
+      "version": "1:1.1.2-3",
+      "sha256": "c6733e5f6463afd261998e408be6eb37f24ce0a64b63bed50a87ddb18ebc1699",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxdmcp/libxdmcp-dev_1.1.2-3_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxdmcp/libxdmcp-dev_1.1.2-3_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxdmcp6",
+      "version": "1:1.1.2-3",
+      "sha256": "ecb8536f5fb34543b55bb9dc5f5b14c9dbb4150a7bddb3f2287b7cab6e9d25ef",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxdmcp/libxdmcp6_1.1.2-3_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxdmcp/libxdmcp6_1.1.2-3_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxext-dev",
+      "version": "2:1.3.3-1.1",
+      "sha256": "0aa17565287ca8a37914e043789ee33c6e1f987acf346dac7175165009c5db7c",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxext/libxext-dev_1.3.3-1.1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxext/libxext-dev_1.3.3-1.1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxext6",
+      "version": "2:1.3.3-1.1",
+      "sha256": "dc1ff8a2b60c7dd3c8917ffb9aa65ee6cda52648d9150608683c47319d1c0c8c",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxext/libxext6_1.3.3-1.1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxext/libxext6_1.3.3-1.1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxfixes-dev",
+      "version": "1:5.0.3-2",
+      "sha256": "bacfcd67ca931839a2e2ae87922ecb40e2870470afa86d0c7245288825da2340",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxfixes/libxfixes-dev_5.0.3-2_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxfixes/libxfixes-dev_5.0.3-2_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxfixes3",
+      "version": "1:5.0.3-2",
+      "sha256": "58622d0d65c3535bd724c4da62ae7acb71e0e8f527bcbd65daf8c97e6f0ef843",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxfixes/libxfixes3_5.0.3-2_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxfixes/libxfixes3_5.0.3-2_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxi-dev",
+      "version": "2:1.7.10-1",
+      "sha256": "736309ff476f0e1594f855cf44e2fb20bf1e594518ce2259eb9b2dd93917f2db",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxi/libxi-dev_1.7.10-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxi/libxi-dev_1.7.10-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxi6",
+      "version": "2:1.7.10-1",
+      "sha256": "4d583f43b5396ca5434100a7274613e9983357d80875a47b29a4f3218fe0bec0",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxi/libxi6_1.7.10-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxi/libxi6_1.7.10-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxinerama-dev",
+      "version": "2:1.1.4-2",
+      "sha256": "18047f52c3a1294d61bc2642d22d05bd879c15393c4e8b4ac2ee6a5061585b9b",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxinerama/libxinerama-dev_1.1.4-2_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxinerama/libxinerama-dev_1.1.4-2_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxinerama1",
+      "version": "2:1.1.4-2",
+      "sha256": "f692c854935571ee44fe313541d8a9f678a4f11dc513bc43b9d0a501c6dff0bd",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxinerama/libxinerama1_1.1.4-2_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxinerama/libxinerama1_1.1.4-2_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxrandr-dev",
+      "version": "2:1.5.1-1",
+      "sha256": "67d40174015e8b4e3e2fe3b6fb2990943321a168e0fbb2d12082f637914a0a2e",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxrandr/libxrandr-dev_1.5.1-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxrandr/libxrandr-dev_1.5.1-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxrandr2",
+      "version": "2:1.5.1-1",
+      "sha256": "8fdd8ba4a8ad819731d6bbd903b52851a2ec2f9ef4139d880e9be421ea61338c",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxrandr/libxrandr2_1.5.1-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxrandr/libxrandr2_1.5.1-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxrender-dev",
+      "version": "1:0.9.10-1",
+      "sha256": "135ed7c8a589e17d21718a91b5a7da48159f33c85e0b337aae9b9f484d3a4954",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxrender/libxrender-dev_0.9.10-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxrender/libxrender-dev_0.9.10-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "libxrender1",
+      "version": "1:0.9.10-1",
+      "sha256": "3ea17d07b5aa89012130e2acd92f0fc0ea67314e2f5eab6e33930ef688f48294",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/libx/libxrender/libxrender1_0.9.10-1_amd64.deb",
+        "https://archive.debian.org/debian/pool/main/libx/libxrender/libxrender1_0.9.10-1_amd64.deb"
+      ]
+    },
+    {
+      "name": "x11proto-dev",
+      "version": "2020.1-1",
+      "sha256": "d5568d587d9ad2664c34c14b0ac538ccb3c567e126ee5291085a8de704a565f5",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/x/xorgproto/x11proto-dev_2020.1-1_all.deb",
+        "https://archive.debian.org/debian/pool/main/x/xorgproto/x11proto-dev_2020.1-1_all.deb"
+      ]
+    },
+    {
+      "name": "xorg-sgml-doctools",
+      "version": "1:1.11-1.1",
+      "sha256": "168345058319094e475a87ace66f5fb6ae802109650ea8434d672117982b5d0a",
+      "urls": [
+        "https://deb.debian.org/debian/pool/main/x/xorg-sgml-doctools/xorg-sgml-doctools_1.11-1.1_all.deb",
+        "https://archive.debian.org/debian/pool/main/x/xorg-sgml-doctools/xorg-sgml-doctools_1.11-1.1_all.deb"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # AGENTS.md — Cistern
 
-Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats and pibs;
+Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats, pibs and beefy pibs;
 breakable barrels, treasure chests, equipment, XP and class progression. Art starts as glyphs, replaced by the owner's PNGs.
 Source paths below are relative to `src/`; scripts, docs and assets are relative to the repository root.
 
@@ -19,6 +19,10 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - `zig` is not on PATH; `_zig.cmd` is the single toolchain definition. Run scripts from this directory:
   `./check.cmd` type-checks executable and tests without linking; `./test.cmd [filter]` runs tests;
   `./build.cmd` builds without launching. Use tests that print meaningful counts.
+- `./build-linux.cmd` and `./build-macos.cmd` use Python 3.9+ to cross-check/build Linux x86-64 and macOS
+  Apple Silicon/Intel, then package maps in `zig-out/releases/`. Linux dependencies cache outside the repo
+  under `../.zigtoolchain/cistern-release/`; the pinned macOS SDK uses Zig's package cache.
+  See `docs/RELEASE_BUILDS.md`; builds do not imply runtime verification. Never launch interactive play to test them.
 - Builds, checks and tests default to Debug. `./build-release.cmd` or `./build.cmd -Doptimize=ReleaseFast`
   explicitly selects ReleaseFast. With raylib cached, a measured small edit took 6.5 s in Debug versus
   25.4 s in ReleaseFast; Debug's headless update/draw averaged 1.54 ms CPU per frame.
@@ -29,6 +33,10 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   (default `maps/main.map`). These are owner-facing entry points.
 - Every `src/**/*.zig` module except the root `main.zig` must be imported in `main.zig`'s `test {}` block.
   `build.zig` checks this on every build step and rejects those modules if smaller than 512 bytes.
+- `game.zig` holds `Game`, the run/door/turn flow, the picture's timing and `update`. `src/game/` splits off `combat`
+  (blows, harm ticks, foe turns), `scene` (map drawing), `overlay` (skill bar, binds, orbs, inspect, tooltips),
+  `character` (pause, Character, Nearby), `shots` (headless captures, bench), `harness` (scripted play shared by
+  tests and shots) and `tests` (the game's integration tests).
 - `shot.cmd` builds into `zig-out-dev` but writes `shots/` under its working directory. For audits, build
   with `./build.cmd --prefix zig-out-dev`, then run the executable from a fresh `%TEMP%` directory containing
   a copy of `maps/`. This keeps generated frames outside the repo:
@@ -48,7 +56,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - For concurrent owner play, copy the built executable into the temporary shot directory with a distinct
   basename before `--shot`; `run.cmd` kills every process named `cistern.exe`, including headless captures.
 - `--shot-ui` runs Character/HUD and day/night level-up captures; use the same temporary-directory procedure as `--shot`.
-- Inspect actual headless PNGs. `game.zig`'s `shoot` and helpers define the coverage: abilities, editor,
+- Inspect actual headless PNGs. `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,
   maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
   `water-reflections/00.png` through `39.png` cover four seconds of idle play; `water-mirrors-*.png`
   show day/night/torch reflections. `--shot-cinema` captures `cinema/` off/individual/all comparisons,
@@ -83,9 +91,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Reveal shows terrain and minimap without changing gameplay sight or saved exploration; turning it off restores
   the normal view. The four cosmetic effects default on. Debug settings are not saved.
 - Inspect (`Mode.inspect`, R3 or I) is the HUD's tooltips: the stick/d-pad walks the orbs, slots, shown
-  statuses and the event log (`game.spotsOf`, nearest along the way pushed), `hud.tooltip` names and describes the one it is
+  statuses and the event log (`overlay.spotsOf`, nearest along the way pushed), `hud.tooltip` names and describes the one it is
   on, without naming any input. Any back-out or the same button again closes it; it spends no turn.
-  In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `game.hovered`).
+  In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `overlay.hovered`).
 - Start / Menu / Options opens Character directly; Select / View opens the game menu. Keyboard Tab / Esc mirror them. Character opens equipment, the inventory list, stats, passives and class skills in `ui/book.zig`.
   Player-facing hand slots are Main hand (viewer-left) and Offhand (viewer-right).
   Two-handers identify the occupied offhand. Menu accents share `look.UI_GOLD/UI_FOCUS`:
@@ -142,6 +150,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   restores the drag without consuming undo or losing redo. `Editor.request` guards leaving, quitting,
   opening and New when dirty, including window close. F5/F6 play-test unsaved; `HELP` stays checked against
   `Desk` captions. Keep Things/issues, object-viewer metadata and cursor previews consistent with the map.
+  `editor.zig` holds `Editor`, input, placement rules and shared widgets; `panel` (node list, tools, palette, things,
+  status), `knobs` (generator rows), `canvas` (map, cursor/paste ghost, graph), `modals` (modals, help, object
+  viewer) and `tests` sit beside it in `src/edit/`.
 - Objects > select a foe > Fight launches `map/spar.zig`'s arena using the app's separate map, with the
   normal editor-test archer and no save slot. Returning preserves the editor map, modal and undo history;
   death retry and Debug > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
@@ -182,13 +193,13 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Class bases feed passive allocations and equipped modifiers;
   `game.heroAttrs` is the runtime source. Armour reduces physical bites before mana shield; elemental/status
   damage keeps its separate rules. Equipped weapons and skill ranks affect hero damage and its previews.
-  Every hero blow goes through `game.scaled` (via `heroRoll`/`heroScaled`), which draws the crit after the
+  Every hero blow goes through `combat.scaled` (via `heroRoll`/`heroScaled`), which draws the crit after the
   damage roll, then rounds each part up as often as its fraction. Skill rolls are `damage.Base` (`Act.bases`); an area
   blow rolls its base once and scales, crits and rounds per foe. Skill tooltips show the scaled non-critical range.
 - `play/hero.zig` maps class to body; `skillbar.kit` restricts bindings and `Bar.of` supplies defaults, both
   narrowed to learned skills by `progress.State.kit/bar`. `skillbar.Act` derives base costs, cooldowns,
   descriptions and targeting from each skill module; `progress.State.cost/cooldown` apply rank. Module
-  descriptions say only what a skill does: `game.describe` appends mana, turn and cooldown at the hero's rank.
+  descriptions say only what a skill does: `overlay.describe` appends mana, turn and cooldown at the hero's rank.
   Mana checks, spending, slot dimming, tooltips and descriptions must agree. Preserve resources/statuses across doors and saves.
 - **Target previews and resolution share legality.** `bow.aimable` requires the mark and every traversed
   cell to be lit; geometric line clearance alone is insufficient. Spend nothing before confirmation.
@@ -203,7 +214,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Skills dispatch by module declarations (`afflict`, `burst`, `JUMPS`, `around`, `Ward`, `knocked`).
   A pin (`pinning.Pin`) holds a body to its cell on its
   turns, counting down like chill; it still strikes the hero beside it and cannot be knocked back.
-  A mana shield (`ward.Ward`) takes the hero's harm from mana first, in `game.hurt`; the orb shows that
+  A mana shield (`ward.Ward`) takes the hero's harm from mana first, in `combat.hurt`; the orb shows that
   mana through `Game.mana_held` until the blow lands, as `flasks_shown` holds a kill's refill.
 - **`Pool.damage` is the only HP-loss path**, apart from splitting a slime's remaining HP, restoring
   carried state and clamping to a lowered maximum (`syncStats`). Elemental resistance applies separately per element, rounding down, clamped to
@@ -223,7 +234,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   without duplicating the parent's already-applied ticks.
 - `play/clock.zig` is the one hidden action clock: `clock.TURN` ticks per turn, `Row.pace >= TURN` because
   presentation supports at most one action per foe per turn. Check chill before the stalled-action return.
-  Use `Clock.delay`/`Clock.stun` for delays/stun, with no separate stun status or visible clock.
+  Use `Clock.delay`/`Clock.stun` for delays/stun, with no separate stun status or visible clock. A stunned hero
+  loses its next turn on its own once the stunning turn is drawn (`stunnedTurn`, in play or Character).
+  A foe's sweep (`Row.sweep_every`) strikes every body and barrel round it; its victims land with its blow on the hero (`Owed.swept`).
 - A pib witnessing a nearby foe death wakes and flees (`FRIGHT_REACH`, `FLEE_TURNS`); subsequent deaths
   refresh it. Cornered beside the hero, it attacks. Fright speech waits for the death's presented impact
   and uses cosmetic RNG.

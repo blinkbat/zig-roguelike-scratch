@@ -546,6 +546,8 @@ pub const State = struct {
     tree: TreeInput = .{},
     /// A latched stick takes priority over digital movement.
     stick: bool = false,
+    /// Last frame's walk went to the tree's pan or zoom instead.
+    muted: bool = false,
     /// Set before each `update`, which clears it: typing keys then type, and press no button.
     typing: bool = false,
     typed: Typed = .{},
@@ -732,13 +734,19 @@ pub const State = struct {
                 settle = Stepper.SETTLE;
             }
         }
-        self.walk = self.step.tick(dt, defl, heading, settle);
-        if (muted) self.walk = null;
+        self.stepWalk(dt, defl, heading, settle, muted);
         self.treeWalk(dt, x, y);
         if (!was_focused) self.holdWalk();
         self.typing = false;
         const pad_hit = if (live) |at| struck(at, &before, &self.triggers) else false;
         self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit or (on_tree and !pan_keys and (self.tree.pan.x != 0 or self.tree.pan.y != 0)), keyed or self.click or self.scroll != 0);
+    }
+
+    fn stepWalk(self: *State, dt: f32, defl: f32, heading: f32, settle: f32, muted: bool) void {
+        if (self.muted and !muted) self.step.hold();
+        self.muted = muted;
+        self.walk = self.step.tick(dt, defl, heading, settle);
+        if (muted) self.walk = null;
     }
 
     fn padHeld(self: *const State, at: i32, b: rl.GamepadButton) bool {
@@ -802,7 +810,8 @@ fn mouseAt() mathx.P {
 
 /// The editor's mouse and keys, captioned with keyboard and mouse glyphs.
 pub const Desk = struct {
-    pub const TOOL_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
+    const DIGIT_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
+    pub const TOOL_KEYS = DIGIT_KEYS ++ [_]rl.KeyboardKey{.grave};
     pub const TOOL_CAPTIONS = glyphCaptions(&TOOL_KEYS);
     /// The editor's shapes, named and ordered as its `Shape` is.
     pub const SHAPE_KEYS_BY = .{ .brush = rl.KeyboardKey.b, .line = rl.KeyboardKey.l, .rect = rl.KeyboardKey.r, .box = rl.KeyboardKey.o, .fill = rl.KeyboardKey.f, .select = rl.KeyboardKey.m };
@@ -867,7 +876,11 @@ pub const Desk = struct {
     pub const NEW_CAPTION = CTRL ++ keyGlyph(NEW_KEY);
     pub const UNDO_CAPTION = CTRL ++ keyGlyph(UNDO_KEY);
     pub const REDO_CAPTION = CTRL ++ keyGlyph(REDO_KEY) ++ " / " ++ CTRL_SHIFT ++ keyGlyph(UNDO_KEY);
-    pub const TOOLS_CAPTION = TOOL_CAPTIONS[0] ++ " to " ++ TOOL_CAPTIONS[TOOL_KEYS.len - 1];
+    pub const TOOLS_CAPTION = blk: {
+        var s: [:0]const u8 = TOOL_CAPTIONS[0] ++ " to " ++ TOOL_CAPTIONS[DIGIT_KEYS.len - 1];
+        for (TOOL_CAPTIONS[DIGIT_KEYS.len..]) |c| s = s ++ " " ++ c;
+        break :blk s;
+    };
     pub const PAINT_CAPTION = glyphCaption(mouseName(PAINT_BUTTON));
     pub const ERASE_CAPTION = glyphCaption(mouseName(ERASE_BUTTON));
     pub const RECT_CAPTION = SHIFT_CAPTION ++ "+drag";
@@ -1083,6 +1096,7 @@ fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
         .right_bracket => "]",
         .minus => "-",
         .equal => "=",
+        .grave => "`",
         .home => "Home",
         .up => "Up",
         .down => "Down",
@@ -1357,6 +1371,25 @@ test "a d-pad zoom or Shift pan held on the tree does not walk after the tree cl
         for (0..30) |_| try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(dt, 1, mathx.Dir.n.heading(), Stepper.SETTLE));
     }
     try std.testing.expect(!walkSource(true, false, up, up).muted);
+}
+
+test "letting go of Shift before the key after a tree pan browses nothing until the key is let go" {
+    var st = State{};
+    const dt = mathx.FRAME_DT;
+    const east = mathx.Dir.e.heading();
+    for (0..30) |_| st.stepWalk(dt, 1, east, Stepper.SETTLE, true);
+    var steps: usize = 0;
+    for (0..30) |_| {
+        st.stepWalk(dt, 1, east, Stepper.SETTLE, false);
+        if (st.walk != null) steps += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 0), steps);
+    st.stepWalk(dt, 0, 0, 0, false);
+    for (0..30) |_| {
+        st.stepWalk(dt, 1, east, Stepper.SETTLE, false);
+        if (st.walk != null) steps += 1;
+    }
+    try std.testing.expect(steps > 0);
 }
 
 test "a way held into the tree stays carried, zooming and panning nothing, until it is let go" {

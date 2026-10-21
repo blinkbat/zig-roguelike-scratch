@@ -439,6 +439,7 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .slime_quarter = @embedFile("slime-quarter.png"),
     .bloat = @embedFile("bloat.png"),
     .pib = @embedFile("pib.png"),
+    .beefy_pib = @embedFile("beefy-pib.png"),
 });
 
 const PICTURED = blk: {
@@ -966,6 +967,7 @@ pub fn body(k: actor.Kind) Look {
         .slime, .slime_half, .slime_quarter => .{ .ch = 's', .fg = rgb(0x6fae5a) },
         .bloat => .{ .ch = 'b', .fg = GAS },
         .pib => .{ .ch = 'p', .fg = rgb(0xe89aa6) },
+        .beefy_pib => .{ .ch = 'P', .fg = rgb(0xe89aa6) },
     };
 }
 
@@ -987,7 +989,7 @@ pub const Gait = enum { hop, slide };
 
 pub fn gait(k: actor.Kind) Gait {
     return switch (k) {
-        .archer, .wizard, .knight, .rat, .pib => .hop,
+        .archer, .wizard, .knight, .rat, .pib, .beefy_pib => .hop,
         .slime, .slime_half, .slime_quarter, .bloat => .slide,
     };
 }

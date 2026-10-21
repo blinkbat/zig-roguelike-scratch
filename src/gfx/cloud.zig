@@ -180,7 +180,7 @@ comptime {
 const OCTAVES: u32 = 3;
 /// Each of `fbm`'s octaves weighs this much of the last, the first this much of one.
 const FBM_GAIN: f32 = 0.5;
-const FBM_MAX: f32 = FBM_GAIN * (1 - std.math.pow(f32, FBM_GAIN, OCTAVES)) / (1 - FBM_GAIN);
+const FBM_MAX: f32 = FBM_GAIN * (1 - mathx.powi(FBM_GAIN, OCTAVES)) / (1 - FBM_GAIN);
 
 const DRIFT = [2]f32{ 0.21, 0.13 };
 

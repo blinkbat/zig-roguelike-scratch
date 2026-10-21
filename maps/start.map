@@ -18,6 +18,7 @@ makeup 2 rat
 makeup 3 pib
 makeup 2 pib rat
 makeup 1 bloat
+makeup 1 beefy_pib pib pib
 feature coast
 side west
 sea 6

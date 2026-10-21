@@ -22,6 +22,7 @@ pub const Kind = enum {
     slime_quarter,
     bloat,
     pib,
+    beefy_pib,
 
     pub fn foe(k: Kind) bool {
         return row(k).foe_type != null;
@@ -88,11 +89,12 @@ pub fn roomFor(bodies: usize, k: Kind) bool {
     return bodies + most(k) <= MAX;
 }
 
-/// `bleeds`: percent chance a blow that leaves its mark alive opens a bleed.
+/// `bleeds`/`stuns`: percent chance a blow that leaves its mark alive opens a bleed or stuns it.
 pub const Strike = struct {
     hit: damage.Base,
     verb: [:0]const u8,
     bleeds: u32 = 0,
+    stuns: u32 = 0,
 
     pub fn roll(s: Strike, rng: *mathx.Rng) i32 {
         return s.hit.roll(rng);
@@ -128,7 +130,22 @@ pub const Row = struct {
     resists: damage.Resists = .initFill(0),
     /// Ticks each of its actions takes (Brogue's `movementDuration`); a turn is drawn with one action at most.
     pace: i32 = clock.TURN,
+    /// Its turns from one sweep, a blow at every cell round it, to the next; 0, it never sweeps.
+    sweep_every: u8 = 0,
 };
+
+pub const SWEEP_VERB = "sweeps";
+pub const SWEEP_CELLS = mathx.ALL_DIRS.len;
+pub const Swept = grid.Area(SWEEP_CELLS);
+
+/// The cells round `from` its sweep reaches, those a step could.
+pub fn sweep(lv: *const grid.Level, from: P) Swept {
+    var out = Swept{};
+    for (mathx.ALL_DIRS) |d| {
+        if (lv.passOk(from, d)) out.push(from.add(d.delta()));
+    }
+    return out;
+}
 
 pub const FLIT: f32 = 0.33;
 pub const FRIGHT_REACH: i32 = 5;
@@ -145,6 +162,7 @@ pub fn row(k: Kind) Row {
         .slime_quarter => smaller(.slime_half, "quarter slime", null),
         .bloat => .{ .name = "bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .burst, .flits = true },
         .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .bleeds = 30 } }, .flees = true },
+        .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .stuns = 25 } }, .sweep_every = 4 },
     };
 }
 
@@ -188,6 +206,8 @@ pub const Actor = struct {
     ward: ward.Ward = .{},
     /// Its turns left running from the hero.
     fright: u8 = 0,
+    /// Its turns until it can sweep again.
+    sweep_in: u8 = 0,
 
     pub fn of(k: Kind, at: P) Actor {
         return .{ .kind = k, .at = at, .hp = row(k).hp, .max = row(k).hp, .resists = row(k).resists };
@@ -434,11 +454,22 @@ test "a slime with no free cell beside it waits to split until a blow finds one"
 }
 
 test "every foe a floor is stocked with is its own family, and a slime ends as four quarters at most" {
-    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib }, &FOES);
+    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib, .beefy_pib }, &FOES);
     try std.testing.expectEqual(Kind.slime, Kind.slime_quarter.family());
     try std.testing.expectEqual(Kind.rat, Kind.rat.family());
     try std.testing.expectEqual(@as(usize, 4), most(.slime));
     try std.testing.expectEqual(@as(usize, 1), most(.rat));
+}
+
+test "a sweep reaches every cell round it a step could, and none through a wall" {
+    var lv = grid.openFloor();
+    const from = P{ .x = 20, .y = 20 };
+    try std.testing.expectEqual(mathx.ALL_DIRS.len, sweep(&lv, from).n);
+    lv.set(.{ .x = 21, .y = 20 }, .wall);
+    const s = sweep(&lv, from);
+    try std.testing.expect(!s.has(.{ .x = 21, .y = 20 }) and !s.has(from));
+    std.debug.print("sweep: {d} cells in the open, {d} beside a wall\n", .{ mathx.ALL_DIRS.len, s.n });
+    try std.testing.expectEqual(mathx.ALL_DIRS.len - 1, s.n);
 }
 
 test "chase walks round a wall toward the hero" {

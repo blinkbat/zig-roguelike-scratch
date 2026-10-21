@@ -14,10 +14,6 @@ fn torn(moved: bool) i32 {
     return if (moved) MOVING else STILL;
 }
 
-pub fn procs(rng: *mathx.Rng, chance: u32) bool {
-    return chance > 0 and rng.percent(chance);
-}
-
 test "bleeding begins next turn, lasts five ticks, doubles on a turn moved and refreshes without stacking" {
     var b = Bleed{};
     b.start();

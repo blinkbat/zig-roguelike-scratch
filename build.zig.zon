@@ -4,8 +4,17 @@
     .fingerprint = 0xd2fe6d13c2ae44bf,
     .minimum_zig_version = "0.14.1",
     .dependencies = .{
+        .raylib = .{
+            .url = "https://codeload.github.com/raysan5/raylib/tar.gz/bdda18656b301303b711785db48ac311655bb3d9",
+            .hash = "raylib-5.5.0-whq8uExcNgQBBys4-PIIEqPuWO-MpfOJkwiM4Q1nLXVN",
+        },
+        .xcode_frameworks = .{
+            .url = "https://codeload.github.com/Corendos/xcode-frameworks/tar.gz/9a45f3ac977fd25dff77e58c6de1870b6808c4a7",
+            .hash = "N-V-__8AABHMqAWYuRdIlflwi8gksPnlUMQBiSxAqQAAZFms",
+            .lazy = true,
+        },
         .raylib_zig = .{
-            .url = "git+https://github.com/raylib-zig/raylib-zig#731884848a1c5480ee58f38d5b787c501925cbe2",
+            .url = "https://codeload.github.com/raylib-zig/raylib-zig/tar.gz/731884848a1c5480ee58f38d5b787c501925cbe2",
             .hash = "raylib_zig-5.6.0-dev-KE8REPE1BQChb1aqFIBZFfA6gyqq8mpQQ3it3g5xSGuJ",
         },
     },

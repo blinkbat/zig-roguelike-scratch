@@ -101,7 +101,19 @@ test {
     _ = @import("ui/journal.zig");
     _ = @import("ui/naming.zig");
     _ = @import("game.zig");
+    _ = @import("game/shots.zig");
+    _ = @import("game/scene.zig");
+    _ = @import("game/overlay.zig");
+    _ = @import("game/character.zig");
+    _ = @import("game/combat.zig");
+    _ = @import("game/harness.zig");
+    _ = @import("game/tests.zig");
     _ = @import("edit/editor.zig");
+    _ = @import("edit/knobs.zig");
+    _ = @import("edit/canvas.zig");
+    _ = @import("edit/modals.zig");
+    _ = @import("edit/panel.zig");
+    _ = @import("edit/tests.zig");
     _ = @import("save.zig");
     _ = @import("app.zig");
 }

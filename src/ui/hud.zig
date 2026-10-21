@@ -230,7 +230,7 @@ const FOCUS_W: f32 = 2;
 const TIP_W: i32 = 380;
 const TIP_PAD: i32 = 12;
 const TIP_GAP: i32 = 8;
-const TIP_LINE: i32 = font.SMALL + font.LEADING;
+const TIP_LINE = font.SMALL_LINE;
 const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
 

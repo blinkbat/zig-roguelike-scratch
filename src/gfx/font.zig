@@ -1,5 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
+const mathx = @import("../core/mathx.zig");
 
 const TTF = "Balthazar-Regular.ttf";
 const ATLAS_PX: i32 = 96;
@@ -267,7 +268,7 @@ fn mixed(a: rl.Color, b: rl.Color, t: f32) rl.Color {
     const k = std.math.clamp(t, 0, 1);
     const ch = struct {
         fn of(p: u8, q: u8, w: f32) u8 {
-            return @intFromFloat(@round(@as(f32, @floatFromInt(p)) + (@as(f32, @floatFromInt(q)) - @as(f32, @floatFromInt(p))) * w));
+            return @intFromFloat(@round(mathx.lerpF(@floatFromInt(p), @floatFromInt(q), w)));
         }
     };
     return .{ .r = ch.of(a.r, b.r, k), .g = ch.of(a.g, b.g, k), .b = ch.of(a.b, b.b, k), .a = a.a };
@@ -326,6 +327,7 @@ pub fn elided(buf: []u8, kept: []const u8, keep_end: bool) std.fmt.BufPrintError
 
 /// Between wrapped lines of text, past the text's size.
 pub const LEADING: i32 = 4;
+pub const SMALL_LINE: i32 = SMALL + LEADING;
 pub const WRAP_LINES_MAX: usize = 18;
 pub const WRAP_COLS_MAX: usize = 96;
 /// `wrap`'s lines, each nul-terminated.

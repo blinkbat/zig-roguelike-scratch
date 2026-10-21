@@ -7,7 +7,7 @@ const actor = @import("actor.zig");
 const P = mathx.P;
 
 pub const PER_FLOOR: usize = 12;
-pub const FEW: usize = 3;
+pub const FEW: usize = 2;
 /// The first kind leads.
 pub const KINDS = [_][]const actor.Kind{
     &.{ .rat, .slime },
@@ -15,7 +15,7 @@ pub const KINDS = [_][]const actor.Kind{
     &.{.rat},
     &.{ .rat, .rat },
     &.{.bloat},
-    &.{ .pib, .pib },
+    &.{ .beefy_pib, .pib, .pib },
     &.{ .pib, .rat, .rat },
     &.{ .rat, .slime, .pib },
 };

@@ -11,6 +11,7 @@ const pack = @import("../play/pack.zig");
 const climate = @import("climate.zig");
 
 const P = mathx.P;
+const Tokens = std.mem.TokenIterator(u8, .scalar);
 
 pub const MAX_NODES: usize = 32;
 /// Every placed foe and the hero fit the pool.
@@ -769,7 +770,7 @@ fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const 
     return out;
 }
 
-fn takeKnob(pg: *Procgen, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), knobbed: *KnobSet) Error!void {
+fn takeKnob(pg: *Procgen, word: []const u8, f: *Tokens, knobbed: *KnobSet) Error!void {
     if (try takeArm(&pg.floor, word, f, knobbed)) return;
     inline for (GROUPS, 0..) |grp, g| {
         inline for (grp.knobs, 0..) |k, i| {
@@ -785,11 +786,11 @@ fn groupBase(comptime g: usize) usize {
     return at;
 }
 
-fn takeFeatureKnob(ft: *Feature, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), set: *FeatureKnobSet) Error!void {
+fn takeFeatureKnob(ft: *Feature, word: []const u8, f: *Tokens, set: *FeatureKnobSet) Error!void {
     if (!try takeArm(ft, word, f, set)) return error.BadLine;
 }
 
-fn takeArm(u: anytype, word: []const u8, f: *std.mem.TokenIterator(u8, .scalar), knobbed: anytype) Error!bool {
+fn takeArm(u: anytype, word: []const u8, f: *Tokens, knobbed: anytype) Error!bool {
     switch (u.*) {
         inline else => |*p, t| inline for (comptime armKnobs(@TypeOf(u.*), t), 0..) |k, i| {
             if (std.mem.eql(u8, word, k)) {
@@ -807,7 +808,7 @@ fn putArm(w: anytype, u: anytype) !void {
     }
 }
 
-fn takeOnce(owner: anytype, comptime k: []const u8, i: usize, f: *std.mem.TokenIterator(u8, .scalar), knobbed: anytype) Error!void {
+fn takeOnce(owner: anytype, comptime k: []const u8, i: usize, f: *Tokens, knobbed: anytype) Error!void {
     if (knobbed.isSet(i)) return error.BadLine;
     knobbed.set(i);
     @field(owner.*, k) = try takeValue(@TypeOf(@field(owner.*, k)), f);
@@ -840,7 +841,7 @@ fn putValue(w: anytype, v: anytype) !void {
     }
 }
 
-fn takeValue(comptime T: type, f: *std.mem.TokenIterator(u8, .scalar)) Error!T {
+fn takeValue(comptime T: type, f: *Tokens) Error!T {
     switch (@typeInfo(T)) {
         .int => return int(T, f),
         .@"enum" => return std.meta.stringToEnum(T, f.next() orelse return error.BadLine) orelse error.BadLine,
@@ -858,11 +859,11 @@ fn takeValue(comptime T: type, f: *std.mem.TokenIterator(u8, .scalar)) Error!T {
     }
 }
 
-fn int(comptime T: type, f: *std.mem.TokenIterator(u8, .scalar)) Error!T {
+fn int(comptime T: type, f: *Tokens) Error!T {
     return std.fmt.parseInt(T, f.next() orelse return error.BadLine, 10) catch error.BadLine;
 }
 
-fn cell(f: *std.mem.TokenIterator(u8, .scalar)) Error!P {
+fn cell(f: *Tokens) Error!P {
     const p = P{ .x = try int(i32, f), .y = try int(i32, f) };
     return if (grid.Level.inside(p)) p else error.BadLine;
 }

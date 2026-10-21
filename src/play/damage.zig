@@ -11,6 +11,11 @@ pub fn chance(comptime pc: u32) fn (*mathx.Rng, i16) bool {
         }
     }.procs;
 }
+/// A foe's blow landing its status `pc` percent of the time; never, drawing nothing.
+pub fn procs(rng: *mathx.Rng, pc: u32) bool {
+    return pc > 0 and rng.percent(pc);
+}
+
 /// A skill's `procs` landing every time, drawing nothing.
 pub fn always(_: *mathx.Rng, _: i16) bool {
     return true;

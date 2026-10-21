@@ -24,7 +24,7 @@ pub const Matter = enum { blood, ooze, wood, ichor };
 pub fn matterOf(kind: ?actor.Kind) Matter {
     const k = kind orelse return .wood;
     return switch (k) {
-        .archer, .wizard, .knight, .rat, .pib => .blood,
+        .archer, .wizard, .knight, .rat, .pib, .beefy_pib => .blood,
         .slime, .slime_half, .slime_quarter => .ooze,
         .bloat => .ichor,
     };
@@ -245,8 +245,8 @@ pub const Sting = struct { slot: usize, after: ?After = null, fire_at: ?[2]f32 =
 pub const Settle = struct { slot: usize, after: After };
 
 const MOTES: usize = 320;
-/// Capacity for every body's turn effects and hero hit, plus a burst or chain jumps.
-pub const DUE: usize = actor.MAX * 6 + 2;
+/// Capacity for every body's turn effects, hero hit and sweep, plus a burst or chain jumps.
+pub const DUE: usize = actor.MAX * (6 + actor.SWEEP_CELLS) + 2;
 
 pub const Burst = struct { at: mathx.P, area: glacial.Burst, element: damage.Element };
 

@@ -42,7 +42,7 @@ pub const Surface = struct {
     offset: rl.Vector2,
 
     pub fn of(screen: mathx.P, size: mathx.P) Surface {
-        const fit = @min(@as(f32, @floatFromInt(screen.x - 2 * SURFACE_MARGIN)) / @as(f32, @floatFromInt(size.x)), @as(f32, @floatFromInt(screen.y - 2 * SURFACE_MARGIN)) / @as(f32, @floatFromInt(size.y)));
+        const fit = @min(@as(f32, @floatFromInt(@max(1, screen.x - 2 * SURFACE_MARGIN))) / @as(f32, @floatFromInt(size.x)), @as(f32, @floatFromInt(@max(1, screen.y - 2 * SURFACE_MARGIN))) / @as(f32, @floatFromInt(size.y)));
         const scale = if (fit <= 1) fit else @min(SCALE_MAX, 1 + (fit - 1) * GROWTH);
         return .{ .scale = scale, .offset = .{
             .x = @round((@as(f32, @floatFromInt(screen.x)) - @as(f32, @floatFromInt(size.x)) * scale) / 2),
@@ -83,6 +83,19 @@ pub const Surface = struct {
         rl.beginScissorMode(@intFromFloat(@floor(self.offset.x + r.x * self.scale)), @intFromFloat(@floor(self.offset.y + r.y * self.scale)), @intFromFloat(@ceil(r.width * self.scale)), @intFromFloat(@ceil(r.height * self.scale)));
     }
 };
+
+test "panel surfaces stay invertible when the window shrinks below its margins" {
+    const size = mathx.P{ .x = 640, .y = 480 };
+    const edges = [_]i32{ 0, 1, 2 * SURFACE_MARGIN - 1, 2 * SURFACE_MARGIN, 2 * SURFACE_MARGIN + 1 };
+    for (edges) |edge| {
+        for ([_]mathx.P{ .{ .x = edge, .y = 720 }, .{ .x = 1280, .y = edge } }) |screen| {
+            const surface = Surface.of(screen, size);
+            try std.testing.expect(std.math.isFinite(surface.scale) and surface.scale > 0);
+            _ = surface.point(.{ .x = 0, .y = 0 });
+        }
+    }
+    std.debug.print("panel surfaces: {d} narrow or short window sizes remain invertible\n", .{edges.len * 2});
+}
 
 /// A box's edge, doubled in `on_ink` when it is the one chosen.
 pub fn outline(r: rl.Rectangle, on: bool, on_ink: rl.Color, off_ink: rl.Color) void {

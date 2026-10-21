@@ -448,9 +448,15 @@ fn pullOf(zoom: f32) f32 {
     return (std.math.clamp(zoom, ZOOM_MIN, ZOOM_MAX) - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN);
 }
 
+/// Rings the pan reaches at the overview, and how many more it gains as the zoom closes in.
+const PAN_REACH: f32 = 1.6;
+const PAN_REACH_ZOOMED: f32 = 6;
+/// Rings of room the overview leaves past the outermost.
+const WHEEL_MARGIN: f32 = 0.63;
+
 /// `view.pan` within its zoom's reach, and never taking the view's middle off the wheel.
 pub fn clampPan(view: View) rl.Vector2 {
-    const limit = 1.6 + 6 * (1 - 1 / view.zoom);
+    const limit = PAN_REACH + PAN_REACH_ZOOMED * (1 - 1 / view.zoom);
     const reach: f32 = @floatFromInt(passives.RINGS);
     const focus = passives.unitPos(view.cursor);
     const pull = pullOf(view.zoom);
@@ -468,7 +474,7 @@ pub fn note(face: *const font.Face, text: [:0]const u8) void {
 fn wheelLayout(view: View) Layout {
     const box = WHEEL;
     const zoom = std.math.clamp(view.zoom, ZOOM_MIN, ZOOM_MAX);
-    const unit = @min(box.width, box.height) / (2 * (@as(f32, @floatFromInt(passives.RINGS)) + 0.63)) * zoom;
+    const unit = @min(box.width, box.height) / (2 * (@as(f32, @floatFromInt(passives.RINGS)) + WHEEL_MARGIN)) * zoom;
     const focus = passives.unitPos(view.cursor);
     const pull = pullOf(zoom);
     const mid = look.middle(box);

@@ -33,6 +33,9 @@ pub const Bonus = enum {
 comptime {
     for (ATTRS) |at| _ = @field(Bonus, @tagName(at));
 }
+/// What `Attrs.reduction` and `Attrs.crit` are called.
+pub const REDUCTION_LABEL = "physical damage reduction";
+pub const CRIT_LABEL = "critical strike chance";
 /// What a blow is, and so which attribute raises it.
 pub const Style = enum {
     heavy,

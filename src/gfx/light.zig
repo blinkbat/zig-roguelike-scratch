@@ -548,7 +548,7 @@ const Fade = struct {
             const dx = @max(0, @max(c.x - x, x - c.x - 1));
             const dy = @max(0, @max(c.y - y, y - c.y - 1));
             if (dx >= reach or dy >= reach) continue;
-            v = @min(v, c.m + (1 - c.m) * smooth(mathx.len(dx, dy) / reach));
+            v = @min(v, mathx.lerpF(c.m, 1, smooth(mathx.len(dx, dy) / reach)));
         }
         return v;
     }
@@ -1362,7 +1362,7 @@ pub const Light = struct {
         const v = if (fogged) self.viewAt(centre) else View{ .sight = 1, .memory = 1, .lit = 1 };
         const lit = v.lit;
         var s = Shine{ .sight = lit };
-        const night: Rgb = if (self.profile()) |k| self.sunOnBody(&s, k, centre, lit) else splat(1);
+        const night: Rgb = if (self.sunRay()) |ray| self.sunOnBody(&s, &ray, centre, lit) else splat(1);
         s.ambient = remembered(self.base() * night, v.sight, v.memory);
         s.floor = remembered((self.base() - self.ambientOf()) * night, v.sight, v.memory);
         if (self.carryToward(centre[0], centre[1], fogged)) |f| {
@@ -1390,10 +1390,10 @@ pub const Light = struct {
         return s;
     }
 
-    fn sunOnBody(self: *const Light, s: *Shine, k: sky.Sky, centre: [2]f32, lit: f32) Rgb {
-        const ray = SunRay.of(k);
+    fn sunOnBody(self: *const Light, s: *Shine, ray: *const SunRay, centre: [2]f32, lit: f32) Rgb {
+        const k = ray.k;
         const toward = ray.u;
-        const sun = self.sunAt(&self.scratch, &ray, centre[0], centre[1], BODY_Z);
+        const sun = self.sunAt(&self.scratch, ray, centre[0], centre[1], BODY_Z);
         const cloud = self.cloudAt(centre);
         const on = reaching(sun, self.composedAt(null, centre, cloud));
         if (lit > 0) s.add(.{
@@ -2281,10 +2281,7 @@ test "cell effect culling preserves floor wall and water lighting" {
     while (cells.next()) |c| {
         const kept = l.effectsNear(c);
         for (0..sub * sub) |i| {
-            const q = [2]f32{
-                @as(f32, @floatFromInt(c.x)) + (@as(f32, @floatFromInt(i % sub)) + 0.5) / SUB,
-                @as(f32, @floatFromInt(c.y)) + (@as(f32, @floatFromInt(i / sub)) + 0.5) / SUB,
-            };
+            const q = Light.texelCentre(@as(usize, @intCast(c.x)) * sub + i % sub, @as(usize, @intCast(c.y)) * sub + i / sub);
             const v = l.viewAt(q);
             surfaces.insert(Spot.of(&lv, q).surface);
             try std.testing.expectEqual(l.shade(&lv, &.{}, all, q, null, v, null, 1), l.shade(&lv, &.{}, kept, q, null, v, null, 1));
@@ -3020,7 +3017,7 @@ test "sight has no step where open ground meets a shrub at its edge" {
     }
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
-    const y: f32 = @as(f32, @floatFromInt(shrub.y)) + 0.5;
+    const y = mathx.centre(shrub)[1];
     const x: f32 = @floatFromInt(shrub.x + 1);
     const past = l.sightAt(x + EDGE_EPS, y);
     const step = past - l.sightAt(x - EDGE_EPS, y);
@@ -3070,7 +3067,7 @@ test "a shrub in sight at the edge of what was ever seen is not dimmed toward th
     }
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
-    const v = l.sightAt(@as(f32, @floatFromInt(shrub.x)) + EDGE_EPS, @as(f32, @floatFromInt(shrub.y)) + 0.5);
+    const v = l.sightAt(@as(f32, @floatFromInt(shrub.x)) + EDGE_EPS, mathx.centre(shrub)[1]);
     std.debug.print("sight at a shrub's unexplored edge: {d:.4}\n", .{v});
     try std.testing.expectApproxEqAbs(@as(f32, 1), v, 1e-3);
 }

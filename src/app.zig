@@ -34,7 +34,7 @@ const DebugRow = enum {
 
     fn note(r: DebugRow) [:0]const u8 {
         return switch (r) {
-            .unkillable => comptime std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.named(DebugRow.unkillable), game.UNKILLABLE_HP }),
+            .unkillable => comptime std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.named(DebugRow.unkillable), game.combat.UNKILLABLE_HP }),
         };
     }
 };
@@ -69,7 +69,7 @@ const App = struct {
     /// The run being played in a slot; null for a play-test.
     autosave: ?save.Autosave = null,
     undeleted: ?anyerror = null,
-    note: menu.Note(menu.NOTE_MAX) = .{},
+    note: menu.Note(LINE) = .{},
 
     fn say(app: *App, comptime fmt: []const u8, args: anytype) void {
         app.note.say(fmt, args);
@@ -465,7 +465,7 @@ test "an editor arena uses a separate map and never opens a save slot" {
 /// `edit` opens the editor on that map first; null opens the title.
 pub fn run(edit: ?[]const u8) !void {
     start_edit = edit;
-    try game.withGame(.{ .vsync_hint = true }, NAME, body, false);
+    try game.withGame(.{ .vsync_hint = true, .window_resizable = true }, NAME, body, false);
 }
 
 fn body(g: *game.Game) !void {
