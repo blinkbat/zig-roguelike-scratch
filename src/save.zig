@@ -48,6 +48,7 @@ const UNSAVED = .{
     "character",
     "nearby",
     "pause_page",
+    "debug",
     "mode",
     "died_in",
     "pause_menu",
@@ -106,6 +107,7 @@ const UNSAVED = .{
     "mana_fill",
     "growth_shown",
     "gold_shown",
+    "perf",
 };
 
 comptime {

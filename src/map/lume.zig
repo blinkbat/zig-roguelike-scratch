@@ -48,6 +48,7 @@ fn dim(lv: *grid.Level, viewer: P, sky: f32, lit_by: *const [grid.CELLS]bool, wa
         const near = mathx.reaches(viewer, grid.Level.of(i), sky);
         lv.lit[i] = near or lit_by[i];
         lv.seen[i] = was_seen[i] or lv.lit[i];
+        if (lv.lit[i]) lv.barrel_seen[i] = lv.barrel[i];
     }
 }
 

@@ -11,13 +11,13 @@ later owner edits.
 |---|---|---|---|
 | Skill icons and controller/key prompts | Assistant, procedural line art | `src/gfx/look.zig`: `skillLines`, `inkSkill`, `Prompt` | Replace skill glyphs when desired; input symbols stay basic |
 | Life/mana orbs and status icons | Assistant, procedural shapes | `src/ui/hud.zig` | Paint orb and ailment components in the existing HUD template |
-| Equipment slots, tree nodes and item markers | Assistant, code-drawn placeholders; radial tree layout adapted from the owner's `zig-soulslike` | `src/ui/book.zig`, `src/ui/trees.zig`; `src/game.zig` loot drawing | Basic rectangles, circles, lines, shared skill glyphs, `*` items and `$` gold; no item sprites yet |
+| Equipment slots and tree nodes | Assistant, code-drawn placeholders; radial tree layout adapted from the owner's `zig-soulslike` | `src/ui/book.zig`, `src/ui/trees.zig` | Basic rectangles, circles, lines and shared skill glyphs; gold and item containers use the supplied rasters below |
 | Event panel | Owner border, assistant layout and colors | `src/ui/journal.zig`, `assets/hud-border.png` | Layout/color review; border painting is the owner's |
 | Missing body/tile pictures | Assistant glyph fallback | `src/gfx/look.zig`: body/tile lookup | Unpainted kinds retain glyphs |
 | Combat effects, weather, lighting, water reflections | Assistant procedural rendering | `src/gfx/fx.zig`, `pixel.zig`, `weather.zig`, `light.zig`; map drawing | Effects review; these are not painted source pixels |
 
-All additions in the inventory/progression pass are code-drawn placeholders. This pass
-does not generate, alter or install raster artwork.
+The original inventory/progression pass used code-drawn placeholders. The later loot-container
+pass registers the supplied bag and coin PNGs below without changing their pixels.
 
 ## Owner originals and derived terrain
 
@@ -37,6 +37,8 @@ documented scripts; it does not mean every resulting tile has been hand-painted 
 | `assets/forest-tree-walls.png` | `assets/source/forest-tree-walls.aseprite`, `Draw here` | `Forest extensions`; documented owner-requested palette transform | Generated canopy/trunk connections and recolor |
 | `assets/swamp-tree.png` | Owner-supplied 64x64 raster; editable source and individual authorship not verified | Registered as a standalone tree and placed near water on the default map; original pixels unchanged | Supplied raster preserved |
 | `assets/beefy-pib.png` | Owner-supplied 64x64 raster, placed in `assets/` by the owner; editable source not recorded | Registered as the beefy pib's body; original pixels unchanged | Supplied raster preserved |
+| `assets/small-coins.png`, `assets/large-coins.png` | Owner-supplied 64x64 rasters in `assets/`; editable sources not recorded | Registered for ground gold piles (large from `items.Coins.LARGE`); a code-drawn shine band and light glow are assistant effects; original pixels unchanged | Supplied rasters preserved at native scale |
+| `assets/item-bag.png`, `assets/chest-item-bag.png` | Owner-supplied 64x64 rasters in `assets/`; editable sources and individual authorship not verified | Registered for ground item piles and nonempty open chests; original pixels unchanged | Supplied rasters preserved at native scale |
 | `assets/grass.png` | Existing grass raster; original source not recorded here | Documented 15% RGB reduction in `tone_forest.lua` | Preserve owner backup; verify original attribution |
 | `assets/source/hud-elements.aseprite` | Paint on the Desktop working copy must be inspected before export | Initial template, guides, reference assembly and named slices from `create_template.py` | Original paint layer versus generated guides |
 | Desktop cave/forest guide sheets | Owner paint on `Draw here`, if present | `guide_walls.lua` guides and `idea_walls.lua` rough ideas | `Ideas - hide before export` is assistant work, not shipping art |

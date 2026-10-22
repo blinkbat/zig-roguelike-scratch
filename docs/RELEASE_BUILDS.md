@@ -17,7 +17,10 @@ python3 tools/release.py linux
 
 The output is `zig-out/releases/cistern-linux-x86_64.tar.gz`, with a SHA-256
 sidecar. Extract it into a writable directory on Linux and run `./run.sh`.
-The launcher selects its own directory so maps and saves are found. The archive
+The launcher selects its own directory so maps and saves are found, and prefers a hybrid laptop's
+dedicated GPU: NVIDIA PRIME offload when `/proc/driver/nvidia` exists, otherwise `DRI_PRIME=1`.
+Variables already set by the player win. The Windows executable exports `NvOptimusEnablement` and
+`AmdPowerXpressRequestHighPerformance` for the same purpose. The archive
 preserves every current `.map` under `maps/`, including subfolders, and includes
 embedded artwork/fonts, relevant license notices and `build-info.json`; it never
 includes saved runs.
@@ -25,6 +28,14 @@ includes saved runs.
 The target is baseline x86-64 with glibc 2.31, X11/XWayland and OpenGL 3.3.
 The README inside the archive lists runtime packages. System graphics libraries
 are supplied by Linux, rather than bundled from the build environment.
+
+For graphics reports, open the game menu's Debug > Diagnostics and capture the active vendor,
+renderer, OpenGL version and build mode. Debug > Display exposes fullscreen, VSync and a frame
+limit; Debug > Lighting and Effects let the tester isolate shadows, body/effect lighting,
+water reflections/glints, weather and the cinema effects. Settings are temporary for that session.
+Linux fullscreen uses the current monitor's native mode through GLFW, retaining the previous
+window size and position on exit. Cross-compiling cannot verify a particular Linux driver's
+fullscreen or GPU selection behavior.
 
 ## macOS
 

@@ -589,10 +589,7 @@ pub const Fx = struct {
 
     /// A blow, sting or settle is still to land on the slot.
     pub fn pending(self: *const Fx, slot: usize) bool {
-        for (self.due[0..self.due_n]) |*d| {
-            if (d.what.on() == slot) return true;
-        }
-        return false;
+        return self.landsIn(slot) > 0;
     }
 
     pub fn landedOn(self: *const Fx, slot: usize) ?Body {
@@ -601,11 +598,17 @@ pub const Fx = struct {
 
     /// The blow that split the body in `slot` off another is still to land.
     pub fn revealing(self: *const Fx, slot: usize) bool {
+        return self.revealsIn(slot) > 0;
+    }
+
+    /// Seconds until the blow that reveals the slot lands; 0 when none is due.
+    pub fn revealsIn(self: *const Fx, slot: usize) f32 {
+        var t: f32 = 0;
         for (self.due[0..self.due_n]) |*d| {
             const a = d.what.after() orelse continue;
-            if (a.reveals == slot) return true;
+            if (a.reveals == slot) t = @max(t, d.t);
         }
-        return false;
+        return t;
     }
 
     pub fn holds(self: *const Fx, slot: usize) bool {
@@ -623,7 +626,8 @@ pub const Fx = struct {
 
     /// Seconds until the slot is held no longer: its last due landed and flashed.
     pub fn heldIn(self: *const Fx, slot: usize) f32 {
-        const due = if (self.pending(slot)) self.landsIn(slot) + FLASH_S else 0;
+        const lands = self.landsIn(slot);
+        const due = if (lands > 0) lands + FLASH_S else 0;
         return @max(self.flash[slot], due);
     }
 

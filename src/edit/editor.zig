@@ -10,18 +10,18 @@ const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const prompt_text = @import("../gfx/prompt_text.zig");
+const game = @import("../game.zig");
+const knobs = @import("knobs.zig");
+const canvas = @import("canvas.zig");
+const modals = @import("modals.zig");
+const panel = @import("panel.zig");
+
+const P = mathx.P;
+const Desk = input.Desk;
 
 pub fn textFace(g: *const game.Game) prompt_text.Face {
     return .{ .face = &g.face };
 }
-const game = @import("../game.zig");
-pub const knobs = @import("knobs.zig");
-pub const canvas = @import("canvas.zig");
-pub const modals = @import("modals.zig");
-pub const panel = @import("panel.zig");
-
-const P = mathx.P;
-const Desk = input.Desk;
 
 pub const PANEL_W: i32 = 340;
 pub const PAD: i32 = 12;
@@ -2161,10 +2161,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     fo.makeup[fo.makeup_n - 1] = pack.Makeup.of(&.{ .slime, .bloat, .rat, .rat, .rat });
     fo.makeup[fo.makeup_n - 1].weight = 3;
     ed.desk.mouse = .{ .x = 0, .y = 0 };
-    prepare(ed, g);
-    rl.beginTextureMode(target);
-    draw(ed, g);
-    rl.endTextureMode();
+    render(ed, g, target);
     ed.gen_top = ed.gen_most;
     try snap(ed, g, target, gen_path);
     ed.modal = .objects;
@@ -2177,10 +2174,14 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-help.png", .{std.fs.path.dirname(map_path) orelse "."}));
 }
 
-fn snap(ed: *Editor, g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {
+fn render(ed: *Editor, g: *game.Game, target: rl.RenderTexture2D) void {
     prepare(ed, g);
     rl.beginTextureMode(target);
     draw(ed, g);
     rl.endTextureMode();
+}
+
+fn snap(ed: *Editor, g: *game.Game, target: rl.RenderTexture2D, path: [:0]const u8) !void {
+    render(ed, g, target);
     try game.shots.exportTarget(target, path);
 }

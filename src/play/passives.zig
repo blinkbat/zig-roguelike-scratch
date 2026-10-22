@@ -26,7 +26,7 @@ pub const Arm = enum {
     }
 
     pub fn of(c: hero.Class) Arm {
-        for (std.enums.values(Arm)) |a| {
+        for (ARMS) |a| {
             if (a.class() == c) return a;
         }
         unreachable;
@@ -65,10 +65,10 @@ pub const Seam = enum {
     rogue_wizard,
     wizard_warrior,
     pub fn from(s: Seam) Arm {
-        return SEAMS.get(s)[0];
+        return SEAMS.get(s).from;
     }
     pub fn to(s: Seam) Arm {
-        return SEAMS.get(s)[1];
+        return SEAMS.get(s).to;
     }
 };
 /// An arm's two branches: the one whose bridges reach the next arm in `Arm`'s order, then the one reached from the previous.
@@ -81,7 +81,7 @@ const BRANCHES = std.EnumArray(Arm, [std.enums.values(Lane).len]Branch).init(.{
 const BRANCH_POSITIONS = blk: {
     var out = std.EnumArray(Branch, struct { arm: Arm, lane: Lane }).initUndefined();
     var seen = std.EnumSet(Branch).initEmpty();
-    for (std.enums.values(Arm)) |a| for (BRANCHES.get(a), 0..) |b, lane| {
+    for (ARMS) |a| for (BRANCHES.get(a), 0..) |b, lane| {
         if (seen.contains(b)) @compileError(@tagName(b) ++ " belongs to more than one passive branch");
         seen.insert(b);
         out.set(b, .{ .arm = a, .lane = @enumFromInt(lane) });
@@ -92,12 +92,11 @@ const BRANCH_POSITIONS = blk: {
     break :blk out;
 };
 const SEAMS = blk: {
-    const arms = std.enums.values(Arm);
-    if (std.enums.values(Seam).len != arms.len) @compileError("one seam joins each arm to the next");
-    var out = std.EnumArray(Seam, [2]Arm).initUndefined();
-    for (arms, 0..) |a, i| {
-        const next = arms[(i + 1) % arms.len];
-        out.set(@field(Seam, @tagName(a) ++ "_" ++ @tagName(next)), .{ a, next });
+    if (std.enums.values(Seam).len != ARMS.len) @compileError("one seam joins each arm to the next");
+    var out = std.EnumArray(Seam, struct { from: Arm, to: Arm }).initUndefined();
+    for (ARMS, 0..) |a, i| {
+        const next = ARMS[(i + 1) % ARMS.len];
+        out.set(@field(Seam, @tagName(a) ++ "_" ++ @tagName(next)), .{ .from = a, .to = next });
     }
     break :blk out;
 };
@@ -305,7 +304,7 @@ pub const PER_BRANCH = blk: {
     break :blk count;
 };
 const PER_ARM = 1 + std.enums.values(Lane).len * PER_BRANCH;
-const NTREE = std.enums.values(Arm).len * PER_ARM;
+const NTREE = ARMS.len * PER_ARM;
 pub const N = NTREE + std.enums.values(Seam).len * BRIDGE_RINGS.len;
 pub const RINGS = BRANCH_RINGS.len + 1;
 pub const HUB = N;
@@ -499,7 +498,7 @@ pub const NODES: [N]Node = blk: {
         .rogue = "Quick Hands",
         .wizard = "Lore",
     });
-    for (std.enums.values(Arm)) |a| {
+    for (ARMS) |a| {
         out[armFirst(a)] = .{ .arm = a, .ring = 0, .name = roots.get(a), .grant = .{ .kind = a.stat(), .amount = ROOT_GRANT } };
         for (BRANCHES.get(a)) |b| {
             var i: usize = 0;

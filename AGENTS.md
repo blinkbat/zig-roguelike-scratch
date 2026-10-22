@@ -56,6 +56,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - For concurrent owner play, copy the built executable into the temporary shot directory with a distinct
   basename before `--shot`; `run.cmd` kills every process named `cistern.exe`, including headless captures.
 - `--shot-ui` runs Character/HUD and day/night level-up captures; use the same temporary-directory procedure as `--shot`.
+- `--shot-debug` captures each Debug submenu at 720p and loot states, and verifies that the six additional
+  lighting/water/weather switches change pixels and restore the exact frame when re-enabled.
 - Inspect actual headless PNGs. `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,
   maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
   `water-reflections/00.png` through `39.png` cover four seconds of idle play; `water-mirrors-*.png`
@@ -87,9 +89,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   including a skill opened with B; the opening press never confirms or cancels the new reticle.
   Esc backs out one layer at a time and opens pause only from play. Clear raylib's exit key with
   `input.claimKeys`; Esc must never close the window. Menu does not open pause over death.
-  Pause's Debug submenu contains Restart Map, Reveal Map, Composed Lighting, Bloom, Atmosphere and Depth Of Field.
+  Pause's Debug menu groups Gameplay, Lighting, Effects, Display and Diagnostics in `game/debug.zig`.
+  It exposes cosmetic lighting/shadow/water/weather switches, fullscreen, VSync/frame limits and active OpenGL
+  renderer/build/framebuffer information. CPU timing excludes frame pacing and is not GPU timing.
   Reveal shows terrain and minimap without changing gameplay sight or saved exploration; turning it off restores
-  the normal view. The four cosmetic effects default on. Debug settings are not saved.
+  the normal view. Cosmetic effects default on. Debug settings are not saved.
 - Inspect (`Mode.inspect`, R3 or I) is the HUD's tooltips: the stick/d-pad walks the orbs, slots, shown
   statuses and the event log (`overlay.spotsOf`, nearest along the way pushed), `hud.tooltip` names and describes the one it is
   on, without naming any input. Any back-out or the same button again closes it; it spends no turn.
@@ -115,8 +119,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Item actions and point allocation execute on one press; item changes spend one turn and keep Character open.
   Shoulders / Q and E change tabs; F1–F5 directly toggle Equipment, Inventory, Stats, Passives and Skills.
   Keyboard tab headers show their shortcut glyphs. Back closes Character directly. Skills owns binding. Point allocation is free.
-  Interact directly handles a sole item or chest (a door always lists), or lists multiple underfoot and adjacent visible objects; a press while busy waits for `quiet` (`Queued.interact`)
-  instead of queuing its button's skill. Item commands wait out door travel. Gold collects automatically on movement.
+  Interact opens a sole bag/chest's loot modal directly, or lists nearby containers/doors first when there is a choice (a door always lists).
+  Each occupied item cell is one bag; loot shows only the selected cell, with Take item and Take all. Each successful pickup action spends one turn;
+  Take all takes as many as fit and leaves the rest. Empty loot closes. A press while busy waits for `quiet` (`Queued.interact`)
+  instead of queuing its button's skill. Item commands wait out door travel. Gold collects automatically on movement and when opening loot.
+  Foes roll gold more often than items; plain white items have no rolled modifiers and are more common than magic blues.
+  `items.foeLoot`/`items.roll` own the rates and rolls; bags and gold appear when the foe's death is presented.
   See `docs/PROGRESSION.md` for rules and the inspected D2/PoE2 paperdoll references.
 - `app.zig` owns title/game/editor transitions; the game requests `Game.exit`, and `Game.back` identifies
   its caller. New reads `atlas.START` (`maps/start.map`) fresh, falling back to a generated floor only
@@ -155,7 +163,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   viewer) and `tests` sit beside it in `src/edit/`.
 - Objects > select a foe > Fight launches `map/spar.zig`'s arena using the app's separate map, with the
   normal editor-test archer and no save slot. Returning preserves the editor map, modal and undo history;
-  death retry and Debug > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
+  death retry and Debug > Gameplay > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
 - `save.zig` freezes the whole run: map, visited/current nodes, actors, class/name, resources/statuses,
   RNG, log, skill bar, time, gold, inventory, progression and each node's ground drops. `core/store.zig`
   fingerprints types, plus the passive tree's layout (`save.TREE`); reject incompatible or incomplete
@@ -176,8 +184,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Brick walls join walls, forests join shrubs. `Level.wallShape` is brick-only; `tileShape` handles both.
   Missing forest masks are restored on save resume. Torch/barrel placement must preserve routes;
   barrels stop movement/arrows and break for gold in one hit, with no HP.
-  Chests spawn closed, open when stepped toward or through Interact for more gold than barrels and an item,
-  and stay empty and walkable afterward. Attacks never open them. Wilds' `loops` reconnects side paths;
+  Chests spawn closed, open their loot modal when stepped toward or through Interact, and automatically collect their gold.
+  They remain walkable, showing `chest-item-bag.png` while items remain and `chest-open.png` once empty;
+  ground item cells show one `item-bag.png` regardless of item count. Gold piles show `small-coins.png`, or `large-coins.png` from
+  `items.Coins.LARGE`, beside a bag on the same cell, with a faint gold light. Seen coins, bags, closed or stocked chests and barrels
+  catch a very subtle diagonal shine (`look.shineSweep`), each cell at its own time. Attacks never open chests. Wilds' `loops` reconnects side paths;
   `rewards chests` rewards substantial branches, fills sparse maps with spaced chests in sheltered alcoves,
   and scatters barrels as minor gold rewards. The Strand enables both; rewards must preserve routes.
   Its swamp trees (`assets/swamp-tree.png`, standalone `swamp_tree` tiles) scatter on dirt

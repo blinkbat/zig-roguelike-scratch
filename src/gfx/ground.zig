@@ -58,12 +58,13 @@ pub const Ground = enum {
 
 pub const Grounds = std.EnumSet(Ground);
 
-const RANKS = std.enums.values(Ground).len + 1;
+const NONE: u8 = 0;
+const RANKS = NONE + 1 + std.enums.values(Ground).len;
 const Ranks = std.meta.Int(.unsigned, RANKS);
 
 const RANK = blk: {
     var r = std.EnumArray(Ground, u8).initFill(0);
-    var n: u8 = 1;
+    var n: u8 = NONE + 1;
     for ([2]bool{ false, true }) |sheet| {
         for (std.enums.values(Ground)) |g| {
             if (look.GROUND_SHEETS.contains(g) != sheet) continue;
@@ -81,7 +82,7 @@ const BY_RANK = blk: {
 };
 
 /// Every ground, lowest first, as they draw.
-pub const LAYERS: []const Ground = BY_RANK[1..];
+pub const LAYERS: []const Ground = BY_RANK[NONE + 1 ..];
 
 pub fn of(t: grid.Tile) ?Ground {
     return switch (t) {
@@ -119,7 +120,6 @@ pub fn bedAt(lv: *const grid.Level, p: P) ?Ground {
     return best;
 }
 
-const NONE: u8 = 0;
 const OVER: u8 = std.math.maxInt(u8);
 
 fn isGround(r: u8) bool {

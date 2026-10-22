@@ -18,7 +18,12 @@ const skillbar = @import("../play/skillbar.zig");
 const fx = @import("../gfx/fx.zig");
 const game = @import("../game.zig");
 const P = mathx.P;
+/// Ground drops kept free for every foe a node may hold, slime halves included, to drop on dying.
 const FOE_DROPS = actor.MAX;
+
+comptime {
+    std.debug.assert(items.GROUND_MAX > FOE_DROPS);
+}
 
 pub fn barrelVerb(comptime act: skillbar.Act) []const u8 {
     return if (comptime act.bolt() != null) skillbar.Act.skill(act).VERB else SHOOT;
@@ -214,7 +219,7 @@ pub fn strike(g: *game.Game, slot: ?usize, s: Stroke, at: P, lethal: bool, after
     const len = mathx.distEuclid(at, s.from);
     const dir: ?[2]f32 = if (len == 0) null else .{ @as(f32, @floatFromInt(at.x - s.from.x)) / len, @as(f32, @floatFromInt(at.y - s.from.y)) / len };
     const kind: ?actor.Kind = if (slot) |i| g.pool.items[i].kind else null;
-    if (slot == null or slot == game.heroSlot(g) or g.lv.isLit(at)) {
+    if (slot == game.heroSlot(g) or g.lv.isLit(at)) {
         g.fx.strike(s.wait, .{ .slot = slot, .at = mathx.centre(at), .dir = dir, .matter = fx.matterOf(kind), .lethal = lethal, .after = after, .fire = s.fire });
         flashes(g, s.wait);
     } else if (after) |a| g.fx.settle(s.wait, .{ .slot = slot.?, .after = a });
@@ -252,9 +257,17 @@ pub fn glideHeld(g: *game.Game, slot: usize, gl: game.Glide) f32 {
 }
 
 pub fn smash(g: *game.Game, p: P, comptime verb: []const u8, s: Stroke) void {
-    if (!g.lv.breakBarrel(p)) return;
-    g.log.push(.loot, "{s} " ++ verb ++ " the barrel. It drops {d} gold.", .{ g.name.text(), loot(g, p, items.BARREL_GOLD) });
+    const gold = barrelGold(g, p) orelse return;
+    g.log.push(.loot, "{s} " ++ verb ++ BARREL_DROPS, .{ g.name.text(), gold });
     strike(g, null, s, p, true, null);
+}
+
+const BARREL_DROPS = " the barrel. It drops {d} gold.";
+
+/// The gold a barrel on `p` drops as it breaks; null with none there.
+fn barrelGold(g: *game.Game, p: P) ?i32 {
+    if (!g.lv.breakBarrel(p)) return null;
+    return loot(g, p, items.BARREL_GOLD);
 }
 
 pub fn openChest(g: *game.Game, p: P) bool {
@@ -275,7 +288,7 @@ pub fn groundRoom(g: *game.Game) bool {
 }
 
 fn loot(g: *game.Game, at: P, range: items.Gold) i32 {
-    const gold = g.loot_rng.range(range.lo, range.hi);
+    const gold = range.roll(&g.loot_rng);
     const added = g.ground.gold(at, gold);
     std.debug.assert(added);
     return gold;
@@ -284,7 +297,7 @@ fn loot(g: *game.Game, at: P, range: items.Gold) i32 {
 pub fn collectGold(g: *game.Game, at: P) void {
     const amount = g.ground.collect(at);
     if (amount == 0) return;
-    g.gold_taken = at;
+    g.gold_taken = .{ .at = at, .amount = amount };
     g.gold +|= amount;
     g.log.push(.loot, "{s} picks up {d} gold.", .{ g.name.text(), amount });
     g.unsaved = true;
@@ -352,8 +365,10 @@ pub fn fell(g: *game.Game, id: u16) void {
     const levels = g.growth.gain(xp);
     g.log.push(.progress, "{s} gains {d} experience.", .{ g.name.text(), xp });
     if (levels > 0) g.log.push(.progress, "Level {d}: +{d} passive, +{d} active points.", .{ g.growth.level, g.growth.passive_points - was.passive_points, g.growth.active_points - was.active_points });
-    if (g.loot_rng.percent(items.DROP_PERCENT)) {
-        const added = g.ground.add(.{ .item = items.roll(&g.loot_rng), .at = at, .source = id });
+    const reward = items.foeLoot(&g.loot_rng);
+    if (reward.gold > 0) std.debug.assert(g.ground.gold(at, reward.gold));
+    if (reward.item) |item| {
+        const added = g.ground.add(.{ .item = item, .at = at, .source = id });
         std.debug.assert(added);
     }
     for (&g.flasks.values) |*f| f.fill(flask.PER_KILL);
@@ -438,7 +453,7 @@ const Hurt = struct { dmg: i32, lethal: bool, mana: i32 = 0 };
 
 pub const UNKILLABLE_HP: i32 = 1;
 
-pub fn hurt(g: *game.Game, id: u16, dmg: i32) Hurt {
+fn hurt(g: *game.Game, id: u16, dmg: i32) Hurt {
     const a = g.pool.get(id) orelse return .{ .dmg = 0, .lethal = false };
     var left = dmg;
     if (id == g.hero) {
@@ -676,7 +691,9 @@ fn swipe(g: *game.Game, id: u16, by: actor.Row, s: actor.Strike) game.Swipe {
     const name = actor.row(a.kind).name;
     const dmg = s.roll(&g.rng);
     const stunned = dmg < a.hp and damage.procs(&g.rng, s.stuns);
-    if (stunned) a.clock.stun();
+    if (stunned) {
+        if (!a.waits and !g.ran[actor.Pool.slot(id)].contains(.worn)) a.clock.stunBeforeAction(actor.row(a.kind).pace) else a.clock.stun();
+    }
     const h = hurt(g, id, dmg);
     game.sayAt(g, at, "The {s} " ++ actor.SWEEP_VERB ++ " the {s} for {d}.{s}", .{ by.name, name, h.dmg, if (h.lethal) IT_DIES else "" });
     if (stunned) game.sayAt(g, at, "The {s} " ++ turn_clock.STUNNED ++ "!", .{name});
@@ -686,8 +703,7 @@ fn swipe(g: *game.Game, id: u16, by: actor.Row, s: actor.Strike) game.Swipe {
 }
 
 fn smashedBy(g: *game.Game, p: P, by: actor.Row) ?game.Swipe {
-    if (!g.lv.breakBarrel(p)) return null;
-    const gold = loot(g, p, items.BARREL_GOLD);
-    game.sayAt(g, p, "The {s} smashes the barrel. It drops {d} gold.", .{ by.name, gold });
+    const gold = barrelGold(g, p) orelse return null;
+    game.sayAt(g, p, "The {s} smashes" ++ BARREL_DROPS, .{ by.name, gold });
     return .{ .slot = null, .at = p, .lethal = true };
 }

@@ -93,11 +93,18 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
   does not confirm it unless that button is also the standard confirm. B always cancels, even when it opened the skill. Secondary skills keep their selected set after the modifier is released.
 - **Character and Game are separate.** Start opens Character directly on its last page, already focused on content; another press closes it. F1–F5 open the corresponding Character page, switch pages directly, and close an already open matching page. Their glyphs appear on the tabs when using the keyboard. These shortcuts cancel an unconfirmed reticle and spend no turn. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
 - **Binding belongs to Skills.** Its bind action carries a learned skill to the slot screen; select a destination and confirm once. Back returns to Skills. The picker remains available for utility skills and the secondary-set modifier. Clearing a slot is direct. Binding spends no turn.
-- **Pause > Debug** contains Restart Map, Reveal Map and the four cinema toggles (`cinema.Options`). Reveal shows terrain and the minimap without changing
-  normal sight or saved exploration; switching it off restores the normal view. Back exits Debug to Pause first.
+- **Pause > Debug** groups controls into Gameplay (Restart Map, Reveal Map, Unkillable), Lighting
+  (Composed Lighting, Shadows, Body Lighting, Effect Lights), Effects (Bloom, Atmosphere, Depth Of Field,
+  Water Reflections, Water Glints, Weather), Display (Fullscreen, VSync, Frame Limit), and Diagnostics.
+  Diagnostics shows the active OpenGL vendor/renderer/version, window and framebuffer size, build mode,
+  and FPS/CPU timing; its performance overlay can be toggled. CPU timing excludes frame pacing and is
+  not GPU timing. Frame Limit cycles through uncapped, 30, 60, 120 and 144 FPS; VSync can cap it further.
+  Visual effects default on. Debug settings last for the application session and are not saved.
+  Reveal changes neither normal sight nor saved exploration. Back returns one submenu at a time,
+  retaining the parent selection, before returning to Pause.
 - **Character** contains equipment, inventory, stats, shared passives and class skills. Shoulders / Q and E change pages from anywhere. Clicking a tab enters its content. Back closes Character in one step. Equip, unequip, drop and point allocation each take one deliberate action; no action submenu or confirmation modal. Rings have an explicit destination switch and the comparison follows that destination. Successful item actions keep the screen open and still spend one turn. Point allocation is free of simulation turns. The underlying inventory/progression transactions remain authoritative.
 - The passive tree starts zoomed in, at `trees.ZOOM_START`. Left-stick bearing browses, right stick pans, D-pad up/down zooms. Shifted keyboard navigation pans; +/- and Page Up/Down zoom; right-stick click / Home gives the overview. Pan and zoom never allocate points.
-- **Interact** acts immediately when there is one visible item or chest within reach. Doors always keep a choice, preventing queued input from immediately returning through an arrival door. Multiple objects open a list; one confirmation acts on its selection. The list stays open while nearby objects remain. Busy input waits for the current turn or door travel. Gold collects automatically on movement.
+- **Interact** opens the loot modal for a sole visible bag or chest within reach. Multiple nearby containers/doors first offer a choice; selecting a container opens only its contents. Doors always keep a choice, preventing queued input from immediately returning through an arrival door. Loot offers Take item through the confirm control and Take all through the change control, with device glyphs and clickable buttons. Each successful pickup action takes one turn; Take all fills available inventory space and leaves excess items. The modal closes when empty. Busy input waits for the current turn or door travel. Gold collects automatically on movement and when opening loot, including a chest's gold as it opens.
 - **Inspect** walks the life orb, skill slots, mana orb, active statuses and event log without spending a turn. The
   log scrolls up/down while selected; move sideways to leave it. B, Select or
   another right-stick click closes it; keyboard X, Esc or I does the same. Holding the modifier (or Ctrl) shows the
@@ -106,7 +113,7 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
   Its help, tooltips, status messages, tool shortcuts and modal shortcuts use the same keycap and
   mouse glyph styles as the game. `gfx/prompt_text.zig` measures and clips marked captions as whole glyphs.
   In Objects, select a foe and choose Fight (or Enter) to test it in an arena. The pause menu returns to the
-  unchanged editor; death retry or Debug > Restart Map resets the fight.
+  unchanged editor; death retry or Debug > Gameplay > Restart Map resets the fight.
 
 ## Binding and glyph audit, 2026-10-20
 
@@ -123,7 +130,7 @@ The second pass checked play, targeting, Character, both trees, binding, Inspect
 | Keyboard back looked like an arbitrary letter | Escape is the primary back glyph; X remains an alias |
 | Binding actions and mouse targets unclear | Explicit glyph actions, direct selected-skill assignment, scaled mouse targets and wrapped descriptions |
 | Clicking UI left controller hints active | Click/wheel selects keyboard prompts; hovering still leaves the device alone |
-| Queued interaction could bounce through a door | Direct handling limited to sole loot/chests; doors keep their choice |
+| Queued interaction could bounce through a door | Direct opening limited to sole bags/chests; doors keep their choice |
 
 [D2R's console account](https://news.blizzard.com/en-us/article/23722094/bringing-the-original-diablo-ii-experience-to-console) supports direct skill trays and adapting interaction to the device. GGG's [PoE2 0.1.1c notes](https://webcdn.pathofexile.com/forum/view-thread/3717308) explicitly cover controller font enlargement, item navigation, dedicated interface-confirm bindings, advanced item information and a full-inventory weapon-swap fix. The useful comparison is direct access, readable consequences, consistent device hints and intact transactions. These are dated primary sources, not claims about every present-day default.
 

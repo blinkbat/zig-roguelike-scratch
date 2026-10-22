@@ -80,11 +80,21 @@ pub const Kind = enum {
 };
 const KINDS = std.enums.values(Kind);
 /// Percent of slain foes that drop an item.
-pub const DROP_PERCENT = 25;
+pub const DROP_PERCENT = 10;
+pub const FOE_GOLD_PERCENT = 50;
+pub const MAGIC_PERCENT = 20;
 /// Gold a broken barrel and an opened chest drop, both ends inclusive.
-pub const Gold = struct { lo: i32, hi: i32 };
+pub const Gold = struct {
+    lo: i32,
+    hi: i32,
+
+    pub fn roll(g: Gold, rng: *mathx.Rng) i32 {
+        return rng.range(g.lo, g.hi);
+    }
+};
 pub const BARREL_GOLD = Gold{ .lo = 3, .hi = 12 };
 pub const CHEST_GOLD = Gold{ .lo = 18, .hi = 36 };
+pub const FOE_GOLD = Gold{ .lo = 1, .hi = 6 };
 pub const Affix = struct { kind: Mod, value: i16 };
 pub const Spec = struct {
     name: [:0]const u8,
@@ -189,16 +199,26 @@ pub const Item = struct {
 
 pub fn roll(rng: *mathx.Rng) Item {
     var out = Item{ .kind = rng.pick(Kind, KINDS) };
-    const count = rng.range(0, out.mods.len);
+    if (!rng.percent(MAGIC_PERCENT)) return out;
+    const count = rng.range(1, out.mods.len);
     for (0..@intCast(count)) |i| {
         var at: usize = rng.below(AFFIXES.len);
         while (for (out.mods[0..i]) |m| {
             if (m.?.kind == AFFIXES[at].kind) break true;
-        } else false) at = (at + 1) % AFFIXES.len;
+        } else false) at = mathx.wrap(at, 1, AFFIXES.len);
         const a = AFFIXES[at];
         out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)) };
     }
     return out;
+}
+
+pub const Loot = struct { gold: i32 = 0, item: ?Item = null };
+
+pub fn foeLoot(rng: *mathx.Rng) Loot {
+    return .{
+        .gold = if (rng.percent(FOE_GOLD_PERCENT)) FOE_GOLD.roll(rng) else 0,
+        .item = if (rng.percent(DROP_PERCENT)) roll(rng) else null,
+    };
 }
 
 pub const Gear = struct {
@@ -331,7 +351,17 @@ pub const Inventory = struct {
 
 pub const GROUND_MAX = 512;
 pub const Drop = struct { item: Item, at: mathx.P, source: u16 = grid.NO_ONE };
-pub const Coins = struct { at: mathx.P, amount: i32 };
+pub const Coins = struct {
+    at: mathx.P,
+    amount: i32,
+
+    /// More than any one barrel holds: only piles dropped on one another are large.
+    pub const LARGE = BARREL_GOLD.hi + 1;
+
+    pub fn large(c: Coins) bool {
+        return c.amount >= LARGE;
+    }
+};
 pub const Ground = struct {
     drops: [GROUND_MAX]Drop = undefined,
     n: usize = 0,
@@ -473,6 +503,34 @@ test "equipment swaps preserve both hands, reject self-funded requirements and k
         if (it.mods[1]) |b| try std.testing.expect(it.mods[0].?.kind != b.kind);
     }
     std.debug.print("equipment: bow plus all 3 great weapons occupy both hands; reverse swaps, dependency checks, atomic failures and 2000 bounded modifier rolls\n", .{});
+}
+
+test "foe loot is mostly gold then plain items with rare magic affixes" {
+    var rng = mathx.Rng.init(0xC157E2);
+    const rolls = 10000;
+    var gold: usize = 0;
+    var plain: usize = 0;
+    var magic: usize = 0;
+    for (0..rolls) |_| {
+        const reward = foeLoot(&rng);
+        if (reward.gold > 0) {
+            gold += 1;
+            try std.testing.expect(reward.gold >= FOE_GOLD.lo and reward.gold <= FOE_GOLD.hi);
+        }
+        if (reward.item) |it| {
+            if (it.magical()) {
+                magic += 1;
+                if (it.mods[1]) |second| try std.testing.expect(second.kind != it.mods[0].?.kind);
+            } else {
+                plain += 1;
+                try std.testing.expectEqual([2]?Affix{ null, null }, it.mods);
+            }
+        }
+    }
+    try std.testing.expect(gold >= 4500 and gold <= 5500);
+    try std.testing.expect(plain >= 650 and plain <= 950);
+    try std.testing.expect(magic >= 125 and magic <= 275);
+    std.debug.print("foe loot over {d} kills: {d} gold, {d} plain items without affixes, {d} magic items\n", .{ rolls, gold, plain, magic });
 }
 
 test "ground gold accommodates every cell and full pickup leaves its item intact" {

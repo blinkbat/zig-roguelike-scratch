@@ -172,9 +172,13 @@ pub const State = struct {
         return true;
     }
 
+    fn extraRanks(self: *const State, act: skillbar.Act) u8 {
+        return self.ranks.get(act) -| 1;
+    }
+
     pub fn damageBonus(self: *const State, act: skillbar.Act) i32 {
         if (act.attack() == null) return 0;
-        return @as(i32, self.ranks.get(act) -| 1) * RANK_DAMAGE_PERCENT;
+        return @as(i32, self.extraRanks(act)) * RANK_DAMAGE_PERCENT;
     }
 
     fn skillAttrs(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) attrs.Attrs {
@@ -196,14 +200,14 @@ pub const State = struct {
     }
 
     pub fn cost(self: *const State, act: skillbar.Act) i32 {
-        return mathx.percentOf(act.cost(), @max(0, mathx.PERCENT - @as(i32, self.ranks.get(act) -| 1) * RANK_COST_PERCENT - self.perks().mana_cost));
+        return mathx.percentOf(act.cost(), @max(0, mathx.PERCENT - @as(i32, self.extraRanks(act)) * RANK_COST_PERCENT - self.perks().mana_cost));
     }
 
     pub fn cooldown(self: *const State, act: skillbar.Act) u8 {
         if (act.attack() != null or act.cooldown() == 0) return act.cooldown();
         // A cooldown of 1 runs out in the turn the skill took, so a turn-taking skill keeps 2.
         const floor = @min(act.cooldown(), 1 + act.turns());
-        return @max(floor, act.cooldown() -| (self.ranks.get(act) -| 1));
+        return @max(floor, act.cooldown() -| self.extraRanks(act));
     }
 
     pub fn writeDescription(self: *const State, act: skillbar.Act, w: anytype) void {

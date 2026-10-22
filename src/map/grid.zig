@@ -328,6 +328,8 @@ pub const Level = struct {
     /// 1-based into the actor pool; `NO_ONE` is empty.
     occupant: [CELLS]u16,
     barrel: [CELLS]bool,
+    /// Each seen cell's barrel as the hero last saw it.
+    barrel_seen: [CELLS]bool,
     /// 1-based into the map's doors; `NO_DOOR` is none.
     door: [CELLS]u8,
     /// Caustic gas, Brogue's volume.
@@ -343,6 +345,7 @@ pub const Level = struct {
             .los = [_]bool{false} ** CELLS,
             .occupant = [_]u16{NO_ONE} ** CELLS,
             .barrel = [_]bool{false} ** CELLS,
+            .barrel_seen = [_]bool{false} ** CELLS,
             .door = [_]u8{NO_DOOR} ** CELLS,
             .gas = [_]u16{0} ** CELLS,
             .torch = .{},
@@ -502,8 +505,22 @@ pub const Level = struct {
 
     pub fn light(self: *Level, p: P) void {
         if (!inside(p)) return;
-        self.lit[idx(p)] = true;
-        self.seen[idx(p)] = true;
+        const i = idx(p);
+        self.lit[i] = true;
+        self.seen[i] = true;
+    }
+
+    /// The cells one step from `from` along `dirs` that a step could reach, in their order.
+    pub fn reachable(self: *const Level, comptime N: usize, from: P, dirs: [N]mathx.Dir) Area(N) {
+        var out = Area(N){};
+        for (dirs) |d| {
+            if (self.passOk(from, d)) out.push(from.add(d.delta()));
+        }
+        return out;
+    }
+
+    pub fn barrelSeen(self: *const Level, p: P) bool {
+        return cellOr(bool, &self.barrel_seen, p, false);
     }
 
     pub fn isLit(self: *const Level, p: P) bool {

@@ -231,6 +231,8 @@ const TIP_W: i32 = 380;
 const TIP_PAD: i32 = 12;
 const TIP_GAP: i32 = 8;
 const TIP_LINE = font.SMALL_LINE;
+/// Below the tooltip's top, where its body starts under the title.
+const TIP_BODY_Y = TIP_PAD + font.BODY + TIP_GAP;
 const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
 
@@ -281,7 +283,7 @@ pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl
             }
         }
     }
-    const h = 2 * TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(n)) * TIP_LINE;
+    const h = TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(n)) * TIP_LINE;
     const mid = look.middleAt(over).x;
     const x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
     const y = @max(TIP_MARGIN, @min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y) - TIP_GAP - h);
@@ -290,7 +292,7 @@ pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl
     rl.drawRectangleLinesEx(look.rect(x, y, TIP_W, h), TIP_FRAME_W, FRAME);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
     for (lines[0..n], 0..) |l, i| {
-        const top = y + TIP_PAD + font.BODY + TIP_GAP + @as(i32, @intCast(i)) * TIP_LINE;
+        const top = y + TIP_BODY_Y + @as(i32, @intCast(i)) * TIP_LINE;
         if (std.mem.indexOfScalar(u8, l, TIP_SEP)) |split| {
             buf[i][split] = 0;
             face.text(buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM);

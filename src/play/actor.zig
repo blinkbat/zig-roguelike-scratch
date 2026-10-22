@@ -140,11 +140,7 @@ pub const Swept = grid.Area(SWEEP_CELLS);
 
 /// The cells round `from` its sweep reaches, those a step could.
 pub fn sweep(lv: *const grid.Level, from: P) Swept {
-    var out = Swept{};
-    for (mathx.ALL_DIRS) |d| {
-        if (lv.passOk(from, d)) out.push(from.add(d.delta()));
-    }
-    return out;
+    return lv.reachable(SWEEP_CELLS, from, mathx.ALL_DIRS[0..SWEEP_CELLS].*);
 }
 
 pub const FLIT: f32 = 0.33;

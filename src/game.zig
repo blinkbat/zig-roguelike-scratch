@@ -40,6 +40,7 @@ pub const shots = @import("game/shots.zig");
 pub const scene = @import("game/scene.zig");
 pub const overlay = @import("game/overlay.zig");
 pub const character = @import("game/character.zig");
+pub const debugging = @import("game/debug.zig");
 pub const combat = @import("game/combat.zig");
 pub const harness = @import("game/harness.zig");
 
@@ -63,29 +64,19 @@ pub fn authored(comptime px: i32) i32 {
 /// Screen pixels to a sprite's pixel.
 pub const PX_SCALE: f32 = @floatFromInt(@divExact(CELL, look.SPRITE_PX));
 pub const GLYPH: i32 = authored(look.GLYPH_PX);
-pub const LEAN_GLYPH: i32 = authored(40);
-pub const LEAN_MARK: i32 = authored(30);
 pub const TEXT: i32 = font.BODY;
 pub const LINE_W: i32 = authored(2);
-pub const OUTLINE_INSET: i32 = authored(1);
-pub const BODY_BAR_INSET: i32 = authored(6);
-pub const BODY_BAR_H: i32 = authored(4);
-pub const BODY_BAR_LIFT: i32 = authored(2);
-pub const LEAN_PAD: i32 = authored(4);
 const TEXT_LEADING: i32 = 6;
 pub const TEXT_LINE: i32 = TEXT + TEXT_LEADING;
 const DEAD_TITLE_DY: i32 = -100;
 const DEAD_SCORE_DY: i32 = -10;
 const DEAD_ACTION_DY: i32 = 40;
 pub const SLOT_PX: i32 = 48;
-pub const SLOT_MID: i32 = @divTrunc(SLOT_PX, 2);
-pub const CLEAR_GLYPH: i32 = @divTrunc(SLOT_PX, 2);
 pub const SLOT_GAP: i32 = 8;
 pub const SLOT_STEP: i32 = SLOT_PX + SLOT_GAP;
 const GROUP_GAP: i32 = 16;
 pub const KEY_GAP: i32 = 6;
 pub const PROMPT_PX: i32 = 22;
-pub const SLOT_EDGE_INSET: i32 = look.HUD_BORDER_CUT - 3;
 pub const SLOT_XS = blk: {
     var xs: [skillbar.SLOTS.len]i32 = undefined;
     var x: i32 = 0;
@@ -101,43 +92,10 @@ pub const SLOT_XS = blk: {
     break :blk xs;
 };
 pub const SKILLS_W: i32 = SLOT_XS[SLOT_XS.len - 1] + SLOT_PX;
-/// The bind screen's panel, scaled like Character's.
-const BIND_PANEL = book.SIZE;
-pub const BIND_TOP: i32 = 24;
-pub const BIND_X0: i32 = @divTrunc(BIND_PANEL.x - SKILLS_W, 2);
-pub const BIND_TITLE: i32 = 32;
-pub const BIND_ROWS_DY: i32 = BIND_TITLE + BIND_POP_DY + SLOT_PX;
-pub const BIND_LABEL_GAP: i32 = 6;
-const BIND_ROW_GAP: i32 = 24;
-const SLOT_COLUMN_H: i32 = SLOT_PX + KEY_GAP + PROMPT_PX;
-pub const BIND_ROW_H: i32 = TEXT + BIND_LABEL_GAP + SLOT_COLUMN_H + BIND_ROW_GAP;
-pub const BIND_POP_DY: i32 = 10;
-pub const BIND_INFO_DY: i32 = 8;
+pub const SLOT_COLUMN_H: i32 = SLOT_PX + KEY_GAP + PROMPT_PX;
 pub const PICK_MARGIN: i32 = 16;
-pub const MINI: i32 = 3;
-pub const MINI_W: i32 = grid.W * MINI;
-pub const MINI_H: i32 = grid.H * MINI;
-pub const MINI_PAD: i32 = hud.EDGE;
 /// Cells past the view a prop's shadow can reach into it from.
 pub const CAST_MARGIN: i32 = @intFromFloat(@ceil(light.CAST_REACH));
-pub const MINI_FRAME: i32 = look.HUD_BORDER_CUT;
-pub const MINI_HERO_GROW: i32 = 1;
-pub const DAY_GAP: i32 = 12;
-pub const DAY_INSET: i32 = 16;
-/// Either side of the glyph's middle, the line stays clear of it.
-pub const DAY_CLEAR: f32 = DAY_GLYPH_R + 3;
-pub const DAY_DROP: i32 = 1;
-pub const SUN_R: f32 = 3;
-pub const SUN_RAY_IN: f32 = 5;
-pub const SUN_RAY_OUT: f32 = 7;
-pub const SUN_RAYS: usize = 8;
-pub const MOON_R: f32 = 5;
-pub const MOON_CUT: f32 = 2.5;
-pub const MOON_CUT_INSET: f32 = 0.6;
-pub const DAY_GLYPH_R: f32 = @max(SUN_RAY_OUT, MOON_R);
-pub const SHOT_SEED: u64 = 0x5EED_1234;
-pub const SHOTS_DIR = "shots";
-pub const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
 const FLIGHT_S: f32 = 0.022;
 const CAM_EASE: f32 = 12.0;
 /// One walk repeat, so the glides of a held walk join end to end.
@@ -167,16 +125,6 @@ const LOOT_SALT: u64 = 0x10_07_A11;
 pub const INTERACT_REACH: i32 = 1;
 const NEARBY_MAX = items.GROUND_MAX + grid.Cells.square(INTERACT_REACH);
 pub const NearbyBuf = [NEARBY_MAX]book.Nearby;
-/// Ground drops kept free for every foe a node may hold, slime halves included, to drop on dying.
-const FOE_DROPS = actor.MAX;
-comptime {
-    std.debug.assert(items.GROUND_MAX > FOE_DROPS);
-}
-/// Gold and item marks on the ground, beside each other in their cell.
-const GOLD_DX: i32 = authored(-10);
-pub const DROP_DX: i32 = authored(10);
-const LOOT_DY: i32 = authored(12);
-const LOOT_PX: i32 = authored(24);
 
 const CONFIRM = menu.CONFIRM;
 const BACK = menu.BACK;
@@ -211,11 +159,6 @@ const PAUSE = menu.PAUSE;
 pub const PausePage = enum { main, debug, character };
 pub const PauseRow = enum { resume_, debug, back, quit };
 pub const PAUSE_ROWS = std.enums.values(PauseRow);
-pub const DebugRow = enum { restart_map, reveal_map, composed_lighting, bloom, atmosphere, depth_of_field };
-pub const DEBUG_ROWS = std.enums.values(DebugRow);
-comptime {
-    for (std.meta.fields(cinema.Options)) |f| _ = @field(DebugRow, f.name);
-}
 
 pub fn rowAt(row: anytype) usize {
     const Row = @TypeOf(row);
@@ -278,7 +221,7 @@ pub fn pickWindow(top_y: i32, bottom_y: i32, n: usize, at: usize) menu.Window {
 pub const Log = journal.Log;
 
 /// Presentation only: the hit already resolved when this was made.
-pub const Shot = struct {
+const Shot = struct {
     flight: bow.Flight,
     from: P,
     act: skillbar.Act = .shoot,
@@ -530,7 +473,7 @@ pub const Tick = std.meta.FieldEnum(Owed);
 /// `in` is set once the turn it was taken in has its stagger.
 const Turning = struct { to: Facing, in: ?f32 = null };
 
-pub const Visit = struct {
+const Visit = struct {
     lv: grid.Level,
     pool: actor.Pool,
     facing: [actor.MAX]Facing,
@@ -549,12 +492,40 @@ pub const Visit = struct {
 
 const Flasks = std.EnumArray(flask.Kind, flask.Flask);
 
+pub const Perf = struct {
+    const EVERY_S: f32 = 0.5;
+    const AT = P{ .x = 8, .y = 6 };
+    const COLOR = look.fade(look.DIM, 0.6);
+
+    since_s: f32 = 0,
+    frames: u32 = 0,
+    work_ns: u64 = 0,
+    buf: [32:0]u8 = [_:0]u8{0} ** 32,
+    len: usize = 0,
+
+    pub fn add(p: *Perf, dt: f32, work_ns: u64) void {
+        p.since_s += dt;
+        p.frames += 1;
+        p.work_ns += work_ns;
+        if (p.since_s < EVERY_S) return;
+        const fps = @as(f32, @floatFromInt(p.frames)) / p.since_s;
+        const ms = @as(f32, @floatFromInt(p.work_ns)) / @as(f32, @floatFromInt(p.frames)) / std.time.ns_per_ms;
+        const len = (std.fmt.bufPrintZ(&p.buf, "{d:.0} fps  {d:.1} ms cpu", .{ fps, ms }) catch "").len;
+        p.* = .{ .buf = p.buf, .len = len };
+    }
+
+    pub fn draw(p: *const Perf, face: *const font.Face) void {
+        face.draw(p.buf[0..p.len :0], AT.x, AT.y, font.SMALL, COLOR);
+    }
+};
+
 pub const Game = struct {
     mode: Mode = .play,
     /// Drawn in place of `.dead` until the lethal turn is.
     died_in: Mode = .play,
     pause_menu: menu.Menu = .{},
     pause_page: PausePage = .main,
+    debug: debugging.State = .{},
     character: book.Book = .{},
     /// What Character's Nearby page lists, filled afresh each step and draw; too big for the stack each frame.
     nearby: NearbyBuf = undefined,
@@ -572,6 +543,7 @@ pub const Game = struct {
     clock: day.Clock = .{},
     outdoors: bool = false,
     hour_shown: f32 = day.Clock.hour(.{}),
+    perf: Perf = .{},
     /// Kept across runs, never saved.
     unkillable: bool = false,
     unsaved: bool = false,
@@ -602,7 +574,7 @@ pub const Game = struct {
     stepped: bool = false,
     displaced: std.StaticBitSet(actor.MAX) = .initEmpty(),
     /// Gold the hero took this turn, still drawn until the hero is drawn there.
-    gold_taken: ?P = null,
+    gold_taken: ?items.Coins = null,
     /// `xpLevels` as of the last drawn turn, and the bar easing toward it.
     xp_aim: f32 = 0,
     xp_shown: f32 = 0,
@@ -943,7 +915,10 @@ pub fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
             }
             g.lead = s.wait;
         },
-        .open => if (!combat.openChest(g, to)) return,
+        .open => {
+            character.openLoot(g, to);
+            return;
+        },
         .step => heroTo(g, to),
         .blocked => return,
     }
@@ -1249,10 +1224,11 @@ fn bindStep(g: *Game) void {
     var kit_buf: KitBuf = undefined;
     const kit = g.growth.kit(g.class, &kit_buf);
     if (state.click) if (state.pointer) |pointer| {
-        const p = menu.Surface.of(g.screen, BIND_PANEL).point(pointer);
+        const panel = overlay.bindPanel(g);
+        const p = overlay.bindSurface(g, panel).point(pointer);
         for (overlay.BIND_ACTIONS, 0..) |action, i| {
             if (!action.shown(b)) continue;
-            if (look.holds(overlay.bindActionBox(i), p)) state.pressed.insert(action.button);
+            if (look.holds(overlay.bindActionBox(panel, i), p)) state.pressed.insert(action.button);
         }
         if (b.menu == .browse) {
             for (skillbar.SETS, 0..) |_, row| for (0..SLOT_XS.len) |col| {
@@ -1463,7 +1439,7 @@ pub fn stepGlide(g: *Game, late: f32) void {
     for (g.order[0..g.order_n]) |id| part[actor.Pool.slot(id)] = stagger(g, id, late, hero_done, &next);
     for (g.owed[0..g.pool.n], 0..) |*o, i| {
         if (!o.any()) continue;
-        const start = if (g.split_from[i]) |p| @max(hero_done, part[p]) else hero_done;
+        const start = if (g.split_from[i]) |p| @max(hero_done, part[p], g.fx.revealsIn(i)) else hero_done;
         part[i] = stagger(g, actor.Pool.idOf(i), late, start, &next);
     }
     if (warded) |c| g.fx.settle(std.mem.max(f32, part[0..g.pool.n]), .{ .slot = hero, .after = c });
@@ -1725,7 +1701,7 @@ pub fn update(g: *Game, dt: f32) void {
     g.light.sky = skyNow(g);
     g.light.step(&g.lv, dt);
     g.light.carrier = carrierAt(g);
-    g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, PX_SCALE);
+    if (g.debug.visuals.weather) g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, PX_SCALE);
 }
 
 fn skyNow(g: *const Game) ?sky.Sky {
@@ -1783,15 +1759,6 @@ fn screenOf(g: *const Game) Screen {
 pub fn holdWalk(g: *Game) void {
     g.st.holdWalk();
     g.pending = null;
-}
-
-pub fn drawGold(g: *const Game, c: scene.Cam, at: P) void {
-    drawLoot(g, c, at, look.COIN_MARK, GOLD_DX, look.RETICLE);
-}
-
-pub fn drawLoot(g: *const Game, c: scene.Cam, at: P, mark: [:0]const u8, dx: i32, ink: rl.Color) void {
-    const m = c.mid(at);
-    g.face.centred(mark, m.x + dx, m.y + LOOT_DY, LOOT_PX, ink);
 }
 
 fn stepTurning(g: *Game, dt: f32) void {
@@ -1873,10 +1840,6 @@ pub fn cellUnder(v: rl.Vector2) P {
     return mathx.cellOf(middle(v));
 }
 
-pub fn drawGlyph(g: *Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void {
-    g.face.glyph(ch, sx + HALF_CELL, sy + HALF_CELL, GLYPH, col);
-}
-
 fn textMid(g: *Game, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
     menu.mid(g.face, g.screen, s, y, size, col);
 }
@@ -1954,6 +1917,7 @@ pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*
     input.mapPads();
     const g = try boot(alloc);
     defer shut(alloc, g);
+    g.debug.vsync = flags.vsync_hint;
     defer unloadGraphics(g);
     g.face = font.Face.load(look.TILE_CODEPOINTS);
     defer g.face.unload();
@@ -1963,11 +1927,12 @@ pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*
 
 pub const NAME = "Cistern";
 
-pub const Headless = struct { flag: [:0]const u8, body: fn (*Game) anyerror!void, startup_shown: bool = false };
+const Headless = struct { flag: [:0]const u8, body: fn (*Game) anyerror!void, startup_shown: bool = false };
 
 pub const HEADLESS = [_]Headless{
     .{ .flag = "--shot", .body = shots.shoot },
     .{ .flag = "--shot-ui", .body = shots.shootUi },
+    .{ .flag = "--shot-debug", .body = shots.shootDebug },
     .{ .flag = "--shot-cinema", .body = shots.shootCinema },
     .{ .flag = "--bench", .body = shots.benchWalk, .startup_shown = true },
 };
@@ -1977,12 +1942,62 @@ pub fn headless(comptime h: Headless) !void {
     try look.expectShaders();
 }
 
+// X11/KDE panels and the macOS menu bar/Dock stay over an undecorated screen-sized window; only a monitor-owned one covers them.
+const MONITOR_OWNED = switch (@import("builtin").os.tag) {
+    .linux, .macos => true,
+    else => false,
+};
+
+const glfw = struct {
+    const Window = opaque {};
+    const Monitor = opaque {};
+    const VidMode = extern struct { width: c_int, height: c_int, red: c_int, green: c_int, blue: c_int, refresh: c_int };
+    extern fn glfwGetCurrentContext() ?*Window;
+    extern fn glfwGetWindowMonitor(w: *Window) ?*Monitor;
+    extern fn glfwGetMonitors(count: *c_int) ?[*]*Monitor;
+    extern fn glfwGetVideoMode(m: *Monitor) ?*const VidMode;
+    extern fn glfwGetWindowPos(w: *Window, x: *c_int, y: *c_int) void;
+    extern fn glfwGetWindowSize(w: *Window, width: *c_int, height: *c_int) void;
+    extern fn glfwSetWindowMonitor(w: *Window, m: ?*Monitor, x: c_int, y: c_int, width: c_int, height: c_int, refresh: c_int) void;
+};
+
+const Rect = struct { x: c_int = 0, y: c_int = 0, w: c_int = WINDOW_W, h: c_int = WINDOW_H };
+
+var windowed: Rect = .{};
+
+fn currentMonitor() ?*glfw.Monitor {
+    var count: c_int = 0;
+    const all = glfw.glfwGetMonitors(&count) orelse return null;
+    const i = rl.getCurrentMonitor();
+    return if (i >= 0 and i < count) all[@intCast(i)] else null;
+}
+
+fn toggleMonitorOwned() void {
+    const w = glfw.glfwGetCurrentContext() orelse return;
+    if (glfw.glfwGetWindowMonitor(w) != null) {
+        glfw.glfwSetWindowMonitor(w, null, windowed.x, windowed.y, windowed.w, windowed.h, 0);
+        return;
+    }
+    const m = currentMonitor() orelse return;
+    const mode = glfw.glfwGetVideoMode(m) orelse return;
+    glfw.glfwGetWindowPos(w, &windowed.x, &windowed.y);
+    glfw.glfwGetWindowSize(w, &windowed.w, &windowed.h);
+    glfw.glfwSetWindowMonitor(w, m, 0, 0, mode.width, mode.height, mode.refresh);
+}
+
 pub fn fullscreen() bool {
+    if (MONITOR_OWNED) {
+        const w = glfw.glfwGetCurrentContext() orelse return false;
+        return glfw.glfwGetWindowMonitor(w) != null;
+    }
     return rl.isWindowState(.{ .borderless_windowed_mode = true });
 }
 
 pub fn syncScreen(g: *Game, toggle: bool) void {
-    if (toggle) rl.toggleBorderlessWindowed();
+    if (toggle) {
+        if (MONITOR_OWNED) toggleMonitorOwned() else rl.toggleBorderlessWindowed();
+        debugging.syncDisplay(g);
+    }
     g.screen = .{ .x = rl.getScreenWidth(), .y = rl.getScreenHeight() };
 }
 
@@ -1999,10 +2014,13 @@ pub fn frame(g: *Game) void {
     g.st.aimed = if (g.mode == .aim) g.aim_by else null;
     g.st.update(dt);
     syncScreen(g, g.st.fullscreen);
+    const began = std.time.Instant.now() catch null;
     update(g, dt);
     prepare(g);
     g.st.modifier = g.bar.modifier;
     rl.beginDrawing();
     drawFrame(g);
+    if (began) |b| if (std.time.Instant.now()) |now| g.perf.add(dt, now.since(b)) else |_| {};
+    if (g.debug.performance_overlay) g.perf.draw(&g.face);
     rl.endDrawing();
 }

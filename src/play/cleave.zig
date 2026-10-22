@@ -19,13 +19,10 @@ pub const Arc = grid.Area(WIDTH);
 
 /// The cell toward `to` and the two either side of it round `from`, those a step could reach.
 pub fn arc(lv: *const grid.Level, from: P, to: P) Arc {
-    var out = Arc{};
-    const d = mathx.dirTo(from, to) orelse return out;
-    for (SPREAD) |turn| {
-        const s = d.turned(turn);
-        if (lv.passOk(from, s)) out.push(from.add(s.delta()));
-    }
-    return out;
+    const d = mathx.dirTo(from, to) orelse return .{};
+    var dirs: [WIDTH]mathx.Dir = undefined;
+    for (SPREAD, &dirs) |turn, *s| s.* = d.turned(turn);
+    return lv.reachable(WIDTH, from, dirs);
 }
 
 /// An arc with a body or barrel in it.

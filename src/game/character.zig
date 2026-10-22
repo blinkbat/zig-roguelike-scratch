@@ -41,7 +41,11 @@ pub fn openCharacter(g: *game.Game) void {
 }
 
 pub fn dropShown(g: *const game.Game, drop: items.Drop) bool {
-    if (!g.lv.isLit(drop.at)) return false;
+    return g.lv.isLit(drop.at) and dropLanded(g, drop);
+}
+
+/// Laid, or its foe's death drawn; seen or not.
+pub fn dropLanded(g: *const game.Game, drop: items.Drop) bool {
     if (drop.source == grid.NO_ONE) return true;
     const i = actor.Pool.slot(drop.source);
     return g.pictured[i].down();
@@ -55,16 +59,31 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
     const hero = game.heroSlot(g) orelse return out[0..0];
     const at = g.pool.items[hero].at;
     var n: usize = 0;
-    for (g.ground.drops[0..g.ground.n], 0..) |drop, i| {
+    var listed = std.StaticBitSet(grid.CELLS).initEmpty();
+    for (g.ground.drops[0..g.ground.n]) |drop| {
         if (!dropReached(g, at, drop)) continue;
-        out[n] = .{ .kind = .loot, .index = i, .at = drop.at, .item = drop.item };
+        const cell = grid.Level.idx(drop.at);
+        if (listed.isSet(cell)) continue;
+        listed.set(cell);
+        out[n] = .{ .kind = if (g.lv.at(drop.at) == .chest_open or g.lv.at(drop.at) == .chest) .chest else .bag, .at = drop.at };
         n += 1;
     }
     var cells = grid.Cells.around(at, game.INTERACT_REACH);
     while (cells.next()) |p| {
-        const chest = chestReached(g, at, p);
+        const chest = chestReached(g, at, p) and !listed.isSet(grid.Level.idx(p));
         if (!chest and doorReached(g, at, p) == null) continue;
         out[n] = .{ .kind = if (chest) .chest else .door, .at = p };
+        n += 1;
+    }
+    return out[0..n];
+}
+
+fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
+    const hero = game.heroSlot(g) orelse return out[0..0];
+    var n: usize = 0;
+    for (g.ground.drops[0..g.ground.n], 0..) |drop, i| {
+        if (!drop.at.eq(at) or !dropReached(g, g.pool.items[hero].at, drop)) continue;
+        out[n] = .{ .kind = .loot, .index = i, .at = at, .item = drop.item };
         n += 1;
     }
     return out[0..n];
@@ -102,7 +121,7 @@ pub fn anyNearby(g: *game.Game) bool {
 pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     const now = game.quiet(g);
     const growth = if (now) &g.growth else &g.growth_shown;
-    return .{ .class = g.class, .name = g.name.text(), .inventory = &g.inventory, .growth = growth, .base = growth.attributes(g.class), .gold = if (now) g.gold else g.gold_shown, .nearby = nearbyOf(g, nearby), .device = g.st.device };
+    return .{ .class = g.class, .name = g.name.text(), .inventory = &g.inventory, .growth = growth, .base = growth.attributes(g.class), .gold = if (now) g.gold else g.gold_shown, .nearby = if (g.character.page == .loot) lootOf(g, nearby, g.character.loot_at) else nearbyOf(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.lv.at(g.character.loot_at) == .chest_open };
 }
 
 pub fn openNearby(g: *game.Game) bool {
@@ -113,6 +132,22 @@ pub fn openNearby(g: *game.Game) bool {
     g.character.choose(.nearby);
     if (nearby.len == 1 and nearby[0].kind != .door) characterCommand(g, nearby[0].command());
     return true;
+}
+
+pub fn openLoot(g: *game.Game, at: P) void {
+    if (!drawnFor(g)) return;
+    if (g.travel != null) return notYet(g);
+    const h = g.heroActor() orelse return;
+    const chest = chestReached(g, h.at, at);
+    if (chest) {
+        if (!game.combat.openChest(g, at)) return;
+    } else if (lootOf(g, &g.nearby, at).len == 0) return;
+    game.combat.collectGold(g, at);
+    game.turnToward(g, g.hero, at.x - h.at.x);
+    openCharacter(g);
+    g.character.choose(.loot);
+    g.character.loot_at = at;
+    if (chest) game.combat.endTurn(g);
 }
 
 fn itemFailed(g: *game.Game, err: items.Failure) void {
@@ -144,7 +179,8 @@ pub fn characterCommand(g: *game.Game, command: book.Command) void {
             if (!unlocked) if (g.bar.firstEmpty()) |slot| g.bar.bind(slot, act);
             g.unsaved = true;
         },
-        .equip, .unequip, .drop, .pickup, .open_chest, .travel => itemCommand(g, command),
+        .open_loot => |at| openLoot(g, at),
+        .equip, .unequip, .drop, .pickup, .take_all, .travel => itemCommand(g, command),
     }
 }
 
@@ -165,7 +201,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
     const h = g.heroActor() orelse return;
     const base = g.growth.attributes(g.class);
     switch (command) {
-        .close, .passive, .skill, .bindings => unreachable,
+        .close, .passive, .skill, .bindings, .open_loot => unreachable,
         .equip => |e| {
             g.inventory.equip(e.index, e.slot, base) catch |err| {
                 itemFailed(g, err);
@@ -189,15 +225,31 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
         },
         .pickup => |i| {
             if (i >= g.ground.n or !dropReached(g, h.at, g.ground.drops[i])) return;
+            if (g.character.page == .loot and !g.ground.drops[i].at.eq(g.character.loot_at)) return;
             if (!g.ground.take(i, &g.inventory)) {
                 itemFailed(g, error.Full);
                 return;
             }
             g.log.push(.loot, "Picked up {s}.", .{g.inventory.bag[g.inventory.n - 1].name()});
         },
-        .open_chest => |p| {
-            if (!chestReached(g, h.at, p) or !game.combat.openChest(g, p)) return;
-            game.turnToward(g, g.hero, p.x - h.at.x);
+        .take_all => {
+            if (g.character.page != .loot) return;
+            var taken: usize = 0;
+            var i: usize = 0;
+            while (i < g.ground.n) {
+                const drop = g.ground.drops[i];
+                if (!drop.at.eq(g.character.loot_at) or !dropReached(g, h.at, drop)) {
+                    i += 1;
+                    continue;
+                }
+                if (!g.ground.take(i, &g.inventory)) {
+                    itemFailed(g, error.Full);
+                    break;
+                }
+                taken += 1;
+                g.log.push(.loot, "Picked up {s}.", .{drop.item.name()});
+            }
+            if (taken == 0) return;
         },
         .travel => |p| {
             const link = doorReached(g, h.at, p) orelse return;
@@ -208,7 +260,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
     }
     game.syncStats(g);
     g.character.destination_index = 0;
-    if (command == .travel or (g.character.direct() and !anyNearby(g))) g.mode = .play;
+    if (command == .travel or (g.character.direct() and bookView(g, &g.nearby).nearby.len == 0)) g.mode = .play;
     game.holdWalk(g);
     game.combat.endTurn(g);
 }
@@ -224,18 +276,7 @@ pub fn pauseStep(g: *game.Game) void {
             }
             if (g.character.step(&g.st, g.screen, view)) |command| characterCommand(g, command);
         },
-        .debug => {
-            if (menu.backed(&g.st)) return pauseBackTo(g, .debug);
-            const i = g.pause_menu.step(&g.st, game.DEBUG_ROWS.len) orelse return;
-            switch (game.DEBUG_ROWS[i]) {
-                .restart_map => game.restart(g),
-                .reveal_map => toggleReveal(g),
-                inline else => |r| {
-                    const option = &@field(g.cinema.options, @tagName(r));
-                    option.* = !option.*;
-                },
-            }
-        },
+        .debug => game.debugging.step(g),
         .main => {
             if (menu.backed(&g.st)) {
                 g.mode = .play;
@@ -246,6 +287,7 @@ pub fn pauseStep(g: *game.Game) void {
                 .resume_ => g.mode = .play,
                 .debug => {
                     g.pause_page = .debug;
+                    g.debug.page = .main;
                     g.pause_menu = .{};
                 },
                 .back => {
@@ -259,11 +301,6 @@ pub fn pauseStep(g: *game.Game) void {
             }
         },
     }
-}
-
-fn pauseBackTo(g: *game.Game, row: game.PauseRow) void {
-    g.pause_page = .main;
-    g.pause_menu.at = game.rowAt(row);
 }
 
 pub fn toggleReveal(g: *game.Game) void {
@@ -296,15 +333,7 @@ pub fn drawPause(g: *game.Game) void {
         .character => {
             g.character.draw(&g.face, &g.sprites, g.screen, bookView(g, &g.nearby));
         },
-        .debug => {
-            var rows: [game.DEBUG_ROWS.len][]const u8 = undefined;
-            for (game.DEBUG_ROWS, &rows) |r, *l| l.* = switch (r) {
-                .restart_map => comptime menu.titled(@tagName(game.DebugRow.restart_map)),
-                .reveal_map => menu.toggle(comptime menu.titled(@tagName(game.DebugRow.reveal_map)), g.light.reveal_map),
-                inline else => |option| menu.toggle(comptime menu.titled(@tagName(option)), @field(g.cinema.options, @tagName(option))),
-            };
-            menu.draw(g.face, g.screen, comptime menu.caps(menu.named(game.PauseRow.debug)), &rows, g.pause_menu.at, null);
-        },
+        .debug => game.debugging.draw(g),
         .main => {
             var rows: [game.PAUSE_ROWS.len][]const u8 = undefined;
             for (game.PAUSE_ROWS, &rows) |r, *l| l.* = pauseLabel(g, r);

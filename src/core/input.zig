@@ -366,11 +366,9 @@ pub const Stepper = struct {
         }
         const now = mathx.dirOf(heading, self.latched);
         if (self.latched != now) {
-            if (self.latched) |last| {
-                if (self.due == HELD and partOf(now, last)) {
-                    self.latched = now;
-                    return null;
-                }
+            if (self.carried() and (if (self.latched) |last| partOf(now, last) else true)) {
+                self.latched = now;
+                return null;
             }
             const owed = self.owe(now);
             self.* = .{ .latched = now, .due = settle, .owed = owed };
@@ -548,6 +546,8 @@ pub const State = struct {
     stick: bool = false,
     /// Last frame's walk went to the tree's pan or zoom instead.
     muted: bool = false,
+    /// The walk is held because a tree pan ended under it, not carried in, so pan and zoom stay live.
+    pan_hold: bool = false,
     /// Set before each `update`, which clears it: typing keys then type, and press no button.
     typing: bool = false,
     typed: Typed = .{},
@@ -593,6 +593,7 @@ pub const State = struct {
     /// A way held over from a screen that used it walks nobody.
     pub fn holdWalk(self: *State) void {
         self.step.hold();
+        self.pan_hold = false;
         self.radial.wait = Stepper.HELD;
         self.tree.move = null;
         self.walk = null;
@@ -694,7 +695,7 @@ pub const State = struct {
         const pan_keys = on_tree and free_keys and either(SHIFT_KEYS);
         if (on_tree and free_keys) {
             self.tree.dt = dt;
-            const carried = self.step.carried();
+            const carried = self.step.carried() and !self.pan_hold;
             if (live) |at| {
                 const px = rl.getGamepadAxisMovement(at, .right_x);
                 const py = rl.getGamepadAxisMovement(at, .right_y);
@@ -743,9 +744,13 @@ pub const State = struct {
     }
 
     fn stepWalk(self: *State, dt: f32, defl: f32, heading: f32, settle: f32, muted: bool) void {
-        if (self.muted and !muted) self.step.hold();
+        if (self.muted and !muted and self.step.latched != null) {
+            self.step.hold();
+            self.pan_hold = true;
+        }
         self.muted = muted;
         self.walk = self.step.tick(dt, defl, heading, settle);
+        if (!self.step.carried()) self.pan_hold = false;
         if (muted) self.walk = null;
     }
 
@@ -1371,6 +1376,41 @@ test "a d-pad zoom or Shift pan held on the tree does not walk after the tree cl
         for (0..30) |_| try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(dt, 1, mathx.Dir.n.heading(), Stepper.SETTLE));
     }
     try std.testing.expect(!walkSource(true, false, up, up).muted);
+}
+
+test "a key held through a screen that never latched it walks nothing until it is let go" {
+    var s = Stepper{};
+    const dt = mathx.FRAME_DT;
+    s.hold();
+    var steps: usize = 0;
+    for (0..30) |_| {
+        if (s.tick(dt, 1, mathx.Dir.e.heading(), Stepper.SETTLE) != null) steps += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 0), steps);
+    _ = s.tick(dt, 0, 0, Stepper.SETTLE);
+    for (0..30) |_| {
+        if (s.tick(dt, 1, mathx.Dir.e.heading(), Stepper.SETTLE) != null) steps += 1;
+    }
+    try std.testing.expect(steps > 0);
+}
+
+test "a tree pan ended under a held key holds the walk but not pan or zoom, and the first browse after idling steps" {
+    var st = State{};
+    const dt = mathx.FRAME_DT;
+    const east = mathx.Dir.e.heading();
+    for (0..10) |_| st.stepWalk(dt, 1, east, Stepper.SETTLE, true);
+    st.stepWalk(dt, 1, east, Stepper.SETTLE, false);
+    try std.testing.expect(st.pan_hold and st.step.carried());
+    st.stepWalk(dt, 0, 0, 0, false);
+    try std.testing.expect(!st.pan_hold);
+    var idle = State{};
+    for (0..10) |_| idle.stepWalk(dt, 0, 0, 0, true);
+    var steps: usize = 0;
+    for (0..30) |_| {
+        idle.stepWalk(dt, 1, east, Stepper.SETTLE, false);
+        if (idle.walk != null) steps += 1;
+    }
+    try std.testing.expect(steps > 0 and !idle.pan_hold);
 }
 
 test "letting go of Shift before the key after a tree pan browses nothing until the key is let go" {

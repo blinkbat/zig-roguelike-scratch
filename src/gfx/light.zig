@@ -300,7 +300,15 @@ fn topOf(t: grid.Tile, cell: P, q: [2]f32) f32 {
     return if (offMiddle(cell, q) < r) k.h else 0;
 }
 
-fn offMiddle(c: P, q: [2]f32) f32 {
+fn offset(a: [3]f32, x: f32, y: f32, z: f32) [3]f32 {
+    return .{ a[0] - x, a[1] - y, a[2] - z };
+}
+
+fn len2(d: [3]f32) f32 {
+    return d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+}
+
+pub fn offMiddle(c: P, q: [2]f32) f32 {
     const m = mathx.centre(c);
     return mathx.len(q[0] - m[0], q[1] - m[1]);
 }
@@ -380,8 +388,8 @@ const Torch = struct {
     /// The flame's offset from a point and how much of it reaches there, fallen off and occluded; null out of reach.
     fn toward(t: *const Torch, x: f32, y: f32, z: f32) ?struct { d: [3]f32, d2: f32, k: f32 } {
         const f = t.flame();
-        const d = [3]f32{ f[0] - x, f[1] - y, f[2] - z };
-        const d2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+        const d = offset(f, x, y, z);
+        const d2 = len2(d);
         if (d2 >= REACH2) return null;
         const o = t.reached(x, y);
         if (o <= 0) return null;
@@ -485,15 +493,20 @@ const Whole = struct {
 };
 
 const Patch = struct {
+    const SIDE = 3;
+
     lo: P,
-    v: std.EnumArray(SightField, [9]f32),
+    v: std.EnumArray(SightField, [SIDE * SIDE]f32),
 
     fn of(l: *const Light, c: P) Patch {
-        var p = Patch{ .lo = c.sub(.{ .x = 1, .y = 1 }), .v = undefined };
+        var p = Patch{ .lo = c.sub(.{ .x = SIDE / 2, .y = SIDE / 2 }), .v = undefined };
         for (std.enums.values(SightField)) |k| {
             const f = l.sightField(k);
             const out = p.v.getPtr(k);
-            for (0..9) |i| out[i] = texel(f, grid.W, grid.H, p.lo.x + @as(i32, @intCast(i % 3)), p.lo.y + @as(i32, @intCast(i / 3)));
+            for (out, 0..) |*o, i| {
+                const q = p.lo.add(mathx.unslot(i, SIDE));
+                o.* = texel(f, grid.W, grid.H, q.x, q.y);
+            }
         }
         return p;
     }
@@ -506,8 +519,8 @@ const Patch = struct {
         const ix: usize = @intCast(@as(i32, @intFromFloat(fx)) - p.lo.x);
         const iy: usize = @intCast(@as(i32, @intFromFloat(fy)) - p.lo.y);
         const f = p.v.getPtrConst(k);
-        const i = iy * 3 + ix;
-        return mathx.bilerp(.{ f[i], f[i + 1], f[i + 3], f[i + 4] }, u - fx, v - fy);
+        const i = iy * SIDE + ix;
+        return mathx.bilerp(.{ f[i], f[i + 1], f[i + SIDE], f[i + SIDE + 1] }, u - fx, v - fy);
     }
 };
 
@@ -738,10 +751,7 @@ const Effect = struct {
 
     fn strength(e: *const Effect, x: f32, y: f32, z: f32) f32 {
         const s = e.source;
-        const dx = s.at[0] - x;
-        const dy = s.at[1] - y;
-        const dz = s.at[2] - z;
-        const d2 = dx * dx + dy * dy + dz * dz;
+        const d2 = len2(offset(s.at, x, y, z));
         if (d2 >= s.radius * s.radius) return 0;
         const i = e.texel(mathx.cellOf(.{ x, y })) orelse return 0;
         if (!e.reach[i]) return 0;
@@ -754,7 +764,15 @@ const Effect = struct {
     }
 };
 
+pub const Options = struct {
+    shadows: bool = true,
+    body_lighting: bool = true,
+    effect_lights: bool = true,
+    water_glints: bool = true,
+};
+
 pub const Light = struct {
+    options: Options = .{},
     effects: [EFFECTS]Effect = undefined,
     effect_n: usize = 0,
     sight: [grid.CELLS]f32,
@@ -1041,7 +1059,7 @@ pub const Light = struct {
         var reach: [4]f32 = undefined;
         var open: [4]f32 = undefined;
         for (0..4) |i| {
-            const p = corner.add(.{ .x = @intCast(i % 2), .y = @intCast(i / 2) });
+            const p = corner.add(mathx.unslot(i, 2));
             reach[i] = mask(self.scratch.inLos(p));
             open[i] = reach[i] * grid.cellOr(f32, &self.see_through, p, 0);
         }
@@ -1138,6 +1156,7 @@ pub const Light = struct {
     }
 
     pub fn emit(self: *Light, lv: *const grid.Level, source: Emission) void {
+        if (!self.options.effect_lights) return;
         const origin = mathx.cellOf(.{ source.at[0], source.at[1] });
         if (self.effect_n == EFFECTS or source.gain <= FAINT or source.radius <= 0 or !lv.isLit(origin)) return;
         const e = &self.effects[self.effect_n];
@@ -1272,7 +1291,20 @@ pub const Light = struct {
     fn bakeCell(self: *Light, lv: *const grid.Level, torches: []const TorchIx, c: P, t0: P, t1: P, ray: ?SunRay) void {
         const fade = self.fadeOf(c);
         const dark = if (fade.flat) |v| v == 0 else false;
-        const corners: [4]f32 = if (ray != null and !dark) self.heldCorners(c) else @splat(1);
+        const x0 = @max(t0.x, c.x * SUB);
+        const x1 = @min(t1.x, (c.x + 1) * SUB);
+        const y0 = @max(t0.y, c.y * SUB);
+        const y1 = @min(t1.y, (c.y + 1) * SUB);
+        if (dark) {
+            var y = y0;
+            while (y < y1) : (y += 1) {
+                const first: usize = @intCast(y * MAP_W + x0);
+                const last: usize = @intCast(y * MAP_W + x1);
+                inline for (comptime std.enums.values(Layer)) |k| @memset(self.texels.getPtr(k)[first..last], UNSEEN.get(k));
+            }
+            return;
+        }
+        const corners: [4]f32 = if (ray != null) self.heldCorners(c) else @splat(1);
 
         const patch = Patch.of(self, c);
         const ground = self.groundAt(c);
@@ -1288,23 +1320,18 @@ pub const Light = struct {
         const map = self.texels.getPtr(.map);
         const glints = self.texels.getPtr(.glints);
         const fog = self.texels.getPtr(.fog);
-        var ty = @max(t0.y, c.y * SUB);
-        while (ty < @min(t1.y, (c.y + 1) * SUB)) : (ty += 1) {
-            var tx = @max(t0.x, c.x * SUB);
-            while (tx < @min(t1.x, (c.x + 1) * SUB)) : (tx += 1) {
+        var ty = y0;
+        while (ty < y1) : (ty += 1) {
+            var tx = x0;
+            while (tx < x1) : (tx += 1) {
                 const i: usize = @intCast(ty * MAP_W + tx);
                 glints[i] = UNSEEN.get(.glints);
-                if (dark) {
-                    map[i] = UNSEEN.get(.map);
-                    fog[i] = UNSEEN.get(.fog);
-                    continue;
-                }
                 const q = texelCentre(@intCast(tx), @intCast(ty));
                 const v = viewOf(sightOf(&patch, ground, q[0], q[1]), q, &fade);
                 fog[i] = look.fade(rl.Color.white, 1 - v.memory);
                 const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
                 map[i] = texelOf(self.shade(lv, torches, effects, q, i, v, if (ray) |*r| r else null, cloud), v.lit);
-                if (wet and v.lit > FAINT and lv.isLit(c))
+                if (self.options.water_glints and wet and v.lit > FAINT and lv.isLit(c))
                     glints[i] = colourOf(self.waterGlint(torches, effects, q, i, if (ray) |*r| r else null, cloud), 1);
             }
         }
@@ -1480,7 +1507,7 @@ pub const Light = struct {
         const src = look.rect(0, 0, if (left) -tex.width else tex.width, tex.height);
         const normals = self.gpu.art(tex).normals;
         const sh = self.gpu.body;
-        if (sh == null or normals == null) {
+        if (!self.options.body_lighting or sh == null or normals == null) {
             const fading = self.beginMirrorFade(fade_bounds);
             defer if (fading) rl.endShaderMode();
             look.blit(tex, src, dest, s.drawn(rl.Color.white, flash));
@@ -1543,7 +1570,7 @@ pub const Light = struct {
         const tall: f32 = @floatFromInt(tex.height);
         const share = foot / tall;
         const height = artY(tex, dest, foot);
-        const x = dest.x + dest.width * 0.5;
+        const x = look.middle(dest).x;
         const y = dest.y + height;
         if (self.gpu.glow) |g| {
             const a = CONTACT_A * @min(1, lit / lum(CARRY));
@@ -1554,6 +1581,7 @@ pub const Light = struct {
 
     /// Shadows accumulate by minimum in a screen mask; `outer` restores the framebuffer. False without GL.
     pub fn beginShadows(self: *Light, screen: P, outer: u32) bool {
+        if (!self.options.shadows) return false;
         const pool = self.gpu.shade orelse return false;
         if (self.gpu.shadow == null or self.gpu.receiver == null or self.gpu.layers.get(.map) == null) return false;
         self.gpu.outer = outer;
@@ -2607,6 +2635,46 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     std.debug.print("whole floor baked: {d} texels never seen, {d} fading in, {d} off what `at` gives\n", .{ dark, fading, off });
     try std.testing.expect(dark > 0 and fading > 0);
     try std.testing.expectEqual(@as(usize, 0), off);
+}
+
+test "clipped light baking clears unseen texels without touching adjacent rows or columns" {
+    var lv = grid.openFloor();
+    lv.light(.{ .x = 3, .y = 3 });
+    lv.light(.{ .x = 4, .y = 3 });
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const sentinel = rl.Color{ .r = 17, .g = 31, .b = 47, .a = 63 };
+    var touched: usize = 0;
+    var dark: usize = 0;
+    var visible: usize = 0;
+    const cases = [_]grid.Box{
+        .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 1, .y = 1 } },
+        .{ .lo = .{ .x = 2, .y = 2 }, .hi = .{ .x = 4, .y = 4 } },
+        .{ .lo = .{ .x = grid.W - 1, .y = grid.H - 1 }, .hi = grid.SIZE },
+    };
+    for (cases) |box| {
+        for (std.enums.values(Layer)) |k| @memset(l.texels.getPtr(k), sentinel);
+        l.bake(&lv, box.lo, box.hi);
+        for (0..TEXELS) |i| {
+            const x: i32 = @intCast(i % Light.TEXELS_W);
+            const y: i32 = @intCast(i / Light.TEXELS_W);
+            const inside = x >= box.lo.x * SUB - 1 and x < box.hi.x * SUB + 1 and
+                y >= box.lo.y * SUB - 1 and y < box.hi.y * SUB + 1;
+            if (!inside) {
+                for (std.enums.values(Layer)) |k| try std.testing.expectEqual(sentinel, l.texels.getPtrConst(k)[i]);
+                continue;
+            }
+            touched += 1;
+            const q = Light.texelCentre(@intCast(x), @intCast(y));
+            const v = l.viewAt(q);
+            if (l.memoryAt(mathx.cellOf(q)) == 0) dark += 1 else visible += 1;
+            try std.testing.expectEqual(texelOf(l.at(&lv, &.{}, q), v.lit), l.texels.getPtrConst(.map)[i]);
+            try std.testing.expectEqual(look.fade(rl.Color.white, 1 - v.memory), l.texels.getPtrConst(.fog)[i]);
+            try std.testing.expectEqual(UNSEEN.get(.glints), l.texels.getPtrConst(.glints)[i]);
+        }
+    }
+    try std.testing.expect(dark > 0 and visible > 0);
+    std.debug.print("clipped light baking: {d} texels updated ({d} unseen, {d} visible); adjacent texels preserved in all 3 layers\n", .{ touched, dark, visible });
 }
 
 test "fog tint follows the soft exploration edge without changing visibility" {

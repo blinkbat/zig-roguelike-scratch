@@ -26,6 +26,13 @@ pub const Clock = struct {
         self.delay(STUN);
     }
 
+    pub fn stunBeforeAction(self: *Clock, pace: i32) void {
+        self.stun();
+        if (self.stalled) return;
+        self.ticks -= pace;
+        self.stalled = true;
+    }
+
     /// Still paying for a stun: the hero, who keeps no pace, loses a turn to each one.
     pub fn owes(self: Clock) bool {
         return self.ticks > 0;
@@ -69,4 +76,28 @@ test "a stun costs the next turn, delay costs a turn for each whole turn of tick
     var slow = Clock{};
     try std.testing.expectEqual(@as(usize, 5), lost(&slow, TURN * 2, 10));
     std.debug.print("clock: a stun loses the next turn; two half-turn delays 1, three turns' 3; a body of pace {d} loses 5 of 10\n", .{TURN * 2});
+}
+
+test "stunning a pending action cancels its prepaid pace without double-paying an existing stall" {
+    for ([_]i32{ TURN, TURN * 2, TURN * 3 }) |pace| {
+        var c = Clock{};
+        c.pass(pace);
+        try std.testing.expect(!c.stalled);
+        c.stunBeforeAction(pace);
+        try std.testing.expect(c.stalled);
+        try std.testing.expectEqual(@as(i32, 0), c.ticks);
+        c.pass(pace);
+        try std.testing.expect(!c.stalled);
+        try std.testing.expectEqual(pace - TURN, c.ticks);
+
+        c = .{ .ticks = TURN * 2 };
+        c.pass(pace);
+        try std.testing.expect(c.stalled);
+        c.stunBeforeAction(pace);
+        try std.testing.expectEqual(TURN * 2, c.ticks);
+        try std.testing.expectEqual(@as(usize, 2), lost(&c, pace, 2));
+        c.pass(pace);
+        try std.testing.expect(!c.stalled);
+    }
+    std.debug.print("pending-action stun: 3 paces cancel one action each; existing stalls retain their remaining debt\n", .{});
 }

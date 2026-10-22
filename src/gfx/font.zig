@@ -4,7 +4,7 @@ const mathx = @import("../core/mathx.zig");
 
 const TTF = "Balthazar-Regular.ttf";
 const ATLAS_PX: i32 = 96;
-const NATIVE_SIZES = [_]i32{ 12, 15, 16, 20, 24 };
+const NATIVE_SIZES = [_]i32{ TINY, 15, SMALL, BODY, HEAD };
 const SHADOW_A: u16 = 200;
 /// Text size per pixel the shadow sits down and right.
 const SHADOW_STEP: i32 = 14;

@@ -18,6 +18,7 @@ const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
+const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const Desk = input.Desk;
 const HEAD = font.HEAD;
@@ -26,8 +27,8 @@ const HOVER = look.EDIT_HOVER;
 pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void {
     const was = pg.*;
     const fo = &pg.foes;
-    var y = editor.panel.beginScroll(ed, g, top);
-    defer editor.panel.endScroll(ed);
+    var y = panel.beginScroll(ed, g, top);
+    defer panel.endScroll(ed);
     if (nodeSwitch(ed, g, &y)) return;
     y += editor.BLOCK_GAP;
     section(g, &y, "Base");
@@ -61,7 +62,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Pro
     }
     if (drop) |i| _ = fo.dropMakeup(i);
     if (editor.button(ed, g, editor.cellOfRow(y, 0, 1), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
-    editor.panel.scrolledTo(ed, g, top, y + editor.ROW_H);
+    panel.scrolledTo(ed, g, top, y + editor.ROW_H);
     editor.refit(ed, pg, was);
 }
 
@@ -490,7 +491,7 @@ pub fn rowNamed(comptime rows: []const Knob, comptime field: []const u8) ?Knob {
 }
 
 fn knobRow(ed: *editor.Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob, live: bool) void {
-    if (editor.panel.clipped(ed, y)) return;
+    if (panel.clipped(ed, y)) return;
     rowLabel(g, y, comptime k.caption());
     const v = &@field(owner.*, k.field);
     const T = @TypeOf(v.*);

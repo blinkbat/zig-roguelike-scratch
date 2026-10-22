@@ -43,7 +43,15 @@ pub const Surface = struct {
 
     pub fn of(screen: mathx.P, size: mathx.P) Surface {
         const fit = @min(@as(f32, @floatFromInt(@max(1, screen.x - 2 * SURFACE_MARGIN))) / @as(f32, @floatFromInt(size.x)), @as(f32, @floatFromInt(@max(1, screen.y - 2 * SURFACE_MARGIN))) / @as(f32, @floatFromInt(size.y)));
-        const scale = if (fit <= 1) fit else @min(SCALE_MAX, 1 + (fit - 1) * GROWTH);
+        return centred(screen, size, if (fit <= 1) fit else @min(SCALE_MAX, 1 + (fit - 1) * GROWTH));
+    }
+
+    /// `size` centred at the scale `reference` gets, so a smaller panel's text matches it; shrunk further only to fit.
+    pub fn like(screen: mathx.P, size: mathx.P, reference: mathx.P) Surface {
+        return centred(screen, size, @min(of(screen, size).scale, of(screen, reference).scale));
+    }
+
+    fn centred(screen: mathx.P, size: mathx.P, scale: f32) Surface {
         return .{ .scale = scale, .offset = .{
             .x = @round((@as(f32, @floatFromInt(screen.x)) - @as(f32, @floatFromInt(size.x)) * scale) / 2),
             .y = @round((@as(f32, @floatFromInt(screen.y)) - @as(f32, @floatFromInt(size.y)) * scale) / 2),
@@ -111,12 +119,12 @@ pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, labe
     rl.drawRectangleLinesEx(r, 1, look.EDGE);
     const text_x = actionPrompt(face, r, prompt, 1);
     const text_w = @as(i32, @intFromFloat(r.x + r.width)) - ACTION_PAD - text_x;
-    face.centred(label, text_x + @divTrunc(text_w, 2), @intFromFloat(look.middle(r).y), font.BODY, look.TEXT);
+    face.centred(label, text_x + @divTrunc(text_w, 2), look.middleAt(r).y, font.BODY, look.TEXT);
 }
 
 /// An action box's prompt; returns where its label starts.
 pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, alpha: f32) i32 {
-    return prompt.drawFrom(face, @as(i32, @intFromFloat(r.x)) + ACTION_PAD, @intFromFloat(look.middle(r).y), font.BODY, alpha) + PROMPT_GAP;
+    return prompt.drawFrom(face, @as(i32, @intFromFloat(r.x)) + ACTION_PAD, look.middleAt(r).y, font.BODY, alpha) + PROMPT_GAP;
 }
 
 pub fn Note(comptime N: usize) type {

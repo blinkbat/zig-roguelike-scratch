@@ -40,6 +40,7 @@ pub fn build(b: *std.Build) void {
     }
 
     const exe = b.addExecutable(.{ .name = "cistern", .root_module = root.module() });
+    if (target.result.os.tag == .windows) exe.dll_export_fns = true;
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

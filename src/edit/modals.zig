@@ -10,6 +10,7 @@ const dual = @import("../gfx/ground.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
+const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const Desk = input.Desk;
 const SMALL = font.SMALL;
@@ -56,7 +57,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
             y += editor.ROW_STEP;
             var pbuf: [atlas.PATH_MAX]u8 = undefined;
             const note = if (ed.namedPath(&pbuf)) |p| std.fmt.bufPrintZ(&buf, "Makes {s}", .{p}) catch "" else "Type a name";
-            editor.panel.drawFit(g, note, SMALL, inner, false, x + editor.PAD, y, look.DIM);
+            panel.drawFit(g, note, SMALL, inner, false, x + editor.PAD, y, look.DIM);
             std.debug.assert(y + SMALL <= buttons_y);
             y = buttons_y;
             if (editor.buttonOn(ed, g, modalButton(bx, y, 1), editor.keyed("OK", Desk.ENTER_CAPTION), false, true, true, null)) ed.named();
@@ -101,10 +102,10 @@ fn drawHelp(ed: *editor.Editor, g: *game.Game) void {
     const w = f.w;
     var y = f.y;
     for (editor.HELP) |s| {
-        editor.panel.drawFit(g, s.head, editor.TEXT, w - 2 * editor.PAD, false, x + editor.PAD, y, look.DIM);
+        panel.drawFit(g, s.head, editor.TEXT, w - 2 * editor.PAD, false, x + editor.PAD, y, look.DIM);
         y += line_h;
         for (s.lines) |l| {
-            editor.panel.drawFit(g, l, editor.TEXT, w - 2 * editor.PAD, false, x + editor.PAD, y, look.TEXT);
+            panel.drawFit(g, l, editor.TEXT, w - 2 * editor.PAD, false, x + editor.PAD, y, look.TEXT);
             y += line_h;
         }
     }
@@ -121,7 +122,7 @@ const VIEW_BIG: f32 = 192;
 fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const grid_w = @as(i32, VIEW_COLS) * VIEW_CELL;
     const title = "Objects";
-    var cells = editor.panel.Tiles{ .x = 0, .y = 0, .cols = VIEW_COLS, .pitch = VIEW_CELL, .size = VIEW_CELL - editor.GAP };
+    var cells = panel.Tiles{ .x = 0, .y = 0, .cols = VIEW_COLS, .pitch = VIEW_CELL, .size = VIEW_CELL - editor.GAP };
     const cells_h = cells.height(editor.SEEN.len);
     const f = editor.modalFrame(g, VIEW_W, editor.MODAL_HEAD + editor.PAD + cells_h + editor.ROW_STEP, title, false);
     const x = f.x;
@@ -148,7 +149,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     var facts = Facts{};
     seenFacts(s, &facts);
     for (facts.all()) |l| {
-        editor.panel.drawFit(g, l, editor.TEXT, x + w - editor.PAD - dx, false, dx, dy, look.DIM);
+        panel.drawFit(g, l, editor.TEXT, x + w - editor.PAD - dx, false, dx, dy, look.DIM);
         dy += editor.TEXT + editor.GAP;
     }
     backButton(ed, g, f.buttonX(), y + cells_h, "Close");
@@ -179,7 +180,7 @@ fn seenName(s: editor.Seen) [:0]const u8 {
 
 pub fn seenPicture(g: *game.Game, s: editor.Seen, r: rl.Rectangle) void {
     switch (s) {
-        .tile => |t| editor.panel.swatch(g, t, r),
+        .tile => |t| panel.swatch(g, t, r),
         .body => |k| editor.figure(g, g.sprites.body(k), look.body(k), r),
         .barrel => editor.figure(g, g.sprites.barrel, look.BARREL, r),
         .torch => editor.glyph(g, look.TORCH.ch, r, look.TORCH.fg),
@@ -214,8 +215,11 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             if (look.under(t)) |u| f.put("Drawn over the ground beside it, else {s}", .{@tagName(u)});
             if (dual.of(t)) |gr| if (look.GROUND_SHEETS.contains(gr)) f.put("Ground {s}: its edges meet the grounds below it", .{@tagName(gr)});
             if (look.stands(t)) f.put("Stands up and throws a shadow", .{});
-            if (t.opened() != null) f.put("Opened by stepping toward it; contains gold, never broken by attacks", .{});
-            if (t.isOpened()) f.put("Already opened and empty; may be walked over", .{});
+            if (t.opened() != null) {
+                f.put("Opened by stepping toward it or interacting", .{});
+                f.put("Contains gold and items; never broken by attacks", .{});
+            }
+            if (t.isOpened()) f.put("Already opened; may hold items and be walked over", .{});
         },
         .body => |k| {
             const r = actor.row(k);
@@ -263,7 +267,7 @@ pub fn fieldRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) void {
     var buf: [editor.LINE]u8 = undefined;
     rl.drawRectangleRec(r, ROW_ON);
     const typed = std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "";
-    editor.panel.drawFit(g, typed, editor.TEXT, editor.insetW(r), true, editor.textX(r), @as(i32, @intFromFloat(r.y)) + editor.TEXT_DY, look.UI_FOCUS);
+    panel.drawFit(g, typed, editor.TEXT, editor.insetW(r), true, editor.textX(r), @as(i32, @intFromFloat(r.y)) + editor.TEXT_DY, look.UI_FOCUS);
 }
 
 fn backButton(ed: *editor.Editor, g: *game.Game, bx: i32, y: i32, comptime label: []const u8) void {

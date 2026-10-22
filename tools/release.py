@@ -1,6 +1,7 @@
 import argparse
 import gzip
 import hashlib
+import http.client
 import io
 import json
 import pathlib
@@ -10,13 +11,31 @@ import struct
 import subprocess
 import tarfile
 import tempfile
-import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-LOCK_PATH = pathlib.Path(__file__).with_name('release-deps.json')
+SELF = pathlib.Path(__file__).resolve()
+ROOT = SELF.parents[1]
+LOCK_PATH = SELF.with_name('release-deps.json')
+PREFIX_LAYOUT = 1
+GLIBC = (2, 31)
+MACOS = (11, 0)
 LAUNCHER = b'#!/bin/sh\nset -eu\ncd -- "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec ./cistern "$@"\n'
+LINUX_LAUNCHER = b'''#!/bin/sh
+set -eu
+cd -- "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+if [ -e /proc/driver/nvidia ]; then
+  export __NV_PRIME_RENDER_OFFLOAD="${__NV_PRIME_RENDER_OFFLOAD-1}"
+  export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME-nvidia}"
+else
+  export DRI_PRIME="${DRI_PRIME-1}"
+fi
+exec ./cistern "$@"
+'''
+
+
+def dotted(version):
+    return '.'.join(map(str, version))
 
 
 def sha256(data):
@@ -40,7 +59,7 @@ def download(record, cache):
                 pending = pathlib.Path(temporary.name)
             pending.replace(dest)
             return dest
-        except (urllib.error.URLError, TimeoutError) as error:
+        except (OSError, ValueError, http.client.HTTPException) as error:
             failures.append(str(error))
     raise RuntimeError('Download failed for ' + record['name'] + ': ' + '; '.join(failures))
 
@@ -68,7 +87,7 @@ def deb_data(path):
 
 def prepare_linux(lock, cache):
     records = lock['linux']
-    identity = sha256(json.dumps(records, sort_keys=True).encode())[:16]
+    identity = sha256(json.dumps({'layout': PREFIX_LAYOUT, 'records': records}, sort_keys=True).encode())[:16]
     prefix = cache / ('linux-' + identity)
     if (prefix / '.complete').is_file():
         return prefix
@@ -157,8 +176,8 @@ def inspect_linux(path):
                 break
             pos += next_entry
     glibc = [tuple(map(int, value[6:].split('.'))) for value in versions if value.startswith('GLIBC_')]
-    if not glibc or max(glibc) > (2, 31):
-        raise ValueError('Release requires a newer glibc than 2.31')
+    if not glibc or max(glibc) > GLIBC:
+        raise ValueError('Release requires a newer glibc than ' + dotted(GLIBC))
     return {'format': 'ELF64 x86-64', 'interpreter': interpreter,
             'needed': [string(strings + value) for tag, value in tags if tag == 1],
             'symbol_versions': sorted(versions), 'sha256': sha256(data)}
@@ -200,7 +219,7 @@ def inspect_macos(path, arch):
         elif command == 0x1d:
             signature = struct.unpack_from('<II', data, offset + 8)
         offset += size
-    if minimum != 11 << 16 or interpreter != '/usr/lib/dyld':
+    if minimum != (MACOS[0] << 16 | MACOS[1] << 8) or interpreter != '/usr/lib/dyld':
         raise ValueError('Unexpected macOS deployment target or loader')
     signed_pages = 0
     if signature:
@@ -230,7 +249,7 @@ def inspect_macos(path, arch):
             raise ValueError('Missing CodeDirectory')
     if arch == 'arm64' and not signed_pages:
         raise ValueError('Apple Silicon executable needs an ad-hoc signature')
-    return {'format': 'Mach-O ' + arch, 'minimum_macos': '11.0', 'needed': needed,
+    return {'format': 'Mach-O ' + arch, 'minimum_macos': dotted(MACOS), 'needed': needed,
             'verified_signature_pages': signed_pages, 'sha256': sha256(data)}
 
 
@@ -239,7 +258,7 @@ def map_paths():
 
 
 def source_hash():
-    paths = [ROOT / 'build.zig', ROOT / 'build.zig.zon', LOCK_PATH, pathlib.Path(__file__)]
+    paths = [ROOT / 'build.zig', ROOT / 'build.zig.zon', LOCK_PATH, SELF]
     paths += list((ROOT / 'src').rglob('*.zig'))
     paths += [p for p in (ROOT / 'assets').iterdir() if p.suffix in ('.png', '.ttf', '.txt')]
     paths += map_paths()
@@ -252,18 +271,21 @@ def source_hash():
 
 def package(binary, output, metadata, platform, arch):
     name = 'cistern-' + platform + '-' + arch
-    files = {'cistern': (binary.read_bytes(), 0o755), 'run.sh': (LAUNCHER, 0o755)}
+    files = {'cistern': (binary.read_bytes(), 0o755), 'run.sh': (LINUX_LAUNCHER if platform == 'linux' else LAUNCHER, 0o755)}
     if platform == 'macos':
         files['run.command'] = (LAUNCHER, 0o755)
     for path in map_paths():
         files[path.relative_to(ROOT).as_posix()] = (path.read_bytes(), 0o644)
     for filename in ('Balthazar-OFL.txt', 'gamecontrollerdb-LICENSE'):
         files['licenses/' + filename] = ((ROOT / 'assets' / filename).read_bytes(), 0o644)
-    requirements = '''Requires glibc 2.31 or newer, an X11 display (or XWayland), and OpenGL 3.3.
+    requirements = '''Requires glibc ''' + dotted(GLIBC) + ''' or newer, an X11 display (or XWayland), and OpenGL 3.3.
 On Debian/Ubuntu, runtime libraries can be installed with:
   sudo apt install libgl1 libglx0 libx11-6 libxcursor1 libxext6 libxfixes3 libxi6 libxinerama1 libxrandr2 libxrender1
-''' if platform == 'linux' else '''Requires macOS 11 or newer and OpenGL 3.3. Use arm64 on Apple Silicon or x86_64 on Intel.
+run.sh prefers a laptop's dedicated GPU (NVIDIA PRIME offload, or DRI_PRIME on Mesa).
+To use the default GPU instead, run ./cistern from this directory.
+''' if platform == 'linux' else '''Requires macOS ''' + dotted(MACOS) + ''' or newer and OpenGL 3.3. Use arm64 on Apple Silicon or x86_64 on Intel.
 You can also double-click run.command to launch through Terminal.
+If macOS says the developer cannot be verified, run: xattr -dr com.apple.quarantine <this folder>
 These are local development builds, not Developer ID signed or notarized releases.
 '''
     files['README.txt'] = (('''Cistern for ''' + platform + ' ' + arch + '''
@@ -327,7 +349,7 @@ def main():
     prefix = prepare_linux(lock, args.cache_dir.resolve()) if args.platform == 'linux' else None
     before = source_hash()
     for arch in arches:
-        target = 'x86_64-linux-gnu.2.31' if args.platform == 'linux' else {'arm64': 'aarch64', 'x86_64': 'x86_64'}[arch] + '-macos.11.0'
+        target = 'x86_64-linux-gnu.' + dotted(GLIBC) if args.platform == 'linux' else {'arm64': 'aarch64', 'x86_64': 'x86_64'}[arch] + '-macos.' + dotted(MACOS)
         install = output / 'build' / (args.platform + '-' + arch)
         common = [args.zig, 'build', '-Dtarget=' + target, '-Dcpu=baseline']
         if prefix:

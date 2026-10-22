@@ -61,8 +61,9 @@ pub fn canopied(t: grid.Tile) bool {
     return STANDS.get(t) == .canopy;
 }
 
-/// Every sprite that throws a shadow from its feet: bodies, barrel, standing tiles and forest shapes.
-pub const FIGURES: usize = LIT_FIGURES + STANDING.len + WALL_MASKS.len;
+/// Every sprite that throws a shadow from its feet: bodies, barrel, standing tiles, forest shapes and item bags.
+pub const FIGURES: usize = LIT_FIGURES + STANDING.len + WALL_MASKS.len + BAG_FIGURES;
+const BAG_FIGURES = 2;
 /// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
 pub const LIT_FIGURES: usize = Bodies.len + 1;
 
@@ -73,12 +74,17 @@ pub const Assets = struct {
     forest: std.StaticBitSet(WALL_MASKS.len) = .initEmpty(),
     grounds: ground.Grounds = .initEmpty(),
     barrel: bool = false,
+    item_bag: bool = false,
+    chest_item_bag: bool = false,
+    small_coins: bool = false,
+    large_coins: bool = false,
 
     pub fn of(lv: *const grid.Level) Assets {
-        var need = Assets{};
+        var need = Assets{ .item_bag = true, .small_coins = true, .large_coins = true };
         for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
             const p = grid.Level.of(i);
-            need.barrel = need.barrel or barrel;
+            need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
+            need.chest_item_bag = need.chest_item_bag or t == .chest or t == .chest_open;
             if (t.opened()) |open| need.add(.{ .tile = open });
             if (standsOver(t)) {
                 if (cutAt(lv, p)) |c| need.add(c);
@@ -103,7 +109,10 @@ pub const Assets = struct {
 
     /// Preload every editor asset so painting does not decode sheets mid-stroke.
     pub fn everything() Assets {
-        var all = Assets{ .barrel = true, .grounds = GROUND_SHEETS, .bodies = PICTURED, .wall = .initFull(), .forest = .initFull() };
+        var all = Assets{ .grounds = GROUND_SHEETS, .bodies = PICTURED, .wall = .initFull(), .forest = .initFull() };
+        inline for (std.meta.fields(Assets)) |f| {
+            if (f.type == bool) @field(all, f.name) = true;
+        }
         for (std.enums.values(grid.Tile)) |t| all.add(.{ .tile = t });
         return all;
     }
@@ -172,6 +181,10 @@ const WaterShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: 
 pub const Sprites = struct {
     bodies: Bodies = .initFill(null),
     barrel: ?rl.Texture2D = null,
+    item_bag: ?rl.Texture2D = null,
+    chest_item_bag: ?rl.Texture2D = null,
+    small_coins: ?rl.Texture2D = null,
+    large_coins: ?rl.Texture2D = null,
     tiles: std.EnumArray(grid.Tile, ?rl.Texture2D) = .initFill(null),
     /// In the sheet's order, `WALL_MASKS`.
     wall: [WALL_MASKS.len]?rl.Texture2D = @splat(null),
@@ -183,6 +196,7 @@ pub const Sprites = struct {
     hud_border: ?rl.Texture2D = null,
     log_fade: ?FadeShader = null,
     water: ?WaterShader = null,
+    shine: ?ShineShader = null,
     mirror: ?rl.RenderTexture2D = null,
     mirror_memory: ?rl.RenderTexture2D = null,
 
@@ -191,6 +205,20 @@ pub const Sprites = struct {
         self.hud_border = texture(HUD_BORDER_PNG);
         self.log_fade = program(FadeShader, FADE_FS);
         self.water = program(WaterShader, WATER_FS);
+        self.shine = program(ShineShader, SHINE_FS);
+    }
+
+    pub fn coins(self: *const Sprites, large: bool) ?rl.Texture2D {
+        return if (large) self.large_coins else self.small_coins;
+    }
+
+    /// `t` again over itself at `dest`, as the band at `sweep` crosses it.
+    pub fn drawShine(self: *const Sprites, t: rl.Texture2D, dest: rl.Rectangle, sweep: f32, col: rl.Color) void {
+        const s = self.shine orelse return;
+        rl.beginShaderMode(s.shader);
+        defer rl.endShaderMode();
+        setUniform(s.shader, s.sweep, sweep);
+        stretch(t, dest, col);
     }
 
     pub fn sync(self: *Sprites, need: Assets) void {
@@ -309,7 +337,8 @@ pub const Sprites = struct {
     pub fn figures(self: *const Sprites) [FIGURES]?rl.Texture2D {
         var standing: [STANDING.len]?rl.Texture2D = undefined;
         for (STANDING, &standing) |t, *s| s.* = self.tiles.getPtrConst(t).*;
-        return self.litFigures() ++ standing ++ self.forest;
+        const bags: [BAG_FIGURES]?rl.Texture2D = .{ self.item_bag, self.chest_item_bag };
+        return self.litFigures() ++ standing ++ self.forest ++ bags;
     }
 
     fn litFigures(self: *const Sprites) [LIT_FIGURES]?rl.Texture2D {
@@ -479,6 +508,10 @@ const SOURCES = .{
     .tiles = TILE_PNGS,
     .grounds = GROUND_PNGS,
     .barrel = @as([]const u8, @embedFile("barrel.png")),
+    .item_bag = @as([]const u8, @embedFile("item-bag.png")),
+    .chest_item_bag = @as([]const u8, @embedFile("chest-item-bag.png")),
+    .small_coins = @as([]const u8, @embedFile("small-coins.png")),
+    .large_coins = @as([]const u8, @embedFile("large-coins.png")),
     .wall = @as([]const u8, WALLS_PNG),
     .forest = @as([]const u8, FOREST_PNG),
 };
@@ -498,8 +531,12 @@ const LONE_CLUMP_IN: u64 = 3;
 const LONE_CLUMP_SEED: u64 = 0xF02E57;
 
 fn loneClump(p: mathx.P) bool {
+    return cellHash(LONE_CLUMP_SEED, p) % LONE_CLUMP_IN == 0;
+}
+
+fn cellHash(seed: u64, p: mathx.P) u64 {
     const coordinates = [2]i32{ p.x, p.y };
-    return std.hash.Wyhash.hash(LONE_CLUMP_SEED, std.mem.asBytes(&coordinates)) % LONE_CLUMP_IN == 0;
+    return std.hash.Wyhash.hash(seed, std.mem.asBytes(&coordinates));
 }
 
 pub fn forestAt(lv: *const grid.Level, p: mathx.P) bool {
@@ -543,10 +580,9 @@ const WALL_CELL = blk: {
 
 /// raylib's `imageFromImage` copies without clamping, so a cell off the sheet would read past it.
 fn wallCell(sheet: rl.Image, i: usize) ?rl.Image {
-    const col: i32 = @intCast(i % WALL_COLS);
-    const row: i32 = @intCast(i / WALL_COLS);
-    if ((col + 1) * SPRITE_PX > sheet.width or (row + 1) * SPRITE_PX > sheet.height) return null;
-    return rl.imageFromImage(sheet, sheetCell(col, row));
+    const at = mathx.unslot(i, WALL_COLS);
+    if ((at.x + 1) * SPRITE_PX > sheet.width or (at.y + 1) * SPRITE_PX > sheet.height) return null;
+    return rl.imageFromImage(sheet, sheetCell(at.x, at.y));
 }
 
 fn sheetCell(col: i32, row: i32) rl.Rectangle {
@@ -935,9 +971,8 @@ pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
-/// Gold on the ground, in the reticle's gold, and an item, in `itemInk`.
+/// Gold on the ground, in the reticle's gold.
 pub const COIN_MARK = "$";
-pub const DROP_MARK = "*";
 
 /// What a picture of the whole map marks a cell with over its tile, a door before a barrel.
 pub const Mark = enum {
@@ -1008,7 +1043,7 @@ pub const MAGIC = WARD;
 
 /// An item's name and mark: magic ones in the ward's blue.
 pub fn itemInk(magical: bool) rl.Color {
-    return if (magical) MAGIC else TEXT;
+    return if (magical) MAGIC else rl.Color.white;
 }
 const AIM_AREA_A: f32 = 0.24;
 pub const RETICLE = rgb(0xe8c25a);
@@ -1356,8 +1391,8 @@ pub const Prompt = union(enum) {
             },
             .mouse => |button| {
                 const shell = rect(cx - @divTrunc(h, 3), cy - @divTrunc(h, 2), @divTrunc(h * 2, 3), h);
-                rl.drawRectangleRounded(shell, 0.65, 8, fade(PROMPT_BODY, alpha));
-                rl.drawRectangleRoundedLinesEx(shell, 0.65, 8, 1, fade(PROMPT_EDGE, alpha));
+                rl.drawRectangleRounded(shell, MOUSE_ROUND.roundness, MOUSE_ROUND.segments, fade(PROMPT_BODY, alpha));
+                rl.drawRectangleRoundedLinesEx(shell, MOUSE_ROUND.roundness, MOUSE_ROUND.segments, 1, fade(PROMPT_EDGE, alpha));
                 const x: f32 = @floatFromInt(cx);
                 const y: f32 = @floatFromInt(cy);
                 const s: f32 = @floatFromInt(h);
@@ -1466,17 +1501,22 @@ fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i3
     }
 }
 
+const Round = struct { roundness: f32, segments: i32 };
+const PILL_ROUND = Round{ .roundness = 0.6, .segments = 8 };
+const KEYCAP_ROUND = Round{ .roundness = 0.3, .segments = 6 };
+const MOUSE_ROUND = Round{ .roundness = 0.65, .segments = 8 };
+
 fn pill(box: rl.Rectangle, alpha: f32) void {
-    rl.drawRectangleRounded(box, 0.6, 8, fade(PROMPT_BODY, alpha));
-    rl.drawRectangleRoundedLinesEx(box, 0.6, 8, 1, fade(PROMPT_EDGE, alpha));
+    rl.drawRectangleRounded(box, PILL_ROUND.roundness, PILL_ROUND.segments, fade(PROMPT_BODY, alpha));
+    rl.drawRectangleRoundedLinesEx(box, PILL_ROUND.roundness, PILL_ROUND.segments, 1, fade(PROMPT_EDGE, alpha));
 }
 
 fn keycap(box: rl.Rectangle, alpha: f32) void {
     const lip = @max(2, box.height / 8);
-    rl.drawRectangleRounded(box, 0.3, 6, fade(PROMPT_LIP, alpha));
+    rl.drawRectangleRounded(box, KEYCAP_ROUND.roundness, KEYCAP_ROUND.segments, fade(PROMPT_LIP, alpha));
     const top = rl.Rectangle{ .x = box.x, .y = box.y, .width = box.width, .height = box.height - lip };
-    rl.drawRectangleRounded(top, 0.3, 6, fade(PROMPT_FACE, alpha));
-    rl.drawRectangleRoundedLinesEx(top, 0.3, 6, 1, fade(PROMPT_EDGE, alpha));
+    rl.drawRectangleRounded(top, KEYCAP_ROUND.roundness, KEYCAP_ROUND.segments, fade(PROMPT_FACE, alpha));
+    rl.drawRectangleRoundedLinesEx(top, KEYCAP_ROUND.roundness, KEYCAP_ROUND.segments, 1, fade(PROMPT_EDGE, alpha));
 }
 
 fn viewMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
@@ -1651,6 +1691,35 @@ const FADE_FS = FS_HEAD ++
     \\}
 ;
 
+const ShineShader = struct { shader: rl.Shader, sweep: i32 };
+/// Each shining cell's band crosses once a period, at its own place in it.
+const SHINE_PERIOD_S: f32 = 7;
+const SHINE_WIPE_S: f32 = 0.9;
+/// Of the sprite's diagonal, the band's half-width.
+const SHINE_WIDTH: f32 = 0.12;
+/// How far the band leans: down the sprite per unit across.
+const SHINE_SLANT: f32 = 0.6;
+const SHINE_GAIN: f32 = 0.18;
+const SHINE_SEED: u64 = 0x5417E;
+const SHINE_PHASES = 1000;
+const SHINE_FS = FS_HEAD ++ glslConsts(.{ .SHINE_WIDTH = SHINE_WIDTH, .SHINE_SLANT = SHINE_SLANT, .SHINE_GAIN = SHINE_GAIN }) ++
+    \\uniform float sweep;
+    \\void main() {
+    \\    vec4 tex = texture(texture0, fragTexCoord);
+    \\    float along = (fragTexCoord.x + fragTexCoord.y * SHINE_SLANT) / (1.0 + SHINE_SLANT);
+    \\    float band = 1.0 - smoothstep(0.0, SHINE_WIDTH, abs(along - sweep));
+    \\    finalColor = vec4(fragColor.rgb, tex.a * fragColor.a * band * SHINE_GAIN);
+    \\}
+;
+
+/// Where the shine's band crosses the sprite on `p` at `seconds`, corner to corner; null between its shines.
+pub fn shineSweep(seconds: f32, p: mathx.P) ?f32 {
+    const phase = cellHash(SHINE_SEED, p) % SHINE_PHASES;
+    const t = @mod(seconds + @as(f32, @floatFromInt(phase)) / SHINE_PHASES * SHINE_PERIOD_S, SHINE_PERIOD_S);
+    if (t >= SHINE_WIPE_S) return null;
+    return mathx.lerpF(-SHINE_WIDTH, 1 + SHINE_WIDTH, t / SHINE_WIPE_S);
+}
+
 /// Of the shallows' colours, what deep water's art keeps: `tools/tile_art/deepen_water.lua`.
 const WATER_DEEP_PERCENT = 60;
 const WATER_DEEP: f32 = mathx.fraction(WATER_DEEP_PERCENT);
@@ -1740,6 +1809,34 @@ pub const EDIT_WARN = FOE;
 pub const EDIT_HOVER = fade(TEXT, 0.6);
 pub const EDIT_UNLINKED = DIM;
 
+test "a cell's shine crosses once a period, corner to corner, and neighbours shine at other times" {
+    const dt = mathx.TEST_DT;
+    const p = mathx.P{ .x = 10, .y = 10 };
+    var shining: usize = 0;
+    var last: ?f32 = null;
+    var t: f32 = 0;
+    const frames: usize = @intFromFloat(SHINE_PERIOD_S / dt);
+    for (0..frames) |_| {
+        t += dt;
+        const s = shineSweep(t, p) orelse {
+            last = null;
+            continue;
+        };
+        shining += 1;
+        try std.testing.expect(s >= -SHINE_WIDTH and s <= 1 + SHINE_WIDTH);
+        if (last) |l| try std.testing.expect(s > l);
+        last = s;
+    }
+    const share = @as(f32, @floatFromInt(shining)) / @as(f32, @floatFromInt(frames));
+    std.debug.print("shine: lit {d:.3} of a {d} s period (wipe {d} s)\n", .{ share, SHINE_PERIOD_S, SHINE_WIPE_S });
+    try std.testing.expectApproxEqAbs(SHINE_WIPE_S / SHINE_PERIOD_S, share, 0.01);
+    var together: usize = 0;
+    for (0..20) |x| {
+        if ((shineSweep(1, .{ .x = @intCast(x), .y = 0 }) != null) == (shineSweep(1, .{ .x = @intCast(x + 1), .y = 0 }) != null)) together += 1;
+    }
+    try std.testing.expect(together < 20);
+}
+
 test "map assets include unseen shapes, ground under props and future slime forms" {
     const gen = @import("../map/gen.zig");
     var lv = grid.Level.blank();
@@ -1765,10 +1862,19 @@ test "map assets include unseen shapes, ground under props and future slime form
     try std.testing.expectEqual(@as(usize, 4), need.bodies.count());
     lv = grid.openFloor();
     lv.putBarrel(grid.MIDDLE);
+    lv.set(.{ .x = 20, .y = 20 }, .chest);
     const next = Assets.of(&lv);
+    try std.testing.expect(next.item_bag and next.chest_item_bag and next.tiles.contains(.chest_open));
     try std.testing.expect(next.barrel and next.forest.count() == 0 and next.bodies.count() == 0);
     try std.testing.expect(next.tiles.contains(.floor) and !next.tiles.contains(.grass));
-    std.debug.print("map assets: hidden walls and forest, 2 underlays, slime descendants and map replacement checked\n", .{});
+    const cell = grid.Level.idx(grid.MIDDLE);
+    lv.seen[cell] = true;
+    lv.barrel_seen[cell] = true;
+    try std.testing.expect(lv.breakBarrel(grid.MIDDLE));
+    try std.testing.expect(Assets.of(&lv).barrel);
+    lv.barrel_seen[cell] = false;
+    try std.testing.expect(!Assets.of(&lv).barrel);
+    std.debug.print("map assets: hidden walls and forest, 2 underlays, slime descendants, remembered barrels and map replacement checked\n", .{});
 }
 
 test "a slot's prompt is its maker's face button or shoulder on a pad, and its key's cap on the keyboard" {

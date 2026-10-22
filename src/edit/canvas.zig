@@ -8,6 +8,8 @@ const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const dual = @import("../gfx/ground.zig");
 const game = @import("../game.zig");
+const modals = @import("modals.zig");
+const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const P = mathx.P;
 const Desk = input.Desk;
@@ -71,10 +73,10 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     rl.drawRectangleLinesEx(look.grown(boxRect(ed, c, grid.Box.inMap(0)), 1), 1, look.EDGE);
     var cells = grid.Cells.of(v.lo, v.hi);
     while (cells.next()) |p| {
-        if (ed.lv.hasBarrel(p)) editor.modals.seenPicture(g, .barrel, ed.cellRect(c, p));
+        if (ed.lv.hasBarrel(p)) modals.seenPicture(g, .barrel, ed.cellRect(c, p));
     }
-    for (ed.lv.torches()) |t| editor.modals.seenPicture(g, .torch, ed.cellRect(c, t));
-    for (ed.shownFoes()) |f| editor.modals.seenPicture(g, .{ .body = f.kind }, ed.cellRect(c, f.at));
+    for (ed.lv.torches()) |t| modals.seenPicture(g, .torch, ed.cellRect(c, t));
+    for (ed.shownFoes()) |f| modals.seenPicture(g, .{ .body = f.kind }, ed.cellRect(c, f.at));
     drawDoors(ed, g, c);
     if (ed.start_at) |s| editor.figure(g, g.sprites.body(actor.HERO), editor.START, ed.cellRect(c, s));
     if (ed.selection) |s| {
@@ -199,7 +201,7 @@ fn ghostPasted(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, tool: e
 }
 
 fn ghostTool(g: *game.Game, r: rl.Rectangle, tool: editor.Tool) void {
-    if (editor.panel.toolPicture(g, tool)) |t| return look.stretch(t, r, GHOST);
+    if (panel.toolPicture(g, tool)) |t| return look.stretch(t, r, GHOST);
     const l = tool.look_();
     editor.glyph(g, l.ch, r, look.fade(l.fg, GHOST_A));
 }
@@ -211,7 +213,7 @@ pub fn ghostInk(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, t: gri
 
 fn ghostTile(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
     if (g.sprites.tileOf(t, .{})) |tex| return look.stretch(tex, r, GHOST);
-    rl.drawRectangleRec(r, look.fade(editor.panel.bareBg(t), GHOST_A));
+    rl.drawRectangleRec(r, look.fade(panel.bareBg(t), GHOST_A));
 }
 
 fn boxRect(ed: *const editor.Editor, c: rl.Rectangle, b: grid.Box) rl.Rectangle {
@@ -238,8 +240,9 @@ pub fn drawGraph(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     for (0..ed.map.node_n) |n| {
         const b = ed.boxAt(c, n);
         rl.drawRectangleRec(b, PANEL_BG);
-        if (thumb(ed, n)) |t| editor.sprite(t, .{ .x = b.x, .y = b.y + @as(f32, @floatFromInt(editor.BOX_TOP)), .width = @floatFromInt(editor.BOX_W), .height = @floatFromInt(editor.BOX_H - editor.BOX_TOP) });
-        editor.panel.drawNodeTitle(ed, g, n, b, @as(i32, @intFromFloat(b.y)) + editor.TITLE_DY);
+        const picture = thumbRect(b);
+        if (thumb(ed, n, picture, c)) |t| editor.sprite(t, picture);
+        panel.drawNodeTitle(ed, g, n, b, @as(i32, @intFromFloat(b.y)) + editor.TITLE_DY);
         rl.drawRectangleLinesEx(b, 1, if (n == ed.node) ON else look.EDGE);
     }
     for (ed.map.nodes(), 0..) |*nd, n| {
@@ -258,7 +261,12 @@ pub fn drawGraph(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     if (ed.linking) |from| rl.drawLineEx(ed.dotAt(c, from), vec(ed.desk.mouse), editor.LINK_W, PICKED);
 }
 
-fn thumb(ed: *editor.Editor, n: usize) ?rl.Texture2D {
+fn thumbRect(b: rl.Rectangle) rl.Rectangle {
+    return .{ .x = b.x, .y = b.y + @as(f32, @floatFromInt(editor.BOX_TOP)), .width = @floatFromInt(editor.BOX_W), .height = @floatFromInt(editor.BOX_H - editor.BOX_TOP) };
+}
+
+fn thumb(ed: *editor.Editor, n: usize, picture: rl.Rectangle, canvas: rl.Rectangle) ?rl.Texture2D {
+    if (!rl.checkCollisionRecs(picture, canvas)) return null;
     if (!ed.thumb_ok.isSet(n)) {
         const lv = if (n == ed.node and !ed.stale) &ed.lv else blk: {
             ed.map.node[n].stamp(&ed.thumb_lv, ed.roll);
@@ -280,4 +288,33 @@ fn thumb(ed: *editor.Editor, n: usize) ?rl.Texture2D {
         ed.thumb_ok.set(n);
     }
     return ed.thumbs[n];
+}
+
+test "offscreen graph thumbnails defer generation and uploads until their image enters the canvas" {
+    const ed = try editor.Editor.create(std.testing.allocator);
+    defer ed.destroy();
+    while (ed.map.node_n < atlas.MAX_NODES) _ = ed.map.add(.{ .procgen = .{} });
+    const c = look.rect(editor.PANEL_W, 0, 640, 480);
+    ed.gcam = .{ 10000, 10000 };
+    for (0..ed.map.node_n) |n| {
+        try std.testing.expect(thumb(ed, n, thumbRect(ed.boxAt(c, n)), c) == null);
+        try std.testing.expect(ed.thumbs[n] == null and !ed.thumb_ok.isSet(n));
+    }
+    ed.gcam = .{ 0, 0 };
+    const b = ed.boxAt(c, 0);
+    const picture = thumbRect(b);
+    var header = b;
+    header.height = editor.BOX_TOP;
+    try std.testing.expect(thumb(ed, 0, picture, header) == null);
+    try std.testing.expect(ed.thumbs[0] == null and !ed.thumb_ok.isSet(0));
+    ed.thumbs[0] = .{ .id = 0, .width = grid.W, .height = grid.H, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    defer ed.thumbs[0] = null;
+    ed.thumb_ok.set(0);
+    var edge = picture;
+    edge.x += edge.width;
+    try std.testing.expect(thumb(ed, 0, picture, edge) == null);
+    edge.x -= 1;
+    try std.testing.expect(thumb(ed, 0, picture, edge) != null);
+    try std.testing.expect(thumb(ed, 0, picture, c) != null);
+    std.debug.print("graph thumbnails: {d} offscreen dirty nodes skip generation and uploads; header-only and exact-edge clips skip, one visible pixel retains the image\n", .{ed.map.node_n});
 }

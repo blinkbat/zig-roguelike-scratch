@@ -60,8 +60,7 @@ fn markEmissive(pixels: *[grid.CELLS]rl.Color, at: [2]f32) bool {
     while (cells.next()) |p| {
         const pixel = &pixels[grid.Level.idx(p)];
         if (@field(pixel, FIELD.lit) == 0) continue;
-        const q = mathx.centre(p);
-        if (mathx.len(q[0] - at[0], q[1] - at[1]) >= EMISSIVE_REACH) continue;
+        if (light.offMiddle(p, at) >= EMISSIVE_REACH) continue;
         @field(pixel, FIELD.emissive) = 255;
         marked = true;
     }
@@ -307,8 +306,7 @@ test "cinema emissive bounds preserve fractional lights and visible map edges" {
             const marked = markEmissive(&pixels, .{ x, y });
             var expected_count: usize = 0;
             for (pixels, 0..) |pixel, i| {
-                const q = mathx.centre(grid.Level.of(i));
-                const expected = i % 5 != 0 and mathx.len(q[0] - x, q[1] - y) < EMISSIVE_REACH;
+                const expected = i % 5 != 0 and light.offMiddle(grid.Level.of(i), .{ x, y }) < EMISSIVE_REACH;
                 try std.testing.expectEqual(@as(u8, if (expected) 255 else 0), pixel.b);
                 try std.testing.expectEqual(@as(u8, if (i % 5 == 0) 0 else 255), pixel.r);
                 try std.testing.expectEqual(@as(u8, 97), pixel.g);

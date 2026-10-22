@@ -1,7 +1,19 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const game = @import("game.zig");
 const app = @import("app.zig");
 const atlas = @import("map/atlas.zig");
+
+const NVIDIA_DISCRETE: u32 = 1;
+const AMD_DISCRETE: u32 = 1;
+
+// NVIDIA Optimus and AMD switchable-graphics drivers read these executable exports to pick the dedicated GPU.
+comptime {
+    if (builtin.os.tag == .windows) {
+        @export(&NVIDIA_DISCRETE, .{ .name = "NvOptimusEnablement" });
+        @export(&AMD_DISCRETE, .{ .name = "AmdPowerXpressRequestHighPerformance" });
+    }
+}
 
 pub fn main() !void {
     const alloc = std.heap.c_allocator;
@@ -17,6 +29,7 @@ pub fn main() !void {
 }
 
 test {
+    _ = @import("game/debug.zig");
     _ = @import("gfx/prompt_text.zig");
     _ = @import("core/mathx.zig");
     _ = @import("core/input.zig");

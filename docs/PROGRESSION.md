@@ -10,9 +10,11 @@
 | Loot | Normal or magic; at most two distinct modifiers |
 | Modifier pool | Life, mana, Strength, Dexterity, Intelligence |
 | Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
-| Gold | Drops from barrels/chests; collected automatically on movement, without an extra turn |
-| Item actions | Pick up, drop, equip and unequip cost one turn; one direct action, screen stays open |
-| Interact | Includes underfoot and adjacent visible objects; browsing/canceling costs no turn |
+| Gold | Collected automatically on movement or when opening loot; chest gold collects as the chest opens, without an extra turn |
+| Item actions | Take item, Take all, drop, equip and unequip cost one turn when successful; Take all fills available inventory space and leaves excess items |
+| Interact | Opens one bag/chest's loot modal; multiple nearby containers/doors first offer a choice. Browsing an open container and canceling cost no turn; opening a closed chest costs one turn |
+| Loot artwork | One `item-bag.png` per ground item cell; `chest-item-bag.png` while a chest contains items, then `chest-open.png` when empty |
+| Foe loot | Gold is common, plain white items occasional, magic blue items rare; white items have no rolled modifiers, blues have one or two |
 | XP | Foe kills grant XP; each level grants one passive and one active point |
 | Passive tree | 81-node radial graph lifted from Soulslike; three origins, six branches and six bridges |
 | Active trees | Per class, prerequisites, three ranks; only learned skills may be bound |
@@ -20,7 +22,7 @@
 | Charge | Can target a clear empty line for retreat |
 | Respec | Deferred |
 
-Balance values live in `src/play/items.zig` (including barrel and chest gold), `src/play/progress.zig`, `src/play/passives.zig`, `src/play/attrs.zig` (life, mana, crit, dodge, armour cap), `src/play/hero.zig` (class bases, mana recovery), `src/play/flask.zig` and each skill module. These are small
+Balance values live in `src/play/items.zig` (including loot rates and foe/barrel/chest gold), `src/play/progress.zig`, `src/play/passives.zig`, `src/play/attrs.zig` (life, mana, crit, dodge, armour cap), `src/play/hero.zig` (class bases, mana recovery), `src/play/flask.zig` and each skill module. These are small
 prototype pools, not full Diablo/PoE itemization. Rank upgrades improve damage and mana cost;
 non-damaging skills with cooldowns also recover sooner, down to 2 turns (1 for a skill that takes
 no turn, since a 1-turn cooldown ends in the turn the skill used). Equipping or allocating life does not
@@ -70,7 +72,7 @@ damages), life per kill, cull (blows kill foes left at or below a share of life)
 mana per turn and cheaper skills; usually with an attribute rider. Each branch ends at a larger
 double-ring capstone whose rider may be a second effect. Bridges grant attributes from both
 neighboring arms. Attribute-side grants go through `attrs`; the rest are `passives.Perks`, read by
-`progress.State.perks` and applied in `game` (`wound`, `manaRegen`, `drink`), `State.cost` and the
+`progress.State.perks` and applied in `game` (`manaRegen`, `drink`), `game/combat.zig` (`wound`), `State.cost` and the
 life flask's description (`flask.Life.describe`). `passives.INFO` holds each grant kind's group, label and wording.
 
 The chosen class's origin is allocated free and gives no extra bonus. The other two origins are

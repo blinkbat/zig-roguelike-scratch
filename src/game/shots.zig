@@ -36,6 +36,9 @@ const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 const SHOOT = bow.VERB;
 const HERO = actor.HERO;
+const SHOT_SEED: u64 = 0x5EED_1234;
+const SHOTS_DIR = "shots";
+const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
 
 fn renderTarget(g: *game.Game) !rl.RenderTexture2D {
     return rl.loadRenderTexture(g.screen.x, g.screen.y);
@@ -44,23 +47,23 @@ fn renderTarget(g: *game.Game) !rl.RenderTexture2D {
 pub fn shoot(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
-    try std.fs.cwd().makePath(game.SHOTS_DIR);
+    try std.fs.cwd().makePath(SHOTS_DIR);
 
-    game.begin(g, game.SHOT_SEED);
+    game.begin(g, SHOT_SEED);
     poseRat(g);
     g.st.lean = true;
-    try capture(g, target, game.SHOTS_DIR ++ "/lean.png");
+    try capture(g, target, SHOTS_DIR ++ "/lean.png");
 
     g.st.lean = false;
     game.openAim(g, boundTo(g, .shoot).by, .shoot);
-    try capture(g, target, game.SHOTS_DIR ++ "/aim.png");
+    try capture(g, target, SHOTS_DIR ++ "/aim.png");
 
     g.mode = .play;
     poseTorch(g);
-    try capture(g, target, game.SHOTS_DIR ++ "/torch.png");
+    try capture(g, target, SHOTS_DIR ++ "/torch.png");
 
     posePicker(g, boundTo(g, .shoot));
-    try capture(g, target, game.SHOTS_DIR ++ "/bind.png");
+    try capture(g, target, SHOTS_DIR ++ "/bind.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     grassOver(&g.lv);
@@ -68,11 +71,13 @@ pub fn shoot(g: *game.Game) !void {
     g.lv.set(chest_at, .chest);
     g.lv.putBarrel(.{ .x = 23, .y = 20 });
     game.settle(g);
-    try capture(g, target, game.SHOTS_DIR ++ "/chest-closed.png");
+    try capture(g, target, SHOTS_DIR ++ "/chest-closed.png");
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.lv.at(chest_at) != .chest_open or g.ground.coin_n != 1) return error.ChestUnopened;
-    try capture(g, target, game.SHOTS_DIR ++ "/chest-open.png");
+    if (g.lv.at(chest_at) != .chest_open or g.ground.coin_n != 0 or g.gold < items.CHEST_GOLD.lo or g.character.page != .loot) return error.ChestUnopened;
+    try capture(g, target, SHOTS_DIR ++ "/chest-loot.png");
+    game.character.characterCommand(g, .close);
+    try capture(g, target, SHOTS_DIR ++ "/chest-open.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{.{ .x = 25, .y = 14 }});
     g.lv.set(.{ .x = 21, .y = 15 }, .water);
@@ -80,24 +85,24 @@ pub fn shoot(g: *game.Game) !void {
     game.settle(g);
     game.openLeap(g, boundTo(g, .juke).by, .juke);
     g.mark = .{ .x = 20 + juke.RANGE, .y = 15 };
-    try capture(g, target, game.SHOTS_DIR ++ "/juke-aim.png");
+    try capture(g, target, SHOTS_DIR ++ "/juke-aim.png");
     game.confirmAim(g);
     g.st = .{};
     game.update(g, 0.06);
-    try capture(g, target, game.SHOTS_DIR ++ "/juke.png");
+    try capture(g, target, SHOTS_DIR ++ "/juke.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{});
     _ = game.harness.spawnAt(g, .slime, .{ .x = 28, .y = 15 }, false);
     game.settle(g);
     g.rng = game.harness.procRng(g, .burning_arrow, 1, true);
     game.useSkill(g, boundTo(g, .burning_arrow));
-    try capture(g, target, game.SHOTS_DIR ++ "/burning-aim.png");
+    try capture(g, target, SHOTS_DIR ++ "/burning-aim.png");
     game.confirmAim(g);
     g.st = .{};
     game.update(g, 0.08);
-    try capture(g, target, game.SHOTS_DIR ++ "/burning-arrow.png");
+    try capture(g, target, SHOTS_DIR ++ "/burning-arrow.png");
     game.update(g, 0.10);
-    try capture(g, target, game.SHOTS_DIR ++ "/burning.png");
+    try capture(g, target, SHOTS_DIR ++ "/burning.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{});
     _ = game.harness.spawnAt(g, .slime, .{ .x = 26, .y = 15 }, false);
@@ -106,45 +111,45 @@ pub fn shoot(g: *game.Game) !void {
     game.settle(g);
     g.rng = game.harness.procRng(g, .glacial_shot, 3, true);
     game.useSkill(g, boundTo(g, .glacial_shot));
-    try capture(g, target, game.SHOTS_DIR ++ "/glacial-aim.png");
+    try capture(g, target, SHOTS_DIR ++ "/glacial-aim.png");
     game.confirmAim(g);
     g.st = .{};
     game.update(g, 0.05);
-    try capture(g, target, game.SHOTS_DIR ++ "/glacial-arrow.png");
+    try capture(g, target, SHOTS_DIR ++ "/glacial-arrow.png");
     game.update(g, 0.14);
-    try capture(g, target, game.SHOTS_DIR ++ "/glacial.png");
+    try capture(g, target, SHOTS_DIR ++ "/glacial.png");
     game.harness.drawnOut(g);
     posePicker(g, boundTo(g, .glacial_shot));
-    try capture(g, target, game.SHOTS_DIR ++ "/glacial-bind.png");
+    try capture(g, target, SHOTS_DIR ++ "/glacial-bind.png");
 
     try shootEffects(g, target);
 
     poseFright(g);
     if (speechLeft(g) <= fx.SPEECH_FADE_S) return error.FrightUnspoken;
-    try capture(g, target, game.SHOTS_DIR ++ "/pib-fright.png");
+    try capture(g, target, SHOTS_DIR ++ "/pib-fright.png");
     game.update(g, speechLeft(g) - fx.SPEECH_FADE_S / 2);
-    try capture(g, target, game.SHOTS_DIR ++ "/pib-fright-fade.png");
+    try capture(g, target, SHOTS_DIR ++ "/pib-fright-fade.png");
 
     poseGas(g);
-    try capture(g, target, game.SHOTS_DIR ++ "/gas.png");
+    try capture(g, target, SHOTS_DIR ++ "/gas.png");
     g.cloud.clear();
-    try capture(g, target, game.SHOTS_DIR ++ "/gas-clear.png");
+    try capture(g, target, SHOTS_DIR ++ "/gas-clear.png");
     g.cloud.settle(&g.lv);
 
     game.character.openPause(g);
-    try capture(g, target, game.SHOTS_DIR ++ "/pause.png");
+    try capture(g, target, SHOTS_DIR ++ "/pause.png");
     g.pause_menu.at = game.rowAt(game.PauseRow.debug);
     game.harness.press(g, CONFIRM);
-    try capture(g, target, game.SHOTS_DIR ++ "/debug.png");
+    try capture(g, target, SHOTS_DIR ++ "/debug.png");
     g.mode = .play;
 
     poseWaterSteps(g);
-    try capture(g, target, game.SHOTS_DIR ++ "/water-steps.png");
+    try capture(g, target, SHOTS_DIR ++ "/water-steps.png");
 
     for ([_]struct { hour: f32, outdoors: bool, path: [:0]const u8 }{
-        .{ .hour = day.NOON, .outdoors = true, .path = game.SHOTS_DIR ++ "/water-mirrors-day.png" },
-        .{ .hour = NIGHT, .outdoors = true, .path = game.SHOTS_DIR ++ "/water-mirrors-night.png" },
-        .{ .hour = day.NOON, .outdoors = false, .path = game.SHOTS_DIR ++ "/water-mirrors-torch.png" },
+        .{ .hour = day.NOON, .outdoors = true, .path = SHOTS_DIR ++ "/water-mirrors-day.png" },
+        .{ .hour = NIGHT, .outdoors = true, .path = SHOTS_DIR ++ "/water-mirrors-night.png" },
+        .{ .hour = day.NOON, .outdoors = false, .path = SHOTS_DIR ++ "/water-mirrors-torch.png" },
     }) |study| {
         poseWaterMirrors(g, study.hour, study.outdoors);
         try capture(g, target, study.path);
@@ -154,24 +159,24 @@ pub fn shoot(g: *game.Game) !void {
     try cinemaWater(g, target);
 
     poseForest(g);
-    try capture(g, target, game.SHOTS_DIR ++ "/forest.png");
+    try capture(g, target, SHOTS_DIR ++ "/forest.png");
     studyAt(g, true, MORNING);
     try captureCinema(g, target, "forest");
     for ([_]struct { hour: f32, name: [:0]const u8 }{
-        .{ .hour = MORNING, .name = game.SHOTS_DIR ++ "/shadows-morning.png" },
-        .{ .hour = day.NOON, .name = game.SHOTS_DIR ++ "/shadows-noon.png" },
-        .{ .hour = EVENING, .name = game.SHOTS_DIR ++ "/shadows-evening.png" },
-        .{ .hour = day.DEAD_OF_NIGHT, .name = game.SHOTS_DIR ++ "/shadows-moon.png" },
+        .{ .hour = MORNING, .name = SHOTS_DIR ++ "/shadows-morning.png" },
+        .{ .hour = day.NOON, .name = SHOTS_DIR ++ "/shadows-noon.png" },
+        .{ .hour = EVENING, .name = SHOTS_DIR ++ "/shadows-evening.png" },
+        .{ .hour = day.DEAD_OF_NIGHT, .name = SHOTS_DIR ++ "/shadows-moon.png" },
     }) |study| {
         poseShadowStudy(g, study.hour, true);
         try capture(g, target, study.name);
     }
     poseShadowStudy(g, day.NOON, false);
-    try capture(g, target, game.SHOTS_DIR ++ "/shadows-torch.png");
+    try capture(g, target, SHOTS_DIR ++ "/shadows-torch.png");
     for ([_]struct { hour: ?f32, path: [:0]const u8 }{
-        .{ .hour = MORNING, .path = game.SHOTS_DIR ++ "/shadows-hidden-sun.png" },
-        .{ .hour = NIGHT, .path = game.SHOTS_DIR ++ "/shadows-hidden-moon.png" },
-        .{ .hour = null, .path = game.SHOTS_DIR ++ "/shadows-hidden-torch.png" },
+        .{ .hour = MORNING, .path = SHOTS_DIR ++ "/shadows-hidden-sun.png" },
+        .{ .hour = NIGHT, .path = SHOTS_DIR ++ "/shadows-hidden-moon.png" },
+        .{ .hour = null, .path = SHOTS_DIR ++ "/shadows-hidden-torch.png" },
     }) |study| {
         poseHiddenShadows(g, study.hour);
         try checkHiddenShadowMask(g, target, true);
@@ -184,7 +189,7 @@ pub fn shoot(g: *game.Game) !void {
     poseHiddenShadows(g, MORNING);
     g.cam.x = @floatFromInt(HIDDEN_SHADOW_X * game.CELL - g.screen.x);
     try checkHiddenShadowMask(g, target, true);
-    try capture(g, target, game.SHOTS_DIR ++ "/shadows-offscreen.png");
+    try capture(g, target, SHOTS_DIR ++ "/shadows-offscreen.png");
 
     try shootHud(g);
 
@@ -196,17 +201,17 @@ pub fn shoot(g: *game.Game) !void {
         try overviews(g, w);
         {
             try w.load(std.heap.c_allocator, atlas.mapPath(SHOT_BIOME));
-            game.beginMapAt(g, w, w.start, game.SHOT_SEED);
-            try capture(g, target, game.SHOTS_DIR ++ "/biome.png");
+            game.beginMapAt(g, w, w.start, SHOT_SEED);
+            try capture(g, target, SHOTS_DIR ++ "/biome.png");
         }
         {
             try loadStrand(g, w);
-            try capture(g, target, game.SHOTS_DIR ++ "/strand.png");
+            try capture(g, target, SHOTS_DIR ++ "/strand.png");
             try captureCinema(g, target, "strand");
             const seen = g.lv.seen;
             const lit = g.lv.lit;
             game.character.toggleReveal(g);
-            try capture(g, target, game.SHOTS_DIR ++ "/map-revealed.png");
+            try capture(g, target, SHOTS_DIR ++ "/map-revealed.png");
             game.character.toggleReveal(g);
             if (!std.mem.eql(bool, &seen, &g.lv.seen) or !std.mem.eql(bool, &lit, &g.lv.lit)) return error.RevealChangedSight;
             try checkWaterSurface(g);
@@ -215,30 +220,31 @@ pub fn shoot(g: *game.Game) !void {
         {
             try w.load(std.heap.c_allocator, atlas.mapPath(SHOT_OUTDOOR));
             for (SHOT_HOURS) |s| {
-                game.beginMapAt(g, w, w.start, game.SHOT_SEED);
+                game.beginMapAt(g, w, w.start, SHOT_SEED);
                 g.lv.seen = @splat(false);
                 g.clock = day.Clock.at(s.hour);
                 game.settle(g);
                 try capture(g, target, s.path);
             }
             inline for ([_]f32{ BLEAK_MORNING, day.NOON, DUSK, day.DEAD_OF_NIGHT }) |hour| {
-                game.beginMapAt(g, w, w.start, game.SHOT_SEED);
+                game.beginMapAt(g, w, w.start, SHOT_SEED);
                 g.clock = day.Clock.at(hour);
                 game.settle(g);
                 g.light.sky = sky.under(hour, .bleak);
-                try capture(g, target, game.SHOTS_DIR ++ "/bleak-" ++ std.fmt.comptimePrint("{d:.1}", .{hour}) ++ ".png");
+                try capture(g, target, SHOTS_DIR ++ "/bleak-" ++ std.fmt.comptimePrint("{d:.1}", .{hour}) ++ ".png");
             }
             g.clock = day.Clock.at(day.NOON);
             game.settle(g);
             g.clock = day.Clock.at(day.DEAD_OF_NIGHT);
             game.settle(g);
-            try capture(g, target, game.SHOTS_DIR ++ "/night-memory.png");
+            try capture(g, target, SHOTS_DIR ++ "/night-memory.png");
         }
-        game.begin(g, game.SHOT_SEED);
+        game.begin(g, SHOT_SEED);
     }
 
-    try editor.shoot(g, target, game.SHOTS_DIR ++ "/edit.png", game.SHOTS_DIR ++ "/edit-graph.png", game.SHOTS_DIR ++ "/edit-gen.png", game.SHOTS_DIR ++ "/edit-objects.png");
+    try editor.shoot(g, target, SHOTS_DIR ++ "/edit.png", SHOTS_DIR ++ "/edit-graph.png", SHOTS_DIR ++ "/edit-gen.png", SHOTS_DIR ++ "/edit-objects.png");
     try shootCharacter(g);
+    try shootLoot(g);
 
     const entry = naming.Entry{ .name = heroes.Name.of("Arwen"), .row = 2, .col = 4 };
     rl.beginTextureMode(target);
@@ -246,33 +252,147 @@ pub fn shoot(g: *game.Game) !void {
     var title: [naming.TITLE_MAX]u8 = undefined;
     naming.draw(&entry, g.face, g.screen, naming.titleOf(heroes.DEFAULT, &title), .xbox);
     rl.endTextureMode();
-    try exportTarget(target, game.SHOTS_DIR ++ "/name.png");
+    try exportTarget(target, SHOTS_DIR ++ "/name.png");
 }
 
 pub fn shootUi(g: *game.Game) !void {
-    try std.fs.cwd().makePath(game.SHOTS_DIR);
+    try std.fs.cwd().makePath(SHOTS_DIR);
     try shootCharacter(g);
+    try shootLoot(g);
     try shootHud(g);
     try shootLevelUp(g);
+}
+
+pub fn shootDebug(g: *game.Game) !void {
+    try std.fs.cwd().makePath(SHOTS_DIR ++ "/debug");
+    const screen = g.screen;
+    defer g.screen = screen;
+    g.screen = game.SCREEN_720;
+    const target = try renderTarget(g);
+    defer rl.unloadRenderTexture(target);
+    poseWaterMirrors(g, MORNING, true);
+    g.fx.zap(0, .{ .from = .{ 27.5, 20.5 }, .to = .{ 29.5, 20.5 } });
+    try capture(g, target, SHOTS_DIR ++ "/debug/all-on.png");
+    inline for (std.meta.fields(light.Options)) |f| {
+        try checkDebugOption(g, target, &@field(g.light.options, f.name), f.name);
+    }
+    try checkDebugOption(g, target, &g.debug.visuals.water_reflections, "water_reflections");
+    const w = try std.heap.c_allocator.create(atlas.Atlas);
+    defer std.heap.c_allocator.destroy(w);
+    defer g.map = null;
+    try loadStrand(g, w);
+    try checkDebugOption(g, target, &g.debug.visuals.weather, "weather");
+    game.character.openPause(g);
+    g.pause_page = .debug;
+    inline for (comptime std.enums.values(game.debugging.Page)) |page| {
+        g.debug.page = page;
+        g.pause_menu = .{};
+        try capture(g, target, SHOTS_DIR ++ "/debug/menu-" ++ @tagName(page) ++ ".png");
+    }
+    try shootLoot(g);
+}
+
+fn checkDebugOption(g: *game.Game, target: rl.RenderTexture2D, option: *bool, comptime name: []const u8) !void {
+    drawInto(g, target);
+    const before = try readTarget(target);
+    defer rl.unloadImage(before);
+    const enabled = option.*;
+    defer option.* = enabled;
+    option.* = false;
+    try capture(g, target, SHOTS_DIR ++ "/debug/off-" ++ name ++ ".png");
+    const disabled = try readTarget(target);
+    defer rl.unloadImage(disabled);
+    const changed = differentPixels(before, disabled);
+    if (changed == 0) return error.DebugOptionDidNotChangeFrame;
+    option.* = true;
+    drawInto(g, target);
+    const restored = try readTarget(target);
+    defer rl.unloadImage(restored);
+    if (differentPixels(before, restored) != 0) return error.DebugOptionDidNotRestoreFrame;
+    std.debug.print("Debug {s}: {d} pixels changed, exact restoration\n", .{ name, changed });
+}
+
+fn differentPixels(a: rl.Image, b: rl.Image) usize {
+    var changed: usize = 0;
+    var pixels = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = a.width, .y = a.height });
+    while (pixels.next()) |p| changed += @intFromBool(!sameRgb(rl.getImageColor(a, p.x, p.y), rl.getImageColor(b, p.x, p.y)));
+    return changed;
+}
+
+fn shootLoot(g: *game.Game) !void {
+    const screen = g.screen;
+    defer g.screen = screen;
+    const device = g.st.device;
+    defer g.st.device = device;
+    g.screen = game.SCREEN_720;
+    const target = try renderTarget(g);
+    defer rl.unloadRenderTexture(target);
+    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    grassOver(&g.lv);
+    const bag = P{ .x = 19, .y = 20 };
+    const chest = P{ .x = 21, .y = 20 };
+    for ([_]items.Kind{ .ring, .boots, .axe }) |kind| _ = g.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null } }, .at = bag });
+    g.lv.set(chest, .chest);
+    game.settle(g);
+    try capture(g, target, SHOTS_DIR ++ "/loot-ground.png");
+    _ = game.character.openNearby(g);
+    try capture(g, target, SHOTS_DIR ++ "/loot-containers.png");
+    game.character.openLoot(g, bag);
+    g.st.device = .xbox;
+    try capture(g, target, SHOTS_DIR ++ "/loot-bag-pad.png");
+    g.st.device = .keys;
+    try capture(g, target, SHOTS_DIR ++ "/loot-bag-keys.png");
+    game.character.characterCommand(g, .close);
+    game.character.openLoot(g, chest);
+    game.harness.drawnOut(g);
+    try capture(g, target, SHOTS_DIR ++ "/loot-chest.png");
+    game.character.characterCommand(g, .close);
+    try capture(g, target, SHOTS_DIR ++ "/loot-chest-left.png");
+    game.character.openLoot(g, chest);
+    game.character.characterCommand(g, .take_all);
+    game.harness.drawnOut(g);
+    if (g.ground.n != 3 or g.inventory.n != 1 or g.lv.at(chest) != .chest_open) return error.LootContainerMismatch;
+    try capture(g, target, SHOTS_DIR ++ "/loot-chest-empty.png");
+    for (0..items.BAG_MAX - g.inventory.n) |_| _ = g.inventory.add(.{ .kind = .cap });
+    game.character.openLoot(g, bag);
+    game.character.characterCommand(g, .take_all);
+    try capture(g, target, SHOTS_DIR ++ "/loot-full.png");
+
+    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{chest});
+    grassOver(&g.lv);
+    var seed: u64 = 0;
+    while (true) : (seed += 1) {
+        var probe = mathx.Rng.init(seed);
+        const reward = items.foeLoot(&probe);
+        if (reward.gold > 0 and reward.item != null and reward.item.?.magical()) break;
+    }
+    g.loot_rng = mathx.Rng.init(seed);
+    game.settle(g);
+    game.combat.wound(g, 2, .{ .dmg = 1000 }, game.combat.SHOOT, .{ .from = g.heroActor().?.at, .wait = 0.2 });
+    try capture(g, target, SHOTS_DIR ++ "/loot-foe-before.png");
+    game.harness.drawnOut(g);
+    try capture(g, target, SHOTS_DIR ++ "/loot-foe-dropped.png");
+    game.character.openLoot(g, chest);
+    try capture(g, target, SHOTS_DIR ++ "/loot-foe-blue.png");
 }
 
 fn shootLevelUp(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
-    try std.fs.cwd().makePath(game.SHOTS_DIR ++ "/level-up");
+    try std.fs.cwd().makePath(SHOTS_DIR ++ "/level-up");
     inline for (.{ .{ "day", day.NOON }, .{ "night", NIGHT } }) |scene| {
         poseForest(g);
         studyAt(g, true, scene[1]);
         g.st = .{ .device = .keys };
         game.settleXp(g);
-        try capture(g, target, game.SHOTS_DIR ++ "/level-up/" ++ scene[0] ++ "-before.png");
+        try capture(g, target, SHOTS_DIR ++ "/level-up/" ++ scene[0] ++ "-before.png");
         _ = g.growth.gain(@intCast(g.growth.needed()));
         game.update(g, 0);
         var elapsed: f32 = 0;
         inline for (.{ 0.12, 0.4, 0.9, 1.5, 2.1 }, 0..) |time, i| {
             game.update(g, time - elapsed);
             elapsed = time;
-            try capture(g, target, std.fmt.comptimePrint(game.SHOTS_DIR ++ "/level-up/{s}-{d}.png", .{ scene[0], i }));
+            try capture(g, target, std.fmt.comptimePrint(SHOTS_DIR ++ "/level-up/{s}-{d}.png", .{ scene[0], i }));
         }
     }
 }
@@ -289,15 +409,14 @@ pub fn shootCinema(g: *game.Game) !void {
     try captureCinema(g, target, "forest");
     try cinemaWater(g, target);
     game.character.openPause(g);
-    g.pause_page = .debug;
-    g.pause_menu.at = game.rowAt(game.DebugRow.composed_lighting);
-    try capture(g, target, game.SHOTS_DIR ++ "/cinema/debug.png");
+    game.debugging.select(g, .composed_lighting);
+    try capture(g, target, SHOTS_DIR ++ "/cinema/debug.png");
 }
 
 /// The start map with its weather under way.
 fn loadStrand(g: *game.Game, w: *atlas.Atlas) !void {
     try w.load(std.heap.c_allocator, atlas.START);
-    game.beginMapAt(g, w, w.start, game.SHOT_SEED);
+    game.beginMapAt(g, w, w.start, SHOT_SEED);
     for (0..RAIN_FRAMES) |_| game.update(g, mathx.FRAME_DT);
 }
 
@@ -313,16 +432,16 @@ fn cinemaWater(g: *game.Game, target: rl.RenderTexture2D) !void {
 fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []const u8) !void {
     const options = g.cinema.options;
     defer g.cinema.options = options;
-    try std.fs.cwd().makePath(game.SHOTS_DIR ++ "/cinema");
+    try std.fs.cwd().makePath(SHOTS_DIR ++ "/cinema");
     g.cinema.options = cinema.Options.off;
-    try capture(g, target, game.SHOTS_DIR ++ "/cinema/" ++ name ++ "-off.png");
+    try capture(g, target, SHOTS_DIR ++ "/cinema/" ++ name ++ "-off.png");
     const base = try readTarget(target);
     defer rl.unloadImage(base);
     if (g.cinema.bloom == null or g.cinema.air == null or g.cinema.focus == null) return error.CinemaShaderMissing;
     inline for (std.meta.fields(cinema.Options)) |f| {
         g.cinema.options = cinema.Options.off;
         @field(g.cinema.options, f.name) = true;
-        try capture(g, target, game.SHOTS_DIR ++ "/cinema/" ++ name ++ "-" ++ f.name ++ ".png");
+        try capture(g, target, SHOTS_DIR ++ "/cinema/" ++ name ++ "-" ++ f.name ++ ".png");
         const img = try readTarget(target);
         defer rl.unloadImage(img);
         const c = game.scene.Cam.of(g);
@@ -360,7 +479,7 @@ fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []con
         std.debug.print("cinema {s}/{s}: {d} changed pixels, {d} hidden pixels unchanged\n", .{ name, f.name, changed, hidden });
     }
     g.cinema.options = .{};
-    try capture(g, target, game.SHOTS_DIR ++ "/cinema/" ++ name ++ "-all.png");
+    try capture(g, target, SHOTS_DIR ++ "/cinema/" ++ name ++ "-all.png");
     g.cinema.options = cinema.Options.off;
     drawInto(g, target);
     const restored = try readTarget(target);
@@ -409,7 +528,7 @@ fn shootCharacter(g: *game.Game) !void {
     defer rl.unloadRenderTexture(target);
     spar.author(w, .slime);
     g.class = heroes.DEFAULT;
-    game.beginMapAt(g, w, w.start, game.SHOT_SEED);
+    game.beginMapAt(g, w, w.start, SHOT_SEED);
     _ = g.growth.gain(100);
     _ = g.inventory.add(.{ .kind = .cap, .mods = .{ .{ .kind = .life, .value = 3 }, null } });
     try g.inventory.equip(0, .helm, g.growth.attributes(g.class));
@@ -433,21 +552,21 @@ fn shootCharacter(g: *game.Game) !void {
     game.syncStats(g);
     game.harness.drawnOut(g);
     g.back = .editor;
-    try capture(g, target, game.SHOTS_DIR ++ "/arena.png");
+    try capture(g, target, SHOTS_DIR ++ "/arena.png");
     game.character.openCharacter(g);
     inline for (book.PAGES) |page| {
         g.character.choose(page);
 
         if (page == .passives) g.character.cursor = progress.start(g.class);
         if (page == .equipment) g.character.cursor = @intFromEnum(items.Slot.helm);
-        try capture(g, target, game.SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ ".png");
+        try capture(g, target, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ ".png");
     }
     {
         const device = g.st.device;
         defer g.st.device = device;
         g.st.device = .keys;
         g.character.choose(.equipment);
-        try capture(g, target, game.SHOTS_DIR ++ "/character-keyboard.png");
+        try capture(g, target, SHOTS_DIR ++ "/character-keyboard.png");
     }
     {
         const gear = g.inventory.gear;
@@ -457,20 +576,20 @@ fn shootCharacter(g: *game.Game) !void {
         g.character.choose(.inventory);
 
         g.character.cursor = 2;
-        try capture(g, target, game.SHOTS_DIR ++ "/item-normal-armour.png");
+        try capture(g, target, SHOTS_DIR ++ "/item-normal-armour.png");
         g.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .mana, .value = 15 }, null } });
         g.inventory.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .dexterity, .value = 3 }, null } });
         g.character.cursor = 1;
         g.character.destination_index = 0;
-        try capture(g, target, game.SHOTS_DIR ++ "/item-ring-left.png");
+        try capture(g, target, SHOTS_DIR ++ "/item-ring-left.png");
         g.character.destination_index = 1;
-        try capture(g, target, game.SHOTS_DIR ++ "/item-ring-right.png");
+        try capture(g, target, SHOTS_DIR ++ "/item-ring-right.png");
         g.inventory.gear.slots.set(.right_hand, .{ .kind = .sling });
         g.inventory.gear.slots.set(.left_hand, .{ .kind = .buckler, .mods = .{ .{ .kind = .life, .value = 6 }, null } });
         _ = g.inventory.add(.{ .kind = .crossbow, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 10 } } });
         g.character.cursor = bag_n;
         g.character.destination_index = 0;
-        try capture(g, target, game.SHOTS_DIR ++ "/item-two-handed.png");
+        try capture(g, target, SHOTS_DIR ++ "/item-two-handed.png");
         const class = g.class;
         defer g.class = class;
         g.class = .knight;
@@ -480,10 +599,10 @@ fn shootCharacter(g: *game.Game) !void {
         inline for ([_]items.Kind{ .axe, .greatclub, .greatsword }) |kind| {
             g.inventory.gear.slots.set(.right_hand, .{ .kind = kind });
             g.character.cursor = @intFromEnum(items.Slot.right_hand);
-            try capture(g, target, game.SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ "-equipped.png");
+            try capture(g, target, SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ "-equipped.png");
         }
         g.character.cursor = @intFromEnum(items.Slot.left_hand);
-        try capture(g, target, game.SHOTS_DIR ++ "/item-offhand-occupied.png");
+        try capture(g, target, SHOTS_DIR ++ "/item-offhand-occupied.png");
     }
     {
         const device = g.st.device;
@@ -493,13 +612,13 @@ fn shootCharacter(g: *game.Game) !void {
             g.character.choose(.passives);
 
             g.character.cursor = progress.start(g.class);
-            try capture(g, target, game.SHOTS_DIR ++ "/tree-controls-" ++ @tagName(d) ++ ".png");
+            try capture(g, target, SHOTS_DIR ++ "/tree-controls-" ++ @tagName(d) ++ ".png");
         }
         g.character.pan = .{ .x = 1.5, .y = -0.8 };
-        try capture(g, target, game.SHOTS_DIR ++ "/tree-passives-pan.png");
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-pan.png");
         g.character.pan = .{ .x = 0, .y = 0 };
         g.character.zoom = 1;
-        try capture(g, target, game.SHOTS_DIR ++ "/tree-passives-overview.png");
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-overview.png");
     }
     {
         const was_class = g.class;
@@ -513,20 +632,20 @@ fn shootCharacter(g: *game.Game) !void {
             g.character.choose(.skills);
 
             g.character.cursor = progress.skills(class).len - 1;
-            try capture(g, target, game.SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-future.png");
+            try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-future.png");
             g.character.cursor = if (class == .wizard) 4 else 0;
-            try capture(g, target, game.SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-description.png");
+            try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-description.png");
             g.growth.ranks.set(progress.skills(class)[g.character.cursor].act, 2);
-            try capture(g, target, game.SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-upgrade.png");
+            try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-upgrade.png");
             if (class == .archer) {
                 g.character.cursor = 2;
                 g.growth.ranks.set(progress.skills(class)[2].act, 2);
-                try capture(g, target, game.SHOTS_DIR ++ "/tree-skills-mixed-upgrade.png");
+                try capture(g, target, SHOTS_DIR ++ "/tree-skills-mixed-upgrade.png");
             }
             g.character.cursor = progress.skills(class).len - 1;
             g.growth.active_points = 30;
             for (progress.skills(class)) |s| while (g.growth.learn(class, s.act)) {};
-            try capture(g, target, game.SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-maximum.png");
+            try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-maximum.png");
         }
         g.class = .knight;
         g.growth = progress.State.of(g.class);
@@ -538,17 +657,17 @@ fn shootCharacter(g: *game.Game) !void {
         g.character.choose(.passives);
 
         g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
-        try capture(g, target, game.SHOTS_DIR ++ "/tree-passives-capstone.png");
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-capstone.png");
         g.character.zoom = 2.2;
-        try capture(g, target, game.SHOTS_DIR ++ "/tree-passives-zoom.png");
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-zoom.png");
         g.character.zoom = 1;
         g.character.cursor = branch + 1;
-        try capture(g, target, game.SHOTS_DIR ++ "/tree-passives-interest.png");
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-interest.png");
         g.character.cursor = progress.passives.bridgeFirst(.warrior_rogue);
-        try capture(g, target, game.SHOTS_DIR ++ "/tree-passives-bridge.png");
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-bridge.png");
         g.growth.passive_points = 0;
         g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
-        try capture(g, target, game.SHOTS_DIR ++ "/tree-passives-no-points.png");
+        try capture(g, target, SHOTS_DIR ++ "/tree-passives-no-points.png");
     }
     {
         const book_screen = g.screen;
@@ -562,18 +681,18 @@ fn shootCharacter(g: *game.Game) !void {
             defer rl.unloadRenderTexture(large);
             inline for (book.PAGES) |page| {
                 g.character.choose(page);
-                try capture(g, large, game.SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ "-" ++ std.fmt.comptimePrint("{d}", .{size.x}) ++ ".png");
+                try capture(g, large, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ "-" ++ std.fmt.comptimePrint("{d}", .{size.x}) ++ ".png");
             }
         }
     }
     g.character.choose(.inventory);
-    try capture(g, target, game.SHOTS_DIR ++ "/character-actions.png");
+    try capture(g, target, SHOTS_DIR ++ "/character-actions.png");
     g.mode = .play;
     _ = game.character.openNearby(g);
-    try capture(g, target, game.SHOTS_DIR ++ "/character-nearby.png");
+    try capture(g, target, SHOTS_DIR ++ "/character-nearby.png");
     g.mode = .play;
     g.log.release();
-    try capture(g, target, game.SHOTS_DIR ++ "/event-log.png");
+    try capture(g, target, SHOTS_DIR ++ "/event-log.png");
     g.inventory = .{};
     for (std.enums.values(items.Kind)) |kind| _ = g.inventory.add(.{ .kind = kind });
     g.mode = .pause;
@@ -583,7 +702,7 @@ fn shootCharacter(g: *game.Game) !void {
 
     inline for ([_]items.Kind{ .crossbow, .dagger, .staff, .wand, .tome, .orb, .buckler, .shield, .totem }) |kind| {
         g.character.cursor = @intFromEnum(kind);
-        try capture(g, target, game.SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ ".png");
+        try capture(g, target, SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ ".png");
     }
 }
 
@@ -608,7 +727,7 @@ fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         game.harness.toughenFoes(g);
         g.clock = day.Clock.at(day.DEAD_OF_NIGHT);
         game.settle(g);
-        const directory = game.SHOTS_DIR ++ "/fx-" ++ @tagName(act);
+        const directory = SHOTS_DIR ++ "/fx-" ++ @tagName(act);
         try std.fs.cwd().makePath(directory);
         try capture(g, target, directory ++ "/before.png");
         game.useSkill(g, boundTo(g, act));
@@ -638,11 +757,11 @@ fn shootHud(g: *game.Game) !void {
     saved_state = g.st;
     defer g.st = saved_state;
     const studies = [_]struct { screen: P, hp: i32, mana: i32, xp: f32 = 0, device: input.Device, path: [:0]const u8, ailing: bool = false, bind: ?[:0]const u8 = null }{
-        .{ .screen = game.SCREEN_720, .hp = 100, .mana = 100, .xp = 0.95, .device = .keys, .path = game.SHOTS_DIR ++ "/hud-full-1280.png", .bind = game.SHOTS_DIR ++ "/hud-bind-720.png" },
-        .{ .screen = game.SCREEN_720, .hp = 75, .mana = 60, .xp = 0.62, .device = .ps5, .path = game.SHOTS_DIR ++ "/hud-ps5-1280.png", .bind = game.SHOTS_DIR ++ "/hud-bind-ps5.png" },
-        .{ .screen = game.WINDOW, .hp = 50, .mana = 35, .xp = 0.37, .device = .xbox, .path = game.SHOTS_DIR ++ "/hud-partial-1600.png", .ailing = true },
-        .{ .screen = game.SCREEN_1080, .hp = 10, .mana = 0, .xp = 0.08, .device = .keys, .path = game.SHOTS_DIR ++ "/hud-critical-1920.png" },
-        .{ .screen = game.WINDOW, .hp = 0, .mana = 0, .device = .keys, .path = game.SHOTS_DIR ++ "/hud-empty-1600.png" },
+        .{ .screen = game.SCREEN_720, .hp = 100, .mana = 100, .xp = 0.95, .device = .keys, .path = SHOTS_DIR ++ "/hud-full-1280.png", .bind = SHOTS_DIR ++ "/hud-bind-720.png" },
+        .{ .screen = game.SCREEN_720, .hp = 75, .mana = 60, .xp = 0.62, .device = .ps5, .path = SHOTS_DIR ++ "/hud-ps5-1280.png", .bind = SHOTS_DIR ++ "/hud-bind-ps5.png" },
+        .{ .screen = game.WINDOW, .hp = 50, .mana = 35, .xp = 0.37, .device = .xbox, .path = SHOTS_DIR ++ "/hud-partial-1600.png", .ailing = true },
+        .{ .screen = game.SCREEN_1080, .hp = 10, .mana = 0, .xp = 0.08, .device = .keys, .path = SHOTS_DIR ++ "/hud-critical-1920.png" },
+        .{ .screen = game.WINDOW, .hp = 0, .mana = 0, .device = .keys, .path = SHOTS_DIR ++ "/hud-empty-1600.png" },
     };
     for (studies) |study| {
         g.screen = study.screen;
@@ -669,17 +788,17 @@ fn shootHud(g: *game.Game) !void {
             g.bar.bind(.{ .set = .secondary, .button = .x }, .glacial_shot);
             g.bar.bind(.{ .set = .secondary, .button = .b }, .burning_arrow);
             g.st.down.insert(g.bar.modifier.?);
-            try capture(g, target, game.SHOTS_DIR ++ "/hud-secondary-pad.png");
+            try capture(g, target, SHOTS_DIR ++ "/hud-secondary-pad.png");
             g.st.down = .initEmpty();
             posePicker(g, boundTo(g, .shoot));
-            try capture(g, target, game.SHOTS_DIR ++ "/hud-bind-pad.png");
+            try capture(g, target, SHOTS_DIR ++ "/hud-bind-pad.png");
             g.mode = .inspect;
             g.inspecting = .{ .slot = game.Binds.colOf(.x) };
-            try capture(g, target, game.SHOTS_DIR ++ "/hud-inspect-skill.png");
+            try capture(g, target, SHOTS_DIR ++ "/hud-inspect-skill.png");
             g.inspecting = .{ .status = .burning };
-            try capture(g, target, game.SHOTS_DIR ++ "/hud-inspect-status.png");
+            try capture(g, target, SHOTS_DIR ++ "/hud-inspect-status.png");
             g.inspecting = .mana;
-            try capture(g, target, game.SHOTS_DIR ++ "/hud-inspect-mana.png");
+            try capture(g, target, SHOTS_DIR ++ "/hud-inspect-mana.png");
             g.mode = .play;
         }
     }
@@ -961,7 +1080,7 @@ fn waterSample(g: *game.Game, target: rl.RenderTexture2D, beds: *const dual.Beds
 }
 
 fn shootWater(g: *game.Game, target: rl.RenderTexture2D) !void {
-    try std.fs.cwd().makePath(game.SHOTS_DIR ++ "/water-reflections");
+    try std.fs.cwd().makePath(SHOTS_DIR ++ "/water-reflections");
     g.st = .{};
     const FRAMES = 40;
     const EVERY = 6;
@@ -970,7 +1089,7 @@ fn shootWater(g: *game.Game, target: rl.RenderTexture2D) !void {
     for (0..FRAMES) |i| {
         for (0..EVERY) |_| game.update(g, mathx.FRAME_DT);
         var path: [80]u8 = undefined;
-        try capture(g, target, try std.fmt.bufPrintZ(&path, game.SHOTS_DIR ++ "/water-reflections/{d:0>2}.png", .{i}));
+        try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-reflections/{d:0>2}.png", .{i}));
     }
     const elapsed = g.light.t.at() - before;
     if (elapsed < FRAMES * EVERY * mathx.FRAME_DT - 0.01 or !std.meta.eql(minute, g.clock)) return error.WaterIdleClock;
@@ -1026,12 +1145,12 @@ fn checkWaterSurface(g: *game.Game) !void {
     view.glints = gleam;
     const first = try waterSample(g, target, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(first);
-    if (!rl.exportImage(first, game.SHOTS_DIR ++ "/water-glints.png")) return error.ExportFailed;
+    if (!rl.exportImage(first, SHOTS_DIR ++ "/water-glints.png")) return error.ExportFailed;
     view.glints = dark;
     view.mirror = .{ .live = mirror.texture, .memory = blank };
     const second = try waterSample(g, target, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(second);
-    if (!rl.exportImage(second, game.SHOTS_DIR ++ "/water-mirror-mask.png")) return error.ExportFailed;
+    if (!rl.exportImage(second, SHOTS_DIR ++ "/water-mirror-mask.png")) return error.ExportFailed;
     var glinted = [_]usize{0} ** BANDS.len;
     var reflected = [_]usize{0} ** BANDS.len;
     var fixed: usize = 0;
@@ -1121,7 +1240,7 @@ fn checkMapEdge(g: *game.Game, target: rl.RenderTexture2D) !void {
         rl.clearBackground(look.FOG);
         game.scene.drawMap(g);
         outOfTarget(g);
-        try exportTarget(target, if (visible) game.SHOTS_DIR ++ "/map-bottom-edge.png" else game.SHOTS_DIR ++ "/map-bottom-memory.png");
+        try exportTarget(target, if (visible) SHOTS_DIR ++ "/map-bottom-edge.png" else SHOTS_DIR ++ "/map-bottom-memory.png");
         const img = try readTarget(target);
         defer rl.unloadImage(img);
         {
@@ -1166,7 +1285,7 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     g.cam = camera;
     @memset(&g.lv.lit, false);
     g.light.settle(&g.lv);
-    try capture(g, target, game.SHOTS_DIR ++ "/water-mirrors-memory.png");
+    try capture(g, target, SHOTS_DIR ++ "/water-mirrors-memory.png");
     const memory = try readTarget(g.sprites.mirror_memory.?);
     defer rl.unloadImage(memory);
     const dim = try readTarget(g.sprites.mirror.?);
@@ -1188,6 +1307,7 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
         }
     }
     if (remembered < MIN_PIXELS) return error.WaterMemoryMissing;
+    try checkRememberedBarrels(g, target, memory);
     @memset(&g.lv.seen, false);
     g.light.settle(&g.lv);
     intoTarget(g, target);
@@ -1208,6 +1328,36 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
         }
     }
     std.debug.print("water mirror GPU: {d} live and {d} remembered pixels; {d} camera samples agree; hidden bodies and unexplored scenery absent\n", .{ reflected, remembered, compared });
+}
+
+fn checkRememberedBarrels(g: *game.Game, target: rl.RenderTexture2D, before: rl.Image) !void {
+    const barrels = g.lv.barrel;
+    const remembered = g.lv.barrel_seen;
+    defer {
+        g.lv.barrel = barrels;
+        g.lv.barrel_seen = remembered;
+        g.art_ready = false;
+    }
+    @memset(&g.lv.barrel, false);
+    g.art_ready = false;
+    try capture(g, target, SHOTS_DIR ++ "/water-mirrors-broken-remembered.png");
+    const broken = try readTarget(g.sprites.mirror_memory.?);
+    defer rl.unloadImage(broken);
+    @memset(&g.lv.barrel_seen, false);
+    g.art_ready = false;
+    drawInto(g, target);
+    const forgotten = try readTarget(g.sprites.mirror_memory.?);
+    defer rl.unloadImage(forgotten);
+    var kept: usize = 0;
+    var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = before.width, .y = before.height });
+    while (px.next()) |p| {
+        const a = rl.getImageColor(before, p.x, p.y);
+        const b = rl.getImageColor(broken, p.x, p.y);
+        if (!std.meta.eql(a, b)) return error.WaterMirrorForgetsUnseenBarrel;
+        if (!std.meta.eql(b, rl.getImageColor(forgotten, p.x, p.y))) kept += 1;
+    }
+    if (kept < MIN_PIXELS) return error.WaterBarrelMemoryMissing;
+    std.debug.print("remembered barrel GPU: {d} reflection pixels survive unseen destruction and clear with memory\n", .{kept});
 }
 
 fn checkHiddenShadowMask(g: *game.Game, target: rl.RenderTexture2D, visible: bool) !void {
@@ -1277,24 +1427,24 @@ const SHOT_BIOME = "qud/qud_salt_marsh";
 const RAIN_FRAMES: usize = 90;
 const SHOT_OUTDOOR = "wilds";
 const SHOT_HOURS = [_]struct { hour: f32, path: [:0]const u8 }{
-    .{ .hour = DAWN, .path = game.SHOTS_DIR ++ "/dawn.png" },
-    .{ .hour = day.NOON, .path = game.SHOTS_DIR ++ "/noon.png" },
-    .{ .hour = AFTERNOON, .path = game.SHOTS_DIR ++ "/day.png" },
-    .{ .hour = DUSK, .path = game.SHOTS_DIR ++ "/dusk.png" },
-    .{ .hour = EARLY_NIGHT, .path = game.SHOTS_DIR ++ "/early-night.png" },
-    .{ .hour = day.DEAD_OF_NIGHT, .path = game.SHOTS_DIR ++ "/night.png" },
-    .{ .hour = LATE_NIGHT, .path = game.SHOTS_DIR ++ "/late-night.png" },
+    .{ .hour = DAWN, .path = SHOTS_DIR ++ "/dawn.png" },
+    .{ .hour = day.NOON, .path = SHOTS_DIR ++ "/noon.png" },
+    .{ .hour = AFTERNOON, .path = SHOTS_DIR ++ "/day.png" },
+    .{ .hour = DUSK, .path = SHOTS_DIR ++ "/dusk.png" },
+    .{ .hour = EARLY_NIGHT, .path = SHOTS_DIR ++ "/early-night.png" },
+    .{ .hour = day.DEAD_OF_NIGHT, .path = SHOTS_DIR ++ "/night.png" },
+    .{ .hour = LATE_NIGHT, .path = SHOTS_DIR ++ "/late-night.png" },
 };
 
 fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
     const target = try rl.loadRenderTexture(grid.W * OVERVIEW_CELL, grid.H * OVERVIEW_CELL);
     defer rl.unloadRenderTexture(target);
-    try std.fs.cwd().makePath(game.SHOTS_MAPS);
+    try std.fs.cwd().makePath(SHOTS_MAPS);
     var list = atlas.Listing{};
     list.scanAll();
     for (0..list.n) |i| {
         try w.load(std.heap.c_allocator, list.at(i));
-        w.node[w.start.node].stamp(&g.lv, game.SHOT_SEED +% i);
+        w.node[w.start.node].stamp(&g.lv, SHOT_SEED +% i);
         rl.beginTextureMode(target);
         rl.clearBackground(look.BG);
         for (0..grid.CELLS) |k| {
@@ -1313,7 +1463,7 @@ fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
         for (g.lv.torches()) |t| g.face.glyph(look.TORCH.ch, t.x * OVERVIEW_CELL + OVERVIEW_MID, t.y * OVERVIEW_CELL + OVERVIEW_MID, OVERVIEW_INK, look.TORCH.fg);
         rl.endTextureMode();
         var buf: [atlas.PATH_MAX + 32]u8 = undefined;
-        const name = try std.fmt.bufPrintZ(&buf, game.SHOTS_MAPS ++ "/{s}.png", .{list.stem(i)});
+        const name = try std.fmt.bufPrintZ(&buf, SHOTS_MAPS ++ "/{s}.png", .{list.stem(i)});
         try exportTarget(target, name);
     }
 }
@@ -1367,16 +1517,16 @@ pub fn benchWalk(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
     var t = try std.time.Timer.start();
-    game.begin(g, game.SHOT_SEED);
+    game.begin(g, SHOT_SEED);
     game.prepare(g);
     std.debug.print("first map: {d:.3} ms, {d} map textures\n", .{ ms(t.read()), g.sprites.count() });
-    var rng = mathx.Rng.init(game.SHOT_SEED);
+    var rng = mathx.Rng.init(SHOT_SEED);
     var d: mathx.Dir = .e;
     const dt = mathx.FRAME_DT;
     var sim = [_]u64{0} ** BENCH_FRAMES;
     var draw = [_]u64{0} ** BENCH_FRAMES;
     for (0..BENCH_FRAMES) |i| {
-        if (g.mode == .dead) game.begin(g, game.SHOT_SEED +% i);
+        if (g.mode == .dead) game.begin(g, SHOT_SEED +% i);
         const was = g.heroActor().?.at;
         t.reset();
         game.harness.walkFrame(g, dt, d);
@@ -1417,7 +1567,7 @@ fn benchAssets(g: *game.Game) !void {
     defer g.map = null;
     inline for ([_][]const u8{ SHOT_OUTDOOR, SHOT_BIOME, SHOT_OUTDOOR }) |name| {
         try w.load(alloc, atlas.mapPath(name));
-        game.beginMapAt(g, w, w.start, game.SHOT_SEED);
+        game.beginMapAt(g, w, w.start, SHOT_SEED);
         var t = try std.time.Timer.start();
         game.prepare(g);
         const loaded = t.read();
