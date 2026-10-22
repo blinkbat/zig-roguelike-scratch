@@ -98,6 +98,13 @@ fn inLoot(g: *const game.Game, from: P, at: P, drop: items.Drop) bool {
     return drop.at.eq(at) and dropReached(g, from, drop);
 }
 
+pub fn lootReached(g: *const game.Game, from: P, at: P) bool {
+    for (g.ground.drops[0..g.ground.n]) |drop| {
+        if (inLoot(g, from, at, drop)) return true;
+    }
+    return false;
+}
+
 fn chestReached(g: *const game.Game, from: P, p: P) bool {
     return withinReach(from, p) and g.lv.isLit(p) and g.lv.at(p).opened() != null;
 }
@@ -142,16 +149,19 @@ pub fn openLoot(g: *game.Game, at: P) void {
     if (!drawnFor(g)) return;
     if (g.travel != null) return notYet(g);
     const h = g.heroActor() orelse return;
-    const chest = chestReached(g, h.at, at);
-    if (chest) {
+    if (chestReached(g, h.at, at)) {
         if (!game.combat.openChest(g, at)) return;
-    } else if (lootOf(g, &g.nearby, at).len == 0) return;
-    game.combat.collectGold(g, at);
+        game.turnToward(g, g.hero, at.x - h.at.x);
+        g.mode = .play;
+        game.holdWalk(g);
+        game.combat.endTurn(g);
+        return;
+    }
+    if (!lootReached(g, h.at, at)) return;
     game.turnToward(g, g.hero, at.x - h.at.x);
     openCharacter(g);
     g.character.choose(.loot);
     g.character.loot_at = at;
-    if (chest) game.combat.endTurn(g);
 }
 
 fn itemFailed(g: *game.Game, err: items.Failure) void {

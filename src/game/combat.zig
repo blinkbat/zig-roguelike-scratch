@@ -603,6 +603,31 @@ fn foeTurn(g: *game.Game, id: u16) void {
         if (r.fright == 0) game.sayAt(g, r.at, "The {s} stops running.", .{row.name});
         return;
     }
+    if (row.ranged) |ranged| {
+        if (!held and mathx.dist(r.at, h.at) <= ranged.retreat) {
+            if (actor.flee(&g.lv, r.at, id, flowTo(g, h.at))) |d| {
+                game.turnLater(g, id, d.delta().x);
+                g.pool.move(&g.lv, id, r.at.add(d.delta()));
+                return;
+            }
+        }
+        if (mathx.dist(r.at, h.at) <= ranged.range and bow.aimable(&g.lv, r.at, h.at)) {
+            const flight = bow.fly(&g.lv, r.at, h.at);
+            if (flight.struck) |hit| {
+                if (hit == .body and hit.body == g.hero) {
+                    game.turnLater(g, id, h.at.x - r.at.x);
+                    g.owed[actor.Pool.slot(id)].arrow = flight;
+                    reach(g, id, row);
+                    return;
+                }
+            }
+        }
+        if (!held and mathx.dist(r.at, h.at) > ranged.retreat) if (actor.chase(&g.lv, r.at, id, flowTo(g, h.at))) |d| {
+            game.turnLater(g, id, d.delta().x);
+            g.pool.move(&g.lv, id, r.at.add(d.delta()));
+        };
+        return;
+    }
     const flitted = if (!held and row.flits and g.rng.chance(actor.FLIT)) actor.flit(&g.lv, r.at, id, g.hero, &g.rng) else null;
     const d = flitted orelse foeWay(g, r.at, id, h.at) orelse return;
     const to = r.at.add(d.delta());

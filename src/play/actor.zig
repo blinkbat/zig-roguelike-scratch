@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
+const bow = @import("bow.zig");
 const burning = @import("burning.zig");
 const glacial = @import("glacial.zig");
 const bleeding = @import("bleeding.zig");
@@ -23,6 +24,7 @@ pub const Kind = enum {
     bloat,
     pib,
     beefy_pib,
+    bandit_crossbowman,
 
     pub fn foe(k: Kind) bool {
         return row(k).foe_type != null;
@@ -110,6 +112,8 @@ pub const Blow = union(enum) {
 pub const Movement = enum { ground, flying };
 pub const FoeType = enum { beast, humanoid, aberration, undead, construct };
 
+pub const Ranged = struct { range: i32, retreat: i32 };
+
 pub const Row = struct {
     name: [:0]const u8,
     movement: Movement,
@@ -119,6 +123,7 @@ pub const Row = struct {
     /// Cells its eyes reach, where there is light to see by.
     sight: i32,
     blow: Blow,
+    ranged: ?Ranged = null,
     /// Cells round it the light it carries reaches.
     light: i32 = 0,
     /// Brogue's `MONST_FLITS`: a third of its moves go a random way.
@@ -159,6 +164,7 @@ pub fn row(k: Kind) Row {
         .bloat => .{ .name = "bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .burst, .flits = true },
         .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .bleeds = 30 } }, .flees = true },
         .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .stuns = 25 } }, .sweep_every = 4 },
+        .bandit_crossbowman => .{ .name = "bandit crossbowman", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 } },
     };
 }
 
@@ -181,6 +187,7 @@ pub fn plural(k: Kind) [:0]const u8 {
 const PLURALS = blk: {
     var t = std.EnumArray(Kind, [:0]const u8).initUndefined();
     for (std.enums.values(Kind)) |k| t.set(k, row(k).name ++ "s");
+    t.set(.bandit_crossbowman, "bandit crossbowmen");
     break :blk t;
 };
 
@@ -450,7 +457,7 @@ test "a slime with no free cell beside it waits to split until a blow finds one"
 }
 
 test "every foe a floor is stocked with is its own family, and a slime ends as four quarters at most" {
-    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib, .beefy_pib }, &FOES);
+    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib, .beefy_pib, .bandit_crossbowman }, &FOES);
     try std.testing.expectEqual(Kind.slime, Kind.slime_quarter.family());
     try std.testing.expectEqual(Kind.rat, Kind.rat.family());
     try std.testing.expectEqual(@as(usize, 4), most(.slime));

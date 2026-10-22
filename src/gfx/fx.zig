@@ -24,7 +24,7 @@ pub const Matter = enum { blood, ooze, wood, ichor };
 pub fn matterOf(kind: ?actor.Kind) Matter {
     const k = kind orelse return .wood;
     return switch (k) {
-        .archer, .wizard, .knight, .rat, .pib, .beefy_pib => .blood,
+        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman => .blood,
         .slime, .slime_half, .slime_quarter => .ooze,
         .bloat => .ichor,
     };
@@ -246,7 +246,7 @@ pub const Settle = struct { slot: usize, after: After };
 
 const MOTES: usize = 320;
 /// Capacity for every body's turn effects, hero hit and sweep, plus a burst or chain jumps.
-pub const DUE: usize = actor.MAX * (6 + actor.SWEEP_CELLS) + 2;
+pub const DUE: usize = actor.MAX * (7 + actor.SWEEP_CELLS) + 2;
 
 pub const Burst = struct { at: mathx.P, area: glacial.Burst, element: damage.Element };
 
@@ -1035,12 +1035,21 @@ pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, 
         pixel.rect(p, 2, 2, k, rl.Color.white);
         return;
     }
+    drawArrow(p, dir, col, k);
+}
+
+pub fn drawArrow(p: rl.Vector2, dir: [2]f32, col: rl.Color, k: f32) void {
     const tail = rl.Vector2{ .x = p.x - dir[0] * 16 * k, .y = p.y - dir[1] * 16 * k };
     pixel.line(tail, p, 1, k, look.SPLINTER);
     const back = rl.Vector2{ .x = p.x - dir[0] * 4 * k, .y = p.y - dir[1] * 4 * k };
-    pixel.line(p, .{ .x = back.x - dir[1] * 3 * k, .y = back.y + dir[0] * 3 * k }, 1, k, col);
-    pixel.line(p, .{ .x = back.x + dir[1] * 3 * k, .y = back.y - dir[0] * 3 * k }, 1, k, col);
-    pixel.line(tail, .{ .x = tail.x + (dir[0] - dir[1]) * 4 * k, .y = tail.y + (dir[1] + dir[0]) * 4 * k }, 1, k, col);
+    for ([_]f32{ -2, -1, 0, 1, 2 }) |side| {
+        pixel.line(p, .{ .x = back.x - dir[1] * side * k, .y = back.y + dir[0] * side * k }, 1, k, col);
+    }
+    const nock = rl.Vector2{ .x = tail.x + dir[0] * 4 * k, .y = tail.y + dir[1] * 4 * k };
+    for ([_]f32{ -1, 1 }) |side| {
+        const feather = rl.Vector2{ .x = tail.x - dir[1] * side * 3 * k, .y = tail.y + dir[0] * side * 3 * k };
+        pixel.line(feather, nock, 1, k, col);
+    }
 }
 
 fn heading(a: f32) [2]f32 {
@@ -1053,7 +1062,7 @@ fn screen(p: [3]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {
 
 fn advance(m: *Mote, lv: *const grid.Level, dt: f32) void {
     var left = dt;
-    while (left > 0) : (left -= MOTE_STEP) tick(m, lv, @min(left, MOTE_STEP));
+    while (left > 0 and m.life > 0) : (left -= MOTE_STEP) tick(m, lv, @min(left, MOTE_STEP));
 }
 
 /// Airborne staining motes do not age, ensuring they leave a stain.

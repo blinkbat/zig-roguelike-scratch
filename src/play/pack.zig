@@ -18,6 +18,7 @@ pub const KINDS = [_][]const actor.Kind{
     &.{ .beefy_pib, .pib, .pib },
     &.{ .pib, .rat, .rat },
     &.{ .rat, .slime, .pib },
+    &.{ .bandit_crossbowman, .rat, .rat },
 };
 pub const REACH: i32 = 2;
 /// Past the hero's sight, so by default none starts in view.
@@ -33,7 +34,7 @@ pub const FEW_MAX: usize = PACKS_MAX;
 pub const MAKEUP_MIN: usize = 1;
 pub const MAKEUP_MAX: usize = 5;
 pub const MAKEUPS_MIN: usize = 1;
-pub const MAKEUPS_MAX: usize = 8;
+pub const MAKEUPS_MAX: usize = 9;
 pub const WEIGHT_MIN: u8 = 1;
 pub const WEIGHT_MAX: u8 = 9;
 pub const FIRST = actor.FOES[0];
@@ -291,11 +292,12 @@ fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, 
     return null;
 }
 
-test "every floor has a few of each foe at least, and every slime stands by a rat" {
+test "every floor has a few of each foe at least, and every slime and crossbowman stands by a rat" {
     var lv: grid.Level = undefined;
     var counts = std.EnumArray(actor.Kind, usize).initFill(0);
     var fewest = std.EnumArray(actor.Kind, usize).initFill(actor.MAX);
     var lone_slimes: usize = 0;
+    var lone_bandits: usize = 0;
     for (0..200) |i| {
         const seed: u64 = 0x9AC5 +% i *% grid.TEST_SEED_STRIDE;
         const f = gen.build(&lv, seed);
@@ -308,16 +310,21 @@ test "every floor has a few of each foe at least, and every slime stands by a ra
             counts.getPtr(a.kind).* += 1;
             try std.testing.expect(!lv.hasBarrel(a.at) and lv.walkable(a.at));
             try std.testing.expect(mathx.dist(a.at, f.start) >= GAP);
-            if (a.kind != .slime) continue;
+            if (a.kind != .slime and a.kind != .bandit_crossbowman) continue;
             const by_rat = for (pool.slice()) |b| {
                 if (b.kind == .rat and mathx.dist(a.at, b.at) <= REACH) break true;
             } else false;
-            if (!by_rat) lone_slimes += 1;
+            if (!by_rat) {
+                if (a.kind == .slime) lone_slimes += 1 else lone_bandits += 1;
+            }
         }
     }
-    std.debug.print("200 floors, {d} packs each: {d} rats, {d} slimes, {d} bloats, {d} pibs; the fewest on one floor {d} rats, {d} slimes, {d} bloats, {d} pibs; {d} slimes with no rat beside them\n", .{ PER_FLOOR, counts.get(.rat), counts.get(.slime), counts.get(.bloat), counts.get(.pib), fewest.get(.rat), fewest.get(.slime), fewest.get(.bloat), fewest.get(.pib), lone_slimes });
+    std.debug.print("200 floors, {d} packs each:\n", .{PER_FLOOR});
+    for (actor.FOES) |k| std.debug.print("  {s}: {d} total, at least {d} on each floor\n", .{ actor.plural(k), counts.get(k), fewest.get(k) });
+    std.debug.print("without a nearby rat: {d} slimes, {d} crossbowmen\n", .{ lone_slimes, lone_bandits });
     try std.testing.expectEqual(@as(usize, 0), counts.get(.archer));
     try std.testing.expectEqual(@as(usize, 0), lone_slimes);
+    try std.testing.expectEqual(@as(usize, 0), lone_bandits);
     try std.testing.expect(counts.get(.slime) < counts.get(.rat));
     for (actor.FOES) |k| try std.testing.expect(fewest.get(k) >= FEW);
 }
@@ -403,6 +410,7 @@ test "a makeup grows, shrinks to its lead and turns round the foe kinds; the las
     while (s.addMakeup()) {}
     try std.testing.expectEqual(MAKEUPS_MAX, s.makeup_n);
     const m = &s.makeup[MAKEUPS_MAX - 1];
+    m.* = .{};
     while (m.grow()) {}
     try std.testing.expectEqual(MAKEUP_MAX, m.n);
     while (m.shrink()) {}

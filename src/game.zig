@@ -438,6 +438,7 @@ const Bite = union(enum) { hurt: fx.After, kill: fx.After, burst: fx.After, miss
 /// Presentation debts land at the body's stagger, or after the hero when it has no stagger.
 const Owed = struct {
     bit: ?Bite = null,
+    arrow: ?bow.Flight = null,
     gassed: ?Harm = null,
     burned: ?Harm = null,
     bled: ?Harm = null,
@@ -602,6 +603,7 @@ pub const Game = struct {
     /// The framebuffer a frame draws into: the window's, or a texture's. Asking GL stalls it.
     framebuffer: u32 = 0,
     shot: ?Shot = null,
+    foe_shots: [actor.MAX]?Shot = @splat(null),
     /// Indexed by pool slot.
     glide: [actor.MAX]Glide = undefined,
     /// Indexed by pool slot. Presentation only: the last way a body stepped, struck or aimed across.
@@ -814,7 +816,7 @@ fn freshRun(g: *Game) void {
 }
 
 fn freshTurn(g: *Game) void {
-    toDefaults(g, &.{ "shot", "travel", "order_n", "busy", "pending", "lead", "owed", "split_from", "dropped_gold", "turning", "displaced", "gold_taken" });
+    toDefaults(g, &.{ "shot", "foe_shots", "travel", "order_n", "busy", "pending", "lead", "owed", "split_from", "dropped_gold", "turning", "displaced", "gold_taken" });
     g.fx.clear();
     g.cloud.clear();
 }
@@ -868,7 +870,7 @@ pub fn castSight(g: *Game, from: P) void {
     g.mini.stale = true;
 }
 
-pub const Move = enum { kick, open, step, blocked };
+pub const Move = enum { kick, open, loot, step, blocked };
 
 pub fn heroMove(g: *Game, d: mathx.Dir) Move {
     const h = g.heroActor() orelse return .blocked;
@@ -879,7 +881,8 @@ pub fn heroMove(g: *Game, d: mathx.Dir) Move {
 pub fn moveOf(g: *const Game, from: P, d: mathx.Dir, occupied: bool) Move {
     if (opensChest(g, from, d)) return .open;
     if (!g.lv.passOk(from, d)) return .blocked;
-    return if (occupied) .kick else .step;
+    if (occupied) return .kick;
+    return if (character.lootReached(g, from, from.add(d.delta()))) .loot else .step;
 }
 
 fn opensChest(g: *const Game, from: P, d: mathx.Dir) bool {
@@ -922,6 +925,10 @@ pub fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
         .open => {
             character.openLoot(g, to);
             return;
+        },
+        .loot => {
+            heroTo(g, to);
+            character.openLoot(g, to);
         },
         .step => heroTo(g, to),
         .blocked => return,
@@ -1470,7 +1477,7 @@ fn splashSteps(g: *Game) void {
 /// Completion time; unplaced bodies wait for the hero and knockback slide.
 fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     comptime for (std.enums.values(Tick)) |t| switch (t) {
-        .bit, .gassed, .burned, .bled, .worn, .swept => {},
+        .bit, .arrow, .gassed, .burned, .bled, .worn, .swept => {},
     };
     const i = actor.Pool.slot(id);
     const a = g.pool.items[i];
@@ -1486,7 +1493,7 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     g.owed[i] = .{};
     const bit = owed.bit;
     const shown = g.lv.isLit(a.at);
-    const placed = if (moved) shown or g.lv.isLit(gl.to) else shown and bit != null;
+    const placed = if (moved) shown or g.lv.isLit(gl.to) else (shown or owed.arrow != null) and bit != null;
     var wait = if (placed) next.* else 0;
     if (placed and id != g.hero and (moved or bit != null)) wait = @max(wait, late + gl.left());
     if (placed and moved and id != g.hero) wait = @max(wait, late + clearIn(g, i, a.at));
@@ -1497,14 +1504,23 @@ fn stagger(g: *Game, id: u16, late: f32, start: f32, next: *f32) f32 {
     var lands = if (placed) wait else if (moved) start else @max(start, gl.left());
     if (moved) {
         gl.* = gl.toward(a.at, late - wait);
-    } else if (bit != null) {
+    } else if (bit != null and owed.arrow == null) {
         gl.* = gl.bumping(hero_at, late - wait);
     }
-    if ((moved or bit != null) and placed) {
+    if ((moved or (bit != null and owed.arrow == null)) and placed) {
         lands = gl.left();
         combat.holdUntil(g, lands);
     }
-    const hits = wait + BUMP_LANDS - late;
+    var hits = wait + BUMP_LANDS - late;
+    if (owed.arrow) |flight| {
+        const release = @max(start, wait - late);
+        const s = Shot{ .from = a.at, .flight = flight, .t = -release };
+        g.foe_shots[i] = s;
+        hits = release + s.lands();
+        lands = release + s.ends();
+        next.* = @max(next.*, lands + late);
+        combat.holdUntil(g, lands);
+    }
     if (bit) |b| switch (b) {
         .hurt, .kill => |after| combat.strike(g, hero, .{ .from = a.at, .wait = hits }, hero_at, b == .kill, after),
         .burst => |after| combat.strike(g, i, .{ .from = hero_at, .wait = hits }, a.at, true, after),
@@ -1647,6 +1663,12 @@ pub fn update(g: *Game, dt: f32) void {
         const heading = s.direction();
         while (s.trail_t < end) : (s.trail_t += gap) g.fx.trail(&g.lv, s.position(s.trail_t), heading, s.act, s.t - s.trail_t);
         if (s.t >= s.ends()) g.shot = null;
+    }
+    for (&g.foe_shots) |*pending| {
+        if (pending.*) |*s| {
+            s.t += dt;
+            if (s.t >= s.ends()) pending.* = null;
+        }
     }
     stepTurning(g, dt);
     var late: f32 = 0;

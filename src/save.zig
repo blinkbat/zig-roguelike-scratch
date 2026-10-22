@@ -70,6 +70,7 @@ const UNSAVED = .{
     "screen",
     "framebuffer",
     "shot",
+    "foe_shots",
     "glide",
     "turning",
     "order",

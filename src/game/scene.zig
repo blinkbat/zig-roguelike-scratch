@@ -607,6 +607,12 @@ pub fn drawMap(g: *game.Game) void {
         const at = s.position(s.t);
         if (g.lv.isLit(mathx.cellOf(at))) fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], game.CELL_F);
     }
+    for (g.foe_shots) |pending| {
+        const s = pending orelse continue;
+        if (s.t < 0) continue;
+        const at = s.position(s.t);
+        if (g.lv.isLit(mathx.cellOf(at))) fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], game.CELL_F);
+    }
     if (blooming) {
         g.cinema.endScene(outer, o, game.CELL_F, g.light);
         g.framebuffer = outer;
@@ -704,7 +710,7 @@ fn drawLean(g: *game.Game, c: Cam, stood: *const Stood) void {
         const p = at.add(d.delta());
         const col = switch (leanShown(g, stood, at, d)) {
             .kick => look.LEAN_FOE,
-            .step, .open => look.LEAN_OPEN,
+            .step, .open, .loot => look.LEAN_OPEN,
             .blocked => look.LEAN_BLOCKED,
         };
         outline(c, p, col);

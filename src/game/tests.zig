@@ -696,6 +696,203 @@ test "a new floor has every pack placed, no foe in sight or on a barrel" {
     }
 }
 
+test "a crossbowman notices then shoots at the player's arrow range and closes only when out of range" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const hero = P{ .x = 20, .y = 20 };
+    const at = hero.add(.{ .x = bow.RANGE, .y = 0 });
+    harness.arena(g, hero, &.{});
+    const id = harness.spawnAt(g, .bandit_crossbowman, at, false);
+    const slot = actor.Pool.slot(id);
+    game.settle(g);
+    const hp = g.heroActor().?.hp;
+    combat.endTurn(g);
+    try std.testing.expect(g.pool.get(id).?.awake);
+    try std.testing.expect(g.owed[slot].arrow == null);
+    g.rng = harness.bitesRng(g, .bandit_crossbowman, &.{true});
+    combat.endTurn(g);
+    try std.testing.expectEqual(at, g.pool.get(id).?.at);
+    try std.testing.expectEqual(@as(usize, bow.RANGE), g.owed[slot].arrow.?.len);
+    try harness.expectWithin(hp - g.heroActor().?.hp, bow.BASE.lo, bow.BASE.hi);
+    harness.arena(g, hero, &.{});
+    const far = at.add(.{ .x = 1, .y = 0 });
+    const far_id = harness.spawnAt(g, .bandit_crossbowman, far, true);
+    game.settle(g);
+    combat.endTurn(g);
+    try std.testing.expectEqual(bow.RANGE, mathx.dist(g.pool.get(far_id).?.at, hero));
+    try std.testing.expect(g.owed[actor.Pool.slot(far_id)].arrow == null);
+    try std.testing.expectEqual(hp, g.heroActor().?.hp);
+    std.debug.print("crossbowman: notices before firing, shoots at {d} tiles for {d}-{d}, closes from {d}\n", .{ bow.RANGE, bow.BASE.lo, bow.BASE.hi, bow.RANGE + 1 });
+}
+
+test "crossbowman arrows respect terrain bodies containers darkness and diagonal gaps" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const Case = enum { wall, barrel, chest, rat, darkness, water, open_chest, diagonal };
+    var fired: usize = 0;
+    for (std.enums.values(Case)) |case| {
+        const hero = P{ .x = 20, .y = 20 };
+        const at = P{ .x = if (case == .darkness) 28 else 26, .y = if (case == .diagonal) 26 else 20 };
+        const middle = P{ .x = 23, .y = 20 };
+        harness.arena(g, hero, &.{});
+        const id = harness.spawnAt(g, .bandit_crossbowman, at, true);
+        g.pool.get(id).?.pin.turns = 2;
+        switch (case) {
+            .wall => g.lv.set(middle, .wall),
+            .barrel => g.lv.putBarrel(middle),
+            .chest => g.lv.set(middle, .chest),
+            .rat => {
+                const rat = harness.spawnAt(g, .rat, middle, false);
+                g.pool.get(rat).?.pin.turns = 2;
+            },
+            .darkness => g.outdoors = false,
+            .water => g.lv.set(middle, .water),
+            .open_chest => g.lv.set(middle, .chest_open),
+            .diagonal => {
+                g.lv.set(.{ .x = 23, .y = 24 }, .wall);
+                g.lv.set(.{ .x = 24, .y = 23 }, .wall);
+            },
+        }
+        game.settle(g);
+        const hp = g.heroActor().?.hp;
+        const expected = case == .water or case == .open_chest or case == .diagonal;
+        g.rng = harness.bitesRng(g, .bandit_crossbowman, &.{true});
+        combat.endTurn(g);
+        const flight = g.owed[actor.Pool.slot(id)].arrow;
+        if (expected != (flight != null)) std.debug.print("unexpected arrow in {s} case\n", .{@tagName(case)});
+        try std.testing.expectEqual(expected, flight != null);
+        try std.testing.expectEqual(expected, g.heroActor().?.hp < hp);
+        try std.testing.expectEqual(at, g.pool.get(id).?.at);
+        if (flight) |f| {
+            fired += 1;
+            try std.testing.expectEqual(g.hero, f.struck.?.body);
+            try std.testing.expectEqual(hero, f.impact().?);
+        }
+    }
+    std.debug.print("crossbowman arrows: {d} obstruction/visibility cases, {d} clear shots\n", .{ std.enums.values(Case).len, fired });
+}
+
+test "a crossbowman retreats when crowded and fires when pinned or cornered" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const hero = P{ .x = 20, .y = 20 };
+    for ([_]i32{ 1, 2 }) |distance| {
+        harness.arena(g, hero, &.{});
+        const id = harness.spawnAt(g, .bandit_crossbowman, hero.add(.{ .x = distance, .y = 0 }), true);
+        game.settle(g);
+        const hp = g.heroActor().?.hp;
+        combat.endTurn(g);
+        try std.testing.expectEqual(distance + 1, mathx.dist(hero, g.pool.get(id).?.at));
+        try std.testing.expectEqual(hp, g.heroActor().?.hp);
+        try std.testing.expect(g.owed[actor.Pool.slot(id)].arrow == null);
+    }
+    for ([_]bool{ false, true }) |pinned| {
+        harness.arena(g, hero, &.{});
+        const at = hero.add(.{ .x = 1, .y = 0 });
+        const id = harness.spawnAt(g, .bandit_crossbowman, at, true);
+        if (pinned) {
+            g.pool.get(id).?.pin.turns = 2;
+        } else {
+            for (mathx.ALL_DIRS) |d| {
+                const cell = at.add(d.delta());
+                if (!cell.eq(hero)) g.lv.set(cell, .wall);
+            }
+        }
+        game.settle(g);
+        const hp = g.heroActor().?.hp;
+        g.rng = harness.bitesRng(g, .bandit_crossbowman, &.{true});
+        combat.endTurn(g);
+        try std.testing.expectEqual(at, g.pool.get(id).?.at);
+        try std.testing.expect(g.owed[actor.Pool.slot(id)].arrow != null);
+        try std.testing.expect(g.heroActor().?.hp < hp);
+    }
+    std.debug.print("crossbowman: 2 close ranges retreat without firing; pin and dead end hold position and fire\n", .{});
+}
+
+test "a crossbowman's stun and chill skip shots while retreat avoids gas and ticks movement bleed" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]bool{ false, true }) |chilled| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        const id = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 26, .y = 20 }, true);
+        const a = g.pool.get(id).?;
+        if (chilled) a.chill = .{ .turns = 2, .phase = glacial.CYCLE - 1 } else a.clock.stun();
+        game.settle(g);
+        const hp = g.heroActor().?.hp;
+        combat.endTurn(g);
+        try std.testing.expectEqual(hp, g.heroActor().?.hp);
+        try std.testing.expect(g.owed[actor.Pool.slot(id)].arrow == null);
+    }
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const id = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 22, .y = 20 }, true);
+    const a = g.pool.get(id).?;
+    a.bleed = .{ .turns = 2 };
+    g.lv.addGas(.{ .x = 23, .y = 19 }, gas.GASSED_UP - 1);
+    game.settle(g);
+    const hp = a.hp;
+    combat.endTurn(g);
+    try std.testing.expect(!g.lv.gassy(a.at));
+    try std.testing.expectEqual(@as(i32, 3), mathx.dist(a.at, g.heroActor().?.at));
+    try std.testing.expectEqual(bleeding.MOVING, hp - a.hp);
+    std.debug.print("crossbowman: stun/chill skip 2 shots; retreat avoids gas and takes {d} movement bleed\n", .{bleeding.MOVING});
+}
+
+test "crossbowman arrows present separate hits on arrival and stay busy through the last flight" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const near = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 23, .y = 20 }, true);
+    const far = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 20, .y = 27 }, true);
+    game.settle(g);
+    const hero = game.heroSlot(g).?;
+    const hp = g.heroActor().?.hp;
+    g.rng = harness.bitesRng(g, .bandit_crossbowman, &.{ true, true });
+    harness.use(g, .wait);
+    const first = g.foe_shots[actor.Pool.slot(near)].?;
+    const last = g.foe_shots[actor.Pool.slot(far)].?;
+    const first_hit = -first.t + game.flown(first.flight.len - 1);
+    const last_hit = -last.t + game.flown(last.flight.len - 1);
+    try std.testing.expect(first_hit > 0 and last_hit > first_hit);
+    try std.testing.expect(g.busy >= -last.t + game.flown(last.flight.len));
+    try std.testing.expect(g.glide[actor.Pool.slot(near)].bump == null);
+    try std.testing.expectEqual(hp, g.pictured[hero].hp);
+    g.st = .{};
+    game.update(g, first_hit - 0.001);
+    try std.testing.expectEqual(hp, g.pictured[hero].hp);
+    game.update(g, 0.002);
+    const between = g.pictured[hero].hp;
+    try std.testing.expect(between < hp and between > g.heroActor().?.hp);
+    try std.testing.expect(!game.quiet(g));
+    game.update(g, last_hit - first_hit);
+    try std.testing.expectEqual(g.heroActor().?.hp, g.pictured[hero].hp);
+    harness.drawnOut(g);
+    try std.testing.expect(game.quiet(g));
+    for (g.foe_shots) |s| try std.testing.expect(s == null);
+    std.debug.print("2 crossbowman arrows: hits at {d:.3}/{d:.3}s, pictured HP {d}/{d}/{d}\n", .{ first_hit, last_hit, hp, between, g.pictured[hero].hp });
+}
+
+test "crossbowman arrows can be dodged and mana shield harm waits for the arrow" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]bool{ false, true }) |shielded| {
+        harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+        const id = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 26, .y = 20 }, true);
+        if (shielded) g.heroActor().?.ward.turns = 2;
+        game.settle(g);
+        const hp = g.heroActor().?.hp;
+        const mana = g.mana;
+        g.rng = harness.bitesRng(g, .bandit_crossbowman, &.{shielded});
+        harness.use(g, .wait);
+        try std.testing.expect(g.foe_shots[actor.Pool.slot(id)] != null);
+        try std.testing.expectEqual(hp, g.heroActor().?.hp);
+        try std.testing.expectEqual(shielded, g.mana < mana);
+        try std.testing.expectEqual(mana, g.mana + g.mana_held);
+        harness.drawnOut(g);
+        try std.testing.expectEqual(@as(i32, 0), g.mana_held);
+    }
+    std.debug.print("crossbowman arrows: 1 dodge and 1 mana-shield impact preserve HP and clear their flights\n", .{});
+}
+
 test "a rat that sees you notices, closes and bites" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -953,7 +1150,7 @@ test "a kicked barrel breaks for gold where it stood, and the archer stays put" 
     try std.testing.expectEqual(@as(usize, 0), g.ground.coin_n);
 }
 
-test "a chest opens for gold once when approached, without a strike, and stays open" {
+test "a chest first bump reveals loot and stops held walking; the next enters and opens loot" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
@@ -963,25 +1160,42 @@ test "a chest opens for gold once when approached, without a strike, and stays o
     const minute = g.clock.minute;
     try std.testing.expectEqual(game.Move.open, game.heroMove(g, .e));
     try std.testing.expect(!g.lv.walkable(at));
-    harness.nudge(g, .e);
+    harness.walkFor(g, 1, .e);
     try std.testing.expectEqual(grid.Tile.chest_open, g.lv.at(at));
     try std.testing.expectEqual(from, g.heroActor().?.at);
     try std.testing.expectEqual(minute + day.TURN_MINUTES, g.clock.minute);
-    try std.testing.expectEqual(@as(usize, 0), g.ground.coin_n);
-    try harness.expectWithin(g.gold, items.CHEST_GOLD.lo, items.CHEST_GOLD.hi);
-    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    try std.testing.expectEqual(@as(usize, 1), g.ground.coin_n);
+    try std.testing.expectEqual(@as(i32, 0), g.gold);
+    try harness.expectWithin(g.ground.coins[0].amount, items.CHEST_GOLD.lo, items.CHEST_GOLD.hi);
+    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expect(scene.bagCells(g).isSet(grid.Level.idx(at)));
     try std.testing.expect(items.CHEST_GOLD.lo > items.BARREL_GOLD.hi);
     try std.testing.expect(g.glide[game.heroSlot(g).?].bump == null);
-    const gold = g.gold;
-    harness.drawnOut(g);
-    harness.press(g, BACK);
-    harness.nudge(g, .e);
+    const gold = g.ground.coins[0].amount;
+    harness.walkFor(g, 1, .e);
+    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(minute + day.TURN_MINUTES, g.clock.minute);
+    harness.walkFrame(g, 0, null);
+    harness.walkFor(g, 1, .e);
     try std.testing.expectEqual(at, g.heroActor().?.at);
+    try std.testing.expectEqual(game.Mode.pause, g.mode);
+    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    try std.testing.expectEqual(at, g.character.loot_at);
+    try std.testing.expectEqual(minute + 2 * day.TURN_MINUTES, g.clock.minute);
+    try std.testing.expectEqual(gold, g.gold);
+    try std.testing.expectEqual(@as(usize, 0), g.ground.coin_n);
+    try std.testing.expectEqual(@as(usize, 0), g.inventory.n);
+    harness.press(g, menu.CHANGE);
+    harness.drawnOut(g);
+    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(@as(usize, 1), g.inventory.n);
+    try std.testing.expectEqual(@as(usize, 0), g.ground.n);
     harness.nudge(g, .w);
     harness.nudge(g, .e);
+    try std.testing.expectEqual(game.Mode.play, g.mode);
     try std.testing.expectEqual(gold, g.gold);
     try std.testing.expectEqual(grid.Tile.chest_open, g.lv.at(at));
-    std.debug.print("chest opened without attacking: {d} gold once, one turn, stays open on return\n", .{gold});
+    std.debug.print("chest: first bump reveals, held walk stops, second enters loot and collects {d} ground gold; empty return walks through\n", .{gold});
 }
 
 test "X aims at a barrel when no rat is in reach, and the arrow breaks it" {
@@ -3373,11 +3587,12 @@ test "new runs gate class skills; underfoot and adjacent loot commit exactly one
     harness.nudge(g, .e);
     try std.testing.expectEqual(@as(i32, 17), g.gold);
     try std.testing.expectEqual(before + day.TURN_MINUTES, g.clock.minute);
+    try std.testing.expectEqual(book.Page.loot, g.character.page);
     try std.testing.expectEqual(@as(usize, 1), g.ground.n - 1);
     std.debug.print("progression: 3 starter kits, underfoot/adjacent menu, one-turn item actions, no equip healing, automatic gold\n", .{});
 }
 
-test "walking over items logs each item once per arrival without picking it up" {
+test "walking onto a bag opens only its loot and can leave every item behind" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
@@ -3396,17 +3611,29 @@ test "walking over items logs each item once per arrival without picking it up" 
     try std.testing.expectEqual(before + day.TURN_MINUTES, g.clock.minute);
     try std.testing.expectEqual(@as(usize, 3), g.ground.n);
     try std.testing.expectEqual(@as(usize, 0), g.inventory.n);
+    try std.testing.expectEqual(at, g.heroActor().?.at);
+    try std.testing.expectEqual(game.Mode.pause, g.mode);
+    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    try std.testing.expectEqual(at, g.character.loot_at);
+    try std.testing.expectEqual(@as(usize, 2), character.bookView(g, &g.nearby).nearby.len);
     harness.drawnOut(g);
     try std.testing.expectEqual(@as(usize, 0), g.log.held);
     for (0..30) |_| game.update(g, harness.TEST_DT);
     try std.testing.expectEqual(@as(usize, 2), g.log.n);
+    for (0..items.BAG_MAX) |_| try std.testing.expect(g.inventory.add(.{ .kind = .cap }));
+    harness.press(g, menu.CHANGE);
+    try std.testing.expectEqual(before + day.TURN_MINUTES, g.clock.minute);
+    try std.testing.expectEqual(@as(usize, 3), g.ground.n);
+    harness.press(g, BACK);
     g.lv.set(.{ .x = 22, .y = 20 }, .wall);
     harness.nudge(g, .e);
     try std.testing.expectEqual(@as(usize, 2), g.log.n);
     harness.nudge(g, .w);
     harness.nudge(g, .e);
     try std.testing.expectEqual(@as(usize, 4), g.log.n);
-    std.debug.print("underfoot loot: 2 items named per arrival, no idle/blocked repeats, no pickup or extra turn\n", .{});
+    try std.testing.expectEqual(game.Mode.pause, g.mode);
+    try std.testing.expectEqual(@as(usize, 3), g.ground.n);
+    std.debug.print("bag bump: 2 selected items, one movement turn, full inventory can cancel and leave all 3 ground items behind\n", .{});
 }
 
 test "interact pressed mid-turn waits for quiet instead of queuing its button's skill; the turn's log lines wait too" {
@@ -3436,7 +3663,7 @@ test "interact pressed mid-turn waits for quiet instead of queuing its button's 
     std.debug.print("interact mid-turn: queued, opens loot without taking the item; held log line released on the quiet frame\n", .{});
 }
 
-test "every foe drops loot at its presented death and gold collects when opening its bag" {
+test "every foe drops loot at its presented death and bag interactions leave ground gold alone" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
@@ -3462,16 +3689,22 @@ test "every foe drops loot at its presented death and gold collects when opening
             const gold = g.ground.coins[0].amount;
             harness.pressInteract(g);
             try std.testing.expectEqual(book.Page.loot, g.character.page);
-            try std.testing.expectEqual(gold, g.gold);
-            try std.testing.expectEqual(@as(usize, 0), g.ground.coin_n);
+            try std.testing.expectEqual(@as(i32, 0), g.gold);
+            try std.testing.expectEqual(@as(usize, 1), g.ground.coin_n);
             try std.testing.expectEqual(@as(usize, 0), g.inventory.n);
             harness.press(g, CONFIRM);
             try std.testing.expectEqual(@as(usize, 1), g.inventory.n);
             try std.testing.expectEqual(magic, g.inventory.bag[0].magical());
+            try std.testing.expectEqual(@as(i32, 0), g.gold);
+            try std.testing.expectEqual(gold, g.ground.coins[0].amount);
+            harness.drawnOut(g);
+            harness.nudge(g, .e);
+            try std.testing.expectEqual(gold, g.gold);
+            try std.testing.expectEqual(@as(usize, 0), g.ground.coin_n);
             cases += 1;
         }
     }
-    std.debug.print("foe loot: {d} kind/rarity deaths, bags and gold delayed to impact, gold automatic and items chosen\n", .{cases});
+    std.debug.print("foe loot: {d} kind/rarity deaths, bags and gold delayed to impact, coins wait for movement through browsing and pickup\n", .{cases});
 }
 
 test "a death on a drawn pile keeps the pile drawn and adds its gold when it lands" {
@@ -3534,7 +3767,7 @@ test "loot groups each cell into one bag and takes only the selected container" 
     std.debug.print("loot: 3 items share one bag; browse is free, single take then take-all spend 2 turns; adjacent and hidden loot preserved\n", .{});
 }
 
-test "chest loot collects gold once and leaves excess items when inventory fills" {
+test "chest interactions reveal before browsing, leave ground gold and preserve excess items" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 21, .y = 20 };
@@ -3543,15 +3776,19 @@ test "chest loot collects gold once and leaves excess items when inventory fills
     for (0..items.BAG_MAX - 1) |_| try std.testing.expect(g.inventory.add(.{ .kind = .cap }));
     const minute = g.clock.minute;
     harness.pressInteract(g);
-    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    try std.testing.expectEqual(game.Mode.play, g.mode);
     try std.testing.expectEqual(grid.Tile.chest_open, g.lv.at(at));
     try std.testing.expectEqual(@as(usize, 1), g.ground.n);
-    try std.testing.expectEqual(@as(usize, 0), g.ground.coin_n);
-    try harness.expectWithin(g.gold, items.CHEST_GOLD.lo, items.CHEST_GOLD.hi);
-    const gold = g.gold;
+    try std.testing.expectEqual(@as(usize, 1), g.ground.coin_n);
+    try std.testing.expectEqual(@as(i32, 0), g.gold);
+    const gold = g.ground.coins[0].amount;
+    try harness.expectWithin(gold, items.CHEST_GOLD.lo, items.CHEST_GOLD.hi);
     try std.testing.expectEqual(minute + day.TURN_MINUTES, g.clock.minute);
     for ([_]items.Kind{ .boots, .ring }) |kind| try std.testing.expect(g.ground.add(.{ .item = .{ .kind = kind }, .at = at }));
     harness.drawnOut(g);
+    harness.pressInteract(g);
+    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    try std.testing.expectEqual(minute + day.TURN_MINUTES, g.clock.minute);
     harness.press(g, menu.CHANGE);
     try std.testing.expectEqual(items.BAG_MAX, g.inventory.n);
     try std.testing.expectEqual(@as(usize, 2), g.ground.n);
@@ -3564,7 +3801,8 @@ test "chest loot collects gold once and leaves excess items when inventory fills
     harness.press(g, BACK);
     harness.pressInteract(g);
     try std.testing.expectEqual(book.Page.loot, g.character.page);
-    try std.testing.expectEqual(gold, g.gold);
+    try std.testing.expectEqual(@as(i32, 0), g.gold);
+    try std.testing.expectEqual(gold, g.ground.coins[0].amount);
     try std.testing.expectEqual(@as(usize, 2), g.ground.n);
     _ = g.inventory.remove(0);
     _ = g.inventory.remove(0);
@@ -3573,7 +3811,12 @@ test "chest loot collects gold once and leaves excess items when inventory fills
     try std.testing.expectEqual(grid.Tile.chest_open, g.lv.at(at));
     try std.testing.expect(!scene.bagCells(g).isSet(grid.Level.idx(at)));
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    std.debug.print("chest loot: automatic gold once, full-bag retry costs no turn, 2 excess items survive reopening, empty chest remains\n", .{});
+    try std.testing.expectEqual(@as(i32, 0), g.gold);
+    harness.drawnOut(g);
+    harness.nudge(g, .e);
+    try std.testing.expectEqual(gold, g.gold);
+    try std.testing.expectEqual(@as(usize, 0), g.ground.coin_n);
+    std.debug.print("chest loot: reveal then browse, coins wait for arrival, full-bag retry costs no turn, 2 excess items survive reopening\n", .{});
 }
 
 test "a chest left holding items keeps its bag out of sight, and a loose bag out of sight is not drawn" {

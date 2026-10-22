@@ -40,6 +40,32 @@ const SHOT_SEED: u64 = 0x5EED_1234;
 const SHOTS_DIR = "shots";
 const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
 
+fn shootCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
+    const h = game.harness;
+    h.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 25, .y = 19 }, .{ .x = 26, .y = 21 } });
+    h.grassOver(&g.lv);
+    const id = h.spawnAt(g, .bandit_crossbowman, .{ .x = 26, .y = 20 }, true);
+    const slot = actor.Pool.slot(id);
+    game.settle(g);
+    game.turnToward(g, id, -1);
+    try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-pack.png");
+    g.rng = h.bitesRng(g, .bandit_crossbowman, &.{true});
+    h.use(g, .wait);
+    const hp_after_shot = g.heroActor().?.hp;
+    const shot = g.foe_shots[slot] orelse return error.CrossbowmanDidNotShoot;
+    g.st = .{};
+    game.update(g, -shot.t + game.flown(shot.flight.len - 1) / 2);
+    try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-arrow.png");
+    h.drawnOut(g);
+    if (g.heroActor().?.hp != hp_after_shot) return error.CrossbowmanIdleDamage;
+    g.pool.move(&g.lv, g.hero, .{ .x = 24, .y = 20 });
+    game.settle(g);
+    h.use(g, .wait);
+    if (mathx.dist(g.pool.get(id).?.at, g.heroActor().?.at) != 3) return error.CrossbowmanDidNotRetreat;
+    h.drawnOut(g);
+    try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-retreat.png");
+}
+
 fn renderTarget(g: *game.Game) !rl.RenderTexture2D {
     return rl.loadRenderTexture(g.screen.x, g.screen.y);
 }
@@ -74,10 +100,13 @@ pub fn shoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/chest-closed.png");
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.lv.at(chest_at) != .chest_open or g.ground.coin_n != 0 or g.gold < items.CHEST_GOLD.lo or g.character.page != .loot) return error.ChestUnopened;
+    if (g.lv.at(chest_at) != .chest_open or g.ground.coin_n != 1 or g.gold != 0 or g.mode != .play) return error.ChestUnopened;
+    try capture(g, target, SHOTS_DIR ++ "/chest-open.png");
+    game.heroStep(g, .e, 0);
+    game.harness.drawnOut(g);
+    if (g.ground.coin_n != 0 or g.gold < items.CHEST_GOLD.lo or g.character.page != .loot) return error.ChestLootUnopened;
     try capture(g, target, SHOTS_DIR ++ "/chest-loot.png");
     game.character.characterCommand(g, .close);
-    try capture(g, target, SHOTS_DIR ++ "/chest-open.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{.{ .x = 25, .y = 14 }});
     g.lv.set(.{ .x = 21, .y = 15 }, .water);
@@ -123,6 +152,7 @@ pub fn shoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/glacial-bind.png");
 
     try shootEffects(g, target);
+    try shootCrossbowman(g, target);
 
     poseFright(g);
     if (speechLeft(g) <= fx.SPEECH_FADE_S) return error.FrightUnspoken;
@@ -345,8 +375,13 @@ fn shootLoot(g: *game.Game) !void {
     g.st.device = .keys;
     try capture(g, target, SHOTS_DIR ++ "/loot-bag-keys.png");
     game.character.characterCommand(g, .close);
-    game.character.openLoot(g, chest);
+    game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
+    if (g.mode != .play or g.gold != 0 or g.ground.coin_n != 1) return error.ChestRevealMismatch;
+    try capture(g, target, SHOTS_DIR ++ "/loot-chest-revealed.png");
+    game.heroStep(g, .e, 0);
+    game.harness.drawnOut(g);
+    if (g.mode != .pause or g.character.page != .loot or g.gold < items.CHEST_GOLD.lo or g.ground.coin_n != 0) return error.ChestLootUnopened;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest.png");
     game.character.characterCommand(g, .close);
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-left.png");
@@ -356,6 +391,8 @@ fn shootLoot(g: *game.Game) !void {
     if (g.ground.n != 3 or g.inventory.n != 1 or g.lv.at(chest) != .chest_open) return error.LootContainerMismatch;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-empty.png");
     for (0..items.BAG_MAX - g.inventory.n) |_| _ = g.inventory.add(.{ .kind = .cap });
+    game.heroStep(g, .w, 0);
+    game.harness.drawnOut(g);
     game.character.openLoot(g, bag);
     game.character.characterCommand(g, .take_all);
     try capture(g, target, SHOTS_DIR ++ "/loot-full.png");
@@ -699,6 +736,7 @@ fn shootCharacter(g: *game.Game) !void {
 }
 
 fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
+    try shootArrows();
     inline for (.{
         .{ heroes.Class.wizard, skillbar.Act.spark },
         .{ heroes.Class.wizard, skillbar.Act.fireball },
@@ -737,6 +775,24 @@ fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
     }
     g.class = heroes.DEFAULT;
     g.bar = skillbar.Bar.of(g.class);
+}
+
+fn shootArrows() !void {
+    const target = try rl.loadRenderTexture(640, 320);
+    defer rl.unloadRenderTexture(target);
+    rl.beginTextureMode(target);
+    rl.clearBackground(look.FOG);
+    for ([_]f32{ 1, 2 }, 0..) |scale, row| {
+        for (0..16) |i| {
+            const angle = @as(f32, @floatFromInt(i)) * std.math.tau / 16;
+            const dir = [2]f32{ @cos(angle), @sin(angle) };
+            const x = 40 + @as(f32, @floatFromInt(i % 8)) * 80;
+            const y = 40 + @as(f32, @floatFromInt(row * 2 + i / 8)) * 80;
+            fx.drawArrow(.{ .x = x + dir[0] * 8 * scale, .y = y + dir[1] * 8 * scale }, dir, look.arrowInk(.shoot), scale);
+        }
+    }
+    rl.endTextureMode();
+    try exportTarget(target, SHOTS_DIR ++ "/arrow-directions.png");
 }
 
 fn shootHud(g: *game.Game) !void {
@@ -893,6 +949,7 @@ const WADERS = [_]Wader{
     .{ .kind = .slime_quarter, .at = .{ .x = 23, .y = 17 } },
     .{ .kind = .wizard, .at = .{ .x = 20, .y = 17 } },
     .{ .kind = .knight, .at = .{ .x = 26, .y = 17 } },
+    .{ .kind = .bandit_crossbowman, .at = .{ .x = 28, .y = 17 } },
 };
 
 comptime {

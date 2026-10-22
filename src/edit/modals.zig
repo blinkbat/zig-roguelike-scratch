@@ -232,6 +232,10 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
                 .burst => f.put("Bursts into caustic gas instead of striking", .{}),
             }
             if (r.sweep_every > 0) f.put("Every {d} turns its blow " ++ actor.SWEEP_VERB ++ " all {d} cells round it", .{ r.sweep_every, actor.SWEEP_CELLS });
+            if (r.ranged) |ranged| {
+                f.put("Fires arrows up to {d} cells along a clear line", .{ranged.range});
+                f.put("Backs away within {d} cells; shoots if cornered", .{ranged.retreat});
+            }
             if (r.light > 0) f.put("Carries a light {d} cells round", .{r.light});
             if (r.splits) |into| f.put("Splits into two {s}s under half its hp", .{actor.row(into).name});
             if (r.flits) f.put("Flits: {d:.0}% of its moves go a random way", .{actor.FLIT * 100});

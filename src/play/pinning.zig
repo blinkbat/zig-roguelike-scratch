@@ -7,8 +7,8 @@ pub const TURNS_LO: u8 = 2;
 pub const TURNS_HI: u8 = 4;
 pub const VERB = "pins";
 pub const TAKES = "is pinned";
-pub const STATUS = "Cannot move. Can still attack adjacent enemies.";
-pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A target it leaves alive is pinned for {d}-{d} turns: it cannot move, but strikes what stands beside it.", .{ TURNS_LO, TURNS_HI });
+pub const STATUS = "Cannot move. Can still attack.";
+pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A target it leaves alive is pinned for {d}-{d} turns: it cannot move, but can still attack.", .{ TURNS_LO, TURNS_HI });
 pub const FLAVOR = "Stay. Good.";
 
 /// Its turns left held to its cell.

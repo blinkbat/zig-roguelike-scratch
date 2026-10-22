@@ -1,6 +1,6 @@
 # AGENTS.md — Cistern
 
-Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats, pibs and beefy pibs;
+Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats, pibs, beefy pibs and bandit crossbowmen;
 breakable barrels, treasure chests, equipment, XP and class progression. Art starts as glyphs, replaced by the owner's PNGs.
 Source paths below are relative to `src/`; scripts, docs and assets are relative to the repository root.
 
@@ -119,10 +119,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Item actions and point allocation execute on one press; item changes spend one turn and keep Character open.
   Shoulders / Q and E change tabs; F1–F5 directly toggle Equipment, Inventory, Stats, Passives and Skills.
   Keyboard tab headers show their shortcut glyphs. Back closes Character directly. Skills owns binding. Point allocation is free.
-  Interact opens a sole bag/chest's loot modal directly, or lists nearby containers/doors first when there is a choice (a door always lists).
+  Bumping or interacting with a closed chest opens it for one turn, revealing its bag and ground gold without a modal.
+  Stepping onto a loose bag or stocked open chest opens its loot modal and spends the movement turn; bags remain walkable.
+  Interact opens a sole bag/open chest's loot modal directly, or lists nearby containers/doors first when there is a choice (a door always lists).
   Each occupied item cell is one bag; loot shows only the selected cell, with Take item and Take all. Each successful pickup action spends one turn;
   Take all takes as many as fit and leaves the rest. Empty loot closes. A press while busy waits for `quiet` (`Queued.interact`)
-  instead of queuing its button's skill. Item commands wait out door travel. Gold collects automatically on movement and when opening loot.
+  instead of queuing its button's skill. Item commands wait out door travel. Gold collects only on arrival at its ground cell, never from opening loot.
   Foes roll gold more often than items; plain white items have no rolled modifiers and are more common than magic blues.
   `items.foeLoot`/`items.roll` own the rates and rolls; bags and gold appear when the foe's death is presented.
   See `docs/PROGRESSION.md` for rules and the inspected D2/PoE2 paperdoll references.
@@ -184,8 +186,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Brick walls join walls, forests join shrubs. `Level.wallShape` is brick-only; `tileShape` handles both.
   Missing forest masks are restored on save resume. Torch/barrel placement must preserve routes;
   barrels stop movement/arrows and break for gold in one hit, with no HP.
-  Chests spawn closed, open their loot modal when stepped toward or through Interact, and automatically collect their gold.
-  They remain walkable, showing `chest-item-bag.png` while items remain and `chest-open.png` once empty;
+  Chests spawn closed; the first bump or Interact reveals their contents and drops gold on the ground.
+  Open chests remain walkable, showing `chest-item-bag.png` while items remain and `chest-open.png` once empty;
   ground item cells show one `item-bag.png` regardless of item count. Gold piles show `small-coins.png`, or `large-coins.png` from
   `items.Coins.LARGE`, beside a bag on the same cell, with a faint gold light. Seen coins, bags, closed or stocked chests and barrels
   catch a very subtle diagonal shine (`look.shineSweep`), each cell at its own time. Attacks never open chests. Wilds' `loops` reconnects side paths;
@@ -224,7 +226,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   (arrow ranged, bolt or unaimed element spell, swing or rush melee), and every damaging action must have one.
   Skills dispatch by module declarations (`afflict`, `burst`, `JUMPS`, `around`, `Ward`, `knocked`).
   A pin (`pinning.Pin`) holds a body to its cell on its
-  turns, counting down like chill; it still strikes the hero beside it and cannot be knocked back.
+  turns, counting down like chill; it can still attack within its normal range and cannot be knocked back.
   A mana shield (`ward.Ward`) takes the hero's harm from mana first, in `combat.hurt`; the orb shows that
   mana through `Game.mana_held` until the blow lands, as `flasks_shown` holds a kill's refill.
 - **`Pool.damage` is the only HP-loss path**, apart from splitting a slime's remaining HP, restoring
@@ -236,6 +238,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   for all eventual halves via `actor.roomFor`. `Kind.family` keeps their counts together.
 - `Row.movement` and `Row.foe_type` describe every kind and appear in the object viewer; heroes have no
   foe type. Bloats fly; ground-only water footsteps must not be added to flying bodies.
+- Bandit crossbowmen spawn with rats, retreat when crowded and use `bow.aimable`/`bow.fly` plus the
+  player's base arrow damage/range. `Game.foe_shots` draws each arrow; its harm lands on arrival.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
   each followed by gas, burn and bleed. Bloats burst however killed; foes do not enter gas from clean air.
   `map/gas.zig` alone advances gas; it spreads through open cells, including liquids.

@@ -10,9 +10,9 @@
 | Loot | Normal or magic; at most two distinct modifiers |
 | Modifier pool | Life, mana, Strength, Dexterity, Intelligence |
 | Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
-| Gold | Collected automatically on movement or when opening loot; chest gold collects as the chest opens, without an extra turn |
+| Gold | Ground coins collect automatically on arrival at their cell; opening a chest drops its gold on the ground, and opening loot never collects coins |
 | Item actions | Take item, Take all, drop, equip and unequip cost one turn when successful; Take all fills available inventory space and leaves excess items |
-| Interact | Opens one bag/chest's loot modal; multiple nearby containers/doors first offer a choice. Browsing an open container and canceling cost no turn; opening a closed chest costs one turn |
+| Interact | First bump or Interact opens a closed chest for one turn, revealing its contents without a modal. Stepping onto a bag/open chest opens loot for the movement turn; bags remain walkable. Interact browses one bag/open chest for free, or offers a choice among multiple nearby containers/doors. Canceling is free |
 | Loot artwork | One `item-bag.png` per ground item cell; `chest-item-bag.png` while a chest contains items, then `chest-open.png` when empty |
 | Foe loot | Gold is common, plain white items occasional, magic blue items rare; white items have no rolled modifiers, blues have one or two |
 | XP | Foe kills grant XP; each level grants one passive and one active point |

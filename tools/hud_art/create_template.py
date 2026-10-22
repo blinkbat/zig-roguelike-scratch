@@ -83,11 +83,22 @@ def reservoir(x, y, core, edge, size=88):
 
 
 skill_source = (ROOT / 'src/gfx/look.zig').read_text(encoding='utf-8')
+
+
+def strokes(body):
+    return [tuple(map(float, row)) for row in re.findall(r'\.\{\s*([\d.]+),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\s*\}', body)]
+
+
+shared_lines = {
+    name: strokes(body)
+    for name, body in re.findall(r'^const (\w+) = \[_\]\[4\]f32\{(.*?)\n\};', skill_source, re.S | re.M)
+}
 skill_source = skill_source.split('fn skillLines(', 1)[1].split('pub fn arrowInk', 1)[0]
 skill_lines = {}
-for name, body in re.findall(r'\.(\w+)\s*=>\s*&\.\{(.*?)\n        \},', skill_source, re.S):
-    skill_lines[name] = [tuple(map(float, row)) for row in re.findall(r'\.\{\s*([\d.]+),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\s*\}', body)]
-assert len(skill_lines) == 6
+for name, shared, body in re.findall(r'\.(\w+)\s*=>\s*&(?:\.\{|\((\w+)\s*\+\+\s*\[_\]\[4\]f32\{)(.*?)\n        \}\)?,', skill_source, re.S):
+    skill_lines[name] = (shared_lines[shared] if shared else []) + strokes(body)
+for name in ('shoot', 'wait', 'secondary', 'juke', 'burning_arrow', 'glacial_shot'):
+    assert skill_lines.get(name), f'Missing template icon strokes: {name}'
 hud_source = (ROOT / 'src/ui/hud.zig').read_text(encoding='utf-8')
 
 
@@ -203,7 +214,7 @@ def quote(value):
     return json.dumps(str(value).replace('\\', '/'))
 
 
-lua = [f'local sprite=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local expected={}']
+lua = [f'for _,path in ipairs({{{quote(OUTPUT)},{quote(SOURCE)}}}) do', 'assert(not app.fs.isFile(path),"Refusing to overwrite editable artwork: "..path)', 'end', f'local sprite=Sprite({SIZE[0]},{SIZE[1]},ColorMode.RGB)', 'local expected={}']
 layers = [('PAPER - hide before export', 'paper', 255), ('GUIDE - underdrawing 25%', 'under', 64), ('GUIDE - alignment 22%', 'guides', 56), ('GUIDE - labels and separators 45%', 'labels', 115)]
 for index, (name, file, opacity) in enumerate(layers):
     lua.extend(['do', 'local layer=' + ('sprite.layers[1]' if index == 0 else 'sprite:newLayer()'), f'layer.name={quote(name)}', f'layer.opacity={opacity}', f'local img=Image{{fromFile={quote(WORK / (file + ".png"))}}}', 'sprite:newCel(layer,1,img,Point(0,0))', 'layer.isEditable=false', 'expected[#expected+1]={name=layer.name,opacity=layer.opacity,image=img}', 'end'])

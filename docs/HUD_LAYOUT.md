@@ -31,7 +31,7 @@ The live HUD omits the hero-name label, enemy counters, gold tally and permanent
 - Target a 640-pixel-wide assembly, horizontally centered from `Game.screen`. Its width does not grow on a wider display.
 - Two matching 96-pixel orb frames flank the seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs cover its ends. The plate is 94px tall, at 70% opacity with a 25% shadow.
 - The minimap background uses the shared fog gray at 70% opacity. Unexplored texture cells are transparent so they do not obscure that background; terrain and markers retain their contrast.
-- Keep the log 12px from the left and bottom edges, 270px tall. Its width follows the free gutter beside the HUD, capped at 440px. It has no heading; text, background and border fade together to 10% of their base opacity at the top. Tooltips and item comparisons use aligned table rows.
+- Keep the log 12px from the left and bottom edges, 270px tall. Its width follows the free gutter beside the HUD, capped at 440px. It has no heading; text, background and border fade together to 10% of their base opacity at the top. Tooltips and item comparisons follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md): descriptions lead, with separate item cards and a preview of changed character stats.
 - Mount the assembly close to the bottom edge. Draw the map behind it and at both sides instead of reserving a full-width black footer.
 - Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
 - Use the current Balthazar face for small resource values and cooldowns; inputs are icons, not captions. Avoid extra explanatory prose in play.
@@ -50,7 +50,7 @@ Small Balthazar text is rasterized at its displayed size (12, 15, 16, 20 and 24p
 
 The map spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind screen sizes its panel for the skill rows, longest available description and action buttons, using Character's `book.SIZE` as its scale reference over a veil. `ui/journal.zig` owns the saved event history and its bottom-left panel; the wheel or HUD inspector scrolls it.
 
-The dedicated captures are `shots/hud-full-1280.png`, `hud-partial-1600.png`, `hud-critical-1920.png`, `hud-empty-1600.png`, `hud-ps5-1280.png`, `hud-secondary-pad.png`, `hud-bind-pad.png`, `hud-bind-ps5.png`, `hud-bind-720.png`, `hud-inspect-skill.png`, `hud-inspect-status.png` and `hud-inspect-mana.png`. `shot.cmd` regenerates them all; previews and logs remain outside tracked source.
+The dedicated captures are `shots/hud-full-1280.png`, `hud-partial-1600.png`, `hud-critical-1920.png`, `hud-empty-1600.png`, `hud-ps5-1280.png`, `hud-secondary-pad.png`, `hud-bind-pad.png`, `hud-bind-ps5.png`, `hud-bind-720.png`, `hud-inspect-skill.png`, `hud-inspect-status.png` and `hud-inspect-mana.png`. Use `--shot-ui` with the [temporary-directory capture procedure in AGENTS.md](../AGENTS.md#build-and-verification); previews and logs stay outside the repository.
 
 ## Inspection wording
 
@@ -85,7 +85,7 @@ The locked guide layers are **underdrawing (25%)**, **alignment (22%)**, and **l
 
 Numbers, resource labels, button captions and cooldowns remain code-rendered. The rectangular frames now use the owner's border artwork described below; the other components retain their procedural graphics until painted.
 
-`tools/hud_art/create_template.py` prepares the guides and a native Aseprite Lua assembly in `%TEMP%/hud-template/`. It refuses to overwrite either editable source. Run that assembly with the Aseprite batch command from `TILE_ART_WORKFLOW.md`; it saves both sources, reopens them, and verifies all guide pixels, layer opacity and editability, the blank paint layer, 21 named slices (20 components plus the reference), and the nine-slice center. Previews and validation reports stay in TEMP. Before later ports, read the Desktop file for new owner painting and back it up; do not regenerate over it.
+`tools/hud_art/create_template.py` prepares the guides and a native Aseprite Lua assembly in `%TEMP%/hud-template/`. Both the generator and the generated assembly refuse to overwrite either editable source. Run that assembly with the Aseprite batch command from `TILE_ART_WORKFLOW.md`; it saves both sources, reopens them, and verifies all guide pixels, layer opacity and editability, the blank paint layer, 21 named slices (20 components plus the reference), and the nine-slice center. Previews and validation reports stay in TEMP. Before later ports, read the Desktop file for new owner painting and back it up; do not regenerate over it.
 
 ## Painted border
 
