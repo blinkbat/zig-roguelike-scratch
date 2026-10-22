@@ -5,7 +5,7 @@ const juke = @import("juke.zig");
 
 pub const RANGE: i32 = 4;
 pub const COOLDOWN: u8 = 3;
-pub const COST: i32 = 35;
+pub const COST: i32 = 7;
 pub const TELEPORTS = true;
 pub const DONE = "blinks away";
 pub const DESCRIPTION = std.fmt.comptimePrint("Teleport to visible empty ground within {d} tiles.", .{RANGE});

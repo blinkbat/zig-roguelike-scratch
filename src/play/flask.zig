@@ -8,29 +8,31 @@ pub const Kind = enum { life, mana };
 pub const CHARGES: u8 = 60;
 pub const USE: u8 = 20;
 pub const PER_KILL: u8 = 5;
-/// Turns its recovery runs, from the end of the turn it is drunk in.
+/// Recovery ticks: the first on drinking, then one per spent turn.
 pub const TURNS: u8 = 3;
 const LIFE_PCT: i32 = 50;
-pub const MANA_GAIN: i32 = 50;
+pub const MANA_GAIN: i32 = 10;
 const CHARGE_NOTE = std.fmt.comptimePrint("Uses {d} of {d} charges; kills refill {d}.", .{ USE, CHARGES, PER_KILL });
 
 pub const Life = struct {
     pub const KIND: Kind = .life;
-    const TEXT = "Recover {d}{s}% of life over {d} turns. {s}";
-    pub const DESCRIPTION = std.fmt.comptimePrint(TEXT, .{ LIFE_PCT, "", TURNS, CHARGE_NOTE });
+    pub const FREE = true;
+    const TEXT = "Recover {d}{s}% of life, starting immediately and continuing for {d} turns. {s}";
+    pub const DESCRIPTION = std.fmt.comptimePrint(TEXT, .{ LIFE_PCT, "", TURNS - 1, CHARGE_NOTE });
     pub const FLAVOR = "Bitter, red, and better than bleeding.";
 
     pub fn describe(w: anytype, perks: passives.Perks) void {
         const tenths = lifeTenths(perks.life_flask);
         var part: [3]u8 = undefined;
         const fraction = if (@mod(tenths, 10) == 0) "" else std.fmt.bufPrint(&part, ".{d}", .{@mod(tenths, 10)}) catch unreachable;
-        w.print(TEXT, .{ @divTrunc(tenths, 10), fraction, TURNS, CHARGE_NOTE }) catch {};
+        w.print(TEXT, .{ @divTrunc(tenths, 10), fraction, TURNS - 1, CHARGE_NOTE }) catch {};
     }
 };
 
 pub const Mana = struct {
     pub const KIND: Kind = .mana;
-    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d} mana over {d} turns. {s}", .{ MANA_GAIN, TURNS, CHARGE_NOTE });
+    pub const FREE = true;
+    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d} mana, starting immediately and continuing for {d} turns. {s}", .{ MANA_GAIN, TURNS - 1, CHARGE_NOTE });
     pub const FLAVOR = "Tastes of cold stone and clear thought.";
 };
 
@@ -100,7 +102,7 @@ test "a bonused drink scales the base recovery once, without truncating its shar
     try std.testing.expect(std.mem.startsWith(u8, s.getWritten(), "Recover 62.5% of life"));
 }
 
-test "a flask holds three drinks, each recovering its amount whole over three turns, and kills refill it" {
+test "a flask holds three drinks, each recovering its amount whole over three ticks, and kills refill it" {
     var f = Flask{};
     try std.testing.expectEqual(CHARGES / USE, f.uses());
     f.drink(lifeOf(24, 0));
@@ -114,5 +116,5 @@ test "a flask holds three drinks, each recovering its amount whole over three tu
     try std.testing.expect(f.full());
     for (0..100) |_| f.fill(PER_KILL);
     try std.testing.expectEqual(CHARGES, f.charges);
-    std.debug.print("flask: {d} drinks from full, {d}% of 24 hp is {d} over {d} turns, {d} kills refill a drink\n", .{ CHARGES / USE, LIFE_PCT, total, TURNS, USE / PER_KILL });
+    std.debug.print("flask: {d} drinks from full, {d}% of 24 hp is {d} over {d} ticks, {d} kills refill a drink\n", .{ CHARGES / USE, LIFE_PCT, total, TURNS, USE / PER_KILL });
 }

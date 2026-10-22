@@ -3,7 +3,8 @@ const mathx = @import("../core/mathx.zig");
 const damage = @import("damage.zig");
 const clock = @import("clock.zig");
 
-pub const COST: i32 = 10;
+pub const COST: i32 = 2;
+pub const AILMENT = @import("resilience.zig").Kind.stun;
 pub const CHANCE: u32 = 50;
 pub const VERB = "sparks";
 pub const BOLT = "spark";
@@ -12,7 +13,7 @@ pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("Strike a target in sight with lightning. {s}.", .{clock.stunNote(CHANCE)});
 pub const FLAVOR = "A crackle, a flash, a twitch.";
 
-pub const BASE = damage.Base{ .lo = 3, .hi = 6 };
+pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const procs = damage.chance(CHANCE);
 pub const afflict = clock.stuns;

@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const font = @import("font.zig");
 const look = @import("look.zig");
+const prompt_icon = @import("prompt_icon.zig");
 const input = @import("../core/input.zig");
 const OPEN = input.GLYPH_OPEN;
 const CLOSE = input.GLYPH_CLOSE;
@@ -26,7 +27,7 @@ fn next(s: []const u8, at: usize) ?Part {
     return .{ .text = s[at..@min(end, at + RUN_MAX)], .control = false, .end = @min(end, at + RUN_MAX) };
 }
 
-fn icon(text: [:0]const u8) look.Prompt {
+fn icon(text: [:0]const u8) prompt_icon.Prompt {
     inline for (.{ .left, .right, .middle }) |b| {
         if (std.mem.eql(u8, text, input.mouseName(b))) return .{ .mouse = b };
     }

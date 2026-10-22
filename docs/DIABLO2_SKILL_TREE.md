@@ -172,10 +172,10 @@ The current active graphs are:
 |---|---|---|
 | Archer | Shoot, Juke | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Glacial Shot -> Pinning Shot; Juke is independent |
 | Wizard | Spark, Blink | Spark -> Fireball -> Chain Lightning; Blink -> Frost Nova -> Mana Shield |
-| Knight | Charge | Charge -> Shield Bash; Charge -> Cleave |
+| Knight | Charge, Cleave | Charge -> Shield Bash; Cleave is independent |
 
-Archer and Wizard use two columns and three logical rows. Knight uses a root and a
-two-child fork. Preserve `Skill.at` rather than sorting by name, unlock state, or rank.
+Archer and Wizard use two columns and three logical rows. Knight uses two starting roots
+with Shield Bash below Charge. Preserve `Skill.at` rather than sorting by name, unlock state, or rank.
 Independent roots should remain visibly independent. Learning a node must not cause the
 other nodes to move. The tree needs no scrolling at its present size.
 
@@ -186,7 +186,8 @@ existing binding behavior after learning; displaying a tree icon does not make i
 playable hotbar button.
 
 Rank increases currently add 20 percentage points of damage bonus and reduce base mana
-cost by 10 percentage points per rank beyond the first. Non-damaging skills with a
+cost by 10 percentage points per rank beyond the first. Costs round up to whole mana,
+with a minimum of 1 for paid skills; some ranks therefore share the same displayed cost. Non-damaging skills with a
 cooldown can shorten it, subject to the existing floor; damaging-skill cooldowns retain
 their existing value. Treat these numbers as a dated description, not duplicated UI
 constants. Obtain values from `damageBonus`, `cost`, and `cooldown`. A rank-zero skill's
@@ -197,8 +198,8 @@ tree, not Diablo II's active-skill layout. Read [POE2_PASSIVE_TREE.md](POE2_PASS
 for that panel's maintained reference. [passives.zig](../src/play/passives.zig) owns
 its 81 nodes: three class roots, two twelve-node branches per class, and six bridges.
 Each branch's six rings contain 1, 2, 3, 3, 2, and 1 nodes. The two bridges between each
-pair of class regions connect branch rings 3 and 5. The central hub is decorative and
-is neither selectable nor an allocation. Stat, interest, and capstone are semantic node
+pair of class regions connect branch rings 3 and 5. There is no central hub; all three
+class roots are directly available. Stat, interest, and capstone are semantic node
 tiers; they must remain distinct even when a capstone grants an attribute rather than
 a special damage bonus.
 
@@ -289,8 +290,9 @@ current/next table with labelled current/first-rank properties and a separate ne
 section containing only changes. This leaves utility skills and maximum ranks free of
 irrelevant zeroes and empty columns.
 
-Use `State.writeDescription` (`Act.describe`, which applies passive perks) for behavior. Mana and cooldown
-must come from the hero's progression state. Show turn cost in turns, not seconds.
+Use `Act.describe` with combined equipment and passive perks for behavior (`Gear.perks` in
+the tree, `game.heroPerks` in the HUD). Mana and cooldown must come from the hero's
+progression state through `State.writeUsage`. Show turn cost in turns, not seconds.
 Where actual damage ranges are displayed, share gameplay's attribute/weapon/rank
 calculation through `State.blowOf` (and `State.hit` for its spans); do not label raw base
 damage as the hero's final result. Show actual physical/elemental ranges before
@@ -314,6 +316,11 @@ the player can immediately inspect its result. Shoulders change tabs directly an
 The separate Bind skill action carries the selected learned skill straight into the slot picker. Binding is available regardless of unspent points, and returns to Skills. The utility-skill picker remains available. This keeps learning and binding explicit while removing the hidden hold entry. Larger text and UI scaling also follow Blizzard's stated readability work.
 [D2R accessibility article](https://news.blizzard.com/en-us/article/23700733/how-were-making-diablo-ii-resurrectedtm-more-accessible-to-everyone).
 
+Clicking a skill selects its inspection details; pointer movement preserves the
+selection while approaching an action. Click the visible Learn/Upgrade
+action to spend one point, or Bind skill to assign it. Tabs and shoulder glyphs are
+clickable, and right-click closes the book without spending a turn.
+
 ## Acceptance and future work
 
 Before handing off a panel change, inspect actual headless captures, including all three
@@ -328,7 +335,7 @@ the repository. The completed UI should meet these checks:
 - Rank numerals and point totals are visible, use real values, and update after a spend.
 - The detail panel includes behavior and a truthful first/current/next-rank comparison.
   A maximum node does not advertise an additional rank.
-- The Knight fork and Archer branch from Shoot remain understandable without reading
+- The Knight's independent Cleave and Archer branch from Shoot remain understandable without reading
   source code. The Wizard's two paths do not accidentally connect.
 - Controller direction and pointer hit regions match what is drawn. No invisible old
   card-sized targets survive a change to square nodes.

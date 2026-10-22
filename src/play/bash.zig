@@ -6,7 +6,8 @@ const damage = @import("damage.zig");
 
 const P = mathx.P;
 
-pub const COST: i32 = 20;
+pub const COST: i32 = 3;
+pub const AILMENT = @import("resilience.zig").Kind.stun;
 pub const COOLDOWN: u8 = 3;
 pub const CHANCE: u32 = 50;
 pub const VERB = "shield-bashes";

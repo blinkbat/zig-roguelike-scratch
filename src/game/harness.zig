@@ -12,9 +12,11 @@ const damage = @import("../play/damage.zig");
 const attrs = @import("../play/attrs.zig");
 const skillbar = @import("../play/skillbar.zig");
 const day = @import("../map/day.zig");
+const atlas = @import("../map/atlas.zig");
 const carve = @import("../map/carve.zig");
 const combat = @import("combat.zig");
 const game = @import("../game.zig");
+const skills = @import("skills.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 
@@ -142,7 +144,7 @@ pub fn confirmUse(g: *game.Game, act: skillbar.Act) void {
     press(g, CONFIRM);
 }
 
-pub fn boundTo(g: *const game.Game, act: skillbar.Act) game.Use {
+pub fn boundTo(g: *const game.Game, act: skillbar.Act) skills.Use {
     for (skillbar.SETS) |s| {
         if (g.bar.buttonOf(s, act)) |b| return .{ .act = act, .by = b, .set = s };
     }
@@ -350,4 +352,45 @@ pub fn spawnAt(g: *game.Game, k: actor.Kind, at: P, awake: bool) u16 {
 pub fn setLife(a: *actor.Actor, hp: i32, max: i32) void {
     a.hp = hp;
     a.max = max;
+}
+
+pub fn corridor(b: *atlas.Bespoke) void {
+    var x: i32 = 2;
+    while (x <= 12) : (x += 1) b.tile[grid.Level.idx(.{ .x = x, .y = 5 })] = .floor;
+}
+
+/// Two corridors joined by a door at each one's end, starting a step from the first's; the second's node.
+pub fn twoRooms(w: *atlas.Atlas) usize {
+    w.* = .{};
+    const a = w.add(.{ .bespoke = .{} }).?;
+    const b = w.add(.{ .bespoke = .{} }).?;
+    for ([_]usize{ a, b }) |n| corridor(&w.node[n].plan.bespoke);
+    const da = w.addDoor(a, .{ .x = 2, .y = 5 }).?;
+    const db = w.addDoor(b, .{ .x = 11, .y = 5 }).?;
+    w.link(.{ .node = a, .door = da }, .{ .node = b, .door = db });
+    w.start = .{ .node = a, .at = .{ .x = 3, .y = 5 } };
+    return b;
+}
+
+pub fn splittable(g: *game.Game, at: P, awake: bool) u16 {
+    const id = spawnAt(g, .slime, at, awake);
+    g.pool.get(id).?.hp = SLIME_HALF + 1;
+    return id;
+}
+
+pub fn bittenToDeath(g: *game.Game) void {
+    arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
+    wakeFoes(g);
+    g.heroActor().?.hp = 1;
+    nudge(g, .e);
+}
+
+pub fn idle(g: *game.Game) void {
+    calm(g);
+    g.st = .{};
+    game.update(g, 0);
+}
+
+pub fn caughtUp(g: *game.Game, slot: usize) bool {
+    return g.pictured[slot].hp == g.pool.items[slot].hp;
 }

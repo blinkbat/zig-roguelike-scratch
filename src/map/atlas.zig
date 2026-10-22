@@ -6,12 +6,12 @@ const gen = @import("gen.zig");
 const procgen = @import("procgen.zig");
 const carve = @import("carve.zig");
 const actor = @import("../play/actor.zig");
-const store = @import("../core/store.zig");
 const pack = @import("../play/pack.zig");
 const climate = @import("climate.zig");
+const listing = @import("listing.zig");
+const atlas_text = @import("atlas_text.zig");
 
 const P = mathx.P;
-const Tokens = std.mem.TokenIterator(u8, .scalar);
 
 pub const MAX_NODES: usize = 32;
 /// Every placed foe and the hero fit the pool.
@@ -40,8 +40,6 @@ pub const PREFIX = DIR ++ "/";
 pub fn mapPath(comptime stem: []const u8) []const u8 {
     return PREFIX ++ stem ++ EXT;
 }
-const HEADER = "roguelike-map 1";
-const TEXT_CAP: usize = 8 << 20;
 const COLS = grid.COLS;
 const ROWS = grid.ROWS;
 pub const NAME_MAX: usize = 20;
@@ -57,14 +55,6 @@ pub fn clampPos(p: P) P {
     const lim: i32 = @intCast(POS_MAX);
     return .{ .x = std.math.clamp(p.x, -lim, lim), .y = std.math.clamp(p.y, -lim, lim) };
 }
-/// A map file's name, `.map` and all.
-const FILE_MAX: usize = 64;
-/// A map file's name before `.map`, as `pathFor` makes it.
-pub const STEM_MAX = FILE_MAX - EXT.len;
-/// The folders a listed map lies in below `DIR`, names and '/'s.
-const FOLDER_MAX: usize = 64;
-pub const PATH_MAX = PREFIX.len + FOLDER_MAX + FILE_MAX;
-const ListedPath = [PATH_MAX + 1]u8;
 
 pub const Link = struct {
     node: usize,
@@ -468,226 +458,16 @@ pub const Atlas = struct {
         self.doorOf(a).to = null;
         self.doorOf(to).to = null;
     }
-
-    pub fn save(self: *Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
-        var text = std.ArrayList(u8).init(alloc);
-        defer text.deinit();
-        try self.write(text.writer());
-        try store.replace(path, text.items);
-    }
-
-    pub fn write(self: *Atlas, w: anytype) !void {
-        try w.print(HEADER ++ "\n" ++ says(.start) ++ "{d} {d} {d}\n", .{ self.start.node, self.start.at.x, self.start.at.y });
-        for (self.nodes()) |*nd| {
-            switch (nd.plan) {
-                .procgen => |*pg| {
-                    try w.print(says(.node) ++ "{s} {s}\n", .{ @tagName(nd.plan), @tagName(pg.floor) });
-                    try putArm(w, &pg.floor);
-                    inline for (GROUPS) |grp| {
-                        inline for (grp.knobs) |k| try putKnob(w, k, @field(@field(pg, grp.field), k));
-                    }
-                    for (pg.foes.makeups()) |*m| {
-                        try w.print(says(.makeup) ++ "{d}", .{m.weight});
-                        for (m.kinds()) |k| try w.print(" {s}", .{@tagName(k)});
-                        try w.writeByte('\n');
-                    }
-                    for (pg.features()) |*ft| {
-                        try w.print(says(.feature) ++ "{s}\n", .{@tagName(ft.*)});
-                        try putArm(w, ft);
-                    }
-                },
-                .bespoke => |*b| {
-                    try w.print(says(.node) ++ "{s}\n", .{@tagName(nd.plan)});
-                    for (0..ROWS) |y| {
-                        try w.writeAll(says(.row));
-                        for (0..COLS) |x| {
-                            const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(y) });
-                            try w.writeByte(if (b.barrel[i]) grid.BARREL_LETTER else b.tile[i].letter());
-                        }
-                        try w.writeByte('\n');
-                    }
-                    for (b.torches()) |t| try w.print(says(.torch) ++ "{d} {d}\n", .{ t.x, t.y });
-                    for (b.foes()) |f| try w.print(says(.foe) ++ "{s} {d} {d}\n", .{ @tagName(f.kind), f.at.x, f.at.y });
-                },
-            }
-            if (nd.label.n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
-            try w.print(says(.at) ++ "{d} {d}\n", .{ nd.pos.x, nd.pos.y });
-            for (nd.doors()) |d| {
-                try w.print(says(.door) ++ "{d} {d}", .{ d.at.x, d.at.y });
-                if (d.to) |l| try w.print(" {d} {d}", .{ l.node, l.door });
-                try w.writeByte('\n');
-            }
-        }
-    }
-
-    pub fn load(self: *Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
-        const text = try std.fs.cwd().readFileAlloc(alloc, path, TEXT_CAP);
-        defer alloc.free(text);
-        try self.parse(text);
-    }
-
-    pub fn parse(self: *Atlas, text: []const u8) Error!void {
-        self.* = .{};
-        var lines = std.mem.splitScalar(u8, text, '\n');
-        const head = std.mem.trimRight(u8, lines.next() orelse return error.NoHeader, "\r");
-        if (!std.mem.eql(u8, head, HEADER)) return error.NoHeader;
-        var row: usize = 0;
-        var own_makeups = false;
-        var seen = std.EnumSet(Word).initEmpty();
-        var knobbed = KnobSet.initEmpty();
-        var featured = FeatureKnobSet.initEmpty();
-        while (lines.next()) |raw| {
-            const line = std.mem.trimRight(u8, raw, "\r");
-            var f = std.mem.tokenizeScalar(u8, line, ' ');
-            const word = f.next() orelse continue;
-            const said = std.meta.stringToEnum(Word, word) orelse {
-                const pg = try self.procgen();
-                if (pg.feature_n > 0) {
-                    try takeFeatureKnob(&pg.feature[pg.feature_n - 1], word, &f, &featured);
-                } else try takeKnob(pg, word, &f, &knobbed);
-                if (f.next() != null) return error.BadLine;
-                continue;
-            };
-            if (ONCE.contains(said)) {
-                if (seen.contains(said)) return error.BadLine;
-                seen.insert(said);
-            }
-            switch (said) {
-                .start => self.start = .{ .node = try int(usize, &f), .at = try cell(&f) },
-                .node => {
-                    const kind = try takeValue(std.meta.Tag(Plan), &f);
-                    const plan: Plan = switch (kind) {
-                        .procgen => blk: {
-                            const algo = try takeValue(Algo, &f);
-                            // Accept and discard seeds from older map files.
-                            if (f.peek() != null) _ = try int(u64, &f);
-                            break :blk .{ .procgen = .{ .floor = Floor.of(algo) } };
-                        },
-                        .bespoke => .{ .bespoke = .{} },
-                    };
-                    try self.finished(row);
-                    _ = self.add(plan) orelse return error.TooMany;
-                    row = 0;
-                    own_makeups = false;
-                    seen = seen.intersectWith(ONCE_FILE);
-                    knobbed = KnobSet.initEmpty();
-                },
-                .name => {
-                    if ((try self.last()).rename(f.rest()) != true) return error.BadLine;
-                    continue;
-                },
-                .at => {
-                    const pos = P{ .x = try int(i32, &f), .y = try int(i32, &f) };
-                    if (!clampPos(pos).eq(pos)) return error.BadLine;
-                    (try self.last()).pos = pos;
-                },
-                .door => {
-                    const nd = try self.last();
-                    const at = try cell(&f);
-                    const k = self.addDoor(self.node_n - 1, at) orelse return error.TooMany;
-                    if (f.peek() != null) nd.door[k].to = .{ .node = try int(usize, &f), .door = try int(usize, &f) };
-                },
-                .feature => {
-                    const pg = try self.procgen();
-                    const k = try takeValue(Kind, &f);
-                    if (!pg.addFeature(k)) return error.TooMany;
-                    featured = FeatureKnobSet.initEmpty();
-                },
-                .makeup => {
-                    const pg = try self.procgen();
-                    if (pg.feature_n > 0) return error.BadLine;
-                    const fo = &pg.foes;
-                    if (!own_makeups) fo.makeup_n = 0;
-                    own_makeups = true;
-                    if (!fo.addMakeup()) return error.TooMany;
-                    const m = &fo.makeup[fo.makeup_n - 1];
-                    m.* = .{ .weight = try int(u8, &f), .n = 0 };
-                    while (f.next()) |name| {
-                        const k = std.meta.stringToEnum(actor.Kind, name) orelse return error.BadLine;
-                        if (!m.grow()) return error.BadLine;
-                        m.kind[m.n - 1] = k;
-                    }
-                },
-                .row => {
-                    const b = try self.bespoke();
-                    const cells = f.next() orelse return error.BadLine;
-                    if (cells.len != COLS or row == ROWS) return error.BadLine;
-                    for (cells, 0..) |c, x| {
-                        const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(row) });
-                        b.barrel[i] = c == grid.BARREL_LETTER;
-                        b.tile[i] = grid.groundOf(c) orelse return error.BadLine;
-                    }
-                    row += 1;
-                },
-                .torch => if (!(try self.bespoke()).torch.add(try cell(&f))) return error.TooMany,
-                .foe => {
-                    const b = try self.bespoke();
-                    const k = try takeValue(actor.Kind, &f);
-                    if (!k.stocked() or !b.addFoe(.{ .kind = k, .at = try cell(&f) })) return error.BadLine;
-                },
-            }
-            if (f.next() != null) return error.BadLine;
-        }
-        try self.finished(row);
-        if (self.node_n == 0) return error.NoNodes;
-        if (!seen.contains(.start)) return error.NoStart;
-        for (self.nodes(), 0..) |*nd, n| {
-            for (nd.doors(), 0..) |d, k| {
-                const l = d.to orelse continue;
-                if (l.node >= self.node_n or l.door >= self.node[l.node].door_n) return error.BadLink;
-                const here = Link{ .node = n, .door = k };
-                if (l.eq(here)) return error.BadLink;
-                const back = self.door(l).to orelse return error.BadLink;
-                if (!back.eq(here)) return error.BadLink;
-            }
-        }
-        if (self.start.node >= self.node_n) return error.BadLink;
-    }
-
-    fn finished(self: *Atlas, rows: usize) Error!void {
-        if (self.node_n == 0) return;
-        const nd = &self.node[self.node_n - 1];
-        switch (nd.plan) {
-            .bespoke => |*b| {
-                if (rows != ROWS) return error.BadLine;
-                for (b.foes()) |f| {
-                    if (!nd.foeFits(b, f.at)) return error.BadLine;
-                }
-                for (b.torches()) |t| {
-                    if (!nd.torchFits(b, t)) return error.BadLine;
-                }
-                for (b.barrel, 0..) |on, i| {
-                    if (on and !nd.barrelFits(b, grid.Level.of(i))) return error.BadLine;
-                }
-            },
-            .procgen => |*pg| if (!pg.valid()) return error.BadLine,
-        }
-    }
+    pub const save = atlas_text.save;
+    pub const write = atlas_text.write;
+    pub const load = atlas_text.load;
+    pub const parse = atlas_text.parse;
 
     pub fn standable(self: *const Atlas, from: Start, scratch: *grid.Level) bool {
         const nd = &self.node[from.node];
         if (nd.unrolled()) return true;
         nd.sketch(scratch);
         return landing(scratch, from.at, nd.placed()) != null;
-    }
-
-    fn procgen(self: *Atlas) Error!*Procgen {
-        return switch ((try self.last()).plan) {
-            .procgen => |*pg| pg,
-            .bespoke => error.BadLine,
-        };
-    }
-
-    fn last(self: *Atlas) Error!*Node {
-        if (self.node_n == 0) return error.BadLine;
-        return &self.node[self.node_n - 1];
-    }
-
-    fn bespoke(self: *Atlas) Error!*Bespoke {
-        return switch ((try self.last()).plan) {
-            .bespoke => |*b| b,
-            .procgen => error.BadLine,
-        };
     }
 };
 
@@ -696,373 +476,6 @@ pub const NOT_LOADED = "{s} did not load ({s})";
 pub const NO_MAPS = "No maps in " ++ DIR ++ " yet";
 
 pub const Error = error{ NoHeader, BadLine, TooMany, NoNodes, NoStart, BadLink };
-
-/// A procgen node's base lines: each named for, and holding, a field of its floor; the foes' and sky's are `GROUPS`.
-pub fn floorKnobs(comptime a: Algo) []const []const u8 {
-    return armKnobs(Floor, a);
-}
-const FLOOR_KNOBS_MAX = mostKnobs(Floor);
-pub const FOE_KNOBS = knobsOf(pack.Spec, MAKEUP_FIELDS);
-pub const SKY_KNOBS = knobsOf(climate.Climate, &.{});
-/// Every other line's first word, which no knob may take.
-const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe };
-const ONCE_FILE = std.EnumSet(Word).initOne(.start);
-const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at });
-const ONCE = ONCE_FILE.unionWith(ONCE_NODE);
-/// A feature's lines after its own: each named for, and holding, a field of it.
-pub fn featureKnobs(comptime k: Kind) []const []const u8 {
-    return armKnobs(Feature, k);
-}
-const FEATURE_KNOBS_MAX = mostKnobs(Feature);
-const FeatureKnobSet = std.StaticBitSet(FEATURE_KNOBS_MAX);
-const GROUPS = [_]struct { field: []const u8, knobs: []const []const u8 }{
-    .{ .field = "foes", .knobs = FOE_KNOBS },
-    .{ .field = "sky", .knobs = SKY_KNOBS },
-};
-const GROUP_KNOBS = blk: {
-    var all: []const []const u8 = &.{};
-    for (GROUPS) |grp| all = all ++ grp.knobs;
-    break :blk all;
-};
-/// An algorithm's knobs by place, then each group's in turn after `FLOOR_KNOBS_MAX`.
-const KnobSet = std.StaticBitSet(groupBase(GROUPS.len));
-const MAKEUP = @tagName(Word.makeup);
-/// `pack.Spec`'s makeups, which are lines of their own.
-const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
-
-fn says(comptime w: Word) []const u8 {
-    return @tagName(w) ++ " ";
-}
-
-comptime {
-    @setEvalBranchQuota(1_000_000);
-    for (MAKEUP_FIELDS) |m| std.debug.assert(@hasField(pack.Spec, m));
-    for (std.enums.values(Algo)) |algo| distinct(floorKnobs(algo) ++ GROUP_KNOBS ++ knobsOf(Word, &.{}));
-    for (std.enums.values(Kind)) |kind| distinct(featureKnobs(kind) ++ knobsOf(Word, &.{}));
-}
-
-fn distinct(comptime names: []const []const u8) void {
-    for (names, 0..) |a, i| {
-        for (names[0..i]) |b| std.debug.assert(!std.mem.eql(u8, a, b));
-    }
-}
-
-fn armKnobs(comptime U: type, comptime tag: std.meta.Tag(U)) []const []const u8 {
-    return knobsOf(@FieldType(U, @tagName(tag)), &.{});
-}
-
-fn mostKnobs(comptime U: type) usize {
-    var most: usize = 0;
-    for (std.enums.values(std.meta.Tag(U))) |t| most = @max(most, armKnobs(U, t).len);
-    return most;
-}
-
-fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const u8 {
-    @setEvalBranchQuota(100_000);
-    comptime var out: []const []const u8 = &.{};
-    inline for (std.meta.fields(T)) |f| {
-        const skipped = for (skip) |s| {
-            if (std.mem.eql(u8, s, f.name)) break true;
-        } else false;
-        if (!skipped) out = out ++ &[_][]const u8{f.name};
-    }
-    return out;
-}
-
-fn takeKnob(pg: *Procgen, word: []const u8, f: *Tokens, knobbed: *KnobSet) Error!void {
-    if (try takeArm(&pg.floor, word, f, knobbed)) return;
-    inline for (GROUPS, 0..) |grp, g| {
-        inline for (grp.knobs, 0..) |k, i| {
-            if (std.mem.eql(u8, word, k)) return takeOnce(&@field(pg, grp.field), k, comptime groupBase(g) + i, f, knobbed);
-        }
-    }
-    return error.BadLine;
-}
-
-fn groupBase(comptime g: usize) usize {
-    var at = FLOOR_KNOBS_MAX;
-    for (GROUPS[0..g]) |grp| at += grp.knobs.len;
-    return at;
-}
-
-fn takeFeatureKnob(ft: *Feature, word: []const u8, f: *Tokens, set: *FeatureKnobSet) Error!void {
-    if (!try takeArm(ft, word, f, set)) return error.BadLine;
-}
-
-fn takeArm(u: anytype, word: []const u8, f: *Tokens, knobbed: anytype) Error!bool {
-    switch (u.*) {
-        inline else => |*p, t| inline for (comptime armKnobs(@TypeOf(u.*), t), 0..) |k, i| {
-            if (std.mem.eql(u8, word, k)) {
-                try takeOnce(p, k, i, f, knobbed);
-                return true;
-            }
-        },
-    }
-    return false;
-}
-
-fn putArm(w: anytype, u: anytype) !void {
-    switch (u.*) {
-        inline else => |*p, t| inline for (comptime armKnobs(@TypeOf(u.*), t)) |k| try putKnob(w, k, @field(p.*, k)),
-    }
-}
-
-fn takeOnce(owner: anytype, comptime k: []const u8, i: usize, f: *Tokens, knobbed: anytype) Error!void {
-    if (knobbed.isSet(i)) return error.BadLine;
-    knobbed.set(i);
-    @field(owner.*, k) = try takeValue(@TypeOf(@field(owner.*, k)), f);
-}
-
-fn putKnob(w: anytype, comptime name: []const u8, v: anytype) !void {
-    try w.writeAll(name);
-    try putValue(w, v);
-    try w.writeByte('\n');
-}
-
-/// How many numbers a knob of type `T` holds on its line.
-pub fn knobNumbers(comptime T: type) usize {
-    return switch (@typeInfo(T)) {
-        .int, .@"enum" => 1,
-        .array => |a| a.len,
-        .@"struct" => |s| s.fields.len,
-        else => @compileError(@typeName(T) ++ " is no knob"),
-    };
-}
-
-fn putValue(w: anytype, v: anytype) !void {
-    const T = @TypeOf(v);
-    switch (@typeInfo(T)) {
-        .int => try w.print(" {d}", .{v}),
-        .@"enum" => try w.print(" {s}", .{@tagName(v)}),
-        .array => for (v) |x| try putValue(w, x),
-        .@"struct" => inline for (std.meta.fields(T)) |f| try putValue(w, @field(v, f.name)),
-        else => @compileError(@typeName(T) ++ " is no knob"),
-    }
-}
-
-fn takeValue(comptime T: type, f: *Tokens) Error!T {
-    switch (@typeInfo(T)) {
-        .int => return int(T, f),
-        .@"enum" => return std.meta.stringToEnum(T, f.next() orelse return error.BadLine) orelse error.BadLine,
-        .array => |a| {
-            var out: T = undefined;
-            for (&out) |*x| x.* = try takeValue(a.child, f);
-            return out;
-        },
-        .@"struct" => {
-            var out: T = undefined;
-            inline for (std.meta.fields(T)) |fl| @field(out, fl.name) = try takeValue(fl.type, f);
-            return out;
-        },
-        else => @compileError(@typeName(T) ++ " is no knob"),
-    }
-}
-
-fn int(comptime T: type, f: *Tokens) Error!T {
-    return std.fmt.parseInt(T, f.next() orelse return error.BadLine, 10) catch error.BadLine;
-}
-
-fn cell(f: *Tokens) Error!P {
-    const p = P{ .x = try int(i32, f), .y = try int(i32, f) };
-    return if (grid.Level.inside(p)) p else error.BadLine;
-}
-
-/// The folder below `DIR` a map's path lies in, its '/' kept; none for a path outside `DIR`.
-pub fn folderOf(path: []const u8) []const u8 {
-    if (!std.mem.startsWith(u8, path, PREFIX)) return "";
-    const rest = path[PREFIX.len..];
-    const end = std.mem.lastIndexOfScalar(u8, rest, '/') orelse return "";
-    return rest[0 .. end + 1];
-}
-
-/// In `folder`, as `folderOf` gives it.
-pub fn pathFor(buf: []u8, folder: []const u8, name: []const u8) ?[]const u8 {
-    var stem: [STEM_MAX]u8 = undefined;
-    var n: usize = 0;
-    for (std.mem.trim(u8, name, " ")) |c| {
-        if (n == stem.len) break;
-        const k = std.ascii.toLower(c);
-        if (!std.ascii.isAlphanumeric(k) and k != '_' and k != ' ') continue;
-        stem[n] = if (k == ' ') '_' else k;
-        n += 1;
-    }
-    if (n == 0 or folder.len > FOLDER_MAX) return null;
-    return std.fmt.bufPrint(buf, PREFIX ++ "{s}{s}" ++ EXT, .{ folder, stem[0..n] }) catch null;
-}
-
-/// Folder listing: parent first, then sorted folders and maps; overflow keeps the first `MAX`.
-pub const Listing = struct {
-    pub const MAX: usize = 128;
-    pub const UP = "..";
-    const DEPTH_MAX: usize = 8;
-    file: [MAX]Listed = undefined,
-    n: usize = 0,
-    /// The folder listed, below `DIR`: each folder's name and a '/', none at `DIR` itself.
-    folder: [FOLDER_MAX]u8 = undefined,
-    folder_n: usize = 0,
-
-    pub const Entry = enum { up, folder, map };
-
-    const Listed = struct {
-        buf: ListedPath,
-        n: usize,
-        entry: Entry,
-
-        fn text(l: *const Listed) [:0]const u8 {
-            return l.buf[0..l.n :0];
-        }
-
-        fn before(_: void, a: Listed, b: Listed) bool {
-            if (a.entry != b.entry) return @intFromEnum(a.entry) < @intFromEnum(b.entry);
-            return std.mem.lessThan(u8, a.text(), b.text());
-        }
-    };
-
-    /// A map's file, a folder's path and its '/', or `UP`.
-    pub fn at(self: *const Listing, i: usize) [:0]const u8 {
-        return self.file[i].text();
-    }
-
-    pub fn entry(self: *const Listing, i: usize) Entry {
-        return self.file[i].entry;
-    }
-
-    /// What its row shows: a map's stem, a folder's name and its '/', or `UP`.
-    pub fn label(self: *const Listing, i: usize) []const u8 {
-        const p = self.at(i);
-        return switch (self.entry(i)) {
-            .up => p,
-            .folder => p[PREFIX.len + self.folder_n ..],
-            .map => self.stem(i),
-        };
-    }
-
-    /// A map's file name before `EXT`.
-    pub fn stem(self: *const Listing, i: usize) []const u8 {
-        const p = self.at(i);
-        const from = if (std.mem.lastIndexOfScalar(u8, p, '/')) |k| k + 1 else 0;
-        return p[from .. p.len - EXT.len];
-    }
-
-    /// The folder listed, below `DIR`.
-    pub fn here(self: *const Listing) []const u8 {
-        return self.folder[0..self.folder_n];
-    }
-
-    /// Into the folder at `i`, or up from `UP`; false for a map.
-    pub fn open(self: *Listing, i: usize) bool {
-        switch (self.entry(i)) {
-            .map => return false,
-            .up => _ = self.up(),
-            .folder => {
-                const name = self.label(i);
-                _ = self.enter(name[0 .. name.len - 1]);
-                self.scan();
-            },
-        }
-        return true;
-    }
-
-    /// To the folder above; false at `DIR` itself.
-    pub fn up(self: *Listing) bool {
-        if (self.folder_n == 0) return false;
-        const inner = self.folder[0 .. self.folder_n - 1];
-        self.folder_n = if (std.mem.lastIndexOfScalar(u8, inner, '/')) |k| k + 1 else 0;
-        self.scan();
-        return true;
-    }
-
-    /// `folder`, as `folderOf` gives it; `DIR` itself if it is not there.
-    pub fn scanAt(self: *Listing, folder: []const u8) void {
-        self.folder_n = 0;
-        if (folder.len <= FOLDER_MAX) {
-            @memcpy(self.folder[0..folder.len], folder);
-            self.folder_n = folder.len;
-        }
-        self.scan();
-    }
-
-    /// The folder listed; `DIR` itself if that folder is gone.
-    pub fn scan(self: *Listing) void {
-        self.n = 0;
-        if (self.folder_n > 0) self.add(.up, "{s}", .{UP});
-        if (!self.gather(null)) {
-            if (self.folder_n == 0) return;
-            self.folder_n = 0;
-            return self.scan();
-        }
-        self.sort();
-    }
-
-    /// Every map in every folder of `DIR`, by path.
-    pub fn scanAll(self: *Listing) void {
-        self.n = 0;
-        self.folder_n = 0;
-        _ = self.gather(0);
-        self.sort();
-    }
-
-    fn fits(self: *const Listing, name: []const u8) bool {
-        return self.folder_n + name.len + 1 <= FOLDER_MAX;
-    }
-
-    fn enter(self: *Listing, name: []const u8) bool {
-        if (!self.fits(name)) return false;
-        @memcpy(self.folder[self.folder_n..][0..name.len], name);
-        self.folder[self.folder_n + name.len] = '/';
-        self.folder_n += name.len + 1;
-        return true;
-    }
-
-    /// `walking` recursively collects maps from this depth, capped at `DEPTH_MAX`.
-    fn gather(self: *Listing, walking: ?usize) bool {
-        var buf: [PATH_MAX]u8 = undefined;
-        var dir = std.fs.cwd().openDir(self.dirPath(&buf), .{ .iterate = true }) catch return false;
-        defer dir.close();
-        var it = dir.iterate();
-        while (it.next() catch null) |e| {
-            if (!shown(e.name)) continue;
-            switch (e.kind) {
-                .directory => if (walking) |depth| {
-                    const was = self.folder_n;
-                    if (depth < DEPTH_MAX and self.enter(e.name)) _ = self.gather(depth + 1);
-                    self.folder_n = was;
-                } else if (self.fits(e.name)) self.add(.folder, PREFIX ++ "{s}{s}/", .{ self.here(), e.name }),
-                .file => if (std.mem.endsWith(u8, e.name, EXT) and e.name.len <= FILE_MAX) self.add(.map, PREFIX ++ "{s}{s}", .{ self.here(), e.name }),
-                else => {},
-            }
-        }
-        return true;
-    }
-
-    pub fn dirPath(self: *const Listing, buf: []u8) []const u8 {
-        return std.fmt.bufPrint(buf, PREFIX ++ "{s}", .{self.here()}) catch DIR;
-    }
-
-    fn shown(name: []const u8) bool {
-        return name.len > 0 and name[0] != '.' and plain(name);
-    }
-
-    fn add(self: *Listing, e: Entry, comptime fmt: []const u8, args: anytype) void {
-        var l: Listed = undefined;
-        l.entry = e;
-        l.n = (std.fmt.bufPrintZ(&l.buf, fmt, args) catch return).len;
-        if (self.n < MAX) {
-            self.file[self.n] = l;
-            self.n += 1;
-            return;
-        }
-        var last: usize = 0;
-        for (self.file[1..], 1..) |*o, i| {
-            if (Listed.before({}, self.file[last], o.*)) last = i;
-        }
-        if (Listed.before({}, l, self.file[last])) self.file[last] = l;
-    }
-
-    fn sort(self: *Listing) void {
-        std.sort.insertion(Listed, self.file[0..self.n], {}, Listed.before);
-    }
-};
 
 /// Where a body arriving at `p` stands: `p`, or the open cell no one holds, nor `foes` are to, fewest steps from it; nearest as the crow flies when no step reaches one.
 pub fn landing(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
@@ -1168,7 +581,7 @@ test "a map saves and loads back the same" {
 test "a map file with a one-way link, a door linked to itself, a stray word or a far box is refused" {
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);
-    const head = HEADER ++ "\nstart 0 5 5\n";
+    const head = atlas_text.HEADER ++ "\nstart 0 5 5\n";
     const bad = [_][]const u8{
         head ++ "node procgen rooms\ndoor 5 5 1 0\nnode procgen rooms\ndoor 5 5\n",
         head ++ "node procgen rooms\ndoor 5 5 0 0\n",
@@ -1199,7 +612,7 @@ test "a map file with a one-way link, a door linked to itself, a stray word or a
         head ++ "node procgen wilds\nfeature river\nmakeup 1 rat\n",
         head ++ "node procgen wilds\nfeature canal\n",
         head ++ "node procgen wilds\nfeature river\nfill moss\n",
-        HEADER ++ "\nnode procgen rooms\n",
+        atlas_text.HEADER ++ "\nnode procgen rooms\n",
     };
     for (bad) |t| try std.testing.expect(std.meta.isError(a.parse(t)));
     try a.parse(head ++ "node procgen rooms 1790812916605\n");
@@ -1309,40 +722,6 @@ test "a body lands on the side of a wall it arrived on, however near the far sid
     std.debug.print("a door walled on its left, its right ringed by barrels: lands at {d},{d}\n", .{ at.x, at.y });
     try std.testing.expect(at.x > 9);
     try std.testing.expectEqual(@as(i32, 2), mathx.dist(door, at));
-}
-
-test "a map file is named from anything typed, and nothing left of it is no name" {
-    var buf: [128]u8 = undefined;
-    try std.testing.expectEqualStrings(DIR ++ "/the_deepcave2" ++ EXT, pathFor(&buf, "", " The Deep/Cave2! ").?);
-    try std.testing.expectEqual(@as(?[]const u8, null), pathFor(&buf, "", "../"));
-    try std.testing.expectEqualStrings("qud/", folderOf(DIR ++ "/qud/qud_strata" ++ EXT));
-    try std.testing.expectEqualStrings("", folderOf(MAIN));
-    try std.testing.expectEqualStrings(DIR ++ "/qud/bog" ++ EXT, pathFor(&buf, folderOf(DIR ++ "/qud/qud_strata" ++ EXT), "Bog").?);
-}
-
-test "the maps folder lists its folders before its maps, and a folder opens with the way back up first" {
-    var list = Listing{};
-    list.scan();
-    try std.testing.expect(list.n > 0 and list.entry(0) == .folder);
-    const qud = for (0..list.n) |i| {
-        if (std.mem.eql(u8, list.label(i), "qud/")) break i;
-    } else return error.NoFolder;
-    const top = list.n;
-    try std.testing.expect(list.open(qud));
-    try std.testing.expectEqualStrings("qud/", list.here());
-    try std.testing.expectEqual(Listing.Entry.up, list.entry(0));
-    try std.testing.expectEqual(Listing.Entry.map, list.entry(1));
-    try std.testing.expect(std.mem.startsWith(u8, list.at(1), DIR ++ "/qud/qud_"));
-    try std.testing.expect(std.mem.startsWith(u8, list.label(1), "qud_"));
-    try std.testing.expect(!list.open(1));
-    const inside = list.n;
-    try std.testing.expect(list.open(0));
-    try std.testing.expectEqual(@as(usize, 0), list.here().len);
-    try std.testing.expect(!list.up());
-    var all = Listing{};
-    all.scanAll();
-    std.debug.print("{d} rows in {s}, {d} in qud/ with the way up, {d} maps in all\n", .{ top, DIR, inside, all.n });
-    try std.testing.expect(all.n > top);
 }
 
 test "the strand: the archer washes up on the beach, and the exit is reached through the trees" {
@@ -1465,7 +844,7 @@ test "the strand reconnects side paths and reliably supplies reachable chests an
 }
 
 test "every map in the maps folder parses, and each procgen node rolls its ground whole" {
-    var list = Listing{};
+    var list = listing.Listing{};
     list.scanAll();
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);

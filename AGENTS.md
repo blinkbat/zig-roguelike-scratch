@@ -34,9 +34,15 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Every `src/**/*.zig` module except the root `main.zig` must be imported in `main.zig`'s `test {}` block.
   `build.zig` checks this on every build step and rejects those modules if smaller than 512 bytes.
 - `game.zig` holds `Game`, the run/door/turn flow, the picture's timing and `update`. `src/game/` splits off `combat`
-  (blows, harm ticks, foe turns), `scene` (map drawing), `overlay` (skill bar, binds, orbs, inspect, tooltips),
-  `character` (pause, Character, Nearby), `debug` (Pause > Debug, diagnostics), `shots` (headless captures, bench), `harness` (scripted play shared by
-  tests and shots) and `tests` (the game's integration tests).
+  (blows, harm ticks, foe turns), `skills` (aiming, leaps, rushes, spells, flasks), `binds` (the skill picker),
+  `glide` (body motion), `scene` (map drawing), `overlay` (skill bar, binds, orbs, inspect, tooltips),
+  `character` (pause, Character, Nearby), `debug` (Pause > Debug, diagnostics, `Perf`), `shots` (headless captures, bench), `harness` (scripted play shared by
+  tests and shots) and `tests/` (the game's integration tests by domain: skills, foes, world, loot, picture, menus, hero).
+  `app.zig` opens the window around a `Game` (`withGame`) and owns the headless flags; `core/window.zig` owns fullscreen.
+- `gfx/look.zig` keeps tile/body appearance and `Sprites`; `raster` holds raylib rect/blit/render-target helpers,
+  `shaders` shader loading/uniforms/GLSL heads, `prompt_icon` input glyphs, `line_icons` skill and direction line art.
+  `gfx/light.zig` keeps the light map; `shadow` casts shadows, `light_gpu` holds its shaders and textures, `light_tests` its tests.
+  `map/atlas.zig` keeps the map graph; `atlas_text` reads/writes map files and their knobs, `listing` browses the maps folder.
 - `shot.cmd` builds into `zig-out-dev` but writes `shots/` under its working directory. For audits, build
   with `./build.cmd --prefix zig-out-dev`, then run the executable from a fresh `%TEMP%` directory containing
   a copy of `maps/`. This keeps generated frames outside the repo:
@@ -76,9 +82,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 ## Input, UI and application
 
 - **`core/input.zig` alone reads input devices.** Controller is primary; keyboard mirrors every action.
+  Mouse motion/buttons/wheel select keyboard/mouse hints; a stationary cursor never overrides controller navigation.
+  `game/mouse.zig` owns map click routing and unsaved click-to-move state; UI panels consume map clicks.
   `docs/CONTROLLER.md` describes the scheme; current mappings/defaults live in `input`, `skillbar.Bar.of` and `progress.State.bar`.
   Keep skill lists and balance values in their source modules instead of duplicating them here.
-- Always show input controls as glyphs, never as key/button names in prose. Use `look.Prompt`,
+- Always show input controls as glyphs, never as key/button names in prose. Use `prompt_icon.Prompt`,
   following the last device (`State.device`, `input.padOf`), including tree hints. The desk editor uses
   keyboard/mouse glyphs through `gfx/prompt_text.zig`; `input.Desk` owns its marked shortcut captions.
 - `play/skillbar.zig` owns primary/secondary sets, the bindable secondary modifier and class kits.
@@ -112,8 +120,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   D-pad up/down zooms. Keyboard navigation, shifted pan, zoom and overview mirror those actions;
   keep device reads in `input` and the control reference in `docs/CONTROLLER.md`.
   Passives lift the Soulslike three-arm, six-branch layout: small stat nodes, larger interest nodes,
-  paired-stat bridges and six double-ring capstones. Use very simple graphics. All three origins open
-  from the central hub; the class origin is free and grants no bonus. Branches follow outward feeders;
+  paired-stat bridges and six double-ring capstones. Use simple circles and lines, with no central hub,
+  per-node labels or legends; selected grants appear in the sidebar. All three origins are available
+  directly; the class origin is free and grants no bonus. Branches follow outward feeders;
   bridges work both ways. The same feeders must govern eligibility and drawn links.
   `Game.character` holds only unsaved navigation state; item/point actions are commands resolved by the game.
   Item actions and point allocation execute on one press; item changes spend one turn and keep Character open.
@@ -142,8 +151,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   occupies the bottom-left gutter without a heading; newest entries append at the bottom, with text,
   background and border fading to 10% of their base opacity at the top. Follow `docs/DATA_PRESENTATION.md` for item cards,
   comparisons and stat wording: relevant properties only, explicit units, and effects before metrics.
-- `gfx/font.zig` draws small Balthazar text from native-size, point-filtered atlases; larger text and
-  symbols use the mipmapped atlas. It falls back to raylib's font in tests/load failure.
+- `gfx/font.zig` uses Source Sans 3 for compact text at 16px and below, Balthazar for display text and symbols.
+  Native sizes use point-filtered atlases; scaled panels use the corresponding mipmapped face. It falls back to raylib's font in tests/load failure.
   Drawn strings are ASCII except tile symbols baked through `look.TILE_CODEPOINTS`; those use
   their ASCII fallback without the atlas.
 
@@ -203,8 +212,10 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `skillbar.Act.attack` selects melee/ranged/spell delivery; `items.Gear.scaling` selects the matching
   weapon's scaling for both live damage and previews. Wands and staves have no innate attack damage.
   Offhands include tomes, orbs, bucklers, shields and totems; two-handed weapons clear that slot.
+  Item bases have fixed neutral innates, with rolled magic modifiers separate in blue. Every base rolls in both rarities.
   Class bases feed passive allocations and equipped modifiers;
-  `game.heroAttrs` is the runtime source. Armour reduces physical bites before mana shield; elemental/status
+  `game.heroAttrs` is the runtime source; `game.heroPerks` combines equipment and passive recovery effects.
+  Foe `Row.armour` reduces physical hits; crossbow penetration subtracts percentage points. Armour reduces physical bites before mana shield; elemental/status
   damage keeps its separate rules. Equipped weapons and skill ranks affect hero damage and its previews.
   Every hero blow goes through `combat.scaled` (via `heroRoll`/`heroScaled`), which draws the crit after the
   damage roll, then rounds each part up as often as its fraction. Skill rolls are `damage.Base` (`Act.bases`); an area
@@ -221,7 +232,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   slime halves inherit statuses without being hit twice by that burst.
 - Juke is the free leap (`juke.FREE`); Blink spends a turn. Leap cursors may cross invalid cells but
   confirm only visible vacant landings. Idle frames advance no simulation, mana recovery or cooldowns.
-  Flasks take a turn, recover from that turn's end, and restart recovery when drunk again; kills refill them.
+  Flasks take no turn, apply their first recovery tick immediately, then recover on the next two spent turns.
+  Drinking again restarts recovery; kills refill charges. Mana uses small whole numbers; natural recovery
+  accumulates over spent turns in saved mana_recovery, never idle frames or free actions.
 - `skillbar.SKILLS` owns each action's module and reticle; `Act.attack` derives the attack type from them
   (arrow ranged, bolt or unaimed element spell, swing or rush melee), and every damaging action must have one.
   Skills dispatch by module declarations (`afflict`, `burst`, `JUMPS`, `around`, `Ward`, `knocked`).
@@ -231,7 +244,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   mana through `Game.mana_held` until the blow lands, as `flasks_shown` holds a kill's refill.
 - **`Pool.damage` is the only HP-loss path**, apart from splitting a slime's remaining HP, restoring
   carried state and clamping to a lowered maximum (`syncStats`). Elemental resistance applies separately per element, rounding down, clamped to
-  -100..100; physical damage is unresisted (`play/damage.zig`).
+  -100..100; physical damage bypasses elemental resistance (`play/damage.zig`) and uses armour separately.
 - `Row.splits` splits a surviving slime below half HP, down to quarters. Each half gets half the remaining
   HP (minimum 1), with inherited statuses/clock; the new half acts next turn. If no adjacent cell is free,
   retry on a later blow. Pack quotas/makeups (`play/pack.zig`) and bespoke placement must reserve capacity
@@ -243,6 +256,10 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
   each followed by gas, burn and bleed. Bloats burst however killed; foes do not enter gas from clean air.
   `map/gas.zig` alone advances gas; it spreads through open cells, including liquids.
+- `play/resilience.zig` owns separate stun/burn/bleed/chill/pin buildup for every body. Successful applications
+  add resistance until expiry on spent turns; failed applications and free actions never extend or age it.
+  `Actor.takeStatus` adds innate stun resistance and gates all combat applications before refreshing a status.
+  Preserve buildup and bleed strength across splits, travel and saves; present resistance with the blow.
 - Burn/bleed begin next turn; refreshing does not stack or postpone a due tick. Bleed doubles on movement,
   including hero leaps. Chill advances on enemy turns, preserving its act/act/skip cadence on refresh.
   A skipped action still takes gas/burn/bleed; waiting newborn halves process inherited status ticks
@@ -275,7 +292,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Skill activation/confirmation (including Wait/Shoot) requires `quiet`.
 - `gfx/look.zig` owns pictures and `look.Assets` map residency. Load required textures before drawing,
   including later slime forms and delayed deaths; retain common textures/normals and unload unused map
-  assets. Title loads only the font; play graphics load lazily. HUD and bind picker share `look.drawSkill`.
+  assets. Title loads only the font; play graphics load lazily. HUD and bind picker share `line_icons.drawSkill`.
 - `gfx/ground.zig` owns real ground layers. `ground.bedAt` chooses the neighbours' majority underlay,
   lowest rank on ties, then `look.under`; rock covers its cell. Grounds without sheets draw below those
   with sheets, each group retaining rank order. `Corners.mask` includes higher layers; `Corners.under`
@@ -290,7 +307,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Shadows/contact pools combine by channelwise `GL_MIN`, never stacking darker than the darkest source.
   `Light.onCaster` ignores fog: unseen/offscreen casters still cast when lit. Receiver visibility in the
   light-map alpha fades shadows, keeping unseen/remembered ground unchanged. Keep the `CAST_MARGIN` culling
-  margin (from `light.CAST_REACH`) and presented actor position/birth/death. Bind the receiver light-map sampler after blend-mode
+  margin (from `shadow.CAST_REACH`) and presented actor position/birth/death. Bind the receiver light-map sampler after blend-mode
   changes, which flush raylib's auxiliary texture bindings.
 - Floor ambient at memory RGB before adding lights, preventing a dark ring around the lantern. Memory
   fades into `look.FOG` dark gray at the unseen boundary; the minimap's panel is that gray at 70% (`look.MINI_BG`).

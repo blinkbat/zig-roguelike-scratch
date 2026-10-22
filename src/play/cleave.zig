@@ -5,7 +5,7 @@ const damage = @import("damage.zig");
 
 const P = mathx.P;
 
-pub const COST: i32 = 15;
+pub const COST: i32 = 2;
 pub const VERB = "cleaves";
 /// Turns off the way aimed, round the hero, of the tiles it sweeps.
 const SPREAD = [_]u3{ 7, 0, 1 };

@@ -279,7 +279,7 @@ def source_hash():
     paths += [p for p in ASSETS.iterdir() if p.suffix in EMBEDDED]
     paths += map_paths()
     digest = hashlib.sha256()
-    for path in sorted(paths):
+    for path in sorted(paths, key=lambda p: p.relative_to(ROOT).as_posix()):
         digest.update(path.relative_to(ROOT).as_posix().encode() + b'\0')
         digest.update(hashlib.sha256(path.read_bytes()).digest())
     return digest.hexdigest()
@@ -296,7 +296,7 @@ def package(binary, output, metadata, platform, arch):
         files['run.command'] = (LAUNCHER, 0o755)
     for path in map_paths():
         files[path.relative_to(ROOT).as_posix()] = (path.read_bytes(), 0o644)
-    for filename in ('Balthazar-OFL.txt', 'gamecontrollerdb-LICENSE'):
+    for filename in ('Balthazar-OFL.txt', 'SourceSans3-OFL.txt', 'gamecontrollerdb-LICENSE'):
         files['licenses/' + filename] = ((ASSETS / filename).read_bytes(), 0o644)
     requirements = '''Requires glibc ''' + dotted(GLIBC) + ''' or newer, an X11 display (or XWayland), and OpenGL 3.3.
 On Debian/Ubuntu, runtime libraries can be installed with:

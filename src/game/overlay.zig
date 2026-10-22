@@ -9,9 +9,15 @@ const book = @import("../ui/book.zig");
 const skillbar = @import("../play/skillbar.zig");
 const damage = @import("../play/damage.zig");
 const attrs = @import("../play/attrs.zig");
+const heroes = @import("../play/hero.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
+const prompt_icon = @import("../gfx/prompt_icon.zig");
+const line_icons = @import("../gfx/line_icons.zig");
 const font = @import("../gfx/font.zig");
 const game = @import("../game.zig");
+const skills = @import("skills.zig");
+const binds = @import("binds.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 const BACK = menu.BACK;
@@ -26,13 +32,13 @@ const SLOT_EDGE_W: f32 = 2;
 const BIND_TOP: i32 = menu.PANEL_PAD;
 const BIND_X0: i32 = @divTrunc(BIND_W - game.SKILLS_W, 2);
 const BIND_TITLE: i32 = 32;
-const BIND_ROWS_DY: i32 = BIND_TITLE + BIND_POP_DY + game.SLOT_PX;
+const BIND_ROWS_DY: i32 = BIND_TITLE + font.LABEL + 3 * BIND_POP_DY + game.SLOT_PX;
 const BIND_LABEL_GAP: i32 = 6;
 const BIND_ROW_GAP: i32 = 24;
 const BIND_ROW_H: i32 = font.BODY + BIND_LABEL_GAP + game.SLOT_COLUMN_H + BIND_ROW_GAP;
 const BIND_POP_DY: i32 = 10;
 const BIND_INFO_DY: i32 = 8;
-const BIND_DESC_DY: i32 = font.BODY + BIND_LABEL_GAP;
+const BIND_DESC_DY: i32 = font.HEAD + BIND_LABEL_GAP;
 
 fn bindRowY(row: usize) i32 {
     return BIND_TOP + BIND_ROWS_DY + @as(i32, @intCast(row)) * BIND_ROW_H;
@@ -43,7 +49,7 @@ fn bindSlotY(row: usize) i32 {
 }
 
 pub fn bindSlotBox(row: usize, col: usize) rl.Rectangle {
-    return look.rect(BIND_X0 + game.SLOT_XS[col], bindSlotY(row), game.SLOT_PX, game.SLOT_PX);
+    return raster.rect(BIND_X0 + game.SLOT_XS[col], bindSlotY(row), game.SLOT_PX, game.SLOT_PX);
 }
 
 const BindAction = struct {
@@ -51,7 +57,7 @@ const BindAction = struct {
     label: [:0]const u8,
     browse_only: bool,
 
-    pub fn shown(a: BindAction, b: *const game.Binds) bool {
+    pub fn shown(a: BindAction, b: *const binds.Binds) bool {
         return b.menu == .browse or !a.browse_only;
     }
 };
@@ -82,7 +88,7 @@ fn descLines(g: *const game.Game, face: *const font.Face, act: skillbar.Act) usi
     var desc: [TIP_BODY_MAX + 1]u8 = undefined;
     var buf: font.Wrapped = undefined;
     var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
-    return font.wrap(face, describe(g, act, &desc), font.BODY, BIND_DESC_W, &buf, &lines);
+    return font.wrap(face, describe(g, act, &desc), font.SMALL, BIND_DESC_W, &buf, &lines);
 }
 
 /// Tall enough for the longest description among the skills it can bind, so it keeps its size while browsing.
@@ -91,7 +97,7 @@ pub fn bindPanel(g: *const game.Game) P {
     var kit_buf: skillbar.KitBuf = undefined;
     var lines: usize = 1;
     for (g.growth.kit(g.class, &kit_buf)) |act| lines = @max(lines, descLines(g, &face, act));
-    const desc_h = @as(i32, @intCast(lines)) * font.BODY_LINE;
+    const desc_h = @as(i32, @intCast(lines)) * (font.SMALL + 4);
     return .{ .x = BIND_W, .y = bindInfoY() + BIND_DESC_DY + desc_h + BIND_ACTION_GAP + BIND_ACTION.y + menu.PANEL_PAD };
 }
 
@@ -101,7 +107,7 @@ pub fn bindSurface(g: *const game.Game, panel: P) menu.Surface {
 
 pub fn bindActionBox(panel: P, i: usize) rl.Rectangle {
     const x = @divTrunc(panel.x - BIND_ACTIONS_W, 2) + @as(i32, @intCast(i)) * BIND_ACTION_STEP;
-    return look.rect(x, panel.y - menu.PANEL_PAD - BIND_ACTION.y, BIND_ACTION.x, BIND_ACTION.y);
+    return raster.rect(x, panel.y - menu.PANEL_PAD - BIND_ACTION.y, BIND_ACTION.x, BIND_ACTION.y);
 }
 
 const SlotLook = struct { act: ?skillbar.Act, key: ?input.Button, edge: ?rl.Color = null, faded: bool = false };
@@ -112,19 +118,19 @@ fn drawSlot(g: *game.Game, box: rl.Rectangle, s: SlotLook) void {
     const a: f32 = if (s.faded) look.FADED_A else 1;
     look.hudPanel(&g.sprites, x, y, game.SLOT_PX, game.SLOT_PX, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a), look.fade(look.LIT, a));
     if (s.edge) |edge| {
-        rl.drawRectangleLinesEx(look.grown(box, @floatFromInt(-SLOT_EDGE_INSET)), SLOT_EDGE_W, look.fade(edge, a));
+        rl.drawRectangleLinesEx(raster.grown(box, @floatFromInt(-SLOT_EDGE_INSET)), SLOT_EDGE_W, look.fade(edge, a));
     }
     if (s.act) |act| {
-        const inset = @divTrunc(game.SLOT_PX - look.SKILL_PX, 2);
-        look.drawSkill(&g.sprites, act, x + inset, y + inset, a);
+        const inset = @divTrunc(game.SLOT_PX - line_icons.SKILL_PX, 2);
+        line_icons.drawSkill(&g.sprites, act, x + inset, y + inset, a);
     }
-    const p = look.Prompt.of(&g.st, s.key orelse return);
+    const p = prompt_icon.Prompt.of(&g.st, s.key orelse return);
     p.draw(&g.face, x + SLOT_MID, y + game.SLOT_PX + game.KEY_GAP + @divTrunc(game.PROMPT_PX, 2), game.PROMPT_PX, a);
 }
 
 /// While aiming, the set the reticle's skill was taken from, whatever is held now.
 fn shownSet(g: *const game.Game) skillbar.Set {
-    return if (g.mode == .aim) g.aim_set else g.bar.active(g.st.down);
+    return if (g.mode == .aim) g.aim_set else skills.activeSet(g);
 }
 
 const SlotShown = struct { act: skillbar.Act, cooling: u8, drinks: ?u8 };
@@ -139,20 +145,20 @@ pub fn hudLayout(g: *const game.Game) hud.Layout {
 }
 
 fn slotBox(layout: hud.Layout, i: usize) rl.Rectangle {
-    return look.rect(layout.skills.x + game.SLOT_XS[i], layout.skills.y, game.SLOT_PX, game.SLOT_PX);
+    return raster.rect(layout.skills.x + game.SLOT_XS[i], layout.skills.y, game.SLOT_PX, game.SLOT_PX);
 }
 
 fn drawSkills(g: *game.Game, layout: hud.Layout) void {
     const mana = game.manaShown(g);
     for (skillbar.SLOTS, 0..) |b, i| {
         const box = slotBox(layout, i);
-        const held = (g.st.held(b) and game.playShown(g)) or (g.mode == .aim and g.aim_by == b);
+        const held = (g.st.held(b) and game.playShown(g)) or (g.mode == .aim and g.aim_by == b) or (b == g.bar.modifier and g.mouse.secondary);
         const s = slotShown(g, i);
         drawSlot(g, box, .{
             .act = if (s) |v| v.act else null,
             .key = b,
             .edge = if (held) look.SLOT_HELD else null,
-            .faded = if (s) |v| game.blocked(g, v.act, &g.flasks_shown, mana) != null else false,
+            .faded = if (s) |v| skills.blocked(g, v.act, &g.flasks_shown, mana) != null else false,
         });
         const v = s orelse continue;
         if (v.cooling > 0 or v.drinks != null) hud.counter(&g.face, box, v.drinks orelse v.cooling);
@@ -168,24 +174,23 @@ const BindPicker = struct {
     h: i32,
 
     pub fn first(p: BindPicker) usize {
-        return p.win.from * game.PICK_COLS;
+        return p.win.from * binds.PICK_COLS;
     }
 
     pub fn end(p: BindPicker) usize {
-        return @min(p.picks, (p.win.from + p.win.len) * game.PICK_COLS);
+        return @min(p.picks, (p.win.from + p.win.len) * binds.PICK_COLS);
     }
 
     pub fn cell(p: BindPicker, i: usize) rl.Rectangle {
-        return look.rect(p.x + @as(i32, @intCast(i % game.PICK_COLS)) * game.SLOT_STEP, p.y + @as(i32, @intCast(i / game.PICK_COLS - p.win.from)) * game.SLOT_STEP, game.SLOT_PX, game.SLOT_PX);
+        return raster.rect(p.x + @as(i32, @intCast(i % binds.PICK_COLS)) * game.SLOT_STEP, p.y + @as(i32, @intCast(i / binds.PICK_COLS - p.win.from)) * game.SLOT_STEP, game.SLOT_PX, game.SLOT_PX);
     }
 };
 
-pub fn bindPicker(b: game.Binds, picks: usize) BindPicker {
-    const cursor_x = BIND_X0 + game.SLOT_XS[b.col];
-    const pop_y = bindSlotY(b.row) - game.SLOT_PX - BIND_POP_DY;
-    const win = game.pickWindow(BIND_TOP + BIND_TITLE, pop_y, picks, b.menu.pick);
-    const w = @as(i32, @intCast(@min(picks, game.PICK_COLS))) * game.SLOT_STEP - game.SLOT_GAP;
-    return .{ .win = win, .picks = picks, .x = std.math.clamp(cursor_x + @divTrunc(game.SLOT_PX - w, 2), BIND_X0, BIND_X0 + game.SKILLS_W - w), .y = pop_y - @as(i32, @intCast(win.len - 1)) * game.SLOT_STEP, .w = w, .h = @as(i32, @intCast(win.len)) * game.SLOT_STEP - game.SLOT_GAP };
+pub fn bindPicker(b: binds.Binds, picks: usize) BindPicker {
+    const pop_y = BIND_TOP + BIND_TITLE + font.LABEL + 2 * BIND_POP_DY;
+    const win = menu.Window.of(binds.pickRows(picks), b.menu.pick / binds.PICK_COLS, 1);
+    const w = @as(i32, @intCast(@min(picks, binds.PICK_COLS))) * game.SLOT_STEP - game.SLOT_GAP;
+    return .{ .win = win, .picks = picks, .x = BIND_X0, .y = pop_y, .w = w, .h = game.SLOT_PX };
 }
 
 /// Centred across the bind panel.
@@ -222,14 +227,17 @@ pub fn drawBinds(g: *game.Game) void {
         .pick => |pick| {
             var kit_buf: skillbar.KitBuf = undefined;
             const kit = g.growth.kit(g.class, &kit_buf);
-            shown = game.pickAct(kit, pick);
-            const picker = bindPicker(b, game.picksOf(kit));
-            rl.drawRectangleRec(look.grown(look.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)), look.PICK_BG);
+            shown = binds.pickAct(kit, pick);
+            const picker = bindPicker(b, binds.picksOf(kit));
+            var label: menu.Note(100) = .{};
+            label.say("Choose skill  /  {d}-{d} of {d}", .{ picker.first() + 1, picker.end(), picker.picks });
+            g.face.draw(label.text(), picker.x, picker.y - font.LABEL - BIND_POP_DY, font.LABEL, look.DIM);
+            rl.drawRectangleRec(raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)), look.PICK_BG);
             for (picker.first()..picker.end()) |i| {
                 const r = picker.cell(i);
                 const x: i32 = @intFromFloat(r.x);
                 const y: i32 = @intFromFloat(r.y);
-                const act = game.pickAct(kit, i);
+                const act = binds.pickAct(kit, i);
                 const edge: ?rl.Color = if (i == pick) look.SLOT_CURSOR else if (act == null) look.SLOT_CLEAR else null;
                 drawSlot(g, r, .{ .act = act, .key = null, .edge = edge });
                 if (act == null) g.face.glyph(look.CLEAR.ch, x + SLOT_MID, y + SLOT_MID, CLEAR_GLYPH, look.CLEAR.fg);
@@ -237,17 +245,17 @@ pub fn drawBinds(g: *game.Game) void {
         },
     }
     if (shown) |a| {
-        bindText(g, panel, a.name(), info_y, font.BODY, look.TEXT);
+        g.face.draw(a.name(), menu.PANEL_PAD, info_y, font.HEAD, look.TEXT);
         var desc: [TIP_BODY_MAX + 1]u8 = undefined;
         const text = describe(g, a, &desc);
-        _ = desc_face.paragraphWith(font.Face.textMid, text, @divTrunc(panel.x, 2), info_y + BIND_DESC_DY, BIND_DESC_W, font.BODY, look.DIM);
+        _ = desc_face.paragraph(text, menu.PANEL_PAD, info_y + BIND_DESC_DY, BIND_DESC_W, font.SMALL, look.TEXT);
     } else if (b.menu == .pick) {
         bindText(g, panel, "Clear slot", info_y, font.BODY, look.TEXT);
     }
     for (BIND_ACTIONS, 0..) |action, i| {
         if (!action.shown(&b)) continue;
         const label = if (action.button == CONFIRM and b.assigning != null and b.menu == .browse) "Assign skill" else action.label;
-        menu.action(&g.face, bindActionBox(panel, i), look.Prompt.menuOf(&g.st, action.button), label);
+        menu.action(&g.face, bindActionBox(panel, i), prompt_icon.Prompt.menuOf(&g.st, action.button), label);
     }
 }
 
@@ -261,7 +269,7 @@ pub fn describe(g: *const game.Game, act: skillbar.Act, buf: []u8) [:0]const u8 
 }
 
 fn writeDescription(g: *const game.Game, act: skillbar.Act, w: anytype) void {
-    g.growth.writeDescription(act, w);
+    act.describe(w, game.heroPerks(g));
     w.writeAll(" ") catch {};
     g.growth.writeUsage(act, w);
     w.writeAll(".") catch {};
@@ -296,7 +304,8 @@ pub fn drawHud(g: *game.Game) void {
     hud.resources(layout, &g.face, life.hp, life.max, game.manaShown(g), game.manaMax(g), g.life_fill, g.mana_fill);
     drawSkills(g, layout);
     hud.experience(layout, g.xp_shown - @floor(g.xp_shown));
-    if (game.heroShown(g)) |h| hud.statuses(layout, &g.sprites, &g.face, h.status);
+    if (game.heroShown(g)) |h| hud.statuses(layout, &g.sprites, &g.face, h.status, h.resilience.peak().percent);
+    game.mouseControls.draw(g);
 }
 
 pub const Part = struct { spot: game.Spot, box: rl.Rectangle };
@@ -351,6 +360,13 @@ pub fn inspectStep(g: *game.Game) void {
     const spots = spotsOf(g, &buf);
     const here = inspected(g, spots);
     g.inspecting = here.spot;
+    if (g.st.pointing()) {
+        for (spots) |part| if (under(part, g.st.pointer.?)) {
+            g.inspecting = part.spot;
+            return;
+        };
+        if (g.st.click) g.mode = .play;
+    }
     const d = g.st.walk orelse return;
     if (here.spot == .log and d.delta().y != 0 and d.delta().x == 0) {
         g.log.move(-d.delta().y);
@@ -367,13 +383,16 @@ fn round(s: game.Spot) bool {
     return s == .life or s == .mana;
 }
 
+fn under(s: Part, p: mathx.P) bool {
+    return if (round(s.spot)) rl.checkCollisionPointCircle(raster.vec(p), raster.middle(s.box), s.box.width / 2) else raster.holds(s.box, p);
+}
+
 pub fn hovered(g: *const game.Game) ?Part {
     if (!game.playShown(g) and g.mode != .aim) return null;
     const p = g.st.pointer orelse return null;
     var buf: [SPOTS_MAX]Part = undefined;
     for (spotsOf(g, &buf)) |s| {
-        const over = if (round(s.spot)) rl.checkCollisionPointCircle(look.vec(p), look.middle(s.box), s.box.width / 2) else look.holds(s.box, p);
-        if (over) return s;
+        if (under(s, p)) return s;
     }
     return null;
 }
@@ -383,7 +402,9 @@ pub fn drawTips(g: *game.Game) void {
         var buf: [SPOTS_MAX]Part = undefined;
         const spots = spotsOf(g, &buf);
         drawTip(g, inspected(g, spots));
-    } else if (hovered(g)) |here| drawTip(g, here);
+    } else if (!g.st.device.pad()) {
+        if (hovered(g)) |here| drawTip(g, here);
+    }
 }
 
 fn drawTip(g: *game.Game, here: Part) void {
@@ -411,7 +432,7 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
         },
         .mana => .{
             .title = hud.MANA,
-            .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" }, .{ "Recovery / turn", "{d}" } }), .{ game.manaShown(g), game.manaMax(g), game.manaRegen(g) }) catch "",
+            .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" }, .{ std.fmt.comptimePrint("Recovery / {d} turns", .{heroes.MANA_REGEN_TURNS}), "{d}" } }), .{ game.manaShown(g), game.manaMax(g), game.manaRegen(g) }) catch "",
         },
         .slot => |i| blk: {
             const v = slotShown(g, i) orelse break :blk .{ .title = "Empty skill slot", .body = "No skill is bound here." };
@@ -433,6 +454,16 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             break :blk .{ .title = if (rank > 0) std.fmt.bufPrintZ(title_buf, "{s} - Rank {d}", .{ act.name(), rank }) catch act.name() else act.name(), .body = body.getWritten() };
         },
         .status => |st| blk: {
+            if (st == .resistant) {
+                var body = std.io.fixedBufferStream(body_buf);
+                const w = body.writer();
+                w.writeAll(st.about()) catch {};
+                if (game.heroShown(g)) |h| for (std.enums.values(@import("../play/resilience.zig").Kind)) |kind| {
+                    const m = h.resilience.meters.get(kind);
+                    if (m.turns > 0) w.print("\n{s}: {d}% resistance, {d} turns", .{ menu.named(kind), m.percent, m.turns }) catch {};
+                };
+                break :blk .{ .title = st.title(), .body = body.getWritten() };
+            }
             const turns = if (game.heroShown(g)) |h| h.status.get(st) else 0;
             break :blk .{
                 .title = std.fmt.bufPrintZ(title_buf, "{s}, {d} turn{s}", .{ st.title(), turns, plural(turns) }) catch st.title(),

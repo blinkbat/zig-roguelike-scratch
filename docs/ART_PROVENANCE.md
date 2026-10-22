@@ -62,6 +62,9 @@ to repaint or replace them.
 | Ground/decor | `floor.png`, `reeds.png`, `shrub.png`, `small-shrooms.png`, `tall-grass.png`, `tall-shroom.png`, `tiny-shrub.png` | Verify source/author |
 
 `Balthazar-Regular.ttf` is third-party font art, covered by `Balthazar-OFL.txt`.
+`SourceSans3-Regular.ttf` is Adobe's unmodified Source Sans 3, used for compact UI text,
+covered by `SourceSans3-OFL.txt`. Source: [Adobe's release tree](https://github.com/adobe-fonts/source-sans/tree/87b37a2daaed80fcb8e8ccb0085c4d72ddade12e),
+`TTF/SourceSans3-Regular.ttf`; retrieved 2026-10-22. Balthazar remains the display face.
 Controller mappings are data, covered by `gamecontrollerdb-LICENSE`.
 
 ## Rules for future changes

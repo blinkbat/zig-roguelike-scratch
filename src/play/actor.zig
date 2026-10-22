@@ -6,6 +6,7 @@ const bow = @import("bow.zig");
 const burning = @import("burning.zig");
 const glacial = @import("glacial.zig");
 const bleeding = @import("bleeding.zig");
+const resilience = @import("resilience.zig");
 const clock = @import("clock.zig");
 const pinning = @import("pinning.zig");
 const ward = @import("ward.zig");
@@ -115,6 +116,8 @@ pub const FoeType = enum { beast, humanoid, aberration, undead, construct };
 pub const Ranged = struct { range: i32, retreat: i32 };
 
 pub const Row = struct {
+    armour: i32 = 0,
+    stun_resist: u8 = 0,
     name: [:0]const u8,
     movement: Movement,
     foe_type: ?FoeType,
@@ -163,8 +166,8 @@ pub fn row(k: Kind) Row {
         .slime_quarter => smaller(.slime_half, "quarter slime", null),
         .bloat => .{ .name = "bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .burst, .flits = true },
         .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .bleeds = 30 } }, .flees = true },
-        .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .stuns = 25 } }, .sweep_every = 4 },
-        .bandit_crossbowman => .{ .name = "bandit crossbowman", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 } },
+        .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .armour = 20 },
+        .bandit_crossbowman => .{ .name = "bandit crossbowman", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15 },
     };
 }
 
@@ -204,6 +207,7 @@ pub const Actor = struct {
     burn: burning.Burn = .{},
     chill: glacial.Chill = .{},
     bleed: bleeding.Bleed = .{},
+    resilience: resilience.State = .{},
     clock: clock.Clock = .{},
     pin: pinning.Pin = .{},
     ward: ward.Ward = .{},
@@ -220,6 +224,10 @@ pub const Actor = struct {
         return self.hp < self.max;
     }
 
+    pub fn takeStatus(self: *Actor, kind: resilience.Kind, rng: *mathx.Rng) bool {
+        return self.resilience.take(kind, if (kind == .stun) row(self.kind).stun_resist else 0, rng);
+    }
+
     pub fn foe(self: Actor) bool {
         return self.kind.foe();
     }
@@ -234,6 +242,21 @@ pub const Actor = struct {
 };
 
 pub const MAX: usize = 64;
+
+test "heroes and foes share independent status buildup with innate beefy pib stun resistance" {
+    var rng = mathx.Rng.init(0x51A7);
+    for ([_]Kind{ .archer, .wizard, .knight, .rat, .beefy_pib }) |kind| {
+        var a = Actor.of(kind, .{ .x = 1, .y = 1 });
+        for (std.enums.values(resilience.Kind)) |status| {
+            var n: usize = 0;
+            for (0..1000) |_| n += @intFromBool(a.takeStatus(status, &rng));
+            try std.testing.expectEqual(@as(usize, if (kind == .beefy_pib and status == .stun) 1 else 4), n);
+        }
+        for (0..resilience.EXPIRY + 1) |_| a.settle();
+        try std.testing.expectEqual(@as(u8, 0), a.resilience.peak().percent);
+    }
+    std.debug.print("status buildup: 3 heroes and 2 foes, all 5 ailments; beefy pib has {d}% innate stun resistance\n", .{row(.beefy_pib).stun_resist});
+}
 
 pub const Tally = struct { left: usize = 0, total: usize = 0 };
 

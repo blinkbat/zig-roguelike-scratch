@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 
 const TTF = "Balthazar-Regular.ttf";
+const DATA_TTF = "SourceSans3-Regular.ttf";
 const ATLAS_PX: i32 = 96;
 /// Drawn from its own point-filtered atlas, not the mipmapped one.
 const NATIVE_SIZES = [_]i32{ TINY, LABEL, SMALL, BODY, HEAD };
@@ -23,6 +24,7 @@ pub const ELLIPSIS = "...";
 /// Until `load` succeeds, raylib's built-in font stands in.
 pub const Face = struct {
     font: ?rl.Font = null,
+    data_font: ?rl.Font = null,
     native: [NATIVE_SIZES.len]?rl.Font = @splat(null),
     /// `load`'s symbols, whose glyphs follow the ASCII in the atlas; none when the atlas came out in another order.
     symbols: [SYMBOLS_MAX]i32 = undefined,
@@ -48,8 +50,16 @@ pub const Face = struct {
         face.symbol_n = symbols.len;
         face.ordered = true;
         var ascii_cps = all[0..ASCII_N].*;
+        if (rl.loadFontFromMemory(".ttf", @embedFile(DATA_TTF), ATLAS_PX, &ascii_cps)) |loaded| {
+            var data = loaded;
+            if (orderedGlyphs(data, &ascii_cps)) {
+                rl.genTextureMipmaps(&data.texture);
+                rl.setTextureFilter(data.texture, .trilinear);
+                face.data_font = data;
+            } else rl.unloadFont(data);
+        } else |_| {}
         for (NATIVE_SIZES, &face.native) |size, *held| {
-            const small = rl.loadFontFromMemory(".ttf", @embedFile(TTF), size, &ascii_cps) catch continue;
+            const small = rl.loadFontFromMemory(".ttf", if (size <= SMALL) @embedFile(DATA_TTF) else @embedFile(TTF), size, &ascii_cps) catch continue;
             if (!orderedGlyphs(small, &ascii_cps)) {
                 rl.unloadFont(small);
                 continue;
@@ -63,10 +73,11 @@ pub const Face = struct {
     /// The font to walk `s` glyph by glyph at `size`; null where raylib's own text calls draw it.
     fn walkable(self: *const Face, s: []const u8, size: i32) ?rl.Font {
         if (!self.ordered or !printable(s)) return null;
+        const fallback = if (size <= SMALL) self.data_font orelse self.font else self.font;
         for (NATIVE_SIZES, &self.native) |px, *held| {
-            if (px == size) return held.* orelse self.font;
+            if (px == size) return held.* orelse fallback;
         }
-        return self.font;
+        return fallback;
     }
 
     fn indexOf(self: *const Face, cp: i32) ?usize {
@@ -90,7 +101,9 @@ pub const Face = struct {
             held.* = null;
         }
         if (self.font) |f| rl.unloadFont(f);
+        if (self.data_font) |f| rl.unloadFont(f);
         self.font = null;
+        self.data_font = null;
     }
 
     /// raylib's MeasureTextEx with zero spacing.

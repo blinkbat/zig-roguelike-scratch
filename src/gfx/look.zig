@@ -9,6 +9,10 @@ const skillbar = @import("../play/skillbar.zig");
 const font = @import("font.zig");
 const ground = @import("ground.zig");
 const sky = @import("sky.zig");
+const line_icons = @import("line_icons.zig");
+const prompt_icon = @import("prompt_icon.zig");
+const shaders = @import("shaders.zig");
+const raster = @import("raster.zig");
 const embedded = @import("assets").names;
 
 pub const SPRITE_PX: i32 = 64;
@@ -147,6 +151,7 @@ pub const Assets = struct {
 };
 
 fn listed(comptime name: []const u8) bool {
+    @setEvalBranchQuota(10_000);
     for (embedded) |n| {
         if (std.mem.eql(u8, n, name)) return true;
     }
@@ -210,11 +215,11 @@ pub const Sprites = struct {
     mirror_memory: ?rl.RenderTexture2D = null,
 
     pub fn loadCommon(self: *Sprites) void {
-        self.skills = skillIcons();
+        self.skills = line_icons.skillIcons();
         self.hud_border = texture(HUD_BORDER_PNG);
-        self.log_fade = program(FadeShader, FADE_FS);
-        self.water = program(WaterShader, WATER_FS);
-        self.shine = program(ShineShader, SHINE_FS);
+        self.log_fade = shaders.program(FadeShader, FADE_FS);
+        self.water = shaders.program(WaterShader, WATER_FS);
+        self.shine = shaders.program(ShineShader, SHINE_FS);
     }
 
     pub fn coins(self: *const Sprites, large: bool) ?rl.Texture2D {
@@ -226,8 +231,8 @@ pub const Sprites = struct {
         const s = self.shine orelse return;
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
-        setUniform(s.shader, s.sweep, sweep);
-        stretch(t, dest, col);
+        shaders.setUniform(s.shader, s.sweep, sweep);
+        raster.stretch(t, dest, col);
     }
 
     pub fn sync(self: *Sprites, need: Assets) void {
@@ -278,7 +283,7 @@ pub const Sprites = struct {
                 if (sheet) {
                     const piece = self.groundPiece(gr, here.corners.mask(gr)) orelse continue;
                     const at = cellAt(origin, p, px);
-                    blit(piece.tex, piece.src, .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px }, LIT);
+                    raster.blit(piece.tex, piece.src, .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px }, LIT);
                     continue;
                 }
                 const under_ = here.corners.under(gr, sheeted);
@@ -296,9 +301,9 @@ pub const Sprites = struct {
         const v = view orelse return false;
         const s = self.water orelse return false;
         rl.beginShaderMode(s.shader);
-        setMapView(s, .{ .origin = origin, .cell = px, .screen = v.screen });
-        setUniform(s.shader, s.depth, depth);
-        setUniform(s.shader, s.mirrored, @as(i32, @intFromBool(v.mirror != null)));
+        shaders.setMapView(s, .{ .origin = origin, .cell = px, .screen = v.screen });
+        shaders.setUniform(s.shader, s.depth, depth);
+        shaders.setUniform(s.shader, s.mirrored, @as(i32, @intFromBool(v.mirror != null)));
         rl.setShaderValueTexture(s.shader, s.visibility, v.visibility);
         rl.setShaderValueTexture(s.shader, s.glints, v.glints);
         if (v.mirror) |m| {
@@ -310,7 +315,7 @@ pub const Sprites = struct {
 
     pub fn beginMirror(self: *Sprites, screen: mathx.P, outer: u32, memory: bool) bool {
         if (self.water == null) return false;
-        if (!beginTarget(if (memory) &self.mirror_memory else &self.mirror, screen, outer, rl.Color.blank)) return false;
+        if (!raster.beginTarget(if (memory) &self.mirror_memory else &self.mirror, screen, outer, rl.Color.blank)) return false;
         rl.gl.rlDisableBackfaceCulling();
         return true;
     }
@@ -318,7 +323,7 @@ pub const Sprites = struct {
     pub fn endMirror(self: *const Sprites, outer: u32) Mirrors {
         rl.gl.rlDrawRenderBatchActive();
         rl.gl.rlEnableBackfaceCulling();
-        endTarget(outer);
+        raster.endTarget(outer);
         return .{ .live = self.mirror.?.texture, .memory = self.mirror_memory.?.texture };
     }
 
@@ -330,8 +335,8 @@ pub const Sprites = struct {
     fn squarePart(self: *const Sprites, t: grid.Tile, cell: [2]f32, px: f32, uv: [2]f32, span: f32) void {
         const dest = rl.Rectangle{ .x = cell[0] + uv[0] * px, .y = cell[1] + uv[1] * px, .width = span * px, .height = span * px };
         if (self.tiles.getPtrConst(t).*) |tex| {
-            const w, const h = sizeOf(tex);
-            blit(tex, .{ .x = uv[0] * w, .y = uv[1] * h, .width = span * w, .height = span * h }, dest, LIT);
+            const w, const h = raster.sizeOf(tex);
+            raster.blit(tex, .{ .x = uv[0] * w, .y = uv[1] * h, .width = span * w, .height = span * h }, dest, LIT);
         } else if (tileBg(t)) |bg| rl.drawRectangleRec(dest, bg);
     }
 
@@ -417,7 +422,7 @@ pub const Sprites = struct {
         return toTexture(rl.loadImageFromMemory(".png", png) catch return null);
     }
 
-    fn toTexture(img: rl.Image) ?rl.Texture2D {
+    pub fn toTexture(img: rl.Image) ?rl.Texture2D {
         defer rl.unloadImage(img);
         return rl.loadTextureFromImage(img) catch null;
     }
@@ -460,7 +465,7 @@ fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, t
                 while (xx < dw[col]) : (xx += sw[col]) {
                     const w = @min(sw[col], dw[col] - xx);
                     const h = @min(sh[row], dh[row] - yy);
-                    rl.drawTextureRec(tex, rect(sx[col], sy[row], w, h), vec(.{ .x = dx[col] + xx, .y = dy[row] + yy }), tint);
+                    rl.drawTextureRec(tex, raster.rect(sx[col], sy[row], w, h), raster.vec(.{ .x = dx[col] + xx, .y = dy[row] + yy }), tint);
                 }
             }
         }
@@ -596,222 +601,7 @@ fn wallCell(sheet: rl.Image, i: usize) ?rl.Image {
 }
 
 fn sheetCell(col: i32, row: i32) rl.Rectangle {
-    return rect(col * SPRITE_PX, row * SPRITE_PX, SPRITE_PX, SPRITE_PX);
-}
-
-pub fn whole(t: rl.Texture2D) rl.Rectangle {
-    return rect(0, 0, t.width, t.height);
-}
-
-pub fn sizeOf(t: rl.Texture2D) [2]f32 {
-    return .{ @floatFromInt(t.width), @floatFromInt(t.height) };
-}
-
-pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
-    return .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(w), .height = @floatFromInt(h) };
-}
-
-pub fn vec(p: mathx.P) rl.Vector2 {
-    return .{ .x = @floatFromInt(p.x), .y = @floatFromInt(p.y) };
-}
-
-pub fn holds(r: rl.Rectangle, p: mathx.P) bool {
-    return rl.checkCollisionPointRec(vec(p), r);
-}
-
-pub fn middle(r: rl.Rectangle) rl.Vector2 {
-    return .{ .x = r.x + r.width / 2, .y = r.y + r.height / 2 };
-}
-
-/// The pixel at `r`'s middle.
-pub fn middleAt(r: rl.Rectangle) mathx.P {
-    const m = middle(r);
-    return .{ .x = @intFromFloat(m.x), .y = @intFromFloat(m.y) };
-}
-
-pub fn stretch(t: rl.Texture2D, dest: rl.Rectangle, tint: rl.Color) void {
-    blit(t, whole(t), dest, tint);
-}
-
-/// `r` grown `by` pixels on every side.
-pub fn grown(r: rl.Rectangle, by: f32) rl.Rectangle {
-    return .{ .x = r.x - by, .y = r.y - by, .width = r.width + 2 * by, .height = r.height + 2 * by };
-}
-
-/// `src` of `t` drawn over `dest`, unturned.
-pub fn blit(t: rl.Texture2D, src: rl.Rectangle, dest: rl.Rectangle, tint: rl.Color) void {
-    rl.drawTexturePro(t, src, dest, .{ .x = 0, .y = 0 }, 0, tint);
-}
-
-pub fn overFloor(t: rl.Texture2D, ox: i32, oy: i32, cell: i32) void {
-    stretch(t, floorRect(ox, oy, cell), LIT);
-}
-
-/// The whole floor on screen, its top-left at `ox, oy`.
-pub fn floorRect(ox: i32, oy: i32, cell: i32) rl.Rectangle {
-    return rect(ox, oy, grid.W * cell, grid.H * cell);
-}
-
-/// Borrows `px`, packed `w` to a row: nothing to unload.
-pub fn rgba(px: *anyopaque, w: i32, h: i32) rl.Image {
-    return .{ .data = px, .width = w, .height = h, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
-}
-
-/// Needs a live GL context.
-pub fn clamped(img: rl.Image, filter: rl.TextureFilter) ?rl.Texture2D {
-    const t = rl.loadTextureFromImage(img) catch return null;
-    rl.setTextureFilter(t, filter);
-    rl.setTextureWrap(t, .clamp);
-    return t;
-}
-
-/// Filled with `c`, for pixels uploaded every frame. Needs a live GL context.
-pub fn canvas(w: i32, h: i32, c: rl.Color, filter: rl.TextureFilter) ?rl.Texture2D {
-    const img = rl.genImageColor(w, h, c);
-    defer rl.unloadImage(img);
-    return clamped(img, filter);
-}
-
-pub fn beginTarget(target: *?rl.RenderTexture2D, screen: mathx.P, outer: u32, clear: rl.Color) bool {
-    rl.gl.rlDrawRenderBatchActive();
-    if (target.*) |t| {
-        if (t.texture.width != screen.x or t.texture.height != screen.y) {
-            rl.unloadRenderTexture(t);
-            target.* = null;
-        }
-    }
-    if (target.* == null) target.* = rl.loadRenderTexture(screen.x, screen.y) catch {
-        endTarget(outer);
-        return false;
-    };
-    rl.gl.rlEnableFramebuffer(target.*.?.id);
-    rl.clearBackground(clear);
-    return true;
-}
-
-/// Back to `outer` after `beginTarget`, with what was drawn flushed into the target.
-pub fn endTarget(outer: u32) void {
-    rl.gl.rlDrawRenderBatchActive();
-    rl.gl.rlEnableFramebuffer(outer);
-}
-
-/// Blending by GL factors and equation, until `rl.endBlendMode`.
-pub fn beginBlend(src: i32, dst: i32, equation: i32) void {
-    rl.gl.rlSetBlendFactors(src, dst, equation);
-    rl.beginBlendMode(.custom);
-}
-
-/// A render texture over the whole frame, flipped the right way up.
-pub fn drawTarget(t: rl.Texture2D) void {
-    rl.drawTextureRec(t, rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);
-}
-
-/// White, its alpha `alphaAt(r)` at `r` from the middle, 1 at the middle of each edge. Needs a live GL context.
-pub fn radial(comptime px: i32, comptime alphaAt: fn (f32) f32) ?rl.Texture2D {
-    const round = struct {
-        fn at(u: f32, v: f32) f32 {
-            return alphaAt(mathx.len(u * 2 - 1, v * 2 - 1));
-        }
-    };
-    return field(px, px, round.at);
-}
-
-/// White, its alpha `alphaAt(u, v)` at each texel's middle, `u` and `v` 0 to 1 across and down. Needs a live GL context.
-pub fn field(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f32) ?rl.Texture2D {
-    const nw: usize = @intCast(w);
-    const nh: usize = @intCast(h);
-    var img: [nw * nh]rl.Color = undefined;
-    for (0..nh) |y| {
-        for (0..nw) |x| {
-            const u = (@as(f32, @floatFromInt(x)) + 0.5) / @as(f32, @floatFromInt(w));
-            const v = (@as(f32, @floatFromInt(y)) + 0.5) / @as(f32, @floatFromInt(h));
-            img[y * nw + x] = fade(rl.Color.white, alphaAt(u, v));
-        }
-    }
-    return clamped(rgba(&img, w, h), .bilinear);
-}
-
-/// Shaders `shader` has failed to compile since the process started.
-pub var shader_failures: u32 = 0;
-
-/// Null when it does not compile: raylib then hands back its default shader rather than an error.
-pub fn shader(fs: [:0]const u8) ?rl.Shader {
-    const s = rl.loadShaderFromMemory(null, fs) catch {
-        shader_failures += 1;
-        return null;
-    };
-    if (s.id != rl.gl.rlGetShaderIdDefault()) return s;
-    shader_failures += 1;
-    return null;
-}
-
-/// For headless runs, after everything they draw has loaded.
-pub fn expectShaders() error{ShaderFailed}!void {
-    if (shader_failures > 0) return error.ShaderFailed;
-}
-
-fn uniforms(comptime T: type, s: rl.Shader) T {
-    var u: T = undefined;
-    u.shader = s;
-    inline for (std.meta.fields(T)) |f| {
-        if (comptime std.mem.eql(u8, f.name, "shader")) continue;
-        @field(u, f.name) = rl.getShaderLocation(s, f.name);
-    }
-    return u;
-}
-
-/// Shader uniforms and `T`'s fields must match in both directions at compile time.
-pub fn program(comptime T: type, comptime fs: [:0]const u8) ?T {
-    comptime {
-        @setEvalBranchQuota(100_000);
-        for (std.meta.fields(T)) |f| {
-            if (!std.mem.eql(u8, f.name, "shader") and !declares(fs, f.name)) @compileError("no uniform " ++ f.name ++ " in the shader for " ++ @typeName(T));
-        }
-        var lines = std.mem.splitScalar(u8, fs, '\n');
-        while (lines.next()) |l| {
-            const name = uniformOf(l) orelse continue;
-            if (!std.mem.eql(u8, name, "texture0") and !@hasField(T, name)) @compileError("uniform " ++ name ++ " has no field in " ++ @typeName(T));
-        }
-    }
-    return uniforms(T, shader(fs) orelse return null);
-}
-
-/// `value` to the uniform at `loc`, its GLSL type read off its Zig type.
-pub fn setUniform(s: rl.Shader, loc: i32, value: anytype) void {
-    rl.setShaderValue(s, loc, &value, comptime uniformType(@TypeOf(value)));
-}
-
-/// The first `n` of `values` to the uniform array at `loc`.
-pub fn setUniforms(s: rl.Shader, loc: i32, values: anytype, n: i32) void {
-    rl.setShaderValueV(s, loc, values, comptime uniformType(std.meta.Elem(@TypeOf(values.*))), n);
-}
-
-fn uniformType(comptime T: type) rl.ShaderUniformDataType {
-    return switch (T) {
-        f32 => .float,
-        [2]f32 => .vec2,
-        [3]f32 => .vec3,
-        [4]f32 => .vec4,
-        i32 => .int,
-        else => @compileError("no uniform type for " ++ @typeName(T)),
-    };
-}
-
-fn declares(comptime fs: []const u8, comptime name: []const u8) bool {
-    var lines = std.mem.splitScalar(u8, fs, '\n');
-    while (lines.next()) |l| {
-        if (std.mem.eql(u8, uniformOf(l) orelse continue, name)) return true;
-    }
-    return false;
-}
-
-fn uniformOf(comptime l: []const u8) ?[]const u8 {
-    const line = std.mem.trim(u8, l, " \t\r");
-    if (!std.mem.startsWith(u8, line, "uniform ")) return null;
-    const end = std.mem.indexOfAny(u8, line, "[;") orelse return null;
-    const head = std.mem.trimRight(u8, line[0..end], " ");
-    const at = std.mem.lastIndexOfScalar(u8, head, ' ') orelse return null;
-    return head[at + 1 ..];
+    return raster.rect(col * SPRITE_PX, row * SPRITE_PX, SPRITE_PX, SPRITE_PX);
 }
 
 fn unloadEach(held: []?rl.Texture2D) void {
@@ -1068,205 +858,6 @@ pub const LEAN_OPEN = GOLD;
 pub const LEAN_FOE = FOE;
 pub const LEAN_BLOCKED = SHADE;
 
-pub fn drawDirection(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) void {
-    const delta = d.delta();
-    const unit: f32 = if (d.diagonal()) std.math.sqrt1_2 else 1;
-    const dx = @as(f32, @floatFromInt(delta.x)) * unit;
-    const dy = @as(f32, @floatFromInt(delta.y)) * unit;
-    const scale = @as(f32, @floatFromInt(size)) / SKILL_GRID;
-    const x: f32 = @floatFromInt(cx);
-    const y: f32 = @floatFromInt(cy);
-    const lines = [_][4]f32{ .{ -12, 0, 12, 0 }, .{ 4, -8, 12, 0 }, .{ 12, 0, 4, 8 } };
-    for (lines) |line| {
-        const from = rl.Vector2{
-            .x = x + (dx * line[0] - dy * line[1]) * scale,
-            .y = y + (dy * line[0] + dx * line[1]) * scale,
-        };
-        const to = rl.Vector2{
-            .x = x + (dx * line[2] - dy * line[3]) * scale,
-            .y = y + (dy * line[2] + dx * line[3]) * scale,
-        };
-        stroke(from, to, scale, col);
-    }
-}
-
-const FLASK = [_][4]f32{
-    .{ 13, 4, 19, 4 },
-    .{ 13, 4, 13, 11 },
-    .{ 19, 4, 19, 11 },
-    .{ 13, 11, 6, 18 },
-    .{ 19, 11, 26, 18 },
-    .{ 6, 18, 6, 26 },
-    .{ 26, 18, 26, 26 },
-    .{ 6, 28, 26, 28 },
-};
-
-const ARROW_LINES = [_][4]f32{
-    .{ 6, 26, 26, 6 },
-    .{ 16, 6, 26, 6 },
-    .{ 26, 6, 26, 16 },
-};
-
-const SHIELD_LINES = [_][4]f32{
-    .{ 6, 5, 26, 5 },
-    .{ 26, 5, 26, 16 },
-    .{ 26, 16, 16, 28 },
-    .{ 16, 28, 6, 16 },
-    .{ 6, 16, 6, 5 },
-};
-
-fn skillLines(a: skillbar.Act) []const [4]f32 {
-    return switch (a) {
-        .shoot => &(ARROW_LINES ++ [_][4]f32{
-            .{ 5, 19, 12, 19 },
-            .{ 12, 19, 12, 26 },
-        }),
-        .burning_arrow => &.{
-            .{ 13, 26, 27, 12 },
-            .{ 19, 12, 27, 12 },
-            .{ 27, 12, 27, 20 },
-            .{ 9, 23, 4, 18 },
-            .{ 4, 18, 4, 14 },
-            .{ 4, 14, 11, 5 },
-            .{ 11, 5, 10, 13 },
-            .{ 10, 13, 15, 10 },
-            .{ 15, 10, 17, 17 },
-            .{ 17, 17, 13, 22 },
-        },
-        .glacial_shot => &.{
-            .{ 5, 27, 25, 7 },
-            .{ 17, 7, 25, 7 },
-            .{ 25, 7, 25, 15 },
-            .{ 5, 6, 15, 16 },
-            .{ 5, 16, 15, 6 },
-            .{ 3, 11, 17, 11 },
-            .{ 10, 4, 10, 18 },
-        },
-        .juke => &.{
-            .{ 6, 7, 15, 16 },
-            .{ 15, 16, 6, 25 },
-            .{ 17, 7, 26, 16 },
-            .{ 26, 16, 17, 25 },
-        },
-        .spark => &.{
-            .{ 19, 3, 9, 17 },
-            .{ 9, 17, 17, 17 },
-            .{ 17, 17, 12, 29 },
-            .{ 12, 29, 24, 13 },
-            .{ 24, 13, 16, 13 },
-            .{ 16, 13, 19, 3 },
-        },
-        .blink => &.{
-            .{ 4, 16, 8, 16 },
-            .{ 6, 14, 6, 18 },
-            .{ 12, 16, 16, 16 },
-            .{ 20, 16, 28, 16 },
-            .{ 24, 10, 24, 22 },
-            .{ 20, 12, 28, 20 },
-            .{ 20, 20, 28, 12 },
-        },
-        .shield_bash => &(SHIELD_LINES ++ [_][4]f32{
-            .{ 16, 9, 16, 22 },
-        }),
-        .pinning_shot => &.{
-            .{ 16, 4, 16, 24 },
-            .{ 11, 19, 16, 24 },
-            .{ 21, 19, 16, 24 },
-            .{ 12, 4, 16, 8 },
-            .{ 20, 4, 16, 8 },
-            .{ 5, 27, 27, 27 },
-        },
-        .barbed_arrow => &(ARROW_LINES ++ [_][4]f32{
-            .{ 11, 21, 7, 21 },
-            .{ 11, 21, 11, 25 },
-            .{ 16, 16, 12, 16 },
-            .{ 16, 16, 16, 20 },
-        }),
-        .frost_nova => &.{
-            .{ 16, 3, 16, 29 },
-            .{ 3, 16, 29, 16 },
-            .{ 7, 7, 25, 25 },
-            .{ 7, 25, 25, 7 },
-            .{ 13, 4, 16, 7 },
-            .{ 19, 4, 16, 7 },
-            .{ 13, 28, 16, 25 },
-            .{ 19, 28, 16, 25 },
-        },
-        .fireball => &.{
-            .{ 14, 10, 20, 12 },
-            .{ 20, 12, 22, 18 },
-            .{ 22, 18, 20, 24 },
-            .{ 20, 24, 14, 26 },
-            .{ 14, 26, 8, 24 },
-            .{ 8, 24, 6, 18 },
-            .{ 6, 18, 8, 12 },
-            .{ 8, 12, 14, 10 },
-            .{ 20, 12, 27, 5 },
-            .{ 22, 18, 29, 13 },
-            .{ 14, 10, 18, 3 },
-        },
-        .chain_lightning => &.{
-            .{ 4, 27, 11, 15 },
-            .{ 11, 15, 17, 21 },
-            .{ 17, 21, 22, 9 },
-            .{ 22, 9, 28, 14 },
-            .{ 9, 13, 13, 17 },
-            .{ 15, 19, 19, 23 },
-            .{ 20, 7, 24, 11 },
-        },
-        .mana_shield => &(SHIELD_LINES ++ [_][4]f32{
-            .{ 16, 9, 21, 15 },
-            .{ 21, 15, 16, 21 },
-            .{ 16, 21, 11, 15 },
-            .{ 11, 15, 16, 9 },
-        }),
-        .charge => &.{
-            .{ 14, 16, 28, 16 },
-            .{ 22, 10, 28, 16 },
-            .{ 28, 16, 22, 22 },
-            .{ 4, 10, 12, 10 },
-            .{ 2, 16, 10, 16 },
-            .{ 4, 22, 12, 22 },
-        },
-        .life_flask => &(FLASK ++ [_][4]f32{
-            .{ 16, 17, 16, 25 },
-            .{ 12, 21, 20, 21 },
-        }),
-        .mana_flask => &(FLASK ++ [_][4]f32{
-            .{ 11, 21, 14, 18 },
-            .{ 14, 18, 18, 24 },
-            .{ 18, 24, 21, 21 },
-        }),
-        .cleave => &.{
-            .{ 4, 26, 24, 6 },
-            .{ 20, 4, 27, 11 },
-            .{ 8, 20, 12, 24 },
-            .{ 6, 10, 4, 16 },
-            .{ 22, 28, 16, 28 },
-            .{ 4, 16, 6, 22 },
-            .{ 16, 28, 10, 26 },
-        },
-        .wait => &.{
-            .{ 7, 5, 25, 5 },
-            .{ 7, 27, 25, 27 },
-            .{ 9, 5, 9, 10 },
-            .{ 9, 10, 23, 22 },
-            .{ 23, 22, 23, 27 },
-            .{ 23, 5, 23, 10 },
-            .{ 23, 10, 9, 22 },
-            .{ 9, 22, 9, 27 },
-        },
-        .secondary => &.{
-            .{ 6, 10, 26, 10 },
-            .{ 20, 4, 26, 10 },
-            .{ 26, 10, 20, 16 },
-            .{ 26, 22, 6, 22 },
-            .{ 12, 16, 6, 22 },
-            .{ 6, 22, 12, 28 },
-        },
-    };
-}
-
 pub fn arrowInk(a: skillbar.Act) rl.Color {
     return elementInk(a.element() orelse return ARROW);
 }
@@ -1282,270 +873,6 @@ pub fn elementInk(e: damage.Element) rl.Color {
 
 pub const LIGHTNING = rgb(0xf4e872);
 pub const LIGHTNING_CORE = FIRE_CORE;
-
-pub const SKILL_PX: i32 = 30;
-
-pub fn drawSkill(sprites: *const Sprites, a: skillbar.Act, x: i32, y: i32, alpha: f32) void {
-    const ink = fade(rl.Color.white, alpha);
-    const t = sprites.skills orelse return inkSkill(a, x, y, ink);
-    blit(t, rect(skillX(a), 0, SKILL_PX, SKILL_PX), rect(x, y, SKILL_PX, SKILL_PX), ink);
-}
-
-fn skillX(a: skillbar.Act) i32 {
-    return @as(i32, @intCast(a.index())) * SKILL_PX;
-}
-
-/// Needs a live GL context.
-fn skillIcons() ?rl.Texture2D {
-    const target = rl.loadRenderTexture(SKILL_PX * @as(i32, @intCast(skillbar.ACTS.len)), SKILL_PX) catch return null;
-    defer rl.unloadRenderTexture(target);
-    rl.beginTextureMode(target);
-    rl.clearBackground(rl.Color.blank);
-    for (skillbar.ACTS) |a| inkSkill(a, skillX(a), 0, rl.Color.white);
-    rl.endTextureMode();
-    var img = rl.loadImageFromTexture(target.texture) catch return null;
-    rl.imageFlipVertical(&img);
-    return Sprites.toTexture(img);
-}
-
-const SKILL_GRID: f32 = 32;
-
-fn inkSkill(a: skillbar.Act, x: i32, y: i32, ink: rl.Color) void {
-    const scale = @as(f32, @floatFromInt(SKILL_PX)) / SKILL_GRID;
-    const ox: f32 = @floatFromInt(x);
-    const oy: f32 = @floatFromInt(y);
-    for (skillLines(a)) |line| {
-        const from = rl.Vector2{ .x = ox + line[0] * scale, .y = oy + line[1] * scale };
-        const to = rl.Vector2{ .x = ox + line[2] * scale, .y = oy + line[3] * scale };
-        stroke(from, to, scale, ink);
-    }
-}
-
-/// Two grid units wide, with round caps.
-fn stroke(from: rl.Vector2, to: rl.Vector2, scale: f32, col: rl.Color) void {
-    rl.drawLineEx(from, to, 2 * scale, col);
-    rl.drawCircleV(from, scale, col);
-    rl.drawCircleV(to, scale, col);
-}
-
-/// Device-specific input icons: PlayStation shapes, Xbox letters, or keyboard caps.
-pub const Prompt = union(enum) {
-    face: struct { button: FaceButton, sony: bool },
-    pill: [:0]const u8,
-    view,
-    menu,
-    key: [:0]const u8,
-    stick: enum { left, right },
-    dpad,
-    arrows,
-    mouse: enum { left, right, middle, wheel },
-
-    pub fn menuOf(st: *const input.State, b: input.Button) Prompt {
-        return if (st.device.pad()) of(st, b) else .{ .key = st.caption(b) };
-    }
-
-    /// A menu button as `device` shows it, outside any live input state.
-    pub fn menuOn(device: input.Device, b: input.Button) Prompt {
-        return menuOf(&.{ .device = device }, b);
-    }
-
-    pub fn of(st: *const input.State, b: input.Button) Prompt {
-        if (!st.device.pad()) return .{ .key = st.slotCaption(b) };
-        return switch (b.pad()) {
-            .right_face_down => .{ .face = .{ .button = .a, .sony = st.device.playstation() } },
-            .right_face_right => .{ .face = .{ .button = .b, .sony = st.device.playstation() } },
-            .right_face_left => .{ .face = .{ .button = .x, .sony = st.device.playstation() } },
-            .right_face_up => .{ .face = .{ .button = .y, .sony = st.device.playstation() } },
-            .left_trigger_1, .right_trigger_1, .right_trigger_2, .right_thumb => .{ .pill = st.caption(b) },
-            .middle_right => if (st.device.playstation()) .{ .pill = st.caption(b) } else .menu,
-            .middle_left => if (st.device.playstation()) .{ .pill = st.caption(b) } else .view,
-            else => unreachable,
-        };
-    }
-
-    /// Across, at `h` tall.
-    pub fn width(p: Prompt, face: *const font.Face, h: i32) i32 {
-        return switch (p) {
-            .face, .stick, .dpad, .arrows, .mouse => h,
-            .pill => |s| face.width(s, labelPx(h)) + h,
-            .view, .menu => h + @divTrunc(h, 2),
-            .key => |s| @max(h, face.width(s, labelPx(h)) + @divTrunc(h, 2)),
-        };
-    }
-
-    /// `draw`, its left on `x`; returns the x past it.
-    pub fn drawFrom(p: Prompt, face: *const font.Face, x: i32, cy: i32, h: i32, alpha: f32) i32 {
-        const w = p.width(face, h);
-        p.draw(face, x + @divTrunc(w, 2), cy, h, alpha);
-        return x + w;
-    }
-
-    /// Its middle on `cx`, `cy`, `h` tall, faded to `alpha`.
-    pub fn draw(p: Prompt, face: *const font.Face, cx: i32, cy: i32, h: i32, alpha: f32) void {
-        const w = p.width(face, h);
-        const box = rect(cx - @divTrunc(w, 2), cy - @divTrunc(h, 2), w, h);
-        switch (p) {
-            .stick => |side| {
-                const c = vec(.{ .x = cx, .y = cy });
-                const radius: f32 = @as(f32, @floatFromInt(h)) * 0.46;
-                rl.drawCircleV(c, radius, fade(PROMPT_BODY, alpha));
-                rl.drawRing(c, radius - 1.5, radius, 0, 360, 24, fade(PROMPT_EDGE, alpha));
-                face.centred(if (side == .left) "L" else "R", cx, cy, labelPx(h), fade(PROMPT_INK, alpha));
-            },
-            .dpad, .arrows => {
-                const step = @divTrunc(h, 3);
-                for ([_]mathx.Dir{ .n, .e, .s, .w }) |d| {
-                    const offset = d.delta();
-                    const ink = if (p == .dpad and offset.x != 0) PROMPT_EDGE else PROMPT_INK;
-                    promptArrow(d, cx + offset.x * step, cy + offset.y * step, arrowPx(h), fade(ink, alpha));
-                }
-            },
-            .mouse => |button| {
-                const shell = rect(cx - @divTrunc(h, 3), cy - @divTrunc(h, 2), @divTrunc(h * 2, 3), h);
-                rl.drawRectangleRounded(shell, MOUSE_ROUND.roundness, MOUSE_ROUND.segments, fade(PROMPT_BODY, alpha));
-                rl.drawRectangleRoundedLinesEx(shell, MOUSE_ROUND.roundness, MOUSE_ROUND.segments, 1, fade(PROMPT_EDGE, alpha));
-                const x: f32 = @floatFromInt(cx);
-                const y: f32 = @floatFromInt(cy);
-                const s: f32 = @floatFromInt(h);
-                if (button == .left or button == .right) {
-                    rl.drawRectangleRec(.{ .x = x + (if (button == .left) -s * 0.24 else @as(f32, 0.04)), .y = y - s * 0.33, .width = s * 0.2, .height = s * 0.3 }, fade(PROMPT_INK, alpha));
-                } else {
-                    rl.drawRectangleRounded(.{ .x = x - 1.5, .y = y - s * 0.3, .width = 3, .height = s * 0.3 }, WHEEL_ROUND.roundness, WHEEL_ROUND.segments, fade(PROMPT_INK, alpha));
-                    if (button == .wheel) for ([_]mathx.Dir{ .n, .s }) |d| {
-                        promptArrow(d, cx, cy + d.delta().y * @divTrunc(h, 3), arrowPx(h), fade(PROMPT_INK, alpha));
-                    };
-                }
-            },
-            .face => |f| faceButton(face, f.button, f.sony, cx, cy, h, alpha),
-            .pill => |s| {
-                pill(box, alpha);
-                face.centred(s, cx, cy, labelPx(h), fade(PROMPT_INK, alpha));
-            },
-            .view => {
-                pill(box, alpha);
-                viewMark(cx, cy, h, alpha);
-            },
-            .menu => {
-                pill(box, alpha);
-                menuMark(cx, cy, h, alpha);
-            },
-            .key => |s| {
-                keycap(box, alpha);
-                const direction: ?mathx.Dir = for (input.ARROW_KEYS) |a| {
-                    if (std.mem.eql(u8, s, a.caption)) break a.d;
-                } else null;
-                if (direction) |d| promptArrow(d, cx, cy - @divTrunc(h, 12), @divTrunc(h, 2), fade(PROMPT_INK, alpha)) else face.centred(s, cx, cy - @divTrunc(h, 12), labelPx(h), fade(PROMPT_INK, alpha));
-            },
-        }
-    }
-};
-
-/// The small arrows of an input icon `h` tall.
-fn arrowPx(h: i32) i32 {
-    return @max(6, @divTrunc(h, 3));
-}
-
-fn promptArrow(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) void {
-    const delta = d.delta();
-    const dx: f32 = @floatFromInt(delta.x);
-    const dy: f32 = @floatFromInt(delta.y);
-    const radius = @as(f32, @floatFromInt(size)) / 2;
-    const x: f32 = @floatFromInt(cx);
-    const y: f32 = @floatFromInt(cy);
-    const tip = rl.Vector2{ .x = x + dx * radius, .y = y + dy * radius };
-    rl.drawLineEx(.{ .x = x - dx * radius, .y = y - dy * radius }, tip, 1.2, col);
-    for ([_]f32{ -1, 1 }) |side| rl.drawLineEx(.{ .x = x - dy * radius * side, .y = y + dx * radius * side }, tip, 1.2, col);
-}
-
-/// An input icon `h` tall: its caption's text size.
-pub fn labelPx(h: i32) i32 {
-    return @divTrunc(h * 11, 16);
-}
-
-const PROMPT_BODY = rgb(0x1b1713);
-const PROMPT_FACE = rgb(0x28221c);
-const PROMPT_EDGE = rgb(0x6a604e);
-const PROMPT_LIP = rgb(0x0c0a08);
-const PROMPT_INK = rgb(0xe2d2b4);
-
-const FaceButton = enum { a, b, x, y };
-
-fn faceInk(b: FaceButton, sony: bool) rl.Color {
-    return switch (b) {
-        .a => if (sony) rgb(0x7cb2e8) else rgb(0x5eb242),
-        .b => if (sony) rgb(0xea6060) else rgb(0xd63e34),
-        .x => if (sony) rgb(0xd686c4) else rgb(0x2e78cd),
-        .y => if (sony) rgb(0x40c4a0) else UI_FOCUS,
-    };
-}
-
-fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i32, h: i32, alpha: f32) void {
-    const r: f32 = @as(f32, @floatFromInt(h)) / 2;
-    const c = vec(.{ .x = cx, .y = cy });
-    const ink = faceInk(b, sony);
-    rl.drawCircleV(c, r, fade(PROMPT_LIP, alpha));
-    rl.drawCircleV(c, r - 1, fade(PROMPT_BODY, alpha));
-    rl.drawCircleV(.{ .x = c.x, .y = c.y - r * 0.12 }, r * 0.78, fade(PROMPT_FACE, alpha));
-    rl.drawRing(c, r - 2.6, r - 1, 0, 360, 32, fade(ink, alpha));
-    if (!sony) {
-        const letter = [_:0]u8{std.ascii.toUpper(@tagName(b)[0])};
-        return face.centred(&letter, cx, cy, labelPx(h), fade(ink, alpha));
-    }
-    const s = r * 0.42;
-    const line = @max(1.5, r * 0.16);
-    const col = fade(ink, alpha);
-    switch (b) {
-        .a => {
-            rl.drawLineEx(.{ .x = c.x - s, .y = c.y - s }, .{ .x = c.x + s, .y = c.y + s }, line, col);
-            rl.drawLineEx(.{ .x = c.x - s, .y = c.y + s }, .{ .x = c.x + s, .y = c.y - s }, line, col);
-        },
-        .b => rl.drawRing(c, s - line / 2, s + line / 2, 0, 360, 24, col),
-        .x => rl.drawRectangleLinesEx(.{ .x = c.x - s, .y = c.y - s, .width = s * 2, .height = s * 2 }, line, col),
-        .y => {
-            const top = rl.Vector2{ .x = c.x, .y = c.y - s * 1.1 };
-            const left = rl.Vector2{ .x = c.x - s * 1.1, .y = c.y + s * 0.8 };
-            const right = rl.Vector2{ .x = c.x + s * 1.1, .y = c.y + s * 0.8 };
-            rl.drawLineEx(top, left, line, col);
-            rl.drawLineEx(left, right, line, col);
-            rl.drawLineEx(right, top, line, col);
-        },
-    }
-}
-
-const Round = struct { roundness: f32, segments: i32 };
-const PILL_ROUND = Round{ .roundness = 0.6, .segments = 8 };
-const KEYCAP_ROUND = Round{ .roundness = 0.3, .segments = 6 };
-const MOUSE_ROUND = Round{ .roundness = 0.65, .segments = 8 };
-const WHEEL_ROUND = Round{ .roundness = 0.5, .segments = 4 };
-
-fn pill(box: rl.Rectangle, alpha: f32) void {
-    rl.drawRectangleRounded(box, PILL_ROUND.roundness, PILL_ROUND.segments, fade(PROMPT_BODY, alpha));
-    rl.drawRectangleRoundedLinesEx(box, PILL_ROUND.roundness, PILL_ROUND.segments, 1, fade(PROMPT_EDGE, alpha));
-}
-
-fn keycap(box: rl.Rectangle, alpha: f32) void {
-    const lip = @max(2, box.height / 8);
-    rl.drawRectangleRounded(box, KEYCAP_ROUND.roundness, KEYCAP_ROUND.segments, fade(PROMPT_LIP, alpha));
-    const top = rl.Rectangle{ .x = box.x, .y = box.y, .width = box.width, .height = box.height - lip };
-    rl.drawRectangleRounded(top, KEYCAP_ROUND.roundness, KEYCAP_ROUND.segments, fade(PROMPT_FACE, alpha));
-    rl.drawRectangleRoundedLinesEx(top, KEYCAP_ROUND.roundness, KEYCAP_ROUND.segments, 1, fade(PROMPT_EDGE, alpha));
-}
-
-fn viewMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
-    const s: f32 = @as(f32, @floatFromInt(h)) * 0.22;
-    const x: f32 = @floatFromInt(cx);
-    const y: f32 = @floatFromInt(cy);
-    const col = fade(PROMPT_INK, alpha);
-    rl.drawRectangleLinesEx(.{ .x = x - s * 1.3, .y = y - s * 1.1, .width = s * 1.6, .height = s * 1.4 }, 1.2, col);
-    rl.drawRectangleLinesEx(.{ .x = x - s * 0.3, .y = y - s * 0.3, .width = s * 1.6, .height = s * 1.4 }, 1.2, col);
-}
-
-fn menuMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
-    const s: f32 = @as(f32, @floatFromInt(h)) * 0.24;
-    const x: f32 = @floatFromInt(cx);
-    const y: f32 = @floatFromInt(cy);
-    for ([_]f32{ -1, 0, 1 }) |k| rl.drawLineEx(.{ .x = x - s, .y = y + k * s * 0.7 }, .{ .x = x + s, .y = y + k * s * 0.7 }, 1.5, fade(PROMPT_INK, alpha));
-}
 
 const PANEL = rgb(0x0e0d12);
 const RAISED = rgb(0x1a1820);
@@ -1564,89 +891,6 @@ pub const CLEAR_A: f32 = 0.004;
 /// The alpha of a skill or action that cannot be used now.
 pub const FADED_A: f32 = 0.35;
 
-/// GLSL `const`s named for `values`' fields: floats at full precision, integers, and two- to four-float vectors.
-pub fn glslConsts(comptime values: anytype) [:0]const u8 {
-    comptime {
-        var out: [:0]const u8 = "";
-        for (std.meta.fields(@TypeOf(values))) |f| {
-            const v = @field(values, f.name);
-            out = out ++ switch (@typeInfo(@TypeOf(v))) {
-                .int, .comptime_int => std.fmt.comptimePrint("const int {s} = {d};\n", .{ f.name, v }),
-                .float, .comptime_float => "const float " ++ f.name ++ " = " ++ glslFloat(v) ++ ";\n",
-                .array, .vector => glslVec(f.name, v),
-                else => @compileError(f.name ++ " is no GLSL constant"),
-            };
-        }
-        return out;
-    }
-}
-
-fn glslVec(comptime name: []const u8, comptime v: anytype) [:0]const u8 {
-    const n = switch (@typeInfo(@TypeOf(v))) {
-        inline .array, .vector => |a| a.len,
-        else => unreachable,
-    };
-    if (n < 2 or n > 4) @compileError(name ++ " has no GLSL vector of its length");
-    const kind = std.fmt.comptimePrint("vec{d}", .{n});
-    var parts: [:0]const u8 = glslFloat(v[0]);
-    for (1..n) |i| parts = parts ++ ", " ++ glslFloat(v[i]);
-    return "const " ++ kind ++ " " ++ name ++ " = " ++ kind ++ "(" ++ parts ++ ");\n";
-}
-
-fn glslFloat(comptime v: anytype) [:0]const u8 {
-    const s = std.fmt.comptimePrint("{d}", .{@as(f32, v)});
-    return if (std.mem.indexOfAny(u8, s, ".e") == null) s ++ ".0" else s;
-}
-
-/// What every fragment shader opens with: raylib's inputs and output, `CLEAR_A`, the map's size in cells and `sky.LUMA`.
-pub const FS_HEAD =
-    \\#version 330
-    \\in vec2 fragTexCoord;
-    \\in vec4 fragColor;
-    \\uniform sampler2D texture0;
-    \\out vec4 finalColor;
-    \\
-++ glslConsts(.{ .CLEAR_A = CLEAR_A, .CELLS = [2]f32{ grid.W, grid.H }, .LUMA = sky.LUMA });
-
-/// The map's place on screen: `cellAtFrag()` is the map position under the fragment, in cells, `cellAtPixel` under a y-down screen pixel,
-/// `targetPixel` the y-down screen pixel at a render target's uv, and `insideMap` whether a map position lies on the map.
-pub const MAP_VIEW_FS =
-    \\uniform vec2 origin;
-    \\uniform float cell;
-    \\uniform vec2 screen;
-    \\vec2 cellAtPixel(vec2 pixel) {
-    \\    return (pixel - origin) / cell;
-    \\}
-    \\vec2 cellAtFrag() {
-    \\    return cellAtPixel(vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y));
-    \\}
-    \\vec2 targetPixel(vec2 uv) {
-    \\    return vec2(uv.x, 1.0 - uv.y) * screen;
-    \\}
-    \\bool insideMap(vec2 c) {
-    \\    return all(greaterThanEqual(c, vec2(0.0))) && all(lessThan(c, CELLS));
-    \\}
-    \\
-;
-
-/// `MAP_VIEW_FS`'s uniforms: where the map's top-left corner lands, a cell's pixels, and the target's size.
-pub const MapView = struct {
-    origin: [2]f32,
-    cell: f32,
-    screen: [2]f32,
-
-    pub fn of(ox: i32, oy: i32, cell: i32, w: i32, h: i32) MapView {
-        return .{ .origin = .{ @floatFromInt(ox), @floatFromInt(oy) }, .cell = @floatFromInt(cell), .screen = .{ @floatFromInt(w), @floatFromInt(h) } };
-    }
-};
-
-/// Sets `MAP_VIEW_FS`'s uniforms on a program with `origin`, `cell` and `screen` locations.
-pub fn setMapView(p: anytype, v: MapView) void {
-    setUniform(p.shader, p.origin, v.origin);
-    setUniform(p.shader, p.cell, v.cell);
-    setUniform(p.shader, p.screen, v.screen);
-}
-
 /// How far a sprite is softened; a shader drawing over it again (the gas veil) softens its own alpha alike.
 pub const Focused = struct {
     texel: [2]f32 = .{ 0, 0 },
@@ -1655,15 +899,15 @@ pub const Focused = struct {
     pub const sharp: Focused = .{};
 
     pub fn set(self: Focused, s: rl.Shader, texel: i32, strength: i32) void {
-        setUniform(s, texel, self.texel);
-        setUniform(s, strength, self.strength);
+        shaders.setUniform(s, texel, self.texel);
+        shaders.setUniform(s, strength, self.strength);
     }
 };
 
 /// `texture0` here and at its four sides, premultiplied; the sides share what the centre leaves.
 pub const FOCUS_CENTRE_W = 0.4;
 pub const FOCUS_SIDE_W = (1 - FOCUS_CENTRE_W) / 4.0;
-pub const FOCUS_WEIGHTS = glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W });
+pub const FOCUS_WEIGHTS = shaders.glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W });
 /// `focused()`: `texture0` softened by `Focused`'s uniforms, premultiplied.
 pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\uniform vec2 texel;
@@ -1693,7 +937,7 @@ pub const VALUE_NOISE_FS =
 ;
 
 const FadeShader = struct { shader: rl.Shader, bounds: i32, minimum: i32 };
-const FADE_FS = FS_HEAD ++
+const FADE_FS = shaders.FS_HEAD ++
     \\uniform vec2 bounds;
     \\uniform float minimum;
     \\void main() {
@@ -1714,7 +958,7 @@ const SHINE_SLANT: f32 = 0.6;
 const SHINE_GAIN: f32 = 0.18;
 const SHINE_SEED: u64 = 0x5417E;
 const SHINE_PHASES = 1000;
-const SHINE_FS = FS_HEAD ++ glslConsts(.{ .SHINE_WIDTH = SHINE_WIDTH, .SHINE_SLANT = SHINE_SLANT, .SHINE_GAIN = SHINE_GAIN }) ++
+const SHINE_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .SHINE_WIDTH = SHINE_WIDTH, .SHINE_SLANT = SHINE_SLANT, .SHINE_GAIN = SHINE_GAIN }) ++
     \\uniform float sweep;
     \\void main() {
     \\    vec4 tex = texture(texture0, fragTexCoord);
@@ -1739,14 +983,14 @@ const WATER_SHALLOW: f32 = 1;
 const WATER_SATURATION: f32 = 0.8;
 const MIRROR_DEEP: f32 = 0.42;
 const MIRROR_SHALLOW: f32 = 0.28;
-const WATER_FS = FS_HEAD ++ glslConsts(.{
+const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     .SATURATION = WATER_SATURATION,
     .OVERBRIGHT = @import("light.zig").OVERBRIGHT,
     .DEEP = WATER_DEEP,
     .SHALLOW = WATER_SHALLOW,
     .MIRROR_DEEP = MIRROR_DEEP,
     .MIRROR_SHALLOW = MIRROR_SHALLOW,
-}) ++ MAP_VIEW_FS ++
+}) ++ shaders.MAP_VIEW_FS ++
     \\uniform float depth;
     \\uniform sampler2D visibility;
     \\uniform sampler2D glints;
@@ -1909,32 +1153,32 @@ test "map assets hold the fallback ground a prop stands on when only unbearing n
 }
 
 test "a slot's prompt is its maker's face button or shoulder on a pad, and its key's cap on the keyboard" {
-    _ = Prompt.draw;
+    _ = prompt_icon.Prompt.draw;
     var st = input.State{ .device = .xbox };
-    try std.testing.expectEqual(FaceButton.a, Prompt.of(&st, .a).face.button);
-    try std.testing.expect(!Prompt.of(&st, .y).face.sony);
-    try std.testing.expectEqualStrings("RB", Prompt.of(&st, .rb).pill);
-    try std.testing.expect(Prompt.of(&st, .character) == .menu);
-    try std.testing.expect(Prompt.of(&st, .pause) == .view);
+    try std.testing.expectEqual(prompt_icon.FaceButton.a, prompt_icon.Prompt.of(&st, .a).face.button);
+    try std.testing.expect(!prompt_icon.Prompt.of(&st, .y).face.sony);
+    try std.testing.expectEqualStrings("RB", prompt_icon.Prompt.of(&st, .rb).pill);
+    try std.testing.expect(prompt_icon.Prompt.of(&st, .character) == .menu);
+    try std.testing.expect(prompt_icon.Prompt.of(&st, .pause) == .view);
     st.device = .ps5;
-    try std.testing.expect(Prompt.of(&st, .x).face.sony);
-    try std.testing.expectEqualStrings("L1", Prompt.of(&st, .lb).pill);
-    try std.testing.expectEqualStrings("Options", Prompt.of(&st, .character).pill);
-    try std.testing.expectEqualStrings("Create", Prompt.of(&st, .pause).pill);
+    try std.testing.expect(prompt_icon.Prompt.of(&st, .x).face.sony);
+    try std.testing.expectEqualStrings("L1", prompt_icon.Prompt.of(&st, .lb).pill);
+    try std.testing.expectEqualStrings("Options", prompt_icon.Prompt.of(&st, .character).pill);
+    try std.testing.expectEqualStrings("Create", prompt_icon.Prompt.of(&st, .pause).pill);
     st.device = .ps4;
-    try std.testing.expectEqualStrings("Share", Prompt.of(&st, .pause).pill);
+    try std.testing.expectEqualStrings("Share", prompt_icon.Prompt.of(&st, .pause).pill);
     st = .{ .device = .keys, .modifier = .lb };
-    try std.testing.expectEqualStrings(input.SECOND_CAPTION, Prompt.of(&st, .lb).key);
-    try std.testing.expectEqualStrings("1", Prompt.of(&st, .a).key);
-    try std.testing.expectEqualStrings("Enter", Prompt.menuOf(&st, .a).key);
-    try std.testing.expectEqualStrings("Esc", Prompt.menuOf(&st, .b).key);
-    try std.testing.expectEqualStrings("Q", Prompt.menuOf(&st, .lb).key);
-    try std.testing.expectEqualStrings("E", Prompt.menuOf(&st, .rb).key);
+    try std.testing.expectEqualStrings(input.SECOND_CAPTION, prompt_icon.Prompt.of(&st, .lb).key);
+    try std.testing.expectEqualStrings("1", prompt_icon.Prompt.of(&st, .a).key);
+    try std.testing.expectEqualStrings("Enter", prompt_icon.Prompt.menuOf(&st, .a).key);
+    try std.testing.expectEqualStrings("Esc", prompt_icon.Prompt.menuOf(&st, .b).key);
+    try std.testing.expectEqualStrings("Q", prompt_icon.Prompt.menuOf(&st, .lb).key);
+    try std.testing.expectEqualStrings("E", prompt_icon.Prompt.menuOf(&st, .rb).key);
     for (input.SLOT_ORDER) |b| {
         for ([_]input.Device{ .xbox, .ps4 }) |d| {
             st.device = d;
-            switch (Prompt.of(&st, b)) {
-                .face => |f| try std.testing.expect(faceInk(f.button, d.playstation()).a == 255),
+            switch (prompt_icon.Prompt.of(&st, b)) {
+                .face => |f| try std.testing.expect(prompt_icon.faceInk(f.button, d.playstation()).a == 255),
                 else => {},
             }
         }

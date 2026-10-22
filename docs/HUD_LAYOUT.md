@@ -16,13 +16,15 @@ Only display the corresponding systems this game actually has. Do not fill the l
 |---|---|
 | Life | Red circular reservoir, filled from the bottom; current / maximum above the orb |
 | Mana | Matching blue reservoir and current / maximum |
-| Assigned skills | Existing skill pictures and each slot's input icon (`look.Prompt`); active secondary set uses the same slots |
+| Assigned skills | Existing skill pictures and each slot's input icon (`prompt_icon.Prompt`); active secondary set uses the same slots |
 | Skill availability | Existing held/aimed state, dimming when unavailable, remaining cooldown on the skill |
 | Experience | Thin bar of 10 segments over the skill strip: a faint white track, filled with a warm parchment gradient through the current level |
 | Active ailments | Small icons with remaining turns, only while active, just above the central strip |
+| Status resistance | A gold buildup meter while active; inspection lists each status's resistance and expiry separately |
 | Minimap | Existing upper-right map, outside the bottom assembly |
 | Time of day | A thin line under the minimap: the sun rides it from sunrise to sunset, the moon from sunset to sunrise, following the drawn hour (`Game.hour_shown`) |
 | Event log | Bottom-left panel, newest at bottom, color-coded events during exploration and combat |
+| Character and Menu | Clickable actions with glyphs in the bottom-right gutter while keyboard/mouse hints are active |
 
 The live HUD omits the hero-name label, enemy counters, gold tally and permanent control instructions. No screen names a key or button in words; menus and the bind screen show concise action labels beside device glyphs. Life and mana flasks use assigned skill slots, including remaining drinks. Exact XP, levels, equipment and both skill trees appear in Character.
 
@@ -31,12 +33,12 @@ The live HUD omits the hero-name label, enemy counters, gold tally and permanent
 - Target a 640-pixel-wide assembly, horizontally centered from `Game.screen`. Its width does not grow on a wider display.
 - Two matching 96-pixel orb frames flank the seven-slot skill strip. One continuous backing plate extends behind the skills to each orb's center, so the orbs cover its ends. The plate is 94px tall, at 70% opacity with a 25% shadow.
 - The minimap background uses the shared fog gray at 70% opacity. Unexplored texture cells are transparent so they do not obscure that background; terrain and markers retain their contrast.
-- Keep the log 12px from the left and bottom edges, 270px tall. Its width follows the free gutter beside the HUD, capped at 440px. It has no heading; text, background and border fade together to 10% of their base opacity at the top. Tooltips and item comparisons follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md): descriptions lead, with separate item cards and a preview of changed character stats.
+- Keep the log 12px from the left and bottom edges, 270px tall. Its width follows the free gutter beside the HUD, capped at 440px. It has no heading; text, background and border fade together to 10% of their base opacity at the top. Tooltips and item comparisons follow [DATA_PRESENTATION.md](DATA_PRESENTATION.md): effects and properties lead, flavor comes last, with separate item cards and a preview of changed character stats.
 - Mount the assembly close to the bottom edge. Draw the map behind it and at both sides instead of reserving a full-width black footer.
 - Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
-- Use the current Balthazar face for small resource values and cooldowns; inputs are icons, not captions. Avoid extra explanatory prose in play.
+- Use Source Sans 3 for compact resource values and cooldowns, with Balthazar for headings and symbols; inputs are icons, not captions. Avoid extra explanatory prose in play.
 - Keep geometry, colours and draw functions together so authored orb/frame art can replace the primitives later. Reuse the existing skill images.
-- Life follows the presented HP (`Game.pictured`), so it changes when a hit lands. Mana spent by Mana Shield follows each hit's impact; other mana changes and cooldowns follow the turn. The experience bar eases toward a turn's experience once that turn is drawn (`Game.xp_shown`). Layout code does not change gameplay.
+- Life follows the presented HP (`Game.pictured`), so it changes when a hit lands. Mana spent by Mana Shield follows each hit's impact; skill spending and flask sips update immediately, while natural recovery and cooldowns follow spent turns. The experience bar eases toward a turn's experience once that turn is drawn (`Game.xp_shown`). Layout code does not change gameplay.
 
 ## Verification
 
@@ -44,9 +46,9 @@ Use the existing check, test, shot and build scripts. Inspect full, partial, cri
 
 ## Implementation
 
-Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game/overlay.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Each slot's input is a `look.Prompt` icon under it.
+Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game/overlay.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Each slot's input is a `prompt_icon.Prompt` icon under it.
 
-Small Balthazar text is rasterized at its displayed size (12, 15, 16, 20 and 24px) with point filtering, measured and drawn from the same atlas. Larger text and map symbols retain the 96px mipmapped atlas. Input icons are 22px tall with 15px labels, 6px below their slots. The 48px slots contain basic 30px procedural icons, with 8px gaps within groups and 16px between groups.
+Small text is rasterized at its displayed size (12, 15, 16, 20 and 24px) with point filtering, measured and drawn from the same atlas. Sizes through 16px use Source Sans 3; larger text uses Balthazar. Scaled panels use the corresponding mipmapped face, and map symbols retain Balthazar. Input icons are 22px tall with 15px labels, 6px below their slots. The 48px slots contain basic 30px procedural icons, with 8px gaps within groups and 16px between groups.
 
 The map spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind screen sizes its panel for the skill rows, longest available description and action buttons, using Character's `book.SIZE` as its scale reference over a veil. `ui/journal.zig` owns the saved event history and its bottom-left panel; the wheel or HUD inspector scrolls it.
 
@@ -93,4 +95,4 @@ Numbers, resource labels, button captions and cooldowns remain code-rendered. Th
 
 `look.hudBorder` keeps the four original 9x9 corner regions and repeats the matching horizontal and vertical strips, clipping the last repeat without scaling, mirroring, rotating or recolouring the art. Nine-pixel cuts keep the dark corner-to-rail transition out of the repeated bottom edge. The texture loads with common play graphics and is shared by the bottom plate, skill slots and bind picker, status boxes, minimap, and the character card. Selected slots retain a coloured inner outline; unavailable slots retain their opacity fade. Status boxes are 40px to keep their icons and counts clear of the painted trim, and the minimap reserves a 9px frame. Orb rims and resource fills remain procedural.
 
-Life and mana fill levels ease both upward and downward using the XP bar's exponential rate (8/s). Labels remain exact. Fill targets use presented life and held mana: a pending bite cannot drain either orb before impact. New floors and resumed saves settle the fills immediately; these two floats are presentation only, never saved. The regression test checks held impact, exact easing in both directions, and convergence without overshoot.
+Life and mana fill levels ease both upward and downward using the XP bar's exponential rate (8/s). Labels remain exact. Fill targets use presented life and held mana: a pending bite cannot drain either orb before impact. Flask sips spend no turn and apply their first recovery tick immediately; the label updates on that frame while the fill eases normally. Mana inspection states recovery per five turns. New floors and resumed saves settle the fills immediately; these two floats are presentation only, never saved. The regression test checks held impact, exact easing in both directions, and convergence without overshoot.

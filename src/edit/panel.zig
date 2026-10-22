@@ -4,8 +4,10 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
+const listing = @import("../map/listing.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
@@ -54,6 +56,16 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     }
     if (editor.button(ed, g, acts.next(), "Title", false, true, editor.keyed("Back to the title", Desk.BACK_CAPTION))) ed.request(.leave);
     acts.done();
+    y += editor.ROW_STEP;
+    var clipboard = editor.Across{ .y = y, .n = 5 };
+    const on_map = ed.view == .map and ed.paintable();
+    const selected = ed.selection != null and on_map;
+    if (editor.button(ed, g, clipboard.next(), "Copy", false, selected, editor.keyed("Copy selection", Desk.COPY_CAPTION))) editor.copySelection(ed, false);
+    if (editor.button(ed, g, clipboard.next(), "Cut", false, selected, editor.keyed("Cut selection", Desk.CUT_CAPTION))) editor.copySelection(ed, true);
+    if (editor.button(ed, g, clipboard.next(), "Paste", ed.pasting, ed.board.size.x > 0 and on_map, editor.keyed("Paste selection", Desk.PASTE_CAPTION))) editor.startPaste(ed);
+    if (editor.button(ed, g, clipboard.next(), "Clear", false, selected, editor.keyed("Clear selection", Desk.DELETE_CAPTION))) editor.clearSelection(ed);
+    if (editor.button(ed, g, clipboard.next(), "Fit", false, ed.view == .map, "Fit the map in view")) editor.fitView(ed, editor.Editor.canvas(g));
+    clipboard.done();
     y += editor.ROW_H + editor.SECTION_GAP;
     y = drawTools(ed, g, y);
     var adds = editor.Across{ .y = y, .n = 2 };
@@ -112,7 +124,7 @@ fn drawNodes(ed: *editor.Editor, g: *game.Game, top: i32) void {
     var y = top;
     for (ed.map.nodes()[ed.scroll..], ed.scroll..) |*nd, n| {
         if (y >= g.screen.y) break;
-        const r = look.rect(editor.PAD, y, editor.INNER_W, editor.NODE_H - editor.NODE_GAP);
+        const r = raster.rect(editor.PAD, y, editor.INNER_W, editor.NODE_H - editor.NODE_GAP);
         const h = editor.hot(ed, r, true, false, "Open this node");
         editor.plate(r, n == ed.node, h.hot);
         drawNodeTitle(ed, g, n, r, y + editor.TITLE_DY);
@@ -170,7 +182,7 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
         const live = s == .select or ed.tool.broad();
         const h = editor.hot(ed, r, true, false, s.tip());
         editor.plate(r, ed.shape == s and live, h.hot);
-        editor.textFace(g).drawMid(label, look.middleAt(r).x, @as(i32, @intFromFloat(r.y)) + editor.SMALL_DY, SMALL, if (live) look.TEXT else look.DIM);
+        editor.textFace(g).drawMid(label, raster.middleAt(r).x, @as(i32, @intFromFloat(r.y)) + editor.SMALL_DY, SMALL, if (live) look.TEXT else look.DIM);
         if (h.hit) ed.setShape(s);
     }
     shapes.done();
@@ -184,7 +196,7 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
     if (by != 0) ed.stepBrush(by);
     const inks_x = editor.PAD + editor.INNER_W - @as(i32, editor.INKS.len) * (SWATCH + editor.GAP) + editor.GAP;
     for (editor.INKS, 0..) |k, i| {
-        const r = look.rect(inks_x + @as(i32, @intCast(i)) * (SWATCH + editor.GAP), y - @divTrunc(SWATCH - editor.ROW_H, 2), SWATCH, SWATCH);
+        const r = raster.rect(inks_x + @as(i32, @intCast(i)) * (SWATCH + editor.GAP), y - @divTrunc(SWATCH - editor.ROW_H, 2), SWATCH, SWATCH);
         swatch(g, ed.ink.get(k), r);
         rl.drawRectangleLinesEx(r, canvas.INK_EDGE, INK_EDGES.get(k));
         _ = editor.hot(ed, r, true, false, INK_TIPS.get(k));
@@ -216,7 +228,7 @@ pub const Tiles = struct {
 
     pub fn at(t: Tiles, i: usize) rl.Rectangle {
         const s = mathx.unslot(i, t.cols);
-        return look.rect(t.x + s.x * t.pitch, t.y + s.y * t.pitch, t.size, t.size);
+        return raster.rect(t.x + s.x * t.pitch, t.y + s.y * t.pitch, t.size, t.size);
     }
 
     pub fn height(t: Tiles, n: usize) i32 {
@@ -355,7 +367,7 @@ pub fn swatch(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
 }
 
 pub fn drawFit(g: *const game.Game, s: []const u8, size: i32, max: i32, keep_end: bool, x: i32, y: i32, col: rl.Color) void {
-    var fit_buf: [atlas.PATH_MAX + editor.LINE]u8 = undefined;
+    var fit_buf: [listing.PATH_MAX + editor.LINE]u8 = undefined;
     editor.textFace(g).draw(editor.textFace(g).fit(&fit_buf, s, size, max, keep_end), x, y, size, col);
 }
 
@@ -366,7 +378,7 @@ pub fn drawNodeTitle(ed: *editor.Editor, g: *const game.Game, n: usize, r: rl.Re
 }
 
 fn lowerArea(g: *const game.Game, top: i32) rl.Rectangle {
-    return look.rect(0, top, editor.PANEL_W, @max(0, g.screen.y - top));
+    return raster.rect(0, top, editor.PANEL_W, @max(0, g.screen.y - top));
 }
 
 pub fn beginScroll(ed: *editor.Editor, g: *const game.Game, top: i32) i32 {
@@ -398,8 +410,13 @@ pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     const state = toolState(ed, &state_buf);
     const state_w = editor.textFace(g).width(state, editor.TEXT);
     var y = top + editor.GAP;
-    drawFit(g, hover(ed, c, &buf), editor.TEXT, w - state_w - editor.BLOCK_GAP, false, x, y, look.TEXT);
-    editor.textFace(g).draw(state, x + w - state_w, y, editor.TEXT, look.DIM);
+    const action_w = 122;
+    const actions_w = 2 * action_w + editor.GAP;
+    const first_w = w - actions_w - editor.BLOCK_GAP;
+    drawFit(g, hover(ed, c, &buf), editor.TEXT, first_w - state_w - editor.BLOCK_GAP, false, x, y, look.TEXT);
+    editor.textFace(g).draw(state, x + first_w - state_w, y, editor.TEXT, look.DIM);
+    if (editor.button(ed, g, editor.row(x + w - actions_w, y, action_w), "Play here", ed.cell_action == .play, true, "Choose a cell to play from")) editor.armCellAction(ed, .play);
+    if (editor.button(ed, g, editor.row(x + w - action_w, y, action_w), "Go through", ed.cell_action == .go, true, "Choose a linked door to follow")) editor.armCellAction(ed, .go);
     y += editor.LINE_STEP;
     const said = ed.said_t > 0;
     const line: []const u8 = if (said) ed.said.text() else if (ed.view == .map) editor.CRIB_MAP else editor.CRIB_GRAPH;

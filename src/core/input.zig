@@ -357,11 +357,17 @@ pub const Stepper = struct {
     /// How long before this frame's end the last step was due.
     late: f32 = 0,
     owed: ?mathx.Dir = null,
+    /// A way pressed down that has not stepped yet.
+    press: bool = false,
+    /// This frame's step is that press's, not a held way repeating or turning.
+    fresh: bool = false,
 
     pub fn tick(self: *Stepper, dt: f32, defl: f32, heading: f32, settle: f32) ?mathx.Dir {
+        self.fresh = false;
         if (!stickWalks(defl, self.latched != null)) {
             const tap = self.owed;
-            self.* = .{};
+            const press = self.press;
+            self.* = .{ .fresh = press and tap != null };
             return tap;
         }
         const now = mathx.dirOf(heading, self.latched);
@@ -371,7 +377,7 @@ pub const Stepper = struct {
                 return null;
             }
             const owed = self.owe(now);
-            self.* = .{ .latched = now, .due = settle, .owed = owed };
+            self.* = .{ .latched = now, .due = settle, .owed = owed, .press = self.press };
         } else {
             self.held += dt;
         }
@@ -382,6 +388,8 @@ pub const Stepper = struct {
         if (self.due <= self.held) self.due = self.held + gap;
         self.fired += 1;
         self.owed = null;
+        self.fresh = self.press;
+        self.press = false;
         return now;
     }
 
@@ -573,6 +581,11 @@ pub const State = struct {
     /// Where the mouse rests on the window, when focused and over it.
     pointer: ?mathx.P = null,
     click: bool = false,
+    right_click: bool = false,
+    middle_click: bool = false,
+    dragging: bool = false,
+    mouse_delta: mathx.P = .{ .x = 0, .y = 0 },
+    mouse_moved: bool = false,
     interact: bool = false,
     scroll: i32 = 0,
     /// Touchpads and smooth wheels report fractions of a notch; they add up to whole scrolls.
@@ -580,6 +593,27 @@ pub const State = struct {
 
     pub fn hit(self: State, b: Button) bool {
         return self.pressed.contains(b);
+    }
+
+    pub fn pointing(self: State) bool {
+        return self.pointer != null and (self.mouse_moved or self.click);
+    }
+
+    fn mouseUsed(self: State, wheel: f32) bool {
+        return self.mouse_moved or self.click or self.right_click or self.middle_click or wheel != 0;
+    }
+
+    fn movePointer(self: *State, pointer: ?mathx.P, was_focused: bool) void {
+        const previous = self.pointer;
+        self.pointer = pointer;
+        self.mouse_delta = if (pointer != null and previous != null and was_focused) pointer.?.sub(previous.?) else .{ .x = 0, .y = 0 };
+        self.mouse_moved = was_focused and pointer != null and (previous == null or self.mouse_delta.x != 0 or self.mouse_delta.y != 0);
+    }
+
+    pub fn clicked(self: State, box: rl.Rectangle) bool {
+        const p = self.pointer orelse return false;
+        return self.click and @as(f32, @floatFromInt(p.x)) >= box.x and @as(f32, @floatFromInt(p.x)) < box.x + box.width and
+            @as(f32, @floatFromInt(p.y)) >= box.y and @as(f32, @floatFromInt(p.y)) < box.y + box.height;
     }
 
     pub fn held(self: State, b: Button) bool {
@@ -618,9 +652,9 @@ pub const State = struct {
         return if (self.walk != null) self.step.late else 0;
     }
 
-    /// This frame's walk repeats a held way rather than starting a press.
+    /// This frame's walk comes from a held way, repeating or turning, not a new press.
     pub fn repeating(self: State) bool {
-        return self.walk != null and self.step.fired > 1;
+        return self.walk != null and !self.step.fresh;
     }
 
     /// The aimed slot's number key, which confirms its reticle; pads have no such repeat.
@@ -652,9 +686,13 @@ pub const State = struct {
         if (!focused) return;
         const kind: ?Device = if (self.pad_at) |at| kindAt(at) else null;
         const live = self.pad_at;
-        self.pointer = if (rl.isCursorOnScreen()) mouseAt() else null;
-        self.click = self.pointer != null and rl.isMouseButtonPressed(.left);
-        self.wheel += rl.getMouseWheelMove();
+        self.movePointer(if (rl.isCursorOnScreen()) mouseAt() else null, was_focused);
+        self.click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.left);
+        self.right_click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.right);
+        self.middle_click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.middle);
+        self.dragging = was_focused and self.pointer != null and rl.isMouseButtonDown(.middle);
+        const wheel = if (self.pointer != null and was_focused) rl.getMouseWheelMove() else 0;
+        self.wheel += wheel;
         self.scroll = @intFromFloat(self.wheel);
         self.wheel -= @floatFromInt(self.scroll);
         const alt_down = altDown();
@@ -751,13 +789,16 @@ pub const State = struct {
                 settle = Stepper.SETTLE;
             }
         }
-        if ((self.stick and !was_stick) or walkPressed(live, self.typing, alt_down)) self.step.pressed();
+        if ((self.stick and !was_stick) or walkPressed(live, self.typing, alt_down)) {
+            self.step.pressed();
+            self.step.press = true;
+        }
         self.stepWalk(dt, defl, heading, settle, muted);
         self.treeWalk(dt, x, y);
         if (!was_focused) self.holdWalk();
         self.typing = false;
         const pad_hit = if (live) |at| struck(at, &before, &self.triggers) else false;
-        self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit or (on_tree and !pan_keys and (self.tree.pan.x != 0 or self.tree.pan.y != 0)), keyed or self.click or self.scroll != 0);
+        self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit or (on_tree and !pan_keys and (self.tree.pan.x != 0 or self.tree.pan.y != 0)), keyed or self.mouseUsed(wheel));
     }
 
     fn stepWalk(self: *State, dt: f32, defl: f32, heading: f32, settle: f32, muted: bool) void {
@@ -1223,6 +1264,22 @@ test "the walk fires once, waits DAS, then repeats at ARR" {
     for (gaps[1..]) |g| try std.testing.expect(@abs(g - Stepper.ARR) <= dt * 2);
 }
 
+test "only a pressed way steps fresh, not a held one repeating or letting a diagonal's key go" {
+    var s = Stepper{ .press = true };
+    const dt = mathx.FRAME_DT;
+    var steps: usize = 0;
+    var fresh: usize = 0;
+    for ([_]mathx.Dir{ .ne, .e }) |d| {
+        for (0..60) |_| {
+            if (s.tick(dt, 1, d.heading(), Stepper.SETTLE) == null) continue;
+            steps += 1;
+            if (s.fresh) fresh += 1;
+        }
+    }
+    std.debug.print("held north-east then east: {d} steps, {d} fresh\n", .{ steps, fresh });
+    try std.testing.expect(steps > 3 and fresh == 1);
+}
+
 test "a stalled frame does not bank repeats" {
     var s = Stepper{};
     const north = mathx.Dir.n.heading();
@@ -1310,6 +1367,38 @@ test "a d-pad diagonal pressed and released a frame apart is one diagonal step" 
         }
     }
     try std.testing.expectEqual(@as(usize, 1), got);
+}
+
+test "mouse motion buttons and fractional wheel select keyboard hints without a stationary pointer taking over" {
+    const samples = [_]State{
+        .{ .mouse_moved = true },
+        .{ .click = true },
+        .{ .right_click = true },
+        .{ .middle_click = true },
+    };
+    for (samples) |sample| {
+        try std.testing.expectEqual(Device.keys, deviceOf(.ps5, .ps5, false, sample.mouseUsed(0)));
+    }
+    var st = State{ .pointer = .{ .x = 100, .y = 100 } };
+    try std.testing.expectEqual(Device.xbox, deviceOf(.xbox, .xbox, false, st.mouseUsed(0)));
+    try std.testing.expectEqual(Device.keys, deviceOf(.xbox, .xbox, false, st.mouseUsed(0.1)));
+    try std.testing.expectEqual(Device.ps5, deviceOf(.keys, .ps5, true, false));
+    st.movePointer(null, true);
+    st.movePointer(.{ .x = 100, .y = 100 }, true);
+    try std.testing.expect(st.mouse_moved);
+    st.movePointer(st.pointer, true);
+    try std.testing.expect(!st.mouse_moved);
+    st.movePointer(null, false);
+    st.movePointer(.{ .x = 120, .y = 100 }, false);
+    try std.testing.expect(!st.mouse_moved);
+    st.click = true;
+    st.right_click = true;
+    st.middle_click = true;
+    st.dragging = true;
+    st.mouse_moved = true;
+    st.focus(false);
+    try std.testing.expect(!st.mouseUsed(0) and !st.dragging and st.pointer == null);
+    std.debug.print("mouse devices: motion, three buttons, fractional wheel, cursor entry, stationary cursor, controller return and focus loss\n", .{});
 }
 
 test "losing focus cancels unsettled movement and held actions without forgetting the controller" {

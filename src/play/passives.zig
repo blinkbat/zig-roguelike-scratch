@@ -215,7 +215,7 @@ const INFO = std.EnumArray(Kind, Info).init(.{
     .life_on_kill = .{ .group = .life, .word = "On kill", .text = "Heal {d} life for each foe a blow kills" },
     .life_flask = .{ .group = .life, .word = "Flask", .percent = true, .text = "+{d}% life flask recovery" },
     .cull = .{ .group = .offense, .word = "Cull", .percent = true, .sign = "", .text = "Blows kill foes left at {d}% life or less" },
-    .mana_regen = .{ .group = .mana, .word = "Regen", .text = "+{d} mana recovered per turn" },
+    .mana_regen = .{ .group = .mana, .word = "Regen", .text = std.fmt.comptimePrint("+{{d}} mana recovered per {d} turns", .{hero.MANA_REGEN_TURNS}) },
     .mana_cost = .{ .group = .mana, .word = "Cost", .percent = true, .sign = "-", .text = "Skills cost {d}% less mana" },
 });
 /// What each class origin grants of its arm's attribute.
@@ -309,7 +309,6 @@ const NTREE = ARMS.len * PER_ARM;
 pub const BRIDGES = std.enums.values(Seam).len * BRIDGE_RINGS.len;
 pub const N = NTREE + BRIDGES;
 pub const RINGS = BRANCH_RINGS.len + 1;
-pub const HUB = N;
 pub const Point = struct { x: f32, y: f32 };
 
 fn armFirst(a: Arm) usize {
@@ -462,22 +461,22 @@ const BANK = std.EnumArray(Branch, [PER_BRANCH]Entry).init(.{
     },
     .wizard_well = .{
         entry("Open Mind", .intelligence, 2),
-        entry("Deep Well", .mana, 5).ride(.intelligence, 1),
+        entry("Deep Well", .mana, 1).ride(.intelligence, 1),
         entry("Slow Tide", .mana_regen, 1),
         entry("Wider Mind", .intelligence, 3),
         entry("Runic Skin", .armour, 2).ride(.intelligence, 1),
-        entry("Still Water", .mana, 6).ride(.intelligence, 1),
+        entry("Still Water", .mana, 1).ride(.intelligence, 1),
         entry("Veil", .armour, 3),
         entry("Warded", .life, 5),
-        entry("Brimming", .mana, 8).ride(.intelligence, 2),
+        entry("Brimming", .mana, 2).ride(.intelligence, 2),
         entry("Sealed Mind", .intelligence, 3),
         entry("Overflow", .mana_regen, 1).ride(.intelligence, 1),
-        entry("Wellspring", .mana_regen, 2).ride(.mana, 10),
+        entry("Wellspring", .mana_regen, 2).ride(.mana, 2),
     },
     .wizard_cast = .{
         entry("Attuned", .mana_cost, 10),
         entry("Charged Words", .spell_damage, 4).ride(.intelligence, 1),
-        entry("Arcana", .mana, 5),
+        entry("Arcana", .mana, 1),
         entry("Deeper Lore", .intelligence, 3),
         entry("Potent Runes", .spell_damage, 4).ride(.intelligence, 1),
         entry("Sigil Craft", .crit, 3).ride(.intelligence, 1),
@@ -561,7 +560,6 @@ fn armAngle(a: Arm) f32 {
     };
 }
 pub fn unitPos(i: usize) Point {
-    if (i >= N) return .{ .x = 0, .y = 0 };
     const n = NODES[i];
     var angle = armAngle(n.arm);
     if (n.seam) |s| {

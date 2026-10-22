@@ -10,6 +10,7 @@ const gen = @import("../map/gen.zig");
 const carve = @import("../map/carve.zig");
 const gas = @import("../map/gas.zig");
 const atlas = @import("../map/atlas.zig");
+const listing = @import("../map/listing.zig");
 const spar = @import("../map/spar.zig");
 const editor = @import("../edit/editor.zig");
 const menu = @import("../ui/menu.zig");
@@ -25,6 +26,8 @@ const glacial = @import("../play/glacial.zig");
 const juke = @import("../play/juke.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
+const prompt_icon = @import("../gfx/prompt_icon.zig");
 const dual = @import("../gfx/ground.zig");
 const light = @import("../gfx/light.zig");
 const fx = @import("../gfx/fx.zig");
@@ -32,6 +35,8 @@ const cinema = @import("../gfx/cinema.zig");
 const sky = @import("../gfx/sky.zig");
 const day = @import("../map/day.zig");
 const game = @import("../game.zig");
+const skills = @import("skills.zig");
+const binds = @import("binds.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 const SHOOT = bow.VERB;
@@ -81,7 +86,7 @@ pub fn shoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/lean.png");
 
     g.st.lean = false;
-    game.openAim(g, game.harness.boundTo(g, .shoot).by, .shoot);
+    skills.openAim(g, game.harness.boundTo(g, .shoot).by, .shoot);
     try capture(g, target, SHOTS_DIR ++ "/aim.png");
 
     g.mode = .play;
@@ -112,10 +117,10 @@ pub fn shoot(g: *game.Game) !void {
     g.lv.set(.{ .x = 21, .y = 15 }, .water);
     _ = g.pool.damage(&g.lv, g.hero, 6);
     game.settle(g);
-    game.openLeap(g, game.harness.boundTo(g, .juke).by, .juke);
+    skills.openLeap(g, game.harness.boundTo(g, .juke).by, .juke);
     g.mark = .{ .x = 20 + juke.RANGE, .y = 15 };
     try capture(g, target, SHOTS_DIR ++ "/juke-aim.png");
-    game.confirmAim(g);
+    skills.confirmAim(g);
     g.st = .{};
     game.update(g, 0.06);
     try capture(g, target, SHOTS_DIR ++ "/juke.png");
@@ -124,9 +129,9 @@ pub fn shoot(g: *game.Game) !void {
     _ = game.harness.spawnAt(g, .slime, .{ .x = 28, .y = 15 }, false);
     game.settle(g);
     g.rng = game.harness.procRng(g, .burning_arrow, 1, true);
-    game.useSkill(g, game.harness.boundTo(g, .burning_arrow));
+    skills.useSkill(g, game.harness.boundTo(g, .burning_arrow));
     try capture(g, target, SHOTS_DIR ++ "/burning-aim.png");
-    game.confirmAim(g);
+    skills.confirmAim(g);
     g.st = .{};
     game.update(g, 0.08);
     try capture(g, target, SHOTS_DIR ++ "/burning-arrow.png");
@@ -139,9 +144,9 @@ pub fn shoot(g: *game.Game) !void {
     _ = game.harness.spawnAt(g, .slime, .{ .x = 28, .y = 16 }, false);
     game.settle(g);
     g.rng = game.harness.procRng(g, .glacial_shot, 3, true);
-    game.useSkill(g, game.harness.boundTo(g, .glacial_shot));
+    skills.useSkill(g, game.harness.boundTo(g, .glacial_shot));
     try capture(g, target, SHOTS_DIR ++ "/glacial-aim.png");
-    game.confirmAim(g);
+    skills.confirmAim(g);
     g.st = .{};
     game.update(g, 0.05);
     try capture(g, target, SHOTS_DIR ++ "/glacial-arrow.png");
@@ -287,10 +292,70 @@ pub fn shoot(g: *game.Game) !void {
 
 pub fn shootUi(g: *game.Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR);
+    try book.verifyCards(&g.face);
     try shootCharacter(g);
     try shootLoot(g);
     try shootHud(g);
     try shootLevelUp(g);
+    try shootMouse(g);
+}
+
+fn shootMouse(g: *game.Game) !void {
+    try std.fs.cwd().makePath(SHOTS_DIR ++ "/mouse");
+    const screen = g.screen;
+    defer g.screen = screen;
+    g.screen = game.SCREEN_720;
+    const target = try renderTarget(g);
+    defer rl.unloadRenderTexture(target);
+    try @import("../app.zig").shootMenus(g, target);
+    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 24, .y = 20 }});
+    g.st = .{ .device = .keys, .modifier = g.bar.modifier };
+    try capture(g, target, SHOTS_DIR ++ "/mouse/hud.png");
+    skills.openAim(g, game.harness.boundTo(g, .shoot).by, .shoot);
+    g.st.pointer = game.scene.Cam.of(g).mid(.{ .x = 24, .y = 20 });
+    g.st.mouse_moved = true;
+    game.update(g, 0);
+    try capture(g, target, SHOTS_DIR ++ "/mouse/aim.png");
+    try checkMouseHiddenAim(g, target);
+    game.character.openPause(g);
+    try capture(g, target, SHOTS_DIR ++ "/mouse/pause.png");
+    game.debugging.open(g, .diagnostics);
+    try capture(g, target, SHOTS_DIR ++ "/mouse/diagnostics.png");
+    try editor.shoot(g, target, SHOTS_DIR ++ "/mouse/editor.png", SHOTS_DIR ++ "/mouse/editor-graph.png", SHOTS_DIR ++ "/mouse/editor-generator.png", SHOTS_DIR ++ "/mouse/editor-objects.png");
+    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    _ = g.pool.damage(&g.lv, g.hero, g.heroActor().?.hp);
+    game.catchUp(g);
+    g.mode = .dead;
+    try capture(g, target, SHOTS_DIR ++ "/mouse/death.png");
+}
+
+fn checkMouseHiddenAim(g: *game.Game, target: rl.RenderTexture2D) !void {
+    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 22) {
+        g.lv.lit[i] = false;
+        g.lv.seen[i] = false;
+    };
+    g.light.settle(&g.lv);
+    skills.aiming(g, game.harness.boundTo(g, .shoot).by, .shoot);
+    g.st = .{ .device = .keys, .modifier = g.bar.modifier, .mouse_moved = true, .pointer = game.scene.Cam.of(g).mid(.{ .x = 24, .y = 20 }) };
+    _ = game.mouseControls.aim(g);
+    if (g.mode != .aim or skills.aimable(g, g.heroActor().?.at, g.mark)) return error.MouseHiddenAimSetup;
+    try capture(g, target, SHOTS_DIR ++ "/mouse/aim-hidden.png");
+    const aimed = try readTarget(target);
+    defer rl.unloadImage(aimed);
+    g.mode = .play;
+    drawInto(g, target);
+    const plain = try readTarget(target);
+    defer rl.unloadImage(plain);
+    const corner = game.scene.Cam.of(g).corner(.{ .x = 23, .y = 20 });
+    var checked: usize = 0;
+    for (0..game.CELL) |dy| for (0..game.CELL) |dx| {
+        const x = corner.x + @as(i32, @intCast(dx));
+        const y = corner.y + @as(i32, @intCast(dy));
+        if (!sameRgb(rl.getImageColor(aimed, x, y), rl.getImageColor(plain, x, y))) return error.MouseAimRevealedHiddenPath;
+        checked += 1;
+    };
+    std.debug.print("mouse targeting GPU: {d} hidden path pixels unchanged\n", .{checked});
 }
 
 pub fn shootDebug(g: *game.Game) !void {
@@ -396,6 +461,11 @@ fn shootLoot(g: *game.Game) !void {
     game.character.openLoot(g, bag);
     game.character.characterCommand(g, .take_all);
     try capture(g, target, SHOTS_DIR ++ "/loot-full.png");
+    for (0..16) |_| _ = g.ground.add(.{ .item = .{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } } }, .at = bag });
+    game.character.openLoot(g, bag);
+    try capture(g, target, SHOTS_DIR ++ "/loot-dense.png");
+    for (0..18) |_| game.harness.nudge(g, .s);
+    try capture(g, target, SHOTS_DIR ++ "/loot-dense-scrolled.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{chest});
     game.harness.grassOver(&g.lv);
@@ -563,7 +633,7 @@ fn shootCharacter(g: *game.Game) !void {
     try g.inventory.equip(0, .helm, g.growth.attributes(g.class));
     _ = g.inventory.add(.{ .kind = .bow, .mods = .{ .{ .kind = .dexterity, .value = 2 }, null } });
     try g.inventory.equip(0, .right_hand, g.growth.attributes(g.class));
-    _ = g.inventory.add(.{ .kind = .helmet, .mods = .{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 10 } } });
+    _ = g.inventory.add(.{ .kind = .helmet, .mods = .{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 2 } } });
     _ = g.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, null } });
     _ = g.inventory.add(.{ .kind = .leather });
     _ = g.ground.add(.{ .item = .{ .kind = .amulet }, .at = g.heroActor().?.at });
@@ -606,7 +676,7 @@ fn shootCharacter(g: *game.Game) !void {
 
         g.character.cursor = 2;
         try capture(g, target, SHOTS_DIR ++ "/item-normal-armour.png");
-        g.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .mana, .value = 15 }, null } });
+        g.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .mana, .value = 3 }, null } });
         g.inventory.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .dexterity, .value = 3 }, null } });
         g.character.cursor = 1;
         g.character.destination_index = 0;
@@ -615,7 +685,7 @@ fn shootCharacter(g: *game.Game) !void {
         try capture(g, target, SHOTS_DIR ++ "/item-ring-right.png");
         g.inventory.gear.slots.set(.right_hand, .{ .kind = .sling });
         g.inventory.gear.slots.set(.left_hand, .{ .kind = .buckler, .mods = .{ .{ .kind = .life, .value = 6 }, null } });
-        _ = g.inventory.add(.{ .kind = .crossbow, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 10 } } });
+        _ = g.inventory.add(.{ .kind = .crossbow, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } } });
         g.character.cursor = bag_n;
         g.character.destination_index = 0;
         try capture(g, target, SHOTS_DIR ++ "/item-two-handed.png");
@@ -729,10 +799,13 @@ fn shootCharacter(g: *game.Game) !void {
     g.character.open();
     g.character.choose(.inventory);
 
-    inline for ([_]items.Kind{ .crossbow, .dagger, .staff, .wand, .tome, .orb, .buckler, .shield, .totem }) |kind| {
+    inline for ([_]items.Kind{ .crossbow, .dagger, .staff, .wand, .tome, .orb, .buckler, .shield, .totem, .ash_wand, .rime_wand, .storm_wand, .hunting_bow, .war_bow, .circlet, .flask_belt, .robes }) |kind| {
         g.character.cursor = @intFromEnum(kind);
         try capture(g, target, SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ ".png");
     }
+    g.inventory.bag[@intFromEnum(items.Kind.axe)].mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } };
+    g.character.cursor = @intFromEnum(items.Kind.axe);
+    try capture(g, target, SHOTS_DIR ++ "/item-axe-magic.png");
 }
 
 fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -760,10 +833,10 @@ fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         const directory = SHOTS_DIR ++ "/fx-" ++ @tagName(act);
         try std.fs.cwd().makePath(directory);
         try capture(g, target, directory ++ "/before.png");
-        game.useSkill(g, game.harness.boundTo(g, act));
+        skills.useSkill(g, game.harness.boundTo(g, act));
         if (act.reticle()) |reticle| {
             g.mark = if (reticle == .leap) .{ .x = 22, .y = 20 } else .{ .x = 23, .y = 20 };
-            game.confirmAim(g);
+            skills.confirmAim(g);
         }
         g.st = .{};
         var previous: f32 = 0;
@@ -823,6 +896,9 @@ fn shootHud(g: *game.Game) !void {
         g.xp_shown = study.xp;
         if (study.ailing) {
             body.status = .initDefault(0, .{ .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1 });
+            body.resilience.meters.set(.stun, .{ .percent = 75, .turns = 4 });
+            body.resilience.meters.set(.bleed, .{ .percent = 25, .turns = 5 });
+            body.status.set(.resistant, 5);
             g.cooldown.set(.juke, juke.COOLDOWN);
         }
         const target = try renderTarget(g);
@@ -841,10 +917,12 @@ fn shootHud(g: *game.Game) !void {
             posePicker(g, game.harness.boundTo(g, .shoot));
             try capture(g, target, SHOTS_DIR ++ "/hud-bind-pad.png");
             g.mode = .inspect;
-            g.inspecting = .{ .slot = game.Binds.colOf(.x) };
+            g.inspecting = .{ .slot = binds.Binds.colOf(.x) };
             try capture(g, target, SHOTS_DIR ++ "/hud-inspect-skill.png");
             g.inspecting = .{ .status = .burning };
             try capture(g, target, SHOTS_DIR ++ "/hud-inspect-status.png");
+            g.inspecting = .{ .status = .resistant };
+            try capture(g, target, SHOTS_DIR ++ "/hud-inspect-resistance.png");
             g.inspecting = .mana;
             try capture(g, target, SHOTS_DIR ++ "/hud-inspect-mana.png");
             g.mode = .play;
@@ -861,8 +939,8 @@ fn promptRoom(g: *const game.Game) void {
     for (std.enums.values(input.Device)) |d| {
         const st = input.State{ .device = d, .modifier = g.bar.modifier };
         for (skillbar.SLOTS[0 .. skillbar.SLOTS.len - 1], skillbar.SLOTS[1..], game.SLOT_XS[0 .. game.SLOT_XS.len - 1], game.SLOT_XS[1..]) |a, b, xa, xb| {
-            const wa = look.Prompt.of(&st, a).width(&g.face, game.PROMPT_PX);
-            const wb = look.Prompt.of(&st, b).width(&g.face, game.PROMPT_PX);
+            const wa = prompt_icon.Prompt.of(&st, a).width(&g.face, game.PROMPT_PX);
+            const wb = prompt_icon.Prompt.of(&st, b).width(&g.face, game.PROMPT_PX);
             least = @min(least, xb - xa - @divTrunc(wa + wb, 2));
         }
     }
@@ -885,10 +963,10 @@ const EARLY_NIGHT: f32 = day.SUNSET + 2;
 const NIGHT: f32 = day.SUNSET + 2.5;
 const POSE_GAS_TURNS: usize = 3;
 
-fn posePicker(g: *game.Game, u: game.Use) void {
-    game.openBinds(g);
+fn posePicker(g: *game.Game, u: skills.Use) void {
+    binds.openBinds(g);
     g.binds.row = game.rowAt(u.set);
-    g.binds.col = game.Binds.colOf(u.by);
+    g.binds.col = binds.Binds.colOf(u.by);
     var kit_buf: skillbar.KitBuf = undefined;
     g.binds.openPick(g.growth.kit(g.class, &kit_buf), &g.bar);
 }
@@ -1157,13 +1235,13 @@ fn checkWaterSurface(g: *game.Game) !void {
     beds.fill(&lv, .{ .x = 0, .y = 0 }, .{ .x = BANDS.len * BAND, .y = ROWS }, false);
     var sight: [grid.CELLS]rl.Color = @splat(.{ .r = 128, .g = 128, .b = 128, .a = 0 });
     for (sight[0..grid.COLS]) |*pixel| pixel.a = 255;
-    const visibility = look.clamped(look.rgba(&sight, grid.W, grid.H), .point) orelse return error.WaterVisibilityMissing;
+    const visibility = raster.clamped(raster.rgba(&sight, grid.W, grid.H), .point) orelse return error.WaterVisibilityMissing;
     defer rl.unloadTexture(visibility);
-    const gleam = look.canvas(grid.W, grid.H, look.rgb(0x302010), .point) orelse return error.WaterGlintsMissing;
+    const gleam = raster.canvas(grid.W, grid.H, look.rgb(0x302010), .point) orelse return error.WaterGlintsMissing;
     defer rl.unloadTexture(gleam);
-    const dark = look.canvas(1, 1, rl.Color.black, .point) orelse return error.WaterGlintsMissing;
+    const dark = raster.canvas(1, 1, rl.Color.black, .point) orelse return error.WaterGlintsMissing;
     defer rl.unloadTexture(dark);
-    const blank = look.canvas(1, 1, rl.Color.blank, .point) orelse return error.WaterMirrorMissing;
+    const blank = raster.canvas(1, 1, rl.Color.blank, .point) orelse return error.WaterMirrorMissing;
     defer rl.unloadTexture(blank);
     const plain = try waterSample(g, target, &beds, null, .{ 0, 0 });
     defer rl.unloadImage(plain);
@@ -1464,7 +1542,7 @@ fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
     const target = try rl.loadRenderTexture(grid.W * OVERVIEW_CELL, grid.H * OVERVIEW_CELL);
     defer rl.unloadRenderTexture(target);
     try std.fs.cwd().makePath(SHOTS_MAPS);
-    var list = atlas.Listing{};
+    var list = listing.Listing{};
     list.scanAll();
     for (0..list.n) |i| {
         try w.load(std.heap.c_allocator, list.at(i));
@@ -1486,7 +1564,7 @@ fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
         }
         for (g.lv.torches()) |t| g.face.glyph(look.TORCH.ch, t.x * OVERVIEW_CELL + OVERVIEW_MID, t.y * OVERVIEW_CELL + OVERVIEW_MID, OVERVIEW_INK, look.TORCH.fg);
         rl.endTextureMode();
-        var buf: [atlas.PATH_MAX + 32]u8 = undefined;
+        var buf: [listing.PATH_MAX + 32]u8 = undefined;
         const name = try std.fmt.bufPrintZ(&buf, SHOTS_MAPS ++ "/{s}.png", .{list.stem(i)});
         try exportTarget(target, name);
     }

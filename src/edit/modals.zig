@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
+const listing = @import("../map/listing.zig");
 const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
@@ -28,8 +29,8 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
         .none, .confirm, .name, .open => {},
     }
     const body = modalBody(ed);
-    var title_buf: [atlas.PATH_MAX + editor.LINE]u8 = undefined;
-    var dir_buf: [atlas.PATH_MAX]u8 = undefined;
+    var title_buf: [listing.PATH_MAX + editor.LINE]u8 = undefined;
+    var dir_buf: [listing.PATH_MAX]u8 = undefined;
     const title: [:0]const u8 = switch (ed.modal) {
         .confirm => "Unsaved changes",
         .name => if (ed.naming == .new) "New map" else "Save the map as",
@@ -55,7 +56,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
         .name => {
             fieldRow(ed, g, editor.row(x + editor.PAD, y, inner));
             y += editor.ROW_STEP;
-            var pbuf: [atlas.PATH_MAX]u8 = undefined;
+            var pbuf: [listing.PATH_MAX]u8 = undefined;
             const note = if (ed.namedPath(&pbuf)) |p| std.fmt.bufPrintZ(&buf, "Makes {s}", .{p}) catch "" else "Type a name";
             panel.drawFit(g, note, SMALL, inner, false, x + editor.PAD, y, look.DIM);
             std.debug.assert(y + SMALL <= buttons_y);
@@ -86,7 +87,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
     }
 }
 
-const OPEN_TIPS = std.EnumArray(atlas.Listing.Entry, [:0]const u8).init(.{
+const OPEN_TIPS = std.EnumArray(listing.Listing.Entry, [:0]const u8).init(.{
     .up = "The folder above (" ++ input.RUB_CAPTION ++ ")",
     .folder = "Into this folder",
     .map = "Open this map",
@@ -94,21 +95,26 @@ const OPEN_TIPS = std.EnumArray(atlas.Listing.Entry, [:0]const u8).init(.{
 const OPEN_CRIB = Desk.NAV_CAPTION ++ " pick" ++ SEP ++ Desk.ENTER_CAPTION ++ " open" ++ SEP ++ input.RUB_CAPTION ++ " up";
 
 const HELP_W: i32 = 1000;
+const HELP_STEP: i32 = 24;
 
 fn drawHelp(ed: *editor.Editor, g: *game.Game) void {
-    const f = editor.modalFrame(g, HELP_W, editor.MODAL_HEAD + editor.PAD + editor.HELP_ROWS * editor.LINE_STEP + editor.ROW_H + editor.PAD, "Every key", false);
+    const f = editor.modalFrame(g, HELP_W, editor.MODAL_HEAD + editor.PAD + editor.HELP_ROWS * HELP_STEP + editor.ROW_H + editor.PAD, "Every key", false);
     const x = f.x;
     const w = f.w;
-    var y = f.y;
+    var ys = [_]i32{ f.y, f.y };
+    const column_w = @divTrunc(w - 3 * editor.PAD, 2);
     for (editor.HELP) |s| {
-        panel.drawFit(g, s.head, editor.TEXT, w - 2 * editor.PAD, false, x + editor.PAD, y, look.DIM);
-        y += editor.LINE_STEP;
+        const cx = x + editor.PAD + @as(i32, @intCast(s.column)) * (column_w + editor.PAD);
+        var y = ys[s.column];
+        panel.drawFit(g, s.head, font.SMALL, column_w, false, cx, y, look.UI_GOLD);
+        y += HELP_STEP;
         for (s.lines) |l| {
-            panel.drawFit(g, l, editor.TEXT, w - 2 * editor.PAD, false, x + editor.PAD, y, look.TEXT);
-            y += editor.LINE_STEP;
+            panel.drawFit(g, l, font.SMALL, column_w, false, cx, y, look.TEXT);
+            y += HELP_STEP;
         }
+        ys[s.column] = y + HELP_STEP;
     }
-    backButton(ed, g, f.buttonX(), y, "Close");
+    backButton(ed, g, f.buttonX(), @max(ys[0], ys[1]), "Close");
 }
 
 const VIEW_W: i32 = 960;
@@ -148,8 +154,8 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     var facts = Facts{};
     seenFacts(s, &facts);
     for (facts.all()) |l| {
-        panel.drawFit(g, l, editor.TEXT, x + w - editor.PAD - dx, false, dx, dy, look.DIM);
-        dy += editor.LINE_STEP;
+        panel.drawFit(g, l, font.SMALL, x + w - editor.PAD - dx, false, dx, dy, look.TEXT);
+        dy += font.SMALL + 4;
     }
     backButton(ed, g, f.buttonX(), y + cells_h, "Close");
     if (seenFoe(s) != null) {
@@ -220,18 +226,18 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
         },
         .body => |k| {
             const r = actor.row(k);
-            f.put("Movement: {s}", .{menu.named(r.movement)});
-            if (r.foe_type) |kind| f.put("Foe type: {s}", .{menu.named(kind)});
-            f.put("{d} hp, sees {d} cells", .{ r.hp, r.sight });
+            if (r.foe_type) |kind| f.put("{s}  /  {s}", .{ menu.named(kind), menu.named(r.movement) }) else f.put("{s}", .{menu.named(r.movement)});
+            f.put("Life {d}  /  Sight {d} cells", .{ r.hp, r.sight });
+            if (r.armour > 0 or r.stun_resist > 0) f.put("Physical reduction {d}%  /  Stun resist {d}%", .{ r.armour, r.stun_resist });
             switch (r.blow) {
                 .strike => |st| {
-                    f.put("Its blow: it {s} for {d} to {d}", .{ st.verb, st.hit.lo, st.hit.hi });
+                    f.put("{d}-{d} physical damage ({s})", .{ st.hit.lo, st.hit.hi, st.verb });
                     if (st.bleeds > 0) f.put("{d}% of its blows open a bleed", .{st.bleeds});
                     if (st.stuns > 0) f.put("{d}% of its blows stun, friend or foe", .{st.stuns});
                 },
                 .burst => f.put("Bursts into caustic gas instead of striking", .{}),
             }
-            if (r.sweep_every > 0) f.put("Every {d} turns its blow " ++ actor.SWEEP_VERB ++ " all {d} cells round it", .{ r.sweep_every, actor.SWEEP_CELLS });
+            if (r.sweep_every > 0) f.put("Sweeps {d} adjacent cells every {d} turns", .{ actor.SWEEP_CELLS, r.sweep_every });
             if (r.ranged) |ranged| {
                 f.put("Fires arrows up to {d} cells along a clear line", .{ranged.range});
                 f.put("Backs away within {d} cells; shoots if cornered", .{ranged.retreat});

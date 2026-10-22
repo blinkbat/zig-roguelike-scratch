@@ -9,6 +9,8 @@ const damage = @import("../play/damage.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
+const prompt_icon = @import("../gfx/prompt_icon.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
 const trees = @import("trees.zig");
@@ -54,6 +56,7 @@ const RIGHT = 568;
 const DIVIDER_X = RIGHT - 18;
 const ROW = 28;
 const VISIBLE = 14;
+const DIRECT_VISIBLE = 8;
 /// A list's rows, then its text and second column within a row, and their tops down from the row's.
 const LIST_X = menu.PANEL_PAD;
 const LIST_Y = 30;
@@ -65,7 +68,7 @@ const ROW_SECOND_DY = 5;
 /// Down from a list's header to "Empty" when it has no rows.
 const EMPTY_DY = 46;
 /// The area under the tabs a page lays out in.
-pub const AREA = look.rect(LIST_X, TOP, W - 2 * LIST_X, AREA_H);
+pub const AREA = raster.rect(LIST_X, TOP, W - 2 * LIST_X, AREA_H);
 const AREA_H = 458;
 const CARD_W = 246;
 const CARD_GAP = 16;
@@ -217,6 +220,7 @@ pub const Book = struct {
     zoom: f32 = trees.ZOOM_START,
     pan: rl.Vector2 = .{ .x = 0, .y = 0 },
     destination_index: usize = 0,
+    mouse_panning: bool = false,
     message: menu.Note(80) = .{},
 
     pub fn open(self: *Book) void {
@@ -241,6 +245,7 @@ pub const Book = struct {
         self.resetView();
     }
     fn resetView(self: *Book) void {
+        self.mouse_panning = false;
         self.zoom = trees.ZOOM_START;
         self.recentre();
         self.destination_index = 0;
@@ -273,7 +278,8 @@ pub const Book = struct {
         };
     }
     fn settledTop(self: *const Book, v: View) usize {
-        return @min(mathx.reveal(self.top, self.cursor, VISIBLE), self.count(v) -| VISIBLE);
+        const visible = self.visibleRows();
+        return @min(mathx.reveal(self.top, self.cursor, visible), self.count(v) -| visible);
     }
     /// A scrolling list rather than laid-out cells.
     fn listed(self: *const Book) bool {
@@ -301,7 +307,7 @@ pub const Book = struct {
         return self.page == .passives;
     }
     fn inWindow(self: *const Book, i: usize) bool {
-        return !self.listed() or (i >= self.top and i < self.top + VISIBLE);
+        return !self.listed() or (i >= self.top and i < self.top + self.visibleRows());
     }
     pub fn enter(self: *Book, v: View) void {
         if (self.count(v) == 0) return;
@@ -347,7 +353,10 @@ pub const Book = struct {
         return if (self.page == .loot) HOLDING_Y + font.SMALL + DIRECT_GAP else CLOSE_Y + CLOSE_H + DIRECT_GAP;
     }
     fn cardTop(self: *const Book, v: View) i32 {
-        return self.directTop() + @as(i32, @intCast(@min(self.count(v), VISIBLE))) * ROW + DIRECT_GAP;
+        return self.directTop() + @as(i32, @intCast(@min(self.count(v), self.visibleRows()))) * ROW + DIRECT_GAP;
+    }
+    fn visibleRows(self: *const Book) usize {
+        return if (self.direct()) DIRECT_VISIBLE else VISIBLE;
     }
     /// The tallest card any listed item needs, so the panel keeps its size while the cursor moves.
     fn cardRoom(v: View) i32 {
@@ -380,7 +389,7 @@ pub const Book = struct {
         }
         self.top = self.settledTop(v);
         if (local.click) if (local.pointer) |p| if (self.buttonAt(p, v)) |b| {
-            local.pressed.insert(b);
+            if (self.page == .passives and b == input.TreeKeys.PAD_OVERVIEW) local.tree.reset = true else local.pressed.insert(b);
             local.click = false;
         };
         if (menu.closed(st)) return .close;
@@ -396,6 +405,14 @@ pub const Book = struct {
         }
         if (self.page == .skills and st.hit(menu.CHANGE)) return .{ .bindings = self.selectedSkill(v) };
         if (self.page == .passives) {
+            if (!st.dragging) self.mouse_panning = false;
+            if (st.middle_click) if (st.pointer) |p| {
+                self.mouse_panning = trees.onCanvas(p);
+            };
+            if (self.mouse_panning) {
+                const scale = self.surface(screen, v).scale;
+                self.pan = trees.drag(self.treeView(), .{ .x = @as(f32, @floatFromInt(st.mouse_delta.x)) / scale, .y = @as(f32, @floatFromInt(st.mouse_delta.y)) / scale });
+            }
             if (st.hit(menu.CHANGE)) self.zoomBy(trees.ZOOM_STEP);
             if (st.hit(menu.REMOVE)) self.zoomBy(-trees.ZOOM_STEP);
             if (st.tree.zoom != 0) self.zoomBy(st.tree.zoom * trees.ZOOM_RATE * st.tree.dt);
@@ -414,8 +431,8 @@ pub const Book = struct {
         if (self.listed() and st.scroll != 0 and self.count(v) > 0) {
             self.cursor = mathx.nudge(self.cursor, -st.scroll, self.count(v));
         }
-        if (st.click) if (st.pointer) |p| {
-            if (!self.direct()) for (PAGES, 0..) |page, i| if (look.holds(tabBox(i), p)) {
+        if (st.click and !self.mouse_panning) if (st.pointer) |p| {
+            if (!self.direct()) for (PAGES, 0..) |page, i| if (raster.holds(tabBox(i), p)) {
                 self.choose(page);
                 self.enter(v);
                 return null;
@@ -423,7 +440,7 @@ pub const Book = struct {
             for (0..self.count(v)) |i| {
                 if (!self.inWindow(i)) continue;
                 if (self.page == .passives and !trees.onCanvas(p)) continue;
-                if (look.holds(self.cellBox(i, v), p)) {
+                if (raster.holds(self.cellBox(i, v), p)) {
                     self.browse(i);
                     return null;
                 }
@@ -448,8 +465,12 @@ pub const Book = struct {
     }
     /// The button whose box is under `p`, so a click there is that button's press.
     fn buttonAt(self: *const Book, p: P, v: View) ?input.Button {
+        if (!self.direct()) {
+            if (raster.holds(raster.rect(LIST_X, TAB_Y, SHOULDER_W, TAB_H), p)) return menu.PAGE_PREV;
+            if (raster.holds(raster.rect(W - LIST_X - SHOULDER_W, TAB_Y, SHOULDER_W, TAB_H), p)) return menu.PAGE_NEXT;
+        }
         const shown = self.controls(v);
-        for (shown.all[0..shown.n]) |c| if (look.holds(c.box, p)) return c.button;
+        for (shown.all[0..shown.n]) |c| if (raster.holds(c.box, p)) return c.button;
         return null;
     }
     /// Every button the page shows, the close button first.
@@ -459,7 +480,8 @@ pub const Book = struct {
         switch (self.page) {
             .passives => {
                 for ([_]bool{ false, true }) |increase| c.add(trees.zoomBox(increase), if (increase) menu.CHANGE else menu.REMOVE, .drawn);
-                c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (v.growth.canAllocate(self.cursor)) 1 else look.FADED_A });
+                c.add(trees.overviewBox(), input.TreeKeys.PAD_OVERVIEW, .drawn);
+                if (!v.growth.nodes.isSet(self.cursor)) c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (v.growth.canAllocate(self.cursor)) 1 else look.FADED_A });
             },
             .skills => {
                 const act = self.selectedSkill(v);
@@ -490,19 +512,19 @@ pub const Book = struct {
     pub fn actionBox(self: *const Book, b: input.Button, v: View) rl.Rectangle {
         const i: i32 = @intCast(std.mem.indexOfScalar(input.Button, &ACTIONS, b).?);
         const x: i32 = if (self.direct()) LIST_X else RIGHT;
-        return look.rect(x + i * (ACTION_W + menu.ACTION_GAP), if (self.direct()) self.directActionY(v) else ACTION_Y, ACTION_W, ACTION_H);
+        return raster.rect(x + i * (ACTION_W + menu.ACTION_GAP), if (self.direct()) self.directActionY(v) else ACTION_Y, ACTION_W, ACTION_H);
     }
     fn closeBox(self: *const Book, v: View) rl.Rectangle {
-        return look.rect(self.size(v).x - LIST_X - CLOSE_W, CLOSE_Y, CLOSE_W, CLOSE_H);
+        return raster.rect(self.size(v).x - LIST_X - CLOSE_W, CLOSE_Y, CLOSE_W, CLOSE_H);
     }
     fn cellBox(self: *const Book, i: usize, v: View) rl.Rectangle {
         const y = TOP;
         return switch (self.page) {
             .equipment => blk: {
                 const s = SLOT_BOX.get(items.SLOTS[i]);
-                break :blk look.rect(s.at.x, y + s.at.y, s.w, s.h);
+                break :blk raster.rect(s.at.x, y + s.at.y, s.w, s.h);
             },
-            .inventory, .nearby, .loot => look.rect(LIST_X, (if (self.direct()) self.directTop() else y + LIST_Y) + (@as(i32, @intCast(i)) - @as(i32, @intCast(self.top))) * ROW, LIST_W, ROW),
+            .inventory, .nearby, .loot => raster.rect(LIST_X, (if (self.direct()) self.directTop() else y + LIST_Y) + (@as(i32, @intCast(i)) - @as(i32, @intCast(self.top))) * ROW, LIST_W, ROW),
             .passives, .skills => trees.cellBox(self.treePanel().?, v.class, i, self.treeView()),
             .stats => unreachable,
         };
@@ -528,7 +550,7 @@ pub const Book = struct {
             header(face, who.text());
             var xp: menu.Note(100) = .{};
             xp.say("Level  {d}     XP  {d} / {d}", .{ v.growth.level, v.growth.xp, v.growth.needed() });
-            face.drawMiddle(xp.text(), RIGHT, HEADER_MID, font.BODY, look.TEXT);
+            face.drawMiddle(xp.text(), RIGHT, HEADER_MID, font.SMALL, look.DIM);
             for (PAGES, 0..) |page, i| tab(face, tabBox(i), page, self.page == page, v.device);
             if (self.treePanel() == null) rl.drawLine(DIVIDER_X, TOP, DIVIDER_X, DIVIDER_FOOT, look.EDGE);
             if (self.treePanel()) |panel| {
@@ -545,7 +567,7 @@ pub const Book = struct {
         }
         const shown = self.controls(v);
         for (shown.all[0..shown.n]) |c| {
-            const prompt = look.Prompt.menuOn(v.device, c.button);
+            const prompt = prompt_icon.Prompt.menuOn(v.device, c.button);
             switch (c.shown) {
                 .label => |label| menu.action(face, c.box, prompt, label),
                 .prompt => |alpha| _ = menu.actionPrompt(face, c.box, prompt, alpha),
@@ -553,8 +575,8 @@ pub const Book = struct {
             }
         }
         if (!self.direct()) {
-            look.Prompt.menuOn(v.device, menu.PAGE_PREV).draw(face, LIST_X + SHOULDER_W / 2, TAB_MID, font.BODY, 1);
-            look.Prompt.menuOn(v.device, menu.PAGE_NEXT).draw(face, W - LIST_X - SHOULDER_W / 2, TAB_MID, font.BODY, 1);
+            prompt_icon.Prompt.menuOn(v.device, menu.PAGE_PREV).draw(face, LIST_X + SHOULDER_W / 2, TAB_MID, font.BODY, 1);
+            prompt_icon.Prompt.menuOn(v.device, menu.PAGE_NEXT).draw(face, W - LIST_X - SHOULDER_W / 2, TAB_MID, font.BODY, 1);
         }
     }
 
@@ -610,7 +632,7 @@ pub const Book = struct {
                     var fitted: [64]u8 = undefined;
                     face.draw(face.fit(&fitted, slotLabel(slot), SLOT_LABEL, inner, false), x + SLOT_INSET, y + SLOT_INSET, SLOT_LABEL, look.DIM);
                     const it = v.inventory.gear.slots.get(slot);
-                    const mid = look.middleAt(r);
+                    const mid = raster.middleAt(r);
                     if (offhandWeapon(v.inventory.gear, slot)) |weapon| {
                         face.centred(BOTH_HANDS, mid.x, mid.y - PAIR_DY, font.SMALL, look.DIM);
                         face.centred(face.fit(&fitted, weapon.name(), font.SMALL, inner, false), mid.x, mid.y + PAIR_DY, font.SMALL, look.DIM);
@@ -659,7 +681,8 @@ pub const Book = struct {
         itemCard(face, x, y, if (comparing) CARD_W else DETAIL_W, it, slot, self.requirementAttrs(v, slot), if (comparing) "SELECTED" else "EQUIPPED");
         if (comparing) itemCard(face, x + CARD_W + CARD_GAP, y, CARD_W, v.inventory.gear.slots.get(slot), slot, v.inventory.gear.statsWithout(slot, v.base), "EQUIPPED");
         if (comparing) {
-            const at = y + CARD_H + CHANGES_GAP;
+            const equipped = v.inventory.gear.slots.get(slot);
+            const at = y + @max(cardFoot(it, slot, self.requirementAttrs(v, slot)), if (equipped) |worn| cardFoot(worn, slot, v.inventory.gear.statsWithout(slot, v.base)) else CARD_SLOT + font.SMALL) + CHANGES_GAP;
             if (v.inventory.preview(self.cursor, slot, v.base)) |after| {
                 var below = drawChanges(face, x, at, v.stats(), after.stats(v.base)) + RETURNS_GAP;
                 for (items.SLOTS) |s| {
@@ -682,7 +705,7 @@ pub const Book = struct {
     }
 };
 
-const CONTROLS_MAX = 4;
+const CONTROLS_MAX = 5;
 /// A labelled button; a prompt over a button the tree panel draws, at this alpha; or drawn there whole.
 const Shown = union(enum) { label: [:0]const u8, prompt: f32, drawn };
 const Control = struct { box: rl.Rectangle, button: input.Button, shown: Shown };
@@ -704,7 +727,7 @@ fn listRow(face: *const font.Face, x: i32, y: i32, text: [:0]const u8, ink: rl.C
     face.draw(second, x + SECOND_X, y + ROW_SECOND_DY, font.SMALL, look.DIM);
 }
 fn tabBox(i: usize) rl.Rectangle {
-    return look.rect(TABS_X + @as(i32, @intCast(i)) * (TAB_W + TAB_GAP), TAB_Y, TAB_W, TAB_H);
+    return raster.rect(TABS_X + @as(i32, @intCast(i)) * (TAB_W + TAB_GAP), TAB_Y, TAB_W, TAB_H);
 }
 /// The detail panel's buttons, left to right.
 const ACTIONS = [_]input.Button{ menu.CONFIRM, menu.CHANGE, menu.REMOVE };
@@ -722,11 +745,11 @@ fn slotLabel(s: items.Slot) [:0]const u8 {
 }
 fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: input.Device) void {
     menu.outline(r, on, look.UI_FOCUS, look.EDGE);
-    const m = look.middleAt(r);
+    const m = raster.middleAt(r);
     const text = menu.named(page);
     const ink = if (on) look.TEXT else look.DIM;
     if (!device.pad()) {
-        const prompt = look.Prompt{ .key = page.shortcut().?.caption() };
+        const prompt = prompt_icon.Prompt{ .key = page.shortcut().?.caption() };
         const left = m.x - @divTrunc(prompt.width(face, font.BODY) + menu.PROMPT_GAP + face.width(text, font.BODY), 2);
         const after = prompt.drawFrom(face, left, m.y, font.BODY, if (on) 1 else OFF_TAB_A);
         face.drawMiddle(text, after + menu.PROMPT_GAP, m.y, font.BODY, ink);
@@ -746,51 +769,53 @@ fn dependent(v: View, at: usize, slot: items.Slot) ?items.Item {
     return null;
 }
 
-const CARD_LINE = 22;
+const CARD_LINE = 20;
 /// Down from a card's top: its rule, name (or "Empty slot"), slot, flavor and first stat line.
 const CARD_RULE = 20;
 const CARD_NAME = 32;
 const CARD_EMPTY = 35;
 const CARD_SLOT = 62;
-const CARD_FLAVOR = 82;
-const CARD_STATS = 104;
+const CARD_STATS = 88;
+const FLAVOR_GAP = 12;
 /// Above and below the modifiers' rule, and its inset from the card's sides.
-const MODS_ABOVE = 8;
-const MODS_BELOW = 12;
-const MODS_INSET = 30;
+const MODS_ABOVE = 6;
+const MODS_BELOW = 10;
+const MODS_INSET = 0;
 
 const CardLine = union(enum) {
     damage: damage.Base,
-    scaling: attr.Attr,
     unarmed,
     armour: i16,
-    requires: struct { at: attr.Attr, n: i32, met: bool },
-    available: i32,
+    innate: items.Innate,
+    bleed_damage: i32,
+    requires: struct { at: attr.Attr, n: i32, available: i32, met: bool },
 
     fn text(l: CardLine, out: *menu.Note(120)) [:0]const u8 {
         switch (l) {
             .damage => |hit| out.say(damage.PHYSICAL_FMT, .{ hit.lo, hit.hi }),
-            .scaling => |at| out.say(attr.SCALES_FMT, .{menu.named(at)}),
             .unarmed => return "No weapon damage",
-            .armour => |n| out.say("Physical damage reduced by {d}%", .{n}),
-            .requires => |r| out.say("Requires {d} {s}", .{ r.n, menu.named(r.at) }),
-            .available => |n| out.say("({d} available)", .{n}),
+            .armour => |n| out.say("{d}% physical damage reduction", .{n}),
+            .innate => |innate| {
+                out.clear();
+                innate.write(out.writer());
+            },
+            .bleed_damage => |n| out.say("Bleed: {d}/turn, {d} when moving", .{ n, n * 2 }),
+            .requires => |r| if (r.met) out.say("Requires {d} {s}", .{ r.n, menu.named(r.at) }) else out.say("Requires {d} {s} ({d} available)", .{ r.n, menu.named(r.at), r.available }),
         }
         return out.text();
     }
 
     fn ink(l: CardLine) rl.Color {
         return switch (l) {
-            .damage, .armour => look.TEXT,
-            .scaling, .unarmed => look.DIM,
+            .damage, .armour, .innate, .bleed_damage => look.TEXT,
+            .unarmed => look.DIM,
             .requires => |r| if (r.met) look.DIM else LOSS,
-            .available => LOSS,
         };
     }
 };
 
 const CardLines = struct {
-    all: [3 + 2 * attr.ATTRS.len]CardLine = undefined,
+    all: [4 + attr.ATTRS.len]CardLine = undefined,
     n: usize = 0,
 
     fn add(self: *CardLines, l: CardLine) void {
@@ -798,20 +823,22 @@ const CardLines = struct {
         self.n += 1;
     }
 
-    /// `spec`'s lines for `slot`; with no `available`, every requirement is unmet, the most lines it can have.
+    /// `spec`'s lines for `slot`; with no `available`, every requirement is unmet by one, the most and widest lines it can have.
     fn of(spec: items.Spec, slot: items.Slot, available: ?attr.Attrs) CardLines {
         var out: CardLines = .{};
         if (spec.damage) |hit| {
             out.add(.{ .damage = hit });
-            out.add(.{ .scaling = spec.style.attr() });
         } else if (slot == .right_hand) out.add(.unarmed);
         if (spec.armour > 0) out.add(.{ .armour = spec.armour });
+        if (spec.innate) |innate| {
+            out.add(.{ .innate = innate });
+            if (innate == .bleed) out.add(.{ .bleed_damage = innate.bleed.damage });
+        }
         inline for (attr.ATTRS) |at| {
             const required = @field(spec.needs, @tagName(at));
             if (required > 0) {
                 const met = if (available) |a| a.get(at) >= required else false;
-                out.add(.{ .requires = .{ .at = at, .n = required, .met = met } });
-                if (!met) out.add(.{ .available = if (available) |a| a.get(at) else 0 });
+                out.add(.{ .requires = .{ .at = at, .n = required, .met = met, .available = if (available) |a| a.get(at) else required - 1 } });
             }
         }
         return out;
@@ -826,8 +853,7 @@ const CardLines = struct {
 fn footOf(lines: usize, mods: usize) i32 {
     const n: i32 = @intCast(lines);
     const m: i32 = @intCast(mods);
-    const last = CARD_STATS + n * CARD_LINE + (if (m > 0) MODS_ABOVE + MODS_BELOW + m * CARD_LINE else 0) - CARD_LINE;
-    return @max(CARD_FLAVOR, last) + font.SMALL;
+    return CARD_STATS + n * CARD_LINE + (if (m > 0) MODS_ABOVE + MODS_BELOW + m * CARD_LINE else 0) + FLAVOR_GAP + font.LABEL;
 }
 
 fn cardFoot(it: items.Item, slot: items.Slot, available: attr.Attrs) i32 {
@@ -849,25 +875,27 @@ comptime {
 }
 
 fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.Item, slot: items.Slot, available: attr.Attrs, caption: [:0]const u8) void {
-    const mid = x + @divTrunc(width, 2);
-    face.drawMid(caption, mid, y, font.SMALL, look.DIM);
+    face.draw(caption, x, y, font.LABEL, look.DIM);
     rl.drawLine(x, y + CARD_RULE, x + width, y + CARD_RULE, look.EDGE);
     const it = maybe orelse {
-        face.drawMid(EMPTY_SLOT, mid, y + CARD_EMPTY, font.BODY, look.DIM);
-        face.drawMid(slot.name(), mid, y + CARD_SLOT, font.SMALL, look.DIM);
+        face.draw(EMPTY_SLOT, x, y + CARD_EMPTY, font.BODY, look.DIM);
+        face.draw(slot.name(), x, y + CARD_SLOT, font.LABEL, look.DIM);
         return;
     };
     const spec = items.spec(it.kind);
     const ink = look.itemInk(it.magical());
     var fitted: [64]u8 = undefined;
-    face.engravedMid(face.fit(&fitted, it.name(), font.HEAD, width, false), mid, y + CARD_NAME, font.HEAD, ink);
-    face.drawMid(if (slot == .right_hand) (if (spec.two_handed) TWO_HANDED else ONE_HANDED) else slot.name(), mid, y + CARD_SLOT, font.SMALL, look.DIM);
-    face.drawMid(face.fit(&fitted, it.flavor(), font.SMALL, width, false), mid, y + CARD_FLAVOR, font.SMALL, look.DIM);
+    face.engraved(face.fit(&fitted, it.name(), font.HEAD, width, false), x, y + CARD_NAME, font.HEAD, ink);
+    var metadata: menu.Note(100) = .{};
+    const slot_name = if (slot == .right_hand) (if (spec.two_handed) TWO_HANDED else ONE_HANDED) else slot.name();
+    if (spec.damage != null) metadata.say("{s}  /  {s}", .{ slot_name, menu.named(spec.style.attr()) }) else metadata.say("{s}", .{slot_name});
+    face.draw(metadata.text(), x, y + CARD_SLOT, font.LABEL, look.DIM);
     var top = y + CARD_STATS;
     var line: menu.Note(120) = .{};
     const stats = CardLines.of(spec, slot, available);
     for (stats.lines()) |l| {
-        face.drawMid(l.text(&line), mid, top, font.SMALL, l.ink());
+        const size = if (l == .requires or l == .bleed_damage or l == .unarmed) font.LABEL else font.SMALL;
+        face.draw(l.text(&line), x, top, size, l.ink());
         top += CARD_LINE;
     }
     if (it.magical()) {
@@ -878,10 +906,11 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
             const n = it.value(m);
             if (n == 0) continue;
             line.say(attr.Bonus.RAISE_FMT, .{ n, m.label() });
-            face.drawMid(line.text(), mid, top, font.SMALL, look.MAGIC);
+            face.draw(line.text(), x, top, font.SMALL, look.MAGIC);
             top += CARD_LINE;
         }
     }
+    face.draw(face.fit(&fitted, it.flavor(), font.LABEL, width, false), x, top + FLAVOR_GAP, font.LABEL, look.DIM);
 }
 
 fn change(face: *const font.Face, x: i32, y: i32, n: *usize, label: [:0]const u8, was: i32, now: i32, percent: bool) void {
@@ -894,7 +923,7 @@ fn change(face: *const font.Face, x: i32, y: i32, n: *usize, label: [:0]const u8
     n.* += 1;
 }
 
-const CHANGE_ROW = 20;
+const CHANGE_ROW = 18;
 const CHANGE_COLS = 2;
 
 fn changeRows(n: usize) i32 {
@@ -907,6 +936,10 @@ const Measure = union(enum) {
     attribute: attr.Attr,
     reduction,
     crit,
+    weapon_crit,
+    spell_crit,
+    physical,
+    element: damage.Element,
     dodge,
     style: attr.Style,
 
@@ -917,6 +950,10 @@ const Measure = union(enum) {
             .attribute => |at| a.get(at),
             .reduction => a.reduction(),
             .crit => @intCast(a.crit()),
+            .weapon_crit => @min(100, @as(i32, @intCast(a.crit())) + a.weapon_crit_bonus),
+            .spell_crit => @min(100, @as(i32, @intCast(a.crit())) + a.spell_crit_bonus),
+            .physical => a.physical_bonus,
+            .element => |e| a.element_bonus.get(e),
             .dodge => @intCast(a.dodge()),
             .style => |s| a.increase(s),
         };
@@ -925,7 +962,7 @@ const Measure = union(enum) {
     fn percent(m: Measure) bool {
         return switch (m) {
             .life, .mana, .attribute => false,
-            .reduction, .crit, .dodge, .style => true,
+            .reduction, .crit, .weapon_crit, .spell_crit, .physical, .element, .dodge, .style => true,
         };
     }
 
@@ -937,6 +974,12 @@ const Measure = union(enum) {
             .attribute => |at| menu.named(at),
             .reduction => comptime menu.capital(attr.REDUCTION_LABEL),
             .crit => comptime menu.capital(attr.CRIT_LABEL),
+            .weapon_crit => "Weapon critical chance",
+            .spell_crit => "Spell critical chance",
+            .physical => "Physical damage bonus",
+            .element => |e| switch (e) {
+                inline else => |t| comptime menu.capital(@tagName(t)) ++ " damage bonus",
+            },
             .dodge => "Chance to dodge",
             .style => |s| s.label(),
         };
@@ -950,6 +993,12 @@ const Measure = union(enum) {
             .attribute => |at| menu.named(at),
             .reduction => "physical reduction",
             .crit => "critical chance",
+            .weapon_crit => "weapon critical chance",
+            .spell_crit => "spell critical chance",
+            .physical => "physical damage",
+            .element => |e| switch (e) {
+                inline else => |t| @tagName(t) ++ " damage",
+            },
             .dodge => "dodge chance",
             .style => |s| damageLabel(s),
         };
@@ -959,14 +1008,12 @@ const Measure = union(enum) {
 const CHANGE_ROWS = blk: {
     var rows: []const Measure = &.{ .life, .mana };
     for (attr.ATTRS) |at| rows = rows ++ &[_]Measure{.{ .attribute = at }};
-    rows = rows ++ &[_]Measure{ .reduction, .crit, .dodge };
+    rows = rows ++ &[_]Measure{ .reduction, .weapon_crit, .spell_crit, .dodge };
     for (attr.STYLES) |s| rows = rows ++ &[_]Measure{.{ .style = s }};
+    rows = rows ++ &[_]Measure{.physical};
+    for (std.enums.values(damage.Element)) |e| rows = rows ++ &[_]Measure{.{ .element = e }};
     break :blk rows[0..rows.len].*;
 };
-
-comptime {
-    std.debug.assert(TOP + CARD_H + CHANGES_GAP + CARD_LINE + changeRows(CHANGE_ROWS.len) * CHANGE_ROW + RETURNS_GAP + font.SMALL <= ACTION_Y);
-}
 
 /// The foot of the change list.
 fn drawChanges(face: *const font.Face, x: i32, y: i32, was: attr.Attrs, now: attr.Attrs) i32 {
@@ -994,19 +1041,17 @@ fn damageLabel(s: attr.Style) [:0]const u8 {
 const STAT_W = 440;
 const STATS_X = 40;
 /// A section's title to its rule and to its first row, and row to row.
-const SECTION_RULE = 25;
-const SECTION_ROWS = 38;
-const STAT_ROW = 30;
-const ATTR_ROW = 58;
+const SECTION_RULE = 22;
+const SECTION_ROWS = 32;
+const STAT_ROW = 24;
+const ATTR_ROW = 48;
 /// Under an attribute's row, its description.
-const ATTR_NOTE_DY = 25;
+const ATTR_NOTE_DY = 23;
 /// Below a section's rows: its note, and the gap to what follows.
 const SURVIVAL_NOTE_DY = 7;
-const BONUS_NOTE_DY = 11;
 const SURVIVAL_GAP = 14;
-const CRIT_GAP = 52;
+const CRIT_GAP = 20;
 const PROGRESSION_GAP = 32;
-const GOLD_GAP = 20;
 
 fn row(top: i32, i: usize, step: i32) i32 {
     return top + SECTION_ROWS + @as(i32, @intCast(i)) * step;
@@ -1021,6 +1066,27 @@ fn stat(face: *const font.Face, x: i32, y: i32, label: [:0]const u8, number: i32
 
 fn measure(face: *const font.Face, x: i32, y: i32, m: Measure, a: attr.Attrs) void {
     stat(face, x, y, m.title(), m.of(a), if (m == .style) "+" else "", if (m.percent()) "%" else "");
+}
+
+pub fn verifyCards(face: *const font.Face) !void {
+    var count: usize = 0;
+    var text: menu.Note(120) = .{};
+    for (std.enums.values(items.Kind)) |kind| {
+        const spec = items.spec(kind);
+        for (spec.slots) |slot| {
+            const rows = CardLines.of(spec, slot, null);
+            for (rows.lines()) |line| {
+                const size = if (line == .requires or line == .bleed_damage or line == .unarmed) font.LABEL else font.SMALL;
+                const value = line.text(&text);
+                if (face.width(value, size) > CARD_W) {
+                    std.debug.print("card overflow {s}: {s}\n", .{ spec.name, value });
+                    return error.ItemCardOverflow;
+                }
+                count += 1;
+            }
+        }
+    }
+    std.debug.print("item typography: {d} property and requirement rows fit {d}px comparison cards\n", .{ count, CARD_W });
 }
 
 const SURVIVAL = [_]Measure{ .life, .mana, .reduction, .dodge };
@@ -1043,7 +1109,7 @@ fn drawStats(face: *const font.Face, v: View) void {
             .strength => "Life and heavy weapon damage",
             .dexterity => "Light weapons, critical chance and dodge",
             .intelligence => "Mana and spell damage",
-        }, x, top + ATTR_NOTE_DY, font.SMALL, look.DIM);
+        }, x, top + ATTR_NOTE_DY, font.LABEL, look.DIM);
     }
     const survival = row(y, attr.ATTRS.len, ATTR_ROW) + SURVIVAL_GAP;
     section(face, x, survival, "SURVIVAL");
@@ -1051,18 +1117,34 @@ fn drawStats(face: *const font.Face, v: View) void {
     var note: menu.Note(100) = .{};
     note.say("Physical reduction is capped at {d}%.", .{attr.ARMOUR_MAX});
     face.draw(note.text(), x, row(survival, SURVIVAL.len, STAT_ROW) + SURVIVAL_NOTE_DY, font.SMALL, look.DIM);
+    const perks = v.inventory.gear.perks(v.growth.perks());
+    const recovery = row(survival, SURVIVAL.len, STAT_ROW) + 34;
+    note.say("Mana recovery  {d} / {d} turns", .{ hero.MANA_REGEN + perks.mana_regen, hero.MANA_REGEN_TURNS });
+    face.draw(note.text(), x, recovery, font.SMALL, look.TEXT);
+    note.say("Life on hit  {d}     Life on kill  {d}", .{ perks.life_on_hit, perks.life_on_kill });
+    face.draw(note.text(), x, recovery + STAT_ROW, font.SMALL, look.TEXT);
+    note.say("Life flask recovery  +{d}%", .{perks.life_flask});
+    face.draw(note.text(), x, recovery + 2 * STAT_ROW, font.LABEL, look.DIM);
     section(face, right, y, "DAMAGE BONUSES");
     for (attr.STYLES, 0..) |s, i| measure(face, right, row(y, i, STAT_ROW), .{ .style = s }, a);
-    const bonuses = row(y, attr.STYLES.len, STAT_ROW);
-    face.draw("Bonuses to base damage; skill ranks add their own.", right, bonuses + BONUS_NOTE_DY, font.SMALL, look.DIM);
+    var bonuses = row(y, attr.STYLES.len, STAT_ROW);
+    if (a.physical_bonus != 0) {
+        measure(face, right, bonuses, .physical, a);
+        bonuses += STAT_ROW;
+    }
+    for (std.enums.values(damage.Element)) |e| if (a.element_bonus.get(e) != 0) {
+        measure(face, right, bonuses, .{ .element = e }, a);
+        bonuses += STAT_ROW;
+    };
     const crit = bonuses + CRIT_GAP;
-    measure(face, right, crit, .crit, a);
-    stat(face, right, crit + STAT_ROW, "Critical damage multiplier", attr.CRIT_MULTI, "", "%");
-    const progression = crit + 2 * STAT_ROW + PROGRESSION_GAP;
+    measure(face, right, crit, .weapon_crit, a);
+    measure(face, right, crit + STAT_ROW, .spell_crit, a);
+    stat(face, right, crit + 2 * STAT_ROW, "Critical damage multiplier", attr.CRIT_MULTI, "", "%");
+    const progression = crit + 3 * STAT_ROW + PROGRESSION_GAP;
     section(face, right, progression, "PROGRESSION");
-    stat(face, right, row(progression, 0, STAT_ROW), "Passive points available", v.growth.passive_points, "", "");
-    stat(face, right, row(progression, 1, STAT_ROW), "Active skill points available", v.growth.active_points, "", "");
-    stat(face, right, row(progression, 2, STAT_ROW) + GOLD_GAP, "Gold", v.gold, "", "");
+    note.say("Passive points  {d}     Skill points  {d}", .{ v.growth.passive_points, v.growth.active_points });
+    face.draw(note.text(), right, row(progression, 0, STAT_ROW), font.SMALL, look.TEXT);
+    stat(face, right, row(progression, 1, STAT_ROW), "Gold", v.gold, "", "");
 }
 
 fn testView(inv: *const items.Inventory, growth: *const progress.State) View {
@@ -1218,6 +1300,87 @@ test "tree browsing is free and point actions issue one command" {
     _ = book.step(&.{ .pointer = surface.screenOf(.{ .x = canvas.x, .y = canvas.y }), .scroll = -1 }, screen, v);
     try std.testing.expect(book.treeActive() and book.zoom < trees.ZOOM_START);
     std.debug.print("tree book: spatial browsing and zoom spend no points; passive and skill selection return one command\n", .{});
+}
+
+test "mouse character browsing and passive dragging preserve points and scaled hit targets" {
+    var inv = items.Inventory{};
+    var growth = progress.State.of(.archer);
+    growth.active_points = 2;
+    growth.passive_points = 2;
+    const v = testView(&inv, &growth);
+    var checked: usize = 0;
+    for ([_]P{ .{ .x = 1280, .y = 720 }, .{ .x = 2560, .y = 1440 } }) |screen| {
+        var book = Book{ .page = .skills };
+        const surface = book.surface(screen, v);
+        const p = surface.screenOf(raster.middle(book.cellBox(1, v)));
+        try std.testing.expect(book.step(&.{ .pointer = p, .click = true }, screen, v) == null);
+        try std.testing.expectEqual(@as(usize, 1), book.cursor);
+        _ = book.step(&.{ .pointer = p, .walk = .w }, screen, v);
+        try std.testing.expectEqual(@as(usize, 0), book.cursor);
+        book.choose(.passives);
+        book.enter(v);
+        const cursor = book.cursor;
+        const inside = surface.screenOf(.{ .x = AREA.x + 150, .y = AREA.y + 160 });
+        _ = book.step(&.{ .pointer = inside, .middle_click = true, .dragging = true, .mouse_delta = .{ .x = 30, .y = 15 } }, screen, v);
+        try std.testing.expect(book.pan.x < 0 and book.pan.y < 0);
+        try std.testing.expectEqual(cursor, book.cursor);
+        const pan = book.pan;
+        _ = book.step(&.{ .pointer = inside, .mouse_delta = .{ .x = 30, .y = 15 } }, screen, v);
+        try std.testing.expectEqual(pan, book.pan);
+        const zoom = book.zoom;
+        _ = book.step(&.{ .pointer = inside, .scroll = 1 }, screen, v);
+        try std.testing.expect(book.zoom > zoom);
+        _ = book.step(&.{ .pointer = surface.screenOf(raster.middle(trees.overviewBox())), .click = true }, screen, v);
+        try std.testing.expectEqual(trees.ZOOM_MIN, book.zoom);
+        try std.testing.expectEqual(rl.Vector2{ .x = 0, .y = 0 }, book.pan);
+        try std.testing.expectEqual(@as(u16, 2), growth.active_points);
+        try std.testing.expectEqual(@as(u16, 2), growth.passive_points);
+        try std.testing.expect(book.step(&.{ .right_click = true }, screen, v).? == .close);
+        checked += 1;
+    }
+    std.debug.print("mouse character: {d} scales, skill selection/controller return, captured drag/release, zoom, overview, no point spend\n", .{checked});
+}
+
+test "mouse item and skill selections survive movement across other targets toward actions" {
+    var inv = items.Inventory{};
+    for (0..8) |_| try std.testing.expect(inv.add(.{ .kind = .cap }));
+    const growth = progress.State.of(.archer);
+    var v = testView(&inv, &growth);
+    const nearby = [_]Nearby{
+        .{ .loot = .{ .index = 7, .item = .{ .kind = .cap } } },
+        .{ .loot = .{ .index = 8, .item = .{ .kind = .cap } } },
+        .{ .loot = .{ .index = 9, .item = .{ .kind = .cap } } },
+    };
+    var journeys: usize = 0;
+    for ([_]P{ .{ .x = 1280, .y = 720 }, .{ .x = 2560, .y = 1440 } }) |screen| {
+        for ([_]Page{ .inventory, .loot, .skills }) |page| {
+            v.nearby = if (page == .loot) &nearby else &.{};
+            var book = Book{ .page = page };
+            const surface = book.surface(screen, v);
+            const origin = raster.middle(book.cellBox(0, v));
+            _ = book.step(&.{ .pointer = surface.screenOf(origin), .click = true }, screen, v);
+            const action = if (page == .skills) trees.bindBox() else book.actionBox(menu.CONFIRM, v);
+            for (1..book.count(v)) |i| {
+                _ = book.step(&.{ .pointer = surface.screenOf(raster.middle(book.cellBox(i, v))), .mouse_moved = true }, screen, v);
+                try std.testing.expectEqual(@as(usize, 0), book.cursor);
+            }
+            const end = raster.middle(action);
+            for (1..21) |i| {
+                const fraction = @as(f32, @floatFromInt(i)) / 20;
+                const p = rl.Vector2{ .x = origin.x + (end.x - origin.x) * fraction, .y = origin.y + (end.y - origin.y) * fraction };
+                _ = book.step(&.{ .pointer = surface.screenOf(p), .mouse_moved = true }, screen, v);
+            }
+            const command = book.step(&.{ .pointer = surface.screenOf(end), .click = true }, screen, v).?;
+            switch (page) {
+                .inventory => try std.testing.expectEqual(@as(usize, 0), command.equip.index),
+                .loot => try std.testing.expectEqual(@as(usize, 7), command.pickup),
+                .skills => try std.testing.expectEqual(progress.skills(v.class)[0].act, command.bindings),
+                else => unreachable,
+            }
+            journeys += 1;
+        }
+    }
+    std.debug.print("mouse action journeys: {d} scaled inventory, loot and skill targets survive intermediate motion\n", .{journeys});
 }
 
 test "a stick pushed where no passive lies keeps the pan, as the keys do" {

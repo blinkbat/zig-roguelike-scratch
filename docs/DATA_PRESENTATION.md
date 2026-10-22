@@ -55,24 +55,33 @@ Many independent properties can coexist because each line describes one property
 Players can recognize a useful item before doing every calculation. Our basic item
 has zero to two modifiers, so it should be especially quick to read.
 
-For example, the captured magic Iron helm now reads:
+For example, a magic Iron helm reads in this order:
 
 ```text
 Iron helm
 Helm
-Cold iron and a narrow view.
 
 Physical damage reduced by 4%
-Requires 16 Strength
-(14 available)
++3 to maximum life
+Requires 16 Strength (14 available)
 
+---
 +6 to maximum life
-+10 to maximum mana
++2 to maximum mana
+
+Cold iron and a narrow view.
 ```
 
-Every item kind carries one dim flavor line under its type (`items.Spec.flavor`, at most
-`items.FLAVOR_MAX` characters so it fits the compared card), and every skill one under its
-description on the Skills page (`FLAVOR` in its module). Flavor never states a mechanic.
+Every item kind carries one dim flavor line after its gameplay properties (`items.Spec.flavor`,
+at most `items.FLAVOR_MAX` characters so it fits the compared card). Skills put their `FLAVOR`
+after current/next-rank details. Flavor never states a mechanic or interrupts the factual reading order.
+
+Names and headings use Balthazar; compact text at 16px and below uses Source Sans 3.
+Item cards share a left edge, group hand/scaling metadata on one small line, keep requirement
+availability inline, and use 20px property rows. Metadata and flavor use 15px text; primary
+effects stay 16px. Comparison changes follow the actual card height. The character sheet groups
+critical chances, recovery and point pools; only active elemental bonuses appear. The binding
+picker has its own labeled strip, clear of both skill-set labels, and left-aligned details.
 
 The worn Leather cap remains a separate, much shorter card. This preserves the
 objects' identities and shows the real equipping blocker. Once an equip is valid,
@@ -95,7 +104,10 @@ the player's build.
 
 1. **Item cards:** name in the existing magic blue or normal pale text; quiet slot
    and handling information; only applicable base properties; only nonzero
-   requirements; then actual modifiers in blue. Damage is one range. A requirement
+   requirements; then a horizontal divider and actual added modifiers in blue; flavor last.
+   Base properties and any future built-in base bonuses stay neutral, including on
+   magic or later rare items. Item-name rarity color never recolors the base section.
+   Damage is one range. A requirement
    uses its full attribute name and red only when unmet. Ordinary items do not need
    an empty modifier section. Do not invent affix names, rarity grades or stats.
 2. **Comparisons:** selected and equipped items retain separate identities. Show
@@ -131,8 +143,8 @@ the player's build.
    names the weapon using it instead of looking empty. Ring destinations remain
    left/right because either ring can use either slot.
 
-Use dark, quiet surfaces, the existing Balthazar font, native text sizes and spare
-dividers. Gold marks focus or section hierarchy, blue marks magic, muted text carries
+Use dark, quiet surfaces, Balthazar headings, Source Sans 3 compact text, native text
+sizes and spare dividers. Gold marks focus or section hierarchy, blue marks magic, muted text carries
 supporting information, and red marks a real blocker or loss. Do not shrink text to
 fit a table that should have been removed. Tables remain appropriate when the reader
 actually needs aligned values; they are not the default container for all information.

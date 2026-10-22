@@ -3,6 +3,8 @@ const attrs = @import("attrs.zig");
 const damage = @import("damage.zig");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
+const passives = @import("passives.zig");
+const bleeding = @import("bleeding.zig");
 
 pub const Slot = enum {
     left_hand,
@@ -35,7 +37,7 @@ const Mod = attrs.Bonus;
 /// The modifiers loot rolls, in roll order, with their value ranges.
 const AFFIXES = [_]struct { kind: Mod, lo: i32, hi: i32 }{
     .{ .kind = .life, .lo = 2, .hi = 6 },
-    .{ .kind = .mana, .lo = 5, .hi = 15 },
+    .{ .kind = .mana, .lo = 1, .hi = 3 },
     .{ .kind = .strength, .lo = 1, .hi = 3 },
     .{ .kind = .dexterity, .lo = 1, .hi = 3 },
     .{ .kind = .intelligence, .lo = 1, .hi = 3 },
@@ -73,6 +75,25 @@ pub const Kind = enum {
     boots,
     ring,
     amulet,
+    hunting_bow,
+    war_bow,
+    ash_wand,
+    rime_wand,
+    storm_wand,
+    plate,
+    robes,
+    hood,
+    circlet,
+    gauntlets,
+    spellwraps,
+    iron_boots,
+    broad_belt,
+    flask_belt,
+    sash,
+    iron_ring,
+    jade_ring,
+    ruby_ring,
+    sapphire_ring,
 
     pub fn slots(k: Kind) []const Slot {
         return spec(k).slots;
@@ -96,6 +117,52 @@ pub const BARREL_GOLD = Gold{ .lo = 3, .hi = 12 };
 pub const CHEST_GOLD = Gold{ .lo = 18, .hi = 36 };
 pub const FOE_GOLD = Gold{ .lo = 1, .hi = 6 };
 pub const Affix = struct { kind: Mod, value: i16 };
+pub const WeaponEffect = struct {
+    bleed: u32 = 0,
+    bleed_damage: i32 = bleeding.STILL,
+    stun: u32 = 0,
+    penetration: i32 = 0,
+};
+
+pub const Innate = union(enum) {
+    grant: passives.Grant,
+    weapon_crit: i32,
+    spell_crit: i32,
+    physical_damage: i32,
+    element: struct { kind: damage.Element, percent: i32 },
+    bleed: struct { chance: u32, damage: i32 = bleeding.STILL },
+    stun: u32,
+    penetration: i32,
+
+    pub fn stat(kind: passives.Kind, amount: i32) Innate {
+        return .{ .grant = .{ .kind = kind, .amount = amount } };
+    }
+
+    fn apply(self: Innate, a: *attrs.Attrs) void {
+        switch (self) {
+            .grant => |g| g.apply(a),
+            .weapon_crit => |n| a.weapon_crit_bonus += n,
+            .spell_crit => |n| a.spell_crit_bonus += n,
+            .physical_damage => |n| a.physical_bonus += n,
+            .element => |e| a.element_bonus.getPtr(e.kind).* += e.percent,
+            .bleed, .stun, .penetration => {},
+        }
+    }
+
+    pub fn write(self: Innate, w: anytype) void {
+        switch (self) {
+            .grant => |g| g.write(w),
+            .weapon_crit => |n| w.print("+{d}% weapon critical chance", .{n}) catch {},
+            .spell_crit => |n| w.print("+{d}% spell critical chance", .{n}) catch {},
+            .physical_damage => |n| w.print("+{d}% physical damage", .{n}) catch {},
+            .element => |e| w.print("+{d}% {s} damage", .{ e.percent, @tagName(e.kind) }) catch {},
+            .bleed => |b| w.print("{d}% chance to bleed on hit", .{b.chance}) catch {},
+            .stun => |n| w.print("{d}% chance to stun on hit", .{n}) catch {},
+            .penetration => |n| w.print("Ignore {d}% physical reduction", .{n}) catch {},
+        }
+    }
+};
+
 pub const Spec = struct {
     name: [:0]const u8,
     flavor: [:0]const u8,
@@ -107,46 +174,55 @@ pub const Spec = struct {
     attack: attrs.Attack = .melee,
     two_handed: bool = false,
     armour: i16 = 0,
-
-    fn named(s: Spec, name: [:0]const u8, flavor: [:0]const u8) Spec {
-        var out = s;
-        out.name = name;
-        out.flavor = flavor;
-        return out;
-    }
+    innate: ?Innate = null,
 };
-const LIGHT_MELEE = Spec{ .name = "Short sword", .flavor = "Quick answers in tight tunnels.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light };
-const HEAVY_MELEE = Spec{ .name = "Longsword", .flavor = "A knight's blade, well notched.", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 } };
-const GREAT_WEAPON = Spec{ .name = "Great axe", .flavor = "Built to fell trees. Not picky.", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 4, .hi = 7 }, .two_handed = true };
-const MAGIC_OFFHAND = Spec{ .name = "Tome", .flavor = "Its scorched pages whisper.", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 } };
 const SPECS = std.EnumArray(Kind, Spec).init(.{
-    .sword = LIGHT_MELEE,
-    .axe = GREAT_WEAPON,
+    .sword = .{ .name = "Short sword", .flavor = "Quick answers in tight tunnels.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 3, .hi = 4 }, .style = .light },
+    .axe = .{ .name = "Great axe", .flavor = "Built to fell trees. Not picky.", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 3, .hi = 6 }, .two_handed = true, .innate = .{ .bleed = .{ .chance = 30, .damage = 2 } } },
     .bow = .{ .name = "Short bow", .flavor = "Yew, gut string, a steady nerve.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
-    .staff = .{ .name = "Oak staff", .flavor = "Old wood remembers its spells.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .two_handed = true },
-    .longsword = HEAVY_MELEE,
-    .mace = HEAVY_MELEE.named("Mace", "Armour only makes it louder."),
-    .greatsword = GREAT_WEAPON.named("Greatsword", "Rarely needs drawing twice."),
-    .crossbow = .{ .name = "Crossbow", .flavor = "Slow to wind, quick to end it.", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true },
-    .greatclub = GREAT_WEAPON.named("Greatclub", "The oldest weapon. Still works."),
-    .sling = .{ .name = "Sling", .flavor = "A stone, a strap, a grudge.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged },
-    .dagger = LIGHT_MELEE.named("Dagger", "For close work, closer secrets."),
-    .handaxe = LIGHT_MELEE.named("Handaxe", "Splits kindling and skulls."),
-    .wand = .{ .name = "Wand", .flavor = "Its tip stays warm, remembering.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 } },
-    .tome = MAGIC_OFFHAND,
-    .orb = MAGIC_OFFHAND.named("Orb", "Something stirs in the glass."),
-    .buckler = .{ .name = "Buckler", .flavor = "Small, until it saves your life.", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2 },
-    .totem = MAGIC_OFFHAND.named("Totem", "Carved faces watch the dark."),
+    .staff = .{ .name = "Oak staff", .flavor = "Old wood remembers its spells.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 16 }, .two_handed = true, .innate = Innate.stat(.spell_damage, 30) },
+    .longsword = .{ .name = "Longsword", .flavor = "A knight's blade, well notched.", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 3, .hi = 5 } },
+    .mace = .{ .name = "Mace", .flavor = "Armour only makes it louder.", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .innate = .{ .stun = 15 } },
+    .greatsword = .{ .name = "Greatsword", .flavor = "Rarely needs drawing twice.", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 8 }, .two_handed = true },
+    .crossbow = .{ .name = "Crossbow", .flavor = "Slow to wind, quick to end it.", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true, .innate = .{ .penetration = 20 } },
+    .greatclub = .{ .name = "Greatclub", .flavor = "The oldest weapon. Still works.", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 3, .hi = 6 }, .two_handed = true, .innate = .{ .stun = 25 } },
+    .sling = .{ .name = "Sling", .flavor = "A stone, a strap, a grudge.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .attack = .ranged },
+    .dagger = .{ .name = "Dagger", .flavor = "For close work, closer secrets.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .innate = .{ .weapon_crit = 15 } },
+    .handaxe = .{ .name = "Handaxe", .flavor = "Splits kindling and skulls.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 3 }, .style = .light, .innate = .{ .bleed = .{ .chance = 25 } } },
+    .wand = .{ .name = "Wand", .flavor = "Its tip stays warm, remembering.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .innate = .{ .spell_crit = 8 } },
+    .tome = .{ .name = "Tome", .flavor = "Its scorched pages whisper.", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.mana, 3) },
+    .orb = .{ .name = "Orb", .flavor = "Something stirs in the glass.", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = .{ .spell_crit = 6 } },
+    .buckler = .{ .name = "Buckler", .flavor = "Small, until it saves your life.", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2, .innate = Innate.stat(.dodge, 4) },
+    .totem = .{ .name = "Totem", .flavor = "Carved faces watch the dark.", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.life_on_kill, 1) },
     .shield = .{ .name = "Wooden shield", .flavor = "Splintered at the rim. Standing.", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6 },
     .cap = .{ .name = "Leather cap", .flavor = "Better than nothing. Barely.", .slots = &.{.helm}, .armour = 2 },
-    .helmet = .{ .name = "Iron helm", .flavor = "Cold iron and a narrow view.", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4 },
-    .leather = .{ .name = "Leather armour", .flavor = "Stiff, scarred, smells of rain.", .slots = &.{.chest}, .needs = .{ .strength = 10 }, .armour = 5 },
+    .helmet = .{ .name = "Iron helm", .flavor = "Cold iron and a narrow view.", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4, .innate = Innate.stat(.life, 3) },
+    .leather = .{ .name = "Leather armour", .flavor = "Stiff, scarred, smells of rain.", .slots = &.{.chest}, .needs = .{ .strength = 10 }, .armour = 5, .innate = Innate.stat(.dodge, 5) },
     .mail = .{ .name = "Mail armour", .flavor = "Each ring a vow to stay alive.", .slots = &.{.chest}, .needs = .{ .strength = 20 }, .armour = 10 },
     .belt = .{ .name = "Leather belt", .flavor = "Holds up trousers, and hope.", .slots = &.{.belt}, .armour = 1 },
-    .gloves = .{ .name = "Leather gloves", .flavor = "Worn thin at the knuckles.", .slots = &.{.gloves}, .armour = 2 },
-    .boots = .{ .name = "Leather boots", .flavor = "They have walked out of worse.", .slots = &.{.boots}, .armour = 2 },
-    .ring = .{ .name = "Copper ring", .flavor = "Green at the edges, warm inside.", .slots = &.{ .left_ring, .right_ring } },
-    .amulet = .{ .name = "Bronze amulet", .flavor = "Wards off the dark. Mostly.", .slots = &.{.amulet} },
+    .gloves = .{ .name = "Leather gloves", .flavor = "Worn thin at the knuckles.", .slots = &.{.gloves}, .armour = 1, .innate = Innate.stat(.light_damage, 10) },
+    .boots = .{ .name = "Soft boots", .flavor = "They have walked out of worse.", .slots = &.{.boots}, .armour = 1, .innate = Innate.stat(.dodge, 3) },
+    .ring = .{ .name = "Copper ring", .flavor = "Green at the edges, warm inside.", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.life, 1) },
+    .amulet = .{ .name = "Bronze amulet", .flavor = "Wards off the dark. Mostly.", .slots = &.{.amulet}, .innate = Innate.stat(.life, 2) },
+    .hunting_bow = .{ .name = "Hunting bow", .flavor = "A notch for every clean shot.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 16 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light, .attack = .ranged, .two_handed = true, .innate = .{ .weapon_crit = 12 } },
+    .war_bow = .{ .name = "War bow", .flavor = "The string pulls back.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 22 }, .damage = .{ .lo = 3, .hi = 6 }, .style = .light, .attack = .ranged, .two_handed = true },
+    .ash_wand = .{ .name = "Ash wand", .flavor = "Warm even in the rain.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .fire, .percent = 25 } } },
+    .rime_wand = .{ .name = "Rime wand", .flavor = "Frost gathers round the grip.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .cold, .percent = 25 } } },
+    .storm_wand = .{ .name = "Storm wand", .flavor = "The hairs rise before the rain.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .lightning, .percent = 25 } } },
+    .plate = .{ .name = "Plate armour", .flavor = "A door that walks.", .slots = &.{.chest}, .needs = .{ .strength = 24 }, .armour = 15 },
+    .robes = .{ .name = "Robes", .flavor = "Thin cloth, deep pockets.", .slots = &.{.chest}, .needs = .{ .intelligence = 12 }, .armour = 1, .innate = Innate.stat(.mana, 4) },
+    .hood = .{ .name = "Hunter's hood", .flavor = "A narrow shadow over the eyes.", .slots = &.{.helm}, .needs = .{ .dexterity = 14 }, .armour = 1, .innate = Innate.stat(.crit, 5) },
+    .circlet = .{ .name = "Circlet", .flavor = "Cool silver, clear thoughts.", .slots = &.{.helm}, .needs = .{ .intelligence = 14 }, .innate = Innate.stat(.mana_regen, 1) },
+    .gauntlets = .{ .name = "Gauntlets", .flavor = "Iron closes round the hilt.", .slots = &.{.gloves}, .needs = .{ .strength = 14 }, .armour = 2, .innate = Innate.stat(.heavy_damage, 10) },
+    .spellwraps = .{ .name = "Spellwraps", .flavor = "Old runes round steady fingers.", .slots = &.{.gloves}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.spell_damage, 10) },
+    .iron_boots = .{ .name = "Iron boots", .flavor = "Every step rings hollow.", .slots = &.{.boots}, .needs = .{ .strength = 14 }, .armour = 5 },
+    .broad_belt = .{ .name = "Broad belt", .flavor = "Another hole, another winter.", .slots = &.{.belt}, .innate = Innate.stat(.life, 3) },
+    .flask_belt = .{ .name = "Flask belt", .flavor = "Glass kept close to the heart.", .slots = &.{.belt}, .innate = Innate.stat(.life_flask, 20) },
+    .sash = .{ .name = "Woven sash", .flavor = "Knots to hold a thought.", .slots = &.{.belt}, .innate = Innate.stat(.mana, 2) },
+    .iron_ring = .{ .name = "Iron ring", .flavor = "A small weight behind the blow.", .slots = &.{ .left_ring, .right_ring }, .innate = .{ .physical_damage = 10 } },
+    .jade_ring = .{ .name = "Jade ring", .flavor = "Smooth from nervous fingers.", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.dodge, 3) },
+    .ruby_ring = .{ .name = "Ruby ring", .flavor = "A red spark under the grime.", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.life, 3) },
+    .sapphire_ring = .{ .name = "Sapphire ring", .flavor = "A drop of blue held still.", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.mana, 2) },
 });
 
 /// Characters of flavor a compared item card holds on one line.
@@ -188,7 +264,9 @@ pub const Item = struct {
     }
 
     pub fn apply(self: Item, a: *attrs.Attrs) void {
-        a.armour += spec(self.kind).armour;
+        const base = spec(self.kind);
+        a.armour += base.armour;
+        if (base.innate) |innate| innate.apply(a);
         for (self.mods) |maybe| if (maybe) |m| a.add(m.kind, m.value);
     }
 
@@ -228,6 +306,31 @@ pub const Gear = struct {
         var out = base;
         for (self.slots.values) |maybe| if (maybe) |it| it.apply(&out);
         return out;
+    }
+
+    pub fn perks(self: Gear, base: passives.Perks) passives.Perks {
+        var out = base;
+        for (self.slots.values) |maybe| if (maybe) |it| {
+            if (spec(it.kind).innate) |innate| if (innate == .grant) innate.grant.perk(&out);
+        };
+        return out;
+    }
+
+    pub fn forAttack(self: Gear, base: attrs.Attrs, attack: attrs.Attack) attrs.Attrs {
+        var out = base;
+        out.crit_bonus += if (attack == .spell) base.spell_crit_bonus else if (self.weapon(attack) != null) base.weapon_crit_bonus else 0;
+        return out;
+    }
+
+    pub fn onHit(self: Gear, attack: attrs.Attack) WeaponEffect {
+        if (self.weapon(attack) == null) return .{};
+        const innate = spec(self.slots.get(.right_hand).?.kind).innate orelse return .{};
+        return switch (innate) {
+            .bleed => |b| .{ .bleed = b.chance, .bleed_damage = b.damage },
+            .stun => |n| .{ .stun = n },
+            .penetration => |n| .{ .penetration = n },
+            else => .{},
+        };
     }
 
     /// The main hand's weapon, when it takes both hands.
@@ -528,6 +631,44 @@ test "foe loot is mostly gold then plain items with rare magic affixes" {
     try std.testing.expect(plain >= 650 and plain <= 950);
     try std.testing.expect(magic >= 125 and magic <= 275);
     std.debug.print("foe loot over {d} kills: {d} gold, {d} plain items without affixes, {d} magic items\n", .{ rolls, gold, plain, magic });
+}
+
+test "every equipment base rolls white and blue and keeps its innate separate from affixes" {
+    var rng = mathx.Rng.init(0xBA5E);
+    var white = std.EnumSet(Kind).initEmpty();
+    var blue = std.EnumSet(Kind).initEmpty();
+    for (0..20000) |_| {
+        const it = roll(&rng);
+        if (it.magical()) blue.insert(it.kind) else white.insert(it.kind);
+    }
+    try std.testing.expectEqual(KINDS.len, white.count());
+    try std.testing.expectEqual(KINDS.len, blue.count());
+    const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
+    for (KINDS) |kind| {
+        var plain = base;
+        var magic = base;
+        const it = Item{ .kind = kind };
+        it.apply(&plain);
+        (Item{ .kind = kind, .mods = .{ .{ .kind = .mana, .value = 2 }, null } }).apply(&magic);
+        try std.testing.expectEqual(@as(i32, 0), it.value(.mana));
+        plain.mana_bonus += 2;
+        try std.testing.expectEqualDeep(plain, magic);
+    }
+    var gear = Gear{};
+    gear.slots.set(.right_hand, .{ .kind = .dagger });
+    const dagger = gear.stats(base);
+    try std.testing.expect(gear.forAttack(dagger, .melee).crit() > base.crit());
+    try std.testing.expectEqual(base.crit(), gear.forAttack(dagger, .spell).crit());
+    gear.slots.set(.right_hand, .{ .kind = .wand });
+    gear.slots.set(.left_hand, .{ .kind = .orb });
+    const caster = gear.stats(base);
+    try std.testing.expectEqual(base.crit() + 14, gear.forAttack(caster, .spell).crit());
+    try std.testing.expectEqual(base.crit(), gear.forAttack(caster, .melee).crit());
+    gear.slots.set(.helm, .{ .kind = .circlet });
+    gear.slots.set(.belt, .{ .kind = .flask_belt });
+    gear.slots.set(.left_hand, .{ .kind = .totem });
+    try std.testing.expectEqualDeep(passives.Perks{ .mana_regen = 1, .life_flask = 20, .life_on_kill = 1 }, gear.perks(.{}));
+    std.debug.print("bases: all {d} roll in both rarities over 20000 drops; innate/affix separation, scoped crit and recovery perks checked\n", .{KINDS.len});
 }
 
 test "ground gold accommodates every cell and full pickup leaves its item intact" {

@@ -2,13 +2,14 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const damage = @import("damage.zig");
 
-pub const COST: i32 = 30;
+pub const COST: i32 = 6;
+pub const AILMENT = @import("resilience.zig").Kind.pin;
 pub const TURNS_LO: u8 = 2;
 pub const TURNS_HI: u8 = 4;
 pub const VERB = "pins";
 pub const TAKES = "is pinned";
 pub const STATUS = "Cannot move. Can still attack.";
-pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A target it leaves alive is pinned for {d}-{d} turns: it cannot move, but can still attack.", .{ TURNS_LO, TURNS_HI });
+pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A surviving target is pinned unless resisted for {d}-{d} turns: it cannot move, but can still attack.", .{ TURNS_LO, TURNS_HI });
 pub const FLAVOR = "Stay. Good.";
 
 /// Its turns left held to its cell.

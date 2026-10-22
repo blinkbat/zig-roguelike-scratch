@@ -7,7 +7,7 @@ pub const RANGE: i32 = 2;
 pub const FREE = true;
 pub const DONE = "jukes away";
 pub const COOLDOWN: u8 = 3;
-pub const COST: i32 = 25;
+pub const COST: i32 = 5;
 pub const DESCRIPTION = std.fmt.comptimePrint("Jump to visible empty ground within {d} tiles.", .{RANGE});
 pub const FLAVOR = "A step the blow did not expect.";
 

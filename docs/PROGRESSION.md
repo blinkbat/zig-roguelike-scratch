@@ -18,7 +18,7 @@
 | XP | Foe kills grant XP; each level grants one passive and one active point |
 | Passive tree | 81-node radial graph lifted from Soulslike; three origins, six branches and six bridges |
 | Active trees | Per class, prerequisites, three ranks; only learned skills may be bound |
-| Initial skills | Archer: Shoot/Juke; Wizard: Spark/Blink; Knight: Charge; all keep bump melee |
+| Initial skills | Archer: Shoot/Juke; Wizard: Spark/Blink; Knight: Charge/Cleave; all keep bump melee |
 | Charge | Can target a clear empty line for retreat |
 | Respec | Deferred |
 
@@ -27,6 +27,18 @@ prototype pools, not full Diablo/PoE itemization. Rank upgrades improve damage a
 non-damaging skills with cooldowns also recover sooner, down to 2 turns (1 for a skill that takes
 no turn, since a 1-turn cooldown ends in the turn the skill used). Equipping or allocating life does not
 heal current HP.
+
+Mana uses small whole numbers alongside life. Starting pools are 20 for archer/knight and 24 for wizard;
+base skill costs range from 2 to 7. Intelligence grants 2 mana per 5 points, and mana affixes grant 1–3.
+Natural recovery is 1 mana per 5 spent turns; recovery passives add to that five-turn rate, with partial
+progress retained across turns, doors and saves. Cost reductions round up to whole mana, with a minimum
+of 1 for paid skills. Mana Shield still absorbs one damage per mana.
+
+Both flasks spend charges without spending a turn. The first of three recovery ticks happens immediately;
+the other two happen on the next two spent turns. A life flask restores half maximum life before passive
+bonuses; a mana flask restores 10 mana. Drinking again restarts that flask's recovery and applies its first
+tick immediately, without advancing the other flask, natural recovery, enemies, ailments or cooldowns.
+The saved recovery remainder and revised passive grants change the save fingerprint; older saves are incompatible.
 
 ## Weapons and offhands
 
@@ -42,14 +54,42 @@ governs basic melee, skill damage, rank bonuses and live damage previews.
 | No innate attack | Wand, staff |
 | Offhand | Tome, orb, buckler, shield, totem |
 
-Each type has one basic item in the loot pool. One-handed melee weapons reuse the
-existing short-sword tier, two-handed heavy melee weapons the great-axe tier, and
-ranged weapons the bow tier. Requirements follow the scaling attribute. Greatsword,
-greatclub, great axe, bow, crossbow and staff use both hands; sling and wand allow
-an offhand. Wands and staves add no weapon damage to melee, ranged skills or spells;
-the hero's existing unarmed fallback and spell bases remain separate.
-Offhands use the existing requirement/armour tiers and can roll the ordinary modifier
-pool. Inventory details identify weapon scaling or the absence of innate attack.
+All 46 bases can drop white or blue. White items retain fixed base properties and have
+no rolled modifiers; blues add one or two ordinary modifiers. Base identity is independent
+of rarity. Requirements follow the relevant build attribute.
+
+Daggers and hunting bows favor weapon critical strikes; handaxes and great axes bleed,
+with great axes applying stronger bleeds. Maces and greatclubs can stun. Crossbows ignore
+20 percentage points of physical reduction; bandits have 15% and beefy pibs 20%.
+Short swords have a narrow damage range; greatswords and war bows favor raw damage.
+Great weapons, bows, crossbows and staves occupy both hands; slings and wands allow an offhand.
+
+Caster implements have no attack damage. The ordinary wand grants spell critical chance;
+ash, rime and storm wands improve fire, cold and lightning damage respectively. Oak staves
+grant a larger general spell bonus. Tomes grant mana, orbs spell critical chance, totems
+life on kill, bucklers dodge, and shields physical reduction. Gloves, armour, belts, boots,
+helmets and rings offer heavy/light/spell damage, life, mana, dodge, recovery or armour
+identities. `items.Spec.innate` is the source; rolled modifiers never include these fixed effects.
+
+Equipment recovery effects combine with passive perks through `game.heroPerks`.
+Weapon and spell critical bonuses remain separate, and elemental/physical bonuses apply
+only to their matching damage component. Live damage and previews share these calculations.
+
+## Class balance and status resistance
+
+The knight starts with 24 Strength, 34 life, 10% physical reduction and a 3-5 basic strike.
+Charge and Shield Bash cost 3 mana; Cleave starts learned and costs 2. Spark's base damage
+is 2-4, retaining its 2-mana cost and 50% base stun chance.
+
+Every hero and foe has separate temporary resistance meters for stun, burn, bleed, chill
+and pin. A successful application adds 25 percentage points, up to 100%; each meter clears
+after five spent turns without a successful reapplication. Failed attempts do not refresh
+the timer. Idle frames, free actions and drinking flasks never age these meters. Innate
+stun resistance adds to buildup: beefy pib starts at 75%, so one landed stun temporarily
+makes it immune. These gates apply to spells, weapon effects and foes hitting heroes or
+other foes. Slime halves inherit meters and bleed strength; doors and saves preserve them.
+The HUD shows an inspectable resistance icon and meter, and wounded foes show a slim gold
+bar for their highest current buildup below their life bar.
 
 The expanded item enum and updated passive grants change the save fingerprint;
 older saves are rejected by the existing compatibility check.
@@ -69,22 +109,23 @@ branches per arm, branch widths 1/2/3/3/2/1 and six cross-arm bridges at branch 
 Small stat nodes grant attributes. Larger interest nodes carry the Soulslike tree's effects, translated
 to turns: life, mana, armour, style damage, critical and dodge chance, leech (life per foe a blow
 damages), life per kill, cull (blows kill foes left at or below a share of life), life flask recovery,
-mana per turn and cheaper skills; usually with an attribute rider. Each branch ends at a larger
+mana per five turns and cheaper skills; usually with an attribute rider. Each branch ends at a larger
 double-ring capstone whose rider may be a second effect. Bridges grant attributes from both
 neighboring arms. Attribute-side grants go through `attrs`; the rest are `passives.Perks`, read by
 `progress.State.perks` and applied in `game` (`manaRegen`, `drink`), `game/combat.zig` (`wound`), `State.cost` and the
 life flask's description (`flask.Life.describe`). `passives.INFO` holds each grant kind's group, label and wording.
 
 The chosen class's origin is allocated free and gives no extra bonus. The other two origins are
-immediately purchasable from the hub for one point each. Further nodes require any one allocated
+immediately purchasable for one point each. There is no central hub. Further nodes require any one allocated
 incoming feeder; branches climb outward, while bridges unlock their two endpoints in either direction.
 Each allocation costs one passive point, never a turn or gold. XP still awards the two point pools;
 Soulslike's purchase-to-level economy is not imported. Selection, zoom and browsing spend nothing.
 
 The board opens zoomed in; zoom follows the selected node, with pan and a full-board overview control.
-Node fill colour names its grant group (attribute, life, mana, offense, defense); from the opening
-zoom each node but the hero's own class origin carries its amount and stat under it. The sidebar leads with the grants, then the
-de-emphasized name and branch, allocation state, a note where a grant needs one, then the point cost. One deliberate action allocates the selected eligible node. Node-index
+The graph uses simple circles and quiet lines without labels, legends or a central node. Allocated
+nodes have solid arm-coloured fills and gold rims; reachable nodes have clear rims, and distant
+nodes stay muted. The sidebar shows a small name, readable grants and riders, any essential note,
+and one allocation action or status. One deliberate action allocates the selected eligible node. Node-index
 layout, grants and feeder wiring participate in the save fingerprint; saves from the old hex tree are
 rejected as incompatible rather than interpreting their allocations as different nodes.
 

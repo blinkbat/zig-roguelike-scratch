@@ -7,6 +7,8 @@ const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
+const line_icons = @import("../gfx/line_icons.zig");
 const dual = @import("../gfx/ground.zig");
 const light = @import("../gfx/light.zig");
 const fx = @import("../gfx/fx.zig");
@@ -16,6 +18,7 @@ const sky = @import("../gfx/sky.zig");
 const day = @import("../map/day.zig");
 const hud = @import("../ui/hud.zig");
 const game = @import("../game.zig");
+const skills = @import("skills.zig");
 const P = mathx.P;
 
 const LEAN_GLYPH: i32 = game.authored(40);
@@ -78,7 +81,7 @@ pub const Cam = struct {
     }
 
     fn box(c: Cam, p: P) rl.Rectangle {
-        return look.rect(c.sx(p), c.sy(p), game.CELL, game.CELL);
+        return raster.rect(c.sx(p), c.sy(p), game.CELL, game.CELL);
     }
 
     /// The map's top-left on screen.
@@ -94,17 +97,17 @@ pub const Cam = struct {
 
 fn spriteRect(t: rl.Texture2D, sx: i32, sy: i32) rl.Rectangle {
     const k = @max(1, @divTrunc(game.CELL, t.width));
-    return look.rect(sx + @divTrunc(game.CELL - t.width * k, 2), sy + @divTrunc(game.CELL - t.height * k, 2), t.width * k, t.height * k);
+    return raster.rect(sx + @divTrunc(game.CELL - t.width * k, 2), sy + @divTrunc(game.CELL - t.height * k, 2), t.width * k, t.height * k);
 }
 
 fn drawSprite(t: rl.Texture2D, sx: i32, sy: i32) void {
-    look.stretch(t, spriteRect(t, sx, sy), look.LIT);
+    raster.stretch(t, spriteRect(t, sx, sy), look.LIT);
 }
 
 /// `t` on `p`, catching its shine as the band crosses it.
 fn drawShining(g: *const game.Game, t: rl.Texture2D, c: Cam, p: P, dx: i32) void {
     const rect = spriteRect(t, c.sx(p) + dx, c.sy(p));
-    look.stretch(t, rect, look.LIT);
+    raster.stretch(t, rect, look.LIT);
     shineOver(g, t, rect, p, look.LIT);
 }
 
@@ -143,7 +146,7 @@ fn chestShines(here: grid.Tile, p: P, bags: *const Bags) bool {
 }
 
 fn outline(c: Cam, p: P, col: rl.Color) void {
-    rl.drawRectangleLinesEx(look.grown(c.box(p), @floatFromInt(-OUTLINE_INSET)), @floatFromInt(game.LINE_W), col);
+    rl.drawRectangleLinesEx(raster.grown(c.box(p), @floatFromInt(-OUTLINE_INSET)), @floatFromInt(game.LINE_W), col);
 }
 
 fn fillCell(c: Cam, p: P, col: rl.Color) void {
@@ -229,7 +232,7 @@ fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool,
     if (!g.cloud.beginVeil(shine.tint(look.GAS), .sharp)) return;
     defer cloud.Cloud.endVeil();
     if (tex) |t| {
-        look.blit(t, look.rect(0, 0, if (left) -t.width else t.width, t.height), spriteRect(t, s.x, s.y), rl.Color.white);
+        raster.blit(t, raster.rect(0, 0, if (left) -t.width else t.width, t.height), spriteRect(t, s.x, s.y), rl.Color.white);
     } else drawGlyph(g, l.ch, s.x, s.y, rl.Color.white);
 }
 
@@ -442,7 +445,7 @@ fn mirrorSprite(g: *const game.Game, c: Cam, p: P, t: rl.Texture2D, tint: rl.Col
     const foot = footOf(g, t, c.corner(p));
     const r = Reflection.begin(g, foot, mirrorFade(g, foot, g.light.topY(t, rect), foot));
     defer r.end();
-    look.stretch(t, rect, tint);
+    raster.stretch(t, rect, tint);
 }
 
 fn drawMirrorScenery(g: *game.Game, c: Cam, view: grid.Box, memory: bool) void {
@@ -554,9 +557,9 @@ pub fn drawMap(g: *game.Game) void {
     if (aim_from) |from| {
         var cells = grid.Cells.of(lo, hi);
         while (cells.next()) |p| {
-            if (game.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
+            if (skills.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
         }
-        if (g.aim_act.reticle() == .bow) {
+        if (g.aim_act.reticle() == .bow and skills.aimable(g, from, g.mark)) {
             const f = bow.fly(&g.lv, from, g.mark);
             for (f.path[0..f.len]) |p| fillCell(c, p, look.AIM_PATH);
             switch (g.aim_act) {
@@ -594,6 +597,7 @@ pub fn drawMap(g: *game.Game) void {
                 .chilled => g.fx.drawChilled(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
                 .pinned => g.fx.drawPinned(x, y, game.CELL_F, b.shine.tint(s.ink())),
                 .warded => g.fx.drawWarded(x, y, game.CELL_F, b.shine.tint(s.ink())),
+                .resistant => {},
             }
         }
     }
@@ -622,9 +626,11 @@ pub fn drawMap(g: *game.Game) void {
         if (!b.pic.kind.foe() or !b.pic.hurt()) continue;
         const y_bar = b.s.y + game.CELL - BODY_BAR_H - BODY_BAR_LIFT;
         bar(b.s.x + BODY_BAR_INSET, y_bar, game.CELL - BODY_BAR_INSET * 2, BODY_BAR_H, b.pic.hp, b.pic.max, look.BG, look.LIFE);
+        const resistance = b.pic.resilience.peak().percent;
+        if (resistance > 0) bar(b.s.x + BODY_BAR_INSET, y_bar + BODY_BAR_H + 2, game.CELL - BODY_BAR_INSET * 2, 2, resistance, 100, look.BG, look.UI_GOLD);
     }
 
-    if (aim_from) |from| outline(c, g.mark, if (game.aimable(g, from, g.mark)) look.RETICLE else look.RETICLE_BLOCKED);
+    if (aim_from) |from| outline(c, g.mark, if (skills.aimable(g, from, g.mark)) look.RETICLE else look.RETICLE_BLOCKED);
     if (game.playShown(g) and g.st.lean) drawLean(g, c, &stood);
 
     for (bodies) |*b| {
@@ -716,13 +722,13 @@ fn drawLean(g: *game.Game, c: Cam, stood: *const Stood) void {
         outline(c, p, col);
         if (g.lv.walkable(p) and !shownAt(g, stood, p)) {
             const m = c.mid(p);
-            look.drawDirection(button, m.x, m.y, LEAN_GLYPH, col);
+            line_icons.drawDirection(button, m.x, m.y, LEAN_GLYPH, col);
             continue;
         }
         const inset = LEAN_PAD + @divTrunc(LEAN_MARK, 2);
         const dx: i32 = if (d.delta().x > 0) game.CELL - inset else inset;
         const dy: i32 = if (d.delta().y > 0) game.CELL - inset else inset;
-        look.drawDirection(button, c.sx(p) + dx, c.sy(p) + dy, LEAN_MARK, col);
+        line_icons.drawDirection(button, c.sx(p) + dx, c.sy(p) + dy, LEAN_MARK, col);
     }
 }
 
@@ -734,7 +740,7 @@ pub const Minimap = struct {
     stale: bool = true,
 
     pub fn load(m: *Minimap) void {
-        m.tex = look.canvas(grid.W, grid.H, rl.Color.blank, .point);
+        m.tex = raster.canvas(grid.W, grid.H, rl.Color.blank, .point);
         m.stale = true;
     }
 
@@ -748,7 +754,7 @@ pub fn miniOrigin(screen_w: i32) P {
 }
 
 fn miniDot(o: P, p: P, grow: i32, col: rl.Color) void {
-    rl.drawRectangleRec(look.grown(look.rect(o.x + p.x * MINI, o.y + p.y * MINI, MINI, MINI), @floatFromInt(grow)), col);
+    rl.drawRectangleRec(raster.grown(raster.rect(o.x + p.x * MINI, o.y + p.y * MINI, MINI, MINI), @floatFromInt(grow)), col);
 }
 
 pub fn drawMinimap(g: *game.Game) void {
@@ -761,7 +767,7 @@ pub fn drawMinimap(g: *game.Game) void {
             rl.updateTexture(t, &g.mini.px);
             g.mini.stale = false;
         }
-        look.stretch(t, map, look.LIT);
+        raster.stretch(t, map, look.LIT);
     }
     for (g.pool.slice(), 0..) |a, i| {
         if (!a.foe()) continue;
@@ -774,11 +780,11 @@ pub fn drawMinimap(g: *game.Game) void {
 
 fn miniBox(screen_w: i32) rl.Rectangle {
     const o = miniOrigin(screen_w);
-    return look.rect(o.x, o.y, MINI_W, MINI_H);
+    return raster.rect(o.x, o.y, MINI_W, MINI_H);
 }
 
 pub fn miniFrame(screen_w: i32) rl.Rectangle {
-    return look.grown(miniBox(screen_w), @floatFromInt(MINI_FRAME));
+    return raster.grown(miniBox(screen_w), @floatFromInt(MINI_FRAME));
 }
 
 pub fn dayLine(screen_w: i32) struct { x0: i32, x1: i32, y: i32 } {

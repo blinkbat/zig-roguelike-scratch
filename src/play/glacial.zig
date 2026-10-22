@@ -6,7 +6,8 @@ const damage = @import("damage.zig");
 
 const P = mathx.P;
 
-pub const COST: i32 = 20;
+pub const COST: i32 = 4;
+pub const AILMENT = @import("resilience.zig").Kind.chill;
 pub const CHANCE: i32 = 50;
 pub const TURNS: u8 = 3;
 pub const RANGE: i32 = 2;

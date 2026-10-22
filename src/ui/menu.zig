@@ -3,6 +3,8 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
+const prompt_icon = @import("../gfx/prompt_icon.zig");
 const font = @import("../gfx/font.zig");
 
 pub const CONFIRM = input.CONFIRM;
@@ -18,13 +20,13 @@ pub const PAGE_NEXT = input.Button.rb;
 pub const TITLE: i32 = 54;
 pub const ROW: i32 = 28;
 pub const ROW_STEP: i32 = 38;
-pub const NOTE: i32 = 18;
+pub const NOTE: i32 = font.SMALL;
 const TITLE_DY: i32 = -44;
 const ROWS_DY: i32 = 16;
+const ROW_INSET: i32 = 4;
 const NOTE_GAP: i32 = 24;
 const MARK_GAP: i32 = 14;
 const MARK_L = ">";
-const MARK_R = "<";
 /// `draw`'s, from the title's top to the first row, and from under the last row to the note's foot.
 const ABOVE: i32 = TITLE - TITLE_DY + ROWS_DY;
 const BELOW: i32 = NOTE_GAP + NOTE;
@@ -119,17 +121,17 @@ pub const ACTION_WIDE = mathx.P{ .x = 220, .y = 40 };
 pub const ACTION_GAP: i32 = 8;
 pub const PANEL_PAD: i32 = 24;
 
-pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, label: [:0]const u8) void {
+pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon.Prompt, label: [:0]const u8) void {
     rl.drawRectangleRec(r, look.PICK_BG);
     rl.drawRectangleLinesEx(r, 1, look.EDGE);
     const text_x = actionPrompt(face, r, prompt, 1);
     const text_w = @as(i32, @intFromFloat(r.x + r.width)) - ACTION_PAD - text_x;
-    face.centred(label, text_x + @divTrunc(text_w, 2), look.middleAt(r).y, font.BODY, look.TEXT);
+    face.centred(label, text_x + @divTrunc(text_w, 2), raster.middleAt(r).y, font.BODY, look.TEXT);
 }
 
 /// An action box's prompt; returns where its label starts.
-pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, alpha: f32) i32 {
-    return prompt.drawFrom(face, @as(i32, @intFromFloat(r.x)) + ACTION_PAD, look.middleAt(r).y, font.BODY, alpha) + PROMPT_GAP;
+pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon.Prompt, alpha: f32) i32 {
+    return prompt.drawFrom(face, @as(i32, @intFromFloat(r.x)) + ACTION_PAD, raster.middleAt(r).y, font.BODY, alpha) + PROMPT_GAP;
 }
 
 pub fn Note(comptime N: usize) type {
@@ -194,14 +196,44 @@ pub const Menu = struct {
     at: usize = 0,
 
     pub fn step(self: *Menu, st: *const input.State, n: usize) ?usize {
+        if (n == 0) return null;
         self.at = @min(self.at, n - 1);
         if (st.walk) |d| self.at = mathx.wrap(self.at, d.delta().y, n);
         return if (st.hit(CONFIRM)) self.at else null;
     }
+
+    pub fn stepAt(self: *Menu, st: *const input.State, n: usize, screen: mathx.P) ?usize {
+        if (n == 0) return null;
+        self.at = @min(self.at, n - 1);
+        const win = window(screen.y, n, self.at);
+        if (st.scroll != 0) self.at = mathx.nudge(self.at, -st.scroll, n);
+        if (st.pointing() and (win.len == n or st.click) and st.scroll == 0 and st.walk == null) {
+            for (win.from..win.from + win.len) |i| {
+                if (st.pointer) |p| if (raster.holds(rowBox(screen, win, i), p)) {
+                    self.at = i;
+                    if (st.click) return i;
+                    break;
+                };
+            }
+        }
+        return self.step(st, n);
+    }
 };
 
 pub fn backed(st: *const input.State) bool {
-    return st.hit(BACK) or st.hit(PAUSE);
+    return st.right_click or st.hit(BACK) or st.hit(PAUSE);
+}
+
+pub fn footerBox(screen: mathx.P, right: bool) rl.Rectangle {
+    return raster.rect(if (right) screen.x - PANEL_PAD - ACTION_WIDE.x else PANEL_PAD, screen.y - PANEL_PAD - ACTION_WIDE.y, ACTION_WIDE.x, ACTION_WIDE.y);
+}
+
+pub fn backedAt(st: *const input.State, screen: mathx.P) bool {
+    return backed(st) or st.clicked(footerBox(screen, false));
+}
+
+pub fn drawBack(face: *const font.Face, screen: mathx.P, st: *const input.State) void {
+    action(face, footerBox(screen, false), prompt_icon.Prompt.menuOf(st, BACK), "Back");
 }
 
 /// Backed out, or Character pressed to shut what it opened over.
@@ -227,8 +259,8 @@ pub fn nearest(from: rl.Rectangle, boxes: []const rl.Rectangle, dir: mathx.Dir) 
 }
 
 fn directionScore(from: rl.Rectangle, to: rl.Rectangle, dir: mathx.Dir, across_weight: f32) ?f32 {
-    const a = look.middle(from);
-    const b = look.middle(to);
+    const a = raster.middle(from);
+    const b = raster.middle(to);
     const vx = b.x - a.x;
     const vy = b.y - a.y;
     const d = dir.delta();
@@ -254,27 +286,49 @@ fn window(screen_h: i32, n: usize, at: usize) Window {
     return Window.of(n, at, room);
 }
 
+pub fn rowBox(screen: mathx.P, win: Window, i: usize) rl.Rectangle {
+    const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(win.len)) * ROW_STEP, 2);
+    const width = @min(620, @max(1, screen.x - 2 * MARK_GAP));
+    return raster.rect(@divTrunc(screen.x - width, 2), top + ROWS_DY + @as(i32, @intCast(i - win.from)) * ROW_STEP - ROW_INSET, width, ROW_STEP);
+}
+
+pub fn rowTextY(box: rl.Rectangle) i32 {
+    return @as(i32, @intFromFloat(box.y)) + ROW_INSET;
+}
+
+pub fn titleY(first: rl.Rectangle) i32 {
+    return rowTextY(first) - ABOVE;
+}
+
+pub fn noteY(first: rl.Rectangle, count: usize) i32 {
+    return rowTextY(first) + @as(i32, @intCast(count)) * ROW_STEP + NOTE_GAP;
+}
+
 pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const []const u8, at: usize, note: ?[:0]const u8) void {
     const win = window(screen.y, all.len, at);
     const rows = all[win.from..][0..win.len];
-    const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(rows.len)) * ROW_STEP, 2);
-    heading(face, screen, title, top + TITLE_DY - TITLE, TITLE, look.TEXT, look.UI_GOLD);
+    const first = rowBox(screen, win, win.from);
+    heading(face, screen, title, titleY(first), TITLE, look.TEXT, look.UI_GOLD);
+    if (rows.len > 0) {
+        const panel = rl.Rectangle{ .x = first.x, .y = first.y - ROW_INSET, .width = first.width, .height = @floatFromInt(rows.len * ROW_STEP + 2 * ROW_INSET) };
+        rl.drawRectangleRec(panel, look.CARD_BG);
+    }
     const mark_w = face.width(MARK_L, ROW);
-    const widest = screen.x - 2 * (MARK_GAP * 2 + mark_w);
+    const widest = @as(i32, @intFromFloat(first.width)) - 2 * (MARK_GAP * 2 + mark_w);
     var fit_buf: [NOTE_MAX + 1]u8 = undefined;
     for (rows, win.from..) |whole, i| {
         const r = face.fit(&fit_buf, whole, ROW, widest, false);
-        const y = top + ROWS_DY + @as(i32, @intCast(i - win.from)) * ROW_STEP;
+        const box = rowBox(screen, win, i);
+        const y = rowTextY(box);
         const on = i == at;
-        const w = face.width(r, ROW);
-        const x = @divTrunc(screen.x - w, 2);
+        if (on) rl.drawRectangleRec(box, look.EDIT_ROW_ON);
+        const x = @as(i32, @intFromFloat(box.x)) + MARK_GAP * 2 + mark_w;
         face.text(r, x, y, ROW, if (on) look.UI_FOCUS else look.DIM);
         if (on) {
             face.text(MARK_L, x - MARK_GAP - mark_w, y, ROW, look.UI_FOCUS);
-            face.text(MARK_R, x + w + MARK_GAP, y, ROW, look.UI_FOCUS);
         }
     }
-    if (note) |n| mid(face, screen, n, top + ROWS_DY + @as(i32, @intCast(rows.len)) * ROW_STEP + NOTE_GAP, NOTE, look.DIM);
+    if (note) |n| _ = face.paragraph(n, @as(i32, @intFromFloat(first.x)) + MARK_GAP * 2 + mark_w, noteY(first, rows.len), widest, NOTE, look.DIM);
 }
 
 /// Printed into `buf` upper-cased, as a title is; empty if it does not fit.
@@ -307,10 +361,22 @@ pub fn titled(comptime s: [:0]const u8) [:0]const u8 {
     return &out;
 }
 
+/// "Iron boots" from "iron_boots"; call it `comptime`.
+pub fn spoken(comptime s: [:0]const u8) [:0]const u8 {
+    comptime var c: [s.len:0]u8 = capital(s)[0..s.len].*;
+    std.mem.replaceScalar(u8, &c, '_', ' ');
+    const out = c;
+    return &out;
+}
+
 pub fn named(e: anytype) [:0]const u8 {
     return switch (e) {
-        inline else => |t| comptime capital(@tagName(t)),
+        inline else => |t| comptime spoken(@tagName(t)),
     };
+}
+
+test "an enum's label reads as words" {
+    try std.testing.expectEqualStrings("Iron boots", named(@import("../play/items.zig").Kind.iron_boots));
 }
 
 pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
@@ -351,6 +417,33 @@ pub fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
         rl.drawRectangleGradientH(cx + RULE_GAP + by, y + by, reach, 1, ink, clear);
         rl.drawPoly(.{ .x = @floatFromInt(cx + by), .y = @as(f32, @floatFromInt(y + by)) + 0.5 }, 4, RULE_PIP, 0, ink);
     }
+}
+
+test "mouse menus share drawn rows and scrolling keeps long menus reachable" {
+    var checked: usize = 0;
+    for ([_]mathx.P{ .{ .x = 1280, .y = 720 }, .{ .x = 1920, .y = 1080 } }) |screen| {
+        var m = Menu{};
+        for (0..6) |i| {
+            const p = raster.middleAt(rowBox(screen, window(screen.y, 6, m.at), i));
+            try std.testing.expectEqual(@as(?usize, null), m.stepAt(&.{ .pointer = p, .mouse_moved = true }, 6, screen));
+            try std.testing.expectEqual(i, m.at);
+            try std.testing.expectEqual(@as(?usize, i), m.stepAt(&.{ .pointer = p, .click = true }, 6, screen));
+            _ = m.stepAt(&.{ .pointer = p, .walk = .s }, 6, screen);
+            try std.testing.expectEqual((i + 1) % 6, m.at);
+            checked += 1;
+        }
+        _ = m.stepAt(&.{ .scroll = -100 }, 40, screen);
+        try std.testing.expectEqual(@as(usize, 39), m.at);
+        const win = window(screen.y, 40, m.at);
+        const p = raster.middleAt(rowBox(screen, win, win.from));
+        try std.testing.expectEqual(@as(?usize, win.from), m.stepAt(&.{ .pointer = p, .click = true }, 40, screen));
+        try std.testing.expectEqual(@as(?usize, null), m.stepAt(&.{ .pointer = .{ .x = 1, .y = 1 }, .click = true }, 40, screen));
+        try std.testing.expect(backedAt(&.{ .pointer = raster.middleAt(footerBox(screen, false)), .click = true }, screen));
+        try std.testing.expect(backed(&.{ .right_click = true }));
+    }
+    var empty = Menu{};
+    try std.testing.expectEqual(@as(?usize, null), empty.stepAt(&.{ .click = true }, 0, .{ .x = 1280, .y = 720 }));
+    std.debug.print("mouse menus: {d} hover/click/keyboard handoffs, two long lists, outside and back clicks, empty menu\n", .{checked});
 }
 
 test "a long menu shows the rows that fit, the one it is on among them" {

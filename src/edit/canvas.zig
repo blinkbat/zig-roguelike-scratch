@@ -5,6 +5,7 @@ const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
 const dual = @import("../gfx/ground.zig");
 const game = @import("../game.zig");
 const modals = @import("modals.zig");
@@ -18,7 +19,7 @@ const HOVER = look.EDIT_HOVER;
 const PICKED = look.EDIT_PICKED;
 const UNLINKED = look.EDIT_UNLINKED;
 const WARN = look.EDIT_WARN;
-const vec = look.vec;
+const vec = raster.vec;
 
 pub fn visible(ed: *const editor.Editor, c: rl.Rectangle) grid.Box {
     const lo = mathx.P{ .x = @min(grid.W, @max(0, @as(i32, @intFromFloat(@floor(ed.cam[0]))))), .y = @min(grid.H, @max(0, @as(i32, @intFromFloat(@floor(ed.cam[1]))))) };
@@ -59,7 +60,7 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         }
     }
     if (ed.px() >= GRID_PX) drawGrid(ed, c, v);
-    rl.drawRectangleLinesEx(look.grown(boxRect(ed, c, grid.Box.inMap(0)), 1), 1, look.EDGE);
+    rl.drawRectangleLinesEx(raster.grown(boxRect(ed, c, grid.Box.inMap(0)), 1), 1, look.EDGE);
     var cells = grid.Cells.of(v.lo, v.hi);
     while (cells.next()) |p| {
         if (ed.lv.hasBarrel(p)) modals.seenPicture(g, .barrel, ed.cellRect(c, p));
@@ -75,7 +76,7 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     if (ed.flash_t > 0) {
         if (ed.flash) |p| {
             const r = ed.cellRect(c, p);
-            rl.drawRectangleLinesEx(look.grown(r, FLASH_PX), PICK_EDGE, look.UI_FOCUS);
+            rl.drawRectangleLinesEx(raster.grown(r, FLASH_PX), PICK_EDGE, look.UI_FOCUS);
         }
     }
     drawCursor(ed, g, c);
@@ -189,7 +190,7 @@ fn ghostPasted(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, tool: e
 }
 
 fn ghostTool(g: *game.Game, r: rl.Rectangle, tool: editor.Tool) void {
-    if (panel.toolPicture(g, tool)) |t| return look.stretch(t, r, GHOST);
+    if (panel.toolPicture(g, tool)) |t| return raster.stretch(t, r, GHOST);
     const l = tool.look_();
     editor.glyph(g, l.ch, r, look.fade(l.fg, GHOST_A));
 }
@@ -200,7 +201,7 @@ pub fn ghostInk(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, t: gri
 }
 
 fn ghostTile(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
-    if (g.sprites.tileOf(t, .{})) |tex| return look.stretch(tex, r, GHOST);
+    if (g.sprites.tileOf(t, .{})) |tex| return raster.stretch(tex, r, GHOST);
     rl.drawRectangleRec(r, look.fade(panel.bareBg(t), GHOST_A));
 }
 
@@ -270,7 +271,7 @@ fn thumb(ed: *editor.Editor, n: usize, picture: rl.Rectangle, canvas: rl.Rectang
                 look.mini(lv.tile[i], true);
         }
         if (ed.thumbs[n] == null) {
-            ed.thumbs[n] = look.canvas(grid.W, grid.H, look.BG, .point);
+            ed.thumbs[n] = raster.canvas(grid.W, grid.H, look.BG, .point);
         }
         if (ed.thumbs[n]) |t| rl.updateTexture(t, &px);
         ed.thumb_ok.set(n);
@@ -282,7 +283,7 @@ test "offscreen graph thumbnails defer generation and uploads until their image 
     const ed = try editor.Editor.create(std.testing.allocator);
     defer ed.destroy();
     while (ed.map.node_n < atlas.MAX_NODES) _ = ed.map.add(.{ .procgen = .{} });
-    const c = look.rect(editor.PANEL_W, 0, 640, 480);
+    const c = raster.rect(editor.PANEL_W, 0, 640, 480);
     ed.gcam = .{ 10000, 10000 };
     for (0..ed.map.node_n) |n| {
         try std.testing.expect(thumb(ed, n, thumbRect(ed.boxAt(c, n)), c) == null);

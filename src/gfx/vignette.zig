@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const look = @import("look.zig");
+const raster = @import("raster.zig");
 
 /// Seconds a blow's reddening takes to rise, and to fade.
 const RISE_S: f32 = 0.12;
@@ -64,7 +65,7 @@ pub const Vignette = struct {
 
     /// Needs a live GL context.
     pub fn load(self: *Vignette) void {
-        self.tex = look.radial(TEX_PX, edgeAlpha);
+        self.tex = raster.radial(TEX_PX, edgeAlpha);
     }
 
     pub fn unload(self: *Vignette) void {
@@ -76,7 +77,7 @@ pub const Vignette = struct {
         const tex = self.tex orelse return;
         const a = self.alpha();
         if (a <= 0) return;
-        look.stretch(tex, look.rect(0, 0, w, h), look.fade(look.LIFE, a));
+        raster.stretch(tex, raster.rect(0, 0, w, h), look.fade(look.LIFE, a));
     }
 };
 

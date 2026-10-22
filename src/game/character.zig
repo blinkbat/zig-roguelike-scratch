@@ -11,6 +11,7 @@ const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const scene = @import("scene.zig");
 const game = @import("../game.zig");
+const binds = @import("binds.zig");
 const P = mathx.P;
 const PAUSE = menu.PAUSE;
 
@@ -186,7 +187,7 @@ pub fn characterCommand(g: *game.Game, command: book.Command) void {
     switch (command) {
         .close => g.mode = .play,
         .bindings => |act| {
-            game.openBinds(g);
+            binds.openBinds(g);
             if (g.growth.unlocked(act)) g.binds.assigning = act;
         },
         .passive => |i| {
@@ -292,11 +293,11 @@ pub fn pauseStep(g: *game.Game) void {
         },
         .debug => game.debugging.step(g),
         .main => {
-            if (menu.backed(&g.st)) {
+            if (menu.backedAt(&g.st, g.screen)) {
                 g.mode = .play;
                 return;
             }
-            const i = g.pause_menu.step(&g.st, game.PAUSE_ROWS.len) orelse return;
+            const i = g.pause_menu.stepAt(&g.st, game.PAUSE_ROWS.len, g.screen) orelse return;
             switch (game.PAUSE_ROWS[i]) {
                 .resume_ => g.mode = .play,
                 .debug => game.debugging.open(g, .main),
@@ -348,6 +349,7 @@ pub fn drawPause(g: *game.Game) void {
             var rows: [game.PAUSE_ROWS.len][]const u8 = undefined;
             for (game.PAUSE_ROWS, &rows) |r, *l| l.* = pauseLabel(g, r);
             menu.draw(g.face, g.screen, "PAUSED", &rows, g.pause_menu.at, null);
+            menu.drawBack(&g.face, g.screen, &g.st);
         },
     }
 }

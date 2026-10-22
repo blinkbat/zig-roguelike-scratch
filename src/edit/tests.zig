@@ -3,11 +3,13 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
+const listing = @import("../map/listing.zig");
 const carve = @import("../map/carve.zig");
 const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
 const menu = @import("../ui/menu.zig");
 const knobs = @import("knobs.zig");
 const modals = @import("modals.zig");
@@ -645,8 +647,54 @@ test "Open lists the edited map's folder and Esc goes up a folder before it clos
     editor.modalKeys(ed);
     try std.testing.expectEqual(editor.Modal.none, ed.modal);
     ed.field.put("Bog");
-    var buf: [atlas.PATH_MAX]u8 = undefined;
+    var buf: [listing.PATH_MAX]u8 = undefined;
     try std.testing.expectEqualStrings(atlas.DIR ++ "/qud/bog" ++ atlas.EXT, ed.namedPath(&buf).?);
+}
+
+test "mouse editor cell actions choose play starts and linked doors without painting" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const from = P{ .x = 10, .y = 10 };
+    const to = P{ .x = 20, .y = 20 };
+    _ = ed.map.addDoor(0, from);
+    _ = ed.map.addDoor(1, to);
+    ed.map.link(.{ .node = 0, .door = 0 }, .{ .node = 1, .door = 0 });
+    const before = ed.map.node[0].plan.bespoke.tile;
+    const start = P{ .x = 12, .y = 13 };
+    ed.pasting = true;
+    editor.armCellAction(ed, .play);
+    try std.testing.expect(!ed.pasting and ed.cell_action == .play);
+    ed.desk = .{ .mouse = raster.middleAt(ed.cellRect(TEST_CANVAS, from)) };
+    editor.mapMouse(ed, TEST_CANVAS, true);
+    try std.testing.expect(ed.action == .none and ed.cell_action == .play);
+    ed.desk = .{ .paint_hit = true, .paint = true, .mouse = raster.middleAt(ed.cellRect(TEST_CANVAS, start)) };
+    editor.mapMouse(ed, TEST_CANVAS, true);
+    try std.testing.expectEqual(@as(usize, 0), ed.action.play.node);
+    try std.testing.expectEqual(start, ed.action.play.at);
+    try std.testing.expect(ed.cell_action == null);
+    ed.desk.paint_hit = false;
+    editor.mapMouse(ed, TEST_CANVAS, true);
+    try std.testing.expectEqualSlices(grid.Tile, &before, &ed.map.node[0].plan.bespoke.tile);
+    ed.action = .none;
+    editor.armCellAction(ed, .go);
+    ed.desk = .{ .paint_hit = true, .mouse = raster.middleAt(ed.cellRect(TEST_CANVAS, from)) };
+    editor.mapMouse(ed, TEST_CANVAS, true);
+    try std.testing.expectEqual(@as(usize, 1), ed.node);
+    try std.testing.expect(ed.cell_action == null);
+    try std.testing.expectEqual(@as(usize, 0), ed.hist_at);
+    editor.armCellAction(ed, .play);
+    ed.desk = .{ .erase_hit = true };
+    editor.mapMouse(ed, TEST_CANVAS, true);
+    try std.testing.expect(ed.cell_action == null and ed.action == .none);
+    editor.armCellAction(ed, .play);
+    editor.escape(ed);
+    try std.testing.expect(ed.cell_action == null and ed.action == .none);
+    editor.armCellAction(ed, .go);
+    ed.desk = .{ .paint_hit = true };
+    editor.mapMouse(ed, TEST_CANVAS, false);
+    try std.testing.expect(ed.cell_action == null and ed.action == .none);
+    try std.testing.expectEqualSlices(grid.Tile, &before, &ed.map.node[0].plan.bespoke.tile);
+    std.debug.print("mouse editor: chosen play cell, linked-door travel, intermediate motion, held click and three cancellations preserve map and undo\n", .{});
 }
 
 test "a full procgen preview keeps the hero's place in the pool, as play does" {

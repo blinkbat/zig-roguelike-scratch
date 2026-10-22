@@ -52,7 +52,7 @@ pub fn skills(c: hero.Class) []const Skill {
         .knight => &.{
             .{ .act = .charge, .initial = true, .at = .{ .x = 0, .y = 0 } },
             .{ .act = .shield_bash, .parent = .charge, .at = .{ .x = 0, .y = 1 } },
-            .{ .act = .cleave, .parent = .charge, .at = .{ .x = 1, .y = 1 } },
+            .{ .act = .cleave, .initial = true, .at = .{ .x = 1, .y = 0 } },
         },
     };
 }
@@ -182,7 +182,7 @@ pub const State = struct {
     }
 
     fn skillAttrs(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) attrs.Attrs {
-        var out = equipped;
+        var out = if (act.attack()) |attack| gear.forAttack(equipped, attack) else equipped;
         if (act.attack()) |attack| out.damage_bonus.getPtr(gear.scaling(attack)).* += self.damageBonus(act);
         return out;
     }
@@ -196,11 +196,13 @@ pub const State = struct {
     /// Its blow's non-critical spans with `gear`, as live damage rolls them.
     pub fn hit(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) ?Hit {
         const b = self.blowOf(equipped, gear, act) orelse return null;
-        return .{ .physical = b.by.span(b.style, b.bases.physical()), .element = if (b.bases.element) |e| b.by.span(b.style, e) else null, .style = b.style };
+        return .{ .physical = b.by.span(b.style, b.bases.physical()), .element = if (b.bases.element) |e| b.by.elementSpan(b.style, e, act.element().?) else null, .style = b.style };
     }
 
     pub fn cost(self: *const State, act: skillbar.Act) i32 {
-        return mathx.percentOf(act.cost(), @max(0, mathx.PERCENT - @as(i32, self.extraRanks(act)) * RANK_COST_PERCENT - self.perks().mana_cost));
+        if (act.cost() == 0) return 0;
+        const percent = @max(0, mathx.PERCENT - @as(i32, self.extraRanks(act)) * RANK_COST_PERCENT - self.perks().mana_cost);
+        return @max(1, std.math.divCeil(i32, act.cost() * percent, mathx.PERCENT) catch unreachable);
     }
 
     pub fn cooldown(self: *const State, act: skillbar.Act) u8 {
@@ -277,6 +279,33 @@ test "experience awards both point pools; passive paths cross class regions; act
     try std.testing.expectEqual(@as(u8, 2), top.cooldown(.blink));
     try std.testing.expectEqual(@as(i32, 0), top.damageBonus(.blink));
     std.debug.print("progression: {d} classes traverse all {d} passive nodes; {d} ranks, prerequisites and separate point pools checked; top-rank blink cools {d}, juke {d}, ward {d}\n", .{ std.enums.values(hero.Class).len, NODES.len, RANKS, top.cooldown(.blink), top.cooldown(.juke), top.cooldown(.mana_shield) });
+}
+
+test "small mana costs round discounts up and paid skills stay paid at every rank" {
+    var state = State{};
+    try std.testing.expectEqual(@as(i32, 2), state.cost(.spark));
+    try std.testing.expectEqual(@as(i32, 7), state.cost(.blink));
+    state.ranks.set(.spark, RANKS);
+    state.ranks.set(.blink, RANKS);
+    try std.testing.expectEqual(@as(i32, 2), state.cost(.spark));
+    try std.testing.expectEqual(@as(i32, 6), state.cost(.blink));
+    for (0..NODES.len) |i| state.nodes.set(i);
+    var checked: usize = 0;
+    for (skillbar.ACTS) |act| {
+        for (1..RANKS + 1) |rank| {
+            state.ranks.set(act, @intCast(rank));
+            const n = state.cost(act);
+            try std.testing.expect(n <= act.cost());
+            if (act.cost() == 0) {
+                try std.testing.expectEqual(@as(i32, 0), n);
+            } else {
+                try std.testing.expect(n >= 1);
+            }
+            checked += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(i32, 1), state.cost(.spark));
+    std.debug.print("small mana costs: {d} action/rank cases, rounded discounts and free actions checked\n", .{checked});
 }
 
 test "passive origins preserve class bases and failed purchases preserve the whole state" {

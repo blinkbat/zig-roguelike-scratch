@@ -3,6 +3,8 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
+const raster = @import("raster.zig");
+const shaders = @import("shaders.zig");
 
 // After Brogue's `getCellAppearance`.
 
@@ -40,7 +42,7 @@ pub const Cloud = struct {
     tex: ?rl.Texture2D = null,
     shade: ?Shade = null,
     veil: ?Veil = null,
-    map_view: look.MapView,
+    map_view: shaders.MapView,
     visible: bool = false,
 
     pub fn create(alloc: std.mem.Allocator) !*Cloud {
@@ -87,9 +89,9 @@ pub const Cloud = struct {
 
     /// Needs a live GL context.
     pub fn load(self: *Cloud) void {
-        self.tex = look.canvas(TEX_W, TEX_H, rl.Color.blank, .bilinear);
-        self.shade = look.program(Shade, CLOUD_FS);
-        self.veil = look.program(Veil, VEIL_FS);
+        self.tex = raster.canvas(TEX_W, TEX_H, rl.Color.blank, .bilinear);
+        self.shade = shaders.program(Shade, CLOUD_FS);
+        self.veil = shaders.program(Veil, VEIL_FS);
     }
 
     pub fn unload(self: *Cloud) void {
@@ -113,11 +115,11 @@ pub const Cloud = struct {
             rl.updateTexture(tex, &self.px);
             self.stale = false;
         }
-        const s = self.shade orelse return look.overFloor(tex, ox, oy, cell);
+        const s = self.shade orelse return raster.overFloor(tex, ox, oy, cell);
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
-        look.setUniform(s.shader, s.time, self.t.at());
-        look.overFloor(tex, ox, oy, cell);
+        shaders.setUniform(s.shader, s.time, self.t.at());
+        raster.overFloor(tex, ox, oy, cell);
         rl.gl.rlDrawRenderBatchActive();
     }
 
@@ -127,10 +129,10 @@ pub const Cloud = struct {
         const s = self.veil orelse return false;
         rl.beginShaderMode(s.shader);
         focus.set(s.shader, s.texel, s.strength);
-        look.setUniform(s.shader, s.time, self.t.at());
-        look.setMapView(s, self.map_view);
+        shaders.setUniform(s.shader, s.time, self.t.at());
+        shaders.setMapView(s, self.map_view);
         const rgb: [3]f32 = look.rgbOf(ink);
-        look.setUniform(s.shader, s.ink, rgb);
+        shaders.setUniform(s.shader, s.ink, rgb);
         rl.setShaderValueTexture(s.shader, s.cloud, tex);
         return true;
     }
@@ -191,7 +193,7 @@ const FBM_MAX: f32 = FBM_GAIN * (1 - mathx.powi(FBM_GAIN, OCTAVES)) / (1 - FBM_G
 const DRIFT = [2]f32{ 0.21, 0.13 };
 
 /// The softened density weighs its own texel and the four `SOFT` round it with `look.FOCUS_WEIGHTS`, which must precede it.
-const CLOUD_NOISE = look.glslConsts(.{
+const CLOUD_NOISE = shaders.glslConsts(.{
     .TINT_HI = TINT_HI,
     .WARP = WARP,
     .SOFT = SOFT,
@@ -234,14 +236,14 @@ const CLOUD_NOISE = look.glslConsts(.{
     \\}
 ;
 
-const CLOUD_FS = look.FS_HEAD ++ look.FOCUS_WEIGHTS ++ CLOUD_NOISE ++
+const CLOUD_FS = shaders.FS_HEAD ++ look.FOCUS_WEIGHTS ++ CLOUD_NOISE ++
     \\void main() {
     \\    vec4 gas = cloudAt(texture0, fragTexCoord * CELLS);
     \\    finalColor = vec4(gas.rgb * texture(texture0, fragTexCoord).rgb, gas.a) * fragColor;
     \\}
 ;
 
-const VEIL_FS = look.FS_HEAD ++ look.FOCUS_TAPS ++ look.MAP_VIEW_FS ++ CLOUD_NOISE ++ look.glslConsts(.{ .FIGURE_SHARE = FIGURE_SHARE }) ++
+const VEIL_FS = shaders.FS_HEAD ++ look.FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ CLOUD_NOISE ++ shaders.glslConsts(.{ .FIGURE_SHARE = FIGURE_SHARE }) ++
     \\uniform sampler2D cloud;
     \\uniform vec3 ink;
     \\void main() {

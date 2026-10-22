@@ -156,7 +156,6 @@ pub const Act = enum {
         };
     }
 
-    /// Spends no turn: Juke alone.
     pub fn free(a: Act) bool {
         return a.declOr("FREE", false);
     }

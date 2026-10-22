@@ -30,6 +30,8 @@ class ReleaseTests(unittest.TestCase):
                             for entry in archive if entry.name.startswith(name + '/maps/')
                         }
                         metadata = json.load(archive.extractfile(name + '/build-info.json'))
+                        for license_name in ('Balthazar-OFL.txt', 'SourceSans3-OFL.txt', 'gamecontrollerdb-LICENSE'):
+                            self.assertEqual((release.ASSETS / license_name).read_bytes(), archive.extractfile(name + '/licenses/' + license_name).read())
                     self.assertEqual(expected, actual)
                     for path, data in expected.items():
                         self.assertEqual(release.sha256(data), metadata['files'][path])

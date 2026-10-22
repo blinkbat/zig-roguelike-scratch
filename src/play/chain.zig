@@ -7,7 +7,7 @@ const spark = @import("spark.zig");
 const clock = @import("clock.zig");
 const bow = @import("bow.zig");
 
-pub const COST: i32 = 20;
+pub const COST: i32 = 4;
 /// Foes it leaps on to after the first, each the nearest unstruck foe to the last within `JUMP_RANGE`.
 pub const JUMPS: usize = 2;
 pub const JUMP_RANGE: i32 = 3;
@@ -22,6 +22,7 @@ pub const BASE = damage.Base{ .lo = 2, .hi = 5 };
 
 pub const procs = spark.procs;
 pub const afflict = spark.afflict;
+pub const AILMENT = spark.AILMENT;
 
 /// The bodies it strikes, the first first: each after it the nearest lit foe to the one before, in a clear line.
 pub const Chain = actor.Ids(JUMPS + 1);

@@ -6,7 +6,7 @@ const bash = @import("bash.zig");
 
 const P = mathx.P;
 
-pub const COST: i32 = 20;
+pub const COST: i32 = 3;
 pub const COOLDOWN: u8 = 4;
 pub const RANGE: i32 = 3;
 pub const MIN_RANGE: i32 = 2;

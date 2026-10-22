@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const font = @import("../gfx/font.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
 const fx = @import("../gfx/fx.zig");
 
 pub const WIDTH: i32 = 640;
@@ -198,14 +199,14 @@ pub fn shownStatuses(status: std.EnumArray(fx.Status, u8), out: *Shown) []const 
 pub fn statusBox(layout: Layout, count: usize, k: usize) rl.Rectangle {
     const n: i32 = @intCast(count);
     const x = layout.left + @divTrunc(WIDTH - n * (STATUS_PX + STATUS_GAP) + STATUS_GAP, 2) + @as(i32, @intCast(k)) * (STATUS_PX + STATUS_GAP);
-    return look.rect(x, layout.top + STATUS_Y, STATUS_PX, STATUS_PX);
+    return raster.rect(x, layout.top + STATUS_Y, STATUS_PX, STATUS_PX);
 }
 
 pub fn orbBox(centre: mathx.P) rl.Rectangle {
-    return look.rect(centre.x - ORB_R, centre.y - ORB_R, 2 * ORB_R, 2 * ORB_R);
+    return raster.rect(centre.x - ORB_R, centre.y - ORB_R, 2 * ORB_R, 2 * ORB_R);
 }
 
-pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.Face, status: std.EnumArray(fx.Status, u8)) void {
+pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.Face, status: std.EnumArray(fx.Status, u8), resistance: u8) void {
     var buf_shown: Shown = undefined;
     const shown = shownStatuses(status, &buf_shown);
     for (shown, 0..) |s, k| {
@@ -215,6 +216,10 @@ pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.
         const y: i32 = @intFromFloat(box.y);
         look.hudPanelIn(sprites, box, PLATE, look.LIT);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
+        if (s == .resistant) {
+            rl.drawRectangle(x + 4, y + STATUS_PX - 5, STATUS_PX - 8, 2, look.EDGE);
+            rl.drawRectangle(x + 4, y + STATUS_PX - 5, @divTrunc((STATUS_PX - 8) * @as(i32, resistance), 100), 2, look.UI_GOLD);
+        }
         counter(face, box, turns);
     }
 }
@@ -244,10 +249,10 @@ const TIP_MARGIN: i32 = 8;
 pub fn focus(box: rl.Rectangle, round: bool) void {
     if (round) {
         const r = box.width / 2 + FOCUS_GROW;
-        rl.drawRing(look.middle(box), r - FOCUS_W, r, 0, 360, 64, look.UI_FOCUS);
+        rl.drawRing(raster.middle(box), r - FOCUS_W, r, 0, 360, 64, look.UI_FOCUS);
         return;
     }
-    rl.drawRectangleLinesEx(look.grown(box, FOCUS_GROW), FOCUS_W, look.UI_FOCUS);
+    rl.drawRectangleLinesEx(raster.grown(box, FOCUS_GROW), FOCUS_W, look.UI_FOCUS);
 }
 
 /// A body with this splits into "label|value" rows, drawn as a table.
@@ -288,12 +293,12 @@ pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl
         }
     }
     const h = TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(n)) * TIP_LINE;
-    const mid = look.middleAt(over).x;
+    const mid = raster.middleAt(over).x;
     const x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
     const y = @max(TIP_MARGIN, @min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y) - TIP_GAP - h);
     shadow(x, y, TIP_W, h, TIP_SHADOW_A);
     rl.drawRectangle(x, y, TIP_W, h, PLATE);
-    rl.drawRectangleLinesEx(look.rect(x, y, TIP_W, h), TIP_FRAME_W, FRAME);
+    rl.drawRectangleLinesEx(raster.rect(x, y, TIP_W, h), TIP_FRAME_W, FRAME);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
     for (lines[0..n], 0..) |l, i| {
         const top = y + TIP_BODY_Y + @as(i32, @intCast(i)) * TIP_LINE;
@@ -356,6 +361,12 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
         .warded => {
             rl.drawCircleLines(x, y, 8, colour);
             rl.drawCircleLines(x, y, 5, colour);
+        },
+        .resistant => {
+            for (0..3) |i| {
+                const dy: i32 = @intCast(i * 5);
+                rl.drawRectangle(x - 7, y - 6 + dy, 14, 3, colour);
+            }
         },
     }
 }

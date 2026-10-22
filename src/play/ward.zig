@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const COST: i32 = 30;
+pub const COST: i32 = 6;
 pub const COOLDOWN: u8 = 8;
 pub const TURNS: u8 = 5;
 pub const DONE = "raises a mana shield";

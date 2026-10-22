@@ -31,8 +31,8 @@ Sources: [Steam: hold back for the mini menu](https://steamcommunity.com/app/269
 
 No screen names a key or button in prose. Control hints use glyphs throughout, including the editor.
 The skill bar and bind screen show each slot's input as an icon of the
-device last pressed (`State.device`, `look.Prompt`): any gamepad button or the stick pushed past walking makes it the
-pad, any key the keyboard, and no pad plugged in is always the keyboard. This behavior is deliberate; the dated reports above do not establish the latest PoE2 client. Hovering over the HUD shows a tooltip without changing the device icons or spending a turn.
+device last pressed (`State.device`, `prompt_icon.Prompt`): any gamepad button or the stick pushed past walking makes it the
+pad; any key, mouse movement, mouse button or wheel motion selects keyboard/mouse hints. A stationary cursor leaves controller navigation alone, and no pad plugged in is always the keyboard. This behavior is deliberate; the dated reports above do not establish the latest PoE2 client. HUD tooltips spend no turn.
 
 GLFW maps every pad onto Xbox's buttons by place, so the table names Xbox's. A Sony pad (vendor `054c` in the
 joystick's GUID, `input.padOf`) shows PlayStation's icons instead: Cross A, Circle B, Square X, Triangle Y, L1/R1 the
@@ -83,6 +83,16 @@ PS button do nothing; GLFW reads no touchpad.
 Class kits and template bindings live in `skillbar`; `progress.State` filters new-run defaults and the bind picker to learned skills.
 With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B, RB, RT.
 
+### Mouse
+
+- Click a menu row to activate it; the wheel browses long lists. Right-click or the visible Back/Close action goes back one layer. The name grid accepts clicks on letters, Space, Delete and Done. Each occupied save row has its own Delete action, requiring a second deliberate press on the same slot.
+- Click explored ground to walk there by a known route. Routes avoid walls, known barrels, visible gas and intermediate doors. Movement waits for each turn to finish and stops at the destination, on visible enemies, damage, another action, focus loss or a screen/level change. With a foe already visible, a ground click takes at most one step. Clicking the hero waits one turn.
+- Click a visible foe to use the first bound targeted attack in the shown skill set that can reach it; an adjacent foe can be bumped when no bound attack reaches it. Click a nearby chest, bag or door to interact with that specific object. Existing visibility, costs and turn rules apply.
+- Click a HUD skill to activate it. A targeted skill previews under the pointer; click the map to confirm and right-click to cancel. Clicking a HUD panel never confirms a map target. Click the modifier slot to toggle the secondary set, or wheel over a slot (down for secondary, up for primary). Returning to a controller clears the mouse toggle.
+- Character and Menu buttons sit in the bottom-right gutter with keyboard/mouse hints. Right-click during play also opens the game menu. Character tabs, shoulder arrows, equipment, inventory, loot, tree actions and binding controls accept clicks. Click an item, skill, passive node or binding slot to select it; moving toward its action button preserves that selection. The wheel scrolls lists and the event log.
+- On Passives, wheel to zoom and drag with the middle button to pan; release stops the drag. The visible Overview action resets zoom and pan. Selection, pan and zoom spend no points. Use the visible allocation or upgrade action to spend one point.
+- The death screen's action is clickable once the lethal turn finishes. The editor retains paint/erase, wheel zoom and middle-drag pan, with clickable Copy/Cut/Paste/Clear/Fit controls and right-click to close modals. Play here and Go through in its status bar arm the next map-cell click; right-click cancels. These actions neither paint nor change the map.
+
 - **Everything is slots.** On the pad a slot is its button. On the keyboard it is a number (`input.SLOT_ORDER`), and
   the slot holding "Activate Secondary Skill Set" is Ctrl instead, so moving the modifier renumbers the rest. The bar
   and bind screen show whichever the device is, as icons.
@@ -129,7 +139,7 @@ The second pass checked play, targeting, Character, both trees, binding, Inspect
 | Old icons survived the button remapping | `Prompt.of` derives from `Button.pad`; Xbox Menu/View and Sony Options/Share/Create checked |
 | Keyboard back looked like an arbitrary letter | Escape is the primary back glyph; X remains an alias |
 | Binding actions and mouse targets unclear | Explicit glyph actions, direct selected-skill assignment, scaled mouse targets and wrapped descriptions |
-| Clicking UI left controller hints active | Click/wheel selects keyboard prompts; hovering still leaves the device alone |
+| Clicking UI left controller hints active | Mouse movement, buttons and wheel select keyboard/mouse prompts; a stationary cursor leaves controller selection alone |
 | Queued interaction could bounce through a door | Direct opening limited to sole bags/chests; doors keep their choice |
 
 [D2R's console account](https://news.blizzard.com/en-us/article/23722094/bringing-the-original-diablo-ii-experience-to-console) supports direct skill trays and adapting interaction to the device. GGG's [PoE2 0.1.1c notes](https://webcdn.pathofexile.com/forum/view-thread/3717308) explicitly cover controller font enlargement, item navigation, dedicated interface-confirm bindings, advanced item information and a full-inventory weapon-swap fix. The useful comparison is direct access, readable consequences, consistent device hints and intact transactions. These are dated primary sources, not claims about every present-day default.

@@ -4,9 +4,11 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
+const listing = @import("../map/listing.zig");
 const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const prompt_text = @import("../gfx/prompt_text.zig");
@@ -88,8 +90,8 @@ pub const DETAIL_DY: i32 = TEXT + 1;
 
 comptime {
     std.debug.assert(atlas.GRAPH_STEP.x > BOX_W and atlas.GRAPH_STEP.y > BOX_H);
-    std.debug.assert(FIELD_MAX >= atlas.NAME_MAX and FIELD_MAX <= atlas.STEM_MAX);
-    std.debug.assert(PATH_FIELD_MAX >= atlas.PATH_MAX);
+    std.debug.assert(FIELD_MAX >= atlas.NAME_MAX and FIELD_MAX <= listing.STEM_MAX);
+    std.debug.assert(PATH_FIELD_MAX >= listing.PATH_MAX);
     std.debug.assert(MEMBERS_X + @as(i32, pack.MAKEUP_MAX) * (MEMBER_W + MEMBER_GAP) <= MAKEUP_TOOLS_X);
 }
 
@@ -272,32 +274,43 @@ pub const CRIB_MAP = Desk.PAINT_CAPTION ++ " place" ++ SEP ++ Desk.ERASE_CAPTION
     " tool" ++ SEP ++ Desk.SHAPES_CAPTION ++ " shape" ++ SEP ++ Desk.PICK_CAPTION ++ " pick" ++ SEP ++ Desk.HELP_CAPTION ++ " every key";
 pub const CRIB_GRAPH = Desk.PAINT_CAPTION ++ " open a node" ++ SEP ++ "drag it to move it, or a door's dot to another's to link them" ++ SEP ++
     Desk.ERASE_CAPTION ++ " on a dot unlinks" ++ SEP ++ Desk.GRAPH_CAPTION ++ " back to the map" ++ SEP ++ Desk.HELP_CAPTION ++ " every key";
-const HelpSection = struct { head: [:0]const u8, lines: []const [:0]const u8 };
+const HelpSection = struct { head: [:0]const u8, column: usize = 0, lines: []const [:0]const u8 };
 pub const HELP = [_]HelpSection{
     .{ .head = "PAINTING", .lines = &.{
-        Desk.PAINT_CAPTION ++ " places with the tool, or paints the first ink" ++ SEP ++ Desk.ERASE_CAPTION ++ " paints the second ink, or takes away",
-        Desk.TOOLS_CAPTION ++ " tool" ++ SEP ++ Desk.SHAPES_CAPTION ++ " " ++ SHAPE_NOUNS ++ SEP ++ Desk.RECT_CAPTION ++ " a rectangle with any shape",
-        Desk.BRUSH_CAPTION ++ " brush size" ++ SEP ++ Desk.PICK_CAPTION ++ " picks up what is under the cursor" ++ SEP ++ "the palette: " ++ PALETTE_RULE,
-        Desk.COPY_CAPTION ++ " copy" ++ SEP ++ Desk.CUT_CAPTION ++ " cut" ++ SEP ++ Desk.PASTE_CAPTION ++ " paste, then " ++ Desk.PAINT_CAPTION ++ " lays it" ++ SEP ++ Desk.DELETE_CAPTION ++ " clears the selection",
+        Desk.PAINT_CAPTION ++ " use tool / paint first ink",
+        Desk.ERASE_CAPTION ++ " second ink / erase",
+        Desk.TOOLS_CAPTION ++ " tool",
+        Desk.SHAPES_CAPTION ++ " shape",
+        SHAPE_NOUNS,
+        Desk.RECT_CAPTION ++ " rectangle with any shape",
+        Desk.BRUSH_CAPTION ++ " brush size",
+        Desk.PICK_CAPTION ++ " pick from under cursor",
+        "Palette: " ++ PALETTE_RULE,
+        Desk.COPY_CAPTION ++ " copy" ++ SEP ++ Desk.CUT_CAPTION ++ " cut" ++ SEP ++ Desk.PASTE_CAPTION ++ " paste",
+        Desk.PAINT_CAPTION ++ " place paste" ++ SEP ++ Desk.DELETE_CAPTION ++ " clear selection",
         std.fmt.comptimePrint("{s} on a number's - or + steps it by {d}", .{ Desk.SHIFT_CAPTION, SHIFT_STEP }),
     } },
-    .{ .head = "VIEW", .lines = &.{
-        Desk.PAN_CAPTION ++ " pan" ++ SEP ++ Desk.WHEEL_CAPTION ++ " or " ++ Desk.ZOOM_CAPTION ++ " zoom" ++ SEP ++ Desk.FIT_CAPTION ++ " fit the map" ++ SEP ++ Desk.GRAPH_CAPTION ++ " graph",
-        Desk.GO_CAPTION ++ " through the door under the cursor" ++ SEP ++ Desk.REROLL_CAPTION ++ " rolls a procgen node again" ++ SEP ++ Desk.OBJECTS_CAPTION ++ " every tile and body" ++ SEP ++
-            Desk.HELP_CAPTION ++ " this list",
+    .{ .head = "VIEW", .column = 1, .lines = &.{
+        Desk.PAN_CAPTION ++ " pan",
+        Desk.WHEEL_CAPTION ++ " or " ++ Desk.ZOOM_CAPTION ++ " zoom" ++ SEP ++ Desk.FIT_CAPTION ++ " fit map",
+        Desk.GRAPH_CAPTION ++ " graph" ++ SEP ++ Desk.GO_CAPTION ++ " through door at cursor",
+        Desk.REROLL_CAPTION ++ " reroll procgen node",
+        Desk.OBJECTS_CAPTION ++ " objects" ++ SEP ++ Desk.HELP_CAPTION ++ " this list",
     } },
-    .{ .head = "MAP", .lines = &.{
-        Desk.SAVE_CAPTION ++ " save" ++ SEP ++ Desk.SAVE_AS_CAPTION ++ " save as" ++ SEP ++ Desk.OPEN_CAPTION ++ " open" ++ SEP ++ Desk.NEW_CAPTION ++ " new" ++ SEP ++
-            Desk.UNDO_CAPTION ++ " undo" ++ SEP ++ Desk.REDO_CAPTION ++ " redo",
-        Desk.RENAME_CAPTION ++ " rename the node" ++ SEP ++ Desk.ENTER_CAPTION ++ " names it" ++ SEP ++ Desk.NAV_CAPTION ++ " move through a list" ++ SEP ++ input.RUB_CAPTION ++ " a folder up",
-        Desk.PLAY_CAPTION ++ " play from the start" ++ SEP ++ Desk.PLAY_HERE_CAPTION ++ " from the cursor, and back" ++ SEP ++ Desk.FULLSCREEN_CAPTION ++ " fullscreen" ++ SEP ++
-            Desk.BACK_CAPTION ++ " back a step",
+    .{ .head = "MAP", .column = 1, .lines = &.{
+        Desk.SAVE_CAPTION ++ " save" ++ SEP ++ Desk.SAVE_AS_CAPTION ++ " save as",
+        Desk.OPEN_CAPTION ++ " open" ++ SEP ++ Desk.NEW_CAPTION ++ " new",
+        Desk.UNDO_CAPTION ++ " undo" ++ SEP ++ Desk.REDO_CAPTION ++ " redo",
+        Desk.RENAME_CAPTION ++ " rename node" ++ SEP ++ Desk.ENTER_CAPTION ++ " accept name",
+        Desk.NAV_CAPTION ++ " browse list" ++ SEP ++ input.RUB_CAPTION ++ " folder up",
+        Desk.PLAY_CAPTION ++ " play start" ++ SEP ++ Desk.PLAY_HERE_CAPTION ++ " play cursor / return",
+        Desk.FULLSCREEN_CAPTION ++ " fullscreen" ++ SEP ++ Desk.BACK_CAPTION ++ " back",
     } },
 };
 pub const HELP_ROWS = blk: {
-    var n: i32 = 0;
-    for (HELP) |s| n += 1 + s.lines.len;
-    break :blk n;
+    var n = [_]i32{ 0, 0 };
+    for (HELP) |s| n[s.column] += 2 + s.lines.len;
+    break :blk @max(n[0], n[1]);
 };
 pub const STATUS_H: i32 = GAP + 2 * LINE_STEP;
 
@@ -439,6 +452,7 @@ pub const SEEN = blk: {
 
 const Popup = struct { slot: rl.Rectangle, which: Which };
 pub const Which = union(enum) { algo, feature: usize };
+pub const CellAction = enum { play, go };
 
 const PREVIEW_ROLL: u64 = 0x5EE;
 
@@ -492,6 +506,7 @@ pub const Editor = struct {
     /// The paste laid aside for its ghost.
     trial: atlas.Bespoke = undefined,
     pasting: bool = false,
+    cell_action: ?CellAction = null,
     linking: ?atlas.Link = null,
     delete_armed: ?usize = null,
     popup: ?Popup = null,
@@ -524,7 +539,7 @@ pub const Editor = struct {
     /// The rename field consumes its closing click; newly exposed buttons must not receive it.
     renamed: bool = false,
     field: Field = .{},
-    listing: atlas.Listing = .{},
+    listing: listing.Listing = .{},
     listed_top: usize = 0,
     listed_at: usize = 0,
     desk: Desk = .{},
@@ -606,7 +621,7 @@ pub const Editor = struct {
         ed.restamp();
     }
 
-    /// With '/' between folders, as `atlas.Listing` writes its paths.
+    /// With '/' between folders, as `listing.Listing` writes its paths.
     pub fn setPath(ed: *Editor, p: []const u8) void {
         var q = p;
         while (q.len > 2 and q[0] == '.' and (q[1] == '/' or q[1] == '\\')) q = q[2..];
@@ -728,11 +743,12 @@ pub const Editor = struct {
     }
 
     fn holding(ed: *const Editor) bool {
-        return ed.popup != null or ed.span != null or ed.stroke != .none or ed.drag != null or ed.linking != null;
+        return ed.cell_action != null or ed.popup != null or ed.span != null or ed.stroke != .none or ed.drag != null or ed.linking != null;
     }
 
     pub fn drop(ed: *Editor) void {
         ed.letGo();
+        ed.cell_action = null;
         if (ed.drag) |dr| ed.map.node[dr.node].pos = dr.was;
         ed.drag = null;
         ed.linking = null;
@@ -976,7 +992,7 @@ pub const Editor = struct {
     }
 
     pub fn askOpen(ed: *Editor) void {
-        ed.listing.scanAt(atlas.folderOf(ed.path()));
+        ed.listing.scanAt(listing.folderOf(ed.path()));
         ed.showListing();
         ed.ask(.open);
     }
@@ -999,11 +1015,11 @@ pub const Editor = struct {
     }
 
     pub fn namedPath(ed: *const Editor, buf: []u8) ?[]const u8 {
-        return atlas.pathFor(buf, atlas.folderOf(ed.path()), ed.field.text());
+        return listing.pathFor(buf, listing.folderOf(ed.path()), ed.field.text());
     }
 
     pub fn named(ed: *Editor) void {
-        var buf: [atlas.PATH_MAX]u8 = undefined;
+        var buf: [listing.PATH_MAX]u8 = undefined;
         const p = ed.namedPath(&buf) orelse return ed.say("Type a name of letters or digits", .{});
         if (std.fs.cwd().access(p, .{})) {
             return ed.say("{s} is there already; open it, or pick another name", .{p});
@@ -1042,7 +1058,7 @@ pub const Editor = struct {
     }
 
     pub fn canvas(g: *const game.Game) rl.Rectangle {
-        return look.rect(PANEL_W, 0, @max(0, g.screen.x - PANEL_W), @max(0, g.screen.y - STATUS_H));
+        return raster.rect(PANEL_W, 0, @max(0, g.screen.x - PANEL_W), @max(0, g.screen.y - STATUS_H));
     }
 
     /// Screen origin rounded to whole pixels to keep sprites aligned.
@@ -1084,7 +1100,7 @@ pub const Editor = struct {
     }
 
     pub fn mouseIn(ed: *const Editor, r: rl.Rectangle) bool {
-        return look.holds(r, ed.desk.mouse);
+        return raster.holds(r, ed.desk.mouse);
     }
 
     pub fn cellRect(ed: *const Editor, c: rl.Rectangle, p: P) rl.Rectangle {
@@ -1116,7 +1132,7 @@ pub const Editor = struct {
         var n = ed.map.node_n;
         while (n > 0) {
             n -= 1;
-            if (look.holds(ed.boxAt(c, n), m)) return n;
+            if (raster.holds(ed.boxAt(c, n), m)) return n;
         }
         return null;
     }
@@ -1138,7 +1154,7 @@ fn freshMap(w: *atlas.Atlas) void {
 
 const FRESH_ROOM = P{ .x = 15, .y = 9 };
 
-const vec = look.vec;
+const vec = raster.vec;
 
 /// Caller updates `desk` and `g.screen` first; `closing` is the window close request.
 pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
@@ -1220,7 +1236,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     if (d.shape) |i| ed.setShape(SHAPES[i]);
     if (ed.view == .map) {
         if (d.fit) fitView(ed, c);
-        if (d.zoom_in or d.zoom_out) zoom(ed, c, if (d.zoom_in) 1 else -1, look.middleAt(c));
+        if (d.zoom_in or d.zoom_out) zoom(ed, c, if (d.zoom_in) 1 else -1, raster.middleAt(c));
         if (d.copy) copySelection(ed, false);
         if (d.cut) copySelection(ed, true);
         if (d.delete) clearSelection(ed);
@@ -1293,6 +1309,10 @@ pub fn escape(ed: *Editor) void {
 
 pub fn modalKeys(ed: *Editor) void {
     const d = &ed.desk;
+    if (d.erase_hit) {
+        ed.modal = .none;
+        return;
+    }
     if (ed.modal == .open and (d.back or d.rub) and ed.listing.up()) return ed.showListing();
     if (d.back) {
         ed.modal = .none;
@@ -1328,6 +1348,17 @@ fn playHere(ed: *Editor, c: rl.Rectangle, over: bool) void {
     ed.action = .{ .play = .{ .node = ed.node, .at = p } };
 }
 
+pub fn armCellAction(ed: *Editor, action: CellAction) void {
+    ed.release();
+    ed.setView(.map);
+    ed.cell_action = action;
+    ed.say("{s} {s}; {s} cancels", .{
+        Desk.PAINT_CAPTION,
+        if (action == .play) "a cell to play there" else "a linked door to go through",
+        Desk.ERASE_CAPTION,
+    });
+}
+
 fn goThrough(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (ed.view != .map) return;
     const door = if (over) ed.doorAt(ed.mouseCell(c)) else null;
@@ -1343,6 +1374,18 @@ fn goThrough(ed: *Editor, c: rl.Rectangle, over: bool) void {
 pub fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const d = &ed.desk;
     const p = ed.mouseCell(c);
+    if (ed.cell_action) |action| {
+        if (d.erase_hit or (d.paint_hit and !over)) {
+            ed.cell_action = null;
+        } else if (d.paint_hit and over) {
+            ed.cell_action = null;
+            switch (action) {
+                .play => playHere(ed, c, over),
+                .go => goThrough(ed, c, over),
+            }
+        }
+        return;
+    }
     if (ed.pasting) {
         if (over and d.paint_hit) {
             if (ed.paintable()) layBoard(ed, p) else ed.say(GENERATED, .{});
@@ -1595,7 +1638,7 @@ fn zoom(ed: *Editor, c: rl.Rectangle, by: i32, anchor: P) void {
     ed.stroke_at = null;
 }
 
-fn fitView(ed: *Editor, c: rl.Rectangle) void {
+pub fn fitView(ed: *Editor, c: rl.Rectangle) void {
     ed.zoom = 0;
     for (ZOOMS, 0..) |z, i| {
         if (@as(f32, grid.W) * z <= c.width and @as(f32, grid.H) * z <= c.height) ed.zoom = i;
@@ -1754,7 +1797,7 @@ pub fn copySelection(ed: *Editor, cut: bool) void {
     ed.say("Copied {d} by {d}: {s} pastes", .{ bd.size.x, bd.size.y, Desk.PASTE_CAPTION });
 }
 
-fn clearSelection(ed: *Editor) void {
+pub fn clearSelection(ed: *Editor) void {
     const s = ed.selection orelse return;
     const b = ed.painted() orelse return ed.say(GENERATED, .{});
     ed.drop();
@@ -1886,7 +1929,7 @@ pub fn plate(r: rl.Rectangle, on: bool, hot_: bool) void {
 }
 
 pub fn row(x: i32, y: i32, w: i32) rl.Rectangle {
-    return look.rect(x, y, w, ROW_H);
+    return raster.rect(x, y, w, ROW_H);
 }
 
 pub fn slotOf(x0: i32, span: i32, y: i32, k: usize, n: usize) rl.Rectangle {
@@ -2088,7 +2131,7 @@ pub fn pictureIn(r: rl.Rectangle, size: f32, top: f32) rl.Rectangle {
 }
 
 pub fn sprite(t: rl.Texture2D, r: rl.Rectangle) void {
-    look.stretch(t, r, look.LIT);
+    raster.stretch(t, r, look.LIT);
 }
 
 pub fn figure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, r: rl.Rectangle) void {
@@ -2098,7 +2141,7 @@ pub fn figure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, r: rl.Rectangle) 
 const GlyphBox = struct { x: i32, y: i32, size: i32 };
 
 fn inkIn(r: rl.Rectangle) GlyphBox {
-    const at = look.middleAt(r);
+    const at = raster.middleAt(r);
     return .{ .x = at.x, .y = at.y, .size = @intFromFloat(r.width * GLYPH_OF_CELL) };
 }
 
@@ -2183,9 +2226,20 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
         if (std.meta.eql(s, Seen{ .body = .slime })) ed.seen_at = i;
     }
     try snap(ed, g, target, objects_path);
-    ed.modal = .help;
     var path: [std.fs.max_path_bytes]u8 = undefined;
+    for (SEEN, 0..) |s, i| {
+        if (std.meta.eql(s, Seen{ .body = .beefy_pib })) ed.seen_at = i;
+    }
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-beefy-pib.png", .{std.fs.path.dirname(map_path) orelse "."}));
+    ed.modal = .help;
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-help.png", .{std.fs.path.dirname(map_path) orelse "."}));
+    ed.naming = .save_as;
+    ed.field.put("The Warrens");
+    ed.listing.scan();
+    inline for (.{ Modal.confirm, Modal.name, Modal.open }) |modal| {
+        ed.modal = modal;
+        try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-" ++ @tagName(modal) ++ ".png", .{std.fs.path.dirname(map_path) orelse "."}));
+    }
 }
 
 fn render(ed: *Editor, g: *game.Game, target: rl.RenderTexture2D) void {

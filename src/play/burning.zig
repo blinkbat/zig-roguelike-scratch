@@ -2,7 +2,8 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const damage = @import("damage.zig");
 
-pub const COST: i32 = 20;
+pub const COST: i32 = 4;
+pub const AILMENT = @import("resilience.zig").Kind.burn;
 pub const CHANCE: u32 = 50;
 pub const TURNS: u8 = 3;
 pub const PER_TURN: i32 = 4;

@@ -6,7 +6,7 @@ const glacial = @import("glacial.zig");
 
 const P = mathx.P;
 
-pub const COST: i32 = 30;
+pub const COST: i32 = 6;
 pub const COOLDOWN: u8 = 3;
 pub const RANGE: i32 = 2;
 pub const OPEN_CELLS: usize = @intCast(grid.Cells.square(RANGE) - 1);
@@ -25,6 +25,7 @@ pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
 
 pub const procs = glacial.procs;
 pub const afflict = glacial.afflict;
+pub const AILMENT = glacial.AILMENT;
 
 /// Every cell within `RANGE` of `from` the burst reaches past the terrain, `from` aside.
 pub fn around(lv: *const grid.Level, from: P) glacial.Burst {

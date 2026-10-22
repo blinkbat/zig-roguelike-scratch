@@ -7,7 +7,7 @@ const glacial = @import("glacial.zig");
 
 const P = mathx.P;
 
-pub const COST: i32 = 25;
+pub const COST: i32 = 5;
 /// Tiles round what it strikes that its blast reaches.
 pub const BLAST: i32 = 1;
 pub const VERB = "blasts";
@@ -25,6 +25,7 @@ pub const BASE = damage.Base{ .lo = 3, .hi = 6 };
 
 pub const procs = burning.procs;
 pub const afflict = burning.afflict;
+pub const AILMENT = burning.AILMENT;
 
 pub fn burst(lv: *const grid.Level, _: P, impact: P) glacial.Burst {
     return glacial.spread(lv, impact, BLAST, {}, every);

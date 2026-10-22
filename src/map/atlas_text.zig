@@ -1,0 +1,405 @@
+const std = @import("std");
+const mathx = @import("../core/mathx.zig");
+const grid = @import("grid.zig");
+const procgen = @import("procgen.zig");
+const actor = @import("../play/actor.zig");
+const store = @import("../core/store.zig");
+const pack = @import("../play/pack.zig");
+const climate = @import("climate.zig");
+const atlas = @import("atlas.zig");
+const P = mathx.P;
+const Tokens = std.mem.TokenIterator(u8, .scalar);
+const Error = atlas.Error;
+const COLS = grid.COLS;
+const ROWS = grid.ROWS;
+const Algo = procgen.Algo;
+const Floor = procgen.Floor;
+const Kind = procgen.Kind;
+const Feature = procgen.Feature;
+
+pub const HEADER = "roguelike-map 1";
+const TEXT_CAP: usize = 8 << 20;
+
+pub fn save(self: *atlas.Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
+    var text = std.ArrayList(u8).init(alloc);
+    defer text.deinit();
+    try write(self, text.writer());
+    try store.replace(path, text.items);
+}
+
+pub fn write(self: *atlas.Atlas, w: anytype) !void {
+    try w.print(HEADER ++ "\n" ++ says(.start) ++ "{d} {d} {d}\n", .{ self.start.node, self.start.at.x, self.start.at.y });
+    for (self.nodes()) |*nd| {
+        switch (nd.plan) {
+            .procgen => |*pg| {
+                try w.print(says(.node) ++ "{s} {s}\n", .{ @tagName(nd.plan), @tagName(pg.floor) });
+                try putArm(w, &pg.floor);
+                inline for (GROUPS) |grp| {
+                    inline for (grp.knobs) |k| try putKnob(w, k, @field(@field(pg, grp.field), k));
+                }
+                for (pg.foes.makeups()) |*m| {
+                    try w.print(says(.makeup) ++ "{d}", .{m.weight});
+                    for (m.kinds()) |k| try w.print(" {s}", .{@tagName(k)});
+                    try w.writeByte('\n');
+                }
+                for (pg.features()) |*ft| {
+                    try w.print(says(.feature) ++ "{s}\n", .{@tagName(ft.*)});
+                    try putArm(w, ft);
+                }
+            },
+            .bespoke => |*b| {
+                try w.print(says(.node) ++ "{s}\n", .{@tagName(nd.plan)});
+                for (0..ROWS) |y| {
+                    try w.writeAll(says(.row));
+                    for (0..COLS) |x| {
+                        const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(y) });
+                        try w.writeByte(if (b.barrel[i]) grid.BARREL_LETTER else b.tile[i].letter());
+                    }
+                    try w.writeByte('\n');
+                }
+                for (b.torches()) |t| try w.print(says(.torch) ++ "{d} {d}\n", .{ t.x, t.y });
+                for (b.foes()) |f| try w.print(says(.foe) ++ "{s} {d} {d}\n", .{ @tagName(f.kind), f.at.x, f.at.y });
+            },
+        }
+        if (nd.label.n > 0) try w.print(says(.name) ++ "{s}\n", .{nd.name()});
+        try w.print(says(.at) ++ "{d} {d}\n", .{ nd.pos.x, nd.pos.y });
+        for (nd.doors()) |d| {
+            try w.print(says(.door) ++ "{d} {d}", .{ d.at.x, d.at.y });
+            if (d.to) |l| try w.print(" {d} {d}", .{ l.node, l.door });
+            try w.writeByte('\n');
+        }
+    }
+}
+
+pub fn load(self: *atlas.Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
+    const text = try std.fs.cwd().readFileAlloc(alloc, path, TEXT_CAP);
+    defer alloc.free(text);
+    try parse(self, text);
+}
+
+pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
+    self.* = .{};
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    const head = std.mem.trimRight(u8, lines.next() orelse return error.NoHeader, "\r");
+    if (!std.mem.eql(u8, head, HEADER)) return error.NoHeader;
+    var row: usize = 0;
+    var own_makeups = false;
+    var seen = std.EnumSet(Word).initEmpty();
+    var knobbed = KnobSet.initEmpty();
+    var featured = FeatureKnobSet.initEmpty();
+    while (lines.next()) |raw| {
+        const line = std.mem.trimRight(u8, raw, "\r");
+        var f = std.mem.tokenizeScalar(u8, line, ' ');
+        const word = f.next() orelse continue;
+        const said = std.meta.stringToEnum(Word, word) orelse {
+            const pg = try lastProcgen(self);
+            if (pg.feature_n > 0) {
+                try takeFeatureKnob(&pg.feature[pg.feature_n - 1], word, &f, &featured);
+            } else try takeKnob(pg, word, &f, &knobbed);
+            if (f.next() != null) return error.BadLine;
+            continue;
+        };
+        if (ONCE.contains(said)) {
+            if (seen.contains(said)) return error.BadLine;
+            seen.insert(said);
+        }
+        switch (said) {
+            .start => self.start = .{ .node = try int(usize, &f), .at = try cell(&f) },
+            .node => {
+                const kind = try takeValue(std.meta.Tag(atlas.Plan), &f);
+                const plan: atlas.Plan = switch (kind) {
+                    .procgen => blk: {
+                        const algo = try takeValue(Algo, &f);
+                        // Accept and discard seeds from older map files.
+                        if (f.peek() != null) _ = try int(u64, &f);
+                        break :blk .{ .procgen = .{ .floor = Floor.of(algo) } };
+                    },
+                    .bespoke => .{ .bespoke = .{} },
+                };
+                try finished(self, row);
+                _ = self.add(plan) orelse return error.TooMany;
+                row = 0;
+                own_makeups = false;
+                seen = seen.intersectWith(ONCE_FILE);
+                knobbed = KnobSet.initEmpty();
+            },
+            .name => {
+                if ((try lastNode(self)).rename(f.rest()) != true) return error.BadLine;
+                continue;
+            },
+            .at => {
+                const pos = P{ .x = try int(i32, &f), .y = try int(i32, &f) };
+                if (!atlas.clampPos(pos).eq(pos)) return error.BadLine;
+                (try lastNode(self)).pos = pos;
+            },
+            .door => {
+                const nd = try lastNode(self);
+                const at = try cell(&f);
+                const k = self.addDoor(self.node_n - 1, at) orelse return error.TooMany;
+                if (f.peek() != null) nd.door[k].to = .{ .node = try int(usize, &f), .door = try int(usize, &f) };
+            },
+            .feature => {
+                const pg = try lastProcgen(self);
+                const k = try takeValue(Kind, &f);
+                if (!pg.addFeature(k)) return error.TooMany;
+                featured = FeatureKnobSet.initEmpty();
+            },
+            .makeup => {
+                const pg = try lastProcgen(self);
+                if (pg.feature_n > 0) return error.BadLine;
+                const fo = &pg.foes;
+                if (!own_makeups) fo.makeup_n = 0;
+                own_makeups = true;
+                if (!fo.addMakeup()) return error.TooMany;
+                const m = &fo.makeup[fo.makeup_n - 1];
+                m.* = .{ .weight = try int(u8, &f), .n = 0 };
+                while (f.next()) |name| {
+                    const k = std.meta.stringToEnum(actor.Kind, name) orelse return error.BadLine;
+                    if (!m.grow()) return error.BadLine;
+                    m.kind[m.n - 1] = k;
+                }
+            },
+            .row => {
+                const b = try lastBespoke(self);
+                const cells = f.next() orelse return error.BadLine;
+                if (cells.len != COLS or row == ROWS) return error.BadLine;
+                for (cells, 0..) |c, x| {
+                    const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(row) });
+                    b.barrel[i] = c == grid.BARREL_LETTER;
+                    b.tile[i] = grid.groundOf(c) orelse return error.BadLine;
+                }
+                row += 1;
+            },
+            .torch => if (!(try lastBespoke(self)).torch.add(try cell(&f))) return error.TooMany,
+            .foe => {
+                const b = try lastBespoke(self);
+                const k = try takeValue(actor.Kind, &f);
+                if (!k.stocked() or !b.addFoe(.{ .kind = k, .at = try cell(&f) })) return error.BadLine;
+            },
+        }
+        if (f.next() != null) return error.BadLine;
+    }
+    try finished(self, row);
+    if (self.node_n == 0) return error.NoNodes;
+    if (!seen.contains(.start)) return error.NoStart;
+    for (self.nodes(), 0..) |*nd, n| {
+        for (nd.doors(), 0..) |d, k| {
+            const l = d.to orelse continue;
+            if (l.node >= self.node_n or l.door >= self.node[l.node].door_n) return error.BadLink;
+            const here = atlas.Link{ .node = n, .door = k };
+            if (l.eq(here)) return error.BadLink;
+            const back = self.door(l).to orelse return error.BadLink;
+            if (!back.eq(here)) return error.BadLink;
+        }
+    }
+    if (self.start.node >= self.node_n) return error.BadLink;
+}
+
+fn finished(self: *atlas.Atlas, rows: usize) Error!void {
+    if (self.node_n == 0) return;
+    const nd = &self.node[self.node_n - 1];
+    switch (nd.plan) {
+        .bespoke => |*b| {
+            if (rows != ROWS) return error.BadLine;
+            for (b.foes()) |f| {
+                if (!nd.foeFits(b, f.at)) return error.BadLine;
+            }
+            for (b.torches()) |t| {
+                if (!nd.torchFits(b, t)) return error.BadLine;
+            }
+            for (b.barrel, 0..) |on, i| {
+                if (on and !nd.barrelFits(b, grid.Level.of(i))) return error.BadLine;
+            }
+        },
+        .procgen => |*pg| if (!pg.valid()) return error.BadLine,
+    }
+}
+
+fn lastProcgen(self: *atlas.Atlas) Error!*atlas.Procgen {
+    return switch ((try lastNode(self)).plan) {
+        .procgen => |*pg| pg,
+        .bespoke => error.BadLine,
+    };
+}
+
+fn lastNode(self: *atlas.Atlas) Error!*atlas.Node {
+    if (self.node_n == 0) return error.BadLine;
+    return &self.node[self.node_n - 1];
+}
+
+fn lastBespoke(self: *atlas.Atlas) Error!*atlas.Bespoke {
+    return switch ((try lastNode(self)).plan) {
+        .bespoke => |*b| b,
+        .procgen => error.BadLine,
+    };
+}
+
+/// A procgen node's base lines: each named for, and holding, a field of its floor; the foes' and sky's are `GROUPS`.
+pub fn floorKnobs(comptime a: Algo) []const []const u8 {
+    return armKnobs(Floor, a);
+}
+const FLOOR_KNOBS_MAX = mostKnobs(Floor);
+pub const FOE_KNOBS = knobsOf(pack.Spec, MAKEUP_FIELDS);
+pub const SKY_KNOBS = knobsOf(climate.Climate, &.{});
+/// Every other line's first word, which no knob may take.
+const Word = enum { start, node, name, at, door, makeup, feature, row, torch, foe };
+const ONCE_FILE = std.EnumSet(Word).initOne(.start);
+const ONCE_NODE = std.EnumSet(Word).initMany(&.{ .name, .at });
+const ONCE = ONCE_FILE.unionWith(ONCE_NODE);
+/// A feature's lines after its own: each named for, and holding, a field of it.
+pub fn featureKnobs(comptime k: Kind) []const []const u8 {
+    return armKnobs(Feature, k);
+}
+const FEATURE_KNOBS_MAX = mostKnobs(Feature);
+const FeatureKnobSet = std.StaticBitSet(FEATURE_KNOBS_MAX);
+const GROUPS = [_]struct { field: []const u8, knobs: []const []const u8 }{
+    .{ .field = "foes", .knobs = FOE_KNOBS },
+    .{ .field = "sky", .knobs = SKY_KNOBS },
+};
+const GROUP_KNOBS = blk: {
+    var all: []const []const u8 = &.{};
+    for (GROUPS) |grp| all = all ++ grp.knobs;
+    break :blk all;
+};
+/// An algorithm's knobs by place, then each group's in turn after `FLOOR_KNOBS_MAX`.
+const KnobSet = std.StaticBitSet(groupBase(GROUPS.len));
+const MAKEUP = @tagName(Word.makeup);
+/// `pack.Spec`'s makeups, which are lines of their own.
+const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
+
+fn says(comptime w: Word) []const u8 {
+    return @tagName(w) ++ " ";
+}
+
+comptime {
+    @setEvalBranchQuota(1_000_000);
+    for (MAKEUP_FIELDS) |m| std.debug.assert(@hasField(pack.Spec, m));
+    for (std.enums.values(Algo)) |algo| distinct(floorKnobs(algo) ++ GROUP_KNOBS ++ knobsOf(Word, &.{}));
+    for (std.enums.values(Kind)) |kind| distinct(featureKnobs(kind) ++ knobsOf(Word, &.{}));
+}
+
+fn distinct(comptime names: []const []const u8) void {
+    for (names, 0..) |a, i| {
+        for (names[0..i]) |b| std.debug.assert(!std.mem.eql(u8, a, b));
+    }
+}
+
+fn armKnobs(comptime U: type, comptime tag: std.meta.Tag(U)) []const []const u8 {
+    return knobsOf(@FieldType(U, @tagName(tag)), &.{});
+}
+
+fn mostKnobs(comptime U: type) usize {
+    var most: usize = 0;
+    for (std.enums.values(std.meta.Tag(U))) |t| most = @max(most, armKnobs(U, t).len);
+    return most;
+}
+
+fn knobsOf(comptime T: type, comptime skip: []const []const u8) []const []const u8 {
+    @setEvalBranchQuota(100_000);
+    comptime var out: []const []const u8 = &.{};
+    inline for (std.meta.fields(T)) |f| {
+        const skipped = for (skip) |s| {
+            if (std.mem.eql(u8, s, f.name)) break true;
+        } else false;
+        if (!skipped) out = out ++ &[_][]const u8{f.name};
+    }
+    return out;
+}
+
+fn takeKnob(pg: *atlas.Procgen, word: []const u8, f: *Tokens, knobbed: *KnobSet) Error!void {
+    if (try takeArm(&pg.floor, word, f, knobbed)) return;
+    inline for (GROUPS, 0..) |grp, g| {
+        inline for (grp.knobs, 0..) |k, i| {
+            if (std.mem.eql(u8, word, k)) return takeOnce(&@field(pg, grp.field), k, comptime groupBase(g) + i, f, knobbed);
+        }
+    }
+    return error.BadLine;
+}
+
+fn groupBase(comptime g: usize) usize {
+    var at = FLOOR_KNOBS_MAX;
+    for (GROUPS[0..g]) |grp| at += grp.knobs.len;
+    return at;
+}
+
+fn takeFeatureKnob(ft: *Feature, word: []const u8, f: *Tokens, set: *FeatureKnobSet) Error!void {
+    if (!try takeArm(ft, word, f, set)) return error.BadLine;
+}
+
+fn takeArm(u: anytype, word: []const u8, f: *Tokens, knobbed: anytype) Error!bool {
+    switch (u.*) {
+        inline else => |*p, t| inline for (comptime armKnobs(@TypeOf(u.*), t), 0..) |k, i| {
+            if (std.mem.eql(u8, word, k)) {
+                try takeOnce(p, k, i, f, knobbed);
+                return true;
+            }
+        },
+    }
+    return false;
+}
+
+fn putArm(w: anytype, u: anytype) !void {
+    switch (u.*) {
+        inline else => |*p, t| inline for (comptime armKnobs(@TypeOf(u.*), t)) |k| try putKnob(w, k, @field(p.*, k)),
+    }
+}
+
+fn takeOnce(owner: anytype, comptime k: []const u8, i: usize, f: *Tokens, knobbed: anytype) Error!void {
+    if (knobbed.isSet(i)) return error.BadLine;
+    knobbed.set(i);
+    @field(owner.*, k) = try takeValue(@TypeOf(@field(owner.*, k)), f);
+}
+
+fn putKnob(w: anytype, comptime name: []const u8, v: anytype) !void {
+    try w.writeAll(name);
+    try putValue(w, v);
+    try w.writeByte('\n');
+}
+
+/// How many numbers a knob of type `T` holds on its line.
+pub fn knobNumbers(comptime T: type) usize {
+    return switch (@typeInfo(T)) {
+        .int, .@"enum" => 1,
+        .array => |a| a.len,
+        .@"struct" => |s| s.fields.len,
+        else => @compileError(@typeName(T) ++ " is no knob"),
+    };
+}
+
+fn putValue(w: anytype, v: anytype) !void {
+    const T = @TypeOf(v);
+    switch (@typeInfo(T)) {
+        .int => try w.print(" {d}", .{v}),
+        .@"enum" => try w.print(" {s}", .{@tagName(v)}),
+        .array => for (v) |x| try putValue(w, x),
+        .@"struct" => inline for (std.meta.fields(T)) |f| try putValue(w, @field(v, f.name)),
+        else => @compileError(@typeName(T) ++ " is no knob"),
+    }
+}
+
+fn takeValue(comptime T: type, f: *Tokens) Error!T {
+    switch (@typeInfo(T)) {
+        .int => return int(T, f),
+        .@"enum" => return std.meta.stringToEnum(T, f.next() orelse return error.BadLine) orelse error.BadLine,
+        .array => |a| {
+            var out: T = undefined;
+            for (&out) |*x| x.* = try takeValue(a.child, f);
+            return out;
+        },
+        .@"struct" => {
+            var out: T = undefined;
+            inline for (std.meta.fields(T)) |fl| @field(out, fl.name) = try takeValue(fl.type, f);
+            return out;
+        },
+        else => @compileError(@typeName(T) ++ " is no knob"),
+    }
+}
+
+fn int(comptime T: type, f: *Tokens) Error!T {
+    return std.fmt.parseInt(T, f.next() orelse return error.BadLine, 10) catch error.BadLine;
+}
+
+fn cell(f: *Tokens) Error!P {
+    const p = P{ .x = try int(i32, f), .y = try int(i32, f) };
+    return if (grid.Level.inside(p)) p else error.BadLine;
+}

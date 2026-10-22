@@ -77,8 +77,9 @@ pub const Attack = enum {
 
 const LIFE_BASE: i32 = 10;
 const LIFE_PER_STR: i32 = 1;
-const MANA_BASE: i32 = 80;
+const MANA_BASE: i32 = 16;
 const MANA_PER_INT: i32 = 2;
+const MANA_INT_DIVISOR: i32 = 5;
 /// Percent more damage of a style per point of its attribute.
 const DAMAGE_PER_POINT: i32 = 1;
 const CRIT_BASE: i32 = 5;
@@ -98,6 +99,10 @@ pub const Attrs = struct {
     damage_bonus: std.EnumArray(Style, i32) = .initFill(0),
     crit_bonus: i32 = 0,
     dodge_bonus: i32 = 0,
+    weapon_crit_bonus: i32 = 0,
+    spell_crit_bonus: i32 = 0,
+    physical_bonus: i32 = 0,
+    element_bonus: std.EnumArray(damage.Element, i32) = .initFill(0),
 
     pub fn of(points: std.enums.EnumFieldStruct(Attr, i32, null)) Attrs {
         return .{ .points = .init(points) };
@@ -126,7 +131,7 @@ pub const Attrs = struct {
     }
 
     pub fn mana(a: Attrs) i32 {
-        return MANA_BASE + MANA_PER_INT * a.get(.intelligence) + a.mana_bonus;
+        return MANA_BASE + @divTrunc(MANA_PER_INT * a.get(.intelligence), MANA_INT_DIVISOR) + a.mana_bonus;
     }
 
     /// Percent more damage its blows of `s` deal.
@@ -159,18 +164,30 @@ pub const Attrs = struct {
     }
 
     pub fn dealt(a: Attrs, s: Style, amount: i32, critical: bool) Dealt {
-        return Dealt.of(@as(i64, @max(0, amount)) * @max(0, mathx.PERCENT + a.increase(s)) * @as(i64, if (critical) CRIT_MULTI else mathx.PERCENT));
+        return a.dealtWith(s, amount, critical, 0);
+    }
+
+    fn dealtWith(a: Attrs, s: Style, amount: i32, critical: bool, extra: i32) Dealt {
+        return Dealt.of(@as(i64, @max(0, amount)) * @max(0, mathx.PERCENT + a.increase(s) + extra) * @as(i64, if (critical) CRIT_MULTI else mathx.PERCENT));
     }
 
     /// What a `b` roll of `s` deals without a critical strike.
     pub fn span(a: Attrs, s: Style, b: damage.Base) damage.Span {
-        return .{ .lo = a.dealt(s, b.lo, false).least(), .hi = a.dealt(s, b.hi, false).most() };
+        return a.spanWith(s, b, a.physical_bonus);
+    }
+
+    pub fn elementSpan(a: Attrs, s: Style, b: damage.Base, e: damage.Element) damage.Span {
+        return a.spanWith(s, b, a.element_bonus.get(e));
+    }
+
+    fn spanWith(a: Attrs, s: Style, b: damage.Base, extra: i32) damage.Span {
+        return .{ .lo = a.dealtWith(s, b.lo, false, extra).least(), .hi = a.dealtWith(s, b.hi, false, extra).most() };
     }
 
     pub fn blow(a: Attrs, s: Style, d: damage.Damage, critical: bool, rng: *mathx.Rng) damage.Damage {
         var out = d;
-        out.physical = a.dealt(s, d.physical, critical).roll(rng);
-        for (&out.elements.values) |*v| v.* = a.dealt(s, v.*, critical).roll(rng);
+        out.physical = a.dealtWith(s, d.physical, critical, a.physical_bonus).roll(rng);
+        for (std.enums.values(damage.Element)) |e| out.elements.set(e, a.dealtWith(s, d.elements.get(e), critical, a.element_bonus.get(e)).roll(rng));
         return out;
     }
 };
@@ -204,7 +221,7 @@ pub const Dealt = struct {
 test "attributes raise life, mana, their own style's damage, crits and dodge" {
     const a = Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 10 });
     try std.testing.expectEqual(@as(i32, 30), a.life());
-    try std.testing.expectEqual(@as(i32, 100), a.mana());
+    try std.testing.expectEqual(@as(i32, 20), a.mana());
     try std.testing.expectEqual(Dealt{ .whole = 12, .part = 0 }, a.dealt(.heavy, 10, false));
     try std.testing.expectEqual(Dealt{ .whole = 11, .part = 0 }, a.dealt(.spell, 10, false));
     try std.testing.expectEqual(Dealt{ .whole = 18, .part = 0 }, a.dealt(.light, 10, true));
@@ -228,4 +245,19 @@ test "attributes raise life, mana, their own style's damage, crits and dodge" {
     try std.testing.expectEqual(@as(i32, 12), b.physical);
     try std.testing.expectEqual(@as(i32, 24), b.elements.get(.fire));
     std.debug.print("attributes 20/20/10: life {d}, mana {d}, crit {d}%, dodge {d}%; 2 heavy at +20% averages {d:.3} over {d} rolls\n", .{ a.life(), a.mana(), a.crit(), a.dodge(), mean, ROLLS });
+}
+
+test "physical and elemental base bonuses affect only their damage part and share preview bounds" {
+    var a = Attrs.of(.{ .strength = 0, .dexterity = 0, .intelligence = 0 });
+    a.physical_bonus = 10;
+    a.element_bonus.set(.fire, 25);
+    const raw = damage.Damage{ .physical = 20, .elements = .initFill(20) };
+    var rng = mathx.Rng.init(443);
+    const hit = a.blow(.spell, raw, false, &rng);
+    try std.testing.expectEqual(@as(i32, 22), hit.physical);
+    try std.testing.expectEqual(@as(i32, 25), hit.elements.get(.fire));
+    try std.testing.expectEqual(@as(i32, 20), hit.elements.get(.cold));
+    try std.testing.expectEqual(damage.Span{ .lo = 25, .hi = 25 }, a.elementSpan(.spell, .{ .lo = 20, .hi = 20 }, .fire));
+    try std.testing.expectEqual(damage.Span{ .lo = 22, .hi = 22 }, a.span(.spell, .{ .lo = 20, .hi = 20 }));
+    std.debug.print("damage parts: 20 becomes 22 physical, 25 fire, 20 cold/lightning/chaos; previews match\n", .{});
 }

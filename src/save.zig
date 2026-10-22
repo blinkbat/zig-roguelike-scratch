@@ -42,7 +42,7 @@ comptime {
     }
 }
 /// Written after the visited nodes, in this order.
-const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "flasks", "cooldown", "stepped", "class", "inventory", "growth", "ground", "loot_rng" };
+const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "mana_recovery", "flasks", "cooldown", "stepped", "class", "inventory", "growth", "ground", "loot_rng" };
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
     "character",
@@ -77,6 +77,7 @@ const UNSAVED = .{
     "order_n",
     "busy",
     "pending",
+    "mouse",
     "lead",
     "owed",
     "ran",
@@ -552,11 +553,16 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expect(g.ground.add(.{ .item = .{ .kind = .boots }, .at = g.heroActor().?.at }));
     try std.testing.expect(g.ground.gold(g.heroActor().?.at, 12));
     g.gold = 17;
-    g.mana = 37;
+    g.mana = 7;
+    g.mana_recovery = 3;
+    g.flasks.getPtr(.life).drink(12);
+    _ = g.flasks.getPtr(.life).tick();
     g.cooldown.set(.juke, 2);
     g.heroActor().?.resists.set(.fire, 50);
     g.heroActor().?.resists.set(.cold, 25);
     g.heroActor().?.burn = .{ .turns = 2 };
+    g.heroActor().?.resilience.meters.set(.burn, .{ .percent = 50, .turns = 4 });
+    g.heroActor().?.bleed = .{ .turns = 3, .amount = 2 };
     g.heroActor().?.chill = .{ .turns = 2, .phase = 1 };
     if (g.pool.n > 1) g.pool.items[1].chill = .{ .turns = 1, .phase = 2 };
     _ = g.pool.damage(&g.lv, g.hero, 5);
@@ -605,12 +611,16 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqual(@as(usize, 1), back.node);
     try std.testing.expectEqual(g.heroActor().?.at, back.heroActor().?.at);
     try std.testing.expectEqual(g.heroActor().?.hp, back.heroActor().?.hp);
-    try std.testing.expectEqual(@as(i32, 37), back.mana);
+    try std.testing.expectEqual(@as(i32, 7), back.mana);
+    try std.testing.expectEqual(@as(i32, 3), back.mana_recovery);
+    try std.testing.expectEqualDeep(g.flasks, back.flasks);
     try std.testing.expectEqual(@as(u8, 2), back.cooldown.get(.juke));
     try std.testing.expect(back.stepped);
     try std.testing.expectEqual(@as(i16, 50), back.heroActor().?.resists.get(.fire));
     try std.testing.expectEqual(@as(i16, 25), back.heroActor().?.resists.get(.cold));
     try std.testing.expectEqual(@as(u8, 2), back.heroActor().?.burn.turns);
+    try std.testing.expectEqualDeep(g.heroActor().?.resilience, back.heroActor().?.resilience);
+    try std.testing.expectEqualDeep(g.heroActor().?.bleed, back.heroActor().?.bleed);
     try std.testing.expectEqual(@as(u8, 2), back.heroActor().?.chill.turns);
     try std.testing.expectEqual(@as(u8, 1), back.heroActor().?.chill.phase);
     for (g.visits[0].pool.slice(), back.visits[0].pool.slice()) |before, after| try std.testing.expectEqual(before.chill, after.chill);

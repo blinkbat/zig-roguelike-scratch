@@ -3,6 +3,8 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
+const raster = @import("raster.zig");
+const shaders = @import("shaders.zig");
 const light = @import("light.zig");
 const sky = @import("sky.zig");
 
@@ -78,10 +80,10 @@ pub const Cinema = struct {
     active_bloom: bool = false,
 
     pub fn load(self: *Cinema) void {
-        self.focus = look.program(Focus, FOCUS_FS);
-        self.bloom = look.program(Bloom, BLOOM_FS);
-        self.air = look.program(Air, AIR_FS);
-        self.field = look.canvas(grid.W, grid.H, rl.Color.blank, .point);
+        self.focus = shaders.program(Focus, FOCUS_FS);
+        self.bloom = shaders.program(Bloom, BLOOM_FS);
+        self.air = shaders.program(Air, AIR_FS);
+        self.field = raster.canvas(grid.W, grid.H, rl.Color.blank, .point);
     }
 
     pub fn unload(self: *Cinema) void {
@@ -114,22 +116,22 @@ pub const Cinema = struct {
 
     pub fn beginScene(self: *Cinema, screen: mathx.P, outer: u32) bool {
         if (!self.options.bloom or !self.active_bloom or self.bloom == null or self.field == null) return false;
-        return look.beginTarget(&self.scene, screen, outer, look.FOG);
+        return raster.beginTarget(&self.scene, screen, outer, look.FOG);
     }
 
     pub fn endScene(self: *Cinema, outer: u32, origin: [2]f32, cell: f32, l: *light.Light) void {
-        look.endTarget(outer);
+        raster.endTarget(outer);
         const scene = self.scene.?.texture;
         const size = mathx.P{ .x = scene.width, .y = scene.height };
         const b = self.bloom.?;
         const visibility = l.mapTexture();
         const glints = l.glintTexture();
-        if (visibility != null and glints != null and look.beginTarget(&self.spread, size, outer, rl.Color.black)) {
+        if (visibility != null and glints != null and raster.beginTarget(&self.spread, size, outer, rl.Color.black)) {
             rl.beginShaderMode(b.shader);
             self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ BLOOM_STEP, 0 }, 1);
             drawTarget(scene);
             rl.endShaderMode();
-            look.endTarget(outer);
+            raster.endTarget(outer);
             copyTarget(scene);
             rl.beginBlendMode(.additive);
             rl.beginShaderMode(b.shader);
@@ -141,10 +143,10 @@ pub const Cinema = struct {
     }
 
     fn bindBloom(self: *Cinema, b: Bloom, origin: [2]f32, cell: f32, visibility: rl.Texture2D, glints: rl.Texture2D, scene: rl.Texture2D, direction: [2]f32, extract: i32) void {
-        setField(b, self.field.?, visibility, .{ .origin = origin, .cell = cell, .screen = look.sizeOf(scene) });
+        setField(b, self.field.?, visibility, .{ .origin = origin, .cell = cell, .screen = raster.sizeOf(scene) });
         rl.setShaderValueTexture(b.shader, b.glints, glints);
-        look.setUniform(b.shader, b.direction, direction);
-        look.setUniform(b.shader, b.extract, extract);
+        shaders.setUniform(b.shader, b.direction, direction);
+        shaders.setUniform(b.shader, b.extract, extract);
     }
 
     pub fn beginFocus(self: *Cinema, t: grid.Tile, tex: rl.Texture2D, at: [2]f32, hero: ?[2]f32) ?Focused {
@@ -152,7 +154,7 @@ pub const Cinema = struct {
         const strength = focusStrength(t, at, hero);
         if (strength <= 0) return null;
         const f = self.focus orelse return null;
-        const size = look.sizeOf(tex);
+        const size = raster.sizeOf(tex);
         const focused = Focused{ .texel = .{ 1 / size[0], 1 / size[1] }, .strength = strength };
         rl.beginShaderMode(f.shader);
         focused.set(f.shader, f.texel, f.strength);
@@ -167,38 +169,38 @@ pub const Cinema = struct {
         const visibility = l.mapTexture() orelse return;
         rl.beginShaderMode(a.shader);
         setField(a, field, visibility, .{ .origin = origin, .cell = cell, .screen = .{ @floatFromInt(screen.x), @floatFromInt(screen.y) } });
-        look.setUniform(a.shader, a.time, l.t.at());
-        look.setUniform(a.shader, a.daylight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
-        look.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));
-        look.setUniform(a.shader, a.direction, k.across());
+        shaders.setUniform(a.shader, a.time, l.t.at());
+        shaders.setUniform(a.shader, a.daylight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
+        shaders.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));
+        shaders.setUniform(a.shader, a.direction, k.across());
         rl.drawRectangle(0, 0, screen.x, screen.y, rl.Color.white);
         rl.endShaderMode();
     }
 };
 
 /// Sets `FIELD_FS`'s uniforms, `MAP_VIEW_FS`'s among them, on a program with their locations.
-fn setField(p: anytype, field: rl.Texture2D, visibility: rl.Texture2D, view: look.MapView) void {
+fn setField(p: anytype, field: rl.Texture2D, visibility: rl.Texture2D, view: shaders.MapView) void {
     rl.setShaderValueTexture(p.shader, p.field, field);
     rl.setShaderValueTexture(p.shader, p.visibility, visibility);
-    look.setMapView(p, view);
+    shaders.setMapView(p, view);
 }
 
-const drawTarget = look.drawTarget;
+const drawTarget = raster.drawTarget;
 
 fn copyTarget(t: rl.Texture2D) void {
-    look.beginBlend(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
+    raster.beginBlend(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
     drawTarget(t);
     rl.endBlendMode();
 }
 
-const FOCUS_FS = look.FS_HEAD ++ look.FOCUS_TAPS ++
+const FOCUS_FS = shaders.FS_HEAD ++ look.FOCUS_TAPS ++
     \\void main() {
     \\    vec4 c = focused();
     \\    finalColor = vec4(c.rgb / max(c.a, 0.0001), c.a) * fragColor;
     \\}
 ;
 
-const FIELD_FS = look.MAP_VIEW_FS ++ FIELD_DEFINES ++
+const FIELD_FS = shaders.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\uniform sampler2D field;
     \\uniform sampler2D visibility;
     \\vec4 fieldAt(vec2 p) {
@@ -211,7 +213,7 @@ const FIELD_FS = look.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\
 ;
 
-const BLOOM_FS = look.FS_HEAD ++ FIELD_FS ++
+const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++
     \\uniform sampler2D glints;
     \\uniform vec2 direction;
     \\uniform int extract;
@@ -241,7 +243,7 @@ const BLOOM_FS = look.FS_HEAD ++ FIELD_FS ++
     \\}
 ;
 
-const AIR_FS = look.FS_HEAD ++ FIELD_FS ++ look.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR }) ++
+const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR }) ++
     \\uniform float time;
     \\uniform float daylight;
     \\uniform float brightness;

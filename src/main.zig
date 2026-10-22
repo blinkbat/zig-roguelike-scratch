@@ -1,6 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const game = @import("game.zig");
 const app = @import("app.zig");
 const atlas = @import("map/atlas.zig");
 
@@ -21,14 +20,15 @@ pub fn main() !void {
     defer std.process.argsFree(alloc, argv);
     for (argv[1..], 1..) |a, i| {
         if (std.mem.eql(u8, a, "--edit")) return app.run(if (i + 1 < argv.len) argv[i + 1] else atlas.MAIN);
-        inline for (game.HEADLESS) |h| {
-            if (std.mem.eql(u8, a, h.flag)) return game.headless(h);
+        inline for (app.HEADLESS) |h| {
+            if (std.mem.eql(u8, a, h.flag)) return app.headless(h);
         }
     }
     try app.run(null);
 }
 
 test {
+    _ = @import("game/mouse.zig");
     _ = @import("game/debug.zig");
     _ = @import("gfx/prompt_text.zig");
     _ = @import("core/mathx.zig");
@@ -68,8 +68,11 @@ test {
     _ = @import("map/climate.zig");
     _ = @import("map/lume.zig");
     _ = @import("map/atlas.zig");
+    _ = @import("map/atlas_text.zig");
+    _ = @import("map/listing.zig");
     _ = @import("map/spar.zig");
     _ = @import("play/actor.zig");
+    _ = @import("play/resilience.zig");
     _ = @import("play/bow.zig");
     _ = @import("play/damage.zig");
     _ = @import("play/attrs.zig");
@@ -97,6 +100,10 @@ test {
     _ = @import("play/skillbar.zig");
     _ = @import("play/hero.zig");
     _ = @import("gfx/look.zig");
+    _ = @import("gfx/raster.zig");
+    _ = @import("gfx/shaders.zig");
+    _ = @import("gfx/prompt_icon.zig");
+    _ = @import("gfx/line_icons.zig");
     _ = @import("gfx/font.zig");
     _ = @import("gfx/ground.zig");
     _ = @import("gfx/fx.zig");
@@ -107,6 +114,9 @@ test {
     _ = @import("gfx/vignette.zig");
     _ = @import("gfx/weather.zig");
     _ = @import("gfx/light.zig");
+    _ = @import("gfx/shadow.zig");
+    _ = @import("gfx/light_gpu.zig");
+    _ = @import("gfx/light_tests.zig");
     _ = @import("ui/menu.zig");
     _ = @import("ui/hud.zig");
     _ = @import("ui/book.zig");
@@ -120,7 +130,17 @@ test {
     _ = @import("game/character.zig");
     _ = @import("game/combat.zig");
     _ = @import("game/harness.zig");
-    _ = @import("game/tests.zig");
+    _ = @import("game/glide.zig");
+    _ = @import("game/binds.zig");
+    _ = @import("game/skills.zig");
+    _ = @import("core/window.zig");
+    _ = @import("game/tests/skills.zig");
+    _ = @import("game/tests/foes.zig");
+    _ = @import("game/tests/world.zig");
+    _ = @import("game/tests/loot.zig");
+    _ = @import("game/tests/picture.zig");
+    _ = @import("game/tests/menus.zig");
+    _ = @import("game/tests/hero.zig");
     _ = @import("edit/editor.zig");
     _ = @import("edit/knobs.zig");
     _ = @import("edit/canvas.zig");

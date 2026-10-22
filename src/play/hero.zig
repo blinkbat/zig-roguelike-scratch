@@ -7,6 +7,7 @@ const attr = @import("attrs.zig");
 const NUMBERS = [_][]const u8{ "none", "one", "two", "three", "four", "five", "six", "seven", "eight" };
 
 pub const MANA_REGEN: i32 = 1;
+pub const MANA_REGEN_TURNS: i32 = 5;
 /// Hp then most hp, as a save slot reads it.
 pub const HP_FMT = "HP {d}/{d}";
 pub const GOLD_FMT = "Gold {d}";
@@ -57,8 +58,12 @@ const SPECS = std.EnumArray(Class, Spec).init(.{
         .blurb = "Sparks that stun what they strike, and a blink to be elsewhere",
     },
     .knight = .{
-        .attrs = .of(.{ .strength = 20, .dexterity = 10, .intelligence = 10 }),
-        .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "slashes" },
+        .attrs = blk: {
+            var a = attr.Attrs.of(.{ .strength = 24, .dexterity = 10, .intelligence = 10 });
+            a.armour = 10;
+            break :blk a;
+        },
+        .strike = .{ .hit = .{ .lo = 3, .hi = 5 }, .verb = "slashes" },
         .blurb = std.fmt.comptimePrint("A shield that knocks foes back stunned, and a blade that sweeps {s} at once", .{NUMBERS[cleave.WIDTH]}),
     },
 });

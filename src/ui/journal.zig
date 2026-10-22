@@ -3,6 +3,8 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const font = @import("../gfx/font.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
+const shaders = @import("../gfx/shaders.zig");
 const menu = @import("menu.zig");
 const hud = @import("hud.zig");
 
@@ -89,7 +91,7 @@ const BG = blk: {
 pub fn box(screen: mathx.P) rl.Rectangle {
     const beside = hud.leftOf(screen) - HUD_GAP;
     const width = @max(MIN_W, @min(MAX_W, beside));
-    return look.rect(MARGIN, screen.y - MARGIN - BOX_H, width, BOX_H);
+    return raster.rect(MARGIN, screen.y - MARGIN - BOX_H, width, BOX_H);
 }
 pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.P, log: *const Log) void {
     const r = box(screen);
@@ -98,8 +100,8 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
     const w: i32 = @intFromFloat(r.width);
     if (sprites.log_fade) |fade| {
         rl.beginShaderMode(fade.shader);
-        look.setUniform(fade.shader, fade.bounds, [2]f32{ @floatFromInt(screen.y - y - BOX_H), @floatFromInt(screen.y - y) });
-        look.setUniform(fade.shader, fade.minimum, TOP_OPACITY);
+        shaders.setUniform(fade.shader, fade.bounds, [2]f32{ @floatFromInt(screen.y - y - BOX_H), @floatFromInt(screen.y - y) });
+        shaders.setUniform(fade.shader, fade.minimum, TOP_OPACITY);
         look.hudPanelIn(sprites, r, BG, look.LIT);
     } else {
         rl.drawRectangleGradientV(x, y, w, BOX_H, look.fade(BG, TOP_OPACITY), BG);

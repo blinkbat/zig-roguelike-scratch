@@ -134,6 +134,7 @@ pub const Status = enum {
     chilled,
     pinned,
     warded,
+    resistant,
 
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
@@ -141,6 +142,7 @@ pub const Status = enum {
             inline .burning, .chilled => |t| look.elementInk(module(t).ELEMENT),
             .pinned => look.PIN,
             .warded => look.WARD,
+            .resistant => look.UI_GOLD,
         };
     }
 
@@ -149,7 +151,7 @@ pub const Status = enum {
         return switch (s) {
             .burning => BURN_GLOW,
             .warded => WARD_GLOW,
-            .bleeding, .chilled, .pinned => null,
+            .bleeding, .chilled, .pinned, .resistant => null,
         };
     }
 
@@ -161,6 +163,7 @@ pub const Status = enum {
     pub fn title(s: Status) [:0]const u8 {
         return switch (s) {
             .warded => skillbar.Act.mana_shield.name(),
+            .resistant => "Status resistance",
             inline else => |t| comptime menu.capital(@tagName(t)),
         };
     }
@@ -168,6 +171,7 @@ pub const Status = enum {
     /// What it does to the body, as its tooltip says.
     pub fn about(s: Status) []const u8 {
         return switch (s) {
+            .resistant => @import("../play/resilience.zig").ABOUT,
             inline else => |t| module(t).STATUS,
         };
     }
@@ -179,6 +183,7 @@ pub const Status = enum {
             .chilled => glacial,
             .pinned => pinning,
             .warded => ward,
+            .resistant => @import("../play/resilience.zig"),
         };
     }
 
@@ -189,11 +194,13 @@ pub const Status = enum {
             .chilled => "chill",
             .pinned => "pin",
             .warded => "ward",
+            .resistant => "resilience",
         };
     }
 
     fn turnsOf(s: Status, a: actor.Actor) u8 {
         return switch (s) {
+            .resistant => a.resilience.peak().turns,
             inline else => |t| @field(a, field(t)).turns,
         };
     }
@@ -216,10 +223,12 @@ pub const Body = struct {
     seq: u64,
     /// Turns left of each.
     status: std.EnumArray(Status, u8) = .initFill(0),
+    resilience: @import("../play/resilience.zig").State = .{},
 
     pub fn of(a: actor.Actor, seq: u64) Body {
         var b = Body{ .kind = a.kind, .hp = a.hp, .max = a.max, .seq = seq };
         if (a.alive) {
+            b.resilience = a.resilience;
             for (std.enums.values(Status)) |s| b.status.set(s, s.turnsOf(a));
         }
         return b;

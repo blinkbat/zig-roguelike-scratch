@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const atlas = @import("../map/atlas.zig");
+const atlas_text = @import("../map/atlas_text.zig");
 const carve = @import("../map/carve.zig");
 const terrain = @import("../map/biome/terrain.zig");
 const labyrinth = @import("../map/biome/labyrinth.zig");
@@ -15,6 +16,7 @@ const scatter = @import("../map/feature/scatter.zig");
 const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
@@ -137,7 +139,7 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
         const h = editor.hot(ed, r, true, false, if (i == 0) "The lead: " ++ Desk.PAINT_CAPTION ++ " for the next foe" else "A member: " ++ Desk.PAINT_CAPTION ++ " for the next foe");
         editor.plate(r, false, h.hot);
         const l = look.body(m.kind[i]);
-        const at = look.middleAt(r);
+        const at = raster.middleAt(r);
         g.face.glyph(l.ch, at.x, at.y, editor.TEXT, l.fg);
         if (h.hit) m.turn(i);
     }
@@ -461,10 +463,10 @@ const SHIFT_TIP = std.fmt.comptimePrint(" ({s} steps {d})", .{ Desk.SHIFT_CAPTIO
 
 comptime {
     @setEvalBranchQuota(1_000_000);
-    for (std.enums.values(atlas.Algo)) |a| covers(@FieldType(atlas.Floor, @tagName(a)), rowsOf(a), atlas.floorKnobs(a));
-    for (std.enums.values(atlas.Kind)) |k| covers(@FieldType(atlas.Feature, @tagName(k)), featureRowsOf(k), atlas.featureKnobs(k));
-    covers(@FieldType(atlas.Procgen, "foes"), &FOE_ROWS, atlas.FOE_KNOBS);
-    covers(@FieldType(atlas.Procgen, "sky"), &SKY_ROWS, atlas.SKY_KNOBS);
+    for (std.enums.values(atlas.Algo)) |a| covers(@FieldType(atlas.Floor, @tagName(a)), rowsOf(a), atlas_text.floorKnobs(a));
+    for (std.enums.values(atlas.Kind)) |k| covers(@FieldType(atlas.Feature, @tagName(k)), featureRowsOf(k), atlas_text.featureKnobs(k));
+    covers(@FieldType(atlas.Procgen, "foes"), &FOE_ROWS, atlas_text.FOE_KNOBS);
+    covers(@FieldType(atlas.Procgen, "sky"), &SKY_ROWS, atlas_text.SKY_KNOBS);
 }
 
 fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []const []const u8) void {
@@ -473,7 +475,7 @@ fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []cons
     for (knobs_) |name| {
         const r = rowNamed(rows, name) orelse @compileError(name ++ " has no row on the generator");
         const K = @FieldType(T, name);
-        if (r.tips.len != atlas.knobNumbers(K)) @compileError(name ++ " wants a tip for each number in it");
+        if (r.tips.len != atlas_text.knobNumbers(K)) @compileError(name ++ " wants a tip for each number in it");
         if (@typeInfo(K) == .@"struct" and K != mathx.P) {
             for (std.meta.fieldNames(K), r.tips) |part, tip| {
                 var spoken = part[0..part.len].*;
@@ -496,7 +498,7 @@ fn knobRow(ed: *editor.Editor, g: *game.Game, y: i32, owner: anytype, comptime k
     rowLabel(g, y, comptime k.caption());
     const v = &@field(owner.*, k.field);
     const T = @TypeOf(v.*);
-    const n = comptime atlas.knobNumbers(T);
+    const n = comptime atlas_text.knobNumbers(T);
     switch (@typeInfo(T)) {
         .@"enum" => stepChoice(ed, g, y, T, v, k.tips[0], live),
         .int, .array, .@"struct" => inline for (0..n) |i| {

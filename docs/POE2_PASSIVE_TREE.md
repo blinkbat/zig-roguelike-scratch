@@ -204,8 +204,8 @@ the branch silhouettes, shared destinations and real lateral routes. Derive both
 the picture and allocation rules from the same relationships. Branch prerequisites
 advance outward: owning a later node does not satisfy an earlier node's inward
 prerequisites. Bridge-to-anchor access works in both directions, allowing entry at
-that depth and further outward progression. Small arrowheads on branch links should
-communicate that difference; bridge links must not promise unrestricted backtracking.
+that depth and further outward progression. The simplified drawing uses plain links;
+the selected node's availability and blocked-action reason explain prerequisites.
 Unrelated geometric neighbors must not become connected because they nearly touch.
 
 ### Node hierarchy and stat riders
@@ -240,7 +240,7 @@ Supported reward vocabulary comes from the local implementation: Strength,
 Dexterity, Intelligence, life, mana, armour, the existing damage-by-style bonus,
 critical and dodge chance, and the 2026-10-20 translations of the sibling's
 sustain and casting grants (`passives.Perks`): leech per foe a blow damages, life
-per foe a blow kills, cull, life flask recovery, mana per turn and skill mana cost.
+per foe a blow kills, cull, life flask recovery, mana per five turns and skill mana cost.
 Sibling grants with no turn-based home here (stamina, poise, roll frames, cast
 speed, move speed, resistances, sacrifice) stay out.
 Heavy weapon damage scales with Strength and light weapon damage with Dexterity;
@@ -274,7 +274,7 @@ migration needs its own deliberate mapping and verification.
 ### Composition and primitives
 
 Give the graph the majority of the panel, with a persistent inspection area on the
-right. Keep the page title and available points compact. The graph should read as
+right. Show available points once; the character tab already names the page. The graph should read as
 one connected landscape, not a collection of large buttons. All node centers,
 edges, hit targets and focus motion must use the same layout transformation.
 The shared character panel grows at half the window-fitting rate, capped at 1.25x;
@@ -287,20 +287,16 @@ canvas and a quiet divider before details are sufficient framing.
 
 Use three modest sizes for stat, interest and capstone nodes. Bridges can use an
 intermediate size and a paired rim or another small, consistent mark. The current
-class origin needs an identifiable center or rim. Branch labels may orient the
-overview, but should not overlap routes or become competing headings for every
-layer. Do not display every reward sentence directly on the graph.
+class origin uses its class initial. The 2026-10-22 simplification follows the
+sibling's sparse circles and lines: no central hub or spokes, node text plates,
+category colours, legends, branch labels or arrowheads. The three class origins
+remain directly available under the same allocation rules.
 
-A node's fill colour names its grant group: attribute, life, mana, offense or
-defense, with a legend inside the canvas frame, under its title. Allocated nodes fill
-solid; others show the colour as a small core. From the opening zoom (`trees.LABEL_UNIT`,
-checked by a test against label/node overlap) every node except the hero's own class
-origin, which grants nothing, carries its amount over a one-word stat ("+4%" over
-"Heavy") on a dark plate. Names never appear on the graph.
-The capstone's size and rim supply hierarchy; there is no need for a unique painting.
-Limit accent colors so arm identity does not overwhelm allocation status. Check
-that fill, rim and size still distinguish important states without relying solely
-on hue.
+Allocated nodes fill solid in their muted arm colour with a warm rim. Other nodes
+have dark fills: reachable rims are clear, distant rims are subdued. Only the
+selected node shows its name and full grants in the sidebar. Capstone double rings,
+bridge marks and a separate focus ring preserve hierarchy without extra labels.
+Keep fill, rim and size useful without relying solely on hue.
 
 ### Node and edge states
 
@@ -322,8 +318,8 @@ route. A frontier edge indicates a legal next connection in its permitted direct
 Other edges remain faint
 enough for the invested route to dominate. Derive these treatments from actual
 allocation and feeder rules; do not light a whole branch because its first node is
-owned. Draw each visual connection once where possible, with small outward
-arrowheads for branch prerequisites and a consistent two-way treatment for bridges.
+owned. Draw each visual connection once as a plain line. Bridges retain their
+two-way connectivity; branch prerequisites still advance outward.
 
 Neither focus nor availability needs constant animation. Static marks are easier
 to inspect in a dense graph and are sufficient for this design. If animation is
@@ -331,15 +327,16 @@ later introduced, it must not obscure status or alter game state.
 
 ### Inspection hierarchy
 
-The 2026-10-20 presentation pass follows [DATA_PRESENTATION.md](DATA_PRESENTATION.md).
+The presentation follows [DATA_PRESENTATION.md](DATA_PRESENTATION.md).
 Grants read as complete modifier phrases, with their amount and units beside the
 benefit. Armour grants explicitly say physical damage reduction; attribute grants
 say what they add to. Keep the supported mechanics and allocation rules unchanged.
 
-The details area should answer, in order: what does it grant, where is it, and what
-can be done with it now? Show its role, then every grant including any rider in
-large modifier text, then the name and branch small and dim. Names are flavour;
-the grants are the decision. Present status and the allocation action together. The point counter should remain visible when a node is blocked.
+The details area shows a small, dim name, then every grant including any rider in
+readable body text. Omit role headings, branch breadcrumbs and repeated status
+sentences. Keep only an essential mechanics note and one allocation action or
+status. The free class origin needs only its class name and "Starting point".
+The point counter stays visible when a node is blocked.
 
 Use exact descriptions generated from real grants. A stat node names the attribute
 and amount. An interest node explains its supported benefit before its rider.
@@ -386,7 +383,11 @@ hit-test transform and clip to the graph canvas. Directional selection recenters
 the view so newly focused nodes remain visible; manual pan may inspect away from
 the selection. Camera state belongs to unsaved navigation, not progression.
 Control hints always use device glyphs, including keyboard keycaps, rather than
-spelling controls in prose. Mouse wheel and on-screen zoom controls remain usable.
+spelling controls in prose. Mouse wheel and on-screen zoom controls remain usable;
+middle-button dragging pans the canvas using the same scale as its node hit targets.
+The drag starts only inside the canvas and ends on release. The visible Overview
+action resets zoom and pan. Clicking a node selects it; pointer movement preserves
+that selection and the visible allocation action spends the point.
 
 Search, if later justified, should highlight real matches, allow inspection of each,
 and retain enough surrounding routes to orient the player. It must not allocate
@@ -414,7 +415,7 @@ repository, following [`AGENTS.md`](../AGENTS.md).
 - Capstone descriptions contain no unimplemented special effect or implied tradeoff.
 - Controller directions and mouse targeting can inspect every node.
 - The graph, details and action footer fit the smallest supported capture size.
-- Branch names, longer node names and multiple grants do not overlap or truncate
+- Longer node names and multiple grants do not overlap or truncate
   critical information.
 - Allocation consumes the proper point pool once; cancel consumes nothing and
   browsing advances no turn.

@@ -158,7 +158,9 @@ fn checkTestRoster(b: *std.Build) void {
         std.debug.panic(ROOT ++ " could not be read ({s})", .{@errorName(e)});
     const at = std.mem.indexOf(u8, file, "\ntest {") orelse
         std.debug.panic(ROOT ++ " has no `test {{` block", .{});
-    const root = file[at..];
+    const block = file[at + 1 ..];
+    const root = block[0 .. std.mem.indexOf(u8, block, "\n}") orelse
+        std.debug.panic(ROOT ++ "'s `test {{` block never closes", .{})];
     var dir = b.build_root.handle.openDir(SRC, .{ .iterate = true }) catch |e|
         std.debug.panic(SRC ++ "/ could not be opened ({s})", .{@errorName(e)});
     defer dir.close();
@@ -183,8 +185,8 @@ fn checkTestRoster(b: *std.Build) void {
 fn named(root: []const u8, want: []const u8) bool {
     var lines = std.mem.splitScalar(u8, root, '\n');
     while (lines.next()) |line| {
-        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, line, " \t"), "//")) continue;
-        if (std.mem.indexOf(u8, line, want) != null) return true;
+        const code = line[0 .. std.mem.indexOf(u8, line, "//") orelse line.len];
+        if (std.mem.indexOf(u8, code, want) != null) return true;
     }
     return false;
 }

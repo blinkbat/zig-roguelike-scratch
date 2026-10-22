@@ -1,6 +1,7 @@
 const std = @import("std");
 const items = @import("play/items.zig");
 const progress = @import("play/progress.zig");
+const passives = @import("play/passives.zig");
 const journal = @import("ui/journal.zig");
 const rl = @import("raylib");
 
@@ -18,14 +19,15 @@ const actor = @import("play/actor.zig");
 const bow = @import("play/bow.zig");
 const attrs = @import("play/attrs.zig");
 const turn_clock = @import("play/clock.zig");
-const glacial = @import("play/glacial.zig");
-const juke = @import("play/juke.zig");
 const chain = @import("play/chain.zig");
 const flask = @import("play/flask.zig");
 const pack = @import("play/pack.zig");
 const skillbar = @import("play/skillbar.zig");
 const look = @import("gfx/look.zig");
+const raster = @import("gfx/raster.zig");
+const prompt_icon = @import("gfx/prompt_icon.zig");
 const light = @import("gfx/light.zig");
+const shadow = @import("gfx/shadow.zig");
 const font = @import("gfx/font.zig");
 const fx = @import("gfx/fx.zig");
 const cloud = @import("gfx/cloud.zig");
@@ -43,12 +45,15 @@ pub const character = @import("game/character.zig");
 pub const debugging = @import("game/debug.zig");
 pub const combat = @import("game/combat.zig");
 pub const harness = @import("game/harness.zig");
+pub const mouseControls = @import("game/mouse.zig");
+const window = @import("core/window.zig");
+const glide = @import("game/glide.zig");
+const binds = @import("game/binds.zig");
+const skills = @import("game/skills.zig");
 
 const P = mathx.P;
 
-const WINDOW_W: i32 = 1600;
-const WINDOW_H: i32 = 900;
-pub const WINDOW = P{ .x = WINDOW_W, .y = WINDOW_H };
+pub const WINDOW = P{ .x = window.WINDOW_W, .y = window.WINDOW_H };
 /// Screens the shots and layout tests cover besides the window's.
 pub const SCREEN_720 = P{ .x = 1280, .y = 720 };
 pub const SCREEN_1080 = P{ .x = 1920, .y = 1080 };
@@ -90,7 +95,7 @@ pub const SKILLS_W: i32 = SLOT_XS[SLOT_XS.len - 1] + SLOT_PX;
 pub const SLOT_COLUMN_H: i32 = SLOT_PX + KEY_GAP + PROMPT_PX;
 pub const PICK_MARGIN: i32 = 16;
 /// Cells past the view a prop's shadow can reach into it from.
-pub const CAST_MARGIN: i32 = @intFromFloat(@ceil(light.CAST_REACH));
+pub const CAST_MARGIN: i32 = @intFromFloat(@ceil(shadow.CAST_REACH));
 const FLIGHT_S: f32 = 0.022;
 const CAM_EASE: f32 = 12.0;
 /// One walk repeat, so the glides of a held walk join end to end.
@@ -101,17 +106,17 @@ pub const SLIDE_S: f32 = GLIDE_S * 2;
 pub const STAGGER_S: f32 = GLIDE_S * 0.5;
 pub const BUMP_S: f32 = GLIDE_S;
 /// Of the bump, the share out to the blow.
-const BUMP_HIT: f32 = 0.5;
+pub const BUMP_HIT: f32 = 0.5;
 pub const BUMP_LANDS: f32 = BUMP_S * BUMP_HIT;
 /// From a spell cast round the hero to its blows landing.
-const CAST_S: f32 = BUMP_LANDS;
+pub const CAST_S: f32 = BUMP_LANDS;
 /// From one body a bolt leaps on from to the next.
 pub const ZAP_S: f32 = 0.08;
 pub const BUMP_PX: f32 = CELL_F * 0.35;
 /// A walk due this close to the turn's last glide ending is not held for it.
 const PACE_SLACK: f32 = 1e-4;
 /// Ease-out-back's overshoot constant: 1.165 carries a slide 5% past its cell (1.70158, the usual one, 10%).
-const SLIDE_BACK: f32 = 1.165;
+pub const SLIDE_BACK: f32 = 1.165;
 /// `gen.build` rolls from the bare seed; without the salt the packs replay the floor's rolls.
 const PLAY_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
 /// Loot rolls on its own stream, so a drop does not shift the fight's rolls.
@@ -123,8 +128,6 @@ pub const NearbyBuf = [NEARBY_MAX]book.Nearby;
 
 const CONFIRM = menu.CONFIRM;
 const BACK = menu.BACK;
-const CHANGE = menu.CHANGE;
-const REMOVE = menu.REMOVE;
 const CHARACTER = menu.CHARACTER;
 
 comptime {
@@ -132,7 +135,7 @@ comptime {
     std.debug.assert(GLYPH <= CELL);
     std.debug.assert(SKILLS_W <= hud.SKILLS_MAX_W);
     std.debug.assert(hud.PLATE_PAD + SLOT_COLUMN_H <= hud.PLATE_H);
-    std.debug.assert(look.labelPx(PROMPT_PX) == font.LABEL);
+    std.debug.assert(prompt_icon.labelPx(PROMPT_PX) == font.LABEL);
 }
 
 pub const Mode = enum { play, aim, bind, dead, pause, inspect };
@@ -160,63 +163,6 @@ pub fn rowAt(row: anytype) usize {
     return std.mem.indexOfScalar(Row, std.enums.values(Row), row).?;
 }
 
-pub const Binds = struct {
-    row: usize = 0,
-    col: usize = 0,
-    menu: Menu = .browse,
-    assigning: ?skillbar.Act = null,
-
-    const Menu = union(enum) { browse, pick: usize };
-
-    pub fn slot(b: Binds) skillbar.Slot {
-        return .{ .set = skillbar.SETS[b.row], .button = skillbar.SLOTS[b.col] };
-    }
-
-    fn move(b: *Binds, d: mathx.Dir) void {
-        b.col = mathx.wrap(b.col, d.delta().x, skillbar.SLOTS.len);
-        b.row = mathx.wrap(b.row, d.delta().y, skillbar.SETS.len);
-    }
-
-    pub fn colOf(button: input.Button) usize {
-        return std.mem.indexOfScalar(input.Button, &skillbar.SLOTS, button).?;
-    }
-
-    pub fn openPick(b: *Binds, kit: []const skillbar.Act, bar: *const skillbar.Bar) void {
-        b.menu = .{ .pick = pickOf(kit, bar.at(b.slot())) };
-    }
-};
-
-/// Picker cell 0 clears the slot; the rest are the class's acts in order. An empty slot opens it on the first act.
-pub fn pickOf(kit: []const skillbar.Act, a: ?skillbar.Act) usize {
-    return 1 + (std.mem.indexOfScalar(skillbar.Act, kit, a orelse kit[0]) orelse 0);
-}
-
-pub fn pickAct(kit: []const skillbar.Act, i: usize) ?skillbar.Act {
-    return if (i == 0) null else kit[i - 1];
-}
-
-pub fn picksOf(kit: []const skillbar.Act) usize {
-    return kit.len + 1;
-}
-
-pub const PICK_COLS: usize = @intCast(@divTrunc(SKILLS_W + SLOT_GAP, SLOT_STEP));
-
-pub fn pickRows(n: usize) usize {
-    return (n + PICK_COLS - 1) / PICK_COLS;
-}
-
-pub fn pickStep(i: usize, d: P, n: usize) usize {
-    const at = mathx.wrap(i, d.x, n);
-    const row = mathx.nudge(at / PICK_COLS, d.y, pickRows(n));
-    return @min(row * PICK_COLS + at % PICK_COLS, n - 1);
-}
-
-pub fn pickWindow(top_y: i32, bottom_y: i32, n: usize, at: usize) menu.Window {
-    const rows = pickRows(n);
-    const room: usize = @intCast(@max(1, @divTrunc(bottom_y - SLOT_GAP - top_y - PICK_MARGIN, SLOT_STEP) + 1));
-    return menu.Window.of(rows, at / PICK_COLS, room);
-}
-
 pub const Log = journal.Log;
 
 /// Presentation only: the hit already resolved when this was made.
@@ -228,11 +174,11 @@ const Shot = struct {
     trail_t: f32 = 0,
 
     /// When the missile reaches its last cell, as its hit is presented.
-    fn lands(self: *const Shot) f32 {
+    pub fn lands(self: *const Shot) f32 {
         return flown(self.flight.len -| 1);
     }
 
-    fn ends(self: *const Shot) f32 {
+    pub fn ends(self: *const Shot) f32 {
         return flown(self.flight.len);
     }
 
@@ -277,158 +223,6 @@ test "missiles move continuously to the existing impact time in every direction"
         checked += 1;
     }
     std.debug.print("smooth missiles: {d} directions, sub-tile motion, exact arrival at presented impact\n", .{checked});
-}
-
-pub fn cellPx(p: P) rl.Vector2 {
-    return look.vec(p.scaled(CELL));
-}
-
-/// Presentation only: the body already stands on `to`.
-pub const Glide = struct {
-    from: rl.Vector2,
-    to: P,
-    t: f32,
-    gait: look.Gait,
-    splashed: bool = false,
-    /// Retain mid-hop height when a new step starts.
-    from_lift: f32 = 0,
-    /// Pixels toward what a melee blow strikes, at the bump's height; null for a step.
-    bump: ?rl.Vector2 = null,
-    /// The glide still drawn while this one waits its turn.
-    prior: ?Prior = null,
-
-    /// Prior motion, offset by `ahead` seconds.
-    const Prior = struct {
-        from: rl.Vector2,
-        to: P,
-        gait: look.Gait,
-        from_lift: f32,
-        bump: ?rl.Vector2,
-        ahead: f32,
-
-        fn copy(dst: anytype, src: anytype) void {
-            inline for (std.meta.fields(Prior)) |f| {
-                if (comptime !std.mem.eql(u8, f.name, "ahead")) @field(dst, f.name) = @field(src, f.name);
-            }
-        }
-    };
-
-    comptime {
-        for (std.meta.fields(Glide)) |f| {
-            const own = std.mem.eql(u8, f.name, "t") or std.mem.eql(u8, f.name, "splashed") or std.mem.eql(u8, f.name, "prior");
-            std.debug.assert(own or @hasField(Prior, f.name));
-        }
-    }
-
-    pub fn still(p: P, gait: look.Gait) Glide {
-        var gl = Glide{ .from = cellPx(p), .to = p, .t = 0, .gait = gait };
-        gl.t = gl.span();
-        return gl;
-    }
-
-    pub fn rest(a: *const actor.Actor) Glide {
-        return still(a.at, look.gait(a.kind));
-    }
-
-    pub fn toward(self: Glide, p: P, t: f32) Glide {
-        var then = self;
-        if (t < 0) then.t -= t;
-        var prior: ?Prior = null;
-        if (t < 0 and self.left() > 0) {
-            var was: Prior = undefined;
-            Prior.copy(&was, self);
-            was.ahead = self.t - t;
-            prior = was;
-        }
-        return .{ .from = then.now(), .to = p, .t = t, .gait = self.gait, .from_lift = then.height(), .prior = prior };
-    }
-
-    fn waiting(self: Glide) ?Glide {
-        if (self.t >= 0) return null;
-        const p = self.prior orelse return null;
-        var gl = Glide{ .from = undefined, .to = undefined, .t = self.t + p.ahead, .gait = undefined };
-        Prior.copy(&gl, p);
-        return gl;
-    }
-
-    pub fn bumping(self: Glide, at: P, t: f32) Glide {
-        var gl = self.toward(self.to, t);
-        gl.bump = look.vec(at.sub(self.to)).scale(BUMP_PX);
-        return gl;
-    }
-
-    const Motion = enum { hop, slide, bump };
-
-    fn motion(self: Glide) Motion {
-        if (self.bump != null) return .bump;
-        return switch (self.gait) {
-            inline else => |gt| @field(Motion, @tagName(gt)),
-        };
-    }
-
-    pub fn span(self: Glide) f32 {
-        return switch (self.motion()) {
-            .hop => GLIDE_S,
-            .slide => SLIDE_S,
-            .bump => BUMP_S,
-        };
-    }
-
-    pub fn left(self: Glide) f32 {
-        return self.span() - self.t;
-    }
-
-    /// `t` is below 0 while the glide waits its turn.
-    pub fn done(self: Glide) f32 {
-        return std.math.clamp(self.t / self.span(), 0, 1);
-    }
-
-    pub fn now(self: Glide) rl.Vector2 {
-        if (self.waiting()) |w| return w.now();
-        const at = self.ground();
-        const b = self.bump orelse return at;
-        const k = bumpOf(self.done());
-        return .{ .x = at.x + b.x * k, .y = at.y + b.y * k };
-    }
-
-    /// Where the body is, its bump aside: the camera follows this.
-    pub fn ground(self: Glide) rl.Vector2 {
-        if (self.waiting()) |w| return w.ground();
-        const k = switch (self.motion()) {
-            .hop, .bump => self.done(),
-            .slide => overshoot(self.done()),
-        };
-        return self.from.lerp(cellPx(self.to), k);
-    }
-
-    pub fn height(self: Glide) f32 {
-        if (self.waiting()) |w| return w.height();
-        const k = self.done();
-        const hop: f32 = switch (self.motion()) {
-            .hop => HOP_PX * 4 * k * (1 - k),
-            .slide, .bump => 0,
-        };
-        return self.from_lift * (1 - k) + hop;
-    }
-
-    /// Pixels above the ground the body is drawn; its shadow, bar, light and the camera stay on the ground.
-    pub fn lift(self: Glide) i32 {
-        return mathx.roundTiesUp(self.height());
-    }
-};
-
-fn bumpOf(k: f32) f32 {
-    if (k < BUMP_HIT) {
-        const u = k / BUMP_HIT;
-        return u * u;
-    }
-    return 1 - mathx.smoothstep(BUMP_HIT, 1, k);
-}
-
-/// Penner's ease-out-back.
-fn overshoot(k: f32) f32 {
-    const u = k - 1;
-    return 1 + (SLIDE_BACK + 1) * u * u * u + SLIDE_BACK * u * u;
 }
 
 pub const Facing = enum { right, left };
@@ -490,38 +284,7 @@ const Visit = struct {
     }
 };
 
-const Flasks = std.EnumArray(flask.Kind, flask.Flask);
-
-pub const Perf = struct {
-    const EVERY_S: f32 = 0.5;
-    const AT = P{ .x = 8, .y = 6 };
-    const COLOR = look.fade(look.DIM, 0.6);
-
-    since_s: f32 = 0,
-    frames: u32 = 0,
-    work_ns: u64 = 0,
-    buf: [32:0]u8 = [_:0]u8{0} ** 32,
-    len: usize = 0,
-
-    pub fn add(p: *Perf, dt: f32, work_ns: u64) void {
-        p.since_s += dt;
-        p.frames += 1;
-        p.work_ns += work_ns;
-        if (p.since_s < EVERY_S) return;
-        const fps = @as(f32, @floatFromInt(p.frames)) / p.since_s;
-        const ms = @as(f32, @floatFromInt(p.work_ns)) / @as(f32, @floatFromInt(p.frames)) / std.time.ns_per_ms;
-        const len = (std.fmt.bufPrintZ(&p.buf, "{d:.0} fps  {d:.1} ms cpu", .{ fps, ms }) catch "").len;
-        p.* = .{ .buf = p.buf, .len = len };
-    }
-
-    pub fn text(p: *const Perf) [:0]const u8 {
-        return p.buf[0..p.len :0];
-    }
-
-    pub fn draw(p: *const Perf, face: *const font.Face) void {
-        face.draw(p.text(), AT.x, AT.y, font.SMALL, COLOR);
-    }
-};
+pub const Flasks = std.EnumArray(flask.Kind, flask.Flask);
 
 pub const Game = struct {
     mode: Mode = .play,
@@ -547,7 +310,7 @@ pub const Game = struct {
     clock: day.Clock = .{},
     outdoors: bool = false,
     hour_shown: f32 = day.Clock.hour(.{}),
-    perf: Perf = .{},
+    perf: debugging.Perf = .{},
     /// Kept across runs, never saved.
     unkillable: bool = false,
     unsaved: bool = false,
@@ -567,6 +330,7 @@ pub const Game = struct {
     kills: usize = 0,
     gold: i32 = 0,
     mana: i32 = heroes.DEFAULT.attrs().mana(),
+    mana_recovery: i32 = 0,
     flasks: Flasks = .initFill(.{}),
     /// Kill refills appear only when the killing blow lands.
     flasks_shown: Flasks = .initFill(.{}),
@@ -589,8 +353,9 @@ pub const Game = struct {
     gold_shown: i32 = 0,
     log: Log = .{},
     st: input.State = .{},
+    mouse: mouseControls.State = .{},
     bar: skillbar.Bar = .{},
-    binds: Binds = .{},
+    binds: binds.Binds = .{},
     aim_by: input.Button = .x,
     aim_act: skillbar.Act = .shoot,
     aim_set: skillbar.Set = .primary,
@@ -605,7 +370,7 @@ pub const Game = struct {
     shot: ?Shot = null,
     foe_shots: [actor.MAX]?Shot = @splat(null),
     /// Indexed by pool slot.
-    glide: [actor.MAX]Glide = undefined,
+    glide: [actor.MAX]glide.Glide = undefined,
     /// Indexed by pool slot. Presentation only: the last way a body stepped, struck or aimed across.
     facing: [actor.MAX]Facing = @splat(.right),
     turning: [actor.MAX]?Turning = @splat(null),
@@ -802,7 +567,7 @@ fn toDefaults(g: *Game, comptime fields: []const []const u8) void {
 }
 
 fn freshRun(g: *Game) void {
-    toDefaults(g, &.{ "kills", "gold", "mana_held", "flasks", "flasks_shown", "cooldown", "stepped", "log", "mode", "inventory", "ground" });
+    toDefaults(g, &.{ "kills", "gold", "mana_held", "mana_recovery", "flasks", "flasks_shown", "cooldown", "stepped", "log", "mode", "inventory", "ground" });
     g.growth = progress.State.of(g.class);
     g.bar = g.growth.bar(g.class);
     g.loot_rng = mathx.Rng.init(g.seed ^ LOOT_SALT);
@@ -816,6 +581,7 @@ fn freshRun(g: *Game) void {
 }
 
 fn freshTurn(g: *Game) void {
+    g.mouse = .{};
     toDefaults(g, &.{ "shot", "foe_shots", "travel", "order_n", "busy", "pending", "lead", "owed", "split_from", "dropped_gold", "turning", "displaced", "gold_taken" });
     g.fx.clear();
     g.cloud.clear();
@@ -951,57 +717,6 @@ pub fn heroTo(g: *Game, to: P) void {
     g.travel = leadsTo(g, to);
 }
 
-pub fn openAim(g: *Game, by: input.Button, act: skillbar.Act) void {
-    const h = g.heroActor() orelse return;
-    aimAt(g, by, act, h.at, bow.pick(&g.lv, &g.pool, h.at));
-}
-
-pub fn openLeap(g: *Game, by: input.Button, act: skillbar.Act) void {
-    const h = g.heroActor() orelse return;
-    g.mark = h.at;
-    aiming(g, by, act);
-}
-
-fn openSwing(g: *Game, by: input.Button, act: skillbar.Act) void {
-    const h = g.heroActor() orelse return;
-    var mark: ?P = null;
-    for (mathx.ALL_DIRS) |d| {
-        const p = h.at.add(d.delta());
-        if (!act.aimable(&g.lv, h.at, p)) continue;
-        const foe = if (g.pool.get(g.lv.who(p))) |a| a.foe() else false;
-        if (foe or mark == null) mark = p;
-        if (foe) break;
-    }
-    aimAt(g, by, act, h.at, mark);
-}
-
-fn aimAt(g: *Game, by: input.Button, act: skillbar.Act, from: P, mark: ?P) void {
-    g.mark = mark orelse {
-        g.log.say("Nothing in reach.", .{});
-        return;
-    };
-    turnToward(g, g.hero, g.mark.x - from.x);
-    aiming(g, by, act);
-}
-
-pub fn aiming(g: *Game, by: input.Button, act: skillbar.Act) void {
-    g.aim_by = by;
-    g.aim_act = act;
-    g.mode = .aim;
-}
-
-const Blocked = enum { cooling, mana, empty, locked };
-
-pub fn blocked(g: *const Game, act: skillbar.Act, flasks: *const Flasks, mana: i32) ?Blocked {
-    if (!g.growth.unlocked(act)) return .locked;
-    if (g.cooldown.get(act) > 0) return .cooling;
-    if (act.flaskOf()) |k| {
-        if (!flasks.get(k).full()) return .empty;
-    }
-    if (mana < g.growth.cost(act)) return .mana;
-    return null;
-}
-
 pub fn heroAttrs(g: *const Game) attrs.Attrs {
     return g.inventory.gear.stats(g.growth.attributes(g.class));
 }
@@ -1031,337 +746,20 @@ pub fn manaMax(g: *const Game) i32 {
     return heroAttrs(g).mana();
 }
 
-fn gainMana(g: *Game, n: i32) void {
+pub fn gainMana(g: *Game, n: i32) void {
     g.mana = @min(manaMax(g), g.mana + n);
 }
 
 pub fn manaRegen(g: *const Game) i32 {
-    return heroes.MANA_REGEN + g.growth.perks().mana_regen;
+    return heroes.MANA_REGEN + heroPerks(g).mana_regen;
+}
+
+pub fn heroPerks(g: *const Game) passives.Perks {
+    return g.inventory.gear.perks(g.growth.perks());
 }
 
 pub fn manaShown(g: *const Game) i32 {
     return @min(manaMax(g), g.mana + g.mana_held);
-}
-
-fn ready(g: *Game, act: skillbar.Act) bool {
-    if (!quiet(g)) return false;
-    switch (blocked(g, act, &g.flasks, g.mana) orelse return true) {
-        .cooling => {
-            const left = g.cooldown.get(act);
-            g.log.say("{s} is ready in {d} turn{s}.", .{ act.name(), left, plural(left) });
-        },
-        .mana => g.log.say("{s} needs {d} mana.", .{ act.name(), g.growth.cost(act) }),
-        .empty => g.log.say("{s} is empty.", .{act.name()}),
-        .locked => g.log.say("{s} is not learned.", .{act.name()}),
-    }
-    return false;
-}
-
-fn spend(g: *Game, act: skillbar.Act) void {
-    g.mana -= g.growth.cost(act);
-    g.cooldown.set(act, g.growth.cooldown(act));
-}
-
-const plural = mathx.plural;
-
-pub fn aimable(g: *const Game, from: P, to: P) bool {
-    return g.aim_act.aimable(&g.lv, from, to);
-}
-
-fn leap(g: *Game, from: P, act: skillbar.Act) void {
-    const to = g.mark;
-    heroTo(g, to);
-    g.glide[heroSlot(g).?] = Glide.rest(g.heroActor().?);
-    turnToward(g, g.hero, to.x - from.x);
-    if (act.teleports()) {
-        g.fx.shimmer(mathx.centre(from), look.WARD);
-        g.fx.shimmer(mathx.centre(to), look.WARD);
-    } else g.fx.juke(from, to);
-    sayDone(g, act);
-    if (g.travel != null) combat.holdUntil(g, fx.JUKE_S);
-    g.unsaved = true;
-    castSight(g, to);
-    if (act.free()) return;
-    g.lead = 0;
-    combat.endTurn(g);
-}
-
-/// Its recovery starts at the end of the turn the drink takes.
-fn drink(g: *Game, act: skillbar.Act, k: flask.Kind) void {
-    const h = g.heroActor() orelse return;
-    spend(g, act);
-    g.flasks.getPtr(k).drink(flask.recovers(k, h.max, g.growth.perks()));
-    g.flasks_shown.set(k, g.flasks.get(k));
-    g.fx.shimmer(mathx.centre(h.at), switch (k) {
-        .life => look.LIFE,
-        .mana => look.WARD,
-    });
-    g.log.push(.recovery, "{s} drinks a {s} flask.", .{ g.name.text(), @tagName(k) });
-    combat.endTurn(g);
-}
-
-pub fn recover(g: *Game) void {
-    gainMana(g, manaRegen(g));
-    for (std.enums.values(flask.Kind)) |k| {
-        const n = g.flasks.getPtr(k).tick();
-        switch (k) {
-            .life => combat.heal(g, n, g.lead orelse 0),
-            .mana => gainMana(g, n),
-        }
-    }
-}
-
-pub const Use = struct { act: skillbar.Act, by: input.Button, set: skillbar.Set = .primary };
-
-/// Since PoE2 0.2.0, pressing the modifier while a button is already held fires that button's secondary skill.
-fn usedSkill(g: *Game) ?Use {
-    const set = g.bar.active(g.st.down);
-    for (skillbar.SLOTS) |b| {
-        if (!g.st.hit(b)) continue;
-        return skillOn(g, set, b) orelse continue;
-    }
-    const m = g.bar.modifier orelse return null;
-    if (!g.st.hit(m)) return null;
-    for (skillbar.SLOTS) |b| {
-        if (b == m or !g.st.held(b)) continue;
-        return skillOn(g, .secondary, b) orelse continue;
-    }
-    return null;
-}
-
-fn skillOn(g: *const Game, set: skillbar.Set, b: input.Button) ?Use {
-    const a = g.bar.at(.{ .set = set, .button = b }) orelse return null;
-    return if (a == .secondary) null else .{ .act = a, .by = b, .set = set };
-}
-
-pub fn useSkill(g: *Game, u: Use) void {
-    if (!quiet(g)) return;
-    const r = u.act.reticle() orelse return switch (u.act) {
-        .wait => combat.endTurn(g),
-        .secondary => unreachable,
-        inline else => |a| if (comptime a.reticle() != null)
-            unreachable
-        else if (comptime a.flaskOf()) |k| {
-            if (ready(g, a)) drink(g, a, k);
-        } else if (ready(g, a)) spell(g, a),
-    };
-    if (!ready(g, u.act)) return;
-    g.aim_set = u.set;
-    switch (r) {
-        .bow => openAim(g, u.by, u.act),
-        .leap => openLeap(g, u.by, u.act),
-        .swing => openSwing(g, u.by, u.act),
-        .rush => openRush(g, u.by, u.act),
-    }
-}
-
-fn spell(g: *Game, comptime act: skillbar.Act) void {
-    const M = skillbar.Act.skill(act);
-    const h = g.heroActor() orelse return;
-    spend(g, act);
-    if (comptime act.surrounds()) {
-        const s = combat.Stroke{ .from = h.at, .wait = CAST_S };
-        combat.holdUntil(g, s.wait);
-        const area = M.around(&g.lv, h.at);
-        if (foesIn(g, area).n == 0) sayDone(g, act);
-        combat.areaHit(g, act, h.at, area, s, null, false);
-        g.lead = s.wait;
-    } else if (comptime act.wards()) {
-        sayDone(g, act);
-        h.ward.raise();
-        g.fx.shimmer(mathx.centre(h.at), look.WARD);
-        combat.settleHero(g, 0);
-        g.lead = 0;
-    } else @compileError(@tagName(act) ++ " has no reticle and no use");
-    combat.endTurn(g);
-}
-
-const Struck = actor.Ids(actor.MAX);
-
-/// Snapshot targets before damage so newborn slime halves are not hit twice.
-pub fn foesIn(g: *Game, area: glacial.Burst) Struck {
-    var out = Struck{};
-    for (g.pool.slice(), 0..) |a, i| {
-        if (a.alive and a.foe() and area.has(a.at)) out.push(actor.Pool.idOf(i));
-    }
-    return out;
-}
-
-fn openRush(g: *Game, by: input.Button, act: skillbar.Act) void {
-    const h = g.heroActor() orelse return;
-    var near = bow.Nearest{ .from = h.at };
-    var empty = bow.Nearest{ .from = h.at };
-    var cells = grid.Cells.around(h.at, act.reach());
-    while (cells.next()) |p| {
-        if (act.aimable(&g.lv, h.at, p)) {
-            if (g.lv.who(p) != grid.NO_ONE) near.offer(p) else empty.offer(p);
-        }
-    }
-    aimAt(g, by, act, h.at, near.best orelse empty.best);
-}
-
-fn rush(g: *Game, from: P, act: skillbar.Act) void {
-    switch (act) {
-        inline else => |a| if (comptime a.reticle() != .rush) unreachable else {
-            const M = skillbar.Act.skill(a);
-            const d = M.wayTo(from, g.mark).?;
-            const occupied = g.lv.who(g.mark) != grid.NO_ONE;
-            const stop = if (occupied) M.stop(from, g.mark) else g.mark;
-            const i = heroSlot(g).?;
-            heroTo(g, stop);
-            const s = combat.Stroke{ .from = stop, .wait = combat.glideHeld(g, i, g.glide[i].toward(stop, 0)) };
-            if (occupied) combat.knock(g, a, d, s) else sayDone(g, a);
-            turnToward(g, g.hero, d.delta().x);
-            g.lead = s.wait;
-        },
-    }
-    combat.endTurn(g);
-}
-
-/// Opened from Character's skills, and backs out to them.
-pub fn openBinds(g: *Game) void {
-    g.binds.menu = .browse;
-    g.binds.assigning = null;
-    g.mode = .bind;
-}
-
-fn bindStep(g: *Game) void {
-    if (g.st.hit(CHARACTER)) {
-        g.mode = .play;
-        return;
-    }
-    if (character.padToGame(g)) return;
-    var state = g.st;
-    const b = &g.binds;
-    var kit_buf: skillbar.KitBuf = undefined;
-    const kit = g.growth.kit(g.class, &kit_buf);
-    if (state.click) if (state.pointer) |pointer| {
-        const panel = overlay.bindPanel(g);
-        const p = overlay.bindSurface(g, panel).point(pointer);
-        for (overlay.BIND_ACTIONS, 0..) |action, i| {
-            if (!action.shown(b)) continue;
-            if (look.holds(overlay.bindActionBox(panel, i), p)) state.pressed.insert(action.button);
-        }
-        if (b.menu == .browse) {
-            for (skillbar.SETS, 0..) |_, row| for (0..SLOT_XS.len) |col| {
-                if (look.holds(overlay.bindSlotBox(row, col), p)) {
-                    b.row = row;
-                    b.col = col;
-                }
-            };
-        } else if (b.menu == .pick) {
-            const picker = overlay.bindPicker(b.*, picksOf(kit));
-            for (picker.first()..picker.end()) |i| {
-                if (look.holds(picker.cell(i), p)) {
-                    b.menu = .{ .pick = i };
-                    state.pressed.insert(CONFIRM);
-                }
-            }
-        }
-    };
-    const here = b.slot();
-    const was = g.bar;
-    defer if (!std.meta.eql(was, g.bar)) {
-        g.unsaved = true;
-    };
-    switch (b.menu) {
-        .browse => {
-            if (menu.backed(&state)) {
-                g.mode = .pause;
-            } else if (state.hit(CONFIRM)) {
-                if (b.assigning) |act| {
-                    g.bar.bind(here, act);
-                    g.character.message.say("{s} bound.", .{act.name()});
-                    g.mode = .pause;
-                } else b.openPick(kit, &g.bar);
-            } else if (state.hit(CHANGE)) {
-                b.assigning = null;
-                b.openPick(kit, &g.bar);
-            } else if (state.hit(REMOVE)) {
-                g.bar.clear(here);
-            } else if (state.walk) |d| {
-                b.move(d);
-            }
-        },
-        .pick => |i| {
-            if (menu.backed(&state)) {
-                b.menu = .browse;
-            } else if (state.hit(CONFIRM)) {
-                if (pickAct(kit, i)) |a| g.bar.bind(here, a) else g.bar.clear(here);
-                b.menu = .browse;
-            } else if (state.walk) |d| {
-                b.menu = .{ .pick = pickStep(i, d.delta(), picksOf(kit)) };
-            }
-        },
-    }
-}
-
-/// Over the hero's own cell, so the reticle reaches the far side of a corridor.
-fn nudgeAim(g: *Game, d: mathx.Dir) void {
-    const h = g.heroActor() orelse return;
-    var to = g.mark.add(d.delta());
-    switch (g.aim_act.reticle().?) {
-        .leap, .rush => if (!juke.inReach(h.at, to, g.aim_act.reach()) or !grid.Level.inside(to)) return,
-        .bow => {
-            if (to.eq(h.at)) to = to.add(d.delta());
-            if (!bow.aimable(&g.lv, h.at, to)) return;
-        },
-        .swing => to = h.at.add(d.delta()),
-    }
-    g.mark = to;
-    turnToward(g, g.hero, to.x - h.at.x);
-}
-
-pub fn confirmAim(g: *Game) void {
-    const h = g.heroActor() orelse return;
-    const act = g.aim_act;
-    if (!ready(g, act)) return;
-    const reticle = act.reticle().?;
-    if (!aimable(g, h.at, g.mark)) {
-        switch (reticle) {
-            .bow => g.log.say("Can't shoot there.", .{}),
-            .leap => g.log.say("{s} needs a visible, empty landing within {d} tiles.", .{ act.name(), act.reach() }),
-            .swing => g.log.say("Nothing to strike there.", .{}),
-            .rush => g.log.say("{s} needs a clear straight line {d} to {d} tiles away.", .{ act.name(), act.nearest(), act.reach() }),
-        }
-        return;
-    }
-    g.mode = .play;
-    spend(g, act);
-    const from = h.at;
-    switch (reticle) {
-        .bow => loose(g, from, act),
-        .leap => leap(g, from, act),
-        .swing => combat.swing(g, from, act),
-        .rush => rush(g, from, act),
-    }
-}
-
-fn loose(g: *Game, from: P, act: skillbar.Act) void {
-    const to = g.mark;
-    const f = bow.fly(&g.lv, from, to);
-    g.shot = .{ .flight = f, .from = from, .act = act };
-    combat.holdUntil(g, g.shot.?.ends());
-    const s = combat.Stroke{ .from = from, .wait = g.shot.?.lands(), .fire = act.element() == .fire };
-    if (act.element() == .lightning and f.len > 0) g.fx.zap(@max(0, s.wait - ZAP_S), .{ .from = mathx.centre(from), .to = mathx.centre(f.path[f.len - 1]) });
-    g.lead = s.wait;
-    if (f.struck) |hit| switch (act) {
-        inline else => |a| if (comptime a.reticle() != .bow) unreachable else if (comptime a.bursts()) combat.burstHit(g, a, hit, f.impact().?, s) else switch (hit) {
-            .body => |id| if (comptime a.chains())
-                combat.chainHit(g, a, id, s)
-            else if (comptime !a.afflicts()) blk: {
-                comptime std.debug.assert(a.element() == null);
-                break :blk combat.wound(g, id, combat.heroSkill(g, a), combat.SHOOT, s);
-            } else combat.arrowHit(g, id, combat.heroArrow(g, a, true), a, s),
-            .barrel => |p| combat.smash(g, p, combat.barrelVerb(a), s),
-        },
-    } else g.log.say("{s}'s {s} finds nothing.", .{ g.name.text(), act.bolt() orelse "arrow" });
-    combat.endTurn(g);
-}
-
-fn sayDone(g: *Game, act: skillbar.Act) void {
-    const done = act.done() orelse return;
-    g.log.say("{s} {s}.", .{ g.name.text(), done });
 }
 
 pub fn heroRow(g: *const Game) actor.Row {
@@ -1401,7 +799,7 @@ pub fn heroShown(g: *const Game) ?fx.Body {
     return g.pictured[i];
 }
 
-fn heroGlide(g: *Game) ?Glide {
+fn heroGlide(g: *Game) ?glide.Glide {
     const i = heroSlot(g) orelse return null;
     return if (standing(g, i)) g.glide[i] else null;
 }
@@ -1436,7 +834,7 @@ pub fn camWant(g: *Game) rl.Vector2 {
 }
 
 pub fn snapGlide(g: *Game) void {
-    for (g.pool.slice(), 0..) |*a, i| g.glide[i] = Glide.rest(a);
+    for (g.pool.slice(), 0..) |*a, i| g.glide[i] = glide.Glide.rest(a);
 }
 
 /// `late` is seconds since the glides started; visible foes follow the hero in acting order.
@@ -1467,7 +865,7 @@ fn splashSteps(g: *Game) void {
     for (g.glide[0..g.pool.n], 0..) |*gl, i| {
         if (gl.splashed or gl.done() < SPLASH_AT) continue;
         gl.splashed = true;
-        if (gl.bump != null or std.meta.eql(gl.from, cellPx(gl.to))) continue;
+        if (gl.bump != null or std.meta.eql(gl.from, glide.cellPx(gl.to))) continue;
         if (g.pictured[i].down() or actor.row(g.pictured[i].kind).movement == .flying) continue;
         const at = drawnAt(g, i) orelse continue;
         if (g.lv.at(cellUnder(at)) == .shallows) g.fx.splash(middle(at));
@@ -1560,7 +958,7 @@ fn harmShown(g: *Game, at: P, lands: f32, h: Harm, fire: bool, in_view: bool, s:
 }
 
 const Walk = struct { d: mathx.Dir, late: f32 };
-pub const Queued = union(enum) { walk: mathx.Dir, skill: Use, interact };
+pub const Queued = union(enum) { walk: mathx.Dir, skill: skills.Use, interact };
 
 pub fn quiet(g: *const Game) bool {
     return g.busy <= PACE_SLACK;
@@ -1585,7 +983,7 @@ fn queueInteract(g: *Game) bool {
 fn queuePress(g: *Game) void {
     if (queueInteract(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
         character.openInspect(g);
-    } else if (usedSkill(g)) |u| {
+    } else if (skills.usedSkill(g)) |u| {
         g.pending = .{ .skill = u };
     } else if (g.st.walk) |d| queueWalk(g, d);
 }
@@ -1596,8 +994,8 @@ fn interacted(g: *Game) bool {
     return character.openNearby(g);
 }
 
-fn skillDue(g: *Game) ?Use {
-    if (usedSkill(g)) |u| g.pending = .{ .skill = u };
+fn skillDue(g: *Game) ?skills.Use {
+    if (skills.usedSkill(g)) |u| g.pending = .{ .skill = u };
     return takeQueued(g, .skill);
 }
 
@@ -1632,16 +1030,17 @@ fn stunnedTurn(g: *Game) bool {
 }
 
 /// Seconds since the last turn was drawn out.
-fn sinceQuiet(g: *const Game) f32 {
+pub fn sinceQuiet(g: *const Game) f32 {
     return @max(0, -g.busy);
 }
 
 /// Advance presentation before new actions so their effects start at the correct delay.
 pub fn update(g: *Game, dt: f32) void {
     if (!g.st.focused) holdWalk(g);
+    mouseControls.prepare(g);
     if (playShown(g) or g.mode == .aim or g.mode == .inspect) {
         if (g.st.pointer) |p| {
-            if (look.holds(journal.box(g.screen), p) and g.st.scroll != 0) g.log.move(g.st.scroll);
+            if (raster.holds(journal.box(g.screen), p) and g.st.scroll != 0) g.log.move(g.st.scroll);
         }
     }
     const death_drawn = deathShown(g);
@@ -1696,24 +1095,25 @@ pub fn update(g: *Game, dt: f32) void {
             } else if (interacted(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
                 character.openInspect(g);
             } else if (skillDue(g)) |u| {
-                useSkill(g, u);
-            } else if (paced(g)) |w| {
+                skills.useSkill(g, u);
+            } else if (mouseControls.step(g)) {} else if (paced(g)) |w| {
                 late = w.late;
                 heroStep(g, w.d, w.late);
             }
         },
         .aim => {
+            const clicked = mouseControls.aim(g);
             if (menu.closed(&g.st)) {
                 g.mode = .play;
-            } else if (g.st.hit(CONFIRM)) {
-                confirmAim(g);
+            } else if (g.st.hit(CONFIRM) or clicked) {
+                skills.confirmAim(g);
             } else if (g.st.walk) |d| {
-                nudgeAim(g, d);
+                skills.nudgeAim(g, d);
             }
         },
-        .bind => bindStep(g),
+        .bind => binds.bindStep(g),
         .inspect => overlay.inspectStep(g),
-        .dead => if (death_drawn and dismissed(&g.st)) {
+        .dead => if (death_drawn and (dismissed(&g.st) or g.st.clicked(deadBox(g.screen)))) {
             if (g.permadeath) g.exit = .back else restart(g);
         },
         .pause => character.pauseStep(g),
@@ -1784,7 +1184,7 @@ pub fn settleXp(g: *Game) void {
 }
 
 /// Whichever screen takes the way: a walk held across a change of it moves nothing on the new one.
-const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, binds: std.meta.Tag(Binds.Menu) };
+const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, binds: std.meta.Tag(binds.Binds.Menu) };
 
 fn screenOf(g: *const Game) Screen {
     return .{ .mode = g.mode, .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .binds = std.meta.activeTag(g.binds.menu) };
@@ -1793,6 +1193,7 @@ fn screenOf(g: *const Game) Screen {
 pub fn holdWalk(g: *Game) void {
     g.st.holdWalk();
     g.pending = null;
+    g.mouse.stop();
 }
 
 fn stepTurning(g: *Game, dt: f32) void {
@@ -1887,8 +1288,11 @@ fn drawDead(g: *Game) void {
     const said = menu.shout(&died, "{s}" ++ DIED, .{g.name.text()});
     menu.heading(g.face, g.screen, said, mid + DEAD_TITLE_DY, menu.TITLE, look.LIFE, look.LIFE);
     textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, font.BODY, look.TEXT);
-    const box = look.rect(@divTrunc(g.screen.x - menu.ACTION_WIDE.x, 2), mid + DEAD_ACTION_DY, menu.ACTION_WIDE.x, menu.ACTION_WIDE.y);
-    menu.action(&g.face, box, look.Prompt.menuOf(&g.st, CONFIRM), if (g.permadeath) "Title" else "Restart");
+    menu.action(&g.face, deadBox(g.screen), prompt_icon.Prompt.menuOf(&g.st, CONFIRM), if (g.permadeath) "Title" else "Restart");
+}
+
+pub fn deadBox(screen: P) rl.Rectangle {
+    return raster.rect(@divTrunc(screen.x - menu.ACTION_WIDE.x, 2), @divTrunc(screen.y, 2) + DEAD_ACTION_DY, menu.ACTION_WIDE.x, menu.ACTION_WIDE.y);
 }
 
 pub fn drawFrame(g: *Game) void {
@@ -1913,7 +1317,7 @@ fn loadGraphics(g: *Game) void {
     g.graphics_ready = true;
 }
 
-fn unloadGraphics(g: *Game) void {
+pub fn unloadGraphics(g: *Game) void {
     g.sprites.unload();
     inline for (GRAPHICS) |f| @field(g, f).unload();
     g.graphics_ready = false;
@@ -1940,98 +1344,9 @@ pub fn mapAssets(g: *Game) look.Assets {
     return need;
 }
 
-pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime body: fn (*Game) anyerror!void, comptime startup_shown: bool) !void {
-    var startup = try std.time.Timer.start();
-    const alloc = std.heap.c_allocator;
-    rl.setConfigFlags(flags);
-    rl.initWindow(WINDOW_W, WINDOW_H, title);
-    if (!rl.isWindowReady()) return error.WindowFailed;
-    defer rl.closeWindow();
-    input.claimKeys();
-    input.mapPads();
-    const g = try boot(alloc);
-    defer shut(alloc, g);
-    g.debug.vsync = flags.vsync_hint;
-    defer unloadGraphics(g);
-    g.face = font.Face.load(look.TILE_CODEPOINTS);
-    defer g.face.unload();
-    if (startup_shown) std.debug.print("startup: {d:.3} ms, {d} map textures\n", .{ shots.ms(startup.read()), g.sprites.count() });
-    try body(g);
-}
-
-pub const NAME = "Cistern";
-
-const Headless = struct { flag: [:0]const u8, body: fn (*Game) anyerror!void, startup_shown: bool = false };
-
-pub const HEADLESS = [_]Headless{
-    .{ .flag = "--shot", .body = shots.shoot },
-    .{ .flag = "--shot-ui", .body = shots.shootUi },
-    .{ .flag = "--shot-debug", .body = shots.shootDebug },
-    .{ .flag = "--shot-cinema", .body = shots.shootCinema },
-    .{ .flag = "--bench", .body = shots.benchWalk, .startup_shown = true },
-};
-
-pub fn headless(comptime h: Headless) !void {
-    try withGame(.{ .window_hidden = true }, NAME ++ " " ++ h.flag, h.body, h.startup_shown);
-    try look.expectShaders();
-}
-
-// X11/KDE panels and the macOS menu bar/Dock stay over an undecorated screen-sized window; only a monitor-owned one covers them.
-const MONITOR_OWNED = switch (@import("builtin").os.tag) {
-    .linux, .macos => true,
-    else => false,
-};
-
-pub const glfw = struct {
-    const GLProc = *const fn () callconv(.c) void;
-    pub extern fn glfwGetProcAddress(name: [*:0]const u8) ?GLProc;
-    const Window = opaque {};
-    const Monitor = opaque {};
-    const VidMode = extern struct { width: c_int, height: c_int, red: c_int, green: c_int, blue: c_int, refresh: c_int };
-    extern fn glfwGetCurrentContext() ?*Window;
-    extern fn glfwGetWindowMonitor(w: *Window) ?*Monitor;
-    extern fn glfwGetMonitors(count: *c_int) ?[*]*Monitor;
-    extern fn glfwGetVideoMode(m: *Monitor) ?*const VidMode;
-    extern fn glfwGetWindowPos(w: *Window, x: *c_int, y: *c_int) void;
-    extern fn glfwGetWindowSize(w: *Window, width: *c_int, height: *c_int) void;
-    extern fn glfwSetWindowMonitor(w: *Window, m: ?*Monitor, x: c_int, y: c_int, width: c_int, height: c_int, refresh: c_int) void;
-};
-
-const Rect = struct { x: c_int = 0, y: c_int = 0, w: c_int = WINDOW_W, h: c_int = WINDOW_H };
-
-var windowed: Rect = .{};
-
-fn currentMonitor() ?*glfw.Monitor {
-    var count: c_int = 0;
-    const all = glfw.glfwGetMonitors(&count) orelse return null;
-    const i = rl.getCurrentMonitor();
-    return if (i >= 0 and i < count) all[@intCast(i)] else null;
-}
-
-fn toggleMonitorOwned() void {
-    const w = glfw.glfwGetCurrentContext() orelse return;
-    if (glfw.glfwGetWindowMonitor(w) != null) {
-        glfw.glfwSetWindowMonitor(w, null, windowed.x, windowed.y, windowed.w, windowed.h, 0);
-        return;
-    }
-    const m = currentMonitor() orelse return;
-    const mode = glfw.glfwGetVideoMode(m) orelse return;
-    glfw.glfwGetWindowPos(w, &windowed.x, &windowed.y);
-    glfw.glfwGetWindowSize(w, &windowed.w, &windowed.h);
-    glfw.glfwSetWindowMonitor(w, m, 0, 0, mode.width, mode.height, mode.refresh);
-}
-
-pub fn fullscreen() bool {
-    if (MONITOR_OWNED) {
-        const w = glfw.glfwGetCurrentContext() orelse return false;
-        return glfw.glfwGetWindowMonitor(w) != null;
-    }
-    return rl.isWindowState(.{ .borderless_windowed_mode = true });
-}
-
 pub fn syncScreen(g: *Game, toggle: bool) void {
     if (toggle) {
-        if (MONITOR_OWNED) toggleMonitorOwned() else rl.toggleBorderlessWindowed();
+        if (window.MONITOR_OWNED) window.toggleMonitorOwned() else rl.toggleBorderlessWindowed();
         debugging.syncDisplay(g);
     }
     g.screen = .{ .x = rl.getScreenWidth(), .y = rl.getScreenHeight() };
