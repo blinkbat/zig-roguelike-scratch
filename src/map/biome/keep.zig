@@ -84,7 +84,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
             }
         }
     }
-    const across = rng.chance(0.5);
+    const across = rng.coin();
     const sides = if (across) carve.ACROSS else carve.DOWN;
     for (sides) |side| carve.gateway(lv, carve.sideMid(curtain, side), side.opposite(), CURTAIN + reachOf(p.towers, p.moat), CURTAIN, @divTrunc(GATE_W, 2), .floor);
     const keep = keepOf(p);
@@ -97,7 +97,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
     var x = in.lo.x + 1;
     while (x < in.hi.x - 1) : (x += TORCH_EVERY) {
         if (rng.percent(p.torches) and torches < TORCHES_MOST) {
-            lv.addTorch(lume.torchWall(.{ .x = x, .y = in.lo.y }));
+            lv.addTorch(lume.torchOver(in, x));
             torches += 1;
         }
     }

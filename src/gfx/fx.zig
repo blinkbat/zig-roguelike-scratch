@@ -121,7 +121,7 @@ pub const Blow = struct {
     fire: bool = false,
 };
 
-pub const StatusGlow = struct { radius: f32, gain: f32 };
+const StatusGlow = struct { radius: f32, gain: f32 };
 const BURN_GLOW = StatusGlow{ .radius = 2, .gain = 0.55 };
 const WARD_GLOW = StatusGlow{ .radius = 1.5, .gain = 0.25 };
 const STATUS_FLICKER: f32 = 0.1;
@@ -685,13 +685,13 @@ pub const Fx = struct {
         const rng = &self.rng;
         for (0..n) |_| {
             const d = dir orelse heading(rng.unit() * mathx.TAU);
-            const along = mathx.lerpF(s.along_lo, s.along_hi, rng.unit());
+            const along = rng.between(s.along_lo, s.along_hi);
             const across = rng.spread(2 * s.fan);
             self.emit(.{
                 .p = .{ at[0], at[1], STRIKE_Z },
-                .v = .{ d[0] * along - d[1] * across, d[1] * along + d[0] * across, mathx.lerpF(s.up_lo, s.up_hi, rng.unit()) },
-                .life = mathx.lerpF(s.life_lo, s.life_hi, rng.unit()),
-                .r = mathx.lerpF(s.r_lo, s.r_hi, rng.unit()),
+                .v = .{ d[0] * along - d[1] * across, d[1] * along + d[0] * across, rng.between(s.up_lo, s.up_hi) },
+                .life = rng.between(s.life_lo, s.life_hi),
+                .r = rng.between(s.r_lo, s.r_hi),
                 .col = s.col,
                 .grav = s.grav,
                 .drag = s.drag,
@@ -731,7 +731,7 @@ pub const Fx = struct {
             .p = .{ at[0] + self.rng.spread(0.08), at[1] + self.rng.spread(0.08), STRIKE_Z },
             .v = .{ -dir[0] * 0.8 + self.rng.spread(0.6), -dir[1] * 0.8 + self.rng.spread(0.6), m.rise },
             .life = life,
-            .r = if (act == .fireball) 1.5 + self.rng.unit() * 2 else 0.7 + self.rng.unit(),
+            .r = if (act == .fireball) self.rng.between(1.5, 3.5) else self.rng.between(0.7, 1.7),
             .col = look.arrowInk(act),
             .drag = 3,
             .add = m.add,
@@ -742,7 +742,7 @@ pub const Fx = struct {
     pub fn shimmer(self: *Fx, at: [2]f32, col: rl.Color) void {
         for (0..SHIMMER_MOTES) |i| {
             const d = ringDir(&self.rng, i, SHIMMER_MOTES, 0.6);
-            self.emit(.{ .p = .{ at[0] + d[0] * 0.3, at[1] + d[1] * 0.18, self.rng.unit() * 0.65 }, .v = .{ d[0] * 0.45, d[1] * 0.3, 0.4 + self.rng.unit() * 0.5 }, .life = 0.25 + self.rng.unit() * 0.25, .r = 0.7 + self.rng.unit(), .col = col, .drag = 2, .add = true });
+            self.emit(.{ .p = .{ at[0] + d[0] * 0.3, at[1] + d[1] * 0.18, self.rng.between(0, 0.65) }, .v = .{ d[0] * 0.45, d[1] * 0.3, self.rng.between(0.4, 0.9) }, .life = self.rng.between(0.25, 0.5), .r = self.rng.between(0.7, 1.7), .col = col, .drag = 2, .add = true });
         }
         self.glow(at, col, SHIMMER_GLOW);
     }
@@ -752,10 +752,10 @@ pub const Fx = struct {
         const at = d.at;
         for (0..DRIP_MOTES) |_| {
             self.emit(.{
-                .p = .{ at[0] + self.rng.spread(0.4), at[1] + self.rng.spread(0.2), STRIKE_Z + self.rng.unit() * 0.2 },
+                .p = .{ at[0] + self.rng.spread(0.4), at[1] + self.rng.spread(0.2), self.rng.between(STRIKE_Z, STRIKE_Z + 0.2) },
                 .v = .{ self.rng.spread(0.3), self.rng.spread(0.3), 0 },
                 .life = s.life_hi,
-                .r = mathx.lerpF(s.r_lo, s.r_hi, self.rng.unit()),
+                .r = self.rng.between(s.r_lo, s.r_hi),
                 .col = s.col,
                 .grav = s.grav,
                 .drag = s.drag,
@@ -783,12 +783,12 @@ pub const Fx = struct {
         for (b.area.slice()) |p| {
             const to = mathx.centre(p);
             for (0..burstMotes(b.area.n)) |_| {
-                const life = 0.22 + self.rng.unit() * 0.18;
+                const life = self.rng.between(0.22, 0.4);
                 self.emit(.{
                     .p = .{ to[0] + self.rng.spread(0.5), to[1] + self.rng.spread(0.5), STRIKE_Z },
-                    .v = .{ (to[0] - from[0]) * 0.25, (to[1] - from[1]) * 0.25, self.rng.unit() * 0.3 },
+                    .v = .{ (to[0] - from[0]) * 0.25, (to[1] - from[1]) * 0.25, self.rng.between(0, 0.3) },
                     .life = life,
-                    .r = 0.8 + self.rng.unit() * 2,
+                    .r = self.rng.between(0.8, 2.8),
                     .col = col,
                     .add = s.add,
                 });
@@ -814,9 +814,9 @@ pub const Fx = struct {
             const on = mathx.lerp2(z.from, z.to, t);
             self.emit(.{
                 .p = .{ on[0] + self.rng.spread(ZAP_JITTER), on[1] + self.rng.spread(ZAP_JITTER), STRIKE_Z },
-                .v = .{ self.rng.spread(2.8), self.rng.spread(2.8), 0.3 + self.rng.unit() },
+                .v = .{ self.rng.spread(2.8), self.rng.spread(2.8), self.rng.between(0.3, 1.3) },
                 .life = 0.12 + t * 0.1,
-                .r = 0.6 + self.rng.unit(),
+                .r = self.rng.between(0.6, 1.6),
                 .col = look.LIGHTNING,
                 .add = true,
                 .terrain = false,
@@ -888,9 +888,9 @@ pub const Fx = struct {
             const dir = ringDir(&self.rng, i, WATER_MOTES, 0.5);
             self.emit(.{
                 .p = .{ at[0] + dir[0] * SPLASH_R, at[1] + SPLASH_FOOT + dir[1] * SPLASH_RY, 0.025 },
-                .v = .{ dir[0] * 0.55, dir[1] * 0.3, 0.45 + self.rng.unit() * 0.3 },
-                .life = 0.24 + self.rng.unit() * 0.1,
-                .r = 0.8 + self.rng.unit() * 0.5,
+                .v = .{ dir[0] * 0.55, dir[1] * 0.3, self.rng.between(0.45, 0.75) },
+                .life = self.rng.between(0.24, 0.34),
+                .r = self.rng.between(0.8, 1.3),
                 .col = look.WATER_DROP,
                 .grav = 5,
                 .drag = 3,
@@ -906,22 +906,22 @@ pub const Fx = struct {
             const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(count));
             const on = mathx.lerp2(a, b, t);
             self.emit(.{
-                .p = .{ on[0], on[1], 0.15 + self.rng.unit() * 0.35 },
+                .p = .{ on[0], on[1], self.rng.between(0.15, 0.5) },
                 .v = .{ 0, 0, 0.12 },
                 .life = 0.18 + t * 0.16,
-                .r = mathx.lerpF(JUKE_R[0], JUKE_R[1], self.rng.unit()),
+                .r = self.rng.between(JUKE_R[0], JUKE_R[1]),
                 .col = look.JUKE_TRAIL,
                 .terrain = false,
             });
         }
         for (0..DUST_MOTES) |i| {
             const dir = ringDir(&self.rng, i, DUST_MOTES, 1);
-            const speed = 0.8 + self.rng.unit() * 1.8;
+            const speed = self.rng.between(0.8, 2.6);
             self.emit(.{
                 .p = .{ b[0] + dir[0] * 0.28, b[1] + dir[1] * 0.28, 0.04 },
-                .v = .{ dir[0] * speed, dir[1] * speed, 0.3 + self.rng.unit() * 0.7 },
-                .life = (1 + self.rng.unit()) * JUKE_S / 2,
-                .r = mathx.lerpF(JUKE_R[0], JUKE_R[1], self.rng.unit()),
+                .v = .{ dir[0] * speed, dir[1] * speed, self.rng.between(0.3, 1) },
+                .life = self.rng.between(JUKE_S / 2, JUKE_S),
+                .r = self.rng.between(JUKE_R[0], JUKE_R[1]),
                 .col = look.JUKE_DUST,
                 .grav = 2,
                 .drag = 3,
@@ -991,9 +991,7 @@ fn unprojected(v: rl.Vector2, ox: f32, oy: f32, cell: f32) [2]f32 {
     return .{ (v.x - ox) / cell, (v.y - oy) / cell + STRIKE_Z };
 }
 
-fn pxScale(cell: f32) f32 {
-    return cell / look.SPRITE_PX;
-}
+const pxScale = look.pxScale;
 
 fn flameAge(t: f32, phase: f32, seed: f32) f32 {
     return @mod(t * FLAME_HZ + phase + seed, 1);

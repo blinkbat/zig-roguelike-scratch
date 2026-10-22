@@ -82,6 +82,7 @@ const UNSAVED = .{
     "pictured",
     "seq",
     "split_from",
+    "dropped_gold",
     "fx",
     "vignette",
     "cinema",

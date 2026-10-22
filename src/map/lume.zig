@@ -19,6 +19,10 @@ pub fn torchWall(floor: P) P {
     return floor.add(mathx.Dir.n.delta());
 }
 
+pub fn torchOver(floor: grid.Box, x: i32) P {
+    return torchWall(.{ .x = x, .y = floor.lo.y });
+}
+
 /// The cells the torch on `wall` lights, added to `out`.
 pub fn torchPool(lv: *const grid.Level, wall: P, out: *[grid.CELLS]bool) void {
     fov.castInto(lv, torchFloor(wall), TORCH_REACH, out);

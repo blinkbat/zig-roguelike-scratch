@@ -55,18 +55,18 @@ pub fn shoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/lean.png");
 
     g.st.lean = false;
-    game.openAim(g, boundTo(g, .shoot).by, .shoot);
+    game.openAim(g, game.harness.boundTo(g, .shoot).by, .shoot);
     try capture(g, target, SHOTS_DIR ++ "/aim.png");
 
     g.mode = .play;
     poseTorch(g);
     try capture(g, target, SHOTS_DIR ++ "/torch.png");
 
-    posePicker(g, boundTo(g, .shoot));
+    posePicker(g, game.harness.boundTo(g, .shoot));
     try capture(g, target, SHOTS_DIR ++ "/bind.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    grassOver(&g.lv);
+    game.harness.grassOver(&g.lv);
     const chest_at = P{ .x = 21, .y = 20 };
     g.lv.set(chest_at, .chest);
     g.lv.putBarrel(.{ .x = 23, .y = 20 });
@@ -83,7 +83,7 @@ pub fn shoot(g: *game.Game) !void {
     g.lv.set(.{ .x = 21, .y = 15 }, .water);
     _ = g.pool.damage(&g.lv, g.hero, 6);
     game.settle(g);
-    game.openLeap(g, boundTo(g, .juke).by, .juke);
+    game.openLeap(g, game.harness.boundTo(g, .juke).by, .juke);
     g.mark = .{ .x = 20 + juke.RANGE, .y = 15 };
     try capture(g, target, SHOTS_DIR ++ "/juke-aim.png");
     game.confirmAim(g);
@@ -95,7 +95,7 @@ pub fn shoot(g: *game.Game) !void {
     _ = game.harness.spawnAt(g, .slime, .{ .x = 28, .y = 15 }, false);
     game.settle(g);
     g.rng = game.harness.procRng(g, .burning_arrow, 1, true);
-    game.useSkill(g, boundTo(g, .burning_arrow));
+    game.useSkill(g, game.harness.boundTo(g, .burning_arrow));
     try capture(g, target, SHOTS_DIR ++ "/burning-aim.png");
     game.confirmAim(g);
     g.st = .{};
@@ -110,7 +110,7 @@ pub fn shoot(g: *game.Game) !void {
     _ = game.harness.spawnAt(g, .slime, .{ .x = 28, .y = 16 }, false);
     game.settle(g);
     g.rng = game.harness.procRng(g, .glacial_shot, 3, true);
-    game.useSkill(g, boundTo(g, .glacial_shot));
+    game.useSkill(g, game.harness.boundTo(g, .glacial_shot));
     try capture(g, target, SHOTS_DIR ++ "/glacial-aim.png");
     game.confirmAim(g);
     g.st = .{};
@@ -119,7 +119,7 @@ pub fn shoot(g: *game.Game) !void {
     game.update(g, 0.14);
     try capture(g, target, SHOTS_DIR ++ "/glacial.png");
     game.harness.drawnOut(g);
-    posePicker(g, boundTo(g, .glacial_shot));
+    posePicker(g, game.harness.boundTo(g, .glacial_shot));
     try capture(g, target, SHOTS_DIR ++ "/glacial-bind.png");
 
     try shootEffects(g, target);
@@ -271,7 +271,7 @@ pub fn shootDebug(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
     poseWaterMirrors(g, MORNING, true);
-    g.fx.zap(0, .{ .from = .{ 27.5, 20.5 }, .to = .{ 29.5, 20.5 } });
+    g.fx.zap(0, POSE_ZAP);
     try capture(g, target, SHOTS_DIR ++ "/debug/all-on.png");
     inline for (std.meta.fields(light.Options)) |f| {
         try checkDebugOption(g, target, &@field(g.light.options, f.name), f.name);
@@ -283,10 +283,8 @@ pub fn shootDebug(g: *game.Game) !void {
     try loadStrand(g, w);
     try checkDebugOption(g, target, &g.debug.visuals.weather, "weather");
     game.character.openPause(g);
-    g.pause_page = .debug;
     inline for (comptime std.enums.values(game.debugging.Page)) |page| {
-        g.debug.page = page;
-        g.pause_menu = .{};
+        game.debugging.open(g, page);
         try capture(g, target, SHOTS_DIR ++ "/debug/menu-" ++ @tagName(page) ++ ".png");
     }
     try shootLoot(g);
@@ -314,9 +312,13 @@ fn checkDebugOption(g: *game.Game, target: rl.RenderTexture2D, option: *bool, co
 
 fn differentPixels(a: rl.Image, b: rl.Image) usize {
     var changed: usize = 0;
-    var pixels = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = a.width, .y = a.height });
-    while (pixels.next()) |p| changed += @intFromBool(!sameRgb(rl.getImageColor(a, p.x, p.y), rl.getImageColor(b, p.x, p.y)));
+    var px = pixels(a.width, a.height);
+    while (px.next()) |p| changed += @intFromBool(!sameRgb(rl.getImageColor(a, p.x, p.y), rl.getImageColor(b, p.x, p.y)));
     return changed;
+}
+
+fn pixels(width: i32, height: i32) grid.Cells {
+    return grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = width, .y = height });
 }
 
 fn shootLoot(g: *game.Game) !void {
@@ -328,7 +330,7 @@ fn shootLoot(g: *game.Game) !void {
     const target = try renderTarget(g);
     defer rl.unloadRenderTexture(target);
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    grassOver(&g.lv);
+    game.harness.grassOver(&g.lv);
     const bag = P{ .x = 19, .y = 20 };
     const chest = P{ .x = 21, .y = 20 };
     for ([_]items.Kind{ .ring, .boots, .axe }) |kind| _ = g.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null } }, .at = bag });
@@ -359,16 +361,10 @@ fn shootLoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/loot-full.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{chest});
-    grassOver(&g.lv);
-    var seed: u64 = 0;
-    while (true) : (seed += 1) {
-        var probe = mathx.Rng.init(seed);
-        const reward = items.foeLoot(&probe);
-        if (reward.gold > 0 and reward.item != null and reward.item.?.magical()) break;
-    }
-    g.loot_rng = mathx.Rng.init(seed);
+    game.harness.grassOver(&g.lv);
+    g.loot_rng = game.harness.lootRng(true);
     game.settle(g);
-    game.combat.wound(g, 2, .{ .dmg = 1000 }, game.combat.SHOOT, .{ .from = g.heroActor().?.at, .wait = 0.2 });
+    game.harness.slay(g, 2, g.heroActor().?.at);
     try capture(g, target, SHOTS_DIR ++ "/loot-foe-before.png");
     game.harness.drawnOut(g);
     try capture(g, target, SHOTS_DIR ++ "/loot-foe-dropped.png");
@@ -484,20 +480,16 @@ fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []con
     drawInto(g, target);
     const restored = try readTarget(target);
     defer rl.unloadImage(restored);
-    {
-        var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = base.width, .y = base.height });
-        while (px.next()) |q| {
-            const x = q.x;
-            const y = q.y;
-            if (!std.meta.eql(rl.getImageColor(base, x, y), rl.getImageColor(restored, x, y))) return error.CinemaOffChangedFrame;
-        }
+    var px = pixels(base.width, base.height);
+    while (px.next()) |p| {
+        if (!std.meta.eql(rl.getImageColor(base, p.x, p.y), rl.getImageColor(restored, p.x, p.y))) return error.CinemaOffChangedFrame;
     }
 }
 
 const CINEMA_FRAMES = 120;
 
 fn checkCinema(g: *game.Game, target: rl.RenderTexture2D) !void {
-    g.fx.zap(0, .{ .from = .{ 27.5, 20.5 }, .to = .{ 29.5, 20.5 } });
+    g.fx.zap(0, POSE_ZAP);
     try captureCinema(g, target, "spell");
     const options = g.cinema.options;
     defer g.cinema.options = options;
@@ -721,7 +713,7 @@ fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         const from = P{ .x = 20, .y = 20 };
         game.harness.heroArena(g, study[0], from, &.{});
         carve.box(&g.lv, .{ .lo = .{ .x = 13, .y = 13 }, .hi = .{ .x = 33, .y = 28 } }, .grass);
-        wallRow(&g.lv, 17, 18, 29);
+        game.harness.wallRow(&g.lv, 17, 18, 29);
         @import("../map/procgen.zig").reshape(&g.lv);
         for ([_]P{ .{ .x = 23, .y = 20 }, .{ .x = 24, .y = 19 }, .{ .x = 24, .y = 21 }, .{ .x = 22, .y = 21 } }) |at| _ = game.harness.spawnAt(g, .slime, at, false);
         game.harness.toughenFoes(g);
@@ -730,7 +722,7 @@ fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         const directory = SHOTS_DIR ++ "/fx-" ++ @tagName(act);
         try std.fs.cwd().makePath(directory);
         try capture(g, target, directory ++ "/before.png");
-        game.useSkill(g, boundTo(g, act));
+        game.useSkill(g, game.harness.boundTo(g, act));
         if (act.reticle()) |reticle| {
             g.mark = if (reticle == .leap) .{ .x = 22, .y = 20 } else .{ .x = 23, .y = 20 };
             game.confirmAim(g);
@@ -781,7 +773,7 @@ fn shootHud(g: *game.Game) !void {
         defer rl.unloadRenderTexture(target);
         try capture(g, target, study.path);
         if (study.bind) |path| {
-            posePicker(g, boundTo(g, .shoot));
+            posePicker(g, game.harness.boundTo(g, .shoot));
             try capture(g, target, path);
         }
         if (study.ailing) {
@@ -790,7 +782,7 @@ fn shootHud(g: *game.Game) !void {
             g.st.down.insert(g.bar.modifier.?);
             try capture(g, target, SHOTS_DIR ++ "/hud-secondary-pad.png");
             g.st.down = .initEmpty();
-            posePicker(g, boundTo(g, .shoot));
+            posePicker(g, game.harness.boundTo(g, .shoot));
             try capture(g, target, SHOTS_DIR ++ "/hud-bind-pad.png");
             g.mode = .inspect;
             g.inspecting = .{ .slot = game.Binds.colOf(.x) };
@@ -822,14 +814,8 @@ fn promptRoom(g: *const game.Game) void {
     std.debug.assert(least >= PROMPT_GAP_MIN);
 }
 
-pub fn boundTo(g: *const game.Game, act: skillbar.Act) game.Use {
-    for (skillbar.SETS) |s| {
-        if (g.bar.buttonOf(s, act)) |b| return .{ .act = act, .by = b, .set = s };
-    }
-    unreachable;
-}
-
 const POSE_BURST = P{ .x = 25, .y = 15 };
+const POSE_ZAP = fx.Zap{ .from = .{ 27.5, 20.5 }, .to = .{ 29.5, 20.5 } };
 pub const MIDNIGHT: f32 = 0;
 const LATE_NIGHT: f32 = day.SUNRISE - 2;
 const DAWN: f32 = day.SUNRISE + 1;
@@ -847,17 +833,8 @@ fn posePicker(g: *game.Game, u: game.Use) void {
     game.openBinds(g);
     g.binds.row = game.rowAt(u.set);
     g.binds.col = game.Binds.colOf(u.by);
-    var kit_buf: game.KitBuf = undefined;
-    g.binds.menu = .{ .pick = game.pickOf(g.growth.kit(g.class, &kit_buf), g.bar.at(g.binds.slot())) };
-}
-
-/// Wall from `lo` to `hi`, both inclusive.
-fn wallIn(lv: *grid.Level, lo: P, hi: P) void {
-    carve.box(lv, grid.Box.between(lo, hi), .wall);
-}
-
-pub fn wallRow(lv: *grid.Level, y: i32, x0: i32, x1: i32) void {
-    wallIn(lv, .{ .x = x0, .y = y }, .{ .x = x1, .y = y });
+    var kit_buf: skillbar.KitBuf = undefined;
+    g.binds.openPick(g.growth.kit(g.class, &kit_buf), &g.bar);
 }
 
 fn poseFright(g: *game.Game) void {
@@ -885,18 +862,18 @@ fn speechLeft(g: *const game.Game) f32 {
 
 fn poseGas(g: *game.Game) void {
     game.harness.arena(g, .{ .x = 23, .y = 16 }, &.{.{ .x = 24, .y = 15 }});
-    wallRow(&g.lv, 10, 13, 31);
-    wallRow(&g.lv, 21, 13, 31);
-    wallIn(&g.lv, .{ .x = 13, .y = 10 }, .{ .x = 13, .y = 21 });
-    wallIn(&g.lv, .{ .x = 31, .y = 10 }, .{ .x = 31, .y = POSE_BURST.y - 1 });
-    wallIn(&g.lv, .{ .x = 31, .y = POSE_BURST.y + 1 }, .{ .x = 31, .y = 21 });
+    game.harness.wallRow(&g.lv, 10, 13, 31);
+    game.harness.wallRow(&g.lv, 21, 13, 31);
+    game.harness.wallIn(&g.lv, .{ .x = 13, .y = 10 }, .{ .x = 13, .y = 21 });
+    game.harness.wallIn(&g.lv, .{ .x = 31, .y = 10 }, .{ .x = 31, .y = POSE_BURST.y - 1 });
+    game.harness.wallIn(&g.lv, .{ .x = 31, .y = POSE_BURST.y + 1 }, .{ .x = 31, .y = 21 });
     g.lv.addTorch(.{ .x = 22, .y = 10 });
     _ = g.pool.spawn(&g.lv, actor.Actor.of(.bloat, .{ .x = 16, .y = 12 }));
     _ = g.pool.spawn(&g.lv, actor.Actor.of(.bloat, .{ .x = 26, .y = 14 }));
     g.lv.putBarrel(.{ .x = 26, .y = 16 });
     g.lv.set(.{ .x = 24, .y = 14 }, .chest);
     g.lv.set(.{ .x = 25, .y = 17 }, .boulder);
-    wallIn(&g.lv, .{ .x = 28, .y = 13 }, .{ .x = 28, .y = 17 });
+    game.harness.wallIn(&g.lv, .{ .x = 28, .y = 13 }, .{ .x = 28, .y = 17 });
     g.lv.addGas(POSE_BURST, gas.BURST);
     for (0..POSE_GAS_TURNS) |_| gas.turn(&g.lv, &g.rng);
     posed(g, false);
@@ -929,7 +906,7 @@ comptime {
 
 fn poseWaterSteps(g: *game.Game) void {
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    grassOver(&g.lv);
+    game.harness.grassOver(&g.lv);
     var cells = grid.Cells.of(.{ .x = 17, .y = 15 }, .{ .x = 30, .y = 26 });
     while (cells.next()) |p| g.lv.set(p, if (p.x < 19) .water else .shallows);
     for (WADERS) |w| _ = game.harness.spawnAt(g, w.kind, w.at, false);
@@ -946,7 +923,7 @@ fn poseWaterSteps(g: *game.Game) void {
 
 fn poseWaterMirrors(g: *game.Game, hour: f32, outdoors: bool) void {
     game.harness.arena(g, .{ .x = 24, .y = 20 }, &.{.{ .x = 27, .y = 21 }});
-    grassOver(&g.lv);
+    game.harness.grassOver(&g.lv);
     var cells = grid.Cells.of(.{ .x = 17, .y = 18 }, .{ .x = 33, .y = 26 });
     while (cells.next()) |p| g.lv.set(p, if (p.y >= 23) .water else .shallows);
     for ([_]i32{ 19, 20, 21, 28, 29 }) |x| g.lv.set(.{ .x = x, .y = 17 }, .shrub);
@@ -954,14 +931,14 @@ fn poseWaterMirrors(g: *game.Game, hour: f32, outdoors: bool) void {
     g.lv.putBarrel(.{ .x = 21, .y = 21 });
     _ = game.harness.spawnAt(g, .wizard, .{ .x = 25, .y = 23 }, false);
     _ = game.harness.spawnAt(g, .slime, .{ .x = 29, .y = 22 }, false);
-    wallRow(&g.lv, 17, 23, 26);
+    game.harness.wallRow(&g.lv, 17, 23, 26);
     g.lv.addTorch(.{ .x = 24, .y = 17 });
     studyLit(g, outdoors, hour);
 }
 
 fn poseForest(g: *game.Game) void {
     game.harness.arena(g, .{ .x = 24, .y = 18 }, &.{});
-    grassOver(&g.lv);
+    game.harness.grassOver(&g.lv);
     const rows = [_][]const u8{
         "...................",
         ".#####...####......",
@@ -983,8 +960,8 @@ fn poseForest(g: *game.Game) void {
 
 fn poseShadowStudy(g: *game.Game, hour: f32, outdoors: bool) void {
     game.harness.arena(g, .{ .x = 24, .y = 21 }, &.{.{ .x = 29, .y = 22 }});
-    grassOver(&g.lv);
-    wallRow(&g.lv, 16, 22, 26);
+    game.harness.grassOver(&g.lv);
+    game.harness.wallRow(&g.lv, 16, 22, 26);
     if (!outdoors) g.lv.addTorch(.{ .x = 24, .y = 16 });
     const props = [_]struct { t: grid.Tile, p: P }{
         .{ .t = .wall, .p = .{ .x = 16, .y = 19 } },
@@ -1031,7 +1008,7 @@ fn posed(g: *game.Game, outdoors: bool) void {
 
 fn poseTorch(g: *game.Game) void {
     game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{ .{ .x = 17, .y = 12 }, .{ .x = 23, .y = 13 } });
-    wallRow(&g.lv, POSE_TORCH.y, 12, 28);
+    game.harness.wallRow(&g.lv, POSE_TORCH.y, 12, 28);
     g.lv.set(.{ .x = 22, .y = 12 }, .wall);
     g.lv.addTorch(POSE_TORCH);
     posed(g, false);
@@ -1045,15 +1022,15 @@ fn poseHiddenShadows(g: *game.Game, hour: ?f32) void {
     const x = HIDDEN_SHADOW_X;
     const row = HIDDEN_SHADOW_ROWS;
     game.harness.arena(g, .{ .x = 22, .y = 19 }, &.{.{ .x = x, .y = row.get(.actor) }});
-    grassOver(&g.lv);
+    game.harness.grassOver(&g.lv);
     g.lv.set(.{ .x = x, .y = row.get(.forest) }, .shrub);
     g.lv.set(.{ .x = x, .y = row.get(.forest) + 1 }, .shrub);
     g.lv.set(.{ .x = x, .y = row.get(.tree) }, .shrub);
     g.lv.putBarrel(.{ .x = x, .y = row.get(.barrel) });
     if (hour == null) {
-        wallRow(&g.lv, 12, 29, 31);
+        game.harness.wallRow(&g.lv, 12, 29, 31);
         g.lv.addTorch(.{ .x = 30, .y = 12 });
-        wallRow(&g.lv, 18, 29, 31);
+        game.harness.wallRow(&g.lv, 18, 29, 31);
         g.lv.addTorch(.{ .x = 30, .y = 18 });
     }
     studyAt(g, hour != null, hour orelse day.NOON);
@@ -1063,12 +1040,6 @@ fn poseHiddenShadows(g: *game.Game, hour: ?f32) void {
         g.lv.lit[i] = visible;
     }
     g.light.settle(&g.lv);
-}
-
-fn grassOver(lv: *grid.Level) void {
-    for (&lv.tile) |*t| {
-        if (t.* == .floor) t.* = .grass;
-    }
 }
 
 fn waterSample(g: *game.Game, target: rl.RenderTexture2D, beds: *const dual.Beds, view: ?look.WaterView, origin: [2]f32) !rl.Image {
@@ -1155,7 +1126,7 @@ fn checkWaterSurface(g: *game.Game) !void {
     var reflected = [_]usize{0} ** BANDS.len;
     var fixed: usize = 0;
     {
-        var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = width, .y = height });
+        var px = pixels(width, height);
         while (px.next()) |q| {
             const x = q.x;
             const y = q.y;
@@ -1185,7 +1156,7 @@ fn checkWaterSurface(g: *game.Game) !void {
     defer rl.unloadImage(memory);
     var remembered = [_]usize{0} ** BANDS.len;
     {
-        var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = width, .y = height });
+        var px = pixels(width, height);
         while (px.next()) |q| {
             const x = q.x;
             const y = q.y;
@@ -1211,7 +1182,7 @@ fn checkWaterSurface(g: *game.Game) !void {
     defer rl.unloadImage(shifted);
     var compared: usize = 0;
     {
-        var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = width - shift.x, .y = height - shift.y });
+        var px = pixels(width - shift.x, height - shift.y);
         while (px.next()) |q| {
             const x = q.x;
             const y = q.y;
@@ -1226,7 +1197,7 @@ fn checkWaterSurface(g: *game.Game) !void {
 
 fn checkMapEdge(g: *game.Game, target: rl.RenderTexture2D) !void {
     game.harness.arena(g, .{ .x = 24, .y = grid.H - 4 }, &.{});
-    grassOver(&g.lv);
+    game.harness.grassOver(&g.lv);
     for (0..grid.W) |x| g.lv.set(.{ .x = @intCast(x), .y = grid.H - 1 }, .grass);
     studyLit(g, true, day.NOON);
     const edge = @divTrunc(g.screen.y, 2);
@@ -1270,7 +1241,7 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     var compared: usize = 0;
     var reflected: usize = 0;
     {
-        var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = original.width - shift.x, .y = original.height - shift.y });
+        var px = pixels(original.width - shift.x, original.height - shift.y);
         while (px.next()) |q| {
             const x = q.x;
             const y = q.y;
@@ -1298,12 +1269,10 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     defer rl.unloadImage(empty);
     var remembered: usize = 0;
     {
-        var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = memory.width, .y = memory.height });
-        while (px.next()) |q| {
-            const x = q.x;
-            const y = q.y;
-            if (rl.getImageColor(memory, x, y).a > 0) remembered += 1;
-            if (!std.meta.eql(rl.getImageColor(dim, x, y), rl.getImageColor(empty, x, y))) return error.WaterMirrorRevealsHidden;
+        var px = pixels(memory.width, memory.height);
+        while (px.next()) |p| {
+            if (rl.getImageColor(memory, p.x, p.y).a > 0) remembered += 1;
+            if (!std.meta.eql(rl.getImageColor(dim, p.x, p.y), rl.getImageColor(empty, p.x, p.y))) return error.WaterMirrorRevealsHidden;
         }
     }
     if (remembered < MIN_PIXELS) return error.WaterMemoryMissing;
@@ -1319,11 +1288,9 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
         const hidden = try readTarget(t);
         defer rl.unloadImage(hidden);
         {
-            var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = hidden.width, .y = hidden.height });
-            while (px.next()) |q| {
-                const x = q.x;
-                const y = q.y;
-                if (rl.getImageColor(hidden, x, y).a != 0) return error.WaterMirrorRevealsHidden;
+            var px = pixels(hidden.width, hidden.height);
+            while (px.next()) |p| {
+                if (rl.getImageColor(hidden, p.x, p.y).a != 0) return error.WaterMirrorRevealsHidden;
             }
         }
     }
@@ -1349,7 +1316,7 @@ fn checkRememberedBarrels(g: *game.Game, target: rl.RenderTexture2D, before: rl.
     const forgotten = try readTarget(g.sprites.mirror_memory.?);
     defer rl.unloadImage(forgotten);
     var kept: usize = 0;
-    var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = before.width, .y = before.height });
+    var px = pixels(before.width, before.height);
     while (px.next()) |p| {
         const a = rl.getImageColor(before, p.x, p.y);
         const b = rl.getImageColor(broken, p.x, p.y);
@@ -1376,7 +1343,7 @@ fn checkHiddenShadowMask(g: *game.Game, target: rl.RenderTexture2D, visible: boo
     var hits = std.EnumArray(Hidden, usize).initFill(0);
     var leaked: usize = 0;
     {
-        var px = grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = g.screen.x, .y = g.screen.y });
+        var px = pixels(g.screen.x, g.screen.y);
         while (px.next()) |q| {
             const x = q.x;
             const y = q.y;

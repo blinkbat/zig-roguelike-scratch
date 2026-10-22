@@ -139,7 +139,7 @@ pub fn clearAround(lv: *const grid.Level, p: P) bool {
     return true;
 }
 
-/// What a scatter lays over: `tile`, and if `decked` the decor standing on it too.
+/// What a scatter lays over: `tile`, and if `decked` the decor standing on it too; with `water_range`, only that near water.
 pub const Over = struct {
     tile: grid.Tile,
     decked: bool = false,
@@ -243,7 +243,7 @@ pub fn field(lv: *grid.Level, pal: Palette) void {
     rim(lv, pal.solid);
 }
 
-fn rimAt(i: usize) bool {
+pub fn rimAt(i: usize) bool {
     return grid.Level.onRim(grid.Level.of(i));
 }
 

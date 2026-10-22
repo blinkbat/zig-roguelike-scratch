@@ -156,23 +156,6 @@ Implemented in `ui/book.zig`, `ui/trees.zig` and `ui/hud.zig`, with shared
 damage inputs in `play/skillbar.zig`/`play/progress.zig`, role names in
 `play/items.zig`, and the global menu palette in `gfx/look.zig`.
 
-Verified on 2026-10-20:
-
-- `check.cmd` and the normal Debug `build.cmd` pass.
-- Focused suites `tooltip`, `book`, `trees`, `weapon`, `equipment` and
-  `attribute` pass: 17 substantive tests, plus the root import checks.
-  These include 256 exact combat outcomes across melee, arrows, mixed arrows and
-  resisted spells, both ring destinations, displaced-hand requirements, and
-  forward/reverse swaps for all three great weapons.
-- After the size adjustment, `ui.` and `binding` suites pass: 17 substantive tests
-  plus root import checks, including scaled pointer targets and tree navigation.
-- The full headless capture harness completes. Character pages are captured at
-  1280x720, 1600x900 and 1920x1080. Inspected equipment, comparisons, stats, both
-  trees, all three classes' skill details, bindings, naming and editor help.
-  Damage and cost lines fit above the action footer.
-- Final capture set: `%TEMP%/cistern-ui-audit-758b01f7f45a453eb57ad0fa0eab8231/shots/`.
-  Captures are disposable evidence; no generated images were added to the repo.
-
 ## Direct manipulation and readable scale (2026-10-20)
 
 The input audit found four confirmations to equip, a forced return to play after every item action, a hidden hold to bind, and two back presses just to leave content. These were interface costs without a useful decision.

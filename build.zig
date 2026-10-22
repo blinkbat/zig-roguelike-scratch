@@ -76,7 +76,7 @@ fn fixMacosDpi(b: *std.Build, raylib: *std.Build.Step.Compile) void {
         for (sources.files, 0..) |name, i| {
             if (!std.mem.eql(u8, name, "src/rcore.c")) continue;
             const original = sources.root.path(b, name);
-            const source = std.fs.cwd().readFileAlloc(b.allocator, original.getPath(b), 1 << 20) catch |err|
+            const source = std.fs.cwd().readFileAlloc(b.allocator, original.getPath(b), READ_MAX) catch |err|
                 std.debug.panic("Could not read raylib core: {s}", .{@errorName(err)});
             const old = "Vector2 scale = GetWindowScaleDPI();";
             const new = "Vector2 scale = IsWindowState(FLAG_WINDOW_HIGHDPI)? GetWindowScaleDPI() : (Vector2){ 1.0f, 1.0f };";
@@ -151,9 +151,10 @@ fn embedded(name: []const u8) bool {
 }
 
 const MIN_SRC: u64 = 512;
+const READ_MAX = 1 << 20;
 
 fn checkTestRoster(b: *std.Build) void {
-    const file = b.build_root.handle.readFileAlloc(b.allocator, ROOT, 1 << 20) catch |e|
+    const file = b.build_root.handle.readFileAlloc(b.allocator, ROOT, READ_MAX) catch |e|
         std.debug.panic(ROOT ++ " could not be read ({s})", .{@errorName(e)});
     const at = std.mem.indexOf(u8, file, "\ntest {") orelse
         std.debug.panic(ROOT ++ " has no `test {{` block", .{});

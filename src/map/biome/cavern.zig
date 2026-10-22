@@ -11,7 +11,7 @@ pub const CHAMBERS_MAX: u8 = 40;
 pub const RADIUS_MIN: u8 = 2;
 pub const RADIUS_MAX: u8 = 14;
 const TRIES: usize = 400;
-/// Of a chamber's radius, how far one may reach into another.
+/// Of two chambers' radii summed, how far one may reach into the other.
 const OVERLAP: f32 = 0.3;
 
 pub const Params = struct {

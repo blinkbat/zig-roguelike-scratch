@@ -61,13 +61,8 @@ pub const MAP_PX = P{ .x = grid.W * CELL, .y = grid.H * CELL };
 pub fn authored(comptime px: i32) i32 {
     return @divExact(CELL * px, look.SPRITE_PX);
 }
-/// Screen pixels to a sprite's pixel.
-pub const PX_SCALE: f32 = @floatFromInt(@divExact(CELL, look.SPRITE_PX));
 pub const GLYPH: i32 = authored(look.GLYPH_PX);
-pub const TEXT: i32 = font.BODY;
 pub const LINE_W: i32 = authored(2);
-const TEXT_LEADING: i32 = 6;
-pub const TEXT_LINE: i32 = TEXT + TEXT_LEADING;
 const DEAD_TITLE_DY: i32 = -100;
 const DEAD_SCORE_DY: i32 = -10;
 const DEAD_ACTION_DY: i32 = 40;
@@ -137,7 +132,7 @@ comptime {
     std.debug.assert(GLYPH <= CELL);
     std.debug.assert(SKILLS_W <= hud.SKILLS_MAX_W);
     std.debug.assert(hud.PLATE_PAD + SLOT_COLUMN_H <= hud.PLATE_H);
-    std.debug.assert(font.isNative(look.labelPx(PROMPT_PX)));
+    std.debug.assert(look.labelPx(PROMPT_PX) == font.LABEL);
 }
 
 pub const Mode = enum { play, aim, bind, dead, pause, inspect };
@@ -184,6 +179,10 @@ pub const Binds = struct {
 
     pub fn colOf(button: input.Button) usize {
         return std.mem.indexOfScalar(input.Button, &skillbar.SLOTS, button).?;
+    }
+
+    pub fn openPick(b: *Binds, kit: []const skillbar.Act, bar: *const skillbar.Bar) void {
+        b.menu = .{ .pick = pickOf(kit, bar.at(b.slot())) };
     }
 };
 
@@ -268,7 +267,7 @@ test "missiles move continuously to the existing impact time in every direction"
         const delta = d.delta();
         const to = P{ .x = from.x + delta.x * 6, .y = from.y + delta.y * 6 };
         const shot_ = Shot{ .from = from, .flight = bow.fly(&lv, from, to) };
-        const lands = flown(shot_.flight.len - 1);
+        const lands = shot_.lands();
         try std.testing.expectEqual(mathx.centre(from), shot_.position(0));
         try std.testing.expectEqual(mathx.centre(to), shot_.position(lands));
         const a = shot_.position(lands * 0.4);
@@ -514,8 +513,12 @@ pub const Perf = struct {
         p.* = .{ .buf = p.buf, .len = len };
     }
 
+    pub fn text(p: *const Perf) [:0]const u8 {
+        return p.buf[0..p.len :0];
+    }
+
     pub fn draw(p: *const Perf, face: *const font.Face) void {
-        face.draw(p.buf[0..p.len :0], AT.x, AT.y, font.SMALL, COLOR);
+        face.draw(p.text(), AT.x, AT.y, font.SMALL, COLOR);
     }
 };
 
@@ -621,6 +624,8 @@ pub const Game = struct {
     seq: u64 = 0,
     /// Indexed by pool slot: the slot a slime split off, until the blow that split it lands.
     split_from: [actor.MAX]?usize = @splat(null),
+    /// Indexed by pool slot: gold a death added to its cell's pile, kept off the drawn pile until that death is drawn.
+    dropped_gold: [actor.MAX]i32 = @splat(0),
     fx: fx.Fx = .{},
     vignette: vignette.Vignette = .{},
     cinema: cinema.Cinema = .{},
@@ -733,8 +738,7 @@ fn enter(g: *Game, n: usize, at: P) void {
     const h = g.heroActor().?;
     carried.at = h.at;
     h.* = carried;
-    combat.collectGold(g, h.at);
-    combat.noticeItems(g, h.at);
+    combat.arrive(g, h.at);
     g.unsaved = true;
     freshTurn(g);
     settle(g);
@@ -757,12 +761,12 @@ fn goThrough(g: *Game, l: atlas.Link) void {
     const hero = heroSlot(g).?;
     const facing = g.facing[hero];
     const level_up = g.fx.level_up;
+    var title: [atlas.TITLE_MAX]u8 = undefined;
+    g.log.say("Entered {s}.", .{g.map.?.node[l.node].title(l.node, &title)});
     enter(g, l.node, g.map.?.door(l).at);
     g.pending = walk;
     g.facing[hero] = facing;
     g.fx.level_up = level_up;
-    var title: [atlas.TITLE_MAX]u8 = undefined;
-    g.log.say("Entered {s}.", .{g.map.?.node[l.node].title(l.node, &title)});
 }
 
 /// Finish pending facing changes and door travel before leaving a run.
@@ -810,7 +814,7 @@ fn freshRun(g: *Game) void {
 }
 
 fn freshTurn(g: *Game) void {
-    toDefaults(g, &.{ "shot", "travel", "order_n", "busy", "pending", "lead", "owed", "split_from", "turning", "displaced", "gold_taken" });
+    toDefaults(g, &.{ "shot", "travel", "order_n", "busy", "pending", "lead", "owed", "split_from", "dropped_gold", "turning", "displaced", "gold_taken" });
     g.fx.clear();
     g.cloud.clear();
 }
@@ -935,8 +939,7 @@ pub fn heroBump(g: *Game, from: P, at: P, late: f32) combat.Stroke {
 
 pub fn heroTo(g: *Game, to: P) void {
     g.pool.move(&g.lv, g.hero, to);
-    combat.collectGold(g, to);
-    combat.noticeItems(g, to);
+    combat.arrive(g, to);
     g.stepped = true;
     g.travel = leadsTo(g, to);
 }
@@ -1004,9 +1007,13 @@ pub fn syncStats(g: *Game) void {
     combat.settleHero(g, 0);
 }
 
+fn characterShown(g: *const Game) bool {
+    return g.mode == .pause and g.pause_page == .character;
+}
+
 /// Character is open with its tabs, not as the Nearby list.
 fn bookOpen(g: *const Game) bool {
-    return g.mode == .pause and g.pause_page == .character and !g.character.direct();
+    return characterShown(g) and !g.character.direct();
 }
 
 pub fn lifeMax(g: *const Game) i32 {
@@ -1211,8 +1218,6 @@ pub fn openBinds(g: *Game) void {
     g.mode = .bind;
 }
 
-pub const KitBuf = [skillbar.ACTS.len]skillbar.Act;
-
 fn bindStep(g: *Game) void {
     if (g.st.hit(CHARACTER)) {
         g.mode = .play;
@@ -1221,7 +1226,7 @@ fn bindStep(g: *Game) void {
     if (character.padToGame(g)) return;
     var state = g.st;
     const b = &g.binds;
-    var kit_buf: KitBuf = undefined;
+    var kit_buf: skillbar.KitBuf = undefined;
     const kit = g.growth.kit(g.class, &kit_buf);
     if (state.click) if (state.pointer) |pointer| {
         const panel = overlay.bindPanel(g);
@@ -1261,10 +1266,10 @@ fn bindStep(g: *Game) void {
                     g.bar.bind(here, act);
                     g.character.message.say("{s} bound.", .{act.name()});
                     g.mode = .pause;
-                } else b.menu = .{ .pick = pickOf(kit, g.bar.at(here)) };
+                } else b.openPick(kit, &g.bar);
             } else if (state.hit(CHANGE)) {
                 b.assigning = null;
-                b.menu = .{ .pick = pickOf(kit, g.bar.at(here)) };
+                b.openPick(kit, &g.bar);
             } else if (state.hit(REMOVE)) {
                 g.bar.clear(here);
             } else if (state.walk) |d| {
@@ -1548,7 +1553,7 @@ pub fn quiet(g: *const Game) bool {
 /// A held walk repeating does not displace a queued action.
 fn queueWalk(g: *Game, d: mathx.Dir) void {
     if (g.pending) |q| {
-        if (q != .walk) return;
+        if (q != .walk and g.st.repeating()) return;
     }
     g.pending = .{ .walk = d };
 }
@@ -1558,6 +1563,15 @@ fn queueInteract(g: *Game) bool {
     if (!g.st.interact or !character.anyNearby(g)) return false;
     g.pending = .interact;
     return true;
+}
+
+/// A frame that cannot take a turn queues its press for the next, as while busy.
+fn queuePress(g: *Game) void {
+    if (queueInteract(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
+        character.openInspect(g);
+    } else if (usedSkill(g)) |u| {
+        g.pending = .{ .skill = u };
+    } else if (g.st.walk) |d| queueWalk(g, d);
 }
 
 fn interacted(g: *Game) bool {
@@ -1593,7 +1607,7 @@ fn takeQueued(g: *Game, comptime tag: std.meta.Tag(Queued)) ?std.meta.TagPayload
 /// A stunned hero's next turn passes once the stunning one is drawn, wherever a turn could be spent.
 fn stunnedTurn(g: *Game) bool {
     if (!quiet(g) or g.travel != null) return false;
-    if (g.mode != .play and !(g.mode == .pause and g.pause_page == .character)) return false;
+    if (g.mode != .play and !characterShown(g)) return false;
     const h = g.heroActor() orelse return false;
     if (!h.clock.owes()) return false;
     h.clock.pass(turn_clock.TURN);
@@ -1650,14 +1664,12 @@ pub fn update(g: *Game, dt: f32) void {
         character.openCharacter(g);
     } else if (g.mode == .play and g.st.hit(PAUSE)) {
         character.openPause(g);
-    } else if (stunnedTurn(g)) {} else switch (g.mode) {
+    } else if (stunnedTurn(g)) {
+        if (g.mode == .play) queuePress(g);
+    } else switch (g.mode) {
         .play => {
             if (g.travel) |l| {
-                if (queueInteract(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
-                    character.openInspect(g);
-                } else if (usedSkill(g)) |u| {
-                    g.pending = .{ .skill = u };
-                } else if (g.st.walk) |d| queueWalk(g, d);
+                queuePress(g);
                 if (quiet(g)) goThrough(g, l);
             } else if (interacted(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
                 character.openInspect(g);
@@ -1684,7 +1696,7 @@ pub fn update(g: *Game, dt: f32) void {
         },
         .pause => character.pauseStep(g),
     }
-    if ((g.mode == .pause and g.pause_page == .character) or g.mode == .inspect) if (g.travel) |l| if (quiet(g)) goThrough(g, l);
+    if (characterShown(g) or g.mode == .inspect) if (g.travel) |l| if (quiet(g)) goThrough(g, l);
     if (!std.meta.eql(was, screenOf(g))) holdWalk(g);
     stepGlide(g, late);
     catchUp(g);
@@ -1701,7 +1713,7 @@ pub fn update(g: *Game, dt: f32) void {
     g.light.sky = skyNow(g);
     g.light.step(&g.lv, dt);
     g.light.carrier = carrierAt(g);
-    if (g.debug.visuals.weather) g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, PX_SCALE);
+    if (g.debug.visuals.weather) g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, CELL_F);
 }
 
 fn skyNow(g: *const Game) ?sky.Sky {
@@ -1720,9 +1732,9 @@ fn climateNow(g: *const Game) climate.Climate {
 /// Per second, how fast the sky drawn catches the hour a turn moved on.
 const HOUR_EASE: f32 = 4;
 /// Per second, how fast the experience bar fills toward a drawn turn's experience.
-pub const XP_EASE: f32 = 8;
+const XP_EASE: f32 = 8;
 /// Per second, how fast the life and mana orbs fill toward what is shown.
-const RESOURCE_EASE = XP_EASE;
+pub const RESOURCE_EASE = XP_EASE;
 
 /// Levels gained so far, the current one's progress as the fraction.
 pub fn xpLevels(g: *const Game) f32 {
@@ -1750,10 +1762,10 @@ pub fn settleXp(g: *Game) void {
 }
 
 /// Whichever screen takes the way: a walk held across a change of it moves nothing on the new one.
-const Screen = struct { mode: Mode, pause_page: PausePage, character_page: book.Page, binds: std.meta.Tag(Binds.Menu) };
+const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, binds: std.meta.Tag(Binds.Menu) };
 
 fn screenOf(g: *const Game) Screen {
-    return .{ .mode = g.mode, .pause_page = g.pause_page, .character_page = g.character.page, .binds = std.meta.activeTag(g.binds.menu) };
+    return .{ .mode = g.mode, .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .binds = std.meta.activeTag(g.binds.menu) };
 }
 
 pub fn holdWalk(g: *Game) void {
@@ -1852,8 +1864,8 @@ fn drawDead(g: *Game) void {
     var died: [heroes.Name.MAX + DIED.len + 1]u8 = undefined;
     const said = menu.shout(&died, "{s}" ++ DIED, .{g.name.text()});
     menu.heading(g.face, g.screen, said, mid + DEAD_TITLE_DY, menu.TITLE, look.LIFE, look.LIFE);
-    textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, TEXT, look.TEXT);
-    const box = look.rect(@divTrunc(g.screen.x - overlay.ACTION.x, 2), mid + DEAD_ACTION_DY, overlay.ACTION.x, overlay.ACTION.y);
+    textMid(g, std.fmt.bufPrintZ(&buf, "{d} foes killed. Seed {d}.", .{ g.kills, g.seed }) catch "", mid + DEAD_SCORE_DY, font.BODY, look.TEXT);
+    const box = look.rect(@divTrunc(g.screen.x - menu.ACTION_WIDE.x, 2), mid + DEAD_ACTION_DY, menu.ACTION_WIDE.x, menu.ACTION_WIDE.y);
     menu.action(&g.face, box, look.Prompt.menuOf(&g.st, CONFIRM), if (g.permadeath) "Title" else "Restart");
 }
 
@@ -1948,7 +1960,9 @@ const MONITOR_OWNED = switch (@import("builtin").os.tag) {
     else => false,
 };
 
-const glfw = struct {
+pub const glfw = struct {
+    const GLProc = *const fn () callconv(.c) void;
+    pub extern fn glfwGetProcAddress(name: [*:0]const u8) ?GLProc;
     const Window = opaque {};
     const Monitor = opaque {};
     const VidMode = extern struct { width: c_int, height: c_int, red: c_int, green: c_int, blue: c_int, refresh: c_int };
@@ -2006,7 +2020,7 @@ pub fn frame(g: *Game) void {
     g.st.context = switch (g.mode) {
         .play => .play,
         .aim => .target,
-        .pause => if (g.pause_page == .character and g.character.treeActive()) .tree else .menu,
+        .pause => if (characterShown(g) and g.character.treeActive()) .tree else .menu,
         .bind, .dead, .inspect => .menu,
     };
     g.st.sets = g.mode == .inspect;

@@ -96,17 +96,16 @@ const OPEN_CRIB = Desk.NAV_CAPTION ++ " pick" ++ SEP ++ Desk.ENTER_CAPTION ++ " 
 const HELP_W: i32 = 1000;
 
 fn drawHelp(ed: *editor.Editor, g: *game.Game) void {
-    const line_h = editor.TEXT + editor.GAP;
-    const f = editor.modalFrame(g, HELP_W, editor.MODAL_HEAD + editor.PAD + editor.HELP_ROWS * line_h + editor.ROW_H + editor.PAD, "Every key", false);
+    const f = editor.modalFrame(g, HELP_W, editor.MODAL_HEAD + editor.PAD + editor.HELP_ROWS * editor.LINE_STEP + editor.ROW_H + editor.PAD, "Every key", false);
     const x = f.x;
     const w = f.w;
     var y = f.y;
     for (editor.HELP) |s| {
         panel.drawFit(g, s.head, editor.TEXT, w - 2 * editor.PAD, false, x + editor.PAD, y, look.DIM);
-        y += line_h;
+        y += editor.LINE_STEP;
         for (s.lines) |l| {
             panel.drawFit(g, l, editor.TEXT, w - 2 * editor.PAD, false, x + editor.PAD, y, look.TEXT);
-            y += line_h;
+            y += editor.LINE_STEP;
         }
     }
     backButton(ed, g, f.buttonX(), y, "Close");
@@ -150,7 +149,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     seenFacts(s, &facts);
     for (facts.all()) |l| {
         panel.drawFit(g, l, editor.TEXT, x + w - editor.PAD - dx, false, dx, dy, look.DIM);
-        dy += editor.TEXT + editor.GAP;
+        dy += editor.LINE_STEP;
     }
     backButton(ed, g, f.buttonX(), y + cells_h, "Close");
     if (seenFoe(s) != null) {
@@ -161,7 +160,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
 pub fn seenFoe(s: editor.Seen) ?actor.Kind {
     return switch (s) {
         .body => |kind| if (kind.foe()) kind else null,
-        else => null,
+        .tile, .barrel, .torch, .door => null,
     };
 }
 
@@ -181,10 +180,8 @@ fn seenName(s: editor.Seen) [:0]const u8 {
 pub fn seenPicture(g: *game.Game, s: editor.Seen, r: rl.Rectangle) void {
     switch (s) {
         .tile => |t| panel.swatch(g, t, r),
-        .body => |k| editor.figure(g, g.sprites.body(k), look.body(k), r),
-        .barrel => editor.figure(g, g.sprites.barrel, look.BARREL, r),
-        .torch => editor.glyph(g, look.TORCH.ch, r, look.TORCH.fg),
-        .door => editor.glyph(g, look.DOOR.ch, r, look.DOOR.fg),
+        .body => |k| panel.toolFigure(g, .{ .foe = k }, r),
+        inline .barrel, .torch, .door => |_, tag| panel.toolFigure(g, @unionInit(editor.Tool, @tagName(tag), {}), r),
     }
 }
 

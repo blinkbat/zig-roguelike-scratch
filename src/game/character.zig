@@ -65,14 +65,14 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
         const cell = grid.Level.idx(drop.at);
         if (listed.isSet(cell)) continue;
         listed.set(cell);
-        out[n] = .{ .kind = if (g.lv.at(drop.at) == .chest_open or g.lv.at(drop.at) == .chest) .chest else .bag, .at = drop.at };
+        out[n] = if (g.lv.at(drop.at).isChest()) .{ .chest = drop.at } else .{ .bag = drop.at };
         n += 1;
     }
     var cells = grid.Cells.around(at, game.INTERACT_REACH);
     while (cells.next()) |p| {
         const chest = chestReached(g, at, p) and !listed.isSet(grid.Level.idx(p));
         if (!chest and doorReached(g, at, p) == null) continue;
-        out[n] = .{ .kind = if (chest) .chest else .door, .at = p };
+        out[n] = if (chest) .{ .chest = p } else .{ .door = p };
         n += 1;
     }
     return out[0..n];
@@ -82,8 +82,8 @@ fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
     const hero = game.heroSlot(g) orelse return out[0..0];
     var n: usize = 0;
     for (g.ground.drops[0..g.ground.n], 0..) |drop, i| {
-        if (!drop.at.eq(at) or !dropReached(g, g.pool.items[hero].at, drop)) continue;
-        out[n] = .{ .kind = .loot, .index = i, .at = at, .item = drop.item };
+        if (!inLoot(g, g.pool.items[hero].at, at, drop)) continue;
+        out[n] = .{ .loot = .{ .index = i, .item = drop.item } };
         n += 1;
     }
     return out[0..n];
@@ -92,6 +92,10 @@ fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
 /// What Interact can reach from `from`, as listed and as resolved alike.
 fn dropReached(g: *const game.Game, from: P, drop: items.Drop) bool {
     return withinReach(from, drop.at) and dropShown(g, drop);
+}
+
+fn inLoot(g: *const game.Game, from: P, at: P, drop: items.Drop) bool {
+    return drop.at.eq(at) and dropReached(g, from, drop);
 }
 
 fn chestReached(g: *const game.Game, from: P, p: P) bool {
@@ -130,7 +134,7 @@ pub fn openNearby(g: *game.Game) bool {
     if (nearby.len == 0) return false;
     openCharacter(g);
     g.character.choose(.nearby);
-    if (nearby.len == 1 and nearby[0].kind != .door) characterCommand(g, nearby[0].command());
+    if (nearby.len == 1 and nearby[0] != .door) characterCommand(g, nearby[0].command());
     return true;
 }
 
@@ -152,6 +156,16 @@ pub fn openLoot(g: *game.Game, at: P) void {
 
 fn itemFailed(g: *game.Game, err: items.Failure) void {
     g.character.message.say("{s}", .{items.caption(err)});
+}
+
+fn takeDrop(g: *game.Game, i: usize) bool {
+    const item = g.ground.drops[i].item;
+    if (!g.ground.take(i, &g.inventory)) {
+        itemFailed(g, error.Full);
+        return false;
+    }
+    g.log.push(.loot, "Picked up {s}.", .{item.name()});
+    return true;
 }
 
 fn notYet(g: *game.Game) void {
@@ -219,35 +233,25 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
         .drop => |i| {
             if (i >= g.inventory.n) return;
             if (!game.combat.groundRoom(g)) return;
-            const added = g.ground.add(.{ .item = g.inventory.bag[i], .at = h.at });
-            std.debug.assert(added);
+            game.combat.dropItem(g, .{ .item = g.inventory.bag[i], .at = h.at });
             g.log.push(.loot, "Dropped {s}.", .{g.inventory.remove(i).name()});
         },
         .pickup => |i| {
             if (i >= g.ground.n or !dropReached(g, h.at, g.ground.drops[i])) return;
             if (g.character.page == .loot and !g.ground.drops[i].at.eq(g.character.loot_at)) return;
-            if (!g.ground.take(i, &g.inventory)) {
-                itemFailed(g, error.Full);
-                return;
-            }
-            g.log.push(.loot, "Picked up {s}.", .{g.inventory.bag[g.inventory.n - 1].name()});
+            if (!takeDrop(g, i)) return;
         },
         .take_all => {
             if (g.character.page != .loot) return;
             var taken: usize = 0;
             var i: usize = 0;
             while (i < g.ground.n) {
-                const drop = g.ground.drops[i];
-                if (!drop.at.eq(g.character.loot_at) or !dropReached(g, h.at, drop)) {
+                if (!inLoot(g, h.at, g.character.loot_at, g.ground.drops[i])) {
                     i += 1;
                     continue;
                 }
-                if (!g.ground.take(i, &g.inventory)) {
-                    itemFailed(g, error.Full);
-                    break;
-                }
+                if (!takeDrop(g, i)) break;
                 taken += 1;
-                g.log.push(.loot, "Picked up {s}.", .{drop.item.name()});
             }
             if (taken == 0) return;
         },
@@ -285,11 +289,7 @@ pub fn pauseStep(g: *game.Game) void {
             const i = g.pause_menu.step(&g.st, game.PAUSE_ROWS.len) orelse return;
             switch (game.PAUSE_ROWS[i]) {
                 .resume_ => g.mode = .play,
-                .debug => {
-                    g.pause_page = .debug;
-                    g.debug.page = .main;
-                    g.pause_menu = .{};
-                },
+                .debug => game.debugging.open(g, .main),
                 .back => {
                     g.mode = .play;
                     g.exit = .back;

@@ -16,6 +16,7 @@ const SECTION_MIN: i32 = 10;
 const STREET: i32 = 2;
 const MARGIN: i32 = 2;
 const ATTEMPTS: usize = 12;
+const JITTER: f32 = 0.5;
 /// In `grid.Tile.letter`'s legend; grass stands for the site's ground.
 const SYMBOLS = "\"#.";
 
@@ -193,7 +194,7 @@ fn solve(m: *const Model, rng: *mathx.Rng, w: usize, h: usize, out: *[CELLS_MAX]
             const k = wave[i].count();
             if (k == 0) return false;
             if (k == 1) continue;
-            const e = @as(f32, @floatFromInt(k)) + rng.unit() * 0.5;
+            const e = @as(f32, @floatFromInt(k)) + rng.unit() * JITTER;
             if (e < best_e) {
                 best_e = e;
                 best = i;

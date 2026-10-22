@@ -36,6 +36,7 @@ comptime {
 /// What `Attrs.reduction` and `Attrs.crit` are called.
 pub const REDUCTION_LABEL = "physical damage reduction";
 pub const CRIT_LABEL = "critical strike chance";
+pub const SCALES_FMT = "Scales with {s}";
 /// What a blow is, and so which attribute raises it.
 pub const Style = enum {
     heavy,
@@ -174,7 +175,7 @@ pub const Attrs = struct {
     }
 };
 
-const SHARE: u32 = mathx.PERCENT * mathx.PERCENT;
+const SHARE: u32 = mathx.BASIS_POINTS;
 
 /// A scaled amount: `whole`, and one more `part` times in `SHARE`.
 pub const Dealt = struct {

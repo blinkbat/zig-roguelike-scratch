@@ -4,7 +4,8 @@ const mathx = @import("../core/mathx.zig");
 
 const TTF = "Balthazar-Regular.ttf";
 const ATLAS_PX: i32 = 96;
-const NATIVE_SIZES = [_]i32{ TINY, 15, SMALL, BODY, HEAD };
+/// Drawn from its own point-filtered atlas, not the mipmapped one.
+const NATIVE_SIZES = [_]i32{ TINY, LABEL, SMALL, BODY, HEAD };
 const SHADOW_A: u16 = 200;
 /// Text size per pixel the shadow sits down and right.
 const SHADOW_STEP: i32 = 14;
@@ -12,15 +13,8 @@ pub const BODY: i32 = 20;
 pub const SMALL: i32 = 16;
 pub const HEAD: i32 = 24;
 pub const TINY: i32 = 12;
+pub const LABEL: i32 = 15;
 
-/// Drawn from its own point-filtered atlas, not the mipmapped one.
-pub fn isNative(size: i32) bool {
-    return std.mem.indexOfScalar(i32, &NATIVE_SIZES, size) != null;
-}
-
-comptime {
-    std.debug.assert(isNative(BODY) and isNative(SMALL) and isNative(HEAD) and isNative(TINY));
-}
 const ASCII_LO: i32 = ' ';
 const ASCII_N: usize = '~' + 1 - ASCII_LO;
 const SYMBOLS_MAX: usize = 16;
@@ -82,6 +76,12 @@ pub const Face = struct {
             if (s == cp) return i;
         }
         return null;
+    }
+
+    pub fn mipmapped(self: Face) Face {
+        var out = self;
+        out.native = @splat(null);
+        return out;
     }
 
     pub fn unload(self: *Face) void {
@@ -328,6 +328,7 @@ pub fn elided(buf: []u8, kept: []const u8, keep_end: bool) std.fmt.BufPrintError
 /// Between wrapped lines of text, past the text's size.
 pub const LEADING: i32 = 4;
 pub const SMALL_LINE: i32 = SMALL + LEADING;
+pub const BODY_LINE: i32 = BODY + LEADING;
 pub const WRAP_LINES_MAX: usize = 18;
 pub const WRAP_COLS_MAX: usize = 96;
 /// `wrap`'s lines, each nul-terminated.

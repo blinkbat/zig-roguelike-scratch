@@ -74,7 +74,7 @@ PS button do nothing; GLFW reads no touchpad.
 | Bind screen: change, remove | X, Y | C, Del |
 | Passive tree: browse | Left stick, actual bearing | WASD, arrows, numpad |
 | Passive tree: pan | Right stick | Shift + WASD/arrows/numpad |
-| Passive tree: zoom | D-pad up/down; X/Y steps | +/-, keypad +/-, Page Up/Down; C/Del steps |
+| Passive tree: zoom | D-pad up/down; X/Y steps | =/-, keypad +/-, Page Up/Down; C/Del steps |
 | Passive tree: overview | Right-stick click | Home |
 | Delete a save | Y | Del |
 | Fullscreen | Options > Fullscreen | Alt+Enter, or Options |
@@ -103,7 +103,7 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
   Reveal changes neither normal sight nor saved exploration. Back returns one submenu at a time,
   retaining the parent selection, before returning to Pause.
 - **Character** contains equipment, inventory, stats, shared passives and class skills. Shoulders / Q and E change pages from anywhere. Clicking a tab enters its content. Back closes Character in one step. Equip, unequip, drop and point allocation each take one deliberate action; no action submenu or confirmation modal. Rings have an explicit destination switch and the comparison follows that destination. Successful item actions keep the screen open and still spend one turn. Point allocation is free of simulation turns. The underlying inventory/progression transactions remain authoritative.
-- The passive tree starts zoomed in, at `trees.ZOOM_START`. Left-stick bearing browses, right stick pans, D-pad up/down zooms. Shifted keyboard navigation pans; +/- and Page Up/Down zoom; right-stick click / Home gives the overview. Pan and zoom never allocate points.
+- The passive tree starts zoomed in, at `trees.ZOOM_START`. Left-stick bearing browses, right stick pans, D-pad up/down zooms. Shifted keyboard navigation pans; =/-, keypad +/- and Page Up/Down zoom; right-stick click / Home gives the overview. Pan and zoom never allocate points.
 - **Interact** opens the loot modal for a sole visible bag or chest within reach. Multiple nearby containers/doors first offer a choice; selecting a container opens only its contents. Doors always keep a choice, preventing queued input from immediately returning through an arrival door. Loot offers Take item through the confirm control and Take all through the change control, with device glyphs and clickable buttons. Each successful pickup action takes one turn; Take all fills available inventory space and leaves excess items. The modal closes when empty. Busy input waits for the current turn or door travel. Gold collects automatically on movement and when opening loot, including a chest's gold as it opens.
 - **Inspect** walks the life orb, skill slots, mana orb, active statuses and event log without spending a turn. The
   log scrolls up/down while selected; move sideways to leave it. B, Select or
@@ -134,4 +134,4 @@ The second pass checked play, targeting, Character, both trees, binding, Inspect
 
 [D2R's console account](https://news.blizzard.com/en-us/article/23722094/bringing-the-original-diablo-ii-experience-to-console) supports direct skill trays and adapting interaction to the device. GGG's [PoE2 0.1.1c notes](https://webcdn.pathofexile.com/forum/view-thread/3717308) explicitly cover controller font enlargement, item navigation, dedicated interface-confirm bindings, advanced item information and a full-inventory weapon-swap fix. The useful comparison is direct access, readable consequences, consistent device hints and intact transactions. These are dated primary sources, not claims about every present-day default.
 
-Mapping/state tests and rendered captures do not substitute for a physical controller play session. `--shot-ui` captures Character and HUD studies without rerunning the map/effect studies; run it from a temporary working directory as with `--shot`.
+Mapping/state tests and rendered captures do not substitute for a physical controller play session. `--shot-ui` captures Character, loot, HUD and level-up studies without rerunning the map/effect studies; run it from a temporary working directory as with `--shot`.

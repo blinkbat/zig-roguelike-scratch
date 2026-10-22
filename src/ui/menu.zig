@@ -12,6 +12,8 @@ pub const CHARACTER = input.Button.character;
 pub const CHANGE = input.Button.x;
 pub const REMOVE = input.Button.y;
 pub const RUB = input.Button.x;
+pub const PAGE_PREV = input.Button.lb;
+pub const PAGE_NEXT = input.Button.rb;
 
 pub const TITLE: i32 = 54;
 pub const ROW: i32 = 28;
@@ -82,9 +84,7 @@ pub const Surface = struct {
 
     /// `f` as this surface draws it: scaled, from the mipmapped atlas rather than the native-size ones.
     pub fn faceFor(self: Surface, f: font.Face) font.Face {
-        var out = f;
-        if (self.scale != 1) out.native = @splat(null);
-        return out;
+        return if (self.scale != 1) f.mipmapped() else f;
     }
 
     pub fn clip(self: Surface, r: rl.Rectangle) void {
@@ -113,6 +113,11 @@ pub fn outline(r: rl.Rectangle, on: bool, on_ink: rl.Color, off_ink: rl.Color) v
 /// Inside an action box, its edge to the prompt and to the label's far side, and the prompt to the label.
 const ACTION_PAD: i32 = 10;
 pub const PROMPT_GAP: i32 = 8;
+pub const ACTION_BOX = mathx.P{ .x = 164, .y = 36 };
+/// A lone action button under a screen or panel, such as the death screen's.
+pub const ACTION_WIDE = mathx.P{ .x = 220, .y = 40 };
+pub const ACTION_GAP: i32 = 8;
+pub const PANEL_PAD: i32 = 24;
 
 pub fn action(face: *const font.Face, r: rl.Rectangle, prompt: look.Prompt, label: [:0]const u8) void {
     rl.drawRectangleRec(r, look.PICK_BG);

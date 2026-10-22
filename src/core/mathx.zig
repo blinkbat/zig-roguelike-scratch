@@ -93,6 +93,7 @@ pub fn cellOf(q: [2]f32) P {
 
 pub const PERCENT = 100;
 pub const MILLE = 1000;
+pub const BASIS_POINTS = PERCENT * PERCENT;
 
 pub fn fraction(pc: anytype) f32 {
     return @as(f32, @floatFromInt(pc)) / PERCENT;
@@ -245,6 +246,13 @@ pub fn removeAt(comptime T: type, items: []T, n: *usize, i: usize, blank: ?T) vo
     if (blank) |b| items[n.*] = b;
 }
 
+pub fn swapRemove(comptime T: type, items: []T, n: *usize, i: usize) T {
+    const out = items[i];
+    n.* -= 1;
+    items[i] = items[n.*];
+    return out;
+}
+
 /// A test's fine frame, seconds, for timings read to a few milliseconds.
 pub const TEST_DT: f32 = 1.0 / 240.0;
 /// A frame at 60 a second, for a bench or a test that counts frames.
@@ -390,6 +398,10 @@ pub const Rng = struct {
         return self.unit() < p;
     }
 
+    pub fn coin(self: *Rng) bool {
+        return self.chance(0.5);
+    }
+
     pub fn percent(self: *Rng, pc: u32) bool {
         return self.below(PERCENT) < pc;
     }
@@ -406,6 +418,10 @@ pub const Rng = struct {
     /// Within `k` wide, centred on 0.
     pub fn spread(self: *Rng, k: f32) f32 {
         return (self.unit() - 0.5) * k;
+    }
+
+    pub fn between(self: *Rng, lo: f32, hi: f32) f32 {
+        return lerpF(lo, hi, self.unit());
     }
 
     /// An index under `n`, each as likely as its `weight`; null when all weigh nothing.
@@ -428,11 +444,7 @@ pub const Rng = struct {
 
     /// One of the first `n.*` items at random, taken out by moving the last into its place.
     pub fn takeFrom(self: *Rng, comptime T: type, items: []T, n: *usize) T {
-        const k = self.below(@intCast(n.*));
-        const out = items[k];
-        n.* -= 1;
-        items[k] = items[n.*];
-        return out;
+        return swapRemove(T, items, n, self.below(@intCast(n.*)));
     }
 
     /// Fisher-Yates, from the back.

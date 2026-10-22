@@ -238,7 +238,7 @@ pub fn raise(lv: *grid.Level, rng: *mathx.Rng, b: Box, p: Params, outside: grid.
     const way = dryDoorway(lv, rng, b) orelse doorway(rng, b);
     openWay(lv, way, p.floor, outside);
     const in = b.inner();
-    if (rng.percent(p.torches) and in.width() > 2) lv.addTorch(lume.torchWall(.{ .x = rng.range(in.lo.x + 1, in.hi.x - 2), .y = in.lo.y }));
+    if (rng.percent(p.torches) and in.width() > 2) lv.addTorch(lume.torchOver(in, rng.range(in.lo.x + 1, in.hi.x - 2)));
     var left = rng.below(@as(u32, p.barrels) + 1);
     var tries: usize = 0;
     while (left > 0 and tries < BARREL_TRIES) : (tries += 1) {

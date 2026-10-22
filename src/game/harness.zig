@@ -12,7 +12,7 @@ const damage = @import("../play/damage.zig");
 const attrs = @import("../play/attrs.zig");
 const skillbar = @import("../play/skillbar.zig");
 const day = @import("../map/day.zig");
-const shots = @import("shots.zig");
+const carve = @import("../map/carve.zig");
 const combat = @import("combat.zig");
 const game = @import("../game.zig");
 const P = mathx.P;
@@ -47,7 +47,7 @@ pub fn procRng(g: *const game.Game, comptime act: skillbar.Act, procs: usize, wa
     const Procs = struct {
         by: attrs.Attrs,
         style: attrs.Style,
-        bases: combat.SkillBases,
+        bases: skillbar.EquippedBases,
         n: usize,
         want: bool,
         fn holds(p: @This(), rng: *mathx.Rng) bool {
@@ -64,12 +64,23 @@ pub fn procRng(g: *const game.Game, comptime act: skillbar.Act, procs: usize, wa
     return rngWhere(Procs{ .by = b.by, .style = b.style, .bases = b.bases, .n = procs, .want = want });
 }
 
+pub fn foes(g: *game.Game) []actor.Actor {
+    return g.pool.slice()[1..];
+}
+
 pub fn wakeFoes(g: *game.Game) void {
-    for (g.pool.slice()[1..]) |*a| a.awake = true;
+    for (foes(g)) |*a| a.awake = true;
 }
 
 pub fn toughenFoes(g: *game.Game) void {
-    for (g.pool.slice()[1..]) |*a| toughen(a);
+    for (foes(g)) |*a| toughen(a);
+}
+
+pub fn logged(g: *const game.Game, needle: []const u8) bool {
+    for (0..g.log.n) |i| {
+        if (std.mem.indexOf(u8, g.log.line(i).?, needle) != null) return true;
+    }
+    return false;
 }
 
 pub fn staggerOnly(g: *game.Game, id: u16) void {
@@ -110,14 +121,47 @@ pub fn press(g: *game.Game, a: input.Button) void {
     pressHolding(g, a, &.{});
 }
 
+pub fn openDebug(g: *game.Game) void {
+    press(g, menu.PAUSE);
+    for (0..game.rowAt(game.PauseRow.debug)) |_| nudge(g, .s);
+    press(g, CONFIRM);
+}
+
 pub fn pressInteract(g: *game.Game) void {
     g.st = .{ .interact = true, .pressed = .initOne(CONFIRM), .down = .initOne(CONFIRM) };
     game.update(g, 0);
 }
 
 pub fn use(g: *game.Game, act: skillbar.Act) void {
-    const u = shots.boundTo(g, act);
+    const u = boundTo(g, act);
     if (u.set == .secondary) pressHolding(g, u.by, &.{g.bar.modifier.?}) else press(g, u.by);
+}
+
+pub fn confirmUse(g: *game.Game, act: skillbar.Act) void {
+    use(g, act);
+    press(g, CONFIRM);
+}
+
+pub fn boundTo(g: *const game.Game, act: skillbar.Act) game.Use {
+    for (skillbar.SETS) |s| {
+        if (g.bar.buttonOf(s, act)) |b| return .{ .act = act, .by = b, .set = s };
+    }
+    unreachable;
+}
+
+/// Wall from `lo` to `hi`, both inclusive.
+pub fn wallIn(lv: *grid.Level, lo: P, hi: P) void {
+    carve.box(lv, grid.Box.between(lo, hi), .wall);
+}
+
+pub fn wallRow(lv: *grid.Level, y: i32, x0: i32, x1: i32) void {
+    wallIn(lv, .{ .x = x0, .y = y }, .{ .x = x1, .y = y });
+}
+
+pub fn grassOver(lv: *grid.Level) void {
+    for (&lv.tile) |*t| {
+        if (t.* == .floor) t.* = .grass;
+    }
 }
 
 pub fn expectWithin(v: anytype, lo: @TypeOf(v), hi: @TypeOf(v)) !void {
@@ -154,6 +198,42 @@ pub fn bitesRng(g: *const game.Game, comptime kind: actor.Kind, lands: []const b
         }
     };
     return rngWhere(Bites{ .by = game.heroAttrs(g), .lands = lands });
+}
+
+pub fn sweepStunRng(g: *const game.Game, after_bite: bool) mathx.Rng {
+    const strike = comptime actor.row(.beefy_pib).blow.strike;
+    const Stun = struct {
+        by: attrs.Attrs,
+        after_bite: bool,
+
+        fn holds(s: @This(), rng: *mathx.Rng) bool {
+            if (s.after_bite) {
+                if (combat.bite(rng, s.by, actor.row(.rat).blow.strike)) |dmg| _ = s.by.physical(dmg, rng);
+            }
+            _ = strike.roll(rng);
+            return damage.procs(rng, strike.stuns);
+        }
+    };
+    return rngWhere(Stun{ .by = game.heroAttrs(g), .after_bite = after_bite });
+}
+
+pub fn lootRng(magic: ?bool) mathx.Rng {
+    const Loot = struct {
+        magic: ?bool,
+
+        fn holds(l: @This(), rng: *mathx.Rng) bool {
+            const reward = items.foeLoot(rng);
+            if (reward.gold <= 0) return false;
+            const m = l.magic orelse return true;
+            const it = reward.item orelse return false;
+            return it.magical() == m;
+        }
+    };
+    return rngWhere(Loot{ .magic = magic });
+}
+
+pub fn slay(g: *game.Game, id: u16, from: P) void {
+    combat.wound(g, id, .{ .dmg = 1000 }, combat.SHOOT, .{ .from = from, .wait = 0.2 });
 }
 
 pub fn meleeThenBites(g: *const game.Game, count: usize) mathx.Rng {

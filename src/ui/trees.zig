@@ -116,10 +116,10 @@ const NODE_FOCUS_GROW: f32 = 5;
 const NODE_KEEP_IN: f32 = 7;
 /// An allocated node's outer ring, and a capstone's inner ring, from its rim.
 const OWNED_RING: f32 = 1;
+const CAPSTONE_RING: f32 = 3;
 const LABEL_PLATE_A: f32 = 0.85;
 /// A node no allocation reaches yet shows its core this faint.
 const DISTANT_CORE_A: f32 = 0.45;
-const CAPSTONE_RING: f32 = 3;
 
 pub fn cellBox(panel: Panel, class: hero.Class, i: usize, view: View) rl.Rectangle {
     return switch (panel) {
@@ -359,11 +359,11 @@ fn skillHit(growth: *const progress.State, act: skillbar.Act, loadout: Loadout) 
 fn hitText(act: skillbar.Act, hit: Hit, text: *menu.Note(128)) [:0]const u8 {
     if (hit.element) |e| {
         if (hit.physical.hi > 0) {
-            text.say("Damage: {d}-{d} physical, {d}-{d} {s}", .{ hit.physical.lo, hit.physical.hi, e.lo, e.hi, @tagName(act.element().?) });
+            text.say(damage.MIXED_FMT, .{ hit.physical.lo, hit.physical.hi, e.lo, e.hi, @tagName(act.element().?) });
         } else {
-            text.say("{s} damage: {d}-{d}", .{ menu.named(act.element().?), e.lo, e.hi });
+            text.say(damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi });
         }
-    } else text.say("Physical damage: {d}-{d}", .{ hit.physical.lo, hit.physical.hi });
+    } else text.say(damage.PHYSICAL_FMT, .{ hit.physical.lo, hit.physical.hi });
     return text.text();
 }
 
@@ -575,12 +575,12 @@ fn groupInk(g: passives.Group) rl.Color {
 const GROUP_LEGEND = legendOf(passives.Group, groupInk);
 /// The group legend's row, under the canvas title, its step and an entry's left to its name.
 const GROUP_LEGEND_Y: i32 = CANVAS_TOP + 50;
+const GROUP_STEP: i32 = 112;
+const GROUP_TEXT_DX: i32 = 16;
 
 comptime {
     std.debug.assert(GROUP_LEGEND_Y + font.SMALL / 2 <= CANVAS_TOP + @as(i32, @intFromFloat(WHEEL_TOP)));
 }
-const GROUP_STEP: i32 = 112;
-const GROUP_TEXT_DX: i32 = 16;
 
 fn grantNote(g: passives.Grant, whole: bool) menu.Note(100) {
     var out: menu.Note(100) = .{};
@@ -599,6 +599,7 @@ const LINK_REACH: f32 = 8;
 
 /// A label's plate past its text's width.
 const LABEL_PAD: i32 = 4;
+const LABEL_H: i32 = 2 * font.TINY + 1;
 
 fn labelTop(p: rl.Vector2, r: f32) f32 {
     return p.y + r + LABEL_GAP;
@@ -606,7 +607,7 @@ fn labelTop(p: rl.Vector2, r: f32) f32 {
 
 /// The plate a label `w` wide sits on, under a node at `p`, radius `r`.
 fn labelRect(p: rl.Vector2, r: f32, w: i32) rl.Rectangle {
-    return look.rect(@as(i32, @intFromFloat(@round(p.x))) - @divTrunc(w, 2), @intFromFloat(@round(labelTop(p, r))), w, 2 * font.TINY + 1);
+    return look.rect(@as(i32, @intFromFloat(@round(p.x))) - @divTrunc(w, 2), @intFromFloat(@round(labelTop(p, r))), w, LABEL_H);
 }
 
 fn nodeLabel(face: *const font.Face, n: passives.Node, p: rl.Vector2, r: f32, state: NodeState) void {
@@ -629,7 +630,7 @@ fn passiveLink(layout: Layout, pos: *const Positions, growth: *const progress.St
     if (!layout.shows(a, b, LINK_REACH)) return;
     rl.drawLineEx(a, b, if (before and after) 2 else 1, ink);
     if (from != passives.HUB and !bridge) {
-        const length = std.math.hypot(b.x - a.x, b.y - a.y);
+        const length = mathx.len(b.x - a.x, b.y - a.y);
         const dx = (b.x - a.x) / length;
         const dy = (b.y - a.y) / length;
         const tip = rl.Vector2{ .x = b.x - dx * (nodeRadius(to, layout.unit) + ARROW_TIP_GAP), .y = b.y - dy * (nodeRadius(to, layout.unit) + ARROW_TIP_GAP) };
@@ -781,12 +782,14 @@ test "every class skill stays in its canvas and is reachable by directional sele
         var boxes: [skillbar.ACTS.len]rl.Rectangle = undefined;
         const area = CANVAS;
         const plaque_over: f32 = @floatFromInt(PLAQUE_AT.x + PLAQUE_W - SKILL_SIZE / 2);
+        const name_foot: f32 = @floatFromInt(SKILL_NAME_DY + font.SMALL - SKILL_SIZE / 2);
+        const legend_top: f32 = @floatFromInt(FOOT_MID - font.SMALL / 2);
         for (skills, 0..) |_, i| {
             const box = skillBox(class, i);
             boxes[i] = box;
             try std.testing.expect(box.x >= area.x and box.y >= area.y);
             try std.testing.expect(box.x + box.width + plaque_over <= area.x + area.width);
-            try std.testing.expect(box.y + box.height + 62 <= area.y + area.height);
+            try std.testing.expect(box.y + box.height + name_foot <= legend_top);
             for (boxes[0..i]) |other| {
                 const overlaps = box.x < other.x + other.width and other.x < box.x + box.width and
                     box.y < other.y + other.height and other.y < box.y + box.height;
@@ -826,7 +829,7 @@ test "passive diagram fits all nodes and retains its selected node through zoom"
         try std.testing.expect(p.x + r <= layout.box.x + layout.box.width and p.y + r <= layout.box.y + layout.box.height);
         for (0..i) |j| {
             const other = layout.at(j);
-            const distance = std.math.hypot(p.x - other.x, p.y - other.y);
+            const distance = mathx.len(p.x - other.x, p.y - other.y);
             try std.testing.expect(distance > nodeRadius(i, layout.unit) + nodeRadius(j, layout.unit) + 2);
         }
         for (TEST_ZOOMS) |zoom| {

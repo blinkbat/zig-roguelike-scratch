@@ -396,6 +396,27 @@ test "leaving or closing mid graph drag keeps the move and asks before discardin
     std.debug.print("2 departure paths preserve an active graph move, prompt, and undo to the saved state\n", .{});
 }
 
+test "Save As or a play-test mid graph drag keeps the move as its own undo" {
+    for ([_]bool{ false, true }) |play| {
+        const ed = try testBespoke();
+        defer ed.destroy();
+        ed.map.node[ed.map.start.node].plan.bespoke.tile[grid.Level.idx(ed.map.start.at)] = .floor;
+        const was = dragFirstBox(ed);
+        const moved = ed.map.node[0].pos;
+        if (play) {
+            ed.action = .{ .play = ed.map.start };
+            editor.launch(ed);
+            try std.testing.expect(ed.action == .play);
+        } else ed.askName(.save_as);
+        try std.testing.expect(ed.drag == null);
+        try std.testing.expectEqual(moved, ed.map.node[0].pos);
+        try std.testing.expectEqual(@as(usize, 1), ed.hist_at);
+        ed.modal = .none;
+        ed.undo();
+        try std.testing.expectEqual(was, ed.map.node[0].pos);
+    }
+}
+
 test "a rename is one undo, and deleting a node renumbers the list round it" {
     const ed = try testEditor();
     defer ed.destroy();
@@ -456,6 +477,20 @@ test "a node added is named as it is added, one undo for both" {
     try std.testing.expectEqualStrings("Pit", ed.map.node[before].name());
     ed.undo();
     try std.testing.expectEqual(before, ed.map.node_n);
+}
+
+test "an undo the same frame a rename starts drops the rename instead of naming another node" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const kept = ed.map.node[0].label;
+    ed.gesture();
+    editor.addNode(ed, .{ .procgen = .{} });
+    ed.field.set("Pit", atlas.NAME_MAX);
+    ed.commitRename();
+    ed.startRename();
+    ed.undo();
+    try std.testing.expect(!ed.renaming);
+    try std.testing.expectEqualStrings(kept.text(), ed.map.node[0].name());
 }
 
 fn tileAt(ed: *editor.Editor, p: P) grid.Tile {

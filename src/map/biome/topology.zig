@@ -56,7 +56,7 @@ pub fn palette(p: Params) carve.Palette {
 
 const Spot = struct { x: f32, y: f32, big: bool = false };
 const Edge = [2]u8;
-const Graph = struct { spots: []const Spot, edges: []const Edge };
+const Graph = struct { spots: []const Spot, edges: []const Edge, big_of: f32 = BOWL_OF, gap: f32 = 0 };
 
 fn graphOf(l: Layout) Graph {
     return switch (l) {
@@ -69,8 +69,9 @@ fn graphOf(l: Layout) Graph {
         .grid => .{
             .spots = &.{ .{ .x = 0.15, .y = 0.17 }, .{ .x = 0.5, .y = 0.17 }, .{ .x = 0.85, .y = 0.17 }, .{ .x = 0.15, .y = 0.5 }, .{ .x = 0.5, .y = 0.5 }, .{ .x = 0.85, .y = 0.5 }, .{ .x = 0.15, .y = 0.83 }, .{ .x = 0.5, .y = 0.83 }, .{ .x = 0.85, .y = 0.83 } },
             .edges = &.{ .{ 0, 1 }, .{ 1, 2 }, .{ 3, 4 }, .{ 4, 5 }, .{ 6, 7 }, .{ 7, 8 }, .{ 0, 3 }, .{ 3, 6 }, .{ 1, 4 }, .{ 4, 7 }, .{ 2, 5 }, .{ 5, 8 } },
+            .gap = GRID_GAP,
         },
-        .arena => .{ .spots = &.{ .{ .x = 0.5, .y = 0.5, .big = true }, .{ .x = 0.04, .y = 0.5 }, .{ .x = 0.96, .y = 0.5 } }, .edges = &.{ .{ 1, 0 }, .{ 0, 2 } } },
+        .arena => .{ .spots = &.{ .{ .x = 0.5, .y = 0.5, .big = true }, .{ .x = 0.04, .y = 0.5 }, .{ .x = 0.96, .y = 0.5 } }, .edges = &.{ .{ 1, 0 }, .{ 0, 2 } }, .big_of = ARENA_OF },
     };
 }
 
@@ -99,11 +100,11 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     }
     const short: f32 = @floatFromInt(@min(grid.W, grid.H));
     for (g.spots, 0..) |s, i| {
-        const r: f32 = if (!s.big) @floatFromInt(p.clearing) else if (p.layout == .arena) short * ARENA_OF else short * BOWL_OF;
+        const r: f32 = if (!s.big) @floatFromInt(p.clearing) else short * g.big_of;
         clearing(lv, noise, at[i], r, if (s.big) BIG_FRAY else FRAY, pal.open);
     }
     for (g.edges) |e| {
-        if (p.layout == .grid and rng.chance(GRID_GAP)) continue;
+        if (g.gap > 0 and rng.chance(g.gap)) continue;
         path(lv, rng, at[e[0]], at[e[1]], p.path, pal.open);
     }
     for (0..p.sides) |_| {

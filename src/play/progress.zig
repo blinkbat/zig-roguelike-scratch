@@ -224,7 +224,7 @@ pub const State = struct {
         if (cd > 0) w.print(", {d}-turn cooldown", .{cd}) catch {};
     }
 
-    pub fn kit(self: *const State, c: hero.Class, out: *[skillbar.ACTS.len]skillbar.Act) []const skillbar.Act {
+    pub fn kit(self: *const State, c: hero.Class, out: *skillbar.KitBuf) []const skillbar.Act {
         var n: usize = 0;
         for (skillbar.kit(c)) |a| if (self.unlocked(a)) {
             out[n] = a;
@@ -321,11 +321,7 @@ test "passive origins preserve class bases and failed purchases preserve the who
 test "passive branch gates advance one layer and apply exact stat interest and capstone packages" {
     const route = comptime blk: {
         var out: [passives.BRANCH_RINGS.len]usize = undefined;
-        var at: usize = 0;
-        for (passives.BRANCH_RINGS, &out) |wide, *first| {
-            first.* = at;
-            at += wide;
-        }
+        for (&out, 0..) |*first, r| first.* = passives.ringOffset(r);
         break :blk out;
     };
     for (std.enums.values(passives.Branch)) |b| {
@@ -438,6 +434,6 @@ test "passive bridges pay both attributes and cross either way without opening i
             }
         }
     }
-    try std.testing.expectEqual(std.enums.values(passives.Seam).len * passives.BRIDGE_RINGS.len * 2, crossings);
+    try std.testing.expectEqual(passives.BRIDGES * 2, crossings);
     std.debug.print("passive bridges: all {d} directional crossings apply exact paired stats, open the far anchor and advance outward only\n", .{crossings});
 }

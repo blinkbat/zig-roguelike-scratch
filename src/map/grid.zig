@@ -91,6 +91,10 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).opens;
     }
 
+    pub fn isChest(t: Tile) bool {
+        return t == .chest or t == .chest_open;
+    }
+
     /// What another tile becomes when opened, never placed as it is.
     pub fn isOpened(t: Tile) bool {
         return OPENED.contains(t);
@@ -299,9 +303,7 @@ pub const Torches = struct {
     }
 
     pub fn remove(self: *Torches, p: P) bool {
-        const i = self.find(p) orelse return false;
-        self.n -= 1;
-        self.at[i] = self.at[self.n];
+        _ = mathx.swapRemove(P, &self.at, &self.n, self.find(p) orelse return false);
         return true;
     }
 
@@ -690,6 +692,10 @@ pub const Box = struct {
     /// Its cell nearest `p`.
     pub fn clamp(b: Box, p: P) P {
         return .{ .x = std.math.clamp(p.x, b.lo.x, b.hi.x - 1), .y = std.math.clamp(p.y, b.lo.y, b.hi.y - 1) };
+    }
+
+    pub fn slot(b: Box, p: P) ?usize {
+        return mathx.slot(p.x - b.lo.x, p.y - b.lo.y, @intCast(b.width()), @intCast(b.height()));
     }
 };
 

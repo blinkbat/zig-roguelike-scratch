@@ -206,6 +206,7 @@ const Knob = struct {
 };
 
 const PERCENT_FMT = "{d}%";
+const TORCH_STEP: i32 = 10;
 const DECAY_ROW = Knob{ .field = "decay", .tips = &.{"Of the walls, how many have fallen to rubble"}, .fmt = PERCENT_FMT };
 const COUNT_ROW = Knob{ .field = "count", .tips = &.{"How many"} };
 const COUNT_MOST_ROW = Knob{ .field = "count", .tips = &.{"How many, at most"} };
@@ -225,7 +226,7 @@ const ROOMS_ROWS = [_]Knob{
     .{ .field = "rooms", .tips = &.{"The most rooms it rolls"} },
     .{ .field = "room_w", .label = "Room W", .tips = &.{ "The narrowest a room is rolled", "The widest a room is rolled" } },
     .{ .field = "room_h", .label = "Room H", .tips = &.{ "The shortest a room is rolled", "The tallest a room is rolled" } },
-    .{ .field = "torches", .tips = &.{"Of the rooms, how many hang a torch"}, .unit = editor.TORCH_STEP, .fmt = PERCENT_FMT },
+    .{ .field = "torches", .tips = &.{"Of the rooms, how many hang a torch"}, .unit = TORCH_STEP, .fmt = PERCENT_FMT },
     .{ .field = "barrels", .tips = &.{"The most barrels one room stacks"} },
 };
 

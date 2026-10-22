@@ -29,16 +29,9 @@ const OptionRow = enum {
     debug,
 };
 const OPTION_ROWS = std.enums.values(OptionRow);
-const DebugRow = enum {
-    unkillable,
-
-    fn note(r: DebugRow) [:0]const u8 {
-        return switch (r) {
-            .unkillable => comptime std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.named(DebugRow.unkillable), game.combat.UNKILLABLE_HP }),
-        };
-    }
+const DEBUG_ROWS = [_]struct { row: game.debugging.Row, note: [:0]const u8 }{
+    .{ .row = .unkillable, .note = std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.titled(@tagName(game.debugging.Row.unkillable)), game.combat.UNKILLABLE_HP }) },
 };
-const DEBUG_ROWS = std.enums.values(DebugRow);
 const DELETE = menu.REMOVE;
 
 const NAME = game.NAME;
@@ -403,16 +396,15 @@ const App = struct {
             },
             .debug => {
                 var rows: [DEBUG_ROWS.len][]const u8 = undefined;
-                for (DEBUG_ROWS, &rows) |r, *l| l.* = switch (r) {
-                    .unkillable => menu.toggle(menu.named(DebugRow.unkillable), g.unkillable),
-                };
+                var bufs: [DEBUG_ROWS.len][game.debugging.LABEL_MAX]u8 = undefined;
+                inline for (DEBUG_ROWS, &rows, &bufs) |d, *l, *b| l.* = game.debugging.label(g, d.row, b);
                 const picked = app.debugs.step(&g.st, rows.len);
-                menu.draw(g.face, g.screen, comptime menu.caps(menu.named(OptionRow.debug)), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note());
+                menu.draw(g.face, g.screen, comptime menu.caps(menu.named(OptionRow.debug)), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note);
                 if (back) {
                     app.goPage(.options);
-                } else if (picked) |i| switch (DEBUG_ROWS[i]) {
-                    .unkillable => g.unkillable = !g.unkillable,
-                };
+                } else if (picked) |i| {
+                    if (game.debugging.option(g, DEBUG_ROWS[i].row)) |on| on.* = !on.*;
+                }
             },
         }
         return true;

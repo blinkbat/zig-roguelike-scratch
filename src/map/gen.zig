@@ -110,7 +110,7 @@ fn hangTorch(lv: *grid.Level, r: Room, rng: *mathx.Rng) void {
     var n: usize = 0;
     var x = r.lo.x;
     while (x < r.hi.x) : (x += 1) {
-        top[n] = lume.torchWall(.{ .x = x, .y = r.lo.y });
+        top[n] = lume.torchOver(r, x);
         n += 1;
     }
     if (rng.pickWhere(P, top[0..n], @as(*const grid.Level, lv), bearsTorch)) |p| lv.addTorch(p);
@@ -148,7 +148,7 @@ fn addRoom(f: *Floor, r: Room) bool {
 }
 
 fn tunnel(lv: *grid.Level, a: P, b: P, rng: *mathx.Rng) void {
-    bend(lv, a, b, rng.chance(0.5));
+    bend(lv, a, b, rng.coin());
 }
 
 fn bend(lv: *grid.Level, a: P, b: P, across_first: bool) void {
@@ -179,7 +179,7 @@ const Reached = struct {
     dist: *const [grid.CELLS]i32,
 
     pub fn has(r: Reached, i: usize) bool {
-        return r.dist[i] >= 0 and !grid.Level.onRim(grid.Level.of(i));
+        return r.dist[i] >= 0 and !carve.rimAt(i);
     }
 };
 
@@ -261,18 +261,9 @@ test "every floor connects" {
 test "the rim stays solid and the start is floor" {
     var lv: grid.Level = undefined;
     for (0..40) |i| {
-        const f = build(&lv, 0xC0FFEE +% i *% 31);
+        const f = build(&lv, 0xC0FFEE +% i *% grid.TEST_SEED_STRIDE);
         try std.testing.expect(lv.walkable(f.start));
-        var x: i32 = 0;
-        while (x < grid.W) : (x += 1) {
-            try std.testing.expect(!lv.walkable(.{ .x = x, .y = 0 }));
-            try std.testing.expect(!lv.walkable(.{ .x = x, .y = grid.H - 1 }));
-        }
-        var y: i32 = 0;
-        while (y < grid.H) : (y += 1) {
-            try std.testing.expect(!lv.walkable(.{ .x = 0, .y = y }));
-            try std.testing.expect(!lv.walkable(.{ .x = grid.W - 1, .y = y }));
-        }
+        try std.testing.expectEqual(@as(usize, 0), carve.leaks(&lv));
     }
 }
 

@@ -71,12 +71,17 @@ pub fn swing(g: *game.Game, from: P, act: skillbar.Act) void {
 fn sweep(g: *game.Game, comptime act: skillbar.Act, s: Stroke) void {
     const M = skillbar.Act.skill(act);
     const arc = M.arc(&g.lv, s.from, g.mark);
-    var struck: [M.WIDTH]u16 = undefined;
-    for (arc.slice(), struck[0..arc.n]) |p, *w| w.* = g.lv.who(p);
+    const struck = occupants(M.WIDTH, &g.lv, &arc);
     const raw = rawFor(g, act, true);
     for (arc.slice(), struck[0..arc.n]) |p, w| {
         if (w != grid.NO_ONE) wound(g, w, heroScaled(g, act, raw).physical(), M.VERB, s) else smash(g, p, M.VERB, s);
     }
+}
+
+fn occupants(comptime N: usize, lv: *const grid.Level, area: *const grid.Area(N)) [N]u16 {
+    var out: [N]u16 = undefined;
+    for (area.slice(), out[0..area.n]) |p, *w| w.* = lv.who(p);
+    return out;
 }
 
 pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) void {
@@ -98,11 +103,11 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
         _ = glideHeld(g, i, g.glide[i].toward(b, -s.wait));
         game.sayAt(g, b, "The {s} is knocked back.", .{name});
     }
-    if (takes) sayTakes(g, M, a.at, name);
+    if (takes) sayTakes(g, M.TAKES, a.at, name);
 }
 
-fn sayTakes(g: *game.Game, comptime M: type, at: P, name: []const u8) void {
-    game.sayAt(g, at, "The {s} " ++ M.TAKES ++ "!", .{name});
+fn sayTakes(g: *game.Game, comptime takes: []const u8, at: P, name: []const u8) void {
+    game.sayAt(g, at, "The {s} " ++ takes ++ "!", .{name});
 }
 
 /// Roll status before nonlethal damage so split halves inherit it.
@@ -150,23 +155,17 @@ pub fn heroScaled(g: *game.Game, comptime act: skillbar.Act, raw: damage.Damage)
     return scaled(&g.rng, b.by, b.style, raw);
 }
 
-pub const SkillBases = skillbar.EquippedBases;
-
 pub fn blowFor(g: *const game.Game, comptime act: skillbar.Act) progress.Blow {
     comptime std.debug.assert(act.attack() != null);
     return g.growth.blowOf(game.heroAttrs(g), g.inventory.gear, act).?;
 }
 
-pub fn basesOf(gear: *const items.Gear, act: skillbar.Act) SkillBases {
-    return act.equippedBases(gear.*);
-}
-
-pub fn basesFor(g: *const game.Game, act: skillbar.Act) SkillBases {
-    return basesOf(&g.inventory.gear, act);
+pub fn basesFor(g: *const game.Game, act: skillbar.Act) skillbar.EquippedBases {
+    return act.equippedBases(g.inventory.gear);
 }
 
 /// Physical before elemental, preserving the seeded shot sequence; without `body`, no physical.
-pub fn rollRaw(rng: *mathx.Rng, comptime act: skillbar.Act, bases: SkillBases, body: bool) damage.Damage {
+pub fn rollRaw(rng: *mathx.Rng, comptime act: skillbar.Act, bases: skillbar.EquippedBases, body: bool) damage.Damage {
     var raw = damage.Damage{};
     if (body) for (bases.parts()) |maybe| {
         if (maybe) |b| raw.physical += b.roll(rng);
@@ -189,7 +188,7 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: Rolled, comptime act: skillbar.Act,
     const lands = if (el) |e| hit.blow.afflicts(a.resists, e, a.hp) else dealt < a.hp;
     const takes = afflicted(g, a, M, lands, if (el) |e| a.resists.get(e) else 0);
     if (dealt > 0) wound(g, id, .{ .dmg = dealt, .crit = hit.crit }, M.VERB, s);
-    if (takes and g.pool.get(id) != null) sayTakes(g, M, at, name);
+    if (takes and g.pool.get(id) != null) sayTakes(g, M.TAKES, at, name);
 }
 
 pub fn burstHit(g: *game.Game, comptime act: skillbar.Act, hit: bow.Hit, impact: P, s: Stroke) void {
@@ -274,8 +273,7 @@ pub fn openChest(g: *game.Game, p: P) bool {
     const opened = g.lv.at(p).opened() orelse return false;
     if (!groundRoom(g)) return false;
     g.lv.set(p, opened);
-    const added = g.ground.add(.{ .item = items.roll(&g.loot_rng), .at = p });
-    std.debug.assert(added);
+    dropItem(g, .{ .item = items.roll(&g.loot_rng), .at = p });
     g.log.push(.loot, "{s} opens the chest: {d} gold and an item.", .{ g.name.text(), loot(g, p, items.CHEST_GOLD) });
     return true;
 }
@@ -289,9 +287,18 @@ pub fn groundRoom(g: *game.Game) bool {
 
 fn loot(g: *game.Game, at: P, range: items.Gold) i32 {
     const gold = range.roll(&g.loot_rng);
-    const added = g.ground.gold(at, gold);
-    std.debug.assert(added);
+    dropGold(g, at, gold);
     return gold;
+}
+
+fn dropGold(g: *game.Game, at: P, amount: i32) void {
+    const added = g.ground.gold(at, amount);
+    std.debug.assert(added);
+}
+
+pub fn dropItem(g: *game.Game, drop: items.Drop) void {
+    const added = g.ground.add(drop);
+    std.debug.assert(added);
 }
 
 pub fn collectGold(g: *game.Game, at: P) void {
@@ -301,6 +308,11 @@ pub fn collectGold(g: *game.Game, at: P) void {
     g.gold +|= amount;
     g.log.push(.loot, "{s} picks up {d} gold.", .{ g.name.text(), amount });
     g.unsaved = true;
+}
+
+pub fn arrive(g: *game.Game, at: P) void {
+    collectGold(g, at);
+    noticeItems(g, at);
 }
 
 pub fn noticeItems(g: *game.Game, at: P) void {
@@ -366,11 +378,9 @@ pub fn fell(g: *game.Game, id: u16) void {
     g.log.push(.progress, "{s} gains {d} experience.", .{ g.name.text(), xp });
     if (levels > 0) g.log.push(.progress, "Level {d}: +{d} passive, +{d} active points.", .{ g.growth.level, g.growth.passive_points - was.passive_points, g.growth.active_points - was.active_points });
     const reward = items.foeLoot(&g.loot_rng);
-    if (reward.gold > 0) std.debug.assert(g.ground.gold(at, reward.gold));
-    if (reward.item) |item| {
-        const added = g.ground.add(.{ .item = item, .at = at, .source = id });
-        std.debug.assert(added);
-    }
+    g.dropped_gold[fallen] = reward.gold;
+    if (reward.gold > 0) dropGold(g, at, reward.gold);
+    if (reward.item) |item| dropItem(g, .{ .item = item, .at = at, .source = id });
     for (&g.flasks.values) |*f| f.fill(flask.PER_KILL);
     if (kind.bursts()) {
         g.lv.addGas(at, gas.BURST);
@@ -673,8 +683,7 @@ fn sweepReady(g: *game.Game, id: u16, row: actor.Row) bool {
 fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike) void {
     const from = g.pool.get(id).?.at;
     const cells = actor.sweep(&g.lv, from);
-    var struck: [actor.SWEEP_CELLS]u16 = undefined;
-    for (cells.slice(), struck[0..cells.n]) |p, *w| w.* = g.lv.who(p);
+    const struck = occupants(actor.SWEEP_CELLS, &g.lv, &cells);
     var swept = game.Swept{};
     for (cells.slice(), struck[0..cells.n]) |p, w| {
         if (w == g.hero) continue;
@@ -696,7 +705,7 @@ fn swipe(g: *game.Game, id: u16, by: actor.Row, s: actor.Strike) game.Swipe {
     }
     const h = hurt(g, id, dmg);
     game.sayAt(g, at, "The {s} " ++ actor.SWEEP_VERB ++ " the {s} for {d}.{s}", .{ by.name, name, h.dmg, if (h.lethal) IT_DIES else "" });
-    if (stunned) game.sayAt(g, at, "The {s} " ++ turn_clock.STUNNED ++ "!", .{name});
+    if (stunned) sayTakes(g, turn_clock.STUNNED, at, name);
     const after = afterBlow(g, id, h);
     if (h.lethal) fell(g, id);
     return .{ .slot = actor.Pool.slot(id), .at = at, .lethal = h.lethal, .after = after };

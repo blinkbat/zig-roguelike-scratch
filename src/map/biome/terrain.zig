@@ -20,6 +20,8 @@ const RIVER_SHALLOWS: f32 = 0.3;
 const LAPSE_FROM: f32 = 60;
 /// A river may start where the height is at least this share of the highest.
 const SOURCE_OVER: f32 = 0.75;
+const STRETCH: f32 = 1.8;
+const DESCENT: f32 = 0.01;
 
 pub const Biome = enum { ocean, coast, beach, mountain, foothills, glacier, tundra, desert, wasteland, badlands, grassland, savanna, shrubland, marsh, swamp, forest, taiga };
 
@@ -141,7 +143,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
 
 /// Value noise bunches round the middle; this spreads it back toward 0 and 1.
 fn stretch(v: f32) f32 {
-    return std.math.clamp((v - 0.5) * 1.8 + 0.5, 0, 1);
+    return std.math.clamp((v - 0.5) * STRETCH + 0.5, 0, 1);
 }
 
 fn river(lv: *grid.Level, rng: *mathx.Rng, height: *[grid.CELLS]f32) void {
@@ -176,7 +178,7 @@ fn river(lv: *grid.Level, rng: *mathx.Rng, height: *[grid.CELLS]f32) void {
         }
         const next = best orelse return;
         const k = grid.Level.idx(next);
-        if (height[k] >= height[i]) height[k] = height[i] - 0.01;
+        if (height[k] >= height[i]) height[k] = height[i] - DESCENT;
         for (dirs) |d| {
             const b = at.add(d);
             if (grid.Level.inside(b) and !lv.at(b).liquid() and rng.chance(RIVER_SHALLOWS)) lv.set(b, .shallows);

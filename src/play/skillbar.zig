@@ -310,6 +310,7 @@ pub const Act = enum {
 };
 
 pub const ACTS = std.enums.values(Act);
+pub const KitBuf = [ACTS.len]Act;
 /// A swing's reach, and a rush's nearest mark unless its module says otherwise.
 const MELEE_REACH: i32 = 1;
 

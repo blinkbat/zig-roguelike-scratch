@@ -150,7 +150,7 @@ pub const Feature = union(enum) {
 
     pub fn fit(f: Feature) Feature {
         return switch (f) {
-            inline else => |p, t| @unionInit(Feature, @tagName(t), p.fit()),
+            inline else => |p, t| @unionInit(Feature, @tagName(t), carve.fitted(p)),
         };
     }
 

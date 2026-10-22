@@ -29,7 +29,7 @@ pub const Params = struct {
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, lots: *buildings.Lots, p: Params) void {
     for (0..p.count) |_| {
         const b = lots.take(lv, rng, rng.range(p.size[0], p.size[1]), rng.range(p.size[0], p.size[1]), pal) orelse continue;
-        const across = rng.chance(0.5);
+        const across = rng.coin();
         var cells = b.cells();
         while (cells.next()) |q| {
             const row = if (across) q.y - b.lo.y else q.x - b.lo.x;

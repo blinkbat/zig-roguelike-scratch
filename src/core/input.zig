@@ -392,6 +392,11 @@ pub const Stepper = struct {
 
     const HELD = std.math.inf(f32);
 
+    /// A way first pressed after the screen changed was not held over, unless one was already latched.
+    fn pressed(self: *Stepper) void {
+        if (self.carried() and self.latched == null) self.* = .{};
+    }
+
     /// A way held over from another screen, still down.
     fn carried(self: Stepper) bool {
         return self.due == HELD;
@@ -462,7 +467,7 @@ const RadialStepper = struct {
     const TURN_COS: f32 = 0.766;
 
     fn tick(self: *RadialStepper, dt: f32, x: f32, y: f32) ?rl.Vector2 {
-        const magnitude = std.math.hypot(x, y);
+        const magnitude = mathx.len(x, y);
         if (!stickWalks(magnitude, self.direction != null)) {
             self.* = .{};
             return null;
@@ -519,7 +524,8 @@ pub const TreeKeys = struct {
     const PAD_ZOOM_IN = walkPad(.n);
     const PAD_ZOOM_OUT = walkPad(.s);
     pub const PAD_OVERVIEW: Button = .inspect;
-    pub const PAN_CAPTION = keyName(SHIFT_KEYS[0]);
+    const PAN_KEYS = SHIFT_KEYS;
+    pub const PAN_CAPTION = keyName(PAN_KEYS[0]);
     const PAGE_IN: rl.KeyboardKey = .page_up;
     const PAGE_OUT: rl.KeyboardKey = .page_down;
     pub const BROWSE_CAPTION = letters(&WALKS);
@@ -612,6 +618,11 @@ pub const State = struct {
         return if (self.walk != null) self.step.late else 0;
     }
 
+    /// This frame's walk repeats a held way rather than starting a press.
+    pub fn repeating(self: State) bool {
+        return self.walk != null and self.step.fired > 1;
+    }
+
     /// The aimed slot's number key, which confirms its reticle; pads have no such repeat.
     fn againKey(self: State) ?rl.KeyboardKey {
         if (self.context != .target) return null;
@@ -624,6 +635,11 @@ pub const State = struct {
         if (self.typing) return &.{};
         if (b == self.modifier) return &SECOND_KEYS;
         return SLOT_KEYS[numberOf(self.modifier, b).?..][0..1];
+    }
+
+    /// Outside play the modifier's menu keys still press it, but only Ctrl holds its set.
+    fn holdsByKeys(self: State, b: Button) bool {
+        return self.context == .play or b != self.modifier;
     }
 
     pub fn update(self: *State, dt: f32) void {
@@ -663,7 +679,7 @@ pub const State = struct {
                 for (self.keysFor(b)) |k| {
                     if (self.typing and types(k)) continue;
                     on = on or rl.isKeyPressed(k);
-                    hold = hold or rl.isKeyDown(k);
+                    if (self.holdsByKeys(b)) hold = hold or rl.isKeyDown(k);
                 }
             }
             self.pressed.setPresent(b, on);
@@ -692,20 +708,20 @@ pub const State = struct {
 
         self.tree = .{};
         const on_tree = self.context == .tree;
-        const pan_keys = on_tree and free_keys and either(SHIFT_KEYS);
+        const pan_keys = on_tree and free_keys and either(TreeKeys.PAN_KEYS);
         if (on_tree and free_keys) {
             self.tree.dt = dt;
             const carried = self.step.carried() and !self.pan_hold;
             if (live) |at| {
                 const px = rl.getGamepadAxisMovement(at, .right_x);
                 const py = rl.getGamepadAxisMovement(at, .right_y);
-                if (std.math.hypot(px, py) >= TreeKeys.PAN_DEADZONE) self.tree.pan = .{ .x = px, .y = py };
+                if (mathx.deflection(px, py) >= TreeKeys.PAN_DEADZONE) self.tree.pan = .{ .x = px, .y = py };
                 if (!carried) self.tree.zoom = @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_IN)) 1 else 0) - @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_OUT)) 1 else 0);
                 self.tree.reset = self.padHit(at, TreeKeys.PAD_OVERVIEW.pad(), &before);
             }
             if (pan_keys and !carried) {
                 const p = heldWalk(&WALKS, false);
-                const length = @max(1, std.math.hypot(@as(f32, @floatFromInt(p.x)), @as(f32, @floatFromInt(p.y))));
+                const length = @max(1, mathx.len(@floatFromInt(p.x), @floatFromInt(p.y)));
                 self.tree.pan = .{ .x = @as(f32, @floatFromInt(p.x)) / length, .y = @as(f32, @floatFromInt(p.y)) / length };
             }
             if (either(ZOOM_IN_KEYS) or rl.isKeyDown(TreeKeys.PAGE_IN)) self.tree.zoom += 1;
@@ -735,6 +751,7 @@ pub const State = struct {
                 settle = Stepper.SETTLE;
             }
         }
+        if ((self.stick and !was_stick) or walkPressed(live, self.typing, alt_down)) self.step.pressed();
         self.stepWalk(dt, defl, heading, settle, muted);
         self.treeWalk(dt, x, y);
         if (!was_focused) self.holdWalk();
@@ -1150,6 +1167,17 @@ fn keyWalk(typing: bool) ?mathx.P {
     return stepOf(heldWalk(&WALKS, typing));
 }
 
+fn walkPressed(pad: ?i32, typing: bool, alt_down: bool) bool {
+    for (WALKS) |w| {
+        if (pad) |at| if (w.pad) |b| if (rl.isGamepadButtonPressed(at, b)) return true;
+        if (alt_down) continue;
+        for (w.keys) |k| {
+            if (!(typing and types(k)) and rl.isKeyPressed(k)) return true;
+        }
+    }
+    return false;
+}
+
 fn heldWalk(walks: []const Walk, typing: bool) mathx.P {
     var p = mathx.P{ .x = 0, .y = 0 };
     for (walks) |w| {
@@ -1394,6 +1422,21 @@ test "a key held through a screen that never latched it walks nothing until it i
     try std.testing.expect(steps > 0);
 }
 
+test "a way first pressed the frame after the screen changed walks, though one held over does not" {
+    const dt = mathx.FRAME_DT;
+    var s = Stepper{};
+    s.hold();
+    s.pressed();
+    var steps: usize = 0;
+    for (0..30) |_| {
+        if (s.tick(dt, 1, mathx.Dir.e.heading(), Stepper.SETTLE) != null) steps += 1;
+    }
+    try std.testing.expect(steps > 0);
+    s.hold();
+    s.pressed();
+    for (0..30) |_| try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(dt, 1, mathx.Dir.e.heading(), Stepper.SETTLE));
+}
+
 test "a tree pan ended under a held key holds the walk but not pan or zoom, and the first browse after idling steps" {
     var st = State{};
     const dt = mathx.FRAME_DT;
@@ -1568,8 +1611,10 @@ test "targeting uses confirm and back keys instead of numbered skills for every 
             s.aimed = b;
             try std.testing.expectEqual(@as(?rl.KeyboardKey, SLOT_KEYS[numberOf(modifier, b).?]), s.againKey());
         }
+        for (BUTTONS) |b| try std.testing.expectEqual(b != modifier, s.holdsByKeys(b));
         s.context = .play;
         try std.testing.expectEqual(@as(?rl.KeyboardKey, null), s.againKey());
+        try std.testing.expect(s.holdsByKeys(modifier));
         s.aimed = null;
         try std.testing.expectEqualSlices(rl.KeyboardKey, &SECOND_KEYS, s.keysFor(modifier));
         for (SLOT_ORDER) |b| {

@@ -15,8 +15,12 @@ pub fn splat(k: f32) Rgb {
     return @splat(k);
 }
 
+pub fn norm(v: Rgb) f32 {
+    return @sqrt(@reduce(.Add, v * v));
+}
+
 pub fn unit(v: Rgb) Rgb {
-    return v / splat(@sqrt(@reduce(.Add, v * v)));
+    return v / splat(norm(v));
 }
 
 fn flatOf(d: [3]f32) f32 {
@@ -251,8 +255,7 @@ fn acrossScreen(d: [3]f32) [3]f32 {
         x *= least / flat;
         y *= least / flat;
     }
-    const n = @sqrt(x * x + y * y + d[2] * d[2]);
-    return .{ x / n, y / n, d[2] / n };
+    return unit(.{ x, y, d[2] });
 }
 
 test "a bleak sky is a little darker than a clear one, greyer, and its shadows softer" {

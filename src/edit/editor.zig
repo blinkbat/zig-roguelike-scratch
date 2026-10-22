@@ -32,6 +32,7 @@ pub const SECTION_GAP: i32 = GAP * 3;
 pub const BLOCK_GAP: i32 = GAP * 2;
 pub const ROW_STEP: i32 = ROW_H + GAP;
 pub const TEXT: i32 = font.BODY;
+pub const LINE_STEP: i32 = TEXT + GAP;
 const SMALL = font.SMALL;
 const HEAD = font.HEAD;
 pub const INNER_W: i32 = PANEL_W - PAD * 2;
@@ -79,7 +80,6 @@ const BRUSH_W: i32 = 48;
 pub const BRUSH_SPAN: i32 = 2 * STEP_W + BRUSH_W;
 pub const MEMBERS_X: i32 = WEIGHT_SPAN + BLOCK_GAP;
 pub const MAKEUP_TOOLS_X: i32 = INNER_W - @as(i32, knobs.MAKEUP_TOOLS.len) * STEP_PITCH + GAP;
-pub const TORCH_STEP: i32 = 10;
 pub const TEXT_DY: i32 = @divTrunc(ROW_H - TEXT, 2);
 pub const SMALL_DY: i32 = @divTrunc(ROW_H - SMALL, 2);
 pub const TITLE_DY: i32 = 3;
@@ -96,7 +96,7 @@ comptime {
 const PANEL_BG = look.EDIT_PANEL;
 const ROW_ON = look.EDIT_ROW_ON;
 const ON = look.EDIT_ON;
-pub const START = look.body(actor.HERO);
+const START = look.body(actor.HERO);
 const START_MARK = [_]u8{ START.ch, ' ' };
 
 pub fn kindName(k: actor.Kind) [:0]const u8 {
@@ -299,7 +299,7 @@ pub const HELP_ROWS = blk: {
     for (HELP) |s| n += 1 + s.lines.len;
     break :blk n;
 };
-pub const STATUS_H: i32 = GAP * 2 + TEXT * 2 + GAP;
+pub const STATUS_H: i32 = GAP + 2 * LINE_STEP;
 
 comptime {
     @setEvalBranchQuota(200_000);
@@ -322,6 +322,7 @@ fn namesKey(comptime crib: []const u8, comptime key: []const u8) bool {
     return false;
 }
 const LINK_CANCELLED = "Link cancelled";
+const LINKING = "Linking node {d} door {d}: ";
 
 pub const Action = union(enum) { none, play: atlas.Start, fight: actor.Kind, leave, quit };
 
@@ -401,7 +402,7 @@ const Board = struct {
     foe_n: usize = 0,
 
     pub fn at(b: *const Board, p: P) usize {
-        return @intCast(p.y * b.size.x + p.x);
+        return b.box(.{ .x = 0, .y = 0 }).slot(p).?;
     }
 
     pub fn box(b: *const Board, lo: P) grid.Box {
@@ -684,6 +685,7 @@ pub const Editor = struct {
     fn swapStep(ed: *Editor, k: usize) void {
         ed.release();
         ed.forgetNode();
+        ed.renaming = false;
         ed.scratch.* = ed.map.*;
         ed.map.* = ed.kept(k).*;
         ed.kept(k).* = ed.scratch.*;
@@ -961,6 +963,7 @@ pub const Editor = struct {
     }
 
     pub fn ask(ed: *Editor, m: Modal) void {
+        ed.keepDrag();
         ed.drop();
         ed.modal = m;
         ed.fresh = true;
@@ -1154,16 +1157,20 @@ pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
     rl.endDrawing();
     ed.fresh = false;
     ed.renamed = false;
-    if (ed.action == .play) {
-        for ([_]atlas.Start{ ed.action.play, ed.map.start }) |from| {
-            if (ed.standable(from)) continue;
-            var buf: [atlas.TITLE_MAX]u8 = undefined;
-            ed.say(atlas.NO_FLOOR, .{ed.nodeName(from.node, &buf)});
-            ed.action = .none;
-            break;
-        } else ed.drop();
-    }
+    if (ed.action == .play) launch(ed);
     return ed.action;
+}
+
+pub fn launch(ed: *Editor) void {
+    for ([_]atlas.Start{ ed.action.play, ed.map.start }) |from| {
+        if (ed.standable(from)) continue;
+        var buf: [atlas.TITLE_MAX]u8 = undefined;
+        ed.say(atlas.NO_FLOOR, .{ed.nodeName(from.node, &buf)});
+        ed.action = .none;
+        return;
+    }
+    ed.keepDrag();
+    ed.drop();
 }
 
 fn step(ed: *Editor, g: *game.Game, dt: f32) void {
@@ -1233,7 +1240,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
     switch (ed.view) {
         .map => {
             panBy(&ed.cam, d, dt, ed.px());
-            if (d.wheel != 0 and over) zoom(ed, c, if (d.wheel > 0) 1 else -1, d.mouse);
+            if (d.wheel != 0 and over) zoom(ed, c, -notch(d), d.mouse);
             mapMouse(ed, c, over);
             if (d.fullscreen) ed.stroke_at = null;
         },
@@ -1243,11 +1250,18 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
         },
     }
     if (d.wheel != 0 and d.mouse.x < PANEL_W and d.mouse.y >= ed.lower_top) {
-        const up = d.wheel > 0;
         if (ed.lower == .things or ed.generator() != null) {
-            ed.gen_top = std.math.clamp(ed.gen_top + if (up) -ROW_H else ROW_H, 0, ed.gen_most);
-        } else scrollNodes(ed, if (up) -1 else 1);
+            ed.gen_top = std.math.clamp(ed.gen_top + notch(d) * ROW_H, 0, ed.gen_most);
+        } else scrollNodes(ed, notch(d));
     }
+}
+
+fn notch(d: *const Desk) i32 {
+    return if (d.wheel > 0) -1 else if (d.wheel < 0) 1 else 0;
+}
+
+fn scrollTop(top: usize, by: i32, n: usize, rows: usize) usize {
+    return mathx.nudge(top, by, (n -| rows) + 1);
 }
 
 /// `px` screen pixels a unit of `cam`.
@@ -1291,7 +1305,7 @@ pub fn modalKeys(ed: *Editor) void {
             if (d.enter) ed.named();
         },
         .open => {
-            if (d.wheel != 0) ed.listed_top = mathx.nudge(ed.listed_top, if (d.wheel > 0) -1 else 1, (ed.listing.n -| MODAL_ROWS) + 1);
+            if (d.wheel != 0) ed.listed_top = scrollTop(ed.listed_top, notch(d), ed.listing.n, MODAL_ROWS);
             if (d.nav != 0 and ed.listing.n > 0) {
                 ed.listed_at = mathx.wrap(ed.listed_at, d.nav, ed.listing.n);
                 ed.listed_top = mathx.reveal(ed.listed_top, ed.listed_at, MODAL_ROWS);
@@ -1535,7 +1549,7 @@ pub fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (over and d.paint_hit) {
         if (ed.dotUnder(c, d.mouse)) |l| {
             ed.linking = l;
-            return ed.say("Linking node {d} door {d}: let go on the door it leads to", .{ l.node, l.door });
+            return ed.say(LINKING ++ "let go on the door it leads to", .{ l.node, l.door });
         }
         if (ed.boxUnder(c, d.mouse)) |n| {
             const was = ed.map.node[n].pos;
@@ -1598,7 +1612,7 @@ pub fn reroll(ed: *Editor) void {
 }
 
 fn scrollNodes(ed: *Editor, by: i32) void {
-    ed.scroll = mathx.nudge(ed.scroll, by, (ed.map.node_n -| ed.node_rows) + 1);
+    ed.scroll = scrollTop(ed.scroll, by, ed.map.node_n, ed.node_rows);
 }
 
 fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
@@ -1682,7 +1696,7 @@ pub fn place(ed: *Editor, p: P) void {
             const here = atlas.Link{ .node = ed.node, .door = k };
             const from = ed.pick orelse {
                 ed.pick = here;
-                return ed.say("Linking node {d} door {d}: " ++ Desk.PAINT_CAPTION ++ " the destination door on any node", .{ here.node, here.door });
+                return ed.say(LINKING ++ Desk.PAINT_CAPTION ++ " the destination door on any node", .{ here.node, here.door });
             };
             ed.pick = null;
             linkDoors(ed, from, here);

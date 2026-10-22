@@ -12,6 +12,10 @@ const sky = @import("sky.zig");
 const embedded = @import("assets").names;
 
 pub const SPRITE_PX: i32 = 64;
+
+pub fn pxScale(cell: f32) f32 {
+    return cell / SPRITE_PX;
+}
 /// A faced wall's bottom rows of brick, as `tools/tile_art/export_walls.lua` paints them.
 pub const WALL_FACE_PX: i32 = 23;
 /// A body or tile with no sprite draws its glyph this big, at `SPRITE_PX`.
@@ -84,15 +88,20 @@ pub const Assets = struct {
         for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
             const p = grid.Level.of(i);
             need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
-            need.chest_item_bag = need.chest_item_bag or t == .chest or t == .chest_open;
+            need.chest_item_bag = need.chest_item_bag or t.isChest();
             if (t.opened()) |open| need.add(.{ .tile = open });
             if (standsOver(t)) {
                 if (cutAt(lv, p)) |c| need.add(c);
             }
-            const g = ground.bedAt(lv, p) orelse continue;
-            if (GROUND_SHEETS.contains(g)) need.grounds.insert(g) else need.add(.{ .tile = g.tile() });
+            const g = ground.bedAt(lv, p, false) orelse continue;
+            need.bed(g);
+            if (under(t)) |u| need.bed(ground.of(u).?);
         }
         return need;
+    }
+
+    fn bed(need: *Assets, g: ground.Ground) void {
+        if (GROUND_SHEETS.contains(g)) need.grounds.insert(g) else need.add(.{ .tile = g.tile() });
     }
 
     fn add(need: *Assets, c: Cut) void {
@@ -1041,7 +1050,7 @@ pub const PIN = rgb(0xc8c2b4);
 pub const WARD = rgb(0x6fa8f0);
 pub const MAGIC = WARD;
 
-/// An item's name and mark: magic ones in the ward's blue.
+/// An item's name: magic ones in the ward's blue.
 pub fn itemInk(magical: bool) rl.Color {
     return if (magical) MAGIC else rl.Color.white;
 }
@@ -1399,7 +1408,7 @@ pub const Prompt = union(enum) {
                 if (button == .left or button == .right) {
                     rl.drawRectangleRec(.{ .x = x + (if (button == .left) -s * 0.24 else @as(f32, 0.04)), .y = y - s * 0.33, .width = s * 0.2, .height = s * 0.3 }, fade(PROMPT_INK, alpha));
                 } else {
-                    rl.drawRectangleRounded(.{ .x = x - 1.5, .y = y - s * 0.3, .width = 3, .height = s * 0.3 }, 0.5, 4, fade(PROMPT_INK, alpha));
+                    rl.drawRectangleRounded(.{ .x = x - 1.5, .y = y - s * 0.3, .width = 3, .height = s * 0.3 }, WHEEL_ROUND.roundness, WHEEL_ROUND.segments, fade(PROMPT_INK, alpha));
                     if (button == .wheel) for ([_]mathx.Dir{ .n, .s }) |d| {
                         promptArrow(d, cx, cy + d.delta().y * @divTrunc(h, 3), arrowPx(h), fade(PROMPT_INK, alpha));
                     };
@@ -1505,6 +1514,7 @@ const Round = struct { roundness: f32, segments: i32 };
 const PILL_ROUND = Round{ .roundness = 0.6, .segments = 8 };
 const KEYCAP_ROUND = Round{ .roundness = 0.3, .segments = 6 };
 const MOUSE_ROUND = Round{ .roundness = 0.65, .segments = 8 };
+const WHEEL_ROUND = Round{ .roundness = 0.5, .segments = 4 };
 
 fn pill(box: rl.Rectangle, alpha: f32) void {
     rl.drawRectangleRounded(box, PILL_ROUND.roundness, PILL_ROUND.segments, fade(PROMPT_BODY, alpha));
@@ -1875,6 +1885,25 @@ test "map assets include unseen shapes, ground under props and future slime form
     lv.barrel_seen[cell] = false;
     try std.testing.expect(!Assets.of(&lv).barrel);
     std.debug.print("map assets: hidden walls and forest, 2 underlays, slime descendants, remembered barrels and map replacement checked\n", .{});
+}
+
+test "map assets hold the fallback ground a prop stands on when only unbearing neighbours are seen" {
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .water);
+    @memset(&lv.seen, true);
+    const p = grid.MIDDLE;
+    lv.set(p, .boulder);
+    const fallback = ground.of(under(.boulder).?).?;
+    const other: ground.Ground = if (fallback == .dirt) .sand else .dirt;
+    for (mathx.CARDINALS) |d| {
+        lv.set(p.add(d), other.tile());
+        lv.seen[grid.Level.idx(p.add(d))] = false;
+    }
+    const shown = ground.bedAt(&lv, p, true).?;
+    try std.testing.expect(shown != ground.bedAt(&lv, p, false).?);
+    const need = Assets.of(&lv);
+    try std.testing.expect(if (GROUND_SHEETS.contains(shown)) need.grounds.contains(shown) else need.tiles.contains(shown.tile()));
+    std.debug.print("prop seen over water only: drawn on {s}, loaded\n", .{@tagName(shown)});
 }
 
 test "a slot's prompt is its maker's face button or shoulder on a pad, and its key's cap on the keyboard" {

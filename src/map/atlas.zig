@@ -178,8 +178,7 @@ pub const Bespoke = struct {
     }
 
     pub fn dropFoe(self: *Bespoke, i: usize) void {
-        self.foe_n -= 1;
-        self.foe[i] = self.foe[self.foe_n];
+        _ = mathx.swapRemove(Foe, &self.foe, &self.foe_n, i);
     }
 };
 
@@ -698,7 +697,7 @@ pub const NO_MAPS = "No maps in " ++ DIR ++ " yet";
 
 pub const Error = error{ NoHeader, BadLine, TooMany, NoNodes, NoStart, BadLink };
 
-/// A procgen node's base lines: each named for, and holding, a field of its floor; the foes' are `FOE_KNOBS`.
+/// A procgen node's base lines: each named for, and holding, a field of its floor; the foes' and sky's are `GROUPS`.
 pub fn floorKnobs(comptime a: Algo) []const []const u8 {
     return armKnobs(Floor, a);
 }
@@ -1065,7 +1064,7 @@ pub const Listing = struct {
     }
 };
 
-/// Where a body arriving at `p` stands: `p`, or the open cell no one holds, nor `foes` are to, fewest steps from it.
+/// Where a body arriving at `p` stands: `p`, or the open cell no one holds, nor `foes` are to, fewest steps from it; nearest as the crow flies when no step reaches one.
 pub fn landing(lv: *const grid.Level, p: P, foes: []const Foe) ?P {
     if (!lv.walkable(p)) return nearest(lv, p, foes);
     if (free(lv, p, foes)) return p;
@@ -1375,7 +1374,7 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
             if (t != .swamp_tree) continue;
             const p = grid.Level.of(k);
             try std.testing.expect(carve.nearWater(&lv, p, 4));
-            dirt_trees += @intFromBool(@import("../gfx/ground.zig").bedAt(&lv, p) == .dirt);
+            dirt_trees += @intFromBool(@import("../gfx/ground.zig").bedAt(&lv, p, false) == .dirt);
             inland_trees += @intFromBool(p.x > 20);
             trees += 1;
         }

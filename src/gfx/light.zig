@@ -360,7 +360,7 @@ const Torch = struct {
 
     /// On the ground plane.
     fn flame(t: *const Torch) [3]f32 {
-        return .{ mathx.centre(t.wall)[0], @as(f32, @floatFromInt(t.wall.y)) + 1 + STANDOFF, FLAME_Z };
+        return .{ mathx.centre(t.wall)[0], @as(f32, @floatFromInt(t.floor().y)) + STANDOFF, FLAME_Z };
     }
 
     fn drawn(t: *const Torch) [2]f32 {
@@ -376,13 +376,12 @@ const Torch = struct {
     }
 
     fn texel(t: *const Torch, p: P) usize {
-        const o = t.corner();
-        return mathx.slot(p.x - o.x, p.y - o.y, SPAN, SPAN).?;
+        return t.box().slot(p).?;
     }
 
     fn reached(t: *const Torch, x: f32, y: f32) f32 {
-        const o = t.corner();
-        return occluded(&t.reach, &t.open, SPAN, SPAN, x - @as(f32, @floatFromInt(o.x)) - 0.5, y - @as(f32, @floatFromInt(o.y)) - 0.5);
+        const uv = fieldUv(t.corner(), x, y);
+        return occluded(&t.reach, &t.open, SPAN, SPAN, uv[0], uv[1]);
     }
 
     /// The flame's offset from a point and how much of it reaches there, fallen off and occluded; null out of reach.
@@ -425,7 +424,7 @@ const EFFECT_GLINT: f32 = 0.11;
 
 fn smoothSpecular(toward: [3]f32, comptime power: u32) f32 {
     const d: Rgb = toward;
-    const len = @sqrt(@reduce(.Add, d * d));
+    const len = sky.norm(d);
     if (len <= 1e-5 or d[2] <= 0) return 0;
     const half = d / splat(len) + VIEWER;
     const h = sky.unit(half);
@@ -471,7 +470,12 @@ const OPEN_WHOLE: f32 = 4;
 
 /// A map-sized field at a point on the screen, cells.
 fn sample(f: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
-    return bilinear(f, grid.W, grid.H, x - 0.5, y - 0.5);
+    const uv = fieldUv(.{ .x = 0, .y = 0 }, x, y);
+    return bilinear(f, grid.W, grid.H, uv[0], uv[1]);
+}
+
+fn fieldUv(o: P, x: f32, y: f32) [2]f32 {
+    return .{ x - @as(f32, @floatFromInt(o.x)) - 0.5, y - @as(f32, @floatFromInt(o.y)) - 0.5 };
 }
 
 const SightField = enum { soft, weight, open };
@@ -525,7 +529,8 @@ const Patch = struct {
 };
 
 fn sampleOccluded(reach: *const [grid.CELLS]f32, open: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
-    return occluded(reach, open, grid.W, grid.H, x - 0.5, y - 0.5);
+    const uv = fieldUv(.{ .x = 0, .y = 0 }, x, y);
+    return occluded(reach, open, grid.W, grid.H, uv[0], uv[1]);
 }
 
 fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32) f32 {
@@ -759,8 +764,12 @@ const Effect = struct {
         return s.gain * k * k;
     }
 
+    fn box(e: *const Effect) grid.Box {
+        return .around(e.origin, EFFECT_REACH);
+    }
+
     fn texel(e: *const Effect, p: P) ?usize {
-        return mathx.slot(p.x - e.origin.x + EFFECT_REACH, p.y - e.origin.y + EFFECT_REACH, EFFECT_SPAN, EFFECT_SPAN);
+        return e.box().slot(p);
     }
 };
 
@@ -793,23 +802,23 @@ pub const Light = struct {
     clear: [grid.CELLS]bool,
     clear_row: [grid.CELLS]bool,
     torch: [grid.MAX_TORCHES]Torch,
-    torch_n: usize,
+    torch_n: usize = 0,
     /// The hero's centre as drawn, cells.
-    carrier: ?[2]f32,
-    sky: ?sky.Sky,
+    carrier: ?[2]f32 = null,
+    sky: ?sky.Sky = null,
     /// Integral image of caster counts at cell corners.
     casting: [CORNERS_W * CORNERS_H]u16,
     clouds: [CORNERS_W * CORNERS_H]f32,
     /// Cached inclusive cloud corners and sample time in seconds.
     clouds_held: ?struct { box: grid.Box, t: f32 } = null,
-    t: mathx.Seconds,
+    t: mathx.Seconds = .{},
     texels: std.EnumArray(Layer, [TEXELS]rl.Color),
     /// The rows of `texels` baked since the texture was last sent, all it needs sent.
     baked: [2]i32,
     scratch: grid.Level,
-    gpu: Gpu,
+    gpu: Gpu = .{},
     forest: [FOREST_QUEUE]ForestCast,
-    forest_n: usize,
+    forest_n: usize = 0,
     forest_order: [FOREST_QUEUE]u64,
     reveal_map: bool = false,
     composed: bool = false,
@@ -821,13 +830,7 @@ pub const Light = struct {
     pub fn create(alloc: std.mem.Allocator) !*Light {
         const l = try alloc.create(Light);
         mathx.defaults(l);
-        l.forest_n = 0;
-        l.torch_n = 0;
-        l.carrier = null;
-        l.sky = null;
         @memset(&l.casting, 0);
-        l.t = .{};
-        l.gpu = .{};
         @memset(&l.sight, 0);
         @memset(&l.memory, 0);
         @memset(&l.scratch.tile, .floor);
@@ -918,6 +921,10 @@ pub const Light = struct {
         return .{ (@as(f32, @floatFromInt(tx)) + 0.5) / sub, (@as(f32, @floatFromInt(ty)) + 0.5) / sub };
     }
 
+    fn texelCentreOf(i: usize) [2]f32 {
+        return texelCentre(i % TEXELS_W, i / TEXELS_W);
+    }
+
     fn grounded(self: *Light) void {
         for (&self.see_through, &self.ground, &self.scratch.tile) |*k, *g, t| {
             k.* = mask(!t.blind());
@@ -934,7 +941,7 @@ pub const Light = struct {
             }
             self.canopy[grid.Level.idx(p)] = @min(1, cover * DAPPLE_COVER);
         }
-        for (&self.dappling, 0..) |*d, i| d.* = self.dapplingAt(texelCentre(i % TEXELS_W, i / TEXELS_W));
+        for (&self.dappling, 0..) |*d, i| d.* = self.dapplingAt(texelCentreOf(i));
     }
 
     /// Blur only seen cells, and ground sight only over open ground, to prevent dim rims and wall leaks.
@@ -1088,10 +1095,7 @@ pub const Light = struct {
 
     fn sunBox(ray: SunRay, x: f32, y: f32, z: f32) grid.Box {
         const far = ray.far(z);
-        const e = [2]f32{ x + ray.u[0] * far, y + ray.u[1] * far };
-        const lo = mathx.cellOf(.{ @min(x, e[0]), @min(y, e[1]) });
-        const hi = mathx.cellOf(.{ @max(x, e[0]), @max(y, e[1]) });
-        return .{ .lo = lo.sub(.{ .x = 1, .y = 1 }), .hi = hi.add(.{ .x = 2, .y = 2 }) };
+        return grid.Box.between(mathx.cellOf(.{ x, y }), mathx.cellOf(.{ x + ray.u[0] * far, y + ray.u[1] * far })).grown(1);
     }
 
     fn castersIn(self: *const Light, box: grid.Box) u16 {
@@ -1356,7 +1360,7 @@ pub const Light = struct {
             const s = e.source;
             const k = e.strength(q[0], q[1], 0);
             if (k <= FAINT) continue;
-            gleam += rgbOf(s.col) * splat(smoothSpecular(.{ s.at[0] - q[0], s.at[1] - q[1], s.at[2] }, GLINT_POWER) * k * EFFECT_GLINT);
+            gleam += rgbOf(s.col) * splat(smoothSpecular(offset(s.at, q[0], q[1], 0), GLINT_POWER) * k * EFFECT_GLINT);
         }
         return gleam;
     }
@@ -2197,6 +2201,13 @@ fn testRoom(lv: *grid.Level, walls: []const P) void {
     @memset(&lv.seen, true);
 }
 
+fn litFloor() grid.Level {
+    var lv = grid.openFloor();
+    @memset(&lv.lit, true);
+    @memset(&lv.seen, true);
+    return lv;
+}
+
 fn testLight(lv: *const grid.Level) !*Light {
     const l = try Light.create(std.testing.allocator);
     l.settle(lv);
@@ -2209,9 +2220,7 @@ fn added(l: *const Light, lv: *const grid.Level, q: [2]f32) f32 {
 }
 
 test "effect lights shade terrain and bodies without revealing memory or crossing walls" {
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    var lv = litFloor();
     for (0..grid.H) |y| lv.set(.{ .x = 22, .y = @intCast(y) }, .wall);
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
@@ -2260,7 +2269,7 @@ test "effect reach bounds preserve lighting at fractional positions and map edge
             const bounded = &l.effects[0];
             var reference = bounded.*;
             for (&reference.reach, 0..) |*reached, i| {
-                const p = P{ .x = reference.origin.x + @as(i32, @intCast(i % EFFECT_SPAN)) - EFFECT_REACH, .y = reference.origin.y + @as(i32, @intCast(i / EFFECT_SPAN)) - EFFECT_REACH };
+                const p = reference.box().lo.add(mathx.unslot(i, EFFECT_SPAN));
                 reached.* = grid.Level.inside(p) and grid.clearLine(&lv, reference.origin, p);
                 for (offsets) |dx| {
                     for (offsets) |dy| {
@@ -2282,9 +2291,7 @@ test "effect reach bounds preserve lighting at fractional positions and map edge
 }
 
 test "cell effect culling preserves floor wall and water lighting" {
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    var lv = litFloor();
     for (18..25) |x| lv.set(.{ .x = @intCast(x), .y = 21 }, .wall);
     @import("../map/procgen.zig").reshape(&lv);
     const l = try testLight(&lv);
@@ -2625,7 +2632,7 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     var fading: usize = 0;
     var off: usize = 0;
     for (0..TEXELS) |i| {
-        const q = Light.texelCentre(i % Light.TEXELS_W, i / Light.TEXELS_W);
+        const q = Light.texelCentreOf(i);
         const m = l.memoryAt(mathx.cellOf(q));
         if (m == 0) dark += 1;
         if (m > 0 and m < 1) fading += 1;
@@ -2656,16 +2663,15 @@ test "clipped light baking clears unseen texels without touching adjacent rows o
         for (std.enums.values(Layer)) |k| @memset(l.texels.getPtr(k), sentinel);
         l.bake(&lv, box.lo, box.hi);
         for (0..TEXELS) |i| {
-            const x: i32 = @intCast(i % Light.TEXELS_W);
-            const y: i32 = @intCast(i / Light.TEXELS_W);
-            const inside = x >= box.lo.x * SUB - 1 and x < box.hi.x * SUB + 1 and
-                y >= box.lo.y * SUB - 1 and y < box.hi.y * SUB + 1;
+            const t = mathx.unslot(i, Light.TEXELS_W);
+            const inside = t.x >= box.lo.x * SUB - 1 and t.x < box.hi.x * SUB + 1 and
+                t.y >= box.lo.y * SUB - 1 and t.y < box.hi.y * SUB + 1;
             if (!inside) {
                 for (std.enums.values(Layer)) |k| try std.testing.expectEqual(sentinel, l.texels.getPtrConst(k)[i]);
                 continue;
             }
             touched += 1;
-            const q = Light.texelCentre(@intCast(x), @intCast(y));
+            const q = Light.texelCentreOf(i);
             const v = l.viewAt(q);
             if (l.memoryAt(mathx.cellOf(q)) == 0) dark += 1 else visible += 1;
             try std.testing.expectEqual(texelOf(l.at(&lv, &.{}, q), v.lit), l.texels.getPtrConst(.map)[i]);
@@ -2955,9 +2961,7 @@ test "cinema lighting stays subtle and leaves night and indoor light unchanged" 
 }
 
 test "the carried light fades across what it lets the archer see and leaves that edge above memory" {
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    const lv = litFloor();
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     l.carrier = .{ 40.5, 30.5 };
@@ -3346,9 +3350,7 @@ test "everything that blocks a step and does not stand shades the ground past it
 }
 
 test "a standing shrub takes the sun as a body does, and throws its shadow the same length away from it" {
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    var lv = litFloor();
     const shrub = P{ .x = 30, .y = 30 };
     const foe = P{ .x = 40, .y = 30 };
     lv.set(shrub, .shrub);
@@ -3369,9 +3371,7 @@ test "a standing shrub takes the sun as a body does, and throws its shadow the s
 }
 
 test "a body's sun shadow runs the way the ground's do, its height times the hour's reach" {
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    const lv = litFloor();
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     const at = mathx.centre(.{ .x = 40, .y = 30 });
@@ -3416,9 +3416,7 @@ test "skipping the sun's march where nothing that casts is near changes nothing 
 }
 
 test "a sun shadow turns smoothly through due east and due west, never flipping across the feet" {
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    const lv = litFloor();
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     const at = mathx.centre(.{ .x = 40, .y = 30 });
@@ -3444,9 +3442,7 @@ test "a sun shadow turns smoothly through due east and due west, never flipping 
 
 test "under the sky, ground in the sun outshines ground in shade, and night is darker than both" {
     const morning: f32 = 9;
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    var lv = litFloor();
     const rock = P{ .x = 30, .y = 30 };
     lv.set(rock, .rock);
     const l = try testLight(&lv);
@@ -3467,9 +3463,7 @@ test "under the sky, ground in the sun outshines ground in shade, and night is d
 }
 
 test "the moon throws a cold shadow as deep as the sun's, over the archer's own light too" {
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    var lv = litFloor();
     const rock = P{ .x = 30, .y = 30 };
     lv.set(rock, .rock);
     const l = try testLight(&lv);
@@ -3506,9 +3500,7 @@ test "the moon throws a cold shadow as deep as the sun's, over the archer's own 
 }
 
 test "sun and torch shadows thinned to slivers give way to soft streaks" {
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    const lv = litFloor();
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     const at = mathx.centre(.{ .x = 40, .y = 30 });
@@ -3528,9 +3520,7 @@ test "sun and torch shadows thinned to slivers give way to soft streaks" {
 }
 
 test "a streak is darkest at the feet and gone at the tip, and a sideways sun shadow runs at most its reach" {
-    var lv = grid.openFloor();
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
+    const lv = litFloor();
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     const at = mathx.centre(.{ .x = 40, .y = 30 });

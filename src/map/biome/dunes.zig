@@ -9,6 +9,9 @@ pub const RIDGES_MAX: u8 = 30;
 pub const MESAS_MAX: u8 = 30;
 pub const SCALE_MIN: u8 = 6;
 pub const SCALE_MAX: u8 = 48;
+const MESA_PER: f32 = 2.5;
+const BREAK_OVER: f32 = 0.45;
+const CREST_MID: f32 = 0.5;
 
 pub const Params = struct {
     ground: carve.Ground = .sand,
@@ -37,11 +40,11 @@ pub fn shape(lv: *grid.Level, _: *mathx.Rng, seed: u64, p: Params) void {
     const broken = carve.Noise.init(seed, .dune_break);
     const s: f32 = @floatFromInt(p.scale);
     const band = mathx.fraction(p.ridges);
-    const high = 1 - mathx.fraction(p.mesas) * 2.5;
+    const high = 1 - mathx.fraction(p.mesas) * MESA_PER;
     for (0..grid.CELLS) |i| {
         const q = grid.Level.of(i);
         const v = crest.at(q, s, 3);
-        const ridge = @abs(v - 0.5) < band and broken.at(q, s / 2, 2) > 0.45;
+        const ridge = @abs(v - CREST_MID) < band and broken.at(q, s / 2, 2) > BREAK_OVER;
         const mesa = v > high;
         lv.tile[i] = if (ridge or mesa) pal.solid else pal.open;
     }

@@ -19,7 +19,7 @@ pub fn author(map: *atlas.Atlas, kind: actor.Kind) void {
     const node = map.oneRoom(ROOM, HERO);
     _ = map.node[node].rename("Arena");
     const room = &map.node[node].plan.bespoke;
-    for ([_]i32{ -TORCH_STEP, 0, TORCH_STEP }) |dx| std.debug.assert(room.torch.add(lume.torchWall(.{ .x = MIDDLE.x + dx, .y = ROOM.lo.y })));
+    for ([_]i32{ -TORCH_STEP, 0, TORCH_STEP }) |dx| std.debug.assert(room.torch.add(lume.torchOver(ROOM, MIDDLE.x + dx)));
     std.debug.assert(room.addFoe(.{ .kind = kind, .at = FOE }));
 }
 

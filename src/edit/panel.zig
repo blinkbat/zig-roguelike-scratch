@@ -116,10 +116,20 @@ fn drawNodes(ed: *editor.Editor, g: *game.Game, top: i32) void {
         const h = editor.hot(ed, r, true, false, "Open this node");
         editor.plate(r, n == ed.node, h.hot);
         drawNodeTitle(ed, g, n, r, y + editor.TITLE_DY);
-        editor.textFace(g).draw(canvas.nodeDetail(nd, &detail_buf), editor.textX(r), y + editor.TITLE_DY + editor.DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
+        editor.textFace(g).draw(nodeDetail(nd, &detail_buf), editor.textX(r), y + editor.TITLE_DY + editor.DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
         if (h.hit) ed.goTo(n);
         y += editor.NODE_H;
     }
+}
+
+fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {
+    const kind = switch (nd.plan) {
+        .bespoke => @tagName(nd.plan),
+        .procgen => |*pg| @tagName(pg.floor),
+    };
+    const open = nd.unlinked();
+    if (open == 0) return std.fmt.bufPrintZ(buf, "{s}, {d} doors", .{ kind, nd.door_n }) catch "";
+    return std.fmt.bufPrintZ(buf, "{s}, {d} doors, {d} unlinked", .{ kind, nd.door_n, open }) catch "";
 }
 
 const ICON_H: i32 = 40;
@@ -147,8 +157,8 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
         const h = editor.hot(ed, icon, live, false, t.tip());
         editor.plate(icon, t.eql(ed.tool), h.hot);
         const pic = editor.pictureIn(icon, ICON_PIC, ICON_PIC_TOP);
-        if (t == .paint) swatch(g, ed.ink.get(.first), pic) else editor.figure(g, toolPicture(g, t), t.look_(), pic);
-        if (!live) rl.drawRectangleRec(icon, canvas.UNLIVE);
+        if (t == .paint) swatch(g, ed.ink.get(.first), pic) else toolFigure(g, t, pic);
+        if (!live) rl.drawRectangleRec(icon, UNLIVE);
         editor.textFace(g).draw(key, @as(i32, @intFromFloat(icon.x)) + ICON_KEY.x, @as(i32, @intFromFloat(icon.y)) + ICON_KEY.y, SMALL, look.DIM);
         if (h.hit) ed.setTool(t);
     }
@@ -217,6 +227,7 @@ pub const Tiles = struct {
 const ICON_PIC: f32 = 30;
 const ICON_PIC_TOP: f32 = 3;
 const ICON_KEY = P{ .x = 3, .y = 1 };
+const UNLIVE = look.fade(look.BG, 0.6);
 const SHAPE_LABELS = std.EnumArray(editor.Shape, [:0]const u8).init(.{ .brush = "Brush", .line = "Line", .rect = "Rect", .box = "Box", .fill = "Fill", .select = "Sel" });
 const INK_EDGES = std.EnumArray(editor.Ink, rl.Color).init(.{ .first = ON, .second = WARN });
 const INK_TIPS = std.EnumArray(editor.Ink, [:0]const u8).init(.{
@@ -325,6 +336,10 @@ pub fn toolPicture(g: *const game.Game, t: editor.Tool) ?rl.Texture2D {
     };
 }
 
+pub fn toolFigure(g: *game.Game, t: editor.Tool, r: rl.Rectangle) void {
+    editor.figure(g, toolPicture(g, t), t.look_(), r);
+}
+
 pub fn bareBg(t: grid.Tile) rl.Color {
     return look.tileBg(t) orelse look.BARE_WALL;
 }
@@ -385,7 +400,7 @@ pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     var y = top + editor.GAP;
     drawFit(g, hover(ed, c, &buf), editor.TEXT, w - state_w - editor.BLOCK_GAP, false, x, y, look.TEXT);
     editor.textFace(g).draw(state, x + w - state_w, y, editor.TEXT, look.DIM);
-    y += editor.TEXT + editor.GAP;
+    y += editor.LINE_STEP;
     const said = ed.said_t > 0;
     const line: []const u8 = if (said) ed.said.text() else if (ed.view == .map) editor.CRIB_MAP else editor.CRIB_GRAPH;
     drawFit(g, line, editor.TEXT, w, false, x, y, if (said) look.UI_FOCUS else look.DIM);
@@ -410,7 +425,7 @@ fn hover(ed: *editor.Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
         }
         const n = ed.boxUnder(c, ed.desk.mouse) orelse return "";
         var d: [editor.LINE]u8 = undefined;
-        return std.fmt.bufPrintZ(buf, "{s} (node {d}): {s}", .{ ed.nodeName(n, &a), n, canvas.nodeDetail(&ed.map.node[n], &d) }) catch "";
+        return std.fmt.bufPrintZ(buf, "{s} (node {d}): {s}", .{ ed.nodeName(n, &a), n, nodeDetail(&ed.map.node[n], &d) }) catch "";
     }
     const p = ed.mouseCell(c);
     if (!grid.Level.inside(p)) return "";

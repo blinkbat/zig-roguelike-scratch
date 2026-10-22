@@ -17,21 +17,26 @@ from concurrent.futures import ThreadPoolExecutor
 SELF = pathlib.Path(__file__).resolve()
 ROOT = SELF.parents[1]
 LOCK_PATH = SELF.with_name('release-deps.json')
+MAPS = ROOT / 'maps'
+ASSETS = ROOT / 'assets'
+EXE = 'cistern'
+LINUX_ARCH = 'x86_64'
+LINUX_TRIPLE = LINUX_ARCH + '-linux-gnu'
+EMBEDDED = ('.png', '.ttf', '.txt')
 PREFIX_LAYOUT = 1
 GLIBC = (2, 31)
 MACOS = (11, 0)
-LAUNCHER = b'#!/bin/sh\nset -eu\ncd -- "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec ./cistern "$@"\n'
-LINUX_LAUNCHER = b'''#!/bin/sh
-set -eu
-cd -- "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-if [ -e /proc/driver/nvidia ]; then
+MACOS_ARCHES = {'arm64': ('aarch64', 0x100000c), 'x86_64': ('x86_64', 0x1000007)}
+PREAMBLE = b'#!/bin/sh\nset -eu\ncd -- "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\n'
+EXEC = b'exec ./' + EXE.encode() + b' "$@"\n'
+LAUNCHER = PREAMBLE + EXEC
+LINUX_LAUNCHER = PREAMBLE + b'''if [ -e /proc/driver/nvidia ]; then
   export __NV_PRIME_RENDER_OFFLOAD="${__NV_PRIME_RENDER_OFFLOAD-1}"
   export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME-nvidia}"
 else
   export DRI_PRIME="${DRI_PRIME-1}"
 fi
-exec ./cistern "$@"
-'''
+''' + EXEC
 
 
 def dotted(version):
@@ -40,6 +45,20 @@ def dotted(version):
 
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def publish(dest, write, check=None):
+    with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as temporary:
+        pending = pathlib.Path(temporary.name)
+    try:
+        with pending.open('wb') as stream:
+            write(stream)
+        if check:
+            check(pending)
+        pending.replace(dest)
+    except BaseException:
+        pending.unlink(missing_ok=True)
+        raise
 
 
 def download(record, cache):
@@ -54,10 +73,7 @@ def download(record, cache):
             if sha256(data) != record['sha256']:
                 raise ValueError('SHA-256 mismatch: ' + url)
             dest.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as temporary:
-                temporary.write(data)
-                pending = pathlib.Path(temporary.name)
-            pending.replace(dest)
+            publish(dest, lambda stream: stream.write(data))
             return dest
         except (OSError, ValueError, http.client.HTTPException) as error:
             failures.append(str(error))
@@ -127,7 +143,7 @@ def prepare_linux(lock, cache):
                 raise ValueError('Unresolved Linux library/header symlinks')
             links = pending
         shutil.copytree(unpacked / 'usr/include', prefix / 'include', dirs_exist_ok=True)
-        shutil.copytree(unpacked / 'usr/lib/x86_64-linux-gnu', prefix / 'lib', dirs_exist_ok=True)
+        shutil.copytree(unpacked / 'usr/lib' / LINUX_TRIPLE, prefix / 'lib', dirs_exist_ok=True)
     (prefix / '.complete').write_text(identity, encoding='ascii')
     return prefix
 
@@ -191,7 +207,7 @@ def run(args):
 def inspect_macos(path, arch):
     data = path.read_bytes()
     header = struct.unpack_from('<8I', data)
-    cpu = {'arm64': 0x100000c, 'x86_64': 0x1000007}[arch]
+    cpu = MACOS_ARCHES[arch][1]
     if header[0] != 0xfeedfacf or header[1] != cpu or header[3] != 2:
         raise ValueError('Expected a Mach-O executable for ' + arch)
     offset, needed, minimum, signature, interpreter = 32, [], None, None, None
@@ -254,13 +270,13 @@ def inspect_macos(path, arch):
 
 
 def map_paths():
-    return sorted((ROOT / 'maps').rglob('*.map'))
+    return sorted(MAPS.rglob('*.map'))
 
 
 def source_hash():
     paths = [ROOT / 'build.zig', ROOT / 'build.zig.zon', LOCK_PATH, SELF]
     paths += list((ROOT / 'src').rglob('*.zig'))
-    paths += [p for p in (ROOT / 'assets').iterdir() if p.suffix in ('.png', '.ttf', '.txt')]
+    paths += [p for p in ASSETS.iterdir() if p.suffix in EMBEDDED]
     paths += map_paths()
     digest = hashlib.sha256()
     for path in sorted(paths):
@@ -269,20 +285,24 @@ def source_hash():
     return digest.hexdigest()
 
 
+def archive_name(platform, arch):
+    return EXE + '-' + platform + '-' + arch
+
+
 def package(binary, output, metadata, platform, arch):
-    name = 'cistern-' + platform + '-' + arch
-    files = {'cistern': (binary.read_bytes(), 0o755), 'run.sh': (LINUX_LAUNCHER if platform == 'linux' else LAUNCHER, 0o755)}
+    name = archive_name(platform, arch)
+    files = {EXE: (binary.read_bytes(), 0o755), 'run.sh': (LINUX_LAUNCHER if platform == 'linux' else LAUNCHER, 0o755)}
     if platform == 'macos':
         files['run.command'] = (LAUNCHER, 0o755)
     for path in map_paths():
         files[path.relative_to(ROOT).as_posix()] = (path.read_bytes(), 0o644)
     for filename in ('Balthazar-OFL.txt', 'gamecontrollerdb-LICENSE'):
-        files['licenses/' + filename] = ((ROOT / 'assets' / filename).read_bytes(), 0o644)
+        files['licenses/' + filename] = ((ASSETS / filename).read_bytes(), 0o644)
     requirements = '''Requires glibc ''' + dotted(GLIBC) + ''' or newer, an X11 display (or XWayland), and OpenGL 3.3.
 On Debian/Ubuntu, runtime libraries can be installed with:
   sudo apt install libgl1 libglx0 libx11-6 libxcursor1 libxext6 libxfixes3 libxi6 libxinerama1 libxrandr2 libxrender1
 run.sh prefers a laptop's dedicated GPU (NVIDIA PRIME offload, or DRI_PRIME on Mesa).
-To use the default GPU instead, run ./cistern from this directory.
+To use the default GPU instead, run ./''' + EXE + ''' from this directory.
 ''' if platform == 'linux' else '''Requires macOS ''' + dotted(MACOS) + ''' or newer and OpenGL 3.3. Use arm64 on Apple Silicon or x86_64 on Intel.
 You can also double-click run.command to launch through Terminal.
 If macOS says the developer cannot be verified, run: xattr -dr com.apple.quarantine <this folder>
@@ -292,7 +312,7 @@ These are local development builds, not Developer ID signed or notarized release
 
 Extract this archive into a writable directory, then run ./run.sh.
 The launcher selects the game directory so maps and saves are found.
-To use the editor, run ./run.sh --edit maps/main.map.
+To use the editor, run ./run.sh --edit ''' + MAPS.name + '''/main.map.
 
 ''' + requirements + '''
 
@@ -306,20 +326,23 @@ Type-checked, compiled and statically inspected. This build command does not lau
     files['build-info.json'] = ((json.dumps(metadata, indent=2, sort_keys=True) + '\n').encode(), 0o644)
     output.mkdir(parents=True, exist_ok=True)
     destination = output / (name + '.tar.gz')
-    with tempfile.NamedTemporaryFile(dir=output, delete=False) as temporary:
-        pending = pathlib.Path(temporary.name)
-        with gzip.GzipFile(filename='', mode='wb', fileobj=temporary, mtime=0) as compressed:
+
+    def write(stream):
+        with gzip.GzipFile(filename='', mode='wb', fileobj=stream, mtime=0) as compressed:
             with tarfile.open(fileobj=compressed, mode='w', format=tarfile.USTAR_FORMAT) as archive:
                 for filename, (data, mode) in sorted(files.items()):
                     entry = tarfile.TarInfo(name + '/' + filename)
                     entry.size, entry.mode, entry.mtime = len(data), mode, 0
                     archive.addfile(entry, io.BytesIO(data))
-    with tarfile.open(pending, 'r:gz') as archive:
-        for entry in archive:
-            data, mode = files[entry.name.removeprefix(name + '/')]
-            if archive.extractfile(entry).read() != data or entry.mode != mode:
-                raise ValueError('Packaged content or mode mismatch: ' + entry.name)
-    pending.replace(destination)
+
+    def check(pending):
+        with tarfile.open(pending, 'r:gz') as archive:
+            for entry in archive:
+                data, mode = files[entry.name.removeprefix(name + '/')]
+                if archive.extractfile(entry).read() != data or entry.mode != mode:
+                    raise ValueError('Packaged content or mode mismatch: ' + entry.name)
+
+    publish(destination, write, check)
     checksum = sha256(destination.read_bytes())
     destination.with_suffix(destination.suffix + '.sha256').write_text(checksum + '  ' + destination.name + '\n', encoding='ascii')
     print('PACKAGED: ' + str(destination), flush=True)
@@ -329,7 +352,7 @@ Type-checked, compiled and statically inspected. This build command does not lau
 def main():
     parser = argparse.ArgumentParser(description='Build and package Cistern with pinned cross-compilation dependencies.')
     parser.add_argument('platform', choices=['linux', 'macos'])
-    parser.add_argument('--arch', choices=['all', 'arm64', 'x86_64'], default='all')
+    parser.add_argument('--arch', choices=['all', *MACOS_ARCHES], default='all')
     parser.add_argument('--zig', default='zig')
     parser.add_argument('--cache-dir', type=pathlib.Path, default=ROOT.parent / '.zigtoolchain/cistern-release')
     parser.add_argument('--output-dir', type=pathlib.Path, default=ROOT / 'zig-out/releases')
@@ -341,15 +364,15 @@ def main():
     if version != lock['zig_version']:
         raise ValueError('Expected Zig ' + lock['zig_version'] + '; found ' + version)
     output = args.output_dir.resolve()
-    if args.platform == 'linux' and args.arch == 'arm64':
-        parser.error('The pinned Linux dependencies support x86_64 only.')
-    arches = ['x86_64'] if args.platform == 'linux' else ['arm64', 'x86_64']
+    if args.platform == 'linux' and args.arch not in ('all', LINUX_ARCH):
+        parser.error('The pinned Linux dependencies support ' + LINUX_ARCH + ' only.')
+    arches = [LINUX_ARCH] if args.platform == 'linux' else list(MACOS_ARCHES)
     if args.arch != 'all':
         arches = [args.arch]
     prefix = prepare_linux(lock, args.cache_dir.resolve()) if args.platform == 'linux' else None
     before = source_hash()
     for arch in arches:
-        target = 'x86_64-linux-gnu.' + dotted(GLIBC) if args.platform == 'linux' else {'arm64': 'aarch64', 'x86_64': 'x86_64'}[arch] + '-macos.' + dotted(MACOS)
+        target = LINUX_TRIPLE + '.' + dotted(GLIBC) if args.platform == 'linux' else MACOS_ARCHES[arch][0] + '-macos.' + dotted(MACOS)
         install = output / 'build' / (args.platform + '-' + arch)
         common = [args.zig, 'build', '-Dtarget=' + target, '-Dcpu=baseline']
         if prefix:
@@ -362,7 +385,7 @@ def main():
         run(common + ['-Doptimize=ReleaseFast', '-Dstrip=true', '--prefix', install, '--summary', 'all'])
         if source_hash() != before:
             raise RuntimeError('Sources changed during the build; rerun to package a consistent snapshot.')
-        binary = install / 'bin/cistern'
+        binary = install / 'bin' / EXE
         inspection = inspect_linux(binary) if args.platform == 'linux' else inspect_macos(binary, arch)
         metadata = {'zig_version': version, 'target': target, 'cpu': 'baseline',
                     'optimize': 'ReleaseFast', 'strip': True, 'source_sha256': before,

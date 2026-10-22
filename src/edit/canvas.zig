@@ -4,7 +4,6 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
-const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const dual = @import("../gfx/ground.zig");
 const game = @import("../game.zig");
@@ -20,16 +19,6 @@ const PICKED = look.EDIT_PICKED;
 const UNLINKED = look.EDIT_UNLINKED;
 const WARN = look.EDIT_WARN;
 const vec = look.vec;
-
-pub fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {
-    const kind = switch (nd.plan) {
-        .bespoke => @tagName(nd.plan),
-        .procgen => |*pg| @tagName(pg.floor),
-    };
-    const open = nd.unlinked();
-    if (open == 0) return std.fmt.bufPrintZ(buf, "{s}, {d} doors", .{ kind, nd.door_n }) catch "";
-    return std.fmt.bufPrintZ(buf, "{s}, {d} doors, {d} unlinked", .{ kind, nd.door_n, open }) catch "";
-}
 
 pub fn visible(ed: *const editor.Editor, c: rl.Rectangle) grid.Box {
     const lo = mathx.P{ .x = @min(grid.W, @max(0, @as(i32, @intFromFloat(@floor(ed.cam[0]))))), .y = @min(grid.H, @max(0, @as(i32, @intFromFloat(@floor(ed.cam[1]))))) };
@@ -78,7 +67,7 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     for (ed.lv.torches()) |t| modals.seenPicture(g, .torch, ed.cellRect(c, t));
     for (ed.shownFoes()) |f| modals.seenPicture(g, .{ .body = f.kind }, ed.cellRect(c, f.at));
     drawDoors(ed, g, c);
-    if (ed.start_at) |s| editor.figure(g, g.sprites.body(actor.HERO), editor.START, ed.cellRect(c, s));
+    if (ed.start_at) |s| panel.toolFigure(g, .start, ed.cellRect(c, s));
     if (ed.selection) |s| {
         outlineCells(ed, c, s, PICKED);
         fillCells(ed, c, s, SELECTED);
@@ -100,7 +89,6 @@ const GHOST = look.fade(look.LIT, GHOST_A);
 const CUT_OFF = look.fade(WARN, 0.35);
 const SELECTED = look.fade(PICKED, 0.15);
 const GRID_INK = look.fade(look.EDGE, 0.35);
-pub const UNLIVE = look.fade(look.BG, 0.6);
 const DOOR_BACK = look.fade(look.BG, 0.55);
 const PLAQUE_BG = look.fade(PANEL_BG, 0.85);
 pub const INK_EDGE: f32 = 2;

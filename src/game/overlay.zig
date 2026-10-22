@@ -7,6 +7,8 @@ const menu = @import("../ui/menu.zig");
 const hud = @import("../ui/hud.zig");
 const book = @import("../ui/book.zig");
 const skillbar = @import("../play/skillbar.zig");
+const damage = @import("../play/damage.zig");
+const attrs = @import("../play/attrs.zig");
 const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
 const game = @import("../game.zig");
@@ -20,23 +22,24 @@ const plural = mathx.plural;
 const SLOT_MID: i32 = @divTrunc(game.SLOT_PX, 2);
 const CLEAR_GLYPH: i32 = @divTrunc(game.SLOT_PX, 2);
 const SLOT_EDGE_INSET: i32 = look.HUD_BORDER_CUT - 3;
-const BIND_TOP: i32 = 24;
-const BIND_PAD: i32 = 24;
+const SLOT_EDGE_W: f32 = 2;
+const BIND_TOP: i32 = menu.PANEL_PAD;
 const BIND_X0: i32 = @divTrunc(BIND_W - game.SKILLS_W, 2);
 const BIND_TITLE: i32 = 32;
 const BIND_ROWS_DY: i32 = BIND_TITLE + BIND_POP_DY + game.SLOT_PX;
 const BIND_LABEL_GAP: i32 = 6;
 const BIND_ROW_GAP: i32 = 24;
-const BIND_ROW_H: i32 = game.TEXT + BIND_LABEL_GAP + game.SLOT_COLUMN_H + BIND_ROW_GAP;
+const BIND_ROW_H: i32 = font.BODY + BIND_LABEL_GAP + game.SLOT_COLUMN_H + BIND_ROW_GAP;
 const BIND_POP_DY: i32 = 10;
 const BIND_INFO_DY: i32 = 8;
+const BIND_DESC_DY: i32 = font.BODY + BIND_LABEL_GAP;
 
 fn bindRowY(row: usize) i32 {
     return BIND_TOP + BIND_ROWS_DY + @as(i32, @intCast(row)) * BIND_ROW_H;
 }
 
 fn bindSlotY(row: usize) i32 {
-    return bindRowY(row) + game.TEXT + BIND_LABEL_GAP;
+    return bindRowY(row) + font.BODY + BIND_LABEL_GAP;
 }
 
 pub fn bindSlotBox(row: usize, col: usize) rl.Rectangle {
@@ -58,14 +61,12 @@ pub const BIND_ACTIONS = [_]BindAction{
     .{ .button = REMOVE, .label = "Clear slot", .browse_only = true },
     .{ .button = BACK, .label = "Back", .browse_only = false },
 };
-/// A labelled action button's size on the death screen.
-pub const ACTION = P{ .x = 220, .y = 40 };
-const BIND_ACTION = book.ACTION_BOX;
-const BIND_ACTION_STEP: i32 = BIND_ACTION.x + book.ACTION_GAP;
-const BIND_ACTIONS_W: i32 = BIND_ACTIONS.len * BIND_ACTION_STEP - book.ACTION_GAP;
+const BIND_ACTION = menu.ACTION_BOX;
+const BIND_ACTION_STEP: i32 = BIND_ACTION.x + menu.ACTION_GAP;
+const BIND_ACTIONS_W: i32 = BIND_ACTIONS.len * BIND_ACTION_STEP - menu.ACTION_GAP;
 /// As wide as the bar or the actions, whichever is wider; descriptions wrap to it.
 const BIND_DESC_W: i32 = @max(game.SKILLS_W, BIND_ACTIONS_W);
-const BIND_W: i32 = BIND_DESC_W + 2 * BIND_PAD;
+const BIND_W: i32 = BIND_DESC_W + 2 * menu.PANEL_PAD;
 const BIND_ACTION_GAP: i32 = 16;
 
 fn bindInfoY() i32 {
@@ -74,9 +75,7 @@ fn bindInfoY() i32 {
 
 /// Descriptions wrap the same however the panel scales.
 fn bindFace(g: *const game.Game) font.Face {
-    var f = g.face;
-    f.native = @splat(null);
-    return f;
+    return g.face.mipmapped();
 }
 
 fn descLines(g: *const game.Game, face: *const font.Face, act: skillbar.Act) usize {
@@ -89,11 +88,11 @@ fn descLines(g: *const game.Game, face: *const font.Face, act: skillbar.Act) usi
 /// Tall enough for the longest description among the skills it can bind, so it keeps its size while browsing.
 pub fn bindPanel(g: *const game.Game) P {
     const face = bindFace(g);
-    var kit_buf: game.KitBuf = undefined;
+    var kit_buf: skillbar.KitBuf = undefined;
     var lines: usize = 1;
     for (g.growth.kit(g.class, &kit_buf)) |act| lines = @max(lines, descLines(g, &face, act));
-    const desc_h = @as(i32, @intCast(lines)) * (font.BODY + font.LEADING);
-    return .{ .x = BIND_W, .y = bindInfoY() + game.TEXT_LINE + desc_h + BIND_ACTION_GAP + BIND_ACTION.y + BIND_PAD };
+    const desc_h = @as(i32, @intCast(lines)) * font.BODY_LINE;
+    return .{ .x = BIND_W, .y = bindInfoY() + BIND_DESC_DY + desc_h + BIND_ACTION_GAP + BIND_ACTION.y + menu.PANEL_PAD };
 }
 
 pub fn bindSurface(g: *const game.Game, panel: P) menu.Surface {
@@ -102,7 +101,7 @@ pub fn bindSurface(g: *const game.Game, panel: P) menu.Surface {
 
 pub fn bindActionBox(panel: P, i: usize) rl.Rectangle {
     const x = @divTrunc(panel.x - BIND_ACTIONS_W, 2) + @as(i32, @intCast(i)) * BIND_ACTION_STEP;
-    return look.rect(x, panel.y - BIND_PAD - BIND_ACTION.y, BIND_ACTION.x, BIND_ACTION.y);
+    return look.rect(x, panel.y - menu.PANEL_PAD - BIND_ACTION.y, BIND_ACTION.x, BIND_ACTION.y);
 }
 
 const SlotLook = struct { act: ?skillbar.Act, key: ?input.Button, edge: ?rl.Color = null, faded: bool = false };
@@ -113,7 +112,7 @@ fn drawSlot(g: *game.Game, box: rl.Rectangle, s: SlotLook) void {
     const a: f32 = if (s.faded) look.FADED_A else 1;
     look.hudPanel(&g.sprites, x, y, game.SLOT_PX, game.SLOT_PX, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a), look.fade(look.LIT, a));
     if (s.edge) |edge| {
-        rl.drawRectangleLinesEx(look.grown(box, @floatFromInt(-SLOT_EDGE_INSET)), @floatFromInt(game.LINE_W), look.fade(edge, a));
+        rl.drawRectangleLinesEx(look.grown(box, @floatFromInt(-SLOT_EDGE_INSET)), SLOT_EDGE_W, look.fade(edge, a));
     }
     if (s.act) |act| {
         const inset = @divTrunc(game.SLOT_PX - look.SKILL_PX, 2);
@@ -207,7 +206,7 @@ pub fn drawBinds(g: *game.Game) void {
     const b = g.binds;
     menu.heading(g.face, panel, "BIND SKILLS", BIND_TOP, BIND_TITLE, look.TEXT, look.UI_GOLD);
     for (skillbar.SETS, 0..) |set, row| {
-        g.face.text(set.name(), BIND_X0, bindRowY(row), game.TEXT, look.DIM);
+        g.face.text(set.name(), BIND_X0, bindRowY(row), font.BODY, look.DIM);
         for (skillbar.SLOTS, 0..) |key, i| {
             drawSlot(g, bindSlotBox(row, i), .{
                 .act = g.bar.at(.{ .set = set, .button = key }),
@@ -221,7 +220,7 @@ pub fn drawBinds(g: *game.Game) void {
     switch (b.menu) {
         .browse => {},
         .pick => |pick| {
-            var kit_buf: game.KitBuf = undefined;
+            var kit_buf: skillbar.KitBuf = undefined;
             const kit = g.growth.kit(g.class, &kit_buf);
             shown = game.pickAct(kit, pick);
             const picker = bindPicker(b, game.picksOf(kit));
@@ -238,12 +237,12 @@ pub fn drawBinds(g: *game.Game) void {
         },
     }
     if (shown) |a| {
-        bindText(g, panel, a.name(), info_y, game.TEXT, look.TEXT);
+        bindText(g, panel, a.name(), info_y, font.BODY, look.TEXT);
         var desc: [TIP_BODY_MAX + 1]u8 = undefined;
         const text = describe(g, a, &desc);
-        _ = desc_face.paragraphWith(font.Face.textMid, text, @divTrunc(panel.x, 2), info_y + game.TEXT_LINE, BIND_DESC_W, font.BODY, look.DIM);
+        _ = desc_face.paragraphWith(font.Face.textMid, text, @divTrunc(panel.x, 2), info_y + BIND_DESC_DY, BIND_DESC_W, font.BODY, look.DIM);
     } else if (b.menu == .pick) {
-        bindText(g, panel, "Clear slot", info_y, game.TEXT, look.TEXT);
+        bindText(g, panel, "Clear slot", info_y, font.BODY, look.TEXT);
     }
     for (BIND_ACTIONS, 0..) |action, i| {
         if (!action.shown(&b)) continue;
@@ -270,10 +269,6 @@ fn writeDescription(g: *const game.Game, act: skillbar.Act, w: anytype) void {
 
 const Life = struct { hp: i32, max: i32 };
 
-pub fn resourceFill(value: i32, max: i32) f32 {
-    return std.math.clamp(@as(f32, @floatFromInt(value)) / @as(f32, @floatFromInt(@max(1, max))), 0, 1);
-}
-
 pub fn settleResources(g: *game.Game) void {
     g.life_fill = lifeFill(g);
     g.mana_fill = manaFill(g);
@@ -282,11 +277,11 @@ pub fn settleResources(g: *game.Game) void {
 /// Where the orbs' fills are easing to.
 pub fn lifeFill(g: *const game.Game) f32 {
     const life = lifeShown(g);
-    return resourceFill(life.hp, life.max);
+    return hud.fillOf(life.hp, life.max);
 }
 
 pub fn manaFill(g: *const game.Game) f32 {
-    return resourceFill(game.manaShown(g), game.manaMax(g));
+    return hud.fillOf(game.manaShown(g), game.manaMax(g));
 }
 
 fn lifeShown(g: *const game.Game) Life {
@@ -426,9 +421,9 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             writeDescription(g, act, w);
             if (act.reticle() != null) w.print("\nRange: {d} cells", .{act.reach()}) catch {};
             if (g.growth.hit(game.heroAttrs(g), g.inventory.gear, act)) |h| {
-                if (h.physical.hi > 0) w.print("\nPhysical damage: {d}-{d}", .{ h.physical.lo, h.physical.hi }) catch {};
-                if (h.element) |e| w.print("\n{s} damage: {d}-{d}", .{ menu.named(act.element().?), e.lo, e.hi }) catch {};
-                w.print("\nScales with {s}", .{menu.named(h.style.attr())}) catch {};
+                if (h.physical.hi > 0) w.print("\n" ++ damage.PHYSICAL_FMT, .{ h.physical.lo, h.physical.hi }) catch {};
+                if (h.element) |e| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi }) catch {};
+                w.print("\n" ++ attrs.SCALES_FMT, .{menu.named(h.style.attr())}) catch {};
             }
             if (v.drinks) |n|
                 w.print("\n{d} drink{s} left", .{ n, plural(n) }) catch {}

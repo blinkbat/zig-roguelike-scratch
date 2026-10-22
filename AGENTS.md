@@ -35,7 +35,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `build.zig` checks this on every build step and rejects those modules if smaller than 512 bytes.
 - `game.zig` holds `Game`, the run/door/turn flow, the picture's timing and `update`. `src/game/` splits off `combat`
   (blows, harm ticks, foe turns), `scene` (map drawing), `overlay` (skill bar, binds, orbs, inspect, tooltips),
-  `character` (pause, Character, Nearby), `shots` (headless captures, bench), `harness` (scripted play shared by
+  `character` (pause, Character, Nearby), `debug` (Pause > Debug, diagnostics), `shots` (headless captures, bench), `harness` (scripted play shared by
   tests and shots) and `tests` (the game's integration tests).
 - `shot.cmd` builds into `zig-out-dev` but writes `shots/` under its working directory. For audits, build
   with `./build.cmd --prefix zig-out-dev`, then run the executable from a fresh `%TEMP%` directory containing
@@ -55,7 +55,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 
 - For concurrent owner play, copy the built executable into the temporary shot directory with a distinct
   basename before `--shot`; `run.cmd` kills every process named `cistern.exe`, including headless captures.
-- `--shot-ui` runs Character/HUD and day/night level-up captures; use the same temporary-directory procedure as `--shot`.
+- `--shot-ui` runs Character/HUD, loot and day/night level-up captures; use the same temporary-directory procedure as `--shot`.
 - `--shot-debug` captures each Debug submenu at 720p and loot states, and verifies that the six additional
   lighting/water/weather switches change pixels and restore the exact frame when re-enabled.
 - Inspect actual headless PNGs. `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,

@@ -298,14 +298,16 @@ pub const Node = struct {
 pub const BRANCH_RINGS = [_]u8{ 1, 2, 3, 3, 2, 1 };
 pub const BRIDGE_RINGS = [_]u8{ 3, 5 };
 pub const MAX_FEED = 4;
-pub const PER_BRANCH = blk: {
-    var count: usize = 0;
-    for (BRANCH_RINGS) |width| count += width;
-    break :blk count;
-};
+pub fn ringOffset(r: usize) usize {
+    var at: usize = 0;
+    for (BRANCH_RINGS[0..r]) |wide| at += wide;
+    return at;
+}
+pub const PER_BRANCH = ringOffset(BRANCH_RINGS.len);
 const PER_ARM = 1 + std.enums.values(Lane).len * PER_BRANCH;
 const NTREE = ARMS.len * PER_ARM;
-pub const N = NTREE + std.enums.values(Seam).len * BRIDGE_RINGS.len;
+pub const BRIDGES = std.enums.values(Seam).len * BRIDGE_RINGS.len;
+pub const N = NTREE + BRIDGES;
 pub const RINGS = BRANCH_RINGS.len + 1;
 pub const HUB = N;
 pub const Point = struct { x: f32, y: f32 };
@@ -323,9 +325,7 @@ pub fn start(c: hero.Class) usize {
     return armFirst(Arm.of(c));
 }
 fn ringFirst(b: Branch, br: usize) usize {
-    var at = branchFirst(b);
-    for (BRANCH_RINGS[0..br]) |wide| at += wide;
-    return at;
+    return branchFirst(b) + ringOffset(br);
 }
 pub fn bridgeAnchors(s: Seam, ring: u8) [2]usize {
     const br = ring - 1;
@@ -578,7 +578,7 @@ pub fn unitPos(i: usize) Point {
     return .{ .x = @sin(angle) * radius, .y = -@cos(angle) * radius };
 }
 pub fn step(cur: usize, dx: f32, dy: f32) usize {
-    const push = std.math.hypot(dx, dy);
+    const push = mathx.len(dx, dy);
     if (push < 1e-6) return cur;
     const from = unitPos(cur);
     var best = cur;
@@ -588,7 +588,7 @@ pub fn step(cur: usize, dx: f32, dy: f32) usize {
         const p = unitPos(i);
         const ax = p.x - from.x;
         const ay = p.y - from.y;
-        const dist = std.math.hypot(ax, ay);
+        const dist = mathx.len(ax, ay);
         const along = (ax * dx + ay * dy) / push;
         if (dist < 1e-5 or along / dist < STEP_COS) continue;
         const s = @abs(ax * dy - ay * dx) / push + STEP_AHEAD * along;
@@ -646,5 +646,5 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
         };
     }
     try std.testing.expectEqual(@as(usize, N), seen.count());
-    std.debug.print("passives: {d} nodes, {d} stat / {d} interest / {d} capstone; {d} two-way bridges; all {d} grant kinds and {d} directional targets checked\n", .{ N, tiers.get(.stat), tiers.get(.interest), tiers.get(.capstone), std.enums.values(Seam).len * BRIDGE_RINGS.len, kinds.count(), seen.count() });
+    std.debug.print("passives: {d} nodes, {d} stat / {d} interest / {d} capstone; {d} two-way bridges; all {d} grant kinds and {d} directional targets checked\n", .{ N, tiers.get(.stat), tiers.get(.interest), tiers.get(.capstone), BRIDGES, kinds.count(), seen.count() });
 }

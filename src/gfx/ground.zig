@@ -99,7 +99,8 @@ comptime {
 }
 
 /// Under standing tiles, choose the neighbours' majority ground, lowest rank on ties; otherwise `look.under`.
-pub fn bedAt(lv: *const grid.Level, p: P) ?Ground {
+/// `seen_only` lets only seen neighbours vote, as play draws.
+pub fn bedAt(lv: *const grid.Level, p: P, seen_only: bool) ?Ground {
     const t = lv.at(p);
     if (of(t)) |g| return g;
     const fallback = look.under(t) orelse return null;
@@ -107,7 +108,9 @@ pub fn bedAt(lv: *const grid.Level, p: P) ?Ground {
     var best = of(fallback).?;
     var most: u8 = 0;
     for (mathx.ALL_DIRS) |d| {
-        const g = of(lv.at(p.add(d.delta()))) orelse continue;
+        const q = p.add(d.delta());
+        if (seen_only and !lv.isSeen(q)) continue;
+        const g = of(lv.at(q)) orelse continue;
         if (!g.bears(t)) continue;
         const r = g.rank();
         votes[r] += 1;
@@ -177,7 +180,7 @@ pub const Beds = struct {
             if (!grid.Level.inside(p)) continue;
             const i = grid.Level.idx(p);
             if (seen_only and !lv.seen[i]) continue;
-            const g = bedAt(lv, p) orelse {
+            const g = bedAt(lv, p, seen_only) orelse {
                 b.rank[s] = OVER;
                 continue;
             };
@@ -244,7 +247,7 @@ pub const CELL_OF = blk: {
     for (ORDER, 0..) |m, i| {
         std.debug.assert(!seen[m]);
         seen[m] = true;
-        at[m] = .{ .x = @intCast(i % COLS), .y = @intCast(i / COLS) };
+        at[m] = mathx.unslot(i, COLS);
     }
     break :blk at;
 };
@@ -357,22 +360,25 @@ test "what stands takes the ground its neighbours bear, and the sheet's cells ma
     lv.set(.{ .x = 3, .y = 3 }, .shrub);
     lv.set(.{ .x = 4, .y = 3 }, .wall);
     lv.set(.{ .x = 6, .y = 3 }, .sand);
-    try std.testing.expectEqual(@as(?Ground, .grass), bedAt(&lv, .{ .x = 3, .y = 3 }));
-    try std.testing.expectEqual(@as(?Ground, .cobble), bedAt(&lv, .{ .x = 4, .y = 3 }));
-    try std.testing.expectEqual(@as(?Ground, .sand), bedAt(&lv, .{ .x = 6, .y = 3 }));
-    try std.testing.expectEqual(@as(?Ground, null), bedAt(&lv, .{ .x = 8, .y = 3 }));
+    try std.testing.expectEqual(@as(?Ground, .grass), bedAt(&lv, .{ .x = 3, .y = 3 }, false));
+    try std.testing.expectEqual(@as(?Ground, .cobble), bedAt(&lv, .{ .x = 4, .y = 3 }, false));
+    try std.testing.expectEqual(@as(?Ground, .sand), bedAt(&lv, .{ .x = 6, .y = 3 }, false));
+    try std.testing.expectEqual(@as(?Ground, null), bedAt(&lv, .{ .x = 8, .y = 3 }, false));
     const boulder = P{ .x = 20, .y = 20 };
     lv.set(boulder, .boulder);
     for ([_]P{ .{ .x = 19, .y = 19 }, .{ .x = 20, .y = 19 }, .{ .x = 21, .y = 19 } }) |q| lv.set(q, .dirt);
     for ([_]P{ .{ .x = 19, .y = 21 }, .{ .x = 20, .y = 21 } }) |q| lv.set(q, .sand);
     for ([_]P{ .{ .x = 19, .y = 20 }, .{ .x = 21, .y = 20 }, .{ .x = 21, .y = 21 } }) |q| lv.set(q, .water);
-    try std.testing.expectEqual(@as(?Ground, .dirt), bedAt(&lv, boulder));
+    try std.testing.expectEqual(@as(?Ground, .dirt), bedAt(&lv, boulder, false));
     lv.set(.{ .x = 21, .y = 21 }, .sand);
-    try std.testing.expectEqual(@as(?Ground, .sand), bedAt(&lv, boulder));
+    try std.testing.expectEqual(@as(?Ground, .sand), bedAt(&lv, boulder, false));
     lv.set(.{ .x = 21, .y = 21 }, .grass);
-    try std.testing.expectEqual(@as(?Ground, .dirt), bedAt(&lv, boulder));
+    try std.testing.expectEqual(@as(?Ground, .dirt), bedAt(&lv, boulder, false));
     lv.set(.{ .x = 20, .y = 19 }, .grass);
-    try std.testing.expectEqual(@as(?Ground, .sand), bedAt(&lv, boulder));
+    try std.testing.expectEqual(@as(?Ground, .sand), bedAt(&lv, boulder, false));
+    try std.testing.expectEqual(of(look.under(.boulder).?), bedAt(&lv, boulder, true));
+    lv.seen[grid.Level.idx(.{ .x = 19, .y = 19 })] = true;
+    try std.testing.expectEqual(@as(?Ground, .dirt), bedAt(&lv, boulder, true));
     try expectLuaList(u4, &ORDER, "tools/tile_art/ground_corners.lua", "return {");
     try expectLuaList(u4, &.{ NW, NE, SW, SE }, "tools/tile_art/ground_sheet.lua", "local NW,NE,SW,SE=");
 

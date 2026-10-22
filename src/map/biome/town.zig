@@ -32,7 +32,7 @@ pub const Params = struct {
     street: u8 = 2,
     /// Percent of each block's lots built on.
     houses: u8 = 80,
-    /// Percent of streets that are canals.
+    /// Percent of east-west streets that are canals.
     canals: u8 = 0,
     ground: carve.Ground = .dirt,
     outside: carve.Ground = .grass,

@@ -80,7 +80,7 @@ fn lifeTenths(bonus: i32) i32 {
 }
 
 pub fn lifeOf(max: i32, bonus: i32) i32 {
-    return @divTrunc(max * lifeShare(bonus), mathx.PERCENT * mathx.PERCENT);
+    return @divTrunc(max * lifeShare(bonus), mathx.BASIS_POINTS);
 }
 
 /// What a drink of `k` recovers in all.

@@ -299,7 +299,7 @@ pub const Pool = struct {
         lv.stand(to, id);
     }
 
-    /// The only place hp goes down; true on the killing blow.
+    /// The only path harm takes off hp; true on the killing blow.
     pub fn damage(self: *Pool, lv: *grid.Level, id: u16, amount: i32) bool {
         const a = self.get(id) orelse return false;
         a.hp = @max(0, a.hp - amount);

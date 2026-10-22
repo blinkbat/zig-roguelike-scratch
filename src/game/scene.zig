@@ -50,6 +50,7 @@ const MOON_CUT_INSET: f32 = 0.6;
 pub const DAY_GLYPH_R: f32 = @max(SUN_RAY_OUT, MOON_R);
 /// Of a reflection's height from its top, where its fade to nothing ends.
 const MIRROR_FADE: f32 = 0.7;
+const FLAME_PHASE = [2]f32{ 0.73, 0.37 };
 
 pub const Cam = struct {
     x: i32,
@@ -101,10 +102,10 @@ fn drawSprite(t: rl.Texture2D, sx: i32, sy: i32) void {
 }
 
 /// `t` on `p`, catching its shine as the band crosses it.
-fn drawShining(g: *const game.Game, t: rl.Texture2D, c: Cam, p: P, dx: i32, col: rl.Color) void {
+fn drawShining(g: *const game.Game, t: rl.Texture2D, c: Cam, p: P, dx: i32) void {
     const rect = spriteRect(t, c.sx(p) + dx, c.sy(p));
-    look.stretch(t, rect, col);
-    shineOver(g, t, rect, p, col);
+    look.stretch(t, rect, look.LIT);
+    shineOver(g, t, rect, p, look.LIT);
 }
 
 /// Only what the hero sees shines; remembered loot stays still.
@@ -117,13 +118,11 @@ fn shineOver(g: *const game.Game, t: rl.Texture2D, rect: rl.Rectangle, p: P, col
 /// Beside a bag on its cell, the coins move aside so the bag does not hide them.
 fn drawGold(g: *const game.Game, c: Cam, pile: items.Coins, beside_bag: bool) void {
     const dx: i32 = if (beside_bag) GOLD_DX else 0;
-    const t = g.sprites.coins(pile.large()) orelse return drawLoot(g, c, pile.at, look.COIN_MARK, dx, look.RETICLE);
-    drawShining(g, t, c, pile.at, dx, look.LIT);
-}
-
-fn drawLoot(g: *const game.Game, c: Cam, at: P, mark: [:0]const u8, dx: i32, ink: rl.Color) void {
-    const m = c.mid(at);
-    g.face.centred(mark, m.x + dx, m.y + LOOT_DY, LOOT_PX, ink);
+    const t = g.sprites.coins(pile.large()) orelse {
+        const m = c.mid(pile.at);
+        return g.face.centred(look.COIN_MARK, m.x + dx, m.y + LOOT_DY, LOOT_PX, look.RETICLE);
+    };
+    drawShining(g, t, c, pile.at, dx);
 }
 
 fn drawGlyph(g: *game.Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void {
@@ -270,12 +269,13 @@ pub fn bagCells(g: *const game.Game) Bags {
     return bags;
 }
 
-pub fn goldShown(g: *game.Game, at: P) bool {
-    if (!g.lv.isLit(at) or barrelPresent(g, at)) return false;
+pub fn pileShown(g: *game.Game, pile: items.Coins) ?items.Coins {
+    if (!g.lv.isLit(pile.at) or barrelPresent(g, pile.at)) return null;
+    var shown = pile;
     for (g.pool.slice(), 0..) |a, i| {
-        if (!a.alive and a.at.eq(at) and !g.pictured[i].down()) return false;
+        if (!a.alive and a.at.eq(pile.at) and !g.pictured[i].down()) shown.amount -= g.dropped_gold[i];
     }
-    return true;
+    return if (shown.amount > 0) shown else null;
 }
 
 fn tileTexture(g: *const game.Game, p: P, bags: *const Bags) ?rl.Texture2D {
@@ -292,11 +292,8 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const Stood) void 
         const here = g.lv.at(p);
         defer if (looseBag(here, &bags, p)) {
             if (g.sprites.item_bag) |t| {
-                drawShining(g, t, c, p, 0, look.LIT);
-                if (g.cloud.beginVeil(look.GAS, .sharp)) {
-                    drawSprite(t, c.sx(p), c.sy(p));
-                    cloud.Cloud.endVeil();
-                }
+                drawShining(g, t, c, p, 0);
+                veilSprite(g, t, c, p, .sharp);
             }
         };
         if (!look.standsOver(here)) continue;
@@ -305,10 +302,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const Stood) void 
             drawSprite(t, c.sx(p), c.sy(p));
             if (focus != null) rl.endShaderMode();
             if (chestShines(here, p, &bags)) shineOver(g, t, spriteRect(t, c.sx(p), c.sy(p)), p, look.LIT);
-            if (look.veiled(here) and g.cloud.beginVeil(look.GAS, focus orelse .sharp)) {
-                drawSprite(t, c.sx(p), c.sy(p));
-                cloud.Cloud.endVeil();
-            }
+            if (look.veiled(here)) veilSprite(g, t, c, p, focus orelse .sharp);
             continue;
         }
         if (look.tileBg(here)) |bg| fillCell(c, p, bg);
@@ -318,6 +312,12 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const Stood) void 
             cloud.Cloud.endVeil();
         }
     }
+}
+
+fn veilSprite(g: *game.Game, t: rl.Texture2D, c: Cam, p: P, focus: look.Focused) void {
+    if (!g.cloud.beginVeil(look.GAS, focus)) return;
+    drawSprite(t, c.sx(p), c.sy(p));
+    cloud.Cloud.endVeil();
 }
 
 fn inkCell(g: *game.Game, c: Cam, p: P, here: grid.Tile, stood: *const Stood) void {
@@ -482,7 +482,7 @@ fn flameLit(f: light.Flame) f32 {
 fn drawFlame(g: *game.Game, c: Cam, f: light.Flame, lit: f32) void {
     const x = mathx.roundTiesUp(f.at[0] * game.CELL_F) - c.x;
     const y = mathx.roundTiesUp(f.at[1] * game.CELL_F) - c.y;
-    g.fx.drawTorch(@floatFromInt(x), @floatFromInt(y), game.CELL_F, f.at[0] * 0.73 + f.at[1] * 0.37, lit, f.memory);
+    g.fx.drawTorch(@floatFromInt(x), @floatFromInt(y), game.CELL_F, f.at[0] * FLAME_PHASE[0] + f.at[1] * FLAME_PHASE[1], lit, f.memory);
 }
 
 pub fn drawMirrors(g: *game.Game, c: Cam, view: grid.Box, bodies: []const Shown, flames: []const light.Flame) ?look.Mirrors {
@@ -539,10 +539,8 @@ pub fn drawMap(g: *game.Game) void {
     const mirror = if (g.debug.visuals.water_reflections and beds.shown.intersectWith(look.REFLECTIVE).count() > 0) drawMirrors(g, c, view, bodies, flames) else null;
     drawGroundPass(g, c, &beds, &stood, mirror);
     const bags = bagCells(g);
-    for (g.ground.coins[0..g.ground.coin_n]) |pile| {
-        if (goldShown(g, pile.at)) drawGold(g, c, pile, bagged(&bags, pile.at));
-    }
-    if (takenShown(g)) |pile| drawGold(g, c, pile, bagged(&bags, pile.at));
+    var piles = Piles{ .g = g };
+    while (piles.next()) |pile| drawGold(g, c, pile, bagged(&bags, pile.at));
     _ = shadowPass(g, c, view, g.framebuffer);
     g.cloud.draw(&g.lv, view, -c.x, -c.y, game.CELL, g.screen);
     drawSolidPass(g, c, lo, hi, &stood);
@@ -603,7 +601,7 @@ pub fn drawMap(g: *game.Game) void {
     drawTorches(g, c, flames);
     g.fx.drawGlow(&g.lv, &g.light.sight, o[0], o[1], game.CELL_F);
     if (level_up_at) |at| g.fx.level_up.drawSparks(at, o[0], o[1], game.CELL_F);
-    if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), &g.light.sight, o[0], o[1], game.CELL_F, game.PX_SCALE, sky.brightness(k));
+    if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), &g.light.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
 
     if (g.shot) |s| {
         const at = s.position(s.t);
@@ -636,21 +634,37 @@ fn takenShown(g: *game.Game) ?items.Coins {
     return if (g.glide[hero].left() > 0 and g.lv.isLit(pile.at)) pile else null;
 }
 
-const COIN_GLOW = fx.StatusGlow{ .radius = 1.2, .gain = 0.15 };
+const Piles = struct {
+    g: *game.Game,
+    i: usize = 0,
+    taken: bool = false,
+
+    fn next(self: *Piles) ?items.Coins {
+        while (self.i < self.g.ground.coin_n) {
+            const pile = self.g.ground.coins[self.i];
+            self.i += 1;
+            if (pileShown(self.g, pile)) |drawn| return drawn;
+        }
+        if (self.taken) return null;
+        self.taken = true;
+        return takenShown(self.g);
+    }
+};
+
+const COIN_GLOW_R: f32 = 1.2;
+const COIN_GLOW_GAIN: f32 = 0.15;
 /// Cells above the ground the coins' glow rises from.
 const COIN_Z: f32 = 0.1;
 
 fn coinGlow(pile: items.Coins) light.Emission {
     const m = mathx.centre(pile.at);
-    return .{ .at = .{ m[0], m[1], COIN_Z }, .col = look.LEVEL_GOLD, .radius = COIN_GLOW.radius, .gain = COIN_GLOW.gain };
+    return .{ .at = .{ m[0], m[1], COIN_Z }, .col = look.LEVEL_GOLD, .radius = COIN_GLOW_R, .gain = COIN_GLOW_GAIN };
 }
 
 pub fn effectLights(g: *game.Game) void {
     defer {
-        for (g.ground.coins[0..g.ground.coin_n]) |pile| {
-            if (goldShown(g, pile.at)) g.light.emit(&g.lv, coinGlow(pile));
-        }
-        if (takenShown(g)) |pile| g.light.emit(&g.lv, coinGlow(pile));
+        var piles = Piles{ .g = g };
+        while (piles.next()) |pile| g.light.emit(&g.lv, coinGlow(pile));
     }
     g.fx.illuminate(&g.lv, g.light);
     if (game.carrierAt(g)) |at| {

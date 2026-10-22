@@ -31,25 +31,21 @@ const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, origin: i32, cel
 pub const Cloud = struct {
     tint: [grid.CELLS]f32,
     px: [TEXELS]rl.Color,
-    stale: bool,
-    baked: grid.Box,
+    stale: bool = true,
+    baked: grid.Box = .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 0, .y = 0 } },
     /// Seconds, for the drift.
-    t: mathx.Seconds,
+    t: mathx.Seconds = .{},
     /// Seconds until the burst the newest gas came from lands; till then the cloud stays as drawn.
-    held: f32,
-    tex: ?rl.Texture2D,
-    shade: ?Shade,
-    veil: ?Veil,
+    held: f32 = 0,
+    tex: ?rl.Texture2D = null,
+    shade: ?Shade = null,
+    veil: ?Veil = null,
     map_view: look.MapView,
-    visible: bool,
+    visible: bool = false,
 
     pub fn create(alloc: std.mem.Allocator) !*Cloud {
         const c = try alloc.create(Cloud);
         mathx.defaults(c);
-        c.tex = null;
-        c.shade = null;
-        c.veil = null;
-        c.baked = .{ .lo = .{ .x = 0, .y = 0 }, .hi = .{ .x = 0, .y = 0 } };
         @memset(&c.px, rl.Color.blank);
         c.clear();
         return c;
@@ -108,9 +104,10 @@ pub const Cloud = struct {
             self.t = .{};
             return;
         }
+        const view = on_screen.grown(1);
+        if (!self.tinted(view.grown(1))) return;
         self.visible = true;
         self.map_view = .of(ox, oy, cell, screen.x, screen.y);
-        const view = on_screen.grown(1);
         if (self.stale or !std.meta.eql(view, self.baked)) {
             self.bake(lv, view);
             rl.updateTexture(tex, &self.px);
@@ -142,6 +139,16 @@ pub const Cloud = struct {
     pub fn endVeil() void {
         rl.gl.rlDrawRenderBatchActive();
         rl.endShaderMode();
+    }
+
+    /// Whether any gas is drawn over `box`, which must cover every cell a baked texel reads.
+    fn tinted(self: *const Cloud, box: grid.Box) bool {
+        var y = box.lo.y;
+        while (y < box.hi.y) : (y += 1) {
+            const row: usize = @intCast(y * grid.W);
+            if (!std.mem.allEqual(f32, self.tint[row + @as(usize, @intCast(box.lo.x)) .. row + @as(usize, @intCast(box.hi.x))], 0)) return true;
+        }
+        return false;
     }
 
     fn bake(self: *Cloud, lv: *const grid.Level, view: grid.Box) void {
@@ -176,7 +183,6 @@ comptime {
     // Past a quarter cell a pixel beside a wall reads the gas of the room behind the wall.
     std.debug.assert(WARP + SOFT < 0.5 / @as(f32, SUB));
 }
-
 const OCTAVES: u32 = 3;
 /// Each of `fbm`'s octaves weighs this much of the last, the first this much of one.
 const FBM_GAIN: f32 = 0.5;
@@ -276,6 +282,18 @@ test "the drawn cloud eases to the gas in sight, and out of sight keeps what was
     lv.lit[i] = true;
     for (0..480) |_| c.step(&lv, dt);
     try std.testing.expectEqual(@as(f32, 0), c.tint[i]);
+}
+
+test "gas remembered off screen leaves the view untinted, gas a wall away from it does not" {
+    const alloc = std.testing.allocator;
+    const c = try Cloud.create(alloc);
+    defer alloc.destroy(c);
+    const view = grid.Box.sized(.{ .x = 10, .y = 10 }, 20, 12);
+    const reads = view.grown(2);
+    c.tint[grid.Level.idx(.{ .x = 50, .y = 40 })] = 0.5;
+    try std.testing.expect(!c.tinted(reads));
+    c.tint[grid.Level.idx(.{ .x = view.hi.x + 1, .y = view.lo.y })] = 0.5;
+    try std.testing.expect(c.tinted(reads));
 }
 
 test "a wall's texels carry the gas of the room they face up to it, and none shows in the corridor past it" {

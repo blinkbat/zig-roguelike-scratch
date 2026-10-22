@@ -55,7 +55,7 @@ const DIVIDER_X = RIGHT - 18;
 const ROW = 28;
 const VISIBLE = 14;
 /// A list's rows, then its text and second column within a row, and their tops down from the row's.
-const LIST_X = 24;
+const LIST_X = menu.PANEL_PAD;
 const LIST_Y = 30;
 const LIST_W = 510;
 const TEXT_X = 8;
@@ -100,10 +100,8 @@ const SHOULDER_W = 40;
 comptime {
     std.debug.assert(LIST_X + SHOULDER_W < TABS_X);
 }
-const ACTION_W = 164;
-pub const ACTION_GAP = 8;
-const ACTION_H = 36;
-pub const ACTION_BOX = P{ .x = ACTION_W, .y = ACTION_H };
+const ACTION_W = menu.ACTION_BOX.x;
+const ACTION_H = menu.ACTION_BOX.y;
 const ACTION_Y = H - 82;
 /// Nearby and loot: header, list, the chosen item's card, a note line and the actions, each only as tall as it needs.
 const DIRECT_W = 2 * LIST_X + LIST_W;
@@ -132,26 +130,33 @@ const SLOT_BOX = std.EnumArray(items.Slot, struct { at: P, w: i32, h: i32 }).ini
 });
 const SLOT_LABEL = font.SMALL;
 const SLOT_INSET = 4;
-pub const Nearby = struct {
-    kind: enum { loot, bag, chest, door },
-    index: usize = 0,
-    at: P,
-    item: ?items.Item = null,
+pub const Nearby = union(enum) {
+    loot: struct { index: usize, item: items.Item },
+    bag: P,
+    chest: P,
+    door: P,
 
     pub fn command(n: Nearby) Command {
-        return switch (n.kind) {
-            .loot => .{ .pickup = n.index },
-            .bag, .chest => .{ .open_loot = n.at },
-            .door => .{ .travel = n.at },
+        return switch (n) {
+            .loot => |l| .{ .pickup = l.index },
+            .bag, .chest => |at| .{ .open_loot = at },
+            .door => |at| .{ .travel = at },
+        };
+    }
+
+    fn item(n: Nearby) ?items.Item {
+        return switch (n) {
+            .loot => |l| l.item,
+            .bag, .chest, .door => null,
         };
     }
 
     fn label(n: Nearby) [:0]const u8 {
-        return if (n.item) |it| it.name() else switch (n.kind) {
+        return switch (n) {
+            .loot => |l| l.item.name(),
             .chest => "Treasure chest",
             .bag => "Item bag",
             .door => "Door",
-            .loot => unreachable,
         };
     }
 };
@@ -306,7 +311,7 @@ pub const Book = struct {
         return switch (self.page) {
             .equipment => v.inventory.gear.slots.get(items.SLOTS[self.cursor]),
             .inventory => if (self.cursor < v.inventory.n) v.inventory.bag[self.cursor] else null,
-            .nearby, .loot => if (self.cursor < v.nearby.len) v.nearby[self.cursor].item else null,
+            .nearby, .loot => if (self.cursor < v.nearby.len) v.nearby[self.cursor].item() else null,
             else => null,
         };
     }
@@ -333,7 +338,7 @@ pub const Book = struct {
         };
     }
     fn size(self: *const Book, v: View) P {
-        return if (self.direct()) .{ .x = DIRECT_W, .y = self.directActionY(v) + ACTION_H + LIST_X } else SIZE;
+        return if (self.direct()) .{ .x = DIRECT_W, .y = self.directActionY(v) + ACTION_H + menu.PANEL_PAD } else SIZE;
     }
     pub fn surface(self: *const Book, screen: P, v: View) menu.Surface {
         return if (self.direct()) menu.Surface.like(screen, self.size(v), SIZE) else menu.Surface.of(screen, SIZE);
@@ -347,7 +352,7 @@ pub const Book = struct {
     /// The tallest card any listed item needs, so the panel keeps its size while the cursor moves.
     fn cardRoom(v: View) i32 {
         var most: i32 = 0;
-        for (v.nearby) |n| if (n.item) |it| {
+        for (v.nearby) |n| if (n.item()) |it| {
             for (it.kind.slots()) |slot| most = @max(most, cardFoot(it, slot, neededAttrs(v, it, slot)));
         };
         return most;
@@ -380,8 +385,8 @@ pub const Book = struct {
         };
         if (menu.closed(st)) return .close;
         if (self.page == .loot and self.count(v) > 0 and st.hit(menu.CHANGE)) return .take_all;
-        if (!self.direct() and (st.hit(.lb) or st.hit(.rb))) {
-            self.choose(mathx.stepIn(Page, &PAGES, self.page, if (st.hit(.lb)) -1 else 1, 0));
+        if (!self.direct() and (st.hit(menu.PAGE_PREV) or st.hit(menu.PAGE_NEXT))) {
+            self.choose(mathx.stepIn(Page, &PAGES, self.page, if (st.hit(menu.PAGE_PREV)) -1 else 1, 0));
             self.enter(v);
             return null;
         }
@@ -485,7 +490,7 @@ pub const Book = struct {
     pub fn actionBox(self: *const Book, b: input.Button, v: View) rl.Rectangle {
         const i: i32 = @intCast(std.mem.indexOfScalar(input.Button, &ACTIONS, b).?);
         const x: i32 = if (self.direct()) LIST_X else RIGHT;
-        return look.rect(x + i * (ACTION_W + ACTION_GAP), if (self.direct()) self.directActionY(v) else ACTION_Y, ACTION_W, ACTION_H);
+        return look.rect(x + i * (ACTION_W + menu.ACTION_GAP), if (self.direct()) self.directActionY(v) else ACTION_Y, ACTION_W, ACTION_H);
     }
     fn closeBox(self: *const Book, v: View) rl.Rectangle {
         return look.rect(self.size(v).x - LIST_X - CLOSE_W, CLOSE_Y, CLOSE_W, CLOSE_H);
@@ -520,7 +525,7 @@ pub const Book = struct {
         } else {
             var who: menu.Note(100) = .{};
             who.say("{s}   {s}", .{ v.name, v.class.title() });
-            face.engraved(who.text(), LIST_X, HEADER_MID - font.HEAD / 2, font.HEAD, look.TEXT);
+            header(face, who.text());
             var xp: menu.Note(100) = .{};
             xp.say("Level  {d}     XP  {d} / {d}", .{ v.growth.level, v.growth.xp, v.growth.needed() });
             face.drawMiddle(xp.text(), RIGHT, HEADER_MID, font.BODY, look.TEXT);
@@ -548,13 +553,13 @@ pub const Book = struct {
             }
         }
         if (!self.direct()) {
-            look.Prompt.menuOn(v.device, .lb).draw(face, LIST_X + SHOULDER_W / 2, TAB_MID, font.BODY, 1);
-            look.Prompt.menuOn(v.device, .rb).draw(face, W - LIST_X - SHOULDER_W / 2, TAB_MID, font.BODY, 1);
+            look.Prompt.menuOn(v.device, menu.PAGE_PREV).draw(face, LIST_X + SHOULDER_W / 2, TAB_MID, font.BODY, 1);
+            look.Prompt.menuOn(v.device, menu.PAGE_NEXT).draw(face, W - LIST_X - SHOULDER_W / 2, TAB_MID, font.BODY, 1);
         }
     }
 
     fn drawDirect(self: *const Book, face: *const font.Face, v: View) void {
-        face.engraved(if (self.page == .nearby) "NEARBY" else if (v.chest) "CHEST LOOT" else "ITEM BAG", LIST_X, HEADER_MID - font.HEAD / 2, font.HEAD, look.TEXT);
+        header(face, if (self.page == .nearby) "NEARBY" else if (v.chest) "CHEST LOOT" else "ITEM BAG");
         if (self.page == .loot) {
             var holding: menu.Note(100) = .{};
             holding.say("Inventory  {d} / {d}     Gold  {d}", .{ v.inventory.n, items.BAG_MAX, v.gold });
@@ -567,13 +572,18 @@ pub const Book = struct {
         }
         if (self.selected(v)) |it| {
             const slot = self.destination(v);
-            itemCard(face, LIST_X, self.cardTop(v), LIST_W, it, slot, self.requirementAttrs(v, slot), if (v.chest) "IN THE CHEST" else if (self.page == .loot) "IN THE BAG" else "ON THE GROUND");
+            itemCard(face, LIST_X, self.cardTop(v), LIST_W, it, slot, self.requirementAttrs(v, slot), if (v.chest) "IN THE CHEST" else "IN THE BAG");
         }
         const note_y = self.noteY(v);
         if (self.message.n > 0) face.draw(self.message.text(), LIST_X, note_y, font.SMALL, look.TEXT);
-        var position: menu.Note(50) = .{};
-        position.say("{d} / {d}", .{ self.cursor + 1, self.count(v) });
+        const position = self.positionOf(v);
         face.draw(position.text(), DIRECT_W - LIST_X - face.width(position.text(), font.SMALL), note_y, font.SMALL, look.DIM);
+    }
+
+    fn positionOf(self: *const Book, v: View) menu.Note(50) {
+        var out: menu.Note(50) = .{};
+        out.say("{d} / {d}", .{ if (self.count(v) > 0) self.cursor + 1 else 0, self.count(v) });
+        return out;
     }
 
     fn drawCells(self: *const Book, face: *const font.Face, v: View) void {
@@ -582,8 +592,7 @@ pub const Book = struct {
             face.draw("ITEM", text_x, TOP, font.SMALL, look.DIM);
             face.draw("SLOT", LIST_X + SECOND_X, TOP, font.SMALL, look.DIM);
             if (self.count(v) == 0) face.draw("Empty", text_x, TOP + EMPTY_DY, font.BODY, look.DIM);
-            var position: menu.Note(50) = .{};
-            position.say("{d} / {d}", .{ if (self.count(v) > 0) self.cursor + 1 else 0, self.count(v) });
+            const position = self.positionOf(v);
             face.draw(position.text(), text_x, FOOT_Y, font.SMALL, look.DIM);
         }
         for (0..self.count(v)) |i| {
@@ -617,7 +626,7 @@ pub const Book = struct {
                 },
                 .nearby, .loot => {
                     const n = v.nearby[i];
-                    listRow(face, x, y, n.label(), inkOf(n.item), n.command().verb());
+                    listRow(face, x, y, n.label(), inkOf(n.item()), n.command().verb());
                 },
                 .passives, .skills, .stats => unreachable,
             }
@@ -642,14 +651,14 @@ pub const Book = struct {
                 _ = face.paragraph(held.text(), x, y + HELD_NOTE_DY, DETAIL_W, font.SMALL, look.DIM);
                 return;
             };
-            face.draw(if (self.direct()) v.nearby[self.cursor].label() else EMPTY_SLOT, x, y, font.HEAD, look.TEXT);
+            face.draw(EMPTY_SLOT, x, y, font.HEAD, look.TEXT);
             return;
         };
         const slot = if (self.page == .equipment) items.SLOTS[self.cursor] else self.destination(v);
         const comparing = self.page == .inventory;
-        itemCard(face, x, y, if (comparing) CARD_W else DETAIL_W, it, slot, self.requirementAttrs(v, slot), if (comparing) "SELECTED" else if (self.page == .equipment) "EQUIPPED" else if (v.chest) "IN THE CHEST" else "IN THE BAG");
+        itemCard(face, x, y, if (comparing) CARD_W else DETAIL_W, it, slot, self.requirementAttrs(v, slot), if (comparing) "SELECTED" else "EQUIPPED");
         if (comparing) itemCard(face, x + CARD_W + CARD_GAP, y, CARD_W, v.inventory.gear.slots.get(slot), slot, v.inventory.gear.statsWithout(slot, v.base), "EQUIPPED");
-        if (self.page == .inventory) {
+        if (comparing) {
             const at = y + CARD_H + CHANGES_GAP;
             if (v.inventory.preview(self.cursor, slot, v.base)) |after| {
                 var below = drawChanges(face, x, at, v.stats(), after.stats(v.base)) + RETURNS_GAP;
@@ -687,6 +696,9 @@ const Controls = struct {
     }
 };
 
+fn header(face: *const font.Face, text: [:0]const u8) void {
+    face.engraved(text, LIST_X, HEADER_MID - font.HEAD / 2, font.HEAD, look.TEXT);
+}
 fn listRow(face: *const font.Face, x: i32, y: i32, text: [:0]const u8, ink: rl.Color, second: [:0]const u8) void {
     face.draw(text, x + TEXT_X, y + ROW_TEXT_DY, font.BODY, ink);
     face.draw(second, x + SECOND_X, y + ROW_SECOND_DY, font.SMALL, look.DIM);
@@ -757,8 +769,8 @@ const CardLine = union(enum) {
 
     fn text(l: CardLine, out: *menu.Note(120)) [:0]const u8 {
         switch (l) {
-            .damage => |hit| out.say("Physical damage: {d}-{d}", .{ hit.lo, hit.hi }),
-            .scaling => |at| out.say("Scales with {s}", .{menu.named(at)}),
+            .damage => |hit| out.say(damage.PHYSICAL_FMT, .{ hit.lo, hit.hi }),
+            .scaling => |at| out.say(attr.SCALES_FMT, .{menu.named(at)}),
             .unarmed => return "No weapon damage",
             .armour => |n| out.say("Physical damage reduced by {d}%", .{n}),
             .requires => |r| out.say("Requires {d} {s}", .{ r.n, menu.named(r.at) }),
@@ -1053,18 +1065,22 @@ fn drawStats(face: *const font.Face, v: View) void {
     stat(face, right, row(progression, 2, STAT_ROW) + GOLD_GAP, "Gold", v.gold, "", "");
 }
 
+fn testView(inv: *const items.Inventory, growth: *const progress.State) View {
+    return .{ .class = .archer, .name = "Test", .inventory = inv, .growth = growth, .base = growth.attributes(.archer) };
+}
+
 test "character actions need one press and tabs are directly reachable" {
     var inv = items.Inventory{};
     try std.testing.expect(inv.add(.{ .kind = .cap }));
     var growth = progress.State.of(.archer);
-    const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = growth.attributes(.archer) };
+    const v = testView(&inv, &growth);
     var book = Book{ .page = .inventory };
     const screen = P{ .x = 1600, .y = 900 };
     const confirm = input.State{ .pressed = .initOne(menu.CONFIRM) };
     try std.testing.expect(book.step(&confirm, screen, v).? == .equip);
     try std.testing.expectEqual(@as(usize, 1), inv.n);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.REMOVE) }, screen, v).? == .drop);
-    _ = book.step(&.{ .pressed = .initOne(.rb) }, screen, v);
+    _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, v);
     try std.testing.expectEqual(Page.stats, book.page);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, v).? == .close);
     book.choose(.inventory);
@@ -1088,7 +1104,8 @@ test "character actions need one press and tabs are directly reachable" {
 test "loot exposes single pickup and take all through controller and mouse controls" {
     const inv = items.Inventory{};
     const growth = progress.State.of(.archer);
-    const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = growth.attributes(.archer), .nearby = &.{.{ .kind = .loot, .index = 7, .at = .{ .x = 20, .y = 20 }, .item = .{ .kind = .cap } }} };
+    var v = testView(&inv, &growth);
+    v.nearby = &.{.{ .loot = .{ .index = 7, .item = .{ .kind = .cap } } }};
     var book = Book{ .page = .loot };
     const screen = P{ .x = 1280, .y = 720 };
     const one = book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, v).?;
@@ -1100,9 +1117,9 @@ test "loot exposes single pickup and take all through controller and mouse contr
     try std.testing.expect(book.step(&.{ .click = true, .pointer = p }, screen, v).? == .take_all);
     const panel = book.size(v);
     try std.testing.expect(panel.x < SIZE.x and panel.y < SIZE.y);
-    try std.testing.expectEqual(@as(f32, @floatFromInt(panel.y - ACTION_H - LIST_X)), book.actionBox(menu.CONFIRM, v).y);
+    try std.testing.expectEqual(@as(f32, @floatFromInt(panel.y - ACTION_H - menu.PANEL_PAD)), book.actionBox(menu.CONFIRM, v).y);
     std.debug.print("loot panel: {d}x{d} for one item, Book {d}x{d}\n", .{ panel.x, panel.y, SIZE.x, SIZE.y });
-    _ = book.step(&.{ .pressed = .initOne(.rb) }, screen, v);
+    _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, v);
     try std.testing.expectEqual(Page.loot, book.page);
     std.debug.print("loot controls: selected index, take-all press and scaled mouse hit, no character tabs\n", .{});
 }
@@ -1111,7 +1128,7 @@ test "the inventory list scrolls back when the bag shrinks" {
     var inv = items.Inventory{};
     for (0..VISIBLE + 6) |_| try std.testing.expect(inv.add(.{ .kind = .cap }));
     var growth = progress.State.of(.archer);
-    const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = growth.attributes(.archer) };
+    const v = testView(&inv, &growth);
     const screen = P{ .x = 1600, .y = 900 };
     var book = Book{ .page = .inventory, .cursor = VISIBLE + 5 };
     _ = book.step(&.{}, screen, v);
@@ -1135,7 +1152,8 @@ test "item card requirements exclude the item itself and every displaced hand" {
     var inv = items.Inventory{};
     var growth = progress.State.of(.archer);
     const base = attr.Attrs.of(.{ .strength = 10, .dexterity = 12, .intelligence = 10 });
-    const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = base };
+    var v = testView(&inv, &growth);
+    v.base = base;
     inv.gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .strength, .value = 10 }, null } });
     try std.testing.expect(inv.add(.{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 10 }, null } }));
     var book = Book{ .page = .inventory };
@@ -1152,8 +1170,8 @@ test "item card requirements exclude the item itself and every displaced hand" {
     try std.testing.expectEqual(@as(i32, 17), book.requirementAttrs(v, .left_ring).get(.strength));
     inv.gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .strength, .value = 10 }, null } });
     var ground = v;
-    ground.nearby = &.{.{ .kind = .loot, .at = .{ .x = 0, .y = 0 }, .item = .{ .kind = .axe, .mods = .{ null, null } } }};
-    book.choose(.nearby);
+    ground.nearby = &.{.{ .loot = .{ .index = 0, .item = .{ .kind = .axe, .mods = .{ null, null } } } }};
+    book.choose(.loot);
     try std.testing.expectEqual(@as(i32, 20), book.requirementAttrs(ground, .right_hand).get(.strength));
     std.debug.print("item cards: 2-hand displacement, self-funding, both ring destinations and ground items; inventory unchanged\n", .{});
 }
@@ -1163,7 +1181,7 @@ test "tree browsing is free and point actions issue one command" {
     var growth = progress.State.of(.archer);
     growth.passive_points = 2;
     growth.active_points = 2;
-    const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = growth.attributes(.archer) };
+    const v = testView(&inv, &growth);
     const screen = P{ .x = 1280, .y = 720 };
     var book = Book{ .page = .passives, .cursor = progress.passives.branchFirst(.rogue_evade) };
     try std.testing.expectEqual(trees.ZOOM_START, book.zoom);
@@ -1205,7 +1223,7 @@ test "tree browsing is free and point actions issue one command" {
 test "a stick pushed where no passive lies keeps the pan, as the keys do" {
     var inv = items.Inventory{};
     var growth = progress.State.of(.archer);
-    const v = View{ .class = .archer, .name = "Test", .inventory = &inv, .growth = &growth, .base = growth.attributes(.archer) };
+    const v = testView(&inv, &growth);
     const screen = P{ .x = 1280, .y = 720 };
     const dead_end = found: for (0..progress.NODES.len) |i| {
         for (mathx.CARDINALS) |delta| {

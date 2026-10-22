@@ -83,7 +83,7 @@ const KINDS = std.enums.values(Kind);
 pub const DROP_PERCENT = 10;
 pub const FOE_GOLD_PERCENT = 50;
 pub const MAGIC_PERCENT = 20;
-/// Gold a broken barrel and an opened chest drop, both ends inclusive.
+/// A gold drop's range, both ends inclusive.
 pub const Gold = struct {
     lo: i32,
     hi: i32,
@@ -382,10 +382,7 @@ pub const Ground = struct {
 
     pub fn collect(self: *Ground, at: mathx.P) i32 {
         for (self.coins[0..self.coin_n], 0..) |pile, i| if (pile.at.eq(at)) {
-            const amount = pile.amount;
-            self.coin_n -= 1;
-            self.coins[i] = self.coins[self.coin_n];
-            return amount;
+            return mathx.swapRemove(Coins, &self.coins, &self.coin_n, i).amount;
         };
         return 0;
     }

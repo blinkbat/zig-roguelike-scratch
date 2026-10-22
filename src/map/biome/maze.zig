@@ -171,7 +171,7 @@ fn room(lv: *grid.Level, rng: *mathx.Rng, noise: carve.Noise, style: Style, pal:
         .tombs => if (inner >= TOMB_INNER) {
             for (carve.corners(whole.shrunk(2))) |c| lv.set(c, .wall);
             if (rng.chance(GRAVE_CHANCE)) lv.set(mid, .grave) else if (rng.chance(TOMB_BARREL_CHANCE)) lv.putBarrel(lo.add(TOMB_BARREL_AT));
-            if (mask & bitOf(.n) == 0) lv.addTorch(lume.torchWall(.{ .x = mid.x, .y = inside.lo.y }));
+            if (mask & bitOf(.n) == 0) lv.addTorch(lume.torchOver(inside, mid.x));
         },
         .sewers => {
             const across = mask & (bitOf(.w) | bitOf(.e)) != 0;
