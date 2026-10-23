@@ -347,7 +347,7 @@ pub const Stepper = struct {
     pub const FIRE: f32 = 0.50;
     const REARM: f32 = 0.32;
     pub const DAS: f32 = 0.28;
-    pub const ARR: f32 = 0.13;
+    pub const ARR: f32 = 0.1625;
     pub const SETTLE: f32 = 0.05;
 
     latched: ?mathx.Dir = null,

@@ -26,6 +26,7 @@ const fireball = @import("../../play/fireball.zig");
 const chain = @import("../../play/chain.zig");
 const ward = @import("../../play/ward.zig");
 const charge = @import("../../play/charge.zig");
+const turn_clock = @import("../../play/clock.zig");
 const skillbar = @import("../../play/skillbar.zig");
 const look = @import("../../gfx/look.zig");
 const raster = @import("../../gfx/raster.zig");
@@ -47,7 +48,7 @@ const CHARACTER = menu.CHARACTER;
 const PAUSE = menu.PAUSE;
 
 fn manaAfter(g: *const game.Game, act: skillbar.Act) i32 {
-    return game.manaMax(g) - g.growth.cost(act) + @divTrunc(game.manaRegen(g), heroes.MANA_REGEN_TURNS);
+    return g.sim.manaMax() - g.sim.growth.cost(act) + @divTrunc(g.sim.manaRegen(), heroes.MANA_REGEN_TURNS);
 }
 
 fn skipsNext(a: *actor.Actor) void {
@@ -65,29 +66,28 @@ test "equipment base effects reach combat recovery and status resistance" {
     const from = P{ .x = 20, .y = 20 };
     harness.heroArena(g, .knight, from, &.{});
     const id = harness.spawnAt(g, .beefy_pib, .{ .x = 23, .y = 20 }, false);
-    g.inventory.gear.slots.set(.right_hand, .{ .kind = .crossbow });
+    g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .crossbow });
     const hit = combat.heroRoll(g, .ranged, 10);
-    const before = g.pool.get(id).?.hp;
+    const before = g.sim.pool.get(id).?.hp;
     combat.wound(g, id, hit, "shoots", .{ .from = from, .wait = 0 });
-    try std.testing.expectEqual(before - hit.dmg, g.pool.get(id).?.hp);
+    try std.testing.expectEqual(before - hit.dmg, g.sim.pool.get(id).?.hp);
     game.settle(g);
-    g.inventory.gear.slots.set(.right_hand, .{ .kind = .axe });
-    const foe = g.pool.get(id).?;
+    g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .axe });
+    const foe = g.sim.pool.get(id).?;
     foe.kind = .rat;
-    foe.max = 10000;
-    foe.hp = foe.max;
+    harness.setLife(foe, 10000, 10000);
     for (0..200) |_| {
         combat.wound(g, id, combat.heroRoll(g, .melee, 1), "slashes", .{ .from = from, .wait = 0 });
         game.settle(g);
     }
     try std.testing.expectEqual(@as(i32, 2), foe.bleed.amount);
     try std.testing.expectEqual(@as(u8, 100), foe.resilience.meters.get(.bleed).percent);
-    g.inventory.gear.slots.set(.right_hand, .{ .kind = .mace });
+    g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .mace });
     for (0..200) |_| {
         combat.wound(g, id, combat.heroRoll(g, .melee, 1), "strikes", .{ .from = from, .wait = 0 });
         game.settle(g);
     }
-    try std.testing.expectEqual(@as(i32, 4 * @import("../../play/clock.zig").TURN), foe.clock.ticks);
+    try std.testing.expectEqual(@as(i32, 4 * turn_clock.TURN), foe.clock.ticks);
     try std.testing.expectEqual(@as(u8, 100), foe.resilience.meters.get(.stun).percent);
     foe.resilience = .{};
     foe.clock = .{};
@@ -96,14 +96,14 @@ test "equipment base effects reach combat recovery and status resistance" {
         combat.arrowHit(g, id, .{ .blow = .{ .elements = .initDefault(0, .{ .lightning = 1 }) } }, .spark, .{ .from = from, .wait = 0 });
         game.settle(g);
     }
-    try std.testing.expectEqual(@as(i32, @import("../../play/clock.zig").TURN), foe.clock.ticks);
+    try std.testing.expectEqual(@as(i32, turn_clock.TURN), foe.clock.ticks);
     try std.testing.expectEqual(@as(u8, 25), foe.resilience.meters.get(.stun).percent);
-    g.inventory.gear.slots.set(.helm, .{ .kind = .circlet });
-    g.inventory.gear.slots.set(.left_hand, .{ .kind = .totem });
-    g.mana = 0;
+    g.sim.inventory.gear.slots.set(.helm, .{ .kind = .circlet });
+    g.sim.inventory.gear.slots.set(.left_hand, .{ .kind = .totem });
+    g.sim.mana = 0;
     for (0..heroes.MANA_REGEN_TURNS) |_| skills.recover(g);
-    try std.testing.expectEqual(@as(i32, 2), g.mana);
-    const h = g.heroActor().?;
+    try std.testing.expectEqual(@as(i32, 2), g.sim.mana);
+    const h = g.sim.heroActor().?;
     h.hp = 10;
     combat.wound(g, id, .{ .dmg = foe.hp }, "slays", .{ .from = from, .wait = 0 });
     try std.testing.expectEqual(@as(i32, 11), h.hp);
@@ -114,9 +114,9 @@ test "skills cannot start a second turn while the first is still being drawn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
-    const clock = g.clock;
-    const hp = g.heroActor().?.hp;
-    g.busy = 0.5;
+    const clock = g.sim.clock;
+    const hp = g.sim.heroActor().?.hp;
+    g.pic.busy = 0.5;
     var bound: usize = 0;
     for (skillbar.SLOTS) |button| {
         const act = g.bar.at(.{ .set = .primary, .button = button }) orelse continue;
@@ -125,23 +125,22 @@ test "skills cannot start a second turn while the first is still being drawn" {
         g.st = .{ .pressed = .initOne(button) };
         game.update(g, 0);
         try std.testing.expectEqual(game.Mode.play, g.mode);
-        try std.testing.expectEqual(clock, g.clock);
-        try std.testing.expectEqual(hp, g.heroActor().?.hp);
-        try std.testing.expectEqual(game.manaMax(g), g.mana);
+        try std.testing.expectEqual(clock, g.sim.clock);
+        try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+        try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
         try std.testing.expectEqual(act, g.pending.?.skill.act);
     }
-    g.pending = null;
-    g.busy = 0;
+    harness.calm(g);
     skills.openAim(g, .x, .shoot);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
-    g.busy = 0.5;
+    g.pic.busy = 0.5;
     skills.confirmAim(g);
-    try std.testing.expectEqual(clock, g.clock);
-    try std.testing.expect(g.shot == null);
-    g.busy = 0;
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expect(g.pic.shot == null);
+    g.pic.busy = 0;
     skills.confirmAim(g);
-    try std.testing.expect(!std.meta.eql(clock, g.clock));
-    try std.testing.expect(g.shot != null);
+    try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
+    try std.testing.expect(g.pic.shot != null);
     std.debug.print("{d} bound skills blocked during animation; shooting resumes when quiet\n", .{bound});
 }
 
@@ -156,44 +155,44 @@ test "glacial shot spends only on confirmation and bursts at the first body with
         .{ .x = 27, .y = 21 },
     });
     harness.toughenFoes(g);
-    g.pool.get(6).?.resists.set(.cold, 100);
-    g.lv.set(.{ .x = 27, .y = 20 }, .wall);
+    g.sim.pool.get(6).?.resists.set(.cold, 100);
+    g.sim.lv.set(.{ .x = 27, .y = 20 }, .wall);
     game.settle(g);
-    const clock = g.clock;
-    g.mana = glacial.COST - 1;
+    const clock = g.sim.clock;
+    g.sim.mana = glacial.COST - 1;
     harness.use(g, .glacial_shot);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    g.mana = game.manaMax(g);
+    g.sim.mana = g.sim.manaMax();
     harness.use(g, .glacial_shot);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     harness.press(g, BACK);
-    try std.testing.expectEqual(clock, g.clock);
-    try std.testing.expectEqual(game.manaMax(g), g.mana);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     harness.use(g, .glacial_shot);
-    g.mark = g.heroActor().?.at;
+    g.mark = g.sim.heroActor().?.at;
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
-    try std.testing.expectEqual(clock, g.clock);
-    try std.testing.expectEqual(game.manaMax(g), g.mana);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     g.mark = .{ .x = 26, .y = 20 };
-    g.rng = harness.procRng(g, .glacial_shot, 1, true);
+    g.sim.rng = harness.procRng(g, .glacial_shot, 1, true);
     harness.press(g, CONFIRM);
-    const direct = g.pool.get(2).?;
-    const splash = g.pool.get(3).?;
+    const direct = g.sim.pool.get(2).?;
+    const splash = g.sim.pool.get(3).?;
     const dealt = harness.TEST_HP - direct.hp;
     try harness.expectDamage(g, .glacial_shot, dealt, &.{ bow.BASE, glacial.BASE });
     try harness.expectDamage(g, .glacial_shot, harness.TEST_HP - splash.hp, &.{glacial.BASE});
-    for ([_]u16{ 4, 5, 6 }) |id| try std.testing.expectEqual(harness.TEST_HP, g.pool.get(id).?.hp);
-    try std.testing.expectEqual(@as(u8, 0), g.pool.get(6).?.chill.turns);
-    try std.testing.expectEqual(manaAfter(g, .glacial_shot), g.mana);
+    for ([_]u16{ 4, 5, 6 }) |id| try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(id).?.hp);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(6).?.chill.turns);
+    try std.testing.expectEqual(manaAfter(g, .glacial_shot), g.sim.mana);
     try std.testing.expectEqual(glacial.TURNS - 1, direct.chill.turns);
-    try std.testing.expectEqual(@as(u8, 0), g.pictured[actor.Pool.slot(2)].status.get(.chilled));
-    try std.testing.expectEqual(harness.TEST_HP, g.pictured[actor.Pool.slot(3)].hp);
-    try std.testing.expectEqual(skillbar.Act.glacial_shot, g.shot.?.act);
+    try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[actor.Pool.slot(2)].status.get(.chilled));
+    try std.testing.expectEqual(harness.TEST_HP, g.pic.pictured[actor.Pool.slot(3)].hp);
+    try std.testing.expectEqual(skillbar.Act.glacial_shot, g.pic.shot.?.act);
     harness.drawnOut(g);
-    try std.testing.expectEqual(direct.chill.turns, g.pictured[actor.Pool.slot(2)].status.get(.chilled));
-    try std.testing.expectEqual(splash.hp, g.pictured[actor.Pool.slot(3)].hp);
-    std.debug.print("Glacial Shot: {d} direct, {d} cone damage; 3 protected targets untouched; mana {d}; chill shown at impact\n", .{ dealt, harness.TEST_HP - splash.hp, g.mana });
+    try std.testing.expectEqual(direct.chill.turns, g.pic.pictured[actor.Pool.slot(2)].status.get(.chilled));
+    try std.testing.expectEqual(splash.hp, g.pic.pictured[actor.Pool.slot(3)].hp);
+    std.debug.print("Glacial Shot: {d} direct, {d} cone damage; 3 protected targets untouched; mana {d}; chill shown at impact\n", .{ dealt, harness.TEST_HP - splash.hp, g.sim.mana });
 }
 
 test "glacial shot uses an intervening body or barrel and an empty shot has no cone" {
@@ -201,29 +200,29 @@ test "glacial shot uses an intervening body or barrel and an empty shot has no c
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
     harness.arena(g, from, &.{ .{ .x = 24, .y = 20 }, .{ .x = 28, .y = 20 } });
-    const near = g.pool.get(2).?;
+    const near = g.sim.pool.get(2).?;
     near.resists.set(.cold, 100);
     harness.use(g, .glacial_shot);
     g.mark = .{ .x = 28, .y = 20 };
     harness.press(g, CONFIRM);
     try harness.expectDamage(g, .glacial_shot, actor.row(.rat).hp - near.hp, &.{bow.BASE});
     try std.testing.expectEqual(@as(u8, 0), near.chill.turns);
-    try std.testing.expectEqual(actor.row(.rat).hp, g.pool.get(3).?.hp);
+    try std.testing.expectEqual(actor.row(.rat).hp, g.sim.pool.get(3).?.hp);
     harness.arena(g, from, &.{.{ .x = 26, .y = 20 }});
     harness.toughenFoes(g);
     const barrel = P{ .x = 24, .y = 20 };
-    g.lv.putBarrel(barrel);
+    g.sim.lv.putBarrel(barrel);
     harness.confirmUse(g, .glacial_shot);
-    try std.testing.expect(!g.lv.hasBarrel(barrel));
-    try std.testing.expect(g.ground.coin_n > 0);
-    const splash = harness.TEST_HP - g.pool.get(2).?.hp;
+    try std.testing.expect(!g.sim.lv.hasBarrel(barrel));
+    try std.testing.expect(g.sim.ground.coin_n > 0);
+    const splash = harness.TEST_HP - g.sim.pool.get(2).?.hp;
     try harness.expectDamage(g, .glacial_shot, splash, &.{glacial.BASE});
     harness.arena(g, from, &.{.{ .x = 26, .y = 21 }});
     harness.use(g, .glacial_shot);
     g.mark = .{ .x = 25, .y = 20 };
     harness.press(g, CONFIRM);
-    try std.testing.expect(g.shot.?.flight.struck == null);
-    try std.testing.expectEqual(actor.row(.rat).hp, g.pool.get(2).?.hp);
+    try std.testing.expect(g.pic.shot.?.flight.struck == null);
+    try std.testing.expectEqual(actor.row(.rat).hp, g.sim.pool.get(2).?.hp);
     std.debug.print("Glacial Shot: first body intercepts, barrel bursts for {d} cold splash, empty shot has no explosion\n", .{splash});
 }
 
@@ -234,9 +233,9 @@ test "glacial splash beyond sight does damage without naming the unseen foe in t
     const far = harness.spawnAt(g, .bloat, .{ .x = 31, .y = 20 }, false);
     harness.toughenFoes(g);
     game.settle(g);
-    try std.testing.expect(!g.lv.isLit(g.pool.get(far).?.at));
+    try std.testing.expect(!g.sim.lv.isLit(g.sim.pool.get(far).?.at));
     harness.confirmUse(g, .glacial_shot);
-    const lost = harness.TEST_HP - g.pool.get(far).?.hp;
+    const lost = harness.TEST_HP - g.sim.pool.get(far).?.hp;
     try harness.expectDamage(g, .glacial_shot, lost, &.{glacial.BASE});
     try std.testing.expect(!harness.logged(g, "bloat"));
     std.debug.print("unseen glacial splash: {d} damage, 0 log lines naming the hidden bloat\n", .{lost});
@@ -246,8 +245,8 @@ test "chill slows movement and attacks while idle frames preserve it and skipped
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 28, .y = 20 }});
-    const rat = g.pool.get(2).?;
-    rat.awake = true;
+    const rat = g.sim.pool.get(2).?;
+    harness.wakeFoes(g);
     rat.chill.apply();
     for (0..glacial.TURNS) |i| {
         harness.use(g, .wait);
@@ -256,21 +255,21 @@ test "chill slows movement and attacks while idle frames preserve it and skipped
     }
     try std.testing.expectEqual(@as(u8, 0), rat.chill.turns);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
-    const adjacent = g.pool.get(2).?;
-    adjacent.awake = true;
+    const adjacent = g.sim.pool.get(2).?;
+    harness.wakeFoes(g);
     harness.toughen(adjacent);
     adjacent.chill = .{ .turns = 2, .phase = glacial.CYCLE - 1 };
     adjacent.burn = .{ .turns = burning.TURNS };
     g.st = .{};
     game.update(g, 1);
     try std.testing.expectEqual(@as(u8, 2), adjacent.chill.turns);
-    const hp = g.heroActor().?.hp;
+    const hp = g.sim.heroActor().?.hp;
     harness.use(g, .wait);
-    try std.testing.expectEqual(hp, g.heroActor().?.hp);
+    try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
     try std.testing.expectEqual(harness.TEST_HP - burning.PER_TURN, adjacent.hp);
     harness.drawnOut(g);
     adjacent.chill = .{ .turns = 2, .phase = glacial.CYCLE - 1 };
-    g.lv.addGas(adjacent.at, harness.TEST_GAS * 10);
+    g.sim.lv.addGas(adjacent.at, harness.TEST_GAS * 10);
     harness.use(g, .wait);
     try std.testing.expectEqual(harness.TEST_HP - 2 * burning.PER_TURN - gas.harm(harness.TEST_HP), adjacent.hp);
     std.debug.print("chill: 2 moves in 3 turns, attack skipped, idle duration unchanged, burning and gas still tick\n", .{});
@@ -281,19 +280,19 @@ test "glacial chill and its cadence follow slime splits without hitting newborn 
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const id = harness.splittable(g, .{ .x = 26, .y = 20 }, true);
-    const a = g.pool.get(id).?;
+    const a = g.sim.pool.get(id).?;
     skipsNext(a);
     a.resists.set(.cold, -100);
-    combat.burstHit(g, .glacial_shot, .{ .body = id }, a.at, .{ .from = g.heroActor().?.at, .wait = 0.2 });
-    try std.testing.expectEqual(@as(usize, 3), g.pool.n);
-    const half = g.pool.get(id + 1).?;
+    combat.burstHit(g, .glacial_shot, .{ .body = id }, a.at, .{ .from = g.sim.heroActor().?.at, .wait = 0.2 });
+    try std.testing.expectEqual(@as(usize, 3), g.sim.pool.n);
+    const half = g.sim.pool.get(id + 1).?;
     try std.testing.expectEqual(actor.Kind.slime_half, a.kind);
     try std.testing.expectEqual(a.hp, half.hp);
     try std.testing.expectEqual(glacial.TURNS, a.chill.turns);
     try std.testing.expectEqual(@as(u8, 2), a.chill.phase);
     try std.testing.expectEqual(a.chill, half.chill);
     try std.testing.expectEqual(@as(i16, -100), half.resists.get(.cold));
-    try std.testing.expect(g.fx.revealing(actor.Pool.slot(id + 1)));
+    try std.testing.expect(g.pic.fx.revealing(actor.Pool.slot(id + 1)));
     std.debug.print("Glacial Shot split: 2 equal halves, chill duration {d} and cadence {d} inherited, one damage event each\n", .{ half.chill.turns, half.chill.phase });
 }
 
@@ -301,33 +300,33 @@ test "burning arrow spends mana only on confirmation and shows burning when its 
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 28, .y = 20 }});
-    const rat = g.pool.get(2).?;
+    const rat = g.sim.pool.get(2).?;
     harness.toughen(rat);
-    game.catchUp(g);
-    g.rng = harness.procRng(g, .burning_arrow, 1, true);
-    const clock = g.clock;
+    g.pic.catchUp(&g.sim);
+    g.sim.rng = harness.procRng(g, .burning_arrow, 1, true);
+    const clock = g.sim.clock;
     harness.use(g, .burning_arrow);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
-    try std.testing.expectEqual(game.manaMax(g), g.mana);
+    try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     harness.press(g, BACK);
-    try std.testing.expectEqual(clock, g.clock);
-    try std.testing.expectEqual(game.manaMax(g), g.mana);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     harness.confirmUse(g, .burning_arrow);
     const dealt = harness.TEST_HP - rat.hp;
     try harness.expectDamage(g, .burning_arrow, dealt, &.{ bow.BASE, burning.BASE });
-    try std.testing.expectEqual(manaAfter(g, .burning_arrow), g.mana);
+    try std.testing.expectEqual(manaAfter(g, .burning_arrow), g.sim.mana);
     try std.testing.expectEqual(burning.TURNS, rat.burn.turns);
-    try std.testing.expectEqual(@as(u8, 0), g.pictured[actor.Pool.slot(2)].status.get(.burning));
-    try std.testing.expectEqual(skillbar.Act.burning_arrow, g.shot.?.act);
+    try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[actor.Pool.slot(2)].status.get(.burning));
+    try std.testing.expectEqual(skillbar.Act.burning_arrow, g.pic.shot.?.act);
     harness.drawnOut(g);
-    try std.testing.expectEqual(burning.TURNS, g.pictured[actor.Pool.slot(2)].status.get(.burning));
+    try std.testing.expectEqual(burning.TURNS, g.pic.pictured[actor.Pool.slot(2)].status.get(.burning));
     const before = rat.hp;
     for (0..burning.TURNS) |_| {
         harness.use(g, .wait);
         harness.drawnOut(g);
     }
     try std.testing.expectEqual(before - burning.PER_TURN * burning.TURNS, rat.hp);
-    try std.testing.expectEqual(@as(u8, 0), g.pictured[actor.Pool.slot(2)].status.get(.burning));
+    try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[actor.Pool.slot(2)].status.get(.burning));
     const after = rat.hp;
     harness.use(g, .wait);
     try std.testing.expectEqual(after, rat.hp);
@@ -338,18 +337,18 @@ test "burning arrow honors fire resistance, refuses insufficient mana and uses t
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 24, .y = 20 }, .{ .x = 27, .y = 20 } });
-    const rat = g.pool.get(2).?;
+    const rat = g.sim.pool.get(2).?;
     rat.resists.set(.fire, 100);
-    g.mana = burning.COST - 1;
+    g.sim.mana = burning.COST - 1;
     harness.use(g, .burning_arrow);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    g.mana = game.manaMax(g);
+    g.sim.mana = g.sim.manaMax();
     harness.use(g, .burning_arrow);
-    g.mark = g.pool.get(3).?.at;
+    g.mark = g.sim.pool.get(3).?.at;
     harness.press(g, CONFIRM);
     try harness.expectDamage(g, .burning_arrow, actor.row(.rat).hp - rat.hp, &.{bow.BASE});
     try std.testing.expectEqual(@as(u8, 0), rat.burn.turns);
-    try std.testing.expectEqual(actor.row(.rat).hp, g.pool.get(3).?.hp);
+    try std.testing.expectEqual(actor.row(.rat).hp, g.sim.pool.get(3).?.hp);
     std.debug.print("100% fire resistance: only physical arrow damage, no ignition; far target untouched\n", .{});
 }
 
@@ -358,24 +357,24 @@ test "burning and gas both land in order, while a burning kill bursts a bloat" {
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 28, .y = 20 };
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{at});
-    const rat = g.pool.get(2).?;
+    const rat = g.sim.pool.get(2).?;
     harness.toughen(rat);
     rat.burn = .{ .turns = burning.TURNS };
     rat.resists.set(.fire, 50);
-    g.lv.addGas(at, harness.TEST_GAS);
-    game.catchUp(g);
+    g.sim.lv.addGas(at, harness.TEST_GAS);
+    g.pic.catchUp(&g.sim);
     harness.use(g, .wait);
     try std.testing.expectEqual(harness.TEST_HP - gas.harm(harness.TEST_HP) - damage.resisted(burning.PER_TURN, 50), rat.hp);
     harness.drawnOut(g);
-    try std.testing.expectEqual(rat.hp, g.pictured[actor.Pool.slot(2)].hp);
-    try std.testing.expectEqual(rat.burn.turns, g.pictured[actor.Pool.slot(2)].status.get(.burning));
+    try std.testing.expectEqual(rat.hp, g.pic.pictured[actor.Pool.slot(2)].hp);
+    try std.testing.expectEqual(rat.burn.turns, g.pic.pictured[actor.Pool.slot(2)].status.get(.burning));
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const id = harness.spawnAt(g, .bloat, at, false);
-    g.pool.get(id).?.burn = .{ .turns = 1 };
+    g.sim.pool.get(id).?.burn = .{ .turns = 1 };
     combat.burnHarm(g, id);
-    try std.testing.expect(g.pool.get(id) == null);
-    try std.testing.expectEqual(@as(usize, 1), g.kills);
-    try std.testing.expectEqual(gas.BURST, g.lv.gasAt(at));
+    try std.testing.expect(g.sim.pool.get(id) == null);
+    try std.testing.expectEqual(@as(usize, 1), g.sim.kills);
+    try std.testing.expectEqual(gas.BURST, g.sim.lv.gasAt(at));
     std.debug.print("burning plus gas: both damage events shown; burning bloat death releases {d} gas\n", .{gas.BURST});
 }
 
@@ -384,12 +383,12 @@ test "burning follows both slime halves without an extra application turn or tic
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const id = harness.splittable(g, .{ .x = 28, .y = 20 }, false);
-    const a = g.pool.get(id).?;
+    const a = g.sim.pool.get(id).?;
     a.burn.start();
     a.resists.set(.fire, 50);
-    combat.wound(g, id, .{ .dmg = 4 }, combat.SHOOT, .{ .from = g.heroActor().?.at, .wait = 0 });
+    combat.wound(g, id, .{ .dmg = 4 }, combat.SHOOT, .{ .from = g.sim.heroActor().?.at, .wait = 0 });
     combat.endTurn(g);
-    const half = g.pool.get(id + 1).?;
+    const half = g.sim.pool.get(id + 1).?;
     try std.testing.expectEqual(@as(i32, 8), a.hp);
     try std.testing.expectEqual(@as(i32, 8), half.hp);
     try std.testing.expectEqual(burning.TURNS, a.burn.turns);
@@ -407,17 +406,17 @@ test "a chill wearing down on a foe's turn shows as that foe's step is drawn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
-    const rat = g.pool.get(2).?;
-    rat.awake = true;
+    const rat = g.sim.pool.get(2).?;
+    harness.wakeFoes(g);
     rat.chill.apply();
-    game.catchUp(g);
+    g.pic.catchUp(&g.sim);
     harness.use(g, .wait);
     try std.testing.expectEqual(@as(i32, 24), rat.at.x);
     try std.testing.expectEqual(glacial.TURNS - 1, rat.chill.turns);
-    try std.testing.expectEqual(glacial.TURNS, g.pictured[actor.Pool.slot(2)].status.get(.chilled));
+    try std.testing.expectEqual(glacial.TURNS, g.pic.pictured[actor.Pool.slot(2)].status.get(.chilled));
     harness.drawnOut(g);
-    try std.testing.expectEqual(glacial.TURNS - 1, g.pictured[actor.Pool.slot(2)].status.get(.chilled));
-    std.debug.print("chill on a stepping rat: {d} turns shown until its step is drawn, then {d}\n", .{ glacial.TURNS, g.pictured[actor.Pool.slot(2)].status.get(.chilled) });
+    try std.testing.expectEqual(glacial.TURNS - 1, g.pic.pictured[actor.Pool.slot(2)].status.get(.chilled));
+    std.debug.print("chill on a stepping rat: {d} turns shown until its step is drawn, then {d}\n", .{ glacial.TURNS, g.pic.pictured[actor.Pool.slot(2)].status.get(.chilled) });
 }
 
 test "a half split off a burning, chilled slime ticks and skips in step with it on its waiting turn" {
@@ -425,18 +424,18 @@ test "a half split off a burning, chilled slime ticks and skips in step with it 
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const id = harness.splittable(g, .{ .x = 28, .y = 20 }, false);
-    const a = g.pool.get(id).?;
+    const a = g.sim.pool.get(id).?;
     a.burn = .{ .turns = burning.TURNS };
     a.chill.apply();
-    combat.wound(g, id, .{ .dmg = 4 }, combat.SHOOT, .{ .from = g.heroActor().?.at, .wait = 0 });
+    combat.wound(g, id, .{ .dmg = 4 }, combat.SHOOT, .{ .from = g.sim.heroActor().?.at, .wait = 0 });
     combat.endTurn(g);
-    const half = g.pool.get(id + 1).?;
+    const half = g.sim.pool.get(id + 1).?;
     try std.testing.expectEqual(a.hp, half.hp);
     try std.testing.expectEqual(a.burn, half.burn);
     try std.testing.expectEqual(a.chill, half.chill);
     g.st = .{};
     game.update(g, 0);
-    for (g.owed) |o| try std.testing.expect(!o.any());
+    for (g.pic.owed) |o| try std.testing.expect(!o.any());
     std.debug.print("split on a burning, chilled slime: both at {d} hp, burn {d} turns, chill {d} turns phase {d}\n", .{ half.hp, half.burn.turns, half.chill.turns, half.chill.phase });
 }
 
@@ -447,13 +446,13 @@ test "a half the gas or a burn splits off on the foes' turn keeps the ticks its 
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
         const at = P{ .x = 30, .y = 20 };
         const id = harness.spawnAt(g, .slime, at, false);
-        const a = g.pool.get(id).?;
+        const a = g.sim.pool.get(id).?;
         a.hp = harness.SLIME_HALF + @as(i32, if (gassed) 1 else 3);
         a.burn = .{ .turns = 2 };
         a.chill.apply();
-        if (gassed) g.lv.addGas(at, gas.BURST);
+        if (gassed) g.sim.lv.addGas(at, gas.BURST);
         combat.endTurn(g);
-        const half = g.pool.get(id + 1).?;
+        const half = g.sim.pool.get(id + 1).?;
         try std.testing.expect(half.alive);
         try std.testing.expectEqual(a.chill, half.chill);
         try std.testing.expectEqual(a.burn, half.burn);
@@ -469,13 +468,13 @@ test "a half a burn splits off a slime in clean air into gas takes the gas on it
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
         const at = P{ .x = 30, .y = 20 };
         const id = harness.spawnAt(g, .slime, at, false);
-        const a = g.pool.get(id).?;
+        const a = g.sim.pool.get(id).?;
         a.hp = harness.SLIME_HALF + 3;
         a.burn = .{ .turns = 2 };
-        if (gassed) for (mathx.ALL_DIRS) |d| g.lv.addGas(at.add(d.delta()), gas.GASSED_UP - 1);
+        if (gassed) for (mathx.ALL_DIRS) |d| g.sim.lv.addGas(at.add(d.delta()), gas.GASSED_UP - 1);
         combat.endTurn(g);
-        try std.testing.expect(!g.lv.gassy(a.at));
-        h.* = g.pool.get(id + 1).?.hp;
+        try std.testing.expect(!g.sim.lv.gassy(a.at));
+        h.* = g.sim.pool.get(id + 1).?.hp;
     }
     std.debug.print("a half burned off a slime in clean air: {d} hp, into gas {d}\n", .{ hp[0], hp[1] });
     try std.testing.expect(hp[1] < hp[0]);
@@ -489,36 +488,36 @@ test "juke targets across obstacles, lands instantly and spends mana but no turn
     const rat = P{ .x = 26, .y = 20 };
     harness.arena(g, from, &.{rat});
     harness.wakeFoes(g);
-    g.lv.set(.{ .x = 21, .y = 20 }, .water);
-    const clock = g.clock;
-    const rng = g.rng;
+    g.sim.lv.set(.{ .x = 21, .y = 20 }, .water);
+    const clock = g.sim.clock;
+    const rng = g.sim.rng;
     harness.use(g, .juke);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     for (0..juke.RANGE) |_| harness.nudge(g, .e);
     try std.testing.expectEqual(to, g.mark);
     harness.nudge(g, .e);
     try std.testing.expectEqual(to, g.mark);
-    try std.testing.expectEqual(game.manaMax(g), g.mana);
+    try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    try std.testing.expectEqual(to, g.heroActor().?.at);
-    try std.testing.expect(harness.samePx(glide.cellPx(to), game.heroNow(g).?));
-    try std.testing.expectEqual(grid.NO_ONE, g.lv.who(from));
-    try std.testing.expectEqual(g.hero, g.lv.who(to));
-    try std.testing.expectEqual(rat, g.pool.get(2).?.at);
-    try std.testing.expectEqual(clock, g.clock);
-    try std.testing.expectEqual(rng, g.rng);
-    try std.testing.expectEqual(game.manaMax(g) - juke.COST, g.mana);
-    try std.testing.expectEqual(juke.COOLDOWN, g.cooldown.get(.juke));
-    try std.testing.expect(g.unsaved);
+    try std.testing.expectEqual(to, g.sim.heroActor().?.at);
+    try std.testing.expect(harness.samePx(glide.cellPx(to), g.pic.heroNow(&g.sim).?));
+    try std.testing.expectEqual(grid.NO_ONE, g.sim.lv.who(from));
+    try std.testing.expectEqual(g.sim.hero, g.sim.lv.who(to));
+    try std.testing.expectEqual(rat, g.sim.pool.get(2).?.at);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(rng, g.sim.rng);
+    try std.testing.expectEqual(g.sim.manaMax() - juke.COST, g.sim.mana);
+    try std.testing.expectEqual(juke.COOLDOWN, g.sim.cooldown.get(.juke));
+    try std.testing.expect(g.sim.unsaved);
     var trail: usize = 0;
-    for (g.fx.motes) |m| {
+    for (g.pic.fx.motes) |m| {
         if (m.life > 0 and std.meta.eql(m.col, look.JUKE_TRAIL) and m.p[0] < mathx.centre(from)[0] + 1) trail += 1;
     }
     try std.testing.expect(trail > 0);
     harness.use(g, .juke);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    std.debug.print("Juke moved {d} tiles instantly: {d} mana left, {d} turns cooldown, no enemy or clock advance\n", .{ mathx.dist(from, to), g.mana, g.cooldown.get(.juke) });
+    std.debug.print("Juke moved {d} tiles instantly: {d} mana left, {d} turns cooldown, no enemy or clock advance\n", .{ mathx.dist(from, to), g.sim.mana, g.sim.cooldown.get(.juke) });
 }
 
 test "juke cancellation and invalid landings cost nothing; recovery requires turns" {
@@ -526,39 +525,39 @@ test "juke cancellation and invalid landings cost nothing; recovery requires tur
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
     harness.arena(g, from, &.{});
-    const clock = g.clock;
+    const clock = g.sim.clock;
     harness.confirmUse(g, .juke);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
-    g.lv.putBarrel(.{ .x = 21, .y = 20 });
+    g.sim.lv.putBarrel(.{ .x = 21, .y = 20 });
     harness.nudge(g, .e);
     harness.press(g, CONFIRM);
-    try std.testing.expectEqual(from, g.heroActor().?.at);
+    try std.testing.expectEqual(from, g.sim.heroActor().?.at);
     harness.press(g, CHARACTER);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    try std.testing.expectEqual(game.manaMax(g), g.mana);
-    try std.testing.expectEqual(@as(u8, 0), g.cooldown.get(.juke));
-    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.cooldown.get(.juke));
+    try std.testing.expectEqual(clock, g.sim.clock);
     harness.use(g, .juke);
     harness.nudge(g, .w);
     harness.press(g, CONFIRM);
     g.st = .{};
     game.update(g, 10);
-    try std.testing.expectEqual(juke.COOLDOWN, g.cooldown.get(.juke));
-    try std.testing.expectEqual(game.manaMax(g) - juke.COST, g.mana);
+    try std.testing.expectEqual(juke.COOLDOWN, g.sim.cooldown.get(.juke));
+    try std.testing.expectEqual(g.sim.manaMax() - juke.COST, g.sim.mana);
     for (0..juke.COOLDOWN) |_| harness.use(g, .wait);
-    try std.testing.expectEqual(@as(u8, 0), g.cooldown.get(.juke));
-    try std.testing.expectEqual(game.manaMax(g) - juke.COST + @divTrunc(heroes.MANA_REGEN * juke.COOLDOWN, heroes.MANA_REGEN_TURNS), g.mana);
-    g.mana = juke.COST - 1;
+    try std.testing.expectEqual(@as(u8, 0), g.sim.cooldown.get(.juke));
+    try std.testing.expectEqual(g.sim.manaMax() - juke.COST + @divTrunc(heroes.MANA_REGEN * juke.COOLDOWN, heroes.MANA_REGEN_TURNS), g.sim.mana);
+    g.sim.mana = juke.COST - 1;
     harness.use(g, .juke);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    for (0..@as(usize, @intCast(@divExact(game.manaMax(g) * heroes.MANA_REGEN_TURNS, heroes.MANA_REGEN)))) |_| harness.use(g, .wait);
-    try std.testing.expectEqual(game.manaMax(g), g.mana);
+    for (0..@as(usize, @intCast(@divExact(g.sim.manaMax() * heroes.MANA_REGEN_TURNS, heroes.MANA_REGEN)))) |_| harness.use(g, .wait);
+    try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     g.bar.bind(.{ .set = .secondary, .button = .rb }, .juke);
     harness.pressHolding(g, .rb, &.{.lb});
     harness.nudge(g, .w);
     harness.press(g, CONFIRM);
-    try std.testing.expectEqual(P{ .x = 18, .y = 20 }, g.heroActor().?.at);
-    std.debug.print("Juke: free cancel and invalid targets, {d}-turn recovery, mana capped at {d}, secondary binding checked\n", .{ juke.COOLDOWN, game.manaMax(g) });
+    try std.testing.expectEqual(P{ .x = 18, .y = 20 }, g.sim.heroActor().?.at);
+    std.debug.print("Juke: free cancel and invalid targets, {d}-turn recovery, mana capped at {d}, secondary binding checked\n", .{ juke.COOLDOWN, g.sim.manaMax() });
 }
 
 test "a skill fires from whatever button holds it, and the secondary set only with its modifier held" {
@@ -575,10 +574,10 @@ test "a skill fires from whatever button holds it, and the secondary set only wi
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     try std.testing.expectEqual(input.Button.rb, g.aim_by);
     harness.press(g, .x);
-    try std.testing.expect(!g.pool.get(2).?.hurt());
+    try std.testing.expect(!g.sim.pool.get(2).?.hurt());
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    try std.testing.expect(g.pool.get(2).?.hurt());
+    try std.testing.expect(g.sim.pool.get(2).?.hurt());
 }
 
 test "every targeted slot uses standard confirmation in both skill sets" {
@@ -588,26 +587,26 @@ test "every targeted slot uses standard confirmation in both skill sets" {
     for (skillbar.SETS) |set| {
         for (skillbar.SLOTS) |by| {
             harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
-            harness.toughen(g.pool.get(2).?);
+            harness.toughen(g.sim.pool.get(2).?);
             g.bar = skillbar.Bar.of(.archer);
             const modifier: input.Button = if (by == .lb) .rt else .lb;
             g.bar.bind(.{ .set = .primary, .button = modifier }, .secondary);
             g.bar.bind(.{ .set = set, .button = by }, .shoot);
-            const clock = g.clock;
+            const clock = g.sim.clock;
             if (set == .secondary) harness.pressHolding(g, by, &.{modifier}) else harness.press(g, by);
             try std.testing.expectEqual(game.Mode.aim, g.mode);
-            try std.testing.expectEqual(clock, g.clock);
+            try std.testing.expectEqual(clock, g.sim.clock);
             try std.testing.expectEqual(set, g.aim_set);
             if (by != CONFIRM and by != BACK) {
                 harness.press(g, by);
                 try std.testing.expectEqual(game.Mode.aim, g.mode);
-                try std.testing.expectEqual(clock, g.clock);
-                try std.testing.expect(!g.pool.get(2).?.hurt());
+                try std.testing.expectEqual(clock, g.sim.clock);
+                try std.testing.expect(!g.sim.pool.get(2).?.hurt());
             }
             harness.press(g, CONFIRM);
             try std.testing.expectEqual(game.Mode.play, g.mode);
-            try std.testing.expect(g.pool.get(2).?.hurt());
-            try std.testing.expectEqual(clock.minute + day.TURN_MINUTES, g.clock.minute);
+            try std.testing.expect(g.sim.pool.get(2).?.hurt());
+            try std.testing.expectEqual(clock.minute + day.TURN_MINUTES, g.sim.clock.minute);
             checked += 1;
         }
     }
@@ -621,19 +620,19 @@ test "standard back controls cancel skills opened with B for every class" {
     for (std.enums.values(heroes.Class)) |class| {
         for ([_]input.Button{ BACK, PAUSE, CHARACTER }) |back| {
             harness.heroArena(g, class, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
-            const clock = g.clock;
-            const mana = g.mana;
-            const cooldown = g.cooldown;
-            const at = g.heroActor().?.at;
+            const clock = g.sim.clock;
+            const mana = g.sim.mana;
+            const cooldown = g.sim.cooldown;
+            const at = g.sim.heroActor().?.at;
             harness.press(g, .b);
             try std.testing.expectEqual(game.Mode.aim, g.mode);
             harness.press(g, back);
             try std.testing.expectEqual(game.Mode.play, g.mode);
-            try std.testing.expectEqual(clock, g.clock);
-            try std.testing.expectEqual(mana, g.mana);
-            try std.testing.expectEqual(cooldown, g.cooldown);
-            try std.testing.expectEqual(at, g.heroActor().?.at);
-            try std.testing.expect(!g.pool.get(2).?.hurt());
+            try std.testing.expectEqual(clock, g.sim.clock);
+            try std.testing.expectEqual(mana, g.sim.mana);
+            try std.testing.expectEqual(cooldown, g.sim.cooldown);
+            try std.testing.expectEqual(at, g.sim.heroActor().?.at);
+            try std.testing.expect(!g.sim.pool.get(2).?.hurt());
             checked += 1;
         }
     }
@@ -654,7 +653,7 @@ test "binding from Skills assigns the selected skill directly and spends no turn
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 30, .y = 20 }});
-    const clock = g.clock;
+    const clock = g.sim.clock;
     harness.press(g, menu.CHARACTER);
     g.character.choose(.skills);
     character.characterCommand(g, .{ .bindings = .shoot });
@@ -670,7 +669,7 @@ test "binding from Skills assigns the selected skill directly and spends no turn
     try std.testing.expectEqual(@as(?skillbar.Act, null), g.bar.at(g.binds.slot()));
     harness.press(g, BACK);
     try std.testing.expectEqual(game.Mode.pause, g.mode);
-    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(clock, g.sim.clock);
     std.debug.print("bindings: selected skill to either bar in two actions, direct clear, return to Skills, no turns\n", .{});
 }
 
@@ -678,7 +677,7 @@ test "binding mouse targets follow both sets at different screen sizes" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    const clock = g.clock;
+    const clock = g.sim.clock;
     var checked: usize = 0;
     for ([_]P{ game.SCREEN_720, game.SCREEN_1080 }) |screen| {
         g.screen = screen;
@@ -703,7 +702,7 @@ test "binding mouse targets follow both sets at different screen sizes" {
             checked += 1;
         };
     }
-    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(clock, g.sim.clock);
     std.debug.print("binding mouse: {d} scaled slot selections and assignments, both sets, zero turns\n", .{checked});
 }
 
@@ -717,7 +716,7 @@ test "a pool longer than the bar wraps into rows the d-pad walks, and the rows s
     try std.testing.expectEqual(@as(usize, 0), binds.pickStep(last, .{ .x = 1, .y = 0 }, n));
     try std.testing.expectEqual(last, binds.pickStep(0, .{ .x = -1, .y = 0 }, n));
     try std.testing.expectEqual(binds.PICK_COLS + 1, binds.pickStep(0, .{ .x = 1, .y = 1 }, n));
-    const one_row = game.PICK_MARGIN + game.SLOT_GAP;
+    const one_row = binds.PICK_MARGIN + game.SLOT_GAP;
     for (0..n) |at| {
         const win = binds.pickWindow(0, one_row, n, at);
         try std.testing.expectEqual(@as(usize, 1), win.len);
@@ -737,12 +736,12 @@ test "X opens aim on the nearest rat and nothing is spent until standard confirm
     harness.press(g, .x);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     try std.testing.expectEqual(P{ .x = 23, .y = 22 }, g.mark);
-    try std.testing.expect(!g.pool.get(3).?.awake);
-    try std.testing.expect(!g.pool.get(3).?.hurt());
+    try std.testing.expect(!g.sim.pool.get(3).?.awake);
+    try std.testing.expect(!g.sim.pool.get(3).?.hurt());
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    try std.testing.expect(g.pool.get(3).?.hurt());
-    try std.testing.expect(!g.pool.get(2).?.hurt());
+    try std.testing.expect(g.sim.pool.get(3).?.hurt());
+    try std.testing.expect(!g.sim.pool.get(2).?.hurt());
 }
 
 test "B cancels aim and costs no turn" {
@@ -753,14 +752,14 @@ test "B cancels aim and costs no turn" {
     harness.press(g, .x);
     harness.press(g, .b);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    try std.testing.expectEqual(P{ .x = 25, .y = 20 }, g.pool.get(2).?.at);
+    try std.testing.expectEqual(P{ .x = 25, .y = 20 }, g.sim.pool.get(2).?.at);
 }
 
 test "the reticle walks only onto cells the arrow can reach" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 20 + bow.RANGE, .y = 20 }});
-    g.lv.set(.{ .x = 20 + bow.RANGE, .y = 19 }, .wall);
+    g.sim.lv.set(.{ .x = 20 + bow.RANGE, .y = 19 }, .wall);
     game.castSight(g, .{ .x = 20, .y = 20 });
     harness.use(g, .shoot);
     harness.nudge(g, .e);
@@ -776,12 +775,12 @@ test "two arrows kill a rat at range, and the first wakes it" {
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
     harness.confirmUse(g, .shoot);
-    const r = g.pool.get(2).?;
+    const r = g.sim.pool.get(2).?;
     try std.testing.expect(r.awake and r.hp > 0 and r.hp <= actor.row(.rat).hp - bow.BASE.lo);
     try std.testing.expectEqual(@as(i32, 26), r.at.x);
     harness.confirmUse(g, .shoot);
-    try std.testing.expectEqual(@as(?*actor.Actor, null), g.pool.get(2));
-    try std.testing.expectEqual(@as(usize, 1), g.kills);
+    try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(2));
+    try std.testing.expectEqual(@as(usize, 1), g.sim.kills);
 }
 
 test "X with nothing in sight stays in play and spends no turn" {
@@ -791,7 +790,7 @@ test "X with nothing in sight stays in play and spends no turn" {
     harness.wakeFoes(g);
     harness.press(g, .x);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    try std.testing.expectEqual(@as(i32, 40), g.pool.get(2).?.at.x);
+    try std.testing.expectEqual(@as(i32, 40), g.sim.pool.get(2).?.at.x);
 }
 
 test "X aims at a barrel when no rat is in reach, and the arrow breaks it" {
@@ -799,23 +798,23 @@ test "X aims at a barrel when no rat is in reach, and the arrow breaks it" {
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const at = P{ .x = 25, .y = 20 };
-    g.lv.putBarrel(at);
+    g.sim.lv.putBarrel(at);
     harness.press(g, .x);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     try std.testing.expectEqual(at, g.mark);
-    try std.testing.expectEqual(@as(i32, 0), g.gold);
+    try std.testing.expectEqual(@as(i32, 0), g.sim.gold);
     harness.press(g, CONFIRM);
-    try std.testing.expect(!g.lv.hasBarrel(at));
-    try std.testing.expectEqual(@as(i32, 0), g.gold);
-    try std.testing.expect(g.ground.coins[0].amount >= items.BARREL_GOLD.lo);
+    try std.testing.expect(!g.sim.lv.hasBarrel(at));
+    try std.testing.expectEqual(@as(i32, 0), g.sim.gold);
+    try std.testing.expect(g.sim.ground.coins[0].amount >= items.BARREL_GOLD.lo);
 }
 
 test "the reticle crosses the archer to the far side of a corridor" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 23, .y = 20 }, .{ .x = 15, .y = 20 } });
-    harness.wallRow(&g.lv, 19, 10, 30);
-    harness.wallRow(&g.lv, 21, 10, 30);
+    harness.wallRow(&g.sim.lv, 19, 10, 30);
+    harness.wallRow(&g.sim.lv, 21, 10, 30);
     game.castSight(g, .{ .x = 20, .y = 20 });
     harness.use(g, .shoot);
     try std.testing.expectEqual(P{ .x = 23, .y = 20 }, g.mark);
@@ -827,26 +826,26 @@ test "charge retreats down an empty line and passive and skill allocations spend
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{});
-    const clock = g.clock;
-    g.growth = progress.State.of(.knight);
-    _ = g.growth.gain(40);
-    for (progress.NODES, 0..) |_, i| if (g.growth.available(i)) {
+    const clock = g.sim.clock;
+    g.sim.growth = progress.State.of(.knight);
+    _ = g.sim.growth.gain(40);
+    for (progress.NODES, 0..) |_, i| if (g.sim.growth.available(i)) {
         character.characterCommand(g, .{ .passive = i });
         break;
     };
-    try std.testing.expectEqual(@as(u16, 0), g.growth.passive_points);
+    try std.testing.expectEqual(@as(u16, 0), g.sim.growth.passive_points);
     character.characterCommand(g, .{ .skill = .cleave });
-    try std.testing.expectEqual(@as(u8, 2), g.growth.ranks.get(.cleave));
-    try std.testing.expectEqual(@as(u16, 0), g.growth.active_points);
-    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(@as(u8, 2), g.sim.growth.ranks.get(.cleave));
+    try std.testing.expectEqual(@as(u16, 0), g.sim.growth.active_points);
+    try std.testing.expectEqual(clock, g.sim.clock);
     harness.drawnOut(g);
     harness.use(g, .charge);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     g.mark = .{ .x = 17, .y = 20 };
     skills.confirmAim(g);
-    try std.testing.expectEqual(P{ .x = 17, .y = 20 }, g.heroActor().?.at);
-    try std.testing.expectEqual(clock.minute + day.TURN_MINUTES, g.clock.minute);
-    try std.testing.expectEqual(manaAfter(g, .charge), g.mana);
+    try std.testing.expectEqual(P{ .x = 17, .y = 20 }, g.sim.heroActor().?.at);
+    try std.testing.expectEqual(clock.minute + day.TURN_MINUTES, g.sim.clock.minute);
+    try std.testing.expectEqual(manaAfter(g, .charge), g.sim.mana);
     std.debug.print("charge: empty retreat landing; allocations consume points and no turn\n", .{});
 }
 
@@ -864,11 +863,11 @@ test "attribute damage and critical rolls reach melee, arrows, mixed arrows and 
         var criticals: usize = 0;
         for (0..seeds) |seed| {
             harness.heroArena(g, c[0], .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
-            const target = g.pool.get(2).?;
+            const target = g.sim.pool.get(2).?;
             harness.toughen(target);
             target.resists = .initFill(50);
-            g.rng = mathx.Rng.init(seed);
-            var expected_rng = g.rng;
+            g.sim.rng = mathx.Rng.init(seed);
+            var expected_rng = g.sim.rng;
             const raw = combat.rollRaw(&expected_rng, c[1], combat.basesFor(g, c[1]), true);
             const critical = c[0].attrs().crits(&expected_rng);
             criticals += @intFromBool(critical);
@@ -887,8 +886,8 @@ test "live skill tooltips include equipped damage, ranks and the actual targetin
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
-    g.inventory.gear.slots.set(.right_hand, .{ .kind = .bow });
-    g.growth.ranks.set(.shoot, 3);
+    g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .bow });
+    g.sim.growth.ranks.set(.shoot, 3);
     g.bar.bind(.{ .set = .primary, .button = skillbar.SLOTS[0] }, .shoot);
     var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
@@ -916,15 +915,15 @@ test "weapon weight controls live damage and its preview independently of attack
         const act = case[1];
         const style = case[2];
         harness.heroArena(g, if (act == .shoot) .archer else .knight, .{ .x = 20, .y = 20 }, &.{});
-        g.inventory.gear.slots.set(.right_hand, .{ .kind = case[0] });
-        g.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 70 }, null } });
-        g.growth.ranks.set(act, 2);
-        var expected_attrs = g.inventory.gear.forAttack(game.heroAttrs(g), act.attack().?);
-        expected_attrs.damage_bonus.getPtr(style).* += g.growth.damageBonus(act);
+        g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = case[0] });
+        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 70 }, null } });
+        g.sim.growth.ranks.set(act, 2);
+        var expected_attrs = g.sim.inventory.gear.forAttack(g.sim.heroAttrs(), act.attack().?);
+        expected_attrs.damage_bonus.getPtr(style).* += g.sim.growth.damageBonus(act);
         try std.testing.expectEqualDeep(expected_attrs, combat.blowFor(g, act).by);
         const raw = damage.Damage{ .physical = 100 };
-        g.rng = mathx.Rng.init(0xDA6);
-        var expected_rng = g.rng;
+        g.sim.rng = mathx.Rng.init(0xDA6);
+        var expected_rng = g.sim.rng;
         const critical = expected_attrs.crits(&expected_rng);
         const expected = expected_attrs.blow(style, raw, critical, &expected_rng);
         try std.testing.expectEqualDeep(expected, combat.heroScaled(g, act, raw).blow);
@@ -938,14 +937,14 @@ test "weapon weight controls live damage and its preview independently of attack
         var wanted: [64]u8 = undefined;
         try std.testing.expect(std.mem.indexOf(u8, tip.body, try std.fmt.bufPrint(&wanted, damage.PHYSICAL_FMT, .{ span.lo, span.hi })) != null);
         if (act == .cleave) {
-            const by = g.inventory.gear.forAttack(game.heroAttrs(g), .melee);
+            const by = g.sim.inventory.gear.forAttack(g.sim.heroAttrs(), .melee);
             var scoped_only: usize = 0;
             for (0..128) |seed| {
-                g.rng = mathx.Rng.init(seed);
-                expected_rng = g.rng;
-                var unscoped_rng = g.rng;
+                g.sim.rng = mathx.Rng.init(seed);
+                expected_rng = g.sim.rng;
+                var unscoped_rng = g.sim.rng;
                 const crit = by.crits(&expected_rng);
-                scoped_only += @intFromBool(crit and !game.heroAttrs(g).crits(&unscoped_rng));
+                scoped_only += @intFromBool(crit and !g.sim.heroAttrs().crits(&unscoped_rng));
                 try std.testing.expectEqual(by.blow(style, raw, crit, &expected_rng).physical, combat.heroRoll(g, .melee, 100).dmg);
             }
             if (case[0] == .dagger) try std.testing.expect(scoped_only > 0);
@@ -970,28 +969,28 @@ test "dodging spends the foe turn without damage, bleeding or mana shield loss" 
             for ([_]bool{ false, true }) |dodged| {
                 harness.heroArena(g, c, .{ .x = 20, .y = 20 }, &.{});
                 _ = harness.spawnAt(g, .pib, .{ .x = 21, .y = 20 }, true);
-                const h = g.heroActor().?;
+                const h = g.sim.heroActor().?;
                 if (warded) h.ward.raise();
                 const hp = h.hp;
-                const clock = g.clock;
-                g.rng = harness.bitesRng(g, .pib, &.{!dodged});
+                const clock = g.sim.clock;
+                g.sim.rng = harness.bitesRng(g, .pib, &.{!dodged});
                 harness.use(g, .wait);
-                try std.testing.expect(!std.meta.eql(clock, g.clock));
+                try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
                 if (dodged) {
                     try std.testing.expectEqual(hp, h.hp);
-                    try std.testing.expectEqual(game.manaMax(g), g.mana);
+                    try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
                     try std.testing.expectEqual(@as(u8, 0), h.bleed.turns);
                 } else if (warded) {
                     try std.testing.expectEqual(hp, h.hp);
-                    try std.testing.expect(g.mana < game.manaMax(g));
+                    try std.testing.expect(g.sim.mana < g.sim.manaMax());
                 } else try std.testing.expect(h.hp < hp);
                 g.st = .{};
                 game.update(g, harness.TEST_DT);
-                try std.testing.expect(g.busy > 0);
+                try std.testing.expect(g.pic.busy > 0);
                 harness.drawnOut(g);
-                try std.testing.expectEqual(h.hp, g.pictured[game.heroSlot(g).?].hp);
-                try std.testing.expectEqual(g.mana, game.manaShown(g));
-                if (dodged) try std.testing.expectEqual(@as(f32, 0), g.fx.flashOf(game.heroSlot(g).?));
+                try std.testing.expectEqual(h.hp, g.pic.pictured[g.sim.heroSlot().?].hp);
+                try std.testing.expectEqual(g.sim.mana, g.pic.manaShown(&g.sim));
+                if (dodged) try std.testing.expectEqual(@as(f32, 0), g.pic.fx.flashOf(g.sim.heroSlot().?));
                 checked += 1;
             }
         }
@@ -1003,21 +1002,21 @@ test "each spark that stuns costs a chasing rat its next turn, and mana is spent
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
-    try std.testing.expectEqual(actor.Kind.wizard, g.heroActor().?.kind);
-    const rat = g.pool.get(2).?;
-    rat.awake = true;
+    try std.testing.expectEqual(actor.Kind.wizard, g.sim.heroActor().?.kind);
+    const rat = g.sim.pool.get(2).?;
+    harness.wakeFoes(g);
     harness.toughen(rat);
     for (0..2) |_| {
         harness.use(g, .spark);
         try std.testing.expectEqual(game.Mode.aim, g.mode);
-        g.rng = harness.procRng(g, .spark, 1, true);
+        g.sim.rng = harness.procRng(g, .spark, 1, true);
         harness.press(g, CONFIRM);
         harness.drawnOut(g);
     }
     const dealt = harness.TEST_HP - rat.hp;
     try harness.expectDamage(g, .spark, dealt, &.{ spark.BASE, spark.BASE });
     try std.testing.expectEqual(@as(i32, 26), rat.at.x);
-    try std.testing.expectEqual(game.manaMax(g) - 2 * spark.COST + @divTrunc(2 * heroes.MANA_REGEN, heroes.MANA_REGEN_TURNS), g.mana);
+    try std.testing.expectEqual(g.sim.manaMax() - 2 * spark.COST + @divTrunc(2 * heroes.MANA_REGEN, heroes.MANA_REGEN_TURNS), g.sim.mana);
     harness.use(g, .wait);
     try std.testing.expectEqual(@as(i32, 25), rat.at.x);
     std.debug.print("spark: {d} lightning over 2 stunning hits; the rat lost both turns, then walked on\n", .{dealt});
@@ -1030,32 +1029,32 @@ test "a knight's shield bash knocks a foe back a tile, and its stun keeps the fo
     var landed: [2]i32 = undefined;
     for ([_]bool{ true, false }, &landed) |stuns, *x| {
         harness.heroArena(g, .knight, from, &.{.{ .x = 21, .y = 20 }});
-        const rat = g.pool.get(2).?;
-        rat.awake = true;
+        const rat = g.sim.pool.get(2).?;
+        harness.wakeFoes(g);
         harness.toughen(rat);
-        const hp = g.heroActor().?.hp;
+        const hp = g.sim.heroActor().?.hp;
         harness.use(g, .shield_bash);
         try std.testing.expectEqual(game.Mode.aim, g.mode);
         try std.testing.expectEqual(P{ .x = 21, .y = 20 }, g.mark);
-        g.rng = harness.procRng(g, .shield_bash, 1, stuns);
+        g.sim.rng = harness.procRng(g, .shield_bash, 1, stuns);
         harness.press(g, CONFIRM);
         const dealt = harness.TEST_HP - rat.hp;
         try harness.expectDamage(g, .shield_bash, dealt, &.{bash.BASE});
-        try std.testing.expectEqual(hp, g.heroActor().?.hp);
-        try std.testing.expectEqual(manaAfter(g, .shield_bash), g.mana);
-        try std.testing.expectEqual(bash.COOLDOWN - 1, g.cooldown.get(.shield_bash));
+        try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+        try std.testing.expectEqual(manaAfter(g, .shield_bash), g.sim.mana);
+        try std.testing.expectEqual(bash.COOLDOWN - 1, g.sim.cooldown.get(.shield_bash));
         x.* = rat.at.x;
         harness.drawnOut(g);
-        try std.testing.expect(harness.samePx(glide.cellPx(rat.at), g.glide[actor.Pool.slot(2)].now()));
+        try std.testing.expect(harness.samePx(glide.cellPx(rat.at), g.pic.glide[actor.Pool.slot(2)].now()));
     }
     try std.testing.expectEqual(@as(i32, 22), landed[0]);
     try std.testing.expectEqual(@as(i32, 21), landed[1]);
     harness.heroArena(g, .knight, from, &.{.{ .x = 21, .y = 20 }});
-    g.lv.set(.{ .x = 22, .y = 20 }, .wall);
+    g.sim.lv.set(.{ .x = 22, .y = 20 }, .wall);
     harness.use(g, .shield_bash);
-    g.rng = harness.procRng(g, .shield_bash, 1, true);
+    g.sim.rng = harness.procRng(g, .shield_bash, 1, true);
     harness.press(g, CONFIRM);
-    try std.testing.expectEqual(P{ .x = 21, .y = 20 }, g.pool.get(2).?.at);
+    try std.testing.expectEqual(P{ .x = 21, .y = 20 }, g.sim.pool.get(2).?.at);
     std.debug.print("shield bash: stunned rat ends the turn at x {d}, unstunned steps back to x {d}; against a wall it stays\n", .{ landed[0], landed[1] });
 }
 
@@ -1064,19 +1063,19 @@ test "a foe knocked back and stepping in again is drawn on its cell until the ba
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 21, .y = 20 };
     harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{at});
-    const rat = g.pool.get(2).?;
-    rat.awake = true;
+    const rat = g.sim.pool.get(2).?;
+    harness.wakeFoes(g);
     harness.toughen(rat);
     harness.use(g, .shield_bash);
-    g.rng = harness.procRng(g, .shield_bash, 1, false);
+    g.sim.rng = harness.procRng(g, .shield_bash, 1, false);
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(@as(i32, 21), rat.at.x);
-    const gl = &g.glide[actor.Pool.slot(2)];
+    const gl = &g.pic.glide[actor.Pool.slot(2)];
     try std.testing.expect(harness.samePx(glide.cellPx(at), gl.now()));
     var held: f32 = 0;
     var furthest: f32 = 0;
     var t: f32 = 0;
-    while (t < 2 and g.busy > 0) : (t += harness.TEST_DT) {
+    while (t < 2 and g.pic.busy > 0) : (t += harness.TEST_DT) {
         game.update(g, harness.TEST_DT);
         if (harness.samePx(glide.cellPx(at), gl.now())) held = t + harness.TEST_DT;
         furthest = @max(furthest, gl.now().x);
@@ -1091,15 +1090,15 @@ test "a cleave strikes only the bodies in its arc as it is swung, not a half spl
     defer game.shut(std.testing.allocator, g);
     const slime = P{ .x = 21, .y = 19 };
     harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{});
-    for ([_]P{ .{ .x = 20, .y = 18 }, .{ .x = 21, .y = 18 }, .{ .x = 22, .y = 18 }, .{ .x = 20, .y = 19 }, .{ .x = 22, .y = 19 }, .{ .x = 22, .y = 20 } }) |w| g.lv.set(w, .wall);
+    for ([_]P{ .{ .x = 20, .y = 18 }, .{ .x = 21, .y = 18 }, .{ .x = 22, .y = 18 }, .{ .x = 20, .y = 19 }, .{ .x = 22, .y = 19 }, .{ .x = 22, .y = 20 } }) |w| g.sim.lv.set(w, .wall);
     const id = harness.spawnAt(g, .slime, slime, false);
-    g.pool.get(id).?.hp = @divTrunc(actor.row(.slime).hp, 2);
+    g.sim.pool.get(id).?.hp = @divTrunc(actor.row(.slime).hp, 2);
     harness.use(g, .cleave);
     harness.nudge(g, .e);
     try std.testing.expectEqual(P{ .x = 21, .y = 20 }, g.mark);
     harness.press(g, CONFIRM);
     var slimes: usize = 0;
-    for (g.pool.slice()) |a| {
+    for (g.sim.pool.slice()) |a| {
         if (!a.alive or a.kind == .knight) continue;
         slimes += 1;
         try std.testing.expectEqual(actor.Kind.slime_half, a.kind);
@@ -1129,7 +1128,7 @@ test "a knight's cleave strikes the three tiles of its arc and nothing outside i
             hit += 1;
         } else try std.testing.expectEqual(@as(i32, 0), lost);
     }
-    try std.testing.expectEqual(manaAfter(g, .cleave), g.mana);
+    try std.testing.expectEqual(manaAfter(g, .cleave), g.sim.mana);
     std.debug.print("cleave: {d} of {d} rats struck, the {d} outside its arc untouched\n", .{ hit, arc.len + outside.len, outside.len });
 }
 
@@ -1138,20 +1137,20 @@ test "a wizard's blink lands further than juke and takes a turn" {
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
     harness.heroArena(g, .wizard, from, &.{.{ .x = 30, .y = 20 }});
-    const rat = g.pool.get(2).?;
-    rat.awake = true;
-    const hour = g.clock;
+    const rat = g.sim.pool.get(2).?;
+    harness.wakeFoes(g);
+    const hour = g.sim.clock;
     harness.use(g, .blink);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     for (0..blink.RANGE + 1) |_| harness.nudge(g, .e);
     try std.testing.expectEqual(P{ .x = 20 + blink.RANGE, .y = 20 }, g.mark);
     harness.press(g, CONFIRM);
-    try std.testing.expectEqual(g.mark, g.heroActor().?.at);
-    try std.testing.expect(g.glide[actor.Pool.slot(2)].t <= -game.STAGGER_S + harness.TEST_TOL);
-    try std.testing.expect(!std.meta.eql(hour, g.clock));
+    try std.testing.expectEqual(g.mark, g.sim.heroActor().?.at);
+    try std.testing.expect(g.pic.glide[actor.Pool.slot(2)].t <= -game.STAGGER_S + harness.TEST_TOL);
+    try std.testing.expect(!std.meta.eql(hour, g.sim.clock));
     try std.testing.expectEqual(@as(i32, 29), rat.at.x);
-    try std.testing.expectEqual(manaAfter(g, .blink), g.mana);
-    try std.testing.expectEqual(blink.COOLDOWN - 1, g.cooldown.get(.blink));
+    try std.testing.expectEqual(manaAfter(g, .blink), g.sim.mana);
+    try std.testing.expectEqual(blink.COOLDOWN - 1, g.sim.cooldown.get(.blink));
     std.debug.print("blink: {d} tiles in a turn; the rat stepped once\n", .{blink.RANGE});
 }
 
@@ -1159,15 +1158,15 @@ test "a pinning shot holds a chasing rat to its cell for two to four of its turn
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
-    const rat = g.pool.get(2).?;
-    rat.awake = true;
+    const rat = g.sim.pool.get(2).?;
+    harness.wakeFoes(g);
     harness.toughen(rat);
     harness.use(g, .pinning_shot);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     harness.press(g, CONFIRM);
     const dealt = harness.TEST_HP - rat.hp;
     try harness.expectDamage(g, .pinning_shot, dealt, &.{bow.BASE});
-    try std.testing.expectEqual(manaAfter(g, .pinning_shot), g.mana);
+    try std.testing.expectEqual(manaAfter(g, .pinning_shot), g.sim.mana);
     var held: usize = 1;
     while (rat.at.x == 26 and held < 10) {
         harness.use(g, .wait);
@@ -1175,22 +1174,22 @@ test "a pinning shot holds a chasing rat to its cell for two to four of its turn
     }
     try harness.expectWithin(held, pinning.TURNS_LO, pinning.TURNS_HI);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
-    const biter = g.pool.get(2).?;
-    biter.awake = true;
+    const biter = g.sim.pool.get(2).?;
+    harness.wakeFoes(g);
     biter.pin.turns = pinning.TURNS_HI;
-    const hp = g.heroActor().?.hp;
-    g.rng = harness.bitesRng(g, .rat, &.{true});
+    const hp = g.sim.heroActor().?.hp;
+    g.sim.rng = harness.bitesRng(g, .rat, &.{true});
     harness.use(g, .wait);
-    try std.testing.expect(g.heroActor().?.hp < hp);
+    try std.testing.expect(g.sim.heroActor().?.hp < hp);
     try std.testing.expectEqual(@as(i32, 21), biter.at.x);
-    std.debug.print("pinning shot: {d} damage, the rat held {d} turns, then walked on; pinned beside the hero it bit for {d}\n", .{ dealt, held, hp - g.heroActor().?.hp });
+    std.debug.print("pinning shot: {d} damage, the rat held {d} turns, then walked on; pinned beside the hero it bit for {d}\n", .{ dealt, held, hp - g.sim.heroActor().?.hp });
 }
 
 test "a barbed arrow always opens a bleed on a body it leaves alive" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
-    const rat = g.pool.get(2).?;
+    const rat = g.sim.pool.get(2).?;
     harness.toughen(rat);
     harness.use(g, .barbed_arrow);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
@@ -1198,7 +1197,7 @@ test "a barbed arrow always opens a bleed on a body it leaves alive" {
     const dealt = harness.TEST_HP - rat.hp;
     try harness.expectDamage(g, .barbed_arrow, dealt, &.{bow.BASE});
     try std.testing.expectEqual(bleeding.TURNS, rat.bleed.turns);
-    try std.testing.expectEqual(manaAfter(g, .barbed_arrow), g.mana);
+    try std.testing.expectEqual(manaAfter(g, .barbed_arrow), g.sim.mana);
     harness.use(g, .wait);
     try std.testing.expect(harness.TEST_HP - rat.hp > dealt);
     std.debug.print("barbed arrow: {d} damage, a {d}-turn bleed, which bled {d} the next turn\n", .{ dealt, bleeding.TURNS, harness.TEST_HP - rat.hp - dealt });
@@ -1212,16 +1211,16 @@ test "a frost nova freezes every foe within two tiles, critical and rounded for 
     for (0..seeds) |seed| {
         harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{ .{ .x = 21, .y = 20 }, .{ .x = 22, .y = 22 }, .{ .x = 23, .y = 20 } });
         harness.toughenFoes(g);
-        g.rng = mathx.Rng.init(seed);
+        g.sim.rng = mathx.Rng.init(seed);
         harness.use(g, .frost_nova);
-        const near = harness.TEST_HP - g.pool.get(2).?.hp;
-        const off = harness.TEST_HP - g.pool.get(3).?.hp;
+        const near = harness.TEST_HP - g.sim.pool.get(2).?.hp;
+        const off = harness.TEST_HP - g.sim.pool.get(3).?.hp;
         try harness.expectDamage(g, .frost_nova, near, &.{nova.BASE});
         try harness.expectDamage(g, .frost_nova, off, &.{nova.BASE});
         apart += @intFromBool(near != off);
-        try std.testing.expectEqual(harness.TEST_HP, g.pool.get(4).?.hp);
-        try std.testing.expectEqual(manaAfter(g, .frost_nova), g.mana);
-        try std.testing.expectEqual(nova.COOLDOWN - 1, g.cooldown.get(.frost_nova));
+        try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(4).?.hp);
+        try std.testing.expectEqual(manaAfter(g, .frost_nova), g.sim.mana);
+        try std.testing.expectEqual(nova.COOLDOWN - 1, g.sim.cooldown.get(.frost_nova));
     }
     try std.testing.expect(apart > 0);
     std.debug.print("frost nova: {d} of {d} casts struck the foes 1 and 2 tiles off differently, none to the one 3 off\n", .{ apart, seeds });
@@ -1233,28 +1232,28 @@ test "a half split into the cell of a body the same blow kills slides out once t
     const cell = P{ .x = 21, .y = 20 };
     const at = P{ .x = 22, .y = 20 };
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{cell});
-    g.pool.get(2).?.hp = 1;
+    g.sim.pool.get(2).?.hp = 1;
     const id = harness.splittable(g, at, false);
     var ring = grid.Box.around(at, 1).cells();
     while (ring.next()) |p| {
-        if (!p.eq(at) and !p.eq(cell)) g.lv.set(p, .wall);
+        if (!p.eq(at) and !p.eq(cell)) g.sim.lv.set(p, .wall);
     }
     game.settle(g);
     harness.use(g, .frost_nova);
     const dying = actor.Pool.slot(2);
     const half = actor.Pool.slot(id) + 1;
-    try std.testing.expect(!g.pool.items[dying].alive);
-    try std.testing.expect(g.pool.items[half].at.eq(cell));
+    try std.testing.expect(!g.sim.pool.items[dying].alive);
+    try std.testing.expect(g.sim.pool.items[half].at.eq(cell));
     var overlap: f32 = 0;
     var t: f32 = 0;
     g.st = .{};
     while (t < 1) : (t += harness.TEST_DT) {
         game.update(g, harness.TEST_DT);
-        if (game.standing(g, dying) and harness.drawn(g, half) and g.glide[half].done() > 0) overlap += harness.TEST_DT;
+        if (g.pic.standing(&g.sim, dying) and harness.drawn(g, half) and g.pic.glide[half].done() > 0) overlap += harness.TEST_DT;
     }
     std.debug.print("a half split into a dying rat's cell: {d:.3} s drawn together\n", .{overlap});
     try std.testing.expect(overlap <= harness.TEST_TOL);
-    try std.testing.expect(g.glide[half].done() >= 1);
+    try std.testing.expect(g.pic.glide[half].done() >= 1);
 }
 
 test "a fireball bursts on the first foe it strikes, burning the foes round it, and none past its blast" {
@@ -1265,12 +1264,12 @@ test "a fireball bursts on the first foe it strikes, burning the foes round it, 
     harness.use(g, .fireball);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     harness.press(g, CONFIRM);
-    const struck = harness.TEST_HP - g.pool.get(2).?.hp;
+    const struck = harness.TEST_HP - g.sim.pool.get(2).?.hp;
     try harness.expectDamage(g, .fireball, struck, &.{fireball.BASE});
-    try harness.expectDamage(g, .fireball, harness.TEST_HP - g.pool.get(3).?.hp, &.{fireball.BASE});
-    try std.testing.expectEqual(harness.TEST_HP, g.pool.get(4).?.hp);
-    try std.testing.expectEqual(manaAfter(g, .fireball), g.mana);
-    std.debug.print("fireball: {d} fire to the struck rat, {d} to the one beside it, none to the rat 3 tiles on\n", .{ struck, harness.TEST_HP - g.pool.get(3).?.hp });
+    try harness.expectDamage(g, .fireball, harness.TEST_HP - g.sim.pool.get(3).?.hp, &.{fireball.BASE});
+    try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(4).?.hp);
+    try std.testing.expectEqual(manaAfter(g, .fireball), g.sim.mana);
+    std.debug.print("fireball: {d} fire to the struck rat, {d} to the one beside it, none to the rat 3 tiles on\n", .{ struck, harness.TEST_HP - g.sim.pool.get(3).?.hp });
 }
 
 test "chain lightning leaps from the struck foe to two more, each within three tiles of the last" {
@@ -1283,12 +1282,12 @@ test "chain lightning leaps from the struck foe to two more, each within three t
     harness.press(g, CONFIRM);
     var hit: usize = 0;
     for ([_]u16{ 2, 3, 4 }) |id| {
-        const dealt = harness.TEST_HP - g.pool.get(id).?.hp;
+        const dealt = harness.TEST_HP - g.sim.pool.get(id).?.hp;
         try harness.expectDamage(g, .chain_lightning, dealt, &.{chain.BASE});
         hit += 1;
     }
-    try std.testing.expectEqual(harness.TEST_HP, g.pool.get(5).?.hp);
-    try std.testing.expectEqual(manaAfter(g, .chain_lightning), g.mana);
+    try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(5).?.hp);
+    try std.testing.expectEqual(manaAfter(g, .chain_lightning), g.sim.mana);
     std.debug.print("chain lightning: {d} rats struck, the fourth 4 tiles from each left whole\n", .{hit});
 }
 
@@ -1298,14 +1297,14 @@ test "resisted chain lightning still holds play until its last jump" {
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{ .{ .x = 24, .y = 20 }, .{ .x = 26, .y = 21 }, .{ .x = 29, .y = 21 } });
     for (harness.foes(g)) |*a| a.resists.set(.lightning, 100);
     harness.confirmUse(g, .chain_lightning);
-    const last = game.flown(g.shot.?.flight.len - 1) + chain.JUMPS * game.ZAP_S;
-    try std.testing.expect(g.busy >= last);
+    const last = g.pic.shot.?.lands() + chain.JUMPS * game.ZAP_S;
+    try std.testing.expect(g.pic.busy >= last);
     g.st = .{ .pressed = .initOne(.y) };
-    const before = g.clock;
+    const before = g.sim.clock;
     game.update(g, last - game.ZAP_S / 2);
-    try std.testing.expectEqual(before, g.clock);
+    try std.testing.expectEqual(before, g.sim.clock);
     harness.drawnOut(g);
-    try std.testing.expectEqual(@as(usize, 0), g.fx.due_n);
+    try std.testing.expectEqual(@as(usize, 0), g.pic.fx.due_n);
     std.debug.print("resisted chain lightning: {d} jumps hold play for {d:.3} s\n", .{ chain.JUMPS, last });
 }
 
@@ -1313,27 +1312,27 @@ test "a mana shield turns a bite onto mana, the orb dropping as the bite lands, 
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
-    g.pool.get(2).?.awake = true;
-    const h = g.heroActor().?;
+    harness.wakeFoes(g);
+    const h = g.sim.heroActor().?;
     const hp = h.hp;
-    g.rng = harness.bitesRng(g, .rat, &.{true});
+    g.sim.rng = harness.bitesRng(g, .rat, &.{true});
     harness.use(g, .mana_shield);
     const after_cast = manaAfter(g, .mana_shield);
-    const bitten = after_cast - g.mana;
+    const bitten = after_cast - g.sim.mana;
     try std.testing.expectEqual(hp, h.hp);
     try harness.expectWithin(bitten, 1, 3);
     try std.testing.expectEqual(ward.TURNS - 1, h.ward.turns);
-    try std.testing.expectEqual(after_cast, g.mana + g.mana_held);
+    try std.testing.expectEqual(after_cast, g.sim.mana + g.pic.mana_held);
     g.st = .{};
     game.update(g, harness.TEST_DT);
-    try std.testing.expectEqual(ward.TURNS, g.pictured[game.heroSlot(g).?].status.get(.warded));
-    try std.testing.expect(g.mana_held > 0);
+    try std.testing.expectEqual(ward.TURNS, g.pic.pictured[g.sim.heroSlot().?].status.get(.warded));
+    try std.testing.expect(g.pic.mana_held > 0);
     harness.drawnOut(g);
-    try std.testing.expectEqual(@as(i32, 0), g.mana_held);
+    try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
     for (1..ward.TURNS) |_| harness.use(g, .wait);
     try std.testing.expectEqual(hp, h.hp);
     try std.testing.expectEqual(@as(u8, 0), h.ward.turns);
-    g.rng = harness.bitesRng(g, .rat, &.{true});
+    g.sim.rng = harness.bitesRng(g, .rat, &.{true});
     harness.use(g, .wait);
     try std.testing.expect(h.hp < hp);
     std.debug.print("mana shield: a bite of {d} taken from mana, the orb holding till it landed; {d} turns, then the bites drew blood\n", .{ bitten, ward.TURNS });
@@ -1344,18 +1343,18 @@ test "mana shield deductions follow each staggered hit" {
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{ .{ .x = 21, .y = 20 }, .{ .x = 20, .y = 21 } });
     harness.wakeFoes(g);
-    g.rng = harness.bitesRng(g, .rat, &.{ true, true });
+    g.sim.rng = harness.bitesRng(g, .rat, &.{ true, true });
     harness.use(g, .mana_shield);
     const before = manaAfter(g, .mana_shield);
-    try std.testing.expectEqual(before, g.mana + g.mana_held);
+    try std.testing.expectEqual(before, g.sim.mana + g.pic.mana_held);
     g.st = .{};
     game.update(g, game.BUMP_LANDS + game.STAGGER_S * 1.5);
-    const between = g.mana + g.mana_held;
+    const between = g.sim.mana + g.pic.mana_held;
     try std.testing.expect(between < before);
-    try std.testing.expect(between > g.mana);
+    try std.testing.expect(between > g.sim.mana);
     harness.drawnOut(g);
-    try std.testing.expectEqual(@as(i32, 0), g.mana_held);
-    std.debug.print("mana shield: shown mana {d}, {d}, {d} across two hits\n", .{ before, between, g.mana });
+    try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+    std.debug.print("mana shield: shown mana {d}, {d}, {d} across two hits\n", .{ before, between, g.sim.mana });
 }
 
 test "a mana shield's last turn stays drawn until the foes' moves of that turn are" {
@@ -1363,19 +1362,19 @@ test "a mana shield's last turn stays drawn until the foes' moves of that turn a
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
     harness.wakeFoes(g);
-    const h = g.heroActor().?;
+    const h = g.sim.heroActor().?;
     h.ward.turns = 1;
     g.st = .{};
     game.update(g, harness.TEST_DT);
-    const hero = game.heroSlot(g).?;
-    try std.testing.expectEqual(@as(u8, 1), g.pictured[hero].status.get(.warded));
+    const hero = g.sim.heroSlot().?;
+    try std.testing.expectEqual(@as(u8, 1), g.pic.pictured[hero].status.get(.warded));
     harness.use(g, .wait);
-    try std.testing.expectEqual(@as(i32, 1), mathx.dist(g.pool.get(2).?.at, h.at));
+    try std.testing.expectEqual(@as(i32, 1), mathx.dist(g.sim.pool.get(2).?.at, h.at));
     try std.testing.expectEqual(@as(u8, 0), h.ward.turns);
-    try std.testing.expect(g.busy > 0);
-    try std.testing.expectEqual(@as(u8, 1), g.pictured[hero].status.get(.warded));
+    try std.testing.expect(g.pic.busy > 0);
+    try std.testing.expectEqual(@as(u8, 1), g.pic.pictured[hero].status.get(.warded));
     harness.drawnOut(g);
-    try std.testing.expectEqual(@as(u8, 0), g.pictured[hero].status.get(.warded));
+    try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[hero].status.get(.warded));
     std.debug.print("mana shield: last turn drawn through the rat's step, gone after\n", .{});
 }
 
@@ -1385,7 +1384,7 @@ test "a charge runs the knight down a line to the foe, striking it and knocking 
     var stood: [2]i32 = undefined;
     for ([_]bool{ false, true }, &stood) |pinned, *x| {
         harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
-        const rat = g.pool.get(2).?;
+        const rat = g.sim.pool.get(2).?;
         harness.toughen(rat);
         skipsNext(rat);
         if (pinned) rat.pin.turns = pinning.TURNS_HI;
@@ -1393,11 +1392,11 @@ test "a charge runs the knight down a line to the foe, striking it and knocking 
         try std.testing.expectEqual(game.Mode.aim, g.mode);
         try std.testing.expectEqual(P{ .x = 23, .y = 20 }, g.mark);
         harness.press(g, CONFIRM);
-        try std.testing.expectEqual(P{ .x = 22, .y = 20 }, g.heroActor().?.at);
+        try std.testing.expectEqual(P{ .x = 22, .y = 20 }, g.sim.heroActor().?.at);
         const dealt = harness.TEST_HP - rat.hp;
         try harness.expectDamage(g, .charge, dealt, &.{charge.BASE});
-        try std.testing.expectEqual(manaAfter(g, .charge), g.mana);
-        try std.testing.expectEqual(charge.COOLDOWN - 1, g.cooldown.get(.charge));
+        try std.testing.expectEqual(manaAfter(g, .charge), g.sim.mana);
+        try std.testing.expectEqual(charge.COOLDOWN - 1, g.sim.cooldown.get(.charge));
         x.* = rat.at.x;
     }
     try std.testing.expectEqual(@as(i32, 24), stood[0]);
@@ -1409,7 +1408,7 @@ test "a knocked rat's bleed lands once its knock slide has ended" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
-    const rat = g.pool.get(2).?;
+    const rat = g.sim.pool.get(2).?;
     harness.toughen(rat);
     skipsNext(rat);
     bleedingNow(rat);
@@ -1419,9 +1418,9 @@ test "a knocked rat's bleed lands once its knock slide has ended" {
     const bled = rat.hp;
     g.st = .{};
     var t: f32 = 0;
-    while (g.pictured[i].hp != bled and t < 2) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
-    try std.testing.expectEqual(bled, g.pictured[i].hp);
-    try std.testing.expect(g.glide[i].left() <= harness.TEST_TOL);
+    while (g.pic.pictured[i].hp != bled and t < 2) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
+    try std.testing.expectEqual(bled, g.pic.pictured[i].hp);
+    try std.testing.expect(g.pic.glide[i].left() <= harness.TEST_TOL);
     std.debug.print("knocked and bleeding: the tick landed {d:.3} s in, the slide done\n", .{t});
 }
 
@@ -1433,8 +1432,8 @@ test "bleeding doubles after knockback even if the foe loses its action" {
         var hp: [2]i32 = undefined;
         for ([_]bool{ false, true }, &hp) |bleeds, *left| {
             harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
-            g.rng = mathx.Rng.init(17);
-            const rat = g.pool.get(2).?;
+            g.sim.rng = mathx.Rng.init(17);
+            const rat = g.sim.pool.get(2).?;
             harness.toughen(rat);
             skipsNext(rat);
             if (pinned) rat.pin.turns = pinning.TURNS_HI;

@@ -301,9 +301,9 @@ pub const TorchIx = std.math.IntFittingRange(0, grid.MAX_TORCHES - 1);
 const Torch = struct {
     wall: P,
     /// 1 where the flame's light gets to, over the box of cells centred on the floor below the flame.
-    reach: [SPAN * SPAN]f32,
+    reach: [grid.Cells.square(REACH)]f32,
     /// Sight-blocking mask for interpolation; prevents walls passing light onward.
-    open: [SPAN * SPAN]f32,
+    open: [grid.Cells.square(REACH)]f32,
     seed: u32,
     colour: Rgb = FLAME,
     glow: f32 = 1,
@@ -508,7 +508,7 @@ fn hidesGround(t: grid.Tile) bool {
 const Fade = struct {
     flat: ?f32 = null,
     n: usize = 0,
-    short: [VOID_SPAN * VOID_SPAN]Short = undefined,
+    short: [grid.Cells.square(VOID_REACH)]Short = undefined,
 
     const Short = struct { x: f32, y: f32, m: f32 };
 
@@ -706,7 +706,7 @@ pub const EFFECT_SPAN: comptime_int = grid.Cells.span(EFFECT_REACH);
 const Effect = struct {
     source: Emission,
     origin: P,
-    reach: [EFFECT_SPAN * EFFECT_SPAN]bool,
+    reach: [grid.Cells.square(EFFECT_REACH)]bool,
 
     pub fn strength(e: *const Effect, x: f32, y: f32, z: f32) f32 {
         const s = e.source;

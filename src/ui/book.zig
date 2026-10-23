@@ -6,6 +6,7 @@ const hero = @import("../play/hero.zig");
 const attr = @import("../play/attrs.zig");
 const items = @import("../play/items.zig");
 const damage = @import("../play/damage.zig");
+const bleeding = @import("../play/bleeding.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
@@ -57,14 +58,12 @@ const DIVIDER_X = RIGHT - 18;
 const ROW = 28;
 const VISIBLE = 14;
 const DIRECT_VISIBLE = 8;
-/// A list's rows, then its text and second column within a row, and their tops down from the row's.
+/// A list's rows, then its text and second column within a row.
 const LIST_X = menu.PANEL_PAD;
 const LIST_Y = 30;
 const LIST_W = 510;
 const TEXT_X = 8;
 const SECOND_X = 336;
-const ROW_TEXT_DY = 4;
-const ROW_SECOND_DY = 5;
 /// Down from a list's header to "Empty" when it has no rows.
 const EMPTY_DY = 46;
 /// The area under the tabs a page lays out in.
@@ -72,7 +71,7 @@ pub const AREA = raster.rect(LIST_X, TOP, W - 2 * LIST_X, AREA_H);
 const AREA_H = 458;
 const CARD_W = 246;
 const CARD_GAP = 16;
-const CARD_H = 252;
+const CARD_H = 268;
 /// Two cards side by side; one card alone or a note under them spans it.
 const DETAIL_W = CARD_W * 2 + CARD_GAP;
 const CLOSE_W = 108;
@@ -720,11 +719,12 @@ const Controls = struct {
 };
 
 fn header(face: *const font.Face, text: [:0]const u8) void {
-    face.engraved(text, LIST_X, HEADER_MID - font.HEAD / 2, font.HEAD, look.TEXT);
+    face.engraved(text, LIST_X, font.Face.topFor(HEADER_MID, font.HEAD), font.HEAD, look.TEXT);
 }
 fn listRow(face: *const font.Face, x: i32, y: i32, text: [:0]const u8, ink: rl.Color, second: [:0]const u8) void {
-    face.draw(text, x + TEXT_X, y + ROW_TEXT_DY, font.BODY, ink);
-    face.draw(second, x + SECOND_X, y + ROW_SECOND_DY, font.SMALL, look.DIM);
+    const mid = y + ROW / 2;
+    face.drawMiddle(text, x + TEXT_X, mid, font.BODY, ink);
+    face.drawMiddle(second, x + SECOND_X, mid, font.SMALL, look.DIM);
 }
 fn tabBox(i: usize) rl.Rectangle {
     return raster.rect(TABS_X + @as(i32, @intCast(i)) * (TAB_W + TAB_GAP), TAB_Y, TAB_W, TAB_H);
@@ -769,13 +769,14 @@ fn dependent(v: View, at: usize, slot: items.Slot) ?items.Item {
     return null;
 }
 
-const CARD_LINE = 20;
+const CARD_LINE = font.SMALL_LINE;
 /// Down from a card's top: its rule, name (or "Empty slot"), slot, flavor and first stat line.
 const CARD_RULE = 20;
 const CARD_NAME = 32;
 const CARD_EMPTY = 35;
 const CARD_SLOT = 62;
-const CARD_STATS = 88;
+const SLOT_STATS_GAP = 11;
+const CARD_STATS = CARD_SLOT + font.LABEL + SLOT_STATS_GAP;
 const FLAVOR_GAP = 12;
 /// Above and below the modifiers' rule, and its inset from the card's sides.
 const MODS_ABOVE = 6;
@@ -794,15 +795,22 @@ const CardLine = union(enum) {
         switch (l) {
             .damage => |hit| out.say(damage.PHYSICAL_FMT, .{ hit.lo, hit.hi }),
             .unarmed => return "No weapon damage",
-            .armour => |n| out.say("{d}% physical damage reduction", .{n}),
+            .armour => |n| out.say("{d}% " ++ attr.REDUCTION_LABEL, .{n}),
             .innate => |innate| {
                 out.clear();
                 innate.write(out.writer());
             },
-            .bleed_damage => |n| out.say("Bleed: {d}/turn, {d} when moving", .{ n, n * 2 }),
+            .bleed_damage => |n| out.say("Bleed: {d}/turn, {d} when moving", .{ n, n * bleeding.MOVE_FACTOR }),
             .requires => |r| if (r.met) out.say("Requires {d} {s}", .{ r.n, menu.named(r.at) }) else out.say("Requires {d} {s} ({d} available)", .{ r.n, menu.named(r.at), r.available }),
         }
         return out.text();
+    }
+
+    fn size(l: CardLine) i32 {
+        return switch (l) {
+            .requires, .bleed_damage, .unarmed => font.LABEL,
+            .damage, .armour, .innate => font.SMALL,
+        };
     }
 
     fn ink(l: CardLine) rl.Color {
@@ -865,7 +873,7 @@ fn cardFoot(it: items.Item, slot: items.Slot, available: attr.Attrs) i32 {
 }
 
 comptime {
-    const mods = (items.Item{ .kind = .cap }).mods.len;
+    const mods = items.AFFIXES_MAX;
     for (std.enums.values(items.Kind)) |k| {
         const s = items.spec(k);
         for (s.slots) |slot| {
@@ -894,8 +902,7 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     var line: menu.Note(120) = .{};
     const stats = CardLines.of(spec, slot, available);
     for (stats.lines()) |l| {
-        const size = if (l == .requires or l == .bleed_damage or l == .unarmed) font.LABEL else font.SMALL;
-        face.draw(l.text(&line), x, top, size, l.ink());
+        face.draw(l.text(&line), x, top, l.size(), l.ink());
         top += CARD_LINE;
     }
     if (it.magical()) {
@@ -923,7 +930,7 @@ fn change(face: *const font.Face, x: i32, y: i32, n: *usize, label: [:0]const u8
     n.* += 1;
 }
 
-const CHANGE_ROW = 18;
+const CHANGE_ROW = font.SMALL_TIGHT;
 const CHANGE_COLS = 2;
 
 fn changeRows(n: usize) i32 {
@@ -950,8 +957,8 @@ const Measure = union(enum) {
             .attribute => |at| a.get(at),
             .reduction => a.reduction(),
             .crit => @intCast(a.crit()),
-            .weapon_crit => @min(100, @as(i32, @intCast(a.crit())) + a.weapon_crit_bonus),
-            .spell_crit => @min(100, @as(i32, @intCast(a.crit())) + a.spell_crit_bonus),
+            .weapon_crit => @intCast(a.critWith(a.weapon_crit_bonus)),
+            .spell_crit => @intCast(a.critWith(a.spell_crit_bonus)),
             .physical => a.physical_bonus,
             .element => |e| a.element_bonus.get(e),
             .dodge => @intCast(a.dodge()),
@@ -974,9 +981,9 @@ const Measure = union(enum) {
             .attribute => |at| menu.named(at),
             .reduction => comptime menu.capital(attr.REDUCTION_LABEL),
             .crit => comptime menu.capital(attr.CRIT_LABEL),
-            .weapon_crit => "Weapon critical chance",
-            .spell_crit => "Spell critical chance",
-            .physical => "Physical damage bonus",
+            .weapon_crit => comptime menu.capital(attr.WEAPON_CRIT_LABEL),
+            .spell_crit => comptime menu.capital(attr.SPELL_CRIT_LABEL),
+            .physical => comptime menu.capital(attr.PHYSICAL_LABEL) ++ " bonus",
             .element => |e| switch (e) {
                 inline else => |t| comptime menu.capital(@tagName(t)) ++ " damage bonus",
             },
@@ -993,9 +1000,9 @@ const Measure = union(enum) {
             .attribute => |at| menu.named(at),
             .reduction => "physical reduction",
             .crit => "critical chance",
-            .weapon_crit => "weapon critical chance",
-            .spell_crit => "spell critical chance",
-            .physical => "physical damage",
+            .weapon_crit => attr.WEAPON_CRIT_LABEL,
+            .spell_crit => attr.SPELL_CRIT_LABEL,
+            .physical => attr.PHYSICAL_LABEL,
             .element => |e| switch (e) {
                 inline else => |t| @tagName(t) ++ " damage",
             },
@@ -1043,13 +1050,15 @@ const STATS_X = 40;
 /// A section's title to its rule and to its first row, and row to row.
 const SECTION_RULE = 22;
 const SECTION_ROWS = 32;
-const STAT_ROW = 24;
-const ATTR_ROW = 48;
+const STAT_ROW = font.BODY_LINE;
+const ATTR_ROW = 2 * STAT_ROW;
 /// Under an attribute's row, its description.
 const ATTR_NOTE_DY = 23;
 /// Below a section's rows: its note, and the gap to what follows.
 const SURVIVAL_NOTE_DY = 7;
 const SURVIVAL_GAP = 14;
+const RECOVERY_GAP = 5;
+const RECOVERY_DY = SURVIVAL_NOTE_DY + font.SMALL_LINE + RECOVERY_GAP;
 const CRIT_GAP = 20;
 const PROGRESSION_GAP = 32;
 
@@ -1073,12 +1082,16 @@ pub fn verifyCards(face: *const font.Face) !void {
     var text: menu.Note(120) = .{};
     for (std.enums.values(items.Kind)) |kind| {
         const spec = items.spec(kind);
+        if (face.width(spec.flavor, font.LABEL) > CARD_W) {
+            std.debug.print("card overflow {s}: {s}\n", .{ spec.name, spec.flavor });
+            return error.ItemCardOverflow;
+        }
+        count += 1;
         for (spec.slots) |slot| {
             const rows = CardLines.of(spec, slot, null);
             for (rows.lines()) |line| {
-                const size = if (line == .requires or line == .bleed_damage or line == .unarmed) font.LABEL else font.SMALL;
                 const value = line.text(&text);
-                if (face.width(value, size) > CARD_W) {
+                if (face.width(value, line.size()) > CARD_W) {
                     std.debug.print("card overflow {s}: {s}\n", .{ spec.name, value });
                     return error.ItemCardOverflow;
                 }
@@ -1086,7 +1099,7 @@ pub fn verifyCards(face: *const font.Face) !void {
             }
         }
     }
-    std.debug.print("item typography: {d} property and requirement rows fit {d}px comparison cards\n", .{ count, CARD_W });
+    std.debug.print("item typography: {d} flavor, property and requirement rows fit {d}px comparison cards\n", .{ count, CARD_W });
 }
 
 const SURVIVAL = [_]Measure{ .life, .mana, .reduction, .dodge };
@@ -1118,7 +1131,7 @@ fn drawStats(face: *const font.Face, v: View) void {
     note.say("Physical reduction is capped at {d}%.", .{attr.ARMOUR_MAX});
     face.draw(note.text(), x, row(survival, SURVIVAL.len, STAT_ROW) + SURVIVAL_NOTE_DY, font.SMALL, look.DIM);
     const perks = v.inventory.gear.perks(v.growth.perks());
-    const recovery = row(survival, SURVIVAL.len, STAT_ROW) + 34;
+    const recovery = row(survival, SURVIVAL.len, STAT_ROW) + RECOVERY_DY;
     note.say("Mana recovery  {d} / {d} turns", .{ hero.MANA_REGEN + perks.mana_regen, hero.MANA_REGEN_TURNS });
     face.draw(note.text(), x, recovery, font.SMALL, look.TEXT);
     note.say("Life on hit  {d}     Life on kill  {d}", .{ perks.life_on_hit, perks.life_on_kill });

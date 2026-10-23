@@ -42,14 +42,14 @@ pub fn openCharacter(g: *game.Game) void {
 }
 
 pub fn dropShown(g: *const game.Game, drop: items.Drop) bool {
-    return g.lv.isLit(drop.at) and dropLanded(g, drop);
+    return g.sim.lv.isLit(drop.at) and dropLanded(g, drop);
 }
 
 /// Laid, or its foe's death drawn; seen or not.
 pub fn dropLanded(g: *const game.Game, drop: items.Drop) bool {
     if (drop.source == grid.NO_ONE) return true;
     const i = actor.Pool.slot(drop.source);
-    return g.pictured[i].down();
+    return g.pic.pictured[i].down();
 }
 
 fn withinReach(from: P, p: P) bool {
@@ -57,16 +57,16 @@ fn withinReach(from: P, p: P) bool {
 }
 
 pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
-    const hero = game.heroSlot(g) orelse return out[0..0];
-    const at = g.pool.items[hero].at;
+    const hero = g.sim.heroSlot() orelse return out[0..0];
+    const at = g.sim.pool.items[hero].at;
     var n: usize = 0;
     var listed = std.StaticBitSet(grid.CELLS).initEmpty();
-    for (g.ground.drops[0..g.ground.n]) |drop| {
+    for (g.sim.ground.drops[0..g.sim.ground.n]) |drop| {
         if (!dropReached(g, at, drop)) continue;
         const cell = grid.Level.idx(drop.at);
         if (listed.isSet(cell)) continue;
         listed.set(cell);
-        out[n] = if (g.lv.at(drop.at).isChest()) .{ .chest = drop.at } else .{ .bag = drop.at };
+        out[n] = if (g.sim.lv.at(drop.at).isChest()) .{ .chest = drop.at } else .{ .bag = drop.at };
         n += 1;
     }
     var cells = grid.Cells.around(at, game.INTERACT_REACH);
@@ -80,10 +80,10 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
 }
 
 fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
-    const hero = game.heroSlot(g) orelse return out[0..0];
+    const hero = g.sim.heroSlot() orelse return out[0..0];
     var n: usize = 0;
-    for (g.ground.drops[0..g.ground.n], 0..) |drop, i| {
-        if (!inLoot(g, g.pool.items[hero].at, at, drop)) continue;
+    for (g.sim.ground.drops[0..g.sim.ground.n], 0..) |drop, i| {
+        if (!inLoot(g, g.sim.pool.items[hero].at, at, drop)) continue;
         out[n] = .{ .loot = .{ .index = i, .item = drop.item } };
         n += 1;
     }
@@ -100,27 +100,27 @@ fn inLoot(g: *const game.Game, from: P, at: P, drop: items.Drop) bool {
 }
 
 pub fn lootReached(g: *const game.Game, from: P, at: P) bool {
-    for (g.ground.drops[0..g.ground.n]) |drop| {
+    for (g.sim.ground.drops[0..g.sim.ground.n]) |drop| {
         if (inLoot(g, from, at, drop)) return true;
     }
     return false;
 }
 
-fn chestReached(g: *const game.Game, from: P, p: P) bool {
-    return withinReach(from, p) and g.lv.isLit(p) and g.lv.at(p).opened() != null;
+pub fn chestReached(g: *const game.Game, from: P, p: P) bool {
+    return withinReach(from, p) and g.sim.lv.isLit(p) and g.sim.lv.at(p).opened() != null;
 }
 
 /// The hero's own door, or a clear one beside.
 pub fn doorReached(g: *game.Game, from: P, p: P) ?atlas.Link {
-    if (!withinReach(from, p) or !g.lv.isLit(p) or !g.lv.walkable(p)) return null;
-    const link = game.leadsTo(g, p) orelse return null;
+    if (!withinReach(from, p) or !g.sim.lv.isLit(p) or !g.sim.lv.walkable(p)) return null;
+    const link = g.sim.leadsTo(p) orelse return null;
     return if (!p.eq(from) and bodyShownIn(g, p)) null else link;
 }
 
 fn bodyShownIn(g: *game.Game, p: P) bool {
-    if (game.quiet(g)) return g.lv.taken(p);
-    for (0..g.pool.n) |i| {
-        if ((game.drawnCell(g, i) orelse continue).eq(p)) return true;
+    if (g.pic.quiet()) return g.sim.lv.taken(p);
+    for (0..g.sim.pool.n) |i| {
+        if ((g.pic.drawnCell(&g.sim, i) orelse continue).eq(p)) return true;
     }
     return scene.barrelShownAt(g, p);
 }
@@ -131,9 +131,9 @@ pub fn anyNearby(g: *game.Game) bool {
 }
 
 pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
-    const now = game.quiet(g);
-    const growth = if (now) &g.growth else &g.growth_shown;
-    return .{ .class = g.class, .name = g.name.text(), .inventory = &g.inventory, .growth = growth, .base = growth.attributes(g.class), .gold = if (now) g.gold else g.gold_shown, .nearby = if (g.character.page == .loot) lootOf(g, nearby, g.character.loot_at) else nearbyOf(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.lv.at(g.character.loot_at) == .chest_open };
+    const now = g.pic.quiet();
+    const growth = if (now) &g.sim.growth else &g.pic.growth_shown;
+    return .{ .class = g.sim.class, .name = g.sim.name.text(), .inventory = &g.sim.inventory, .growth = growth, .base = growth.attributes(g.sim.class), .gold = if (now) g.sim.gold else g.pic.gold_shown, .nearby = if (g.character.page == .loot) lootOf(g, nearby, g.character.loot_at) else nearbyOf(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.sim.lv.at(g.character.loot_at) == .chest_open };
 }
 
 pub fn openNearby(g: *game.Game) bool {
@@ -148,18 +148,18 @@ pub fn openNearby(g: *game.Game) bool {
 
 pub fn openLoot(g: *game.Game, at: P) void {
     if (!drawnFor(g)) return;
-    if (g.travel != null) return notYet(g);
-    const h = g.heroActor() orelse return;
+    if (g.sim.travel != null) return notYet(g);
+    const h = g.sim.heroActor() orelse return;
     if (chestReached(g, h.at, at)) {
         if (!game.combat.openChest(g, at)) return;
-        game.turnToward(g, g.hero, at.x - h.at.x);
+        g.pic.turnToward(g.sim.hero, at.x - h.at.x);
         g.mode = .play;
         game.holdWalk(g);
         game.combat.endTurn(g);
         return;
     }
     if (!lootReached(g, h.at, at)) return;
-    game.turnToward(g, g.hero, at.x - h.at.x);
+    g.pic.turnToward(g.sim.hero, at.x - h.at.x);
     openCharacter(g);
     g.character.choose(.loot);
     g.character.loot_at = at;
@@ -170,12 +170,12 @@ fn itemFailed(g: *game.Game, err: items.Failure) void {
 }
 
 fn takeDrop(g: *game.Game, i: usize) bool {
-    const item = g.ground.drops[i].item;
-    if (!g.ground.take(i, &g.inventory)) {
+    const item = g.sim.ground.drops[i].item;
+    if (!g.sim.ground.take(i, &g.sim.inventory)) {
         itemFailed(g, error.Full);
         return false;
     }
-    g.log.push(.loot, "Picked up {s}.", .{item.name()});
+    g.sim.log.push(.loot, "Picked up {s}.", .{item.name()});
     return true;
 }
 
@@ -188,21 +188,21 @@ pub fn characterCommand(g: *game.Game, command: book.Command) void {
         .close => g.mode = .play,
         .bindings => |act| {
             binds.openBinds(g);
-            if (g.growth.unlocked(act)) g.binds.assigning = act;
+            if (g.sim.growth.unlocked(act)) g.binds.assigning = act;
         },
         .passive => |i| {
-            if (!drawnFor(g) or !g.growth.allocate(i)) return;
-            g.log.push(.progress, "{s} allocated.", .{progress.NODES[i].name});
+            if (!drawnFor(g) or !g.sim.growth.allocate(i)) return;
+            g.sim.log.push(.progress, "{s} allocated.", .{progress.NODES[i].name});
             game.syncStats(g);
-            g.unsaved = true;
+            g.sim.unsaved = true;
         },
         .skill => |act| {
             if (!drawnFor(g)) return;
-            const unlocked = g.growth.unlocked(act);
-            if (!g.growth.learn(g.class, act)) return;
-            g.log.push(.progress, "{s}: rank {d}.", .{ act.name(), g.growth.ranks.get(act) });
+            const unlocked = g.sim.growth.unlocked(act);
+            if (!g.sim.growth.learn(g.sim.class, act)) return;
+            g.sim.log.push(.progress, "{s}: rank {d}.", .{ act.name(), g.sim.growth.ranks.get(act) });
             if (!unlocked) if (g.bar.firstEmpty()) |slot| g.bar.bind(slot, act);
-            g.unsaved = true;
+            g.sim.unsaved = true;
         },
         .open_loot => |at| openLoot(g, at),
         .equip, .unequip, .drop, .pickup, .take_all, .travel => itemCommand(g, command),
@@ -211,7 +211,7 @@ pub fn characterCommand(g: *game.Game, command: book.Command) void {
 
 /// Whether the turn is drawn, so a command acts; says so when not.
 fn drawnFor(g: *game.Game) bool {
-    if (!game.quiet(g)) {
+    if (!g.pic.quiet()) {
         notYet(g);
         return false;
     }
@@ -222,42 +222,42 @@ fn drawnFor(g: *game.Game) bool {
 /// Item commands spend the turn, and wait out door travel.
 fn itemCommand(g: *game.Game, command: book.Command) void {
     if (!drawnFor(g)) return;
-    if (g.travel != null) return notYet(g);
-    const h = g.heroActor() orelse return;
-    const base = g.growth.attributes(g.class);
+    if (g.sim.travel != null) return notYet(g);
+    const h = g.sim.heroActor() orelse return;
+    const base = g.sim.growth.attributes(g.sim.class);
     switch (command) {
         .close, .passive, .skill, .bindings, .open_loot => unreachable,
         .equip => |e| {
-            g.inventory.equip(e.index, e.slot, base) catch |err| {
+            g.sim.inventory.equip(e.index, e.slot, base) catch |err| {
                 itemFailed(g, err);
                 return;
             };
-            g.log.push(.loot, "Equipped {s}: {s}.", .{ g.inventory.gear.slots.get(e.slot).?.name(), e.slot.name() });
+            g.sim.log.push(.loot, "Equipped {s}: {s}.", .{ g.sim.inventory.gear.slots.get(e.slot).?.name(), e.slot.name() });
         },
         .unequip => |s| {
-            g.inventory.unequip(s, base) catch |err| {
+            g.sim.inventory.unequip(s, base) catch |err| {
                 itemFailed(g, err);
                 return;
             };
-            g.log.push(.loot, "Unequipped {s}.", .{s.name()});
+            g.sim.log.push(.loot, "Unequipped {s}.", .{s.name()});
         },
         .drop => |i| {
-            if (i >= g.inventory.n) return;
+            if (i >= g.sim.inventory.n) return;
             if (!game.combat.groundRoom(g)) return;
-            game.combat.dropItem(g, .{ .item = g.inventory.bag[i], .at = h.at });
-            g.log.push(.loot, "Dropped {s}.", .{g.inventory.remove(i).name()});
+            game.combat.dropItem(g, .{ .item = g.sim.inventory.bag[i], .at = h.at });
+            g.sim.log.push(.loot, "Dropped {s}.", .{g.sim.inventory.remove(i).name()});
         },
         .pickup => |i| {
-            if (i >= g.ground.n or !dropReached(g, h.at, g.ground.drops[i])) return;
-            if (g.character.page == .loot and !g.ground.drops[i].at.eq(g.character.loot_at)) return;
+            if (i >= g.sim.ground.n or !dropReached(g, h.at, g.sim.ground.drops[i])) return;
+            if (g.character.page == .loot and !g.sim.ground.drops[i].at.eq(g.character.loot_at)) return;
             if (!takeDrop(g, i)) return;
         },
         .take_all => {
             if (g.character.page != .loot) return;
             var taken: usize = 0;
             var i: usize = 0;
-            while (i < g.ground.n) {
-                if (!inLoot(g, h.at, g.character.loot_at, g.ground.drops[i])) {
+            while (i < g.sim.ground.n) {
+                if (!inLoot(g, h.at, g.character.loot_at, g.sim.ground.drops[i])) {
                     i += 1;
                     continue;
                 }
@@ -269,8 +269,8 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
         .travel => |p| {
             const link = doorReached(g, h.at, p) orelse return;
             const dx = p.x - h.at.x;
-            if (p.eq(h.at)) g.travel = link else game.heroTo(g, p);
-            game.turnToward(g, g.hero, dx);
+            if (p.eq(h.at)) g.sim.travel = link else game.heroTo(g, p);
+            g.pic.turnToward(g.sim.hero, dx);
         },
     }
     game.syncStats(g);
@@ -315,12 +315,12 @@ pub fn pauseStep(g: *game.Game) void {
 }
 
 pub fn toggleReveal(g: *game.Game) void {
-    g.light.reveal(&g.lv, !g.light.reveal_map);
+    g.light.reveal(&g.sim.lv, !g.light.reveal_map);
     g.mini.stale = true;
 }
 
 pub fn terrainSeen(g: *const game.Game, p: P) bool {
-    return g.light.remembers(&g.lv, p);
+    return g.light.remembers(&g.sim.lv, p);
 }
 
 fn pauseLabel(g: *const game.Game, r: game.PauseRow) [:0]const u8 {

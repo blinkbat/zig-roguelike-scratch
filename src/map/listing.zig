@@ -209,11 +209,11 @@ pub const Listing = struct {
 
 test "a map file is named from anything typed, and nothing left of it is no name" {
     var buf: [128]u8 = undefined;
-    try std.testing.expectEqualStrings(atlas.DIR ++ "/the_deepcave2" ++ atlas.EXT, pathFor(&buf, "", " The Deep/Cave2! ").?);
+    try std.testing.expectEqualStrings(atlas.mapPath("the_deepcave2"), pathFor(&buf, "", " The Deep/Cave2! ").?);
     try std.testing.expectEqual(@as(?[]const u8, null), pathFor(&buf, "", "../"));
-    try std.testing.expectEqualStrings("qud/", folderOf(atlas.DIR ++ "/qud/qud_strata" ++ atlas.EXT));
+    try std.testing.expectEqualStrings("qud/", folderOf(atlas.mapPath("qud/qud_strata")));
     try std.testing.expectEqualStrings("", folderOf(atlas.MAIN));
-    try std.testing.expectEqualStrings(atlas.DIR ++ "/qud/bog" ++ atlas.EXT, pathFor(&buf, folderOf(atlas.DIR ++ "/qud/qud_strata" ++ atlas.EXT), "Bog").?);
+    try std.testing.expectEqualStrings(atlas.mapPath("qud/bog"), pathFor(&buf, folderOf(atlas.mapPath("qud/qud_strata")), "Bog").?);
 }
 
 test "the maps folder lists its folders before its maps, and a folder opens with the way back up first" {
@@ -228,7 +228,7 @@ test "the maps folder lists its folders before its maps, and a folder opens with
     try std.testing.expectEqualStrings("qud/", list.here());
     try std.testing.expectEqual(Listing.Entry.up, list.entry(0));
     try std.testing.expectEqual(Listing.Entry.map, list.entry(1));
-    try std.testing.expect(std.mem.startsWith(u8, list.at(1), atlas.DIR ++ "/qud/qud_"));
+    try std.testing.expect(std.mem.startsWith(u8, list.at(1), atlas.PREFIX ++ "qud/qud_"));
     try std.testing.expect(std.mem.startsWith(u8, list.label(1), "qud_"));
     try std.testing.expect(!list.open(1));
     const inside = list.n;

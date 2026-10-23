@@ -71,7 +71,7 @@ life on kill, bucklers dodge, and shields physical reduction. Gloves, armour, be
 helmets and rings offer heavy/light/spell damage, life, mana, dodge, recovery or armour
 identities. `items.Spec.innate` is the source; rolled modifiers never include these fixed effects.
 
-Equipment recovery effects combine with passive perks through `game.heroPerks`.
+Equipment recovery effects combine with passive perks through `Simulation.heroPerks`.
 Weapon and spell critical bonuses remain separate, and elemental/physical bonuses apply
 only to their matching damage component. Live damage and previews share these calculations.
 

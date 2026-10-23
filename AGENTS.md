@@ -33,7 +33,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   (default `maps/main.map`). These are owner-facing entry points.
 - Every `src/**/*.zig` module except the root `main.zig` must be imported in `main.zig`'s `test {}` block.
   `build.zig` checks this on every build step and rejects those modules if smaller than 512 bytes.
-- `game.zig` holds `Game`, the run/door/turn flow, the picture's timing and `update`. `src/game/` splits off `combat`
+- `game.zig` holds `Game`, the run/door/turn flow and `update`; `Game` coordinates input, `g.sim` and `g.pic`.
+  `game/sim.zig`'s `Simulation` owns the authoritative run (level, pool, RNG, resources, progression, nodes, log) and hero queries;
+  `game/presentation.zig`'s `Presentation` owns the picture (glides, facing, pictured bodies, owed blows, shots, `fx`, shown
+  resources) and its scheduler, which reads `*const Simulation`. Graphics resources stay on `Game`. `save.zig` maps each saved
+  field to its owner by name; `RECORDED_FINGERPRINT` pins the format. `src/game/` splits off `combat`
   (blows, harm ticks, foe turns), `skills` (aiming, leaps, rushes, spells, flasks), `binds` (the skill picker),
   `glide` (body motion), `scene` (map drawing), `overlay` (skill bar, binds, orbs, inspect, tooltips),
   `character` (pause, Character, Nearby), `debug` (Pause > Debug, diagnostics, `Perf`), `shots` (headless captures, bench), `harness` (scripted play shared by
@@ -111,7 +115,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Two-handers identify the occupied offhand. Menu accents share `look.UI_GOLD/UI_FOCUS`:
   muted gold, never bright yellow.
   Character/binding panels share `menu.Surface`: half-rate growth, capped at 1.25x,
-  with 16px detail and 20px body text before scaling. Keep panels centered with margins.
+  with 18px detail and 20px body text before scaling. Keep panels centered with margins.
   `play/items.zig` owns slot/requirement transactions; `play/progress.zig` owns XP, point pools and skill ranks;
   `play/passives.zig` owns the radial passive graph and grants; `ui/trees.zig` draws both tree panels.
   Before changing either panel, read its maintained reference: `docs/DIABLO2_SKILL_TREE.md` for skills,
@@ -142,7 +146,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   when that default file is missing. Reject malformed maps and starts without open floor.
 - New runs select class and name, then use a free save slot; refuse when all slots are occupied.
   Saved-run death deletes the slot and returns to title on restart input; unsaved play can restart.
-  Editor play-tests use the archer and no save slot. `Game.unkillable` is a debug option, never saved.
+  Editor play-tests use the archer and no save slot. `Simulation.unkillable` is a debug option, never saved.
   Use the hero's name in the log/death screen, never "you".
 - `Game.screen` controls layout; fullscreen can change it at runtime. `ui/hud.zig` follows
   `docs/HUD_LAYOUT.md`: a centered 640px assembly, life/mana orbs, skill icons, cooldowns, an experience bar and ailments;
@@ -151,7 +155,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   occupies the bottom-left gutter without a heading; newest entries append at the bottom, with text,
   background and border fading to 10% of their base opacity at the top. Follow `docs/DATA_PRESENTATION.md` for item cards,
   comparisons and stat wording: relevant properties only, explicit units, and effects before metrics.
-- `gfx/font.zig` uses Source Sans 3 for compact text at 16px and below, Balthazar for display text and symbols.
+- `gfx/font.zig` uses Source Sans 3 for compact text at 18px (`font.SMALL`) and below, Balthazar for display text and symbols.
   Native sizes use point-filtered atlases; scaled panels use the corresponding mipmapped face. It falls back to raylib's font in tests/load failure.
   Drawn strings are ASCII except tile symbols baked through `look.TILE_CODEPOINTS`; those use
   their ASCII fallback without the atlas.
@@ -214,7 +218,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Offhands include tomes, orbs, bucklers, shields and totems; two-handed weapons clear that slot.
   Item bases have fixed neutral innates, with rolled magic modifiers separate in blue. Every base rolls in both rarities.
   Class bases feed passive allocations and equipped modifiers;
-  `game.heroAttrs` is the runtime source; `game.heroPerks` combines equipment and passive recovery effects.
+  `Simulation.heroAttrs` is the runtime source; `Simulation.heroPerks` combines equipment and passive recovery effects.
   Foe `Row.armour` reduces physical hits; crossbow penetration subtracts percentage points. Armour reduces physical bites before mana shield; elemental/status
   damage keeps its separate rules. Equipped weapons and skill ranks affect hero damage and its previews.
   Every hero blow goes through `combat.scaled` (via `heroRoll`/`heroScaled`), which draws the crit after the
@@ -241,7 +245,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   A pin (`pinning.Pin`) holds a body to its cell on its
   turns, counting down like chill; it can still attack within its normal range and cannot be knocked back.
   A mana shield (`ward.Ward`) takes the hero's harm from mana first, in `combat.hurt`; the orb shows that
-  mana through `Game.mana_held` until the blow lands, as `flasks_shown` holds a kill's refill.
+  mana through `Presentation.mana_held` until the blow lands, as `flasks_shown` holds a kill's refill.
 - **`Pool.damage` is the only HP-loss path**, apart from splitting a slime's remaining HP, restoring
   carried state and clamping to a lowered maximum (`syncStats`). Elemental resistance applies separately per element, rounding down, clamped to
   -100..100; physical damage bypasses elemental resistance (`play/damage.zig`) and uses armour separately.
@@ -252,7 +256,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - `Row.movement` and `Row.foe_type` describe every kind and appear in the object viewer; heroes have no
   foe type. Bloats fly; ground-only water footsteps must not be added to flying bodies.
 - Bandit crossbowmen spawn with rats, retreat when crowded and use `bow.aimable`/`bow.fly` plus the
-  player's base arrow damage/range. `Game.foe_shots` draws each arrow; its harm lands on arrival.
+  player's base arrow damage/range. `Presentation.foe_shots` draws each arrow; its harm lands on arrival.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
   each followed by gas, burn and bleed. Bloats burst however killed; foes do not enter gas from clean air.
   `map/gas.zig` alone advances gas; it spreads through open cells, including liquids.
@@ -272,21 +276,21 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - A pib witnessing a nearby foe death wakes and flees (`FRIGHT_REACH`, `FLEE_TURNS`); subsequent deaths
   refresh it. Cornered beside the hero, it attacks. Fright speech waits for the death's presented impact
   and uses cosmetic RNG.
-- `map/day.zig`'s `Game.clock` is simulation: saved whole minutes, advanced by spent turns on every
-  node. `map/lume.zig` uses it for outdoor sight; `Game.hour_shown` only eases the rendered lighting and the minimap's sun/moon line.
+- `map/day.zig`'s `Simulation.clock` is simulation: saved whole minutes, advanced by spent turns on every
+  node. `map/lume.zig` uses it for outdoor sight; `Presentation.hour_shown` only eases the rendered lighting and the minimap's sun/moon line.
 - `map/fov.zig` owns line of sight; `map/lume.zig` owns visibility from light. `Level.los` is geometric
   sight; `Level.lit` additionally requires sky, torch or carried light. Terrain is remembered; bodies are
   shown only where lit at their presented center. Rendering never decides visibility.
 
 ## Rendering contracts
 
-- **The picture lags the mechanic.** Simulation never reads presentation. `Game.pictured`/`fx.After`
+- **The picture lags the mechanic.** Simulation never reads presentation. `Presentation.pictured`/`fx.After`
   apply each visible blow when it lands; HUD life and vignette use presented HP. Deaths, barrel removal,
   slime births, status markers and speech follow that timing. Event-log lines said while a turn resolves stay
   hidden (`Log.held`) until it is `quiet`; gold taken on a step stays drawn while the hero glides there. Foes turn/move at their stagger position.
   Level gains start a brief gold shaft, rising glints, a soft character glow with nearby golden light,
   and floating "Level up!" text when progression is presented;
-  loading a run does not replay them. Update ongoing effects before starting new ones. `Game.busy` covers the slowest glide/projectile/flash;
+  loading a run does not replay them. Update ongoing effects before starting new ones. `Presentation.busy` covers the slowest glide/projectile/flash;
   movement, skills and interactions pressed while busy are queued (`Game.pending`, the latest wins, but a repeating
   held walk never displaces a skill or interaction). Queued interactions survive door travel and open nearby after arrival.
   Skill activation/confirmation (including Wait/Shoot) requires `quiet`.
@@ -328,7 +332,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   persist in explored fog under memory lighting; bodies, animated flames and glints require live visibility.
   Mirrors follow presented feet/facing/lift, fade out toward their reflected tops, and exclude unexplored
   sources; glints obey light occlusion.
-  Source art/editor preview remain static. `game.splashSteps`/`Fx.splash` follows visible ground
+  Source art/editor preview remain static. `Presentation.splashSteps`/`Fx.splash` follows visible ground
   footsteps in water, excluding idle bodies and melee bumps. Vignette draws under minimap/HUD.
 - `gfx/pixel.zig` draws crisp FX shapes with smooth map motion. Missiles arrive at the existing impact
   time; electrical arcs, trails and light use cosmetic state. `Light.emit` lights terrain and body normals
@@ -356,6 +360,6 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   existing tone and `assets/backup/` before applying it again.
 - `build.zig` embeds top-level PNG/TTF/TXT files in `assets/` by filename (`@embedFile`,
   `@import("assets").names`), including controller mappings. Maps/saves still use the working directory.
-  Register body/tile PNGs in `look.BODY_PNGS`/`TILE_PNGS`. Sprites are 64px, facing right; `Game.facing`
+  Register body/tile PNGs in `look.BODY_PNGS`/`TILE_PNGS`. Sprites are 64px, facing right; `Presentation.facing`
   mirrors leftward movement/strikes/aim and retains facing for vertical motion. `CELL` must be a whole
   multiple of 64, never fractional sprite scaling. Rebuild after installing assets.

@@ -12,6 +12,8 @@ const gas = @import("../map/gas.zig");
 const atlas = @import("../map/atlas.zig");
 const listing = @import("../map/listing.zig");
 const spar = @import("../map/spar.zig");
+const procgen = @import("../map/procgen.zig");
+const app = @import("../app.zig");
 const editor = @import("../edit/editor.zig");
 const menu = @import("../ui/menu.zig");
 const hud = @import("../ui/hud.zig");
@@ -48,31 +50,36 @@ const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
 fn shootCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     const h = game.harness;
     h.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 25, .y = 19 }, .{ .x = 26, .y = 21 } });
-    h.grassOver(&g.lv);
+    h.grassOver(&g.sim.lv);
     const id = h.spawnAt(g, .bandit_crossbowman, .{ .x = 26, .y = 20 }, true);
     const slot = actor.Pool.slot(id);
     game.settle(g);
-    game.turnToward(g, id, -1);
+    g.pic.turnToward(id, -1);
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-pack.png");
-    g.rng = h.bitesRng(g, .bandit_crossbowman, &.{true});
+    g.sim.rng = h.bitesRng(g, .bandit_crossbowman, &.{true});
     h.use(g, .wait);
-    const hp_after_shot = g.heroActor().?.hp;
-    const shot = g.foe_shots[slot] orelse return error.CrossbowmanDidNotShoot;
+    const hp_after_shot = g.sim.heroActor().?.hp;
+    const shot = g.pic.foe_shots[slot] orelse return error.CrossbowmanDidNotShoot;
     g.st = .{};
-    game.update(g, -shot.t + game.flown(shot.flight.len - 1) / 2);
+    game.update(g, -shot.t + shot.lands() / 2);
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-arrow.png");
     h.drawnOut(g);
-    if (g.heroActor().?.hp != hp_after_shot) return error.CrossbowmanIdleDamage;
-    g.pool.move(&g.lv, g.hero, .{ .x = 24, .y = 20 });
+    if (g.sim.heroActor().?.hp != hp_after_shot) return error.CrossbowmanIdleDamage;
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
     game.settle(g);
     h.use(g, .wait);
-    if (mathx.dist(g.pool.get(id).?.at, g.heroActor().?.at) != 3) return error.CrossbowmanDidNotRetreat;
+    if (mathx.dist(g.sim.pool.get(id).?.at, g.sim.heroActor().?.at) != 3) return error.CrossbowmanDidNotRetreat;
     h.drawnOut(g);
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-retreat.png");
 }
 
 fn renderTarget(g: *game.Game) !rl.RenderTexture2D {
     return rl.loadRenderTexture(g.screen.x, g.screen.y);
+}
+
+fn target720(g: *game.Game) !rl.RenderTexture2D {
+    g.screen = game.SCREEN_720;
+    return renderTarget(g);
 }
 
 pub fn shoot(g: *game.Game) !void {
@@ -97,25 +104,25 @@ pub fn shoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/bind.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    game.harness.grassOver(&g.lv);
+    game.harness.grassOver(&g.sim.lv);
     const chest_at = P{ .x = 21, .y = 20 };
-    g.lv.set(chest_at, .chest);
-    g.lv.putBarrel(.{ .x = 23, .y = 20 });
+    g.sim.lv.set(chest_at, .chest);
+    g.sim.lv.putBarrel(.{ .x = 23, .y = 20 });
     game.settle(g);
     try capture(g, target, SHOTS_DIR ++ "/chest-closed.png");
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.lv.at(chest_at) != .chest_open or g.ground.coin_n != 1 or g.gold != 0 or g.mode != .play) return error.ChestUnopened;
+    if (g.sim.lv.at(chest_at) != .chest_open or g.sim.ground.coin_n != 1 or g.sim.gold != 0 or g.mode != .play) return error.ChestUnopened;
     try capture(g, target, SHOTS_DIR ++ "/chest-open.png");
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.ground.coin_n != 0 or g.gold < items.CHEST_GOLD.lo or g.character.page != .loot) return error.ChestLootUnopened;
+    if (g.sim.ground.coin_n != 0 or g.sim.gold < items.CHEST_GOLD.lo or g.character.page != .loot) return error.ChestLootUnopened;
     try capture(g, target, SHOTS_DIR ++ "/chest-loot.png");
     game.character.characterCommand(g, .close);
 
     game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{.{ .x = 25, .y = 14 }});
-    g.lv.set(.{ .x = 21, .y = 15 }, .water);
-    _ = g.pool.damage(&g.lv, g.hero, 6);
+    g.sim.lv.set(.{ .x = 21, .y = 15 }, .water);
+    _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 6);
     game.settle(g);
     skills.openLeap(g, game.harness.boundTo(g, .juke).by, .juke);
     g.mark = .{ .x = 20 + juke.RANGE, .y = 15 };
@@ -128,7 +135,7 @@ pub fn shoot(g: *game.Game) !void {
     game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{});
     _ = game.harness.spawnAt(g, .slime, .{ .x = 28, .y = 15 }, false);
     game.settle(g);
-    g.rng = game.harness.procRng(g, .burning_arrow, 1, true);
+    g.sim.rng = game.harness.procRng(g, .burning_arrow, 1, true);
     skills.useSkill(g, game.harness.boundTo(g, .burning_arrow));
     try capture(g, target, SHOTS_DIR ++ "/burning-aim.png");
     skills.confirmAim(g);
@@ -143,7 +150,7 @@ pub fn shoot(g: *game.Game) !void {
     _ = game.harness.spawnAt(g, .slime, .{ .x = 27, .y = 14 }, false);
     _ = game.harness.spawnAt(g, .slime, .{ .x = 28, .y = 16 }, false);
     game.settle(g);
-    g.rng = game.harness.procRng(g, .glacial_shot, 3, true);
+    g.sim.rng = game.harness.procRng(g, .glacial_shot, 3, true);
     skills.useSkill(g, game.harness.boundTo(g, .glacial_shot));
     try capture(g, target, SHOTS_DIR ++ "/glacial-aim.png");
     skills.confirmAim(g);
@@ -169,7 +176,7 @@ pub fn shoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/gas.png");
     g.cloud.clear();
     try capture(g, target, SHOTS_DIR ++ "/gas-clear.png");
-    g.cloud.settle(&g.lv);
+    g.cloud.settle(&g.sim.lv);
 
     game.character.openPause(g);
     try capture(g, target, SHOTS_DIR ++ "/pause.png");
@@ -216,9 +223,9 @@ pub fn shoot(g: *game.Game) !void {
         poseHiddenShadows(g, study.hour);
         try checkHiddenShadowMask(g, target, true);
         try capture(g, target, study.path);
-        @memset(&g.lv.lit, false);
-        @memset(&g.lv.seen, true);
-        g.light.settle(&g.lv);
+        @memset(&g.sim.lv.lit, false);
+        @memset(&g.sim.lv.seen, true);
+        g.light.settle(&g.sim.lv);
         try checkHiddenShadowMask(g, target, false);
     }
     poseHiddenShadows(g, MORNING);
@@ -243,12 +250,12 @@ pub fn shoot(g: *game.Game) !void {
             try loadStrand(g, w);
             try capture(g, target, SHOTS_DIR ++ "/strand.png");
             try captureCinema(g, target, "strand");
-            const seen = g.lv.seen;
-            const lit = g.lv.lit;
+            const seen = g.sim.lv.seen;
+            const lit = g.sim.lv.lit;
             game.character.toggleReveal(g);
             try capture(g, target, SHOTS_DIR ++ "/map-revealed.png");
             game.character.toggleReveal(g);
-            if (!std.mem.eql(bool, &seen, &g.lv.seen) or !std.mem.eql(bool, &lit, &g.lv.lit)) return error.RevealChangedSight;
+            if (!std.mem.eql(bool, &seen, &g.sim.lv.seen) or !std.mem.eql(bool, &lit, &g.sim.lv.lit)) return error.RevealChangedSight;
             try checkWaterSurface(g);
             try shootWater(g, target);
         }
@@ -256,21 +263,21 @@ pub fn shoot(g: *game.Game) !void {
             try w.load(std.heap.c_allocator, atlas.mapPath(SHOT_OUTDOOR));
             for (SHOT_HOURS) |s| {
                 game.beginMapAt(g, w, w.start, SHOT_SEED);
-                g.lv.seen = @splat(false);
-                g.clock = day.Clock.at(s.hour);
+                g.sim.lv.seen = @splat(false);
+                g.sim.clock = day.Clock.at(s.hour);
                 game.settle(g);
                 try capture(g, target, s.path);
             }
             inline for ([_]f32{ BLEAK_MORNING, day.NOON, DUSK, day.DEAD_OF_NIGHT }) |hour| {
                 game.beginMapAt(g, w, w.start, SHOT_SEED);
-                g.clock = day.Clock.at(hour);
+                g.sim.clock = day.Clock.at(hour);
                 game.settle(g);
                 g.light.sky = sky.under(hour, .bleak);
                 try capture(g, target, SHOTS_DIR ++ "/bleak-" ++ std.fmt.comptimePrint("{d:.1}", .{hour}) ++ ".png");
             }
-            g.clock = day.Clock.at(day.NOON);
+            g.sim.clock = day.Clock.at(day.NOON);
             game.settle(g);
-            g.clock = day.Clock.at(day.DEAD_OF_NIGHT);
+            g.sim.clock = day.Clock.at(day.DEAD_OF_NIGHT);
             game.settle(g);
             try capture(g, target, SHOTS_DIR ++ "/night-memory.png");
         }
@@ -298,16 +305,16 @@ pub fn shootUi(g: *game.Game) !void {
     try shootHud(g);
     try shootLevelUp(g);
     try shootMouse(g);
+    try app.shootHeroes(g);
 }
 
 fn shootMouse(g: *game.Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR ++ "/mouse");
     const screen = g.screen;
     defer g.screen = screen;
-    g.screen = game.SCREEN_720;
-    const target = try renderTarget(g);
+    const target = try target720(g);
     defer rl.unloadRenderTexture(target);
-    try @import("../app.zig").shootMenus(g, target);
+    try app.shootMenus(g, target);
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 24, .y = 20 }});
     g.st = .{ .device = .keys, .modifier = g.bar.modifier };
     try capture(g, target, SHOTS_DIR ++ "/mouse/hud.png");
@@ -323,23 +330,26 @@ fn shootMouse(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/mouse/diagnostics.png");
     try editor.shoot(g, target, SHOTS_DIR ++ "/mouse/editor.png", SHOTS_DIR ++ "/mouse/editor-graph.png", SHOTS_DIR ++ "/mouse/editor-generator.png", SHOTS_DIR ++ "/mouse/editor-objects.png");
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    _ = g.pool.damage(&g.lv, g.hero, g.heroActor().?.hp);
-    game.catchUp(g);
+    const before = g.sim.heroActor().?.hp;
+    _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, before);
+    g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = .rat }, .dmg = before, .before = before } });
+    g.pic.catchUp(&g.sim);
     g.mode = .dead;
+    game.epitaph.inscribe(g);
     try capture(g, target, SHOTS_DIR ++ "/mouse/death.png");
 }
 
 fn checkMouseHiddenAim(g: *game.Game, target: rl.RenderTexture2D) !void {
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 22) {
-        g.lv.lit[i] = false;
-        g.lv.seen[i] = false;
+        g.sim.lv.lit[i] = false;
+        g.sim.lv.seen[i] = false;
     };
-    g.light.settle(&g.lv);
+    g.light.settle(&g.sim.lv);
     skills.aiming(g, game.harness.boundTo(g, .shoot).by, .shoot);
     g.st = .{ .device = .keys, .modifier = g.bar.modifier, .mouse_moved = true, .pointer = game.scene.Cam.of(g).mid(.{ .x = 24, .y = 20 }) };
     _ = game.mouseControls.aim(g);
-    if (g.mode != .aim or skills.aimable(g, g.heroActor().?.at, g.mark)) return error.MouseHiddenAimSetup;
+    if (g.mode != .aim or skills.aimable(g, g.sim.heroActor().?.at, g.mark)) return error.MouseHiddenAimSetup;
     try capture(g, target, SHOTS_DIR ++ "/mouse/aim-hidden.png");
     const aimed = try readTarget(target);
     defer rl.unloadImage(aimed);
@@ -362,11 +372,10 @@ pub fn shootDebug(g: *game.Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR ++ "/debug");
     const screen = g.screen;
     defer g.screen = screen;
-    g.screen = game.SCREEN_720;
-    const target = try renderTarget(g);
+    const target = try target720(g);
     defer rl.unloadRenderTexture(target);
     poseWaterMirrors(g, MORNING, true);
-    g.fx.zap(0, POSE_ZAP);
+    g.pic.fx.zap(0, POSE_ZAP);
     try capture(g, target, SHOTS_DIR ++ "/debug/all-on.png");
     inline for (std.meta.fields(light.Options)) |f| {
         try checkDebugOption(g, target, &@field(g.light.options, f.name), f.name);
@@ -374,7 +383,7 @@ pub fn shootDebug(g: *game.Game) !void {
     try checkDebugOption(g, target, &g.debug.visuals.water_reflections, "water_reflections");
     const w = try std.heap.c_allocator.create(atlas.Atlas);
     defer std.heap.c_allocator.destroy(w);
-    defer g.map = null;
+    defer g.sim.map = null;
     try loadStrand(g, w);
     try checkDebugOption(g, target, &g.debug.visuals.weather, "weather");
     game.character.openPause(g);
@@ -421,15 +430,14 @@ fn shootLoot(g: *game.Game) !void {
     defer g.screen = screen;
     const device = g.st.device;
     defer g.st.device = device;
-    g.screen = game.SCREEN_720;
-    const target = try renderTarget(g);
+    const target = try target720(g);
     defer rl.unloadRenderTexture(target);
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    game.harness.grassOver(&g.lv);
+    game.harness.grassOver(&g.sim.lv);
     const bag = P{ .x = 19, .y = 20 };
     const chest = P{ .x = 21, .y = 20 };
-    for ([_]items.Kind{ .ring, .boots, .axe }) |kind| _ = g.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null } }, .at = bag });
-    g.lv.set(chest, .chest);
+    for ([_]items.Kind{ .ring, .boots, .axe }) |kind| _ = g.sim.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null } }, .at = bag });
+    g.sim.lv.set(chest, .chest);
     game.settle(g);
     try capture(g, target, SHOTS_DIR ++ "/loot-ground.png");
     _ = game.character.openNearby(g);
@@ -442,36 +450,36 @@ fn shootLoot(g: *game.Game) !void {
     game.character.characterCommand(g, .close);
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.mode != .play or g.gold != 0 or g.ground.coin_n != 1) return error.ChestRevealMismatch;
+    if (g.mode != .play or g.sim.gold != 0 or g.sim.ground.coin_n != 1) return error.ChestRevealMismatch;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-revealed.png");
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.mode != .pause or g.character.page != .loot or g.gold < items.CHEST_GOLD.lo or g.ground.coin_n != 0) return error.ChestLootUnopened;
+    if (g.mode != .pause or g.character.page != .loot or g.sim.gold < items.CHEST_GOLD.lo or g.sim.ground.coin_n != 0) return error.ChestLootUnopened;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest.png");
     game.character.characterCommand(g, .close);
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-left.png");
     game.character.openLoot(g, chest);
     game.character.characterCommand(g, .take_all);
     game.harness.drawnOut(g);
-    if (g.ground.n != 3 or g.inventory.n != 1 or g.lv.at(chest) != .chest_open) return error.LootContainerMismatch;
+    if (g.sim.ground.n != 3 or g.sim.inventory.n != 1 or g.sim.lv.at(chest) != .chest_open) return error.LootContainerMismatch;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-empty.png");
-    for (0..items.BAG_MAX - g.inventory.n) |_| _ = g.inventory.add(.{ .kind = .cap });
+    for (0..items.BAG_MAX - g.sim.inventory.n) |_| _ = g.sim.inventory.add(.{ .kind = .cap });
     game.heroStep(g, .w, 0);
     game.harness.drawnOut(g);
     game.character.openLoot(g, bag);
     game.character.characterCommand(g, .take_all);
     try capture(g, target, SHOTS_DIR ++ "/loot-full.png");
-    for (0..16) |_| _ = g.ground.add(.{ .item = .{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } } }, .at = bag });
+    for (0..16) |_| _ = g.sim.ground.add(.{ .item = .{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } } }, .at = bag });
     game.character.openLoot(g, bag);
     try capture(g, target, SHOTS_DIR ++ "/loot-dense.png");
     for (0..18) |_| game.harness.nudge(g, .s);
     try capture(g, target, SHOTS_DIR ++ "/loot-dense-scrolled.png");
 
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{chest});
-    game.harness.grassOver(&g.lv);
-    g.loot_rng = game.harness.lootRng(true);
+    game.harness.grassOver(&g.sim.lv);
+    g.sim.loot_rng = game.harness.lootRng(true);
     game.settle(g);
-    game.harness.slay(g, 2, g.heroActor().?.at);
+    game.harness.slay(g, 2, g.sim.heroActor().?.at);
     try capture(g, target, SHOTS_DIR ++ "/loot-foe-before.png");
     game.harness.drawnOut(g);
     try capture(g, target, SHOTS_DIR ++ "/loot-foe-dropped.png");
@@ -487,9 +495,9 @@ fn shootLevelUp(g: *game.Game) !void {
         poseForest(g);
         studyAt(g, true, scene[1]);
         g.st = .{ .device = .keys };
-        game.settleXp(g);
+        g.pic.settleXp(&g.sim);
         try capture(g, target, SHOTS_DIR ++ "/level-up/" ++ scene[0] ++ "-before.png");
-        _ = g.growth.gain(@intCast(g.growth.needed()));
+        _ = g.sim.growth.gain(@intCast(g.sim.growth.needed()));
         game.update(g, 0);
         var elapsed: f32 = 0;
         inline for (.{ 0.12, 0.4, 0.9, 1.5, 2.1 }, 0..) |time, i| {
@@ -567,7 +575,7 @@ fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []con
                 const dx = @mod(x + c.x, game.CELL);
                 const dy = @mod(y + c.y, game.CELL);
                 const interior = dx >= game.CELL / light.SUB and dx < game.CELL - game.CELL / light.SUB and dy >= game.CELL / light.SUB and dy < game.CELL - game.CELL / light.SUB;
-                if ((!g.lv.isSeen(p) and interior) or (live_only and !g.lv.isLit(p))) {
+                if ((!g.sim.lv.isSeen(p) and interior) or (live_only and !g.sim.lv.isLit(p))) {
                     hidden += 1;
                     if (!same) {
                         std.debug.print("cinema {s}/{s} changed hidden pixel {d},{d}, cell {d},{d}: {any} to {any}\n", .{ name, f.name, x, y, p.x, p.y, a, b });
@@ -596,7 +604,7 @@ fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []con
 const CINEMA_FRAMES = 120;
 
 fn checkCinema(g: *game.Game, target: rl.RenderTexture2D) !void {
-    g.fx.zap(0, POSE_ZAP);
+    g.pic.fx.zap(0, POSE_ZAP);
     try captureCinema(g, target, "spell");
     const options = g.cinema.options;
     defer g.cinema.options = options;
@@ -619,35 +627,34 @@ fn checkCinema(g: *game.Game, target: rl.RenderTexture2D) !void {
 fn shootCharacter(g: *game.Game) !void {
     const w = try std.heap.c_allocator.create(atlas.Atlas);
     defer std.heap.c_allocator.destroy(w);
-    defer g.map = null;
+    defer g.sim.map = null;
     const screen = g.screen;
     defer g.screen = screen;
-    g.screen = game.SCREEN_720;
-    const target = try renderTarget(g);
+    const target = try target720(g);
     defer rl.unloadRenderTexture(target);
     spar.author(w, .slime);
-    g.class = heroes.DEFAULT;
+    g.sim.class = heroes.DEFAULT;
     game.beginMapAt(g, w, w.start, SHOT_SEED);
-    _ = g.growth.gain(100);
-    _ = g.inventory.add(.{ .kind = .cap, .mods = .{ .{ .kind = .life, .value = 3 }, null } });
-    try g.inventory.equip(0, .helm, g.growth.attributes(g.class));
-    _ = g.inventory.add(.{ .kind = .bow, .mods = .{ .{ .kind = .dexterity, .value = 2 }, null } });
-    try g.inventory.equip(0, .right_hand, g.growth.attributes(g.class));
-    _ = g.inventory.add(.{ .kind = .helmet, .mods = .{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 2 } } });
-    _ = g.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, null } });
-    _ = g.inventory.add(.{ .kind = .leather });
-    _ = g.ground.add(.{ .item = .{ .kind = .amulet }, .at = g.heroActor().?.at });
-    g.log.push(.event, "Archer enters the old ruins.", .{});
-    g.log.push(.damage, "Archer shoots the rat for 3.", .{});
-    g.log.push(.danger, "The rat bites Archer for 2.", .{});
-    g.log.push(.recovery, "Archer recovers 4 life.", .{});
-    g.log.push(.loot, "Archer picks up 8 gold.", .{});
-    g.log.push(.event, "Archer opens the chest.", .{});
-    g.log.push(.loot, "Picked up Iron helm.", .{});
-    g.log.push(.progress, "Level 3: +2 passive, +2 active points.", .{});
-    g.log.push(.damage, "Archer shoots the slime for 4.", .{});
-    g.log.push(.danger, "The slime hits Archer for 2.", .{});
-    game.combat.noticeItems(g, g.heroActor().?.at);
+    _ = g.sim.growth.gain(100);
+    _ = g.sim.inventory.add(.{ .kind = .cap, .mods = .{ .{ .kind = .life, .value = 3 }, null } });
+    try g.sim.inventory.equip(0, .helm, g.sim.growth.attributes(g.sim.class));
+    _ = g.sim.inventory.add(.{ .kind = .bow, .mods = .{ .{ .kind = .dexterity, .value = 2 }, null } });
+    try g.sim.inventory.equip(0, .right_hand, g.sim.growth.attributes(g.sim.class));
+    _ = g.sim.inventory.add(.{ .kind = .helmet, .mods = .{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 2 } } });
+    _ = g.sim.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, null } });
+    _ = g.sim.inventory.add(.{ .kind = .leather });
+    _ = g.sim.ground.add(.{ .item = .{ .kind = .amulet }, .at = g.sim.heroActor().?.at });
+    g.sim.log.push(.event, "Archer enters the old ruins.", .{});
+    g.sim.log.push(.damage, "Archer shoots the rat for 3.", .{});
+    g.sim.log.push(.danger, "The rat bites Archer for 2.", .{});
+    g.sim.log.push(.recovery, "Archer recovers 4 life.", .{});
+    g.sim.log.push(.loot, "Archer picks up 8 gold.", .{});
+    g.sim.log.push(.event, "Archer opens the chest.", .{});
+    g.sim.log.push(.loot, "Picked up Iron helm.", .{});
+    g.sim.log.push(.progress, "Level 3: +2 passive, +2 active points.", .{});
+    g.sim.log.push(.damage, "Archer shoots the slime for 4.", .{});
+    g.sim.log.push(.danger, "The slime hits Archer for 2.", .{});
+    game.combat.noticeItems(g, g.sim.heroActor().?.at);
     game.syncStats(g);
     game.harness.drawnOut(g);
     g.back = .editor;
@@ -656,7 +663,7 @@ fn shootCharacter(g: *game.Game) !void {
     inline for (book.PAGES) |page| {
         g.character.choose(page);
 
-        if (page == .passives) g.character.cursor = progress.start(g.class);
+        if (page == .passives) g.character.cursor = progress.start(g.sim.class);
         if (page == .equipment) g.character.cursor = @intFromEnum(items.Slot.helm);
         try capture(g, target, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ ".png");
     }
@@ -668,35 +675,35 @@ fn shootCharacter(g: *game.Game) !void {
         try capture(g, target, SHOTS_DIR ++ "/character-keyboard.png");
     }
     {
-        const gear = g.inventory.gear;
-        defer g.inventory.gear = gear;
-        const bag_n = g.inventory.n;
-        defer g.inventory.n = bag_n;
+        const gear = g.sim.inventory.gear;
+        defer g.sim.inventory.gear = gear;
+        const bag_n = g.sim.inventory.n;
+        defer g.sim.inventory.n = bag_n;
         g.character.choose(.inventory);
 
         g.character.cursor = 2;
         try capture(g, target, SHOTS_DIR ++ "/item-normal-armour.png");
-        g.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .mana, .value = 3 }, null } });
-        g.inventory.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .dexterity, .value = 3 }, null } });
+        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .mana, .value = 3 }, null } });
+        g.sim.inventory.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .dexterity, .value = 3 }, null } });
         g.character.cursor = 1;
         g.character.destination_index = 0;
         try capture(g, target, SHOTS_DIR ++ "/item-ring-left.png");
         g.character.destination_index = 1;
         try capture(g, target, SHOTS_DIR ++ "/item-ring-right.png");
-        g.inventory.gear.slots.set(.right_hand, .{ .kind = .sling });
-        g.inventory.gear.slots.set(.left_hand, .{ .kind = .buckler, .mods = .{ .{ .kind = .life, .value = 6 }, null } });
-        _ = g.inventory.add(.{ .kind = .crossbow, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } } });
+        g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .sling });
+        g.sim.inventory.gear.slots.set(.left_hand, .{ .kind = .buckler, .mods = .{ .{ .kind = .life, .value = 6 }, null } });
+        _ = g.sim.inventory.add(.{ .kind = .crossbow, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } } });
         g.character.cursor = bag_n;
         g.character.destination_index = 0;
         try capture(g, target, SHOTS_DIR ++ "/item-two-handed.png");
-        const class = g.class;
-        defer g.class = class;
-        g.class = .knight;
-        g.inventory.gear.slots.set(.left_hand, null);
+        const class = g.sim.class;
+        defer g.sim.class = class;
+        g.sim.class = .knight;
+        g.sim.inventory.gear.slots.set(.left_hand, null);
         g.character.choose(.equipment);
 
         inline for ([_]items.Kind{ .axe, .greatclub, .greatsword }) |kind| {
-            g.inventory.gear.slots.set(.right_hand, .{ .kind = kind });
+            g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = kind });
             g.character.cursor = @intFromEnum(items.Slot.right_hand);
             try capture(g, target, SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ "-equipped.png");
         }
@@ -710,7 +717,7 @@ fn shootCharacter(g: *game.Game) !void {
             g.st.device = d;
             g.character.choose(.passives);
 
-            g.character.cursor = progress.start(g.class);
+            g.character.cursor = progress.start(g.sim.class);
             try capture(g, target, SHOTS_DIR ++ "/tree-controls-" ++ @tagName(d) ++ ".png");
         }
         g.character.pan = .{ .x = 1.5, .y = -0.8 };
@@ -720,39 +727,39 @@ fn shootCharacter(g: *game.Game) !void {
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-overview.png");
     }
     {
-        const was_class = g.class;
-        const was_growth = g.growth;
-        defer g.class = was_class;
-        defer g.growth = was_growth;
+        const was_class = g.sim.class;
+        const was_growth = g.sim.growth;
+        defer g.sim.class = was_class;
+        defer g.sim.growth = was_growth;
         inline for (heroes.CLASSES) |class| {
-            g.class = class;
-            g.growth = progress.State.of(class);
-            g.growth.active_points = 2;
+            g.sim.class = class;
+            g.sim.growth = progress.State.of(class);
+            g.sim.growth.active_points = 2;
             g.character.choose(.skills);
 
             g.character.cursor = progress.skills(class).len - 1;
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-future.png");
             g.character.cursor = if (class == .wizard) 4 else 0;
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-description.png");
-            g.growth.ranks.set(progress.skills(class)[g.character.cursor].act, 2);
+            g.sim.growth.ranks.set(progress.skills(class)[g.character.cursor].act, 2);
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-upgrade.png");
             if (class == .archer) {
                 g.character.cursor = 2;
-                g.growth.ranks.set(progress.skills(class)[2].act, 2);
+                g.sim.growth.ranks.set(progress.skills(class)[2].act, 2);
                 try capture(g, target, SHOTS_DIR ++ "/tree-skills-mixed-upgrade.png");
             }
             g.character.cursor = progress.skills(class).len - 1;
-            g.growth.active_points = 30;
-            for (progress.skills(class)) |s| while (g.growth.learn(class, s.act)) {};
+            g.sim.growth.active_points = 30;
+            for (progress.skills(class)) |s| while (g.sim.growth.learn(class, s.act)) {};
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-maximum.png");
         }
-        g.class = .knight;
-        g.growth = progress.State.of(g.class);
-        g.growth.passive_points = 30;
+        g.sim.class = .knight;
+        g.sim.growth = progress.State.of(g.sim.class);
+        g.sim.growth.passive_points = 30;
         const branch = progress.passives.branchFirst(.warrior_life);
-        for (branch..branch + progress.passives.PER_BRANCH - 1) |i| _ = g.growth.allocate(i);
+        for (branch..branch + progress.passives.PER_BRANCH - 1) |i| _ = g.sim.growth.allocate(i);
         const bridge = progress.passives.bridgeFirst(.warrior_rogue);
-        _ = g.growth.allocate(bridge);
+        _ = g.sim.growth.allocate(bridge);
         g.character.choose(.passives);
 
         g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
@@ -764,7 +771,7 @@ fn shootCharacter(g: *game.Game) !void {
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-interest.png");
         g.character.cursor = progress.passives.bridgeFirst(.warrior_rogue);
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-bridge.png");
-        g.growth.passive_points = 0;
+        g.sim.growth.passive_points = 0;
         g.character.cursor = branch + progress.passives.PER_BRANCH - 1;
         try capture(g, target, SHOTS_DIR ++ "/tree-passives-no-points.png");
     }
@@ -790,10 +797,10 @@ fn shootCharacter(g: *game.Game) !void {
     _ = game.character.openNearby(g);
     try capture(g, target, SHOTS_DIR ++ "/character-nearby.png");
     g.mode = .play;
-    g.log.release();
+    g.sim.log.release();
     try capture(g, target, SHOTS_DIR ++ "/event-log.png");
-    g.inventory = .{};
-    for (std.enums.values(items.Kind)) |kind| _ = g.inventory.add(.{ .kind = kind });
+    g.sim.inventory = .{};
+    for (std.enums.values(items.Kind)) |kind| _ = g.sim.inventory.add(.{ .kind = kind });
     g.mode = .pause;
     g.pause_page = .character;
     g.character.open();
@@ -803,7 +810,7 @@ fn shootCharacter(g: *game.Game) !void {
         g.character.cursor = @intFromEnum(kind);
         try capture(g, target, SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ ".png");
     }
-    g.inventory.bag[@intFromEnum(items.Kind.axe)].mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } };
+    g.sim.inventory.bag[@intFromEnum(items.Kind.axe)].mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } };
     g.character.cursor = @intFromEnum(items.Kind.axe);
     try capture(g, target, SHOTS_DIR ++ "/item-axe-magic.png");
 }
@@ -823,12 +830,12 @@ fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         const act = study[1];
         const from = P{ .x = 20, .y = 20 };
         game.harness.heroArena(g, study[0], from, &.{});
-        carve.box(&g.lv, .{ .lo = .{ .x = 13, .y = 13 }, .hi = .{ .x = 33, .y = 28 } }, .grass);
-        game.harness.wallRow(&g.lv, 17, 18, 29);
-        @import("../map/procgen.zig").reshape(&g.lv);
+        carve.box(&g.sim.lv, .{ .lo = .{ .x = 13, .y = 13 }, .hi = .{ .x = 33, .y = 28 } }, .grass);
+        game.harness.wallRow(&g.sim.lv, 17, 18, 29);
+        procgen.reshape(&g.sim.lv);
         for ([_]P{ .{ .x = 23, .y = 20 }, .{ .x = 24, .y = 19 }, .{ .x = 24, .y = 21 }, .{ .x = 22, .y = 21 } }) |at| _ = game.harness.spawnAt(g, .slime, at, false);
         game.harness.toughenFoes(g);
-        g.clock = day.Clock.at(day.DEAD_OF_NIGHT);
+        g.sim.clock = day.Clock.at(day.DEAD_OF_NIGHT);
         game.settle(g);
         const directory = SHOTS_DIR ++ "/fx-" ++ @tagName(act);
         try std.fs.cwd().makePath(directory);
@@ -846,8 +853,8 @@ fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
             try capture(g, target, directory ++ "/" ++ std.fmt.comptimePrint("{d}", .{i}) ++ ".png");
         }
     }
-    g.class = heroes.DEFAULT;
-    g.bar = skillbar.Bar.of(g.class);
+    g.sim.class = heroes.DEFAULT;
+    g.bar = skillbar.Bar.of(g.sim.class);
 }
 
 fn shootArrows() !void {
@@ -887,19 +894,19 @@ fn shootHud(g: *game.Game) !void {
     for (studies) |study| {
         g.screen = study.screen;
         poseForest(g);
-        g.bar = skillbar.Bar.of(g.class);
+        g.bar = skillbar.Bar.of(g.sim.class);
         g.st = .{ .device = study.device, .modifier = g.bar.modifier };
-        const body = &g.pictured[game.heroSlot(g).?];
+        const body = &g.pic.pictured[g.sim.heroSlot().?];
         body.hp = mathx.percentOf(body.max, study.hp);
-        g.mana = mathx.percentOf(game.manaMax(g), study.mana);
-        game.overlay.settleResources(g);
-        g.xp_shown = study.xp;
+        g.sim.mana = mathx.percentOf(g.sim.manaMax(), study.mana);
+        g.pic.settleResources(&g.sim);
+        g.pic.xp_shown = study.xp;
         if (study.ailing) {
             body.status = .initDefault(0, .{ .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1 });
             body.resilience.meters.set(.stun, .{ .percent = 75, .turns = 4 });
             body.resilience.meters.set(.bleed, .{ .percent = 25, .turns = 5 });
             body.status.set(.resistant, 5);
-            g.cooldown.set(.juke, juke.COOLDOWN);
+            g.sim.cooldown.set(.juke, juke.COOLDOWN);
         }
         const target = try renderTarget(g);
         defer rl.unloadRenderTexture(target);
@@ -968,7 +975,7 @@ fn posePicker(g: *game.Game, u: skills.Use) void {
     g.binds.row = game.rowAt(u.set);
     g.binds.col = binds.Binds.colOf(u.by);
     var kit_buf: skillbar.KitBuf = undefined;
-    g.binds.openPick(g.growth.kit(g.class, &kit_buf), &g.bar);
+    g.binds.openPick(g.sim.growth.kit(g.sim.class, &kit_buf), &g.bar);
 }
 
 fn poseFright(g: *game.Game) void {
@@ -980,36 +987,36 @@ fn poseFright(g: *game.Game) void {
     game.settle(g);
     const wait: f32 = 0.2;
     game.combat.wound(g, 2, .{ .dmg = actor.row(.rat).hp }, SHOOT, .{ .from = hero, .wait = wait });
-    g.lead = wait;
+    g.pic.lead = wait;
     game.combat.endTurn(g);
     g.st = .{};
     game.update(g, 0);
     for (0..18) |_| game.update(g, mathx.FRAME_DT);
-    for (slots, 0..) |s, i| g.fx.speech[s].word = i;
+    for (slots, 0..) |s, i| g.pic.fx.speech[s].word = i;
 }
 
 fn speechLeft(g: *const game.Game) f32 {
     var most: f32 = 0;
-    for (g.fx.speech[0..g.pool.n]) |s| most = @max(most, s.life);
+    for (g.pic.fx.speech[0..g.sim.pool.n]) |s| most = @max(most, s.life);
     return most;
 }
 
 fn poseGas(g: *game.Game) void {
     game.harness.arena(g, .{ .x = 23, .y = 16 }, &.{.{ .x = 24, .y = 15 }});
-    game.harness.wallRow(&g.lv, 10, 13, 31);
-    game.harness.wallRow(&g.lv, 21, 13, 31);
-    game.harness.wallIn(&g.lv, .{ .x = 13, .y = 10 }, .{ .x = 13, .y = 21 });
-    game.harness.wallIn(&g.lv, .{ .x = 31, .y = 10 }, .{ .x = 31, .y = POSE_BURST.y - 1 });
-    game.harness.wallIn(&g.lv, .{ .x = 31, .y = POSE_BURST.y + 1 }, .{ .x = 31, .y = 21 });
-    g.lv.addTorch(.{ .x = 22, .y = 10 });
-    _ = g.pool.spawn(&g.lv, actor.Actor.of(.bloat, .{ .x = 16, .y = 12 }));
-    _ = g.pool.spawn(&g.lv, actor.Actor.of(.bloat, .{ .x = 26, .y = 14 }));
-    g.lv.putBarrel(.{ .x = 26, .y = 16 });
-    g.lv.set(.{ .x = 24, .y = 14 }, .chest);
-    g.lv.set(.{ .x = 25, .y = 17 }, .boulder);
-    game.harness.wallIn(&g.lv, .{ .x = 28, .y = 13 }, .{ .x = 28, .y = 17 });
-    g.lv.addGas(POSE_BURST, gas.BURST);
-    for (0..POSE_GAS_TURNS) |_| gas.turn(&g.lv, &g.rng);
+    game.harness.wallRow(&g.sim.lv, 10, 13, 31);
+    game.harness.wallRow(&g.sim.lv, 21, 13, 31);
+    game.harness.wallIn(&g.sim.lv, .{ .x = 13, .y = 10 }, .{ .x = 13, .y = 21 });
+    game.harness.wallIn(&g.sim.lv, .{ .x = 31, .y = 10 }, .{ .x = 31, .y = POSE_BURST.y - 1 });
+    game.harness.wallIn(&g.sim.lv, .{ .x = 31, .y = POSE_BURST.y + 1 }, .{ .x = 31, .y = 21 });
+    g.sim.lv.addTorch(.{ .x = 22, .y = 10 });
+    _ = game.harness.spawnAt(g, .bloat, .{ .x = 16, .y = 12 }, false);
+    _ = game.harness.spawnAt(g, .bloat, .{ .x = 26, .y = 14 }, false);
+    g.sim.lv.putBarrel(.{ .x = 26, .y = 16 });
+    g.sim.lv.set(.{ .x = 24, .y = 14 }, .chest);
+    g.sim.lv.set(.{ .x = 25, .y = 17 }, .boulder);
+    game.harness.wallIn(&g.sim.lv, .{ .x = 28, .y = 13 }, .{ .x = 28, .y = 17 });
+    g.sim.lv.addGas(POSE_BURST, gas.BURST);
+    for (0..POSE_GAS_TURNS) |_| gas.turn(&g.sim.lv, &g.sim.rng);
     posed(g, false);
 }
 
@@ -1041,16 +1048,16 @@ comptime {
 
 fn poseWaterSteps(g: *game.Game) void {
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    game.harness.grassOver(&g.lv);
+    game.harness.grassOver(&g.sim.lv);
     var cells = grid.Cells.of(.{ .x = 17, .y = 15 }, .{ .x = 30, .y = 26 });
-    while (cells.next()) |p| g.lv.set(p, if (p.x < 19) .water else .shallows);
+    while (cells.next()) |p| g.sim.lv.set(p, if (p.x < 19) .water else .shallows);
     for (WADERS) |w| _ = game.harness.spawnAt(g, w.kind, w.at, false);
     game.settle(g);
     g.st = .{};
-    for (g.pool.slice(), 0..) |a, i| {
+    for (g.sim.pool.slice(), 0..) |a, i| {
         const to = a.at.add(mathx.Dir.e.delta());
-        g.pool.move(&g.lv, actor.Pool.idOf(i), to);
-        g.glide[i] = g.glide[i].toward(to, g.glide[i].span() * (game.SPLASH_AT + 0.01));
+        g.sim.pool.move(&g.sim.lv, actor.Pool.idOf(i), to);
+        g.pic.glide[i] = g.pic.glide[i].toward(to, g.pic.glide[i].span() * (game.presentation.SPLASH_AT + 0.01));
     }
     game.update(g, 0);
     game.update(g, 0.055);
@@ -1058,22 +1065,22 @@ fn poseWaterSteps(g: *game.Game) void {
 
 fn poseWaterMirrors(g: *game.Game, hour: f32, outdoors: bool) void {
     game.harness.arena(g, .{ .x = 24, .y = 20 }, &.{.{ .x = 27, .y = 21 }});
-    game.harness.grassOver(&g.lv);
+    game.harness.grassOver(&g.sim.lv);
     var cells = grid.Cells.of(.{ .x = 17, .y = 18 }, .{ .x = 33, .y = 26 });
-    while (cells.next()) |p| g.lv.set(p, if (p.y >= 23) .water else .shallows);
-    for ([_]i32{ 19, 20, 21, 28, 29 }) |x| g.lv.set(.{ .x = x, .y = 17 }, .shrub);
-    g.lv.set(.{ .x = 31, .y = 20 }, .boulder);
-    g.lv.putBarrel(.{ .x = 21, .y = 21 });
+    while (cells.next()) |p| g.sim.lv.set(p, if (p.y >= 23) .water else .shallows);
+    for ([_]i32{ 19, 20, 21, 28, 29 }) |x| g.sim.lv.set(.{ .x = x, .y = 17 }, .shrub);
+    g.sim.lv.set(.{ .x = 31, .y = 20 }, .boulder);
+    g.sim.lv.putBarrel(.{ .x = 21, .y = 21 });
     _ = game.harness.spawnAt(g, .wizard, .{ .x = 25, .y = 23 }, false);
     _ = game.harness.spawnAt(g, .slime, .{ .x = 29, .y = 22 }, false);
-    game.harness.wallRow(&g.lv, 17, 23, 26);
-    g.lv.addTorch(.{ .x = 24, .y = 17 });
+    game.harness.wallRow(&g.sim.lv, 17, 23, 26);
+    g.sim.lv.addTorch(.{ .x = 24, .y = 17 });
     studyLit(g, outdoors, hour);
 }
 
 fn poseForest(g: *game.Game) void {
     game.harness.arena(g, .{ .x = 24, .y = 18 }, &.{});
-    game.harness.grassOver(&g.lv);
+    game.harness.grassOver(&g.sim.lv);
     const rows = [_][]const u8{
         "...................",
         ".#####...####......",
@@ -1087,17 +1094,17 @@ fn poseForest(g: *game.Game) void {
     };
     for (rows, 0..) |row, y| {
         for (row, 0..) |ch, x| {
-            if (ch == '#') g.lv.set(.{ .x = 16 + @as(i32, @intCast(x)), .y = 12 + @as(i32, @intCast(y)) }, .shrub);
+            if (ch == '#') g.sim.lv.set(.{ .x = 16 + @as(i32, @intCast(x)), .y = 12 + @as(i32, @intCast(y)) }, .shrub);
         }
     }
-    posed(g, g.outdoors);
+    posed(g, g.sim.outdoors);
 }
 
 fn poseShadowStudy(g: *game.Game, hour: f32, outdoors: bool) void {
     game.harness.arena(g, .{ .x = 24, .y = 21 }, &.{.{ .x = 29, .y = 22 }});
-    game.harness.grassOver(&g.lv);
-    game.harness.wallRow(&g.lv, 16, 22, 26);
-    if (!outdoors) g.lv.addTorch(.{ .x = 24, .y = 16 });
+    game.harness.grassOver(&g.sim.lv);
+    game.harness.wallRow(&g.sim.lv, 16, 22, 26);
+    if (!outdoors) g.sim.lv.addTorch(.{ .x = 24, .y = 16 });
     const props = [_]struct { t: grid.Tile, p: P }{
         .{ .t = .wall, .p = .{ .x = 16, .y = 19 } },
         .{ .t = .wall, .p = .{ .x = 17, .y = 19 } },
@@ -1117,35 +1124,35 @@ fn poseShadowStudy(g: *game.Game, hour: f32, outdoors: bool) void {
         .{ .t = .reeds, .p = .{ .x = 28, .y = 16 } },
         .{ .t = .crop, .p = .{ .x = 31, .y = 16 } },
     };
-    for (props) |prop| g.lv.set(prop.p, prop.t);
-    g.lv.putBarrel(.{ .x = 32, .y = 23 });
+    for (props) |prop| g.sim.lv.set(prop.p, prop.t);
+    g.sim.lv.putBarrel(.{ .x = 32, .y = 23 });
     _ = game.harness.spawnAt(g, .slime, .{ .x = 31, .y = 22 }, false);
     studyLit(g, outdoors, hour);
 }
 
 fn studyLit(g: *game.Game, outdoors: bool, hour: f32) void {
     studyAt(g, outdoors, hour);
-    @memset(&g.lv.seen, true);
-    @memset(&g.lv.lit, true);
-    g.light.settle(&g.lv);
+    @memset(&g.sim.lv.seen, true);
+    @memset(&g.sim.lv.lit, true);
+    g.light.settle(&g.sim.lv);
 }
 
 fn studyAt(g: *game.Game, outdoors: bool, hour: f32) void {
-    g.clock = day.Clock.at(hour);
+    g.sim.clock = day.Clock.at(hour);
     posed(g, outdoors);
 }
 
 fn posed(g: *game.Game, outdoors: bool) void {
-    g.outdoors = outdoors;
-    gen.shapeWalls(&g.lv);
+    g.sim.outdoors = outdoors;
+    gen.shapeWalls(&g.sim.lv);
     game.settle(g);
 }
 
 fn poseTorch(g: *game.Game) void {
     game.harness.arena(g, .{ .x = 20, .y = 15 }, &.{ .{ .x = 17, .y = 12 }, .{ .x = 23, .y = 13 } });
-    game.harness.wallRow(&g.lv, POSE_TORCH.y, 12, 28);
-    g.lv.set(.{ .x = 22, .y = 12 }, .wall);
-    g.lv.addTorch(POSE_TORCH);
+    game.harness.wallRow(&g.sim.lv, POSE_TORCH.y, 12, 28);
+    g.sim.lv.set(.{ .x = 22, .y = 12 }, .wall);
+    g.sim.lv.addTorch(POSE_TORCH);
     posed(g, false);
 }
 
@@ -1157,24 +1164,24 @@ fn poseHiddenShadows(g: *game.Game, hour: ?f32) void {
     const x = HIDDEN_SHADOW_X;
     const row = HIDDEN_SHADOW_ROWS;
     game.harness.arena(g, .{ .x = 22, .y = 19 }, &.{.{ .x = x, .y = row.get(.actor) }});
-    game.harness.grassOver(&g.lv);
-    g.lv.set(.{ .x = x, .y = row.get(.forest) }, .shrub);
-    g.lv.set(.{ .x = x, .y = row.get(.forest) + 1 }, .shrub);
-    g.lv.set(.{ .x = x, .y = row.get(.tree) }, .shrub);
-    g.lv.putBarrel(.{ .x = x, .y = row.get(.barrel) });
+    game.harness.grassOver(&g.sim.lv);
+    g.sim.lv.set(.{ .x = x, .y = row.get(.forest) }, .shrub);
+    g.sim.lv.set(.{ .x = x, .y = row.get(.forest) + 1 }, .shrub);
+    g.sim.lv.set(.{ .x = x, .y = row.get(.tree) }, .shrub);
+    g.sim.lv.putBarrel(.{ .x = x, .y = row.get(.barrel) });
     if (hour == null) {
-        game.harness.wallRow(&g.lv, 12, 29, 31);
-        g.lv.addTorch(.{ .x = 30, .y = 12 });
-        game.harness.wallRow(&g.lv, 18, 29, 31);
-        g.lv.addTorch(.{ .x = 30, .y = 18 });
+        game.harness.wallRow(&g.sim.lv, 12, 29, 31);
+        g.sim.lv.addTorch(.{ .x = 30, .y = 12 });
+        game.harness.wallRow(&g.sim.lv, 18, 29, 31);
+        g.sim.lv.addTorch(.{ .x = 30, .y = 18 });
     }
     studyAt(g, hour != null, hour orelse day.NOON);
     for (0..grid.CELLS) |i| {
         const visible = grid.Level.of(i).x < x;
-        g.lv.seen[i] = visible;
-        g.lv.lit[i] = visible;
+        g.sim.lv.seen[i] = visible;
+        g.sim.lv.lit[i] = visible;
     }
-    g.light.settle(&g.lv);
+    g.light.settle(&g.sim.lv);
 }
 
 fn waterSample(g: *game.Game, target: rl.RenderTexture2D, beds: *const dual.Beds, view: ?look.WaterView, origin: [2]f32) !rl.Image {
@@ -1191,14 +1198,14 @@ fn shootWater(g: *game.Game, target: rl.RenderTexture2D) !void {
     const FRAMES = 40;
     const EVERY = 6;
     const before = g.light.t.at();
-    const minute = g.clock;
+    const minute = g.sim.clock;
     for (0..FRAMES) |i| {
         for (0..EVERY) |_| game.update(g, mathx.FRAME_DT);
         var path: [80]u8 = undefined;
         try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-reflections/{d:0>2}.png", .{i}));
     }
     const elapsed = g.light.t.at() - before;
-    if (elapsed < FRAMES * EVERY * mathx.FRAME_DT - 0.01 or !std.meta.eql(minute, g.clock)) return error.WaterIdleClock;
+    if (elapsed < FRAMES * EVERY * mathx.FRAME_DT - 0.01 or !std.meta.eql(minute, g.sim.clock)) return error.WaterIdleClock;
     std.debug.print("water reflections idle play: {d:.2} seconds in {d} rendered frames, no turn spent\n", .{ elapsed, FRAMES });
 }
 
@@ -1332,16 +1339,16 @@ fn checkWaterSurface(g: *game.Game) !void {
 
 fn checkMapEdge(g: *game.Game, target: rl.RenderTexture2D) !void {
     game.harness.arena(g, .{ .x = 24, .y = grid.H - 4 }, &.{});
-    game.harness.grassOver(&g.lv);
-    for (0..grid.W) |x| g.lv.set(.{ .x = @intCast(x), .y = grid.H - 1 }, .grass);
+    game.harness.grassOver(&g.sim.lv);
+    for (0..grid.W) |x| g.sim.lv.set(.{ .x = @intCast(x), .y = grid.H - 1 }, .grass);
     studyLit(g, true, day.NOON);
     const edge = @divTrunc(g.screen.y, 2);
     g.cam.y = @floatFromInt(game.MAP_PX.y - edge);
     game.prepare(g);
     var compared: usize = 0;
     for ([_]bool{ true, false }) |visible| {
-        @memset(&g.lv.lit, visible);
-        g.light.settle(&g.lv);
+        @memset(&g.sim.lv.lit, visible);
+        g.light.settle(&g.sim.lv);
         intoTarget(g, target);
         rl.clearBackground(look.FOG);
         game.scene.drawMap(g);
@@ -1389,16 +1396,16 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     }
     if (reflected < MIN_PIXELS) return error.WaterMirrorEmpty;
     g.cam = camera;
-    @memset(&g.lv.lit, false);
-    g.light.settle(&g.lv);
+    @memset(&g.sim.lv.lit, false);
+    g.light.settle(&g.sim.lv);
     try capture(g, target, SHOTS_DIR ++ "/water-mirrors-memory.png");
     const memory = try readTarget(g.sprites.mirror_memory.?);
     defer rl.unloadImage(memory);
     const dim = try readTarget(g.sprites.mirror.?);
     defer rl.unloadImage(dim);
-    const actors = g.pool.n;
-    g.pool.n = 0;
-    defer g.pool.n = actors;
+    const actors = g.sim.pool.n;
+    g.sim.pool.n = 0;
+    defer g.sim.pool.n = actors;
     drawInto(g, target);
     const empty = try readTarget(g.sprites.mirror.?);
     defer rl.unloadImage(empty);
@@ -1412,12 +1419,12 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     }
     if (remembered < MIN_PIXELS) return error.WaterMemoryMissing;
     try checkRememberedBarrels(g, target, memory);
-    @memset(&g.lv.seen, false);
-    g.light.settle(&g.lv);
+    @memset(&g.sim.lv.seen, false);
+    g.light.settle(&g.sim.lv);
     intoTarget(g, target);
     const c = game.scene.Cam.of(g);
     var flame_buf: [grid.MAX_TORCHES]light.Flame = undefined;
-    _ = game.scene.drawMirrors(g, c, game.scene.viewBox(g, c), &.{}, g.light.flames(&g.lv, &flame_buf));
+    _ = game.scene.drawMirrors(g, c, game.scene.viewBox(g, c), &.{}, g.light.flames(&g.sim.lv, &flame_buf));
     outOfTarget(g);
     for ([_]rl.RenderTexture2D{ g.sprites.mirror.?, g.sprites.mirror_memory.? }) |t| {
         const hidden = try readTarget(t);
@@ -1433,19 +1440,19 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
 }
 
 fn checkRememberedBarrels(g: *game.Game, target: rl.RenderTexture2D, before: rl.Image) !void {
-    const barrels = g.lv.barrel;
-    const remembered = g.lv.barrel_seen;
+    const barrels = g.sim.lv.barrel;
+    const remembered = g.sim.lv.barrel_seen;
     defer {
-        g.lv.barrel = barrels;
-        g.lv.barrel_seen = remembered;
+        g.sim.lv.barrel = barrels;
+        g.sim.lv.barrel_seen = remembered;
         g.art_ready = false;
     }
-    @memset(&g.lv.barrel, false);
+    @memset(&g.sim.lv.barrel, false);
     g.art_ready = false;
     try capture(g, target, SHOTS_DIR ++ "/water-mirrors-broken-remembered.png");
     const broken = try readTarget(g.sprites.mirror_memory.?);
     defer rl.unloadImage(broken);
-    @memset(&g.lv.barrel_seen, false);
+    @memset(&g.sim.lv.barrel_seen, false);
     g.art_ready = false;
     drawInto(g, target);
     const forgotten = try readTarget(g.sprites.mirror_memory.?);
@@ -1466,7 +1473,7 @@ fn checkHiddenShadowMask(g: *game.Game, target: rl.RenderTexture2D, visible: boo
     game.prepare(g);
     const c = game.scene.Cam.of(g);
     const view = game.scene.viewBox(g, c);
-    g.light.bake(&g.lv, view.lo, view.hi);
+    g.light.bake(&g.sim.lv, view.lo, view.hi);
     {
         rl.beginTextureMode(target);
         defer rl.endTextureMode();
@@ -1546,23 +1553,23 @@ fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
     list.scanAll();
     for (0..list.n) |i| {
         try w.load(std.heap.c_allocator, list.at(i));
-        w.node[w.start.node].stamp(&g.lv, SHOT_SEED +% i);
+        w.node[w.start.node].stamp(&g.sim.lv, SHOT_SEED +% i);
         rl.beginTextureMode(target);
         rl.clearBackground(look.BG);
         for (0..grid.CELLS) |k| {
             const p = grid.Level.of(k);
-            const t = g.lv.tile[k];
+            const t = g.sim.lv.tile[k];
             const x = p.x * OVERVIEW_CELL;
             const y = p.y * OVERVIEW_CELL;
             const under = t.ground() orelse t;
             if (look.tileBg(under)) |bg| rl.drawRectangle(x, y, OVERVIEW_CELL, OVERVIEW_CELL, bg);
             const cx = x + OVERVIEW_MID;
             const cy = y + OVERVIEW_MID;
-            if (look.Mark.of(&g.lv, k)) |m| {
+            if (look.Mark.of(&g.sim.lv, k)) |m| {
                 g.face.glyph(m.look().ch, cx, cy, OVERVIEW_INK, m.look().fg);
             } else look.inkTile(&g.face, t, cx, cy, OVERVIEW_INK);
         }
-        for (g.lv.torches()) |t| g.face.glyph(look.TORCH.ch, t.x * OVERVIEW_CELL + OVERVIEW_MID, t.y * OVERVIEW_CELL + OVERVIEW_MID, OVERVIEW_INK, look.TORCH.fg);
+        for (g.sim.lv.torches()) |t| g.face.glyph(look.TORCH.ch, t.x * OVERVIEW_CELL + OVERVIEW_MID, t.y * OVERVIEW_CELL + OVERVIEW_MID, OVERVIEW_INK, look.TORCH.fg);
         rl.endTextureMode();
         var buf: [listing.PATH_MAX + 32]u8 = undefined;
         const name = try std.fmt.bufPrintZ(&buf, SHOTS_MAPS ++ "/{s}.png", .{list.stem(i)});
@@ -1629,14 +1636,14 @@ pub fn benchWalk(g: *game.Game) !void {
     var draw = [_]u64{0} ** BENCH_FRAMES;
     for (0..BENCH_FRAMES) |i| {
         if (g.mode == .dead) game.begin(g, SHOT_SEED +% i);
-        const was = g.heroActor().?.at;
+        const was = g.sim.heroActor().?.at;
         t.reset();
         game.harness.walkFrame(g, dt, d);
         sim[i] = t.lap();
         drawInto(g, target);
         draw[i] = t.read();
         const tried = g.st.walk != null and g.pending == null;
-        if (tried and g.heroActor() != null and g.heroActor().?.at.eq(was)) d = rng.pick(mathx.Dir, mathx.ALL_DIRS);
+        if (tried and g.sim.heroActor() != null and g.sim.heroActor().?.at.eq(was)) d = rng.pick(mathx.Dir, mathx.ALL_DIRS);
     }
     for ([_][]u64{ &sim, &draw }, [_][]const u8{ "update", "draw" }) |xs, name| {
         std.mem.sort(u64, xs, {}, std.sort.asc(u64));
@@ -1653,10 +1660,10 @@ pub fn benchWalk(g: *game.Game) !void {
 fn benchEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
     poseGas(g);
     for ([_]usize{ 0, 8, 32 }) |count| {
-        g.fx.clear();
+        g.pic.fx.clear();
         for (0..count) |i| {
             const at = mathx.centre(.{ .x = 15 + @as(i32, @intCast(i % 8)), .y = 14 + @as(i32, @intCast(i / 8)) });
-            g.fx.glow(at, look.FIRE, .{ .radius = fx.EMBER_GLOW.radius, .gain = fx.EMBER_GLOW.gain, .life = 1 });
+            g.pic.fx.glow(at, look.FIRE, .{ .radius = fx.EMBER_GLOW.radius, .gain = fx.EMBER_GLOW.gain, .life = 1 });
         }
         std.debug.print("effects {d}: {d:.3} ms mean draw over {d} frames\n", .{ count, try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
     }
@@ -1666,7 +1673,7 @@ fn benchAssets(g: *game.Game) !void {
     const alloc = std.heap.c_allocator;
     const w = try alloc.create(atlas.Atlas);
     defer alloc.destroy(w);
-    defer g.map = null;
+    defer g.sim.map = null;
     inline for ([_][]const u8{ SHOT_OUTDOOR, SHOT_BIOME, SHOT_OUTDOOR }) |name| {
         try w.load(alloc, atlas.mapPath(name));
         game.beginMapAt(g, w, w.start, SHOT_SEED);
@@ -1688,15 +1695,15 @@ const POSE_NEAR: i32 = 3;
 const POSE_FAR: i32 = 5;
 
 fn poseRat(g: *game.Game) void {
-    const h = g.heroActor() orelse return;
-    const rat = for (g.pool.slice(), 0..) |a, i| {
+    const h = g.sim.heroActor() orelse return;
+    const rat = for (g.sim.pool.slice(), 0..) |a, i| {
         if (a.kind == .rat) break actor.Pool.idOf(i);
     } else return;
     for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);
         const d = mathx.dist(p, h.at);
-        if (d < POSE_NEAR or d > POSE_FAR or !bow.aimable(&g.lv, h.at, p) or g.lv.taken(p)) continue;
-        g.pool.move(&g.lv, rat, p);
+        if (d < POSE_NEAR or d > POSE_FAR or !bow.aimable(&g.sim.lv, h.at, p) or g.sim.lv.taken(p)) continue;
+        g.sim.pool.move(&g.sim.lv, rat, p);
         break;
     }
     game.combat.wound(g, rat, .{ .dmg = bow.BASE.lo }, SHOOT, .{ .from = h.at, .wait = 0 });

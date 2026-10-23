@@ -36,6 +36,9 @@ comptime {
 /// What `Attrs.reduction` and `Attrs.crit` are called.
 pub const REDUCTION_LABEL = "physical damage reduction";
 pub const CRIT_LABEL = "critical strike chance";
+pub const WEAPON_CRIT_LABEL = "weapon critical chance";
+pub const SPELL_CRIT_LABEL = "spell critical chance";
+pub const PHYSICAL_LABEL = "physical damage";
 pub const SCALES_FMT = "Scales with {s}";
 /// What a blow is, and so which attribute raises it.
 pub const Style = enum {
@@ -148,7 +151,11 @@ pub const Attrs = struct {
     }
 
     pub fn crit(a: Attrs) u32 {
-        return @intCast(std.math.clamp(CRIT_BASE + @divTrunc(a.get(.dexterity), DEX_PER_CRIT) + a.crit_bonus, 0, mathx.PERCENT));
+        return a.critWith(0);
+    }
+
+    pub fn critWith(a: Attrs, extra: i32) u32 {
+        return @intCast(std.math.clamp(CRIT_BASE + @divTrunc(a.get(.dexterity), DEX_PER_CRIT) + a.crit_bonus + extra, 0, mathx.PERCENT));
     }
 
     pub fn dodge(a: Attrs) u32 {

@@ -138,18 +138,18 @@ fn drawCursor(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
         while (cells.next()) |q| {
             const p = m.add(q);
-            const k = bd.at(q);
+            const k = grid.Level.idx(q);
             if (!view.holds(p)) continue;
-            ghostInk(ed, g, c, p, bd.tile[k]);
-            if (!bd.barrel[k]) continue;
+            ghostInk(ed, g, c, p, bd.cells.tile[k]);
+            if (!bd.cells.barrel[k]) continue;
             const i = grid.Level.idx(p);
             ghostPasted(ed, g, c, p, .barrel, lays and trial.barrel[i]);
         }
-        for (bd.torch.slice()) |t| {
+        for (bd.cells.torches()) |t| {
             const p = m.add(t);
             if (view.holds(p)) ghostPasted(ed, g, c, p, .torch, lays and trial.torch.has(p));
         }
-        for (bd.foe[0..bd.foe_n]) |f| {
+        for (bd.cells.foes()) |f| {
             const p = m.add(f.at);
             const there = if (lays) trial.foeAt(p) else null;
             if (view.holds(p)) ghostPasted(ed, g, c, p, .{ .foe = f.kind }, if (there) |i| trial.foe[i].kind == f.kind else false);

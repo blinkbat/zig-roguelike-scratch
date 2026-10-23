@@ -212,10 +212,6 @@ pub const State = struct {
         return @max(floor, act.cooldown() -| self.extraRanks(act));
     }
 
-    pub fn writeDescription(self: *const State, act: skillbar.Act, w: anytype) void {
-        act.describe(w, self.perks());
-    }
-
     /// What using it costs at its rank: "3 mana, 1 turn, 2-turn cooldown".
     pub fn writeUsage(self: *const State, act: skillbar.Act, w: anytype) void {
         const c = self.cost(act);

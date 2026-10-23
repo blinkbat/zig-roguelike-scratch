@@ -52,6 +52,7 @@ pub fn picksOf(kit: []const skillbar.Act) usize {
     return kit.len + 1;
 }
 
+pub const PICK_MARGIN: i32 = 16;
 pub const PICK_COLS: usize = @intCast(@divTrunc(game.SKILLS_W + game.SLOT_GAP, game.SLOT_STEP));
 
 pub fn pickRows(n: usize) usize {
@@ -66,7 +67,7 @@ pub fn pickStep(i: usize, d: P, n: usize) usize {
 
 pub fn pickWindow(top_y: i32, bottom_y: i32, n: usize, at: usize) menu.Window {
     const rows = pickRows(n);
-    const room: usize = @intCast(@max(1, @divTrunc(bottom_y - game.SLOT_GAP - top_y - game.PICK_MARGIN, game.SLOT_STEP) + 1));
+    const room: usize = @intCast(@max(1, @divTrunc(bottom_y - game.SLOT_GAP - top_y - PICK_MARGIN, game.SLOT_STEP) + 1));
     return menu.Window.of(rows, at / PICK_COLS, room);
 }
 
@@ -86,7 +87,7 @@ pub fn bindStep(g: *game.Game) void {
     var state = g.st;
     const b = &g.binds;
     var kit_buf: skillbar.KitBuf = undefined;
-    const kit = g.growth.kit(g.class, &kit_buf);
+    const kit = g.sim.growth.kit(g.sim.class, &kit_buf);
     if (state.pointing()) if (state.pointer) |pointer| {
         const panel = overlay.bindPanel(g);
         const p = overlay.bindSurface(g, panel).point(pointer);
@@ -114,7 +115,7 @@ pub fn bindStep(g: *game.Game) void {
     const here = b.slot();
     const was = g.bar;
     defer if (!std.meta.eql(was, g.bar)) {
-        g.unsaved = true;
+        g.sim.unsaved = true;
     };
     switch (b.menu) {
         .browse => {

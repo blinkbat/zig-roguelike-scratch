@@ -37,7 +37,7 @@ test "a way held through closing inspect, a reticle or pause walks nobody until 
     for (cases) |case| {
         harness.arena(g, .{ .x = 20, .y = 32 }, &.{});
         g.st = .{};
-        const start = g.heroActor().?.at;
+        const start = g.sim.heroActor().?.at;
         g.mark = start;
         if (case.mode == .aim) skills.aiming(g, .a, .juke);
         g.mode = case.mode;
@@ -47,12 +47,12 @@ test "a way held through closing inspect, a reticle or pause walks nobody until 
         g.st.pressed = .initEmpty();
         try std.testing.expectEqual(game.Mode.play, g.mode);
         harness.walkFor(g, 1, .e);
-        try std.testing.expect(g.heroActor().?.at.eq(start));
+        try std.testing.expect(g.sim.heroActor().?.at.eq(start));
         harness.walkFrame(g, dt, null);
         for (0..30) |_| {
             harness.walkFrame(g, dt, .e);
         }
-        try std.testing.expect(!g.heroActor().?.at.eq(start));
+        try std.testing.expect(!g.sim.heroActor().?.at.eq(start));
     }
     std.debug.print("held walk: {d} screens closed with the way held, none walked till it was let go\n", .{cases.len});
 }
@@ -109,9 +109,9 @@ test "a way held into or out of Character moves nothing until let go" {
     harness.walkFor(g, 1, .s);
     try std.testing.expectEqual(cursor, g.character.cursor);
     harness.pressWalking(g, menu.BACK, .s);
-    const at = g.heroActor().?.at;
+    const at = g.sim.heroActor().?.at;
     harness.walkFor(g, 1, .s);
-    try std.testing.expectEqual(at, g.heroActor().?.at);
+    try std.testing.expectEqual(at, g.sim.heroActor().?.at);
     std.debug.print("held walk: direct Character entry and exit suppress carried movement\n", .{});
 }
 
@@ -170,12 +170,12 @@ test "Character stays drawn over a lethal item turn until the bite is drawn" {
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
     harness.wakeFoes(g);
-    g.heroActor().?.hp = 1;
+    g.sim.heroActor().?.hp = 1;
     character.openCharacter(g);
     var turns: usize = 0;
     while (g.mode != .dead and turns < harness.TRIES) : (turns += 1) {
-        try std.testing.expect(g.inventory.add(.{ .kind = .ring }));
-        character.characterCommand(g, .{ .drop = g.inventory.n - 1 });
+        try std.testing.expect(g.sim.inventory.add(.{ .kind = .ring }));
+        character.characterCommand(g, .{ .drop = g.sim.inventory.n - 1 });
         if (g.mode != .dead) harness.drawnOut(g);
     }
     try std.testing.expectEqual(game.Mode.dead, g.mode);
@@ -193,10 +193,10 @@ test "the Nearby list keeps its entries over a lethal pickup until the bite is d
     const at: P = .{ .x = 20, .y = 20 };
     harness.arena(g, at, &.{.{ .x = 21, .y = 20 }});
     harness.wakeFoes(g);
-    g.heroActor().?.hp = 1;
+    g.sim.heroActor().?.hp = 1;
     var turns: usize = 0;
     while (g.mode != .dead and turns < harness.TRIES) : (turns += 1) {
-        for (0..2) |_| try std.testing.expect(g.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
+        for (0..2) |_| try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
         if (g.mode != .pause) try std.testing.expect(character.openNearby(g));
         character.characterCommand(g, .{ .pickup = 0 });
         if (g.mode != .dead) harness.drawnOut(g);
@@ -215,12 +215,12 @@ test "the ring slid under the cursor after an equip starts on the left ring agai
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-    for (0..2) |_| try std.testing.expect(g.inventory.add(.{ .kind = .ring }));
+    for (0..2) |_| try std.testing.expect(g.sim.inventory.add(.{ .kind = .ring }));
     character.openCharacter(g);
     g.character.choose(.inventory);
     g.character.destination_index = 1;
     character.characterCommand(g, .{ .equip = .{ .index = 0, .slot = .right_ring } });
-    try std.testing.expect(g.inventory.gear.slots.get(.right_ring) != null);
+    try std.testing.expect(g.sim.inventory.gear.slots.get(.right_ring) != null);
     try std.testing.expectEqual(@as(usize, 0), g.character.destination_index);
 }
 
@@ -246,28 +246,26 @@ test "the pause menu spends no turn, and its way out leads back to where the gam
     try std.testing.expectEqual(game.Mode.play, g.mode);
     for (std.enums.values(game.Back)) |back| {
         g.back = back;
-        harness.press(g, PAUSE);
-        for (0..game.rowAt(game.PauseRow.back)) |_| harness.nudge(g, .s);
-        harness.press(g, CONFIRM);
+        harness.pickPause(g, .back);
         try std.testing.expectEqual(@as(?game.Exit, .back), g.exit);
         try std.testing.expectEqual(game.Mode.play, g.mode);
         g.exit = null;
     }
-    try std.testing.expectEqual(P{ .x = 26, .y = 20 }, g.pool.get(2).?.at);
+    try std.testing.expectEqual(P{ .x = 26, .y = 20 }, g.sim.pool.get(2).?.at);
 }
 
 test "Character and Game have separate shortcuts and never spend a turn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
-    const clock = g.clock;
-    const hp = g.heroActor().?.hp;
+    const clock = g.sim.clock;
+    const hp = g.sim.heroActor().?.hp;
     harness.press(g, menu.CHARACTER);
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);
     g.character.choose(.inventory);
     harness.press(g, CONFIRM);
-    try std.testing.expectEqual(clock, g.clock);
-    try std.testing.expectEqual(hp, g.heroActor().?.hp);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
     harness.press(g, menu.CHARACTER);
     try std.testing.expectEqual(game.Mode.play, g.mode);
     harness.press(g, PAUSE);
@@ -277,7 +275,7 @@ test "Character and Game have separate shortcuts and never spend a turn" {
     try std.testing.expectEqual(book.Page.inventory, g.character.page);
     harness.press(g, BACK);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(clock, g.sim.clock);
     std.debug.print("Character: direct toggle, retained page, one-step back; Game: separate menu; zero turns\n", .{});
 }
 
@@ -285,9 +283,9 @@ test "Character page shortcuts open switch and close without acting or carrying 
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
-    const at = g.heroActor().?.at;
-    const clock = g.clock;
-    const mana = g.mana;
+    const at = g.sim.heroActor().?.at;
+    const clock = g.sim.clock;
+    const mana = g.sim.mana;
     var checked: usize = 0;
     for ([_]game.Mode{ .play, .aim, .inspect, .bind, .pause }) |mode| {
         g.mode = mode;
@@ -299,8 +297,8 @@ test "Character page shortcuts open switch and close without acting or carrying 
             try std.testing.expectEqual(game.PausePage.character, g.pause_page);
             try std.testing.expectEqual(book.Page.of(page), g.character.page);
             try std.testing.expect(g.st.walk == null and g.pending == null);
-            if (page == .passives) try std.testing.expectEqual(progress.start(g.class), g.character.cursor);
-            try std.testing.expectEqual(at, g.heroActor().?.at);
+            if (page == .passives) try std.testing.expectEqual(progress.start(g.sim.class), g.character.cursor);
+            try std.testing.expectEqual(at, g.sim.heroActor().?.at);
             checked += 1;
         }
         g.st = .{ .device = .keys, .character_page = .skills };
@@ -311,8 +309,8 @@ test "Character page shortcuts open switch and close without acting or carrying 
     g.st = .{ .character_page = .equipment };
     game.update(g, 0);
     try std.testing.expectEqual(game.Mode.dead, g.mode);
-    try std.testing.expectEqual(clock, g.clock);
-    try std.testing.expectEqual(mana, g.mana);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(mana, g.sim.mana);
     std.debug.print("Character shortcuts: {d} page openings, 5 toggles, death guarded; no turns or mana spent\n", .{checked});
 }
 
@@ -323,16 +321,16 @@ test "an arena restart restores its selected opponent and hero" {
     defer std.testing.allocator.destroy(map);
     spar.author(map, .bloat);
     game.beginMap(g, map);
-    _ = g.pool.damage(&g.lv, 2, 100);
-    _ = g.pool.damage(&g.lv, g.hero, 3);
-    g.mana = 0;
+    _ = g.sim.pool.damage(&g.sim.lv, 2, 100);
+    _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 3);
+    g.sim.mana = 0;
     game.restart(g);
-    try std.testing.expectEqual(@as(usize, 2), g.pool.n);
-    try std.testing.expectEqual(actor.Kind.bloat, g.pool.items[1].kind);
-    try std.testing.expect(g.pool.items[1].alive);
-    try std.testing.expectEqual(actor.row(HERO).hp, g.heroActor().?.hp);
-    try std.testing.expectEqual(game.manaMax(g), g.mana);
-    try std.testing.expectEqual(spar.HERO, g.heroActor().?.at);
+    try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
+    try std.testing.expectEqual(actor.Kind.bloat, g.sim.pool.items[1].kind);
+    try std.testing.expect(g.sim.pool.items[1].alive);
+    try std.testing.expectEqual(actor.row(HERO).hp, g.sim.heroActor().?.hp);
+    try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
+    try std.testing.expectEqual(spar.HERO, g.sim.heroActor().?.at);
     std.debug.print("arena retry: bloat and hero restored at their starting positions with full resources\n", .{});
 }
 
@@ -340,10 +338,10 @@ test "Debug graphics toggles are independent and spend no simulation" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
-    const before = g.lv;
-    const clock = g.clock;
-    const rng = g.rng;
-    const hp = g.heroActor().?.hp;
+    const before = g.sim.lv;
+    const clock = g.sim.clock;
+    const rng = g.sim.rng;
+    const hp = g.sim.heroActor().?.hp;
     harness.openDebug(g);
     var toggles: usize = 0;
     inline for (game.debugging.SWITCHES) |T| {
@@ -356,12 +354,12 @@ test "Debug graphics toggles are independent and spend no simulation" {
                     const expected = if (comptime std.mem.eql(u8, f.name, other.name)) on else true;
                     try std.testing.expectEqual(expected, @field(group, other.name));
                 }
-                try std.testing.expectEqualSlices(bool, &before.seen, &g.lv.seen);
-                try std.testing.expectEqualSlices(bool, &before.lit, &g.lv.lit);
-                try std.testing.expectEqualSlices(grid.Tile, &before.tile, &g.lv.tile);
-                try std.testing.expectEqual(clock, g.clock);
-                try std.testing.expectEqual(rng, g.rng);
-                try std.testing.expectEqual(hp, g.heroActor().?.hp);
+                try std.testing.expectEqualSlices(bool, &before.seen, &g.sim.lv.seen);
+                try std.testing.expectEqualSlices(bool, &before.lit, &g.sim.lv.lit);
+                try std.testing.expectEqualSlices(grid.Tile, &before.tile, &g.sim.lv.tile);
+                try std.testing.expectEqual(clock, g.sim.clock);
+                try std.testing.expectEqual(rng, g.sim.rng);
+                try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
                 try std.testing.expectEqual(game.Mode.pause, g.mode);
                 toggles += 1;
             }
@@ -375,10 +373,10 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
     defer game.shut(std.testing.allocator, g);
     const far = P{ .x = 60, .y = 40 };
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{far});
-    const seen = g.lv.seen;
-    const lit = g.lv.lit;
-    const clock = g.clock;
-    const rng = g.rng;
+    const seen = g.sim.lv.seen;
+    const lit = g.sim.lv.lit;
+    const clock = g.sim.clock;
+    const rng = g.sim.rng;
     try std.testing.expect(!character.terrainSeen(g, far));
     harness.openDebug(g);
     try std.testing.expectEqual(game.PausePage.debug, g.pause_page);
@@ -391,11 +389,11 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
         try std.testing.expectEqual(enabled, g.light.reveal_map);
         try std.testing.expectEqual(enabled, character.terrainSeen(g, far));
         try std.testing.expectEqual(@as(f32, if (enabled) 1 else 0), g.light.memory[grid.Level.idx(far)]);
-        try std.testing.expectEqualSlices(bool, &seen, &g.lv.seen);
-        try std.testing.expectEqualSlices(bool, &lit, &g.lv.lit);
-        try std.testing.expectEqual(clock, g.clock);
-        try std.testing.expectEqual(rng, g.rng);
-        try std.testing.expect(game.drawnAt(g, actor.Pool.slot(2)) == null);
+        try std.testing.expectEqualSlices(bool, &seen, &g.sim.lv.seen);
+        try std.testing.expectEqualSlices(bool, &lit, &g.sim.lv.lit);
+        try std.testing.expectEqual(clock, g.sim.clock);
+        try std.testing.expectEqual(rng, g.sim.rng);
+        try std.testing.expect(g.pic.drawnAt(&g.sim, actor.Pool.slot(2)) == null);
     }
     harness.press(g, BACK);
     try std.testing.expectEqual(game.PausePage.debug, g.pause_page);
@@ -417,20 +415,20 @@ test "Debug restart begins the map anew and clears visited nodes" {
     _ = map.add(.{ .procgen = .{} });
     _ = map.add(.{ .procgen = .{} });
     game.beginMapAt(g, map, .{ .node = 1, .at = grid.MIDDLE }, 12);
-    g.visited.set(1);
-    g.gold = 99;
-    g.heroActor().?.hp = 1;
+    g.sim.visited.set(1);
+    g.sim.gold = 99;
+    g.sim.heroActor().?.hp = 1;
     harness.openDebug(g);
     try std.testing.expectEqual(game.PausePage.debug, g.pause_page);
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(game.debugging.Page.gameplay, g.debug.page);
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    try std.testing.expectEqual(map.start.node, g.node);
-    try std.testing.expectEqual(@as(usize, 0), g.visited.count());
-    try std.testing.expectEqual(@as(i32, 0), g.gold);
-    try std.testing.expectEqual(game.heroRow(g).hp, g.heroActor().?.hp);
-    try std.testing.expect(g.seed != 12);
+    try std.testing.expectEqual(map.start.node, g.sim.node);
+    try std.testing.expectEqual(@as(usize, 0), g.sim.visited.count());
+    try std.testing.expectEqual(@as(i32, 0), g.sim.gold);
+    try std.testing.expectEqual(g.sim.heroRow().hp, g.sim.heroActor().?.hp);
+    try std.testing.expect(g.sim.seed != 12);
     std.debug.print("Debug restart: returns to map start, rerolls seed, restores hero and clears visited nodes and gold\n", .{});
 }
 
@@ -438,9 +436,9 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 30, .y = 20 }});
-    g.heroActor().?.bleed.turns = bleeding.TURNS;
-    game.catchUp(g);
-    const clock = g.clock;
+    g.sim.heroActor().?.bleed.turns = bleeding.TURNS;
+    g.pic.catchUp(&g.sim);
+    const clock = g.sim.clock;
     harness.press(g, skillbar.INSPECT);
     try std.testing.expectEqual(game.Mode.inspect, g.mode);
     g.inspecting = .life;
@@ -462,7 +460,7 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
     }
     harness.press(g, skillbar.INSPECT);
     try std.testing.expectEqual(game.Mode.play, g.mode);
-    try std.testing.expect(std.meta.eql(clock, g.clock));
+    try std.testing.expect(std.meta.eql(clock, g.sim.clock));
     std.debug.print("inspect: life to mana in {d} steps across {d} slots, up to a status and down again; 3 ways out, no turn spent\n", .{ walked, skillbar.SLOTS.len });
 }
 
@@ -470,8 +468,8 @@ test "the mouse over an orb, a slot or a status shows its tooltip while playing,
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 30, .y = 20 }});
-    g.heroActor().?.bleed.turns = bleeding.TURNS;
-    game.catchUp(g);
+    g.sim.heroActor().?.bleed.turns = bleeding.TURNS;
+    g.pic.catchUp(&g.sim);
     var buf: [overlay.SPOTS_MAX]overlay.Part = undefined;
     const spots = overlay.spotsOf(g, &buf);
     for (spots) |s| {

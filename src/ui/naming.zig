@@ -1,4 +1,5 @@
 const std = @import("std");
+const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const look = @import("../gfx/look.zig");
@@ -29,11 +30,18 @@ const TITLE_DY: i32 = -198;
 const FIELD_DY: i32 = -130;
 const GRID_DY: i32 = -62;
 const CARET = menu.CARET;
+const AT_DONE = Entry{ .row = ROWS - 1, .col = DONE_AT };
 
-fn keyBox(screen: mathx.P, row: usize, col: usize) @import("raylib").Rectangle {
+fn keyBox(screen: mathx.P, row: usize, col: usize) rl.Rectangle {
     const width: i32 = if (row < LETTERS.len) KEY_W else WIDE_W;
     const count: i32 = @intCast(Entry.width(row));
     return raster.rect(@divTrunc(screen.x - count * width, 2) + @as(i32, @intCast(col)) * width, @divTrunc(screen.y, 2) + GRID_DY + @as(i32, @intCast(row)) * KEY_H, width, KEY_H);
+}
+
+/// The letter grid's bounds: its widest rows across, every row down.
+pub fn gridBox(screen: mathx.P) rl.Rectangle {
+    const width = @max(@as(i32, COLS) * KEY_W, @as(i32, LAST.len) * WIDE_W);
+    return raster.rect(@divTrunc(screen.x - width, 2), @divTrunc(screen.y, 2) + GRID_DY, width, @as(i32, ROWS) * KEY_H);
 }
 
 pub const Outcome = enum { done, back };
@@ -96,8 +104,8 @@ pub const Entry = struct {
     /// Typed on the keyboard, Enter then means done.
     fn onDone(self: *Entry) void {
         self.pointer_selected = false;
-        self.row = ROWS - 1;
-        self.col = DONE_AT;
+        self.row = AT_DONE.row;
+        self.col = AT_DONE.col;
     }
 
     fn move(self: *Entry, d: mathx.Dir) void {
@@ -123,7 +131,7 @@ pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
 
 /// On the keyboard Enter is done, so Done is what is focused.
 pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8, device: input.Device) void {
-    const at = if (device == .keys and !e.pointer_selected) Entry{ .row = ROWS - 1, .col = DONE_AT } else e.*;
+    const at = if (device == .keys and !e.pointer_selected) AT_DONE else e.*;
     const mid = @divTrunc(screen.y, 2);
     menu.heading(face, screen, title, mid + TITLE_DY, menu.TITLE, look.TEXT, look.UI_GOLD);
     var buf: [hero.Name.MAX + CARET.len + 1]u8 = undefined;
@@ -133,7 +141,7 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
             const box = keyBox(screen, r, c);
             const centre = raster.middleAt(box);
             const on = r == at.row and c == at.col;
-            if (on) @import("raylib").drawRectangleRec(box, look.PICK_BG);
+            if (on) rl.drawRectangleRec(box, look.PICK_BG);
             const col = if (on) look.UI_FOCUS else look.DIM;
             if (r < LETTERS.len) {
                 face.glyph(LETTERS[r][c], centre.x, centre.y, KEY, col);
@@ -159,7 +167,7 @@ test "mouse naming types letters spaces deletes and finishes with keyboard hints
         try std.testing.expectEqual(@as(?Outcome, null), e.stepAt(&st, screen));
     }
     try std.testing.expectEqualStrings("Ab ", e.name.text());
-    try std.testing.expectEqual(@as(?Outcome, .done), e.stepAt(&.{ .device = .keys, .click = true, .pointer = raster.middleAt(keyBox(screen, ROWS - 1, DONE_AT)) }, screen));
+    try std.testing.expectEqual(@as(?Outcome, .done), e.stepAt(&.{ .device = .keys, .click = true, .pointer = raster.middleAt(keyBox(screen, AT_DONE.row, AT_DONE.col)) }, screen));
     try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .right_click = true }, screen));
     try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .click = true, .pointer = raster.middleAt(menu.footerBox(screen, false)) }, screen));
     std.debug.print("mouse naming: five text edits, Done with keyboard prompts, both back controls\n", .{});
@@ -186,7 +194,7 @@ test "the grid types a name, the keyboard types into it, and done waits for a na
     st = .{};
     st.pressed.insert(menu.CONFIRM);
     try std.testing.expectEqual(@as(?Outcome, .done), e.step(&st));
-    var blank = Entry{ .row = ROWS - 1, .col = DONE_AT };
+    var blank = AT_DONE;
     try std.testing.expectEqual(@as(?Outcome, null), blank.step(&st));
 }
 

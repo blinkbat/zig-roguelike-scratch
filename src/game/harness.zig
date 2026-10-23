@@ -25,14 +25,14 @@ pub fn arena(g: *game.Game, hero: P, rats: []const P) void {
 }
 
 pub fn heroArena(g: *game.Game, c: heroes.Class, hero: P, rats: []const P) void {
-    g.class = c;
-    g.lv = grid.openFloor();
+    g.sim.class = c;
+    g.sim.lv = grid.openFloor();
     game.reset(g, hero);
-    for (progress.skills(g.class)) |s| g.growth.ranks.set(s.act, 1);
-    g.bar = skillbar.Bar.of(g.class);
-    g.outdoors = true;
-    g.clock = day.Clock.at(day.NOON);
-    for (rats) |r| _ = g.pool.spawn(&g.lv, actor.Actor.of(.rat, r));
+    for (progress.skills(g.sim.class)) |s| g.sim.growth.ranks.set(s.act, 1);
+    g.bar = skillbar.Bar.of(g.sim.class);
+    g.sim.outdoors = true;
+    g.sim.clock = day.Clock.at(day.NOON);
+    for (rats) |r| _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(.rat, r));
     game.settle(g);
 }
 
@@ -67,7 +67,7 @@ pub fn procRng(g: *const game.Game, comptime act: skillbar.Act, procs: usize, wa
 }
 
 pub fn foes(g: *game.Game) []actor.Actor {
-    return g.pool.slice()[1..];
+    return g.sim.pool.slice()[1..];
 }
 
 pub fn wakeFoes(g: *game.Game) void {
@@ -79,22 +79,22 @@ pub fn toughenFoes(g: *game.Game) void {
 }
 
 pub fn logged(g: *const game.Game, needle: []const u8) bool {
-    for (0..g.log.n) |i| {
-        if (std.mem.indexOf(u8, g.log.line(i).?, needle) != null) return true;
+    for (0..g.sim.log.n) |i| {
+        if (std.mem.indexOf(u8, g.sim.log.line(i).?, needle) != null) return true;
     }
     return false;
 }
 
 pub fn staggerOnly(g: *game.Game, id: u16) void {
-    g.order[0] = id;
-    g.order_n = 1;
-    g.lead = 0;
-    game.stepGlide(g, 0);
+    g.sim.order[0] = id;
+    g.sim.order_n = 1;
+    g.pic.lead = 0;
+    g.pic.stepGlide(&g.sim, g.cloud, 0);
 }
 
 pub fn stepTo(g: *game.Game, id: u16, to: P) void {
-    g.pool.move(&g.lv, id, to);
-    game.stepGlide(g, 0);
+    g.sim.pool.move(&g.sim.lv, id, to);
+    g.pic.stepGlide(&g.sim, g.cloud, 0);
 }
 
 pub const TRIES: usize = 300;
@@ -115,7 +115,7 @@ pub fn deathDrawn(g: *game.Game, _: usize) bool {
 }
 
 pub fn calm(g: *game.Game) void {
-    g.busy = 0;
+    g.pic.busy = 0;
     g.pending = null;
 }
 
@@ -124,8 +124,12 @@ pub fn press(g: *game.Game, a: input.Button) void {
 }
 
 pub fn openDebug(g: *game.Game) void {
+    pickPause(g, .debug);
+}
+
+pub fn pickPause(g: *game.Game, row: game.PauseRow) void {
     press(g, menu.PAUSE);
-    for (0..game.rowAt(game.PauseRow.debug)) |_| nudge(g, .s);
+    for (0..game.rowAt(row)) |_| nudge(g, .s);
     press(g, CONFIRM);
 }
 
@@ -199,7 +203,7 @@ pub fn bitesRng(g: *const game.Game, comptime kind: actor.Kind, lands: []const b
             return true;
         }
     };
-    return rngWhere(Bites{ .by = game.heroAttrs(g), .lands = lands });
+    return rngWhere(Bites{ .by = g.sim.heroAttrs(), .lands = lands });
 }
 
 pub fn sweepStunRng(g: *const game.Game, after_bite: bool) mathx.Rng {
@@ -216,7 +220,7 @@ pub fn sweepStunRng(g: *const game.Game, after_bite: bool) mathx.Rng {
             return damage.procs(rng, strike.stuns);
         }
     };
-    return rngWhere(Stun{ .by = game.heroAttrs(g), .after_bite = after_bite });
+    return rngWhere(Stun{ .by = g.sim.heroAttrs(), .after_bite = after_bite });
 }
 
 pub fn lootRng(magic: ?bool) mathx.Rng {
@@ -245,13 +249,13 @@ pub fn meleeThenBites(g: *const game.Game, count: usize) mathx.Rng {
         strike: actor.Strike,
         n: usize,
         fn holds(s: @This(), rng: *mathx.Rng) bool {
-            const raw = game.kickRaw(rng, s.gear, s.strike);
+            const raw = combat.kickRaw(rng, s.gear, s.strike);
             _ = combat.scaled(rng, s.by, s.gear.scaling(.melee), .{ .physical = raw });
             for (0..s.n) |_| if (combat.bite(rng, s.by, actor.row(.rat).blow.strike) == null) return false;
             return true;
         }
     };
-    return rngWhere(Sequence{ .by = game.heroAttrs(g), .gear = &g.inventory.gear, .strike = g.class.strike(), .n = count });
+    return rngWhere(Sequence{ .by = g.sim.heroAttrs(), .gear = &g.sim.inventory.gear, .strike = g.sim.class.strike(), .n = count });
 }
 
 pub fn nudge(g: *game.Game, d: mathx.Dir) void {
@@ -288,15 +292,15 @@ pub fn framesUntil(g: *game.Game, slot: usize, comptime done: fn (*game.Game, us
 }
 
 pub fn flashing(g: *game.Game, slot: usize) bool {
-    return g.fx.flashOf(slot) > 0;
+    return g.pic.fx.flashOf(slot) > 0;
 }
 
 pub fn facesLeft(g: *game.Game, slot: usize) bool {
-    return g.facing[slot] == .left;
+    return g.pic.facing[slot] == .left;
 }
 
 pub fn gone(g: *game.Game, slot: usize) bool {
-    return game.drawnAt(g, slot) == null;
+    return g.pic.drawnAt(&g.sim, slot) == null;
 }
 
 pub fn drawn(g: *game.Game, slot: usize) bool {
@@ -315,11 +319,11 @@ pub const SLIME_HALF = actor.row(.slime_half).hp;
 pub fn drawnOut(g: *game.Game) void {
     g.st = .{};
     var t: f32 = 0;
-    while (t < 2 and (g.busy > 0 or turningAny(g))) : (t += TEST_DT) game.update(g, TEST_DT);
+    while (t < 2 and (g.pic.busy > 0 or turningAny(g))) : (t += TEST_DT) game.update(g, TEST_DT);
 }
 
 fn turningAny(g: *game.Game) bool {
-    for (g.turning) |t| {
+    for (g.pic.turning) |t| {
         if (t != null) return true;
     }
     return false;
@@ -343,9 +347,9 @@ pub fn pressHolding(g: *game.Game, a: input.Button, held: []const input.Button) 
 }
 
 pub fn spawnAt(g: *game.Game, k: actor.Kind, at: P, awake: bool) u16 {
-    const id = g.pool.spawn(&g.lv, actor.Actor.of(k, at));
-    g.pool.get(id).?.awake = awake;
-    game.snapGlide(g);
+    const id = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(k, at));
+    g.sim.pool.get(id).?.awake = awake;
+    g.pic.snapGlide(&g.sim.pool);
     return id;
 }
 
@@ -374,14 +378,14 @@ pub fn twoRooms(w: *atlas.Atlas) usize {
 
 pub fn splittable(g: *game.Game, at: P, awake: bool) u16 {
     const id = spawnAt(g, .slime, at, awake);
-    g.pool.get(id).?.hp = SLIME_HALF + 1;
+    g.sim.pool.get(id).?.hp = SLIME_HALF + 1;
     return id;
 }
 
 pub fn bittenToDeath(g: *game.Game) void {
     arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
     wakeFoes(g);
-    g.heroActor().?.hp = 1;
+    g.sim.heroActor().?.hp = 1;
     nudge(g, .e);
 }
 
@@ -392,5 +396,5 @@ pub fn idle(g: *game.Game) void {
 }
 
 pub fn caughtUp(g: *game.Game, slot: usize) bool {
-    return g.pictured[slot].hp == g.pool.items[slot].hp;
+    return g.pic.pictured[slot].hp == g.sim.pool.items[slot].hp;
 }

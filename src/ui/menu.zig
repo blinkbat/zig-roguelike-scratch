@@ -286,9 +286,16 @@ fn window(screen_h: i32, n: usize, at: usize) Window {
     return Window.of(n, at, room);
 }
 
+/// Every single-column list's widest, at any screen size.
+pub const LIST_W: i32 = 760;
+
+pub fn listWidth(screen: mathx.P) i32 {
+    return @min(LIST_W, @max(1, screen.x - 2 * MARK_GAP));
+}
+
 pub fn rowBox(screen: mathx.P, win: Window, i: usize) rl.Rectangle {
     const top = @divTrunc(screen.y, 2) - @divTrunc(@as(i32, @intCast(win.len)) * ROW_STEP, 2);
-    const width = @min(620, @max(1, screen.x - 2 * MARK_GAP));
+    const width = listWidth(screen);
     return raster.rect(@divTrunc(screen.x - width, 2), top + ROWS_DY + @as(i32, @intCast(i - win.from)) * ROW_STEP - ROW_INSET, width, ROW_STEP);
 }
 
@@ -383,10 +390,13 @@ pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
     return if (on) label ++ ": On" else label ++ ": Off";
 }
 
+fn fitScreen(face: font.Face, buf: *[NOTE_MAX + 1]u8, screen: mathx.P, s: [:0]const u8, size: i32) [:0]const u8 {
+    return face.fit(buf, s, size, screen.x - 2 * MARK_GAP, false);
+}
+
 pub fn mid(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
     var buf: [NOTE_MAX + 1]u8 = undefined;
-    const t = face.fit(&buf, s, size, screen.x - 2 * MARK_GAP, false);
-    face.textMid(t, @divTrunc(screen.x, 2), y, size, col);
+    face.textMid(fitScreen(face, &buf, screen, s, size), @divTrunc(screen.x, 2), y, size, col);
 }
 
 const RULE_REACH: i32 = 56;
@@ -399,7 +409,7 @@ const RULE_DROP: f32 = 1.02;
 /// Engraved and centred, over a rule in `accent`.
 pub fn heading(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: i32, col: rl.Color, accent: rl.Color) void {
     var buf: [NOTE_MAX + 1]u8 = undefined;
-    const t = face.fit(&buf, s, size, screen.x - 2 * MARK_GAP, false);
+    const t = fitScreen(face, &buf, screen, s, size);
     const cx = @divTrunc(screen.x, 2);
     face.engravedMid(t, cx, y, size, col);
     const half = @min(@divTrunc(face.width(t, size), 2) + RULE_REACH, @divTrunc(screen.x, 2) - MARK_GAP);

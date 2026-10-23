@@ -123,6 +123,7 @@ test {
     _ = @import("ui/trees.zig");
     _ = @import("ui/journal.zig");
     _ = @import("ui/naming.zig");
+    _ = @import("ui/stage.zig");
     _ = @import("game.zig");
     _ = @import("game/shots.zig");
     _ = @import("game/scene.zig");
@@ -133,6 +134,12 @@ test {
     _ = @import("game/glide.zig");
     _ = @import("game/binds.zig");
     _ = @import("game/skills.zig");
+    _ = @import("game/presentation.zig");
+    _ = @import("game/sim.zig");
+    _ = @import("play/chronicle.zig");
+    _ = @import("play/obituary.zig");
+    _ = @import("play/ossuary.zig");
+    _ = @import("game/epitaph.zig");
     _ = @import("core/window.zig");
     _ = @import("game/tests/skills.zig");
     _ = @import("game/tests/foes.zig");

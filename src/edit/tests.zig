@@ -636,7 +636,7 @@ test "Open lists the edited map's folder and Esc goes up a folder before it clos
     const ed = try testBespoke();
     defer ed.destroy();
     ed.setPath(".\\" ++ comptime atlas.mapPath("qud\\qud_strata"));
-    try std.testing.expectEqualStrings(atlas.DIR ++ "/qud/qud_strata" ++ atlas.EXT, ed.path());
+    try std.testing.expectEqualStrings(atlas.mapPath("qud/qud_strata"), ed.path());
     ed.askOpen();
     try std.testing.expectEqualStrings("qud/", ed.listing.here());
     try std.testing.expectEqualStrings(ed.path(), ed.listing.at(ed.listed_at));
@@ -648,7 +648,7 @@ test "Open lists the edited map's folder and Esc goes up a folder before it clos
     try std.testing.expectEqual(editor.Modal.none, ed.modal);
     ed.field.put("Bog");
     var buf: [listing.PATH_MAX]u8 = undefined;
-    try std.testing.expectEqualStrings(atlas.DIR ++ "/qud/bog" ++ atlas.EXT, ed.namedPath(&buf).?);
+    try std.testing.expectEqualStrings(atlas.mapPath("qud/bog"), ed.namedPath(&buf).?);
 }
 
 test "mouse editor cell actions choose play starts and linked doors without painting" {

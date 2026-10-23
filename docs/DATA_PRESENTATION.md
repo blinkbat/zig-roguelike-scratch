@@ -76,10 +76,10 @@ Every item kind carries one dim flavor line after its gameplay properties (`item
 at most `items.FLAVOR_MAX` characters so it fits the compared card). Skills put their `FLAVOR`
 after current/next-rank details. Flavor never states a mechanic or interrupts the factual reading order.
 
-Names and headings use Balthazar; compact text at 16px and below uses Source Sans 3.
+Names and headings use Balthazar; compact text at 18px and below uses Source Sans 3.
 Item cards share a left edge, group hand/scaling metadata on one small line, keep requirement
-availability inline, and use 20px property rows. Metadata and flavor use 15px text; primary
-effects stay 16px. Comparison changes follow the actual card height. The character sheet groups
+availability inline, and use 22px property rows. Metadata and flavor use 17px text; primary
+effects stay 18px. Comparison changes follow the actual card height. The character sheet groups
 critical chances, recovery and point pools; only active elemental bonuses appear. The binding
 picker has its own labeled strip, clear of both skill-set labels, and left-aligned details.
 
@@ -174,6 +174,6 @@ The input audit found four confirmations to equip, a forced return to play after
 
 Character opens directly through its control glyph; the game menu has its own control. Equip, unequip, drop, pickup and point spending have one explicit action. Shoulder glyphs change pages without moving focus through a tab row. Back closes Character. Binding starts from Skills, with the selected learned skill already chosen. A first bump or Interact opens a closed chest for one turn, revealing its contents and ground gold without a modal. Stepping onto a bag or stocked open chest opens its loot modal for the movement turn; Interact browses a sole bag or open chest for free. Multiple containers and doors use a choice list, and a sole door still lists. Loot shows only the selected cell, with Take item and Take all. Each successful pickup action costs one turn; Take all fills available inventory space and leaves excess items. Gold collects only on arrival at its ground cell, never from opening loot. An empty loot modal closes.
 
-Character and binding panels stay centered and grow at half the rate needed to fill the window, capped at 1.25x. Smaller windows still fit within a 16px margin. At 1600x900 the 1100x640 panel is 1296x754, leaving space around it; 16px detail text and 20px body text become about 19px and 24px. Menu titles, rows and spacing are restrained too. Hit regions and passive clipping use the same transform. Scaled panels use mipmapped type; native-size panels retain the crisp native atlases.
+Character and binding panels stay centered and grow at half the rate needed to fill the window, capped at 1.25x. Smaller windows still fit within a 16px margin. At 1600x900 the 1100x640 panel is 1296x754, leaving space around it; 18px detail text and 20px body text become about 21px and 24px. Menu titles, rows and spacing are restrained too. Hit regions and passive clipping use the same transform. Scaled panels use mipmapped type; native-size panels retain the crisp native atlases.
 
 Blizzard explicitly discusses larger type, UI scaling, reducing repeated clicks, bindable interactions and alternatives to holds in its [D2R accessibility article](https://news.blizzard.com/en-us/article/23700733/how-were-making-diablo-ii-resurrectedtm-more-accessible-to-everyone). The [original D2 manual](https://download.blizzard.com/pub/misc/Diablo%20II%20Manual.pdf) describes direct manipulation of equipment. These support the direction; the exact shortcuts above are this project's choices. GGG's [0.2.1 plans](https://www.pathofexile.com/forum/view-thread/3783548/filter-account-type/staff) describe passive search and navigation improvements; they support keeping navigation cheap, without establishing today's controller bindings. Historical player reports in CONTROLLER.md are not treated as an official current map.

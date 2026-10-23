@@ -28,6 +28,8 @@ const OUTLINE_INSET: i32 = game.authored(1);
 const BODY_BAR_INSET: i32 = game.authored(6);
 const BODY_BAR_H: i32 = game.authored(4);
 const BODY_BAR_LIFT: i32 = game.authored(2);
+const RESIST_BAR_H: i32 = 2;
+const RESIST_BAR_GAP: i32 = 2;
 /// Gold beside an item bag in its cell.
 const GOLD_DX: i32 = game.authored(-24);
 const LOOT_DY: i32 = game.authored(12);
@@ -113,8 +115,8 @@ fn drawShining(g: *const game.Game, t: rl.Texture2D, c: Cam, p: P, dx: i32) void
 
 /// Only what the hero sees shines; remembered loot stays still.
 fn shineOver(g: *const game.Game, t: rl.Texture2D, rect: rl.Rectangle, p: P, col: rl.Color) void {
-    if (!g.lv.isLit(p)) return;
-    const sweep = look.shineSweep(g.fx.seconds.at(), p) orelse return;
+    if (!g.sim.lv.isLit(p)) return;
+    const sweep = look.shineSweep(g.pic.fx.seconds.at(), p) orelse return;
     g.sprites.drawShine(t, rect, sweep, col);
 }
 
@@ -156,12 +158,12 @@ fn fillCell(c: Cam, p: P, col: rl.Color) void {
 /// Barrels stay remembered until the hero's visible breaking blow lands, or until it sees them gone.
 pub fn barrelShownAt(g: *game.Game, p: P) bool {
     if (!game.character.terrainSeen(g, p)) return false;
-    if (g.lv.isLit(p) or !g.lv.isSeen(p)) return barrelPresent(g, p);
-    return g.lv.barrelSeen(p);
+    if (g.sim.lv.isLit(p) or !g.sim.lv.isSeen(p)) return barrelPresent(g, p);
+    return g.sim.lv.barrelSeen(p);
 }
 
 pub fn barrelPresent(g: *game.Game, p: P) bool {
-    return g.lv.hasBarrel(p) or g.fx.breaking(p);
+    return g.sim.lv.hasBarrel(p) or g.pic.fx.breaking(p);
 }
 
 fn shownAt(g: *game.Game, stood: *const Stood, p: P) bool {
@@ -170,7 +172,7 @@ fn shownAt(g: *game.Game, stood: *const Stood, p: P) bool {
 
 pub fn stoodNow(g: *game.Game) Stood {
     var stood = Stood.initEmpty();
-    for (0..g.pool.n) |i| stand(&stood, game.drawnCell(g, i) orelse continue);
+    for (0..g.sim.pool.n) |i| stand(&stood, g.pic.drawnCell(&g.sim, i) orelse continue);
     return stood;
 }
 
@@ -255,9 +257,9 @@ fn drawGroundPass(g: *game.Game, c: Cam, beds: *const dual.Beds, stood: *const S
     var cells = grid.Cells.of(beds.lo, beds.hi);
     while (cells.next()) |p| {
         if (!game.character.terrainSeen(g, p)) continue;
-        const here = g.lv.at(p);
+        const here = g.sim.lv.at(p);
         if (look.glyphGround(here, &g.sprites)) inkCell(g, c, p, here, stood);
-        if (g.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
+        if (g.sim.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
     }
 }
 
@@ -265,25 +267,25 @@ const Bags = std.StaticBitSet(grid.CELLS);
 
 pub fn bagCells(g: *const game.Game) Bags {
     var bags = Bags.initEmpty();
-    for (g.ground.drops[0..g.ground.n]) |drop| {
-        const remembered = g.lv.at(drop.at) == .chest_open and game.character.dropLanded(g, drop);
+    for (g.sim.ground.drops[0..g.sim.ground.n]) |drop| {
+        const remembered = g.sim.lv.at(drop.at) == .chest_open and game.character.dropLanded(g, drop);
         if (remembered or game.character.dropShown(g, drop)) bags.set(grid.Level.idx(drop.at));
     }
     return bags;
 }
 
 pub fn pileShown(g: *game.Game, pile: items.Coins) ?items.Coins {
-    if (!g.lv.isLit(pile.at) or barrelPresent(g, pile.at)) return null;
+    if (!g.sim.lv.isLit(pile.at) or barrelPresent(g, pile.at)) return null;
     var shown = pile;
-    for (g.pool.slice(), 0..) |a, i| {
-        if (!a.alive and a.at.eq(pile.at) and !g.pictured[i].down()) shown.amount -= g.dropped_gold[i];
+    for (g.sim.pool.slice(), 0..) |a, i| {
+        if (!a.alive and a.at.eq(pile.at) and !g.pic.pictured[i].down()) shown.amount -= g.pic.dropped_gold[i];
     }
     return if (shown.amount > 0) shown else null;
 }
 
 fn tileTexture(g: *const game.Game, p: P, bags: *const Bags) ?rl.Texture2D {
-    if (g.lv.at(p) == .chest_open and bagged(bags, p)) return g.sprites.chest_item_bag;
-    return g.sprites.tileAt(&g.lv, p);
+    if (g.sim.lv.at(p) == .chest_open and bagged(bags, p)) return g.sprites.chest_item_bag;
+    return g.sprites.tileAt(&g.sim.lv, p);
 }
 
 /// At full light, what stands on the seen cells from `lo` up to `hi`, over the shadows cast on the ground.
@@ -292,7 +294,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const Stood) void 
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
         if (!game.character.terrainSeen(g, p)) continue;
-        const here = g.lv.at(p);
+        const here = g.sim.lv.at(p);
         defer if (looseBag(here, &bags, p)) {
             if (g.sprites.item_bag) |t| {
                 drawShining(g, t, c, p, 0);
@@ -341,27 +343,27 @@ fn drawShadows(g: *game.Game, c: Cam, cast: grid.Box) void {
     const bags = bagCells(g);
     var props = cast.cells();
     while (props.next()) |p| {
-        const kind = g.lv.at(p);
+        const kind = g.sim.lv.at(p);
         if (looseBag(kind, &bags, p)) propShadow(g, c, p, g.sprites.item_bag);
         if (barrelPresent(g, p)) propShadow(g, c, p, g.sprites.barrel);
         if (!look.stands(kind)) continue;
-        const forest = look.forestAt(&g.lv, p);
+        const forest = look.forestAt(&g.sim.lv, p);
         const t = tileTexture(g, p, &bags) orelse continue;
         const pr = Prop.at(g, c, p, true);
         const rect = spriteRect(t, pr.s.x, pr.s.y);
         if (forest) {
-            g.light.drawForestShadows(t, rect, pr.mid, &pr.shine, g.lv.tileShape(p) orelse .{});
+            g.light.drawForestShadows(t, rect, pr.mid, &pr.shine, g.sim.lv.tileShape(p) orelse .{});
         } else if (look.canopied(kind)) {
             g.light.drawCanopy(t, rect, pr.mid, &pr.shine);
         } else g.light.drawShadows(t, rect, false, pr.mid, &pr.shine);
     }
-    for (0..g.pool.n) |i| {
-        const at = game.casterAt(g, i, cast) orelse continue;
-        const t = g.sprites.body(g.pictured[i].kind) orelse continue;
+    for (0..g.sim.pool.n) |i| {
+        const at = g.pic.casterAt(&g.sim, i, cast) orelse continue;
+        const t = g.sprites.body(g.pic.pictured[i].kind) orelse continue;
         const s = c.px(at);
         const mid = game.middle(at);
-        const shine = g.light.onCaster(mid, game.isHero(g, i));
-        g.light.drawShadows(t, spriteRect(t, s.x, s.y), g.facing[i] == .left, mid, &shine);
+        const shine = g.light.onCaster(mid, g.sim.isHero(i));
+        g.light.drawShadows(t, spriteRect(t, s.x, s.y), g.pic.facing[i] == .left, mid, &shine);
     }
 }
 
@@ -426,9 +428,9 @@ fn mirrorFade(g: *const game.Game, foot: f32, top: f32, bottom: f32) [2]f32 {
 fn drawBody(g: *game.Game, b: *const Shown, mirrored: bool) void {
     const tex = g.sprites.body(b.pic.kind);
     const l = look.body(b.pic.kind);
-    const flash = g.fx.flashOf(b.slot);
+    const flash = g.pic.fx.flashOf(b.slot);
     var shine = b.shine;
-    if (game.isHero(g, b.slot)) shine.emission = g.fx.level_up.bodyGlow();
+    if (g.sim.isHero(b.slot)) shine.emission = g.pic.fx.level_up.bodyGlow();
     if (mirrored) drawMirrored(g, tex, l, b.s, b.lifted, b.left, b.mid, &shine, flash) else drawFigure(g, tex, l, b.lifted, b.left, b.mid, &shine, flash);
 }
 
@@ -453,7 +455,7 @@ fn drawMirrorScenery(g: *game.Game, c: Cam, view: grid.Box, memory: bool) void {
     var cells = view.grown(game.CAST_MARGIN).cells();
     while (cells.next()) |p| {
         if (!game.character.terrainSeen(g, p)) continue;
-        const kind = g.lv.at(p);
+        const kind = g.sim.lv.at(p);
         if (look.standsOver(kind)) {
             if (tileTexture(g, p, &bags)) |t| mirrorSprite(g, c, p, t, if (memory) rl.Color.white else sceneryTint(g, p));
         }
@@ -474,7 +476,7 @@ fn drawMirrorTorches(g: *game.Game, c: Cam, flames: []const light.Flame, memory:
         const top = f.at[1] * game.CELL_F - @as(f32, @floatFromInt(c.y + game.authored(fx.TORCH_TOP_PX)));
         const r = Reflection.begin(g, foot, mirrorFade(g, foot, top, foot));
         defer r.end();
-        drawFlame(g, c, f, if (memory or !g.lv.isLit(mathx.cellOf(f.at))) 0 else flameLit(f));
+        drawFlame(g, c, f, if (memory or !g.sim.lv.isLit(mathx.cellOf(f.at))) 0 else flameLit(f));
     }
 }
 
@@ -485,7 +487,7 @@ fn flameLit(f: light.Flame) f32 {
 fn drawFlame(g: *game.Game, c: Cam, f: light.Flame, lit: f32) void {
     const x = mathx.roundTiesUp(f.at[0] * game.CELL_F) - c.x;
     const y = mathx.roundTiesUp(f.at[1] * game.CELL_F) - c.y;
-    g.fx.drawTorch(@floatFromInt(x), @floatFromInt(y), game.CELL_F, f.at[0] * FLAME_PHASE[0] + f.at[1] * FLAME_PHASE[1], lit, f.memory);
+    g.pic.fx.drawTorch(@floatFromInt(x), @floatFromInt(y), game.CELL_F, f.at[0] * FLAME_PHASE[0] + f.at[1] * FLAME_PHASE[1], lit, f.memory);
 }
 
 pub fn drawMirrors(g: *game.Game, c: Cam, view: grid.Box, bodies: []const Shown, flames: []const light.Flame) ?look.Mirrors {
@@ -509,50 +511,50 @@ pub fn drawMap(g: *game.Game) void {
     const view = viewBox(g, c);
     const lo = view.lo;
     const hi = view.hi;
-    const aim_from: ?P = if (g.mode != .aim) null else if (g.heroActor()) |a| a.at else null;
+    const aim_from: ?P = if (g.mode != .aim) null else if (g.sim.heroActor()) |a| a.at else null;
 
     var shown: [actor.MAX]Shown = undefined;
     const stood = stoodNow(g);
     var n: usize = 0;
-    for (0..g.pool.n) |i| {
-        const at = game.drawnAt(g, i) orelse continue;
+    for (0..g.sim.pool.n) |i| {
+        const at = g.pic.drawnAt(&g.sim, i) orelse continue;
         const mid = game.middle(at);
         shown[n] = .{
-            .pic = g.pictured[i],
+            .pic = g.pic.pictured[i],
             .slot = i,
             .s = c.px(at),
-            .lifted = c.px(at).sub(.{ .x = 0, .y = g.glide[i].lift() }),
+            .lifted = c.px(at).sub(.{ .x = 0, .y = g.pic.glide[i].lift() }),
             .mid = mid,
-            .left = g.facing[i] == .left,
-            .shine = g.light.onBody(mid, game.isHero(g, i)),
+            .left = g.pic.facing[i] == .left,
+            .shine = g.light.onBody(mid, g.sim.isHero(i)),
         };
         n += 1;
     }
     const bodies = shown[0..n];
 
-    g.light.bake(&g.lv, lo, hi);
+    g.light.bake(&g.sim.lv, lo, hi);
     var flame_buf: [grid.MAX_TORCHES]light.Flame = undefined;
-    const flames = g.light.flames(&g.lv, &flame_buf);
-    g.cinema.prepare(&g.lv, g.light, view, flames);
+    const flames = g.light.flames(&g.sim.lv, &flame_buf);
+    g.cinema.prepare(&g.sim.lv, g.light, view, flames);
     const outer = g.framebuffer;
     const blooming = g.cinema.beginScene(g.screen, outer);
     if (blooming) g.framebuffer = g.cinema.scene.?.id;
     var beds: dual.Beds = undefined;
-    beds.fill(&g.lv, lo, hi, !g.light.reveal_map);
+    beds.fill(&g.sim.lv, lo, hi, !g.light.reveal_map);
     const mirror = if (g.debug.visuals.water_reflections and beds.shown.intersectWith(look.REFLECTIVE).count() > 0) drawMirrors(g, c, view, bodies, flames) else null;
     drawGroundPass(g, c, &beds, &stood, mirror);
     const bags = bagCells(g);
     var piles = Piles{ .g = g };
     while (piles.next()) |pile| drawGold(g, c, pile, bagged(&bags, pile.at));
     _ = shadowPass(g, c, view, g.framebuffer);
-    g.cloud.draw(&g.lv, view, -c.x, -c.y, game.CELL, g.screen);
+    g.cloud.draw(&g.sim.lv, view, -c.x, -c.y, game.CELL, g.screen);
     drawSolidPass(g, c, lo, hi, &stood);
     const o = c.origin();
-    g.fx.draw(o[0], o[1], game.CELL_F);
+    g.pic.fx.draw(o[0], o[1], game.CELL_F);
     g.light.drawMap(-c.x, -c.y, game.CELL);
     g.cinema.drawAir(g.light, o, game.CELL_F, g.screen);
-    const level_up_at: ?[2]f32 = if (game.heroSlot(g)) |i| (if (game.drawnAt(g, i)) |v| game.middle(v) else null) else null;
-    if (level_up_at) |at| g.fx.level_up.drawBeam(at, o[0], o[1], game.CELL_F);
+    const level_up_at: ?[2]f32 = if (g.sim.heroSlot()) |i| (if (g.pic.drawnAt(&g.sim, i)) |v| game.middle(v) else null) else null;
+    if (level_up_at) |at| g.pic.fx.level_up.drawBeam(at, o[0], o[1], game.CELL_F);
 
     if (aim_from) |from| {
         var cells = grid.Cells.of(lo, hi);
@@ -560,11 +562,11 @@ pub fn drawMap(g: *game.Game) void {
             if (skills.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
         }
         if (g.aim_act.reticle() == .bow and skills.aimable(g, from, g.mark)) {
-            const f = bow.fly(&g.lv, from, g.mark);
+            const f = bow.fly(&g.sim.lv, from, g.mark);
             for (f.path[0..f.len]) |p| fillCell(c, p, look.AIM_PATH);
             switch (g.aim_act) {
                 inline else => |a| if (comptime a.bursts()) if (f.impact()) |at| {
-                    const area = skillbar.Act.elemental(a).burst(&g.lv, from, at);
+                    const area = skillbar.Act.elemental(a).burst(&g.sim.lv, from, at);
                     for (area.slice()) |p| {
                         if (game.character.terrainSeen(g, p)) fillCell(c, p, look.aimArea(a));
                     }
@@ -573,7 +575,7 @@ pub fn drawMap(g: *game.Game) void {
         }
         switch (g.aim_act) {
             inline else => |a| if (comptime a.sweeps()) {
-                const arc = skillbar.Act.skill(a).arc(&g.lv, from, g.mark);
+                const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, g.mark);
                 for (arc.slice()) |p| fillCell(c, p, look.AIM_PATH);
             },
         }
@@ -592,30 +594,25 @@ pub fn drawMap(g: *game.Game) void {
         for (std.enums.values(fx.Status)) |s| {
             if (b.pic.status.get(s) == 0) continue;
             switch (s) {
-                .bleeding => g.fx.drawBleeding(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
-                .burning => g.fx.drawBurning(x, y, game.CELL_F, b.slot, b.shine.sight),
-                .chilled => g.fx.drawChilled(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
-                .pinned => g.fx.drawPinned(x, y, game.CELL_F, b.shine.tint(s.ink())),
-                .warded => g.fx.drawWarded(x, y, game.CELL_F, b.shine.tint(s.ink())),
+                .bleeding => g.pic.fx.drawBleeding(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
+                .burning => g.pic.fx.drawBurning(x, y, game.CELL_F, b.slot, b.shine.sight),
+                .chilled => g.pic.fx.drawChilled(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
+                .pinned => g.pic.fx.drawPinned(x, y, game.CELL_F, b.shine.tint(s.ink())),
+                .warded => g.pic.fx.drawWarded(x, y, game.CELL_F, b.shine.tint(s.ink())),
                 .resistant => {},
             }
         }
     }
 
     drawTorches(g, c, flames);
-    g.fx.drawGlow(&g.lv, &g.light.sight, o[0], o[1], game.CELL_F);
-    if (level_up_at) |at| g.fx.level_up.drawSparks(at, o[0], o[1], game.CELL_F);
+    g.pic.fx.drawGlow(&g.sim.lv, &g.light.sight, o[0], o[1], game.CELL_F);
+    if (level_up_at) |at| g.pic.fx.level_up.drawSparks(at, o[0], o[1], game.CELL_F);
     if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), &g.light.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
 
-    if (g.shot) |s| {
-        const at = s.position(s.t);
-        if (g.lv.isLit(mathx.cellOf(at))) fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], game.CELL_F);
-    }
-    for (g.foe_shots) |pending| {
+    if (g.pic.shot) |s| drawShot(g, s, o);
+    for (g.pic.foe_shots) |pending| {
         const s = pending orelse continue;
-        if (s.t < 0) continue;
-        const at = s.position(s.t);
-        if (g.lv.isLit(mathx.cellOf(at))) fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], game.CELL_F);
+        if (s.t >= 0) drawShot(g, s, o);
     }
     if (blooming) {
         g.cinema.endScene(outer, o, game.CELL_F, g.light);
@@ -627,23 +624,28 @@ pub fn drawMap(g: *game.Game) void {
         const y_bar = b.s.y + game.CELL - BODY_BAR_H - BODY_BAR_LIFT;
         bar(b.s.x + BODY_BAR_INSET, y_bar, game.CELL - BODY_BAR_INSET * 2, BODY_BAR_H, b.pic.hp, b.pic.max, look.BG, look.LIFE);
         const resistance = b.pic.resilience.peak().percent;
-        if (resistance > 0) bar(b.s.x + BODY_BAR_INSET, y_bar + BODY_BAR_H + 2, game.CELL - BODY_BAR_INSET * 2, 2, resistance, 100, look.BG, look.UI_GOLD);
+        if (resistance > 0) bar(b.s.x + BODY_BAR_INSET, y_bar + BODY_BAR_H + RESIST_BAR_GAP, game.CELL - BODY_BAR_INSET * 2, RESIST_BAR_H, resistance, mathx.PERCENT, look.BG, look.UI_GOLD);
     }
 
     if (aim_from) |from| outline(c, g.mark, if (skills.aimable(g, from, g.mark)) look.RETICLE else look.RETICLE_BLOCKED);
     if (game.playShown(g) and g.st.lean) drawLean(g, c, &stood);
 
     for (bodies) |*b| {
-        g.fx.drawSpeech(&g.face, b.slot, b.lifted.x, b.lifted.y, game.CELL_F, b.shine.sight);
+        g.pic.fx.drawSpeech(&g.face, b.slot, b.lifted.x, b.lifted.y, game.CELL_F, b.shine.sight);
     }
-    if (level_up_at) |at| g.fx.level_up.drawText(at, &g.face, o[0], o[1], game.CELL_F);
+    if (level_up_at) |at| g.pic.fx.level_up.drawText(at, &g.face, o[0], o[1], game.CELL_F);
+}
+
+fn drawShot(g: *const game.Game, s: game.presentation.Shot, o: [2]f32) void {
+    const at = s.position(s.t);
+    if (g.sim.lv.isLit(mathx.cellOf(at))) fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], game.CELL_F);
 }
 
 /// The pile the hero took this turn, still drawn until the hero is drawn on it.
 fn takenShown(g: *game.Game) ?items.Coins {
-    const pile = g.gold_taken orelse return null;
-    const hero = game.heroSlot(g).?;
-    return if (g.glide[hero].left() > 0 and g.lv.isLit(pile.at)) pile else null;
+    const pile = g.pic.gold_taken orelse return null;
+    const hero = g.sim.heroSlot().?;
+    return if (g.pic.glide[hero].left() > 0 and g.sim.lv.isLit(pile.at)) pile else null;
 }
 
 const Piles = struct {
@@ -652,8 +654,8 @@ const Piles = struct {
     taken: bool = false,
 
     fn next(self: *Piles) ?items.Coins {
-        while (self.i < self.g.ground.coin_n) {
-            const pile = self.g.ground.coins[self.i];
+        while (self.i < self.g.sim.ground.coin_n) {
+            const pile = self.g.sim.ground.coins[self.i];
             self.i += 1;
             if (pileShown(self.g, pile)) |drawn| return drawn;
         }
@@ -676,24 +678,24 @@ fn coinGlow(pile: items.Coins) light.Emission {
 pub fn effectLights(g: *game.Game) void {
     defer {
         var piles = Piles{ .g = g };
-        while (piles.next()) |pile| g.light.emit(&g.lv, coinGlow(pile));
+        while (piles.next()) |pile| g.light.emit(&g.sim.lv, coinGlow(pile));
     }
-    g.fx.illuminate(&g.lv, g.light);
-    if (game.carrierAt(g)) |at| {
-        if (g.fx.level_up.emission(at)) |source| g.light.emit(&g.lv, source);
+    g.pic.fx.illuminate(&g.sim.lv, g.light);
+    if (g.pic.carrierAt(&g.sim)) |at| {
+        if (g.pic.fx.level_up.emission(at)) |source| g.light.emit(&g.sim.lv, source);
     }
-    if (g.shot) |s| {
-        if (fx.missileLight(s.position(s.t), s.act)) |source| g.light.emit(&g.lv, source);
+    if (g.pic.shot) |s| {
+        if (fx.missileLight(s.position(s.t), s.act)) |source| g.light.emit(&g.sim.lv, source);
     }
-    for (0..g.pool.n) |i| {
-        const at = game.drawnAt(g, i) orelse continue;
-        const pic = g.pictured[i];
+    for (0..g.sim.pool.n) |i| {
+        const at = g.pic.drawnAt(&g.sim, i) orelse continue;
+        const pic = g.pic.pictured[i];
         if (pic.down()) continue;
-        const flicker = g.fx.statusFlicker(@floatFromInt(i));
+        const flicker = g.pic.fx.statusFlicker(@floatFromInt(i));
         const source = for (std.enums.values(fx.Status)) |s| {
             if (pic.status.get(s) > 0) if (s.emission(game.middle(at), flicker)) |e| break e;
         } else continue;
-        g.light.emit(&g.lv, source);
+        g.light.emit(&g.sim.lv, source);
     }
 }
 
@@ -710,7 +712,7 @@ pub fn leanShown(g: *game.Game, stood: *const Stood, from: P, d: mathx.Dir) game
 }
 
 fn drawLean(g: *game.Game, c: Cam, stood: *const Stood) void {
-    const at = game.cellUnder(game.heroNow(g) orelse return);
+    const at = game.cellUnder(g.pic.heroNow(&g.sim) orelse return);
     for (input.DPAD) |button| {
         const d = input.leanOf(button);
         const p = at.add(d.delta());
@@ -720,7 +722,7 @@ fn drawLean(g: *game.Game, c: Cam, stood: *const Stood) void {
             .blocked => look.LEAN_BLOCKED,
         };
         outline(c, p, col);
-        if (g.lv.walkable(p) and !shownAt(g, stood, p)) {
+        if (g.sim.lv.walkable(p) and !shownAt(g, stood, p)) {
             const m = c.mid(p);
             line_icons.drawDirection(button, m.x, m.y, LEAN_GLYPH, col);
             continue;
@@ -763,17 +765,17 @@ pub fn drawMinimap(g: *game.Game) void {
     look.hudPanelIn(&g.sprites, miniFrame(g.screen.x), look.MINI_BG, look.LIT);
     if (g.mini.tex) |t| {
         if (g.mini.stale) {
-            for (&g.mini.px, &g.lv.tile, &g.lv.seen, &g.lv.lit) |*c, tile, seen, lit| c.* = if (seen or g.light.reveal_map) look.mini(tile, lit) else rl.Color.blank;
+            for (&g.mini.px, &g.sim.lv.tile, &g.sim.lv.seen, &g.sim.lv.lit) |*c, tile, seen, lit| c.* = if (seen or g.light.reveal_map) look.mini(tile, lit) else rl.Color.blank;
             rl.updateTexture(t, &g.mini.px);
             g.mini.stale = false;
         }
         raster.stretch(t, map, look.LIT);
     }
-    for (g.pool.slice(), 0..) |a, i| {
+    for (g.sim.pool.slice(), 0..) |a, i| {
         if (!a.foe()) continue;
-        miniDot(o, game.drawnCell(g, i) orelse continue, 0, look.MINI_FOE);
+        miniDot(o, g.pic.drawnCell(&g.sim, i) orelse continue, 0, look.MINI_FOE);
     }
-    if (game.heroNow(g)) |at| miniDot(o, game.cellUnder(at), MINI_HERO_GROW, look.MINI_HERO);
+    if (g.pic.heroNow(&g.sim)) |at| miniDot(o, game.cellUnder(at), MINI_HERO_GROW, look.MINI_HERO);
     const v = miniView(Cam.of(g), g.screen);
     rl.drawRectangleLines(o.x + v.lo.x, o.y + v.lo.y, v.hi.x - v.lo.x, v.hi.y - v.lo.y, look.MINI_VIEW);
 }
@@ -795,7 +797,7 @@ pub fn dayLine(screen_w: i32) struct { x0: i32, x1: i32, y: i32 } {
 
 pub fn drawDayNight(g: *game.Game) void {
     const l = dayLine(g.screen.x);
-    const now = day.arc(g.hour_shown);
+    const now = day.arc(g.pic.hour_shown);
     const at = rl.Vector2{
         .x = @round(mathx.lerpF(@floatFromInt(l.x0), @floatFromInt(l.x1), now.u)),
         .y = @floatFromInt(l.y),

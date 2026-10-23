@@ -19,8 +19,9 @@ pub fn afflict(a: anytype, _: *mathx.Rng) void {
 test "a barbed arrow always opens a bleed" {
     var rng = mathx.Rng.init(0xBA4B);
     var a: struct { bleed: bleeding.Bleed = .{} } = .{};
-    for (0..100) |_| try std.testing.expect(procs(&rng, 0));
+    const tries = 100;
+    for (0..tries) |_| try std.testing.expect(procs(&rng, 0));
     afflict(&a, &rng);
     try std.testing.expectEqual(bleeding.TURNS, a.bleed.turns);
-    std.debug.print("barbed arrow: 100 of 100 procs, a bleed of {d} turns\n", .{bleeding.TURNS});
+    std.debug.print("barbed arrow: {d} of {d} procs, a bleed of {d} turns\n", .{ tries, tries, bleeding.TURNS });
 }

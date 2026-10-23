@@ -11,6 +11,7 @@ pub const PER_KILL: u8 = 5;
 /// Recovery ticks: the first on drinking, then one per spent turn.
 pub const TURNS: u8 = 3;
 const LIFE_PCT: i32 = 50;
+const TENTHS: i32 = 10;
 pub const MANA_GAIN: i32 = 10;
 const CHARGE_NOTE = std.fmt.comptimePrint("Uses {d} of {d} charges; kills refill {d}.", .{ USE, CHARGES, PER_KILL });
 
@@ -24,8 +25,8 @@ pub const Life = struct {
     pub fn describe(w: anytype, perks: passives.Perks) void {
         const tenths = lifeTenths(perks.life_flask);
         var part: [3]u8 = undefined;
-        const fraction = if (@mod(tenths, 10) == 0) "" else std.fmt.bufPrint(&part, ".{d}", .{@mod(tenths, 10)}) catch unreachable;
-        w.print(TEXT, .{ @divTrunc(tenths, 10), fraction, TURNS - 1, CHARGE_NOTE }) catch {};
+        const fraction = if (@mod(tenths, TENTHS) == 0) "" else std.fmt.bufPrint(&part, ".{d}", .{@mod(tenths, TENTHS)}) catch unreachable;
+        w.print(TEXT, .{ @divTrunc(tenths, TENTHS), fraction, TURNS - 1, CHARGE_NOTE }) catch {};
     }
 };
 
@@ -78,7 +79,7 @@ fn lifeShare(bonus: i32) i32 {
 }
 
 fn lifeTenths(bonus: i32) i32 {
-    return @divTrunc(lifeShare(bonus), 10);
+    return @divTrunc(lifeShare(bonus), TENTHS);
 }
 
 pub fn lifeOf(max: i32, bonus: i32) i32 {

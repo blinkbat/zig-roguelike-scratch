@@ -7,6 +7,7 @@ const listing = @import("../map/listing.zig");
 const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
+const raster = @import("../gfx/raster.zig");
 const dual = @import("../gfx/ground.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
@@ -122,7 +123,7 @@ const VIEW_COLS: usize = 7;
 const VIEW_CELL: i32 = 72;
 const VIEW_PIC: f32 = 48;
 const VIEW_PIC_TOP: f32 = 4;
-const VIEW_BIG: f32 = 192;
+const VIEW_BIG: i32 = 192;
 
 fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const grid_w = @as(i32, VIEW_COLS) * VIEW_CELL;
@@ -146,16 +147,16 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const s = editor.SEEN[ed.seen_at];
     const dx = x + editor.PAD + grid_w + editor.PAD;
     var dy = y;
-    seenPicture(g, s, .{ .x = @floatFromInt(dx), .y = @floatFromInt(dy), .width = VIEW_BIG, .height = VIEW_BIG });
-    rl.drawRectangleLines(dx, dy, @intFromFloat(VIEW_BIG), @intFromFloat(VIEW_BIG), look.EDGE);
-    dy += @as(i32, @intFromFloat(VIEW_BIG)) + editor.PAD;
+    seenPicture(g, s, raster.rect(dx, dy, VIEW_BIG, VIEW_BIG));
+    rl.drawRectangleLines(dx, dy, VIEW_BIG, VIEW_BIG, look.EDGE);
+    dy += VIEW_BIG + editor.PAD;
     editor.textFace(g).draw(seenName(s), dx, dy, HEAD, look.TEXT);
     dy += HEAD + editor.GAP;
     var facts = Facts{};
     seenFacts(s, &facts);
     for (facts.all()) |l| {
         panel.drawFit(g, l, font.SMALL, x + w - editor.PAD - dx, false, dx, dy, look.TEXT);
-        dy += font.SMALL + 4;
+        dy += font.SMALL_LINE;
     }
     backButton(ed, g, f.buttonX(), y + cells_h, "Close");
     if (seenFoe(s) != null) {

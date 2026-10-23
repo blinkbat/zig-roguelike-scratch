@@ -11,7 +11,7 @@ const menu = @import("ui/menu.zig");
 pub const SLOTS: usize = 3;
 pub const NOT_WRITTEN = "The last save did not write ({s})";
 pub const NOT_DELETED = "The dead run's save did not delete ({s})";
-const DIR = "saves";
+const DIR = store.DIR;
 const EXT = ".save";
 const MAGIC = "roguelike-save\n";
 const FILE_CAP: usize = 64 << 20;
@@ -19,13 +19,27 @@ const PATH_FMT = DIR ++ "/slot{d}" ++ EXT;
 const PATH_MAX: usize = std.fmt.count(PATH_FMT, .{SLOTS});
 const GAP_S: f32 = 1;
 
+/// Where in the game a saved field lives, `game` or its field of that name; the file names it by its field name alone.
+const Part = enum { game, sim, pic };
+
+fn Of(comptime p: Part) type {
+    return if (p == .game) game.Game else @FieldType(game.Game, @tagName(p));
+}
+
+fn part(g: *game.Game, comptime p: Part) *Of(p) {
+    return if (p == .game) g else &@field(g, @tagName(p));
+}
+
+const HEAD_PART: Part = .sim;
+const Run = Of(HEAD_PART);
+
 /// Written before the tail, by hand, in this order: the map behind a flag, then each visited node's visit.
 const Header = struct {
-    seed: @FieldType(game.Game, "seed"),
-    map: std.meta.Child(std.meta.Child(@FieldType(game.Game, "map"))),
-    node: @FieldType(game.Game, "node"),
-    visited: @FieldType(game.Game, "visited"),
-    visits: std.meta.Elem(@FieldType(game.Game, "visits")),
+    seed: @FieldType(Run, "seed"),
+    map: std.meta.Child(std.meta.Child(@FieldType(Run, "map"))),
+    node: @FieldType(Run, "node"),
+    visited: @FieldType(Run, "visited"),
+    visits: std.meta.Elem(@FieldType(Run, "visits")),
 };
 const Seed = @FieldType(Header, "seed");
 const Map = @FieldType(Header, "map");
@@ -42,89 +56,135 @@ comptime {
     }
 }
 /// Written after the visited nodes, in this order.
-const TAIL_FIELDS = .{ "lv", "pool", "hero", "rng", "kills", "gold", "log", "bar", "facing", "name", "clock", "mana", "mana_recovery", "flasks", "cooldown", "stepped", "class", "inventory", "growth", "ground", "loot_rng" };
+const TAIL_FIELDS = .{
+    .{ .sim, "lv" },
+    .{ .sim, "pool" },
+    .{ .sim, "hero" },
+    .{ .sim, "rng" },
+    .{ .sim, "kills" },
+    .{ .sim, "gold" },
+    .{ .sim, "log" },
+    .{ .game, "bar" },
+    .{ .pic, "facing" },
+    .{ .sim, "name" },
+    .{ .sim, "clock" },
+    .{ .sim, "mana" },
+    .{ .sim, "mana_recovery" },
+    .{ .sim, "flasks" },
+    .{ .sim, "cooldown" },
+    .{ .sim, "stepped" },
+    .{ .sim, "class" },
+    .{ .sim, "inventory" },
+    .{ .sim, "growth" },
+    .{ .sim, "ground" },
+    .{ .sim, "loot_rng" },
+};
 /// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 const UNSAVED = .{
-    "character",
-    "nearby",
-    "pause_page",
-    "debug",
-    "mode",
-    "died_in",
-    "pause_menu",
-    "back",
-    "exit",
-    "permadeath",
-    "outdoors",
-    "hour_shown",
-    "unkillable",
-    "unsaved",
-    "travel",
-    "st",
-    "binds",
-    "aim_by",
-    "aim_act",
-    "aim_set",
-    "mark",
-    "cam",
-    "screen",
-    "framebuffer",
-    "shot",
-    "foe_shots",
-    "glide",
-    "turning",
-    "order",
-    "order_n",
-    "busy",
-    "pending",
-    "mouse",
-    "lead",
-    "owed",
-    "ran",
-    "pictured",
-    "seq",
-    "split_from",
-    "dropped_gold",
-    "fx",
-    "vignette",
-    "cinema",
-    "mini",
-    "sprites",
-    "face",
-    "light",
-    "cloud",
-    "flowed",
-    "flow",
-    "queue",
-    "graphics_ready",
-    "art_ready",
-    "rain",
-    "flasks_shown",
-    "mana_held",
-    "inspecting",
-    "displaced",
-    "gold_taken",
-    "xp_aim",
-    "xp_shown",
-    "life_fill",
-    "mana_fill",
-    "growth_shown",
-    "gold_shown",
-    "perf",
+    .game = .{
+        "character",
+        "nearby",
+        "pause_page",
+        "debug",
+        "mode",
+        "died_in",
+        "pause_menu",
+        "back",
+        "exit",
+        "permadeath",
+        "hall",
+        "epitaph",
+        "st",
+        "binds",
+        "aim_by",
+        "aim_act",
+        "aim_set",
+        "mark",
+        "cam",
+        "screen",
+        "framebuffer",
+        "pending",
+        "mouse",
+        "vignette",
+        "cinema",
+        "mini",
+        "sprites",
+        "face",
+        "light",
+        "cloud",
+        "graphics_ready",
+        "art_ready",
+        "rain",
+        "inspecting",
+        "perf",
+    },
+    .sim = .{
+        "outdoors",
+        "unkillable",
+        "unsaved",
+        "travel",
+        "chronicle",
+        "displaced",
+        "order",
+        "order_n",
+        "ran",
+        "flowed",
+        "flow",
+        "queue",
+    },
+    .pic = .{
+        "glide",
+        "turning",
+        "pictured",
+        "seq",
+        "split_from",
+        "dropped_gold",
+        "owed",
+        "shot",
+        "foe_shots",
+        "busy",
+        "lead",
+        "fx",
+        "gold_taken",
+        "mana_held",
+        "flasks_shown",
+        "xp_aim",
+        "xp_shown",
+        "life_fill",
+        "mana_fill",
+        "growth_shown",
+        "gold_shown",
+        "hour_shown",
+    },
 };
 
 comptime {
     @setEvalBranchQuota(100_000);
-    const named = HEAD_FIELDS.* ++ TAIL_FIELDS ++ UNSAVED;
-    for (std.meta.fields(game.Game)) |f| {
-        var n: usize = 0;
-        for (named) |name| {
-            if (std.mem.eql(u8, f.name, name)) n += 1;
+    for (std.enums.values(Part)) |p| {
+        const T = Of(p);
+        const unsaved = @field(UNSAVED, @tagName(p));
+        for (std.meta.fields(T)) |f| {
+            var n: usize = 0;
+            if (p == HEAD_PART) for (HEAD_FIELDS) |name| {
+                if (std.mem.eql(u8, f.name, name)) n += 1;
+            };
+            for (TAIL_FIELDS) |t| {
+                if (t[0] == p and std.mem.eql(u8, f.name, t[1])) n += 1;
+            }
+            for (unsaved) |name| {
+                if (std.mem.eql(u8, f.name, name)) n += 1;
+            }
+            if (p == .game) for (std.enums.values(Part)) |q| {
+                if (q != .game and std.mem.eql(u8, f.name, @tagName(q))) n += 1;
+            };
+            if (n != 1) @compileError("save.zig: say whether " ++ @typeName(T) ++ "." ++ f.name ++ " is saved");
         }
-        if (n != 1) @compileError("save.zig: say whether game.Game." ++ f.name ++ " is saved");
+        for (unsaved) |name| {
+            if (!@hasField(T, name)) @compileError("save.zig: " ++ @typeName(T) ++ " has no field " ++ name);
+        }
     }
-    for (named) |name| {
-        if (!@hasField(game.Game, name)) @compileError("save.zig: game.Game has no field " ++ name);
+    for (TAIL_FIELDS) |t| {
+        if (!@hasField(Of(t[0]), t[1])) @compileError("save.zig: " ++ @typeName(Of(t[0])) ++ " has no field " ++ t[1]);
     }
 }
 
@@ -132,8 +192,8 @@ comptime {
 const Tail = blk: {
     var fs: [TAIL_FIELDS.len]std.builtin.Type.StructField = undefined;
     for (TAIL_FIELDS, 0..) |f, i| {
-        const T = @FieldType(game.Game, f);
-        fs[i] = .{ .name = f, .type = T, .default_value_ptr = null, .is_comptime = false, .alignment = @alignOf(T) };
+        const T = @FieldType(Of(f[0]), f[1]);
+        fs[i] = .{ .name = f[1], .type = T, .default_value_ptr = null, .is_comptime = false, .alignment = @alignOf(T) };
     }
     break :blk @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fs, .decls = &.{}, .is_tuple = false } });
 };
@@ -228,18 +288,15 @@ comptime {
 }
 const Print = @TypeOf(FINGERPRINT);
 const HEAD = MAGIC.len + @sizeOf(Print);
-/// A trailing payload hash rejects damaged or truncated files before loading.
-const SUM = @sizeOf(u64);
 
 pub const Error = error{ NotASave, OtherBuild, Short, Damaged };
 
 fn summaryOf(g: *game.Game) Summary {
-    const i = game.heroSlot(g).?;
-    const h = g.pool.items[i];
-    var s = Summary{ .name = g.name, .hp = h.hp, .max = h.max, .gold = g.gold, .node = null };
-    if (g.map) |a| {
-        s.node = g.node;
-        s.place = a.node[g.node].label;
+    const h = g.sim.heroActor().?;
+    var s = Summary{ .name = g.sim.name, .hp = h.hp, .max = h.max, .gold = g.sim.gold, .node = null };
+    if (g.sim.map) |a| {
+        s.node = g.sim.node;
+        s.place = a.node[g.sim.node].label;
     }
     return s;
 }
@@ -251,47 +308,31 @@ fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
     try w.writeAll(MAGIC);
     try store.put(w, &FINGERPRINT);
     try store.put(w, &summaryOf(g));
-    try store.put(w, &g.seed);
-    const has_map = g.map != null;
+    try store.put(w, &g.sim.seed);
+    const has_map = g.sim.map != null;
     try store.put(w, &has_map);
-    if (g.map) |a| try store.put(w, a);
-    try store.put(w, &g.node);
-    try store.put(w, &g.visited);
-    var it = g.visited.iterator(.{});
-    while (it.next()) |n| try store.put(w, &g.visits[n]);
-    inline for (TAIL_FIELDS) |f| try store.put(w, &@field(g, f));
-    try out.ensureUnusedCapacity(SUM);
+    if (g.sim.map) |a| try store.put(w, a);
+    try store.put(w, &g.sim.node);
+    try store.put(w, &g.sim.visited);
+    var it = g.sim.visited.iterator(.{});
+    while (it.next()) |n| try store.put(w, &g.sim.visits[n]);
+    inline for (TAIL_FIELDS) |f| try store.put(w, &@field(part(g, f[0]), f[1]));
+    try out.ensureUnusedCapacity(store.SUM);
 }
 
 /// Ends a file `write` began in `out` with its sum, in the room `write` kept, so it may run off the frame.
 fn seal(out: *std.ArrayList(u8)) void {
-    const sum = sumOf(out.items[HEAD..]);
+    const sum = store.sum(out.items[HEAD..]);
     out.appendSliceAssumeCapacity(std.mem.asBytes(&sum));
 }
 
-fn sumOf(bytes: []const u8) u64 {
-    return std.hash.Wyhash.hash(0, bytes);
-}
-
-fn header(bytes: *[]const u8) Error!void {
-    if (bytes.len < HEAD or !std.mem.eql(u8, bytes.*[0..MAGIC.len], MAGIC)) return error.NotASave;
-    var b = bytes.*[MAGIC.len..];
-    var print: Print = undefined;
-    _ = store.take(&b, &print);
-    if (print != FINGERPRINT) return error.OtherBuild;
-    bytes.* = b;
-}
-
 fn payload(bytes: []const u8) Error![]const u8 {
-    var b = bytes;
-    try header(&b);
-    if (b.len < SUM) return error.Short;
-    var tail = b[b.len - SUM ..];
-    var sum: u64 = undefined;
-    _ = store.take(&tail, &sum);
-    b = b[0 .. b.len - SUM];
-    if (sum != sumOf(b)) return error.Damaged;
-    return b;
+    return store.open(bytes, MAGIC, FINGERPRINT) catch |e| switch (e) {
+        error.Foreign => error.NotASave,
+        error.OtherBuild => error.OtherBuild,
+        error.Short => error.Short,
+        error.Damaged => error.Damaged,
+    };
 }
 
 fn peek(bytes: []const u8) Error!Summary {
@@ -328,13 +369,13 @@ fn read(bytes: []const u8, g: *game.Game, map: *Map) Error!void {
     const c = try inspect(bytes);
     var b = c.body;
     if (c.has_map) _ = store.take(&b, map);
-    g.map = if (c.has_map) map else null;
-    g.seed = c.seed;
-    _ = store.take(&b, &g.node);
-    _ = store.take(&b, &g.visited);
-    var it = g.visited.iterator(.{});
-    while (it.next()) |n| _ = store.take(&b, &g.visits[n]);
-    inline for (TAIL_FIELDS) |f| _ = store.take(&b, &@field(g, f));
+    g.sim.map = if (c.has_map) map else null;
+    g.sim.seed = c.seed;
+    _ = store.take(&b, &g.sim.node);
+    _ = store.take(&b, &g.sim.visited);
+    var it = g.sim.visited.iterator(.{});
+    while (it.next()) |n| _ = store.take(&b, &g.sim.visits[n]);
+    inline for (TAIL_FIELDS) |f| _ = store.take(&b, &@field(part(g, f[0]), f[1]));
     game.resumeRun(g);
 }
 
@@ -420,23 +461,23 @@ pub const Autosave = struct {
         self.since += dt;
         if (!self.finished.load(.acquire)) return;
         self.wait();
-        if (self.failed != null) g.unsaved = true;
-        if (!g.unsaved or self.since < GAP_S or g.travel != null or !game.quiet(g)) return;
+        if (self.failed != null) g.sim.unsaved = true;
+        if (!g.sim.unsaved or self.since < GAP_S or g.sim.travel != null or !g.pic.quiet()) return;
         self.flush(g);
     }
 
     pub fn flush(self: *Autosave, g: *game.Game) void {
         self.wait();
         if (self.failed) |e| {
-            if (self.reported == null or self.reported.? != e) g.log.say(NOT_WRITTEN ++ ".", .{@errorName(e)});
+            if (self.reported == null or self.reported.? != e) g.sim.log.say(NOT_WRITTEN ++ ".", .{@errorName(e)});
             self.reported = e;
             self.failed = null;
-            g.unsaved = true;
+            g.sim.unsaved = true;
         } else self.reported = null;
-        if (!g.unsaved) return;
+        if (!g.sim.unsaved) return;
         self.bytes.clearRetainingCapacity();
         self.since = 0;
-        g.unsaved = false;
+        g.sim.unsaved = false;
         write(g, &self.bytes) catch |e| {
             self.failed = e;
             return;
@@ -481,7 +522,7 @@ test "an unfinished autosave defers the next snapshot without consuming dirty st
     a.finished.store(false, .release);
     a.since = GAP_S;
     a.step(g, GAP_S);
-    try std.testing.expect(g.unsaved);
+    try std.testing.expect(g.sim.unsaved);
     try std.testing.expectEqual(@as(?anyerror, null), a.failed);
     try std.testing.expectEqual(@as(usize, 0), a.bytes.items.len);
     try std.testing.expectEqual(GAP_S * 2, a.since);
@@ -491,7 +532,7 @@ test "an unfinished autosave defers the next snapshot without consuming dirty st
     a.step(g, 0);
     try std.testing.expectEqual(@as(?anyerror, error.OutOfMemory), a.failed);
     a.step(g, 0);
-    try std.testing.expect(g.unsaved);
+    try std.testing.expect(g.sim.unsaved);
     std.debug.print("autosave deferred {d:.1} s; completion resumes capture and failure rearms it\n", .{deferred});
 }
 
@@ -503,9 +544,9 @@ test "a failed autosave marks an idle run dirty again without another turn" {
     defer a.deinit();
     a.since = 0;
     a.failed = error.AccessDenied;
-    g.unsaved = false;
+    g.sim.unsaved = false;
     a.step(g, 0);
-    try std.testing.expect(g.unsaved);
+    try std.testing.expect(g.sim.unsaved);
     try std.testing.expectEqual(@as(?anyerror, error.AccessDenied), a.failed);
     try std.testing.expectEqual(@as(usize, 0), a.bytes.items.len);
     std.debug.print("failed autosave rearmed with no turn taken; retry remains throttled\n", .{});
@@ -517,11 +558,11 @@ test "a save that keeps failing is said once, not once a retry" {
     game.begin(g, 1);
     var a = Autosave.init(std.testing.failing_allocator, 0);
     defer a.deinit();
-    const said = g.log.n;
+    const said = g.sim.log.n;
     const RETRIES = 6;
     for (0..RETRIES) |_| a.step(g, GAP_S);
-    try std.testing.expectEqual(said + 1, g.log.n);
-    std.debug.print("a save failing {d} retries in a row: {d} log line\n", .{ RETRIES, g.log.n - said });
+    try std.testing.expectEqual(said + 1, g.sim.log.n);
+    std.debug.print("a save failing {d} retries in a row: {d} log line\n", .{ RETRIES, g.sim.log.n - said });
 }
 
 fn testMap() !*Map {
@@ -544,35 +585,35 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
     game.beginMap(g, w);
-    g.name = hero.Name.of("Arwen");
-    try std.testing.expect(g.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .intelligence, .value = 2 }, null } }));
-    try g.inventory.equip(0, .right_ring, g.growth.attributes(g.class));
-    try std.testing.expect(g.inventory.add(.{ .kind = .sword }));
-    _ = g.growth.gain(100);
-    try std.testing.expect(g.growth.learn(g.class, .burning_arrow));
-    try std.testing.expect(g.ground.add(.{ .item = .{ .kind = .boots }, .at = g.heroActor().?.at }));
-    try std.testing.expect(g.ground.gold(g.heroActor().?.at, 12));
-    g.gold = 17;
-    g.mana = 7;
-    g.mana_recovery = 3;
-    g.flasks.getPtr(.life).drink(12);
-    _ = g.flasks.getPtr(.life).tick();
-    g.cooldown.set(.juke, 2);
-    g.heroActor().?.resists.set(.fire, 50);
-    g.heroActor().?.resists.set(.cold, 25);
-    g.heroActor().?.burn = .{ .turns = 2 };
-    g.heroActor().?.resilience.meters.set(.burn, .{ .percent = 50, .turns = 4 });
-    g.heroActor().?.bleed = .{ .turns = 3, .amount = 2 };
-    g.heroActor().?.chill = .{ .turns = 2, .phase = 1 };
-    if (g.pool.n > 1) g.pool.items[1].chill = .{ .turns = 1, .phase = 2 };
-    _ = g.pool.damage(&g.lv, g.hero, 5);
-    g.travel = .{ .node = 1, .door = 0 };
-    g.busy = 0;
+    g.sim.name = hero.Name.of("Arwen");
+    try std.testing.expect(g.sim.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .intelligence, .value = 2 }, null } }));
+    try g.sim.inventory.equip(0, .right_ring, g.sim.growth.attributes(g.sim.class));
+    try std.testing.expect(g.sim.inventory.add(.{ .kind = .sword }));
+    _ = g.sim.growth.gain(100);
+    try std.testing.expect(g.sim.growth.learn(g.sim.class, .burning_arrow));
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .boots }, .at = g.sim.heroActor().?.at }));
+    try std.testing.expect(g.sim.ground.gold(g.sim.heroActor().?.at, 12));
+    g.sim.gold = 17;
+    g.sim.mana = 7;
+    g.sim.mana_recovery = 3;
+    g.sim.flasks.getPtr(.life).drink(12);
+    _ = g.sim.flasks.getPtr(.life).tick();
+    g.sim.cooldown.set(.juke, 2);
+    g.sim.heroActor().?.resists.set(.fire, 50);
+    g.sim.heroActor().?.resists.set(.cold, 25);
+    g.sim.heroActor().?.burn = .{ .turns = 2 };
+    g.sim.heroActor().?.resilience.meters.set(.burn, .{ .percent = 50, .turns = 4 });
+    g.sim.heroActor().?.bleed = .{ .turns = 3, .amount = 2 };
+    g.sim.heroActor().?.chill = .{ .turns = 2, .phase = 1 };
+    if (g.sim.pool.n > 1) g.sim.pool.items[1].chill = .{ .turns = 1, .phase = 2 };
+    _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 5);
+    g.sim.travel = .{ .node = 1, .door = 0 };
+    g.pic.busy = 0;
     game.update(g, 0);
-    g.log.say("A line to keep.", .{});
-    g.stepped = true;
+    g.sim.log.say("A line to keep.", .{});
+    g.sim.stepped = true;
     const forest = grid.Level.idx(.{ .x = 70, .y = 50 });
-    for ([_]*grid.Level{ &g.lv, &g.visits[0].lv }) |lv| {
+    for ([_]*grid.Level{ &g.sim.lv, &g.sim.visits[0].lv }) |lv| {
         var cells = (grid.Box{ .lo = .{ .x = 69, .y = 49 }, .hi = .{ .x = 73, .y = 52 } }).cells();
         while (cells.next()) |p| lv.set(p, .grass);
         lv.set(.{ .x = 72, .y = 49 }, .chest);
@@ -599,45 +640,45 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     buf.items[buf.items.len / 2] +%= 1;
     try std.testing.expectError(error.Damaged, read(buf.items, back, into));
     buf.items[buf.items.len / 2] -%= 1;
-    try std.testing.expectEqual(@as(?*const Map, null), back.map);
+    try std.testing.expectEqual(@as(?*const Map, null), back.sim.map);
     try read(buf.items, back, into);
-    try std.testing.expectEqualStrings("Arwen", back.name.text());
-    try std.testing.expectEqual(g.growth, back.growth);
-    try std.testing.expectEqual(g.inventory.gear, back.inventory.gear);
-    try std.testing.expectEqualSlices(@import("play/items.zig").Item, g.inventory.bag[0..g.inventory.n], back.inventory.bag[0..back.inventory.n]);
-    try std.testing.expectEqual(@as(usize, 1), back.visits[0].ground.n);
-    try std.testing.expectEqual(@as(i32, 12), back.visits[0].ground.coins[0].amount);
-    try std.testing.expectEqual(g.loot_rng, back.loot_rng);
-    try std.testing.expectEqual(@as(usize, 1), back.node);
-    try std.testing.expectEqual(g.heroActor().?.at, back.heroActor().?.at);
-    try std.testing.expectEqual(g.heroActor().?.hp, back.heroActor().?.hp);
-    try std.testing.expectEqual(@as(i32, 7), back.mana);
-    try std.testing.expectEqual(@as(i32, 3), back.mana_recovery);
-    try std.testing.expectEqualDeep(g.flasks, back.flasks);
-    try std.testing.expectEqual(@as(u8, 2), back.cooldown.get(.juke));
-    try std.testing.expect(back.stepped);
-    try std.testing.expectEqual(@as(i16, 50), back.heroActor().?.resists.get(.fire));
-    try std.testing.expectEqual(@as(i16, 25), back.heroActor().?.resists.get(.cold));
-    try std.testing.expectEqual(@as(u8, 2), back.heroActor().?.burn.turns);
-    try std.testing.expectEqualDeep(g.heroActor().?.resilience, back.heroActor().?.resilience);
-    try std.testing.expectEqualDeep(g.heroActor().?.bleed, back.heroActor().?.bleed);
-    try std.testing.expectEqual(@as(u8, 2), back.heroActor().?.chill.turns);
-    try std.testing.expectEqual(@as(u8, 1), back.heroActor().?.chill.phase);
-    for (g.visits[0].pool.slice(), back.visits[0].pool.slice()) |before, after| try std.testing.expectEqual(before.chill, after.chill);
-    try std.testing.expectEqual(g.pool.n, back.pool.n);
-    try std.testing.expectEqualSlices(grid.Tile, &g.lv.tile, &back.lv.tile);
-    try std.testing.expectEqualSlices(grid.Tile, &g.visits[0].lv.tile, &back.visits[0].lv.tile);
+    try std.testing.expectEqualStrings("Arwen", back.sim.name.text());
+    try std.testing.expectEqual(g.sim.growth, back.sim.growth);
+    try std.testing.expectEqual(g.sim.inventory.gear, back.sim.inventory.gear);
+    try std.testing.expectEqualSlices(@import("play/items.zig").Item, g.sim.inventory.bag[0..g.sim.inventory.n], back.sim.inventory.bag[0..back.sim.inventory.n]);
+    try std.testing.expectEqual(@as(usize, 1), back.sim.visits[0].ground.n);
+    try std.testing.expectEqual(@as(i32, 12), back.sim.visits[0].ground.coins[0].amount);
+    try std.testing.expectEqual(g.sim.loot_rng, back.sim.loot_rng);
+    try std.testing.expectEqual(@as(usize, 1), back.sim.node);
+    try std.testing.expectEqual(g.sim.heroActor().?.at, back.sim.heroActor().?.at);
+    try std.testing.expectEqual(g.sim.heroActor().?.hp, back.sim.heroActor().?.hp);
+    try std.testing.expectEqual(@as(i32, 7), back.sim.mana);
+    try std.testing.expectEqual(@as(i32, 3), back.sim.mana_recovery);
+    try std.testing.expectEqualDeep(g.sim.flasks, back.sim.flasks);
+    try std.testing.expectEqual(@as(u8, 2), back.sim.cooldown.get(.juke));
+    try std.testing.expect(back.sim.stepped);
+    try std.testing.expectEqual(@as(i16, 50), back.sim.heroActor().?.resists.get(.fire));
+    try std.testing.expectEqual(@as(i16, 25), back.sim.heroActor().?.resists.get(.cold));
+    try std.testing.expectEqual(@as(u8, 2), back.sim.heroActor().?.burn.turns);
+    try std.testing.expectEqualDeep(g.sim.heroActor().?.resilience, back.sim.heroActor().?.resilience);
+    try std.testing.expectEqualDeep(g.sim.heroActor().?.bleed, back.sim.heroActor().?.bleed);
+    try std.testing.expectEqual(@as(u8, 2), back.sim.heroActor().?.chill.turns);
+    try std.testing.expectEqual(@as(u8, 1), back.sim.heroActor().?.chill.phase);
+    for (g.sim.visits[0].pool.slice(), back.sim.visits[0].pool.slice()) |before, after| try std.testing.expectEqual(before.chill, after.chill);
+    try std.testing.expectEqual(g.sim.pool.n, back.sim.pool.n);
+    try std.testing.expectEqualSlices(grid.Tile, &g.sim.lv.tile, &back.sim.lv.tile);
+    try std.testing.expectEqualSlices(grid.Tile, &g.sim.visits[0].lv.tile, &back.sim.visits[0].lv.tile);
     var restored: usize = 0;
-    for ([_]*const grid.Level{ &back.lv, &back.visits[0].lv }) |lv| {
+    for ([_]*const grid.Level{ &back.sim.lv, &back.sim.visits[0].lv }) |lv| {
         try std.testing.expectEqual(@as(u8, 2), lv.shape[forest].?.mask());
         try std.testing.expectEqual(@as(u8, 8), lv.shape[forest + 1].?.mask());
         restored += 2;
     }
     std.debug.print("save reload restored {d} absent forest shapes across the active and visited nodes\n", .{restored});
     std.debug.print("closed and opened chests preserved on both active and visited nodes\n", .{});
-    try std.testing.expectEqualStrings("A line to keep.", back.log.line(0).?);
+    try std.testing.expectEqualStrings("A line to keep.", back.sim.log.line(0).?);
     const s = try peek(buf.items);
-    var line: [128]u8 = undefined;
+    var line: [menu.NOTE_MAX]u8 = undefined;
     try std.testing.expectEqualStrings("Arwen" ++ menu.SEP ++ comptime std.fmt.comptimePrint(hero.HP_FMT, .{ 19, actor.row(actor.HERO).hp }) ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.line(&line));
     const at = HEAD + @offsetOf(Summary, "node");
     buf.items[at + @sizeOf(usize)] +%= 2;
@@ -645,9 +686,50 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     buf.items[at + @sizeOf(usize)] -%= 2;
     const far: ?usize = atlas.MAX_NODES;
     @memcpy(buf.items[at..][0..@sizeOf(?usize)], std.mem.asBytes(&far));
-    buf.shrinkRetainingCapacity(buf.items.len - SUM);
+    buf.shrinkRetainingCapacity(buf.items.len - store.SUM);
     seal(&buf);
     try std.testing.expectError(error.Damaged, peek(buf.items));
+}
+
+/// Changes only when the saved types, their names or order, the passive tree or Zig's version do; old saves then stop loading.
+const RECORDED_FINGERPRINT: Print = 0xc4e1cee95ba4251a;
+
+fn fixture(g: *game.Game, w: *const Map) !void {
+    game.beginMapAt(g, w, w.start, 7);
+    g.sim.name = hero.Name.of("Fixture");
+    try std.testing.expect(g.sim.inventory.add(.{ .kind = .sword }));
+    g.pic.facing[0] = .left;
+    g.sim.travel = .{ .node = 1, .door = 0 };
+    game.update(g, 0);
+}
+
+test "the save layout is the recorded one, and a run saves the bytes it loads from" {
+    const alloc = std.testing.allocator;
+    const w = try testMap();
+    defer alloc.destroy(w);
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    try fixture(g, w);
+    var first = std.ArrayList(u8).init(alloc);
+    defer first.deinit();
+    try write(g, &first);
+    seal(&first);
+
+    const back = try game.boot(alloc);
+    defer game.shut(alloc, back);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    game.begin(back, 1);
+    try read(first.items, back, into);
+    var again = std.ArrayList(u8).init(alloc);
+    defer again.deinit();
+    try write(back, &again);
+    seal(&again);
+    try std.testing.expectEqualDeep(try peek(first.items), try peek(again.items));
+    const run = first.items[HEAD + @sizeOf(Summary) .. first.items.len - store.SUM];
+    try std.testing.expectEqualSlices(u8, run, again.items[HEAD + @sizeOf(Summary) .. again.items.len - store.SUM]);
+    std.debug.print("fingerprint 0x{x:0>16}; fixture run of {d} bytes rewritten identically after loading\n", .{ FINGERPRINT, run.len });
+    try std.testing.expectEqual(RECORDED_FINGERPRINT, FINGERPRINT);
 }
 
 test "a listed save must have the complete run that loading requires" {
@@ -661,8 +743,8 @@ test "a listed save must have the complete run that loading requires" {
     defer std.testing.allocator.free(full);
     const map = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(map);
-    const hp = g.heroActor().?.hp;
-    const seed = g.seed;
+    const hp = g.sim.heroActor().?.hp;
+    const seed = g.sim.seed;
     const cuts = [_]usize{ HEAD + @sizeOf(Summary), HEAD + @sizeOf(Summary) + @sizeOf(Seed) + @sizeOf(bool), full.len - 1 };
     for (cuts) |cut| {
         buf.clearRetainingCapacity();
@@ -670,8 +752,8 @@ test "a listed save must have the complete run that loading requires" {
         seal(&buf);
         try std.testing.expectError(error.Short, peek(buf.items));
         try std.testing.expectError(error.Short, read(buf.items, g, map));
-        try std.testing.expectEqual(hp, g.heroActor().?.hp);
-        try std.testing.expectEqual(seed, g.seed);
+        try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+        try std.testing.expectEqual(seed, g.sim.seed);
     }
     buf.clearRetainingCapacity();
     try buf.appendSlice(full);

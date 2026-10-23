@@ -9,12 +9,12 @@ later owner edits.
 
 | Element | Attribution | Location | Review |
 |---|---|---|---|
-| Skill icons and controller/key prompts | Assistant, procedural line art | `src/gfx/look.zig`: `skillLines`, `inkSkill`, `Prompt` | Replace skill glyphs when desired; input symbols stay basic |
+| Skill icons and controller/key prompts | Assistant, procedural line art | `src/gfx/line_icons.zig`: `skillLines`, `inkSkill`; `src/gfx/prompt_icon.zig`: `Prompt` | Replace skill glyphs when desired; input symbols stay basic |
 | Life/mana orbs and status icons | Assistant, procedural shapes | `src/ui/hud.zig` | Paint orb and ailment components in the existing HUD template |
 | Equipment slots and tree nodes | Assistant, code-drawn placeholders; radial tree layout adapted from the owner's `zig-soulslike` | `src/ui/book.zig`, `src/ui/trees.zig` | Basic rectangles, circles, lines and shared skill glyphs; gold and item containers use the supplied rasters below |
 | Event panel | Owner border, assistant layout and colors | `src/ui/journal.zig`, `assets/hud-border.png` | Layout/color review; border painting is the owner's |
 | Missing body/tile pictures | Assistant glyph fallback | `src/gfx/look.zig`: body/tile lookup | Unpainted kinds retain glyphs |
-| Combat effects, weather, lighting, water reflections | Assistant procedural rendering | `src/gfx/fx.zig`, `pixel.zig`, `weather.zig`, `light.zig`; map drawing | Effects review; these are not painted source pixels |
+| Combat effects, weather, lighting, water reflections | Assistant procedural rendering | `src/gfx/fx.zig`, `pixel.zig`, `weather.zig`, `light.zig`, `shadow.zig`, `light_gpu.zig`; map drawing | Effects review; these are not painted source pixels |
 
 The original inventory/progression pass used code-drawn placeholders. The later loot-container
 pass registers the supplied bag and coin PNGs below without changing their pixels.

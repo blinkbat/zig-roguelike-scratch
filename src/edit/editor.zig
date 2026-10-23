@@ -408,15 +408,7 @@ const Span = struct { from: P, erase: bool, shape: Spanned };
 
 const Board = struct {
     size: P = .{ .x = 0, .y = 0 },
-    tile: [grid.CELLS]grid.Tile = undefined,
-    barrel: [grid.CELLS]bool = undefined,
-    torch: grid.Torches = .{},
-    foe: [atlas.MAX_FOES]atlas.Foe = undefined,
-    foe_n: usize = 0,
-
-    pub fn at(b: *const Board, p: P) usize {
-        return b.box(.{ .x = 0, .y = 0 }).slot(p).?;
-    }
+    cells: atlas.Bespoke = .{},
 
     pub fn box(b: *const Board, lo: P) grid.Box {
         return grid.Box.sized(lo, b.size.x, b.size.y);
@@ -1780,18 +1772,16 @@ pub fn copySelection(ed: *Editor, cut: bool) void {
     bd.* = .{ .size = s.hi.sub(s.lo) };
     var cells = s.cells();
     while (cells.next()) |p| {
-        const at = bd.at(p.sub(s.lo));
+        const at = grid.Level.idx(p.sub(s.lo));
         const i = grid.Level.idx(p);
-        bd.tile[at] = b.tile[i];
-        bd.barrel[at] = b.barrel[i];
+        bd.cells.tile[at] = b.tile[i];
+        bd.cells.barrel[at] = b.barrel[i];
     }
     for (b.torches()) |t| {
-        if (s.holds(t)) _ = bd.torch.add(t.sub(s.lo));
+        if (s.holds(t)) _ = bd.cells.torch.add(t.sub(s.lo));
     }
     for (b.foes()) |f| {
-        if (!s.holds(f.at)) continue;
-        bd.foe[bd.foe_n] = .{ .kind = f.kind, .at = f.at.sub(s.lo) };
-        bd.foe_n += 1;
+        if (s.holds(f.at)) _ = bd.cells.addFoe(.{ .kind = f.kind, .at = f.at.sub(s.lo) });
     }
     if (cut) return clearSelection(ed);
     ed.say("Copied {d} by {d}: {s} pastes", .{ bd.size.x, bd.size.y, Desk.PASTE_CAPTION });
@@ -1839,20 +1829,20 @@ fn layInto(nd: *const atlas.Node, b: *atlas.Bespoke, bd: *const Board, at: P) Pa
     var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
     while (cells.next()) |q| {
         const p = at.add(q);
-        const k = bd.at(q);
+        const k = grid.Level.idx(q);
         if (!grid.Level.inside(p)) {
-            if (bd.barrel[k]) laid.left += 1;
+            if (bd.cells.barrel[k]) laid.left += 1;
             continue;
         }
-        if (paintInto(nd, b, p, bd.tile[k])) laid.changed = true;
-        if (!bd.barrel[k]) continue;
+        if (paintInto(nd, b, p, bd.cells.tile[k])) laid.changed = true;
+        if (!bd.cells.barrel[k]) continue;
         switch (barrelInto(nd, b, p)) {
             .there => {},
             .laid => laid.changed = true,
             .refused => laid.left += 1,
         }
     }
-    for (bd.torch.slice()) |t| {
+    for (bd.cells.torches()) |t| {
         const p = at.add(t);
         if (!grid.Level.inside(p)) {
             laid.left += 1;
@@ -1860,7 +1850,7 @@ fn layInto(nd: *const atlas.Node, b: *atlas.Bespoke, bd: *const Board, at: P) Pa
             if (nd.torchGoes(b, p) and b.torch.add(p)) laid.changed = true else laid.left += 1;
         }
     }
-    for (bd.foe[0..bd.foe_n]) |f| {
+    for (bd.cells.foes()) |f| {
         const p = at.add(f.at);
         if (!grid.Level.inside(p)) {
             laid.left += 1;
@@ -2222,24 +2212,28 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     ed.gen_top = ed.gen_most;
     try snap(ed, g, target, gen_path);
     ed.modal = .objects;
-    for (SEEN, 0..) |s, i| {
-        if (std.meta.eql(s, Seen{ .body = .slime })) ed.seen_at = i;
-    }
+    ed.seen_at = seenIndex(.{ .body = .slime });
     try snap(ed, g, target, objects_path);
     var path: [std.fs.max_path_bytes]u8 = undefined;
-    for (SEEN, 0..) |s, i| {
-        if (std.meta.eql(s, Seen{ .body = .beefy_pib })) ed.seen_at = i;
-    }
-    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-beefy-pib.png", .{std.fs.path.dirname(map_path) orelse "."}));
+    const dir = std.fs.path.dirname(map_path) orelse ".";
+    ed.seen_at = seenIndex(.{ .body = .beefy_pib });
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-beefy-pib.png", .{dir}));
     ed.modal = .help;
-    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-help.png", .{std.fs.path.dirname(map_path) orelse "."}));
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-help.png", .{dir}));
     ed.naming = .save_as;
     ed.field.put("The Warrens");
     ed.listing.scan();
     inline for (.{ Modal.confirm, Modal.name, Modal.open }) |modal| {
         ed.modal = modal;
-        try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-" ++ @tagName(modal) ++ ".png", .{std.fs.path.dirname(map_path) orelse "."}));
+        try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-" ++ @tagName(modal) ++ ".png", .{dir}));
     }
+}
+
+fn seenIndex(want: Seen) usize {
+    for (SEEN, 0..) |s, i| {
+        if (std.meta.eql(s, want)) return i;
+    }
+    unreachable;
 }
 
 fn render(ed: *Editor, g: *game.Game, target: rl.RenderTexture2D) void {

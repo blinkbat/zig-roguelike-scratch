@@ -4,7 +4,8 @@ const damage = @import("damage.zig");
 
 pub const TURNS: u8 = 5;
 pub const STILL: i32 = 1;
-pub const MOVING: i32 = 2;
+pub const MOVE_FACTOR: i32 = 2;
+pub const MOVING: i32 = STILL * MOVE_FACTOR;
 pub const TAKES = "starts bleeding";
 pub const STATUS = std.fmt.comptimePrint("Lose {d} life per turn, or {d} when moving.", .{ STILL, MOVING });
 
@@ -32,7 +33,7 @@ pub const Bleed = struct {
             return null;
         }
         self.turns -= 1;
-        return self.amount * @as(i32, if (moved) 2 else 1);
+        return if (moved) self.amount * MOVE_FACTOR else self.amount;
     }
 
     pub fn settle(self: *Bleed) void {

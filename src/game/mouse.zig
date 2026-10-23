@@ -6,7 +6,10 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const skillbar = @import("../play/skillbar.zig");
+const actor = @import("../play/actor.zig");
+const day = @import("../map/day.zig");
 const menu = @import("../ui/menu.zig");
+const book = @import("../ui/book.zig");
 const hud = @import("../ui/hud.zig");
 const journal = @import("../ui/journal.zig");
 const raster = @import("../gfx/raster.zig");
@@ -26,14 +29,33 @@ pub const State = struct {
     }
 };
 
-pub fn buttonBox(screen: P, character: bool) rl.Rectangle {
-    return raster.rect(screen.x - 156, screen.y - (if (character) @as(i32, 88) else 48), 144, 32);
+const BUTTON = P{ .x = 144, .y = 32 };
+const BUTTON_RIGHT: i32 = 12;
+const BUTTON_BOTTOM: i32 = 16;
+const Corner = struct { button: input.Button, label: [:0]const u8 };
+const CORNER = [_]Corner{
+    .{ .button = menu.PAUSE, .label = "Menu" },
+    .{ .button = menu.CHARACTER, .label = "Character" },
+};
+
+pub fn buttonBox(screen: P, button: input.Button) rl.Rectangle {
+    const row = for (CORNER, 0..) |c, k| {
+        if (c.button == button) break k;
+    } else unreachable;
+    const up: i32 = @intCast(row);
+    return raster.rect(screen.x - BUTTON_RIGHT - BUTTON.x, screen.y - BUTTON_BOTTOM - BUTTON.y - up * (BUTTON.y + menu.ACTION_GAP), BUTTON.x, BUTTON.y);
+}
+
+fn buttonAt(screen: P, p: P) ?input.Button {
+    for (CORNER) |c| {
+        if (raster.holds(buttonBox(screen, c.button), p)) return c.button;
+    }
+    return null;
 }
 
 pub fn draw(g: *game.Game) void {
     if (g.st.device.pad() or !clickable(g.mode)) return;
-    menu.action(&g.face, buttonBox(g.screen, true), prompt_icon.Prompt.menuOf(&g.st, menu.CHARACTER), "Character");
-    menu.action(&g.face, buttonBox(g.screen, false), prompt_icon.Prompt.menuOf(&g.st, menu.PAUSE), "Menu");
+    for (CORNER) |c| menu.action(&g.face, buttonBox(g.screen, c.button), prompt_icon.Prompt.menuOf(&g.st, c.button), c.label);
 }
 
 fn clickable(mode: game.Mode) bool {
@@ -44,7 +66,7 @@ pub fn overUi(g: *const game.Game, p: P) bool {
     const layout = game.overlay.hudLayout(g);
     return raster.holds(raster.rect(layout.left, layout.top, hud.WIDTH, hud.COVER), p) or
         raster.holds(journal.box(g.screen), p) or raster.holds(game.scene.miniFrame(g.screen.x), p) or
-        raster.holds(buttonBox(g.screen, true), p) or raster.holds(buttonBox(g.screen, false), p);
+        buttonAt(g.screen, p) != null;
 }
 
 pub fn cell(g: *game.Game) ?P {
@@ -69,14 +91,9 @@ pub fn prepare(g: *game.Game) void {
     if (g.st.click) {
         g.mouse.stop();
         g.pending = null;
-        if (raster.holds(buttonBox(g.screen, true), p)) {
+        if (buttonAt(g.screen, p)) |b| {
             g.mode = .play;
-            g.st.pressed.insert(menu.CHARACTER);
-            return;
-        }
-        if (raster.holds(buttonBox(g.screen, false), p)) {
-            g.mode = .play;
-            g.st.pressed.insert(menu.PAUSE);
+            g.st.pressed.insert(b);
             return;
         }
     }
@@ -94,14 +111,14 @@ pub fn prepare(g: *game.Game) void {
     }
     if (!g.st.click) return;
     const at = cell(g) orelse return;
-    if (!g.lv.isSeen(at)) return;
+    if (!g.sim.lv.isSeen(at)) return;
     g.mouse.target = at;
     g.mouse.fresh = true;
-    for (g.pool.slice(), 0..) |a, i| {
+    for (g.sim.pool.slice(), 0..) |a, i| {
         if (!a.foe()) continue;
-        const drawn = game.drawnCell(g, i) orelse continue;
+        const drawn = g.pic.drawnCell(&g.sim, i) orelse continue;
         if (drawn.eq(at)) {
-            g.mouse.foe = @import("../play/actor.zig").Pool.idOf(i);
+            g.mouse.foe = actor.Pool.idOf(i);
             break;
         }
     }
@@ -110,27 +127,27 @@ pub fn prepare(g: *game.Game) void {
 pub fn aim(g: *game.Game) bool {
     if (!g.st.pointing()) return false;
     const at = cell(g) orelse return false;
-    const h = g.heroActor() orelse return false;
+    const h = g.sim.heroActor() orelse return false;
     if (g.aim_act.reticle() == .swing) {
         const d = mathx.stepDir(at.sub(h.at).sign()) orelse return false;
         g.mark = h.at.add(d.delta());
     } else g.mark = at;
-    game.turnToward(g, g.hero, g.mark.x - h.at.x);
+    g.pic.turnToward(g.sim.hero, g.mark.x - h.at.x);
     return g.st.click;
 }
 
 fn danger(g: *const game.Game) bool {
-    for (g.pool.items[0..g.pool.n]) |a| if (a.alive and a.foe() and g.lv.isLit(a.at)) return true;
+    for (g.sim.pool.items[0..g.sim.pool.n]) |a| if (a.alive and a.foe() and g.sim.lv.isLit(a.at)) return true;
     return false;
 }
 
 fn attack(g: *game.Game, at: P) bool {
-    const h = g.heroActor() orelse return false;
+    const h = g.sim.heroActor() orelse return false;
     const set = skills.activeSet(g);
     for (skillbar.SLOTS) |b| {
         const act = g.bar.at(.{ .set = set, .button = b }) orelse continue;
-        if (act.reticle() == null or act.attack() == null or !act.aimable(&g.lv, h.at, at)) continue;
-        if (skills.blocked(g, act, &g.flasks, g.mana) != null) continue;
+        if (act.reticle() == null or act.attack() == null or !act.aimable(&g.sim.lv, h.at, at)) continue;
+        if (skills.blocked(g, act, &g.sim.flasks, g.sim.mana) != null) continue;
         skills.useSkill(g, .{ .act = act, .by = b, .set = set });
         if (g.mode == .aim) {
             g.mark = at;
@@ -141,14 +158,10 @@ fn attack(g: *game.Game, at: P) bool {
     return false;
 }
 
-/// A routed walk rests this long between steps, slower than a held walk's joined glides.
-pub const REST_S: f32 = game.GLIDE_S * 0.5;
-
 pub fn step(g: *game.Game) bool {
     var at = g.mouse.target orelse return false;
-    if (!game.quiet(g)) return true;
-    if (!g.mouse.fresh and game.sinceQuiet(g) < REST_S) return true;
-    const h = g.heroActor() orelse {
+    if (!g.pic.quiet()) return true;
+    const h = g.sim.heroActor() orelse {
         g.mouse.stop();
         return false;
     };
@@ -158,8 +171,8 @@ pub fn step(g: *game.Game) bool {
     }
     if (g.mouse.foe) |id| {
         g.mouse.stop();
-        const foe = g.pool.get(id) orelse return true;
-        if (!foe.alive or !g.lv.isLit(foe.at)) return true;
+        const foe = g.sim.pool.get(id) orelse return true;
+        if (!foe.alive or !g.sim.lv.isLit(foe.at)) return true;
         at = foe.at;
         if (attack(g, at)) return true;
         if (mathx.dist(h.at, at) <= 1) {
@@ -168,17 +181,15 @@ pub fn step(g: *game.Game) bool {
         }
         g.mouse.target = at;
     }
-    if (mathx.dist(h.at, at) <= game.INTERACT_REACH and g.lv.isLit(at)) {
-        if (g.lv.at(at).opened() != null or game.character.lootReached(g, h.at, at)) {
-            g.mouse.stop();
-            game.character.openLoot(g, at);
-            return true;
-        }
-        if (game.character.doorReached(g, h.at, at) != null) {
-            g.mouse.stop();
-            game.character.characterCommand(g, .{ .travel = at });
-            return true;
-        }
+    if (game.character.chestReached(g, h.at, at) or game.character.lootReached(g, h.at, at)) {
+        g.mouse.stop();
+        game.character.openLoot(g, at);
+        return true;
+    }
+    if (game.character.doorReached(g, h.at, at) != null) {
+        g.mouse.stop();
+        game.character.characterCommand(g, .{ .travel = at });
+        return true;
     }
     if (h.at.eq(at)) {
         const fresh = g.mouse.fresh;
@@ -197,7 +208,7 @@ pub fn step(g: *game.Game) bool {
 }
 
 pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
-    if (!grid.Level.inside(to) or !g.lv.isSeen(to) or from.eq(to)) return null;
+    if (!grid.Level.inside(to) or !g.sim.lv.isSeen(to) or from.eq(to)) return null;
     var visited = std.StaticBitSet(grid.CELLS).initEmpty();
     var queue: [grid.CELLS]P = undefined;
     var first: [grid.CELLS]mathx.Dir = undefined;
@@ -211,14 +222,14 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
         for ([_]u3{ 0, 1, 7, 2, 6, 3, 5, 4 }) |offset| {
             const d = toward.turned(offset);
             const q = p.add(d.delta());
-            if (!grid.Level.inside(q) or !g.lv.isSeen(q)) continue;
+            if (!grid.Level.inside(q) or !g.sim.lv.isSeen(q)) continue;
             const i = grid.Level.idx(q);
             if (visited.isSet(i)) continue;
             const end = q.eq(to);
-            if (!g.lv.walkable(q) and !(end and g.lv.at(q).opened() != null)) continue;
-            if (g.lv.barrelSeen(q) and !end) continue;
-            if (g.lv.isLit(q) and ((g.lv.taken(q) and !end) or g.lv.gassy(q))) continue;
-            if (!end and game.leadsTo(g, q) != null) continue;
+            if (!g.sim.lv.walkable(q) and !(end and g.sim.lv.at(q).opened() != null)) continue;
+            if (g.sim.lv.barrelSeen(q) and !end) continue;
+            if (g.sim.lv.isLit(q) and ((g.sim.lv.taken(q) and !end) or g.sim.lv.gassy(q))) continue;
+            if (!end and g.sim.leadsTo(q) != null) continue;
             const way = if (head == 0) d else first[head];
             if (end) return way;
             visited.set(i);
@@ -240,7 +251,7 @@ test "mouse walking stops on harm despite healing or mana shielding" {
     defer game.shut(std.testing.allocator, g);
     for ([_]bool{ false, true }) |shield| {
         game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-        const h = g.heroActor().?;
+        const h = g.sim.heroActor().?;
         h.hp -= 20;
         const initial = h.hp;
         clickCell(g, .{ .x = 24, .y = 20 });
@@ -265,52 +276,52 @@ test "mouse walking follows explored routes once per turn and stops on arrival o
     defer game.shut(std.testing.allocator, g);
     const start = P{ .x = 20, .y = 20 };
     const dest = P{ .x = 23, .y = 20 };
-    for ([_]P{ game.SCREEN_720, game.SCREEN_1080, game.SCREEN_1440 }) |screen| {
+    for (game.SCREENS) |screen| {
         g.screen = screen;
         game.harness.arena(g, start, &.{});
-        const clock = g.clock.minute;
+        const clock = g.sim.clock.minute;
         clickCell(g, dest);
-        try std.testing.expectEqual(start.add(mathx.Dir.e.delta()), g.heroActor().?.at);
+        try std.testing.expectEqual(start.add(mathx.Dir.e.delta()), g.sim.heroActor().?.at);
         try std.testing.expect(g.mouse.target != null);
         g.st = .{ .device = .keys };
         for (0..3) |_| game.update(g, 2);
-        try std.testing.expectEqual(dest, g.heroActor().?.at);
+        try std.testing.expectEqual(dest, g.sim.heroActor().?.at);
         try std.testing.expect(g.mouse.target == null);
-        try std.testing.expectEqual(clock + 3 * @import("../map/day.zig").TURN_MINUTES, g.clock.minute);
+        try std.testing.expectEqual(clock + 3 * day.TURN_MINUTES, g.sim.clock.minute);
     }
     game.harness.arena(g, start, &.{});
-    g.busy = 0.5;
-    const clock = g.clock;
+    g.pic.busy = 0.5;
+    const clock = g.sim.clock;
     clickCell(g, dest);
-    try std.testing.expectEqual(clock, g.clock);
-    try std.testing.expectEqual(start, g.heroActor().?.at);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(start, g.sim.heroActor().?.at);
     g.st = .{ .walk = .s };
     game.update(g, 0);
     try std.testing.expect(g.mouse.target == null and g.pending.? == .walk);
     game.harness.arena(g, start, &.{});
     clickCell(g, dest);
-    const stopped = g.heroActor().?.at;
+    const stopped = g.sim.heroActor().?.at;
     g.st = .{ .focused = false };
     game.update(g, 2);
-    try std.testing.expectEqual(stopped, g.heroActor().?.at);
+    try std.testing.expectEqual(stopped, g.sim.heroActor().?.at);
     try std.testing.expect(g.mouse.target == null);
     std.debug.print("mouse walking: three resolutions, nine exact turns, busy queue, keyboard override and focus cancellation\n", .{});
 }
 
-test "a routed walk rests between steps, the first leaving at once" {
+test "a routed walk keeps a held walk's pace, the first step leaving at once" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const start = P{ .x = 20, .y = 20 };
     game.harness.arena(g, start, &.{});
     clickCell(g, .{ .x = 26, .y = 20 });
-    try std.testing.expectEqual(start.add(mathx.Dir.e.delta()), g.heroActor().?.at);
+    try std.testing.expectEqual(start.add(mathx.Dir.e.delta()), g.sim.heroActor().?.at);
     g.st = .{ .device = .keys };
     var t: f32 = 0;
-    const first = g.heroActor().?.at;
-    while (g.heroActor().?.at.eq(first)) : (t += mathx.FRAME_DT) game.update(g, mathx.FRAME_DT);
-    std.debug.print("routed walk: {d:.3} s a step against a held walk's {d:.3}\n", .{ t, game.GLIDE_S });
-    try std.testing.expect(t >= game.GLIDE_S + REST_S - mathx.FRAME_DT);
-    try std.testing.expect(t <= game.GLIDE_S + REST_S + 2 * mathx.FRAME_DT);
+    const first = g.sim.heroActor().?.at;
+    while (g.sim.heroActor().?.at.eq(first)) : (t += mathx.FRAME_DT) game.update(g, mathx.FRAME_DT);
+    std.debug.print("routed walk: {d:.3} s a step against a held walk's {d:.3}\n", .{ t, input.Stepper.ARR });
+    try std.testing.expect(t >= input.Stepper.ARR - mathx.FRAME_DT);
+    try std.testing.expect(t <= input.Stepper.ARR + 2 * mathx.FRAME_DT);
 }
 
 test "mouse routes avoid unknown cells walls gas barrels and stop when enemies appear" {
@@ -321,29 +332,29 @@ test "mouse routes avoid unknown cells walls gas barrels and stop when enemies a
     game.harness.arena(g, start, &.{});
     const east = start.add(mathx.Dir.e.delta());
     try std.testing.expectEqual(@as(?mathx.Dir, .e), next(g, start, dest));
-    g.lv.set(east, .wall);
+    g.sim.lv.set(east, .wall);
     try std.testing.expect(next(g, start, dest).? != .e);
-    g.lv.set(east, .floor);
-    g.lv.gas[grid.Level.idx(east)] = 100;
+    g.sim.lv.set(east, .floor);
+    g.sim.lv.gas[grid.Level.idx(east)] = game.harness.TEST_GAS;
     try std.testing.expect(next(g, start, dest).? != .e);
-    g.lv.gas[grid.Level.idx(east)] = 0;
-    g.lv.putBarrel(east);
-    g.lv.barrel_seen[grid.Level.idx(east)] = true;
+    g.sim.lv.gas[grid.Level.idx(east)] = 0;
+    g.sim.lv.putBarrel(east);
+    g.sim.lv.barrel_seen[grid.Level.idx(east)] = true;
     try std.testing.expect(next(g, start, dest).? != .e);
     try std.testing.expectEqual(@as(?mathx.Dir, .e), next(g, start, east));
-    g.lv.seen[grid.Level.idx(dest)] = false;
+    g.sim.lv.seen[grid.Level.idx(dest)] = false;
     try std.testing.expect(next(g, start, dest) == null);
-    const clock = g.clock;
+    const clock = g.sim.clock;
     clickCell(g, dest);
-    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(clock, g.sim.clock);
     game.harness.arena(g, start, &.{});
     clickCell(g, dest);
-    const stopped = g.heroActor().?.at;
+    const stopped = g.sim.heroActor().?.at;
     _ = game.harness.spawnAt(g, .rat, .{ .x = 24, .y = 21 }, false);
     game.castSight(g, stopped);
     g.st = .{};
     game.update(g, 2);
-    try std.testing.expectEqual(stopped, g.heroActor().?.at);
+    try std.testing.expectEqual(stopped, g.sim.heroActor().?.at);
     try std.testing.expect(g.mouse.target == null);
     std.debug.print("mouse routes: walls, gas, barrels, unknown destinations and newly visible enemies checked\n", .{});
 }
@@ -354,7 +365,7 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     const start = P{ .x = 20, .y = 20 };
     const target = P{ .x = 23, .y = 20 };
     game.harness.arena(g, start, &.{target});
-    const clock = g.clock;
+    const clock = g.sim.clock;
     const use = game.harness.boundTo(g, .shoot);
     var spots: [game.overlay.SPOTS_MAX]game.overlay.Part = undefined;
     const slot = for (game.overlay.spotsOf(g, &spots)) |part| {
@@ -363,27 +374,27 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     g.st = .{ .device = .keys, .pointer = raster.middleAt(slot), .click = true };
     game.update(g, 0);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
-    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(clock, g.sim.clock);
     g.st = .{ .device = .keys, .pointer = raster.middleAt(slot), .click = true };
     game.update(g, 0);
-    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(clock, g.sim.clock);
     const blocked = P{ .x = 20, .y = 24 };
-    g.lv.set(.{ .x = 20, .y = 22 }, .wall);
+    g.sim.lv.set(.{ .x = 20, .y = 22 }, .wall);
     game.castSight(g, start);
     clickCell(g, blocked);
-    try std.testing.expectEqual(clock, g.clock);
+    try std.testing.expectEqual(clock, g.sim.clock);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
     g.st = .{ .right_click = true };
     game.update(g, 0);
     try std.testing.expectEqual(game.Mode.play, g.mode);
     clickCell(g, target);
-    try std.testing.expect(g.shot != null);
+    try std.testing.expect(g.pic.shot != null);
     try std.testing.expectEqual(game.Mode.play, g.mode);
     game.harness.drawnOut(g);
-    const after = g.clock;
+    const after = g.sim.clock;
     g.st = .{ .device = .keys, .pointer = raster.middleAt(journal.box(g.screen)), .click = true };
     game.update(g, 0);
-    try std.testing.expectEqual(after, g.clock);
+    try std.testing.expectEqual(after, g.sim.clock);
     try std.testing.expect(g.mouse.target == null);
     std.debug.print("mouse targeting: HUD activation, no click-through, blocked shot, cancel and one clicked foe attack\n", .{});
 }
@@ -393,11 +404,11 @@ test "a clicked foe beside the hero is bumped when every aimed attack is cooling
     defer game.shut(std.testing.allocator, g);
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
     for (std.enums.values(skillbar.Act)) |a| {
-        if (a.attack() != null) g.cooldown.set(a, 5);
+        if (a.attack() != null) g.sim.cooldown.set(a, 5);
     }
-    const clock = g.clock;
+    const clock = g.sim.clock;
     clickCell(g, .{ .x = 21, .y = 20 });
-    try std.testing.expect(!std.meta.eql(clock, g.clock));
+    try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
     std.debug.print("clicked foe with every attack cooling: the turn is spent on a bump\n", .{});
 }
 
@@ -407,26 +418,26 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     const start = P{ .x = 20, .y = 20 };
     const chest = P{ .x = 21, .y = 20 };
     game.harness.arena(g, start, &.{});
-    g.lv.set(chest, .chest);
+    g.sim.lv.set(chest, .chest);
     game.settle(g);
-    const clock = g.clock.minute;
+    const clock = g.sim.clock.minute;
     clickCell(g, chest);
-    try std.testing.expectEqual(grid.Tile.chest_open, g.lv.at(chest));
-    try std.testing.expectEqual(clock + @import("../map/day.zig").TURN_MINUTES, g.clock.minute);
+    try std.testing.expectEqual(grid.Tile.chest_open, g.sim.lv.at(chest));
+    try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
     game.harness.drawnOut(g);
     clickCell(g, chest);
     try std.testing.expectEqual(game.Mode.pause, g.mode);
-    try std.testing.expectEqual(@import("../ui/book.zig").Page.loot, g.character.page);
-    try std.testing.expectEqual(clock + @import("../map/day.zig").TURN_MINUTES, g.clock.minute);
+    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
     g.st = .{ .right_click = true };
     game.update(g, 0);
-    g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, true)) };
+    g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, menu.CHARACTER)) };
     game.update(g, 0);
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);
     try std.testing.expectEqual(game.Mode.pause, g.mode);
     g.st = .{ .right_click = true };
     game.update(g, 0);
-    g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, false)) };
+    g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, menu.PAUSE)) };
     game.update(g, 0);
     try std.testing.expectEqual(game.PausePage.main, g.pause_page);
     g.st = .{ .right_click = true };
@@ -443,11 +454,11 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     try std.testing.expectEqual(skillbar.Set.primary, skills.activeSet(g));
     g.mode = .dead;
     g.permadeath = true;
-    g.busy = 1;
+    g.pic.busy = 1;
     g.st = .{ .click = true, .pointer = raster.middleAt(game.deadBox(g.screen)) };
     game.update(g, 0);
     try std.testing.expect(g.exit == null);
-    g.busy = 0;
+    g.pic.busy = 0;
     game.update(g, 0);
     try std.testing.expectEqual(@as(?game.Exit, .back), g.exit);
     std.debug.print("mouse actions: chest one turn, loot free, character/menu/back, secondary toggle, death waits for presentation\n", .{});

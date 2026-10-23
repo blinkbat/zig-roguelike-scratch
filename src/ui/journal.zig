@@ -129,10 +129,12 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
 
 test "event history keeps chronological rows and colors through wrap; new events return to the bottom" {
     var log = Log{};
-    for (0..Log.LINES + 8) |i| log.push(.loot, "Item {d}", .{i});
+    const extra = 8;
+    for (0..Log.LINES + extra) |i| log.push(.loot, "Item {d}", .{i});
     try std.testing.expectEqual(Log.LINES, log.n);
-    try std.testing.expectEqualStrings("Item 8", log.line(Log.LINES - 1).?);
-    try std.testing.expectEqualStrings("Item 135", log.line(0).?);
+    var want: [16]u8 = undefined;
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&want, "Item {d}", .{extra}), log.line(Log.LINES - 1).?);
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&want, "Item {d}", .{Log.LINES + extra - 1}), log.line(0).?);
     log.move(4);
     try std.testing.expectEqual(@as(usize, 0), log.scroll);
     log.release();
@@ -142,5 +144,5 @@ test "event history keeps chronological rows and colors through wrap; new events
     try std.testing.expectEqual(@as(usize, 0), log.scroll);
     try std.testing.expectEqual(Kind.recovery, log.kinds[log.index(0)]);
     try std.testing.expectEqual(Log.LINES - 1, log.shown());
-    std.debug.print("event log: 128-entry ring, colors, scrolling, bottom-follow and held lines checked\n", .{});
+    std.debug.print("event log: {d}-entry ring, colors, scrolling, bottom-follow and held lines checked\n", .{Log.LINES});
 }

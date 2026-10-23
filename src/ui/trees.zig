@@ -51,13 +51,13 @@ const LEGEND_STEP: i32 = 140;
 const ZOOM_PX: i32 = 28;
 const ZOOM_GAP: i32 = 14;
 const BUTTON_H: i32 = 34;
-const ACTION_Y: i32 = DETAIL_TOP + 408;
-const BIND_Y: i32 = DETAIL_TOP + 338;
-const REASON_Y: i32 = DETAIL_TOP + 380;
-comptime {
-    std.debug.assert(BIND_Y + BUTTON_H <= REASON_Y and REASON_Y + font.SMALL <= ACTION_Y);
-    std.debug.assert(@as(f32, @floatFromInt(ACTION_Y + BUTTON_H)) <= DETAIL.y + DETAIL.height);
-}
+const ACTION_FOOT_GAP: i32 = 8;
+const REASON_GAP: i32 = 10;
+const BIND_GAP: i32 = 8;
+const DETAIL_BOTTOM: i32 = @intFromFloat(DETAIL.y + DETAIL.height);
+const ACTION_Y: i32 = DETAIL_BOTTOM - ACTION_FOOT_GAP - BUTTON_H;
+const REASON_Y: i32 = ACTION_Y - REASON_GAP - font.SMALL;
+const BIND_Y: i32 = REASON_Y - BIND_GAP - BUTTON_H;
 const HINT_Y: i32 = CANVAS_BOTTOM + 20;
 const HINT_STEP: i32 = 164;
 /// In a hint, between one glyph and the next, and past the last before the label.
@@ -80,7 +80,7 @@ const ARROW_CLEAR: i32 = 8;
 /// The rank plaque's corner, out from its tile's middle, and its size.
 const PLAQUE_AT = P{ .x = 10, .y = 16 };
 const PLAQUE_W: i32 = 42;
-const PLAQUE_H: i32 = 22;
+const PLAQUE_H: i32 = font.SMALL + 6;
 /// The selected tile's frame, out from the tile.
 const SKILL_FOCUS_GROW: f32 = 5;
 /// Detail rows: name, rank or kind, description, the earliest rule, and a passive's first grant.
@@ -91,10 +91,10 @@ const RULE_MIN_Y: i32 = DETAIL_TOP + 128;
 const GRANT_Y: i32 = DETAIL_TOP + 45;
 /// Either side of a detail rule, and a caption to its first line.
 const RULE_GAP: i32 = 12;
-const CAPTION_STEP: i32 = 21;
+const CAPTION_STEP: i32 = font.SMALL_LINE + 1;
 /// Above a skill's flavor line, under its one-line note, and above the next rank's changes.
 const FLAVOR_GAP: i32 = 4;
-const NOTE_STEP: i32 = 18;
+const NOTE_STEP: i32 = font.SMALL_TIGHT;
 const NEXT_GAP: i32 = 8;
 const BACK = look.rgb(0x0c0e12);
 const TILE = look.rgb(0x15171c);
@@ -206,9 +206,14 @@ fn frame(face: *const font.Face, title: [:0]const u8, points: u16) void {
         rl.drawRectangleLinesEx(box, 1, BORDER);
     }
     face.draw(title, CANVAS_LEFT, TITLE_Y, font.SMALL, look.TEXT);
+    drawPoints(face, points, true);
+}
+
+fn drawPoints(face: *const font.Face, points: u16, right: bool) void {
     var line: menu.Note(64) = .{};
     line.say("{d} point{s} available", .{ points, mathx.plural(points) });
-    face.draw(line.text(), CANVAS_RIGHT - face.width(line.text(), font.SMALL), TITLE_Y, font.SMALL, if (points > 0) OWNED else look.DIM);
+    const x = if (right) CANVAS_RIGHT - face.width(line.text(), font.SMALL) else CANVAS_LEFT;
+    face.draw(line.text(), x, TITLE_Y, font.SMALL, if (points > 0) OWNED else look.DIM);
 }
 
 const Legend = struct { name: [:0]const u8, color: rl.Color };
@@ -219,29 +224,17 @@ fn legendOf(comptime E: type, comptime inkOf: fn (E) rl.Color) [std.enums.values
     return out;
 }
 
-/// Where a legend's row sits and how each entry looks; `text` null inks a name as its mark.
-const LegendStyle = struct {
-    y: i32,
-    step: i32,
-    mark: enum { ring, square, dot },
-    text_dx: i32,
-    text: ?rl.Color = null,
-};
 /// Half a legend mark's width.
 const MARK_HALF: i32 = 5;
 /// A foot legend entry's left to its name.
 const LEGEND_TEXT_DX: i32 = 20;
 
-fn legend(face: *const font.Face, entries: []const Legend, style: LegendStyle) void {
+fn legend(face: *const font.Face, entries: []const Legend) void {
+    const y = FOOT_MID;
     for (entries, 0..) |l, i| {
-        const x = CANVAS_LEFT + @as(i32, @intCast(i)) * style.step;
-        const y = style.y;
-        switch (style.mark) {
-            .ring => ring(.{ .x = @floatFromInt(x + MARK_HALF), .y = @floatFromInt(y) }, @floatFromInt(MARK_HALF - 1), l.color),
-            .square => rl.drawRectangleLinesEx(raster.rect(x, y - MARK_HALF, 2 * MARK_HALF + 1, 2 * MARK_HALF + 1), 1, l.color),
-            .dot => rl.drawCircle(x + MARK_HALF, y, MARK_HALF, l.color),
-        }
-        face.drawMiddle(l.name, x + style.text_dx, y, font.SMALL, style.text orelse l.color);
+        const x = CANVAS_LEFT + @as(i32, @intCast(i)) * LEGEND_STEP;
+        rl.drawRectangleLinesEx(raster.rect(x, y - MARK_HALF, 2 * MARK_HALF + 1, 2 * MARK_HALF + 1), 1, l.color);
+        face.drawMiddle(l.name, x + LEGEND_TEXT_DX, y, font.SMALL, l.color);
     }
 }
 
@@ -323,7 +316,7 @@ fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, class: hero.
         face.centred(rank.text(), pm.x, pm.y, font.SMALL, ink);
         face.drawMid(s.act.name(), mid.x, mid.y + SKILL_NAME_DY, font.SMALL, if (growth.unlocked(s.act) or i == cursor) look.TEXT else LOCKED);
     }
-    legend(face, &SkillState.LEGEND, .{ .y = FOOT_MID, .step = LEGEND_STEP, .mark = .square, .text_dx = LEGEND_TEXT_DX });
+    legend(face, &SkillState.LEGEND);
     skillDetails(face, class, growth, skills[cursor], loadout);
 }
 
@@ -583,9 +576,7 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
     rl.drawRectangleRec(CANVAS, BACK);
     rl.drawRectangleLinesEx(CANVAS, 1, BORDER);
     rl.drawLine(@intFromFloat(DETAIL.x), DETAIL_TOP, @intFromFloat(DETAIL.x), CANVAS_BOTTOM, BORDER);
-    var points: menu.Note(64) = .{};
-    points.say("{d} point{s} available", .{ growth.passive_points, mathx.plural(growth.passive_points) });
-    face.draw(points.text(), CANVAS_LEFT, TITLE_Y, font.SMALL, if (growth.passive_points > 0) OWNED else look.DIM);
+    drawPoints(face, growth.passive_points, false);
     const layout = wheelLayout(view);
     var pos: Positions = undefined;
     for (&pos, 0..) |*q, i| q.* = layout.at(i);
@@ -725,7 +716,7 @@ test "every class skill stays in its canvas and is reachable by directional sele
         try std.testing.expectEqual(skills.len, reached.count());
         checked += skills.len;
     }
-    std.debug.print("class skill diagrams: {d} non-overlapping tiles within their canvas; all reachable in 8 directions\n", .{checked});
+    std.debug.print("class skill diagrams: {d} non-overlapping tiles within their canvas; all reachable in {d} directions\n", .{ checked, mathx.ALL_DIRS.len });
 }
 
 /// Every zoom a button press reaches from the overview, the closest and the opening one.

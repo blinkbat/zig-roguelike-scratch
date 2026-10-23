@@ -22,7 +22,7 @@ Only display the corresponding systems this game actually has. Do not fill the l
 | Active ailments | Small icons with remaining turns, only while active, just above the central strip |
 | Status resistance | A gold buildup meter while active; inspection lists each status's resistance and expiry separately |
 | Minimap | Existing upper-right map, outside the bottom assembly |
-| Time of day | A thin line under the minimap: the sun rides it from sunrise to sunset, the moon from sunset to sunrise, following the drawn hour (`Game.hour_shown`) |
+| Time of day | A thin line under the minimap: the sun rides it from sunrise to sunset, the moon from sunset to sunrise, following the drawn hour (`Presentation.hour_shown`) |
 | Event log | Bottom-left panel, newest at bottom, color-coded events during exploration and combat |
 | Character and Menu | Clickable actions with glyphs in the bottom-right gutter while keyboard/mouse hints are active |
 
@@ -38,7 +38,7 @@ The live HUD omits the hero-name label, enemy counters, gold tally and permanent
 - Give each orb a dark empty interior, a solid coloured fill with a horizontal surface, a simple rim and a small highlight. Full, half and empty must read clearly. Clamp resource values to the valid fill range.
 - Use Source Sans 3 for compact resource values and cooldowns, with Balthazar for headings and symbols; inputs are icons, not captions. Avoid extra explanatory prose in play.
 - Keep geometry, colours and draw functions together so authored orb/frame art can replace the primitives later. Reuse the existing skill images.
-- Life follows the presented HP (`Game.pictured`), so it changes when a hit lands. Mana spent by Mana Shield follows each hit's impact; skill spending and flask sips update immediately, while natural recovery and cooldowns follow spent turns. The experience bar eases toward a turn's experience once that turn is drawn (`Game.xp_shown`). Layout code does not change gameplay.
+- Life follows the presented HP (`Presentation.pictured`), so it changes when a hit lands. Mana spent by Mana Shield follows each hit's impact; skill spending and flask sips update immediately, while natural recovery and cooldowns follow spent turns. The experience bar eases toward a turn's experience once that turn is drawn (`Presentation.xp_shown`). Layout code does not change gameplay.
 
 ## Verification
 
@@ -48,7 +48,7 @@ Use the existing check, test, shot and build scripts. Inspect full, partial, cri
 
 Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game/overlay.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Each slot's input is a `prompt_icon.Prompt` icon under it.
 
-Small text is rasterized at its displayed size (12, 15, 16, 20 and 24px) with point filtering, measured and drawn from the same atlas. Sizes through 16px use Source Sans 3; larger text uses Balthazar. Scaled panels use the corresponding mipmapped face, and map symbols retain Balthazar. Input icons are 22px tall with 15px labels, 6px below their slots. The 48px slots contain basic 30px procedural icons, with 8px gaps within groups and 16px between groups.
+Small text is rasterized at its displayed size (14, 17, 18, 20 and 24px) with point filtering, measured and drawn from the same atlas. Sizes through 18px use Source Sans 3; larger text uses Balthazar. Scaled panels use the corresponding mipmapped face, and map symbols retain Balthazar. Input icons are 25px tall with 17px labels, 6px below their slots. The 48px slots contain basic 30px procedural icons, with 8px gaps within groups and 16px between groups.
 
 The map spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind screen sizes its panel for the skill rows, longest available description and action buttons, using Character's `book.SIZE` as its scale reference over a veil. `ui/journal.zig` owns the saved event history and its bottom-left panel; the wheel or HUD inspector scrolls it.
 

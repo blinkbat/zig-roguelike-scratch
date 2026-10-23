@@ -67,5 +67,5 @@ test "a charge runs a straight open line of two or three tiles to a lit body, an
     lv.stand(.{ .x = 24, .y = 20 }, 6);
     lv.lit[grid.Level.idx(.{ .x = 23, .y = 20 })] = false;
     try std.testing.expect(!aimable(&lv, from, .{ .x = 23, .y = 20 }));
-    std.debug.print("charge: {d} to {d} tiles in 8 lines, blocked by a barrel, water, a body or darkness\n", .{ MIN_RANGE, RANGE });
+    std.debug.print("charge: {d} to {d} tiles in {d} lines, blocked by a barrel, water, a body or darkness\n", .{ MIN_RANGE, RANGE, mathx.ALL_DIRS.len });
 }

@@ -291,7 +291,7 @@ section containing only changes. This leaves utility skills and maximum ranks fr
 irrelevant zeroes and empty columns.
 
 Use `Act.describe` with combined equipment and passive perks for behavior (`Gear.perks` in
-the tree, `game.heroPerks` in the HUD). Mana and cooldown must come from the hero's
+the tree, `Simulation.heroPerks` in the HUD). Mana and cooldown must come from the hero's
 progression state through `State.writeUsage`. Show turn cost in turns, not seconds.
 Where actual damage ranges are displayed, share gameplay's attribute/weapon/rank
 calculation through `State.blowOf` (and `State.hit` for its spans); do not label raw base
@@ -311,7 +311,7 @@ Controller movement should follow visible geometry via the existing directional
 navigation helper, including locked nodes. A player must be able to inspect future
 skills before acquiring their parents. Pointer and keyboard navigation should converge
 on the same selected node and details. Focus must survive a successful allocation so
-the player can immediately inspect its result. Shoulders change tabs directly and Back closes the book. The centered panel grows at half the window-fitting rate, capped at 1.25x, with 16px detail and 20px body text before scaling. Scaled text uses the mipmapped font atlas; native-size panels retain the crisp native atlases.
+the player can immediately inspect its result. Shoulders change tabs directly and Back closes the book. The centered panel grows at half the window-fitting rate, capped at 1.25x, with 18px detail and 20px body text before scaling. Scaled text uses the mipmapped font atlas; native-size panels retain the crisp native atlases.
 
 The separate Bind skill action carries the selected learned skill straight into the slot picker. Binding is available regardless of unspent points, and returns to Skills. The utility-skill picker remains available. This keeps learning and binding explicit while removing the hidden hold entry. Larger text and UI scaling also follow Blizzard's stated readability work.
 [D2R accessibility article](https://news.blizzard.com/en-us/article/23700733/how-were-making-diablo-ii-resurrectedtm-more-accessible-to-everyone).

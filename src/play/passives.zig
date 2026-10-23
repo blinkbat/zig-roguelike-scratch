@@ -101,8 +101,6 @@ const SEAMS = blk: {
     break :blk out;
 };
 pub const Tier = enum { stat, interest, capstone };
-/// What a grant is about, which colours its node.
-pub const Group = enum { attribute, life, mana, offense, defense };
 /// Effects the game reads off the allocated tree rather than off the attributes.
 pub const Perks = struct {
     life_on_hit: i32 = 0,
@@ -142,15 +140,6 @@ pub const Kind = enum {
         };
     }
 
-    pub fn group(k: Kind) Group {
-        return INFO.getPtrConst(k).group;
-    }
-
-    /// Its tree label's stat: "Heavy", or "Str" for an attribute.
-    pub fn word(k: Kind) [:0]const u8 {
-        return INFO.getPtrConst(k).word;
-    }
-
     /// The damage it raises by a percentage, for a damage kind.
     pub fn style(k: Kind) ?attrs.Style {
         return switch (k) {
@@ -176,10 +165,9 @@ pub const Kind = enum {
         for (std.enums.values(Kind)) |k| {
             const homes = @as(u8, @intFromBool(k.style() != null)) + @intFromBool(k.bonus() != null) + @intFromBool(k.perk()) + @intFromBool(k.rate() != null);
             std.debug.assert(homes == 1);
-            const info = INFO.getPtrConst(k);
-            if (k.style() != null) std.debug.assert(info.percent and info.text == null);
-            if (info.text) |t| std.debug.assert(info.percent == (std.mem.indexOf(u8, t, "%") != null));
-            if (k.style() == null and k.bonus() == null) std.debug.assert(info.text != null);
+            const text = TEXT.get(k);
+            if (k.style() != null) std.debug.assert(text == null);
+            if (k.style() == null and k.bonus() == null) std.debug.assert(text != null);
         }
         for (std.meta.fields(Perks)) |f| _ = @field(Kind, f.name);
     }
@@ -191,32 +179,25 @@ pub const Kind = enum {
         };
     }
 };
-const Info = struct {
-    group: Group,
-    word: [:0]const u8,
-    percent: bool = false,
-    sign: []const u8 = "+",
-    /// The whole modifier, for a kind that is neither a damage style nor an attribute bonus.
-    text: ?[]const u8 = null,
-};
-const INFO = std.EnumArray(Kind, Info).init(.{
-    .strength = .{ .group = .attribute, .word = "Str" },
-    .dexterity = .{ .group = .attribute, .word = "Dex" },
-    .intelligence = .{ .group = .attribute, .word = "Int" },
-    .life = .{ .group = .life, .word = "Life" },
-    .mana = .{ .group = .mana, .word = "Mana" },
-    .armour = .{ .group = .defense, .word = "Armour", .percent = true, .text = "+{d}% " ++ attrs.REDUCTION_LABEL },
-    .heavy_damage = .{ .group = .offense, .word = "Heavy", .percent = true },
-    .light_damage = .{ .group = .offense, .word = "Light", .percent = true },
-    .spell_damage = .{ .group = .offense, .word = "Spell", .percent = true },
-    .crit = .{ .group = .offense, .word = "Crit", .percent = true, .text = "+{d}% " ++ attrs.CRIT_LABEL },
-    .dodge = .{ .group = .defense, .word = "Dodge", .percent = true, .text = "+{d}% chance to dodge attacks" },
-    .life_on_hit = .{ .group = .life, .word = "Leech", .text = "Heal {d} life for each foe a blow damages" },
-    .life_on_kill = .{ .group = .life, .word = "On kill", .text = "Heal {d} life for each foe a blow kills" },
-    .life_flask = .{ .group = .life, .word = "Flask", .percent = true, .text = "+{d}% life flask recovery" },
-    .cull = .{ .group = .offense, .word = "Cull", .percent = true, .sign = "", .text = "Blows kill foes left at {d}% life or less" },
-    .mana_regen = .{ .group = .mana, .word = "Regen", .text = std.fmt.comptimePrint("+{{d}} mana recovered per {d} turns", .{hero.MANA_REGEN_TURNS}) },
-    .mana_cost = .{ .group = .mana, .word = "Cost", .percent = true, .sign = "-", .text = "Skills cost {d}% less mana" },
+/// The whole modifier, for a kind that is neither a damage style nor an attribute bonus.
+const TEXT = std.EnumArray(Kind, ?[]const u8).init(.{
+    .strength = null,
+    .dexterity = null,
+    .intelligence = null,
+    .life = null,
+    .mana = null,
+    .armour = "+{d}% " ++ attrs.REDUCTION_LABEL,
+    .heavy_damage = null,
+    .light_damage = null,
+    .spell_damage = null,
+    .crit = "+{d}% " ++ attrs.CRIT_LABEL,
+    .dodge = "+{d}% chance to dodge attacks",
+    .life_on_hit = "Heal {d} life for each foe a blow damages",
+    .life_on_kill = "Heal {d} life for each foe a blow kills",
+    .life_flask = "+{d}% life flask recovery",
+    .cull = "Blows kill foes left at {d}% life or less",
+    .mana_regen = std.fmt.comptimePrint("+{{d}} mana recovered per {d} turns", .{hero.MANA_REGEN_TURNS}),
+    .mana_cost = "Skills cost {d}% less mana",
 });
 /// What each class origin grants of its arm's attribute.
 pub const ROOT_GRANT: i32 = 2;
@@ -246,23 +227,13 @@ pub const Grant = struct {
     pub fn write(g: Grant, w: anytype) void {
         const n = g.amount;
         (switch (g.kind) {
-            inline else => |t| if (comptime INFO.getPtrConst(t).text) |text|
+            inline else => |t| if (comptime TEXT.get(t)) |text|
                 w.print(text, .{n})
             else if (comptime t.style()) |s|
                 w.print("+{d}% {s}", .{ n, s.label() })
             else
                 w.print(attrs.Bonus.RAISE_FMT, .{ n, comptime t.bonus().?.label() }),
         }) catch {};
-    }
-
-    /// The tree's label is this over `word`: "+4%" over "Heavy".
-    pub fn writeAmount(g: Grant, w: anytype) void {
-        const info = INFO.getPtrConst(g.kind);
-        w.print("{s}{d}{s}", .{ info.sign, g.amount, if (info.percent) "%" else "" }) catch {};
-    }
-
-    pub fn word(g: Grant) [:0]const u8 {
-        return g.kind.word();
     }
 };
 pub const Node = struct {
@@ -284,14 +255,6 @@ pub const Node = struct {
     pub fn perk(n: Node, p: *Perks) void {
         n.grant.perk(p);
         if (n.bump) |g| g.perk(p);
-    }
-
-    /// Its grant's, or both attributes of a bridge.
-    pub fn word(n: Node) [:0]const u8 {
-        const s = n.seam orelse return n.grant.word();
-        return switch (s) {
-            inline else => |t| comptime t.from().stat().word() ++ "/" ++ t.to().stat().word(),
-        };
     }
 };
 
@@ -634,8 +597,8 @@ test "radial branches preserve capstone routes, bridge crossings, live grants an
     while (changed) {
         changed = false;
         for (0..N) |i| if (seen.isSet(i)) {
-            for ([_]Point{ .{ .x = 1, .y = 0 }, .{ .x = -1, .y = 0 }, .{ .x = 0, .y = 1 }, .{ .x = 0, .y = -1 } }) |d| {
-                const next = step(i, d.x, d.y);
+            for (mathx.CARDINALS) |d| {
+                const next = step(i, @floatFromInt(d.x), @floatFromInt(d.y));
                 if (!seen.isSet(next)) {
                     seen.set(next);
                     changed = true;

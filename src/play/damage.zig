@@ -106,5 +106,5 @@ test "each elemental resistance reduces only its own damage and leaves physical 
     try std.testing.expectEqual(@as(i32, 30), resisted(20, -50));
     try std.testing.expectEqual(@as(i32, 0), resisted(20, 150));
     try std.testing.expectEqual(@as(i32, 0), resisted(-1, 0));
-    std.debug.print("4 elemental resistances checked: 50% of 20 = 10, physical damage unchanged\n", .{});
+    std.debug.print("{d} elemental resistances checked: 50% of 20 = 10, physical damage unchanged\n", .{std.enums.values(Element).len});
 }

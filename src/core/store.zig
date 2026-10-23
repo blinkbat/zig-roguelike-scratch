@@ -54,6 +54,30 @@ pub fn replace(path: []const u8, bytes: []const u8) !void {
     try std.fs.cwd().rename(tmp, path);
 }
 
+pub const DIR = "saves";
+pub const SUM = @sizeOf(u64);
+
+pub fn sum(bytes: []const u8) u64 {
+    return std.hash.Wyhash.hash(0, bytes);
+}
+
+pub const OpenError = error{ Foreign, OtherBuild, Short, Damaged };
+
+pub fn open(bytes: []const u8, magic: []const u8, print: u64) OpenError![]const u8 {
+    if (bytes.len < magic.len + @sizeOf(u64) or !std.mem.eql(u8, bytes[0..magic.len], magic)) return error.Foreign;
+    var b = bytes[magic.len..];
+    var got: u64 = undefined;
+    _ = take(&b, &got);
+    if (got != print) return error.OtherBuild;
+    if (b.len < SUM) return error.Short;
+    var tail = b[b.len - SUM ..];
+    var want: u64 = undefined;
+    _ = take(&tail, &want);
+    b = b[0 .. b.len - SUM];
+    if (want != sum(b)) return error.Damaged;
+    return b;
+}
+
 pub fn put(w: anytype, v: anytype) !void {
     try w.writeAll(std.mem.asBytes(v));
 }

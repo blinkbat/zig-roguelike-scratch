@@ -166,5 +166,5 @@ test "glacial cone follows cardinal diagonal and oblique shots and stops at wall
     try std.testing.expect(!area.has(.{ .x = 22, .y = 20 }));
     try std.testing.expect(area.has(.{ .x = 21, .y = 21 }));
     for (lv.lit) |lit| try std.testing.expect(!lit);
-    std.debug.print("glacial cone: 8 directions plus oblique aim, 2-tile reach, wall occlusion, no sight changes\n", .{});
+    std.debug.print("glacial cone: {d} directions plus oblique aim, {d}-tile reach, wall occlusion, no sight changes\n", .{ mathx.ALL_DIRS.len, RANGE });
 }

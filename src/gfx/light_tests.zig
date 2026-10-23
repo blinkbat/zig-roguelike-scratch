@@ -21,10 +21,21 @@ const TORCH_AT = P{ .x = 20, .y = 10 };
 /// Cells in from an edge, so a sample on it reads the seen cell and not the unseen one past it.
 const EDGE_EPS: f32 = 1e-4;
 
-fn testRoom(lv: *grid.Level, walls: []const P) void {
-    lv.* = grid.openFloor();
+fn wallAcross(lv: *grid.Level) void {
     var x: i32 = 1;
     while (x < grid.W - 1) : (x += 1) lv.set(.{ .x = x, .y = TORCH_AT.y }, .wall);
+}
+
+const LIT_BOX = grid.Box.between(.{ .x = 10, .y = 10 }, .{ .x = 20, .y = 20 });
+
+fn lightBox(lv: *grid.Level, b: grid.Box) void {
+    var cells = b.cells();
+    while (cells.next()) |p| lv.light(p);
+}
+
+fn testRoom(lv: *grid.Level, walls: []const P) void {
+    lv.* = grid.openFloor();
+    wallAcross(lv);
     for (walls) |w| lv.set(w, .wall);
     gen.shapeWalls(lv);
     lv.addTorch(TORCH_AT);
@@ -381,11 +392,7 @@ test "a cell coming into sight fades up fast, and fades down to memory slower on
     var lv = grid.openFloor();
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
-    var y: i32 = 10;
-    while (y < 21) : (y += 1) {
-        var x: i32 = 10;
-        while (x < 21) : (x += 1) lv.light(.{ .x = x, .y = y });
-    }
+    lightBox(&lv, LIT_BOX);
     const q = [2]f32{ 15.5, 15.5 };
     l.carrier = q;
     const bright = lum(l.base() + light.CARRY);
@@ -838,8 +845,7 @@ test "the carried light reaches no remembered floor behind a wall" {
 
 test "daylight reaches no remembered floor behind a wall in sight" {
     var lv = grid.openFloor();
-    var x: i32 = 1;
-    while (x < grid.W - 1) : (x += 1) lv.set(.{ .x = x, .y = TORCH_AT.y }, .wall);
+    wallAcross(&lv);
     gen.shapeWalls(&lv);
     for (0..grid.CELLS) |i| {
         lv.seen[i] = true;
@@ -872,7 +878,7 @@ test "a cell is clear exactly when every cell within its fade's reach is wholly 
         l.soften();
         for (0..grid.CELLS) |i| {
             const c = grid.Level.of(i);
-            var want = c.x >= r and c.y >= r and c.x + r < grid.W and c.y + r < grid.H;
+            var want = grid.Box.inMap(r).holds(c);
             var box = grid.Cells.around(c, r);
             while (box.next()) |p| want = want and l.memoryAt(p) >= 1;
             try std.testing.expectEqual(want, l.clear[i]);
@@ -885,8 +891,7 @@ test "a cell is clear exactly when every cell within its fade's reach is wholly 
 
 test "sight has no step where it ends along a wall, nor as it eases out behind one" {
     var lv = grid.openFloor();
-    var x: i32 = 1;
-    while (x < grid.W - 1) : (x += 1) lv.set(.{ .x = x, .y = TORCH_AT.y }, .wall);
+    wallAcross(&lv);
     gen.shapeWalls(&lv);
     for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);
@@ -1078,11 +1083,7 @@ test "a body is lit as the ground under it is, fading into sight and on the edge
     var lv = grid.openFloor();
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
-    var y: i32 = 10;
-    while (y < 21) : (y += 1) {
-        var x: i32 = 10;
-        while (x < 21) : (x += 1) lv.light(.{ .x = x, .y = y });
-    }
+    lightBox(&lv, LIT_BOX);
     l.carrier = .{ 15.5, 15.5 };
     var worst: f32 = 0;
     var first: [2]f32 = undefined;

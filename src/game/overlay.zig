@@ -10,6 +10,7 @@ const skillbar = @import("../play/skillbar.zig");
 const damage = @import("../play/damage.zig");
 const attrs = @import("../play/attrs.zig");
 const heroes = @import("../play/hero.zig");
+const resilience = @import("../play/resilience.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
@@ -96,8 +97,8 @@ pub fn bindPanel(g: *const game.Game) P {
     const face = bindFace(g);
     var kit_buf: skillbar.KitBuf = undefined;
     var lines: usize = 1;
-    for (g.growth.kit(g.class, &kit_buf)) |act| lines = @max(lines, descLines(g, &face, act));
-    const desc_h = @as(i32, @intCast(lines)) * (font.SMALL + 4);
+    for (g.sim.growth.kit(g.sim.class, &kit_buf)) |act| lines = @max(lines, descLines(g, &face, act));
+    const desc_h = @as(i32, @intCast(lines)) * font.SMALL_LINE;
     return .{ .x = BIND_W, .y = bindInfoY() + BIND_DESC_DY + desc_h + BIND_ACTION_GAP + BIND_ACTION.y + menu.PANEL_PAD };
 }
 
@@ -137,7 +138,7 @@ const SlotShown = struct { act: skillbar.Act, cooling: u8, drinks: ?u8 };
 
 fn slotShown(g: *const game.Game, i: usize) ?SlotShown {
     const act = g.bar.at(.{ .set = shownSet(g), .button = skillbar.SLOTS[i] }) orelse return null;
-    return .{ .act = act, .cooling = g.cooldown.get(act), .drinks = if (act.flaskOf()) |k| g.flasks_shown.get(k).uses() else null };
+    return .{ .act = act, .cooling = g.sim.cooldown.get(act), .drinks = if (act.flaskOf()) |k| g.pic.flasks_shown.get(k).uses() else null };
 }
 
 pub fn hudLayout(g: *const game.Game) hud.Layout {
@@ -149,7 +150,7 @@ fn slotBox(layout: hud.Layout, i: usize) rl.Rectangle {
 }
 
 fn drawSkills(g: *game.Game, layout: hud.Layout) void {
-    const mana = game.manaShown(g);
+    const mana = g.pic.manaShown(&g.sim);
     for (skillbar.SLOTS, 0..) |b, i| {
         const box = slotBox(layout, i);
         const held = (g.st.held(b) and game.playShown(g)) or (g.mode == .aim and g.aim_by == b) or (b == g.bar.modifier and g.mouse.secondary);
@@ -158,7 +159,7 @@ fn drawSkills(g: *game.Game, layout: hud.Layout) void {
             .act = if (s) |v| v.act else null,
             .key = b,
             .edge = if (held) look.SLOT_HELD else null,
-            .faded = if (s) |v| skills.blocked(g, v.act, &g.flasks_shown, mana) != null else false,
+            .faded = if (s) |v| skills.blocked(g, v.act, &g.pic.flasks_shown, mana) != null else false,
         });
         const v = s orelse continue;
         if (v.cooling > 0 or v.drinks != null) hud.counter(&g.face, box, v.drinks orelse v.cooling);
@@ -193,11 +194,6 @@ pub fn bindPicker(b: binds.Binds, picks: usize) BindPicker {
     return .{ .win = win, .picks = picks, .x = BIND_X0, .y = pop_y, .w = w, .h = game.SLOT_PX };
 }
 
-/// Centred across the bind panel.
-fn bindText(g: *const game.Game, panel: P, s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
-    menu.mid(g.face, panel, s, y, size, col);
-}
-
 pub fn drawBinds(g: *game.Game) void {
     game.character.veil(g);
     const panel = bindPanel(g);
@@ -226,7 +222,7 @@ pub fn drawBinds(g: *game.Game) void {
         .browse => {},
         .pick => |pick| {
             var kit_buf: skillbar.KitBuf = undefined;
-            const kit = g.growth.kit(g.class, &kit_buf);
+            const kit = g.sim.growth.kit(g.sim.class, &kit_buf);
             shown = binds.pickAct(kit, pick);
             const picker = bindPicker(b, binds.picksOf(kit));
             var label: menu.Note(100) = .{};
@@ -250,7 +246,7 @@ pub fn drawBinds(g: *game.Game) void {
         const text = describe(g, a, &desc);
         _ = desc_face.paragraph(text, menu.PANEL_PAD, info_y + BIND_DESC_DY, BIND_DESC_W, font.SMALL, look.TEXT);
     } else if (b.menu == .pick) {
-        bindText(g, panel, "Clear slot", info_y, font.BODY, look.TEXT);
+        menu.mid(g.face, panel, "Clear slot", info_y, font.BODY, look.TEXT);
     }
     for (BIND_ACTIONS, 0..) |action, i| {
         if (!action.shown(&b)) continue;
@@ -269,42 +265,20 @@ pub fn describe(g: *const game.Game, act: skillbar.Act, buf: []u8) [:0]const u8 
 }
 
 fn writeDescription(g: *const game.Game, act: skillbar.Act, w: anytype) void {
-    act.describe(w, game.heroPerks(g));
+    act.describe(w, g.sim.heroPerks());
     w.writeAll(" ") catch {};
-    g.growth.writeUsage(act, w);
+    g.sim.growth.writeUsage(act, w);
     w.writeAll(".") catch {};
-}
-
-const Life = struct { hp: i32, max: i32 };
-
-pub fn settleResources(g: *game.Game) void {
-    g.life_fill = lifeFill(g);
-    g.mana_fill = manaFill(g);
-}
-
-/// Where the orbs' fills are easing to.
-pub fn lifeFill(g: *const game.Game) f32 {
-    const life = lifeShown(g);
-    return hud.fillOf(life.hp, life.max);
-}
-
-pub fn manaFill(g: *const game.Game) f32 {
-    return hud.fillOf(game.manaShown(g), game.manaMax(g));
-}
-
-fn lifeShown(g: *const game.Game) Life {
-    const h = game.heroShown(g) orelse return .{ .hp = 0, .max = game.lifeMax(g) };
-    return .{ .hp = h.hp, .max = h.max };
 }
 
 pub fn drawHud(g: *game.Game) void {
     const layout = hudLayout(g);
     hud.frame(layout, &g.sprites);
-    const life = lifeShown(g);
-    hud.resources(layout, &g.face, life.hp, life.max, game.manaShown(g), game.manaMax(g), g.life_fill, g.mana_fill);
+    const life = g.pic.lifeShown(&g.sim);
+    hud.resources(layout, &g.face, life.hp, life.max, g.pic.manaShown(&g.sim), g.sim.manaMax(), g.pic.life_fill, g.pic.mana_fill);
     drawSkills(g, layout);
-    hud.experience(layout, g.xp_shown - @floor(g.xp_shown));
-    if (game.heroShown(g)) |h| hud.statuses(layout, &g.sprites, &g.face, h.status, h.resilience.peak().percent);
+    hud.experience(layout, g.pic.xp_shown - @floor(g.pic.xp_shown));
+    if (g.pic.heroShown(&g.sim)) |h| hud.statuses(layout, &g.sprites, &g.face, h.status, h.resilience.peak().percent);
     game.mouseControls.draw(g);
 }
 
@@ -324,7 +298,7 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     out[n] = .{ .spot = .mana, .box = hud.orbBox(layout.mana) };
     n += 1;
     std.debug.assert(n == ORBS + skillbar.SLOTS.len);
-    if (game.heroShown(g)) |h| {
+    if (g.pic.heroShown(&g.sim)) |h| {
         var buf: hud.Shown = undefined;
         const shown = hud.shownStatuses(h.status, &buf);
         for (shown, 0..) |s, k| {
@@ -369,7 +343,7 @@ pub fn inspectStep(g: *game.Game) void {
     }
     const d = g.st.walk orelse return;
     if (here.spot == .log and d.delta().y != 0 and d.delta().x == 0) {
-        g.log.move(-d.delta().y);
+        g.sim.log.move(-d.delta().y);
         return;
     }
     g.inspecting = toward(spots, here, d) orelse here.spot;
@@ -424,15 +398,15 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
     return switch (s) {
         .log => null,
         .life => blk: {
-            const life = lifeShown(g);
+            const life = g.pic.lifeShown(&g.sim);
             break :blk .{
                 .title = hud.LIFE,
-                .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" }, .{ "Physical reduction", "{d}%" }, .{ "Dodge", "{d}%" } }), .{ life.hp, life.max, game.heroAttrs(g).reduction(), game.heroAttrs(g).dodge() }) catch "",
+                .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" }, .{ "Physical reduction", "{d}%" }, .{ "Dodge", "{d}%" } }), .{ life.hp, life.max, g.sim.heroAttrs().reduction(), g.sim.heroAttrs().dodge() }) catch "",
             };
         },
         .mana => .{
             .title = hud.MANA,
-            .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" }, .{ std.fmt.comptimePrint("Recovery / {d} turns", .{heroes.MANA_REGEN_TURNS}), "{d}" } }), .{ game.manaShown(g), game.manaMax(g), game.manaRegen(g) }) catch "",
+            .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" }, .{ std.fmt.comptimePrint("Recovery / {d} turns", .{heroes.MANA_REGEN_TURNS}), "{d}" } }), .{ g.pic.manaShown(&g.sim), g.sim.manaMax(), g.sim.manaRegen() }) catch "",
         },
         .slot => |i| blk: {
             const v = slotShown(g, i) orelse break :blk .{ .title = "Empty skill slot", .body = "No skill is bound here." };
@@ -441,7 +415,7 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             const w = body.writer();
             writeDescription(g, act, w);
             if (act.reticle() != null) w.print("\nRange: {d} cells", .{act.reach()}) catch {};
-            if (g.growth.hit(game.heroAttrs(g), g.inventory.gear, act)) |h| {
+            if (g.sim.growth.hit(g.sim.heroAttrs(), g.sim.inventory.gear, act)) |h| {
                 if (h.physical.hi > 0) w.print("\n" ++ damage.PHYSICAL_FMT, .{ h.physical.lo, h.physical.hi }) catch {};
                 if (h.element) |e| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi }) catch {};
                 w.print("\n" ++ attrs.SCALES_FMT, .{menu.named(h.style.attr())}) catch {};
@@ -450,7 +424,7 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
                 w.print("\n{d} drink{s} left", .{ n, plural(n) }) catch {}
             else if (v.cooling > 0)
                 w.print("\nReady in {d} turn{s}", .{ v.cooling, plural(v.cooling) }) catch {};
-            const rank = g.growth.ranks.get(act);
+            const rank = g.sim.growth.ranks.get(act);
             break :blk .{ .title = if (rank > 0) std.fmt.bufPrintZ(title_buf, "{s} - Rank {d}", .{ act.name(), rank }) catch act.name() else act.name(), .body = body.getWritten() };
         },
         .status => |st| blk: {
@@ -458,13 +432,13 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
                 var body = std.io.fixedBufferStream(body_buf);
                 const w = body.writer();
                 w.writeAll(st.about()) catch {};
-                if (game.heroShown(g)) |h| for (std.enums.values(@import("../play/resilience.zig").Kind)) |kind| {
+                if (g.pic.heroShown(&g.sim)) |h| for (std.enums.values(resilience.Kind)) |kind| {
                     const m = h.resilience.meters.get(kind);
                     if (m.turns > 0) w.print("\n{s}: {d}% resistance, {d} turns", .{ menu.named(kind), m.percent, m.turns }) catch {};
                 };
                 break :blk .{ .title = st.title(), .body = body.getWritten() };
             }
-            const turns = if (game.heroShown(g)) |h| h.status.get(st) else 0;
+            const turns = if (g.pic.heroShown(&g.sim)) |h| h.status.get(st) else 0;
             break :blk .{
                 .title = std.fmt.bufPrintZ(title_buf, "{s}, {d} turn{s}", .{ st.title(), turns, plural(turns) }) catch st.title(),
                 .body = st.about(),

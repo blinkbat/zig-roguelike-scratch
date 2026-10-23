@@ -128,7 +128,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                 continue;
             },
             .at => {
-                const pos = P{ .x = try int(i32, &f), .y = try int(i32, &f) };
+                const pos = try point(&f);
                 if (!atlas.clampPos(pos).eq(pos)) return error.BadLine;
                 (try lastNode(self)).pos = pos;
             },
@@ -399,7 +399,11 @@ fn int(comptime T: type, f: *Tokens) Error!T {
     return std.fmt.parseInt(T, f.next() orelse return error.BadLine, 10) catch error.BadLine;
 }
 
+fn point(f: *Tokens) Error!P {
+    return .{ .x = try int(i32, f), .y = try int(i32, f) };
+}
+
 fn cell(f: *Tokens) Error!P {
-    const p = P{ .x = try int(i32, f), .y = try int(i32, f) };
+    const p = try point(f);
     return if (grid.Level.inside(p)) p else error.BadLine;
 }

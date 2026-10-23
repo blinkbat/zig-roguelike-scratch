@@ -46,7 +46,7 @@ const GLINT_AT = mathx.P{ .x = -20, .y = -24 };
 const GLINT_R = [2]f32{ 3, 6 };
 const GLINT_A: f32 = 0.16;
 /// Above an orb's rim, its label's top.
-const LABEL_RISE: i32 = 19;
+const LABEL_RISE: i32 = font.SMALL + 3;
 /// A status icon's middle in its square; a status or slot count's inset from its box's corner.
 const ICON_AT = mathx.P{ .x = 14, .y = 15 };
 const COUNT_INSET = mathx.P{ .x = 7, .y = 6 };
@@ -68,6 +68,10 @@ const MANA_CORE = look.rgb(0x376eb4);
 const MANA_EDGE = look.rgb(0x14294d);
 const STATUS_PX: i32 = 40;
 const STATUS_GAP: i32 = 8;
+const RESIST_INSET: i32 = 4;
+const RESIST_RISE: i32 = 5;
+const RESIST_H: i32 = 2;
+const RESIST_W: i32 = STATUS_PX - 2 * RESIST_INSET;
 
 pub const Layout = struct {
     left: i32,
@@ -217,8 +221,9 @@ pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.
         look.hudPanelIn(sprites, box, PLATE, look.LIT);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         if (s == .resistant) {
-            rl.drawRectangle(x + 4, y + STATUS_PX - 5, STATUS_PX - 8, 2, look.EDGE);
-            rl.drawRectangle(x + 4, y + STATUS_PX - 5, @divTrunc((STATUS_PX - 8) * @as(i32, resistance), 100), 2, look.UI_GOLD);
+            const bar_y = y + STATUS_PX - RESIST_RISE;
+            rl.drawRectangle(x + RESIST_INSET, bar_y, RESIST_W, RESIST_H, look.EDGE);
+            rl.drawRectangle(x + RESIST_INSET, bar_y, mathx.filled(resistance, mathx.PERCENT, RESIST_W), RESIST_H, look.UI_GOLD);
         }
         counter(face, box, turns);
     }

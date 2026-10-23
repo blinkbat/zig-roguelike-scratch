@@ -117,6 +117,7 @@ pub const BARREL_GOLD = Gold{ .lo = 3, .hi = 12 };
 pub const CHEST_GOLD = Gold{ .lo = 18, .hi = 36 };
 pub const FOE_GOLD = Gold{ .lo = 1, .hi = 6 };
 pub const Affix = struct { kind: Mod, value: i16 };
+pub const AFFIXES_MAX = 2;
 pub const WeaponEffect = struct {
     bleed: u32 = 0,
     bleed_damage: i32 = bleeding.STILL,
@@ -152,9 +153,9 @@ pub const Innate = union(enum) {
     pub fn write(self: Innate, w: anytype) void {
         switch (self) {
             .grant => |g| g.write(w),
-            .weapon_crit => |n| w.print("+{d}% weapon critical chance", .{n}) catch {},
-            .spell_crit => |n| w.print("+{d}% spell critical chance", .{n}) catch {},
-            .physical_damage => |n| w.print("+{d}% physical damage", .{n}) catch {},
+            .weapon_crit => |n| w.print("+{d}% " ++ attrs.WEAPON_CRIT_LABEL, .{n}) catch {},
+            .spell_crit => |n| w.print("+{d}% " ++ attrs.SPELL_CRIT_LABEL, .{n}) catch {},
+            .physical_damage => |n| w.print("+{d}% " ++ attrs.PHYSICAL_LABEL, .{n}) catch {},
             .element => |e| w.print("+{d}% {s} damage", .{ e.percent, @tagName(e.kind) }) catch {},
             .bleed => |b| w.print("{d}% chance to bleed on hit", .{b.chance}) catch {},
             .stun => |n| w.print("{d}% chance to stun on hit", .{n}) catch {},
@@ -237,7 +238,7 @@ pub fn spec(k: Kind) Spec {
 
 pub const Item = struct {
     kind: Kind,
-    mods: [2]?Affix = .{ null, null },
+    mods: [AFFIXES_MAX]?Affix = @splat(null),
 
     pub fn name(self: Item) [:0]const u8 {
         return spec(self.kind).name;
@@ -523,7 +524,8 @@ test "weapon weights cross melee and range while caster implements have no innat
         try std.testing.expectEqual(s.damage, gear.weapon(s.attack));
         try std.testing.expect(gear.weapon(if (s.attack == .ranged) .melee else .ranged) == null);
     }
-    for ([_]Kind{ .wand, .staff }) |kind| {
+    const implements = [_]Kind{ .wand, .staff };
+    for (implements) |kind| {
         gear.slots.set(.right_hand, .{ .kind = kind });
         try std.testing.expect(spec(kind).damage == null);
         for (std.enums.values(attrs.Attack)) |attack| {
@@ -532,7 +534,8 @@ test "weapon weights cross melee and range while caster implements have no innat
         }
     }
     const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
-    for ([_]Kind{ .tome, .orb, .buckler, .shield, .totem }) |kind| {
+    const offhands = [_]Kind{ .tome, .orb, .buckler, .shield, .totem };
+    for (offhands) |kind| {
         var inv = Inventory{};
         try std.testing.expect(inv.add(.{ .kind = .wand }));
         try inv.equip(0, .right_hand, base);
@@ -550,7 +553,7 @@ test "weapon weights cross melee and range while caster implements have no innat
     var rng = mathx.Rng.init(0x17E);
     for (0..2000) |_| seen.insert(roll(&rng).kind);
     try std.testing.expectEqual(KINDS.len, seen.count());
-    std.debug.print("items: {d} heavy, {d} light, 2 non-attacking implements, 5 offhand swaps; all {d} kinds roll as loot\n", .{ heavy.len, light.len, KINDS.len });
+    std.debug.print("items: {d} heavy, {d} light, {d} non-attacking implements, {d} offhand swaps; all {d} kinds roll as loot\n", .{ heavy.len, light.len, implements.len, offhands.len, KINDS.len });
 }
 
 test "equipment swaps preserve both hands, reject self-funded requirements and keep dependent gear valid" {
@@ -623,7 +626,7 @@ test "foe loot is mostly gold then plain items with rare magic affixes" {
                 if (it.mods[1]) |second| try std.testing.expect(second.kind != it.mods[0].?.kind);
             } else {
                 plain += 1;
-                try std.testing.expectEqual([2]?Affix{ null, null }, it.mods);
+                try std.testing.expectEqual(@as([AFFIXES_MAX]?Affix, @splat(null)), it.mods);
             }
         }
     }

@@ -6,15 +6,14 @@ const TTF = "Balthazar-Regular.ttf";
 const DATA_TTF = "SourceSans3-Regular.ttf";
 const ATLAS_PX: i32 = 96;
 /// Drawn from its own point-filtered atlas, not the mipmapped one.
-const NATIVE_SIZES = [_]i32{ TINY, LABEL, SMALL, BODY, HEAD };
+const NATIVE_SIZES = [_]i32{ LABEL, SMALL, BODY, HEAD };
 const SHADOW_A: u16 = 200;
 /// Text size per pixel the shadow sits down and right.
 const SHADOW_STEP: i32 = 14;
 pub const BODY: i32 = 20;
-pub const SMALL: i32 = 16;
+pub const SMALL: i32 = 18;
 pub const HEAD: i32 = 24;
-pub const TINY: i32 = 12;
-pub const LABEL: i32 = 15;
+pub const LABEL: i32 = 17;
 
 const ASCII_LO: i32 = ' ';
 const ASCII_N: usize = '~' + 1 - ASCII_LO;
@@ -59,7 +58,7 @@ pub const Face = struct {
             } else rl.unloadFont(data);
         } else |_| {}
         for (NATIVE_SIZES, &face.native) |size, *held| {
-            const small = rl.loadFontFromMemory(".ttf", if (size <= SMALL) @embedFile(DATA_TTF) else @embedFile(TTF), size, &ascii_cps) catch continue;
+            const small = rl.loadFontFromMemory(".ttf", if (dataSized(size)) @embedFile(DATA_TTF) else @embedFile(TTF), size, &ascii_cps) catch continue;
             if (!orderedGlyphs(small, &ascii_cps)) {
                 rl.unloadFont(small);
                 continue;
@@ -73,7 +72,7 @@ pub const Face = struct {
     /// The font to walk `s` glyph by glyph at `size`; null where raylib's own text calls draw it.
     fn walkable(self: *const Face, s: []const u8, size: i32) ?rl.Font {
         if (!self.ordered or !printable(s)) return null;
-        const fallback = if (size <= SMALL) self.data_font orelse self.font else self.font;
+        const fallback = if (dataSized(size)) self.data_font orelse self.font else self.font;
         for (NATIVE_SIZES, &self.native) |px, *held| {
             if (px == size) return held.* orelse fallback;
         }
@@ -194,7 +193,7 @@ pub const Face = struct {
         self.textMid(s, cx, topFor(cy, size), size, col);
     }
 
-    fn topFor(cy: i32, size: i32) i32 {
+    pub fn topFor(cy: i32, size: i32) i32 {
         return cy - @divTrunc(size, 2);
     }
 
@@ -239,6 +238,10 @@ pub const Face = struct {
         self.engraved(s, self.leftFor(s, cx, size), y, size, col);
     }
 };
+
+fn dataSized(size: i32) bool {
+    return size <= SMALL;
+}
 
 fn shadowDrop(size: i32) i32 {
     return @max(@divTrunc(size, SHADOW_STEP), 1);
@@ -341,6 +344,7 @@ pub fn elided(buf: []u8, kept: []const u8, keep_end: bool) std.fmt.BufPrintError
 /// Between wrapped lines of text, past the text's size.
 pub const LEADING: i32 = 4;
 pub const SMALL_LINE: i32 = SMALL + LEADING;
+pub const SMALL_TIGHT: i32 = SMALL + 2;
 pub const BODY_LINE: i32 = BODY + LEADING;
 pub const WRAP_LINES_MAX: usize = 18;
 pub const WRAP_COLS_MAX: usize = 96;

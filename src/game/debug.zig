@@ -139,11 +139,21 @@ pub fn switches(g: *game.Game, comptime T: type) *T {
     };
 }
 
+const OWN_SWITCHES = [_]Row{ .unkillable, .performance_overlay };
+
 fn switched(comptime row: Row) bool {
     inline for (SWITCHES) |T| {
         if (@hasField(T, @tagName(row))) return true;
     }
-    return row == .unkillable or row == .performance_overlay;
+    return std.mem.indexOfScalar(Row, &OWN_SWITCHES, row) != null;
+}
+
+fn ownSwitch(g: *game.Game, comptime row: Row) *bool {
+    return switch (row) {
+        .unkillable => &g.sim.unkillable,
+        .performance_overlay => &g.debug.performance_overlay,
+        else => @compileError("Debug row " ++ @tagName(row) ++ " is not a switch of its own"),
+    };
 }
 
 pub fn option(g: *game.Game, row: Row) ?*bool {
@@ -152,11 +162,10 @@ pub fn option(g: *game.Game, row: Row) ?*bool {
             if (row == @field(Row, f.name)) return &@field(switches(g, T), f.name);
         }
     }
-    return switch (row) {
-        .unkillable => &g.unkillable,
-        .performance_overlay => &g.debug.performance_overlay,
-        else => null,
-    };
+    inline for (OWN_SWITCHES) |r| {
+        if (row == r) return ownSwitch(g, r);
+    }
+    return null;
 }
 
 pub fn syncDisplay(g: *const game.Game) void {
@@ -202,7 +211,7 @@ pub fn step(g: *game.Game) void {
             syncDisplay(g);
         },
         .frame_limit => {
-            g.debug.limit = (g.debug.limit + 1) % LIMITS.len;
+            g.debug.limit = mathx.wrap(g.debug.limit, 1, LIMITS.len);
             syncDisplay(g);
         },
         inline else => |r| {

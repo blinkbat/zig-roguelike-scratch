@@ -17,23 +17,23 @@ const game = @import("../game.zig");
 const P = mathx.P;
 
 pub fn openAim(g: *game.Game, by: input.Button, act: skillbar.Act) void {
-    const h = g.heroActor() orelse return;
-    aimAt(g, by, act, h.at, bow.pick(&g.lv, &g.pool, h.at));
+    const h = g.sim.heroActor() orelse return;
+    aimAt(g, by, act, h.at, bow.pick(&g.sim.lv, &g.sim.pool, h.at));
 }
 
 pub fn openLeap(g: *game.Game, by: input.Button, act: skillbar.Act) void {
-    const h = g.heroActor() orelse return;
+    const h = g.sim.heroActor() orelse return;
     g.mark = h.at;
     aiming(g, by, act);
 }
 
 fn openSwing(g: *game.Game, by: input.Button, act: skillbar.Act) void {
-    const h = g.heroActor() orelse return;
+    const h = g.sim.heroActor() orelse return;
     var mark: ?P = null;
     for (mathx.ALL_DIRS) |d| {
         const p = h.at.add(d.delta());
-        if (!act.aimable(&g.lv, h.at, p)) continue;
-        const foe = if (g.pool.get(g.lv.who(p))) |a| a.foe() else false;
+        if (!act.aimable(&g.sim.lv, h.at, p)) continue;
+        const foe = if (g.sim.pool.get(g.sim.lv.who(p))) |a| a.foe() else false;
         if (foe or mark == null) mark = p;
         if (foe) break;
     }
@@ -42,10 +42,10 @@ fn openSwing(g: *game.Game, by: input.Button, act: skillbar.Act) void {
 
 fn aimAt(g: *game.Game, by: input.Button, act: skillbar.Act, from: P, mark: ?P) void {
     g.mark = mark orelse {
-        g.log.say("Nothing in reach.", .{});
+        g.sim.log.say("Nothing in reach.", .{});
         return;
     };
-    game.turnToward(g, g.hero, g.mark.x - from.x);
+    g.pic.turnToward(g.sim.hero, g.mark.x - from.x);
     aiming(g, by, act);
 }
 
@@ -57,85 +57,86 @@ pub fn aiming(g: *game.Game, by: input.Button, act: skillbar.Act) void {
 
 const Blocked = enum { cooling, mana, empty, locked };
 
-pub fn blocked(g: *const game.Game, act: skillbar.Act, flasks: *const game.Flasks, mana: i32) ?Blocked {
-    if (!g.growth.unlocked(act)) return .locked;
-    if (g.cooldown.get(act) > 0) return .cooling;
+pub fn blocked(g: *const game.Game, act: skillbar.Act, flasks: *const game.simulation.Flasks, mana: i32) ?Blocked {
+    if (!g.sim.growth.unlocked(act)) return .locked;
+    if (g.sim.cooldown.get(act) > 0) return .cooling;
     if (act.flaskOf()) |k| {
         if (!flasks.get(k).full()) return .empty;
     }
-    if (mana < g.growth.cost(act)) return .mana;
+    if (mana < g.sim.growth.cost(act)) return .mana;
     return null;
 }
 
 fn ready(g: *game.Game, act: skillbar.Act) bool {
-    if (!game.quiet(g)) return false;
-    switch (blocked(g, act, &g.flasks, g.mana) orelse return true) {
+    if (!g.pic.quiet()) return false;
+    switch (blocked(g, act, &g.sim.flasks, g.sim.mana) orelse return true) {
         .cooling => {
-            const left = g.cooldown.get(act);
-            g.log.say("{s} is ready in {d} turn{s}.", .{ act.name(), left, plural(left) });
+            const left = g.sim.cooldown.get(act);
+            g.sim.log.say("{s} is ready in {d} turn{s}.", .{ act.name(), left, plural(left) });
         },
-        .mana => g.log.say("{s} needs {d} mana.", .{ act.name(), g.growth.cost(act) }),
-        .empty => g.log.say("{s} is empty.", .{act.name()}),
-        .locked => g.log.say("{s} is not learned.", .{act.name()}),
+        .mana => g.sim.log.say("{s} needs {d} mana.", .{ act.name(), g.sim.growth.cost(act) }),
+        .empty => g.sim.log.say("{s} is empty.", .{act.name()}),
+        .locked => g.sim.log.say("{s} is not learned.", .{act.name()}),
     }
     return false;
 }
 
 fn spend(g: *game.Game, act: skillbar.Act) void {
-    g.mana -= g.growth.cost(act);
-    g.cooldown.set(act, g.growth.cooldown(act));
+    g.sim.chronicle.note(.{ .used = act });
+    g.sim.mana -= g.sim.growth.cost(act);
+    g.sim.cooldown.set(act, g.sim.growth.cooldown(act));
 }
 
 const plural = mathx.plural;
 
 pub fn aimable(g: *const game.Game, from: P, to: P) bool {
-    return g.aim_act.aimable(&g.lv, from, to);
+    return g.aim_act.aimable(&g.sim.lv, from, to);
 }
 
 fn leap(g: *game.Game, from: P, act: skillbar.Act) void {
     const to = g.mark;
     game.heroTo(g, to);
-    g.glide[game.heroSlot(g).?] = glide.Glide.rest(g.heroActor().?);
-    game.turnToward(g, g.hero, to.x - from.x);
+    g.pic.glide[g.sim.heroSlot().?] = glide.Glide.rest(g.sim.heroActor().?);
+    g.pic.turnToward(g.sim.hero, to.x - from.x);
     if (act.teleports()) {
-        g.fx.shimmer(mathx.centre(from), look.WARD);
-        g.fx.shimmer(mathx.centre(to), look.WARD);
-    } else g.fx.juke(from, to);
+        g.pic.fx.shimmer(mathx.centre(from), look.WARD);
+        g.pic.fx.shimmer(mathx.centre(to), look.WARD);
+    } else g.pic.fx.juke(from, to);
     sayDone(g, act);
-    if (g.travel != null) combat.holdUntil(g, fx.JUKE_S);
-    g.unsaved = true;
+    if (g.sim.travel != null) g.pic.holdUntil(fx.JUKE_S);
+    g.sim.unsaved = true;
     game.castSight(g, to);
     if (act.free()) return;
-    g.lead = 0;
+    g.pic.lead = 0;
     combat.endTurn(g);
 }
 
 fn drink(g: *game.Game, act: skillbar.Act, k: flask.Kind) void {
-    const h = g.heroActor() orelse return;
+    const h = g.sim.heroActor() orelse return;
     spend(g, act);
-    g.flasks.getPtr(k).drink(flask.recovers(k, h.max, game.heroPerks(g)));
+    g.sim.flasks.getPtr(k).drink(flask.recovers(k, h.max, g.sim.heroPerks()));
     recoverFlask(g, k, 0);
-    g.flasks_shown.set(k, g.flasks.get(k));
-    g.fx.shimmer(mathx.centre(h.at), switch (k) {
+    g.pic.flasks_shown.set(k, g.sim.flasks.get(k));
+    g.pic.fx.shimmer(mathx.centre(h.at), switch (k) {
         .life => look.LIFE,
         .mana => look.WARD,
     });
-    g.log.push(.recovery, "{s} drinks a {s} flask.", .{ g.name.text(), @tagName(k) });
-    g.unsaved = true;
+    g.sim.log.push(.recovery, "{s} drinks a {s} flask.", .{ g.sim.name.text(), @tagName(k) });
+    g.sim.unsaved = true;
 }
 
 pub fn recover(g: *game.Game) void {
-    g.mana_recovery += game.manaRegen(g);
-    game.gainMana(g, @divTrunc(g.mana_recovery, heroes.MANA_REGEN_TURNS));
-    g.mana_recovery = @mod(g.mana_recovery, heroes.MANA_REGEN_TURNS);
-    for (std.enums.values(flask.Kind)) |k| recoverFlask(g, k, g.lead orelse 0);
+    g.sim.mana_recovery += g.sim.manaRegen();
+    g.sim.gainMana(@divTrunc(g.sim.mana_recovery, heroes.MANA_REGEN_TURNS));
+    g.sim.mana_recovery = @mod(g.sim.mana_recovery, heroes.MANA_REGEN_TURNS);
+    for (std.enums.values(flask.Kind)) |k| recoverFlask(g, k, g.pic.lead orelse 0);
 }
 
 fn recoverFlask(g: *game.Game, k: flask.Kind, wait: f32) void {
-    const n = g.flasks.getPtr(k).tick();
+    const n = g.sim.flasks.getPtr(k).tick();
     switch (k) {
         .life => combat.heal(g, n, wait),
-        .mana => game.gainMana(g, n),
+        .mana => g.sim.gainMana(n),
     }
 }
 
@@ -167,9 +168,12 @@ fn skillOn(g: *const game.Game, set: skillbar.Set, b: input.Button) ?Use {
 }
 
 pub fn useSkill(g: *game.Game, u: Use) void {
-    if (!game.quiet(g)) return;
+    if (!g.pic.quiet()) return;
     const r = u.act.reticle() orelse return switch (u.act) {
-        .wait => combat.endTurn(g),
+        .wait => {
+            g.sim.chronicle.note(.{ .used = .wait });
+            combat.endTurn(g);
+        },
         .secondary => unreachable,
         inline else => |a| if (comptime a.reticle() != null)
             unreachable
@@ -189,21 +193,21 @@ pub fn useSkill(g: *game.Game, u: Use) void {
 
 fn spell(g: *game.Game, comptime act: skillbar.Act) void {
     const M = skillbar.Act.skill(act);
-    const h = g.heroActor() orelse return;
+    const h = g.sim.heroActor() orelse return;
     spend(g, act);
     if (comptime act.surrounds()) {
-        const s = combat.Stroke{ .from = h.at, .wait = game.CAST_S };
-        combat.holdUntil(g, s.wait);
-        const area = M.around(&g.lv, h.at);
+        const s = game.presentation.Stroke{ .from = h.at, .wait = game.CAST_S };
+        g.pic.holdUntil(s.wait);
+        const area = M.around(&g.sim.lv, h.at);
         if (foesIn(g, area).n == 0) sayDone(g, act);
         combat.areaHit(g, act, h.at, area, s, null, false);
-        g.lead = s.wait;
+        g.pic.lead = s.wait;
     } else if (comptime act.wards()) {
         sayDone(g, act);
         h.ward.raise();
-        g.fx.shimmer(mathx.centre(h.at), look.WARD);
-        combat.settleHero(g, 0);
-        g.lead = 0;
+        g.pic.fx.shimmer(mathx.centre(h.at), look.WARD);
+        g.pic.settleHero(&g.sim, 0);
+        g.pic.lead = 0;
     } else @compileError(@tagName(act) ++ " has no reticle and no use");
     combat.endTurn(g);
 }
@@ -213,20 +217,20 @@ const Struck = actor.Ids(actor.MAX);
 /// Snapshot targets before damage so newborn slime halves are not hit twice.
 pub fn foesIn(g: *game.Game, area: glacial.Burst) Struck {
     var out = Struck{};
-    for (g.pool.slice(), 0..) |a, i| {
+    for (g.sim.pool.slice(), 0..) |a, i| {
         if (a.alive and a.foe() and area.has(a.at)) out.push(actor.Pool.idOf(i));
     }
     return out;
 }
 
 fn openRush(g: *game.Game, by: input.Button, act: skillbar.Act) void {
-    const h = g.heroActor() orelse return;
+    const h = g.sim.heroActor() orelse return;
     var near = bow.Nearest{ .from = h.at };
     var empty = bow.Nearest{ .from = h.at };
     var cells = grid.Cells.around(h.at, act.reach());
     while (cells.next()) |p| {
-        if (act.aimable(&g.lv, h.at, p)) {
-            if (g.lv.who(p) != grid.NO_ONE) near.offer(p) else empty.offer(p);
+        if (act.aimable(&g.sim.lv, h.at, p)) {
+            if (g.sim.lv.who(p) != grid.NO_ONE) near.offer(p) else empty.offer(p);
         }
     }
     aimAt(g, by, act, h.at, near.best orelse empty.best);
@@ -237,14 +241,13 @@ fn rush(g: *game.Game, from: P, act: skillbar.Act) void {
         inline else => |a| if (comptime a.reticle() != .rush) unreachable else {
             const M = skillbar.Act.skill(a);
             const d = M.wayTo(from, g.mark).?;
-            const occupied = g.lv.who(g.mark) != grid.NO_ONE;
+            const occupied = g.sim.lv.who(g.mark) != grid.NO_ONE;
             const stop = if (occupied) M.stop(from, g.mark) else g.mark;
-            const i = game.heroSlot(g).?;
             game.heroTo(g, stop);
-            const s = combat.Stroke{ .from = stop, .wait = combat.glideHeld(g, i, g.glide[i].toward(stop, 0)) };
+            const s = game.presentation.Stroke{ .from = stop, .wait = g.pic.glideToHeld(g.sim.heroSlot().?, stop, 0) };
             if (occupied) combat.knock(g, a, d, s) else sayDone(g, a);
-            game.turnToward(g, g.hero, d.delta().x);
-            g.lead = s.wait;
+            g.pic.turnToward(g.sim.hero, d.delta().x);
+            g.pic.lead = s.wait;
         },
     }
     combat.endTurn(g);
@@ -252,31 +255,31 @@ fn rush(g: *game.Game, from: P, act: skillbar.Act) void {
 
 /// Over the hero's own cell, so the reticle reaches the far side of a corridor.
 pub fn nudgeAim(g: *game.Game, d: mathx.Dir) void {
-    const h = g.heroActor() orelse return;
+    const h = g.sim.heroActor() orelse return;
     var to = g.mark.add(d.delta());
     switch (g.aim_act.reticle().?) {
         .leap, .rush => if (!juke.inReach(h.at, to, g.aim_act.reach()) or !grid.Level.inside(to)) return,
         .bow => {
             if (to.eq(h.at)) to = to.add(d.delta());
-            if (!bow.aimable(&g.lv, h.at, to)) return;
+            if (!bow.aimable(&g.sim.lv, h.at, to)) return;
         },
         .swing => to = h.at.add(d.delta()),
     }
     g.mark = to;
-    game.turnToward(g, g.hero, to.x - h.at.x);
+    g.pic.turnToward(g.sim.hero, to.x - h.at.x);
 }
 
 pub fn confirmAim(g: *game.Game) void {
-    const h = g.heroActor() orelse return;
+    const h = g.sim.heroActor() orelse return;
     const act = g.aim_act;
     if (!ready(g, act)) return;
     const reticle = act.reticle().?;
     if (!aimable(g, h.at, g.mark)) {
         switch (reticle) {
-            .bow => g.log.say("Can't shoot there.", .{}),
-            .leap => g.log.say("{s} needs a visible, empty landing within {d} tiles.", .{ act.name(), act.reach() }),
-            .swing => g.log.say("Nothing to strike there.", .{}),
-            .rush => g.log.say("{s} needs a clear straight line {d} to {d} tiles away.", .{ act.name(), act.nearest(), act.reach() }),
+            .bow => g.sim.log.say("Can't shoot there.", .{}),
+            .leap => g.sim.log.say("{s} needs a visible, empty landing within {d} tiles.", .{ act.name(), act.reach() }),
+            .swing => g.sim.log.say("Nothing to strike there.", .{}),
+            .rush => g.sim.log.say("{s} needs a clear straight line {d} to {d} tiles away.", .{ act.name(), act.nearest(), act.reach() }),
         }
         return;
     }
@@ -293,12 +296,12 @@ pub fn confirmAim(g: *game.Game) void {
 
 fn loose(g: *game.Game, from: P, act: skillbar.Act) void {
     const to = g.mark;
-    const f = bow.fly(&g.lv, from, to);
-    g.shot = .{ .flight = f, .from = from, .act = act };
-    combat.holdUntil(g, g.shot.?.ends());
-    const s = combat.Stroke{ .from = from, .wait = g.shot.?.lands(), .fire = act.element() == .fire };
-    if (act.element() == .lightning and f.len > 0) g.fx.zap(@max(0, s.wait - game.ZAP_S), .{ .from = mathx.centre(from), .to = mathx.centre(f.path[f.len - 1]) });
-    g.lead = s.wait;
+    const f = bow.fly(&g.sim.lv, from, to);
+    g.pic.shot = .{ .flight = f, .from = from, .act = act };
+    g.pic.holdUntil(g.pic.shot.?.ends());
+    const s = game.presentation.Stroke{ .from = from, .wait = g.pic.shot.?.lands(), .fire = act.element() == .fire };
+    if (act.element() == .lightning and f.len > 0) g.pic.fx.zap(@max(0, s.wait - game.ZAP_S), .{ .from = mathx.centre(from), .to = mathx.centre(f.path[f.len - 1]) });
+    g.pic.lead = s.wait;
     if (f.struck) |hit| switch (act) {
         inline else => |a| if (comptime a.reticle() != .bow) unreachable else if (comptime a.bursts()) combat.burstHit(g, a, hit, f.impact().?, s) else switch (hit) {
             .body => |id| if (comptime a.chains())
@@ -309,11 +312,14 @@ fn loose(g: *game.Game, from: P, act: skillbar.Act) void {
             } else combat.arrowHit(g, id, combat.heroArrow(g, a, true), a, s),
             .barrel => |p| combat.smash(g, p, combat.barrelVerb(a), s),
         },
-    } else g.log.say("{s}'s {s} finds nothing.", .{ g.name.text(), act.bolt() orelse "arrow" });
+    } else {
+        g.sim.log.say("{s}'s {s} finds nothing.", .{ g.sim.name.text(), act.bolt() orelse "arrow" });
+        g.sim.chronicle.note(.missed);
+    }
     combat.endTurn(g);
 }
 
 fn sayDone(g: *game.Game, act: skillbar.Act) void {
     const done = act.done() orelse return;
-    g.log.say("{s} {s}.", .{ g.name.text(), done });
+    g.sim.log.say("{s} {s}.", .{ g.sim.name.text(), done });
 }

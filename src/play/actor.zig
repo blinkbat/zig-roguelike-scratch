@@ -243,19 +243,23 @@ pub const Actor = struct {
 
 pub const MAX: usize = 64;
 
+/// The last way a body stepped, struck or aimed across.
+pub const Facing = enum { right, left };
+
 test "heroes and foes share independent status buildup with innate beefy pib stun resistance" {
     var rng = mathx.Rng.init(0x51A7);
-    for ([_]Kind{ .archer, .wizard, .knight, .rat, .beefy_pib }) |kind| {
+    const kinds = [_]Kind{ .archer, .wizard, .knight, .rat, .beefy_pib };
+    for (kinds) |kind| {
         var a = Actor.of(kind, .{ .x = 1, .y = 1 });
         for (std.enums.values(resilience.Kind)) |status| {
             var n: usize = 0;
             for (0..1000) |_| n += @intFromBool(a.takeStatus(status, &rng));
-            try std.testing.expectEqual(@as(usize, if (kind == .beefy_pib and status == .stun) 1 else 4), n);
+            try std.testing.expectEqual(@as(usize, if (kind == .beefy_pib and status == .stun) 1 else mathx.PERCENT / resilience.GAIN), n);
         }
         for (0..resilience.EXPIRY + 1) |_| a.settle();
         try std.testing.expectEqual(@as(u8, 0), a.resilience.peak().percent);
     }
-    std.debug.print("status buildup: 3 heroes and 2 foes, all 5 ailments; beefy pib has {d}% innate stun resistance\n", .{row(.beefy_pib).stun_resist});
+    std.debug.print("status buildup: {d} bodies, all {d} ailments; beefy pib has {d}% innate stun resistance\n", .{ kinds.len, std.enums.values(resilience.Kind).len, row(.beefy_pib).stun_resist });
 }
 
 pub const Tally = struct { left: usize = 0, total: usize = 0 };

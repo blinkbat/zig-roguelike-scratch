@@ -536,11 +536,8 @@ test "a map saves and loads back the same" {
     pg.foes.makeup[1] = pack.Makeup.of(&.{ .bloat, .rat });
     pg.foes.makeup[1].weight = 3;
     const b = &a.node[room].plan.bespoke;
-    var y: i32 = 3;
-    while (y < 9) : (y += 1) {
-        var x: i32 = 3;
-        while (x < 12) : (x += 1) b.tile[grid.Level.idx(.{ .x = x, .y = y })] = .floor;
-    }
+    var floor = grid.Box.sized(.{ .x = 3, .y = 3 }, 9, 6).cells();
+    while (floor.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
     b.barrel[grid.Level.idx(.{ .x = 4, .y = 4 })] = true;
     _ = b.torch.add(.{ .x = 6, .y = 2 });
     _ = b.addFoe(.{ .kind = .slime, .at = .{ .x = 9, .y = 6 } });

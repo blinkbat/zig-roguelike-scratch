@@ -72,7 +72,7 @@ pub const Prompt = union(enum) {
             },
             .dpad, .arrows => {
                 const step = @divTrunc(h, 3);
-                for ([_]mathx.Dir{ .n, .e, .s, .w }) |d| {
+                for (input.DPAD) |d| {
                     const offset = d.delta();
                     const ink = if (p == .dpad and offset.x != 0) PROMPT_EDGE else PROMPT_INK;
                     promptArrow(d, cx + offset.x * step, cy + offset.y * step, arrowPx(h), look.fade(ink, alpha));

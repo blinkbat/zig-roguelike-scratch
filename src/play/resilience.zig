@@ -25,14 +25,14 @@ pub const State = struct {
     }
 
     pub fn resistance(self: State, kind: Kind, innate: u8) u32 {
-        return @min(100, @as(u32, innate) + self.meters.get(kind).percent);
+        return @min(mathx.PERCENT, @as(u32, innate) + self.meters.get(kind).percent);
     }
 
     pub fn take(self: *State, kind: Kind, innate: u8, rng: *mathx.Rng) bool {
         const resist = self.resistance(kind, innate);
-        if (resist >= 100 or (resist > 0 and rng.percent(resist))) return false;
+        if (resist >= mathx.PERCENT or (resist > 0 and rng.percent(resist))) return false;
         const meter = self.meters.getPtr(kind);
-        meter.* = .{ .percent = @min(100, meter.percent + GAIN), .turns = EXPIRY, .fresh = true };
+        meter.* = .{ .percent = @min(mathx.PERCENT, meter.percent + GAIN), .turns = EXPIRY, .fresh = true };
         return true;
     }
 
@@ -54,8 +54,8 @@ test "status buildup is independent, blocks repeated applications and expires on
     for (std.enums.values(Kind)) |kind| {
         var landed: usize = 0;
         for (0..1000) |_| landed += @intFromBool(s.take(kind, 0, &rng));
-        try std.testing.expectEqual(@as(usize, 4), landed);
-        try std.testing.expectEqual(@as(u32, 100), s.resistance(kind, 0));
+        try std.testing.expectEqual(@as(usize, mathx.PERCENT / GAIN), landed);
+        try std.testing.expectEqual(@as(u32, mathx.PERCENT), s.resistance(kind, 0));
     }
     s.settle();
     for (0..EXPIRY - 1) |_| s.settle();
@@ -66,5 +66,5 @@ test "status buildup is independent, blocks repeated applications and expires on
     for (0..1000) |_| successes += @intFromBool(s.take(.stun, 75, &rng));
     try std.testing.expectEqual(@as(usize, 1), successes);
     try std.testing.expectEqual(@as(u32, 0), s.resistance(.bleed, 0));
-    std.debug.print("resilience: 5 independent meters, 4 successes before immunity; innate 75% needs 1, expiry {d} turns\n", .{EXPIRY});
+    std.debug.print("resilience: {d} independent meters, {d} successes before immunity; innate 75% needs 1, expiry {d} turns\n", .{ std.enums.values(Kind).len, mathx.PERCENT / GAIN, EXPIRY });
 }
