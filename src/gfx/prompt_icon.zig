@@ -224,3 +224,36 @@ fn menuMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
     const y: f32 = @floatFromInt(cy);
     for ([_]f32{ -1, 0, 1 }) |k| rl.drawLineEx(.{ .x = x - s, .y = y + k * s * 0.7 }, .{ .x = x + s, .y = y + k * s * 0.7 }, 1.5, look.fade(PROMPT_INK, alpha));
 }
+
+test "a slot's prompt is its maker's face button or shoulder on a pad, and its key's cap on the keyboard" {
+    _ = Prompt.draw;
+    var st = input.State{ .device = .xbox };
+    try std.testing.expectEqual(FaceButton.a, Prompt.of(&st, .a).face.button);
+    try std.testing.expect(!Prompt.of(&st, .y).face.sony);
+    try std.testing.expectEqualStrings("RB", Prompt.of(&st, .rb).pill);
+    try std.testing.expect(Prompt.of(&st, .character) == .menu);
+    try std.testing.expect(Prompt.of(&st, .pause) == .view);
+    st.device = .ps5;
+    try std.testing.expect(Prompt.of(&st, .x).face.sony);
+    try std.testing.expectEqualStrings("L1", Prompt.of(&st, .lb).pill);
+    try std.testing.expectEqualStrings("Options", Prompt.of(&st, .character).pill);
+    try std.testing.expectEqualStrings("Create", Prompt.of(&st, .pause).pill);
+    st.device = .ps4;
+    try std.testing.expectEqualStrings("Share", Prompt.of(&st, .pause).pill);
+    st = .{ .device = .keys, .modifier = .lb };
+    try std.testing.expectEqualStrings(input.SECOND_CAPTION, Prompt.of(&st, .lb).key);
+    try std.testing.expectEqualStrings("1", Prompt.of(&st, .a).key);
+    try std.testing.expectEqualStrings("Enter", Prompt.menuOf(&st, .a).key);
+    try std.testing.expectEqualStrings("Esc", Prompt.menuOf(&st, .b).key);
+    try std.testing.expectEqualStrings("Q", Prompt.menuOf(&st, .lb).key);
+    try std.testing.expectEqualStrings("E", Prompt.menuOf(&st, .rb).key);
+    for (input.SLOT_ORDER) |b| {
+        for ([_]input.Device{ .xbox, .ps4 }) |d| {
+            st.device = d;
+            switch (Prompt.of(&st, b)) {
+                .face => |f| try std.testing.expect(faceInk(f.button, d.playstation()).a == 255),
+                else => {},
+            }
+        }
+    }
+}

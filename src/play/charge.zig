@@ -23,7 +23,7 @@ pub const knocked = bash.knocked;
 pub fn wayTo(from: P, to: P) ?mathx.Dir {
     const d = to.sub(from);
     if (d.x != 0 and d.y != 0 and @abs(d.x) != @abs(d.y)) return null;
-    return mathx.stepDir(d.sign());
+    return mathx.toward(from, to);
 }
 
 /// Where the hero stops: the cell before the body it charges.

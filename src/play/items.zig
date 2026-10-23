@@ -123,6 +123,14 @@ pub const WeaponEffect = struct {
     bleed_damage: i32 = bleeding.STILL,
     stun: u32 = 0,
     penetration: i32 = 0,
+
+    pub fn chance(self: WeaponEffect, k: @import("resilience.zig").Kind) u32 {
+        return switch (k) {
+            .bleed => self.bleed,
+            .stun => self.stun,
+            .burn, .chill, .pin => 0,
+        };
+    }
 };
 
 pub const Innate = union(enum) {
@@ -281,11 +289,15 @@ pub fn roll(rng: *mathx.Rng) Item {
     if (!rng.percent(MAGIC_PERCENT)) return out;
     const count = rng.range(1, out.mods.len);
     for (0..@intCast(count)) |i| {
-        var at: usize = rng.below(AFFIXES.len);
-        while (for (out.mods[0..i]) |m| {
-            if (m.?.kind == AFFIXES[at].kind) break true;
-        } else false) at = mathx.wrap(at, 1, AFFIXES.len);
-        const a = AFFIXES[at];
+        var left = rng.below(@intCast(AFFIXES.len - i));
+        const a = for (AFFIXES) |a| {
+            const taken = for (out.mods[0..i]) |m| {
+                if (m.?.kind == a.kind) break true;
+            } else false;
+            if (taken) continue;
+            if (left == 0) break a;
+            left -= 1;
+        } else unreachable;
         out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)) };
     }
     return out;
@@ -634,6 +646,30 @@ test "foe loot is mostly gold then plain items with rare magic affixes" {
     try std.testing.expect(plain >= 650 and plain <= 950);
     try std.testing.expect(magic >= 125 and magic <= 275);
     std.debug.print("foe loot over {d} kills: {d} gold, {d} plain items without affixes, {d} magic items\n", .{ rolls, gold, plain, magic });
+}
+
+test "a second affix is any of the others alike" {
+    var rng = mathx.Rng.init(0xAFF1);
+    var pairs = std.mem.zeroes([AFFIXES.len][AFFIXES.len]u32);
+    var n: usize = 0;
+    while (n < 15000) {
+        const it = roll(&rng);
+        const second = it.mods[1] orelse continue;
+        pairs[std.mem.indexOfScalar(Mod, &MODS, it.mods[0].?.kind).?][std.mem.indexOfScalar(Mod, &MODS, second.kind).?] += 1;
+        n += 1;
+    }
+    var worst: f32 = 0;
+    for (pairs, 0..) |row, f| {
+        var total: u32 = 0;
+        for (row) |c| total += c;
+        const even = @as(f32, @floatFromInt(total)) / (AFFIXES.len - 1);
+        for (row, 0..) |c, s| {
+            if (s == f) continue;
+            worst = @max(worst, @abs(@as(f32, @floatFromInt(c)) - even) / even);
+        }
+    }
+    std.debug.print("second affixes over {d} two-affix items: worst pair {d:.0}% off even\n", .{ n, worst * 100 });
+    try std.testing.expect(worst < 0.25);
 }
 
 test "every equipment base rolls white and blue and keeps its innate separate from affixes" {

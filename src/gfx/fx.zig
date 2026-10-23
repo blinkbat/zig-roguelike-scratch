@@ -138,9 +138,10 @@ pub const Status = enum {
 
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
-            .bleeding => look.BLEED,
-            inline .burning, .chilled => |t| look.elementInk(module(t).ELEMENT),
-            .pinned => look.PIN,
+            .bleeding => look.ailmentInk(.bleed),
+            .burning => look.ailmentInk(.burn),
+            .chilled => look.ailmentInk(.chill),
+            .pinned => look.ailmentInk(.pin),
             .warded => look.WARD,
             .resistant => look.UI_GOLD,
         };

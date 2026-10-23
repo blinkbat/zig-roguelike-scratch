@@ -12,7 +12,6 @@ const bow = @import("../play/bow.zig");
 const damage = @import("../play/damage.zig");
 const attrs = @import("../play/attrs.zig");
 const burning = @import("../play/burning.zig");
-const bleeding = @import("../play/bleeding.zig");
 const turn_clock = @import("../play/clock.zig");
 const glacial = @import("../play/glacial.zig");
 const flask = @import("../play/flask.zig");
@@ -96,7 +95,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
     if (id == grid.NO_ONE) return smash(g, to, M.VERB, s);
     const a = g.sim.pool.get(id).?;
     var r = heroSkill(g, act).against(a, &g.sim.rng);
-    const takes = if (comptime act.afflicts()) afflicted(g, a, M, r.dmg < a.hp, 0) else false;
+    const takes = if (comptime act.afflicts()) afflicted(g, a, M, r.dmg > 0 and r.dmg < a.hp, 0) else false;
     if (comptime act.afflicts()) if (takes) {
         r.applied = M.AILMENT;
     };
@@ -138,9 +137,7 @@ const Roll = struct {
 
     fn against(self: Roll, a: *const actor.Actor, rng: *mathx.Rng) Roll {
         var out = self;
-        var defense = attrs.Attrs.of(.{ .strength = 0, .dexterity = 0, .intelligence = 0 });
-        defense.armour = @max(0, actor.row(a.kind).armour - self.effect.penetration);
-        out.dmg -= self.physical - defense.physical(self.physical, rng);
+        out.dmg -= self.physical - attrs.armoured(actor.row(a.kind).armour - self.effect.penetration, self.physical, rng);
         out.physical = 0;
         return out;
     }
@@ -322,20 +319,24 @@ pub fn wound(g: *game.Game, id: u16, raw: Roll, comptime verb: []const u8, s: St
     const name = actor.row(kind).name;
     const perks = g.sim.heroPerks();
     const culled = r.dmg > 0 and perks.culls(a.hp - r.dmg, a.max);
+    var bled: ?[]const u8 = null;
+    var stunned = false;
     if (!culled and r.dmg > 0 and r.dmg < a.hp) {
         if (r.applied != .bleed and procOn(g, a, .bleed, r.effect.bleed)) {
+            bled = a.bleed.said();
             a.bleed.startWith(r.effect.bleed_damage);
-            sayTakes(g, bleeding.TAKES, at, name);
         }
         if (r.applied != .stun and procOn(g, a, .stun, r.effect.stun)) {
             a.clock.stun();
-            sayTakes(g, turn_clock.STUNNED, at, name);
+            stunned = true;
         }
     }
     const h = hurt(g, id, if (culled) a.hp else r.dmg);
     const lethal = h.lethal;
     g.sim.chronicle.note(.{ .dealt = .{ .to = kind, .killed = lethal } });
     g.sim.sayAs(.damage, at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.sim.name.text(), name, if (r.crit) " critically" else "", r.dmg, if (culled) CUT_DOWN else if (lethal) IT_DIES else "" });
+    if (bled) |said| g.sim.sayAt(at, "The {s} {s}!", .{ name, said });
+    if (stunned) sayTakes(g, turn_clock.STUNNED, at, name);
     g.pic.strike(&g.sim, g.cloud, i, s, at, lethal, afterBlow(g, id, h));
     if (lethal) fell(g, id);
     if (h.dmg > 0) heal(g, perks.life_on_hit + if (lethal) perks.life_on_kill else 0, s.wait);
@@ -387,7 +388,7 @@ pub fn fell(g: *game.Game, id: u16) void {
     const was = g.sim.growth;
     const levels = g.sim.growth.gain(xp);
     g.sim.log.push(.progress, "{s} gains {d} experience.", .{ g.sim.name.text(), xp });
-    if (levels > 0) g.sim.chronicle.mark(.{ .level = g.sim.growth.level });
+    if (levels > 0) g.sim.chronicle.mark(.level);
     if (levels > 0) g.sim.log.push(.progress, "Level {d}: +{d} passive, +{d} active points.", .{ g.sim.growth.level, g.sim.growth.passive_points - was.passive_points, g.sim.growth.active_points - was.active_points });
     const reward = items.foeLoot(&g.sim.loot_rng);
     g.pic.dropped_gold[fallen] = reward.gold;
@@ -396,7 +397,7 @@ pub fn fell(g: *game.Game, id: u16) void {
     for (&g.sim.flasks.values) |*f| f.fill(flask.PER_KILL);
     if (kind.bursts()) {
         g.sim.lv.addGas(at, gas.BURST);
-        g.sim.sayAt(at, "The {s} bursts, leaving a cloud of caustic gas!", .{name});
+        g.sim.sayAt(at, "The {s} bursts, leaving a cloud of " ++ gas.NAME ++ "!", .{name});
     }
     const family = kind.family();
     if (g.sim.pool.tally(family).left == 0) {
@@ -506,7 +507,7 @@ fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
 fn gasHarm(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     if (!g.sim.lv.gassy(a.at) or ranAlready(g, id, .gassed)) return;
-    _ = harmTick(g, id, gas.harm(a.max), .gassed, .{ .hero = "The caustic gas eats at {s} for {d}." });
+    _ = harmTick(g, id, gas.harm(a.max), .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." });
 }
 
 /// Mark a tick consumed; split halves inherit the parent's consumed ticks.
@@ -619,7 +620,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
     }
     if (r.fright > 0) {
         r.fright -= 1;
-        if (if (held) null else actor.flee(&g.sim.lv, r.at, id, flowTo(g, h.at))) |d| {
+        if (if (held) null else fleeWay(g, r.at, id, h.at)) |d| {
             foeStep(g, id, r.at, d);
         } else if (besideWay(g, r.at, h.at)) |d| {
             g.pic.turnLater(id, d.delta().x);
@@ -629,10 +630,11 @@ fn foeTurn(g: *game.Game, id: u16) void {
         return;
     }
     if (row.ranged) |ranged| {
-        if (!held and mathx.dist(r.at, h.at) <= ranged.retreat) {
-            if (actor.flee(&g.sim.lv, r.at, id, flowTo(g, h.at))) |d| return foeStep(g, id, r.at, d);
+        const gap = mathx.dist(r.at, h.at);
+        if (!held and gap <= ranged.retreat) {
+            if (fleeWay(g, r.at, id, h.at)) |d| return foeStep(g, id, r.at, d);
         }
-        if (mathx.dist(r.at, h.at) <= ranged.range and bow.aimable(&g.sim.lv, r.at, h.at)) {
+        if (gap <= ranged.range and bow.aimable(&g.sim.lv, r.at, h.at)) {
             const flight = bow.fly(&g.sim.lv, r.at, h.at);
             if (flight.struck) |hit| {
                 if (hit == .body and hit.body == g.sim.hero) {
@@ -643,7 +645,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
                 }
             }
         }
-        if (!held and mathx.dist(r.at, h.at) > ranged.retreat) if (actor.chase(&g.sim.lv, r.at, id, flowTo(g, h.at))) |d| {
+        if (!held and gap > ranged.retreat) if (actor.chase(&g.sim.lv, r.at, id, flowTo(g, h.at))) |d| {
             if (mathx.dist(r.at.add(d.delta()), h.at) <= ranged.retreat) return;
             foeStep(g, id, r.at, d);
         };
@@ -665,6 +667,10 @@ fn foeStep(g: *game.Game, id: u16, from: P, d: mathx.Dir) void {
 
 fn foeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
     return besideWay(g, at, hero) orelse actor.chase(&g.sim.lv, at, id, flowTo(g, hero));
+}
+
+fn fleeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
+    return actor.flee(&g.sim.lv, at, id, flowTo(g, hero));
 }
 
 fn besideWay(g: *const game.Game, at: P, hero: P) ?mathx.Dir {
@@ -706,9 +712,8 @@ fn reach(g: *game.Game, id: u16, row: actor.Row) void {
             g.sim.log.push(.danger, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), h.dmg });
             g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = kind }, .dmg = h.dmg, .before = before, .best = dmg == s.hit.hi } });
             if (!lethal and h.dmg > 0 and procOn(g, hero, .bleed, s.bleeds)) {
-                const b = &hero.bleed;
-                g.sim.log.say("{s} {s}!", .{ g.sim.name.text(), if (b.turns == 0) bleeding.TAKES else "bleeds anew" });
-                b.start();
+                g.sim.log.say("{s} {s}!", .{ g.sim.name.text(), hero.bleed.said() });
+                hero.bleed.start();
             }
             if (!lethal and h.dmg > 0 and procOn(g, hero, .stun, s.stuns)) {
                 hero.clock.stun();

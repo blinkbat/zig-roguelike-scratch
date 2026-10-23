@@ -65,6 +65,7 @@ PS button do nothing; GLFW reads no touchpad.
 | Character tabs | LB / RB | Q / E |
 | Equipment / Inventory / Stats / Passives / Skills directly | Character tabs | F1 / F2 / F3 / F4 / F5 |
 | Skills: bind selected skill | X | C |
+| Stats: advanced / main sheet | X | C |
 | Inventory: equip / drop / change ring | A / Y / X | Enter / Del / C |
 | Inspect HUD (from play) | Right-stick click (RS/R3) | I |
 | Get out (reticle, binds, menus, pause) | B | X or Esc (Esc alone in play) |

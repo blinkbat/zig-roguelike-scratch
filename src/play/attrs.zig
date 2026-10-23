@@ -94,6 +94,11 @@ pub const DODGE_MAX: i32 = 75;
 /// Percent of a physical blow armour may take at most.
 pub const ARMOUR_MAX: i32 = 75;
 
+/// A physical blow of `amount` after `armour` takes its share.
+pub fn armoured(armour: i32, amount: i32, rng: *mathx.Rng) i32 {
+    return Dealt.of(@as(i64, @max(0, amount)) * (mathx.PERCENT - std.math.clamp(armour, 0, ARMOUR_MAX)) * mathx.PERCENT).roll(rng);
+}
+
 pub const Attrs = struct {
     points: std.EnumArray(Attr, i32),
     life_bonus: i32 = 0,
@@ -147,7 +152,7 @@ pub const Attrs = struct {
     }
 
     pub fn physical(a: Attrs, amount: i32, rng: *mathx.Rng) i32 {
-        return Dealt.of(@as(i64, @max(0, amount)) * (mathx.PERCENT - a.reduction()) * mathx.PERCENT).roll(rng);
+        return armoured(a.armour, amount, rng);
     }
 
     pub fn crit(a: Attrs) u32 {

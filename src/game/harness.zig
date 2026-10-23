@@ -149,10 +149,8 @@ pub fn confirmUse(g: *game.Game, act: skillbar.Act) void {
 }
 
 pub fn boundTo(g: *const game.Game, act: skillbar.Act) skills.Use {
-    for (skillbar.SETS) |s| {
-        if (g.bar.buttonOf(s, act)) |b| return .{ .act = act, .by = b, .set = s };
-    }
-    unreachable;
+    const s = g.bar.slotOf(act).?;
+    return .{ .act = act, .by = s.button, .set = s.set };
 }
 
 /// Wall from `lo` to `hi`, both inclusive.

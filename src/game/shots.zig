@@ -65,10 +65,11 @@ fn shootCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-arrow.png");
     h.drawnOut(g);
     if (g.sim.heroActor().?.hp != hp_after_shot) return error.CrossbowmanIdleDamage;
-    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
+    const retreat = actor.row(.bandit_crossbowman).ranged.?.retreat;
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 26 - retreat, .y = 20 });
     game.settle(g);
     h.use(g, .wait);
-    if (mathx.dist(g.sim.pool.get(id).?.at, g.sim.heroActor().?.at) != 3) return error.CrossbowmanDidNotRetreat;
+    if (mathx.dist(g.sim.pool.get(id).?.at, g.sim.heroActor().?.at) != retreat + 1) return error.CrossbowmanDidNotRetreat;
     h.drawnOut(g);
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-retreat.png");
 }
@@ -300,6 +301,7 @@ pub fn shoot(g: *game.Game) !void {
 pub fn shootUi(g: *game.Game) !void {
     try std.fs.cwd().makePath(SHOTS_DIR);
     try book.verifyCards(&g.face);
+    try book.verifyStats(&g.face);
     try shootCharacter(g);
     try shootLoot(g);
     try shootHud(g);
@@ -666,6 +668,12 @@ fn shootCharacter(g: *game.Game) !void {
         if (page == .passives) g.character.cursor = progress.start(g.sim.class);
         if (page == .equipment) g.character.cursor = @intFromEnum(items.Slot.helm);
         try capture(g, target, SHOTS_DIR ++ "/character-" ++ @tagName(page) ++ ".png");
+    }
+    {
+        g.character.choose(.stats);
+        g.character.advanced = true;
+        defer g.character.advanced = false;
+        try capture(g, target, SHOTS_DIR ++ "/character-stats-advanced.png");
     }
     {
         const device = g.st.device;

@@ -159,8 +159,11 @@ Selected and equipped items use separate cards with only applicable base propert
 nonzero requirements and actual magic modifiers. Legal equip previews list changed character
 bonuses with signs; unmet requirements show the available attribute after displacement,
 excluding the item's own bonus. Opposite-hand items returned to storage are named.
-The Stats page separates attributes, survival, damage bonuses and progression, with
-percent units on the values. Placeholder artwork is indexed in
+The Stats page leads with what the player reads at a glance: life and mana, and each learned
+skill's hit with its status chances (the skill's roll, then the weapon's second roll for that
+status). Defenses, attributes, crit chance and progression follow. Its Advanced sheet,
+like D2's Advanced Stats, holds every damage bonus, the crit multiplier, recovery, and each
+elemental and status resistance, zeros included. Placeholder artwork is indexed in
 [ART_PROVENANCE.md](ART_PROVENANCE.md).
 
 ## Event log

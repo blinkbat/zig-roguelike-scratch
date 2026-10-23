@@ -6,6 +6,7 @@ const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
 const font = @import("../gfx/font.zig");
+const display = @import("../core/window.zig");
 
 pub const CONFIRM = input.CONFIRM;
 pub const BACK = input.Button.b;
@@ -30,6 +31,7 @@ const MARK_L = ">";
 /// `draw`'s, from the title's top to the first row, and from under the last row to the note's foot.
 const ABOVE: i32 = TITLE - TITLE_DY + ROWS_DY;
 const BELOW: i32 = NOTE_GAP + NOTE;
+pub const TITLE_LEAD: i32 = ABOVE - ROW_INSET;
 /// The rows sit at the middle, so either side takes the more of the two.
 const CHROME_H: i32 = 2 * @as(i32, @max(ABOVE, BELOW));
 pub const NOTE_MAX: usize = 160;
@@ -206,19 +208,31 @@ pub const Menu = struct {
         if (n == 0) return null;
         self.at = @min(self.at, n - 1);
         const win = window(screen.y, n, self.at);
-        if (st.scroll != 0) self.at = mathx.nudge(self.at, -st.scroll, n);
-        if (st.pointing() and (win.len == n or st.click) and st.scroll == 0 and st.walk == null) {
-            for (win.from..win.from + win.len) |i| {
-                if (st.pointer) |p| if (raster.holds(rowBox(screen, win, i), p)) {
-                    self.at = i;
-                    if (st.click) return i;
-                    break;
-                };
-            }
-        }
+        self.at = st.scrolled(self.at, n);
+        if (win.len == n or st.click) if (pointed(st, win.len, Rows{ .screen = screen, .win = win }, Rows.box)) |k| {
+            self.at = win.from + k;
+            if (st.click) return self.at;
+        };
         return self.step(st, n);
     }
 };
+
+const Rows = struct {
+    screen: mathx.P,
+    win: Window,
+
+    fn box(r: Rows, k: usize) rl.Rectangle {
+        return rowBox(r.screen, r.win, r.win.from + k);
+    }
+};
+
+pub fn pointed(st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
+    if (!st.pointing() or st.scroll != 0 or st.walk != null) return null;
+    for (0..n) |i| {
+        if (raster.holds(boxOf(ctx, i), st.pointer.?)) return i;
+    }
+    return null;
+}
 
 pub fn backed(st: *const input.State) bool {
     return st.right_click or st.hit(BACK) or st.hit(PAUSE);
@@ -304,7 +318,7 @@ pub fn rowTextY(box: rl.Rectangle) i32 {
 }
 
 pub fn titleY(first: rl.Rectangle) i32 {
-    return rowTextY(first) - ABOVE;
+    return @as(i32, @intFromFloat(first.y)) - TITLE_LEAD;
 }
 
 pub fn noteY(first: rl.Rectangle, count: usize) i32 {
@@ -315,7 +329,7 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const 
     const win = window(screen.y, all.len, at);
     const rows = all[win.from..][0..win.len];
     const first = rowBox(screen, win, win.from);
-    heading(face, screen, title, titleY(first), TITLE, look.TEXT, look.UI_GOLD);
+    pageHeading(face, screen, title, titleY(first));
     if (rows.len > 0) {
         const panel = rl.Rectangle{ .x = first.x, .y = first.y - ROW_INSET, .width = first.width, .height = @floatFromInt(rows.len * ROW_STEP + 2 * ROW_INSET) };
         rl.drawRectangleRec(panel, look.CARD_BG);
@@ -416,6 +430,10 @@ pub fn heading(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32, size: 
     rule(cx, y + @as(i32, @intFromFloat(@as(f32, @floatFromInt(size)) * RULE_DROP)), half, look.fade(accent, RULE_A * look.alphaOf(col)));
 }
 
+pub fn pageHeading(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32) void {
+    heading(face, screen, s, y, TITLE, look.TEXT, look.UI_GOLD);
+}
+
 /// Hairlines fading out either side of a small diamond.
 pub fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
     for ([_]bool{ true, false }) |shadow| {
@@ -431,7 +449,7 @@ pub fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
 
 test "mouse menus share drawn rows and scrolling keeps long menus reachable" {
     var checked: usize = 0;
-    for ([_]mathx.P{ .{ .x = 1280, .y = 720 }, .{ .x = 1920, .y = 1080 } }) |screen| {
+    for ([_]mathx.P{ display.SCREEN_720, display.SCREEN_1080 }) |screen| {
         var m = Menu{};
         for (0..6) |i| {
             const p = raster.middleAt(rowBox(screen, window(screen.y, 6, m.at), i));
@@ -452,7 +470,7 @@ test "mouse menus share drawn rows and scrolling keeps long menus reachable" {
         try std.testing.expect(backed(&.{ .right_click = true }));
     }
     var empty = Menu{};
-    try std.testing.expectEqual(@as(?usize, null), empty.stepAt(&.{ .click = true }, 0, .{ .x = 1280, .y = 720 }));
+    try std.testing.expectEqual(@as(?usize, null), empty.stepAt(&.{ .click = true }, 0, display.SCREEN_720));
     std.debug.print("mouse menus: {d} hover/click/keyboard handoffs, two long lists, outside and back clicks, empty menu\n", .{checked});
 }
 

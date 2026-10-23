@@ -344,6 +344,11 @@ pub fn dirTo(a: P, b: P) ?Dir {
     return stepDir(b.sub(a));
 }
 
+/// The step from `a` heading for `b`, however far; null on `b` itself.
+pub fn toward(a: P, b: P) ?Dir {
+    return stepDir(b.sub(a).sign());
+}
+
 /// 0 is north, growing clockwise.
 pub fn headingOf(dx: f32, dy: f32) f32 {
     const a = std.math.atan2(dx, -dy);

@@ -28,8 +28,8 @@ const OUTLINE_INSET: i32 = game.authored(1);
 const BODY_BAR_INSET: i32 = game.authored(6);
 const BODY_BAR_H: i32 = game.authored(4);
 const BODY_BAR_LIFT: i32 = game.authored(2);
-const RESIST_BAR_H: i32 = 2;
-const RESIST_BAR_GAP: i32 = 2;
+const RESIST_BAR_H: i32 = game.authored(2);
+const RESIST_BAR_GAP: i32 = game.authored(2);
 /// Gold beside an item bag in its cell.
 const GOLD_DX: i32 = game.authored(-24);
 const LOOT_DY: i32 = game.authored(12);
@@ -166,7 +166,7 @@ pub fn barrelPresent(g: *game.Game, p: P) bool {
     return g.sim.lv.hasBarrel(p) or g.pic.fx.breaking(p);
 }
 
-fn shownAt(g: *game.Game, stood: *const Stood, p: P) bool {
+pub fn shownAt(g: *game.Game, stood: *const Stood, p: P) bool {
     return (grid.Level.inside(p) and stood.isSet(grid.Level.idx(p))) or barrelShownAt(g, p);
 }
 

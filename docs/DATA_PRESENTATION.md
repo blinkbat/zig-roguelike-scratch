@@ -115,10 +115,15 @@ the player's build.
    legal. Preserve real loadout validation, ring destination and displaced-hand
    reporting. Positive and negative changes carry signs, not color alone. No gear
    score and no universal better/worse verdict.
-3. **Character sheet:** group attributes, survival, damage bonuses and progression.
-   Attach units to values. Explain what each attribute affects. Damage bonuses
-   explicitly say bonus; critical damage explicitly says multiplier. Our armour
-   is physical damage reduction, unlike D2 defense: never relabel it Defense.
+3. **Character sheet:** the main sheet answers "how much life, how much damage, what
+   chance to afflict"; everything rarer goes on the Advanced sheet. Three type tiers
+   (`book.Tier`): headline numbers engraved large (life, mana, skill hits), key rows
+   engraved at body size (attributes, skill names), plain rows in the data face. Colour
+   carries meaning: life red, mana blue, each element and status in its own ink, gold
+   for gold and unspent points, zeros dim. Attach units to values. Explain what each
+   attribute affects. Damage bonuses explicitly say bonus; critical damage explicitly
+   says multiplier. Our armour is physical damage reduction, unlike D2 defense: never
+   relabel it Defense.
 4. **Skills:** effect first, rank second, current or first-rank properties together,
    then a separate next-rank section containing only changes. Actual hit ranges
    include equipment, attributes and rank, before critical hits and defenses.

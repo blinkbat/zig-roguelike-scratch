@@ -8,6 +8,7 @@ const atlas = @import("../map/atlas.zig");
 const menu = @import("../ui/menu.zig");
 const book = @import("../ui/book.zig");
 const actor = @import("../play/actor.zig");
+const resilience = @import("../play/resilience.zig");
 const look = @import("../gfx/look.zig");
 const scene = @import("scene.zig");
 const game = @import("../game.zig");
@@ -57,8 +58,7 @@ fn withinReach(from: P, p: P) bool {
 }
 
 pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
-    const hero = g.sim.heroSlot() orelse return out[0..0];
-    const at = g.sim.pool.items[hero].at;
+    const at = g.sim.heroAt() orelse return out[0..0];
     var n: usize = 0;
     var listed = std.StaticBitSet(grid.CELLS).initEmpty();
     for (g.sim.ground.drops[0..g.sim.ground.n]) |drop| {
@@ -80,10 +80,10 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
 }
 
 fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
-    const hero = g.sim.heroSlot() orelse return out[0..0];
+    const from = g.sim.heroAt() orelse return out[0..0];
     var n: usize = 0;
     for (g.sim.ground.drops[0..g.sim.ground.n], 0..) |drop, i| {
-        if (!inLoot(g, g.sim.pool.items[hero].at, at, drop)) continue;
+        if (!inLoot(g, from, at, drop)) continue;
         out[n] = .{ .loot = .{ .index = i, .item = drop.item } };
         n += 1;
     }
@@ -119,10 +119,7 @@ pub fn doorReached(g: *game.Game, from: P, p: P) ?atlas.Link {
 
 fn bodyShownIn(g: *game.Game, p: P) bool {
     if (g.pic.quiet()) return g.sim.lv.taken(p);
-    for (0..g.sim.pool.n) |i| {
-        if ((g.pic.drawnCell(&g.sim, i) orelse continue).eq(p)) return true;
-    }
-    return scene.barrelShownAt(g, p);
+    return scene.shownAt(g, &scene.stoodNow(g), p);
 }
 
 pub fn anyNearby(g: *game.Game) bool {
@@ -130,10 +127,22 @@ pub fn anyNearby(g: *game.Game) bool {
     return nearbyOf(g, &nearby).len > 0;
 }
 
+fn shownNearby(g: *game.Game, buf: *game.NearbyBuf) []const book.Nearby {
+    return if (g.character.page == .loot) lootOf(g, buf, g.character.loot_at) else nearbyOf(g, buf);
+}
+
+fn directEmptied(g: *game.Game) bool {
+    return g.character.direct() and shownNearby(g, &g.nearby).len == 0;
+}
+
 pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     const now = g.pic.quiet();
     const growth = if (now) &g.sim.growth else &g.pic.growth_shown;
-    return .{ .class = g.sim.class, .name = g.sim.name.text(), .inventory = &g.sim.inventory, .growth = growth, .base = growth.attributes(g.sim.class), .gold = if (now) g.sim.gold else g.pic.gold_shown, .nearby = if (g.character.page == .loot) lootOf(g, nearby, g.character.loot_at) else nearbyOf(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.sim.lv.at(g.character.loot_at) == .chest_open };
+    const life = g.pic.lifeShown(&g.sim);
+    var v = book.View{ .class = g.sim.class, .name = g.sim.name.text(), .inventory = &g.sim.inventory, .growth = growth, .base = growth.attributes(g.sim.class), .gold = if (now) g.sim.gold else g.pic.gold_shown, .nearby = shownNearby(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.sim.lv.at(g.character.loot_at) == .chest_open, .life = .{ .now = life.hp, .max = life.max }, .mana = .{ .now = g.pic.manaShown(&g.sim), .max = g.sim.manaMax() } };
+    if (g.sim.heroActor()) |h| v.resists = h.resists;
+    if (g.pic.heroShown(&g.sim)) |h| for (std.enums.values(resilience.Kind)) |k| v.status_resist.set(k, h.resilience.standing(k, actor.innateResist(h.kind, k)));
+    return v;
 }
 
 pub fn openNearby(g: *game.Game) bool {
@@ -275,7 +284,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
     }
     game.syncStats(g);
     g.character.destination_index = 0;
-    if (command == .travel or (g.character.direct() and bookView(g, &g.nearby).nearby.len == 0)) g.mode = .play;
+    if (command == .travel or directEmptied(g)) g.mode = .play;
     game.holdWalk(g);
     game.combat.endTurn(g);
 }

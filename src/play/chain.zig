@@ -20,6 +20,7 @@ pub const FLAVOR = "The storm never settles for one.";
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 5 };
 
+pub const CHANCE = spark.CHANCE;
 pub const procs = spark.procs;
 pub const afflict = spark.afflict;
 pub const AILMENT = spark.AILMENT;

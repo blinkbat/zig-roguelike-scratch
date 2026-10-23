@@ -11,23 +11,16 @@ const skillbar = @import("../play/skillbar.zig");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
 
-fn bound(g: *const game.Game, act: skillbar.Act) bool {
-    for (skillbar.SETS) |s| {
-        if (g.bar.buttonOf(s, act) != null) return true;
-    }
-    return false;
-}
-
 /// Why a bound `act` could not be used now, `.unbound` when it is not on the bar.
 fn readiness(g: *const game.Game, act: skillbar.Act) enum { ready, mana, other, unbound } {
-    if (!bound(g, act)) return .unbound;
+    if (g.bar.slotOf(act) == null) return .unbound;
     const why = skills.blocked(g, act, &g.sim.flasks, g.sim.mana) orelse return .ready;
     return if (why == .mana) .mana else .other;
 }
 
 /// The hero as a turn begins, for the chronicle; a stunned turn readies nothing.
 pub fn turnStart(g: *const game.Game) chronicle.Start {
-    const h = g.sim.pool.items[g.sim.heroSlot().?];
+    const h = g.sim.heroBody().?;
     const s = chronicle.Start{ .hp = h.hp, .max = h.max };
     if (h.clock.owes()) return s;
     const ward = readiness(g, chronicle.WARD);
@@ -53,18 +46,18 @@ fn placeOf(g: *const game.Game, out: *[IN.len + atlas.TITLE_MAX]u8) []const u8 {
 /// The dead hero's bones and summary, said as the chronicle saw the death.
 pub fn of(g: *const game.Game) ossuary.Entry {
     const s = &g.sim;
-    const h = s.pool.items[s.heroSlot().?];
+    const h = s.heroBody().?;
     var e = ossuary.Entry{
         .name = s.name,
         .class = s.class,
         .level = s.growth.level,
         .kills = @intCast(@min(s.kills, std.math.maxInt(u32))),
         .gold = s.gold,
-        .renown = obituary.renown(.{ .kills = s.kills, .level = s.growth.level, .gold = s.gold, .places = s.visited.count() + @intFromBool(!s.visited.isSet(s.node)) }),
+        .renown = ossuary.renown(.{ .kills = s.kills, .level = s.growth.level, .gold = s.gold, .places = s.visited.count() + @intFromBool(!s.visited.isSet(s.node)) }),
         .seed = s.seed,
     };
     var buf: [chronicle.KEPT]chronicle.Turn = undefined;
-    const turns = s.chronicle.recent(chronicle.RECENT, &buf);
+    const turns = s.chronicle.recent(&buf);
     const killer = if (turns.len > 0) turns[turns.len - 1].lastHurt() else null;
     const k = killer orelse {
         var said: [ossuary.SUMMARY_MAX]u8 = undefined;

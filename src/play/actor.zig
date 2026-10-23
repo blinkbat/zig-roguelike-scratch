@@ -96,6 +96,8 @@ pub fn roomFor(bodies: usize, k: Kind) bool {
 pub const Strike = struct {
     hit: damage.Base,
     verb: [:0]const u8,
+    /// How its blow kills, said after "was".
+    slain: ?[:0]const u8 = null,
     bleeds: u32 = 0,
     stuns: u32 = 0,
 
@@ -155,19 +157,23 @@ pub const FLIT: f32 = 0.33;
 pub const FRIGHT_REACH: i32 = 5;
 pub const FLEE_TURNS: u8 = 4;
 
-const SLAM = Blow{ .strike = .{ .hit = .{ .lo = 2, .hi = 5 }, .verb = "slams" } };
+const SLAM = Blow{ .strike = .{ .hit = .{ .lo = 2, .hi = 5 }, .verb = "slams", .slain = "crushed" } };
+
+pub fn innateResist(k: Kind, status: resilience.Kind) u8 {
+    return if (status == .stun) row(k).stun_resist else 0;
+}
 
 pub fn row(k: Kind) Row {
     return switch (k) {
         inline .archer, .wizard, .knight => |h| heroRow(@field(heroes.Class, @tagName(h))),
-        .rat => .{ .name = "rat", .movement = .ground, .foe_type = .beast, .hp = 6, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "bites" } } },
+        .rat => .{ .name = "rat", .movement = .ground, .foe_type = .beast, .hp = 6, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "bites", .slain = "bitten to death" } } },
         .slime => .{ .name = "slime", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half },
         .slime_half => smaller(.slime, "half slime", .slime_quarter),
         .slime_quarter => smaller(.slime_half, "quarter slime", null),
         .bloat => .{ .name = "bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .burst, .flits = true },
-        .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .bleeds = 30 } }, .flees = true },
-        .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .armour = 20 },
-        .bandit_crossbowman => .{ .name = "bandit crossbowman", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15 },
+        .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .slain = "stabbed to death", .bleeds = 30 } }, .flees = true },
+        .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .slain = "beaten to death", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .armour = 20 },
+        .bandit_crossbowman => .{ .name = "bandit crossbowman", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15 },
     };
 }
 
@@ -225,7 +231,7 @@ pub const Actor = struct {
     }
 
     pub fn takeStatus(self: *Actor, kind: resilience.Kind, rng: *mathx.Rng) bool {
-        return self.resilience.take(kind, if (kind == .stun) row(self.kind).stun_resist else 0, rng);
+        return self.resilience.take(kind, innateResist(self.kind, kind), rng);
     }
 
     pub fn foe(self: Actor) bool {

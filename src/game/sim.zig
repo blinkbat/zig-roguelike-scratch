@@ -88,6 +88,16 @@ pub const Simulation = struct {
         return if (self.hero == grid.NO_ONE) null else actor.Pool.slot(self.hero);
     }
 
+    /// Living or not.
+    pub fn heroBody(self: *const Simulation) ?*const actor.Actor {
+        const i = self.heroSlot() orelse return null;
+        return &self.pool.items[i];
+    }
+
+    pub fn heroAt(self: *const Simulation) ?P {
+        return (self.heroBody() orelse return null).at;
+    }
+
     pub fn isHero(self: *const Simulation, slot: usize) bool {
         return actor.Pool.idOf(slot) == self.hero;
     }
@@ -117,7 +127,7 @@ pub const Simulation = struct {
     }
 
     pub fn manaRegen(self: *const Simulation) i32 {
-        return heroes.MANA_REGEN + self.heroPerks().mana_regen;
+        return heroes.manaRegen(self.heroPerks());
     }
 
     /// Levels gained so far, the current one's progress as the fraction.

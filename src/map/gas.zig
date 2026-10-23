@@ -6,6 +6,7 @@ const gen = @import("gen.zig");
 
 const P = mathx.P;
 
+pub const NAME = "caustic gas";
 /// Brogue's `DF_BLOAT_DEATH`.
 pub const BURST: u16 = 2000;
 /// Brogue updates gas twice a hundred ticks, which is one turn.

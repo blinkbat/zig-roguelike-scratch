@@ -34,18 +34,18 @@ pub const Event = union(enum) {
     burst,
 };
 
-/// The hero as a turn began.
 pub const FLASK: skillbar.Act = .life_flask;
 pub const WARD: skillbar.Act = .mana_shield;
 
+/// The hero as a turn began.
 pub const Start = struct {
     hp: i32,
     max: i32,
-    /// A bound life flask could be drunk.
+    /// A bound `FLASK` could be drunk.
     flask: bool = false,
-    /// A bound Mana Shield could be cast.
+    /// A bound `WARD` could be cast.
     ward: bool = false,
-    /// A bound Mana Shield was ready but for the mana.
+    /// A bound `WARD` was ready but for the mana.
     starved: bool = false,
 };
 
@@ -73,12 +73,11 @@ pub const Turn = struct {
 
 pub const Milestone = struct {
     turn: u32,
-    what: union(enum) { level: u16, cleared: actor.Kind, chest },
+    what: union(enum) { level, cleared: actor.Kind, chest },
 };
 
-/// Turns kept; a report reads `RECENT` of them by default.
-pub const KEPT: usize = 8;
-pub const RECENT: usize = 5;
+/// Turns kept, all of which a report reads.
+pub const KEPT: usize = 5;
 
 /// The hero's last few turns as they happened, for the death report; not saved.
 pub const Chronicle = struct {
@@ -124,11 +123,10 @@ pub const Chronicle = struct {
         self.milestone = .{ .turn = self.count, .what = what };
     }
 
-    /// The last `want` turns, oldest first.
-    pub fn recent(self: *const Chronicle, want: usize, out: *[KEPT]Turn) []const Turn {
-        const k = @min(want, self.n);
-        for (0..k) |i| out[i] = self.turns[(self.head + KEPT + 1 + i - k) % KEPT];
-        return out[0..k];
+    /// The kept turns, oldest first.
+    pub fn recent(self: *const Chronicle, out: *[KEPT]Turn) []const Turn {
+        for (0..self.n) |i| out[i] = self.turns[(self.head + KEPT + 1 + i - self.n) % KEPT];
+        return out[0..self.n];
     }
 };
 
@@ -146,8 +144,8 @@ test "the chronicle keeps the last turns in order and a quiet turn can be restar
     c.restart(s);
     try std.testing.expectEqual(@as(u32, KEPT + 4), c.count);
     var buf: [KEPT]Turn = undefined;
-    const last = c.recent(RECENT, &buf);
-    try std.testing.expectEqual(RECENT, last.len);
+    const last = c.recent(&buf);
+    try std.testing.expectEqual(KEPT, last.len);
     for (last[0 .. last.len - 1], last[1..]) |a, b| try std.testing.expectEqual(a.number + 1, b.number);
     try std.testing.expectEqual(c.count, last[last.len - 1].number);
     try std.testing.expectEqual(@as(i32, KEPT + 2), last[last.len - 2].events[0].hurt.dmg);

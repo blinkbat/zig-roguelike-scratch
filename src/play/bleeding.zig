@@ -7,6 +7,7 @@ pub const STILL: i32 = 1;
 pub const MOVE_FACTOR: i32 = 2;
 pub const MOVING: i32 = STILL * MOVE_FACTOR;
 pub const TAKES = "starts bleeding";
+pub const RETAKES = "bleeds anew";
 pub const STATUS = std.fmt.comptimePrint("Lose {d} life per turn, or {d} when moving.", .{ STILL, MOVING });
 
 pub const Bleed = struct {
@@ -18,21 +19,17 @@ pub const Bleed = struct {
         self.startWith(STILL);
     }
 
+    /// What starting it now says: read before it starts.
+    pub fn said(self: Bleed) []const u8 {
+        return if (self.turns == 0) TAKES else RETAKES;
+    }
+
     pub fn startWith(self: *Bleed, amount: i32) void {
-        if (self.turns == 0) {
-            self.fresh = true;
-            self.amount = amount;
-        } else self.amount = @max(self.amount, amount);
-        self.turns = TURNS;
+        self.amount = if (damage.begin(self, TURNS)) amount else @max(self.amount, amount);
     }
 
     pub fn tick(self: *Bleed, moved: bool) ?i32 {
-        if (self.turns == 0) return null;
-        if (self.fresh) {
-            self.fresh = false;
-            return null;
-        }
-        self.turns -= 1;
+        if (!damage.due(self)) return null;
         return if (moved) self.amount * MOVE_FACTOR else self.amount;
     }
 

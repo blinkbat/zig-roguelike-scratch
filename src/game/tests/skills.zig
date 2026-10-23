@@ -27,6 +27,7 @@ const chain = @import("../../play/chain.zig");
 const ward = @import("../../play/ward.zig");
 const charge = @import("../../play/charge.zig");
 const turn_clock = @import("../../play/clock.zig");
+const resilience = @import("../../play/resilience.zig");
 const skillbar = @import("../../play/skillbar.zig");
 const look = @import("../../gfx/look.zig");
 const raster = @import("../../gfx/raster.zig");
@@ -81,14 +82,14 @@ test "equipment base effects reach combat recovery and status resistance" {
         game.settle(g);
     }
     try std.testing.expectEqual(@as(i32, 2), foe.bleed.amount);
-    try std.testing.expectEqual(@as(u8, 100), foe.resilience.meters.get(.bleed).percent);
+    try std.testing.expectEqual(@as(u8, mathx.PERCENT), foe.resilience.meters.get(.bleed).percent);
     g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .mace });
     for (0..200) |_| {
         combat.wound(g, id, combat.heroRoll(g, .melee, 1), "strikes", .{ .from = from, .wait = 0 });
         game.settle(g);
     }
     try std.testing.expectEqual(@as(i32, 4 * turn_clock.TURN), foe.clock.ticks);
-    try std.testing.expectEqual(@as(u8, 100), foe.resilience.meters.get(.stun).percent);
+    try std.testing.expectEqual(@as(u8, mathx.PERCENT), foe.resilience.meters.get(.stun).percent);
     foe.resilience = .{};
     foe.clock = .{};
     foe.kind = .beefy_pib;
@@ -97,7 +98,7 @@ test "equipment base effects reach combat recovery and status resistance" {
         game.settle(g);
     }
     try std.testing.expectEqual(@as(i32, turn_clock.TURN), foe.clock.ticks);
-    try std.testing.expectEqual(@as(u8, 25), foe.resilience.meters.get(.stun).percent);
+    try std.testing.expectEqual(resilience.GAIN, foe.resilience.meters.get(.stun).percent);
     g.sim.inventory.gear.slots.set(.helm, .{ .kind = .circlet });
     g.sim.inventory.gear.slots.set(.left_hand, .{ .kind = .totem });
     g.sim.mana = 0;

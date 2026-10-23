@@ -396,7 +396,11 @@ fn takeValue(comptime T: type, f: *Tokens) Error!T {
 }
 
 fn int(comptime T: type, f: *Tokens) Error!T {
-    return std.fmt.parseInt(T, f.next() orelse return error.BadLine, 10) catch error.BadLine;
+    const word = f.next() orelse return error.BadLine;
+    const n = std.fmt.parseInt(T, word, 10) catch return error.BadLine;
+    var buf: [24]u8 = undefined;
+    if (!std.mem.eql(u8, word, std.fmt.bufPrint(&buf, "{d}", .{n}) catch unreachable)) return error.BadLine;
+    return n;
 }
 
 fn point(f: *Tokens) Error!P {
@@ -406,4 +410,119 @@ fn point(f: *Tokens) Error!P {
 fn cell(f: *Tokens) Error!P {
     const p = try point(f);
     return if (grid.Level.inside(p)) p else error.BadLine;
+}
+
+test "a map saves and loads back the same" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const room = a.add(.{ .bespoke = .{} }).?;
+    const cave = a.add(.{ .procgen = .{} }).?;
+    const pg = &a.node[cave].plan.procgen;
+    pg.floor.rooms.size = .{ .x = 50, .y = 40 };
+    pg.floor.rooms.torches = 20;
+    const wood = a.add(.{ .procgen = .{ .floor = .{ .wilds = .{ .thicket = 30, .strays = 7 } } } }).?;
+    const wpg = &a.node[wood].plan.procgen;
+    _ = wpg.addFeature(.river);
+    wpg.feature[0].river.fill = .lava;
+    wpg.feature[0].river.width = 5;
+    _ = wpg.addFeature(.setpiece);
+    wpg.feature[1].setpiece.piece = .graveyard;
+    pg.foes.apart = 6;
+    pg.foes.makeup_n = 2;
+    pg.foes.makeup[1] = pack.Makeup.of(&.{ .bloat, .rat });
+    pg.foes.makeup[1].weight = 3;
+    const b = &a.node[room].plan.bespoke;
+    var floor = grid.Box.sized(.{ .x = 3, .y = 3 }, 9, 6).cells();
+    while (floor.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
+    b.barrel[grid.Level.idx(.{ .x = 4, .y = 4 })] = true;
+    _ = b.torch.add(.{ .x = 6, .y = 2 });
+    _ = b.addFoe(.{ .kind = .slime, .at = .{ .x = 9, .y = 6 } });
+    const d0 = a.addDoor(room, .{ .x = 11, .y = 5 }).?;
+    const d1 = a.addDoor(cave, .{ .x = 0, .y = 30 }).?;
+    a.link(.{ .node = room, .door = d0 }, .{ .node = cave, .door = d1 });
+    a.start = .{ .node = room, .at = .{ .x = 5, .y = 5 } };
+    try std.testing.expectEqual(@as(?bool, true), a.node[cave].rename("  The Deep Cave "));
+    try std.testing.expectEqual(@as(?bool, false), a.node[cave].rename("The Deep Cave"));
+    try std.testing.expectEqual(@as(?bool, null), a.node[room].rename("a name far too long to keep"));
+    a.node[room].pos = .{ .x = -40, .y = 310 };
+
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    defer buf.deinit();
+    try a.write(buf.writer());
+    const back = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(back);
+    try back.parse(buf.items);
+    var again = std.ArrayList(u8).init(std.testing.allocator);
+    defer again.deinit();
+    try back.write(again.writer());
+    std.debug.print("a two-node map is {d} bytes of text\n", .{buf.items.len});
+    try std.testing.expectEqualStrings(buf.items, again.items);
+    try std.testing.expectEqual(@as(?atlas.Link, .{ .node = cave, .door = d1 }), back.node[room].door[d0].to);
+    const bpg = &back.node[cave].plan.procgen;
+    try std.testing.expect(std.meta.eql(pg.floor, bpg.floor));
+    try std.testing.expect(std.meta.eql(a.node[wood].plan.procgen, back.node[wood].plan.procgen));
+    try std.testing.expectEqual(grid.Tile.lava, back.node[wood].plan.procgen.feature[0].river.fill);
+    try std.testing.expectEqual(@as(i32, 6), bpg.foes.apart);
+    try std.testing.expectEqual(@as(usize, 2), bpg.foes.makeup_n);
+    try std.testing.expectEqual(@as(u8, 3), bpg.foes.makeup[1].weight);
+    try std.testing.expectEqualSlices(actor.Kind, &.{ .bloat, .rat }, bpg.foes.makeup[1].kinds());
+    try std.testing.expectEqualStrings("The Deep Cave", back.node[cave].name());
+    try std.testing.expectEqual(P{ .x = -40, .y = 310 }, back.node[room].pos);
+    try std.testing.expectEqual(atlas.GRAPH_STEP.x, back.node[cave].pos.x);
+}
+
+test "a map file with a one-way link, a door linked to itself, a stray word, a far box or a number not written plainly is refused" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const head = HEADER ++ "\nstart 0 5 5\n";
+    const bad = [_][]const u8{
+        head ++ "node procgen rooms\ndoor 5 5 1 0\nnode procgen rooms\ndoor 5 5\n",
+        head ++ "node procgen rooms\ndoor 5 5 0 0\n",
+        head ++ "node procgen rooms 1 2\n",
+        head ++ "node procgen rooms deep\n",
+        head ++ "node procgen rooms\nat 0 0\nnode procgen rooms\nat -2147483648 0\nnode procgen rooms\n",
+        head ++ "node bespoke\nrow " ++ "#" ** COLS ++ "\n",
+        head ++ "node procgen rooms\nsize 20 20\nroom_w 5 30\n",
+        head ++ "node procgen rooms\nmakeup 0 rat\n",
+        head ++ "node procgen rooms\nmakeup 1 slime_half\n",
+        head ++ "node procgen rooms\nmakeup 1\n",
+        head ++ "node procgen rooms\napart 99\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** ROWS ++ "foe rat 3 3\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "." ** COLS ++ "\n") ** ROWS ++ "foe slime_half 3 3\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** ROWS ++ "torch 3 3\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "." ** COLS ++ "\n") ** ROWS ++ "torch 3 3\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "0" ** COLS ++ "\n") ** ROWS ++ "door 3 3\n",
+        head ++ "start 0 6 6\nnode procgen rooms\n",
+        head ++ "node procgen rooms\nname A\nname B\n",
+        head ++ "node procgen rooms\nname   \n",
+        head ++ "node procgen rooms\nat 0 0\nat 1 1\n",
+        head ++ "node procgen rooms\napart 4\napart 5\n",
+        head ++ "node procgen wilds\nrooms 4\n",
+        head ++ "node procgen rooms\nthicket 40\n",
+        head ++ "node procgen wilds\nthicket 99\n",
+        head ++ "node procgen wilds\nfeature river\nthicket 40\n",
+        head ++ "node procgen wilds\nfeature river\nwidth 3\nwidth 4\n",
+        head ++ "node procgen wilds\nfeature river\nmakeup 1 rat\n",
+        head ++ "node procgen wilds\nfeature canal\n",
+        head ++ "node procgen wilds\nfeature river\nfill moss\n",
+        HEADER ++ "\nnode procgen rooms\n",
+        head ++ "node procgen rooms\nat +1 0\n",
+        head ++ "node procgen rooms\nat 0_1 0\n",
+        head ++ "node procgen rooms\nat 01 0\n",
+        head ++ "node procgen rooms\nat -0 0\n",
+    };
+    for (bad) |t| try std.testing.expect(std.meta.isError(a.parse(t)));
+    try a.parse(head ++ "node procgen rooms 1790812916605\n");
+    try a.parse(head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** 4 ++ "row " ++ "." ** COLS ++ "\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** (ROWS - 5) ++ "torch 3 3\n");
+    try std.testing.expectEqual(@as(usize, 1), a.node[0].plan.bespoke.torch.n);
+    try a.parse(head ++ "node procgen rooms\n  name  Deep  Cave\n");
+    try std.testing.expectEqualStrings("Deep  Cave", a.node[0].name());
+    try a.parse(head ++ "node procgen rooms\nat 0 0\napart 4\nnode procgen rooms\nat 1 1\napart 5\n");
+    try a.parse(head ++ "node procgen wilds\nthicket 50\nsmooth 2\nstrays 0\npacks 4\n");
+    try std.testing.expectEqual(50, a.node[0].plan.procgen.floor.wilds.thicket);
+    try a.parse(head ++ "node procgen caves\nfill 50\nfeature lake\nfill lava\ncount 2\nfeature river\nwidth 2\n");
+    const pg = &a.node[0].plan.procgen;
+    try std.testing.expectEqual(@as(usize, 2), pg.feature_n);
+    try std.testing.expectEqual(grid.Tile.lava, pg.feature[0].lake.fill);
+    try std.testing.expectEqual(@as(u8, 2), pg.feature[1].river.width);
 }

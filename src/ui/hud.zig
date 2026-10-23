@@ -377,7 +377,8 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
 }
 
 test "the HUD stays centered at a fixed width with room between orbs and skills" {
-    const widths = [_]mathx.P{ .{ .x = 1280, .y = 720 }, .{ .x = 1600, .y = 900 }, .{ .x = 1920, .y = 1080 }, .{ .x = 2560, .y = 1440 } };
+    const display = @import("../core/window.zig");
+    const widths = [_]mathx.P{ display.SCREEN_720, display.WINDOW, display.SCREEN_1080, display.SCREEN_1440 };
     for (widths) |screen| {
         const layout = Layout.of(screen, SKILLS_MAX_W);
         try std.testing.expectEqual(screen.x, layout.left * 2 + WIDTH);

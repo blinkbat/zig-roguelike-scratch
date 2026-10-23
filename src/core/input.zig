@@ -449,14 +449,42 @@ pub const Typed = struct {
             self.n += 1;
         }
     }
+
+    fn drop(self: *Typed) void {
+        self.n = 0;
+        while (rl.getCharPressed() != 0) {}
+    }
+};
+
+const TYPING_RANGES = [_][2]rl.KeyboardKey{ .{ .a, .z }, .{ .zero, .nine }, .{ .kp_0, .kp_9 } };
+const TYPING_SINGLES = [_]rl.KeyboardKey{ .space, .period, .apostrophe, .minus };
+const TYPING_KEYS = blk: {
+    var out: []const rl.KeyboardKey = &TYPING_SINGLES;
+    for (TYPING_RANGES) |r| {
+        const lo: usize = @intCast(@intFromEnum(r[0]));
+        const hi: usize = @intCast(@intFromEnum(r[1]));
+        for (lo..hi + 1) |c| out = out ++ &[_]rl.KeyboardKey{@enumFromInt(c)};
+    }
+    break :blk out[0..out.len].*;
+};
+const TYPING_SET = blk: {
+    var top: usize = 0;
+    for (TYPING_KEYS) |k| top = @max(top, @as(usize, @intCast(@intFromEnum(k))));
+    var set = std.StaticBitSet(top + 1).initEmpty();
+    for (TYPING_KEYS) |k| set.set(@intCast(@intFromEnum(k)));
+    break :blk set;
 };
 
 fn types(k: rl.KeyboardKey) bool {
     const c = @intFromEnum(k);
-    return (c >= @intFromEnum(rl.KeyboardKey.a) and c <= @intFromEnum(rl.KeyboardKey.z)) or
-        (c >= @intFromEnum(rl.KeyboardKey.zero) and c <= @intFromEnum(rl.KeyboardKey.nine)) or
-        (c >= @intFromEnum(rl.KeyboardKey.kp_0) and c <= @intFromEnum(rl.KeyboardKey.kp_9)) or
-        k == .space or k == .period or k == .apostrophe or k == .minus;
+    return c >= 0 and c < TYPING_SET.capacity() and TYPING_SET.isSet(@intCast(c));
+}
+
+fn typingHeld() bool {
+    for (TYPING_KEYS) |k| {
+        if (rl.isKeyDown(k)) return true;
+    }
+    return false;
 }
 
 pub const TreeInput = struct {
@@ -564,6 +592,9 @@ pub const State = struct {
     pan_hold: bool = false,
     /// Set before each `update`, which clears it: typing keys then type, and press no button.
     typing: bool = false,
+    was_typing: bool = false,
+    /// A typing key held into the field types nothing until every typing key is let go.
+    held_into_typing: bool = false,
     typed: Typed = .{},
     rub: bool = false,
     /// Play uses numbered slots; menus and targeting use standard confirm/back keys.
@@ -612,8 +643,11 @@ pub const State = struct {
 
     pub fn clicked(self: State, box: rl.Rectangle) bool {
         const p = self.pointer orelse return false;
-        return self.click and @as(f32, @floatFromInt(p.x)) >= box.x and @as(f32, @floatFromInt(p.x)) < box.x + box.width and
-            @as(f32, @floatFromInt(p.y)) >= box.y and @as(f32, @floatFromInt(p.y)) < box.y + box.height;
+        return self.click and rl.checkCollisionPointRec(.{ .x = @floatFromInt(p.x), .y = @floatFromInt(p.y) }, box);
+    }
+
+    pub fn scrolled(self: State, at: usize, n: usize) usize {
+        return if (self.scroll != 0) mathx.nudge(at, -self.scroll, n) else at;
     }
 
     pub fn held(self: State, b: Button) bool {
@@ -740,9 +774,11 @@ pub const State = struct {
         self.typed.n = 0;
         self.rub = false;
         if (self.typing) {
-            self.typed.read();
+            if (!self.was_typing or self.held_into_typing) self.held_into_typing = typingHeld();
+            if (self.held_into_typing) self.typed.drop() else self.typed.read();
             self.rub = rubbed();
         }
+        self.was_typing = self.typing;
 
         self.tree = .{};
         const on_tree = self.context == .tree;

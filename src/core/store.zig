@@ -61,10 +61,25 @@ pub fn sum(bytes: []const u8) u64 {
     return std.hash.Wyhash.hash(0, bytes);
 }
 
+/// Bytes before a file's body: its magic, then its fingerprint.
+pub fn head(magic: []const u8) usize {
+    return magic.len + @sizeOf(u64);
+}
+
+pub fn begin(w: anytype, magic: []const u8, print: u64) !void {
+    try w.writeAll(magic);
+    try put(w, &print);
+}
+
+/// Ends a file with the sum of its `body`, everything after its head.
+pub fn seal(w: anytype, body: []const u8) !void {
+    try put(w, &sum(body));
+}
+
 pub const OpenError = error{ Foreign, OtherBuild, Short, Damaged };
 
 pub fn open(bytes: []const u8, magic: []const u8, print: u64) OpenError![]const u8 {
-    if (bytes.len < magic.len + @sizeOf(u64) or !std.mem.eql(u8, bytes[0..magic.len], magic)) return error.Foreign;
+    if (bytes.len < head(magic) or !std.mem.eql(u8, bytes[0..magic.len], magic)) return error.Foreign;
     var b = bytes[magic.len..];
     var got: u64 = undefined;
     _ = take(&b, &got);

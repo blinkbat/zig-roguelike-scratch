@@ -5,8 +5,6 @@ const carve = @import("../carve.zig");
 
 // Qud's NoiseMap: sector seeds blurred by the 1-3-1 / 3-6-3 kernel, opened where the blur stands over 2.
 
-const P = mathx.P;
-
 pub const SECTORS_MAX: u8 = 6;
 pub const SEEDS_MAX: u8 = 4;
 pub const BLUR_MAX: u8 = 10;

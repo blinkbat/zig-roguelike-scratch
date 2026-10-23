@@ -48,12 +48,11 @@ pub const epitaph = @import("game/epitaph.zig");
 
 const P = mathx.P;
 
-pub const WINDOW = P{ .x = window.WINDOW_W, .y = window.WINDOW_H };
-/// Screens the shots and layout tests cover besides the window's.
-pub const SCREEN_720 = P{ .x = 1280, .y = 720 };
-pub const SCREEN_1080 = P{ .x = 1920, .y = 1080 };
-pub const SCREEN_1440 = P{ .x = 2560, .y = 1440 };
-pub const SCREENS = [_]P{ SCREEN_720, SCREEN_1080, SCREEN_1440 };
+pub const WINDOW = window.WINDOW;
+pub const SCREEN_720 = window.SCREEN_720;
+pub const SCREEN_1080 = window.SCREEN_1080;
+pub const SCREEN_1440 = window.SCREEN_1440;
+pub const SCREENS = window.SCREENS;
 pub const CELL: i32 = 64;
 pub const CELL_F: f32 = @floatFromInt(CELL);
 pub const HALF_CELL: i32 = @divTrunc(CELL, 2);
@@ -198,7 +197,7 @@ pub const Game = struct {
     screen: P = WINDOW,
     /// The framebuffer a frame draws into: the window's, or a texture's. Asking GL stalls it.
     framebuffer: u32 = 0,
-    /// The latest walk, skill or interaction asked for while `busy`.
+    /// The latest walk, skill or interaction asked for while `Presentation.busy`.
     pending: ?Queued = null,
     vignette: vignette.Vignette = .{},
     cinema: cinema.Cinema = .{},
@@ -334,10 +333,12 @@ fn goThrough(g: *Game, l: atlas.Link) void {
     const hero = g.sim.heroSlot().?;
     const facing = g.pic.facing[hero];
     const level_up = g.pic.fx.level_up;
+    const secondary = g.mouse.secondary;
     var title: [atlas.TITLE_MAX]u8 = undefined;
     g.sim.log.say("Entered {s}.", .{g.sim.map.?.node[l.node].title(l.node, &title)});
     enter(g, l.node, g.sim.map.?.door(l).at);
     g.pending = walk;
+    g.mouse.secondary = secondary;
     g.pic.facing[hero] = facing;
     g.pic.fx.level_up = level_up;
 }

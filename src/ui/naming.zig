@@ -133,7 +133,7 @@ pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
 pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8, device: input.Device) void {
     const at = if (device == .keys and !e.pointer_selected) AT_DONE else e.*;
     const mid = @divTrunc(screen.y, 2);
-    menu.heading(face, screen, title, mid + TITLE_DY, menu.TITLE, look.TEXT, look.UI_GOLD);
+    menu.pageHeading(face, screen, title, mid + TITLE_DY);
     var buf: [hero.Name.MAX + CARET.len + 1]u8 = undefined;
     menu.mid(face, screen, std.fmt.bufPrintZ(&buf, "{s}" ++ CARET, .{e.name.text()}) catch "", mid + FIELD_DY, FIELD, look.UI_FOCUS);
     for (0..ROWS) |r| {
@@ -159,7 +159,7 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
 }
 
 test "mouse naming types letters spaces deletes and finishes with keyboard hints active" {
-    const screen = mathx.P{ .x = 1280, .y = 720 };
+    const screen = @import("../core/window.zig").SCREEN_720;
     var e = Entry{};
     const keys = [_][2]usize{ .{ 0, 0 }, .{ 2, 1 }, .{ 4, 0 }, .{ 0, 2 }, .{ 4, 1 } };
     for (keys) |k| {

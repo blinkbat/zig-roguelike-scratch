@@ -23,6 +23,7 @@ comptime {
 
 pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
 
+pub const CHANCE = glacial.CHANCE;
 pub const procs = glacial.procs;
 pub const afflict = glacial.afflict;
 pub const AILMENT = glacial.AILMENT;

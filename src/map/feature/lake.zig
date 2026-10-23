@@ -6,7 +6,6 @@ const carve = @import("../carve.zig");
 // Dwarf Fortress's pools and cavern lakes, ADOM's ponds; filled with rock, Diablo II's Act 4 mesas.
 
 const SHORE_SCALE: f32 = 4;
-const P = mathx.P;
 
 pub const COUNT_MAX: u8 = 12;
 pub const SIZE_MIN: u8 = 2;

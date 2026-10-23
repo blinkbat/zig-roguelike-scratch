@@ -7,6 +7,7 @@ const attr = @import("../play/attrs.zig");
 const items = @import("../play/items.zig");
 const damage = @import("../play/damage.zig");
 const bleeding = @import("../play/bleeding.zig");
+const resilience = @import("../play/resilience.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
@@ -15,6 +16,8 @@ const prompt_icon = @import("../gfx/prompt_icon.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
 const trees = @import("trees.zig");
+const hud = @import("hud.zig");
+const display = @import("../core/window.zig");
 const P = mathx.P;
 pub const Page = enum {
     equipment,
@@ -162,6 +165,7 @@ pub const Nearby = union(enum) {
         };
     }
 };
+pub const Vital = struct { now: i32 = 0, max: i32 = 0 };
 pub const View = struct {
     class: hero.Class,
     name: []const u8,
@@ -173,6 +177,10 @@ pub const View = struct {
     nearby: []const Nearby = &.{},
     device: input.Device = .keys,
     chest: bool = false,
+    life: Vital = .{},
+    mana: Vital = .{},
+    resists: damage.Resists = .initFill(0),
+    status_resist: std.EnumArray(resilience.Kind, resilience.Standing) = .initFill(.{}),
     fn stats(v: View) attr.Attrs {
         return v.inventory.gear.stats(v.base);
     }
@@ -221,6 +229,8 @@ pub const Book = struct {
     destination_index: usize = 0,
     mouse_panning: bool = false,
     message: menu.Note(80) = .{},
+    /// Stats shows its advanced sheet, as D2's Advanced Stats.
+    advanced: bool = false,
 
     pub fn open(self: *Book) void {
         if (self.direct()) {
@@ -403,6 +413,7 @@ pub const Book = struct {
             if (st.hit(menu.CHANGE)) self.destination_index = mathx.wrap(self.destination_index, 1, self.selected(v).?.kind.slots().len);
         }
         if (self.page == .skills and st.hit(menu.CHANGE)) return .{ .bindings = self.selectedSkill(v) };
+        if (self.page == .stats and st.hit(menu.CHANGE)) self.advanced = !self.advanced;
         if (self.page == .passives) {
             if (!st.dragging) self.mouse_panning = false;
             if (st.middle_click) if (st.pointer) |p| {
@@ -427,9 +438,7 @@ pub const Book = struct {
                 self.zoomBy(@as(f32, @floatFromInt(st.scroll)) * trees.ZOOM_WHEEL);
             };
         }
-        if (self.listed() and st.scroll != 0 and self.count(v) > 0) {
-            self.cursor = mathx.nudge(self.cursor, -st.scroll, self.count(v));
-        }
+        if (self.listed() and self.count(v) > 0) self.cursor = st.scrolled(self.cursor, self.count(v));
         if (st.click and !self.mouse_panning) if (st.pointer) |p| {
             if (!self.direct()) for (PAGES, 0..) |page, i| if (raster.holds(tabBox(i), p)) {
                 self.choose(page);
@@ -487,7 +496,7 @@ pub const Book = struct {
                 c.add(trees.bindBox(), menu.CHANGE, .{ .label = if (v.growth.unlocked(act)) verbOf(.bindings) else "Bindings" });
                 c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (v.growth.canLearn(v.class, act)) 1 else look.FADED_A });
             },
-            .stats => {},
+            .stats => c.add(self.actionBox(menu.CHANGE, v), menu.CHANGE, .{ .label = if (self.advanced) "Main stats" else "Advanced" }),
             .equipment, .inventory, .nearby, .loot => if (self.count(v) > 0) {
                 const it = self.selected(v) orelse {
                     c.add(self.actionBox(menu.CONFIRM, v), menu.CONFIRM, .{ .label = if (self.direct()) v.nearby[self.cursor].command().verb() else "Inventory" });
@@ -555,7 +564,7 @@ pub const Book = struct {
             if (self.treePanel()) |panel| {
                 trees.draw(panel, face, sprites, v.class, v.growth, self.treeView(), v.device, .{ .stats = v.stats(), .gear = v.inventory.gear }, on);
             } else if (self.page == .stats) {
-                drawStats(face, v);
+                if (self.advanced) drawAdvanced(face, v) else drawStats(face, v);
             } else {
                 self.drawCells(face, v);
                 self.drawDetail(face, v);
@@ -942,7 +951,6 @@ const Measure = union(enum) {
     mana,
     attribute: attr.Attr,
     reduction,
-    crit,
     weapon_crit,
     spell_crit,
     physical,
@@ -956,7 +964,6 @@ const Measure = union(enum) {
             .mana => a.mana(),
             .attribute => |at| a.get(at),
             .reduction => a.reduction(),
-            .crit => @intCast(a.crit()),
             .weapon_crit => @intCast(a.critWith(a.weapon_crit_bonus)),
             .spell_crit => @intCast(a.critWith(a.spell_crit_bonus)),
             .physical => a.physical_bonus,
@@ -969,7 +976,7 @@ const Measure = union(enum) {
     fn percent(m: Measure) bool {
         return switch (m) {
             .life, .mana, .attribute => false,
-            .reduction, .crit, .weapon_crit, .spell_crit, .physical, .element, .dodge, .style => true,
+            .reduction, .weapon_crit, .spell_crit, .physical, .element, .dodge, .style => true,
         };
     }
 
@@ -980,7 +987,6 @@ const Measure = union(enum) {
             .mana => comptime menu.capital(attr.Bonus.mana.label()),
             .attribute => |at| menu.named(at),
             .reduction => comptime menu.capital(attr.REDUCTION_LABEL),
-            .crit => comptime menu.capital(attr.CRIT_LABEL),
             .weapon_crit => comptime menu.capital(attr.WEAPON_CRIT_LABEL),
             .spell_crit => comptime menu.capital(attr.SPELL_CRIT_LABEL),
             .physical => comptime menu.capital(attr.PHYSICAL_LABEL) ++ " bonus",
@@ -999,7 +1005,6 @@ const Measure = union(enum) {
             .mana => attr.Bonus.mana.label(),
             .attribute => |at| menu.named(at),
             .reduction => "physical reduction",
-            .crit => "critical chance",
             .weapon_crit => attr.WEAPON_CRIT_LABEL,
             .spell_crit => attr.SPELL_CRIT_LABEL,
             .physical => attr.PHYSICAL_LABEL,
@@ -1051,30 +1056,291 @@ const STATS_X = 40;
 const SECTION_RULE = 22;
 const SECTION_ROWS = 32;
 const STAT_ROW = font.BODY_LINE;
-const ATTR_ROW = 2 * STAT_ROW;
-/// Under an attribute's row, its description.
-const ATTR_NOTE_DY = 23;
-/// Below a section's rows: its note, and the gap to what follows.
-const SURVIVAL_NOTE_DY = 7;
-const SURVIVAL_GAP = 14;
-const RECOVERY_GAP = 5;
-const RECOVERY_DY = SURVIVAL_NOTE_DY + font.SMALL_LINE + RECOVERY_GAP;
+const HEADLINE = font.HEAD + 4;
+const HEADLINE_ROW = HEADLINE + 8;
+const CHANCE_ROW = font.LABEL + 3;
+const NOTE_DY = 7;
+const SECTION_GAP = 14;
 const CRIT_GAP = 20;
-const PROGRESSION_GAP = 32;
+/// Between a row's label and its value, at the least.
+const ROW_GAP = 16;
+/// Between one skill's chances to afflict.
+const CHANCE_GAP = 18;
+/// The lowest a column may reach: the right one stops above the actions.
+const LEFT_FOOT = FOOT_Y;
+const RIGHT_FOOT = ACTION_Y - SECTION_GAP;
 
-fn row(top: i32, i: usize, step: i32) i32 {
-    return top + SECTION_ROWS + @as(i32, @intCast(i)) * step;
+/// The sheet's type, fanciest first: what the player came to read, then what builds it, then the rest.
+const Tier = enum {
+    headline,
+    key,
+    plain,
+
+    fn size(t: Tier) i32 {
+        return switch (t) {
+            .headline => HEADLINE,
+            .key => font.BODY,
+            .plain => font.SMALL,
+        };
+    }
+
+    fn step(t: Tier) i32 {
+        return if (t == .headline) HEADLINE_ROW else STAT_ROW;
+    }
+
+    /// The display face engraved for the first two, the data face for the rest.
+    fn put(t: Tier, face: *const font.Face, s: [:0]const u8, x: i32, y: i32, col: rl.Color) void {
+        if (t == .plain) face.draw(s, x, y, t.size(), col) else face.engraved(s, x, y, t.size(), col);
+    }
+
+    fn label(t: Tier) Tier {
+        return if (t == .headline) .key else t;
+    }
+
+    /// Its label beside its value shares their baseline.
+    fn labelDrop(t: Tier) i32 {
+        return @divTrunc((t.size() - t.label().size()) * 3, 4);
+    }
+};
+
+/// Nothing to read in a zero, so it recedes.
+fn quiet(n: i32, col: rl.Color) rl.Color {
+    return if (n == 0) look.DIM else if (n < 0) LOSS else col;
 }
 
-fn stat(face: *const font.Face, x: i32, y: i32, label: [:0]const u8, number: i32, prefix: []const u8, suffix: []const u8) void {
-    face.draw(label, x, y, font.BODY, look.TEXT);
+fn noLine(_: *const font.Face, _: [:0]const u8, _: i32, _: i32, _: i32, _: rl.Color) void {}
+
+/// One column of the sheet, top down; `dry` lays it out without drawing to check it fits.
+const Column = struct {
+    face: *const font.Face,
+    x: i32,
+    y: i32 = TOP,
+    dry: bool = false,
+    cramped: bool = false,
+
+    fn heading(c: *Column, title: [:0]const u8) void {
+        if (!c.dry) {
+            c.face.draw(title, c.x, c.y, font.SMALL, look.UI_FOCUS);
+            rl.drawLine(c.x, c.y + SECTION_RULE, c.x + STAT_W, c.y + SECTION_RULE, look.EDGE);
+        }
+        c.y += SECTION_ROWS;
+    }
+
+    fn fits(c: *Column, w: i32) void {
+        if (w > STAT_W) c.cramped = true;
+    }
+
+    fn entry(c: *Column, label: [:0]const u8, value: [:0]const u8, tier: Tier, col: rl.Color) void {
+        c.fits(c.face.width(label, tier.label().size()) + ROW_GAP + c.face.width(value, tier.size()));
+        if (!c.dry) {
+            tier.label().put(c.face, label, c.x, c.y + tier.labelDrop(), look.TEXT);
+            tier.put(c.face, value, c.x + STAT_W - c.face.width(value, tier.size()), c.y, col);
+        }
+        c.y += tier.step();
+    }
+
+    fn stat(c: *Column, m: Measure, a: attr.Attrs, tier: Tier, col: rl.Color) void {
+        var text: menu.Note(48) = .{};
+        text.say("{s}{d}{s}", .{ if (m == .style) "+" else "", m.of(a), if (m.percent()) "%" else "" });
+        c.entry(m.title(), text.text(), tier, col);
+    }
+
+    fn vital(c: *Column, label: [:0]const u8, v: Vital, col: rl.Color) void {
+        var text: menu.Note(32) = .{};
+        text.say("{d} / {d}", .{ v.now, v.max });
+        c.entry(label, text.text(), .headline, col);
+    }
+
+    fn note(c: *Column, s: []const u8, size: i32, col: rl.Color) void {
+        c.y = if (c.dry) c.face.paragraphWith(noLine, s, c.x, c.y, STAT_W, size, col) else c.face.paragraph(s, c.x, c.y, STAT_W, size, col);
+    }
+
+    /// A skill's name, then its hit coloured part by part, then what it may afflict.
+    fn skill(c: *Column, act: skillbar.Act, hit: progress.Hit, effect: items.WeaponEffect) void {
+        var physical: menu.Note(24) = .{};
+        var element: menu.Note(40) = .{};
+        if (hit.physical.hi > 0) physical.say("{d}-{d}", .{ hit.physical.lo, hit.physical.hi });
+        if (hit.element) |e| element.say("{d}-{d} {s}", .{ e.lo, e.hi, @tagName(act.element().?) });
+        const join: [:0]const u8 = if (physical.n > 0 and element.n > 0) " + " else "";
+        const parts = [_]struct { [:0]const u8, rl.Color }{
+            .{ physical.text(), look.PHYSICAL },
+            .{ join, look.DIM },
+            .{ element.text(), look.arrowInk(act) },
+        };
+        const tier = Tier.headline;
+        var w: i32 = 0;
+        for (parts) |p| w += c.face.width(p[0], tier.size());
+        c.fits(c.face.width(act.name(), tier.label().size()) + ROW_GAP + w);
+        if (!c.dry) {
+            tier.label().put(c.face, act.name(), c.x, c.y + tier.labelDrop(), look.TEXT);
+            var at = c.x + STAT_W - w;
+            for (parts) |p| {
+                tier.put(c.face, p[0], at, c.y, p[1]);
+                at += c.face.width(p[0], tier.size());
+            }
+        }
+        c.y += tier.step();
+        const chances = chancesOf(act, hit, effect);
+        var any = false;
+        var at = c.x;
+        for (std.enums.values(resilience.Kind)) |k| {
+            const pc = chances.get(k);
+            if (pc == 0) continue;
+            any = true;
+            var text: menu.Note(32) = .{};
+            text.say("{d}% {s}", .{ pc, @tagName(k) });
+            if (!c.dry) c.face.draw(text.text(), at, c.y, font.LABEL, look.ailmentInk(k));
+            at += c.face.width(text.text(), font.LABEL) + CHANCE_GAP;
+        }
+        if (!any) return;
+        c.fits(at - CHANCE_GAP - c.x);
+        c.y += CHANCE_ROW;
+    }
+};
+
+/// Each ailment a hit may bring, the skill's own roll first and the weapon's only if that missed, as combat rolls them.
+fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: items.WeaponEffect) std.EnumArray(resilience.Kind, u32) {
+    var out = std.EnumArray(resilience.Kind, u32).initFill(0);
+    if (act.ailment()) |ail| out.set(ail.kind, ail.chance);
+    if (hit.physical.hi > 0) {
+        for (std.enums.values(resilience.Kind)) |k| {
+            const skill = out.get(k);
+            out.set(k, skill + ((mathx.PERCENT - skill) * effect.chance(k) + mathx.PERCENT / 2) / mathx.PERCENT);
+        }
+    }
+    return out;
+}
+
+fn attributeNote(at: attr.Attr) [:0]const u8 {
+    return switch (at) {
+        .strength => "Life and heavy weapon damage",
+        .dexterity => "Light weapons, critical chance and dodge",
+        .intelligence => "Mana and spell damage",
+    };
+}
+
+const DEFENCES = [_]Measure{ .reduction, .dodge };
+const CRITS = [_]Measure{ .weapon_crit, .spell_crit };
+
+/// What the player reads at a glance: life, mana and each skill's hit, then what builds them.
+fn sheet(face: *const font.Face, v: View, dry: bool) [2]Column {
+    const a = v.stats();
+    var left = Column{ .face = face, .x = STATS_X, .dry = dry };
+    left.heading("SURVIVAL");
+    left.vital(hud.LIFE, v.life, look.LIFE_TEXT);
+    left.vital(hud.MANA, v.mana, look.MANA_TEXT);
+    for (DEFENCES) |m| left.stat(m, a, .plain, look.TEXT);
+    left.y += NOTE_DY;
+    var note: menu.Note(100) = .{};
+    note.say("Physical reduction is capped at {d}%.", .{attr.ARMOUR_MAX});
+    left.note(note.text(), font.SMALL, look.DIM);
+    left.y += SECTION_GAP;
+    left.heading("ATTRIBUTES");
+    for (attr.ATTRS) |at| {
+        left.stat(.{ .attribute = at }, a, .key, look.TEXT);
+        left.note(attributeNote(at), font.LABEL, look.DIM);
+    }
+    left.y += SECTION_GAP;
+    left.heading("PROGRESSION");
+    note.say("{d} passive, {d} skill", .{ v.growth.passive_points, v.growth.active_points });
+    left.entry("Unspent points", note.text(), .plain, quiet(@as(i32, v.growth.passive_points) + v.growth.active_points, look.UI_FOCUS));
+    var gold: menu.Note(24) = .{};
+    gold.say("{d}", .{v.gold});
+    left.entry("Gold", gold.text(), .plain, look.LEVEL_GOLD);
+
+    var right = Column{ .face = face, .x = RIGHT, .dry = dry };
+    right.heading("DAMAGE");
+    for (skillbar.kit(v.class)) |act| if (act.attack() != null and v.growth.unlocked(act)) {
+        right.skill(act, v.growth.hit(a, v.inventory.gear, act).?, v.inventory.gear.onHit(act.attack().?));
+    };
+    right.y += NOTE_DY;
+    right.note("Per hit, before critical hits, defenses and resistances.", font.SMALL, look.DIM);
+    right.y += CRIT_GAP;
+    for (CRITS) |m| right.stat(m, a, .plain, look.TEXT);
+    return .{ left, right };
+}
+
+/// D2's Advanced Stats: every bonus, recovery and resistance, zeros included.
+fn advancedSheet(face: *const font.Face, v: View, dry: bool) [2]Column {
+    const a = v.stats();
+    var left = Column{ .face = face, .x = STATS_X, .dry = dry };
+    left.heading("DAMAGE BONUSES");
+    for (attr.STYLES) |s| left.stat(.{ .style = s }, a, .plain, quiet(a.increase(s), look.TEXT));
+    left.stat(.physical, a, .plain, quiet(a.physical_bonus, look.PHYSICAL));
+    for (std.enums.values(damage.Element)) |e| left.stat(.{ .element = e }, a, .plain, quiet(a.element_bonus.get(e), look.elementInk(e)));
     var text: menu.Note(48) = .{};
-    text.say("{s}{d}{s}", .{ prefix, number, suffix });
-    face.draw(text.text(), x + STAT_W - face.width(text.text(), font.BODY), y, font.BODY, look.TEXT);
+    text.say("{d}%", .{attr.CRIT_MULTI});
+    left.entry("Critical damage multiplier", text.text(), .plain, look.TEXT);
+    left.y += SECTION_GAP;
+    left.heading("RECOVERY");
+    const perks = v.inventory.gear.perks(v.growth.perks());
+    text.say("{d} / {d} turns", .{ hero.manaRegen(perks), hero.MANA_REGEN_TURNS });
+    left.entry("Mana recovery", text.text(), .plain, look.MANA_TEXT);
+    text.say("{d}", .{perks.life_on_hit});
+    left.entry("Life on hit", text.text(), .plain, quiet(perks.life_on_hit, look.LIFE_TEXT));
+    text.say("{d}", .{perks.life_on_kill});
+    left.entry("Life on kill", text.text(), .plain, quiet(perks.life_on_kill, look.LIFE_TEXT));
+    text.say("+{d}%", .{perks.life_flask});
+    left.entry("Life flask recovery", text.text(), .plain, quiet(perks.life_flask, look.LIFE_TEXT));
+
+    var right = Column{ .face = face, .x = RIGHT, .dry = dry };
+    right.heading("RESISTANCES");
+    for (std.enums.values(damage.Element)) |e| {
+        const n = v.resists.get(e);
+        text.say("{d}%", .{n});
+        right.entry(resistanceLabel(e), text.text(), .plain, quiet(n, look.elementInk(e)));
+    }
+    right.y += SECTION_GAP;
+    right.heading("STATUS RESISTANCE");
+    for (std.enums.values(resilience.Kind)) |k| {
+        const m = v.status_resist.get(k);
+        if (m.turns > 0) text.say("{d}%, {d} turn{s}", .{ m.percent, m.turns, mathx.plural(m.turns) }) else text.say("{d}%", .{m.percent});
+        right.entry(resistanceLabel(k), text.text(), .plain, quiet(m.percent, look.ailmentInk(k)));
+    }
+    right.y += NOTE_DY;
+    right.note(resilience.ABOUT, font.SMALL, look.DIM);
+    return .{ left, right };
 }
 
-fn measure(face: *const font.Face, x: i32, y: i32, m: Measure, a: attr.Attrs) void {
-    stat(face, x, y, m.title(), m.of(a), if (m == .style) "+" else "", if (m.percent()) "%" else "");
+fn resistanceLabel(e: anytype) [:0]const u8 {
+    return switch (e) {
+        inline else => |t| comptime menu.capital(@tagName(t)) ++ " resistance",
+    };
+}
+
+fn drawStats(face: *const font.Face, v: View) void {
+    _ = sheet(face, v, false);
+}
+
+fn drawAdvanced(face: *const font.Face, v: View) void {
+    _ = advancedSheet(face, v, false);
+}
+
+/// Every class with every skill learned keeps both sheets' rows inside their columns and above the actions.
+pub fn verifyStats(face: *const font.Face) !void {
+    var checked: usize = 0;
+    for (hero.CLASSES) |class| {
+        var growth = progress.State.of(class);
+        for (progress.skills(class)) |s| growth.ranks.set(s.act, progress.RANKS);
+        var inv = items.Inventory{};
+        inv.gear.slots.set(.right_hand, .{ .kind = .axe });
+        var v = testView(&inv, &growth);
+        v.class = class;
+        v.base = growth.attributes(class);
+        v.life = .{ .now = 999, .max = 999 };
+        v.mana = .{ .now = 999, .max = 999 };
+        for (std.enums.values(resilience.Kind)) |k| v.status_resist.set(k, .{ .percent = 100, .turns = resilience.EXPIRY });
+        for ([_][2]Column{ sheet(face, v, true), advancedSheet(face, v, true) }) |cols| {
+            for (cols, [_]i32{ LEFT_FOOT, RIGHT_FOOT }) |col, foot| {
+                if (col.cramped or col.y > foot) {
+                    std.debug.print("stats overflow {s}: column at x {d} reaches {d} of {d}, cramped {}\n", .{ @tagName(class), col.x, col.y, foot, col.cramped });
+                    return error.StatsOverflow;
+                }
+                checked += 1;
+            }
+        }
+    }
+    std.debug.print("stats typography: {d} columns fit, main and advanced, every class fully learned\n", .{checked});
 }
 
 pub fn verifyCards(face: *const font.Face) !void {
@@ -1102,64 +1368,6 @@ pub fn verifyCards(face: *const font.Face) !void {
     std.debug.print("item typography: {d} flavor, property and requirement rows fit {d}px comparison cards\n", .{ count, CARD_W });
 }
 
-const SURVIVAL = [_]Measure{ .life, .mana, .reduction, .dodge };
-
-fn section(face: *const font.Face, x: i32, y: i32, title: [:0]const u8) void {
-    face.draw(title, x, y, font.SMALL, look.UI_FOCUS);
-    rl.drawLine(x, y + SECTION_RULE, x + STAT_W, y + SECTION_RULE, look.EDGE);
-}
-
-fn drawStats(face: *const font.Face, v: View) void {
-    const a = v.stats();
-    const x = STATS_X;
-    const right = RIGHT;
-    const y = TOP;
-    section(face, x, y, "ATTRIBUTES");
-    for (attr.ATTRS, 0..) |at, i| {
-        const top = row(y, i, ATTR_ROW);
-        measure(face, x, top, .{ .attribute = at }, a);
-        face.draw(switch (at) {
-            .strength => "Life and heavy weapon damage",
-            .dexterity => "Light weapons, critical chance and dodge",
-            .intelligence => "Mana and spell damage",
-        }, x, top + ATTR_NOTE_DY, font.LABEL, look.DIM);
-    }
-    const survival = row(y, attr.ATTRS.len, ATTR_ROW) + SURVIVAL_GAP;
-    section(face, x, survival, "SURVIVAL");
-    for (SURVIVAL, 0..) |m, i| measure(face, x, row(survival, i, STAT_ROW), m, a);
-    var note: menu.Note(100) = .{};
-    note.say("Physical reduction is capped at {d}%.", .{attr.ARMOUR_MAX});
-    face.draw(note.text(), x, row(survival, SURVIVAL.len, STAT_ROW) + SURVIVAL_NOTE_DY, font.SMALL, look.DIM);
-    const perks = v.inventory.gear.perks(v.growth.perks());
-    const recovery = row(survival, SURVIVAL.len, STAT_ROW) + RECOVERY_DY;
-    note.say("Mana recovery  {d} / {d} turns", .{ hero.MANA_REGEN + perks.mana_regen, hero.MANA_REGEN_TURNS });
-    face.draw(note.text(), x, recovery, font.SMALL, look.TEXT);
-    note.say("Life on hit  {d}     Life on kill  {d}", .{ perks.life_on_hit, perks.life_on_kill });
-    face.draw(note.text(), x, recovery + STAT_ROW, font.SMALL, look.TEXT);
-    note.say("Life flask recovery  +{d}%", .{perks.life_flask});
-    face.draw(note.text(), x, recovery + 2 * STAT_ROW, font.LABEL, look.DIM);
-    section(face, right, y, "DAMAGE BONUSES");
-    for (attr.STYLES, 0..) |s, i| measure(face, right, row(y, i, STAT_ROW), .{ .style = s }, a);
-    var bonuses = row(y, attr.STYLES.len, STAT_ROW);
-    if (a.physical_bonus != 0) {
-        measure(face, right, bonuses, .physical, a);
-        bonuses += STAT_ROW;
-    }
-    for (std.enums.values(damage.Element)) |e| if (a.element_bonus.get(e) != 0) {
-        measure(face, right, bonuses, .{ .element = e }, a);
-        bonuses += STAT_ROW;
-    };
-    const crit = bonuses + CRIT_GAP;
-    measure(face, right, crit, .weapon_crit, a);
-    measure(face, right, crit + STAT_ROW, .spell_crit, a);
-    stat(face, right, crit + 2 * STAT_ROW, "Critical damage multiplier", attr.CRIT_MULTI, "", "%");
-    const progression = crit + 3 * STAT_ROW + PROGRESSION_GAP;
-    section(face, right, progression, "PROGRESSION");
-    note.say("Passive points  {d}     Skill points  {d}", .{ v.growth.passive_points, v.growth.active_points });
-    face.draw(note.text(), right, row(progression, 0, STAT_ROW), font.SMALL, look.TEXT);
-    stat(face, right, row(progression, 1, STAT_ROW), "Gold", v.gold, "", "");
-}
-
 fn testView(inv: *const items.Inventory, growth: *const progress.State) View {
     return .{ .class = .archer, .name = "Test", .inventory = inv, .growth = growth, .base = growth.attributes(.archer) };
 }
@@ -1170,7 +1378,7 @@ test "character actions need one press and tabs are directly reachable" {
     var growth = progress.State.of(.archer);
     const v = testView(&inv, &growth);
     var book = Book{ .page = .inventory };
-    const screen = P{ .x = 1600, .y = 900 };
+    const screen = display.WINDOW;
     const confirm = input.State{ .pressed = .initOne(menu.CONFIRM) };
     try std.testing.expect(book.step(&confirm, screen, v).? == .equip);
     try std.testing.expectEqual(@as(usize, 1), inv.n);
@@ -1196,13 +1404,39 @@ test "character actions need one press and tabs are directly reachable" {
     std.debug.print("character actions: direct equip/drop, shoulder tabs, one-step close, scaled mouse hit; commands leave inventory untouched\n", .{});
 }
 
+test "stats change between main and advanced by button and by click, and back still closes" {
+    const inv = items.Inventory{};
+    const growth = progress.State.of(.wizard);
+    const v = testView(&inv, &growth);
+    var book = Book{ .page = .stats };
+    const screen = display.WINDOW;
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CHANGE) }, screen, v) == null);
+    try std.testing.expect(book.advanced);
+    const box = book.actionBox(menu.CHANGE, v);
+    const p = book.surface(screen, v).screenOf(.{ .x = box.x + 20, .y = box.y + 20 });
+    _ = book.step(&.{ .click = true, .pointer = p }, screen, v);
+    try std.testing.expect(!book.advanced);
+    book.advanced = true;
+    try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.BACK) }, screen, v).? == .close);
+    std.debug.print("stats: change and a click on its button toggle the advanced sheet; back closes from it\n", .{});
+}
+
+test "a skill's status chances combine its own roll with the weapon's second roll" {
+    const bash = chancesOf(.shield_bash, .{ .physical = .{ .lo = 1, .hi = 2 }, .element = null, .style = .heavy }, .{ .stun = 20, .bleed = 10 });
+    try std.testing.expectEqual(@as(u32, 60), bash.get(.stun));
+    try std.testing.expectEqual(@as(u32, 10), bash.get(.bleed));
+    const spark = chancesOf(.spark, .{ .physical = .{ .lo = 0, .hi = 0 }, .element = .{ .lo = 1, .hi = 3 }, .style = .spell }, .{ .stun = 20 });
+    try std.testing.expectEqual(@as(u32, 50), spark.get(.stun));
+    std.debug.print("status chances: bash 50% + mace 20% = {d}% stun; pure lightning ignores the weapon at {d}%\n", .{ bash.get(.stun), spark.get(.stun) });
+}
+
 test "loot exposes single pickup and take all through controller and mouse controls" {
     const inv = items.Inventory{};
     const growth = progress.State.of(.archer);
     var v = testView(&inv, &growth);
     v.nearby = &.{.{ .loot = .{ .index = 7, .item = .{ .kind = .cap } } }};
     var book = Book{ .page = .loot };
-    const screen = P{ .x = 1280, .y = 720 };
+    const screen = display.SCREEN_720;
     const one = book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, v).?;
     try std.testing.expectEqual(@as(usize, 7), one.pickup);
     try std.testing.expect(book.step(&.{ .pressed = .initOne(menu.CHANGE) }, screen, v).? == .take_all);
@@ -1224,7 +1458,7 @@ test "the inventory list scrolls back when the bag shrinks" {
     for (0..VISIBLE + 6) |_| try std.testing.expect(inv.add(.{ .kind = .cap }));
     var growth = progress.State.of(.archer);
     const v = testView(&inv, &growth);
-    const screen = P{ .x = 1600, .y = 900 };
+    const screen = display.WINDOW;
     var book = Book{ .page = .inventory, .cursor = VISIBLE + 5 };
     _ = book.step(&.{}, screen, v);
     try std.testing.expectEqual(@as(usize, 6), book.top);
@@ -1277,7 +1511,7 @@ test "tree browsing is free and point actions issue one command" {
     growth.passive_points = 2;
     growth.active_points = 2;
     const v = testView(&inv, &growth);
-    const screen = P{ .x = 1280, .y = 720 };
+    const screen = display.SCREEN_720;
     var book = Book{ .page = .passives, .cursor = progress.passives.branchFirst(.rogue_evade) };
     try std.testing.expectEqual(trees.ZOOM_START, book.zoom);
     try std.testing.expect(book.treeActive());
@@ -1322,7 +1556,7 @@ test "mouse character browsing and passive dragging preserve points and scaled h
     growth.passive_points = 2;
     const v = testView(&inv, &growth);
     var checked: usize = 0;
-    for ([_]P{ .{ .x = 1280, .y = 720 }, .{ .x = 2560, .y = 1440 } }) |screen| {
+    for ([_]P{ display.SCREEN_720, display.SCREEN_1440 }) |screen| {
         var book = Book{ .page = .skills };
         const surface = book.surface(screen, v);
         const p = surface.screenOf(raster.middle(book.cellBox(1, v)));
@@ -1365,7 +1599,7 @@ test "mouse item and skill selections survive movement across other targets towa
         .{ .loot = .{ .index = 9, .item = .{ .kind = .cap } } },
     };
     var journeys: usize = 0;
-    for ([_]P{ .{ .x = 1280, .y = 720 }, .{ .x = 2560, .y = 1440 } }) |screen| {
+    for ([_]P{ display.SCREEN_720, display.SCREEN_1440 }) |screen| {
         for ([_]Page{ .inventory, .loot, .skills }) |page| {
             v.nearby = if (page == .loot) &nearby else &.{};
             var book = Book{ .page = page };
@@ -1400,7 +1634,7 @@ test "a stick pushed where no passive lies keeps the pan, as the keys do" {
     var inv = items.Inventory{};
     var growth = progress.State.of(.archer);
     const v = testView(&inv, &growth);
-    const screen = P{ .x = 1280, .y = 720 };
+    const screen = display.SCREEN_720;
     const dead_end = found: for (0..progress.NODES.len) |i| {
         for (mathx.CARDINALS) |delta| {
             if (progress.passives.step(i, @floatFromInt(delta.x), @floatFromInt(delta.y)) == i) break :found .{ i, delta };

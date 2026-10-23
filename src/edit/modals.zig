@@ -102,8 +102,8 @@ fn drawHelp(ed: *editor.Editor, g: *game.Game) void {
     const f = editor.modalFrame(g, HELP_W, editor.MODAL_HEAD + editor.PAD + editor.HELP_ROWS * HELP_STEP + editor.ROW_H + editor.PAD, "Every key", false);
     const x = f.x;
     const w = f.w;
-    var ys = [_]i32{ f.y, f.y };
-    const column_w = @divTrunc(w - 3 * editor.PAD, 2);
+    var ys: [editor.HELP_COLUMNS]i32 = @splat(f.y);
+    const column_w = @divTrunc(w - (editor.HELP_COLUMNS + 1) * editor.PAD, editor.HELP_COLUMNS);
     for (editor.HELP) |s| {
         const cx = x + editor.PAD + @as(i32, @intCast(s.column)) * (column_w + editor.PAD);
         var y = ys[s.column];
@@ -115,7 +115,7 @@ fn drawHelp(ed: *editor.Editor, g: *game.Game) void {
         }
         ys[s.column] = y + HELP_STEP;
     }
-    backButton(ed, g, f.buttonX(), @max(ys[0], ys[1]), "Close");
+    backButton(ed, g, f.buttonX(), std.mem.max(i32, &ys), "Close");
 }
 
 const VIEW_W: i32 = 960;
@@ -236,7 +236,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
                     if (st.bleeds > 0) f.put("{d}% of its blows open a bleed", .{st.bleeds});
                     if (st.stuns > 0) f.put("{d}% of its blows stun, friend or foe", .{st.stuns});
                 },
-                .burst => f.put("Bursts into caustic gas instead of striking", .{}),
+                .burst => f.put("Bursts into " ++ @import("../map/gas.zig").NAME ++ " instead of striking", .{}),
             }
             if (r.sweep_every > 0) f.put("Sweeps {d} adjacent cells every {d} turns", .{ actor.SWEEP_CELLS, r.sweep_every });
             if (r.ranged) |ranged| {

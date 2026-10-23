@@ -145,7 +145,7 @@ pub fn hudLayout(g: *const game.Game) hud.Layout {
     return hud.Layout.of(g.screen, game.SKILLS_W);
 }
 
-fn slotBox(layout: hud.Layout, i: usize) rl.Rectangle {
+pub fn slotBox(layout: hud.Layout, i: usize) rl.Rectangle {
     return raster.rect(layout.skills.x + game.SLOT_XS[i], layout.skills.y, game.SLOT_PX, game.SLOT_PX);
 }
 

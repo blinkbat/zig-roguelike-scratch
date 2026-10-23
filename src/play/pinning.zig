@@ -24,7 +24,8 @@ pub const Pin = struct {
     }
 };
 
-pub const procs = damage.always;
+pub const CHANCE: u32 = mathx.PERCENT;
+pub const procs = damage.chance(CHANCE);
 
 /// Pinned again, it is held for the longer of the two.
 pub fn afflict(a: anytype, rng: *mathx.Rng) void {

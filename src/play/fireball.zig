@@ -23,6 +23,7 @@ comptime {
 
 pub const BASE = damage.Base{ .lo = 3, .hi = 6 };
 
+pub const CHANCE = burning.CHANCE;
 pub const procs = burning.procs;
 pub const afflict = burning.afflict;
 pub const AILMENT = burning.AILMENT;

@@ -8,7 +8,7 @@ const P = mathx.P;
 
 pub const COST: i32 = 4;
 pub const AILMENT = @import("resilience.zig").Kind.chill;
-pub const CHANCE: i32 = 50;
+pub const CHANCE: u32 = 50;
 pub const TURNS: u8 = 3;
 pub const RANGE: i32 = 2;
 pub const CYCLE: u8 = 3;
@@ -41,7 +41,7 @@ pub const Chill = struct {
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub fn chance(resist: i16) u32 {
-    return @intCast(@min(mathx.PERCENT, damage.resisted(CHANCE, resist)));
+    return @intCast(@min(mathx.PERCENT, damage.resisted(@as(i32, CHANCE), resist)));
 }
 
 pub fn procs(rng: *mathx.Rng, resist: i16) bool {

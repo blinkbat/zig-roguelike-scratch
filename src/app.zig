@@ -54,6 +54,7 @@ const BONES_SCALE: i32 = 3;
 const BONES_GAP: i32 = 12;
 const BONES_RANK = "Level {d} {s}" ++ menu.SEP ++ "Renown {d}";
 const CHOOSE_MAP = "CHOOSE A MAP";
+const CHOOSE_HERO = "CHOOSE A HERO";
 const DELETE_W: f32 = 188;
 const DELETE_INSET: f32 = 2;
 
@@ -156,18 +157,15 @@ const App = struct {
     fn saveStep(app: *App, st: *const input.State, screen: mathx.P) ?SaveAction {
         const was = app.loads.at;
         const picked = app.loads.step(st, save.SLOTS);
-        if (st.scroll != 0) app.loads.at = mathx.nudge(app.loads.at, -st.scroll, save.SLOTS);
+        app.loads.at = st.scrolled(app.loads.at, save.SLOTS);
         var action: ?SaveAction = if (picked) |i| .{ .load = i } else null;
-        if (st.pointing() and st.walk == null and st.scroll == 0) {
-            for (0..save.SLOTS) |i| if (raster.holds(saveRowBox(screen, i), st.pointer.?)) {
-                app.loads.at = i;
-                if (st.click) {
-                    if (raster.holds(saveDeleteBox(screen, i), st.pointer.?)) {
-                        if (app.list[i] != .empty) action = .{ .remove = i };
-                    } else action = .{ .load = i };
-                }
-                break;
-            };
+        if (menu.pointed(st, save.SLOTS, screen, saveRowBox)) |i| {
+            app.loads.at = i;
+            if (st.click) {
+                if (raster.holds(saveDeleteBox(screen, i), st.pointer.?)) {
+                    if (app.list[i] != .empty) action = .{ .remove = i };
+                } else action = .{ .load = i };
+            }
         }
         if (app.loads.at != was) {
             app.armed = null;
@@ -187,7 +185,7 @@ const App = struct {
     fn drawSaves(app: *const App) void {
         const g = app.g;
         const first = saveRowBox(g.screen, 0);
-        menu.heading(g.face, g.screen, comptime menu.caps(menu.named(MainRow.load)), menu.titleY(first), menu.TITLE, look.TEXT, look.UI_GOLD);
+        menu.pageHeading(g.face, g.screen, comptime menu.caps(menu.named(MainRow.load)), menu.titleY(first));
         var line: [LINE]u8 = undefined;
         var fit: [LINE + 1]u8 = undefined;
         for (&app.list, 0..) |*slot, i| {
@@ -439,7 +437,7 @@ const App = struct {
             .class => {
                 app.loadHeroes();
                 const picked = app.classes.step(&g.st, g.screen);
-                app.classes.draw(g.face, &g.sprites, g.screen, "CHOOSE A HERO");
+                app.classes.draw(g.face, &g.sprites, g.screen, CHOOSE_HERO);
                 if (back) {
                     app.fromClass();
                 } else if (picked) |i| {
@@ -547,20 +545,21 @@ const App = struct {
         var wrapped: font.Wrapped = undefined;
         var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
         const n = font.wrap(&g.face, e.text(), font.BODY, w - 2 * pad, &wrapped, &lines);
-        const panel_h = 2 * pad + BONES_SCALE * look.SPRITE_PX + 2 * BONES_GAP + font.BODY_LINE + @as(i32, @intCast(n)) * font.BODY_LINE;
-        const lead = -menu.titleY(raster.rect(0, 0, 0, 0));
+        const feet_dy = pad + BONES_SCALE * look.SPRITE_PX;
+        const stats_dy = feet_dy + BONES_GAP;
+        const text_dy = stats_dy + font.BODY_LINE + BONES_GAP;
+        const panel_h = text_dy + @as(i32, @intCast(n)) * font.BODY_LINE + pad;
+        const lead = menu.TITLE_LEAD;
         const x = @divTrunc(g.screen.x - w, 2);
         const top = @divTrunc(g.screen.y - lead - panel_h, 2) + lead;
         var name: [hero.Name.MAX + 1]u8 = undefined;
-        menu.heading(g.face, g.screen, menu.shout(&name, "{s}", .{e.name.text()}), top - lead, menu.TITLE, look.TEXT, look.UI_GOLD);
+        menu.pageHeading(g.face, g.screen, menu.shout(&name, "{s}", .{e.name.text()}), top - lead);
         rl.drawRectangleRec(raster.rect(x, top, w, panel_h), look.CARD_BG);
-        var y = top + pad + BONES_SCALE * look.SPRITE_PX;
-        stage.figure(&g.sprites, e.class.kind(), .{ .x = @divTrunc(g.screen.x, 2), .y = y }, BONES_SCALE, 1);
-        y += BONES_GAP;
+        stage.figure(&g.sprites, e.class.kind(), .{ .x = @divTrunc(g.screen.x, 2), .y = top + feet_dy }, BONES_SCALE, 1);
         var stats: [LINE + 1]u8 = undefined;
         const said = std.fmt.bufPrintZ(&stats, BONES_RANK ++ menu.SEP ++ "Kills {d}" ++ menu.SEP ++ hero.GOLD_FMT, .{ e.level, e.class.title(), e.renown, e.kills, e.gold }) catch "";
-        menu.mid(g.face, g.screen, said, y, font.BODY, look.UI_GOLD);
-        y += font.BODY_LINE + BONES_GAP;
+        menu.mid(g.face, g.screen, said, top + stats_dy, font.BODY, look.UI_GOLD);
+        var y = top + text_dy;
         for (lines[0..n]) |l| {
             g.face.text(l, x + pad, y, font.BODY, look.TEXT);
             y += font.BODY_LINE;
@@ -665,10 +664,10 @@ test "mouse save deletion stays tied to its row through intermediate movement an
 fn fixtureHall() ossuary.Hall {
     const Bones = struct { name: []const u8, class: hero.Class, level: u16, kills: u32, renown: u32, said: []const u8 };
     const all = [_]Bones{
-        .{ .name = "Arwen the Bold", .class = .archer, .level = 14, .kills = 212, .renown = 9120, .said = "Arwen the Bold, a level 14 archer, was slain by a bandit crossbowman on The Strand after 3 days below, having felled 212 foes and gathered 4310 gold. Her last arrow found its mark a heartbeat too late, and the bolt that answered it did not miss. " ++ ossuary.ENTOMBED },
-        .{ .name = "Merrow", .class = .wizard, .level = 9, .kills = 96, .renown = 4410, .said = "Merrow, a level 9 wizard, choked in a bloat's gas in the Cistern after 2 days below, having felled 96 foes. " ++ ossuary.ENTOMBED },
-        .{ .name = "Sir Gallant-Rhys", .class = .knight, .level = 7, .kills = 61, .renown = 2875, .said = "Sir Gallant-Rhys, a level 7 knight, was overrun by rats in the Wilds, having felled 61 foes. " ++ ossuary.ENTOMBED },
-        .{ .name = "Pell", .class = .archer, .level = 2, .kills = 4, .renown = 120, .said = "Pell, a level 2 archer, was bitten to death by a rat on the first floor. " ++ ossuary.ENTOMBED },
+        .{ .name = "Arwen the Bold", .class = .archer, .level = 14, .kills = 212, .renown = 9120, .said = "Arwen the Bold was shot dead by a bandit crossbowman on the Strand after dark. Arwen the Bold's last arrow struck a bandit crossbowman, and was answered. " ++ ossuary.ENTOMBED },
+        .{ .name = "Merrow", .class = .wizard, .level = 9, .kills = 96, .renown = 4410, .said = "Merrow the wizard burst a bloat in the Cistern, then died in its gas. There was nowhere left to step. " ++ ossuary.ENTOMBED },
+        .{ .name = "Sir Gallant-Rhys", .class = .knight, .level = 7, .kills = 61, .renown = 2875, .said = "Sir Gallant-Rhys the knight was bitten to death by a rat in the Wilds. Sir Gallant-Rhys drank a life flask at the very end, too late. At the end, Sir Gallant-Rhys was surrounded. " ++ ossuary.ENTOMBED },
+        .{ .name = "Pell", .class = .archer, .level = 2, .kills = 4, .renown = 120, .said = "Pell the archer was bitten to death by a rat in the Cistern. Pell's last arrow found only air. " ++ ossuary.ENTOMBED },
     };
     var hall = ossuary.Hall{};
     for (all, 0..) |b, i| {

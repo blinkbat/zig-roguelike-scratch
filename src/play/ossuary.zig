@@ -38,6 +38,26 @@ pub const Entry = struct {
     }
 };
 
+/// What a run did that history counts.
+pub const Deeds = struct { kills: usize, level: u16, gold: i32, places: usize };
+
+const RENOWN_PER_KILL: u32 = 10;
+const RENOWN_PER_LEVEL: u32 = 100;
+const RENOWN_PER_PLACE: u32 = 25;
+const GOLD_PER_RENOWN: u32 = 5;
+
+pub fn renown(d: Deeds) u32 {
+    const kills: u32 = @intCast(@min(d.kills, std.math.maxInt(u32) / RENOWN_PER_KILL / 4));
+    const places: u32 = @intCast(@min(d.places, std.math.maxInt(u32) / RENOWN_PER_PLACE / 4));
+    const gold: u32 = @intCast(@max(0, d.gold));
+    return kills * RENOWN_PER_KILL +| (@as(u32, d.level) -| 1) * RENOWN_PER_LEVEL +| places * RENOWN_PER_PLACE +| gold / GOLD_PER_RENOWN;
+}
+
+test "renown counts kills, levels past the first, places and gold" {
+    try std.testing.expectEqual(@as(u32, 25), renown(.{ .kills = 0, .level = 1, .gold = 4, .places = 1 }));
+    try std.testing.expectEqual(@as(u32, 230 + 300 + 75 + 28), renown(.{ .kills = 23, .level = 4, .gold = 140, .places = 3 }));
+}
+
 /// The `MAX` most renowned deaths, most renowned first; a tie keeps the earlier death above.
 pub const Hall = struct {
     entries: [MAX]Entry = undefined,
@@ -49,8 +69,8 @@ pub const Hall = struct {
         return self.entries[0..self.n];
     }
 
-    pub fn qualifies(self: *const Hall, renown: u32) bool {
-        return self.n < MAX or renown > self.entries[MAX - 1].renown;
+    pub fn qualifies(self: *const Hall, worth: u32) bool {
+        return self.n < MAX or worth > self.entries[MAX - 1].renown;
     }
 
     /// Where it now lies, or null when it falls short.
@@ -74,7 +94,7 @@ pub const NOT_READ = "The Revered Ossuary could not be read ({s}); no hero will 
 const MAGIC = "cistern-ossuary\n";
 const Count = u8;
 const PRINT = store.fingerprint(.{ Count, Entry });
-const HEAD = MAGIC.len + @sizeOf(@TypeOf(PRINT));
+const HEAD = store.head(MAGIC);
 pub const FILE_MAX = HEAD + @sizeOf(Count) + MAX * @sizeOf(Entry) + store.SUM;
 const ClassRaw = std.meta.Int(.unsigned, 8 * @sizeOf(heroes.Class));
 
@@ -87,22 +107,18 @@ pub const Error = error{ NotOssuary, OtherBuild, Short, Damaged };
 pub fn encode(hall: *const Hall, buf: *[FILE_MAX]u8) []const u8 {
     var s = std.io.fixedBufferStream(buf);
     const w = s.writer();
-    w.writeAll(MAGIC) catch unreachable;
-    store.put(w, &PRINT) catch unreachable;
+    store.begin(w, MAGIC, PRINT) catch unreachable;
     const n: Count = @intCast(hall.n);
     store.put(w, &n) catch unreachable;
     for (hall.slice()) |*e| store.put(w, e) catch unreachable;
-    const sum = store.sum(buf[HEAD..s.pos]);
-    store.put(w, &sum) catch unreachable;
+    store.seal(w, buf[HEAD..s.pos]) catch unreachable;
     return buf[0..s.pos];
 }
 
 pub fn decode(bytes: []const u8) Error!Hall {
     var b = store.open(bytes, MAGIC, PRINT) catch |e| return switch (e) {
         error.Foreign => error.NotOssuary,
-        error.OtherBuild => error.OtherBuild,
-        error.Short => error.Short,
-        error.Damaged => error.Damaged,
+        else => |other| other,
     };
     var n: Count = undefined;
     if (!store.take(&b, &n)) return error.Short;
@@ -110,7 +126,7 @@ pub fn decode(bytes: []const u8) Error!Hall {
     if (b.len != @as(usize, n) * @sizeOf(Entry)) return error.Short;
     var hall = Hall{ .n = n };
     for (hall.entries[0..n], 0..) |*e, i| {
-        const class = std.mem.readInt(ClassRaw, b[@offsetOf(Entry, "class")..][0..@sizeOf(ClassRaw)], @import("builtin").cpu.arch.endian());
+        const class = std.mem.bytesToValue(ClassRaw, b[@offsetOf(Entry, "class")..][0..@sizeOf(ClassRaw)]);
         _ = std.meta.intToEnum(heroes.Class, class) catch return error.Damaged;
         _ = store.take(&b, e);
         if (!e.name.valid() or e.summary_n > SUMMARY_MAX) return error.Damaged;
@@ -132,8 +148,8 @@ pub fn write(hall: *Hall) !void {
     hall.dirty = false;
 }
 
-fn testEntry(renown: u32) Entry {
-    return .{ .name = heroes.Name.of("Bones"), .class = .knight, .level = 1, .kills = 0, .gold = 0, .renown = renown, .seed = renown };
+fn testEntry(worth: u32) Entry {
+    return .{ .name = heroes.Name.of("Bones"), .class = .knight, .level = 1, .kills = 0, .gold = 0, .renown = worth, .seed = worth };
 }
 
 test "the ossuary keeps the most renowned deaths, earlier first on a tie, and refuses the rest once full" {

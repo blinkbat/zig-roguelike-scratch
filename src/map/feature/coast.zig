@@ -5,8 +5,6 @@ const carve = @import("../carve.zig");
 
 // Path of Exile's Twilight Strand, Dwarf Fortress's ocean edge: the sea along one side, its surf, then a beach.
 
-const P = mathx.P;
-
 pub const SEA_MAX: u8 = 24;
 pub const SHORE_MAX: u8 = 8;
 pub const BEACH_MAX: u8 = 16;

@@ -1,16 +1,15 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
-const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
 const skillbar = @import("../play/skillbar.zig");
+const resilience = @import("../play/resilience.zig");
 const font = @import("font.zig");
 const ground = @import("ground.zig");
 const sky = @import("sky.zig");
 const line_icons = @import("line_icons.zig");
-const prompt_icon = @import("prompt_icon.zig");
 const shaders = @import("shaders.zig");
 const raster = @import("raster.zig");
 const embedded = @import("assets").names;
@@ -646,6 +645,16 @@ pub fn fade(c: rl.Color, a: f32) rl.Color {
     return .{ .r = c.r, .g = c.g, .b = c.b, .a = @intFromFloat(@as(f32, @floatFromInt(c.a)) * std.math.clamp(a, 0, 1)) };
 }
 
+pub fn mixed(a: rl.Color, b: rl.Color, t: f32) rl.Color {
+    const k = std.math.clamp(t, 0, 1);
+    const ch = struct {
+        fn of(p: u8, q: u8, w: f32) u8 {
+            return @intFromFloat(@round(mathx.lerpF(@floatFromInt(p), @floatFromInt(q), w)));
+        }
+    };
+    return .{ .r = ch.of(a.r, b.r, k), .g = ch.of(a.g, b.g, k), .b = ch.of(a.b, b.b, k), .a = a.a };
+}
+
 const GOLD = rgb(0xc9a24a);
 const FOE = rgb(0xe0503a);
 const SHADE = rgb(0x3e3c46);
@@ -859,7 +868,7 @@ pub const LEAN_FOE = FOE;
 pub const LEAN_BLOCKED = SHADE;
 
 pub fn arrowInk(a: skillbar.Act) rl.Color {
-    return elementInk(a.element() orelse return ARROW);
+    return elementInk(a.element() orelse return PHYSICAL);
 }
 
 pub fn elementInk(e: damage.Element) rl.Color {
@@ -873,6 +882,20 @@ pub fn elementInk(e: damage.Element) rl.Color {
 
 pub const LIGHTNING = rgb(0xf4e872);
 pub const LIGHTNING_CORE = FIRE_CORE;
+pub const PHYSICAL = ARROW;
+/// Life and mana as text, brighter than their orbs so they read on a panel.
+pub const LIFE_TEXT = rgb(0xe0645a);
+pub const MANA_TEXT = rgb(0x6e9ce8);
+
+pub fn ailmentInk(k: resilience.Kind) rl.Color {
+    return switch (k) {
+        .stun => LIGHTNING,
+        .burn => elementInk(.fire),
+        .bleed => BLEED,
+        .chill => elementInk(.cold),
+        .pin => PIN,
+    };
+}
 
 const PANEL = rgb(0x0e0d12);
 const RAISED = rgb(0x1a1820);
@@ -1150,39 +1173,6 @@ test "map assets hold the fallback ground a prop stands on when only unbearing n
     const need = Assets.of(&lv);
     try std.testing.expect(if (GROUND_SHEETS.contains(shown)) need.grounds.contains(shown) else need.tiles.contains(shown.tile()));
     std.debug.print("prop seen over water only: drawn on {s}, loaded\n", .{@tagName(shown)});
-}
-
-test "a slot's prompt is its maker's face button or shoulder on a pad, and its key's cap on the keyboard" {
-    _ = prompt_icon.Prompt.draw;
-    var st = input.State{ .device = .xbox };
-    try std.testing.expectEqual(prompt_icon.FaceButton.a, prompt_icon.Prompt.of(&st, .a).face.button);
-    try std.testing.expect(!prompt_icon.Prompt.of(&st, .y).face.sony);
-    try std.testing.expectEqualStrings("RB", prompt_icon.Prompt.of(&st, .rb).pill);
-    try std.testing.expect(prompt_icon.Prompt.of(&st, .character) == .menu);
-    try std.testing.expect(prompt_icon.Prompt.of(&st, .pause) == .view);
-    st.device = .ps5;
-    try std.testing.expect(prompt_icon.Prompt.of(&st, .x).face.sony);
-    try std.testing.expectEqualStrings("L1", prompt_icon.Prompt.of(&st, .lb).pill);
-    try std.testing.expectEqualStrings("Options", prompt_icon.Prompt.of(&st, .character).pill);
-    try std.testing.expectEqualStrings("Create", prompt_icon.Prompt.of(&st, .pause).pill);
-    st.device = .ps4;
-    try std.testing.expectEqualStrings("Share", prompt_icon.Prompt.of(&st, .pause).pill);
-    st = .{ .device = .keys, .modifier = .lb };
-    try std.testing.expectEqualStrings(input.SECOND_CAPTION, prompt_icon.Prompt.of(&st, .lb).key);
-    try std.testing.expectEqualStrings("1", prompt_icon.Prompt.of(&st, .a).key);
-    try std.testing.expectEqualStrings("Enter", prompt_icon.Prompt.menuOf(&st, .a).key);
-    try std.testing.expectEqualStrings("Esc", prompt_icon.Prompt.menuOf(&st, .b).key);
-    try std.testing.expectEqualStrings("Q", prompt_icon.Prompt.menuOf(&st, .lb).key);
-    try std.testing.expectEqualStrings("E", prompt_icon.Prompt.menuOf(&st, .rb).key);
-    for (input.SLOT_ORDER) |b| {
-        for ([_]input.Device{ .xbox, .ps4 }) |d| {
-            st.device = d;
-            switch (prompt_icon.Prompt.of(&st, b)) {
-                .face => |f| try std.testing.expect(prompt_icon.faceInk(f.button, d.playstation()).a == 255),
-                else => {},
-            }
-        }
-    }
 }
 
 test "every glyph is printable ascii" {

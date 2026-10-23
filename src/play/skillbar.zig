@@ -22,6 +22,7 @@ const ward = @import("ward.zig");
 const charge = @import("charge.zig");
 const hero = @import("hero.zig");
 const flask = @import("flask.zig");
+const resilience = @import("resilience.zig");
 const passives = @import("passives.zig");
 const menu = @import("../ui/menu.zig");
 
@@ -271,6 +272,15 @@ pub const Act = enum {
         return a.declares("afflict");
     }
 
+    /// What it afflicts and how often against no resistance.
+    pub fn ailment(a: Act) ?Ailment {
+        return switch (a) {
+            inline else => |t| if (comptime has(t, "afflict")) comptime .{ .kind = module(t).?.AILMENT, .chance = module(t).?.CHANCE } else null,
+        };
+    }
+
+    pub const Ailment = struct { kind: resilience.Kind, chance: u32 };
+
     /// Cast at once, it strikes the cells round the hero.
     pub fn surrounds(a: Act) bool {
         return a.declares("around");
@@ -296,7 +306,7 @@ pub const Act = enum {
     }
 
     /// Every decl probed by name above, so renaming one in its module fails the build.
-    const PROBED = .{ "describe", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE", "BASE", "DONE" };
+    const PROBED = .{ "describe", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "AILMENT", "CHANCE", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE", "BASE", "DONE" };
 
     comptime {
         @setEvalBranchQuota(10_000);
@@ -398,10 +408,10 @@ pub const Bar = struct {
         return self.set.get(s.set).get(s.button);
     }
 
-    pub fn buttonOf(self: Bar, s: Set, a: Act) ?Button {
-        for (SLOTS) |b| {
-            if (self.at(.{ .set = s, .button = b }) == a) return b;
-        }
+    pub fn slotOf(self: Bar, a: Act) ?Slot {
+        for (SETS) |s| for (SLOTS) |b| {
+            if (self.at(.{ .set = s, .button = b }) == a) return .{ .set = s, .button = b };
+        };
         return null;
     }
 
@@ -527,6 +537,20 @@ test "arrows scale as ranged, bolts and novas as spells, swings and rushes as me
         .mana_flask = null,
     });
     for (ACTS) |a| try std.testing.expectEqual(want.get(a), a.attack());
+}
+
+test "each afflicting skill's stated chance is what its roll lands" {
+    const TRIES = 4000;
+    var n: usize = 0;
+    inline for (comptime std.enums.values(Act)) |a| if (comptime a.ailment()) |ail| {
+        var rng = mathx.Rng.init(0xA11);
+        var landed: u32 = 0;
+        for (0..TRIES) |_| landed += @intFromBool(Act.skill(a).procs(&rng, 0));
+        const pc = landed * mathx.PERCENT / TRIES;
+        try std.testing.expect(pc + 3 >= ail.chance and pc <= ail.chance + 3);
+        n += 1;
+    };
+    std.debug.print("ailments: {d} afflicting skills land within 3 points of their stated chance\n", .{n});
 }
 
 test "each class starts with its own skills bound, and only skills of its kit" {

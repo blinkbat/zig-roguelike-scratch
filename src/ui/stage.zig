@@ -68,17 +68,7 @@ pub fn loadHeroes(sprites: *look.Sprites) bool {
 pub fn figure(sprites: *const look.Sprites, k: actor.Kind, feet: mathx.P, scale: i32, light: f32) void {
     const tex = sprites.body(k) orelse return;
     const size = look.SPRITE_PX * scale;
-    raster.stretch(tex, raster.rect(feet.x - @divTrunc(size, 2), feet.y - size, size, size), lit(light));
-}
-
-fn lit(light: f32) rl.Color {
-    const t = std.math.clamp(light, 0, 1);
-    const ch = struct {
-        fn of(a: u8, b: u8, w: f32) u8 {
-            return @intFromFloat(@round(mathx.lerpF(@floatFromInt(a), @floatFromInt(b), w)));
-        }
-    };
-    return .{ .r = ch.of(SHADE.r, look.LIT.r, t), .g = ch.of(SHADE.g, look.LIT.g, t), .b = ch.of(SHADE.b, look.LIT.b, t), .a = 255 };
+    raster.stretch(tex, raster.rect(feet.x - @divTrunc(size, 2), feet.y - size, size, size), look.mixed(SHADE, look.LIT, light));
 }
 
 /// A soft beam from `top` down onto a pool at `feet`, sized for a figure `size` pixels tall.
@@ -188,7 +178,17 @@ const Layout = struct {
 pub const Lineup = struct {
     at: usize = 0,
     spot: f32 = 0,
-    shown: [N]f32 = [_]f32{1} ++ [_]f32{0} ** (N - 1),
+    shown: [N]f32 = shownAt(0),
+
+    fn shownAt(at: usize) [N]f32 {
+        var out: [N]f32 = undefined;
+        for (&out, 0..) |*s, i| s.* = goal(at, i);
+        return out;
+    }
+
+    fn goal(at: usize, i: usize) f32 {
+        return @floatFromInt(@intFromBool(i == at));
+    }
 
     pub fn on(i: usize) Lineup {
         var l = Lineup{ .at = i };
@@ -198,18 +198,14 @@ pub const Lineup = struct {
 
     pub fn settle(self: *Lineup) void {
         self.spot = @floatFromInt(self.at);
-        for (&self.shown, 0..) |*s, i| s.* = @floatFromInt(@intFromBool(i == self.at));
+        self.shown = shownAt(self.at);
     }
 
     pub fn step(self: *Lineup, st: *const input.State, screen: mathx.P) ?usize {
-        if (st.scroll != 0) self.at = mathx.nudge(self.at, -st.scroll, N);
-        if (st.pointing() and st.scroll == 0 and st.walk == null) {
-            const lay = Layout.of(screen);
-            for (0..N) |i| if (raster.holds(lay.box(i), st.pointer.?)) {
-                self.at = i;
-                if (st.click) return i;
-                break;
-            };
+        self.at = st.scrolled(self.at, N);
+        if (menu.pointed(st, N, Layout.of(screen), Layout.box)) |i| {
+            self.at = i;
+            if (st.click) return i;
         }
         if (st.walk) |d| {
             const v = d.delta();
@@ -222,7 +218,7 @@ pub const Lineup = struct {
         const k = mathx.easing(dt, SPOT_RATE);
         self.spot = mathx.ease(self.spot, @floatFromInt(self.at), k, k);
         const f = mathx.easing(dt, SHOW_RATE);
-        for (&self.shown, 0..) |*s, i| s.* = mathx.ease(s.*, @floatFromInt(@intFromBool(i == self.at)), f, f);
+        for (&self.shown, 0..) |*s, i| s.* = mathx.ease(s.*, goal(self.at, i), f, f);
     }
 
     fn lightOf(self: *const Lineup, i: usize) f32 {
@@ -231,7 +227,7 @@ pub const Lineup = struct {
 
     pub fn draw(self: *const Lineup, face: font.Face, sprites: *const look.Sprites, screen: mathx.P, title: [:0]const u8) void {
         const lay = Layout.of(screen);
-        menu.heading(face, screen, title, lay.top, menu.TITLE, look.TEXT, look.UI_GOLD);
+        menu.pageHeading(face, screen, title, lay.top);
         spotlight(lay.centreX(self.spot), @floatFromInt(lay.top + BEAM_DROP), @floatFromInt(lay.feet_y), @floatFromInt(lay.size));
         for (hero.CLASSES, 0..) |c, i| {
             const feet = lay.feet(i);
@@ -245,7 +241,7 @@ pub const Lineup = struct {
     }
 };
 
-const SCREENS = [_]mathx.P{ .{ .x = 1280, .y = 720 }, .{ .x = 1920, .y = 1080 }, .{ .x = 2560, .y = 1440 } };
+const SCREENS = @import("../core/window.zig").SCREENS;
 
 test "the spotlight eases onto the chosen hero and only its words stay shown" {
     var l = Lineup{};

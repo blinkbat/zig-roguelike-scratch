@@ -10,7 +10,8 @@ pub const TAKES = bleeding.TAKES;
 pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A surviving target bleeds unless resisted: {d} a turn, {d} when moving, for {d} turns.", .{ bleeding.STILL, bleeding.MOVING, bleeding.TURNS });
 pub const FLAVOR = "Easy going in. Impossible coming out.";
 
-pub const procs = damage.always;
+pub const CHANCE: u32 = mathx.PERCENT;
+pub const procs = damage.chance(CHANCE);
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.bleed.start();

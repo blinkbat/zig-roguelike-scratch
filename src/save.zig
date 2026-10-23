@@ -287,7 +287,7 @@ comptime {
     }
 }
 const Print = @TypeOf(FINGERPRINT);
-const HEAD = MAGIC.len + @sizeOf(Print);
+const HEAD = store.head(MAGIC);
 
 pub const Error = error{ NotASave, OtherBuild, Short, Damaged };
 
@@ -305,8 +305,7 @@ fn summaryOf(g: *game.Game) Summary {
 fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
     std.debug.assert(out.items.len == 0);
     const w = out.writer();
-    try w.writeAll(MAGIC);
-    try store.put(w, &FINGERPRINT);
+    try store.begin(w, MAGIC, FINGERPRINT);
     try store.put(w, &summaryOf(g));
     try store.put(w, &g.sim.seed);
     const has_map = g.sim.map != null;
@@ -329,9 +328,7 @@ fn seal(out: *std.ArrayList(u8)) void {
 fn payload(bytes: []const u8) Error![]const u8 {
     return store.open(bytes, MAGIC, FINGERPRINT) catch |e| switch (e) {
         error.Foreign => error.NotASave,
-        error.OtherBuild => error.OtherBuild,
-        error.Short => error.Short,
-        error.Damaged => error.Damaged,
+        else => |other| other,
     };
 }
 

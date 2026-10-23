@@ -307,10 +307,11 @@ pub const HELP = [_]HelpSection{
         Desk.FULLSCREEN_CAPTION ++ " fullscreen" ++ SEP ++ Desk.BACK_CAPTION ++ " back",
     } },
 };
+pub const HELP_COLUMNS = 2;
 pub const HELP_ROWS = blk: {
-    var n = [_]i32{ 0, 0 };
+    var n: [HELP_COLUMNS]i32 = @splat(0);
     for (HELP) |s| n[s.column] += 2 + s.lines.len;
-    break :blk @max(n[0], n[1]);
+    break :blk std.mem.max(i32, &n);
 };
 pub const STATUS_H: i32 = GAP + 2 * LINE_STEP;
 

@@ -1,6 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
-const mathx = @import("../core/mathx.zig");
+const look = @import("look.zig");
 
 const TTF = "Balthazar-Regular.ttf";
 const DATA_TTF = "SourceSans3-Regular.ttf";
@@ -266,7 +266,7 @@ const Ink = struct {
     size: f32,
 
     fn of(col: rl.Color, top: f32, size: f32) Ink {
-        return .{ .lit = mixed(col, rl.Color.white, ENGRAVE_LIT), .mid = col, .deep = mixed(col, rl.Color.black, ENGRAVE_DEEP), .top = top, .size = size };
+        return .{ .lit = look.mixed(col, rl.Color.white, ENGRAVE_LIT), .mid = col, .deep = look.mixed(col, rl.Color.black, ENGRAVE_DEEP), .top = top, .size = size };
     }
 
     fn split(ink: Ink) f32 {
@@ -275,20 +275,10 @@ const Ink = struct {
 
     fn at(ink: Ink, y: f32) rl.Color {
         const t = std.math.clamp((y - ink.top) / ink.size, 0, 1);
-        if (t <= ENGRAVE_MID) return mixed(ink.lit, ink.mid, t / ENGRAVE_MID);
-        return mixed(ink.mid, ink.deep, (t - ENGRAVE_MID) / (1 - ENGRAVE_MID));
+        if (t <= ENGRAVE_MID) return look.mixed(ink.lit, ink.mid, t / ENGRAVE_MID);
+        return look.mixed(ink.mid, ink.deep, (t - ENGRAVE_MID) / (1 - ENGRAVE_MID));
     }
 };
-
-fn mixed(a: rl.Color, b: rl.Color, t: f32) rl.Color {
-    const k = std.math.clamp(t, 0, 1);
-    const ch = struct {
-        fn of(p: u8, q: u8, w: f32) u8 {
-            return @intFromFloat(@round(mathx.lerpF(@floatFromInt(p), @floatFromInt(q), w)));
-        }
-    };
-    return .{ .r = ch.of(a.r, b.r, k), .g = ch.of(a.g, b.g, k), .b = ch.of(a.b, b.b, k), .a = a.a };
-}
 
 /// `put` as raw quads inside an open `rl_quads` batch, coloured down the line by `ink`, split where its gradient bends.
 fn putInked(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, ink: Ink) void {

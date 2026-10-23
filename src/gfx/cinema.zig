@@ -303,16 +303,19 @@ test "cinema emissive bounds preserve fractional lights and visible map edges" {
         for (offsets) |y| {
             var pixels: [grid.CELLS]rl.Color = undefined;
             for (&pixels, 0..) |*pixel, i| {
-                pixel.* = .{ .r = if (i % 5 == 0) 0 else 255, .g = 97, .b = 0, .a = 39 };
+                @field(pixel, FIELD.lit) = if (i % 5 == 0) 0 else 255;
+                @field(pixel, FIELD.water) = 97;
+                @field(pixel, FIELD.emissive) = 0;
+                @field(pixel, FIELD.crown) = 39;
             }
             const marked = markEmissive(&pixels, .{ x, y });
             var expected_count: usize = 0;
             for (pixels, 0..) |pixel, i| {
                 const expected = i % 5 != 0 and light.offMiddle(grid.Level.of(i), .{ x, y }) < EMISSIVE_REACH;
-                try std.testing.expectEqual(@as(u8, if (expected) 255 else 0), pixel.b);
-                try std.testing.expectEqual(@as(u8, if (i % 5 == 0) 0 else 255), pixel.r);
-                try std.testing.expectEqual(@as(u8, 97), pixel.g);
-                try std.testing.expectEqual(@as(u8, 39), pixel.a);
+                try std.testing.expectEqual(@as(u8, if (expected) 255 else 0), @field(pixel, FIELD.emissive));
+                try std.testing.expectEqual(@as(u8, if (i % 5 == 0) 0 else 255), @field(pixel, FIELD.lit));
+                try std.testing.expectEqual(@as(u8, 97), @field(pixel, FIELD.water));
+                try std.testing.expectEqual(@as(u8, 39), @field(pixel, FIELD.crown));
                 expected_count += @intFromBool(expected);
                 checked += 1;
             }

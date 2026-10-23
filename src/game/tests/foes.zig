@@ -129,7 +129,9 @@ test "a crossbowman retreats when crowded and fires when pinned or cornered" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const hero = P{ .x = 20, .y = 20 };
-    for ([_]i32{ 1, 2 }) |distance| {
+    const retreat = actor.row(.bandit_crossbowman).ranged.?.retreat;
+    var distance: i32 = 1;
+    while (distance <= retreat) : (distance += 1) {
         harness.arena(g, hero, &.{});
         const id = harness.spawnAt(g, .bandit_crossbowman, hero.add(.{ .x = distance, .y = 0 }), true);
         game.settle(g);
@@ -159,7 +161,7 @@ test "a crossbowman retreats when crowded and fires when pinned or cornered" {
         try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].arrow != null);
         try std.testing.expect(g.sim.heroActor().?.hp < hp);
     }
-    std.debug.print("crossbowman: 2 close ranges retreat without firing; pin and dead end hold position and fire\n", .{});
+    std.debug.print("crossbowman: {d} close ranges retreat without firing; pin and dead end hold position and fire\n", .{retreat});
 }
 
 test "a crossbowman with its shot blocked holds outside its retreat instead of shuttling in and out" {
@@ -205,7 +207,7 @@ test "a crossbowman's stun and chill skip shots while retreat avoids gas and tic
     const hp = a.hp;
     combat.endTurn(g);
     try std.testing.expect(!g.sim.lv.gassy(a.at));
-    try std.testing.expectEqual(@as(i32, 3), mathx.dist(a.at, g.sim.heroActor().?.at));
+    try std.testing.expectEqual(actor.row(.bandit_crossbowman).ranged.?.retreat + 1, mathx.dist(a.at, g.sim.heroActor().?.at));
     try std.testing.expectEqual(bleeding.MOVING, hp - a.hp);
     std.debug.print("crossbowman: stun/chill skip 2 shots; retreat avoids gas and takes {d} movement bleed\n", .{bleeding.MOVING});
 }

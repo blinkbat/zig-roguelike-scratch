@@ -1,7 +1,14 @@
 const rl = @import("raylib");
+const P = @import("mathx.zig").P;
 
 pub const WINDOW_W: i32 = 1600;
 pub const WINDOW_H: i32 = 900;
+pub const WINDOW = P{ .x = WINDOW_W, .y = WINDOW_H };
+/// Screens the shots and layout tests cover besides the window's.
+pub const SCREEN_720 = P{ .x = 1280, .y = 720 };
+pub const SCREEN_1080 = P{ .x = 1920, .y = 1080 };
+pub const SCREEN_1440 = P{ .x = 2560, .y = 1440 };
+pub const SCREENS = [_]P{ SCREEN_720, SCREEN_1080, SCREEN_1440 };
 
 // X11/KDE panels and the macOS menu bar/Dock stay over an undecorated screen-sized window; only a monitor-owned one covers them.
 pub const MONITOR_OWNED = switch (@import("builtin").os.tag) {

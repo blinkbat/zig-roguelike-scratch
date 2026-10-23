@@ -399,6 +399,9 @@ pub fn scrolledTo(ed: *editor.Editor, g: *const game.Game, top: i32, end: i32) v
     ed.gen_most = @max(0, end + editor.PAD + ed.gen_top - top - shown);
 }
 
+const ACTION_W: i32 = 122;
+const ACTIONS: i32 = std.enums.values(editor.CellAction).len;
+
 pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     var buf: [editor.LINE + 1]u8 = undefined;
     var state_buf: [editor.LINE + 1]u8 = undefined;
@@ -410,8 +413,8 @@ pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     const state = toolState(ed, &state_buf);
     const state_w = editor.textFace(g).width(state, editor.TEXT);
     var y = top + editor.GAP;
-    const action_w = 122;
-    const actions_w = 2 * action_w + editor.GAP;
+    const action_w = ACTION_W;
+    const actions_w = ACTIONS * action_w + (ACTIONS - 1) * editor.GAP;
     const first_w = w - actions_w - editor.BLOCK_GAP;
     drawFit(g, hover(ed, c, &buf), editor.TEXT, first_w - state_w - editor.BLOCK_GAP, false, x, y, look.TEXT);
     editor.textFace(g).draw(state, x + first_w - state_w, y, editor.TEXT, look.DIM);

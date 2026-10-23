@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
+const binds = @import("binds.zig");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
@@ -129,7 +130,7 @@ pub fn aim(g: *game.Game) bool {
     const at = cell(g) orelse return false;
     const h = g.sim.heroActor() orelse return false;
     if (g.aim_act.reticle() == .swing) {
-        const d = mathx.stepDir(at.sub(h.at).sign()) orelse return false;
+        const d = mathx.toward(h.at, at) orelse return false;
         g.mark = h.at.add(d.delta());
     } else g.mark = at;
     g.pic.turnToward(g.sim.hero, g.mark.x - h.at.x);
@@ -176,7 +177,7 @@ pub fn step(g: *game.Game) bool {
         at = foe.at;
         if (attack(g, at)) return true;
         if (mathx.dist(h.at, at) <= 1) {
-            game.heroStep(g, mathx.stepDir(at.sub(h.at)).?, 0);
+            game.heroStep(g, mathx.dirTo(h.at, at).?, 0);
             return true;
         }
         g.mouse.target = at;
@@ -207,6 +208,9 @@ pub fn step(g: *game.Game) bool {
     return true;
 }
 
+/// Eighths turned off the heading, straight ahead first, then alternating sides outward.
+const FAN = [_]u3{ 0, 1, 7, 2, 6, 3, 5, 4 };
+
 pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
     if (!grid.Level.inside(to) or !g.sim.lv.isSeen(to) or from.eq(to)) return null;
     var visited = std.StaticBitSet(grid.CELLS).initEmpty();
@@ -218,9 +222,9 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
     visited.set(grid.Level.idx(from));
     while (head < tail) : (head += 1) {
         const p = queue[head];
-        const toward = mathx.stepDir(to.sub(p).sign()).?;
-        for ([_]u3{ 0, 1, 7, 2, 6, 3, 5, 4 }) |offset| {
-            const d = toward.turned(offset);
+        const ahead = mathx.toward(p, to).?;
+        for (FAN) |offset| {
+            const d = ahead.turned(offset);
             const q = p.add(d.delta());
             if (!grid.Level.inside(q) or !g.sim.lv.isSeen(q)) continue;
             const i = grid.Level.idx(q);
@@ -367,10 +371,7 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     game.harness.arena(g, start, &.{target});
     const clock = g.sim.clock;
     const use = game.harness.boundTo(g, .shoot);
-    var spots: [game.overlay.SPOTS_MAX]game.overlay.Part = undefined;
-    const slot = for (game.overlay.spotsOf(g, &spots)) |part| {
-        if (part.spot == .slot and skillbar.SLOTS[part.spot.slot] == use.by) break part.box;
-    } else unreachable;
+    const slot = game.overlay.slotBox(game.overlay.hudLayout(g), binds.Binds.colOf(use.by));
     g.st = .{ .device = .keys, .pointer = raster.middleAt(slot), .click = true };
     game.update(g, 0);
     try std.testing.expectEqual(game.Mode.aim, g.mode);
@@ -442,10 +443,7 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     try std.testing.expectEqual(game.PausePage.main, g.pause_page);
     g.st = .{ .right_click = true };
     game.update(g, 0);
-    var spots: [game.overlay.SPOTS_MAX]game.overlay.Part = undefined;
-    const modifier = for (game.overlay.spotsOf(g, &spots)) |part| {
-        if (part.spot == .slot and skillbar.SLOTS[part.spot.slot] == g.bar.modifier) break part.box;
-    } else unreachable;
+    const modifier = game.overlay.slotBox(game.overlay.hudLayout(g), binds.Binds.colOf(g.bar.modifier.?));
     g.st = .{ .device = .keys, .click = true, .pointer = raster.middleAt(modifier) };
     game.update(g, 0);
     try std.testing.expectEqual(skillbar.Set.secondary, skills.activeSet(g));

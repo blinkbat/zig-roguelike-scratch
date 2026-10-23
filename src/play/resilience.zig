@@ -12,11 +12,17 @@ pub const Meter = struct {
     fresh: bool = false,
 };
 
+/// A body's resistance to a status as shown, and the turns before its built-up part expires.
+pub const Standing = struct {
+    percent: u8 = 0,
+    turns: u8 = 0,
+};
+
 pub const State = struct {
     meters: std.EnumArray(Kind, Meter) = .initFill(.{}),
 
-    pub fn peak(self: State) Meter {
-        var out = Meter{};
+    pub fn peak(self: State) Standing {
+        var out = Standing{};
         for (self.meters.values) |m| {
             out.percent = @max(out.percent, m.percent);
             out.turns = @max(out.turns, m.turns);
@@ -26,6 +32,11 @@ pub const State = struct {
 
     pub fn resistance(self: State, kind: Kind, innate: u8) u32 {
         return @min(mathx.PERCENT, @as(u32, innate) + self.meters.get(kind).percent);
+    }
+
+    /// Its whole resistance to `kind`, innate included.
+    pub fn standing(self: State, kind: Kind, innate: u8) Standing {
+        return .{ .percent = @intCast(self.resistance(kind, innate)), .turns = self.meters.get(kind).turns };
     }
 
     pub fn take(self: *State, kind: Kind, innate: u8, rng: *mathx.Rng) bool {

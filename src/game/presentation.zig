@@ -437,7 +437,7 @@ pub const Presentation = struct {
         if (placed) next.* = wait + game.STAGGER_S;
         if (self.turning[i]) |*t| t.in = if (placed) wait - late else start;
         const hero = sim.heroSlot().?;
-        const hero_at = sim.pool.items[hero].at;
+        const hero_at = sim.heroAt().?;
         var lands = if (placed) wait else if (moved) start else @max(start, gl.left());
         if (moved) {
             gl.* = gl.toward(a.at, late - wait);
@@ -448,7 +448,7 @@ pub const Presentation = struct {
             lands = gl.left();
             self.holdUntil(lands);
         }
-        var hits = wait + game.BUMP_LANDS - late;
+        var hits = (if (placed) wait - late else start) + game.BUMP_LANDS;
         if (owed.arrow) |flight| {
             const release = @max(start, wait - late);
             const s = Shot{ .from = a.at, .flight = flight, .t = -release };

@@ -3,8 +3,9 @@ const mathx = @import("../core/mathx.zig");
 
 pub const Element = enum { cold, fire, chaos, lightning };
 
-/// A skill's `procs` landing `pc` percent of the time, whatever the resistance.
+/// A skill's `procs` landing `pc` percent of the time, whatever the resistance; certain, it draws nothing.
 pub fn chance(comptime pc: u32) fn (*mathx.Rng, i16) bool {
+    if (pc >= mathx.PERCENT) return always;
     return struct {
         fn procs(rng: *mathx.Rng, _: i16) bool {
             return rng.percent(pc);
@@ -66,18 +67,11 @@ pub fn Lasting(comptime TURNS: u8, comptime Arg: type, comptime amount: fn (Arg)
         fresh: bool = false,
 
         pub fn start(self: *@This()) void {
-            if (self.turns == 0) self.fresh = true;
-            self.turns = TURNS;
+            _ = begin(self, TURNS);
         }
 
         pub fn tick(self: *@This(), arg: Arg) ?i32 {
-            if (self.turns == 0) return null;
-            if (self.fresh) {
-                self.fresh = false;
-                return null;
-            }
-            self.turns -= 1;
-            return amount(arg);
+            return if (due(self)) amount(arg) else null;
         }
 
         /// The turn it started in is over, whether or not its tick ran.
@@ -85,6 +79,25 @@ pub fn Lasting(comptime TURNS: u8, comptime Arg: type, comptime amount: fn (Arg)
             self.fresh = false;
         }
     };
+}
+
+/// Starts or refreshes a lasting harm's `turns` and `fresh`; true when it was not already running.
+pub fn begin(self: anytype, turns: u8) bool {
+    const new = self.turns == 0;
+    if (new) self.fresh = true;
+    self.turns = turns;
+    return new;
+}
+
+/// Spends one of a lasting harm's turns, unless it started this turn: whether it harms now.
+pub fn due(self: anytype) bool {
+    if (self.turns == 0) return false;
+    if (self.fresh) {
+        self.fresh = false;
+        return false;
+    }
+    self.turns -= 1;
+    return true;
 }
 
 pub fn resisted(amount: i32, resist: i16) i32 {

@@ -96,7 +96,7 @@ pub fn bindStep(g: *game.Game) void {
             if (state.click and raster.holds(overlay.bindActionBox(panel, i), p)) state.pressed.insert(action.button);
         }
         if (b.menu == .browse and state.click) {
-            for (skillbar.SETS, 0..) |_, row| for (0..game.SLOT_XS.len) |col| {
+            for (skillbar.SETS, 0..) |_, row| for (0..skillbar.SLOTS.len) |col| {
                 if (raster.holds(overlay.bindSlotBox(row, col), p)) {
                     b.row = row;
                     b.col = col;
