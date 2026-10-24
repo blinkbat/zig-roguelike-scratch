@@ -756,6 +756,120 @@ test "B cancels aim and costs no turn" {
     try std.testing.expectEqual(P{ .x = 25, .y = 20 }, g.sim.pool.get(2).?.at);
 }
 
+test "smart aim retains a moved enemy across skills without spending or firing" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{ .{ .x = 23, .y = 20 }, .{ .x = 26, .y = 22 } });
+    const clock = g.sim.clock;
+    const mana = g.sim.mana;
+    const rng = g.sim.rng;
+    const hp = g.sim.pool.get(3).?.hp;
+    skills.useSkill(g, .{ .act = .shoot, .by = .x });
+    try std.testing.expectEqual(@as(?u16, 2), g.target);
+    skills.nudgeAim(g, .e);
+    try std.testing.expectEqual(@as(?u16, 3), g.target);
+    harness.press(g, BACK);
+    const moved = P{ .x = 25, .y = 22 };
+    g.sim.pool.move(&g.sim.lv, 3, moved);
+    skills.useSkill(g, .{ .act = .burning_arrow, .by = .x });
+    try std.testing.expectEqual(moved, g.mark);
+    try std.testing.expectEqual(@as(?u16, 3), g.target);
+    try std.testing.expectEqual(game.Mode.aim, g.mode);
+    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(mana, g.sim.mana);
+    try std.testing.expectEqualDeep(rng, g.sim.rng);
+    try std.testing.expectEqual(hp, g.sim.pool.get(3).?.hp);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.cooldown.get(.burning_arrow));
+    std.debug.print("smart aim: a moved enemy retains identity across two skills; selection and cancellation spend no mana, cooldown, turn, RNG or damage\n", .{});
+}
+
+test "smart aim replaces dead hidden blocked distant and invalid targets with a legal foe" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const first = P{ .x = 23, .y = 20 };
+    const second = P{ .x = 22, .y = 22 };
+    const Invalid = enum { dead, hidden, blocked, distant, missing, hero };
+    for (std.enums.values(Invalid)) |why| {
+        harness.arena(g, from, &.{ first, second });
+        g.target = 2;
+        switch (why) {
+            .dead => _ = g.sim.pool.damage(&g.sim.lv, 2, 1000),
+            .hidden => g.sim.lv.lit[grid.Level.idx(first)] = false,
+            .blocked => g.sim.lv.set(.{ .x = 21, .y = 20 }, .wall),
+            .distant => g.sim.pool.move(&g.sim.lv, 2, .{ .x = from.x + bow.RANGE + 1, .y = from.y }),
+            .missing => g.target = actor.MAX,
+            .hero => g.target = g.sim.hero,
+        }
+        const clock = g.sim.clock;
+        const mana = g.sim.mana;
+        skills.useSkill(g, .{ .act = .burning_arrow, .by = .x });
+        try std.testing.expectEqual(second, g.mark);
+        try std.testing.expectEqual(@as(?u16, 3), g.target);
+        try std.testing.expectEqual(game.Mode.aim, g.mode);
+        try std.testing.expectEqual(clock, g.sim.clock);
+        try std.testing.expectEqual(mana, g.sim.mana);
+        try std.testing.expect(!g.sim.pool.get(3).?.hurt());
+    }
+    std.debug.print("smart aim: {d} invalid target cases choose the nearest legal visible foe and wait for confirmation\n", .{std.enums.values(Invalid).len});
+}
+
+test "smart aim cycles in eight directions and retains melee and rush targets by their legality" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const centre = P{ .x = 24, .y = 24 };
+    harness.arena(g, from, &.{centre});
+    for (mathx.ALL_DIRS) |d| {
+        const delta = d.delta();
+        _ = harness.spawnAt(g, .rat, centre.add(.{ .x = 2 * delta.x, .y = 2 * delta.y }), false);
+    }
+    game.castSight(g, from);
+    const clock = g.sim.clock;
+    for (mathx.ALL_DIRS, 0..) |d, i| {
+        g.mode = .play;
+        g.target = 2;
+        skills.useSkill(g, .{ .act = .shoot, .by = .x });
+        skills.nudgeAim(g, d);
+        try std.testing.expectEqual(@as(?u16, actor.Pool.idOf(i + 2)), g.target);
+        try std.testing.expectEqual(g.sim.pool.get(g.target.?).?.at, g.mark);
+        try std.testing.expectEqual(clock, g.sim.clock);
+    }
+    harness.heroArena(g, .knight, from, &.{ .{ .x = 20, .y = 19 }, .{ .x = 21, .y = 20 }, .{ .x = 23, .y = 20 } });
+    g.target = 3;
+    skills.useSkill(g, .{ .act = .shield_bash, .by = .x });
+    try std.testing.expectEqual(@as(?u16, 3), g.target);
+    g.mode = .play;
+    skills.useSkill(g, .{ .act = .charge, .by = .x });
+    try std.testing.expectEqual(@as(?u16, null), g.target);
+    g.mode = .play;
+    g.sim.pool.move(&g.sim.lv, 3, .{ .x = 21, .y = 21 });
+    skills.useSkill(g, .{ .act = .charge, .by = .x });
+    try std.testing.expectEqual(@as(?u16, 4), g.target);
+    try std.testing.expectEqual(P{ .x = 23, .y = 20 }, g.mark);
+    skills.openLeap(g, .b, .juke);
+    try std.testing.expectEqual(from, g.mark);
+    try std.testing.expectEqual(@as(?u16, 4), g.target);
+    std.debug.print("smart aim: eight directional cycles, adjacent melee, blocked and clear rushes; leaps retain free cell targeting\n", .{});
+}
+
+test "smart aim forgets actor identities when a pool is reset or a run resumes" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{.{ .x = 23, .y = 20 }});
+    skills.openAim(g, .x, .shoot);
+    try std.testing.expectEqual(@as(?u16, 2), g.target);
+    harness.arena(g, from, &.{ .{ .x = 27, .y = 20 }, .{ .x = 22, .y = 22 } });
+    try std.testing.expectEqual(@as(?u16, null), g.target);
+    skills.openAim(g, .x, .shoot);
+    try std.testing.expectEqual(@as(?u16, 3), g.target);
+    game.resumeRun(g);
+    try std.testing.expectEqual(@as(?u16, null), g.target);
+    std.debug.print("smart aim: reset and resume discard actor IDs instead of selecting unrelated replacement actors\n", .{});
+}
+
 test "the reticle walks only onto cells the arrow can reach" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -813,7 +927,7 @@ test "X aims at a barrel when no rat is in reach, and the arrow breaks it" {
 test "the reticle crosses the archer to the far side of a corridor" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 23, .y = 20 }, .{ .x = 15, .y = 20 } });
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
     harness.wallRow(&g.sim.lv, 19, 10, 30);
     harness.wallRow(&g.sim.lv, 21, 10, 30);
     game.castSight(g, .{ .x = 20, .y = 20 });

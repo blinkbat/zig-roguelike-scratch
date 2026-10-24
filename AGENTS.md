@@ -104,6 +104,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Pause's Debug menu groups Gameplay, Lighting, Effects, Display and Diagnostics in `game/debug.zig`.
   It exposes cosmetic lighting/shadow/water/weather switches, fullscreen, VSync/frame limits and active OpenGL
   renderer/build/framebuffer information. CPU timing excludes frame pacing and is not GPU timing.
+  Smart aim retains a legal visible foe by unsaved `Game.target` identity, otherwise selects the nearest legal
+  visible foe. Directions cycle through legal enemies with free-cell fallback; leaps remain free-cell targeting.
+  Automatic selection spends nothing; confirmation and explicit enemy clicks retain normal attack legality.
   Reveal shows terrain and minimap without changing gameplay sight or saved exploration; turning it off restores
   the normal view. Cosmetic effects default on. Debug settings are not saved.
 - Inspect (`Mode.inspect`, R3 or I) is the HUD's tooltips: the stick/d-pad walks the orbs, slots, shown
@@ -179,6 +182,10 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - Objects > select a foe > Fight launches `map/spar.zig`'s arena using the app's separate map, with the
   normal editor-test archer and no save slot. Returning preserves the editor map, modal and undo history;
   death retry and Debug > Gameplay > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
+- Editor > Text uses `edit/text_catalog.zig` and `edit/text_panel.zig` to browse source wording, rewrite literals
+  and assign simple author tags. Source and tag conflict checks protect external edits; wording applies after rebuilding.
+  Display aliases live in `assets/player-labels.txt`, attribution in root `text-tags.json`; enum/save identities stay fixed.
+  Map names are references here and use the existing node Rename action. See `docs/TEXT_EDITOR.md`.
 - `save.zig` freezes the whole run: map, visited/current nodes, actors, class/name, resources/statuses,
   RNG, log, skill bar, time, gold, inventory, progression and each node's ground drops. `core/store.zig`
   fingerprints types, plus the passive tree's layout (`save.TREE`); reject incompatible or incomplete

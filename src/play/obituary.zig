@@ -4,6 +4,7 @@ const heroes = @import("hero.zig");
 const chronicle = @import("chronicle.zig");
 const skillbar = @import("skillbar.zig");
 const gas = @import("../map/gas.zig");
+const menu = @import("../ui/menu.zig");
 const Source = chronicle.Source;
 const Turn = chronicle.Turn;
 const Hurt = chronicle.Hurt;
@@ -380,7 +381,7 @@ pub const Titled = struct {
     pub fn format(self: Titled, comptime _: []const u8, _: std.fmt.FormatOptions, w: anytype) !void {
         try w.writeAll(self.name);
         if (std.ascii.eqlIgnoreCase(self.name, self.class.title()) or std.ascii.indexOfIgnoreCase(self.name, " the ") != null) return;
-        try w.print(" the {s}", .{@tagName(self.class)});
+        try w.print(" the {s}", .{menu.word(self.class)});
     }
 };
 
@@ -392,17 +393,16 @@ fn cause(ctx: *const Context, tagged: Tags, w: Writer) !void {
             const foe = actor.row(k).name;
             try w.print("{}", .{who});
             const mere = if (tagged.contains(.by_trash)) "mere " else "";
-            if (mere.len > 0) try w.writeAll(", no novice,");
             try w.print(" was {s} by {s} {s}{s} {s}{s}.", .{ done(k) orelse "killed", article(if (mere.len > 0) mere else foe, false), mere, foe, ctx.place, dark });
         },
         .gas => if (tagged.contains(.own_goal))
             try w.print("{} burst a bloat {s}{s}, then died in its gas.", .{ who, ctx.place, dark })
         else if (tagged.contains(.burst_beside))
-            try w.print("A bloat burst beside {} {s}{s}, and its gas did the rest.", .{ who, ctx.place, dark })
+            try w.print("{} died in gas from a bloat that burst nearby {s}{s}.", .{ who, ctx.place, dark })
         else
             try w.print("{} choked on {s} {s}{s}.", .{ who, sourceName(.gas), ctx.place, dark }),
         .burn => try w.print("{} burned to death {s}{s}.", .{ who, ctx.place, dark }),
-        .bleed => try w.print("{} bled to death {s}{s}{s}.", .{ who, ctx.place, dark, if (ctx.killer.torn) ", still walking" else "" }),
+        .bleed => try w.print("{} bled to death {s}{s}{s}.", .{ who, ctx.place, dark, if (ctx.killer.torn) " after moving" else "" }),
     }
 }
 
@@ -448,38 +448,28 @@ fn missile(with: ?skillbar.Act) []const u8 {
     return a.bolt() orelse "blow";
 }
 
-/// The killing blow came from the same family as `k`.
-fn kin(ctx: *const Context, k: actor.Kind) bool {
-    return switch (ctx.killer.by) {
-        .foe => |f| f.family() == k.family(),
-        else => false,
-    };
-}
-
 fn lastGasp(ctx: *const Context, deed: Deed, w: Writer) !void {
     const name = ctx.name;
     const with = missile(deed.with);
     switch (deed.what) {
         .felled => |k| {
             const foe = Indefinite{ .word = actor.row(k).name };
-            if (kin(ctx, k)) return w.print(" {s}'s last {s} felled {}, but another was waiting.", .{ name, with, foe });
-            return w.print(" {s} went down fighting; the last {s} felled {}.", .{ name, with, foe });
+            return w.print(" {s}'s last {s} killed {}.", .{ name, with, foe });
         },
         .struck => |k| {
             const foe = Indefinite{ .word = actor.row(k).name };
-            if (kin(ctx, k)) return w.print(" {s}'s last {s} struck {}, and was answered.", .{ name, with, foe });
-            return w.print(" {s}'s last {s} struck {}, but did not bring it down.", .{ name, with, foe });
+            return w.print(" {s}'s last {s} hit {} without killing it.", .{ name, with, foe });
         },
-        .missed => return w.print(" {s}'s last {s} found only air.", .{ name, with }),
+        .missed => return w.print(" {s}'s last {s} missed.", .{ name, with }),
         .used => |a| switch (a) {
-            chronicle.FLASK => try w.print(" {s} drank a life flask at the very end, too late.", .{name}),
-            chronicle.WARD => try w.print(" {s} raised " ++ WARD_NAME ++ " at the last, and it was not enough.", .{name}),
-            .wait => try w.print(" {s} stood fast at the last, and waited.", .{name}),
+            chronicle.FLASK => try w.print(" {s} drank a life flask on the final turn.", .{name}),
+            chronicle.WARD => try w.print(" {s} cast " ++ WARD_NAME ++ " on the final turn.", .{name}),
+            .wait => try w.print(" {s} waited.", .{name}),
             else => if (a.flaskOf() == .mana)
                 try w.print(" {s}'s last act was to drink a mana flask.", .{name})
             else if (a.reticle() == .leap) {
-                if (a.teleports()) return w.print(" {s} blinked away at the last, but not far enough.", .{name});
-                try w.print(" {s} leapt clear at the last, but not clear enough.", .{name});
+                if (a.teleports()) return w.print(" {s}'s last move was a blink.", .{name});
+                try w.print(" {s}'s last move was a leap.", .{name});
             },
         },
     }
@@ -487,24 +477,24 @@ fn lastGasp(ctx: *const Context, deed: Deed, w: Writer) !void {
 
 fn how(ctx: *const Context, top: *const Top, tagged: Tags, deed: ?Deed, said: *Tags, w: Writer) !void {
     const k = ctx.killer;
-    if (tagged.contains(.one_shot)) return w.print(" A single blow did it; {s} had been whole a moment before.", .{ctx.name});
+    if (tagged.contains(.one_shot)) return w.print(" {s} died from full life in one hit.", .{ctx.name});
     if (tagged.contains(.overkill)) return w.print(" The last blow would have killed {s} twice over.", .{ctx.name});
-    if (tagged.contains(.chip)) return w.writeAll(" No single wound was deep, but they never stopped coming.");
+    if (tagged.contains(.chip)) return w.print(" {s} took one small wound after another.", .{ctx.name});
     for (top.slice()) |c| switch (c.what) {
         .source => |s| if (!std.meta.eql(s, k.by)) {
             const what = sourceName(s);
-            if (s == .foe) return w.print(" The {s} had worn {s} down before the end.", .{ what, ctx.name });
-            return w.print(" {c}{s} had worn {s} down before the end.", .{ std.ascii.toUpper(what[0]), what[1..], ctx.name });
+            if (s == .foe) return w.print(" The {s} had already wounded {s}.", .{ what, ctx.name });
+            return w.print(" {c}{s} had already wounded {s}.", .{ std.ascii.toUpper(what[0]), what[1..], ctx.name });
         },
         .stun => |s| {
             const foe = Indefinite{ .word = actor.row(s.by).name, .capital = true };
-            if (ctx.since(s.turn) == 0) return w.print(" {} had just left {s} reeling.", .{ foe, ctx.name });
-            return w.print(" {} had left {s} reeling.", .{ foe, ctx.name });
+            if (ctx.since(s.turn) == 0) return w.print(" {} stunned {s} on that turn.", .{ foe, ctx.name });
+            return w.print(" {} had stunned {s}.", .{ foe, ctx.name });
         },
-        .starved => return w.print(" " ++ WARD_NAME ++ " might have saved {s}, but the mana had run dry.", .{ctx.name}),
-        .outnumbered => return w.print(" At the end, {s} was surrounded.", .{ctx.name}),
+        .starved => return w.print(" {s} had too little mana for " ++ WARD_NAME ++ ".", .{ctx.name}),
+        .outnumbered => return w.print(" {s} was surrounded.", .{ctx.name}),
         .cornered => return w.writeAll(" There was nowhere left to step."),
-        .torn => return w.writeAll(" Every step tore the wound wider."),
+        .torn => return w.writeAll(" Moving made the bleeding worse."),
         .flask => {
             said.insert(.flask_unused);
             return w.print(FLASK_LEFT, .{ctx.name});
@@ -515,31 +505,31 @@ fn how(ctx: *const Context, top: *const Top, tagged: Tags, deed: ?Deed, said: *T
         },
         .best_roll => return w.print(" It was the hardest blow {} can strike.", .{Indefinite{ .word = sourceName(k.by) }}),
         .missed => |n| if (deed == null or deed.?.what != .missed) {
-            if (n == 1) return w.print(" {s}'s aim had faltered.", .{ctx.name});
-            return w.print(" {s}'s shots kept finding only air.", .{ctx.name});
+            if (n == 1) return w.print(" {s} had missed a shot.", .{ctx.name});
+            return w.print(" {s} had missed {d} shots.", .{ ctx.name, n });
         },
     };
 }
 
 const WARD_NAME = chronicle.WARD.name();
-const FLASK_LEFT = " {s} died with a life flask still within reach.";
-const WARD_LEFT = " " ++ WARD_NAME ++ " was ready, and never raised.";
+const FLASK_LEFT = " {s} had a life flask ready but did not drink it.";
+const WARD_LEFT = " " ++ WARD_NAME ++ " was ready but unused.";
 
 fn aftertaste(ctx: *const Context, tagged: Tags, said: Tags, w: Writer) !void {
     if (tagged.contains(.flask_unused) and !said.contains(.flask_unused)) return w.print(FLASK_LEFT, .{ctx.name});
     if (tagged.contains(.ward_unused) and !said.contains(.ward_unused)) return w.writeAll(WARD_LEFT);
     if (tagged.contains(.just_levelled)) {
-        if (ctx.since(ctx.milestone.?.turn) == 0) return w.print(" {s} had grown stronger that very turn.", .{ctx.name});
-        return w.print(" {s} had only just grown stronger.", .{ctx.name});
+        if (ctx.since(ctx.milestone.?.turn) == 0) return w.print(" {s} had gained a level that turn.", .{ctx.name});
+        return w.print(" {s} had recently gained a level.", .{ctx.name});
     }
-    if (tagged.contains(.almost_levelled)) return w.print(" {s} was on the cusp of growing stronger.", .{ctx.name});
-    if (tagged.contains(.unspent)) return w.print(" {s} died with gifts still unclaimed.", .{ctx.name});
+    if (tagged.contains(.almost_levelled)) return w.print(" {s} was close to the next level.", .{ctx.name});
+    if (tagged.contains(.unspent)) return w.print(" {s} died with unspent points.", .{ctx.name});
     const m = ctx.milestone orelse return;
     const n = ctx.since(m.turn);
     if (n == 0 or n > RECENT_MILESTONE) return;
     switch (m.what) {
-        .cleared => |k| try w.print(" The last {s} had only just fallen.", .{actor.row(k).name}),
-        .chest => try w.print(" {s} had only just opened a chest.", .{ctx.name}),
+        .cleared => |k| try w.print(" {s} had recently killed the last {s}.", .{ ctx.name, actor.row(k).name }),
+        .chest => try w.print(" {s} had recently opened a chest.", .{ctx.name}),
         .level => {},
     }
 }
@@ -583,7 +573,7 @@ test "a death by many small bites, a flask left full, reads as plain sentences" 
     try std.testing.expect(t.contains(.chip) and t.contains(.by_trash) and t.contains(.flask_unused) and !t.contains(.one_shot));
     const r = write(&ctx);
     std.debug.print("chip death: {s}\n", .{r.text()});
-    try std.testing.expectEqualStrings("Arwen the archer, no novice, was bitten to death by a mere rat in the Warrens. No single wound was deep, but they never stopped coming. Arwen died with a life flask still within reach.", r.text());
+    try std.testing.expectEqualStrings("Arwen the archer was bitten to death by a mere rat in the Warrens. Arwen took one small wound after another. Arwen had a life flask ready but did not drink it.", r.text());
 }
 
 test "an arrow answered by a bolt past the last of life names the hero's last shot" {
@@ -599,7 +589,7 @@ test "an arrow answered by a bolt past the last of life names the hero's last sh
     ctx.points = 2;
     const r = write(&ctx);
     std.debug.print("overkill: {s}\n", .{r.text()});
-    try std.testing.expectEqualStrings("Arwen the archer was shot dead by a bandit crossbowman in the Warrens after dark. Arwen's last arrow struck a bandit crossbowman, and was answered. The last blow would have killed Arwen twice over. Arwen died with gifts still unclaimed.", r.text());
+    try std.testing.expectEqualStrings("Arwen the archer was shot dead by a bandit crossbowman in the Warrens after dark. Arwen's last arrow hit a bandit crossbowman without killing it. The last blow would have killed Arwen twice over. Arwen died with unspent points.", r.text());
     const top = contributors(&ctx);
     try std.testing.expectEqual(@as(usize, TOP), top.n);
     try std.testing.expect(ctx.unlucky());
@@ -617,7 +607,7 @@ test "gas from a bloat the hero burst is the hero's own doing, and the foe that 
     ctx.milestone = .{ .turn = 3, .what = .{ .cleared = .bloat } };
     const r = write(&ctx);
     std.debug.print("own goal: {s}\n", .{r.text()});
-    try std.testing.expectEqualStrings("Arwen the archer burst a bloat in the Warrens, then died in its gas. The pib had worn Arwen down before the end. The last bloat had only just fallen.", r.text());
+    try std.testing.expectEqualStrings("Arwen the archer burst a bloat in the Warrens, then died in its gas. The pib had already wounded Arwen. Arwen had recently killed the last bloat.", r.text());
 }
 
 test "the hero's own last act in the turn it died is its last gasp" {
@@ -628,7 +618,7 @@ test "the hero's own last act in the turn it died is its last gasp" {
     const flask_ctx = testContext(&late);
     const drank = write(&flask_ctx);
     std.debug.print("last gasp: {s}\n", .{drank.text()});
-    try std.testing.expectEqualStrings("Arwen the archer was bitten to death by a rat in the Warrens. Arwen drank a life flask at the very end, too late.", drank.text());
+    try std.testing.expectEqualStrings("Arwen the archer was bitten to death by a rat in the Warrens. Arwen drank a life flask on the final turn.", drank.text());
     const fought = [_]Turn{
         turnOf(7, 6, &.{rat(3, 6)}),
         turnOf(8, 4, &.{ .{ .dealt = .{ .to = .rat, .killed = true } }, rat(5, 4) }),
@@ -637,7 +627,7 @@ test "the hero's own last act in the turn it died is its last gasp" {
     ctx.name = "Arwen the Bold";
     const felled = write(&ctx);
     std.debug.print("last gasp: {s}\n", .{felled.text()});
-    try std.testing.expectEqualStrings("Arwen the Bold was bitten to death by a rat in the Warrens. Arwen the Bold's last blow felled a rat, but another was waiting.", felled.text());
+    try std.testing.expectEqualStrings("Arwen the Bold was bitten to death by a rat in the Warrens. Arwen the Bold's last blow killed a rat.", felled.text());
 }
 
 test "bites a shield took whole wore nobody down, and a shield cast in time was not starved" {
@@ -652,7 +642,7 @@ test "bites a shield took whole wore nobody down, and a shield cast in time was 
     try std.testing.expectEqual(@as(usize, 1), top.n);
     const r = write(&ctx);
     std.debug.print("shielded: {s}\n", .{r.text()});
-    try std.testing.expectEqualStrings("Arwen the archer was stabbed to death by a pib in the Warrens. Arwen raised " ++ WARD_NAME ++ " at the last, and it was not enough.", r.text());
+    try std.testing.expectEqualStrings("Arwen the archer was stabbed to death by a pib in the Warrens. Arwen cast " ++ WARD_NAME ++ " on the final turn.", r.text());
 }
 
 test "a report too long for its room drops whole sentences" {

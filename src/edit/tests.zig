@@ -654,6 +654,7 @@ test "Open lists the edited map's folder and Esc goes up a folder before it clos
 test "mouse editor cell actions choose play starts and linked doors without painting" {
     const ed = try testBespoke();
     defer ed.destroy();
+    _ = ed.map.add(.{ .bespoke = .{} });
     const from = P{ .x = 10, .y = 10 };
     const to = P{ .x = 20, .y = 20 };
     _ = ed.map.addDoor(0, from);

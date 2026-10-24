@@ -86,6 +86,11 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
 
 ### Mouse
 
+Arcane Barrier uses two ordinary targeting confirmations for its endpoints. With the
+mouse, press on the first endpoint, drag to preview the straight wall and release to
+confirm the second. Cancel discards the whole preview without spending mana or a turn.
+Overwatch uses normal targeting to choose the direction of its covered cone.
+
 - Click a menu row to activate it; the wheel browses long lists. Right-click or the visible Back/Close action goes back one layer. The name grid accepts clicks on letters, Space, Delete and Done. Each occupied save row has its own Delete action, requiring a second deliberate press on the same slot.
 - Click explored ground to walk there by a known route. Routes avoid walls, known barrels, visible gas and intermediate doors. Movement waits for each turn to finish and stops at the destination, on visible enemies, damage, another action, focus loss or a screen/level change. With a foe already visible, a ground click takes at most one step. Clicking the hero waits one turn.
 - Click a visible foe to use the first bound targeted attack in the shown skill set that can reach it; an adjacent foe can be bumped when no bound attack reaches it. Click a nearby chest, bag or door to interact with that specific object. Existing visibility, costs and turn rules apply.
@@ -102,6 +107,12 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
 - **Target once, then confirm or back out.** A (Cross), Enter, Space or Z confirms a target; B (Circle), Select, X or
   Esc cancels. On the keyboard the skill's own number confirms too (1, then 1); on the pad pressing the skill again
   does not confirm it unless that button is also the standard confirm. B always cancels, even when it opened the skill. Secondary skills keep their selected set after the modifier is released.
+- **Smart aim** keeps the previously selected enemy while it remains alive, visible and legal for the chosen skill,
+  following it when it moves. Otherwise the reticle selects the nearest legal visible enemy. Directional input
+  selects another legal enemy in that direction; with none there, the existing cell or swing-direction controls apply.
+  Leap destinations remain freely aimed. Selecting or replacing a target spends nothing and never fires automatically;
+  the normal confirmation is still required. A direct mouse click on an enemy is explicit targeting and confirmation.
+  Target memory clears on level changes, restarts and save loads.
 - **Character and Game are separate.** Start opens Character directly on its last page, already focused on content; another press closes it. F1–F5 open the corresponding Character page, switch pages directly, and close an already open matching page. Their glyphs appear on the tabs when using the keyboard. These shortcuts cancel an unconfirmed reticle and spend no turn. Select opens the game menu. From Character on a pad, Select switches to Game. Escape backs out from Character and opens Game only from play. There is no hidden hold gesture.
 - **Binding belongs to Skills.** Its bind action carries a learned skill to the slot screen; select a destination and confirm once. Back returns to Skills. The picker remains available for utility skills and the secondary-set modifier. Clearing a slot is direct. Binding spends no turn.
 - **Pause > Debug** groups controls into Gameplay (Restart Map, Reveal Map, Unkillable), Lighting

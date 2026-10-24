@@ -28,6 +28,9 @@ pub fn main() !void {
 }
 
 test {
+    _ = @import("core/wording.zig");
+    _ = @import("edit/text_catalog.zig");
+    _ = @import("edit/text_panel.zig");
     _ = @import("game/mouse.zig");
     _ = @import("game/debug.zig");
     _ = @import("gfx/prompt_text.zig");
@@ -98,6 +101,8 @@ test {
     _ = @import("play/flask.zig");
     _ = @import("play/pack.zig");
     _ = @import("play/skillbar.zig");
+    _ = @import("play/tactics.zig");
+    _ = @import("game/tactics.zig");
     _ = @import("play/hero.zig");
     _ = @import("gfx/look.zig");
     _ = @import("gfx/raster.zig");

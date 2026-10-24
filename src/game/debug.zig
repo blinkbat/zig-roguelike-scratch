@@ -224,7 +224,7 @@ pub fn step(g: *game.Game) void {
 pub const LABEL_MAX: usize = 64;
 
 pub fn label(g: *game.Game, comptime row: Row, buf: []u8) [:0]const u8 {
-    const name = comptime menu.titled(@tagName(row));
+    const name = comptime menu.titleOf(row);
     if (option(g, row)) |on| return menu.toggle(name, on.*);
     return switch (row) {
         .reveal_map => menu.toggle(name, g.light.reveal_map),

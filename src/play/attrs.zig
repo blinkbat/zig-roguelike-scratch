@@ -1,5 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const wording = @import("../core/wording.zig");
 const damage = @import("damage.zig");
 
 pub const Attr = enum { strength, dexterity, intelligence };
@@ -21,9 +22,9 @@ pub const Bonus = enum {
     /// What "+N to" raises.
     pub fn label(b: Bonus) [:0]const u8 {
         return switch (b) {
-            .strength => "Strength",
-            .dexterity => "Dexterity",
-            .intelligence => "Intelligence",
+            .strength => wording.named(Attr.strength),
+            .dexterity => wording.named(Attr.dexterity),
+            .intelligence => wording.named(Attr.intelligence),
             .life => "maximum life",
             .mana => "maximum mana",
             .armour => "Armour",
@@ -111,6 +112,7 @@ pub const Attrs = struct {
     spell_crit_bonus: i32 = 0,
     physical_bonus: i32 = 0,
     element_bonus: std.EnumArray(damage.Element, i32) = .initFill(0),
+    resists: damage.Resists = .initFill(0),
 
     pub fn of(points: std.enums.EnumFieldStruct(Attr, i32, null)) Attrs {
         return .{ .points = .init(points) };

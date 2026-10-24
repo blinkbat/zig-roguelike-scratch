@@ -199,6 +199,7 @@ const Knob = struct {
     field: [:0]const u8,
     label: ?[:0]const u8 = null,
     tips: []const [:0]const u8,
+    parts: []const []const u8 = &.{},
     unit: i32 = 1,
     fmt: []const u8 = "{d}",
 
@@ -213,8 +214,12 @@ const DECAY_ROW = Knob{ .field = "decay", .tips = &.{"Of the walls, how many hav
 const COUNT_ROW = Knob{ .field = "count", .tips = &.{"How many"} };
 const COUNT_MOST_ROW = Knob{ .field = "count", .tips = &.{"How many, at most"} };
 const WIDTH_ROW = Knob{ .field = "width", .tips = &.{"Cells across"} };
-const LITTER_ROW = Knob{ .field = "litter", .tips = &.{"Lone boulders, a thousandth of the open grass each"} };
-const DECOR_ROW = Knob{ .field = "decor", .tips = &.{ "Tiny shrubs a cell at a time, a thousandth of the open grass each", "Tall grass in patches, a thousandth of the open grass each", "Shrooms a cell at a time, a thousandth of the open grass each" } };
+const LITTER_ROW = structRow("litter", carve.Litter, .{ .boulders = "Lone boulders, a thousandth of the open grass each" });
+const DECOR_ROW = structRow("decor", carve.Decor, .{
+    .tiny_shrubs = "Tiny shrubs a cell at a time, a thousandth of the open grass each",
+    .tall_grass = "Tall grass in patches, a thousandth of the open grass each",
+    .shrooms = "Shrooms a cell at a time, a thousandth of the open grass each",
+});
 const GRASS_ROWS = [_]Knob{ LITTER_ROW, DECOR_ROW };
 const COURSE_ROW = Knob{ .field = "course", .tips = &.{listing(carve.Course, 3, "Across, down, or either")} };
 
@@ -469,6 +474,15 @@ comptime {
     covers(@FieldType(atlas.Procgen, "sky"), &SKY_ROWS, atlas_text.SKY_KNOBS);
 }
 
+fn structRow(comptime field: [:0]const u8, comptime T: type, comptime tips: anytype) Knob {
+    const parts = std.meta.fieldNames(T);
+    if (std.meta.fields(@TypeOf(tips)).len != parts.len) @compileError(field ++ " wants a tip for each member");
+    var ordered: [parts.len][:0]const u8 = undefined;
+    for (parts, 0..) |part, i| ordered[i] = @field(tips, part);
+    const labels = ordered;
+    return .{ .field = field, .tips = &labels, .parts = parts };
+}
+
 fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []const []const u8) void {
     @setEvalBranchQuota(100_000);
     if (rows.len != knobs_.len) @compileError("a generator row is for no knob");
@@ -477,13 +491,23 @@ fn covers(comptime T: type, comptime rows: []const Knob, comptime knobs_: []cons
         const K = @FieldType(T, name);
         if (r.tips.len != atlas_text.knobNumbers(K)) @compileError(name ++ " wants a tip for each number in it");
         if (@typeInfo(K) == .@"struct" and K != mathx.P) {
-            for (std.meta.fieldNames(K), r.tips) |part, tip| {
-                var spoken = part[0..part.len].*;
-                std.mem.replaceScalar(u8, &spoken, '_', ' ');
-                if (std.ascii.indexOfIgnoreCase(tip, &spoken) == null) @compileError(name ++ "." ++ part ++ " has another's tip");
+            if (r.parts.len != r.tips.len) @compileError(name ++ " wants named member tips");
+            for (std.meta.fieldNames(K), r.parts) |part, tip_part| {
+                if (!std.mem.eql(u8, part, tip_part)) @compileError(name ++ "." ++ part ++ " has another's tip");
             }
         }
     }
+}
+
+test "structured generator tips follow fields independently of wording and declaration order" {
+    const decor = comptime structRow("decor", carve.Decor, .{ .shrooms = "Fungi", .tiny_shrubs = "Small bushes", .tall_grass = "Long blades" });
+    const litter = comptime structRow("litter", carve.Litter, .{ .boulders = "Loose stones" });
+    comptime covers(struct { decor: carve.Decor, litter: carve.Litter }, &.{ decor, litter }, &.{ "decor", "litter" });
+    try std.testing.expectEqualStrings("Small bushes", decor.tips[0]);
+    try std.testing.expectEqualStrings("Long blades", decor.tips[1]);
+    try std.testing.expectEqualStrings("Fungi", decor.tips[2]);
+    try std.testing.expectEqualStrings("Loose stones", litter.tips[0]);
+    std.debug.print("generator tips: 4 rewritten passages retain their field mapping, including reordered declarations\n", .{});
 }
 
 pub fn rowNamed(comptime rows: []const Knob, comptime field: []const u8) ?Knob {

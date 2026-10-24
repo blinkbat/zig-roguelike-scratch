@@ -13,12 +13,36 @@ const look = @import("../gfx/look.zig");
 const fx = @import("../gfx/fx.zig");
 const combat = @import("combat.zig");
 const glide = @import("glide.zig");
+const tactics = @import("tactics.zig");
 const game = @import("../game.zig");
+const menu = @import("../ui/menu.zig");
 const P = mathx.P;
 
 pub fn openAim(g: *game.Game, by: input.Button, act: skillbar.Act) void {
     const h = g.sim.heroActor() orelse return;
-    aimAt(g, by, act, h.at, bow.pick(&g.sim.lv, &g.sim.pool, h.at));
+    aimAt(g, by, act, h.at, preferredTarget(g, act, h.at) orelse (if (act == .combustion) null else bow.pick(&g.sim.lv, &g.sim.pool, h.at)));
+}
+
+fn targetAt(g: *game.Game, act: skillbar.Act, from: P, id: u16) ?P {
+    const a = g.sim.pool.get(id) orelse return null;
+    if (!a.foe() or !g.sim.lv.isLit(a.at) or !tactics.validAct(g, act, from, a.at)) return null;
+    return a.at;
+}
+
+fn preferredTarget(g: *game.Game, act: skillbar.Act, from: P) ?P {
+    if (g.target) |id| if (targetAt(g, act, from, id)) |at| return at;
+    var near = bow.Nearest{ .from = from };
+    for (0..g.sim.pool.n) |i| {
+        if (targetAt(g, act, from, actor.Pool.idOf(i))) |at| near.offer(at);
+    }
+    return near.best;
+}
+
+pub fn rememberTarget(g: *game.Game) void {
+    if (g.aim_act.attack() == null) return;
+    const id = g.sim.lv.who(g.mark);
+    const a = g.sim.pool.get(id);
+    g.target = if (a != null and a.?.foe() and g.sim.lv.isLit(g.mark)) id else null;
 }
 
 pub fn openLeap(g: *game.Game, by: input.Button, act: skillbar.Act) void {
@@ -29,6 +53,7 @@ pub fn openLeap(g: *game.Game, by: input.Button, act: skillbar.Act) void {
 
 fn openSwing(g: *game.Game, by: input.Button, act: skillbar.Act) void {
     const h = g.sim.heroActor() orelse return;
+    if (preferredTarget(g, act, h.at)) |at| return aimAt(g, by, act, h.at, at);
     var mark: ?P = null;
     for (mathx.ALL_DIRS) |d| {
         const p = h.at.add(d.delta());
@@ -47,6 +72,7 @@ fn aimAt(g: *game.Game, by: input.Button, act: skillbar.Act, from: P, mark: ?P) 
     };
     g.pic.turnToward(g.sim.hero, g.mark.x - from.x);
     aiming(g, by, act);
+    rememberTarget(g);
 }
 
 pub fn aiming(g: *game.Game, by: input.Button, act: skillbar.Act) void {
@@ -59,6 +85,7 @@ const Blocked = enum { cooling, mana, empty, locked };
 
 pub fn blocked(g: *const game.Game, act: skillbar.Act, flasks: *const game.simulation.Flasks, mana: i32) ?Blocked {
     if (!g.sim.growth.unlocked(act)) return .locked;
+    if (act == .unyielding and g.sim.heroBody() != null and g.sim.heroBody().?.tactics.unyielding) return null;
     if (g.sim.cooldown.get(act) > 0) return .cooling;
     if (act.flaskOf()) |k| {
         if (!flasks.get(k).full()) return .empty;
@@ -82,6 +109,7 @@ fn ready(g: *game.Game, act: skillbar.Act) bool {
 }
 
 fn spend(g: *game.Game, act: skillbar.Act) void {
+    if (act.flaskOf() == null) tactics.beforeAction(g);
     g.sim.chronicle.note(.{ .used = act });
     g.sim.mana -= g.sim.growth.cost(act);
     g.sim.cooldown.set(act, g.sim.growth.cooldown(act));
@@ -90,6 +118,7 @@ fn spend(g: *game.Game, act: skillbar.Act) void {
 const plural = mathx.plural;
 
 pub fn aimable(g: *const game.Game, from: P, to: P) bool {
+    if (g.aim_act.reticle() == .ground) return tactics.valid(g, from, to);
     return g.aim_act.aimable(&g.sim.lv, from, to);
 }
 
@@ -121,7 +150,7 @@ fn drink(g: *game.Game, act: skillbar.Act, k: flask.Kind) void {
         .life => look.LIFE,
         .mana => look.WARD,
     });
-    g.sim.log.push(.recovery, "{s} drinks a {s} flask.", .{ g.sim.name.text(), @tagName(k) });
+    g.sim.log.push(.recovery, "{s} drinks a {s} flask.", .{ g.sim.name.text(), menu.word(k) });
     g.sim.unsaved = true;
 }
 
@@ -171,6 +200,7 @@ pub fn useSkill(g: *game.Game, u: Use) void {
     if (!g.pic.quiet()) return;
     const r = u.act.reticle() orelse return switch (u.act) {
         .wait => {
+            tactics.beforeAction(g);
             g.sim.chronicle.note(.{ .used = .wait });
             combat.endTurn(g);
         },
@@ -182,20 +212,28 @@ pub fn useSkill(g: *game.Game, u: Use) void {
         } else if (ready(g, a)) spell(g, a),
     };
     if (!ready(g, u.act)) return;
+    g.barrier_start = null;
     g.aim_set = u.set;
     switch (r) {
         .bow => openAim(g, u.by, u.act),
         .leap => openLeap(g, u.by, u.act),
         .swing => openSwing(g, u.by, u.act),
         .rush => openRush(g, u.by, u.act),
+        .ground => if (u.act == .combustion) openAim(g, u.by, u.act) else openLeap(g, u.by, u.act),
     }
 }
 
 fn spell(g: *game.Game, comptime act: skillbar.Act) void {
     const M = skillbar.Act.skill(act);
     const h = g.sim.heroActor() orelse return;
-    spend(g, act);
-    if (comptime act.surrounds()) {
+    const ending_stance = act == .unyielding and h.tactics.unyielding;
+    if (ending_stance) {
+        tactics.beforeAction(g);
+        g.sim.chronicle.note(.{ .used = act });
+    } else spend(g, act);
+    if (comptime act == .steady_aim or act == .guard or act == .unyielding or act == .whirlwind) {
+        _ = tactics.instant(g, act);
+    } else if (comptime act.surrounds()) {
         const s = game.presentation.Stroke{ .from = h.at, .wait = game.CAST_S };
         g.pic.holdUntil(s.wait);
         const area = M.around(&g.sim.lv, h.at);
@@ -225,6 +263,7 @@ pub fn foesIn(g: *game.Game, area: glacial.Burst) Struck {
 
 fn openRush(g: *game.Game, by: input.Button, act: skillbar.Act) void {
     const h = g.sim.heroActor() orelse return;
+    if (preferredTarget(g, act, h.at)) |at| return aimAt(g, by, act, h.at, at);
     var near = bow.Nearest{ .from = h.at };
     var empty = bow.Nearest{ .from = h.at };
     var cells = grid.Cells.around(h.at, act.reach());
@@ -256,9 +295,15 @@ fn rush(g: *game.Game, from: P, act: skillbar.Act) void {
 /// Over the hero's own cell, so the reticle reaches the far side of a corridor.
 pub fn nudgeAim(g: *game.Game, d: mathx.Dir) void {
     const h = g.sim.heroActor() orelse return;
+    if (g.aim_act.attack() != null) if (targetToward(g, h.at, d)) |at| {
+        g.mark = at;
+        rememberTarget(g);
+        g.pic.turnToward(g.sim.hero, at.x - h.at.x);
+        return;
+    };
     var to = g.mark.add(d.delta());
     switch (g.aim_act.reticle().?) {
-        .leap, .rush => if (!juke.inReach(h.at, to, g.aim_act.reach()) or !grid.Level.inside(to)) return,
+        .leap, .rush, .ground => if (!juke.inReach(h.at, to, g.aim_act.reach()) or !grid.Level.inside(to)) return,
         .bow => {
             if (to.eq(h.at)) to = to.add(d.delta());
             if (!bow.aimable(&g.sim.lv, h.at, to)) return;
@@ -266,7 +311,26 @@ pub fn nudgeAim(g: *game.Game, d: mathx.Dir) void {
         .swing => to = h.at.add(d.delta()),
     }
     g.mark = to;
+    rememberTarget(g);
     g.pic.turnToward(g.sim.hero, to.x - h.at.x);
+}
+
+fn targetToward(g: *game.Game, from: P, d: mathx.Dir) ?P {
+    const way = d.delta();
+    var best: ?P = null;
+    var best_score: i32 = std.math.maxInt(i32);
+    for (0..g.sim.pool.n) |i| {
+        const at = targetAt(g, g.aim_act, from, actor.Pool.idOf(i)) orelse continue;
+        const delta = at.sub(g.mark);
+        const along = delta.x * way.x + delta.y * way.y;
+        if (along <= 0) continue;
+        const across: i32 = @intCast(@abs(delta.x * way.y - delta.y * way.x));
+        const score = along + 2 * across;
+        if (score >= best_score) continue;
+        best_score = score;
+        best = at;
+    }
+    return best;
 }
 
 pub fn confirmAim(g: *game.Game) void {
@@ -280,9 +344,15 @@ pub fn confirmAim(g: *game.Game) void {
             .leap => g.sim.log.say("{s} needs a visible, empty landing within {d} tiles.", .{ act.name(), act.reach() }),
             .swing => g.sim.log.say("Nothing to strike there.", .{}),
             .rush => g.sim.log.say("{s} needs a clear straight line {d} to {d} tiles away.", .{ act.name(), act.nearest(), act.reach() }),
+            .ground => g.sim.log.say("Choose a legal visible target for {s}.", .{act.name()}),
         }
         return;
     }
+    if (act == .arcane_barrier and g.barrier_start == null) {
+        g.barrier_start = g.mark;
+        return;
+    }
+    rememberTarget(g);
     g.mode = .play;
     spend(g, act);
     const from = h.at;
@@ -291,6 +361,7 @@ pub fn confirmAim(g: *game.Game) void {
         .leap => leap(g, from, act),
         .swing => combat.swing(g, from, act),
         .rush => rush(g, from, act),
+        .ground => tactics.cast(g, act, from),
     }
 }
 
@@ -316,6 +387,7 @@ fn loose(g: *game.Game, from: P, act: skillbar.Act) void {
         g.sim.log.say("{s}'s {s} finds nothing.", .{ g.sim.name.text(), act.bolt() orelse "arrow" });
         g.sim.chronicle.note(.missed);
     }
+    if (act.isArrow()) if (g.sim.heroActor()) |h| { h.tactics.steady = 0; };
     combat.endTurn(g);
 }
 

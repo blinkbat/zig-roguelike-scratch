@@ -319,6 +319,8 @@ pub const Torches = struct {
 };
 
 pub const Level = struct {
+    barrier: [CELLS]u8 = @splat(0),
+    caltrops: [CELLS]struct { turns: u8 = 0, rank: u8 = 0 } = @splat(.{}),
     tile: [CELLS]Tile,
     /// Null on anything that is neither a wall nor a forest tile.
     shape: [CELLS]?WallShape,
@@ -538,7 +540,11 @@ pub const Level = struct {
     }
 
     pub fn walkable(self: *const Level, p: P) bool {
-        return inside(p) and !self.at(p).solid();
+        return inside(p) and !self.at(p).solid() and !self.hasBarrier(p);
+    }
+
+    pub fn hasBarrier(self: *const Level, p: P) bool {
+        return cellOr(u8, &self.barrier, p, 0) > 0;
     }
 
     /// Terrain only.
@@ -839,18 +845,23 @@ pub const Ray = struct {
 
 /// The target's own cell may be opaque.
 pub fn clearLine(lv: *const Level, from: P, to: P) bool {
-    return lineOk(lv, from, to, false);
+    return lineOk(lv, from, to, false, false);
+}
+
+pub fn projectileLine(lv: *const Level, from: P, to: P) bool {
+    return lineOk(lv, from, to, false, true);
 }
 
 /// `clearLine`, and every cell on it lit, the target's too.
 pub fn litLine(lv: *const Level, from: P, to: P) bool {
-    return lineOk(lv, from, to, true);
+    return lineOk(lv, from, to, true, true);
 }
 
-fn lineOk(lv: *const Level, from: P, to: P, comptime lit: bool) bool {
+fn lineOk(lv: *const Level, from: P, to: P, comptime lit: bool, comptime projectiles: bool) bool {
     var ray = Ray.init(from, to);
     while (ray.next()) |c| {
         if (lit and !lv.isLit(c)) return false;
+        if (projectiles and lv.hasBarrier(c)) return false;
         if (c.eq(to)) return true;
         if (lv.at(c).blind()) return false;
     }

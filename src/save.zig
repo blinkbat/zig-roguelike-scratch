@@ -100,6 +100,8 @@ const UNSAVED = .{
         "aim_act",
         "aim_set",
         "mark",
+        "barrier_start",
+        "target",
         "cam",
         "screen",
         "framebuffer",
@@ -689,7 +691,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
 }
 
 /// Changes only when the saved types, their names or order, the passive tree or Zig's version do; old saves then stop loading.
-const RECORDED_FINGERPRINT: Print = 0xc4e1cee95ba4251a;
+const RECORDED_FINGERPRINT: Print = 0xfcf5056f0a0ba908;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
     game.beginMapAt(g, w, w.start, 7);
@@ -707,6 +709,10 @@ test "the save layout is the recorded one, and a run saves the bytes it loads fr
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
     try fixture(g, w);
+    g.sim.heroActor().?.tactics = .{ .steady = 2, .guard = 1, .unyielding = true, .overwatch = .e };
+    const at = g.sim.heroActor().?.at.add(.{ .x = 2, .y = 0 });
+    g.sim.lv.barrier[grid.Level.idx(at)] = 3;
+    g.sim.lv.caltrops[grid.Level.idx(at)] = .{ .turns = 4, .rank = 2 };
     var first = std.ArrayList(u8).init(alloc);
     defer first.deinit();
     try write(g, &first);
@@ -718,6 +724,9 @@ test "the save layout is the recorded one, and a run saves the bytes it loads fr
     defer alloc.destroy(into);
     game.begin(back, 1);
     try read(first.items, back, into);
+    try std.testing.expectEqualDeep(g.sim.heroActor().?.tactics, back.sim.heroActor().?.tactics);
+    try std.testing.expectEqual(@as(u8, 3), back.sim.lv.barrier[grid.Level.idx(at)]);
+    try std.testing.expectEqual(@as(u8, 2), back.sim.lv.caltrops[grid.Level.idx(at)].rank);
     var again = std.ArrayList(u8).init(alloc);
     defer again.deinit();
     try write(back, &again);

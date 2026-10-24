@@ -612,6 +612,7 @@ pub const State = struct {
     /// Where the mouse rests on the window, when focused and over it.
     pointer: ?mathx.P = null,
     click: bool = false,
+    left_released: bool = false,
     right_click: bool = false,
     middle_click: bool = false,
     dragging: bool = false,
@@ -722,6 +723,7 @@ pub const State = struct {
         const live = self.pad_at;
         self.movePointer(if (rl.isCursorOnScreen()) mouseAt() else null, was_focused);
         self.click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.left);
+        self.left_released = was_focused and self.pointer != null and rl.isMouseButtonReleased(.left);
         self.right_click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.right);
         self.middle_click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.middle);
         self.dragging = was_focused and self.pointer != null and rl.isMouseButtonDown(.middle);
@@ -1097,6 +1099,13 @@ pub const Desk = struct {
     paste: bool = false,
     /// Up -1 or down 1, as pressed or repeated.
     nav: i32 = 0,
+    text_left: bool = false,
+    text_right: bool = false,
+    text_home: bool = false,
+    text_end: bool = false,
+    text_delete: bool = false,
+    text_all: bool = false,
+    paste_text: ?[:0]const u8 = null,
     tool: ?usize = null,
     shape: ?usize = null,
     typed: Typed = .{},
@@ -1138,6 +1147,13 @@ pub const Desk = struct {
         self.enter = !altDown() and anyHit(&ENTER_KEYS);
         self.rub = rubbed();
         self.alt = altDown();
+        self.text_left = repeated(.left);
+        self.text_right = repeated(.right);
+        self.text_home = hit(.home);
+        self.text_end = hit(.end);
+        self.text_delete = repeated(.delete);
+        self.text_all = ctrl and hit(.a);
+        self.paste_text = if (self.paste) rl.getClipboardText() else null;
         self.nav = 0;
         for (NAV_KEYS, [2]i32{ -1, 1 }) |k, by| {
             if (repeated(k)) self.nav = by;
@@ -1155,6 +1171,10 @@ pub const Desk = struct {
         self.typed.read();
     }
 };
+
+pub fn copyText(text: [:0]const u8) void {
+    rl.setClipboardText(text);
+}
 
 fn either(pair: [2]rl.KeyboardKey) bool {
     return rl.isKeyDown(pair[0]) or rl.isKeyDown(pair[1]);

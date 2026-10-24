@@ -82,7 +82,7 @@ def reservoir(x, y, core, edge, size=88):
     under.alpha_composite(tile, (x, y))
 
 
-skill_source = (ROOT / 'src/gfx/look.zig').read_text(encoding='utf-8')
+skill_source = (ROOT / 'src/gfx/line_icons.zig').read_text(encoding='utf-8')
 
 
 def strokes(body):
@@ -93,7 +93,7 @@ shared_lines = {
     name: strokes(body)
     for name, body in re.findall(r'^const (\w+) = \[_\]\[4\]f32\{(.*?)\n\};', skill_source, re.S | re.M)
 }
-skill_source = skill_source.split('fn skillLines(', 1)[1].split('pub fn arrowInk', 1)[0]
+skill_source = skill_source.split('fn skillLines(', 1)[1].split('\n}', 1)[0]
 skill_lines = {}
 for name, shared, body in re.findall(r'\.(\w+)\s*=>\s*&(?:\.\{|\((\w+)\s*\+\+\s*\[_\]\[4\]f32\{)(.*?)\n        \}\)?,', skill_source, re.S):
     skill_lines[name] = (shared_lines[shared] if shared else []) + strokes(body)

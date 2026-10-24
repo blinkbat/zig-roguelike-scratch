@@ -135,6 +135,10 @@ pub const Status = enum {
     pinned,
     warded,
     resistant,
+    guarding,
+    unyielding,
+    steady,
+    overwatch,
 
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
@@ -144,6 +148,7 @@ pub const Status = enum {
             .pinned => look.ailmentInk(.pin),
             .warded => look.WARD,
             .resistant => look.UI_GOLD,
+            .guarding, .unyielding, .steady, .overwatch => look.UI_GOLD,
         };
     }
 
@@ -152,7 +157,7 @@ pub const Status = enum {
         return switch (s) {
             .burning => BURN_GLOW,
             .warded => WARD_GLOW,
-            .bleeding, .chilled, .pinned, .resistant => null,
+            .bleeding, .chilled, .pinned, .resistant, .guarding, .unyielding, .steady, .overwatch => null,
         };
     }
 
@@ -165,6 +170,7 @@ pub const Status = enum {
         return switch (s) {
             .warded => skillbar.Act.mana_shield.name(),
             .resistant => "Status resistance",
+            .guarding => "Guard", .unyielding => "Unyielding", .steady => "Steady Aim", .overwatch => "Overwatch",
             inline else => |t| comptime menu.capital(@tagName(t)),
         };
     }
@@ -173,6 +179,10 @@ pub const Status = enum {
     pub fn about(s: Status) []const u8 {
         return switch (s) {
             .resistant => @import("../play/resilience.zig").ABOUT,
+            .guarding => @import("../play/tactics.zig").Guard.DESCRIPTION,
+            .unyielding => @import("../play/tactics.zig").Unyielding.DESCRIPTION,
+            .steady => @import("../play/tactics.zig").SteadyAim.DESCRIPTION,
+            .overwatch => @import("../play/tactics.zig").Overwatch.DESCRIPTION,
             inline else => |t| module(t).STATUS,
         };
     }
@@ -185,6 +195,7 @@ pub const Status = enum {
             .pinned => pinning,
             .warded => ward,
             .resistant => @import("../play/resilience.zig"),
+            .guarding, .unyielding, .steady, .overwatch => @import("../play/tactics.zig"),
         };
     }
 
@@ -196,12 +207,17 @@ pub const Status = enum {
             .pinned => "pin",
             .warded => "ward",
             .resistant => "resilience",
+            .guarding, .unyielding, .steady, .overwatch => "tactics",
         };
     }
 
     fn turnsOf(s: Status, a: actor.Actor) u8 {
         return switch (s) {
             .resistant => a.resilience.peak().turns,
+            .guarding => @intFromBool(a.tactics.guard > 0),
+            .unyielding => @intFromBool(a.tactics.unyielding),
+            .steady => @intFromBool(a.tactics.steady > 0),
+            .overwatch => @intFromBool(a.tactics.overwatch != null),
             inline else => |t| @field(a, field(t)).turns,
         };
     }
@@ -256,7 +272,7 @@ pub const Settle = struct { slot: usize, after: After };
 
 const MOTES: usize = 320;
 /// Capacity for every body's turn effects, hero hit and sweep, plus a burst or chain jumps.
-pub const DUE: usize = actor.MAX * (7 + actor.SWEEP_CELLS) + 2;
+pub const DUE: usize = actor.MAX * (9 + actor.SWEEP_CELLS) + 2;
 
 pub const Burst = struct { at: mathx.P, area: glacial.Burst, element: damage.Element };
 

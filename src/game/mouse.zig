@@ -126,15 +126,16 @@ pub fn prepare(g: *game.Game) void {
 }
 
 pub fn aim(g: *game.Game) bool {
-    if (!g.st.pointing()) return false;
+    if (!g.st.pointing() and !g.st.left_released) return false;
     const at = cell(g) orelse return false;
     const h = g.sim.heroActor() orelse return false;
     if (g.aim_act.reticle() == .swing) {
         const d = mathx.toward(h.at, at) orelse return false;
         g.mark = h.at.add(d.delta());
     } else g.mark = at;
+    skills.rememberTarget(g);
     g.pic.turnToward(g.sim.hero, g.mark.x - h.at.x);
-    return g.st.click;
+    return g.st.click or (g.aim_act == .arcane_barrier and g.barrier_start != null and g.st.left_released);
 }
 
 fn danger(g: *const game.Game) bool {

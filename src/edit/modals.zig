@@ -25,6 +25,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
     var buf: [editor.LINE]u8 = undefined;
     game.character.veil(g);
     switch (ed.modal) {
+        .text => return @import("text_panel.zig").draw(ed, g),
         .help => return drawHelp(ed, g),
         .objects => return drawObjects(ed, g),
         .none, .confirm, .name, .open => {},
@@ -36,7 +37,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
         .confirm => "Unsaved changes",
         .name => if (ed.naming == .new) "New map" else "Save the map as",
         .open => std.fmt.bufPrintZ(&title_buf, "Open: {s}", .{ed.listing.dirPath(&dir_buf)}) catch "Open",
-        .none, .help, .objects => "",
+        .none, .help, .objects, .text => "",
     };
     const f = editor.modalFrame(g, editor.MODAL_W, editor.MODAL_HEAD + body + editor.ROW_H + editor.PAD, title, true);
     const x = f.x;
@@ -84,7 +85,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
             editor.textFace(g).draw(OPEN_CRIB, x + editor.PAD, buttons_y + editor.SMALL_DY, SMALL, look.DIM);
             backButton(ed, g, bx, buttons_y, "Cancel");
         },
-        .none, .help, .objects => {},
+        .none, .help, .objects, .text => {},
     }
 }
 
@@ -263,7 +264,7 @@ fn modalBody(ed: *const editor.Editor) i32 {
         .confirm => editor.ROW_H * 2 + editor.PAD,
         .name => editor.ROW_STEP + editor.ROW_H + editor.PAD,
         .open => @as(i32, @intCast(@max(1, @min(ed.listing.n, editor.MODAL_ROWS)))) * editor.ROW_H + editor.PAD,
-        .none, .help, .objects => 0,
+        .none, .help, .objects, .text => 0,
     };
 }
 

@@ -117,6 +117,7 @@ const Root = struct {
         for (r.assets) |name| m.addAnonymousImport(name, .{ .root_source_file = r.b.path(r.b.fmt(ASSETS ++ "/{s}", .{name})) });
         const listed = r.b.addOptions();
         listed.addOption([]const []const u8, "names", r.assets);
+        listed.addOption([]const u8, "source_root", r.b.pathFromRoot("."));
         m.addImport("assets", listed.createModule());
         return m;
     }

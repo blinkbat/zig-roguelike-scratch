@@ -41,7 +41,7 @@ const OptionRow = enum {
 };
 const OPTION_ROWS = std.enums.values(OptionRow);
 const DEBUG_ROWS = [_]struct { row: game.debugging.Row, note: [:0]const u8 }{
-    .{ .row = .unkillable, .note = std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.titled(@tagName(game.debugging.Row.unkillable)), game.combat.UNKILLABLE_HP }) },
+    .{ .row = .unkillable, .note = std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.titleOf(game.debugging.Row.unkillable), game.combat.UNKILLABLE_HP }) },
 };
 const DELETE = menu.REMOVE;
 
@@ -664,10 +664,10 @@ test "mouse save deletion stays tied to its row through intermediate movement an
 fn fixtureHall() ossuary.Hall {
     const Bones = struct { name: []const u8, class: hero.Class, level: u16, kills: u32, renown: u32, said: []const u8 };
     const all = [_]Bones{
-        .{ .name = "Arwen the Bold", .class = .archer, .level = 14, .kills = 212, .renown = 9120, .said = "Arwen the Bold was shot dead by a bandit crossbowman on the Strand after dark. Arwen the Bold's last arrow struck a bandit crossbowman, and was answered. " ++ ossuary.ENTOMBED },
+        .{ .name = "Arwen the Bold", .class = .archer, .level = 14, .kills = 212, .renown = 9120, .said = "Arwen the Bold was shot dead by a bandit crossbowman on the Strand after dark. Arwen the Bold's last arrow hit a bandit crossbowman without killing it. " ++ ossuary.ENTOMBED },
         .{ .name = "Merrow", .class = .wizard, .level = 9, .kills = 96, .renown = 4410, .said = "Merrow the wizard burst a bloat in the Cistern, then died in its gas. There was nowhere left to step. " ++ ossuary.ENTOMBED },
-        .{ .name = "Sir Gallant-Rhys", .class = .knight, .level = 7, .kills = 61, .renown = 2875, .said = "Sir Gallant-Rhys the knight was bitten to death by a rat in the Wilds. Sir Gallant-Rhys drank a life flask at the very end, too late. At the end, Sir Gallant-Rhys was surrounded. " ++ ossuary.ENTOMBED },
-        .{ .name = "Pell", .class = .archer, .level = 2, .kills = 4, .renown = 120, .said = "Pell the archer was bitten to death by a rat in the Cistern. Pell's last arrow found only air. " ++ ossuary.ENTOMBED },
+        .{ .name = "Sir Gallant-Rhys", .class = .knight, .level = 7, .kills = 61, .renown = 2875, .said = "Sir Gallant-Rhys the knight was bitten to death by a rat in the Wilds. Sir Gallant-Rhys drank a life flask on the final turn. Sir Gallant-Rhys was surrounded. " ++ ossuary.ENTOMBED },
+        .{ .name = "Pell", .class = .archer, .level = 2, .kills = 4, .renown = 120, .said = "Pell the archer was bitten to death by a rat in the Cistern. Pell's last arrow missed. " ++ ossuary.ENTOMBED },
     };
     var hall = ossuary.Hall{};
     for (all, 0..) |b, i| {

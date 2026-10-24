@@ -66,7 +66,7 @@ pub fn fly(lv: *const grid.Level, from: P, to: P) Flight {
     var f = Flight{};
     var ray = grid.Ray.init(from, to);
     while (ray.next()) |c| {
-        if (f.len == f.path.len or (!c.eq(to) and lv.at(c).blind())) break;
+        if (f.len == f.path.len or lv.hasBarrier(c) or (!c.eq(to) and lv.at(c).blind())) break;
         f.path[f.len] = c;
         f.len += 1;
         if (lv.at(c).halts()) break;

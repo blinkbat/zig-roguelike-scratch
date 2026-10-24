@@ -7,8 +7,8 @@
 | Slots | Main hand, offhand, helm, chest, belt, gloves, boots, two rings, amulet |
 | Equipment rules | Attribute requirements, one main-hand item plus an offhand, or a two-handed item |
 | Requirements | Final loadout must remain valid; an item cannot fund its own requirement |
-| Loot | Normal or magic; at most two distinct modifiers |
-| Modifier pool | Life, mana, Strength, Dexterity, Intelligence |
+| Loot | Normal or magic; blues roll one prefix, one suffix, or both, with names composed from those affixes and the base name |
+| Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery and penetration; equipment restrictions live in `items.Mod.allows` |
 | Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
 | Gold | Ground coins collect automatically on arrival at their cell; opening a chest drops its gold on the ground, and opening loot never collects coins |
 | Item actions | Take item, Take all, drop, equip and unequip cost one turn when successful; Take all fills available inventory space and leaves excess items |
@@ -75,6 +75,46 @@ Equipment recovery effects combine with passive perks through `Simulation.heroPe
 Weapon and spell critical bonuses remain separate, and elemental/physical bonuses apply
 only to their matching damage component. Live damage and previews share these calculations.
 
+Magic names always describe their rolls, for example `Bear's Leather gloves of Precision`.
+They have no independent unique name. A two-affix roll always pairs opposite sides; a single
+affix may be either side. Warded prefixes identify their rolled element. Innate base effects
+remain separate from affixes. Recovery modifiers add to equipment/passive recovery; Puncturing
+adds to a matching weapon's innate penetration. Cruel applies only to physical weapon damage.
+Harvest also recovers life from status kills; the existing passive/totem kill recovery
+keeps its blow-only contract. Its healing is presented with the killing impact or tick.
+
+## Tactical skills and class paths
+
+All class skills retain three ranks. Basic attacks and mobility start learned; other skills
+require their parent. The trees group elemental damage, preparation, control and defense:
+
+| Class | Paths |
+|---|---|
+| Archer | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot; Juke -> Caltrops |
+| Wizard | Spark -> Fireball -> Combustion; Spark -> Chain Lightning; Blink -> Frost Nova -> Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
+| Knight | Cleave -> Guard -> Unyielding; Charge -> Shield Bash -> Whirlwind |
+
+Caltrops pins entering ground foes at every rank, adds bleed at rank 2, then strengthens
+both at rank 3. Flying foes ignore caltrops. Gravity Well pulls foes toward its center;
+rank 2 adds a one-turn pin, rank 3 increases pull distance and pin duration. Both use normal
+status resistance. Combustion requires a burning foe, consumes its burn and explodes nearby
+foes with fire damage; the remaining burn increases the explosion's base damage.
+
+Steady Aim prepares the next arrow with damage and critical bonuses; movement cancels it.
+Overwatch covers a chosen cone until the next action and fires once when a foe moves into
+it with an unobstructed arrow path. Guard reduces physical attack damage until the next
+action. Whirlwind strikes all adjacent foes and barrels once. Unyielding toggles a melee
+counter stance with rank-based chance, draining mana on spent turns and ending when upkeep
+cannot be paid. It can always be turned off, even at zero mana. Idle frames advance none
+of these effects; free flasks do not end preparation or defense.
+
+Arcane Barrier selects two endpoints (mouse drag/release, or two ordinary confirmations).
+Every cell must be visible, empty, in reach, and free of doors and chests. The rank limits
+length and duration. The straight wall blocks movement and projectiles while allowing
+sight, and expires on spent turns without replacing its underlying terrain. Barrier and
+caltrop lifetimes persist with the node; hero preparations and stances persist with the hero.
+The expanded run layout changes the save fingerprint; older saves are rejected.
+
 ## Class balance and status resistance
 
 The knight starts with 24 Strength, 34 life, 10% physical reduction and a 3-5 basic strike.
@@ -112,8 +152,9 @@ damages), life per kill, cull (blows kill foes left at or below a share of life)
 mana per five turns and cheaper skills; usually with an attribute rider. Each branch ends at a larger
 double-ring capstone whose rider may be a second effect. Bridges grant attributes from both
 neighboring arms. Attribute-side grants go through `attrs`; the rest are `passives.Perks`, read by
-`progress.State.perks` and applied in `game` (`manaRegen`, `drink`), `game/combat.zig` (`wound`), `State.cost` and the
-life flask's description (`flask.Life.describe`). `passives.INFO` holds each grant kind's group, label and wording.
+`progress.State.perks` and applied by `Simulation.manaRegen` in `game/sim.zig`, `drink` in
+`game/skills.zig`, `wound` in `game/combat.zig`, `State.cost` and the life flask's description
+(`flask.Life.describe`). `passives.Grant.write` formats grants through `TEXT` and the shared attribute/style labels.
 
 The chosen class's origin is allocated free and gives no extra bonus. The other two origins are
 immediately purchasable for one point each. There is no central hub. Further nodes require any one allocated

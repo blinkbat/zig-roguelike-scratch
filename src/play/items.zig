@@ -5,6 +5,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const passives = @import("passives.zig");
 const bleeding = @import("bleeding.zig");
+const menu = @import("../ui/menu.zig");
 
 pub const Slot = enum {
     left_hand,
@@ -33,7 +34,47 @@ pub const Slot = enum {
     }
 };
 pub const SLOTS = std.enums.values(Slot);
-const Mod = attrs.Bonus;
+pub const Mod = enum {
+    life, mana, strength, dexterity, intelligence,
+    physical_damage, spell_damage, crit, armour, dodge, resistance,
+    mana_regen, life_on_kill, life_flask, penetration,
+
+    pub fn prefix(m: Mod) bool {
+        return switch (m) {
+            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance => true,
+            else => false,
+        };
+    }
+    pub fn title(m: Mod, element: damage.Element) [:0]const u8 {
+        return switch (m) {
+            .life => "of Life", .mana => "of Insight", .strength => "Bear's", .dexterity => "Serpent's", .intelligence => "Sage's",
+            .physical_damage => "Cruel", .spell_damage => "Sorcerous", .crit => "of Precision", .armour => "Reinforced", .dodge => "of Evasion",
+            .resistance => switch (element) { .fire => "Fire-Warded", .cold => "Cold-Warded", .lightning => "Storm-Warded", .chaos => "Chaos-Warded" },
+            .mana_regen => "of Renewal", .life_on_kill => "of Harvest", .life_flask => "of Plenty", .penetration => "of Puncturing",
+        };
+    }
+    pub fn allows(m: Mod, k: Kind) bool {
+        const s = spec(k);
+        const slot = s.slots[0];
+        const weapon = s.damage != null;
+        const caster = switch (k) { .wand, .ash_wand, .rime_wand, .storm_wand, .staff, .tome, .orb => true, else => false };
+        const ring = slot == .left_ring;
+        const armour = slot == .helm or slot == .chest or slot == .belt or slot == .gloves or slot == .boots;
+        return switch (m) {
+            .physical_damage => weapon,
+            .spell_damage => caster or slot == .amulet,
+            .crit => weapon or slot == .gloves or ring,
+            .armour => armour or k == .shield or k == .buckler,
+            .dodge => slot == .boots or slot == .gloves or ring,
+            .resistance => armour or slot == .left_hand or ring or slot == .amulet,
+            .mana_regen => caster or k == .circlet or ring or slot == .amulet,
+            .life_on_kill => weapon or k == .totem or ring,
+            .life_flask => slot == .belt or slot == .amulet,
+            .penetration => weapon or slot == .gloves,
+            else => true,
+        };
+    }
+};
 /// The modifiers loot rolls, in roll order, with their value ranges.
 const AFFIXES = [_]struct { kind: Mod, lo: i32, hi: i32 }{
     .{ .kind = .life, .lo = 2, .hi = 6 },
@@ -41,6 +82,16 @@ const AFFIXES = [_]struct { kind: Mod, lo: i32, hi: i32 }{
     .{ .kind = .strength, .lo = 1, .hi = 3 },
     .{ .kind = .dexterity, .lo = 1, .hi = 3 },
     .{ .kind = .intelligence, .lo = 1, .hi = 3 },
+    .{ .kind = .physical_damage, .lo = 10, .hi = 20 },
+    .{ .kind = .spell_damage, .lo = 10, .hi = 20 },
+    .{ .kind = .crit, .lo = 2, .hi = 5 },
+    .{ .kind = .armour, .lo = 2, .hi = 4 },
+    .{ .kind = .dodge, .lo = 2, .hi = 4 },
+    .{ .kind = .resistance, .lo = 10, .hi = 20 },
+    .{ .kind = .mana_regen, .lo = 1, .hi = 1 },
+    .{ .kind = .life_on_kill, .lo = 1, .hi = 2 },
+    .{ .kind = .life_flask, .lo = 10, .hi = 20 },
+    .{ .kind = .penetration, .lo = 5, .hi = 10 },
 };
 pub const MODS = blk: {
     var out: [AFFIXES.len]Mod = undefined;
@@ -116,8 +167,30 @@ pub const Gold = struct {
 pub const BARREL_GOLD = Gold{ .lo = 3, .hi = 12 };
 pub const CHEST_GOLD = Gold{ .lo = 18, .hi = 36 };
 pub const FOE_GOLD = Gold{ .lo = 1, .hi = 6 };
-pub const Affix = struct { kind: Mod, value: i16 };
+pub const Affix = struct {
+    kind: Mod,
+    value: i16,
+    element: damage.Element = .fire,
+
+    pub fn write(m: Affix, w: anytype) void {
+        const n = m.value;
+        switch (m.kind) {
+            .life, .mana, .strength, .dexterity, .intelligence => |k| w.print(attrs.Bonus.RAISE_FMT, .{ n, switch (k) { .life => attrs.Bonus.life.label(), .mana => attrs.Bonus.mana.label(), .strength => attrs.Bonus.strength.label(), .dexterity => attrs.Bonus.dexterity.label(), .intelligence => attrs.Bonus.intelligence.label(), else => unreachable } }) catch {},
+            .physical_damage => w.print("+{d}% physical weapon damage", .{n}) catch {},
+            .spell_damage => w.print("+{d}% spell damage", .{n}) catch {},
+            .crit => w.print("+{d}% critical strike chance", .{n}) catch {},
+            .armour => w.print("+{d}% physical damage reduction", .{n}) catch {},
+            .dodge => w.print("+{d}% dodge chance", .{n}) catch {},
+            .resistance => w.print("+{d}% {s} resistance", .{ n, menu.word(m.element) }) catch {},
+            .mana_regen => w.print("+{d} mana recovered per {d} turns", .{ n, @import("hero.zig").MANA_REGEN_TURNS }) catch {},
+            .life_on_kill => w.print("+{d} life on kill", .{n}) catch {},
+            .life_flask => w.print("+{d}% life flask recovery", .{n}) catch {},
+            .penetration => w.print("Ignore {d}% physical damage reduction", .{n}) catch {},
+        }
+    }
+};
 pub const AFFIXES_MAX = 2;
+pub const NAME_MAX = 128;
 pub const WeaponEffect = struct {
     bleed: u32 = 0,
     bleed_damage: i32 = bleeding.STILL,
@@ -164,7 +237,7 @@ pub const Innate = union(enum) {
             .weapon_crit => |n| w.print("+{d}% " ++ attrs.WEAPON_CRIT_LABEL, .{n}) catch {},
             .spell_crit => |n| w.print("+{d}% " ++ attrs.SPELL_CRIT_LABEL, .{n}) catch {},
             .physical_damage => |n| w.print("+{d}% " ++ attrs.PHYSICAL_LABEL, .{n}) catch {},
-            .element => |e| w.print("+{d}% {s} damage", .{ e.percent, @tagName(e.kind) }) catch {},
+            .element => |e| w.print("+{d}% {s} damage", .{ e.percent, menu.word(e.kind) }) catch {},
             .bleed => |b| w.print("{d}% chance to bleed on hit", .{b.chance}) catch {},
             .stun => |n| w.print("{d}% chance to stun on hit", .{n}) catch {},
             .penetration => |n| w.print("Ignore {d}% physical reduction", .{n}) catch {},
@@ -248,8 +321,14 @@ pub const Item = struct {
     kind: Kind,
     mods: [AFFIXES_MAX]?Affix = @splat(null),
 
-    pub fn name(self: Item) [:0]const u8 {
-        return spec(self.kind).name;
+    pub fn name(self: Item, buf: []u8) [:0]const u8 {
+        const base = menu.namedOr(self.kind, spec(self.kind).name);
+        var pre: []const u8 = "";
+        var post: []const u8 = "";
+        for (self.mods) |maybe| if (maybe) |m| {
+            if (m.kind.prefix()) pre = m.kind.title(m.element) else post = m.kind.title(m.element);
+        };
+        return std.fmt.bufPrintZ(buf, "{s}{s}{s}{s}{s}", .{ pre, if (pre.len > 0) " " else "", base, if (post.len > 0) " " else "", post }) catch base;
     }
 
     pub fn flavor(self: Item) [:0]const u8 {
@@ -276,7 +355,17 @@ pub const Item = struct {
         const base = spec(self.kind);
         a.armour += base.armour;
         if (base.innate) |innate| innate.apply(a);
-        for (self.mods) |maybe| if (maybe) |m| a.add(m.kind, m.value);
+        for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
+            .life => a.add(.life, m.value), .mana => a.add(.mana, m.value),
+            .strength => a.add(.strength, m.value), .dexterity => a.add(.dexterity, m.value), .intelligence => a.add(.intelligence, m.value),
+            .physical_damage => a.physical_bonus += m.value,
+            .spell_damage => a.damage_bonus.getPtr(.spell).* += m.value,
+            .crit => a.crit_bonus += m.value,
+            .armour => a.armour += m.value,
+            .dodge => a.dodge_bonus += m.value,
+            .resistance => a.resists.getPtr(m.element).* += m.value,
+            .mana_regen, .life_on_kill, .life_flask, .penetration => {},
+        };
     }
 
     pub fn meets(self: Item, a: attrs.Attrs) bool {
@@ -289,16 +378,17 @@ pub fn roll(rng: *mathx.Rng) Item {
     if (!rng.percent(MAGIC_PERCENT)) return out;
     const count = rng.range(1, out.mods.len);
     for (0..@intCast(count)) |i| {
-        var left = rng.below(@intCast(AFFIXES.len - i));
+        var eligible: usize = 0;
+        for (AFFIXES) |a| {
+            if (a.kind.allows(out.kind) and (i == 0 or a.kind.prefix() != out.mods[0].?.kind.prefix())) eligible += 1;
+        }
+        var left = rng.below(@intCast(eligible));
         const a = for (AFFIXES) |a| {
-            const taken = for (out.mods[0..i]) |m| {
-                if (m.?.kind == a.kind) break true;
-            } else false;
-            if (taken) continue;
+            if (!a.kind.allows(out.kind) or (i > 0 and a.kind.prefix() == out.mods[0].?.kind.prefix())) continue;
             if (left == 0) break a;
             left -= 1;
         } else unreachable;
-        out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)) };
+        out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)), .element = if (a.kind == .resistance) rng.pick(damage.Element, std.enums.values(damage.Element)) else .fire };
     }
     return out;
 }
@@ -325,25 +415,44 @@ pub const Gear = struct {
         var out = base;
         for (self.slots.values) |maybe| if (maybe) |it| {
             if (spec(it.kind).innate) |innate| if (innate == .grant) innate.grant.perk(&out);
+            out.mana_regen += it.value(.mana_regen);
+            out.life_on_kill += it.value(.life_on_kill);
+            out.life_flask += it.value(.life_flask);
         };
         return out;
     }
 
     pub fn forAttack(self: Gear, base: attrs.Attrs, attack: attrs.Attack) attrs.Attrs {
         var out = base;
+        if (self.weapon(attack) == null) {
+            for (self.slots.values) |maybe| if (maybe) |it| { out.physical_bonus -= it.value(.physical_damage); };
+        }
         out.crit_bonus += if (attack == .spell) base.spell_crit_bonus else if (self.weapon(attack) != null) base.weapon_crit_bonus else 0;
+        return out;
+    }
+
+    pub fn killRecovery(self: Gear) i32 {
+        var out: i32 = 0;
+        for (self.slots.values) |maybe| if (maybe) |it| { out += it.value(.life_on_kill); };
         return out;
     }
 
     pub fn onHit(self: Gear, attack: attrs.Attack) WeaponEffect {
         if (self.weapon(attack) == null) return .{};
-        const innate = spec(self.slots.get(.right_hand).?.kind).innate orelse return .{};
-        return switch (innate) {
+        var out = WeaponEffect{};
+        for (self.slots.values) |maybe| if (maybe) |it| { out.penetration += it.value(.penetration); };
+        const innate = spec(self.slots.get(.right_hand).?.kind).innate orelse return out;
+        const fixed: WeaponEffect = switch (innate) {
             .bleed => |b| .{ .bleed = b.chance, .bleed_damage = b.damage },
             .stun => |n| .{ .stun = n },
             .penetration => |n| .{ .penetration = n },
             else => .{},
         };
+        out.bleed = fixed.bleed;
+        out.bleed_damage = fixed.bleed_damage;
+        out.stun = fixed.stun;
+        out.penetration += fixed.penetration;
+        return out;
     }
 
     /// The main hand's weapon, when it takes both hands.
@@ -648,28 +757,49 @@ test "foe loot is mostly gold then plain items with rare magic affixes" {
     std.debug.print("foe loot over {d} kills: {d} gold, {d} plain items without affixes, {d} magic items\n", .{ rolls, gold, plain, magic });
 }
 
-test "a second affix is any of the others alike" {
+test "magic affixes respect equipment eligibility prefix suffix and rolled bounds" {
     var rng = mathx.Rng.init(0xAFF1);
-    var pairs = std.mem.zeroes([AFFIXES.len][AFFIXES.len]u32);
-    var n: usize = 0;
-    while (n < 15000) {
+    var seen = std.EnumSet(Mod).initEmpty();
+    var elements = std.EnumSet(damage.Element).initEmpty();
+    var two: usize = 0;
+    for (0..50000) |_| {
         const it = roll(&rng);
-        const second = it.mods[1] orelse continue;
-        pairs[std.mem.indexOfScalar(Mod, &MODS, it.mods[0].?.kind).?][std.mem.indexOfScalar(Mod, &MODS, second.kind).?] += 1;
-        n += 1;
-    }
-    var worst: f32 = 0;
-    for (pairs, 0..) |row, f| {
-        var total: u32 = 0;
-        for (row) |c| total += c;
-        const even = @as(f32, @floatFromInt(total)) / (AFFIXES.len - 1);
-        for (row, 0..) |c, s| {
-            if (s == f) continue;
-            worst = @max(worst, @abs(@as(f32, @floatFromInt(c)) - even) / even);
+        for (it.mods) |maybe| if (maybe) |m| {
+            seen.insert(m.kind);
+            try std.testing.expect(m.kind.allows(it.kind));
+            for (AFFIXES) |a| if (a.kind == m.kind) try std.testing.expect(m.value >= a.lo and m.value <= a.hi);
+            if (m.kind == .resistance) elements.insert(m.element);
+        };
+        if (it.mods[1]) |second| {
+            two += 1;
+            try std.testing.expect(it.mods[0].?.kind.prefix() != second.kind.prefix());
         }
     }
-    std.debug.print("second affixes over {d} two-affix items: worst pair {d:.0}% off even\n", .{ n, worst * 100 });
-    try std.testing.expect(worst < 0.25);
+    try std.testing.expectEqual(AFFIXES.len, seen.count());
+    try std.testing.expectEqual(std.enums.values(damage.Element).len, elements.count());
+    var name: [NAME_MAX]u8 = undefined;
+    const gloves = Item{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 2 }, .{ .kind = .crit, .value = 3 } } };
+    try std.testing.expectEqualStrings("Bear's Leather gloves of Precision", gloves.name(&name));
+    try std.testing.expectEqualStrings("Leather gloves of Precision", (Item{ .kind = .gloves, .mods = .{ .{ .kind = .crit, .value = 3 }, null } }).name(&name));
+    std.debug.print("magic affixes: 50000 rolls, all {d} modifiers and {d} elements; {d} legal prefix/suffix pairs and exact composed names checked\n", .{ seen.count(), elements.count(), two });
+}
+
+test "rolled combat defenses and recovery modifiers reach equipment consumers" {
+    const base = attrs.Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 20 });
+    var gear = Gear{};
+    gear.slots.set(.right_hand, .{ .kind = .crossbow, .mods = .{ .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .penetration, .value = 10 } } });
+    gear.slots.set(.gloves, .{ .kind = .gloves, .mods = .{ .{ .kind = .armour, .value = 4 }, .{ .kind = .crit, .value = 5 } } });
+    gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .resistance, .value = 20, .element = .cold }, .{ .kind = .mana_regen, .value = 1 } } });
+    gear.slots.set(.belt, .{ .kind = .belt, .mods = .{ .{ .kind = .life_flask, .value = 20 }, null } });
+    const stats = gear.stats(base);
+    try std.testing.expectEqual(@as(i32, 20), stats.physical_bonus);
+    try std.testing.expectEqual(@as(i16, 20), stats.resists.get(.cold));
+    try std.testing.expectEqual(base.crit() + 5, stats.crit());
+    try std.testing.expectEqual(@as(i32, 30), gear.onHit(.ranged).penetration);
+    try std.testing.expectEqual(@as(i32, 0), gear.onHit(.melee).penetration);
+    try std.testing.expectEqual(@as(i32, 0), gear.forAttack(stats, .spell).physical_bonus);
+    try std.testing.expectEqualDeep(passives.Perks{ .mana_regen = 1, .life_flask = 20 }, gear.perks(.{}));
+    std.debug.print("rolled item effects: weapon-scoped damage and penetration, additive crit, elemental defense and two recovery consumers checked\n", .{});
 }
 
 test "every equipment base rolls white and blue and keeps its innate separate from affixes" {

@@ -11,6 +11,7 @@ const clock = @import("clock.zig");
 const pinning = @import("pinning.zig");
 const ward = @import("ward.zig");
 const heroes = @import("hero.zig");
+const menu = @import("../ui/menu.zig");
 
 const P = mathx.P;
 
@@ -178,7 +179,7 @@ pub fn row(k: Kind) Row {
 }
 
 fn heroRow(comptime c: heroes.Class) Row {
-    return .{ .name = @tagName(c), .movement = .ground, .foe_type = null, .hp = c.attrs().life(), .sight = 10, .light = 5, .blow = .{ .strike = c.strike() } };
+    return .{ .name = menu.word(c), .movement = .ground, .foe_type = null, .hp = c.attrs().life(), .sight = 10, .light = 5, .blow = .{ .strike = c.strike() } };
 }
 
 fn smaller(of: Kind, name: [:0]const u8, splits: ?Kind) Row {
@@ -217,6 +218,7 @@ pub const Actor = struct {
     clock: clock.Clock = .{},
     pin: pinning.Pin = .{},
     ward: ward.Ward = .{},
+    tactics: @import("tactics.zig").State = .{},
     /// Its turns left running from the hero.
     fright: u8 = 0,
     /// Its turns until it can sweep again.

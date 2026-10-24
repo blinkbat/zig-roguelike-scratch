@@ -20,6 +20,7 @@ const fx = @import("../gfx/fx.zig");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
 const glide = @import("glide.zig");
+const tactics = @import("tactics.zig");
 const P = mathx.P;
 const Stroke = game.presentation.Stroke;
 /// Ground drops kept free for every foe a node may hold, slime halves included, to drop on dying.
@@ -108,6 +109,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
         g.sim.pool.move(&g.sim.lv, id, b);
         g.sim.displaced.set(i);
         _ = g.pic.glideToHeld(i, b, -s.wait);
+        tactics.entered(g, id);
         g.sim.sayAt(b, "The {s} is knocked back.", .{name});
     }
     if (takes) sayTakes(g, M.TAKES, a.at, name);
@@ -147,7 +149,7 @@ const Rolled = struct {
     crit: bool = false,
     effect: items.WeaponEffect = .{},
 
-    fn physical(h: Rolled) Roll {
+    pub fn physical(h: Rolled) Roll {
         return .{ .dmg = h.blow.physical, .physical = h.blow.physical, .crit = h.crit, .effect = h.effect };
     }
 };
@@ -188,7 +190,7 @@ pub fn heroScaled(g: *game.Game, comptime act: skillbar.Act, raw: damage.Damage)
 
 pub fn blowFor(g: *const game.Game, comptime act: skillbar.Act) progress.Blow {
     comptime std.debug.assert(act.attack() != null);
-    return g.sim.growth.blowOf(g.sim.heroAttrs(), g.sim.inventory.gear, act).?;
+    return g.sim.growth.preparedBlow(g.sim.heroAttrs(), g.sim.inventory.gear, act, if (g.sim.heroBody()) |h| h.tactics.steady else 0).?;
 }
 
 pub fn basesFor(g: *const game.Game, act: skillbar.Act) skillbar.EquippedBases {
@@ -305,12 +307,21 @@ pub fn arrive(g: *game.Game, at: P) void {
 }
 
 pub fn noticeItems(g: *game.Game, at: P) void {
+    var name: [items.NAME_MAX]u8 = undefined;
     for (g.sim.ground.drops[0..g.sim.ground.n]) |drop| {
-        if (drop.at.eq(at)) g.sim.log.push(.loot, "{s} steps over {s}.", .{ g.sim.name.text(), drop.item.name() });
+        if (drop.at.eq(at)) g.sim.log.push(.loot, "{s} steps over {s}.", .{ g.sim.name.text(), drop.item.name(&name) });
     }
 }
 
 pub fn wound(g: *game.Game, id: u16, raw: Roll, comptime verb: []const u8, s: Stroke) void {
+    woundAt(g, id, raw, verb, s, null, null);
+}
+
+pub fn reaction(g: *game.Game, id: u16, raw: Roll, comptime verb: []const u8, s: Stroke, source: u16, flight: ?bow.Flight) void {
+    woundAt(g, id, raw, verb, s, source, flight);
+}
+
+fn woundAt(g: *game.Game, id: u16, raw: Roll, comptime verb: []const u8, s: Stroke, source: ?u16, flight: ?bow.Flight) void {
     const a = g.sim.pool.get(id) orelse return;
     const r = raw.against(a, &g.sim.rng);
     const kind = a.kind;
@@ -337,9 +348,15 @@ pub fn wound(g: *game.Game, id: u16, raw: Roll, comptime verb: []const u8, s: St
     g.sim.sayAs(.damage, at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.sim.name.text(), name, if (r.crit) " critically" else "", r.dmg, if (culled) CUT_DOWN else if (lethal) IT_DIES else "" });
     if (bled) |said| g.sim.sayAt(at, "The {s} {s}!", .{ name, said });
     if (stunned) sayTakes(g, turn_clock.STUNNED, at, name);
-    g.pic.strike(&g.sim, g.cloud, i, s, at, lethal, afterBlow(g, id, h));
+    const after = afterBlow(g, id, h);
+    if (source) |by| {
+        g.pic.owed[actor.Pool.slot(by)].reaction = .{ .from = s.from, .flight = flight, .hit = .{ .slot = i, .at = at, .lethal = lethal, .after = after } };
+    } else g.pic.strike(&g.sim, g.cloud, i, s, at, lethal, after);
     if (lethal) fell(g, id);
-    if (h.dmg > 0) heal(g, perks.life_on_hit + if (lethal) perks.life_on_kill else 0, s.wait);
+    if (h.dmg > 0) {
+        const recovery = perks.life_on_hit + if (lethal) perks.life_on_kill else 0;
+        if (source) |by| g.pic.owed[actor.Pool.slot(by)].reaction.?.recovery = recoverLife(g, recovery) else heal(g, recovery, s.wait);
+    }
 }
 
 fn procOn(g: *game.Game, a: *actor.Actor, kind: resilience.Kind, pc: u32) bool {
@@ -348,10 +365,15 @@ fn procOn(g: *game.Game, a: *actor.Actor, kind: resilience.Kind, pc: u32) bool {
 
 /// Shown on the hero as the blow that earned it lands.
 pub fn heal(g: *game.Game, n: i32, wait: f32) void {
-    const h = g.sim.heroActor() orelse return;
-    if (n <= 0 or h.hp >= h.max) return;
+    const after = recoverLife(g, n) orelse return;
+    g.pic.fx.settle(wait, .{ .slot = g.sim.heroSlot().?, .after = after });
+}
+
+fn recoverLife(g: *game.Game, n: i32) ?fx.After {
+    const h = g.sim.heroActor() orelse return null;
+    if (n <= 0 or h.hp >= h.max) return null;
     h.hp = @min(h.max, h.hp + n);
-    g.pic.settleHero(&g.sim, wait);
+    return g.pic.afterOf(&g.sim, g.sim.heroSlot().?);
 }
 
 fn afterBlow(g: *game.Game, id: u16, h: Hurt) fx.After {
@@ -434,6 +456,7 @@ pub fn endTurn(g: *game.Game) void {
     const h = g.sim.heroActor() orelse return;
     g.sim.unsaved = true;
     g.sim.clock.turn();
+    tactics.startTurn(g);
     skills.recover(g);
     for (&g.sim.cooldown.values) |*c| c.* -|= 1;
     defer {
@@ -561,10 +584,14 @@ fn harmTick(g: *game.Game, id: u16, dmg: i32, comptime owed: game.simulation.Tic
     } else if (comptime said.foe) |line| {
         g.sim.sayAt(at, line ++ "{s}", .{ name, h.dmg, if (h.lethal) IT_DIES else "" });
     } else if (h.lethal) g.sim.sayAt(at, "The {s} dies.", .{name});
-    @field(g.pic.owed[actor.Pool.slot(id)], @tagName(owed)) = .{ .kill = h.lethal, .after = afterBlow(g, id, h) };
+    var debt = game.presentation.Harm{ .kill = h.lethal, .after = afterBlow(g, id, h) };
     if (h.lethal) {
-        if (hero) heroDies(g) else fell(g, id);
+        if (hero) heroDies(g) else {
+            fell(g, id);
+            debt.recovery = recoverLife(g, g.sim.inventory.gear.killRecovery());
+        }
     }
+    @field(g.pic.owed[actor.Pool.slot(id)], @tagName(owed)) = debt;
     return h;
 }
 
@@ -663,6 +690,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
 fn foeStep(g: *game.Game, id: u16, from: P, d: mathx.Dir) void {
     g.pic.turnLater(id, d.delta().x);
     g.sim.pool.move(&g.sim.lv, id, from.add(d.delta()));
+    tactics.entered(g, id);
 }
 
 fn foeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
@@ -703,11 +731,14 @@ fn reach(g: *game.Game, id: u16, row: actor.Row) void {
             const dmg = bite(&g.sim.rng, g.sim.heroAttrs(), s) orelse {
                 g.sim.log.say("{s} dodges the {s}.", .{ g.sim.name.text(), row.name });
                 g.pic.owed[i].bit = .miss;
+                if (row.ranged == null) tactics.counter(g, id);
                 return;
             };
             const hero = g.sim.heroActor().?;
             const before = hero.hp;
-            const h = hurt(g, g.sim.hero, g.sim.heroAttrs().physical(dmg, &g.sim.rng));
+            var physical = g.sim.heroAttrs().physical(dmg, &g.sim.rng);
+            if (hero.tactics.guard > 0) physical = @intCast(@divTrunc(@as(i64, physical) * (100 - @import("../play/tactics.zig").Guard.reduction(hero.tactics.guard)) + 99, 100));
+            const h = hurt(g, g.sim.hero, physical);
             const lethal = h.lethal;
             g.sim.log.push(.danger, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), h.dmg });
             g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = kind }, .dmg = h.dmg, .before = before, .best = dmg == s.hit.hi } });
@@ -722,7 +753,7 @@ fn reach(g: *game.Game, id: u16, row: actor.Row) void {
             }
             const after = afterBlow(g, g.sim.hero, h);
             g.pic.owed[i].bit = if (lethal) .{ .kill = after } else .{ .hurt = after };
-            if (lethal) heroDies(g);
+            if (lethal) heroDies(g) else if (row.ranged == null) tactics.counter(g, id);
         },
         .burst => {
             g.sim.chronicle.note(.burst);

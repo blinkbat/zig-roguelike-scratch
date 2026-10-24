@@ -15,6 +15,7 @@ const knobs = @import("knobs.zig");
 const canvas = @import("canvas.zig");
 const modals = @import("modals.zig");
 const editor = @import("editor.zig");
+const text_panel = @import("text_panel.zig");
 const P = mathx.P;
 const Desk = input.Desk;
 const SMALL = font.SMALL;
@@ -40,11 +41,12 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     if (editor.button(ed, g, file.next(), "Save as", false, true, editor.keyed("Save under a new name", Desk.SAVE_AS_CAPTION))) ed.askName(.save_as);
     file.done();
     y += editor.ROW_STEP;
-    var views = editor.Across{ .y = y, .n = std.enums.values(editor.View).len + 2 };
+    var views = editor.Across{ .y = y, .n = std.enums.values(editor.View).len + 3 };
     for (std.enums.values(editor.View)) |v| {
         if (editor.button(ed, g, views.next(), menu.named(v), ed.view == v, true, editor.keyed("The map of one node, or every node and how they link", Desk.GRAPH_CAPTION))) ed.setView(v);
     }
     if (editor.button(ed, g, views.next(), "Objects", false, true, editor.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
+    if (editor.button(ed, g, views.next(), "Text", false, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
     if (editor.button(ed, g, views.next(), "Keys", false, true, editor.keyed("Every key", Desk.HELP_CAPTION))) ed.ask(.help);
     views.done();
     y += editor.ROW_STEP;

@@ -363,7 +363,7 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
             rl.drawLine(x - 7, y + 8, x + 7, y + 8, colour);
             for ([_]i32{ -5, 0, 5 }) |dx| rl.drawLine(x + dx, y - 6, x + dx, y + 8, colour);
         },
-        .warded => {
+        .warded, .guarding => {
             rl.drawCircleLines(x, y, 8, colour);
             rl.drawCircleLines(x, y, 5, colour);
         },
@@ -372,6 +372,17 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
                 const dy: i32 = @intCast(i * 5);
                 rl.drawRectangle(x - 7, y - 6 + dy, 14, 3, colour);
             }
+        },
+        .unyielding => {
+            rl.drawLine(x - 6, y - 7, x - 6, y + 6, colour);
+            rl.drawLine(x + 6, y - 7, x + 6, y + 6, colour);
+            rl.drawLine(x - 6, y + 6, x + 6, y + 6, colour);
+            rl.drawLine(x - 4, y + 3, x + 4, y - 5, colour);
+        },
+        .steady, .overwatch => {
+            rl.drawCircleLines(x, y, 6, colour);
+            rl.drawLine(x - 9, y, x + 9, y, colour);
+            rl.drawLine(x, y - 9, x, y + 9, colour);
         },
     }
 }

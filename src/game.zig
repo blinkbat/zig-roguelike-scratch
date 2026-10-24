@@ -189,7 +189,9 @@ pub const Game = struct {
     aim_by: input.Button = .x,
     aim_act: skillbar.Act = .shoot,
     aim_set: skillbar.Set = .primary,
+    target: ?u16 = null,
     mark: P = .{ .x = 0, .y = 0 },
+    barrier_start: ?P = null,
     /// Kept between inspections, so the next opens where the last left off.
     inspecting: Spot = .{ .slot = 0 },
     /// Map pixels, eased toward the hero. Nothing in the simulation reads it.
@@ -288,7 +290,7 @@ pub fn beginMapAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64)
 fn enter(g: *Game, n: usize, at: P) void {
     const w = g.sim.map.?;
     var carried = actor.Actor.of(g.sim.class.kind(), at);
-    if (g.sim.heroActor()) |h| carried = h.*;
+    if (g.sim.heroActor()) |h| { carried = h.*; carried.tactics.steady = 0; }
     g.sim.node = n;
     g.sim.outdoors = g.sim.outdoorsNow();
     const back = g.sim.visited.isSet(n);
@@ -391,7 +393,7 @@ fn freshRun(g: *Game) void {
 fn freshTurn(g: *Game) void {
     g.mouse = .{};
     toDefaults(&g.sim, &.{ "travel", "order_n", "displaced" });
-    toDefaults(g, &.{"pending"});
+    toDefaults(g, &.{ "pending", "target" });
     g.pic.freshTurn();
     g.cloud.clear();
 }
@@ -456,6 +458,7 @@ fn opensChest(g: *const Game, from: P, d: mathx.Dir) bool {
 pub fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
     const h = g.sim.heroActor() orelse return;
     const to = h.at.add(d.delta());
+    if (heroMove(g, d) != .blocked) @import("game/tactics.zig").beforeAction(g);
     switch (heroMove(g, d)) {
         .kick => {
             const w = g.sim.lv.who(to);
@@ -490,6 +493,7 @@ pub fn heroBump(g: *Game, from: P, at: P, late: f32) presentation.Stroke {
 }
 
 pub fn heroTo(g: *Game, to: P) void {
+    if (g.sim.heroActor()) |h| h.tactics.steady = 0;
     g.sim.pool.move(&g.sim.lv, g.sim.hero, to);
     combat.arrive(g, to);
     g.sim.stepped = true;
@@ -500,6 +504,7 @@ pub fn syncStats(g: *Game) void {
     const h = g.sim.heroActor() orelse return;
     h.max = g.sim.lifeMax();
     h.hp = @min(h.hp, h.max);
+    h.resists = g.sim.heroAttrs().resists;
     g.sim.mana = @min(g.sim.mana, g.sim.manaMax());
     g.pic.settleHero(&g.sim, 0);
 }
@@ -647,6 +652,7 @@ pub fn update(g: *Game, dt: f32) void {
         .aim => {
             const clicked = mouseControls.aim(g);
             if (menu.closed(&g.st)) {
+                g.barrier_start = null;
                 g.mode = .play;
             } else if (g.st.hit(CONFIRM) or clicked) {
                 skills.confirmAim(g);

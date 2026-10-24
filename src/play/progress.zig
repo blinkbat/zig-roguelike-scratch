@@ -34,25 +34,34 @@ pub const Skill = struct { act: skillbar.Act, parent: ?skillbar.Act = null, init
 pub fn skills(c: hero.Class) []const Skill {
     return switch (c) {
         .archer => &.{
-            .{ .act = .shoot, .initial = true, .at = .{ .x = 0, .y = 0 } },
-            .{ .act = .juke, .initial = true, .at = .{ .x = 1, .y = 0 } },
+            .{ .act = .shoot, .initial = true, .at = .{ .x = 1, .y = 0 } },
+            .{ .act = .juke, .initial = true, .at = .{ .x = 3, .y = 0 } },
             .{ .act = .burning_arrow, .parent = .shoot, .at = .{ .x = 0, .y = 1 } },
-            .{ .act = .glacial_shot, .parent = .shoot, .at = .{ .x = 1, .y = 1 } },
+            .{ .act = .steady_aim, .parent = .shoot, .at = .{ .x = 1, .y = 1 } },
+            .{ .act = .glacial_shot, .parent = .shoot, .at = .{ .x = 2, .y = 1 } },
+            .{ .act = .caltrops, .parent = .juke, .at = .{ .x = 3, .y = 1 } },
             .{ .act = .barbed_arrow, .parent = .burning_arrow, .at = .{ .x = 0, .y = 2 } },
-            .{ .act = .pinning_shot, .parent = .glacial_shot, .at = .{ .x = 1, .y = 2 } },
+            .{ .act = .overwatch, .parent = .steady_aim, .at = .{ .x = 1, .y = 2 } },
+            .{ .act = .pinning_shot, .parent = .glacial_shot, .at = .{ .x = 2, .y = 2 } },
         },
         .wizard => &.{
             .{ .act = .spark, .initial = true, .at = .{ .x = 0, .y = 0 } },
-            .{ .act = .blink, .initial = true, .at = .{ .x = 1, .y = 0 } },
+            .{ .act = .blink, .initial = true, .at = .{ .x = 3, .y = 0 } },
             .{ .act = .fireball, .parent = .spark, .at = .{ .x = 0, .y = 1 } },
-            .{ .act = .frost_nova, .parent = .blink, .at = .{ .x = 1, .y = 1 } },
-            .{ .act = .chain_lightning, .parent = .fireball, .at = .{ .x = 0, .y = 2 } },
-            .{ .act = .mana_shield, .parent = .frost_nova, .at = .{ .x = 1, .y = 2 } },
+            .{ .act = .chain_lightning, .parent = .spark, .at = .{ .x = 1, .y = 1 } },
+            .{ .act = .frost_nova, .parent = .blink, .at = .{ .x = 2, .y = 1 } },
+            .{ .act = .mana_shield, .parent = .blink, .at = .{ .x = 3, .y = 1 } },
+            .{ .act = .combustion, .parent = .fireball, .at = .{ .x = 0, .y = 2 } },
+            .{ .act = .gravity_well, .parent = .frost_nova, .at = .{ .x = 2, .y = 2 } },
+            .{ .act = .arcane_barrier, .parent = .mana_shield, .at = .{ .x = 3, .y = 2 } },
         },
         .knight => &.{
-            .{ .act = .charge, .initial = true, .at = .{ .x = 0, .y = 0 } },
-            .{ .act = .shield_bash, .parent = .charge, .at = .{ .x = 0, .y = 1 } },
+            .{ .act = .charge, .initial = true, .at = .{ .x = 2, .y = 0 } },
             .{ .act = .cleave, .initial = true, .at = .{ .x = 1, .y = 0 } },
+            .{ .act = .guard, .parent = .cleave, .at = .{ .x = 0, .y = 1 } },
+            .{ .act = .shield_bash, .parent = .charge, .at = .{ .x = 2, .y = 1 } },
+            .{ .act = .unyielding, .parent = .guard, .at = .{ .x = 0, .y = 2 } },
+            .{ .act = .whirlwind, .parent = .shield_bash, .at = .{ .x = 2, .y = 2 } },
         },
     };
 }
@@ -75,7 +84,12 @@ comptime {
 }
 
 pub const Hit = struct { physical: damage.Span, element: ?damage.Span, style: attrs.Style };
-pub const Blow = struct { by: attrs.Attrs, style: attrs.Style, bases: skillbar.EquippedBases };
+pub const Blow = struct {
+    by: attrs.Attrs, style: attrs.Style, bases: skillbar.EquippedBases,
+    pub fn hit(self: Blow, act: skillbar.Act) Hit {
+        return .{ .physical = self.by.span(self.style, self.bases.physical()), .element = if (self.bases.element) |e| self.by.elementSpan(self.style, e, act.element().?) else null, .style = self.style };
+    }
+};
 
 pub const State = struct {
     level: u16 = 1,
@@ -193,7 +207,21 @@ pub const State = struct {
     /// Its blow's non-critical spans with `gear`, as live damage rolls them.
     pub fn hit(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act) ?Hit {
         const b = self.blowOf(equipped, gear, act) orelse return null;
-        return .{ .physical = b.by.span(b.style, b.bases.physical()), .element = if (b.bases.element) |e| b.by.elementSpan(b.style, e, act.element().?) else null, .style = b.style };
+        return b.hit(act);
+    }
+
+    pub fn preparedBlow(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act, steady: u8) ?Blow {
+        var out = self.blowOf(equipped, gear, act) orelse return null;
+        if (steady > 0 and (act.isArrow() or act == .overwatch)) {
+            const t = @import("tactics.zig");
+            out.by.damage_bonus.getPtr(out.style).* += t.SteadyAim.bonus(steady);
+            out.by.crit_bonus += t.SteadyAim.critical(steady);
+        }
+        return out;
+    }
+
+    pub fn preparedHit(self: *const State, equipped: attrs.Attrs, gear: items.Gear, act: skillbar.Act, steady: u8) ?Hit {
+        return (self.preparedBlow(equipped, gear, act, steady) orelse return null).hit(act);
     }
 
     pub fn cost(self: *const State, act: skillbar.Act) i32 {
@@ -217,6 +245,23 @@ pub const State = struct {
         if (turns == 0) w.writeAll("no turn cost") catch {} else w.print("{d} turn{s}", .{ turns, mathx.plural(turns) }) catch {};
         const cd = self.cooldown(act);
         if (cd > 0) w.print(", {d}-turn cooldown", .{cd}) catch {};
+    }
+
+    pub fn writeRank(self: *const State, act: skillbar.Act, w: anytype) void {
+        const t = @import("tactics.zig");
+        const rank = @max(1, self.ranks.get(act));
+        switch (act) {
+            .caltrops => {
+                w.print("Patch: {d} turns; pin: {d} turn(s); ", .{ t.Caltrops.duration(rank), t.Caltrops.pins(rank) }) catch {};
+                if (t.Caltrops.bleed(rank) == 0) w.writeAll("no bleed.") catch {} else w.print("bleed: {d} per turn.", .{t.Caltrops.bleed(rank)}) catch {};
+            },
+            .gravity_well => w.print("Pull: {d} cell(s); pin: {d} turn(s).", .{ t.GravityWell.pulls(rank), t.GravityWell.pins(rank) }) catch {},
+            .arcane_barrier => w.print("Wall: up to {d} cells, {d} turns.", .{ t.ArcaneBarrier.length(rank), t.ArcaneBarrier.duration(rank) }) catch {},
+            .guard => w.print("{d}% less physical attack damage.", .{t.Guard.reduction(rank)}) catch {},
+            .unyielding => w.print("{d}% counter chance; {d} mana per turn.", .{ t.Unyielding.chance(rank), t.Unyielding.DRAIN }) catch {},
+            .steady_aim => w.print("Next arrow: +{d}% damage, +{d}% critical chance.", .{ t.SteadyAim.bonus(rank), t.SteadyAim.critical(rank) }) catch {},
+            else => {},
+        }
     }
 
     pub fn kit(self: *const State, c: hero.Class, out: *skillbar.KitBuf) []const skillbar.Act {

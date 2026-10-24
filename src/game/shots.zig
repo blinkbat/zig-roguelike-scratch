@@ -299,6 +299,7 @@ pub fn shoot(g: *game.Game) !void {
 }
 
 pub fn shootUi(g: *game.Game) !void {
+    try shootTactics(g);
     try std.fs.cwd().makePath(SHOTS_DIR);
     try book.verifyCards(&g.face);
     try book.verifyStats(&g.face);
@@ -308,6 +309,50 @@ pub fn shootUi(g: *game.Game) !void {
     try shootLevelUp(g);
     try shootMouse(g);
     try app.shootHeroes(g);
+}
+
+fn shootTactics(g: *game.Game) !void {
+    const previous = g.screen;
+    defer g.screen = previous;
+    const target = try target720(g);
+    defer rl.unloadRenderTexture(target);
+    try std.fs.cwd().makePath(SHOTS_DIR ++ "/tactics");
+    inline for (.{
+        .{ heroes.Class.archer, &[_]skillbar.Act{ .caltrops, .overwatch, .steady_aim } },
+        .{ heroes.Class.wizard, &[_]skillbar.Act{ .gravity_well, .combustion, .arcane_barrier } },
+        .{ heroes.Class.knight, &[_]skillbar.Act{ .guard, .whirlwind, .unyielding } },
+    }) |group| {
+        game.harness.heroArena(g, group[0], .{ .x = 20, .y = 20 }, &.{});
+        g.sim.growth.active_points = 10;
+        game.character.openCharacter(g);
+        g.character.choose(.skills);
+        inline for (group[1]) |act| {
+            for (progress.skills(group[0]), 0..) |s, i| if (s.act == act) { g.character.cursor = i; };
+            g.sim.growth.ranks.set(act, 1);
+            try capture(g, target, SHOTS_DIR ++ "/tactics/tree-" ++ @tagName(act) ++ ".png");
+        }
+    }
+    game.harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    skills.useSkill(g, .{ .act = .arcane_barrier, .by = .x });
+    g.mark = .{ .x = 23, .y = 19 };
+    skills.confirmAim(g);
+    g.mark = .{ .x = 23, .y = 21 };
+    try capture(g, target, SHOTS_DIR ++ "/tactics/barrier-preview.png");
+    skills.confirmAim(g);
+    game.harness.drawnOut(g);
+    try capture(g, target, SHOTS_DIR ++ "/tactics/barrier-raised.png");
+    game.harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
+    skills.useSkill(g, .{ .act = .caltrops, .by = .x });
+    g.mark = .{ .x = 23, .y = 20 };
+    try capture(g, target, SHOTS_DIR ++ "/tactics/caltrops-preview.png");
+    skills.confirmAim(g);
+    game.harness.drawnOut(g);
+    try capture(g, target, SHOTS_DIR ++ "/tactics/caltrops-laid.png");
+    _ = g.sim.inventory.add(.{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 } } });
+    game.character.openCharacter(g);
+    g.character.choose(.inventory);
+    g.character.cursor = 0;
+    try capture(g, target, SHOTS_DIR ++ "/tactics/item-prefix-suffix.png");
 }
 
 fn shootMouse(g: *game.Game) !void {

@@ -17,6 +17,7 @@ const knobs = @import("knobs.zig");
 const canvas = @import("canvas.zig");
 const modals = @import("modals.zig");
 const panel = @import("panel.zig");
+const text_panel = @import("text_panel.zig");
 
 const P = mathx.P;
 const Desk = input.Desk;
@@ -365,7 +366,7 @@ pub const Ink = enum {
 pub const INKS = std.enums.values(Ink);
 /// Asked for, and done once any unsaved changes are saved or let go.
 pub const Pending = enum { leave, quit, open, new };
-pub const Modal = enum { none, confirm, name, open, help, objects };
+pub const Modal = enum { none, confirm, name, open, help, objects, text };
 const Naming = enum { new, save_as };
 
 fn Text(comptime N: usize) type {
@@ -532,6 +533,7 @@ pub const Editor = struct {
     /// The rename field consumes its closing click; newly exposed buttons must not receive it.
     renamed: bool = false,
     field: Field = .{},
+    words: text_panel.State = .{},
     listing: listing.Listing = .{},
     listed_top: usize = 0,
     listed_at: usize = 0,
@@ -556,6 +558,7 @@ pub const Editor = struct {
 
     /// Needs the GL context that drew its thumbnails.
     pub fn destroy(ed: *Editor) void {
+        ed.words.deinit(ed.alloc);
         for (ed.thumbs) |t| {
             if (t) |x| rl.unloadTexture(x);
         }
@@ -638,7 +641,7 @@ pub const Editor = struct {
         ed.brush = mathx.nudge(ed.brush, std.math.sign(by), BRUSHES.len);
     }
 
-    fn say(ed: *Editor, comptime fmt: []const u8, args: anytype) void {
+    pub fn say(ed: *Editor, comptime fmt: []const u8, args: anytype) void {
         ed.said.say(fmt, args);
         ed.said_t = SAY_S;
     }
@@ -1152,7 +1155,9 @@ const vec = raster.vec;
 /// Caller updates `desk` and `g.screen` first; `closing` is the window close request.
 pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
     ed.action = .none;
-    if (closing) ed.request(.quit);
+    if (closing) {
+        if (ed.modal == .text) text_panel.requestClose(ed, true) else ed.request(.quit);
+    }
     const c = Editor.canvas(g);
     if (ed.recentre) {
         ed.preview();
@@ -1301,6 +1306,7 @@ pub fn escape(ed: *Editor) void {
 }
 
 pub fn modalKeys(ed: *Editor) void {
+    if (ed.modal == .text) return text_panel.keys(ed);
     const d = &ed.desk;
     if (d.erase_hit) {
         ed.modal = .none;
@@ -1329,7 +1335,7 @@ pub fn modalKeys(ed: *Editor) void {
             if (d.nav != 0) ed.seen_at = mathx.wrap(ed.seen_at, d.nav, SEEN.len);
             if (d.enter) modals.fightSeen(ed);
         },
-        .help, .none => {},
+        .help, .none, .text => {},
     }
 }
 
@@ -2228,6 +2234,11 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
         ed.modal = modal;
         try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-" ++ @tagName(modal) ++ ".png", .{dir}));
     }
+    try text_panel.pose(ed);
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text.png", .{dir}));
+    ed.words.author = .you;
+    text_panel.requestClose(ed, false);
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text-unsaved.png", .{dir}));
 }
 
 fn seenIndex(want: Seen) usize {

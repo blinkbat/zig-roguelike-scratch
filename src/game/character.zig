@@ -140,7 +140,7 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     const growth = if (now) &g.sim.growth else &g.pic.growth_shown;
     const life = g.pic.lifeShown(&g.sim);
     var v = book.View{ .class = g.sim.class, .name = g.sim.name.text(), .inventory = &g.sim.inventory, .growth = growth, .base = growth.attributes(g.sim.class), .gold = if (now) g.sim.gold else g.pic.gold_shown, .nearby = shownNearby(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.sim.lv.at(g.character.loot_at) == .chest_open, .life = .{ .now = life.hp, .max = life.max }, .mana = .{ .now = g.pic.manaShown(&g.sim), .max = g.sim.manaMax() } };
-    if (g.sim.heroActor()) |h| v.resists = h.resists;
+    if (g.sim.heroActor()) |h| { v.resists = h.resists; v.steady = h.tactics.steady; }
     if (g.pic.heroShown(&g.sim)) |h| for (std.enums.values(resilience.Kind)) |k| v.status_resist.set(k, h.resilience.standing(k, actor.innateResist(h.kind, k)));
     return v;
 }
@@ -161,6 +161,7 @@ pub fn openLoot(g: *game.Game, at: P) void {
     const h = g.sim.heroActor() orelse return;
     if (chestReached(g, h.at, at)) {
         if (!game.combat.openChest(g, at)) return;
+        @import("tactics.zig").beforeAction(g);
         g.pic.turnToward(g.sim.hero, at.x - h.at.x);
         g.mode = .play;
         game.holdWalk(g);
@@ -179,12 +180,13 @@ fn itemFailed(g: *game.Game, err: items.Failure) void {
 }
 
 fn takeDrop(g: *game.Game, i: usize) bool {
+    var name: [items.NAME_MAX]u8 = undefined;
     const item = g.sim.ground.drops[i].item;
     if (!g.sim.ground.take(i, &g.sim.inventory)) {
         itemFailed(g, error.Full);
         return false;
     }
-    g.sim.log.push(.loot, "Picked up {s}.", .{item.name()});
+    g.sim.log.push(.loot, "Picked up {s}.", .{item.name(&name)});
     return true;
 }
 
@@ -230,6 +232,7 @@ fn drawnFor(g: *game.Game) bool {
 
 /// Item commands spend the turn, and wait out door travel.
 fn itemCommand(g: *game.Game, command: book.Command) void {
+    var name: [items.NAME_MAX]u8 = undefined;
     if (!drawnFor(g)) return;
     if (g.sim.travel != null) return notYet(g);
     const h = g.sim.heroActor() orelse return;
@@ -241,7 +244,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
                 itemFailed(g, err);
                 return;
             };
-            g.sim.log.push(.loot, "Equipped {s}: {s}.", .{ g.sim.inventory.gear.slots.get(e.slot).?.name(), e.slot.name() });
+            g.sim.log.push(.loot, "Equipped {s}: {s}.", .{ g.sim.inventory.gear.slots.get(e.slot).?.name(&name), e.slot.name() });
         },
         .unequip => |s| {
             g.sim.inventory.unequip(s, base) catch |err| {
@@ -254,7 +257,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             if (i >= g.sim.inventory.n) return;
             if (!game.combat.groundRoom(g)) return;
             game.combat.dropItem(g, .{ .item = g.sim.inventory.bag[i], .at = h.at });
-            g.sim.log.push(.loot, "Dropped {s}.", .{g.sim.inventory.remove(i).name()});
+            g.sim.log.push(.loot, "Dropped {s}.", .{g.sim.inventory.remove(i).name(&name)});
         },
         .pickup => |i| {
             if (i >= g.sim.ground.n or !dropReached(g, h.at, g.sim.ground.drops[i])) return;
@@ -286,6 +289,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
     g.character.destination_index = 0;
     if (command == .travel or directEmptied(g)) g.mode = .play;
     game.holdWalk(g);
+    @import("tactics.zig").beforeAction(g);
     game.combat.endTurn(g);
 }
 

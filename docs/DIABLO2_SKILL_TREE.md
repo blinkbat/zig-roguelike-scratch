@@ -155,7 +155,7 @@ second allocation policy. [trees.zig](../src/ui/trees.zig) draws the panels, whi
 
 | Concept | Diablo II reference | Current prototype treatment |
 |---|---|---|
-| Scope | Three discipline trees per class | One active tree per class, with 6 Archer, 6 Wizard, or 3 Knight skills |
+| Scope | Three discipline trees per class | One active tree per class, with 9 Archer, 9 Wizard, or 6 Knight skills |
 | Investment | Repeated points in a skill | `progress.RANKS` is 3; display its actual value |
 | Progression budget | Skill points earned through progression | Each level grants one active and one passive point; the pools stay distinct |
 | Unlock path | Prerequisites and character-level tiers | At most one parent per active node; parent must be learned; no character-level gate |
@@ -170,12 +170,13 @@ The current active graphs are:
 
 | Class | Starting nodes | Connections |
 |---|---|---|
-| Archer | Shoot, Juke | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Glacial Shot -> Pinning Shot; Juke is independent |
-| Wizard | Spark, Blink | Spark -> Fireball -> Chain Lightning; Blink -> Frost Nova -> Mana Shield |
-| Knight | Charge, Cleave | Charge -> Shield Bash; Cleave is independent |
+| Archer | Shoot, Juke | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot; Juke -> Caltrops |
+| Wizard | Spark, Blink | Spark -> Fireball -> Combustion; Spark -> Chain Lightning; Blink -> Frost Nova -> Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
+| Knight | Charge, Cleave | Charge -> Shield Bash -> Whirlwind; Cleave -> Guard -> Unyielding |
 
-Archer and Wizard use two columns and three logical rows. Knight uses two starting roots
-with Shield Bash below Charge. Preserve `Skill.at` rather than sorting by name, unlock state, or rank.
+The active trees use up to four columns and three logical rows, placing preparation and
+simple defenses before reactive stances and battlefield control. Preserve `Skill.at`
+rather than sorting by name, unlock state, or rank.
 Independent roots should remain visibly independent. Learning a node must not cause the
 other nodes to move. The tree needs no scrolling at its present size.
 
@@ -226,8 +227,7 @@ current number of skills, existing character book, native font, and simple artwo
 2. Use the left region as a graph canvas and the right region as a persistent inspection
    panel. This gives controller focus the same information a hover tooltip supplies.
 3. Center the authored graph within its region. Reserve enough room around its edges for
-   names, rank plaques, arrow bends, and the focus border. Avoid stretching the Knight's
-   three nodes to fill every available corner.
+   names, rank plaques, arrow bends, and the focus border. Keep the Knight's smaller graph compact.
 4. Draw connections first, then sockets, then focus, then symbols, then rank plaques, so a
    plaque sits over the focus border's corner.
    Lines should end outside tiles and text; they should not run through an icon.
@@ -294,7 +294,8 @@ Use `Act.describe` with combined equipment and passive perks for behavior (`Gear
 the tree, `Simulation.heroPerks` in the HUD). Mana and cooldown must come from the hero's
 progression state through `State.writeUsage`. Show turn cost in turns, not seconds.
 Where actual damage ranges are displayed, share gameplay's attribute/weapon/rank
-calculation through `State.blowOf` (and `State.hit` for its spans); do not label raw base
+calculation through `State.preparedBlow` (and `State.preparedHit` for its spans), passing
+the hero's current Steady Aim preparation; do not label raw base
 damage as the hero's final result. Show actual physical/elemental ranges before
 critical hits and defenses. When a rank improves average damage but its integer
 range endpoints stay unchanged, show the old/new `Rank damage bonus` explicitly.

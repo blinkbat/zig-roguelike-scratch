@@ -25,6 +25,7 @@ const flask = @import("flask.zig");
 const resilience = @import("resilience.zig");
 const passives = @import("passives.zig");
 const menu = @import("../ui/menu.zig");
+const tactics = @import("tactics.zig");
 
 const Button = input.Button;
 
@@ -66,13 +67,22 @@ pub const Act = enum {
     chain_lightning,
     mana_shield,
     charge,
+    caltrops,
+    overwatch,
+    steady_aim,
+    gravity_well,
+    combustion,
+    arcane_barrier,
+    guard,
+    whirlwind,
+    unyielding,
     life_flask,
     mana_flask,
 
     pub fn name(a: Act) [:0]const u8 {
         return switch (a) {
             .secondary => "Activate " ++ comptime Set.secondary.name(),
-            inline else => |t| comptime menu.titled(@tagName(t)),
+            inline else => |t| comptime menu.titleOf(t),
         };
     }
 
@@ -117,7 +127,7 @@ pub const Act = enum {
     }
 
     /// Bow targets a lit line; leap a landing; swing an adjacent tile; rush a body or empty landing down a running line.
-    pub const Reticle = enum { bow, leap, swing, rush };
+    pub const Reticle = enum { bow, leap, swing, rush, ground };
 
     pub fn reticle(a: Act) ?Reticle {
         return switch (a) {
@@ -131,11 +141,17 @@ pub const Act = enum {
 
     /// An arrow is ranged, a bolt or an unaimed element a spell, a swing or a rush melee.
     pub fn attack(a: Act) ?attrs.Attack {
+        switch (a) {
+            .overwatch => return .ranged,
+            .whirlwind => return .melee,
+            else => {},
+        }
         return switch (a) {
             inline else => |t| comptime if (t.isArrow()) .ranged else if (t.bolt() != null) .spell else if (reticle(t)) |r| switch (r) {
                 .bow => unreachable,
                 .swing, .rush => .melee,
                 .leap => null,
+                .ground => if (has(t, "ELEMENT")) .spell else null,
             } else if (has(t, "ELEMENT")) .spell else null,
         };
     }
@@ -177,7 +193,7 @@ pub const Act = enum {
             inline else => |t| if (comptime reticle(t)) |r| switch (r) {
                 .bow => bow.RANGE,
                 .swing => MELEE_REACH,
-                .leap, .rush => module(t).?.RANGE,
+                .leap, .rush, .ground => module(t).?.RANGE,
             } else 0,
         };
     }
@@ -193,6 +209,7 @@ pub const Act = enum {
             inline else => |t| if (comptime reticle(t)) |r| switch (r) {
                 .bow => bow.aimable(lv, from, to),
                 .leap, .swing, .rush => module(t).?.aimable(lv, from, to),
+                .ground => grid.Level.inside(to) and mathx.dist(from, to) <= t.reach() and lv.walkable(to) and lv.isLit(to) and grid.litLine(lv, from, to),
             } else unreachable,
         };
     }
@@ -342,6 +359,15 @@ const SKILLS = std.EnumArray(Act, Skill).init(.{
     .chain_lightning = .{ .module = chain, .reticle = .bow },
     .mana_shield = .{ .module = ward },
     .charge = .{ .module = charge, .reticle = .rush },
+    .caltrops = .{ .module = tactics.Caltrops, .reticle = .ground },
+    .overwatch = .{ .module = tactics.Overwatch, .reticle = .ground },
+    .steady_aim = .{ .module = tactics.SteadyAim },
+    .gravity_well = .{ .module = tactics.GravityWell, .reticle = .ground },
+    .combustion = .{ .module = tactics.Combustion, .reticle = .ground },
+    .arcane_barrier = .{ .module = tactics.ArcaneBarrier, .reticle = .ground },
+    .guard = .{ .module = tactics.Guard },
+    .whirlwind = .{ .module = tactics.Whirlwind },
+    .unyielding = .{ .module = tactics.Unyielding },
     .life_flask = .{ .module = flask.Life },
     .mana_flask = .{ .module = flask.Mana },
 });
@@ -349,9 +375,9 @@ const SKILLS = std.EnumArray(Act, Skill).init(.{
 /// The skills a class may bind, in the bind picker's order.
 pub fn kit(c: hero.Class) []const Act {
     return switch (c) {
-        .archer => &.{ .shoot, .wait, .secondary, .juke, .burning_arrow, .glacial_shot, .pinning_shot, .barbed_arrow, .life_flask, .mana_flask },
-        .wizard => &.{ .spark, .wait, .secondary, .blink, .fireball, .chain_lightning, .frost_nova, .mana_shield, .life_flask, .mana_flask },
-        .knight => &.{ .cleave, .wait, .secondary, .shield_bash, .charge, .life_flask, .mana_flask },
+        .archer => &.{ .shoot, .wait, .secondary, .juke, .steady_aim, .burning_arrow, .glacial_shot, .barbed_arrow, .caltrops, .pinning_shot, .overwatch, .life_flask, .mana_flask },
+        .wizard => &.{ .spark, .wait, .secondary, .blink, .fireball, .frost_nova, .mana_shield, .chain_lightning, .combustion, .gravity_well, .arcane_barrier, .life_flask, .mana_flask },
+        .knight => &.{ .cleave, .wait, .secondary, .charge, .guard, .shield_bash, .whirlwind, .unyielding, .life_flask, .mana_flask },
     };
 }
 
@@ -533,6 +559,15 @@ test "arrows scale as ranged, bolts and novas as spells, swings and rushes as me
         .chain_lightning = .spell,
         .mana_shield = null,
         .charge = .melee,
+        .caltrops = null,
+        .overwatch = .ranged,
+        .steady_aim = null,
+        .gravity_well = null,
+        .combustion = .spell,
+        .arcane_barrier = null,
+        .guard = null,
+        .whirlwind = .melee,
+        .unyielding = null,
         .life_flask = null,
         .mana_flask = null,
     });

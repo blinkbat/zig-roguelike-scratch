@@ -20,7 +20,7 @@ const book = @import("book.zig");
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
 pub const View = struct { cursor: usize = 0, zoom: f32 = ZOOM_MIN, pan: rl.Vector2 = .{ .x = 0, .y = 0 } };
-pub const Loadout = struct { stats: attrs.Attrs, gear: items.Gear };
+pub const Loadout = struct { stats: attrs.Attrs, gear: items.Gear, steady: u8 = 0 };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
 pub const ZOOM_START: f32 = 2.4;
@@ -67,7 +67,7 @@ const HINT_LABEL_GAP: i32 = 2;
 const TITLE_Y: i32 = CANVAS_TOP + 18;
 const SKILL_SIZE: i32 = 56;
 const SKILL_MID_X: i32 = 372;
-const SKILL_STEP_X: i32 = 248;
+const SKILL_STEP_X: i32 = 140;
 const SKILL_TOP: i32 = CANVAS_TOP + 86;
 const SKILL_STEP_Y: i32 = 126;
 /// A diagram of two rows or fewer: its first row's middle and the step between rows.
@@ -342,13 +342,13 @@ fn drawAction(face: *const font.Face, label: [:0]const u8, enabled: bool) void {
 const Hit = progress.Hit;
 
 fn skillHit(growth: *const progress.State, act: skillbar.Act, loadout: Loadout) ?Hit {
-    return growth.hit(loadout.stats, loadout.gear, act);
+    return growth.preparedHit(loadout.stats, loadout.gear, act, loadout.steady);
 }
 
 fn hitText(act: skillbar.Act, hit: Hit, text: *menu.Note(128)) [:0]const u8 {
     if (hit.element) |e| {
         if (hit.physical.hi > 0) {
-            text.say(damage.MIXED_FMT, .{ hit.physical.lo, hit.physical.hi, e.lo, e.hi, @tagName(act.element().?) });
+            text.say(damage.MIXED_FMT, .{ hit.physical.lo, hit.physical.hi, e.lo, e.hi, menu.word(act.element().?) });
         } else {
             text.say(damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi });
         }
@@ -382,6 +382,9 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     growth.writeUsage(s.act, text.writer());
     text.buf[0] = std.ascii.toUpper(text.buf[0]);
     top = paragraph(face, text.text(), x, top, TEXT_W, look.TEXT);
+    text.clear();
+    growth.writeRank(s.act, text.writer());
+    if (text.n > 0) top = paragraph(face, text.text(), x, top, TEXT_W, look.TEXT);
     const maximum = growth.maxed(s.act);
     var next = growth.*;
     if (!maximum) next.ranks.getPtr(s.act).* += 1;
@@ -391,6 +394,9 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
         face.draw(text.text(), x, top, font.SMALL, OWNED);
         top += CAPTION_STEP;
         const changes = top;
+        text.clear();
+        next.writeRank(s.act, text.writer());
+        if (text.n > 0) top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
         if (next.damageBonus(s.act) != growth.damageBonus(s.act)) {
             const next_hit = skillHit(&next, s.act, loadout).?;
             if (std.meta.eql(hit.?, next_hit)) {

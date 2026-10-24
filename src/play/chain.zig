@@ -37,7 +37,7 @@ pub fn chain(lv: *const grid.Level, pool: *actor.Pool, first: u16) Chain {
         var near = bow.Nearest{ .from = from, .reach = JUMP_RANGE };
         for (pool.slice(), 0..) |a, i| {
             if (!a.alive or !a.foe() or c.has(actor.Pool.idOf(i))) continue;
-            if (lv.isLit(a.at) and grid.clearLine(lv, from, a.at)) near.offer(a.at);
+            if (lv.isLit(a.at) and grid.projectileLine(lv, from, a.at)) near.offer(a.at);
         }
         c.push(lv.who(near.best orelse break));
     }
@@ -55,6 +55,10 @@ test "chain lightning leaps to the nearest lit foe in a clear line, never twice 
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 25, .y = 10 }));
     var c = chain(&lv, &pool, first);
     try std.testing.expectEqualSlices(u16, &.{ first, near, far }, c.slice());
+    lv.barrier[grid.Level.idx(.{ .x = 17, .y = 10 })] = 3;
+    lv.barrier[grid.Level.idx(.{ .x = 17, .y = 11 })] = 3;
+    try std.testing.expectEqualSlices(u16, &.{ first, near }, chain(&lv, &pool, first).slice());
+    lv.barrier = @splat(0);
     lv.set(.{ .x = 17, .y = 10 }, .wall);
     lv.set(.{ .x = 17, .y = 11 }, .wall);
     c = chain(&lv, &pool, first);

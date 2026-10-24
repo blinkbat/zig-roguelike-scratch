@@ -90,6 +90,7 @@ pub const Owed = struct {
     bled: ?Harm = null,
     worn: ?fx.After = null,
     swept: ?Swept = null,
+    reaction: ?struct { from: P, flight: ?bow.Flight, hit: Swipe, recovery: ?fx.After = null } = null,
 
     pub fn any(o: *const Owed) bool {
         inline for (std.meta.fields(Owed)) |f| {
@@ -110,7 +111,7 @@ comptime {
     std.debug.assert(fx.DUE >= actor.MAX * (std.meta.fields(Owed).len + actor.SWEEP_CELLS) + @max(2, chain.JUMPS));
 }
 
-pub const Harm = struct { kill: bool, after: fx.After };
+pub const Harm = struct { kill: bool, after: fx.After, recovery: ?fx.After = null };
 
 /// `in` is set once the turn it was taken in has its stagger.
 pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
@@ -414,7 +415,7 @@ pub const Presentation = struct {
     /// Completion time; unplaced bodies wait for the hero and knockback slide.
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, id: u16, late: f32, start: f32, next: *f32) f32 {
         comptime for (std.enums.values(std.meta.FieldEnum(Owed))) |t| switch (t) {
-            .bit, .arrow, .gassed, .burned, .bled, .worn, .swept => {},
+            .bit, .arrow, .gassed, .burned, .bled, .worn, .swept, .reaction => {},
         };
         const i = actor.Pool.slot(id);
         const a = sim.pool.items[i];
@@ -464,7 +465,24 @@ pub const Presentation = struct {
             .miss => {},
         };
         if (owed.swept) |*sw| for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h.slot, .{ .from = a.at, .wait = hits }, h.at, h.lethal, h.after);
+        if (owed.reaction) |r| {
+            const release = if (moved) lands else hits;
+            var impact = release + game.BUMP_LANDS;
+            if (r.flight) |f| {
+                const shot_ = Shot{ .from = r.from, .flight = f, .act = .overwatch, .t = -release };
+                self.shot = shot_;
+                impact = release + shot_.lands();
+                self.holdUntil(release + shot_.ends());
+            }
+            self.strike(sim, gas, r.hit.slot, .{ .from = r.from, .wait = impact }, r.hit.at, r.hit.lethal, r.hit.after);
+            if (r.recovery) |after| self.fx.settle(impact, .{ .slot = hero, .after = after });
+            lands = @max(lands, impact);
+            next.* = @max(next.*, impact + late + game.STAGGER_S);
+        }
         lands = @max(lands, self.fx.landsIn(i));
+        inline for (.{ "gassed", "burned", "bled" }) |field| if (@field(owed, field)) |h| {
+            if (h.recovery != null) lands = @max(lands, @max(0, next.* - late));
+        };
         if (owed.worn) |c| self.fx.settle(lands, .{ .slot = i, .after = c });
         const mark: ?[2]f32 = if (shown) mathx.centre(a.at) else null;
         const drip: ?fx.Drip = if (mark) |m| .{ .at = m, .matter = fx.matterOf(a.kind) } else null;
@@ -487,6 +505,7 @@ pub const Presentation = struct {
     }
 
     fn harmShown(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, at: P, lands: f32, h: Harm, fire: bool, in_view: bool, s: fx.Sting) void {
+        if (h.recovery) |after| self.fx.settle(lands, .{ .slot = sim.heroSlot().?, .after = after });
         if (h.kill) {
             self.strike(sim, gas, s.slot, .{ .from = at, .wait = lands, .fire = fire }, at, true, h.after);
         } else if (in_view) {

@@ -553,6 +553,7 @@ pub fn drawMap(g: *game.Game) void {
     g.pic.fx.draw(o[0], o[1], game.CELL_F);
     g.light.drawMap(-c.x, -c.y, game.CELL);
     g.cinema.drawAir(g.light, o, game.CELL_F, g.screen);
+    drawTacticalGround(g, c, lo, hi);
     const level_up_at: ?[2]f32 = if (g.sim.heroSlot()) |i| (if (g.pic.drawnAt(&g.sim, i)) |v| game.middle(v) else null) else null;
     if (level_up_at) |at| g.pic.fx.level_up.drawBeam(at, o[0], o[1], game.CELL_F);
 
@@ -574,6 +575,23 @@ pub fn drawMap(g: *game.Game) void {
             }
         }
         switch (g.aim_act) {
+            inline .caltrops, .gravity_well, .combustion => |a| {
+                const area = skillbar.Act.skill(a).area(&g.sim.lv, g.mark);
+                if (skills.aimable(g, from, g.mark)) for (area.slice()) |p| {
+                    if (g.sim.lv.isLit(p)) fillCell(c, p, look.AIM_PATH);
+                };
+            },
+            .arcane_barrier => {
+                if (@import("../play/tactics.zig").wall(&g.sim.lv, from, g.barrier_start orelse g.mark, g.mark, g.sim.growth.ranks.get(.arcane_barrier))) |area| {
+                    for (area.slice()) |p| fillCell(c, p, look.AIM_PATH);
+                }
+            },
+            .overwatch => if (mathx.toward(from, g.mark)) |d| {
+                var covered = grid.Cells.around(from, bow.RANGE);
+                while (covered.next()) |p| {
+                    if (@import("../play/tactics.zig").covered(from, d, p) and bow.aimable(&g.sim.lv, from, p)) fillCell(c, p, look.AIM_PATH);
+                }
+            },
             inline else => |a| if (comptime a.sweeps()) {
                 const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, g.mark);
                 for (arc.slice()) |p| fillCell(c, p, look.AIM_PATH);
@@ -599,6 +617,7 @@ pub fn drawMap(g: *game.Game) void {
                 .chilled => g.pic.fx.drawChilled(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
                 .pinned => g.pic.fx.drawPinned(x, y, game.CELL_F, b.shine.tint(s.ink())),
                 .warded => g.pic.fx.drawWarded(x, y, game.CELL_F, b.shine.tint(s.ink())),
+                .guarding, .unyielding, .steady, .overwatch => {},
                 .resistant => {},
             }
         }
@@ -609,7 +628,7 @@ pub fn drawMap(g: *game.Game) void {
     if (level_up_at) |at| g.pic.fx.level_up.drawSparks(at, o[0], o[1], game.CELL_F);
     if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), &g.light.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
 
-    if (g.pic.shot) |s| drawShot(g, s, o);
+    if (g.pic.shot) |s| if (s.t >= 0) { drawShot(g, s, o); };
     for (g.pic.foe_shots) |pending| {
         const s = pending orelse continue;
         if (s.t >= 0) drawShot(g, s, o);
@@ -664,6 +683,30 @@ const Piles = struct {
         return takenShown(self.g);
     }
 };
+
+fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
+    var cells = grid.Cells.of(lo, hi);
+    while (cells.next()) |p| {
+        if (!g.sim.lv.isLit(p)) continue;
+        const i = grid.Level.idx(p);
+        const x = p.x * game.CELL - c.x;
+        const y = p.y * game.CELL - c.y;
+        if (g.sim.lv.caltrops[i].turns > 0) {
+            for ([_]P{ .{ .x = 12, .y = 20 }, .{ .x = 29, .y = 32 }, .{ .x = 42, .y = 17 } }) |q| {
+                const dx = @divTrunc(q.x * game.CELL, 64);
+                const dy = @divTrunc(q.y * game.CELL, 64);
+                rl.drawLine(x + dx - 4, y + dy + 3, x + dx, y + dy - 5, look.UI_GOLD);
+                rl.drawLine(x + dx, y + dy - 5, x + dx + 4, y + dy + 3, look.UI_GOLD);
+            }
+        }
+        if (g.sim.lv.barrier[i] > 0) {
+            fillCell(c, p, rl.fade(look.WARD, 0.28));
+            outline(c, p, look.WARD);
+            rl.drawLine(x + game.CELL / 4, y + 5, x + game.CELL / 4, y + game.CELL - 5, look.WARD);
+            rl.drawLine(x + game.CELL * 3 / 4, y + 5, x + game.CELL * 3 / 4, y + game.CELL - 5, look.WARD);
+        }
+    }
+}
 
 const COIN_GLOW_R: f32 = 1.2;
 const COIN_GLOW_GAIN: f32 = 0.15;

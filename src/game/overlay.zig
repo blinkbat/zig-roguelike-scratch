@@ -269,6 +269,8 @@ fn writeDescription(g: *const game.Game, act: skillbar.Act, w: anytype) void {
     w.writeAll(" ") catch {};
     g.sim.growth.writeUsage(act, w);
     w.writeAll(".") catch {};
+    w.writeAll(" ") catch {};
+    g.sim.growth.writeRank(act, w);
 }
 
 pub fn drawHud(g: *game.Game) void {
@@ -415,7 +417,7 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             const w = body.writer();
             writeDescription(g, act, w);
             if (act.reticle() != null) w.print("\nRange: {d} cells", .{act.reach()}) catch {};
-            if (g.sim.growth.hit(g.sim.heroAttrs(), g.sim.inventory.gear, act)) |h| {
+            if (g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, act, if (g.sim.heroBody()) |h| h.tactics.steady else 0)) |h| {
                 if (h.physical.hi > 0) w.print("\n" ++ damage.PHYSICAL_FMT, .{ h.physical.lo, h.physical.hi }) catch {};
                 if (h.element) |e| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi }) catch {};
                 w.print("\n" ++ attrs.SCALES_FMT, .{menu.named(h.style.attr())}) catch {};

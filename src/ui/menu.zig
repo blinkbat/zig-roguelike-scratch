@@ -1,4 +1,5 @@
 const std = @import("std");
+const wording = @import("../core/wording.zig");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
@@ -370,30 +371,26 @@ pub fn capital(comptime s: [:0]const u8) [:0]const u8 {
     return &out;
 }
 
-/// "Burning Arrow" from "burning_arrow"; call it `comptime`.
-pub fn titled(comptime s: [:0]const u8) [:0]const u8 {
-    comptime var c: [s.len:0]u8 = s[0..s.len].*;
-    for (&c, 0..) |*ch, i| {
-        if (ch.* == '_') {
-            ch.* = ' ';
-        } else if (i == 0 or s[i - 1] == '_') ch.* = std.ascii.toUpper(ch.*);
-    }
-    const out = c;
-    return &out;
-}
+pub const titled = wording.titled;
+pub const spoken = wording.spoken;
+pub const named = wording.named;
+pub const namedOr = wording.namedOr;
+pub const titleOf = wording.titleOf;
+pub const word = wording.word;
 
-/// "Iron boots" from "iron_boots"; call it `comptime`.
-pub fn spoken(comptime s: [:0]const u8) [:0]const u8 {
-    comptime var c: [s.len:0]u8 = capital(s)[0..s.len].*;
-    std.mem.replaceScalar(u8, &c, '_', ' ');
-    const out = c;
-    return &out;
-}
-
-pub fn named(e: anytype) [:0]const u8 {
-    return switch (e) {
-        inline else => |t| comptime spoken(@tagName(t)),
-    };
+test "display aliases use actual enum types without renaming identifiers" {
+    const Hero = @import("../play/hero.zig").Class;
+    const Act = @import("../play/skillbar.zig").Act;
+    const Kind = @import("../play/items.zig").Kind;
+    try std.testing.expectEqualStrings("play.hero.Class", @typeName(Hero));
+    try std.testing.expectEqualStrings("play.skillbar.Act", @typeName(Act));
+    try std.testing.expectEqualStrings("play.items.Kind", @typeName(Kind));
+    const labels = "play.hero.Class.archer\tWayfarer\nplay.skillbar.Act.shoot\tLoose Arrow\nplay.items.Kind.short_bow\tHunting bow\n";
+    try std.testing.expectEqualStrings("Wayfarer", comptime wording.displayAliasIn(labels, @typeName(Hero), "archer").?);
+    try std.testing.expectEqualStrings("Loose Arrow", comptime wording.displayAliasIn(labels, @typeName(Act), "shoot").?);
+    try std.testing.expectEqualStrings("Hunting bow", comptime wording.displayAliasIn(labels, @typeName(Kind), "short_bow").?);
+    try std.testing.expectEqualStrings("archer", @tagName(Hero.archer));
+    std.debug.print("display aliases: class, skill and item type keys verified; 3 display overrides leave enum identity unchanged\n", .{});
 }
 
 test "an enum's label reads as words" {
