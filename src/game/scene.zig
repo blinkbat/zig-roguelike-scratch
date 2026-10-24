@@ -30,10 +30,6 @@ const BODY_BAR_H: i32 = game.authored(4);
 const BODY_BAR_LIFT: i32 = game.authored(2);
 const RESIST_BAR_H: i32 = game.authored(2);
 const RESIST_BAR_GAP: i32 = game.authored(2);
-/// Gold beside an item bag in its cell.
-const GOLD_DX: i32 = game.authored(-24);
-const LOOT_DY: i32 = game.authored(12);
-const LOOT_PX: i32 = game.authored(24);
 const MINI: i32 = 3;
 const MINI_W: i32 = grid.W * MINI;
 const MINI_H: i32 = grid.H * MINI;
@@ -120,18 +116,18 @@ fn shineOver(g: *const game.Game, t: rl.Texture2D, rect: rl.Rectangle, p: P, col
     g.sprites.drawShine(t, rect, sweep, col);
 }
 
-/// Beside a bag on its cell, the coins move aside so the bag does not hide them.
-fn drawGold(g: *const game.Game, c: Cam, pile: items.Coins, beside_bag: bool) void {
-    const dx: i32 = if (beside_bag) GOLD_DX else 0;
-    const t = g.sprites.coins(pile.large()) orelse {
-        const m = c.mid(pile.at);
-        return g.face.centred(look.COIN_MARK, m.x + dx, m.y + LOOT_DY, LOOT_PX, look.RETICLE);
-    };
-    drawShining(g, t, c, pile.at, dx);
-}
-
 fn drawGlyph(g: *game.Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void {
     g.face.glyph(ch, sx + game.HALF_CELL, sy + game.HALF_CELL, game.GLYPH, col);
+}
+
+fn drawCoins(g: *const game.Game, c: Cam, pile: items.Coins) void {
+    const tex = if (pile.large()) g.sprites.large_coins else g.sprites.small_coins;
+    if (tex) |t| {
+        drawShining(g, t, c, pile.at, 0);
+    } else {
+        const m = c.mid(pile.at);
+        g.face.centred("$", m.x, m.y, game.GLYPH, look.UI_GOLD);
+    }
 }
 
 fn bagged(bags: *const Bags, p: P) bool {
@@ -162,7 +158,7 @@ pub fn barrelShownAt(g: *game.Game, p: P) bool {
     return g.sim.lv.barrelSeen(p);
 }
 
-pub fn barrelPresent(g: *game.Game, p: P) bool {
+pub fn barrelPresent(g: *const game.Game, p: P) bool {
     return g.sim.lv.hasBarrel(p) or g.pic.fx.breaking(p);
 }
 
@@ -271,13 +267,20 @@ pub fn bagCells(g: *const game.Game) Bags {
         const remembered = g.sim.lv.at(drop.at) == .chest_open and game.character.dropLanded(g, drop);
         if (remembered or game.character.dropShown(g, drop)) bags.set(grid.Level.idx(drop.at));
     }
+    for (g.sim.ground.coins[0..g.sim.ground.coin_n]) |pile| {
+        if (g.sim.lv.at(pile.at) == .chest_open and pileLanded(g, pile) != null) bags.set(grid.Level.idx(pile.at));
+    }
     return bags;
 }
 
-pub fn pileShown(g: *game.Game, pile: items.Coins) ?items.Coins {
+pub fn pileShown(g: *const game.Game, pile: items.Coins) ?items.Coins {
     if (!g.sim.lv.isLit(pile.at) or barrelPresent(g, pile.at)) return null;
+    return pileLanded(g, pile);
+}
+
+fn pileLanded(g: *const game.Game, pile: items.Coins) ?items.Coins {
     var shown = pile;
-    for (g.sim.pool.slice(), 0..) |a, i| {
+    for (g.sim.pool.items[0..g.sim.pool.n], 0..) |a, i| {
         if (!a.alive and a.at.eq(pile.at) and !g.pic.pictured[i].down()) shown.amount -= g.pic.dropped_gold[i];
     }
     return if (shown.amount > 0) shown else null;
@@ -544,8 +547,15 @@ pub fn drawMap(g: *game.Game) void {
     const mirror = if (g.debug.visuals.water_reflections and beds.shown.intersectWith(look.REFLECTIVE).count() > 0) drawMirrors(g, c, view, bodies, flames) else null;
     drawGroundPass(g, c, &beds, &stood, mirror);
     const bags = bagCells(g);
-    var piles = Piles{ .g = g };
-    while (piles.next()) |pile| drawGold(g, c, pile, bagged(&bags, pile.at));
+    for (g.sim.ground.coins[0..g.sim.ground.coin_n]) |pile| {
+        if (g.sim.lv.at(pile.at).isChest() or bagged(&bags, pile.at)) continue;
+        if (pileShown(g, pile)) |shown_pile| drawCoins(g, c, shown_pile);
+    }
+    if (g.pic.gold_taken) |pile| {
+        if (g.sim.heroSlot()) |hero| {
+            if (g.pic.glide[hero].left() > 0 and g.sim.lv.isLit(pile.at)) drawCoins(g, c, pile);
+        }
+    }
     _ = shadowPass(g, c, view, g.framebuffer);
     g.cloud.draw(&g.sim.lv, view, -c.x, -c.y, game.CELL, g.screen);
     drawSolidPass(g, c, lo, hi, &stood);
@@ -660,30 +670,6 @@ fn drawShot(g: *const game.Game, s: game.presentation.Shot, o: [2]f32) void {
     if (g.sim.lv.isLit(mathx.cellOf(at))) fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], game.CELL_F);
 }
 
-/// The pile the hero took this turn, still drawn until the hero is drawn on it.
-fn takenShown(g: *game.Game) ?items.Coins {
-    const pile = g.pic.gold_taken orelse return null;
-    const hero = g.sim.heroSlot().?;
-    return if (g.pic.glide[hero].left() > 0 and g.sim.lv.isLit(pile.at)) pile else null;
-}
-
-const Piles = struct {
-    g: *game.Game,
-    i: usize = 0,
-    taken: bool = false,
-
-    fn next(self: *Piles) ?items.Coins {
-        while (self.i < self.g.sim.ground.coin_n) {
-            const pile = self.g.sim.ground.coins[self.i];
-            self.i += 1;
-            if (pileShown(self.g, pile)) |drawn| return drawn;
-        }
-        if (self.taken) return null;
-        self.taken = true;
-        return takenShown(self.g);
-    }
-};
-
 fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
@@ -708,21 +694,7 @@ fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
     }
 }
 
-const COIN_GLOW_R: f32 = 1.2;
-const COIN_GLOW_GAIN: f32 = 0.15;
-/// Cells above the ground the coins' glow rises from.
-const COIN_Z: f32 = 0.1;
-
-fn coinGlow(pile: items.Coins) light.Emission {
-    const m = mathx.centre(pile.at);
-    return .{ .at = .{ m[0], m[1], COIN_Z }, .col = look.LEVEL_GOLD, .radius = COIN_GLOW_R, .gain = COIN_GLOW_GAIN };
-}
-
 pub fn effectLights(g: *game.Game) void {
-    defer {
-        var piles = Piles{ .g = g };
-        while (piles.next()) |pile| g.light.emit(&g.sim.lv, coinGlow(pile));
-    }
     g.pic.fx.illuminate(&g.sim.lv, g.light);
     if (g.pic.carrierAt(&g.sim)) |at| {
         if (g.pic.fx.level_up.emission(at)) |source| g.light.emit(&g.sim.lv, source);

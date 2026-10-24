@@ -79,3 +79,53 @@ test "status buildup is independent, blocks repeated applications and expires on
     try std.testing.expectEqual(@as(u32, 0), s.resistance(.bleed, 0));
     std.debug.print("resilience: {d} independent meters, {d} successes before immunity; innate 75% needs 1, expiry {d} turns\n", .{ std.enums.values(Kind).len, mathx.PERCENT / GAIN, EXPIRY });
 }
+
+test "failed status applications preserve expiry freshness and all other meters" {
+    var accepted: usize = 0;
+    var refused: usize = 0;
+    for (std.enums.values(Kind)) |kind| {
+        for (0..128) |seed| {
+            var s = State{};
+            s.meters.set(kind, .{ .percent = GAIN, .turns = 2 });
+            var rng = mathx.Rng.init(seed);
+            var want = s;
+            if (s.take(kind, 0, &rng)) {
+                accepted += 1;
+                want.meters.set(kind, .{ .percent = GAIN * 2, .turns = EXPIRY, .fresh = true });
+            } else refused += 1;
+            try std.testing.expectEqualDeep(want, s);
+        }
+    }
+    try std.testing.expect(accepted > 0 and refused > 0);
+    std.debug.print("status retry atomicity: {d} accepted and {d} resisted applications across all {d} meters\n", .{ accepted, refused, std.enums.values(Kind).len });
+}
+
+test "certain status outcomes draw no RNG and immunity expires without failed retries extending it" {
+    for (std.enums.values(Kind)) |kind| {
+        var rng = mathx.Rng.init(51);
+        const before = rng;
+        var s = State{};
+        try std.testing.expect(s.take(kind, 0, &rng));
+        try std.testing.expectEqualDeep(before, rng);
+        s.meters.set(kind, .{ .percent = mathx.PERCENT, .turns = 2 });
+        const immune = s;
+        try std.testing.expect(!s.take(kind, 0, &rng));
+        try std.testing.expectEqualDeep(immune, s);
+        try std.testing.expectEqualDeep(before, rng);
+        s.settle();
+        try std.testing.expectEqual(@as(u8, 1), s.meters.get(kind).turns);
+        try std.testing.expect(!s.take(kind, 0, &rng));
+        s.settle();
+        try std.testing.expectEqualDeep(State{}, s);
+        try std.testing.expect(!s.take(kind, mathx.PERCENT, &rng));
+        try std.testing.expectEqualDeep(State{}, s);
+        try std.testing.expectEqualDeep(before, rng);
+        try std.testing.expect(s.take(kind, 0, &rng));
+        s.settle();
+        try std.testing.expectEqual(EXPIRY, s.meters.get(kind).turns);
+        try std.testing.expect(!s.meters.get(kind).fresh);
+        s.settle();
+        try std.testing.expectEqual(EXPIRY - 1, s.meters.get(kind).turns);
+    }
+    std.debug.print("status lifetime: {d} meters check no-draw certainty, innate immunity, failed retries, exact expiry and one fresh-turn exemption\n", .{std.enums.values(Kind).len});
+}

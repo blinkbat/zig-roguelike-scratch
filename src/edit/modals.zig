@@ -9,14 +9,13 @@ const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const dual = @import("../gfx/ground.zig");
-const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const Desk = input.Desk;
-const SMALL = font.SMALL;
-const HEAD = font.HEAD;
+const SMALL = editor.DETAIL;
+const HEAD = editor.HEAD;
 const ROW_ON = look.EDIT_ROW_ON;
 const HOVER = look.EDIT_HOVER;
 const SEP = menu.SEP;
@@ -97,7 +96,7 @@ const OPEN_TIPS = std.EnumArray(listing.Listing.Entry, [:0]const u8).init(.{
 const OPEN_CRIB = Desk.NAV_CAPTION ++ " pick" ++ SEP ++ Desk.ENTER_CAPTION ++ " open" ++ SEP ++ input.RUB_CAPTION ++ " up";
 
 const HELP_W: i32 = 1000;
-const HELP_STEP: i32 = 24;
+const HELP_STEP: i32 = 28;
 
 fn drawHelp(ed: *editor.Editor, g: *game.Game) void {
     const f = editor.modalFrame(g, HELP_W, editor.MODAL_HEAD + editor.PAD + editor.HELP_ROWS * HELP_STEP + editor.ROW_H + editor.PAD, "Every key", false);
@@ -108,10 +107,10 @@ fn drawHelp(ed: *editor.Editor, g: *game.Game) void {
     for (editor.HELP) |s| {
         const cx = x + editor.PAD + @as(i32, @intCast(s.column)) * (column_w + editor.PAD);
         var y = ys[s.column];
-        panel.drawFit(g, s.head, font.SMALL, column_w, false, cx, y, look.UI_GOLD);
+        panel.drawFit(g, s.head, SMALL, column_w, false, cx, y, look.UI_GOLD);
         y += HELP_STEP;
         for (s.lines) |l| {
-            panel.drawFit(g, l, font.SMALL, column_w, false, cx, y, look.TEXT);
+            panel.drawFit(g, l, SMALL, column_w, false, cx, y, look.TEXT);
             y += HELP_STEP;
         }
         ys[s.column] = y + HELP_STEP;
@@ -124,7 +123,7 @@ const VIEW_COLS: usize = 7;
 const VIEW_CELL: i32 = 72;
 const VIEW_PIC: f32 = 48;
 const VIEW_PIC_TOP: f32 = 4;
-const VIEW_BIG: i32 = 192;
+const VIEW_BIG: i32 = 160;
 
 fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const grid_w = @as(i32, VIEW_COLS) * VIEW_CELL;
@@ -137,7 +136,8 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const y = f.y;
     cells.x = x + editor.PAD;
     cells.y = y;
-    editor.textFace(g).draw(Desk.NAV_CAPTION ++ " or " ++ Desk.PAINT_CAPTION ++ " picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes", x + editor.PAD + editor.textFace(g).width(title, HEAD) + editor.PAD, f.top + @divTrunc(HEAD - SMALL, 2), SMALL, look.DIM);
+    const hint_x = x + 2 * editor.PAD + editor.textFace(g).width(title, HEAD);
+    panel.drawFit(g, Desk.NAV_CAPTION ++ " or " ++ Desk.PAINT_CAPTION ++ " picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes", SMALL, x + w - editor.PAD - hint_x, false, hint_x, f.top + @divTrunc(HEAD - SMALL, 2), look.DIM);
     for (editor.SEEN, 0..) |s, i| {
         const r = cells.at(i);
         const hh = editor.hot(ed, r, true, true, seenName(s));
@@ -156,8 +156,8 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     var facts = Facts{};
     seenFacts(s, &facts);
     for (facts.all()) |l| {
-        panel.drawFit(g, l, font.SMALL, x + w - editor.PAD - dx, false, dx, dy, look.TEXT);
-        dy += font.SMALL_LINE;
+        panel.drawFit(g, l, SMALL, x + w - editor.PAD - dx, false, dx, dy, look.TEXT);
+        dy += SMALL + editor.GAP;
     }
     backButton(ed, g, f.buttonX(), y + cells_h, "Close");
     if (seenFoe(s) != null) {
@@ -275,6 +275,7 @@ fn modalButton(bx: i32, y: i32, k: i32) rl.Rectangle {
 pub fn fieldRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) void {
     var buf: [editor.LINE]u8 = undefined;
     rl.drawRectangleRec(r, ROW_ON);
+    if (ed.field.selected) rl.drawRectangleLinesEx(r, 2, look.UI_FOCUS);
     const typed = std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "";
     panel.drawFit(g, typed, editor.TEXT, editor.insetW(r), true, editor.textX(r), @as(i32, @intFromFloat(r.y)) + editor.TEXT_DY, look.UI_FOCUS);
 }

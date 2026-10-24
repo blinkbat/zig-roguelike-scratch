@@ -20,6 +20,31 @@ const glide = @import("../glide.zig");
 const P = mathx.P;
 const HERO = actor.HERO;
 
+test "collected coins stay drawn only until the collection step finishes" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 21, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    try std.testing.expect(g.sim.ground.gold(at, 37));
+    harness.nudge(g, .e);
+    try std.testing.expectEqual(@as(i32, 37), g.sim.gold);
+    try std.testing.expect(g.pic.gold_taken.?.at.eq(at));
+    harness.drawnOut(g);
+    try std.testing.expect(g.pic.gold_taken == null);
+    harness.nudge(g, .e);
+    try std.testing.expect(g.pic.glide[g.sim.heroSlot().?].left() > 0);
+    try std.testing.expect(g.pic.gold_taken == null);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    try std.testing.expect(g.sim.ground.gold(at, 37));
+    harness.nudge(g, .e);
+    g.st = .{ .walk = .e };
+    game.update(g, game.GLIDE_S - 0.00005);
+    try std.testing.expectEqual(@as(i32, 22), g.sim.heroActor().?.at.x);
+    try std.testing.expect(g.pic.glide[g.sim.heroSlot().?].left() > 0);
+    try std.testing.expect(g.pic.gold_taken == null);
+    std.debug.print("coin presentation: collection holds 37 gold; completion and next movement, including pacing slack, clear it\n", .{});
+}
+
 /// Seconds of frames till a split-off half in `slot` is drawn, and till what is owed it lands.
 fn showsAndLands(g: *game.Game, slot: usize) struct { shows: f32, lands: f32 } {
     var shows: ?f32 = null;

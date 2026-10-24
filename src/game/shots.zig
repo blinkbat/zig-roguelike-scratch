@@ -117,7 +117,7 @@ pub fn shoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/chest-open.png");
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.sim.ground.coin_n != 0 or g.sim.gold < items.CHEST_GOLD.lo or g.character.page != .loot) return error.ChestLootUnopened;
+    if (g.sim.ground.coin_n != 1 or g.sim.gold != 0 or g.character.page != .loot) return error.ChestLootUnopened;
     try capture(g, target, SHOTS_DIR ++ "/chest-loot.png");
     game.character.characterCommand(g, .close);
 
@@ -296,6 +296,25 @@ pub fn shoot(g: *game.Game) !void {
     naming.draw(&entry, g.face, g.screen, naming.titleOf(heroes.DEFAULT, &title), .xbox);
     rl.endTextureMode();
     try exportTarget(target, SHOTS_DIR ++ "/name.png");
+}
+
+pub fn shootEditor(g: *game.Game) !void {
+    const screen = g.screen;
+    defer g.screen = screen;
+    for (@import("../core/window.zig").SCREENS) |size| {
+        g.screen = size;
+        const target = try renderTarget(g);
+        defer rl.unloadRenderTexture(target);
+        var dir_buf: [128]u8 = undefined;
+        const dir = try std.fmt.bufPrint(&dir_buf, SHOTS_DIR ++ "/editor-{d}x{d}", .{ size.x, size.y });
+        try std.fs.cwd().makePath(dir);
+        var paths: [4][256]u8 = undefined;
+        try editor.shoot(g, target,
+            try std.fmt.bufPrintZ(&paths[0], "{s}/edit.png", .{dir}),
+            try std.fmt.bufPrintZ(&paths[1], "{s}/edit-graph.png", .{dir}),
+            try std.fmt.bufPrintZ(&paths[2], "{s}/edit-gen.png", .{dir}),
+            try std.fmt.bufPrintZ(&paths[3], "{s}/edit-objects.png", .{dir}));
+    }
 }
 
 pub fn shootUi(g: *game.Game) !void {
@@ -484,6 +503,7 @@ fn shootLoot(g: *game.Game) !void {
     const bag = P{ .x = 19, .y = 20 };
     const chest = P{ .x = 21, .y = 20 };
     for ([_]items.Kind{ .ring, .boots, .axe }) |kind| _ = g.sim.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null } }, .at = bag });
+    _ = g.sim.ground.gold(bag, 37);
     g.sim.lv.set(chest, .chest);
     game.settle(g);
     try capture(g, target, SHOTS_DIR ++ "/loot-ground.png");
@@ -494,21 +514,23 @@ fn shootLoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/loot-bag-pad.png");
     g.st.device = .keys;
     try capture(g, target, SHOTS_DIR ++ "/loot-bag-keys.png");
+    g.character.cursor = 3;
+    try capture(g, target, SHOTS_DIR ++ "/loot-gold.png");
     game.character.characterCommand(g, .close);
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.mode != .play or g.sim.gold != 0 or g.sim.ground.coin_n != 1) return error.ChestRevealMismatch;
+    if (g.mode != .play or g.sim.gold != 0 or g.sim.ground.coin_n != 2) return error.ChestRevealMismatch;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-revealed.png");
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.mode != .pause or g.character.page != .loot or g.sim.gold < items.CHEST_GOLD.lo or g.sim.ground.coin_n != 0) return error.ChestLootUnopened;
+    if (g.mode != .pause or g.character.page != .loot or g.sim.gold != 0 or g.sim.ground.coin_n != 2) return error.ChestLootUnopened;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest.png");
     game.character.characterCommand(g, .close);
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-left.png");
     game.character.openLoot(g, chest);
     game.character.characterCommand(g, .take_all);
     game.harness.drawnOut(g);
-    if (g.sim.ground.n != 3 or g.sim.inventory.n != 1 or g.sim.lv.at(chest) != .chest_open) return error.LootContainerMismatch;
+    if (g.sim.ground.n != 3 or g.sim.inventory.n != 1 or g.sim.gold < items.CHEST_GOLD.lo or g.sim.ground.coin_n != 1 or g.sim.lv.at(chest) != .chest_open) return error.LootContainerMismatch;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-empty.png");
     for (0..items.BAG_MAX - g.sim.inventory.n) |_| _ = g.sim.inventory.add(.{ .kind = .cap });
     game.heroStep(g, .w, 0);
@@ -516,6 +538,7 @@ fn shootLoot(g: *game.Game) !void {
     game.character.openLoot(g, bag);
     game.character.characterCommand(g, .take_all);
     try capture(g, target, SHOTS_DIR ++ "/loot-full.png");
+    game.harness.drawnOut(g);
     for (0..16) |_| _ = g.sim.ground.add(.{ .item = .{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } } }, .at = bag });
     game.character.openLoot(g, bag);
     try capture(g, target, SHOTS_DIR ++ "/loot-dense.png");
@@ -532,6 +555,16 @@ fn shootLoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/loot-foe-dropped.png");
     game.character.openLoot(g, chest);
     try capture(g, target, SHOTS_DIR ++ "/loot-foe-blue.png");
+
+    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    game.harness.grassOver(&g.sim.lv);
+    _ = g.sim.ground.gold(bag, 37);
+    game.settle(g);
+    try capture(g, target, SHOTS_DIR ++ "/loot-gold-only-ground.png");
+    game.heroStep(g, .w, 0);
+    game.harness.drawnOut(g);
+    if (g.mode != .play or g.sim.gold != 37 or g.sim.ground.coin_n != 0) return error.GoldAutoLootMismatch;
+    try capture(g, target, SHOTS_DIR ++ "/loot-gold-only.png");
 }
 
 fn shootLevelUp(g: *game.Game) !void {

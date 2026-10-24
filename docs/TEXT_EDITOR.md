@@ -1,8 +1,15 @@
 # Player-facing text editor
 
 The editor's Text view reads production Zig source under the project's `src` directory.
-It shows each discovered text fragment with its source file, line and an authorship tag:
-Unknown, You, AI or Mixed. Existing text starts Unknown unless a matching saved tag exists.
+Browse by feature, then by the skill, item, screen or source owner. Passages identify their
+purpose, such as Name, Description, Flavor or Tooltip, before showing the wording. The
+inspector keeps the owner, purpose, exact source declaration and file/line visible above
+the draft. Search matches wording, feature, owner, purpose and source identifiers. Clear
+the query or return to All features to broaden the results. Each list scrolls independently.
+
+Selecting a passage focuses its wording; selecting the search field focuses filtering.
+The editing text is 24px, with 20px supporting labels. The Written by controls set an
+authorship tag: Unknown, You, AI or Mixed. Existing text starts Unknown unless a matching saved tag exists.
 Edits default to You; the tag is an attribution choice, not an automatic authorship detector.
 
 Saving replaces that one quoted literal in its source file. Other bytes, including UTF-8
@@ -26,6 +33,10 @@ skills, items, UI, editor and map display modules, including pieces concatenated
 larger sentence. Display-looking literals are selected by their surrounding names and
 content, so this is source discovery rather than a translation database. Small punctuation
 fragments and generated/computed strings are not independently editable passages.
+Context comes from enclosing source declarations, functions, named table rows and skill
+registrations. When a runtime use cannot be determined, the browser shows the source owner
+and call instead of claiming a particular screen. A literal reused in several places still
+edits that shared source. Level-up text and fright speech are included under Effects.
 Named nodes in `maps/**/*.map` are listed with their map-file provenance. They are read-only
 here: use the map editor's existing Rename action so its open map and undo state remain
 authoritative.

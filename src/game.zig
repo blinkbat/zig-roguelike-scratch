@@ -458,8 +458,9 @@ fn opensChest(g: *const Game, from: P, d: mathx.Dir) bool {
 pub fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
     const h = g.sim.heroActor() orelse return;
     const to = h.at.add(d.delta());
-    if (heroMove(g, d) != .blocked) @import("game/tactics.zig").beforeAction(g);
-    switch (heroMove(g, d)) {
+    const move = heroMove(g, d);
+    if (move != .blocked and move != .open) @import("game/tactics.zig").beforeAction(g);
+    switch (move) {
         .kick => {
             const w = g.sim.lv.who(to);
             const s = heroBump(g, h.at, to, late);
@@ -613,7 +614,6 @@ pub fn update(g: *Game, dt: f32) void {
     g.pic.advance(&g.sim, dt);
     if (g.pic.quiet()) {
         g.sim.log.release();
-        g.pic.gold_taken = null;
         drawnTurn(g);
     }
     g.cloud.step(&g.sim.lv, dt);

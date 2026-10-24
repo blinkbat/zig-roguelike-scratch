@@ -225,8 +225,8 @@ test "a door takes the archer to the door it leads to, and a node left is found 
     harness.idle(g);
     try std.testing.expectEqual(room, g.sim.node);
     try std.testing.expectEqual(@as(i32, 17), g.sim.gold);
-    try std.testing.expect(std.mem.endsWith(u8, g.sim.log.line(0).?, "picks up 17 gold."));
     try std.testing.expect(std.mem.startsWith(u8, g.sim.log.line(1).?, "Entered "));
+    try std.testing.expect(std.mem.endsWith(u8, g.sim.log.line(0).?, "picks up 17 gold."));
     try std.testing.expectEqual(@as(usize, 0), g.sim.ground.coin_n);
     try std.testing.expectEqual(P{ .x = 12, .y = 5 }, g.sim.heroActor().?.at);
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);

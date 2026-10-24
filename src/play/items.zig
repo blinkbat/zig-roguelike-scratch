@@ -580,11 +580,8 @@ pub const Coins = struct {
     at: mathx.P,
     amount: i32,
 
-    /// More than any one barrel holds: only piles dropped on one another are large.
-    pub const LARGE = BARREL_GOLD.hi + 1;
-
     pub fn large(c: Coins) bool {
-        return c.amount >= LARGE;
+        return c.amount > BARREL_GOLD.hi;
     }
 };
 pub const Ground = struct {
@@ -592,6 +589,11 @@ pub const Ground = struct {
     n: usize = 0,
     coins: [grid.CELLS]Coins = undefined,
     coin_n: usize = 0,
+
+    pub fn hasItems(self: *const Ground, at: mathx.P) bool {
+        for (self.drops[0..self.n]) |drop| if (drop.at.eq(at)) return true;
+        return false;
+    }
 
     pub fn gold(self: *Ground, at: mathx.P, amount: i32) bool {
         std.debug.assert(grid.Level.inside(at) and amount > 0);
@@ -852,4 +854,115 @@ test "ground gold accommodates every cell and full pickup leaves its item intact
     try std.testing.expect(!ground.take(0, &inv));
     try std.testing.expectEqual(@as(usize, 1), ground.n);
     std.debug.print("ground: {d} gold cells, merged piles and full pickup preservation checked\n", .{grid.CELLS});
+}
+
+fn expectInventoryUnchanged(before: *const Inventory, after: *const Inventory) !void {
+    try std.testing.expectEqual(before.n, after.n);
+    try std.testing.expectEqualDeep(before.gear, after.gear);
+    try std.testing.expectEqualSlices(Item, before.bag[0..before.n], after.bag[0..after.n]);
+}
+
+test "equipment failures preserve every carried item and the complete loadout" {
+    const base = attrs.Attrs.of(.{ .strength = 18, .dexterity = 20, .intelligence = 10 });
+    var inv = Inventory{};
+    inv.gear.slots.set(.right_hand, .{ .kind = .sword });
+    try std.testing.expect(inv.add(.{ .kind = .mail, .mods = .{ .{ .kind = .strength, .value = 3 }, null } }));
+    const before = inv;
+    for ([_]usize{ inv.n, BAG_MAX, std.math.maxInt(usize) }) |missing| {
+        try std.testing.expectError(error.Missing, inv.preview(missing, .chest, base));
+        try std.testing.expectError(error.Missing, inv.equip(missing, .chest, base));
+        try expectInventoryUnchanged(&before, &inv);
+    }
+    try std.testing.expectError(error.WrongSlot, inv.equip(0, .helm, base));
+    try expectInventoryUnchanged(&before, &inv);
+    try std.testing.expectError(error.Requirements, inv.preview(0, .chest, base));
+    try std.testing.expectError(error.Requirements, inv.equip(0, .chest, base));
+    try expectInventoryUnchanged(&before, &inv);
+    try std.testing.expectError(error.Missing, inv.unequip(.left_ring, base));
+    try expectInventoryUnchanged(&before, &inv);
+
+    inv.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 2 }, null } });
+    inv.gear.slots.set(.chest, .{ .kind = .mail });
+    try std.testing.expect(inv.gear.valid(base));
+    const dependent = inv;
+    try std.testing.expectError(error.Requirements, inv.unequip(.left_ring, base));
+    try expectInventoryUnchanged(&dependent, &inv);
+    try std.testing.expect(inv.add(.{ .kind = .ring }));
+    const replacement = inv;
+    try std.testing.expectError(error.Requirements, inv.equip(1, .left_ring, base));
+    try expectInventoryUnchanged(&replacement, &inv);
+    std.debug.print("equipment atomicity: missing indices, wrong slot, self-funded requirements and 2 dependent-gear failures preserve all items\n", .{});
+}
+
+test "equipment swaps account for exact bag capacity and both displaced hands" {
+    const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
+    var inv = Inventory{};
+    inv.gear.slots.set(.right_hand, .{ .kind = .sword });
+    inv.gear.slots.set(.left_hand, .{ .kind = .shield });
+    try std.testing.expect(inv.add(.{ .kind = .greatsword }));
+    for (1..BAG_MAX) |_| try std.testing.expect(inv.add(.{ .kind = .ring }));
+    const full = inv;
+    try std.testing.expectError(error.Full, inv.preview(0, .right_hand, base));
+    try std.testing.expectError(error.Full, inv.equip(0, .right_hand, base));
+    try expectInventoryUnchanged(&full, &inv);
+    try std.testing.expectError(error.Full, inv.unequip(.left_hand, base));
+    try expectInventoryUnchanged(&full, &inv);
+    try std.testing.expect(!inv.add(.{ .kind = .cap }));
+    try expectInventoryUnchanged(&full, &inv);
+
+    _ = inv.remove(inv.n - 1);
+    const before_preview = inv;
+    const preview = try inv.preview(0, .right_hand, base);
+    try expectInventoryUnchanged(&before_preview, &inv);
+    try inv.equip(0, .right_hand, base);
+    try std.testing.expectEqualDeep(preview, inv.gear);
+    try std.testing.expectEqual(@as(usize, BAG_MAX), inv.n);
+    try std.testing.expectEqual(Kind.shield, inv.bag[BAG_MAX - 2].kind);
+    try std.testing.expectEqual(Kind.sword, inv.bag[BAG_MAX - 1].kind);
+    for (inv.bag[0 .. BAG_MAX - 2]) |it| try std.testing.expectEqual(Kind.ring, it.kind);
+
+    try inv.equip(BAG_MAX - 2, .left_hand, base);
+    try std.testing.expectEqual(@as(usize, BAG_MAX), inv.n);
+    try std.testing.expect(inv.gear.slots.get(.right_hand) == null);
+    try std.testing.expectEqual(Kind.shield, inv.gear.slots.get(.left_hand).?.kind);
+    try std.testing.expectEqual(Kind.greatsword, inv.bag[BAG_MAX - 1].kind);
+    _ = inv.remove(0);
+    try inv.unequip(.left_hand, base);
+    try std.testing.expectEqual(@as(usize, BAG_MAX), inv.n);
+    try std.testing.expectEqual(Kind.shield, inv.bag[BAG_MAX - 1].kind);
+    try std.testing.expect(inv.gear.slots.get(.left_hand) == null);
+    std.debug.print("equipment capacity: {d}-item rejection, exact-fit two-hand swap, reverse swap and exact-fit unequip checked\n", .{BAG_MAX});
+}
+
+test "ground pickups preserve order and source identity and never collect another cell's gold" {
+    const here = mathx.P{ .x = 5, .y = 5 };
+    const there = mathx.P{ .x = 6, .y = 5 };
+    var ground = Ground{};
+    var inv = Inventory{};
+    const drops = [_]Drop{
+        .{ .item = .{ .kind = .cap }, .at = here, .source = 2 },
+        .{ .item = .{ .kind = .ring }, .at = there, .source = 3 },
+        .{ .item = .{ .kind = .boots }, .at = here, .source = 4 },
+    };
+    for (drops) |drop| try std.testing.expect(ground.add(drop));
+    try std.testing.expect(ground.gold(here, 7));
+    try std.testing.expect(ground.gold(there, 11));
+    for ([_]usize{ ground.n, GROUND_MAX, std.math.maxInt(usize) }) |missing| try std.testing.expect(!ground.take(missing, &inv));
+    try std.testing.expectEqual(@as(usize, 0), inv.n);
+    try std.testing.expectEqualSlices(Drop, &drops, ground.drops[0..ground.n]);
+    try std.testing.expect(ground.take(1, &inv));
+    try std.testing.expectEqual(Kind.ring, inv.bag[0].kind);
+    try std.testing.expectEqualSlices(Drop, &.{ drops[0], drops[2] }, ground.drops[0..ground.n]);
+    try std.testing.expect(!ground.hasItems(there));
+    try std.testing.expect(ground.hasItems(here));
+    try std.testing.expectEqual(@as(usize, 2), ground.coin_n);
+    try std.testing.expectEqual(@as(i32, 7), ground.collect(here));
+    try std.testing.expectEqual(@as(i32, 0), ground.collect(here));
+    try std.testing.expectEqual(@as(usize, 1), ground.coin_n);
+    try std.testing.expectEqualDeep(Coins{ .at = there, .amount = 11 }, ground.coins[0]);
+    try std.testing.expect(ground.gold(there, std.math.maxInt(i32)));
+    try std.testing.expectEqual(std.math.maxInt(i32), ground.collect(there));
+    try std.testing.expectEqual(@as(usize, 0), ground.coin_n);
+    try std.testing.expectEqualSlices(Drop, &.{ drops[0], drops[2] }, ground.drops[0..ground.n]);
+    std.debug.print("ground transactions: 3 invalid indices, ordered pickup with source identity, isolated gold and saturated merge checked\n", .{});
 }

@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const atlas = @import("../map/atlas.zig");
 const atlas_text = @import("../map/atlas_text.zig");
+const grid = @import("../map/grid.zig");
 const carve = @import("../map/carve.zig");
 const terrain = @import("../map/biome/terrain.zig");
 const labyrinth = @import("../map/biome/labyrinth.zig");
@@ -17,13 +18,12 @@ const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
-const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const Desk = input.Desk;
-const HEAD = font.HEAD;
+const HEAD = editor.HEAD;
 const HOVER = look.EDIT_HOVER;
 
 pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void {
@@ -102,8 +102,24 @@ fn knobs(ed: *editor.Editor, g: *game.Game, y: *i32, title: [:0]const u8, owner:
 
 fn knobRows(ed: *editor.Editor, g: *game.Game, y: *i32, owner: anytype, comptime rows: []const Knob, live: bool) void {
     inline for (rows) |k| {
-        knobRow(ed, g, y.*, owner, k, live);
-        y.* += editor.ROW_STEP;
+        if (comptime k.parts.len > 0) {
+            section(g, y, k.caption());
+            inline for (k.parts, 0..) |part, i| {
+                if (!panel.clipped(ed, y.*)) {
+                    var buf: [64]u8 = undefined;
+                    const label = std.fmt.bufPrintZ(&buf, "{s}", .{part}) catch "";
+                    std.mem.replaceScalar(u8, buf[0..label.len], '_', ' ');
+                    if (label.len > 0) buf[0] = std.ascii.toUpper(buf[0]);
+                    rowLabel(g, y.*, label);
+                    const reach = [2]bool{ live and moves(owner, k, i, -1), live and moves(owner, k, i, 1) };
+                    stepNumber(ed, g, y.*, i, 1, numberOf(owner, k, i), k, reach);
+                }
+                y.* += editor.ROW_STEP;
+            }
+        } else {
+            knobRow(ed, g, y.*, owner, k, live);
+            y.* += editor.ROW_STEP;
+        }
     }
 }
 
@@ -188,7 +204,7 @@ const MakeupTool = enum {
 pub const MAKEUP_TOOLS = std.enums.values(MakeupTool);
 
 pub fn rowLabel(g: *game.Game, y: i32, s: [:0]const u8) void {
-    editor.textFace(g).draw(s, editor.PAD, y + editor.TEXT_DY, editor.TEXT, look.TEXT);
+    panel.drawFit(g, s, editor.TEXT, editor.LABEL_W - editor.GAP, false, editor.PAD, y + editor.TEXT_DY, look.TEXT);
 }
 
 fn num(buf: []u8, comptime fmt: []const u8, v: anytype) [:0]const u8 {
@@ -562,7 +578,7 @@ pub fn moves(owner: anytype, comptime k: Knob, comptime i: usize, by: i32) bool 
 fn stepNumber(ed: *editor.Editor, g: *game.Game, y: i32, comptime i: usize, n: usize, v: anytype, comptime k: Knob, reach: [2]bool) void {
     var buf: [16]u8 = undefined;
     const tip = k.tips[i] ++ SHIFT_TIP;
-    bump(@TypeOf(v.*), v, k.unit * stepper(ed, g, valueSlot(y, i, n), num(&buf, k.fmt, v.*), .{ .{ .tip = tip, .live = reach[0] }, .{ .tip = tip, .live = reach[1] } }));
+    bump(@TypeOf(v.*), v, k.unit * stepper(ed, g, valueSlot(y, if (k.parts.len > 0) 0 else i, n), num(&buf, k.fmt, v.*), .{ .{ .tip = tip, .live = reach[0] }, .{ .tip = tip, .live = reach[1] } }));
 }
 
 fn stepChoice(ed: *editor.Editor, g: *game.Game, y: i32, comptime T: type, v: *T, tip: [:0]const u8, live: bool) void {
@@ -575,7 +591,29 @@ fn valueSlot(y: i32, k: usize, n: usize) rl.Rectangle {
 }
 
 fn cycle(comptime T: type, v: T, by: i32) T {
-    return mathx.stepIn(T, comptime std.enums.values(T), v, std.math.sign(by), null);
+    if (by == 0) return v;
+    const values = comptime std.enums.values(T);
+    var next = mathx.stepIn(T, values, v, std.math.sign(by), null);
+    if (T == grid.Tile) {
+        while (next.isOpened()) next = mathx.stepIn(T, values, next, std.math.sign(by), null);
+    }
+    return next;
+}
+
+test "generator tile choices skip opened containers in both directions" {
+    var checked: usize = 0;
+    for (std.enums.values(grid.Tile)) |tile| {
+        try std.testing.expectEqual(tile, cycle(grid.Tile, tile, 0));
+        for ([_]i32{ -1, 1 }) |by| {
+            const next = cycle(grid.Tile, tile, by);
+            try std.testing.expect(!next.isOpened());
+            if (!tile.isOpened()) try std.testing.expectEqual(tile, cycle(grid.Tile, next, -by));
+            checked += 1;
+        }
+    }
+    try std.testing.expectEqual(grid.Tile.swamp_tree, cycle(grid.Tile, .chest, 1));
+    try std.testing.expectEqual(grid.Tile.chest, cycle(grid.Tile, .swamp_tree, -1));
+    std.debug.print("generator tile choices: {d} forward/back steps exclude opened containers; idle choices preserved\n", .{checked});
 }
 
 const Step = struct { tip: [:0]const u8, live: bool = true };

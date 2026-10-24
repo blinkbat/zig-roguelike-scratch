@@ -13,8 +13,44 @@ const raster = @import("../gfx/raster.zig");
 const menu = @import("../ui/menu.zig");
 const knobs = @import("knobs.zig");
 const modals = @import("modals.zig");
+const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const P = mathx.P;
+
+test "editor workspaces retain a useful viewport and shape hit targets do not overlap" {
+    try std.testing.expectEqual(@as(i32, 24), editor.TEXT);
+    try std.testing.expect(editor.DETAIL >= 20);
+    for (@import("../core/window.zig").SCREENS) |screen| {
+        try std.testing.expect(screen.y - panel.WORKSPACE_TOP >= 380);
+        try std.testing.expect(screen.x - editor.PANEL_W > grid.W * 8);
+    }
+    for (editor.SHAPES, 0..) |_, i| {
+        const r = panel.shapeSlot(panel.WORKSPACE_TOP, i);
+        try std.testing.expect(r.x >= editor.PAD and r.x + r.width <= editor.PANEL_W - editor.PAD);
+        try std.testing.expect(r.width >= 120 and r.height >= editor.TEXT + 8);
+        for (0..i) |j| try std.testing.expect(!rl.checkCollisionRecs(r, panel.shapeSlot(panel.WORKSPACE_TOP, j)));
+    }
+    std.debug.print("editor layout: 3 supported screens retain at least 380px of workspace; 6 readable shape targets stay separate\n", .{});
+}
+
+test "disabled editor controls expose their tooltip without accepting a click" {
+    const ed = try editor.Editor.create(std.testing.allocator);
+    defer ed.destroy();
+    const r = editor.row(10, 10, 100);
+    ed.desk = .{ .mouse = .{ .x = 15, .y = 15 }, .paint_hit = true };
+    const disabled = editor.hot(ed, r, false, false, editor.GENERATED);
+    try std.testing.expect(!disabled.hot and !disabled.hit);
+    try std.testing.expectEqualStrings(editor.GENERATED, ed.tip.?);
+    ed.tip = null;
+    ed.clip = raster.rect(200, 200, 20, 20);
+    try std.testing.expect(!editor.hot(ed, r, false, false, editor.GENERATED).hit);
+    try std.testing.expect(ed.tip == null);
+    ed.clip = null;
+    ed.modal = .help;
+    try std.testing.expect(!editor.hot(ed, r, true, false, editor.GENERATED).hit);
+    try std.testing.expect(ed.tip == null);
+    std.debug.print("editor hover: disabled tooltip retained, clicks blocked, clip and modal boundaries respected\n", .{});
+}
 
 fn testEditor() !*editor.Editor {
     const ed = try editor.Editor.create(std.testing.allocator);
@@ -910,4 +946,66 @@ test "a knob's step is dim where its owner's fit would take it back" {
     const grass = comptime std.meta.fieldIndex(carve.Decor, "tall_grass").?;
     try std.testing.expect(!knobs.moves(&floor, decor, grass, 1));
     try std.testing.expect(knobs.moves(&floor, decor, grass, -1));
+}
+
+test "editor history preserves exact contents through rollover undo and redo after the saved state expires" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    const total = editor.UNDO_CAP * 2 + 5;
+    for (0..total) |i| {
+        click(ed, .paint, .{ .x = @intCast(i + 1), .y = 1 });
+        if (i == 0) {
+            ed.saved_at = ed.hist_at;
+            ed.dirty = false;
+        }
+    }
+    try std.testing.expectEqual(editor.UNDO_CAP, ed.hist_len);
+    try std.testing.expect(ed.saved_at == null);
+    for (0..editor.UNDO_CAP + 1) |i| {
+        const painted = total - i;
+        try std.testing.expectEqual(painted, count(ed, .floor));
+        for (0..total) |cell| try std.testing.expectEqual(if (cell < painted) grid.Tile.floor else grid.Tile.wall, tileAt(ed, .{ .x = @intCast(cell + 1), .y = 1 }));
+        try std.testing.expect(ed.dirty);
+        ed.undo();
+    }
+    try std.testing.expectEqual(@as(usize, 0), ed.hist_at);
+    for (0..editor.UNDO_CAP + 1) |i| {
+        try std.testing.expectEqual(total - editor.UNDO_CAP + i, count(ed, .floor));
+        try std.testing.expect(ed.dirty);
+        ed.redo();
+    }
+    try std.testing.expectEqual(editor.UNDO_CAP, ed.hist_at);
+    try std.testing.expectEqual(total, count(ed, .floor));
+    std.debug.print("editor history: {d} gestures, all {d} retained states checked cell-by-cell, full redo and both no-op boundaries; evicted save stays dirty\n", .{ total, editor.UNDO_CAP + 1 });
+}
+
+test "branching before a saved redo state cannot become clean by reusing its history index" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    for (0..3) |i| click(ed, .paint, .{ .x = @intCast(i + 1), .y = 1 });
+    ed.saved_at = ed.hist_at;
+    ed.dirty = false;
+    ed.undo();
+    ed.undo();
+    try std.testing.expectEqual(@as(usize, 1), ed.hist_at);
+    click(ed, .paint, .{ .x = 10, .y = 1 });
+    try std.testing.expect(ed.saved_at == null);
+    click(ed, .paint, .{ .x = 11, .y = 1 });
+    try std.testing.expectEqual(@as(usize, 3), ed.hist_at);
+    try std.testing.expect(ed.dirty);
+    ed.redo();
+    try std.testing.expectEqual(@as(usize, 3), count(ed, .floor));
+    try std.testing.expectEqual(grid.Tile.wall, tileAt(ed, .{ .x = 2, .y = 1 }));
+    try std.testing.expectEqual(grid.Tile.wall, tileAt(ed, .{ .x = 3, .y = 1 }));
+    try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 10, .y = 1 }));
+    try std.testing.expectEqual(grid.Tile.floor, tileAt(ed, .{ .x = 11, .y = 1 }));
+    for (0..3) |_| {
+        ed.undo();
+        try std.testing.expect(ed.dirty);
+    }
+    for (0..3) |_| {
+        ed.redo();
+        try std.testing.expect(ed.dirty);
+    }
+    std.debug.print("editor branching: saved future discarded, equal history index stays dirty through all 3 undo/redo steps\n", .{});
 }

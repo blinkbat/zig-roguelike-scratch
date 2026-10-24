@@ -504,3 +504,79 @@ test "passive bridges pay both attributes and cross either way without opening i
     try std.testing.expectEqual(passives.BRIDGES * 2, crossings);
     std.debug.print("passive bridges: all {d} directional crossings apply exact paired stats, open the far anchor and advance outward only\n", .{crossings});
 }
+
+test "experience crosses exact thresholds carries excess and saturates point pools at the level cap" {
+    for (hero.CLASSES) |class| {
+        var state = State.of(class);
+        const initial = state;
+        try std.testing.expectEqual(@as(u16, 0), state.gain(0));
+        try std.testing.expectEqualDeep(initial, state);
+        try std.testing.expectEqual(@as(u16, 0), state.gain(39));
+        try std.testing.expectEqual(@as(u64, 39), state.xp);
+        try std.testing.expectEqual(@as(u16, 0), state.active_points);
+        try std.testing.expectEqual(@as(u16, 1), state.gain(1));
+        try std.testing.expectEqual(@as(u16, 2), state.level);
+        try std.testing.expectEqual(@as(u64, 0), state.xp);
+        try std.testing.expectEqual(@as(u64, 60), state.needed());
+        try std.testing.expectEqual(@as(u16, 2), state.gain(141));
+        try std.testing.expectEqual(@as(u16, 4), state.level);
+        try std.testing.expectEqual(@as(u64, 1), state.xp);
+        try std.testing.expectEqual(@as(u16, 3), state.active_points);
+        try std.testing.expectEqual(@as(u16, 3), state.passive_points);
+        try std.testing.expectEqualDeep(initial.nodes, state.nodes);
+        try std.testing.expectEqualDeep(initial.ranks, state.ranks);
+
+        state.level = std.math.maxInt(u16) - 1;
+        state.xp = state.needed() - 1;
+        state.active_points = std.math.maxInt(u16);
+        state.passive_points = std.math.maxInt(u16) - 1;
+        try std.testing.expectEqual(@as(u16, 1), state.gain(1));
+        try std.testing.expectEqual(std.math.maxInt(u16), state.level);
+        try std.testing.expectEqual(std.math.maxInt(u16), state.active_points);
+        try std.testing.expectEqual(std.math.maxInt(u16), state.passive_points);
+        state.xp = std.math.maxInt(u64) - 1;
+        try std.testing.expectEqual(@as(u16, 0), state.gain(std.math.maxInt(u32)));
+        try std.testing.expectEqual(std.math.maxInt(u64), state.xp);
+        try std.testing.expectEqual(std.math.maxInt(u16), state.level);
+    }
+    std.debug.print("experience boundaries: {d} classes check zero gain, just-below/exact/multiple levels, overflow and saturated point pools\n", .{hero.CLASSES.len});
+}
+
+test "failed active skill purchases preserve state for poverty prerequisites foreign skills and rank caps" {
+    var checked: usize = 0;
+    for (hero.CLASSES) |class| {
+        for (skills(class)) |skill| {
+            var state = State.of(class);
+            var before = state;
+            try std.testing.expect(!state.learn(class, skill.act));
+            try std.testing.expectEqualDeep(before, state);
+            checked += 1;
+            state.active_points = 5;
+            if (skill.parent) |parent| {
+                state.ranks.set(parent, 0);
+                before = state;
+                try std.testing.expect(!state.canLearn(class, skill.act));
+                try std.testing.expect(!state.learn(class, skill.act));
+                try std.testing.expectEqualDeep(before, state);
+                checked += 1;
+            }
+            state.ranks.set(skill.act, RANKS);
+            before = state;
+            try std.testing.expect(!state.learn(class, skill.act));
+            try std.testing.expectEqualDeep(before, state);
+            checked += 1;
+        }
+        var state = State.of(class);
+        state.active_points = 5;
+        const before = state;
+        for (hero.CLASSES) |other| {
+            if (other == class) continue;
+            for (skills(other)) |skill| {
+                try std.testing.expect(!state.learn(class, skill.act));
+                try std.testing.expectEqualDeep(before, state);
+                checked += 1;
+            }
+        }
+    }
+    std.debug.print("active skill purchases: {d} failed transactions preserve ranks, points, XP and passive allocations\n", .{checked});
+}

@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
+const tactics = @import("tactics.zig");
 const binds = @import("binds.zig");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
@@ -148,7 +149,7 @@ fn attack(g: *game.Game, at: P) bool {
     const set = skills.activeSet(g);
     for (skillbar.SLOTS) |b| {
         const act = g.bar.at(.{ .set = set, .button = b }) orelse continue;
-        if (act.reticle() == null or act.attack() == null or !act.aimable(&g.sim.lv, h.at, at)) continue;
+        if (act.reticle() == null or act.attack() == null or !tactics.validAct(g, act, h.at, at)) continue;
         if (skills.blocked(g, act, &g.sim.flasks, g.sim.mana) != null) continue;
         skills.useSkill(g, .{ .act = act, .by = b, .set = set });
         if (g.mode == .aim) {
@@ -399,6 +400,41 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     try std.testing.expectEqual(after, g.sim.clock);
     try std.testing.expect(g.mouse.target == null);
     std.debug.print("mouse targeting: HUD activation, no click-through, blocked shot, cancel and one clicked foe attack\n", .{});
+}
+
+test "mouse attacks skip combustion for unburning foes and cast it on burning foes" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const start = P{ .x = 20, .y = 20 };
+    const target = P{ .x = 23, .y = 20 };
+    const other = P{ .x = 23, .y = 22 };
+    for ([_]bool{ false, true }) |other_burning| {
+        game.harness.heroArena(g, .wizard, start, &.{ target, other });
+        g.bar.bind(.{ .set = .primary, .button = .a }, .combustion);
+        if (other_burning) game.harness.foes(g)[1].burn.start();
+        const clock = g.sim.clock.minute;
+        clickCell(g, target);
+        try std.testing.expectEqual(game.Mode.play, g.mode);
+        try std.testing.expect(g.pic.shot != null);
+        try std.testing.expectEqual(skillbar.Act.spark, g.pic.shot.?.act);
+        try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
+        try std.testing.expectEqual(@as(u8, 0), g.sim.cooldown.get(.combustion));
+    }
+    game.harness.heroArena(g, .wizard, start, &.{target});
+    g.bar.bind(.{ .set = .primary, .button = .a }, .combustion);
+    const foe = &game.harness.foes(g)[0];
+    game.harness.toughen(foe);
+    foe.burn.start();
+    const hp = foe.hp;
+    const clock = g.sim.clock.minute;
+    clickCell(g, target);
+    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expect(g.pic.shot == null);
+    try std.testing.expect(foe.hp < hp);
+    try std.testing.expectEqual(@as(u8, 0), foe.burn.turns);
+    try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
+    try std.testing.expect(g.sim.cooldown.get(.combustion) > 0);
+    std.debug.print("mouse attacks: 2 unburning-target cases choose Spark; burning target consumes burn with Combustion, one turn each\n", .{});
 }
 
 test "a clicked foe beside the hero is bumped when every aimed attack is cooling" {

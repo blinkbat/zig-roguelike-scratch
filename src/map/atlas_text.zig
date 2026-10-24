@@ -167,6 +167,7 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                     const i = grid.Level.idx(.{ .x = @intCast(x), .y = @intCast(row) });
                     b.barrel[i] = c == grid.BARREL_LETTER;
                     b.tile[i] = grid.groundOf(c) orelse return error.BadLine;
+                    if (b.tile[i].isOpened()) return error.BadLine;
                 }
                 row += 1;
             },
@@ -380,7 +381,11 @@ fn putValue(w: anytype, v: anytype) !void {
 fn takeValue(comptime T: type, f: *Tokens) Error!T {
     switch (@typeInfo(T)) {
         .int => return int(T, f),
-        .@"enum" => return std.meta.stringToEnum(T, f.next() orelse return error.BadLine) orelse error.BadLine,
+        .@"enum" => {
+            const value = std.meta.stringToEnum(T, f.next() orelse return error.BadLine) orelse return error.BadLine;
+            if (T == grid.Tile and value.isOpened()) return error.BadLine;
+            return value;
+        },
         .array => |a| {
             var out: T = undefined;
             for (&out) |*x| x.* = try takeValue(a.child, f);
@@ -471,6 +476,27 @@ test "a map saves and loads back the same" {
     try std.testing.expectEqual(atlas.GRAPH_STEP.x, back.node[cave].pos.x);
 }
 
+test "fresh map text refuses opened containers in terrain and generator choices" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const head = HEADER ++ "\nstart 0 5 5\n";
+    const features = [_][]const u8{
+        "feature scatter\ntile chest_open\n",
+        "feature scatter\non chest_open\n",
+        "feature lake\nfill chest_open\n",
+        "feature river\nfill chest_open\n",
+        "feature border\ntile chest_open\n",
+    };
+    inline for (features) |feature| try std.testing.expectError(error.BadLine, a.parse(head ++ "node procgen open\n" ++ feature));
+    const rows = ("row " ++ "." ** COLS ++ "\n") ** (ROWS - 1);
+    try std.testing.expectError(error.BadLine, a.parse(head ++ "node bespoke\nrow O" ++ "." ** (COLS - 1) ++ "\n" ++ rows));
+    try a.parse(head ++ "node bespoke\nrow C" ++ "." ** (COLS - 1) ++ "\n" ++ rows);
+    try std.testing.expectEqual(grid.Tile.chest, a.node[0].plan.bespoke.tile[0]);
+    try a.parse(head ++ "node procgen open\nfeature scatter\ntile chest\n");
+    try std.testing.expectEqual(grid.Tile.chest, a.node[0].plan.procgen.feature[0].scatter.tile);
+    std.debug.print("fresh map text: 6 opened-container inputs refused; closed chests preserved in terrain and scatter\n", .{});
+}
+
 test "a map file with a one-way link, a door linked to itself, a stray word, a far box or a number not written plainly is refused" {
     const a = try atlas.testAtlas();
     defer std.testing.allocator.destroy(a);
@@ -525,4 +551,104 @@ test "a map file with a one-way link, a door linked to itself, a stray word, a f
     try std.testing.expectEqual(@as(usize, 2), pg.feature_n);
     try std.testing.expectEqual(grid.Tile.lava, pg.feature[0].lake.fill);
     try std.testing.expectEqual(@as(u8, 2), pg.feature[1].river.width);
+}
+
+fn testChangedKnobs(v: anytype) @TypeOf(v) {
+    const T = @TypeOf(v);
+    return switch (@typeInfo(T)) {
+        .int => v +| 1,
+        .@"enum" => if (T == grid.Tile) v else blk: {
+            const values = std.enums.values(T);
+            const i = std.mem.indexOfScalar(T, values, v).?;
+            break :blk values[(i + 1) % values.len];
+        },
+        .array => blk: {
+            var out = v;
+            for (&out) |*x| x.* = testChangedKnobs(x.*);
+            break :blk out;
+        },
+        .@"struct" => blk: {
+            var out = v;
+            inline for (std.meta.fields(T)) |f| @field(out, f.name) = testChangedKnobs(@field(out, f.name));
+            break :blk out;
+        },
+        .@"union" => switch (v) {
+            inline else => |p, tag| @unionInit(T, @tagName(tag), testChangedKnobs(p)),
+        },
+        else => @compileError("unsupported test knob " ++ @typeName(T)),
+    };
+}
+
+test "map text round-trips every floor and feature with default and changed knobs" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const back = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(back);
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    defer buf.deinit();
+    var again = std.ArrayList(u8).init(std.testing.allocator);
+    defer again.deinit();
+    var checked: usize = 0;
+    for ([_]bool{ false, true }) |changed| {
+        for (std.enums.values(Algo)) |algo| {
+            for (std.enums.values(Kind)) |kind| {
+                a.* = .{};
+                const n = a.add(.{ .procgen = .{ .floor = Floor.of(algo) } }).?;
+                const pg = &a.node[n].plan.procgen;
+                try std.testing.expect(pg.addFeature(kind));
+                if (changed) {
+                    pg.floor = testChangedKnobs(pg.floor).fit();
+                    pg.feature[0] = testChangedKnobs(pg.feature[0]).fit();
+                    pg.sky = .{ .light = .bleak, .weather = .drizzle };
+                    pg.foes.apart = 7;
+                    pg.foes.makeup_n = 1;
+                    pg.foes.makeup[0] = pack.Makeup.of(&.{ .bandit_crossbowman, .rat, .slime });
+                    pg.foes.makeup[0].weight = 4;
+                }
+                try std.testing.expect(pg.valid());
+                buf.clearRetainingCapacity();
+                try a.write(buf.writer());
+                try back.parse(buf.items);
+                try std.testing.expectEqualDeep(pg.*, back.node[n].plan.procgen);
+                try std.testing.expectEqualDeep(a.start, back.start);
+                again.clearRetainingCapacity();
+                try back.write(again.writer());
+                try std.testing.expectEqualStrings(buf.items, again.items);
+                checked += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(2 * std.enums.values(Algo).len * std.enums.values(Kind).len, checked);
+    std.debug.print("map serialization: {d} floor/feature/default-or-changed cases preserve plans, climate, pack makeup and canonical text\n", .{checked});
+}
+
+test "map text accepts exact node feature and door limits and refuses the next entry" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const head = HEADER ++ "\nstart 0 5 5\n";
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    defer buf.deinit();
+    try buf.appendSlice(head);
+    for (0..atlas.MAX_NODES) |_| try buf.appendSlice("node procgen open\n");
+    try a.parse(buf.items);
+    try std.testing.expectEqual(atlas.MAX_NODES, a.node_n);
+    try buf.appendSlice("node procgen open\n");
+    try std.testing.expectError(error.TooMany, a.parse(buf.items));
+
+    buf.clearRetainingCapacity();
+    try buf.appendSlice(head ++ "node procgen open\n");
+    for (0..atlas.MAX_FEATURES) |_| try buf.appendSlice("feature scatter\n");
+    try a.parse(buf.items);
+    try std.testing.expectEqual(atlas.MAX_FEATURES, a.node[0].plan.procgen.feature_n);
+    try buf.appendSlice("feature scatter\n");
+    try std.testing.expectError(error.TooMany, a.parse(buf.items));
+
+    buf.clearRetainingCapacity();
+    try buf.appendSlice(head ++ "node procgen open\n");
+    for (0..grid.MAX_DOORS) |i| try buf.writer().print("door {d} 5\n", .{i});
+    try a.parse(buf.items);
+    try std.testing.expectEqual(grid.MAX_DOORS, a.node[0].door_n);
+    try buf.writer().print("door {d} 5\n", .{grid.MAX_DOORS});
+    try std.testing.expectError(error.TooMany, a.parse(buf.items));
+    std.debug.print("map limits: {d} nodes, {d} features and {d} doors accepted exactly; 3 excess entries refused\n", .{ atlas.MAX_NODES, atlas.MAX_FEATURES, grid.MAX_DOORS });
 }

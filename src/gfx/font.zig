@@ -137,6 +137,15 @@ pub const Face = struct {
         const whole = std.fmt.bufPrintZ(buf, "{s}", .{s}) catch "";
         if (whole.len == s.len and self.width(whole, size) <= max) return whole;
         var n = @min(s.len, buf.len -| (ELLIPSIS.len + 1));
+        if (self.walkable(s, size) != null) {
+            var lo: usize = 0;
+            while (lo < n) {
+                const mid = lo + (n - lo + 1) / 2;
+                const t = elided(buf, if (keep_end) s[s.len - mid ..] else s[0..mid], keep_end) catch return whole;
+                if (self.width(t, size) <= max) lo = mid else n = mid - 1;
+            }
+            return elided(buf, if (keep_end) s[s.len - lo ..] else s[0..lo], keep_end) catch whole;
+        }
         while (true) : (n -= 1) {
             const t = elided(buf, if (keep_end) s[s.len - n ..] else s[0..n], keep_end) catch return whole;
             if (n == 0 or self.width(t, size) <= max) return t;
@@ -329,6 +338,60 @@ test "an engraved line is lit at its top, its own ink through the middle and dee
 /// `kept` in `buf` with "..." where the rest was cut: before it when `keep_end`, else after.
 pub fn elided(buf: []u8, kept: []const u8, keep_end: bool) std.fmt.BufPrintError![:0]u8 {
     return if (keep_end) std.fmt.bufPrintZ(buf, ELLIPSIS ++ "{s}", .{kept}) else std.fmt.bufPrintZ(buf, "{s}" ++ ELLIPSIS, .{kept});
+}
+
+test "font fitting preserves linear results for native fallback and long ASCII text" {
+    const max_text = 4096;
+    const Reference = struct {
+        fn fit(face: *const Face, buf: []u8, s: []const u8, size: i32, max: i32, keep_end: bool) [:0]const u8 {
+            const whole = std.fmt.bufPrintZ(buf, "{s}", .{s}) catch "";
+            if (whole.len == s.len and face.width(whole, size) <= max) return whole;
+            var n = @min(s.len, buf.len -| (ELLIPSIS.len + 1));
+            while (true) : (n -= 1) {
+                const t = elided(buf, if (keep_end) s[s.len - n ..] else s[0..n], keep_end) catch return whole;
+                if (n == 0 or face.width(t, size) <= max) return t;
+            }
+        }
+    };
+    var glyphs: [ASCII_N]rl.GlyphInfo = undefined;
+    var recs: [ASCII_N]rl.Rectangle = undefined;
+    for (&glyphs, &recs, 0..) |*g, *r, i| {
+        g.* = .{ .value = ASCII_LO + @as(i32, @intCast(i)), .advanceX = if (i % 7 == 0) 0 else 3 + @as(i32, @intCast(i % 11)), .offsetX = 1, .offsetY = 0, .image = undefined };
+        r.* = .{ .x = 0, .y = 0, .width = 6, .height = 20 };
+    }
+    const metric = rl.Font{ .baseSize = 20, .glyphCount = ASCII_N, .glyphPadding = 0, .texture = undefined, .recs = &recs, .glyphs = &glyphs };
+    var face = Face{ .font = metric, .data_font = metric, .ordered = true };
+    face.native[2] = metric;
+    var text: [max_text]u8 = undefined;
+    for (&text, 0..) |*c, i| c.* = @intCast(ASCII_LO + (i * 37) % ASCII_N);
+    var actual: [max_text + 1]u8 = undefined;
+    var expected: [max_text + 1]u8 = undefined;
+    var checked: usize = 0;
+    for ([_]bool{ true, false }) |ordered| {
+        face.ordered = ordered;
+        for ([_]usize{ 0, 1, 16, 64, 128 }) |len| {
+            for ([_]usize{ 0, 3, 4, 12, 90, 256 }) |cap| {
+                for ([_]i32{ 17, 20, 24, 32 }) |size| {
+                    for ([_]i32{ -1, 0, 27, 280, 10000 }) |max| {
+                        for ([_]bool{ false, true }) |tail| {
+                            try std.testing.expectEqualStrings(Reference.fit(&face, expected[0..cap], text[0..len], size, max, tail), face.fit(actual[0..cap], text[0..len], size, max, tail));
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    face.ordered = true;
+    for ([_][]const u8{ text[0..], "A line\nAnother line", "Caf\xc3\xa9" }) |body| {
+        for ([_]i32{ 0, 280 }) |max| {
+            for ([_]bool{ false, true }) |tail| {
+                try std.testing.expectEqualStrings(Reference.fit(&face, &expected, body, 20, max, tail), face.fit(&actual, body, 20, max, tail));
+                checked += 1;
+            }
+        }
+    }
+    std.debug.print("font fit: {d} native/mipmapped/fallback, short-buffer, keep-end and 4096-byte comparisons match linear reference\n", .{checked});
 }
 
 /// Between wrapped lines of text, past the text's size.

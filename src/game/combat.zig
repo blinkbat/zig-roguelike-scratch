@@ -302,7 +302,7 @@ pub fn collectGold(g: *game.Game, at: P) void {
 }
 
 pub fn arrive(g: *game.Game, at: P) void {
-    collectGold(g, at);
+    if (!g.sim.lv.at(at).isChest() and !g.sim.ground.hasItems(at)) collectGold(g, at);
     noticeItems(g, at);
 }
 

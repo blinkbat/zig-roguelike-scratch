@@ -11,12 +11,16 @@ const panel = @import("panel.zig");
 const catalog = @import("text_catalog.zig");
 
 const PAD = editor.PAD;
-const ROW = 52;
-const LINE = 24;
+const TEXT = editor.TEXT;
+const DETAIL = editor.DETAIL;
+const ROW = TEXT + 2 * DETAIL + 20;
+const LINE = TEXT + 8;
+const NAV_ROW = DETAIL + 20;
 const Focus = enum { search, passage };
 const Leave = enum { close, quit };
 const HISTORY = 16;
 const Revision = struct { buf: [catalog.MAX_TEXT + 1]u8, n: usize, cursor: usize, anchor: usize };
+const Group = struct { category: []const u8, owner: []const u8, first: usize, end: usize, matches: usize = 0 };
 const FontKey = struct {
     ordered: bool,
     font: ?rl.Font,
@@ -234,8 +238,22 @@ pub const State = struct {
     note: [256:0]u8 = @splat(0),
     note_n: usize = 0,
     passage_box: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+    nav_box: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+    list_box: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+    category: ?[]const u8 = null,
+    owner: ?[]const u8 = null,
+    nav_top: usize = 0,
+    nav_rows: usize = 1,
+    nav_count: usize = 0,
+    order: std.ArrayListUnmanaged(usize) = .{},
+    groups: std.ArrayListUnmanaged(Group) = .{},
+    results: std.ArrayListUnmanaged(usize) = .{},
+    view_dirty: bool = true,
 
     pub fn deinit(s: *State, alloc: std.mem.Allocator) void {
+        s.order.deinit(alloc);
+        s.groups.deinit(alloc);
+        s.results.deinit(alloc);
         if (s.data) |c| {
             c.deinit();
             alloc.destroy(c);
@@ -257,26 +275,101 @@ pub const State = struct {
         return !std.mem.eql(u8, s.draft.text(), e.text) or s.author != e.author;
     }
 
-    fn matches(s: *const State, e: catalog.Entry) bool {
+    fn queryMatches(s: *const State, e: catalog.Entry) bool {
         const q = s.search.text();
-        return q.len == 0 or std.ascii.indexOfIgnoreCase(e.text, q) != null or std.ascii.indexOfIgnoreCase(e.path, q) != null;
+        if (q.len == 0) return true;
+        for ([_][]const u8{ e.text, e.path, e.category, e.owner, e.role, e.context }) |value| {
+            if (std.ascii.indexOfIgnoreCase(value, q) != null) return true;
+        }
+        return false;
     }
 
-    fn count(s: *const State) usize {
-        const c = s.data orelse return 0;
-        var n: usize = 0;
-        for (c.entries()) |e| if (s.matches(e)) {
-            n += 1;
-        };
-        return n;
+    fn matches(s: *const State, e: catalog.Entry) bool {
+        if (s.category) |category| if (!std.mem.eql(u8, category, e.category)) return false;
+        if (s.owner) |owner| if (!std.mem.eql(u8, owner, e.owner)) return false;
+        return s.queryMatches(e);
     }
 
-    fn pick(s: *State, i: usize) void {
-        if (s.selected == i) return;
-        if (s.dirty()) return s.say("Save or discard this passage before selecting another.", .{});
+    fn reindex(s: *State, alloc: std.mem.Allocator) !void {
+        s.order.clearRetainingCapacity();
+        s.groups.clearRetainingCapacity();
+        s.results.clearRetainingCapacity();
+        s.category = null;
+        s.owner = null;
+        s.nav_top = 0;
+        const c = s.data orelse return;
+        const entries = c.entries();
+        try s.order.ensureTotalCapacity(alloc, entries.len);
+        try s.groups.ensureTotalCapacity(alloc, entries.len);
+        try s.results.ensureTotalCapacity(alloc, entries.len);
+        for (entries, 0..) |_, i| s.order.appendAssumeCapacity(i);
+        std.mem.sort(usize, s.order.items, entries, struct {
+            fn less(es: []const catalog.Entry, x: usize, y: usize) bool {
+                const a = es[x];
+                const b = es[y];
+                inline for (.{ "category", "owner", "role", "path" }) |field| {
+                    const cmp = std.mem.order(u8, @field(a, field), @field(b, field));
+                    if (cmp != .eq) return cmp == .lt;
+                }
+                if (a.line != b.line) return a.line < b.line;
+                return x < y;
+            }
+        }.less);
+        for (s.order.items, 0..) |index, at| {
+            const e = entries[index];
+            if (s.groups.items.len > 0) {
+                const previous = &s.groups.items[s.groups.items.len - 1];
+                if (std.mem.eql(u8, previous.category, e.category) and std.mem.eql(u8, previous.owner, e.owner)) {
+                    previous.end = at + 1;
+                    continue;
+                }
+            }
+            s.groups.appendAssumeCapacity(.{ .category = e.category, .owner = e.owner, .first = at, .end = at + 1 });
+        }
+        s.view_dirty = true;
+        s.refresh();
+    }
+
+    fn refresh(s: *State) void {
+        if (!s.view_dirty) return;
+        s.results.clearRetainingCapacity();
+        const c = s.data orelse return;
+        for (s.groups.items) |*group| {
+            group.matches = 0;
+            for (s.order.items[group.first..group.end]) |index| {
+                const e = c.entries()[index];
+                if (!s.queryMatches(e)) continue;
+                group.matches += 1;
+                if (s.matches(e)) s.results.appendAssumeCapacity(index);
+            }
+        }
+        s.top = @min(s.top, s.results.items.len -| s.rows);
+        s.view_dirty = false;
+    }
+
+    fn scope(s: *State, category: ?[]const u8, owner: ?[]const u8) void {
+        if (s.dirty()) return s.say("Save or discard this passage before changing its group.", .{});
+        const same_category = if (s.category) |previous| if (category) |next| std.mem.eql(u8, previous, next) else false else category == null;
+        s.category = category;
+        s.owner = owner;
+        s.top = 0;
+        if (!same_category) s.nav_top = 0;
+        s.selected = null;
+        s.focus = .search;
+        s.view_dirty = true;
+        s.note_n = 0;
+    }
+
+    fn pick(s: *State, i: usize) bool {
+        if (s.selected == i) return true;
+        if (s.dirty()) {
+            s.say("Save or discard this passage before selecting another.", .{});
+            return false;
+        }
         s.selected = i;
         s.restore();
         s.note_n = 0;
+        return true;
     }
 
     fn restore(s: *State) void {
@@ -318,17 +411,34 @@ fn reload(ed: *editor.Editor) void {
     };
     s.selected = null;
     s.top = 0;
+    s.reindex(ed.alloc) catch {
+        s.say("Could not organize project text: out of memory.", .{});
+        return;
+    };
     if (c.warning.len > 0) s.say("{s}", .{c.warning}) else s.say("Loaded {d} passages. Saved wording takes effect after rebuilding.", .{c.entries().len});
 }
 
 pub fn pose(ed: *editor.Editor) !void {
+    try poseContext(ed, "play.fireball.DESCRIPTION");
+}
+
+pub fn poseContext(ed: *editor.Editor, context: []const u8) !void {
     open(ed);
     const s = &ed.words;
     const c = s.data orelse return error.TextCatalogMissing;
-    s.search.set("fireball.zig");
+    s.search.set("");
     for (c.entries(), 0..) |entry, i| {
-        if (!s.matches(entry) or !entry.editable or entry.text.len < 40) continue;
-        s.pick(i);
+        if (!std.mem.startsWith(u8, entry.context, context) or !entry.editable) continue;
+        s.scope(entry.category, entry.owner);
+        _ = s.pick(i);
+        s.refresh();
+        var owner_at: usize = 0;
+        for (s.groups.items) |group| {
+            if (!std.mem.eql(u8, group.category, entry.category)) continue;
+            if (std.mem.eql(u8, group.owner, entry.owner)) break;
+            owner_at += 1;
+        }
+        s.nav_top = owner_at -| 2;
         s.focus = .passage;
         return;
     }
@@ -360,6 +470,7 @@ fn save(ed: *editor.Editor) void {
         return;
     };
     s.restore();
+    s.view_dirty = true;
     if (result == .tags_not_saved) s.author = requested_author;
     if (result == .saved) s.say("Saved. Rebuild to apply wording changes.", .{}) else s.say("Source saved; author tags could not be saved.", .{});
     if (result == .saved and s.leave != null) finishClose(ed);
@@ -380,7 +491,11 @@ pub fn keys(ed: *editor.Editor) void {
     if (s.focus == .search) {
         const old = std.hash.Wyhash.hash(0, s.search.text());
         if (!s.search.feed(d, false)) s.say("Search accepts plain ASCII text on one line.", .{});
-        if (std.hash.Wyhash.hash(0, s.search.text()) != old) s.top = 0;
+        if (std.hash.Wyhash.hash(0, s.search.text()) != old) {
+            s.top = 0;
+            s.nav_top = 0;
+            s.view_dirty = true;
+        }
     } else if (s.selected) |i| {
         if (s.data.?.entries()[i].editable) {
             const was_dirty = s.dirty();
@@ -392,33 +507,28 @@ pub fn keys(ed: *editor.Editor) void {
             _ = s.draft.feed(&nav, true);
         }
     }
-    const n = s.count();
+    if (d.wheel == 0 and (d.nav == 0 or s.focus != .search)) return;
+    s.refresh();
+    const n = s.results.items.len;
     if (d.wheel != 0) {
         const by: i32 = if (d.wheel > 0) -3 else 3;
         if (raster.holds(s.passage_box, d.mouse)) {
             s.draft.scroll = mathx.nudge(s.draft.scroll, by, (s.draft.lines -| s.draft.rows) + 1);
             s.draft.reveal = false;
-        } else s.top = mathx.nudge(s.top, by, (n -| s.rows) + 1);
+        } else if (raster.holds(s.nav_box, d.mouse)) {
+            s.nav_top = mathx.nudge(s.nav_top, by, (s.nav_count -| s.nav_rows) + 1);
+        } else if (raster.holds(s.list_box, d.mouse)) s.top = mathx.nudge(s.top, by, (n -| s.rows) + 1);
     }
     if (d.nav != 0 and s.focus == .search and n > 0) {
         var at: usize = 0;
-        var ordinal: usize = 0;
-        for (s.data.?.entries(), 0..) |e, i| {
-            if (!s.matches(e)) continue;
-            if (s.selected == i) at = ordinal;
-            ordinal += 1;
-        }
-        const next = mathx.wrap(at, d.nav, n);
-        ordinal = 0;
-        for (s.data.?.entries(), 0..) |e, i| {
-            if (!s.matches(e)) continue;
-            if (ordinal == next) {
-                s.pick(i);
-                break;
-            }
-            ordinal += 1;
-        }
-        s.top = mathx.reveal(s.top, next, s.rows);
+        var found = false;
+        for (s.results.items, 0..) |i, ordinal| if (s.selected == i) {
+            at = ordinal;
+            found = true;
+            break;
+        };
+        const next = if (found) mathx.wrap(at, d.nav, n) else if (d.nav < 0) n - 1 else 0;
+        if (s.pick(s.results.items[next])) s.top = mathx.reveal(s.top, next, s.rows);
     }
 }
 
@@ -436,7 +546,7 @@ fn displayBytes(s: []u8) void {
 
 fn displayWidth(face: anytype, s: [:0]u8) i32 {
     displayBytes(s);
-    return face.width(s, font.SMALL);
+    return face.width(s, TEXT);
 }
 
 fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, focused: bool, multiline: bool, editable: bool) void {
@@ -483,11 +593,11 @@ fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, focu
             rl.drawRectangle(x + left, yy, right - left, LINE, look.EDIT_ROW_ON);
         }
         displayBytes(buf[0 .. end - start]);
-        g.face.draw(buf[0 .. end - start :0], x, yy, font.SMALL, if (editable) look.TEXT else look.DIM);
+        g.face.draw(buf[0 .. end - start :0], x, yy, TEXT, if (editable) look.TEXT else look.DIM);
         if (focused and caret_line == line) {
             const at = @min(f.cursor, end) - start;
             buf[at] = 0;
-            rl.drawRectangle(x + displayWidth(&g.face, buf[0..at :0]), yy, 1, font.SMALL, look.UI_FOCUS);
+            rl.drawRectangle(x + displayWidth(&g.face, buf[0..at :0]), yy, 2, TEXT, look.UI_FOCUS);
         }
         if (hit and ed.desk.mouse.y >= yy and ed.desk.mouse.y < yy + LINE) {
             var at = start;
@@ -504,87 +614,179 @@ fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, focu
     if (hit) ed.words.focus = if (multiline) .passage else .search;
 }
 
+fn scrollMark(r: rl.Rectangle, top: usize, rows: usize, count: usize) void {
+    editor.scrollbar(.{ .x = r.x + r.width - 3, .y = r.y, .width = 3, .height = r.height }, top, rows, count);
+}
+
+fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8, count: usize, on: bool) bool {
+    const s = &ed.words;
+    if (ordinal < s.nav_top or ordinal >= s.nav_top + s.nav_rows) return false;
+    const x: i32 = @intFromFloat(s.nav_box.x);
+    const y = @as(i32, @intFromFloat(s.nav_box.y)) + @as(i32, @intCast(ordinal - s.nav_top)) * NAV_ROW;
+    const w: i32 = @intFromFloat(s.nav_box.width);
+    const r = raster.rect(x, y, w - editor.GAP, NAV_ROW - 4);
+    const h = editor.hot(ed, r, s.leave == null, true, null);
+    editor.plate(r, on, h.hot);
+    var buf: [32]u8 = undefined;
+    const number = std.fmt.bufPrintZ(&buf, "{d}", .{count}) catch "";
+    const number_w = g.face.width(number, DETAIL);
+    panel.drawFit(g, label, DETAIL, w - number_w - 3 * editor.GAP - 6, false, x + editor.GAP, y + 8, if (on) look.UI_GOLD else look.TEXT);
+    g.face.draw(number, x + w - number_w - 2 * editor.GAP, y + 8, DETAIL, look.DIM);
+    return h.hit;
+}
+
+fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bottom: i32) void {
+    const s = &ed.words;
+    panel.drawFit(g, if (s.category) |category| category else "Features", TEXT, w, false, x, y, look.UI_GOLD);
+    var yy = y + LINE;
+    if (button(ed, g, x, yy, w - editor.GAP, if (s.category != null) "< All features" else "All text", s.category == null, s.leave == null)) s.scope(null, null);
+    yy += editor.ROW_STEP;
+    if (s.category != null) {
+        if (button(ed, g, x, yy, w - editor.GAP, "All in this feature", s.owner == null, s.leave == null)) s.scope(s.category, null);
+        yy += editor.ROW_STEP;
+    }
+    s.nav_box = raster.rect(x, yy, w, @max(0, bottom - yy));
+    s.nav_rows = @intCast(@max(1, @divTrunc(bottom - yy, NAV_ROW)));
+    var count: usize = 0;
+    var previous: []const u8 = "";
+    for (s.groups.items) |group| {
+        if (group.matches == 0) continue;
+        if (s.category) |category| {
+            if (std.mem.eql(u8, category, group.category)) count += 1;
+        } else if (!std.mem.eql(u8, previous, group.category)) {
+            count += 1;
+            previous = group.category;
+        }
+    }
+    s.nav_count = count;
+    s.nav_top = @min(s.nav_top, count -| s.nav_rows);
+    var ordinal: usize = 0;
+    if (s.category) |category| {
+        for (s.groups.items) |group| {
+            if (group.matches == 0 or !std.mem.eql(u8, category, group.category)) continue;
+            const on = if (s.owner) |owner| std.mem.eql(u8, owner, group.owner) else false;
+            if (navItem(ed, g, ordinal, group.owner, group.matches, on)) s.scope(category, group.owner);
+            ordinal += 1;
+        }
+    } else {
+        var at: usize = 0;
+        while (at < s.groups.items.len) {
+            const category = s.groups.items[at].category;
+            var matches: usize = 0;
+            while (at < s.groups.items.len and std.mem.eql(u8, category, s.groups.items[at].category)) : (at += 1) matches += s.groups.items[at].matches;
+            if (matches == 0) continue;
+            if (navItem(ed, g, ordinal, category, matches, false)) s.scope(category, null);
+            ordinal += 1;
+        }
+    }
+    scrollMark(s.nav_box, s.nav_top, s.nav_rows, s.nav_count);
+}
+
 pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.words;
-    const height = @max(400, @min(760, g.screen.y - 2 * PAD));
-    const f = editor.modalFrame(g, 1200, height, "Player-facing text", false);
+    s.refresh();
+    const height = @min(1080, g.screen.y - 2 * PAD);
+    const f = editor.modalFrame(g, 1800, height, "Text editor", false);
     const x = f.x + PAD;
     const w = f.w - 2 * PAD;
     var y = f.y;
-    var buf: [512]u8 = undefined;
-    panel.drawFit(g, "Find wording or source file", font.SMALL, w, false, x, y, look.DIM);
-    y += LINE;
-    drawField(ed, g, &s.search, raster.rect(x, y, w - 208, 36), s.focus == .search, false, true);
-    if (button(ed, g, x + w - 200, y + 5, 94, "Reload", false, !s.dirty())) reload(ed);
-    if (button(ed, g, x + w - 100, y + 5, 100, "Close", false, true)) requestClose(ed, false);
-    y += 48;
-    const left = @divTrunc(w * 2, 5);
-    const right_x = x + left + PAD;
-    const right_w = w - left - PAD;
-    const bottom = f.top - PAD + height - PAD;
-    s.rows = @intCast(@max(1, @divTrunc(bottom - y - 2 * LINE, ROW)));
-    var ordinal: usize = 0;
-    var drawn: usize = 0;
-    if (s.data) |c| for (c.entries(), 0..) |e, i| {
-        if (!s.matches(e)) continue;
-        defer ordinal += 1;
-        if (ordinal < s.top or drawn >= s.rows) continue;
-        const yy = y + @as(i32, @intCast(drawn)) * ROW;
-        const r = raster.rect(x, yy, left, ROW - 4);
-        const h = editor.hot(ed, r, true, true, null);
-        editor.plate(r, s.selected == i, h.hot);
-        var snippet: [catalog.MAX_TEXT + 1]u8 = undefined;
-        const snippet_n = @min(e.text.len, catalog.MAX_TEXT);
-        @memcpy(snippet[0..snippet_n], e.text[0..snippet_n]);
-        for (snippet[0..snippet_n]) |*char| if (char.* < ' ') {
-            char.* = ' ';
-        };
-        panel.drawFit(g, snippet[0..snippet_n], font.SMALL, left - 12, false, x + 6, yy + 3, look.TEXT);
-        const provenance = std.fmt.bufPrintZ(&buf, "{s}:{d}  |  {s}", .{ e.path, e.line, @tagName(e.author) }) catch "";
-        panel.drawFit(g, provenance, font.LABEL, left - 12, true, x + 6, yy + 25, look.DIM);
-        if (h.hit and s.leave == null) s.pick(i);
-        drawn += 1;
-    };
-    const count_label = std.fmt.bufPrintZ(&buf, "{d} matching passages", .{s.count()}) catch "";
-    panel.drawFit(g, count_label, font.SMALL, left, false, x, bottom - LINE, look.DIM);
+    var buf: [1024]u8 = undefined;
+    panel.drawFit(g, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
+    y += DETAIL + 6;
+    drawField(ed, g, &s.search, raster.rect(x, y, w - 294, LINE + 12), s.focus == .search, false, true);
+    if (button(ed, g, x + w - 282, y + 4, 86, "Clear", false, s.search.n > 0)) {
+        s.search.set("");
+        s.view_dirty = true;
+        s.top = 0;
+        s.nav_top = 0;
+        s.focus = .search;
+    }
+    if (button(ed, g, x + w - 188, y + 4, 90, "Reload", false, !s.dirty())) reload(ed);
+    if (button(ed, g, x + w - 90, y + 4, 90, "Close", false, true)) requestClose(ed, false);
+    y += LINE + 28;
+    const nav_w = std.math.clamp(@divTrunc(w, 5), 180, 250);
+    const list_x = x + nav_w + PAD;
+    const list_w = std.math.clamp(@divTrunc(w, 4), 240, 360);
+    const right_x = list_x + list_w + PAD;
+    const right_w = x + w - right_x;
+    const bottom = f.top - PAD + height - PAD - DETAIL - 8;
+    rl.drawRectangle(list_x - @divTrunc(PAD, 2), y, 1, bottom - y, look.EDGE);
+    rl.drawRectangle(right_x - @divTrunc(PAD, 2), y, 1, bottom - y, look.EDGE);
+    drawNavigation(ed, g, x, y, nav_w, bottom);
+    panel.drawFit(g, "Passages", TEXT, list_w, false, list_x, y, look.UI_GOLD);
+    const list_y = y + LINE;
+    s.rows = @intCast(@max(1, @divTrunc(bottom - list_y - DETAIL - 8, ROW)));
+    s.top = @min(s.top, s.results.items.len -| s.rows);
+    s.list_box = raster.rect(list_x, list_y, list_w, @as(i32, @intCast(s.rows)) * ROW);
+    if (s.data) |c| {
+        const end = @min(s.results.items.len, s.top + s.rows);
+        for (s.results.items[s.top..end], 0..) |i, at| {
+            const e = c.entries()[i];
+            const yy = list_y + @as(i32, @intCast(at)) * ROW;
+            const r = raster.rect(list_x, yy, list_w - editor.GAP, ROW - 6);
+            const h = editor.hot(ed, r, s.leave == null, true, null);
+            editor.plate(r, s.selected == i, h.hot);
+            panel.drawFit(g, e.role, TEXT, list_w - 20, false, list_x + 6, yy + 4, if (s.selected == i) look.UI_GOLD else look.TEXT);
+            panel.drawFit(g, e.owner, DETAIL, list_w - 20, false, list_x + 6, yy + TEXT + 8, look.DIM);
+            var snippet: [catalog.MAX_TEXT + 1]u8 = undefined;
+            const n = @min(e.text.len, catalog.MAX_TEXT);
+            @memcpy(snippet[0..n], e.text[0..n]);
+            for (snippet[0..n]) |*char| if (char.* < ' ') { char.* = ' '; };
+            panel.drawFit(g, snippet[0..n], DETAIL, list_w - 20, false, list_x + 6, yy + TEXT + DETAIL + 12, look.TEXT);
+            if (h.hit and s.pick(i)) s.focus = .passage;
+        }
+    }
+    scrollMark(s.list_box, s.top, s.rows, s.results.items.len);
+    const count_label = std.fmt.bufPrintZ(&buf, "{d} passages", .{s.results.items.len}) catch "";
+    panel.drawFit(g, count_label, DETAIL, list_w, false, list_x, bottom - DETAIL, look.DIM);
+    if (s.results.items.len == 0) {
+        panel.drawFit(g, "No matching passages.", DETAIL, list_w, false, list_x + 6, list_y + 8, look.TEXT);
+        panel.drawFit(g, "Clear search or choose another group.", DETAIL, list_w, false, list_x + 6, list_y + 36, look.DIM);
+    }
+    s.passage_box = raster.rect(0, 0, 0, 0);
     if (s.selected) |i| if (s.data) |c| {
         const e = c.entries()[i];
+        panel.drawFit(g, e.owner, TEXT, right_w, false, right_x, y, look.TEXT);
+        const breadcrumb = std.fmt.bufPrintZ(&buf, "{s}  >  {s}", .{ e.category, e.role }) catch "";
+        panel.drawFit(g, breadcrumb, DETAIL, right_w, false, right_x, y + LINE, look.UI_GOLD);
         const source = std.fmt.bufPrintZ(&buf, "{s}:{d}", .{ e.path, e.line }) catch "";
-        panel.drawFit(g, source, font.SMALL, right_w, true, right_x, y, look.UI_GOLD);
-        var yy = y + LINE + 4;
-        const hint = std.fmt.bufPrintZ(&buf, "Keep placeholders intact. {d}/{d} characters.", .{ s.draft.n, e.max_len }) catch "";
-        panel.drawFit(g, if (e.editable) hint else e.reason, font.SMALL, right_w, false, right_x, yy, look.DIM);
-        yy += LINE + 4;
-        const field_h = @max(80, bottom - yy - 6 * LINE - 24);
+        panel.drawFit(g, source, DETAIL, right_w, true, right_x, y + LINE + DETAIL + 6, look.DIM);
+        panel.drawFit(g, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * (DETAIL + 6), look.DIM);
+        var yy = y + LINE + 3 * (DETAIL + 6) + 4;
+        const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, e.max_len }) catch "";
+        panel.drawFit(g, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
+        yy += DETAIL + 8;
+        const field_h = @max(LINE + 12, bottom - yy - (DETAIL + 8 + 2 * editor.ROW_STEP + DETAIL + 8));
         s.passage_box = raster.rect(right_x, yy, right_w, field_h);
         drawField(ed, g, &s.draft, s.passage_box, s.focus == .passage, true, e.editable);
-        yy += field_h + 10;
+        yy += field_h + 8;
+        panel.drawFit(g, "Written by", DETAIL, right_w, false, right_x, yy, look.DIM);
+        yy += DETAIL + 6;
         const tags = std.enums.values(catalog.Author);
         const tag_w = @divTrunc(right_w, @as(i32, @intCast(tags.len)));
         for (tags, 0..) |tag, at| {
-            const label: [:0]const u8 = switch (tag) {
-                .unknown => "Unknown",
-                .you => "You",
-                .ai => "AI",
-                .mixed => "Mixed",
-            };
+            const label: [:0]const u8 = switch (tag) { .unknown => "Unknown", .you => "You", .ai => "AI", .mixed => "Mixed" };
             if (button(ed, g, right_x + @as(i32, @intCast(at)) * tag_w, yy, tag_w - 4, label, s.author == tag, e.editable and s.leave == null)) s.author = tag;
         }
-        yy += 36;
-        if (button(ed, g, right_x, yy, 130, "Save passage", false, e.editable and s.dirty())) save(ed);
-        if (button(ed, g, right_x + 138, yy, 100, "Discard", false, s.dirty())) {
+        yy += editor.ROW_STEP;
+        const save_w = @min(160, @divTrunc(right_w, 3));
+        if (button(ed, g, right_x, yy, save_w, "Save passage", false, e.editable and s.dirty())) save(ed);
+        if (button(ed, g, right_x + save_w + 6, yy, 100, "Discard", false, s.dirty())) {
             s.restore();
             s.note_n = 0;
             if (s.leave != null) finishClose(ed);
         }
-        if (s.leave != null) {
-            if (button(ed, g, right_x + 246, yy, @max(90, right_w - 246), "Keep editing", false, true)) s.leave = null;
-        }
-        yy += 36;
-        if (s.leave != null) panel.drawFit(g, "Unsaved passage: save or discard before leaving.", font.SMALL, right_w, false, right_x, yy, look.UI_FOCUS) else panel.drawFit(g, if (s.dirty()) "Unsaved changes" else "Saved wording is applied on the next build.", font.SMALL, right_w, false, right_x, yy, look.DIM);
+        if (s.leave != null and button(ed, g, right_x + save_w + 112, yy, right_w - save_w - 112, "Keep editing", false, true)) s.leave = null;
+        yy += editor.ROW_STEP;
+        const status = if (s.leave != null) "Save or discard before leaving." else if (!e.editable) e.reason else if (s.dirty()) "Unsaved changes" else if (e.alias != null) "Display name; code identity stays fixed." else "Keep format placeholders and control markers intact.";
+        panel.drawFit(g, status, DETAIL, right_w, false, right_x, yy, if (s.dirty()) look.UI_FOCUS else look.DIM);
     };
-    if (s.selected == null) panel.drawFit(g, "Select a passage to rewrite it and set its author tag.", font.SMALL, right_w, false, right_x, y + LINE, look.DIM);
-    panel.drawFit(g, s.note[0..s.note_n], font.SMALL, right_w, false, right_x, bottom - LINE, look.UI_GOLD);
+    if (s.selected == null) {
+        panel.drawFit(g, "Choose a passage", TEXT, right_w, false, right_x, y, look.TEXT);
+        _ = g.face.paragraph("Browse a feature, then its object or screen. Select a named field to see its wording and exact source.", right_x, y + LINE + 8, right_w, DETAIL, look.DIM);
+    }
+    const note = if (s.note_n > 0) s.note[0..s.note_n] else "Saved wording takes effect after rebuilding.";
+    panel.drawFit(g, note, DETAIL, w, false, x, bottom + 8, look.UI_GOLD);
 }
 
 test "text field replaces selections, preserves drafts on invalid paste, and inserts at cursor" {
@@ -601,6 +803,44 @@ test "text field replaces selections, preserves drafts on invalid paste, and ins
     try std.testing.expect(f.insert("Look!\r\n"));
     try std.testing.expectEqualStrings("Look!\nA slime bites.", f.text());
     std.debug.print("3 text edits checked: selected replacement, rejected non-ASCII, insertion with normalized newlines\n", .{});
+}
+
+test "text browser groups semantic owners and protects a dirty passage during navigation" {
+    const alloc = std.testing.allocator;
+    const ed = try editor.Editor.create(alloc);
+    defer ed.destroy();
+    const c = try alloc.create(catalog.Catalog);
+    c.* = catalog.Catalog.init(alloc);
+    ed.words.data = c;
+    for ([_]catalog.Entry{
+        .{ .path = "src/play/fireball.zig", .line = 2, .text = "A fiery burst.", .category = "Skills", .owner = "Fireball", .role = "Description", .context = "play.fireball.DESCRIPTION", .file = 0, .start = 0, .end = 0, .ordinal = 0 },
+        .{ .path = "src/play/fireball.zig", .line = 3, .text = "Fire follows.", .category = "Skills", .owner = "Fireball", .role = "Flavor", .context = "play.fireball.FLAVOR", .file = 0, .start = 0, .end = 0, .ordinal = 1 },
+        .{ .path = "src/play/ward.zig", .line = 2, .text = "A magical shield.", .category = "Skills", .owner = "Mana shield", .role = "Description", .context = "play.ward.DESCRIPTION", .file = 0, .start = 0, .end = 0, .ordinal = 0 },
+    }) |entry| try c.list.append(c.arena.allocator(), entry);
+    const s = &ed.words;
+    try s.reindex(alloc);
+    try std.testing.expectEqual(@as(usize, 2), s.groups.items.len);
+    try std.testing.expectEqual(@as(usize, 3), s.results.items.len);
+    s.search.set("play.ward");
+    s.view_dirty = true;
+    s.refresh();
+    try std.testing.expectEqualSlices(usize, &.{2}, s.results.items);
+    s.search.set("");
+    s.scope("Skills", "Fireball");
+    s.refresh();
+    try std.testing.expectEqualSlices(usize, &.{ 0, 1 }, s.results.items);
+    try std.testing.expect(s.pick(0));
+    try std.testing.expect(s.draft.insert("!"));
+    s.rows = 1;
+    s.top = 0;
+    ed.desk = .{ .nav = 1 };
+    keys(ed);
+    try std.testing.expectEqual(@as(?usize, 0), s.selected);
+    try std.testing.expectEqual(@as(usize, 0), s.top);
+    s.scope("Skills", "Mana shield");
+    try std.testing.expectEqualStrings("Fireball", s.owner.?);
+    try std.testing.expectEqualStrings("A fiery burst.!", s.draft.text());
+    std.debug.print("text browser: semantic grouping, exact-context search, owner filtering and dirty navigation/scroll protection checked\n", .{});
 }
 
 test "text field selection survives select all, shift arrows and idle frames" {

@@ -66,6 +66,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - For concurrent owner play, copy the built executable into the temporary shot directory with a distinct
   basename before `--shot`; `run.cmd` kills every process named `cistern.exe`, including headless captures.
 - `--shot-ui` runs Character/HUD, loot and day/night level-up captures; use the same temporary-directory procedure as `--shot`.
+- `--shot-editor` captures editor workspaces and text/modal states at 720p, 1080p and 1440p; use the same temporary-directory procedure.
 - `--shot-debug` captures each Debug submenu at 720p and loot states, and verifies that the six additional
   lighting/water/weather switches change pixels and restore the exact frame when re-enabled.
 - Inspect actual headless PNGs. `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,
@@ -135,12 +136,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Item actions and point allocation execute on one press; item changes spend one turn and keep Character open.
   Shoulders / Q and E change tabs; F1–F5 directly toggle Equipment, Inventory, Stats, Passives and Skills.
   Keyboard tab headers show their shortcut glyphs. Back closes Character directly. Skills owns binding. Point allocation is free.
-  Bumping or interacting with a closed chest opens it for one turn, revealing its bag and ground gold without a modal.
+  Bumping or interacting with a closed chest opens it for one turn, revealing its loot without a modal.
   Stepping onto a loose bag or stocked open chest opens its loot modal and spends the movement turn; bags remain walkable.
   Interact opens a sole bag/open chest's loot modal directly, or lists nearby containers/doors first when there is a choice (a door always lists).
-  Each occupied item cell is one bag; loot shows only the selected cell, with Take item and Take all. Each successful pickup action spends one turn;
-  Take all takes as many as fit and leaves the rest. Empty loot closes. A press while busy waits for `quiet` (`Queued.interact`)
-  instead of queuing its button's skill. Item commands wait out door travel. Gold collects only on arrival at its ground cell, never from opening loot.
+  Ground gold without items is a coin drop, automatically collected when the hero steps onto it without an extra turn or modal. Gold with items shares one item bag; loot shows only the selected cell, with Take item, Take gold and Take all. Each successful pickup action spends one turn;
+  Take all collects gold and as many items as fit, leaving the rest. Gold needs no inventory space. Empty loot closes. A press while busy waits for `quiet` (`Queued.interact`)
+  instead of queuing its button's skill. Item commands wait out door travel. Movement and browsing never collect gold from bags or chests.
   Foes roll gold more often than items; plain white items have no rolled modifiers and are more common than magic blues.
   `items.foeLoot`/`items.roll` own the rates and rolls; bags and gold appear when the foe's death is presented.
   See `docs/PROGRESSION.md` for rules and the inspected D2/PoE2 paperdoll references.
@@ -183,7 +184,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   normal editor-test archer and no save slot. Returning preserves the editor map, modal and undo history;
   death retry and Debug > Gameplay > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
 - Editor > Text uses `edit/text_catalog.zig` and `edit/text_panel.zig` to browse source wording, rewrite literals
-  and assign simple author tags. Source and tag conflict checks protect external edits; wording applies after rebuilding.
+  by feature, owner and field purpose, and assign separate author tags. Editor workspaces use 24px primary text,
+  20px details and scrollable Tools/Nodes/Things/Generator panels. Source and tag conflict checks protect external edits; wording applies after rebuilding.
   Display aliases live in `assets/player-labels.txt`, attribution in root `text-tags.json`; enum/save identities stay fixed.
   Map names are references here and use the existing node Rename action. See `docs/TEXT_EDITOR.md`.
 - `save.zig` freezes the whole run: map, visited/current nodes, actors, class/name, resources/statuses,
@@ -206,10 +208,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Brick walls join walls, forests join shrubs. `Level.wallShape` is brick-only; `tileShape` handles both.
   Missing forest masks are restored on save resume. Torch/barrel placement must preserve routes;
   barrels stop movement/arrows and break for gold in one hit, with no HP.
-  Chests spawn closed; the first bump or Interact reveals their contents and drops gold on the ground.
-  Open chests remain walkable, showing `chest-item-bag.png` while items remain and `chest-open.png` once empty;
-  ground item cells show one `item-bag.png` regardless of item count. Gold piles show `small-coins.png`, or `large-coins.png` from
-  `items.Coins.LARGE`, beside a bag on the same cell, with a faint gold light. Seen coins, bags, closed or stocked chests and barrels
+  Chests spawn closed; the first bump or Interact reveals their items and gold.
+  Open chests remain walkable, showing `chest-item-bag.png` while items or gold remain and `chest-open.png` once empty;
+  ground cells with items show one `item-bag.png`, including any gold in that cell; gold alone uses `small-coins.png` or `large-coins.png`, with no coin lights. Seen coins, bags, closed or stocked chests and barrels
   catch a very subtle diagonal shine (`look.shineSweep`), each cell at its own time. Attacks never open chests. Wilds' `loops` reconnects side paths;
   `rewards chests` rewards substantial branches, fills sparse maps with spaced chests in sheltered alcoves,
   and scatters barrels as minor gold rewards. The Strand enables both; rewards must preserve routes.
@@ -294,7 +295,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - **The picture lags the mechanic.** Simulation never reads presentation. `Presentation.pictured`/`fx.After`
   apply each visible blow when it lands; HUD life and vignette use presented HP. Deaths, barrel removal,
   slime births, status markers and speech follow that timing. Event-log lines said while a turn resolves stay
-  hidden (`Log.held`) until it is `quiet`; gold taken on a step stays drawn while the hero glides there. Foes turn/move at their stagger position.
+  hidden (`Log.held`) until it is `quiet`. Foes turn/move at their stagger position.
   Level gains start a brief gold shaft, rising glints, a soft character glow with nearby golden light,
   and floating "Level up!" text when progression is presented;
   loading a run does not replay them. Update ongoing effects before starting new ones. `Presentation.busy` covers the slowest glide/projectile/flash;

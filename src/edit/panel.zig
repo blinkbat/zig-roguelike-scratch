@@ -8,7 +8,6 @@ const listing = @import("../map/listing.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
-const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
 const knobs = @import("knobs.zig");
@@ -18,13 +17,17 @@ const editor = @import("editor.zig");
 const text_panel = @import("text_panel.zig");
 const P = mathx.P;
 const Desk = input.Desk;
-const SMALL = font.SMALL;
-const HEAD = font.HEAD;
+const SMALL = editor.DETAIL;
+const HEAD = editor.HEAD;
 const PANEL_BG = look.EDIT_PANEL;
 const ON = look.EDIT_ON;
 const HOVER = look.EDIT_HOVER;
 const WARN = look.EDIT_WARN;
 const SEP = menu.SEP;
+
+const WORKSPACE_COLS = 2;
+const WORKSPACE_ROWS = std.math.divCeil(usize, std.enums.values(editor.Lower).len, WORKSPACE_COLS) catch unreachable;
+pub const WORKSPACE_TOP: i32 = editor.PAD + HEAD + editor.GAP + (4 + WORKSPACE_ROWS) * editor.ROW_STEP + editor.GAP;
 
 pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     var buf: [editor.LINE]u8 = undefined;
@@ -41,14 +44,18 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     if (editor.button(ed, g, file.next(), "Save as", false, true, editor.keyed("Save under a new name", Desk.SAVE_AS_CAPTION))) ed.askName(.save_as);
     file.done();
     y += editor.ROW_STEP;
-    var views = editor.Across{ .y = y, .n = std.enums.values(editor.View).len + 3 };
+    var views = editor.Across{ .y = y, .n = std.enums.values(editor.View).len + 1 };
     for (std.enums.values(editor.View)) |v| {
         if (editor.button(ed, g, views.next(), menu.named(v), ed.view == v, true, editor.keyed("The map of one node, or every node and how they link", Desk.GRAPH_CAPTION))) ed.setView(v);
     }
-    if (editor.button(ed, g, views.next(), "Objects", false, true, editor.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
-    if (editor.button(ed, g, views.next(), "Text", false, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
-    if (editor.button(ed, g, views.next(), "Keys", false, true, editor.keyed("Every key", Desk.HELP_CAPTION))) ed.ask(.help);
+    if (editor.button(ed, g, views.next(), "Fit", false, ed.view == .map, "Fit the map in view")) editor.fitView(ed, editor.Editor.canvas(g));
     views.done();
+    y += editor.ROW_STEP;
+    var library = editor.Across{ .y = y, .n = 3 };
+    if (editor.button(ed, g, library.next(), "Objects", false, true, editor.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
+    if (editor.button(ed, g, library.next(), "Text", false, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
+    if (editor.button(ed, g, library.next(), "Keys", false, true, editor.keyed("Every key", Desk.HELP_CAPTION))) ed.ask(.help);
+    library.done();
     y += editor.ROW_STEP;
     var acts = editor.Across{ .y = y, .n = 4 };
     if (editor.button(ed, g, acts.next(), "Undo", false, ed.hist_at > 0, editor.keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
@@ -59,17 +66,46 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     if (editor.button(ed, g, acts.next(), "Title", false, true, editor.keyed("Back to the title", Desk.BACK_CAPTION))) ed.request(.leave);
     acts.done();
     y += editor.ROW_STEP;
-    var clipboard = editor.Across{ .y = y, .n = 5 };
+    if (ed.lower == .generator and ed.rolled() == null) ed.lower = .nodes;
+    for (std.enums.values(editor.Lower), 0..) |l, i| {
+        const s = mathx.unslot(i, WORKSPACE_COLS);
+        const r = editor.slotOf(editor.PAD, editor.INNER_W, y + s.y * editor.ROW_STEP, @intCast(s.x), WORKSPACE_COLS);
+        const live = l != .generator or ed.rolled() != null;
+        if (editor.button(ed, g, r, menu.named(l), ed.lower == l, live, LOWER_TIPS.get(l))) {
+            ed.lower = l;
+            ed.gen_top = 0;
+        }
+    }
+    y += WORKSPACE_ROWS * editor.ROW_STEP + editor.GAP;
+    std.debug.assert(y == WORKSPACE_TOP);
+    ed.lower_top = y;
+    switch (ed.lower) {
+        .tools => drawToolsWorkspace(ed, g, y),
+        .nodes => drawNodesWorkspace(ed, g, y),
+        .generator => if (ed.generator()) |pg| knobs.drawGenerator(ed, g, y, pg),
+        .things => drawThings(ed, g, y),
+    }
+}
+
+fn drawToolsWorkspace(ed: *editor.Editor, g: *game.Game, top: i32) void {
+    var y = beginScroll(ed, g, top);
+    defer endScroll(ed);
+    var clipboard = editor.Across{ .y = y, .n = 3 };
     const on_map = ed.view == .map and ed.paintable();
     const selected = ed.selection != null and on_map;
     if (editor.button(ed, g, clipboard.next(), "Copy", false, selected, editor.keyed("Copy selection", Desk.COPY_CAPTION))) editor.copySelection(ed, false);
     if (editor.button(ed, g, clipboard.next(), "Cut", false, selected, editor.keyed("Cut selection", Desk.CUT_CAPTION))) editor.copySelection(ed, true);
     if (editor.button(ed, g, clipboard.next(), "Paste", ed.pasting, ed.board.size.x > 0 and on_map, editor.keyed("Paste selection", Desk.PASTE_CAPTION))) editor.startPaste(ed);
-    if (editor.button(ed, g, clipboard.next(), "Clear", false, selected, editor.keyed("Clear selection", Desk.DELETE_CAPTION))) editor.clearSelection(ed);
-    if (editor.button(ed, g, clipboard.next(), "Fit", false, ed.view == .map, "Fit the map in view")) editor.fitView(ed, editor.Editor.canvas(g));
     clipboard.done();
-    y += editor.ROW_H + editor.SECTION_GAP;
+    y += editor.ROW_STEP;
+    if (editor.button(ed, g, editor.cellOfRow(y, 0, 1), "Clear selection", false, selected, editor.keyed("Clear selection", Desk.DELETE_CAPTION))) editor.clearSelection(ed);
+    y += editor.ROW_STEP + editor.BLOCK_GAP;
     y = drawTools(ed, g, y);
+    scrolledTo(ed, g, top, y);
+}
+
+fn drawNodesWorkspace(ed: *editor.Editor, g: *game.Game, top: i32) void {
+    var y = top;
     var adds = editor.Across{ .y = y, .n = 2 };
     if (editor.button(ed, g, adds.next(), "+ Bespoke", false, true, "A node you paint yourself")) editor.addNode(ed, .{ .bespoke = .{} });
     if (editor.button(ed, g, adds.next(), "+ Procgen", false, true, knobs.ADD_PROCGEN_TIP)) editor.addNode(ed, .{ .procgen = .{} });
@@ -87,26 +123,12 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
         node.done();
     }
     y += editor.ROW_H + editor.SECTION_GAP;
-    var tabs = editor.Across{ .y = y, .n = std.enums.values(editor.Lower).len };
-    for (std.enums.values(editor.Lower)) |l| {
-        const live = l != .generator or ed.rolled() != null;
-        if (editor.button(ed, g, tabs.next(), menu.named(l), ed.lower == l and live, live, LOWER_TIPS.get(l))) {
-            ed.lower = l;
-            ed.gen_top = 0;
-        }
-    }
-    tabs.done();
-    y += editor.ROW_H + editor.BLOCK_GAP;
     ed.lower_top = y;
-    switch (ed.lower) {
-        .generator => if (ed.generator()) |pg| return knobs.drawGenerator(ed, g, y, pg),
-        .things => return drawThings(ed, g, y),
-        .nodes => {},
-    }
     drawNodes(ed, g, y);
 }
 
 const LOWER_TIPS = std.EnumArray(editor.Lower, [:0]const u8).init(.{
+    .tools = "Painting, shapes, terrain palette and clipboard",
     .nodes = "Every node of the map",
     .things = "What is on this node and what is wrong with it; a row shows it on the map",
     .generator = "What this procgen node's floor, sky and foes are rolled from",
@@ -134,6 +156,7 @@ fn drawNodes(ed: *editor.Editor, g: *game.Game, top: i32) void {
         if (h.hit) ed.goTo(n);
         y += editor.NODE_H;
     }
+    drawScroll(g, top, @as(i32, @intCast(ed.scroll)) * editor.NODE_H, @as(i32, @intCast(ed.map.node_n -| ed.node_rows)) * editor.NODE_H);
 }
 
 fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {
@@ -146,10 +169,11 @@ fn nodeDetail(nd: *const atlas.Node, buf: []u8) [:0]const u8 {
     return std.fmt.bufPrintZ(buf, "{s}, {d} doors, {d} unlinked", .{ kind, nd.door_n, open }) catch "";
 }
 
-const ICON_H: i32 = 40;
+const ICON_H: i32 = 52;
 const TOOL_ROW: usize = 5;
-const SWATCH: i32 = 34;
-const SWATCH_GAP: i32 = 3;
+const SWATCH: i32 = 40;
+const SWATCH_GAP: i32 = 4;
+pub const SHAPE_COLS: usize = 3;
 const PALETTE_COLS: usize = @intCast(@divTrunc(editor.INNER_W + SWATCH_GAP, SWATCH + SWATCH_GAP));
 const PALETTE = blk: {
     var tiles: []const grid.Tile = &.{};
@@ -168,7 +192,7 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
         const r = editor.slotOf(editor.PAD, editor.INNER_W, y + s.y * (ICON_H + editor.GAP), @intCast(s.x), TOOL_ROW);
         const icon = rl.Rectangle{ .x = r.x, .y = r.y, .width = r.width, .height = ICON_H };
         const live = t.fits(ed.here());
-        const h = editor.hot(ed, icon, live, false, t.tip());
+        const h = editor.hot(ed, icon, live, false, if (live) t.tip() else editor.GENERATED);
         editor.plate(icon, t.eql(ed.tool), h.hot);
         const pic = editor.pictureIn(icon, ICON_PIC, ICON_PIC_TOP);
         if (t == .paint) swatch(g, ed.ink.get(.first), pic) else toolFigure(g, t, pic);
@@ -177,18 +201,16 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
         if (h.hit) ed.setTool(t);
     }
     y += @as(i32, @intCast(rows)) * (ICON_H + editor.GAP) + editor.GAP;
-    var shapes = editor.Across{ .y = y, .n = editor.SHAPES.len };
-    for (editor.SHAPES, Desk.SHAPE_CAPTIONS) |s, key| {
-        const r = shapes.next();
+    for (editor.SHAPES, Desk.SHAPE_CAPTIONS, 0..) |s, key, i| {
+        const r = shapeSlot(y, i);
         const label = std.fmt.bufPrintZ(&buf, "{s} {s}", .{ key, SHAPE_LABELS.get(s) }) catch "";
-        const live = s == .select or ed.tool.broad();
-        const h = editor.hot(ed, r, true, false, s.tip());
-        editor.plate(r, ed.shape == s and live, h.hot);
-        editor.textFace(g).drawMid(label, raster.middleAt(r).x, @as(i32, @intFromFloat(r.y)) + editor.SMALL_DY, SMALL, if (live) look.TEXT else look.DIM);
+        const live = s == .select or ed.paintable();
+        const h = editor.hot(ed, r, live, false, if (live) s.tip() else editor.GENERATED);
+        editor.plate(r, ed.shape == s and (s == .select or ed.tool.broad()), h.hot);
+        drawFit(g, label, SMALL, editor.insetW(r), false, editor.textX(r), @as(i32, @intFromFloat(r.y)) + editor.SMALL_DY, if (live) look.TEXT else look.DIM);
         if (h.hit) ed.setShape(s);
     }
-    shapes.done();
-    y += editor.ROW_STEP;
+    y += @as(i32, @intCast(std.math.divCeil(usize, editor.SHAPES.len, SHAPE_COLS) catch unreachable)) * editor.ROW_STEP;
     knobs.rowLabel(g, y, "Brush");
     const n = ed.brushSize();
     const by = knobs.stepper(ed, g, editor.row(editor.PAD + editor.LABEL_W, y, editor.BRUSH_SPAN), std.fmt.bufPrintZ(&buf, "{d}x{d}", .{ n, n }) catch "", .{
@@ -238,7 +260,12 @@ pub const Tiles = struct {
     }
 };
 
-const ICON_PIC: f32 = 30;
+pub fn shapeSlot(top: i32, i: usize) rl.Rectangle {
+    const s = mathx.unslot(i, SHAPE_COLS);
+    return editor.slotOf(editor.PAD, editor.INNER_W, top + s.y * editor.ROW_STEP, @intCast(s.x), SHAPE_COLS);
+}
+
+const ICON_PIC: f32 = 36;
 const ICON_PIC_TOP: f32 = 3;
 const ICON_KEY = P{ .x = 3, .y = 1 };
 const UNLIVE = look.fade(look.BG, 0.6);
@@ -399,6 +426,15 @@ pub fn endScroll(ed: *editor.Editor) void {
 pub fn scrolledTo(ed: *editor.Editor, g: *const game.Game, top: i32, end: i32) void {
     const shown: i32 = @intFromFloat(lowerArea(g, top).height);
     ed.gen_most = @max(0, end + editor.PAD + ed.gen_top - top - shown);
+    drawScroll(g, top, ed.gen_top, ed.gen_most);
+}
+
+fn drawScroll(g: *const game.Game, top: i32, offset: i32, most: i32) void {
+    if (most <= 0) return;
+    const height = g.screen.y - top - 2 * editor.GAP;
+    if (height <= 0) return;
+    const shown: usize = @intCast(g.screen.y - top);
+    editor.scrollbar(raster.rect(editor.PANEL_W - 6, top + editor.GAP, 3, height), @intCast(std.math.clamp(offset, 0, most)), shown, shown + @as(usize, @intCast(most)));
 }
 
 const ACTION_W: i32 = 122;

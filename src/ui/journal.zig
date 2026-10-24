@@ -146,3 +146,41 @@ test "event history keeps chronological rows and colors through wrap; new events
     try std.testing.expectEqual(Log.LINES - 1, log.shown());
     std.debug.print("event log: {d}-entry ring, colors, scrolling, bottom-follow and held lines checked\n", .{Log.LINES});
 }
+
+test "held log entries never enter the scroll range and overflow retains exact text and kinds" {
+    var log = Log{};
+    try std.testing.expect(log.line(0) == null);
+    log.move(1000);
+    try std.testing.expectEqual(@as(usize, 0), log.scroll);
+    for (0..4) |i| log.say("Visible {d}", .{i});
+    log.release();
+    log.move(1000);
+    try std.testing.expectEqual(@as(usize, 3), log.scroll);
+    log.push(.danger, "Held 0", .{});
+    log.push(.status, "Held 1", .{});
+    try std.testing.expectEqual(@as(usize, 0), log.scroll);
+    try std.testing.expectEqual(@as(usize, 2), log.held);
+    try std.testing.expectEqual(@as(usize, 4), log.shown());
+    log.move(1000);
+    try std.testing.expectEqual(@as(usize, 3), log.scroll);
+    log.move(-1000);
+    try std.testing.expectEqual(@as(usize, 0), log.scroll);
+    for (0..Log.LINES + 9) |i| log.push(if (i % 2 == 0) .loot else .damage, "Pending {d}", .{i});
+    try std.testing.expectEqual(Log.LINES, log.held);
+    try std.testing.expectEqual(@as(usize, 0), log.shown());
+    log.move(1000);
+    try std.testing.expectEqual(@as(usize, 0), log.scroll);
+    log.release();
+    log.release();
+    try std.testing.expectEqual(Log.LINES, log.shown());
+    var buf: [32]u8 = undefined;
+    for (0..Log.LINES) |back| {
+        const number = Log.LINES + 8 - back;
+        try std.testing.expectEqualStrings(try std.fmt.bufPrint(&buf, "Pending {d}", .{number}), log.line(back).?);
+        try std.testing.expectEqual(if (number % 2 == 0) Kind.loot else Kind.damage, log.kinds[log.index(back)]);
+    }
+    try std.testing.expect(log.line(Log.LINES) == null);
+    log.move(1000);
+    try std.testing.expectEqual(Log.LINES - 1, log.scroll);
+    std.debug.print("log visibility: mixed visible/held scrolling, full hidden rollover, idempotent release and all {d} retained text/color pairs checked\n", .{Log.LINES});
+}

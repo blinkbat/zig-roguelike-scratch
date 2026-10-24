@@ -170,7 +170,10 @@ pub const Status = enum {
         return switch (s) {
             .warded => skillbar.Act.mana_shield.name(),
             .resistant => "Status resistance",
-            .guarding => "Guard", .unyielding => "Unyielding", .steady => "Steady Aim", .overwatch => "Overwatch",
+            .guarding => skillbar.Act.guard.name(),
+            .unyielding => skillbar.Act.unyielding.name(),
+            .steady => skillbar.Act.steady_aim.name(),
+            .overwatch => skillbar.Act.overwatch.name(),
             inline else => |t| comptime menu.capital(@tagName(t)),
         };
     }

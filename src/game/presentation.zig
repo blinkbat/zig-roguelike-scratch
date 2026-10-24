@@ -129,7 +129,7 @@ pub const Presentation = struct {
     seq: u64 = 0,
     /// Indexed by pool slot: the slot a slime split off, until the blow that split it lands.
     split_from: [actor.MAX]?usize = @splat(null),
-    /// Indexed by pool slot: gold a death added to its cell's pile, kept off the drawn pile until that death is drawn.
+    /// Indexed by pool slot: gold kept out of its drop until that death is drawn.
     dropped_gold: [actor.MAX]i32 = @splat(0),
     owed: [actor.MAX]Owed = @splat(.{}),
     shot: ?Shot = null,
@@ -139,7 +139,6 @@ pub const Presentation = struct {
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
     lead: ?f32 = null,
     fx: fx.Fx = .{},
-    /// Gold the hero took this turn, still drawn until the hero is drawn there.
     gold_taken: ?items.Coins = null,
     /// Spent shield mana held for blows not yet presented.
     mana_held: i32 = 0,
@@ -331,6 +330,9 @@ pub const Presentation = struct {
     pub fn advance(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.busy -= dt;
         for (self.glide[0..sim.pool.n]) |*gl| gl.t += dt;
+        if (sim.heroSlot()) |h| {
+            if (self.glide[h].left() <= PACE_SLACK) self.gold_taken = null;
+        }
         self.fx.step(&sim.lv, dt);
         self.catchUp(sim);
     }

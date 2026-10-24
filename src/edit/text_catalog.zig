@@ -2,6 +2,7 @@ const std = @import("std");
 const store = @import("../core/store.zig");
 const wording = @import("../core/wording.zig");
 const input = @import("../core/input.zig");
+const atlas = @import("../map/atlas.zig");
 
 pub const MAX_TEXT: usize = 4096;
 const FILE_CAP = 4 << 20;
@@ -13,6 +14,10 @@ pub const Entry = struct {
     path: []const u8,
     line: usize,
     text: []const u8,
+    category: []const u8 = "",
+    owner: []const u8 = "",
+    role: []const u8 = "",
+    context: []const u8 = "",
     author: Author = .unknown,
     editable: bool = true,
     reason: []const u8 = "",
@@ -40,6 +45,7 @@ pub const Catalog = struct {
     tags_invalid: bool = false,
     tag_bytes: []const u8 = "",
     warning: []const u8 = "",
+    skills: ?[]const SkillSource = null,
 
     pub fn init(alloc: std.mem.Allocator) Catalog {
         return .{ .alloc = alloc, .arena = std.heap.ArenaAllocator.init(alloc) };
@@ -109,14 +115,14 @@ pub const Catalog = struct {
     }
 
     fn readMaps(self: *Catalog, project: std.fs.Dir) !void {
-        var maps = project.openDir("maps", .{ .iterate = true }) catch |e| if (e == error.FileNotFound) return else return e;
+        var maps = project.openDir(atlas.DIR, .{ .iterate = true }) catch |e| if (e == error.FileNotFound) return else return e;
         defer maps.close();
         const a = self.arena.allocator();
         var walker = try maps.walk(a);
         defer walker.deinit();
         var paths = std.ArrayList([]const u8).init(a);
         while (try walker.next()) |item| {
-            if (item.kind != .file or !std.mem.endsWith(u8, item.path, ".map")) continue;
+            if (item.kind != .file or !std.mem.endsWith(u8, item.path, atlas.EXT)) continue;
             const path = try a.dupe(u8, item.path);
             std.mem.replaceScalar(u8, path, '\\', '/');
             try paths.append(path);
@@ -128,7 +134,7 @@ pub const Catalog = struct {
         }.less);
         for (paths.items) |path| {
             const bytes = try maps.readFileAlloc(a, path, FILE_CAP);
-            try self.scanMap(try std.fmt.allocPrint(a, "maps/{s}", .{path}), bytes);
+            try self.scanMap(try std.fmt.allocPrint(a, atlas.PREFIX ++ "{s}", .{path}), bytes);
         }
     }
 
@@ -136,13 +142,15 @@ pub const Catalog = struct {
         const a = self.arena.allocator();
         var lines = std.mem.splitScalar(u8, bytes, '\n');
         var line: usize = 0;
+        var node: usize = 0;
         while (lines.next()) |raw| {
             line += 1;
             const text = std.mem.trim(u8, raw, " \r");
+            if (std.mem.startsWith(u8, text, "node ")) node += 1;
             if (!std.mem.startsWith(u8, text, "name ")) continue;
             const name = std.mem.trim(u8, text[5..], " ");
             if (name.len == 0) continue;
-            try self.list.append(a, .{ .path = path, .line = line, .text = try a.dupe(u8, name), .editable = false, .reason = "Rename this node in the map editor", .file = 0, .start = 0, .end = 0, .ordinal = 0 });
+            try self.list.append(a, .{ .path = path, .line = line, .text = try a.dupe(u8, name), .category = "Maps", .owner = try std.fmt.allocPrint(a, "{s} (node {d})", .{ name, node -| 1 }), .role = "Name", .context = try std.fmt.allocPrint(a, "{s}.node[{d}].name", .{ path, node -| 1 }), .editable = false, .reason = "Rename this node in the map editor", .file = 0, .start = 0, .end = 0, .ordinal = 0 });
         }
     }
 
@@ -255,6 +263,8 @@ pub const Catalog = struct {
             try tokens.append(token);
         }
         const ts = tokens.items;
+        if (self.skills == null) self.skills = try skillSources(a, @embedFile("../play/skillbar.zig"));
+        var contexts = try ContextScan.init(a, path, bytes, ts, self.skills.?);
         var excluded = try a.alloc(bool, ts.len);
         @memset(excluded, false);
         for (ts, 0..) |token, i| {
@@ -275,6 +285,7 @@ pub const Catalog = struct {
         }
         var ordinal: usize = 0;
         for (ts, 0..) |token, i| {
+            try contexts.step(i);
             if (token.tag != .string_literal) continue;
             const nth = ordinal;
             ordinal += 1;
@@ -284,10 +295,15 @@ pub const Catalog = struct {
             const is_input = std.mem.eql(u8, path, "src/core/input.zig");
             const is_keyboard = std.mem.eql(u8, path, "src/ui/naming.zig") and std.mem.eql(u8, declaration(bytes, ts, i) orelse "", "LETTERS");
             const flavor = std.mem.eql(u8, path, "src/play/items.zig") and i >= 2 and ts[i - 1].tag == .equal and std.mem.eql(u8, slice(bytes, ts[i - 2]), "flavor");
+            const semantic = try contexts.describe();
             try self.list.append(a, .{
                 .path = path,
                 .line = lineOf(bytes, token.loc.start),
                 .text = decoded,
+                .category = semantic.category,
+                .owner = semantic.owner,
+                .role = semantic.role,
+                .context = semantic.context,
                 .file = file,
                 .start = token.loc.start,
                 .end = token.loc.end,
@@ -320,7 +336,8 @@ pub const Catalog = struct {
                         wording.format(label, if (type_name) |tn| wording.casing(tn) else .sentence);
                         const key = if (type_name) |tn| try wording.keyAlloc(a, tn, name) else null;
                         const allowed = if (type_name) |tn| wording.allowed(tn, name) else false;
-                        try self.list.append(a, .{ .path = path, .line = lineOf(bytes, ts[at].loc.start), .text = if (key) |k| wording.lookup(self.labels, k) orelse label else label, .editable = allowed, .reason = if (allowed) "Display alias; saves to assets/player-labels.txt without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
+                        const identity = key orelse try std.fmt.allocPrint(a, "{s}.{s}", .{ path, name });
+                        try self.list.append(a, .{ .path = path, .line = lineOf(bytes, ts[at].loc.start), .text = if (key) |k| wording.lookup(self.labels, k) orelse label else label, .category = try categoryOf(a, path), .owner = try humanize(a, name), .role = "Display name", .context = identity, .editable = allowed, .reason = if (allowed) "Display alias; saves to assets/player-labels.txt without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
                     }
                     field = false;
                 }
@@ -339,11 +356,238 @@ fn included(path: []const u8) bool {
     }
     if (std.mem.endsWith(u8, path, "tests.zig")) return false;
     for ([_][]const u8{ "game/", "play/", "ui/", "edit/", "map/" }) |prefix| if (std.mem.startsWith(u8, path, prefix)) return true;
-    return oneOf(path, &.{ "app.zig", "game.zig", "save.zig", "core/input.zig", "gfx/look.zig" });
+    return oneOf(path, &.{ "app.zig", "game.zig", "save.zig", "core/input.zig", "gfx/look.zig", "gfx/fx.zig" });
 }
 
 fn oneOf(value: []const u8, choices: []const []const u8) bool {
     for (choices) |choice| if (std.mem.eql(u8, value, choice)) return true;
+    return false;
+}
+
+const SkillSource = struct { scope: []const u8, name: []const u8 };
+
+fn skillSources(a: std.mem.Allocator, bytes: [:0]const u8) ![]const SkillSource {
+    var tokens = std.ArrayList(Token).init(a);
+    var lex = std.zig.Tokenizer.init(bytes);
+    while (true) {
+        const token = lex.next();
+        if (token.tag == .eof) break;
+        try tokens.append(token);
+    }
+    const ts = tokens.items;
+    var imports = std.StringHashMap([]const u8).init(a);
+    for (ts, 0..) |t, i| {
+        if (t.tag != .keyword_const or i + 6 >= ts.len) continue;
+        if (ts[i + 2].tag != .equal or !std.mem.eql(u8, slice(bytes, ts[i + 3]), "@import") or ts[i + 5].tag != .string_literal) continue;
+        const path = try std.zig.string_literal.parseAlloc(a, slice(bytes, ts[i + 5]));
+        if (std.mem.indexOfScalar(u8, path, '/') != null or !std.mem.endsWith(u8, path, ".zig")) continue;
+        try imports.put(slice(bytes, ts[i + 1]), try std.fmt.allocPrint(a, "play.{s}", .{path[0 .. path.len - 4]}));
+    }
+    var result = std.ArrayList(SkillSource).init(a);
+    var braces = std.ArrayList(usize).init(a);
+    for (ts, 0..) |t, i| {
+        if (t.tag == .l_brace) {
+            try braces.append(i);
+            continue;
+        }
+        if (t.tag == .r_brace) {
+            _ = braces.pop();
+            continue;
+        }
+        if (t.tag != .identifier or !std.mem.eql(u8, slice(bytes, t), "module") or i == 0 or i + 2 >= ts.len or braces.items.len == 0) continue;
+        if (ts[i - 1].tag != .period or ts[i + 1].tag != .equal) continue;
+        const module = imports.get(slice(bytes, ts[i + 2])) orelse continue;
+        const open = braces.items[braces.items.len - 1];
+        if (open < 4 or ts[open - 1].tag != .period or ts[open - 2].tag != .equal or ts[open - 3].tag != .identifier or ts[open - 4].tag != .period) continue;
+        const name = slice(bytes, ts[open - 3]);
+        const scope = if (i + 4 < ts.len and ts[i + 3].tag == .period and ts[i + 4].tag == .identifier)
+            try std.fmt.allocPrint(a, "{s}.{s}", .{ module, slice(bytes, ts[i + 4]) })
+        else
+            module;
+        try result.append(.{ .scope = scope, .name = try humanize(a, name) });
+    }
+    return result.toOwnedSlice();
+}
+
+fn humanize(a: std.mem.Allocator, value: []const u8) ![]const u8 {
+    var out = std.ArrayList(u8).init(a);
+    for (value, 0..) |c, i| {
+        if (c == '_') {
+            try out.append(' ');
+        } else {
+            if (i > 0 and std.ascii.isUpper(c) and std.ascii.isLower(value[i - 1])) try out.append(' ');
+            try out.append(if (i == 0) std.ascii.toUpper(c) else std.ascii.toLower(c));
+        }
+    }
+    return out.toOwnedSlice();
+}
+
+fn moduleOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
+    const start: usize = if (std.mem.startsWith(u8, path, "src/")) 4 else 0;
+    const end = if (std.mem.endsWith(u8, path, ".zig")) path.len - 4 else path.len;
+    const module = try a.dupe(u8, path[start..end]);
+    std.mem.replaceScalar(u8, module, '/', '.');
+    return module;
+}
+
+fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
+    if (std.mem.startsWith(u8, path, "src/edit/")) return "Editor";
+    if (std.mem.startsWith(u8, path, "src/map/")) return "Maps";
+    if (std.mem.startsWith(u8, path, "src/ui/")) return "Interface";
+    if (std.mem.eql(u8, path, "src/play/items.zig")) return "Items";
+    if (std.mem.eql(u8, path, "src/play/skillbar.zig")) return "Skills";
+    if (std.mem.eql(u8, path, "src/gfx/fx.zig")) return "Effects";
+    const base = std.fs.path.basename(path);
+    return humanize(a, if (std.mem.endsWith(u8, base, ".zig")) base[0 .. base.len - 4] else base);
+}
+
+fn textRole(name: []const u8) ?[]const u8 {
+    if (std.ascii.eqlIgnoreCase(name, "description") or std.ascii.eqlIgnoreCase(name, "desc")) return "Description";
+    if (std.ascii.eqlIgnoreCase(name, "flavor")) return "Flavor";
+    if (std.ascii.eqlIgnoreCase(name, "name")) return "Name";
+    if (std.ascii.eqlIgnoreCase(name, "title")) return "Title";
+    if (std.ascii.eqlIgnoreCase(name, "label") or std.ascii.eqlIgnoreCase(name, "caption")) return "Label";
+    if (std.ascii.eqlIgnoreCase(name, "tip")) return "Tooltip";
+    if (std.ascii.eqlIgnoreCase(name, "status")) return "Status";
+    if (oneOf(name, &.{ "VERB", "DONE", "TAKES", "RETAKES", "SWEEP_VERB" })) return "Action wording";
+    if (std.mem.eql(u8, name, "FRIGHT_WORDS")) return "Fright speech";
+    return null;
+}
+
+const Semantic = struct { category: []const u8, owner: []const u8, role: []const u8, context: []const u8 };
+const Scope = struct {
+    name: []const u8,
+    end: usize,
+    kind: enum { declaration, function, member, call },
+    display: ?[]const u8 = null,
+};
+
+const ContextScan = struct {
+    a: std.mem.Allocator,
+    bytes: []const u8,
+    ts: []const Token,
+    pairs: []usize,
+    scopes: std.ArrayList(Scope),
+    module: []const u8,
+    category: []const u8,
+    skills: []const SkillSource,
+
+    fn init(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []const Token, skills: []const SkillSource) !ContextScan {
+        const pairs = try a.alloc(usize, ts.len);
+        for (pairs, 0..) |*p, i| p.* = i;
+        var stack = std.ArrayList(usize).init(a);
+        for (ts, 0..) |t, i| switch (t.tag) {
+            .l_paren, .l_brace, .l_bracket => try stack.append(i),
+            .r_paren, .r_brace, .r_bracket => if (stack.pop()) |open| {
+                pairs[open] = i;
+                pairs[i] = open;
+            },
+            else => {},
+        };
+        return .{ .a = a, .bytes = bytes, .ts = ts, .pairs = pairs, .scopes = std.ArrayList(Scope).init(a), .module = try moduleOf(a, path), .category = try categoryOf(a, path), .skills = skills };
+    }
+
+    fn expressionEnd(s: *const ContextScan, from: usize) usize {
+        var i = from;
+        while (i < s.ts.len) : (i += 1) {
+            switch (s.ts[i].tag) {
+                .comma, .semicolon, .r_brace, .r_paren, .r_bracket => return i -| 1,
+                .l_brace, .l_paren, .l_bracket => i = s.pairs[i],
+                else => {},
+            }
+        }
+        return s.ts.len -| 1;
+    }
+
+    fn rowName(s: *const ContextScan, from: usize, end: usize) !?[]const u8 {
+        var open = from;
+        while (open <= end and open < s.ts.len and s.ts[open].tag != .l_brace) : (open += 1) {
+            if (s.ts[open].tag == .l_paren) return null;
+        }
+        if (open > end or open >= s.ts.len) return null;
+        var i = open + 1;
+        while (i + 3 < s.pairs[open]) : (i += 1) {
+            if (s.ts[i].tag == .period and std.mem.eql(u8, slice(s.bytes, s.ts[i + 1]), "name") and s.ts[i + 2].tag == .equal and s.ts[i + 3].tag == .string_literal) {
+                const name = std.zig.string_literal.parseAlloc(s.a, slice(s.bytes, s.ts[i + 3])) catch return null;
+                return if (name.len > 0) name else null;
+            }
+            if (oneOfToken(s.ts[i].tag, &.{ .l_brace, .l_paren, .l_bracket })) i = s.pairs[i];
+        }
+        return null;
+    }
+
+    fn step(s: *ContextScan, i: usize) !void {
+        while (s.scopes.items.len > 0 and s.scopes.items[s.scopes.items.len - 1].end < i) _ = s.scopes.pop();
+        const ts = s.ts;
+        if (oneOfToken(ts[i].tag, &.{ .keyword_const, .keyword_var }) and (i == 0 or !oneOfToken(ts[i - 1].tag, &.{ .r_bracket, .asterisk })) and i + 2 < ts.len and ts[i + 1].tag == .identifier and oneOfToken(ts[i + 2].tag, &.{ .equal, .colon })) {
+            try s.scopes.append(.{ .name = slice(s.bytes, ts[i + 1]), .end = s.expressionEnd(i + 2), .kind = .declaration });
+        } else if (ts[i].tag == .keyword_fn and i + 2 < ts.len and ts[i + 1].tag == .identifier and ts[i + 2].tag == .l_paren) {
+            var body = s.pairs[i + 2] + 1;
+            while (body < ts.len and !oneOfToken(ts[body].tag, &.{ .l_brace, .semicolon })) : (body += 1) {
+                if (oneOfToken(ts[body].tag, &.{ .l_paren, .l_bracket })) body = s.pairs[body];
+            }
+            try s.scopes.append(.{ .name = slice(s.bytes, ts[i + 1]), .end = if (body < ts.len) s.pairs[body] else ts.len -| 1, .kind = .function });
+        } else if (ts[i].tag == .period and (i == 0 or !oneOfToken(ts[i - 1].tag, &.{ .identifier, .r_paren, .r_bracket })) and i + 2 < ts.len and ts[i + 1].tag == .identifier and ts[i + 2].tag == .equal) {
+            const end = s.expressionEnd(i + 3);
+            try s.scopes.append(.{ .name = slice(s.bytes, ts[i + 1]), .end = end, .kind = .member, .display = try s.rowName(i + 3, end) });
+        } else if (ts[i].tag == .identifier and i > 0 and oneOfToken(ts[i - 1].tag, &.{ .l_brace, .comma }) and i + 1 < ts.len and ts[i + 1].tag == .colon) {
+            const end = s.expressionEnd(i + 2);
+            var at = i + 2;
+            while (at <= end and ts[at].tag != .equal) : (at += 1) {
+                if (oneOfToken(ts[at].tag, &.{ .l_brace, .l_paren, .l_bracket })) at = s.pairs[at];
+            }
+            if (at <= end) try s.scopes.append(.{ .name = slice(s.bytes, ts[i]), .end = end, .kind = .member });
+        } else if (ts[i].tag == .l_paren and i > 0 and ts[i - 1].tag == .identifier and (i < 2 or ts[i - 2].tag != .keyword_fn)) {
+            var start = i - 1;
+            while (start >= 2 and ts[start - 1].tag == .period and ts[start - 2].tag == .identifier) start -= 2;
+            try s.scopes.append(.{ .name = s.bytes[ts[start].loc.start..ts[i - 1].loc.end], .end = s.pairs[i], .kind = .call });
+        }
+    }
+
+    fn describe(s: *const ContextScan) !Semantic {
+        var identity = std.ArrayList(u8).init(s.a);
+        try identity.appendSlice(s.module);
+        var owner: ?[]const u8 = null;
+        var role: []const u8 = "Text";
+        var call: ?[]const u8 = null;
+        var category = s.category;
+        var skill_owner: ?[]const u8 = null;
+        for (s.skills) |skill| if (std.mem.eql(u8, skill.scope, s.module)) {
+            skill_owner = skill.name;
+        };
+        for (s.scopes.items) |scope| {
+            if (scope.kind == .call) {
+                call = scope.name;
+                continue;
+            }
+            try identity.append('.');
+            try identity.appendSlice(scope.name);
+            call = null;
+            for (s.skills) |skill| if (std.mem.eql(u8, skill.scope, identity.items)) {
+                skill_owner = skill.name;
+            };
+            if (scope.display) |display| owner = display else if (textRole(scope.name)) |r| {
+                role = r;
+            } else owner = try humanize(s.a, scope.name);
+        }
+        if (skill_owner) |name| {
+            category = "Skills";
+            owner = name;
+        }
+        if (owner == null) {
+            const dot = std.mem.lastIndexOfScalar(u8, s.module, '.') orelse 0;
+            owner = try humanize(s.a, s.module[if (dot > 0) dot + 1 else 0..]);
+        }
+        if (call) |name| {
+            try identity.appendSlice(" > ");
+            try identity.appendSlice(name);
+        }
+        return .{ .category = category, .owner = owner.?, .role = role, .context = try identity.toOwnedSlice() };
+    }
+};
+
+fn oneOfToken(tag: Token.Tag, choices: []const Token.Tag) bool {
+    for (choices) |choice| if (tag == choice) return true;
     return false;
 }
 
@@ -418,8 +662,8 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     if (letters == 0) return false;
     const decl = declaration(bytes, ts, i) orelse "";
     if (oneOf(decl, &.{ "PROBED", "SYMBOLS", "TTF", "DATA_TTF" }) or std.mem.endsWith(u8, decl, "_FIELDS")) return false;
-    if (oneOf(decl, &.{ "VERB", "DONE", "TAKES", "RETAKES", "NAME", "NUMBERS", "SWEEP_VERB" })) return true;
-    for ([_][]const u8{ ".zig", ".png", ".ttf", ".map", ".json", "#version", "void main", "uniform ", "layout(", "roguelike-map", "shots/", "assets/", "maps/", "saves/" }) |part| {
+    if (oneOf(decl, &.{ "VERB", "DONE", "TAKES", "RETAKES", "NAME", "NUMBERS", "SWEEP_VERB", "FRIGHT_WORDS" })) return true;
+    for ([_][]const u8{ ".zig", ".png", ".ttf", atlas.EXT, ".json", "#version", "void main", "uniform ", "layout(", "roguelike-map", "shots/", "assets/", atlas.PREFIX, "saves/" }) |part| {
         if (std.mem.indexOf(u8, text, part) != null) return false;
     }
     const from = i -| 12;
@@ -532,6 +776,136 @@ test "text catalog excludes tests technical calls and imports while retaining pr
     try std.testing.expect(!c.entries()[2].editable);
     try std.testing.expectEqualStrings("Short bow", c.entries()[2].text);
     std.debug.print("text catalog: 2 editable strings, 2 generated labels, imports/test bodies/technical calls excluded\n", .{});
+}
+
+test "text catalog semantic context separates table rows skill containers calls and enum identities" {
+    var c = Catalog.init(std.testing.allocator);
+    defer c.deinit();
+    try c.scan("src/play/items.zig",
+        \\const SPECS = make(.{
+        \\ .war_bow = .{ .flavor = "Far away.", .name = "War bow" },
+        \\ .tome = .{ .name = "Tome", .flavor = "Old words." },
+        \\});
+    );
+    try std.testing.expectEqual(@as(usize, 4), c.entries().len);
+    const bow = c.entries()[0];
+    try std.testing.expectEqualStrings("Items", bow.category);
+    try std.testing.expectEqualStrings("War bow", bow.owner);
+    try std.testing.expectEqualStrings("Flavor", bow.role);
+    try std.testing.expectEqualStrings("play.items.SPECS.war_bow.flavor", bow.context);
+    try std.testing.expectEqualStrings("Tome", c.entries()[3].owner);
+    try std.testing.expectEqualStrings("play.items.SPECS.tome.flavor", c.entries()[3].context);
+    try std.testing.expectEqual(@as(usize, 3), c.entries()[3].ordinal);
+    try c.scan("src/play/tactics.zig",
+        \\pub const ArcaneBarrier = struct {
+        \\ pub const DESCRIPTION = "Raise a wall.";
+        \\ pub const FLAVOR = "Draw a line.";
+        \\};
+        \\pub const Guard = struct { pub const DESCRIPTION = "Brace."; };
+    );
+    try std.testing.expectEqualStrings("Skills", c.entries()[4].category);
+    try std.testing.expectEqualStrings("Arcane barrier", c.entries()[4].owner);
+    try std.testing.expectEqualStrings("Description", c.entries()[4].role);
+    try std.testing.expectEqualStrings("Flavor", c.entries()[5].role);
+    try std.testing.expectEqualStrings("play.tactics.ArcaneBarrier.FLAVOR", c.entries()[5].context);
+    try std.testing.expectEqualStrings("Guard", c.entries()[6].owner);
+    try c.scan("src/play/ward.zig", "pub const DESCRIPTION = fmt.comptimePrint(\"Drain {d} mana.\", .{5});\n");
+    try std.testing.expectEqualStrings("Mana shield", c.entries()[7].owner);
+    try std.testing.expectEqualStrings("Description", c.entries()[7].role);
+    try std.testing.expectEqualStrings("play.ward.DESCRIPTION > fmt.comptimePrint", c.entries()[7].context);
+    try c.scan("src/game/character.zig", "const Panel = struct { fn draw() void { ui.button(\"Take all\"); } };\n");
+    try std.testing.expectEqualStrings("Draw", c.entries()[8].owner);
+    try std.testing.expectEqualStrings("Text", c.entries()[8].role);
+    try std.testing.expectEqualStrings("game.character.Panel.draw > ui.button", c.entries()[8].context);
+    c.labels = "play.skillbar.Act.arcane_barrier\tStone wall\n";
+    try c.scan("src/play/skillbar.zig", "pub const Act = enum { arcane_barrier };\n");
+    const alias = c.entries()[9];
+    try std.testing.expectEqualStrings("Stone wall", alias.text);
+    try std.testing.expectEqualStrings("Skills", alias.category);
+    try std.testing.expectEqualStrings("Arcane barrier", alias.owner);
+    try std.testing.expectEqualStrings("play.skillbar.Act.arcane_barrier", alias.context);
+    try std.testing.expectEqualStrings("Display name", alias.role);
+    try std.testing.expect(alias.editable);
+    try std.testing.expectEqualStrings(alias.context, alias.alias.?);
+    try c.scan("src/ui/example.zig", "const Dialog = struct { title: []const u8 = \"Welcome\", }; const NAME: []const u8 = \"Typed name\";\n");
+    try std.testing.expectEqualStrings("ui.example.Dialog.title", c.entries()[10].context);
+    try std.testing.expectEqualStrings("Dialog", c.entries()[10].owner);
+    try std.testing.expectEqualStrings("Title", c.entries()[10].role);
+    try std.testing.expectEqualStrings("ui.example.NAME", c.entries()[11].context);
+    for (c.entries()) |e| try std.testing.expect(e.category.len > 0 and e.owner.len > 0 and e.role.len > 0 and e.context.len > 0);
+    std.debug.print("text catalog: table rows, skill module/container names, exact call context, typed fields and enum alias identity checked across 12 entries\n", .{});
+}
+
+test "text catalog skill registry context follows named rows with module in any member order" {
+    var c = Catalog.init(std.testing.allocator);
+    defer c.deinit();
+    c.skills = try skillSources(c.arena.allocator(),
+        \\const tactics = @import("tactics.zig");
+        \\const ward = @import("ward.zig");
+        \\const SKILLS = .{
+        \\ .arcane_barrier = .{ .reticle = .ground, .module = tactics.ArcaneBarrier },
+        \\ .mana_shield = .{ .reticle = choose(.{ .shape = .ground }), .module = ward },
+        \\ .guard = .{ .module = tactics.Guard, .reticle = .ground },
+        \\ .wait = .{ .reticle = .ground, .module = null },
+        \\};
+    );
+    try std.testing.expectEqual(@as(usize, 3), c.skills.?.len);
+    try c.scan("src/play/tactics.zig", "const ArcaneBarrier = struct { const DESCRIPTION = \"Raise a wall.\"; }; const Guard = struct { const FLAVOR = \"Stand firm.\"; };\n");
+    try c.scan("src/play/ward.zig", "const DESCRIPTION = \"Drain mana.\";\n");
+    try std.testing.expectEqualStrings("Skills", c.entries()[0].category);
+    try std.testing.expectEqualStrings("Arcane barrier", c.entries()[0].owner);
+    try std.testing.expectEqualStrings("play.tactics.ArcaneBarrier.DESCRIPTION", c.entries()[0].context);
+    try std.testing.expectEqualStrings("Guard", c.entries()[1].owner);
+    try std.testing.expectEqualStrings("Mana shield", c.entries()[2].owner);
+    std.debug.print("text skill registry: reticle-first, nested reticle expression, module-first and null module keep 3 correct skill owners\n", .{});
+}
+
+test "text catalog finds all fright speech and gives maps nonempty semantic provenance" {
+    var c = Catalog.init(std.testing.allocator);
+    defer c.deinit();
+    try std.testing.expect(included("gfx/fx.zig"));
+    try c.scan("src/gfx/fx.zig", "pub const FRIGHT_WORDS = [_][:0]const u8{ \"Eek!\", \"Ah!\", \"[snorts]\", \"[squeals]\" };\n");
+    try std.testing.expectEqual(@as(usize, 4), c.entries().len);
+    for (c.entries()) |e| {
+        try std.testing.expectEqualStrings("Effects", e.category);
+        try std.testing.expectEqualStrings("Fright speech", e.role);
+        try std.testing.expectEqualStrings("gfx.fx.FRIGHT_WORDS", e.context);
+        try std.testing.expect(e.owner.len > 0 and e.editable);
+    }
+    try c.scanMap("maps/test.map", "node bespoke\nname First room\nnode procgen wilds\nname Second room\n");
+    try std.testing.expectEqualStrings("First room (node 0)", c.entries()[4].owner);
+    try std.testing.expectEqualStrings("Maps", c.entries()[5].category);
+    try std.testing.expectEqualStrings("Name", c.entries()[5].role);
+    try std.testing.expectEqualStrings("maps/test.map.node[1].name", c.entries()[5].context);
+    std.debug.print("text catalog: 4 fright utterances including lowercase bracketed speech, 2 named map nodes checked\n", .{});
+}
+
+test "text catalog indexes live item skill and speech sources with complete metadata" {
+    var c = Catalog.init(std.testing.allocator);
+    defer c.deinit();
+    try c.scan("src/play/items.zig", @embedFile("../play/items.zig"));
+    try c.scan("src/play/tactics.zig", @embedFile("../play/tactics.zig"));
+    try c.scan("src/gfx/fx.zig", @embedFile("../gfx/fx.zig"));
+    var bow = false;
+    var barrier = false;
+    var speech: usize = 0;
+    for (c.entries()) |e| {
+        try std.testing.expect(e.category.len > 0 and e.owner.len > 0 and e.role.len > 0 and e.context.len > 0);
+        if (std.mem.eql(u8, e.context, "play.items.SPECS.war_bow.flavor")) {
+            bow = true;
+            try std.testing.expectEqualStrings("War bow", e.owner);
+            try std.testing.expectEqualStrings("Flavor", e.role);
+        }
+        if (std.mem.eql(u8, e.context, "play.tactics.ArcaneBarrier.DESCRIPTION")) {
+            barrier = true;
+            try std.testing.expectEqualStrings("Skills", e.category);
+            try std.testing.expectEqualStrings("Arcane barrier", e.owner);
+        }
+        if (std.mem.eql(u8, e.context, "gfx.fx.FRIGHT_WORDS")) speech += 1;
+    }
+    try std.testing.expect(bow and barrier);
+    try std.testing.expectEqual(@import("../gfx/fx.zig").FRIGHT_WORDS.len, speech);
+    std.debug.print("text catalog: {d} live entries have nonempty metadata; item/skill context and all {d} fright utterances found\n", .{ c.entries().len, speech });
 }
 
 test "text edits preserve escapes format arguments control glyphs and source bytes" {

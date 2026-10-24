@@ -10,10 +10,10 @@
 | Loot | Normal or magic; blues roll one prefix, one suffix, or both, with names composed from those affixes and the base name |
 | Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery and penetration; equipment restrictions live in `items.Mod.allows` |
 | Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
-| Gold | Ground coins collect automatically on arrival at their cell; opening a chest drops its gold on the ground, and opening loot never collects coins |
-| Item actions | Take item, Take all, drop, equip and unequip cost one turn when successful; Take all fills available inventory space and leaves excess items |
+| Gold | Ground gold without items is a coin drop, automatically collected when stepped onto, with no extra turn or modal. Gold with items shares their bag; chest gold stays in its chest. Select the gold row or use Take all in bags/chests. Gold needs no inventory space |
+| Item actions | Take item, Take gold, Take all, drop, equip and unequip cost one turn when successful; Take all collects gold, fills available inventory space and leaves excess items |
 | Interact | First bump or Interact opens a closed chest for one turn, revealing its contents without a modal. Stepping onto a bag/open chest opens loot for the movement turn; bags remain walkable. Interact browses one bag/open chest for free, or offers a choice among multiple nearby containers/doors. Canceling is free |
-| Loot artwork | One `item-bag.png` per ground item cell; `chest-item-bag.png` while a chest contains items, then `chest-open.png` when empty |
+| Loot artwork | One `item-bag.png` per ground cell containing items, including any gold in that cell. Gold alone uses `small-coins.png` or `large-coins.png`. Chests use `chest-item-bag.png` while containing items or gold, then `chest-open.png` when empty. No coin lights |
 | Foe loot | Gold is common, plain white items occasional, magic blue items rare; white items have no rolled modifiers, blues have one or two |
 | XP | Foe kills grant XP; each level grants one passive and one active point |
 | Passive tree | 81-node radial graph lifted from Soulslike; three origins, six branches and six bridges |

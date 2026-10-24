@@ -209,8 +209,29 @@ fn joins(lv: *const grid.Level, p: P, d: mathx.Dir) bool {
 
 /// A wall whose brick face looks onto floor.
 pub fn bearsTorch(lv: *const grid.Level, p: P) bool {
-    const s = lv.wallShape(p) orelse return false;
-    return s.faced() and lv.walkable(lume.torchFloor(p));
+    return grid.Level.inside(p) and lv.at(p) == .wall and lv.walkable(lume.torchFloor(p));
+}
+
+test "torch pruning follows terrain changes before wall masks are rebuilt" {
+    var lv = grid.Level.blank();
+    const wall = P{ .x = 10, .y = 10 };
+    const floor = lume.torchFloor(wall);
+    lv.set(floor, .floor);
+    lv.addTorch(wall);
+    keepTorches(&lv);
+    try std.testing.expectEqual(@as(usize, 1), lv.torches().len);
+    shapeWalls(&lv);
+    lv.set(floor, .rock);
+    keepTorches(&lv);
+    try std.testing.expectEqual(@as(usize, 0), lv.torches().len);
+    lv.set(floor, .floor);
+    lv.addTorch(wall);
+    lv.set(wall, .shrub);
+    keepTorches(&lv);
+    try std.testing.expectEqual(@as(usize, 0), lv.torches().len);
+    lv.set(.{ .x = wall.x, .y = 0 }, .floor);
+    try std.testing.expect(!bearsTorch(&lv, .{ .x = wall.x, .y = -1 }));
+    std.debug.print("torch pruning: unshaped brick retained, blocked floor/non-brick removed despite stale masks; off-map wall refused\n", .{});
 }
 
 test "forest shapes join their own material, continue over the rim and never hold torches" {

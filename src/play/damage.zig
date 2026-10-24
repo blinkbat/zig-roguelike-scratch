@@ -121,3 +121,45 @@ test "each elemental resistance reduces only its own damage and leaves physical 
     try std.testing.expectEqual(@as(i32, 0), resisted(-1, 0));
     std.debug.print("{d} elemental resistances checked: 50% of 20 = 10, physical damage unchanged\n", .{std.enums.values(Element).len});
 }
+
+test "damage floors each element separately clamps resistance and saturates large totals" {
+    const Case = struct { amount: i32, resist: i16, want: i32 };
+    const cases = [_]Case{
+        .{ .amount = 3, .resist = 50, .want = 1 },
+        .{ .amount = 1, .resist = 1, .want = 0 },
+        .{ .amount = 3, .resist = -50, .want = 4 },
+        .{ .amount = 3, .resist = -101, .want = 6 },
+        .{ .amount = 3, .resist = 101, .want = 0 },
+        .{ .amount = 0, .resist = -100, .want = 0 },
+        .{ .amount = -3, .resist = -100, .want = 0 },
+        .{ .amount = std.math.maxInt(i32), .resist = -100, .want = std.math.maxInt(i32) },
+    };
+    for (cases) |c| try std.testing.expectEqual(c.want, resisted(c.amount, c.resist));
+    const tiny = Damage{ .physical = -5, .elements = .initFill(1) };
+    try std.testing.expectEqual(@as(i32, 0), tiny.total(.initFill(50)));
+    const large = Damage{ .physical = std.math.maxInt(i32), .elements = .initFill(std.math.maxInt(i32)) };
+    try std.testing.expectEqual(std.math.maxInt(i32), large.total(.initFill(-100)));
+    std.debug.print("damage boundaries: {d} explicit cases, per-element rounding and saturated mixed totals checked\n", .{cases.len});
+}
+
+test "elemental statuses require penetrating damage and a surviving target" {
+    var checks: usize = 0;
+    for (std.enums.values(Element)) |element| {
+        const hit = Damage{ .physical = 3 };
+        var elemental = hit;
+        elemental.elements.set(element, 2);
+        const clear = Resists.initFill(0);
+        try std.testing.expect(elemental.afflicts(clear, element, 6));
+        try std.testing.expect(!elemental.afflicts(clear, element, 5));
+        try std.testing.expect(!elemental.afflicts(clear, element, 4));
+        var immune = clear;
+        immune.set(element, 100);
+        try std.testing.expect(!elemental.afflicts(immune, element, 20));
+        try std.testing.expect(!hit.afflicts(clear, element, 20));
+        elemental.elements.set(element, 1);
+        immune.set(element, 50);
+        try std.testing.expect(!elemental.afflicts(immune, element, 20));
+        checks += 6;
+    }
+    std.debug.print("elemental status eligibility: {d} survival, lethal, immune, absent and rounded-away cases checked\n", .{checks});
+}

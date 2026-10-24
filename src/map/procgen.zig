@@ -203,7 +203,7 @@ pub fn roll(lv: *grid.Level, seed: u64, doors: []const P, floor: Floor, features
     const base = lv.tile;
     var lots: buildings.Lots = .{};
     for (features, 0..) |f, i| {
-        reshape(lv);
+        gen.keepTorches(lv);
         f.fit().apply(lv, &rng, seed +% i *% FEATURE_STRIDE, pal, &lots);
     }
     carve.seal(lv, pal.solid);

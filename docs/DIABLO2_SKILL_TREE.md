@@ -304,7 +304,9 @@ For an unlearned skill, label the available values as the first rank's preview. 
 maximum skill, omit the next-rank section rather than duplicating the current
 numbers under a misleading upgrade heading. Unchanged values should remain calm and
 readable; the one value affected by the next point should be easy to compare. Any
-description wrapping must account for the action footer.
+description wrapping must account for the action footer. Keep rank-dependent length and
+duration in the property and next-rank rows instead of repeating them in behavior prose,
+so the flavor line remains above the binding action.
 
 The selected eligible skill spends one point on one deliberate confirm press. There is no secondary confirmation modal. Browsing, backing out and allocation spend no simulation turn; only a successful `State.learn` reduces the point pool. Details show the result before spending.
 

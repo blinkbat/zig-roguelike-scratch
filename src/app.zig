@@ -773,6 +773,7 @@ const Headless = struct { flag: [:0]const u8, body: fn (*game.Game) anyerror!voi
 pub const HEADLESS = [_]Headless{
     .{ .flag = "--shot", .body = shots.shoot },
     .{ .flag = "--shot-ui", .body = shots.shootUi },
+    .{ .flag = "--shot-editor", .body = shots.shootEditor },
     .{ .flag = "--shot-debug", .body = shots.shootDebug },
     .{ .flag = "--shot-cinema", .body = shots.shootCinema },
     .{ .flag = "--bench", .body = shots.benchWalk, .startup_shown = true },

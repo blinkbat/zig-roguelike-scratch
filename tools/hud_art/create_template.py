@@ -95,8 +95,9 @@ shared_lines = {
 }
 skill_source = skill_source.split('fn skillLines(', 1)[1].split('\n}', 1)[0]
 skill_lines = {}
-for name, shared, body in re.findall(r'\.(\w+)\s*=>\s*&(?:\.\{|\((\w+)\s*\+\+\s*\[_\]\[4\]f32\{)(.*?)\n        \}\)?,', skill_source, re.S):
-    skill_lines[name] = (shared_lines[shared] if shared else []) + strokes(body)
+for name, body in re.findall(r'^        \.(\w+)\s*=>\s*&(.*?)(?=^        \.\w+\s*=>|^    };)', skill_source, re.S | re.M):
+    shared = re.match(r'\((\w+)\s*\+\+\s*\[_\]\[4\]f32\{', body)
+    skill_lines[name] = (shared_lines[shared.group(1)] if shared else []) + strokes(body)
 for name in ('shoot', 'wait', 'secondary', 'juke', 'burning_arrow', 'glacial_shot'):
     assert skill_lines.get(name), f'Missing template icon strokes: {name}'
 hud_source = (ROOT / 'src/ui/hud.zig').read_text(encoding='utf-8')

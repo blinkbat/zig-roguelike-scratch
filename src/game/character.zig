@@ -71,10 +71,19 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
     }
     var cells = grid.Cells.around(at, game.INTERACT_REACH);
     while (cells.next()) |p| {
-        const chest = chestReached(g, at, p) and !listed.isSet(grid.Level.idx(p));
-        if (!chest and doorReached(g, at, p) == null) continue;
-        out[n] = if (chest) .{ .chest = p } else .{ .door = p };
-        n += 1;
+        if (!grid.Level.inside(p)) continue;
+        if (!listed.isSet(grid.Level.idx(p))) {
+            const chest = chestReached(g, at, p);
+            const gold = goldReached(g, at, p);
+            if (chest or gold != null) {
+                out[n] = if (chest or g.sim.lv.at(p).isChest()) .{ .chest = p } else .{ .gold = gold.? };
+                n += 1;
+            }
+        }
+        if (doorReached(g, at, p) != null) {
+            out[n] = .{ .door = p };
+            n += 1;
+        }
     }
     return out[0..n];
 }
@@ -87,7 +96,19 @@ fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
         out[n] = .{ .loot = .{ .index = i, .item = drop.item } };
         n += 1;
     }
+    if (goldReached(g, from, at)) |pile| {
+        out[n] = .{ .gold = pile };
+        n += 1;
+    }
     return out[0..n];
+}
+
+fn goldReached(g: *const game.Game, from: P, at: P) ?items.Coins {
+    if (!withinReach(from, at)) return null;
+    for (g.sim.ground.coins[0..g.sim.ground.coin_n]) |pile| {
+        if (pile.at.eq(at)) return scene.pileShown(g, pile);
+    }
+    return null;
 }
 
 /// What Interact can reach from `from`, as listed and as resolved alike.
@@ -103,7 +124,7 @@ pub fn lootReached(g: *const game.Game, from: P, at: P) bool {
     for (g.sim.ground.drops[0..g.sim.ground.n]) |drop| {
         if (inLoot(g, from, at, drop)) return true;
     }
-    return false;
+    return g.sim.lv.at(at).isChest() and goldReached(g, from, at) != null;
 }
 
 pub fn chestReached(g: *const game.Game, from: P, p: P) bool {
@@ -216,7 +237,7 @@ pub fn characterCommand(g: *game.Game, command: book.Command) void {
             g.sim.unsaved = true;
         },
         .open_loot => |at| openLoot(g, at),
-        .equip, .unequip, .drop, .pickup, .take_all, .travel => itemCommand(g, command),
+        .equip, .unequip, .drop, .pickup, .take_gold, .take_all, .travel => itemCommand(g, command),
     }
 }
 
@@ -264,9 +285,20 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             if (g.character.page == .loot and !g.sim.ground.drops[i].at.eq(g.character.loot_at)) return;
             if (!takeDrop(g, i)) return;
         },
+        .take_gold => |at| {
+            if (goldReached(g, h.at, at) == null) return;
+            if (g.character.page == .loot) {
+                if (!at.eq(g.character.loot_at)) return;
+            } else if (g.sim.lv.at(at).isChest() or g.sim.ground.hasItems(at)) return;
+            game.combat.collectGold(g, at);
+        },
         .take_all => {
             if (g.character.page != .loot) return;
             var taken: usize = 0;
+            if (goldReached(g, h.at, g.character.loot_at) != null) {
+                game.combat.collectGold(g, g.character.loot_at);
+                taken += 1;
+            }
             var i: usize = 0;
             while (i < g.sim.ground.n) {
                 if (!inLoot(g, h.at, g.character.loot_at, g.sim.ground.drops[i])) {

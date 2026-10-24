@@ -769,3 +769,141 @@ test "a listed save must have the complete run that loading requires" {
     try std.testing.expectError(error.Damaged, read(buf.items, g, map));
     std.debug.print("{d} checksummed incomplete saves and an invalid map flag refused before loading\n", .{cuts.len});
 }
+
+test "autosave gates retain dirty state until the interval turn and door are complete" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const Gate = enum { clean, interval, busy, travel };
+    for (std.enums.values(Gate)) |gate| {
+        game.begin(g, 1);
+        var a = Autosave.init(std.testing.failing_allocator, 0);
+        defer a.deinit();
+        a.since = if (gate == .interval) GAP_S / 2 else GAP_S;
+        g.sim.unsaved = gate != .clean;
+        if (gate == .busy) g.pic.busy = 0.25;
+        if (gate == .travel) g.sim.travel = .{ .node = 0, .door = 0 };
+        a.step(g, 0);
+        try std.testing.expectEqual(gate != .clean, g.sim.unsaved);
+        try std.testing.expectEqual(@as(?anyerror, null), a.failed);
+        try std.testing.expectEqual(@as(usize, 0), a.bytes.items.len);
+        try std.testing.expect(a.writer == null);
+        g.sim.unsaved = true;
+        g.sim.travel = null;
+        g.pic.busy = 0;
+        a.since = GAP_S;
+        a.step(g, 0);
+        try std.testing.expectEqual(@as(?anyerror, error.OutOfMemory), a.failed);
+        try std.testing.expect(a.writer == null);
+        a.step(g, 0);
+        try std.testing.expect(g.sim.unsaved);
+    }
+    std.debug.print("autosave: 4 independent gates preserve dirty state; each released gate attempts capture without filesystem writes\n", .{});
+}
+
+test "checksummed save length failures preserve both the live run and destination map" {
+    const alloc = std.testing.allocator;
+    const w = try testMap();
+    defer alloc.destroy(w);
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    try fixture(g, w);
+    var full = std.ArrayList(u8).init(alloc);
+    defer full.deinit();
+    try write(g, &full);
+    seal(&full);
+
+    const back = try game.boot(alloc);
+    defer game.shut(alloc, back);
+    game.begin(back, 19);
+    back.sim.name = hero.Name.of("Untouched");
+    back.sim.gold = 41;
+    const into = try testMap();
+    defer alloc.destroy(into);
+    const map_hash = store.sum(std.mem.asBytes(into));
+    var before = std.ArrayList(u8).init(alloc);
+    defer before.deinit();
+    try write(back, &before);
+    const map_at = HEAD + @sizeOf(Summary) + @sizeOf(Seed) + @sizeOf(bool);
+    const visits_at = map_at + @sizeOf(Map) + @sizeOf(Node) + @sizeOf(Visited);
+    const cuts = [_]usize{
+        HEAD,
+        HEAD + @sizeOf(Summary) - 1,
+        map_at - 1,
+        map_at,
+        map_at + @sizeOf(Map) - 1,
+        visits_at - 1,
+        visits_at,
+        visits_at + @sizeOf(Visit) - 1,
+        full.items.len - store.SUM - 1,
+        full.items.len - store.SUM,
+    };
+    var damaged = std.ArrayList(u8).init(alloc);
+    defer damaged.deinit();
+    var after = std.ArrayList(u8).init(alloc);
+    defer after.deinit();
+    for (cuts, 0..) |cut, i| {
+        damaged.clearRetainingCapacity();
+        try damaged.appendSlice(full.items[0..cut]);
+        if (i == cuts.len - 1) try damaged.append(0);
+        seal(&damaged);
+        try std.testing.expectError(error.Short, peek(damaged.items));
+        try std.testing.expectError(error.Short, read(damaged.items, back, into));
+        after.clearRetainingCapacity();
+        try write(back, &after);
+        try std.testing.expectEqualSlices(u8, before.items, after.items);
+        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
+    }
+    std.debug.print("save validation: {d} correctly checksummed structural failures preserve the complete run and destination map\n", .{cuts.len});
+}
+
+test "a generated run reloads every class without retaining the previous run's transient state" {
+    const alloc = std.testing.allocator;
+    const g = try game.boot(alloc);
+    defer game.shut(alloc, g);
+    const back = try game.boot(alloc);
+    defer game.shut(alloc, back);
+    const into = try testMap();
+    defer alloc.destroy(into);
+    var buf = std.ArrayList(u8).init(alloc);
+    defer buf.deinit();
+    for (hero.CLASSES) |class| {
+        g.sim.class = class;
+        game.begin(g, 29);
+        g.sim.name = hero.Name.of("Generated");
+        g.sim.gold = 31;
+        g.sim.mana = 2;
+        _ = g.sim.growth.gain(100);
+        _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 3);
+        const map_hash = store.sum(std.mem.asBytes(into));
+        buf.clearRetainingCapacity();
+        try write(g, &buf);
+        seal(&buf);
+        try fixture(back, into);
+        back.mode = .aim;
+        back.exit = .quit;
+        back.target = 2;
+        back.pending = .interact;
+        back.sim.travel = .{ .node = 0, .door = 0 };
+        back.pic.busy = 0.5;
+        try read(buf.items, back, into);
+        try std.testing.expect(back.sim.map == null);
+        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
+        try std.testing.expectEqual(class, back.sim.class);
+        try std.testing.expectEqualStrings("Generated", back.sim.name.text());
+        try std.testing.expectEqualDeep(g.sim.growth, back.sim.growth);
+        try std.testing.expectEqualDeep(g.sim.rng, back.sim.rng);
+        try std.testing.expectEqualDeep(g.sim.loot_rng, back.sim.loot_rng);
+        try std.testing.expectEqualDeep(g.bar, back.bar);
+        try std.testing.expectEqual(@as(i32, 31), back.sim.gold);
+        try std.testing.expectEqual(@as(i32, 2), back.sim.mana);
+        try std.testing.expectEqual(g.sim.heroActor().?.hp, back.sim.heroActor().?.hp);
+        try std.testing.expectEqual(game.Mode.play, back.mode);
+        try std.testing.expect(back.exit == null and back.target == null and back.pending == null and back.sim.travel == null);
+        try std.testing.expect(back.pic.quiet());
+        try std.testing.expectEqual(back.sim.heroActor().?.hp, back.pic.heroShown(&back.sim).?.hp);
+        try std.testing.expectEqual(back.sim.gold, back.pic.gold_shown);
+        try std.testing.expectEqualDeep(back.sim.growth, back.pic.growth_shown);
+        try std.testing.expectEqual(@as(f32, 0), back.pic.fx.level_up.life);
+    }
+    std.debug.print("save reload: {d} generated class runs restore resources, RNG and HUD; clear pending aim, travel and effects without touching the destination map\n", .{hero.CLASSES.len});
+}

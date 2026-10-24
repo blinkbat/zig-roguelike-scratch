@@ -1568,3 +1568,100 @@ test "bleeding doubles after knockback even if the foe loses its action" {
     }
     std.debug.print("{d} bleeding cases: a stalled knocked foe moves; a pinned foe stays still\n", .{checked});
 }
+
+test "rejected skills preserve simulation across every class and readiness gate" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const Gate = enum { busy, locked, cooling, mana, empty };
+    var counts = std.EnumArray(Gate, usize).initFill(0);
+    for (heroes.CLASSES) |class| {
+        for (skillbar.kit(class)) |act| {
+            if (act == .wait or act == .secondary) continue;
+            for (std.enums.values(Gate)) |gate| {
+                const foe_at = P{ .x = if (act.reticle() == .rush) 23 else 21, .y = 20 };
+                harness.heroArena(g, class, .{ .x = 20, .y = 20 }, &.{foe_at});
+                if (act == .combustion) g.sim.pool.get(2).?.burn.turns = burning.TURNS;
+                switch (gate) {
+                    .busy => g.pic.busy = 0.5,
+                    .locked => {
+                        if (act.flaskOf() != null) continue;
+                        g.sim.growth.ranks.set(act, 0);
+                    },
+                    .cooling => g.sim.cooldown.set(act, 2),
+                    .mana => {
+                        const cost = g.sim.growth.cost(act);
+                        if (cost == 0) continue;
+                        g.sim.mana = cost - 1;
+                    },
+                    .empty => {
+                        const kind = act.flaskOf() orelse continue;
+                        g.sim.flasks.getPtr(kind).charges = 0;
+                    },
+                }
+                g.sim.unsaved = false;
+                const before = .{ g.sim.clock, g.sim.rng, g.sim.loot_rng, g.sim.mana, g.sim.mana_recovery, g.sim.flasks, g.sim.cooldown, g.sim.growth, g.sim.gold, g.sim.kills, g.sim.unsaved };
+                const bodies = try std.testing.allocator.dupe(actor.Actor, g.sim.pool.slice());
+                defer std.testing.allocator.free(bodies);
+                skills.useSkill(g, .{ .act = act, .by = .x });
+                try std.testing.expectEqual(game.Mode.play, g.mode);
+                try std.testing.expectEqualDeep(before, .{ g.sim.clock, g.sim.rng, g.sim.loot_rng, g.sim.mana, g.sim.mana_recovery, g.sim.flasks, g.sim.cooldown, g.sim.growth, g.sim.gold, g.sim.kills, g.sim.unsaved });
+                try std.testing.expectEqualSlices(actor.Actor, bodies, g.sim.pool.slice());
+                try std.testing.expect(g.pic.shot == null and g.pending == null);
+                counts.getPtr(gate).* += 1;
+            }
+        }
+    }
+    for (counts.values) |count| try std.testing.expect(count > 0);
+    std.debug.print("skill rejection: busy {d}, locked {d}, cooling {d}, mana {d}, empty flask {d}; actors, resources, RNG and progression unchanged\n", .{ counts.get(.busy), counts.get(.locked), counts.get(.cooling), counts.get(.mana), counts.get(.empty) });
+}
+
+test "every targeted skill rechecks readiness and bounds at confirmation without spending" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const Gate = enum { bounds, busy, locked, cooling, mana };
+    var checked: usize = 0;
+    for (heroes.CLASSES) |class| {
+        for (progress.skills(class)) |skill| {
+            const act = skill.act;
+            const reticle = act.reticle() orelse continue;
+            for (std.enums.values(Gate)) |gate| {
+                const from = P{ .x = 20, .y = 20 };
+                const foe_at = P{ .x = if (reticle == .rush) 23 else 21, .y = 20 };
+                harness.heroArena(g, class, from, &.{foe_at});
+                skills.aiming(g, .x, act);
+                g.mark = if (reticle == .leap) .{ .x = 22, .y = 20 } else foe_at;
+                if (act == .combustion) g.sim.pool.get(2).?.burn.turns = burning.TURNS;
+                if (act == .arcane_barrier) {
+                    g.barrier_start = .{ .x = 21, .y = 21 };
+                    g.mark = .{ .x = 22, .y = 21 };
+                }
+                try std.testing.expect(skills.aimable(g, from, g.mark));
+                switch (gate) {
+                    .bounds => g.mark = .{ .x = -1, .y = -1 },
+                    .busy => g.pic.busy = 0.5,
+                    .locked => g.sim.growth.ranks.set(act, 0),
+                    .cooling => g.sim.cooldown.set(act, 2),
+                    .mana => {
+                        const cost = g.sim.growth.cost(act);
+                        if (cost == 0) continue;
+                        g.sim.mana = cost - 1;
+                    },
+                }
+                g.sim.unsaved = false;
+                const before = .{ g.sim.clock, g.sim.rng, g.sim.mana, g.sim.mana_recovery, g.sim.flasks, g.sim.cooldown, g.sim.growth, g.sim.unsaved };
+                const aim_before = .{ g.mark, g.barrier_start, g.aim_act, g.aim_by };
+                const bodies = try std.testing.allocator.dupe(actor.Actor, g.sim.pool.slice());
+                defer std.testing.allocator.free(bodies);
+                skills.confirmAim(g);
+                try std.testing.expectEqual(game.Mode.aim, g.mode);
+                try std.testing.expectEqualDeep(aim_before, .{ g.mark, g.barrier_start, g.aim_act, g.aim_by });
+                try std.testing.expectEqualDeep(before, .{ g.sim.clock, g.sim.rng, g.sim.mana, g.sim.mana_recovery, g.sim.flasks, g.sim.cooldown, g.sim.growth, g.sim.unsaved });
+                try std.testing.expectEqualSlices(actor.Actor, bodies, g.sim.pool.slice());
+                try std.testing.expect(g.pic.shot == null);
+                checked += 1;
+            }
+        }
+    }
+    try std.testing.expect(checked > 0);
+    std.debug.print("target confirmation: {d} out-of-bounds and changed-readiness cases preserve the reticle and simulation\n", .{checked});
+}

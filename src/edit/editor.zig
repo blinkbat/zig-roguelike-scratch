@@ -9,7 +9,6 @@ const actor = @import("../play/actor.zig");
 const pack = @import("../play/pack.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
-const font = @import("../gfx/font.zig");
 const menu = @import("../ui/menu.zig");
 const prompt_text = @import("../gfx/prompt_text.zig");
 const game = @import("../game.zig");
@@ -26,18 +25,19 @@ pub fn textFace(g: *const game.Game) prompt_text.Face {
     return .{ .face = &g.face };
 }
 
-pub const PANEL_W: i32 = 340;
+pub const PANEL_W: i32 = 420;
 pub const PAD: i32 = 12;
-pub const ROW_H: i32 = 26;
-pub const NODE_H: i32 = 46;
+pub const ROW_H: i32 = 34;
+pub const NODE_H: i32 = 60;
 pub const GAP: i32 = 6;
 pub const SECTION_GAP: i32 = GAP * 3;
 pub const BLOCK_GAP: i32 = GAP * 2;
 pub const ROW_STEP: i32 = ROW_H + GAP;
-pub const TEXT: i32 = font.BODY;
+pub const TEXT: i32 = 24;
+pub const DETAIL: i32 = 20;
+pub const HEAD: i32 = 32;
 pub const LINE_STEP: i32 = TEXT + GAP;
-const SMALL = font.SMALL;
-const HEAD = font.HEAD;
+const SMALL = DETAIL;
 pub const INNER_W: i32 = PANEL_W - PAD * 2;
 const ZOOMS = [_]f32{ 8, 16, 32, 64 };
 const ZOOM_AT = zoomOf(16);
@@ -67,19 +67,19 @@ pub const LINK_W: f32 = 2;
 pub const DOT_R: f32 = 4;
 /// Pixels past a door's dot a press still takes it.
 pub const DOT_SLOP: f32 = 3;
-pub const MODAL_W: i32 = 600;
+pub const MODAL_W: i32 = 720;
 pub const MODAL_HEAD: i32 = PAD + HEAD + PAD;
 pub const MODAL_ROWS: usize = 12;
-pub const MODAL_BTN_W: i32 = 150;
-pub const LABEL_W: i32 = 96;
-pub const STEP_W: i32 = 24;
+pub const MODAL_BTN_W: i32 = 180;
+pub const LABEL_W: i32 = 126;
+pub const STEP_W: i32 = 30;
 pub const STEP_PITCH: i32 = STEP_W + GAP;
 pub const SHIFT_STEP: i32 = 5;
-const WEIGHT_W: i32 = 30;
+const WEIGHT_W: i32 = 36;
 pub const MEMBER_W: i32 = 24;
 pub const MEMBER_GAP: i32 = 2;
 pub const WEIGHT_SPAN: i32 = 2 * STEP_W + WEIGHT_W;
-const BRUSH_W: i32 = 48;
+const BRUSH_W: i32 = 64;
 pub const BRUSH_SPAN: i32 = 2 * STEP_W + BRUSH_W;
 pub const MEMBERS_X: i32 = WEIGHT_SPAN + BLOCK_GAP;
 pub const MAKEUP_TOOLS_X: i32 = INNER_W - @as(i32, knobs.MAKEUP_TOOLS.len) * STEP_PITCH + GAP;
@@ -350,6 +350,7 @@ pub const View = enum {
     }
 };
 pub const Lower = enum {
+    tools,
     nodes,
     things,
     generator,
@@ -375,6 +376,7 @@ fn Text(comptime N: usize) type {
         buf: [N]u8 = undefined,
         n: usize = 0,
         cap: usize = N,
+        selected: bool = false,
 
         pub fn text(f: *const Self) []const u8 {
             return f.buf[0..f.n];
@@ -384,6 +386,7 @@ fn Text(comptime N: usize) type {
             f.cap = @min(cap, N);
             f.n = @min(s.len, f.cap);
             @memcpy(f.buf[0..f.n], s[0..f.n]);
+            f.selected = false;
         }
 
         pub fn put(f: *Self, s: []const u8) void {
@@ -391,18 +394,61 @@ fn Text(comptime N: usize) type {
         }
 
         fn feed(f: *Self, d: *const Desk) void {
+            if (d.text_all) f.selected = true;
+            if (d.paste_text) |pasted| {
+                for (pasted) |c| if (!std.ascii.isPrint(c)) return;
+                const from: usize = if (f.selected) 0 else f.n;
+                if (pasted.len > f.cap - from) return;
+                @memcpy(f.buf[from..][0..pasted.len], pasted);
+                f.n = from + pasted.len;
+                f.selected = false;
+            }
+            if (d.text().len > 0 and f.selected) {
+                f.n = 0;
+                f.selected = false;
+            }
             for (d.text()) |c| {
                 if (f.n == f.cap) break;
                 f.buf[f.n] = c;
                 f.n += 1;
             }
-            if (d.rub and f.n > 0) f.n -= 1;
+            if (d.rub) {
+                if (f.selected) f.n = 0 else if (f.n > 0) f.n -= 1;
+                f.selected = false;
+            }
         }
     };
 }
 
 const Field = Text(FIELD_MAX);
 const Path = Text(PATH_FIELD_MAX);
+
+test "editor naming fields paste atomically and replace selected names" {
+    var f = Field{};
+    f.set("Old name", atlas.NAME_MAX);
+    f.feed(&.{ .text_all = true, .paste_text = "New name" });
+    try std.testing.expectEqualStrings("New name", f.text());
+    f.feed(&.{ .paste_text = "\ninvalid" });
+    try std.testing.expectEqualStrings("New name", f.text());
+    f.feed(&.{ .paste_text = "\xc3\xa9" });
+    try std.testing.expectEqualStrings("New name", f.text());
+    f.feed(&.{ .paste_text = "a" ** atlas.NAME_MAX });
+    try std.testing.expectEqualStrings("New name", f.text());
+    f.feed(&.{ .text_all = true });
+    f.feed(&.{ .paste_text = "a" ** (atlas.NAME_MAX + 1) });
+    try std.testing.expectEqualStrings("New name", f.text());
+    try std.testing.expect(f.selected);
+    f.feed(&.{ .rub = true });
+    try std.testing.expectEqualStrings("", f.text());
+    f.feed(&.{ .paste_text = "a" ** atlas.NAME_MAX });
+    try std.testing.expectEqual(atlas.NAME_MAX, f.n);
+    var typed = Desk{ .text_all = true };
+    typed.typed.n = 1;
+    typed.typed.buf[0] = 'B';
+    f.feed(&typed);
+    try std.testing.expectEqualStrings("B", f.text());
+    std.debug.print("editor names: valid paste, 4 atomic rejections, select-all deletion and typed replacement checked\n", .{});
+}
 
 /// Graph drag; cancellation restores `was`.
 const Drag = struct { node: usize, grab: P, from: P, was: P, moved: bool = false };
@@ -470,7 +516,7 @@ pub const Editor = struct {
     shape: Shape = .brush,
     brush: usize = 0,
     view: View = .map,
-    lower: Lower = .nodes,
+    lower: Lower = .tools,
     lower_top: i32 = 0,
     node_rows: usize = 1,
     /// Scrolled pixels and maximum scroll in the generator or Things panel.
@@ -1042,6 +1088,7 @@ pub const Editor = struct {
 
     fn typeName(ed: *Editor) void {
         ed.drop();
+        ed.lower = .nodes;
         ed.field.set(ed.here().name(), atlas.NAME_MAX);
         ed.renaming = true;
     }
@@ -1264,7 +1311,7 @@ fn step(ed: *Editor, g: *game.Game, dt: f32) void {
         },
     }
     if (d.wheel != 0 and d.mouse.x < PANEL_W and d.mouse.y >= ed.lower_top) {
-        if (ed.lower == .things or ed.generator() != null) {
+        if (ed.lower == .tools or ed.lower == .things or ed.generator() != null) {
             ed.gen_top = std.math.clamp(ed.gen_top + notch(d) * ROW_H, 0, ed.gen_most);
         } else scrollNodes(ed, notch(d));
     }
@@ -1889,9 +1936,9 @@ pub fn addNode(ed: *Editor, plan: atlas.Plan) void {
 pub fn hot(ed: *Editor, r: rl.Rectangle, live: bool, modal: bool, tip: ?[:0]const u8) struct { hot: bool, hit: bool } {
     const on_layer = !ed.fresh and ed.action == .none and (modal or (ed.modal == .none and ed.popup == null));
     const in_clip = if (ed.clip) |c| ed.mouseIn(c) else true;
-    const h = live and on_layer and in_clip and ed.mouseIn(r);
-    if (h and tip != null) ed.tip = tip;
-    return .{ .hot = h, .hit = h and ed.desk.paint_hit };
+    const hovered = on_layer and in_clip and ed.mouseIn(r);
+    if (hovered and tip != null) ed.tip = tip;
+    return .{ .hot = live and hovered, .hit = live and hovered and ed.desk.paint_hit };
 }
 
 pub fn button(ed: *Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
@@ -1900,6 +1947,8 @@ pub fn button(ed: *Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, 
 
 pub fn buttonOn(ed: *Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     const h = hot(ed, r, live, modal, tip);
+    rl.drawRectangleRec(r, look.fade(ROW_ON, if (live) 0.5 else 0.2));
+    rl.drawRectangleLinesEx(r, 1, look.fade(look.EDGE, if (live) 0.85 else 0.35));
     plate(r, on, h.hot);
     const y: i32 = @intFromFloat(r.y);
     panel.drawFit(g, label, TEXT, insetW(r), false, textX(r), y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), if (live) look.TEXT else look.DIM);
@@ -1941,6 +1990,36 @@ pub fn cellOfRow(y: i32, k: usize, n: usize) rl.Rectangle {
 
 pub fn scissor(r: rl.Rectangle) void {
     rl.beginScissorMode(@intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height));
+}
+
+pub fn scrollThumb(track: rl.Rectangle, offset: usize, shown: usize, total: usize) ?rl.Rectangle {
+    if (shown == 0 or total <= shown or track.width <= 0 or track.height <= 0) return null;
+    const visible: f32 = @floatFromInt(shown);
+    const count: f32 = @floatFromInt(total);
+    const height = @min(track.height, @max(24, track.height * visible / count));
+    const travel = (track.height - height) * @as(f32, @floatFromInt(@min(offset, total - shown))) / @as(f32, @floatFromInt(total - shown));
+    return .{ .x = track.x, .y = track.y + travel, .width = track.width, .height = height };
+}
+
+pub fn scrollbar(track: rl.Rectangle, offset: usize, shown: usize, total: usize) void {
+    const thumb = scrollThumb(track, offset, shown, total) orelse return;
+    rl.drawRectangleRec(track, look.EDGE);
+    rl.drawRectangleRec(thumb, look.UI_GOLD);
+}
+
+test "editor scrollbar thumb remains inside its track for large catalogs and short views" {
+    for ([_]f32{ 8, 300 }) |height| {
+        const track = rl.Rectangle{ .x = 40, .y = 100, .width = 3, .height = height };
+        for ([_]usize{ 0, 500, 1_000_000 }) |offset| {
+            const thumb = scrollThumb(track, offset, 4, 2000).?;
+            try std.testing.expect(thumb.y >= track.y);
+            try std.testing.expect(thumb.y + thumb.height <= track.y + track.height);
+            try std.testing.expect(thumb.height >= @min(24, height));
+        }
+        try std.testing.expect(scrollThumb(track, 0, 4, 4) == null);
+        try std.testing.expect(scrollThumb(track, 0, 0, 4) == null);
+    }
+    std.debug.print("editor scrollbars: 6 large-catalog/short-view bounds and 4 non-scrollable cases checked\n", .{});
 }
 
 pub const Across = struct {
@@ -2203,11 +2282,20 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     const hover_at = ed.cellRect(Editor.canvas(g), .{ .x = 14, .y = 13 });
     ed.desk.mouse = .{ .x = @as(i32, @intFromFloat(hover_at.x)) + 8, .y = @as(i32, @intFromFloat(hover_at.y)) + 8 };
     ed.said_t = 0;
+    var path: [std.fs.max_path_bytes]u8 = undefined;
+    const dir = std.fs.path.dirname(map_path) orelse ".";
     for (std.enums.values(View), [_][:0]const u8{ map_path, graph_path }) |v, p| {
         ed.view = v;
         try snap(ed, g, target, p);
     }
     ed.view = .map;
+    ed.lower = .nodes;
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-nodes.png", .{dir}));
+    ed.lower = .tools;
+    render(ed, g, target);
+    ed.gen_top = ed.gen_most;
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-tools-palette.png", .{dir}));
+    ed.gen_top = 0;
     ed.select(1);
     ed.lower = .generator;
     const fo = &ed.map.node[1].plan.procgen.foes;
@@ -2216,13 +2304,12 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     fo.makeup[fo.makeup_n - 1].weight = 3;
     ed.desk.mouse = .{ .x = 0, .y = 0 };
     render(ed, g, target);
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-gen-top.png", .{dir}));
     ed.gen_top = ed.gen_most;
     try snap(ed, g, target, gen_path);
     ed.modal = .objects;
     ed.seen_at = seenIndex(.{ .body = .slime });
     try snap(ed, g, target, objects_path);
-    var path: [std.fs.max_path_bytes]u8 = undefined;
-    const dir = std.fs.path.dirname(map_path) orelse ".";
     ed.seen_at = seenIndex(.{ .body = .beefy_pib });
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-beefy-pib.png", .{dir}));
     ed.modal = .help;
@@ -2234,6 +2321,12 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
         ed.modal = modal;
         try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-" ++ @tagName(modal) ++ ".png", .{dir}));
     }
+    text_panel.open(ed);
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text-browse.png", .{dir}));
+    ed.words.top = std.math.maxInt(usize);
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text-list-end.png", .{dir}));
+    try text_panel.poseContext(ed, "play.items.SPECS.war_bow.flavor");
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text-item.png", .{dir}));
     try text_panel.pose(ed);
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text.png", .{dir}));
     ed.words.author = .you;

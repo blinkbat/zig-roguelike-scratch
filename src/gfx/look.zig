@@ -221,10 +221,6 @@ pub const Sprites = struct {
         self.shine = shaders.program(ShineShader, SHINE_FS);
     }
 
-    pub fn coins(self: *const Sprites, large: bool) ?rl.Texture2D {
-        return if (large) self.large_coins else self.small_coins;
-    }
-
     /// `t` again over itself at `dest`, as the band at `sweep` crosses it.
     pub fn drawShine(self: *const Sprites, t: rl.Texture2D, dest: rl.Rectangle, sweep: f32, col: rl.Color) void {
         const s = self.shine orelse return;
@@ -780,9 +776,6 @@ pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
-/// Gold on the ground, in the reticle's gold.
-pub const COIN_MARK = "$";
-
 /// What a picture of the whole map marks a cell with over its tile, a door before a barrel.
 pub const Mark = enum {
     door,

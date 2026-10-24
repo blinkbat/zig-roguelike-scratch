@@ -137,6 +137,7 @@ const SLOT_LABEL = font.SMALL;
 const SLOT_INSET = 4;
 pub const Nearby = union(enum) {
     loot: struct { index: usize, item: items.Item },
+    gold: items.Coins,
     bag: P,
     chest: P,
     door: P,
@@ -144,6 +145,7 @@ pub const Nearby = union(enum) {
     pub fn command(n: Nearby) Command {
         return switch (n) {
             .loot => |l| .{ .pickup = l.index },
+            .gold => |pile| .{ .take_gold = pile.at },
             .bag, .chest => |at| .{ .open_loot = at },
             .door => |at| .{ .travel = at },
         };
@@ -152,13 +154,14 @@ pub const Nearby = union(enum) {
     fn item(n: Nearby) ?items.Item {
         return switch (n) {
             .loot => |l| l.item,
-            .bag, .chest, .door => null,
+            .gold, .bag, .chest, .door => null,
         };
     }
 
     fn label(n: Nearby, buf: []u8) [:0]const u8 {
         return switch (n) {
             .loot => |l| l.item.name(buf),
+            .gold => |pile| std.fmt.bufPrintZ(buf, "{d} gold", .{pile.amount}) catch "Gold",
             .chest => "Treasure chest",
             .bag => "Item bag",
             .door => "Door",
@@ -194,6 +197,7 @@ pub const Command = union(enum) {
     passive: usize,
     skill: skillbar.Act,
     pickup: usize,
+    take_gold: P,
     take_all,
     open_loot: P,
     travel: P,
@@ -211,6 +215,7 @@ fn verbOf(c: std.meta.Tag(Command)) [:0]const u8 {
         .drop => "Drop",
         .passive, .skill => unreachable,
         .pickup => "Take item",
+        .take_gold => "Take gold",
         .take_all => "Take all",
         .open_loot => "Loot",
         .travel => "Travel",
@@ -372,7 +377,7 @@ pub const Book = struct {
     fn cardRoom(v: View) i32 {
         var most: i32 = 0;
         for (v.nearby) |n| if (n.item()) |it| {
-            for (it.kind.slots()) |slot| most = @max(most, cardFoot(it, slot, neededAttrs(v, it, slot)));
+            for (it.kind.slots()) |slot| most = @max(most, cardFoot(it, slot));
         };
         return most;
     }
@@ -501,6 +506,7 @@ pub const Book = struct {
             .equipment, .inventory, .nearby, .loot => if (self.count(v) > 0) {
                 const it = self.selected(v) orelse {
                     c.add(self.actionBox(menu.CONFIRM, v), menu.CONFIRM, .{ .label = if (self.direct()) v.nearby[self.cursor].command().verb() else "Inventory" });
+                    if (self.page == .loot) c.add(self.actionBox(menu.CHANGE, v), menu.CHANGE, .{ .label = verbOf(.take_all) });
                     return c;
                 };
                 c.add(self.actionBox(menu.CONFIRM, v), menu.CONFIRM, .{ .label = switch (self.page) {
@@ -693,7 +699,7 @@ pub const Book = struct {
         if (comparing) itemCard(face, x + CARD_W + CARD_GAP, y, CARD_W, v.inventory.gear.slots.get(slot), slot, v.inventory.gear.statsWithout(slot, v.base), "EQUIPPED");
         if (comparing) {
             const equipped = v.inventory.gear.slots.get(slot);
-            const at = y + @max(cardFoot(it, slot, self.requirementAttrs(v, slot)), if (equipped) |worn| cardFoot(worn, slot, v.inventory.gear.statsWithout(slot, v.base)) else CARD_SLOT + font.SMALL) + CHANGES_GAP;
+            const at = y + @max(cardFoot(it, slot), if (equipped) |worn| cardFoot(worn, slot) else CARD_SLOT + font.SMALL) + CHANGES_GAP;
             if (v.inventory.preview(self.cursor, slot, v.base)) |after| {
                 var below = drawChanges(face, x, at, v, after) + RETURNS_GAP;
                 for (items.SLOTS) |s| {
@@ -876,12 +882,12 @@ fn footOf(lines: usize, mods: usize) i32 {
     return CARD_STATS + n * CARD_LINE + (if (m > 0) MODS_ABOVE + MODS_BELOW + m * CARD_LINE else 0) + FLAVOR_GAP + font.LABEL;
 }
 
-fn cardFoot(it: items.Item, slot: items.Slot, available: attr.Attrs) i32 {
+fn cardFoot(it: items.Item, slot: items.Slot) i32 {
     var mods: usize = 0;
     if (it.magical()) for (items.MODS) |m| {
         if (it.value(m) != 0) mods += 1;
     };
-    return footOf(CardLines.of(items.spec(it.kind), slot, available).n, mods);
+    return footOf(CardLines.of(items.spec(it.kind), slot, null).n, mods);
 }
 
 comptime {
@@ -1498,7 +1504,15 @@ test "loot exposes single pickup and take all through controller and mouse contr
     std.debug.print("loot panel: {d}x{d} for one item, Book {d}x{d}\n", .{ panel.x, panel.y, SIZE.x, SIZE.y });
     _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, v);
     try std.testing.expectEqual(Page.loot, book.page);
-    std.debug.print("loot controls: selected index, take-all press and scaled mouse hit, no character tabs\n", .{});
+    const at = P{ .x = 20, .y = 20 };
+    v.nearby = &.{.{ .gold = .{ .at = at, .amount = 37 } }};
+    try std.testing.expectEqual(at, book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, v).?.take_gold);
+    var label: [80]u8 = undefined;
+    try std.testing.expectEqualStrings("37 gold", v.nearby[0].label(&label));
+    const gold_box = book.actionBox(menu.CHANGE, v);
+    const gold_p = book.surface(screen, v).screenOf(.{ .x = gold_box.x + 20, .y = gold_box.y + 20 });
+    try std.testing.expect(book.step(&.{ .click = true, .pointer = gold_p }, screen, v).? == .take_all);
+    std.debug.print("loot controls: item and gold pickup, take-all press and scaled mouse hit on both row types, no character tabs\n", .{});
 }
 
 test "the inventory list scrolls back when the bag shrinks" {

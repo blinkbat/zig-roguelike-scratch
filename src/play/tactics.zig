@@ -77,7 +77,7 @@ pub const ArcaneBarrier = struct {
     pub const COST: i32 = 6;
     pub const COOLDOWN: u8 = 6;
     pub const RANGE: i32 = 6;
-    pub const DESCRIPTION = "Choose two endpoints to raise a straight arcane wall. Blocks movement and projectiles, allows sight. Rank increases length and duration. Cannot cover bodies, props or doors.";
+    pub const DESCRIPTION = "Choose two endpoints to raise a straight arcane wall. Blocks movement and projectiles, allows sight. Cannot cover bodies, props or doors.";
     pub const FLAVOR = "Draw a line the world must obey.";
     pub fn length(rank: u8) usize {
         return 2 + @as(usize, @max(1, rank));
