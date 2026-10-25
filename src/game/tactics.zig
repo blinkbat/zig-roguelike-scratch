@@ -363,7 +363,7 @@ test "tactical reaction recovery waits for impact and Harvest restores life from
     const h = game.harness;
     const from = P{ .x = 20, .y = 20 };
     h.heroArena(g, .knight, from, &.{});
-    g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .life_on_kill, .value = 2 }, null } });
+    g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .life_on_kill, .value = 2 }, null, null, null } });
     game.syncStats(g);
     g.sim.heroActor().?.hp -= 10;
     const id = h.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
@@ -395,7 +395,7 @@ test "tactical overwatch reaction finishes before the next foe can expose its re
     const h = game.harness;
     const from = P{ .x = 20, .y = 20 };
     h.heroArena(g, .archer, from, &.{});
-    g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .life_on_kill, .value = 2 }, null } });
+    g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .life_on_kill, .value = 2 }, null, null, null } });
     game.syncStats(g);
     g.sim.heroActor().?.hp -= 10;
     const rat = h.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, true);

@@ -6,7 +6,6 @@ const hero = @import("../play/hero.zig");
 const attr = @import("../play/attrs.zig");
 const items = @import("../play/items.zig");
 const damage = @import("../play/damage.zig");
-const bleeding = @import("../play/bleeding.zig");
 const resilience = @import("../play/resilience.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -74,7 +73,7 @@ pub const AREA = raster.rect(LIST_X, TOP, W - 2 * LIST_X, AREA_H);
 const AREA_H = 458;
 const CARD_W = 246;
 const CARD_GAP = 16;
-const CARD_H = 290;
+const CARD_H = 334;
 /// Two cards side by side; one card alone or a note under them spans it.
 const DETAIL_W = CARD_W * 2 + CARD_GAP;
 const CLOSE_W = 108;
@@ -113,12 +112,10 @@ const DIRECT_W = 2 * LIST_X + LIST_W;
 const DIRECT_GAP = 14;
 /// Under the header, loot's inventory and gold line.
 const HOLDING_Y = CLOSE_Y + CLOSE_H + 4;
-const CHANGES_GAP = 10;
-const RETURNS_GAP = 4;
+const REQUIREMENT_GAP = 10;
 /// Under "Both hands in use", its explanation's top.
 const HELD_NOTE_DY = 42;
 const LOSS = look.rgb(0xe18c83);
-const GAIN = look.rgb(0xa8c596);
 /// The most cells any page lays out by box.
 const CELLS_MAX = @max(skillbar.ACTS.len, items.SLOTS.len);
 const SLOT_BOX = std.EnumArray(items.Slot, struct { at: P, w: i32, h: i32 }).init(.{
@@ -651,7 +648,7 @@ pub const Book = struct {
                     const mid = raster.middleAt(r);
                     if (offhandWeapon(v.inventory.gear, slot)) |weapon| {
                         face.centred(BOTH_HANDS, mid.x, mid.y - PAIR_DY, font.SMALL, look.DIM);
-                        face.centred(face.fit(&fitted, weapon.name(&name_buf), font.SMALL, inner, false), mid.x, mid.y + PAIR_DY, font.SMALL, look.DIM);
+                        face.centred(face.fit(&fitted, weapon.name(&name_buf), font.SMALL, inner, false), mid.x, mid.y + PAIR_DY, font.SMALL, look.itemInk(weapon.rarity()));
                     } else {
                         const name = if (it) |a| a.name(&name_buf) else "-";
                         face.centred(face.fit(&fitted, name, font.SMALL, inner, false), mid.x, mid.y + NAME_DY, font.SMALL, inkOf(it));
@@ -660,7 +657,7 @@ pub const Book = struct {
                 .inventory => {
                     const it = v.inventory.bag[i];
                     const slots = it.kind.slots();
-                    listRow(face, x, y, it.name(&name_buf), look.itemInk(it.magical()), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.named(it.kind) else slots[0].name());
+                    listRow(face, x, y, it.name(&name_buf), look.itemInk(it.rarity()), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.named(it.kind) else slots[0].name());
                 },
                 .nearby, .loot => {
                     const n = v.nearby[i];
@@ -686,7 +683,7 @@ pub const Book = struct {
             if (self.page == .equipment) if (offhandWeapon(v.inventory.gear, items.SLOTS[self.cursor])) |weapon| {
                 face.draw(BOTH_IN_USE, x, y, font.HEAD, look.TEXT);
                 var held: menu.Note(128) = .{};
-                held.say("{s} uses both hands. Equipping an offhand returns it to inventory.", .{weapon.name(&name_buf)});
+                held.say("{s}", .{weapon.name(&name_buf)});
                 _ = face.paragraph(held.text(), x, y + HELD_NOTE_DY, DETAIL_W, font.SMALL, look.DIM);
                 return;
             };
@@ -699,17 +696,8 @@ pub const Book = struct {
         if (comparing) itemCard(face, x + CARD_W + CARD_GAP, y, CARD_W, v.inventory.gear.slots.get(slot), slot, v.inventory.gear.statsWithout(slot, v.base), "EQUIPPED");
         if (comparing) {
             const equipped = v.inventory.gear.slots.get(slot);
-            const at = y + @max(cardFoot(it, slot), if (equipped) |worn| cardFoot(worn, slot) else CARD_SLOT + font.SMALL) + CHANGES_GAP;
-            if (v.inventory.preview(self.cursor, slot, v.base)) |after| {
-                var below = drawChanges(face, x, at, v, after) + RETURNS_GAP;
-                for (items.SLOTS) |s| {
-                    if (s == slot or !v.inventory.displaced(after, slot, s)) continue;
-                    var moved: menu.Note(100) = .{};
-                    moved.say("Returns {s} to inventory.", .{v.inventory.gear.slots.get(s).?.name(&name_buf)});
-                    face.draw(moved.text(), x, below, font.SMALL, look.DIM);
-                    below += CHANGE_ROW;
-                }
-            } else |err| {
+            const at = y + @max(cardFoot(it, slot), if (equipped) |worn| cardFoot(worn, slot) else CARD_SLOT + font.SMALL) + REQUIREMENT_GAP;
+            _ = v.inventory.preview(self.cursor, slot, v.base) catch |err| {
                 var reason: menu.Note(140) = .{};
                 if (err != error.Requirements) {
                     reason.say("{s}", .{items.caption(err)});
@@ -717,7 +705,8 @@ pub const Book = struct {
                     reason.say("Would leave {s} without its required attributes.", .{other.name(&name_buf)});
                 } else reason.say("Cannot equip: requirements not met.", .{});
                 _ = face.paragraph(reason.text(), x, at, DETAIL_W, font.SMALL, LOSS);
-            }
+                return;
+            };
         }
     }
 };
@@ -806,7 +795,6 @@ const CardLine = union(enum) {
     unarmed,
     armour: i16,
     innate: items.Innate,
-    bleed_damage: i32,
     requires: struct { at: attr.Attr, n: i32, available: i32, met: bool },
 
     fn text(l: CardLine, out: *menu.Note(120)) [:0]const u8 {
@@ -818,7 +806,6 @@ const CardLine = union(enum) {
                 out.clear();
                 innate.write(out.writer());
             },
-            .bleed_damage => |n| out.say("Bleed: {d}/turn, {d} when moving", .{ n, n * bleeding.MOVE_FACTOR }),
             .requires => |r| if (r.met) out.say("Requires {d} {s}", .{ r.n, menu.named(r.at) }) else out.say("Requires {d} {s} ({d} available)", .{ r.n, menu.named(r.at), r.available }),
         }
         return out.text();
@@ -826,14 +813,14 @@ const CardLine = union(enum) {
 
     fn size(l: CardLine) i32 {
         return switch (l) {
-            .requires, .bleed_damage, .unarmed => font.LABEL,
+            .requires, .unarmed => font.LABEL,
             .damage, .armour, .innate => font.SMALL,
         };
     }
 
     fn ink(l: CardLine) rl.Color {
         return switch (l) {
-            .damage, .armour, .innate, .bleed_damage => look.TEXT,
+            .damage, .armour, .innate => look.TEXT,
             .unarmed => look.DIM,
             .requires => |r| if (r.met) look.DIM else LOSS,
         };
@@ -858,7 +845,6 @@ const CardLines = struct {
         if (spec.armour > 0) out.add(.{ .armour = spec.armour });
         if (spec.innate) |innate| {
             out.add(.{ .innate = innate });
-            if (innate == .bleed) out.add(.{ .bleed_damage = innate.bleed.damage });
         }
         inline for (attr.ATTRS) |at| {
             const required = @field(spec.needs, @tagName(at));
@@ -909,10 +895,11 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
         return;
     };
     const spec = items.spec(it.kind);
-    const ink = look.itemInk(it.magical());
+    const ink = look.itemInk(it.rarity());
     var fitted: [64]u8 = undefined;
     var name_buf: [items.NAME_MAX]u8 = undefined;
     _ = face.paragraph(it.name(&name_buf), x, y + CARD_NAME, width, font.BODY, ink);
+    if (it.rarity() == .rare) face.draw(menu.namedOr(it.kind, spec.name), x, y + CARD_NAME + font.BODY_LINE, font.LABEL, look.TEXT);
     var metadata: menu.Note(100) = .{};
     const slot_name = if (slot == .right_hand) (if (spec.two_handed) TWO_HANDED else ONE_HANDED) else slot.name();
     if (spec.damage != null) metadata.say("{s}  /  {s}", .{ slot_name, menu.named(spec.style.attr()) }) else metadata.say("{s}", .{slot_name});
@@ -933,30 +920,13 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
             if (n == 0) continue;
             line.clear();
             for (it.mods) |rolled| if (rolled) |a| { if (a.kind == m) a.write(line.writer()); };
-            face.draw(line.text(), x, top, font.SMALL, look.MAGIC);
+            face.draw(line.text(), x, top, font.SMALL, ink);
             top += CARD_LINE;
         }
     }
     face.draw(face.fit(&fitted, it.flavor(), font.LABEL, width, false), x, top + FLAVOR_GAP, font.LABEL, look.DIM);
 }
 
-fn change(face: *const font.Face, x: i32, y: i32, n: *usize, label: [:0]const u8, was: i32, now: i32, percent: bool) void {
-    const delta = now - was;
-    if (delta == 0) return;
-    var text: menu.Note(100) = .{};
-    text.say("{s}{d}{s} {s}", .{ if (delta > 0) @as([]const u8, "+") else "", delta, if (percent) @as([]const u8, "%") else "", label });
-    const at = mathx.unslot(n.*, CHANGE_COLS);
-    face.draw(text.text(), x + at.x * (CARD_W + CARD_GAP), y + at.y * CHANGE_ROW, font.SMALL, if (delta > 0) GAIN else LOSS);
-    n.* += 1;
-}
-
-const CHANGE_ROW = font.SMALL_TIGHT;
-const CHANGE_COLS = 2;
-
-fn changeRows(n: usize) i32 {
-    return @intCast((n + CHANGE_COLS - 1) / CHANGE_COLS);
-}
-/// A character stat the Stats page and the change list both show.
 const Measure = union(enum) {
     life,
     mana,
@@ -968,6 +938,9 @@ const Measure = union(enum) {
     element: damage.Element,
     dodge,
     style: attr.Style,
+    thorns,
+    gold_find,
+    item_rarity,
 
     fn of(m: Measure, a: attr.Attrs) i32 {
         return switch (m) {
@@ -981,13 +954,16 @@ const Measure = union(enum) {
             .element => |e| a.element_bonus.get(e),
             .dodge => @intCast(a.dodge()),
             .style => |s| a.increase(s),
+            .thorns => a.thorns,
+            .gold_find => a.gold_find,
+            .item_rarity => a.item_rarity,
         };
     }
 
     fn percent(m: Measure) bool {
         return switch (m) {
-            .life, .mana, .attribute => false,
-            .reduction, .weapon_crit, .spell_crit, .physical, .element, .dodge, .style => true,
+            .life, .mana, .attribute, .thorns => false,
+            .reduction, .weapon_crit, .spell_crit, .physical, .element, .dodge, .style, .gold_find, .item_rarity => true,
         };
     }
 
@@ -1006,102 +982,16 @@ const Measure = union(enum) {
             },
             .dodge => "Chance to dodge",
             .style => |s| s.label(),
+            .thorns => "Physical thorns damage",
+            .gold_find => "Gold collected bonus",
+            .item_rarity => "Item rarity bonus",
         };
     }
 
-    /// Its change line, short enough for half the detail panel.
-    fn label(m: Measure) [:0]const u8 {
-        return switch (m) {
-            .life => attr.Bonus.life.label(),
-            .mana => attr.Bonus.mana.label(),
-            .attribute => |at| menu.named(at),
-            .reduction => "physical reduction",
-            .weapon_crit => attr.WEAPON_CRIT_LABEL,
-            .spell_crit => attr.SPELL_CRIT_LABEL,
-            .physical => attr.PHYSICAL_LABEL,
-            .element => |e| switch (e) {
-                inline else => |t| comptime menu.word(t) ++ " damage",
-            },
-            .dodge => "dodge chance",
-            .style => |s| damageLabel(s),
-        };
-    }
+
 };
-/// Every line `drawChanges` can list, in order.
-const CHANGE_ROWS = blk: {
-    var rows: []const Measure = &.{ .life, .mana };
-    for (attr.ATTRS) |at| rows = rows ++ &[_]Measure{.{ .attribute = at }};
-    rows = rows ++ &[_]Measure{ .reduction, .weapon_crit, .spell_crit, .dodge };
-    for (attr.STYLES) |s| rows = rows ++ &[_]Measure{.{ .style = s }};
-    rows = rows ++ &[_]Measure{.physical};
-    for (std.enums.values(damage.Element)) |e| rows = rows ++ &[_]Measure{.{ .element = e }};
-    break :blk rows[0..rows.len].*;
-};
-
-/// The foot of the change list.
-fn drawChanges(face: *const font.Face, x: i32, y: i32, v: View, after: items.Gear) i32 {
-    face.draw("IF EQUIPPED", x, y, font.SMALL, look.DIM);
-    var n: usize = 0;
-    const top = y + CARD_LINE;
-    const was = v.stats();
-    const now = after.stats(v.base);
-    for (CHANGE_ROWS) |m| change(face, x, top, &n, m.label(), m.of(was), m.of(now), m.percent());
-    const recovery = PerkChanges.of(v.inventory.gear, after, v.growth.perks());
-    inline for (std.meta.fields(progress.passives.Perks)) |f| {
-        const delta = @field(recovery.delta, f.name);
-        change(face, x, top, &n, PerkChanges.label(f.name), 0, delta, PerkChanges.percent(f.name));
-    }
-    for (std.enums.values(damage.Element)) |e| change(face, x, top, &n, resistanceLabel(e), was.resists.get(e), now.resists.get(e), true);
-    inline for (.{ attr.Attack.melee, attr.Attack.ranged }) |attack| {
-        change(face, x, top, &n, if (attack == .melee) "melee penetration" else "ranged penetration", v.inventory.gear.onHit(attack).penetration, after.onHit(attack).penetration, true);
-    }
-    if (n == 0) {
-        face.draw("No attribute, defense or recovery changes.", x, top, font.SMALL, look.DIM);
-        return top + CHANGE_ROW;
-    }
-    return top + changeRows(n) * CHANGE_ROW;
-}
-
-const PerkChanges = struct {
-    delta: progress.passives.Perks,
-
-    fn of(before: items.Gear, after: items.Gear, base: progress.passives.Perks) PerkChanges {
-        const was = before.perks(base);
-        const now = after.perks(base);
-        var delta: progress.passives.Perks = undefined;
-        inline for (std.meta.fields(progress.passives.Perks)) |f| {
-            @field(delta, f.name) = if (comptime std.mem.eql(u8, f.name, "mana_regen")) hero.manaRegen(now) - hero.manaRegen(was) else @field(now, f.name) - @field(was, f.name);
-        }
-        return .{ .delta = delta };
-    }
-
-    fn label(comptime name: []const u8) [:0]const u8 {
-        return switch (@field(std.meta.FieldEnum(progress.passives.Perks), name)) {
-            .mana_regen => std.fmt.comptimePrint("mana / {d} turns", .{hero.MANA_REGEN_TURNS}),
-            .life_on_hit => "life on hit",
-            .life_on_kill => "life on kill",
-            .life_flask => "life flask recovery",
-            .cull => "cull threshold",
-            .mana_cost => "mana cost reduction",
-        };
-    }
-
-    fn percent(comptime name: []const u8) bool {
-        return switch (@field(std.meta.FieldEnum(progress.passives.Perks), name)) {
-            .mana_regen, .life_on_hit, .life_on_kill => false,
-            .life_flask, .cull, .mana_cost => true,
-        };
-    }
-};
-
 fn inkOf(it: ?items.Item) rl.Color {
-    return look.itemInk(if (it) |i| i.magical() else false);
-}
-
-fn damageLabel(s: attr.Style) [:0]const u8 {
-    return switch (s) {
-        inline else => |t| comptime menu.word(t) ++ " damage bonus",
-    };
+    return look.itemInk(if (it) |i| i.rarity() else .normal);
 }
 
 const STAT_W = 440;
@@ -1113,7 +1003,6 @@ const STAT_ROW = font.BODY_LINE;
 const HEADLINE = font.HEAD + 4;
 const HEADLINE_ROW = HEADLINE + 8;
 const CHANCE_ROW = font.LABEL + 3;
-const NOTE_DY = 7;
 const SECTION_GAP = 14;
 const CRIT_GAP = 20;
 /// Between a row's label and its value, at the least.
@@ -1162,8 +1051,6 @@ fn quiet(n: i32, col: rl.Color) rl.Color {
     return if (n == 0) look.DIM else if (n < 0) LOSS else col;
 }
 
-fn noLine(_: *const font.Face, _: [:0]const u8, _: i32, _: i32, _: i32, _: rl.Color) void {}
-
 /// One column of the sheet, top down; `dry` lays it out without drawing to check it fits.
 const Column = struct {
     face: *const font.Face,
@@ -1203,10 +1090,6 @@ const Column = struct {
         var text: menu.Note(32) = .{};
         text.say("{d} / {d}", .{ v.now, v.max });
         c.entry(label, text.text(), .headline, col);
-    }
-
-    fn note(c: *Column, s: []const u8, size: i32, col: rl.Color) void {
-        c.y = if (c.dry) c.face.paragraphWith(noLine, s, c.x, c.y, STAT_W, size, col) else c.face.paragraph(s, c.x, c.y, STAT_W, size, col);
     }
 
     /// A skill's name, then its hit coloured part by part, then what it may afflict.
@@ -1265,14 +1148,6 @@ fn chancesOf(act: skillbar.Act, hit: progress.Hit, effect: items.WeaponEffect) s
     return out;
 }
 
-fn attributeNote(at: attr.Attr) [:0]const u8 {
-    return switch (at) {
-        .strength => "Life and heavy weapon damage",
-        .dexterity => "Light weapons, critical chance and dodge",
-        .intelligence => "Mana and spell damage",
-    };
-}
-
 const DEFENCES = [_]Measure{ .reduction, .dodge };
 const CRITS = [_]Measure{ .weapon_crit, .spell_crit };
 
@@ -1284,15 +1159,11 @@ fn sheet(face: *const font.Face, v: View, dry: bool) [2]Column {
     left.vital(hud.LIFE, v.life, look.LIFE_TEXT);
     left.vital(hud.MANA, v.mana, look.MANA_TEXT);
     for (DEFENCES) |m| left.stat(m, a, .plain, look.TEXT);
-    left.y += NOTE_DY;
     var note: menu.Note(100) = .{};
-    note.say("Physical reduction is capped at {d}%.", .{attr.ARMOUR_MAX});
-    left.note(note.text(), font.SMALL, look.DIM);
     left.y += SECTION_GAP;
     left.heading("ATTRIBUTES");
     for (attr.ATTRS) |at| {
         left.stat(.{ .attribute = at }, a, .key, look.TEXT);
-        left.note(attributeNote(at), font.LABEL, look.DIM);
     }
     left.y += SECTION_GAP;
     left.heading("PROGRESSION");
@@ -1307,8 +1178,6 @@ fn sheet(face: *const font.Face, v: View, dry: bool) [2]Column {
     for (skillbar.kit(v.class)) |act| if (act.attack() != null and v.growth.unlocked(act)) {
         right.skill(act, v.growth.preparedHit(a, v.inventory.gear, act, v.steady).?, v.inventory.gear.onHit(act.attack().?));
     };
-    right.y += NOTE_DY;
-    right.note("Per hit, before critical hits, defenses and resistances.", font.SMALL, look.DIM);
     right.y += CRIT_GAP;
     for (CRITS) |m| right.stat(m, a, .plain, look.TEXT);
     return .{ left, right };
@@ -1318,15 +1187,16 @@ fn sheet(face: *const font.Face, v: View, dry: bool) [2]Column {
 fn advancedSheet(face: *const font.Face, v: View, dry: bool) [2]Column {
     const a = v.stats();
     var left = Column{ .face = face, .x = STATS_X, .dry = dry };
-    left.heading("DAMAGE BONUSES");
+    left.heading("DAMAGE MODIFIERS");
     for (attr.STYLES) |s| left.stat(.{ .style = s }, a, .plain, quiet(a.increase(s), look.TEXT));
     left.stat(.physical, a, .plain, quiet(a.physical_bonus, look.PHYSICAL));
     for (std.enums.values(damage.Element)) |e| left.stat(.{ .element = e }, a, .plain, quiet(a.element_bonus.get(e), look.elementInk(e)));
     var text: menu.Note(48) = .{};
     text.say("{d}%", .{attr.CRIT_MULTI});
     left.entry("Critical damage multiplier", text.text(), .plain, look.TEXT);
+    left.stat(.thorns, a, .plain, quiet(a.thorns, look.PHYSICAL));
     left.y += SECTION_GAP;
-    left.heading("RECOVERY");
+    left.heading("RECOVERY AND LOOT");
     const perks = v.inventory.gear.perks(v.growth.perks());
     text.say("{d} / {d} turns", .{ hero.manaRegen(perks), hero.MANA_REGEN_TURNS });
     left.entry("Mana recovery", text.text(), .plain, look.MANA_TEXT);
@@ -1336,6 +1206,8 @@ fn advancedSheet(face: *const font.Face, v: View, dry: bool) [2]Column {
     left.entry("Life on kill", text.text(), .plain, quiet(perks.life_on_kill, look.LIFE_TEXT));
     text.say("+{d}%", .{perks.life_flask});
     left.entry("Life flask recovery", text.text(), .plain, quiet(perks.life_flask, look.LIFE_TEXT));
+    left.stat(.gold_find, a, .plain, quiet(a.gold_find, look.UI_GOLD));
+    left.stat(.item_rarity, a, .plain, quiet(a.item_rarity, look.MAGIC));
 
     var right = Column{ .face = face, .x = RIGHT, .dry = dry };
     right.heading("RESISTANCES");
@@ -1351,8 +1223,6 @@ fn advancedSheet(face: *const font.Face, v: View, dry: bool) [2]Column {
         if (m.turns > 0) text.say("{d}%, {d} turn{s}", .{ m.percent, m.turns, mathx.plural(m.turns) }) else text.say("{d}%", .{m.percent});
         right.entry(resistanceLabel(k), text.text(), .plain, quiet(m.percent, look.ailmentInk(k)));
     }
-    right.y += NOTE_DY;
-    right.note(resilience.ABOUT, font.SMALL, look.DIM);
     return .{ left, right };
 }
 
@@ -1420,6 +1290,21 @@ pub fn verifyCards(face: *const font.Face) !void {
         }
     }
     std.debug.print("item typography: {d} flavor, property and requirement rows fit {d}px comparison cards\n", .{ count, CARD_W });
+    for (items.MODS) |mod| {
+        text.clear();
+        (items.Affix{ .kind = mod, .value = 25 }).write(text.writer());
+        if (face.width(text.text(), font.SMALL) > CARD_W) {
+            std.debug.print("affix overflow: {s}\n", .{text.text()});
+            return error.ItemCardOverflow;
+        }
+    }
+    var rare_buf: [items.NAME_MAX]u8 = undefined;
+    for (std.enums.values(items.RareName.First)) |first| {
+        for (std.enums.values(items.RareName.Last)) |last| {
+            const name = (items.RareName{ .first = first, .last = last }).name(&rare_buf);
+            if (face.width(name, font.BODY) > CARD_W) return error.ItemCardOverflow;
+        }
+    }
 }
 
 fn testView(inv: *const items.Inventory, growth: *const progress.State) View {
@@ -1545,62 +1430,26 @@ test "item card requirements exclude the item itself and every displaced hand" {
     const base = attr.Attrs.of(.{ .strength = 10, .dexterity = 12, .intelligence = 10 });
     var v = testView(&inv, &growth);
     v.base = base;
-    inv.gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .strength, .value = 10 }, null } });
-    try std.testing.expect(inv.add(.{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 10 }, null } }));
+    inv.gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .strength, .value = 10 }, null, null, null } });
+    try std.testing.expect(inv.add(.{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 10 }, null, null, null } }));
     var book = Book{ .page = .inventory };
     try std.testing.expectEqual(@as(i32, 10), book.requirementAttrs(v, .right_hand).get(.strength));
     try std.testing.expectError(error.Requirements, inv.preview(0, .right_hand, base));
     try std.testing.expect(inv.gear.slots.get(.left_hand) != null and inv.n == 1);
     inv.gear.slots.set(.left_hand, null);
-    inv.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, null } });
-    inv.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 7 }, null } });
-    inv.bag[0] = .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 2 }, null } };
+    inv.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, null, null, null } });
+    inv.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 7 }, null, null, null } });
+    inv.bag[0] = .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 2 }, null, null, null } };
     try std.testing.expectEqual(@as(i32, 17), book.requirementAttrs(v, .left_ring).get(.strength));
     try std.testing.expectEqual(@as(i32, 13), book.requirementAttrs(v, .right_ring).get(.strength));
     book.page = .equipment;
     try std.testing.expectEqual(@as(i32, 17), book.requirementAttrs(v, .left_ring).get(.strength));
-    inv.gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .strength, .value = 10 }, null } });
+    inv.gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .strength, .value = 10 }, null, null, null } });
     var ground = v;
-    ground.nearby = &.{.{ .loot = .{ .index = 0, .item = .{ .kind = .axe, .mods = .{ null, null } } } }};
+    ground.nearby = &.{.{ .loot = .{ .index = 0, .item = .{ .kind = .axe, .mods = .{ null, null, null, null } } } }};
     book.choose(.loot);
     try std.testing.expectEqual(@as(i32, 20), book.requirementAttrs(ground, .right_hand).get(.strength));
     std.debug.print("item cards: 2-hand displacement, self-funding, both ring destinations and ground items; inventory unchanged\n", .{});
-}
-
-test "equipment comparisons show recovery gains and displaced offhand losses without changing inventory" {
-    const base = attr.Attrs.of(.{ .strength = 40, .dexterity = 40, .intelligence = 40 });
-    const perks = progress.passives.Perks{ .mana_regen = 3, .life_on_kill = 4, .life_flask = 30, .life_on_hit = 2, .cull = 5, .mana_cost = 8 };
-    const cases = [_]struct { kind: items.Kind, slot: items.Slot, expected: progress.passives.Perks }{
-        .{ .kind = .circlet, .slot = .helm, .expected = .{ .mana_regen = 1 } },
-        .{ .kind = .totem, .slot = .left_hand, .expected = .{ .life_on_kill = 1 } },
-        .{ .kind = .flask_belt, .slot = .belt, .expected = .{ .life_flask = 20 } },
-    };
-    for (cases) |case| {
-        var inv = items.Inventory{};
-        try std.testing.expect(inv.add(.{ .kind = case.kind }));
-        const original = inv;
-        const after = try inv.preview(0, case.slot, base);
-        try std.testing.expectEqualDeep(case.expected, PerkChanges.of(inv.gear, after, perks).delta);
-        try std.testing.expectEqualDeep(progress.passives.Perks{}, PerkChanges.of(after, after, perks).delta);
-        try std.testing.expectEqual(original.n, inv.n);
-        try std.testing.expectEqualDeep(original.gear, inv.gear);
-        try std.testing.expectEqualDeep(original.bag[0..original.n], inv.bag[0..inv.n]);
-    }
-    var inv = items.Inventory{};
-    inv.gear.slots.set(.left_hand, .{ .kind = .totem });
-    inv.gear.slots.set(.helm, .{ .kind = .circlet });
-    inv.gear.slots.set(.belt, .{ .kind = .flask_belt });
-    try std.testing.expect(inv.add(.{ .kind = .bow }));
-    const original = inv;
-    const after = try inv.preview(0, .right_hand, base);
-    try std.testing.expect(after.slots.get(.left_hand) == null);
-    try std.testing.expectEqualDeep(progress.passives.Perks{ .life_on_kill = -1 }, PerkChanges.of(inv.gear, after, perks).delta);
-    try std.testing.expectEqual(original.n, inv.n);
-    try std.testing.expectEqualDeep(original.gear, inv.gear);
-    try std.testing.expectEqualDeep(original.bag[0..original.n], inv.bag[0..inv.n]);
-    try std.testing.expectEqualStrings("mana / 5 turns", PerkChanges.label("mana_regen"));
-    try std.testing.expect(!PerkChanges.percent("mana_regen") and !PerkChanges.percent("life_on_kill") and PerkChanges.percent("life_flask"));
-    std.debug.print("equipment recovery comparison: {d} gains, {d} unchanged previews and a two-handed offhand loss; passive perks retained and inventory unchanged\n", .{ cases.len, cases.len });
 }
 
 test "tree browsing is free and point actions issue one command" {

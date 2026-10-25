@@ -90,6 +90,7 @@ pub const Owed = struct {
     bled: ?Harm = null,
     worn: ?fx.After = null,
     swept: ?Swept = null,
+    thorns: ?Harm = null,
     reaction: ?struct { from: P, flight: ?bow.Flight, hit: Swipe, recovery: ?fx.After = null } = null,
 
     pub fn any(o: *const Owed) bool {
@@ -417,7 +418,7 @@ pub const Presentation = struct {
     /// Completion time; unplaced bodies wait for the hero and knockback slide.
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, id: u16, late: f32, start: f32, next: *f32) f32 {
         comptime for (std.enums.values(std.meta.FieldEnum(Owed))) |t| switch (t) {
-            .bit, .arrow, .gassed, .burned, .bled, .worn, .swept, .reaction => {},
+            .bit, .arrow, .gassed, .burned, .bled, .worn, .swept, .thorns, .reaction => {},
         };
         const i = actor.Pool.slot(id);
         const a = sim.pool.items[i];
@@ -467,6 +468,10 @@ pub const Presentation = struct {
             .miss => {},
         };
         if (owed.swept) |*sw| for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h.slot, .{ .from = a.at, .wait = hits }, h.at, h.lethal, h.after);
+        if (owed.thorns) |h| {
+            self.strike(sim, gas, i, .{ .from = hero_at, .wait = hits }, a.at, h.kill, h.after);
+            if (h.recovery) |after| self.fx.settle(hits, .{ .slot = hero, .after = after });
+        }
         if (owed.reaction) |r| {
             const release = if (moved) lands else hits;
             var impact = release + game.BUMP_LANDS;

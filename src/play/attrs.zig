@@ -111,6 +111,9 @@ pub const Attrs = struct {
     weapon_crit_bonus: i32 = 0,
     spell_crit_bonus: i32 = 0,
     physical_bonus: i32 = 0,
+    thorns: i32 = 0,
+    gold_find: i32 = 0,
+    item_rarity: i32 = 0,
     element_bonus: std.EnumArray(damage.Element, i32) = .initFill(0),
     resists: damage.Resists = .initFill(0),
 
@@ -155,6 +158,15 @@ pub const Attrs = struct {
 
     pub fn physical(a: Attrs, amount: i32, rng: *mathx.Rng) i32 {
         return armoured(a.armour, amount, rng);
+    }
+
+    pub fn collectedGold(a: Attrs, amount: i32, rng: *mathx.Rng) i32 {
+        if (amount <= 0) return 0;
+        const scaled = @as(i64, amount) * @max(0, 100 + @as(i64, a.gold_find));
+        const whole = @divTrunc(scaled, 100);
+        const fraction: u32 = @intCast(@mod(scaled, 100));
+        const extra: i64 = @intFromBool(fraction > 0 and rng.percent(fraction));
+        return @intCast(@min(std.math.maxInt(i32), whole + extra));
     }
 
     pub fn crit(a: Attrs) u32 {
@@ -207,6 +219,22 @@ pub const Attrs = struct {
 };
 
 const SHARE: u32 = mathx.BASIS_POINTS;
+
+test "spoils gold rounds fractional coins fairly and preserves baseline rng" {
+    var a = Attrs.of(.{ .strength = 0, .dexterity = 0, .intelligence = 0 });
+    var rng = mathx.Rng.init(0x601D);
+    const before = rng;
+    try std.testing.expectEqual(@as(i32, 37), a.collectedGold(37, &rng));
+    try std.testing.expectEqualDeep(before, rng);
+    a.gold_find = 25;
+    try std.testing.expectEqual(@as(i32, 25), a.collectedGold(20, &rng));
+    var total: i32 = 0;
+    for (0..10000) |_| total += a.collectedGold(1, &rng);
+    try std.testing.expect(total > 12300 and total < 12700);
+    try std.testing.expectEqual(@as(i32, 0), a.collectedGold(0, &rng));
+    try std.testing.expectEqual(std.math.maxInt(i32), a.collectedGold(std.math.maxInt(i32), &rng));
+    std.debug.print("Spoils gold: {d} from 10000 single coins at +25%; exact larger piles, zero and saturation checked\n", .{total});
+}
 
 /// A scaled amount: `whole`, and one more `part` times in `SHARE`.
 pub const Dealt = struct {

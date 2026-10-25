@@ -226,7 +226,7 @@ pub fn lootRng(magic: ?bool) mathx.Rng {
         magic: ?bool,
 
         fn holds(l: @This(), rng: *mathx.Rng) bool {
-            const reward = items.foeLoot(rng);
+            const reward = items.foeLoot(rng, 0);
             if (reward.gold <= 0) return false;
             const m = l.magic orelse return true;
             const it = reward.item orelse return false;

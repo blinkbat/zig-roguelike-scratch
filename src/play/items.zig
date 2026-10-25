@@ -37,11 +37,11 @@ pub const SLOTS = std.enums.values(Slot);
 pub const Mod = enum {
     life, mana, strength, dexterity, intelligence,
     physical_damage, spell_damage, crit, armour, dodge, resistance,
-    mana_regen, life_on_kill, life_flask, penetration,
+    mana_regen, life_on_kill, life_flask, penetration, thorns, spoils,
 
     pub fn prefix(m: Mod) bool {
         return switch (m) {
-            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance => true,
+            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns => true,
             else => false,
         };
     }
@@ -51,6 +51,7 @@ pub const Mod = enum {
             .physical_damage => "Cruel", .spell_damage => "Sorcerous", .crit => "of Precision", .armour => "Reinforced", .dodge => "of Evasion",
             .resistance => switch (element) { .fire => "Fire-Warded", .cold => "Cold-Warded", .lightning => "Storm-Warded", .chaos => "Chaos-Warded" },
             .mana_regen => "of Renewal", .life_on_kill => "of Harvest", .life_flask => "of Plenty", .penetration => "of Puncturing",
+            .thorns => "Thorned", .spoils => "of Spoils",
         };
     }
     pub fn allows(m: Mod, k: Kind) bool {
@@ -71,6 +72,8 @@ pub const Mod = enum {
             .life_on_kill => weapon or k == .totem or ring,
             .life_flask => slot == .belt or slot == .amulet,
             .penetration => weapon or slot == .gloves,
+            .thorns => slot == .chest or k == .shield,
+            .spoils => ring or slot == .amulet,
             else => true,
         };
     }
@@ -92,6 +95,8 @@ const AFFIXES = [_]struct { kind: Mod, lo: i32, hi: i32 }{
     .{ .kind = .life_on_kill, .lo = 1, .hi = 2 },
     .{ .kind = .life_flask, .lo = 10, .hi = 20 },
     .{ .kind = .penetration, .lo = 5, .hi = 10 },
+    .{ .kind = .thorns, .lo = 1, .hi = 2 },
+    .{ .kind = .spoils, .lo = 15, .hi = 25 },
 };
 pub const MODS = blk: {
     var out: [AFFIXES.len]Mod = undefined;
@@ -155,6 +160,24 @@ const KINDS = std.enums.values(Kind);
 pub const DROP_PERCENT = 10;
 pub const FOE_GOLD_PERCENT = 50;
 pub const MAGIC_PERCENT = 20;
+pub const RARE_PERCENT = 5;
+pub const Rarity = enum { normal, magic, rare };
+
+pub const RareName = struct {
+    first: First,
+    last: Last,
+
+    pub const First = enum { Spine, Void, Magus, Doom, Dread, Storm, Blood, Bone, Ash, Rune, Gloom, Soul, Death, Wraith, Grim, Viper, Raven, Dragon, Demon, Havoc, Eagle, Bramble, Carrion, Mind };
+    pub const Last = enum { Crusher, Maw, Fold, Bite, Grasp, Shroud, Song, Ward, Eye, Heart, Fang, Coil, Veil, Mark, Clasp, Crown, Touch, Hold, Bane, Whisper, Shell, Knot, Edge, Call };
+
+    fn roll(rng: *mathx.Rng) RareName {
+        return .{ .first = rng.pick(First, std.enums.values(First)), .last = rng.pick(Last, std.enums.values(Last)) };
+    }
+
+    pub fn name(self: RareName, buf: []u8) [:0]const u8 {
+        return std.fmt.bufPrintZ(buf, "{s} {s}", .{ @tagName(self.first), @tagName(self.last) }) catch @tagName(self.first);
+    }
+};
 /// A gold drop's range, both ends inclusive.
 pub const Gold = struct {
     lo: i32,
@@ -186,10 +209,12 @@ pub const Affix = struct {
             .life_on_kill => w.print("+{d} life on kill", .{n}) catch {},
             .life_flask => w.print("+{d}% life flask recovery", .{n}) catch {},
             .penetration => w.print("Ignore {d}% physical damage reduction", .{n}) catch {},
+            .thorns => w.print("Return {d} damage to melee attackers", .{n}) catch {},
+            .spoils => w.print("+{d}% gold and item rarity", .{n}) catch {},
         }
     }
 };
-pub const AFFIXES_MAX = 2;
+pub const AFFIXES_MAX = 4;
 pub const NAME_MAX = 128;
 pub const WeaponEffect = struct {
     bleed: u32 = 0,
@@ -320,8 +345,10 @@ pub fn spec(k: Kind) Spec {
 pub const Item = struct {
     kind: Kind,
     mods: [AFFIXES_MAX]?Affix = @splat(null),
+    rare_name: ?RareName = null,
 
     pub fn name(self: Item, buf: []u8) [:0]const u8 {
+        if (self.rare_name) |rare| return rare.name(buf);
         const base = menu.namedOr(self.kind, spec(self.kind).name);
         var pre: []const u8 = "";
         var post: []const u8 = "";
@@ -341,6 +368,20 @@ pub const Item = struct {
 
     pub fn magical(self: Item) bool {
         return self.mods[0] != null;
+    }
+
+    pub fn rarity(self: Item) Rarity {
+        return if (self.rare_name != null) .rare else if (self.magical()) .magic else .normal;
+    }
+
+    fn allows(self: Item, kind: Mod) bool {
+        if (!kind.allows(self.kind)) return false;
+        var same_side: usize = 0;
+        for (self.mods) |maybe| if (maybe) |m| {
+            if (m.kind == kind) return false;
+            if (m.kind.prefix() == kind.prefix()) same_side += 1;
+        };
+        return same_side < @as(usize, if (self.rarity() == .rare) 2 else 1);
     }
 
     pub fn value(self: Item, kind: Mod) i32 {
@@ -364,6 +405,8 @@ pub const Item = struct {
             .armour => a.armour += m.value,
             .dodge => a.dodge_bonus += m.value,
             .resistance => a.resists.getPtr(m.element).* += m.value,
+            .thorns => a.thorns += m.value,
+            .spoils => { a.gold_find += m.value; a.item_rarity += m.value; },
             .mana_regen, .life_on_kill, .life_flask, .penetration => {},
         };
     }
@@ -373,18 +416,21 @@ pub const Item = struct {
     }
 };
 
-pub fn roll(rng: *mathx.Rng) Item {
+pub fn roll(rng: *mathx.Rng, item_rarity: i32) Item {
     var out = Item{ .kind = rng.pick(Kind, KINDS) };
-    if (!rng.percent(MAGIC_PERCENT)) return out;
-    const count = rng.range(1, out.mods.len);
+    const quality = rng.below(100);
+    if (quality >= qualityChance(MAGIC_PERCENT + RARE_PERCENT, item_rarity)) return out;
+    const rare = quality < qualityChance(RARE_PERCENT, item_rarity);
+    if (rare) out.rare_name = RareName.roll(rng);
+    const count = if (rare) rng.range(3, AFFIXES_MAX) else rng.range(1, 2);
     for (0..@intCast(count)) |i| {
         var eligible: usize = 0;
         for (AFFIXES) |a| {
-            if (a.kind.allows(out.kind) and (i == 0 or a.kind.prefix() != out.mods[0].?.kind.prefix())) eligible += 1;
+            if (out.allows(a.kind)) eligible += 1;
         }
         var left = rng.below(@intCast(eligible));
         const a = for (AFFIXES) |a| {
-            if (!a.kind.allows(out.kind) or (i > 0 and a.kind.prefix() == out.mods[0].?.kind.prefix())) continue;
+            if (!out.allows(a.kind)) continue;
             if (left == 0) break a;
             left -= 1;
         } else unreachable;
@@ -393,12 +439,16 @@ pub fn roll(rng: *mathx.Rng) Item {
     return out;
 }
 
+fn qualityChance(base: u32, item_rarity: i32) u32 {
+    return @intCast(std.math.clamp(@divTrunc(@as(i64, base) * (100 + @as(i64, item_rarity)), 100), 0, 100));
+}
+
 pub const Loot = struct { gold: i32 = 0, item: ?Item = null };
 
-pub fn foeLoot(rng: *mathx.Rng) Loot {
+pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
     return .{
         .gold = if (rng.percent(FOE_GOLD_PERCENT)) FOE_GOLD.roll(rng) else 0,
-        .item = if (rng.percent(DROP_PERCENT)) roll(rng) else null,
+        .item = if (rng.percent(DROP_PERCENT)) roll(rng, item_rarity) else null,
     };
 }
 
@@ -674,7 +724,7 @@ test "weapon weights cross melee and range while caster implements have no innat
     }
     var seen = std.EnumSet(Kind).initEmpty();
     var rng = mathx.Rng.init(0x17E);
-    for (0..2000) |_| seen.insert(roll(&rng).kind);
+    for (0..2000) |_| seen.insert(roll(&rng, 0).kind);
     try std.testing.expectEqual(KINDS.len, seen.count());
     std.debug.print("items: {d} heavy, {d} light, {d} non-attacking implements, {d} offhand swaps; all {d} kinds roll as loot\n", .{ heavy.len, light.len, implements.len, offhands.len, KINDS.len });
 }
@@ -682,7 +732,7 @@ test "weapon weights cross melee and range while caster implements have no innat
 test "equipment swaps preserve both hands, reject self-funded requirements and keep dependent gear valid" {
     const base = attrs.Attrs.of(.{ .strength = 18, .dexterity = 20, .intelligence = 10 });
     var inv = Inventory{};
-    try std.testing.expect(inv.add(.{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 2 }, null } }));
+    try std.testing.expect(inv.add(.{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 2 }, null, null, null } }));
     try inv.equip(0, .left_ring, base);
     try std.testing.expect(inv.add(.{ .kind = .mail }));
     try inv.equip(0, .chest, base);
@@ -690,7 +740,7 @@ test "equipment swaps preserve both hands, reject self-funded requirements and k
     try inv.unequip(.chest, base);
     try inv.unequip(.left_ring, base);
     var other = Inventory{};
-    try std.testing.expect(other.add(.{ .kind = .mail, .mods = .{ .{ .kind = .strength, .value = 3 }, null } }));
+    try std.testing.expect(other.add(.{ .kind = .mail, .mods = .{ .{ .kind = .strength, .value = 3 }, null, null, null } }));
     try std.testing.expectError(error.Requirements, other.equip(0, .chest, base));
     try std.testing.expectEqual(@as(usize, 1), other.n);
     try std.testing.expect(inv.add(.{ .kind = .sword }));
@@ -725,27 +775,28 @@ test "equipment swaps preserve both hands, reject self-funded requirements and k
     }
     var rng = mathx.Rng.init(123);
     for (0..2000) |_| {
-        const it = roll(&rng);
+        const it = roll(&rng, 0);
         if (it.mods[1]) |b| try std.testing.expect(it.mods[0].?.kind != b.kind);
     }
     std.debug.print("equipment: bow plus all 3 great weapons occupy both hands; reverse swaps, dependency checks, atomic failures and 2000 bounded modifier rolls\n", .{});
 }
 
-test "foe loot is mostly gold then plain items with rare magic affixes" {
+test "foe loot is mostly gold then plain items with magic and rare affixes" {
     var rng = mathx.Rng.init(0xC157E2);
     const rolls = 10000;
     var gold: usize = 0;
     var plain: usize = 0;
     var magic: usize = 0;
+    var rare: usize = 0;
     for (0..rolls) |_| {
-        const reward = foeLoot(&rng);
+        const reward = foeLoot(&rng, 0);
         if (reward.gold > 0) {
             gold += 1;
             try std.testing.expect(reward.gold >= FOE_GOLD.lo and reward.gold <= FOE_GOLD.hi);
         }
         if (reward.item) |it| {
             if (it.magical()) {
-                magic += 1;
+                if (it.rarity() == .rare) rare += 1 else magic += 1;
                 if (it.mods[1]) |second| try std.testing.expect(second.kind != it.mods[0].?.kind);
             } else {
                 plain += 1;
@@ -756,7 +807,8 @@ test "foe loot is mostly gold then plain items with rare magic affixes" {
     try std.testing.expect(gold >= 4500 and gold <= 5500);
     try std.testing.expect(plain >= 650 and plain <= 950);
     try std.testing.expect(magic >= 125 and magic <= 275);
-    std.debug.print("foe loot over {d} kills: {d} gold, {d} plain items without affixes, {d} magic items\n", .{ rolls, gold, plain, magic });
+    try std.testing.expect(rare >= 20 and rare <= 80);
+    std.debug.print("foe loot over {d} kills: {d} gold, {d} plain, {d} magic, {d} rare items\n", .{ rolls, gold, plain, magic, rare });
 }
 
 test "magic affixes respect equipment eligibility prefix suffix and rolled bounds" {
@@ -765,34 +817,90 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
     var elements = std.EnumSet(damage.Element).initEmpty();
     var two: usize = 0;
     for (0..50000) |_| {
-        const it = roll(&rng);
+        const it = roll(&rng, 0);
         for (it.mods) |maybe| if (maybe) |m| {
             seen.insert(m.kind);
             try std.testing.expect(m.kind.allows(it.kind));
             for (AFFIXES) |a| if (a.kind == m.kind) try std.testing.expect(m.value >= a.lo and m.value <= a.hi);
             if (m.kind == .resistance) elements.insert(m.element);
         };
-        if (it.mods[1]) |second| {
+        if (it.rarity() == .magic) if (it.mods[1]) |second| {
             two += 1;
             try std.testing.expect(it.mods[0].?.kind.prefix() != second.kind.prefix());
-        }
+        };
     }
     try std.testing.expectEqual(AFFIXES.len, seen.count());
     try std.testing.expectEqual(std.enums.values(damage.Element).len, elements.count());
     var name: [NAME_MAX]u8 = undefined;
-    const gloves = Item{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 2 }, .{ .kind = .crit, .value = 3 } } };
+    const gloves = Item{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 2 }, .{ .kind = .crit, .value = 3 }, null, null } };
     try std.testing.expectEqualStrings("Bear's Leather gloves of Precision", gloves.name(&name));
-    try std.testing.expectEqualStrings("Leather gloves of Precision", (Item{ .kind = .gloves, .mods = .{ .{ .kind = .crit, .value = 3 }, null } }).name(&name));
+    try std.testing.expectEqualStrings("Leather gloves of Precision", (Item{ .kind = .gloves, .mods = .{ .{ .kind = .crit, .value = 3 }, null, null, null } }).name(&name));
     std.debug.print("magic affixes: 50000 rolls, all {d} modifiers and {d} elements; {d} legal prefix/suffix pairs and exact composed names checked\n", .{ seen.count(), elements.count(), two });
+}
+
+test "rare items roll distinct legal affixes and persistent combinatorial names" {
+    var rng = mathx.Rng.init(0x2A2E);
+    var counts = std.EnumArray(Rarity, usize).initFill(0);
+    var bases = std.EnumSet(Kind).initEmpty();
+    var firsts = std.EnumSet(RareName.First).initEmpty();
+    var lasts = std.EnumSet(RareName.Last).initEmpty();
+    var sizes = [_]usize{ 0, 0 };
+    for (0..100000) |_| {
+        const it = roll(&rng, 0);
+        counts.getPtr(it.rarity()).* += 1;
+        if (it.rarity() != .rare) continue;
+        bases.insert(it.kind);
+        firsts.insert(it.rare_name.?.first);
+        lasts.insert(it.rare_name.?.last);
+        var seen = std.EnumSet(Mod).initEmpty();
+        var sides = [_]usize{ 0, 0 };
+        for (it.mods) |maybe| if (maybe) |m| {
+            try std.testing.expect(m.kind.allows(it.kind));
+            try std.testing.expect(!seen.contains(m.kind));
+            seen.insert(m.kind);
+            sides[@intFromBool(m.kind.prefix())] += 1;
+            for (AFFIXES) |a| if (a.kind == m.kind) try std.testing.expect(m.value >= a.lo and m.value <= a.hi);
+        };
+        try std.testing.expect(seen.count() >= 3 and seen.count() <= 4);
+        try std.testing.expect(sides[0] <= 2 and sides[1] <= 2);
+        sizes[seen.count() - 3] += 1;
+    }
+    try std.testing.expect(counts.get(.normal) > 74000 and counts.get(.normal) < 76000);
+    try std.testing.expect(counts.get(.magic) > 19000 and counts.get(.magic) < 21000);
+    try std.testing.expect(counts.get(.rare) > 4500 and counts.get(.rare) < 5500);
+    try std.testing.expectEqual(KINDS.len, bases.count());
+    try std.testing.expectEqual(std.enums.values(RareName.First).len, firsts.count());
+    try std.testing.expectEqual(std.enums.values(RareName.Last).len, lasts.count());
+    try std.testing.expect(sizes[0] > 0 and sizes[1] > 0);
+    var name: [NAME_MAX]u8 = undefined;
+    for ([_]RareName{ .{ .first = .Spine, .last = .Crusher }, .{ .first = .Void, .last = .Maw }, .{ .first = .Magus, .last = .Fold } }, [_][]const u8{ "Spine Crusher", "Void Maw", "Magus Fold" }) |rare, expected| {
+        try std.testing.expectEqualStrings(expected, (Item{ .kind = .axe, .rare_name = rare }).name(&name));
+    }
+    const rare = Item{ .kind = .mace, .rare_name = .{ .first = .Spine, .last = .Crusher }, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 }, .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .life_on_kill, .value = 2 } } };
+    var gear = Gear{};
+    gear.slots.set(.right_hand, rare);
+    const base = attrs.Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 20 });
+    const stats = gear.stats(base);
+    try std.testing.expectEqual(base.get(.strength) + 3, stats.get(.strength));
+    try std.testing.expectEqual(@as(i32, 20), stats.physical_bonus);
+    try std.testing.expectEqual(base.crit() + 5, stats.crit());
+    try std.testing.expectEqual(@as(i32, 2), gear.killRecovery());
+    var inv = Inventory{};
+    try std.testing.expect(inv.add(rare));
+    try inv.equip(0, .right_hand, base);
+    try std.testing.expectEqualDeep(rare, inv.gear.slots.get(.right_hand).?);
+    try inv.unequip(.right_hand, base);
+    try std.testing.expectEqualDeep(rare, inv.bag[0]);
+    std.debug.print("rare loot: 100000 drops, {d} normal / {d} magic / {d} rare; all {d} bases, {d} names, both mod counts and four-mod equipment effects checked\n", .{ counts.get(.normal), counts.get(.magic), counts.get(.rare), bases.count(), firsts.count() * lasts.count() });
 }
 
 test "rolled combat defenses and recovery modifiers reach equipment consumers" {
     const base = attrs.Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 20 });
     var gear = Gear{};
-    gear.slots.set(.right_hand, .{ .kind = .crossbow, .mods = .{ .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .penetration, .value = 10 } } });
-    gear.slots.set(.gloves, .{ .kind = .gloves, .mods = .{ .{ .kind = .armour, .value = 4 }, .{ .kind = .crit, .value = 5 } } });
-    gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .resistance, .value = 20, .element = .cold }, .{ .kind = .mana_regen, .value = 1 } } });
-    gear.slots.set(.belt, .{ .kind = .belt, .mods = .{ .{ .kind = .life_flask, .value = 20 }, null } });
+    gear.slots.set(.right_hand, .{ .kind = .crossbow, .mods = .{ .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .penetration, .value = 10 }, null, null } });
+    gear.slots.set(.gloves, .{ .kind = .gloves, .mods = .{ .{ .kind = .armour, .value = 4 }, .{ .kind = .crit, .value = 5 }, null, null } });
+    gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .resistance, .value = 20, .element = .cold }, .{ .kind = .mana_regen, .value = 1 }, null, null } });
+    gear.slots.set(.belt, .{ .kind = .belt, .mods = .{ .{ .kind = .life_flask, .value = 20 }, null, null, null } });
     const stats = gear.stats(base);
     try std.testing.expectEqual(@as(i32, 20), stats.physical_bonus);
     try std.testing.expectEqual(@as(i16, 20), stats.resists.get(.cold));
@@ -804,23 +912,60 @@ test "rolled combat defenses and recovery modifiers reach equipment consumers" {
     std.debug.print("rolled item effects: weapon-scoped damage and penetration, additive crit, elemental defense and two recovery consumers checked\n", .{});
 }
 
-test "every equipment base rolls white and blue and keeps its innate separate from affixes" {
+test "spoils rarity improves magic and rare quality without increasing item quantity" {
+    const samples = 20000;
+    for ([_]i32{ 0, 25, 100, 400, 1000, -200 }) |rarity| {
+        var rng = mathx.Rng.init(0x5F0115);
+        var magic: usize = 0;
+        var rare: usize = 0;
+        var drops: usize = 0;
+        for (0..samples) |_| {
+            const reward = foeLoot(&rng, rarity);
+            if (reward.item) |it| {
+                drops += 1;
+                if (it.magical()) magic += 1;
+                if (it.rarity() == .rare) rare += 1;
+            }
+        }
+        try std.testing.expect(drops > 1800 and drops < 2200);
+        const expected = @as(f64, @floatFromInt(qualityChance(MAGIC_PERCENT + RARE_PERCENT, rarity))) / 100;
+        const expected_rare = @as(f64, @floatFromInt(qualityChance(RARE_PERCENT, rarity))) / 100;
+        try std.testing.expect(@abs(@as(f64, @floatFromInt(magic)) / @as(f64, @floatFromInt(drops)) - expected) < 0.035);
+        try std.testing.expect(@abs(@as(f64, @floatFromInt(rare)) / @as(f64, @floatFromInt(drops)) - expected_rare) < 0.035);
+        if (expected == 0) try std.testing.expectEqual(@as(usize, 0), magic);
+        if (expected == 1) try std.testing.expectEqual(drops, magic);
+        std.debug.print("Spoils rarity +{d}%: {d}/{d} improved items, {d} rare over {d} kills\n", .{ rarity, magic, drops, rare, samples });
+    }
+    var gear = Gear{};
+    gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+    gear.slots.set(.left_hand, .{ .kind = .shield, .mods = .{ .{ .kind = .thorns, .value = 1 }, null, null, null } });
+    gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .spoils, .value = 25 }, null, null, null } });
+    gear.slots.set(.amulet, .{ .kind = .amulet, .mods = .{ .{ .kind = .spoils, .value = 15 }, null, null, null } });
+    const a = gear.stats(attrs.Attrs.of(.{ .strength = 20, .dexterity = 20, .intelligence = 20 }));
+    try std.testing.expectEqual(@as(i32, 3), a.thorns);
+    try std.testing.expectEqual(@as(i32, 40), a.gold_find);
+    try std.testing.expectEqual(@as(i32, 40), a.item_rarity);
+}
+
+test "every equipment base rolls all three rarities and keeps its innate separate from affixes" {
     var rng = mathx.Rng.init(0xBA5E);
     var white = std.EnumSet(Kind).initEmpty();
     var blue = std.EnumSet(Kind).initEmpty();
+    var yellow = std.EnumSet(Kind).initEmpty();
     for (0..20000) |_| {
-        const it = roll(&rng);
-        if (it.magical()) blue.insert(it.kind) else white.insert(it.kind);
+        const it = roll(&rng, 0);
+        switch (it.rarity()) { .normal => white.insert(it.kind), .magic => blue.insert(it.kind), .rare => yellow.insert(it.kind) }
     }
     try std.testing.expectEqual(KINDS.len, white.count());
     try std.testing.expectEqual(KINDS.len, blue.count());
+    try std.testing.expectEqual(KINDS.len, yellow.count());
     const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
     for (KINDS) |kind| {
         var plain = base;
         var magic = base;
         const it = Item{ .kind = kind };
         it.apply(&plain);
-        (Item{ .kind = kind, .mods = .{ .{ .kind = .mana, .value = 2 }, null } }).apply(&magic);
+        (Item{ .kind = kind, .mods = .{ .{ .kind = .mana, .value = 2 }, null, null, null } }).apply(&magic);
         try std.testing.expectEqual(@as(i32, 0), it.value(.mana));
         plain.mana_bonus += 2;
         try std.testing.expectEqualDeep(plain, magic);
@@ -839,7 +984,7 @@ test "every equipment base rolls white and blue and keeps its innate separate fr
     gear.slots.set(.belt, .{ .kind = .flask_belt });
     gear.slots.set(.left_hand, .{ .kind = .totem });
     try std.testing.expectEqualDeep(passives.Perks{ .mana_regen = 1, .life_flask = 20, .life_on_kill = 1 }, gear.perks(.{}));
-    std.debug.print("bases: all {d} roll in both rarities over 20000 drops; innate/affix separation, scoped crit and recovery perks checked\n", .{KINDS.len});
+    std.debug.print("bases: all {d} roll in all three rarities over 20000 drops; innate/affix separation, scoped crit and recovery perks checked\n", .{KINDS.len});
 }
 
 test "ground gold accommodates every cell and full pickup leaves its item intact" {
@@ -866,7 +1011,7 @@ test "equipment failures preserve every carried item and the complete loadout" {
     const base = attrs.Attrs.of(.{ .strength = 18, .dexterity = 20, .intelligence = 10 });
     var inv = Inventory{};
     inv.gear.slots.set(.right_hand, .{ .kind = .sword });
-    try std.testing.expect(inv.add(.{ .kind = .mail, .mods = .{ .{ .kind = .strength, .value = 3 }, null } }));
+    try std.testing.expect(inv.add(.{ .kind = .mail, .mods = .{ .{ .kind = .strength, .value = 3 }, null, null, null } }));
     const before = inv;
     for ([_]usize{ inv.n, BAG_MAX, std.math.maxInt(usize) }) |missing| {
         try std.testing.expectError(error.Missing, inv.preview(missing, .chest, base));
@@ -881,7 +1026,7 @@ test "equipment failures preserve every carried item and the complete loadout" {
     try std.testing.expectError(error.Missing, inv.unequip(.left_ring, base));
     try expectInventoryUnchanged(&before, &inv);
 
-    inv.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 2 }, null } });
+    inv.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 2 }, null, null, null } });
     inv.gear.slots.set(.chest, .{ .kind = .mail });
     try std.testing.expect(inv.gear.valid(base));
     const dependent = inv;

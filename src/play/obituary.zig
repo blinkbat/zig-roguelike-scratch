@@ -428,10 +428,9 @@ fn lastDeed(ctx: *const Context, tagged: Tags) ?Deed {
     var missed = false;
     for (ctx.last().slice()) |e| switch (e) {
         .used => |a| with = a,
-        .dealt => |d| if (d.killed) {
-            felled = d.to;
-        } else {
-            struck = d.to;
+        .dealt => |d| {
+            if (d.reaction) continue;
+            if (d.killed) felled = d.to else struck = d.to;
         },
         .missed => missed = true,
         else => {},
@@ -628,6 +627,30 @@ test "the hero's own last act in the turn it died is its last gasp" {
     const felled = write(&ctx);
     std.debug.print("last gasp: {s}\n", .{felled.text()});
     try std.testing.expectEqualStrings("Arwen the Bold was bitten to death by a rat in the Warrens. Arwen the Bold's last blow killed a rat.", felled.text());
+}
+
+test "reactions preserve the chosen last deed and still attribute a burst bloat" {
+    for ([_]bool{ false, true }) |killed| {
+        const turns = [_]Turn{turnOf(8, 4, &.{
+            .{ .used = .shoot },
+            .{ .dealt = .{ .to = .bandit_crossbowman, .killed = false } },
+            .{ .dealt = .{ .to = .rat, .killed = killed, .reaction = true } },
+            rat(5, 4),
+        })};
+        const ctx = testContext(&turns);
+        const report = write(&ctx);
+        try std.testing.expect(std.mem.indexOf(u8, report.text(), "last arrow hit a bandit crossbowman without killing it") != null);
+    }
+    const turns = [_]Turn{turnOf(8, 4, &.{
+        .{ .used = .wait },
+        .{ .dealt = .{ .to = .bloat, .killed = true, .reaction = true } },
+        .{ .hurt = .{ .by = .gas, .dmg = 5, .before = 4 } },
+    })};
+    const ctx = testContext(&turns);
+    const report = write(&ctx);
+    try std.testing.expect(std.mem.indexOf(u8, report.text(), "burst a bloat") != null);
+    try std.testing.expect(std.mem.indexOf(u8, report.text(), "Arwen waited.") != null);
+    std.debug.print("reaction reports: nonlethal and lethal reactions preserve the shot; reactive bloat kill retains gas attribution and Wait\n", .{});
 }
 
 test "bites a shield took whole wore nobody down, and a shield cast in time was not starved" {

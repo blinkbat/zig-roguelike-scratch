@@ -263,7 +263,7 @@ pub fn openChest(g: *game.Game, p: P) bool {
     const opened = g.sim.lv.at(p).opened() orelse return false;
     if (!groundRoom(g)) return false;
     g.sim.lv.set(p, opened);
-    dropItem(g, .{ .item = items.roll(&g.sim.loot_rng), .at = p });
+    dropItem(g, .{ .item = items.roll(&g.sim.loot_rng, g.sim.heroAttrs().item_rarity), .at = p });
     g.sim.log.push(.loot, "{s} opens the chest: {d} gold and an item.", .{ g.sim.name.text(), loot(g, p, items.CHEST_GOLD) });
     g.sim.chronicle.mark(.chest);
     return true;
@@ -293,9 +293,10 @@ pub fn dropItem(g: *game.Game, drop: items.Drop) void {
 }
 
 pub fn collectGold(g: *game.Game, at: P) void {
-    const amount = g.sim.ground.collect(at);
-    if (amount == 0) return;
-    g.pic.gold_taken = .{ .at = at, .amount = amount };
+    const coins = g.sim.ground.collect(at);
+    if (coins == 0) return;
+    const amount = g.sim.heroAttrs().collectedGold(coins, &g.sim.loot_rng);
+    g.pic.gold_taken = .{ .at = at, .amount = coins };
     g.sim.gold +|= amount;
     g.sim.log.push(.loot, "{s} picks up {d} gold.", .{ g.sim.name.text(), amount });
     g.sim.unsaved = true;
@@ -344,7 +345,7 @@ fn woundAt(g: *game.Game, id: u16, raw: Roll, comptime verb: []const u8, s: Stro
     }
     const h = hurt(g, id, if (culled) a.hp else r.dmg);
     const lethal = h.lethal;
-    g.sim.chronicle.note(.{ .dealt = .{ .to = kind, .killed = lethal } });
+    g.sim.chronicle.note(.{ .dealt = .{ .to = kind, .killed = lethal, .reaction = source != null } });
     g.sim.sayAs(.damage, at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.sim.name.text(), name, if (r.crit) " critically" else "", r.dmg, if (culled) CUT_DOWN else if (lethal) IT_DIES else "" });
     if (bled) |said| g.sim.sayAt(at, "The {s} {s}!", .{ name, said });
     if (stunned) sayTakes(g, turn_clock.STUNNED, at, name);
@@ -412,7 +413,7 @@ pub fn fell(g: *game.Game, id: u16) void {
     g.sim.log.push(.progress, "{s} gains {d} experience.", .{ g.sim.name.text(), xp });
     if (levels > 0) g.sim.chronicle.mark(.level);
     if (levels > 0) g.sim.log.push(.progress, "Level {d}: +{d} passive, +{d} active points.", .{ g.sim.growth.level, g.sim.growth.passive_points - was.passive_points, g.sim.growth.active_points - was.active_points });
-    const reward = items.foeLoot(&g.sim.loot_rng);
+    const reward = items.foeLoot(&g.sim.loot_rng, g.sim.heroAttrs().item_rarity);
     g.pic.dropped_gold[fallen] = reward.gold;
     if (reward.gold > 0) dropGold(g, at, reward.gold);
     if (reward.item) |item| dropItem(g, .{ .item = item, .at = at, .source = id });
@@ -753,6 +754,7 @@ fn reach(g: *game.Game, id: u16, row: actor.Row) void {
             }
             const after = afterBlow(g, g.sim.hero, h);
             g.pic.owed[i].bit = if (lethal) .{ .kill = after } else .{ .hurt = after };
+            if (row.ranged == null and physical > 0) returnThorns(g, id, hero.at);
             if (lethal) heroDies(g) else if (row.ranged == null) tactics.counter(g, id);
         },
         .burst => {
@@ -763,6 +765,23 @@ fn reach(g: *game.Game, id: u16, row: actor.Row) void {
             fell(g, id);
         },
     }
+}
+
+fn returnThorns(g: *game.Game, id: u16, from: P) void {
+    const amount = g.sim.heroAttrs().thorns;
+    if (amount <= 0) return;
+    const a = g.sim.pool.get(id) orelse return;
+    if (mathx.dist(from, a.at) != 1) return;
+    const dmg = attrs.armoured(actor.row(a.kind).armour, amount, &g.sim.rng);
+    if (dmg <= 0) return;
+    const at = a.at;
+    const kind = a.kind;
+    const h = hurt(g, id, dmg);
+    const after = afterBlow(g, id, h);
+    g.sim.chronicle.note(.{ .dealt = .{ .to = kind, .killed = h.lethal, .reaction = true } });
+    g.sim.sayAs(.damage, at, "{s}'s thorns hurt the {s} for {d}.{s}", .{ g.sim.name.text(), actor.row(kind).name, h.dmg, if (h.lethal) IT_DIES else "" });
+    if (h.lethal) fell(g, id);
+    g.pic.owed[actor.Pool.slot(id)].thorns = .{ .kill = h.lethal, .after = after, .recovery = if (h.lethal) recoverLife(g, g.sim.inventory.gear.killRecovery()) else null };
 }
 
 fn sweepReady(g: *game.Game, id: u16, row: actor.Row) bool {

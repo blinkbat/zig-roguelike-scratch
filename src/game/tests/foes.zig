@@ -17,6 +17,163 @@ const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 const HERO = actor.HERO;
 
+test "thorns returns melee damage with the incoming impact and ignores dodges and arrows" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    inline for (.{ actor.Kind.rat, actor.Kind.bandit_crossbowman }) |kind| {
+        for ([_]bool{ false, true }) |hit| {
+            harness.arena(g, from, &.{});
+            g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+            const id = harness.spawnAt(g, kind, from.add(.{ .x = if (kind == .rat) 1 else 4, .y = 0 }), true);
+            game.settle(g);
+            const slot = actor.Pool.slot(id);
+            const hp = g.sim.pool.get(id).?.hp;
+            const hero_hp = g.sim.heroActor().?.hp;
+            g.sim.rng = harness.bitesRng(g, kind, &.{hit});
+            combat.endTurn(g);
+            const expected: i32 = if (kind == .rat and hit) 2 else 0;
+            try std.testing.expectEqual(hp - expected, g.sim.pool.get(id).?.hp);
+            try std.testing.expectEqual(expected > 0, g.pic.owed[slot].thorns != null);
+            try std.testing.expectEqual(hp, g.pic.pictured[slot].hp);
+            g.pic.lead = 0;
+            g.pic.stepGlide(&g.sim, g.cloud, 0);
+            if (expected > 0) {
+                const impact = g.pic.fx.landsIn(slot);
+                try std.testing.expectApproxEqAbs(impact, g.pic.fx.landsIn(g.sim.heroSlot().?), 0.0001);
+                game.update(g, impact - 0.001);
+                try std.testing.expectEqual(hp, g.pic.pictured[slot].hp);
+                try std.testing.expectEqual(hero_hp, g.pic.pictured[g.sim.heroSlot().?].hp);
+                game.update(g, 0.002);
+                try std.testing.expectEqual(hp - expected, g.pic.pictured[slot].hp);
+                try std.testing.expect(g.pic.pictured[g.sim.heroSlot().?].hp < hero_hp);
+            }
+            harness.drawnOut(g);
+            try std.testing.expectEqual(hp - expected, g.pic.pictured[slot].hp);
+        }
+    }
+    std.debug.print("Thorns: melee hit/dodge and ranged hit/dodge, both bodies change at the same impact\n", .{});
+}
+
+test "thorns kills grant rewards and harvest after a shielded hit without blow recovery" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]bool{ false, true }) |lethal_hero| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .life_on_kill, .value = 2 }, null, null, null } });
+        const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
+        g.sim.pool.get(id).?.hp = 1;
+        const hero = g.sim.heroActor().?;
+        hero.hp = if (lethal_hero) 1 else hero.max - 3;
+        if (!lethal_hero) hero.ward.turns = 2;
+        const hp = hero.hp;
+        game.settle(g);
+        const kills = g.sim.kills;
+        g.sim.rng = harness.bitesRng(g, .rat, &.{true});
+        combat.endTurn(g);
+        try std.testing.expect(g.sim.pool.get(id) == null);
+        try std.testing.expectEqual(kills + 1, g.sim.kills);
+        try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].thorns.?.kill);
+        if (lethal_hero) {
+            try std.testing.expectEqual(game.Mode.dead, g.mode);
+            try std.testing.expect(g.sim.heroActor() == null);
+        } else {
+            try std.testing.expectEqual(hp + 2, g.sim.heroActor().?.hp);
+            try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].thorns.?.recovery != null);
+        }
+        g.pic.lead = 0;
+        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        harness.drawnOut(g);
+        try std.testing.expect(!g.pic.standing(&g.sim, actor.Pool.slot(id)));
+    }
+    std.debug.print("Thorns: shield absorption and simultaneous death, rewards and delayed Harvest recovery checked\n", .{});
+}
+
+test "retaliation kills do not replace the last arrow in the death report" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    var deaths: usize = 0;
+    for (0..16) |seed| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+        const rat = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
+        g.sim.pool.get(rat).?.hp = 1;
+        const target = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 20, .y = 24 }, false);
+        harness.toughen(g.sim.pool.get(target).?);
+        g.sim.pool.get(target).?.clock.stun();
+        g.sim.heroActor().?.hp = 1;
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(seed);
+        const skills = @import("../skills.zig");
+        skills.useSkill(g, .{ .act = .shoot, .by = .x });
+        g.mark = g.sim.pool.get(target).?.at;
+        skills.confirmAim(g);
+        if (g.mode != .dead) continue;
+        deaths += 1;
+        try std.testing.expect(g.sim.pool.get(rat) == null);
+        const report = g.epitaph.?.text();
+        try std.testing.expect(std.mem.indexOf(u8, report, "last arrow hit a bandit crossbowman without killing it") != null);
+        try std.testing.expect(std.mem.indexOf(u8, report, "last arrow killed a rat") == null);
+    }
+    try std.testing.expect(deaths > 0);
+    std.debug.print("death reports: {d} lethal thorns turns preserve the arrow's actual target across 16 seeds\n", .{deaths});
+}
+
+test "thorns respects armour splits slimes and coexists with unyielding counters" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    var counters: usize = 0;
+    var reduced: usize = 0;
+    for (0..40) |seed| {
+        harness.heroArena(g, .knight, from, &.{});
+        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+        const id = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(seed);
+        combat.endTurn(g);
+        if (g.pic.owed[actor.Pool.slot(id)].thorns) |debt| {
+            const loss = actor.row(.beefy_pib).hp - debt.after.body.hp;
+            try std.testing.expect(loss == 1 or loss == 2);
+            if (loss == 1) reduced += 1;
+        }
+        harness.heroArena(g, .knight, from, &.{});
+        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+        const rat = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
+        harness.toughen(g.sim.pool.get(rat).?);
+        g.sim.heroActor().?.tactics.unyielding = true;
+        g.sim.growth.ranks.set(.unyielding, 3);
+        g.sim.mana = 100;
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(seed);
+        combat.endTurn(g);
+        const debt = g.pic.owed[actor.Pool.slot(rat)];
+        if (debt.thorns != null and debt.reaction != null) {
+            counters += 1;
+            try std.testing.expect(debt.thorns.?.after.body.hp > debt.reaction.?.hit.after.?.body.hp);
+            g.pic.lead = 0;
+            g.pic.stepGlide(&g.sim, g.cloud, 0);
+            harness.drawnOut(g);
+            try std.testing.expectEqual(g.sim.pool.get(rat).?.hp, g.pic.pictured[actor.Pool.slot(rat)].hp);
+        }
+    }
+    try std.testing.expect(reduced > 0 and counters > 0);
+    harness.arena(g, from, &.{});
+    g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+    const slime = harness.spawnAt(g, .slime, .{ .x = 21, .y = 20 }, true);
+    g.sim.pool.get(slime).?.hp = 5;
+    game.settle(g);
+    g.sim.rng = harness.bitesRng(g, .slime, &.{true});
+    combat.endTurn(g);
+    try std.testing.expectEqual(@as(usize, 2), g.sim.pool.tally(.slime).left);
+    try std.testing.expect(g.pic.owed[actor.Pool.slot(slime)].thorns.?.after.reveals != null);
+    g.pic.lead = 0;
+    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    harness.drawnOut(g);
+    std.debug.print("Thorns: {d} armour reductions, {d} separate counters across 40 seeds, one inherited slime split\n", .{ reduced, counters });
+}
+
 /// Long enough that most of a turn's blows land before the next, so splits show.
 const SOAK_DT: f32 = 0.1;
 

@@ -224,7 +224,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `skillbar.Act.attack` selects melee/ranged/spell delivery; `items.Gear.scaling` selects the matching
   weapon's scaling for both live damage and previews. Wands and staves have no innate attack damage.
   Offhands include tomes, orbs, bucklers, shields and totems; two-handed weapons clear that slot.
-  Item bases have fixed neutral innates, with rolled magic modifiers separate in blue. Every base rolls in both rarities.
+  Item bases have fixed neutral innates, with rolled modifiers separate in magic blue or rare yellow. Every base rolls in all three rarities.
   Class bases feed passive allocations and equipped modifiers;
   `Simulation.heroAttrs` is the runtime source; `Simulation.heroPerks` combines equipment and passive recovery effects.
   Foe `Row.armour` reduces physical hits; crossbow penetration subtracts percentage points. Armour reduces physical bites before mana shield; elemental/status

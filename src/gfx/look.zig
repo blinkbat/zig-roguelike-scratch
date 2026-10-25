@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
+const items = @import("../play/items.zig");
 const skillbar = @import("../play/skillbar.zig");
 const resilience = @import("../play/resilience.zig");
 const font = @import("font.zig");
@@ -843,10 +844,10 @@ pub const COLD = rgb(0x8cddf5);
 pub const PIN = rgb(0xc8c2b4);
 pub const WARD = rgb(0x6fa8f0);
 pub const MAGIC = WARD;
+pub const RARE = rgb(0xe8d15a);
 
-/// An item's name: magic ones in the ward's blue.
-pub fn itemInk(magical: bool) rl.Color {
-    return if (magical) MAGIC else rl.Color.white;
+pub fn itemInk(rarity: items.Rarity) rl.Color {
+    return switch (rarity) { .normal => rl.Color.white, .magic => MAGIC, .rare => RARE };
 }
 const AIM_AREA_A: f32 = 0.24;
 pub const RETICLE = rgb(0xe8c25a);

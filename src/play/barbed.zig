@@ -7,7 +7,7 @@ pub const COST: i32 = 6;
 pub const AILMENT = @import("resilience.zig").Kind.bleed;
 pub const VERB = "shoots a barbed arrow into";
 pub const TAKES = bleeding.TAKES;
-pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A surviving target bleeds unless resisted: {d} a turn, {d} when moving, for {d} turns.", .{ bleeding.STILL, bleeding.MOVING, bleeding.TURNS });
+pub const DESCRIPTION = "Arrow damage. Inflicts bleeding.";
 pub const FLAVOR = "Easy going in. Impossible coming out.";
 
 pub const CHANCE: u32 = mathx.PERCENT;

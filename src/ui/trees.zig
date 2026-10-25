@@ -375,8 +375,6 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     const hit = skillHit(growth, s.act, loadout);
     if (hit) |h| {
         top = paragraph(face, hitText(s.act, h, &text), x, top, TEXT_W, look.TEXT);
-        face.draw("Before critical hits and defenses.", x, top, font.SMALL, look.DIM);
-        top += NOTE_STEP;
     }
     text.clear();
     growth.writeUsage(s.act, text.writer());
@@ -397,20 +395,25 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
         text.clear();
         next.writeRank(s.act, text.writer());
         if (text.n > 0) top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
-        if (next.damageBonus(s.act) != growth.damageBonus(s.act)) {
+        const mana_changes = next.cost(s.act) != growth.cost(s.act);
+        const damage_changes = next.damageBonus(s.act) != growth.damageBonus(s.act);
+        if (damage_changes) {
             const next_hit = skillHit(&next, s.act, loadout).?;
             if (std.meta.eql(hit.?, next_hit)) {
                 text.say("Rank damage bonus: +{d}% (was +{d}%)", .{ next.damageBonus(s.act), growth.damageBonus(s.act) });
             } else _ = hitText(s.act, next_hit, &text);
+            if (mana_changes) text.writer().print("; {d} mana", .{next.cost(s.act)}) catch {};
             top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
         }
-        if (next.cost(s.act) != growth.cost(s.act)) {
-            text.say("Mana cost: {d}", .{next.cost(s.act)});
-            top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
-        }
-        if (next.cooldown(s.act) != growth.cooldown(s.act)) {
+        const mana_separate = mana_changes and !damage_changes;
+        const cooldown_changes = next.cooldown(s.act) != growth.cooldown(s.act);
+        if (mana_separate or cooldown_changes) {
             const cd = next.cooldown(s.act);
-            text.say("Cooldown: {d} turn{s}", .{ cd, mathx.plural(cd) });
+            if (mana_separate and cooldown_changes) {
+                text.say("Mana: {d}; cooldown: {d} turn{s}", .{ next.cost(s.act), cd, mathx.plural(cd) });
+            } else if (mana_separate) {
+                text.say("Mana cost: {d}", .{next.cost(s.act)});
+            } else text.say("Cooldown: {d} turn{s}", .{ cd, mathx.plural(cd) });
             top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
         }
         if (top == changes) {
@@ -634,27 +637,10 @@ fn grantRow(face: *const font.Face, x: i32, y: i32, grant: passives.Grant) i32 {
 }
 
 /// What the grants alone leave unsaid.
-fn grantNoteOf(n: passives.Node, out: *menu.Note(128)) ?[:0]const u8 {
-    if (n.seam != null) return "Connects both paths. Reach this bridge from either side.";
-    if (n.ring == 0) return "Another class origin can be allocated directly.";
+fn grantNoteOf(n: passives.Node) ?[:0]const u8 {
     for ([_]?passives.Grant{ n.grant, n.bump }) |maybe| {
         const g = maybe orelse continue;
-        switch (g.kind) {
-            .armour => {
-                out.say("Armour reduces physical harm by 1% per point, up to {d}% total.", .{attrs.ARMOUR_MAX});
-                return out.text();
-            },
-            .dodge => {
-                out.say("Dodge is capped at {d}%.", .{attrs.DODGE_MAX});
-                return out.text();
-            },
-            .life_on_kill => return "Kills by burning, bleeding or gas do not heal.",
-            .cull => return "Applies to every foe a blow damages.",
-            .mana_regen => return std.fmt.comptimePrint("Added to the base recovery of {d} mana per {d} turns.", .{ hero.MANA_REGEN, hero.MANA_REGEN_TURNS }),
-            .mana_cost => return "Adds to the reduction from skill ranks.",
-            .life_flask => return "Increases what each life flask drink recovers.",
-            else => {},
-        }
+        if (g.kind == .life_on_kill) return "From blows only.";
     }
     return null;
 }
@@ -673,8 +659,7 @@ fn passiveDetails(face: *const font.Face, class: hero.Class, growth: *const prog
     }
     y = grantRow(face, x, y, n.grant);
     if (n.bump) |bump| y = grantRow(face, x, y, bump);
-    var note_buf: menu.Note(128) = .{};
-    if (grantNoteOf(n, &note_buf)) |line| _ = paragraph(face, line, x, y + RULE_GAP, TEXT_W, look.DIM);
+    if (grantNoteOf(n)) |line| _ = paragraph(face, line, x, y + RULE_GAP, TEXT_W, look.DIM);
     if (state == .allocated) {
         face.draw("Allocated", x, ACTION_Y, font.BODY, OWNED);
         return;

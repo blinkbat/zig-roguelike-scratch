@@ -52,7 +52,6 @@ pub fn picksOf(kit: []const skillbar.Act) usize {
     return kit.len + 1;
 }
 
-pub const PICK_MARGIN: i32 = 16;
 pub const PICK_COLS: usize = @intCast(@divTrunc(game.SKILLS_W + game.SLOT_GAP, game.SLOT_STEP));
 
 pub fn pickRows(n: usize) usize {
@@ -63,12 +62,6 @@ pub fn pickStep(i: usize, d: P, n: usize) usize {
     const at = mathx.wrap(i, d.x, n);
     const row = mathx.nudge(at / PICK_COLS, d.y, pickRows(n));
     return @min(row * PICK_COLS + at % PICK_COLS, n - 1);
-}
-
-pub fn pickWindow(top_y: i32, bottom_y: i32, n: usize, at: usize) menu.Window {
-    const rows = pickRows(n);
-    const room: usize = @intCast(@max(1, @divTrunc(bottom_y - game.SLOT_GAP - top_y - PICK_MARGIN, game.SLOT_STEP) + 1));
-    return menu.Window.of(rows, at / PICK_COLS, room);
 }
 
 /// Opened from Character's skills, and backs out to them.

@@ -336,6 +336,8 @@ The details area shows a small, dim name, then every grant including any rider i
 readable body text. Omit role headings, branch breadcrumbs and repeated status
 sentences. Keep only an essential mechanics note and one allocation action or
 status. The free class origin needs only its class name and "Starting point".
+Notes identify a grant-specific exception, such as blow-only recovery; omit explanations
+of core armour, dodge, recovery and allocation rules.
 The point counter stays visible when a node is blocked.
 
 Use exact descriptions generated from real grants. A stat node names the attribute

@@ -13,27 +13,26 @@ pub const TURNS: u8 = 3;
 const LIFE_PCT: i32 = 50;
 const TENTHS: i32 = 10;
 pub const MANA_GAIN: i32 = 10;
-const CHARGE_NOTE = std.fmt.comptimePrint("Uses {d} of {d} charges; kills refill {d}.", .{ USE, CHARGES, PER_KILL });
 
 pub const Life = struct {
     pub const KIND: Kind = .life;
     pub const FREE = true;
-    const TEXT = "Recover {d}{s}% of life, starting immediately and continuing for {d} turns. {s}";
-    pub const DESCRIPTION = std.fmt.comptimePrint(TEXT, .{ LIFE_PCT, "", TURNS - 1, CHARGE_NOTE });
+    const TEXT = "Recover {d}{s}% of life.";
+    pub const DESCRIPTION = std.fmt.comptimePrint(TEXT, .{ LIFE_PCT, "" });
     pub const FLAVOR = "Bitter, red, and better than bleeding.";
 
     pub fn describe(w: anytype, perks: passives.Perks) void {
         const tenths = lifeTenths(perks.life_flask);
         var part: [3]u8 = undefined;
         const fraction = if (@mod(tenths, TENTHS) == 0) "" else std.fmt.bufPrint(&part, ".{d}", .{@mod(tenths, TENTHS)}) catch unreachable;
-        w.print(TEXT, .{ @divTrunc(tenths, TENTHS), fraction, TURNS - 1, CHARGE_NOTE }) catch {};
+        w.print(TEXT, .{ @divTrunc(tenths, TENTHS), fraction }) catch {};
     }
 };
 
 pub const Mana = struct {
     pub const KIND: Kind = .mana;
     pub const FREE = true;
-    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d} mana, starting immediately and continuing for {d} turns. {s}", .{ MANA_GAIN, TURNS - 1, CHARGE_NOTE });
+    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d} mana.", .{MANA_GAIN});
     pub const FLAVOR = "Tastes of cold stone and clear thought.";
 };
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const items = @import("play/items.zig");
 const store = @import("core/store.zig");
 const game = @import("game.zig");
 const atlas = @import("map/atlas.zig");
@@ -585,7 +586,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     defer game.shut(alloc, g);
     game.beginMap(g, w);
     g.sim.name = hero.Name.of("Arwen");
-    try std.testing.expect(g.sim.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .intelligence, .value = 2 }, null } }));
+    try std.testing.expect(g.sim.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .intelligence, .value = 2 }, null, null, null } }));
     try g.sim.inventory.equip(0, .right_ring, g.sim.growth.attributes(g.sim.class));
     try std.testing.expect(g.sim.inventory.add(.{ .kind = .sword }));
     _ = g.sim.growth.gain(100);
@@ -691,7 +692,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
 }
 
 /// Changes only when the saved types, their names or order, the passive tree or Zig's version do; old saves then stop loading.
-const RECORDED_FINGERPRINT: Print = 0xfcf5056f0a0ba908;
+const RECORDED_FINGERPRINT: Print = 0x41833e2139f703fb;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
     game.beginMapAt(g, w, w.start, 7);
@@ -709,6 +710,11 @@ test "the save layout is the recorded one, and a run saves the bytes it loads fr
     const g = try game.boot(alloc);
     defer game.shut(alloc, g);
     try fixture(g, w);
+    g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+    g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .rare_name = .{ .first = .Void, .last = .Maw }, .mods = .{ .{ .kind = .spoils, .value = 25 }, .{ .kind = .strength, .value = 1 }, .{ .kind = .resistance, .value = 10, .element = .cold }, .{ .kind = .life, .value = 2 } } });
+    const rare = items.Item{ .kind = .robes, .rare_name = .{ .first = .Magus, .last = .Fold }, .mods = .{ .{ .kind = .intelligence, .value = 3 }, .{ .kind = .armour, .value = 4 }, .{ .kind = .mana, .value = 3 }, .{ .kind = .life, .value = 6 } } };
+    try std.testing.expect(g.sim.inventory.add(rare));
+    try std.testing.expect(g.sim.ground.add(.{ .item = rare, .at = g.sim.heroActor().?.at }));
     g.sim.heroActor().?.tactics = .{ .steady = 2, .guard = 1, .unyielding = true, .overwatch = .e };
     const at = g.sim.heroActor().?.at.add(.{ .x = 2, .y = 0 });
     g.sim.lv.barrier[grid.Level.idx(at)] = 3;
@@ -724,6 +730,14 @@ test "the save layout is the recorded one, and a run saves the bytes it loads fr
     defer alloc.destroy(into);
     game.begin(back, 1);
     try read(first.items, back, into);
+    try std.testing.expectEqualDeep(g.sim.inventory.gear, back.sim.inventory.gear);
+    try std.testing.expectEqualDeep(g.sim.inventory.bag[1], back.sim.inventory.bag[1]);
+    try std.testing.expectEqualDeep(g.sim.ground.drops[0].item, back.sim.ground.drops[0].item);
+    var rare_buf: [items.NAME_MAX]u8 = undefined;
+    try std.testing.expectEqualStrings("Magus Fold", back.sim.inventory.bag[1].name(&rare_buf));
+    try std.testing.expectEqual(@as(i32, 2), back.sim.heroAttrs().thorns);
+    try std.testing.expectEqual(@as(i32, 25), back.sim.heroAttrs().gold_find);
+    try std.testing.expectEqual(@as(i32, 25), back.sim.heroAttrs().item_rarity);
     try std.testing.expectEqualDeep(g.sim.heroActor().?.tactics, back.sim.heroActor().?.tactics);
     try std.testing.expectEqual(@as(u8, 3), back.sim.lv.barrier[grid.Level.idx(at)]);
     try std.testing.expectEqual(@as(u8, 2), back.sim.lv.caltrops[grid.Level.idx(at)].rank);

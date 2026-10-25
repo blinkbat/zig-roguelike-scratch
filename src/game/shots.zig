@@ -287,6 +287,7 @@ pub fn shoot(g: *game.Game) !void {
 
     try editor.shoot(g, target, SHOTS_DIR ++ "/edit.png", SHOTS_DIR ++ "/edit-graph.png", SHOTS_DIR ++ "/edit-gen.png", SHOTS_DIR ++ "/edit-objects.png");
     try shootCharacter(g);
+    try shootRares(g);
     try shootLoot(g);
 
     const entry = naming.Entry{ .name = heroes.Name.of("Arwen"), .row = 2, .col = 4 };
@@ -323,11 +324,43 @@ pub fn shootUi(g: *game.Game) !void {
     try book.verifyCards(&g.face);
     try book.verifyStats(&g.face);
     try shootCharacter(g);
+    try shootRares(g);
     try shootLoot(g);
     try shootHud(g);
     try shootLevelUp(g);
     try shootMouse(g);
     try app.shootHeroes(g);
+}
+
+fn shootRares(g: *game.Game) !void {
+    const screen = g.screen;
+    defer g.screen = screen;
+    game.harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{});
+    const crusher = items.Item{ .kind = .axe, .rare_name = .{ .first = .Spine, .last = .Crusher }, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .physical_damage, .value = 20 }, .{ .kind = .crit, .value = 5 }, .{ .kind = .life_on_kill, .value = 2 } } };
+    const maw = items.Item{ .kind = .ring, .rare_name = .{ .first = .Void, .last = .Maw }, .mods = .{ .{ .kind = .dexterity, .value = 3 }, .{ .kind = .resistance, .value = 20, .element = .chaos }, .{ .kind = .mana, .value = 3 }, .{ .kind = .spoils, .value = 25 } } };
+    const fold = items.Item{ .kind = .robes, .rare_name = .{ .first = .Magus, .last = .Fold }, .mods = .{ .{ .kind = .intelligence, .value = 3 }, .{ .kind = .armour, .value = 4 }, .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 3 } } };
+    g.sim.inventory = .{};
+    if (!g.sim.inventory.add(crusher) or !g.sim.inventory.add(fold)) return error.InventoryFull;
+    g.sim.inventory.gear.slots.set(.left_ring, maw);
+    if (!g.sim.ground.add(.{ .item = maw, .at = g.sim.heroActor().?.at })) return error.GroundFull;
+    game.syncStats(g);
+    game.harness.drawnOut(g);
+    inline for (.{ game.SCREEN_720, game.SCREEN_1080, game.SCREEN_1440 }, .{ "720", "1080", "1440" }) |size, tag| {
+        g.screen = size;
+        const target = try renderTarget(g);
+        defer rl.unloadRenderTexture(target);
+        game.character.openCharacter(g);
+        g.character.choose(.inventory);
+        g.character.cursor = 0;
+        try capture(g, target, SHOTS_DIR ++ "/item-rare-weapon-" ++ tag ++ ".png");
+        g.character.cursor = 1;
+        try capture(g, target, SHOTS_DIR ++ "/item-rare-armour-" ++ tag ++ ".png");
+        g.character.choose(.equipment);
+        g.character.cursor = @intFromEnum(items.Slot.left_ring);
+        try capture(g, target, SHOTS_DIR ++ "/item-rare-equipped-" ++ tag ++ ".png");
+        game.character.openLoot(g, g.sim.heroActor().?.at);
+        try capture(g, target, SHOTS_DIR ++ "/item-rare-loot-" ++ tag ++ ".png");
+    }
 }
 
 fn shootTactics(g: *game.Game) !void {
@@ -336,19 +369,20 @@ fn shootTactics(g: *game.Game) !void {
     const target = try target720(g);
     defer rl.unloadRenderTexture(target);
     try std.fs.cwd().makePath(SHOTS_DIR ++ "/tactics");
-    inline for (.{
-        .{ heroes.Class.archer, &[_]skillbar.Act{ .caltrops, .overwatch, .steady_aim } },
-        .{ heroes.Class.wizard, &[_]skillbar.Act{ .gravity_well, .combustion, .arcane_barrier } },
-        .{ heroes.Class.knight, &[_]skillbar.Act{ .guard, .whirlwind, .unyielding } },
-    }) |group| {
-        game.harness.heroArena(g, group[0], .{ .x = 20, .y = 20 }, &.{});
+    inline for (heroes.CLASSES) |class| {
+        game.harness.heroArena(g, class, .{ .x = 20, .y = 20 }, &.{});
         g.sim.growth.active_points = 10;
         game.character.openCharacter(g);
         g.character.choose(.skills);
-        inline for (group[1]) |act| {
-            for (progress.skills(group[0]), 0..) |s, i| if (s.act == act) { g.character.cursor = i; };
+        inline for (comptime progress.skills(class), 0..) |s, i| {
+            const act = s.act;
+            g.character.cursor = i;
             g.sim.growth.ranks.set(act, 1);
             try capture(g, target, SHOTS_DIR ++ "/tactics/tree-" ++ @tagName(act) ++ ".png");
+            g.sim.growth.ranks.set(act, 2);
+            try capture(g, target, SHOTS_DIR ++ "/tactics/tree-" ++ @tagName(act) ++ "-upgrade.png");
+            g.sim.growth.ranks.set(act, progress.RANKS);
+            try capture(g, target, SHOTS_DIR ++ "/tactics/tree-" ++ @tagName(act) ++ "-maximum.png");
         }
     }
     game.harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
@@ -367,7 +401,7 @@ fn shootTactics(g: *game.Game) !void {
     skills.confirmAim(g);
     game.harness.drawnOut(g);
     try capture(g, target, SHOTS_DIR ++ "/tactics/caltrops-laid.png");
-    _ = g.sim.inventory.add(.{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 } } });
+    _ = g.sim.inventory.add(.{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 }, null, null } });
     game.character.openCharacter(g);
     g.character.choose(.inventory);
     g.character.cursor = 0;
@@ -502,7 +536,7 @@ fn shootLoot(g: *game.Game) !void {
     game.harness.grassOver(&g.sim.lv);
     const bag = P{ .x = 19, .y = 20 };
     const chest = P{ .x = 21, .y = 20 };
-    for ([_]items.Kind{ .ring, .boots, .axe }) |kind| _ = g.sim.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null } }, .at = bag });
+    for ([_]items.Kind{ .ring, .boots, .axe }) |kind| _ = g.sim.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null, null, null } }, .at = bag });
     _ = g.sim.ground.gold(bag, 37);
     g.sim.lv.set(chest, .chest);
     game.settle(g);
@@ -539,7 +573,7 @@ fn shootLoot(g: *game.Game) !void {
     game.character.characterCommand(g, .take_all);
     try capture(g, target, SHOTS_DIR ++ "/loot-full.png");
     game.harness.drawnOut(g);
-    for (0..16) |_| _ = g.sim.ground.add(.{ .item = .{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } } }, .at = bag });
+    for (0..16) |_| _ = g.sim.ground.add(.{ .item = .{ .kind = .axe, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 }, null, null } }, .at = bag });
     game.character.openLoot(g, bag);
     try capture(g, target, SHOTS_DIR ++ "/loot-dense.png");
     for (0..18) |_| game.harness.nudge(g, .s);
@@ -716,12 +750,12 @@ fn shootCharacter(g: *game.Game) !void {
     g.sim.class = heroes.DEFAULT;
     game.beginMapAt(g, w, w.start, SHOT_SEED);
     _ = g.sim.growth.gain(100);
-    _ = g.sim.inventory.add(.{ .kind = .cap, .mods = .{ .{ .kind = .life, .value = 3 }, null } });
+    _ = g.sim.inventory.add(.{ .kind = .cap, .mods = .{ .{ .kind = .life, .value = 3 }, null, null, null } });
     try g.sim.inventory.equip(0, .helm, g.sim.growth.attributes(g.sim.class));
-    _ = g.sim.inventory.add(.{ .kind = .bow, .mods = .{ .{ .kind = .dexterity, .value = 2 }, null } });
+    _ = g.sim.inventory.add(.{ .kind = .bow, .mods = .{ .{ .kind = .dexterity, .value = 2 }, null, null, null } });
     try g.sim.inventory.equip(0, .right_hand, g.sim.growth.attributes(g.sim.class));
-    _ = g.sim.inventory.add(.{ .kind = .helmet, .mods = .{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 2 } } });
-    _ = g.sim.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, null } });
+    _ = g.sim.inventory.add(.{ .kind = .helmet, .mods = .{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 2 }, null, null } });
+    _ = g.sim.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, null, null, null } });
     _ = g.sim.inventory.add(.{ .kind = .leather });
     _ = g.sim.ground.add(.{ .item = .{ .kind = .amulet }, .at = g.sim.heroActor().?.at });
     g.sim.log.push(.event, "Archer enters the old ruins.", .{});
@@ -769,16 +803,16 @@ fn shootCharacter(g: *game.Game) !void {
 
         g.character.cursor = 2;
         try capture(g, target, SHOTS_DIR ++ "/item-normal-armour.png");
-        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .mana, .value = 3 }, null } });
-        g.sim.inventory.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .dexterity, .value = 3 }, null } });
+        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .mana, .value = 3 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .dexterity, .value = 3 }, null, null, null } });
         g.character.cursor = 1;
         g.character.destination_index = 0;
         try capture(g, target, SHOTS_DIR ++ "/item-ring-left.png");
         g.character.destination_index = 1;
         try capture(g, target, SHOTS_DIR ++ "/item-ring-right.png");
         g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .sling });
-        g.sim.inventory.gear.slots.set(.left_hand, .{ .kind = .buckler, .mods = .{ .{ .kind = .life, .value = 6 }, null } });
-        _ = g.sim.inventory.add(.{ .kind = .crossbow, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } } });
+        g.sim.inventory.gear.slots.set(.left_hand, .{ .kind = .buckler, .mods = .{ .{ .kind = .life, .value = 6 }, null, null, null } });
+        _ = g.sim.inventory.add(.{ .kind = .crossbow, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 }, null, null } });
         g.character.cursor = bag_n;
         g.character.destination_index = 0;
         try capture(g, target, SHOTS_DIR ++ "/item-two-handed.png");
@@ -795,6 +829,25 @@ fn shootCharacter(g: *game.Game) !void {
         }
         g.character.cursor = @intFromEnum(items.Slot.left_hand);
         try capture(g, target, SHOTS_DIR ++ "/item-offhand-occupied.png");
+    }
+    {
+        const inventory = g.sim.inventory;
+        defer g.sim.inventory = inventory;
+        const thorned = items.Item{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, .{ .kind = .life, .value = 3 }, null, null } };
+        const spoils = items.Item{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .spoils, .value = 25 }, null, null } };
+        g.character.choose(.inventory);
+        g.character.cursor = g.sim.inventory.n;
+        if (!g.sim.inventory.add(thorned)) return error.InventoryFull;
+        try capture(g, target, SHOTS_DIR ++ "/item-thorns.png");
+        g.character.cursor = g.sim.inventory.n;
+        if (!g.sim.inventory.add(spoils)) return error.InventoryFull;
+        try capture(g, target, SHOTS_DIR ++ "/item-spoils.png");
+        g.sim.inventory.gear.slots.set(.chest, thorned);
+        g.sim.inventory.gear.slots.set(.left_ring, spoils);
+        g.character.choose(.stats);
+        g.character.advanced = true;
+        defer g.character.advanced = false;
+        try capture(g, target, SHOTS_DIR ++ "/character-thorns-spoils.png");
     }
     {
         const device = g.st.device;
@@ -896,7 +949,7 @@ fn shootCharacter(g: *game.Game) !void {
         g.character.cursor = @intFromEnum(kind);
         try capture(g, target, SHOTS_DIR ++ "/item-" ++ @tagName(kind) ++ ".png");
     }
-    g.sim.inventory.bag[@intFromEnum(items.Kind.axe)].mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 } };
+    g.sim.inventory.bag[@intFromEnum(items.Kind.axe)].mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 }, null, null };
     g.character.cursor = @intFromEnum(items.Kind.axe);
     try capture(g, target, SHOTS_DIR ++ "/item-axe-magic.png");
 }

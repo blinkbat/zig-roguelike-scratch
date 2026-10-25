@@ -717,17 +717,21 @@ test "a pool longer than the bar wraps into rows the d-pad walks, and the rows s
     try std.testing.expectEqual(@as(usize, 0), binds.pickStep(last, .{ .x = 1, .y = 0 }, n));
     try std.testing.expectEqual(last, binds.pickStep(0, .{ .x = -1, .y = 0 }, n));
     try std.testing.expectEqual(binds.PICK_COLS + 1, binds.pickStep(0, .{ .x = 1, .y = 1 }, n));
-    const one_row = binds.PICK_MARGIN + game.SLOT_GAP;
     for (0..n) |at| {
-        const win = binds.pickWindow(0, one_row, n, at);
-        try std.testing.expectEqual(@as(usize, 1), win.len);
-        try std.testing.expectEqual(at / binds.PICK_COLS, win.from);
+        const picker = overlay.bindPicker(.{ .menu = .{ .pick = at } }, n);
+        try std.testing.expectEqual(@as(usize, 1), picker.win.len);
+        try std.testing.expectEqual(at / binds.PICK_COLS, picker.win.from);
+        try std.testing.expect(picker.first() <= at and at < picker.end());
+        try std.testing.expectEqual(@min(n, picker.first() + binds.PICK_COLS), picker.end());
+        for (picker.first()..picker.end()) |i| {
+            const cell = picker.cell(i);
+            try std.testing.expectEqual(@as(f32, @floatFromInt(picker.y)), cell.y);
+            try std.testing.expect(cell.x >= @as(f32, @floatFromInt(picker.x)));
+            try std.testing.expect(cell.x + cell.width <= @as(f32, @floatFromInt(picker.x + picker.w)));
+            try std.testing.expect(cell.height <= @as(f32, @floatFromInt(picker.h)));
+        }
     }
-    const two_rows = one_row + game.SLOT_STEP;
-    try std.testing.expectEqual(@as(usize, 2), binds.pickWindow(0, two_rows, n, last).len);
-    try std.testing.expectEqual(binds.pickRows(n) - 2, binds.pickWindow(0, two_rows, n, last).from);
-    try std.testing.expectEqual(@as(usize, 1), binds.pickWindow(two_rows - one_row, two_rows, n, last).len);
-    try std.testing.expectEqual(binds.pickRows(n), binds.pickWindow(0, 10_000, n, 0).len);
+    std.debug.print("binding picker: {d} selections stay in the actual one-row viewport, including the partial last row\n", .{n});
 }
 
 test "X opens aim on the nearest rat and nothing is spent until standard confirmation" {
@@ -1031,7 +1035,7 @@ test "weapon weight controls live damage and its preview independently of attack
         const style = case[2];
         harness.heroArena(g, if (act == .shoot) .archer else .knight, .{ .x = 20, .y = 20 }, &.{});
         g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = case[0] });
-        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 70 }, null } });
+        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 70 }, null, null, null } });
         g.sim.growth.ranks.set(act, 2);
         var expected_attrs = g.sim.inventory.gear.forAttack(g.sim.heroAttrs(), act.attack().?);
         expected_attrs.damage_bonus.getPtr(style).* += g.sim.growth.damageBonus(act);

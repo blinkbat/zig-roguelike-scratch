@@ -88,7 +88,7 @@ pub const Act = enum {
 
     pub fn desc(a: Act) [:0]const u8 {
         return switch (a) {
-            .shoot => "Aim an arrow at a target in range; confirm to loose it.",
+            .shoot => "Shoot an arrow.",
             .wait => "Let a turn pass.",
             .secondary => "Hold to use Skills in your " ++ comptime Set.secondary.name() ++ ". Takes up this slot in both Skill Sets.",
             inline else => |t| comptime module(t).?.DESCRIPTION,

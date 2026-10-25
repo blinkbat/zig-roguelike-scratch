@@ -7,14 +7,14 @@
 | Slots | Main hand, offhand, helm, chest, belt, gloves, boots, two rings, amulet |
 | Equipment rules | Attribute requirements, one main-hand item plus an offhand, or a two-handed item |
 | Requirements | Final loadout must remain valid; an item cannot fund its own requirement |
-| Loot | Normal or magic; blues roll one prefix, one suffix, or both, with names composed from those affixes and the base name |
-| Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery and penetration; equipment restrictions live in `items.Mod.allows` |
+| Loot | Normal, magic or rare; blues roll 1–2 mods and affix/base names; yellow rares roll 3–4 distinct mods and independent two-part names |
+| Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery, penetration, thorns and Spoils (gold and item rarity); equipment restrictions live in `items.Mod.allows` |
 | Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
 | Gold | Ground gold without items is a coin drop, automatically collected when stepped onto, with no extra turn or modal. Gold with items shares their bag; chest gold stays in its chest. Select the gold row or use Take all in bags/chests. Gold needs no inventory space |
 | Item actions | Take item, Take gold, Take all, drop, equip and unequip cost one turn when successful; Take all collects gold, fills available inventory space and leaves excess items |
 | Interact | First bump or Interact opens a closed chest for one turn, revealing its contents without a modal. Stepping onto a bag/open chest opens loot for the movement turn; bags remain walkable. Interact browses one bag/open chest for free, or offers a choice among multiple nearby containers/doors. Canceling is free |
 | Loot artwork | One `item-bag.png` per ground cell containing items, including any gold in that cell. Gold alone uses `small-coins.png` or `large-coins.png`. Chests use `chest-item-bag.png` while containing items or gold, then `chest-open.png` when empty. No coin lights |
-| Foe loot | Gold is common, plain white items occasional, magic blue items rare; white items have no rolled modifiers, blues have one or two |
+| Foe loot | Gold is common; item drops are 75% plain white, 20% magic blue and 5% rare yellow before rarity bonuses. Whites have no rolled mods, blues 1–2, rares 3–4 |
 | XP | Foe kills grant XP; each level grants one passive and one active point |
 | Passive tree | 81-node radial graph lifted from Soulslike; three origins, six branches and six bridges |
 | Active trees | Per class, prerequisites, three ranks; only learned skills may be bound |
@@ -54,8 +54,8 @@ governs basic melee, skill damage, rank bonuses and live damage previews.
 | No innate attack | Wand, staff |
 | Offhand | Tome, orb, buckler, shield, totem |
 
-All 46 bases can drop white or blue. White items retain fixed base properties and have
-no rolled modifiers; blues add one or two ordinary modifiers. Base identity is independent
+All 46 bases can drop white, blue or yellow. White items retain fixed base properties and have
+no rolled modifiers; blues add one or two ordinary modifiers and rares add three or four. Base identity is independent
 of rarity. Requirements follow the relevant build attribute.
 
 Daggers and hunting bows favor weapon critical strikes; handaxes and great axes bleed,
@@ -82,6 +82,31 @@ remain separate from affixes. Recovery modifiers add to equipment/passive recove
 adds to a matching weapon's innate penetration. Cruel applies only to physical weapon damage.
 Harvest also recovers life from status kills; the existing passive/totem kill recovery
 keeps its blow-only contract. Its healing is presented with the killing impact or tick.
+
+Rare names combine two saved words independently of the modifiers, such as `Spine Crusher`,
+`Void Maw` or `Magus Fold` (576 combinations). The base name remains visible beneath the
+yellow name on item cards. Added modifiers are yellow; fixed base properties stay neutral.
+Rares use the same legal modifier pool and value ranges as magic items, without repeating
+a modifier kind, with at most two prefixes and two suffixes. Names and all four mod slots
+survive equipment swaps, pickups, drops, travel and saves.
+
+Thorned chest armour and shields return physical damage on a connected adjacent melee hit,
+including one absorbed by mana shield or one that kills the hero. Dodges, arrows and damage
+over time do not trigger it. The attacker's armour applies; thorns cannot crit, apply weapon
+statuses, cull, trigger blow recovery or retaliate recursively. Kills still award normal XP,
+loot and Harvest recovery for a surviving hero. Returned damage, deaths and slime splits
+are shown with the incoming impact, separately from any Unyielding counterattack.
+
+Jewellery of Spoils adds the same rolled percentage to two separate stats: gold collected
+and item rarity. Gold scales once on pickup, from every source; fractional coins round
+probabilistically. Item rarity improves quality without increasing the number of drops.
+The combined magic-or-rare threshold (25% base) and rare threshold (5% base) each scale
+by `1 + rarity / 100`, round down to whole percentages and cap at 100%. The rare threshold
+is checked within the combined threshold: +100% rarity yields 50% plain, 40% magic and
+10% rare; sufficiently high rarity can make every item rare.
+Foes and newly opened chests use equipped rarity when their items roll. Bonuses from
+multiple items add together. Advanced Stats and item cards show all three
+new stats. The added affix identities change the save fingerprint; older saves are rejected.
 
 ## Tactical skills and class paths
 
@@ -197,9 +222,9 @@ values remain unchanged. A two-hander marks the offhand with Both hands and the 
 weapon's name; it is not presented as an empty slot. Slot size and position follow
 the reference; inventory remains the agreed list.
 Selected and equipped items use separate cards with only applicable base properties,
-nonzero requirements and actual magic modifiers. Legal equip previews list changed character
-bonuses with signs; unmet requirements show the available attribute after displacement,
-excluding the item's own bonus. Opposite-hand items returned to storage are named.
+nonzero requirements and actual magic modifiers, with no "If equipped" character-change section
+or separate bleed-damage line. Unmet requirements show the available attribute after displacement,
+excluding the item's own bonus.
 The Stats page leads with what the player reads at a glance: life and mana, and each learned
 skill's hit with its status chances (the skill's roll, then the weapon's second roll for that
 status). Defenses, attributes, crit chance and progression follow. Its Advanced sheet,

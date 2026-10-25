@@ -53,7 +53,7 @@ numbers before explaining the skill. These are the problems this pass addresses.
 D2's useful density comes from a stable reading order and familiar vocabulary.
 Many independent properties can coexist because each line describes one property.
 Players can recognize a useful item before doing every calculation. Our basic item
-has zero to two modifiers, so it should be especially quick to read.
+has zero to four rolled modifiers, so it should be especially quick to read.
 
 For example, a magic Iron helm reads in this order:
 
@@ -79,14 +79,19 @@ after current/next-rank details. Flavor never states a mechanic or interrupts th
 Names and headings use Balthazar; compact text at 18px and below uses Source Sans 3.
 Item cards share a left edge, group hand/scaling metadata on one small line, keep requirement
 availability inline, and use 22px property rows. Metadata and flavor use 17px text; primary
-effects stay 18px. Comparison changes follow the actual card height. The character sheet groups
+effects stay 18px. Requirement errors follow the actual card height. The character sheet groups
 critical chances, recovery and point pools; only active elemental bonuses appear. The binding
 picker has its own labeled strip, clear of both skill-set labels, and left-aligned details.
 
 The worn Leather cap remains a separate, much shorter card. This preserves the
-objects' identities and shows the real equipping blocker. Once an equip is valid,
-the small change list explains its effects on the character, including attributes
-from any displaced offhand. It does not repeat every unchanged stat.
+objects' identities and shows the real equipping blocker. Selected and equipped cards
+show their own properties directly, without an "If equipped" character-change section.
+Item cards show the innate bleed chance without a separate bleed-damage line.
+
+Across item, skill, passive and stat panels, show the specific effect, values and
+differences. Omit repeated explanations of core rules such as bleed movement damage,
+resistance and armour caps, attribute scaling, flask timing or charge refills. Keep
+skill-specific exceptions and rank changes; dedicated status inspection owns status definitions.
 
 PoE2's source/tier metadata becomes useful when a player needs to inspect a roll or
 craft an item. This prototype has no crafting and a small fixed modifier pool.
@@ -102,26 +107,26 @@ the player's build.
 
 ## Presentation contract
 
-1. **Item cards:** name in the existing magic blue or normal pale text; quiet slot
+1. **Item cards:** name in rare yellow, magic blue or normal pale text; quiet slot
    and handling information; only applicable base properties; only nonzero
-   requirements; then a horizontal divider and actual added modifiers in blue; flavor last.
+   requirements; then a horizontal divider and actual added modifiers in their rarity color; flavor last.
    Base properties and any future built-in base bonuses stay neutral, including on
-   magic or later rare items. Item-name rarity color never recolors the base section.
+   magic or rare items. Rare cards show the base name beneath their generated two-part name.
+   Item-name rarity color never recolors the base section.
    Damage is one range. A requirement
    uses its full attribute name and red only when unmet. Ordinary items do not need
    an empty modifier section. Do not invent affix names, rarity grades or stats.
-2. **Comparisons:** selected and equipped items retain separate identities. Show
-   a compact, explicitly labelled preview of character changes only when equip is
-   legal. Preserve real loadout validation, ring destination and displaced-hand
-   reporting. Positive and negative changes carry signs, not color alone. No gear
-   score and no universal better/worse verdict.
+2. **Comparisons:** selected and equipped items retain separate identities. Keep
+   their cards side by side, with no derived character-change list. Preserve real
+   loadout validation, requirement errors and ring destination. No gear score and
+   no universal better/worse verdict.
 3. **Character sheet:** the main sheet answers "how much life, how much damage, what
    chance to afflict"; everything rarer goes on the Advanced sheet. Three type tiers
    (`book.Tier`): headline numbers engraved large (life, mana, skill hits), key rows
    engraved at body size (attributes, skill names), plain rows in the data face. Colour
    carries meaning: life red, mana blue, each element and status in its own ink, gold
-   for gold and unspent points, zeros dim. Attach units to values. Explain what each
-   attribute affects. Damage bonuses explicitly say bonus; critical damage explicitly
+   for gold and unspent points, zeros dim. Attach units to values. Name each
+   attribute directly. Damage bonuses explicitly say bonus; critical damage explicitly
    says multiplier. Our armour is physical damage reduction, unlike D2 defense: never
    relabel it Defense.
 4. **Skills:** effect first, rank second, current or first-rank properties together,
@@ -132,8 +137,8 @@ the player's build.
    show the old/new rank bonus explicitly. State mana, turn and range units. A utility
    skill has no damage line. At maximum rank, remove the empty next-rank section.
    Skill descriptions explain behavior without repeating raw base-hit ranges.
-   Preserve fixed status damage, duration, area and proc chance because these do
-   not appear in the direct-hit range.
+   Keep skill-specific duration, area and proc chance; omit the standard status rules
+   already covered by status inspection.
 5. **Passives:** name and actual grants lead. Write complete modifier phrases;
    use plain language for the next action or blocker. Topological terms are secondary
    to the grant. Preserve origins, feeders and point costs exactly.
@@ -149,7 +154,7 @@ the player's build.
    left/right because either ring can use either slot.
 
 Use dark, quiet surfaces, Balthazar headings, Source Sans 3 compact text, native text
-sizes and spare dividers. Gold marks focus or section hierarchy, blue marks magic, muted text carries
+sizes and spare dividers. Gold marks focus or section hierarchy, blue marks magic, yellow marks rare items, muted text carries
 supporting information, and red marks a real blocker or loss. Do not shrink text to
 fit a table that should have been removed. Tables remain appropriate when the reader
 actually needs aligned values; they are not the default container for all information.
@@ -163,7 +168,7 @@ gain/loss colors distinct. UI selection no longer borrows the world targeting co
 ## Verification
 
 Inspect real headless captures at 1280x720 and the larger HUD capture sizes. Cover
-normal and magic items, unmet and met requirements, both ring destinations,
+normal, magic and rare items, unmet and met requirements, both ring destinations,
 two-handed displacement, empty slots, each class's skill states, and passive grants.
 Check that comparisons do not mutate inventory and that browsing/cancelling spends
 nothing. Reuse source calculations and test any new requirement/preview derivation.

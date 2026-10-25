@@ -21,7 +21,7 @@ pub const Hurt = struct {
     torn: bool = false,
 };
 
-pub const Dealt = struct { to: actor.Kind, killed: bool };
+pub const Dealt = struct { to: actor.Kind, killed: bool, reaction: bool = false };
 
 pub const Event = union(enum) {
     hurt: Hurt,

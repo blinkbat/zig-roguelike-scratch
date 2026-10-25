@@ -20,6 +20,101 @@ const BACK = menu.BACK;
 
 const TWO_ROOMS_SEED: u64 = 123;
 
+test "rare chest and foe drops keep their names and mods through pickup and dropping" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = from.add(.{ .x = 1, .y = 0 });
+    for ([_]bool{ false, true }) |foe| {
+        harness.arena(g, from, &.{});
+        var expected: ?items.Item = null;
+        for (0..10000) |seed| {
+            var rng = mathx.Rng.init(seed);
+            const candidate = if (foe) items.foeLoot(&rng, 0).item else items.roll(&rng, 0);
+            if (candidate) |it| if (it.rarity() == .rare) {
+                expected = it;
+                g.sim.loot_rng = mathx.Rng.init(seed);
+                break;
+            };
+        }
+        try std.testing.expect(expected != null);
+        if (foe) {
+            const rat = harness.spawnAt(g, .rat, at, false);
+            game.settle(g);
+            harness.slay(g, rat, from);
+            try std.testing.expect(!scene.bagCells(g).isSet(grid.Level.idx(at)));
+        } else {
+            g.sim.lv.set(at, .chest);
+            try std.testing.expect(game.combat.openChest(g, at));
+        }
+        try std.testing.expectEqualDeep(expected.?, g.sim.ground.drops[0].item);
+        harness.drawnOut(g);
+        game.character.openLoot(g, at);
+        harness.press(g, CONFIRM);
+        harness.drawnOut(g);
+        try std.testing.expectEqual(@as(usize, 1), g.sim.inventory.n);
+        try std.testing.expectEqualDeep(expected.?, g.sim.inventory.bag[0]);
+        game.character.openCharacter(g);
+        game.character.characterCommand(g, .{ .drop = 0 });
+        harness.drawnOut(g);
+        try std.testing.expectEqual(@as(usize, 0), g.sim.inventory.n);
+        try std.testing.expectEqualDeep(expected.?, g.sim.ground.drops[0].item);
+    }
+    std.debug.print("rare loot: chest and foe generation, delayed foe bag, pickup and dropping preserve full item identity\n", .{});
+}
+
+test "spoils applies to chest and foe quality and every gold pickup route" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = from.add(.{ .x = 1, .y = 0 });
+    harness.arena(g, from, &.{});
+    g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .spoils, .value = 25 }, null, null, null } });
+    var magic: usize = 0;
+    for (0..100) |seed| {
+        g.sim.ground = .{};
+        g.sim.lv.set(at, .chest);
+        g.sim.loot_rng = mathx.Rng.init(seed);
+        var expected_rng = g.sim.loot_rng;
+        const expected = items.roll(&expected_rng, 25);
+        try std.testing.expect(game.combat.openChest(g, at));
+        try std.testing.expectEqualDeep(expected, g.sim.ground.drops[0].item);
+        if (expected.magical()) magic += 1;
+    }
+    try std.testing.expect(magic > 0 and magic < 100);
+    g.sim.ground = .{};
+    g.sim.loot_rng = harness.lootRng(true);
+    var expected_rng = g.sim.loot_rng;
+    const expected = items.foeLoot(&expected_rng, 25);
+    const rat = harness.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
+    harness.slay(g, rat, from);
+    try std.testing.expectEqualDeep(expected.item.?, g.sim.ground.drops[0].item);
+    try std.testing.expectEqual(expected.gold, g.sim.ground.coins[0].amount);
+    harness.drawnOut(g);
+    for (0..3) |route| {
+        g.sim.ground = .{};
+        g.sim.gold = 0;
+        if (!g.sim.heroActor().?.at.eq(from)) g.sim.pool.move(&g.sim.lv, g.sim.hero, from);
+        g.sim.lv.set(at, if (route == 2) .chest_open else .floor);
+        try std.testing.expect(g.sim.ground.gold(at, 20));
+        if (route == 0) {
+            harness.nudge(g, .e);
+            try std.testing.expectEqual(@as(i32, 20), g.pic.gold_taken.?.amount);
+        } else {
+            try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap }, .at = at }));
+            harness.pressInteract(g);
+            try std.testing.expectEqual(book.Page.loot, g.character.page);
+            if (route == 1) g.character.cursor = 1;
+            harness.press(g, if (route == 1) CONFIRM else menu.CHANGE);
+        }
+        try std.testing.expectEqual(@as(i32, 25), g.sim.gold);
+        try std.testing.expectEqual(@as(usize, 0), g.sim.ground.coin_n);
+        harness.drawnOut(g);
+        if (g.mode == .pause) harness.press(g, BACK);
+    }
+    std.debug.print("Spoils: 100 chest rolls, foe reward, walking coins, bag gold and chest Take all checked\n", .{});
+}
+
 fn runTwoRooms(g: *game.Game, w: *atlas.Atlas) usize {
     const b = harness.twoRooms(w);
     game.beginMapAt(g, w, w.start, TWO_ROOMS_SEED);
@@ -135,7 +230,7 @@ test "new runs gate class skills; underfoot and adjacent loot commit exactly one
     }
     harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
     const at = g.sim.heroActor().?.at;
-    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap, .mods = .{ .{ .kind = .life, .value = 6 }, null } }, .at = at }));
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap, .mods = .{ .{ .kind = .life, .value = 6 }, null, null, null } }, .at = at }));
     try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at.add(.{ .x = 1, .y = 0 }) }));
     try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .boots }, .at = at.add(.{ .x = 2, .y = 0 }) }));
     const clock = g.sim.clock;

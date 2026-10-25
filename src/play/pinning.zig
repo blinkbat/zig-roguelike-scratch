@@ -9,7 +9,7 @@ pub const TURNS_HI: u8 = 4;
 pub const VERB = "pins";
 pub const TAKES = "is pinned";
 pub const STATUS = "Cannot move. Can still attack.";
-pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. A surviving target is pinned unless resisted for {d}-{d} turns: it cannot move, but can still attack.", .{ TURNS_LO, TURNS_HI });
+pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. Pins for {d}-{d} turns.", .{ TURNS_LO, TURNS_HI });
 pub const FLAVOR = "Stay. Good.";
 
 /// Its turns left held to its cell.

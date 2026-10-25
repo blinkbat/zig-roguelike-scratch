@@ -290,6 +290,9 @@ current/next table with labelled current/first-rank properties and a separate ne
 section containing only changes. This leaves utility skills and maximum ranks free of
 irrelevant zeroes and empty columns.
 
+Descriptions keep the skill's specific effect and exceptions. Do not repeat core status,
+resistance, damage-scaling or flask rules; the current/next rows show the actual values and changes.
+
 Use `Act.describe` with combined equipment and passive perks for behavior (`Gear.perks` in
 the tree, `Simulation.heroPerks` in the HUD). Mana and cooldown must come from the hero's
 progression state through `State.writeUsage`. Show turn cost in turns, not seconds.
@@ -306,7 +309,8 @@ numbers under a misleading upgrade heading. Unchanged values should remain calm 
 readable; the one value affected by the next point should be easy to compare. Any
 description wrapping must account for the action footer. Keep rank-dependent length and
 duration in the property and next-rank rows instead of repeating them in behavior prose,
-so the flavor line remains above the binding action.
+so the flavor line remains above the binding action. Combine a changed mana cost with
+the next-rank damage or cooldown paragraph to preserve that space.
 
 The selected eligible skill spends one point on one deliberate confirm press. There is no secondary confirmation modal. Browsing, backing out and allocation spend no simulation turn; only a successful `State.learn` reduces the point pool. Details show the result before spending.
 
