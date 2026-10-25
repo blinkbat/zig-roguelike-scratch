@@ -54,6 +54,39 @@ test "large tree boughs fade with the pictured hero and only their base blocks" 
     std.debug.print("large tree: base-only collision, picture-based fade and restoration, idle easing and map reset checked\n", .{});
 }
 
+test "sight blocking reeds use pictured hero occlusion within their own walkable cell" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    harness.arena(g, at, &.{});
+    harness.grassOver(&g.sim.lv);
+    g.sim.lv.set(at, .reeds);
+    game.settle(g);
+    const i = grid.Level.idx(at);
+    try std.testing.expect(look.occludes(.reeds) and !look.tall(.reeds));
+    try std.testing.expect(!look.occludes(.grass) and !look.occludes(.tall_grass));
+    try std.testing.expect(g.sim.lv.walkable(at) and g.sim.lv.at(at).blind());
+    g.pic.ease(&g.sim, 0);
+    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
+    g.pic.ease(&g.sim, 0.04);
+    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 1);
+    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    try std.testing.expect(g.pic.occlusion[i] > 0.99);
+    const hero = g.sim.heroSlot().?;
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 20, .y = 21 });
+    g.pic.ease(&g.sim, 0.04);
+    try std.testing.expect(g.pic.occlusion[i] > 0.99);
+    g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
+    g.pic.ease(&g.sim, 0.04);
+    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 0.99);
+    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    try std.testing.expect(g.pic.occlusion[i] < 0.01);
+    g.pic.occlusion[i] = 1;
+    game.settle(g);
+    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
+    std.debug.print("reeds: walkable sight blocker, pictured overlap, smooth fade/restoration and map reset checked\n", .{});
+}
+
 test "collected coins stay drawn only until the collection step finishes" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

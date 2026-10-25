@@ -303,13 +303,13 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const Stood) void 
     while (cells.next()) |p| {
         if (!game.character.terrainSeen(g, p)) continue;
         const here = g.sim.lv.at(p);
-        if (look.tall(here)) continue;
         defer if (looseBag(here, &bags, p)) {
             if (g.sprites.item_bag) |t| {
                 drawShining(g, t, c, p, 0);
                 veilSprite(g, t, c, p, .sharp);
             }
         };
+        if (look.occludes(here)) continue;
         if (!look.standsOver(here)) continue;
         if (tileTexture(g, p, &bags)) |t| {
             const focus = g.cinema.beginFocus(here, t, mathx.centre(p), g.light.carrier);
@@ -626,13 +626,13 @@ pub fn drawMap(g: *game.Game) void {
         }
     }.less);
     var next_body: usize = 0;
-    var trees = view.grown(1).cells();
-    while (trees.next()) |p| {
+    var occluders = view.grown(1).cells();
+    while (occluders.next()) |p| {
         const kind = g.sim.lv.at(p);
-        if (!look.tall(kind) or !game.character.terrainSeen(g, p)) continue;
+        if (!look.occludes(kind) or !game.character.terrainSeen(g, p)) continue;
         const depth = @as(f32, @floatFromInt(p.y)) + 0.5;
         while (next_body < bodies.len and bodies[next_body].mid[1] <= depth) : (next_body += 1) drawStandingBody(g, &bodies[next_body]);
-        drawTall(g, c, p, kind);
+        drawOccluder(g, c, p, kind);
     }
     for (bodies[next_body..]) |*b| drawStandingBody(g, b);
 
@@ -670,7 +670,7 @@ pub fn drawMap(g: *game.Game) void {
     if (level_up_at) |at| g.pic.fx.level_up.drawText(at, &g.face, o[0], o[1], game.CELL_F);
 }
 
-fn drawTall(g: *game.Game, c: Cam, p: P, kind: grid.Tile) void {
+fn drawOccluder(g: *game.Game, c: Cam, p: P, kind: grid.Tile) void {
     const hidden = g.pic.occlusion[grid.Level.idx(p)];
     const occlusion: look.Occlusion = if (g.pic.occlusionHero(&g.sim)) |at| .{ .hero = game.middle(at), .hidden = hidden } else .{};
     const tex = g.sprites.tileAt(&g.sim.lv, p) orelse {

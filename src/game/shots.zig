@@ -698,7 +698,46 @@ pub fn shootTrees(g: *game.Game) !void {
     g.sim.lv.set(.{ .x = 27, .y = 17 }, .large_tree);
     studyLit(g, true, day.NOON);
     try capture(g, target, SHOTS_DIR ++ "/trees/water-reflection.png");
+    game.harness.arena(g, .{ .x = 24, .y = 18 }, &.{});
+    game.harness.grassOver(&g.sim.lv);
+    const grass = P{ .x = 24, .y = 18 };
+    var patch = grid.Cells.of(.{ .x = 23, .y = 17 }, .{ .x = 26, .y = 20 });
+    while (patch.next()) |p| g.sim.lv.set(p, .reeds);
+    studyLit(g, true, day.NOON);
+    g.st = .{};
+    try capture(g, target, SHOTS_DIR ++ "/trees/grass-opaque.png");
+    game.update(g, 0.04);
+    const grass_partial = g.pic.occlusion[grid.Level.idx(grass)];
+    if (grass_partial <= 0 or grass_partial >= 1) return error.GrassFadeNotSmooth;
+    try capture(g, target, SHOTS_DIR ++ "/trees/grass-fading.png");
+    for (0..120) |_| game.update(g, mathx.TEST_DT);
+    if (g.pic.occlusion[grid.Level.idx(grass)] < 0.99) return error.GrassDidNotFade;
+    try capture(g, target, SHOTS_DIR ++ "/trees/grass-clear.png");
+    const faded_grass = try readTarget(target);
+    defer rl.unloadImage(faded_grass);
+    const grass_hidden = g.pic.occlusion[grid.Level.idx(grass)];
+    g.pic.occlusion[grid.Level.idx(grass)] = 0;
+    drawInto(g, target);
+    const opaque_grass = try readTarget(target);
+    defer rl.unloadImage(opaque_grass);
+    const grass_pixels = differentPixels(faded_grass, opaque_grass);
+    if (grass_pixels == 0) return error.GrassOcclusionDidNotChangeFrame;
+    g.pic.occlusion[grid.Level.idx(grass)] = grass_hidden;
+    drawInto(g, target);
+    const restored_grass = try readTarget(target);
+    defer rl.unloadImage(restored_grass);
+    if (differentPixels(faded_grass, restored_grass) != 0) return error.GrassOcclusionDidNotRestoreFrame;
+    std.debug.print("reed occlusion GPU check: {d} pixels changed, exact restoration\n", .{grass_pixels});
+    g.sim.lv.gas[grid.Level.idx(grass)] = 60;
+    g.cloud.settle(&g.sim.lv);
+    try capture(g, target, SHOTS_DIR ++ "/trees/grass-gas.png");
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
+    g.pic.glide[g.sim.heroSlot().?] = @import("glide.zig").Glide.rest(g.sim.heroActor().?);
+    for (0..120) |_| game.update(g, mathx.TEST_DT);
+    if (g.pic.occlusion[grid.Level.idx(grass)] > 0.01) return error.GrassDidNotRestore;
+    try capture(g, target, SHOTS_DIR ++ "/trees/grass-front.png");
     std.debug.print("tall tree captures: native height, wall adjacency, smooth hiding/restoration and front/behind depth checked\n", .{});
+    std.debug.print("reed patch captures: body depth, smooth hiding/restoration and shared gas fade checked\n", .{});
 }
 
 /// The start map with its weather under way.

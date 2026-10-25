@@ -74,6 +74,10 @@ pub fn tall(t: grid.Tile) bool {
     return t == .large_tree;
 }
 
+pub fn occludes(t: grid.Tile) bool {
+    return tall(t) or t == .reeds;
+}
+
 pub const OCCLUDED_A: f32 = 0.4;
 
 pub const Occlusion = struct {

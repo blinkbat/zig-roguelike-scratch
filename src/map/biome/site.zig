@@ -9,7 +9,7 @@ const P = mathx.P;
 
 const N: usize = 3;
 const PATTERNS_MAX: usize = 128;
-const Bits = std.StaticBitSet(PATTERNS_MAX);
+const Bits = if (@import("builtin").mode == .Debug) std.bit_set.IntegerBitSet(PATTERNS_MAX) else std.StaticBitSet(PATTERNS_MAX);
 const SECTION_W: i32 = 30;
 const SECTION_H: i32 = 20;
 const SECTION_MIN: i32 = 10;
@@ -325,10 +325,21 @@ test "every template's model holds all its patterns and every one has a neighbou
     }
 }
 
-test "a site grows walls and floors from its templates" {
-    var lv = grid.Level.blank();
-    var rng = mathx.Rng.init(0x517E);
-    shape(&lv, &rng, 0, .{ .decay = 0 });
-    std.debug.print("a site: {d} wall, {d} floor of {d}\n", .{ carve.count(&lv, .wall), carve.count(&lv, .floor), grid.CELLS });
-    try std.testing.expect(carve.count(&lv, .wall) > 200 and carve.count(&lv, .floor) > 200);
+test "site templates retain seeded terrain and RNG through solver representation changes" {
+    const expected = std.EnumArray(Template, struct { tiles: u64, rng: [4]u64 }).init(.{
+        .huts = .{ .tiles = 0xa5f13b05b1f0c3c7, .rng = .{ 3254636547335816609, 8250941921774936062, 9055159738079733990, 6439131476116771212 } },
+        .compound = .{ .tiles = 0x61ae27517a4a3e1d, .rng = .{ 8009758291623854872, 10636507405661234734, 33640705646347558, 1670422348647217934 } },
+        .pillars = .{ .tiles = 0x38d30dea9a74652f, .rng = .{ 14375317673847580198, 12569558135922049239, 13834771041735259801, 476486666236213021 } },
+        .mixed = .{ .tiles = 0x9738fc83e19b4cdf, .rng = .{ 15017720190799609836, 4598980875943922636, 11167322986283800415, 17605521039977777757 } },
+    });
+    for (std.enums.values(Template)) |template| {
+        var lv = grid.Level.blank();
+        var rng = mathx.Rng.init(0x517E);
+        shape(&lv, &rng, 0, .{ .template = template, .decay = 0 });
+        const fixture = expected.get(template);
+        try std.testing.expectEqual(fixture.tiles, std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(&lv.tile)));
+        try std.testing.expectEqualSlices(u64, &fixture.rng, &rng.impl.s);
+        try std.testing.expect(carve.count(&lv, .wall) > 200 and carve.count(&lv, .floor) > 200);
+    }
+    std.debug.print("site generation: all {d} templates retain exact seeded terrain, final RNG and wall/floor coverage\n", .{expected.values.len});
 }

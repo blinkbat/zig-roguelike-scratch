@@ -754,7 +754,7 @@ fn reach(g: *game.Game, id: u16, row: actor.Row) void {
             }
             const after = afterBlow(g, g.sim.hero, h);
             g.pic.owed[i].bit = if (lethal) .{ .kill = after } else .{ .hurt = after };
-            if (row.ranged == null and physical > 0) returnThorns(g, id, hero.at);
+            if (row.ranged == null) returnThorns(g, id, hero.at);
             if (lethal) heroDies(g) else if (row.ranged == null) tactics.counter(g, id);
         },
         .burst => {

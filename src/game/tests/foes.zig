@@ -55,6 +55,35 @@ test "thorns returns melee damage with the incoming impact and ignores dodges an
     std.debug.print("Thorns: melee hit/dodge and ranged hit/dodge, both bodies change at the same impact\n", .{});
 }
 
+test "thorns still returns a connected melee hit rounded to zero by hero armour" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    var absorbed: usize = 0;
+    for (0..64) |seed| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, .{ .kind = .armour, .value = 75 }, null, null } });
+        const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
+        game.settle(g);
+        const hero_hp = g.sim.heroActor().?.hp;
+        const foe_hp = g.sim.pool.get(id).?.hp;
+        g.sim.rng = mathx.Rng.init(seed);
+        combat.endTurn(g);
+        const slot = actor.Pool.slot(id);
+        if (g.pic.owed[slot].bit.? == .miss) continue;
+        if (g.sim.heroActor().?.hp != hero_hp) continue;
+        absorbed += 1;
+        try std.testing.expectEqual(foe_hp - 2, g.sim.pool.get(id).?.hp);
+        try std.testing.expect(g.pic.owed[slot].thorns != null);
+        g.pic.lead = 0;
+        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        harness.drawnOut(g);
+        try std.testing.expectEqual(foe_hp - 2, g.pic.pictured[slot].hp);
+        try std.testing.expectEqual(hero_hp, g.pic.heroShown(&g.sim).?.hp);
+    }
+    try std.testing.expect(absorbed > 0);
+    std.debug.print("Thorns: {d} connected hits fully absorbed by armour still retaliate at impact over 64 seeds\n", .{absorbed});
+}
+
 test "thorns kills grant rewards and harvest after a shielded hit without blow recovery" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

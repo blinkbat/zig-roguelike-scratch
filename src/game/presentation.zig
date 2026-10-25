@@ -341,15 +341,17 @@ pub const Presentation = struct {
         const hero = self.occlusionHero(sim);
         const k = mathx.easing(dt, OCCLUSION_EASE);
         for (sim.lv.tile, &self.occlusion, 0..) |t, *hidden, i| {
-            if (!look.tall(t)) {
+            if (!look.occludes(t)) {
                 hidden.* = 0;
                 continue;
             }
             const p = grid.Level.of(i);
             const x = @as(f32, @floatFromInt(p.x)) * game.CELL_F;
             const y = @as(f32, @floatFromInt(p.y)) * game.CELL_F;
+            const top = y - if (look.tall(t)) game.CELL_F else 0;
+            const bottom = y + if (look.tall(t)) 0 else game.CELL_F;
             const covered = if (hero) |at| at.x + game.CELL_F * 0.85 > x and at.x + game.CELL_F * 0.15 < x + game.CELL_F and
-                at.y + game.CELL_F * 0.9 > y - game.CELL_F and at.y + game.CELL_F * 0.1 < y else false;
+                at.y + game.CELL_F * 0.9 > top and at.y + game.CELL_F * 0.1 < bottom else false;
             hidden.* = mathx.ease(hidden.*, if (covered) 1 else 0, k, k);
         }
     }

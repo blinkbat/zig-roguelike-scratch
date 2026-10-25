@@ -72,6 +72,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - `--shot-trees` captures two-cell tree height, wall adjacency, smooth hero occlusion and front/behind depth;
   use the same temporary-directory procedure. Tall trees occupy only their bottom cell; unsaved fading
   uses a soft aperture around the pictured hero, shared by scenery and gas, preserving the lower trunk.
+  Dense sight-blocking grass (`reeds`) uses that same occlusion and depth ordering within its walkable cell; these captures cover it too.
 - Inspect actual headless PNGs. `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,
   maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
   `water-reflections/00.png` through `39.png` cover four seconds of idle play; `water-mirrors-*.png`

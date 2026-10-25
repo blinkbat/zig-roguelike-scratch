@@ -322,7 +322,7 @@ pub const Act = enum {
         return std.enums.EnumIndexer(Act).indexOf(a);
     }
 
-    /// Every decl probed by name above, so renaming one in its module fails the build.
+    /// Every declaration probed by name above must exist in at least one skill module.
     const PROBED = .{ "describe", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "AILMENT", "CHANCE", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE", "BASE", "DONE" };
 
     comptime {
