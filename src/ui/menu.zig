@@ -302,7 +302,7 @@ fn window(screen_h: i32, n: usize, at: usize) Window {
 }
 
 /// Every single-column list's widest, at any screen size.
-pub const LIST_W: i32 = 760;
+pub const LIST_W: i32 = 640;
 
 pub fn listWidth(screen: mathx.P) i32 {
     return @min(LIST_W, @max(1, screen.x - 2 * MARK_GAP));

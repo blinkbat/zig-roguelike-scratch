@@ -11,6 +11,7 @@ const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const fx = @import("../gfx/fx.zig");
 const cloud = @import("../gfx/cloud.zig");
+const look = @import("../gfx/look.zig");
 const hud = @import("../ui/hud.zig");
 const game = @import("../game.zig");
 const glide = @import("glide.zig");
@@ -119,6 +120,7 @@ pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
 
 /// What is drawn of the run, lagging the simulation until each blow lands; nothing in the simulation reads it.
 pub const Presentation = struct {
+    occlusion: [grid.CELLS]f32 = @splat(0),
     /// Indexed by pool slot.
     glide: [actor.MAX]glide.Glide = undefined,
     /// Indexed by pool slot.
@@ -239,6 +241,7 @@ pub const Presentation = struct {
     }
 
     pub fn snapGlide(self: *Presentation, pool: *const actor.Pool) void {
+        self.occlusion = @splat(0);
         for (pool.items[0..pool.n], 0..) |*a, i| self.glide[i] = glide.Glide.rest(a);
     }
 
@@ -320,11 +323,35 @@ pub const Presentation = struct {
 
     /// The sky, experience bar and orbs ease toward what the drawn turns show.
     pub fn ease(self: *Presentation, sim: *const Simulation, dt: f32) void {
+        self.stepOcclusion(sim, dt);
         self.hour_shown = day.wrapHour(self.hour_shown + day.toward(self.hour_shown, sim.clock.hour()) * mathx.easing(dt, HOUR_EASE));
         self.xp_shown = mathx.ease(self.xp_shown, self.xp_aim, mathx.easing(dt, XP_EASE), 1);
         const resource_ease = mathx.easing(dt, RESOURCE_EASE);
         self.life_fill = mathx.ease(self.life_fill, self.lifeFill(sim), resource_ease, resource_ease);
         self.mana_fill = mathx.ease(self.mana_fill, self.manaFill(sim), resource_ease, resource_ease);
+    }
+
+    pub fn occlusionHero(self: *const Presentation, sim: *const Simulation) ?rl.Vector2 {
+        const h = sim.heroSlot() orelse return null;
+        const at = self.drawnAt(sim, h) orelse return null;
+        return .{ .x = at.x, .y = at.y - @as(f32, @floatFromInt(self.glide[h].lift())) };
+    }
+
+    fn stepOcclusion(self: *Presentation, sim: *const Simulation, dt: f32) void {
+        const hero = self.occlusionHero(sim);
+        const k = mathx.easing(dt, OCCLUSION_EASE);
+        for (sim.lv.tile, &self.occlusion, 0..) |t, *hidden, i| {
+            if (!look.tall(t)) {
+                hidden.* = 0;
+                continue;
+            }
+            const p = grid.Level.of(i);
+            const x = @as(f32, @floatFromInt(p.x)) * game.CELL_F;
+            const y = @as(f32, @floatFromInt(p.y)) * game.CELL_F;
+            const covered = if (hero) |at| at.x + game.CELL_F * 0.85 > x and at.x + game.CELL_F * 0.15 < x + game.CELL_F and
+                at.y + game.CELL_F * 0.9 > y - game.CELL_F and at.y + game.CELL_F * 0.1 < y else false;
+            hidden.* = mathx.ease(hidden.*, if (covered) 1 else 0, k, k);
+        }
     }
 
     /// Time passes on the picture, then it takes whatever blows have landed.
@@ -556,6 +583,7 @@ const PACE_SLACK: f32 = 1e-4;
 pub const SPLASH_AT: f32 = 0.85;
 /// Per second, how fast the sky drawn catches the hour a turn moved on.
 const HOUR_EASE: f32 = 4;
+const OCCLUSION_EASE: f32 = 12;
 /// Per second, how fast the experience bar fills toward a drawn turn's experience.
 const XP_EASE: f32 = 8;
 /// Per second, how fast the life and mana orbs fill toward what is shown.

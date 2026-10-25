@@ -49,6 +49,7 @@ pub const Tile = enum(u8) {
     chest,
     chest_open,
     swamp_tree,
+    large_tree,
 
     pub fn solid(t: Tile) bool {
         return TERRAIN.getPtrConst(t).solid;
@@ -134,6 +135,7 @@ pub const Tile = enum(u8) {
             .chest => 'C',
             .chest_open => 'O',
             .swamp_tree => 'S',
+            .large_tree => 'L',
         };
     }
 
@@ -213,9 +215,11 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .chest = .{ .solid = true, .blind = false, .ground = .grass, .halts = true, .opens = .chest_open },
     .chest_open = DECOR,
     .swamp_tree = .{ .solid = true, .blind = true, .ground = .dirt },
+    .large_tree = TALL_PROP,
 });
 
 fn tilesWhere(comptime has: fn (Tile) bool) std.EnumSet(Tile) {
+    @setEvalBranchQuota(10_000);
     var set = std.EnumSet(Tile).initEmpty();
     for (std.enums.values(Tile)) |t| set.setPresent(t, has(t));
     return set;

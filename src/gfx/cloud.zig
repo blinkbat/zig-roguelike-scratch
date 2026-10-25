@@ -28,7 +28,7 @@ fn tintOf(volume: u16) f32 {
 }
 
 const Shade = struct { shader: rl.Shader, time: i32 };
-const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, origin: i32, cell: i32, screen: i32, ink: i32, texel: i32, strength: i32 };
+const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, origin: i32, cell: i32, screen: i32, ink: i32, texel: i32, strength: i32, hero: i32, hidden: i32 };
 
 pub const Cloud = struct {
     tint: [grid.CELLS]f32,
@@ -124,11 +124,16 @@ pub const Cloud = struct {
     }
 
     pub fn beginVeil(self: *const Cloud, ink: rl.Color, focus: look.Focused) bool {
+        return self.beginOccludedVeil(ink, focus, .{});
+    }
+
+    pub fn beginOccludedVeil(self: *const Cloud, ink: rl.Color, focus: look.Focused, occlusion: look.Occlusion) bool {
         if (!self.visible) return false;
         const tex = self.tex orelse return false;
         const s = self.veil orelse return false;
         rl.beginShaderMode(s.shader);
         focus.set(s.shader, s.texel, s.strength);
+        occlusion.set(s.shader, s.hero, s.hidden);
         shaders.setUniform(s.shader, s.time, self.t.at());
         shaders.setMapView(s, self.map_view);
         const rgb: [3]f32 = look.rgbOf(ink);
@@ -243,11 +248,11 @@ const CLOUD_FS = shaders.FS_HEAD ++ look.FOCUS_WEIGHTS ++ CLOUD_NOISE ++
     \\}
 ;
 
-const VEIL_FS = shaders.FS_HEAD ++ look.FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ CLOUD_NOISE ++ shaders.glslConsts(.{ .FIGURE_SHARE = FIGURE_SHARE }) ++
+const VEIL_FS = shaders.FS_HEAD ++ look.FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ look.OCCLUSION_FS ++ CLOUD_NOISE ++ shaders.glslConsts(.{ .FIGURE_SHARE = FIGURE_SHARE }) ++
     \\uniform sampler2D cloud;
     \\uniform vec3 ink;
     \\void main() {
-    \\    float a = focused().a * fragColor.a;
+    \\    float a = focused().a * fragColor.a * occlusionAt(cellAtFrag());
     \\    if (a < CLEAR_A) discard;
     \\    vec4 gas = cloudAt(cloud, cellAtFrag());
     \\    finalColor = vec4(gas.rgb * ink, gas.a * a * FIGURE_SHARE);

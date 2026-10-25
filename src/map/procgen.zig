@@ -30,7 +30,7 @@ const coast = @import("feature/coast.zig");
 
 const P = mathx.P;
 
-pub const MAX_FEATURES: usize = 6;
+pub const MAX_FEATURES: usize = 8;
 const FEATURE_STRIDE: u64 = @intFromEnum(carve.Salt.features);
 
 /// A base biome: `gen.around`'s rooms, or a module with `Params`, `shape` and `palette`.

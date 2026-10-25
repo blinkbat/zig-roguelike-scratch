@@ -55,7 +55,9 @@ const BONES_GAP: i32 = 12;
 const BONES_RANK = "Level {d} {s}" ++ menu.SEP ++ "Renown {d}";
 const CHOOSE_MAP = "CHOOSE A MAP";
 const CHOOSE_HERO = "CHOOSE A HERO";
-const DELETE_W: f32 = 188;
+const SAVE_ROW_H: i32 = 68;
+const SAVE_DETAIL_Y: i32 = 36;
+const DELETE_W: f32 = 180;
 const DELETE_INSET: f32 = 2;
 
 fn mainLabel(r: MainRow) [:0]const u8 {
@@ -63,13 +65,15 @@ fn mainLabel(r: MainRow) [:0]const u8 {
 }
 
 fn saveRowBox(screen: mathx.P, i: usize) rl.Rectangle {
-    return menu.rowBox(screen, .{ .from = 0, .len = save.SLOTS }, i);
+    const width = menu.listWidth(screen);
+    return raster.rect(@divTrunc(screen.x - width, 2), @divTrunc(screen.y - SAVE_ROW_H * @as(i32, save.SLOTS), 2) + @as(i32, @intCast(i)) * SAVE_ROW_H, width, SAVE_ROW_H);
 }
 
 fn saveDeleteBox(screen: mathx.P, i: usize) rl.Rectangle {
     const row = saveRowBox(screen, i);
     const width = @min(DELETE_W, row.width / 2);
-    return .{ .x = row.x + row.width - width, .y = row.y + DELETE_INSET, .width = width, .height = row.height - 2 * DELETE_INSET };
+    const height: f32 = @floatFromInt(menu.ACTION_BOX.y);
+    return .{ .x = row.x + row.width - width - DELETE_INSET, .y = row.y + (row.height - height) / 2, .width = width, .height = height };
 }
 
 const App = struct {
@@ -188,16 +192,23 @@ const App = struct {
         menu.pageHeading(g.face, g.screen, comptime menu.caps(menu.named(MainRow.load)), menu.titleY(first));
         var line: [LINE]u8 = undefined;
         var fit: [LINE + 1]u8 = undefined;
+        const last = saveRowBox(g.screen, save.SLOTS - 1);
+        rl.drawRectangleRec(.{ .x = first.x, .y = first.y, .width = first.width, .height = last.y + last.height - first.y }, look.CARD_BG);
         for (&app.list, 0..) |*slot, i| {
             const row = saveRowBox(g.screen, i);
             const remove = saveDeleteBox(g.screen, i);
             const on = app.loads.at == i;
             if (on) rl.drawRectangleRec(.{ .x = row.x, .y = row.y, .width = remove.x - row.x - menu.ACTION_GAP, .height = row.height }, look.PICK_BG);
             const text = g.face.fit(&fit, slotLine(slot, &line, i), menu.ROW, @as(i32, @intFromFloat(remove.x - row.x)) - 2 * menu.ACTION_GAP, false);
-            g.face.text(text, @as(i32, @intFromFloat(row.x)) + menu.ACTION_GAP, menu.rowTextY(row), menu.ROW, if (on) look.UI_FOCUS else look.DIM);
+            const x = @as(i32, @intFromFloat(row.x)) + menu.ACTION_GAP;
+            g.face.text(text, x, @as(i32, @intFromFloat(row.y)) + 4, menu.ROW, if (on) look.UI_FOCUS else look.DIM);
+            if (slotDetails(slot, &line)) |detail| {
+                const fitted = g.face.fit(&fit, detail, font.SMALL, @as(i32, @intFromFloat(remove.x - row.x)) - 2 * menu.ACTION_GAP, false);
+                g.face.text(fitted, x, @as(i32, @intFromFloat(row.y)) + SAVE_DETAIL_Y, font.SMALL, look.DIM);
+            }
             if (slot.* != .empty) menu.action(&g.face, remove, prompt_icon.Prompt.menuOf(&g.st, DELETE), if (app.armed == i) "Delete it?" else "Delete save");
         }
-        menu.mid(g.face, g.screen, app.note.text(), menu.noteY(first, save.SLOTS), menu.NOTE, look.DIM);
+        menu.mid(g.face, g.screen, app.note.text(), @as(i32, @intFromFloat(last.y + last.height)) + 24, menu.NOTE, look.DIM);
     }
 
     fn slotFree(app: *App) bool {
@@ -572,13 +583,20 @@ fn boneLine(e: *const ossuary.Entry, buf: *[LINE]u8, i: usize) []const u8 {
 }
 
 fn slotLine(s: *const save.Slot, buf: *[LINE]u8, i: usize) [:0]const u8 {
-    var sum: [LINE]u8 = undefined;
     const what: []const u8 = switch (s.*) {
         .empty => "Empty",
-        .unreadable => |why| why.caption(),
-        .run => |*r| r.line(&sum),
+        .unreadable => "Unavailable",
+        .run => |*r| r.name.text(),
     };
     return std.fmt.bufPrintZ(buf, "{d}" ++ menu.SEP ++ "{s}", .{ save.number(i), what }) catch "";
+}
+
+fn slotDetails(s: *const save.Slot, buf: *[LINE]u8) ?[:0]const u8 {
+    return switch (s.*) {
+        .empty => null,
+        .unreadable => |why| std.fmt.bufPrintZ(buf, "{s}", .{why.caption()}) catch "",
+        .run => |*r| r.details(buf),
+    };
 }
 
 /// About half the spotlight's way from one hero to the next.
@@ -776,6 +794,7 @@ pub const HEADLESS = [_]Headless{
     .{ .flag = "--shot-editor", .body = shots.shootEditor },
     .{ .flag = "--shot-debug", .body = shots.shootDebug },
     .{ .flag = "--shot-cinema", .body = shots.shootCinema },
+    .{ .flag = "--shot-trees", .body = shots.shootTrees },
     .{ .flag = "--bench", .body = shots.benchWalk, .startup_shown = true },
 };
 

@@ -32,7 +32,7 @@ pub fn visible(ed: *const editor.Editor, c: rl.Rectangle) grid.Box {
 fn drawCells(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) void {
     var beds: dual.Beds = undefined;
     beds.fill(&ed.lv, v.lo, v.hi, false);
-    g.sprites.drawGround(&beds, ed.origin(c), ed.px(), null);
+    g.sprites.drawGround(&ed.lv, &beds, ed.origin(c), ed.px(), null);
     var cells = grid.Cells.of(v.lo, v.hi);
     while (cells.next()) |p| {
         const r = ed.cellRect(c, p);
@@ -40,7 +40,7 @@ fn drawCells(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) vo
         if (look.glyphGround(here, &g.sprites)) editor.tileGlyph(g, here, r);
         if (!look.standsOver(here)) continue;
         if (g.sprites.tileAt(&ed.lv, p)) |t| {
-            editor.sprite(t, r);
+            raster.stretch(t, look.tileRect(here, t, r), look.LIT);
             continue;
         }
         if (look.tileBg(here) orelse if (here == .wall) look.BARE_WALL else null) |bg| rl.drawRectangleRec(r, bg);
@@ -201,7 +201,7 @@ pub fn ghostInk(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, t: gri
 }
 
 fn ghostTile(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
-    if (g.sprites.tileOf(t, .{})) |tex| return raster.stretch(tex, r, GHOST);
+    if (g.sprites.tileOf(t, .{})) |tex| return raster.stretch(tex, look.tileRect(t, tex, r), GHOST);
     rl.drawRectangleRec(r, look.fade(panel.bareBg(t), GHOST_A));
 }
 

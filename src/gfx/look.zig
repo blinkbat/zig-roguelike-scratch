@@ -37,6 +37,7 @@ const Shadow = enum { silhouette, canopy };
 const STANDS = std.EnumArray(grid.Tile, ?Shadow).initDefault(@as(?Shadow, null), .{
     .shrub = .canopy,
     .swamp_tree = .canopy,
+    .large_tree = .canopy,
     .tiny_shrub = .canopy,
     .boulder = .silhouette,
     .fungus = .silhouette,
@@ -69,6 +70,41 @@ pub fn canopied(t: grid.Tile) bool {
     return STANDS.get(t) == .canopy;
 }
 
+pub fn tall(t: grid.Tile) bool {
+    return t == .large_tree;
+}
+
+pub const OCCLUDED_A: f32 = 0.4;
+
+pub const Occlusion = struct {
+    hero: [2]f32 = .{ 0, 0 },
+    hidden: f32 = 0,
+
+    pub fn set(self: Occlusion, shader: rl.Shader, hero: i32, hidden: i32) void {
+        shaders.setUniform(shader, hero, self.hero);
+        shaders.setUniform(shader, hidden, self.hidden);
+    }
+};
+
+pub const OCCLUSION_FS = shaders.glslConsts(.{ .OCCLUDED_A = OCCLUDED_A, .OCCLUSION_RADIUS = [2]f32{ 0.6, 0.85 }, .OCCLUSION_INNER = @as(f32, 0.35) }) ++
+    \\uniform vec2 hero;
+    \\uniform float hidden;
+    \\float occlusionAt(vec2 p) {
+    \\    float distance = length((p - hero) / OCCLUSION_RADIUS);
+    \\    float aperture = 1.0 - smoothstep(OCCLUSION_INNER, 1.0, distance);
+    \\    return mix(1.0, OCCLUDED_A, hidden * aperture);
+    \\}
+;
+
+pub fn occlusionAlpha(hidden: f32) f32 {
+    return mathx.lerpF(1, OCCLUDED_A, hidden);
+}
+
+pub fn tileRect(t: grid.Tile, tex: rl.Texture2D, cell: rl.Rectangle) rl.Rectangle {
+    const height = cell.width * @as(f32, @floatFromInt(tex.height)) / @as(f32, @floatFromInt(tex.width));
+    return .{ .x = cell.x, .y = cell.y + if (tall(t)) cell.height - height else (cell.height - height) / 2, .width = cell.width, .height = height };
+}
+
 /// Every sprite that throws a shadow from its feet: bodies, barrel, standing tiles, forest shapes and item bags.
 pub const FIGURES: usize = LIT_FIGURES + STANDING.len + WALL_MASKS.len + BAG_FIGURES;
 const BAG_FIGURES = 2;
@@ -81,6 +117,9 @@ pub const Assets = struct {
     wall: std.StaticBitSet(WALL_MASKS.len) = .initEmpty(),
     forest: std.StaticBitSet(WALL_MASKS.len) = .initEmpty(),
     grounds: ground.Grounds = .initEmpty(),
+    grass2: bool = false,
+    brush: bool = false,
+    flowers: bool = false,
     barrel: bool = false,
     item_bag: bool = false,
     chest_item_bag: bool = false,
@@ -91,6 +130,10 @@ pub const Assets = struct {
         var need = Assets{ .item_bag = true, .small_coins = true, .large_coins = true };
         for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
             const p = grid.Level.of(i);
+            if (grassDecor(t, p)) |decor| switch (decor) {
+                .brush => need.brush = true,
+                .flowers => need.flowers = true,
+            };
             need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
             need.chest_item_bag = need.chest_item_bag or t.isChest();
             if (t.opened()) |open| need.add(.{ .tile = open });
@@ -105,6 +148,7 @@ pub const Assets = struct {
     }
 
     fn bed(need: *Assets, g: ground.Ground) void {
+        need.grass2 = need.grass2 or g == .grass;
         if (GROUND_SHEETS.contains(g)) need.grounds.insert(g) else need.add(.{ .tile = g.tile() });
     }
 
@@ -191,9 +235,14 @@ pub const WaterView = struct {
 
 const WaterShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, depth: i32, visibility: i32, glints: i32, mirror: i32, memory: i32, mirrored: i32 };
 
+const SceneryShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, lightmap: i32, fogmap: i32, hero: i32, hidden: i32, texel: i32, strength: i32 };
+
 /// Needs a live GL context.
 pub const Sprites = struct {
     bodies: Bodies = .initFill(null),
+    grass2: ?rl.Texture2D = null,
+    brush: ?rl.Texture2D = null,
+    flowers: ?rl.Texture2D = null,
     barrel: ?rl.Texture2D = null,
     item_bag: ?rl.Texture2D = null,
     chest_item_bag: ?rl.Texture2D = null,
@@ -211,6 +260,7 @@ pub const Sprites = struct {
     log_fade: ?FadeShader = null,
     water: ?WaterShader = null,
     shine: ?ShineShader = null,
+    scenery: ?SceneryShader = null,
     mirror: ?rl.RenderTexture2D = null,
     mirror_memory: ?rl.RenderTexture2D = null,
 
@@ -220,6 +270,20 @@ pub const Sprites = struct {
         self.log_fade = shaders.program(FadeShader, FADE_FS);
         self.water = shaders.program(WaterShader, WATER_FS);
         self.shine = shaders.program(ShineShader, SHINE_FS);
+        self.scenery = shaders.program(SceneryShader, SCENERY_FS);
+    }
+
+    pub fn drawScenery(self: *const Sprites, tex: rl.Texture2D, dest: rl.Rectangle, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: Occlusion, focus: Focused) bool {
+        const s = self.scenery orelse return false;
+        rl.beginShaderMode(s.shader);
+        defer rl.endShaderMode();
+        shaders.setMapView(s, view);
+        occlusion.set(s.shader, s.hero, s.hidden);
+        focus.set(s.shader, s.texel, s.strength);
+        rl.setShaderValueTexture(s.shader, s.lightmap, lightmap);
+        rl.setShaderValueTexture(s.shader, s.fogmap, fogmap);
+        raster.stretch(tex, dest, LIT);
+        return true;
     }
 
     /// `t` again over itself at `dest`, as the band at `sweep` crosses it.
@@ -244,7 +308,10 @@ pub const Sprites = struct {
         }
     }
 
-    fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4) ?Piece {
+    fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4, p: mathx.P) ?Piece {
+        if (g == .grass and mask == ground.FULL and cellHash(0x62A552, p) % 3 == 0) {
+            if (self.grass2) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
+        }
         const tex = self.grounds.getPtrConst(g).* orelse return null;
         const at = ground.CELL_OF[mask];
         return .{ .tex = tex, .src = sheetCell(at.x, at.y) };
@@ -258,7 +325,7 @@ pub const Sprites = struct {
     }
 
     /// Draw lowest layers first; `origin` is cell (0, 0)'s top-left and `px` is pixels per cell.
-    pub fn drawGround(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
+    pub fn drawGround(self: *const Sprites, lv: *const grid.Level, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
         const sheeted = self.sheets();
         for (ground.LAYERS) |gr| {
             if (!beds.shown.contains(gr)) continue;
@@ -277,7 +344,7 @@ pub const Sprites = struct {
                 const here = beds.pointAt(p);
                 if (!here.has(gr)) continue;
                 if (sheet) {
-                    const piece = self.groundPiece(gr, here.corners.mask(gr)) orelse continue;
+                    const piece = self.groundPiece(gr, here.corners.mask(gr), p) orelse continue;
                     const at = cellAt(origin, p, px);
                     raster.blit(piece.tex, piece.src, .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px }, LIT);
                     continue;
@@ -288,6 +355,19 @@ pub const Sprites = struct {
                     if (under_ & a.bit == 0) continue;
                     const toward: [2]f32 = .{ @floatFromInt(-a.d.x), @floatFromInt(-a.d.y) };
                     self.squarePart(gr.tile(), cellAt(origin, p.add(a.d), px), px, .{ toward[0] / 2, toward[1] / 2 }, 0.5);
+                }
+            }
+            if (gr == .grass) {
+                var cells = grid.Cells.of(beds.lo, beds.hi);
+                while (cells.next()) |p| {
+                    if (beds.ground(p) != .grass) continue;
+                    const decor = grassDecor(lv.at(p), p) orelse continue;
+                    const tex = (switch (decor) {
+                        .brush => self.brush,
+                        .flowers => self.flowers,
+                    }) orelse continue;
+                    const at = cellAt(origin, p, px);
+                    raster.stretch(tex, .{ .x = at[0], .y = at[1], .width = px, .height = px }, LIT);
                 }
             }
         }
@@ -495,6 +575,7 @@ const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const
     .reeds = @embedFile("reeds.png"),
     .shrub = @embedFile("shrub.png"),
     .swamp_tree = @embedFile("swamp-tree.png"),
+    .large_tree = @embedFile("large-tree.png"),
     .tiny_shrub = @embedFile("tiny-shrub.png"),
     .boulder = @embedFile("boulder.png"),
     .fungus = @embedFile("tall-shroom.png"),
@@ -506,6 +587,7 @@ const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const
 
 comptime {
     std.debug.assert(TILE_PNGS.get(.wall) == null);
+    std.debug.assert(std.meta.eql(pngSize(TILE_PNGS.get(.large_tree).?), mathx.P{ .x = SPRITE_PX, .y = 2 * SPRITE_PX }));
     for (STANDING) |t| {
         if (TILE_PNGS.get(t) == null) @compileError("a standing tile casts from its picture: " ++ @tagName(t));
     }
@@ -518,6 +600,9 @@ const SOURCES = .{
     .bodies = BODY_PNGS,
     .tiles = TILE_PNGS,
     .grounds = GROUND_PNGS,
+    .grass2 = @as([]const u8, @embedFile("grass2.png")),
+    .brush = @as([]const u8, @embedFile("brush.png")),
+    .flowers = @as([]const u8, @embedFile("flowers.png")),
     .barrel = @as([]const u8, @embedFile("barrel.png")),
     .item_bag = @as([]const u8, @embedFile("item-bag.png")),
     .chest_item_bag = @as([]const u8, @embedFile("chest-item-bag.png")),
@@ -540,6 +625,17 @@ comptime {
 /// One lone shrub in this many is a forest clump, the rest `shrub.png`; which ones by a hash of the cell.
 const LONE_CLUMP_IN: u64 = 3;
 const LONE_CLUMP_SEED: u64 = 0xF02E57;
+
+const GrassDecor = enum { brush, flowers };
+
+fn grassDecor(t: grid.Tile, p: mathx.P) ?GrassDecor {
+    if (t != .grass) return null;
+    return switch (cellHash(0xB2754, p) % 20) {
+        0 => .brush,
+        1 => .flowers,
+        else => null,
+    };
+}
 
 fn loneClump(p: mathx.P) bool {
     return cellHash(LONE_CLUMP_SEED, p) % LONE_CLUMP_IN == 0;
@@ -683,6 +779,11 @@ pub fn inkTile(face: *const font.Face, t: grid.Tile, cx: i32, cy: i32, size: i32
     face.symbol(l.sym, l.ch, cx, cy, size, l.fg);
 }
 
+pub fn tile(t: grid.Tile) Look {
+    const l = TILES.getPtrConst(t);
+    return .{ .ch = l.ch, .fg = l.fg };
+}
+
 /// Under a tile's glyph where it has no sprite; null leaves the background.
 pub fn tileBg(t: grid.Tile) ?rl.Color {
     return TILES.getPtrConst(t).bg;
@@ -694,7 +795,7 @@ pub fn under(t: grid.Tile) ?grid.Tile {
 }
 
 /// Tree crowns: ground the light shades beneath them, and the atmosphere's shafts fall between.
-const CROWNS = std.EnumSet(grid.Tile).init(.{ .shrub = true, .swamp_tree = true });
+const CROWNS = std.EnumSet(grid.Tile).init(.{ .shrub = true, .swamp_tree = true, .large_tree = true });
 /// Scenery depth of field softens: the crowns and the small plants.
 pub const SOFTENED = CROWNS.unionWith(grid.LITTER_TILES);
 
@@ -754,6 +855,7 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .chest = .{ .sym = "C", .ch = 'C', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = rgb(0x66502b) },
     .chest_open = .{ .sym = "O", .ch = 'O', .fg = rgb(0x96724d), .bg = null, .mini = rgb(0x96724d), .mini_dim = rgb(0x443422) },
     .swamp_tree = .{ .sym = "S", .ch = 'S', .fg = rgb(0x788650), .bg = null, .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) },
+    .large_tree = .{ .sym = "L", .ch = 'L', .fg = rgb(0x788650), .bg = null, .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) },
 });
 
 comptime {
@@ -847,7 +949,11 @@ pub const MAGIC = WARD;
 pub const RARE = rgb(0xe8d15a);
 
 pub fn itemInk(rarity: items.Rarity) rl.Color {
-    return switch (rarity) { .normal => rl.Color.white, .magic => MAGIC, .rare => RARE };
+    return switch (rarity) {
+        .normal => rl.Color.white,
+        .magic => MAGIC,
+        .rare => RARE,
+    };
 }
 const AIM_AREA_A: f32 = 0.24;
 pub const RETICLE = rgb(0xe8c25a);
@@ -954,6 +1060,20 @@ pub const VALUE_NOISE_FS =
 ;
 
 const FadeShader = struct { shader: rl.Shader, bounds: i32, minimum: i32 };
+const SCENERY_FS = shaders.FS_HEAD ++ FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ OCCLUSION_FS ++ shaders.glslConsts(.{ .FOG_RGB = rgbOf(FOG) }) ++
+    \\uniform sampler2D lightmap;
+    \\uniform sampler2D fogmap;
+    \\void main() {
+    \\    vec2 p = cellAtFrag();
+    \\    if (!insideMap(p)) discard;
+    \\    vec2 uv = p / CELLS;
+    \\    vec4 art = focused();
+    \\    vec3 lit = texture(lightmap, uv).rgb * 2.0;
+    \\    vec3 fog = FOG_RGB * texture(fogmap, uv).a;
+    \\    finalColor = vec4(art.rgb / max(art.a, 0.0001) * lit + fog, art.a * occlusionAt(p));
+    \\}
+;
+
 const FADE_FS = shaders.FS_HEAD ++
     \\uniform vec2 bounds;
     \\uniform float minimum;

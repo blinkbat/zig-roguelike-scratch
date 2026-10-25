@@ -51,6 +51,10 @@ tile swamp_tree
 on dirt
 amount 180
 water_range 3
+feature scatter
+tile large_tree
+on grass
+amount 8
 name The Strand
 at 0 0
 door 95 32

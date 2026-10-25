@@ -150,15 +150,20 @@ pub const Cinema = struct {
     }
 
     pub fn beginFocus(self: *Cinema, t: grid.Tile, tex: rl.Texture2D, at: [2]f32, hero: ?[2]f32) ?Focused {
-        if (!self.options.depth_of_field) return null;
-        const strength = focusStrength(t, at, hero);
-        if (strength <= 0) return null;
-        const f = self.focus orelse return null;
-        const size = raster.sizeOf(tex);
-        const focused = Focused{ .texel = .{ 1 / size[0], 1 / size[1] }, .strength = strength };
+        const focused = self.focusOf(t, tex, at, hero) orelse return null;
+        const f = self.focus.?;
         rl.beginShaderMode(f.shader);
         focused.set(f.shader, f.texel, f.strength);
         return focused;
+    }
+
+    pub fn focusOf(self: *const Cinema, t: grid.Tile, tex: rl.Texture2D, at: [2]f32, hero: ?[2]f32) ?Focused {
+        if (!self.options.depth_of_field) return null;
+        const strength = focusStrength(t, at, hero);
+        if (strength <= 0) return null;
+        if (self.focus == null) return null;
+        const size = raster.sizeOf(tex);
+        return Focused{ .texel = .{ 1 / size[0], 1 / size[1] }, .strength = strength };
     }
 
     pub fn drawAir(self: *Cinema, l: *light.Light, origin: [2]f32, cell: f32, screen: mathx.P) void {

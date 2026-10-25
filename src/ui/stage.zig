@@ -135,6 +135,13 @@ pub fn beside(sprites: *const look.Sprites, k: actor.Kind, box: rl.Rectangle, sc
     figure(sprites, k, feet, scale, 1);
 }
 
+pub fn besideBounds(box: rl.Rectangle, screen: mathx.P) rl.Rectangle {
+    const size: f32 = @floatFromInt(look.SPRITE_PX * scaleFor(screen));
+    const cx = box.x - @as(f32, @floatFromInt(BESIDE_GAP)) - size / 2;
+    const feet = box.y + box.height;
+    return .{ .x = cx - size * POOL_RX, .y = feet - size - @as(f32, @floatFromInt(BEAM_ABOVE)), .width = size * POOL_RX * 2, .height = size * (1 + POOL_RY) + @as(f32, @floatFromInt(BEAM_ABOVE)) };
+}
+
 const Layout = struct {
     scale: i32,
     size: i32,

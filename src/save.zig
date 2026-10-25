@@ -136,6 +136,7 @@ const UNSAVED = .{
         "queue",
     },
     .pic = .{
+        "occlusion",
         "glide",
         "turning",
         "pictured",
@@ -215,10 +216,10 @@ pub const Summary = struct {
     node: ?usize,
     place: atlas.Label = .{},
 
-    pub fn line(self: *const Summary, buf: []u8) [:0]const u8 {
+    pub fn details(self: *const Summary, buf: []u8) [:0]const u8 {
         var at: [atlas.TITLE_MAX]u8 = undefined;
         const where = if (self.node) |n| atlas.titleOf(self.place.text(), n, &at) else "a generated floor";
-        return std.fmt.bufPrintZ(buf, "{s}" ++ menu.SEP ++ hero.HP_FMT ++ menu.SEP ++ hero.GOLD_FMT ++ menu.SEP ++ "{s}", .{ self.name.text(), self.hp, self.max, self.gold, where }) catch "";
+        return std.fmt.bufPrintZ(buf, hero.HP_FMT ++ menu.SEP ++ hero.GOLD_FMT ++ menu.SEP ++ "{s}", .{ self.hp, self.max, self.gold, where }) catch "";
     }
 };
 
@@ -679,7 +680,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqualStrings("A line to keep.", back.sim.log.line(0).?);
     const s = try peek(buf.items);
     var line: [menu.NOTE_MAX]u8 = undefined;
-    try std.testing.expectEqualStrings("Arwen" ++ menu.SEP ++ comptime std.fmt.comptimePrint(hero.HP_FMT, .{ 19, actor.row(actor.HERO).hp }) ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.line(&line));
+    try std.testing.expectEqualStrings(comptime std.fmt.comptimePrint(hero.HP_FMT, .{ 19, actor.row(actor.HERO).hp }) ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.details(&line));
     const at = HEAD + @offsetOf(Summary, "node");
     buf.items[at + @sizeOf(usize)] +%= 2;
     try std.testing.expectError(error.Damaged, peek(buf.items));
@@ -692,7 +693,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
 }
 
 /// Changes only when the saved types, their names or order, the passive tree or Zig's version do; old saves then stop loading.
-const RECORDED_FINGERPRINT: Print = 0x41833e2139f703fb;
+const RECORDED_FINGERPRINT: Print = 0x2d1c39b5a4cbd50b;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
     game.beginMapAt(g, w, w.start, 7);

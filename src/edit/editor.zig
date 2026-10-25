@@ -2207,7 +2207,10 @@ pub fn pictureIn(r: rl.Rectangle, size: f32, top: f32) rl.Rectangle {
 }
 
 pub fn sprite(t: rl.Texture2D, r: rl.Rectangle) void {
-    raster.stretch(t, r, look.LIT);
+    const scale = @min(r.width / @as(f32, @floatFromInt(t.width)), r.height / @as(f32, @floatFromInt(t.height)));
+    const width = @as(f32, @floatFromInt(t.width)) * scale;
+    const height = @as(f32, @floatFromInt(t.height)) * scale;
+    raster.stretch(t, .{ .x = r.x + (r.width - width) / 2, .y = r.y + (r.height - height) / 2, .width = width, .height = height }, look.LIT);
 }
 
 pub fn figure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, r: rl.Rectangle) void {

@@ -7,6 +7,7 @@ const raster = @import("../gfx/raster.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
 const hero = @import("../play/hero.zig");
+const stage = @import("stage.zig");
 
 const LETTERS = [_][]const u8{ "ABCDEFGHIJKLM", "NOPQRSTUVWXYZ", "abcdefghijklm", "nopqrstuvwxyz" };
 const Key = union(enum) { ch: u8, space, rub, done };
@@ -26,22 +27,34 @@ const KEY = menu.ROW;
 const KEY_W: i32 = 38;
 const KEY_H = menu.ROW_STEP;
 const WIDE_W: i32 = KEY_W * 4;
-const TITLE_DY: i32 = -198;
-const FIELD_DY: i32 = -130;
-const GRID_DY: i32 = -62;
+const FIELD_Y: i32 = 68;
+const GRID_Y: i32 = 136;
+const GRID_W: i32 = @max(@as(i32, COLS) * KEY_W, @as(i32, LAST.len) * WIDE_W);
+const CONTENT_H: i32 = GRID_Y + @as(i32, ROWS) * KEY_H;
 const CARET = menu.CARET;
 const AT_DONE = Entry{ .row = ROWS - 1, .col = DONE_AT };
 
 fn keyBox(screen: mathx.P, row: usize, col: usize) rl.Rectangle {
     const width: i32 = if (row < LETTERS.len) KEY_W else WIDE_W;
     const count: i32 = @intCast(Entry.width(row));
-    return raster.rect(@divTrunc(screen.x - count * width, 2) + @as(i32, @intCast(col)) * width, @divTrunc(screen.y, 2) + GRID_DY + @as(i32, @intCast(row)) * KEY_H, width, KEY_H);
+    const content = contentBox(screen);
+    return raster.rect(@as(i32, @intFromFloat(content.x)) + @divTrunc(GRID_W - count * width, 2) + @as(i32, @intCast(col)) * width, @as(i32, @intFromFloat(content.y)) + GRID_Y + @as(i32, @intCast(row)) * KEY_H, width, KEY_H);
+}
+
+fn contentBox(screen: mathx.P) rl.Rectangle {
+    const column = raster.rect(0, 0, GRID_W, CONTENT_H);
+    const body = stage.besideBounds(raster.rect(0, GRID_Y, GRID_W, @as(i32, ROWS) * KEY_H), screen);
+    const left = @min(column.x, body.x);
+    const top = @min(column.y, body.y);
+    const right = @max(column.x + column.width, body.x + body.width);
+    const bottom = @max(column.y + column.height, body.y + body.height);
+    return .{ .x = @round((@as(f32, @floatFromInt(screen.x)) - (right - left)) / 2 - left), .y = @round((@as(f32, @floatFromInt(screen.y)) - (bottom - top)) / 2 - top), .width = column.width, .height = column.height };
 }
 
 /// The letter grid's bounds: its widest rows across, every row down.
 pub fn gridBox(screen: mathx.P) rl.Rectangle {
-    const width = @max(@as(i32, COLS) * KEY_W, @as(i32, LAST.len) * WIDE_W);
-    return raster.rect(@divTrunc(screen.x - width, 2), @divTrunc(screen.y, 2) + GRID_DY, width, @as(i32, ROWS) * KEY_H);
+    const content = contentBox(screen);
+    return .{ .x = content.x, .y = content.y + GRID_Y, .width = GRID_W, .height = @as(i32, ROWS) * KEY_H };
 }
 
 pub const Outcome = enum { done, back };
@@ -132,10 +145,13 @@ pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
 /// On the keyboard Enter is done, so Done is what is focused.
 pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8, device: input.Device) void {
     const at = if (device == .keys and !e.pointer_selected) AT_DONE else e.*;
-    const mid = @divTrunc(screen.y, 2);
-    menu.pageHeading(face, screen, title, mid + TITLE_DY);
+    const content = contentBox(screen);
+    rl.beginMode2D(.{ .target = .{ .x = 0, .y = 0 }, .offset = .{ .x = content.x, .y = content.y }, .rotation = 0, .zoom = 1 });
+    const column = mathx.P{ .x = GRID_W, .y = CONTENT_H };
+    menu.pageHeading(face, column, title, 0);
     var buf: [hero.Name.MAX + CARET.len + 1]u8 = undefined;
-    menu.mid(face, screen, std.fmt.bufPrintZ(&buf, "{s}" ++ CARET, .{e.name.text()}) catch "", mid + FIELD_DY, FIELD, look.UI_FOCUS);
+    menu.mid(face, column, std.fmt.bufPrintZ(&buf, "{s}" ++ CARET, .{e.name.text()}) catch "", FIELD_Y, FIELD, look.UI_FOCUS);
+    rl.endMode2D();
     for (0..ROWS) |r| {
         for (0..Entry.width(r)) |c| {
             const box = keyBox(screen, r, c);
@@ -159,18 +175,20 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
 }
 
 test "mouse naming types letters spaces deletes and finishes with keyboard hints active" {
-    const screen = @import("../core/window.zig").SCREEN_720;
-    var e = Entry{};
-    const keys = [_][2]usize{ .{ 0, 0 }, .{ 2, 1 }, .{ 4, 0 }, .{ 0, 2 }, .{ 4, 1 } };
-    for (keys) |k| {
-        const st = input.State{ .device = .keys, .click = true, .pointer = raster.middleAt(keyBox(screen, k[0], k[1])) };
-        try std.testing.expectEqual(@as(?Outcome, null), e.stepAt(&st, screen));
+    const screens = @import("../core/window.zig").SCREENS;
+    for (screens) |screen| {
+        var e = Entry{};
+        const keys = [_][2]usize{ .{ 0, 0 }, .{ 2, 1 }, .{ 4, 0 }, .{ 0, 2 }, .{ 4, 1 } };
+        for (keys) |k| {
+            const st = input.State{ .device = .keys, .click = true, .pointer = raster.middleAt(keyBox(screen, k[0], k[1])) };
+            try std.testing.expectEqual(@as(?Outcome, null), e.stepAt(&st, screen));
+        }
+        try std.testing.expectEqualStrings("Ab ", e.name.text());
+        try std.testing.expectEqual(@as(?Outcome, .done), e.stepAt(&.{ .device = .keys, .click = true, .pointer = raster.middleAt(keyBox(screen, AT_DONE.row, AT_DONE.col)) }, screen));
+        try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .right_click = true }, screen));
+        try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .click = true, .pointer = raster.middleAt(menu.footerBox(screen, false)) }, screen));
     }
-    try std.testing.expectEqualStrings("Ab ", e.name.text());
-    try std.testing.expectEqual(@as(?Outcome, .done), e.stepAt(&.{ .device = .keys, .click = true, .pointer = raster.middleAt(keyBox(screen, AT_DONE.row, AT_DONE.col)) }, screen));
-    try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .right_click = true }, screen));
-    try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .click = true, .pointer = raster.middleAt(menu.footerBox(screen, false)) }, screen));
-    std.debug.print("mouse naming: five text edits, Done with keyboard prompts, both back controls\n", .{});
+    std.debug.print("mouse naming: five text edits, Done with keyboard prompts and both back controls at {d} resolutions\n", .{screens.len});
 }
 
 test "the grid types a name, the keyboard types into it, and done waits for a name" {

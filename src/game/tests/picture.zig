@@ -20,6 +20,40 @@ const glide = @import("../glide.zig");
 const P = mathx.P;
 const HERO = actor.HERO;
 
+test "large tree boughs fade with the pictured hero and only their base blocks" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const behind = P{ .x = 20, .y = 20 };
+    const base = P{ .x = 20, .y = 21 };
+    harness.arena(g, behind, &.{});
+    harness.grassOver(&g.sim.lv);
+    g.sim.lv.set(base, .large_tree);
+    game.settle(g);
+    const i = grid.Level.idx(base);
+    try std.testing.expect(g.sim.lv.walkable(behind));
+    try std.testing.expect(!g.sim.lv.walkable(base) and g.sim.lv.at(base).blind());
+    try std.testing.expect(look.Assets.of(&g.sim.lv).tiles.contains(.large_tree));
+    g.pic.ease(&g.sim, 0);
+    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
+    g.pic.ease(&g.sim, 0.04);
+    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 1);
+    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    try std.testing.expect(g.pic.occlusion[i] > 0.99);
+    const hero = g.sim.heroSlot().?;
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 22, .y = 20 });
+    g.pic.ease(&g.sim, 0.04);
+    try std.testing.expect(g.pic.occlusion[i] > 0.99);
+    g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
+    g.pic.ease(&g.sim, 0.04);
+    try std.testing.expect(g.pic.occlusion[i] > 0 and g.pic.occlusion[i] < 0.99);
+    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    try std.testing.expect(g.pic.occlusion[i] < 0.01);
+    g.pic.occlusion[i] = 1;
+    game.settle(g);
+    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
+    std.debug.print("large tree: base-only collision, picture-based fade and restoration, idle easing and map reset checked\n", .{});
+}
+
 test "collected coins stay drawn only until the collection step finishes" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

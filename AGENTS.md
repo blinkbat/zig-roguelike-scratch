@@ -69,6 +69,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - `--shot-editor` captures editor workspaces and text/modal states at 720p, 1080p and 1440p; use the same temporary-directory procedure.
 - `--shot-debug` captures each Debug submenu at 720p and loot states, and verifies that the six additional
   lighting/water/weather switches change pixels and restore the exact frame when re-enabled.
+- `--shot-trees` captures two-cell tree height, wall adjacency, smooth hero occlusion and front/behind depth;
+  use the same temporary-directory procedure. Tall trees occupy only their bottom cell; unsaved fading
+  uses a soft aperture around the pictured hero, shared by scenery and gas, preserving the lower trunk.
 - Inspect actual headless PNGs. `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,
   maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
   `water-reflections/00.png` through `39.png` cover four seconds of idle play; `water-mirrors-*.png`
@@ -368,6 +371,6 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   existing tone and `assets/backup/` before applying it again.
 - `build.zig` embeds top-level PNG/TTF/TXT files in `assets/` by filename (`@embedFile`,
   `@import("assets").names`), including controller mappings. Maps/saves still use the working directory.
-  Register body/tile PNGs in `look.BODY_PNGS`/`TILE_PNGS`. Sprites are 64px, facing right; `Presentation.facing`
+  Register body/tile PNGs in `look.BODY_PNGS`/`TILE_PNGS`. Sprites are 64px wide; tall scenery retains its native height. Bodies face right; `Presentation.facing`
   mirrors leftward movement/strikes/aim and retains facing for vertical motion. `CELL` must be a whole
   multiple of 64, never fractional sprite scaling. Rebuild after installing assets.

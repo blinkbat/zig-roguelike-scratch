@@ -638,6 +638,69 @@ pub fn shootCinema(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/cinema/debug.png");
 }
 
+pub fn shootTrees(g: *game.Game) !void {
+    const target = try renderTarget(g);
+    defer rl.unloadRenderTexture(target);
+    try std.fs.cwd().makePath(SHOTS_DIR ++ "/trees");
+    game.harness.arena(g, .{ .x = 24, .y = 18 }, &.{});
+    game.harness.grassOver(&g.sim.lv);
+    const tree = P{ .x = 24, .y = 19 };
+    g.sim.lv.set(tree, .large_tree);
+    g.sim.lv.set(.{ .x = 27, .y = 19 }, .large_tree);
+    g.sim.lv.set(.{ .x = 22, .y = 24 }, .large_tree);
+    game.harness.wallRow(&g.sim.lv, 18, 26, 30);
+    studyLit(g, true, day.NOON);
+    g.st = .{};
+    try capture(g, target, SHOTS_DIR ++ "/trees/behind-opaque.png");
+    game.update(g, 0.04);
+    const partial = g.pic.occlusion[grid.Level.idx(tree)];
+    if (partial <= 0 or partial >= 1) return error.TreeFadeNotSmooth;
+    try capture(g, target, SHOTS_DIR ++ "/trees/behind-fading.png");
+    for (0..120) |_| game.update(g, mathx.TEST_DT);
+    if (g.pic.occlusion[grid.Level.idx(tree)] < 0.99) return error.TreeDidNotFade;
+    try capture(g, target, SHOTS_DIR ++ "/trees/behind-clear.png");
+    const hero = g.sim.heroSlot().?;
+    const still = g.pic.glide[hero];
+    g.pic.glide[hero] = still.toward(.{ .x = 25, .y = 18 }, game.GLIDE_S / 2);
+    try capture(g, target, SHOTS_DIR ++ "/trees/behind-midstep.png");
+    g.pic.glide[hero] = still;
+    var behind_gas = grid.Cells.of(.{ .x = 23, .y = 17 }, .{ .x = 26, .y = 21 });
+    while (behind_gas.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = 60;
+    g.cloud.settle(&g.sim.lv);
+    try capture(g, target, SHOTS_DIR ++ "/trees/behind-gas.png");
+    @memset(&g.sim.lv.gas, 0);
+    g.cloud.settle(&g.sim.lv);
+    g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
+    g.pic.glide[hero] = @import("glide.zig").Glide.rest(g.sim.heroActor().?);
+    game.update(g, 0.04);
+    const restoring = g.pic.occlusion[grid.Level.idx(tree)];
+    if (restoring <= 0 or restoring >= 0.99) return error.TreeRestoreNotSmooth;
+    try capture(g, target, SHOTS_DIR ++ "/trees/front-restoring.png");
+    for (0..120) |_| game.update(g, mathx.TEST_DT);
+    if (g.pic.occlusion[grid.Level.idx(tree)] > 0.01) return error.TreeDidNotRestore;
+    try capture(g, target, SHOTS_DIR ++ "/trees/front-opaque.png");
+    var gassed = grid.Cells.of(.{ .x = 21, .y = 17 }, .{ .x = 29, .y = 25 });
+    while (gassed.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = 60;
+    studyLit(g, false, NIGHT);
+    try capture(g, target, SHOTS_DIR ++ "/trees/night-gas.png");
+    g.cam.y = @as(f32, @floatFromInt(24 * game.CELL - g.screen.y + game.HALF_CELL));
+    try capture(g, target, SHOTS_DIR ++ "/trees/bough-at-screen-bottom.png");
+    @memset(&g.sim.lv.gas, 0);
+    studyLit(g, true, day.NOON);
+    game.prepare(g);
+    {
+        const tex = g.sprites.tiles.get(.large_tree) orelse return error.TreeTextureMissing;
+        g.sprites.tiles.set(.large_tree, null);
+        defer g.sprites.tiles.set(.large_tree, tex);
+        try capture(g, target, SHOTS_DIR ++ "/trees/glyph-fallback.png");
+    }
+    poseWaterMirrors(g, day.NOON, true);
+    g.sim.lv.set(.{ .x = 27, .y = 17 }, .large_tree);
+    studyLit(g, true, day.NOON);
+    try capture(g, target, SHOTS_DIR ++ "/trees/water-reflection.png");
+    std.debug.print("tall tree captures: native height, wall adjacency, smooth hiding/restoration and front/behind depth checked\n", .{});
+}
+
 /// The start map with its weather under way.
 fn loadStrand(g: *game.Game, w: *atlas.Atlas) !void {
     try w.load(std.heap.c_allocator, atlas.START);
@@ -1326,7 +1389,7 @@ fn poseHiddenShadows(g: *game.Game, hour: ?f32) void {
 fn waterSample(g: *game.Game, target: rl.RenderTexture2D, beds: *const dual.Beds, view: ?look.WaterView, origin: [2]f32) !rl.Image {
     rl.beginTextureMode(target);
     rl.clearBackground(rl.Color.blank);
-    g.sprites.drawGround(beds, origin, game.CELL_F, view);
+    g.sprites.drawGround(&g.sim.lv, beds, origin, game.CELL_F, view);
     rl.endTextureMode();
     return readTarget(target);
 }
@@ -1794,6 +1857,26 @@ pub fn benchWalk(g: *game.Game) !void {
     try benchEffects(g, target);
     poseWaterMirrors(g, day.NOON, true);
     std.debug.print("smooth water with mirrors and glints: {d:.3} ms mean draw over {d} frames\n", .{ try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
+    try benchGrass(g, target);
+}
+
+fn benchGrass(g: *game.Game, target: rl.RenderTexture2D) !void {
+    game.harness.arena(g, .{ .x = 24, .y = 20 }, &.{});
+    game.harness.grassOver(&g.sim.lv);
+    studyLit(g, true, day.NOON);
+    game.prepare(g);
+    const alt = g.sprites.grass2 orelse return error.GrassAlternateMissing;
+    defer g.sprites.grass2 = alt;
+    const varied = try meanDraw(g, target, 1, BENCH_DRAWS);
+    g.sprites.grass2 = null;
+    const plain = try meanDraw(g, target, 1, BENCH_DRAWS);
+    g.sprites.grass2 = alt;
+    const repeated = try meanDraw(g, target, 1, BENCH_DRAWS);
+    std.debug.print("flat grass: alternate {d:.3}/{d:.3} ms, plain {d:.3} ms mean draw over {d} frames\n", .{ varied, repeated, plain, BENCH_DRAWS });
+    for (0..8) |i| g.sim.lv.set(.{ .x = 20 + @as(i32, @intCast(i)), .y = 21 }, .large_tree);
+    studyLit(g, true, day.NOON);
+    game.prepare(g);
+    std.debug.print("flat grass with 8 tall trees: {d:.3} ms mean draw over {d} frames\n", .{ try meanDraw(g, target, 1, BENCH_DRAWS), BENCH_DRAWS });
 }
 
 fn benchEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
