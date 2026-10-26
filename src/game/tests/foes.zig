@@ -180,7 +180,7 @@ test "thorns respects armour splits slimes and coexists with unyielding counters
         const debt = g.pic.owed[actor.Pool.slot(rat)];
         if (debt.thorns != null and debt.reaction != null) {
             counters += 1;
-            try std.testing.expect(debt.thorns.?.after.body.hp > debt.reaction.?.hit.after.?.body.hp);
+            try std.testing.expect(debt.thorns.?.after.body.hp > debt.reaction.?.hit.?.after.?.body.hp);
             g.pic.lead = 0;
             g.pic.stepGlide(&g.sim, g.cloud, 0);
             harness.drawnOut(g);

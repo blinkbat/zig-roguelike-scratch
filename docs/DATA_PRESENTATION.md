@@ -80,8 +80,8 @@ Names and headings use Balthazar; compact text at 18px and below uses Source San
 Item cards share a left edge, group hand/scaling metadata on one small line, keep requirement
 availability inline, and use 22px property rows. Metadata and flavor use 17px text; primary
 effects stay 18px. Requirement errors follow the actual card height. The character sheet groups
-critical chances, recovery and point pools; only active elemental bonuses appear. The binding
-picker has its own labeled strip, clear of both skill-set labels, and left-aligned details.
+critical chances and point pools; Advanced includes recovery and all elemental bonuses, with zeros dimmed.
+The binding picker has its own labeled strip, clear of both skill-set labels, and left-aligned details.
 
 The worn Leather cap remains a separate, much shorter card. This preserves the
 objects' identities and shows the real equipping blocker. Selected and equipped cards

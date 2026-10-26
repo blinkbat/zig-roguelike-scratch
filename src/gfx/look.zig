@@ -1064,7 +1064,7 @@ pub const VALUE_NOISE_FS =
 ;
 
 const FadeShader = struct { shader: rl.Shader, bounds: i32, minimum: i32 };
-const SCENERY_FS = shaders.FS_HEAD ++ FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ OCCLUSION_FS ++ shaders.glslConsts(.{ .FOG_RGB = rgbOf(FOG) }) ++
+const SCENERY_FS = shaders.FS_HEAD ++ FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ OCCLUSION_FS ++ shaders.glslConsts(.{ .FOG_RGB = rgbOf(FOG), .OVERBRIGHT = @import("light.zig").OVERBRIGHT }) ++
     \\uniform sampler2D lightmap;
     \\uniform sampler2D fogmap;
     \\void main() {
@@ -1072,7 +1072,7 @@ const SCENERY_FS = shaders.FS_HEAD ++ FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ OCCLU
     \\    if (!insideMap(p)) discard;
     \\    vec2 uv = p / CELLS;
     \\    vec4 art = focused();
-    \\    vec3 lit = texture(lightmap, uv).rgb * 2.0;
+    \\    vec3 lit = texture(lightmap, uv).rgb * OVERBRIGHT;
     \\    vec3 fog = FOG_RGB * texture(fogmap, uv).a;
     \\    finalColor = vec4(art.rgb / max(art.a, 0.0001) * lit + fog, art.a * occlusionAt(p));
     \\}

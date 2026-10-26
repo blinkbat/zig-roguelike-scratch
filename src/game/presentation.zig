@@ -92,7 +92,7 @@ pub const Owed = struct {
     worn: ?fx.After = null,
     swept: ?Swept = null,
     thorns: ?Harm = null,
-    reaction: ?struct { from: P, flight: ?bow.Flight, hit: Swipe, recovery: ?fx.After = null } = null,
+    reaction: ?struct { from: P, flight: ?bow.Flight, hit: ?Swipe = null, recovery: ?fx.After = null } = null,
 
     pub fn any(o: *const Owed) bool {
         inline for (std.meta.fields(Owed)) |f| {
@@ -510,8 +510,9 @@ pub const Presentation = struct {
                 impact = release + shot_.lands();
                 self.holdUntil(release + shot_.ends());
             }
-            self.strike(sim, gas, r.hit.slot, .{ .from = r.from, .wait = impact }, r.hit.at, r.hit.lethal, r.hit.after);
+            if (r.hit) |h| self.strike(sim, gas, h.slot, .{ .from = r.from, .wait = impact }, h.at, h.lethal, h.after);
             if (r.recovery) |after| self.fx.settle(impact, .{ .slot = hero, .after = after });
+            self.holdUntil(impact);
             lands = @max(lands, impact);
             next.* = @max(next.*, impact + late + game.STAGGER_S);
         }

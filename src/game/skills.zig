@@ -243,9 +243,7 @@ fn spell(g: *game.Game, comptime act: skillbar.Act) void {
         tactics.beforeAction(g);
         g.sim.chronicle.note(.{ .used = act });
     } else spend(g, act);
-    if (comptime act == .steady_aim or act == .guard or act == .unyielding or act == .whirlwind) {
-        _ = tactics.instant(g, act);
-    } else if (comptime act.surrounds()) {
+    if (comptime act.surrounds()) {
         const s = game.presentation.Stroke{ .from = h.at, .wait = game.CAST_S };
         g.pic.holdUntil(s.wait);
         const area = M.around(&g.sim.lv, h.at);
@@ -258,7 +256,7 @@ fn spell(g: *game.Game, comptime act: skillbar.Act) void {
         g.pic.fx.shimmer(mathx.centre(h.at), look.WARD);
         g.pic.settleHero(&g.sim, 0);
         g.pic.lead = 0;
-    } else @compileError(@tagName(act) ++ " has no reticle and no use");
+    } else tactics.instant(g, act);
     combat.endTurn(g);
 }
 
@@ -397,7 +395,7 @@ fn loose(g: *game.Game, from: P, act: skillbar.Act) void {
         },
     } else {
         g.sim.log.say("{s}'s {s} finds nothing.", .{ g.sim.name.text(), act.bolt() orelse "arrow" });
-        g.sim.chronicle.note(.missed);
+        g.sim.chronicle.note(.{ .missed = .{} });
     }
     if (act.isArrow()) if (g.sim.heroActor()) |h| {
         h.tactics.steady = 0;

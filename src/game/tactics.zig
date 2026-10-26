@@ -11,8 +11,8 @@ const combat = @import("combat.zig");
 const skills = @import("skills.zig");
 const P = mathx.P;
 
-pub fn instant(g: *game.Game, act: skillbar.Act) bool {
-    const h = g.sim.heroActor() orelse return false;
+pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
+    const h = g.sim.heroActor() orelse return;
     const rank = g.sim.growth.ranks.get(act);
     switch (act) {
         .steady_aim => h.tactics.steady = rank,
@@ -27,11 +27,10 @@ pub fn instant(g: *game.Game, act: skillbar.Act) bool {
             for (area.slice()) |at| combat.smash(g, at, "whirls into", s);
             g.pic.lead = s.wait;
         },
-        else => return false,
+        else => @compileError(@tagName(act) ++ " has no instant tactical use"),
     }
     g.sim.log.say("{s}: {s}{s}.", .{ g.sim.name.text(), act.name(), if (act == .unyielding and !h.tactics.unyielding) " ended" else "" });
     g.pic.fx.shimmer(mathx.centre(h.at), look.UI_GOLD);
-    return true;
 }
 
 pub fn valid(g: *const game.Game, from: P, at: P) bool {
@@ -54,6 +53,12 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
 }
 
 pub fn cast(g: *game.Game, act: skillbar.Act, from: P) void {
+    switch (act) {
+        inline else => |a| if (comptime a.reticle() != .ground) unreachable else castGround(g, a, from),
+    }
+}
+
+fn castGround(g: *game.Game, comptime act: skillbar.Act, from: P) void {
     const rank = g.sim.growth.ranks.get(act);
     const at = g.mark;
     switch (act) {
@@ -90,6 +95,8 @@ pub fn cast(g: *game.Game, act: skillbar.Act, from: P) void {
             const target = g.sim.pool.get(g.sim.lv.who(at)).?;
             const fuel: i32 = target.burn.turns;
             target.burn = .{};
+            const slot = actor.Pool.slot(g.sim.lv.who(at));
+            g.pic.fx.settle(game.CAST_S, .{ .slot = slot, .after = g.pic.afterOf(&g.sim, slot) });
             const area = rules.Combustion.area(&g.sim.lv, at);
             const ids = skills.foesIn(g, area);
             var raw = combat.rollRaw(&g.sim.rng, .combustion, combat.basesFor(g, .combustion), false);
@@ -107,7 +114,7 @@ pub fn cast(g: *game.Game, act: skillbar.Act, from: P) void {
             for (area.slice()) |p| g.sim.lv.barrier[grid.Level.idx(p)] = rules.ArcaneBarrier.duration(rank) + 1;
             g.barrier_start = null;
         },
-        else => unreachable,
+        else => @compileError(@tagName(act) ++ " has no ground tactical use"),
     }
     g.sim.log.say("{s} casts {s}.", .{ g.sim.name.text(), act.name() });
     g.pic.lead = game.CAST_S;
@@ -255,6 +262,41 @@ test "tactical gravity ranks pull and unlock pin while combustion consumes burn 
     try std.testing.expect(g.sim.pool.get(id).?.hp < before);
     try std.testing.expect(g.sim.pool.get(neighbor).?.hp < before);
     std.debug.print("tactical wizard: 3 pull/pin ranks, no-spend invalid combustion, consumed burn and neighboring explosion checked\n", .{});
+}
+
+test "tactical combustion consumes pictured burn at explosion time even when damage misses" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const h = game.harness;
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 23, .y = 20 };
+    var misses: usize = 0;
+    for ([_]u64{ 0, 10 }) |seed| {
+        h.heroArena(g, .wizard, from, &.{at});
+        g.sim.lv.set(from, .reeds);
+        const id = g.sim.lv.who(at);
+        const foe = g.sim.pool.get(id).?;
+        h.toughen(foe);
+        foe.burn.start();
+        game.settle(g);
+        const slot = actor.Pool.slot(id);
+        const hp = foe.hp;
+        const burning = g.pic.pictured[slot].status.get(.burning);
+        g.sim.rng = mathx.Rng.init(seed);
+        targeted(g, .combustion, at);
+        misses += @intFromBool(foe.hp == hp);
+        try std.testing.expectEqual(@as(u8, 0), foe.burn.turns);
+        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        g.pic.advance(&g.sim, game.CAST_S / 2);
+        try std.testing.expectEqual(burning, g.pic.pictured[slot].status.get(.burning));
+        try std.testing.expectEqual(hp, g.pic.pictured[slot].hp);
+        g.pic.advance(&g.sim, game.CAST_S / 2 + 0.001);
+        try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[slot].status.get(.burning));
+        try std.testing.expectEqual(foe.hp, g.pic.pictured[slot].hp);
+        h.drawnOut(g);
+    }
+    try std.testing.expectEqual(@as(usize, 1), misses);
+    std.debug.print("tactical combustion: hit and miss retain burning until explosion, then consume it with damage\n", .{});
 }
 
 test "tactical barrier selects endpoints without spending then blocks paths until spent-turn expiry" {

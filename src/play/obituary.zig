@@ -432,7 +432,9 @@ fn lastDeed(ctx: *const Context, tagged: Tags) ?Deed {
             if (d.reaction) continue;
             if (d.killed) felled = d.to else struck = d.to;
         },
-        .missed => missed = true,
+        .missed => |m| if (!m.reaction) {
+            missed = true;
+        },
         else => {},
     };
     if (felled) |k| return if (tagged.contains(.own_goal) and k.bursts()) null else .{ .with = with, .what = .{ .felled = k } };
@@ -669,7 +671,7 @@ test "bites a shield took whole wore nobody down, and a shield cast in time was 
 }
 
 test "a report too long for its room drops whole sentences" {
-    const turns = [_]Turn{turnOf(8, 4, &.{ .{ .used = .shoot }, .missed, rat(5, 4) })};
+    const turns = [_]Turn{turnOf(8, 4, &.{ .{ .used = .shoot }, .{ .missed = .{} }, rat(5, 4) })};
     var ctx = testContext(&turns);
     ctx.place = "in " ++ "a" ** (REPORT_MAX - 60);
     const r = write(&ctx);

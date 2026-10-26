@@ -27,8 +27,7 @@ pub const Event = union(enum) {
     hurt: Hurt,
     stunned: actor.Kind,
     dealt: Dealt,
-    /// A shot that found nothing.
-    missed,
+    missed: struct { reaction: bool = false },
     used: skillbar.Act,
     /// A bloat burst beside the hero.
     burst,
@@ -149,7 +148,7 @@ test "the chronicle keeps the last turns in order and a quiet turn can be restar
     for (last[0 .. last.len - 1], last[1..]) |a, b| try std.testing.expectEqual(a.number + 1, b.number);
     try std.testing.expectEqual(c.count, last[last.len - 1].number);
     try std.testing.expectEqual(@as(i32, KEPT + 2), last[last.len - 2].events[0].hurt.dmg);
-    for (0..EVENTS + 4) |_| c.note(.missed);
+    for (0..EVENTS + 4) |_| c.note(.{ .missed = .{} });
     try std.testing.expectEqual(EVENTS, c.current().?.n);
     c.note(.{ .hurt = .{ .by = .gas, .dmg = 7, .before = 7 } });
     try std.testing.expectEqual(@as(i32, 7), c.current().?.events[EVENTS - 1].hurt.dmg);

@@ -27,11 +27,38 @@ pub const Entry = struct {
     ordinal: usize,
     alias: ?[]const u8 = null,
     max_len: usize = MAX_TEXT,
+    text_owned: bool = false,
+
+    fn replaceText(self: *Entry, alloc: std.mem.Allocator, text: []const u8) void {
+        if (self.text_owned) alloc.free(self.text);
+        self.text = text;
+        self.text_owned = true;
+    }
 };
-const Source = struct { path: []const u8, bytes: [:0]const u8 };
+const Source = struct {
+    path: []const u8,
+    bytes: [:0]const u8,
+    bytes_owned: bool = false,
+
+    fn replaceBytes(self: *Source, alloc: std.mem.Allocator, bytes: [:0]const u8) void {
+        if (self.bytes_owned) alloc.free(self.bytes);
+        self.bytes = bytes;
+        self.bytes_owned = true;
+    }
+};
 const Tag = struct { path: []const u8, ordinal: usize, hash: u64, author: Author };
 const Tags = struct { version: u32 = 1, tags: []const Tag };
-const TagUpdate = struct { tags: []const Tag, bytes: []const u8, path: []const u8 };
+const TagUpdate = struct {
+    tags: []const Tag,
+    bytes: []const u8,
+    path: []const u8,
+
+    fn deinit(self: *TagUpdate, alloc: std.mem.Allocator) void {
+        alloc.free(self.tags);
+        alloc.free(self.bytes);
+        alloc.free(self.path);
+    }
+};
 const Token = std.zig.Token;
 
 pub const Catalog = struct {
@@ -44,6 +71,8 @@ pub const Catalog = struct {
     labels: []const u8 = "",
     tags_invalid: bool = false,
     tag_bytes: []const u8 = "",
+    tags_owned: bool = false,
+    labels_owned: bool = false,
     warning: []const u8 = "",
     skills: ?[]const SkillSource = null,
 
@@ -52,6 +81,13 @@ pub const Catalog = struct {
     }
 
     pub fn deinit(self: *Catalog) void {
+        for (self.files.items) |source| if (source.bytes_owned) self.alloc.free(source.bytes);
+        for (self.list.items) |entry| if (entry.text_owned) self.alloc.free(entry.text);
+        if (self.tags_owned) {
+            self.alloc.free(self.tags);
+            self.alloc.free(self.tag_bytes);
+        }
+        if (self.labels_owned) self.alloc.free(self.labels);
         self.arena.deinit();
         self.* = undefined;
     }
@@ -172,18 +208,20 @@ pub const Catalog = struct {
         defer self.alloc.free(encoded);
         const bytes = try replaceLiteral(self.alloc, current, entry.start, entry.end, encoded);
         defer self.alloc.free(bytes);
-        const tags = try self.prepareTags(entry, replacement, author);
-        const a = self.arena.allocator();
-        const stored = try a.dupeZ(u8, bytes);
-        const value = try a.dupe(u8, replacement);
+        var tags = try self.prepareTags(entry, replacement, author);
+        defer tags.deinit(self.alloc);
+        const stored = try self.alloc.dupeZ(u8, bytes);
+        errdefer self.alloc.free(stored);
+        const value = try self.alloc.dupe(u8, replacement);
+        errdefer self.alloc.free(value);
         try store.replace(path, bytes);
-        const result = self.saveTags(tags);
+        const result = self.saveTags(&tags);
         const delta = @as(isize, @intCast(encoded.len)) - @as(isize, @intCast(entry.end - entry.start));
-        self.files.items[entry.file].bytes = stored;
+        self.files.items[entry.file].replaceBytes(self.alloc, stored);
         for (self.list.items, 0..) |*other, i| {
             if (other.file != entry.file) continue;
             if (i == index) {
-                other.text = value;
+                other.replaceText(self.alloc, value);
                 other.end = other.start + encoded.len;
                 other.author = if (result == .saved) author else .unknown;
             } else if (other.start >= entry.end) {
@@ -213,16 +251,26 @@ pub const Catalog = struct {
         if (!unchanged(self.labels, current)) return error.SourceChanged;
         const output = try wording.replace(self.alloc, current, key, replacement);
         defer self.alloc.free(output);
-        const tags = try self.prepareTags(entry, replacement, author);
-        const a = self.arena.allocator();
-        const stored = try a.dupe(u8, output);
-        const value = try a.dupe(u8, replacement);
+        var tags = try self.prepareTags(entry, replacement, author);
+        defer tags.deinit(self.alloc);
+        const stored = if (changed) try self.alloc.dupe(u8, output) else self.labels;
+        errdefer if (changed) self.alloc.free(stored);
+        const value = try self.alloc.dupe(u8, replacement);
+        errdefer self.alloc.free(value);
         if (changed) try store.replace(path, output);
-        const result = self.saveTags(tags);
-        if (changed) self.labels = stored;
-        self.list.items[index].text = value;
+        const result = self.saveTags(&tags);
+        if (changed) {
+            self.replaceLabels(stored);
+        }
+        self.list.items[index].replaceText(self.alloc, value);
         self.list.items[index].author = if (result == .saved) author else .unknown;
         return result;
+    }
+
+    fn replaceLabels(self: *Catalog, labels: []const u8) void {
+        if (self.labels_owned) self.alloc.free(self.labels);
+        self.labels = labels;
+        self.labels_owned = true;
     }
 
     fn prepareTags(self: *Catalog, entry: Entry, replacement: []const u8, author: Author) !TagUpdate {
@@ -233,20 +281,34 @@ pub const Catalog = struct {
             try updated.append(tag);
         }
         try updated.append(.{ .path = entry.path, .ordinal = entry.ordinal, .hash = hash(replacement), .author = author });
-        const a = self.arena.allocator();
+        const tags = try updated.toOwnedSlice();
+        errdefer self.alloc.free(tags);
+        const bytes = try std.json.stringifyAlloc(self.alloc, Tags{ .tags = tags }, .{ .whitespace = .indent_2 });
+        errdefer self.alloc.free(bytes);
         return .{
-            .tags = try a.dupe(Tag, updated.items),
-            .bytes = try std.json.stringifyAlloc(a, Tags{ .tags = updated.items }, .{ .whitespace = .indent_2 }),
-            .path = try std.fs.path.join(a, &.{ self.root, TAG_FILE }),
+            .tags = tags,
+            .bytes = bytes,
+            .path = try std.fs.path.join(self.alloc, &.{ self.root, TAG_FILE }),
         };
     }
 
-    fn saveTags(self: *Catalog, update: TagUpdate) SaveResult {
+    fn saveTags(self: *Catalog, update: *TagUpdate) SaveResult {
         if (self.tags_invalid) return .tags_not_saved;
         store.replace(update.path, update.bytes) catch return .tags_not_saved;
+        self.acceptTags(update);
+        return .saved;
+    }
+
+    fn acceptTags(self: *Catalog, update: *TagUpdate) void {
+        if (self.tags_owned) {
+            self.alloc.free(self.tags);
+            self.alloc.free(self.tag_bytes);
+        }
         self.tags = update.tags;
         self.tag_bytes = update.bytes;
-        return .saved;
+        self.tags_owned = true;
+        update.tags = &.{};
+        update.bytes = "";
     }
 
     fn scan(self: *Catalog, path: []const u8, text: []const u8) !void {
@@ -337,7 +399,7 @@ pub const Catalog = struct {
                         const key = if (type_name) |tn| try wording.keyAlloc(a, tn, name) else null;
                         const allowed = if (type_name) |tn| wording.allowed(tn, name) else false;
                         const identity = key orelse try std.fmt.allocPrint(a, "{s}.{s}", .{ path, name });
-                        try self.list.append(a, .{ .path = path, .line = lineOf(bytes, ts[at].loc.start), .text = if (key) |k| wording.lookup(self.labels, k) orelse label else label, .category = try categoryOf(a, path), .owner = try humanize(a, name), .role = "Display name", .context = identity, .editable = allowed, .reason = if (allowed) "Display alias; saves to assets/player-labels.txt without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
+                        try self.list.append(a, .{ .path = path, .line = lineOf(bytes, ts[at].loc.start), .text = if (key) |k| try a.dupe(u8, wording.lookup(self.labels, k) orelse label) else label, .category = try categoryOf(a, path), .owner = try humanize(a, name), .role = "Display name", .context = identity, .editable = allowed, .reason = if (allowed) "Display alias; saves to assets/player-labels.txt without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
                     }
                     field = false;
                 }
@@ -949,6 +1011,58 @@ test "text attribution requires matching source literal position and content" {
     std.debug.print("text tags: exact attribution restored; changed position, content and source remain unknown\n", .{});
 }
 
+test "text catalog repeated snapshot replacements keep live memory bounded without file writes" {
+    var memory = std.heap.DebugAllocator(.{ .enable_memory_limit = true }){};
+    defer _ = memory.deinit();
+    const alloc = memory.allocator();
+    var live: [2]usize = @splat(0);
+    {
+        var c = Catalog.init(alloc);
+        defer c.deinit();
+        var source: [80 * 1024]u8 = @splat(' ');
+        const declaration_ = "const NAME = \"Start\";\n";
+        @memcpy(source[0..declaration_.len], declaration_);
+        try c.scan("src/ui/example.zig", &source);
+        for (0..128) |i| {
+            const value = if (i % 2 == 0) "Begin" else "Again";
+            const author: Author = if (i % 2 == 0) .you else .mixed;
+            var update = try c.prepareTags(c.entries()[0], value, author);
+            c.acceptTags(&update);
+            update.deinit(alloc);
+            @memcpy(source[c.entries()[0].start + 1 ..][0..value.len], value);
+            c.files.items[0].replaceBytes(alloc, try alloc.dupeZ(u8, &source));
+            c.list.items[0].replaceText(alloc, try alloc.dupe(u8, value));
+            c.replaceLabels(try alloc.dupe(u8, "play.skillbar.Act.guard\tBlock\n"));
+            const before_failure = memory.total_requested_bytes;
+            c.tags_invalid = true;
+            var discarded = try c.prepareTags(c.entries()[0], "Later", .ai);
+            try std.testing.expectEqual(SaveResult.tags_not_saved, c.saveTags(&discarded));
+            discarded.deinit(alloc);
+            c.tags_invalid = false;
+            try std.testing.expectEqual(before_failure, memory.total_requested_bytes);
+            try std.testing.expectEqual(author, c.authorOf(c.entries()[0]));
+            try std.testing.expectEqualStrings(value, c.entries()[0].text);
+            try std.testing.expectEqualStrings(&source, c.files.items[0].bytes);
+            if (i < live.len) live[i] = memory.total_requested_bytes else try std.testing.expectEqual(live[i % live.len], memory.total_requested_bytes);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), memory.total_requested_bytes);
+    std.debug.print("text catalog: 128 source/text/tag/label replacements stay at {d}-{d} live bytes, rejected tags release preparation, teardown frees all\n", .{ live[0], live[1] });
+}
+
+test "text catalog display entries keep independent text when label snapshots are replaced" {
+    const alloc = std.testing.allocator;
+    var c = Catalog.init(alloc);
+    defer c.deinit();
+    c.replaceLabels(try alloc.dupe(u8, "play.skillbar.Act.guard\tBrace\nplay.skillbar.Act.secondary\tAlternate\n"));
+    try c.scan("src/play/skillbar.zig", "pub const Act = enum { guard, secondary };\n");
+    c.replaceLabels(try alloc.dupe(u8, "play.skillbar.Act.guard\tBlock\n"));
+    try std.testing.expectEqualStrings("Brace", c.entries()[0].text);
+    try std.testing.expectEqualStrings("Alternate", c.entries()[1].text);
+    try std.testing.expect(c.entries()[0].editable and !c.entries()[1].editable);
+    std.debug.print("text catalog: editable and read-only display entries retain independent text across label replacement\n", .{});
+}
+
 test "text tag preparation shares source and alias upserts without mutating loaded attribution" {
     var c = Catalog.init(std.testing.allocator);
     defer c.deinit();
@@ -959,7 +1073,8 @@ test "text tag preparation shares source and alias upserts without mutating load
     };
     c.tags = &existing;
     c.tag_bytes = "unchanged snapshot";
-    const update = try c.prepareTags(entry, "Begin", .mixed);
+    var update = try c.prepareTags(entry, "Begin", .mixed);
+    defer update.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(usize, 2), update.tags.len);
     try std.testing.expectEqual(@as(usize, 4), update.tags[0].ordinal);
     try std.testing.expectEqual(hash("Begin"), update.tags[1].hash);
@@ -969,7 +1084,7 @@ test "text tag preparation shares source and alias upserts without mutating load
     try std.testing.expectEqualDeep(update.tags, parsed.value.tags);
     try std.testing.expectEqual(Author.ai, c.tags[0].author);
     c.tags_invalid = true;
-    try std.testing.expectEqual(SaveResult.tags_not_saved, c.saveTags(update));
+    try std.testing.expectEqual(SaveResult.tags_not_saved, c.saveTags(&update));
     try std.testing.expectEqualStrings("unchanged snapshot", c.tag_bytes);
     try std.testing.expectEqual(Author.ai, c.tags[0].author);
     std.debug.print("text tags: shared upsert prepared independently; malformed file blocks tag commit and preserves loaded attribution\n", .{});

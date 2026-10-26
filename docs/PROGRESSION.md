@@ -113,8 +113,9 @@ new stats. The added affix identities change the save fingerprint; older saves a
 
 ## Tactical skills and class paths
 
-All class skills retain three ranks. Basic attacks and mobility start learned; other skills
-require their parent. The trees group elemental damage, preparation, control and defense:
+Upgradeable class skills retain three ranks; Shoot remains a fixed basic attack. Basic attacks
+and mobility start learned; other skills require their parent. The trees group elemental damage,
+preparation, control and defense:
 
 | Class | Paths |
 |---|---|

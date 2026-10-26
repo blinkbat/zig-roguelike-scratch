@@ -3,6 +3,7 @@ const progress = @import("../../play/progress.zig");
 const mathx = @import("../../core/mathx.zig");
 const hud = @import("../../ui/hud.zig");
 const heroes = @import("../../play/hero.zig");
+const bow = @import("../../play/bow.zig");
 const juke = @import("../../play/juke.zig");
 const pinning = @import("../../play/pinning.zig");
 const charge = @import("../../play/charge.zig");
@@ -53,6 +54,68 @@ test "a hero bitten to death gets an epitaph naming the rat, entombed only while
     harness.bittenToDeath(g);
     try std.testing.expect(!std.mem.endsWith(u8, g.epitaph.?.text(), game.ossuary.ENTOMBED));
     try std.testing.expectEqual(game.ossuary.MAX, hall.n);
+}
+
+fn missedBlowArena(g: *game.Game) !u16 {
+    const from = mathx.P{ .x = 20, .y = 20 };
+    harness.heroArena(g, .knight, from, &.{});
+    g.sim.name = heroes.Name.of("Knight");
+    g.sim.lv.set(from, .reeds);
+    const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
+    game.settle(g);
+    const attacker = g.sim.combatStats(g.sim.heroBody().?);
+    const defender = g.sim.combatStats(g.sim.pool.get(id).?);
+    for (0..1000) |seed| {
+        var rng = mathx.Rng.init(seed);
+        if (attacker.misses(defender, &rng)) {
+            g.sim.rng = mathx.Rng.init(seed);
+            return id;
+        }
+    }
+    return error.NoMissSeed;
+}
+
+test "missed reactions preserve the chosen last deed while chosen attacks still report misses" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]bool{ false, true }) |reacting| {
+        const id = try missedBlowArena(g);
+        const hero = g.sim.heroBody().?;
+        const before = g.sim.pool.get(id).?.hp;
+        g.sim.chronicle.begin(.{ .hp = hero.hp, .max = hero.max });
+        g.sim.chronicle.note(.{ .used = if (reacting) .wait else .shoot });
+        const stroke = game.presentation.Stroke{ .from = hero.at, .wait = 0 };
+        if (reacting) combat.reaction(g, id, .{ .dmg = 100 }, "counters", stroke, id, null) else combat.wound(g, id, .{ .dmg = 100 }, "shoots", stroke);
+        try std.testing.expectEqual(before, g.sim.pool.get(id).?.hp);
+        g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = .rat }, .dmg = hero.hp, .before = hero.hp } });
+        const report = game.epitaph.of(g);
+        const deed = if (reacting) "Knight waited." else "Knight's last arrow missed.";
+        try std.testing.expect(std.mem.indexOf(u8, report.text(), deed) != null);
+    }
+    std.debug.print("missed blows: chosen attack reported, automatic reaction preserves Wait in the epitaph\n", .{});
+}
+
+test "missed reactions preserve projectile timing without phantom barrels or impact effects" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]bool{ false, true }) |projectile| {
+        const id = try missedBlowArena(g);
+        const from = g.sim.heroAt().?;
+        const at = g.sim.pool.get(id).?.at;
+        const before = g.sim.pool.get(id).?.hp;
+        const flight = if (projectile) bow.fly(&g.sim.lv, from, at) else null;
+        combat.reaction(g, id, .{ .dmg = 100 }, "counters", .{ .from = from, .wait = 0 }, id, flight);
+        try std.testing.expectEqual(before, g.sim.pool.get(id).?.hp);
+        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        try std.testing.expect(!g.pic.fx.breaking(at));
+        try std.testing.expectEqual(projectile, g.pic.shot != null);
+        try std.testing.expect(g.pic.busy >= game.BUMP_LANDS);
+        if (g.pic.shot) |shot| try std.testing.expect(g.pic.busy >= -shot.t + shot.ends());
+        try std.testing.expectEqual(@as(usize, 0), g.pic.fx.due_n);
+        harness.drawnOut(g);
+        try std.testing.expect(!g.pic.fx.breaking(at));
+    }
+    std.debug.print("missed reactions: melee and projectile misses schedule no barrel or hit effects; arrow timing retained\n", .{});
 }
 
 test "life and mana fill and drain at XP speed after their presented impact" {

@@ -111,7 +111,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   It exposes cosmetic lighting/shadow/water/weather switches, fullscreen, VSync/frame limits and active OpenGL
   renderer/build/framebuffer information. CPU timing excludes frame pacing and is not GPU timing.
   Smart aim retains a legal visible foe by unsaved `Game.target` identity, otherwise selects the nearest legal
-  visible foe. Directions cycle through legal enemies with free-cell fallback; leaps remain free-cell targeting.
+  visible foe. Projectile directions move cell by cell; melee and rush directions suggest legal enemies with
+  free-cell fallback. Leaps remain free-cell targeting.
   Automatic selection spends nothing; confirmation and explicit enemy clicks retain normal attack legality.
   Reveal shows terrain and minimap without changing gameplay sight or saved exploration; turning it off restores
   the normal view. Cosmetic effects default on. Debug settings are not saved.

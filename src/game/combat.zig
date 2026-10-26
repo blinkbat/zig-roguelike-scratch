@@ -96,7 +96,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
     const id = g.sim.lv.who(to);
     if (id == grid.NO_ONE) return smash(g, to, M.VERB, s);
     const a = g.sim.pool.get(id).?;
-    if (!heroLands(g, a)) return;
+    if (!heroLands(g, a, false)) return;
     var r = heroSkill(g, act).against(a, &g.sim.rng);
     r.hit_checked = true;
     const takes = if (comptime act.afflicts()) afflicted(g, a, M, r.dmg > 0 and r.dmg < a.hp, 0) else false;
@@ -222,7 +222,7 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: Rolled, comptime act: skillbar.Act,
     const M = skillbar.Act.skill(act);
     const el = comptime act.element();
     const a = g.sim.pool.get(id) orelse return;
-    if (!heroLands(g, a)) return;
+    if (!heroLands(g, a, false)) return;
     const resists = g.sim.combatStats(a).elements;
     var r = (Roll{ .dmg = hit.blow.total(resists), .physical = hit.blow.physical, .crit = hit.crit, .effect = hit.effect, .hit_checked = true }).against(a, &g.sim.rng);
     const at = a.at;
@@ -333,8 +333,8 @@ pub fn reaction(g: *game.Game, id: u16, raw: Roll, comptime verb: []const u8, s:
 
 fn woundAt(g: *game.Game, id: u16, raw: Roll, comptime verb: []const u8, s: Stroke, source: ?u16, flight: ?bow.Flight) void {
     const a = g.sim.pool.get(id) orelse return;
-    if (!raw.hit_checked and !heroLands(g, a)) {
-        if (source) |by| g.pic.owed[actor.Pool.slot(by)].reaction = .{ .from = s.from, .flight = flight, .hit = .{ .slot = null, .at = a.at, .lethal = false } };
+    if (!raw.hit_checked and !heroLands(g, a, source != null)) {
+        if (source) |by| g.pic.owed[actor.Pool.slot(by)].reaction = .{ .from = s.from, .flight = flight };
         return;
     }
     const r = raw.against(a, &g.sim.rng);
@@ -377,11 +377,11 @@ fn procOn(g: *game.Game, a: *actor.Actor, kind: resilience.Kind, pc: u32) bool {
     return g.sim.procStatus(a, kind, pc);
 }
 
-fn heroLands(g: *game.Game, a: *const actor.Actor) bool {
+fn heroLands(g: *game.Game, a: *const actor.Actor, reacting: bool) bool {
     const h = g.sim.heroBody() orelse return false;
     if (!g.sim.combatStats(h).misses(g.sim.combatStats(a), &g.sim.rng)) return true;
     g.sim.sayAt(a.at, "{s} misses the {s}.", .{ g.sim.name.text(), actor.row(a.kind).name });
-    g.sim.chronicle.note(.missed);
+    g.sim.chronicle.note(.{ .missed = .{ .reaction = reacting } });
     return false;
 }
 

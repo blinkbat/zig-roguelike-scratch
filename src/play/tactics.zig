@@ -48,7 +48,8 @@ pub const GravityWell = struct {
     pub const COST: i32 = 6;
     pub const COOLDOWN: u8 = 5;
     pub const RANGE: i32 = 6;
-    pub const DESCRIPTION = "Pull foes within two cells toward a visible center.";
+    pub const RADIUS: i32 = 2;
+    pub const DESCRIPTION = std.fmt.comptimePrint("Pull foes within {d} cells toward a visible center.", .{RADIUS});
     pub const FLAVOR = "Even the dark has weight.";
     pub fn pulls(rank: u8) usize {
         return if (rank == 3) 2 else 1;
@@ -57,7 +58,7 @@ pub const GravityWell = struct {
         return rank -| 1;
     }
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, 2);
+        return patch(lv, at, RADIUS);
     }
 };
 pub const Combustion = struct {
@@ -66,7 +67,7 @@ pub const Combustion = struct {
     pub const RANGE: i32 = 7;
     pub const ELEMENT = damage.Element.fire;
     pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
-    pub const DESCRIPTION = "Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding two damage per remaining burn turn.";
+    pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding {d} damage per remaining burn turn.", .{FUEL_DAMAGE});
     pub const FLAVOR = "One spark was only the beginning.";
     pub const FUEL_DAMAGE: i32 = 2;
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
