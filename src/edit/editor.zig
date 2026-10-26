@@ -463,6 +463,21 @@ const Board = struct {
     }
 };
 
+const PastePreview = struct {
+    ready: bool = false,
+    at: P = undefined,
+    node: usize = undefined,
+    source: atlas.Node = undefined,
+    board: Board = undefined,
+    result: Pasted = undefined,
+
+    fn matches(self: *const PastePreview, ed: *Editor, at: P) bool {
+        return self.ready and self.node == ed.node and self.at.eq(at) and
+            std.mem.eql(u8, std.mem.asBytes(&self.source), std.mem.asBytes(ed.here())) and
+            std.mem.eql(u8, std.mem.asBytes(&self.board), std.mem.asBytes(&ed.board));
+    }
+};
+
 const Issues = struct {
     unlinked: usize = 0,
     /// Open cells no walk from the start or a door reaches.
@@ -545,6 +560,7 @@ pub const Editor = struct {
     board: Board = .{},
     /// The paste laid aside for its ghost.
     trial: atlas.Bespoke = undefined,
+    paste_preview: PastePreview = .{},
     pasting: bool = false,
     cell_action: ?CellAction = null,
     linking: ?atlas.Link = null,
@@ -1873,8 +1889,17 @@ pub fn layBoard(ed: *Editor, at: P) void {
 const Pasted = struct { left: usize = 0, changed: bool = false };
 
 pub fn layAside(ed: *Editor, at: P) Pasted {
+    const cached = &ed.paste_preview;
+    if (cached.matches(ed, at)) return cached.result;
     ed.trial = ed.plan().bespoke;
-    return layInto(ed.here(), &ed.trial, &ed.board, at);
+    const result = layInto(ed.here(), &ed.trial, &ed.board, at);
+    @memcpy(std.mem.asBytes(&cached.source), std.mem.asBytes(ed.here()));
+    @memcpy(std.mem.asBytes(&cached.board), std.mem.asBytes(&ed.board));
+    cached.at = at;
+    cached.node = ed.node;
+    cached.result = result;
+    cached.ready = true;
+    return result;
 }
 
 /// The copy laid into `b` with its corner at `at`; the paste's ghost lays it aside the same way.

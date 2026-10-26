@@ -126,7 +126,6 @@ pub const Act = enum {
         return @hasDecl(m, decl);
     }
 
-    /// Bow targets a lit line; leap a landing; swing an adjacent tile; rush a body or empty landing down a running line.
     pub const Reticle = enum { bow, leap, swing, rush, ground };
 
     pub fn reticle(a: Act) ?Reticle {

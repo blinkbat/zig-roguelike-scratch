@@ -73,7 +73,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   use the same temporary-directory procedure. Tall trees occupy only their bottom cell; unsaved fading
   uses a soft aperture around the pictured hero, shared by scenery and gas, preserving the lower trunk.
   Dense sight-blocking grass (`reeds`) uses that same occlusion and depth ordering within its walkable cell; these captures cover it too.
-- Inspect actual headless PNGs. `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,
+- Inspect actual headless PNGs. Recursive map overviews use `shots/maps/<relative.map>/overview.png`, preserving folder and filename identity.
+  `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,
   maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
   `water-reflections/00.png` through `39.png` cover four seconds of idle play; `water-mirrors-*.png`
   show day/night/torch reflections. `--shot-cinema` captures `cinema/` off/individual/all comparisons,
@@ -114,9 +115,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Automatic selection spends nothing; confirmation and explicit enemy clicks retain normal attack legality.
   Reveal shows terrain and minimap without changing gameplay sight or saved exploration; turning it off restores
   the normal view. Cosmetic effects default on. Debug settings are not saved.
-- Inspect (`Mode.inspect`, R3 or I) is the HUD's tooltips: the stick/d-pad walks the orbs, slots, shown
-  statuses and the event log (`overlay.spotsOf`, nearest along the way pushed), `hud.tooltip` names and describes the one it is
-  on, without naming any input. Any back-out or the same button again closes it; it spends no turn.
+- Inspect (`Mode.inspect`, R3 or I) walks visible, onscreen characters as well as the orbs, slots, shown
+  statuses and event log (`overlay.spotsOf`, nearest along the way pushed). Foe cards show a title-case name,
+  pictured HP, then a divider and the presented tile with signed effects. Hero cards retain detailed pictured
+  stats/status/buildup; hidden, unborn and departed bodies are excluded.
+  Long cards scroll with page controls or the mouse wheel. Any back-out or the same button closes it; it spends no turn.
   In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `overlay.hovered`).
 - Start / Menu / Options opens Character directly; Select / View opens the game menu. Keyboard Tab / Esc mirror them. Character opens equipment, the inventory list, stats, passives and class skills in `ui/book.zig`.
   Player-facing hand slots are Main hand (viewer-left) and Offhand (viewer-right).
@@ -241,8 +244,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   descriptions and targeting from each skill module; `progress.State.cost/cooldown` apply rank. Module
   descriptions say only what a skill does: `overlay.describe` appends mana, turn and cooldown at the hero's rank.
   Mana checks, spending, slot dimming, tooltips and descriptions must agree. Preserve resources/statuses across doors and saves.
-- **Target previews and resolution share legality.** `bow.aimable` requires the mark and every traversed
-  cell to be lit; geometric line clearance alone is insufficient. Spend nothing before confirmation.
+- **Target previews and resolution share legality.** Projectile aiming accepts empty, dark and wall cells
+  within range and geometric line of sight (`bow.aimable`, plus `Level.inLos` for the player's reticle).
+  Visible targets are suggestions; projectile directions move freely by cell, and aiming opens without a target.
+  `bow.fly` stops at the first collision even when the intercepted attack misses. Previews must not reveal
+  hidden collisions. Spend nothing before confirmation.
   Area previews/damage/effects share geometry (each module's `burst`/`around`, `glacial.spread`, `cleave.arc`); use `fov.castInto` for
   terrain occlusion without changing sight or memory. Capture area targets before damage so newborn
   slime halves inherit statuses without being hit twice by that burst.
@@ -274,8 +280,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `map/gas.zig` alone advances gas; it spreads through open cells, including liquids.
 - `play/resilience.zig` owns separate stun/burn/bleed/chill/pin buildup for every body. Successful applications
   add resistance until expiry on spent turns; failed applications and free actions never extend or age it.
-  `Actor.takeStatus` adds innate stun resistance and gates all combat applications before refreshing a status.
+  `Simulation.takeStatus/procStatus` combine innate resistance, buildup and terrain before gating combat applications.
   Preserve buildup and bleed strength across splits, travel and saves; present resistance with the blow.
+- `play/terrain.zig` owns typed tile modifiers for hit, dodge, elemental and status resistance.
+  `Simulation.combatStats/combatStatsAt` resolve them from base stats without mutating or saving bonuses.
+  Combat, Character and inspection share this resolver; see `docs/TERRAIN.md`. Shoot is a fixed basic attack:
+  it stays bindable and anchors the archer tree, but cannot consume points or gain rank scaling.
 - Burn/bleed begin next turn; refreshing does not stack or postpone a due tick. Bleed doubles on movement,
   including hero leaps. Chill advances on enemy turns, preserving its act/act/skip cadence on refresh.
   A skipped action still takes gas/burn/bleed; waiting newborn halves process inherited status ticks

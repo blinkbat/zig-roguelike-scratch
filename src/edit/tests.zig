@@ -608,6 +608,68 @@ test "the paste's ghost lays aside what the click lays, so a door refuses the ba
     try std.testing.expectEqualStrings("Pasted; 1 torch(es), barrel(s) or foe(s) did not fit there", ed.said.text());
 }
 
+test "paste previews reuse unchanged content and follow cells clipboard terrain doors nodes and undo" {
+    const ed = try editor.Editor.create(std.testing.allocator);
+    defer ed.destroy();
+    _ = ed.map.oneRoom(grid.Box.inMap(0), grid.MIDDLE);
+    const at = P{ .x = 30, .y = 20 };
+    const beside = at.add(.{ .x = 1, .y = 0 });
+    const outside = P{ .x = 50, .y = 40 };
+    ed.board.size = .{ .x = 2, .y = 1 };
+    ed.board.cells.tile = @splat(.floor);
+    ed.board.cells.barrel[0] = true;
+    try std.testing.expect(ed.board.cells.addFoe(.{ .kind = .rat, .at = .{ .x = 1, .y = 0 } }));
+    const first = editor.layAside(ed, at);
+    try std.testing.expect(first.changed and first.left == 0);
+    for (0..256) |_| {
+        try std.testing.expectEqualDeep(first, editor.layAside(ed, at));
+        try std.testing.expect(ed.trial.barrel[grid.Level.idx(at)]);
+        try std.testing.expectEqual(actor.Kind.rat, ed.trial.foe[ed.trial.foeAt(beside).?].kind);
+    }
+    try std.testing.expect(!ed.map.node[0].plan.bespoke.barrel[grid.Level.idx(at)]);
+    try std.testing.expectEqual(@as(usize, 0), ed.map.node[0].plan.bespoke.foe_n);
+
+    const moved = at.add(.{ .x = 3, .y = 0 });
+    _ = editor.layAside(ed, moved);
+    try std.testing.expect(!ed.trial.barrel[grid.Level.idx(at)]);
+    try std.testing.expect(ed.trial.barrel[grid.Level.idx(moved)]);
+    ed.board.cells.tile[0] = .dirt;
+    try std.testing.expectEqual(@as(usize, 1), editor.layAside(ed, at).left);
+    try std.testing.expect(!ed.trial.barrel[grid.Level.idx(at)]);
+    ed.board.cells.tile[0] = .floor;
+    ed.board.cells.foe[0].kind = .pib;
+    try std.testing.expectEqual(@as(usize, 0), editor.layAside(ed, at).left);
+    try std.testing.expectEqual(actor.Kind.pib, ed.trial.foe[ed.trial.foeAt(beside).?].kind);
+
+    paintClick(ed, .rock, outside);
+    _ = editor.layAside(ed, at);
+    try std.testing.expectEqual(grid.Tile.rock, ed.trial.tile[grid.Level.idx(outside)]);
+    ed.undo();
+    _ = editor.layAside(ed, at);
+    try std.testing.expectEqual(grid.Tile.floor, ed.trial.tile[grid.Level.idx(outside)]);
+    ed.redo();
+    _ = editor.layAside(ed, at);
+    try std.testing.expectEqual(grid.Tile.rock, ed.trial.tile[grid.Level.idx(outside)]);
+    click(ed, .door, at);
+    try std.testing.expectEqual(@as(usize, 1), editor.layAside(ed, at).left);
+    try std.testing.expect(!ed.trial.barrel[grid.Level.idx(at)]);
+
+    const n = ed.map.add(.{ .bespoke = .{} }).?;
+    ed.select(n);
+    const predicted = editor.layAside(ed, at);
+    try std.testing.expectEqual(@as(usize, 0), predicted.left);
+    try std.testing.expectEqual(grid.Tile.wall, ed.trial.tile[grid.Level.idx(outside)]);
+    const trial = ed.trial;
+    ed.gesture();
+    editor.layBoard(ed, at);
+    const applied = &ed.map.node[n].plan.bespoke;
+    try std.testing.expectEqualSlices(grid.Tile, &trial.tile, &applied.tile);
+    try std.testing.expectEqualSlices(bool, &trial.barrel, &applied.barrel);
+    try std.testing.expectEqualDeep(trial.torches(), applied.torches());
+    try std.testing.expectEqualDeep(trial.foes(), applied.foes());
+    std.debug.print("paste previews: 256 unchanged frames, moved cell, terrain and foe clipboard edits, terrain undo/redo, door, node and apply parity checked\n", .{});
+}
+
 test "a selection copied pastes with what stood on it, and cut leaves the second ink" {
     const ed = try testBespoke();
     defer ed.destroy();

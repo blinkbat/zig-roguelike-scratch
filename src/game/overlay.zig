@@ -11,6 +11,10 @@ const damage = @import("../play/damage.zig");
 const attrs = @import("../play/attrs.zig");
 const heroes = @import("../play/hero.zig");
 const resilience = @import("../play/resilience.zig");
+const actor = @import("../play/actor.zig");
+const terrain = @import("../play/terrain.zig");
+const progress = @import("../play/progress.zig");
+const fx = @import("../gfx/fx.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
@@ -280,13 +284,13 @@ pub fn drawHud(g: *game.Game) void {
     hud.resources(layout, &g.face, life.hp, life.max, g.pic.manaShown(&g.sim), g.sim.manaMax(), g.pic.life_fill, g.pic.mana_fill);
     drawSkills(g, layout);
     hud.experience(layout, g.pic.xp_shown - @floor(g.pic.xp_shown));
-    if (g.pic.heroShown(&g.sim)) |h| hud.statuses(layout, &g.sprites, &g.face, h.status, h.resilience.peak().percent);
+    if (g.pic.heroShown(&g.sim)) |h| hud.statuses(layout, &g.sprites, &g.face, h.status, @intCast(h.resilience.peak().percent));
     game.mouseControls.draw(g);
 }
 
 pub const Part = struct { spot: game.Spot, box: rl.Rectangle };
 const ORBS = 2;
-pub const SPOTS_MAX = ORBS + skillbar.SLOTS.len + @typeInfo(hud.Shown).array.len + 1;
+pub const SPOTS_MAX = ORBS + skillbar.SLOTS.len + @typeInfo(hud.Shown).array.len + 1 + actor.MAX;
 
 pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     const layout = hudLayout(g);
@@ -310,6 +314,16 @@ pub fn spotsOf(g: *const game.Game, out: *[SPOTS_MAX]Part) []const Part {
     }
     out[n] = .{ .spot = .log, .box = journal.box(g.screen) };
     n += 1;
+    const cam = game.scene.Cam.of(g);
+    for (0..g.sim.pool.n) |i| {
+        const at = g.pic.drawnAt(&g.sim, i) orelse continue;
+        if (g.pic.pictured[i].down()) continue;
+        const p = cam.px(at);
+        const box = raster.rect(p.x, p.y, game.CELL, game.CELL);
+        if (p.x + game.CELL <= 0 or p.y + game.CELL <= 0 or p.x >= g.screen.x or p.y >= g.screen.y) continue;
+        out[n] = .{ .spot = .{ .actor = actor.Pool.idOf(i) }, .box = box };
+        n += 1;
+    }
     return out[0..n];
 }
 
@@ -335,9 +349,15 @@ pub fn inspectStep(g: *game.Game) void {
     var buf: [SPOTS_MAX]Part = undefined;
     const spots = spotsOf(g, &buf);
     const here = inspected(g, spots);
+    if (!std.meta.eql(g.inspecting, here.spot)) g.inspect_scroll = 0;
     g.inspecting = here.spot;
+    if (here.spot == .actor) {
+        const scroll = -g.st.scroll + @as(i32, @intFromBool(g.st.hit(menu.PAGE_NEXT))) - @as(i32, @intFromBool(g.st.hit(menu.PAGE_PREV)));
+        g.inspect_scroll = @intCast(std.math.clamp(@as(i32, @intCast(g.inspect_scroll)) + scroll, 0, @as(i32, hud.TIP_LINES_MAX - 1)));
+    }
     if (g.st.pointing()) {
         for (spots) |part| if (under(part, g.st.pointer.?)) {
+            if (!std.meta.eql(g.inspecting, part.spot)) g.inspect_scroll = 0;
             g.inspecting = part.spot;
             return;
         };
@@ -348,7 +368,9 @@ pub fn inspectStep(g: *game.Game) void {
         g.sim.log.move(-d.delta().y);
         return;
     }
-    g.inspecting = toward(spots, here, d) orelse here.spot;
+    const next = toward(spots, here, d) orelse here.spot;
+    if (!std.meta.eql(next, here.spot)) g.inspect_scroll = 0;
+    g.inspecting = next;
 }
 
 fn inspected(g: *const game.Game, spots: []const Part) Part {
@@ -388,22 +410,24 @@ fn drawTip(g: *game.Game, here: Part) void {
     var title_buf: [TIP_TITLE_MAX]u8 = undefined;
     var body_buf: [TIP_BODY_MAX]u8 = undefined;
     const tip = tipOf(g, here.spot, &title_buf, &body_buf) orelse return;
-    hud.tooltip(&g.face, hudLayout(g), g.screen, here.box, tip.title, tip.body);
+    const scroll = hud.tooltipScrolled(&g.face, hudLayout(g), g.screen, here.box, tip.title, tip.body, if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll else 0);
+    if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll = scroll;
 }
 
 const Tip = struct { title: [:0]const u8, body: []const u8 };
 pub const TIP_TITLE_MAX: usize = 64;
-pub const TIP_BODY_MAX: usize = menu.NOTE_MAX * 2;
+pub const TIP_BODY_MAX: usize = 2048;
 
 /// The log is its own tooltip: scrolled, never titled.
 pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8) ?Tip {
     return switch (s) {
+        .actor => |id| actorTip(g, id, title_buf, body_buf),
         .log => null,
         .life => blk: {
             const life = g.pic.lifeShown(&g.sim);
             break :blk .{
                 .title = hud.LIFE,
-                .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" }, .{ "Physical reduction", "{d}%" }, .{ "Dodge", "{d}%" } }), .{ life.hp, life.max, g.sim.heroAttrs().reduction(), g.sim.heroAttrs().dodge() }) catch "",
+                .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" }, .{ "Physical reduction", "{d}%" }, .{ "Dodge", "{d}%" } }), .{ life.hp, life.max, g.sim.heroAttrs().reduction(), if (g.sim.heroBody()) |h| g.sim.combatStats(h).dodge else 0 }) catch "",
             };
         },
         .mana => .{
@@ -427,7 +451,7 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             else if (v.cooling > 0)
                 w.print("\nReady in {d} turn{s}", .{ v.cooling, plural(v.cooling) }) catch {};
             const rank = g.sim.growth.ranks.get(act);
-            break :blk .{ .title = if (rank > 0) std.fmt.bufPrintZ(title_buf, "{s} - Rank {d}", .{ act.name(), rank }) catch act.name() else act.name(), .body = body.getWritten() };
+            break :blk .{ .title = if (rank > 0 and !progress.basic(act)) std.fmt.bufPrintZ(title_buf, "{s} - Rank {d}", .{ act.name(), rank }) catch act.name() else act.name(), .body = body.getWritten() };
         },
         .status => |st| blk: {
             if (st == .resistant) {
@@ -447,4 +471,82 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             };
         },
     };
+}
+
+fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip {
+    if (id == 0 or actor.Pool.slot(id) >= g.sim.pool.n) return null;
+    const i = actor.Pool.slot(id);
+    const at = g.pic.drawnCell(&g.sim, i) orelse return null;
+    const pictured = g.pic.pictured[i];
+    if (pictured.down()) return null;
+    const a = &g.sim.pool.items[i];
+    const row = actor.row(pictured.kind);
+    const tile = g.sim.lv.at(at);
+    var stream = std.io.fixedBufferStream(body_buf);
+    const w = stream.writer();
+    if (!g.sim.isHero(i)) {
+        w.print("{d}/{d} HP\n" ++ hud.TIP_RULE ++ "\n{s}", .{ pictured.hp, pictured.max, menu.titleOf(tile) }) catch {};
+        terrain.of(tile).write(w);
+        const title = std.fmt.bufPrintZ(title_buf, "{s}", .{row.name}) catch return .{ .title = row.name, .body = stream.getWritten() };
+        var first = true;
+        for (title) |*c| {
+            if (first) c.* = std.ascii.toUpper(c.*);
+            first = c.* == ' ';
+        }
+        return .{ .title = title, .body = stream.getWritten() };
+    }
+    const stats = g.sim.combatStatsAt(a, at, pictured.resilience);
+    if (row.foe_type) |kind| w.print("{s}, {s}\n", .{ menu.named(kind), menu.word(row.movement) }) catch {} else w.print("{s}\n", .{menu.named(g.sim.class)}) catch {};
+    w.print("Life: {d}/{d}\n", .{ pictured.hp, pictured.max }) catch {};
+    if (g.sim.isHero(i)) w.print("Mana: {d}/{d}\n", .{ g.pic.manaShown(&g.sim), g.sim.manaMax() }) catch {};
+    if (g.sim.isHero(i)) {
+        const attributes = g.sim.heroAttrs();
+        w.print("Strength {d}, dexterity {d}, intelligence {d}\n", .{ attributes.get(.strength), attributes.get(.dexterity), attributes.get(.intelligence) }) catch {};
+        const gear = g.sim.inventory.gear;
+        const melee = gear.weapon(.melee) orelse row.blow.strike.hit;
+        const span = gear.forAttack(attributes, .melee).span(gear.scaling(.melee), melee);
+        w.print("Bump attack: {d}-{d} physical\nBump critical chance: {d}%\n", .{ span.lo, span.hi, gear.forAttack(attributes, .melee).crit() }) catch {};
+        if (g.sim.class == .archer) if (g.sim.growth.preparedHit(attributes, gear, .shoot, if (pictured.status.get(.steady) > 0) a.tactics.steady else 0)) |hit| {
+            w.print("Shoot: {d}-{d} physical\n", .{ hit.physical.lo, hit.physical.hi }) catch {};
+        };
+        if (g.sim.class == .wizard) w.print("Spell critical chance: {d}%\n", .{gear.forAttack(attributes, .spell).crit()}) catch {};
+    }
+    switch (row.blow) {
+        .strike => |strike| {
+            if (!g.sim.isHero(i)) {
+                const reach = if (row.ranged) |r| r.range else @as(i32, 1);
+                w.print("Attack: {d}-{d} physical; range {d} cell{s}\n", .{ strike.hit.lo, strike.hit.hi, reach, plural(reach) }) catch {};
+                if (strike.bleeds > 0) w.print("Bleed chance: {d}%\n", .{strike.bleeds}) catch {};
+                if (strike.stuns > 0) w.print("Stun chance: {d}%\n", .{strike.stuns}) catch {};
+            }
+        },
+        .burst => w.writeAll("Bursts into caustic gas.\n") catch {},
+    }
+    w.print("Hit: {d}%; dodge: {d}%\nPhysical reduction: {d}%\n", .{ stats.hit, stats.dodge, if (g.sim.isHero(i)) g.sim.heroAttrs().reduction() else row.armour }) catch {};
+    for (std.enums.values(damage.Element)) |e| w.print("{s} resistance: {d}%\n", .{ menu.named(e), stats.elements.get(e) }) catch {};
+    for (std.enums.values(resilience.Kind)) |k| {
+        const n = stats.statuses.get(k);
+        const turns = pictured.resilience.meters.get(k).turns;
+        if (n != 0 or turns > 0) {
+            w.print("{s} resistance: {d}%", .{ menu.named(k), n }) catch {};
+            if (turns > 0) w.print(" (buildup: {d} turns)", .{turns}) catch {};
+            w.writeAll("\n") catch {};
+        }
+    }
+    for (std.enums.values(fx.Status)) |status| {
+        const turns = pictured.status.get(status);
+        if (turns == 0 or status == .resistant) continue;
+        switch (status) {
+            .guarding, .unyielding, .steady, .overwatch => w.print("{s}: active\n", .{status.title()}) catch {},
+            else => w.print("{s}: {d} turn{s}\n", .{ status.title(), turns, plural(turns) }) catch {},
+        }
+    }
+    if (row.splits != null) w.writeAll("Splits below half life.\n") catch {};
+    if (row.sweep_every > 0) w.print("Sweeps every {d} turns.\n", .{row.sweep_every}) catch {};
+    if (row.flits) w.writeAll("Moves erratically.\n") catch {};
+    if (row.flees) w.writeAll("Flees after a nearby foe dies.\n") catch {};
+    if (row.ranged != null) w.writeAll("Retreats when crowded.\n") catch {};
+    w.print("\nTile: {s}", .{menu.named(tile)}) catch {};
+    terrain.of(tile).write(w);
+    return .{ .title = if (g.sim.isHero(i)) std.fmt.bufPrintZ(title_buf, "{s}", .{g.sim.name.text()}) catch row.name else row.name, .body = stream.getWritten() };
 }

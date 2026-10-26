@@ -76,6 +76,7 @@ test {
     _ = @import("map/spar.zig");
     _ = @import("play/actor.zig");
     _ = @import("play/resilience.zig");
+    _ = @import("play/terrain.zig");
     _ = @import("play/bow.zig");
     _ = @import("play/damage.zig");
     _ = @import("play/attrs.zig");
@@ -153,6 +154,7 @@ test {
     _ = @import("game/tests/picture.zig");
     _ = @import("game/tests/menus.zig");
     _ = @import("game/tests/hero.zig");
+    _ = @import("game/tests/terrain.zig");
     _ = @import("edit/editor.zig");
     _ = @import("edit/knobs.zig");
     _ = @import("edit/canvas.zig");

@@ -48,7 +48,7 @@ Use the existing check, test, shot and build scripts. Inspect full, partial, cri
 
 Implemented in `src/ui/hud.zig`, with game data supplied by `drawHud` and `drawSkills` in `src/game/overlay.zig`. The HUD module holds the orb/frame geometry, colours, fill calculation and ailment icons for later replacement with authored art. The selected aiming slot stays highlighted. Each slot's input is a `prompt_icon.Prompt` icon under it.
 
-Small text is rasterized at its displayed size (17, 18, 20 and 24px) with point filtering, measured and drawn from the same atlas. Sizes through 18px use Source Sans 3; larger text uses Balthazar. Scaled panels use the corresponding mipmapped face, and map symbols retain Balthazar. Input icons are 25px tall with 17px labels, 6px below their slots. The 48px slots contain basic 30px procedural icons, with 8px gaps within groups and 16px between groups.
+Small text is rasterized at its displayed size (17, 18, 20 and 24px) with point filtering, measured and drawn from the same atlas. Sizes through 18px use Source Sans 3; larger text uses Balthazar. Scaled panels use the corresponding mipmapped face, and map symbols retain Balthazar. Input icons are 25px tall with 17px labels, 6px below their slots. The 48px slots contain basic 30px procedural icons, with equal 8px horizontal gaps between all seven slots, including the modifier.
 
 The map spans the full screen (`Game.screen`), the camera scrolling past the floor's foot by `hud.COVER`. The bind screen sizes its panel for the skill rows, longest available description and action buttons, using Character's `book.SIZE` as its scale reference over a veil. `ui/journal.zig` owns the saved event history and its bottom-left panel; the wheel or HUD inspector scrolls it.
 

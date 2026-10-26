@@ -80,7 +80,7 @@ pub fn cast(g: *game.Game, act: skillbar.Act, from: P) void {
                     g.sim.displaced.set(actor.Pool.slot(id));
                     entered(g, id);
                 }
-                if (rules.GravityWell.pins(rank) > 0 and a.takeStatus(.pin, &g.sim.rng)) a.pin.turns = @max(a.pin.turns, rules.GravityWell.pins(rank));
+                if (rules.GravityWell.pins(rank) > 0 and g.sim.takeStatus(a, .pin)) a.pin.turns = @max(a.pin.turns, rules.GravityWell.pins(rank));
                 g.pic.fx.settle(game.CAST_S, .{ .slot = actor.Pool.slot(id), .after = g.pic.afterOf(&g.sim, actor.Pool.slot(id)) });
             }
             g.sim.flowed = false;
@@ -99,7 +99,7 @@ pub fn cast(g: *game.Game, act: skillbar.Act, from: P) void {
             for (ids.slice()) |id| {
                 const a = g.sim.pool.get(id) orelse continue;
                 const hit = combat.heroScaled(g, .combustion, raw);
-                combat.wound(g, id, .{ .dmg = hit.blow.total(a.resists), .crit = hit.crit }, "detonates", s);
+                combat.wound(g, id, .{ .dmg = hit.blow.total(g.sim.combatStats(a).elements), .crit = hit.crit }, "detonates", s);
             }
         },
         .arcane_barrier => {
@@ -142,8 +142,8 @@ pub fn entered(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     const trap = g.sim.lv.caltrops[grid.Level.idx(a.at)];
     if (trap.turns > 0 and actor.row(a.kind).movement != .flying) {
-        if (a.takeStatus(.pin, &g.sim.rng)) a.pin.turns = @max(a.pin.turns, rules.Caltrops.pins(trap.rank));
-        if (rules.Caltrops.bleed(trap.rank) > 0 and a.takeStatus(.bleed, &g.sim.rng)) a.bleed.startWith(rules.Caltrops.bleed(trap.rank));
+        if (g.sim.takeStatus(a, .pin)) a.pin.turns = @max(a.pin.turns, rules.Caltrops.pins(trap.rank));
+        if (rules.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) a.bleed.startWith(rules.Caltrops.bleed(trap.rank));
         g.pic.owed[actor.Pool.slot(id)].worn = g.pic.afterOf(&g.sim, actor.Pool.slot(id));
         g.sim.sayAt(a.at, "The {s} steps into caltrops.", .{actor.row(a.kind).name});
     }
@@ -274,7 +274,7 @@ test "tactical barrier selects endpoints without spending then blocks paths unti
     const middle = P{ .x = 22, .y = 20 };
     try std.testing.expect(g.sim.lv.hasBarrier(middle));
     try std.testing.expect(!g.sim.lv.walkable(middle));
-    try std.testing.expect(!bow.aimable(&g.sim.lv, from, .{ .x = 24, .y = 20 }));
+    try std.testing.expect(bow.aimable(&g.sim.lv, from, .{ .x = 24, .y = 20 }));
     try std.testing.expect(grid.clearLine(&g.sim.lv, from, .{ .x = 24, .y = 20 }));
     try std.testing.expectEqual(@as(usize, 1), bow.fly(&g.sim.lv, from, .{ .x = 24, .y = 20 }).len);
     try std.testing.expect(g.sim.lv.isLit(.{ .x = 24, .y = 20 }));

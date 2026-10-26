@@ -249,6 +249,7 @@ const TIP_LINE = font.SMALL_LINE;
 const TIP_BODY_Y = TIP_PAD + font.BODY + TIP_GAP;
 const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
+pub const TIP_LINES_MAX: usize = 96;
 
 /// The mark round what is inspected: a ring round an orb, a frame round anything else.
 pub fn focus(box: rl.Rectangle, round: bool) void {
@@ -262,6 +263,7 @@ pub fn focus(box: rl.Rectangle, round: bool) void {
 
 /// A body with this splits into "label|value" rows, drawn as a table.
 pub const TIP_SEP = '|';
+pub const TIP_RULE = "---";
 
 /// A tooltip body of `.{ label, value }` rows, the values `std.fmt` patterns.
 pub fn table(comptime rows: anytype) []const u8 {
@@ -274,14 +276,18 @@ const TIP_VALUE_X = @divTrunc(TIP_W, 2) + TIP_VALUE_DX;
 
 /// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does.
 pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8) void {
-    var buf: font.Wrapped = undefined;
-    var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
+    _ = tooltipScrolled(face, layout, screen, over, title, body, 0);
+}
+
+pub fn tooltipScrolled(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize) usize {
+    var buf: [TIP_LINES_MAX][font.WRAP_COLS_MAX + 1]u8 = undefined;
+    var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
     var wrapped: font.Wrapped = undefined;
     var parts: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
     var n: usize = 0;
     var rows = std.mem.splitScalar(u8, body, '\n');
     while (rows.next()) |r| {
-        if (n == font.WRAP_LINES_MAX) break;
+        if (n == TIP_LINES_MAX) break;
         if (std.mem.indexOfScalar(u8, r, TIP_SEP) != null or r.len == 0) {
             const len = @min(r.len, font.WRAP_COLS_MAX);
             @memcpy(buf[n][0..len], r[0..len]);
@@ -290,29 +296,43 @@ pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl
             n += 1;
         } else {
             const count = font.wrap(face, r, font.SMALL, TIP_W - 2 * TIP_PAD, &wrapped, &parts);
-            for (parts[0..@min(count, font.WRAP_LINES_MAX - n)]) |part| {
+            for (parts[0..@min(count, TIP_LINES_MAX - n)]) |part| {
                 @memcpy(buf[n][0 .. part.len + 1], part[0 .. part.len + 1]);
                 lines[n] = buf[n][0..part.len :0];
                 n += 1;
             }
         }
     }
-    const h = TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(n)) * TIP_LINE;
+    const limit: usize = @intCast(@max(1, @divTrunc(screen.y - 2 * TIP_MARGIN - TIP_BODY_Y - TIP_PAD, TIP_LINE)));
+    const shown = @min(n, limit);
+    const first = @min(scroll, n - shown);
+    const h = TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(shown)) * TIP_LINE;
     const mid = raster.middleAt(over).x;
-    const x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
-    const y = @max(TIP_MARGIN, @min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y) - TIP_GAP - h);
+    var x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
+    var y: i32 = @max(TIP_MARGIN, @min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y) - TIP_GAP - h);
+    if (over.y < @as(f32, @floatFromInt(layout.top)) and over.y < @as(f32, @floatFromInt(h + TIP_GAP + TIP_MARGIN))) {
+        const right = @as(i32, @intFromFloat(over.x + over.width)) + TIP_GAP;
+        const left = @as(i32, @intFromFloat(over.x)) - TIP_GAP - TIP_W;
+        if (right + TIP_W <= screen.x - TIP_MARGIN or left >= TIP_MARGIN) {
+            x = if (right + TIP_W <= screen.x - TIP_MARGIN) right else left;
+            y = std.math.clamp(@as(i32, @intFromFloat(over.y)) - @divTrunc(h, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.y - h - TIP_MARGIN));
+        }
+    }
     shadow(x, y, TIP_W, h, TIP_SHADOW_A);
     rl.drawRectangle(x, y, TIP_W, h, PLATE);
     rl.drawRectangleLinesEx(raster.rect(x, y, TIP_W, h), TIP_FRAME_W, FRAME);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
-    for (lines[0..n], 0..) |l, i| {
-        const top = y + TIP_BODY_Y + @as(i32, @intCast(i)) * TIP_LINE;
-        if (std.mem.indexOfScalar(u8, l, TIP_SEP)) |split| {
+    for (lines[first .. first + shown], first..) |l, i| {
+        const top = y + TIP_BODY_Y + @as(i32, @intCast(i - first)) * TIP_LINE;
+        if (std.mem.eql(u8, l, TIP_RULE)) {
+            rl.drawLine(x + TIP_PAD, top + @divTrunc(TIP_LINE, 2), x + TIP_W - TIP_PAD, top + @divTrunc(TIP_LINE, 2), FRAME);
+        } else if (std.mem.indexOfScalar(u8, l, TIP_SEP)) |split| {
             buf[i][split] = 0;
             face.text(buf[i][0..split :0], x + TIP_PAD, top, font.SMALL, look.DIM);
             face.text(buf[i][split + 1 .. l.len :0], x + TIP_VALUE_X, top, font.SMALL, look.TEXT);
         } else face.text(l, x + TIP_PAD, top, font.SMALL, look.TEXT);
     }
+    return first;
 }
 
 test "a tooltip's body breaks at spaces into lines that each fit" {

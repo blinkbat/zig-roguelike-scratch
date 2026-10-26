@@ -20,12 +20,23 @@ const P = mathx.P;
 
 pub fn openAim(g: *game.Game, by: input.Button, act: skillbar.Act) void {
     const h = g.sim.heroActor() orelse return;
-    aimAt(g, by, act, h.at, preferredTarget(g, act, h.at) orelse (if (act == .combustion) null else bow.pick(&g.sim.lv, &g.sim.pool, h.at)));
+    const suggested = preferredTarget(g, act, h.at) orelse (if (act == .combustion) null else bow.pick(&g.sim.lv, &g.sim.pool, h.at));
+    if (suggested) |at| return aimAt(g, by, act, h.at, at);
+    if (act.reticle() == .bow) {
+        const dx: i32 = if (g.pic.facing[g.sim.heroSlot().?] == .left) -1 else 1;
+        const ahead = h.at.add(.{ .x = dx, .y = 0 });
+        return aimAt(g, by, act, h.at, if (grid.Level.inside(ahead)) ahead else h.at.add(.{ .x = -dx, .y = 0 }));
+    }
+    aimAt(g, by, act, h.at, null);
 }
 
 fn targetAt(g: *game.Game, act: skillbar.Act, from: P, id: u16) ?P {
     const a = g.sim.pool.get(id) orelse return null;
     if (!a.foe() or !g.sim.lv.isLit(a.at) or !tactics.validAct(g, act, from, a.at)) return null;
+    if (act.reticle() == .bow) {
+        const flight = bow.preview(&g.sim.lv, from, a.at);
+        if (flight.struck == null or flight.struck.? != .body or flight.struck.?.body != id) return null;
+    }
     return a.at;
 }
 
@@ -119,6 +130,7 @@ const plural = mathx.plural;
 
 pub fn aimable(g: *const game.Game, from: P, to: P) bool {
     if (g.aim_act.reticle() == .ground) return tactics.valid(g, from, to);
+    if (g.aim_act.reticle() == .bow and !g.sim.lv.inLos(to)) return false;
     return g.aim_act.aimable(&g.sim.lv, from, to);
 }
 
@@ -295,7 +307,7 @@ fn rush(g: *game.Game, from: P, act: skillbar.Act) void {
 /// Over the hero's own cell, so the reticle reaches the far side of a corridor.
 pub fn nudgeAim(g: *game.Game, d: mathx.Dir) void {
     const h = g.sim.heroActor() orelse return;
-    if (g.aim_act.attack() != null) if (targetToward(g, h.at, d)) |at| {
+    if (g.aim_act.attack() != null and g.aim_act.reticle() != .bow) if (targetToward(g, h.at, d)) |at| {
         g.mark = at;
         rememberTarget(g);
         g.pic.turnToward(g.sim.hero, at.x - h.at.x);
@@ -306,7 +318,7 @@ pub fn nudgeAim(g: *game.Game, d: mathx.Dir) void {
         .leap, .rush, .ground => if (!juke.inReach(h.at, to, g.aim_act.reach()) or !grid.Level.inside(to)) return,
         .bow => {
             if (to.eq(h.at)) to = to.add(d.delta());
-            if (!bow.aimable(&g.sim.lv, h.at, to)) return;
+            if (!aimable(g, h.at, to)) return;
         },
         .swing => to = h.at.add(d.delta()),
     }
@@ -387,7 +399,9 @@ fn loose(g: *game.Game, from: P, act: skillbar.Act) void {
         g.sim.log.say("{s}'s {s} finds nothing.", .{ g.sim.name.text(), act.bolt() orelse "arrow" });
         g.sim.chronicle.note(.missed);
     }
-    if (act.isArrow()) if (g.sim.heroActor()) |h| { h.tactics.steady = 0; };
+    if (act.isArrow()) if (g.sim.heroActor()) |h| {
+        h.tactics.steady = 0;
+    };
     combat.endTurn(g);
 }
 

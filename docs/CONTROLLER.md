@@ -109,7 +109,10 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   does not confirm it unless that button is also the standard confirm. B always cancels, even when it opened the skill. Secondary skills keep their selected set after the modifier is released.
 - **Smart aim** keeps the previously selected enemy while it remains alive, visible and legal for the chosen skill,
   following it when it moves. Otherwise the reticle selects the nearest legal visible enemy. Directional input
-  selects another legal enemy in that direction; with none there, the existing cell or swing-direction controls apply.
+  moves projectile reticles freely one cell at a time; melee and rush targeting retain directional suggestions.
+  Projectile aiming opens without an enemy and accepts empty or dark cells within range and geometric line of sight.
+  Previews and automatic suggestions ignore unseen bodies and barrels. Confirmation fires even without a visible target;
+  nonpiercing flight stops at the first collision, including unseen interceptors.
   Leap destinations remain freely aimed. Selecting or replacing a target spends nothing and never fires automatically;
   the normal confirmation is still required. A direct mouse click on an enemy is explicit targeting and confirmation.
   Target memory clears on level changes, restarts and save loads.
@@ -127,7 +130,9 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
 - **Character** contains equipment, inventory, stats, shared passives and class skills. Shoulders / Q and E change pages from anywhere. Clicking a tab enters its content. Back closes Character in one step. Equip, unequip, drop and point allocation each take one deliberate action; no action submenu or confirmation modal. Rings have an explicit destination switch and the comparison follows that destination. Successful item actions keep the screen open and still spend one turn. Point allocation is free of simulation turns. The underlying inventory/progression transactions remain authoritative.
 - The passive tree starts zoomed in, at `trees.ZOOM_START`. Left-stick bearing browses, right stick pans, D-pad up/down zooms. Shifted keyboard navigation pans; =/-, keypad +/- and Page Up/Down zoom; right-stick click / Home gives the overview. Pan and zoom never allocate points.
 - **Interact** or a first bump opens a closed chest for one turn, revealing its items and gold without opening a panel. Stepping onto a loose bag or stocked open chest opens loot for the movement turn; bags stay walkable even when loot is left behind. Ground gold without items uses a coin drop and auto-loots when stepped onto, with no extra turn or modal. Gold with items shares their bag. Interact browses a sole visible bag/open chest within reach for free, or takes a sole coin drop for one turn. Multiple nearby drops/containers/doors first offer a choice; selecting an entry affects only that cell. Doors always keep a choice, preventing queued input from immediately returning through an arrival door. Loot offers Take item or Take gold for the selected row through the confirm control and Take all through the change control, with device glyphs and clickable buttons. Each successful pickup action takes one turn; Take all collects gold, fills available inventory space and leaves excess items. Gold needs no inventory space. The modal closes when empty. Busy input waits for the current turn or door travel. Movement and browsing never collect gold from bags or chests.
-- **Inspect** walks the life orb, skill slots, mana orb, active statuses and event log without spending a turn. The
+- **Inspect** walks visible onscreen characters, the life orb, skill slots, mana orb, active statuses and event log without spending a turn.
+  Foe cards show only the name in title case and pictured HP, then a divider and the tile with its signed effects.
+  Hero cards retain detailed stats, pictured statuses and effective resistances. Page controls and the mouse wheel scroll long cards. The
   log scrolls up/down while selected; move sideways to leave it. B, Select or
   another right-stick click closes it; keyboard X, Esc or I does the same. Holding the modifier (or Ctrl) shows the
   secondary set's slots there too (`State.sets`).

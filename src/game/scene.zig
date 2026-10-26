@@ -59,7 +59,7 @@ pub const Cam = struct {
     y: i32,
     at: rl.Vector2,
 
-    pub fn of(g: *game.Game) Cam {
+    pub fn of(g: *const game.Game) Cam {
         return .{ .x = mathx.roundTiesDown(g.cam.x), .y = mathx.roundTiesDown(g.cam.y), .at = g.cam };
     }
 
@@ -576,16 +576,20 @@ pub fn drawMap(g: *game.Game) void {
     if (aim_from) |from| {
         var cells = grid.Cells.of(lo, hi);
         while (cells.next()) |p| {
-            if (skills.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
+            if (g.sim.lv.isLit(p) and skills.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
         }
         if (g.aim_act.reticle() == .bow and skills.aimable(g, from, g.mark)) {
-            const f = bow.fly(&g.sim.lv, from, g.mark);
-            for (f.path[0..f.len]) |p| fillCell(c, p, look.AIM_PATH);
+            const f = bow.preview(&g.sim.lv, from, g.mark);
+            for (f.path[0..f.len]) |p| if (g.sim.lv.isLit(p)) {
+                fillCell(c, p, look.AIM_PATH);
+            };
             switch (g.aim_act) {
                 inline else => |a| if (comptime a.bursts()) if (f.impact()) |at| {
-                    const area = skillbar.Act.elemental(a).burst(&g.sim.lv, from, at);
-                    for (area.slice()) |p| {
-                        if (game.character.terrainSeen(g, p)) fillCell(c, p, look.aimArea(a));
+                    if (g.sim.lv.isLit(at)) {
+                        const area = skillbar.Act.elemental(a).burst(&g.sim.lv, from, at);
+                        for (area.slice()) |p| {
+                            if (g.sim.lv.isLit(p)) fillCell(c, p, look.aimArea(a));
+                        }
                     }
                 },
             }
@@ -605,7 +609,7 @@ pub fn drawMap(g: *game.Game) void {
             .overwatch => if (mathx.toward(from, g.mark)) |d| {
                 var covered = grid.Cells.around(from, bow.RANGE);
                 while (covered.next()) |p| {
-                    if (@import("../play/tactics.zig").covered(from, d, p) and bow.aimable(&g.sim.lv, from, p)) fillCell(c, p, look.AIM_PATH);
+                    if (g.sim.lv.isLit(p) and @import("../play/tactics.zig").covered(from, d, p) and bow.aimable(&g.sim.lv, from, p)) fillCell(c, p, look.AIM_PATH);
                 }
             },
             inline else => |a| if (comptime a.sweeps()) {

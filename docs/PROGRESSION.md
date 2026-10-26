@@ -17,7 +17,7 @@
 | Foe loot | Gold is common; item drops are 75% plain white, 20% magic blue and 5% rare yellow before rarity bonuses. Whites have no rolled mods, blues 1–2, rares 3–4 |
 | XP | Foe kills grant XP; each level grants one passive and one active point |
 | Passive tree | 81-node radial graph lifted from Soulslike; three origins, six branches and six bridges |
-| Active trees | Per class, prerequisites, three ranks; only learned skills may be bound |
+| Active trees | Per class, prerequisites, three ranks; Shoot is a fixed basic attack and cannot be upgraded; only learned skills may be bound |
 | Initial skills | Archer: Shoot/Juke; Wizard: Spark/Blink; Knight: Charge/Cleave; all keep bump melee |
 | Charge | Can target a clear empty line for retreat |
 | Respec | Deferred |
@@ -27,6 +27,9 @@ prototype pools, not full Diablo/PoE itemization. Rank upgrades improve damage a
 non-damaging skills with cooldowns also recover sooner, down to 2 turns (1 for a skill that takes
 no turn, since a 1-turn cooldown ends in the turn the skill used). Equipping or allocating life does not
 heal current HP.
+
+Shoot remains available as a basic attack and scales with equipment and attributes, with
+no skill-rank bonus. Loading an older run refunds points spent above its first rank once.
 
 Mana uses small whole numbers alongside life. Starting pools are 20 for archer/knight and 24 for wizard;
 base skill costs range from 2 to 7. Intelligence grants 2 mana per 5 points, and mana affixes grant 1–3.

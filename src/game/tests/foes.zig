@@ -30,7 +30,7 @@ test "thorns returns melee damage with the incoming impact and ignores dodges an
             const slot = actor.Pool.slot(id);
             const hp = g.sim.pool.get(id).?.hp;
             const hero_hp = g.sim.heroActor().?.hp;
-            g.sim.rng = harness.bitesRng(g, kind, &.{hit});
+            g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = hit }});
             combat.endTurn(g);
             const expected: i32 = if (kind == .rat and hit) 2 else 0;
             try std.testing.expectEqual(hp - expected, g.sim.pool.get(id).?.hp);
@@ -99,7 +99,7 @@ test "thorns kills grant rewards and harvest after a shielded hit without blow r
         const hp = hero.hp;
         game.settle(g);
         const kills = g.sim.kills;
-        g.sim.rng = harness.bitesRng(g, .rat, &.{true});
+        g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
         combat.endTurn(g);
         try std.testing.expect(g.sim.pool.get(id) == null);
         try std.testing.expectEqual(kills + 1, g.sim.kills);
@@ -193,7 +193,7 @@ test "thorns respects armour splits slimes and coexists with unyielding counters
     const slime = harness.spawnAt(g, .slime, .{ .x = 21, .y = 20 }, true);
     g.sim.pool.get(slime).?.hp = 5;
     game.settle(g);
-    g.sim.rng = harness.bitesRng(g, .slime, &.{true});
+    g.sim.rng = harness.bitesRng(g, &.{.{ .id = slime, .lands = true }});
     combat.endTurn(g);
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.tally(.slime).left);
     try std.testing.expect(g.pic.owed[actor.Pool.slot(slime)].thorns.?.after.reveals != null);
@@ -248,7 +248,7 @@ test "a crossbowman notices then shoots at the player's arrow range and closes o
     combat.endTurn(g);
     try std.testing.expect(g.sim.pool.get(id).?.awake);
     try std.testing.expect(g.pic.owed[slot].arrow == null);
-    g.sim.rng = harness.bitesRng(g, .bandit_crossbowman, &.{true});
+    g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
     combat.endTurn(g);
     try std.testing.expectEqual(at, g.sim.pool.get(id).?.at);
     try std.testing.expectEqual(@as(usize, bow.RANGE), g.pic.owed[slot].arrow.?.len);
@@ -294,8 +294,8 @@ test "crossbowman arrows respect terrain bodies containers darkness and diagonal
         }
         game.settle(g);
         const hp = g.sim.heroActor().?.hp;
-        const expected = case == .water or case == .open_chest or case == .diagonal;
-        g.sim.rng = harness.bitesRng(g, .bandit_crossbowman, &.{true});
+        const expected = case == .water or case == .open_chest or case == .diagonal or case == .darkness;
+        g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
         combat.endTurn(g);
         const flight = g.pic.owed[actor.Pool.slot(id)].arrow;
         if (expected != (flight != null)) std.debug.print("unexpected arrow in {s} case\n", .{@tagName(case)});
@@ -341,7 +341,7 @@ test "a crossbowman retreats when crowded and fires when pinned or cornered" {
         }
         game.settle(g);
         const hp = g.sim.heroActor().?.hp;
-        g.sim.rng = harness.bitesRng(g, .bandit_crossbowman, &.{true});
+        g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
         combat.endTurn(g);
         try std.testing.expectEqual(at, g.sim.pool.get(id).?.at);
         try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].arrow != null);
@@ -407,7 +407,7 @@ test "crossbowman arrows present separate hits on arrival and stay busy through 
     game.settle(g);
     const hero = g.sim.heroSlot().?;
     const hp = g.sim.heroActor().?.hp;
-    g.sim.rng = harness.bitesRng(g, .bandit_crossbowman, &.{ true, true });
+    g.sim.rng = harness.bitesRng(g, &.{ .{ .id = near, .lands = true }, .{ .id = far, .lands = true } });
     harness.use(g, .wait);
     const first = g.pic.foe_shots[actor.Pool.slot(near)].?;
     const last = g.pic.foe_shots[actor.Pool.slot(far)].?;
@@ -442,7 +442,7 @@ test "crossbowman arrows can be dodged and mana shield harm waits for the arrow"
         game.settle(g);
         const hp = g.sim.heroActor().?.hp;
         const mana = g.sim.mana;
-        g.sim.rng = harness.bitesRng(g, .bandit_crossbowman, &.{shielded});
+        g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = shielded }});
         harness.use(g, .wait);
         try std.testing.expect(g.pic.foe_shots[actor.Pool.slot(id)] != null);
         try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
@@ -799,9 +799,9 @@ test "a sweep stun skips the victim's next action before or after its place in t
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{at});
         harness.toughenFoes(g);
         harness.wakeFoes(g);
-        _ = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
+        const sweeper = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
         g.sim.unkillable = true;
-        g.sim.rng = harness.sweepStunRng(g, earlier);
+        g.sim.rng = harness.sweepStunRng(g, sweeper, 2, earlier);
         combat.endTurn(g);
         try std.testing.expect(g.sim.pool.items[1].hp < harness.TEST_HP);
         try std.testing.expectEqual(at, g.sim.pool.items[1].at);
@@ -830,9 +830,9 @@ test "a sweep stun is paid once by both halves when a later slime splits" {
     const at = P{ .x = 22, .y = 20 };
     const slime = harness.spawnAt(g, .slime, at, true);
     g.sim.pool.get(slime).?.hp = 22;
-    _ = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
+    const sweeper = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
     g.sim.unkillable = true;
-    g.sim.rng = harness.sweepStunRng(g, false);
+    g.sim.rng = harness.sweepStunRng(g, sweeper, slime, false);
     combat.endTurn(g);
     try std.testing.expectEqual(@as(usize, 4), g.sim.pool.n);
     try std.testing.expectEqual(at, g.sim.pool.get(slime).?.at);

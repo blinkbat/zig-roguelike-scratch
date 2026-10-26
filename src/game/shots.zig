@@ -56,7 +56,7 @@ fn shootCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     game.settle(g);
     g.pic.turnToward(id, -1);
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-pack.png");
-    g.sim.rng = h.bitesRng(g, .bandit_crossbowman, &.{true});
+    g.sim.rng = h.bitesRng(g, &.{.{ .id = id, .lands = true }});
     h.use(g, .wait);
     const hp_after_shot = g.sim.heroActor().?.hp;
     const shot = g.pic.foe_shots[slot] orelse return error.CrossbowmanDidNotShoot;
@@ -310,11 +310,7 @@ pub fn shootEditor(g: *game.Game) !void {
         const dir = try std.fmt.bufPrint(&dir_buf, SHOTS_DIR ++ "/editor-{d}x{d}", .{ size.x, size.y });
         try std.fs.cwd().makePath(dir);
         var paths: [4][256]u8 = undefined;
-        try editor.shoot(g, target,
-            try std.fmt.bufPrintZ(&paths[0], "{s}/edit.png", .{dir}),
-            try std.fmt.bufPrintZ(&paths[1], "{s}/edit-graph.png", .{dir}),
-            try std.fmt.bufPrintZ(&paths[2], "{s}/edit-gen.png", .{dir}),
-            try std.fmt.bufPrintZ(&paths[3], "{s}/edit-objects.png", .{dir}));
+        try editor.shoot(g, target, try std.fmt.bufPrintZ(&paths[0], "{s}/edit.png", .{dir}), try std.fmt.bufPrintZ(&paths[1], "{s}/edit-graph.png", .{dir}), try std.fmt.bufPrintZ(&paths[2], "{s}/edit-gen.png", .{dir}), try std.fmt.bufPrintZ(&paths[3], "{s}/edit-objects.png", .{dir}));
     }
 }
 
@@ -327,9 +323,42 @@ pub fn shootUi(g: *game.Game) !void {
     try shootRares(g);
     try shootLoot(g);
     try shootHud(g);
+    try shootInspect(g);
     try shootLevelUp(g);
     try shootMouse(g);
     try app.shootHeroes(g);
+}
+
+fn shootInspect(g: *game.Game) !void {
+    const screen = g.screen;
+    defer g.screen = screen;
+    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }, .{ "720", "1080" }) |size, suffix| {
+        g.screen = size;
+        const h = game.harness;
+        const from = P{ .x = 20, .y = 20 };
+        const at = P{ .x = 23, .y = 20 };
+        h.arena(g, from, &.{});
+        h.grassOver(&g.sim.lv);
+        const id = h.spawnAt(g, .beefy_pib, at, true);
+        g.sim.lv.set(at, .shallows);
+        g.sim.lv.set(from, .reeds);
+        g.sim.pool.get(id).?.burn.start();
+        g.sim.pool.get(id).?.resilience.meters.set(.burn, .{ .percent = 25, .turns = 3 });
+        game.settle(g);
+        g.st = .{ .device = .keys };
+        g.mode = .inspect;
+        g.inspecting = .{ .actor = id };
+        g.inspect_scroll = 0;
+        const target = try renderTarget(g);
+        defer rl.unloadRenderTexture(target);
+        try capture(g, target, SHOTS_DIR ++ "/inspect-enemy-water-" ++ suffix ++ ".png");
+        g.inspecting = .{ .actor = g.sim.hero };
+        try capture(g, target, SHOTS_DIR ++ "/inspect-hero-reeds-" ++ suffix ++ ".png");
+        g.sim.lv.set(at, .grass);
+        g.inspecting = .{ .actor = id };
+        try capture(g, target, SHOTS_DIR ++ "/inspect-enemy-grass-" ++ suffix ++ ".png");
+        g.mode = .play;
+    }
 }
 
 fn shootRares(g: *game.Game) !void {
@@ -440,17 +469,21 @@ fn shootMouse(g: *game.Game) !void {
 }
 
 fn checkMouseHiddenAim(g: *game.Game, target: rl.RenderTexture2D) !void {
+    inline for (.{ skillbar.Act.shoot, skillbar.Act.overwatch }) |act| try checkHiddenAim(g, target, act);
+}
+
+fn checkHiddenAim(g: *game.Game, target: rl.RenderTexture2D, comptime act: skillbar.Act) !void {
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     for (0..grid.CELLS) |i| if (grid.Level.of(i).x >= 22) {
         g.sim.lv.lit[i] = false;
         g.sim.lv.seen[i] = false;
     };
     g.light.settle(&g.sim.lv);
-    skills.aiming(g, game.harness.boundTo(g, .shoot).by, .shoot);
-    g.st = .{ .device = .keys, .modifier = g.bar.modifier, .mouse_moved = true, .pointer = game.scene.Cam.of(g).mid(.{ .x = 24, .y = 20 }) };
+    skills.aiming(g, game.harness.boundTo(g, .shoot).by, act);
+    g.st = .{ .device = .keys, .modifier = g.bar.modifier, .mouse_moved = true, .pointer = game.scene.Cam.of(g).mid(.{ .x = if (act == .overwatch) 21 else 24, .y = 20 }) };
     _ = game.mouseControls.aim(g);
-    if (g.mode != .aim or skills.aimable(g, g.sim.heroActor().?.at, g.mark)) return error.MouseHiddenAimSetup;
-    try capture(g, target, SHOTS_DIR ++ "/mouse/aim-hidden.png");
+    if (g.mode != .aim or !skills.aimable(g, g.sim.heroActor().?.at, g.mark)) return error.MouseHiddenAimSetup;
+    try capture(g, target, SHOTS_DIR ++ "/mouse/aim-hidden-" ++ @tagName(act) ++ ".png");
     const aimed = try readTarget(target);
     defer rl.unloadImage(aimed);
     g.mode = .play;
@@ -465,7 +498,7 @@ fn checkMouseHiddenAim(g: *game.Game, target: rl.RenderTexture2D) !void {
         if (!sameRgb(rl.getImageColor(aimed, x, y), rl.getImageColor(plain, x, y))) return error.MouseAimRevealedHiddenPath;
         checked += 1;
     };
-    std.debug.print("mouse targeting GPU: {d} hidden path pixels unchanged\n", .{checked});
+    std.debug.print("{s} targeting GPU: {d} hidden path pixels unchanged\n", .{ @tagName(act), checked });
 }
 
 pub fn shootDebug(g: *game.Game) !void {
@@ -1813,9 +1846,25 @@ fn overviews(g: *game.Game, w: *atlas.Atlas) !void {
         for (g.sim.lv.torches()) |t| g.face.glyph(look.TORCH.ch, t.x * OVERVIEW_CELL + OVERVIEW_MID, t.y * OVERVIEW_CELL + OVERVIEW_MID, OVERVIEW_INK, look.TORCH.fg);
         rl.endTextureMode();
         var buf: [listing.PATH_MAX + 32]u8 = undefined;
-        const name = try std.fmt.bufPrintZ(&buf, SHOTS_MAPS ++ "/{s}.png", .{list.stem(i)});
+        const name = try overviewPath(&buf, list.at(i));
+        try std.fs.cwd().makePath(std.fs.path.dirname(name).?);
         try exportTarget(target, name);
     }
+}
+
+fn overviewPath(buf: []u8, map: []const u8) ![:0]const u8 {
+    return std.fmt.bufPrintZ(buf, SHOTS_MAPS ++ "/{s}/overview.png", .{map[atlas.PREFIX.len..]});
+}
+
+test "map overview paths preserve folders with repeated map names" {
+    const paths = [_][]const u8{ "main", "foo", "a/foo", "b/foo", "a/deeper/foo", "foo.png/bar" };
+    var checked: usize = 0;
+    inline for (paths) |path| {
+        var buf: [listing.PATH_MAX + 32]u8 = undefined;
+        try std.testing.expectEqualStrings(SHOTS_MAPS ++ "/" ++ path ++ atlas.EXT ++ "/overview.png", try overviewPath(&buf, atlas.PREFIX ++ path ++ atlas.EXT));
+        checked += 1;
+    }
+    std.debug.print("map overview paths: {d} root and nested outputs keep distinct names\n", .{checked});
 }
 
 /// Milliseconds a frame takes to draw, over `n` frames after `warm` unmeasured.

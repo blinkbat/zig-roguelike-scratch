@@ -771,7 +771,8 @@ test "smart aim retains a moved enemy across skills without spending or firing" 
     const hp = g.sim.pool.get(3).?.hp;
     skills.useSkill(g, .{ .act = .shoot, .by = .x });
     try std.testing.expectEqual(@as(?u16, 2), g.target);
-    skills.nudgeAim(g, .e);
+    g.mark = g.sim.pool.get(3).?.at;
+    skills.rememberTarget(g);
     try std.testing.expectEqual(@as(?u16, 3), g.target);
     harness.press(g, BACK);
     const moved = P{ .x = 25, .y = 22 };
@@ -786,6 +787,41 @@ test "smart aim retains a moved enemy across skills without spending or firing" 
     try std.testing.expectEqual(hp, g.sim.pool.get(3).?.hp);
     try std.testing.expectEqual(@as(u8, 0), g.sim.cooldown.get(.burning_arrow));
     std.debug.print("smart aim: a moved enemy retains identity across two skills; selection and cancellation spend no mana, cooldown, turn, RNG or damage\n", .{});
+}
+
+test "smart aim ignores hidden interception until the shot is confirmed" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const hidden = P{ .x = 23, .y = 20 };
+    const to = P{ .x = 26, .y = 20 };
+    const Interceptor = enum { body, barrel };
+    for (std.enums.values(Interceptor)) |kind| {
+        harness.arena(g, from, &.{to});
+        const hp = g.sim.pool.get(2).?.hp;
+        const id: ?u16 = if (kind == .body) harness.spawnAt(g, .rat, hidden, false) else null;
+        if (kind == .barrel) g.sim.lv.putBarrel(hidden);
+        g.sim.lv.lit[grid.Level.idx(hidden)] = false;
+        const clock = g.sim.clock;
+        const mana = g.sim.mana;
+        const rng = g.sim.rng;
+        skills.openAim(g, .x, .shoot);
+        try std.testing.expectEqual(to, g.mark);
+        try std.testing.expectEqual(@as(?u16, 2), g.target);
+        g.mode = .play;
+        skills.openAim(g, .x, .burning_arrow);
+        try std.testing.expectEqual(to, g.mark);
+        try std.testing.expectEqual(@as(?u16, 2), g.target);
+        try std.testing.expectEqual(clock, g.sim.clock);
+        try std.testing.expectEqual(mana, g.sim.mana);
+        try std.testing.expectEqualDeep(rng, g.sim.rng);
+        g.aim_act = .shoot;
+        skills.confirmAim(g);
+        try std.testing.expectEqual(@as(?P, hidden), g.pic.shot.?.flight.impact());
+        try std.testing.expectEqual(hp, g.sim.pool.get(2).?.hp);
+        if (id) |rat| try std.testing.expect(g.sim.pool.get(rat).?.hurt()) else try std.testing.expect(!g.sim.lv.hasBarrel(hidden));
+    }
+    std.debug.print("smart aim: hidden body and barrel preserve initial and retained targets without spending; confirmed shots still hit each interceptor\n", .{});
 }
 
 test "smart aim replaces dead hidden blocked distant and invalid targets with a legal foe" {
@@ -819,7 +855,7 @@ test "smart aim replaces dead hidden blocked distant and invalid targets with a 
     std.debug.print("smart aim: {d} invalid target cases choose the nearest legal visible foe and wait for confirmation\n", .{std.enums.values(Invalid).len});
 }
 
-test "smart aim cycles in eight directions and retains melee and rush targets by their legality" {
+test "free projectile aim moves one cell in eight directions and retains melee and rush targeting" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
@@ -831,13 +867,14 @@ test "smart aim cycles in eight directions and retains melee and rush targets by
     }
     game.castSight(g, from);
     const clock = g.sim.clock;
-    for (mathx.ALL_DIRS, 0..) |d, i| {
+    for (mathx.ALL_DIRS) |d| {
         g.mode = .play;
         g.target = 2;
         skills.useSkill(g, .{ .act = .shoot, .by = .x });
+        g.mark = centre;
         skills.nudgeAim(g, d);
-        try std.testing.expectEqual(@as(?u16, actor.Pool.idOf(i + 2)), g.target);
-        try std.testing.expectEqual(g.sim.pool.get(g.target.?).?.at, g.mark);
+        try std.testing.expectEqual(@as(?u16, null), g.target);
+        try std.testing.expectEqual(centre.add(d.delta()), g.mark);
         try std.testing.expectEqual(clock, g.sim.clock);
     }
     harness.heroArena(g, .knight, from, &.{ .{ .x = 20, .y = 19 }, .{ .x = 21, .y = 20 }, .{ .x = 23, .y = 20 } });
@@ -855,7 +892,7 @@ test "smart aim cycles in eight directions and retains melee and rush targets by
     skills.openLeap(g, .b, .juke);
     try std.testing.expectEqual(from, g.mark);
     try std.testing.expectEqual(@as(?u16, 4), g.target);
-    std.debug.print("smart aim: eight directional cycles, adjacent melee, blocked and clear rushes; leaps retain free cell targeting\n", .{});
+    std.debug.print("free projectile aim: eight directions without snapping; adjacent melee, blocked and clear rushes and free leaps checked\n", .{});
 }
 
 test "smart aim forgets actor identities when a pool is reset or a run resumes" {
@@ -874,7 +911,7 @@ test "smart aim forgets actor identities when a pool is reset or a run resumes" 
     std.debug.print("smart aim: reset and resume discard actor IDs instead of selecting unrelated replacement actors\n", .{});
 }
 
-test "the reticle walks only onto cells the arrow can reach" {
+test "the projectile reticle can aim at walls while staying within range" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 20 + bow.RANGE, .y = 20 }});
@@ -884,9 +921,9 @@ test "the reticle walks only onto cells the arrow can reach" {
     harness.nudge(g, .e);
     try std.testing.expectEqual(P{ .x = 20 + bow.RANGE, .y = 20 }, g.mark);
     harness.nudge(g, .n);
-    try std.testing.expectEqual(P{ .x = 20 + bow.RANGE, .y = 20 }, g.mark);
+    try std.testing.expectEqual(P{ .x = 20 + bow.RANGE, .y = 19 }, g.mark);
     harness.nudge(g, .w);
-    try std.testing.expectEqual(P{ .x = 19 + bow.RANGE, .y = 20 }, g.mark);
+    try std.testing.expectEqual(P{ .x = 19 + bow.RANGE, .y = 19 }, g.mark);
 }
 
 test "two arrows kill a rat at range, and the first wakes it" {
@@ -902,13 +939,13 @@ test "two arrows kill a rat at range, and the first wakes it" {
     try std.testing.expectEqual(@as(usize, 1), g.sim.kills);
 }
 
-test "X with nothing in sight stays in play and spends no turn" {
+test "projectile aiming opens with nothing in sight and only confirmation spends a turn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 40, .y = 20 }});
     harness.wakeFoes(g);
     harness.press(g, .x);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.aim, g.mode);
     try std.testing.expectEqual(@as(i32, 40), g.sim.pool.get(2).?.at.x);
 }
 
@@ -1012,8 +1049,8 @@ test "live skill tooltips include equipped damage, ranks and the actual targetin
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
     const tip = overlay.tipOf(g, .{ .slot = 0 }, &title, &body).?;
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "Range: 9 cells") != null);
-    try std.testing.expect(std.mem.indexOf(u8, tip.body, "Physical damage: 3-8") != null);
-    try std.testing.expectEqualStrings("Shoot - Rank 3", tip.title);
+    try std.testing.expect(std.mem.indexOf(u8, tip.body, "Physical damage: 2-6") != null);
+    try std.testing.expectEqualStrings("Shoot", tip.title);
     try std.testing.expect(std.mem.startsWith(u8, tip.body, skillbar.Act.shoot.desc()));
     try std.testing.expectEqual(@as(i32, 1), skillbar.Act.cleave.reach());
     g.bar.bind(.{ .set = .primary, .button = skillbar.SLOTS[0] }, .secondary);
@@ -1092,7 +1129,7 @@ test "dodging spends the foe turn without damage, bleeding or mana shield loss" 
                 if (warded) h.ward.raise();
                 const hp = h.hp;
                 const clock = g.sim.clock;
-                g.sim.rng = harness.bitesRng(g, .pib, &.{!dodged});
+                g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = !dodged }});
                 harness.use(g, .wait);
                 try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
                 if (dodged) {
@@ -1297,7 +1334,7 @@ test "a pinning shot holds a chasing rat to its cell for two to four of its turn
     harness.wakeFoes(g);
     biter.pin.turns = pinning.TURNS_HI;
     const hp = g.sim.heroActor().?.hp;
-    g.sim.rng = harness.bitesRng(g, .rat, &.{true});
+    g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = true }});
     harness.use(g, .wait);
     try std.testing.expect(g.sim.heroActor().?.hp < hp);
     try std.testing.expectEqual(@as(i32, 21), biter.at.x);
@@ -1434,7 +1471,7 @@ test "a mana shield turns a bite onto mana, the orb dropping as the bite lands, 
     harness.wakeFoes(g);
     const h = g.sim.heroActor().?;
     const hp = h.hp;
-    g.sim.rng = harness.bitesRng(g, .rat, &.{true});
+    g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = true }});
     harness.use(g, .mana_shield);
     const after_cast = manaAfter(g, .mana_shield);
     const bitten = after_cast - g.sim.mana;
@@ -1451,7 +1488,7 @@ test "a mana shield turns a bite onto mana, the orb dropping as the bite lands, 
     for (1..ward.TURNS) |_| harness.use(g, .wait);
     try std.testing.expectEqual(hp, h.hp);
     try std.testing.expectEqual(@as(u8, 0), h.ward.turns);
-    g.sim.rng = harness.bitesRng(g, .rat, &.{true});
+    g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = true }});
     harness.use(g, .wait);
     try std.testing.expect(h.hp < hp);
     std.debug.print("mana shield: a bite of {d} taken from mana, the orb holding till it landed; {d} turns, then the bites drew blood\n", .{ bitten, ward.TURNS });
@@ -1462,7 +1499,7 @@ test "mana shield deductions follow each staggered hit" {
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{ .{ .x = 21, .y = 20 }, .{ .x = 20, .y = 21 } });
     harness.wakeFoes(g);
-    g.sim.rng = harness.bitesRng(g, .rat, &.{ true, true });
+    g.sim.rng = harness.bitesRng(g, &.{ .{ .id = 2, .lands = true }, .{ .id = 3, .lands = true } });
     harness.use(g, .mana_shield);
     const before = manaAfter(g, .mana_shield);
     try std.testing.expectEqual(before, g.sim.mana + g.pic.mana_held);

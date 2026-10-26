@@ -311,7 +311,7 @@ fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, class: hero.
         rl.drawRectangleRec(plaque, BACK);
         rl.drawRectangleLinesEx(plaque, 1, ink);
         var rank: menu.Note(16) = .{};
-        rank.say("{d}/{d}", .{ growth.ranks.get(s.act), progress.RANKS });
+        if (progress.basic(s.act)) rank.say("Basic", .{}) else rank.say("{d}/{d}", .{ growth.ranks.get(s.act), progress.rankLimit(s.act) });
         const pm = raster.middleAt(plaque);
         face.centred(rank.text(), pm.x, pm.y, font.SMALL, ink);
         face.drawMid(s.act.name(), mid.x, mid.y + SKILL_NAME_DY, font.SMALL, if (growth.unlocked(s.act) or i == cursor) look.TEXT else LOCKED);
@@ -321,6 +321,7 @@ fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, class: hero.
 }
 
 fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Skill, buf: *menu.Note(128)) [:0]const u8 {
+    if (progress.basic(s.act)) return "Basic attacks cannot be upgraded.";
     if (growth.maxed(s.act)) return "Maximum rank reached.";
     if (s.parent) |p| if (!growth.unlocked(p)) {
         buf.say("Learn {s} first.", .{p.name()});
@@ -361,7 +362,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     face.engraved(s.act.name(), x, NAME_Y, font.HEAD, look.TEXT);
     var rank: menu.Note(64) = .{};
     const learned = growth.unlocked(s.act);
-    if (learned) rank.say("Rank {d} of {d}", .{ growth.ranks.get(s.act), progress.RANKS }) else rank.say("Not learned", .{});
+    if (progress.basic(s.act)) rank.say("Basic attack", .{}) else if (learned) rank.say("Rank {d} of {d}", .{ growth.ranks.get(s.act), progress.rankLimit(s.act) }) else rank.say("Not learned", .{});
     face.draw(rank.text(), x, RANK_Y, font.SMALL, skillInk(class, growth, s));
     var desc: menu.Note(256) = .{};
     s.act.describe(desc.writer(), loadout.gear.perks(growth.perks()));
@@ -369,7 +370,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     var top: i32 = @max(RULE_MIN_Y, end + RULE_GAP);
     rl.drawLine(x, top, x + TEXT_W, top, BORDER);
     top += RULE_GAP;
-    face.draw(if (learned) "CURRENT RANK" else "FIRST RANK", x, top, font.SMALL, look.DIM);
+    face.draw(if (progress.basic(s.act)) "ATTACK" else if (learned) "CURRENT RANK" else "FIRST RANK", x, top, font.SMALL, look.DIM);
     top += CAPTION_STEP;
     var text: menu.Note(128) = .{};
     const hit = skillHit(growth, s.act, loadout);
@@ -424,7 +425,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     if (s.act.flavor()) |line| _ = face.paragraph(line, x, top + FLAVOR_GAP, TEXT_W, font.LABEL, look.DIM);
     var reason: menu.Note(128) = .{};
     _ = paragraph(face, skillReason(class, growth, s, &reason), x, REASON_Y, TEXT_W, if (growth.canLearn(class, s.act)) OWNED else look.DIM);
-    drawAction(face, if (maximum) "Maximum rank" else if (learned) "Upgrade skill" else "Learn skill", growth.canLearn(class, s.act));
+    drawAction(face, if (progress.basic(s.act)) "Basic attack" else if (maximum) "Maximum rank" else if (learned) "Upgrade skill" else "Learn skill", growth.canLearn(class, s.act));
 }
 
 const Layout = struct {

@@ -137,7 +137,7 @@ test "tight diagonals carry movement sight projectiles melee and gas in all four
         try std.testing.expectEqual(ahead, g.sim.pool.get(rat).?.at);
         const hp = g.sim.heroActor().?.hp;
         const rat_hp = g.sim.pool.get(rat).?.hp;
-        g.sim.rng = harness.meleeThenBites(g, 1);
+        g.sim.rng = harness.meleeThenBites(g, rat, &.{rat});
         harness.nudge(g, d);
         try std.testing.expectEqual(near, g.sim.heroActor().?.at);
         try std.testing.expect(g.sim.heroActor().?.hp < hp);

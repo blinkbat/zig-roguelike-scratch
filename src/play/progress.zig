@@ -8,6 +8,13 @@ const damage = @import("damage.zig");
 const mathx = @import("../core/mathx.zig");
 
 pub const RANKS: u8 = 3;
+pub fn basic(act: skillbar.Act) bool {
+    return act == .shoot;
+}
+
+pub fn rankLimit(act: skillbar.Act) u8 {
+    return if (basic(act)) 1 else RANKS;
+}
 /// Percent more damage, and percent less mana, per rank past the first.
 const RANK_DAMAGE_PERCENT: i32 = 20;
 const RANK_COST_PERCENT: i32 = 10;
@@ -85,7 +92,9 @@ comptime {
 
 pub const Hit = struct { physical: damage.Span, element: ?damage.Span, style: attrs.Style };
 pub const Blow = struct {
-    by: attrs.Attrs, style: attrs.Style, bases: skillbar.EquippedBases,
+    by: attrs.Attrs,
+    style: attrs.Style,
+    bases: skillbar.EquippedBases,
     pub fn hit(self: Blow, act: skillbar.Act) Hit {
         return .{ .physical = self.by.span(self.style, self.bases.physical()), .element = if (self.bases.element) |e| self.by.elementSpan(self.style, e, act.element().?) else null, .style = self.style };
     }
@@ -165,7 +174,7 @@ pub const State = struct {
     }
 
     pub fn maxed(self: *const State, act: skillbar.Act) bool {
-        return self.ranks.get(act) >= RANKS;
+        return basic(act) or self.ranks.get(act) >= rankLimit(act);
     }
 
     pub fn canLearn(self: *const State, c: hero.Class, act: skillbar.Act) bool {
@@ -183,7 +192,21 @@ pub const State = struct {
         return true;
     }
 
+    pub fn refundBasicRanks(self: *State) bool {
+        var refunded = false;
+        for (std.enums.values(skillbar.Act)) |act| {
+            if (!basic(act)) continue;
+            const extra = self.ranks.get(act) -| 1;
+            if (extra == 0) continue;
+            self.active_points +|= extra;
+            self.ranks.set(act, 1);
+            refunded = true;
+        }
+        return refunded;
+    }
+
     fn extraRanks(self: *const State, act: skillbar.Act) u8 {
+        if (basic(act)) return 0;
         return self.ranks.get(act) -| 1;
     }
 
@@ -305,7 +328,7 @@ test "experience awards both point pools; passive paths cross class regions; act
         state.active_points = 100;
         for (skills(c)) |s| {
             while (state.learn(c, s.act)) {}
-            try std.testing.expectEqual(RANKS, state.ranks.get(s.act));
+            try std.testing.expectEqual(rankLimit(s.act), state.ranks.get(s.act));
         }
         for (hero.CLASSES) |other| if (other != c) {
             try std.testing.expect(!state.learn(c, skills(other)[0].act));

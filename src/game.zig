@@ -71,21 +71,11 @@ const DEAD_ACTION_DY: i32 = DEAD_SCORE_DY + 50;
 pub const SLOT_PX: i32 = 48;
 pub const SLOT_GAP: i32 = 8;
 pub const SLOT_STEP: i32 = SLOT_PX + SLOT_GAP;
-const GROUP_GAP: i32 = 16;
 pub const KEY_GAP: i32 = 6;
 pub const PROMPT_PX: i32 = 25;
 pub const SLOT_XS = blk: {
     var xs: [skillbar.SLOTS.len]i32 = undefined;
-    var x: i32 = 0;
-    var i: usize = 0;
-    for (skillbar.GROUPS, 0..) |grp, gi| {
-        if (gi > 0) x += GROUP_GAP - SLOT_GAP;
-        for (grp) |_| {
-            xs[i] = x;
-            x += SLOT_STEP;
-            i += 1;
-        }
-    }
+    for (&xs, 0..) |*x, i| x.* = @as(i32, @intCast(i)) * SLOT_STEP;
     break :blk xs;
 };
 pub const SKILLS_W: i32 = SLOT_XS[SLOT_XS.len - 1] + SLOT_PX;
@@ -136,6 +126,7 @@ comptime {
 pub const Mode = enum { play, aim, bind, dead, pause, inspect };
 
 pub const Spot = union(enum) {
+    actor: u16,
     life,
     mana,
     log,
@@ -194,6 +185,7 @@ pub const Game = struct {
     barrier_start: ?P = null,
     /// Kept between inspections, so the next opens where the last left off.
     inspecting: Spot = .{ .slot = 0 },
+    inspect_scroll: usize = 0,
     /// Map pixels, eased toward the hero. Nothing in the simulation reads it.
     cam: rl.Vector2 = .{ .x = 0, .y = 0 },
     screen: P = WINDOW,
@@ -290,7 +282,10 @@ pub fn beginMapAt(g: *Game, w: *const atlas.Atlas, from: atlas.Start, seed: u64)
 fn enter(g: *Game, n: usize, at: P) void {
     const w = g.sim.map.?;
     var carried = actor.Actor.of(g.sim.class.kind(), at);
-    if (g.sim.heroActor()) |h| { carried = h.*; carried.tactics.steady = 0; }
+    if (g.sim.heroActor()) |h| {
+        carried = h.*;
+        carried.tactics.steady = 0;
+    }
     g.sim.node = n;
     g.sim.outdoors = g.sim.outdoorsNow();
     const back = g.sim.visited.isSet(n);
@@ -419,6 +414,7 @@ pub fn resumeRun(g: *Game) void {
     while (visits.next()) |n| gen.restoreShapes(&g.sim.visits[n].lv);
     toDefaults(g, &.{ "mode", "exit", "character", "epitaph" });
     toDefaults(&g.sim, &.{ "unsaved", "chronicle" });
+    g.sim.unsaved = g.sim.growth.refundBasicRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
     freshTurn(g);
     g.pic.settleXp(&g.sim);

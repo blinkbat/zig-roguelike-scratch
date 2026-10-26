@@ -119,6 +119,7 @@ const UNSAVED = .{
         "art_ready",
         "rain",
         "inspecting",
+        "inspect_scroll",
         "perf",
     },
     .sim = .{

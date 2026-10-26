@@ -554,7 +554,7 @@ test "a kick bumps the rat and lands at the bump's height, and the rat bites bac
     harness.arena(g, at, &.{.{ .x = 21, .y = 20 }});
     harness.wakeFoes(g);
     const cam = g.cam;
-    g.sim.rng = harness.meleeThenBites(g, 1);
+    g.sim.rng = harness.meleeThenBites(g, 2, &.{2});
     harness.nudge(g, .e);
     const hero = g.sim.heroSlot().?;
     const rat = actor.Pool.slot(2);
@@ -804,7 +804,7 @@ test "a foe's hp as drawn, the archer's and the low glow drop as the blow lands,
     const low: i32 = @intFromFloat(vignette.LOW * @as(f32, @floatFromInt(actor.row(HERO).hp)));
     g.sim.heroActor().?.hp = low;
     g.pic.catchUp(&g.sim);
-    g.sim.rng = harness.bitesRng(g, .rat, &.{true});
+    g.sim.rng = harness.bitesRngAt(g, .{ .x = 21, .y = 20 }, &.{.{ .id = 3, .lands = true }});
     harness.nudge(g, .e);
     const hero = g.sim.heroSlot().?;
     try std.testing.expect(g.sim.heroActor().?.hp < low);
@@ -1152,7 +1152,7 @@ test "a kick due late in a frame puts the foes a stagger after it lands, late on
     g.pic.busy = -1;
     g.st = .{ .walk = .e };
     g.st.step.late = late;
-    g.sim.rng = harness.meleeThenBites(g, 2);
+    g.sim.rng = harness.meleeThenBites(g, 2, &.{ 2, 3 });
     game.update(g, 0);
     const t = harness.framesUntil(g, g.sim.heroSlot().?, harness.reddened);
     std.debug.print("a kick due {d:.3} s late: the first bite lands {d:.3} s on\n", .{ late, t });

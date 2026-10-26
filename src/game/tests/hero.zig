@@ -317,7 +317,7 @@ test "a flask's first heal shows immediately and later recovery precedes the nex
     g.st = .{};
     game.update(g, 0);
     try std.testing.expectEqual(first_tick, g.pic.pictured[hero].hp);
-    g.sim.rng = harness.bitesRng(g, .rat, &.{true});
+    g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = true }});
     harness.use(g, .wait);
     const healed = first_tick + firstLifeTick(h.max);
     try std.testing.expect(h.hp < healed);

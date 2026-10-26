@@ -9,6 +9,7 @@ const menu = @import("../ui/menu.zig");
 const book = @import("../ui/book.zig");
 const actor = @import("../play/actor.zig");
 const resilience = @import("../play/resilience.zig");
+const terrain = @import("../play/terrain.zig");
 const look = @import("../gfx/look.zig");
 const scene = @import("scene.zig");
 const game = @import("../game.zig");
@@ -161,8 +162,15 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     const growth = if (now) &g.sim.growth else &g.pic.growth_shown;
     const life = g.pic.lifeShown(&g.sim);
     var v = book.View{ .class = g.sim.class, .name = g.sim.name.text(), .inventory = &g.sim.inventory, .growth = growth, .base = growth.attributes(g.sim.class), .gold = if (now) g.sim.gold else g.pic.gold_shown, .nearby = shownNearby(g, nearby), .device = g.st.device, .chest = g.character.page == .loot and g.sim.lv.at(g.character.loot_at) == .chest_open, .life = .{ .now = life.hp, .max = life.max }, .mana = .{ .now = g.pic.manaShown(&g.sim), .max = g.sim.manaMax() } };
-    if (g.sim.heroActor()) |h| { v.resists = h.resists; v.steady = h.tactics.steady; }
-    if (g.pic.heroShown(&g.sim)) |h| for (std.enums.values(resilience.Kind)) |k| v.status_resist.set(k, h.resilience.standing(k, actor.innateResist(h.kind, k)));
+    if (g.sim.heroBody()) |h| {
+        v.steady = h.tactics.steady;
+        const at = g.pic.drawnCell(&g.sim, g.sim.heroSlot().?) orelse h.at;
+        const buildup = if (g.pic.heroShown(&g.sim)) |shown| shown.resilience else h.resilience;
+        const stats = g.sim.combatStatsAt(h, at, buildup);
+        v.resists = stats.elements;
+        v.environment = terrain.of(g.sim.lv.at(at));
+        for (std.enums.values(resilience.Kind)) |k| v.status_resist.set(k, .{ .percent = stats.statuses.get(k), .turns = buildup.meters.get(k).turns });
+    }
     return v;
 }
 

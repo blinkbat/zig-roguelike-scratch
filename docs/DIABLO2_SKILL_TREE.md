@@ -168,6 +168,10 @@ second allocation policy. [trees.zig](../src/ui/trees.zig) draws the panels, whi
 
 The current active graphs are:
 
+Shoot is a fixed basic attack, like bump melee. It remains the archer's bindable starting
+attack and a prerequisite anchor, but cannot spend active points or gain damage from ranks.
+Its node and details say Basic rather than offering rank upgrades.
+
 | Class | Starting nodes | Connections |
 |---|---|---|
 | Archer | Shoot, Juke | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot; Juke -> Caltrops |

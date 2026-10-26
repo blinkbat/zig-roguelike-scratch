@@ -8,6 +8,9 @@ const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const chronicle = @import("../play/chronicle.zig");
 const attrs = @import("../play/attrs.zig");
+const terrain = @import("../play/terrain.zig");
+const resilience = @import("../play/resilience.zig");
+const damage = @import("../play/damage.zig");
 const flask = @import("../play/flask.zig");
 const heroes = @import("../play/hero.zig");
 const items = @import("../play/items.zig");
@@ -112,6 +115,29 @@ pub const Simulation = struct {
 
     pub fn heroPerks(self: *const Simulation) passives.Perks {
         return self.inventory.gear.perks(self.growth.perks());
+    }
+
+    pub fn combatStats(self: *const Simulation, a: *const actor.Actor) terrain.Stats {
+        return self.combatStatsAt(a, a.at, a.resilience);
+    }
+
+    pub fn combatStatsAt(self: *const Simulation, a: *const actor.Actor, at: P, buildup: resilience.State) terrain.Stats {
+        var base = terrain.Stats{ .elements = a.resists };
+        if (!a.foe()) base.dodge = self.heroAttrs().dodge();
+        for (std.enums.values(resilience.Kind)) |k| {
+            base.statuses.set(k, @as(i16, actor.innateResist(a.kind, k)) + buildup.meters.get(k).percent);
+        }
+        return base.on(self.lv.at(at));
+    }
+
+    pub fn takeStatus(self: *Simulation, a: *actor.Actor, kind: resilience.Kind) bool {
+        return a.resilience.takeResisted(kind, self.combatStats(a).statuses.get(kind), &self.rng);
+    }
+
+    pub fn procStatus(self: *Simulation, a: *actor.Actor, kind: resilience.Kind, chance: u32) bool {
+        const resistance = self.combatStats(a).statuses.get(kind);
+        const effective: u32 = @intCast(@min(100, damage.resisted(@intCast(chance), @min(0, resistance))));
+        return damage.procs(&self.rng, effective) and self.takeStatus(a, kind);
     }
 
     pub fn lifeMax(self: *const Simulation) i32 {

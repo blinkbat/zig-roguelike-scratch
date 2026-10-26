@@ -7,6 +7,7 @@ const attr = @import("../play/attrs.zig");
 const items = @import("../play/items.zig");
 const damage = @import("../play/damage.zig");
 const resilience = @import("../play/resilience.zig");
+const terrain = @import("../play/terrain.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
@@ -182,8 +183,11 @@ pub const View = struct {
     resists: damage.Resists = .initFill(0),
     status_resist: std.EnumArray(resilience.Kind, resilience.Standing) = .initFill(.{}),
     steady: u8 = 0,
+    environment: terrain.Modifiers = .{},
     fn stats(v: View) attr.Attrs {
-        return v.inventory.gear.stats(v.base);
+        var out = v.inventory.gear.stats(v.base);
+        out.dodge_bonus += v.environment.dodge;
+        return out;
     }
 };
 pub const Command = union(enum) {
@@ -919,7 +923,9 @@ fn itemCard(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
             const n = it.value(m);
             if (n == 0) continue;
             line.clear();
-            for (it.mods) |rolled| if (rolled) |a| { if (a.kind == m) a.write(line.writer()); };
+            for (it.mods) |rolled| if (rolled) |a| {
+                if (a.kind == m) a.write(line.writer());
+            };
             face.draw(line.text(), x, top, font.SMALL, ink);
             top += CARD_LINE;
         }
@@ -987,8 +993,6 @@ const Measure = union(enum) {
             .item_rarity => "Item rarity bonus",
         };
     }
-
-
 };
 fn inkOf(it: ?items.Item) rl.Color {
     return look.itemInk(if (it) |i| i.rarity() else .normal);
@@ -1485,7 +1489,9 @@ test "tree browsing is free and point actions issue one command" {
     try std.testing.expectEqual(@as(u16, 2), growth.passive_points);
     book.choose(.skills);
     book.cursor = 0;
-    try std.testing.expectEqual(progress.skills(.archer)[0].act, book.step(&confirm, screen, v).?.skill);
+    try std.testing.expect(book.step(&confirm, screen, v) == null);
+    book.cursor = 1;
+    try std.testing.expectEqual(progress.skills(.archer)[1].act, book.step(&confirm, screen, v).?.skill);
     try std.testing.expectEqual(@as(u16, 2), growth.active_points);
     book.choose(.passives);
     try std.testing.expectEqual(trees.ZOOM_START, book.zoom);

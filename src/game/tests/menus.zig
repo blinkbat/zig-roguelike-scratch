@@ -446,7 +446,7 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
     while (g.inspecting != .mana and walked < 20) : (walked += 1) harness.nudge(g, .e);
     try std.testing.expectEqual(skillbar.SLOTS.len + 1, walked);
     harness.nudge(g, .e);
-    try std.testing.expectEqual(game.Spot.mana, g.inspecting);
+    try std.testing.expect(g.inspecting == .actor);
     g.inspecting = .{ .slot = 3 };
     harness.nudge(g, .n);
     try std.testing.expectEqual(game.Spot{ .status = .bleeding }, g.inspecting);
@@ -461,7 +461,7 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
     harness.press(g, skillbar.INSPECT);
     try std.testing.expectEqual(game.Mode.play, g.mode);
     try std.testing.expect(std.meta.eql(clock, g.sim.clock));
-    std.debug.print("inspect: life to mana in {d} steps across {d} slots, up to a status and down again; 3 ways out, no turn spent\n", .{ walked, skillbar.SLOTS.len });
+    std.debug.print("inspect: life to mana in {d} steps across {d} slots, then a visible character; status navigation, 3 ways out and no turn spent\n", .{ walked, skillbar.SLOTS.len });
 }
 
 test "the mouse over an orb, a slot or a status shows its tooltip while playing, and nothing off the hud" {

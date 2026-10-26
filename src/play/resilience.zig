@@ -14,7 +14,7 @@ pub const Meter = struct {
 
 /// A body's resistance to a status as shown, and the turns before its built-up part expires.
 pub const Standing = struct {
-    percent: u8 = 0,
+    percent: i16 = 0,
     turns: u8 = 0,
 };
 
@@ -40,8 +40,11 @@ pub const State = struct {
     }
 
     pub fn take(self: *State, kind: Kind, innate: u8, rng: *mathx.Rng) bool {
-        const resist = self.resistance(kind, innate);
-        if (resist >= mathx.PERCENT or (resist > 0 and rng.percent(resist))) return false;
+        return self.takeResisted(kind, @intCast(self.resistance(kind, innate)), rng);
+    }
+
+    pub fn takeResisted(self: *State, kind: Kind, resist: i16, rng: *mathx.Rng) bool {
+        if (resist >= mathx.PERCENT or (resist > 0 and rng.percent(@intCast(resist)))) return false;
         const meter = self.meters.getPtr(kind);
         meter.* = .{ .percent = @min(mathx.PERCENT, meter.percent + GAIN), .turns = EXPIRY, .fresh = true };
         return true;
