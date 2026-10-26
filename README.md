@@ -53,8 +53,11 @@ integration tests and recipes for adding skills or editor tools.
 | Application and transitions | `src/app.zig` |
 | Run state, combat and rewards | `src/game/sim.zig`, `src/game/attacks.zig`, `src/game/rewards.zig` |
 | Input and turn coordination | `src/core/input.zig`, `src/game.zig` |
+| Movement repeat and stick hysteresis | `src/core/input_repeat.zig` |
+| Character navigation, cards and statistics | `src/ui/book.zig`, `src/ui/item_card.zig`, `src/ui/character_stats.zig` |
 | Presentation timing | `src/game/presentation.zig` |
 | Editor input, lifecycle and history | `src/edit/interaction.zig`, `src/edit/editor.zig`, `src/edit/history.zig` |
+| Editor tools, help and naming | `src/edit/tool_catalog.zig`, `src/edit/name_field.zig` |
 | Editor derived previews and thumbnails | `src/edit/preview.zig`, `src/edit/thumbnails.zig` |
 | Map parsing and generation | `src/map/atlas_text.zig`, `src/map/procgen.zig` |
 | Persistence | `src/save.zig`, `src/core/store.zig` |

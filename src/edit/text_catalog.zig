@@ -970,6 +970,26 @@ test "text catalog indexes live item skill and speech sources with complete meta
     std.debug.print("text catalog: {d} live entries have nonempty metadata; item/skill context and all {d} fright utterances found\n", .{ c.entries().len, speech });
 }
 
+test "character page aliases retain their saved keys after moving the view type" {
+    const Page = @import("../ui/character_view.zig").Page;
+    const labels = "ui.book.Page.equipment\tOutfitting\n";
+    var c = Catalog.init(std.testing.allocator);
+    defer c.deinit();
+    c.labels = labels;
+    try c.scan("src/ui/character_view.zig", @embedFile("../ui/character_view.zig"));
+    var pages: usize = 0;
+    for (c.entries()) |entry| {
+        if (!std.mem.startsWith(u8, entry.context, "ui.book.Page.")) continue;
+        try std.testing.expect(entry.editable);
+        try std.testing.expectEqualStrings(entry.context, entry.alias.?);
+        if (std.mem.eql(u8, entry.context, "ui.book.Page.equipment")) try std.testing.expectEqualStrings("Outfitting", entry.text);
+        pages += 1;
+    }
+    try std.testing.expectEqual(std.enums.values(Page).len, pages);
+    try std.testing.expectEqualStrings("Outfitting", comptime wording.displayAliasIn(labels, @typeName(Page), "equipment").?);
+    std.debug.print("character wording: all {d} page aliases remain editable and the moved runtime type reads the original saved key\n", .{pages});
+}
+
 test "text edits preserve escapes format arguments control glyphs and source bytes" {
     const a = std.testing.allocator;
     const value = "Take \"bow\"\\stash\n{s} \x1eEnter\x1f";

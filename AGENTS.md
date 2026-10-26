@@ -100,6 +100,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 ## Input, UI and application
 
 - **`core/input.zig` alone reads input devices.** Controller is primary; keyboard mirrors every action.
+  `core/input_repeat.zig` owns pure movement repeat and stick hysteresis; `State.update` names each polling stage.
   Mouse motion/buttons/wheel select keyboard/mouse hints; a stationary cursor never overrides controller navigation.
   `game/mouse.zig` owns map click routing and unsaved click-to-move state; UI panels consume map clicks.
   `docs/CONTROLLER.md` describes the scheme; current mappings/defaults live in `input`, `skillbar.Bar.of` and `progress.State.bar`.
@@ -137,6 +138,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Character/binding panels share `menu.Surface`: half-rate growth, capped at 1.25x,
   with 18px detail and 20px body text before scaling. Keep panels centered with margins.
   `play/items.zig` owns slot/requirement transactions; `play/progress.zig` owns XP, point pools and skill ranks;
+  `ui/book.zig` owns navigation, `character_view` its read-only inputs/commands, `character_layout` shared
+  geometry, `item_card` card rendering and `character_stats` the main/advanced sheets.
   `play/passives.zig` owns the radial passive graph and grants; `ui/trees.zig` draws both tree panels.
   Before changing either panel, read its maintained reference: `docs/DIABLO2_SKILL_TREE.md` for skills,
   `docs/POE2_PASSIVE_TREE.md` for passives. Keep those documents aligned with subsequent changes.
@@ -198,6 +201,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `preview.Scene` owns the derived level, preview foes and reachability/issues, reading a const map;
   `thumbnails.Thumbnails` owns graph texture generation, invalidation and lifetime. Notify them through editor change/history operations.
   `widgets` takes explicit `Controls`, font and screen values, with no `Editor` or `Game` access;
+  `tool_catalog` owns tool/shape descriptions and checked help; `name_field` owns bounded naming/paste input.
   `panel` (node list, tools, palette, things,
   status), `knobs` (generator rows), `canvas` (map, cursor/paste ghost, graph), `modals` (modals, help, object
   viewer) and `tests` sit beside it in `src/edit/`.

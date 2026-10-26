@@ -143,9 +143,7 @@ pub const Act = enum {
     }
 
     fn declares(a: Act, comptime decl: []const u8) bool {
-        return switch (a) {
-            inline else => |t| comptime has(t, decl),
-        };
+        return a.contract().has(decl);
     }
 
     pub fn free(a: Act) bool {

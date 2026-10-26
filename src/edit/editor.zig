@@ -1,3 +1,18 @@
+const tool_catalog = @import("tool_catalog.zig");
+const name_field = @import("name_field.zig");
+pub const kindName = tool_catalog.kindName;
+pub const Tool = tool_catalog.Tool;
+pub const TOOLS = tool_catalog.TOOLS;
+pub const PALETTE_RULE = tool_catalog.PALETTE_RULE;
+pub const GENERATED = tool_catalog.GENERATED;
+pub const Shape = tool_catalog.Shape;
+pub const SHAPES = tool_catalog.SHAPES;
+pub const CRIB_MAP = tool_catalog.CRIB_MAP;
+pub const CRIB_GRAPH = tool_catalog.CRIB_GRAPH;
+pub const HELP = tool_catalog.HELP;
+pub const HELP_COLUMNS = tool_catalog.HELP_COLUMNS;
+pub const HELP_ROWS = tool_catalog.HELP_ROWS;
+const START_MARK = tool_catalog.START_MARK;
 const placement = @import("placement.zig");
 const interaction = @import("interaction.zig");
 const widgets = @import("widgets.zig");
@@ -54,7 +69,8 @@ pub const DOT_SLOP: f32 = 3;
 pub const LABEL_W: i32 = 126;
 pub const STEP_W: i32 = 30;
 pub const STEP_PITCH: i32 = STEP_W + widgets.GAP;
-pub const SHIFT_STEP: i32 = 5;
+pub const SHIFT_STEP = tool_catalog.SHIFT_STEP;
+pub const STATUS_H: i32 = widgets.GAP + 2 * widgets.LINE_STEP;
 const WEIGHT_W: i32 = 36;
 pub const MEMBER_W: i32 = 24;
 pub const MEMBER_GAP: i32 = 2;
@@ -74,239 +90,6 @@ comptime {
     std.debug.assert(FIELD_MAX >= atlas.NAME_MAX and FIELD_MAX <= listing.STEM_MAX);
     std.debug.assert(PATH_FIELD_MAX >= listing.PATH_MAX);
     std.debug.assert(MEMBERS_X + @as(i32, pack.MAKEUP_MAX) * (MEMBER_W + MEMBER_GAP) <= MAKEUP_TOOLS_X);
-}
-
-const START = look.body(actor.HERO);
-const START_MARK = [_]u8{ START.ch, ' ' };
-
-pub fn kindName(k: actor.Kind) [:0]const u8 {
-    return switch (k) {
-        inline else => |f| comptime menu.capital(actor.row(f).name),
-    };
-}
-
-pub const Tool = union(enum) {
-    paint,
-    barrel,
-    torch,
-    foe: actor.Kind,
-    door,
-    link,
-    start,
-
-    pub fn fits(t: Tool, nd: *const atlas.Node) bool {
-        return !nd.unrolled() or !t.generated();
-    }
-
-    pub fn eql(a: Tool, b: Tool) bool {
-        return std.meta.eql(a, b);
-    }
-
-    fn generated(t: Tool) bool {
-        return switch (t) {
-            .door, .link, .start => false,
-            .paint, .barrel, .torch, .foe => true,
-        };
-    }
-
-    pub fn strokes(t: Tool) bool {
-        return switch (t) {
-            .paint, .barrel => true,
-            .torch, .foe, .door, .link, .start => false,
-        };
-    }
-
-    pub fn broad(t: Tool) bool {
-        return t == .paint;
-    }
-
-    pub fn look_(t: Tool) look.Look {
-        return switch (t) {
-            .paint => .{ .ch = '#', .fg = look.TEXT },
-            .barrel => look.BARREL,
-            .torch => look.TORCH,
-            .foe => |k| look.body(k),
-            .door => look.DOOR,
-            .link => .{ .ch = '=', .fg = look.DOOR.fg },
-            .start => START,
-        };
-    }
-
-    pub fn name(t: Tool) [:0]const u8 {
-        return switch (t) {
-            .foe => |k| kindName(k),
-            inline else => |_, tag| comptime menu.named(tag),
-        };
-    }
-
-    pub fn tip(t: Tool) [:0]const u8 {
-        return switch (t) {
-            .foe => "Foe: " ++ comptime rule(.{ .foe = actor.FOES[0] }),
-            inline else => |_, tag| comptime blk: {
-                @setEvalBranchQuota(10_000);
-                const k = @unionInit(Tool, @tagName(tag), {});
-                break :blk k.name() ++ ": " ++ k.rule();
-            },
-        };
-    }
-
-    fn rule(t: Tool) [:0]const u8 {
-        return switch (t) {
-            .paint => Desk.PAINT_CAPTION ++ " paints the palette's first tile, " ++ Desk.ERASE_CAPTION ++ " its second, in the shape picked",
-            .barrel => "stands on " ++ @tagName(grid.BARREL_GROUND) ++ " and breaks for gold; " ++ Desk.ERASE_CAPTION ++ " takes it away",
-            .torch => placement.TORCH_RULE,
-            .foe => placement.FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
-            .door => "any cell of any node; a procgen node's floor is rolled round its doors each run",
-            .link => Desk.PAINT_CAPTION ++ " a door, then the door it leads to on any node; " ++ Desk.ERASE_CAPTION ++ " unlinks",
-            .start => "where the map begins, and " ++ Desk.PLAY_CAPTION ++ " plays from",
-        };
-    }
-};
-
-pub const TOOLS = blk: {
-    var out: []const Tool = &.{};
-    for (std.enums.values(std.meta.Tag(Tool))) |tag| {
-        if (tag == .foe) {
-            for (actor.FOES) |k| out = out ++ &[_]Tool{.{ .foe = k }};
-        } else out = out ++ &[_]Tool{@unionInit(Tool, @tagName(tag), {})};
-    }
-    break :blk out[0..out.len].*;
-};
-pub const PALETTE_RULE = Desk.PAINT_CAPTION ++ " first ink, " ++ Desk.ERASE_CAPTION ++ " second";
-const UNGENERATED = blk: {
-    var names: []const []const u8 = &.{};
-    for (TOOLS) |t| {
-        if (!t.generated()) names = names ++ &[_][]const u8{@tagName(t)};
-    }
-    break :blk menu.joined(names, .@"and");
-};
-pub const GENERATED = "A procgen node is generated; it takes only " ++ UNGENERATED ++ " (" ++ Desk.REROLL_CAPTION ++ " rolls it again)";
-
-comptime {
-    @setEvalBranchQuota(10_000);
-    std.debug.assert(TOOLS.len == Desk.TOOL_KEYS.len);
-    for (actor.FOES) |k| std.debug.assert(k.stocked());
-}
-
-/// How the paint tool lays its ink, in `Desk.SHAPE_KEYS`' order; a selection is any tool's.
-pub const Shape = enum {
-    brush,
-    line,
-    rect,
-    box,
-    fill,
-    select,
-
-    fn noun(s: Shape) [:0]const u8 {
-        return switch (s) {
-            .rect => "rectangle",
-            inline else => |t| @tagName(t),
-        };
-    }
-
-    pub fn tip(s: Shape) [:0]const u8 {
-        return switch (s) {
-            inline else => |t| comptime menu.capital(t.noun()) ++ ": " ++ t.rule(),
-        };
-    }
-
-    fn rule(s: Shape) [:0]const u8 {
-        return switch (s) {
-            .brush => "paints every cell it passes, the brush's size",
-            .line => "drag from one end to the other",
-            .rect => "drag corner to corner, filled",
-            .box => "drag corner to corner, its edge alone",
-            .fill => "the ground of one tile joined to the cell clicked",
-            .select => "drag a rectangle; " ++ Desk.COPY_CAPTION ++ " copies, " ++ Desk.CUT_CAPTION ++ " cuts, " ++ Desk.DELETE_CAPTION ++ " clears it, " ++ Desk.PASTE_CAPTION ++ " pastes",
-        };
-    }
-
-    pub fn dragged(s: Shape) ?placement.Spanned {
-        return switch (s) {
-            inline .line, .rect, .box, .select => |t| @field(placement.Spanned, @tagName(t)),
-            .brush, .fill => null,
-        };
-    }
-};
-
-pub const SHAPES = std.enums.values(Shape);
-const SHAPE_NOUNS = blk: {
-    var nouns: [SHAPES.len][:0]const u8 = undefined;
-    for (SHAPES, &nouns) |sh, *n| n.* = sh.noun();
-    break :blk menu.joined(nouns, .@"or");
-};
-
-comptime {
-    const named = std.meta.fields(@TypeOf(Desk.SHAPE_KEYS_BY));
-    std.debug.assert(SHAPES.len == named.len);
-    for (SHAPES, named) |s, f| std.debug.assert(std.mem.eql(u8, @tagName(s), f.name));
-}
-
-const SEP = menu.SEP;
-pub const CRIB_MAP = Desk.PAINT_CAPTION ++ " place" ++ SEP ++ Desk.ERASE_CAPTION ++ " second ink or remove" ++ SEP ++ Desk.TOOLS_CAPTION ++
-    " tool" ++ SEP ++ Desk.SHAPES_CAPTION ++ " shape" ++ SEP ++ Desk.PICK_CAPTION ++ " pick" ++ SEP ++ Desk.HELP_CAPTION ++ " every key";
-pub const CRIB_GRAPH = Desk.PAINT_CAPTION ++ " open a node" ++ SEP ++ "drag it to move it, or a door's dot to another's to link them" ++ SEP ++
-    Desk.ERASE_CAPTION ++ " on a dot unlinks" ++ SEP ++ Desk.GRAPH_CAPTION ++ " back to the map" ++ SEP ++ Desk.HELP_CAPTION ++ " every key";
-const HelpSection = struct { head: [:0]const u8, column: usize = 0, lines: []const [:0]const u8 };
-pub const HELP = [_]HelpSection{
-    .{ .head = "PAINTING", .lines = &.{
-        Desk.PAINT_CAPTION ++ " use tool / paint first ink",
-        Desk.ERASE_CAPTION ++ " second ink / erase",
-        Desk.TOOLS_CAPTION ++ " tool",
-        Desk.SHAPES_CAPTION ++ " shape",
-        SHAPE_NOUNS,
-        Desk.RECT_CAPTION ++ " rectangle with any shape",
-        Desk.BRUSH_CAPTION ++ " brush size",
-        Desk.PICK_CAPTION ++ " pick from under cursor",
-        "Palette: " ++ PALETTE_RULE,
-        Desk.COPY_CAPTION ++ " copy" ++ SEP ++ Desk.CUT_CAPTION ++ " cut" ++ SEP ++ Desk.PASTE_CAPTION ++ " paste",
-        Desk.PAINT_CAPTION ++ " place paste" ++ SEP ++ Desk.DELETE_CAPTION ++ " clear selection",
-        std.fmt.comptimePrint("{s} on a number's - or + steps it by {d}", .{ Desk.SHIFT_CAPTION, SHIFT_STEP }),
-    } },
-    .{ .head = "VIEW", .column = 1, .lines = &.{
-        Desk.PAN_CAPTION ++ " pan",
-        Desk.WHEEL_CAPTION ++ " or " ++ Desk.ZOOM_CAPTION ++ " zoom" ++ SEP ++ Desk.FIT_CAPTION ++ " fit map",
-        Desk.GRAPH_CAPTION ++ " graph" ++ SEP ++ Desk.GO_CAPTION ++ " through door at cursor",
-        Desk.REROLL_CAPTION ++ " reroll procgen node",
-        Desk.OBJECTS_CAPTION ++ " objects" ++ SEP ++ Desk.HELP_CAPTION ++ " this list",
-    } },
-    .{ .head = "MAP", .column = 1, .lines = &.{
-        Desk.SAVE_CAPTION ++ " save" ++ SEP ++ Desk.SAVE_AS_CAPTION ++ " save as",
-        Desk.OPEN_CAPTION ++ " open" ++ SEP ++ Desk.NEW_CAPTION ++ " new",
-        Desk.UNDO_CAPTION ++ " undo" ++ SEP ++ Desk.REDO_CAPTION ++ " redo",
-        Desk.RENAME_CAPTION ++ " rename node" ++ SEP ++ Desk.ENTER_CAPTION ++ " accept name",
-        Desk.NAV_CAPTION ++ " browse list" ++ SEP ++ input.RUB_CAPTION ++ " folder up",
-        Desk.PLAY_CAPTION ++ " play start" ++ SEP ++ Desk.PLAY_HERE_CAPTION ++ " play cursor / return",
-        Desk.FULLSCREEN_CAPTION ++ " fullscreen" ++ SEP ++ Desk.BACK_CAPTION ++ " back",
-    } },
-};
-pub const HELP_COLUMNS = 2;
-pub const HELP_ROWS = blk: {
-    var n: [HELP_COLUMNS]i32 = @splat(0);
-    for (HELP) |s| n[s.column] += 2 + s.lines.len;
-    break :blk std.mem.max(i32, &n);
-};
-pub const STATUS_H: i32 = widgets.GAP + 2 * widgets.LINE_STEP;
-
-comptime {
-    @setEvalBranchQuota(200_000);
-    var crib: []const u8 = "";
-    for (HELP) |s| {
-        for (s.lines) |l| crib = crib ++ " " ++ l ++ " ";
-    }
-    for (@typeInfo(Desk).@"struct".decls) |d| {
-        if (!std.mem.endsWith(u8, d.name, "_CAPTION")) continue;
-        if (!namesKey(crib, @field(Desk, d.name))) @compileError("the help never names " ++ d.name);
-    }
-}
-
-fn namesKey(comptime crib: []const u8, comptime key: []const u8) bool {
-    var from: usize = 0;
-    while (std.mem.indexOfPos(u8, crib, from, key)) |i| : (from = i + 1) {
-        const end = i + key.len;
-        if (crib[i - 1] == ' ' and end < crib.len and (crib[end] == ' ' or crib[end] == ',')) return true;
-    }
-    return false;
 }
 
 pub const Action = union(enum) { none, play: atlas.Start, fight: actor.Kind, leave, quit };
@@ -340,85 +123,8 @@ pub const Pending = enum { leave, quit, open, new };
 pub const Modal = enum { none, confirm, name, open, help, objects, text };
 const Naming = enum { new, save_as };
 
-fn Text(comptime N: usize) type {
-    return struct {
-        const Self = @This();
-        buf: [N]u8 = undefined,
-        n: usize = 0,
-        cap: usize = N,
-        selected: bool = false,
-
-        pub fn text(f: *const Self) []const u8 {
-            return f.buf[0..f.n];
-        }
-
-        pub fn set(f: *Self, s: []const u8, cap: usize) void {
-            f.cap = @min(cap, N);
-            f.n = @min(s.len, f.cap);
-            @memcpy(f.buf[0..f.n], s[0..f.n]);
-            f.selected = false;
-        }
-
-        pub fn put(f: *Self, s: []const u8) void {
-            f.set(s, N);
-        }
-
-        pub fn feed(f: *Self, d: *const Desk) void {
-            if (d.text_all) f.selected = true;
-            if (d.paste_text) |pasted| {
-                for (pasted) |c| if (!std.ascii.isPrint(c)) return;
-                const from: usize = if (f.selected) 0 else f.n;
-                if (pasted.len > f.cap - from) return;
-                @memcpy(f.buf[from..][0..pasted.len], pasted);
-                f.n = from + pasted.len;
-                f.selected = false;
-            }
-            if (d.text().len > 0 and f.selected) {
-                f.n = 0;
-                f.selected = false;
-            }
-            for (d.text()) |c| {
-                if (f.n == f.cap) break;
-                f.buf[f.n] = c;
-                f.n += 1;
-            }
-            if (d.rub) {
-                if (f.selected) f.n = 0 else if (f.n > 0) f.n -= 1;
-                f.selected = false;
-            }
-        }
-    };
-}
-
-const Field = Text(FIELD_MAX);
-const Path = Text(PATH_FIELD_MAX);
-
-test "editor naming fields paste atomically and replace selected names" {
-    var f = Field{};
-    f.set("Old name", atlas.NAME_MAX);
-    f.feed(&.{ .text_all = true, .paste_text = "New name" });
-    try std.testing.expectEqualStrings("New name", f.text());
-    f.feed(&.{ .paste_text = "\ninvalid" });
-    try std.testing.expectEqualStrings("New name", f.text());
-    f.feed(&.{ .paste_text = "\xc3\xa9" });
-    try std.testing.expectEqualStrings("New name", f.text());
-    f.feed(&.{ .paste_text = "a" ** atlas.NAME_MAX });
-    try std.testing.expectEqualStrings("New name", f.text());
-    f.feed(&.{ .text_all = true });
-    f.feed(&.{ .paste_text = "a" ** (atlas.NAME_MAX + 1) });
-    try std.testing.expectEqualStrings("New name", f.text());
-    try std.testing.expect(f.selected);
-    f.feed(&.{ .rub = true });
-    try std.testing.expectEqualStrings("", f.text());
-    f.feed(&.{ .paste_text = "a" ** atlas.NAME_MAX });
-    try std.testing.expectEqual(atlas.NAME_MAX, f.n);
-    var typed = Desk{ .text_all = true };
-    typed.typed.n = 1;
-    typed.typed.buf[0] = 'B';
-    f.feed(&typed);
-    try std.testing.expectEqualStrings("B", f.text());
-    std.debug.print("editor names: valid paste, 4 atomic rejections, select-all deletion and typed replacement checked\n", .{});
-}
+const Field = name_field.Text(FIELD_MAX);
+const Path = name_field.Text(PATH_FIELD_MAX);
 
 const Drag = struct { node: usize, grab: P, from: P, moved: bool = false };
 

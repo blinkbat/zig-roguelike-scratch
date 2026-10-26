@@ -238,7 +238,8 @@ elemental and status resistance, zeros included. Placeholder artwork is indexed 
 
 ## Event log
 
-`src/ui/journal.zig` keeps 128 saved entries, newest at the bottom. Damage, incoming harm,
+`src/play/log.zig` owns the 128 saved entries in `Simulation.log`;
+`src/ui/journal.zig` draws them, newest at the bottom. Damage, incoming harm,
 recovery, loot, progression and status events have separate colors. It remains visible in
 exploration and combat, anchored at bottom left beside the compact HUD. Arriving on dropped
 items names each item without picking it up or repeating while idle. Mouse wheel scrolls over

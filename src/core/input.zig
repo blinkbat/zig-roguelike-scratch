@@ -1,6 +1,11 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
+const repeat = @import("input_repeat.zig");
+
+pub const Stepper = repeat.Stepper;
+const RadialStepper = repeat.RadialStepper;
+const stickWalks = repeat.stickWalks;
 
 const ENTER_KEYS = [_]rl.KeyboardKey{ .enter, .kp_enter };
 const INTERACT_KEYS = ENTER_KEYS ++ [_]rl.KeyboardKey{.space};
@@ -342,94 +347,6 @@ pub fn claimKeys() void {
     rl.setExitKey(.null);
 }
 
-/// Schmitt trigger plus DAS/ARR; `settle` merges staggered key presses into diagonals.
-pub const Stepper = struct {
-    pub const FIRE: f32 = 0.50;
-    const REARM: f32 = 0.32;
-    pub const DAS: f32 = 0.28;
-    pub const ARR: f32 = 0.1625;
-    pub const SETTLE: f32 = 0.05;
-
-    latched: ?mathx.Dir = null,
-    held: f32 = 0,
-    due: f32 = 0,
-    fired: u32 = 0,
-    /// How long before this frame's end the last step was due.
-    late: f32 = 0,
-    owed: ?mathx.Dir = null,
-    /// A way pressed down that has not stepped yet.
-    press: bool = false,
-    /// This frame's step is that press's, not a held way repeating or turning.
-    fresh: bool = false,
-
-    pub fn tick(self: *Stepper, dt: f32, defl: f32, heading: f32, settle: f32) ?mathx.Dir {
-        self.fresh = false;
-        if (!stickWalks(defl, self.latched != null)) {
-            const tap = self.owed;
-            const press = self.press;
-            self.* = .{ .fresh = press and tap != null };
-            return tap;
-        }
-        const now = mathx.dirOf(heading, self.latched);
-        if (self.latched != now) {
-            if (self.carried() and (if (self.latched) |last| partOf(now, last) else true)) {
-                self.latched = now;
-                return null;
-            }
-            const owed = self.owe(now);
-            self.* = .{ .latched = now, .due = settle, .owed = owed, .press = self.press };
-        } else {
-            self.held += dt;
-        }
-        if (self.held < self.due) return null;
-        self.late = self.held - self.due;
-        const gap: f32 = if (self.fired == 0) DAS else ARR;
-        self.due += gap;
-        if (self.due <= self.held) self.due = self.held + gap;
-        self.fired += 1;
-        self.owed = null;
-        self.fresh = self.press;
-        self.press = false;
-        return now;
-    }
-
-    /// Rearm only on release or direction change; staggered diagonal release stays held.
-    pub fn hold(self: *Stepper) void {
-        self.* = .{ .latched = self.latched, .held = self.held, .due = HELD, .fired = 1 };
-    }
-
-    const HELD = std.math.inf(f32);
-
-    /// A way first pressed after the screen changed was not held over, unless one was already latched.
-    fn pressed(self: *Stepper) void {
-        if (self.carried() and self.latched == null) self.* = .{};
-    }
-
-    /// A way held over from another screen, still down.
-    fn carried(self: Stepper) bool {
-        return self.due == HELD;
-    }
-
-    /// A diagonal that has not stepped survives one of its keys coming up first.
-    fn owe(self: Stepper, now: mathx.Dir) ?mathx.Dir {
-        const last = self.latched orelse return now;
-        if (self.fired > 0) return if (partOf(now, last)) null else now;
-        const o = self.owed orelse return now;
-        return if (partOf(now, o)) o else now;
-    }
-};
-
-fn stickWalks(defl: f32, was: bool) bool {
-    return defl >= Stepper.FIRE or (was and defl >= Stepper.REARM);
-}
-
-fn partOf(d: mathx.Dir, diag: mathx.Dir) bool {
-    if (!diag.diagonal() or d.diagonal()) return false;
-    const a = diag.delta();
-    const b = d.delta();
-    return b.x == a.x or b.y == a.y;
-}
-
 pub const Typed = struct {
     const MAX: usize = 16;
     buf: [MAX]u8 = undefined,
@@ -493,34 +410,6 @@ pub const TreeInput = struct {
     zoom: f32 = 0,
     reset: bool = false,
     dt: f32 = 0,
-};
-
-const RadialStepper = struct {
-    direction: ?rl.Vector2 = null,
-    wait: f32 = 0,
-
-    /// Cosine of 40 degrees: a bearing turned further than this is a fresh press, not a hold.
-    const TURN_COS: f32 = 0.766;
-
-    fn tick(self: *RadialStepper, dt: f32, x: f32, y: f32) ?rl.Vector2 {
-        const magnitude = mathx.len(x, y);
-        if (!stickWalks(magnitude, self.direction != null)) {
-            self.* = .{};
-            return null;
-        }
-        const next = rl.Vector2{ .x = x / magnitude, .y = y / magnitude };
-        const turned = if (self.direction) |old| old.x * next.x + old.y * next.y < TURN_COS else true;
-        if (turned) {
-            self.direction = next;
-            self.wait = Stepper.DAS;
-            return next;
-        }
-        self.wait -= dt;
-        if (self.wait > 0) return null;
-        self.wait = Stepper.ARR;
-        self.direction = next;
-        return next;
-    }
 };
 
 pub const CharacterPage = enum {
@@ -721,6 +610,24 @@ pub const State = struct {
         if (!focused) return;
         const kind: ?Device = if (self.pad_at) |at| kindAt(at) else null;
         const live = self.pad_at;
+        const wheel = self.readPointer(was_focused);
+        const alt_down = altDown();
+        const free_keys = !self.typing and !alt_down;
+        self.readButtons(alt_down, &before);
+        var keyed = false;
+        while (rl.getKeyPressed() != .null) keyed = true;
+        self.fullscreen = fullscreenHit();
+        self.lean = (self.context == .play or self.context == .target) and ((if (live) |at| self.padHeld(at, LEAN) else false) or either(LEAN_KEYS));
+        self.readText();
+        const pan_keys = self.readTree(dt, free_keys, &before);
+        const stick_activated = self.readMovement(dt, alt_down, pan_keys);
+        if (!was_focused) self.holdWalk();
+        self.typing = false;
+        const pad_hit = if (live) |at| struck(at, &before, &self.triggers) else false;
+        self.device = deviceOf(self.device, kind, stick_activated or pad_hit or (self.context == .tree and !pan_keys and (self.tree.pan.x != 0 or self.tree.pan.y != 0)), keyed or self.mouseUsed(wheel));
+    }
+
+    fn readPointer(self: *State, was_focused: bool) f32 {
         self.movePointer(if (rl.isCursorOnScreen()) mouseAt() else null, was_focused);
         self.click = was_focused and self.pointer != null and rl.isMouseButtonPressed(.left);
         self.left_released = was_focused and self.pointer != null and rl.isMouseButtonReleased(.left);
@@ -731,7 +638,11 @@ pub const State = struct {
         self.wheel += wheel;
         self.scroll = @intFromFloat(self.wheel);
         self.wheel -= @floatFromInt(self.scroll);
-        const alt_down = altDown();
+        return wheel;
+    }
+
+    fn readButtons(self: *State, alt_down: bool, before: *const [PADS]Triggers) void {
+        const live = self.pad_at;
         const free_keys = !self.typing and !alt_down;
         self.character_page = null;
         if (free_keys) {
@@ -741,12 +652,12 @@ pub const State = struct {
         }
         self.interact = self.context == .play and free_keys and
             (anyHit(&INTERACT_KEYS) or
-                (if (live) |at| self.padHit(at, CONFIRM.pad(), &before) else false));
+                (if (live) |at| self.padHit(at, CONFIRM.pad(), before) else false));
         for (BUTTONS) |b| {
             var on = false;
             var hold = false;
             if (live) |at| {
-                on = self.padHit(at, b.pad(), &before);
+                on = self.padHit(at, b.pad(), before);
                 hold = self.padHeld(at, b.pad());
             }
             if (!alt_down) {
@@ -769,10 +680,9 @@ pub const State = struct {
                 if (either(SECOND_KEYS)) self.down.insert(m);
             }
         }
-        var keyed = false;
-        while (rl.getKeyPressed() != .null) keyed = true;
-        self.fullscreen = fullscreenHit();
-        self.lean = (self.context == .play or self.context == .target) and ((if (live) |at| self.padHeld(at, LEAN) else false) or either(LEAN_KEYS));
+    }
+
+    fn readText(self: *State) void {
         self.typed.n = 0;
         self.rub = false;
         if (self.typing) {
@@ -781,7 +691,10 @@ pub const State = struct {
             self.rub = rubbed();
         }
         self.was_typing = self.typing;
+    }
 
+    fn readTree(self: *State, dt: f32, free_keys: bool, before: *const [PADS]Triggers) bool {
+        const live = self.pad_at;
         self.tree = .{};
         const on_tree = self.context == .tree;
         const pan_keys = on_tree and free_keys and either(TreeKeys.PAN_KEYS);
@@ -793,7 +706,7 @@ pub const State = struct {
                 const py = rl.getGamepadAxisMovement(at, .right_y);
                 if (mathx.deflection(px, py) >= TreeKeys.PAN_DEADZONE) self.tree.pan = .{ .x = px, .y = py };
                 if (!carried) self.tree.zoom = @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_IN)) 1 else 0) - @as(f32, if (self.padHeld(at, TreeKeys.PAD_ZOOM_OUT)) 1 else 0);
-                self.tree.reset = self.padHit(at, TreeKeys.PAD_OVERVIEW.pad(), &before);
+                self.tree.reset = self.padHit(at, TreeKeys.PAD_OVERVIEW.pad(), before);
             }
             if (pan_keys and !carried) {
                 const p = heldWalk(&WALKS, false);
@@ -804,6 +717,12 @@ pub const State = struct {
             if (either(ZOOM_OUT_KEYS) or rl.isKeyDown(TreeKeys.PAGE_OUT)) self.tree.zoom -= 1;
             self.tree.reset = self.tree.reset or rl.isKeyPressed(OVERVIEW_KEY);
         }
+        return pan_keys;
+    }
+
+    fn readMovement(self: *State, dt: f32, alt_down: bool, pan_keys: bool) bool {
+        const live = self.pad_at;
+        const on_tree = self.context == .tree;
         var x: f32 = 0;
         var y: f32 = 0;
         if (live) |at| {
@@ -833,10 +752,7 @@ pub const State = struct {
         }
         self.stepWalk(dt, defl, heading, settle, muted);
         self.treeWalk(dt, x, y);
-        if (!was_focused) self.holdWalk();
-        self.typing = false;
-        const pad_hit = if (live) |at| struck(at, &before, &self.triggers) else false;
-        self.device = deviceOf(self.device, kind, (self.stick and !was_stick) or pad_hit or (on_tree and !pan_keys and (self.tree.pan.x != 0 or self.tree.pan.y != 0)), keyed or self.mouseUsed(wheel));
+        return self.stick and !was_stick;
     }
 
     fn stepWalk(self: *State, dt: f32, defl: f32, heading: f32, settle: f32, muted: bool) void {
@@ -1297,59 +1213,6 @@ pub fn mouseName(comptime b: rl.MouseButton) [:0]const u8 {
     };
 }
 
-test "the walk fires once, waits DAS, then repeats at ARR" {
-    var s = Stepper{};
-    const north = mathx.Dir.n.heading();
-    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(mathx.FRAME_DT, 0.40, north, 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, .n), s.tick(mathx.FRAME_DT, 0.90, north, 0));
-    const dt: f32 = 1.0 / 600.0;
-    var gaps: [4]f32 = undefined;
-    var n: usize = 0;
-    var t: f32 = 0;
-    var last: f32 = 0;
-    while (n < gaps.len and t < 3.0) {
-        t += dt;
-        if (s.tick(dt, 0.90, north, 0) != null) {
-            gaps[n] = t - last;
-            last = t;
-            n += 1;
-        }
-    }
-    std.debug.print("first repeat {d:.3} s, then {d:.3} {d:.3} {d:.3} s\n", .{ gaps[0], gaps[1], gaps[2], gaps[3] });
-    try std.testing.expect(@abs(gaps[0] - Stepper.DAS) <= dt * 2);
-    for (gaps[1..]) |g| try std.testing.expect(@abs(g - Stepper.ARR) <= dt * 2);
-}
-
-test "only a pressed way steps fresh, not a held one repeating or letting a diagonal's key go" {
-    var s = Stepper{ .press = true };
-    const dt = mathx.FRAME_DT;
-    var steps: usize = 0;
-    var fresh: usize = 0;
-    for ([_]mathx.Dir{ .ne, .e }) |d| {
-        for (0..60) |_| {
-            if (s.tick(dt, 1, d.heading(), Stepper.SETTLE) == null) continue;
-            steps += 1;
-            if (s.fresh) fresh += 1;
-        }
-    }
-    std.debug.print("held north-east then east: {d} steps, {d} fresh\n", .{ steps, fresh });
-    try std.testing.expect(steps > 3 and fresh == 1);
-}
-
-test "a stalled frame does not bank repeats" {
-    var s = Stepper{};
-    const north = mathx.Dir.n.heading();
-    const dt = mathx.FRAME_DT;
-    for (0..31) |_| _ = s.tick(dt, 1, north, 0);
-    var steps: usize = 0;
-    if (s.tick(1.0, 1, north, 0) != null) steps += 1;
-    for (0..4) |_| {
-        if (s.tick(dt, 1, north, 0) != null) steps += 1;
-    }
-    std.debug.print("a 1 s stall, then 4 frames: {d} step(s)\n", .{steps});
-    try std.testing.expectEqual(@as(usize, 1), steps);
-}
-
 test "tree stick follows the bearing with hysteresis, turn edges and repeat" {
     var radial = RadialStepper{};
     try std.testing.expect(radial.tick(0.01, 0.1, 0.1) == null);
@@ -1370,14 +1233,6 @@ test "tree stick follows the bearing with hysteresis, turn edges and repeat" {
     std.debug.print("tree input: raw bearing, deadzone, repeat, turning, release, held navigation and focus loss checked\n", .{});
 }
 
-test "a stick resting off centre leaves the d-pad and keys to walk, and a pushed one holds its walk down to rearming" {
-    const resting = (Stepper.REARM + Stepper.FIRE) / 2;
-    try std.testing.expect(!stickWalks(resting, false));
-    try std.testing.expect(stickWalks(Stepper.FIRE, false));
-    try std.testing.expect(stickWalks(resting, true));
-    try std.testing.expect(!stickWalks(Stepper.REARM / 2, true));
-}
-
 test "a held stick cannot move the tree when opening it from another screen" {
     for ([_]State.Context{ .play, .menu, .target }) |context| {
         var state = State{ .context = context, .stick = true };
@@ -1394,35 +1249,6 @@ test "a held stick cannot move the tree when opening it from another screen" {
         try std.testing.expect(state.tree.move != null);
     }
     std.debug.print("3 tree entry contexts suppress held movement and rearm on turn or release\n", .{});
-}
-
-test "a stick is steered, not re-pressed" {
-    var s = Stepper{};
-    try std.testing.expectEqual(@as(?mathx.Dir, .n), s.tick(mathx.FRAME_DT, 0.9, mathx.Dir.n.heading(), 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(mathx.FRAME_DT, 0.9, mathx.Dir.n.heading(), 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, .e), s.tick(mathx.FRAME_DT, 0.9, mathx.Dir.e.heading(), 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, null), s.tick(mathx.FRAME_DT, 0.1, mathx.Dir.e.heading(), 0));
-    try std.testing.expectEqual(@as(?mathx.Dir, .e), s.tick(mathx.FRAME_DT, 0.9, mathx.Dir.e.heading(), 0));
-}
-
-test "a d-pad diagonal pressed and released a frame apart is one diagonal step" {
-    var s = Stepper{};
-    const dt = mathx.FRAME_DT;
-    const settle = Stepper.SETTLE;
-    var steps: [8]?mathx.Dir = undefined;
-    steps[0] = s.tick(dt, 1, mathx.Dir.n.heading(), settle);
-    steps[1] = s.tick(dt, 1, mathx.Dir.ne.heading(), settle);
-    for (steps[2..6]) |*st| st.* = s.tick(dt, 1, mathx.Dir.ne.heading(), settle);
-    steps[6] = s.tick(dt, 1, mathx.Dir.e.heading(), settle);
-    steps[7] = s.tick(dt, 0, 0, settle);
-    var got: usize = 0;
-    for (steps) |st| {
-        if (st) |d| {
-            try std.testing.expectEqual(mathx.Dir.ne, d);
-            got += 1;
-        }
-    }
-    try std.testing.expectEqual(@as(usize, 1), got);
 }
 
 test "mouse motion buttons and fractional wheel select keyboard hints without a stationary pointer taking over" {
@@ -1476,64 +1302,6 @@ test "losing focus cancels unsettled movement and held actions without forgettin
     st.focus(true);
     try std.testing.expect(st.focused and st.walk == null);
     std.debug.print("focus loss: pending tap and held action cancelled; controller and trigger latch retained\n", .{});
-}
-
-test "a tap let go before it settles steps once, on release" {
-    var s = Stepper{};
-    const dt = mathx.FRAME_DT;
-    const settle = Stepper.SETTLE;
-    const got = [_]?mathx.Dir{
-        s.tick(dt, 1, mathx.Dir.n.heading(), settle),
-        s.tick(dt, 1, mathx.Dir.n.heading(), settle),
-        s.tick(dt, 0, 0, settle),
-        s.tick(dt, 0, 0, settle),
-    };
-    try std.testing.expectEqualSlices(?mathx.Dir, &.{ null, null, .n, null }, &got);
-}
-
-test "a quick diagonal tap let go one key at a time steps the diagonal" {
-    var s = Stepper{};
-    const dt = mathx.FRAME_DT;
-    const settle = Stepper.SETTLE;
-    const got = [_]?mathx.Dir{
-        s.tick(dt, 1, mathx.Dir.n.heading(), settle),
-        s.tick(dt, 1, mathx.Dir.ne.heading(), settle),
-        s.tick(dt, 1, mathx.Dir.n.heading(), settle),
-        s.tick(dt, 0, 0, settle),
-    };
-    try std.testing.expectEqualSlices(?mathx.Dir, &.{ null, null, null, .ne }, &got);
-}
-
-test "a held walk that has stepped owes nothing when it is let go" {
-    var s = Stepper{};
-    const dt = mathx.FRAME_DT;
-    var steps: usize = 0;
-    const held: usize = @intFromFloat(@ceil((Stepper.SETTLE + Stepper.DAS) / dt) + 2);
-    for (0..held) |_| {
-        if (s.tick(dt, 1, mathx.Dir.e.heading(), Stepper.SETTLE) != null) steps += 1;
-    }
-    if (s.tick(dt, 0, 0, Stepper.SETTLE) != null) steps += 1;
-    try std.testing.expectEqual(@as(usize, 2), steps);
-}
-
-test "a held diagonal let go one key at a time steps nowhere, and a new way walks" {
-    var s = Stepper{};
-    const dt = mathx.FRAME_DT;
-    const settle = Stepper.SETTLE;
-    for (0..30) |_| _ = s.tick(dt, 1, mathx.Dir.ne.heading(), settle);
-    s.hold();
-    var steps: usize = 0;
-    for ([_]mathx.Dir{ .ne, .e }) |d| {
-        for (0..30) |_| {
-            if (s.tick(dt, 1, d.heading(), settle) != null) steps += 1;
-        }
-    }
-    if (s.tick(dt, 0, 0, settle) != null) steps += 1;
-    try std.testing.expectEqual(@as(usize, 0), steps);
-    for (0..30) |_| {
-        if (s.tick(dt, 1, mathx.Dir.s.heading(), settle) != null) steps += 1;
-    }
-    try std.testing.expect(steps > 0);
 }
 
 test "a d-pad zoom or Shift pan held on the tree does not walk after the tree closes" {

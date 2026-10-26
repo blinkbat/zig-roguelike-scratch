@@ -122,7 +122,7 @@ the player's build.
    no universal better/worse verdict.
 3. **Character sheet:** the main sheet answers "how much life, how much damage, what
    chance to afflict"; everything rarer goes on the Advanced sheet. Three type tiers
-   (`book.Tier`): headline numbers engraved large (life, mana, skill hits), key rows
+   (`character_stats.Tier`): headline numbers engraved large (life, mana, skill hits), key rows
    engraved at body size (attributes, skill names), plain rows in the data face. Colour
    carries meaning: life red, mana blue, each element and status in its own ink, gold
    for gold and unspent points, zeros dim. Attach units to values. Name each
@@ -174,7 +174,8 @@ Check that comparisons do not mutate inventory and that browsing/cancelling spen
 nothing. Reuse source calculations and test any new requirement/preview derivation.
 Keep screenshots and research downloads in the temporary directory.
 
-Implemented in `ui/book.zig`, `ui/trees.zig` and `ui/hud.zig`, with shared
+Implemented in `ui/book.zig`, `ui/item_card.zig`, `ui/character_stats.zig`,
+`ui/trees.zig` and `ui/hud.zig`, with shared geometry in `ui/character_layout.zig` and
 damage inputs in `play/skillbar.zig`/`play/progress.zig`, role names in
 `play/items.zig`, and the global menu palette in `gfx/look.zig`.
 

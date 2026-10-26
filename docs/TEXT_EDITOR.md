@@ -50,7 +50,9 @@ chosen text in each of those contexts. Internal, anonymous and explicitly overri
 labels remain read-only, as do input glyph identifiers and the name-entry keyboard.
 Changing only an authorship tag does not create or alter a display alias.
 `core/wording.zig` owns the shared alias format, display helpers and registration of editable
-enum labels, including their default casing and excluded fields.
+enum labels, including their default casing and excluded fields. When moving a registered
+enum, update its registration name and retain the original key through `saved_name`;
+the catalog and runtime display helpers use that same mapping.
 
 Editable text is nonempty ASCII, up to 4096 bytes, matching the game's text rendering
 contract. Item flavor lines retain their source-defined 32-character limit. Display aliases

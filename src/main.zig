@@ -43,6 +43,7 @@ test {
     _ = @import("gfx/prompt_text.zig");
     _ = @import("core/mathx.zig");
     _ = @import("core/input.zig");
+    _ = @import("core/input_repeat.zig");
     _ = @import("core/store.zig");
     _ = @import("map/grid.zig");
     _ = @import("map/fov.zig");
@@ -134,6 +135,10 @@ test {
     _ = @import("ui/menu.zig");
     _ = @import("ui/hud.zig");
     _ = @import("ui/book.zig");
+    _ = @import("ui/character_view.zig");
+    _ = @import("ui/character_layout.zig");
+    _ = @import("ui/item_card.zig");
+    _ = @import("ui/character_stats.zig");
     _ = @import("ui/trees.zig");
     _ = @import("ui/journal.zig");
     _ = @import("ui/naming.zig");
@@ -166,6 +171,8 @@ test {
     _ = @import("game/tests/hero.zig");
     _ = @import("game/tests/terrain.zig");
     _ = @import("edit/editor.zig");
+    _ = @import("edit/tool_catalog.zig");
+    _ = @import("edit/name_field.zig");
     _ = @import("edit/placement.zig");
     _ = @import("edit/widgets.zig");
     _ = @import("edit/history.zig");

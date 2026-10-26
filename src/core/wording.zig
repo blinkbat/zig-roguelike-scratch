@@ -3,7 +3,7 @@ const std = @import("std");
 pub const FILE = "assets/player-labels.txt";
 pub const ASSET = "player-labels.txt";
 pub const Case = enum { sentence, title, word };
-const Registration = struct { name: []const u8, casing: Case = .sentence, except: []const []const u8 = &.{}, only: ?[]const []const u8 = null };
+const Registration = struct { name: []const u8, saved_name: ?[]const u8 = null, casing: Case = .sentence, except: []const []const u8 = &.{}, only: ?[]const []const u8 = null };
 const TYPES = [_]Registration{
     .{ .name = "app.MainRow", .except = &.{"ossuary"} },
     .{ .name = "app.OptionRow" },
@@ -19,7 +19,7 @@ const TYPES = [_]Registration{
     .{ .name = "play.flask.Kind", .casing = .word },
     .{ .name = "play.actor.FoeType" },
     .{ .name = "play.actor.Movement" },
-    .{ .name = "ui.book.Page" },
+    .{ .name = "ui.character_view.Page", .saved_name = "ui.book.Page" },
     .{ .name = "ui.trees.SkillState" },
     .{ .name = "edit.editor.View" },
     .{ .name = "edit.editor.Lower" },
@@ -27,8 +27,14 @@ const TYPES = [_]Registration{
 };
 
 fn registration(name: []const u8) ?Registration {
-    for (TYPES) |row| if (std.mem.eql(u8, row.name, name)) return row;
+    for (TYPES) |row| {
+        if (std.mem.eql(u8, row.name, name) or std.mem.eql(u8, row.saved_name orelse row.name, name)) return row;
+    }
     return null;
+}
+
+fn savedName(name: []const u8) []const u8 {
+    return if (registration(name)) |row| row.saved_name orelse row.name else name;
 }
 
 fn contains(values: []const []const u8, value: []const u8) bool {
@@ -57,7 +63,7 @@ pub fn format(bytes: []u8, style: Case) void {
 }
 
 pub fn keyAlloc(alloc: std.mem.Allocator, name: []const u8, field: []const u8) ![]u8 {
-    return std.fmt.allocPrint(alloc, "{s}.{s}", .{ name, field });
+    return std.fmt.allocPrint(alloc, "{s}.{s}", .{ savedName(name), field });
 }
 
 pub const Record = struct { key: []const u8, text: []const u8 };
@@ -108,7 +114,7 @@ pub fn titled(comptime text: [:0]const u8) [:0]const u8 {
 
 pub fn displayAliasIn(comptime labels: []const u8, comptime name: []const u8, comptime tag: []const u8) ?[:0]const u8 {
     @setEvalBranchQuota(100_000);
-    const value = lookup(labels, name ++ "." ++ tag) orelse return null;
+    const value = lookup(labels, savedName(name) ++ "." ++ tag) orelse return null;
     return std.fmt.comptimePrint("{s}", .{value});
 }
 

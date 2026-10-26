@@ -14,8 +14,14 @@ fn domain(path: []const u8) bool {
         gameRules(path) or std.mem.eql(u8, path, "edit/preview.zig");
 }
 
-fn independentEditor(path: []const u8) bool {
-    return std.mem.eql(u8, path, "edit/widgets.zig") or std.mem.eql(u8, path, "edit/thumbnails.zig");
+fn independentHelper(path: []const u8) bool {
+    for ([_][]const u8{
+        "edit/widgets.zig",      "edit/thumbnails.zig",     "edit/tool_catalog.zig",  "edit/name_field.zig",
+        "ui/character_view.zig", "ui/character_layout.zig", "ui/character_stats.zig", "ui/item_card.zig",
+    }) |owner| {
+        if (std.mem.eql(u8, path, owner)) return true;
+    }
+    return false;
 }
 
 fn allowed(owner: []const u8, target: []const u8) bool {
@@ -27,11 +33,12 @@ fn allowed(owner: []const u8, target: []const u8) bool {
     }
     const interaction = std.mem.eql(u8, owner, "edit/interaction.zig");
     return (interaction or !std.mem.eql(u8, target, "edit/editor.zig")) and !std.mem.eql(u8, target, "game.zig") and
-        !std.mem.startsWith(u8, target, "game/") and !std.mem.eql(u8, target, "app.zig");
+        !std.mem.startsWith(u8, target, "game/") and !std.mem.eql(u8, target, "app.zig") and
+        (!std.mem.startsWith(u8, owner, "ui/") or !std.mem.eql(u8, target, "ui/book.zig"));
 }
 
 pub fn check(alloc: std.mem.Allocator, owner: []const u8, source: [:0]const u8) !?Violation {
-    if (!domain(owner) and !independentEditor(owner) and !std.mem.eql(u8, owner, "edit/interaction.zig")) return null;
+    if (!domain(owner) and !independentHelper(owner) and !std.mem.eql(u8, owner, "edit/interaction.zig")) return null;
     var tree = try std.zig.Ast.parse(alloc, source, .zig);
     defer tree.deinit(alloc);
     if (tree.errors.len != 0) return error.InvalidSyntax;
@@ -88,11 +95,16 @@ test "source boundaries recognize real imports and permit integration tests" {
     try std.testing.expect((try check(alloc, "play/items.zig", source)) == null);
     try std.testing.expect((try check(alloc, "play/items.zig", "const good = @import(\"../core/wording.zig\",);")) == null);
     try std.testing.expectError(error.NonliteralImport, check(alloc, "play/items.zig", "const bad = @import(\"../ui/\" ++ \"menu.zig\");"));
-    for ([_][]const u8{ "edit/widgets.zig", "edit/thumbnails.zig" }) |owner| {
-        try std.testing.expect((try check(alloc, owner, "const bad = @import(\"editor.zig\");")) != null);
+    for ([_][]const u8{
+        "edit/widgets.zig",      "edit/thumbnails.zig",     "edit/tool_catalog.zig",  "edit/name_field.zig",
+        "ui/character_view.zig", "ui/character_layout.zig", "ui/character_stats.zig", "ui/item_card.zig",
+    }) |owner| {
+        try std.testing.expect((try check(alloc, owner, "const bad = @import(\"../edit/editor.zig\");")) != null);
         try std.testing.expect((try check(alloc, owner, "const bad = @import(\"../game.zig\");")) != null);
         try std.testing.expect((try check(alloc, owner, "const good = @import(\"../gfx/raster.zig\");")) == null);
     }
+    try std.testing.expect((try check(alloc, "ui/character_stats.zig", "const bad = @import(\"book.zig\");")) != null);
+    try std.testing.expect((try check(alloc, "ui/item_card.zig", "const good = @import(\"character_layout.zig\");")) == null);
     try std.testing.expect((try check(alloc, "edit/interaction.zig", "const good = @import(\"editor.zig\");")) == null);
     try std.testing.expect((try check(alloc, "edit/interaction.zig", "const bad = @import(\"../game.zig\");")) != null);
     try std.testing.expect((try check(alloc, "edit/interaction.zig", "const bad = @import(\"../app.zig\");")) != null);

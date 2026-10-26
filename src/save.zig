@@ -352,12 +352,24 @@ fn inspect(bytes: []const u8) Error!Contents {
     if (!store.take(&b, &seed) or !store.take(&b, &map_flag)) return error.Short;
     if (map_flag > 1) return error.Damaged;
     const has_map = map_flag != 0;
-    const at_visited = @as(usize, if (has_map) @sizeOf(Map) else 0) + @sizeOf(Node);
+    const at_node: usize = if (has_map) @sizeOf(Map) else 0;
+    const at_visited = at_node + @sizeOf(Node);
     if (b.len < at_visited + @sizeOf(Visited)) return error.Short;
+    var node: Node = undefined;
     var visited: Visited = undefined;
-    var vb = b[at_visited..];
-    _ = store.take(&vb, &visited);
+    var navigation = b[at_node..];
+    _ = store.take(&navigation, &node);
+    _ = store.take(&navigation, &visited);
     if (b.len != at_visited + @sizeOf(Visited) + visited.count() * @sizeOf(Visit) + TAIL) return error.Short;
+    if (has_map) {
+        var node_count: @FieldType(Map, "node_n") = undefined;
+        var count_bytes = b[@offsetOf(Map, "node_n")..];
+        _ = store.take(&count_bytes, &node_count);
+        if (node_count == 0 or node_count > atlas.MAX_NODES or node >= node_count) return error.Damaged;
+        var it = visited.iterator(.{});
+        while (it.next()) |n| if (n >= node_count) return error.Damaged;
+        if (s.node != node) return error.Damaged;
+    } else if (node != 0 or visited.count() != 0 or s.node != null) return error.Damaged;
     return .{ .summary = s, .seed = seed, .has_map = has_map, .body = b };
 }
 
@@ -811,7 +823,7 @@ test "autosave gates retain dirty state until the interval turn and door are com
     std.debug.print("autosave: 4 independent gates preserve dirty state; each released gate attempts capture without filesystem writes\n", .{});
 }
 
-test "checksummed save length failures preserve both the live run and destination map" {
+test "checksummed save structure failures preserve both the live run and destination map" {
     const alloc = std.testing.allocator;
     const w = try testMap();
     defer alloc.destroy(w);
@@ -864,7 +876,41 @@ test "checksummed save length failures preserve both the live run and destinatio
         try std.testing.expectEqualSlices(u8, before.items, after.items);
         try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
     }
-    std.debug.print("save validation: {d} correctly checksummed structural failures preserve the complete run and destination map\n", .{cuts.len});
+    const Navigation = enum { node_capacity, node_count, empty_map, oversized_map, visited_node, summary_node };
+    const Patch = struct {
+        fn value(bytes: []u8, at: usize, v: anytype) void {
+            @memcpy(bytes[at..][0..@sizeOf(@TypeOf(v))], std.mem.asBytes(&v));
+        }
+    };
+    for (std.enums.values(Navigation)) |case| {
+        damaged.clearRetainingCapacity();
+        try damaged.appendSlice(full.items[0 .. full.items.len - store.SUM]);
+        const node_at = map_at + @sizeOf(Map);
+        switch (case) {
+            .node_capacity => Patch.value(damaged.items, node_at, @as(Node, atlas.MAX_NODES)),
+            .node_count => {
+                Patch.value(damaged.items, node_at, @as(Node, w.node_n));
+                Patch.value(damaged.items, HEAD + @offsetOf(Summary, "node"), @as(?usize, w.node_n));
+            },
+            .empty_map => Patch.value(damaged.items, map_at + @offsetOf(Map, "node_n"), @as(usize, 0)),
+            .oversized_map => Patch.value(damaged.items, map_at + @offsetOf(Map, "node_n"), @as(usize, atlas.MAX_NODES + 1)),
+            .visited_node => {
+                var visited = Visited.initEmpty();
+                visited.set(w.node_n);
+                try std.testing.expectEqual(g.sim.visited.count(), visited.count());
+                Patch.value(damaged.items, node_at + @sizeOf(Node), visited);
+            },
+            .summary_node => Patch.value(damaged.items, HEAD + @offsetOf(Summary, "node"), @as(?usize, 0)),
+        }
+        seal(&damaged);
+        try std.testing.expectError(error.Damaged, peek(damaged.items));
+        try std.testing.expectError(error.Damaged, read(damaged.items, back, into));
+        after.clearRetainingCapacity();
+        try write(back, &after);
+        try std.testing.expectEqualSlices(u8, before.items, after.items);
+        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
+    }
+    std.debug.print("save validation: {d} length and {d} navigation failures preserve the complete run and destination map\n", .{ cuts.len, std.enums.values(Navigation).len });
 }
 
 test "a generated run reloads every class without retaining the previous run's transient state" {

@@ -9,13 +9,13 @@ const Editor = editor.Editor;
 const Desk = input.Desk;
 const P = mathx.P;
 
-pub const TORCH_RULE = "hangs on a wall with floor below it";
-pub const FOE_RULE = "stands on open floor";
+pub const TORCH_RULE = @import("tool_catalog.zig").TORCH_RULE;
+pub const FOE_RULE = @import("tool_catalog.zig").FOE_RULE;
 pub const NO_ROOM = "The node has no room for another {s}";
 pub const LINKING = "Linking node {d} door {d}: ";
 pub const LINK_CANCELLED = "Link cancelled";
 
-pub const Spanned = enum { line, rect, box, select };
+pub const Spanned = @import("tool_catalog.zig").Spanned;
 pub const Span = struct { from: P, erase: bool, shape: Spanned };
 
 pub const Board = struct {

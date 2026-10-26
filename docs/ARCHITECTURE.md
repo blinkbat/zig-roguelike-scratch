@@ -33,7 +33,9 @@ editor coordination or the application. Use `core/wording.zig` for display names
 `core/text.zig` for bounded text and `play/log.zig` for event history;
 `ui/journal.zig` only renders that history.
 
-Editor widgets and thumbnails cannot import Editor, Game or the application.
+Editor widgets, thumbnails, tool metadata and naming fields cannot import Editor,
+Game or the application. Character view, layout, card and stats modules cannot
+import Book navigation, Editor, Game or the application.
 Editor interaction may import Editor, but cannot import Game or the application.
 The build checks actual Zig import tokens and normalizes relative paths. Test
 bodies may import other layers to verify integration contracts. These are direct
@@ -81,6 +83,13 @@ harm in the same turn.
 
 ## Adding a skill
 
+Follow the runtime path in `game/skills.zig`: `useSkill` checks presentation timing,
+then calls `useUnaimed` or `openTargeting`. Targeted actions resolve through
+`confirmAim`. Projectile execution goes through `loose`, `resolveProjectileHit`
+and `hitProjectileActor`; rush execution goes through `rushTo`. Each helper names
+one decision. Compile-time specialization stays at the calls that need a skill's
+module type; ordinary capability queries read the checked contract table.
+
 Start with [pinning](../src/play/pinning.zig) for a simple projectile,
 [nova](../src/play/nova.zig) for an area skill, or `Overwatch` in
 [tactics](../src/play/tactics.zig) plus its [execution](../src/game/tactics.zig)
@@ -125,6 +134,25 @@ restores the starting map without modifying the history ring or saved position.
 Undo/redo swaps invalidate only affected thumbnails, or all thumbnails when node
 identity changes. Source wording and attribution remain separate transactions in
 `text_catalog.zig` and `text_panel.zig`; map undo never rewrites source files.
+
+## Finding input, editor and character UI behavior
+
+| Change | Owner |
+| --- | --- |
+| Device polling and input context | `core/input.zig`: `State.update` orders pointer, button, text, tree and movement reads; all device reads remain here |
+| Movement repeat and stick hysteresis | `core/input_repeat.zig`: `Stepper`, `RadialStepper` and their pure repeat tests |
+| Editor tools, shapes, descriptions and help | `edit/tool_catalog.zig`; it does not access Editor or Game |
+| Editor naming and paste validation | `edit/name_field.zig`: bounded naming fields fed by Desk snapshots |
+| Character navigation and commands | `ui/book.zig`: `Book.step`, selection and panel drawing |
+| Character read-only inputs and command types | `ui/character_view.zig`: `View`, `Nearby`, `Page` and `Command` |
+| Shared character geometry | `ui/character_layout.zig`: panel, tab, list and equipment bounds shared by drawing and hit testing |
+| Item-card rows and typography | `ui/item_card.zig`: card drawing, height and typography verification |
+| Main and advanced character statistics | `ui/character_stats.zig`: columns, status chances and typography verification |
+
+The existing `input.Stepper`, `editor.Tool`, `book.View` and related exports remain
+entry points for callers. The extracted character renderers read a `View` without
+access to Book navigation, Game or editor state. Tests stay with their owning
+logic; integration tests continue to exercise the public entry points.
 
 ## Verification
 
