@@ -1,3 +1,4 @@
+const widgets = @import("widgets.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const input = @import("../core/input.zig");
@@ -7,12 +8,11 @@ const font = @import("../gfx/font.zig");
 const raster = @import("../gfx/raster.zig");
 const game = @import("../game.zig");
 const editor = @import("editor.zig");
-const panel = @import("panel.zig");
 const catalog = @import("text_catalog.zig");
 
-const PAD = editor.PAD;
-const TEXT = editor.TEXT;
-const DETAIL = editor.DETAIL;
+const PAD = widgets.PAD;
+const TEXT = widgets.TEXT;
+const DETAIL = widgets.DETAIL;
 const ROW = TEXT + 2 * DETAIL + 20;
 const LINE = TEXT + 8;
 const NAV_ROW = DETAIL + 20;
@@ -533,7 +533,7 @@ pub fn keys(ed: *editor.Editor) void {
 }
 
 fn button(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: [:0]const u8, on: bool, live: bool) bool {
-    return editor.buttonOn(ed, g, raster.rect(x, y, w, editor.ROW_H), label, on, live, true, null);
+    return widgets.buttonOn(ed.controls(), &g.face, raster.rect(x, y, w, widgets.ROW_H), label, on, live, true, null);
 }
 
 fn displayBytes(s: []u8) void {
@@ -552,11 +552,11 @@ fn displayWidth(face: anytype, s: [:0]u8) i32 {
 fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, focused: bool, multiline: bool, editable: bool) void {
     rl.drawRectangleRec(r, look.EDIT_PANEL);
     rl.drawRectangleLinesEx(r, 1, if (focused) look.UI_FOCUS else look.EDGE);
-    const hit = editor.hot(ed, r, true, true, null).hit;
-    const x = @as(i32, @intFromFloat(r.x)) + editor.GAP;
-    const y = @as(i32, @intFromFloat(r.y)) + editor.GAP;
-    const width = @as(i32, @intFromFloat(r.width)) - 2 * editor.GAP;
-    const rows: usize = @intCast(@max(1, @divTrunc(@as(i32, @intFromFloat(r.height)) - 2 * editor.GAP, LINE)));
+    const hit = widgets.hot(ed.controls(), r, true, true, null).hit;
+    const x = @as(i32, @intFromFloat(r.x)) + widgets.GAP;
+    const y = @as(i32, @intFromFloat(r.y)) + widgets.GAP;
+    const width = @as(i32, @intFromFloat(r.width)) - 2 * widgets.GAP;
+    const rows: usize = @intCast(@max(1, @divTrunc(@as(i32, @intFromFloat(r.height)) - 2 * widgets.GAP, LINE)));
     _ = f.layout(width, FontKey.of(&g.face), &g.face);
     const breaks = f.starts[0 .. f.lines + 1];
     const lines = f.lines;
@@ -615,7 +615,7 @@ fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, focu
 }
 
 fn scrollMark(r: rl.Rectangle, top: usize, rows: usize, count: usize) void {
-    editor.scrollbar(.{ .x = r.x + r.width - 3, .y = r.y, .width = 3, .height = r.height }, top, rows, count);
+    widgets.scrollbar(.{ .x = r.x + r.width - 3, .y = r.y, .width = 3, .height = r.height }, top, rows, count);
 }
 
 fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8, count: usize, on: bool) bool {
@@ -624,26 +624,26 @@ fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8,
     const x: i32 = @intFromFloat(s.nav_box.x);
     const y = @as(i32, @intFromFloat(s.nav_box.y)) + @as(i32, @intCast(ordinal - s.nav_top)) * NAV_ROW;
     const w: i32 = @intFromFloat(s.nav_box.width);
-    const r = raster.rect(x, y, w - editor.GAP, NAV_ROW - 4);
-    const h = editor.hot(ed, r, s.leave == null, true, null);
-    editor.plate(r, on, h.hot);
+    const r = raster.rect(x, y, w - widgets.GAP, NAV_ROW - 4);
+    const h = widgets.hot(ed.controls(), r, s.leave == null, true, null);
+    widgets.plate(r, on, h.hot);
     var buf: [32]u8 = undefined;
     const number = std.fmt.bufPrintZ(&buf, "{d}", .{count}) catch "";
     const number_w = g.face.width(number, DETAIL);
-    panel.drawFit(g, label, DETAIL, w - number_w - 3 * editor.GAP - 6, false, x + editor.GAP, y + 8, if (on) look.UI_GOLD else look.TEXT);
-    g.face.draw(number, x + w - number_w - 2 * editor.GAP, y + 8, DETAIL, look.DIM);
+    widgets.drawFit(&g.face, label, DETAIL, w - number_w - 3 * widgets.GAP - 6, false, x + widgets.GAP, y + 8, if (on) look.UI_GOLD else look.TEXT);
+    g.face.draw(number, x + w - number_w - 2 * widgets.GAP, y + 8, DETAIL, look.DIM);
     return h.hit;
 }
 
 fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bottom: i32) void {
     const s = &ed.words;
-    panel.drawFit(g, if (s.category) |category| category else "Features", TEXT, w, false, x, y, look.UI_GOLD);
+    widgets.drawFit(&g.face, if (s.category) |category| category else "Features", TEXT, w, false, x, y, look.UI_GOLD);
     var yy = y + LINE;
-    if (button(ed, g, x, yy, w - editor.GAP, if (s.category != null) "< All features" else "All text", s.category == null, s.leave == null)) s.scope(null, null);
-    yy += editor.ROW_STEP;
+    if (button(ed, g, x, yy, w - widgets.GAP, if (s.category != null) "< All features" else "All text", s.category == null, s.leave == null)) s.scope(null, null);
+    yy += widgets.ROW_STEP;
     if (s.category != null) {
-        if (button(ed, g, x, yy, w - editor.GAP, "All in this feature", s.owner == null, s.leave == null)) s.scope(s.category, null);
-        yy += editor.ROW_STEP;
+        if (button(ed, g, x, yy, w - widgets.GAP, "All in this feature", s.owner == null, s.leave == null)) s.scope(s.category, null);
+        yy += widgets.ROW_STEP;
     }
     s.nav_box = raster.rect(x, yy, w, @max(0, bottom - yy));
     s.nav_rows = @intCast(@max(1, @divTrunc(bottom - yy, NAV_ROW)));
@@ -686,12 +686,12 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.words;
     s.refresh();
     const height = @min(1080, g.screen.y - 2 * PAD);
-    const f = editor.modalFrame(g, 1800, height, "Text editor", false);
+    const f = widgets.modalFrame(&g.face, g.screen, 1800, height, "Text editor", false);
     const x = f.x + PAD;
     const w = f.w - 2 * PAD;
     var y = f.y;
     var buf: [1024]u8 = undefined;
-    panel.drawFit(g, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
+    widgets.drawFit(&g.face, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
     y += DETAIL + 6;
     drawField(ed, g, &s.search, raster.rect(x, y, w - 294, LINE + 12), s.focus == .search, false, true);
     if (button(ed, g, x + w - 282, y + 4, 86, "Clear", false, s.search.n > 0)) {
@@ -713,7 +713,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     rl.drawRectangle(list_x - @divTrunc(PAD, 2), y, 1, bottom - y, look.EDGE);
     rl.drawRectangle(right_x - @divTrunc(PAD, 2), y, 1, bottom - y, look.EDGE);
     drawNavigation(ed, g, x, y, nav_w, bottom);
-    panel.drawFit(g, "Passages", TEXT, list_w, false, list_x, y, look.UI_GOLD);
+    widgets.drawFit(&g.face, "Passages", TEXT, list_w, false, list_x, y, look.UI_GOLD);
     const list_y = y + LINE;
     s.rows = @intCast(@max(1, @divTrunc(bottom - list_y - DETAIL - 8, ROW)));
     s.top = @min(s.top, s.results.items.len -| s.rows);
@@ -723,52 +723,59 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         for (s.results.items[s.top..end], 0..) |i, at| {
             const e = c.entries()[i];
             const yy = list_y + @as(i32, @intCast(at)) * ROW;
-            const r = raster.rect(list_x, yy, list_w - editor.GAP, ROW - 6);
-            const h = editor.hot(ed, r, s.leave == null, true, null);
-            editor.plate(r, s.selected == i, h.hot);
-            panel.drawFit(g, e.role, TEXT, list_w - 20, false, list_x + 6, yy + 4, if (s.selected == i) look.UI_GOLD else look.TEXT);
-            panel.drawFit(g, e.owner, DETAIL, list_w - 20, false, list_x + 6, yy + TEXT + 8, look.DIM);
+            const r = raster.rect(list_x, yy, list_w - widgets.GAP, ROW - 6);
+            const h = widgets.hot(ed.controls(), r, s.leave == null, true, null);
+            widgets.plate(r, s.selected == i, h.hot);
+            widgets.drawFit(&g.face, e.role, TEXT, list_w - 20, false, list_x + 6, yy + 4, if (s.selected == i) look.UI_GOLD else look.TEXT);
+            widgets.drawFit(&g.face, e.owner, DETAIL, list_w - 20, false, list_x + 6, yy + TEXT + 8, look.DIM);
             var snippet: [catalog.MAX_TEXT + 1]u8 = undefined;
             const n = @min(e.text.len, catalog.MAX_TEXT);
             @memcpy(snippet[0..n], e.text[0..n]);
-            for (snippet[0..n]) |*char| if (char.* < ' ') { char.* = ' '; };
-            panel.drawFit(g, snippet[0..n], DETAIL, list_w - 20, false, list_x + 6, yy + TEXT + DETAIL + 12, look.TEXT);
+            for (snippet[0..n]) |*char| if (char.* < ' ') {
+                char.* = ' ';
+            };
+            widgets.drawFit(&g.face, snippet[0..n], DETAIL, list_w - 20, false, list_x + 6, yy + TEXT + DETAIL + 12, look.TEXT);
             if (h.hit and s.pick(i)) s.focus = .passage;
         }
     }
     scrollMark(s.list_box, s.top, s.rows, s.results.items.len);
     const count_label = std.fmt.bufPrintZ(&buf, "{d} passages", .{s.results.items.len}) catch "";
-    panel.drawFit(g, count_label, DETAIL, list_w, false, list_x, bottom - DETAIL, look.DIM);
+    widgets.drawFit(&g.face, count_label, DETAIL, list_w, false, list_x, bottom - DETAIL, look.DIM);
     if (s.results.items.len == 0) {
-        panel.drawFit(g, "No matching passages.", DETAIL, list_w, false, list_x + 6, list_y + 8, look.TEXT);
-        panel.drawFit(g, "Clear search or choose another group.", DETAIL, list_w, false, list_x + 6, list_y + 36, look.DIM);
+        widgets.drawFit(&g.face, "No matching passages.", DETAIL, list_w, false, list_x + 6, list_y + 8, look.TEXT);
+        widgets.drawFit(&g.face, "Clear search or choose another group.", DETAIL, list_w, false, list_x + 6, list_y + 36, look.DIM);
     }
     s.passage_box = raster.rect(0, 0, 0, 0);
     if (s.selected) |i| if (s.data) |c| {
         const e = c.entries()[i];
-        panel.drawFit(g, e.owner, TEXT, right_w, false, right_x, y, look.TEXT);
+        widgets.drawFit(&g.face, e.owner, TEXT, right_w, false, right_x, y, look.TEXT);
         const breadcrumb = std.fmt.bufPrintZ(&buf, "{s}  >  {s}", .{ e.category, e.role }) catch "";
-        panel.drawFit(g, breadcrumb, DETAIL, right_w, false, right_x, y + LINE, look.UI_GOLD);
+        widgets.drawFit(&g.face, breadcrumb, DETAIL, right_w, false, right_x, y + LINE, look.UI_GOLD);
         const source = std.fmt.bufPrintZ(&buf, "{s}:{d}", .{ e.path, e.line }) catch "";
-        panel.drawFit(g, source, DETAIL, right_w, true, right_x, y + LINE + DETAIL + 6, look.DIM);
-        panel.drawFit(g, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * (DETAIL + 6), look.DIM);
+        widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE + DETAIL + 6, look.DIM);
+        widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * (DETAIL + 6), look.DIM);
         var yy = y + LINE + 3 * (DETAIL + 6) + 4;
         const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, e.max_len }) catch "";
-        panel.drawFit(g, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
+        widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
         yy += DETAIL + 8;
-        const field_h = @max(LINE + 12, bottom - yy - (DETAIL + 8 + 2 * editor.ROW_STEP + DETAIL + 8));
+        const field_h = @max(LINE + 12, bottom - yy - (DETAIL + 8 + 2 * widgets.ROW_STEP + DETAIL + 8));
         s.passage_box = raster.rect(right_x, yy, right_w, field_h);
         drawField(ed, g, &s.draft, s.passage_box, s.focus == .passage, true, e.editable);
         yy += field_h + 8;
-        panel.drawFit(g, "Written by", DETAIL, right_w, false, right_x, yy, look.DIM);
+        widgets.drawFit(&g.face, "Written by", DETAIL, right_w, false, right_x, yy, look.DIM);
         yy += DETAIL + 6;
         const tags = std.enums.values(catalog.Author);
         const tag_w = @divTrunc(right_w, @as(i32, @intCast(tags.len)));
         for (tags, 0..) |tag, at| {
-            const label: [:0]const u8 = switch (tag) { .unknown => "Unknown", .you => "You", .ai => "AI", .mixed => "Mixed" };
+            const label: [:0]const u8 = switch (tag) {
+                .unknown => "Unknown",
+                .you => "You",
+                .ai => "AI",
+                .mixed => "Mixed",
+            };
             if (button(ed, g, right_x + @as(i32, @intCast(at)) * tag_w, yy, tag_w - 4, label, s.author == tag, e.editable and s.leave == null)) s.author = tag;
         }
-        yy += editor.ROW_STEP;
+        yy += widgets.ROW_STEP;
         const save_w = @min(160, @divTrunc(right_w, 3));
         if (button(ed, g, right_x, yy, save_w, "Save passage", false, e.editable and s.dirty())) save(ed);
         if (button(ed, g, right_x + save_w + 6, yy, 100, "Discard", false, s.dirty())) {
@@ -777,16 +784,16 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
             if (s.leave != null) finishClose(ed);
         }
         if (s.leave != null and button(ed, g, right_x + save_w + 112, yy, right_w - save_w - 112, "Keep editing", false, true)) s.leave = null;
-        yy += editor.ROW_STEP;
+        yy += widgets.ROW_STEP;
         const status = if (s.leave != null) "Save or discard before leaving." else if (!e.editable) e.reason else if (s.dirty()) "Unsaved changes" else if (e.alias != null) "Display name; code identity stays fixed." else "Keep format placeholders and control markers intact.";
-        panel.drawFit(g, status, DETAIL, right_w, false, right_x, yy, if (s.dirty()) look.UI_FOCUS else look.DIM);
+        widgets.drawFit(&g.face, status, DETAIL, right_w, false, right_x, yy, if (s.dirty()) look.UI_FOCUS else look.DIM);
     };
     if (s.selected == null) {
-        panel.drawFit(g, "Choose a passage", TEXT, right_w, false, right_x, y, look.TEXT);
+        widgets.drawFit(&g.face, "Choose a passage", TEXT, right_w, false, right_x, y, look.TEXT);
         _ = g.face.paragraph("Browse a feature, then its object or screen. Select a named field to see its wording and exact source.", right_x, y + LINE + 8, right_w, DETAIL, look.DIM);
     }
     const note = if (s.note_n > 0) s.note[0..s.note_n] else "Saved wording takes effect after rebuilding.";
-    panel.drawFit(g, note, DETAIL, w, false, x, bottom + 8, look.UI_GOLD);
+    widgets.drawFit(&g.face, note, DETAIL, w, false, x, bottom + 8, look.UI_GOLD);
 }
 
 test "text field replaces selections, preserves drafts on invalid paste, and inserts at cursor" {

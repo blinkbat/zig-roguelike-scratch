@@ -97,11 +97,6 @@ const UNSAVED = .{
         "epitaph",
         "st",
         "binds",
-        "aim_by",
-        "aim_act",
-        "aim_set",
-        "mark",
-        "barrier_start",
         "target",
         "cam",
         "screen",
@@ -116,7 +111,7 @@ const UNSAVED = .{
         "light",
         "cloud",
         "graphics_ready",
-        "art_ready",
+        "art",
         "rain",
         "inspecting",
         "inspect_scroll",
@@ -895,7 +890,7 @@ test "a generated run reloads every class without retaining the previous run's t
         try write(g, &buf);
         seal(&buf);
         try fixture(back, into);
-        back.mode = .aim;
+        back.mode = .{ .aim = game.Aim.of(.x, .shoot, .{ .x = 20, .y = 20 }) };
         back.exit = .quit;
         back.target = 2;
         back.pending = .interact;
@@ -913,7 +908,7 @@ test "a generated run reloads every class without retaining the previous run's t
         try std.testing.expectEqual(@as(i32, 31), back.sim.gold);
         try std.testing.expectEqual(@as(i32, 2), back.sim.mana);
         try std.testing.expectEqual(g.sim.heroActor().?.hp, back.sim.heroActor().?.hp);
-        try std.testing.expectEqual(game.Mode.play, back.mode);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(back.mode));
         try std.testing.expect(back.exit == null and back.target == null and back.pending == null and back.sim.travel == null);
         try std.testing.expect(back.pic.quiet());
         try std.testing.expectEqual(back.sim.heroActor().?.hp, back.pic.heroShown(&back.sim).?.hp);

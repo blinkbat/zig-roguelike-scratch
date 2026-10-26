@@ -28,6 +28,13 @@ pub fn main() !void {
 }
 
 test {
+    _ = @import("gfx/light_visibility.zig");
+    _ = @import("edit/interaction.zig");
+    _ = @import("game/rewards.zig");
+    _ = @import("edit/preview.zig");
+    _ = @import("edit/thumbnails.zig");
+    _ = @import("core/text.zig");
+    _ = @import("play/log.zig");
     _ = @import("core/wording.zig");
     _ = @import("edit/text_catalog.zig");
     _ = @import("edit/text_panel.zig");
@@ -102,6 +109,7 @@ test {
     _ = @import("play/flask.zig");
     _ = @import("play/pack.zig");
     _ = @import("play/skillbar.zig");
+    _ = @import("play/skill_contract.zig");
     _ = @import("play/tactics.zig");
     _ = @import("game/tactics.zig");
     _ = @import("play/hero.zig");
@@ -136,10 +144,12 @@ test {
     _ = @import("game/overlay.zig");
     _ = @import("game/character.zig");
     _ = @import("game/combat.zig");
+    _ = @import("game/attacks.zig");
     _ = @import("game/harness.zig");
     _ = @import("game/glide.zig");
     _ = @import("game/binds.zig");
     _ = @import("game/skills.zig");
+    _ = @import("game/targeting.zig");
     _ = @import("game/presentation.zig");
     _ = @import("game/sim.zig");
     _ = @import("play/chronicle.zig");
@@ -156,6 +166,9 @@ test {
     _ = @import("game/tests/hero.zig");
     _ = @import("game/tests/terrain.zig");
     _ = @import("edit/editor.zig");
+    _ = @import("edit/placement.zig");
+    _ = @import("edit/widgets.zig");
+    _ = @import("edit/history.zig");
     _ = @import("edit/knobs.zig");
     _ = @import("edit/canvas.zig");
     _ = @import("edit/modals.zig");

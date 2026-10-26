@@ -5,7 +5,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const passives = @import("passives.zig");
 const bleeding = @import("bleeding.zig");
-const menu = @import("../ui/menu.zig");
+const wording = @import("../core/wording.zig");
 
 pub const Slot = enum {
     left_hand,
@@ -35,9 +35,23 @@ pub const Slot = enum {
 };
 pub const SLOTS = std.enums.values(Slot);
 pub const Mod = enum {
-    life, mana, strength, dexterity, intelligence,
-    physical_damage, spell_damage, crit, armour, dodge, resistance,
-    mana_regen, life_on_kill, life_flask, penetration, thorns, spoils,
+    life,
+    mana,
+    strength,
+    dexterity,
+    intelligence,
+    physical_damage,
+    spell_damage,
+    crit,
+    armour,
+    dodge,
+    resistance,
+    mana_regen,
+    life_on_kill,
+    life_flask,
+    penetration,
+    thorns,
+    spoils,
 
     pub fn prefix(m: Mod) bool {
         return switch (m) {
@@ -47,18 +61,38 @@ pub const Mod = enum {
     }
     pub fn title(m: Mod, element: damage.Element) [:0]const u8 {
         return switch (m) {
-            .life => "of Life", .mana => "of Insight", .strength => "Bear's", .dexterity => "Serpent's", .intelligence => "Sage's",
-            .physical_damage => "Cruel", .spell_damage => "Sorcerous", .crit => "of Precision", .armour => "Reinforced", .dodge => "of Evasion",
-            .resistance => switch (element) { .fire => "Fire-Warded", .cold => "Cold-Warded", .lightning => "Storm-Warded", .chaos => "Chaos-Warded" },
-            .mana_regen => "of Renewal", .life_on_kill => "of Harvest", .life_flask => "of Plenty", .penetration => "of Puncturing",
-            .thorns => "Thorned", .spoils => "of Spoils",
+            .life => "of Life",
+            .mana => "of Insight",
+            .strength => "Bear's",
+            .dexterity => "Serpent's",
+            .intelligence => "Sage's",
+            .physical_damage => "Cruel",
+            .spell_damage => "Sorcerous",
+            .crit => "of Precision",
+            .armour => "Reinforced",
+            .dodge => "of Evasion",
+            .resistance => switch (element) {
+                .fire => "Fire-Warded",
+                .cold => "Cold-Warded",
+                .lightning => "Storm-Warded",
+                .chaos => "Chaos-Warded",
+            },
+            .mana_regen => "of Renewal",
+            .life_on_kill => "of Harvest",
+            .life_flask => "of Plenty",
+            .penetration => "of Puncturing",
+            .thorns => "Thorned",
+            .spoils => "of Spoils",
         };
     }
     pub fn allows(m: Mod, k: Kind) bool {
         const s = spec(k);
         const slot = s.slots[0];
         const weapon = s.damage != null;
-        const caster = switch (k) { .wand, .ash_wand, .rime_wand, .storm_wand, .staff, .tome, .orb => true, else => false };
+        const caster = switch (k) {
+            .wand, .ash_wand, .rime_wand, .storm_wand, .staff, .tome, .orb => true,
+            else => false,
+        };
         const ring = slot == .left_ring;
         const armour = slot == .helm or slot == .chest or slot == .belt or slot == .gloves or slot == .boots;
         return switch (m) {
@@ -198,13 +232,20 @@ pub const Affix = struct {
     pub fn write(m: Affix, w: anytype) void {
         const n = m.value;
         switch (m.kind) {
-            .life, .mana, .strength, .dexterity, .intelligence => |k| w.print(attrs.Bonus.RAISE_FMT, .{ n, switch (k) { .life => attrs.Bonus.life.label(), .mana => attrs.Bonus.mana.label(), .strength => attrs.Bonus.strength.label(), .dexterity => attrs.Bonus.dexterity.label(), .intelligence => attrs.Bonus.intelligence.label(), else => unreachable } }) catch {},
+            .life, .mana, .strength, .dexterity, .intelligence => |k| w.print(attrs.Bonus.RAISE_FMT, .{ n, switch (k) {
+                .life => attrs.Bonus.life.label(),
+                .mana => attrs.Bonus.mana.label(),
+                .strength => attrs.Bonus.strength.label(),
+                .dexterity => attrs.Bonus.dexterity.label(),
+                .intelligence => attrs.Bonus.intelligence.label(),
+                else => unreachable,
+            } }) catch {},
             .physical_damage => w.print("+{d}% physical weapon damage", .{n}) catch {},
             .spell_damage => w.print("+{d}% spell damage", .{n}) catch {},
             .crit => w.print("+{d}% critical strike chance", .{n}) catch {},
             .armour => w.print("+{d}% physical damage reduction", .{n}) catch {},
             .dodge => w.print("+{d}% dodge chance", .{n}) catch {},
-            .resistance => w.print("+{d}% {s} resistance", .{ n, menu.word(m.element) }) catch {},
+            .resistance => w.print("+{d}% {s} resistance", .{ n, wording.word(m.element) }) catch {},
             .mana_regen => w.print("+{d} mana recovered per {d} turns", .{ n, @import("hero.zig").MANA_REGEN_TURNS }) catch {},
             .life_on_kill => w.print("+{d} life on kill", .{n}) catch {},
             .life_flask => w.print("+{d}% life flask recovery", .{n}) catch {},
@@ -262,7 +303,7 @@ pub const Innate = union(enum) {
             .weapon_crit => |n| w.print("+{d}% " ++ attrs.WEAPON_CRIT_LABEL, .{n}) catch {},
             .spell_crit => |n| w.print("+{d}% " ++ attrs.SPELL_CRIT_LABEL, .{n}) catch {},
             .physical_damage => |n| w.print("+{d}% " ++ attrs.PHYSICAL_LABEL, .{n}) catch {},
-            .element => |e| w.print("+{d}% {s} damage", .{ e.percent, menu.word(e.kind) }) catch {},
+            .element => |e| w.print("+{d}% {s} damage", .{ e.percent, wording.word(e.kind) }) catch {},
             .bleed => |b| w.print("{d}% chance to bleed on hit", .{b.chance}) catch {},
             .stun => |n| w.print("{d}% chance to stun on hit", .{n}) catch {},
             .penetration => |n| w.print("Ignore {d}% physical reduction", .{n}) catch {},
@@ -349,7 +390,7 @@ pub const Item = struct {
 
     pub fn name(self: Item, buf: []u8) [:0]const u8 {
         if (self.rare_name) |rare| return rare.name(buf);
-        const base = menu.namedOr(self.kind, spec(self.kind).name);
+        const base = wording.namedOr(self.kind, spec(self.kind).name);
         var pre: []const u8 = "";
         var post: []const u8 = "";
         for (self.mods) |maybe| if (maybe) |m| {
@@ -397,8 +438,11 @@ pub const Item = struct {
         a.armour += base.armour;
         if (base.innate) |innate| innate.apply(a);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
-            .life => a.add(.life, m.value), .mana => a.add(.mana, m.value),
-            .strength => a.add(.strength, m.value), .dexterity => a.add(.dexterity, m.value), .intelligence => a.add(.intelligence, m.value),
+            .life => a.add(.life, m.value),
+            .mana => a.add(.mana, m.value),
+            .strength => a.add(.strength, m.value),
+            .dexterity => a.add(.dexterity, m.value),
+            .intelligence => a.add(.intelligence, m.value),
             .physical_damage => a.physical_bonus += m.value,
             .spell_damage => a.damage_bonus.getPtr(.spell).* += m.value,
             .crit => a.crit_bonus += m.value,
@@ -406,7 +450,10 @@ pub const Item = struct {
             .dodge => a.dodge_bonus += m.value,
             .resistance => a.resists.getPtr(m.element).* += m.value,
             .thorns => a.thorns += m.value,
-            .spoils => { a.gold_find += m.value; a.item_rarity += m.value; },
+            .spoils => {
+                a.gold_find += m.value;
+                a.item_rarity += m.value;
+            },
             .mana_regen, .life_on_kill, .life_flask, .penetration => {},
         };
     }
@@ -475,7 +522,9 @@ pub const Gear = struct {
     pub fn forAttack(self: Gear, base: attrs.Attrs, attack: attrs.Attack) attrs.Attrs {
         var out = base;
         if (self.weapon(attack) == null) {
-            for (self.slots.values) |maybe| if (maybe) |it| { out.physical_bonus -= it.value(.physical_damage); };
+            for (self.slots.values) |maybe| if (maybe) |it| {
+                out.physical_bonus -= it.value(.physical_damage);
+            };
         }
         out.crit_bonus += if (attack == .spell) base.spell_crit_bonus else if (self.weapon(attack) != null) base.weapon_crit_bonus else 0;
         return out;
@@ -483,14 +532,18 @@ pub const Gear = struct {
 
     pub fn killRecovery(self: Gear) i32 {
         var out: i32 = 0;
-        for (self.slots.values) |maybe| if (maybe) |it| { out += it.value(.life_on_kill); };
+        for (self.slots.values) |maybe| if (maybe) |it| {
+            out += it.value(.life_on_kill);
+        };
         return out;
     }
 
     pub fn onHit(self: Gear, attack: attrs.Attack) WeaponEffect {
         if (self.weapon(attack) == null) return .{};
         var out = WeaponEffect{};
-        for (self.slots.values) |maybe| if (maybe) |it| { out.penetration += it.value(.penetration); };
+        for (self.slots.values) |maybe| if (maybe) |it| {
+            out.penetration += it.value(.penetration);
+        };
         const innate = spec(self.slots.get(.right_hand).?.kind).innate orelse return out;
         const fixed: WeaponEffect = switch (innate) {
             .bleed => |b| .{ .bleed = b.chance, .bleed_damage = b.damage },
@@ -954,7 +1007,11 @@ test "every equipment base rolls all three rarities and keeps its innate separat
     var yellow = std.EnumSet(Kind).initEmpty();
     for (0..20000) |_| {
         const it = roll(&rng, 0);
-        switch (it.rarity()) { .normal => white.insert(it.kind), .magic => blue.insert(it.kind), .rare => yellow.insert(it.kind) }
+        switch (it.rarity()) {
+            .normal => white.insert(it.kind),
+            .magic => blue.insert(it.kind),
+            .rare => yellow.insert(it.kind),
+        }
     }
     try std.testing.expectEqual(KINDS.len, white.count());
     try std.testing.expectEqual(KINDS.len, blue.count());

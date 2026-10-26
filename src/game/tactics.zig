@@ -1,3 +1,5 @@
+const attacks = @import("attacks.zig");
+const Simulation = @import("sim.zig").Simulation;
 const std = @import("std");
 const game = @import("../game.zig");
 const mathx = @import("../core/mathx.zig");
@@ -21,9 +23,9 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
         .whirlwind => {
             const area = rules.Whirlwind.area(&g.sim.lv, h.at);
             const ids = skills.foesIn(g, area);
-            const raw = combat.rollRaw(&g.sim.rng, .whirlwind, combat.basesFor(g, .whirlwind), true);
+            const raw = attacks.rollRaw(&g.sim.rng, .whirlwind, attacks.basesFor(&g.sim, .whirlwind), true);
             const s = game.presentation.Stroke{ .from = h.at, .wait = game.CAST_S };
-            for (ids.slice()) |id| combat.wound(g, id, combat.heroScaled(g, .whirlwind, raw).physical(), "whirls into", s);
+            for (ids.slice()) |id| combat.wound(g, id, attacks.heroScaled(&g.sim, .whirlwind, raw).physical(), "whirls into", s);
             for (area.slice()) |at| combat.smash(g, at, "whirls into", s);
             g.pic.lead = s.wait;
         },
@@ -34,7 +36,7 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
 }
 
 pub fn valid(g: *const game.Game, from: P, at: P) bool {
-    return validAct(g, g.aim_act, from, at);
+    return validAct(g, g.mode.aim.act(), from, at);
 }
 
 pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
@@ -46,21 +48,21 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
             const a = g.sim.pool.items[actor.Pool.slot(id)];
             break :blk a.alive and a.foe() and a.burn.turns > 0;
         },
-        .arcane_barrier => rules.wall(&g.sim.lv, from, g.barrier_start orelse at, at, g.sim.growth.ranks.get(.arcane_barrier)) != null,
+        .arcane_barrier => rules.wall(&g.sim.lv, from, (if (g.mode == .aim) g.mode.aim.anchor() else null) orelse at, at, g.sim.growth.ranks.get(.arcane_barrier)) != null,
         .overwatch => !from.eq(at),
         else => true,
     };
 }
 
-pub fn cast(g: *game.Game, act: skillbar.Act, from: P) void {
-    switch (act) {
-        inline else => |a| if (comptime a.reticle() != .ground) unreachable else castGround(g, a, from),
+pub fn cast(g: *game.Game, aim: game.Aim, from: P) void {
+    switch (aim.act()) {
+        inline else => |a| if (comptime a.reticle() != .ground) unreachable else castGround(g, a, aim, from),
     }
 }
 
-fn castGround(g: *game.Game, comptime act: skillbar.Act, from: P) void {
+fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P) void {
     const rank = g.sim.growth.ranks.get(act);
-    const at = g.mark;
+    const at = aim.mark;
     switch (act) {
         .overwatch => g.sim.heroActor().?.tactics.overwatch = mathx.toward(from, at).?,
         .caltrops => {
@@ -99,20 +101,19 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, from: P) void {
             g.pic.fx.settle(game.CAST_S, .{ .slot = slot, .after = g.pic.afterOf(&g.sim, slot) });
             const area = rules.Combustion.area(&g.sim.lv, at);
             const ids = skills.foesIn(g, area);
-            var raw = combat.rollRaw(&g.sim.rng, .combustion, combat.basesFor(g, .combustion), false);
+            var raw = attacks.rollRaw(&g.sim.rng, .combustion, attacks.basesFor(&g.sim, .combustion), false);
             raw.elements.getPtr(.fire).* += rules.Combustion.FUEL_DAMAGE * fuel;
             const s = game.presentation.Stroke{ .from = from, .wait = game.CAST_S, .fire = true };
             g.pic.fx.burst(s.wait, .{ .at = at, .area = area, .element = .fire });
             for (ids.slice()) |id| {
                 const a = g.sim.pool.get(id) orelse continue;
-                const hit = combat.heroScaled(g, .combustion, raw);
+                const hit = attacks.heroScaled(&g.sim, .combustion, raw);
                 combat.wound(g, id, .{ .dmg = hit.blow.total(g.sim.combatStats(a).elements), .crit = hit.crit }, "detonates", s);
             }
         },
         .arcane_barrier => {
-            const area = rules.wall(&g.sim.lv, from, g.barrier_start.?, at, rank).?;
+            const area = rules.wall(&g.sim.lv, from, aim.anchor().?, at, rank).?;
             for (area.slice()) |p| g.sim.lv.barrier[grid.Level.idx(p)] = rules.ArcaneBarrier.duration(rank) + 1;
-            g.barrier_start = null;
         },
         else => @compileError(@tagName(act) ++ " has no ground tactical use"),
     }
@@ -122,24 +123,24 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, from: P) void {
     combat.endTurn(g);
 }
 
-pub fn beforeAction(g: *game.Game) void {
-    const h = g.sim.heroActor() orelse return;
+pub fn beforeAction(sim: *Simulation) void {
+    const h = sim.heroActor() orelse return;
     h.tactics.guard = 0;
     h.tactics.overwatch = null;
 }
 
-pub fn startTurn(g: *game.Game) void {
-    const h = g.sim.heroActor() orelse return;
+pub fn startTurn(sim: *Simulation) void {
+    const h = sim.heroActor() orelse return;
     if (h.tactics.unyielding) {
-        if (g.sim.mana >= rules.Unyielding.DRAIN) {
-            g.sim.mana -= rules.Unyielding.DRAIN;
+        if (sim.mana >= rules.Unyielding.DRAIN) {
+            sim.mana -= rules.Unyielding.DRAIN;
         } else {
             h.tactics.unyielding = false;
-            g.sim.log.say("{s}'s Unyielding ends: not enough mana.", .{g.sim.name.text()});
+            sim.log.say("{s}'s Unyielding ends: not enough mana.", .{sim.name.text()});
         }
     }
-    for (&g.sim.lv.barrier) |*t| t.* -|= 1;
-    for (&g.sim.lv.caltrops) |*c| {
+    for (&sim.lv.barrier) |*t| t.* -|= 1;
+    for (&sim.lv.caltrops) |*c| {
         c.turns -|= 1;
         if (c.turns == 0) c.rank = 0;
     }
@@ -151,7 +152,7 @@ pub fn entered(g: *game.Game, id: u16) void {
     if (trap.turns > 0 and actor.row(a.kind).movement != .flying) {
         if (g.sim.takeStatus(a, .pin)) a.pin.turns = @max(a.pin.turns, rules.Caltrops.pins(trap.rank));
         if (rules.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) a.bleed.startWith(rules.Caltrops.bleed(trap.rank));
-        g.pic.owed[actor.Pool.slot(id)].worn = g.pic.afterOf(&g.sim, actor.Pool.slot(id));
+        g.pic.recordWear(&g.sim, .fromInt(id));
         g.sim.sayAt(a.at, "The {s} steps into caltrops.", .{actor.row(a.kind).name});
     }
     const h = g.sim.heroActor() orelse return;
@@ -160,7 +161,7 @@ pub fn entered(g: *game.Game, id: u16) void {
     const flight = bow.fly(&g.sim.lv, h.at, a.at);
     if (flight.struck == null or flight.struck.? != .body or flight.struck.?.body != id) return;
     h.tactics.overwatch = null;
-    combat.reaction(g, id, combat.heroSkill(g, .overwatch), "shoots on overwatch", .{ .from = h.at, .wait = 0 }, id, flight);
+    combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), "shoots on overwatch", .{ .from = h.at, .wait = 0 }, id, flight);
     h.tactics.steady = 0;
 }
 
@@ -168,14 +169,14 @@ pub fn counter(g: *game.Game, id: u16) void {
     const h = g.sim.heroActor() orelse return;
     const a = g.sim.pool.get(id) orelse return;
     if (!h.tactics.unyielding or mathx.dist(h.at, a.at) != 1 or !g.sim.rng.percent(rules.Unyielding.chance(g.sim.growth.ranks.get(.unyielding)))) return;
-    const raw = combat.kickRaw(&g.sim.rng, &g.sim.inventory.gear, g.sim.heroRow().blow.strike);
-    combat.reaction(g, id, combat.heroRoll(g, .melee, raw), "counters", .{ .from = h.at, .wait = 0 }, id, null);
+    const raw = attacks.kickRaw(&g.sim.rng, &g.sim.inventory.gear, g.sim.heroRow().blow.strike);
+    combat.reaction(g, id, attacks.heroRoll(&g.sim, .melee, raw), "counters", .{ .from = h.at, .wait = 0 }, id, null);
 }
 
 fn targeted(g: *game.Game, act: skillbar.Act, at: P) void {
     skills.useSkill(g, .{ .act = act, .by = .x });
     if (g.mode != .aim) return;
-    g.mark = at;
+    g.mode.aim.mark = at;
     skills.confirmAim(g);
 }
 
@@ -210,9 +211,9 @@ test "tactical overwatch fires once after movement and steady aim is consumed or
     h.heroArena(g, .archer, from, &.{});
     skills.useSkill(g, .{ .act = .steady_aim, .by = .x });
     try std.testing.expectEqual(@as(u8, 1), g.sim.heroActor().?.tactics.steady);
-    const boosted = combat.blowFor(g, .shoot).by;
+    const boosted = attacks.blowFor(&g.sim, .shoot).by;
     g.sim.heroActor().?.tactics.steady = 0;
-    const plain = combat.blowFor(g, .shoot).by;
+    const plain = attacks.blowFor(&g.sim, .shoot).by;
     try std.testing.expectEqual(plain.increase(.light) + rules.SteadyAim.bonus(1), boosted.increase(.light));
     h.drawnOut(g);
     g.sim.heroActor().?.tactics.steady = 2;
@@ -255,7 +256,7 @@ test "tactical gravity ranks pull and unlock pin while combustion consumes burn 
     const mana = g.sim.mana;
     targeted(g, .combustion, .{ .x = 23, .y = 20 });
     try std.testing.expectEqual(mana, g.sim.mana);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     g.sim.pool.get(id).?.burn.start();
     targeted(g, .combustion, .{ .x = 23, .y = 20 });
     try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(id).?.burn.turns);
@@ -310,8 +311,8 @@ test "tactical barrier selects endpoints without spending then blocks paths unti
     const mana = g.sim.mana;
     targeted(g, .arcane_barrier, start);
     try std.testing.expectEqual(mana, g.sim.mana);
-    try std.testing.expectEqual(start, g.barrier_start.?);
-    g.mark = end;
+    try std.testing.expectEqual(start, g.mode.aim.anchor().?);
+    g.mode.aim.mark = end;
     skills.confirmAim(g);
     const middle = P{ .x = 22, .y = 20 };
     try std.testing.expect(g.sim.lv.hasBarrier(middle));
@@ -395,7 +396,7 @@ test "tactical regressions cover forced trap entries chest action cleanup and pr
     h.heroArena(g, .archer, from, &.{});
     g.sim.heroActor().?.tactics.steady = 3;
     const preview = g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, .shoot, 3).?;
-    try std.testing.expectEqualDeep(combat.blowFor(g, .shoot).hit(.shoot), preview);
+    try std.testing.expectEqualDeep(attacks.blowFor(&g.sim, .shoot).hit(.shoot), preview);
     std.debug.print("tactical regressions: intermediate pull trap, bash trap, chest cleanup and shared prepared damage checked\n", .{});
 }
 

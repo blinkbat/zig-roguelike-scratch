@@ -105,7 +105,7 @@ test "thorns kills grant rewards and harvest after a shielded hit without blow r
         try std.testing.expectEqual(kills + 1, g.sim.kills);
         try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].thorns.?.kill);
         if (lethal_hero) {
-            try std.testing.expectEqual(game.Mode.dead, g.mode);
+            try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
             try std.testing.expect(g.sim.heroActor() == null);
         } else {
             try std.testing.expectEqual(hp + 2, g.sim.heroActor().?.hp);
@@ -136,7 +136,7 @@ test "retaliation kills do not replace the last arrow in the death report" {
         g.sim.rng = mathx.Rng.init(seed);
         const skills = @import("../skills.zig");
         skills.useSkill(g, .{ .act = .shoot, .by = .x });
-        g.mark = g.sim.pool.get(target).?.at;
+        g.mode.aim.mark = g.sim.pool.get(target).?.at;
         skills.confirmAim(g);
         if (g.mode != .dead) continue;
         deaths += 1;
@@ -180,7 +180,7 @@ test "thorns respects armour splits slimes and coexists with unyielding counters
         const debt = g.pic.owed[actor.Pool.slot(rat)];
         if (debt.thorns != null and debt.reaction != null) {
             counters += 1;
-            try std.testing.expect(debt.thorns.?.after.body.hp > debt.reaction.?.hit.?.after.?.body.hp);
+            try std.testing.expect(debt.thorns.?.after.body.hp > debt.reaction.?.outcome.hit.after.?.body.hp);
             g.pic.lead = 0;
             g.pic.stepGlide(&g.sim, g.cloud, 0);
             harness.drawnOut(g);

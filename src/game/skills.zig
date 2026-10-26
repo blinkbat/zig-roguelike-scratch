@@ -1,3 +1,4 @@
+const attacks = @import("attacks.zig");
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
@@ -50,16 +51,16 @@ fn preferredTarget(g: *game.Game, act: skillbar.Act, from: P) ?P {
 }
 
 pub fn rememberTarget(g: *game.Game) void {
-    if (g.aim_act.attack() == null) return;
-    const id = g.sim.lv.who(g.mark);
+    if (g.mode.aim.act().attack() == null) return;
+    const id = g.sim.lv.who(g.mode.aim.mark);
     const a = g.sim.pool.get(id);
-    g.target = if (a != null and a.?.foe() and g.sim.lv.isLit(g.mark)) id else null;
+    g.target = if (a != null and a.?.foe() and g.sim.lv.isLit(g.mode.aim.mark)) id else null;
 }
 
 pub fn openLeap(g: *game.Game, by: input.Button, act: skillbar.Act) void {
     const h = g.sim.heroActor() orelse return;
-    g.mark = h.at;
     aiming(g, by, act);
+    g.mode.aim.mark = h.at;
 }
 
 fn openSwing(g: *game.Game, by: input.Button, act: skillbar.Act) void {
@@ -77,19 +78,22 @@ fn openSwing(g: *game.Game, by: input.Button, act: skillbar.Act) void {
 }
 
 fn aimAt(g: *game.Game, by: input.Button, act: skillbar.Act, from: P, mark: ?P) void {
-    g.mark = mark orelse {
+    const to = mark orelse {
         g.sim.log.say("Nothing in reach.", .{});
         return;
     };
-    g.pic.turnToward(g.sim.hero, g.mark.x - from.x);
     aiming(g, by, act);
+    g.mode.aim.mark = to;
+    g.pic.turnToward(g.sim.hero, to.x - from.x);
     rememberTarget(g);
 }
 
 pub fn aiming(g: *game.Game, by: input.Button, act: skillbar.Act) void {
-    g.aim_by = by;
-    g.aim_act = act;
-    g.mode = .aim;
+    g.mode = .{ .aim = game.Aim.of(by, act, g.sim.heroAt().?) };
+}
+
+pub fn closeAim(g: *game.Game) void {
+    if (g.mode == .aim) g.mode = .play;
 }
 
 const Blocked = enum { cooling, mana, empty, locked };
@@ -120,7 +124,7 @@ fn ready(g: *game.Game, act: skillbar.Act) bool {
 }
 
 fn spend(g: *game.Game, act: skillbar.Act) void {
-    if (act.flaskOf() == null) tactics.beforeAction(g);
+    if (act.flaskOf() == null) tactics.beforeAction(&g.sim);
     g.sim.chronicle.note(.{ .used = act });
     g.sim.mana -= g.sim.growth.cost(act);
     g.sim.cooldown.set(act, g.sim.growth.cooldown(act));
@@ -129,13 +133,12 @@ fn spend(g: *game.Game, act: skillbar.Act) void {
 const plural = mathx.plural;
 
 pub fn aimable(g: *const game.Game, from: P, to: P) bool {
-    if (g.aim_act.reticle() == .ground) return tactics.valid(g, from, to);
-    if (g.aim_act.reticle() == .bow and !g.sim.lv.inLos(to)) return false;
-    return g.aim_act.aimable(&g.sim.lv, from, to);
+    if (g.mode.aim.act().reticle() == .ground) return tactics.valid(g, from, to);
+    if (g.mode.aim.act().reticle() == .bow and !g.sim.lv.inLos(to)) return false;
+    return g.mode.aim.act().aimable(&g.sim.lv, from, to);
 }
 
-fn leap(g: *game.Game, from: P, act: skillbar.Act) void {
-    const to = g.mark;
+fn leap(g: *game.Game, from: P, act: skillbar.Act, to: P) void {
     game.heroTo(g, to);
     g.pic.glide[g.sim.heroSlot().?] = glide.Glide.rest(g.sim.heroActor().?);
     g.pic.turnToward(g.sim.hero, to.x - from.x);
@@ -212,7 +215,7 @@ pub fn useSkill(g: *game.Game, u: Use) void {
     if (!g.pic.quiet()) return;
     const r = u.act.reticle() orelse return switch (u.act) {
         .wait => {
-            tactics.beforeAction(g);
+            tactics.beforeAction(&g.sim);
             g.sim.chronicle.note(.{ .used = .wait });
             combat.endTurn(g);
         },
@@ -224,8 +227,6 @@ pub fn useSkill(g: *game.Game, u: Use) void {
         } else if (ready(g, a)) spell(g, a),
     };
     if (!ready(g, u.act)) return;
-    g.barrier_start = null;
-    g.aim_set = u.set;
     switch (r) {
         .bow => openAim(g, u.by, u.act),
         .leap => openLeap(g, u.by, u.act),
@@ -233,6 +234,7 @@ pub fn useSkill(g: *game.Game, u: Use) void {
         .rush => openRush(g, u.by, u.act),
         .ground => if (u.act == .combustion) openAim(g, u.by, u.act) else openLeap(g, u.by, u.act),
     }
+    if (g.mode == .aim) g.mode.aim.set = u.set;
 }
 
 fn spell(g: *game.Game, comptime act: skillbar.Act) void {
@@ -240,7 +242,7 @@ fn spell(g: *game.Game, comptime act: skillbar.Act) void {
     const h = g.sim.heroActor() orelse return;
     const ending_stance = act == .unyielding and h.tactics.unyielding;
     if (ending_stance) {
-        tactics.beforeAction(g);
+        tactics.beforeAction(&g.sim);
         g.sim.chronicle.note(.{ .used = act });
     } else spend(g, act);
     if (comptime act.surrounds()) {
@@ -285,13 +287,13 @@ fn openRush(g: *game.Game, by: input.Button, act: skillbar.Act) void {
     aimAt(g, by, act, h.at, near.best orelse empty.best);
 }
 
-fn rush(g: *game.Game, from: P, act: skillbar.Act) void {
+fn rush(g: *game.Game, from: P, act: skillbar.Act, mark: P) void {
     switch (act) {
         inline else => |a| if (comptime a.reticle() != .rush) unreachable else {
             const M = skillbar.Act.skill(a);
-            const d = M.wayTo(from, g.mark).?;
-            const occupied = g.sim.lv.who(g.mark) != grid.NO_ONE;
-            const stop = if (occupied) M.stop(from, g.mark) else g.mark;
+            const d = M.wayTo(from, mark).?;
+            const occupied = g.sim.lv.who(mark) != grid.NO_ONE;
+            const stop = if (occupied) M.stop(from, mark) else mark;
             game.heroTo(g, stop);
             const s = game.presentation.Stroke{ .from = stop, .wait = g.pic.glideToHeld(g.sim.heroSlot().?, stop, 0) };
             if (occupied) combat.knock(g, a, d, s) else sayDone(g, a);
@@ -305,22 +307,22 @@ fn rush(g: *game.Game, from: P, act: skillbar.Act) void {
 /// Over the hero's own cell, so the reticle reaches the far side of a corridor.
 pub fn nudgeAim(g: *game.Game, d: mathx.Dir) void {
     const h = g.sim.heroActor() orelse return;
-    if (g.aim_act.attack() != null and g.aim_act.reticle() != .bow) if (targetToward(g, h.at, d)) |at| {
-        g.mark = at;
+    if (g.mode.aim.act().attack() != null and g.mode.aim.act().reticle() != .bow) if (targetToward(g, h.at, d)) |at| {
+        g.mode.aim.mark = at;
         rememberTarget(g);
         g.pic.turnToward(g.sim.hero, at.x - h.at.x);
         return;
     };
-    var to = g.mark.add(d.delta());
-    switch (g.aim_act.reticle().?) {
-        .leap, .rush, .ground => if (!juke.inReach(h.at, to, g.aim_act.reach()) or !grid.Level.inside(to)) return,
+    var to = g.mode.aim.mark.add(d.delta());
+    switch (g.mode.aim.act().reticle().?) {
+        .leap, .rush, .ground => if (!juke.inReach(h.at, to, g.mode.aim.act().reach()) or !grid.Level.inside(to)) return,
         .bow => {
             if (to.eq(h.at)) to = to.add(d.delta());
             if (!aimable(g, h.at, to)) return;
         },
         .swing => to = h.at.add(d.delta()),
     }
-    g.mark = to;
+    g.mode.aim.mark = to;
     rememberTarget(g);
     g.pic.turnToward(g.sim.hero, to.x - h.at.x);
 }
@@ -330,8 +332,8 @@ fn targetToward(g: *game.Game, from: P, d: mathx.Dir) ?P {
     var best: ?P = null;
     var best_score: i32 = std.math.maxInt(i32);
     for (0..g.sim.pool.n) |i| {
-        const at = targetAt(g, g.aim_act, from, actor.Pool.idOf(i)) orelse continue;
-        const delta = at.sub(g.mark);
+        const at = targetAt(g, g.mode.aim.act(), from, actor.Pool.idOf(i)) orelse continue;
+        const delta = at.sub(g.mode.aim.mark);
         const along = delta.x * way.x + delta.y * way.y;
         if (along <= 0) continue;
         const across: i32 = @intCast(@abs(delta.x * way.y - delta.y * way.x));
@@ -345,10 +347,11 @@ fn targetToward(g: *game.Game, from: P, d: mathx.Dir) ?P {
 
 pub fn confirmAim(g: *game.Game) void {
     const h = g.sim.heroActor() orelse return;
-    const act = g.aim_act;
+    if (g.mode != .aim) return;
+    const act = g.mode.aim.act();
     if (!ready(g, act)) return;
     const reticle = act.reticle().?;
-    if (!aimable(g, h.at, g.mark)) {
+    if (!aimable(g, h.at, g.mode.aim.mark)) {
         switch (reticle) {
             .bow => g.sim.log.say("Can't shoot there.", .{}),
             .leap => g.sim.log.say("{s} needs a visible, empty landing within {d} tiles.", .{ act.name(), act.reach() }),
@@ -358,39 +361,32 @@ pub fn confirmAim(g: *game.Game) void {
         }
         return;
     }
-    if (act == .arcane_barrier and g.barrier_start == null) {
-        g.barrier_start = g.mark;
-        return;
-    }
+    if (g.mode.aim.chooseStart()) return;
     rememberTarget(g);
-    g.mode = .play;
+    const aim = g.mode.aim;
+    closeAim(g);
     spend(g, act);
     const from = h.at;
     switch (reticle) {
-        .bow => loose(g, from, act),
-        .leap => leap(g, from, act),
-        .swing => combat.swing(g, from, act),
-        .rush => rush(g, from, act),
-        .ground => tactics.cast(g, act, from),
+        .bow => loose(g, from, act, aim.mark),
+        .leap => leap(g, from, act, aim.mark),
+        .swing => combat.swing(g, from, act, aim.mark),
+        .rush => rush(g, from, act, aim.mark),
+        .ground => tactics.cast(g, aim, from),
     }
 }
 
-fn loose(g: *game.Game, from: P, act: skillbar.Act) void {
-    const to = g.mark;
+fn loose(g: *game.Game, from: P, act: skillbar.Act, to: P) void {
     const f = bow.fly(&g.sim.lv, from, to);
-    g.pic.shot = .{ .flight = f, .from = from, .act = act };
-    g.pic.holdUntil(g.pic.shot.?.ends());
-    const s = game.presentation.Stroke{ .from = from, .wait = g.pic.shot.?.lands(), .fire = act.element() == .fire };
-    if (act.element() == .lightning and f.len > 0) g.pic.fx.zap(@max(0, s.wait - game.ZAP_S), .{ .from = mathx.centre(from), .to = mathx.centre(f.path[f.len - 1]) });
-    g.pic.lead = s.wait;
+    const s = g.pic.recordProjectile(from, act, f);
     if (f.struck) |hit| switch (act) {
         inline else => |a| if (comptime a.reticle() != .bow) unreachable else if (comptime a.bursts()) combat.burstHit(g, a, hit, f.impact().?, s) else switch (hit) {
             .body => |id| if (comptime a.chains())
                 combat.chainHit(g, a, id, s)
             else if (comptime !a.afflicts()) blk: {
                 comptime std.debug.assert(a.element() == null);
-                break :blk combat.wound(g, id, combat.heroSkill(g, a), combat.SHOOT, s);
-            } else combat.arrowHit(g, id, combat.heroArrow(g, a, true), a, s),
+                break :blk combat.wound(g, id, attacks.heroSkill(&g.sim, a), combat.SHOOT, s);
+            } else combat.arrowHit(g, id, attacks.heroArrow(&g.sim, a, true), a, s),
             .barrel => |p| combat.smash(g, p, combat.barrelVerb(a), s),
         },
     } else {

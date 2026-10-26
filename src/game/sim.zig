@@ -17,7 +17,7 @@ const items = @import("../play/items.zig");
 const passives = @import("../play/passives.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
-const journal = @import("../ui/journal.zig");
+const log = @import("../play/log.zig");
 const P = mathx.P;
 
 pub const Flasks = std.EnumArray(flask.Kind, flask.Flask);
@@ -34,6 +34,15 @@ pub const Visit = struct {
 pub const Tick = enum { gassed, burned, bled, worn };
 /// The ticks a body's turn has run, which a half split off it mid-turn has had too.
 pub const Ran = std.EnumSet(Tick);
+
+pub const DamageResult = struct {
+    target: actor.ActorId,
+    dmg: i32 = 0,
+    lethal: bool = false,
+    mana: i32 = 0,
+};
+
+pub const UNKILLABLE_HP: i32 = 1;
 
 /// The run as it is, whatever has been drawn of it.
 pub const Simulation = struct {
@@ -72,7 +81,7 @@ pub const Simulation = struct {
     growth: progress.State = progress.State.of(heroes.DEFAULT),
     ground: items.Ground = .{},
     loot_rng: mathx.Rng = mathx.Rng.init(1),
-    log: journal.Log = .{},
+    log: log.Log = .{},
     chronicle: chronicle.Chronicle = .{},
     /// Living foes at turn start, nearest first; also their presentation order.
     order: [actor.MAX]u16 = undefined,
@@ -85,6 +94,36 @@ pub const Simulation = struct {
 
     pub fn heroActor(self: *Simulation) ?*actor.Actor {
         return self.pool.get(self.hero);
+    }
+
+    pub fn resolveDamage(self: *Simulation, target: actor.ActorId, amount: i32) DamageResult {
+        const a = self.pool.get(target.value) orelse return .{ .target = target };
+        const absorbed = if (target.value == self.hero) a.ward.takes(self.mana, amount) else 0;
+        self.mana -= absorbed;
+        const left = amount - absorbed;
+        const taken = if (target.value == self.hero and self.unkillable) std.math.clamp(a.hp - UNKILLABLE_HP, 0, left) else left;
+        return .{ .target = target, .dmg = taken, .lethal = self.pool.damage(&self.lv, target.value, taken), .mana = absorbed };
+    }
+
+    pub fn recoverLife(self: *Simulation, amount: i32) bool {
+        const h = self.heroActor() orelse return false;
+        if (amount <= 0 or h.hp >= h.max) return false;
+        h.hp = @min(h.max, h.hp + amount);
+        return true;
+    }
+
+    pub fn finishTurn(self: *Simulation) void {
+        for (self.pool.slice()) |*a| a.settle();
+        self.ran = @splat(Ran.initEmpty());
+        self.displaced = .initEmpty();
+    }
+
+    pub fn resetTransientTurn(self: *Simulation) void {
+        self.travel = null;
+        self.order_n = 0;
+        self.ran = @splat(Ran.initEmpty());
+        self.displaced = .initEmpty();
+        self.flowed = false;
     }
 
     pub fn heroSlot(self: *const Simulation) ?usize {
@@ -198,7 +237,7 @@ pub const Simulation = struct {
     }
 
     /// Logged only if `at` is in sight.
-    pub fn sayAs(self: *Simulation, kind: journal.Kind, at: P, comptime fmt: []const u8, args: anytype) void {
+    pub fn sayAs(self: *Simulation, kind: log.Kind, at: P, comptime fmt: []const u8, args: anytype) void {
         if (self.lv.isLit(at)) self.log.push(kind, fmt, args);
     }
 };

@@ -10,6 +10,7 @@ const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const shadow = @import("shadow.zig");
 const light_gpu = @import("light_gpu.zig");
+const visibility = @import("light_visibility.zig");
 
 const P = mathx.P;
 pub const Rgb = sky.Rgb;
@@ -60,15 +61,7 @@ const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
 pub const FAINT: f32 = 0.002;
 const TINT_DIRECT: f32 = 0.6;
-/// Per second.
-const REVEAL: f32 = 14.0;
-const FORGET: f32 = 5.0;
-/// Cells: memory is black on the edge of anything unseen and full this far from it.
-const VOID_FADE: f32 = 1.5;
-/// Keep the sight fade inside unseen cell rims so visible ground stays bright.
-const SIGHT_FADE: f32 = 0.4;
-pub const VOID_REACH: i32 = @intFromFloat(@ceil(VOID_FADE));
-const VOID_SPAN: usize = @intCast(grid.Cells.span(VOID_REACH));
+pub const VOID_REACH = visibility.VOID_REACH;
 const CORNERS_W = grid.CORNERS_W;
 const CORNERS_H = grid.CORNERS_H;
 pub const FLICKER: f32 = 0.14;
@@ -334,8 +327,8 @@ const Torch = struct {
     }
 
     fn reached(t: *const Torch, x: f32, y: f32) f32 {
-        const uv = fieldUv(t.corner(), x, y);
-        return occluded(&t.reach, &t.open, SPAN, SPAN, uv[0], uv[1]);
+        const uv = visibility.fieldUv(t.corner(), x, y);
+        return visibility.occluded(&t.reach, &t.open, SPAN, SPAN, uv[0], uv[1]);
     }
 
     /// The flame's offset from a point and how much of it reaches there, fallen off and occluded; null out of reach.
@@ -410,121 +403,8 @@ fn wrapped(cos: f32, wrap: f32) f32 {
     return @max(0, (cos + wrap) / (1 + wrap));
 }
 
-/// 0 outside the grid; texel centres sit on whole numbers.
-fn bilinear(f: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
-    const fx = @floor(u);
-    const fy = @floor(v);
-    const x0: i32 = @intFromFloat(fx);
-    const y0: i32 = @intFromFloat(fy);
-    return mathx.bilerp(.{ texel(f, w, h, x0, y0), texel(f, w, h, x0 + 1, y0), texel(f, w, h, x0, y0 + 1), texel(f, w, h, x0 + 1, y0 + 1) }, u - fx, v - fy);
-}
-
-/// Bilinear self-weight is at least 1/4, keeping remembered open ground whole.
-const OPEN_WHOLE: f32 = 4;
-
-/// A map-sized field at a point on the screen, cells.
-fn sample(f: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
-    const uv = fieldUv(.{ .x = 0, .y = 0 }, x, y);
-    return bilinear(f, grid.W, grid.H, uv[0], uv[1]);
-}
-
-fn fieldUv(o: P, x: f32, y: f32) [2]f32 {
-    return .{ x - @as(f32, @floatFromInt(o.x)) - 0.5, y - @as(f32, @floatFromInt(o.y)) - 0.5 };
-}
-
-const SightField = enum { soft, weight, open };
-
-fn sightOf(sees: anytype, ground: bool, x: f32, y: f32) f32 {
-    const soft = sees.at(.soft, x, y);
-    if (!ground) return soft;
-    const weight = sees.at(.weight, x, y);
-    if (weight <= 0) return soft;
-    return mathx.lerpF(soft, sees.at(.open, x, y) / weight, @min(1, weight * OPEN_WHOLE));
-}
-
-const Whole = struct {
-    l: *const Light,
-
-    fn at(w: Whole, k: SightField, x: f32, y: f32) f32 {
-        return sample(w.l.sightField(k), x, y);
-    }
-};
-
-const Patch = struct {
-    const SIDE = 3;
-
-    lo: P,
-    v: std.EnumArray(SightField, [SIDE * SIDE]f32),
-
-    fn of(l: *const Light, c: P) Patch {
-        var p = Patch{ .lo = c.sub(.{ .x = SIDE / 2, .y = SIDE / 2 }), .v = undefined };
-        for (std.enums.values(SightField)) |k| {
-            const f = l.sightField(k);
-            const out = p.v.getPtr(k);
-            for (out, 0..) |*o, i| {
-                const q = p.lo.add(mathx.unslot(i, SIDE));
-                o.* = texel(f, grid.W, grid.H, q.x, q.y);
-            }
-        }
-        return p;
-    }
-
-    fn at(p: *const Patch, k: SightField, x: f32, y: f32) f32 {
-        const u = x - 0.5;
-        const v = y - 0.5;
-        const fx = @floor(u);
-        const fy = @floor(v);
-        const ix: usize = @intCast(@as(i32, @intFromFloat(fx)) - p.lo.x);
-        const iy: usize = @intCast(@as(i32, @intFromFloat(fy)) - p.lo.y);
-        const f = p.v.getPtrConst(k);
-        const i = iy * SIDE + ix;
-        return mathx.bilerp(.{ f[i], f[i + 1], f[i + SIDE], f[i + SIDE + 1] }, u - fx, v - fy);
-    }
-};
-
-fn sampleOccluded(reach: *const [grid.CELLS]f32, open: *const [grid.CELLS]f32, x: f32, y: f32) f32 {
-    const uv = fieldUv(.{ .x = 0, .y = 0 }, x, y);
-    return occluded(reach, open, grid.W, grid.H, uv[0], uv[1]);
-}
-
-pub fn texel(f: []const f32, w: i32, h: i32, x: i32, y: i32) f32 {
-    return f[mathx.slot(x, y, @intCast(w), @intCast(h)) orelse return 0];
-}
-
-/// Blend unreachable cells over `open` so walls cannot pass light onward.
-fn occluded(reach: []const f32, open: []const f32, w: i32, h: i32, u: f32, v: f32) f32 {
-    const own = texel(reach, w, h, mathx.roundTiesUp(u), mathx.roundTiesUp(v)) > 0;
-    return bilinear(if (own) reach else open, w, h, u, v);
-}
-
-pub fn mask(on: bool) f32 {
-    return @floatFromInt(@intFromBool(on));
-}
-
-fn hidesGround(t: grid.Tile) bool {
-    return t.blind() and t.upright() and !look.stands(t);
-}
-
-const Fade = struct {
-    flat: ?f32 = null,
-    n: usize = 0,
-    short: [grid.Cells.square(VOID_REACH)]Short = undefined,
-
-    const Short = struct { x: f32, y: f32, m: f32 };
-
-    fn at(f: *const Fade, x: f32, y: f32, sight: f32) f32 {
-        if (f.flat) |v| return v;
-        const reach = mathx.lerpF(VOID_FADE, SIGHT_FADE, sight);
-        var v: f32 = 1;
-        for (f.short[0..f.n]) |c| {
-            const dx = @max(0, @max(c.x - x, x - c.x - 1));
-            const dy = @max(0, @max(c.y - y, y - c.y - 1));
-            if (dx >= reach or dy >= reach) continue;
-            v = @min(v, mathx.lerpF(c.m, 1, smooth(mathx.len(dx, dy) / reach)));
-        }
-        return v;
-    }
-};
+pub const texel = visibility.texel;
+pub const mask = visibility.mask;
 
 fn hash(n: i32, seed: u32) f32 {
     var x: u32 = @bitCast(n);
@@ -738,23 +618,7 @@ pub const Light = struct {
     options: Options = .{},
     effects: [EFFECTS]Effect = undefined,
     effect_n: usize = 0,
-    sight: [grid.CELLS]f32,
-    memory: [grid.CELLS]f32,
-    soft_sight: [grid.CELLS]f32,
-    /// Weighted sight over open ground only, preventing light leaks through walls.
-    open_sight: [grid.CELLS]f32,
-    /// 1 on a cell that blocks no sight; set from the tiles in `settle`.
-    see_through: [grid.CELLS]f32,
-    /// Open-ground memory weights; `sightAt` divides weighted sight by these.
-    open_weight: [grid.CELLS]f32,
-    /// Ground visibility includes shrub edges, keeping them continuous with adjacent ground.
-    ground: [grid.CELLS]f32,
-    blur: [grid.CELLS]f32,
-    share: [grid.CELLS]f32,
-    /// `sight` but for what blocks it, as `Torch.open` is, so the carried light passes through no wall.
-    carry_open: [grid.CELLS]f32,
-    clear: [grid.CELLS]bool,
-    clear_row: [grid.CELLS]bool,
+    visibility: visibility.Visibility,
     torch: [grid.MAX_TORCHES]Torch,
     torch_n: usize = 0,
     /// The hero's centre as drawn, cells.
@@ -785,14 +649,13 @@ pub const Light = struct {
         const l = try alloc.create(Light);
         mathx.defaults(l);
         @memset(&l.casting, 0);
-        @memset(&l.sight, 0);
-        @memset(&l.memory, 0);
+        l.visibility.reset();
         @memset(&l.scratch.tile, .floor);
         @memset(&l.scratch.los, false);
         l.grounded();
         for (std.enums.values(Layer)) |k| @memset(l.texels.getPtr(k), UNSEEN.get(k));
         l.baked = .{ 0, MAP_H };
-        l.soften();
+        l.visibility.soften();
         return l;
     }
 
@@ -810,48 +673,26 @@ pub const Light = struct {
             while (box.next()) |p| {
                 const k = t.texel(p);
                 t.reach[k] = mask(grid.cellOr(bool, &pool, p, false));
-                t.open[k] = t.reach[k] * grid.cellOr(f32, &self.see_through, p, 0);
+                t.open[k] = t.reach[k] * grid.cellOr(f32, &self.visibility.see_through, p, 0);
             }
             self.torch[self.torch_n] = t;
             self.torch_n += 1;
         }
-        for (0..grid.CELLS) |i| {
-            self.sight[i] = mask(lv.lit[i]);
-            self.memory[i] = mask(self.recalls(lv, i));
-        }
-        self.soften();
+        self.visibility.snap(lv, self.reveal_map);
         self.t = .{};
         self.fan();
     }
 
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {
         self.scratch.los = lv.los;
-        const up = mathx.easing(dt, REVEAL);
-        const down = mathx.easing(dt, FORGET);
-        var moved = false;
-        for (0..grid.CELLS) |i| {
-            const want_s = mask(lv.lit[i]);
-            const want_m = mask(self.recalls(lv, i));
-            if (self.sight[i] == want_s and self.memory[i] == want_m) continue;
-            const s = mathx.ease(self.sight[i], want_s, up, down);
-            const m = mathx.ease(self.memory[i], want_m, up, down);
-            moved = moved or s != self.sight[i] or m != self.memory[i];
-            self.sight[i] = s;
-            self.memory[i] = m;
-        }
-        if (moved) self.soften();
+        self.visibility.step(lv, dt, self.reveal_map);
         self.t.step(dt);
         self.fan();
     }
 
     pub fn reveal(self: *Light, lv: *const grid.Level, enabled: bool) void {
         self.reveal_map = enabled;
-        for (0..grid.CELLS) |i| self.memory[i] = mask(self.recalls(lv, i));
-        self.soften();
-    }
-
-    fn recalls(self: *const Light, lv: *const grid.Level, i: usize) bool {
-        return self.reveal_map or lv.seen[i];
+        self.visibility.reveal(lv, enabled);
     }
 
     /// Drawn as terrain: explored, or everything while the debug reveal is on.
@@ -880,10 +721,7 @@ pub const Light = struct {
     }
 
     fn grounded(self: *Light) void {
-        for (&self.see_through, &self.ground, &self.scratch.tile) |*k, *g, t| {
-            k.* = mask(!t.blind());
-            g.* = mask(!hidesGround(t));
-        }
+        self.visibility.terrain(&self.scratch);
         var cells = grid.Cells.of(.{ .x = 0, .y = 0 }, grid.SIZE);
         while (cells.next()) |p| {
             var neighbours = grid.Cells.around(p, DAPPLE_REACH);
@@ -898,88 +736,12 @@ pub const Light = struct {
         for (&self.dappling, 0..) |*d, i| d.* = self.dapplingAt(texelCentreOf(i));
     }
 
-    /// Blur only seen cells, and ground sight only over open ground, to prevent dim rims and wall leaks.
-    pub fn soften(self: *Light) void {
-        for (&self.soft_sight, &self.open_sight, &self.open_weight, &self.carry_open, &self.sight, &self.memory, &self.see_through) |*seen, *open, *w, *carry, s, m, k| {
-            seen.* = s * m;
-            open.* = s * m * k;
-            w.* = m * k;
-            carry.* = s * k;
-        }
-        self.blurShare(&self.soft_sight, &self.memory);
-        self.blurShare(&self.open_sight, &self.open_weight);
-        for (&self.open_sight, &self.open_weight) |*o, w| o.* *= w;
-        self.markClear();
-    }
-
-    fn markClear(self: *Light) void {
-        const r: usize = VOID_REACH;
-        const span = VOID_SPAN;
-        const w = grid.COLS;
-        const h = grid.ROWS;
-        @memset(&self.clear_row, false);
-        @memset(&self.clear, false);
-        for (0..h) |y| {
-            var run: usize = 0;
-            for (self.memory[y * w ..][0..w], 0..) |m, x| {
-                run = if (m >= 1) run + 1 else 0;
-                if (run >= span) self.clear_row[y * w + x - r] = true;
-            }
-        }
-        var runs: [grid.COLS]u16 = @splat(0);
-        for (0..h) |y| {
-            for (self.clear_row[y * w ..][0..w], &runs, 0..) |ok, *run, x| {
-                run.* = if (ok) run.* + 1 else 0;
-                if (run.* >= span) self.clear[(y - r) * w + x] = true;
-            }
-        }
-    }
-
-    fn blurShare(self: *Light, num: *[grid.CELLS]f32, den: *const [grid.CELLS]f32) void {
-        blur121(num, &self.blur, num);
-        blur121(den, &self.blur, &self.share);
-        for (num, &self.share) |*o, d| o.* = if (d > 0) @min(1, o.* / d) else 0;
-    }
-
-    /// A point on the screen, cells.
     pub fn sightAt(self: *const Light, x: f32, y: f32) f32 {
-        return sightOf(Whole{ .l = self }, self.groundAt(mathx.cellOf(.{ x, y })), x, y);
+        return self.visibility.sightAt(x, y);
     }
 
-    fn groundAt(self: *const Light, c: P) bool {
-        return grid.cellOr(f32, &self.ground, c, 0) > 0;
-    }
-
-    fn sightField(self: *const Light, k: SightField) *const [grid.CELLS]f32 {
-        return switch (k) {
-            .soft => &self.soft_sight,
-            .weight => &self.open_weight,
-            .open => &self.open_sight,
-        };
-    }
-
-    /// Distance fade reaches black at unseen rims; a blur leaks around corners.
-    fn fadeOf(self: *const Light, c: P) Fade {
-        const own = self.memoryAt(c);
-        if (own <= 0) return .{ .flat = 0 };
-        if (own >= 1 and self.whole(c)) return .{ .flat = 1 };
-        var f = Fade{};
-        var box = grid.Cells.around(c, VOID_REACH);
-        while (box.next()) |p| {
-            const m = self.memoryAt(p);
-            if (m >= 1) continue;
-            f.short[f.n] = .{ .x = @floatFromInt(p.x), .y = @floatFromInt(p.y), .m = m };
-            f.n += 1;
-        }
-        return f;
-    }
-
-    pub fn memoryAt(self: *const Light, p: P) f32 {
-        return grid.cellOr(f32, &self.memory, p, 0);
-    }
-
-    fn whole(self: *const Light, p: P) bool {
-        return grid.cellOr(bool, &self.clear, p, false);
+    pub fn memoryAt(self: *const Light, point: P) f32 {
+        return self.visibility.memoryAt(point);
     }
 
     pub fn near(self: *const Light, view: grid.Box, out: *[grid.MAX_TORCHES]TorchIx) []const TorchIx {
@@ -1001,7 +763,7 @@ pub const Light = struct {
         const dy = c[1] - y;
         const flat = mathx.len(dx, dy);
         if (flat >= CARRY_R) return null;
-        const reach = if (fogged) sampleOccluded(&self.sight, &self.carry_open, x, y) else self.carryReach(x, y);
+        const reach = if (fogged) visibility.sampleOccluded(&self.visibility.sight, &self.visibility.carry_open, x, y) else self.carryReach(x, y);
         return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat) * share * reach };
     }
 
@@ -1022,9 +784,9 @@ pub const Light = struct {
         for (0..4) |i| {
             const p = corner.add(mathx.unslot(i, 2));
             reach[i] = mask(self.scratch.inLos(p));
-            open[i] = reach[i] * grid.cellOr(f32, &self.see_through, p, 0);
+            open[i] = reach[i] * grid.cellOr(f32, &self.visibility.see_through, p, 0);
         }
-        return occluded(&reach, &open, 2, 2, x - 0.5 - @as(f32, @floatFromInt(corner.x)), y - 0.5 - @as(f32, @floatFromInt(corner.y)));
+        return visibility.occluded(&reach, &open, 2, 2, x - 0.5 - @as(f32, @floatFromInt(corner.x)), y - 0.5 - @as(f32, @floatFromInt(corner.y)));
     }
 
     fn countCasters(self: *Light, lv: *const grid.Level) void {
@@ -1094,7 +856,7 @@ pub const Light = struct {
 
     /// How much the canopy's dappled shade takes from the sun at `q`.
     fn dapplingAt(self: *const Light, q: [2]f32) f32 {
-        const cover = sample(&self.canopy, q[0], q[1]);
+        const cover = visibility.sample(&self.canopy, q[0], q[1]);
         if (cover == 0) return 0;
         const dapple = 0.5 + 0.5 * @sin(q[0] * DAPPLE_WAVE[0] + q[1] * DAPPLE_WAVE[1] + @sin(q[1] * DAPPLE_WAVE[2]));
         return cover * (DAPPLE_MIN + DAPPLE_SPAN * dapple);
@@ -1145,10 +907,10 @@ pub const Light = struct {
     /// `q` is in cells.
     pub fn at(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32) Rgb {
         const c = mathx.cellOf(q);
-        const fade = self.fadeOf(c);
+        const fade = self.visibility.fadeOf(c);
         const ray = self.sunRay();
         const cloud = if (ray != null) self.cloudAt(q) else 1;
-        return self.shade(lv, torches, self.effectsNear(c), q, null, self.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
+        return self.shade(lv, torches, self.effectsNear(c), q, null, self.visibility.viewIn(q, &fade), if (ray) |*r| r else null, cloud);
     }
 
     /// `cloud` is the share of the sky's light the clouds let through, read only with a `ray`.
@@ -1247,7 +1009,7 @@ pub const Light = struct {
     }
 
     fn bakeCell(self: *Light, lv: *const grid.Level, torches: []const TorchIx, c: P, t0: P, t1: P, ray: ?SunRay) void {
-        const fade = self.fadeOf(c);
+        const fade = self.visibility.fadeOf(c);
         const dark = if (fade.flat) |v| v == 0 else false;
         const x0 = @max(t0.x, c.x * SUB);
         const x1 = @min(t1.x, (c.x + 1) * SUB);
@@ -1264,8 +1026,8 @@ pub const Light = struct {
         }
         const corners: [4]f32 = if (ray != null) self.heldCorners(c) else @splat(1);
 
-        const patch = Patch.of(self, c);
-        const ground = self.groundAt(c);
+        const patch = visibility.Patch.of(&self.visibility, c);
+        const ground = self.visibility.groundAt(c);
         const effects = self.effectsNear(c);
         var wet = false;
         var neighbours = grid.Cells.around(c, 1);
@@ -1285,7 +1047,7 @@ pub const Light = struct {
                 const i: usize = @intCast(ty * MAP_W + tx);
                 glints[i] = UNSEEN.get(.glints);
                 const q = texelCentre(@intCast(tx), @intCast(ty));
-                const v = viewOf(sightOf(&patch, ground, q[0], q[1]), q, &fade);
+                const v = fade.view(patch.sightAt(ground, q[0], q[1]), q);
                 fog[i] = look.fade(rl.Color.white, 1 - v.memory);
                 const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
                 map[i] = texelOf(self.shade(lv, torches, effects, q, i, v, if (ray) |*r| r else null, cloud), v.lit);
@@ -1319,19 +1081,10 @@ pub const Light = struct {
         return gleam;
     }
 
-    const View = struct { sight: f32, memory: f32, lit: f32 };
+    const View = visibility.View;
 
-    pub fn viewAt(self: *const Light, q: [2]f32) View {
-        return self.viewIn(q, &self.fadeOf(mathx.cellOf(q)));
-    }
-
-    fn viewIn(self: *const Light, q: [2]f32, fade: *const Fade) View {
-        return viewOf(self.sightAt(q[0], q[1]), q, fade);
-    }
-
-    fn viewOf(sight: f32, q: [2]f32, fade: *const Fade) View {
-        const memory = fade.at(q[0], q[1], sight);
-        return .{ .sight = sight, .memory = memory, .lit = sight * memory };
+    pub fn viewAt(self: *const Light, point: [2]f32) View {
+        return self.visibility.viewAt(point);
     }
 
     /// Ground centre in cells; self-carried light is flat, visibility follows the ground.
@@ -1549,23 +1302,4 @@ pub fn glowAt(g: rl.Texture2D, x: f32, y: f32, rx: f32, ry: f32, c: rl.Color) vo
 pub fn flashed(c: rl.Color, k: f32) rl.Color {
     const from = rgbOf(c);
     return recolour(c, mix(from, FLASH_RGB, k));
-}
-
-/// The edges repeat their own cell. `out` may be `src`.
-fn blur121(src: *const [grid.CELLS]f32, tmp: *[grid.CELLS]f32, out: *[grid.CELLS]f32) void {
-    const w = grid.COLS;
-    const h = grid.ROWS;
-    for (0..h) |y| {
-        const s = src[y * w ..][0..w];
-        const t = tmp[y * w ..][0..w];
-        t[0] = (s[0] + s[0] * 2 + s[1]) * 0.25;
-        for (t[1 .. w - 1], s[0 .. w - 2], s[1 .. w - 1], s[2..w]) |*v, l, m, r| v.* = (l + m * 2 + r) * 0.25;
-        t[w - 1] = (s[w - 2] + s[w - 1] * 2 + s[w - 1]) * 0.25;
-    }
-    for (0..h) |y| {
-        const u = tmp[(if (y == 0) 0 else y - 1) * w ..][0..w];
-        const m = tmp[y * w ..][0..w];
-        const d = tmp[@min(h - 1, y + 1) * w ..][0..w];
-        for (out[y * w ..][0..w], u, m, d) |*v, a, b, c| v.* = (a + b * 2 + c) * 0.25;
-    }
 }

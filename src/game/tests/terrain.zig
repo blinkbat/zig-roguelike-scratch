@@ -203,13 +203,13 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
         harness.heroArena(g, if (act == .spark) .wizard else .archer, from, &.{});
         const clock = g.sim.clock;
         harness.use(g, act);
-        try std.testing.expectEqual(game.Mode.aim, g.mode);
+        try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
         try std.testing.expectEqual(clock, g.sim.clock);
-        g.mark = far;
+        g.mode.aim.mark = far;
         g.sim.lv.lit[grid.Level.idx(far)] = false;
         try std.testing.expect(skills.aimable(g, from, far));
         skills.confirmAim(g);
-        try std.testing.expectEqual(game.Mode.play, g.mode);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
         try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
         try std.testing.expect(g.pic.shot.?.flight.struck == null);
 
@@ -218,7 +218,7 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
         g.sim.pool.get(2).?.clock.stun();
         g.sim.pool.get(3).?.clock.stun();
         harness.use(g, act);
-        g.mark = far;
+        g.mode.aim.mark = far;
         const untouched = g.sim.pool.get(3).?.hp;
         skills.confirmAim(g);
         try std.testing.expectEqual(@as(u16, 2), g.pic.shot.?.flight.struck.?.body);
@@ -228,11 +228,11 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
         g.sim.lv.set(near, .wall);
         game.castSight(g, from);
         harness.use(g, act);
-        g.mark = far;
+        g.mode.aim.mark = far;
         const before = g.sim.clock;
         const mana = g.sim.mana;
         skills.confirmAim(g);
-        try std.testing.expectEqual(game.Mode.aim, g.mode);
+        try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
         try std.testing.expectEqual(before, g.sim.clock);
         try std.testing.expectEqual(mana, g.sim.mana);
     }
@@ -247,7 +247,7 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
         game.castSight(g, from);
         g.sim.rng = rng;
         harness.use(g, .shoot);
-        g.mark = far;
+        g.mode.aim.mark = far;
         skills.confirmAim(g);
         rng = g.sim.rng;
         missed += @intFromBool(g.sim.pool.get(2).?.hp == harness.TEST_HP);

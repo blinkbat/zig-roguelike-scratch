@@ -137,45 +137,7 @@ pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon
     return prompt.drawFrom(face, @as(i32, @intFromFloat(r.x)) + ACTION_PAD, raster.middleAt(r).y, font.BODY, alpha) + PROMPT_GAP;
 }
 
-pub fn Note(comptime N: usize) type {
-    return struct {
-        const Self = @This();
-        buf: [N + 1]u8 = @splat(0),
-        n: usize = 0,
-
-        pub fn say(self: *Self, comptime fmt: []const u8, args: anytype) void {
-            self.n = (std.fmt.bufPrintZ(&self.buf, fmt, args) catch blk: {
-                self.buf[N] = 0;
-                break :blk self.buf[0..N];
-            }).len;
-        }
-
-        pub fn clear(self: *Self) void {
-            self.n = 0;
-            self.buf[0] = 0;
-        }
-
-        pub const Writer = std.io.GenericWriter(*Self, error{NoSpaceLeft}, append);
-
-        /// Appends to the text, as much as fits.
-        pub fn writer(self: *Self) Writer {
-            return .{ .context = self };
-        }
-
-        fn append(self: *Self, bytes: []const u8) error{NoSpaceLeft}!usize {
-            const n = @min(bytes.len, N - self.n);
-            if (n == 0 and bytes.len > 0) return error.NoSpaceLeft;
-            @memcpy(self.buf[self.n..][0..n], bytes[0..n]);
-            self.n += n;
-            self.buf[self.n] = 0;
-            return n;
-        }
-
-        pub fn text(self: *const Self) [:0]const u8 {
-            return self.buf[0..self.n :0];
-        }
-    };
-}
+pub const Note = @import("../core/text.zig").Note;
 
 pub const Conjunction = enum { @"and", @"or" };
 
@@ -477,17 +439,6 @@ test "a long menu shows the rows that fit, the one it is on among them" {
     try std.testing.expect(w.len < 40 and w.from + w.len == 40);
     try std.testing.expectEqual(@as(usize, 0), window(900, 40, 0).from);
     try std.testing.expectEqual(@as(usize, 3), window(900, 3, 2).len);
-}
-
-test "a note's writer appends what fits and stays terminated" {
-    var note: Note(8) = .{};
-    note.writer().print("{d} of {d}", .{ 12, 34 }) catch {};
-    note.writer().writeAll("overflow") catch {};
-    try std.testing.expectEqualStrings("12 of 34", note.text());
-    note.clear();
-    note.writer().writeAll("ab") catch {};
-    try std.testing.expectEqualStrings("ab", note.text());
-    std.debug.print("note writer: {d}-byte note truncates and re-terminates after clear\n", .{8});
 }
 
 test "a tag is titled word by word" {

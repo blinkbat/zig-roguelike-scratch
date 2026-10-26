@@ -1,4 +1,5 @@
 const std = @import("std");
+const source_rules = @import("tools/source_rules.zig");
 
 const SRC = "src";
 const ROOT = SRC ++ "/main.zig";
@@ -59,12 +60,16 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     checkTestRoster(b);
     test_step.dependOn(&run_tests.step);
+    const rule_module = b.createModule(.{ .root_source_file = b.path("tools/source_rules.zig"), .target = target, .optimize = optimize });
+    const rule_tests = b.addTest(.{ .root_module = rule_module });
+    test_step.dependOn(&b.addRunArtifact(rule_tests).step);
 
-    // No step may install or run these two — Step.Compile passes -fno-emit-bin only while nothing asks for the binary.
+    // No step may install or run these checks — Step.Compile passes -fno-emit-bin only while nothing asks for the binary.
     const check_step = b.step("check", "Type-check only — no codegen, no link, no binary");
     for ([_]*std.Build.Step.Compile{
         b.addExecutable(.{ .name = "check-exe", .root_module = root.module() }),
         b.addTest(.{ .root_module = root.module() }),
+        b.addTest(.{ .root_module = rule_module }),
     }) |c| check_step.dependOn(&c.step);
 }
 
@@ -176,6 +181,11 @@ fn checkTestRoster(b: *std.Build) void {
         const st = ent.dir.statFile(ent.basename) catch |e|
             std.debug.panic(SRC ++ "/{s} could not be stat'd ({s})", .{ slashed, @errorName(e) });
         if (st.size < MIN_SRC) std.debug.panic(SRC ++ "/{s} is {d} bytes — a truncated file, not a module", .{ slashed, st.size });
+        const source = ent.dir.readFileAllocOptions(b.allocator, ent.basename, READ_MAX, null, @alignOf(u8), 0) catch |e|
+            std.debug.panic(SRC ++ "/{s} could not be read ({s})", .{ slashed, @errorName(e) });
+        if (source_rules.check(b.allocator, slashed, source) catch |e|
+            std.debug.panic(SRC ++ "/{s}: source boundary check failed ({s})", .{ slashed, @errorName(e) })) |violation|
+            std.debug.panic(SRC ++ "/{s}:{d}: {s} crosses this module's dependency boundary; see docs/ARCHITECTURE.md", .{ slashed, violation.line, violation.imported });
         const want = b.fmt("@import(\"{s}\")", .{slashed});
         if (!named(root, want)) {
             std.debug.panic(ROOT ++ "'s test block does not name {s}. Add `_ = {s};`.", .{ slashed, want });

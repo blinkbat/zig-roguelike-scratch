@@ -21,13 +21,15 @@ pub const Hurt = struct {
     torn: bool = false,
 };
 
-pub const Dealt = struct { to: actor.Kind, killed: bool, reaction: bool = false };
+pub const AttackOrigin = union(enum) { chosen, reaction: actor.ActorId };
+
+pub const Dealt = struct { to: actor.Kind, killed: bool, origin: AttackOrigin = .chosen };
 
 pub const Event = union(enum) {
     hurt: Hurt,
     stunned: actor.Kind,
     dealt: Dealt,
-    missed: struct { reaction: bool = false },
+    missed: struct { origin: AttackOrigin = .chosen },
     used: skillbar.Act,
     /// A bloat burst beside the hero.
     burst,

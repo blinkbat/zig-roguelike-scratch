@@ -9,6 +9,7 @@ const chain = @import("../play/chain.zig");
 const items = @import("../play/items.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
+const chronicle = @import("../play/chronicle.zig");
 const fx = @import("../gfx/fx.zig");
 const cloud = @import("../gfx/cloud.zig");
 const look = @import("../gfx/look.zig");
@@ -16,6 +17,7 @@ const hud = @import("../ui/hud.zig");
 const game = @import("../game.zig");
 const glide = @import("glide.zig");
 const simulation = @import("sim.zig");
+const rewards = @import("rewards.zig");
 const Simulation = simulation.Simulation;
 const P = mathx.P;
 
@@ -92,7 +94,7 @@ pub const Owed = struct {
     worn: ?fx.After = null,
     swept: ?Swept = null,
     thorns: ?Harm = null,
-    reaction: ?struct { from: P, flight: ?bow.Flight, hit: ?Swipe = null, recovery: ?fx.After = null } = null,
+    reaction: ?Reaction = null,
 
     pub fn any(o: *const Owed) bool {
         inline for (std.meta.fields(Owed)) |f| {
@@ -102,12 +104,14 @@ pub const Owed = struct {
     }
 };
 
-/// What a foe's sweep struck besides the hero, landing with its blow on the hero; a null slot is a barrel.
+pub const ReactionOutcome = union(enum) { miss, hit: fx.ActorImpact };
+pub const Reaction = struct { from: P, flight: ?bow.Flight, outcome: ReactionOutcome, recovery: ?fx.After = null };
+
+/// What a foe's sweep struck besides the hero, landing with its blow on the hero.
 pub const Swept = struct {
-    hit: [actor.SWEEP_CELLS]Swipe = undefined,
+    hit: [actor.SWEEP_CELLS]fx.Impact = undefined,
     n: usize = 0,
 };
-pub const Swipe = struct { slot: ?usize, at: P, lethal: bool, after: ?fx.After = null };
 
 comptime {
     std.debug.assert(fx.DUE >= actor.MAX * (std.meta.fields(Owed).len + actor.SWEEP_CELLS) + @max(2, chain.JUMPS));
@@ -168,6 +172,85 @@ pub const Presentation = struct {
 
     pub fn holdUntil(self: *Presentation, t: f32) void {
         self.busy = @max(self.busy, t);
+    }
+
+    pub fn deferDamage(self: *Presentation, result: simulation.DamageResult) void {
+        self.mana_held += result.mana;
+    }
+
+    pub fn recordAttack(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, origin: chronicle.AttackOrigin, stroke: Stroke, flight: ?bow.Flight, outcome: ReactionOutcome, recovery: ?fx.After) void {
+        switch (origin) {
+            .reaction => |by| self.owed[by.slot().index].reaction = .{ .from = stroke.from, .flight = flight, .outcome = outcome, .recovery = recovery },
+            .chosen => {
+                switch (outcome) {
+                    .hit => |hit| self.strike(sim, gas, .{ .actor = hit }, stroke),
+                    .miss => {},
+                }
+                if (recovery) |after| self.recordRecovery(sim, stroke.wait, after);
+            },
+        }
+    }
+
+    pub fn recordRecovery(self: *Presentation, sim: *const Simulation, wait: f32, after: fx.After) void {
+        self.fx.settle(wait, .{ .slot = sim.heroSlot().?, .after = after });
+    }
+
+    pub fn recordProjectile(self: *Presentation, from: P, act: skillbar.Act, flight: bow.Flight) Stroke {
+        self.shot = .{ .flight = flight, .from = from, .act = act };
+        self.holdUntil(self.shot.?.ends());
+        const stroke = Stroke{ .from = from, .wait = self.shot.?.lands(), .fire = act.element() == .fire };
+        if (act.element() == .lightning and flight.len > 0) self.fx.zap(@max(0, stroke.wait - game.ZAP_S), .{ .from = mathx.centre(from), .to = mathx.centre(flight.path[flight.len - 1]) });
+        self.lead = stroke.wait;
+        return stroke;
+    }
+
+    pub fn damageAfter(self: *Presentation, sim: *const Simulation, result: simulation.DamageResult, child: ?actor.ActorId) fx.After {
+        var after = self.afterOf(sim, result.target.slot().index);
+        after.reveals = if (child) |id| id.slot().index else null;
+        after.mana = result.mana;
+        return after;
+    }
+
+    pub fn recordSplit(self: *Presentation, sim: *const Simulation, parent: actor.ActorId, child: actor.ActorId) void {
+        const i = parent.slot().index;
+        const o = child.slot().index;
+        const body = sim.pool.items[o];
+        self.split_from[o] = i;
+        self.pictured[o] = fx.Body.of(body, self.seq);
+        self.glide[o] = glide.Glide.rest(&body);
+        self.facing[o] = if (self.turning[i]) |t| t.to else self.facing[i];
+    }
+
+    pub fn recordDeath(self: *Presentation, target: actor.ActorId, death: rewards.Death) void {
+        self.dropped_gold[target.slot().index] = death.gold;
+        self.recordFright(target.slot(), death.frightened);
+    }
+
+    pub fn recordFright(self: *Presentation, fallen: actor.ActorSlot, frightened: rewards.Frightened) void {
+        var slots = frightened.iterator(.{});
+        while (slots.next()) |slot| self.fx.frighten(slot, fallen.index);
+    }
+
+    pub fn recordFoeAttack(self: *Presentation, by: actor.ActorId, outcome: Bite, flight: ?bow.Flight) void {
+        const owed = &self.owed[by.slot().index];
+        owed.bit = outcome;
+        owed.arrow = flight;
+    }
+
+    pub fn recordStatus(self: *Presentation, target: actor.ActorId, comptime tick: simulation.Tick, harm: Harm) void {
+        @field(self.owed[target.slot().index], @tagName(tick)) = harm;
+    }
+
+    pub fn recordWear(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
+        self.owed[target.slot().index].worn = self.afterOf(sim, target.slot().index);
+    }
+
+    pub fn recordThorns(self: *Presentation, target: actor.ActorId, harm: Harm) void {
+        self.owed[target.slot().index].thorns = harm;
+    }
+
+    pub fn recordSweep(self: *Presentation, by: actor.ActorId, swept: Swept) void {
+        if (swept.n > 0) self.owed[by.slot().index].swept = swept;
     }
 
     pub fn freshTurn(self: *Presentation) void {
@@ -492,13 +575,13 @@ pub const Presentation = struct {
             self.holdUntil(lands);
         }
         if (bit) |b| switch (b) {
-            .hurt, .kill => |after| self.strike(sim, gas, hero, .{ .from = a.at, .wait = hits }, hero_at, b == .kill, after),
-            .burst => |after| self.strike(sim, gas, i, .{ .from = hero_at, .wait = hits }, a.at, true, after),
+            .hurt, .kill => |after| self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(hero), .at = hero_at, .lethal = b == .kill, .after = after } }, .{ .from = a.at, .wait = hits }),
+            .burst => |after| self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(i), .at = a.at, .lethal = true, .after = after } }, .{ .from = hero_at, .wait = hits }),
             .miss => {},
         };
-        if (owed.swept) |*sw| for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h.slot, .{ .from = a.at, .wait = hits }, h.at, h.lethal, h.after);
+        if (owed.swept) |*sw| for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h, .{ .from = a.at, .wait = hits });
         if (owed.thorns) |h| {
-            self.strike(sim, gas, i, .{ .from = hero_at, .wait = hits }, a.at, h.kill, h.after);
+            self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(i), .at = a.at, .lethal = h.kill, .after = h.after } }, .{ .from = hero_at, .wait = hits });
             if (h.recovery) |after| self.fx.settle(hits, .{ .slot = hero, .after = after });
         }
         if (owed.reaction) |r| {
@@ -510,7 +593,10 @@ pub const Presentation = struct {
                 impact = release + shot_.lands();
                 self.holdUntil(release + shot_.ends());
             }
-            if (r.hit) |h| self.strike(sim, gas, h.slot, .{ .from = r.from, .wait = impact }, h.at, h.lethal, h.after);
+            switch (r.outcome) {
+                .miss => {},
+                .hit => |h| self.strike(sim, gas, .{ .actor = h }, .{ .from = r.from, .wait = impact }),
+            }
             if (r.recovery) |after| self.fx.settle(impact, .{ .slot = hero, .after = after });
             self.holdUntil(impact);
             lands = @max(lands, impact);
@@ -544,7 +630,7 @@ pub const Presentation = struct {
     fn harmShown(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, at: P, lands: f32, h: Harm, fire: bool, in_view: bool, s: fx.Sting) void {
         if (h.recovery) |after| self.fx.settle(lands, .{ .slot = sim.heroSlot().?, .after = after });
         if (h.kill) {
-            self.strike(sim, gas, s.slot, .{ .from = at, .wait = lands, .fire = fire }, at, true, h.after);
+            self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(s.slot), .at = at, .lethal = true, .after = h.after } }, .{ .from = at, .wait = lands, .fire = fire });
         } else if (in_view) {
             var shown = s;
             shown.after = h.after;
@@ -553,16 +639,27 @@ pub const Presentation = struct {
     }
 
     /// A blow drawn landing on `at`, or only settled when the hero cannot see it; a bursting kill holds its gas back as long.
-    pub fn strike(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, slot: ?usize, s: Stroke, at: P, lethal: bool, after: ?fx.After) void {
+    pub fn strike(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, impact: fx.Impact, s: Stroke) void {
+        const at = impact.at();
         const len = mathx.distEuclid(at, s.from);
         const dir: ?[2]f32 = if (len == 0) null else .{ @as(f32, @floatFromInt(at.x - s.from.x)) / len, @as(f32, @floatFromInt(at.y - s.from.y)) / len };
-        const kind: ?actor.Kind = if (slot) |i| sim.pool.items[i].kind else null;
-        if (slot == sim.heroSlot() or sim.lv.isLit(at)) {
-            self.fx.strike(s.wait, .{ .slot = slot, .at = mathx.centre(at), .dir = dir, .matter = fx.matterOf(kind), .lethal = lethal, .after = after, .fire = s.fire });
+        const kind: ?actor.Kind = switch (impact) {
+            .actor => |a| sim.pool.items[a.slot.index].kind,
+            .barrel => null,
+        };
+        const hero = switch (impact) {
+            .actor => |a| sim.isHero(a.slot.index),
+            .barrel => false,
+        };
+        if (hero or sim.lv.isLit(at)) {
+            self.fx.strike(s.wait, .{ .impact = impact, .dir = dir, .matter = fx.matterOf(kind), .fire = s.fire });
             self.flashes(s.wait);
-        } else if (after) |a| self.fx.settle(s.wait, .{ .slot = slot.?, .after = a });
+        } else switch (impact) {
+            .actor => |a| if (a.after) |after| self.fx.settle(s.wait, .{ .slot = a.slot.index, .after = after }),
+            .barrel => {},
+        }
         const k = kind orelse return;
-        if (lethal and k.bursts()) gas.hold(s.wait);
+        if (impact.lethal() and k.bursts()) gas.hold(s.wait);
     }
 
     pub fn sting(self: *Presentation, wait: f32, s: fx.Sting) void {

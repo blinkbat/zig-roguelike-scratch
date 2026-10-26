@@ -21,6 +21,7 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "tools/source_rules.zig",
         "src",
         "assets",
     },

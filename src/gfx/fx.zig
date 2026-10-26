@@ -108,16 +108,37 @@ pub const Mote = struct {
     terrain: bool = true,
 };
 
+pub const ActorImpact = struct {
+    slot: actor.ActorSlot,
+    at: mathx.P,
+    lethal: bool,
+    after: ?After = null,
+};
+
+pub const Impact = union(enum) {
+    actor: ActorImpact,
+    barrel: mathx.P,
+
+    pub fn at(self: Impact) mathx.P {
+        return switch (self) {
+            .actor => |a| a.at,
+            .barrel => |p| p,
+        };
+    }
+
+    pub fn lethal(self: Impact) bool {
+        return switch (self) {
+            .actor => |a| a.lethal,
+            .barrel => true,
+        };
+    }
+};
+
 pub const Blow = struct {
-    /// The pool slot to flash; null for what has no body left to flash, a barrel.
-    slot: ?usize,
-    /// Cells, the middle of the struck cell on the ground.
-    at: [2]f32,
+    impact: Impact,
     /// Unit travel direction; null scatters a directionless hit such as gas.
     dir: ?[2]f32,
     matter: Matter,
-    lethal: bool,
-    after: ?After = null,
     fire: bool = false,
 };
 
@@ -379,7 +400,10 @@ const Due = union(enum) {
 
     fn on(d: *const Due) ?usize {
         return switch (d.*) {
-            .blow => |*b| b.slot,
+            .blow => |*b| switch (b.impact) {
+                .actor => |a| a.slot.index,
+                .barrel => null,
+            },
             .sting => |*s| s.slot,
             .settle => |*s| s.slot,
             .burst, .zap => null,
@@ -395,12 +419,15 @@ const Due = union(enum) {
 
     fn onBarrel(d: *const Due) bool {
         const b = d.blowOf() orelse return false;
-        return b.slot == null;
+        return b.impact == .barrel;
     }
 
     fn after(d: *const Due) ?After {
         return switch (d.*) {
-            .blow => |*b| b.after,
+            .blow => |*b| switch (b.impact) {
+                .actor => |a| a.after,
+                .barrel => null,
+            },
             .sting => |*s| s.after,
             .settle => |*s| s.after,
             .burst, .zap => null,
@@ -668,7 +695,7 @@ pub const Fx = struct {
     pub fn breaking(self: *const Fx, p: mathx.P) bool {
         if (self.barrels_due == 0) return false;
         for (self.due[0..self.due_n]) |*d| {
-            if (d.what.onBarrel() and mathx.cellOf(d.what.blowOf().?.at).eq(p)) return true;
+            if (d.what.onBarrel() and d.what.blowOf().?.impact.barrel.eq(p)) return true;
         }
         return false;
     }
@@ -704,10 +731,11 @@ pub const Fx = struct {
     }
 
     fn land(self: *Fx, b: Blow) void {
-        if (b.fire) self.embers(b.at);
-        self.emit(.{ .p = .{ b.at[0], b.at[1], STRIKE_Z }, .v = .{ 0, 0, 0 }, .life = CONTACT_S, .r = CONTACT_R * (if (b.lethal) KILL_POP else 1), .col = CONTACT, .add = true });
+        const at = mathx.centre(b.impact.at());
+        if (b.fire) self.embers(at);
+        self.emit(.{ .p = .{ at[0], at[1], STRIKE_Z }, .v = .{ 0, 0, 0 }, .life = CONTACT_S, .r = CONTACT_R * (if (b.impact.lethal()) KILL_POP else 1), .col = CONTACT, .add = true });
         const s = sprayOf(b.matter);
-        self.spray(b.at, b.dir, s, if (b.lethal) s.kill else s.hit);
+        self.spray(at, b.dir, s, if (b.impact.lethal()) s.kill else s.hit);
     }
 
     fn spray(self: *Fx, at: [2]f32, dir: ?[2]f32, s: Spray, n: usize) void {
@@ -1139,7 +1167,7 @@ fn live(fx: *const Fx) Live {
     return out;
 }
 
-const TEST_BLOW = Blow{ .slot = 3, .at = .{ 20.5, 20.5 }, .dir = .{ 1, 0 }, .matter = .blood, .lethal = false };
+const TEST_BLOW = Blow{ .impact = .{ .actor = .{ .slot = .fromIndex(3), .at = .{ .x = 20, .y = 20 }, .lethal = false } }, .dir = .{ 1, 0 }, .matter = .blood };
 
 test "a delayed effect starts its particles and light together after a long frame" {
     const lv = grid.openFloor();
@@ -1269,11 +1297,11 @@ test "a blow flashes its body for a beat and sprays blood a fraction of a cell, 
         if (flash_gone == null and fx.flashOf(3) == 0) flash_gone = t;
         for (fx.motes) |m| {
             if (m.life <= 0 or m.add) continue;
-            reach = @max(reach, mathx.len(m.p[0] - TEST_BLOW.at[0], m.p[1] - TEST_BLOW.at[1]));
+            reach = @max(reach, mathx.len(m.p[0] - mathx.centre(TEST_BLOW.impact.at())[0], m.p[1] - mathx.centre(TEST_BLOW.impact.at())[1]));
         }
         if (@abs(t - 0.7) < dt * 0.5) {
             for (fx.motes) |m| {
-                if (m.landed and m.life > 0 and m.p[0] > TEST_BLOW.at[0]) ahead += 1;
+                if (m.landed and m.life > 0 and m.p[0] > mathx.centre(TEST_BLOW.impact.at())[0]) ahead += 1;
             }
             try std.testing.expectEqual(@as(usize, sprayOf(.blood).hit), live(&fx).stains);
         }
@@ -1291,7 +1319,7 @@ test "splinters bounce and leave no stain, and a mote that flies into a wall is 
     fx.clear();
     var b = TEST_BLOW;
     b.matter = .wood;
-    b.lethal = true;
+    b.impact.actor.lethal = true;
     fx.strike(0, b);
     var bounced = false;
     var t: f32 = 0;
@@ -1342,7 +1370,7 @@ test "a blow from nowhere sprays all round, not in one heap" {
     fx.clear();
     var b = TEST_BLOW;
     b.dir = null;
-    b.lethal = true;
+    b.impact.actor.lethal = true;
     fx.strike(0, b);
     for (0..240) |_| fx.step(&lv, mathx.TEST_DT);
     var sum = [2]f32{ 0, 0 };
@@ -1350,8 +1378,8 @@ test "a blow from nowhere sprays all round, not in one heap" {
     var n: f32 = 0;
     for (fx.motes) |m| {
         if (!m.landed or m.life <= 0) continue;
-        const dx = m.p[0] - b.at[0];
-        const dy = m.p[1] - b.at[1];
+        const dx = m.p[0] - mathx.centre(b.impact.at())[0];
+        const dy = m.p[1] - mathx.centre(b.impact.at())[1];
         sum = .{ sum[0] + dx, sum[1] + dy };
         reach = @max(reach, mathx.len(dx, dy));
         n += 1;

@@ -1,3 +1,5 @@
+const placement = @import("placement.zig");
+const widgets = @import("widgets.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -31,44 +33,44 @@ pub fn visible(ed: *const editor.Editor, c: rl.Rectangle) grid.Box {
 
 fn drawCells(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) void {
     var beds: dual.Beds = undefined;
-    beds.fill(&ed.lv, v.lo, v.hi, false);
-    g.sprites.drawGround(&ed.lv, &beds, ed.origin(c), ed.px(), null);
+    beds.fill(&ed.scene.lv, v.lo, v.hi, false);
+    g.sprites.drawGround(&ed.scene.lv, &beds, ed.origin(c), ed.px(), null);
     var cells = grid.Cells.of(v.lo, v.hi);
     while (cells.next()) |p| {
         const r = ed.cellRect(c, p);
-        const here = ed.lv.at(p);
-        if (look.glyphGround(here, &g.sprites)) editor.tileGlyph(g, here, r);
+        const here = ed.scene.lv.at(p);
+        if (look.glyphGround(here, &g.sprites)) widgets.tileGlyph(&g.face, here, r);
         if (!look.standsOver(here)) continue;
-        if (g.sprites.tileAt(&ed.lv, p)) |t| {
+        if (g.sprites.tileAt(&ed.scene.lv, p)) |t| {
             raster.stretch(t, look.tileRect(here, t, r), look.LIT);
             continue;
         }
         if (look.tileBg(here) orelse if (here == .wall) look.BARE_WALL else null) |bg| rl.drawRectangleRec(r, bg);
-        if (here != .wall) editor.tileGlyph(g, here, r);
+        if (here != .wall) widgets.tileGlyph(&g.face, here, r);
     }
 }
 
 pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
-    editor.scissor(c);
+    widgets.scissor(c);
     defer rl.endScissorMode();
     const v = visible(ed, c);
     drawCells(ed, g, c, v);
-    if (ed.lower == .things and ed.issues.cut_off > 0) {
+    if (ed.lower == .things and ed.scene.issues.cut_off > 0) {
         var cells = grid.Cells.of(v.lo, v.hi);
         while (cells.next()) |p| {
-            if (ed.cutOff(grid.Level.idx(p))) rl.drawRectangleRec(ed.cellRect(c, p), CUT_OFF);
+            if (ed.scene.cutOff(grid.Level.idx(p))) rl.drawRectangleRec(ed.cellRect(c, p), CUT_OFF);
         }
     }
     if (ed.px() >= GRID_PX) drawGrid(ed, c, v);
     rl.drawRectangleLinesEx(raster.grown(boxRect(ed, c, grid.Box.inMap(0)), 1), 1, look.EDGE);
     var cells = grid.Cells.of(v.lo, v.hi);
     while (cells.next()) |p| {
-        if (ed.lv.hasBarrel(p)) modals.seenPicture(g, .barrel, ed.cellRect(c, p));
+        if (ed.scene.lv.hasBarrel(p)) modals.seenPicture(g, .barrel, ed.cellRect(c, p));
     }
-    for (ed.lv.torches()) |t| modals.seenPicture(g, .torch, ed.cellRect(c, t));
-    for (ed.shownFoes()) |f| modals.seenPicture(g, .{ .body = f.kind }, ed.cellRect(c, f.at));
+    for (ed.scene.lv.torches()) |t| modals.seenPicture(g, .torch, ed.cellRect(c, t));
+    for (ed.scene.shownFoes()) |f| modals.seenPicture(g, .{ .body = f.kind }, ed.cellRect(c, f.at));
     drawDoors(ed, g, c);
-    if (ed.start_at) |s| panel.toolFigure(g, .start, ed.cellRect(c, s));
+    if (ed.scene.start_at) |s| panel.toolFigure(g, .start, ed.cellRect(c, s));
     if (ed.selection) |s| {
         outlineCells(ed, c, s, PICKED);
         fillCells(ed, c, s, SELECTED);
@@ -115,11 +117,11 @@ fn drawDoors(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     for (ed.here().doors(), 0..) |d, k| {
         const r = ed.cellRect(c, d.at);
         rl.drawRectangleRec(r, DOOR_BACK);
-        editor.glyph(g, look.DOOR.ch, r, if (d.to == null) UNLINKED else look.DOOR.fg);
+        widgets.glyph(&g.face, look.DOOR.ch, r, if (d.to == null) UNLINKED else look.DOOR.fg);
         rl.drawRectangleLinesEx(r, 1, if (d.to == null) WARN else look.DOOR.fg);
         if (ed.px() >= editor.LABEL_PX) {
             const label = std.fmt.bufPrintZ(&buf, "{d}", .{k}) catch "";
-            editor.drawTag(g, label, .{ .x = @intFromFloat(r.x), .y = @intFromFloat(r.y) }, editor.LABEL_PAD, PANEL_BG, null);
+            widgets.drawTag(&g.face, label, .{ .x = @intFromFloat(r.x), .y = @intFromFloat(r.y) }, editor.LABEL_PAD, PANEL_BG, null);
         }
         const pk = ed.pick orelse continue;
         if (pk.eq(.{ .node = ed.node, .door = k })) rl.drawRectangleLinesEx(r, PICK_EDGE, PICKED);
@@ -133,7 +135,7 @@ fn drawCursor(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         const bd = &ed.board;
         const view = visible(ed, c);
         const lays = ed.paintable();
-        if (lays) _ = editor.layAside(ed, m);
+        if (lays) _ = placement.layAside(ed, m);
         const trial = &ed.trial;
         var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
         while (cells.next()) |q| {
@@ -159,25 +161,25 @@ fn drawCursor(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     }
     if (ed.span) |s| {
         const to = grid.Level.clamp(m);
-        editor.eachSpanCell(ed, s, to, editor.Ghost.of(ed, g, c, ed.ink.get(.of(s.erase))));
+        placement.eachSpanCell(ed, s, to, Ghost.of(ed, g, c, ed.ink.get(.of(s.erase))));
         outlineCells(ed, c, grid.Box.between(s.from, to), PICKED);
         return;
     }
     if (!grid.Level.inside(m) or !ed.mouseIn(c)) return;
-    if (ed.shape == .select or (ed.desk.alt and ed.stroke == .none)) return outlineCells(ed, c, editor.brushBox(m, 1), PICKED);
+    if (ed.shape == .select or (ed.desk.alt and ed.stroke == .none)) return outlineCells(ed, c, placement.brushBox(m, 1), PICKED);
     const erase = if (ed.stroke == .none) ed.desk.erase else ed.stroke == .erase;
     if (ed.tool.broad()) {
-        const ghost = editor.Ghost.of(ed, g, c, ed.ink.get(.of(erase)));
-        const begins = if (ed.stroke == .none) editor.spanOf(ed, ed.desk.shift) else null;
+        const ghost = Ghost.of(ed, g, c, ed.ink.get(.of(erase)));
+        const begins = if (ed.stroke == .none) placement.spanOf(ed, ed.desk.shift) else null;
         if (begins) |sh| {
-            editor.eachSpanCell(ed, .{ .from = m, .erase = erase, .shape = sh }, m, ghost);
-            return outlineCells(ed, c, editor.brushBox(m, if (sh == .line) ed.brushSize() else 1), HOVER);
+            placement.eachSpanCell(ed, .{ .from = m, .erase = erase, .shape = sh }, m, ghost);
+            return outlineCells(ed, c, placement.brushBox(m, if (sh == .line) ed.brushSize() else 1), HOVER);
         }
-        if (ed.shape != .fill) editor.eachBrushCell(ed, m, ghost);
-        return outlineCells(ed, c, editor.brushBox(m, if (ed.shape == .fill) 1 else ed.brushSize()), if (ed.tool.fits(ed.here())) HOVER else WARN);
+        if (ed.shape != .fill) placement.eachBrushCell(ed, m, ghost);
+        return outlineCells(ed, c, placement.brushBox(m, if (ed.shape == .fill) 1 else ed.brushSize()), if (ed.tool.fits(ed.here())) HOVER else WARN);
     }
     const r = ed.cellRect(c, m);
-    const ok = if (erase) editor.removable(ed, m) else editor.legal(ed, m);
+    const ok = if (erase) placement.removable(ed, m) else placement.legal(ed, m);
     if (!erase) ghostTool(g, r, ed.tool);
     rl.drawRectangleLinesEx(r, INK_EDGE, if (ok) HOVER else WARN);
     if (!ok) rl.drawRectangleRec(r, CUT_OFF);
@@ -192,7 +194,7 @@ fn ghostPasted(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, tool: e
 fn ghostTool(g: *game.Game, r: rl.Rectangle, tool: editor.Tool) void {
     if (panel.toolPicture(g, tool)) |t| return raster.stretch(t, r, GHOST);
     const l = tool.look_();
-    editor.glyph(g, l.ch, r, look.fade(l.fg, GHOST_A));
+    widgets.glyph(&g.face, l.ch, r, look.fade(l.fg, GHOST_A));
 }
 
 pub fn ghostInk(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, t: grid.Tile) void {
@@ -216,7 +218,7 @@ fn fillCells(ed: *const editor.Editor, c: rl.Rectangle, b: grid.Box, col: rl.Col
 }
 
 fn plaque(g: *game.Game, c: rl.Rectangle, s: [:0]const u8) void {
-    editor.drawTag(g, s, .{ .x = @as(i32, @intFromFloat(c.x)) + editor.GAP, .y = @as(i32, @intFromFloat(c.y)) + editor.GAP }, editor.GAPS, PLAQUE_BG, null);
+    widgets.drawTag(&g.face, s, .{ .x = @as(i32, @intFromFloat(c.x)) + widgets.GAP, .y = @as(i32, @intFromFloat(c.y)) + widgets.GAP }, widgets.GAPS, PLAQUE_BG, null);
 }
 
 fn outlineCells(ed: *const editor.Editor, c: rl.Rectangle, b: grid.Box, col: rl.Color) void {
@@ -224,13 +226,13 @@ fn outlineCells(ed: *const editor.Editor, c: rl.Rectangle, b: grid.Box, col: rl.
 }
 
 pub fn drawGraph(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
-    editor.scissor(c);
+    widgets.scissor(c);
     defer rl.endScissorMode();
     for (0..ed.map.node_n) |n| {
         const b = ed.boxAt(c, n);
         rl.drawRectangleRec(b, PANEL_BG);
         const picture = thumbRect(b);
-        if (thumb(ed, n, picture, c)) |t| editor.sprite(t, picture);
+        if (thumb(ed, n, picture, c)) |t| widgets.sprite(t, picture);
         panel.drawNodeTitle(ed, g, n, b, @as(i32, @intFromFloat(b.y)) + editor.TITLE_DY);
         rl.drawRectangleLinesEx(b, 1, if (n == ed.node) ON else look.EDGE);
     }
@@ -255,39 +257,18 @@ fn thumbRect(b: rl.Rectangle) rl.Rectangle {
 }
 
 fn thumb(ed: *editor.Editor, n: usize, picture: rl.Rectangle, canvas: rl.Rectangle) ?rl.Texture2D {
-    if (!rl.checkCollisionRecs(picture, canvas)) return null;
-    if (!ed.thumb_ok.isSet(n)) {
-        const lv = if (n == ed.node and !ed.stale) &ed.lv else blk: {
-            ed.map.node[n].stamp(&ed.thumb_lv, ed.roll);
-            break :blk &ed.thumb_lv;
-        };
-        var px: [grid.CELLS]rl.Color = undefined;
-        for (&px, 0..) |*c, i| {
-            c.* = if (look.Mark.of(lv, i)) |m|
-                m.look().fg
-            else if (if (lv.wallShape(grid.Level.of(i))) |s| s.solid() else false)
-                look.BG
-            else
-                look.mini(lv.tile[i], true);
-        }
-        if (ed.thumbs[n] == null) {
-            ed.thumbs[n] = raster.canvas(grid.W, grid.H, look.BG, .point);
-        }
-        if (ed.thumbs[n]) |t| rl.updateTexture(t, &px);
-        ed.thumb_ok.set(n);
-    }
-    return ed.thumbs[n];
+    return ed.thumbnails.get(ed.map, &ed.scene, n, picture, canvas);
 }
 
 test "offscreen graph thumbnails defer generation and uploads until their image enters the canvas" {
     const ed = try editor.Editor.create(std.testing.allocator);
     defer ed.destroy();
     while (ed.map.node_n < atlas.MAX_NODES) _ = ed.map.add(.{ .procgen = .{} });
-    const c = raster.rect(editor.PANEL_W, 0, 640, 480);
+    const c = raster.rect(widgets.PANEL_W, 0, 640, 480);
     ed.gcam = .{ 10000, 10000 };
     for (0..ed.map.node_n) |n| {
         try std.testing.expect(thumb(ed, n, thumbRect(ed.boxAt(c, n)), c) == null);
-        try std.testing.expect(ed.thumbs[n] == null and !ed.thumb_ok.isSet(n));
+        try std.testing.expect(ed.thumbnails.textures[n] == null and !ed.thumbnails.valid.isSet(n));
     }
     ed.gcam = .{ 0, 0 };
     const b = ed.boxAt(c, 0);
@@ -295,10 +276,10 @@ test "offscreen graph thumbnails defer generation and uploads until their image 
     var header = b;
     header.height = editor.BOX_TOP;
     try std.testing.expect(thumb(ed, 0, picture, header) == null);
-    try std.testing.expect(ed.thumbs[0] == null and !ed.thumb_ok.isSet(0));
-    ed.thumbs[0] = .{ .id = 0, .width = grid.W, .height = grid.H, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
-    defer ed.thumbs[0] = null;
-    ed.thumb_ok.set(0);
+    try std.testing.expect(ed.thumbnails.textures[0] == null and !ed.thumbnails.valid.isSet(0));
+    ed.thumbnails.textures[0] = .{ .id = 0, .width = grid.W, .height = grid.H, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    defer ed.thumbnails.textures[0] = null;
+    ed.thumbnails.valid.set(0);
     var edge = picture;
     edge.x += edge.width;
     try std.testing.expect(thumb(ed, 0, picture, edge) == null);
@@ -307,3 +288,19 @@ test "offscreen graph thumbnails defer generation and uploads until their image 
     try std.testing.expect(thumb(ed, 0, picture, c) != null);
     std.debug.print("graph thumbnails: {d} offscreen dirty nodes skip generation and uploads; header-only and exact-edge clips skip, one visible pixel retains the image\n", .{ed.map.node_n});
 }
+
+const Ghost = struct {
+    ed: *editor.Editor,
+    g: *game.Game,
+    c: rl.Rectangle,
+    ink: grid.Tile,
+    view: grid.Box,
+
+    pub fn of(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, ink: grid.Tile) Ghost {
+        return .{ .ed = ed, .g = g, .c = c, .ink = ink, .view = visible(ed, c) };
+    }
+
+    pub fn at(h: Ghost, p: P) void {
+        if (h.view.holds(p)) ghostInk(h.ed, h.g, h.c, p, h.ink);
+    }
+};

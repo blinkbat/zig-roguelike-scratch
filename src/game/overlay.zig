@@ -135,7 +135,7 @@ fn drawSlot(g: *game.Game, box: rl.Rectangle, s: SlotLook) void {
 
 /// While aiming, the set the reticle's skill was taken from, whatever is held now.
 fn shownSet(g: *const game.Game) skillbar.Set {
-    return if (g.mode == .aim) g.aim_set else skills.activeSet(g);
+    return if (g.mode == .aim) g.mode.aim.set else skills.activeSet(g);
 }
 
 const SlotShown = struct { act: skillbar.Act, cooling: u8, drinks: ?u8 };
@@ -157,7 +157,7 @@ fn drawSkills(g: *game.Game, layout: hud.Layout) void {
     const mana = g.pic.manaShown(&g.sim);
     for (skillbar.SLOTS, 0..) |b, i| {
         const box = slotBox(layout, i);
-        const held = (g.st.held(b) and game.playShown(g)) or (g.mode == .aim and g.aim_by == b) or (b == g.bar.modifier and g.mouse.secondary);
+        const held = (g.st.held(b) and game.playShown(g)) or (g.mode == .aim and g.mode.aim.by == b) or (b == g.bar.modifier and g.mouse.secondary);
         const s = slotShown(g, i);
         drawSlot(g, box, .{
             .act = if (s) |v| v.act else null,

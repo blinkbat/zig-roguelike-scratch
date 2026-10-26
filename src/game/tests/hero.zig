@@ -1,3 +1,4 @@
+const attacks = @import("../attacks.zig");
 const std = @import("std");
 const progress = @import("../../play/progress.zig");
 const mathx = @import("../../core/mathx.zig");
@@ -17,6 +18,114 @@ const combat = @import("../combat.zig");
 const harness = @import("../harness.zig");
 const game = @import("../../game.zig");
 const skills = @import("../skills.zig");
+
+test "attack resolution returns harm and statuses without advancing the picture" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
+    const target = g.sim.pool.get(2).?;
+    harness.setLife(target, 20, 20);
+    g.pic.catchUp(&g.sim);
+    const before = g.pic.pictured[1];
+    const raw = attacks.Roll{ .dmg = 3, .hit_checked = true, .effect = .{ .bleed = 100, .bleed_damage = 2, .stun = 100 } };
+    const outcome = attacks.resolve(&g.sim, .fromInt(2), raw, .chosen).?;
+    try std.testing.expect(outcome == .hit);
+    const hit = outcome.hit;
+    try std.testing.expectEqual(@as(i32, 17), target.hp);
+    try std.testing.expectEqual(@as(i32, 3), hit.damage.dmg);
+    try std.testing.expect(!hit.damage.lethal and !hit.culled);
+    try std.testing.expect(hit.bled != null and hit.stunned);
+    try std.testing.expectEqual(@as(i32, 2), target.bleed.amount);
+    try std.testing.expect(hit.at.eq(target.at));
+    try std.testing.expectEqualDeep(before, g.pic.pictured[1]);
+    try std.testing.expect(!g.pic.owed[1].any());
+    const rng = g.sim.rng;
+    const log = g.sim.log;
+    try std.testing.expect(attacks.resolve(&g.sim, .fromInt(3), raw, .chosen) == null);
+    try std.testing.expectEqualDeep(rng, g.sim.rng);
+    try std.testing.expectEqualDeep(log, g.sim.log);
+    std.debug.print("attack boundary: damage, bleed and stun resolved before picture changes; missing target leaves RNG and log untouched\n", .{});
+}
+
+test "chosen attacks reactions and status ticks retain recorded seeded outcomes" {
+    const cases = .{
+        .{ @as(u64, 11), @as(i32, 82), [_]u64{ 862564402851664045, 4794504947867443746, 7755685727112513350, 12536992963963539506 } },
+        .{ @as(u64, 42), @as(i32, 78), [_]u64{ 7903954225905035531, 9357853297271469720, 2724644940759801119, 10543582298886573110 } },
+        .{ @as(u64, 113), @as(i32, 81), [_]u64{ 4410175173307694628, 1620366555190407232, 5054763941814804829, 38094909334747344 } },
+    };
+    inline for (cases) |case| {
+        const g = try game.boot(std.testing.allocator);
+        defer game.shut(std.testing.allocator, g);
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
+        const target = g.sim.pool.get(2).?;
+        target.max = 100;
+        target.hp = 100;
+        g.sim.rng = mathx.Rng.init(case[0]);
+        const stroke = game.presentation.Stroke{ .from = g.sim.heroAt().?, .wait = 0.2 };
+        combat.wound(g, 2, attacks.heroRoll(&g.sim, .ranged, 7), "shoots", stroke);
+        combat.reaction(g, 2, attacks.heroRoll(&g.sim, .melee, 5), "counters", stroke, 2, null);
+        target.burn.start();
+        _ = target.burn.tick(0);
+        combat.burnHarm(g, 2);
+        try std.testing.expectEqual(case[1], target.hp);
+        try std.testing.expectEqualDeep(case[2], g.sim.rng.impl.s);
+    }
+    std.debug.print("seeded combat: 3 chosen/reaction/burn sequences retain original HP and final RNG state\n", .{});
+}
+
+test "hero post-action death prevents gas spread and foe actions while clearing turn tracking" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = mathx.P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{.{ .x = 21, .y = 20 }});
+    harness.wakeFoes(g);
+    const h = g.sim.heroActor().?;
+    h.hp = 1;
+    g.sim.lv.addGas(from, @import("../../map/gas.zig").BURST);
+    const lv = g.sim.lv;
+    const rng = g.sim.rng;
+    const foe = g.sim.pool.items[1];
+    g.sim.stepped = true;
+    g.sim.displaced.set(1);
+    combat.endTurn(g);
+    try std.testing.expect(g.mode == .dead);
+    try std.testing.expectEqualDeep(rng, g.sim.rng);
+    try std.testing.expectEqualDeep(lv.gas, g.sim.lv.gas);
+    try std.testing.expectEqualDeep(foe.clock, g.sim.pool.items[1].clock);
+    try std.testing.expectEqual(foe.at, g.sim.pool.items[1].at);
+    try std.testing.expect(!g.pic.owed[1].any());
+    try std.testing.expect(!g.sim.stepped);
+    try std.testing.expectEqual(@as(usize, 0), g.sim.displaced.count());
+    for (g.sim.ran) |ran| try std.testing.expectEqual(@as(usize, 0), ran.count());
+    std.debug.print("turn stages: lethal hero gas precedes spread and foe clocks; all consumed ticks and displacement cleared\n", .{});
+}
+
+test "damage resolution changes only simulation and preserves random streams" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    for ([_]bool{ false, true }) |protected| {
+        harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+        const h = g.sim.heroActor().?;
+        h.hp = 9;
+        h.ward.turns = 3;
+        g.sim.mana = 4;
+        g.sim.unkillable = protected;
+        game.settle(g);
+        const rng = g.sim.rng;
+        const loot_rng = g.sim.loot_rng;
+        const pictured = g.pic.heroShown(&g.sim).?;
+        const result = g.sim.resolveDamage(.fromInt(g.sim.hero), 20);
+        try std.testing.expectEqual(@as(i32, 4), result.mana);
+        try std.testing.expectEqual(@as(i32, if (protected) 8 else 16), result.dmg);
+        try std.testing.expectEqual(!protected, result.lethal);
+        try std.testing.expectEqual(@as(i32, 0), g.sim.mana);
+        try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+        try std.testing.expectEqualDeep(pictured, g.pic.heroShown(&g.sim).?);
+        try std.testing.expectEqualDeep(rng, g.sim.rng);
+        try std.testing.expectEqualDeep(loot_rng, g.sim.loot_rng);
+    }
+    std.debug.print("damage resolver: shield absorption, lethal and protected harm, unchanged picture and both RNG streams\n", .{});
+}
 
 fn firstLifeTick(max: i32) i32 {
     var f = flask.Flask{};
@@ -40,7 +149,7 @@ test "a hero bitten to death gets an epitaph naming the rat, entombed only while
     var hall = game.ossuary.Hall{};
     g.hall = &hall;
     harness.bittenToDeath(g);
-    try std.testing.expectEqual(game.Mode.dead, g.mode);
+    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     const said = g.epitaph.?.text();
     std.debug.print("epitaph: {s}\n", .{said});
     try std.testing.expect(std.mem.startsWith(u8, said, "Archer was bitten to death by a rat on a nameless floor."));
@@ -254,7 +363,7 @@ test "the log says the blow and the experience it awards, a juke as itself, and 
     try std.testing.expect(!harness.logged(g, " uses "));
     while (!g.pic.quiet()) game.update(g, harness.TEST_DT);
     skills.openLeap(g, harness.boundTo(g, .juke).by, .juke);
-    g.mark = .{ .x = 20 + juke.RANGE, .y = 20 };
+    g.mode.aim.mark = .{ .x = 20 + juke.RANGE, .y = 20 };
     skills.confirmAim(g);
     try std.testing.expectEqualStrings("Archer jukes away.", g.sim.log.line(0).?);
     std.debug.print("log: \"{s}\" then \"{s}\"\n", .{ gained, g.sim.log.line(0).? });

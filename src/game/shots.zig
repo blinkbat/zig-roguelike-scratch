@@ -37,6 +37,7 @@ const cinema = @import("../gfx/cinema.zig");
 const sky = @import("../gfx/sky.zig");
 const day = @import("../map/day.zig");
 const game = @import("../game.zig");
+const rewards = @import("rewards.zig");
 const skills = @import("skills.zig");
 const binds = @import("binds.zig");
 const P = mathx.P;
@@ -126,7 +127,7 @@ pub fn shoot(g: *game.Game) !void {
     _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 6);
     game.settle(g);
     skills.openLeap(g, game.harness.boundTo(g, .juke).by, .juke);
-    g.mark = .{ .x = 20 + juke.RANGE, .y = 15 };
+    g.mode.aim.mark = .{ .x = 20 + juke.RANGE, .y = 15 };
     try capture(g, target, SHOTS_DIR ++ "/juke-aim.png");
     skills.confirmAim(g);
     g.st = .{};
@@ -416,16 +417,16 @@ fn shootTactics(g: *game.Game) !void {
     }
     game.harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
     skills.useSkill(g, .{ .act = .arcane_barrier, .by = .x });
-    g.mark = .{ .x = 23, .y = 19 };
+    g.mode.aim.mark = .{ .x = 23, .y = 19 };
     skills.confirmAim(g);
-    g.mark = .{ .x = 23, .y = 21 };
+    g.mode.aim.mark = .{ .x = 23, .y = 21 };
     try capture(g, target, SHOTS_DIR ++ "/tactics/barrier-preview.png");
     skills.confirmAim(g);
     game.harness.drawnOut(g);
     try capture(g, target, SHOTS_DIR ++ "/tactics/barrier-raised.png");
     game.harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
     skills.useSkill(g, .{ .act = .caltrops, .by = .x });
-    g.mark = .{ .x = 23, .y = 20 };
+    g.mode.aim.mark = .{ .x = 23, .y = 20 };
     try capture(g, target, SHOTS_DIR ++ "/tactics/caltrops-preview.png");
     skills.confirmAim(g);
     game.harness.drawnOut(g);
@@ -482,7 +483,7 @@ fn checkHiddenAim(g: *game.Game, target: rl.RenderTexture2D, comptime act: skill
     skills.aiming(g, game.harness.boundTo(g, .shoot).by, act);
     g.st = .{ .device = .keys, .modifier = g.bar.modifier, .mouse_moved = true, .pointer = game.scene.Cam.of(g).mid(.{ .x = if (act == .overwatch) 21 else 24, .y = 20 }) };
     _ = game.mouseControls.aim(g);
-    if (g.mode != .aim or !skills.aimable(g, g.sim.heroActor().?.at, g.mark)) return error.MouseHiddenAimSetup;
+    if (g.mode != .aim or !skills.aimable(g, g.sim.heroActor().?.at, g.mode.aim.mark)) return error.MouseHiddenAimSetup;
     try capture(g, target, SHOTS_DIR ++ "/mouse/aim-hidden-" ++ @tagName(act) ++ ".png");
     const aimed = try readTarget(target);
     defer rl.unloadImage(aimed);
@@ -903,7 +904,7 @@ fn shootCharacter(g: *game.Game) !void {
     g.sim.log.push(.progress, "Level 3: +2 passive, +2 active points.", .{});
     g.sim.log.push(.damage, "Archer shoots the slime for 4.", .{});
     g.sim.log.push(.danger, "The slime hits Archer for 2.", .{});
-    game.combat.noticeItems(g, g.sim.heroActor().?.at);
+    rewards.noticeItems(&g.sim, g.sim.heroActor().?.at);
     game.syncStats(g);
     game.harness.drawnOut(g);
     g.back = .editor;
@@ -1116,7 +1117,7 @@ fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
         try capture(g, target, directory ++ "/before.png");
         skills.useSkill(g, game.harness.boundTo(g, act));
         if (act.reticle()) |reticle| {
-            g.mark = if (reticle == .leap) .{ .x = 22, .y = 20 } else .{ .x = 23, .y = 20 };
+            g.mode.aim.mark = if (reticle == .leap) .{ .x = 22, .y = 20 } else .{ .x = 23, .y = 20 };
             skills.confirmAim(g);
         }
         g.st = .{};
@@ -1719,15 +1720,15 @@ fn checkRememberedBarrels(g: *game.Game, target: rl.RenderTexture2D, before: rl.
     defer {
         g.sim.lv.barrel = barrels;
         g.sim.lv.barrel_seen = remembered;
-        g.art_ready = false;
+        g.art = .stale;
     }
     @memset(&g.sim.lv.barrel, false);
-    g.art_ready = false;
+    g.art = .stale;
     try capture(g, target, SHOTS_DIR ++ "/water-mirrors-broken-remembered.png");
     const broken = try readTarget(g.sprites.mirror_memory.?);
     defer rl.unloadImage(broken);
     @memset(&g.sim.lv.barrel_seen, false);
-    g.art_ready = false;
+    g.art = .stale;
     drawInto(g, target);
     const forgotten = try readTarget(g.sprites.mirror_memory.?);
     defer rl.unloadImage(forgotten);
@@ -1992,7 +1993,7 @@ fn benchAssets(g: *game.Game) !void {
         const loaded = t.read();
         if (!std.meta.eql(game.mapAssets(g), g.sprites.resident())) return error.MissingMapAsset;
         const held = g.sprites;
-        g.art_ready = false;
+        g.art = .stale;
         t.reset();
         game.prepare(g);
         const reused = t.read();

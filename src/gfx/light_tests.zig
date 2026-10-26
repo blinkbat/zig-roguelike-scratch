@@ -874,14 +874,14 @@ test "a cell is clear exactly when every cell within its fade's reach is wholly 
     const r = light.VOID_REACH;
     var n: usize = 0;
     for (0..20) |_| {
-        for (&l.memory) |*m| m.* = if (rng.percent(97)) 1 else 0.5;
-        l.soften();
+        for (&l.visibility.memory) |*m| m.* = if (rng.percent(97)) 1 else 0.5;
+        l.visibility.soften();
         for (0..grid.CELLS) |i| {
             const c = grid.Level.of(i);
             var want = grid.Box.inMap(r).holds(c);
             var box = grid.Cells.around(c, r);
             while (box.next()) |p| want = want and l.memoryAt(p) >= 1;
-            try std.testing.expectEqual(want, l.clear[i]);
+            try std.testing.expectEqual(want, l.visibility.clear[i]);
             if (want) n += 1;
         }
     }
@@ -903,11 +903,11 @@ test "sight has no step where it ends along a wall, nor as it eases out behind o
     const fy: f32 = @floatFromInt(TORCH_AT.y + 1);
     const step = l.sightAt(31 + EDGE_EPS, fy + 0.5) - l.sightAt(31 - EDGE_EPS, fy + 0.5);
     const behind = grid.Level.idx(.{ .x = 20, .y = TORCH_AT.y - 1 });
-    l.sight[behind] = 2 * mathx.SETTLE;
-    l.soften();
+    l.visibility.sight[behind] = 2 * mathx.SETTLE;
+    l.visibility.soften();
     const easing = l.sightAt(20.5, fy - 1.5);
-    l.sight[behind] = 0;
-    l.soften();
+    l.visibility.sight[behind] = 0;
+    l.visibility.soften();
     const gone = l.sightAt(20.5, fy - 1.5);
     std.debug.print("sight across its edge along a wall: {d:.4}; behind a wall, easing out {d:.4}, then gone {d:.4}\n", .{ step, easing, gone });
     try std.testing.expectApproxEqAbs(@as(f32, 0), step, 1e-3);
@@ -929,7 +929,7 @@ test "sight has no step where open ground meets a shrub at its edge" {
     const x: f32 = @floatFromInt(shrub.x + 1);
     const past = l.sightAt(x + EDGE_EPS, y);
     const step = past - l.sightAt(x - EDGE_EPS, y);
-    const own = l.open_sight[grid.Level.idx(.{ .x = shrub.x + 1, .y = shrub.y })];
+    const own = l.visibility.open_sight[grid.Level.idx(.{ .x = shrub.x + 1, .y = shrub.y })];
     std.debug.print("sight across a shrub's edge where sight ends: {d:.4}; just past it {d:.4}, its ground's own {d:.4}\n", .{ step, past, own });
     try std.testing.expectApproxEqAbs(@as(f32, 0), step, 1e-3);
     try std.testing.expectApproxEqAbs(own, past, 1e-3);
@@ -956,9 +956,9 @@ test "sight has no step through a shrub clump, nor as the ground behind a hedge 
     defer std.testing.allocator.destroy(h);
     const unseen = h.sightAt(30.6, 20.5);
     const behind = grid.Level.idx(.{ .x = 31, .y = 20 });
-    h.sight[behind] = 2 * mathx.SETTLE;
-    h.memory[behind] = 2 * mathx.SETTLE;
-    h.soften();
+    h.visibility.sight[behind] = 2 * mathx.SETTLE;
+    h.visibility.memory[behind] = 2 * mathx.SETTLE;
+    h.visibility.soften();
     const glimpsed = h.sightAt(30.6, 20.5);
     std.debug.print("sight through a shrub clump's middle: {d:.4}; behind a hedge, unseen {d:.4}, first glimpsed {d:.4}\n", .{ step, unseen, glimpsed });
     try std.testing.expectApproxEqAbs(@as(f32, 0), step, 1e-2);

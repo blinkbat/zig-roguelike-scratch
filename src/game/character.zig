@@ -13,6 +13,7 @@ const terrain = @import("../play/terrain.zig");
 const look = @import("../gfx/look.zig");
 const scene = @import("scene.zig");
 const game = @import("../game.zig");
+const rewards = @import("rewards.zig");
 const binds = @import("binds.zig");
 const P = mathx.P;
 const PAUSE = menu.PAUSE;
@@ -190,7 +191,7 @@ pub fn openLoot(g: *game.Game, at: P) void {
     const h = g.sim.heroActor() orelse return;
     if (chestReached(g, h.at, at)) {
         if (!game.combat.openChest(g, at)) return;
-        @import("tactics.zig").beforeAction(g);
+        @import("tactics.zig").beforeAction(&g.sim);
         g.pic.turnToward(g.sim.hero, at.x - h.at.x);
         g.mode = .play;
         game.holdWalk(g);
@@ -285,7 +286,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
         .drop => |i| {
             if (i >= g.sim.inventory.n) return;
             if (!game.combat.groundRoom(g)) return;
-            game.combat.dropItem(g, .{ .item = g.sim.inventory.bag[i], .at = h.at });
+            rewards.dropItem(&g.sim, .{ .item = g.sim.inventory.bag[i], .at = h.at });
             g.sim.log.push(.loot, "Dropped {s}.", .{g.sim.inventory.remove(i).name(&name)});
         },
         .pickup => |i| {
@@ -329,7 +330,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
     g.character.destination_index = 0;
     if (command == .travel or directEmptied(g)) g.mode = .play;
     game.holdWalk(g);
-    @import("tactics.zig").beforeAction(g);
+    @import("tactics.zig").beforeAction(&g.sim);
     game.combat.endTurn(g);
 }
 

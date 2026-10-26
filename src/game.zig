@@ -1,3 +1,4 @@
+const attacks = @import("game/attacks.zig");
 const std = @import("std");
 const items = @import("play/items.zig");
 const progress = @import("play/progress.zig");
@@ -124,6 +125,8 @@ comptime {
 }
 
 pub const Mode = enum { play, aim, bind, dead, pause, inspect };
+pub const Aim = @import("game/targeting.zig").Aim;
+pub const ModeState = union(Mode) { play, aim: Aim, bind, dead, pause, inspect };
 
 pub const Spot = union(enum) {
     actor: u16,
@@ -155,7 +158,7 @@ pub const Log = journal.Log;
 pub const Game = struct {
     sim: simulation.Simulation,
     pic: presentation.Presentation = .{},
-    mode: Mode = .play,
+    mode: ModeState = .play,
     /// Drawn in place of `.dead` until the lethal turn is.
     died_in: Mode = .play,
     pause_menu: menu.Menu = .{},
@@ -177,12 +180,7 @@ pub const Game = struct {
     mouse: mouseControls.State = .{},
     bar: skillbar.Bar = .{},
     binds: binds.Binds = .{},
-    aim_by: input.Button = .x,
-    aim_act: skillbar.Act = .shoot,
-    aim_set: skillbar.Set = .primary,
     target: ?u16 = null,
-    mark: P = .{ .x = 0, .y = 0 },
-    barrier_start: ?P = null,
     /// Kept between inspections, so the next opens where the last left off.
     inspecting: Spot = .{ .slot = 0 },
     inspect_scroll: usize = 0,
@@ -199,11 +197,23 @@ pub const Game = struct {
     mini: scene.Minimap = .{},
     sprites: look.Sprites = .{},
     graphics_ready: bool = false,
-    art_ready: bool = false,
+    art: enum { stale, play, editor } = .stale,
     face: font.Face = .{},
     light: *light.Light,
     cloud: *cloud.Cloud,
 };
+
+pub fn hurt(g: *Game, target: actor.ActorId, amount: i32) simulation.DamageResult {
+    const result = g.sim.resolveDamage(target, amount);
+    presentDamage(g, result);
+    return result;
+}
+
+pub fn presentDamage(g: *Game, result: simulation.DamageResult) void {
+    g.pic.deferDamage(result);
+    if (result.mana > 0) g.sim.log.say("The mana shield takes {d}.", .{result.mana});
+    if (result.target.value == g.sim.hero and (result.dmg > 0 or result.mana > 0)) g.mouse.stop();
+}
 
 pub fn boot(alloc: std.mem.Allocator) !*Game {
     const l = try light.Light.create(alloc);
@@ -326,19 +336,30 @@ pub fn rollOf(run: u64, n: usize) u64 {
 fn goThrough(g: *Game, l: atlas.Link) void {
     g.sim.visits[g.sim.node] = visitOf(g);
     g.sim.visited.set(g.sim.node);
-    const walk = g.pending;
-    const hero = g.sim.heroSlot().?;
-    const facing = g.pic.facing[hero];
-    const level_up = g.pic.fx.level_up;
-    const secondary = g.mouse.secondary;
+    const carried = TravelCarry.of(g);
     var title: [atlas.TITLE_MAX]u8 = undefined;
     g.sim.log.say("Entered {s}.", .{g.sim.map.?.node[l.node].title(l.node, &title)});
     enter(g, l.node, g.sim.map.?.door(l).at);
-    g.pending = walk;
-    g.mouse.secondary = secondary;
-    g.pic.facing[hero] = facing;
-    g.pic.fx.level_up = level_up;
+    carried.restore(g);
 }
+
+const TravelCarry = struct {
+    queued: ?Queued,
+    secondary: bool,
+    facing: actor.Facing,
+    level_up: @FieldType(fx.Fx, "level_up"),
+
+    fn of(g: *const Game) TravelCarry {
+        return .{ .queued = g.pending, .secondary = g.mouse.secondary, .facing = g.pic.facing[g.sim.heroSlot().?], .level_up = g.pic.fx.level_up };
+    }
+
+    fn restore(self: TravelCarry, g: *Game) void {
+        g.pending = self.queued;
+        g.mouse.secondary = self.secondary;
+        g.pic.facing[g.sim.heroSlot().?] = self.facing;
+        g.pic.fx.level_up = self.level_up;
+    }
+};
 
 /// Finish pending facing changes and door travel before leaving a run.
 pub fn leave(g: *Game) void {
@@ -386,15 +407,16 @@ fn freshRun(g: *Game) void {
 }
 
 fn freshTurn(g: *Game) void {
+    skills.closeAim(g);
     g.mouse = .{};
-    toDefaults(&g.sim, &.{ "travel", "order_n", "displaced" });
+    g.sim.resetTransientTurn();
     toDefaults(g, &.{ "pending", "target" });
     g.pic.freshTurn();
     g.cloud.clear();
 }
 
 pub fn settle(g: *Game) void {
-    g.art_ready = false;
+    g.art = .stale;
     g.sim.chronicle.restart(epitaph.turnStart(g));
     castSight(g, g.sim.heroActor().?.at);
     g.cloud.settle(&g.sim.lv);
@@ -455,7 +477,7 @@ pub fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
     const h = g.sim.heroActor() orelse return;
     const to = h.at.add(d.delta());
     const move = heroMove(g, d);
-    if (move != .blocked and move != .open) @import("game/tactics.zig").beforeAction(g);
+    if (move != .blocked and move != .open) @import("game/tactics.zig").beforeAction(&g.sim);
     switch (move) {
         .kick => {
             const w = g.sim.lv.who(to);
@@ -463,7 +485,7 @@ pub fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
             switch (g.sim.class) {
                 inline else => |c| {
                     const blow = comptime c.strike();
-                    if (w != grid.NO_ONE) combat.wound(g, w, combat.heroRoll(g, .melee, combat.kickRaw(&g.sim.rng, &g.sim.inventory.gear, blow)), blow.verb, s) else combat.smash(g, to, blow.verb, s);
+                    if (w != grid.NO_ONE) combat.wound(g, w, attacks.heroRoll(&g.sim, .melee, attacks.kickRaw(&g.sim.rng, &g.sim.inventory.gear, blow)), blow.verb, s) else combat.smash(g, to, blow.verb, s);
                 },
             }
             g.pic.lead = s.wait;
@@ -648,8 +670,7 @@ pub fn update(g: *Game, dt: f32) void {
         .aim => {
             const clicked = mouseControls.aim(g);
             if (menu.closed(&g.st)) {
-                g.barrier_start = null;
-                g.mode = .play;
+                skills.closeAim(g);
             } else if (g.st.hit(CONFIRM) or clicked) {
                 skills.confirmAim(g);
             } else if (g.st.walk) |d| {
@@ -698,7 +719,7 @@ fn drawnTurn(g: *Game) void {
 const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, binds: std.meta.Tag(binds.Binds.Menu) };
 
 fn screenOf(g: *const Game) Screen {
-    return .{ .mode = g.mode, .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .binds = std.meta.activeTag(g.binds.menu) };
+    return .{ .mode = std.meta.activeTag(g.mode), .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .binds = std.meta.activeTag(g.binds.menu) };
 }
 
 pub fn holdWalk(g: *Game) void {
@@ -712,7 +733,7 @@ pub fn deathShown(g: *const Game) bool {
 }
 
 pub fn modeShown(g: *const Game) Mode {
-    return if (g.mode == .dead and !g.pic.quiet()) g.died_in else g.mode;
+    return if (g.mode == .dead and !g.pic.quiet()) g.died_in else std.meta.activeTag(g.mode);
 }
 
 pub fn playShown(g: *const Game) bool {
@@ -798,17 +819,17 @@ pub fn unloadGraphics(g: *Game) void {
     g.sprites.unload();
     inline for (GRAPHICS) |f| @field(g, f).unload();
     g.graphics_ready = false;
-    g.art_ready = false;
+    g.art = .stale;
 }
 
 pub fn prepare(g: *Game) void {
     if (!g.graphics_ready) loadGraphics(g);
-    if (g.art_ready) return;
+    if (g.art == .play) return;
     const need = mapAssets(g);
     g.sprites.sync(need);
     const figures = g.sprites.figures();
     g.light.syncFigures(&figures);
-    g.art_ready = true;
+    g.art = .play;
 }
 
 pub fn mapAssets(g: *Game) look.Assets {
@@ -839,7 +860,7 @@ pub fn frame(g: *Game) void {
     };
     g.st.sets = g.mode == .inspect;
     g.st.modifier = g.bar.modifier;
-    g.st.aimed = if (g.mode == .aim) g.aim_by else null;
+    g.st.aimed = if (g.mode == .aim) g.mode.aim.by else null;
     g.st.update(dt);
     syncScreen(g, g.st.fullscreen);
     const began = std.time.Instant.now() catch null;

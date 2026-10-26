@@ -41,7 +41,7 @@ const OptionRow = enum {
 };
 const OPTION_ROWS = std.enums.values(OptionRow);
 const DEBUG_ROWS = [_]struct { row: game.debugging.Row, note: [:0]const u8 }{
-    .{ .row = .unkillable, .note = std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.titleOf(game.debugging.Row.unkillable), game.combat.UNKILLABLE_HP }) },
+    .{ .row = .unkillable, .note = std.fmt.comptimePrint("{s} keeps the hero on {d} hp whatever strikes it", .{ menu.titleOf(game.debugging.Row.unkillable), game.simulation.UNKILLABLE_HP }) },
 };
 const DELETE = menu.REMOVE;
 
@@ -540,8 +540,7 @@ const App = struct {
 
     fn loadHeroes(app: *App) void {
         if (!stage.loadHeroes(&app.g.sprites)) return;
-        app.g.art_ready = false;
-        if (app.ed) |e| e.assets_stale = true;
+        app.g.art = .stale;
     }
 
     fn refuse(app: *App) bool {
@@ -743,9 +742,9 @@ test "an editor arena uses a separate map and never opens a save slot" {
     defer alloc.destroy(w);
     const ed = try editor.Editor.create(alloc);
     defer ed.destroy();
-    ed.dirty = true;
-    ed.hist_at = 2;
-    ed.hist_len = 3;
+    ed.history.dirty = true;
+    ed.history.at = 2;
+    ed.history.len = 3;
     const tiles = ed.map.node[0].plan.bespoke.tile;
     var app = App{ .alloc = alloc, .g = g, .map = w, .ed = ed, .edit_path = atlas.MAIN, .scene = .edit };
     app.fight(.slime);
@@ -753,7 +752,7 @@ test "an editor arena uses a separate map and never opens a save slot" {
     try std.testing.expectEqual(game.Back.editor, g.back);
     try std.testing.expect(!g.permadeath and app.autosave == null);
     try std.testing.expect(g.sim.map == w and g.sim.map != ed.map);
-    try std.testing.expect(ed.dirty and ed.hist_at == 2 and ed.hist_len == 3);
+    try std.testing.expect(ed.history.dirty and ed.history.at == 2 and ed.history.len == 3);
     try std.testing.expectEqualSlices(@import("map/grid.zig").Tile, &tiles, &ed.map.node[0].plan.bespoke.tile);
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
     try std.testing.expectEqual(actor.Kind.slime, g.sim.pool.items[1].kind);

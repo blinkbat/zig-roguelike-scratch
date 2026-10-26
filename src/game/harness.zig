@@ -1,3 +1,4 @@
+const attacks = @import("attacks.zig");
 const std = @import("std");
 const items = @import("../play/items.zig");
 const progress = @import("../play/progress.zig");
@@ -53,16 +54,16 @@ pub fn procRng(g: *const game.Game, comptime act: skillbar.Act, procs: usize, wa
         n: usize,
         want: bool,
         fn holds(p: @This(), rng: *mathx.Rng) bool {
-            var raw = combat.rollRaw(rng, act, p.bases, true);
+            var raw = attacks.rollRaw(rng, act, p.bases, true);
             for (0..p.n) |_| {
-                _ = combat.scaled(rng, p.by, p.style, raw);
+                _ = attacks.scaled(rng, p.by, p.style, raw);
                 if (skillbar.Act.skill(act).procs(rng, 0) != p.want) return false;
                 raw.physical = 0;
             }
             return true;
         }
     };
-    const b = combat.blowFor(g, act);
+    const b = attacks.blowFor(&g.sim, act);
     return rngWhere(Procs{ .by = b.by, .style = b.style, .bases = b.bases, .n = procs, .want = want });
 }
 
@@ -176,7 +177,7 @@ pub fn expectWithin(v: anytype, lo: @TypeOf(v), hi: @TypeOf(v)) !void {
 }
 
 pub fn expectDamage(g: *const game.Game, comptime act: skillbar.Act, dealt: i32, ranges: []const damage.Base) !void {
-    const b = combat.blowFor(g, act);
+    const b = attacks.blowFor(&g.sim, act);
     var lo: i32 = 0;
     var hi: i32 = 0;
     for (ranges) |r| {
@@ -201,7 +202,7 @@ fn bitesHold(g: *const game.Game, hero_at: P, bites: []const Bite, rng: *mathx.R
     for (bites, 0..) |b, i| {
         const a = combatant(g, b.id);
         const strike = actor.row(a.kind).blow.strike;
-        const hit = combat.bite(rng, g.sim.combatStats(a), defender, strike);
+        const hit = attacks.bite(rng, g.sim.combatStats(a), defender, strike);
         if ((hit != null) != b.lands) return false;
         if (i + 1 < bites.len) {
             std.debug.assert(strike.bleeds == 0 and strike.stuns == 0 and g.sim.heroAttrs().thorns == 0 and !hero.tactics.unyielding);
@@ -238,14 +239,14 @@ pub fn sweepStunRng(g: *const game.Game, sweeper: u16, victim: u16, after_bite: 
         fn holds(s: @This(), rng: *mathx.Rng) bool {
             if (s.after_bite) {
                 const a = combatant(s.g, s.victim);
-                if (combat.bite(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(s.g.sim.heroBody().?), actor.row(a.kind).blow.strike)) |dmg| _ = s.g.sim.heroAttrs().physical(dmg, rng);
+                if (attacks.bite(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(s.g.sim.heroBody().?), actor.row(a.kind).blow.strike)) |dmg| _ = s.g.sim.heroAttrs().physical(dmg, rng);
             }
             const attacker = combatant(s.g, s.sweeper);
             const target = combatant(s.g, s.victim);
             const defender = s.g.sim.combatStats(target);
             std.debug.assert(defender.statuses.get(.stun) == 0);
             const strike = actor.row(attacker.kind).blow.strike;
-            const hit = combat.bite(rng, s.g.sim.combatStats(attacker), defender, strike) orelse return false;
+            const hit = attacks.bite(rng, s.g.sim.combatStats(attacker), defender, strike) orelse return false;
             const dmg = attrs.armoured(actor.row(target.kind).armour, hit, rng);
             if (dmg <= 0 or dmg >= target.hp) return false;
             return damage.procs(rng, strike.stuns);
@@ -282,8 +283,8 @@ pub fn meleeThenBites(g: *const game.Game, target: u16, attackers: []const u16) 
             const gear = &s.g.sim.inventory.gear;
             const effect = gear.onHit(.melee);
             std.debug.assert(effect.bleed == 0 and effect.stun == 0);
-            const raw = combat.kickRaw(rng, gear, s.g.sim.class.strike());
-            const hit = combat.scaled(rng, gear.forAttack(s.g.sim.heroAttrs(), .melee), gear.scaling(.melee), .{ .physical = raw });
+            const raw = attacks.kickRaw(rng, gear, s.g.sim.class.strike());
+            const hit = attacks.scaled(rng, gear.forAttack(s.g.sim.heroAttrs(), .melee), gear.scaling(.melee), .{ .physical = raw });
             const hero = s.g.sim.heroBody().?;
             const target_actor = combatant(s.g, s.target);
             if (s.g.sim.combatStats(hero).misses(s.g.sim.combatStats(target_actor), rng)) return false;
@@ -291,7 +292,7 @@ pub fn meleeThenBites(g: *const game.Game, target: u16, attackers: []const u16) 
             for (s.attackers, 0..) |id, i| {
                 const a = combatant(s.g, id);
                 const strike = actor.row(a.kind).blow.strike;
-                const dmg = combat.bite(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(hero), strike) orelse return false;
+                const dmg = attacks.bite(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(hero), strike) orelse return false;
                 if (i + 1 < s.attackers.len) {
                     std.debug.assert(strike.bleeds == 0 and strike.stuns == 0 and s.g.sim.heroAttrs().thorns == 0 and !hero.tactics.unyielding);
                     _ = s.g.sim.heroAttrs().physical(dmg, rng);
@@ -480,7 +481,7 @@ test "a strike with zero dodge draws only terrain hit chance and damage" {
         const attacker = (terrain.Stats{}).on(tile);
         const lands = attacker.hit == 100 or expected.percent(attacker.hit);
         const want: ?i32 = if (lands) strike.roll(&expected) else null;
-        try std.testing.expectEqual(want, combat.bite(&rng, attacker, .{}, strike));
+        try std.testing.expectEqual(want, attacks.bite(&rng, attacker, .{}, strike));
         try std.testing.expectEqualDeep(expected, rng);
         checked += 1;
     };

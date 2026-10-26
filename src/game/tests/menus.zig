@@ -38,14 +38,17 @@ test "a way held through closing inspect, a reticle or pause walks nobody until 
         harness.arena(g, .{ .x = 20, .y = 32 }, &.{});
         g.st = .{};
         const start = g.sim.heroActor().?.at;
-        g.mark = start;
-        if (case.mode == .aim) skills.aiming(g, .a, .juke);
-        g.mode = case.mode;
+        switch (case.mode) {
+            .aim => skills.aiming(g, .a, .juke),
+            .inspect => g.mode = .inspect,
+            .pause => g.mode = .pause,
+            else => unreachable,
+        }
         harness.walkFor(g, 0.6, .e);
         g.st.pressed.insert(case.close);
         game.update(g, dt);
         g.st.pressed = .initEmpty();
-        try std.testing.expectEqual(game.Mode.play, g.mode);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
         harness.walkFor(g, 1, .e);
         try std.testing.expect(g.sim.heroActor().?.at.eq(start));
         harness.walkFrame(g, dt, null);
@@ -140,14 +143,14 @@ test "the dead archer's floor restarts only once the death is shown" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.bittenToDeath(g);
-    try std.testing.expectEqual(game.Mode.dead, g.mode);
+    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     g.st = .{};
     g.st.pressed.insert(CONFIRM);
     game.update(g, 0);
-    try std.testing.expectEqual(game.Mode.dead, g.mode);
+    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     _ = harness.framesUntil(g, 0, harness.deathDrawn);
     harness.press(g, CONFIRM);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
 }
 
 test "the hud's tooltip stays up until the lethal bite is drawn" {
@@ -178,7 +181,7 @@ test "Character stays drawn over a lethal item turn until the bite is drawn" {
         character.characterCommand(g, .{ .drop = g.sim.inventory.n - 1 });
         if (g.mode != .dead) harness.drawnOut(g);
     }
-    try std.testing.expectEqual(game.Mode.dead, g.mode);
+    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     g.st = .{};
     game.update(g, 0);
     try std.testing.expectEqual(game.Mode.pause, game.modeShown(g));
@@ -201,7 +204,7 @@ test "the Nearby list keeps its entries over a lethal pickup until the bite is d
         character.characterCommand(g, .{ .pickup = 0 });
         if (g.mode != .dead) harness.drawnOut(g);
     }
-    try std.testing.expectEqual(game.Mode.dead, g.mode);
+    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     g.st = .{};
     game.update(g, 0);
     try std.testing.expectEqual(game.Mode.pause, game.modeShown(g));
@@ -231,7 +234,7 @@ test "Menu, B or X leaves the death screen as A does, and none of them pauses it
         harness.bittenToDeath(g);
         _ = harness.framesUntil(g, 0, harness.deathDrawn);
         harness.press(g, b);
-        try std.testing.expectEqual(game.Mode.play, g.mode);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     }
 }
 
@@ -241,14 +244,14 @@ test "the pause menu spends no turn, and its way out leads back to where the gam
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
     harness.wakeFoes(g);
     harness.press(g, PAUSE);
-    try std.testing.expectEqual(game.Mode.pause, g.mode);
+    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     harness.press(g, PAUSE);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     for (std.enums.values(game.Back)) |back| {
         g.back = back;
         harness.pickPause(g, .back);
         try std.testing.expectEqual(@as(?game.Exit, .back), g.exit);
-        try std.testing.expectEqual(game.Mode.play, g.mode);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
         g.exit = null;
     }
     try std.testing.expectEqual(P{ .x = 26, .y = 20 }, g.sim.pool.get(2).?.at);
@@ -267,14 +270,14 @@ test "Character and Game have separate shortcuts and never spend a turn" {
     try std.testing.expectEqual(clock, g.sim.clock);
     try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
     harness.press(g, menu.CHARACTER);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     harness.press(g, PAUSE);
     try std.testing.expectEqual(game.PausePage.main, g.pause_page);
     harness.press(g, menu.CHARACTER);
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);
     try std.testing.expectEqual(book.Page.inventory, g.character.page);
     harness.press(g, BACK);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(clock, g.sim.clock);
     std.debug.print("Character: direct toggle, retained page, one-step back; Game: separate menu; zero turns\n", .{});
 }
@@ -287,13 +290,13 @@ test "Character page shortcuts open switch and close without acting or carrying 
     const clock = g.sim.clock;
     const mana = g.sim.mana;
     var checked: usize = 0;
-    for ([_]game.Mode{ .play, .aim, .inspect, .bind, .pause }) |mode| {
-        g.mode = mode;
+    inline for (.{ game.Mode.play, .aim, .inspect, .bind, .pause }) |mode| {
+        if (mode == .aim) skills.aiming(g, .x, .shoot) else g.mode = mode;
         g.pause_page = .main;
         for (std.enums.values(input.CharacterPage)) |page| {
             g.st = .{ .device = .keys, .character_page = page, .walk = .s };
             game.update(g, 0);
-            try std.testing.expectEqual(game.Mode.pause, g.mode);
+            try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
             try std.testing.expectEqual(game.PausePage.character, g.pause_page);
             try std.testing.expectEqual(book.Page.of(page), g.character.page);
             try std.testing.expect(g.st.walk == null and g.pending == null);
@@ -303,12 +306,12 @@ test "Character page shortcuts open switch and close without acting or carrying 
         }
         g.st = .{ .device = .keys, .character_page = .skills };
         game.update(g, 0);
-        try std.testing.expectEqual(game.Mode.play, g.mode);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     }
     g.mode = .dead;
     g.st = .{ .character_page = .equipment };
     game.update(g, 0);
-    try std.testing.expectEqual(game.Mode.dead, g.mode);
+    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(clock, g.sim.clock);
     try std.testing.expectEqual(mana, g.sim.mana);
     std.debug.print("Character shortcuts: {d} page openings, 5 toggles, death guarded; no turns or mana spent\n", .{checked});
@@ -360,7 +363,7 @@ test "Debug graphics toggles are independent and spend no simulation" {
                 try std.testing.expectEqual(clock, g.sim.clock);
                 try std.testing.expectEqual(rng, g.sim.rng);
                 try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
-                try std.testing.expectEqual(game.Mode.pause, g.mode);
+                try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
                 toggles += 1;
             }
         }
@@ -380,7 +383,7 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
     try std.testing.expect(!character.terrainSeen(g, far));
     harness.openDebug(g);
     try std.testing.expectEqual(game.PausePage.debug, g.pause_page);
-    try std.testing.expectEqual(game.Mode.pause, g.mode);
+    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(game.debugging.Page.gameplay, g.debug.page);
     harness.nudge(g, .s);
@@ -388,7 +391,7 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
         harness.press(g, CONFIRM);
         try std.testing.expectEqual(enabled, g.light.reveal_map);
         try std.testing.expectEqual(enabled, character.terrainSeen(g, far));
-        try std.testing.expectEqual(@as(f32, if (enabled) 1 else 0), g.light.memory[grid.Level.idx(far)]);
+        try std.testing.expectEqual(@as(f32, if (enabled) 1 else 0), g.light.visibility.memory[grid.Level.idx(far)]);
         try std.testing.expectEqualSlices(bool, &seen, &g.sim.lv.seen);
         try std.testing.expectEqualSlices(bool, &lit, &g.sim.lv.lit);
         try std.testing.expectEqual(clock, g.sim.clock);
@@ -400,9 +403,9 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
     try std.testing.expectEqual(game.debugging.Page.main, g.debug.page);
     harness.press(g, BACK);
     try std.testing.expectEqual(game.PausePage.main, g.pause_page);
-    try std.testing.expectEqual(game.Mode.pause, g.mode);
+    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     harness.press(g, PAUSE);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     std.debug.print("Debug reveal: on/off restores fog, all {d} exploration cells unchanged; back exits one menu at a time\n", .{grid.CELLS});
 }
 
@@ -423,7 +426,7 @@ test "Debug restart begins the map anew and clears visited nodes" {
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(game.debugging.Page.gameplay, g.debug.page);
     harness.press(g, CONFIRM);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(map.start.node, g.sim.node);
     try std.testing.expectEqual(@as(usize, 0), g.sim.visited.count());
     try std.testing.expectEqual(@as(i32, 0), g.sim.gold);
@@ -440,7 +443,7 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
     g.pic.catchUp(&g.sim);
     const clock = g.sim.clock;
     harness.press(g, skillbar.INSPECT);
-    try std.testing.expectEqual(game.Mode.inspect, g.mode);
+    try std.testing.expectEqual(game.Mode.inspect, std.meta.activeTag(g.mode));
     g.inspecting = .life;
     var walked: usize = 0;
     while (g.inspecting != .mana and walked < 20) : (walked += 1) harness.nudge(g, .e);
@@ -454,12 +457,12 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
     try std.testing.expect(g.inspecting == .slot);
     for ([_]input.Button{ menu.BACK, menu.PAUSE, skillbar.INSPECT }) |out| {
         harness.press(g, out);
-        try std.testing.expectEqual(game.Mode.play, g.mode);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
         harness.press(g, skillbar.INSPECT);
-        try std.testing.expectEqual(game.Mode.inspect, g.mode);
+        try std.testing.expectEqual(game.Mode.inspect, std.meta.activeTag(g.mode));
     }
     harness.press(g, skillbar.INSPECT);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expect(std.meta.eql(clock, g.sim.clock));
     std.debug.print("inspect: life to mana in {d} steps across {d} slots, then a visible character; status navigation, 3 ways out and no turn spent\n", .{ walked, skillbar.SLOTS.len });
 }

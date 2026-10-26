@@ -578,12 +578,12 @@ pub fn drawMap(g: *game.Game) void {
         while (cells.next()) |p| {
             if (g.sim.lv.isLit(p) and skills.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
         }
-        if (g.aim_act.reticle() == .bow and skills.aimable(g, from, g.mark)) {
-            const f = bow.preview(&g.sim.lv, from, g.mark);
+        if (g.mode.aim.act().reticle() == .bow and skills.aimable(g, from, g.mode.aim.mark)) {
+            const f = bow.preview(&g.sim.lv, from, g.mode.aim.mark);
             for (f.path[0..f.len]) |p| if (g.sim.lv.isLit(p)) {
                 fillCell(c, p, look.AIM_PATH);
             };
-            switch (g.aim_act) {
+            switch (g.mode.aim.act()) {
                 inline else => |a| if (comptime a.bursts()) if (f.impact()) |at| {
                     if (g.sim.lv.isLit(at)) {
                         const area = skillbar.Act.elemental(a).burst(&g.sim.lv, from, at);
@@ -594,26 +594,26 @@ pub fn drawMap(g: *game.Game) void {
                 },
             }
         }
-        switch (g.aim_act) {
+        switch (g.mode.aim.act()) {
             inline .caltrops, .gravity_well, .combustion => |a| {
-                const area = skillbar.Act.skill(a).area(&g.sim.lv, g.mark);
-                if (skills.aimable(g, from, g.mark)) for (area.slice()) |p| {
+                const area = skillbar.Act.skill(a).area(&g.sim.lv, g.mode.aim.mark);
+                if (skills.aimable(g, from, g.mode.aim.mark)) for (area.slice()) |p| {
                     if (g.sim.lv.isLit(p)) fillCell(c, p, look.AIM_PATH);
                 };
             },
             .arcane_barrier => {
-                if (@import("../play/tactics.zig").wall(&g.sim.lv, from, g.barrier_start orelse g.mark, g.mark, g.sim.growth.ranks.get(.arcane_barrier))) |area| {
+                if (@import("../play/tactics.zig").wall(&g.sim.lv, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark, g.sim.growth.ranks.get(.arcane_barrier))) |area| {
                     for (area.slice()) |p| fillCell(c, p, look.AIM_PATH);
                 }
             },
-            .overwatch => if (mathx.toward(from, g.mark)) |d| {
+            .overwatch => if (mathx.toward(from, g.mode.aim.mark)) |d| {
                 var covered = grid.Cells.around(from, bow.RANGE);
                 while (covered.next()) |p| {
                     if (g.sim.lv.isLit(p) and @import("../play/tactics.zig").covered(from, d, p) and bow.aimable(&g.sim.lv, from, p)) fillCell(c, p, look.AIM_PATH);
                 }
             },
             inline else => |a| if (comptime a.sweeps()) {
-                const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, g.mark);
+                const arc = skillbar.Act.skill(a).arc(&g.sim.lv, from, g.mode.aim.mark);
                 for (arc.slice()) |p| fillCell(c, p, look.AIM_PATH);
             },
         }
@@ -641,9 +641,9 @@ pub fn drawMap(g: *game.Game) void {
     for (bodies[next_body..]) |*b| drawStandingBody(g, b);
 
     drawTorches(g, c, flames);
-    g.pic.fx.drawGlow(&g.sim.lv, &g.light.sight, o[0], o[1], game.CELL_F);
+    g.pic.fx.drawGlow(&g.sim.lv, &g.light.visibility.sight, o[0], o[1], game.CELL_F);
     if (level_up_at) |at| g.pic.fx.level_up.drawSparks(at, o[0], o[1], game.CELL_F);
-    if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), &g.light.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
+    if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), &g.light.visibility.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
 
     if (g.pic.shot) |s| if (s.t >= 0) {
         drawShot(g, s, o);
@@ -665,7 +665,7 @@ pub fn drawMap(g: *game.Game) void {
         if (resistance > 0) bar(b.s.x + BODY_BAR_INSET, y_bar + BODY_BAR_H + RESIST_BAR_GAP, game.CELL - BODY_BAR_INSET * 2, RESIST_BAR_H, resistance, mathx.PERCENT, look.BG, look.UI_GOLD);
     }
 
-    if (aim_from) |from| outline(c, g.mark, if (skills.aimable(g, from, g.mark)) look.RETICLE else look.RETICLE_BLOCKED);
+    if (aim_from) |from| outline(c, g.mode.aim.mark, if (skills.aimable(g, from, g.mode.aim.mark)) look.RETICLE else look.RETICLE_BLOCKED);
     if (game.playShown(g) and g.st.lean) drawLean(g, c, &stood);
 
     for (bodies) |*b| {

@@ -4,7 +4,7 @@ const damage = @import("damage.zig");
 const resilience = @import("resilience.zig");
 const attrs = @import("attrs.zig");
 const mathx = @import("../core/mathx.zig");
-const menu = @import("../ui/menu.zig");
+const wording = @import("../core/wording.zig");
 
 pub const Modifiers = struct {
     hit: i16 = 0,
@@ -25,7 +25,7 @@ pub const Modifiers = struct {
         for (std.enums.values(damage.Element)) |e| {
             const n = self.elements.get(e);
             if (n != 0) {
-                w.print("\n{s}{d}% {s} Resistance", .{ sign(n), n, menu.titleOf(e) }) catch {};
+                w.print("\n{s}{d}% {s} Resistance", .{ sign(n), n, wording.titleOf(e) }) catch {};
                 shown = true;
             }
         }

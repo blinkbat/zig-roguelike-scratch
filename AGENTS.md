@@ -7,6 +7,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 ## Working rules
 
 - Prefer no comments in code. Ask before making product/design decisions. Don't commit, push or branch unless asked.
+- `docs/ARCHITECTURE.md` maps runtime contracts to owners and representative tests, including skill and editor contribution recipes.
 - Preserve unrelated work, including existing uncommitted changes. Keep verified workflow learnings succinct;
   update existing guidance instead of appending a diary.
 - **No scratch files in the repo**, including `output/` and ignored `shots/`. Put backups, previews, mocks,
@@ -16,7 +17,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 
 ## Build and verification
 
-- `zig` is not on PATH; `_zig.cmd` is the single toolchain definition. Run scripts from this directory:
+- `_zig.cmd` selects Zig 0.14.1 from `ZIG`, the existing sibling toolchain, or PATH, and checks its version.
+  See `README.md` for fresh-machine setup. Run scripts from this directory:
   `./check.cmd` type-checks executable and tests without linking; `./test.cmd [filter]` runs tests;
   `./build.cmd` builds without launching. Use tests that print meaningful counts.
 - `./build-linux.cmd` and `./build-macos.cmd` use Python 3.9+ to cross-check/build Linux x86-64 and macOS
@@ -33,19 +35,25 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   (default `maps/main.map`). These are owner-facing entry points.
 - Every `src/**/*.zig` module except the root `main.zig` must be imported in `main.zig`'s `test {}` block.
   `build.zig` checks this on every build step and rejects those modules if smaller than 512 bytes.
+  `tools/source_rules.zig` also checks runtime import boundaries: gameplay/map rules cannot depend on UI/rendering,
+  and standalone editor helpers cannot depend on Editor/Game. Integration-test bodies may cross those boundaries.
+  `core/wording.zig` owns display names, `core/text.zig` bounded text, and `play/log.zig` the event history drawn by `ui/journal.zig`.
 - `game.zig` holds `Game`, the run/door/turn flow and `update`; `Game` coordinates input, `g.sim` and `g.pic`.
   `game/sim.zig`'s `Simulation` owns the authoritative run (level, pool, RNG, resources, progression, nodes, log) and hero queries;
   `game/presentation.zig`'s `Presentation` owns the picture (glides, facing, pictured bodies, owed blows, shots, `fx`, shown
   resources) and its scheduler, which reads `*const Simulation`. Graphics resources stay on `Game`. `save.zig` maps each saved
   field to its owner by name; `RECORDED_FINGERPRINT` pins the format. `src/game/` splits off `combat`
-  (blows, harm ticks, foe turns), `skills` (aiming, leaps, rushes, spells, flasks), `binds` (the skill picker),
+  (impact orchestration, harm ticks, foe turns), `attacks` (simulation-only rolls, hit/status resolution and outcomes),
+  `rewards` (simulation-only death, loot, experience and witness fright, returning facts for presentation),
+  `skills` (aiming, leaps, rushes, spells, flasks), `binds` (the skill picker),
   `glide` (body motion), `scene` (map drawing), `overlay` (skill bar, binds, orbs, inspect, tooltips),
   `character` (pause, Character, Nearby), `debug` (Pause > Debug, diagnostics, `Perf`), `shots` (headless captures, bench), `harness` (scripted play shared by
   tests and shots) and `tests/` (the game's integration tests by domain: skills, foes, world, loot, picture, menus, hero).
   `app.zig` opens the window around a `Game` (`withGame`) and owns the headless flags; `core/window.zig` owns fullscreen.
 - `gfx/look.zig` keeps tile/body appearance and `Sprites`; `raster` holds raylib rect/blit/render-target helpers,
   `shaders` shader loading/uniforms/GLSL heads, `prompt_icon` input glyphs, `line_icons` skill and direction line art.
-  `gfx/light.zig` keeps the light map; `shadow` casts shadows, `light_gpu` holds its shaders and textures, `light_tests` its tests.
+  `gfx/light.zig` keeps the light map; `light_visibility` owns eased sight, memory and visibility sampling;
+  `shadow` casts shadows, `light_gpu` holds its shaders and textures, `light_tests` its tests.
   `map/atlas.zig` keeps the map graph; `atlas_text` reads/writes map files and their knobs, `listing` browses the maps folder.
 - `shot.cmd` builds into `zig-out-dev` but writes `shots/` under its working directory. For audits, build
   with `./build.cmd --prefix zig-out-dev`, then run the executable from a fresh `%TEMP%` directory containing
@@ -185,7 +193,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   restores the drag without consuming undo or losing redo. `Editor.request` guards leaving, quitting,
   opening and New when dirty, including window close. F5/F6 play-test unsaved; `HELP` stays checked against
   `Desk` captions. Keep Things/issues, object-viewer metadata and cursor previews consistent with the map.
-  `editor.zig` holds `Editor`, input, placement rules and shared widgets; `panel` (node list, tools, palette, things,
+  `editor.zig` holds `Editor` and lifecycle; `interaction` routes Desk input, modal commands and canvas gestures
+  with explicit viewport bounds and no Game access; `placement` owns brushes, placement legality, clipboard and paste preview.
+  `preview.Scene` owns the derived level, preview foes and reachability/issues, reading a const map;
+  `thumbnails.Thumbnails` owns graph texture generation, invalidation and lifetime. Notify them through editor change/history operations.
+  `widgets` takes explicit `Controls`, font and screen values, with no `Editor` or `Game` access;
+  `panel` (node list, tools, palette, things,
   status), `knobs` (generator rows), `canvas` (map, cursor/paste ghost, graph), `modals` (modals, help, object
   viewer) and `tests` sit beside it in `src/edit/`.
 - Objects > select a foe > Fight launches `map/spar.zig`'s arena using the app's separate map, with the
@@ -237,7 +250,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `Simulation.heroAttrs` is the runtime source; `Simulation.heroPerks` combines equipment and passive recovery effects.
   Foe `Row.armour` reduces physical hits; crossbow penetration subtracts percentage points. Armour reduces physical bites before mana shield; elemental/status
   damage keeps its separate rules. Equipped weapons and skill ranks affect hero damage and its previews.
-  Every hero blow goes through `combat.scaled` (via `heroRoll`/`heroScaled`), which draws the crit after the
+  Every hero blow goes through `attacks.scaled` (via `heroRoll`/`heroScaled`), which draws the crit after the
   damage roll, then rounds each part up as often as its fraction. Skill rolls are `damage.Base` (`Act.bases`); an area
   blow rolls its base once and scales, crits and rounds per foe. Skill tooltips show the scaled non-critical range.
 - `play/hero.zig` maps class to body; `skillbar.kit` restricts bindings and `Bar.of` supplies defaults, both
@@ -258,12 +271,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Flasks take no turn, apply their first recovery tick immediately, then recover on the next two spent turns.
   Drinking again restarts recovery; kills refill charges. Mana uses small whole numbers; natural recovery
   accumulates over spent turns in saved mana_recovery, never idle frames or free actions.
-- `skillbar.SKILLS` owns each action's module and reticle; `Act.attack` derives the attack type from them
-  (arrow ranged, bolt or unaimed element spell, swing or rush melee), and every damaging action must have one.
-  Skills dispatch by module declarations (`afflict`, `burst`, `JUMPS`, `around`, `Ward`, `knocked`).
+- `skillbar.SKILLS` owns each action's module, reticle and explicit attack delivery. `play/skill_contract.zig`
+  interprets and validates capabilities once; `Act` metadata, execution and previews use that contract.
   A pin (`pinning.Pin`) holds a body to its cell on its
   turns, counting down like chill; it can still attack within its normal range and cannot be knocked back.
-  A mana shield (`ward.Ward`) takes the hero's harm from mana first, in `combat.hurt`; the orb shows that
+  A mana shield (`ward.Ward`) takes the hero's harm from mana first, in `Simulation.resolveDamage`; `Game.hurt`
+  handles input consequences and Presentation defers the result. The orb shows that
   mana through `Presentation.mana_held` until the blow lands, as `flasks_shown` holds a kill's refill.
 - **`Pool.damage` is the only HP-loss path**, apart from splitting a slime's remaining HP, restoring
   carried state and clamping to a lowered maximum (`syncStats`). Elemental resistance applies separately per element, rounding down, clamped to
@@ -319,7 +332,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Skill activation/confirmation (including Wait/Shoot) requires `quiet`.
 - `gfx/look.zig` owns pictures and `look.Assets` map residency. Load required textures before drawing,
   including later slime forms and delayed deaths; retain common textures/normals and unload unused map
-  assets. Title loads only the font; play graphics load lazily. HUD and bind picker share `line_icons.drawSkill`.
+  assets. `Game.art` records stale/play/editor residency intent; scene changes and title assets invalidate it,
+  and each renderer prepares its set once. Title loads only the font; play graphics load lazily.
+  HUD and bind picker share `line_icons.drawSkill`.
 - `gfx/ground.zig` owns real ground layers. `ground.bedAt` chooses the neighbours' majority underlay,
   lowest rank on ties, then `look.under`; rock covers its cell. Grounds without sheets draw below those
   with sheets, each group retaining rank order. `Corners.mask` includes higher layers; `Corners.under`

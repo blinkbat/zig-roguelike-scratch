@@ -1,6 +1,6 @@
 const std = @import("std");
 const actor = @import("actor.zig");
-const menu = @import("../ui/menu.zig");
+const wording = @import("../core/wording.zig");
 const cleave = @import("cleave.zig");
 const attr = @import("attrs.zig");
 
@@ -22,7 +22,7 @@ pub const Class = enum {
     knight,
 
     pub fn title(c: Class) [:0]const u8 {
-        return menu.named(c);
+        return wording.named(c);
     }
 
     pub fn unnamed(c: Class) Name {

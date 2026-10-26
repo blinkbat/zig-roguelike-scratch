@@ -1,0 +1,41 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Install pinned Zig
+        run: |
+          $version = (Get-Content tools/release-deps.json -Raw | ConvertFrom-Json).zig_version
+          $archive = Join-Path $env:RUNNER_TEMP 'zig.zip'
+          Invoke-WebRequest "https://ziglang.org/download/$version/zig-x86_64-windows-$version.zip" -OutFile $archive
+          $expected = '554f5378228923ffd558eac35e21af020c73789d87afeabf4bfd16f2e6feed2c'
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Zig archive checksum mismatch' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP
+          "ZIG=$(Join-Path $env:RUNNER_TEMP "zig-x86_64-windows-$version/zig.exe")" >> $env:GITHUB_ENV
+      - name: Compile check
+        run: ./check.cmd
+      - name: Unit and integration tests
+        run: ./test.cmd
+      - name: Packaging tests
+        run: python -B tools/test_release.py
+      - name: Build
+        run: ./build.cmd

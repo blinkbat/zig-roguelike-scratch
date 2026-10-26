@@ -171,7 +171,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertIsNotNone(wanted)
         lock = json.loads(release.LOCK_PATH.read_text(encoding='utf-8'))
         self.assertEqual(wanted.group(1), lock['zig_version'])
-        print('release lock and build.zig.zon both pin Zig', lock['zig_version'])
+        toolchain = (release.ROOT / '_zig.cmd').read_text(encoding='utf-8')
+        self.assertIn('set "ZIG_VERSION=' + lock['zig_version'] + '"', toolchain)
+        print('release lock, Windows wrapper and build.zig.zon all pin Zig', lock['zig_version'])
 
 
 if __name__ == '__main__':

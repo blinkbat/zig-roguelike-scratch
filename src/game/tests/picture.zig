@@ -372,7 +372,7 @@ test "a foe stepping into the cell of a body still dying there sets off once tha
     const mover = actor.Pool.slot(3);
     _ = g.sim.pool.damage(&g.sim.lv, 2, g.sim.pool.get(2).?.hp);
     const lands: f32 = 0.3;
-    g.pic.strike(&g.sim, g.cloud, dying, .{ .from = .{ .x = 20, .y = 20 }, .wait = lands }, cell, true, g.pic.afterOf(&g.sim, dying));
+    g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(dying), .at = cell, .lethal = true, .after = g.pic.afterOf(&g.sim, dying) } }, .{ .from = .{ .x = 20, .y = 20 }, .wait = lands });
     g.sim.pool.move(&g.sim.lv, 3, cell);
     harness.staggerOnly(g, 3);
     var overlap: f32 = 0;
@@ -507,7 +507,7 @@ test "the bite that kills the archer leaves it standing and followed until it la
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.bittenToDeath(g);
-    try std.testing.expectEqual(game.Mode.dead, g.mode);
+    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     const hero = g.sim.heroSlot().?;
     try std.testing.expect(g.pic.drawnAt(&g.sim, hero) != null and g.pic.carrierAt(&g.sim) != null);
     const t = harness.framesUntil(g, hero, harness.gone);
@@ -525,7 +525,7 @@ test "a foe whose bite kills the archer is not then killed by the gas it stands 
     g.sim.heroActor().?.hp = 1;
     g.sim.lv.addGas(.{ .x = 21, .y = 20 }, harness.TEST_GAS);
     harness.use(g, .wait);
-    try std.testing.expectEqual(game.Mode.dead, g.mode);
+    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     try std.testing.expect(g.sim.pool.get(2) != null);
     try std.testing.expectEqual(@as(usize, 0), g.sim.kills);
     try std.testing.expectEqualStrings("Archer dies.", g.sim.log.line(0).?);
@@ -960,7 +960,7 @@ test "a barrel broken out of sight stays remembered, with no blow drawn, until i
     try std.testing.expect(scene.barrelShownAt(g, p));
     try std.testing.expect(g.sim.lv.breakBarrel(p));
     g.sim.lv.lit[grid.Level.idx(p)] = false;
-    g.pic.strike(&g.sim, g.cloud, null, .{ .from = .{ .x = 24, .y = 20 }, .wait = 0.2 }, p, true, null);
+    g.pic.strike(&g.sim, g.cloud, .{ .barrel = p }, .{ .from = .{ .x = 24, .y = 20 }, .wait = 0.2 });
     try std.testing.expect(!g.pic.fx.breaking(p));
     try std.testing.expect(scene.barrelShownAt(g, p));
     game.castSight(g, g.sim.heroActor().?.at);
@@ -1280,7 +1280,7 @@ test "a slime split off one not yet drawn waits for it" {
     g.pic.split_from[c] = p;
     g.pic.split_from[d] = c;
     const wait: f32 = 0.1;
-    g.pic.fx.strike(wait, .{ .slot = p, .at = mathx.centre(g.sim.pool.items[p].at), .dir = null, .matter = .ooze, .lethal = false, .after = .{ .body = fx.Body.of(g.sim.pool.items[p], 1), .reveals = c } });
+    g.pic.fx.strike(wait, .{ .impact = .{ .actor = .{ .slot = .fromIndex(p), .at = g.sim.pool.items[p].at, .lethal = false, .after = .{ .body = fx.Body.of(g.sim.pool.items[p], 1), .reveals = c } } }, .dir = null, .matter = .ooze });
     g.pic.catchUp(&g.sim);
     try std.testing.expect(g.pic.split_from[c] != null and g.pic.split_from[d] != null);
     const t = harness.framesUntil(g, d, harness.drawn);
@@ -1313,7 +1313,7 @@ test "gas left to eat at the archer kills it" {
     g.sim.lv.addGas(.{ .x = 20, .y = 20 }, harness.TEST_GAS);
     g.sim.heroActor().?.hp = 1;
     harness.use(g, .wait);
-    try std.testing.expectEqual(game.Mode.dead, g.mode);
+    try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
     try std.testing.expectEqualStrings("Archer dies.", g.sim.log.line(0).?);
     try std.testing.expect(harness.framesUntil(g, g.sim.heroSlot().?, harness.reddened) < harness.TEST_TOL);
 }
@@ -1328,7 +1328,7 @@ test "an unkillable archer keeps 1 hp through gas and bites that would kill it" 
     g.sim.heroActor().?.hp = 2;
     for (0..20) |_| harness.use(g, .wait);
     std.debug.print("an unkillable archer after 20 turns in gas between two rats: {d} hp\n", .{g.sim.heroActor().?.hp});
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(@as(i32, 1), g.sim.heroActor().?.hp);
 }
 

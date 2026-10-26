@@ -22,9 +22,9 @@ const ward = @import("ward.zig");
 const charge = @import("charge.zig");
 const hero = @import("hero.zig");
 const flask = @import("flask.zig");
-const resilience = @import("resilience.zig");
+const contracts = @import("skill_contract.zig");
 const passives = @import("passives.zig");
-const menu = @import("../ui/menu.zig");
+const wording = @import("../core/wording.zig");
 const tactics = @import("tactics.zig");
 
 const Button = input.Button;
@@ -82,7 +82,7 @@ pub const Act = enum {
     pub fn name(a: Act) [:0]const u8 {
         return switch (a) {
             .secondary => "Activate " ++ comptime Set.secondary.name(),
-            inline else => |t| comptime menu.titleOf(t),
+            inline else => |t| comptime wording.titleOf(t),
         };
     }
 
@@ -116,48 +116,30 @@ pub const Act = enum {
     }
 
     fn has(comptime a: Act, comptime decl: []const u8) bool {
-        comptime {
-            @setEvalBranchQuota(10_000);
-            for (PROBED) |p| {
-                if (std.mem.eql(u8, p, decl)) break;
-            } else @compileError("skillbar: " ++ decl ++ " is probed but not listed in PROBED");
-        }
-        const m = module(a) orelse return false;
-        return @hasDecl(m, decl);
+        return CONTRACTS.get(a).has(decl);
     }
 
-    pub const Reticle = enum { bow, leap, swing, rush, ground };
+    pub const Reticle = contracts.Reticle;
+
+    pub fn contract(a: Act) *const contracts.Contract {
+        return CONTRACTS.getPtrConst(a);
+    }
 
     pub fn reticle(a: Act) ?Reticle {
-        return switch (a) {
-            inline else => |t| comptime SKILLS.get(t).reticle,
-        };
+        return a.contract().reticle;
     }
 
     pub fn defaultStyle(a: Act) ?attrs.Style {
         return (a.attack() orelse return null).defaultStyle();
     }
 
-    /// An arrow is ranged, a bolt or an unaimed element a spell, a swing or a rush melee.
     pub fn attack(a: Act) ?attrs.Attack {
-        switch (a) {
-            .overwatch => return .ranged,
-            .whirlwind => return .melee,
-            else => {},
-        }
-        return switch (a) {
-            inline else => |t| comptime if (t.isArrow()) .ranged else if (t.bolt() != null) .spell else if (reticle(t)) |r| switch (r) {
-                .bow => unreachable,
-                .swing, .rush => .melee,
-                .leap => null,
-                .ground => if (has(t, "ELEMENT")) .spell else null,
-            } else if (has(t, "ELEMENT")) .spell else null,
-        };
+        return a.contract().delivery;
     }
 
     /// Loosed from the bow, with the bow's physical hit.
     pub fn isArrow(a: Act) bool {
-        return a.reticle() == .bow and a.bolt() == null;
+        return a.contract().source == .arrow;
     }
 
     fn declares(a: Act, comptime decl: []const u8) bool {
@@ -166,14 +148,8 @@ pub const Act = enum {
         };
     }
 
-    fn declOr(a: Act, comptime decl: []const u8, default: anytype) @TypeOf(default) {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, decl)) @field(module(t).?, decl) else default,
-        };
-    }
-
     pub fn free(a: Act) bool {
-        return a.declOr("FREE", false);
+        return a.contract().free;
     }
 
     /// Turns using it spends: none for a free action or the set modifier.
@@ -183,23 +159,17 @@ pub const Act = enum {
 
     /// The flask it drinks.
     pub fn flaskOf(a: Act) ?flask.Kind {
-        return a.declOr("KIND", @as(?flask.Kind, null));
+        return a.contract().flask_kind;
     }
 
     /// Furthest target in cells; zero for actions without a reticle.
     pub fn reach(a: Act) i32 {
-        return switch (a) {
-            inline else => |t| if (comptime reticle(t)) |r| switch (r) {
-                .bow => bow.RANGE,
-                .swing => MELEE_REACH,
-                .leap, .rush, .ground => module(t).?.RANGE,
-            } else 0,
-        };
+        return a.contract().reach;
     }
 
     /// A rush's nearest mark.
     pub fn nearest(a: Act) i32 {
-        return a.declOr("MIN_RANGE", MELEE_REACH);
+        return a.contract().nearest;
     }
 
     /// A missile's marks, a leap's landings, a swing's or a rush's: what its reticle holds legal.
@@ -215,7 +185,7 @@ pub const Act = enum {
 
     /// Not an arrow: what it is called, and it has no arrow's physical hit nor picture.
     pub fn bolt(a: Act) ?[]const u8 {
-        return a.declOr("BOLT", @as(?[]const u8, null));
+        return a.contract().bolt;
     }
 
     /// It vanishes and reappears rather than jumps.
@@ -229,7 +199,7 @@ pub const Act = enum {
     }
 
     pub fn cost(a: Act) i32 {
-        return a.declOr("COST", @as(i32, 0));
+        return a.contract().cost;
     }
 
     /// An elemental skill's module: its element, its roll, its chance to afflict, its verb and what is said as it takes.
@@ -243,25 +213,20 @@ pub const Act = enum {
     }
 
     pub fn element(a: Act) ?damage.Element {
-        return a.declOr("ELEMENT", @as(?damage.Element, null));
+        return a.contract().element;
     }
 
     /// What the log says the hero did, when no blow or barrel says it.
     pub fn done(a: Act) ?[]const u8 {
-        return a.declOr("DONE", @as(?[]const u8, null));
+        return a.contract().done;
     }
 
     /// Its physical and elemental rolls before its attribute; an arrow's physical is the bow's.
     pub fn bases(a: Act) Bases {
-        return switch (a) {
-            inline else => |t| comptime .{
-                .physical = if (t.isArrow()) bow.BASE else if (has(t, "BASE") and !has(t, "ELEMENT")) module(t).?.BASE else null,
-                .element = if (has(t, "ELEMENT")) module(t).?.BASE else null,
-            },
-        };
+        return a.contract().bases;
     }
 
-    pub const Bases = struct { physical: ?damage.Base, element: ?damage.Base };
+    pub const Bases = contracts.Bases;
 
     pub fn equippedBases(a: Act, gear: items.Gear) EquippedBases {
         const b = a.bases();
@@ -290,12 +255,10 @@ pub const Act = enum {
 
     /// What it afflicts and how often against no resistance.
     pub fn ailment(a: Act) ?Ailment {
-        return switch (a) {
-            inline else => |t| if (comptime has(t, "afflict")) comptime .{ .kind = module(t).?.AILMENT, .chance = module(t).?.CHANCE } else null,
-        };
+        return a.contract().ailment;
     }
 
-    pub const Ailment = struct { kind: resilience.Kind, chance: u32 };
+    pub const Ailment = contracts.Ailment;
 
     /// Cast at once, it strikes the cells round the hero.
     pub fn surrounds(a: Act) bool {
@@ -314,62 +277,55 @@ pub const Act = enum {
 
     /// Turns after it is used before it can be again.
     pub fn cooldown(a: Act) u8 {
-        return a.declOr("COOLDOWN", @as(u8, 0));
+        return a.contract().cooldown;
     }
 
     pub fn index(a: Act) usize {
         return std.enums.EnumIndexer(Act).indexOf(a);
     }
-
-    /// Every declaration probed by name above must exist in at least one skill module.
-    const PROBED = .{ "describe", "FREE", "TELEPORTS", "KIND", "BOLT", "arc", "COST", "ELEMENT", "burst", "JUMPS", "afflict", "AILMENT", "CHANCE", "around", "Ward", "knocked", "COOLDOWN", "MIN_RANGE", "BASE", "DONE" };
-
-    comptime {
-        @setEvalBranchQuota(10_000);
-        for (PROBED) |decl| {
-            var found = false;
-            for (std.enums.values(Act)) |a| found = found or has(a, decl);
-            if (!found) @compileError("skillbar: no skill module declares " ++ decl);
-        }
-    }
 };
 
 pub const ACTS = std.enums.values(Act);
 pub const KitBuf = [ACTS.len]Act;
-/// A swing's reach, and a rush's nearest mark unless its module says otherwise.
-const MELEE_REACH: i32 = 1;
 
-const Skill = struct { module: ?type, reticle: ?Act.Reticle = null };
+const Skill = contracts.Definition;
 const SKILLS = std.EnumArray(Act, Skill).init(.{
-    .shoot = .{ .module = null, .reticle = .bow },
+    .shoot = .{ .module = null, .reticle = .bow, .delivery = .ranged },
     .wait = .{ .module = null },
     .secondary = .{ .module = null },
     .juke = .{ .module = juke, .reticle = .leap },
-    .burning_arrow = .{ .module = burning, .reticle = .bow },
-    .glacial_shot = .{ .module = glacial, .reticle = .bow },
-    .spark = .{ .module = spark, .reticle = .bow },
+    .burning_arrow = .{ .module = burning, .reticle = .bow, .delivery = .ranged },
+    .glacial_shot = .{ .module = glacial, .reticle = .bow, .delivery = .ranged },
+    .spark = .{ .module = spark, .reticle = .bow, .delivery = .spell },
     .blink = .{ .module = blink, .reticle = .leap },
-    .shield_bash = .{ .module = bash, .reticle = .swing },
-    .cleave = .{ .module = cleave, .reticle = .swing },
-    .pinning_shot = .{ .module = pinning, .reticle = .bow },
-    .barbed_arrow = .{ .module = barbed, .reticle = .bow },
-    .frost_nova = .{ .module = nova },
-    .fireball = .{ .module = fireball, .reticle = .bow },
-    .chain_lightning = .{ .module = chain, .reticle = .bow },
+    .shield_bash = .{ .module = bash, .reticle = .swing, .delivery = .melee },
+    .cleave = .{ .module = cleave, .reticle = .swing, .delivery = .melee },
+    .pinning_shot = .{ .module = pinning, .reticle = .bow, .delivery = .ranged },
+    .barbed_arrow = .{ .module = barbed, .reticle = .bow, .delivery = .ranged },
+    .frost_nova = .{ .module = nova, .delivery = .spell },
+    .fireball = .{ .module = fireball, .reticle = .bow, .delivery = .spell },
+    .chain_lightning = .{ .module = chain, .reticle = .bow, .delivery = .spell },
     .mana_shield = .{ .module = ward },
-    .charge = .{ .module = charge, .reticle = .rush },
+    .charge = .{ .module = charge, .reticle = .rush, .delivery = .melee },
     .caltrops = .{ .module = tactics.Caltrops, .reticle = .ground },
-    .overwatch = .{ .module = tactics.Overwatch, .reticle = .ground },
+    .overwatch = .{ .module = tactics.Overwatch, .reticle = .ground, .delivery = .ranged },
     .steady_aim = .{ .module = tactics.SteadyAim },
     .gravity_well = .{ .module = tactics.GravityWell, .reticle = .ground },
-    .combustion = .{ .module = tactics.Combustion, .reticle = .ground },
+    .combustion = .{ .module = tactics.Combustion, .reticle = .ground, .delivery = .spell },
     .arcane_barrier = .{ .module = tactics.ArcaneBarrier, .reticle = .ground },
     .guard = .{ .module = tactics.Guard },
-    .whirlwind = .{ .module = tactics.Whirlwind },
+    .whirlwind = .{ .module = tactics.Whirlwind, .delivery = .melee },
     .unyielding = .{ .module = tactics.Unyielding },
     .life_flask = .{ .module = flask.Life },
     .mana_flask = .{ .module = flask.Mana },
 });
+
+const CONTRACTS = blk: {
+    @setEvalBranchQuota(100_000);
+    var table = std.EnumArray(Act, contracts.Contract).initUndefined();
+    for (ACTS) |act| table.set(act, contracts.interpret(@tagName(act), SKILLS.get(act)));
+    break :blk table;
+};
 
 /// The skills a class may bind, in the bind picker's order.
 pub fn kit(c: hero.Class) []const Act {
@@ -381,7 +337,7 @@ pub fn kit(c: hero.Class) []const Act {
 }
 
 comptime {
-    @setEvalBranchQuota(10_000);
+    @setEvalBranchQuota(100_000);
     for (ACTS) |a| {
         if ((a.reticle() == .bow or Act.has(a, "BASE")) != (a.attack() != null)) @compileError(@tagName(a) ++ ": a damage skill has no attack type to scale by");
         var n: usize = 0;
@@ -603,7 +559,7 @@ test "each class starts with its own skills bound, and only skills of its kit" {
 }
 
 pub const INSPECT = Button.inspect;
-const NOT_SLOTS = [_]Button{ menu.CHARACTER, menu.PAUSE, INSPECT };
+const NOT_SLOTS = [_]Button{ Button.character, Button.pause, INSPECT };
 
 comptime {
     if (!std.mem.eql(Button, &SLOTS, &input.SLOT_ORDER)) @compileError("the keyboard numbers the slots out of their order");

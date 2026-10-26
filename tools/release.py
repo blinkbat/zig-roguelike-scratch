@@ -274,7 +274,7 @@ def map_paths():
 
 
 def source_hash():
-    paths = [ROOT / 'build.zig', ROOT / 'build.zig.zon', LOCK_PATH, SELF]
+    paths = [ROOT / 'build.zig', ROOT / 'build.zig.zon', ROOT / 'tools/source_rules.zig', LOCK_PATH, SELF]
     paths += list((ROOT / 'src').rglob('*.zig'))
     paths += [p for p in ASSETS.iterdir() if p.suffix in EMBEDDED]
     paths += map_paths()

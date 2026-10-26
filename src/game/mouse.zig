@@ -60,7 +60,7 @@ pub fn draw(g: *game.Game) void {
     for (CORNER) |c| menu.action(&g.face, buttonBox(g.screen, c.button), prompt_icon.Prompt.menuOf(&g.st, c.button), c.label);
 }
 
-fn clickable(mode: game.Mode) bool {
+fn clickable(mode: game.ModeState) bool {
     return mode == .play or mode == .aim or mode == .inspect;
 }
 
@@ -130,13 +130,13 @@ pub fn aim(g: *game.Game) bool {
     if (!g.st.pointing() and !g.st.left_released) return false;
     const at = cell(g) orelse return false;
     const h = g.sim.heroActor() orelse return false;
-    if (g.aim_act.reticle() == .swing) {
+    if (g.mode.aim.act().reticle() == .swing) {
         const d = mathx.toward(h.at, at) orelse return false;
-        g.mark = h.at.add(d.delta());
-    } else g.mark = at;
+        g.mode.aim.mark = h.at.add(d.delta());
+    } else g.mode.aim.mark = at;
     skills.rememberTarget(g);
-    g.pic.turnToward(g.sim.hero, g.mark.x - h.at.x);
-    return g.st.click or (g.aim_act == .arcane_barrier and g.barrier_start != null and g.st.left_released);
+    g.pic.turnToward(g.sim.hero, g.mode.aim.mark.x - h.at.x);
+    return g.st.click or (g.mode.aim.act() == .arcane_barrier and g.mode.aim.anchor() != null and g.st.left_released);
 }
 
 fn danger(g: *const game.Game) bool {
@@ -153,7 +153,7 @@ fn attack(g: *game.Game, at: P) bool {
         if (skills.blocked(g, act, &g.sim.flasks, g.sim.mana) != null) continue;
         skills.useSkill(g, .{ .act = act, .by = b, .set = set });
         if (g.mode == .aim) {
-            g.mark = at;
+            g.mode.aim.mark = at;
             skills.confirmAim(g);
         }
         return true;
@@ -376,7 +376,7 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     const slot = game.overlay.slotBox(game.overlay.hudLayout(g), binds.Binds.colOf(use.by));
     g.st = .{ .device = .keys, .pointer = raster.middleAt(slot), .click = true };
     game.update(g, 0);
-    try std.testing.expectEqual(game.Mode.aim, g.mode);
+    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(clock, g.sim.clock);
     g.st = .{ .device = .keys, .pointer = raster.middleAt(slot), .click = true };
     game.update(g, 0);
@@ -386,13 +386,13 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     game.castSight(g, start);
     clickCell(g, blocked);
     try std.testing.expectEqual(clock, g.sim.clock);
-    try std.testing.expectEqual(game.Mode.aim, g.mode);
+    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
     g.st = .{ .right_click = true };
     game.update(g, 0);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     clickCell(g, target);
     try std.testing.expect(g.pic.shot != null);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     game.harness.drawnOut(g);
     const after = g.sim.clock;
     g.st = .{ .device = .keys, .pointer = raster.middleAt(journal.box(g.screen)), .click = true };
@@ -414,7 +414,7 @@ test "mouse attacks skip combustion for unburning foes and cast it on burning fo
         if (other_burning) game.harness.foes(g)[1].burn.start();
         const clock = g.sim.clock.minute;
         clickCell(g, target);
-        try std.testing.expectEqual(game.Mode.play, g.mode);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
         try std.testing.expect(g.pic.shot != null);
         try std.testing.expectEqual(skillbar.Act.spark, g.pic.shot.?.act);
         try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
@@ -428,7 +428,7 @@ test "mouse attacks skip combustion for unburning foes and cast it on burning fo
     const hp = foe.hp;
     const clock = g.sim.clock.minute;
     clickCell(g, target);
-    try std.testing.expectEqual(game.Mode.play, g.mode);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expect(g.pic.shot == null);
     try std.testing.expect(foe.hp < hp);
     try std.testing.expectEqual(@as(u8, 0), foe.burn.turns);
@@ -464,7 +464,7 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
     game.harness.drawnOut(g);
     clickCell(g, chest);
-    try std.testing.expectEqual(game.Mode.pause, g.mode);
+    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(book.Page.loot, g.character.page);
     try std.testing.expectEqual(clock + day.TURN_MINUTES, g.sim.clock.minute);
     g.st = .{ .right_click = true };
@@ -472,7 +472,7 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, menu.CHARACTER)) };
     game.update(g, 0);
     try std.testing.expectEqual(game.PausePage.character, g.pause_page);
-    try std.testing.expectEqual(game.Mode.pause, g.mode);
+    try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     g.st = .{ .right_click = true };
     game.update(g, 0);
     g.st = .{ .click = true, .pointer = raster.middleAt(buttonBox(g.screen, menu.PAUSE)) };

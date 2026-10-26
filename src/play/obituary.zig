@@ -4,7 +4,7 @@ const heroes = @import("hero.zig");
 const chronicle = @import("chronicle.zig");
 const skillbar = @import("skillbar.zig");
 const gas = @import("../map/gas.zig");
-const menu = @import("../ui/menu.zig");
+const wording = @import("../core/wording.zig");
 const Source = chronicle.Source;
 const Turn = chronicle.Turn;
 const Hurt = chronicle.Hurt;
@@ -381,7 +381,7 @@ pub const Titled = struct {
     pub fn format(self: Titled, comptime _: []const u8, _: std.fmt.FormatOptions, w: anytype) !void {
         try w.writeAll(self.name);
         if (std.ascii.eqlIgnoreCase(self.name, self.class.title()) or std.ascii.indexOfIgnoreCase(self.name, " the ") != null) return;
-        try w.print(" the {s}", .{menu.word(self.class)});
+        try w.print(" the {s}", .{wording.word(self.class)});
     }
 };
 
@@ -429,10 +429,10 @@ fn lastDeed(ctx: *const Context, tagged: Tags) ?Deed {
     for (ctx.last().slice()) |e| switch (e) {
         .used => |a| with = a,
         .dealt => |d| {
-            if (d.reaction) continue;
+            if (d.origin == .reaction) continue;
             if (d.killed) felled = d.to else struck = d.to;
         },
-        .missed => |m| if (!m.reaction) {
+        .missed => |m| if (m.origin == .chosen) {
             missed = true;
         },
         else => {},
@@ -636,7 +636,7 @@ test "reactions preserve the chosen last deed and still attribute a burst bloat"
         const turns = [_]Turn{turnOf(8, 4, &.{
             .{ .used = .shoot },
             .{ .dealt = .{ .to = .bandit_crossbowman, .killed = false } },
-            .{ .dealt = .{ .to = .rat, .killed = killed, .reaction = true } },
+            .{ .dealt = .{ .to = .rat, .killed = killed, .origin = .{ .reaction = .fromInt(2) } } },
             rat(5, 4),
         })};
         const ctx = testContext(&turns);
@@ -645,7 +645,7 @@ test "reactions preserve the chosen last deed and still attribute a burst bloat"
     }
     const turns = [_]Turn{turnOf(8, 4, &.{
         .{ .used = .wait },
-        .{ .dealt = .{ .to = .bloat, .killed = true, .reaction = true } },
+        .{ .dealt = .{ .to = .bloat, .killed = true, .origin = .{ .reaction = .fromInt(2) } } },
         .{ .hurt = .{ .by = .gas, .dmg = 5, .before = 4 } },
     })};
     const ctx = testContext(&turns);

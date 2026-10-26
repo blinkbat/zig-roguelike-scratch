@@ -11,9 +11,35 @@ const clock = @import("clock.zig");
 const pinning = @import("pinning.zig");
 const ward = @import("ward.zig");
 const heroes = @import("hero.zig");
-const menu = @import("../ui/menu.zig");
+const wording = @import("../core/wording.zig");
 
 const P = mathx.P;
+
+pub const ActorId = struct {
+    value: u16,
+
+    pub fn fromInt(value: u16) ActorId {
+        std.debug.assert(value != grid.NO_ONE and value <= MAX);
+        return .{ .value = value };
+    }
+
+    pub fn slot(self: ActorId) ActorSlot {
+        return .{ .index = Pool.slot(self.value) };
+    }
+};
+
+pub const ActorSlot = struct {
+    index: usize,
+
+    pub fn fromIndex(index: usize) ActorSlot {
+        std.debug.assert(index < MAX);
+        return .{ .index = index };
+    }
+
+    pub fn id(self: ActorSlot) ActorId {
+        return .{ .value = Pool.idOf(self.index) };
+    }
+};
 
 pub const Kind = enum {
     archer,
@@ -179,7 +205,7 @@ pub fn row(k: Kind) Row {
 }
 
 fn heroRow(comptime c: heroes.Class) Row {
-    return .{ .name = menu.word(c), .movement = .ground, .foe_type = null, .hp = c.attrs().life(), .sight = 10, .light = 5, .blow = .{ .strike = c.strike() } };
+    return .{ .name = wording.word(c), .movement = .ground, .foe_type = null, .hp = c.attrs().life(), .sight = 10, .light = 5, .blow = .{ .strike = c.strike() } };
 }
 
 fn smaller(of: Kind, name: [:0]const u8, splits: ?Kind) Row {
