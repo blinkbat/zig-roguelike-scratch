@@ -41,8 +41,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - `game.zig` holds `Game`, the run/door/turn flow and `update`; `Game` coordinates input, `g.sim` and `g.pic`.
   `game/sim.zig`'s `Simulation` owns the authoritative run (level, pool, RNG, resources, progression, nodes, log) and hero queries;
   `game/presentation.zig`'s `Presentation` owns the picture (glides, facing, pictured bodies, owed blows, shots, `fx`, shown
-  resources) and its scheduler, which reads `*const Simulation`. Graphics resources stay on `Game`. `save.zig` maps each saved
-  field to its owner by name; `RECORDED_FINGERPRINT` pins the format. `src/game/` splits off `combat`
+  resources) and its scheduler, which reads `*const Simulation`. Graphics resources stay on `Game`. `save_data.zig` maps each saved
+  field to its owner; `save_format.zig` and `save_values.zig` own portable parsing/conversion. `RECORDED_FINGERPRINT` pins the legacy reader. `src/game/` splits off `combat`
   (impact orchestration, harm ticks, foe turns), `attacks` (simulation-only rolls, hit/status resolution and outcomes),
   `rewards` (simulation-only death, loot, experience and witness fright, returning facts for presentation),
   `skills` (aiming, leaps, rushes, spells, flasks), `binds` (the skill picker),
@@ -52,8 +52,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `app.zig` opens the window around a `Game` (`withGame`) and owns the headless flags; `core/window.zig` owns fullscreen.
 - `gfx/look.zig` keeps tile/body appearance and `Sprites`; `raster` holds raylib rect/blit/render-target helpers,
   `shaders` shader loading/uniforms/GLSL heads, `prompt_icon` input glyphs, `line_icons` skill and direction line art.
-  `gfx/light.zig` keeps the light map; `light_visibility` owns eased sight, memory and visibility sampling;
-  `shadow` casts shadows, `light_gpu` holds its shaders and textures, `light_tests` its tests.
+  `gfx/light.zig` coordinates light state and baking; `light_model` owns shading math and source types;
+  `light_visibility` owns eased sight, memory and visibility sampling;
+  `shadow` casts shadows, `light_gpu` owns shaders, textures, uploads and drawing, `light_tests` its tests.
   `map/atlas.zig` keeps the map graph; `atlas_text` reads/writes map files and their knobs, `listing` browses the maps folder.
 - `shot.cmd` builds into `zig-out-dev` but writes `shots/` under its working directory. For audits, build
   with `./build.cmd --prefix zig-out-dev`, then run the executable from a fresh `%TEMP%` directory containing
@@ -100,6 +101,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 ## Input, UI and application
 
 - **`core/input.zig` alone reads input devices.** Controller is primary; keyboard mirrors every action.
+  `input_bindings` owns contextual mappings and Desk shortcuts; `input_names` owns glyph names and marked captions.
   `core/input_repeat.zig` owns pure movement repeat and stick hysteresis; `State.update` names each polling stage.
   Mouse motion/buttons/wheel select keyboard/mouse hints; a stationary cursor never overrides controller navigation.
   `game/mouse.zig` owns map click routing and unsaved click-to-move state; UI panels consume map clicks.
@@ -214,9 +216,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Display aliases live in `assets/player-labels.txt`, attribution in root `text-tags.json`; enum/save identities stay fixed.
   Map names are references here and use the existing node Rename action. See `docs/TEXT_EDITOR.md`.
 - `save.zig` freezes the whole run: map, visited/current nodes, actors, class/name, resources/statuses,
-  RNG, log, skill bar, time, gold, inventory, progression and each node's ground drops. `core/store.zig`
-  fingerprints types, plus the passive tree's layout (`save.TREE`); reject incompatible or incomplete
-  saves before mutating the game. Autosave snapshots on the frame and writes on a thread, only while
+  RNG, log, skill bar, time, gold, inventory, progression and each node's ground drops. `core/wire.zig`
+  encodes named fields and enum keys; `core/store.zig` owns versioned checksummed envelopes and atomic replacement.
+  Convert on parse with safe defaults, preserving recoverable state; validate detached snapshots before mutating the game.
+  Compatible raw saves migrate through `core/store_legacy.zig`; see `docs/SAVE_FORMAT.md` for required fields and evolution rules.
+  Autosave snapshots on the frame and writes on a thread, only while
   quiet and outside door travel; flush again on departure. Atomic completion gates reuse of the buffer.
   Failed writes rearm dirty state even while idle and retry on `GAP_S`; death ends the save.
 - `map/procgen.zig` rolls a base, then ordered features on a separately salted RNG stream, so adding

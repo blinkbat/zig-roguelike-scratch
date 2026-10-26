@@ -28,6 +28,12 @@ pub fn main() !void {
 }
 
 test {
+    _ = @import("save_data.zig");
+    _ = @import("save_format.zig");
+    _ = @import("core/wire.zig");
+    _ = @import("gfx/light_model.zig");
+    _ = @import("core/input_bindings.zig");
+    _ = @import("core/input_names.zig");
     _ = @import("gfx/light_visibility.zig");
     _ = @import("edit/interaction.zig");
     _ = @import("game/rewards.zig");
@@ -45,6 +51,8 @@ test {
     _ = @import("core/input.zig");
     _ = @import("core/input_repeat.zig");
     _ = @import("core/store.zig");
+    _ = @import("core/store_legacy.zig");
+    _ = @import("save_values.zig");
     _ = @import("map/grid.zig");
     _ = @import("map/fov.zig");
     _ = @import("map/gen.zig");

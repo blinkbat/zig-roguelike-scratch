@@ -354,7 +354,7 @@ pub const Catalog = struct {
             if (excluded[i]) continue;
             const decoded = std.zig.string_literal.parseAlloc(a, slice(bytes, token)) catch continue;
             if (!spoken(decoded, bytes, ts, i)) continue;
-            const is_input = std.mem.eql(u8, path, "src/core/input.zig");
+            const is_input = inputSource(path);
             const is_keyboard = std.mem.eql(u8, path, "src/ui/naming.zig") and std.mem.eql(u8, declaration(bytes, ts, i) orelse "", "LETTERS");
             const flavor = std.mem.eql(u8, path, "src/play/items.zig") and i >= 2 and ts[i - 1].tag == .equal and std.mem.eql(u8, slice(bytes, ts[i - 2]), "flavor");
             const semantic = try contexts.describe();
@@ -418,7 +418,11 @@ fn included(path: []const u8) bool {
     }
     if (std.mem.endsWith(u8, path, "tests.zig")) return false;
     for ([_][]const u8{ "game/", "play/", "ui/", "edit/", "map/" }) |prefix| if (std.mem.startsWith(u8, path, prefix)) return true;
-    return oneOf(path, &.{ "app.zig", "game.zig", "save.zig", "core/input.zig", "gfx/look.zig", "gfx/fx.zig" });
+    return oneOf(path, &.{ "app.zig", "game.zig", "save.zig", "save_data.zig", "core/input.zig", "core/input_bindings.zig", "core/input_names.zig", "gfx/look.zig", "gfx/fx.zig" });
+}
+
+fn inputSource(path: []const u8) bool {
+    return oneOf(path, &.{ "src/core/input.zig", "src/core/input_bindings.zig", "src/core/input_names.zig" });
 }
 
 fn oneOf(value: []const u8, choices: []const []const u8) bool {
@@ -493,6 +497,8 @@ fn moduleOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
 }
 
 fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
+    if (inputSource(path)) return "Input";
+    if (std.mem.eql(u8, path, "src/save_data.zig")) return "Save";
     if (std.mem.startsWith(u8, path, "src/edit/")) return "Editor";
     if (std.mem.startsWith(u8, path, "src/map/")) return "Maps";
     if (std.mem.startsWith(u8, path, "src/ui/")) return "Interface";
@@ -968,6 +974,28 @@ test "text catalog indexes live item skill and speech sources with complete meta
     try std.testing.expect(bow and barrier);
     try std.testing.expectEqual(@import("../gfx/fx.zig").FRIGHT_WORDS.len, speech);
     std.debug.print("text catalog: {d} live entries have nonempty metadata; item/skill context and all {d} fright utterances found\n", .{ c.entries().len, speech });
+}
+
+test "text catalog retains moved input captions and save wording under their original categories" {
+    var catalog = Catalog.init(std.testing.allocator);
+    defer catalog.deinit();
+    for ([_][]const u8{ "core/input_bindings.zig", "core/input_names.zig", "save_data.zig" }) |source| {
+        try std.testing.expect(included(source));
+    }
+    try catalog.scan("src/core/input_bindings.zig", "pub const CAPTION = \"A shortcut caption\";");
+    try catalog.scan("src/core/input_names.zig", "pub const CAPTION = \"A device caption\";");
+    try catalog.scan("src/save_data.zig", "pub const CAPTION = \"a generated floor\";");
+    try std.testing.expectEqual(@as(usize, 3), catalog.entries().len);
+    for (catalog.entries()[0..2]) |entry| {
+        try std.testing.expectEqualStrings("Input", entry.category);
+        try std.testing.expect(!entry.editable);
+    }
+    try std.testing.expectEqualStrings("Save", catalog.entries()[2].category);
+    try catalog.scan("src/play/ossuary.zig", @embedFile("../play/ossuary.zig"));
+    for (catalog.entries()[3..]) |entry| {
+        try std.testing.expect(!std.mem.eql(u8, entry.text, "n") and !std.mem.eql(u8, entry.text, "summary_n"));
+    }
+    std.debug.print("text catalog: 3 moved sources retain categories and input caption protections\n", .{});
 }
 
 test "character page aliases retain their saved keys after moving the view type" {

@@ -16,8 +16,9 @@ fn domain(path: []const u8) bool {
 
 fn independentHelper(path: []const u8) bool {
     for ([_][]const u8{
-        "edit/widgets.zig",      "edit/thumbnails.zig",     "edit/tool_catalog.zig",  "edit/name_field.zig",
-        "ui/character_view.zig", "ui/character_layout.zig", "ui/character_stats.zig", "ui/item_card.zig",
+        "edit/widgets.zig",        "edit/thumbnails.zig",     "edit/tool_catalog.zig",  "edit/name_field.zig",
+        "ui/character_view.zig",   "ui/character_layout.zig", "ui/character_stats.zig", "ui/item_card.zig",
+        "core/input_bindings.zig", "core/input_names.zig",    "gfx/light_model.zig",    "gfx/light_gpu.zig",
     }) |owner| {
         if (std.mem.eql(u8, path, owner)) return true;
     }
@@ -25,6 +26,12 @@ fn independentHelper(path: []const u8) bool {
 }
 
 fn allowed(owner: []const u8, target: []const u8) bool {
+    if (std.mem.eql(u8, owner, "core/input_bindings.zig") or std.mem.eql(u8, owner, "core/input_names.zig")) {
+        if (std.mem.eql(u8, target, "core/input.zig")) return false;
+    }
+    if (std.mem.eql(u8, owner, "gfx/light_model.zig") or std.mem.eql(u8, owner, "gfx/light_gpu.zig")) {
+        if (std.mem.eql(u8, target, "gfx/light.zig")) return false;
+    }
     if (domain(owner)) {
         if (!std.mem.endsWith(u8, target, ".zig")) return !std.mem.eql(u8, target, "raylib");
         return std.mem.startsWith(u8, target, "core/") or std.mem.startsWith(u8, target, "play/") or
@@ -79,8 +86,10 @@ test "source boundaries reject rendering and application imports in domain code"
         try std.testing.expect((try check(alloc, owner, "const ok = @import(\"../core/wording.zig\");")) == null);
     }
     try std.testing.expect((try check(alloc, "game/attacks.zig", "const sim = @import(\"sim.zig\");")) == null);
+    try std.testing.expect((try check(alloc, "core/input_names.zig", "const input = @import(\"input.zig\");")) != null);
+    try std.testing.expect((try check(alloc, "gfx/light_model.zig", "const light = @import(\"light.zig\");")) != null);
     try std.testing.expect((try check(alloc, "play/items.zig", "const bad = @import(\"../core/../ui/menu.zig\");")) != null);
-    std.debug.print("source boundaries: 31 forbidden domain imports rejected, 7 allowed imports retained\n", .{});
+    std.debug.print("source boundaries: 33 forbidden imports rejected, 7 allowed imports retained\n", .{});
 }
 
 test "source boundaries recognize real imports and permit integration tests" {

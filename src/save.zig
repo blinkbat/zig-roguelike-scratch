@@ -15,209 +15,25 @@ pub const NOT_DELETED = "The dead run's save did not delete ({s})";
 const DIR = store.DIR;
 const EXT = ".save";
 const MAGIC = "roguelike-save\n";
-const FILE_CAP: usize = 64 << 20;
+const FILE_CAP: usize = format.FILE_CAP;
 const PATH_FMT = DIR ++ "/slot{d}" ++ EXT;
 const PATH_MAX: usize = std.fmt.count(PATH_FMT, .{SLOTS});
 const GAP_S: f32 = 1;
 
-/// Where in the game a saved field lives, `game` or its field of that name; the file names it by its field name alone.
-const Part = enum { game, sim, pic };
+const data = @import("save_data.zig");
+const format = @import("save_format.zig");
 
-fn Of(comptime p: Part) type {
-    return if (p == .game) game.Game else @FieldType(game.Game, @tagName(p));
-}
-
-fn part(g: *game.Game, comptime p: Part) *Of(p) {
-    return if (p == .game) g else &@field(g, @tagName(p));
-}
-
-const HEAD_PART: Part = .sim;
-const Run = Of(HEAD_PART);
-
-/// Written before the tail, by hand, in this order: the map behind a flag, then each visited node's visit.
-const Header = struct {
-    seed: @FieldType(Run, "seed"),
-    map: std.meta.Child(std.meta.Child(@FieldType(Run, "map"))),
-    node: @FieldType(Run, "node"),
-    visited: @FieldType(Run, "visited"),
-    visits: std.meta.Elem(@FieldType(Run, "visits")),
-};
-const Seed = @FieldType(Header, "seed");
-const Map = @FieldType(Header, "map");
-const Node = @FieldType(Header, "node");
-const Visited = @FieldType(Header, "visited");
-const Visit = @FieldType(Header, "visits");
-const HEAD_FIELDS = std.meta.fieldNames(Header);
-
-comptime {
-    const by_hand = .{ "seed", "map", "node", "visited", "visits" };
-    std.debug.assert(HEAD_FIELDS.len == by_hand.len);
-    for (HEAD_FIELDS, by_hand) |f, h| {
-        if (!std.mem.eql(u8, f, h)) @compileError("save.Header: write, inspect and read take " ++ h ++ " here by hand, not " ++ f);
-    }
-}
-/// Written after the visited nodes, in this order.
-const TAIL_FIELDS = .{
-    .{ .sim, "lv" },
-    .{ .sim, "pool" },
-    .{ .sim, "hero" },
-    .{ .sim, "rng" },
-    .{ .sim, "kills" },
-    .{ .sim, "gold" },
-    .{ .sim, "log" },
-    .{ .game, "bar" },
-    .{ .pic, "facing" },
-    .{ .sim, "name" },
-    .{ .sim, "clock" },
-    .{ .sim, "mana" },
-    .{ .sim, "mana_recovery" },
-    .{ .sim, "flasks" },
-    .{ .sim, "cooldown" },
-    .{ .sim, "stepped" },
-    .{ .sim, "class" },
-    .{ .sim, "inventory" },
-    .{ .sim, "growth" },
-    .{ .sim, "ground" },
-    .{ .sim, "loot_rng" },
-};
-/// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
-const UNSAVED = .{
-    .game = .{
-        "character",
-        "nearby",
-        "pause_page",
-        "debug",
-        "mode",
-        "died_in",
-        "pause_menu",
-        "back",
-        "exit",
-        "permadeath",
-        "hall",
-        "epitaph",
-        "st",
-        "binds",
-        "target",
-        "cam",
-        "screen",
-        "framebuffer",
-        "pending",
-        "mouse",
-        "vignette",
-        "cinema",
-        "mini",
-        "sprites",
-        "face",
-        "light",
-        "cloud",
-        "graphics_ready",
-        "art",
-        "rain",
-        "inspecting",
-        "inspect_scroll",
-        "perf",
-    },
-    .sim = .{
-        "outdoors",
-        "unkillable",
-        "unsaved",
-        "travel",
-        "chronicle",
-        "displaced",
-        "order",
-        "order_n",
-        "ran",
-        "flowed",
-        "flow",
-        "queue",
-    },
-    .pic = .{
-        "occlusion",
-        "glide",
-        "turning",
-        "pictured",
-        "seq",
-        "split_from",
-        "dropped_gold",
-        "owed",
-        "shot",
-        "foe_shots",
-        "busy",
-        "lead",
-        "fx",
-        "gold_taken",
-        "mana_held",
-        "flasks_shown",
-        "xp_aim",
-        "xp_shown",
-        "life_fill",
-        "mana_fill",
-        "growth_shown",
-        "gold_shown",
-        "hour_shown",
-    },
-};
-
-comptime {
-    @setEvalBranchQuota(100_000);
-    for (std.enums.values(Part)) |p| {
-        const T = Of(p);
-        const unsaved = @field(UNSAVED, @tagName(p));
-        for (std.meta.fields(T)) |f| {
-            var n: usize = 0;
-            if (p == HEAD_PART) for (HEAD_FIELDS) |name| {
-                if (std.mem.eql(u8, f.name, name)) n += 1;
-            };
-            for (TAIL_FIELDS) |t| {
-                if (t[0] == p and std.mem.eql(u8, f.name, t[1])) n += 1;
-            }
-            for (unsaved) |name| {
-                if (std.mem.eql(u8, f.name, name)) n += 1;
-            }
-            if (p == .game) for (std.enums.values(Part)) |q| {
-                if (q != .game and std.mem.eql(u8, f.name, @tagName(q))) n += 1;
-            };
-            if (n != 1) @compileError("save.zig: say whether " ++ @typeName(T) ++ "." ++ f.name ++ " is saved");
-        }
-        for (unsaved) |name| {
-            if (!@hasField(T, name)) @compileError("save.zig: " ++ @typeName(T) ++ " has no field " ++ name);
-        }
-    }
-    for (TAIL_FIELDS) |t| {
-        if (!@hasField(Of(t[0]), t[1])) @compileError("save.zig: " ++ @typeName(Of(t[0])) ++ " has no field " ++ t[1]);
-    }
-}
-
-/// Named as well as typed, so two fields of one type swapped change the fingerprint.
-const Tail = blk: {
-    var fs: [TAIL_FIELDS.len]std.builtin.Type.StructField = undefined;
-    for (TAIL_FIELDS, 0..) |f, i| {
-        const T = @FieldType(Of(f[0]), f[1]);
-        fs[i] = .{ .name = f[1], .type = T, .default_value_ptr = null, .is_comptime = false, .alignment = @alignOf(T) };
-    }
-    break :blk @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fs, .decls = &.{}, .is_tuple = false } });
-};
-const TAIL = blk: {
-    var n: usize = 0;
-    for (std.meta.fields(Tail)) |f| n += @sizeOf(f.type);
-    break :blk n;
-};
-
-pub const Summary = struct {
-    name: hero.Name,
-    hp: i32,
-    max: i32,
-    gold: i32,
-    /// Null on a generated floor.
-    node: ?usize,
-    place: atlas.Label = .{},
-
-    pub fn details(self: *const Summary, buf: []u8) [:0]const u8 {
-        var at: [atlas.TITLE_MAX]u8 = undefined;
-        const where = if (self.node) |n| atlas.titleOf(self.place.text(), n, &at) else "a generated floor";
-        return std.fmt.bufPrintZ(buf, hero.HP_FMT ++ menu.SEP ++ hero.GOLD_FMT ++ menu.SEP ++ "{s}", .{ self.hp, self.max, self.gold, where }) catch "";
-    }
-};
+const part = data.part;
+const Header = data.Header;
+const Seed = data.Seed;
+const Map = data.Map;
+const Node = data.Node;
+const Visited = data.Visited;
+const Visit = data.Visit;
+const TAIL_FIELDS = data.TAIL_FIELDS;
+const Tail = data.Tail;
+const TAIL = data.TAIL;
+pub const Summary = data.Summary;
 
 pub const Unreadable = enum {
     other_build,
@@ -249,7 +65,7 @@ const FINGERPRINT = blk: {
     }
     types[i] = Tail;
     std.debug.assert(i + 1 == types.len);
-    break :blk store.fingerprint(types) ^ TREE;
+    break :blk store.legacy.fingerprint(types) ^ TREE;
 };
 /// What the tree's hash takes for a node's missing branch, seam or rider.
 const NO_PART: u8 = 255;
@@ -302,27 +118,30 @@ fn summaryOf(g: *game.Game) Summary {
 }
 
 /// Into an empty `out`, all but the sum `seal` ends it with.
-fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
+fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
     std.debug.assert(out.items.len == 0);
     const w = out.writer();
     try store.begin(w, MAGIC, FINGERPRINT);
-    try store.put(w, &summaryOf(g));
-    try store.put(w, &g.sim.seed);
+    try store.legacy.put(w, &summaryOf(g));
+    try store.legacy.put(w, &g.sim.seed);
     const has_map = g.sim.map != null;
-    try store.put(w, &has_map);
-    if (g.sim.map) |a| try store.put(w, a);
-    try store.put(w, &g.sim.node);
-    try store.put(w, &g.sim.visited);
+    try store.legacy.put(w, &has_map);
+    if (g.sim.map) |a| try store.legacy.put(w, a);
+    try store.legacy.put(w, &g.sim.node);
+    try store.legacy.put(w, &g.sim.visited);
     var it = g.sim.visited.iterator(.{});
-    while (it.next()) |n| try store.put(w, &g.sim.visits[n]);
-    inline for (TAIL_FIELDS) |f| try store.put(w, &@field(part(g, f[0]), f[1]));
+    while (it.next()) |n| try store.legacy.put(w, &g.sim.visits[n]);
+    inline for (TAIL_FIELDS) |f| try store.legacy.put(w, &@field(part(g, f[0]), f[1]));
     try out.ensureUnusedCapacity(store.SUM);
 }
 
 /// Ends a file `write` began in `out` with its sum, in the room `write` kept, so it may run off the frame.
 fn seal(out: *std.ArrayList(u8)) void {
-    const sum = store.sum(out.items[HEAD..]);
-    out.appendSliceAssumeCapacity(std.mem.asBytes(&sum));
+    const payload_at = if (std.mem.startsWith(u8, out.items, format.MAGIC)) store.head(format.MAGIC) else HEAD;
+    const sum = store.sum(out.items[payload_at..]);
+    var bytes: [8]u8 = undefined;
+    std.mem.writeInt(u64, &bytes, sum, .little);
+    out.appendSliceAssumeCapacity(&bytes);
 }
 
 fn payload(bytes: []const u8) Error![]const u8 {
@@ -332,8 +151,10 @@ fn payload(bytes: []const u8) Error![]const u8 {
     };
 }
 
-fn peek(bytes: []const u8) Error!Summary {
-    return (try inspect(bytes)).summary;
+fn peekLegacy(bytes: []const u8) !Summary {
+    const snapshot = try parseLegacy(bytes);
+    defer std.heap.page_allocator.destroy(snapshot);
+    return snapshot.summary;
 }
 
 const Contents = struct { summary: Summary, seed: Seed, has_map: bool, body: []const u8 };
@@ -341,7 +162,8 @@ const Contents = struct { summary: Summary, seed: Seed, has_map: bool, body: []c
 fn inspect(bytes: []const u8) Error!Contents {
     var b = try payload(bytes);
     var s: Summary = undefined;
-    if (!store.take(&b, &s)) return error.Short;
+    if (!store.legacy.take(&b, &s)) return error.Short;
+    if (!store.legacy.valid(format.Policy, &s)) return error.Damaged;
     if (!s.name.valid() or !s.place.valid()) return error.Damaged;
     if (s.node) |n| {
         if (n >= atlas.MAX_NODES) return error.Damaged;
@@ -349,7 +171,7 @@ fn inspect(bytes: []const u8) Error!Contents {
     var seed: Seed = undefined;
     var map_flag: u8 = undefined;
     comptime std.debug.assert(@sizeOf(bool) == @sizeOf(u8));
-    if (!store.take(&b, &seed) or !store.take(&b, &map_flag)) return error.Short;
+    if (!store.legacy.take(&b, &seed) or !store.legacy.take(&b, &map_flag)) return error.Short;
     if (map_flag > 1) return error.Damaged;
     const has_map = map_flag != 0;
     const at_node: usize = if (has_map) @sizeOf(Map) else 0;
@@ -358,13 +180,13 @@ fn inspect(bytes: []const u8) Error!Contents {
     var node: Node = undefined;
     var visited: Visited = undefined;
     var navigation = b[at_node..];
-    _ = store.take(&navigation, &node);
-    _ = store.take(&navigation, &visited);
+    _ = store.legacy.take(&navigation, &node);
+    _ = store.legacy.take(&navigation, &visited);
     if (b.len != at_visited + @sizeOf(Visited) + visited.count() * @sizeOf(Visit) + TAIL) return error.Short;
     if (has_map) {
         var node_count: @FieldType(Map, "node_n") = undefined;
         var count_bytes = b[@offsetOf(Map, "node_n")..];
-        _ = store.take(&count_bytes, &node_count);
+        _ = store.legacy.take(&count_bytes, &node_count);
         if (node_count == 0 or node_count > atlas.MAX_NODES or node >= node_count) return error.Damaged;
         var it = visited.iterator(.{});
         while (it.next()) |n| if (n >= node_count) return error.Damaged;
@@ -374,18 +196,52 @@ fn inspect(bytes: []const u8) Error!Contents {
 }
 
 /// All of it is measured before any of it reaches `g`, so a file that does not read leaves the game as it was.
-fn read(bytes: []const u8, g: *game.Game, map: *Map) Error!void {
+fn parseLegacy(bytes: []const u8) !*format.Snapshot {
     const c = try inspect(bytes);
+    const snapshot = try std.heap.page_allocator.create(format.Snapshot);
+    errdefer std.heap.page_allocator.destroy(snapshot);
+    snapshot.summary = c.summary;
+    snapshot.seed = c.seed;
+    snapshot.map = null;
+    snapshot.visits = @splat(null);
     var b = c.body;
-    if (c.has_map) _ = store.take(&b, map);
-    g.sim.map = if (c.has_map) map else null;
-    g.sim.seed = c.seed;
-    _ = store.take(&b, &g.sim.node);
-    _ = store.take(&b, &g.sim.visited);
-    var it = g.sim.visited.iterator(.{});
-    while (it.next()) |n| _ = store.take(&b, &g.sim.visits[n]);
-    inline for (TAIL_FIELDS) |f| _ = store.take(&b, &@field(part(g, f[0]), f[1]));
-    game.resumeRun(g);
+    if (c.has_map) {
+        snapshot.map = @as(Map, undefined);
+        _ = store.legacy.take(&b, &snapshot.map.?);
+    }
+    _ = store.legacy.take(&b, &snapshot.node);
+    var visited: Visited = undefined;
+    _ = store.legacy.take(&b, &visited);
+    var it = visited.iterator(.{});
+    while (it.next()) |n| {
+        snapshot.visits[n] = @as(Visit, undefined);
+        _ = store.legacy.take(&b, &snapshot.visits[n].?);
+    }
+    inline for (TAIL_FIELDS) |field| _ = store.legacy.take(&b, &@field(snapshot.run, field[1]));
+    if (!store.legacy.valid(format.Policy, snapshot)) return error.Damaged;
+    try format.validate(snapshot);
+    return snapshot;
+}
+
+fn readLegacy(bytes: []const u8, g: *game.Game, map: *Map) !void {
+    const snapshot = try parseLegacy(bytes);
+    defer std.heap.page_allocator.destroy(snapshot);
+    format.apply(snapshot, g, map);
+}
+
+fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
+    try format.write(g, out);
+}
+
+fn read(bytes: []const u8, g: *game.Game, map: *Map) !void {
+    if (std.mem.startsWith(u8, bytes, format.MAGIC)) return format.read(bytes, g, map);
+    try readLegacy(bytes, g, map);
+    g.sim.unsaved = true;
+}
+
+fn peek(bytes: []const u8) !Summary {
+    if (std.mem.startsWith(u8, bytes, format.MAGIC)) return format.peek(bytes);
+    return peekLegacy(bytes);
 }
 
 pub fn number(slot: usize) usize {
@@ -443,6 +299,7 @@ pub fn free(list: *const [SLOTS]Slot) ?usize {
 pub const Autosave = struct {
     slot: usize,
     bytes: std.ArrayList(u8),
+    snapshot: ?*format.Snapshot = null,
     since: f32 = GAP_S,
     /// Copy the run on the frame, then write the snapshot off-thread.
     writer: ?std.Thread = null,
@@ -456,6 +313,7 @@ pub const Autosave = struct {
 
     pub fn deinit(self: *Autosave) void {
         self.wait();
+        if (self.snapshot) |snapshot| self.bytes.allocator.destroy(snapshot);
         self.bytes.deinit();
     }
 
@@ -487,7 +345,13 @@ pub const Autosave = struct {
         self.bytes.clearRetainingCapacity();
         self.since = 0;
         g.sim.unsaved = false;
-        write(g, &self.bytes) catch |e| {
+        if (self.snapshot == null) {
+            self.snapshot = self.bytes.allocator.create(format.Snapshot) catch |e| {
+                self.failed = e;
+                return;
+            };
+        }
+        format.capture(g, self.snapshot.?) catch |e| {
             self.failed = e;
             return;
         };
@@ -500,6 +364,10 @@ pub const Autosave = struct {
 
     fn writeOff(self: *Autosave) void {
         defer self.finished.store(true, .release);
+        format.writeSnapshot(self.snapshot.?, &self.bytes) catch |e| {
+            self.failed = e;
+            return;
+        };
         seal(&self.bytes);
         writeFile(self.bytes.items, self.slot) catch |e| {
             self.failed = e;
@@ -689,18 +557,9 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     const s = try peek(buf.items);
     var line: [menu.NOTE_MAX]u8 = undefined;
     try std.testing.expectEqualStrings(comptime std.fmt.comptimePrint(hero.HP_FMT, .{ 19, actor.row(actor.HERO).hp }) ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.details(&line));
-    const at = HEAD + @offsetOf(Summary, "node");
-    buf.items[at + @sizeOf(usize)] +%= 2;
-    try std.testing.expectError(error.Damaged, peek(buf.items));
-    buf.items[at + @sizeOf(usize)] -%= 2;
-    const far: ?usize = atlas.MAX_NODES;
-    @memcpy(buf.items[at..][0..@sizeOf(?usize)], std.mem.asBytes(&far));
-    buf.shrinkRetainingCapacity(buf.items.len - store.SUM);
-    seal(&buf);
-    try std.testing.expectError(error.Damaged, peek(buf.items));
 }
 
-/// Changes only when the saved types, their names or order, the passive tree or Zig's version do; old saves then stop loading.
+/// The raw legacy schema accepted by this migration reader.
 const RECORDED_FINGERPRINT: Print = 0x2d1c39b5a4cbd50b;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
@@ -712,7 +571,7 @@ fn fixture(g: *game.Game, w: *const Map) !void {
     game.update(g, 0);
 }
 
-test "the save layout is the recorded one, and a run saves the bytes it loads from" {
+test "portable saves retain the recorded gameplay values and rewrite canonically" {
     const alloc = std.testing.allocator;
     const w = try testMap();
     defer alloc.destroy(w);
@@ -730,7 +589,14 @@ test "the save layout is the recorded one, and a run saves the bytes it loads fr
     g.sim.lv.caltrops[grid.Level.idx(at)] = .{ .turns = 4, .rank = 2 };
     var first = std.ArrayList(u8).init(alloc);
     defer first.deinit();
+    const snapshot = try alloc.create(format.Snapshot);
+    defer alloc.destroy(snapshot);
+    var timer = try std.time.Timer.start();
+    try format.capture(g, snapshot);
+    const capture_ns = timer.read();
+    timer.reset();
     try write(g, &first);
+    const encode_ns = timer.read();
     seal(&first);
 
     const back = try game.boot(alloc);
@@ -738,7 +604,9 @@ test "the save layout is the recorded one, and a run saves the bytes it loads fr
     const into = try alloc.create(Map);
     defer alloc.destroy(into);
     game.begin(back, 1);
+    timer.reset();
     try read(first.items, back, into);
+    const parse_ns = timer.read();
     try std.testing.expectEqualDeep(g.sim.inventory.gear, back.sim.inventory.gear);
     try std.testing.expectEqualDeep(g.sim.inventory.bag[1], back.sim.inventory.bag[1]);
     try std.testing.expectEqualDeep(g.sim.ground.drops[0].item, back.sim.ground.drops[0].item);
@@ -755,10 +623,54 @@ test "the save layout is the recorded one, and a run saves the bytes it loads fr
     try write(back, &again);
     seal(&again);
     try std.testing.expectEqualDeep(try peek(first.items), try peek(again.items));
-    const run = first.items[HEAD + @sizeOf(Summary) .. first.items.len - store.SUM];
-    try std.testing.expectEqualSlices(u8, run, again.items[HEAD + @sizeOf(Summary) .. again.items.len - store.SUM]);
-    std.debug.print("fingerprint 0x{x:0>16}; fixture run of {d} bytes rewritten identically after loading\n", .{ FINGERPRINT, run.len });
+    try std.testing.expectEqualSlices(u8, first.items, again.items);
+    std.debug.print("portable save version {d}: {d} bytes, canonical rewrite and all equipment/status fields retained\n", .{ format.VERSION, first.items.len });
+    std.debug.print("portable save timing: {d:.2} ms capture, {d:.2} ms encoding off-frame, {d:.2} ms validated load (two-node fixture)\n", .{ @as(f64, @floatFromInt(capture_ns)) / std.time.ns_per_ms, @as(f64, @floatFromInt(encode_ns)) / std.time.ns_per_ms, @as(f64, @floatFromInt(parse_ns)) / std.time.ns_per_ms });
     try std.testing.expectEqual(RECORDED_FINGERPRINT, FINGERPRINT);
+}
+
+test "legacy saves convert on load and reject invalid native tags before changing the run" {
+    const alloc = std.testing.allocator;
+    const world = try testMap();
+    defer alloc.destroy(world);
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    try fixture(source, world);
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    var old = std.ArrayList(u8).init(alloc);
+    defer old.deinit();
+    try writeLegacy(source, &old);
+    seal(&old);
+    try read(old.items, target, into);
+    try std.testing.expect(target.sim.unsaved);
+    try std.testing.expectEqualStrings(source.sim.name.text(), target.sim.name.text());
+    try std.testing.expectEqualDeep(source.sim.growth, target.sim.growth);
+    try std.testing.expectEqualDeep(source.sim.rng, target.sim.rng);
+    var fresh = std.ArrayList(u8).init(alloc);
+    defer fresh.deinit();
+    try write(target, &fresh);
+    seal(&fresh);
+    try std.testing.expect(std.mem.startsWith(u8, fresh.items, format.MAGIC));
+    _ = try peek(fresh.items);
+
+    const tail_at = HEAD + @sizeOf(Summary) + @sizeOf(Seed) + 1 + @sizeOf(Map) + @sizeOf(Node) + @sizeOf(Visited) + source.sim.visited.count() * @sizeOf(Visit);
+    const actor_at = tail_at + @sizeOf(grid.Level) + @offsetOf(actor.Pool, "items");
+    const offsets = [_]usize{ actor_at + @offsetOf(actor.Actor, "kind"), actor_at + @offsetOf(actor.Actor, "alive") };
+    const map_hash = store.sum(std.mem.asBytes(into));
+    for (offsets) |offset| {
+        const previous = old.items[offset];
+        old.items[offset] = 255;
+        old.shrinkRetainingCapacity(old.items.len - store.SUM);
+        seal(&old);
+        try std.testing.expectError(error.Damaged, read(old.items, target, into));
+        try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
+        try std.testing.expectEqualStrings(source.sim.name.text(), target.sim.name.text());
+        old.items[offset] = previous;
+    }
+    std.debug.print("legacy conversion: visited map, progress and RNG retained; native enum/bool corruption rejected without mutation\n", .{});
 }
 
 test "a listed save must have the complete run that loading requires" {
@@ -767,7 +679,7 @@ test "a listed save must have the complete run that loading requires" {
     game.begin(g, 1);
     var buf = std.ArrayList(u8).init(std.testing.allocator);
     defer buf.deinit();
-    try write(g, &buf);
+    try writeLegacy(g, &buf);
     const full = try std.testing.allocator.dupe(u8, buf.items);
     defer std.testing.allocator.free(full);
     const map = try std.testing.allocator.create(Map);
@@ -779,8 +691,8 @@ test "a listed save must have the complete run that loading requires" {
         buf.clearRetainingCapacity();
         try buf.appendSlice(full[0..cut]);
         seal(&buf);
-        try std.testing.expectError(error.Short, peek(buf.items));
-        try std.testing.expectError(error.Short, read(buf.items, g, map));
+        try std.testing.expectError(error.Short, peekLegacy(buf.items));
+        try std.testing.expectError(error.Short, readLegacy(buf.items, g, map));
         try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
         try std.testing.expectEqual(seed, g.sim.seed);
     }
@@ -788,8 +700,8 @@ test "a listed save must have the complete run that loading requires" {
     try buf.appendSlice(full);
     buf.items[HEAD + @sizeOf(Summary) + @sizeOf(Seed)] = 2;
     seal(&buf);
-    try std.testing.expectError(error.Damaged, peek(buf.items));
-    try std.testing.expectError(error.Damaged, read(buf.items, g, map));
+    try std.testing.expectError(error.Damaged, peekLegacy(buf.items));
+    try std.testing.expectError(error.Damaged, readLegacy(buf.items, g, map));
     std.debug.print("{d} checksummed incomplete saves and an invalid map flag refused before loading\n", .{cuts.len});
 }
 
@@ -832,7 +744,7 @@ test "checksummed save structure failures preserve both the live run and destina
     try fixture(g, w);
     var full = std.ArrayList(u8).init(alloc);
     defer full.deinit();
-    try write(g, &full);
+    try writeLegacy(g, &full);
     seal(&full);
 
     const back = try game.boot(alloc);
@@ -845,7 +757,7 @@ test "checksummed save structure failures preserve both the live run and destina
     const map_hash = store.sum(std.mem.asBytes(into));
     var before = std.ArrayList(u8).init(alloc);
     defer before.deinit();
-    try write(back, &before);
+    try writeLegacy(back, &before);
     const map_at = HEAD + @sizeOf(Summary) + @sizeOf(Seed) + @sizeOf(bool);
     const visits_at = map_at + @sizeOf(Map) + @sizeOf(Node) + @sizeOf(Visited);
     const cuts = [_]usize{
@@ -869,10 +781,10 @@ test "checksummed save structure failures preserve both the live run and destina
         try damaged.appendSlice(full.items[0..cut]);
         if (i == cuts.len - 1) try damaged.append(0);
         seal(&damaged);
-        try std.testing.expectError(error.Short, peek(damaged.items));
-        try std.testing.expectError(error.Short, read(damaged.items, back, into));
+        try std.testing.expectError(error.Short, peekLegacy(damaged.items));
+        try std.testing.expectError(error.Short, readLegacy(damaged.items, back, into));
         after.clearRetainingCapacity();
-        try write(back, &after);
+        try writeLegacy(back, &after);
         try std.testing.expectEqualSlices(u8, before.items, after.items);
         try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
     }
@@ -903,10 +815,10 @@ test "checksummed save structure failures preserve both the live run and destina
             .summary_node => Patch.value(damaged.items, HEAD + @offsetOf(Summary, "node"), @as(?usize, 0)),
         }
         seal(&damaged);
-        try std.testing.expectError(error.Damaged, peek(damaged.items));
-        try std.testing.expectError(error.Damaged, read(damaged.items, back, into));
+        try std.testing.expectError(error.Damaged, peekLegacy(damaged.items));
+        try std.testing.expectError(error.Damaged, readLegacy(damaged.items, back, into));
         after.clearRetainingCapacity();
-        try write(back, &after);
+        try writeLegacy(back, &after);
         try std.testing.expectEqualSlices(u8, before.items, after.items);
         try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
     }

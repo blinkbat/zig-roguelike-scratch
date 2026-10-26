@@ -2,7 +2,8 @@
 
 Ordinary feature changes should stay within an owning module and its integration
 contract. The simulation is authoritative; the picture follows resolved facts at
-their scheduled impact. Saved field classification remains solely in `src/save.zig`.
+their scheduled impact. Saved field classification lives in `src/save_data.zig`; portable parsing and
+conversion live in `save_format.zig` and `save_values.zig`. See [save compatibility](SAVE_FORMAT.md).
 
 | Contract | Owner and enforcement | Representative verification |
 | --- | --- | --- |
@@ -12,7 +13,7 @@ their scheduled impact. Saved field classification remains solely in `src/save.z
 | Each resolution is pictured at its own impact | `game/presentation.zig`: semantic recording operations own snapshots, debts and recovery; bounded FX capacity | [Picture tests](../src/game/tests/picture.zig): multiple blows and split births; [tactics tests](../src/game/tactics.zig): reaction recovery |
 | Turn stages preserve causality and clean up on death | `game/combat.zig`: named stages; Simulation owns consumed ticks inherited by split children | [Skill tests](../src/game/tests/skills.zig): inherited ticks, skipped actions, movement bleed and free actions; [hero tests](../src/game/tests/hero.zig): death prevents later stages and clears transients |
 | Targeting is valid only while active | `game.zig`, `game/skills.zig`: cohesive mode payload and begin/end operations | [Skill tests](../src/game/tests/skills.zig): opening input, cancellation, two-point barrier; [picture tests](../src/game/tests/picture.zig): queued actions |
-| Transients reset at their declared lifetime | Game coordinates new run, travel and resume; Presentation owns picture resets | [World tests](../src/game/tests/world.zig): travel; [loot tests](../src/game/tests/loot.zig): carried interactions; [save tests](../src/save.zig): in-memory round trips and fingerprint |
+| Transients reset at their declared lifetime | Game coordinates new run, travel and resume; Presentation owns picture resets | [World tests](../src/game/tests/world.zig): travel; [loot tests](../src/game/tests/loot.zig): carried interactions; [save tests](../src/save.zig): in-memory round trips, legacy migration and rejected corruption |
 | A skill declares a checked integration contract | `play/skill_contract.zig`: one compile-time capability interpretation shared by dispatch and metadata through `skillbar` | [Contract diagnostics](../src/play/skill_contract.zig); [skill tests](../src/game/tests/skills.zig): legality, previews and scaling |
 | Death and loot rules cannot update the picture or menus | `game/rewards.zig`: accepts Simulation; death returns dropped gold and newly frightened witnesses, coin collection returns the removed pile, and chest opening distinguishes capacity failure | [Reward tests](../src/game/rewards.zig): seeded loot, unchanged combat RNG/picture and fright refresh; [loot tests](../src/game/tests/loot.zig): reserved ground capacity and delayed drops |
 | A gesture owns one history transaction | `edit/history.zig`: transaction snapshot, change, commit and cancel; Editor owns cache invalidation; text editing retains its separate persistence | [Editor tests](../src/edit/tests.zig): gesture, cancelled graph drag, no-op, undo and redo preservation |
@@ -22,7 +23,7 @@ their scheduled impact. Saved field classification remains solely in `src/save.z
 | Placement and cursor previews share geometry and legality | `edit/placement.zig`: brushes, placement, clipboard and paste preview; `edit/canvas.zig` owns cursor drawing | [Editor tests](../src/edit/tests.zig): shapes, paste clipping, blocked objects, cache invalidation and history |
 | Derived editor data cannot mutate the authored map | `edit/preview.zig`: Scene owns generated terrain, preview foes, arrival, reachability and issue caches; accepts only a const Atlas | [Preview tests](../src/edit/preview.zig): node selection, reuse, reroll, reset and map immutability |
 | Graph textures have one owner and explicit invalidation | `edit/thumbnails.zig`: owns generation scratch, texture lifetime and validity; canvas requests only visible images | [Thumbnail tests](../src/edit/thumbnails.zig): selective invalidation and changed node identities; [canvas tests](../src/edit/canvas.zig): offscreen clipping |
-| Gameplay does not depend on UI or rendering modules | `tools/source_rules.zig`, called by every build step; wording and bounded text live in core, event history in `play/log.zig` | Boundary-checker tests reject forbidden imports and allow integration-test imports; [save tests](../src/save.zig) retain the recorded fingerprint |
+| Gameplay does not depend on UI or rendering modules | `tools/source_rules.zig`, called by every build step; wording and bounded text live in core, event history in `play/log.zig` | Boundary-checker tests reject forbidden imports and allow integration-test imports; [save tests](../src/save.zig) retain the legacy fingerprint and portable field identities |
 
 ## Dependency boundaries
 
@@ -46,7 +47,7 @@ input types.
 
 Simulation owns run data, including the seeded RNG and consumed turn ticks.
 The saved integer actor references remain stable; typed transient adapters do not
-change the recorded save fingerprint. Pool replacement must retain the initialized
+change the legacy reader fingerprint and portable save identities. Pool replacement must retain the initialized
 `var` copy of a carried actor required by Zig 0.14.1.
 
 Presentation snapshots must be captured immediately after a resolution, before a
@@ -141,6 +142,10 @@ identity changes. Source wording and attribution remain separate transactions in
 | --- | --- |
 | Device polling and input context | `core/input.zig`: `State.update` orders pointer, button, text, tree and movement reads; all device reads remain here |
 | Movement repeat and stick hysteresis | `core/input_repeat.zig`: `Stepper`, `RadialStepper` and their pure repeat tests |
+| Contextual bindings and Desk shortcuts | `core/input_bindings.zig`: tables and checked captions, with no device polling |
+| Input glyph naming | `core/input_names.zig`: device labels and marked captions |
+| Light sampling and baking | `gfx/light.zig`: source state and bake orchestration; `light_model.zig` owns shading math and source types |
+| Light drawing and resources | `gfx/light_gpu.zig`: shader/texture lifetime, uploads and draw operations |
 | Editor tools, shapes, descriptions and help | `edit/tool_catalog.zig`; it does not access Editor or Game |
 | Editor naming and paste validation | `edit/name_field.zig`: bounded naming fields fed by Desk snapshots |
 | Character navigation and commands | `ui/book.zig`: `Book.step`, selection and panel drawing |
@@ -158,7 +163,7 @@ logic; integration tests continue to exercise the public entry points.
 
 Run `check.cmd` and affected test filters for each migration, then the full suite
 after combat, scheduling or lifecycle changes. Preserve seeded outcomes and the
-recorded save fingerprint. Tests use in-memory saves and maps. Run actual headless
+legacy reader fingerprint and portable save identities. Tests use in-memory saves and maps. Run actual headless
 captures for presentation/editor changes, inspect PNGs, benchmark, and finish with
 `build.cmd`. All generated captures, timing logs and temporary scripts live in `%TEMP%`.
 The full test command also runs the source-boundary checker's own tests. The

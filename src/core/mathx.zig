@@ -378,10 +378,10 @@ pub fn deflection(x: f32, y: f32) f32 {
 }
 
 pub const Rng = struct {
-    impl: std.Random.DefaultPrng,
+    impl: std.Random.Xoshiro256,
 
     pub fn init(seed: u64) Rng {
-        return .{ .impl = std.Random.DefaultPrng.init(seed) };
+        return .{ .impl = std.Random.Xoshiro256.init(seed) };
     }
 
     fn r(self: *Rng) std.Random {

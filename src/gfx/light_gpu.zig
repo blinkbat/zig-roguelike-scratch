@@ -6,7 +6,7 @@ const raster = @import("raster.zig");
 const shaders = @import("shaders.zig");
 const sky = @import("sky.zig");
 const shadow = @import("shadow.zig");
-const light = @import("light.zig");
+const light = @import("light_model.zig");
 const Rgb = sky.Rgb;
 const splat = sky.splat;
 
@@ -173,6 +173,93 @@ const SOLID_A: u8 = 25;
 pub const NO_FIGURES: [look.FIGURES]?rl.Texture2D = @splat(null);
 
 pub const Gpu = struct {
+    /// `ox, oy` is where the map's top-left corner lands on screen.
+    pub fn drawMap(self: *const Gpu, ox: i32, oy: i32, cell: i32) void {
+        const tex = self.layers.get(.map) orelse return;
+        raster.beginBlend(rl.gl.rl_dst_color, rl.gl.rl_src_color, rl.gl.rl_func_add);
+        raster.overFloor(tex, ox, oy, cell);
+        rl.endBlendMode();
+        if (self.layers.get(.fog)) |fog| {
+            rl.beginBlendMode(.additive);
+            raster.stretch(fog, raster.floorRect(ox, oy, cell), look.FOG);
+            rl.endBlendMode();
+        }
+    }
+
+    pub fn uploadRows(self: *const Gpu, texels: *const std.EnumArray(light.Layer, [light.TEXELS]rl.Color), rows: [2]i32) void {
+        if (self.layers.get(.map) == null) return;
+        const from, const to = rows;
+        if (to > from) {
+            const rect = raster.rect(0, from, light.MAP_W, to - from);
+            for (std.enums.values(light.Layer)) |k| {
+                if (self.layers.get(k)) |t| rl.updateTextureRec(t, rect, &texels.getPtrConst(k)[@intCast(from * light.MAP_W)]);
+            }
+        }
+    }
+
+    /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
+    pub fn drawBody(self: *const Gpu, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const light.Shine, flash: f32, fade_bounds: [2]f32, enabled: bool) void {
+        const size = raster.sizeOf(tex);
+        const w, const h = size;
+        const src = raster.rect(0, 0, if (left) -tex.width else tex.width, tex.height);
+        const normals = self.art(tex).normals;
+        const sh = self.body;
+        if (!enabled or sh == null or normals == null) {
+            const fading = self.beginMirrorFade(fade_bounds);
+            defer if (fading) rl.endShaderMode();
+            raster.blit(tex, src, dest, s.drawn(rl.Color.white, flash));
+            return;
+        }
+        var pos: [light.BODY_LIGHTS][3]f32 = undefined;
+        var col: [light.BODY_LIGHTS][3]f32 = undefined;
+        for (s.lamp[0..s.n], 0..) |l, i| {
+            pos[i] = .{ (l.drawn[0] - centre[0]) * w, (l.drawn[1] - centre[1]) * h, light.BODY_LIGHT_Z };
+            col[i] = l.colour;
+        }
+        const flip: f32 = if (left) -1 else 1;
+        const ambient: [3]f32 = s.ambient;
+        const emission: [3]f32 = s.emission * splat(s.sight);
+        const n: i32 = @intCast(s.n);
+        const b = sh.?;
+        rl.beginShaderMode(b.shader);
+        defer rl.endShaderMode();
+        shaders.setUniform(b.shader, b.size, size);
+        shaders.setUniform(b.shader, b.flip, flip);
+        shaders.setUniform(b.shader, b.ambient, ambient);
+        shaders.setUniform(b.shader, b.emission, emission);
+        shaders.setUniform(b.shader, b.count, n);
+        shaders.setUniform(b.shader, b.flash, flash);
+        shaders.setUniform(b.shader, b.fade_bounds, fade_bounds);
+        rl.setShaderValueTexture(b.shader, b.normals, normals.?);
+        if (s.n > 0) {
+            shaders.setUniforms(b.shader, b.lpos, &pos, n);
+            shaders.setUniforms(b.shader, b.lcol, &col, n);
+        }
+        raster.blit(tex, src, dest, rl.Color.white);
+        rl.gl.rlDrawRenderBatchActive();
+    }
+
+    pub fn beginMirrorFade(self: *const Gpu, bounds: [2]f32) bool {
+        if (bounds[0] >= bounds[1]) return false;
+        const s = self.mirror_fade orelse return false;
+        rl.beginShaderMode(s.shader);
+        shaders.setUniform(s.shader, s.fade_bounds, bounds);
+        return true;
+    }
+
+    pub fn drawGlows(self: *const Gpu, flames_: []const light.Flame, ox: f32, oy: f32, cell: f32) void {
+        const g = self.glow orelse return;
+        rl.beginBlendMode(.additive);
+        defer rl.endBlendMode();
+        for (flames_) |f| {
+            if (!f.live()) continue;
+            const x = ox + f.at[0] * cell;
+            const y = oy + f.at[1] * cell;
+            glowAt(g, x, y, cell * light.GLOW_HALO, cell * light.GLOW_HALO, light.colourOf(light.GLOW_TINT, light.GLOW_HALO_A * f.glow * f.lit));
+            glowAt(g, x, y, cell * light.GLOW_CORE, cell * light.GLOW_CORE, light.colourOf(light.GLOW_TINT, light.GLOW_CORE_A * f.glow * f.lit));
+        }
+    }
+
     layers: std.EnumArray(light.Layer, ?rl.Texture2D) = .initFill(null),
     glow: ?rl.Texture2D = null,
     streak: ?rl.Texture2D = null,
@@ -304,4 +391,8 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
 fn glowAlpha(r: f32) f32 {
     const r2 = @min(1, r * r);
     return (1 - r2) * (1 - r2) * @exp(-3 * r2);
+}
+
+pub fn glowAt(g: rl.Texture2D, x: f32, y: f32, rx: f32, ry: f32, c: rl.Color) void {
+    raster.stretch(g, .{ .x = x - rx, .y = y - ry, .width = rx * 2, .height = ry * 2 }, c);
 }

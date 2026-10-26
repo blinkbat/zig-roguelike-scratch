@@ -54,15 +54,17 @@ integration tests and recipes for adding skills or editor tools.
 | Run state, combat and rewards | `src/game/sim.zig`, `src/game/attacks.zig`, `src/game/rewards.zig` |
 | Input and turn coordination | `src/core/input.zig`, `src/game.zig` |
 | Movement repeat and stick hysteresis | `src/core/input_repeat.zig` |
+| Input mappings, editor shortcuts and glyph names | `src/core/input_bindings.zig`, `src/core/input_names.zig` |
+| Lighting model, baking and GPU resources | `src/gfx/light_model.zig`, `src/gfx/light.zig`, `src/gfx/light_gpu.zig` |
 | Character navigation, cards and statistics | `src/ui/book.zig`, `src/ui/item_card.zig`, `src/ui/character_stats.zig` |
 | Presentation timing | `src/game/presentation.zig` |
 | Editor input, lifecycle and history | `src/edit/interaction.zig`, `src/edit/editor.zig`, `src/edit/history.zig` |
 | Editor tools, help and naming | `src/edit/tool_catalog.zig`, `src/edit/name_field.zig` |
 | Editor derived previews and thumbnails | `src/edit/preview.zig`, `src/edit/thumbnails.zig` |
 | Map parsing and generation | `src/map/atlas_text.zig`, `src/map/procgen.zig` |
-| Persistence | `src/save.zig`, `src/core/store.zig` |
+| Persistence | `src/save.zig`, `src/save_format.zig`, `src/save_values.zig`, `src/core/wire.zig` |
 
-Read [AGENTS.md](AGENTS.md) before changing runtime contracts or artwork. Saves
-currently require a matching schema fingerprint; compatibility policy and file
-format changes need an explicit decision. Behavior-preserving refactors should
-keep the recorded save fingerprint and seeded combat outcomes unchanged.
+Read [AGENTS.md](AGENTS.md) before changing runtime contracts or artwork.
+[Save compatibility](docs/SAVE_FORMAT.md) uses defensive conversion on load,
+declared defaults and named fields. Compatible legacy saves convert automatically;
+unknown raw layouts remain untouched. Refactors must preserve seeded combat outcomes.

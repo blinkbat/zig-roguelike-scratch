@@ -2,6 +2,7 @@ const std = @import("std");
 const heroes = @import("hero.zig");
 const obituary = @import("obituary.zig");
 const store = @import("../core/store.zig");
+const wire = @import("../core/wire.zig");
 
 /// Said at the end of a death report whose hero is entombed.
 pub const ENTOMBED = "The hero's remains were entombed in the Revered Ossuary.";
@@ -91,11 +92,27 @@ pub const Hall = struct {
 pub const PATH = store.DIR ++ "/ossuary.bones";
 pub const NOT_WRITTEN = "The Revered Ossuary did not write ({s})";
 pub const NOT_READ = "The Revered Ossuary could not be read ({s}); no hero will be entombed";
-const MAGIC = "cistern-ossuary\n";
+const OLD_MAGIC = "cistern-ossuary\n";
+const MAGIC = "cistern-ossuary-v1\n";
+const VERSION = 1;
 const Count = u8;
-const PRINT = store.fingerprint(.{ Count, Entry });
+const PRINT = store.legacy.fingerprint(.{ Count, Entry });
 const HEAD = store.head(MAGIC);
-pub const FILE_MAX = HEAD + @sizeOf(Count) + MAX * @sizeOf(Entry) + store.SUM;
+const Bones = struct { entries: [MAX]Entry = undefined, n: usize = 0 };
+pub const FILE_MAX = HEAD + wire.maxSize(Bones) + store.SUM;
+const Code = wire.Codec(struct {
+    pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {
+        const COUNT_FIELDS = .{
+            .{ Bones, "entries", "n" },
+            .{ heroes.Name, "buf", "n" },
+            .{ Entry, "summary", "summary_n" },
+        };
+        inline for (COUNT_FIELDS) |entry| {
+            if (T == entry[0] and std.mem.eql(u8, field, entry[1])) return entry[2];
+        }
+        return null;
+    }
+});
 const ClassRaw = std.meta.Int(.unsigned, 8 * @sizeOf(heroes.Class));
 
 comptime {
@@ -105,33 +122,53 @@ comptime {
 pub const Error = error{ NotOssuary, OtherBuild, Short, Damaged };
 
 pub fn encode(hall: *const Hall, buf: *[FILE_MAX]u8) []const u8 {
-    var s = std.io.fixedBufferStream(buf);
-    const w = s.writer();
-    store.begin(w, MAGIC, PRINT) catch unreachable;
-    const n: Count = @intCast(hall.n);
-    store.put(w, &n) catch unreachable;
-    for (hall.slice()) |*e| store.put(w, e) catch unreachable;
-    store.seal(w, buf[HEAD..s.pos]) catch unreachable;
-    return buf[0..s.pos];
+    var allocator = std.heap.FixedBufferAllocator.init(buf);
+    var out = std.ArrayList(u8).initCapacity(allocator.allocator(), FILE_MAX) catch unreachable;
+    store.begin(out.writer(), MAGIC, VERSION) catch unreachable;
+    const bones = Bones{ .entries = hall.entries, .n = hall.n };
+    Code.write(&out, &bones) catch unreachable;
+    store.seal(out.writer(), out.items[HEAD..]) catch unreachable;
+    return out.items;
 }
 
 pub fn decode(bytes: []const u8) Error!Hall {
-    var b = store.open(bytes, MAGIC, PRINT) catch |e| return switch (e) {
+    if (std.mem.startsWith(u8, bytes, OLD_MAGIC)) return decodeLegacy(bytes);
+    const body = store.open(bytes, MAGIC, VERSION) catch |e| return switch (e) {
+        error.Foreign => error.NotOssuary,
+        else => |other| other,
+    };
+    var bones: Bones = undefined;
+    try Code.read(body, &bones);
+    const hall = Hall{ .entries = bones.entries, .n = bones.n };
+    try validate(&hall);
+    return hall;
+}
+
+fn validate(hall: *const Hall) Error!void {
+    for (hall.slice(), 0..) |*entry, index| {
+        if (!entry.name.valid() or entry.summary_n > SUMMARY_MAX or entry.level == 0 or entry.gold < 0) return error.Damaged;
+        if (index > 0 and hall.entries[index - 1].renown < entry.renown) return error.Damaged;
+    }
+}
+
+fn decodeLegacy(bytes: []const u8) Error!Hall {
+    var b = store.open(bytes, OLD_MAGIC, PRINT) catch |e| return switch (e) {
         error.Foreign => error.NotOssuary,
         else => |other| other,
     };
     var n: Count = undefined;
-    if (!store.take(&b, &n)) return error.Short;
+    if (!store.legacy.take(&b, &n)) return error.Short;
     if (n > MAX) return error.Damaged;
     if (b.len != @as(usize, n) * @sizeOf(Entry)) return error.Short;
-    var hall = Hall{ .n = n };
+    var hall = Hall{ .n = n, .dirty = true };
     for (hall.entries[0..n], 0..) |*e, i| {
         const class = std.mem.bytesToValue(ClassRaw, b[@offsetOf(Entry, "class")..][0..@sizeOf(ClassRaw)]);
         _ = std.meta.intToEnum(heroes.Class, class) catch return error.Damaged;
-        _ = store.take(&b, e);
+        _ = store.legacy.take(&b, e);
         if (!e.name.valid() or e.summary_n > SUMMARY_MAX) return error.Damaged;
         if (i > 0 and hall.entries[i - 1].renown < e.renown) return error.Damaged;
     }
+    try validate(&hall);
     return hall;
 }
 
@@ -152,6 +189,24 @@ fn testEntry(worth: u32) Entry {
     return .{ .name = heroes.Name.of("Bones"), .class = .knight, .level = 1, .kills = 0, .gold = 0, .renown = worth, .seed = worth };
 }
 
+test "legacy ossuary converts records and marks them for a portable rewrite" {
+    var old = std.ArrayList(u8).init(std.testing.allocator);
+    defer old.deinit();
+    try store.begin(old.writer(), OLD_MAGIC, PRINT);
+    try store.legacy.put(old.writer(), &@as(Count, 1));
+    var entry = testEntry(123);
+    entry.say("A remembered hero.");
+    try store.legacy.put(old.writer(), &entry);
+    try store.seal(old.writer(), old.items[store.head(OLD_MAGIC)..]);
+    const recovered = try decode(old.items);
+    try std.testing.expect(recovered.dirty);
+    try std.testing.expectEqualStrings(entry.text(), recovered.entries[0].text());
+    var bytes: [FILE_MAX]u8 = undefined;
+    const portable = encode(&recovered, &bytes);
+    try std.testing.expect(std.mem.startsWith(u8, portable, MAGIC));
+    try std.testing.expectEqual(entry.renown, (try decode(portable)).entries[0].renown);
+    std.debug.print("legacy ossuary: name, report and renown survive conversion and canonical rewrite\n", .{});
+}
 test "the ossuary keeps the most renowned deaths, earlier first on a tie, and refuses the rest once full" {
     var h = Hall{};
     for (0..MAX) |i| try std.testing.expect(h.entomb(testEntry(@intCast(i % 7))) != null);
