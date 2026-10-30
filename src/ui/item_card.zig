@@ -135,9 +135,13 @@ comptime {
     }
 }
 
-pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consumable.Kind, carried: u8, caption: ?[:0]const u8) void {
+fn head(face: *const font.Face, x: i32, y: i32, width: i32, caption: ?[:0]const u8) void {
     if (caption) |c| face.draw(c, x, y, font.LABEL, look.DIM);
     rl.drawLine(x, y + CARD_RULE, x + width, y + CARD_RULE, look.EDGE);
+}
+
+pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consumable.Kind, carried: u8, caption: ?[:0]const u8) void {
+    head(face, x, y, width, caption);
     _ = face.paragraph(menu.named(k), x, y + CARD_NAME, width, font.BODY, look.itemInk(.normal));
     face.draw(CONSUMABLE, x, y + SLOT_Y, font.LABEL, look.DIM);
     const act = skillbar.Act.ofSupply(k);
@@ -148,8 +152,7 @@ pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consuma
 }
 
 pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.Item, slot: items.Slot, available: attr.Attrs, caption: ?[:0]const u8) void {
-    if (caption) |c| face.draw(c, x, y, font.LABEL, look.DIM);
-    rl.drawLine(x, y + CARD_RULE, x + width, y + CARD_RULE, look.EDGE);
+    head(face, x, y, width, caption);
     const item = maybe orelse {
         face.draw(EMPTY_SLOT, x, y + CARD_EMPTY, font.BODY, look.DIM);
         face.draw(slot.name(), x, y + SLOT_Y, font.LABEL, look.DIM);

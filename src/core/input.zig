@@ -657,6 +657,16 @@ pub const Desk = struct {
     const SHIFT_TWINS = bindings.Desk.SHIFT_TWINS;
     const keyOf = bindings.Desk.keyOf;
 
+    comptime {
+        @setEvalBranchQuota(20_000);
+        for (@typeInfo(bindings.Desk).@"struct".decls) |b| {
+            if (!std.mem.endsWith(u8, b.name, "_CAPTION")) continue;
+            for (@typeInfo(Desk).@"struct".decls) |d| {
+                if (std.mem.eql(u8, d.name, b.name)) break;
+            } else @compileError(b.name ++ " is not on input.Desk, so the editor's help never checks it");
+        }
+    }
+
     mouse: mathx.P = .{ .x = 0, .y = 0 },
     moved: mathx.P = .{ .x = 0, .y = 0 },
     wheel: f32 = 0,

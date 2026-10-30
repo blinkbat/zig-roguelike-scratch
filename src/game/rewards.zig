@@ -19,9 +19,10 @@ comptime {
 }
 
 pub const Frightened = std.StaticBitSet(actor.MAX);
-pub const Ignited = std.StaticBitSet(actor.MAX);
+/// The bodies a pyre's burst catches: set alight, or standing on the water it boils.
+pub const Caught = std.StaticBitSet(actor.MAX);
 /// `unmasked`: it died in its chest, which then fell open.
-pub const Death = struct { gold: i32, frightened: Frightened, ignited: Ignited = .initEmpty(), unmasked: bool = false };
+pub const Death = struct { gold: i32, frightened: Frightened, caught: Caught = .initEmpty(), unmasked: bool = false };
 pub const Chest = enum { opened, not_closed, ground_full };
 
 pub fn groundRoom(sim: *Simulation) bool {
@@ -102,7 +103,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     if (reward.item) |item| dropItem(sim, .{ .item = item, .at = fallen.at, .source = target.value });
     if (reward.supply) |k| dropSupply(sim, .{ .kind = k, .at = fallen.at, .source = target.value });
     for (std.enums.values(flask.Kind)) |k| if (sim.inventory.gear.holds(k)) sim.flasks.getPtr(k).fill(flask.PER_KILL);
-    var ignited = Ignited.initEmpty();
+    var caught = Caught.initEmpty();
     switch (actor.row(fallen.kind).blow) {
         .burst => |b| switch (b) {
             .gas => {
@@ -110,8 +111,8 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
                 sim.sayAt(fallen.at, "The {s} bursts, leaving a cloud of " ++ gas.NAME ++ "!", .{actor.row(fallen.kind).name});
             },
             .fire => {
-                ignited = ignite(sim, fallen.at, actor.row(fallen.kind).name);
-                _ = boil(sim, glacial.wetIn(&sim.lv, fallen.at, PYRE_REACH).slice());
+                caught = ignite(sim, fallen.at, actor.row(fallen.kind).name);
+                if (boilRound(sim, fallen.at, PYRE_REACH)) |steeped| caught.setUnion(steeped);
             },
         },
         .strike => {},
@@ -121,7 +122,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
         sim.log.say("The last {s} is dead.", .{actor.row(family).name});
         sim.chronicle.mark(.{ .cleared = family });
     }
-    return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .ignited = ignited, .unmasked = unmasked };
+    return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .caught = caught, .unmasked = unmasked };
 }
 
 /// A mimic leaves its chest's loot; nothing is left where no one could walk to fetch it.
@@ -134,18 +135,14 @@ fn lootOf(sim: *Simulation, fallen: actor.Actor) items.Loot {
 
 pub const PYRE_REACH: i32 = 1;
 
-fn keep(_: void, _: P) bool {
-    return true;
-}
-
 /// Where a pyre bursting at `at` sets bodies alight.
 pub fn pyre(lv: *const grid.Level, at: P) glacial.Burst {
-    return glacial.spread(lv, at, PYRE_REACH, {}, keep);
+    return glacial.patch(lv, at, PYRE_REACH);
 }
 
 /// Every body in the burst catches fire, as far as its fire and burn resistance allow; the slots of those that did.
-fn ignite(sim: *Simulation, at: P, name: []const u8) Ignited {
-    var out = Ignited.initEmpty();
+fn ignite(sim: *Simulation, at: P, name: []const u8) Caught {
+    var out = Caught.initEmpty();
     sim.sayAt(at, "The {s} bursts into flame!", .{name});
     const area = pyre(&sim.lv, at);
     for (sim.pool.slice(), 0..) |*a, i| {
@@ -159,14 +156,19 @@ fn ignite(sim: *Simulation, at: P, name: []const u8) Ignited {
     return out;
 }
 
-/// Fire on the water among `cells` boils it into steam; whether any did.
-pub fn boil(sim: *Simulation, cells: []const P) bool {
-    if (gas.boil(&sim.lv, cells) == 0) return false;
-    for (cells) |p| if (sim.lv.at(p).wet() and sim.lv.isLit(p)) {
+/// Fire within `reach` of `at` boils the water it reaches into steam; the bodies standing on it, or null when none boiled.
+pub fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
+    const wet = glacial.wetIn(&sim.lv, at, reach);
+    if (gas.boil(&sim.lv, wet.slice()) == 0) return null;
+    for (wet.slice()) |p| if (sim.lv.isLit(p)) {
         sim.log.say("The water hisses into a cloud of " ++ gas.STEAM_NAME ++ "!", .{});
         break;
     };
-    return true;
+    var out = Caught.initEmpty();
+    for (sim.pool.slice(), 0..) |*a, i| {
+        if (a.alive and wet.has(a.at)) out.set(i);
+    }
+    return out;
 }
 
 fn gainExperience(sim: *Simulation, kind: actor.Kind) void {
@@ -189,11 +191,9 @@ pub fn scare(sim: *Simulation, at: P) Frightened {
         const row = actor.row(foe.kind);
         if (!foe.alive or !row.flees) continue;
         if (mathx.dist(foe.at, at) > actor.FRIGHT_REACH or !grid.clearLine(&sim.lv, foe.at, at)) continue;
-        const was_frightened = foe.fright > 0;
-        foe.fright = actor.FLEE_TURNS;
         foe.awake = true;
-        if (was_frightened) continue;
-        sim.sayAt(foe.at, "The {s} flees in terror!", .{row.name});
+        if (!foe.frighten(actor.FLEE_TURNS)) continue;
+        sim.sayAt(foe.at, actor.FLEES, .{row.name});
         frightened.set(slot);
     }
     return frightened;

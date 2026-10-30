@@ -10,8 +10,8 @@ const Editor = editor.Editor;
 const Desk = input.Desk;
 const P = mathx.P;
 
-pub const TORCH_RULE = @import("tool_catalog.zig").TORCH_RULE;
-pub const FOE_RULE = @import("tool_catalog.zig").FOE_RULE;
+const TORCH_RULE = @import("tool_catalog.zig").TORCH_RULE;
+const FOE_RULE = @import("tool_catalog.zig").FOE_RULE;
 const FOLK_RULE = @import("tool_catalog.zig").FOLK_RULE;
 pub const NO_ROOM = "The node has no room for another {s}";
 pub const LINKING = "Linking node {d} door {d}: ";
@@ -237,12 +237,13 @@ pub fn place(ed: *Editor, p: P) void {
         },
         .foe => |k| {
             const b = &ed.plan().bespoke;
-            if (!ed.here().foeFits(b, p, k) or ed.map.script.folkAt(ed.node, p) != null) return ed.say("A foe " ++ FOE_RULE, .{});
-            if (b.foeAt(p)) |f| {
-                if (b.foe[f].kind == k) return;
+            const there = b.foeAt(p);
+            if (there) |f| if (b.foe[f].kind == k) return;
+            if (!ed.map.foeGoes(ed.node, b, p, k)) {
                 if (!b.roomAt(p, k)) return ed.say(NO_ROOM, .{actor.row(k).name});
-                b.foe[f].kind = k;
-            } else if (!b.addFoe(.{ .kind = k, .at = p })) return ed.say(NO_ROOM, .{actor.row(k).name});
+                return ed.say("A foe " ++ FOE_RULE, .{});
+            }
+            if (there) |f| b.foe[f].kind = k else _ = b.addFoe(.{ .kind = k, .at = p });
             ed.changed();
         },
         .folk => {

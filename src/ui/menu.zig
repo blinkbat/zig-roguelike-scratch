@@ -322,7 +322,7 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const 
         const box = rowBox(screen, win, i);
         const y = rowTextY(box);
         const on = i == at;
-        if (on) rl.drawRectangleRec(box, look.EDIT_ROW_ON);
+        if (on) rl.drawRectangleRec(box, look.ROW_ON);
         const x = @as(i32, @intFromFloat(box.x)) + MARK_GAP * 2 + mark_w;
         face.text(r, x, y, ROW, if (on) look.UI_FOCUS else look.DIM);
         if (on) {

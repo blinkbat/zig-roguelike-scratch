@@ -20,7 +20,6 @@ const hero = @import("play/hero.zig");
 const ossuary = @import("play/ossuary.zig");
 const save = @import("save.zig");
 const input = @import("core/input.zig");
-const skillbar = @import("play/skillbar.zig");
 const mathx = @import("core/mathx.zig");
 
 const Scene = enum { title, play, edit };

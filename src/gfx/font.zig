@@ -398,7 +398,6 @@ test "font fitting preserves linear results for native fallback and long ASCII t
 /// Between wrapped lines of text, past the text's size.
 pub const LEADING: i32 = 4;
 pub const SMALL_LINE: i32 = SMALL + LEADING;
-pub const SMALL_TIGHT: i32 = SMALL + 2;
 pub const BODY_LINE: i32 = BODY + LEADING;
 pub const WRAP_LINES_MAX: usize = 18;
 pub const WRAP_COLS_MAX: usize = 96;

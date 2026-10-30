@@ -86,8 +86,7 @@ fn edgeAlpha(r: f32) f32 {
 }
 
 fn lowOf(hp: i32, max: i32) f32 {
-    const left = @as(f32, @floatFromInt(hp)) / @as(f32, @floatFromInt(max));
-    return std.math.clamp((LOW - left) / LOW, 0, 1);
+    return std.math.clamp((LOW - mathx.fillOf(hp, max)) / LOW, 0, 1);
 }
 
 test "a blow on the archer starts reddening the edge as it lands, rises, and fades within its time" {

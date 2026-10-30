@@ -58,7 +58,7 @@ pub const FrostVial = struct {
     pub const chance = glacial.chance;
     pub const afflict = glacial.afflict;
     pub const AILMENT = glacial.AILMENT;
-    pub const DESCRIPTION = std.fmt.comptimePrint("A thrown vial shatters into cold, hitting every foe within {d} tile. {s}.", .{ BLAST, glacial.CHILL_NOTE });
+    pub const DESCRIPTION = std.fmt.comptimePrint("A thrown vial shatters into cold, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), glacial.CHILL_NOTE });
 
     comptime {
         std.debug.assert(BLAST <= glacial.BURST_MAX);

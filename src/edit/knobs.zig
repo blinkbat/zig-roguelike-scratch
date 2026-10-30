@@ -130,7 +130,7 @@ fn choiceRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime U: type, v: *U
     stepChoice(ed, g, y.*, std.meta.Tag(U), &tag, c.tip, true);
     editor.retag(U, v, tag);
     const slot = valueSlot(y.*, 0, 1);
-    const value = valueRect(slot);
+    const value = widgets.stepValue(slot);
     const h = widgets.hot(ed.controls(), value, true, false, "Every choice; " ++ c.tip);
     if (h.hot) rl.drawRectangleLinesEx(value, 1, HOVER);
     if (h.hit) {
@@ -619,11 +619,6 @@ test "generator tile choices skip opened containers in both directions" {
 
 pub fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, steps: [2]widgets.Step) i32 {
     return widgets.stepper(ed.controls(), &g.face, r, value, widgets.KNOB_ARROWS, steps, ed.desk.shift);
-}
-
-fn valueRect(r: rl.Rectangle) rl.Rectangle {
-    const pitch: f32 = @floatFromInt(editor.STEP_PITCH);
-    return .{ .x = r.x + pitch, .y = r.y, .width = r.width - 2 * pitch, .height = r.height };
 }
 
 /// The caller fits the result to its application-specific range.

@@ -16,6 +16,7 @@ const fx = @import("../gfx/fx.zig");
 const combat = @import("combat.zig");
 const glide = @import("glide.zig");
 const tactics = @import("tactics.zig");
+const rules = @import("../play/tactics.zig");
 const game = @import("../game.zig");
 const menu = @import("../ui/menu.zig");
 const P = mathx.P;
@@ -113,8 +114,14 @@ pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.sim
         if (!flasks.get(k).full()) return .empty;
     }
     if (act.supplyOf()) |k| if (run.sim.inventory.stacks.get(k) == 0) return .none_left;
-    if (mana < run.sim.growth.cost(act)) return .mana;
+    if (mana < needs(run, act)) return .mana;
     return null;
+}
+
+/// A stance's first upkeep falls due on the turn it is raised.
+fn needs(run: *const game.Game, act: skillbar.Act) i32 {
+    const upkeep: i32 = if (act == .unyielding) rules.Unyielding.DRAIN else 0;
+    return run.sim.growth.cost(act) + upkeep;
 }
 
 fn ready(run: *game.Game, act: skillbar.Act) bool {
@@ -124,7 +131,7 @@ fn ready(run: *game.Game, act: skillbar.Act) bool {
             const left = run.sim.cooldown.get(act);
             run.sim.log.say("{s} is ready in {d} turn{s}.", .{ act.name(), left, plural(left) });
         },
-        .mana => run.sim.log.say("{s} needs {d} mana.", .{ act.name(), run.sim.growth.cost(act) }),
+        .mana => run.sim.log.say("{s} needs {d} mana.", .{ act.name(), needs(run, act) }),
         .unworn => run.sim.log.say("{s} is not equipped.", .{act.name()}),
         .empty => run.sim.log.say("{s} is empty.", .{act.name()}),
         .none_left => run.sim.log.say("{s}: none carried.", .{act.name()}),
@@ -463,7 +470,7 @@ fn resolveProjectileHit(run: *game.Game, comptime action: skillbar.Act, hit: bow
         .body => |id| hitProjectileActor(run, action, id, stroke),
         .barrel => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),
     }
-    if (comptime action.element() == .fire) combat.boil(run, &.{flight.impact().?}, stroke.wait);
+    if (comptime action.element() == .fire) combat.boil(run, flight.impact().?, 0, stroke.wait);
 }
 
 fn hitProjectileActor(run: *game.Game, comptime action: skillbar.Act, id: u16, stroke: game.presentation.Stroke) void {

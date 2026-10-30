@@ -91,9 +91,14 @@ pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, valu
     if (buttonOn(controls, face, row(x + w - STEP_W, y, STEP_W), arrows.glyphs[1], false, steps[1].live, arrows.modal, steps[1].tip)) by = 1;
     if (arrows.well) rl.drawRectangle(x + STEP_W, y, w - 2 * STEP_W, ROW_H, look.fade(ROW_ON, 0.5));
     var fit_buf: [LINE]u8 = undefined;
-    const shown = textFace(face).fit(&fit_buf, value, arrows.size, w - 2 * (STEP_W + GAP), false);
+    const shown = textFace(face).fit(&fit_buf, value, arrows.size, @intFromFloat(stepValue(r).width), false);
     textFace(face).drawMid(shown, x + @divTrunc(w, 2), y + @divTrunc(ROW_H - arrows.size, 2), arrows.size, look.TEXT);
     return if (shift) by * SHIFT_STEP else by;
+}
+
+pub fn stepValue(r: rl.Rectangle) rl.Rectangle {
+    const inset: f32 = @floatFromInt(STEP_W + GAP);
+    return .{ .x = r.x + inset, .y = r.y, .width = r.width - 2 * inset, .height = r.height };
 }
 
 pub fn insetW(r: rl.Rectangle) i32 {
@@ -158,9 +163,17 @@ pub fn scissorIn(clip: ?rl.Rectangle, r: rl.Rectangle) void {
     scissor(if (clip) |c| rl.getCollisionRec(c, r) else r);
 }
 
+pub fn reclip(clip: ?rl.Rectangle) void {
+    if (clip) |c| scissor(c) else rl.endScissorMode();
+}
+
 /// The first of `rows` shown of `n`, moved `by` and held where the last still fills the view.
 pub fn scrollTop(top: usize, by: i32, n: usize, rows: usize) usize {
     return mathx.nudge(top, by, (n -| rows) + 1);
+}
+
+pub fn clampTop(top: usize, n: usize, rows: usize) usize {
+    return @min(top, n -| rows);
 }
 
 pub fn scrollBy(top: *i32, most: i32, by: i32) void {

@@ -224,6 +224,7 @@ pub const FLIT: f32 = 0.33;
 pub const FRIGHT_REACH: i32 = 5;
 pub const FLEE_TURNS: u8 = 4;
 pub const FRIGHT_STATUS = "Runs from the hero, attacking only when cornered.";
+pub const FLEES = "The {s} flees in terror!";
 
 const SLAM = Blow{ .strike = .{ .hit = .{ .lo = 2, .hi = 5 }, .verb = "slams", .slain = "crushed" } };
 const NET = Net{ .range = 5, .pins = 2, .every = 4 };
@@ -362,6 +363,13 @@ pub const Actor = struct {
         const got = std.math.clamp(n, 0, @max(0, self.max - self.hp));
         self.hp += got;
         return got;
+    }
+
+    /// Runs at least `turns` more, never fewer than it already would; whether it was not running.
+    pub fn frighten(self: *Actor, turns: u8) bool {
+        const fresh = self.fright == 0;
+        resilience.lengthen(&self.fright, turns);
+        return fresh;
     }
 
     /// Its chest flung open: the ground comes back and it wakes.
@@ -578,7 +586,10 @@ const Step = struct {
 /// Brogue's `monsterAvoids`: gas, steam and flames are shunned by a body not already in some.
 fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
     const to = from.add(d.delta());
-    return (lv.gassy(to) and !lv.gassy(from)) or (lv.scalding(to) and !lv.scalding(from)) or (lv.burning(to) and !lv.burning(from));
+    for (std.enums.values(grid.Gas)) |kind| {
+        if (kind.harms() and lv.volumeAt(kind, to) > 0 and lv.volumeAt(kind, from) == 0) return true;
+    }
+    return lv.burning(to) and !lv.burning(from);
 }
 
 /// The water step that most closes on `toward`, by steps then by the straighter line; none that gains.
@@ -587,7 +598,7 @@ pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
     var best: ?mathx.Dir = null;
     for (mathx.ALL_DIRS) |d| {
         const to = from.add(d.delta());
-        if (!dwells(k, lv, to)) continue;
+        if (!dwells(k, lv, to) or shuns(lv, from, d)) continue;
         near.offer(to);
         if (near.best) |b| {
             if (b.eq(to)) best = d;
@@ -816,6 +827,23 @@ test "a leech swims only through water toward the hero and surfaces only beside 
     try std.testing.expect(!pool.get(id).?.submerged);
     try std.testing.expect(dwells(.bog_leech, &lv, .{ .x = 11, .y = 10 }) and !dwells(.bog_leech, &lv, .{ .x = 11, .y = 12 }));
     try std.testing.expect(!holds(.bog_leech, &lv, .{ .x = 16, .y = 10 }) and holds(.rat, &lv, .{ .x = 16, .y = 10 }));
+}
+
+test "a fright already running longer is never cut short by a fresh one" {
+    var a = Actor.of(.pib, .{ .x = 5, .y = 5 });
+    try std.testing.expect(a.frighten(FLEE_TURNS + 2));
+    try std.testing.expect(!a.frighten(FLEE_TURNS));
+    try std.testing.expectEqual(FLEE_TURNS + 2, a.fright);
+}
+
+test "a leech will not swim into steam from outside it, but swims on out of the steam it is in" {
+    var lv = grid.openFloor();
+    var cells = grid.Cells.of(.{ .x = 10, .y = 10 }, .{ .x = 17, .y = 11 });
+    while (cells.next()) |p| lv.set(p, .water);
+    const hero = P{ .x = 18, .y = 10 };
+    lv.release(.steam, .{ .x = 12, .y = 10 }, @import("../map/gas.zig").BOIL);
+    try std.testing.expectEqual(@as(?mathx.Dir, null), swim(&lv, .{ .x = 11, .y = 10 }, .bog_leech, hero));
+    try std.testing.expectEqual(@as(?mathx.Dir, .e), swim(&lv, .{ .x = 12, .y = 10 }, .bog_leech, hero));
 }
 
 test "a mimic stands as a closed chest on its own ground until unmasked" {

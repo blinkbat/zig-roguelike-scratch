@@ -149,7 +149,7 @@ fn drawNodes(ed: *editor.Editor, g: *game.Game, top: i32) void {
         ed.scroll = mathx.reveal(ed.scroll, ed.node, ed.node_rows);
         ed.revealed = ed.node;
     }
-    ed.scroll = @min(ed.scroll, ed.map.node_n -| ed.node_rows);
+    ed.scroll = widgets.clampTop(ed.scroll, ed.map.node_n, ed.node_rows);
     widgets.scissor(lowerArea(g, top));
     defer rl.endScissorMode();
     var y = top;

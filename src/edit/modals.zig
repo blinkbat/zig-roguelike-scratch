@@ -1,9 +1,8 @@
-const placement = @import("placement.zig");
+const tool_catalog = @import("tool_catalog.zig");
 const widgets = @import("widgets.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const input = @import("../core/input.zig");
-const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
 const listing = @import("../map/listing.zig");
 const lume = @import("../map/lume.zig");
@@ -206,7 +205,7 @@ const Facts = struct {
     n: usize = 0,
 
     fn put(f: *Facts, comptime fmt: []const u8, args: anytype) void {
-        if (f.n == FACTS_MAX) return;
+        std.debug.assert(f.n < FACTS_MAX);
         f.line[f.n] = std.fmt.bufPrintZ(&f.buf[f.n], fmt, args) catch "";
         f.n += 1;
     }
@@ -261,17 +260,29 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             if (k.foe() and !k.stocked()) f.put("Only split off another; never placed", .{});
         },
         .barrel => {
-            f.put("Stands on " ++ @tagName(grid.BARREL_GROUND) ++ "; one hit, shot or kicked, breaks it for gold", .{});
+            f.put(menu.capital(tool_catalog.BARREL_RULE) ++ " in one hit, shot or kicked", .{});
             f.put("Blocks a step and stops an arrow", .{});
         },
-        .torch => f.put(menu.capital(placement.TORCH_RULE) ++ "; lights {d} cells round", .{lume.TORCH_REACH}),
+        .torch => f.put(menu.capital(tool_catalog.TORCH_RULE) ++ "; lights {d} cells round", .{lume.TORCH_REACH}),
         .door => f.put("Leads both ways to one door on any node", .{}),
         .folk => {
-            f.put("Stands on open floor of a painted node; never fights or moves", .{});
+            f.put(menu.capital(tool_catalog.FOLK_RULE) ++ ", on a painted node", .{});
+            f.put("Never fights or moves", .{});
             f.put("Bump it or interact beside it to open its dialog; no turn passes", .{});
             f.put("Blocks a step; arrows and blasts pass it by", .{});
         },
     }
+}
+
+test "editor object viewer facts fit its lines for every object" {
+    var most: usize = 0;
+    for (editor.SEEN) |s| {
+        var f = Facts{};
+        seenFacts(s, &f);
+        most = @max(most, f.n);
+    }
+    try std.testing.expect(most <= FACTS_MAX);
+    std.debug.print("object viewer: {d} objects, at most {d} of {d} fact lines\n", .{ editor.SEEN.len, most, FACTS_MAX });
 }
 
 fn promptBody(ed: *const editor.Editor, prompt: editor.Prompt) i32 {

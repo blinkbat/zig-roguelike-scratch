@@ -1091,6 +1091,7 @@ pub const SLOT_CURSOR = UI_FOCUS;
 pub const SLOT_CLEAR = FOE;
 pub const PICK_BG = PANEL;
 pub const CARD_BG = PANEL;
+pub const ROW_ON = RAISED;
 pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 
 /// The alpha below which nothing is drawn.
@@ -1289,7 +1290,7 @@ pub const DAY_PATH = fade(UI_GOLD, 0.45);
 pub const DAY_SHADOW = fade(BG, 0.75);
 
 pub const EDIT_PANEL = PANEL;
-pub const EDIT_ROW_ON = RAISED;
+pub const EDIT_ROW_ON = ROW_ON;
 pub const EDIT_ON = UI_GOLD;
 pub const EDIT_PICKED = UI_FOCUS;
 pub const EDIT_WARN = FOE;

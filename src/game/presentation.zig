@@ -13,7 +13,6 @@ const chronicle = @import("../play/chronicle.zig");
 const fx = @import("../gfx/fx.zig");
 const cloud = @import("../gfx/cloud.zig");
 const look = @import("../gfx/look.zig");
-const hud = @import("../ui/hud.zig");
 const game = @import("../game.zig");
 const glide = @import("glide.zig");
 const simulation = @import("sim.zig");
@@ -165,7 +164,7 @@ pub const Presentation = struct {
     under: std.StaticBitSet(actor.MAX) = .initEmpty(),
     /// Indexed by pool slot: seconds until a body that surfaced or dived this turn is drawn so.
     dives: [actor.MAX]?f32 = @splat(null),
-    /// Indexed by pool slot: set alight or frightened by a death not yet staggered.
+    /// Indexed by pool slot: caught or frightened by a death not yet staggered.
     befallen: [actor.MAX]?Befallen = @splat(null),
     owed: [actor.MAX]Owed = @splat(.{}),
     shot: ?Shot = null,
@@ -261,7 +260,7 @@ pub const Presentation = struct {
         self.dropped_gold[i] = death.gold;
         self.masked.setValue(i, death.unmasked);
         self.recordFright(sim, target.slot(), death.frightened);
-        self.befall(sim, i, death.ignited);
+        self.befall(sim, i, death.caught);
     }
 
     pub fn recordFright(self: *Presentation, sim: *const Simulation, fallen: actor.ActorSlot, frightened: rewards.Frightened) void {
@@ -275,7 +274,7 @@ pub const Presentation = struct {
         while (each.next()) |slot| self.befallen[slot] = .{ .by = by, .after = self.afterOf(sim, slot) };
     }
 
-    /// The bodies the death in `fallen` set alight or frightened catch up as it lands.
+    /// The bodies the death in `fallen` caught or frightened catch up as it lands.
     fn landBefallen(self: *Presentation, fallen: usize, wait: f32) void {
         for (&self.befallen, 0..) |*b, slot| {
             const was = b.* orelse continue;
@@ -486,11 +485,11 @@ pub const Presentation = struct {
     /// Where the orbs' fills are easing to.
     pub fn lifeFill(self: *const Presentation, sim: *const Simulation) f32 {
         const life = self.lifeShown(sim);
-        return hud.fillOf(life.hp, life.max);
+        return mathx.fillOf(life.hp, life.max);
     }
 
     pub fn manaFill(self: *const Presentation, sim: *const Simulation) f32 {
-        return hud.fillOf(self.manaShown(sim), sim.manaMax());
+        return mathx.fillOf(self.manaShown(sim), sim.manaMax());
     }
 
     pub fn settleResources(self: *Presentation, sim: *const Simulation) void {
@@ -644,6 +643,7 @@ pub const Presentation = struct {
         if (warded) |c| self.fx.settle(std.mem.max(f32, part[0..sim.pool.n]), .{ .slot = hero, .after = c });
         for (sim.pool.items[0..sim.pool.n], 0..) |*a, i| {
             if (!self.glide[i].to.eq(a.at)) self.glide[i] = self.glide[i].toward(a.at, late);
+            if (a.submerged != self.under.isSet(i) and self.dives[i] == null) self.dives[i] = part[i];
         }
     }
 
@@ -653,7 +653,7 @@ pub const Presentation = struct {
             .bit, .arrow, .gassed, .scalded, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended => {},
         };
         const i = actor.Pool.slot(id);
-        const a = sim.pool.items[i];
+        const a = &sim.pool.items[i];
         const gl = &self.glide[i];
         const dest = if (id == sim.hero) self.knocked_from orelse a.at else a.at;
         const moved = !gl.to.eq(dest);
@@ -677,7 +677,7 @@ pub const Presentation = struct {
         if (self.turning[i]) |*t| t.in = if (placed) wait - late else start;
         const hero = sim.heroSlot().?;
         const hero_at = if (owed.knock) |k| k.from else self.hero_cell.?;
-        var lands = if (placed) wait else if (moved) start else @max(start, gl.left());
+        var lands = if (placed) wait - late else if (moved) start else @max(start, gl.left());
         if (moved) {
             gl.* = gl.toward(dest, late - wait);
         } else if (bit != null and owed.arrow == null) {
@@ -750,9 +750,11 @@ pub const Presentation = struct {
             next.* = @max(next.*, late + shoved.left());
         }
         lands = @max(lands, self.fx.landsIn(i));
-        inline for (.{ "gassed", "scalded", "burned", "bled" }) |field| if (@field(owed, field)) |h| {
-            if (h.recovery != null) lands = @max(lands, @max(0, next.* - late));
-        };
+        inline for (comptime std.enums.values(simulation.Tick)) |t| {
+            if (comptime @FieldType(Owed, @tagName(t)) == ?Harm) if (@field(owed, @tagName(t))) |h| {
+                if (h.recovery != null) lands = @max(lands, @max(0, next.* - late));
+            };
+        }
         if (owed.worn) |c| self.fx.settle(lands, .{ .slot = i, .after = c });
         const mark: ?[2]f32 = if (shown) mathx.centre(at) else null;
         const drip: ?fx.Drip = if (mark) |m| .{ .at = m, .matter = fx.matterOf(a.kind) } else null;
@@ -762,7 +764,7 @@ pub const Presentation = struct {
         if (owed.healed) |after| self.fx.settle(lands, .{ .slot = i, .after = after, .puff = fx.Puff.over(mark, look.gasInk(.healing)) });
         if (owed.burned) |h| self.harmShown(sim, gas, at, lands, h, true, in_view, .{ .slot = i, .fire_at = mark });
         if (owed.bled) |h| self.harmShown(sim, gas, at, lands, h, false, in_view, .{ .slot = i, .drip = drip });
-        if (a.submerged != self.under.isSet(i)) self.dives[i] = if (a.submerged) lands else @max(0, wait - late);
+        if (a.submerged != self.under.isSet(i)) self.dives[i] = if (a.submerged) lands else if (placed) @max(0, wait - late) else start;
         return lands;
     }
 
@@ -801,7 +803,11 @@ pub const Presentation = struct {
             .actor => |a| sim.isHero(a.slot.index),
             .barrel => false,
         };
-        if (hero or sim.lv.isLit(at)) {
+        const veiled = switch (impact) {
+            .actor => |a| sim.pool.items[a.slot.index].veiled(),
+            .barrel => false,
+        };
+        if (hero or (sim.lv.isLit(at) and !veiled)) {
             self.fx.strike(s.wait, .{ .impact = impact, .dir = dir, .matter = fx.matterOf(kind), .fire = s.fire });
             self.flashes(s.wait);
         } else switch (impact) {

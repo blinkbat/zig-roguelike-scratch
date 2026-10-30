@@ -209,7 +209,7 @@ pub const Catalog = struct {
     }
 
     fn saveAlias(self: *Catalog, index: usize, key: []const u8, replacement: []const u8, author: Author) !SaveResult {
-        if (std.mem.indexOfAny(u8, replacement, "\r\n\t") != null) return error.SingleLineOnly;
+        if (!oneLine(replacement)) return error.SingleLineOnly;
         const entry = self.list.items[index];
         const changed = aliasChanged(entry.text, replacement);
         const path = try std.fs.path.join(self.alloc, &.{ self.root, LABEL_FILE });
@@ -804,6 +804,10 @@ fn protected(text: []const u8, from: usize) ?struct { start: usize, end: usize }
 
 pub fn supported(c: u8) bool {
     return (c >= 32 and c < 127) or c == '\n' or c == '\r' or c == '\t' or c == input.GLYPH_OPEN or c == input.GLYPH_CLOSE;
+}
+
+pub fn oneLine(s: []const u8) bool {
+    return std.mem.indexOfAny(u8, s, "\r\n\t") == null;
 }
 
 pub fn validate(before: []const u8, after: []const u8) !void {

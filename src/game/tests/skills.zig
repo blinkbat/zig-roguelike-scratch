@@ -1414,6 +1414,26 @@ test "a half split into the cell of a body the same blow kills slides out once t
     try std.testing.expect(g.pic.glide[half].done() >= 1);
 }
 
+test "a half split onto Fire Wall's flames catches fire as a step into them would" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 24, .y = 20 };
+    const cell = P{ .x = 25, .y = 20 };
+    harness.heroArena(g, .wizard, from, &.{});
+    const id = harness.splittable(g, at, false);
+    var ring = grid.Box.around(at, 1).cells();
+    while (ring.next()) |p| {
+        if (!p.eq(at) and !p.eq(cell)) g.sim.lv.set(p, .wall);
+    }
+    g.sim.lv.flames[grid.Level.idx(cell)] = 3;
+    game.settle(g);
+    combat.wound(g, id, .{ .dmg = 4, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    const half = g.sim.pool.get(id + 1).?;
+    try std.testing.expect(half.at.eq(cell) and half.burn.turns > 0);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(id).?.burn.turns);
+}
+
 test "a fireball bursts on the first foe it strikes, burning the foes round it, and none past its blast" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

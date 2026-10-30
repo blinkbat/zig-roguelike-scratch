@@ -83,13 +83,15 @@ pub const Cloud = struct {
         if (self.held > 0) return;
         self.held = 0;
         const k = mathx.easing(dt, EASE);
-        for (std.enums.values(grid.Gas)) |kind| {
-            for (self.tint.getPtr(kind), &lv.lit, lv.volumes(kind)) |*t, lit, v| {
-                if (!lit) continue;
-                const want = tintOf(v);
-                if (t.* == want) continue;
-                t.* = mathx.ease(t.*, want, k, k);
-                self.stale = true;
+        for (&lv.lit, 0..) |lit, i| {
+            if (!lit) continue;
+            inline for (comptime std.enums.values(grid.Gas)) |kind| {
+                const t = &self.tint.getPtr(kind)[i];
+                const want = tintOf(lv.volumes(kind)[i]);
+                if (t.* != want) {
+                    t.* = mathx.ease(t.*, want, k, k);
+                    self.stale = true;
+                }
             }
         }
     }

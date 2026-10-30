@@ -20,7 +20,6 @@ const NAV_ROW = DETAIL + 20;
 const Focus = enum { search, passage };
 const Leave = enum { close, quit };
 const HISTORY = 16;
-const Revision = struct { buf: [catalog.MAX_TEXT + 1]u8, n: usize, cursor: usize, anchor: usize };
 const Group = struct { category: []const u8, owner: []const u8, first: usize, end: usize, matches: usize = 0 };
 const FontKey = struct {
     ordered: bool,
@@ -33,198 +32,211 @@ const FontKey = struct {
     }
 };
 
-pub const Field = struct {
-    buf: [catalog.MAX_TEXT + 1]u8 = @splat(0),
-    n: usize = 0,
-    cursor: usize = 0,
-    anchor: usize = 0,
-    starts: [catalog.MAX_TEXT + 2]usize = @splat(0),
-    lines: usize = 1,
-    rows: usize = 1,
-    scroll: usize = 0,
-    reveal: bool = true,
-    layout_valid: bool = false,
-    layout_width: i32 = 0,
-    layout_font: FontKey = undefined,
-    history: [HISTORY]Revision = undefined,
-    history_base: usize = 0,
-    history_n: usize = 0,
-    history_at: usize = 0,
+pub const Field = FieldOf(catalog.MAX_TEXT, catalog.supported);
 
-    pub fn text(f: *const Field) [:0]const u8 {
-        return f.buf[0..f.n :0];
-    }
+pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
+    return struct {
+        const Self = @This();
+        pub const MAX = N;
+        const Revision = struct { buf: [N + 1]u8, n: usize, cursor: usize, anchor: usize };
 
-    pub fn set(f: *Field, s: []const u8) void {
-        f.n = @min(s.len, catalog.MAX_TEXT);
-        @memcpy(f.buf[0..f.n], s[0..f.n]);
-        f.buf[f.n] = 0;
-        f.cursor = f.n;
-        f.anchor = f.n;
-        f.scroll = 0;
-        f.reveal = true;
-        f.layout_valid = false;
-        f.lines = 1;
-        f.starts[0] = 0;
-        f.starts[1] = f.n;
-        f.history_base = 0;
-        f.history_at = 0;
-        f.history_n = 1;
-        f.history[0] = f.revision();
-    }
+        buf: [N + 1]u8 = @splat(0),
+        n: usize = 0,
+        cap: usize = N,
+        cursor: usize = 0,
+        anchor: usize = 0,
+        starts: [N + 2]usize = @splat(0),
+        lines: usize = 1,
+        rows: usize = 1,
+        scroll: usize = 0,
+        reveal: bool = true,
+        layout_valid: bool = false,
+        layout_width: i32 = 0,
+        layout_font: FontKey = undefined,
+        history: [HISTORY]Revision = undefined,
+        history_base: usize = 0,
+        history_n: usize = 0,
+        history_at: usize = 0,
 
-    fn revision(f: *const Field) Revision {
-        return .{ .buf = f.buf, .n = f.n, .cursor = f.cursor, .anchor = f.anchor };
-    }
-
-    fn remember(f: *Field) void {
-        if (f.history_n > 0) {
-            const previous = &f.history[(f.history_base + f.history_at) % HISTORY];
-            if (std.mem.eql(u8, previous.buf[0..previous.n], f.text())) return;
-            f.history_n = f.history_at + 1;
+        pub fn text(f: *const Self) [:0]const u8 {
+            return f.buf[0..f.n :0];
         }
-        if (f.history_n == HISTORY) {
-            f.history_base = (f.history_base + 1) % HISTORY;
-            f.history_n -= 1;
-        }
-        f.history[(f.history_base + f.history_n) % HISTORY] = f.revision();
-        f.history_at = f.history_n;
-        f.history_n += 1;
-    }
 
-    fn restoreRevision(f: *Field, by: i32) void {
-        if (f.history_n == 0) return;
-        f.history_at = mathx.nudge(f.history_at, by, f.history_n);
-        const r = &f.history[(f.history_base + f.history_at) % HISTORY];
-        f.buf = r.buf;
-        f.n = r.n;
-        f.cursor = r.cursor;
-        f.anchor = r.anchor;
-        f.reveal = true;
-        f.layout_valid = false;
-    }
-
-    fn erase(f: *Field) bool {
-        const lo = @min(f.cursor, f.anchor);
-        const hi = @max(f.cursor, f.anchor);
-        if (lo == hi) return false;
-        f.layout_valid = false;
-        std.mem.copyForwards(u8, f.buf[lo..], f.buf[hi .. f.n + 1]);
-        f.n -= hi - lo;
-        f.cursor = lo;
-        f.anchor = lo;
-        return true;
-    }
-
-    pub fn insert(f: *Field, s: []const u8) bool {
-        if (s.len == 0) return true;
-        for (s) |c| if (!catalog.supported(c)) return false;
-        const removed = @max(f.cursor, f.anchor) - @min(f.cursor, f.anchor);
-        var count: usize = 0;
-        for (s) |c| if (c != '\r') {
-            count += 1;
-        };
-        if (f.n - removed + count > catalog.MAX_TEXT) return false;
-        _ = f.erase();
-        std.mem.copyBackwards(u8, f.buf[f.cursor + count .. f.n + count + 1], f.buf[f.cursor .. f.n + 1]);
-        for (s) |c| {
-            if (c == '\r') continue;
-            f.buf[f.cursor] = c;
-            f.cursor += 1;
-        }
-        f.n += count;
-        f.anchor = f.cursor;
-        f.layout_valid = false;
-        return true;
-    }
-
-    fn layout(f: *Field, width: i32, key: FontKey, face: anytype) bool {
-        if (f.layout_valid and f.layout_width == width and std.meta.eql(f.layout_font, key)) return false;
-        var lines: usize = 0;
-        var pos: usize = 0;
-        var buf: [catalog.MAX_TEXT + 1]u8 = undefined;
-        while (true) {
-            f.starts[lines] = pos;
-            var end = pos;
-            while (end < f.n and f.buf[end] != '\n') {
-                const next = end + 1;
-                @memcpy(buf[0 .. next - pos], f.buf[pos..next]);
-                buf[next - pos] = 0;
-                if (end > pos and displayWidth(face, buf[0 .. next - pos :0]) > width) break;
-                end = next;
-            }
-            lines += 1;
-            if (end == f.n) break;
-            pos = end + @as(usize, if (f.buf[end] == '\n') 1 else 0);
-        }
-        f.starts[lines] = f.n;
-        f.lines = lines;
-        f.layout_width = width;
-        f.layout_font = key;
-        f.layout_valid = true;
-        return true;
-    }
-
-    pub fn feed(f: *Field, d: *const input.Desk, multiline: bool) bool {
-        if (d.undo or d.redo) {
-            f.restoreRevision(if (d.undo) -1 else 1);
-            return true;
-        }
-        defer f.remember();
-        if (d.text_all or d.text_left or d.text_right or d.text_home or d.text_end or d.rub or d.text_delete or d.paste or d.cut or d.text().len > 0 or (multiline and (d.enter or d.nav != 0))) f.reveal = true;
-        if (d.text_all) {
-            f.anchor = 0;
+        pub fn set(f: *Self, s: []const u8) void {
+            f.n = @min(s.len, f.cap);
+            @memcpy(f.buf[0..f.n], s[0..f.n]);
+            f.buf[f.n] = 0;
             f.cursor = f.n;
+            f.anchor = f.n;
+            f.scroll = 0;
+            f.reveal = true;
+            f.layout_valid = false;
+            f.lines = 1;
+            f.starts[0] = 0;
+            f.starts[1] = f.n;
+            f.history_base = 0;
+            f.history_at = 0;
+            f.history_n = 1;
+            f.history[0] = f.revision();
         }
-        if (multiline and d.nav != 0) {
-            var line: usize = 0;
-            while (line + 1 < f.lines and f.starts[line + 1] <= f.cursor) : (line += 1) {}
-            const column = f.cursor - f.starts[line];
-            const next = mathx.nudge(line, d.nav, f.lines);
-            var end = @min(f.n, f.starts[next + 1]);
-            if (end > f.starts[next] and f.buf[end - 1] == '\n') end -= 1;
-            if (next + 1 < f.lines and end == f.starts[next + 1] and end > f.starts[next]) end -= 1;
-            f.cursor = @min(end, f.starts[next] + column);
-            if (!d.shift) f.anchor = f.cursor;
+
+        pub fn limit(f: *Self, cap: usize) void {
+            f.cap = @min(cap, N);
         }
-        if (d.text_left or d.text_right or d.text_home or d.text_end) {
-            if (d.text_home) f.cursor = 0 else if (d.text_end) f.cursor = f.n else if (!d.shift and f.anchor != f.cursor) {
-                f.cursor = if (d.text_left) @min(f.anchor, f.cursor) else @max(f.anchor, f.cursor);
-            } else if (d.text_left) f.cursor -|= 1 else f.cursor = @min(f.n, f.cursor + 1);
-            if (!d.shift) f.anchor = f.cursor;
+
+        fn revision(f: *const Self) Revision {
+            return .{ .buf = f.buf, .n = f.n, .cursor = f.cursor, .anchor = f.anchor };
         }
-        if (d.copy or d.cut) {
-            var copied: [catalog.MAX_TEXT + 1]u8 = undefined;
+
+        fn remember(f: *Self) void {
+            if (f.history_n > 0) {
+                const previous = &f.history[(f.history_base + f.history_at) % HISTORY];
+                if (std.mem.eql(u8, previous.buf[0..previous.n], f.text())) return;
+                f.history_n = f.history_at + 1;
+            }
+            if (f.history_n == HISTORY) {
+                f.history_base = (f.history_base + 1) % HISTORY;
+                f.history_n -= 1;
+            }
+            f.history[(f.history_base + f.history_n) % HISTORY] = f.revision();
+            f.history_at = f.history_n;
+            f.history_n += 1;
+        }
+
+        fn restoreRevision(f: *Self, by: i32) void {
+            if (f.history_n == 0) return;
+            f.history_at = mathx.nudge(f.history_at, by, f.history_n);
+            const r = &f.history[(f.history_base + f.history_at) % HISTORY];
+            f.buf = r.buf;
+            f.n = r.n;
+            f.cursor = r.cursor;
+            f.anchor = r.anchor;
+            f.reveal = true;
+            f.layout_valid = false;
+        }
+
+        fn erase(f: *Self) bool {
             const lo = @min(f.cursor, f.anchor);
             const hi = @max(f.cursor, f.anchor);
-            if (hi > lo) {
-                @memcpy(copied[0 .. hi - lo], f.buf[lo..hi]);
-                copied[hi - lo] = 0;
-                input.copyText(copied[0 .. hi - lo :0]);
-                if (d.cut) _ = f.erase();
+            if (lo == hi) return false;
+            f.layout_valid = false;
+            std.mem.copyForwards(u8, f.buf[lo..], f.buf[hi .. f.n + 1]);
+            f.n -= hi - lo;
+            f.cursor = lo;
+            f.anchor = lo;
+            return true;
+        }
+
+        pub fn insert(f: *Self, s: []const u8) bool {
+            if (s.len == 0) return true;
+            for (s) |c| if (!accepts(c)) return false;
+            const removed = @max(f.cursor, f.anchor) - @min(f.cursor, f.anchor);
+            var count: usize = 0;
+            for (s) |c| if (c != '\r') {
+                count += 1;
+            };
+            if (f.n - removed + count > f.cap) return false;
+            _ = f.erase();
+            std.mem.copyBackwards(u8, f.buf[f.cursor + count .. f.n + count + 1], f.buf[f.cursor .. f.n + 1]);
+            for (s) |c| {
+                if (c == '\r') continue;
+                f.buf[f.cursor] = c;
+                f.cursor += 1;
             }
+            f.n += count;
+            f.anchor = f.cursor;
+            f.layout_valid = false;
+            return true;
         }
-        if (d.rub) {
-            if (!f.erase() and f.cursor > 0) {
-                f.anchor = f.cursor - 1;
-                _ = f.erase();
+
+        fn layout(f: *Self, width: i32, key: FontKey, face: anytype) bool {
+            if (f.layout_valid and f.layout_width == width and std.meta.eql(f.layout_font, key)) return false;
+            var lines: usize = 0;
+            var pos: usize = 0;
+            var buf: [N + 1]u8 = undefined;
+            while (true) {
+                f.starts[lines] = pos;
+                var end = pos;
+                while (end < f.n and f.buf[end] != '\n') {
+                    const next = end + 1;
+                    @memcpy(buf[0 .. next - pos], f.buf[pos..next]);
+                    buf[next - pos] = 0;
+                    if (end > pos and displayWidth(face, buf[0 .. next - pos :0]) > width) break;
+                    end = next;
+                }
+                lines += 1;
+                if (end == f.n) break;
+                pos = end + @as(usize, if (f.buf[end] == '\n') 1 else 0);
             }
+            f.starts[lines] = f.n;
+            f.lines = lines;
+            f.layout_width = width;
+            f.layout_font = key;
+            f.layout_valid = true;
+            return true;
         }
-        if (d.text_delete) {
-            if (!f.erase() and f.cursor < f.n) {
-                f.anchor = f.cursor + 1;
-                _ = f.erase();
+
+        pub fn feed(f: *Self, d: *const input.Desk, multiline: bool) bool {
+            if (d.undo or d.redo) {
+                f.restoreRevision(if (d.undo) -1 else 1);
+                return true;
             }
+            defer f.remember();
+            if (d.text_all or d.text_left or d.text_right or d.text_home or d.text_end or d.rub or d.text_delete or d.paste or d.cut or d.text().len > 0 or (multiline and (d.enter or d.nav != 0))) f.reveal = true;
+            if (d.text_all) {
+                f.anchor = 0;
+                f.cursor = f.n;
+            }
+            if (multiline and d.nav != 0) {
+                var line: usize = 0;
+                while (line + 1 < f.lines and f.starts[line + 1] <= f.cursor) : (line += 1) {}
+                const column = f.cursor - f.starts[line];
+                const next = mathx.nudge(line, d.nav, f.lines);
+                var end = @min(f.n, f.starts[next + 1]);
+                if (end > f.starts[next] and f.buf[end - 1] == '\n') end -= 1;
+                if (next + 1 < f.lines and end == f.starts[next + 1] and end > f.starts[next]) end -= 1;
+                f.cursor = @min(end, f.starts[next] + column);
+                if (!d.shift) f.anchor = f.cursor;
+            }
+            if (d.text_left or d.text_right or d.text_home or d.text_end) {
+                if (d.text_home) f.cursor = 0 else if (d.text_end) f.cursor = f.n else if (!d.shift and f.anchor != f.cursor) {
+                    f.cursor = if (d.text_left) @min(f.anchor, f.cursor) else @max(f.anchor, f.cursor);
+                } else if (d.text_left) f.cursor -|= 1 else f.cursor = @min(f.n, f.cursor + 1);
+                if (!d.shift) f.anchor = f.cursor;
+            }
+            if (d.copy or d.cut) {
+                var copied: [N + 1]u8 = undefined;
+                const lo = @min(f.cursor, f.anchor);
+                const hi = @max(f.cursor, f.anchor);
+                if (hi > lo) {
+                    @memcpy(copied[0 .. hi - lo], f.buf[lo..hi]);
+                    copied[hi - lo] = 0;
+                    input.copyText(copied[0 .. hi - lo :0]);
+                    if (d.cut) _ = f.erase();
+                }
+            }
+            if (d.rub) {
+                if (!f.erase() and f.cursor > 0) {
+                    f.anchor = f.cursor - 1;
+                    _ = f.erase();
+                }
+            }
+            if (d.text_delete) {
+                if (!f.erase() and f.cursor < f.n) {
+                    f.anchor = f.cursor + 1;
+                    _ = f.erase();
+                }
+            }
+            if (d.paste_text) |s| {
+                if (!multiline and !catalog.oneLine(s)) return false;
+                if (!f.insert(s)) return false;
+            }
+            if (!f.insert(d.text())) return false;
+            if (multiline and d.enter and !f.insert("\n")) return false;
+            return true;
         }
-        if (d.paste_text) |s| {
-            if (!multiline and (std.mem.indexOfScalar(u8, s, '\n') != null or std.mem.indexOfScalar(u8, s, '\r') != null)) return false;
-            if (!f.insert(s)) return false;
-        }
-        if (!f.insert(d.text())) return false;
-        if (multiline and d.enter and !f.insert("\n")) return false;
-        return true;
-    }
-};
+    };
+}
 
 pub const State = struct {
     data: ?*catalog.Catalog = null,
@@ -344,7 +356,7 @@ pub const State = struct {
                 if (s.inScope(e)) s.results.appendAssumeCapacity(index);
             }
         }
-        s.top = @min(s.top, s.results.items.len -| s.rows);
+        s.top = widgets.clampTop(s.top, s.results.items.len, s.rows);
         s.view_dirty = false;
     }
 
@@ -472,7 +484,7 @@ fn save(ed: *editor.Editor) void {
     s.restore();
     s.view_dirty = true;
     if (result == .saved) s.say("Saved. Rebuild to apply wording changes.", .{}) else s.say("Source saved; author tags could not be saved.", .{});
-    if (s.leave != null) finishClose(ed);
+    if (result == .saved) finishClose(ed) else s.leave = null;
 }
 
 pub fn keys(ed: *editor.Editor) void {
@@ -496,10 +508,11 @@ pub fn keys(ed: *editor.Editor) void {
             s.view_dirty = true;
         }
     } else if (s.selected) |i| {
-        if (s.data.?.entries()[i].editable) {
+        const e = s.data.?.entries()[i];
+        if (e.editable) {
             const was_dirty = s.dirty();
             const old = std.hash.Wyhash.hash(0, s.draft.text());
-            if (!s.draft.feed(d, true)) s.say("Text must be ASCII and at most {d} characters.", .{catalog.MAX_TEXT});
+            if (!s.draft.feed(d, e.alias == null)) s.say("Text must be ASCII{s} and at most {d} characters.", .{ if (e.alias != null) " on one line" else "", catalog.MAX_TEXT });
             if (!was_dirty and std.hash.Wyhash.hash(0, s.draft.text()) != old) s.author = .you;
         } else {
             var nav = d.navigationOnly();
@@ -549,7 +562,7 @@ fn displayWidth(face: anytype, s: [:0]u8) i32 {
 }
 
 /// Whether it was clicked.
-pub fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, focused: bool, editable: bool) bool {
+pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle, focused: bool, editable: bool) bool {
     rl.drawRectangleRec(r, look.EDIT_PANEL);
     rl.drawRectangleLinesEx(r, 1, if (focused) look.UI_FOCUS else look.EDGE);
     const hit = widgets.hot(ed.controls(), r, true, true, null).hit;
@@ -560,7 +573,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, 
     _ = f.layout(width, FontKey.of(&g.face), &g.face);
     const breaks = f.starts[0 .. f.lines + 1];
     const lines = f.lines;
-    var buf: [catalog.MAX_TEXT + 1]u8 = undefined;
+    var buf: [@TypeOf(f.*).MAX + 1]u8 = undefined;
     var caret_line: usize = 0;
     for (breaks[0..lines], 0..) |pos, line| if (f.cursor >= pos) {
         caret_line = line;
@@ -568,10 +581,10 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, 
     f.rows = rows;
     if (f.reveal and focused) f.scroll = mathx.reveal(f.scroll, caret_line, rows);
     f.reveal = false;
-    f.scroll = @min(f.scroll, lines -| rows);
+    f.scroll = widgets.clampTop(f.scroll, lines, rows);
     const first = f.scroll;
     widgets.scissorIn(ed.clip, r);
-    defer rl.endScissorMode();
+    defer widgets.reclip(ed.clip);
     for (first..@min(lines, first + rows)) |line| {
         const start = breaks[line];
         var end = breaks[line + 1];
@@ -655,7 +668,7 @@ fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bot
         }
     }
     s.nav_count = count;
-    s.nav_top = @min(s.nav_top, count -| s.nav_rows);
+    s.nav_top = widgets.clampTop(s.nav_top, count, s.nav_rows);
     var ordinal: usize = 0;
     if (s.category) |category| {
         for (s.groups.items) |group| {
@@ -716,7 +729,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     widgets.drawFit(&g.face, "Passages", TEXT, list_w, false, list_x, y, look.UI_GOLD);
     const list_y = y + LINE;
     s.rows = @intCast(@max(1, @divTrunc(bottom - list_y - DETAIL - 8, ROW)));
-    s.top = @min(s.top, s.results.items.len -| s.rows);
+    s.top = widgets.clampTop(s.top, s.results.items.len, s.rows);
     s.list_box = raster.rect(list_x, list_y, list_w, @as(i32, @intCast(s.rows)) * ROW);
     if (s.data) |c| {
         const end = @min(s.results.items.len, s.top + s.rows);
@@ -849,6 +862,19 @@ test "text browser groups semantic owners and protects a dirty passage during na
     try std.testing.expectEqualStrings("Fireball", s.owner.?);
     try std.testing.expectEqualStrings("A fiery burst.!", s.draft.text());
     std.debug.print("text browser: semantic grouping, exact-context search, owner filtering and dirty navigation/scroll protection checked\n", .{});
+}
+
+test "text field on one line refuses the breaks and tabs a display alias cannot save" {
+    var f = Field{};
+    f.set("Bow");
+    try std.testing.expect(!f.feed(&.{ .paste_text = "Long\tbow" }, false));
+    try std.testing.expect(!f.feed(&.{ .paste_text = "Long\nbow" }, false));
+    try std.testing.expect(f.feed(&.{ .enter = true }, false));
+    try std.testing.expectEqualStrings("Bow", f.text());
+    try std.testing.expect(catalog.oneLine(f.text()));
+    try std.testing.expect(f.feed(&.{ .paste_text = "\tbow" }, true));
+    try std.testing.expectEqualStrings("Bow\tbow", f.text());
+    std.debug.print("one-line field: tab and line-break pastes refused, Enter ignored; several lines still take a tab\n", .{});
 }
 
 test "text field selection survives select all, shift arrows and idle frames" {

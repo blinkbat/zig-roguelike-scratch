@@ -65,7 +65,7 @@ pub const State = struct {
     line: u8 = 0,
     trigger: ?u8 = null,
     focus: ?Focus = null,
-    field: text_panel.Field = .{},
+    field: Field = .{},
     /// A field took this frame's click.
     claimed: bool = false,
     list: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
@@ -121,7 +121,7 @@ fn close(ed: *editor.Editor) void {
 
 fn typed(ed: *editor.Editor, t: Target) void {
     const s = &ed.plot;
-    if (!s.field.feed(&ed.desk, false)) return ed.say("Plain letters on one line", .{});
+    if (!s.field.feed(&ed.desk, false)) return ed.say("Plain letters on one line, {d} at most", .{s.field.cap});
     const now = std.mem.trim(u8, s.field.text(), " ");
     const was = t.words.text();
     if (std.mem.eql(u8, now, was)) return;
@@ -146,12 +146,29 @@ const Words = union(enum) {
         };
     }
 
+    fn most(w: Words) usize {
+        return switch (w) {
+            inline else => |p| @TypeOf(p.*).MAX,
+        };
+    }
+
     fn set(w: Words, s: []const u8) bool {
         return switch (w) {
             inline else => |p| p.set(s),
         };
     }
 };
+
+const Field = text_panel.FieldOf(WORDS_MAX, plainChar);
+const WORDS_MAX = blk: {
+    var most: usize = 0;
+    for (std.meta.fields(Words)) |f| most = @max(most, std.meta.Child(f.type).MAX);
+    break :blk most;
+};
+
+fn plainChar(c: u8) bool {
+    return script.plain(&[_]u8{c});
+}
 
 const Unique = union(enum) { dialog: u8, line: LineAt, trigger: u8, table: TableAt };
 
@@ -170,19 +187,12 @@ fn target(m: *Script, f: Focus) ?Target {
 }
 
 fn put(m: *Script, t: Target, s: []const u8) bool {
-    if (t.unique) |u| {
-        if (!script.token(s) or !free(m, u, s)) return false;
-    }
-    return t.words.set(s);
-}
-
-/// No other in its list goes by `s`.
-fn free(m: *const Script, u: Unique, s: []const u8) bool {
+    const u = t.unique orelse return t.words.set(s);
     return switch (u) {
-        .dialog => |i| (m.findDialog(s) orelse i) == i,
-        .line => |at| (m.dialog[at.d].findLine(s) orelse at.l) == at.l,
-        .trigger => |i| (m.findTrigger(s) orelse i) == i,
-        .table => |at| (m.find(at.t, s) orelse at.i) == at.i,
+        .dialog => |i| script.renameIn(m.dialog[0..m.dialog_n], i, s),
+        .line => |at| script.renameIn(m.dialog[at.d].line[0..m.dialog[at.d].line_n], at.l, s),
+        .trigger => |i| script.renameIn(m.trigger[0..m.trigger_n], i, s),
+        .table => |at| m.rename(at.t, at.i, s),
     };
 }
 
@@ -254,11 +264,6 @@ fn split(w: i32, comptime shares: []const i32, comptime caps: []const i32) [shar
     var out: [shares.len]i32 = undefined;
     inline for (shares, caps, 0..) |s, cap, i| out[i] = @max(2 * widgets.STEP_W + 24, @min(cap, @divTrunc(room * s, total)));
     return out;
-}
-
-/// The scroll area's clip, after something drew under its own.
-fn reclip(ed: *const editor.Editor) void {
-    if (ed.clip) |c| widgets.scissor(c) else rl.endScissorMode();
 }
 
 fn frameOf(ed: *editor.Editor, g: *game.Game, title: [:0]const u8) Frame {
@@ -343,14 +348,14 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
     const on = if (s.focus) |now| std.meta.eql(now, f) else false;
     if (on) {
         if (text_panel.drawField(ed, g, &s.field, r, true, true) or ed.mouseIn(r)) s.claimed = true;
-        reclip(ed);
         return;
     }
     rl.drawRectangleRec(r, look.EDIT_PANEL);
     rl.drawRectangleLinesEx(r, 1, look.EDGE);
     const h = widgets.hot(ed.controls(), r, true, true, "Click to type; it is written into the map as you type");
     if (h.hot) rl.drawRectangleLinesEx(r, 1, look.EDIT_HOVER);
-    const now = target(&ed.map.script, f).?.words.text();
+    const words_ = target(&ed.map.script, f).?.words;
+    const now = words_.text();
     const x: i32 = @as(i32, @intFromFloat(r.x)) + GAP;
     const y: i32 = @as(i32, @intFromFloat(r.y)) + GAP;
     const w: i32 = @as(i32, @intFromFloat(r.width)) - 2 * GAP;
@@ -359,10 +364,11 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
     } else if (r.height > @as(f32, @floatFromInt(FIELD_LINE + 2 * GAP))) {
         widgets.scissorIn(ed.clip, r);
         _ = g.face.paragraph(now, x, y, w, TEXT, look.TEXT);
-        reclip(ed);
+        widgets.reclip(ed.clip);
     } else widgets.drawFit(&g.face, now, TEXT, w, false, x, y, look.TEXT);
     if (h.hit) {
         s.focus = f;
+        s.field.limit(words_.most());
         s.field.set(now);
         s.claimed = true;
     }
@@ -679,16 +685,31 @@ fn withAct(at: ActAt, i: u8) ActAt {
 /// A kind the act can be given here: a conversation's lines only say and set; one naming what the map lacks is passed over.
 fn actKindOk(m: *const Script, k: script.ActKind, spoken: bool) bool {
     if (spoken and !k.spoken()) return false;
-    return k != .dialog or m.dialog_n > 0;
+    return refOk(m, script.actRef(k));
 }
 
 /// Its slot in range, naming the table its kind reads: coined when the table is empty.
 fn fitAct(m: *Script, a: *script.Act, spoken: bool) void {
     while (!actKindOk(m, a.kind, spoken)) a.kind = cycle(script.ActKind, a.kind, 1);
-    if (script.actTable(a.kind)) |t| {
-        fitSlot(m, t, &a.slot);
-    } else if (a.kind == .dialog) a.slot = @min(a.slot, m.dialog_n - 1) else a.slot = 0;
+    if (script.actRef(a.kind)) |r| fitRef(m, r, &a.slot) else a.slot = 0;
     if ((a.kind == .timer or a.kind == .wait) and a.n < 0) a.n = 0;
+}
+
+/// The map has something for `r` to name; a table always does, as one is coined.
+fn refOk(m: *const Script, r: ?script.Ref) bool {
+    return switch (r orelse return true) {
+        .table => true,
+        .folk => m.folk_n > 0,
+        .dialog => m.dialog_n > 0,
+    };
+}
+
+fn fitRef(m: *Script, r: script.Ref, slot: *u8) void {
+    switch (r) {
+        .table => |t| fitSlot(m, t, slot),
+        .folk => slot.* = @min(slot.*, m.folk_n - 1),
+        .dialog => slot.* = @min(slot.*, m.dialog_n - 1),
+    }
 }
 
 /// `slot` held to table `t`, its first name coined when the table is empty.
@@ -793,18 +814,12 @@ fn tableStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, t: script.Table
     const x: i32 = @intFromFloat(r.x);
     const y: i32 = @intFromFloat(r.y);
     indexStep(ed, g, widgets.row(x, y, w - widgets.STEP_W - GAP), all[slot.*].text(), slot, all.len, "Which one; names are kept in the Script page");
-    if (rightButton(ed, g, x + w, y, widgets.STEP_W, "+", all.len < tableMost(t), "A new one, named for its kind; rename it in the Script page")) {
+    if (rightButton(ed, g, x + w, y, widgets.STEP_W, "+", all.len < Script.tableMax(t), "A new one, named for its kind; rename it in the Script page")) {
         if (m.coin(t)) |i| {
             slot.* = i;
             ed.bank();
         }
     }
-}
-
-fn tableMost(t: script.Table) usize {
-    return switch (t) {
-        inline else => |k| @typeInfo(@FieldType(Script, @tagName(k))).array.len,
-    };
 }
 
 const COND_WORDS = std.EnumArray(script.CondKind, []const u8).init(.{
@@ -823,24 +838,18 @@ const COND_WORDS = std.EnumArray(script.CondKind, []const u8).init(.{
 const CMP_WORDS = std.EnumArray(script.Cmp, []const u8).init(.{ .lt = "under", .le = "at most", .eq = "exactly", .ge = "at least", .gt = "over" });
 
 fn condKindOk(m: *const Script, k: script.CondKind) bool {
-    return switch (k) {
-        .near => m.folk_n > 0,
-        .talked => m.dialog_n > 0,
-        else => true,
-    };
+    return refOk(m, script.condRef(k));
 }
 
 fn fitCond(ed: *editor.Editor, c: *script.Cond) void {
     const m = &ed.map.script;
     while (!condKindOk(m, c.kind)) c.kind = cycle(script.CondKind, c.kind, 1);
-    if (script.condTable(c.kind)) |t| fitSlot(m, t, &c.slot);
+    if (script.condRef(c.kind)) |r| fitRef(m, r, &c.slot);
     switch (c.kind) {
         .near => {
-            c.slot = @min(c.slot, m.folk_n - 1);
             c.n = std.math.clamp(c.n, 0, script.NEAR_MAX);
             if (c.n == 0) c.n = 2;
         },
-        .talked => c.slot = @min(c.slot, m.dialog_n - 1),
         .region => {
             c.node = @intCast(ed.node);
             if (ed.selection) |b| {
@@ -946,8 +955,8 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     inline for (comptime std.enums.values(script.Table)) |t| {
         y += GAP;
         const all = m.names(t);
-        heading(g, f.x, y, lw, std.fmt.bufPrint(&buf, "{s}s {d}/{d}", .{ comptime menu.capital(@tagName(t)), all.len, tableMost(t) }) catch "");
-        if (rightButton(ed, g, f.x + lw - GAP, y, 50, "+", all.len < tableMost(t), "A new " ++ @tagName(t) ++ ", named for its kind")) {
+        heading(g, f.x, y, lw, std.fmt.bufPrint(&buf, "{s}s {d}/{d}", .{ comptime menu.capital(@tagName(t)), all.len, Script.tableMax(t) }) catch "");
+        if (rightButton(ed, g, f.x + lw - GAP, y, 50, "+", all.len < Script.tableMax(t), "A new " ++ @tagName(t) ++ ", named for its kind")) {
             if (m.coin(t)) |_| ed.bank();
         }
         y += STEP;
@@ -1036,4 +1045,16 @@ test "a folk's name gives its dialog a name the map reads back" {
     var s = Script{};
     _ = s.addDialog("old_wenna").?;
     try std.testing.expectEqualStrings("dialog1", s.dialog[s.addDialog("old_wenna").?].name.text());
+}
+
+test "typed words refuse what the map's words refuse" {
+    var f = Field{};
+    f.limit(script.Name.MAX);
+    f.set("");
+    try std.testing.expect(!f.insert("\x1eEnter\x1f"));
+    try std.testing.expect(!f.insert("a\tb"));
+    try std.testing.expect(!f.insert("a" ** (script.NAME_MAX + 1)));
+    try std.testing.expect(f.insert("a" ** script.NAME_MAX));
+    try std.testing.expect(script.Name.of(f.text()).eql(f.text()));
+    std.debug.print("typed words: 3 refusals (control markers, tab, one past the name limit) and a full name accepted\n", .{});
 }

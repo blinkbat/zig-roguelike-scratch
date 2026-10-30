@@ -20,7 +20,7 @@ pub const Shock = struct {
     pub fn spend(self: *Shock, dmg: i32) i32 {
         if (self.turns == 0 or dmg <= 0) return dmg;
         self.turns = 0;
-        return std.math.lossyCast(i32, @divTrunc(@as(i64, dmg) * (mathx.PERCENT + MORE) + mathx.PERCENT - 1, mathx.PERCENT));
+        return mathx.percentCeil(dmg, mathx.PERCENT + MORE);
     }
 
     pub fn wear(self: *Shock) void {

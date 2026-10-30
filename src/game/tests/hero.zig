@@ -2,7 +2,6 @@ const attacks = @import("../attacks.zig");
 const std = @import("std");
 const progress = @import("../../play/progress.zig");
 const mathx = @import("../../core/mathx.zig");
-const hud = @import("../../ui/hud.zig");
 const heroes = @import("../../play/hero.zig");
 const bow = @import("../../play/bow.zig");
 const juke = @import("../../play/juke.zig");
@@ -318,8 +317,8 @@ test "life and mana fill and drain at XP speed after their presented impact" {
     g.pic.busy = 0;
     g.pic.fx.step(&g.sim.lv, 1);
     g.pic.catchUp(&g.sim);
-    const life_target = hud.fillOf(h.hp, h.max);
-    const mana_target = hud.fillOf(g.sim.mana, max_mana);
+    const life_target = mathx.fillOf(h.hp, h.max);
+    const mana_target = mathx.fillOf(g.sim.mana, max_mana);
     game.update(g, harness.TEST_DT);
     try std.testing.expectApproxEqAbs(1 + (life_target - 1) * mathx.easing(harness.TEST_DT, game.presentation.RESOURCE_EASE), g.pic.life_fill, 0.0001);
     try std.testing.expectApproxEqAbs(1 + (mana_target - 1) * mathx.easing(harness.TEST_DT, game.presentation.RESOURCE_EASE), g.pic.mana_fill, 0.0001);

@@ -319,7 +319,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   each followed by gas, steam, healing gas, burn and bleed. Bloats burst however killed; foes do not enter gas, steam or Fire Wall flames from outside them (`actor.shuns`).
   `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`), healing (`Level.healing`)
   and steam (`Level.steam`) are separate volumes (`grid.Gas`), spread alike; healing gas mends every hurt body a fifteenth of its life a turn, as caustic gas eats at it.
-  Fire landing on deep water or shallows boils it into steam (`gas.boil`, `rewards.boil`): fireball and Combustion blasts over `glacial.wetIn`,
+  Fire landing on deep water or shallows boils it into steam (`gas.boil`, `rewards.boilRound`): fireball and Combustion blasts over `glacial.wetIn`,
   a fire arrow's impact cell, a pyre bloat's burst. Steam also loses a third of each cell a pass (`gas.CONDENSE`) and scalds for `gas.SCALD` fire damage, resisted.
   `gfx/cloud.zig` draws them in one premultiplied texture; gas harm and heals shed `fx.Puff` wisps of their gas's colour as they land.
 - `play/resilience.zig` owns separate stun/burn/bleed/chill/pin buildup for every body. Successful applications

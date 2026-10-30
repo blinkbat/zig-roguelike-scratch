@@ -94,7 +94,7 @@ pub fn draw(face: *const font.Face, screen: P, v: View, l: *const Layout) void {
     if (l.row_n > 0) rl.drawRectangle(l.text_x, l.choices_rule_y, l.text_w, 1, look.fade(look.EDGE, 0.8));
     for (l.rows[0..l.row_n], v.choices[0..l.row_n], 0..) |r, label, i| {
         const on = i == v.cursor;
-        if (on) rl.drawRectangleRec(r, look.EDIT_ROW_ON);
+        if (on) rl.drawRectangleRec(r, look.ROW_ON);
         const row = std.fmt.bufPrintZ(&buf, "{d}. {s}", .{ i + 1, label }) catch "";
         var fit_buf: [LINE_MAX]u8 = undefined;
         face.text(face.fit(&fit_buf, row, font.BODY, l.text_w, false), l.text_x, @as(i32, @intFromFloat(r.y)) + @divTrunc(ROW_H - font.BODY, 2), font.BODY, if (on) look.UI_FOCUS else look.DIM);

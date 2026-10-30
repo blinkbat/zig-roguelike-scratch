@@ -104,9 +104,19 @@ pub fn percentOf(v: i32, pc: i32) i32 {
     return @divTrunc(v * pc, PERCENT);
 }
 
+/// `pc` percent of a non-negative `v`, rounded up.
+pub fn percentCeil(v: i32, pc: i32) i32 {
+    return std.math.lossyCast(i32, @divTrunc(@as(i64, v) * pc + PERCENT - 1, PERCENT));
+}
+
 /// The ending a noun counted `n` times takes.
 pub fn plural(n: anytype) []const u8 {
     return if (n == 1) "" else "s";
+}
+
+/// The share of `max` a `value` fills, held to 0..1.
+pub fn fillOf(value: i32, max: i32) f32 {
+    return std.math.clamp(@as(f32, @floatFromInt(value)) / @as(f32, @floatFromInt(@max(1, max))), 0, 1);
 }
 
 /// How much of `full` a `value` out of `max` fills, held to 0..`full`.

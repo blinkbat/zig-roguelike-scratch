@@ -98,6 +98,14 @@ pub fn indexOfName(items: anytype, name: []const u8) ?u8 {
     return null;
 }
 
+pub fn renameIn(items: anytype, i: u8, name: []const u8) bool {
+    if (!token(name)) return false;
+    if (indexOfName(items, name)) |at| return at == i;
+    const it = &items[i];
+    if (comptime @TypeOf(it.*) == Name) it.* = Name.of(name) else it.name = Name.of(name);
+    return true;
+}
+
 /// No two of `items` go by one name.
 fn distinct(items: anytype) bool {
     for (items, 0..) |*it, i| {
@@ -179,13 +187,6 @@ pub const ActKind = enum {
             .dialog, .wait, .preserve => false,
         };
     }
-};
-pub const SPOKEN_ACTS = blk: {
-    var out: []const ActKind = &.{};
-    for (std.enums.values(ActKind)) |k| {
-        if (k.spoken()) out = out ++ &[_]ActKind{k};
-    }
-    break :blk out[0..out.len].*;
 };
 
 pub const Setop = enum { off, on, flip };
@@ -397,17 +398,13 @@ pub const Script = struct {
 
     pub fn names(self: *const Script, t: Table) []const Name {
         return switch (t) {
-            .flag => self.flag[0..self.flag_n],
-            .counter => self.counter[0..self.counter_n],
-            .timer => self.timer[0..self.timer_n],
+            inline else => |tag| @field(self, @tagName(tag))[0..@field(self, @tagName(tag) ++ "_n")],
         };
     }
 
     fn tableOf(self: *Script, t: Table) struct { items: []Name, n: *u8 } {
         return switch (t) {
-            .flag => .{ .items = &self.flag, .n = &self.flag_n },
-            .counter => .{ .items = &self.counter, .n = &self.counter_n },
-            .timer => .{ .items = &self.timer, .n = &self.timer_n },
+            inline else => |tag| .{ .items = &@field(self, @tagName(tag)), .n = &@field(self, @tagName(tag) ++ "_n") },
         };
     }
 
@@ -438,10 +435,8 @@ pub const Script = struct {
     }
 
     pub fn rename(self: *Script, t: Table, i: u8, name: []const u8) bool {
-        if (!token(name)) return false;
-        if (self.find(t, name)) |at| return at == i;
-        self.tableOf(t).items[i] = Name.of(name);
-        return true;
+        const tb = self.tableOf(t);
+        return renameIn(tb.items[0..tb.n.*], i, name);
     }
 
     pub fn tableUsers(self: *const Script, t: Table, i: u8) usize {

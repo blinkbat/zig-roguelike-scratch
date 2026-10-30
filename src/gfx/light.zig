@@ -106,6 +106,8 @@ pub const Light = struct {
     visibility: visibility.Visibility,
     torch: [LIGHTS]Torch,
     torch_n: usize = 0,
+    /// Lights hung since the level settled; each takes its flicker seed from it, never shared after an uproot.
+    hung: u32 = 0,
     /// The hero's centre as drawn, cells.
     carrier: ?[2]f32 = null,
     sky: ?sky.Sky = null,
@@ -150,18 +152,17 @@ pub const Light = struct {
         self.grounded();
         self.countCasters(lv);
         self.torch_n = 0;
+        self.hung = 0;
         for (lv.torches()) |w| self.hang(lv, .{ .wall = w });
-        for (lv.tile, 0..) |t, i| {
-            if (self.torch_n == lv.torches().len + PLANT_LIGHTS) break;
-            if (t.glows()) self.hang(lv, .{ .plant = grid.Level.of(i) });
-        }
+        self.hangPlants(lv);
         self.visibility.snap(lv, self.reveal_map);
         self.t = .{};
         self.fan();
     }
 
     fn hang(self: *Light, lv: *const grid.Level, mount: Mount) void {
-        var t = Torch{ .mount = mount, .reach = undefined, .open = undefined, .seed = @as(u32, @intCast(self.torch_n)) *% 0x27D4EB2F +% 0x165667B1 };
+        var t = Torch{ .mount = mount, .reach = undefined, .open = undefined, .seed = self.hung *% 0x27D4EB2F +% 0x165667B1 };
+        self.hung +%= 1;
         var pool: [grid.CELLS]bool = @splat(false);
         lume.torchPool(lv, t.floor(), &pool);
         var box = t.box().cells();
@@ -183,12 +184,16 @@ pub const Light = struct {
         }
         self.scratch.tile[grid.Level.idx(p)] = lv.at(p);
         self.countCasters(&self.scratch);
-        if (self.torch_n < lv.torches().len + PLANT_LIGHTS) for (lv.tile, 0..) |t, i| {
+        self.hangPlants(lv);
+    }
+
+    /// Glowing plants not yet lit, in reading order, as many as the lights left over from the torches allow.
+    fn hangPlants(self: *Light, lv: *const grid.Level) void {
+        for (lv.tile, 0..) |t, i| {
+            if (self.torch_n >= lv.torches().len + PLANT_LIGHTS) break;
             const q = grid.Level.of(i);
-            if (!t.glows() or self.hangs(q)) continue;
-            self.hang(lv, .{ .plant = q });
-            break;
-        };
+            if (t.glows() and !self.hangs(q)) self.hang(lv, .{ .plant = q });
+        }
     }
 
     fn hangs(self: *const Light, p: P) bool {

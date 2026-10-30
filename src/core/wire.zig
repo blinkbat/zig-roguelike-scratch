@@ -397,3 +397,37 @@ test "wire conversion skips retired fields and preserves signedness and named en
     try std.testing.expectEqual(@as(u16, 0), elements.get(.poison));
     std.debug.print("wire conversion: retired field skipped, unsafe signed casts refused, reordered enum keys retained and new key defaulted\n", .{});
 }
+
+test "wire max size is exactly what the largest value writes" {
+    const Mode = enum { a, longest_mode };
+    const Inner = struct { on: bool, ratio: f32 };
+    const Pick = union(enum) { none, wide: [3]u16, flag: bool };
+    const Value = struct {
+        n: i64,
+        maybe: ?Inner,
+        mode: Mode,
+        pick: Pick,
+        name: [5]u8,
+        list: [2]Inner,
+        nothing: void,
+        tally: std.EnumArray(Mode, u8),
+    };
+    const Counted = struct { items: [3]u16, n: usize };
+    const Policy = struct {
+        pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {
+            return if (T == Counted and comptime std.mem.eql(u8, field, "items")) "n" else null;
+        }
+    };
+    var bytes = std.ArrayList(u8).init(std.testing.allocator);
+    defer bytes.deinit();
+    const inner = Inner{ .on = true, .ratio = 0.5 };
+    const C = Codec(Defaults);
+    try C.write(&bytes, Value{ .n = -1, .maybe = inner, .mode = .longest_mode, .pick = .{ .wide = .{ 1, 2, 3 } }, .name = "abcde".*, .list = .{ inner, inner }, .nothing = {}, .tally = .initFill(7) });
+    try std.testing.expectEqual(comptime C.maxSize(Value), bytes.items.len);
+    try std.testing.expectEqual(comptime maxSize(Value), bytes.items.len);
+    bytes.clearRetainingCapacity();
+    const Listed = Codec(Policy);
+    try Listed.write(&bytes, Counted{ .items = .{ 4, 5, 6 }, .n = 3 });
+    try std.testing.expectEqual(comptime Listed.maxSize(Counted), bytes.items.len);
+    std.debug.print("wire max size: plain and counted largest values encode to exactly their bound\n", .{});
+}

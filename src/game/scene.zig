@@ -8,6 +8,7 @@ const bow = @import("../play/bow.zig");
 const skillbar = @import("../play/skillbar.zig");
 const glacial = @import("../play/glacial.zig");
 const rules = @import("../play/tactics.zig");
+const tactics = @import("tactics.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const line_icons = @import("../gfx/line_icons.zig");
@@ -625,15 +626,8 @@ pub fn drawMap(g: *game.Game) void {
             }
         }
         switch (g.mode.aim.act()) {
-            .arcane_barrier => {
-                if (rules.wall(&g.sim.lv, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark, g.sim.growth.ranks.get(.arcane_barrier))) |area| {
-                    for (area.slice()) |p| fillCell(c, p, look.AIM_PATH);
-                }
-            },
-            .fire_wall => {
-                if (rules.blaze(&g.sim.lv, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark, g.sim.growth.ranks.get(.fire_wall))) |area| {
-                    for (area.slice()) |p| fillCell(c, p, look.aimArea(.fireball));
-                }
+            .arcane_barrier, .fire_wall => |a| if (tactics.span(g, a, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark)) |area| {
+                for (area.slice()) |p| fillCell(c, p, if (a == .fire_wall) look.aimArea(.fireball) else look.AIM_PATH);
             },
             .overwatch => if (mathx.toward(from, g.mode.aim.mark)) |d| {
                 var covered = grid.Cells.around(from, bow.RANGE);

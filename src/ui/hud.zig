@@ -120,10 +120,6 @@ pub fn resources(layout: Layout, face: *const font.Face, hp: i32, hp_max: i32, m
     orb(face, layout.mana, MANA, mana, mana_max, mana_fill, MANA_CORE, MANA_EDGE);
 }
 
-pub fn fillOf(value: i32, max: i32) f32 {
-    return std.math.clamp(@as(f32, @floatFromInt(value)) / @as(f32, @floatFromInt(@max(1, max))), 0, 1);
-}
-
 fn fillHeight(fill: f32) i32 {
     return @intFromFloat(@round(std.math.clamp(fill, 0, 1) * (FILL_R * 2)));
 }
@@ -459,6 +455,6 @@ test "orb fill clamps values and gives full half and empty reservoirs" {
         .{ .value = 110, .max = 100, .want = FILL_R * 2 },
         .{ .value = std.math.maxInt(i32), .max = std.math.maxInt(i32), .want = FILL_R * 2 },
     };
-    for (cases) |c| try std.testing.expectEqual(c.want, fillHeight(fillOf(c.value, c.max)));
+    for (cases) |c| try std.testing.expectEqual(c.want, fillHeight(mathx.fillOf(c.value, c.max)));
     std.debug.print("orbs: {d} resource fill cases verified\n", .{cases.len});
 }

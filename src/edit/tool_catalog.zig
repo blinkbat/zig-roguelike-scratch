@@ -9,6 +9,7 @@ const Desk = input.Desk;
 
 pub const SHIFT_STEP: i32 = 5;
 pub const TORCH_RULE = "hangs on a wall with floor below it";
+pub const BARREL_RULE = "stands on " ++ @tagName(grid.BARREL_GROUND) ++ " and breaks for gold";
 pub const FOE_RULE = "stands on open floor; a swimmer in water, a mimic on bare ground";
 pub const FOLK_RULE = "talks; stands on open floor no foe or barrel holds";
 pub const Spanned = enum { line, rect, box, select };
@@ -92,7 +93,7 @@ pub const Tool = union(enum) {
     fn rule(tool: Tool) [:0]const u8 {
         return switch (tool) {
             .paint => Desk.PAINT_CAPTION ++ " paints the palette's first tile, " ++ Desk.ERASE_CAPTION ++ " its second, in the shape picked",
-            .barrel => "stands on " ++ @tagName(grid.BARREL_GROUND) ++ " and breaks for gold; " ++ Desk.ERASE_CAPTION ++ " takes it away",
+            .barrel => BARREL_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes it away",
             .torch => TORCH_RULE,
             .foe => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
             .folk => FOLK_RULE ++ "; " ++ Desk.PAINT_CAPTION ++ " on one gives it words, " ++ Desk.ERASE_CAPTION ++ " takes it away",

@@ -90,6 +90,7 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
     if (has(d, "PIERCES") and (d.reticle != .bow or has(d, "BOLT") or has(d, "burst") or has(d, "afflict") or has(d, "JUMPS"))) return "PIERCES requires a plain arrow";
     if (has(d, "length") and d.reticle != .ground) return "length requires ground targeting";
     if (has(d, "FUEL_DAMAGE") and (d.reticle != .ground or !has(d, "ELEMENT") or !@hasDecl(m, "area"))) return "FUEL_DAMAGE requires a ground-targeted elemental area";
+    if (has(d, "FUEL_DAMAGE") != @hasDecl(m, "FUEL")) return "FUEL_DAMAGE and the FUEL status it consumes go together";
     if (has(d, "knocked") and !signature(m, "knocked", &.{ *const grid.Level, mathx.P, mathx.Dir, u16 }, ?mathx.P)) return "knocked must accept (*const Level, P, Dir, u16) and return ?P";
     if (has(d, "arc")) {
         if (!@hasDecl(m, "WIDTH")) return "arc requires WIDTH";

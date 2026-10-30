@@ -1037,6 +1037,31 @@ test "a mimic stands as a closed chest until opened, then bites, and dies leavin
     try std.testing.expect(g.sim.ground.hasItems(at));
 }
 
+test "an arrow into a submerged leech strikes it unseen: no line names it until a blow kills it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    const lake = P{ .x = 24, .y = 20 };
+    g.sim.lv.set(lake, .water);
+    const id = harness.spawnAt(g, .bog_leech, lake, false);
+    harness.toughen(g.sim.pool.get(id).?);
+    game.settle(g);
+    const name = actor.row(.bog_leech).name;
+    var struck: usize = 0;
+    for (0..8) |seed| {
+        g.sim.rng = mathx.Rng.init(seed);
+        harness.aimAt(g, .shoot, lake);
+        harness.drawnOut(g);
+        if (g.sim.pool.get(id).?.hp < harness.TEST_HP) struck += 1;
+        try std.testing.expect(g.sim.pool.get(id).?.submerged and !harness.logged(g, name));
+    }
+    std.debug.print("submerged leech: struck by {d} of 8 arrows, none said\n", .{struck});
+    try std.testing.expect(struck > 0);
+    combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    try std.testing.expect(harness.logged(g, name));
+}
+
 test "a bandit netter's net pins the hero, who struggles in place and cannot leap until it wears off" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -1298,6 +1323,32 @@ test "a pyre bloat sets its neighbours alight as its death lands, not before" {
     try std.testing.expect(frames > 0);
 }
 
+test "a pyre bloat bursting on its own turn scalds a body on the water it boils only as the burst lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const lake = P{ .x = 22, .y = 20 };
+    g.sim.lv.set(lake, .water);
+    const bloat = harness.spawnAt(g, .pyre_bloat, .{ .x = 21, .y = 20 }, true);
+    g.sim.pool.get(bloat).?.pin.extend(2);
+    const leech = harness.spawnAt(g, .bog_leech, lake, true);
+    harness.toughen(g.sim.pool.get(leech).?);
+    game.settle(g);
+    harness.use(g, .wait);
+    try std.testing.expect(g.sim.pool.get(bloat) == null and g.sim.pool.get(leech).?.hp < harness.TEST_HP);
+    const slot = actor.Pool.slot(leech);
+    g.st = .{};
+    var frames: usize = 0;
+    while (!g.pic.pictured[actor.Pool.slot(bloat)].down()) : (frames += 1) {
+        try std.testing.expect(frames < 200);
+        try std.testing.expectEqual(harness.TEST_HP, g.pic.pictured[slot].hp);
+        game.update(g, harness.TEST_DT);
+    }
+    const t = harness.framesUntil(g, slot, harness.caughtUp);
+    std.debug.print("pyre steam: the leech drawn unscalded for {d} frames, scalded {d:.3} s after the burst lands\n", .{ frames, t });
+    try std.testing.expect(frames > 0 and t < 1);
+}
+
 test "a leech swimming unseen holds neither the stagger nor the walk" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -1314,6 +1365,29 @@ test "a leech swimming unseen holds neither the stagger nor the walk" {
     g.pic.stepGlide(&g.sim, g.cloud, 0);
     std.debug.print("submerged leech: swam to {d},{d}; the turn holds {d:.3} s\n", .{ leech.at.x, leech.at.y, @max(0, g.pic.busy) });
     try std.testing.expect(g.pic.quiet());
+}
+
+test "a sleeping leech the hero steps beside surfaces as the step lands, and dives as the step away does" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const lake = P{ .x = 22, .y = 20 };
+    g.sim.lv.set(lake, .water);
+    const id = harness.spawnAt(g, .bog_leech, lake, false);
+    game.settle(g);
+    const slot = actor.Pool.slot(id);
+    const hero = g.sim.heroSlot().?;
+    try std.testing.expect(harness.gone(g, slot));
+    var shown: [2]f32 = undefined;
+    inline for (.{ mathx.Dir.e, mathx.Dir.w }, .{ false, true }, &shown) |d, under, *t| {
+        harness.nudge(g, d);
+        try std.testing.expectEqual(under, g.sim.pool.get(id).?.submerged);
+        const step = g.pic.glide[hero].left();
+        t.* = harness.framesUntil(g, slot, if (under) harness.gone else harness.drawn);
+        try std.testing.expect(t.* + harness.TEST_DT >= step and t.* < 1);
+        harness.drawnOut(g);
+    }
+    std.debug.print("leech: surfaces {d:.3} s and dives {d:.3} s into the hero's step\n", .{ shown[0], shown[1] });
 }
 
 test "a bolt bursting on a leech in deep water strikes it though the burst spreads over no water" {

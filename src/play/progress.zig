@@ -255,7 +255,7 @@ pub const State = struct {
     pub fn cost(self: *const State, act: skillbar.Act) i32 {
         if (act.cost() == 0) return 0;
         const percent = @max(0, mathx.PERCENT - @as(i32, self.extraRanks(act)) * RANK_COST_PERCENT - self.perks().mana_cost);
-        return @max(1, std.math.divCeil(i32, act.cost() * percent, mathx.PERCENT) catch unreachable);
+        return @max(1, mathx.percentCeil(act.cost(), percent));
     }
 
     pub fn cooldown(self: *const State, act: skillbar.Act) u8 {

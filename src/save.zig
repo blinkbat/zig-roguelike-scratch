@@ -343,13 +343,13 @@ pub const Autosave = struct {
         return self.failed;
     }
 
-    /// Not mid-door, nor mid-turn: a foe's turn to face the hero is only in `facing` once it is drawn.
+    /// Not mid-door, mid-turn or mid loot visit: a foe's turn to face the hero is only in `facing` once it is drawn, and a visit's turn is spent as it closes.
     pub fn step(self: *Autosave, g: *game.Game, dt: f32) void {
         self.since += dt;
         if (!self.finished.load(.acquire)) return;
         self.wait();
         if (self.failed != null) g.sim.unsaved = true;
-        if (!g.sim.unsaved or self.since < GAP_S or g.sim.travel != null or !g.pic.quiet()) return;
+        if (!g.sim.unsaved or self.since < GAP_S or g.sim.travel != null or g.looted or !g.pic.quiet()) return;
         self.flush(g);
     }
 
@@ -431,6 +431,21 @@ test "an unfinished autosave defers the next snapshot without consuming dirty st
     a.step(g, 0);
     try std.testing.expect(g.sim.unsaved);
     std.debug.print("autosave deferred {d:.1} s; completion resumes capture and failure rearms it\n", .{deferred});
+}
+
+test "autosave waits out an open loot visit, whose pickups are paid for as it closes" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.begin(g, 1);
+    var a = Autosave.init(std.testing.failing_allocator, 0);
+    defer a.deinit();
+    g.looted = true;
+    a.step(g, GAP_S);
+    try std.testing.expectEqual(@as(?anyerror, null), a.failed);
+    try std.testing.expect(g.sim.unsaved);
+    g.looted = false;
+    a.step(g, 0);
+    try std.testing.expectEqual(@as(?anyerror, error.OutOfMemory), a.failed);
 }
 
 test "a failed autosave marks an idle run dirty again without another turn" {

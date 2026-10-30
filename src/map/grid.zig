@@ -342,7 +342,18 @@ pub const Torches = struct {
     }
 };
 
-pub const Gas = enum { caustic, healing, steam };
+pub const Gas = enum {
+    caustic,
+    healing,
+    steam,
+
+    pub fn harms(self: Gas) bool {
+        return switch (self) {
+            .caustic, .steam => true,
+            .healing => false,
+        };
+    }
+};
 
 pub const Level = struct {
     barrier: [CELLS]u8 = @splat(0),
@@ -532,6 +543,12 @@ pub const Level = struct {
 
     pub fn scalding(self: *const Level, p: P) bool {
         return self.volumeAt(.steam, p) > 0;
+    }
+
+    pub fn harmful(self: *const Level, p: P) bool {
+        return for (std.enums.values(Gas)) |kind| {
+            if (kind.harms() and self.volumeAt(kind, p) > 0) break true;
+        } else false;
     }
 
     /// Nothing stands up from it: open ground or a liquid, which gas drifts and a drop flies over.

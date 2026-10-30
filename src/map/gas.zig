@@ -27,7 +27,7 @@ pub const BOIL: u16 = 60;
 /// Steam also loses this part of each cell's volume a pass, rounded up, so it clears in a few turns.
 pub const CONDENSE: u32 = 3;
 pub const SCALD: i32 = 2;
-pub const SCALD_ELEMENT: damage.Element = .fire;
+const SCALD_ELEMENT: damage.Element = .fire;
 
 pub fn harm(max_hp: i32) i32 {
     return @max(1, @divTrunc(max_hp, HARM_PART));
@@ -37,8 +37,8 @@ pub fn heal(max_hp: i32) i32 {
     return harm(max_hp);
 }
 
-pub fn scald(fire_resist: i16) i32 {
-    return damage.resisted(SCALD, fire_resist);
+pub fn scald(resists: damage.Resists) i32 {
+    return damage.resisted(SCALD, resists.get(SCALD_ELEMENT));
 }
 
 /// Steam over each deep water or shallows cell of `cells`; how many boiled.
@@ -52,8 +52,8 @@ pub fn boil(lv: *grid.Level, cells: []const P) usize {
     return n;
 }
 
-fn any(lv: *const grid.Level) bool {
-    return std.mem.indexOfNone(u16, &lv.gas, &.{0}) != null;
+fn any(vol: *const [grid.CELLS]u16) bool {
+    return std.mem.indexOfNone(u16, vol, &.{0}) != null;
 }
 
 /// A floor without gas rolls nothing.
@@ -129,7 +129,7 @@ const NEVER: usize = 2000;
 fn lasts(lv: *grid.Level, kind: grid.Gas, rng: *mathx.Rng) !Life {
     var life = Life{};
     const vol = lv.volumes(kind);
-    while (std.mem.indexOfNone(u16, vol, &.{0}) != null) : (life.turns += 1) {
+    while (any(vol)) : (life.turns += 1) {
         if (life.turns == NEVER) return error.NeverClears;
         turn(lv, rng);
         var cells: usize = 0;
@@ -214,7 +214,7 @@ test "gas drifts over a river to the bank across it" {
     lv.addGas(at, BURST);
     const across = P{ .x = 25, .y = 20 };
     var turns: usize = 0;
-    while (!lv.gassy(across) and any(&lv)) : (turns += 1) turn(&lv, &rng);
+    while (!lv.gassy(across) and any(&lv.gas)) : (turns += 1) turn(&lv, &rng);
     std.debug.print("a burst two cells from a 3-wide river reaches the far bank in {d} turns\n", .{turns});
     try std.testing.expect(lv.gassy(across));
 }
@@ -238,10 +238,10 @@ test "a glow plant bursts into healing gas over its grass, which spreads and cle
     try std.testing.expect(!lv.gassy(at));
     var turns: usize = 0;
     var most: usize = 0;
-    while (std.mem.indexOfNone(u16, &lv.healing, &.{0}) != null) : (turns += 1) {
+    while (any(&lv.healing)) : (turns += 1) {
         try std.testing.expect(turns < NEVER);
         turn(&lv, &rng);
-        try std.testing.expect(!any(&lv));
+        try std.testing.expect(!any(&lv.gas));
         most = @max(most, grid.CELLS - std.mem.count(u16, &lv.healing, &.{0}));
     }
     std.debug.print("a glow plant's healing gas on open floor: gone in {d} turns, over at most {d} cells\n", .{ turns, most });
@@ -283,8 +283,8 @@ test "steam boiled off a lake clears in a few turns, far sooner than as much hea
 }
 
 test "steam scalds for a little fire damage, less in water, none to the fireproof" {
-    try std.testing.expectEqual(SCALD, scald(0));
-    try std.testing.expectEqual(@as(i32, 1), scald(25));
-    try std.testing.expectEqual(@as(i32, 0), scald(100));
-    try std.testing.expectEqual(@as(i32, 3), scald(-50));
+    try std.testing.expectEqual(SCALD, scald(.initFill(0)));
+    try std.testing.expectEqual(@as(i32, 1), scald(.initDefault(0, .{ .fire = 25 })));
+    try std.testing.expectEqual(@as(i32, 0), scald(.initDefault(0, .{ .fire = 100 })));
+    try std.testing.expectEqual(@as(i32, 3), scald(.initDefault(0, .{ .fire = -50 })));
 }

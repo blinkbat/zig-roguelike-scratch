@@ -21,10 +21,6 @@ pub fn Turns(comptime N: u8) type {
             lengthen(&self.turns, N);
         }
 
-        pub fn atLeast(self: *@This(), n: u8) void {
-            lengthen(&self.turns, n);
-        }
-
         /// One of its turns: whether it ran.
         pub fn wear(self: *@This()) bool {
             return wearTurn(&self.turns);

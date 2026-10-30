@@ -18,6 +18,7 @@ pub fn replace(path: []const u8, bytes: []const u8) !void {
 
 pub const DIR = "saves";
 pub const SUM = @sizeOf(u64);
+const PRINT = @sizeOf(u64);
 
 pub fn sum(bytes: []const u8) u64 {
     return std.hash.Wyhash.hash(0, bytes);
@@ -25,7 +26,7 @@ pub fn sum(bytes: []const u8) u64 {
 
 /// Bytes before a file's body: its magic, then its format version.
 pub fn head(magic: []const u8) usize {
-    return magic.len + @sizeOf(u64);
+    return magic.len + PRINT;
 }
 
 pub fn begin(w: anytype, magic: []const u8, print: u64) !void {
@@ -49,11 +50,11 @@ pub const OpenError = error{ Foreign, OtherBuild, Short, Damaged };
 
 pub fn open(bytes: []const u8, magic: []const u8, print: u64) OpenError![]const u8 {
     if (bytes.len < head(magic) or !std.mem.eql(u8, bytes[0..magic.len], magic)) return error.Foreign;
-    const got = std.mem.readInt(u64, bytes[magic.len..][0..8], .little);
+    const got = std.mem.readInt(u64, bytes[magic.len..][0..PRINT], .little);
     var b = bytes[head(magic)..];
     if (got != print) return error.OtherBuild;
     if (b.len < SUM) return error.Short;
-    const want = std.mem.readInt(u64, b[b.len - SUM ..][0..8], .little);
+    const want = std.mem.readInt(u64, b[b.len - SUM ..][0..SUM], .little);
     b = b[0 .. b.len - SUM];
     if (want != sum(b)) return error.Damaged;
     return b;

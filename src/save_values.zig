@@ -1,8 +1,4 @@
 const std = @import("std");
-const actor = @import("play/actor.zig");
-const items = @import("play/items.zig");
-const grid = @import("map/grid.zig");
-const atlas = @import("map/atlas.zig");
 const hero = @import("play/hero.zig");
 const progress = @import("play/progress.zig");
 const mathx = @import("core/mathx.zig");
@@ -130,7 +126,7 @@ pub const Policy = struct {
                 if (comptime std.mem.eql(u8, field, entry[0])) return entry[1];
             }
         }
-        if (T == data.LegacyMap and comptime std.mem.eql(u8, field, "node")) return "node_n";
+        if (T == data.LegacyMap) return countField(data.Map, field);
         inline for (.{
             .{ SavedProgress, "allocations", "n" },
         }) |entry| {

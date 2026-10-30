@@ -413,7 +413,7 @@ pub const Atlas = struct {
     pub fn stampFolk(self: *const Atlas, n: usize, lv: *grid.Level) void {
         lv.folk = @splat(grid.NO_FOLK);
         for (self.script.folks(), 0..) |*f, i| {
-            if (f.node == n and lv.walkable(f.at) and lv.who(f.at) == grid.NO_ONE and !lv.hasBarrel(f.at)) lv.putFolk(f.at, i);
+            if (f.node == n and lv.walkable(f.at) and !lv.taken(f.at)) lv.putFolk(f.at, i);
         }
     }
 

@@ -181,12 +181,12 @@ pub fn burstHit(g: *game.Game, comptime act: skillbar.Act, hit: bow.Hit, impact:
         .barrel => null,
     };
     areaHit(g, act, impact, M.burst(&g.sim.lv, s.from, impact), s, direct, hit == .barrel);
-    if (comptime act.element() == .fire) boil(g, glacial.wetIn(&g.sim.lv, impact, M.BLAST).slice(), s.wait);
+    if (comptime act.element() == .fire) boil(g, impact, M.BLAST, s.wait);
 }
 
 /// Fire on water: its steam is drawn as the blow lands.
-pub fn boil(g: *game.Game, cells: []const P, wait: f32) void {
-    if (rewards.boil(&g.sim, cells)) g.cloud.hold(wait);
+pub fn boil(g: *game.Game, at: P, range: i32, wait: f32) void {
+    if (rewards.boilRound(&g.sim, at, range) != null) g.cloud.hold(wait);
 }
 
 /// `direct` is struck even where the burst spreads no further, as a body in deep water.
@@ -273,9 +273,12 @@ fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime ver
     game.presentDamage(g, h);
     const name = actor.row(hit.kind).name;
     g.sim.chronicle.note(.{ .dealt = .{ .to = hit.kind, .killed = h.lethal, .origin = origin } });
-    g.sim.sayAs(.damage, hit.at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.sim.name.text(), name, if (hit.roll.crit) " critically" else "", hit.roll.dmg, if (hit.culled) CUT_DOWN else deathNote(h) });
-    if (hit.bled) |said| g.sim.sayAt(hit.at, "The {s} {s}!", .{ name, said });
-    if (hit.stunned) sayTakes(g, turn_clock.STUNNED, hit.at, name);
+    const slot = target.slot().index;
+    if (h.lethal or !g.sim.pool.items[slot].veiled()) {
+        g.sim.sayAs(.damage, hit.at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.sim.name.text(), name, if (hit.roll.crit) " critically" else "", hit.roll.dmg, if (hit.culled) CUT_DOWN else deathNote(h) });
+        if (hit.bled) |said| g.sim.sayAt(hit.at, "The {s} {s}!", .{ name, said });
+        if (hit.stunned) sayTakes(g, turn_clock.STUNNED, hit.at, name);
+    }
     const after = afterBlow(g, target.value, h);
     const impact = fx.ActorImpact{ .slot = target.slot(), .at = hit.at, .lethal = h.lethal, .after = after };
     if (h.lethal) fell(g, target.value);
@@ -308,6 +311,7 @@ fn split(g: *game.Game, id: u16) ?actor.ActorId {
     g.sim.ran[o] = g.sim.ran[i];
     g.pic.recordSplit(&g.sim, .fromInt(id), .fromInt(other));
     g.sim.sayAt(g.sim.pool.items[i].at, "The {s} splits in two!", .{name});
+    tactics.landed(g, other);
     return .fromInt(other);
 }
 
@@ -418,7 +422,7 @@ fn gasHarm(g: *game.Game, id: u16) void {
 fn steamHarm(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     if (!g.sim.lv.scalding(a.at) or ranAlready(g, id, .scalded)) return;
-    const dmg = gas.scald(g.sim.combatStats(a).elements.get(gas.SCALD_ELEMENT));
+    const dmg = gas.scald(g.sim.combatStats(a).elements);
     if (dmg == 0) return;
     _ = harmTick(g, id, dmg, .scalded, .{ .hero = "The " ++ gas.STEAM_NAME ++ " scalds {s} for {d}." });
 }
@@ -795,7 +799,8 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, flight: ?bow.Flight) void {
 
 /// Shoved a cell straight back from the striker, onto open ground short of a door, unless pinned.
 fn knockHero(g: *game.Game, by: u16) void {
-    const striker = g.sim.pool.items[actor.Pool.slot(by)].at;
+    const slot = actor.Pool.slot(by);
+    const striker = g.sim.pool.items[slot].at;
     const h = g.sim.heroActor() orelse return;
     if (h.pin.turns > 0) return;
     const d = mathx.dirTo(striker, h.at) orelse return;
@@ -807,7 +812,7 @@ fn knockHero(g: *game.Game, by: u16) void {
     g.sim.flowed = false;
     h.tactics.steady = 0;
     g.sim.stepped = true;
-    g.sim.pool.surface(to);
+    game.castSight(g, to);
     g.sim.log.say("{s} is knocked back.", .{g.sim.name.text()});
     g.pic.recordKnock(.fromInt(by), from, to);
 }

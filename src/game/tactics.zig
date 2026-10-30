@@ -47,8 +47,7 @@ fn warCry(g: *game.Game, from: P, rank: u8) void {
         if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, from) > rules.WarCry.RADIUS) continue;
         a.awake = true;
         if (!g.sim.procStatus(a, .fright, rules.WarCry.chance(rank))) continue;
-        if (a.fright == 0) g.sim.sayAt(a.at, "The {s} flees in terror!", .{actor.row(a.kind).name});
-        a.fright = @max(a.fright, rules.WarCry.turns(rank));
+        if (a.frighten(rules.WarCry.turns(rank))) g.sim.sayAt(a.at, actor.FLEES, .{actor.row(a.kind).name});
         g.pic.settleSlot(&g.sim, game.CAST_S, slot);
     }
 }
@@ -60,17 +59,26 @@ pub fn valid(g: *const game.Game, from: P, at: P) bool {
 pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
     if (!act.aimable(&g.sim.lv, from, at) or strikesHidden(g, act, from, at)) return false;
     const start = (if (g.mode == .aim) g.mode.aim.anchor() else null) orelse at;
+    if (act.consumes()) {
+        const id = g.sim.lv.who(at);
+        if (id == grid.NO_ONE) return false;
+        const a = &g.sim.pool.items[actor.Pool.slot(id)];
+        return a.seenFoe(&g.sim.lv) and fuelOf(act, a) > 0;
+    }
     return switch (act) {
-        .combustion, .shatter => blk: {
-            const id = g.sim.lv.who(at);
-            if (id == grid.NO_ONE) break :blk false;
-            const a = &g.sim.pool.items[actor.Pool.slot(id)];
-            break :blk a.seenFoe(&g.sim.lv) and fuelOf(act, a) > 0;
-        },
-        .arcane_barrier => rules.wall(&g.sim.lv, from, start, at, g.sim.growth.ranks.get(.arcane_barrier)) != null,
-        .fire_wall => rules.blaze(&g.sim.lv, from, start, at, g.sim.growth.ranks.get(.fire_wall)) != null,
+        .arcane_barrier, .fire_wall => span(g, act, from, start, at) != null,
         .overwatch => !from.eq(at),
         else => true,
+    };
+}
+
+/// The line a wall-laying skill covers from `start` toward `end`, at its rank.
+pub fn span(g: *const game.Game, act: skillbar.Act, from: P, start: P, end: P) ?rules.Wall {
+    const rank = g.sim.growth.ranks.get(act);
+    return switch (act) {
+        .arcane_barrier => rules.wall(&g.sim.lv, from, start, end, rank),
+        .fire_wall => rules.blaze(&g.sim.lv, from, start, end, rank),
+        else => null,
     };
 }
 
@@ -94,11 +102,9 @@ pub fn strikesHidden(g: *const game.Game, act: skillbar.Act, from: P, at: P) boo
 
 /// The turns left of what a consuming skill consumes.
 fn fuelOf(act: skillbar.Act, a: *const actor.Actor) u8 {
-    return switch (act) {
-        .combustion => a.burn.turns,
-        .shatter => a.chill.turns,
-        else => 0,
-    };
+    switch (act) {
+        inline else => |c| return if (comptime c.consumes()) @field(a, @tagName(skillbar.Act.skill(c).FUEL)).turns else 0,
+    }
 }
 
 pub fn cast(g: *game.Game, aim: game.Aim, from: P) void {
@@ -110,7 +116,7 @@ pub fn cast(g: *game.Game, aim: game.Aim, from: P) void {
 fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P) void {
     const rank = g.sim.growth.ranks.get(act);
     const at = aim.mark;
-    switch (act) {
+    if (comptime act.consumes()) detonate(g, act, at, from) else switch (act) {
         .overwatch => {
             g.sim.heroActor().?.tactics.overwatch = mathx.toward(from, at).?;
             g.pic.settleHero(&g.sim, 0);
@@ -144,13 +150,12 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
             g.sim.flowed = false;
             g.pic.fx.shimmer(mathx.centre(at), look.WARD);
         },
-        .combustion, .shatter => detonate(g, act, at, from),
         .arcane_barrier => {
-            const area = rules.wall(&g.sim.lv, from, aim.anchor().?, at, rank).?;
+            const area = span(g, act, from, aim.anchor().?, at).?;
             for (area.slice()) |p| g.sim.lv.barrier[grid.Level.idx(p)] = rules.ArcaneBarrier.laid(rank);
         },
         .fire_wall => {
-            const area = rules.blaze(&g.sim.lv, from, aim.anchor().?, at, rank).?;
+            const area = span(g, act, from, aim.anchor().?, at).?;
             for (area.slice()) |p| g.sim.lv.flames[grid.Level.idx(p)] = rules.FireWall.laid(rank);
             for (area.slice()) |p| {
                 const id = g.sim.lv.who(p);
@@ -171,11 +176,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     const Skill = skillbar.Act.skill(act);
     const target = g.sim.pool.get(g.sim.lv.who(at)).?;
     const fuel: i32 = fuelOf(act, target);
-    switch (act) {
-        .combustion => target.burn = .{},
-        .shatter => target.chill = .{},
-        else => @compileError(@tagName(act) ++ " consumes nothing"),
-    }
+    @field(target, @tagName(Skill.FUEL)) = .{};
     const slot = actor.Pool.slot(g.sim.lv.who(at));
     g.pic.settleSlot(&g.sim, game.CAST_S, slot);
     const area = Skill.area(&g.sim.lv, at);
@@ -189,7 +190,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
         const hit = attacks.heroScaled(&g.sim, act, raw);
         combat.wound(g, id, .{ .dmg = hit.blow.total(g.sim.combatStats(a).elements), .crit = hit.crit }, Skill.VERB, s);
     }
-    if (comptime Skill.ELEMENT == .fire) combat.boil(g, glacial.wetIn(&g.sim.lv, at, Skill.REACH).slice(), s.wait);
+    if (comptime Skill.ELEMENT == .fire) combat.boil(g, at, Skill.REACH, s.wait);
 }
 
 /// Fire Wall's flames take hold of a body unless its burn resistance holds; true when they do.
@@ -226,6 +227,21 @@ pub fn startTurn(sim: *Simulation) void {
 }
 
 pub fn entered(g: *game.Game, id: u16) void {
+    landed(g, id);
+    const a = g.sim.pool.get(id) orelse return;
+    const h = g.sim.heroActor() orelse return;
+    const direction = h.tactics.overwatch orelse return;
+    if (a.veiled() or !rules.covered(h.at, direction, a.at) or !bow.aimable(&g.sim.lv, h.at, a.at)) return;
+    const flight = bow.fly(&g.sim.lv, h.at, a.at);
+    if (!flight.hits(id)) return;
+    h.tactics.overwatch = null;
+    combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), rules.Overwatch.VERB, .{ .from = h.at, .wait = 0 }, id, flight);
+    h.tactics.steady = 0;
+    if (g.pic.owed[actor.Pool.slot(id)].reaction) |*r| r.recovery = g.pic.afterOf(&g.sim, g.sim.heroSlot().?);
+}
+
+/// Caltrops and Fire Wall's flames take whatever comes to stand on them, a split half as well as a step.
+pub fn landed(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     const cell = grid.Level.idx(a.at);
     const trap = g.sim.lv.caltrops[cell];
@@ -236,15 +252,6 @@ pub fn entered(g: *game.Game, id: u16) void {
         g.sim.sayOf(a, "The {s} steps into caltrops.", .{actor.row(a.kind).name});
     }
     if (g.sim.lv.burning(a.at) and ignite(g, id)) g.pic.recordWear(&g.sim, .fromInt(id));
-    const h = g.sim.heroActor() orelse return;
-    const direction = h.tactics.overwatch orelse return;
-    if (a.veiled() or !rules.covered(h.at, direction, a.at) or !bow.aimable(&g.sim.lv, h.at, a.at)) return;
-    const flight = bow.fly(&g.sim.lv, h.at, a.at);
-    if (!flight.hits(id)) return;
-    h.tactics.overwatch = null;
-    combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), rules.Overwatch.VERB, .{ .from = h.at, .wait = 0 }, id, flight);
-    h.tactics.steady = 0;
-    if (g.pic.owed[actor.Pool.slot(id)].reaction) |*r| r.recovery = g.pic.afterOf(&g.sim, g.sim.heroSlot().?);
 }
 
 pub fn counter(g: *game.Game, id: u16) void {
@@ -446,6 +453,20 @@ test "tactical knight guard expires on action whirlwind hits neighbors and unyie
     skills.useSkill(g, .{ .act = .wait, .by = .y });
     try std.testing.expect(!g.sim.heroActor().?.tactics.unyielding);
     std.debug.print("tactical knight: guard expiry, two-sided whirlwind, activation/upkeep and zero-mana stance exit checked\n", .{});
+}
+
+test "unyielding is refused without the mana for its first turn's upkeep as well as its cost" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{});
+    const needed = g.sim.growth.cost(.unyielding) + rules.Unyielding.DRAIN;
+    g.sim.mana = needed - 1;
+    skills.useSkill(g, .{ .act = .unyielding, .by = .x });
+    try std.testing.expect(!g.sim.heroActor().?.tactics.unyielding);
+    try std.testing.expectEqual(needed - 1, g.sim.mana);
+    g.sim.mana = needed;
+    skills.useSkill(g, .{ .act = .unyielding, .by = .x });
+    try std.testing.expect(g.sim.heroActor().?.tactics.unyielding);
 }
 
 test "tactical regressions cover forced trap entries chest action cleanup and prepared previews" {

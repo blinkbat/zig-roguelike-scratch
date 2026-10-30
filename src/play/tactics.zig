@@ -4,6 +4,7 @@ const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
 const glacial = @import("glacial.zig");
 const bow = @import("bow.zig");
+const resilience = @import("resilience.zig");
 const P = mathx.P;
 
 pub const Caltrops = struct {
@@ -80,6 +81,7 @@ pub const Combustion = struct {
     pub const ELEMENT = damage.Element.fire;
     pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
     pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding {d} damage per remaining burn turn.", .{FUEL_DAMAGE});
+    pub const FUEL = resilience.Kind.burn;
     pub const FUEL_DAMAGE: i32 = 2;
     pub const REACH: i32 = 1;
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
@@ -113,9 +115,11 @@ pub const Shatter = struct {
     pub const ELEMENT = damage.Element.cold;
     pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
     pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's chill. Shatter it and its neighbors for cold damage, adding {d} damage per remaining chill turn.", .{FUEL_DAMAGE});
+    pub const FUEL = resilience.Kind.chill;
     pub const FUEL_DAMAGE: i32 = 2;
+    pub const REACH: i32 = 1;
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, 1);
+        return patch(lv, at, REACH);
     }
 };
 pub const FireWall = struct {
@@ -154,7 +158,7 @@ pub const Guard = struct {
     }
     /// `dmg` as guarding at `rank` lets it through, rounded up.
     pub fn reduce(rank: u8, dmg: i32) i32 {
-        return @intCast(@divTrunc(@as(i64, dmg) * (mathx.PERCENT - reduction(rank)) + mathx.PERCENT - 1, mathx.PERCENT));
+        return mathx.percentCeil(dmg, mathx.PERCENT - reduction(rank));
     }
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("{d}% less physical attack damage.", .{reduction(rank)}) catch {};

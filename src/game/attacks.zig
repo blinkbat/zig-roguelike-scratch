@@ -8,7 +8,6 @@ const progress = @import("../play/progress.zig");
 const resilience = @import("../play/resilience.zig");
 const chronicle = @import("../play/chronicle.zig");
 const skillbar = @import("../play/skillbar.zig");
-const glacial = @import("../play/glacial.zig");
 const terrain = @import("../play/terrain.zig");
 const simulation = @import("sim.zig");
 const Simulation = simulation.Simulation;
@@ -108,7 +107,7 @@ pub fn afflicted(sim: *Simulation, a: *actor.Actor, comptime M: type, lands: boo
 pub fn heroLands(sim: *Simulation, a: *const actor.Actor, origin: chronicle.AttackOrigin) bool {
     const h = sim.heroBody() orelse return false;
     if (!sim.combatStats(h).misses(sim.combatStats(a), &sim.rng)) return true;
-    sim.sayAt(a.at, "{s} misses the {s}.", .{ sim.name.text(), actor.row(a.kind).name });
+    sim.sayOf(a, "{s} misses the {s}.", .{ sim.name.text(), actor.row(a.kind).name });
     sim.chronicle.note(.{ .missed = .{ .origin = origin } });
     return false;
 }

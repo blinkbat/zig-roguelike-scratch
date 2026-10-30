@@ -250,6 +250,25 @@ test "a glowing plant pools pale blue light round its own cell and draws a glow 
     try std.testing.expect(got[0].kind == .plant and got[0].live());
 }
 
+test "the plant lit in an uprooted plant's place flickers apart from every other light" {
+    var lv = litFloor();
+    var plants: [light.LIGHTS + 1]P = undefined;
+    for (&plants, 0..) |*p, i| {
+        p.* = .{ .x = 2 + @as(i32, @intCast(i % 40)), .y = 2 + 2 * @as(i32, @intCast(i / 40)) };
+        lv.set(p.*, .glow_plant);
+    }
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    const lit = l.torch_n;
+    try std.testing.expect(lit < plants.len);
+    lv.set(plants[0], .grass);
+    l.uproot(&lv, plants[0]);
+    try std.testing.expectEqual(lit, l.torch_n);
+    for (l.torch[0..l.torch_n], 0..) |*a, i| {
+        for (l.torch[i + 1 .. l.torch_n]) |*b| try std.testing.expect(a.seed != b.seed);
+    }
+}
+
 test "a brick face by its torch catches far more than the ceiling above it, and one turned away catches none" {
     var lv: grid.Level = undefined;
     testRoom(&lv, &.{.{ .x = 22, .y = 14 }});
