@@ -457,10 +457,13 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
 fn resolveProjectileHit(run: *game.Game, comptime action: skillbar.Act, hit: bow.Hit, flight: bow.Flight, stroke: game.presentation.Stroke) void {
     if (comptime action.bursts()) {
         combat.burstHit(run, action, hit, flight.impact().?, stroke);
-    } else switch (hit) {
+        return;
+    }
+    switch (hit) {
         .body => |id| hitProjectileActor(run, action, id, stroke),
         .barrel => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),
     }
+    if (comptime action.element() == .fire) combat.boil(run, &.{flight.impact().?}, stroke.wait);
 }
 
 fn hitProjectileActor(run: *game.Game, comptime action: skillbar.Act, id: u16, stroke: game.presentation.Stroke) void {

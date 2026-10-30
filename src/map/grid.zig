@@ -342,7 +342,7 @@ pub const Torches = struct {
     }
 };
 
-pub const Gas = enum { caustic, healing };
+pub const Gas = enum { caustic, healing, steam };
 
 pub const Level = struct {
     barrier: [CELLS]u8 = @splat(0),
@@ -370,6 +370,8 @@ pub const Level = struct {
     folk: [CELLS]u8 = @splat(NO_FOLK),
     /// Healing gas, Brogue's volume.
     healing: [CELLS]u16 = @splat(0),
+    /// Steam boiled off water by fire, Qud's.
+    steam: [CELLS]u16 = @splat(0),
 
     pub fn blank() Level {
         return .{
@@ -512,6 +514,7 @@ pub const Level = struct {
         return switch (kind) {
             .caustic => &self.gas,
             .healing => &self.healing,
+            .steam => &self.steam,
         };
     }
 
@@ -525,6 +528,10 @@ pub const Level = struct {
 
     pub fn gassy(self: *const Level, p: P) bool {
         return self.gasAt(p) > 0;
+    }
+
+    pub fn scalding(self: *const Level, p: P) bool {
+        return self.volumeAt(.steam, p) > 0;
     }
 
     /// Nothing stands up from it: open ground or a liquid, which gas drifts and a drop flies over.

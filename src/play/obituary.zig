@@ -401,6 +401,7 @@ fn cause(ctx: *const Context, tagged: Tags, w: Writer) !void {
             try w.print("{} died in gas from a bloat that burst nearby {s}{s}.", .{ who, ctx.place, dark })
         else
             try w.print("{} choked on {s} {s}{s}.", .{ who, sourceName(.gas), ctx.place, dark }),
+        .steam => try w.print("{} was scalded to death by {s} {s}{s}.", .{ who, sourceName(.steam), ctx.place, dark }),
         .burn => try w.print("{} burned to death {s}{s}.", .{ who, ctx.place, dark }),
         .bleed => try w.print("{} bled to death {s}{s}{s}.", .{ who, ctx.place, dark, if (ctx.killer.torn) " after moving" else "" }),
     }
@@ -410,6 +411,7 @@ fn sourceName(by: Source) []const u8 {
     return switch (by) {
         .foe => |k| actor.row(k).name,
         .gas => gas.NAME,
+        .steam => gas.STEAM_NAME,
         .burn => "fire",
         .bleed => "bleeding",
     };

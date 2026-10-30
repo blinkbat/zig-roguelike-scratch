@@ -34,7 +34,7 @@ pub const Visit = struct {
 };
 
 /// A body's harm ticks, each run at most once a turn.
-pub const Tick = enum { gassed, healed, burned, bled, worn };
+pub const Tick = enum { gassed, scalded, healed, burned, bled, worn };
 /// The ticks a body's turn has run, which a half split off it mid-turn has had too.
 pub const Ran = std.EnumSet(Tick);
 

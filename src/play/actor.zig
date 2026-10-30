@@ -575,10 +575,10 @@ const Step = struct {
     }
 };
 
-/// Brogue's `monsterAvoids`: gas and flames are shunned by a body not already in some.
+/// Brogue's `monsterAvoids`: gas, steam and flames are shunned by a body not already in some.
 fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
     const to = from.add(d.delta());
-    return (lv.gassy(to) and !lv.gassy(from)) or (lv.burning(to) and !lv.burning(from));
+    return (lv.gassy(to) and !lv.gassy(from)) or (lv.scalding(to) and !lv.scalding(from)) or (lv.burning(to) and !lv.burning(from));
 }
 
 /// The water step that most closes on `toward`, by steps then by the straighter line; none that gains.

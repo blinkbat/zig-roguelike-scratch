@@ -81,8 +81,9 @@ pub const Combustion = struct {
     pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
     pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding {d} damage per remaining burn turn.", .{FUEL_DAMAGE});
     pub const FUEL_DAMAGE: i32 = 2;
+    pub const REACH: i32 = 1;
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, 1);
+        return patch(lv, at, REACH);
     }
 };
 pub const ArcaneBarrier = struct {

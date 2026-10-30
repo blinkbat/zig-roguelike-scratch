@@ -54,7 +54,7 @@ Supporting one requires its original schema and an explicit migration. Keep
 claiming compatibility.
 
 The reader takes the map and level in their raw shape without the fields added
-to their ends since (`save_data.LegacyMap`, `LegacyLevel`: the script, folk and healing gas),
+to their ends since (`save_data.LegacyMap`, `LegacyLevel`: the script, folk, healing gas and steam),
 then converts with those fields defaulted. Run state added after the raw format
 (`PORTABLE_FIELDS`, the trigger runtime) lives in portable saves alone.
 

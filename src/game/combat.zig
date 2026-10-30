@@ -181,6 +181,12 @@ pub fn burstHit(g: *game.Game, comptime act: skillbar.Act, hit: bow.Hit, impact:
         .barrel => null,
     };
     areaHit(g, act, impact, M.burst(&g.sim.lv, s.from, impact), s, direct, hit == .barrel);
+    if (comptime act.element() == .fire) boil(g, glacial.wetIn(&g.sim.lv, impact, M.BLAST).slice(), s.wait);
+}
+
+/// Fire on water: its steam is drawn as the blow lands.
+pub fn boil(g: *game.Game, cells: []const P, wait: f32) void {
+    if (rewards.boil(&g.sim, cells)) g.cloud.hold(wait);
 }
 
 /// `direct` is struck even where the burst spreads no further, as a body in deep water.
@@ -397,6 +403,7 @@ const Hurt = game.simulation.DamageResult;
 
 fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
     gasHarm(g, id);
+    steamHarm(g, id);
     gasHeal(g, id);
     burnHarm(g, id);
     bleedHarm(g, id, moved or g.sim.displaced.isSet(actor.Pool.slot(id)));
@@ -406,6 +413,14 @@ fn gasHarm(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     if (!g.sim.lv.gassy(a.at) or ranAlready(g, id, .gassed)) return;
     _ = harmTick(g, id, gas.harm(a.max), .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." });
+}
+
+fn steamHarm(g: *game.Game, id: u16) void {
+    const a = g.sim.pool.get(id) orelse return;
+    if (!g.sim.lv.scalding(a.at) or ranAlready(g, id, .scalded)) return;
+    const dmg = gas.scald(g.sim.combatStats(a).elements.get(gas.SCALD_ELEMENT));
+    if (dmg == 0) return;
+    _ = harmTick(g, id, dmg, .scalded, .{ .hero = "The " ++ gas.STEAM_NAME ++ " scalds {s} for {d}." });
 }
 
 /// Brogue's `T_CAUSES_HEALING`: every hurt body in it, foe or hero.
@@ -459,6 +474,7 @@ fn harmTick(g: *game.Game, id: u16, dmg: i32, comptime owed: game.simulation.Tic
         g.sim.log.push(.danger, said.hero, .{ g.sim.name.text(), h.dmg });
         const by: chronicle.Source = switch (owed) {
             .gassed => .gas,
+            .scalded => .steam,
             .burned => .burn,
             .bled => .bleed,
             .healed, .worn => unreachable,

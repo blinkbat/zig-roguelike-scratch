@@ -6,6 +6,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
+const glacial = @import("../play/glacial.zig");
 const rules = @import("../play/tactics.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
@@ -188,6 +189,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
         const hit = attacks.heroScaled(&g.sim, act, raw);
         combat.wound(g, id, .{ .dmg = hit.blow.total(g.sim.combatStats(a).elements), .crit = hit.crit }, Skill.VERB, s);
     }
+    if (comptime Skill.ELEMENT == .fire) combat.boil(g, glacial.wetIn(&g.sim.lv, at, Skill.REACH).slice(), s.wait);
 }
 
 /// Fire Wall's flames take hold of a body unless its burn resistance holds; true when they do.
@@ -591,7 +593,6 @@ test "shatter consumes chill for cold damage over its neighbours and refuses an 
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const h = game.harness;
-    const glacial = @import("../play/glacial.zig");
     h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
     g.sim.growth.ranks.set(.shatter, 1);
     const at = P{ .x = 23, .y = 20 };

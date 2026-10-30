@@ -6,6 +6,7 @@ const skillbar = @import("skillbar.zig");
 pub const Source = union(enum) {
     foe: actor.Kind,
     gas,
+    steam,
     burn,
     bleed,
 };

@@ -340,7 +340,7 @@ pub const Settle = struct { slot: usize, after: After, puff: ?Puff = null };
 
 const MOTES: usize = 320;
 /// Capacity for every body's turn effects, hero hit and sweep, plus a burst and a puff, or chain jumps.
-pub const DUE: usize = actor.MAX * (12 + actor.SWEEP_CELLS) + 2;
+pub const DUE: usize = actor.MAX * (13 + actor.SWEEP_CELLS) + 2;
 
 pub const Burst = struct { at: mathx.P, area: glacial.Burst, element: damage.Element };
 

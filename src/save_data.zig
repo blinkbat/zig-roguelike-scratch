@@ -34,7 +34,7 @@ pub const Visit = @FieldType(Header, "visits");
 pub const HEAD_FIELDS = std.meta.fieldNames(Header);
 
 /// What raw saves wrote before fields were added to the end of the level and the map; the legacy reader takes them in this shape.
-pub const LegacyLevel = Without(Without(@FieldType(Visit, "lv"), "folk"), "healing");
+pub const LegacyLevel = Without(Without(Without(@FieldType(Visit, "lv"), "folk"), "healing"), "steam");
 pub const LegacyMap = Without(Map, "script");
 pub const LegacyVisit = Replaced(Visit, "lv", LegacyLevel);
 pub const LegacyHeader = Replaced(Replaced(Header, "map", LegacyMap), "visits", LegacyVisit);
@@ -284,7 +284,7 @@ pub fn convert(dest: anytype, src: anytype) void {
 
 test "the legacy shapes keep every byte older raw saves wrote and convert both ways" {
     const grid = @import("map/grid.zig");
-    try std.testing.expect(!@hasField(LegacyMap, "script") and !@hasField(LegacyLevel, "folk") and !@hasField(LegacyLevel, "healing"));
+    try std.testing.expect(!@hasField(LegacyMap, "script") and !@hasField(LegacyLevel, "folk") and !@hasField(LegacyLevel, "healing") and !@hasField(LegacyLevel, "steam"));
     try std.testing.expectEqual(std.meta.fields(Map).len - 1, std.meta.fields(LegacyMap).len);
     const raw = try std.testing.allocator.create(LegacyVisit);
     defer std.testing.allocator.destroy(raw);

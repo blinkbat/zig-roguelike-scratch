@@ -974,11 +974,13 @@ pub const BLOAT = rgb(0xbf40d9);
 /// Its caustic gas, a greyer purple.
 pub const GAS = rgb(0x9a76aa);
 pub const HEALING_GAS = rgb(0xa6cff0);
+pub const STEAM = rgb(0xe6e8ea);
 
 pub fn gasInk(g: grid.Gas) rl.Color {
     return switch (g) {
         .caustic => GAS,
         .healing => HEALING_GAS,
+        .steam => STEAM,
     };
 }
 

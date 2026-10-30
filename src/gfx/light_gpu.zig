@@ -115,6 +115,9 @@ const SHADOW_FS = POOL_HEAD ++ shaders.glslConsts(.{ .TAPS = model.SHADOW_TAPS }
     \\    if ((uv.y < 0.0 && joined.z < 0.5) || (uv.y > foot && joined.w < 0.5)) return 0.0;
     \\    return texture(texture0, clamp(uv, vec2(0.0), vec2(1.0, foot))).a;
     \\}
+    \\float trail(float past, float reach, float side) {
+    \\    return mix(1.0, 1.0 - smoothstep(0.0, reach, past), side);
+    \\}
     \\void main() {
     \\    float spread = mix(softness.x, softness.y, clamp(fragTexCoord.y / foot, 0.0, 1.0));
     \\    float a = 0.0;
@@ -124,6 +127,10 @@ const SHADOW_FS = POOL_HEAD ++ shaders.glslConsts(.{ .TAPS = model.SHADOW_TAPS }
     \\        }
     \\    }
     \\    float n = float(TAPS * 2 + 1);
+    \\    vec2 uv = fragTexCoord;
+    \\    vec2 reach = spread * float(TAPS) / size;
+    \\    a *= trail(-uv.x, reach.x, joined.x) * trail(uv.x - 1.0, reach.x, joined.y);
+    \\    a *= trail(-uv.y, reach.y, joined.z) * trail(uv.y - foot, reach.y, joined.w);
     \\    finalColor = pool(a / (n * n));
     \\}
 ;

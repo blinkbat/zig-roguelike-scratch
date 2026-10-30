@@ -63,7 +63,7 @@ apply Game's damage consequences, record the log, snapshot/split, handle death r
 then schedule the impact and recovery. Hero damage rolls and weapon status resolution stay in attacks;
 animation, input and death transitions stay in their owning adapters.
 
-`rewards.defeat` resolves XP, drops, flask refills, gas and witness fright using
+`rewards.defeat` resolves XP, drops, flask refills, gas, steam and witness fright using
 Simulation alone. Presentation consumes its `Death` result to hold dropped gold
 and schedule speech against the fallen actor's impact. Already frightened witnesses
 refresh their simulation timer without scheduling another speech. Chest capacity

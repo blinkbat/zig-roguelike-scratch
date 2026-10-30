@@ -1174,7 +1174,27 @@ test "a pyre bloat bursts into flame, setting the bodies beside it burning and n
     try std.testing.expect(g.sim.heroActor().?.burn.turns > 0);
     try std.testing.expect(g.sim.pool.get(near).?.burn.turns > 0);
     try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(far).?.burn.turns);
-    try std.testing.expect(!g.sim.lv.gassy(at));
+    try std.testing.expect(!g.sim.lv.gassy(at) and !g.sim.lv.scalding(at));
+}
+
+test "a pyre bloat bursting over a lake boils the water beside it into steam and none further" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 24, .y = 20 };
+    harness.arena(g, from, &.{});
+    var lake = grid.Cells.around(at, 2);
+    while (lake.next()) |p| g.sim.lv.set(p, .water);
+    const bloat = harness.spawnAt(g, .pyre_bloat, at, false);
+    game.settle(g);
+    combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    try std.testing.expect(g.sim.pool.get(bloat) == null);
+    var cells = grid.Cells.around(at, 2);
+    while (cells.next()) |p| {
+        const steam = g.sim.lv.volumeAt(.steam, p);
+        try std.testing.expectEqual(if (mathx.dist(p, at) <= 1) gas.BOIL else 0, steam);
+    }
+    try std.testing.expect(harness.logged(g, gas.STEAM_NAME));
 }
 
 test "a pib shaman mends the most hurt pib in reach, else wakes the sleeping ones, and keeps off the hero" {

@@ -316,10 +316,12 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   action costs its next turn. Pyre bloats' burst (`rewards.pyre`) burns the bodies beside it. Pib shamans (`Row.mends`) heal
   the most hurt pib in reach or wake sleepers, keeping `Row.keeps` cells off the hero.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
-  each followed by gas, healing gas, burn and bleed. Bloats burst however killed; foes do not enter gas or Fire Wall flames from outside them (`actor.shuns`).
-  `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`) and healing (`Level.healing`)
-  gas are separate volumes (`grid.Gas`), spread alike; healing gas mends every hurt body a fifteenth of its life a turn, as caustic gas eats at it.
-  `gfx/cloud.zig` draws both in one premultiplied texture; gas harm and heals shed `fx.Puff` wisps of their gas's colour as they land.
+  each followed by gas, steam, healing gas, burn and bleed. Bloats burst however killed; foes do not enter gas, steam or Fire Wall flames from outside them (`actor.shuns`).
+  `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`), healing (`Level.healing`)
+  and steam (`Level.steam`) are separate volumes (`grid.Gas`), spread alike; healing gas mends every hurt body a fifteenth of its life a turn, as caustic gas eats at it.
+  Fire landing on deep water or shallows boils it into steam (`gas.boil`, `rewards.boil`): fireball and Combustion blasts over `glacial.wetIn`,
+  a fire arrow's impact cell, a pyre bloat's burst. Steam also loses a third of each cell a pass (`gas.CONDENSE`) and scalds for `gas.SCALD` fire damage, resisted.
+  `gfx/cloud.zig` draws them in one premultiplied texture; gas harm and heals shed `fx.Puff` wisps of their gas's colour as they land.
 - `play/resilience.zig` owns separate stun/burn/bleed/chill/pin buildup for every body. Successful applications
   add resistance until expiry on spent turns; failed applications and free actions never extend or age it.
   `Simulation.takeStatus/procStatus` combine innate resistance, buildup and terrain before gating combat applications.

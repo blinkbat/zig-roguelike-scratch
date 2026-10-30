@@ -3,11 +3,13 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("grid.zig");
 const carve = @import("carve.zig");
 const gen = @import("gen.zig");
+const damage = @import("../play/damage.zig");
 
 const P = mathx.P;
 
 pub const NAME = "caustic gas";
 pub const HEALING_NAME = "healing gas";
+pub const STEAM_NAME = "steam";
 /// Brogue's `DF_BLOAT_DEATH`.
 pub const BURST: u16 = 2000;
 /// Brogue's bloodwort pod bursting.
@@ -20,6 +22,12 @@ pub const GASSED_UP: u16 = 20;
 pub const DISSIPATE: f32 = 0.5;
 /// Brogue's `T_CAUSES_DAMAGE` and `T_CAUSES_HEALING` alike: a fifteenth of the body's full hp a turn.
 const HARM_PART: i32 = 15;
+/// What a wet cell gives off where fire lands on it.
+pub const BOIL: u16 = 60;
+/// Steam also loses this part of each cell's volume a pass, rounded up, so it clears in a few turns.
+pub const CONDENSE: u32 = 3;
+pub const SCALD: i32 = 2;
+pub const SCALD_ELEMENT: damage.Element = .fire;
 
 pub fn harm(max_hp: i32) i32 {
     return @max(1, @divTrunc(max_hp, HARM_PART));
@@ -27,6 +35,21 @@ pub fn harm(max_hp: i32) i32 {
 
 pub fn heal(max_hp: i32) i32 {
     return harm(max_hp);
+}
+
+pub fn scald(fire_resist: i16) i32 {
+    return damage.resisted(SCALD, fire_resist);
+}
+
+/// Steam over each deep water or shallows cell of `cells`; how many boiled.
+pub fn boil(lv: *grid.Level, cells: []const P) usize {
+    var n: usize = 0;
+    for (cells) |p| {
+        if (!lv.at(p).wet()) continue;
+        lv.release(.steam, p, BOIL);
+        n += 1;
+    }
+    return n;
 }
 
 fn any(lv: *const grid.Level) bool {
@@ -80,6 +103,7 @@ fn spread(lv: *grid.Level, kind: grid.Gas, rng: *mathx.Rng) void {
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
         if (next[i] > 0 and vol[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
+        if (kind == .steam) next[i] -= std.math.divCeil(u32, next[i], CONDENSE) catch unreachable;
         vol[i] = @intCast(@min(next[i], std.math.maxInt(u16)));
     }
 }
@@ -102,13 +126,14 @@ const Life = struct { turns: usize = 0, most: usize = 0 };
 
 const NEVER: usize = 2000;
 
-fn lasts(lv: *grid.Level, rng: *mathx.Rng) !Life {
+fn lasts(lv: *grid.Level, kind: grid.Gas, rng: *mathx.Rng) !Life {
     var life = Life{};
-    while (any(lv)) : (life.turns += 1) {
+    const vol = lv.volumes(kind);
+    while (std.mem.indexOfNone(u16, vol, &.{0}) != null) : (life.turns += 1) {
         if (life.turns == NEVER) return error.NeverClears;
         turn(lv, rng);
         var cells: usize = 0;
-        for (lv.gas, lv.tile) |v, t| {
+        for (vol, lv.tile) |v, t| {
             if (v == 0) continue;
             if (t.upright()) return error.GasInWall;
             cells += 1;
@@ -123,7 +148,7 @@ const OPEN_AT = grid.MIDDLE;
 fn onOpenFloor(rng: *mathx.Rng) !Life {
     var lv = grid.openFloor();
     lv.addGas(OPEN_AT, BURST);
-    return lasts(&lv, rng);
+    return lasts(&lv, .caustic, rng);
 }
 
 test "a gassed-up cell shares its gas evenly with its open neighbours, and a thinner one keeps its own" {
@@ -147,7 +172,7 @@ test "a burst shut in a room lingers, and on open floor clears sooner and spread
     const room = gen.Room.sized(.{ .x = 10, .y = 10 }, 9, 6);
     carve.box(&shut, room, .floor);
     shut.addGas(room.centre(), BURST);
-    const a = try lasts(&shut, &rng);
+    const a = try lasts(&shut, .caustic, &rng);
     const b = try onOpenFloor(&rng);
     std.debug.print("a bloat's burst: shut in a 9x6 room it lasts {d} turns over at most {d} cells, on open floor {d} turns over at most {d}\n", .{ a.turns, a.most, b.turns, b.most });
     try std.testing.expectEqual(@as(usize, @intCast(room.width() * room.height())), a.most);
@@ -166,11 +191,11 @@ test "a burst in a room of a real floor leaks out of its doorways: sooner gone t
         const f = gen.build(&lv, 0x6A5 +% i *% grid.TEST_SEED_STRIDE);
         const r = f.rooms[1];
         lv.addGas(r.centre(), BURST);
-        real += (try lasts(&lv, &rng)).turns;
+        real += (try lasts(&lv, .caustic, &rng)).turns;
         shut = grid.Level.blank();
         carve.box(&shut, r, .floor);
         shut.addGas(r.centre(), BURST);
-        sealed += (try lasts(&shut, &rng)).turns;
+        sealed += (try lasts(&shut, .caustic, &rng)).turns;
     }
     const open = (try onOpenFloor(&rng)).turns;
     std.debug.print("{d} floors, a burst in a room's middle: gone in {d} turns on average, {d} with the same rooms shut, {d} on open floor\n", .{ FLOORS, real / FLOORS, sealed / FLOORS, open });
@@ -221,4 +246,45 @@ test "a glow plant bursts into healing gas over its grass, which spreads and cle
     }
     std.debug.print("a glow plant's healing gas on open floor: gone in {d} turns, over at most {d} cells\n", .{ turns, most });
     try std.testing.expect(turns > 5 and most > 9);
+}
+
+test "fire boils deep water and shallows into steam, and dry ground into nothing" {
+    var lv = grid.openFloor();
+    const cells = [_]P{ OPEN_AT, OPEN_AT.add(.{ .x = 1, .y = 0 }), OPEN_AT.add(.{ .x = 2, .y = 0 }) };
+    lv.set(cells[0], .water);
+    lv.set(cells[1], .shallows);
+    try std.testing.expectEqual(@as(usize, 2), boil(&lv, &cells));
+    try std.testing.expectEqual(BOIL, lv.volumeAt(.steam, cells[0]));
+    try std.testing.expectEqual(BOIL, lv.volumeAt(.steam, cells[1]));
+    try std.testing.expect(!lv.scalding(cells[2]) and !lv.gassy(cells[0]));
+}
+
+test "steam boiled off a lake clears in a few turns, far sooner than as much healing gas" {
+    var rng = mathx.Rng.init(0x6A5);
+    var lake = grid.openFloor();
+    var water = grid.Cells.around(OPEN_AT, 3);
+    while (water.next()) |p| lake.set(p, .water);
+    var blast: [@intCast(grid.Cells.square(1))]P = undefined;
+    var n: usize = 0;
+    var cells = grid.Cells.around(OPEN_AT, 1);
+    while (cells.next()) |p| : (n += 1) blast[n] = p;
+    try std.testing.expectEqual(blast.len, boil(&lake, &blast));
+    const steam = try lasts(&lake, .steam, &rng);
+    var pool = grid.openFloor();
+    pool.set(OPEN_AT, .shallows);
+    _ = boil(&pool, &.{OPEN_AT});
+    const lone = try lasts(&pool, .steam, &rng);
+    var same = grid.openFloor();
+    for (blast) |p| same.release(.healing, p, BOIL);
+    const healing = try lasts(&same, .healing, &rng);
+    std.debug.print("steam: a 3x3 blast on a lake gone in {d} turns over at most {d} cells, one boiled cell in {d}; as much healing gas lasts {d}\n", .{ steam.turns, steam.most, lone.turns, healing.turns });
+    try std.testing.expect(steam.turns * 3 < healing.turns);
+    try std.testing.expect(lone.turns < steam.turns);
+}
+
+test "steam scalds for a little fire damage, less in water, none to the fireproof" {
+    try std.testing.expectEqual(SCALD, scald(0));
+    try std.testing.expectEqual(@as(i32, 1), scald(25));
+    try std.testing.expectEqual(@as(i32, 0), scald(100));
+    try std.testing.expectEqual(@as(i32, 3), scald(-50));
 }

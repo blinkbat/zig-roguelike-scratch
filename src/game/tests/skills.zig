@@ -1428,6 +1428,29 @@ test "a fireball bursts on the first foe it strikes, burning the foes round it, 
     try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(4).?.hp);
     try std.testing.expectEqual(manaAfter(g, .fireball), g.sim.mana);
     std.debug.print("fireball: {d} fire to the struck rat, {d} to the one beside it, none to the rat 3 tiles on\n", .{ struck, harness.TEST_HP - g.sim.pool.get(3).?.hp });
+    try std.testing.expect(std.mem.allEqual(u16, &g.sim.lv.steam, 0));
+}
+
+test "a fireball striking a foe at a lake's edge boils the water into steam, which clears in a few turns" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 26, .y = 20 };
+    harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{at});
+    harness.toughenFoes(g);
+    g.sim.unkillable = true;
+    var lake = grid.Cells.around(.{ .x = 29, .y = 20 }, 2);
+    while (lake.next()) |p| g.sim.lv.set(p, .water);
+    g.sim.lv.set(at, .shallows);
+    harness.use(g, .fireball);
+    harness.press(g, CONFIRM);
+    try std.testing.expect(harness.logged(g, gas.STEAM_NAME));
+    var turns: usize = 0;
+    while (!std.mem.allEqual(u16, &g.sim.lv.steam, 0)) : (turns += 1) {
+        try std.testing.expect(turns < 20);
+        harness.use(g, .wait);
+    }
+    std.debug.print("a fireball at a lake's edge: its steam gone {d} turns after the blast\n", .{turns});
+    try std.testing.expect(turns > 0);
 }
 
 test "chain lightning leaps from the struck foe to two more, each within three tiles of the last" {

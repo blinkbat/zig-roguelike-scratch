@@ -104,6 +104,7 @@ pub const Owed = struct {
     bit: ?Bite = null,
     arrow: ?bow.Flight = null,
     gassed: ?Harm = null,
+    scalded: ?Harm = null,
     healed: ?fx.After = null,
     burned: ?Harm = null,
     bled: ?Harm = null,
@@ -649,7 +650,7 @@ pub const Presentation = struct {
     /// Completion time; unplaced bodies wait for the hero and knockback slide.
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, id: u16, late: f32, start: f32, next: *f32) f32 {
         comptime for (std.enums.values(std.meta.FieldEnum(Owed))) |t| switch (t) {
-            .bit, .arrow, .gassed, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended => {},
+            .bit, .arrow, .gassed, .scalded, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended => {},
         };
         const i = actor.Pool.slot(id);
         const a = sim.pool.items[i];
@@ -749,7 +750,7 @@ pub const Presentation = struct {
             next.* = @max(next.*, late + shoved.left());
         }
         lands = @max(lands, self.fx.landsIn(i));
-        inline for (.{ "gassed", "burned", "bled" }) |field| if (@field(owed, field)) |h| {
+        inline for (.{ "gassed", "scalded", "burned", "bled" }) |field| if (@field(owed, field)) |h| {
             if (h.recovery != null) lands = @max(lands, @max(0, next.* - late));
         };
         if (owed.worn) |c| self.fx.settle(lands, .{ .slot = i, .after = c });
@@ -757,6 +758,7 @@ pub const Presentation = struct {
         const drip: ?fx.Drip = if (mark) |m| .{ .at = m, .matter = fx.matterOf(a.kind) } else null;
         const in_view = shown or placed;
         if (owed.gassed) |h| self.harmShown(sim, gas, at, lands, h, false, in_view, .{ .slot = i, .puff = fx.Puff.over(mark, look.gasInk(.caustic)) });
+        if (owed.scalded) |h| self.harmShown(sim, gas, at, lands, h, false, in_view, .{ .slot = i, .puff = fx.Puff.over(mark, look.gasInk(.steam)) });
         if (owed.healed) |after| self.fx.settle(lands, .{ .slot = i, .after = after, .puff = fx.Puff.over(mark, look.gasInk(.healing)) });
         if (owed.burned) |h| self.harmShown(sim, gas, at, lands, h, true, in_view, .{ .slot = i, .fire_at = mark });
         if (owed.bled) |h| self.harmShown(sim, gas, at, lands, h, false, in_view, .{ .slot = i, .drip = drip });
@@ -812,7 +814,10 @@ pub const Presentation = struct {
         switch (actor.row(k).blow) {
             .burst => |b| switch (b) {
                 .gas => gas.hold(s.wait),
-                .fire => if (sim.lv.isLit(at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire }),
+                .fire => {
+                    gas.hold(s.wait);
+                    if (sim.lv.isLit(at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
+                },
             },
             .strike => {},
         }

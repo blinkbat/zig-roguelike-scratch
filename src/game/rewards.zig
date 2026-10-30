@@ -109,7 +109,10 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
                 sim.lv.addGas(fallen.at, gas.BURST);
                 sim.sayAt(fallen.at, "The {s} bursts, leaving a cloud of " ++ gas.NAME ++ "!", .{actor.row(fallen.kind).name});
             },
-            .fire => ignited = ignite(sim, fallen.at, actor.row(fallen.kind).name),
+            .fire => {
+                ignited = ignite(sim, fallen.at, actor.row(fallen.kind).name);
+                _ = boil(sim, glacial.wetIn(&sim.lv, fallen.at, PYRE_REACH).slice());
+            },
         },
         .strike => {},
     }
@@ -154,6 +157,16 @@ fn ignite(sim: *Simulation, at: P, name: []const u8) Ignited {
         if (sim.isHero(i)) sim.log.push(.danger, "{s} catches fire!", .{sim.name.text()}) else sim.sayOf(a, "The {s} catches fire!", .{actor.row(a.kind).name});
     }
     return out;
+}
+
+/// Fire on the water among `cells` boils it into steam; whether any did.
+pub fn boil(sim: *Simulation, cells: []const P) bool {
+    if (gas.boil(&sim.lv, cells) == 0) return false;
+    for (cells) |p| if (sim.lv.at(p).wet() and sim.lv.isLit(p)) {
+        sim.log.say("The water hisses into a cloud of " ++ gas.STEAM_NAME ++ "!", .{});
+        break;
+    };
+    return true;
 }
 
 fn gainExperience(sim: *Simulation, kind: actor.Kind) void {

@@ -353,3 +353,33 @@ test "healing gas mends every hurt body in it a fifteenth of its life a turn, it
     try std.testing.expectEqual(2 * fx.TICK_WISPS, healing);
     try std.testing.expectEqual(fx.TICK_WISPS, caustic);
 }
+
+test "steam scalds each body in it for a little fire damage a turn, less in water and none to the fireproof, its wisps drawn as each lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const cells = [_]P{ .{ .x = 20, .y = 20 }, .{ .x = 25, .y = 20 }, .{ .x = 20, .y = 25 }, .{ .x = 25, .y = 25 } };
+    harness.arena(g, cells[0], &.{});
+    g.sim.lv.set(cells[2], .shallows);
+    const ids = [_]u16{ g.sim.hero, harness.spawnAt(g, .rat, cells[1], false), harness.spawnAt(g, .rat, cells[2], false), harness.spawnAt(g, .pyre_bloat, cells[3], false) };
+    for (ids) |id| harness.toughen(g.sim.pool.get(id).?);
+    for (cells) |p| g.sim.lv.release(.steam, p, gas.BOIL);
+    game.settle(g);
+    harness.use(g, .wait);
+    var lost: [ids.len]i32 = undefined;
+    for (ids, &lost) |id, *l| l.* = harness.TEST_HP - g.sim.pool.get(id).?.hp;
+    try std.testing.expectEqual([_]i32{ gas.SCALD, gas.SCALD, 1, 0 }, lost);
+    try std.testing.expect(harness.logged(g, gas.STEAM_NAME));
+    g.st = .{};
+    var t: f32 = 0;
+    while (t < 1) : (t += harness.TEST_DT) {
+        const caught = for (ids[0..3]) |id| {
+            if (!harness.caughtUp(g, actor.Pool.slot(id))) break false;
+        } else true;
+        if (caught) break;
+        game.update(g, harness.TEST_DT);
+    }
+    const wisps = wispsOf(g, look.STEAM);
+    std.debug.print("a turn in steam: the archer and a rat scalded for {d}, a rat in shallows for {d}, a pyre bloat for {d}; {d} steam wisps\n", .{ lost[0], lost[2], lost[3], wisps });
+    try std.testing.expect(t < 1);
+    try std.testing.expectEqual(3 * fx.TICK_WISPS, wisps);
+}
