@@ -447,9 +447,18 @@ pub const Presentation = struct {
     /// What is drawn at `p`: a mimic's chest until its death is, a glow plant until the bump that bursts it lands.
     pub fn tileShown(self: *const Presentation, sim: *const Simulation, p: P) grid.Tile {
         if (self.bursting) |b| if (b.at.eq(p)) return b.was;
-        var each = self.masked.iterator(.{});
-        while (each.next()) |i| if (sim.pool.items[i].at.eq(p)) return .chest;
+        if (self.mimicAt(sim, p)) return .chest;
         return sim.lv.at(p);
+    }
+
+    /// The chest drawn at `p` is a mimic's: one still disguised, or one killed in it until its death is drawn.
+    pub fn mimicAt(self: *const Presentation, sim: *const Simulation, p: P) bool {
+        var each = self.masked.iterator(.{});
+        while (each.next()) |i| if (sim.pool.items[i].at.eq(p)) return true;
+        const id = sim.lv.who(p);
+        if (id == grid.NO_ONE) return false;
+        const a = &sim.pool.items[actor.Pool.slot(id)];
+        return a.alive and a.disguised;
     }
 
     pub fn burstPlant(self: *Presentation, at: P, was: grid.Tile, wait: f32) void {

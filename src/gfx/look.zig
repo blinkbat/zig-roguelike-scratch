@@ -109,9 +109,9 @@ pub fn tileRect(t: grid.Tile, tex: rl.Texture2D, cell: rl.Rectangle) rl.Rectangl
     return .{ .x = cell.x, .y = cell.y + if (tall(t)) cell.height - height else (cell.height - height) / 2, .width = cell.width, .height = height };
 }
 
-/// Every sprite that throws a shadow from its feet: bodies, barrel, standing tiles, forest shapes and item bags.
-pub const FIGURES: usize = LIT_FIGURES + STANDING.len + WALL_MASKS.len + BAG_FIGURES;
-const BAG_FIGURES = 2;
+/// Every sprite that throws a shadow from its feet: bodies, barrel, standing tiles, forest shapes, item bags and a mimic's chest.
+pub const FIGURES: usize = LIT_FIGURES + STANDING.len + WALL_MASKS.len + PROP_FIGURES;
+const PROP_FIGURES = 3;
 /// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
 pub const LIT_FIGURES: usize = Bodies.len + 1;
 
@@ -127,6 +127,7 @@ pub const Assets = struct {
     barrel: bool = false,
     item_bag: bool = false,
     chest_item_bag: bool = false,
+    mimic_closed: bool = false,
     small_coins: bool = false,
     large_coins: bool = false,
 
@@ -262,6 +263,7 @@ pub const Sprites = struct {
     barrel: ?rl.Texture2D = null,
     item_bag: ?rl.Texture2D = null,
     chest_item_bag: ?rl.Texture2D = null,
+    mimic_closed: ?rl.Texture2D = null,
     small_coins: ?rl.Texture2D = null,
     large_coins: ?rl.Texture2D = null,
     tiles: std.EnumArray(grid.Tile, ?rl.Texture2D) = .initFill(null),
@@ -446,8 +448,8 @@ pub const Sprites = struct {
     pub fn figures(self: *const Sprites) [FIGURES]?rl.Texture2D {
         var standing: [STANDING.len]?rl.Texture2D = undefined;
         for (STANDING, &standing) |t, *s| s.* = self.tiles.getPtrConst(t).*;
-        const bags: [BAG_FIGURES]?rl.Texture2D = .{ self.item_bag, self.chest_item_bag };
-        return self.litFigures() ++ standing ++ self.forest ++ bags;
+        const props: [PROP_FIGURES]?rl.Texture2D = .{ self.item_bag, self.chest_item_bag, self.mimic_closed };
+        return self.litFigures() ++ standing ++ self.forest ++ props;
     }
 
     fn litFigures(self: *const Sprites) [LIT_FIGURES]?rl.Texture2D {
@@ -585,7 +587,7 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .pyre_bloat = null,
     .pib_shaman = null,
     .bog_leech = null,
-    .mimic = null,
+    .mimic = @embedFile("mimic-open.png"),
 });
 
 const PICTURED = blk: {
@@ -637,6 +639,7 @@ const SOURCES = .{
     .barrel = @as([]const u8, @embedFile("barrel.png")),
     .item_bag = @as([]const u8, @embedFile("item-bag.png")),
     .chest_item_bag = @as([]const u8, @embedFile("chest-item-bag.png")),
+    .mimic_closed = @as([]const u8, @embedFile("mimic-closed.png")),
     .small_coins = @as([]const u8, @embedFile("small-coins.png")),
     .large_coins = @as([]const u8, @embedFile("large-coins.png")),
     .wall = @as([]const u8, WALLS_PNG),

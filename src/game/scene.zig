@@ -321,6 +321,7 @@ fn pileLanded(g: *const game.Game, pile: items.Coins) ?items.Coins {
 /// `here` is `tileShown` at `p`.
 fn tileTexture(g: *const game.Game, here: grid.Tile, p: P, bags: *const grid.CellSet) ?rl.Texture2D {
     if (here == .chest_open and bagged(bags, p)) return g.sprites.chest_item_bag;
+    if (here == .chest and g.pic.mimicAt(&g.sim, p)) return g.sprites.mimic_closed;
     if (here != g.sim.lv.at(p)) return g.sprites.tileOf(here, null);
     return g.sprites.tileAt(&g.sim.lv, p);
 }

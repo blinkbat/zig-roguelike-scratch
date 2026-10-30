@@ -1020,11 +1020,13 @@ test "a mimic stands as a closed chest until opened, then bites, and dies leavin
         harness.drawnOut(g);
     }
     try std.testing.expect(g.sim.pool.get(id).?.disguised and !g.sim.pool.get(id).?.awake);
+    try std.testing.expect(g.pic.mimicAt(&g.sim, at) and !g.pic.mimicAt(&g.sim, from));
     try std.testing.expectEqual(game.Move.open, game.heroMove(g, .e));
     game.heroStep(g, .e, 0);
     const m = g.sim.pool.get(id).?;
     try std.testing.expect(!m.disguised and m.awake);
     try std.testing.expectEqual(grid.Tile.floor, g.sim.lv.at(at));
+    try std.testing.expect(!g.pic.mimicAt(&g.sim, at));
     try std.testing.expect(g.pic.owed[slot].bit != null);
     harness.drawnOut(g);
     try std.testing.expect(harness.drawn(g, slot));
@@ -1245,10 +1247,12 @@ test "a mimic killed in its chest stays the chest until the killing blow lands" 
     var frames: usize = 0;
     while (!g.pic.pictured[slot].down()) : (frames += 1) {
         try std.testing.expectEqual(grid.Tile.chest, g.pic.tileShown(&g.sim, at));
+        try std.testing.expect(g.pic.mimicAt(&g.sim, at));
         try std.testing.expect(harness.gone(g, slot));
         game.update(g, harness.TEST_DT);
     }
     try std.testing.expectEqual(g.sim.lv.at(at), g.pic.tileShown(&g.sim, at));
+    try std.testing.expect(!g.pic.mimicAt(&g.sim, at));
     std.debug.print("mimic: drawn as its chest for {d} frames, until the killing arrow lands\n", .{frames});
     try std.testing.expect(frames > 0);
 }

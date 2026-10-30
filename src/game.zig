@@ -902,6 +902,7 @@ pub fn mapAssets(g: *Game) look.Assets {
         if (a.alive) need.body(a.kind);
         if (a.alive and a.disguised) need.beneath(a.under, a.at);
         if (g.pic.standing(&g.sim, i)) need.body(g.pic.pictured[i].kind);
+        if ((a.alive and a.disguised) or g.pic.masked.isSet(i)) need.mimic_closed = true;
     }
     return need;
 }

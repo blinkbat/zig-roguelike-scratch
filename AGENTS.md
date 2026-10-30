@@ -309,6 +309,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - `actor.dwells` is each kind's ground for packs, bespoke spawns and the editor (`Node.foeFits`); a pack whose lead has none
   is skipped. Bog leeches swim only in water (`actor.swim`), stay `submerged` beyond the hero's reach and are struck there.
   Mimics stand as a real chest tile (`under` keeps the ground) until opened (`Actor.unmask`), then drop chest loot.
+  That chest draws `mimic-closed.png` (`Presentation.mimicAt`); the body is `mimic-open.png`.
   `Actor.veiled`/`seenIn` hide both from drawing, aiming (`bow.previewAmong`), inspection and targeting.
   Netters (`Row.net`) pin the hero: steps struggle in place, leaps and rushes are blocked. Shieldbearers knock the hero back
   (`Presentation.knocked_from`/`Owed.knock` draw it as the blow lands). Frost wisps' touch chills the hero; every third chilled
