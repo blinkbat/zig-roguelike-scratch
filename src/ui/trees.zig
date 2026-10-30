@@ -92,9 +92,7 @@ const GRANT_Y: i32 = DETAIL_TOP + 45;
 /// Either side of a detail rule, and a caption to its first line.
 const RULE_GAP: i32 = 12;
 const CAPTION_STEP: i32 = font.SMALL_LINE + 1;
-/// Above a skill's flavor line, under its one-line note, and above the next rank's changes.
-const FLAVOR_GAP: i32 = 4;
-const NOTE_STEP: i32 = font.SMALL_TIGHT;
+/// Above the next rank's changes.
 const NEXT_GAP: i32 = 8;
 const BACK = look.rgb(0x0c0e12);
 const TILE = look.rgb(0x15171c);
@@ -178,24 +176,18 @@ pub fn bindBox() rl.Rectangle {
     return raster.rect(TEXT_X, BIND_Y, TEXT_W, BUTTON_H);
 }
 
-const SKILL_COLUMNS: i32 = blk: {
-    var most: i32 = 0;
-    for (hero.CLASSES) |c| {
-        for (progress.skills(c)) |s| most = @max(most, s.at.x + 1);
-    }
-    break :blk most;
-};
-
 fn skillBox(class: hero.Class, i: usize) rl.Rectangle {
     const skills = progress.skills(class);
     const at = skills[i].at;
     var last: i32 = 0;
+    var columns: i32 = 0;
     var across: usize = 0;
     for (skills) |s| {
         last = @max(last, s.at.y);
+        columns = @max(columns, s.at.x + 1);
         across += @intFromBool(s.at.y == at.y);
     }
-    const x = if (across == 1) SKILL_MID_X else SKILL_MID_X + (2 * at.x - (SKILL_COLUMNS - 1)) * @divExact(SKILL_STEP_X, 2);
+    const x = if (across == 1) SKILL_MID_X else SKILL_MID_X + (2 * at.x - (columns - 1)) * @divExact(SKILL_STEP_X, 2);
     const y = if (last < 2) SPARSE_TOP + at.y * SPARSE_STEP_Y else SKILL_TOP + at.y * SKILL_STEP_Y;
     return raster.rect(x - SKILL_SIZE / 2, y - SKILL_SIZE / 2, SKILL_SIZE, SKILL_SIZE);
 }
@@ -320,9 +312,8 @@ fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, class: hero.
     skillDetails(face, class, growth, skills[cursor], loadout);
 }
 
-fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Skill, buf: *menu.Note(128)) [:0]const u8 {
-    if (progress.basic(s.act)) return "Basic attacks cannot be upgraded.";
-    if (growth.maxed(s.act)) return "Maximum rank reached.";
+fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Skill, buf: *menu.Note(128)) ?[:0]const u8 {
+    if (progress.basic(s.act) or growth.maxed(s.act)) return null;
     if (s.parent) |p| if (!growth.unlocked(p)) {
         buf.say("Learn {s} first.", .{p.name()});
         return buf.text();
@@ -387,17 +378,17 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     const maximum = growth.maxed(s.act);
     var next = growth.*;
     if (!maximum) next.ranks.getPtr(s.act).* += 1;
-    if (learned and !maximum) {
+    var ranked: menu.Note(128) = .{};
+    next.writeRank(s.act, ranked.writer());
+    const mana_changes = next.cost(s.act) != growth.cost(s.act);
+    const damage_changes = next.damageBonus(s.act) != growth.damageBonus(s.act);
+    const cooldown_changes = next.cooldown(s.act) != growth.cooldown(s.act);
+    if (learned and !maximum and (ranked.n > 0 or mana_changes or damage_changes or cooldown_changes)) {
         top += NEXT_GAP;
         text.say("NEXT RANK  {d}", .{next.ranks.get(s.act)});
         face.draw(text.text(), x, top, font.SMALL, OWNED);
         top += CAPTION_STEP;
-        const changes = top;
-        text.clear();
-        next.writeRank(s.act, text.writer());
-        if (text.n > 0) top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
-        const mana_changes = next.cost(s.act) != growth.cost(s.act);
-        const damage_changes = next.damageBonus(s.act) != growth.damageBonus(s.act);
+        if (ranked.n > 0) top = paragraph(face, ranked.text(), x, top, TEXT_W, OWNED);
         if (damage_changes) {
             const next_hit = skillHit(&next, s.act, loadout).?;
             if (std.meta.eql(hit.?, next_hit)) {
@@ -407,7 +398,6 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
             top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
         }
         const mana_separate = mana_changes and !damage_changes;
-        const cooldown_changes = next.cooldown(s.act) != growth.cooldown(s.act);
         if (mana_separate or cooldown_changes) {
             const cd = next.cooldown(s.act);
             if (mana_separate and cooldown_changes) {
@@ -417,15 +407,10 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
             } else text.say("Cooldown: {d} turn{s}", .{ cd, mathx.plural(cd) });
             top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
         }
-        if (top == changes) {
-            face.draw("No further stat changes.", x, top, font.LABEL, look.DIM);
-            top += NOTE_STEP;
-        }
     }
-    if (s.act.flavor()) |line| _ = face.paragraph(line, x, top + FLAVOR_GAP, TEXT_W, font.LABEL, look.DIM);
     var reason: menu.Note(128) = .{};
-    _ = paragraph(face, skillReason(class, growth, s, &reason), x, REASON_Y, TEXT_W, if (growth.canLearn(class, s.act)) OWNED else look.DIM);
-    drawAction(face, if (progress.basic(s.act)) "Basic attack" else if (maximum) "Maximum rank" else if (learned) "Upgrade skill" else "Learn skill", growth.canLearn(class, s.act));
+    if (skillReason(class, growth, s, &reason)) |why| _ = paragraph(face, why, x, REASON_Y, TEXT_W, if (growth.canLearn(class, s.act)) OWNED else look.DIM);
+    if (!progress.basic(s.act)) drawAction(face, if (maximum) "Maximum rank" else if (learned) "Upgrade skill" else "Learn skill", growth.canLearn(class, s.act));
 }
 
 const Layout = struct {

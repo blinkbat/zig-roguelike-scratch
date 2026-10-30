@@ -32,8 +32,6 @@ const CARRY_R = model.CARRY_R;
 const CARRY_CEILING = model.CARRY_CEILING;
 const CARRY_FACE_WRAP = model.CARRY_FACE_WRAP;
 pub const MEMORY = model.MEMORY;
-const FLAME = model.FLAME;
-const FLAME_SHIFT = model.FLAME_SHIFT;
 pub const FAINT = model.FAINT;
 pub const VOID_REACH = model.VOID_REACH;
 const CORNERS_W = model.CORNERS_W;
@@ -61,7 +59,10 @@ const offset = model.offset;
 pub const offMiddle = model.offMiddle;
 pub const Spot = model.Spot;
 pub const TorchIx = model.TorchIx;
+pub const LIGHTS = model.LIGHTS;
+const PLANT_LIGHTS = model.PLANT_LIGHTS;
 const Torch = model.Torch;
+const Mount = model.Mount;
 const upright = model.upright;
 pub const GLINT_POWER = model.GLINT_POWER;
 const SUN_GLINT = model.SUN_GLINT;
@@ -106,7 +107,7 @@ pub const Light = struct {
     effects: [EFFECTS]Effect = undefined,
     effect_n: usize = 0,
     visibility: visibility.Visibility,
-    torch: [grid.MAX_TORCHES]Torch,
+    torch: [LIGHTS]Torch,
     torch_n: usize = 0,
     /// The hero's centre as drawn, cells.
     carrier: ?[2]f32 = null,
@@ -152,22 +153,39 @@ pub const Light = struct {
         self.grounded();
         self.countCasters(lv);
         self.torch_n = 0;
-        for (lv.torches(), 0..) |w, i| {
-            var t = Torch{ .wall = w, .reach = undefined, .open = undefined, .seed = @as(u32, @intCast(i)) *% 0x27D4EB2F +% 0x165667B1 };
-            var pool: [grid.CELLS]bool = @splat(false);
-            lume.torchPool(lv, w, &pool);
-            var box = t.box().cells();
-            while (box.next()) |p| {
-                const k = t.texel(p);
-                t.reach[k] = mask(grid.cellOr(bool, &pool, p, false));
-                t.open[k] = t.reach[k] * grid.cellOr(f32, &self.visibility.see_through, p, 0);
-            }
-            self.torch[self.torch_n] = t;
-            self.torch_n += 1;
+        for (lv.torches()) |w| self.hang(lv, .{ .wall = w });
+        for (lv.tile, 0..) |t, i| {
+            if (self.torch_n == lv.torches().len + PLANT_LIGHTS) break;
+            if (t.glows()) self.hang(lv, .{ .plant = grid.Level.of(i) });
         }
         self.visibility.snap(lv, self.reveal_map);
         self.t = .{};
         self.fan();
+    }
+
+    fn hang(self: *Light, lv: *const grid.Level, mount: Mount) void {
+        var t = Torch{ .mount = mount, .reach = undefined, .open = undefined, .seed = @as(u32, @intCast(self.torch_n)) *% 0x27D4EB2F +% 0x165667B1 };
+        var pool: [grid.CELLS]bool = @splat(false);
+        lume.torchPool(lv, t.floor(), &pool);
+        var box = t.box().cells();
+        while (box.next()) |p| {
+            const k = t.texel(p);
+            t.reach[k] = mask(grid.cellOr(bool, &pool, p, false));
+            t.open[k] = t.reach[k] * grid.cellOr(f32, &self.visibility.see_through, p, 0);
+        }
+        self.torch[self.torch_n] = t;
+        self.torch_n += 1;
+    }
+
+    /// A glowing plant gone from `p`: its light and its shadow with it.
+    pub fn uproot(self: *Light, lv: *const grid.Level, p: P) void {
+        for (self.torch[0..self.torch_n], 0..) |*t, i| {
+            if (t.mount != .plant or !t.mount.plant.eq(p)) continue;
+            _ = mathx.swapRemove(Torch, &self.torch, &self.torch_n, i);
+            break;
+        }
+        self.scratch.tile[grid.Level.idx(p)] = lv.at(p);
+        self.countCasters(&self.scratch);
     }
 
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {
@@ -188,12 +206,7 @@ pub const Light = struct {
     }
 
     fn fan(self: *Light) void {
-        for (self.torch[0..self.torch_n]) |*t| {
-            t.glow = flicker(self.t.at(), t.seed);
-            var shift: Rgb = undefined;
-            for (0..3) |k| shift[k] = std.math.pow(f32, t.glow, FLAME_SHIFT[k]);
-            t.colour = FLAME * shift;
-        }
+        for (self.torch[0..self.torch_n]) |*t| t.fan(self.t.at());
     }
 
     pub const TEXELS_W: usize = @intCast(MAP_W);
@@ -231,7 +244,7 @@ pub const Light = struct {
         return self.visibility.memoryAt(point);
     }
 
-    pub fn near(self: *const Light, view: grid.Box, out: *[grid.MAX_TORCHES]TorchIx) []const TorchIx {
+    pub fn near(self: *const Light, view: grid.Box, out: *[LIGHTS]TorchIx) []const TorchIx {
         var n: usize = 0;
         for (self.torch[0..self.torch_n], 0..) |*t, i| {
             if (!t.box().overlaps(view, 0)) continue;
@@ -440,7 +453,7 @@ pub const Light = struct {
 
     /// Cells `lo` up to `hi`, and a texel round them for the filter.
     pub fn bake(self: *Light, lv: *const grid.Level, lo: P, hi: P) void {
-        var ids: [grid.MAX_TORCHES]TorchIx = undefined;
+        var ids: [LIGHTS]TorchIx = undefined;
         const torches = self.near((grid.Box{ .lo = lo, .hi = hi }).grown(1), &ids);
         const t0 = P{ .x = @max(0, lo.x * SUB - 1), .y = @max(0, lo.y * SUB - 1) };
         const t1 = P{ .x = @min(MAP_W, hi.x * SUB + 1), .y = @min(MAP_H, hi.y * SUB + 1) };
@@ -632,14 +645,15 @@ pub const Light = struct {
     }
 
     /// A flame hangs on its wall's south face, so a wall seen only from behind shows none, and burns live only while that face's floor is in sight.
-    pub fn flames(self: *const Light, lv: *const grid.Level, out: *[grid.MAX_TORCHES]Flame) []const Flame {
+    pub fn flames(self: *const Light, lv: *const grid.Level, out: *[LIGHTS]Flame) []const Flame {
         var n: usize = 0;
         for (self.torch[0..self.torch_n]) |*t| {
-            if (!self.remembers(lv, t.wall) or !self.remembers(lv, t.floor())) continue;
+            if (t.mount == .wall and !self.remembers(lv, t.mount.wall)) continue;
+            if (!self.remembers(lv, t.floor())) continue;
             const d = t.drawn();
             const v = self.viewAt(d);
             const face = self.viewAt(mathx.centre(t.floor()));
-            out[n] = .{ .at = d, .foot = t.flame()[1], .glow = t.glow, .lit = @min(v.lit, face.lit), .memory = v.memory };
+            out[n] = .{ .kind = t.mount, .at = d, .foot = t.flame()[1], .glow = t.glow, .lit = @min(v.lit, face.lit), .memory = v.memory };
             n += 1;
         }
         return out[0..n];

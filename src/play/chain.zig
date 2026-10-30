@@ -16,7 +16,6 @@ pub const BOLT = "chain lightning";
 pub const TAKES = spark.TAKES;
 pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {s} each.", .{ JUMPS, JUMP_RANGE, clock.stunNote(spark.CHANCE) });
-pub const FLAVOR = "The storm never settles for one.";
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 5 };
 
@@ -37,7 +36,7 @@ pub fn chain(lv: *const grid.Level, pool: *actor.Pool, first: u16) Chain {
         var near = bow.Nearest{ .from = from, .reach = JUMP_RANGE };
         for (pool.slice(), 0..) |a, i| {
             if (!a.alive or !a.foe() or c.has(actor.Pool.idOf(i))) continue;
-            if (lv.isLit(a.at) and grid.projectileLine(lv, from, a.at)) near.offer(a.at);
+            if (a.seenIn(lv) and grid.projectileLine(lv, from, a.at)) near.offer(a.at);
         }
         c.push(lv.who(near.best orelse break));
     }

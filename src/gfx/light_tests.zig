@@ -57,7 +57,7 @@ fn testLight(lv: *const grid.Level) !*light.Light {
 }
 
 fn added(l: *const light.Light, lv: *const grid.Level, q: [2]f32) f32 {
-    var ids: [grid.MAX_TORCHES]light.TorchIx = undefined;
+    var ids: [light.LIGHTS]light.TorchIx = undefined;
     return lum(l.at(lv, l.near(grid.Box.inMap(0), &ids), q)) - lum(l.at(lv, &.{}, q));
 }
 
@@ -221,6 +221,35 @@ test "a torch pools light on the floor below it, fading to nothing at its reach"
     try std.testing.expectApproxEqAbs(@as(f32, 0), last, 1e-5);
 }
 
+test "a glowing plant pools pale blue light round its own cell and draws a glow but no flame" {
+    var lv = litFloor();
+    const at = P{ .x = 30, .y = 30 };
+    lv.set(at, .glow_plant);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    try std.testing.expectEqual(@as(usize, 1), l.torch_n);
+    var ids: [light.LIGHTS]light.TorchIx = undefined;
+    const near = l.near(grid.Box.inMap(0), &ids);
+    const top = l.at(&lv, near, mathx.centre(at)) - l.at(&lv, &.{}, mathx.centre(at));
+    std.debug.print("glow plant light by cells along the floor:", .{});
+    var last = std.math.floatMax(f32);
+    for ([_]f32{ 1, 2, 3, 4, 5, 6, @floatFromInt(light.REACH) }) |r| {
+        const q = [2]f32{ mathx.centre(at)[0] + r, mathx.centre(at)[1] };
+        const rgb = l.at(&lv, near, q) - l.at(&lv, &.{}, q);
+        std.debug.print(" {d}:{d:.3}/{d:.3}/{d:.3}", .{ r, rgb[0], rgb[1], rgb[2] });
+        try std.testing.expect(lum(rgb) <= last);
+        if (r < 6) try std.testing.expect(rgb[2] > rgb[1] and rgb[1] > rgb[0]);
+        last = lum(rgb);
+    }
+    std.debug.print("; its own top {d:.3}\n", .{lum(top)});
+    try std.testing.expect(!std.math.isNan(lum(top)) and lum(top) > 0.3);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), last, 1e-5);
+    var buf: [light.LIGHTS]light.Flame = undefined;
+    const got = l.flames(&lv, &buf);
+    try std.testing.expectEqual(@as(usize, 1), got.len);
+    try std.testing.expect(got[0].kind == .plant and got[0].live());
+}
+
 test "a brick face by its torch catches far more than the ceiling above it, and one turned away catches none" {
     var lv: grid.Level = undefined;
     testRoom(&lv, &.{.{ .x = 22, .y = 14 }});
@@ -382,7 +411,7 @@ test "a pillar throws the torch's shadow across the floor behind it" {
 
 fn stepUntil(l: *light.Light, lv: *const grid.Level, q: [2]f32, comptime done: fn (f32) bool) usize {
     var frames: usize = 0;
-    var ids: [grid.MAX_TORCHES]light.TorchIx = undefined;
+    var ids: [light.LIGHTS]light.TorchIx = undefined;
     const none = ids[0..0];
     while (frames < 600 and !done(lum(l.at(lv, none, q)))) : (frames += 1) l.step(lv, mathx.FRAME_DT);
     return frames;
@@ -464,7 +493,7 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     l.carrier = mathx.centre(f.start);
     for (0..4) |_| l.step(&lv, mathx.FRAME_DT);
     l.bake(&lv, .{ .x = 0, .y = 0 }, grid.SIZE);
-    var ids: [grid.MAX_TORCHES]light.TorchIx = undefined;
+    var ids: [light.LIGHTS]light.TorchIx = undefined;
     const torches = l.near(grid.Box.inMap(-1), &ids);
     var dark: usize = 0;
     var fading: usize = 0;
@@ -988,7 +1017,7 @@ test "a torch on a wall never seen has no flame to draw, though the floor below 
     lv.light(lume.torchFloor(TORCH_AT));
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
-    var buf: [grid.MAX_TORCHES]light.Flame = undefined;
+    var buf: [light.LIGHTS]light.Flame = undefined;
     const got = l.flames(&lv, &buf);
     std.debug.print("unseen torch over a floor in sight: {d} flame(s), lit {d:.3}\n", .{ got.len, if (got.len > 0) got[0].lit else 0 });
     try std.testing.expectEqual(@as(usize, 0), got.len);
@@ -1004,7 +1033,7 @@ test "a torch seen only from behind its wall has no flame, and a remembered one 
     }
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
-    var buf: [grid.MAX_TORCHES]light.Flame = undefined;
+    var buf: [light.LIGHTS]light.Flame = undefined;
     try std.testing.expect(lv.isSeen(TORCH_AT));
     try std.testing.expectEqual(@as(usize, 0), l.flames(&lv, &buf).len);
     @memset(&lv.seen, false);
@@ -1033,7 +1062,7 @@ test "a remembered torch seen again from behind its wall burns at memory, not li
     defer std.testing.allocator.destroy(l);
     l.settle(&lv);
     for (0..240) |_| l.step(&lv, mathx.FRAME_DT);
-    var buf: [grid.MAX_TORCHES]light.Flame = undefined;
+    var buf: [light.LIGHTS]light.Flame = undefined;
     const got = l.flames(&lv, &buf);
     try std.testing.expectEqual(@as(usize, 1), got.len);
     std.debug.print("remembered torch from behind its wall: flame lit {d:.3}, memory {d:.3}\n", .{ got[0].lit, got[0].memory });

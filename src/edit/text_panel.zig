@@ -549,7 +549,8 @@ fn displayWidth(face: anytype, s: [:0]u8) i32 {
     return face.width(s, TEXT);
 }
 
-fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, focused: bool, multiline: bool, editable: bool) void {
+/// Whether it was clicked.
+pub fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, focused: bool, editable: bool) bool {
     rl.drawRectangleRec(r, look.EDIT_PANEL);
     rl.drawRectangleLinesEx(r, 1, if (focused) look.UI_FOCUS else look.EDGE);
     const hit = widgets.hot(ed.controls(), r, true, true, null).hit;
@@ -611,7 +612,7 @@ fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, focu
             f.reveal = true;
         }
     }
-    if (hit) ed.words.focus = if (multiline) .passage else .search;
+    return hit;
 }
 
 fn scrollMark(r: rl.Rectangle, top: usize, rows: usize, count: usize) void {
@@ -693,7 +694,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     var buf: [1024]u8 = undefined;
     widgets.drawFit(&g.face, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
     y += DETAIL + 6;
-    drawField(ed, g, &s.search, raster.rect(x, y, w - 294, LINE + 12), s.focus == .search, false, true);
+    if (drawField(ed, g, &s.search, raster.rect(x, y, w - 294, LINE + 12), s.focus == .search, true)) s.focus = .search;
     if (button(ed, g, x + w - 282, y + 4, 86, "Clear", false, s.search.n > 0)) {
         s.search.set("");
         s.view_dirty = true;
@@ -755,12 +756,12 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE + DETAIL + 6, look.DIM);
         widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * (DETAIL + 6), look.DIM);
         var yy = y + LINE + 3 * (DETAIL + 6) + 4;
-        const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, e.max_len }) catch "";
+        const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
         widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
         yy += DETAIL + 8;
         const field_h = @max(LINE + 12, bottom - yy - (DETAIL + 8 + 2 * widgets.ROW_STEP + DETAIL + 8));
         s.passage_box = raster.rect(right_x, yy, right_w, field_h);
-        drawField(ed, g, &s.draft, s.passage_box, s.focus == .passage, true, e.editable);
+        if (drawField(ed, g, &s.draft, s.passage_box, s.focus == .passage, e.editable)) s.focus = .passage;
         yy += field_h + 8;
         widgets.drawFit(&g.face, "Written by", DETAIL, right_w, false, right_x, yy, look.DIM);
         yy += DETAIL + 6;
@@ -821,7 +822,7 @@ test "text browser groups semantic owners and protects a dirty passage during na
     ed.words.data = c;
     for ([_]catalog.Entry{
         .{ .path = "src/play/fireball.zig", .line = 2, .text = "A fiery burst.", .category = "Skills", .owner = "Fireball", .role = "Description", .context = "play.fireball.DESCRIPTION", .file = 0, .start = 0, .end = 0, .ordinal = 0 },
-        .{ .path = "src/play/fireball.zig", .line = 3, .text = "Fire follows.", .category = "Skills", .owner = "Fireball", .role = "Flavor", .context = "play.fireball.FLAVOR", .file = 0, .start = 0, .end = 0, .ordinal = 1 },
+        .{ .path = "src/play/fireball.zig", .line = 3, .text = "Fire follows.", .category = "Skills", .owner = "Fireball", .role = "Status", .context = "play.fireball.STATUS", .file = 0, .start = 0, .end = 0, .ordinal = 1 },
         .{ .path = "src/play/ward.zig", .line = 2, .text = "A magical shield.", .category = "Skills", .owner = "Mana shield", .role = "Description", .context = "play.ward.DESCRIPTION", .file = 0, .start = 0, .end = 0, .ordinal = 0 },
     }) |entry| try c.list.append(c.arena.allocator(), entry);
     const s = &ed.words;

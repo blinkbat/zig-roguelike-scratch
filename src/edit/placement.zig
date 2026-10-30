@@ -4,6 +4,7 @@ const input = @import("../core/input.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
 const actor = @import("../play/actor.zig");
+const script = @import("../map/script.zig");
 const editor = @import("editor.zig");
 const Editor = editor.Editor;
 const Desk = input.Desk;
@@ -11,6 +12,7 @@ const P = mathx.P;
 
 pub const TORCH_RULE = @import("tool_catalog.zig").TORCH_RULE;
 pub const FOE_RULE = @import("tool_catalog.zig").FOE_RULE;
+const FOLK_RULE = @import("tool_catalog.zig").FOLK_RULE;
 pub const NO_ROOM = "The node has no room for another {s}";
 pub const LINKING = "Linking node {d} door {d}: ";
 pub const LINK_CANCELLED = "Link cancelled";
@@ -111,6 +113,7 @@ pub fn fill(ed: *Editor, p: P, second: bool) void {
     var head: usize = 0;
     var tail: usize = 1;
     var filled: usize = 0;
+    const folk_before = ed.map.script.folk_n;
     queue[0] = @intCast(at);
     seen.set(queue[0]);
     while (head < tail) : (head += 1) {
@@ -127,7 +130,8 @@ pub fn fill(ed: *Editor, p: P, second: bool) void {
             tail += 1;
         }
     }
-    ed.say("Filled {d} cells of {s} with {s}", .{ filled, @tagName(from), @tagName(to) });
+    const folk_went = ed.map.script.folk_n < folk_before;
+    ed.say("Filled {d} cells of {s} with {s}{s}", .{ filled, @tagName(from), @tagName(to), if (folk_went) "; folk standing there went" else "" });
 }
 
 pub fn pickUp(ed: *Editor, p: P, second: bool) void {
@@ -135,7 +139,7 @@ pub fn pickUp(ed: *Editor, p: P, second: bool) void {
     ed.stroke = .none;
     const nd = ed.here();
     const i = grid.Level.idx(p);
-    const picked: ?editor.Tool = switch (nd.plan) {
+    const picked: ?editor.Tool = if (ed.map.script.folkAt(ed.node, p) != null) .folk else switch (nd.plan) {
         .bespoke => |*b| if (b.foeAt(p)) |f| .{ .foe = b.foe[f].kind } else if (b.barrel[i]) .barrel else if (b.torch.has(p)) .torch else if (nd.doorAt(p) != null) .door else null,
         .procgen => if (nd.doorAt(p) != null) .door else null,
     };
@@ -193,6 +197,7 @@ fn barrelInto(nd: *const atlas.Node, b: *atlas.Bespoke, p: P) Put {
 }
 
 fn putBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) bool {
+    if (ed.map.script.folkAt(ed.node, p) != null) return false;
     const put = barrelInto(ed.here(), b, p);
     if (put == .laid) ed.changed();
     return put != .refused;
@@ -214,6 +219,11 @@ fn takeFoe(ed: *Editor, b: *atlas.Bespoke, p: P) void {
     ed.changed();
 }
 
+fn takeFolk(ed: *Editor, p: P) void {
+    ed.map.script.dropFolk(ed.map.script.folkAt(ed.node, p) orelse return);
+    ed.changed();
+}
+
 pub fn place(ed: *Editor, p: P) void {
     switch (ed.tool) {
         .paint => paintTile(ed, p, ed.ink.get(.first)),
@@ -228,13 +238,20 @@ pub fn place(ed: *Editor, p: P) void {
         },
         .foe => |k| {
             const b = &ed.plan().bespoke;
-            if (!ed.here().foeFits(b, p)) return ed.say("A foe " ++ FOE_RULE, .{});
+            if (!ed.here().foeFits(b, p, k) or ed.map.script.folkAt(ed.node, p) != null) return ed.say("A foe " ++ FOE_RULE, .{});
             if (b.foeAt(p)) |f| {
                 if (b.foe[f].kind == k) return;
                 if (!b.roomAt(p, k)) return ed.say(NO_ROOM, .{actor.row(k).name});
                 b.foe[f].kind = k;
             } else if (!b.addFoe(.{ .kind = k, .at = p })) return ed.say(NO_ROOM, .{actor.row(k).name});
             ed.changed();
+        },
+        .folk => {
+            if (ed.map.script.folkAt(ed.node, p)) |f| return editor.plot.openFolk(ed, f);
+            if (!ed.map.folkFits(ed.node, p)) return ed.say("Folk " ++ FOLK_RULE, .{});
+            const f = ed.map.script.addFolk(.{ .node = @intCast(ed.node), .at = p }) orelse return ed.say("The map holds {d} folk", .{script.MAX_FOLK});
+            ed.changed();
+            editor.plot.openFolk(ed, f);
         },
         .door => {
             const k = ed.map.addDoor(ed.node, p) orelse return ed.say("That cell is a door, or the node holds {d}", .{grid.MAX_DOORS});
@@ -270,6 +287,7 @@ pub fn remove(ed: *Editor, p: P) void {
         .barrel => takeBarrel(ed, &ed.plan().bespoke, p),
         .torch => takeTorch(ed, &ed.plan().bespoke, p),
         .foe => takeFoe(ed, &ed.plan().bespoke, p),
+        .folk => takeFolk(ed, p),
         .door => {
             ed.map.removeDoor(.{ .node = ed.node, .door = ed.doorAt(p).? });
             if (ed.painted()) |b| ed.here().pruneAt(b, p);
@@ -316,6 +334,7 @@ pub fn clearSelection(ed: *Editor) void {
         takeBarrel(ed, b, p);
         takeTorch(ed, b, p);
         takeFoe(ed, b, p);
+        takeFolk(ed, p);
         paintTile(ed, p, ed.ink.get(.second));
     }
     ed.say("Cleared to {s}", .{@tagName(ed.ink.get(.second))});
@@ -330,9 +349,9 @@ pub fn startPaste(ed: *Editor) void {
 }
 
 pub fn layBoard(ed: *Editor, at: P) void {
-    const laid = layInto(ed.here(), &ed.plan().bespoke, &ed.board, at);
-    if (laid.changed) ed.changed();
+    const laid = layInto(ed.here(), .{ .script = &ed.map.script, .node = ed.node }, &ed.plan().bespoke, &ed.board, at);
     if (laid.left > 0) ed.say("Pasted; {d} torch(es), barrel(s) or foe(s) did not fit there", .{laid.left}) else ed.say("Pasted", .{});
+    if (laid.changed) ed.changed();
 }
 
 pub const Pasted = struct { left: usize = 0, changed: bool = false };
@@ -341,7 +360,7 @@ pub fn layAside(ed: *Editor, at: P) Pasted {
     const cached = &ed.paste_preview;
     if (cached.matches(ed, at)) return cached.result;
     ed.trial = ed.plan().bespoke;
-    const result = layInto(ed.here(), &ed.trial, &ed.board, at);
+    const result = layInto(ed.here(), .{ .script = &ed.map.script, .node = ed.node }, &ed.trial, &ed.board, at);
     @memcpy(std.mem.asBytes(&cached.source), std.mem.asBytes(ed.here()));
     @memcpy(std.mem.asBytes(&cached.board), std.mem.asBytes(&ed.board));
     cached.at = at;
@@ -351,8 +370,17 @@ pub fn layAside(ed: *Editor, at: P) Pasted {
     return result;
 }
 
+const Folk = struct {
+    script: *const script.Script,
+    node: usize,
+
+    fn at(self: Folk, p: P) bool {
+        return self.script.folkAt(self.node, p) != null;
+    }
+};
+
 /// The copy laid into `b` with its corner at `at`; the paste's ghost lays it aside the same way.
-fn layInto(nd: *const atlas.Node, b: *atlas.Bespoke, bd: *const Board, at: P) Pasted {
+fn layInto(nd: *const atlas.Node, folk: Folk, b: *atlas.Bespoke, bd: *const Board, at: P) Pasted {
     var laid: Pasted = .{};
     var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
     while (cells.next()) |q| {
@@ -364,6 +392,10 @@ fn layInto(nd: *const atlas.Node, b: *atlas.Bespoke, bd: *const Board, at: P) Pa
         }
         if (paintInto(nd, b, p, bd.cells.tile[k])) laid.changed = true;
         if (!bd.cells.barrel[k]) continue;
+        if (folk.at(p)) {
+            laid.left += 1;
+            continue;
+        }
         switch (barrelInto(nd, b, p)) {
             .there => {},
             .laid => laid.changed = true,
@@ -384,7 +416,7 @@ fn layInto(nd: *const atlas.Node, b: *atlas.Bespoke, bd: *const Board, at: P) Pa
             laid.left += 1;
         } else if (b.foeAt(p)) |i| {
             if (b.foe[i].kind != f.kind) laid.left += 1;
-        } else if (nd.foeGoes(b, p, f.kind) and b.addFoe(.{ .kind = f.kind, .at = p })) laid.changed = true else laid.left += 1;
+        } else if (!folk.at(p) and nd.foeGoes(b, p, f.kind) and b.addFoe(.{ .kind = f.kind, .at = p })) laid.changed = true else laid.left += 1;
     }
     return laid;
 }
@@ -394,9 +426,10 @@ pub fn legal(ed: *Editor, p: P) bool {
     if (!ed.tool.fits(nd)) return false;
     return switch (ed.tool) {
         .paint, .start => true,
-        .barrel => nd.barrelGoes(&nd.plan.bespoke, p),
+        .barrel => nd.barrelGoes(&nd.plan.bespoke, p) and ed.map.script.folkAt(ed.node, p) == null,
         .torch => nd.torchGoes(&nd.plan.bespoke, p),
-        .foe => |k| nd.foeGoes(&nd.plan.bespoke, p, k),
+        .foe => |k| nd.foeGoes(&nd.plan.bespoke, p, k) and ed.map.script.folkAt(ed.node, p) == null,
+        .folk => ed.map.folkGoes(ed.node, p) or ed.map.script.folkAt(ed.node, p) != null,
         .door => nd.takesDoor(p),
         .link => nd.doorAt(p) != null,
     };
@@ -411,6 +444,7 @@ pub fn removable(ed: *Editor, p: P) bool {
         .barrel => nd.plan.bespoke.barrel[i],
         .torch => nd.plan.bespoke.torch.has(p),
         .foe => nd.plan.bespoke.foeAt(p) != null,
+        .folk => ed.map.script.folkAt(ed.node, p) != null,
         .door => nd.doorAt(p) != null,
         .link => if (nd.doorAt(p)) |k| nd.door[k].to != null else false,
         .start => false,

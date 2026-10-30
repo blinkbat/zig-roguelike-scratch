@@ -29,7 +29,7 @@ const SEP = menu.SEP;
 
 const WORKSPACE_COLS = 2;
 const WORKSPACE_ROWS = std.math.divCeil(usize, std.enums.values(editor.Lower).len, WORKSPACE_COLS) catch unreachable;
-pub const WORKSPACE_TOP: i32 = widgets.PAD + HEAD + widgets.GAP + (4 + WORKSPACE_ROWS) * widgets.ROW_STEP + widgets.GAP;
+pub const WORKSPACE_TOP: i32 = widgets.PAD + HEAD + widgets.GAP + (5 + WORKSPACE_ROWS) * widgets.ROW_STEP + widgets.GAP;
 
 pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     var buf: [widgets.LINE]u8 = undefined;
@@ -58,6 +58,11 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     if (widgets.button(ed.controls(), &g.face, library.next(), "Text", false, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
     if (widgets.button(ed.controls(), &g.face, library.next(), "Keys", false, true, widgets.keyed("Every key", Desk.HELP_CAPTION))) ed.ask(.help);
     library.done();
+    y += widgets.ROW_STEP;
+    var story = widgets.Across{ .y = y, .n = 2 };
+    if (widgets.button(ed.controls(), &g.face, story.next(), "Dialog", false, true, "Folk and the conversations they open: lines, choices and what each does")) editor.plot.open(ed, .dialogs);
+    if (widgets.button(ed.controls(), &g.face, story.next(), "Script", false, true, "Triggers: when every condition holds after a turn, their actions run in order")) editor.plot.open(ed, .script);
+    story.done();
     y += widgets.ROW_STEP;
     var acts = widgets.Across{ .y = y, .n = 4 };
     if (widgets.button(ed.controls(), &g.face, acts.next(), "Undo", false, ed.history.at > 0, widgets.keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
@@ -329,6 +334,12 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, top: i32) void {
         thingRow(ed, g, &y, line, if (d.to == null) WARN else look.TEXT, d.at);
     }
     for (ed.scene.shownFoes()) |f| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}", .{ editor.kindName(f.kind), f.at.x, f.at.y }) catch "", look.TEXT, f.at);
+    const s = &ed.map.script;
+    for (s.folks()) |f| {
+        if (f.node != ed.node) continue;
+        const talk = if (f.dialog) |d| s.dialog[d].name.text() else "nothing to say";
+        thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}  talks: {s}", .{ f.called(), f.at.x, f.at.y, talk }) catch "", look.TEXT, f.at);
+    }
     switch (ed.plan().*) {
         .bespoke => |*b| {
             for (b.torches()) |t| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "Torch  {d},{d}", .{ t.x, t.y }) catch "", look.TEXT, t);
@@ -375,7 +386,7 @@ pub fn toolPicture(g: *const game.Game, t: editor.Tool) ?rl.Texture2D {
         .barrel => g.sprites.barrel,
         .foe => |k| g.sprites.body(k),
         .start => g.sprites.body(actor.HERO),
-        .paint, .torch, .door, .link => null,
+        .paint, .torch, .folk, .door, .link => null,
     };
 }
 
@@ -500,6 +511,7 @@ fn hover(ed: *editor.Editor, c: rl.Rectangle, buf: []u8) [:0]const u8 {
     for (ed.scene.shownFoes()) |f| {
         if (f.at.eq(p)) wr.print(", a {s}", .{actor.row(f.kind).name}) catch {};
     }
+    if (ed.map.script.folkAt(ed.node, p)) |f| wr.print(", {s} (folk)", .{ed.map.script.folk[f].called()}) catch {};
     if (ed.scene.start_at) |s| {
         if (s.eq(p)) wr.writeAll(", the start") catch {};
     }

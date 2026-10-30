@@ -3,9 +3,12 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const gas = @import("../map/gas.zig");
 const actor = @import("../play/actor.zig");
+const damage = @import("../play/damage.zig");
+const glacial = @import("../play/glacial.zig");
 const items = @import("../play/items.zig");
 const progress = @import("../play/progress.zig");
 const flask = @import("../play/flask.zig");
+const consumable = @import("../play/consumable.zig");
 const Simulation = @import("sim.zig").Simulation;
 const P = mathx.P;
 
@@ -16,7 +19,8 @@ comptime {
 }
 
 pub const Frightened = std.StaticBitSet(actor.MAX);
-pub const Death = struct { gold: i32, frightened: Frightened };
+pub const Ignited = std.StaticBitSet(actor.MAX);
+pub const Death = struct { gold: i32, frightened: Frightened, ignited: Ignited = .initEmpty() };
 pub const Chest = enum { opened, not_closed, ground_full };
 
 pub fn groundRoom(sim: *Simulation) bool {
@@ -28,6 +32,10 @@ pub fn groundRoom(sim: *Simulation) bool {
 pub fn dropItem(sim: *Simulation, drop: items.Drop) void {
     const added = sim.ground.add(drop);
     std.debug.assert(added);
+}
+
+fn dropSupply(sim: *Simulation, supply: items.Supply) void {
+    _ = sim.ground.addSupply(supply);
 }
 
 fn dropGold(sim: *Simulation, at: P, amount: i32) void {
@@ -51,7 +59,11 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
     if (!groundRoom(sim)) return .ground_full;
     sim.lv.set(at, opened);
     dropItem(sim, .{ .item = items.roll(&sim.loot_rng, sim.heroAttrs().item_rarity), .at = at });
-    sim.log.push(.loot, "{s} opens the chest: {d} gold and an item.", .{ sim.name.text(), rollGold(sim, at, items.CHEST_GOLD) });
+    const gold = rollGold(sim, at, items.CHEST_GOLD);
+    if (consumable.roll(&sim.loot_rng, consumable.CHEST_PERCENT)) |k| {
+        dropSupply(sim, .{ .kind = k, .at = at });
+        sim.log.push(.loot, "{s} opens the chest: {d} gold, an item and {s}.", .{ sim.name.text(), gold, consumable.phrase(k) });
+    } else sim.log.push(.loot, "{s} opens the chest: {d} gold and an item.", .{ sim.name.text(), gold });
     sim.chronicle.mark(.chest);
     return .opened;
 }
@@ -71,26 +83,74 @@ pub fn noticeItems(sim: *Simulation, at: P) void {
     for (sim.ground.drops[0..sim.ground.n]) |drop| {
         if (drop.at.eq(at)) sim.log.push(.loot, "{s} steps over {s}.", .{ sim.name.text(), drop.item.name(&name) });
     }
+    for (sim.ground.supplies[0..sim.ground.supply_n]) |s| {
+        if (s.at.eq(at)) sim.log.push(.loot, "{s} steps over {s}.", .{ sim.name.text(), consumable.phrase(s.kind) });
+    }
 }
 
 pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
+    sim.pool.items[target.slot().index].unmask(&sim.lv);
     const fallen = sim.pool.items[target.slot().index];
     sim.kills += 1;
+    sim.plot.died(fallen.kind);
     gainExperience(sim, fallen.kind);
-    const reward = items.foeLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
+    const reward = lootOf(sim, fallen);
     if (reward.gold > 0) dropGold(sim, fallen.at, reward.gold);
     if (reward.item) |item| dropItem(sim, .{ .item = item, .at = fallen.at, .source = target.value });
-    for (&sim.flasks.values) |*flask_| flask_.fill(flask.PER_KILL);
-    if (fallen.kind.bursts()) {
-        sim.lv.addGas(fallen.at, gas.BURST);
-        sim.sayAt(fallen.at, "The {s} bursts, leaving a cloud of " ++ gas.NAME ++ "!", .{actor.row(fallen.kind).name});
+    if (reward.supply) |k| dropSupply(sim, .{ .kind = k, .at = fallen.at, .source = target.value });
+    for (std.enums.values(flask.Kind)) |k| if (sim.inventory.gear.holds(k)) sim.flasks.getPtr(k).fill(flask.PER_KILL);
+    var ignited = Ignited.initEmpty();
+    switch (actor.row(fallen.kind).blow) {
+        .burst => |b| switch (b) {
+            .gas => {
+                sim.lv.addGas(fallen.at, gas.BURST);
+                sim.sayAt(fallen.at, "The {s} bursts, leaving a cloud of " ++ gas.NAME ++ "!", .{actor.row(fallen.kind).name});
+            },
+            .fire => ignited = ignite(sim, fallen.at, actor.row(fallen.kind).name),
+        },
+        .strike => {},
     }
     const family = fallen.kind.family();
     if (sim.pool.tally(family).left == 0) {
         sim.log.say("The last {s} is dead.", .{actor.row(family).name});
         sim.chronicle.mark(.{ .cleared = family });
     }
-    return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at) };
+    return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .ignited = ignited };
+}
+
+/// A mimic leaves its chest's loot; nothing is left where no one could walk to fetch it.
+fn lootOf(sim: *Simulation, fallen: actor.Actor) items.Loot {
+    if (!sim.lv.walkable(fallen.at)) return .{};
+    const rarity = sim.heroAttrs().item_rarity;
+    if (actor.row(fallen.kind).disguised) return .{ .item = items.roll(&sim.loot_rng, rarity), .gold = items.CHEST_GOLD.roll(&sim.loot_rng), .supply = consumable.roll(&sim.loot_rng, consumable.CHEST_PERCENT) };
+    return items.foeLoot(&sim.loot_rng, rarity);
+}
+
+pub const PYRE_REACH: i32 = 1;
+
+fn keep(_: void, _: P) bool {
+    return true;
+}
+
+/// Where a pyre bursting at `at` sets bodies alight.
+pub fn pyre(lv: *const grid.Level, at: P) glacial.Burst {
+    return glacial.spread(lv, at, PYRE_REACH, {}, keep);
+}
+
+/// Every body in the burst catches fire, as far as its fire and burn resistance allow; the slots of those that did.
+fn ignite(sim: *Simulation, at: P, name: []const u8) Ignited {
+    var out = Ignited.initEmpty();
+    sim.sayAt(at, "The {s} bursts into flame!", .{name});
+    const area = pyre(&sim.lv, at);
+    for (sim.pool.slice(), 0..) |*a, i| {
+        if (!a.alive or !area.has(a.at)) continue;
+        const chance: u32 = @intCast(@min(mathx.PERCENT, damage.resisted(mathx.PERCENT, sim.combatStats(a).elements.get(.fire))));
+        if (!sim.procStatus(a, .burn, chance)) continue;
+        a.burn.start();
+        out.set(i);
+        if (sim.isHero(i)) sim.log.push(.danger, "{s} catches fire!", .{sim.name.text()}) else sim.sayAt(a.at, "The {s} catches fire!", .{actor.row(a.kind).name});
+    }
+    return out;
 }
 
 fn gainExperience(sim: *Simulation, kind: actor.Kind) void {

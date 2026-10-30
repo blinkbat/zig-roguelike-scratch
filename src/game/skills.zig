@@ -9,6 +9,7 @@ const bow = @import("../play/bow.zig");
 const glacial = @import("../play/glacial.zig");
 const juke = @import("../play/juke.zig");
 const flask = @import("../play/flask.zig");
+const consumable = @import("../play/consumable.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
 const fx = @import("../gfx/fx.zig");
@@ -21,7 +22,7 @@ const P = mathx.P;
 
 pub fn openAim(run: *game.Game, by: input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
-    const suggested = preferredTarget(run, act, hero.at) orelse (if (act == .combustion) null else bow.pick(&run.sim.lv, &run.sim.pool, hero.at));
+    const suggested = preferredTarget(run, act, hero.at) orelse (if (act.consumes()) null else bow.pick(&run.sim.lv, &run.sim.pool, hero.at));
     if (suggested) |at| return aimAt(run, by, act, hero.at, at);
     if (act.reticle() == .bow) {
         const dx: i32 = if (run.pic.facing[run.sim.heroSlot().?] == .left) -1 else 1;
@@ -33,9 +34,9 @@ pub fn openAim(run: *game.Game, by: input.Button, act: skillbar.Act) void {
 
 fn targetAt(run: *game.Game, act: skillbar.Act, from: P, id: u16) ?P {
     const a = run.sim.pool.get(id) orelse return null;
-    if (!a.foe() or !run.sim.lv.isLit(a.at) or !tactics.validAct(run, act, from, a.at)) return null;
+    if (!a.foe() or !a.seenIn(&run.sim.lv) or !tactics.validAct(run, act, from, a.at)) return null;
     if (act.reticle() == .bow) {
-        const flight = bow.preview(&run.sim.lv, from, a.at);
+        const flight = bow.previewAmong(&run.sim.lv, &run.sim.pool, from, a.at);
         if (flight.struck == null or flight.struck.? != .body or flight.struck.?.body != id) return null;
     }
     return a.at;
@@ -54,7 +55,7 @@ pub fn rememberTarget(run: *game.Game) void {
     if (run.mode.aim.act().attack() == null) return;
     const id = run.sim.lv.who(run.mode.aim.mark);
     const a = run.sim.pool.get(id);
-    run.target = if (a != null and a.?.foe() and run.sim.lv.isLit(run.mode.aim.mark)) id else null;
+    run.target = if (a != null and a.?.foe() and a.?.seenIn(&run.sim.lv)) id else null;
 }
 
 pub fn openLeap(run: *game.Game, by: input.Button, act: skillbar.Act) void {
@@ -69,7 +70,7 @@ fn openSwing(run: *game.Game, by: input.Button, act: skillbar.Act) void {
     var mark: ?P = null;
     for (mathx.ALL_DIRS) |d| {
         const p = hero.at.add(d.delta());
-        if (!act.aimable(&run.sim.lv, hero.at, p)) continue;
+        if (!tactics.validAct(run, act, hero.at, p)) continue;
         const foe = if (run.sim.pool.get(run.sim.lv.who(p))) |a| a.foe() else false;
         if (foe or mark == null) mark = p;
         if (foe) break;
@@ -96,15 +97,18 @@ pub fn closeAim(run: *game.Game) void {
     if (run.mode == .aim) run.mode = .play;
 }
 
-const Blocked = enum { cooling, mana, empty, locked };
+const Blocked = enum { cooling, mana, unworn, empty, none_left, locked, pinned };
 
 pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.simulation.Flasks, mana: i32) ?Blocked {
     if (!run.sim.growth.unlocked(act)) return .locked;
+    if (movesHero(act) and run.sim.heroBody() != null and run.sim.heroBody().?.pin.turns > 0) return .pinned;
     if (act == .unyielding and run.sim.heroBody() != null and run.sim.heroBody().?.tactics.unyielding) return null;
     if (run.sim.cooldown.get(act) > 0) return .cooling;
     if (act.flaskOf()) |k| {
+        if (!run.sim.inventory.gear.holds(k)) return .unworn;
         if (!flasks.get(k).full()) return .empty;
     }
+    if (act.supplyOf()) |k| if (run.sim.inventory.stacks.get(k) == 0) return .none_left;
     if (mana < run.sim.growth.cost(act)) return .mana;
     return null;
 }
@@ -117,25 +121,35 @@ fn ready(run: *game.Game, act: skillbar.Act) bool {
             run.sim.log.say("{s} is ready in {d} turn{s}.", .{ act.name(), left, plural(left) });
         },
         .mana => run.sim.log.say("{s} needs {d} mana.", .{ act.name(), run.sim.growth.cost(act) }),
+        .unworn => run.sim.log.say("{s} is not equipped.", .{act.name()}),
         .empty => run.sim.log.say("{s} is empty.", .{act.name()}),
+        .none_left => run.sim.log.say("{s}: none carried.", .{act.name()}),
         .locked => run.sim.log.say("{s} is not learned.", .{act.name()}),
+        .pinned => run.sim.log.say("{s} is pinned.", .{run.sim.name.text()}),
     }
     return false;
 }
 
+fn movesHero(act: skillbar.Act) bool {
+    const r = act.reticle() orelse return false;
+    return r == .leap or r == .rush;
+}
+
 fn spend(run: *game.Game, act: skillbar.Act) void {
-    if (act.flaskOf() == null) tactics.beforeAction(&run.sim);
+    tactics.beforeAction(&run.sim);
     run.sim.chronicle.note(.{ .used = act });
     run.sim.mana -= run.sim.growth.cost(act);
     run.sim.cooldown.set(act, run.sim.growth.cooldown(act));
+    if (act.supplyOf()) |k| run.sim.inventory.stacks.getPtr(k).* -= 1;
 }
 
 const plural = mathx.plural;
 
 pub fn aimable(run: *const game.Game, from: P, to: P) bool {
-    if (run.mode.aim.act().reticle() == .ground) return tactics.valid(run, from, to);
-    if (run.mode.aim.act().reticle() == .bow and !run.sim.lv.inLos(to)) return false;
-    return run.mode.aim.act().aimable(&run.sim.lv, from, to);
+    const act = run.mode.aim.act();
+    if (act.reticle() == .ground) return tactics.valid(run, from, to);
+    if (act.reticle() == .bow and !run.sim.lv.inLos(to)) return false;
+    return act.aimable(&run.sim.lv, from, to) and !tactics.strikesHidden(run, act, from, to);
 }
 
 fn leap(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
@@ -159,14 +173,29 @@ fn drink(run: *game.Game, act: skillbar.Act, k: flask.Kind) void {
     const hero = run.sim.heroActor() orelse return;
     spend(run, act);
     run.sim.flasks.getPtr(k).drink(flask.recovers(k, hero.max, run.sim.heroPerks()));
-    recoverFlask(run, k, 0);
     run.pic.flasks_shown.set(k, run.sim.flasks.get(k));
     run.pic.fx.shimmer(mathx.centre(hero.at), switch (k) {
         .life => look.LIFE,
         .mana => look.WARD,
     });
     run.sim.log.push(.recovery, "{s} drinks a {s} flask.", .{ run.sim.name.text(), menu.word(k) });
-    run.sim.unsaved = true;
+    run.pic.lead = 0;
+    combat.endTurn(run);
+}
+
+fn useSupply(run: *game.Game, act: skillbar.Act, k: consumable.Kind) void {
+    const hero = run.sim.heroActor() orelse return;
+    spend(run, act);
+    switch (k) {
+        .bandage => hero.bleed = .{},
+        .smelling_salts => consumable.SmellingSalts.steel(&hero.resilience),
+        .frost_vial => unreachable,
+    }
+    sayDone(run, act);
+    run.pic.fx.shimmer(mathx.centre(hero.at), look.TEXT);
+    run.pic.settleHero(&run.sim, 0);
+    run.pic.lead = 0;
+    combat.endTurn(run);
 }
 
 pub fn recover(run: *game.Game) void {
@@ -231,6 +260,8 @@ fn useUnaimed(run: *game.Game, act: skillbar.Act) void {
                 unreachable;
             } else if (comptime action.flaskOf()) |kind| {
                 if (ready(run, action)) drink(run, action, kind);
+            } else if (comptime action.supplyOf()) |kind| {
+                if (ready(run, action)) useSupply(run, action, kind);
             } else if (ready(run, action)) {
                 castSpell(run, action);
             }
@@ -244,7 +275,7 @@ fn openTargeting(run: *game.Game, selection: Use, reticle: skillbar.Act.Reticle)
         .leap => openLeap(run, selection.by, selection.act),
         .swing => openSwing(run, selection.by, selection.act),
         .rush => openRush(run, selection.by, selection.act),
-        .ground => if (selection.act == .combustion) openAim(run, selection.by, selection.act) else openLeap(run, selection.by, selection.act),
+        .ground => if (selection.act.consumes()) openAim(run, selection.by, selection.act) else openLeap(run, selection.by, selection.act),
     }
     if (run.mode == .aim) run.mode.aim.set = selection.set;
 }
@@ -292,7 +323,7 @@ fn openRush(run: *game.Game, by: input.Button, act: skillbar.Act) void {
     var empty = bow.Nearest{ .from = hero.at };
     var cells = grid.Cells.around(hero.at, act.reach());
     while (cells.next()) |p| {
-        if (act.aimable(&run.sim.lv, hero.at, p)) {
+        if (tactics.validAct(run, act, hero.at, p)) {
             if (run.sim.lv.who(p) != grid.NO_ONE) near.offer(p) else empty.offer(p);
         }
     }
@@ -393,12 +424,15 @@ pub fn confirmAim(run: *game.Game) void {
 }
 
 fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
-    const flight = bow.fly(&run.sim.lv, from, to);
+    const pierced = if (act.pierces()) bow.pierce(&run.sim.lv, from, to) else null;
+    const flight = if (pierced) |p| p.flight else bow.fly(&run.sim.lv, from, to);
     const stroke = run.pic.recordProjectile(from, act, flight);
     if (flight.struck) |hit| {
         switch (act) {
             inline else => |action| {
-                if (comptime action.reticle() == .bow) {
+                if (comptime action.pierces()) {
+                    combat.pierceHit(run, action, pierced.?, stroke);
+                } else if (comptime action.reticle() == .bow) {
                     resolveProjectileHit(run, action, hit, flight, stroke);
                 } else unreachable;
             },

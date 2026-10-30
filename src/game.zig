@@ -17,6 +17,7 @@ const book = @import("ui/book.zig");
 const heroes = @import("play/hero.zig");
 const actor = @import("play/actor.zig");
 const turn_clock = @import("play/clock.zig");
+const confusion = @import("play/confusion.zig");
 const pack = @import("play/pack.zig");
 const skillbar = @import("play/skillbar.zig");
 const look = @import("gfx/look.zig");
@@ -46,6 +47,7 @@ const skills = @import("game/skills.zig");
 pub const presentation = @import("game/presentation.zig");
 pub const simulation = @import("game/sim.zig");
 pub const epitaph = @import("game/epitaph.zig");
+pub const talking = @import("game/talking.zig");
 
 const P = mathx.P;
 
@@ -109,7 +111,7 @@ const PLAY_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
 const LOOT_SALT: u64 = 0x10_07_A11;
 /// Reach of Interact: underfoot and the cells beside the hero.
 pub const INTERACT_REACH: i32 = 1;
-const NEARBY_MAX = items.GROUND_MAX + grid.Cells.square(INTERACT_REACH);
+const NEARBY_MAX = 2 * items.GROUND_MAX + grid.Cells.square(INTERACT_REACH);
 pub const NearbyBuf = [NEARBY_MAX]book.Nearby;
 
 const CONFIRM = menu.CONFIRM;
@@ -124,9 +126,9 @@ comptime {
     std.debug.assert(prompt_icon.labelPx(PROMPT_PX) == font.LABEL);
 }
 
-pub const Mode = enum { play, aim, bind, dead, pause, inspect };
+pub const Mode = enum { play, aim, bind, dead, pause, inspect, talk };
 pub const Aim = @import("game/targeting.zig").Aim;
-pub const ModeState = union(Mode) { play, aim: Aim, bind, dead, pause, inspect };
+pub const ModeState = union(Mode) { play, aim: Aim, bind, dead, pause, inspect, talk };
 
 pub const Spot = union(enum) {
     actor: u16,
@@ -165,6 +167,8 @@ pub const Game = struct {
     pause_page: PausePage = .main,
     debug: debugging.State = .{},
     character: book.Book = .{},
+    /// Something was taken from the open loot menu; closing it spends the one turn.
+    looted: bool = false,
     /// What Character's Nearby page lists, filled afresh each step and draw; too big for the stack each frame.
     nearby: NearbyBuf = undefined,
     back: Back = .title,
@@ -257,7 +261,7 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
 
 fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
     toDefaults(&g.sim, &.{ "visited", "node", "outdoors", "pool", "hero", "clock" });
-    toDefaults(g, &.{"character"});
+    toDefaults(g, &.{ "character", "looted" });
     g.sim.map = w;
     g.sim.seed = seed;
     g.sim.rng = mathx.Rng.init(seed ^ PLAY_SALT);
@@ -304,6 +308,7 @@ fn enter(g: *Game, n: usize, at: P) void {
         const hero = g.sim.heroSlot().?;
         g.sim.lv.clear(g.sim.pool.items[hero].at);
     } else w.node[n].stamp(&g.sim.lv, rollOf(g.sim.seed, n));
+    w.stampFolk(n, &g.sim.lv);
     const placing: []const atlas.Foe = if (back) &.{} else w.node[n].placed();
     const to = atlas.landing(&g.sim.lv, at, placing) orelse at;
     if (back) {
@@ -316,7 +321,7 @@ fn enter(g: *Game, n: usize, at: P) void {
         switch (w.node[n].plan) {
             .procgen => |*pg| pack.place(&g.sim.lv, &g.sim.pool, &g.sim.rng, to, &pg.foes),
             .bespoke => for (placing) |f| {
-                if (g.sim.lv.vacant(f.at)) _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(f.kind, f.at));
+                if (actor.dwells(f.kind, &g.sim.lv, f.at)) _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(f.kind, f.at));
             },
         }
     }
@@ -327,6 +332,7 @@ fn enter(g: *Game, n: usize, at: P) void {
     g.sim.unsaved = true;
     freshTurn(g);
     settle(g);
+    talking.arrived(g);
 }
 
 pub fn rollOf(run: u64, n: usize) u64 {
@@ -391,7 +397,7 @@ pub fn toDefaults(s: anytype, comptime fields: []const []const u8) void {
 }
 
 fn freshRun(g: *Game) void {
-    toDefaults(&g.sim, &.{ "kills", "gold", "mana_recovery", "flasks", "cooldown", "stepped", "log", "chronicle", "inventory", "ground" });
+    toDefaults(&g.sim, &.{ "kills", "gold", "mana_recovery", "flasks", "cooldown", "stepped", "log", "chronicle", "inventory", "ground", "plot" });
     toDefaults(g, &.{ "mode", "epitaph" });
     g.pic.freshRun();
     g.sim.growth = progress.State.of(g.sim.class);
@@ -434,14 +440,20 @@ pub fn resumeRun(g: *Game) void {
     gen.restoreShapes(&g.sim.lv);
     var visits = g.sim.visited.iterator(.{});
     while (visits.next()) |n| gen.restoreShapes(&g.sim.visits[n].lv);
-    toDefaults(g, &.{ "mode", "exit", "character", "epitaph" });
+    toDefaults(g, &.{ "mode", "exit", "character", "looted", "epitaph" });
     toDefaults(&g.sim, &.{ "unsaved", "chronicle" });
     g.sim.unsaved = g.sim.growth.refundBasicRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
+    if (g.sim.map) |w| {
+        w.stampFolk(g.sim.node, &g.sim.lv);
+        var left = g.sim.visited.iterator(.{});
+        while (left.next()) |n| w.stampFolk(n, &g.sim.visits[n].lv);
+    }
     freshTurn(g);
     g.pic.settleXp(&g.sim);
     settle(g);
     if (g.pic.heroShown(&g.sim)) |h| g.vignette.settle(h.hp, h.max) else g.vignette.clear();
+    if (g.sim.plot.talk != null) g.mode = .talk;
 }
 
 pub fn freshSeed() u64 {
@@ -449,11 +461,12 @@ pub fn freshSeed() u64 {
 }
 
 pub fn castSight(g: *Game, from: P) void {
+    g.sim.pool.surface(from);
     g.sim.see(from);
     g.mini.stale = true;
 }
 
-pub const Move = enum { kick, open, loot, step, blocked };
+pub const Move = enum { kick, open, burst, loot, step, talk, blocked };
 
 pub fn heroMove(g: *Game, d: mathx.Dir) Move {
     const h = g.sim.heroActor() orelse return .blocked;
@@ -463,7 +476,9 @@ pub fn heroMove(g: *Game, d: mathx.Dir) Move {
 /// A step from `from` toward `d`, `occupied` saying whether a body or barrel stands where it lands.
 pub fn moveOf(g: *const Game, from: P, d: mathx.Dir, occupied: bool) Move {
     if (opensChest(g, from, d)) return .open;
-    if (!g.sim.lv.passOk(from, d)) return .blocked;
+    if (g.sim.lv.at(from.add(d.delta())).bursts()) return .burst;
+    if (!g.sim.lv.passOk(from, d)) return if (occupied and g.sim.lv.at(from.add(d.delta())).wet()) .kick else .blocked;
+    if (g.sim.lv.folkAt(from.add(d.delta())) != null) return .talk;
     if (occupied) return .kick;
     return if (character.lootReached(g, from, from.add(d.delta()))) .loot else .step;
 }
@@ -472,12 +487,30 @@ fn opensChest(g: *const Game, from: P, d: mathx.Dir) bool {
     return g.sim.lv.at(from.add(d.delta())).opened() != null;
 }
 
+fn spends(m: Move) bool {
+    return m != .blocked and m != .open and m != .talk;
+}
+
+fn spendsMove(g: *Game, d: mathx.Dir) bool {
+    return spends(heroMove(g, d));
+}
+
+/// A confused hero's move that spends a turn may go any way that also would.
+fn astray(g: *Game, chosen: mathx.Dir) mathx.Dir {
+    const h = g.sim.heroActor() orelse return chosen;
+    if (!spends(heroMove(g, chosen)) or !confusion.strays(h.confusion.turns > 0, &g.sim.rng)) return chosen;
+    const d = g.sim.rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, g, spendsMove) orelse return chosen;
+    if (d != chosen) g.sim.log.say("{s} " ++ confusion.STUMBLES ++ ".", .{g.sim.name.text()});
+    return d;
+}
+
 /// `late` seconds ago the walk came due.
-pub fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
+pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
     const h = g.sim.heroActor() orelse return;
+    const d = astray(g, chosen);
     const to = h.at.add(d.delta());
     const move = heroMove(g, d);
-    if (move != .blocked and move != .open) @import("game/tactics.zig").beforeAction(&g.sim);
+    if (spends(move)) @import("game/tactics.zig").beforeAction(&g.sim);
     switch (move) {
         .kick => {
             const w = g.sim.lv.who(to);
@@ -490,15 +523,26 @@ pub fn heroStep(g: *Game, d: mathx.Dir, late: f32) void {
             }
             g.pic.lead = s.wait;
         },
+        .burst => {
+            const s = heroBump(g, h.at, to, late);
+            combat.burstPlant(g, to, s);
+            g.pic.lead = s.wait;
+        },
         .open => {
             character.openLoot(g, to);
             return;
         },
-        .loot => {
-            heroTo(g, to);
-            character.openLoot(g, to);
+        .talk => {
+            talking.speak(g, g.sim.lv.folkAt(to).?);
+            return;
         },
-        .step => heroTo(g, to),
+        .loot, .step => if (h.pin.turns > 0) {
+            g.sim.log.say("{s} is pinned and struggles.", .{g.sim.name.text()});
+            g.mouse.stop();
+        } else {
+            heroTo(g, to);
+            if (move == .loot) character.openLoot(g, to);
+        },
         .blocked => return,
     }
     g.pic.turnToward(g.sim.hero, d.delta().x);
@@ -564,7 +608,7 @@ fn queueWalk(g: *Game, d: mathx.Dir) void {
 
 /// With anything near, the press is Interact's, not its button's skill, and waits for quiet like one.
 fn queueInteract(g: *Game) bool {
-    if (!g.st.interact or !character.anyNearby(g)) return false;
+    if (!g.st.interact or !(character.anyNearby(g) or talking.beside(g) != null)) return false;
     g.pending = .interact;
     return true;
 }
@@ -581,6 +625,10 @@ fn queuePress(g: *Game) void {
 fn interacted(g: *Game) bool {
     if (queueInteract(g) and !g.pic.quiet()) return true;
     if (takeQueued(g, .interact) == null) return false;
+    if (talking.beside(g)) |f| {
+        talking.speak(g, f);
+        return true;
+    }
     return character.openNearby(g);
 }
 
@@ -638,7 +686,7 @@ pub fn update(g: *Game, dt: f32) void {
     g.pic.stepMotion(&g.sim, dt);
     var late: f32 = 0;
     const was = screenOf(g);
-    if (g.mode != .dead and g.st.character_page != null) {
+    if (g.mode != .dead and g.mode != .talk and g.st.character_page != null) {
         const page = book.Page.of(g.st.character_page.?);
         if (bookOpen(g) and g.character.page == page) {
             g.mode = .play;
@@ -655,7 +703,7 @@ pub fn update(g: *Game, dt: f32) void {
         if (g.mode == .play) queuePress(g);
     } else switch (g.mode) {
         .play => {
-            if (g.sim.travel) |l| {
+            if (talking.due(g)) {} else if (g.sim.travel) |l| {
                 queuePress(g);
                 if (g.pic.quiet()) goThrough(g, l);
             } else if (interacted(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
@@ -683,7 +731,9 @@ pub fn update(g: *Game, dt: f32) void {
             if (g.permadeath) g.exit = .back else restart(g);
         },
         .pause => character.pauseStep(g),
+        .talk => talking.step(g),
     }
+    character.settleLoot(g);
     if (characterShown(g) or g.mode == .inspect) if (g.sim.travel) |l| if (g.pic.quiet()) goThrough(g, l);
     if (!std.meta.eql(was, screenOf(g))) holdWalk(g);
     g.pic.stepGlide(&g.sim, g.cloud, late);
@@ -799,6 +849,7 @@ pub fn drawFrame(g: *Game) void {
     g.vignette.draw(g.screen.x, g.screen.y);
     scene.drawMinimap(g);
     scene.drawDayNight(g);
+    if (modeShown(g) == .talk) return talking.draw(g);
     overlay.drawHud(g);
     journal.draw(&g.face, &g.sprites, g.screen, &g.sim.log);
     overlay.drawTips(g);
@@ -856,7 +907,7 @@ pub fn frame(g: *Game) void {
         .play => .play,
         .aim => .target,
         .pause => if (characterShown(g) and g.character.treeActive()) .tree else .menu,
-        .bind, .dead, .inspect => .menu,
+        .bind, .dead, .inspect, .talk => .menu,
     };
     g.st.sets = g.mode == .inspect;
     g.st.modifier = g.bar.modifier;

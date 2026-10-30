@@ -9,6 +9,8 @@ const resilience = @import("../play/resilience.zig");
 const terrain = @import("../play/terrain.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
+const consumable = @import("../play/consumable.zig");
+const wording = @import("../core/wording.zig");
 const P = mathx.P;
 
 pub const Page = enum {
@@ -46,6 +48,7 @@ pub const PAGES = blk: {
 };
 pub const Nearby = union(enum) {
     loot: struct { index: usize, item: items.Item },
+    supply: struct { index: usize, kind: consumable.Kind },
     gold: items.Coins,
     bag: P,
     chest: P,
@@ -54,6 +57,7 @@ pub const Nearby = union(enum) {
     pub fn command(n: Nearby) Command {
         return switch (n) {
             .loot => |l| .{ .pickup = l.index },
+            .supply => |s| .{ .take_supply = s.index },
             .gold => |pile| .{ .take_gold = pile.at },
             .bag, .chest => |at| .{ .open_loot = at },
             .door => |at| .{ .travel = at },
@@ -63,13 +67,21 @@ pub const Nearby = union(enum) {
     pub fn item(n: Nearby) ?items.Item {
         return switch (n) {
             .loot => |l| l.item,
-            .gold, .bag, .chest, .door => null,
+            .supply, .gold, .bag, .chest, .door => null,
+        };
+    }
+
+    pub fn supplyOf(n: Nearby) ?consumable.Kind {
+        return switch (n) {
+            .supply => |s| s.kind,
+            .loot, .gold, .bag, .chest, .door => null,
         };
     }
 
     pub fn label(n: Nearby, buf: []u8) [:0]const u8 {
         return switch (n) {
             .loot => |l| l.item.name(buf),
+            .supply => |s| wording.named(s.kind),
             .gold => |pile| std.fmt.bufPrintZ(buf, "{d} gold", .{pile.amount}) catch "Gold",
             .chest => "Treasure chest",
             .bag => "Item bag",
@@ -95,9 +107,12 @@ pub const View = struct {
     status_resist: std.EnumArray(resilience.Kind, resilience.Standing) = .initFill(.{}),
     steady: u8 = 0,
     environment: terrain.Modifiers = .{},
+    /// Armour a sunder takes off.
+    sundered: i32 = 0,
     pub fn stats(v: View) attr.Attrs {
         var out = v.inventory.gear.stats(v.base);
         out.dodge_bonus += v.environment.dodge;
+        out.armour -= v.sundered;
         return out;
     }
 };
@@ -109,6 +124,8 @@ pub const Command = union(enum) {
     passive: usize,
     skill: skillbar.Act,
     pickup: usize,
+    take_supply: usize,
+    use: consumable.Kind,
     take_gold: P,
     take_all,
     open_loot: P,
@@ -126,7 +143,8 @@ pub fn verbOf(c: std.meta.Tag(Command)) [:0]const u8 {
         .unequip => "Unequip",
         .drop => "Drop",
         .passive, .skill => unreachable,
-        .pickup => "Take item",
+        .pickup, .take_supply => "Take item",
+        .use => "Use",
         .take_gold => "Take gold",
         .take_all => "Take all",
         .open_loot => "Loot",

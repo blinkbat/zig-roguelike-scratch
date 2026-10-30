@@ -9,7 +9,8 @@ const Desk = input.Desk;
 
 pub const SHIFT_STEP: i32 = 5;
 pub const TORCH_RULE = "hangs on a wall with floor below it";
-pub const FOE_RULE = "stands on open floor";
+pub const FOE_RULE = "stands on open floor; a swimmer in water, a mimic on bare ground";
+pub const FOLK_RULE = "talks; stands on open floor no foe or barrel holds";
 pub const Spanned = enum { line, rect, box, select };
 
 const START = look.body(actor.HERO);
@@ -26,6 +27,7 @@ pub const Tool = union(enum) {
     barrel,
     torch,
     foe: actor.Kind,
+    folk,
     door,
     link,
     start,
@@ -41,14 +43,14 @@ pub const Tool = union(enum) {
     fn generated(tool: Tool) bool {
         return switch (tool) {
             .door, .link, .start => false,
-            .paint, .barrel, .torch, .foe => true,
+            .paint, .barrel, .torch, .foe, .folk => true,
         };
     }
 
     pub fn strokes(tool: Tool) bool {
         return switch (tool) {
             .paint, .barrel => true,
-            .torch, .foe, .door, .link, .start => false,
+            .torch, .foe, .folk, .door, .link, .start => false,
         };
     }
 
@@ -62,6 +64,7 @@ pub const Tool = union(enum) {
             .barrel => look.BARREL,
             .torch => look.TORCH,
             .foe => |k| look.body(k),
+            .folk => look.FOLK,
             .door => look.DOOR,
             .link => .{ .ch = '=', .fg = look.DOOR.fg },
             .start => START,
@@ -92,6 +95,7 @@ pub const Tool = union(enum) {
             .barrel => "stands on " ++ @tagName(grid.BARREL_GROUND) ++ " and breaks for gold; " ++ Desk.ERASE_CAPTION ++ " takes it away",
             .torch => TORCH_RULE,
             .foe => FOE_RULE ++ "; " ++ Desk.ERASE_CAPTION ++ " takes any foe away",
+            .folk => FOLK_RULE ++ "; " ++ Desk.PAINT_CAPTION ++ " on one gives it words, " ++ Desk.ERASE_CAPTION ++ " takes it away",
             .door => "any cell of any node; a procgen node's floor is rolled round its doors each run",
             .link => Desk.PAINT_CAPTION ++ " a door, then the door it leads to on any node; " ++ Desk.ERASE_CAPTION ++ " unlinks",
             .start => "where the map begins, and " ++ Desk.PLAY_CAPTION ++ " plays from",

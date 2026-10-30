@@ -38,6 +38,11 @@ pub const Modifiers = struct {
                     .bleed => "Chance To Bleed",
                     .chill => "Chance To Be Chilled",
                     .pin => "Chance To Be Pinned",
+                    .shock => "Chance To Be Shocked",
+                    .sunder => "Chance To Be Sundered",
+                    .blind => "Chance To Be Blinded",
+                    .confusion => "Chance To Be Confused",
+                    .fright => "Chance To Be Frightened",
                 };
                 w.print("\n{s}{d}% {s}", .{ sign(n), n, label }) catch {};
                 shown = true;
@@ -75,6 +80,8 @@ pub fn of(tile: grid.Tile) Modifiers {
 pub const Stats = struct {
     hit: u32 = 100,
     dodge: u32 = 0,
+    /// Before the cap `attrs.armoured` applies.
+    armour: i32 = 0,
     elements: damage.Resists = .initFill(0),
     statuses: std.EnumArray(resilience.Kind, i16) = .initFill(0),
 
@@ -112,5 +119,5 @@ test "terrain resolves signed modifiers after base stats without mutating them" 
     try std.testing.expectEqualDeep(base, base.on(.floor));
     base.elements.set(.fire, -100);
     try std.testing.expectEqual(@as(i16, -100), base.on(.grass).elements.get(.fire));
-    std.debug.print("terrain: hit/dodge, four elements, five statuses, caps and neutral ground checked\n", .{});
+    std.debug.print("terrain: hit/dodge, {d} elements, {d} statuses, caps and neutral ground checked\n", .{ std.enums.values(damage.Element).len, std.enums.values(resilience.Kind).len });
 }

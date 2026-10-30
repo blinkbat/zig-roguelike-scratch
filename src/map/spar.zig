@@ -20,7 +20,19 @@ pub fn author(map: *atlas.Atlas, kind: actor.Kind) void {
     _ = map.node[node].rename("Arena");
     const room = &map.node[node].plan.bespoke;
     for ([_]i32{ -TORCH_STEP, 0, TORCH_STEP }) |dx| std.debug.assert(room.torch.add(lume.torchOver(ROOM, MIDDLE.x + dx)));
+    if (actor.row(kind).movement == .swimming) {
+        var pond = grid.Box.around(FOE, POND).cells();
+        while (pond.next()) |p| room.tile[grid.Level.idx(p)] = .water;
+    }
+    std.debug.assert(map.node[node].foeFits(room, FOE, kind));
     std.debug.assert(room.addFoe(.{ .kind = kind, .at = FOE }));
+}
+
+/// Cells round a swimming opponent that are water, short of the hero.
+const POND: i32 = 1;
+
+comptime {
+    std.debug.assert(mathx.dist(HERO, FOE) > POND + 1);
 }
 
 test "the arena contains one selected foe, a sealed room and an open start" {
@@ -34,10 +46,16 @@ test "the arena contains one selected foe, a sealed room and an open start" {
         const room = &map.node[0].plan.bespoke;
         try std.testing.expectEqual(@as(usize, 1), room.foe_n);
         try std.testing.expectEqual(kind, room.foe[0].kind);
-        try std.testing.expect(room.floorAt(HERO) and room.floorAt(FOE));
+        const swims = actor.row(kind).movement == .swimming;
+        try std.testing.expect(room.floorAt(HERO) and map.node[0].foeFits(room, FOE, kind));
         try std.testing.expectEqual(HERO.x - ROOM.lo.x, ROOM.hi.x - 1 - FOE.x);
         try std.testing.expect(room.bodies() <= actor.MAX);
-        for (room.tile, 0..) |tile, i| try std.testing.expectEqual(ROOM.holds(grid.Level.of(i)), tile == .floor);
+        for (room.tile, 0..) |tile, i| {
+            const p = grid.Level.of(i);
+            const pond = swims and mathx.dist(p, FOE) <= POND;
+            try std.testing.expectEqual(ROOM.holds(p) and !pond, tile == .floor);
+            try std.testing.expectEqual(pond, tile == .water);
+        }
         for (room.torches()) |torch| try std.testing.expect(map.node[0].torchFits(room, torch));
         checked += 1;
     }

@@ -198,7 +198,7 @@ fn combatant(g: *const game.Game, id: u16) *const actor.Actor {
 
 fn bitesHold(g: *const game.Game, hero_at: P, bites: []const Bite, rng: *mathx.Rng) bool {
     const hero = g.sim.heroBody().?;
-    const defender = g.sim.combatStatsAt(hero, hero_at, hero.resilience);
+    const defender = g.sim.combatStatsAt(hero, hero_at, hero.resilience, hero.sunder);
     for (bites, 0..) |b, i| {
         const a = combatant(g, b.id);
         const strike = actor.row(a.kind).blow.strike;
@@ -206,7 +206,7 @@ fn bitesHold(g: *const game.Game, hero_at: P, bites: []const Bite, rng: *mathx.R
         if ((hit != null) != b.lands) return false;
         if (i + 1 < bites.len) {
             std.debug.assert(strike.bleeds == 0 and strike.stuns == 0 and g.sim.heroAttrs().thorns == 0 and !hero.tactics.unyielding);
-            if (hit) |dmg| _ = g.sim.heroAttrs().physical(dmg, rng);
+            if (hit) |dmg| _ = attrs.armoured(defender.armour, dmg, rng);
         }
     }
     return true;
@@ -239,7 +239,8 @@ pub fn sweepStunRng(g: *const game.Game, sweeper: u16, victim: u16, after_bite: 
         fn holds(s: @This(), rng: *mathx.Rng) bool {
             if (s.after_bite) {
                 const a = combatant(s.g, s.victim);
-                if (attacks.bite(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(s.g.sim.heroBody().?), actor.row(a.kind).blow.strike)) |dmg| _ = s.g.sim.heroAttrs().physical(dmg, rng);
+                const hero = s.g.sim.combatStats(s.g.sim.heroBody().?);
+                if (attacks.bite(rng, s.g.sim.combatStats(a), hero, actor.row(a.kind).blow.strike)) |dmg| _ = attrs.armoured(hero.armour, dmg, rng);
             }
             const attacker = combatant(s.g, s.sweeper);
             const target = combatant(s.g, s.victim);
@@ -247,7 +248,7 @@ pub fn sweepStunRng(g: *const game.Game, sweeper: u16, victim: u16, after_bite: 
             std.debug.assert(defender.statuses.get(.stun) == 0);
             const strike = actor.row(attacker.kind).blow.strike;
             const hit = attacks.bite(rng, s.g.sim.combatStats(attacker), defender, strike) orelse return false;
-            const dmg = attrs.armoured(actor.row(target.kind).armour, hit, rng);
+            const dmg = attrs.armoured(defender.armour, hit, rng);
             if (dmg <= 0 or dmg >= target.hp) return false;
             return damage.procs(rng, strike.stuns);
         }
@@ -288,14 +289,14 @@ pub fn meleeThenBites(g: *const game.Game, target: u16, attackers: []const u16) 
             const hero = s.g.sim.heroBody().?;
             const target_actor = combatant(s.g, s.target);
             if (s.g.sim.combatStats(hero).misses(s.g.sim.combatStats(target_actor), rng)) return false;
-            _ = attrs.armoured(actor.row(target_actor.kind).armour - effect.penetration, hit.blow.physical, rng);
+            _ = attrs.armoured(s.g.sim.combatStats(target_actor).armour - effect.penetration, hit.blow.physical, rng);
             for (s.attackers, 0..) |id, i| {
                 const a = combatant(s.g, id);
                 const strike = actor.row(a.kind).blow.strike;
                 const dmg = attacks.bite(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(hero), strike) orelse return false;
                 if (i + 1 < s.attackers.len) {
                     std.debug.assert(strike.bleeds == 0 and strike.stuns == 0 and s.g.sim.heroAttrs().thorns == 0 and !hero.tactics.unyielding);
-                    _ = s.g.sim.heroAttrs().physical(dmg, rng);
+                    _ = attrs.armoured(s.g.sim.combatStats(hero).armour, dmg, rng);
                 }
             }
             return true;

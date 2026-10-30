@@ -1674,8 +1674,9 @@ test "every targeted skill rechecks readiness and bounds at confirmation without
                 skills.aiming(g, .x, act);
                 g.mode.aim.mark = if (reticle == .leap) .{ .x = 22, .y = 20 } else foe_at;
                 if (act == .combustion) g.sim.pool.get(2).?.burn.turns = burning.TURNS;
-                if (act == .arcane_barrier) {
-                    g.mode.aim.action = .{ .wall_end = .{ .x = 21, .y = 21 } };
+                if (act == .shatter) g.sim.pool.get(2).?.chill.apply();
+                if (act.spans()) {
+                    g.mode.aim.action = .{ .wall_end = .{ .act = act, .at = .{ .x = 21, .y = 21 } } };
                     g.mode.aim.mark = .{ .x = 22, .y = 21 };
                 }
                 try std.testing.expect(skills.aimable(g, from, g.mode.aim.mark));
@@ -1707,4 +1708,58 @@ test "every targeted skill rechecks readiness and bounds at confirmation without
     }
     try std.testing.expect(checked > 0);
     std.debug.print("target confirmation: {d} out-of-bounds and changed-readiness cases preserve the reticle and simulation\n", .{checked});
+}
+
+fn aimedAt(g: *game.Game, act: skillbar.Act, at: P) void {
+    skills.useSkill(g, .{ .act = act, .by = .x });
+    if (g.mode != .aim) return;
+    g.mode.aim.mark = at;
+    skills.confirmAim(g);
+}
+
+test "rend strikes the foe beside the knight and opens its stronger bleed" {
+    const rend = @import("../../play/rend.zig");
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.heroArena(g, .knight, from, &.{});
+    g.sim.growth.ranks.set(.rend, 1);
+    const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
+    harness.toughen(g.sim.pool.get(id).?);
+    game.settle(g);
+    aimedAt(g, .rend, .{ .x = 21, .y = 20 });
+    const rat = g.sim.pool.get(id).?;
+    try std.testing.expect(rat.hp < harness.TEST_HP);
+    try std.testing.expectEqual(bleeding.TURNS, rat.bleed.turns);
+    try std.testing.expectEqual(rend.BLEED, rat.bleed.amount);
+    try std.testing.expectEqual(manaAfter(g, .rend), g.sim.mana);
+    std.debug.print("rend: {d} damage, a bleed of {d} per turn for {d} turns\n", .{ harness.TEST_HP - rat.hp, rat.bleed.amount, rat.bleed.turns });
+}
+
+test "piercing shot strikes every foe in its line, each as the arrow reaches it, and a barrel stops it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.heroArena(g, .archer, from, &.{});
+    g.sim.growth.ranks.set(.piercing_shot, 1);
+    const near = harness.spawnAt(g, .rat, .{ .x = 22, .y = 20 }, true);
+    const far = harness.spawnAt(g, .rat, .{ .x = 26, .y = 20 }, true);
+    const beyond = harness.spawnAt(g, .rat, .{ .x = 29, .y = 20 }, true);
+    for ([_]u16{ near, far, beyond }) |id| harness.toughen(g.sim.pool.get(id).?);
+    g.sim.lv.putBarrel(.{ .x = 28, .y = 20 });
+    game.settle(g);
+    aimedAt(g, .piercing_shot, .{ .x = 22, .y = 20 });
+    try std.testing.expect(g.sim.pool.get(near).?.hp < harness.TEST_HP);
+    try std.testing.expect(g.sim.pool.get(far).?.hp < harness.TEST_HP);
+    try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(beyond).?.hp);
+    try std.testing.expect(!g.sim.lv.hasBarrel(.{ .x = 28, .y = 20 }));
+    const shot = g.pic.shot.?;
+    try std.testing.expectEqual(@as(usize, 8), shot.flight.len);
+    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    g.pic.advance(&g.sim, shot.lands() * 2 / 8 + 0.001);
+    try std.testing.expectEqual(g.sim.pool.get(near).?.hp, g.pic.pictured[actor.Pool.slot(near)].hp);
+    try std.testing.expectEqual(harness.TEST_HP, g.pic.pictured[actor.Pool.slot(far)].hp);
+    harness.drawnOut(g);
+    try std.testing.expectEqual(g.sim.pool.get(far).?.hp, g.pic.pictured[actor.Pool.slot(far)].hp);
+    std.debug.print("piercing shot: 2 rats struck in an 8-cell flight, the near one pictured first; the barrel at 8 shields the rat behind it\n", .{});
 }

@@ -5,6 +5,8 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const passives = @import("passives.zig");
 const bleeding = @import("bleeding.zig");
+const flask = @import("flask.zig");
+const consumable = @import("consumable.zig");
 const wording = @import("../core/wording.zig");
 
 pub const Slot = enum {
@@ -18,6 +20,8 @@ pub const Slot = enum {
     left_ring,
     right_ring,
     amulet,
+    life_flask,
+    mana_flask,
     pub fn name(s: Slot) [:0]const u8 {
         return switch (s) {
             .left_hand => "Offhand",
@@ -30,6 +34,15 @@ pub const Slot = enum {
             .left_ring => "Left ring",
             .right_ring => "Right ring",
             .amulet => "Amulet",
+            .life_flask => "Life flask",
+            .mana_flask => "Mana flask",
+        };
+    }
+
+    pub fn ofFlask(k: flask.Kind) Slot {
+        return switch (k) {
+            .life => .life_flask,
+            .mana => .mana_flask,
         };
     }
 };
@@ -184,12 +197,35 @@ pub const Kind = enum {
     jade_ring,
     ruby_ring,
     sapphire_ring,
+    life_flask,
+    mana_flask,
 
     pub fn slots(k: Kind) []const Slot {
         return spec(k).slots;
     }
+
+    pub fn ofFlask(k: flask.Kind) Kind {
+        return switch (k) {
+            .life => .life_flask,
+            .mana => .mana_flask,
+        };
+    }
+
+    pub fn flaskOf(k: Kind) ?flask.Kind {
+        const innate = spec(k).innate orelse return null;
+        return if (innate == .flask) innate.flask else null;
+    }
 };
-const KINDS = std.enums.values(Kind);
+/// What loot rolls: every base but the flasks.
+const LOOT = blk: {
+    var out: [std.enums.values(Kind).len - std.enums.values(flask.Kind).len]Kind = undefined;
+    var n: usize = 0;
+    for (std.enums.values(Kind)) |k| if (k.flaskOf() == null) {
+        out[n] = k;
+        n += 1;
+    };
+    break :blk out;
+};
 /// Percent of slain foes that drop an item.
 pub const DROP_PERCENT = 10;
 pub const FOE_GOLD_PERCENT = 50;
@@ -267,7 +303,7 @@ pub const WeaponEffect = struct {
         return switch (k) {
             .bleed => self.bleed,
             .stun => self.stun,
-            .burn, .chill, .pin => 0,
+            .burn, .chill, .pin, .shock, .sunder, .blind, .confusion, .fright => 0,
         };
     }
 };
@@ -281,6 +317,7 @@ pub const Innate = union(enum) {
     bleed: struct { chance: u32, damage: i32 = bleeding.STILL },
     stun: u32,
     penetration: i32,
+    flask: flask.Kind,
 
     pub fn stat(kind: passives.Kind, amount: i32) Innate {
         return .{ .grant = .{ .kind = kind, .amount = amount } };
@@ -293,7 +330,7 @@ pub const Innate = union(enum) {
             .spell_crit => |n| a.spell_crit_bonus += n,
             .physical_damage => |n| a.physical_bonus += n,
             .element => |e| a.element_bonus.getPtr(e.kind).* += e.percent,
-            .bleed, .stun, .penetration => {},
+            .bleed, .stun, .penetration, .flask => {},
         }
     }
 
@@ -307,13 +344,13 @@ pub const Innate = union(enum) {
             .bleed => |b| w.print("{d}% chance to bleed on hit", .{b.chance}) catch {},
             .stun => |n| w.print("{d}% chance to stun on hit", .{n}) catch {},
             .penetration => |n| w.print("Ignore {d}% physical reduction", .{n}) catch {},
+            .flask => |k| w.writeAll(flask.effect(k)) catch {},
         }
     }
 };
 
 pub const Spec = struct {
     name: [:0]const u8,
-    flavor: [:0]const u8,
     /// Where it may be worn.
     slots: []const Slot,
     needs: attrs.Needs = .{},
@@ -325,59 +362,55 @@ pub const Spec = struct {
     innate: ?Innate = null,
 };
 const SPECS = std.EnumArray(Kind, Spec).init(.{
-    .sword = .{ .name = "Short sword", .flavor = "Quick answers in tight tunnels.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 3, .hi = 4 }, .style = .light },
-    .axe = .{ .name = "Great axe", .flavor = "Built to fell trees. Not picky.", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 3, .hi = 6 }, .two_handed = true, .innate = .{ .bleed = .{ .chance = 30, .damage = 2 } } },
-    .bow = .{ .name = "Short bow", .flavor = "Yew, gut string, a steady nerve.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
-    .staff = .{ .name = "Oak staff", .flavor = "Old wood remembers its spells.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 16 }, .two_handed = true, .innate = Innate.stat(.spell_damage, 30) },
-    .longsword = .{ .name = "Longsword", .flavor = "A knight's blade, well notched.", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 3, .hi = 5 } },
-    .mace = .{ .name = "Mace", .flavor = "Armour only makes it louder.", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .innate = .{ .stun = 15 } },
-    .greatsword = .{ .name = "Greatsword", .flavor = "Rarely needs drawing twice.", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 8 }, .two_handed = true },
-    .crossbow = .{ .name = "Crossbow", .flavor = "Slow to wind, quick to end it.", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true, .innate = .{ .penetration = 20 } },
-    .greatclub = .{ .name = "Greatclub", .flavor = "The oldest weapon. Still works.", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 3, .hi = 6 }, .two_handed = true, .innate = .{ .stun = 25 } },
-    .sling = .{ .name = "Sling", .flavor = "A stone, a strap, a grudge.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .attack = .ranged },
-    .dagger = .{ .name = "Dagger", .flavor = "For close work, closer secrets.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .innate = .{ .weapon_crit = 15 } },
-    .handaxe = .{ .name = "Handaxe", .flavor = "Splits kindling and skulls.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 3 }, .style = .light, .innate = .{ .bleed = .{ .chance = 25 } } },
-    .wand = .{ .name = "Wand", .flavor = "Its tip stays warm, remembering.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .innate = .{ .spell_crit = 8 } },
-    .tome = .{ .name = "Tome", .flavor = "Its scorched pages whisper.", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.mana, 3) },
-    .orb = .{ .name = "Orb", .flavor = "Something stirs in the glass.", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = .{ .spell_crit = 6 } },
-    .buckler = .{ .name = "Buckler", .flavor = "Small, until it saves your life.", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2, .innate = Innate.stat(.dodge, 4) },
-    .totem = .{ .name = "Totem", .flavor = "Carved faces watch the dark.", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.life_on_kill, 1) },
-    .shield = .{ .name = "Wooden shield", .flavor = "Splintered at the rim. Standing.", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6 },
-    .cap = .{ .name = "Leather cap", .flavor = "Better than nothing. Barely.", .slots = &.{.helm}, .armour = 2 },
-    .helmet = .{ .name = "Iron helm", .flavor = "Cold iron and a narrow view.", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4, .innate = Innate.stat(.life, 3) },
-    .leather = .{ .name = "Leather armour", .flavor = "Stiff, scarred, smells of rain.", .slots = &.{.chest}, .needs = .{ .strength = 10 }, .armour = 5, .innate = Innate.stat(.dodge, 5) },
-    .mail = .{ .name = "Mail armour", .flavor = "Each ring a vow to stay alive.", .slots = &.{.chest}, .needs = .{ .strength = 20 }, .armour = 10 },
-    .belt = .{ .name = "Leather belt", .flavor = "Holds up trousers, and hope.", .slots = &.{.belt}, .armour = 1 },
-    .gloves = .{ .name = "Leather gloves", .flavor = "Worn thin at the knuckles.", .slots = &.{.gloves}, .armour = 1, .innate = Innate.stat(.light_damage, 10) },
-    .boots = .{ .name = "Soft boots", .flavor = "They have walked out of worse.", .slots = &.{.boots}, .armour = 1, .innate = Innate.stat(.dodge, 3) },
-    .ring = .{ .name = "Copper ring", .flavor = "Green at the edges, warm inside.", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.life, 1) },
-    .amulet = .{ .name = "Bronze amulet", .flavor = "Wards off the dark. Mostly.", .slots = &.{.amulet}, .innate = Innate.stat(.life, 2) },
-    .hunting_bow = .{ .name = "Hunting bow", .flavor = "A notch for every clean shot.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 16 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light, .attack = .ranged, .two_handed = true, .innate = .{ .weapon_crit = 12 } },
-    .war_bow = .{ .name = "War bow", .flavor = "The string pulls back.", .slots = &.{.right_hand}, .needs = .{ .dexterity = 22 }, .damage = .{ .lo = 3, .hi = 6 }, .style = .light, .attack = .ranged, .two_handed = true },
-    .ash_wand = .{ .name = "Ash wand", .flavor = "Warm even in the rain.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .fire, .percent = 25 } } },
-    .rime_wand = .{ .name = "Rime wand", .flavor = "Frost gathers round the grip.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .cold, .percent = 25 } } },
-    .storm_wand = .{ .name = "Storm wand", .flavor = "The hairs rise before the rain.", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .lightning, .percent = 25 } } },
-    .plate = .{ .name = "Plate armour", .flavor = "A door that walks.", .slots = &.{.chest}, .needs = .{ .strength = 24 }, .armour = 15 },
-    .robes = .{ .name = "Robes", .flavor = "Thin cloth, deep pockets.", .slots = &.{.chest}, .needs = .{ .intelligence = 12 }, .armour = 1, .innate = Innate.stat(.mana, 4) },
-    .hood = .{ .name = "Hunter's hood", .flavor = "A narrow shadow over the eyes.", .slots = &.{.helm}, .needs = .{ .dexterity = 14 }, .armour = 1, .innate = Innate.stat(.crit, 5) },
-    .circlet = .{ .name = "Circlet", .flavor = "Cool silver, clear thoughts.", .slots = &.{.helm}, .needs = .{ .intelligence = 14 }, .innate = Innate.stat(.mana_regen, 1) },
-    .gauntlets = .{ .name = "Gauntlets", .flavor = "Iron closes round the hilt.", .slots = &.{.gloves}, .needs = .{ .strength = 14 }, .armour = 2, .innate = Innate.stat(.heavy_damage, 10) },
-    .spellwraps = .{ .name = "Spellwraps", .flavor = "Old runes round steady fingers.", .slots = &.{.gloves}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.spell_damage, 10) },
-    .iron_boots = .{ .name = "Iron boots", .flavor = "Every step rings hollow.", .slots = &.{.boots}, .needs = .{ .strength = 14 }, .armour = 5 },
-    .broad_belt = .{ .name = "Broad belt", .flavor = "Another hole, another winter.", .slots = &.{.belt}, .innate = Innate.stat(.life, 3) },
-    .flask_belt = .{ .name = "Flask belt", .flavor = "Glass kept close to the heart.", .slots = &.{.belt}, .innate = Innate.stat(.life_flask, 20) },
-    .sash = .{ .name = "Woven sash", .flavor = "Knots to hold a thought.", .slots = &.{.belt}, .innate = Innate.stat(.mana, 2) },
-    .iron_ring = .{ .name = "Iron ring", .flavor = "A small weight behind the blow.", .slots = &.{ .left_ring, .right_ring }, .innate = .{ .physical_damage = 10 } },
-    .jade_ring = .{ .name = "Jade ring", .flavor = "Smooth from nervous fingers.", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.dodge, 3) },
-    .ruby_ring = .{ .name = "Ruby ring", .flavor = "A red spark under the grime.", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.life, 3) },
-    .sapphire_ring = .{ .name = "Sapphire ring", .flavor = "A drop of blue held still.", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.mana, 2) },
+    .sword = .{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 3, .hi = 4 }, .style = .light },
+    .axe = .{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 3, .hi = 6 }, .two_handed = true, .innate = .{ .bleed = .{ .chance = 30, .damage = 2 } } },
+    .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
+    .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 16 }, .two_handed = true, .innate = Innate.stat(.spell_damage, 30) },
+    .longsword = .{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 3, .hi = 5 } },
+    .mace = .{ .name = "Mace", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .innate = .{ .stun = 15 } },
+    .greatsword = .{ .name = "Greatsword", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 8 }, .two_handed = true },
+    .crossbow = .{ .name = "Crossbow", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true, .innate = .{ .penetration = 20 } },
+    .greatclub = .{ .name = "Greatclub", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 3, .hi = 6 }, .two_handed = true, .innate = .{ .stun = 25 } },
+    .sling = .{ .name = "Sling", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .attack = .ranged },
+    .dagger = .{ .name = "Dagger", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .innate = .{ .weapon_crit = 15 } },
+    .handaxe = .{ .name = "Handaxe", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 3 }, .style = .light, .innate = .{ .bleed = .{ .chance = 25 } } },
+    .wand = .{ .name = "Wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .innate = .{ .spell_crit = 8 } },
+    .tome = .{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.mana, 3) },
+    .orb = .{ .name = "Orb", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = .{ .spell_crit = 6 } },
+    .buckler = .{ .name = "Buckler", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2, .innate = Innate.stat(.dodge, 4) },
+    .totem = .{ .name = "Totem", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.life_on_kill, 1) },
+    .shield = .{ .name = "Wooden shield", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6 },
+    .cap = .{ .name = "Leather cap", .slots = &.{.helm}, .armour = 2 },
+    .helmet = .{ .name = "Iron helm", .slots = &.{.helm}, .needs = .{ .strength = 16 }, .armour = 4, .innate = Innate.stat(.life, 3) },
+    .leather = .{ .name = "Leather armour", .slots = &.{.chest}, .needs = .{ .strength = 10 }, .armour = 5, .innate = Innate.stat(.dodge, 5) },
+    .mail = .{ .name = "Mail armour", .slots = &.{.chest}, .needs = .{ .strength = 20 }, .armour = 10 },
+    .belt = .{ .name = "Leather belt", .slots = &.{.belt}, .armour = 1 },
+    .gloves = .{ .name = "Leather gloves", .slots = &.{.gloves}, .armour = 1, .innate = Innate.stat(.light_damage, 10) },
+    .boots = .{ .name = "Soft boots", .slots = &.{.boots}, .armour = 1, .innate = Innate.stat(.dodge, 3) },
+    .ring = .{ .name = "Copper ring", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.life, 1) },
+    .amulet = .{ .name = "Bronze amulet", .slots = &.{.amulet}, .innate = Innate.stat(.life, 2) },
+    .hunting_bow = .{ .name = "Hunting bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 16 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light, .attack = .ranged, .two_handed = true, .innate = .{ .weapon_crit = 12 } },
+    .war_bow = .{ .name = "War bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 22 }, .damage = .{ .lo = 3, .hi = 6 }, .style = .light, .attack = .ranged, .two_handed = true },
+    .ash_wand = .{ .name = "Ash wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .fire, .percent = 25 } } },
+    .rime_wand = .{ .name = "Rime wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .cold, .percent = 25 } } },
+    .storm_wand = .{ .name = "Storm wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .lightning, .percent = 25 } } },
+    .plate = .{ .name = "Plate armour", .slots = &.{.chest}, .needs = .{ .strength = 24 }, .armour = 15 },
+    .robes = .{ .name = "Robes", .slots = &.{.chest}, .needs = .{ .intelligence = 12 }, .armour = 1, .innate = Innate.stat(.mana, 4) },
+    .hood = .{ .name = "Hunter's hood", .slots = &.{.helm}, .needs = .{ .dexterity = 14 }, .armour = 1, .innate = Innate.stat(.crit, 5) },
+    .circlet = .{ .name = "Circlet", .slots = &.{.helm}, .needs = .{ .intelligence = 14 }, .innate = Innate.stat(.mana_regen, 1) },
+    .gauntlets = .{ .name = "Gauntlets", .slots = &.{.gloves}, .needs = .{ .strength = 14 }, .armour = 2, .innate = Innate.stat(.heavy_damage, 10) },
+    .spellwraps = .{ .name = "Spellwraps", .slots = &.{.gloves}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.spell_damage, 10) },
+    .iron_boots = .{ .name = "Iron boots", .slots = &.{.boots}, .needs = .{ .strength = 14 }, .armour = 5 },
+    .broad_belt = .{ .name = "Broad belt", .slots = &.{.belt}, .innate = Innate.stat(.life, 3) },
+    .flask_belt = .{ .name = "Flask belt", .slots = &.{.belt}, .innate = Innate.stat(.life_flask, 20) },
+    .sash = .{ .name = "Woven sash", .slots = &.{.belt}, .innate = Innate.stat(.mana, 2) },
+    .iron_ring = .{ .name = "Iron ring", .slots = &.{ .left_ring, .right_ring }, .innate = .{ .physical_damage = 10 } },
+    .jade_ring = .{ .name = "Jade ring", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.dodge, 3) },
+    .ruby_ring = .{ .name = "Ruby ring", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.life, 3) },
+    .sapphire_ring = .{ .name = "Sapphire ring", .slots = &.{ .left_ring, .right_ring }, .innate = Innate.stat(.mana, 2) },
+    .life_flask = .{ .name = "Life flask", .slots = &.{.life_flask}, .innate = .{ .flask = .life } },
+    .mana_flask = .{ .name = "Mana flask", .slots = &.{.mana_flask}, .innate = .{ .flask = .mana } },
 });
-
-/// Characters of flavor a compared item card holds on one line.
-pub const FLAVOR_MAX = 32;
-comptime {
-    for (SPECS.values) |s| if (s.flavor.len > FLAVOR_MAX) @compileError(s.name ++ ": flavor longer than a card line");
-}
 
 pub fn spec(k: Kind) Spec {
     return SPECS.getPtrConst(k).*;
@@ -397,10 +430,6 @@ pub const Item = struct {
             if (m.kind.prefix()) pre = m.kind.title(m.element) else post = m.kind.title(m.element);
         };
         return std.fmt.bufPrintZ(buf, "{s}{s}{s}{s}{s}", .{ pre, if (pre.len > 0) " " else "", base, if (post.len > 0) " " else "", post }) catch base;
-    }
-
-    pub fn flavor(self: Item) [:0]const u8 {
-        return spec(self.kind).flavor;
     }
 
     pub fn fits(self: Item, slot: Slot) bool {
@@ -464,7 +493,7 @@ pub const Item = struct {
 };
 
 pub fn roll(rng: *mathx.Rng, item_rarity: i32) Item {
-    var out = Item{ .kind = rng.pick(Kind, KINDS) };
+    var out = Item{ .kind = rng.pick(Kind, &LOOT) };
     const quality = rng.below(100);
     if (quality >= qualityChance(MAGIC_PERCENT + RARE_PERCENT, item_rarity)) return out;
     const rare = quality < qualityChance(RARE_PERCENT, item_rarity);
@@ -490,17 +519,33 @@ fn qualityChance(base: u32, item_rarity: i32) u32 {
     return @intCast(std.math.clamp(@divTrunc(@as(i64, base) * (100 + @as(i64, item_rarity)), 100), 0, 100));
 }
 
-pub const Loot = struct { gold: i32 = 0, item: ?Item = null };
+pub const Loot = struct { gold: i32 = 0, item: ?Item = null, supply: ?consumable.Kind = null };
 
 pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
     return .{
         .gold = if (rng.percent(FOE_GOLD_PERCENT)) FOE_GOLD.roll(rng) else 0,
         .item = if (rng.percent(DROP_PERCENT)) roll(rng, item_rarity) else null,
+        .supply = consumable.roll(rng, consumable.FOE_PERCENT),
     };
 }
 
 pub const Gear = struct {
     slots: std.EnumArray(Slot, ?Item) = .initFill(null),
+
+    /// A new run's: both flasks worn, nothing else.
+    pub const flasks: Gear = blk: {
+        var out = Gear{};
+        out.wearFlasks();
+        break :blk out;
+    };
+
+    pub fn wearFlasks(self: *Gear) void {
+        for (std.enums.values(flask.Kind)) |k| self.slots.set(.ofFlask(k), .{ .kind = .ofFlask(k) });
+    }
+
+    pub fn holds(self: Gear, k: flask.Kind) bool {
+        return self.slots.get(.ofFlask(k)) != null;
+    }
 
     pub fn stats(self: Gear, base: attrs.Attrs) attrs.Attrs {
         var out = base;
@@ -621,11 +666,20 @@ pub const Inventory = struct {
     bag: [BAG_MAX]Item = undefined,
     n: usize = 0,
     gear: Gear = .{},
+    stacks: std.EnumArray(consumable.Kind, u8) = .initFill(0),
 
     pub fn add(self: *Inventory, it: Item) bool {
         if (self.n == BAG_MAX) return false;
         self.bag[self.n] = it;
         self.n += 1;
+        return true;
+    }
+
+    /// One more `k` on its stack, unless the stack is full.
+    pub fn stock(self: *Inventory, k: consumable.Kind) bool {
+        const n = self.stacks.getPtr(k);
+        if (n.* >= consumable.STACK_MAX) return false;
+        n.* += 1;
         return true;
     }
 
@@ -679,6 +733,7 @@ pub const Inventory = struct {
 
 pub const GROUND_MAX = 512;
 pub const Drop = struct { item: Item, at: mathx.P, source: u16 = grid.NO_ONE };
+pub const Supply = struct { kind: consumable.Kind, at: mathx.P, source: u16 = grid.NO_ONE };
 pub const Coins = struct {
     at: mathx.P,
     amount: i32,
@@ -692,10 +747,34 @@ pub const Ground = struct {
     n: usize = 0,
     coins: [grid.CELLS]Coins = undefined,
     coin_n: usize = 0,
+    supplies: [GROUND_MAX]Supply = undefined,
+    supply_n: usize = 0,
+
+    pub const COUNTED = .{.{ "supplies", "supply_n" }};
 
     pub fn hasItems(self: *const Ground, at: mathx.P) bool {
         for (self.drops[0..self.n]) |drop| if (drop.at.eq(at)) return true;
         return false;
+    }
+
+    /// Items or consumables lie here, which a bag holds.
+    pub fn bagged(self: *const Ground, at: mathx.P) bool {
+        if (self.hasItems(at)) return true;
+        for (self.supplies[0..self.supply_n]) |s| if (s.at.eq(at)) return true;
+        return false;
+    }
+
+    pub fn addSupply(self: *Ground, s: Supply) bool {
+        if (self.supply_n == self.supplies.len) return false;
+        self.supplies[self.supply_n] = s;
+        self.supply_n += 1;
+        return true;
+    }
+
+    pub fn takeSupply(self: *Ground, i: usize, into: *Inventory) bool {
+        if (i >= self.supply_n or !into.stock(self.supplies[i].kind)) return false;
+        mathx.removeAt(Supply, &self.supplies, &self.supply_n, i, null);
+        return true;
     }
 
     pub fn gold(self: *Ground, at: mathx.P, amount: i32) bool {
@@ -778,8 +857,50 @@ test "weapon weights cross melee and range while caster implements have no innat
     var seen = std.EnumSet(Kind).initEmpty();
     var rng = mathx.Rng.init(0x17E);
     for (0..2000) |_| seen.insert(roll(&rng, 0).kind);
-    try std.testing.expectEqual(KINDS.len, seen.count());
-    std.debug.print("items: {d} heavy, {d} light, {d} non-attacking implements, {d} offhand swaps; all {d} kinds roll as loot\n", .{ heavy.len, light.len, implements.len, offhands.len, KINDS.len });
+    try std.testing.expectEqual(LOOT.len, seen.count());
+    std.debug.print("items: {d} heavy, {d} light, {d} non-attacking implements, {d} offhand swaps; all {d} kinds roll as loot\n", .{ heavy.len, light.len, implements.len, offhands.len, LOOT.len });
+}
+
+test "foes now and then drop each kind of consumable, which stacks only as far as its cap" {
+    var rng = mathx.Rng.init(0x5A99);
+    var seen = std.EnumSet(consumable.Kind).initEmpty();
+    var dropped: usize = 0;
+    for (0..10000) |_| if (foeLoot(&rng, 0).supply) |k| {
+        dropped += 1;
+        seen.insert(k);
+    };
+    try std.testing.expect(dropped >= 650 and dropped <= 950);
+    try std.testing.expectEqual(consumable.KINDS.len, seen.count());
+    var inv = Inventory{};
+    var ground = Ground{};
+    for (0..consumable.STACK_MAX) |_| try std.testing.expect(inv.stock(.bandage));
+    try std.testing.expect(!inv.stock(.bandage));
+    try std.testing.expect(ground.addSupply(.{ .kind = .bandage, .at = .{ .x = 3, .y = 3 } }));
+    try std.testing.expect(!ground.takeSupply(0, &inv));
+    try std.testing.expectEqual(@as(usize, 1), ground.supply_n);
+    try std.testing.expectEqual(@as(usize, 0), inv.n);
+    std.debug.print("consumables: {d} of 10000 foes drop one, all {d} kinds seen; a stack holds {d}\n", .{ dropped, seen.count(), consumable.STACK_MAX });
+}
+
+test "flasks start worn in their own slots, never roll as loot, and come off and back like gear" {
+    var rng = mathx.Rng.init(0xF1A5);
+    for (0..5000) |_| try std.testing.expect(roll(&rng, 0).kind.flaskOf() == null);
+    const base = attrs.Attrs.of(.{ .strength = 10, .dexterity = 10, .intelligence = 10 });
+    var inv = Inventory{ .gear = .flasks };
+    try std.testing.expectEqualDeep(base, inv.gear.stats(base));
+    try std.testing.expectEqualDeep(passives.Perks{}, inv.gear.perks(.{}));
+    for (std.enums.values(flask.Kind), [_]flask.Kind{ .mana, .life }) |k, other| {
+        try std.testing.expect(inv.gear.holds(k));
+        try inv.unequip(.ofFlask(k), base);
+        try std.testing.expect(!inv.gear.holds(k));
+        try std.testing.expectEqual(Kind.ofFlask(k), inv.bag[inv.n - 1].kind);
+        try std.testing.expectError(error.WrongSlot, inv.swapped(inv.n - 1, .ofFlask(other)));
+        try std.testing.expectError(error.WrongSlot, inv.swapped(inv.n - 1, .belt));
+        try inv.equip(inv.n - 1, .ofFlask(k), base);
+        try std.testing.expect(inv.gear.holds(k));
+    }
+    try std.testing.expectEqual(@as(usize, 0), inv.n);
+    std.debug.print("flasks: none in 5000 loot rolls; both worn from the start, each fits only its own slot and adds no stats\n", .{});
 }
 
 test "equipment swaps preserve both hands, reject self-funded requirements and keep dependent gear valid" {
@@ -921,7 +1042,7 @@ test "rare items roll distinct legal affixes and persistent combinatorial names"
     try std.testing.expect(counts.get(.normal) > 74000 and counts.get(.normal) < 76000);
     try std.testing.expect(counts.get(.magic) > 19000 and counts.get(.magic) < 21000);
     try std.testing.expect(counts.get(.rare) > 4500 and counts.get(.rare) < 5500);
-    try std.testing.expectEqual(KINDS.len, bases.count());
+    try std.testing.expectEqual(LOOT.len, bases.count());
     try std.testing.expectEqual(std.enums.values(RareName.First).len, firsts.count());
     try std.testing.expectEqual(std.enums.values(RareName.Last).len, lasts.count());
     try std.testing.expect(sizes[0] > 0 and sizes[1] > 0);
@@ -1013,11 +1134,11 @@ test "every equipment base rolls all three rarities and keeps its innate separat
             .rare => yellow.insert(it.kind),
         }
     }
-    try std.testing.expectEqual(KINDS.len, white.count());
-    try std.testing.expectEqual(KINDS.len, blue.count());
-    try std.testing.expectEqual(KINDS.len, yellow.count());
+    try std.testing.expectEqual(LOOT.len, white.count());
+    try std.testing.expectEqual(LOOT.len, blue.count());
+    try std.testing.expectEqual(LOOT.len, yellow.count());
     const base = attrs.Attrs.of(.{ .strength = 30, .dexterity = 30, .intelligence = 30 });
-    for (KINDS) |kind| {
+    for (LOOT) |kind| {
         var plain = base;
         var magic = base;
         const it = Item{ .kind = kind };
@@ -1041,7 +1162,7 @@ test "every equipment base rolls all three rarities and keeps its innate separat
     gear.slots.set(.belt, .{ .kind = .flask_belt });
     gear.slots.set(.left_hand, .{ .kind = .totem });
     try std.testing.expectEqualDeep(passives.Perks{ .mana_regen = 1, .life_flask = 20, .life_on_kill = 1 }, gear.perks(.{}));
-    std.debug.print("bases: all {d} roll in all three rarities over 20000 drops; innate/affix separation, scoped crit and recovery perks checked\n", .{KINDS.len});
+    std.debug.print("bases: all {d} roll in all three rarities over 20000 drops; innate/affix separation, scoped crit and recovery perks checked\n", .{LOOT.len});
 }
 
 test "ground gold accommodates every cell and full pickup leaves its item intact" {

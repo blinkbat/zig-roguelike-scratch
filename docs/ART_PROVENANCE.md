@@ -10,6 +10,7 @@ later owner edits.
 | Element | Attribution | Location | Review |
 |---|---|---|---|
 | Skill icons and controller/key prompts | Assistant, procedural line art | `src/gfx/line_icons.zig`: `skillLines`, `inkSkill`; `src/gfx/prompt_icon.zig`: `Prompt` | Replace skill glyphs when desired; input symbols stay basic |
+| Item glyphs | Assistant, procedural line art | `src/gfx/line_icons.zig`: `ITEM_LINES`, `drawItem` | One glyph per item kind on the skill icons' 32-unit grid; replace when desired |
 | Life/mana orbs and status icons | Assistant, procedural shapes | `src/ui/hud.zig` | Paint orb and ailment components in the existing HUD template |
 | Equipment slots and tree nodes | Assistant, code-drawn placeholders; radial tree layout adapted from the owner's `zig-soulslike` | `src/ui/book.zig`, `src/ui/trees.zig` | Basic rectangles, circles, lines and shared skill glyphs; gold and item containers use the supplied rasters below |
 | Event panel | Owner border, assistant layout and colors | `src/ui/journal.zig`, `assets/hud-border.png` | Layout/color review; border painting is the owner's |
@@ -34,6 +35,7 @@ documented scripts; it does not mean every resulting tile has been hand-painted 
 | `assets/dirt-ground.png` | `assets/source/dirt.aseprite`, `Draw here` | `Dirt extensions` via `port_ground.lua` | Extension layer and joins |
 | `assets/shallows-ground.png` | `assets/source/water.aseprite`, `Draw here` | `Water extensions`, exported as shallows | Extension layer and shore joins |
 | `assets/water-ground.png` | Derived from the owner's shallow-water source | `deepen_water.lua` 60% RGB transform; `assets/source/deep-water.aseprite` | Whole derived deep-water sheet, including its `Draw here` layer |
+| `assets/bridge-ground.png` | Desktop `bridge.aseprite`, `Draw here` (kept, hidden); canonical `assets/source/bridge.aseprite` | `Bridge extensions` via `port_bridge.lua`: continuous interior copied from his grain, exposed caps and side-outline repairs across all 15 cells; owner-requested 30% RGB darkening on PNG export only | Whole extension layer, especially exposed edges and grain joins |
 | `assets/forest-tree-walls.png` | `assets/source/forest-tree-walls.aseprite`, `Draw here` | `Forest extensions`; documented owner-requested palette transform | Generated canopy/trunk connections and recolor |
 | `assets/swamp-tree.png` | Owner-supplied 64x64 raster; editable source and individual authorship not verified | Registered as a standalone tree and placed near water on the default map; original pixels unchanged | Supplied raster preserved |
 | `assets/large-tree.png` | Owner-supplied 64x128 raster; editable source and individual authorship not verified | Two-cell-high tree anchored at its blocking base, scattered sparsely on grass; upper bough fades while hiding the hero; original pixels unchanged | Supplied raster preserved at native scale |

@@ -11,7 +11,6 @@ pub const VERB = "cleaves";
 const SPREAD = [_]u3{ 7, 0, 1 };
 pub const WIDTH: usize = SPREAD.len;
 pub const DESCRIPTION = std.fmt.comptimePrint("Swing through the {d} tiles in an arc ahead, striking each foe there.", .{WIDTH});
-pub const FLAVOR = "One swing, many regrets.";
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 

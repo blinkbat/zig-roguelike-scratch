@@ -8,7 +8,7 @@ const day = @import("day.zig");
 
 const P = mathx.P;
 
-/// Cells a torch's flame lights, from the floor below it.
+/// Cells a torch's flame lights, from the floor below it, or a glowing plant from its own cell.
 pub const TORCH_REACH: i32 = 7;
 
 pub fn torchFloor(wall: P) P {
@@ -23,9 +23,9 @@ pub fn torchOver(floor: grid.Box, x: i32) P {
     return torchWall(.{ .x = x, .y = floor.lo.y });
 }
 
-/// The cells the torch on `wall` lights, added to `out`.
-pub fn torchPool(lv: *const grid.Level, wall: P, out: *[grid.CELLS]bool) void {
-    fov.castInto(lv, torchFloor(wall), TORCH_REACH, out);
+/// The cells a torch lights from `from`, added to `out`.
+pub fn torchPool(lv: *const grid.Level, from: P, out: *[grid.CELLS]bool) void {
+    fov.castInto(lv, from, TORCH_REACH, out);
 }
 
 pub const Source = struct { at: P, reach: i32 };
@@ -39,8 +39,13 @@ pub fn skyReach(outdoors: bool, hour: f32, sight: i32) f32 {
 /// Only light pools overlapping the viewer's sight can affect visibility.
 fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, out: *[grid.CELLS]bool) void {
     @memset(out, false);
+    const near = sight + TORCH_REACH;
     for (lv.torches()) |t| {
-        if (mathx.dist(torchFloor(t), viewer) <= sight + TORCH_REACH) torchPool(lv, t, out);
+        if (mathx.dist(torchFloor(t), viewer) <= near) torchPool(lv, torchFloor(t), out);
+    }
+    var cells = grid.Box.around(viewer, near).cells();
+    while (cells.next()) |p| {
+        if (lv.at(p).glows()) torchPool(lv, p, out);
     }
     for (carried) |s| fov.castInto(lv, s.at, s.reach, out);
 }
@@ -105,4 +110,22 @@ test "a torch's pool is seen across the dark, and a cell once seen is remembered
     see(&lv, away, 10, 0, &lamp);
     try std.testing.expect(!lv.isLit(under) and lv.isSeen(under));
     try std.testing.expect(!lv.isSeen(.{ .x = at.x - 8, .y = at.y + 9 }));
+}
+
+test "a glowing plant lights its own pool at night, out to the hero's sight and no farther" {
+    var lv = grid.openFloor();
+    const at = P{ .x = 40, .y = 30 };
+    const lamp = [_]Source{.{ .at = at, .reach = 5 }};
+    const plant = P{ .x = 49, .y = 30 };
+    const behind = P{ .x = 47, .y = 30 };
+    const past = P{ .x = 53, .y = 30 };
+    see(&lv, at, 10, 0, &lamp);
+    try std.testing.expect(!lv.isLit(behind));
+    lv.set(plant, .glow_plant);
+    see(&lv, at, 10, 0, &lamp);
+    var shown: usize = 0;
+    for (lv.lit, 0..) |l, i| shown += @intFromBool(l and mathx.dist(grid.Level.of(i), at) > 5);
+    std.debug.print("a glow plant 9 cells off at midnight: {d} cells seen past the lantern's 5\n", .{shown});
+    try std.testing.expect(lv.isLit(plant) and lv.isLit(behind));
+    try std.testing.expect(!lv.isLit(past) and lv.inLos(.{ .x = 50, .y = 30 }));
 }

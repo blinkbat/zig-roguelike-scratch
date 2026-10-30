@@ -6,8 +6,8 @@ const actor = @import("actor.zig");
 
 const P = mathx.P;
 
-pub const PER_FLOOR: usize = 12;
-pub const FEW: usize = 2;
+pub const PER_FLOOR: usize = 14;
+pub const FEW: usize = 1;
 /// The first kind leads.
 pub const KINDS = [_][]const actor.Kind{
     &.{ .rat, .slime },
@@ -19,6 +19,12 @@ pub const KINDS = [_][]const actor.Kind{
     &.{ .pib, .rat, .rat },
     &.{ .rat, .slime, .pib },
     &.{ .bandit_crossbowman, .rat, .rat },
+    &.{ .bandit_shieldbearer, .bandit_crossbowman, .bandit_netter },
+    &.{ .pib_shaman, .pib, .pib },
+    &.{ .frost_wisp, .frost_wisp },
+    &.{.pyre_bloat},
+    &.{.bog_leech},
+    &.{.mimic},
 };
 pub const REACH: i32 = 2;
 /// Past the hero's sight, so by default none starts in view.
@@ -34,7 +40,7 @@ pub const FEW_MAX: usize = PACKS_MAX;
 pub const MAKEUP_MIN: usize = 1;
 pub const MAKEUP_MAX: usize = 5;
 pub const MAKEUPS_MIN: usize = 1;
-pub const MAKEUPS_MAX: usize = 9;
+pub const MAKEUPS_MAX: usize = 16;
 pub const WEIGHT_MIN: u8 = 1;
 pub const WEIGHT_MAX: u8 = 9;
 pub const FIRST = actor.FOES[0];
@@ -192,18 +198,20 @@ pub const Spec = struct {
         return n;
     }
 
-    fn pick(self: *const Spec, rng: *mathx.Rng, k: ?actor.Kind, bodies: usize) ?*const Makeup {
+    /// `homeless`: the kinds no lead could be found ground for.
+    fn pick(self: *const Spec, rng: *mathx.Rng, k: ?actor.Kind, bodies: usize, homeless: Kinds) ?*const Makeup {
         const Holding = struct {
             spec: *const Spec,
             k: ?actor.Kind,
             bodies: usize,
+            homeless: Kinds,
 
             fn weight(h: @This(), i: usize) u32 {
                 const m = &h.spec.makeups()[i];
-                return if (m.fits(h.bodies, h.k)) m.weight else 0;
+                return if (!h.homeless.contains(m.lead()) and m.fits(h.bodies, h.k)) m.weight else 0;
             }
         };
-        return &self.makeups()[rng.weighted(self.makeup_n, Holding{ .spec = self, .k = k, .bodies = bodies }, Holding.weight) orelse return null];
+        return &self.makeups()[rng.weighted(self.makeup_n, Holding{ .spec = self, .k = k, .bodies = bodies, .homeless = homeless }, Holding.weight) orelse return null];
     }
 
     /// The foes in the fewest makeups first, so the packs that fill their quota fill the others' on the way.
@@ -218,29 +226,35 @@ pub const Spec = struct {
     }
 };
 
+const Kinds = std.EnumSet(actor.Kind);
+
 /// No more than the pool holds once every slime placed has split down to quarters.
+/// A makeup whose lead finds no ground of its own, as a leech on a dry floor, gives way to the rest.
 pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, given: *const Spec) void {
     const fitted = given.fit();
     const spec = &fitted;
     var bodies = pool.n;
+    var homeless = Kinds.initEmpty();
     var packs: usize = 0;
     for (spec.quotaOrder()) |k| {
-        while (packs < spec.packs and pool.tally(k).total < spec.few) : (packs += 1) {
-            if (!placeOne(lv, pool, rng, start, spec, spec.pick(rng, k, bodies) orelse break, &bodies)) return;
+        while (packs < spec.packs and pool.tally(k).total < spec.few) {
+            const m = spec.pick(rng, k, bodies, homeless) orelse break;
+            if (placeOne(lv, pool, rng, start, spec, m, &bodies)) packs += 1 else homeless.insert(m.lead());
         }
     }
-    while (packs < spec.packs) : (packs += 1) {
-        if (!placeOne(lv, pool, rng, start, spec, spec.pick(rng, null, bodies) orelse return, &bodies)) return;
+    while (packs < spec.packs) {
+        const m = spec.pick(rng, null, bodies, homeless) orelse return;
+        if (placeOne(lv, pool, rng, start, spec, m, &bodies)) packs += 1 else homeless.insert(m.lead());
     }
 }
 
 fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec, m: *const Makeup, bodies: *usize) bool {
     const others = pool.n;
-    const lead = leadSpot(lv, pool, rng, start, spec, others) orelse return false;
+    const lead = leadSpot(lv, pool, rng, start, spec, others, m.lead()) orelse return false;
     spawnCounted(lv, pool, m.lead(), lead, bodies);
     for (m.followers()) |k| {
         if (!actor.roomFor(bodies.*, k)) continue;
-        const at = spotNear(lv, pool, rng, lead, start, spec, others) orelse break;
+        const at = spotNear(lv, pool, rng, lead, start, spec, others, k) orelse continue;
         spawnCounted(lv, pool, k, at, bodies);
     }
     return true;
@@ -252,8 +266,8 @@ fn spawnCounted(lv: *grid.Level, pool: *actor.Pool, k: actor.Kind, at: P, bodies
 }
 
 /// `others` bounds the previously placed packs.
-fn clear(lv: *const grid.Level, pool: *actor.Pool, p: P, start: P, spec: *const Spec, others: usize) bool {
-    if (!lv.vacant(p) or mathx.dist(p, start) < spec.gap) return false;
+fn clear(lv: *const grid.Level, pool: *actor.Pool, p: P, start: P, spec: *const Spec, others: usize, k: actor.Kind) bool {
+    if (!actor.dwells(k, lv, p) or mathx.dist(p, start) < spec.gap) return false;
     if (spec.apart == 0) return true;
     for (pool.items[0..others]) |*a| {
         if (a.foe() and mathx.dist(a.at, p) < spec.apart) return false;
@@ -261,29 +275,30 @@ fn clear(lv: *const grid.Level, pool: *actor.Pool, p: P, start: P, spec: *const 
     return true;
 }
 
-fn leadSpot(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec, others: usize) ?P {
+fn leadSpot(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, spec: *const Spec, others: usize, k: actor.Kind) ?P {
     const Clear = struct {
         lv: *const grid.Level,
         pool: *actor.Pool,
         start: P,
         spec: *const Spec,
         others: usize,
+        k: actor.Kind,
 
         fn at(c: @This(), p: P) bool {
-            return clear(c.lv, c.pool, p, c.start, c.spec, c.others);
+            return clear(c.lv, c.pool, p, c.start, c.spec, c.others, c.k);
         }
     };
-    return grid.Box.inMap(1).rollWhere(rng, SPOT_TRIES, Clear{ .lv = lv, .pool = pool, .start = start, .spec = spec, .others = others }, Clear.at);
+    return grid.Box.inMap(1).rollWhere(rng, SPOT_TRIES, Clear{ .lv = lv, .pool = pool, .start = start, .spec = spec, .others = others, .k = k }, Clear.at);
 }
 
-fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, start: P, spec: *const Spec, others: usize) ?P {
+fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, start: P, spec: *const Spec, others: usize, k: actor.Kind) ?P {
     var ring: i32 = 1;
     while (ring <= spec.reach) : (ring += 1) {
         var spots: [mathx.Ring.cells(REACH_MAX)]P = undefined;
         var n: usize = 0;
         var cells = mathx.Ring.init(lead, ring);
         while (cells.next()) |p| {
-            if (!clear(lv, pool, p, start, spec, others) or !grid.clearLine(lv, lead, p)) continue;
+            if (!clear(lv, pool, p, start, spec, others, k) or !grid.clearLine(lv, lead, p)) continue;
             spots[n] = p;
             n += 1;
         }
@@ -292,41 +307,73 @@ fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, 
     return null;
 }
 
-test "every floor has a few of each foe at least, and every slime and crossbowman stands by a rat" {
+test "every floor has a few of each foe it has ground for, each on its own ground, slimes by rats and crossbowmen by rats or shields" {
     var lv: grid.Level = undefined;
     var counts = std.EnumArray(actor.Kind, usize).initFill(0);
     var fewest = std.EnumArray(actor.Kind, usize).initFill(actor.MAX);
     var lone_slimes: usize = 0;
     var lone_bandits: usize = 0;
+    var dry: usize = 0;
     for (0..200) |i| {
         const seed: u64 = 0x9AC5 +% i *% grid.TEST_SEED_STRIDE;
         const f = gen.build(&lv, seed);
+        var housed = Kinds.initEmpty();
+        for (0..grid.CELLS) |c| for (actor.FOES) |k| {
+            const p = grid.Level.of(c);
+            if (mathx.dist(p, f.start) >= GAP and actor.dwells(k, &lv, p)) housed.insert(k);
+        };
+        dry += @intFromBool(!housed.contains(.bog_leech));
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(seed);
         place(&lv, &pool, &rng, f.start, &.{});
         try std.testing.expect(pool.n >= PER_FLOOR and pool.n <= PER_FLOOR * BIGGEST);
-        for (actor.FOES) |k| fewest.set(k, @min(fewest.get(k), pool.tally(k).total));
+        for (actor.FOES) |k| if (housed.contains(k)) fewest.set(k, @min(fewest.get(k), pool.tally(k).total));
         for (pool.slice()) |a| {
             counts.getPtr(a.kind).* += 1;
-            try std.testing.expect(!lv.hasBarrel(a.at) and lv.walkable(a.at));
-            try std.testing.expect(mathx.dist(a.at, f.start) >= GAP);
+            try std.testing.expect(!lv.hasBarrel(a.at) and mathx.dist(a.at, f.start) >= GAP);
+            switch (actor.row(a.kind).movement) {
+                .swimming => try std.testing.expect(lv.at(a.at).wet()),
+                else => try std.testing.expect(if (a.disguised) lv.at(a.at) == .chest and a.under.rewards() else lv.walkable(a.at)),
+            }
             if (a.kind != .slime and a.kind != .bandit_crossbowman) continue;
-            const by_rat = for (pool.slice()) |b| {
-                if (b.kind == .rat and mathx.dist(a.at, b.at) <= REACH) break true;
+            const guarded = for (pool.slice()) |b| {
+                const guard = b.kind == .rat or (a.kind == .bandit_crossbowman and b.kind == .bandit_shieldbearer);
+                if (guard and mathx.dist(a.at, b.at) <= REACH) break true;
             } else false;
-            if (!by_rat) {
+            if (!guarded) {
                 if (a.kind == .slime) lone_slimes += 1 else lone_bandits += 1;
             }
         }
     }
-    std.debug.print("200 floors, {d} packs each:\n", .{PER_FLOOR});
-    for (actor.FOES) |k| std.debug.print("  {s}: {d} total, at least {d} on each floor\n", .{ actor.plural(k), counts.get(k), fewest.get(k) });
-    std.debug.print("without a nearby rat: {d} slimes, {d} crossbowmen\n", .{ lone_slimes, lone_bandits });
+    std.debug.print("200 floors, {d} packs each, {d} with no water for leeches:\n", .{ PER_FLOOR, dry });
+    for (actor.FOES) |k| std.debug.print("  {s}: {d} total, at least {d} on each floor with ground for it\n", .{ actor.plural(k), counts.get(k), fewest.get(k) });
+    std.debug.print("unguarded: {d} slimes, {d} crossbowmen\n", .{ lone_slimes, lone_bandits });
     try std.testing.expectEqual(@as(usize, 0), counts.get(.archer));
     try std.testing.expectEqual(@as(usize, 0), lone_slimes);
     try std.testing.expectEqual(@as(usize, 0), lone_bandits);
     try std.testing.expect(counts.get(.slime) < counts.get(.rat));
     for (actor.FOES) |k| try std.testing.expect(fewest.get(k) >= FEW);
+}
+
+test "a pack whose lead has no ground of its own gives way without costing the floor a pack" {
+    var lv = grid.openFloor();
+    var spec = Spec{ .packs = 4, .few = 0, .gap = 0, .makeup_n = 2 };
+    spec.makeup[0] = Makeup.of(&.{.bog_leech});
+    spec.makeup[0].weight = WEIGHT_MAX;
+    spec.makeup[1] = Makeup.of(&.{.rat});
+    var pool = actor.Pool{};
+    var rng = mathx.Rng.init(0x1EEC);
+    place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &spec);
+    try std.testing.expectEqual(@as(usize, 4), pool.tally(.rat).total);
+    try std.testing.expectEqual(@as(usize, 0), pool.tally(.bog_leech).total);
+    pool = .{};
+    lv = grid.openFloor();
+    var cells = grid.Cells.of(.{ .x = 30, .y = 30 }, .{ .x = 34, .y = 33 });
+    while (cells.next()) |p| lv.set(p, .water);
+    place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &spec);
+    try std.testing.expect(pool.tally(.bog_leech).total > 0);
+    for (pool.slice()) |a| if (a.kind == .bog_leech) try std.testing.expectEqual(grid.Tile.water, lv.at(a.at));
+    std.debug.print("a leech-led makeup weighted {d} to 1: a dry floor still takes 4 rat packs; with a pond, {d} leeches swim in it\n", .{ WEIGHT_MAX, pool.tally(.bog_leech).total });
 }
 
 test "a spec of its own makeups places only them, its packs kept apart and the pool never overfilled" {

@@ -15,6 +15,9 @@ const scene = @import("scene.zig");
 const game = @import("../game.zig");
 const rewards = @import("rewards.zig");
 const binds = @import("binds.zig");
+const skills = @import("skills.zig");
+const skillbar = @import("../play/skillbar.zig");
+const consumable = @import("../play/consumable.zig");
 const P = mathx.P;
 const PAUSE = menu.PAUSE;
 
@@ -50,9 +53,29 @@ pub fn dropShown(g: *const game.Game, drop: items.Drop) bool {
 
 /// Laid, or its foe's death drawn; seen or not.
 pub fn dropLanded(g: *const game.Game, drop: items.Drop) bool {
-    if (drop.source == grid.NO_ONE) return true;
-    const i = actor.Pool.slot(drop.source);
+    return landed(g, drop.source);
+}
+
+fn landed(g: *const game.Game, source: u16) bool {
+    if (source == grid.NO_ONE) return true;
+    const i = actor.Pool.slot(source);
     return g.pic.pictured[i].down();
+}
+
+pub fn supplyLanded(g: *const game.Game, s: items.Supply) bool {
+    return landed(g, s.source);
+}
+
+pub fn supplyShown(g: *const game.Game, s: items.Supply) bool {
+    return g.sim.lv.isLit(s.at) and supplyLanded(g, s);
+}
+
+fn supplyReached(g: *const game.Game, from: P, s: items.Supply) bool {
+    return withinReach(from, s.at) and supplyShown(g, s);
+}
+
+fn supplyInLoot(g: *const game.Game, from: P, at: P, s: items.Supply) bool {
+    return s.at.eq(at) and supplyReached(g, from, s);
 }
 
 fn withinReach(from: P, p: P) bool {
@@ -69,6 +92,14 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
         if (listed.isSet(cell)) continue;
         listed.set(cell);
         out[n] = if (g.sim.lv.at(drop.at).isChest()) .{ .chest = drop.at } else .{ .bag = drop.at };
+        n += 1;
+    }
+    for (g.sim.ground.supplies[0..g.sim.ground.supply_n]) |s| {
+        if (!supplyReached(g, at, s)) continue;
+        const cell = grid.Level.idx(s.at);
+        if (listed.isSet(cell)) continue;
+        listed.set(cell);
+        out[n] = if (g.sim.lv.at(s.at).isChest()) .{ .chest = s.at } else .{ .bag = s.at };
         n += 1;
     }
     var cells = grid.Cells.around(at, game.INTERACT_REACH);
@@ -98,6 +129,11 @@ fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
         out[n] = .{ .loot = .{ .index = i, .item = drop.item } };
         n += 1;
     }
+    for (g.sim.ground.supplies[0..g.sim.ground.supply_n], 0..) |s, i| {
+        if (!supplyInLoot(g, from, at, s)) continue;
+        out[n] = .{ .supply = .{ .index = i, .kind = s.kind } };
+        n += 1;
+    }
     if (goldReached(g, from, at)) |pile| {
         out[n] = .{ .gold = pile };
         n += 1;
@@ -125,6 +161,9 @@ fn inLoot(g: *const game.Game, from: P, at: P, drop: items.Drop) bool {
 pub fn lootReached(g: *const game.Game, from: P, at: P) bool {
     for (g.sim.ground.drops[0..g.sim.ground.n]) |drop| {
         if (inLoot(g, from, at, drop)) return true;
+    }
+    for (g.sim.ground.supplies[0..g.sim.ground.supply_n]) |s| {
+        if (supplyInLoot(g, from, at, s)) return true;
     }
     return g.sim.lv.at(at).isChest() and goldReached(g, from, at) != null;
 }
@@ -166,8 +205,11 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
     if (g.sim.heroBody()) |h| {
         v.steady = h.tactics.steady;
         const at = g.pic.drawnCell(&g.sim, g.sim.heroSlot().?) orelse h.at;
-        const buildup = if (g.pic.heroShown(&g.sim)) |shown| shown.resilience else h.resilience;
-        const stats = g.sim.combatStatsAt(h, at, buildup);
+        const pictured = g.pic.heroShown(&g.sim);
+        const buildup = if (pictured) |shown| shown.resilience else h.resilience;
+        const sundered = if (pictured) |shown| shown.sunder else h.sunder;
+        const stats = g.sim.combatStatsAt(h, at, buildup, sundered);
+        v.sundered = sundered.lost();
         v.resists = stats.elements;
         v.environment = terrain.of(g.sim.lv.at(at));
         for (std.enums.values(resilience.Kind)) |k| v.status_resist.set(k, .{ .percent = stats.statuses.get(k), .turns = buildup.meters.get(k).turns });
@@ -220,11 +262,32 @@ fn takeDrop(g: *game.Game, i: usize) bool {
     return true;
 }
 
+fn takeSupply(g: *game.Game, i: usize) bool {
+    const kind = g.sim.ground.supplies[i].kind;
+    if (!g.sim.ground.takeSupply(i, &g.sim.inventory)) {
+        g.character.message.say("Stack full", .{});
+        return false;
+    }
+    g.sim.log.push(.loot, "Picked up {s}.", .{consumable.phrase(kind)});
+    return true;
+}
+
+/// Throwing closes Character for the reticle; anything else is used where it is.
+fn useCarried(g: *game.Game, k: consumable.Kind) void {
+    if (!drawnFor(g)) return;
+    if (g.sim.travel != null) return notYet(g);
+    const act = skillbar.Act.ofSupply(k);
+    if (act.reticle() != null) g.mode = .play;
+    const slot = g.bar.slotOf(act);
+    skills.useSkill(g, .{ .act = act, .by = if (slot) |s| s.button else menu.CONFIRM, .set = if (slot) |s| s.set else .primary });
+}
+
 fn notYet(g: *game.Game) void {
     g.character.message.say("Not until the turn ends", .{});
 }
 
 pub fn characterCommand(g: *game.Game, command: book.Command) void {
+    defer settleLoot(g);
     switch (command) {
         .close => g.mode = .play,
         .bindings => |act| {
@@ -246,7 +309,8 @@ pub fn characterCommand(g: *game.Game, command: book.Command) void {
             g.sim.unsaved = true;
         },
         .open_loot => |at| openLoot(g, at),
-        .equip, .unequip, .drop, .pickup, .take_gold, .take_all, .travel => itemCommand(g, command),
+        .use => |k| useCarried(g, k),
+        .equip, .unequip, .drop, .pickup, .take_supply, .take_gold, .take_all, .travel => itemCommand(g, command),
     }
 }
 
@@ -268,7 +332,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
     const h = g.sim.heroActor() orelse return;
     const base = g.sim.growth.attributes(g.sim.class);
     switch (command) {
-        .close, .passive, .skill, .bindings, .open_loot => unreachable,
+        .close, .passive, .skill, .bindings, .open_loot, .use => unreachable,
         .equip => |e| {
             g.sim.inventory.equip(e.index, e.slot, base) catch |err| {
                 itemFailed(g, err);
@@ -294,11 +358,16 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             if (g.character.page == .loot and !g.sim.ground.drops[i].at.eq(g.character.loot_at)) return;
             if (!takeDrop(g, i)) return;
         },
+        .take_supply => |i| {
+            if (i >= g.sim.ground.supply_n or !supplyReached(g, h.at, g.sim.ground.supplies[i])) return;
+            if (g.character.page == .loot and !g.sim.ground.supplies[i].at.eq(g.character.loot_at)) return;
+            if (!takeSupply(g, i)) return;
+        },
         .take_gold => |at| {
             if (goldReached(g, h.at, at) == null) return;
             if (g.character.page == .loot) {
                 if (!at.eq(g.character.loot_at)) return;
-            } else if (g.sim.lv.at(at).isChest() or g.sim.ground.hasItems(at)) return;
+            } else if (g.sim.lv.at(at).isChest() or g.sim.ground.bagged(at)) return;
             game.combat.collectGold(g, at);
         },
         .take_all => {
@@ -309,27 +378,60 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
                 taken += 1;
             }
             var i: usize = 0;
+            var bag_full = false;
             while (i < g.sim.ground.n) {
                 if (!inLoot(g, h.at, g.character.loot_at, g.sim.ground.drops[i])) {
                     i += 1;
                     continue;
                 }
-                if (!takeDrop(g, i)) break;
+                if (!takeDrop(g, i)) {
+                    bag_full = true;
+                    break;
+                }
                 taken += 1;
             }
+            i = 0;
+            while (i < g.sim.ground.supply_n) {
+                if (!supplyInLoot(g, h.at, g.character.loot_at, g.sim.ground.supplies[i]) or !takeSupply(g, i)) {
+                    i += 1;
+                    continue;
+                }
+                taken += 1;
+            }
+            if (bag_full) itemFailed(g, error.Full);
             if (taken == 0) return;
         },
         .travel => |p| {
             const link = doorReached(g, h.at, p) orelse return;
             const dx = p.x - h.at.x;
-            if (p.eq(h.at)) g.sim.travel = link else game.heroTo(g, p);
+            if (p.eq(h.at)) {
+                g.sim.travel = link;
+            } else if (h.pin.turns > 0) {
+                g.sim.log.say("{s} is pinned and struggles.", .{g.sim.name.text()});
+            } else game.heroTo(g, p);
             g.pic.turnToward(g.sim.hero, dx);
         },
     }
     game.syncStats(g);
     g.character.destination_index = 0;
+    const looting = g.character.page == .loot;
     if (command == .travel or directEmptied(g)) g.mode = .play;
     game.holdWalk(g);
+    if (looting) {
+        g.looted = true;
+        return;
+    }
+    spendTurn(g);
+}
+
+/// Everything taken while the loot menu was open is one action, spent once it closes.
+pub fn settleLoot(g: *game.Game) void {
+    if (!g.looted or (g.mode == .pause and g.pause_page == .character and g.character.page == .loot)) return;
+    g.looted = false;
+    spendTurn(g);
+}
+
+fn spendTurn(g: *game.Game) void {
     @import("tactics.zig").beforeAction(&g.sim);
     game.combat.endTurn(g);
 }

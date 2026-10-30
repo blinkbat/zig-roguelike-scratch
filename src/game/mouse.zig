@@ -136,11 +136,11 @@ pub fn aim(g: *game.Game) bool {
     } else g.mode.aim.mark = at;
     skills.rememberTarget(g);
     g.pic.turnToward(g.sim.hero, g.mode.aim.mark.x - h.at.x);
-    return g.st.click or (g.mode.aim.act() == .arcane_barrier and g.mode.aim.anchor() != null and g.st.left_released);
+    return g.st.click or (g.mode.aim.act().spans() and g.mode.aim.anchor() != null and g.st.left_released);
 }
 
 fn danger(g: *const game.Game) bool {
-    for (g.sim.pool.items[0..g.sim.pool.n]) |a| if (a.alive and a.foe() and g.sim.lv.isLit(a.at)) return true;
+    for (g.sim.pool.items[0..g.sim.pool.n]) |a| if (a.alive and a.foe() and a.seenIn(&g.sim.lv)) return true;
     return false;
 }
 
@@ -149,7 +149,7 @@ fn attack(g: *game.Game, at: P) bool {
     const set = skills.activeSet(g);
     for (skillbar.SLOTS) |b| {
         const act = g.bar.at(.{ .set = set, .button = b }) orelse continue;
-        if (act.reticle() == null or act.attack() == null or !tactics.validAct(g, act, h.at, at)) continue;
+        if (act.reticle() == null or act.attack() == null or act.supplyOf() != null or !tactics.validAct(g, act, h.at, at)) continue;
         if (skills.blocked(g, act, &g.sim.flasks, g.sim.mana) != null) continue;
         skills.useSkill(g, .{ .act = act, .by = b, .set = set });
         if (g.mode == .aim) {
@@ -233,7 +233,7 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
             if (visited.isSet(i)) continue;
             const end = q.eq(to);
             if (!g.sim.lv.walkable(q) and !(end and g.sim.lv.at(q).opened() != null)) continue;
-            if (g.sim.lv.barrelSeen(q) and !end) continue;
+            if ((g.sim.lv.barrelSeen(q) or g.sim.lv.folkAt(q) != null) and !end) continue;
             if (g.sim.lv.isLit(q) and ((g.sim.lv.taken(q) and !end) or g.sim.lv.gassy(q))) continue;
             if (!end and g.sim.leadsTo(q) != null) continue;
             const way = if (head == 0) d else first[head];

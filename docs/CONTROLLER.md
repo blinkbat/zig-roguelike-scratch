@@ -71,6 +71,8 @@ PS button do nothing; GLFW reads no touchpad.
 | Get out (reticle, binds, menus, pause) | B | X or Esc (Esc alone in play) |
 | Confirm, select | A | Enter, Space or Z |
 | Interact in play | A / Cross | Enter or Space |
+| Talk to folk | walk into them, or Interact beside them | walk into them, Enter or Space beside them |
+| Conversation: choose, go on | D-pad up/down, A | arrows/WS, Enter, Space or Z; or click a choice (no back-out) |
 | Scroll event log | Inspect log, up/down | Wheel over log, or Inspect then up/down |
 | Bind screen: change, remove | X, Y | C, Del |
 | Passive tree: browse | Left stick, actual bearing | WASD, arrows, numpad |
@@ -86,8 +88,8 @@ With the default LB modifier, the keyboard uses Ctrl, then 1 to 6 for A, X, Y, B
 
 ### Mouse
 
-Arcane Barrier uses two ordinary targeting confirmations for its endpoints. With the
-mouse, press on the first endpoint, drag to preview the straight wall and release to
+Arcane Barrier and Fire Wall use two ordinary targeting confirmations for their endpoints. With the
+mouse, press on the first endpoint, drag to preview the straight line and release to
 confirm the second. Cancel discards the whole preview without spending mana or a turn.
 Overwatch uses normal targeting to choose the direction of its covered cone.
 
@@ -129,10 +131,10 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
   retaining the parent selection, before returning to Pause.
 - **Character** contains equipment, inventory, stats, shared passives and class skills. Shoulders / Q and E change pages from anywhere. Clicking a tab enters its content. Back closes Character in one step. Equip, unequip, drop and point allocation each take one deliberate action; no action submenu or confirmation modal. Rings have an explicit destination switch and the comparison follows that destination. Successful item actions keep the screen open and still spend one turn. Point allocation is free of simulation turns. The underlying inventory/progression transactions remain authoritative.
 - The passive tree starts zoomed in, at `trees.ZOOM_START`. Left-stick bearing browses, right stick pans, D-pad up/down zooms. Shifted keyboard navigation pans; =/-, keypad +/- and Page Up/Down zoom; right-stick click / Home gives the overview. Pan and zoom never allocate points.
-- **Interact** or a first bump opens a closed chest for one turn, revealing its items and gold without opening a panel. Stepping onto a loose bag or stocked open chest opens loot for the movement turn; bags stay walkable even when loot is left behind. Ground gold without items uses a coin drop and auto-loots when stepped onto, with no extra turn or modal. Gold with items shares their bag. Interact browses a sole visible bag/open chest within reach for free, or takes a sole coin drop for one turn. Multiple nearby drops/containers/doors first offer a choice; selecting an entry affects only that cell. Doors always keep a choice, preventing queued input from immediately returning through an arrival door. Loot offers Take item or Take gold for the selected row through the confirm control and Take all through the change control, with device glyphs and clickable buttons. Each successful pickup action takes one turn; Take all collects gold, fills available inventory space and leaves excess items. Gold needs no inventory space. The modal closes when empty. Busy input waits for the current turn or door travel. Movement and browsing never collect gold from bags or chests.
+- **Interact** or a first bump opens a closed chest for one turn, revealing its items and gold without opening a panel. Stepping onto a loose bag or stocked open chest opens loot for the movement turn; bags stay walkable even when loot is left behind. Ground gold without items uses a coin drop and auto-loots when stepped onto, with no extra turn or modal. Gold with items shares their bag. Interact browses a sole visible bag/open chest within reach for free, or takes a sole coin drop for one turn. Multiple nearby drops/containers/doors first offer a choice; selecting an entry affects only that cell. Doors always keep a choice, preventing queued input from immediately returning through an arrival door. Loot offers Take item or Take gold for the selected row through the confirm control and Take all through the change control, with device glyphs and clickable buttons. Everything taken during one loot visit is one action: the turn is spent once, when the loot closes (Back, emptied or left for another screen), and only if something was taken; Take all collects gold, fills available inventory space and leaves excess items. Gold needs no inventory space. The modal closes when empty. Busy input waits for the current turn or door travel. Movement and browsing never collect gold from bags or chests.
 - **Inspect** walks visible onscreen characters, the life orb, skill slots, mana orb, active statuses and event log without spending a turn.
-  Foe cards show only the name in title case and pictured HP, then a divider and the tile with its signed effects.
-  Hero cards retain detailed stats, pictured statuses and effective resistances. Page controls and the mouse wheel scroll long cards. The
+  Every unit card shows only its name (title case for foes, the hero's own name) and pictured HP, then a divider and the tile with its signed effects.
+  Page controls and the mouse wheel scroll long cards. The
   log scrolls up/down while selected; move sideways to leave it. B, Select or
   another right-stick click closes it; keyboard X, Esc or I does the same. Holding the modifier (or Ctrl) shows the
   secondary set's slots there too (`State.sets`).

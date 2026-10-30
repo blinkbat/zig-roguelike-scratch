@@ -33,6 +33,8 @@ pub const Shot = struct {
     flight: bow.Flight,
     from: P,
     act: skillbar.Act = .shoot,
+    /// A thrown net rather than an arrow.
+    net: bool = false,
     t: f32 = 0,
     trail_t: f32 = 0,
 
@@ -82,19 +84,29 @@ test "missiles move continuously to the existing impact time in every direction"
     std.debug.print("smooth missiles: {d} directions, sub-tile motion, exact arrival at presented impact\n", .{checked});
 }
 
-pub const Bite = union(enum) { hurt: fx.After, kill: fx.After, burst: fx.After, miss };
+/// `snare`: a net, holding the hero as it lands, or dodged (null).
+pub const Bite = union(enum) { hurt: fx.After, kill: fx.After, burst: fx.After, snare: ?fx.After, miss };
+
+/// The hero shoved from one cell to the next as the blow lands.
+pub const Knock = struct { from: P, to: P };
+
+/// A body healed as the mending lands; none when the mending only woke its kin.
+pub const Mended = struct { slot: ?actor.ActorSlot = null, after: ?fx.After = null };
 
 /// Presentation debts land at the body's stagger, or after the hero when it has no stagger.
 pub const Owed = struct {
     bit: ?Bite = null,
     arrow: ?bow.Flight = null,
     gassed: ?Harm = null,
+    healed: ?fx.After = null,
     burned: ?Harm = null,
     bled: ?Harm = null,
     worn: ?fx.After = null,
     swept: ?Swept = null,
     thorns: ?Harm = null,
     reaction: ?Reaction = null,
+    knock: ?Knock = null,
+    mended: ?Mended = null,
 
     pub fn any(o: *const Owed) bool {
         inline for (std.meta.fields(Owed)) |f| {
@@ -125,6 +137,8 @@ pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
 /// What is drawn of the run, lagging the simulation until each blow lands; nothing in the simulation reads it.
 pub const Presentation = struct {
     occlusion: [grid.CELLS]f32 = @splat(0),
+    /// The middle of the body each occluding cell last fades around, cells.
+    occluder: [grid.CELLS][2]f32 = @splat(.{ 0, 0 }),
     /// Indexed by pool slot.
     glide: [actor.MAX]glide.Glide = undefined,
     /// Indexed by pool slot.
@@ -141,6 +155,8 @@ pub const Presentation = struct {
     owed: [actor.MAX]Owed = @splat(.{}),
     shot: ?Shot = null,
     foe_shots: [actor.MAX]?Shot = @splat(null),
+    /// Where the hero stood before the turn's first knockback: its own move ends there.
+    knocked_from: ?P = null,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -241,6 +257,10 @@ pub const Presentation = struct {
         @field(self.owed[target.slot().index], @tagName(tick)) = harm;
     }
 
+    pub fn recordHeal(self: *Presentation, target: actor.ActorId, after: fx.After) void {
+        self.owed[target.slot().index].healed = after;
+    }
+
     pub fn recordWear(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
         self.owed[target.slot().index].worn = self.afterOf(sim, target.slot().index);
     }
@@ -253,8 +273,17 @@ pub const Presentation = struct {
         if (swept.n > 0) self.owed[by.slot().index].swept = swept;
     }
 
+    pub fn recordKnock(self: *Presentation, by: actor.ActorId, from: P, to: P) void {
+        if (self.knocked_from == null) self.knocked_from = from;
+        self.owed[by.slot().index].knock = .{ .from = from, .to = to };
+    }
+
+    pub fn recordMend(self: *Presentation, by: actor.ActorId, mended: Mended) void {
+        self.owed[by.slot().index].mended = mended;
+    }
+
     pub fn freshTurn(self: *Presentation) void {
-        game.toDefaults(self, &.{ "shot", "foe_shots", "busy", "lead", "owed", "split_from", "dropped_gold", "turning", "gold_taken" });
+        game.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "busy", "lead", "owed", "split_from", "dropped_gold", "turning", "gold_taken" });
         self.fx.clear();
     }
 
@@ -354,7 +383,7 @@ pub const Presentation = struct {
     }
 
     pub fn drawnAt(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
-        if (!self.standing(sim, i)) return null;
+        if (!self.standing(sim, i) or sim.pool.items[i].veiled()) return null;
         const at = self.glide[i].now();
         return if (sim.lv.isLit(game.cellUnder(at))) at else null;
     }
@@ -414,28 +443,32 @@ pub const Presentation = struct {
         self.mana_fill = mathx.ease(self.mana_fill, self.manaFill(sim), resource_ease, resource_ease);
     }
 
-    pub fn occlusionHero(self: *const Presentation, sim: *const Simulation) ?rl.Vector2 {
-        const h = sim.heroSlot() orelse return null;
-        const at = self.drawnAt(sim, h) orelse return null;
-        return .{ .x = at.x, .y = at.y - @as(f32, @floatFromInt(self.glide[h].lift())) };
+    fn occluding(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
+        const at = self.drawnAt(sim, i) orelse return null;
+        return .{ .x = at.x, .y = at.y - @as(f32, @floatFromInt(self.glide[i].lift())) };
     }
 
     fn stepOcclusion(self: *Presentation, sim: *const Simulation, dt: f32) void {
-        const hero = self.occlusionHero(sim);
+        var covered = Covered.initEmpty();
+        if (sim.heroSlot()) |h| self.cover(sim, h, &covered);
+        for (0..sim.pool.n) |i| if (!sim.isHero(i)) self.cover(sim, i, &covered);
         const k = mathx.easing(dt, OCCLUSION_EASE);
         for (sim.lv.tile, &self.occlusion, 0..) |t, *hidden, i| {
-            if (!look.occludes(t)) {
-                hidden.* = 0;
-                continue;
-            }
-            const p = grid.Level.of(i);
-            const x = @as(f32, @floatFromInt(p.x)) * game.CELL_F;
-            const y = @as(f32, @floatFromInt(p.y)) * game.CELL_F;
-            const top = y - if (look.tall(t)) game.CELL_F else 0;
-            const bottom = y + if (look.tall(t)) 0 else game.CELL_F;
-            const covered = if (hero) |at| at.x + game.CELL_F * 0.85 > x and at.x + game.CELL_F * 0.15 < x + game.CELL_F and
-                at.y + game.CELL_F * 0.9 > top and at.y + game.CELL_F * 0.1 < bottom else false;
-            hidden.* = mathx.ease(hidden.*, if (covered) 1 else 0, k, k);
+            hidden.* = if (look.occludes(t)) mathx.ease(hidden.*, if (covered.isSet(i)) 1 else 0, k, k) else 0;
+        }
+    }
+
+    fn cover(self: *Presentation, sim: *const Simulation, slot: usize, covered: *Covered) void {
+        const at = self.occluding(sim, slot) orelse return;
+        const under = game.cellUnder(at);
+        var near = grid.Cells.of(under.sub(.{ .x = 1, .y = 1 }), under.add(.{ .x = 2, .y = 3 }));
+        while (near.next()) |p| {
+            if (!grid.Level.inside(p)) continue;
+            const i = grid.Level.idx(p);
+            const t = sim.lv.tile[i];
+            if (covered.isSet(i) or !look.occludes(t) or !hides(at, p, t)) continue;
+            covered.set(i);
+            self.occluder[i] = game.middle(at);
         }
     }
 
@@ -475,7 +508,7 @@ pub const Presentation = struct {
             if (gl.splashed or gl.done() < SPLASH_AT) continue;
             gl.splashed = true;
             if (gl.bump != null or std.meta.eql(gl.from, glide.cellPx(gl.to))) continue;
-            if (self.pictured[i].down() or actor.row(self.pictured[i].kind).movement == .flying) continue;
+            if (self.pictured[i].down() or actor.row(self.pictured[i].kind).movement != .ground) continue;
             const at = self.drawnAt(sim, i) orelse continue;
             if (sim.lv.at(game.cellUnder(at)) == .shallows) self.fx.splash(game.middle(at));
         }
@@ -514,6 +547,7 @@ pub const Presentation = struct {
         self.owed[hero].worn = null;
         const hero_done = self.stagger(sim, gas, sim.hero, late, self.lead orelse 0, &next);
         self.lead = null;
+        self.knocked_from = null;
         var part: [actor.MAX]f32 = @splat(hero_done);
         for (sim.order[0..sim.order_n]) |id| part[actor.Pool.slot(id)] = self.stagger(sim, gas, id, late, hero_done, &next);
         for (self.owed[0..sim.pool.n], 0..) |*o, i| {
@@ -530,12 +564,13 @@ pub const Presentation = struct {
     /// Completion time; unplaced bodies wait for the hero and knockback slide.
     fn stagger(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, id: u16, late: f32, start: f32, next: *f32) f32 {
         comptime for (std.enums.values(std.meta.FieldEnum(Owed))) |t| switch (t) {
-            .bit, .arrow, .gassed, .burned, .bled, .worn, .swept, .thorns, .reaction => {},
+            .bit, .arrow, .gassed, .healed, .burned, .bled, .worn, .swept, .thorns, .reaction, .knock, .mended => {},
         };
         const i = actor.Pool.slot(id);
         const a = sim.pool.items[i];
         const gl = &self.glide[i];
-        const moved = !gl.to.eq(a.at);
+        const dest = if (id == sim.hero) self.knocked_from orelse a.at else a.at;
+        const moved = !gl.to.eq(dest);
         if (!moved and !self.owed[i].any()) {
             if (self.turning[i]) |*t| {
                 if (t.in == null) t.in = start;
@@ -546,17 +581,17 @@ pub const Presentation = struct {
         self.owed[i] = .{};
         const bit = owed.bit;
         const shown = sim.lv.isLit(a.at);
-        const placed = if (moved) shown or sim.lv.isLit(gl.to) else (shown or owed.arrow != null) and bit != null;
+        const placed = if (moved) shown or sim.lv.isLit(gl.to) else (shown or owed.arrow != null) and (bit != null or owed.mended != null);
         var wait = if (placed) next.* else 0;
         if (placed and id != sim.hero and (moved or bit != null)) wait = @max(wait, late + gl.left());
         if (placed and moved and id != sim.hero) wait = @max(wait, late + self.clearIn(sim, i, a.at));
         if (placed) next.* = wait + game.STAGGER_S;
         if (self.turning[i]) |*t| t.in = if (placed) wait - late else start;
         const hero = sim.heroSlot().?;
-        const hero_at = sim.heroAt().?;
+        const hero_at = if (owed.knock) |k| k.from else sim.heroAt().?;
         var lands = if (placed) wait else if (moved) start else @max(start, gl.left());
         if (moved) {
-            gl.* = gl.toward(a.at, late - wait);
+            gl.* = gl.toward(dest, late - wait);
         } else if (bit != null and owed.arrow == null) {
             gl.* = gl.bumping(hero_at, late - wait);
         }
@@ -567,7 +602,7 @@ pub const Presentation = struct {
         var hits = (if (placed) wait - late else start) + game.BUMP_LANDS;
         if (owed.arrow) |flight| {
             const release = @max(start, wait - late);
-            const s = Shot{ .from = a.at, .flight = flight, .t = -release };
+            const s = Shot{ .from = a.at, .flight = flight, .t = -release, .net = bit != null and bit.? == .snare };
             self.foe_shots[i] = s;
             hits = release + s.lands();
             lands = release + s.ends();
@@ -577,8 +612,22 @@ pub const Presentation = struct {
         if (bit) |b| switch (b) {
             .hurt, .kill => |after| self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(hero), .at = hero_at, .lethal = b == .kill, .after = after } }, .{ .from = a.at, .wait = hits }),
             .burst => |after| self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(i), .at = a.at, .lethal = true, .after = after } }, .{ .from = hero_at, .wait = hits }),
+            .snare => |held| if (held) |after| self.fx.settle(hits, .{ .slot = hero, .after = after }),
             .miss => {},
         };
+        if (owed.knock) |k| {
+            const shoved = &self.glide[hero];
+            shoved.* = shoved.toward(k.to, -hits);
+            self.holdUntil(shoved.left());
+            lands = @max(lands, shoved.left());
+        }
+        if (owed.mended) |m| {
+            if (shown) self.fx.shimmer(mathx.centre(a.at), look.body(a.kind).fg);
+            if (m.slot) |s| {
+                if (m.after) |after| self.fx.settle(hits, .{ .slot = s.index, .after = after });
+                if (sim.lv.isLit(sim.pool.items[s.index].at)) self.fx.shimmer(mathx.centre(sim.pool.items[s.index].at), look.LIFE);
+            }
+        }
         if (owed.swept) |*sw| for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h, .{ .from = a.at, .wait = hits });
         if (owed.thorns) |h| {
             self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(i), .at = a.at, .lethal = h.kill, .after = h.after } }, .{ .from = hero_at, .wait = hits });
@@ -610,7 +659,8 @@ pub const Presentation = struct {
         const mark: ?[2]f32 = if (shown) mathx.centre(a.at) else null;
         const drip: ?fx.Drip = if (mark) |m| .{ .at = m, .matter = fx.matterOf(a.kind) } else null;
         const in_view = shown or placed;
-        if (owed.gassed) |h| self.harmShown(sim, gas, a.at, lands, h, false, in_view, .{ .slot = i });
+        if (owed.gassed) |h| self.harmShown(sim, gas, a.at, lands, h, false, in_view, .{ .slot = i, .puff = fx.Puff.over(mark, look.GAS) });
+        if (owed.healed) |after| self.fx.settle(lands, .{ .slot = i, .after = after, .puff = fx.Puff.over(mark, look.HEALING_GAS) });
         if (owed.burned) |h| self.harmShown(sim, gas, a.at, lands, h, true, in_view, .{ .slot = i, .fire_at = mark });
         if (owed.bled) |h| self.harmShown(sim, gas, a.at, lands, h, false, in_view, .{ .slot = i, .drip = drip });
         return lands;
@@ -659,7 +709,14 @@ pub const Presentation = struct {
             .barrel => {},
         }
         const k = kind orelse return;
-        if (impact.lethal() and k.bursts()) gas.hold(s.wait);
+        if (!impact.lethal()) return;
+        switch (actor.row(k).blow) {
+            .burst => |b| switch (b) {
+                .gas => gas.hold(s.wait),
+                .fire => if (sim.lv.isLit(at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire }),
+            },
+            .strike => {},
+        }
     }
 
     pub fn sting(self: *Presentation, wait: f32, s: fx.Sting) void {
@@ -688,6 +745,17 @@ const OCCLUSION_EASE: f32 = 12;
 const XP_EASE: f32 = 8;
 /// Per second, how fast the life and mana orbs fill toward what is shown.
 pub const RESOURCE_EASE = XP_EASE;
+
+const Covered = std.StaticBitSet(grid.CELLS);
+
+fn hides(at: rl.Vector2, p: P, t: grid.Tile) bool {
+    const x = @as(f32, @floatFromInt(p.x)) * game.CELL_F;
+    const y = @as(f32, @floatFromInt(p.y)) * game.CELL_F;
+    const top = y - if (look.tall(t)) game.CELL_F else 0;
+    const bottom = y + if (look.tall(t)) 0 else game.CELL_F;
+    return at.x + game.CELL_F * 0.85 > x and at.x + game.CELL_F * 0.15 < x + game.CELL_F and
+        at.y + game.CELL_F * 0.9 > top and at.y + game.CELL_F * 0.1 < bottom;
+}
 
 fn facingOf(dx: i32) ?actor.Facing {
     return if (dx < 0) .left else if (dx > 0) .right else null;

@@ -13,7 +13,6 @@ pub const MIN_RANGE: i32 = 2;
 pub const VERB = "charges into";
 pub const DONE = "charges";
 pub const DESCRIPTION = std.fmt.comptimePrint("Rush {d}-{d} tiles along a clear line. Strike a foe at the end and knock it back a tile, or retreat to empty ground.", .{ MIN_RANGE, RANGE });
-pub const FLAVOR = "Distance is only a matter of resolve.";
 
 pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
 

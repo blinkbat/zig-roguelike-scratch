@@ -15,7 +15,6 @@ pub const BOLT = "fireball";
 pub const TAKES = burning.TAKES;
 pub const ELEMENT: damage.Element = .fire;
 pub const DESCRIPTION = std.fmt.comptimePrint("A fire bolt bursts on impact, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), burning.BURN_NOTE });
-pub const FLAVOR = "Light enough to see by, briefly.";
 
 comptime {
     std.debug.assert(BLAST <= glacial.BURST_MAX);

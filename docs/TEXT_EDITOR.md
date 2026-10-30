@@ -55,7 +55,7 @@ enum, update its registration name and retain the original key through `saved_na
 the catalog and runtime display helpers use that same mapping.
 
 Editable text is nonempty ASCII, up to 4096 bytes, matching the game's text rendering
-contract. Item flavor lines retain their source-defined 32-character limit. Display aliases
+contract. Display aliases
 are single-line text. Quotes, backslashes and newlines are escaped safely. Format placeholders such as
 `{s}` and `{d}`, escaped braces and inline control glyph markers must remain unchanged and
 in the same order. Layout remains the author's responsibility; long replacements can need

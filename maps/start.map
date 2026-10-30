@@ -55,6 +55,10 @@ feature scatter
 tile large_tree
 on grass
 amount 8
+feature scatter
+tile glow_plant
+on grass
+amount 6
 name The Strand
 at 0 0
 door 95 32

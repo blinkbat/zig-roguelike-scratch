@@ -87,7 +87,7 @@ const STAT_ROW = font.BODY_LINE;
 const HEADLINE = font.HEAD + 4;
 const HEADLINE_ROW = HEADLINE + 8;
 const CHANCE_ROW = font.LABEL + 3;
-const SECTION_GAP = 14;
+const SECTION_GAP = 12;
 const CRIT_GAP = 20;
 /// Between a row's label and its value, at the least.
 const ROW_GAP = 16;
@@ -259,7 +259,7 @@ fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
 
     var right = Column{ .face = face, .x = layout.DETAIL_X, .dry = dry };
     right.heading("DAMAGE");
-    for (skillbar.kit(view.class)) |act| if (act.attack() != null and view.growth.unlocked(act)) {
+    for (skillbar.kit(view.class)) |act| if (act.attack() != null and act.supplyOf() == null and view.growth.unlocked(act)) {
         right.skill(act, view.growth.preparedHit(attributes, view.inventory.gear, act, view.steady).?, view.inventory.gear.onHit(act.attack().?));
     };
     right.y += CRIT_GAP;

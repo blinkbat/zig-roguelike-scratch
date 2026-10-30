@@ -37,6 +37,7 @@ const canvas = @import("canvas.zig");
 const modals = @import("modals.zig");
 const panel = @import("panel.zig");
 const text_panel = @import("text_panel.zig");
+pub const plot = @import("plot.zig");
 
 const P = mathx.P;
 const Desk = input.Desk;
@@ -120,7 +121,7 @@ pub const Ink = enum {
 pub const INKS = std.enums.values(Ink);
 /// Asked for, and done once any unsaved changes are saved or let go.
 pub const Pending = enum { leave, quit, open, new };
-pub const Modal = enum { none, confirm, name, open, help, objects, text };
+pub const Modal = enum { none, confirm, name, open, help, objects, text, dialogs, script };
 const Naming = enum { new, save_as };
 
 const Field = name_field.Text(FIELD_MAX);
@@ -134,6 +135,7 @@ pub const Seen = union(enum) {
     barrel,
     torch,
     door,
+    folk,
 };
 
 pub const SEEN = blk: {
@@ -221,6 +223,7 @@ pub const Editor = struct {
     renamed: bool = false,
     field: Field = .{},
     words: text_panel.State = .{},
+    plot: plot.State = .{},
     listing: listing.Listing = .{},
     listed_top: usize = 0,
     listed_at: usize = 0,
@@ -336,6 +339,7 @@ pub const Editor = struct {
     }
 
     pub fn changed(ed: *Editor) void {
+        if (ed.map.pruneFolk(ed.node)) ed.say("Folk that no longer had open floor to stand on went", .{});
         ed.bank();
         ed.scene.invalidate();
         ed.thumbnails.invalidate(ed.node);
@@ -916,6 +920,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
         ed.tool = q.t;
         placement.place(ed, q.at);
     }
+    try @import("../map/script_text.zig").readAlone(SHOT_SCRIPT, &ed.map.script, ed.map.node_n);
     for ([_]usize{ 1, 2 }) |n| {
         ed.select(n);
         ed.tool = .door;
@@ -967,6 +972,19 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-beefy-pib.png", .{dir}));
     ed.modal = .help;
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-help.png", .{dir}));
+    ed.modal = .dialogs;
+    ed.plot.pick = .{ .folk = 0 };
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-folk.png", .{dir}));
+    ed.plot.pick = .{ .dialog = 0 };
+    ed.plot.line = 0;
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-dialog.png", .{dir}));
+    ed.plot.focus = .{ .say = .{ .d = 0, .l = 0 } };
+    ed.plot.field.set(ed.map.script.dialog[0].line[0].say.text());
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-dialog-typing.png", .{dir}));
+    ed.plot.focus = null;
+    ed.modal = .script;
+    ed.plot.trigger = 0;
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-script.png", .{dir}));
     ed.naming = .save_as;
     ed.field.put("The Warrens");
     ed.listing.scan();
@@ -978,7 +996,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text-browse.png", .{dir}));
     ed.words.top = std.math.maxInt(usize);
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text-list-end.png", .{dir}));
-    try text_panel.poseContext(ed, "play.items.SPECS.war_bow.flavor");
+    try text_panel.poseContext(ed, "play.items.SPECS.war_bow.name");
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text-item.png", .{dir}));
     try text_panel.pose(ed);
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text.png", .{dir}));
@@ -986,6 +1004,40 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     text_panel.requestClose(ed, false);
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text-unsaved.png", .{dir}));
 }
+
+pub const SHOT_SCRIPT =
+    \\flag met_wenna
+    \\counter coins
+    \\dialog wenna
+    \\line root
+    \\who Old Wenna
+    \\say You came down the well too? Nobody comes down the well. Mind the slime; it splits when you cut it.
+    \\act flag met_wenna on
+    \\ask What is down here? -> deeper
+    \\ask Do you need anything? -> coins
+    \\need flag met_wenna on
+    \\gets counter coins add 5
+    \\ask Goodbye. -> end
+    \\line deeper
+    \\say Rats. Slime. Worse, past the gate.
+    \\then root
+    \\line coins
+    \\say Bring me five coins and I will tell you where the old gate key fell.
+    \\then root
+    \\folk 0 11 8 wenna Old Wenna
+    \\folk 0 21 9 -
+    \\trigger greet 5 once live
+    \\when near 0 3
+    \\when flag met_wenna off
+    \\do text Someone hums by the cistern.
+    \\do dialog wenna
+    \\trigger cleared 0 once live
+    \\when deaths rat >= 3
+    \\when alive slime = 0
+    \\do text The warrens fall quiet.
+    \\do flag met_wenna flip
+    \\
+;
 
 fn seenIndex(want: Seen) usize {
     for (SEEN, 0..) |s, i| {

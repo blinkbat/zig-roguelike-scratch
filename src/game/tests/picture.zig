@@ -54,6 +54,28 @@ test "large tree boughs fade with the pictured hero and only their base blocks" 
     std.debug.print("large tree: base-only collision, picture-based fade and restoration, idle easing and map reset checked\n", .{});
 }
 
+test "large trees fade around a drawn foe behind them but not an unseen one" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const seen = P{ .x = 24, .y = 20 };
+    const unseen = P{ .x = 30, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{ seen, unseen });
+    harness.grassOver(&g.sim.lv);
+    for (10..31) |y| g.sim.lv.set(.{ .x = 28, .y = @intCast(y) }, .wall);
+    g.sim.lv.set(seen.add(.{ .x = 0, .y = 1 }), .large_tree);
+    g.sim.lv.set(unseen.add(.{ .x = 0, .y = 1 }), .large_tree);
+    game.settle(g);
+    const near = grid.Level.idx(seen.add(.{ .x = 0, .y = 1 }));
+    const far = grid.Level.idx(unseen.add(.{ .x = 0, .y = 1 }));
+    try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(seen))) != null);
+    try std.testing.expect(g.pic.drawnCell(&g.sim, actor.Pool.slot(g.sim.lv.who(unseen))) == null);
+    for (0..120) |_| g.pic.ease(&g.sim, mathx.TEST_DT);
+    try std.testing.expect(g.pic.occlusion[near] > 0.99);
+    try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[far]);
+    try std.testing.expectEqual([2]f32{ 24.5, 20.5 }, g.pic.occluder[near]);
+    std.debug.print("foe occlusion: drawn foe fades its tree around its middle; unseen foe leaves its tree whole\n", .{});
+}
+
 test "sight blocking reeds use pictured hero occlusion within their own walkable cell" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -229,6 +251,7 @@ test "water footsteps follow the shown ground unit step once, excluding flying u
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
         const id = if (kind == HERO) g.sim.hero else harness.spawnAt(g, kind, .{ .x = 24, .y = 20 }, false);
         const slot = actor.Pool.slot(id);
+        g.sim.pool.get(id).?.unmask(&g.sim.lv);
         const from = g.sim.pool.get(id).?.at;
         const to = from.add(mathx.Dir.e.delta());
         g.sim.lv.set(from, .shallows);
@@ -268,7 +291,7 @@ test "water footsteps follow the shown ground unit step once, excluding flying u
         try std.testing.expectEqual(rng, g.sim.rng);
     }
     try std.testing.expect(grounded > 0 and flying > 0);
-    std.debug.print("water footsteps: {d} ground kinds splash once at the shown footfall, {d} flying kind stays dry; no idle effects or simulation changes\n", .{ grounded, flying });
+    std.debug.print("water footsteps: {d} ground kinds splash once at the shown footfall, {d} flying or swimming kinds stay dry; no idle effects or simulation changes\n", .{ grounded, flying });
 }
 
 test "a long frame that ends a step in shallows and starts the next walk still splashes" {
@@ -736,7 +759,7 @@ test "a bloat's cloud is drawn from when its burst lands" {
     const Burst = struct {
         const at = P{ .x = 27, .y = 20 };
         fn clouded(gm: *game.Game, _: usize) bool {
-            return gm.cloud.tint[grid.Level.idx(at)] > 0;
+            return gm.cloud.tint.getPtrConst(.caustic)[grid.Level.idx(at)] > 0;
         }
     };
     const bloat = harness.spawnAt(g, .bloat, Burst.at, false);
@@ -1174,12 +1197,13 @@ test "a flask pressed mid-walk is drunk once the step is drawn, ahead of the hel
     g.st = .{ .walk = .e };
     game.update(g, 0);
     try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);
-    const clock = g.sim.clock;
+    var next = g.sim.clock;
+    next.turn();
     g.st = .{ .walk = .e };
     game.update(g, game.GLIDE_S + mathx.FRAME_DT);
     try std.testing.expect(g.pending == null);
     try std.testing.expectEqual(flask.CHARGES / flask.USE - 1, g.sim.flasks.get(.life).uses());
-    try std.testing.expectEqual(clock, g.sim.clock);
+    try std.testing.expectEqual(next, g.sim.clock);
     try std.testing.expect(g.sim.heroActor().?.at.eq(at));
     std.debug.print("flask queued behind a held walk: drunk on the first quiet frame, hero still at {d},{d}\n", .{ at.x, at.y });
 }

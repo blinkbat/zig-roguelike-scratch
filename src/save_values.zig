@@ -122,6 +122,12 @@ pub const Policy = struct {
     }
 
     pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {
+        if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "COUNTED")) {
+            inline for (T.COUNTED) |entry| {
+                if (comptime std.mem.eql(u8, field, entry[0])) return entry[1];
+            }
+        }
+        if (T == data.LegacyMap and comptime std.mem.eql(u8, field, "node")) return "node_n";
         inline for (.{
             .{ SavedProgress, "allocations", "n" },
             .{ actor.Pool, "items", "n" },

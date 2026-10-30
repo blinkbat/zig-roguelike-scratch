@@ -208,7 +208,7 @@ pub const TreeKeys = struct {
 
 pub const Desk = struct {
     pub const DIGIT_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
-    pub const TOOL_KEYS = DIGIT_KEYS ++ [_]rl.KeyboardKey{ .grave, .semicolon };
+    pub const TOOL_KEYS = DIGIT_KEYS ++ [_]rl.KeyboardKey{ .grave, .semicolon, .apostrophe, .comma, .period, .slash, .backslash, .h, .j, .k };
     pub const TOOL_CAPTIONS = glyphCaptions(&TOOL_KEYS);
     /// The editor's shapes, named and ordered as its `Shape` is.
     pub const SHAPE_KEYS_BY = .{ .brush = rl.KeyboardKey.b, .line = rl.KeyboardKey.l, .rect = rl.KeyboardKey.r, .box = rl.KeyboardKey.o, .fill = rl.KeyboardKey.f, .select = rl.KeyboardKey.m };

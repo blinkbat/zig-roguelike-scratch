@@ -22,10 +22,13 @@ const ward = @import("ward.zig");
 const charge = @import("charge.zig");
 const hero = @import("hero.zig");
 const flask = @import("flask.zig");
+const consumable = @import("consumable.zig");
 const contracts = @import("skill_contract.zig");
 const passives = @import("passives.zig");
 const wording = @import("../core/wording.zig");
 const tactics = @import("tactics.zig");
+const rend = @import("rend.zig");
+const piercing = @import("piercing.zig");
 
 const Button = input.Button;
 
@@ -76,8 +79,16 @@ pub const Act = enum {
     guard,
     whirlwind,
     unyielding,
+    rend,
+    war_cry,
+    piercing_shot,
+    shatter,
+    fire_wall,
     life_flask,
     mana_flask,
+    bandage,
+    smelling_salts,
+    frost_vial,
 
     pub fn name(a: Act) [:0]const u8 {
         return switch (a) {
@@ -100,15 +111,6 @@ pub const Act = enum {
         switch (a) {
             inline else => |t| if (comptime has(t, "describe")) module(t).?.describe(w, perks) else w.writeAll(t.desc()) catch {},
         }
-    }
-
-    pub fn flavor(a: Act) ?[:0]const u8 {
-        return switch (a) {
-            .shoot => "Every arrow is a promise kept at a distance.",
-            .wait => "The dark is patient. So can you be.",
-            .secondary => null,
-            inline else => |t| comptime module(t).?.FLAVOR,
-        };
     }
 
     fn module(comptime a: Act) ?type {
@@ -158,6 +160,17 @@ pub const Act = enum {
     /// The flask it drinks.
     pub fn flaskOf(a: Act) ?flask.Kind {
         return a.contract().flask_kind;
+    }
+
+    /// The consumable it uses up.
+    pub fn supplyOf(a: Act) ?consumable.Kind {
+        return a.contract().supply;
+    }
+
+    pub fn ofSupply(k: consumable.Kind) Act {
+        return switch (k) {
+            inline else => |t| @field(Act, @tagName(t)),
+        };
     }
 
     /// Furthest target in cells; zero for actions without a reticle.
@@ -273,6 +286,21 @@ pub const Act = enum {
         return a.declares("knocked");
     }
 
+    /// Its arrow flies on through every body in its line.
+    pub fn pierces(a: Act) bool {
+        return a.declares("PIERCES");
+    }
+
+    /// Its reticle takes both ends of a straight line.
+    pub fn spans(a: Act) bool {
+        return a.declares("length");
+    }
+
+    /// It must be cast on a foe suffering what it consumes.
+    pub fn consumes(a: Act) bool {
+        return a.declares("FUEL_DAMAGE");
+    }
+
     /// Turns after it is used before it can be again.
     pub fn cooldown(a: Act) u8 {
         return a.contract().cooldown;
@@ -314,8 +342,16 @@ const SKILLS = std.EnumArray(Act, Skill).init(.{
     .guard = .{ .module = tactics.Guard },
     .whirlwind = .{ .module = tactics.Whirlwind, .delivery = .melee },
     .unyielding = .{ .module = tactics.Unyielding },
+    .rend = .{ .module = rend, .reticle = .swing, .delivery = .melee },
+    .war_cry = .{ .module = tactics.WarCry },
+    .piercing_shot = .{ .module = piercing, .reticle = .bow, .delivery = .ranged },
+    .shatter = .{ .module = tactics.Shatter, .reticle = .ground, .delivery = .spell },
+    .fire_wall = .{ .module = tactics.FireWall, .reticle = .ground },
     .life_flask = .{ .module = flask.Life },
     .mana_flask = .{ .module = flask.Mana },
+    .bandage = .{ .module = consumable.Bandage },
+    .smelling_salts = .{ .module = consumable.SmellingSalts },
+    .frost_vial = .{ .module = consumable.FrostVial, .reticle = .bow, .delivery = .spell },
 });
 
 const CONTRACTS = blk: {
@@ -328,9 +364,9 @@ const CONTRACTS = blk: {
 /// The skills a class may bind, in the bind picker's order.
 pub fn kit(c: hero.Class) []const Act {
     return switch (c) {
-        .archer => &.{ .shoot, .wait, .secondary, .juke, .steady_aim, .burning_arrow, .glacial_shot, .barbed_arrow, .caltrops, .pinning_shot, .overwatch, .life_flask, .mana_flask },
-        .wizard => &.{ .spark, .wait, .secondary, .blink, .fireball, .frost_nova, .mana_shield, .chain_lightning, .combustion, .gravity_well, .arcane_barrier, .life_flask, .mana_flask },
-        .knight => &.{ .cleave, .wait, .secondary, .charge, .guard, .shield_bash, .whirlwind, .unyielding, .life_flask, .mana_flask },
+        .archer => &.{ .shoot, .wait, .secondary, .juke, .steady_aim, .burning_arrow, .glacial_shot, .barbed_arrow, .caltrops, .pinning_shot, .overwatch, .piercing_shot, .life_flask, .mana_flask, .bandage, .smelling_salts, .frost_vial },
+        .wizard => &.{ .spark, .wait, .secondary, .blink, .fireball, .frost_nova, .mana_shield, .chain_lightning, .combustion, .gravity_well, .arcane_barrier, .shatter, .fire_wall, .life_flask, .mana_flask, .bandage, .smelling_salts, .frost_vial },
+        .knight => &.{ .cleave, .wait, .secondary, .charge, .guard, .shield_bash, .whirlwind, .unyielding, .rend, .war_cry, .life_flask, .mana_flask, .bandage, .smelling_salts, .frost_vial },
     };
 }
 
@@ -521,8 +557,16 @@ test "arrows scale as ranged, bolts and novas as spells, swings and rushes as me
         .guard = null,
         .whirlwind = .melee,
         .unyielding = null,
+        .rend = .melee,
+        .war_cry = null,
+        .piercing_shot = .ranged,
+        .shatter = .spell,
+        .fire_wall = null,
         .life_flask = null,
         .mana_flask = null,
+        .bandage = null,
+        .smelling_salts = null,
+        .frost_vial = .spell,
     });
     for (ACTS) |a| try std.testing.expectEqual(want.get(a), a.attack());
 }

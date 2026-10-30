@@ -151,6 +151,7 @@ pub fn escape(ed: *Editor) void {
 
 pub fn modalKeys(ed: *Editor) void {
     if (ed.modal == .text) return text_panel.keys(ed);
+    if (ed.modal == .dialogs or ed.modal == .script) return editor.plot.keys(ed);
     const d = &ed.desk;
     if (d.erase_hit) {
         ed.modal = .none;
@@ -179,7 +180,7 @@ pub fn modalKeys(ed: *Editor) void {
             if (d.nav != 0) ed.seen_at = mathx.wrap(ed.seen_at, d.nav, editor.SEEN.len);
             if (d.enter) modals.fightSeen(ed);
         },
-        .help, .none, .text => {},
+        .help, .none, .text, .dialogs, .script => {},
     }
 }
 

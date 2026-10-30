@@ -17,6 +17,7 @@ const TYPES = [_]Registration{
     .{ .name = "play.damage.Element" },
     .{ .name = "play.resilience.Kind" },
     .{ .name = "play.flask.Kind", .casing = .word },
+    .{ .name = "play.consumable.Kind" },
     .{ .name = "play.actor.FoeType" },
     .{ .name = "play.actor.Movement" },
     .{ .name = "ui.character_view.Page", .saved_name = "ui.book.Page" },

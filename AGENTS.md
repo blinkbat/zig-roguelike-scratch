@@ -1,7 +1,8 @@
 # AGENTS.md — Cistern
 
-Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats, pibs, beefy pibs and bandit crossbowmen;
-breakable barrels, treasure chests, equipment, XP and class progression. Art starts as glyphs, replaced by the owner's PNGs.
+Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats, pyre bloats, frost wisps, pibs, beefy pibs, pib shamans,
+bandit crossbowmen, netters and shieldbearers, bog leeches and mimics; breakable barrels, treasure chests, equipment, XP and class progression.
+Art starts as glyphs, replaced by the owner's PNGs; a body without art draws its letter cell-high and bright over a drop shadow (`look.body`).
 Source paths below are relative to `src/`; scripts, docs and assets are relative to the repository root.
 
 ## Working rules
@@ -51,7 +52,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   tests and shots) and `tests/` (the game's integration tests by domain: skills, foes, world, loot, picture, menus, hero).
   `app.zig` opens the window around a `Game` (`withGame`) and owns the headless flags; `core/window.zig` owns fullscreen.
 - `gfx/look.zig` keeps tile/body appearance and `Sprites`; `raster` holds raylib rect/blit/render-target helpers,
-  `shaders` shader loading/uniforms/GLSL heads, `prompt_icon` input glyphs, `line_icons` skill and direction line art.
+  `shaders` shader loading/uniforms/GLSL heads, `prompt_icon` input glyphs, `line_icons` skill, item and direction line art.
   `gfx/light.zig` coordinates light state and baking; `light_model` owns shading math and source types;
   `light_visibility` owns eased sight, memory and visibility sampling;
   `shadow` casts shadows, `light_gpu` owns shaders, textures, uploads and drawing, `light_tests` its tests.
@@ -80,7 +81,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   lighting/water/weather switches change pixels and restore the exact frame when re-enabled.
 - `--shot-trees` captures two-cell tree height, wall adjacency, smooth hero occlusion and front/behind depth;
   use the same temporary-directory procedure. Tall trees occupy only their bottom cell; unsaved fading
-  uses a soft aperture around the pictured hero, shared by scenery and gas, preserving the lower trunk.
+  uses a soft aperture around whichever drawn body (hero first, then visible foes) stands behind it, shared by scenery and gas, preserving the lower trunk.
   Dense sight-blocking grass (`reeds`) uses that same occlusion and depth ordering within its walkable cell; these captures cover it too.
 - Inspect actual headless PNGs. Recursive map overviews use `shots/maps/<relative.map>/overview.png`, preserving folder and filename identity.
   `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,
@@ -128,14 +129,15 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Reveal shows terrain and minimap without changing gameplay sight or saved exploration; turning it off restores
   the normal view. Cosmetic effects default on. Debug settings are not saved.
 - Inspect (`Mode.inspect`, R3 or I) walks visible, onscreen characters as well as the orbs, slots, shown
-  statuses and event log (`overlay.spotsOf`, nearest along the way pushed). Foe cards show a title-case name,
-  pictured HP, then a divider and the presented tile with signed effects. Hero cards retain detailed pictured
-  stats/status/buildup; hidden, unborn and departed bodies are excluded.
+  statuses and event log (`overlay.spotsOf`, nearest along the way pushed). Every unit card shows only a name
+  (title-case for foes, the hero's own name), pictured HP, then a divider and the presented tile with signed effects;
+  hidden, unborn and departed bodies are excluded.
   Long cards scroll with page controls or the mouse wheel. Any back-out or the same button closes it; it spends no turn.
   In play/aim the same tooltip shows for the part under the mouse (`State.pointer`, `overlay.hovered`).
 - Start / Menu / Options opens Character directly; Select / View opens the game menu. Keyboard Tab / Esc mirror them. Character opens equipment, the inventory list, stats, passives and class skills in `ui/book.zig`.
   Player-facing hand slots are Main hand (viewer-left) and Offhand (viewer-right).
-  Two-handers identify the occupied offhand. Menu accents share `look.UI_GOLD/UI_FOCUS`:
+  Life and mana flasks are items worn in their own Equipment slots, as PoE2's: a new run wears both, they never roll as loot,
+  and only a worn flask drinks or refills; its charges stay in `Simulation.flasks` while it is off. Two-handers identify the occupied offhand. Menu accents share `look.UI_GOLD/UI_FOCUS`:
   muted gold, never bright yellow.
   Character/binding panels share `menu.Surface`: half-rate growth, capped at 1.25x,
   with 18px detail and 20px body text before scaling. Keep panels centered with margins.
@@ -160,7 +162,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Bumping or interacting with a closed chest opens it for one turn, revealing its loot without a modal.
   Stepping onto a loose bag or stocked open chest opens its loot modal and spends the movement turn; bags remain walkable.
   Interact opens a sole bag/open chest's loot modal directly, or lists nearby containers/doors first when there is a choice (a door always lists).
-  Ground gold without items is a coin drop, automatically collected when the hero steps onto it without an extra turn or modal. Gold with items shares one item bag; loot shows only the selected cell, with Take item, Take gold and Take all. Each successful pickup action spends one turn;
+  Ground gold without items is a coin drop, automatically collected when the hero steps onto it without an extra turn or modal. Gold with items shares one item bag; loot shows only the selected cell, with Take item, Take gold and Take all. Pickups in one loot visit are one action: `Game.looted` defers the turn to the loot's close (`character.settleLoot`);
   Take all collects gold and as many items as fit, leaving the rest. Gold needs no inventory space. Empty loot closes. A press while busy waits for `quiet` (`Queued.interact`)
   instead of queuing its button's skill. Item commands wait out door travel. Movement and browsing never collect gold from bags or chests.
   Foes roll gold more often than items; plain white items have no rolled modifiers and are more common than magic blues.
@@ -180,6 +182,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   occupies the bottom-left gutter without a heading; newest entries append at the bottom, with text,
   background and border fading to 10% of their base opacity at the top. Follow `docs/DATA_PRESENTATION.md` for item cards,
   comparisons and stat wording: relevant properties only, explicit units, and effects before metrics.
+- **HUD and UI never restate.** No stat, mechanic or fact the player can already see elsewhere or infer from
+  context (no attribute/resistance dumps on tooltips, no "In the bag" on a bag's own panel, no reason line repeating
+  a label), and no flavor text on items, skills or anywhere else.
 - `gfx/font.zig` uses Source Sans 3 for compact text at 18px (`font.SMALL`) and below, Balthazar for display text and symbols.
   Native sizes use point-filtered atlases; scaled panels use the corresponding mipmapped face. It falls back to raylib's font in tests/load failure.
   Drawn strings are ASCII except tile symbols baked through `look.TILE_CODEPOINTS`; those use
@@ -245,6 +250,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   and scatters barrels as minor gold rewards. The Strand enables both; rewards must preserve routes.
   Its swamp trees (`assets/swamp-tree.png`, standalone `swamp_tree` tiles) scatter on dirt
   within three cells of water/shallows. Scatter's `water_range = 0` leaves other maps unrestricted.
+  A few glow plants (`glow_plant`, a pale blue `&` glyph and light) scatter on its grass as natural torches. Stepping into one
+  (`Move.burst`, a spent turn) bursts it into healing gas (`gas.burst`, Brogue's bloodwort pod) and leaves its grass; `Light.uproot` drops its light.
 
 ## Combat and simulation
 
@@ -276,7 +283,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   slime halves inherit statuses without being hit twice by that burst.
 - Juke is the free leap (`juke.FREE`); Blink spends a turn. Leap cursors may cross invalid cells but
   confirm only visible vacant landings. Idle frames advance no simulation, mana recovery or cooldowns.
-  Flasks take no turn, apply their first recovery tick immediately, then recover on the next two spent turns.
+  Every consumable spends a turn. A flask drink recovers its first tick on that turn, before foes act, then on the next two spent turns.
+  Bandage, Smelling salts and Frost vial (`play/consumable.zig`) are skill acts declaring `SUPPLY`: carried as `Inventory.stacks`,
+  lying as `Ground.supplies` beside item drops, listed above bag items in Inventory and bindable like flasks.
   Drinking again restarts recovery; kills refill charges. Mana uses small whole numbers; natural recovery
   accumulates over spent turns in saved mana_recovery, never idle frames or free actions.
 - `skillbar.SKILLS` owns each action's module, reticle and explicit attack delivery. `play/skill_contract.zig`
@@ -297,13 +306,28 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   foe type. Bloats fly; ground-only water footsteps must not be added to flying bodies.
 - Bandit crossbowmen spawn with rats, retreat when crowded and use `bow.aimable`/`bow.fly` plus the
   player's base arrow damage/range. `Presentation.foe_shots` draws each arrow; its harm lands on arrival.
+- `actor.dwells` is each kind's ground for packs, bespoke spawns and the editor (`Node.foeFits`); a pack whose lead has none
+  is skipped. Bog leeches swim only in water (`actor.swim`), stay `submerged` beyond the hero's reach and are struck there.
+  Mimics stand as a real chest tile (`under` keeps the ground) until opened (`Actor.unmask`), then drop chest loot.
+  `Actor.veiled`/`seenIn` hide both from drawing, aiming (`bow.previewAmong`), inspection and targeting.
+  Netters (`Row.net`) pin the hero: steps struggle in place, leaps and rushes are blocked. Shieldbearers knock the hero back
+  (`Presentation.knocked_from`/`Owed.knock` draw it as the blow lands). Frost wisps' touch chills the hero; every third chilled
+  action costs its next turn. Pyre bloats' burst (`rewards.pyre`) burns the bodies beside it. Pib shamans (`Row.mends`) heal
+  the most hurt pib in reach or wake sleepers, keeping `Row.keeps` cells off the hero.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
-  each followed by gas, burn and bleed. Bloats burst however killed; foes do not enter gas from clean air.
-  `map/gas.zig` alone advances gas; it spreads through open cells, including liquids.
+  each followed by gas, healing gas, burn and bleed. Bloats burst however killed; foes do not enter gas or Fire Wall flames from outside them (`actor.shuns`).
+  `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`) and healing (`Level.healing`)
+  gas are separate volumes (`grid.Gas`), spread alike; healing gas mends every hurt body a fifteenth of its life a turn, as caustic gas eats at it.
+  `gfx/cloud.zig` draws both in one premultiplied texture; gas harm and heals shed `fx.Puff` wisps of their gas's colour as they land.
 - `play/resilience.zig` owns separate stun/burn/bleed/chill/pin buildup for every body. Successful applications
   add resistance until expiry on spent turns; failed applications and free actions never extend or age it.
   `Simulation.takeStatus/procStatus` combine innate resistance, buildup and terrain before gating combat applications.
   Preserve buildup and bleed strength across splits, travel and saves; present resistance with the blow.
+- `play/shock.zig`, `sunder.zig`, `blind.zig` and `confusion.zig` own afflictions that nothing applies yet. Each wears
+  a turn on its body's own turn (`combat.wearTurn`; the hero's right after its action). Shock spends itself on the next
+  damaging hit (`attacks.resolve`, foe bites and sweeps) for half again, rounded up. Sunder stacks lower armour in
+  `Simulation.combatStatsAt`, which every armour read uses. Blindness limits sight to adjacent cells; a blinded foe acts
+  only beside the hero. Confusion sends half of moves a random way that also spends the move (`actor.stumble`, `game.astray`).
 - `play/terrain.zig` owns typed tile modifiers for hit, dodge, elemental and status resistance.
   `Simulation.combatStats/combatStatsAt` resolve them from base stats without mutating or saving bonuses.
   Combat, Character and inspection share this resolver; see `docs/TERRAIN.md`. Shoot is a fixed basic attack:
@@ -319,12 +343,35 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   A foe's sweep (`Row.sweep_every`) strikes every body and barrel round it; its victims land with its blow on the hero (`Owed.swept`).
 - A pib witnessing a nearby foe death wakes and flees (`FRIGHT_REACH`, `FLEE_TURNS`); subsequent deaths
   refresh it. Cornered beside the hero, it attacks. Fright speech waits for the death's presented impact
-  and uses cosmetic RNG.
+  and uses cosmetic RNG. This is the Frightened status (`Actor.fright`, resilience `.fright`); witness fright
+  needs no roll, while War Cry rolls it against `Row.fright_resist` and buildup.
 - `map/day.zig`'s `Simulation.clock` is simulation: saved whole minutes, advanced by spent turns on every
   node. `map/lume.zig` uses it for outdoor sight; `Presentation.hour_shown` only eases the rendered lighting and the minimap's sun/moon line.
 - `map/fov.zig` owns line of sight; `map/lume.zig` owns visibility from light. `Level.los` is geometric
-  sight; `Level.lit` additionally requires sky, torch or carried light. Terrain is remembered; bodies are
+  sight; `Level.lit` additionally requires sky, torch or carried light. A `Tile.glows` tile lights a torch's
+  pool from its own cell; `gfx/light.zig` hangs it as a plant-mounted `Torch`. Terrain is remembered; bodies are
   shown only where lit at their presented center. Rendering never decides visibility.
+
+## Folk, triggers and dialog
+
+- `map/script.zig` is the map's script (`Atlas.script`): named flags, counters and timers, folk (node, cell,
+  name, dialog), dialogs of lines and choices, and StarCraft-style triggers. References are indices the script's
+  own removals renumber or retire (`dropNode`, `dropFolk`, `dropDialog`, `dropLine`); a name or dialog still in
+  use cannot go. `Script.valid` guards map parsing and portable loads. `map/script_text.zig` writes it after the
+  nodes: names are tokens, prose is the rest of its line, references resolve once the whole file is read.
+- Folk stand on open bespoke floor no foe, barrel or door holds (`Atlas.folkFits`); painting under one prunes it.
+  `Atlas.stampFolk` marks them on `Level.folk` on entry and resume. They block steps and landings (`vacant`,
+  `stepOk`) but are no target (`taken`): attacks, arrows and areas pass them by.
+- `play/trigger.zig`'s `Runtime` (`Simulation.plot`) is looked at after each spent turn, on arrival and when a
+  conversation closes, never on idle frames; a kept trigger runs at most once a turn. Every condition must hold;
+  none never fires. Timers, `wait` and `elapsed` count spent turns; `deaths`/`alive` count a whole foe family.
+- A `dialog` action holds its own list until that conversation is heard out; one at a time, opened once the turn
+  is drawn (`talking.due`). Bumping a folk or Interact beside one opens its dialog without a turn, ahead of
+  containers. No back-out: a conversation ends only through an ending, so `talked` means heard. A gate hides a
+  choice; line actions land on arrival, choice actions on the pick. The HUD hides behind `ui/talk.zig`'s panel.
+- Editor: the Folk tool places and removes folk and opens Dialog on one; Dialog edits folk, dialogs, lines and
+  choices, Script the triggers and name tables. Words are typed into the map, one undo step per click; a
+  condition or action kind that would name nothing is skipped or coins a name.
 
 ## Rendering contracts
 
@@ -342,7 +389,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   including later slime forms and delayed deaths; retain common textures/normals and unload unused map
   assets. `Game.art` records stale/play/editor residency intent; scene changes and title assets invalidate it,
   and each renderer prepares its set once. Title loads only the font; play graphics load lazily.
-  HUD and bind picker share `line_icons.drawSkill`.
+  HUD and bind picker share `line_icons.drawSkill`. Character rows and paperdoll cells draw `line_icons.drawItem`
+  (a supply uses its skill's glyph); every `items.Kind` needs an `ITEM_LINES` entry.
 - `gfx/ground.zig` owns real ground layers. `ground.bedAt` chooses the neighbours' majority underlay,
   lowest rank on ties, then `look.under`; rock covers its cell. Grounds without sheets draw below those
   with sheets, each group retaining rank order. `Corners.mask` includes higher layers; `Corners.under`
@@ -399,7 +447,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   extensions layer. `port_ground.lua` records crops; `export_ground.lua` produces 16 dual-grid masks in
   64px cells. `name=shallows` reads `water.aseprite` into `shallows-ground.png`; `name=water` reads
   `deep-water.aseprite` into `water-ground.png`. The deep copy uses 60% RGB with identical shapes/alpha
-  (`deepen_water.lua`); both retain `Water extensions`.
+  (`deepen_water.lua`); both retain `Water extensions`. `port_bridge.lua` re-cuts the bridge planks into
+  every cell of `Bridge extensions`, its `Draw here` kept but hidden, so only the extension exports.
 - Forest source is `assets/source/forest-tree-walls.aseprite`; preserve `Draw here`/`Forest extensions` in
   the Desktop source. `export_forest.lua` exports the art layers. Isolated shrubs mix `shrub.png` and forest
   cell 01 by stable position hash. `tone_forest.lua` records the darker foliage/grass palette; inspect

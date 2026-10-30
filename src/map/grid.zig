@@ -18,6 +18,7 @@ pub const NO_ONE: u16 = 0;
 pub const MAX_TORCHES: usize = 32;
 pub const MAX_DOORS: usize = 16;
 pub const NO_DOOR: u8 = 0;
+pub const NO_FOLK: u8 = 0;
 
 pub const Tile = enum(u8) {
     /// Built, and shaped by `gen.shapeWalls`.
@@ -50,6 +51,7 @@ pub const Tile = enum(u8) {
     chest_open,
     swamp_tree,
     large_tree,
+    glow_plant,
 
     pub fn solid(t: Tile) bool {
         return TERRAIN.getPtrConst(t).solid;
@@ -90,6 +92,16 @@ pub const Tile = enum(u8) {
 
     pub fn opened(t: Tile) ?Tile {
         return TERRAIN.getPtrConst(t).opens;
+    }
+
+    /// Lights the cells round it as a torch does.
+    pub fn glows(t: Tile) bool {
+        return TERRAIN.getPtrConst(t).glows;
+    }
+
+    /// Bursts into healing gas when the hero steps into it, leaving its ground.
+    pub fn bursts(t: Tile) bool {
+        return TERRAIN.getPtrConst(t).bursts;
     }
 
     pub fn isChest(t: Tile) bool {
@@ -136,6 +148,7 @@ pub const Tile = enum(u8) {
             .chest_open => 'O',
             .swamp_tree => 'S',
             .large_tree => 'L',
+            .glow_plant => 'p',
         };
     }
 
@@ -176,6 +189,8 @@ const Terrain = struct {
     wet: bool = false,
     shaped: bool = false,
     opens: ?Tile = null,
+    glows: bool = false,
+    bursts: bool = false,
 };
 const OPEN = Terrain{ .solid = false, .blind = false };
 const BARE = Terrain{ .solid = false, .blind = false, .rewards = true };
@@ -216,6 +231,7 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .chest_open = DECOR,
     .swamp_tree = .{ .solid = true, .blind = true, .ground = .dirt },
     .large_tree = TALL_PROP,
+    .glow_plant = .{ .solid = true, .blind = false, .ground = .grass, .glows = true, .bursts = true },
 });
 
 fn tilesWhere(comptime has: fn (Tile) bool) std.EnumSet(Tile) {
@@ -322,9 +338,12 @@ pub const Torches = struct {
     }
 };
 
+pub const Gas = enum { caustic, healing };
+
 pub const Level = struct {
     barrier: [CELLS]u8 = @splat(0),
     caltrops: [CELLS]struct { turns: u8 = 0, rank: u8 = 0 } = @splat(.{}),
+    flames: [CELLS]u8 = @splat(0),
     tile: [CELLS]Tile,
     /// Null on anything that is neither a wall nor a forest tile.
     shape: [CELLS]?WallShape,
@@ -343,6 +362,10 @@ pub const Level = struct {
     /// Caustic gas, Brogue's volume.
     gas: [CELLS]u16,
     torch: Torches,
+    /// 1-based into the map's folk; `NO_FOLK` is none. The legacy save reader takes the fields before it.
+    folk: [CELLS]u8 = @splat(NO_FOLK),
+    /// Healing gas, Brogue's volume.
+    healing: [CELLS]u16 = @splat(0),
 
     pub fn blank() Level {
         return .{
@@ -480,8 +503,20 @@ pub const Level = struct {
         self.door[k] = @intCast(i + 1);
     }
 
+    /// Mutable through a mutable level.
+    pub fn volumes(self: anytype, kind: Gas) @TypeOf(&self.gas) {
+        return switch (kind) {
+            .caustic => &self.gas,
+            .healing => &self.healing,
+        };
+    }
+
+    pub fn volumeAt(self: *const Level, kind: Gas, p: P) u16 {
+        return cellOr(u16, self.volumes(kind), p, 0);
+    }
+
     pub fn gasAt(self: *const Level, p: P) u16 {
-        return cellOr(u16, &self.gas, p, 0);
+        return self.volumeAt(.caustic, p);
     }
 
     pub fn gassy(self: *const Level, p: P) bool {
@@ -494,17 +529,30 @@ pub const Level = struct {
     }
 
     pub fn addGas(self: *Level, p: P, volume: u16) void {
-        if (!self.flat(p)) return;
-        const i = idx(p);
-        self.gas[i] +|= volume;
+        self.release(.caustic, p, volume);
     }
 
+    pub fn release(self: *Level, kind: Gas, p: P, volume: u16) void {
+        if (!self.flat(p)) return;
+        self.volumes(kind)[idx(p)] +|= volume;
+    }
+
+    pub fn folkAt(self: *const Level, p: P) ?usize {
+        const f = cellOr(u8, &self.folk, p, NO_FOLK);
+        return if (f == NO_FOLK) null else f - 1;
+    }
+
+    pub fn putFolk(self: *Level, p: P, i: usize) void {
+        self.folk[idx(p)] = @intCast(i + 1);
+    }
+
+    /// A body or barrel; folk are no target, so not counted.
     pub fn taken(self: *const Level, p: P) bool {
         return self.who(p) != NO_ONE or self.hasBarrel(p);
     }
 
     pub fn vacant(self: *const Level, p: P) bool {
-        return self.walkable(p) and !self.taken(p);
+        return self.walkable(p) and !self.taken(p) and self.folkAt(p) == null;
     }
 
     pub fn lightless(self: *Level) void {
@@ -551,6 +599,10 @@ pub const Level = struct {
         return cellOr(u8, &self.barrier, p, 0) > 0;
     }
 
+    pub fn burning(self: *const Level, p: P) bool {
+        return cellOr(u8, &self.flames, p, 0) > 0;
+    }
+
     /// Terrain only.
     pub fn passOk(self: *const Level, from: P, d: mathx.Dir) bool {
         return self.walkable(from.add(d.delta()));
@@ -560,7 +612,7 @@ pub const Level = struct {
     pub fn stepOk(self: *const Level, from: P, d: mathx.Dir, ignore: u16) bool {
         if (!self.passOk(from, d)) return false;
         const to = from.add(d.delta());
-        if (self.hasBarrel(to)) return false;
+        if (self.hasBarrel(to) or self.folkAt(to) != null) return false;
         const w = self.who(to);
         return w == NO_ONE or w == ignore;
     }

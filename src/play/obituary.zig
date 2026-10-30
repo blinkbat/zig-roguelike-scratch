@@ -282,7 +282,7 @@ pub fn tags(ctx: *const Context, top: *const Top) Tags {
     if (k.by == .foe and actor.row(k.by.foe).hp <= TRASH_HP and ctx.level >= TRASH_LEVEL) out.insert(.by_trash);
     var gassed_by: ?Tag = null;
     for (ctx.turns) |*turn| for (turn.slice()) |e| switch (e) {
-        .dealt => |d| if (d.killed and d.to.bursts()) {
+        .dealt => |d| if (d.killed and d.to.gasses()) {
             gassed_by = .own_goal;
         },
         .burst => gassed_by = .burst_beside,
@@ -437,7 +437,7 @@ fn lastDeed(ctx: *const Context, tagged: Tags) ?Deed {
         },
         else => {},
     };
-    if (felled) |k| return if (tagged.contains(.own_goal) and k.bursts()) null else .{ .with = with, .what = .{ .felled = k } };
+    if (felled) |k| return if (tagged.contains(.own_goal) and k.gasses()) null else .{ .with = with, .what = .{ .felled = k } };
     if (struck) |k| return .{ .with = with, .what = .{ .struck = k } };
     if (missed) return .{ .with = with, .what = .missed };
     return .{ .with = with, .what = .{ .used = with orelse return null } };

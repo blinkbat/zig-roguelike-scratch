@@ -21,11 +21,13 @@ const input = @import("../core/input.zig");
 const hero = @import("../play/hero.zig");
 const attr = @import("../play/attrs.zig");
 const items = @import("../play/items.zig");
+const consumable = @import("../play/consumable.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const prompt_icon = @import("../gfx/prompt_icon.zig");
+const line_icons = @import("../gfx/line_icons.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
 const trees = @import("trees.zig");
@@ -94,7 +96,7 @@ pub const Book = struct {
     fn count(self: *const Book, view: View) usize {
         return switch (self.page) {
             .equipment => items.SLOTS.len,
-            .inventory => view.inventory.n,
+            .inventory => stocked(view) + view.inventory.n,
             .stats => 0,
             .passives => progress.NODES.len,
             .skills => progress.skills(view.class).len,
@@ -137,10 +139,18 @@ pub const Book = struct {
         if (self.count(view) == 0) return;
         if (self.page == .passives) self.browse(progress.start(view.class));
     }
+    /// The bag item under the cursor; carried consumables list above the bag.
+    fn bagIndex(self: *const Book, view: View) ?usize {
+        const above = stocked(view);
+        return if (self.cursor >= above and self.cursor - above < view.inventory.n) self.cursor - above else null;
+    }
+    fn carriedRow(self: *const Book, view: View) ?consumable.Kind {
+        return if (self.page == .inventory) stockAt(view, self.cursor) else null;
+    }
     fn selected(self: *const Book, view: View) ?items.Item {
         return switch (self.page) {
             .equipment => view.inventory.gear.slots.get(items.SLOTS[self.cursor]),
-            .inventory => if (self.cursor < view.inventory.n) view.inventory.bag[self.cursor] else null,
+            .inventory => if (self.bagIndex(view)) |b| view.inventory.bag[b] else null,
             .nearby, .loot => if (self.cursor < view.nearby.len) view.nearby[self.cursor].item() else null,
             else => null,
         };
@@ -157,7 +167,7 @@ pub const Book = struct {
                 self.choose(.inventory);
                 break :blk null;
             },
-            .inventory => .{ .equip = .{ .index = self.cursor, .slot = self.destination(view) } },
+            .inventory => if (stockAt(view, self.cursor)) |k| .{ .use = k } else .{ .equip = .{ .index = self.bagIndex(view).?, .slot = self.destination(view) } },
             .stats => null,
             .passives => if (view.growth.canAllocate(self.cursor)) .{ .passive = self.cursor } else null,
             .skills => blk: {
@@ -168,33 +178,30 @@ pub const Book = struct {
         };
     }
     fn size(self: *const Book, view: View) P {
-        return if (self.direct()) .{ .x = layout.DIRECT_W, .y = self.directActionY(view) + layout.ACTION_H + menu.PANEL_PAD } else layout.SIZE;
+        return switch (self.page) {
+            .loot => layout.LOOT_SIZE,
+            .nearby => .{ .x = layout.DIRECT_W, .y = self.nearbyActionY(view) + layout.ACTION_H + menu.PANEL_PAD },
+            else => layout.SIZE,
+        };
     }
     pub fn surface(self: *const Book, screen: P, view: View) menu.Surface {
         return if (self.direct()) menu.Surface.like(screen, self.size(view), layout.SIZE) else menu.Surface.of(screen, layout.SIZE);
     }
     fn directTop(self: *const Book) i32 {
-        return if (self.page == .loot) layout.HOLDING_Y + font.SMALL + layout.DIRECT_GAP else layout.CLOSE_Y + layout.CLOSE_H + layout.DIRECT_GAP;
-    }
-    fn cardTop(self: *const Book, view: View) i32 {
-        return self.directTop() + @as(i32, @intCast(@min(self.count(view), self.visibleRows()))) * layout.ROW_HEIGHT + layout.DIRECT_GAP;
+        return if (self.page == .loot) layout.LOOT_TOP else layout.CLOSE_Y + layout.CLOSE_H + layout.DIRECT_GAP;
     }
     fn visibleRows(self: *const Book) usize {
-        return if (self.direct()) layout.DIRECT_VISIBLE_ROWS else layout.VISIBLE_ROWS;
-    }
-    /// The tallest card any listed item needs, so the panel keeps its size while the cursor moves.
-    fn cardRoom(view: View) i32 {
-        var most: i32 = 0;
-        for (view.nearby) |n| if (n.item()) |it| {
-            for (it.kind.slots()) |slot| most = @max(most, item_card.height(it, slot));
+        return switch (self.page) {
+            .loot => layout.LOOT_ROWS,
+            .nearby => layout.DIRECT_VISIBLE_ROWS,
+            else => layout.VISIBLE_ROWS,
         };
-        return most;
     }
     fn noteY(self: *const Book, view: View) i32 {
-        const room = cardRoom(view);
-        return self.cardTop(view) + if (room > 0) room + layout.DIRECT_GAP else 0;
+        if (self.page == .loot) return font.Face.topFor(layout.LOOT_FOOT_Y + layout.ACTION_H / 2, font.SMALL);
+        return self.directTop() + @as(i32, @intCast(@min(self.count(view), self.visibleRows()))) * layout.ROW_HEIGHT + layout.DIRECT_GAP;
     }
-    fn directActionY(self: *const Book, view: View) i32 {
+    fn nearbyActionY(self: *const Book, view: View) i32 {
         return self.noteY(view) + font.SMALL + layout.DIRECT_GAP;
     }
     pub fn step(self: *Book, state: *const input.State, screen: P, view: View) ?Command {
@@ -224,7 +231,7 @@ pub const Book = struct {
             return null;
         }
         if (self.page == .inventory and self.selected(view) != null) {
-            if (st.hit(menu.REMOVE)) return .{ .drop = self.cursor };
+            if (st.hit(menu.REMOVE)) return .{ .drop = self.bagIndex(view).? };
             if (st.hit(menu.CHANGE)) self.destination_index = mathx.wrap(self.destination_index, 1, self.selected(view).?.kind.slots().len);
         }
         if (self.page == .skills and st.hit(menu.CHANGE)) return .{ .bindings = self.selectedSkill(view) };
@@ -314,7 +321,7 @@ pub const Book = struct {
             .stats => c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = if (self.advanced) "Main stats" else "Advanced" }),
             .equipment, .inventory, .nearby, .loot => if (self.count(view) > 0) {
                 const it = self.selected(view) orelse {
-                    c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = if (self.direct()) view.nearby[self.cursor].command().verb() else "Inventory" });
+                    c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = if (self.direct()) view.nearby[self.cursor].command().verb() else if (self.carriedRow(view) != null) character_view.verbOf(.use) else "Inventory" });
                     if (self.page == .loot) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = character_view.verbOf(.take_all) });
                     return c;
                 };
@@ -335,8 +342,12 @@ pub const Book = struct {
     }
     pub fn actionBox(self: *const Book, b: input.Button, view: View) rl.Rectangle {
         const i: i32 = @intCast(std.mem.indexOfScalar(input.Button, &ACTIONS, b).?);
-        const x: i32 = if (self.direct()) layout.LIST_X else layout.DETAIL_X;
-        return raster.rect(x + i * (layout.ACTION_W + menu.ACTION_GAP), if (self.direct()) self.directActionY(view) else layout.ACTION_Y, layout.ACTION_W, layout.ACTION_H);
+        const at: P = switch (self.page) {
+            .loot => .{ .x = layout.DETAIL_X, .y = layout.LOOT_FOOT_Y },
+            .nearby => .{ .x = layout.LIST_X, .y = self.nearbyActionY(view) },
+            else => .{ .x = layout.DETAIL_X, .y = layout.ACTION_Y },
+        };
+        return raster.rect(at.x + i * (layout.ACTION_W + menu.ACTION_GAP), at.y, layout.ACTION_W, layout.ACTION_H);
     }
     fn closeBox(self: *const Book, view: View) rl.Rectangle {
         return raster.rect(self.size(view).x - layout.LIST_X - layout.CLOSE_W, layout.CLOSE_Y, layout.CLOSE_W, layout.CLOSE_H);
@@ -367,7 +378,7 @@ pub const Book = struct {
         const scaled_face = on.faceFor(source_face.*);
         const face = &scaled_face;
         if (self.direct()) {
-            self.drawDirect(face, view);
+            self.drawDirect(face, sprites, view);
         } else {
             var who: menu.Note(100) = .{};
             who.say("{s}   {s}", .{ view.name, view.class.title() });
@@ -382,7 +393,7 @@ pub const Book = struct {
             } else if (self.page == .stats) {
                 if (self.advanced) character_stats.drawAdvanced(face, view) else character_stats.draw(face, view);
             } else {
-                self.drawCells(face, view);
+                self.drawCells(face, sprites, view);
                 self.drawDetail(face, view);
             }
             if (self.message.n > 0) {
@@ -404,21 +415,24 @@ pub const Book = struct {
         }
     }
 
-    fn drawDirect(self: *const Book, face: *const font.Face, view: View) void {
+    fn drawDirect(self: *const Book, face: *const font.Face, sprites: *const look.Sprites, view: View) void {
         header(face, if (self.page == .nearby) "NEARBY" else if (view.chest) "CHEST LOOT" else "ITEM BAG");
         if (self.page == .loot) {
             var holding: menu.Note(100) = .{};
             holding.say("Inventory  {d} / {d}     Gold  {d}", .{ view.inventory.n, items.BAG_MAX, view.gold });
             face.draw(holding.text(), layout.LIST_X, layout.HOLDING_Y, font.SMALL, look.DIM);
+            rl.drawLine(layout.DIVIDER_X, layout.LOOT_TOP, layout.DIVIDER_X, layout.LOOT_TOP + layout.CARD_H, look.EDGE);
         }
-        self.drawCells(face, view);
+        self.drawCells(face, sprites, view);
         if (self.count(view) == 0) {
             face.draw("Empty", layout.LIST_X + layout.TEXT_X, self.directTop(), font.BODY, look.DIM);
             return;
         }
         if (self.selected(view)) |it| {
             const slot = self.destination(view);
-            item_card.draw(face, layout.LIST_X, self.cardTop(view), layout.LIST_W, it, slot, self.requirementAttrs(view, slot), if (view.chest) "IN THE CHEST" else "IN THE BAG");
+            item_card.draw(face, layout.DETAIL_X, layout.LOOT_TOP, layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), null);
+        } else if (view.nearby[self.cursor].supplyOf()) |k| {
+            item_card.drawSupply(face, layout.DETAIL_X, layout.LOOT_TOP, layout.DETAIL_W, k, view.inventory.stacks.get(k), null);
         }
         const note_y = self.noteY(view);
         if (self.message.n > 0) face.draw(self.message.text(), layout.LIST_X, note_y, font.SMALL, look.TEXT);
@@ -432,7 +446,7 @@ pub const Book = struct {
         return out;
     }
 
-    fn drawCells(self: *const Book, face: *const font.Face, view: View) void {
+    fn drawCells(self: *const Book, face: *const font.Face, sprites: *const look.Sprites, view: View) void {
         if (self.page == .inventory) {
             const text_x = layout.LIST_X + layout.TEXT_X;
             face.draw("ITEM", text_x, layout.CONTENT_TOP, font.SMALL, look.DIM);
@@ -457,22 +471,36 @@ pub const Book = struct {
                     var fitted: [64]u8 = undefined;
                     face.draw(face.fit(&fitted, slotLabel(slot), layout.SLOT_LABEL, inner, false), x + layout.SLOT_INSET, y + layout.SLOT_INSET, layout.SLOT_LABEL, look.DIM);
                     const it = view.inventory.gear.slots.get(slot);
-                    const mid = raster.middleAt(r);
+                    const named = r.height >= layout.NAMED_CELL_H;
+                    const foot = y + @as(i32, @intFromFloat(r.height)) - (if (named) layout.SLOT_INSET + font.SMALL else 0);
+                    const glyph = P{ .x = raster.middleAt(r).x, .y = @divTrunc(y + layout.SLOT_INSET + layout.SLOT_LABEL + foot, 2) };
+                    const side: line_icons.ItemSize = if (named) .cell else .row;
+                    const name_mid = foot + font.SMALL / 2;
                     if (offhandWeapon(view.inventory.gear, slot)) |weapon| {
-                        face.centred(BOTH_HANDS, mid.x, mid.y - layout.PAIR_DY, font.SMALL, look.DIM);
-                        face.centred(face.fit(&fitted, weapon.name(&name_buf), font.SMALL, inner, false), mid.x, mid.y + layout.PAIR_DY, font.SMALL, look.itemInk(weapon.rarity()));
-                    } else {
-                        const name = if (it) |a| a.name(&name_buf) else "-";
-                        face.centred(face.fit(&fitted, name, font.SMALL, inner, false), mid.x, mid.y + layout.NAME_DY, font.SMALL, inkOf(it));
-                    }
+                        line_icons.drawItem(sprites, weapon.kind, side, glyph.x, glyph.y, look.fade(look.itemInk(weapon.rarity()), look.FADED_A));
+                        face.centred(BOTH_HANDS, glyph.x, name_mid - layout.PAIR_DY, font.SMALL, look.DIM);
+                        face.centred(face.fit(&fitted, weapon.name(&name_buf), font.SMALL, inner, false), glyph.x, name_mid, font.SMALL, look.itemInk(weapon.rarity()));
+                    } else if (it) |worn| {
+                        line_icons.drawItem(sprites, worn.kind, side, glyph.x, glyph.y, look.itemInk(worn.rarity()));
+                        if (named) face.centred(face.fit(&fitted, worn.name(&name_buf), font.SMALL, inner, false), glyph.x, name_mid, font.SMALL, look.itemInk(worn.rarity()));
+                    } else line_icons.drawItem(sprites, slotGlyph(slot), side, glyph.x, glyph.y, look.fade(look.DIM, look.FADED_A));
                 },
-                .inventory => {
-                    const it = view.inventory.bag[i];
+                .inventory => if (stockAt(view, i)) |k| {
+                    var carried: menu.Note(24) = .{};
+                    carried.say("{d} carried", .{view.inventory.stacks.get(k)});
+                    line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, look.itemInk(.normal));
+                    listRow(face, x, y, menu.named(k), look.itemInk(.normal), carried.text());
+                } else {
+                    const it = view.inventory.bag[i - stocked(view)];
                     const slots = it.kind.slots();
+                    line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, look.itemInk(it.rarity()));
                     listRow(face, x, y, it.name(&name_buf), look.itemInk(it.rarity()), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.named(it.kind) else slots[0].name());
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];
+                    if (n.item()) |it| {
+                        line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, inkOf(it));
+                    } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, look.itemInk(.normal));
                     listRow(face, x, y, n.label(&name_buf), inkOf(n.item()), n.command().verb());
                 },
                 .passives, .skills, .stats => unreachable,
@@ -481,7 +509,7 @@ pub const Book = struct {
     }
     fn requirementAttrs(self: *const Book, view: View, slot: items.Slot) attr.Attrs {
         return switch (self.page) {
-            .inventory => (view.inventory.swapped(self.cursor, slot) catch view.inventory.gear).statsWithout(slot, view.base),
+            .inventory => (view.inventory.swapped(self.bagIndex(view).?, slot) catch view.inventory.gear).statsWithout(slot, view.base),
             .nearby, .loot => neededAttrs(view, self.selected(view).?, slot),
             else => view.inventory.gear.statsWithout(slot, view.base),
         };
@@ -492,6 +520,7 @@ pub const Book = struct {
         const y = layout.CONTENT_TOP;
         if (self.count(view) == 0) return;
         const it = self.selected(view) orelse {
+            if (self.carriedRow(view)) |k| return item_card.drawSupply(face, x, y, layout.DETAIL_W, k, view.inventory.stacks.get(k), null);
             if (self.page == .equipment) if (offhandWeapon(view.inventory.gear, items.SLOTS[self.cursor])) |weapon| {
                 face.draw(BOTH_IN_USE, x, y, font.HEAD, look.TEXT);
                 var held: menu.Note(128) = .{};
@@ -504,18 +533,19 @@ pub const Book = struct {
         };
         const slot = if (self.page == .equipment) items.SLOTS[self.cursor] else self.destination(view);
         const comparing = self.page == .inventory;
-        item_card.draw(face, x, y, if (comparing) layout.CARD_W else layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), if (comparing) "SELECTED" else "EQUIPPED");
+        item_card.draw(face, x, y, if (comparing) layout.CARD_W else layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), if (comparing) "SELECTED" else null);
         if (comparing) item_card.draw(face, x + layout.CARD_W + layout.CARD_GAP, y, layout.CARD_W, view.inventory.gear.slots.get(slot), slot, view.inventory.gear.statsWithout(slot, view.base), "EQUIPPED");
         if (comparing) {
             const equipped = view.inventory.gear.slots.get(slot);
             const at = y + @max(item_card.height(it, slot), if (equipped) |worn| item_card.height(worn, slot) else item_card.SLOT_Y + font.SMALL) + layout.REQUIREMENT_GAP;
-            _ = view.inventory.preview(self.cursor, slot, view.base) catch |err| {
+            const bagged = self.bagIndex(view).?;
+            _ = view.inventory.preview(bagged, slot, view.base) catch |err| {
                 var reason: menu.Note(140) = .{};
                 if (err != error.Requirements) {
                     reason.say("{s}", .{items.caption(err)});
-                } else if (dependent(view, self.cursor, slot)) |other| {
+                } else if (dependent(view, bagged, slot)) |other| {
                     reason.say("Would leave {s} without its required attributes.", .{other.name(&name_buf)});
-                } else reason.say("Cannot equip: requirements not met.", .{});
+                } else return;
                 _ = face.paragraph(reason.text(), x, at, layout.DETAIL_W, font.SMALL, layout.LOSS);
                 return;
             };
@@ -542,7 +572,8 @@ fn header(face: *const font.Face, text: [:0]const u8) void {
 }
 fn listRow(face: *const font.Face, x: i32, y: i32, text: [:0]const u8, ink: rl.Color, second: [:0]const u8) void {
     const mid = y + layout.ROW_HEIGHT / 2;
-    face.drawMiddle(text, x + layout.TEXT_X, mid, font.BODY, ink);
+    var fitted: [items.NAME_MAX]u8 = undefined;
+    face.drawMiddle(face.fit(&fitted, text, font.BODY, layout.SECOND_X - layout.TEXT_X - layout.COLUMN_GAP, false), x + layout.TEXT_X, mid, font.BODY, ink);
     face.drawMiddle(second, x + layout.SECOND_X, mid, font.SMALL, look.DIM);
 }
 fn tabBox(i: usize) rl.Rectangle {
@@ -559,7 +590,23 @@ fn slotLabel(s: items.Slot) [:0]const u8 {
     return switch (s) {
         .left_ring => "L ring",
         .right_ring => "R ring",
-        .left_hand, .right_hand, .helm, .chest, .belt, .gloves, .boots, .amulet => s.name(),
+        .left_hand, .right_hand, .helm, .chest, .belt, .gloves, .boots, .amulet, .life_flask, .mana_flask => s.name(),
+    };
+}
+/// The kind an empty slot shows faintly.
+fn slotGlyph(s: items.Slot) items.Kind {
+    return switch (s) {
+        .right_hand => .sword,
+        .left_hand => .shield,
+        .helm => .helmet,
+        .chest => .leather,
+        .belt => .belt,
+        .gloves => .gloves,
+        .boots => .boots,
+        .left_ring, .right_ring => .ring,
+        .amulet => .amulet,
+        .life_flask => .life_flask,
+        .mana_flask => .mana_flask,
     };
 }
 fn tab(face: *const font.Face, r: rl.Rectangle, page: Page, on: bool, device: input.Device) void {
@@ -585,6 +632,22 @@ fn dependent(view: View, at: usize, slot: items.Slot) ?items.Item {
         if (s == slot) continue;
         if (after.slots.get(s)) |other| if (!after.wornMeets(s, view.base)) return other;
     }
+    return null;
+}
+
+/// Kinds carried, which head the Inventory list.
+fn stocked(view: View) usize {
+    var n: usize = 0;
+    for (view.inventory.stacks.values) |carried| n += @intFromBool(carried > 0);
+    return n;
+}
+
+fn stockAt(view: View, row: usize) ?consumable.Kind {
+    var left = row;
+    for (consumable.KINDS) |k| if (view.inventory.stacks.get(k) > 0) {
+        if (left == 0) return k;
+        left -= 1;
+    };
     return null;
 }
 
@@ -660,13 +723,21 @@ test "loot exposes single pickup and take all through controller and mouse contr
     const p = surface.screenOf(.{ .x = box.x + 20, .y = box.y + 20 });
     try std.testing.expect(book.step(&.{ .click = true, .pointer = p }, screen, view).? == .take_all);
     const panel = book.size(view);
-    try std.testing.expect(panel.x < layout.SIZE.x and panel.y < layout.SIZE.y);
+    try std.testing.expect(panel.y < layout.SIZE.y);
     try std.testing.expectEqual(@as(f32, @floatFromInt(panel.y - layout.ACTION_H - menu.PANEL_PAD)), book.actionBox(menu.CONFIRM, view).y);
-    std.debug.print("loot panel: {d}x{d} for one item, Book {d}x{d}\n", .{ panel.x, panel.y, layout.SIZE.x, layout.SIZE.y });
+    const card = item_card.height(.{ .kind = .cap }, .helm);
+    try std.testing.expect(book.cellBox(0, view).x + layout.LIST_W < layout.DETAIL_X and layout.LOOT_TOP + card <= layout.LOOT_FOOT_Y);
+    var many: [layout.LOOT_ROWS + 4]Nearby = undefined;
+    for (&many, 0..) |*n, i| n.* = .{ .loot = .{ .index = i, .item = .{ .kind = .axe } } };
+    var crowded = view;
+    crowded.nearby = &many;
+    try std.testing.expectEqual(panel, book.size(crowded));
+    std.debug.print("loot panel: fixed {d}x{d}, list {d} rows left, card {d}px right, Book {d}x{d}\n", .{ panel.x, panel.y, layout.LOOT_ROWS, card, layout.SIZE.x, layout.SIZE.y });
     _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, view);
     try std.testing.expectEqual(Page.loot, book.page);
     const at = P{ .x = 20, .y = 20 };
     view.nearby = &.{.{ .gold = .{ .at = at, .amount = 37 } }};
+    try std.testing.expectEqual(panel, book.size(view));
     try std.testing.expectEqual(at, book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).?.take_gold);
     var label: [80]u8 = undefined;
     try std.testing.expectEqualStrings("37 gold", view.nearby[0].label(&label));

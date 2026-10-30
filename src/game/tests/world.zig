@@ -9,6 +9,8 @@ const bow = @import("../../play/bow.zig");
 const glacial = @import("../../play/glacial.zig");
 const juke = @import("../../play/juke.zig");
 const sky = @import("../../gfx/sky.zig");
+const fx = @import("../../gfx/fx.zig");
+const look = @import("../../gfx/look.zig");
 const climate = @import("../../map/climate.zig");
 const day = @import("../../map/day.zig");
 const shots = @import("../shots.zig");
@@ -282,4 +284,68 @@ test "a door keeps the low glow, a level-up, the archer's facing and a walk pres
     std.debug.print("through a door on 1 hp: the low glow {d:.3} before, {d:.3} after, a walk queued: {}\n", .{ low, g.vignette.low, g.pending != null });
     try std.testing.expect(g.pending != null);
     try std.testing.expectApproxEqAbs(low, g.vignette.low, 0.05);
+}
+
+test "stepping into a glow plant bursts it into healing gas for a turn, leaving its grass and taking its light" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const plant = P{ .x = 21, .y = 20 };
+    harness.arena(g, from, &.{});
+    g.sim.lv.set(plant, .glow_plant);
+    game.settle(g);
+    const lights = g.light.torch_n;
+    try std.testing.expectEqual(game.Move.burst, game.heroMove(g, .e));
+    const was = g.sim.clock.minute;
+    harness.nudge(g, .e);
+    try std.testing.expectEqual(was + day.TURN_MINUTES, g.sim.clock.minute);
+    try std.testing.expect(g.sim.heroActor().?.at.eq(from));
+    try std.testing.expectEqual(grid.Tile.grass, g.sim.lv.at(plant));
+    try std.testing.expect(g.sim.lv.volumeAt(.healing, plant) > 0 and !g.sim.lv.gassy(plant));
+    try std.testing.expectEqual(lights - 1, g.light.torch_n);
+    try std.testing.expect(harness.logged(g, gas.HEALING_NAME));
+    try std.testing.expectEqual(game.Move.step, game.heroMove(g, .e));
+}
+
+fn wispsOf(g: *const game.Game, ink: @TypeOf(look.GAS)) usize {
+    var n: usize = 0;
+    for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and m.grow > 0 and m.col.r == ink.r and m.col.g == ink.g and m.col.b == ink.b);
+    return n;
+}
+
+test "healing gas mends every hurt body in it a fifteenth of its life a turn, its wisps and caustic gas's drawn as each lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const hero_at = P{ .x = 20, .y = 20 };
+    const mended_at = P{ .x = 25, .y = 20 };
+    const stung_at = P{ .x = 20, .y = 25 };
+    harness.arena(g, hero_at, &.{});
+    const mended = harness.spawnAt(g, .rat, mended_at, false);
+    const stung = harness.spawnAt(g, .rat, stung_at, false);
+    const hero = g.sim.heroActor().?;
+    harness.setLife(hero, 40, harness.TEST_HP);
+    for ([_]u16{ mended, stung }) |id| harness.setLife(g.sim.pool.get(id).?, harness.TEST_HP - 1, harness.TEST_HP);
+    for ([_]P{ hero_at, mended_at }) |p| g.sim.lv.release(.healing, p, gas.HEALING_BURST);
+    g.sim.lv.addGas(stung_at, harness.TEST_GAS);
+    game.settle(g);
+    const slots = [_]usize{ g.sim.heroSlot().?, actor.Pool.slot(mended), actor.Pool.slot(stung) };
+    harness.use(g, .wait);
+    try std.testing.expectEqual(40 + gas.heal(harness.TEST_HP), hero.hp);
+    try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(mended).?.hp);
+    try std.testing.expectEqual(harness.TEST_HP - 1 - gas.harm(harness.TEST_HP), g.sim.pool.get(stung).?.hp);
+    g.st = .{};
+    var t: f32 = 0;
+    while (t < 1) : (t += harness.TEST_DT) {
+        const caught = for (slots) |s| {
+            if (!harness.caughtUp(g, s)) break false;
+        } else true;
+        if (caught) break;
+        game.update(g, harness.TEST_DT);
+    }
+    const healing = wispsOf(g, look.HEALING_GAS);
+    const caustic = wispsOf(g, look.GAS);
+    std.debug.print("a turn in gas: all three drawn {d:.3} s in, the archer mended by {d}, {d} healing wisps and {d} caustic\n", .{ t, gas.heal(harness.TEST_HP), healing, caustic });
+    try std.testing.expect(t < 1);
+    try std.testing.expectEqual(2 * fx.TICK_WISPS, healing);
+    try std.testing.expectEqual(fx.TICK_WISPS, caustic);
 }

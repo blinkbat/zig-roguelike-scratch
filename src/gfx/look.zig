@@ -81,20 +81,20 @@ pub fn occludes(t: grid.Tile) bool {
 pub const OCCLUDED_A: f32 = 0.4;
 
 pub const Occlusion = struct {
-    hero: [2]f32 = .{ 0, 0 },
+    body: [2]f32 = .{ 0, 0 },
     hidden: f32 = 0,
 
-    pub fn set(self: Occlusion, shader: rl.Shader, hero: i32, hidden: i32) void {
-        shaders.setUniform(shader, hero, self.hero);
+    pub fn set(self: Occlusion, shader: rl.Shader, at: i32, hidden: i32) void {
+        shaders.setUniform(shader, at, self.body);
         shaders.setUniform(shader, hidden, self.hidden);
     }
 };
 
 pub const OCCLUSION_FS = shaders.glslConsts(.{ .OCCLUDED_A = OCCLUDED_A, .OCCLUSION_RADIUS = [2]f32{ 0.6, 0.85 }, .OCCLUSION_INNER = @as(f32, 0.35) }) ++
-    \\uniform vec2 hero;
+    \\uniform vec2 body;
     \\uniform float hidden;
     \\float occlusionAt(vec2 p) {
-    \\    float distance = length((p - hero) / OCCLUSION_RADIUS);
+    \\    float distance = length((p - body) / OCCLUSION_RADIUS);
     \\    float aperture = 1.0 - smoothstep(OCCLUSION_INNER, 1.0, distance);
     \\    return mix(1.0, OCCLUDED_A, hidden * aperture);
     \\}
@@ -239,7 +239,7 @@ pub const WaterView = struct {
 
 const WaterShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, depth: i32, visibility: i32, glints: i32, mirror: i32, memory: i32, mirrored: i32 };
 
-const SceneryShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, lightmap: i32, fogmap: i32, hero: i32, hidden: i32, texel: i32, strength: i32 };
+const SceneryShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, lightmap: i32, fogmap: i32, body: i32, hidden: i32, texel: i32, strength: i32 };
 
 /// Needs a live GL context.
 pub const Sprites = struct {
@@ -260,6 +260,8 @@ pub const Sprites = struct {
     grounds: std.EnumArray(ground.Ground, ?rl.Texture2D) = .initFill(null),
     /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
     skills: ?rl.Texture2D = null,
+    /// Every item kind's icon at each `line_icons.ItemSize`, a strip per size.
+    item_icons: ?rl.Texture2D = null,
     hud_border: ?rl.Texture2D = null,
     log_fade: ?FadeShader = null,
     water: ?WaterShader = null,
@@ -270,6 +272,7 @@ pub const Sprites = struct {
 
     pub fn loadCommon(self: *Sprites) void {
         self.skills = line_icons.skillIcons();
+        self.item_icons = line_icons.itemIcons();
         self.hud_border = texture(HUD_BORDER_PNG);
         self.log_fade = shaders.program(FadeShader, FADE_FS);
         self.water = shaders.program(WaterShader, WATER_FS);
@@ -282,7 +285,7 @@ pub const Sprites = struct {
         rl.beginShaderMode(s.shader);
         defer rl.endShaderMode();
         shaders.setMapView(s, view);
-        occlusion.set(s.shader, s.hero, s.hidden);
+        occlusion.set(s.shader, s.body, s.hidden);
         focus.set(s.shader, s.texel, s.strength);
         rl.setShaderValueTexture(s.shader, s.lightmap, lightmap);
         rl.setShaderValueTexture(s.shader, s.fogmap, fogmap);
@@ -564,6 +567,13 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .pib = @embedFile("pib.png"),
     .beefy_pib = @embedFile("beefy-pib.png"),
     .bandit_crossbowman = @embedFile("bandit-crossbowman.png"),
+    .bandit_netter = null,
+    .bandit_shieldbearer = null,
+    .frost_wisp = null,
+    .pyre_bloat = null,
+    .pib_shaman = null,
+    .bog_leech = null,
+    .mimic = null,
 });
 
 const PICTURED = blk: {
@@ -709,7 +719,7 @@ fn unloadEach(held: []?rl.Texture2D) void {
 
 pub fn unloadAll(v: anytype) void {
     inline for (std.meta.fields(@TypeOf(v.*))) |f| {
-        if (comptime @typeInfo(f.type) == .@"struct" and @hasField(f.type, "values") and @hasDecl(f.type, "Key")) {
+        if (comptime @typeInfo(f.type) == .@"struct" and @hasField(f.type, "values") and @hasDecl(f.type, "Key") and std.meta.Elem(@FieldType(f.type, "values")) == ?rl.Texture2D) {
             unloadEach(&@field(v.*, f.name).values);
             continue;
         }
@@ -860,6 +870,7 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .chest_open = .{ .sym = "O", .ch = 'O', .fg = rgb(0x96724d), .bg = null, .mini = rgb(0x96724d), .mini_dim = rgb(0x443422) },
     .swamp_tree = .{ .sym = "S", .ch = 'S', .fg = rgb(0x788650), .bg = null, .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) },
     .large_tree = .{ .sym = "L", .ch = 'L', .fg = rgb(0x788650), .bg = null, .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) },
+    .glow_plant = .{ .sym = "&", .ch = '&', .fg = rgb(0x9fd2ff), .bg = null, .mini = rgb(0x7fb2e0), .mini_dim = rgb(0x2e4256) },
 });
 
 comptime {
@@ -882,6 +893,7 @@ pub const TILE_CODEPOINTS = blk: {
 pub const TORCH = Look{ .ch = 'i', .fg = rgb(0xffc46a) };
 pub const TORCH_DIM = rgb(0x4a4238);
 pub const BARREL = Look{ .ch = '0', .fg = rgb(0x8a5a32) };
+pub const FOLK = Look{ .ch = '@', .fg = rgb(0xd8a860) };
 pub const DOOR = Look{ .ch = '+', .fg = rgb(0xb89a5a) };
 /// What a picture of the whole map marks a cell with over its tile, a door before a barrel.
 pub const Mark = enum {
@@ -909,21 +921,35 @@ pub fn body(k: actor.Kind) Look {
         .knight => .{ .ch = '@', .fg = rgb(0xd6d9e0) },
         .rat => .{ .ch = 'r', .fg = rgb(0xb07a4e) },
         .slime, .slime_half, .slime_quarter => .{ .ch = 's', .fg = rgb(0x6fae5a) },
-        .bloat => .{ .ch = 'b', .fg = GAS },
+        .bloat => .{ .ch = 'b', .fg = BLOAT },
         .pib => .{ .ch = 'p', .fg = rgb(0xe89aa6) },
         .beefy_pib => .{ .ch = 'P', .fg = rgb(0xe89aa6) },
         .bandit_crossbowman => .{ .ch = 'c', .fg = rgb(0xb07a4e) },
+        .bandit_netter => .{ .ch = 'N', .fg = rgb(0xffeb3b) },
+        .bandit_shieldbearer => .{ .ch = 'S', .fg = rgb(0x4d7cff) },
+        .frost_wisp => .{ .ch = 'W', .fg = rgb(0x4ff0ff) },
+        .pyre_bloat => .{ .ch = 'B', .fg = rgb(0xff3b3b) },
+        .pib_shaman => .{ .ch = 'Y', .fg = rgb(0xc77dff) },
+        .bog_leech => .{ .ch = 'L', .fg = rgb(0x8cff3f) },
+        .mimic => .{ .ch = 'M', .fg = rgb(0xff9f1c) },
     };
 }
 
-/// Brogue's `poisonGasColor`, the bloat's and its gas's.
-pub const GAS = rgb(0xbf40d9);
+/// Drawn a figure's glyph is, offset down-right in this ink, so letters standing in for art read at a glance.
+pub const GLYPH_SHADOW = rl.Color{ .r = 0, .g = 0, .b = 0, .a = 200 };
+pub const GLYPH_SHADOW_PX: i32 = 4;
+
+/// Brogue's `poisonGasColor`, the bloat's.
+pub const BLOAT = rgb(0xbf40d9);
+/// Its caustic gas, a greyer purple.
+pub const GAS = rgb(0x9a76aa);
+pub const HEALING_GAS = rgb(0xa6cff0);
 
 pub const BLOOD = rl.Color{ .r = 112, .g = 22, .b = 16, .a = GORE_A };
 pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = GORE_A };
 pub const SPLINTER = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
-/// Brogue's purple blood: the gas's, darker.
-pub const ICHOR = rl.Color{ .r = GAS.r / 2, .g = GAS.g / 2, .b = GAS.b / 2, .a = GORE_A };
+/// Brogue's purple blood: the bloat's, darker.
+pub const ICHOR = rl.Color{ .r = BLOAT.r / 2, .g = BLOAT.g / 2, .b = BLOAT.b / 2, .a = GORE_A };
 const GORE_A: u8 = 220;
 pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
 pub const JUKE_TRAIL = rl.Color{ .r = 196, .g = 212, .b = 218, .a = 140 };
@@ -934,8 +960,8 @@ pub const Gait = enum { hop, slide };
 
 pub fn gait(k: actor.Kind) Gait {
     return switch (k) {
-        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman => .hop,
-        .slime, .slime_half, .slime_quarter, .bloat => .slide,
+        .archer, .wizard, .knight, .rat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .pib_shaman, .mimic => .hop,
+        .slime, .slime_half, .slime_quarter, .bloat, .frost_wisp, .pyre_bloat, .bog_leech => .slide,
     };
 }
 
@@ -948,6 +974,11 @@ pub const AIM_REACH = fade(GOLD, 0.10);
 pub const AIM_PATH = fade(GOLD, 0.28);
 pub const COLD = rgb(0x8cddf5);
 pub const PIN = rgb(0xc8c2b4);
+pub const SHOCK = rgb(0xb48cff);
+pub const SUNDER = rgb(0xb5652e);
+pub const BLIND = rgb(0x8a96a3);
+pub const CONFUSION = rgb(0x9ad46b);
+pub const FEAR = rgb(0xe39bc4);
 pub const WARD = rgb(0x6fa8f0);
 pub const MAGIC = WARD;
 pub const RARE = rgb(0xe8d15a);
@@ -998,6 +1029,11 @@ pub fn ailmentInk(k: resilience.Kind) rl.Color {
         .bleed => BLEED,
         .chill => elementInk(.cold),
         .pin => PIN,
+        .shock => SHOCK,
+        .sunder => SUNDER,
+        .blind => BLIND,
+        .confusion => CONFUSION,
+        .fright => FEAR,
     };
 }
 

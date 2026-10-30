@@ -13,7 +13,6 @@ pub const CHANCE: u32 = 50;
 pub const VERB = "shield-bashes";
 pub const TAKES = clock.STUNNED;
 pub const DESCRIPTION = std.fmt.comptimePrint("Strike an adjacent foe and knock it back a tile. {s}.", .{clock.stunNote(CHANCE)});
-pub const FLAVOR = "Oak and iron make a fine argument.";
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 

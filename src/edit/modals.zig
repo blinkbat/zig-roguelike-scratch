@@ -27,6 +27,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
     game.character.veil(g);
     switch (ed.modal) {
         .text => return @import("text_panel.zig").draw(ed, g),
+        .dialogs, .script => return editor.plot.draw(ed, g),
         .help => return drawHelp(ed, g),
         .objects => return drawObjects(ed, g),
         .none, .confirm, .name, .open => {},
@@ -38,7 +39,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
         .confirm => "Unsaved changes",
         .name => if (ed.naming == .new) "New map" else "Save the map as",
         .open => std.fmt.bufPrintZ(&title_buf, "Open: {s}", .{ed.listing.dirPath(&dir_buf)}) catch "Open",
-        .none, .help, .objects, .text => "",
+        .none, .help, .objects, .text, .dialogs, .script => "",
     };
     const f = widgets.modalFrame(&g.face, g.screen, widgets.MODAL_W, widgets.MODAL_HEAD + body + widgets.ROW_H + widgets.PAD, title, true);
     const x = f.x;
@@ -86,7 +87,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
             widgets.textFace(&g.face).draw(OPEN_CRIB, x + widgets.PAD, buttons_y + editor.SMALL_DY, SMALL, look.DIM);
             backButton(ed, g, bx, buttons_y, "Cancel");
         },
-        .none, .help, .objects, .text => {},
+        .none, .help, .objects, .text, .dialogs, .script => {},
     }
 }
 
@@ -170,7 +171,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
 pub fn seenFoe(s: editor.Seen) ?actor.Kind {
     return switch (s) {
         .body => |kind| if (kind.foe()) kind else null,
-        .tile, .barrel, .torch, .door => null,
+        .tile, .barrel, .torch, .door, .folk => null,
     };
 }
 
@@ -191,7 +192,7 @@ pub fn seenPicture(g: *game.Game, s: editor.Seen, r: rl.Rectangle) void {
     switch (s) {
         .tile => |t| panel.swatch(g, t, r),
         .body => |k| panel.toolFigure(g, .{ .foe = k }, r),
-        inline .barrel, .torch, .door => |_, tag| panel.toolFigure(g, @unionInit(editor.Tool, @tagName(tag), {}), r),
+        inline .barrel, .torch, .door, .folk => |_, tag| panel.toolFigure(g, @unionInit(editor.Tool, @tagName(tag), {}), r),
     }
 }
 
@@ -227,6 +228,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
                 f.put("Contains gold and items; never broken by attacks", .{});
             }
             if (t.isOpened()) f.put("Already opened; may hold items and be walked over", .{});
+            if (t.bursts()) f.put("Bursts into " ++ @import("../map/gas.zig").HEALING_NAME ++ " when the hero steps into it", .{});
         },
         .body => |k| {
             const r = actor.row(k);
@@ -258,6 +260,11 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
         },
         .torch => f.put(menu.capital(placement.TORCH_RULE) ++ "; lights {d} cells round", .{lume.TORCH_REACH}),
         .door => f.put("Leads both ways to one door on any node", .{}),
+        .folk => {
+            f.put("Stands on open floor of a painted node; never fights or moves", .{});
+            f.put("Bump it or interact beside it to open its dialog; no turn passes", .{});
+            f.put("Blocks a step; arrows and blasts pass it by", .{});
+        },
     }
 }
 
@@ -266,7 +273,7 @@ fn modalBody(ed: *const editor.Editor) i32 {
         .confirm => widgets.ROW_H * 2 + widgets.PAD,
         .name => widgets.ROW_STEP + widgets.ROW_H + widgets.PAD,
         .open => @as(i32, @intCast(@max(1, @min(ed.listing.n, widgets.MODAL_ROWS)))) * widgets.ROW_H + widgets.PAD,
-        .none, .help, .objects, .text => 0,
+        .none, .help, .objects, .text, .dialogs, .script => 0,
     };
 }
 

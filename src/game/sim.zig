@@ -10,6 +10,8 @@ const chronicle = @import("../play/chronicle.zig");
 const attrs = @import("../play/attrs.zig");
 const terrain = @import("../play/terrain.zig");
 const resilience = @import("../play/resilience.zig");
+const sunder = @import("../play/sunder.zig");
+const blind = @import("../play/blind.zig");
 const damage = @import("../play/damage.zig");
 const flask = @import("../play/flask.zig");
 const heroes = @import("../play/hero.zig");
@@ -18,6 +20,7 @@ const passives = @import("../play/passives.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const log = @import("../play/log.zig");
+const trigger = @import("../play/trigger.zig");
 const P = mathx.P;
 
 pub const Flasks = std.EnumArray(flask.Kind, flask.Flask);
@@ -31,7 +34,7 @@ pub const Visit = struct {
 };
 
 /// A body's harm ticks, each run at most once a turn.
-pub const Tick = enum { gassed, burned, bled, worn };
+pub const Tick = enum { gassed, healed, burned, bled, worn };
 /// The ticks a body's turn has run, which a half split off it mid-turn has had too.
 pub const Ran = std.EnumSet(Tick);
 
@@ -77,11 +80,13 @@ pub const Simulation = struct {
     /// The hero stepped or leapt since the last turn ended, which tears a bleed wider.
     stepped: bool = false,
     displaced: std.StaticBitSet(actor.MAX) = .initEmpty(),
-    inventory: items.Inventory = .{},
+    inventory: items.Inventory = .{ .gear = .flasks },
     growth: progress.State = progress.State.of(heroes.DEFAULT),
     ground: items.Ground = .{},
     loot_rng: mathx.Rng = mathx.Rng.init(1),
     log: log.Log = .{},
+    /// The map's triggers and conversation as the run has them.
+    plot: trigger.Runtime = .{},
     chronicle: chronicle.Chronicle = .{},
     /// Living foes at turn start, nearest first; also their presentation order.
     order: [actor.MAX]u16 = undefined,
@@ -140,8 +145,25 @@ pub const Simulation = struct {
         return (self.heroBody() orelse return null).at;
     }
 
+    /// What the map's triggers read of the run.
+    pub fn world(self: *const Simulation) trigger.World {
+        var w = trigger.World{ .node = self.node, .hero = self.heroAt() orelse .{ .x = 0, .y = 0 } };
+        for (self.pool.items[0..self.pool.n]) |a| {
+            if (a.alive and a.foe()) w.alive.getPtr(a.kind.family()).* += 1;
+        }
+        return w;
+    }
+
     pub fn isHero(self: *const Simulation, slot: usize) bool {
         return actor.Pool.idOf(slot) == self.hero;
+    }
+
+    /// A body stands at `p` that nothing shows: a chest that is a mimic, a leech under the water.
+    pub fn hiddenAt(self: *const Simulation, p: P) bool {
+        const id = self.lv.who(p);
+        if (id == grid.NO_ONE) return false;
+        const a = &self.pool.items[actor.Pool.slot(id)];
+        return a.alive and a.veiled();
     }
 
     pub fn heroRow(self: *const Simulation) actor.Row {
@@ -157,12 +179,17 @@ pub const Simulation = struct {
     }
 
     pub fn combatStats(self: *const Simulation, a: *const actor.Actor) terrain.Stats {
-        return self.combatStatsAt(a, a.at, a.resilience);
+        return self.combatStatsAt(a, a.at, a.resilience, a.sunder);
     }
 
-    pub fn combatStatsAt(self: *const Simulation, a: *const actor.Actor, at: P, buildup: resilience.State) terrain.Stats {
-        var base = terrain.Stats{ .elements = a.resists };
-        if (!a.foe()) base.dodge = self.heroAttrs().dodge();
+    pub fn combatStatsAt(self: *const Simulation, a: *const actor.Actor, at: P, buildup: resilience.State, sundered: sunder.Sunder) terrain.Stats {
+        var base = terrain.Stats{ .elements = a.resists, .armour = actor.row(a.kind).armour };
+        if (!a.foe()) {
+            const by = self.heroAttrs();
+            base.dodge = by.dodge();
+            base.armour = by.armour;
+        }
+        base.armour -= sundered.lost();
         for (std.enums.values(resilience.Kind)) |k| {
             base.statuses.set(k, @as(i16, actor.innateResist(a.kind, k)) + buildup.meters.get(k).percent);
         }
@@ -228,7 +255,7 @@ pub const Simulation = struct {
             carried[n] = .{ .at = if (self.isHero(i)) from else a.at, .reach = r };
             n += 1;
         }
-        const sight = self.heroRow().sight;
+        const sight = blind.sight(if (self.heroBody()) |h| h.blind.turns > 0 else false, self.heroRow().sight);
         lume.see(&self.lv, from, sight, lume.skyReach(self.outdoors, self.clock.hour(), sight), carried[0..n]);
     }
 

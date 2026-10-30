@@ -4,7 +4,7 @@
 |---|---|
 | Persistence | Whole run saved; death loses equipment, inventory and progression |
 | Inventory | Item list; no weight or stash |
-| Slots | Main hand, offhand, helm, chest, belt, gloves, boots, two rings, amulet |
+| Slots | Main hand, offhand, helm, chest, belt, gloves, boots, two rings, amulet, life flask, mana flask |
 | Equipment rules | Attribute requirements, one main-hand item plus an offhand, or a two-handed item |
 | Requirements | Final loadout must remain valid; an item cannot fund its own requirement |
 | Loot | Normal, magic or rare; blues roll 1–2 mods and affix/base names; yellow rares roll 3–4 distinct mods and independent two-part names |
@@ -37,10 +37,20 @@ Natural recovery is 1 mana per 5 spent turns; recovery passives add to that five
 progress retained across turns, doors and saves. Cost reductions round up to whole mana, with a minimum
 of 1 for paid skills. Mana Shield still absorbs one damage per mana.
 
-Both flasks spend charges without spending a turn. The first of three recovery ticks happens immediately;
-the other two happen on the next two spent turns. A life flask restores half maximum life before passive
-bonuses; a mana flask restores 10 mana. Drinking again restarts that flask's recovery and applies its first
-tick immediately, without advancing the other flask, natural recovery, enemies, ailments or cooldowns.
+Flasks are items worn in the Life flask and Mana flask slots, as in PoE2. A new run wears both; they never
+roll as loot. Like other gear they can be unequipped, dropped and worn again for a turn. Only a worn flask can
+be drunk or gains charges from kills; its charges wait in the slot while it is off.
+
+Every consumable spends a turn, flasks included. A drink spends its charges and recovers its first of three
+ticks on that turn, before foes act; the other two happen on the next two spent turns. A life flask restores
+half maximum life before passive bonuses; a mana flask restores 10 mana. Drinking again restarts that
+flask's recovery.
+
+Consumables (`play/consumable.zig`): Bandage stops bleeding; Smelling salts hold stun resistance at 100% through
+the turn they are used and the five after; a thrown Frost vial splashes small cold damage and a chill roll on every
+foe within one tile of its mark, scaling as a spell. Each is a stack in the bag (up to 20 of a kind) listed above
+the items in Inventory, used there or from a bound skill slot, which shows the count. Foes drop one 8% of the
+time and chests 50%; they lie in the ground bag with any items and gold. Using one spends a turn.
 The saved recovery remainder and revised passive grants change the save fingerprint; older saves are incompatible.
 
 ## Weapons and offhands
@@ -119,15 +129,26 @@ preparation, control and defense:
 
 | Class | Paths |
 |---|---|
-| Archer | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot; Juke -> Caltrops |
-| Wizard | Spark -> Fireball -> Combustion; Spark -> Chain Lightning; Blink -> Frost Nova -> Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
-| Knight | Cleave -> Guard -> Unyielding; Charge -> Shield Bash -> Whirlwind |
+| Archer | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot, Piercing Shot; Juke -> Caltrops |
+| Wizard | Spark -> Fireball -> Combustion, Fire Wall; Spark -> Chain Lightning; Blink -> Frost Nova -> Shatter, Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
+| Knight | Cleave -> Guard -> Unyielding; Cleave -> Rend -> War Cry; Charge -> Shield Bash -> Whirlwind |
 
 Caltrops pins entering ground foes at every rank, adds bleed at rank 2, then strengthens
 both at rank 3. Flying foes ignore caltrops. Gravity Well pulls foes toward its center;
 rank 2 adds a one-turn pin, rank 3 increases pull distance and pin duration. Both use normal
 status resistance. Combustion requires a burning foe, consumes its burn and explodes nearby
-foes with fire damage; the remaining burn increases the explosion's base damage.
+foes with fire damage; the remaining burn increases the explosion's base damage. Shatter is
+its cold counterpart: it requires a chilled foe and consumes the chill. Each chilled foe shows
+a chill meter above its life bar, one segment per remaining chill turn.
+
+Piercing Shot's arrow flies on through every body in its line to full bow range, rolling once
+and scaling per foe; a barrel, wall, barrier or closed chest stops it. Rend strikes an adjacent
+foe and always opens a 2-per-turn bleed, subject to bleed resistance.
+
+War Cry gives each visible foe within 3 tiles a rank-based chance to become Frightened, a status
+with its own resistance meter. Frightened foes run from the hero and attack only when cornered.
+Innate fright resistance: slimes and bloats 100%, beefy pibs 50%, bandit crossbowmen 25%, others 0%.
+A pib's witness fright applies the same status without a roll.
 
 Steady Aim prepares the next arrow with damage and critical bonuses; movement cancels it.
 Overwatch covers a chosen cone until the next action and fires once when a foe moves into
@@ -135,12 +156,15 @@ it with an unobstructed arrow path. Guard reduces physical attack damage until t
 action. Whirlwind strikes all adjacent foes and barrels once. Unyielding toggles a melee
 counter stance with rank-based chance, draining mana on spent turns and ending when upkeep
 cannot be paid. It can always be turned off, even at zero mana. Idle frames advance none
-of these effects; free flasks do not end preparation or defense.
+of these effects; a flask drink is an action and ends Guard and Overwatch.
 
 Arcane Barrier selects two endpoints (mouse drag/release, or two ordinary confirmations).
 Every cell must be visible, empty, in reach, and free of doors and chests. The rank limits
 length and duration. The straight wall blocks movement and projectiles while allowing
-sight, and expires on spent turns without replacing its underlying terrain. Barrier and
+sight, and expires on spent turns without replacing its underlying terrain. Fire Wall uses the
+same two-endpoint targeting over visible dry walkable ground, bodies allowed, but not water,
+barrels, chests or doors. Foes on its cells catch fire as it rises and foes entering later catch
+fire, both through burn resistance. Foes shun its flames as they shun gas. Barrier, flame and
 caltrop lifetimes persist with the node; hero preparations and stances persist with the hero.
 The expanded run layout changes the save fingerprint; older saves are rejected.
 
@@ -150,15 +174,21 @@ The knight starts with 24 Strength, 34 life, 10% physical reduction and a 3-5 ba
 Charge and Shield Bash cost 3 mana; Cleave starts learned and costs 2. Spark's base damage
 is 2-4, retaining its 2-mana cost and 50% base stun chance.
 
-Every hero and foe has separate temporary resistance meters for stun, burn, bleed, chill
-and pin. A successful application adds 25 percentage points, up to 100%; each meter clears
+Every hero and foe has separate temporary resistance meters for stun, burn, bleed, chill,
+pin, shock, sunder, blind, confusion and fright. A successful application adds 25 percentage points, up to 100%; each meter clears
 after five spent turns without a successful reapplication. Failed attempts do not refresh
-the timer. Idle frames, free actions and drinking flasks never age these meters. Innate
+the timer. Idle frames and free actions never age these meters. Innate
 stun resistance adds to buildup: beefy pib starts at 75%, so one landed stun temporarily
 makes it immune. These gates apply to spells, weapon effects and foes hitting heroes or
 other foes. Slime halves inherit meters and bleed strength; doors and saves preserve them.
 The HUD shows an inspectable resistance icon and meter, and wounded foes show a slim gold
 bar for their highest current buildup below their life bar.
+
+Four afflictions have rules but no source yet. Each lasts a number of the body's own turns. Shock (3 turns) makes the
+next hit that deals damage deal 50% more, rounded up, and is spent on it. Sunder (4 turns from the latest stack) takes
+10 points of armour per stack, up to 3 stacks, and its stacks all fall away together. Blindness (3 turns) limits sight
+to adjacent cells: a blinded foe neither notices nor hunts a hero farther away. Confusion (3 turns) sends half of all
+moves a random way, gas or not; a confused hero strays only onto moves that would also spend the turn, bumps included.
 
 The expanded item enum and updated passive grants change the save fingerprint;
 older saves are rejected by the existing compatibility check.
@@ -223,7 +253,9 @@ rings beside the body, while D2 puts rings alongside the belt. This implementati
 The main hand is on the viewer's left and the offhand on the right, matching D2/PoE2.
 Use role names in all player-facing labels. The stored `right_hand`/`left_hand` enum
 values remain unchanged. A two-hander marks the offhand with Both hands and the held
-weapon's name; it is not presented as an empty slot. Slot size and position follow
+weapon's name; it is not presented as an empty slot. Each cell shows the worn item's glyph in its rarity
+color, with the name under it in cells tall enough; an empty slot shows its slot's glyph faded, and the
+offhand shows the held two-hander's glyph faded. List rows lead with the item's glyph. Slot size and position follow
 the reference; inventory remains the agreed list.
 Selected and equipped items use separate cards with only applicable base properties,
 nonzero requirements and actual magic modifiers, with no "If equipped" character-change section

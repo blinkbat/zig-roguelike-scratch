@@ -11,7 +11,6 @@ pub const Caltrops = struct {
     pub const COOLDOWN: u8 = 5;
     pub const RANGE: i32 = 5;
     pub const DESCRIPTION = "Scatter caltrops that pin entering foes.";
-    pub const FLAVOR = "The road behind is no longer safe.";
     pub fn duration(rank: u8) u8 {
         return 4 + rank;
     }
@@ -30,13 +29,11 @@ pub const Overwatch = struct {
     pub const COST: i32 = 4;
     pub const COOLDOWN: u8 = 3;
     pub const DESCRIPTION = "Cover a direction until your next action. Shoot the first foe moving into its cone.";
-    pub const FLAVOR = "Let them make the first mistake.";
     pub const BASE = bow.BASE;
 };
 pub const SteadyAim = struct {
     pub const COST: i32 = 2;
     pub const DESCRIPTION = "Prepare your next arrow for increased damage and critical chance. Movement cancels preparation.";
-    pub const FLAVOR = "Breathe out. Let the world grow still.";
     pub fn bonus(rank: u8) i32 {
         return 15 + 15 * @as(i32, @max(1, rank));
     }
@@ -50,7 +47,6 @@ pub const GravityWell = struct {
     pub const RANGE: i32 = 6;
     pub const RADIUS: i32 = 2;
     pub const DESCRIPTION = std.fmt.comptimePrint("Pull foes within {d} cells toward a visible center.", .{RADIUS});
-    pub const FLAVOR = "Even the dark has weight.";
     pub fn pulls(rank: u8) usize {
         return if (rank == 3) 2 else 1;
     }
@@ -68,7 +64,6 @@ pub const Combustion = struct {
     pub const ELEMENT = damage.Element.fire;
     pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
     pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding {d} damage per remaining burn turn.", .{FUEL_DAMAGE});
-    pub const FLAVOR = "One spark was only the beginning.";
     pub const FUEL_DAMAGE: i32 = 2;
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
         return patch(lv, at, 1);
@@ -79,7 +74,6 @@ pub const ArcaneBarrier = struct {
     pub const COOLDOWN: u8 = 6;
     pub const RANGE: i32 = 6;
     pub const DESCRIPTION = "Choose two endpoints to raise a straight arcane wall. Blocks movement and projectiles, allows sight. Cannot cover bodies, props or doors.";
-    pub const FLAVOR = "Draw a line the world must obey.";
     pub fn length(rank: u8) usize {
         return 2 + @as(usize, @max(1, rank));
     }
@@ -87,10 +81,45 @@ pub const ArcaneBarrier = struct {
         return 3 + @max(1, rank);
     }
 };
+pub const Shatter = struct {
+    pub const COST: i32 = 5;
+    pub const COOLDOWN: u8 = 3;
+    pub const RANGE: i32 = 7;
+    pub const ELEMENT = damage.Element.cold;
+    pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
+    pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's chill. Shatter it and its neighbors for cold damage, adding {d} damage per remaining chill turn.", .{FUEL_DAMAGE});
+    pub const FUEL_DAMAGE: i32 = 2;
+    pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
+        return patch(lv, at, 1);
+    }
+};
+pub const FireWall = struct {
+    pub const COST: i32 = 6;
+    pub const COOLDOWN: u8 = 5;
+    pub const RANGE: i32 = 6;
+    pub const DESCRIPTION = "Choose two endpoints to set a straight line of ground ablaze. Foes shun the flames; any that enter them, or stand there as they rise, catch fire. Cannot cover water, props or doors.";
+    pub fn length(rank: u8) usize {
+        return 2 + @as(usize, @max(1, rank));
+    }
+    pub fn duration(rank: u8) u8 {
+        return 3 + @max(1, rank);
+    }
+};
+pub const WarCry = struct {
+    pub const COST: i32 = 4;
+    pub const COOLDOWN: u8 = 5;
+    pub const RADIUS: i32 = 3;
+    pub const DESCRIPTION = std.fmt.comptimePrint("Each visible foe within {d} tiles may be frightened and run from you.", .{RADIUS});
+    pub fn chance(rank: u8) u32 {
+        return 40 + 15 * @as(u32, @max(1, rank));
+    }
+    pub fn turns(rank: u8) u8 {
+        return 2 + @max(1, rank);
+    }
+};
 pub const Guard = struct {
     pub const COST: i32 = 2;
     pub const DESCRIPTION = "Reduce incoming physical attack damage until your next action.";
-    pub const FLAVOR = "Stand, and make them break upon you.";
     pub fn reduction(rank: u8) i32 {
         return 40 + 10 * @as(i32, @max(1, rank));
     }
@@ -100,7 +129,6 @@ pub const Whirlwind = struct {
     pub const COOLDOWN: u8 = 3;
     pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
     pub const DESCRIPTION = "Strike every adjacent foe and barrel with your melee weapon.";
-    pub const FLAVOR = "Steel has no blind side.";
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
         return patch(lv, at, 1);
     }
@@ -108,7 +136,6 @@ pub const Whirlwind = struct {
 pub const Unyielding = struct {
     pub const COST: i32 = 2;
     pub const DESCRIPTION = "Counter adjacent melee attackers. Toggle the stance; ends when mana runs out.";
-    pub const FLAVOR = "Every blow invites an answer.";
     pub const DRAIN: i32 = 2;
     pub fn chance(rank: u8) u32 {
         return 15 + 10 * @as(u32, @max(1, rank));
@@ -135,13 +162,27 @@ pub fn covered(from: P, dir: mathx.Dir, at: P) bool {
     const across = v.x * d.y - v.y * d.x;
     return along > 0 and @abs(across) <= along;
 }
-pub const Wall = grid.Area(ArcaneBarrier.length(@import("progress.zig").RANKS));
+const TOP_RANK = @import("progress.zig").RANKS;
+pub const Wall = grid.Area(@max(ArcaneBarrier.length(TOP_RANK), FireWall.length(TOP_RANK)));
 pub fn wall(lv: *const grid.Level, hero: P, start: P, end: P, rank: u8) ?Wall {
+    return line(lv, hero, start, end, ArcaneBarrier.length(rank), ArcaneBarrier.RANGE, raisable);
+}
+/// Fire Wall's cells: open dry ground, bodies or not.
+pub fn blaze(lv: *const grid.Level, hero: P, start: P, end: P, rank: u8) ?Wall {
+    return line(lv, hero, start, end, FireWall.length(rank), FireWall.RANGE, flammable);
+}
+fn raisable(lv: *const grid.Level, p: P) bool {
+    return lv.vacant(p);
+}
+fn flammable(lv: *const grid.Level, p: P) bool {
+    return lv.walkable(p) and !lv.hasBarrel(p) and !lv.at(p).liquid();
+}
+fn line(lv: *const grid.Level, hero: P, start: P, end: P, most: usize, range: i32, comptime fits: fn (*const grid.Level, P) bool) ?Wall {
     var out = Wall{};
     var p = start;
     var ray = grid.Ray.init(start, end);
     while (true) {
-        if (out.n == ArcaneBarrier.length(rank) or !lv.vacant(p) or lv.at(p).isChest() or lv.doorAt(p) != null or !lv.isLit(p) or mathx.dist(hero, p) > ArcaneBarrier.RANGE) return null;
+        if (out.n == most or !fits(lv, p) or lv.at(p).isChest() or lv.doorAt(p) != null or !lv.isLit(p) or mathx.dist(hero, p) > range) return null;
         out.push(p);
         if (p.eq(end)) return out;
         p = ray.next() orelse return null;
@@ -160,4 +201,23 @@ test "tactical wall follows arbitrary bearings and validates every cell before p
     try std.testing.expect(wall(&lv, hero, a, b, 1) == null);
     try std.testing.expect(wall(&lv, hero, a, .{ .x = 26, .y = 20 }, 1) == null);
     std.debug.print("tactical geometry: angled wall, occupied interior and rank length caps checked\n", .{});
+}
+
+test "a fire line may cover bodies but not barrels or water, and stretches with rank" {
+    var lv = grid.openFloor();
+    lv.lit = @splat(true);
+    const hero = P{ .x = 20, .y = 20 };
+    const a = P{ .x = 22, .y = 18 };
+    const b = P{ .x = 22, .y = 22 };
+    try std.testing.expect(blaze(&lv, hero, a, b, 1) == null);
+    try std.testing.expectEqual(@as(usize, 5), blaze(&lv, hero, a, b, 3).?.n);
+    lv.stand(.{ .x = 22, .y = 20 }, 2);
+    try std.testing.expect(blaze(&lv, hero, a, b, 3) != null);
+    try std.testing.expect(wall(&lv, hero, a, b, 3) == null);
+    lv.set(.{ .x = 22, .y = 21 }, .water);
+    try std.testing.expect(blaze(&lv, hero, a, b, 3) == null);
+    lv.set(.{ .x = 22, .y = 21 }, .floor);
+    lv.putBarrel(.{ .x = 22, .y = 19 });
+    try std.testing.expect(blaze(&lv, hero, a, b, 3) == null);
+    std.debug.print("fire line: {d}-{d} cells by rank over bodies; water and barrels refused\n", .{ FireWall.length(1), FireWall.length(TOP_RANK) });
 }

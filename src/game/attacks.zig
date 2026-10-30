@@ -21,9 +21,9 @@ pub const Roll = struct {
     applied: ?resilience.Kind = null,
     hit_checked: bool = false,
 
-    pub fn against(self: Roll, a: *const actor.Actor, rng: *mathx.Rng) Roll {
+    pub fn against(self: Roll, armour: i32, rng: *mathx.Rng) Roll {
         var out = self;
-        out.dmg -= self.physical - attrs.armoured(actor.row(a.kind).armour - self.effect.penetration, self.physical, rng);
+        out.dmg -= self.physical - attrs.armoured(armour - self.effect.penetration, self.physical, rng);
         out.physical = 0;
         return out;
     }
@@ -134,7 +134,8 @@ pub const Outcome = union(enum) { miss, hit: Hit };
 pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chronicle.AttackOrigin) ?Outcome {
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
-    const r = raw.against(a, &sim.rng);
+    var r = raw.against(sim.combatStats(a).armour, &sim.rng);
+    r.dmg = a.shock.spend(r.dmg);
     const kind = a.kind;
     const at = a.at;
     const perks = sim.heroPerks();

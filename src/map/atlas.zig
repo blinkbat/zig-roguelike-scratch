@@ -10,6 +10,7 @@ const pack = @import("../play/pack.zig");
 const climate = @import("climate.zig");
 const listing = @import("listing.zig");
 const atlas_text = @import("atlas_text.zig");
+pub const script = @import("script.zig");
 
 const P = mathx.P;
 
@@ -291,13 +292,18 @@ pub const Node = struct {
         return self.door_n < grid.MAX_DOORS and self.doorAt(p) == null and grid.Level.inside(p);
     }
 
-    pub fn foeFits(self: *const Node, b: *const Bespoke, p: P) bool {
-        return b.floorAt(p) and self.doorAt(p) == null and !grid.cellOr(bool, &b.barrel, p, false);
+    /// A swimmer's ground is water, a mimic's where a chest could stand, the rest's any open floor.
+    pub fn foeFits(self: *const Node, b: *const Bespoke, p: P, k: actor.Kind) bool {
+        if (self.doorAt(p) != null or grid.cellOr(bool, &b.barrel, p, false)) return false;
+        const r = actor.row(k);
+        if (r.movement == .swimming) return b.tileAt(p).wet();
+        if (r.disguised) return b.tileAt(p).rewards();
+        return b.floorAt(p);
     }
 
     /// Where a `k` may be laid: it fits, and the node has room for it there.
     pub fn foeGoes(self: *const Node, b: *const Bespoke, p: P, k: actor.Kind) bool {
-        return self.foeFits(b, p) and b.roomAt(p, k);
+        return self.foeFits(b, p, k) and b.roomAt(p, k);
     }
 
     /// Where a torch may be hung: it fits, and the wall and the node have room for it.
@@ -313,7 +319,7 @@ pub const Node = struct {
         const i = grid.Level.idx(p);
         if (b.barrel[i] and !self.barrelFits(b, p)) b.barrel[i] = false;
         if (b.foeAt(p)) |f| {
-            if (!self.foeFits(b, p)) b.dropFoe(f);
+            if (!self.foeFits(b, p, b.foe[f].kind)) b.dropFoe(f);
         }
     }
 
@@ -361,9 +367,47 @@ pub const Atlas = struct {
     node: [MAX_NODES]Node = undefined,
     node_n: usize = 0,
     start: Start = .{},
+    /// Last: the legacy save reader takes every field before it as the format it was.
+    script: script.Script = .{},
 
     pub fn nodes(self: *Atlas) []Node {
         return self.node[0..self.node_n];
+    }
+
+    /// Open bespoke floor with no door, barrel or foe on it; any folk already there aside.
+    pub fn folkFits(self: *const Atlas, n: usize, p: P) bool {
+        if (n >= self.node_n or !grid.Level.inside(p)) return false;
+        const nd = &self.node[n];
+        return switch (nd.plan) {
+            .bespoke => |*b| b.floorAt(p) and nd.doorAt(p) == null and !grid.cellOr(bool, &b.barrel, p, false) and b.foeAt(p) == null,
+            .procgen => false,
+        };
+    }
+
+    pub fn folkGoes(self: *const Atlas, n: usize, p: P) bool {
+        return self.folkFits(n, p) and self.script.folkAt(n, p) == null and self.script.folk_n < script.MAX_FOLK;
+    }
+
+    /// Node `n`'s folk that no longer fit where they stand go, as `parse` would refuse them; whether any did.
+    pub fn pruneFolk(self: *Atlas, n: usize) bool {
+        var pruned = false;
+        var i: usize = self.script.folk_n;
+        while (i > 0) {
+            i -= 1;
+            const f = self.script.folk[i];
+            if (f.node != n or self.folkFits(n, f.at)) continue;
+            self.script.dropFolk(@intCast(i));
+            pruned = true;
+        }
+        return pruned;
+    }
+
+    /// Node `n`'s folk onto its level, where they can still stand.
+    pub fn stampFolk(self: *const Atlas, n: usize, lv: *grid.Level) void {
+        lv.folk = @splat(grid.NO_FOLK);
+        for (self.script.folks(), 0..) |*f, i| {
+            if (f.node == n and lv.walkable(f.at) and lv.who(f.at) == grid.NO_ONE and !lv.hasBarrel(f.at)) lv.putFolk(f.at, i);
+        }
     }
 
     pub fn add(self: *Atlas, plan: Plan) ?usize {
@@ -399,6 +443,7 @@ pub const Atlas = struct {
 
     pub fn remove(self: *Atlas, n: usize) void {
         for (self.node[n].doors(), 0..) |_, k| self.unlink(.{ .node = n, .door = k });
+        self.script.dropNode(n);
         mathx.removeAt(Node, &self.node, &self.node_n, n, null);
         self.renumber(.{ .node = n, .door = 0 }, Atlas.pastNode);
         if (self.start.node == n) self.start = .{} else if (self.start.node > n) self.start.node -= 1;
@@ -649,6 +694,27 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
     try std.testing.expect(wound / RUNS > 1.1);
     std.debug.print("the strand: {d} swamp trees near water, {d} on dirt, {d} at inland ponds across {d} rolls\n", .{ swamp_trees, dirt_trees, inland_trees, RUNS });
     try std.testing.expect(dirt_trees * 10 >= swamp_trees * 8 and inland_trees > 0);
+}
+
+test "the strand grows a few glowing plants on every roll" {
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    try a.load(std.testing.allocator, START);
+    var lv: grid.Level = undefined;
+    const nd = &a.node[a.start.node];
+    var least: usize = grid.CELLS;
+    var most: usize = 0;
+    var total: usize = 0;
+    const RUNS = 50;
+    for (0..RUNS) |i| {
+        nd.stamp(&lv, 0x6C0E +% i *% grid.TEST_SEED_STRIDE);
+        const n = carve.count(&lv, .glow_plant);
+        least = @min(least, n);
+        most = @max(most, n);
+        total += n;
+    }
+    std.debug.print("the strand over {d} rolls: {d} to {d} glow plants, {d:.1} on average\n", .{ RUNS, least, most, @as(f32, @floatFromInt(total)) / RUNS });
+    try std.testing.expect(least >= 1 and most <= 14 and total >= RUNS * 3);
 }
 
 test "the strand reconnects side paths and reliably supplies reachable chests and barrels" {

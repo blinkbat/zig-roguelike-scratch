@@ -14,7 +14,6 @@ pub const ELEMENT: damage.Element = .fire;
 pub const BURN_NOTE = std.fmt.comptimePrint("{d}% burn chance", .{CHANCE});
 pub const STATUS = std.fmt.comptimePrint("Take {d} fire damage per turn, reduced by fire resistance.", .{PER_TURN});
 pub const DESCRIPTION = std.fmt.comptimePrint("Add fire damage to an arrow. {s}.", .{BURN_NOTE});
-pub const FLAVOR = "Pitch, rag and a spark of spite.";
 
 pub const Burn = damage.Lasting(TURNS, i16, seared);
 

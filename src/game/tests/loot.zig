@@ -1,5 +1,6 @@
 const std = @import("std");
 const items = @import("../../play/items.zig");
+const consumable = @import("../../play/consumable.zig");
 const progress = @import("../../play/progress.zig");
 const mathx = @import("../../core/mathx.zig");
 const grid = @import("../../map/grid.zig");
@@ -111,6 +112,7 @@ test "spoils applies to chest and foe quality and every gold pickup route" {
         try std.testing.expectEqual(@as(usize, 0), g.sim.ground.coin_n);
         harness.drawnOut(g);
         if (g.mode == .pause) harness.press(g, BACK);
+        harness.drawnOut(g);
     }
     std.debug.print("Spoils: 100 chest rolls, foe reward, walking coins, bag gold and chest Take all checked\n", .{});
 }
@@ -217,7 +219,7 @@ test "ground pressure preserves closed chest rewards and reserves every possible
     std.debug.print("full ground: chest, turn, Guard and Overwatch untouched, {d} foe rewards reserved\n", .{actor.MAX});
 }
 
-test "new runs gate class skills; underfoot and adjacent loot commit exactly one turn; gold waits for pickup" {
+test "new runs gate class skills; underfoot and adjacent loot commit exactly one turn; gold waits for the loot to close" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     for (heroes.CLASSES) |c| {
@@ -263,9 +265,11 @@ test "new runs gate class skills; underfoot and adjacent loot commit exactly one
     g.character.cursor = 1;
     harness.press(g, CONFIRM);
     try std.testing.expectEqual(@as(i32, 17), g.sim.gold);
-    try std.testing.expectEqual(before + 2 * day.TURN_MINUTES, g.sim.clock.minute);
+    try std.testing.expectEqual(before + day.TURN_MINUTES, g.sim.clock.minute);
     try std.testing.expectEqual(@as(usize, 2), g.sim.ground.n);
-    std.debug.print("progression: 3 starter kits, one-turn item actions, no equip healing; gold row takes one turn and leaves items\n", .{});
+    harness.press(g, BACK);
+    try std.testing.expectEqual(before + 2 * day.TURN_MINUTES, g.sim.clock.minute);
+    std.debug.print("progression: 3 starter kits, one-turn item actions, no equip healing; gold row leaves items, its turn spent on close\n", .{});
 }
 
 test "walking onto a bag opens only its loot and can leave every item behind" {
@@ -312,6 +316,31 @@ test "walking onto a bag opens only its loot and can leave every item behind" {
     std.debug.print("bag bump: 2 selected items, one movement turn, full inventory can cancel and leave all 3 ground items behind\n", .{});
 }
 
+test "consumables lie in a bag, list in its loot, stack when taken and stay put once their stack is full" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
+    const at = P{ .x = 21, .y = 20 };
+    for ([_]consumable.Kind{ .bandage, .bandage, .frost_vial }) |k| try std.testing.expect(g.sim.ground.addSupply(.{ .kind = k, .at = at }));
+    try std.testing.expect(g.sim.ground.bagged(at) and !g.sim.ground.hasItems(at));
+    try std.testing.expect(scene.bagCells(g).isSet(grid.Level.idx(at)));
+    harness.nudge(g, .e);
+    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    const view = character.bookView(g, &g.nearby);
+    try std.testing.expectEqual(@as(usize, 3), view.nearby.len);
+    try std.testing.expectEqual(@as(?consumable.Kind, .bandage), view.nearby[0].supplyOf());
+    harness.press(g, CONFIRM);
+    try std.testing.expectEqual(@as(u8, 1), g.sim.inventory.stacks.get(.bandage));
+    try std.testing.expectEqual(@as(usize, 2), g.sim.ground.supply_n);
+    g.sim.inventory.stacks.set(.bandage, consumable.STACK_MAX);
+    harness.press(g, menu.CHANGE);
+    try std.testing.expectEqual(@as(u8, 1), g.sim.inventory.stacks.get(.frost_vial));
+    try std.testing.expectEqual(consumable.STACK_MAX, g.sim.inventory.stacks.get(.bandage));
+    try std.testing.expectEqual(@as(usize, 1), g.sim.ground.supply_n);
+    try std.testing.expectEqual(@as(usize, 0), g.sim.inventory.n);
+    std.debug.print("consumable bag: 3 listed, 1 taken singly, take all stacks the vial and leaves the bandage a full stack refuses\n", .{});
+}
+
 test "interact pressed mid-turn waits for quiet instead of queuing its button's skill; the turn's log lines wait too" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -348,7 +377,7 @@ test "foes with items drop one bag at their presented death and gold stays with 
     for ([_]bool{ false, true }) |magic| {
         const loot = harness.lootRng(magic);
         for (std.enums.values(actor.Kind)) |kind| {
-            if (!kind.foe()) continue;
+            if (!kind.foe() or actor.row(kind).disguised) continue;
             harness.arena(g, from, &.{});
             const id = harness.spawnAt(g, kind, at, false);
             game.settle(g);
@@ -437,14 +466,14 @@ test "loot groups each cell into one bag and takes only the selected container" 
     try std.testing.expectEqual(@as(usize, 1), g.sim.inventory.n);
     try std.testing.expectEqual(items.Kind.cap, g.sim.inventory.bag[0].kind);
     try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
-    harness.drawnOut(g);
+    try std.testing.expectEqual(minute, g.sim.clock.minute);
     harness.press(g, menu.CHANGE);
     try std.testing.expectEqual(@as(usize, 3), g.sim.inventory.n);
     try std.testing.expectEqual(@as(usize, 2), g.sim.ground.n);
     try std.testing.expectEqual(items.Kind.amulet, g.sim.ground.drops[0].item.kind);
-    try std.testing.expectEqual(minute + 2 * day.TURN_MINUTES, g.sim.clock.minute);
+    try std.testing.expectEqual(minute + day.TURN_MINUTES, g.sim.clock.minute);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
-    std.debug.print("loot: 3 items share one bag; browse is free, single take then take-all spend 2 turns; adjacent and hidden loot preserved\n", .{});
+    std.debug.print("loot: 3 items share one bag; browse is free, single take then take-all spend one turn as the emptied loot closes; adjacent and hidden loot preserved\n", .{});
 }
 
 test "chest interactions reveal before browsing, take all collects gold and preserves excess items" {
@@ -477,10 +506,11 @@ test "chest interactions reveal before browsing, take all collects gold and pres
     try std.testing.expect(g.character.message.n > 0);
     try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     try std.testing.expect(scene.bagCells(g).isSet(grid.Level.idx(at)));
-    harness.drawnOut(g);
     harness.press(g, menu.CHANGE);
-    try std.testing.expectEqual(minute + 2 * day.TURN_MINUTES, g.sim.clock.minute);
+    try std.testing.expectEqual(minute + day.TURN_MINUTES, g.sim.clock.minute);
     harness.press(g, BACK);
+    try std.testing.expectEqual(minute + 2 * day.TURN_MINUTES, g.sim.clock.minute);
+    harness.drawnOut(g);
     harness.pressInteract(g);
     try std.testing.expectEqual(book.Page.loot, g.character.page);
     try std.testing.expectEqual(gold, g.sim.gold);
@@ -558,18 +588,59 @@ test "take all collects gold from a mixed bag even when no item fits" {
     try std.testing.expectEqual(@as(usize, 0), g.sim.ground.coin_n);
     try std.testing.expectEqual(@as(usize, 1), g.sim.ground.n);
     try std.testing.expectEqual(items.BAG_MAX, g.sim.inventory.n);
-    try std.testing.expectEqual(minute + day.TURN_MINUTES, g.sim.clock.minute);
+    try std.testing.expectEqual(minute, g.sim.clock.minute);
     try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
     try std.testing.expect(g.character.message.n > 0);
-    harness.drawnOut(g);
     harness.press(g, menu.CHANGE);
-    try std.testing.expectEqual(minute + day.TURN_MINUTES, g.sim.clock.minute);
+    try std.testing.expectEqual(minute, g.sim.clock.minute);
     _ = g.sim.inventory.remove(0);
     harness.press(g, menu.CHANGE);
-    try std.testing.expectEqual(minute + 2 * day.TURN_MINUTES, g.sim.clock.minute);
+    try std.testing.expectEqual(minute + day.TURN_MINUTES, g.sim.clock.minute);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expect(!scene.bagCells(g).isSet(grid.Level.idx(at)));
-    std.debug.print("mixed bag with full inventory: gold taken, item preserved, empty retry free; one freed slot takes the remaining item\n", .{});
+    std.debug.print("mixed bag with full inventory: gold taken, item preserved, empty retry free; one freed slot takes the remaining item, one turn in all\n", .{});
+}
+
+test "every pickup in one loot visit is one turn, spent however the loot closes" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 21, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const exits = [_][]const u8{ "back", "tab key", "pad view" };
+    for (exits, 0..) |_, exit| {
+        g.sim.inventory = .{};
+        for ([_]items.Kind{ .cap, .ring, .boots }) |kind| try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = kind }, .at = at }));
+        try std.testing.expect(g.sim.ground.gold(at, 5));
+        character.openLoot(g, at);
+        const minute = g.sim.clock.minute;
+        harness.press(g, CONFIRM);
+        harness.press(g, CONFIRM);
+        g.character.cursor = 1;
+        harness.press(g, CONFIRM);
+        try std.testing.expectEqual(@as(usize, 2), g.sim.inventory.n);
+        try std.testing.expectEqual(@as(usize, 0), g.sim.ground.coin_n);
+        try std.testing.expectEqual(book.Page.loot, g.character.page);
+        try std.testing.expectEqual(minute, g.sim.clock.minute);
+        switch (exit) {
+            0 => harness.press(g, BACK),
+            1 => {
+                g.st = .{ .character_page = .inventory };
+                game.update(g, 0);
+            },
+            else => {
+                g.st = .{ .device = .xbox };
+                g.st.pressed.insert(menu.PAUSE);
+                game.update(g, 0);
+            },
+        }
+        try std.testing.expect(!(g.mode == .pause and g.pause_page == .character and g.character.page == .loot));
+        try std.testing.expectEqual(minute + day.TURN_MINUTES, g.sim.clock.minute);
+        harness.drawnOut(g);
+        try std.testing.expectEqual(minute + day.TURN_MINUTES, g.sim.clock.minute);
+        g.mode = .play;
+        g.sim.ground = .{};
+    }
+    std.debug.print("one loot visit: 2 items and gold for one turn, closed by {s}, {s} and {s}\n", .{ exits[0], exits[1], exits[2] });
 }
 
 test "a chest left holding items or gold keeps its bag out of sight, and loose bags out of sight are not drawn" {

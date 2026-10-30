@@ -255,8 +255,8 @@ pub const Gpu = struct {
             if (!f.live()) continue;
             const x = ox + f.at[0] * cell;
             const y = oy + f.at[1] * cell;
-            glowAt(g, x, y, cell * light.GLOW_HALO, cell * light.GLOW_HALO, light.colourOf(light.GLOW_TINT, light.GLOW_HALO_A * f.glow * f.lit));
-            glowAt(g, x, y, cell * light.GLOW_CORE, cell * light.GLOW_CORE, light.colourOf(light.GLOW_TINT, light.GLOW_CORE_A * f.glow * f.lit));
+            glowAt(g, x, y, cell * light.GLOW_HALO, cell * light.GLOW_HALO, light.colourOf(f.tint(), light.GLOW_HALO_A * f.glow * f.lit));
+            if (f.kind == .wall) glowAt(g, x, y, cell * light.GLOW_CORE, cell * light.GLOW_CORE, light.colourOf(f.tint(), light.GLOW_CORE_A * f.glow * f.lit));
         }
     }
 

@@ -1105,3 +1105,49 @@ test "branching before a saved redo state cannot become clean by reusing its his
     }
     std.debug.print("editor branching: saved future discarded, equal history index stays dirty through all 3 undo/redo steps\n", .{});
 }
+
+fn typeInto(ed: *editor.Editor, s: []const u8) void {
+    var d = @import("../core/input.zig").Desk{};
+    for (s) |c| {
+        d.typed.buf[d.typed.n] = c;
+        d.typed.n += 1;
+    }
+    ed.desk = d;
+    editor.plot.keys(ed);
+}
+
+test "folk: placing one opens its words, typing is one undo step, and nothing else may share its cell" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    ed.tool = .paint;
+    placement.laySpan(ed, .{ .from = .{ .x = 4, .y = 5 }, .erase = false, .shape = .rect }, .{ .x = 9, .y = 8 });
+    const at = P{ .x = 6, .y = 6 };
+    click(ed, .folk, at);
+    try std.testing.expect(ed.modal == .dialogs);
+    try std.testing.expectEqual(editor.plot.Pick{ .folk = 0 }, ed.plot.pick);
+    ed.modal = .none;
+    click(ed, .{ .foe = .rat }, at);
+    click(ed, .barrel, at);
+    try std.testing.expect(ed.map.node[0].plan.bespoke.foeAt(at) == null);
+    try std.testing.expect(!ed.map.node[0].plan.bespoke.barrel[grid.Level.idx(at)]);
+    ed.modal = .dialogs;
+    ed.plot.focus = .{ .folk = 0 };
+    ed.plot.field.set("");
+    ed.gesture();
+    const before = ed.history.at;
+    typeInto(ed, "Old ");
+    typeInto(ed, "Wenna");
+    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.folk[0].name.text());
+    try std.testing.expectEqual(before + 1, ed.history.at);
+    ed.desk = .{ .paste = true, .paste_text = "x" ** atlas.script.WHO_MAX };
+    editor.plot.keys(ed);
+    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.folk[0].name.text());
+    ed.desk = .{ .undo = true };
+    editor.plot.keys(ed);
+    try std.testing.expectEqualStrings("", ed.map.script.folk[0].name.text());
+    try std.testing.expect(ed.plot.focus == null);
+    ed.modal = .none;
+    paintClick(ed, .wall, at);
+    try std.testing.expectEqual(@as(u8, 0), ed.map.script.folk_n);
+    std.debug.print("editor folk: placement opens its words, foe and barrel refused on it, typing undone in one step, a wall takes it away\n", .{});
+}

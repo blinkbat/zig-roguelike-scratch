@@ -7,19 +7,26 @@ const gen = @import("gen.zig");
 const P = mathx.P;
 
 pub const NAME = "caustic gas";
+pub const HEALING_NAME = "healing gas";
 /// Brogue's `DF_BLOAT_DEATH`.
 pub const BURST: u16 = 2000;
+/// Brogue's bloodwort pod bursting.
+pub const HEALING_BURST: u16 = 350;
 /// Brogue updates gas twice a hundred ticks, which is one turn.
 pub const PASSES: usize = 2;
 /// A cell holding less keeps its gas: it takes from a gassed-up neighbour and gives none on.
 pub const GASSED_UP: u16 = 20;
-/// The share of passes a cell that held gas loses a unit.
+/// The share of passes a cell that held gas loses a unit; Brogue's healing gas dissipates as quickly.
 pub const DISSIPATE: f32 = 0.5;
-/// Brogue's `T_CAUSES_DAMAGE`: a fifteenth of the body's full hp a turn.
+/// Brogue's `T_CAUSES_DAMAGE` and `T_CAUSES_HEALING` alike: a fifteenth of the body's full hp a turn.
 const HARM_PART: i32 = 15;
 
 pub fn harm(max_hp: i32) i32 {
     return @max(1, @divTrunc(max_hp, HARM_PART));
+}
+
+pub fn heal(max_hp: i32) i32 {
+    return harm(max_hp);
 }
 
 fn any(lv: *const grid.Level) bool {
@@ -28,17 +35,29 @@ fn any(lv: *const grid.Level) bool {
 
 /// A floor without gas rolls nothing.
 pub fn turn(lv: *grid.Level, rng: *mathx.Rng) void {
-    for (0..PASSES) |_| spread(lv, rng);
+    for (0..PASSES) |_| {
+        for (std.enums.values(grid.Gas)) |kind| spread(lv, kind, rng);
+    }
+}
+
+/// The ground it grew on, under a cloud of healing gas.
+pub fn burst(lv: *grid.Level, p: P) bool {
+    const t = lv.at(p);
+    if (!t.bursts()) return false;
+    lv.set(p, t.ground().?);
+    lv.release(.healing, p, HEALING_BURST);
+    return true;
 }
 
 /// Randomly distribute remainders so spreading conserves gas.
-fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
-    const box = reach(lv) orelse return;
+fn spread(lv: *grid.Level, kind: grid.Gas, rng: *mathx.Rng) void {
+    const vol = lv.volumes(kind);
+    const box = reach(vol) orelse return;
     var next = [_]u32{0} ** grid.CELLS;
     var cells = box.cells();
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
-        const v = lv.gas[i];
+        const v = vol[i];
         if (v == 0) continue;
         if (v < GASSED_UP) {
             next[i] += v;
@@ -60,16 +79,16 @@ fn spread(lv: *grid.Level, rng: *mathx.Rng) void {
     cells = box.cells();
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
-        if (next[i] > 0 and lv.gas[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
-        lv.gas[i] = @intCast(@min(next[i], std.math.maxInt(u16)));
+        if (next[i] > 0 and vol[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
+        vol[i] = @intCast(@min(next[i], std.math.maxInt(u16)));
     }
 }
 
 /// A cell wider than the gas all round; the high corner exclusive.
-fn reach(lv: *const grid.Level) ?grid.Box {
+fn reach(vol: *const [grid.CELLS]u16) ?grid.Box {
     var lo = grid.SIZE;
     var hi = P{ .x = -1, .y = -1 };
-    for (&lv.gas, 0..) |v, i| {
+    for (vol, 0..) |v, i| {
         if (v == 0) continue;
         const p = grid.Level.of(i);
         lo = lo.min(p);
@@ -112,12 +131,12 @@ test "a gassed-up cell shares its gas evenly with its open neighbours, and a thi
     const at = P{ .x = 20, .y = 20 };
     var lv = grid.openFloor();
     lv.addGas(at, 9 * 100);
-    spread(&lv, &rng);
+    spread(&lv, .caustic, &rng);
     for (mathx.ALL_DIRS) |d| try std.testing.expectEqual(@as(u16, 100), lv.gasAt(at.add(d.delta())));
     try std.testing.expect(lv.gasAt(at) >= 99);
     var thin = grid.openFloor();
     thin.addGas(at, GASSED_UP - 1);
-    spread(&thin, &rng);
+    spread(&thin, .caustic, &rng);
     for (mathx.ALL_DIRS) |d| try std.testing.expectEqual(@as(u16, 0), thin.gasAt(at.add(d.delta())));
     try std.testing.expect(thin.gasAt(at) >= GASSED_UP - 2);
 }
@@ -179,4 +198,27 @@ test "gas eats a fifteenth of full hp a turn and never less than one" {
     try std.testing.expectEqual(@as(i32, 1), harm(4));
     try std.testing.expectEqual(@as(i32, 1), harm(24));
     try std.testing.expectEqual(@as(i32, 2), harm(40));
+    try std.testing.expectEqual(@as(i32, 2), heal(40));
+}
+
+test "a glow plant bursts into healing gas over its grass, which spreads and clears apart from caustic gas" {
+    var rng = mathx.Rng.init(0x6A5);
+    var lv = grid.openFloor();
+    const at = OPEN_AT;
+    lv.set(at, .glow_plant);
+    try std.testing.expect(!burst(&lv, at.add(.{ .x = 1, .y = 0 })));
+    try std.testing.expect(burst(&lv, at));
+    try std.testing.expectEqual(grid.Tile.grass, lv.at(at));
+    try std.testing.expectEqual(HEALING_BURST, lv.volumeAt(.healing, at));
+    try std.testing.expect(!lv.gassy(at));
+    var turns: usize = 0;
+    var most: usize = 0;
+    while (std.mem.indexOfNone(u16, &lv.healing, &.{0}) != null) : (turns += 1) {
+        try std.testing.expect(turns < NEVER);
+        turn(&lv, &rng);
+        try std.testing.expect(!any(&lv));
+        most = @max(most, grid.CELLS - std.mem.count(u16, &lv.healing, &.{0}));
+    }
+    std.debug.print("a glow plant's healing gas on open floor: gone in {d} turns, over at most {d} cells\n", .{ turns, most });
+    try std.testing.expect(turns > 5 and most > 9);
 }

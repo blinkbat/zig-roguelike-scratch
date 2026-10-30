@@ -9,6 +9,10 @@ const bleeding = @import("bleeding.zig");
 const resilience = @import("resilience.zig");
 const clock = @import("clock.zig");
 const pinning = @import("pinning.zig");
+const shock = @import("shock.zig");
+const sunder = @import("sunder.zig");
+const blind = @import("blind.zig");
+const confusion = @import("confusion.zig");
 const ward = @import("ward.zig");
 const heroes = @import("hero.zig");
 const wording = @import("../core/wording.zig");
@@ -53,6 +57,13 @@ pub const Kind = enum {
     pib,
     beefy_pib,
     bandit_crossbowman,
+    bandit_netter,
+    bandit_shieldbearer,
+    frost_wisp,
+    pyre_bloat,
+    pib_shaman,
+    bog_leech,
+    mimic,
 
     pub fn foe(k: Kind) bool {
         return row(k).foe_type != null;
@@ -68,6 +79,13 @@ pub const Kind = enum {
 
     pub fn bursts(k: Kind) bool {
         return row(k).blow == .burst;
+    }
+
+    pub fn gasses(k: Kind) bool {
+        return switch (row(k).blow) {
+            .burst => |b| b == .gas,
+            .strike => false,
+        };
     }
 };
 
@@ -127,26 +145,42 @@ pub const Strike = struct {
     slain: ?[:0]const u8 = null,
     bleeds: u32 = 0,
     stuns: u32 = 0,
+    /// Percent chance, before cold resistance, to chill.
+    chills: u32 = 0,
+    /// Its damage is this element's, resisted as such instead of by armour.
+    element: ?damage.Element = null,
+    /// A landed blow pushes the struck body a cell straight away.
+    knocks: bool = false,
 
     pub fn roll(s: Strike, rng: *mathx.Rng) i32 {
         return s.hit.roll(rng);
     }
 };
 
+pub const Burst = enum { gas, fire };
+
 pub const Blow = union(enum) {
     strike: Strike,
-    /// It dies instead (Brogue's kamikaze), and bursts into caustic gas however it dies.
-    burst,
+    /// It dies instead (Brogue's kamikaze), and bursts however it dies.
+    burst: Burst,
 };
 
-pub const Movement = enum { ground, flying };
+/// Swimming bodies keep to deep water and shallows.
+pub const Movement = enum { ground, flying, swimming };
 pub const FoeType = enum { beast, humanoid, aberration, undead, construct };
 
 pub const Ranged = struct { range: i32, retreat: i32 };
 
+/// Thrown every `every` turns at a hero within `range`, holding it for `pins` turns.
+pub const Net = struct { range: i32, pins: u8, every: u8 };
+
+/// Every `every` turns: heals the most hurt `kin` within `reach` by `amount`, or else wakes the sleeping ones.
+pub const Mend = struct { reach: i32, amount: i32, every: u8, kin: []const Kind };
+
 pub const Row = struct {
     armour: i32 = 0,
     stun_resist: u8 = 0,
+    fright_resist: u8 = 0,
     name: [:0]const u8,
     movement: Movement,
     foe_type: ?FoeType,
@@ -169,7 +203,17 @@ pub const Row = struct {
     pace: i32 = clock.TURN,
     /// Its turns from one sweep, a blow at every cell round it, to the next; 0, it never sweeps.
     sweep_every: u8 = 0,
+    /// Unseen, even where lit, until the hero is beside it.
+    lurks: bool = false,
+    /// Spawns as a closed chest, inert until opened.
+    disguised: bool = false,
+    /// Backs off from a hero this close, and comes no closer.
+    keeps: i32 = 0,
+    net: ?Net = null,
+    mends: ?Mend = null,
 };
+
+pub const LURK_REACH: i32 = 1;
 
 pub const SWEEP_VERB = "sweeps";
 pub const SWEEP_CELLS = mathx.ALL_DIRS.len;
@@ -183,25 +227,55 @@ pub fn sweep(lv: *const grid.Level, from: P) Swept {
 pub const FLIT: f32 = 0.33;
 pub const FRIGHT_REACH: i32 = 5;
 pub const FLEE_TURNS: u8 = 4;
+pub const FRIGHT_STATUS = "Runs from the hero, attacking only when cornered.";
 
 const SLAM = Blow{ .strike = .{ .hit = .{ .lo = 2, .hi = 5 }, .verb = "slams", .slain = "crushed" } };
+const NET = Net{ .range = 5, .pins = 2, .every = 4 };
+const MEND = Mend{ .reach = 5, .amount = 8, .every = 3, .kin = &.{ .pib, .beefy_pib } };
+const ICY = damage.Resists.init(.{ .cold = 100, .fire = -50, .chaos = 0, .lightning = 0 });
+const FIERY = damage.Resists.init(.{ .cold = -50, .fire = 100, .chaos = 0, .lightning = 0 });
 
 pub fn innateResist(k: Kind, status: resilience.Kind) u8 {
-    return if (status == .stun) row(k).stun_resist else 0;
+    return switch (status) {
+        .stun => row(k).stun_resist,
+        .fright => row(k).fright_resist,
+        else => 0,
+    };
 }
 
 pub fn row(k: Kind) Row {
     return switch (k) {
         inline .archer, .wizard, .knight => |h| heroRow(@field(heroes.Class, @tagName(h))),
         .rat => .{ .name = "rat", .movement = .ground, .foe_type = .beast, .hp = 6, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "bites", .slain = "bitten to death" } } },
-        .slime => .{ .name = "slime", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half },
+        .slime => .{ .name = "slime", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half, .fright_resist = 100 },
         .slime_half => smaller(.slime, "half slime", .slime_quarter),
         .slime_quarter => smaller(.slime_half, "quarter slime", null),
-        .bloat => .{ .name = "bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .burst, .flits = true },
+        .bloat => .{ .name = "bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .{ .burst = .gas }, .flits = true, .fright_resist = 100 },
         .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .slain = "stabbed to death", .bleeds = 30 } }, .flees = true },
-        .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .slain = "beaten to death", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .armour = 20 },
-        .bandit_crossbowman => .{ .name = "bandit crossbowman", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15 },
+        .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .slain = "beaten to death", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .fright_resist = 50, .armour = 20 },
+        .bandit_crossbowman => .{ .name = "bandit crossbowman", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15, .fright_resist = 25 },
+        .bandit_netter => .{ .name = "bandit netter", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "clubs", .slain = "clubbed down" } }, .keeps = 2, .net = NET, .armour = 10, .fright_resist = 25 },
+        .bandit_shieldbearer => .{ .name = "bandit shieldbearer", .movement = .ground, .foe_type = .humanoid, .hp = 24, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bashes", .slain = "battered down", .knocks = true } }, .armour = 40, .stun_resist = 75, .fright_resist = 50 },
+        .frost_wisp => .{ .name = "frost wisp", .movement = .flying, .foe_type = .aberration, .hp = 8, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "touches", .slain = "frozen solid", .element = .cold, .chills = 100 } }, .flits = true, .resists = ICY, .fright_resist = 100 },
+        .pyre_bloat => .{ .name = "pyre bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .{ .burst = .fire }, .flits = true, .resists = FIERY, .fright_resist = 100 },
+        .pib_shaman => .{ .name = "pib shaman", .movement = .ground, .foe_type = .beast, .hp = 12, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "pokes", .slain = "poked to death" } }, .keeps = 3, .mends = MEND },
+        .bog_leech => .{ .name = "bog leech", .movement = .swimming, .foe_type = .beast, .hp = 12, .sight = 5, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bites", .slain = "drained dry", .bleeds = 50 } }, .lurks = true, .fright_resist = 100 },
+        .mimic => .{ .name = "mimic", .movement = .ground, .foe_type = .aberration, .hp = 24, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 10, .fright_resist = 100 },
     };
+}
+
+/// Where a `k` may be set down: a swimmer in water, a mimic where a chest could stand, the rest on any vacant cell.
+pub fn dwells(k: Kind, lv: *const grid.Level, p: P) bool {
+    const r = row(k);
+    if (r.movement == .swimming) return grid.Level.inside(p) and lv.at(p).wet() and !lv.taken(p) and lv.folkAt(p) == null and !lv.hasBarrier(p);
+    if (r.disguised) return lv.vacant(p) and lv.at(p).rewards() and lv.doorAt(p) == null;
+    return lv.vacant(p);
+}
+
+/// Where a `k` may be pushed or pulled to: wherever its feet, or its fins, can go.
+pub fn holds(k: Kind, lv: *const grid.Level, p: P) bool {
+    if (row(k).movement == .swimming) return dwells(k, lv, p);
+    return lv.vacant(p);
 }
 
 fn heroRow(comptime c: heroes.Class) Row {
@@ -224,6 +298,7 @@ const PLURALS = blk: {
     var t = std.EnumArray(Kind, [:0]const u8).initUndefined();
     for (std.enums.values(Kind)) |k| t.set(k, row(k).name ++ "s");
     t.set(.bandit_crossbowman, "bandit crossbowmen");
+    t.set(.bog_leech, "bog leeches");
     break :blk t;
 };
 
@@ -243,15 +318,44 @@ pub const Actor = struct {
     resilience: resilience.State = .{},
     clock: clock.Clock = .{},
     pin: pinning.Pin = .{},
+    shock: shock.Shock = .{},
+    sunder: sunder.Sunder = .{},
+    blind: blind.Blind = .{},
+    confusion: confusion.Confusion = .{},
     ward: ward.Ward = .{},
     tactics: @import("tactics.zig").State = .{},
     /// Its turns left running from the hero.
     fright: u8 = 0,
     /// Its turns until it can sweep again.
     sweep_in: u8 = 0,
+    /// Its turns until it can throw a net or mend again.
+    ready_in: u8 = 0,
+    /// Lurking out of the hero's reach.
+    submerged: bool = false,
+    /// Standing as a closed chest.
+    disguised: bool = false,
+    /// The ground its chest stands on.
+    under: grid.Tile = .floor,
 
     pub fn of(k: Kind, at: P) Actor {
-        return .{ .kind = k, .at = at, .hp = row(k).hp, .max = row(k).hp, .resists = row(k).resists };
+        return .{ .kind = k, .at = at, .hp = row(k).hp, .max = row(k).hp, .resists = row(k).resists, .submerged = row(k).lurks, .disguised = row(k).disguised };
+    }
+
+    /// Not seen as a body even where lit.
+    pub fn veiled(self: Actor) bool {
+        return self.submerged or self.disguised;
+    }
+
+    pub fn seenIn(self: Actor, lv: *const grid.Level) bool {
+        return lv.isLit(self.at) and !self.veiled();
+    }
+
+    /// Its chest flung open: the ground comes back and it wakes.
+    pub fn unmask(self: *Actor, lv: *grid.Level) void {
+        if (!self.disguised) return;
+        lv.set(self.at, self.under);
+        self.disguised = false;
+        self.awake = true;
     }
 
     pub fn hurt(self: Actor) bool {
@@ -266,6 +370,17 @@ pub const Actor = struct {
         return self.kind.foe();
     }
 
+    pub fn afflicted(self: Actor) bool {
+        return self.shock.turns > 0 or self.sunder.turns > 0 or self.blind.turns > 0 or self.confusion.turns > 0;
+    }
+
+    /// One of its turns spent under shock, sunder, blindness and confusion.
+    pub fn wearAfflictions(self: *Actor) Afflicted {
+        self.shock.wear();
+        self.sunder.wear();
+        return .{ .blinded = self.blind.wear(), .confused = self.confusion.wear() };
+    }
+
     /// The turn is over: what started or split off in it is no longer fresh.
     pub fn settle(self: *Actor) void {
         self.waits = false;
@@ -274,6 +389,9 @@ pub const Actor = struct {
         }
     }
 };
+
+/// What a turn worn under them was.
+pub const Afflicted = struct { blinded: bool = false, confused: bool = false };
 
 pub const MAX: usize = 64;
 
@@ -288,12 +406,12 @@ test "heroes and foes share independent status buildup with innate beefy pib stu
         for (std.enums.values(resilience.Kind)) |status| {
             var n: usize = 0;
             for (0..1000) |_| n += @intFromBool(a.takeStatus(status, &rng));
-            try std.testing.expectEqual(@as(usize, if (kind == .beefy_pib and status == .stun) 1 else mathx.PERCENT / resilience.GAIN), n);
+            try std.testing.expectEqual(@as(usize, (mathx.PERCENT - innateResist(kind, status) + resilience.GAIN - 1) / resilience.GAIN), n);
         }
         for (0..resilience.EXPIRY + 1) |_| a.settle();
         try std.testing.expectEqual(@as(u8, 0), a.resilience.peak().percent);
     }
-    std.debug.print("status buildup: {d} bodies, all {d} ailments; beefy pib has {d}% innate stun resistance\n", .{ kinds.len, std.enums.values(resilience.Kind).len, row(.beefy_pib).stun_resist });
+    std.debug.print("status buildup: {d} bodies, all {d} ailments; beefy pib has {d}% innate stun and {d}% fright resistance\n", .{ kinds.len, std.enums.values(resilience.Kind).len, row(.beefy_pib).stun_resist, row(.beefy_pib).fright_resist });
 }
 
 pub const Tally = struct { left: usize = 0, total: usize = 0 };
@@ -335,9 +453,18 @@ pub const Pool = struct {
         std.debug.assert(self.n < MAX);
         const id = idOf(self.n);
         self.items[self.n] = a;
+        if (a.disguised) {
+            self.items[self.n].under = lv.at(a.at);
+            lv.set(a.at, .chest);
+        }
         self.n += 1;
         lv.stand(a.at, id);
         return id;
+    }
+
+    /// Lurkers out of reach of the hero at `hero` sink; those within it rise.
+    pub fn surface(self: *Pool, hero: P) void {
+        for (self.slice()) |*a| a.submerged = row(a.kind).lurks and mathx.dist(a.at, hero) > LURK_REACH;
     }
 
     pub fn get(self: *Pool, id: u16) ?*Actor {
@@ -412,9 +539,28 @@ const Step = struct {
     }
 };
 
-/// Brogue's `monsterAvoids`: gas is shunned by a body not already in some.
+/// Brogue's `monsterAvoids`: gas and flames are shunned by a body not already in some.
 fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
-    return lv.gassy(from.add(d.delta())) and !lv.gassy(from);
+    const to = from.add(d.delta());
+    return (lv.gassy(to) and !lv.gassy(from)) or (lv.burning(to) and !lv.burning(from));
+}
+
+/// The water step that most closes on `toward`, by steps then by the straighter line; none that gains.
+pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
+    var best: ?mathx.Dir = null;
+    var best_d = mathx.dist(from, toward);
+    var best_line = mathx.distEuclid(from, toward);
+    for (mathx.ALL_DIRS) |d| {
+        const to = from.add(d.delta());
+        if (!dwells(k, lv, to)) continue;
+        const gap = mathx.dist(to, toward);
+        const line = mathx.distEuclid(to, toward);
+        if (gap > best_d or (gap == best_d and line >= best_line)) continue;
+        best = d;
+        best_d = gap;
+        best_line = line;
+    }
+    return best;
 }
 
 /// Downhill on `flow`, a walked-distance map from the hero.
@@ -440,6 +586,11 @@ fn climb(lv: *const grid.Level, from: P, id: u16, flow: *const [grid.CELLS]i32, 
         }
     }
     return best;
+}
+
+/// A confused step: any free cell, gas or not.
+pub fn stumble(lv: *const grid.Level, from: P, id: u16, rng: *mathx.Rng) ?mathx.Dir {
+    return rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, Step{ .lv = lv, .from = from, .id = id }, Step.free);
 }
 
 /// Brogue's `randValidDirectionFrom`: any step it may take and does not shun, or one onto `prey`.
@@ -518,7 +669,7 @@ test "a slime with no free cell beside it waits to split until a blow finds one"
 }
 
 test "every foe a floor is stocked with is its own family, and a slime ends as four quarters at most" {
-    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib, .beefy_pib, .bandit_crossbowman }, &FOES);
+    try std.testing.expectEqualSlices(Kind, &.{ .rat, .slime, .bloat, .pib, .beefy_pib, .bandit_crossbowman, .bandit_netter, .bandit_shieldbearer, .frost_wisp, .pyre_bloat, .pib_shaman, .bog_leech, .mimic }, &FOES);
     try std.testing.expectEqual(Kind.slime, Kind.slime_quarter.family());
     try std.testing.expectEqual(Kind.rat, Kind.rat.family());
     try std.testing.expectEqual(@as(usize, 4), most(.slime));
@@ -607,4 +758,44 @@ test "a flit goes every open way about evenly, onto its prey too, and never into
     for ([_]mathx.Dir{ .ne, .e, .se, .s, .sw, .nw }) |d| {
         try std.testing.expect(counts.get(d) * 6 > TRIES * 85 / 100 and counts.get(d) * 6 < TRIES * 115 / 100);
     }
+}
+
+test "a leech swims only through water toward the hero and surfaces only beside it" {
+    var lv = grid.openFloor();
+    var cells = grid.Cells.of(.{ .x = 10, .y = 10 }, .{ .x = 16, .y = 11 });
+    while (cells.next()) |p| lv.set(p, if (p.x < 13) .water else .shallows);
+    var pool = Pool{};
+    const id = pool.spawn(&lv, Actor.of(.bog_leech, .{ .x = 10, .y = 10 }));
+    const hero = P{ .x = 18, .y = 10 };
+    var at = pool.get(id).?.at;
+    var steps: usize = 0;
+    while (swim(&lv, at, .bog_leech, hero)) |d| : (steps += 1) {
+        pool.move(&lv, id, at.add(d.delta()));
+        at = pool.get(id).?.at;
+        try std.testing.expect(lv.at(at).wet());
+    }
+    std.debug.print("bog leech: {d} strokes to the last water cell, {d} from a hero on dry ground\n", .{ steps, mathx.dist(at, hero) });
+    try std.testing.expectEqual(P{ .x = 15, .y = 10 }, at);
+    pool.surface(hero);
+    lv.lit = @splat(true);
+    try std.testing.expect(pool.get(id).?.submerged and !pool.get(id).?.seenIn(&lv));
+    pool.surface(.{ .x = 16, .y = 11 });
+    try std.testing.expect(!pool.get(id).?.submerged);
+    try std.testing.expect(dwells(.bog_leech, &lv, .{ .x = 11, .y = 10 }) and !dwells(.bog_leech, &lv, .{ .x = 11, .y = 12 }));
+    try std.testing.expect(!holds(.bog_leech, &lv, .{ .x = 16, .y = 10 }) and holds(.rat, &lv, .{ .x = 16, .y = 10 }));
+}
+
+test "a mimic stands as a closed chest on its own ground until unmasked" {
+    var lv = grid.openFloor();
+    lv.set(.{ .x = 5, .y = 5 }, .grass);
+    var pool = Pool{};
+    try std.testing.expect(dwells(.mimic, &lv, .{ .x = 5, .y = 5 }) and !dwells(.mimic, &lv, .{ .x = 0, .y = 0 }));
+    const id = pool.spawn(&lv, Actor.of(.mimic, .{ .x = 5, .y = 5 }));
+    const m = pool.get(id).?;
+    try std.testing.expect(m.disguised and m.veiled() and !m.awake);
+    try std.testing.expectEqual(grid.Tile.chest, lv.at(m.at));
+    try std.testing.expectEqual(id, lv.who(m.at));
+    m.unmask(&lv);
+    try std.testing.expectEqual(grid.Tile.grass, lv.at(m.at));
+    try std.testing.expect(!m.disguised and m.awake);
 }

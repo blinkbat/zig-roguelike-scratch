@@ -202,6 +202,9 @@ pub fn shoot(g: *game.Game) !void {
     try checkMapEdge(g, target);
     try cinemaWater(g, target);
 
+    poseBridges(g);
+    try capture(g, target, SHOTS_DIR ++ "/bridges.png");
+
     poseForest(g);
     try capture(g, target, SHOTS_DIR ++ "/forest.png");
     studyAt(g, true, MORNING);
@@ -316,8 +319,9 @@ pub fn shootEditor(g: *game.Game) !void {
 }
 
 pub fn shootUi(g: *game.Game) !void {
-    try shootTactics(g);
     try std.fs.cwd().makePath(SHOTS_DIR);
+    try shootTalk(g);
+    try shootTactics(g);
     try book.verifyCards(&g.face);
     try book.verifyStats(&g.face);
     try shootCharacter(g);
@@ -358,6 +362,34 @@ fn shootInspect(g: *game.Game) !void {
         g.sim.lv.set(at, .grass);
         g.inspecting = .{ .actor = id };
         try capture(g, target, SHOTS_DIR ++ "/inspect-enemy-grass-" ++ suffix ++ ".png");
+        g.mode = .play;
+    }
+}
+
+fn shootTalk(g: *game.Game) !void {
+    const screen = g.screen;
+    defer g.screen = screen;
+    const w = try std.heap.c_allocator.create(atlas.Atlas);
+    defer std.heap.c_allocator.destroy(w);
+    defer g.sim.map = null;
+    w.* = .{};
+    const n = w.add(.{ .bespoke = .{} }).?;
+    var floor = grid.Box.sized(.{ .x = 6, .y = 4 }, 20, 10).cells();
+    while (floor.next()) |p| w.node[n].plan.bespoke.tile[grid.Level.idx(p)] = .floor;
+    w.start = .{ .node = n, .at = .{ .x = 12, .y = 8 } };
+    try @import("../map/script_text.zig").readAlone(editor.SHOT_SCRIPT, &w.script, w.node_n);
+    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }, .{ "720", "1080" }) |size, suffix| {
+        g.screen = size;
+        game.beginMapAt(g, w, w.start, 5);
+        g.st = .{ .device = .keys };
+        g.sim.plot = .{};
+        game.talking.speak(g, 0);
+        const target = try renderTarget(g);
+        defer rl.unloadRenderTexture(target);
+        try capture(g, target, SHOTS_DIR ++ "/talk-choices-" ++ suffix ++ ".png");
+        g.sim.plot.pick(&w.script, 0, g.sim.world(), &g.sim.log);
+        try capture(g, target, SHOTS_DIR ++ "/talk-line-" ++ suffix ++ ".png");
+        g.sim.plot = .{};
         g.mode = .play;
     }
 }
@@ -431,6 +463,21 @@ fn shootTactics(g: *game.Game) !void {
     skills.confirmAim(g);
     game.harness.drawnOut(g);
     try capture(g, target, SHOTS_DIR ++ "/tactics/caltrops-laid.png");
+    game.harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    g.sim.growth.ranks.set(.fire_wall, 1);
+    _ = game.harness.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
+    const chilled = game.harness.spawnAt(g, .rat, .{ .x = 21, .y = 22 }, false);
+    const frightened = game.harness.spawnAt(g, .pib, .{ .x = 18, .y = 22 }, false);
+    g.sim.pool.get(chilled).?.chill.apply();
+    g.sim.pool.get(frightened).?.fright = actor.FLEE_TURNS;
+    skills.useSkill(g, .{ .act = .fire_wall, .by = .x });
+    g.mode.aim.mark = .{ .x = 23, .y = 19 };
+    skills.confirmAim(g);
+    g.mode.aim.mark = .{ .x = 23, .y = 21 };
+    try capture(g, target, SHOTS_DIR ++ "/tactics/fire-wall-preview.png");
+    skills.confirmAim(g);
+    game.harness.drawnOut(g);
+    try capture(g, target, SHOTS_DIR ++ "/tactics/fire-wall-chill-fright.png");
     _ = g.sim.inventory.add(.{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .crit, .value = 5 }, null, null } });
     game.character.openCharacter(g);
     g.character.choose(.inventory);
@@ -1177,7 +1224,7 @@ fn shootHud(g: *game.Game) !void {
         g.pic.settleResources(&g.sim);
         g.pic.xp_shown = study.xp;
         if (study.ailing) {
-            body.status = .initDefault(0, .{ .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1 });
+            body.status = .initDefault(0, .{ .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1, .shocked = 2, .sundered = 3, .blinded = 1, .confused = 2 });
             body.resilience.meters.set(.stun, .{ .percent = 75, .turns = 4 });
             body.resilience.meters.set(.bleed, .{ .percent = 25, .turns = 5 });
             body.status.set(.resistant, 5);
@@ -1310,6 +1357,13 @@ const WADERS = [_]Wader{
     .{ .kind = .wizard, .at = .{ .x = 20, .y = 17 } },
     .{ .kind = .knight, .at = .{ .x = 26, .y = 17 } },
     .{ .kind = .bandit_crossbowman, .at = .{ .x = 28, .y = 17 } },
+    .{ .kind = .bandit_netter, .at = .{ .x = 20, .y = 15 } },
+    .{ .kind = .bandit_shieldbearer, .at = .{ .x = 23, .y = 15 } },
+    .{ .kind = .frost_wisp, .at = .{ .x = 26, .y = 15 } },
+    .{ .kind = .pyre_bloat, .at = .{ .x = 28, .y = 15 } },
+    .{ .kind = .pib_shaman, .at = .{ .x = 23, .y = 25 } },
+    .{ .kind = .mimic, .at = .{ .x = 26, .y = 25 } },
+    .{ .kind = .bog_leech, .at = .{ .x = 19, .y = 21 } },
 };
 
 comptime {
@@ -1326,7 +1380,7 @@ fn poseWaterSteps(g: *game.Game) void {
     game.harness.grassOver(&g.sim.lv);
     var cells = grid.Cells.of(.{ .x = 17, .y = 15 }, .{ .x = 30, .y = 26 });
     while (cells.next()) |p| g.sim.lv.set(p, if (p.x < 19) .water else .shallows);
-    for (WADERS) |w| _ = game.harness.spawnAt(g, w.kind, w.at, false);
+    for (WADERS) |w| g.sim.pool.get(game.harness.spawnAt(g, w.kind, w.at, false)).?.unmask(&g.sim.lv);
     game.settle(g);
     g.st = .{};
     for (g.sim.pool.slice(), 0..) |a, i| {
@@ -1373,6 +1427,34 @@ fn poseForest(g: *game.Game) void {
         }
     }
     posed(g, g.sim.outdoors);
+}
+
+fn poseBridges(g: *game.Game) void {
+    game.harness.arena(g, .{ .x = 28, .y = 18 }, &.{});
+    game.harness.grassOver(&g.sim.lv);
+    const rows = [_][]const u8{
+        "..=....==...===.....",
+        "ss=ssss==sss===sssss",
+        "~~=~~~~==~~~===~~~~~",
+        "~~=~~~~==~~~===~~~~~",
+        "~~=~~~~==~~~========",
+        "~~=~~~~==~~~===~~~~~",
+        "~~=~~~~==~~~===~~~~~",
+        "ss=ssss==sss===sssss",
+        "..=....==...===.....",
+    };
+    for (rows, 0..) |row, y| {
+        for (row, 0..) |ch, x| {
+            const t: grid.Tile = switch (ch) {
+                '=' => .bridge,
+                '~' => .water,
+                's' => .shallows,
+                else => continue,
+            };
+            g.sim.lv.set(.{ .x = 15 + @as(i32, @intCast(x)), .y = 14 + @as(i32, @intCast(y)) }, t);
+        }
+    }
+    studyAt(g, true, day.NOON);
 }
 
 fn poseShadowStudy(g: *game.Game, hour: f32, outdoors: bool) void {
@@ -1698,7 +1780,7 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     g.light.settle(&g.sim.lv);
     intoTarget(g, target);
     const c = game.scene.Cam.of(g);
-    var flame_buf: [grid.MAX_TORCHES]light.Flame = undefined;
+    var flame_buf: [light.LIGHTS]light.Flame = undefined;
     _ = game.scene.drawMirrors(g, c, game.scene.viewBox(g, c), &.{}, g.light.flames(&g.sim.lv, &flame_buf));
     outOfTarget(g);
     for ([_]rl.RenderTexture2D{ g.sprites.mirror.?, g.sprites.mirror_memory.? }) |t| {

@@ -33,8 +33,8 @@ pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
 pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
     var near = Nearest{ .from = from };
     for (pool.slice()) |a| {
-        if (a.alive and a.foe() and lv.isLit(a.at) and aimable(lv, from, a.at)) {
-            const flight = preview(lv, from, a.at);
+        if (a.alive and a.foe() and a.seenIn(lv) and aimable(lv, from, a.at)) {
+            const flight = previewAmong(lv, pool, from, a.at);
             if (flight.impact()) |at| if (at.eq(a.at)) {
                 near.offer(a.at);
             };
@@ -67,14 +67,19 @@ pub const Nearest = struct {
 };
 
 pub fn fly(lv: *const grid.Level, from: P, to: P) Flight {
-    return trace(lv, from, to, false);
+    return trace(lv, null, from, to, false);
 }
 
 pub fn preview(lv: *const grid.Level, from: P, to: P) Flight {
-    return trace(lv, from, to, true);
+    return trace(lv, null, from, to, true);
 }
 
-fn trace(lv: *const grid.Level, from: P, to: P, comptime visible_only: bool) Flight {
+/// `preview`, passing over the bodies in `pool` the hero cannot see where lit.
+pub fn previewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to: P) Flight {
+    return trace(lv, pool, from, to, true);
+}
+
+fn trace(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, comptime visible_only: bool) Flight {
     var f = Flight{};
     var ray = grid.Ray.init(from, to);
     while (ray.next()) |c| {
@@ -85,6 +90,7 @@ fn trace(lv: *const grid.Level, from: P, to: P, comptime visible_only: bool) Fli
         if (visible_only and !lv.isLit(c)) continue;
         const w = lv.who(c);
         if (w != grid.NO_ONE) {
+            if (seen) |pool| if (pool.items[actor.Pool.slot(w)].veiled()) continue;
             f.struck = .{ .body = w };
             break;
         }
@@ -94,6 +100,68 @@ fn trace(lv: *const grid.Level, from: P, to: P, comptime visible_only: bool) Fli
         }
     }
     return f;
+}
+
+/// The bodies an arrow passes through, nearest first, each with its index along the flight.
+pub const Pierced = struct {
+    flight: Flight = .{},
+    body: [RANGE]u16 = undefined,
+    step: [RANGE]usize = undefined,
+    n: usize = 0,
+};
+
+/// On through every body past `to`, out to full range; a barrel, wall or barrier still stops it.
+pub fn pierce(lv: *const grid.Level, from: P, to: P) Pierced {
+    return through(lv, from, to, false);
+}
+
+pub fn piercePreview(lv: *const grid.Level, from: P, to: P) Flight {
+    return through(lv, from, to, true).flight;
+}
+
+fn through(lv: *const grid.Level, from: P, to: P, comptime visible_only: bool) Pierced {
+    var out = Pierced{};
+    const d = mathx.dist(from, to);
+    if (d == 0) return out;
+    const f = &out.flight;
+    var ray = grid.Ray.init(from, from.add(to.sub(from).scaled(@divFloor(RANGE + d - 1, d))));
+    while (ray.next()) |c| {
+        if (!grid.Level.inside(c) or f.len == f.path.len or lv.hasBarrier(c) or (!c.eq(to) and lv.at(c).blind())) break;
+        f.path[f.len] = c;
+        f.len += 1;
+        if (lv.at(c).halts()) break;
+        if (visible_only and !lv.isLit(c)) continue;
+        const w = lv.who(c);
+        if (w != grid.NO_ONE) {
+            out.body[out.n] = w;
+            out.step[out.n] = f.len - 1;
+            out.n += 1;
+        } else if (lv.hasBarrel(c)) {
+            f.struck = .{ .barrel = c };
+            break;
+        }
+    }
+    if (f.struck == null and out.n > 0) f.struck = .{ .body = out.body[out.n - 1] };
+    return out;
+}
+
+test "a piercing arrow passes every body in its line to full range and stops at a barrel" {
+    var lv = grid.openFloor();
+    var pool = actor.Pool{};
+    const from = P{ .x = 10, .y = 10 };
+    const near = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 12, .y = 11 }));
+    const far = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 16, .y = 13 }));
+    const p = pierce(&lv, from, .{ .x = 12, .y = 11 });
+    try std.testing.expectEqual(@as(usize, RANGE), p.flight.len);
+    try std.testing.expectEqualSlices(u16, &.{ near, far }, p.body[0..p.n]);
+    try std.testing.expectEqual(@as(usize, 1), p.step[0]);
+    try std.testing.expectEqual(@as(?Hit, .{ .body = far }), p.flight.struck);
+    try std.testing.expectEqualSlices(P, fly(&lv, from, .{ .x = 12, .y = 11 }).path[0..2], p.flight.path[0..2]);
+    lv.putBarrel(.{ .x = 14, .y = 12 });
+    const stopped = pierce(&lv, from, .{ .x = 12, .y = 11 });
+    try std.testing.expectEqualSlices(u16, &.{near}, stopped.body[0..stopped.n]);
+    try std.testing.expectEqual(@as(?Hit, .{ .barrel = .{ .x = 14, .y = 12 } }), stopped.flight.struck);
+    std.debug.print("piercing arrow: {d} cells, {d} bodies passed; a barrel at 4 stops it after {d}\n", .{ p.flight.len, p.n, stopped.n });
 }
 
 test "an arrow stops on the first body in the line" {

@@ -69,6 +69,9 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     }
     for (ed.scene.lv.torches()) |t| modals.seenPicture(g, .torch, ed.cellRect(c, t));
     for (ed.scene.shownFoes()) |f| modals.seenPicture(g, .{ .body = f.kind }, ed.cellRect(c, f.at));
+    for (ed.map.script.folks()) |f| {
+        if (f.node == ed.node) modals.seenPicture(g, .folk, ed.cellRect(c, f.at));
+    }
     drawDoors(ed, g, c);
     if (ed.scene.start_at) |s| panel.toolFigure(g, .start, ed.cellRect(c, s));
     if (ed.selection) |s| {

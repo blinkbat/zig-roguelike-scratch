@@ -8,7 +8,7 @@ pub const Kind = enum { life, mana };
 pub const CHARGES: u8 = 60;
 pub const USE: u8 = 20;
 pub const PER_KILL: u8 = 5;
-/// Recovery ticks: the first on drinking, then one per spent turn.
+/// Recovery ticks: one on the drinking turn, then one per spent turn.
 pub const TURNS: u8 = 3;
 const LIFE_PCT: i32 = 50;
 const TENTHS: i32 = 10;
@@ -16,10 +16,9 @@ pub const MANA_GAIN: i32 = 10;
 
 pub const Life = struct {
     pub const KIND: Kind = .life;
-    pub const FREE = true;
     const TEXT = "Recover {d}{s}% of life.";
-    pub const DESCRIPTION = std.fmt.comptimePrint(TEXT, .{ LIFE_PCT, "" });
-    pub const FLAVOR = "Bitter, red, and better than bleeding.";
+    pub const EFFECT = std.fmt.comptimePrint("Recover {d}% of life", .{LIFE_PCT});
+    pub const DESCRIPTION = EFFECT ++ ".";
 
     pub fn describe(w: anytype, perks: passives.Perks) void {
         const tenths = lifeTenths(perks.life_flask);
@@ -31,10 +30,16 @@ pub const Life = struct {
 
 pub const Mana = struct {
     pub const KIND: Kind = .mana;
-    pub const FREE = true;
-    pub const DESCRIPTION = std.fmt.comptimePrint("Recover {d} mana.", .{MANA_GAIN});
-    pub const FLAVOR = "Tastes of cold stone and clear thought.";
+    pub const EFFECT = std.fmt.comptimePrint("Recover {d} mana", .{MANA_GAIN});
+    pub const DESCRIPTION = EFFECT ++ ".";
 };
+
+pub fn effect(k: Kind) [:0]const u8 {
+    return switch (k) {
+        .life => Life.EFFECT,
+        .mana => Mana.EFFECT,
+    };
+}
 
 pub const Flask = struct {
     charges: u8 = CHARGES,

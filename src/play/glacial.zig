@@ -19,7 +19,6 @@ pub const STATUS = std.fmt.comptimePrint("Lose 1 action in every {d}.", .{CYCLE}
 /// Its chance to chill, as every cold skill's description says it.
 pub const CHILL_NOTE = std.fmt.comptimePrint("{d}% chill chance", .{CHANCE});
 pub const DESCRIPTION = std.fmt.comptimePrint("An arrow bursts into a {d}-tile cone of cold. {s}.", .{ RANGE, CHILL_NOTE });
-pub const FLAVOR = "Winter, fletched and loosed.";
 
 pub const Chill = struct {
     turns: u8 = 0,

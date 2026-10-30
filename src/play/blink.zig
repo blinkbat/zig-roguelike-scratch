@@ -9,7 +9,6 @@ pub const COST: i32 = 7;
 pub const TELEPORTS = true;
 pub const DONE = "blinks away";
 pub const DESCRIPTION = std.fmt.comptimePrint("Teleport to visible empty ground within {d} tiles.", .{RANGE});
-pub const FLAVOR = "Here, then not. The between is no one's business.";
 
 comptime {
     std.debug.assert(RANGE > juke.RANGE and COST > juke.COST);

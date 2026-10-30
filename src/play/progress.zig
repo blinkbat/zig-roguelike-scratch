@@ -50,24 +50,29 @@ pub fn skills(c: hero.Class) []const Skill {
             .{ .act = .barbed_arrow, .parent = .burning_arrow, .at = .{ .x = 0, .y = 2 } },
             .{ .act = .overwatch, .parent = .steady_aim, .at = .{ .x = 1, .y = 2 } },
             .{ .act = .pinning_shot, .parent = .glacial_shot, .at = .{ .x = 2, .y = 2 } },
+            .{ .act = .piercing_shot, .parent = .glacial_shot, .at = .{ .x = 3, .y = 2 } },
         },
         .wizard => &.{
             .{ .act = .spark, .initial = true, .at = .{ .x = 0, .y = 0 } },
             .{ .act = .blink, .initial = true, .at = .{ .x = 3, .y = 0 } },
             .{ .act = .fireball, .parent = .spark, .at = .{ .x = 0, .y = 1 } },
             .{ .act = .chain_lightning, .parent = .spark, .at = .{ .x = 1, .y = 1 } },
-            .{ .act = .frost_nova, .parent = .blink, .at = .{ .x = 2, .y = 1 } },
-            .{ .act = .mana_shield, .parent = .blink, .at = .{ .x = 3, .y = 1 } },
+            .{ .act = .frost_nova, .parent = .blink, .at = .{ .x = 3, .y = 1 } },
+            .{ .act = .mana_shield, .parent = .blink, .at = .{ .x = 4, .y = 1 } },
             .{ .act = .combustion, .parent = .fireball, .at = .{ .x = 0, .y = 2 } },
-            .{ .act = .gravity_well, .parent = .frost_nova, .at = .{ .x = 2, .y = 2 } },
-            .{ .act = .arcane_barrier, .parent = .mana_shield, .at = .{ .x = 3, .y = 2 } },
+            .{ .act = .fire_wall, .parent = .fireball, .at = .{ .x = 1, .y = 2 } },
+            .{ .act = .shatter, .parent = .frost_nova, .at = .{ .x = 2, .y = 2 } },
+            .{ .act = .gravity_well, .parent = .frost_nova, .at = .{ .x = 3, .y = 2 } },
+            .{ .act = .arcane_barrier, .parent = .mana_shield, .at = .{ .x = 4, .y = 2 } },
         },
         .knight => &.{
             .{ .act = .charge, .initial = true, .at = .{ .x = 2, .y = 0 } },
             .{ .act = .cleave, .initial = true, .at = .{ .x = 1, .y = 0 } },
             .{ .act = .guard, .parent = .cleave, .at = .{ .x = 0, .y = 1 } },
+            .{ .act = .rend, .parent = .cleave, .at = .{ .x = 1, .y = 1 } },
             .{ .act = .shield_bash, .parent = .charge, .at = .{ .x = 2, .y = 1 } },
             .{ .act = .unyielding, .parent = .guard, .at = .{ .x = 0, .y = 2 } },
+            .{ .act = .war_cry, .parent = .rend, .at = .{ .x = 1, .y = 2 } },
             .{ .act = .whirlwind, .parent = .shield_bash, .at = .{ .x = 2, .y = 2 } },
         },
     };
@@ -75,7 +80,7 @@ pub fn skills(c: hero.Class) []const Skill {
 
 /// Every hero has it from the start, outside the class's tree.
 fn innate(act: skillbar.Act) bool {
-    return act == .wait or act == .secondary or act.flaskOf() != null;
+    return act == .wait or act == .secondary or act.flaskOf() != null or act.supplyOf() != null;
 }
 
 comptime {
@@ -280,6 +285,8 @@ pub const State = struct {
             },
             .gravity_well => w.print("Pull: {d} cell(s); pin: {d} turn(s).", .{ t.GravityWell.pulls(rank), t.GravityWell.pins(rank) }) catch {},
             .arcane_barrier => w.print("Wall: up to {d} cells, {d} turns.", .{ t.ArcaneBarrier.length(rank), t.ArcaneBarrier.duration(rank) }) catch {},
+            .fire_wall => w.print("Flames: up to {d} cells, {d} turns.", .{ t.FireWall.length(rank), t.FireWall.duration(rank) }) catch {},
+            .war_cry => w.print("{d}% fright chance; frightened {d} turns.", .{ t.WarCry.chance(rank), t.WarCry.turns(rank) }) catch {},
             .guard => w.print("{d}% less physical attack damage.", .{t.Guard.reduction(rank)}) catch {},
             .unyielding => w.print("{d}% counter chance; {d} mana per turn.", .{ t.Unyielding.chance(rank), t.Unyielding.DRAIN }) catch {},
             .steady_aim => w.print("Next arrow: +{d}% damage, +{d}% critical chance.", .{ t.SteadyAim.bonus(rank), t.SteadyAim.critical(rank) }) catch {},

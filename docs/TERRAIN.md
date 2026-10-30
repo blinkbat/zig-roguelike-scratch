@@ -22,12 +22,11 @@ New terrain effects should add typed fields and resolution here, with a neutral 
 then route their consumers through the simulation resolver. Do not add tile checks to
 individual skills. Inspection lists modifiers from the same table used by combat.
 
-Inspect navigation includes HUD parts and visible onscreen characters. Foe cards show only
-the name in title case and presented HP, followed by a divider and a separate terrain section:
+Inspect navigation includes HUD parts and visible onscreen characters. Every unit card shows only
+its name (title case for foes, the hero's own name) and presented HP, followed by a divider and a separate terrain section:
 the tile name and its signed effects, also in title case. Status effects read as changes to
 application chance, such as "+15% Chance To Burn" on grass. Neutral terrain says "No Effects".
-The tile is the one beneath the presented body. Hero cards retain their detailed stats,
-presented statuses and buildup. Hidden, unborn and departed bodies have no inspect target.
+The tile is the one beneath the presented body. Hidden, unborn and departed bodies have no inspect target.
 Long cards scroll through page controls or the mouse wheel. Inspection never spends a turn.
 
 Projectile target suggestions include only visible enemies reached by the preview flight,

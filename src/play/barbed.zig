@@ -8,7 +8,6 @@ pub const AILMENT = @import("resilience.zig").Kind.bleed;
 pub const VERB = "shoots a barbed arrow into";
 pub const TAKES = bleeding.TAKES;
 pub const DESCRIPTION = "Arrow damage. Inflicts bleeding.";
-pub const FLAVOR = "Easy going in. Impossible coming out.";
 
 pub const CHANCE: u32 = mathx.PERCENT;
 pub const procs = damage.chance(CHANCE);

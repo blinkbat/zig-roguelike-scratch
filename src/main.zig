@@ -88,10 +88,20 @@ test {
     _ = @import("map/lume.zig");
     _ = @import("map/atlas.zig");
     _ = @import("map/atlas_text.zig");
+    _ = @import("map/script.zig");
+    _ = @import("map/script_text.zig");
+    _ = @import("play/trigger.zig");
+    _ = @import("ui/talk.zig");
+    _ = @import("game/talking.zig");
+    _ = @import("edit/plot.zig");
     _ = @import("map/listing.zig");
     _ = @import("map/spar.zig");
     _ = @import("play/actor.zig");
     _ = @import("play/resilience.zig");
+    _ = @import("play/shock.zig");
+    _ = @import("play/sunder.zig");
+    _ = @import("play/blind.zig");
+    _ = @import("play/confusion.zig");
     _ = @import("play/terrain.zig");
     _ = @import("play/bow.zig");
     _ = @import("play/damage.zig");
@@ -109,6 +119,8 @@ test {
     _ = @import("play/cleave.zig");
     _ = @import("play/pinning.zig");
     _ = @import("play/barbed.zig");
+    _ = @import("play/rend.zig");
+    _ = @import("play/piercing.zig");
     _ = @import("play/nova.zig");
     _ = @import("play/fireball.zig");
     _ = @import("play/chain.zig");
@@ -116,6 +128,7 @@ test {
     _ = @import("play/charge.zig");
     _ = @import("play/clock.zig");
     _ = @import("play/flask.zig");
+    _ = @import("play/consumable.zig");
     _ = @import("play/pack.zig");
     _ = @import("play/skillbar.zig");
     _ = @import("play/skill_contract.zig");
@@ -178,6 +191,7 @@ test {
     _ = @import("game/tests/menus.zig");
     _ = @import("game/tests/hero.zig");
     _ = @import("game/tests/terrain.zig");
+    _ = @import("game/tests/afflictions.zig");
     _ = @import("edit/editor.zig");
     _ = @import("edit/tool_catalog.zig");
     _ = @import("edit/name_field.zig");

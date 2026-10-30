@@ -11,7 +11,6 @@ pub const BOLT = "spark";
 pub const TAKES = clock.STUNNED;
 pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("Strike a target in sight with lightning. {s}.", .{clock.stunNote(CHANCE)});
-pub const FLAVOR = "A crackle, a flash, a twitch.";
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 

@@ -1,7 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 
-pub const Kind = enum { stun, burn, bleed, chill, pin };
+pub const Kind = enum { stun, burn, bleed, chill, pin, shock, sunder, blind, confusion, fright };
 pub const GAIN: u8 = 25;
 pub const EXPIRY: u8 = 5;
 pub const ABOUT = std.fmt.comptimePrint("Repeated harmful statuses build resistance. Each successful application adds {d}%; it expires after {d} turns without another successful application.", .{ GAIN, EXPIRY });

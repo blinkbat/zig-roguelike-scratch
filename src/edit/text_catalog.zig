@@ -26,7 +26,6 @@ pub const Entry = struct {
     end: usize,
     ordinal: usize,
     alias: ?[]const u8 = null,
-    max_len: usize = MAX_TEXT,
     text_owned: bool = false,
 
     fn replaceText(self: *Entry, alloc: std.mem.Allocator, text: []const u8) void {
@@ -194,7 +193,7 @@ pub const Catalog = struct {
         if (index >= self.list.items.len) return error.NoEntry;
         const entry = self.list.items[index];
         if (!entry.editable) return error.ReadOnly;
-        if (replacement.len > entry.max_len) return error.TextTooLong;
+        if (replacement.len > MAX_TEXT) return error.TextTooLong;
         try validate(entry.text, replacement);
         const source = self.files.items[entry.file];
         const path = try std.fs.path.join(self.alloc, &.{ self.root, source.path });
@@ -356,7 +355,6 @@ pub const Catalog = struct {
             if (!spoken(decoded, bytes, ts, i)) continue;
             const is_input = inputSource(path);
             const is_keyboard = std.mem.eql(u8, path, "src/ui/naming.zig") and std.mem.eql(u8, declaration(bytes, ts, i) orelse "", "LETTERS");
-            const flavor = std.mem.eql(u8, path, "src/play/items.zig") and i >= 2 and ts[i - 1].tag == .equal and std.mem.eql(u8, slice(bytes, ts[i - 2]), "flavor");
             const semantic = try contexts.describe();
             try self.list.append(a, .{
                 .path = path,
@@ -372,7 +370,6 @@ pub const Catalog = struct {
                 .ordinal = nth,
                 .editable = decoded.len <= MAX_TEXT and !is_input and !is_keyboard,
                 .reason = if (is_input or is_keyboard) "Input glyph identifiers are tied to controls" else if (decoded.len > MAX_TEXT) "Text exceeds the editor limit" else "",
-                .max_len = if (flavor) @import("../play/items.zig").FLAVOR_MAX else MAX_TEXT,
             });
         }
         try self.enumLabels(path, bytes, ts, excluded, file);
@@ -511,7 +508,6 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
 
 fn textRole(name: []const u8) ?[]const u8 {
     if (std.ascii.eqlIgnoreCase(name, "description") or std.ascii.eqlIgnoreCase(name, "desc")) return "Description";
-    if (std.ascii.eqlIgnoreCase(name, "flavor")) return "Flavor";
     if (std.ascii.eqlIgnoreCase(name, "name")) return "Name";
     if (std.ascii.eqlIgnoreCase(name, "title")) return "Title";
     if (std.ascii.eqlIgnoreCase(name, "label") or std.ascii.eqlIgnoreCase(name, "caption")) return "Label";
@@ -739,7 +735,7 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     for (ts[from..i]) |token| {
         if (token.tag != .identifier) continue;
         const name = slice(bytes, token);
-        if (oneOf(name, &.{ "name", "label", "title", "description", "desc", "tip", "note", "caption", "say", "push", "draw", "drawMid", "drawFit", "button", "buttonOn", "put", "text", "textLine", "line", "bufPrint", "bufPrintZ", "comptimePrint", "verb", "slain", "flavor" })) context = true;
+        if (oneOf(name, &.{ "name", "label", "title", "description", "desc", "tip", "note", "caption", "say", "push", "draw", "drawMid", "drawFit", "button", "buttonOn", "put", "text", "textLine", "line", "bufPrint", "bufPrintZ", "comptimePrint", "verb", "slain" })) context = true;
     }
     if (context) return true;
     if (std.mem.indexOfScalar(u8, text, ' ') != null and letters >= 3) return true;
@@ -851,31 +847,31 @@ test "text catalog semantic context separates table rows skill containers calls 
     defer c.deinit();
     try c.scan("src/play/items.zig",
         \\const SPECS = make(.{
-        \\ .war_bow = .{ .flavor = "Far away.", .name = "War bow" },
-        \\ .tome = .{ .name = "Tome", .flavor = "Old words." },
+        \\ .war_bow = .{ .desc = "Far away.", .name = "War bow" },
+        \\ .tome = .{ .name = "Tome", .desc = "Old words." },
         \\});
     );
     try std.testing.expectEqual(@as(usize, 4), c.entries().len);
     const bow = c.entries()[0];
     try std.testing.expectEqualStrings("Items", bow.category);
     try std.testing.expectEqualStrings("War bow", bow.owner);
-    try std.testing.expectEqualStrings("Flavor", bow.role);
-    try std.testing.expectEqualStrings("play.items.SPECS.war_bow.flavor", bow.context);
+    try std.testing.expectEqualStrings("Description", bow.role);
+    try std.testing.expectEqualStrings("play.items.SPECS.war_bow.desc", bow.context);
     try std.testing.expectEqualStrings("Tome", c.entries()[3].owner);
-    try std.testing.expectEqualStrings("play.items.SPECS.tome.flavor", c.entries()[3].context);
+    try std.testing.expectEqualStrings("play.items.SPECS.tome.desc", c.entries()[3].context);
     try std.testing.expectEqual(@as(usize, 3), c.entries()[3].ordinal);
     try c.scan("src/play/tactics.zig",
         \\pub const ArcaneBarrier = struct {
         \\ pub const DESCRIPTION = "Raise a wall.";
-        \\ pub const FLAVOR = "Draw a line.";
+        \\ pub const STATUS = "Draw a line.";
         \\};
         \\pub const Guard = struct { pub const DESCRIPTION = "Brace."; };
     );
     try std.testing.expectEqualStrings("Skills", c.entries()[4].category);
     try std.testing.expectEqualStrings("Arcane barrier", c.entries()[4].owner);
     try std.testing.expectEqualStrings("Description", c.entries()[4].role);
-    try std.testing.expectEqualStrings("Flavor", c.entries()[5].role);
-    try std.testing.expectEqualStrings("play.tactics.ArcaneBarrier.FLAVOR", c.entries()[5].context);
+    try std.testing.expectEqualStrings("Status", c.entries()[5].role);
+    try std.testing.expectEqualStrings("play.tactics.ArcaneBarrier.STATUS", c.entries()[5].context);
     try std.testing.expectEqualStrings("Guard", c.entries()[6].owner);
     try c.scan("src/play/ward.zig", "pub const DESCRIPTION = fmt.comptimePrint(\"Drain {d} mana.\", .{5});\n");
     try std.testing.expectEqualStrings("Mana shield", c.entries()[7].owner);
@@ -918,7 +914,7 @@ test "text catalog skill registry context follows named rows with module in any 
         \\};
     );
     try std.testing.expectEqual(@as(usize, 3), c.skills.?.len);
-    try c.scan("src/play/tactics.zig", "const ArcaneBarrier = struct { const DESCRIPTION = \"Raise a wall.\"; }; const Guard = struct { const FLAVOR = \"Stand firm.\"; };\n");
+    try c.scan("src/play/tactics.zig", "const ArcaneBarrier = struct { const DESCRIPTION = \"Raise a wall.\"; }; const Guard = struct { const DESCRIPTION = \"Stand firm.\"; };\n");
     try c.scan("src/play/ward.zig", "const DESCRIPTION = \"Drain mana.\";\n");
     try std.testing.expectEqualStrings("Skills", c.entries()[0].category);
     try std.testing.expectEqualStrings("Arcane barrier", c.entries()[0].owner);
@@ -959,10 +955,10 @@ test "text catalog indexes live item skill and speech sources with complete meta
     var speech: usize = 0;
     for (c.entries()) |e| {
         try std.testing.expect(e.category.len > 0 and e.owner.len > 0 and e.role.len > 0 and e.context.len > 0);
-        if (std.mem.eql(u8, e.context, "play.items.SPECS.war_bow.flavor")) {
+        if (std.mem.eql(u8, e.context, "play.items.SPECS.war_bow.name")) {
             bow = true;
             try std.testing.expectEqualStrings("War bow", e.owner);
-            try std.testing.expectEqualStrings("Flavor", e.role);
+            try std.testing.expectEqualStrings("Name", e.role);
         }
         if (std.mem.eql(u8, e.context, "play.tactics.ArcaneBarrier.DESCRIPTION")) {
             barrier = true;
@@ -1138,14 +1134,11 @@ test "text tag preparation shares source and alias upserts without mutating load
     std.debug.print("text tags: shared upsert prepared independently; malformed file blocks tag commit and preserves loaded attribution\n", .{});
 }
 
-test "text catalog protects reflection controls and item flavor length while finding short verbs" {
+test "text catalog protects reflection controls while finding short verbs" {
     var c = Catalog.init(std.testing.allocator);
     defer c.deinit();
-    try c.scan("src/play/items.zig", "const SPECS = .{ .flavor = \"Old words.\" };\n");
-    try std.testing.expectEqual(@as(usize, @import("../play/items.zig").FLAVOR_MAX), c.entries()[0].max_len);
-    try std.testing.expectError(error.TextTooLong, c.save(0, "x" ** (@import("../play/items.zig").FLAVOR_MAX + 1), .you));
     try c.scan("src/ui/naming.zig", "const LETTERS = [_][]const u8{ \"ABCDEFGHIJKLM\", \"NOPQRSTUVWXYZ\" };\n");
-    try std.testing.expect(!c.entries()[1].editable and !c.entries()[2].editable);
+    try std.testing.expect(!c.entries()[0].editable and !c.entries()[1].editable);
     const n = c.entries().len;
     try c.scan("src/play/example.zig", "const VERB = \"shoots\";\nconst s = .{ .verb = \"bites\" };\nconst name = @tagName(k) ++ \"_bonus\";\nconst PROBED = .{ \"BASE\", \"KIND\" };\n");
     try std.testing.expectEqual(n + 2, c.entries().len);
@@ -1156,5 +1149,5 @@ test "text catalog protects reflection controls and item flavor length while fin
     try std.testing.expect(!entry.editable);
     try std.testing.expectEqualStrings("The Strand", entry.text);
     try std.testing.expectEqual(@as(usize, 3), entry.line);
-    std.debug.print("text catalog: bounded item flavor, 2 protected keyboard rows, 2 short verbs, reflection exclusions, tag-only aliases and map-name provenance checked\n", .{});
+    std.debug.print("text catalog: 2 protected keyboard rows, 2 short verbs, reflection exclusions, tag-only aliases and map-name provenance checked\n", .{});
 }

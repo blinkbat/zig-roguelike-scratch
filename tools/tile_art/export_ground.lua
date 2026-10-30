@@ -1,7 +1,7 @@
 -- A ground template's painting, its 4x4 block alone, as the game's sheet: assets/<name>-ground.png, which src/gfx/ground.zig reads.
--- params: name=grass|cobble|dirt|water|shallows [source=<sheet.aseprite>] [out=<png>] [from=underdrawing, a stand-in, only with out=]
+-- params: name=grass|cobble|dirt|water|shallows|bridge [source=<sheet.aseprite>] [out=<png>] [from=underdrawing, a stand-in, only with out=]
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
-local name=assert(app.params.name,'name=grass|cobble|dirt|water|shallows')
+local name=assert(app.params.name,'name=grass|cobble|dirt|water|shallows|bridge')
 local source_name=({water='deep-water',shallows='water'})[name] or name
 local source=app.params.source or ('C:/Users/DavidBennett/Desktop/'..source_name..'.aseprite')
 local stand_in=app.params.from=='underdrawing'
@@ -28,11 +28,11 @@ local extension=(name=='water' or name=='shallows') and 'Water extensions' or na
 local found=false
 local sheet=Image(COLS*CELL,COLS*CELL,ColorMode.RGB)
 for _,l in ipairs(sprite.layers) do
-  if l.name==want or (not stand_in and l.name==extension) then
+  if l.name==want then found=true end
+  if (l.name==want and (stand_in or l.isVisible)) or (not stand_in and l.name==extension) then
     local cel=assert(l:cel(1),'no cel on '..l.name)
     assert(stand_in or (l.opacity==255 and cel.opacity==255),'Art layer opacity: '..l.name)
     sheet:drawImage(cel.image,Point(cel.position.x,cel.position.y-HEAD))
-    if l.name==want then found=true end
   end
 end
 assert(found,'no '..want..' in '..source)
@@ -41,6 +41,15 @@ for it in sheet:pixels() do
   if app.pixelColor.rgbaA(it())>0 then painted=painted+1 end
 end
 assert(painted>0,source..': nothing painted on '..want)
+if name=='bridge' and not stand_in then
+  local pc=app.pixelColor
+  for it in sheet:pixels() do
+    local v=it()
+    if pc.rgbaA(v)>0 then
+      it(pc.rgba(math.floor(pc.rgbaR(v)*0.70+0.5),math.floor(pc.rgbaG(v)*0.70+0.5),math.floor(pc.rgbaB(v)*0.70+0.5),pc.rgbaA(v)))
+    end
+  end
+end
 sprite:close()
 sheet:saveAs(out)
 local back=Image{fromFile=out}

@@ -155,7 +155,7 @@ second allocation policy. [trees.zig](../src/ui/trees.zig) draws the panels, whi
 
 | Concept | Diablo II reference | Current prototype treatment |
 |---|---|---|
-| Scope | Three discipline trees per class | One active tree per class, with 9 Archer, 9 Wizard, or 6 Knight skills |
+| Scope | Three discipline trees per class | One active tree per class, with 10 Archer, 11 Wizard, or 8 Knight skills |
 | Investment | Repeated points in a skill | `progress.RANKS` is 3; display its actual value |
 | Progression budget | Skill points earned through progression | Each level grants one active and one passive point; the pools stay distinct |
 | Unlock path | Prerequisites and character-level tiers | At most one parent per active node; parent must be learned; no character-level gate |
@@ -174,11 +174,12 @@ Its node and details say Basic rather than offering rank upgrades.
 
 | Class | Starting nodes | Connections |
 |---|---|---|
-| Archer | Shoot, Juke | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot; Juke -> Caltrops |
-| Wizard | Spark, Blink | Spark -> Fireball -> Combustion; Spark -> Chain Lightning; Blink -> Frost Nova -> Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
-| Knight | Charge, Cleave | Charge -> Shield Bash -> Whirlwind; Cleave -> Guard -> Unyielding |
+| Archer | Shoot, Juke | Shoot -> Burning Arrow -> Barbed Arrow; Shoot -> Steady Aim -> Overwatch; Shoot -> Glacial Shot -> Pinning Shot, Piercing Shot; Juke -> Caltrops |
+| Wizard | Spark, Blink | Spark -> Fireball -> Combustion, Fire Wall; Spark -> Chain Lightning; Blink -> Frost Nova -> Shatter, Gravity Well; Blink -> Mana Shield -> Arcane Barrier |
+| Knight | Charge, Cleave | Charge -> Shield Bash -> Whirlwind; Cleave -> Guard -> Unyielding; Cleave -> Rend -> War Cry |
 
-The active trees use up to four columns and three logical rows, placing preparation and
+The active trees use up to five columns and three logical rows, each class centred on its own
+column count, placing preparation and
 simple defenses before reactive stances and battlefield control. Preserve `Skill.at`
 rather than sorting by name, unlock state, or rank.
 Independent roots should remain visibly independent. Learning a node must not cause the
@@ -308,12 +309,13 @@ critical hits and defenses. When a rank improves average damage but its integer
 range endpoints stay unchanged, show the old/new `Rank damage bonus` explicitly.
 
 For an unlearned skill, label the available values as the first rank's preview. For a
-maximum skill, omit the next-rank section rather than duplicating the current
-numbers under a misleading upgrade heading. Unchanged values should remain calm and
+maximum skill, or a rank that changes nothing shown, omit the next-rank section rather than
+duplicating the current numbers under a misleading upgrade heading. Basic attacks show no
+reason line or action button, and a maximum skill no reason line; their rank row already says so. Unchanged values should remain calm and
 readable; the one value affected by the next point should be easy to compare. Any
 description wrapping must account for the action footer. Keep rank-dependent length and
 duration in the property and next-rank rows instead of repeating them in behavior prose,
-so the flavor line remains above the binding action. Combine a changed mana cost with
+so the details stay above the binding action. Combine a changed mana cost with
 the next-rank damage or cooldown paragraph to preserve that space.
 
 The selected eligible skill spends one point on one deliberate confirm press. There is no secondary confirmation modal. Browsing, backing out and allocation spend no simulation turn; only a successful `State.learn` reduces the point pool. Details show the result before spending.

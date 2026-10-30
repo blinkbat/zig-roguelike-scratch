@@ -197,11 +197,12 @@ test "the Nearby list keeps its entries over a lethal pickup until the bite is d
     harness.arena(g, at, &.{.{ .x = 21, .y = 20 }});
     harness.wakeFoes(g);
     g.sim.heroActor().?.hp = 1;
+    const piles = [_]P{ .{ .x = 19, .y = 20 }, .{ .x = 20, .y = 21 } };
     var turns: usize = 0;
     while (g.mode != .dead and turns < harness.TRIES) : (turns += 1) {
-        for (0..2) |_| try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
+        for (piles) |p| try std.testing.expect(g.sim.ground.gold(p, 5));
         if (g.mode != .pause) try std.testing.expect(character.openNearby(g));
-        character.characterCommand(g, .{ .pickup = 0 });
+        character.characterCommand(g, .{ .take_gold = piles[0] });
         if (g.mode != .dead) harness.drawnOut(g);
     }
     try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));

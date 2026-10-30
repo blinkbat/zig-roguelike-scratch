@@ -361,6 +361,8 @@ test "a tooltip's body breaks at spaces into lines that each fit" {
     std.debug.print("tooltip: a {d}-word description in {d} lines of {d} px at most\n", .{ words, n, w });
 }
 
+const SWIRL_STEPS = 14;
+
 fn statusIcon(status: fx.Status, x: i32, y: i32) void {
     const colour = status.ink();
     switch (status) {
@@ -382,6 +384,37 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
         .pinned => {
             rl.drawLine(x - 7, y + 8, x + 7, y + 8, colour);
             for ([_]i32{ -5, 0, 5 }) |dx| rl.drawLine(x + dx, y - 6, x + dx, y + 8, colour);
+        },
+        .shocked => {
+            rl.drawLine(x + 3, y - 8, x - 3, y - 1, colour);
+            rl.drawLine(x - 3, y - 1, x + 3, y + 1, colour);
+            rl.drawLine(x + 3, y + 1, x - 3, y + 8, colour);
+        },
+        .sundered => {
+            rl.drawRectangleLines(x - 6, y - 7, 12, 14, colour);
+            rl.drawLine(x - 1, y - 7, x + 2, y - 1, colour);
+            rl.drawLine(x + 2, y - 1, x - 2, y + 3, colour);
+            rl.drawLine(x - 2, y + 3, x + 1, y + 7, colour);
+        },
+        .blinded => {
+            rl.drawEllipseLines(x, y, 8, 4, colour);
+            rl.drawCircle(x, y, 2, colour);
+            rl.drawLine(x - 7, y + 7, x + 7, y - 7, colour);
+        },
+        .confused => {
+            var at = rl.Vector2{ .x = @floatFromInt(x), .y = @floatFromInt(y) };
+            for (1..SWIRL_STEPS + 1) |i| {
+                const k: f32 = @floatFromInt(i);
+                const a = k * 0.9;
+                const r = k * 0.55;
+                const next = rl.Vector2{ .x = @as(f32, @floatFromInt(x)) + @cos(a) * r, .y = @as(f32, @floatFromInt(y)) + @sin(a) * r };
+                rl.drawLineV(at, next, colour);
+                at = next;
+            }
+        },
+        .frightened => {
+            rl.drawRectangle(x - 1, y - 8, 3, 11, colour);
+            rl.drawRectangle(x - 1, y + 5, 3, 3, colour);
         },
         .warded, .guarding => {
             rl.drawCircleLines(x, y, 8, colour);

@@ -34,6 +34,8 @@ pub const WALL_H: f32 = 1.0;
 pub const FACE_FROM: f32 = 1 - @as(f32, @floatFromInt(look.WALL_FACE_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
 pub const FACE_H: f32 = 1 - FACE_FROM;
 pub const FLAME_Z: f32 = 0.6;
+/// Above the plant's own caster height, so no lit point sits on the light.
+pub const PLANT_Z: f32 = 0.6;
 /// Flame offset from its wall, preventing edge-on lighting of neighbouring bricks.
 pub const STANDOFF: f32 = 0.3;
 pub const FLOOR_WRAP: f32 = 1.0;
@@ -55,6 +57,10 @@ pub const MEMORY = rgbOf(look.rgb(0x33385c));
 pub const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 pub const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
+pub const PLANT_LIGHT: Rgb = .{ 0.52, 0.68, 0.92 };
+/// A glowing plant breathes rather than flickers: its share either way, and breaths a second.
+pub const PULSE: f32 = 0.08;
+pub const PULSE_HZ: f32 = 0.3;
 pub const FAINT: f32 = 0.002;
 pub const TINT_DIRECT: f32 = 0.6;
 pub const VOID_REACH = visibility.VOID_REACH;
@@ -87,6 +93,7 @@ pub const GLOW_HALO: f32 = 2.6;
 pub const GLOW_CORE_A: f32 = 0.85;
 pub const GLOW_HALO_A: f32 = 0.2;
 pub const GLOW_TINT: Rgb = .{ 1.0, 0.52, 0.22 };
+pub const PLANT_TINT: Rgb = .{ 0.62, 0.82, 1.0 };
 /// Cells between ray samples; softness is a fraction of caster height and a cell distance from round edges.
 pub const SUN_STEP: f32 = 0.1;
 pub const SUN_SOFT: f32 = 0.7;
@@ -108,6 +115,7 @@ pub const CASTERS = std.EnumArray(grid.Tile, ?Caster).initDefault(@as(?Caster, n
     .fence = .{ .h = 0.5 },
     .reeds = .{ .h = 0.5 },
     .crop = .{ .h = 0.4 },
+    .glow_plant = .{ .h = 0.5, .r = 0.28 },
 });
 
 comptime {
@@ -285,10 +293,21 @@ pub fn faceY(top: f32, z: f32) f32 {
     return top + 1 - z / WALL_H * FACE_H;
 }
 
-pub const TorchIx = std.math.IntFittingRange(0, grid.MAX_TORCHES - 1);
+/// Glowing plants the renderer lights, the first this many in reading order; sight takes them all.
+pub const PLANT_LIGHTS: usize = 64;
+pub const LIGHTS: usize = grid.MAX_TORCHES + PLANT_LIGHTS;
+pub const TorchIx = std.math.IntFittingRange(0, LIGHTS - 1);
+
+pub const Kind = enum { wall, plant };
+
+/// A torch hangs on its wall's south face; a glowing plant is its own torch.
+pub const Mount = union(Kind) {
+    wall: P,
+    plant: P,
+};
 
 pub const Torch = struct {
-    wall: P,
+    mount: Mount,
     /// 1 where the flame's light gets to, over the box of cells centred on the floor below the flame.
     reach: [grid.Cells.square(REACH)]f32,
     /// Sight-blocking mask for interpolation; prevents walls passing light onward.
@@ -298,16 +317,41 @@ pub const Torch = struct {
     glow: f32 = 1,
 
     pub fn floor(t: *const Torch) P {
-        return lume.torchFloor(t.wall);
+        return switch (t.mount) {
+            .wall => |w| lume.torchFloor(w),
+            .plant => |p| p,
+        };
     }
 
     /// On the ground plane.
     pub fn flame(t: *const Torch) [3]f32 {
-        return .{ mathx.centre(t.wall)[0], @as(f32, @floatFromInt(t.floor().y)) + STANDOFF, FLAME_Z };
+        return switch (t.mount) {
+            .wall => |w| .{ mathx.centre(w)[0], @as(f32, @floatFromInt(t.floor().y)) + STANDOFF, FLAME_Z },
+            .plant => |p| .{ mathx.centre(p)[0], mathx.centre(p)[1], PLANT_Z },
+        };
     }
 
     pub fn drawn(t: *const Torch) [2]f32 {
-        return .{ mathx.centre(t.wall)[0], faceY(@floatFromInt(t.wall.y), FLAME_Z) };
+        return switch (t.mount) {
+            .wall => |w| .{ mathx.centre(w)[0], faceY(@floatFromInt(w.y), FLAME_Z) },
+            .plant => |p| mathx.centre(p),
+        };
+    }
+
+    /// The flame's flicker, or the plant's slow breath, at `s` seconds.
+    pub fn fan(t: *Torch, s: f32) void {
+        switch (t.mount) {
+            .wall => {
+                t.glow = flicker(s, t.seed);
+                var shift: Rgb = undefined;
+                for (0..3) |k| shift[k] = std.math.pow(f32, t.glow, FLAME_SHIFT[k]);
+                t.colour = FLAME * shift;
+            },
+            .plant => {
+                t.glow = pulse(s, t.seed);
+                t.colour = PLANT_LIGHT * splat(t.glow);
+            },
+        }
     }
 
     pub fn box(t: *const Torch) grid.Box {
@@ -424,6 +468,10 @@ pub fn flicker(t: f32, seed: u32) f32 {
     return 1 + FLICKER * n;
 }
 
+pub fn pulse(t: f32, seed: u32) f32 {
+    return 1 + PULSE * @sin((t * PULSE_HZ + hash(0, seed)) * std.math.tau);
+}
+
 pub fn knee(c: Rgb) Rgb {
     var out = c;
     for (0..3) |i| {
@@ -537,6 +585,7 @@ pub fn recolour(c: rl.Color, rgb: Rgb) rl.Color {
 
 /// `lit` combines sight and memory; `memory` retains only exploration visibility.
 pub const Flame = struct {
+    kind: Kind,
     at: [2]f32,
     foot: f32,
     glow: f32,
@@ -546,6 +595,13 @@ pub const Flame = struct {
     /// Seen enough to glow and bloom.
     pub fn live(f: Flame) bool {
         return f.lit > FAINT;
+    }
+
+    pub fn tint(f: Flame) Rgb {
+        return switch (f.kind) {
+            .wall => GLOW_TINT,
+            .plant => PLANT_TINT,
+        };
     }
 };
 

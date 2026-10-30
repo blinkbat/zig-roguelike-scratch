@@ -952,3 +952,215 @@ test "a frightened pib in a dead end holds it, and strikes only an archer beside
     try std.testing.expectEqual(@as(usize, 0), moves);
     try std.testing.expect(strikes > 0);
 }
+
+test "a bog leech swims unseen to the shore, surfaces beside the hero and is struck where it floats" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    var cells = grid.Cells.of(.{ .x = 21, .y = 18 }, .{ .x = 27, .y = 23 });
+    while (cells.next()) |p| g.sim.lv.set(p, .water);
+    const id = harness.spawnAt(g, .bog_leech, .{ .x = 25, .y = 20 }, true);
+    game.settle(g);
+    const slot = actor.Pool.slot(id);
+    try std.testing.expect(g.sim.pool.get(id).?.submerged and harness.gone(g, slot));
+    try std.testing.expectEqual(@as(?P, null), bow.pick(&g.sim.lv, &g.sim.pool, from));
+    var turns: usize = 0;
+    while (g.sim.pool.get(id).?.submerged and turns < 8) : (turns += 1) {
+        combat.endTurn(g);
+        try std.testing.expectEqual(grid.Tile.water, g.sim.lv.at(g.sim.pool.get(id).?.at));
+        harness.drawnOut(g);
+    }
+    std.debug.print("bog leech: {d} turns swimming unseen, then shown beside the hero\n", .{turns});
+    try std.testing.expectEqual(P{ .x = 21, .y = 20 }, g.sim.pool.get(id).?.at);
+    try std.testing.expect(harness.drawn(g, slot) and g.sim.pool.get(id).?.seenIn(&g.sim.lv));
+    try std.testing.expectEqual(game.Move.kick, game.heroMove(g, .e));
+}
+
+test "a mimic stands as a closed chest until opened, then bites, and dies leaving a chest's loot" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 21, .y = 20 };
+    harness.arena(g, from, &.{});
+    const id = harness.spawnAt(g, .mimic, at, false);
+    game.settle(g);
+    const slot = actor.Pool.slot(id);
+    try std.testing.expectEqual(grid.Tile.chest, g.sim.lv.at(at));
+    try std.testing.expect(harness.gone(g, slot));
+    for (0..3) |_| {
+        combat.endTurn(g);
+        harness.drawnOut(g);
+    }
+    try std.testing.expect(g.sim.pool.get(id).?.disguised and !g.sim.pool.get(id).?.awake);
+    try std.testing.expectEqual(game.Move.open, game.heroMove(g, .e));
+    game.heroStep(g, .e, 0);
+    const m = g.sim.pool.get(id).?;
+    try std.testing.expect(!m.disguised and m.awake);
+    try std.testing.expectEqual(grid.Tile.floor, g.sim.lv.at(at));
+    try std.testing.expect(g.pic.owed[slot].bit != null);
+    harness.drawnOut(g);
+    try std.testing.expect(harness.drawn(g, slot));
+    const drops = g.sim.ground.n;
+    combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    try std.testing.expect(g.sim.pool.get(id) == null);
+    try std.testing.expectEqual(drops + 1, g.sim.ground.n);
+    try std.testing.expect(g.sim.ground.hasItems(at));
+}
+
+test "a bandit netter's net pins the hero, who struggles in place and cannot leap until it wears off" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const skills = @import("../skills.zig");
+    const from = P{ .x = 20, .y = 20 };
+    const net = actor.row(.bandit_netter).net.?;
+    var tries: usize = 0;
+    const pinned = for (0..64) |seed| {
+        tries += 1;
+        harness.arena(g, from, &.{});
+        const id = harness.spawnAt(g, .bandit_netter, .{ .x = 24, .y = 20 }, true);
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(seed);
+        combat.endTurn(g);
+        const slot = actor.Pool.slot(id);
+        try std.testing.expect(g.pic.owed[slot].bit.? == .snare);
+        try std.testing.expectEqual(net.every, g.sim.pool.get(id).?.ready_in);
+        if (g.sim.heroActor().?.pin.turns == 0) continue;
+        try std.testing.expectEqual(net.pins, g.sim.heroActor().?.pin.turns);
+        g.pic.lead = 0;
+        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        try std.testing.expect(g.pic.foe_shots[slot].?.net);
+        harness.drawnOut(g);
+        try std.testing.expect((skills.blocked(g, .juke, &g.sim.flasks, g.sim.mana) orelse return error.NotPinned) == .pinned);
+        for (0..net.pins) |_| {
+            game.heroStep(g, .w, 0);
+            try std.testing.expectEqual(from, g.sim.heroAt().?);
+            harness.drawnOut(g);
+        }
+        game.heroStep(g, .w, 0);
+        try std.testing.expectEqual(from.add(mathx.Dir.w.delta()), g.sim.heroAt().?);
+        break true;
+    } else false;
+    std.debug.print("bandit netter: pinned on throw {d}; {d} struggling turns in place, then free\n", .{ tries, net.pins });
+    try std.testing.expect(pinned);
+}
+
+test "a bandit shieldbearer's landed bash knocks the hero a cell back as the blow lands, unless walled" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const glide = @import("../glide.zig");
+    const from = P{ .x = 20, .y = 20 };
+    const back = from.add(mathx.Dir.w.delta());
+    for ([_]bool{ false, true }) |walled| {
+        harness.arena(g, from, &.{});
+        if (walled) g.sim.lv.set(back, .wall);
+        const id = harness.spawnAt(g, .bandit_shieldbearer, .{ .x = 21, .y = 20 }, true);
+        game.settle(g);
+        g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
+        combat.endTurn(g);
+        const want = if (walled) from else back;
+        try std.testing.expectEqual(want, g.sim.heroAt().?);
+        const hero = g.sim.heroSlot().?;
+        g.pic.lead = 0;
+        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        try std.testing.expect(harness.samePx(g.pic.glide[hero].ground(), glide.cellPx(from)));
+        harness.drawnOut(g);
+        try std.testing.expect(harness.samePx(g.pic.glide[hero].ground(), glide.cellPx(want)));
+    }
+}
+
+test "a frost wisp's touch chills the hero unless cold-proof, and a chilled hero's third action costs the next turn" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    var touched = false;
+    for (0..64) |seed| {
+        harness.arena(g, from, &.{});
+        _ = harness.spawnAt(g, .frost_wisp, .{ .x = 21, .y = 20 }, true);
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(seed);
+        const hp = g.sim.heroActor().?.hp;
+        combat.endTurn(g);
+        if (g.sim.heroActor().?.hp == hp) continue;
+        try std.testing.expectEqual(glacial.TURNS, g.sim.heroActor().?.chill.turns);
+        touched = true;
+        break;
+    }
+    try std.testing.expect(touched);
+    for (0..16) |seed| {
+        harness.arena(g, from, &.{});
+        g.sim.heroActor().?.resists.set(.cold, 100);
+        _ = harness.spawnAt(g, .frost_wisp, .{ .x = 21, .y = 20 }, true);
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(seed);
+        const hp = g.sim.heroActor().?.hp;
+        combat.endTurn(g);
+        try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
+        try std.testing.expectEqual(@as(u8, 0), g.sim.heroActor().?.chill.turns);
+    }
+    harness.arena(g, from, &.{});
+    g.sim.heroActor().?.chill.apply();
+    for (0..glacial.CYCLE) |i| {
+        try std.testing.expect(!g.sim.heroActor().?.clock.owes());
+        combat.endTurn(g);
+        try std.testing.expectEqual(i + 1 == glacial.CYCLE, g.sim.heroActor().?.clock.owes());
+    }
+    harness.drawnOut(g);
+    harness.idle(g);
+    try std.testing.expect(!g.sim.heroActor().?.clock.owes());
+    std.debug.print("frost wisp: touch chills for {d} turns, cold-proof heroes untouched; one lost turn after {d} chilled actions\n", .{ glacial.TURNS, glacial.CYCLE });
+}
+
+test "a pyre bloat bursts into flame, setting the bodies beside it burning and nothing further" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 21, .y = 20 };
+    harness.arena(g, from, &.{});
+    const bloat = harness.spawnAt(g, .pyre_bloat, at, false);
+    const near = harness.spawnAt(g, .rat, .{ .x = 22, .y = 21 }, false);
+    const far = harness.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
+    game.settle(g);
+    combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    try std.testing.expect(g.sim.pool.get(bloat) == null);
+    try std.testing.expect(g.sim.heroActor().?.burn.turns > 0);
+    try std.testing.expect(g.sim.pool.get(near).?.burn.turns > 0);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(far).?.burn.turns);
+    try std.testing.expect(!g.sim.lv.gassy(at));
+}
+
+test "a pib shaman mends the most hurt pib in reach, else wakes the sleeping ones, and keeps off the hero" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const mend = actor.row(.pib_shaman).mends.?;
+    harness.arena(g, from, &.{});
+    const shaman = harness.spawnAt(g, .pib_shaman, .{ .x = 27, .y = 20 }, true);
+    const worse = harness.spawnAt(g, .pib, .{ .x = 28, .y = 20 }, true);
+    const better = harness.spawnAt(g, .pib, .{ .x = 28, .y = 21 }, true);
+    const sleeper = harness.spawnAt(g, .pib, .{ .x = 29, .y = 19 }, false);
+    g.sim.pool.get(worse).?.hp = 3;
+    g.sim.pool.get(better).?.hp = 8;
+    game.settle(g);
+    combat.endTurn(g);
+    const mended = g.sim.pool.get(worse).?.hp;
+    try std.testing.expectEqual(@min(3 + mend.amount, g.sim.pool.get(worse).?.max), mended);
+    try std.testing.expectEqual(@as(i32, 8), g.sim.pool.get(better).?.hp);
+    try std.testing.expectEqual(mend.every, g.sim.pool.get(shaman).?.ready_in);
+    try std.testing.expect(!g.sim.pool.get(sleeper).?.awake);
+    harness.drawnOut(g);
+    g.sim.pool.get(better).?.hp = g.sim.pool.get(better).?.max;
+    var turns: usize = 0;
+    while (!g.sim.pool.get(sleeper).?.awake and turns < mend.every) : (turns += 1) {
+        combat.endTurn(g);
+        harness.drawnOut(g);
+    }
+    try std.testing.expect(g.sim.pool.get(sleeper).?.awake);
+    try std.testing.expect(mathx.dist(g.sim.pool.get(shaman).?.at, from) > actor.row(.pib_shaman).keeps);
+    harness.arena(g, from, &.{});
+    const cornered = harness.spawnAt(g, .pib_shaman, .{ .x = 21, .y = 20 }, true);
+    game.settle(g);
+    combat.endTurn(g);
+    try std.testing.expectEqual(@as(i32, 2), mathx.dist(g.sim.pool.get(cornered).?.at, from));
+    std.debug.print("pib shaman: mended a pib to {d}, woke a sleeper {d} turns later, stepped back from a hero beside it\n", .{ mended, turns });
+}

@@ -7,6 +7,7 @@ const store = @import("../core/store.zig");
 const pack = @import("../play/pack.zig");
 const climate = @import("climate.zig");
 const atlas = @import("atlas.zig");
+const script_text = @import("script_text.zig");
 const P = mathx.P;
 const Tokens = std.mem.TokenIterator(u8, .scalar);
 const Error = atlas.Error;
@@ -69,6 +70,7 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
             try w.writeByte('\n');
         }
     }
+    try script_text.write(&self.script, w);
 }
 
 pub fn load(self: *atlas.Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
@@ -87,10 +89,16 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
     var seen = std.EnumSet(Word).initEmpty();
     var knobbed = KnobSet.initEmpty();
     var featured = FeatureKnobSet.initEmpty();
+    var told = try script_text.Reader.of(text);
     while (lines.next()) |raw| {
         const line = std.mem.trimRight(u8, raw, "\r");
         var f = std.mem.tokenizeScalar(u8, line, ' ');
         const word = f.next() orelse continue;
+        if (std.meta.stringToEnum(script_text.Word, word)) |sw| {
+            try told.take(&self.script, sw, &f);
+            if (f.next() != null) return error.BadLine;
+            continue;
+        }
         const said = std.meta.stringToEnum(Word, word) orelse {
             const pg = try lastProcgen(self);
             if (pg.feature_n > 0) {
@@ -194,6 +202,10 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
         }
     }
     if (self.start.node >= self.node_n) return error.BadLink;
+    if (!self.script.valid(self.node_n)) return error.BadLine;
+    for (self.script.folks()) |f| {
+        if (!self.folkFits(f.node, f.at)) return error.BadLine;
+    }
 }
 
 fn finished(self: *atlas.Atlas, rows: usize) Error!void {
@@ -203,7 +215,7 @@ fn finished(self: *atlas.Atlas, rows: usize) Error!void {
         .bespoke => |*b| {
             if (rows != ROWS) return error.BadLine;
             for (b.foes()) |f| {
-                if (!nd.foeFits(b, f.at)) return error.BadLine;
+                if (!nd.foeFits(b, f.at, f.kind)) return error.BadLine;
             }
             for (b.torches()) |t| {
                 if (!nd.torchFits(b, t)) return error.BadLine;
@@ -275,8 +287,9 @@ fn says(comptime w: Word) []const u8 {
 comptime {
     @setEvalBranchQuota(1_000_000);
     for (MAKEUP_FIELDS) |m| std.debug.assert(@hasField(pack.Spec, m));
-    for (std.enums.values(Algo)) |algo| distinct(floorKnobs(algo) ++ GROUP_KNOBS ++ knobsOf(Word, &.{}));
-    for (std.enums.values(Kind)) |kind| distinct(featureKnobs(kind) ++ knobsOf(Word, &.{}));
+    const words = knobsOf(Word, &.{}) ++ knobsOf(script_text.Word, &.{});
+    for (std.enums.values(Algo)) |algo| distinct(floorKnobs(algo) ++ GROUP_KNOBS ++ words);
+    for (std.enums.values(Kind)) |kind| distinct(featureKnobs(kind) ++ words);
 }
 
 fn distinct(comptime names: []const []const u8) void {
@@ -620,6 +633,36 @@ test "map text round-trips every floor and feature with default and changed knob
     }
     try std.testing.expectEqual(2 * std.enums.values(Algo).len * std.enums.values(Kind).len, checked);
     std.debug.print("map serialization: {d} floor/feature/default-or-changed cases preserve plans, climate, pack makeup and canonical text\n", .{checked});
+}
+
+test "a map's folk and script save with it, and folk off open bespoke floor are refused" {
+    const a = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(a);
+    const room = a.add(.{ .bespoke = .{} }).?;
+    const b = &a.node[room].plan.bespoke;
+    var floor = grid.Box.sized(.{ .x = 3, .y = 3 }, 9, 6).cells();
+    while (floor.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
+    _ = b.addFoe(.{ .kind = .rat, .at = .{ .x = 9, .y = 4 } });
+    a.start = .{ .node = room, .at = .{ .x = 4, .y = 4 } };
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    defer buf.deinit();
+    try a.write(buf.writer());
+    const bare = buf.items.len;
+    try buf.appendSlice(script_text.SAMPLE);
+    const back = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(back);
+    try back.parse(buf.items);
+    var again = std.ArrayList(u8).init(std.testing.allocator);
+    defer again.deinit();
+    try back.write(again.writer());
+    try std.testing.expectEqualStrings(buf.items, again.items);
+    try std.testing.expectEqual(@as(u8, 2), back.script.folk_n);
+    for ([_][]const u8{ "folk 0 1 1 -\n", "folk 0 9 4 -\n", "folk 0 3 3 -\nfolk 0 3 3 -\n" }) |extra| {
+        buf.shrinkRetainingCapacity(bare);
+        try buf.appendSlice(extra);
+        try std.testing.expectError(error.BadLine, back.parse(buf.items));
+    }
+    std.debug.print("map script: {d} script bytes round-trip with the map; folk on a wall, a foe or each other refused\n", .{script_text.SAMPLE.len});
 }
 
 test "map text accepts exact node feature and door limits and refuses the next entry" {

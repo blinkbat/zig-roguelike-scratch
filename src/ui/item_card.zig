@@ -7,20 +7,22 @@ const look = @import("../gfx/look.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
 const layout = @import("character_layout.zig");
+const consumable = @import("../play/consumable.zig");
+const skillbar = @import("../play/skillbar.zig");
 
 pub const TWO_HANDED = "Two-handed";
 pub const ONE_HANDED = "One-handed";
 pub const EMPTY_SLOT = "Empty slot";
+pub const CONSUMABLE = "Consumable";
 
 const CARD_LINE = font.SMALL_LINE;
-/// Down from a card's top: its rule, name (or "Empty slot"), slot, flavor and first stat line.
+/// Down from a card's top: its rule, name (or "Empty slot"), slot and first stat line.
 const CARD_RULE = 20;
 const CARD_NAME = 32;
 const CARD_EMPTY = 35;
 pub const SLOT_Y = 84;
 const SLOT_STATS_GAP = 11;
 const CARD_STATS = SLOT_Y + font.LABEL + SLOT_STATS_GAP;
-const FLAVOR_GAP = 12;
 /// Above and below the modifiers' rule, and its inset from the card's sides.
 const MODS_ABOVE = 6;
 const MODS_BELOW = 10;
@@ -101,7 +103,7 @@ const CardLines = struct {
 fn footOf(lines: usize, mods: usize) i32 {
     const n: i32 = @intCast(lines);
     const m: i32 = @intCast(mods);
-    return CARD_STATS + n * CARD_LINE + (if (m > 0) MODS_ABOVE + MODS_BELOW + m * CARD_LINE else 0) + FLAVOR_GAP + font.LABEL;
+    return CARD_STATS + n * CARD_LINE + (if (m > 0) MODS_ABOVE + MODS_BELOW + m * CARD_LINE else 0);
 }
 
 pub fn height(item: items.Item, slot: items.Slot) i32 {
@@ -122,8 +124,20 @@ comptime {
     }
 }
 
-pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.Item, slot: items.Slot, available: attr.Attrs, caption: [:0]const u8) void {
-    face.draw(caption, x, y, font.LABEL, look.DIM);
+pub fn drawSupply(face: *const font.Face, x: i32, y: i32, width: i32, k: consumable.Kind, carried: u8, caption: ?[:0]const u8) void {
+    if (caption) |c| face.draw(c, x, y, font.LABEL, look.DIM);
+    rl.drawLine(x, y + CARD_RULE, x + width, y + CARD_RULE, look.EDGE);
+    _ = face.paragraph(menu.named(k), x, y + CARD_NAME, width, font.BODY, look.itemInk(.normal));
+    face.draw(CONSUMABLE, x, y + SLOT_Y, font.LABEL, look.DIM);
+    const act = skillbar.Act.ofSupply(k);
+    const top = face.paragraph(act.desc(), x, y + CARD_STATS, width, font.SMALL, look.TEXT);
+    var line: menu.Note(40) = .{};
+    line.say("{d} carried, 1 turn to use", .{carried});
+    face.draw(line.text(), x, top + MODS_BELOW, font.LABEL, look.DIM);
+}
+
+pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.Item, slot: items.Slot, available: attr.Attrs, caption: ?[:0]const u8) void {
+    if (caption) |c| face.draw(c, x, y, font.LABEL, look.DIM);
     rl.drawLine(x, y + CARD_RULE, x + width, y + CARD_RULE, look.EDGE);
     const item = maybe orelse {
         face.draw(EMPTY_SLOT, x, y + CARD_EMPTY, font.BODY, look.DIM);
@@ -132,7 +146,6 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     };
     const spec = items.spec(item.kind);
     const ink = look.itemInk(item.rarity());
-    var fitted: [64]u8 = undefined;
     var name_buf: [items.NAME_MAX]u8 = undefined;
     _ = face.paragraph(item.name(&name_buf), x, y + CARD_NAME, width, font.BODY, ink);
     if (item.rarity() == .rare) face.draw(menu.namedOr(item.kind, spec.name), x, y + CARD_NAME + font.BODY_LINE, font.LABEL, look.TEXT);
@@ -162,7 +175,6 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
             top += CARD_LINE;
         }
     }
-    face.draw(face.fit(&fitted, item.flavor(), font.LABEL, width, false), x, top + FLAVOR_GAP, font.LABEL, look.DIM);
 }
 
 pub fn verify(face: *const font.Face) !void {
@@ -170,11 +182,6 @@ pub fn verify(face: *const font.Face) !void {
     var text: menu.Note(120) = .{};
     for (std.enums.values(items.Kind)) |kind| {
         const spec = items.spec(kind);
-        if (face.width(spec.flavor, font.LABEL) > layout.CARD_W) {
-            std.debug.print("card overflow {s}: {s}\n", .{ spec.name, spec.flavor });
-            return error.ItemCardOverflow;
-        }
-        count += 1;
         for (spec.slots) |slot| {
             const rows = CardLines.of(spec, slot, null);
             for (rows.lines()) |line| {
@@ -187,7 +194,7 @@ pub fn verify(face: *const font.Face) !void {
             }
         }
     }
-    std.debug.print("item typography: {d} flavor, property and requirement rows fit {d}px comparison cards\n", .{ count, layout.CARD_W });
+    std.debug.print("item typography: {d} property and requirement rows fit {d}px comparison cards\n", .{ count, layout.CARD_W });
     for (items.MODS) |mod| {
         text.clear();
         (items.Affix{ .kind = mod, .value = 25 }).write(text.writer());

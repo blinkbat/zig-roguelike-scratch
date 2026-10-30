@@ -302,6 +302,5 @@ fn drawDiagnostics(g: *game.Game) void {
     line.say("Build: {s} / {s} / {s}", .{ @tagName(builtin.os.tag), @tagName(builtin.cpu.arch), @tagName(builtin.mode) });
     face.draw(line.text(), PAD, lineY(STATS_Y, 1), font.SMALL, look.TEXT);
     face.draw(g.perf.text(), PAD, lineY(STATS_Y, 2), font.SMALL, look.TEXT);
-    face.draw("CPU time excludes frame pacing and is not a GPU timer.", PAD, lineY(STATS_Y, 3), menu.NOTE, look.DIM);
     menu.action(&face, backBox(), prompt_icon.Prompt.menuOf(&g.st, menu.BACK), "Back");
 }

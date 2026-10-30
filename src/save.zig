@@ -24,14 +24,16 @@ const data = @import("save_data.zig");
 const format = @import("save_format.zig");
 
 const part = data.part;
-const Header = data.Header;
+const Header = data.LegacyHeader;
 const Seed = data.Seed;
 const Map = data.Map;
+const RawMap = data.LegacyMap;
 const Node = data.Node;
 const Visited = data.Visited;
-const Visit = data.Visit;
+const RawVisit = data.LegacyVisit;
+const RawLevel = data.LegacyLevel;
 const TAIL_FIELDS = data.TAIL_FIELDS;
-const Tail = data.Tail;
+const Tail = data.LegacyTail;
 const TAIL = data.TAIL;
 pub const Summary = data.Summary;
 
@@ -126,12 +128,28 @@ fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
     try store.legacy.put(w, &g.sim.seed);
     const has_map = g.sim.map != null;
     try store.legacy.put(w, &has_map);
-    if (g.sim.map) |a| try store.legacy.put(w, a);
+    const raw = try std.heap.page_allocator.create(struct { map: RawMap, visit: RawVisit, lv: RawLevel });
+    defer std.heap.page_allocator.destroy(raw);
+    if (g.sim.map) |a| {
+        data.convert(&raw.map, a);
+        try store.legacy.put(w, &raw.map);
+    }
     try store.legacy.put(w, &g.sim.node);
     try store.legacy.put(w, &g.sim.visited);
     var it = g.sim.visited.iterator(.{});
-    while (it.next()) |n| try store.legacy.put(w, &g.sim.visits[n]);
-    inline for (TAIL_FIELDS) |f| try store.legacy.put(w, &@field(part(g, f[0]), f[1]));
+    while (it.next()) |n| {
+        data.convert(&raw.visit, &g.sim.visits[n]);
+        try store.legacy.put(w, &raw.visit);
+    }
+    inline for (TAIL_FIELDS) |f| {
+        const value = &@field(part(g, f[0]), f[1]);
+        if (comptime @TypeOf(value.*) == @FieldType(Tail, f[1])) {
+            try store.legacy.put(w, value);
+        } else {
+            data.convert(&raw.lv, value);
+            try store.legacy.put(w, &raw.lv);
+        }
+    }
     try out.ensureUnusedCapacity(store.SUM);
 }
 
@@ -174,7 +192,7 @@ fn inspect(bytes: []const u8) Error!Contents {
     if (!store.legacy.take(&b, &seed) or !store.legacy.take(&b, &map_flag)) return error.Short;
     if (map_flag > 1) return error.Damaged;
     const has_map = map_flag != 0;
-    const at_node: usize = if (has_map) @sizeOf(Map) else 0;
+    const at_node: usize = if (has_map) @sizeOf(RawMap) else 0;
     const at_visited = at_node + @sizeOf(Node);
     if (b.len < at_visited + @sizeOf(Visited)) return error.Short;
     var node: Node = undefined;
@@ -182,10 +200,10 @@ fn inspect(bytes: []const u8) Error!Contents {
     var navigation = b[at_node..];
     _ = store.legacy.take(&navigation, &node);
     _ = store.legacy.take(&navigation, &visited);
-    if (b.len != at_visited + @sizeOf(Visited) + visited.count() * @sizeOf(Visit) + TAIL) return error.Short;
+    if (b.len != at_visited + @sizeOf(Visited) + visited.count() * @sizeOf(RawVisit) + TAIL) return error.Short;
     if (has_map) {
-        var node_count: @FieldType(Map, "node_n") = undefined;
-        var count_bytes = b[@offsetOf(Map, "node_n")..];
+        var node_count: @FieldType(RawMap, "node_n") = undefined;
+        var count_bytes = b[@offsetOf(RawMap, "node_n")..];
         _ = store.legacy.take(&count_bytes, &node_count);
         if (node_count == 0 or node_count > atlas.MAX_NODES or node >= node_count) return error.Damaged;
         var it = visited.iterator(.{});
@@ -204,20 +222,36 @@ fn parseLegacy(bytes: []const u8) !*format.Snapshot {
     snapshot.seed = c.seed;
     snapshot.map = null;
     snapshot.visits = @splat(null);
+    snapshot.portable = .{};
+    const raw = try std.heap.page_allocator.create(struct { map: RawMap, visit: RawVisit, lv: RawLevel });
+    defer std.heap.page_allocator.destroy(raw);
     var b = c.body;
     if (c.has_map) {
+        _ = store.legacy.take(&b, &raw.map);
+        if (!store.legacy.valid(format.Policy, &raw.map)) return error.Damaged;
         snapshot.map = @as(Map, undefined);
-        _ = store.legacy.take(&b, &snapshot.map.?);
+        data.convert(&snapshot.map.?, &raw.map);
     }
     _ = store.legacy.take(&b, &snapshot.node);
     var visited: Visited = undefined;
     _ = store.legacy.take(&b, &visited);
     var it = visited.iterator(.{});
     while (it.next()) |n| {
-        snapshot.visits[n] = @as(Visit, undefined);
-        _ = store.legacy.take(&b, &snapshot.visits[n].?);
+        _ = store.legacy.take(&b, &raw.visit);
+        if (!store.legacy.valid(format.Policy, &raw.visit)) return error.Damaged;
+        snapshot.visits[n] = @as(data.Visit, undefined);
+        data.convert(&snapshot.visits[n].?, &raw.visit);
     }
-    inline for (TAIL_FIELDS) |field| _ = store.legacy.take(&b, &@field(snapshot.run, field[1]));
+    inline for (TAIL_FIELDS) |field| {
+        const into = &@field(snapshot.run, field[1]);
+        if (comptime @TypeOf(into.*) == @FieldType(Tail, field[1])) {
+            _ = store.legacy.take(&b, into);
+        } else {
+            _ = store.legacy.take(&b, &raw.lv);
+            if (!store.legacy.valid(format.Policy, &raw.lv)) return error.Damaged;
+            data.convert(into, &raw.lv);
+        }
+    }
     if (!store.legacy.valid(format.Policy, snapshot)) return error.Damaged;
     try format.validate(snapshot);
     return snapshot;
@@ -560,7 +594,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0x2d1c39b5a4cbd50b;
+const RECORDED_FINGERPRINT: Print = 0xe27fed80f5e3dff6;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
     game.beginMapAt(g, w, w.start, 7);
@@ -583,6 +617,8 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     const rare = items.Item{ .kind = .robes, .rare_name = .{ .first = .Magus, .last = .Fold }, .mods = .{ .{ .kind = .intelligence, .value = 3 }, .{ .kind = .armour, .value = 4 }, .{ .kind = .mana, .value = 3 }, .{ .kind = .life, .value = 6 } } };
     try std.testing.expect(g.sim.inventory.add(rare));
     try std.testing.expect(g.sim.ground.add(.{ .item = rare, .at = g.sim.heroActor().?.at }));
+    try std.testing.expect(g.sim.ground.addSupply(.{ .kind = .smelling_salts, .at = g.sim.heroActor().?.at }));
+    g.sim.inventory.stacks.set(.frost_vial, 3);
     g.sim.heroActor().?.tactics = .{ .steady = 2, .guard = 1, .unyielding = true, .overwatch = .e };
     const at = g.sim.heroActor().?.at.add(.{ .x = 2, .y = 0 });
     g.sim.lv.barrier[grid.Level.idx(at)] = 3;
@@ -610,6 +646,8 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     try std.testing.expectEqualDeep(g.sim.inventory.gear, back.sim.inventory.gear);
     try std.testing.expectEqualDeep(g.sim.inventory.bag[1], back.sim.inventory.bag[1]);
     try std.testing.expectEqualDeep(g.sim.ground.drops[0].item, back.sim.ground.drops[0].item);
+    try std.testing.expectEqualDeep(g.sim.ground.supplies[0], back.sim.ground.supplies[0]);
+    try std.testing.expectEqualDeep(g.sim.inventory.stacks, back.sim.inventory.stacks);
     var rare_buf: [items.NAME_MAX]u8 = undefined;
     try std.testing.expectEqualStrings("Magus Fold", back.sim.inventory.bag[1].name(&rare_buf));
     try std.testing.expectEqual(@as(i32, 2), back.sim.heroAttrs().thorns);
@@ -656,8 +694,8 @@ test "legacy saves convert on load and reject invalid native tags before changin
     try std.testing.expect(std.mem.startsWith(u8, fresh.items, format.MAGIC));
     _ = try peek(fresh.items);
 
-    const tail_at = HEAD + @sizeOf(Summary) + @sizeOf(Seed) + 1 + @sizeOf(Map) + @sizeOf(Node) + @sizeOf(Visited) + source.sim.visited.count() * @sizeOf(Visit);
-    const actor_at = tail_at + @sizeOf(grid.Level) + @offsetOf(actor.Pool, "items");
+    const tail_at = HEAD + @sizeOf(Summary) + @sizeOf(Seed) + 1 + @sizeOf(RawMap) + @sizeOf(Node) + @sizeOf(Visited) + source.sim.visited.count() * @sizeOf(RawVisit);
+    const actor_at = tail_at + @sizeOf(RawLevel) + @offsetOf(actor.Pool, "items");
     const offsets = [_]usize{ actor_at + @offsetOf(actor.Actor, "kind"), actor_at + @offsetOf(actor.Actor, "alive") };
     const map_hash = store.sum(std.mem.asBytes(into));
     for (offsets) |offset| {
@@ -759,16 +797,16 @@ test "checksummed save structure failures preserve both the live run and destina
     defer before.deinit();
     try writeLegacy(back, &before);
     const map_at = HEAD + @sizeOf(Summary) + @sizeOf(Seed) + @sizeOf(bool);
-    const visits_at = map_at + @sizeOf(Map) + @sizeOf(Node) + @sizeOf(Visited);
+    const visits_at = map_at + @sizeOf(RawMap) + @sizeOf(Node) + @sizeOf(Visited);
     const cuts = [_]usize{
         HEAD,
         HEAD + @sizeOf(Summary) - 1,
         map_at - 1,
         map_at,
-        map_at + @sizeOf(Map) - 1,
+        map_at + @sizeOf(RawMap) - 1,
         visits_at - 1,
         visits_at,
-        visits_at + @sizeOf(Visit) - 1,
+        visits_at + @sizeOf(RawVisit) - 1,
         full.items.len - store.SUM - 1,
         full.items.len - store.SUM,
     };
@@ -797,15 +835,15 @@ test "checksummed save structure failures preserve both the live run and destina
     for (std.enums.values(Navigation)) |case| {
         damaged.clearRetainingCapacity();
         try damaged.appendSlice(full.items[0 .. full.items.len - store.SUM]);
-        const node_at = map_at + @sizeOf(Map);
+        const node_at = map_at + @sizeOf(RawMap);
         switch (case) {
             .node_capacity => Patch.value(damaged.items, node_at, @as(Node, atlas.MAX_NODES)),
             .node_count => {
                 Patch.value(damaged.items, node_at, @as(Node, w.node_n));
                 Patch.value(damaged.items, HEAD + @offsetOf(Summary, "node"), @as(?usize, w.node_n));
             },
-            .empty_map => Patch.value(damaged.items, map_at + @offsetOf(Map, "node_n"), @as(usize, 0)),
-            .oversized_map => Patch.value(damaged.items, map_at + @offsetOf(Map, "node_n"), @as(usize, atlas.MAX_NODES + 1)),
+            .empty_map => Patch.value(damaged.items, map_at + @offsetOf(RawMap, "node_n"), @as(usize, 0)),
+            .oversized_map => Patch.value(damaged.items, map_at + @offsetOf(RawMap, "node_n"), @as(usize, atlas.MAX_NODES + 1)),
             .visited_node => {
                 var visited = Visited.initEmpty();
                 visited.set(w.node_n);

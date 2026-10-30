@@ -95,9 +95,14 @@ pub const DODGE_MAX: i32 = 75;
 /// Percent of a physical blow armour may take at most.
 pub const ARMOUR_MAX: i32 = 75;
 
+/// The percent of a physical blow `armour` takes.
+pub fn reductionOf(armour: i32) i32 {
+    return std.math.clamp(armour, 0, ARMOUR_MAX);
+}
+
 /// A physical blow of `amount` after `armour` takes its share.
 pub fn armoured(armour: i32, amount: i32, rng: *mathx.Rng) i32 {
-    return Dealt.of(@as(i64, @max(0, amount)) * (mathx.PERCENT - std.math.clamp(armour, 0, ARMOUR_MAX)) * mathx.PERCENT).roll(rng);
+    return Dealt.of(@as(i64, @max(0, amount)) * (mathx.PERCENT - reductionOf(armour)) * mathx.PERCENT).roll(rng);
 }
 
 pub const Attrs = struct {
@@ -153,11 +158,7 @@ pub const Attrs = struct {
     }
 
     pub fn reduction(a: Attrs) i32 {
-        return std.math.clamp(a.armour, 0, ARMOUR_MAX);
-    }
-
-    pub fn physical(a: Attrs, amount: i32, rng: *mathx.Rng) i32 {
-        return armoured(a.armour, amount, rng);
+        return reductionOf(a.armour);
     }
 
     pub fn collectedGold(a: Attrs, amount: i32, rng: *mathx.Rng) i32 {

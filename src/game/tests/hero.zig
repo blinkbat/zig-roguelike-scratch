@@ -18,6 +18,77 @@ const combat = @import("../combat.zig");
 const harness = @import("../harness.zig");
 const game = @import("../../game.zig");
 const skills = @import("../skills.zig");
+const consumable = @import("../../play/consumable.zig");
+const menu = @import("../../ui/menu.zig");
+
+fn carry(g: *game.Game, act: skillbar.Act, n: u8) void {
+    g.sim.inventory.stacks.set(act.supplyOf().?, n);
+    if (g.bar.slotOf(act) == null) g.bar.bind(g.bar.firstEmpty().?, act);
+}
+
+test "a bandage stops bleeding for a turn and one from the stack, and none left spends nothing" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    carry(g, .bandage, 1);
+    const h = g.sim.heroActor().?;
+    h.bleed.startWith(3);
+    const hp = h.hp;
+    var next = g.sim.clock;
+    next.turn();
+    harness.use(g, .bandage);
+    try std.testing.expectEqual(next, g.sim.clock);
+    try std.testing.expectEqual(@as(u8, 0), h.bleed.turns);
+    try std.testing.expectEqual(hp, h.hp);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.inventory.stacks.get(.bandage));
+    h.bleed.startWith(3);
+    harness.use(g, .bandage);
+    try std.testing.expectEqual(next, g.sim.clock);
+    try std.testing.expect(h.bleed.turns > 0);
+    try std.testing.expect(harness.logged(g, "none carried"));
+    std.debug.print("bandage: bleed stopped in one turn with no bleed tick; an empty stack refuses and spends no turn\n", .{});
+}
+
+test "smelling salts keep every stun off through the turn they are used and the five after" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    carry(g, .smelling_salts, 1);
+    const h = g.sim.heroActor().?;
+    harness.use(g, .smelling_salts);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.inventory.stacks.get(.smelling_salts));
+    for (0..consumable.SmellingSalts.TURNS) |_| {
+        const rng = g.sim.rng;
+        try std.testing.expect(!g.sim.takeStatus(h, .stun));
+        try std.testing.expectEqualDeep(rng, g.sim.rng);
+        harness.use(g, .wait);
+    }
+    try std.testing.expect(g.sim.takeStatus(h, .stun));
+    std.debug.print("smelling salts: {d} turns after use with no stun landing and no roll drawn, then a stun lands\n", .{consumable.SmellingSalts.TURNS});
+}
+
+test "a frost vial thrown from the bag splashes cold on every foe round its mark and none past it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{ .{ .x = 26, .y = 20 }, .{ .x = 27, .y = 21 }, .{ .x = 29, .y = 20 } });
+    harness.toughenFoes(g);
+    g.sim.inventory.stacks.set(.frost_vial, 2);
+    character.openCharacter(g);
+    g.character.choose(.inventory);
+    harness.press(g, menu.CONFIRM);
+    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+    try std.testing.expectEqual(@as(u8, 2), g.sim.inventory.stacks.get(.frost_vial));
+    var next = g.sim.clock;
+    next.turn();
+    harness.press(g, menu.CONFIRM);
+    try std.testing.expectEqual(next, g.sim.clock);
+    try std.testing.expectEqual(@as(u8, 1), g.sim.inventory.stacks.get(.frost_vial));
+    const struck = harness.TEST_HP - g.sim.pool.get(2).?.hp;
+    try harness.expectDamage(g, .frost_vial, struck, &.{consumable.FrostVial.BASE});
+    try harness.expectDamage(g, .frost_vial, harness.TEST_HP - g.sim.pool.get(3).?.hp, &.{consumable.FrostVial.BASE});
+    try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(4).?.hp);
+    std.debug.print("frost vial: {d} cold to the struck rat, {d} beside it, none 3 tiles on; one vial used\n", .{ struck, harness.TEST_HP - g.sim.pool.get(3).?.hp });
+}
 
 test "attack resolution returns harm and statuses without advancing the picture" {
     const g = try game.boot(std.testing.allocator);
@@ -369,43 +440,56 @@ test "the log says the blow and the experience it awards, a juke as itself, and 
     std.debug.print("log: \"{s}\" then \"{s}\"\n", .{ gained, g.sim.log.line(0).? });
 }
 
-test "a flask drink is free, recovers immediately and over later turns, and kills refill its charges" {
+test "a flask drink spends a turn, recovers on it and the next two, and kills refill only a worn flask" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{.{ .x = 30, .y = 20 }});
     const h = g.sim.heroActor().?;
     h.hp = 1;
     g.sim.mana = 0;
-    const hour = g.sim.clock;
+    var next = g.sim.clock;
+    next.turn();
     harness.use(g, .life_flask);
-    try std.testing.expectEqual(hour, g.sim.clock);
+    try std.testing.expectEqual(next, g.sim.clock);
     const per = firstLifeTick(h.max);
     try std.testing.expectEqual(1 + per, h.hp);
     for (1..flask.TURNS) |_| harness.use(g, .wait);
     try std.testing.expectEqual(1 + flask.lifeOf(h.max, 0), h.hp);
     harness.use(g, .mana_flask);
-    for (1..flask.TURNS + 2) |_| harness.use(g, .wait);
+    for (1..flask.TURNS) |_| harness.use(g, .wait);
     try std.testing.expectEqual(@min(g.sim.manaMax(), flask.MANA_GAIN + @divTrunc(heroes.MANA_REGEN * (flask.TURNS * 2), heroes.MANA_REGEN_TURNS)), g.sim.mana);
     harness.use(g, .life_flask);
     harness.use(g, .life_flask);
     try std.testing.expectEqual(@as(u8, 0), g.sim.flasks.get(.life).uses());
-    const hp = h.hp;
+    const empty = g.sim.clock;
     harness.use(g, .life_flask);
-    try std.testing.expectEqual(hp, h.hp);
+    try std.testing.expectEqual(empty, g.sim.clock);
     try std.testing.expectEqual(@as(u8, 0), g.sim.flasks.get(.life).uses());
     for (0..flask.USE / flask.PER_KILL) |_| combat.fell(g, 2);
     try std.testing.expectEqual(@as(u8, 1), g.sim.flasks.get(.life).uses());
-    std.debug.print("life flask: {d} hp over {d} ticks on a knight of {d}; empty after {d} drinks; {d} kills refill one\n", .{ flask.lifeOf(h.max, 0), flask.TURNS, h.max, flask.CHARGES / flask.USE, flask.USE / flask.PER_KILL });
+    try g.sim.inventory.unequip(.life_flask, g.sim.growth.attributes(g.sim.class));
+    const charges = g.sim.flasks.get(.life).charges;
+    g.sim.flasks.getPtr(.mana).charges = flask.USE;
+    const mana_charges = g.sim.flasks.get(.mana).charges;
+    const unworn = g.sim.clock;
+    harness.use(g, .life_flask);
+    try std.testing.expectEqual(unworn, g.sim.clock);
+    try std.testing.expectEqual(charges, g.sim.flasks.get(.life).charges);
+    try std.testing.expect(harness.logged(g, "is not equipped."));
+    combat.fell(g, 2);
+    try std.testing.expectEqual(charges, g.sim.flasks.get(.life).charges);
+    try std.testing.expectEqual(mana_charges + flask.PER_KILL, g.sim.flasks.get(.mana).charges);
+    std.debug.print("life flask: {d} hp over {d} turns on a knight of {d}; empty after {d} drinks; {d} kills refill one; unworn it neither drinks nor refills\n", .{ flask.lifeOf(h.max, 0), flask.TURNS, h.max, flask.CHARGES / flask.USE, flask.USE / flask.PER_KILL });
 }
 
-test "both flask sips leave foes ailments cooldowns regeneration and the other flask untouched" {
+test "each flask drink is a whole turn: foes, ailments, cooldowns, regeneration and the other flask all advance" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     for ([_]skillbar.Act{ .life_flask, .mana_flask }) |act| {
         harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
         harness.wakeFoes(g);
         const h = g.sim.heroActor().?;
-        h.hp = 1;
+        h.hp = h.max - firstLifeTick(h.max);
         h.burn = .{ .turns = 2 };
         g.sim.mana = 0;
         g.sim.mana_recovery = heroes.MANA_REGEN_TURNS - 1;
@@ -414,39 +498,38 @@ test "both flask sips leave foes ailments cooldowns regeneration and the other f
         const other: flask.Kind = if (kind == .life) .mana else .life;
         g.sim.flasks.getPtr(other).drink(9);
         const other_before = g.sim.flasks.get(other);
-        const foe = g.sim.pool.get(2).?.*;
-        const clock = g.sim.clock;
+        var next = g.sim.clock;
+        next.turn();
         const rng = g.sim.rng;
         g.sim.unsaved = false;
         g.pic.catchUp(&g.sim);
         harness.use(g, act);
         try std.testing.expect(g.sim.unsaved);
-        try std.testing.expectEqual(clock, g.sim.clock);
-        try std.testing.expectEqualDeep(foe, g.sim.pool.get(2).?.*);
-        try std.testing.expectEqual(rng, g.sim.rng);
-        try std.testing.expectEqual(@as(u8, 2), h.burn.turns);
-        try std.testing.expectEqual(@as(u8, 2), g.sim.cooldown.get(.charge));
-        try std.testing.expectEqual(heroes.MANA_REGEN_TURNS - 1, g.sim.mana_recovery);
-        try std.testing.expectEqual(other_before, g.sim.flasks.get(other));
-        try std.testing.expectEqual(@as(u8, 0), act.turns());
+        try std.testing.expectEqual(next, g.sim.clock);
+        try std.testing.expect(!std.meta.eql(rng, g.sim.rng));
+        try std.testing.expect(h.burn.turns < 2);
+        try std.testing.expectEqual(@as(u8, 1), g.sim.cooldown.get(.charge));
+        try std.testing.expectEqual(@as(i32, 0), g.sim.mana_recovery);
+        try std.testing.expectEqual(other_before.turns - 1, g.sim.flasks.get(other).turns);
+        try std.testing.expectEqual(@as(u8, 1), act.turns());
         try std.testing.expectEqual(flask.TURNS - 1, g.sim.flasks.get(kind).turns);
         try std.testing.expectEqual(flask.CHARGES / flask.USE - 1, g.sim.flasks.get(kind).uses());
-        try std.testing.expectEqual(if (kind == .life) 1 + firstLifeTick(h.max) else @as(i32, 1), h.hp);
-        try std.testing.expectEqual(if (kind == .mana) try std.math.divCeil(i32, flask.MANA_GAIN, flask.TURNS) else @as(i32, 0), g.sim.mana);
-        try std.testing.expectEqual(h.hp, g.pic.pictured[g.sim.heroSlot().?].hp);
+        const flask_mana = if (kind == .mana) try std.math.divCeil(i32, flask.MANA_GAIN, flask.TURNS) else try std.math.divCeil(i32, 9, flask.TURNS);
+        try std.testing.expectEqual(heroes.MANA_REGEN + flask_mana, g.sim.mana);
         var description: [256]u8 = undefined;
-        try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, act, &description), "no turn cost") != null);
+        try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, act, &description), "1 turn") != null);
         const recovering = g.sim.flasks;
         const hp = h.hp;
         const mana = g.sim.mana;
+        harness.calm(g);
         g.st = .{};
         game.update(g, 1);
         try std.testing.expectEqualDeep(recovering, g.sim.flasks);
         try std.testing.expectEqual(hp, h.hp);
         try std.testing.expectEqual(mana, g.sim.mana);
-        try std.testing.expectEqual(clock, g.sim.clock);
+        try std.testing.expectEqual(next, g.sim.clock);
     }
-    std.debug.print("2 flask types: same-frame first tick, zero turns, no foe/status/cooldown/regen/other-flask advance, and no idle recovery\n", .{});
+    std.debug.print("2 flask types: one turn each, foes roll, burn, cooldown, regeneration and the other flask advance; no idle recovery\n", .{});
 }
 
 test "mana recovery carries partial progress over spent turns and resets on a new run" {
@@ -474,7 +557,7 @@ test "mana recovery carries partial progress over spent turns and resets on a ne
     std.debug.print("mana: 1 per 5 spent turns, Slow Tide 2 per 5 with carried remainder, fresh runs reset recovery\n", .{});
 }
 
-test "a flask's first heal shows immediately and later recovery precedes the next bite" {
+test "a flask's first heal shows on its own turn and later recovery precedes the next bite" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
@@ -483,6 +566,7 @@ test "a flask's first heal shows immediately and later recovery precedes the nex
     h.hp = 10;
     g.pic.catchUp(&g.sim);
     const hero = g.sim.heroSlot().?;
+    g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = false }});
     harness.use(g, .life_flask);
     const first_tick = 10 + firstLifeTick(h.max);
     try std.testing.expectEqual(first_tick, h.hp);

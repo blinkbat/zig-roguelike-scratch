@@ -15,7 +15,6 @@ pub const DONE = "casts a frost nova";
 pub const TAKES = glacial.TAKES;
 pub const ELEMENT: damage.Element = .cold;
 pub const DESCRIPTION = std.fmt.comptimePrint("A cold blast hits every foe within {d} tiles. {s}.", .{ RANGE, glacial.CHILL_NOTE });
-pub const FLAVOR = "The cold arrives all at once, and stays.";
 
 comptime {
     std.debug.assert(RANGE <= glacial.BURST_MAX);

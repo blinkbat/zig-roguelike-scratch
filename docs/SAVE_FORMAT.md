@@ -53,13 +53,19 @@ Supporting one requires its original schema and an explicit migration. Keep
 `RECORDED_FINGERPRINT` and the legacy fixtures as guards against accidentally
 claiming compatibility.
 
+The reader takes the map and level in their raw shape without the fields added
+to their ends since (`save_data.LegacyMap`, `LegacyLevel`: the script, folk and healing gas),
+then converts with those fields defaulted. Run state added after the raw format
+(`PORTABLE_FIELDS`, the trigger runtime) lives in portable saves alone.
+
 ## Encoding and evolution
 
 `core/store.zig` supplies atomic replacement and an envelope: magic, a little-endian
 u64 format version, body, and a little-endian u64 Wyhash checksum of that body.
 The checksum detects damage; it is not authentication. Unknown envelope versions
-are refused. Run magic is `cistern-save\n`, version 1; ossuary magic is
-`cistern-ossuary-v1\n`, version 1.
+are refused. Run magic is `cistern-save\n`, version 2; ossuary magic is
+`cistern-ossuary-v1\n`, version 1. Version 1 runs predate flasks worn as items and load
+with both flasks equipped; version 2 keeps an empty flask slot empty.
 
 `core/wire.zig` writes structs as a u16 field count followed by length-delimited
 named fields. Each field has a u16 name length, name bytes, u32 payload length and
