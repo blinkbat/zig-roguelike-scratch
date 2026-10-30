@@ -23,7 +23,28 @@ pub const Flight = struct {
         if (f.struck == null) return null;
         return f.path[f.len - 1];
     }
+
+    /// It struck the body `id`.
+    pub fn hits(f: *const Flight, id: u16) bool {
+        const s = f.struck orelse return false;
+        return switch (s) {
+            .body => |b| b == id,
+            .barrel => false,
+        };
+    }
+
+    /// `c` laid on its path toward `to`: whether it stops there, flies on through the dark, or may strike there.
+    fn enter(f: *Flight, lv: *const grid.Level, c: P, to: P, comptime visible_only: bool) Cell {
+        if (!grid.Level.inside(c) or f.len == f.path.len or lv.hasBarrier(c) or (!c.eq(to) and lv.at(c).blind())) return .stop;
+        f.path[f.len] = c;
+        f.len += 1;
+        if (lv.at(c).halts()) return .stop;
+        if (visible_only and !lv.isLit(c)) return .unseen;
+        return .open;
+    }
 };
+
+const Cell = enum { stop, unseen, open };
 
 pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     const d = mathx.dist(from, to);
@@ -31,7 +52,7 @@ pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
 }
 
 pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
-    var near = Nearest{ .from = from };
+    var near = grid.Nearest{ .from = from };
     for (pool.slice()) |a| {
         if (a.alive and a.foe() and a.seenIn(lv) and aimable(lv, from, a.at)) {
             const flight = previewAmong(lv, pool, from, a.at);
@@ -47,24 +68,6 @@ pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
     }
     return near.best;
 }
-
-/// The nearest cell offered within `reach`, by steps and then by the straighter line.
-pub const Nearest = struct {
-    from: P,
-    reach: i32 = std.math.maxInt(i32),
-    best: ?P = null,
-    best_d: i32 = std.math.maxInt(i32),
-    best_line: f32 = std.math.floatMax(f32),
-
-    pub fn offer(n: *Nearest, p: P) void {
-        const d = mathx.dist(n.from, p);
-        const line = mathx.distEuclid(n.from, p);
-        if (d > n.reach or d > n.best_d or (d == n.best_d and line >= n.best_line)) return;
-        n.best_d = d;
-        n.best_line = line;
-        n.best = p;
-    }
-};
 
 pub fn fly(lv: *const grid.Level, from: P, to: P) Flight {
     return trace(lv, null, from, to, false);
@@ -83,14 +86,14 @@ fn trace(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, compti
     var f = Flight{};
     var ray = grid.Ray.init(from, to);
     while (ray.next()) |c| {
-        if (!grid.Level.inside(c) or f.len == f.path.len or lv.hasBarrier(c) or (!c.eq(to) and lv.at(c).blind())) break;
-        f.path[f.len] = c;
-        f.len += 1;
-        if (lv.at(c).halts()) break;
-        if (visible_only and !lv.isLit(c)) continue;
+        switch (f.enter(lv, c, to, visible_only)) {
+            .stop => break,
+            .unseen => continue,
+            .open => {},
+        }
         const w = lv.who(c);
         if (w != grid.NO_ONE) {
-            if (seen) |pool| if (pool.items[actor.Pool.slot(w)].veiled()) continue;
+            if (veiled(seen, w)) continue;
             f.struck = .{ .body = w };
             break;
         }
@@ -100,6 +103,13 @@ fn trace(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, compti
         }
     }
     return f;
+}
+
+/// A body in `seen` the hero cannot see where lit; without a pool, none is.
+fn veiled(seen: ?*const actor.Pool, w: u16) bool {
+    const pool = seen orelse return false;
+    const i = actor.Pool.slot(w);
+    return pool.items[i].veiled();
 }
 
 /// The bodies an arrow passes through, nearest first, each with its index along the flight.
@@ -112,27 +122,29 @@ pub const Pierced = struct {
 
 /// On through every body past `to`, out to full range; a barrel, wall or barrier still stops it.
 pub fn pierce(lv: *const grid.Level, from: P, to: P) Pierced {
-    return through(lv, from, to, false);
+    return through(lv, null, from, to, false);
 }
 
-pub fn piercePreview(lv: *const grid.Level, from: P, to: P) Flight {
-    return through(lv, from, to, true).flight;
+/// `previewAmong` for a piercing arrow: veiled bodies in `pool` are passed over unseen.
+pub fn piercePreviewAmong(lv: *const grid.Level, pool: *const actor.Pool, from: P, to: P) Flight {
+    return through(lv, pool, from, to, true).flight;
 }
 
-fn through(lv: *const grid.Level, from: P, to: P, comptime visible_only: bool) Pierced {
+fn through(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, comptime visible_only: bool) Pierced {
     var out = Pierced{};
     const d = mathx.dist(from, to);
     if (d == 0) return out;
     const f = &out.flight;
     var ray = grid.Ray.init(from, from.add(to.sub(from).scaled(@divFloor(RANGE + d - 1, d))));
     while (ray.next()) |c| {
-        if (!grid.Level.inside(c) or f.len == f.path.len or lv.hasBarrier(c) or (!c.eq(to) and lv.at(c).blind())) break;
-        f.path[f.len] = c;
-        f.len += 1;
-        if (lv.at(c).halts()) break;
-        if (visible_only and !lv.isLit(c)) continue;
+        switch (f.enter(lv, c, to, visible_only)) {
+            .stop => break,
+            .unseen => continue,
+            .open => {},
+        }
         const w = lv.who(c);
         if (w != grid.NO_ONE) {
+            if (veiled(seen, w)) continue;
             out.body[out.n] = w;
             out.step[out.n] = f.len - 1;
             out.n += 1;
@@ -143,6 +155,21 @@ fn through(lv: *const grid.Level, from: P, to: P, comptime visible_only: bool) P
     }
     if (f.struck == null and out.n > 0) f.struck = .{ .body = out.body[out.n - 1] };
     return out;
+}
+
+test "a piercing preview passes over a submerged leech in lit water without striking it" {
+    var lv = grid.openFloor();
+    lv.lit = @splat(true);
+    var pool = actor.Pool{};
+    const from = P{ .x = 10, .y = 10 };
+    const mark = P{ .x = 12, .y = 10 };
+    lv.set(.{ .x = 14, .y = 10 }, .water);
+    const leech = pool.spawn(&lv, actor.Actor.of(.bog_leech, .{ .x = 14, .y = 10 }));
+    try std.testing.expect(pool.get(leech).?.veiled());
+    const shown = piercePreviewAmong(&lv, &pool, from, mark);
+    try std.testing.expectEqual(@as(?Hit, null), shown.struck);
+    try std.testing.expect(pierce(&lv, from, mark).flight.hits(leech));
+    std.debug.print("piercing preview: {d} cells drawn past a submerged leech, none struck; the real arrow strikes it\n", .{shown.len});
 }
 
 test "a piercing arrow passes every body in its line to full range and stops at a barrel" {

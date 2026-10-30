@@ -25,8 +25,8 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
             const ids = skills.foesIn(g, area);
             const raw = attacks.rollRaw(&g.sim.rng, .whirlwind, attacks.basesFor(&g.sim, .whirlwind), true);
             const s = game.presentation.Stroke{ .from = h.at, .wait = game.CAST_S };
-            for (ids.slice()) |id| combat.wound(g, id, attacks.heroScaled(&g.sim, .whirlwind, raw).physical(), "whirls into", s);
-            for (area.slice()) |at| combat.smash(g, at, "whirls into", s);
+            for (ids.slice()) |id| combat.wound(g, id, attacks.heroScaled(&g.sim, .whirlwind, raw).physical(), rules.Whirlwind.VERB, s);
+            for (area.slice()) |at| combat.smash(g, at, rules.Whirlwind.VERB, s);
             g.pic.lead = s.wait;
         },
         .war_cry => {
@@ -43,12 +43,12 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
 /// Each visible foe in reach rolls against its fright resistance; one already running only runs longer.
 fn warCry(g: *game.Game, from: P, rank: u8) void {
     for (g.sim.pool.slice(), 0..) |*a, slot| {
-        if (!a.alive or !a.foe() or mathx.dist(a.at, from) > rules.WarCry.RADIUS or !a.seenIn(&g.sim.lv)) continue;
+        if (!a.seenFoe(&g.sim.lv) or mathx.dist(a.at, from) > rules.WarCry.RADIUS) continue;
         a.awake = true;
         if (!g.sim.procStatus(a, .fright, rules.WarCry.chance(rank))) continue;
         if (a.fright == 0) g.sim.sayAt(a.at, "The {s} flees in terror!", .{actor.row(a.kind).name});
         a.fright = @max(a.fright, rules.WarCry.turns(rank));
-        g.pic.fx.settle(game.CAST_S, .{ .slot = slot, .after = g.pic.afterOf(&g.sim, slot) });
+        g.pic.settleSlot(&g.sim, game.CAST_S, slot);
     }
 }
 
@@ -64,7 +64,7 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
             const id = g.sim.lv.who(at);
             if (id == grid.NO_ONE) break :blk false;
             const a = &g.sim.pool.items[actor.Pool.slot(id)];
-            break :blk a.alive and a.foe() and fuelOf(act, a) > 0;
+            break :blk a.seenFoe(&g.sim.lv) and fuelOf(act, a) > 0;
         },
         .arcane_barrier => rules.wall(&g.sim.lv, from, start, at, g.sim.growth.ranks.get(.arcane_barrier)) != null,
         .fire_wall => rules.blaze(&g.sim.lv, from, start, at, g.sim.growth.ranks.get(.fire_wall)) != null,
@@ -110,12 +110,15 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
     const rank = g.sim.growth.ranks.get(act);
     const at = aim.mark;
     switch (act) {
-        .overwatch => g.sim.heroActor().?.tactics.overwatch = mathx.toward(from, at).?,
+        .overwatch => {
+            g.sim.heroActor().?.tactics.overwatch = mathx.toward(from, at).?;
+            g.pic.settleHero(&g.sim, 0);
+        },
         .caltrops => {
             const area = rules.Caltrops.area(&g.sim.lv, at);
             for (area.slice()) |p| {
                 if (!g.sim.lv.isLit(p)) continue;
-                g.sim.lv.caltrops[grid.Level.idx(p)] = .{ .turns = rules.Caltrops.duration(rank) + 1, .rank = rank };
+                g.sim.lv.caltrops[grid.Level.idx(p)] = .{ .turns = rules.Caltrops.laid(rank), .rank = rank };
             }
         },
         .gravity_well => {
@@ -133,8 +136,9 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
                     g.sim.displaced.set(actor.Pool.slot(id));
                     entered(g, id);
                 }
-                if (rules.GravityWell.pins(rank) > 0 and g.sim.takeStatus(a, .pin)) a.pin.turns = @max(a.pin.turns, rules.GravityWell.pins(rank));
-                g.pic.fx.settle(game.CAST_S, .{ .slot = actor.Pool.slot(id), .after = g.pic.afterOf(&g.sim, actor.Pool.slot(id)) });
+                if (g.sim.displaced.isSet(actor.Pool.slot(id))) _ = g.pic.glideToHeld(actor.Pool.slot(id), a.at, -game.CAST_S);
+                if (rules.GravityWell.pins(rank) > 0 and g.sim.takeStatus(a, .pin)) a.pin.extend(rules.GravityWell.pins(rank));
+                g.pic.settleSlot(&g.sim, game.CAST_S, actor.Pool.slot(id));
             }
             g.sim.flowed = false;
             g.pic.fx.shimmer(mathx.centre(at), look.WARD);
@@ -142,15 +146,15 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
         .combustion, .shatter => detonate(g, act, at, from),
         .arcane_barrier => {
             const area = rules.wall(&g.sim.lv, from, aim.anchor().?, at, rank).?;
-            for (area.slice()) |p| g.sim.lv.barrier[grid.Level.idx(p)] = rules.ArcaneBarrier.duration(rank) + 1;
+            for (area.slice()) |p| g.sim.lv.barrier[grid.Level.idx(p)] = rules.ArcaneBarrier.laid(rank);
         },
         .fire_wall => {
             const area = rules.blaze(&g.sim.lv, from, aim.anchor().?, at, rank).?;
-            for (area.slice()) |p| g.sim.lv.flames[grid.Level.idx(p)] = rules.FireWall.duration(rank) + 1;
+            for (area.slice()) |p| g.sim.lv.flames[grid.Level.idx(p)] = rules.FireWall.laid(rank);
             for (area.slice()) |p| {
                 const id = g.sim.lv.who(p);
                 const a = g.sim.pool.get(id) orelse continue;
-                if (a.foe() and ignite(g, id)) g.pic.fx.settle(game.CAST_S, .{ .slot = actor.Pool.slot(id), .after = g.pic.afterOf(&g.sim, actor.Pool.slot(id)) });
+                if (a.foe() and ignite(g, id)) g.pic.settleSlot(&g.sim, game.CAST_S, actor.Pool.slot(id));
             }
         },
         else => @compileError(@tagName(act) ++ " has no ground tactical use"),
@@ -172,7 +176,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
         else => @compileError(@tagName(act) ++ " consumes nothing"),
     }
     const slot = actor.Pool.slot(g.sim.lv.who(at));
-    g.pic.fx.settle(game.CAST_S, .{ .slot = slot, .after = g.pic.afterOf(&g.sim, slot) });
+    g.pic.settleSlot(&g.sim, game.CAST_S, slot);
     const area = Skill.area(&g.sim.lv, at);
     const ids = skills.foesIn(g, area);
     var raw = attacks.rollRaw(&g.sim.rng, act, attacks.basesFor(&g.sim, act), false);
@@ -182,7 +186,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     for (ids.slice()) |id| {
         const a = g.sim.pool.get(id) orelse continue;
         const hit = attacks.heroScaled(&g.sim, act, raw);
-        combat.wound(g, id, .{ .dmg = hit.blow.total(g.sim.combatStats(a).elements), .crit = hit.crit }, if (act == .shatter) "shatters" else "detonates", s);
+        combat.wound(g, id, .{ .dmg = hit.blow.total(g.sim.combatStats(a).elements), .crit = hit.crit }, Skill.VERB, s);
     }
 }
 
@@ -190,7 +194,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
 fn ignite(g: *game.Game, id: u16) bool {
     const a = g.sim.pool.get(id) orelse return false;
     if (!g.sim.takeStatus(a, .burn)) return false;
-    if (a.burn.turns == 0) g.sim.sayAt(a.at, "The {s} catches fire!", .{actor.row(a.kind).name});
+    if (a.burn.turns == 0) g.sim.sayOf(a, "The {s} catches fire!", .{actor.row(a.kind).name});
     a.burn.start();
     return true;
 }
@@ -221,22 +225,24 @@ pub fn startTurn(sim: *Simulation) void {
 
 pub fn entered(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
-    const trap = g.sim.lv.caltrops[grid.Level.idx(a.at)];
+    const cell = grid.Level.idx(a.at);
+    const trap = g.sim.lv.caltrops[cell];
     if (trap.turns > 0 and actor.row(a.kind).movement != .flying) {
-        if (g.sim.takeStatus(a, .pin)) a.pin.turns = @max(a.pin.turns, rules.Caltrops.pins(trap.rank));
+        if (g.sim.takeStatus(a, .pin)) a.pin.extend(rules.Caltrops.pins(trap.rank));
         if (rules.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) a.bleed.startWith(rules.Caltrops.bleed(trap.rank));
         g.pic.recordWear(&g.sim, .fromInt(id));
-        g.sim.sayAt(a.at, "The {s} steps into caltrops.", .{actor.row(a.kind).name});
+        g.sim.sayOf(a, "The {s} steps into caltrops.", .{actor.row(a.kind).name});
     }
     if (g.sim.lv.burning(a.at) and ignite(g, id)) g.pic.recordWear(&g.sim, .fromInt(id));
     const h = g.sim.heroActor() orelse return;
     const direction = h.tactics.overwatch orelse return;
     if (a.veiled() or !rules.covered(h.at, direction, a.at) or !bow.aimable(&g.sim.lv, h.at, a.at)) return;
     const flight = bow.fly(&g.sim.lv, h.at, a.at);
-    if (flight.struck == null or flight.struck.? != .body or flight.struck.?.body != id) return;
+    if (!flight.hits(id)) return;
     h.tactics.overwatch = null;
-    combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), "shoots on overwatch", .{ .from = h.at, .wait = 0 }, id, flight);
+    combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), rules.Overwatch.VERB, .{ .from = h.at, .wait = 0 }, id, flight);
     h.tactics.steady = 0;
+    if (g.pic.owed[actor.Pool.slot(id)].reaction) |*r| r.recovery = g.pic.afterOf(&g.sim, g.sim.heroSlot().?);
 }
 
 pub fn counter(g: *game.Game, id: u16) void {
@@ -244,14 +250,7 @@ pub fn counter(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     if (!h.tactics.unyielding or mathx.dist(h.at, a.at) != 1 or !g.sim.rng.percent(rules.Unyielding.chance(g.sim.growth.ranks.get(.unyielding)))) return;
     const raw = attacks.kickRaw(&g.sim.rng, &g.sim.inventory.gear, g.sim.heroRow().blow.strike);
-    combat.reaction(g, id, attacks.heroRoll(&g.sim, .melee, raw), "counters", .{ .from = h.at, .wait = 0 }, id, null);
-}
-
-fn targeted(g: *game.Game, act: skillbar.Act, at: P) void {
-    skills.useSkill(g, .{ .act = act, .by = .x });
-    if (g.mode != .aim) return;
-    g.mode.aim.mark = at;
-    skills.confirmAim(g);
+    combat.reaction(g, id, attacks.heroRoll(&g.sim, .melee, raw), rules.Unyielding.VERB, .{ .from = h.at, .wait = 0 }, id, null);
 }
 
 test "tactical caltrops ranks pin entering ground foes and unlock stronger bleeding" {
@@ -263,7 +262,7 @@ test "tactical caltrops ranks pin entering ground foes and unlock stronger bleed
         g.sim.growth.ranks.set(.caltrops, @intCast(rank));
         const id = h.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, true);
         h.toughen(g.sim.pool.get(id).?);
-        targeted(g, .caltrops, .{ .x = 22, .y = 20 });
+        h.aimAt(g, .caltrops, .{ .x = 22, .y = 20 });
         const foe = g.sim.pool.get(id).?;
         try std.testing.expectEqual(@as(i32, 23), foe.at.x);
         try std.testing.expectEqual(rules.Caltrops.pins(@intCast(rank)), foe.pin.turns);
@@ -295,13 +294,19 @@ test "tactical overwatch fires once after movement and steady aim is consumed or
     h.toughen(g.sim.pool.get(id).?);
     game.settle(g);
     const before = g.sim.pool.get(id).?.hp;
-    targeted(g, .overwatch, .{ .x = 25, .y = 20 });
+    h.aimAt(g, .overwatch, .{ .x = 25, .y = 20 });
     try std.testing.expect(g.sim.pool.get(id).?.hp < before);
     try std.testing.expect(g.sim.heroActor().?.tactics.overwatch == null);
     try std.testing.expectEqual(@as(u8, 0), g.sim.heroActor().?.tactics.steady);
     try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].reaction != null);
     try std.testing.expectEqual(before, g.pic.pictured[actor.Pool.slot(id)].hp);
+    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    g.pic.catchUp(&g.sim);
+    try std.testing.expectEqual(@as(u8, 1), g.pic.heroShown(&g.sim).?.status.get(.overwatch));
+    try std.testing.expectEqual(@as(u8, 1), g.pic.heroShown(&g.sim).?.status.get(.steady));
     h.drawnOut(g);
+    try std.testing.expectEqual(@as(u8, 0), g.pic.heroShown(&g.sim).?.status.get(.overwatch));
+    try std.testing.expectEqual(@as(u8, 0), g.pic.heroShown(&g.sim).?.status.get(.steady));
     g.sim.heroActor().?.tactics.steady = 1;
     game.heroStep(g, .w, 0);
     try std.testing.expectEqual(@as(u8, 0), g.sim.heroActor().?.tactics.steady);
@@ -316,7 +321,7 @@ test "tactical gravity ranks pull and unlock pin while combustion consumes burn 
         h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
         g.sim.growth.ranks.set(.gravity_well, @intCast(rank));
         const id = h.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, false);
-        targeted(g, .gravity_well, .{ .x = 22, .y = 20 });
+        h.aimAt(g, .gravity_well, .{ .x = 22, .y = 20 });
         const foe = g.sim.pool.get(id).?;
         try std.testing.expectEqual(@as(i32, if (rank == 3) 22 else 23), foe.at.x);
         try std.testing.expectEqual(rank >= 2, foe.resilience.meters.get(.pin).percent > 0);
@@ -328,11 +333,11 @@ test "tactical gravity ranks pull and unlock pin while combustion consumes burn 
     h.toughen(g.sim.pool.get(neighbor).?);
     const before = g.sim.pool.get(id).?.hp;
     const mana = g.sim.mana;
-    targeted(g, .combustion, .{ .x = 23, .y = 20 });
+    h.aimAt(g, .combustion, .{ .x = 23, .y = 20 });
     try std.testing.expectEqual(mana, g.sim.mana);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     g.sim.pool.get(id).?.burn.start();
-    targeted(g, .combustion, .{ .x = 23, .y = 20 });
+    h.aimAt(g, .combustion, .{ .x = 23, .y = 20 });
     try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(id).?.burn.turns);
     try std.testing.expect(g.sim.pool.get(id).?.hp < before);
     try std.testing.expect(g.sim.pool.get(neighbor).?.hp < before);
@@ -358,7 +363,7 @@ test "tactical combustion consumes pictured burn at explosion time even when dam
         const hp = foe.hp;
         const burning = g.pic.pictured[slot].status.get(.burning);
         g.sim.rng = mathx.Rng.init(seed);
-        targeted(g, .combustion, at);
+        h.aimAt(g, .combustion, at);
         misses += @intFromBool(foe.hp == hp);
         try std.testing.expectEqual(@as(u8, 0), foe.burn.turns);
         g.pic.stepGlide(&g.sim, g.cloud, 0);
@@ -383,7 +388,7 @@ test "tactical barrier selects endpoints without spending then blocks paths unti
     const end = P{ .x = 22, .y = 21 };
     h.heroArena(g, .wizard, from, &.{});
     const mana = g.sim.mana;
-    targeted(g, .arcane_barrier, start);
+    h.aimAt(g, .arcane_barrier, start);
     try std.testing.expectEqual(mana, g.sim.mana);
     try std.testing.expectEqual(start, g.mode.aim.anchor().?);
     g.mode.aim.mark = end;
@@ -450,7 +455,7 @@ test "tactical regressions cover forced trap entries chest action cleanup and pr
     g.sim.growth.ranks.set(.gravity_well, 3);
     const id = h.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, false);
     g.sim.lv.caltrops[grid.Level.idx(.{ .x = 23, .y = 20 })] = .{ .turns = 5, .rank = 2 };
-    targeted(g, .gravity_well, .{ .x = 22, .y = 20 });
+    h.aimAt(g, .gravity_well, .{ .x = 22, .y = 20 });
     try std.testing.expectEqual(@as(i32, 23), g.sim.pool.get(id).?.at.x);
     try std.testing.expect(g.sim.pool.get(id).?.bleed.turns > 0);
     h.heroArena(g, .knight, from, &.{});
@@ -486,7 +491,7 @@ test "tactical reaction recovery waits for impact and Harvest restores life from
     const id = h.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
     game.settle(g);
     const before = g.sim.heroActor().?.hp;
-    combat.reaction(g, id, .{ .dmg = 100 }, "counters", .{ .from = from, .wait = 0 }, id, null);
+    combat.reaction(g, id, .{ .dmg = 100 }, rules.Unyielding.VERB, .{ .from = from, .wait = 0 }, id, null);
     try std.testing.expectEqual(before + 2, g.sim.heroActor().?.hp);
     g.pic.stepGlide(&g.sim, g.cloud, 0);
     g.pic.catchUp(&g.sim);
@@ -523,7 +528,7 @@ test "tactical overwatch reaction finishes before the next foe can expose its re
     g.sim.pool.get(hidden).?.bleed.startWith(2);
     g.sim.pool.get(hidden).?.bleed.fresh = false;
     game.settle(g);
-    targeted(g, .overwatch, .{ .x = 25, .y = 20 });
+    h.aimAt(g, .overwatch, .{ .x = 25, .y = 20 });
     try std.testing.expect(g.pic.owed[actor.Pool.slot(rat)].reaction.?.recovery != null);
     g.pic.stepGlide(&g.sim, g.cloud, 0);
     const reaction_shot = g.pic.shot.?;
@@ -596,13 +601,13 @@ test "shatter consumes chill for cold damage over its neighbours and refuses an 
     h.toughen(g.sim.pool.get(neighbor).?);
     const before = g.sim.pool.get(id).?.hp;
     const mana = g.sim.mana;
-    targeted(g, .shatter, at);
+    h.aimAt(g, .shatter, at);
     try std.testing.expectEqual(mana, g.sim.mana);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     g.sim.pool.get(id).?.chill.apply();
     game.settle(g);
     try std.testing.expectEqual(glacial.TURNS, g.pic.pictured[actor.Pool.slot(id)].status.get(.chilled));
-    targeted(g, .shatter, at);
+    h.aimAt(g, .shatter, at);
     try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(id).?.chill.turns);
     try std.testing.expect(g.sim.pool.get(id).?.hp < before);
     try std.testing.expect(g.sim.pool.get(neighbor).?.hp < before);
@@ -622,7 +627,7 @@ test "fire wall ignites foes it rises under and those that enter, is shunned, an
     h.toughen(g.sim.pool.get(under).?);
     h.toughen(g.sim.pool.get(outside).?);
     const mana = g.sim.mana;
-    targeted(g, .fire_wall, .{ .x = 22, .y = 19 });
+    h.aimAt(g, .fire_wall, .{ .x = 22, .y = 19 });
     try std.testing.expectEqual(mana, g.sim.mana);
     g.mode.aim.mark = .{ .x = 22, .y = 21 };
     skills.confirmAim(g);

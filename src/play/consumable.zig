@@ -41,7 +41,7 @@ pub const SmellingSalts = struct {
     pub const DESCRIPTION = std.fmt.comptimePrint("No stun can land for {d} turns.", .{TURNS});
 
     pub fn steel(r: *resilience.State) void {
-        r.meters.set(.stun, .{ .percent = mathx.PERCENT, .turns = TURNS, .fresh = true });
+        r.immune(.stun, TURNS);
     }
 };
 
@@ -55,6 +55,7 @@ pub const FrostVial = struct {
     pub const BASE = damage.Base{ .lo = 1, .hi = 3 };
     pub const CHANCE = glacial.CHANCE;
     pub const procs = glacial.procs;
+    pub const chance = glacial.chance;
     pub const afflict = glacial.afflict;
     pub const AILMENT = glacial.AILMENT;
     pub const DESCRIPTION = std.fmt.comptimePrint("A thrown vial shatters into cold, hitting every foe within {d} tile. {s}.", .{ BLAST, glacial.CHILL_NOTE });
@@ -64,11 +65,7 @@ pub const FrostVial = struct {
     }
 
     pub fn burst(lv: *const grid.Level, _: P, impact: P) glacial.Burst {
-        return glacial.spread(lv, impact, BLAST, {}, every);
-    }
-
-    fn every(_: void, _: P) bool {
-        return true;
+        return glacial.patch(lv, impact, BLAST);
     }
 };
 

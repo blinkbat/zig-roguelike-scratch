@@ -93,6 +93,12 @@ pub const Knock = struct { from: P, to: P };
 /// A body healed as the mending lands; none when the mending only woke its kin.
 pub const Mended = struct { slot: ?actor.ActorSlot = null, after: ?fx.After = null };
 
+/// What a death did to another body, shown as that death lands.
+pub const Befallen = struct { by: usize, after: fx.After };
+
+/// `was` stands at `at` for `left` seconds more.
+pub const Bursting = struct { at: P, was: grid.Tile, left: f32 };
+
 /// Presentation debts land at the body's stagger, or after the hero when it has no stagger.
 pub const Owed = struct {
     bit: ?Bite = null,
@@ -152,11 +158,23 @@ pub const Presentation = struct {
     split_from: [actor.MAX]?usize = @splat(null),
     /// Indexed by pool slot: gold kept out of its drop until that death is drawn.
     dropped_gold: [actor.MAX]i32 = @splat(0),
+    /// Pool slots of mimics killed in their chests, each drawn as its chest until its death is.
+    masked: std.StaticBitSet(actor.MAX) = .initEmpty(),
+    /// Pool slots drawn underwater; each takes the simulation's depth once its `dives` runs out.
+    under: std.StaticBitSet(actor.MAX) = .initEmpty(),
+    /// Indexed by pool slot: seconds until a body that surfaced or dived this turn is drawn so.
+    dives: [actor.MAX]?f32 = @splat(null),
+    /// Indexed by pool slot: set alight or frightened by a death not yet staggered.
+    befallen: [actor.MAX]?Befallen = @splat(null),
     owed: [actor.MAX]Owed = @splat(.{}),
     shot: ?Shot = null,
     foe_shots: [actor.MAX]?Shot = @splat(null),
     /// Where the hero stood before the turn's first knockback: its own move ends there.
     knocked_from: ?P = null,
+    /// Where the hero stands as each stagger is drawn: a knock moves it on for the foes after.
+    hero_cell: ?P = null,
+    /// A glow plant burst by the hero's bump: drawn, and lit, until the bump lands.
+    bursting: ?Bursting = null,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -237,14 +255,33 @@ pub const Presentation = struct {
         self.facing[o] = if (self.turning[i]) |t| t.to else self.facing[i];
     }
 
-    pub fn recordDeath(self: *Presentation, target: actor.ActorId, death: rewards.Death) void {
-        self.dropped_gold[target.slot().index] = death.gold;
-        self.recordFright(target.slot(), death.frightened);
+    pub fn recordDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId, death: rewards.Death) void {
+        const i = target.slot().index;
+        self.dropped_gold[i] = death.gold;
+        self.masked.setValue(i, death.unmasked);
+        self.recordFright(sim, target.slot(), death.frightened);
+        self.befall(sim, i, death.ignited);
     }
 
-    pub fn recordFright(self: *Presentation, fallen: actor.ActorSlot, frightened: rewards.Frightened) void {
+    pub fn recordFright(self: *Presentation, sim: *const Simulation, fallen: actor.ActorSlot, frightened: rewards.Frightened) void {
         var slots = frightened.iterator(.{});
         while (slots.next()) |slot| self.fx.frighten(slot, fallen.index);
+        self.befall(sim, fallen.index, frightened);
+    }
+
+    fn befall(self: *Presentation, sim: *const Simulation, by: usize, slots: std.StaticBitSet(actor.MAX)) void {
+        var each = slots.iterator(.{});
+        while (each.next()) |slot| self.befallen[slot] = .{ .by = by, .after = self.afterOf(sim, slot) };
+    }
+
+    /// The bodies the death in `fallen` set alight or frightened catch up as it lands.
+    fn landBefallen(self: *Presentation, fallen: usize, wait: f32) void {
+        for (&self.befallen, 0..) |*b, slot| {
+            const was = b.* orelse continue;
+            if (was.by != fallen) continue;
+            self.fx.settle(wait, .{ .slot = slot, .after = was.after });
+            b.* = null;
+        }
     }
 
     pub fn recordFoeAttack(self: *Presentation, by: actor.ActorId, outcome: Bite, flight: ?bow.Flight) void {
@@ -283,7 +320,7 @@ pub const Presentation = struct {
     }
 
     pub fn freshTurn(self: *Presentation) void {
-        game.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "busy", "lead", "owed", "split_from", "dropped_gold", "turning", "gold_taken" });
+        game.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "dives", "befallen", "turning", "gold_taken" });
         self.fx.clear();
     }
 
@@ -348,7 +385,11 @@ pub const Presentation = struct {
     }
 
     pub fn settleHero(self: *Presentation, sim: *const Simulation, wait: f32) void {
-        const slot = sim.heroSlot().?;
+        self.settleSlot(sim, wait, sim.heroSlot().?);
+    }
+
+    /// The body in `slot` as it is now, shown `wait` seconds on.
+    pub fn settleSlot(self: *Presentation, sim: *const Simulation, wait: f32, slot: usize) void {
         self.fx.settle(wait, .{ .slot = slot, .after = self.afterOf(sim, slot) });
     }
 
@@ -383,7 +424,7 @@ pub const Presentation = struct {
     }
 
     pub fn drawnAt(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
-        if (!self.standing(sim, i) or sim.pool.items[i].veiled()) return null;
+        if (!self.figured(sim, i)) return null;
         const at = self.glide[i].now();
         return if (sim.lv.isLit(game.cellUnder(at))) at else null;
     }
@@ -393,9 +434,34 @@ pub const Presentation = struct {
     }
 
     pub fn casterAt(self: *const Presentation, sim: *const Simulation, i: usize, area: grid.Box) ?rl.Vector2 {
-        if (!self.standing(sim, i)) return null;
+        if (!self.figured(sim, i)) return null;
         const at = self.glide[i].now();
         return if (area.holds(game.cellUnder(at))) at else null;
+    }
+
+    /// Standing as a body, not underwater or in its chest.
+    fn figured(self: *const Presentation, sim: *const Simulation, i: usize) bool {
+        return self.standing(sim, i) and !sim.pool.items[i].disguised and !self.under.isSet(i) and !self.masked.isSet(i);
+    }
+
+    /// What is drawn at `p`: a mimic's chest until its death is, a glow plant until the bump that bursts it lands.
+    pub fn tileShown(self: *const Presentation, sim: *const Simulation, p: P) grid.Tile {
+        if (self.bursting) |b| if (b.at.eq(p)) return b.was;
+        var each = self.masked.iterator(.{});
+        while (each.next()) |i| if (sim.pool.items[i].at.eq(p)) return .chest;
+        return sim.lv.at(p);
+    }
+
+    pub fn burstPlant(self: *Presentation, at: P, was: grid.Tile, wait: f32) void {
+        self.bursting = .{ .at = at, .was = was, .left = wait };
+    }
+
+    /// The plant whose burst has now landed, once.
+    pub fn uprooted(self: *Presentation) ?P {
+        const b = self.bursting orelse return null;
+        if (b.left > 0) return null;
+        self.bursting = null;
+        return b.at;
     }
 
     pub fn manaShown(self: *const Presentation, sim: *const Simulation) i32 {
@@ -449,19 +515,19 @@ pub const Presentation = struct {
     }
 
     fn stepOcclusion(self: *Presentation, sim: *const Simulation, dt: f32) void {
-        var covered = Covered.initEmpty();
+        var covered = grid.CellSet.initEmpty();
         if (sim.heroSlot()) |h| self.cover(sim, h, &covered);
         for (0..sim.pool.n) |i| if (!sim.isHero(i)) self.cover(sim, i, &covered);
         const k = mathx.easing(dt, OCCLUSION_EASE);
-        for (sim.lv.tile, &self.occlusion, 0..) |t, *hidden, i| {
+        for (&sim.lv.tile, &self.occlusion, 0..) |t, *hidden, i| {
             hidden.* = if (look.occludes(t)) mathx.ease(hidden.*, if (covered.isSet(i)) 1 else 0, k, k) else 0;
         }
     }
 
-    fn cover(self: *Presentation, sim: *const Simulation, slot: usize, covered: *Covered) void {
+    fn cover(self: *Presentation, sim: *const Simulation, slot: usize, covered: *grid.CellSet) void {
         const at = self.occluding(sim, slot) orelse return;
         const under = game.cellUnder(at);
-        var near = grid.Cells.of(under.sub(.{ .x = 1, .y = 1 }), under.add(.{ .x = 2, .y = 3 }));
+        var near = grid.Cells.of(under.sub(COVER_LO), under.add(COVER_HI));
         while (near.next()) |p| {
             if (!grid.Level.inside(p)) continue;
             const i = grid.Level.idx(p);
@@ -475,7 +541,12 @@ pub const Presentation = struct {
     /// Time passes on the picture, then it takes whatever blows have landed.
     pub fn advance(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.busy -= dt;
+        if (self.bursting) |*b| b.left -= dt;
         for (self.glide[0..sim.pool.n]) |*gl| gl.t += dt;
+        for (&self.dives) |*d| if (d.*) |*left| {
+            left.* -= dt;
+            if (left.* <= 0) d.* = null;
+        };
         if (sim.heroSlot()) |h| {
             if (self.glide[h].left() <= PACE_SLACK) self.gold_taken = null;
         }
@@ -524,6 +595,8 @@ pub const Presentation = struct {
                 if (b.seq > self.pictured[i].seq) self.pictured[i] = b;
             }
             if (!a.alive and !self.pictured[i].down()) dying = true;
+            if (self.pictured[i].down()) self.masked.unset(i);
+            if (self.dives[i] == null) self.under.setValue(i, a.submerged);
             const from = self.split_from[i] orelse continue;
             if (self.fx.revealing(i) or self.split_from[from] != null) continue;
             self.split_from[i] = null;
@@ -545,6 +618,7 @@ pub const Presentation = struct {
         const hero = sim.heroSlot().?;
         const warded = self.owed[hero].worn;
         self.owed[hero].worn = null;
+        self.hero_cell = self.knocked_from orelse sim.heroAt().?;
         const hero_done = self.stagger(sim, gas, sim.hero, late, self.lead orelse 0, &next);
         self.lead = null;
         self.knocked_from = null;
@@ -555,6 +629,8 @@ pub const Presentation = struct {
             const start = if (self.split_from[i]) |p| @max(hero_done, part[p], self.fx.revealsIn(i)) else hero_done;
             part[i] = self.stagger(sim, gas, actor.Pool.idOf(i), late, start, &next);
         }
+        self.hero_cell = null;
+        self.befallen = @splat(null);
         if (warded) |c| self.fx.settle(std.mem.max(f32, part[0..sim.pool.n]), .{ .slot = hero, .after = c });
         for (sim.pool.items[0..sim.pool.n], 0..) |*a, i| {
             if (!self.glide[i].to.eq(a.at)) self.glide[i] = self.glide[i].toward(a.at, late);
@@ -580,15 +656,17 @@ pub const Presentation = struct {
         const owed = self.owed[i];
         self.owed[i] = .{};
         const bit = owed.bit;
-        const shown = sim.lv.isLit(a.at);
-        const placed = if (moved) shown or sim.lv.isLit(gl.to) else (shown or owed.arrow != null) and (bit != null or owed.mended != null);
+        const at = if (id == sim.hero) dest else a.at;
+        const hidden = a.disguised or (a.submerged and self.under.isSet(i) and bit == null);
+        const shown = sim.lv.isLit(at) and !hidden;
+        const placed = if (moved) shown or (!hidden and sim.lv.isLit(gl.to)) else (shown or owed.arrow != null) and (bit != null or owed.mended != null);
         var wait = if (placed) next.* else 0;
         if (placed and id != sim.hero and (moved or bit != null)) wait = @max(wait, late + gl.left());
         if (placed and moved and id != sim.hero) wait = @max(wait, late + self.clearIn(sim, i, a.at));
         if (placed) next.* = wait + game.STAGGER_S;
         if (self.turning[i]) |*t| t.in = if (placed) wait - late else start;
         const hero = sim.heroSlot().?;
-        const hero_at = if (owed.knock) |k| k.from else sim.heroAt().?;
+        const hero_at = if (owed.knock) |k| k.from else self.hero_cell.?;
         var lands = if (placed) wait else if (moved) start else @max(start, gl.left());
         if (moved) {
             gl.* = gl.toward(dest, late - wait);
@@ -615,24 +693,25 @@ pub const Presentation = struct {
             .snare => |held| if (held) |after| self.fx.settle(hits, .{ .slot = hero, .after = after }),
             .miss => {},
         };
-        if (owed.knock) |k| {
-            const shoved = &self.glide[hero];
-            shoved.* = shoved.toward(k.to, -hits);
-            self.holdUntil(shoved.left());
-            lands = @max(lands, shoved.left());
-        }
         if (owed.mended) |m| {
-            if (shown) self.fx.shimmer(mathx.centre(a.at), look.body(a.kind).fg);
+            var seen = shown;
+            if (shown) self.fx.shimmerIn(hits, .{ .at = mathx.centre(a.at), .col = look.body(a.kind).fg });
             if (m.slot) |s| {
                 if (m.after) |after| self.fx.settle(hits, .{ .slot = s.index, .after = after });
-                if (sim.lv.isLit(sim.pool.items[s.index].at)) self.fx.shimmer(mathx.centre(sim.pool.items[s.index].at), look.LIFE);
+                const kin = self.glide[s.index].to;
+                if (sim.lv.isLit(kin)) {
+                    self.fx.shimmerIn(hits, .{ .at = mathx.centre(kin), .col = look.LIFE });
+                    seen = true;
+                }
             }
+            if (seen) self.holdUntil(hits);
         }
         if (owed.swept) |*sw| for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h, .{ .from = a.at, .wait = hits });
         if (owed.thorns) |h| {
             self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(i), .at = a.at, .lethal = h.kill, .after = h.after } }, .{ .from = hero_at, .wait = hits });
-            if (h.recovery) |after| self.fx.settle(hits, .{ .slot = hero, .after = after });
+            if (h.recovery) |after| self.recordRecovery(sim, hits, after);
         }
+        var countered = hits;
         if (owed.reaction) |r| {
             const release = if (moved) lands else hits;
             var impact = release + game.BUMP_LANDS;
@@ -646,23 +725,33 @@ pub const Presentation = struct {
                 .miss => {},
                 .hit => |h| self.strike(sim, gas, .{ .actor = h }, .{ .from = r.from, .wait = impact }),
             }
-            if (r.recovery) |after| self.fx.settle(impact, .{ .slot = hero, .after = after });
+            if (r.recovery) |after| self.recordRecovery(sim, impact, after);
             self.holdUntil(impact);
             lands = @max(lands, impact);
             next.* = @max(next.*, impact + late + game.STAGGER_S);
+            countered = impact;
+        }
+        if (owed.knock) |k| {
+            const shoved = &self.glide[hero];
+            shoved.* = shoved.toward(k.to, -countered);
+            self.holdUntil(shoved.left());
+            lands = @max(lands, shoved.left());
+            self.hero_cell = k.to;
+            next.* = @max(next.*, late + shoved.left());
         }
         lands = @max(lands, self.fx.landsIn(i));
         inline for (.{ "gassed", "burned", "bled" }) |field| if (@field(owed, field)) |h| {
             if (h.recovery != null) lands = @max(lands, @max(0, next.* - late));
         };
         if (owed.worn) |c| self.fx.settle(lands, .{ .slot = i, .after = c });
-        const mark: ?[2]f32 = if (shown) mathx.centre(a.at) else null;
+        const mark: ?[2]f32 = if (shown) mathx.centre(at) else null;
         const drip: ?fx.Drip = if (mark) |m| .{ .at = m, .matter = fx.matterOf(a.kind) } else null;
         const in_view = shown or placed;
-        if (owed.gassed) |h| self.harmShown(sim, gas, a.at, lands, h, false, in_view, .{ .slot = i, .puff = fx.Puff.over(mark, look.GAS) });
-        if (owed.healed) |after| self.fx.settle(lands, .{ .slot = i, .after = after, .puff = fx.Puff.over(mark, look.HEALING_GAS) });
-        if (owed.burned) |h| self.harmShown(sim, gas, a.at, lands, h, true, in_view, .{ .slot = i, .fire_at = mark });
-        if (owed.bled) |h| self.harmShown(sim, gas, a.at, lands, h, false, in_view, .{ .slot = i, .drip = drip });
+        if (owed.gassed) |h| self.harmShown(sim, gas, at, lands, h, false, in_view, .{ .slot = i, .puff = fx.Puff.over(mark, look.gasInk(.caustic)) });
+        if (owed.healed) |after| self.fx.settle(lands, .{ .slot = i, .after = after, .puff = fx.Puff.over(mark, look.gasInk(.healing)) });
+        if (owed.burned) |h| self.harmShown(sim, gas, at, lands, h, true, in_view, .{ .slot = i, .fire_at = mark });
+        if (owed.bled) |h| self.harmShown(sim, gas, at, lands, h, false, in_view, .{ .slot = i, .drip = drip });
+        if (a.submerged != self.under.isSet(i)) self.dives[i] = if (a.submerged) lands else @max(0, wait - late);
         return lands;
     }
 
@@ -678,7 +767,7 @@ pub const Presentation = struct {
     }
 
     fn harmShown(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, at: P, lands: f32, h: Harm, fire: bool, in_view: bool, s: fx.Sting) void {
-        if (h.recovery) |after| self.fx.settle(lands, .{ .slot = sim.heroSlot().?, .after = after });
+        if (h.recovery) |after| self.recordRecovery(sim, lands, after);
         if (h.kill) {
             self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(s.slot), .at = at, .lethal = true, .after = h.after } }, .{ .from = at, .wait = lands, .fire = fire });
         } else if (in_view) {
@@ -710,6 +799,7 @@ pub const Presentation = struct {
         }
         const k = kind orelse return;
         if (!impact.lethal()) return;
+        self.landBefallen(impact.actor.slot.index, s.wait);
         switch (actor.row(k).blow) {
             .burst => |b| switch (b) {
                 .gas => gas.hold(s.wait),
@@ -746,15 +836,20 @@ const XP_EASE: f32 = 8;
 /// Per second, how fast the life and mana orbs fill toward what is shown.
 pub const RESOURCE_EASE = XP_EASE;
 
-const Covered = std.StaticBitSet(grid.CELLS);
+/// Cell-widths a drawn figure stops short of its cell's sides, and of its top and bottom, as scenery hides it.
+const FIGURE_INSET_X = 0.15;
+const FIGURE_INSET_Y = 0.1;
+/// Cells round a body that may hide it, from a cell up-left to the two-cell tall scenery in front of it.
+const COVER_LO = P{ .x = 1, .y = 1 };
+const COVER_HI = P{ .x = 2, .y = 3 };
 
 fn hides(at: rl.Vector2, p: P, t: grid.Tile) bool {
     const x = @as(f32, @floatFromInt(p.x)) * game.CELL_F;
     const y = @as(f32, @floatFromInt(p.y)) * game.CELL_F;
     const top = y - if (look.tall(t)) game.CELL_F else 0;
     const bottom = y + if (look.tall(t)) 0 else game.CELL_F;
-    return at.x + game.CELL_F * 0.85 > x and at.x + game.CELL_F * 0.15 < x + game.CELL_F and
-        at.y + game.CELL_F * 0.9 > top and at.y + game.CELL_F * 0.1 < bottom;
+    return at.x + game.CELL_F * (1 - FIGURE_INSET_X) > x and at.x + game.CELL_F * FIGURE_INSET_X < x + game.CELL_F and
+        at.y + game.CELL_F * (1 - FIGURE_INSET_Y) > top and at.y + game.CELL_F * FIGURE_INSET_Y < bottom;
 }
 
 fn facingOf(dx: i32) ?actor.Facing {

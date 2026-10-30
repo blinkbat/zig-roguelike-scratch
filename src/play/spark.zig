@@ -15,6 +15,7 @@ pub const DESCRIPTION = std.fmt.comptimePrint("Strike a target in sight with lig
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const procs = damage.chance(CHANCE);
+pub const chance = damage.flat(CHANCE);
 pub const afflict = clock.stuns;
 
 test "a spark stuns about half the time" {

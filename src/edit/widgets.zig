@@ -7,6 +7,7 @@ const raster = @import("../gfx/raster.zig");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const listing = @import("../map/listing.zig");
+const SHIFT_STEP = @import("tool_catalog.zig").SHIFT_STEP;
 const P = mathx.P;
 
 pub const PANEL_W: i32 = 420;
@@ -26,6 +27,10 @@ pub const MODAL_W: i32 = 720;
 pub const MODAL_HEAD: i32 = PAD + HEAD + PAD;
 pub const MODAL_ROWS: usize = 12;
 pub const MODAL_BTN_W: i32 = 180;
+pub const PAGE_W: i32 = 1800;
+pub const PAGE_H: i32 = 1080;
+pub const STEP_W: i32 = 30;
+pub const SCROLL_W: i32 = 3;
 pub const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
 pub const PANEL_BG = look.EDIT_PANEL;
 pub const ROW_ON = look.EDIT_ROW_ON;
@@ -67,6 +72,28 @@ pub fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, lab
     const y: i32 = @intFromFloat(r.y);
     drawFit(face, label, TEXT, insetW(r), false, textX(r), y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), if (live) look.TEXT else look.DIM);
     return h.hit;
+}
+
+pub const Step = struct { tip: ?[:0]const u8, live: bool = true };
+
+/// How a stepper looks: its two arrows, its value's size, and whether it sits on a modal page over a filled well.
+pub const Arrows = struct { glyphs: [2][:0]const u8, size: i32, modal: bool, well: bool };
+pub const KNOB_ARROWS = Arrows{ .glyphs = .{ "-", "+" }, .size = TEXT, .modal = false, .well = false };
+pub const PAGE_ARROWS = Arrows{ .glyphs = .{ "<", ">" }, .size = DETAIL, .modal = true, .well = true };
+
+/// Arrows either side of `value`: -1 or 1 as one is pressed, `SHIFT_STEP` times that when `shift`; 0 otherwise.
+pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, value: []const u8, arrows: Arrows, steps: [2]Step, shift: bool) i32 {
+    const x: i32 = @intFromFloat(r.x);
+    const y: i32 = @intFromFloat(r.y);
+    const w: i32 = @intFromFloat(r.width);
+    var by: i32 = 0;
+    if (buttonOn(controls, face, row(x, y, STEP_W), arrows.glyphs[0], false, steps[0].live, arrows.modal, steps[0].tip)) by = -1;
+    if (buttonOn(controls, face, row(x + w - STEP_W, y, STEP_W), arrows.glyphs[1], false, steps[1].live, arrows.modal, steps[1].tip)) by = 1;
+    if (arrows.well) rl.drawRectangle(x + STEP_W, y, w - 2 * STEP_W, ROW_H, look.fade(ROW_ON, 0.5));
+    var fit_buf: [LINE]u8 = undefined;
+    const shown = textFace(face).fit(&fit_buf, value, arrows.size, w - 2 * (STEP_W + GAP), false);
+    textFace(face).drawMid(shown, x + @divTrunc(w, 2), y + @divTrunc(ROW_H - arrows.size, 2), arrows.size, look.TEXT);
+    return if (shift) by * SHIFT_STEP else by;
 }
 
 pub fn insetW(r: rl.Rectangle) i32 {
@@ -121,6 +148,57 @@ pub fn scrollbar(track: rl.Rectangle, offset: usize, shown: usize, total: usize)
     rl.drawRectangleRec(thumb, look.UI_GOLD);
 }
 
+pub fn scrollbarIn(box: rl.Rectangle, offset: usize, shown: usize, total: usize) void {
+    const w: f32 = @floatFromInt(SCROLL_W);
+    scrollbar(.{ .x = box.x + box.width - w, .y = box.y, .width = w, .height = box.height }, offset, shown, total);
+}
+
+/// The scissor of `r` held within `clip`, the scrolled area it is drawn in.
+pub fn scissorIn(clip: ?rl.Rectangle, r: rl.Rectangle) void {
+    scissor(if (clip) |c| rl.getCollisionRec(c, r) else r);
+}
+
+/// The first of `rows` shown of `n`, moved `by` and held where the last still fills the view.
+pub fn scrollTop(top: usize, by: i32, n: usize, rows: usize) usize {
+    return mathx.nudge(top, by, (n -| rows) + 1);
+}
+
+pub fn scrollBy(top: *i32, most: i32, by: i32) void {
+    top.* = std.math.clamp(top.* + by, 0, most);
+}
+
+pub const Scroll = struct {
+    box: rl.Rectangle,
+    top: *i32,
+    most: *i32,
+
+    /// Clips to the box, held in `clip` so nothing outside it is hot; the content's first row.
+    pub fn begin(s: Scroll, clip: *?rl.Rectangle) i32 {
+        clip.* = s.box;
+        scissor(s.box);
+        s.top.* = std.math.clamp(s.top.*, 0, s.most.*);
+        return @as(i32, @intFromFloat(s.box.y)) - s.top.*;
+    }
+
+    pub fn shown(s: Scroll) i32 {
+        return @intFromFloat(s.box.height);
+    }
+
+    /// The content ran to `bottom`, wanting `margin` below it.
+    pub fn fit(s: Scroll, bottom: i32, margin: i32) void {
+        s.most.* = @max(0, bottom + margin + s.top.* - @as(i32, @intFromFloat(s.box.y)) - s.shown());
+    }
+
+    pub fn bar(s: Scroll) void {
+        if (s.most.* > 0) scrollbarIn(s.box, @intCast(s.top.*), @intCast(s.shown()), @intCast(s.shown() + s.most.*));
+    }
+};
+
+pub fn unclip(clip: *?rl.Rectangle) void {
+    rl.endScissorMode();
+    clip.* = null;
+}
+
 test "editor scrollbar thumb remains inside its track for large catalogs and short views" {
     for ([_]f32{ 8, 300 }) |height| {
         const track = rl.Rectangle{ .x = 40, .y = 100, .width = 3, .height = height };
@@ -151,6 +229,33 @@ pub const Across = struct {
         std.debug.assert(a.k == a.n);
     }
 };
+
+pub const Lay = struct {
+    x: i32,
+    y: i32,
+    gap: i32 = GAP,
+
+    pub fn take(self: *Lay, w: i32) rl.Rectangle {
+        defer self.x += w + self.gap;
+        return row(self.x, self.y, w);
+    }
+};
+
+pub const LayEnd = struct {
+    right: i32,
+    y: i32,
+    gap: i32 = GAP,
+
+    pub fn take(self: *LayEnd, w: i32) rl.Rectangle {
+        defer self.right -= w + self.gap;
+        return row(self.right - w, self.y, w);
+    }
+};
+
+/// The rule between two columns, in the gutter left of `x`.
+pub fn divider(x: i32, top: i32, bottom: i32) void {
+    rl.drawRectangle(x - @divTrunc(PAD, 2), top, 1, bottom - top, look.EDGE);
+}
 
 pub const GAPS = P{ .x = GAP, .y = GAP };
 
@@ -189,6 +294,15 @@ pub fn modalFrame(face: *const font.Face, screen: P, want_w: i32, h: i32, title:
     const top = y + PAD;
     drawFit(face, title, HEAD, w - 2 * PAD, keep_end, x + PAD, top, look.TEXT);
     return .{ .x = x, .w = w, .top = top, .y = y + MODAL_HEAD };
+}
+
+pub const Page = struct { frame: Frame, bottom: i32 };
+
+/// A page over the whole editor; `bottom` is the inside of its padding.
+pub fn pageFrame(face: *const font.Face, screen: P, title: [:0]const u8) Page {
+    const h = @min(PAGE_H, screen.y - 2 * PAD);
+    const f = modalFrame(face, screen, PAGE_W, h, title, false);
+    return .{ .frame = f, .bottom = f.top - PAD + h - PAD };
 }
 
 pub fn keyed(comptime what: []const u8, comptime key: []const u8) [:0]const u8 {

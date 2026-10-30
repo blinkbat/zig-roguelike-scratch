@@ -6,8 +6,8 @@ smooth 4
 strays 20
 loops 80
 rewards chests
-packs 8
-few 2
+packs 11
+few 1
 reach 2
 gap 14
 apart 4
@@ -20,6 +20,13 @@ makeup 2 pib rat
 makeup 1 bloat
 makeup 1 beefy_pib pib pib
 makeup 1 bandit_crossbowman rat rat
+makeup 1 rat slime
+makeup 1 bandit_shieldbearer bandit_crossbowman bandit_netter
+makeup 1 pib_shaman pib
+makeup 1 frost_wisp
+makeup 1 pyre_bloat
+makeup 1 bog_leech
+makeup 1 mimic
 feature coast
 side west
 sea 6

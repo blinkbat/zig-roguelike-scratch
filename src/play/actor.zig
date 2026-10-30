@@ -77,10 +77,6 @@ pub const Kind = enum {
         return FAMILY.get(k);
     }
 
-    pub fn bursts(k: Kind) bool {
-        return row(k).blow == .burst;
-    }
-
     pub fn gasses(k: Kind) bool {
         return switch (row(k).blow) {
             .burst => |b| b == .gas,
@@ -264,12 +260,18 @@ pub fn row(k: Kind) Row {
     };
 }
 
-/// Where a `k` may be set down: a swimmer in water, a mimic where a chest could stand, the rest on any vacant cell.
-pub fn dwells(k: Kind, lv: *const grid.Level, p: P) bool {
+/// The ground a `k` stands on: a swimmer's water, a mimic's where a chest could stand, the rest's any open ground.
+pub fn groundFits(k: Kind, t: grid.Tile) bool {
     const r = row(k);
-    if (r.movement == .swimming) return grid.Level.inside(p) and lv.at(p).wet() and !lv.taken(p) and lv.folkAt(p) == null and !lv.hasBarrier(p);
-    if (r.disguised) return lv.vacant(p) and lv.at(p).rewards() and lv.doorAt(p) == null;
-    return lv.vacant(p);
+    if (r.movement == .swimming) return t.wet();
+    if (r.disguised) return t.rewards();
+    return !t.solid();
+}
+
+/// Where a `k` may be set down: its ground with no body, barrel, folk or barrier on it, and a mimic's off any door.
+pub fn dwells(k: Kind, lv: *const grid.Level, p: P) bool {
+    if (!grid.Level.inside(p) or !groundFits(k, lv.at(p)) or lv.taken(p) or lv.folkAt(p) != null or lv.hasBarrier(p)) return false;
+    return !row(k).disguised or lv.doorAt(p) == null;
 }
 
 /// Where a `k` may be pushed or pulled to: wherever its feet, or its fins, can go.
@@ -350,6 +352,18 @@ pub const Actor = struct {
         return lv.isLit(self.at) and !self.veiled();
     }
 
+    /// A living foe the hero sees.
+    pub fn seenFoe(self: Actor, lv: *const grid.Level) bool {
+        return self.alive and self.foe() and self.seenIn(lv);
+    }
+
+    /// Up to `n` hp back, never past its most: what it got.
+    pub fn heal(self: *Actor, n: i32) i32 {
+        const got = std.math.clamp(n, 0, @max(0, self.max - self.hp));
+        self.hp += got;
+        return got;
+    }
+
     /// Its chest flung open: the ground comes back and it wakes.
     pub fn unmask(self: *Actor, lv: *grid.Level) void {
         if (!self.disguised) return;
@@ -371,14 +385,31 @@ pub const Actor = struct {
     }
 
     pub fn afflicted(self: Actor) bool {
-        return self.shock.turns > 0 or self.sunder.turns > 0 or self.blind.turns > 0 or self.confusion.turns > 0;
+        inline for (AFFLICTIONS) |k| {
+            if (@field(self, @tagName(k)).turns > 0) return true;
+        }
+        return false;
     }
 
-    /// One of its turns spent under shock, sunder, blindness and confusion.
+    /// Something its own turns wear: an affliction, a pin or a chill.
+    pub fn wearsAny(self: Actor) bool {
+        return self.pin.turns > 0 or self.chill.turns > 0 or self.afflicted();
+    }
+
+    /// One of its turns spent under each of `AFFLICTIONS`, in order.
     pub fn wearAfflictions(self: *Actor) Afflicted {
-        self.shock.wear();
-        self.sunder.wear();
-        return .{ .blinded = self.blind.wear(), .confused = self.confusion.wear() };
+        var out = Afflicted{};
+        inline for (AFFLICTIONS) |k| {
+            const status = &@field(self, @tagName(k));
+            const ran = status.turns > 0;
+            _ = status.wear();
+            switch (k) {
+                .blind => out.blinded = ran,
+                .confusion => out.confused = ran,
+                else => {},
+            }
+        }
+        return out;
     }
 
     /// The turn is over: what started or split off in it is no longer fresh.
@@ -392,6 +423,9 @@ pub const Actor = struct {
 
 /// What a turn worn under them was.
 pub const Afflicted = struct { blinded: bool = false, confused: bool = false };
+
+/// The statuses worn on a body's own turn, each kept in the `Actor` field its kind names.
+pub const AFFLICTIONS = [_]resilience.Kind{ .shock, .sunder, .blind, .confusion };
 
 pub const MAX: usize = 64;
 
@@ -440,6 +474,8 @@ pub fn Ids(comptime N: usize) type {
 pub const Pool = struct {
     items: [MAX]Actor = undefined,
     n: usize = 0,
+
+    pub const COUNTED = .{.{ "items", "n" }};
 
     pub fn idOf(i: usize) u16 {
         return @intCast(i + 1);
@@ -547,18 +583,15 @@ fn shuns(lv: *const grid.Level, from: P, d: mathx.Dir) bool {
 
 /// The water step that most closes on `toward`, by steps then by the straighter line; none that gains.
 pub fn swim(lv: *const grid.Level, from: P, k: Kind, toward: P) ?mathx.Dir {
+    var near = grid.Nearest{ .from = toward, .best_d = mathx.dist(from, toward), .best_line = mathx.distEuclid(from, toward) };
     var best: ?mathx.Dir = null;
-    var best_d = mathx.dist(from, toward);
-    var best_line = mathx.distEuclid(from, toward);
     for (mathx.ALL_DIRS) |d| {
         const to = from.add(d.delta());
         if (!dwells(k, lv, to)) continue;
-        const gap = mathx.dist(to, toward);
-        const line = mathx.distEuclid(to, toward);
-        if (gap > best_d or (gap == best_d and line >= best_line)) continue;
-        best = d;
-        best_d = gap;
-        best_line = line;
+        near.offer(to);
+        if (near.best) |b| {
+            if (b.eq(to)) best = d;
+        }
     }
     return best;
 }

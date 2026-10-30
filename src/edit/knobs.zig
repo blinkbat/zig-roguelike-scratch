@@ -617,19 +617,8 @@ test "generator tile choices skip opened containers in both directions" {
     std.debug.print("generator tile choices: {d} forward/back steps exclude opened containers; idle choices preserved\n", .{checked});
 }
 
-const Step = struct { tip: [:0]const u8, live: bool = true };
-
-pub fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, steps: [2]Step) i32 {
-    const x: i32 = @intFromFloat(r.x);
-    const y: i32 = @intFromFloat(r.y);
-    const w: i32 = @intFromFloat(r.width);
-    var by: i32 = 0;
-    if (widgets.button(ed.controls(), &g.face, widgets.row(x, y, editor.STEP_W), "-", false, steps[0].live, steps[0].tip)) by = -1;
-    if (widgets.button(ed.controls(), &g.face, widgets.row(x + w - editor.STEP_W, y, editor.STEP_W), "+", false, steps[1].live, steps[1].tip)) by = 1;
-    var fit_buf: [widgets.LINE]u8 = undefined;
-    const shown = widgets.textFace(&g.face).fit(&fit_buf, value, widgets.TEXT, @intFromFloat(valueRect(r).width), false);
-    widgets.textFace(&g.face).drawMid(shown, x + @divTrunc(w, 2), y + editor.TEXT_DY, widgets.TEXT, look.TEXT);
-    return if (ed.desk.shift) by * editor.SHIFT_STEP else by;
+pub fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, steps: [2]widgets.Step) i32 {
+    return widgets.stepper(ed.controls(), &g.face, r, value, widgets.KNOB_ARROWS, steps, ed.desk.shift);
 }
 
 fn valueRect(r: rl.Rectangle) rl.Rectangle {

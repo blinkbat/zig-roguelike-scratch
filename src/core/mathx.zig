@@ -232,6 +232,14 @@ pub fn reaches(a: P, b: P, r: f32) bool {
     return distEuclid(a, b) <= r + 0.5;
 }
 
+/// Within the right angle `origin` faces along `heading`, `origin` itself left out.
+pub fn ahead(origin: P, heading: P, p: P) bool {
+    const v = p.sub(origin);
+    const along = heading.x * v.x + heading.y * v.y;
+    const across = heading.x * v.y - heading.y * v.x;
+    return along > 0 and @abs(across) <= along;
+}
+
 /// Every field of `p.*` that declares a default set to it, as `alloc.create` does not.
 pub fn defaults(p: anytype) void {
     inline for (std.meta.fields(@TypeOf(p.*))) |f| {
@@ -240,7 +248,7 @@ pub fn defaults(p: anytype) void {
 }
 
 /// Takes `items[i]` out of the first `n.*`, the rest keeping their order, and leaves `blank` in the slot freed at the end.
-pub fn removeAt(comptime T: type, items: []T, n: *usize, i: usize, blank: ?T) void {
+pub fn removeAt(comptime T: type, items: []T, n: anytype, i: usize, blank: ?T) void {
     std.mem.copyForwards(T, items[i .. n.* - 1], items[i + 1 .. n.*]);
     n.* -= 1;
     if (blank) |b| items[n.*] = b;

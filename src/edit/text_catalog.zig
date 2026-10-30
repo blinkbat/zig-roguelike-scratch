@@ -3,6 +3,7 @@ const store = @import("../core/store.zig");
 const wording = @import("../core/wording.zig");
 const input = @import("../core/input.zig");
 const atlas = @import("../map/atlas.zig");
+const atlas_text = @import("../map/atlas_text.zig");
 
 pub const MAX_TEXT: usize = 4096;
 const FILE_CAP = 4 << 20;
@@ -118,21 +119,7 @@ pub const Catalog = struct {
         self.labels = project.readFileAlloc(a, LABEL_FILE, FILE_CAP) catch |e| if (e == error.FileNotFound) "" else return e;
         var source = try project.openDir("src", .{ .iterate = true });
         defer source.close();
-        var walker = try source.walk(a);
-        defer walker.deinit();
-        var paths = std.ArrayList([]const u8).init(a);
-        while (try walker.next()) |item| {
-            if (item.kind != .file) continue;
-            const path = try a.dupe(u8, item.path);
-            std.mem.replaceScalar(u8, path, '\\', '/');
-            if (included(path)) try paths.append(path);
-        }
-        std.mem.sort([]const u8, paths.items, {}, struct {
-            fn less(_: void, x: []const u8, y: []const u8) bool {
-                return std.mem.lessThan(u8, x, y);
-            }
-        }.less);
-        for (paths.items) |path| {
+        for (try sortedFiles(a, source, included)) |path| {
             const bytes = try source.readFileAlloc(a, path, FILE_CAP);
             try self.scan(try std.fmt.allocPrint(a, "src/{s}", .{path}), bytes);
         }
@@ -153,21 +140,7 @@ pub const Catalog = struct {
         var maps = project.openDir(atlas.DIR, .{ .iterate = true }) catch |e| if (e == error.FileNotFound) return else return e;
         defer maps.close();
         const a = self.arena.allocator();
-        var walker = try maps.walk(a);
-        defer walker.deinit();
-        var paths = std.ArrayList([]const u8).init(a);
-        while (try walker.next()) |item| {
-            if (item.kind != .file or !std.mem.endsWith(u8, item.path, atlas.EXT)) continue;
-            const path = try a.dupe(u8, item.path);
-            std.mem.replaceScalar(u8, path, '\\', '/');
-            try paths.append(path);
-        }
-        std.mem.sort([]const u8, paths.items, {}, struct {
-            fn less(_: void, x: []const u8, y: []const u8) bool {
-                return std.mem.lessThan(u8, x, y);
-            }
-        }.less);
-        for (paths.items) |path| {
+        for (try sortedFiles(a, maps, isMap)) |path| {
             const bytes = try maps.readFileAlloc(a, path, FILE_CAP);
             try self.scanMap(try std.fmt.allocPrint(a, atlas.PREFIX ++ "{s}", .{path}), bytes);
         }
@@ -175,17 +148,9 @@ pub const Catalog = struct {
 
     fn scanMap(self: *Catalog, path: []const u8, bytes: []const u8) !void {
         const a = self.arena.allocator();
-        var lines = std.mem.splitScalar(u8, bytes, '\n');
-        var line: usize = 0;
-        var node: usize = 0;
-        while (lines.next()) |raw| {
-            line += 1;
-            const text = std.mem.trim(u8, raw, " \r");
-            if (std.mem.startsWith(u8, text, "node ")) node += 1;
-            if (!std.mem.startsWith(u8, text, "name ")) continue;
-            const name = std.mem.trim(u8, text[5..], " ");
-            if (name.len == 0) continue;
-            try self.list.append(a, .{ .path = path, .line = line, .text = try a.dupe(u8, name), .category = "Maps", .owner = try std.fmt.allocPrint(a, "{s} (node {d})", .{ name, node -| 1 }), .role = "Name", .context = try std.fmt.allocPrint(a, "{s}.node[{d}].name", .{ path, node -| 1 }), .editable = false, .reason = "Rename this node in the map editor", .file = 0, .start = 0, .end = 0, .ordinal = 0 });
+        var names = atlas_text.NodeNames.of(bytes);
+        while (names.next()) |n| {
+            try self.list.append(a, .{ .path = path, .line = n.line, .text = try a.dupe(u8, n.name), .category = "Maps", .owner = try std.fmt.allocPrint(a, "{s} (node {d})", .{ n.name, n.node }), .role = "Name", .context = try std.fmt.allocPrint(a, "{s}.node[{d}].name", .{ path, n.node }), .editable = false, .reason = "Rename this node in the map editor", .file = 0, .start = 0, .end = 0, .ordinal = 0 });
         }
     }
 
@@ -234,9 +199,13 @@ pub const Catalog = struct {
     fn checkTags(self: *Catalog) !void {
         const path = try std.fs.path.join(self.alloc, &.{ self.root, TAG_FILE });
         defer self.alloc.free(path);
-        const current = std.fs.cwd().readFileAlloc(self.alloc, path, FILE_CAP) catch |e| if (e == error.FileNotFound) try self.alloc.dupe(u8, "") else return e;
+        const current = try self.readOrEmpty(path);
         defer self.alloc.free(current);
         if (!unchanged(self.tag_bytes, current)) return error.TagsChanged;
+    }
+
+    fn readOrEmpty(self: *Catalog, path: []const u8) ![]u8 {
+        return std.fs.cwd().readFileAlloc(self.alloc, path, FILE_CAP) catch |e| if (e == error.FileNotFound) try self.alloc.dupe(u8, "") else return e;
     }
 
     fn saveAlias(self: *Catalog, index: usize, key: []const u8, replacement: []const u8, author: Author) !SaveResult {
@@ -245,7 +214,7 @@ pub const Catalog = struct {
         const changed = aliasChanged(entry.text, replacement);
         const path = try std.fs.path.join(self.alloc, &.{ self.root, LABEL_FILE });
         defer self.alloc.free(path);
-        const current = std.fs.cwd().readFileAlloc(self.alloc, path, FILE_CAP) catch |e| if (e == error.FileNotFound) try self.alloc.dupe(u8, "") else return e;
+        const current = try self.readOrEmpty(path);
         defer self.alloc.free(current);
         if (!unchanged(self.labels, current)) return error.SourceChanged;
         const output = try wording.replace(self.alloc, current, key, replacement);
@@ -410,16 +379,41 @@ pub const Catalog = struct {
 
 fn included(path: []const u8) bool {
     if (!std.mem.endsWith(u8, path, ".zig")) return false;
-    for ([_][]const u8{ "tests/", "shots.zig", "harness.zig", "atlas_text.zig", "text_catalog.zig", "text_panel.zig" }) |part| {
+    for ([_][]const u8{ "tests/", "shots.zig", "harness.zig", "atlas_text.zig", "script_text.zig", "text_catalog.zig", "text_panel.zig" }) |part| {
         if (std.mem.indexOf(u8, path, part) != null) return false;
     }
     if (std.mem.endsWith(u8, path, "tests.zig")) return false;
     for ([_][]const u8{ "game/", "play/", "ui/", "edit/", "map/" }) |prefix| if (std.mem.startsWith(u8, path, prefix)) return true;
-    return oneOf(path, &.{ "app.zig", "game.zig", "save.zig", "save_data.zig", "core/input.zig", "core/input_bindings.zig", "core/input_names.zig", "gfx/look.zig", "gfx/fx.zig" });
+    return oneOf(path, &INPUT_SOURCES) or oneOf(path, &.{ "app.zig", "game.zig", "save.zig", "save_data.zig", "gfx/look.zig", "gfx/fx.zig" });
 }
 
+const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
+
 fn inputSource(path: []const u8) bool {
-    return oneOf(path, &.{ "src/core/input.zig", "src/core/input_bindings.zig", "src/core/input_names.zig" });
+    return std.mem.startsWith(u8, path, "src/") and oneOf(path["src/".len..], &INPUT_SOURCES);
+}
+
+fn isMap(path: []const u8) bool {
+    return std.mem.endsWith(u8, path, atlas.EXT);
+}
+
+/// Every file under `dir` that `keep` takes, '/' between its folders, in order.
+fn sortedFiles(a: std.mem.Allocator, dir: std.fs.Dir, comptime keep: fn ([]const u8) bool) ![]const []const u8 {
+    var walker = try dir.walk(a);
+    defer walker.deinit();
+    var paths = std.ArrayList([]const u8).init(a);
+    while (try walker.next()) |item| {
+        if (item.kind != .file) continue;
+        const path = try a.dupe(u8, item.path);
+        std.mem.replaceScalar(u8, path, '\\', '/');
+        if (keep(path)) try paths.append(path);
+    }
+    std.mem.sort([]const u8, paths.items, {}, struct {
+        fn less(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.lessThan(u8, x, y);
+        }
+    }.less);
+    return paths.items;
 }
 
 fn oneOf(value: []const u8, choices: []const []const u8) bool {
@@ -513,10 +507,13 @@ fn textRole(name: []const u8) ?[]const u8 {
     if (std.ascii.eqlIgnoreCase(name, "label") or std.ascii.eqlIgnoreCase(name, "caption")) return "Label";
     if (std.ascii.eqlIgnoreCase(name, "tip")) return "Tooltip";
     if (std.ascii.eqlIgnoreCase(name, "status")) return "Status";
-    if (oneOf(name, &.{ "VERB", "DONE", "TAKES", "RETAKES", "SWEEP_VERB" })) return "Action wording";
-    if (std.mem.eql(u8, name, "FRIGHT_WORDS")) return "Fright speech";
+    if (oneOf(name, &ACTION_WORDS)) return "Action wording";
+    if (std.mem.eql(u8, name, FRIGHT_WORDS)) return "Fright speech";
     return null;
 }
+
+const ACTION_WORDS = [_][]const u8{ "VERB", "DONE", "TAKES", "RETAKES", "SWEEP_VERB" };
+const FRIGHT_WORDS = "FRIGHT_WORDS";
 
 const Semantic = struct { category: []const u8, owner: []const u8, role: []const u8, context: []const u8 };
 const Scope = struct {
@@ -659,8 +656,7 @@ fn enumType(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []con
     if (at < 3 or ts[at - 1].tag != .equal or ts[at - 2].tag != .identifier or ts[at - 3].tag != .keyword_const) return null;
     if (!std.mem.startsWith(u8, path, "src/") or !std.mem.endsWith(u8, path, ".zig")) return null;
     var name = std.ArrayList(u8).init(a);
-    try name.appendSlice(path[4 .. path.len - 4]);
-    std.mem.replaceScalar(u8, name.items, '/', '.');
+    try name.appendSlice(try moduleOf(a, path));
     for (ts[0..at], 0..) |token, i| {
         if (token.tag != .keyword_struct and token.tag != .keyword_union and token.tag != .keyword_enum) continue;
         var open = i + 1;
@@ -726,7 +722,7 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     if (letters == 0) return false;
     const decl = declaration(bytes, ts, i) orelse "";
     if (oneOf(decl, &.{ "PROBED", "SYMBOLS", "TTF", "DATA_TTF" }) or std.mem.endsWith(u8, decl, "_FIELDS")) return false;
-    if (oneOf(decl, &.{ "VERB", "DONE", "TAKES", "RETAKES", "NAME", "NUMBERS", "SWEEP_VERB", "FRIGHT_WORDS" })) return true;
+    if (oneOf(decl, &ACTION_WORDS) or oneOf(decl, &.{ "NAME", "NUMBERS", FRIGHT_WORDS })) return true;
     for ([_][]const u8{ ".zig", ".png", ".ttf", atlas.EXT, ".json", "#version", "void main", "uniform ", "layout(", "roguelike-map", "shots/", "assets/", atlas.PREFIX, "saves/" }) |part| {
         if (std.mem.indexOf(u8, text, part) != null) return false;
     }

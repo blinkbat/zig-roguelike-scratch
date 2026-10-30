@@ -80,6 +80,8 @@ pub const Name = struct {
     buf: [MAX]u8 = undefined,
     n: usize = 0,
 
+    pub const COUNTED = .{.{ "buf", "n" }};
+
     pub fn of(s: []const u8) Name {
         var nm = Name{};
         for (s) |c| _ = nm.push(c);

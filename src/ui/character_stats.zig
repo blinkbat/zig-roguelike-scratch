@@ -17,9 +17,17 @@ const character_view = @import("character_view.zig");
 const View = character_view.View;
 const Vital = character_view.Vital;
 
+/// What the sheet reads: the view's attributes, with combat's own dodge.
+const Figures = struct {
+    attrs: attr.Attrs,
+    dodge: u32,
+
+    fn of(view: View) Figures {
+        return .{ .attrs = view.stats(), .dodge = view.dodge() };
+    }
+};
+
 const Measure = union(enum) {
-    life,
-    mana,
     attribute: attr.Attr,
     reduction,
     weapon_crit,
@@ -32,17 +40,16 @@ const Measure = union(enum) {
     gold_find,
     item_rarity,
 
-    fn of(measure: Measure, attributes: attr.Attrs) i32 {
+    fn of(measure: Measure, figures: Figures) i32 {
+        const attributes = figures.attrs;
         return switch (measure) {
-            .life => attributes.life(),
-            .mana => attributes.mana(),
             .attribute => |at| attributes.get(at),
             .reduction => attributes.reduction(),
             .weapon_crit => @intCast(attributes.critWith(attributes.weapon_crit_bonus)),
             .spell_crit => @intCast(attributes.critWith(attributes.spell_crit_bonus)),
             .physical => attributes.physical_bonus,
             .element => |e| attributes.element_bonus.get(e),
-            .dodge => @intCast(attributes.dodge()),
+            .dodge => @intCast(figures.dodge),
             .style => |s| attributes.increase(s),
             .thorns => attributes.thorns,
             .gold_find => attributes.gold_find,
@@ -52,7 +59,7 @@ const Measure = union(enum) {
 
     fn percent(measure: Measure) bool {
         return switch (measure) {
-            .life, .mana, .attribute, .thorns => false,
+            .attribute, .thorns => false,
             .reduction, .weapon_crit, .spell_crit, .physical, .element, .dodge, .style, .gold_find, .item_rarity => true,
         };
     }
@@ -60,8 +67,6 @@ const Measure = union(enum) {
     /// Its Stats page row.
     fn title(measure: Measure) [:0]const u8 {
         return switch (measure) {
-            .life => comptime menu.capital(attr.Bonus.life.label()),
-            .mana => comptime menu.capital(attr.Bonus.mana.label()),
             .attribute => |at| menu.named(at),
             .reduction => comptime menu.capital(attr.REDUCTION_LABEL),
             .weapon_crit => comptime menu.capital(attr.WEAPON_CRIT_LABEL),
@@ -164,9 +169,9 @@ const Column = struct {
         column.y += tier.step();
     }
 
-    fn stat(column: *Column, measure: Measure, attributes: attr.Attrs, tier: Tier, col: rl.Color) void {
+    fn stat(column: *Column, measure: Measure, figures: Figures, tier: Tier, col: rl.Color) void {
         var text: menu.Note(48) = .{};
-        text.say("{s}{d}{s}", .{ if (measure == .style) "+" else "", measure.of(attributes), if (measure.percent()) "%" else "" });
+        text.say("{s}{d}{s}", .{ if (measure == .style) "+" else "", measure.of(figures), if (measure.percent()) "%" else "" });
         column.entry(measure.title(), text.text(), tier, col);
     }
 
@@ -237,17 +242,18 @@ const CRITS = [_]Measure{ .weapon_crit, .spell_crit };
 
 /// What the player reads at a glance: life, mana and each skill's hit, then what builds them.
 fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
-    const attributes = view.stats();
+    const figures = Figures.of(view);
+    const attributes = figures.attrs;
     var left = Column{ .face = face, .x = STATS_X, .dry = dry };
     left.heading("SURVIVAL");
     left.vital(hud.LIFE, view.life, look.LIFE_TEXT);
     left.vital(hud.MANA, view.mana, look.MANA_TEXT);
-    for (DEFENCES) |measure| left.stat(measure, attributes, .plain, look.TEXT);
+    for (DEFENCES) |measure| left.stat(measure, figures, .plain, look.TEXT);
     var note: menu.Note(100) = .{};
     left.y += SECTION_GAP;
     left.heading("ATTRIBUTES");
     for (attr.ATTRS) |at| {
-        left.stat(.{ .attribute = at }, attributes, .key, look.TEXT);
+        left.stat(.{ .attribute = at }, figures, .key, look.TEXT);
     }
     left.y += SECTION_GAP;
     left.heading("PROGRESSION");
@@ -263,22 +269,23 @@ fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
         right.skill(act, view.growth.preparedHit(attributes, view.inventory.gear, act, view.steady).?, view.inventory.gear.onHit(act.attack().?));
     };
     right.y += CRIT_GAP;
-    for (CRITS) |measure| right.stat(measure, attributes, .plain, look.TEXT);
+    for (CRITS) |measure| right.stat(measure, figures, .plain, look.TEXT);
     return .{ left, right };
 }
 
 /// D2's Advanced Stats: every bonus, recovery and resistance, zeros included.
 fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
-    const attributes = view.stats();
+    const figures = Figures.of(view);
+    const attributes = figures.attrs;
     var left = Column{ .face = face, .x = STATS_X, .dry = dry };
     left.heading("DAMAGE MODIFIERS");
-    for (attr.STYLES) |s| left.stat(.{ .style = s }, attributes, .plain, quiet(attributes.increase(s), look.TEXT));
-    left.stat(.physical, attributes, .plain, quiet(attributes.physical_bonus, look.PHYSICAL));
-    for (std.enums.values(damage.Element)) |e| left.stat(.{ .element = e }, attributes, .plain, quiet(attributes.element_bonus.get(e), look.elementInk(e)));
+    for (attr.STYLES) |s| left.stat(.{ .style = s }, figures, .plain, quiet(attributes.increase(s), look.TEXT));
+    left.stat(.physical, figures, .plain, quiet(attributes.physical_bonus, look.PHYSICAL));
+    for (std.enums.values(damage.Element)) |e| left.stat(.{ .element = e }, figures, .plain, quiet(attributes.element_bonus.get(e), look.elementInk(e)));
     var text: menu.Note(48) = .{};
     text.say("{d}%", .{attr.CRIT_MULTI});
     left.entry("Critical damage multiplier", text.text(), .plain, look.TEXT);
-    left.stat(.thorns, attributes, .plain, quiet(attributes.thorns, look.PHYSICAL));
+    left.stat(.thorns, figures, .plain, quiet(attributes.thorns, look.PHYSICAL));
     left.y += SECTION_GAP;
     left.heading("RECOVERY AND LOOT");
     const perks = view.inventory.gear.perks(view.growth.perks());
@@ -290,8 +297,8 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     left.entry("Life on kill", text.text(), .plain, quiet(perks.life_on_kill, look.LIFE_TEXT));
     text.say("+{d}%", .{perks.life_flask});
     left.entry("Life flask recovery", text.text(), .plain, quiet(perks.life_flask, look.LIFE_TEXT));
-    left.stat(.gold_find, attributes, .plain, quiet(attributes.gold_find, look.UI_GOLD));
-    left.stat(.item_rarity, attributes, .plain, quiet(attributes.item_rarity, look.MAGIC));
+    left.stat(.gold_find, figures, .plain, quiet(attributes.gold_find, look.UI_GOLD));
+    left.stat(.item_rarity, figures, .plain, quiet(attributes.item_rarity, look.MAGIC));
 
     var right = Column{ .face = face, .x = layout.DETAIL_X, .dry = dry };
     right.heading("RESISTANCES");

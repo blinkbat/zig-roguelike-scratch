@@ -443,7 +443,7 @@ test "leaving with unsaved changes asks first, and leaving a saved map does not"
     ed.action = .none;
     click(ed, .paint, .{ .x = 3, .y = 3 });
     ed.request(.leave);
-    try std.testing.expectEqual(editor.Modal.confirm, ed.modal);
+    try std.testing.expectEqual(editor.Modal{ .prompt = .confirm }, ed.modal);
     try std.testing.expect(ed.action == .none);
     ed.commit();
     try std.testing.expect(ed.action == .leave);
@@ -457,7 +457,7 @@ test "leaving or closing mid graph drag keeps the move and asks before discardin
         const moved = ed.map.node[0].pos;
         try std.testing.expect(!moved.eq(was));
         ed.request(pending);
-        try std.testing.expectEqual(editor.Modal.confirm, ed.modal);
+        try std.testing.expectEqual(editor.Modal{ .prompt = .confirm }, ed.modal);
         try std.testing.expect(ed.action == .none);
         try std.testing.expect(ed.drag == null);
         try std.testing.expectEqual(moved, ed.map.node[0].pos);
@@ -470,22 +470,27 @@ test "leaving or closing mid graph drag keeps the move and asks before discardin
     std.debug.print("2 departure paths preserve an active graph move, prompt, and undo to the saved state\n", .{});
 }
 
-test "Save As or a play-test mid graph drag keeps the move as its own undo" {
-    for ([_]bool{ false, true }) |play| {
+test "Save As, a play-test or a rename mid graph drag keeps the move as its own undo" {
+    for ([_]enum { save_as, play, rename }{ .save_as, .play, .rename }) |by| {
         const ed = try testBespoke();
         defer ed.destroy();
         ed.map.node[ed.map.start.node].plan.bespoke.tile[grid.Level.idx(ed.map.start.at)] = .floor;
         const was = dragFirstBox(ed);
         const moved = ed.map.node[0].pos;
-        if (play) {
-            ed.action = .{ .play = ed.map.start };
-            editor.launch(ed);
-            try std.testing.expect(ed.action == .play);
-        } else ed.askName(.save_as);
+        switch (by) {
+            .play => {
+                ed.action = .{ .play = ed.map.start };
+                editor.launch(ed);
+                try std.testing.expect(ed.action == .play);
+            },
+            .save_as => ed.askName(.save_as),
+            .rename => ed.startRename(),
+        }
         try std.testing.expect(ed.drag == null);
         try std.testing.expectEqual(moved, ed.map.node[0].pos);
         try std.testing.expectEqual(@as(usize, 1), ed.history.at);
         ed.modal = .none;
+        ed.renaming = false;
         ed.undo();
         try std.testing.expectEqual(was, ed.map.node[0].pos);
     }
@@ -676,6 +681,11 @@ test "paste previews reuse unchanged content and follow cells clipboard terrain 
     ed.board.cells.foe[0].kind = .pib;
     try std.testing.expectEqual(@as(usize, 0), placement.layAside(ed, at).left);
     try std.testing.expectEqual(actor.Kind.pib, ed.trial.foe[ed.trial.foeAt(beside).?].kind);
+    click(ed, .folk, at);
+    ed.modal = .none;
+    try std.testing.expectEqual(@as(usize, 1), placement.layAside(ed, at).left);
+    ed.undo();
+    try std.testing.expectEqual(@as(usize, 0), placement.layAside(ed, at).left);
 
     paintClick(ed, .rock, outside);
     _ = placement.layAside(ed, at);
@@ -776,7 +786,7 @@ test "Open lists the edited map's folder and Esc goes up a folder before it clos
     try std.testing.expectEqualStrings(ed.path(), ed.listing.at(ed.listed_at));
     ed.desk = .{ .back = true };
     interaction.modalKeys(ed);
-    try std.testing.expectEqual(editor.Modal.open, ed.modal);
+    try std.testing.expectEqual(editor.Modal{ .prompt = .open }, ed.modal);
     try std.testing.expectEqual(@as(usize, 0), ed.listing.here().len);
     interaction.modalKeys(ed);
     try std.testing.expectEqual(editor.Modal.none, ed.modal);
@@ -864,6 +874,10 @@ test "a procgen node shows a roll of it with its packs, and a bespoke one counts
     placement.laySpan(ed, .{ .from = .{ .x = 20, .y = 2 }, .erase = false, .shape = .rect }, .{ .x = 22, .y = 4 });
     ed.map.start = .{ .node = b, .at = .{ .x = 3, .y = 3 } };
     click(ed, .{ .foe = .rat }, .{ .x = 21, .y = 3 });
+    var pond = grid.Cells.of(.{ .x = 7, .y = 2 }, .{ .x = 10, .y = 7 });
+    while (pond.next()) |p| paintClick(ed, .water, p);
+    click(ed, .{ .foe = .bog_leech }, .{ .x = 9, .y = 4 });
+    try std.testing.expect(ed.here().plan.bespoke.foeAt(.{ .x = 9, .y = 4 }) != null);
     ed.preview();
     std.debug.print("a wilds roll: {d} open cells, {d} foes placed; two rooms apart: {d} cells and {d} foe cut off\n", .{ open, foes, ed.scene.issues.cut_off, ed.scene.issues.foes_cut_off });
     try std.testing.expect(open > 0 and foes > 0);
@@ -1123,14 +1137,14 @@ test "folk: placing one opens its words, typing is one undo step, and nothing el
     placement.laySpan(ed, .{ .from = .{ .x = 4, .y = 5 }, .erase = false, .shape = .rect }, .{ .x = 9, .y = 8 });
     const at = P{ .x = 6, .y = 6 };
     click(ed, .folk, at);
-    try std.testing.expect(ed.modal == .dialogs);
+    try std.testing.expectEqual(editor.Modal{ .plot = .dialogs }, ed.modal);
     try std.testing.expectEqual(editor.plot.Pick{ .folk = 0 }, ed.plot.pick);
     ed.modal = .none;
     click(ed, .{ .foe = .rat }, at);
     click(ed, .barrel, at);
     try std.testing.expect(ed.map.node[0].plan.bespoke.foeAt(at) == null);
     try std.testing.expect(!ed.map.node[0].plan.bespoke.barrel[grid.Level.idx(at)]);
-    ed.modal = .dialogs;
+    ed.modal = .{ .plot = .dialogs };
     ed.plot.focus = .{ .folk = 0 };
     ed.plot.field.set("");
     ed.gesture();
@@ -1146,6 +1160,15 @@ test "folk: placing one opens its words, typing is one undo step, and nothing el
     editor.plot.keys(ed);
     try std.testing.expectEqualStrings("", ed.map.script.folk[0].name.text());
     try std.testing.expect(ed.plot.focus == null);
+    ed.desk = .{ .redo = true, .paint_hit = true };
+    editor.plot.keys(ed);
+    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.folk[0].name.text());
+    ed.map.script.folk[0].name = atlas.script.Who.of("Wenna");
+    ed.bank();
+    ed.undo();
+    try std.testing.expectEqualStrings("Old Wenna", ed.map.script.folk[0].name.text());
+    ed.undo();
+    try std.testing.expectEqualStrings("", ed.map.script.folk[0].name.text());
     ed.modal = .none;
     paintClick(ed, .wall, at);
     try std.testing.expectEqual(@as(u8, 0), ed.map.script.folk_n);

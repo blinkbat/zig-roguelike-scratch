@@ -1,5 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const resilience = @import("resilience.zig");
 
 pub const TURNS: u8 = 4;
 pub const MOST: u8 = 3;
@@ -25,7 +26,7 @@ pub const Sunder = struct {
     }
 
     pub fn wear(self: *Sunder) void {
-        self.turns -|= 1;
+        _ = resilience.wearTurn(&self.turns);
         if (self.turns == 0) self.stacks = 0;
     }
 };

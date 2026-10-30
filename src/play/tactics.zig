@@ -14,8 +14,12 @@ pub const Caltrops = struct {
     pub fn duration(rank: u8) u8 {
         return 4 + rank;
     }
+    /// What a patch's cells are laid with.
+    pub fn laid(rank: u8) u8 {
+        return duration(rank) + 1;
+    }
     pub fn pins(rank: u8) u8 {
-        return 1 + @as(u8, @intFromBool(rank == 3));
+        return 1 + @as(u8, @intFromBool(rank == TOP_RANK));
     }
     pub fn bleed(rank: u8) i32 {
         return rank -| 1;
@@ -23,11 +27,16 @@ pub const Caltrops = struct {
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
         return patch(lv, at, 1);
     }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("Patch: {d} turns; pin: {d} turn(s); ", .{ duration(rank), pins(rank) }) catch {};
+        if (bleed(rank) == 0) w.writeAll("no bleed.") catch {} else w.print("bleed: {d} per turn.", .{bleed(rank)}) catch {};
+    }
 };
 pub const Overwatch = struct {
     pub const RANGE = bow.RANGE;
     pub const COST: i32 = 4;
     pub const COOLDOWN: u8 = 3;
+    pub const VERB = "shoots on overwatch";
     pub const DESCRIPTION = "Cover a direction until your next action. Shoot the first foe moving into its cone.";
     pub const BASE = bow.BASE;
 };
@@ -40,6 +49,9 @@ pub const SteadyAim = struct {
     pub fn critical(rank: u8) i32 {
         return 5 + 5 * @as(i32, @max(1, rank));
     }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("Next arrow: +{d}% damage, +{d}% critical chance.", .{ bonus(rank), critical(rank) }) catch {};
+    }
 };
 pub const GravityWell = struct {
     pub const COST: i32 = 6;
@@ -48,7 +60,7 @@ pub const GravityWell = struct {
     pub const RADIUS: i32 = 2;
     pub const DESCRIPTION = std.fmt.comptimePrint("Pull foes within {d} cells toward a visible center.", .{RADIUS});
     pub fn pulls(rank: u8) usize {
-        return if (rank == 3) 2 else 1;
+        return if (rank == TOP_RANK) 2 else 1;
     }
     pub fn pins(rank: u8) u8 {
         return rank -| 1;
@@ -56,11 +68,15 @@ pub const GravityWell = struct {
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
         return patch(lv, at, RADIUS);
     }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("Pull: {d} cell(s); pin: {d} turn(s).", .{ pulls(rank), pins(rank) }) catch {};
+    }
 };
 pub const Combustion = struct {
     pub const COST: i32 = 5;
     pub const COOLDOWN: u8 = 3;
     pub const RANGE: i32 = 7;
+    pub const VERB = "detonates";
     pub const ELEMENT = damage.Element.fire;
     pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
     pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding {d} damage per remaining burn turn.", .{FUEL_DAMAGE});
@@ -80,11 +96,19 @@ pub const ArcaneBarrier = struct {
     pub fn duration(rank: u8) u8 {
         return 3 + @max(1, rank);
     }
+    /// What a wall's cells are laid with.
+    pub fn laid(rank: u8) u8 {
+        return duration(rank) + 1;
+    }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("Wall: up to {d} cells, {d} turns.", .{ length(rank), duration(rank) }) catch {};
+    }
 };
 pub const Shatter = struct {
     pub const COST: i32 = 5;
     pub const COOLDOWN: u8 = 3;
     pub const RANGE: i32 = 7;
+    pub const VERB = "shatters";
     pub const ELEMENT = damage.Element.cold;
     pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
     pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's chill. Shatter it and its neighbors for cold damage, adding {d} damage per remaining chill turn.", .{FUEL_DAMAGE});
@@ -96,13 +120,14 @@ pub const Shatter = struct {
 pub const FireWall = struct {
     pub const COST: i32 = 6;
     pub const COOLDOWN: u8 = 5;
-    pub const RANGE: i32 = 6;
+    pub const RANGE = ArcaneBarrier.RANGE;
     pub const DESCRIPTION = "Choose two endpoints to set a straight line of ground ablaze. Foes shun the flames; any that enter them, or stand there as they rise, catch fire. Cannot cover water, props or doors.";
-    pub fn length(rank: u8) usize {
-        return 2 + @as(usize, @max(1, rank));
-    }
-    pub fn duration(rank: u8) u8 {
-        return 3 + @max(1, rank);
+    pub const length = ArcaneBarrier.length;
+    pub const duration = ArcaneBarrier.duration;
+    /// What its flames are laid with.
+    pub const laid = ArcaneBarrier.laid;
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("Flames: up to {d} cells, {d} turns.", .{ length(rank), duration(rank) }) catch {};
     }
 };
 pub const WarCry = struct {
@@ -116,6 +141,9 @@ pub const WarCry = struct {
     pub fn turns(rank: u8) u8 {
         return 2 + @max(1, rank);
     }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("{d}% fright chance; frightened {d} turns.", .{ chance(rank), turns(rank) }) catch {};
+    }
 };
 pub const Guard = struct {
     pub const COST: i32 = 2;
@@ -123,10 +151,18 @@ pub const Guard = struct {
     pub fn reduction(rank: u8) i32 {
         return 40 + 10 * @as(i32, @max(1, rank));
     }
+    /// `dmg` as guarding at `rank` lets it through, rounded up.
+    pub fn reduce(rank: u8, dmg: i32) i32 {
+        return @intCast(@divTrunc(@as(i64, dmg) * (mathx.PERCENT - reduction(rank)) + mathx.PERCENT - 1, mathx.PERCENT));
+    }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("{d}% less physical attack damage.", .{reduction(rank)}) catch {};
+    }
 };
 pub const Whirlwind = struct {
     pub const COST: i32 = 5;
     pub const COOLDOWN: u8 = 3;
+    pub const VERB = "whirls into";
     pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
     pub const DESCRIPTION = "Strike every adjacent foe and barrel with your melee weapon.";
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
@@ -135,10 +171,14 @@ pub const Whirlwind = struct {
 };
 pub const Unyielding = struct {
     pub const COST: i32 = 2;
+    pub const VERB = "counters";
     pub const DESCRIPTION = "Counter adjacent melee attackers. Toggle the stance; ends when mana runs out.";
     pub const DRAIN: i32 = 2;
     pub fn chance(rank: u8) u32 {
         return 15 + 10 * @as(u32, @max(1, rank));
+    }
+    pub fn writeRank(rank: u8, w: anytype) void {
+        w.print("{d}% counter chance; {d} mana per turn.", .{ chance(rank), DRAIN }) catch {};
     }
 };
 
@@ -149,18 +189,9 @@ pub const State = struct {
     overwatch: ?mathx.Dir = null,
 };
 
-pub fn keep(_: void, _: P) bool {
-    return true;
-}
-pub fn patch(lv: *const grid.Level, at: P, radius: i32) glacial.Burst {
-    return glacial.spread(lv, at, radius, {}, keep);
-}
+pub const patch = glacial.patch;
 pub fn covered(from: P, dir: mathx.Dir, at: P) bool {
-    const d = dir.delta();
-    const v = at.sub(from);
-    const along = v.x * d.x + v.y * d.y;
-    const across = v.x * d.y - v.y * d.x;
-    return along > 0 and @abs(across) <= along;
+    return mathx.ahead(from, dir.delta(), at);
 }
 const TOP_RANK = @import("progress.zig").RANKS;
 pub const Wall = grid.Area(@max(ArcaneBarrier.length(TOP_RANK), FireWall.length(TOP_RANK)));

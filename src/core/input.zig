@@ -154,14 +154,12 @@ pub const CONFIRM = bindings.CONFIRM;
 pub const SLOT_ORDER = bindings.SLOT_ORDER;
 const SLOT_KEYS = bindings.SLOT_KEYS;
 const SLOT_CAPTIONS = bindings.SLOT_CAPTIONS;
-const captions = bindings.captions;
 
 pub const GLYPH_OPEN = names.GLYPH_OPEN;
 pub const GLYPH_CLOSE = names.GLYPH_CLOSE;
 pub const WHEEL = names.WHEEL;
 pub const ARROWS = names.ARROWS;
 pub const ARROW_KEYS = names.ARROW_KEYS;
-pub const glyphCaption = names.glyphCaption;
 const keyGlyph = names.keyGlyph;
 
 const SECOND_KEYS = bindings.SECOND_KEYS;
@@ -609,7 +607,6 @@ fn mouseAt() mathx.P {
 
 /// The editor's mouse and keys, captioned with keyboard and mouse glyphs.
 pub const Desk = struct {
-    const DIGIT_KEYS = bindings.Desk.DIGIT_KEYS;
     pub const TOOL_KEYS = bindings.Desk.TOOL_KEYS;
     pub const TOOL_CAPTIONS = bindings.Desk.TOOL_CAPTIONS;
     pub const SHAPE_KEYS_BY = bindings.Desk.SHAPE_KEYS_BY;
@@ -619,34 +616,8 @@ pub const Desk = struct {
     const PAINT_BUTTON = bindings.Desk.PAINT_BUTTON;
     const ERASE_BUTTON = bindings.Desk.ERASE_BUTTON;
     const GRAB_BUTTON = bindings.Desk.GRAB_BUTTON;
-    pub const PLAY_KEY = bindings.Desk.PLAY_KEY;
-    pub const PLAY_HERE_KEY = bindings.Desk.PLAY_HERE_KEY;
-    pub const SAVE_KEY = bindings.Desk.SAVE_KEY;
-    pub const OPEN_KEY = bindings.Desk.OPEN_KEY;
-    pub const NEW_KEY = bindings.Desk.NEW_KEY;
-    pub const UNDO_KEY = bindings.Desk.UNDO_KEY;
-    pub const REDO_KEY = bindings.Desk.REDO_KEY;
-    pub const GRAPH_KEY = bindings.Desk.GRAPH_KEY;
-    pub const GO_KEY = bindings.Desk.GO_KEY;
-    pub const RENAME_KEY = bindings.Desk.RENAME_KEY;
-    pub const BACK_KEY = bindings.Desk.BACK_KEY;
-    pub const SMALLER_KEY = bindings.Desk.SMALLER_KEY;
-    pub const BIGGER_KEY = bindings.Desk.BIGGER_KEY;
-    pub const ZOOM_OUT_KEY = bindings.Desk.ZOOM_OUT_KEY;
-    pub const ZOOM_IN_KEY = bindings.Desk.ZOOM_IN_KEY;
-    pub const FIT_KEY = bindings.Desk.FIT_KEY;
-    pub const HELP_KEY = bindings.Desk.HELP_KEY;
-    pub const OBJECTS_KEY = bindings.Desk.OBJECTS_KEY;
-    pub const REROLL_KEY = bindings.Desk.REROLL_KEY;
-    pub const DELETE_KEY = bindings.Desk.DELETE_KEY;
-    pub const COPY_KEY = bindings.Desk.COPY_KEY;
-    pub const CUT_KEY = bindings.Desk.CUT_KEY;
-    pub const PASTE_KEY = bindings.Desk.PASTE_KEY;
     const NAV_KEYS = bindings.Desk.NAV_KEYS;
-    const CTRL = bindings.Desk.CTRL;
-    const ALT = bindings.Desk.ALT;
     pub const SHIFT_CAPTION = bindings.Desk.SHIFT_CAPTION;
-    const CTRL_SHIFT = bindings.Desk.CTRL_SHIFT;
     pub const PLAY_CAPTION = bindings.Desk.PLAY_CAPTION;
     pub const PLAY_HERE_CAPTION = bindings.Desk.PLAY_HERE_CAPTION;
     pub const SAVE_CAPTION = bindings.Desk.SAVE_CAPTION;
@@ -683,8 +654,8 @@ pub const Desk = struct {
     const BARE = bindings.Desk.BARE;
     const WITH_CTRL = bindings.Desk.WITH_CTRL;
     const SHIFTED = bindings.Desk.SHIFTED;
+    const SHIFT_TWINS = bindings.Desk.SHIFT_TWINS;
     const keyOf = bindings.Desk.keyOf;
-    const distinct = bindings.Desk.distinct;
 
     mouse: mathx.P = .{ .x = 0, .y = 0 },
     moved: mathx.P = .{ .x = 0, .y = 0 },
@@ -745,6 +716,16 @@ pub const Desk = struct {
         return self.paint_hit or self.erase_hit;
     }
 
+    /// One step down a list for the wheel turned toward the user, one up for away, 0 when it is still.
+    pub fn notch(self: *const Desk) i32 {
+        return if (self.wheel > 0) -1 else if (self.wheel < 0) 1 else 0;
+    }
+
+    /// Only the caret, selection, list and copy keys: what reading text that cannot change may still use.
+    pub fn navigationOnly(self: *const Desk) Desk {
+        return .{ .text_all = self.text_all, .text_left = self.text_left, .text_right = self.text_right, .text_home = self.text_home, .text_end = self.text_end, .shift = self.shift, .nav = self.nav, .copy = self.copy };
+    }
+
     pub fn update(self: *Desk) void {
         const d = rl.getMouseDelta();
         self.mouse = mouseAt();
@@ -766,10 +747,14 @@ pub const Desk = struct {
         const bare = !ctrl;
         inline for (BARE) |f| @field(self, f) = bare and hit(comptime keyOf(f));
         inline for (WITH_CTRL) |f| @field(self, f) = ctrl and hit(comptime keyOf(f));
-        self.save = ctrl and !self.shift and hit(SAVE_KEY);
-        self.save_as = ctrl and self.shift and hit(SAVE_KEY);
-        self.undo = ctrl and !self.shift and hit(UNDO_KEY);
-        self.redo = ctrl and (hit(REDO_KEY) or (self.shift and hit(UNDO_KEY)));
+        inline for (SHIFT_TWINS) |t| @field(self, t[1]) = false;
+        inline for (SHIFTED) |f| @field(self, f) = ctrl and hit(comptime keyOf(f));
+        inline for (SHIFT_TWINS) |t| {
+            if (self.shift and @field(self, t[0])) {
+                @field(self, t[0]) = false;
+                @field(self, t[1]) = true;
+            }
+        }
         self.fullscreen = fullscreenHit();
         self.enter = !altDown() and anyHit(&ENTER_KEYS);
         self.rub = rubbed();

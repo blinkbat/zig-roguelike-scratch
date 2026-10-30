@@ -19,6 +19,11 @@ const ON = [2][]const u8{ "off", "on" };
 const DONE = [2][]const u8{ "running", "done" };
 
 fn says(comptime w: Word) []const u8 {
+    return firstWord(w);
+}
+
+/// A map-text line's first word as written, its space included.
+pub fn firstWord(comptime w: anytype) []const u8 {
     return @tagName(w) ++ " ";
 }
 
@@ -126,17 +131,11 @@ const Index = struct {
     }
 
     fn findDialog(ix: *const Index, name: []const u8) ?u8 {
-        for (ix.dialog[0..ix.dialog_n], 0..) |*nm, i| {
-            if (nm.eql(name)) return @intCast(i);
-        }
-        return null;
+        return script.indexOfName(ix.dialog[0..ix.dialog_n], name);
     }
 
     fn findLine(ix: *const Index, d: usize, name: []const u8) ?u8 {
-        for (ix.line[d][0..ix.line_n[d]], 0..) |*nm, i| {
-            if (nm.eql(name)) return @intCast(i);
-        }
-        return null;
+        return script.indexOfName(ix.line[d][0..ix.line_n[d]], name);
     }
 };
 
@@ -197,7 +196,7 @@ pub const Reader = struct {
                     .{ split, split + ARROW.len }
                 else if (std.mem.startsWith(u8, all, unasked)) .{ 0, unasked.len } else return error.BadLine;
                 if (l.choice_n == script.MAX_CHOICES) return error.TooMany;
-                var c = script.Choice{ .next = try r.lineNamed(all[next_at..]) };
+                var c = script.Choice{ .next = try r.lineNamed(std.mem.trim(u8, all[next_at..], " ")) };
                 if (!c.ask.set(all[0..ask_n])) return error.BadLine;
                 l.choice[l.choice_n] = c;
                 r.choice = l.choice_n;
@@ -233,7 +232,6 @@ pub const Reader = struct {
                 if (s.trigger_n == script.MAX_TRIGGERS) return error.TooMany;
                 var t = script.Trigger{ .name = script.Name.of(try nameOf(f)) };
                 t.priority = try int(i8, f);
-                if (t.priority < -script.PRIORITY_MAX or t.priority > script.PRIORITY_MAX) return error.BadLine;
                 t.once = try pick(f, ONCE);
                 t.parked = try pick(f, PARKED);
                 s.trigger[s.trigger_n] = t;
@@ -293,7 +291,7 @@ pub const Reader = struct {
             .counter => {
                 c.slot = try slotOf(s, .counter, f);
                 c.cmp = try cmpOf(f);
-                c.n = try number(f);
+                c.n = try int(i32, f);
             },
             .timer => {
                 c.slot = try slotOf(s, .timer, f);
@@ -301,7 +299,7 @@ pub const Reader = struct {
             },
             .elapsed => {
                 c.cmp = try cmpOf(f);
-                c.n = try number(f);
+                c.n = try int(i32, f);
             },
             .region => {
                 c.node = try int(u8, f);
@@ -315,9 +313,8 @@ pub const Reader = struct {
             .talked => c.slot = r.index.findDialog(f.next() orelse return error.BadLine) orelse return error.BadLink,
             .deaths, .alive => {
                 c.foe = try value(actor.Kind, f);
-                if (!c.foe.stocked()) return error.BadLine;
                 c.cmp = try cmpOf(f);
-                c.n = try number(f);
+                c.n = try int(i32, f);
             },
         }
         return c;
@@ -336,13 +333,13 @@ pub const Reader = struct {
             .counter => {
                 a.slot = try slotOf(s, .counter, f);
                 a.countop = try value(script.Countop, f);
-                a.n = try number(f);
+                a.n = try int(i32, f);
             },
             .timer => {
                 a.slot = try slotOf(s, .timer, f);
-                a.n = try turns(f);
+                a.n = try int(i32, f);
             },
-            .wait => a.n = try turns(f),
+            .wait => a.n = try int(i32, f),
         }
         return a;
     }
@@ -386,22 +383,12 @@ fn cmpOf(f: *Tokens) Error!script.Cmp {
     return error.BadLine;
 }
 
-fn value(comptime T: type, f: *Tokens) Error!T {
+pub fn value(comptime T: type, f: *Tokens) Error!T {
     return std.meta.stringToEnum(T, f.next() orelse return error.BadLine) orelse error.BadLine;
 }
 
-fn number(f: *Tokens) Error!i32 {
-    const n = try int(i32, f);
-    return if (n >= -script.NUMBER_MAX and n <= script.NUMBER_MAX) n else error.BadLine;
-}
-
-fn turns(f: *Tokens) Error!i32 {
-    const n = try number(f);
-    return if (n >= 0) n else error.BadLine;
-}
-
 /// Written plainly, as `{d}` writes it: no sign but a minus, no leading zero.
-fn int(comptime T: type, f: *Tokens) Error!T {
+pub fn int(comptime T: type, f: *Tokens) Error!T {
     const word = f.next() orelse return error.BadLine;
     const n = std.fmt.parseInt(T, word, 10) catch return error.BadLine;
     var buf: [24]u8 = undefined;
@@ -409,8 +396,13 @@ fn int(comptime T: type, f: *Tokens) Error!T {
     return n;
 }
 
-fn cell(f: *Tokens) Error!P {
-    const p = P{ .x = try int(i32, f), .y = try int(i32, f) };
+pub fn point(f: *Tokens) Error!P {
+    return .{ .x = try int(i32, f), .y = try int(i32, f) };
+}
+
+/// A `point` on the map.
+pub fn cell(f: *Tokens) Error!P {
+    const p = try point(f);
     return if (grid.Level.inside(p)) p else error.BadLine;
 }
 

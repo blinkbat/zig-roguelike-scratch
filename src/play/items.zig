@@ -45,6 +45,14 @@ pub const Slot = enum {
             .mana => .mana_flask,
         };
     }
+
+    /// Worn as armour.
+    pub fn armour(s: Slot) bool {
+        return switch (s) {
+            .helm, .chest, .belt, .gloves, .boots => true,
+            .left_hand, .right_hand, .left_ring, .right_ring, .amulet, .life_flask, .mana_flask => false,
+        };
+    }
 };
 pub const SLOTS = std.enums.values(Slot);
 pub const Mod = enum {
@@ -102,20 +110,16 @@ pub const Mod = enum {
         const s = spec(k);
         const slot = s.slots[0];
         const weapon = s.damage != null;
-        const caster = switch (k) {
-            .wand, .ash_wand, .rime_wand, .storm_wand, .staff, .tome, .orb => true,
-            else => false,
-        };
         const ring = slot == .left_ring;
-        const armour = slot == .helm or slot == .chest or slot == .belt or slot == .gloves or slot == .boots;
+        const armour = slot.armour();
         return switch (m) {
             .physical_damage => weapon,
-            .spell_damage => caster or slot == .amulet,
+            .spell_damage => s.caster or slot == .amulet,
             .crit => weapon or slot == .gloves or ring,
             .armour => armour or k == .shield or k == .buckler,
             .dodge => slot == .boots or slot == .gloves or ring,
             .resistance => armour or slot == .left_hand or ring or slot == .amulet,
-            .mana_regen => caster or k == .circlet or ring or slot == .amulet,
+            .mana_regen => s.caster or k == .circlet or ring or slot == .amulet,
             .life_on_kill => weapon or k == .totem or ring,
             .life_flask => slot == .belt or slot == .amulet,
             .penetration => weapon or slot == .gloves,
@@ -358,6 +362,8 @@ pub const Spec = struct {
     style: attrs.Style = .heavy,
     attack: attrs.Attack = .melee,
     two_handed: bool = false,
+    /// A spellcaster's implement, which rolls spell modifiers.
+    caster: bool = false,
     armour: i16 = 0,
     innate: ?Innate = null,
 };
@@ -365,7 +371,7 @@ const SPECS = std.EnumArray(Kind, Spec).init(.{
     .sword = .{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 3, .hi = 4 }, .style = .light },
     .axe = .{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 3, .hi = 6 }, .two_handed = true, .innate = .{ .bleed = .{ .chance = 30, .damage = 2 } } },
     .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
-    .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 16 }, .two_handed = true, .innate = Innate.stat(.spell_damage, 30) },
+    .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 16 }, .two_handed = true, .caster = true, .innate = Innate.stat(.spell_damage, 30) },
     .longsword = .{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 3, .hi = 5 } },
     .mace = .{ .name = "Mace", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .innate = .{ .stun = 15 } },
     .greatsword = .{ .name = "Greatsword", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 8 }, .two_handed = true },
@@ -374,9 +380,9 @@ const SPECS = std.EnumArray(Kind, Spec).init(.{
     .sling = .{ .name = "Sling", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .attack = .ranged },
     .dagger = .{ .name = "Dagger", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .innate = .{ .weapon_crit = 15 } },
     .handaxe = .{ .name = "Handaxe", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 3 }, .style = .light, .innate = .{ .bleed = .{ .chance = 25 } } },
-    .wand = .{ .name = "Wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .innate = .{ .spell_crit = 8 } },
-    .tome = .{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.mana, 3) },
-    .orb = .{ .name = "Orb", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = .{ .spell_crit = 6 } },
+    .wand = .{ .name = "Wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = .{ .spell_crit = 8 } },
+    .tome = .{ .name = "Tome", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = Innate.stat(.mana, 3) },
+    .orb = .{ .name = "Orb", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .caster = true, .innate = .{ .spell_crit = 6 } },
     .buckler = .{ .name = "Buckler", .slots = &.{.left_hand}, .needs = .{ .dexterity = 10 }, .armour = 2, .innate = Innate.stat(.dodge, 4) },
     .totem = .{ .name = "Totem", .slots = &.{.left_hand}, .needs = .{ .intelligence = 12 }, .innate = Innate.stat(.life_on_kill, 1) },
     .shield = .{ .name = "Wooden shield", .slots = &.{.left_hand}, .needs = .{ .strength = 10 }, .armour = 6 },
@@ -391,9 +397,9 @@ const SPECS = std.EnumArray(Kind, Spec).init(.{
     .amulet = .{ .name = "Bronze amulet", .slots = &.{.amulet}, .innate = Innate.stat(.life, 2) },
     .hunting_bow = .{ .name = "Hunting bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 16 }, .damage = .{ .lo = 2, .hi = 4 }, .style = .light, .attack = .ranged, .two_handed = true, .innate = .{ .weapon_crit = 12 } },
     .war_bow = .{ .name = "War bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 22 }, .damage = .{ .lo = 3, .hi = 6 }, .style = .light, .attack = .ranged, .two_handed = true },
-    .ash_wand = .{ .name = "Ash wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .fire, .percent = 25 } } },
-    .rime_wand = .{ .name = "Rime wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .cold, .percent = 25 } } },
-    .storm_wand = .{ .name = "Storm wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .innate = .{ .element = .{ .kind = .lightning, .percent = 25 } } },
+    .ash_wand = .{ .name = "Ash wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .caster = true, .innate = .{ .element = .{ .kind = .fire, .percent = 25 } } },
+    .rime_wand = .{ .name = "Rime wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .caster = true, .innate = .{ .element = .{ .kind = .cold, .percent = 25 } } },
+    .storm_wand = .{ .name = "Storm wand", .slots = &.{.right_hand}, .needs = .{ .intelligence = 14 }, .caster = true, .innate = .{ .element = .{ .kind = .lightning, .percent = 25 } } },
     .plate = .{ .name = "Plate armour", .slots = &.{.chest}, .needs = .{ .strength = 24 }, .armour = 15 },
     .robes = .{ .name = "Robes", .slots = &.{.chest}, .needs = .{ .intelligence = 12 }, .armour = 1, .innate = Innate.stat(.mana, 4) },
     .hood = .{ .name = "Hunter's hood", .slots = &.{.helm}, .needs = .{ .dexterity = 14 }, .armour = 1, .innate = Innate.stat(.crit, 5) },
@@ -494,7 +500,7 @@ pub const Item = struct {
 
 pub fn roll(rng: *mathx.Rng, item_rarity: i32) Item {
     var out = Item{ .kind = rng.pick(Kind, &LOOT) };
-    const quality = rng.below(100);
+    const quality = rng.below(mathx.PERCENT);
     if (quality >= qualityChance(MAGIC_PERCENT + RARE_PERCENT, item_rarity)) return out;
     const rare = quality < qualityChance(RARE_PERCENT, item_rarity);
     if (rare) out.rare_name = RareName.roll(rng);
@@ -516,7 +522,7 @@ pub fn roll(rng: *mathx.Rng, item_rarity: i32) Item {
 }
 
 fn qualityChance(base: u32, item_rarity: i32) u32 {
-    return @intCast(std.math.clamp(@divTrunc(@as(i64, base) * (100 + @as(i64, item_rarity)), 100), 0, 100));
+    return @intCast(std.math.clamp(@divTrunc(@as(i64, base) * (mathx.PERCENT + @as(i64, item_rarity)), mathx.PERCENT), 0, mathx.PERCENT));
 }
 
 pub const Loot = struct { gold: i32 = 0, item: ?Item = null, supply: ?consumable.Kind = null };
@@ -575,12 +581,9 @@ pub const Gear = struct {
         return out;
     }
 
+    /// Life its worn items heal for a kill, innate grants and rolled modifiers alike; passives' heal blows only.
     pub fn killRecovery(self: Gear) i32 {
-        var out: i32 = 0;
-        for (self.slots.values) |maybe| if (maybe) |it| {
-            out += it.value(.life_on_kill);
-        };
-        return out;
+        return self.perks(.{}).life_on_kill;
     }
 
     pub fn onHit(self: Gear, attack: attrs.Attack) WeaponEffect {
@@ -668,6 +671,8 @@ pub const Inventory = struct {
     gear: Gear = .{},
     stacks: std.EnumArray(consumable.Kind, u8) = .initFill(0),
 
+    pub const COUNTED = .{.{ "bag", "n" }};
+
     pub fn add(self: *Inventory, it: Item) bool {
         if (self.n == BAG_MAX) return false;
         self.bag[self.n] = it;
@@ -750,7 +755,7 @@ pub const Ground = struct {
     supplies: [GROUND_MAX]Supply = undefined,
     supply_n: usize = 0,
 
-    pub const COUNTED = .{.{ "supplies", "supply_n" }};
+    pub const COUNTED = .{ .{ "drops", "n" }, .{ "coins", "coin_n" }, .{ "supplies", "supply_n" } };
 
     pub fn hasItems(self: *const Ground, at: mathx.P) bool {
         for (self.drops[0..self.n]) |drop| if (drop.at.eq(at)) return true;

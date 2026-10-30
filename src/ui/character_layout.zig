@@ -1,4 +1,5 @@
 const std = @import("std");
+const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const items = @import("../play/items.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -53,7 +54,6 @@ pub const TAB_Y = 76;
 pub const TAB_W = 184;
 pub const TAB_H = 34;
 pub const TAB_GAP = 9;
-pub const TAB_MID = TAB_Y + TAB_H / 2;
 pub const OFF_TAB_A: f32 = 0.7;
 pub const TABS_X: i32 = @divExact(WIDTH - @as(i32, PAGES.len) * TAB_W - (@as(i32, PAGES.len) - 1) * TAB_GAP, 2);
 /// Room each side of the tabs for the shoulder buttons' icons.
@@ -61,6 +61,17 @@ pub const SHOULDER_W = 40;
 comptime {
     std.debug.assert(LIST_X + SHOULDER_W < TABS_X);
 }
+
+pub fn tabBox(i: usize) rl.Rectangle {
+    return raster.rect(TABS_X + @as(i32, @intCast(i)) * (TAB_W + TAB_GAP), TAB_Y, TAB_W, TAB_H);
+}
+
+/// A shoulder button's box beside the tabs: the previous page's on the left, the next page's on the right.
+pub fn shoulderBox(next: bool) rl.Rectangle {
+    const x: i32 = if (next) WIDTH - LIST_X - SHOULDER_W else LIST_X;
+    return raster.rect(x, TAB_Y, SHOULDER_W, TAB_H);
+}
+
 pub const ACTION_W = menu.ACTION_BOX.x;
 pub const ACTION_H = menu.ACTION_BOX.y;
 pub const ACTION_Y = HEIGHT - 82;

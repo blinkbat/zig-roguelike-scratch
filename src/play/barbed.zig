@@ -11,6 +11,7 @@ pub const DESCRIPTION = "Arrow damage. Inflicts bleeding.";
 
 pub const CHANCE: u32 = mathx.PERCENT;
 pub const procs = damage.chance(CHANCE);
+pub const chance = damage.flat(CHANCE);
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.bleed.start();

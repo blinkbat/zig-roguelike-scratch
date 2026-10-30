@@ -5,11 +5,9 @@ const character_stats = @import("character_stats.zig");
 pub const Page = character_view.Page;
 pub const PAGES = character_view.PAGES;
 pub const Nearby = character_view.Nearby;
-pub const Vital = character_view.Vital;
 pub const View = character_view.View;
 pub const Command = character_view.Command;
 pub const SIZE = layout.SIZE;
-pub const AREA = layout.AREA;
 pub const verifyCards = item_card.verify;
 pub const verifyStats = character_stats.verify;
 const BOTH_HANDS = "Both hands";
@@ -262,7 +260,7 @@ pub const Book = struct {
         }
         if (self.listed() and self.count(view) > 0) self.cursor = st.scrolled(self.cursor, self.count(view));
         if (st.click and !self.mouse_panning) if (st.pointer) |p| {
-            if (!self.direct()) for (PAGES, 0..) |page, i| if (raster.holds(tabBox(i), p)) {
+            if (!self.direct()) for (PAGES, 0..) |page, i| if (raster.holds(layout.tabBox(i), p)) {
                 self.choose(page);
                 self.enter(view);
                 return null;
@@ -296,8 +294,8 @@ pub const Book = struct {
     /// The button whose box is under `p`, so a click there is that button's press.
     fn buttonAt(self: *const Book, p: P, view: View) ?input.Button {
         if (!self.direct()) {
-            if (raster.holds(raster.rect(layout.LIST_X, layout.TAB_Y, layout.SHOULDER_W, layout.TAB_H), p)) return menu.PAGE_PREV;
-            if (raster.holds(raster.rect(layout.WIDTH - layout.LIST_X - layout.SHOULDER_W, layout.TAB_Y, layout.SHOULDER_W, layout.TAB_H), p)) return menu.PAGE_NEXT;
+            if (raster.holds(layout.shoulderBox(false), p)) return menu.PAGE_PREV;
+            if (raster.holds(layout.shoulderBox(true), p)) return menu.PAGE_NEXT;
         }
         const shown = self.controls(view);
         for (shown.all[0..shown.n]) |c| if (raster.holds(c.box, p)) return c.button;
@@ -386,7 +384,7 @@ pub const Book = struct {
             var xp: menu.Note(100) = .{};
             xp.say("Level  {d}     XP  {d} / {d}", .{ view.growth.level, view.growth.xp, view.growth.needed() });
             face.drawMiddle(xp.text(), layout.DETAIL_X, layout.HEADER_MID, font.SMALL, look.DIM);
-            for (PAGES, 0..) |page, i| tab(face, tabBox(i), page, self.page == page, view.device);
+            for (PAGES, 0..) |page, i| tab(face, layout.tabBox(i), page, self.page == page, view.device);
             if (self.treePanel() == null) rl.drawLine(layout.DIVIDER_X, layout.CONTENT_TOP, layout.DIVIDER_X, layout.DIVIDER_FOOT, look.EDGE);
             if (self.treePanel()) |panel| {
                 trees.draw(panel, face, sprites, view.class, view.growth, self.treeView(), view.device, .{ .stats = view.stats(), .gear = view.inventory.gear, .steady = view.steady }, on);
@@ -409,10 +407,10 @@ pub const Book = struct {
                 .drawn => {},
             }
         }
-        if (!self.direct()) {
-            prompt_icon.Prompt.menuOn(view.device, menu.PAGE_PREV).draw(face, layout.LIST_X + layout.SHOULDER_W / 2, layout.TAB_MID, font.BODY, 1);
-            prompt_icon.Prompt.menuOn(view.device, menu.PAGE_NEXT).draw(face, layout.WIDTH - layout.LIST_X - layout.SHOULDER_W / 2, layout.TAB_MID, font.BODY, 1);
-        }
+        if (!self.direct()) for ([_]bool{ false, true }) |next| {
+            const m = raster.middleAt(layout.shoulderBox(next));
+            prompt_icon.Prompt.menuOn(view.device, if (next) menu.PAGE_NEXT else menu.PAGE_PREV).draw(face, m.x, m.y, font.BODY, 1);
+        };
     }
 
     fn drawDirect(self: *const Book, face: *const font.Face, sprites: *const look.Sprites, view: View) void {
@@ -491,7 +489,8 @@ pub const Book = struct {
                     line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, look.itemInk(.normal));
                     listRow(face, x, y, menu.named(k), look.itemInk(.normal), carried.text());
                 } else {
-                    const it = view.inventory.bag[i - stocked(view)];
+                    const at = i - stocked(view);
+                    const it = view.inventory.bag[at];
                     const slots = it.kind.slots();
                     line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, look.itemInk(it.rarity()));
                     listRow(face, x, y, it.name(&name_buf), look.itemInk(it.rarity()), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.named(it.kind) else slots[0].name());
@@ -536,8 +535,7 @@ pub const Book = struct {
         item_card.draw(face, x, y, if (comparing) layout.CARD_W else layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), if (comparing) "SELECTED" else null);
         if (comparing) item_card.draw(face, x + layout.CARD_W + layout.CARD_GAP, y, layout.CARD_W, view.inventory.gear.slots.get(slot), slot, view.inventory.gear.statsWithout(slot, view.base), "EQUIPPED");
         if (comparing) {
-            const equipped = view.inventory.gear.slots.get(slot);
-            const at = y + @max(item_card.height(it, slot), if (equipped) |worn| item_card.height(worn, slot) else item_card.SLOT_Y + font.SMALL) + layout.REQUIREMENT_GAP;
+            const at = y + @max(item_card.height(it, slot), item_card.height(view.inventory.gear.slots.get(slot), slot)) + layout.REQUIREMENT_GAP;
             const bagged = self.bagIndex(view).?;
             _ = view.inventory.preview(bagged, slot, view.base) catch |err| {
                 var reason: menu.Note(140) = .{};
@@ -562,6 +560,7 @@ const Controls = struct {
     n: usize = 0,
 
     fn add(self: *Controls, box: rl.Rectangle, button: input.Button, shown: Shown) void {
+        std.debug.assert(self.n < CONTROLS_MAX);
         self.all[self.n] = .{ .box = box, .button = button, .shown = shown };
         self.n += 1;
     }
@@ -575,9 +574,6 @@ fn listRow(face: *const font.Face, x: i32, y: i32, text: [:0]const u8, ink: rl.C
     var fitted: [items.NAME_MAX]u8 = undefined;
     face.drawMiddle(face.fit(&fitted, text, font.BODY, layout.SECOND_X - layout.TEXT_X - layout.COLUMN_GAP, false), x + layout.TEXT_X, mid, font.BODY, ink);
     face.drawMiddle(second, x + layout.SECOND_X, mid, font.SMALL, look.DIM);
-}
-fn tabBox(i: usize) rl.Rectangle {
-    return raster.rect(layout.TABS_X + @as(i32, @intCast(i)) * (layout.TAB_W + layout.TAB_GAP), layout.TAB_Y, layout.TAB_W, layout.TAB_H);
 }
 /// The detail panel's buttons, left to right.
 const ACTIONS = [_]input.Button{ menu.CONFIRM, menu.CHANGE, menu.REMOVE };

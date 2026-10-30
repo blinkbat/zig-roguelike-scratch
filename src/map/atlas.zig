@@ -24,12 +24,7 @@ pub const MAIN = mapPath("main");
 pub const START = mapPath("start");
 
 /// Printable ascii, as every drawn string is.
-pub fn plain(s: []const u8) bool {
-    for (s) |c| {
-        if (!std.ascii.isPrint(c)) return false;
-    }
-    return true;
-}
+pub const plain = script.plain;
 
 pub fn titleOf(name: []const u8, n: usize, buf: *[TITLE_MAX]u8) []const u8 {
     if (name.len > 0) return name;
@@ -76,6 +71,7 @@ pub const MAX_FEATURES = procgen.MAX_FEATURES;
 
 /// Base generation precedes ordered features; doors stay fixed across run rolls.
 pub const Procgen = struct {
+    pub const COUNTED = .{.{ "feature", "feature_n" }};
     floor: Floor = .{ .rooms = .{} },
     /// Unused slots retain defaults so plans compare by content.
     feature: [MAX_FEATURES]Feature = @splat(Feature.of(FIRST_FEATURE)),
@@ -118,6 +114,7 @@ pub const Procgen = struct {
 pub const FIRST_FEATURE = std.enums.values(Kind)[0];
 
 pub const Bespoke = struct {
+    pub const COUNTED = .{.{ "foe", "foe_n" }};
     tile: [grid.CELLS]grid.Tile = [_]grid.Tile{.wall} ** grid.CELLS,
     barrel: [grid.CELLS]bool = [_]bool{false} ** grid.CELLS,
     torch: grid.Torches = .{},
@@ -175,6 +172,7 @@ pub const Plan = union(enum) { bespoke: Bespoke, procgen: Procgen };
 
 /// A node's name: printable ascii, `NAME_MAX` at most; an empty name is none.
 pub const Label = struct {
+    pub const COUNTED = .{.{ "buf", "n" }};
     buf: [NAME_MAX]u8 = undefined,
     n: usize = 0,
 
@@ -198,6 +196,7 @@ pub const Label = struct {
 };
 
 pub const Node = struct {
+    pub const COUNTED = .{.{ "door", "door_n" }};
     plan: Plan,
     door: [grid.MAX_DOORS]Door = undefined,
     door_n: usize = 0,
@@ -292,13 +291,10 @@ pub const Node = struct {
         return self.door_n < grid.MAX_DOORS and self.doorAt(p) == null and grid.Level.inside(p);
     }
 
-    /// A swimmer's ground is water, a mimic's where a chest could stand, the rest's any open floor.
+    /// `k`'s own ground, as `actor.groundFits` says, with no door or barrel on it.
     pub fn foeFits(self: *const Node, b: *const Bespoke, p: P, k: actor.Kind) bool {
         if (self.doorAt(p) != null or grid.cellOr(bool, &b.barrel, p, false)) return false;
-        const r = actor.row(k);
-        if (r.movement == .swimming) return b.tileAt(p).wet();
-        if (r.disguised) return b.tileAt(p).rewards();
-        return b.floorAt(p);
+        return actor.groundFits(k, b.tileAt(p));
     }
 
     /// Where a `k` may be laid: it fits, and the node has room for it there.
@@ -364,6 +360,7 @@ pub const Node = struct {
 pub const Start = struct { node: usize = 0, at: P = grid.MIDDLE };
 
 pub const Atlas = struct {
+    pub const COUNTED = .{.{ "node", "node_n" }};
     node: [MAX_NODES]Node = undefined,
     node_n: usize = 0,
     start: Start = .{},
@@ -386,6 +383,16 @@ pub const Atlas = struct {
 
     pub fn folkGoes(self: *const Atlas, n: usize, p: P) bool {
         return self.folkFits(n, p) and self.script.folkAt(n, p) == null and self.script.folk_n < script.MAX_FOLK;
+    }
+
+    /// Where node `n` takes a barrel: `Node.barrelGoes`, and no folk stands there.
+    pub fn barrelGoes(self: *const Atlas, n: usize, b: *const Bespoke, p: P) bool {
+        return self.node[n].barrelGoes(b, p) and self.script.folkAt(n, p) == null;
+    }
+
+    /// Where node `n` takes a `k`: `Node.foeGoes`, and no folk stands there.
+    pub fn foeGoes(self: *const Atlas, n: usize, b: *const Bespoke, p: P, k: actor.Kind) bool {
+        return self.node[n].foeGoes(b, p, k) and self.script.folkAt(n, p) == null;
     }
 
     /// Node `n`'s folk that no longer fit where they stand go, as `parse` would refuse them; whether any did.
@@ -510,6 +517,7 @@ pub const Atlas = struct {
         const nd = &self.node[from.node];
         if (nd.unrolled()) return true;
         nd.sketch(scratch);
+        self.stampFolk(from.node, scratch);
         return landing(scratch, from.at, nd.placed()) != null;
     }
 };

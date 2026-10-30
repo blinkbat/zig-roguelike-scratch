@@ -54,7 +54,10 @@ pub const Scene = struct {
         const nd = &map.node[node];
         self.rolled_foes = .{};
         switch (nd.plan) {
-            .bespoke => nd.sketch(&self.lv),
+            .bespoke => {
+                nd.sketch(&self.lv);
+                map.stampFolk(node, &self.lv);
+            },
             .procgen => |*pg| {
                 nd.stamp(&self.lv, self.roll);
                 var rng = mathx.Rng.init(self.roll);
@@ -110,12 +113,42 @@ pub const Scene = struct {
             is.cut_off += 1;
             if (is.reach_from == null) is.reach_from = grid.Level.of(i);
         }
+        var swims: ?std.StaticBitSet(grid.CELLS) = null;
         for (nd.placed()) |foe| {
             const i = grid.Level.idx(foe.at);
-            if (self.reach_dist[i] < 0) is.foes_cut_off += 1;
+            if (self.reach_dist[i] >= 0) continue;
+            if (actor.row(foe.kind).movement == .swimming) {
+                if (swims == null) swims = self.swimReach();
+                if (swims.?.isSet(i)) continue;
+            }
+            is.foes_cut_off += 1;
         }
 
         return is;
+    }
+
+    /// Wet cells joined to ground the walk reaches, so a swimmer there meets it; reuses the walk's spent queue.
+    fn swimReach(self: *Scene) std.StaticBitSet(grid.CELLS) {
+        var out = std.StaticBitSet(grid.CELLS).initEmpty();
+        var tail: usize = 0;
+        for (&self.reach_dist, 0..) |*d, i| if (d.* >= 0) {
+            self.reach_queue[tail] = @intCast(i);
+            tail += 1;
+        };
+        var head: usize = 0;
+        while (head < tail) : (head += 1) {
+            const here = grid.Level.of(self.reach_queue[head]);
+            for (mathx.ALL_DIRS) |d| {
+                const p = here.add(d.delta());
+                if (!grid.Level.inside(p)) continue;
+                const i = grid.Level.idx(p);
+                if (out.isSet(i) or self.reach_dist[i] >= 0 or !self.lv.tile[i].wet()) continue;
+                out.set(i);
+                self.reach_queue[tail] = @intCast(i);
+                tail += 1;
+            }
+        }
+        return out;
     }
 
     pub fn cutOff(self: *const Scene, i: usize) bool {

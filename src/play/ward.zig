@@ -1,4 +1,5 @@
 const std = @import("std");
+const resilience = @import("resilience.zig");
 
 pub const COST: i32 = 6;
 pub const COOLDOWN: u8 = 8;
@@ -17,7 +18,7 @@ pub const Ward = struct {
 
     /// A turn of it is spent.
     pub fn wear(self: *Ward) void {
-        self.turns -|= 1;
+        _ = resilience.wearTurn(&self.turns);
     }
 
     /// Of `dmg`, what `mana` takes while it holds.

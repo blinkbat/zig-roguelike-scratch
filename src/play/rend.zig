@@ -3,6 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const bleeding = @import("bleeding.zig");
 const damage = @import("damage.zig");
+const bash = @import("bash.zig");
 
 const P = mathx.P;
 
@@ -17,16 +18,13 @@ pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const CHANCE: u32 = mathx.PERCENT;
 pub const procs = damage.chance(CHANCE);
+pub const chance = damage.flat(CHANCE);
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.bleed.startWith(BLEED);
 }
 
-/// A body or barrel beside `from`.
-pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
-    const d = mathx.dirTo(from, to) orelse return false;
-    return lv.passOk(from, d) and lv.taken(to);
-}
+pub const aimable = bash.aimable;
 
 test "rend reaches a body beside the knight and opens a bleed stronger than an arrow's" {
     var lv = grid.openFloor();

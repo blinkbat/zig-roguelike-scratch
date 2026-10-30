@@ -281,8 +281,34 @@ const MAKEUP = @tagName(Word.makeup);
 const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
 
 fn says(comptime w: Word) []const u8 {
-    return @tagName(w) ++ " ";
+    return script_text.firstWord(w);
 }
+
+/// Each node's `name` line in map text: the node's index, its name and the line it is on, counted from 1.
+pub const NodeNames = struct {
+    lines: std.mem.SplitIterator(u8, .scalar),
+    line: usize = 0,
+    node: usize = 0,
+
+    pub const Named = struct { node: usize, name: []const u8, line: usize };
+
+    pub fn of(text: []const u8) NodeNames {
+        return .{ .lines = std.mem.splitScalar(u8, text, '\n') };
+    }
+
+    pub fn next(self: *NodeNames) ?Named {
+        while (self.lines.next()) |raw| {
+            self.line += 1;
+            const text = std.mem.trim(u8, raw, " \r");
+            if (std.mem.startsWith(u8, text, says(.node))) self.node += 1;
+            if (!std.mem.startsWith(u8, text, says(.name))) continue;
+            const name = std.mem.trim(u8, text[says(.name).len..], " ");
+            if (name.len == 0) continue;
+            return .{ .node = self.node -| 1, .name = name, .line = self.line };
+        }
+        return null;
+    }
+};
 
 comptime {
     @setEvalBranchQuota(1_000_000);
@@ -395,7 +421,7 @@ fn takeValue(comptime T: type, f: *Tokens) Error!T {
     switch (@typeInfo(T)) {
         .int => return int(T, f),
         .@"enum" => {
-            const value = std.meta.stringToEnum(T, f.next() orelse return error.BadLine) orelse return error.BadLine;
+            const value = try script_text.value(T, f);
             if (T == grid.Tile and value.isOpened()) return error.BadLine;
             return value;
         },
@@ -413,21 +439,21 @@ fn takeValue(comptime T: type, f: *Tokens) Error!T {
     }
 }
 
-fn int(comptime T: type, f: *Tokens) Error!T {
-    const word = f.next() orelse return error.BadLine;
-    const n = std.fmt.parseInt(T, word, 10) catch return error.BadLine;
-    var buf: [24]u8 = undefined;
-    if (!std.mem.eql(u8, word, std.fmt.bufPrint(&buf, "{d}", .{n}) catch unreachable)) return error.BadLine;
-    return n;
-}
+const int = script_text.int;
+const point = script_text.point;
+const cell = script_text.cell;
 
-fn point(f: *Tokens) Error!P {
-    return .{ .x = try int(i32, f), .y = try int(i32, f) };
-}
-
-fn cell(f: *Tokens) Error!P {
-    const p = try point(f);
-    return if (grid.Level.inside(p)) p else error.BadLine;
+test "node names are read with their node and line, blank names skipped" {
+    var it = NodeNames.of("roguelike-map 1\nnode bespoke\nname First room\r\nnode procgen wilds\nname   \nnode procgen open\n  name  Third  \n");
+    const want = [_]NodeNames.Named{ .{ .node = 0, .name = "First room", .line = 3 }, .{ .node = 2, .name = "Third", .line = 7 } };
+    for (want) |w| {
+        const got = it.next().?;
+        try std.testing.expectEqual(w.node, got.node);
+        try std.testing.expectEqualStrings(w.name, got.name);
+        try std.testing.expectEqual(w.line, got.line);
+    }
+    try std.testing.expect(it.next() == null);
+    std.debug.print("node names: {d} named nodes of 3 read with node index and line\n", .{want.len});
 }
 
 test "a map saves and loads back the same" {

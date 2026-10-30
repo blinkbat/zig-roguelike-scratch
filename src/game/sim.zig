@@ -77,7 +77,7 @@ pub const Simulation = struct {
     flasks: Flasks = .initFill(.{}),
     /// Turns until each can be used again.
     cooldown: std.EnumArray(skillbar.Act, u8) = .initFill(0),
-    /// The hero stepped or leapt since the last turn ended, which tears a bleed wider.
+    /// The hero stepped, leapt or was knocked back since its last action, which tears a bleed wider.
     stepped: bool = false,
     displaced: std.StaticBitSet(actor.MAX) = .initEmpty(),
     inventory: items.Inventory = .{ .gear = .flasks },
@@ -112,23 +112,29 @@ pub const Simulation = struct {
 
     pub fn recoverLife(self: *Simulation, amount: i32) bool {
         const h = self.heroActor() orelse return false;
-        if (amount <= 0 or h.hp >= h.max) return false;
-        h.hp = @min(h.max, h.hp + amount);
-        return true;
+        return amount > 0 and h.heal(amount) > 0;
     }
 
     pub fn finishTurn(self: *Simulation) void {
         for (self.pool.slice()) |*a| a.settle();
-        self.ran = @splat(Ran.initEmpty());
-        self.displaced = .initEmpty();
+        self.clearTurnMarks();
     }
 
     pub fn resetTransientTurn(self: *Simulation) void {
         self.travel = null;
         self.order_n = 0;
+        self.clearTurnMarks();
+        self.flowed = false;
+    }
+
+    fn clearTurnMarks(self: *Simulation) void {
         self.ran = @splat(Ran.initEmpty());
         self.displaced = .initEmpty();
-        self.flowed = false;
+    }
+
+    pub fn heroSteady(self: *const Simulation) u8 {
+        const h = self.heroBody() orelse return 0;
+        return h.tactics.steady;
     }
 
     pub fn heroSlot(self: *const Simulation) ?usize {
@@ -202,7 +208,7 @@ pub const Simulation = struct {
 
     pub fn procStatus(self: *Simulation, a: *actor.Actor, kind: resilience.Kind, chance: u32) bool {
         const resistance = self.combatStats(a).statuses.get(kind);
-        const effective: u32 = @intCast(@min(100, damage.resisted(@intCast(chance), @min(0, resistance))));
+        const effective = damage.resistedChance(chance, @min(0, resistance));
         return damage.procs(&self.rng, effective) and self.takeStatus(a, kind);
     }
 
@@ -266,5 +272,10 @@ pub const Simulation = struct {
     /// Logged only if `at` is in sight.
     pub fn sayAs(self: *Simulation, kind: log.Kind, at: P, comptime fmt: []const u8, args: anytype) void {
         if (self.lv.isLit(at)) self.log.push(kind, fmt, args);
+    }
+
+    /// Logged only if `a` is seen, not underwater or in its chest.
+    pub fn sayOf(self: *Simulation, a: *const actor.Actor, comptime fmt: []const u8, args: anytype) void {
+        if (a.seenIn(&self.lv)) self.log.push(.status, fmt, args);
     }
 };

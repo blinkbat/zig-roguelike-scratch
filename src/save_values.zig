@@ -52,12 +52,21 @@ const SavedProgress = struct {
     n: usize = 0,
     ranks: @FieldType(progress.State, "ranks") = .initFill(0),
 };
+
+/// A `progress.State` field `SavedProgress` keeps as it is; `nodes` is kept by identity in `allocations`.
+fn carried(comptime name: []const u8) bool {
+    return !std.mem.eql(u8, name, "nodes");
+}
+
 comptime {
     @setEvalBranchQuota(100_000);
     if (progress.NODES.len > 512) @compileError("raise the saved allocation limit");
     for (progress.NODES, 0..) |node, index| for (progress.NODES[0..index]) |other| {
         if (std.meta.eql(NodeKey.of(node), NodeKey.of(other))) @compileError("passive save identities must be unique");
     };
+    for (std.meta.fields(progress.State)) |f| {
+        if (carried(f.name) and (!@hasField(SavedProgress, f.name) or @FieldType(SavedProgress, f.name) != f.type)) @compileError("SavedProgress does not keep progress.State." ++ f.name);
+    }
 }
 
 pub const Policy = struct {
@@ -82,13 +91,10 @@ pub const Policy = struct {
 
     pub fn encode(value: anytype) wire.Error!Stored(@TypeOf(value)) {
         if (@TypeOf(value) == mathx.Rng) return .{ .xoshiro256 = value.impl.s };
-        var result = SavedProgress{
-            .level = value.level,
-            .xp = value.xp,
-            .passive_points = value.passive_points,
-            .active_points = value.active_points,
-            .ranks = value.ranks,
-        };
+        var result = SavedProgress{};
+        inline for (std.meta.fields(progress.State)) |f| {
+            if (comptime carried(f.name)) @field(result, f.name) = @field(value, f.name);
+        }
         var allocated = value.nodes.iterator(.{});
         while (allocated.next()) |index| {
             result.allocations[result.n] = NodeKey.of(progress.NODES[index]);
@@ -102,13 +108,10 @@ pub const Policy = struct {
             if (std.mem.allEqual(u64, &stored.xoshiro256, 0)) return error.Damaged;
             return .{ .impl = .{ .s = stored.xoshiro256 } };
         }
-        var result = progress.State{
-            .level = stored.level,
-            .xp = stored.xp,
-            .passive_points = stored.passive_points,
-            .active_points = stored.active_points,
-            .ranks = stored.ranks,
-        };
+        var result = progress.State{};
+        inline for (std.meta.fields(progress.State)) |f| {
+            if (comptime carried(f.name)) @field(result, f.name) = @field(stored, f.name);
+        }
         for (stored.allocations[0..stored.n], 0..) |key, index| {
             for (stored.allocations[0..index]) |previous| if (std.meta.eql(key, previous)) return error.Damaged;
             for (progress.NODES, 0..) |node, current| {
@@ -130,17 +133,6 @@ pub const Policy = struct {
         if (T == data.LegacyMap and comptime std.mem.eql(u8, field, "node")) return "node_n";
         inline for (.{
             .{ SavedProgress, "allocations", "n" },
-            .{ actor.Pool, "items", "n" },
-            .{ items.Inventory, "bag", "n" },
-            .{ items.Ground, "drops", "n" },
-            .{ items.Ground, "coins", "coin_n" },
-            .{ grid.Torches, "at", "n" },
-            .{ atlas.Atlas, "node", "node_n" },
-            .{ atlas.Node, "door", "door_n" },
-            .{ atlas.Bespoke, "foe", "foe_n" },
-            .{ atlas.Procgen, "feature", "feature_n" },
-            .{ hero.Name, "buf", "n" },
-            .{ atlas.Label, "buf", "n" },
         }) |entry| {
             if (T == entry[0] and std.mem.eql(u8, field, entry[1])) return entry[2];
         }

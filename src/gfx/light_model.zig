@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
 const sky = @import("sky.zig");
+const shaders = @import("shaders.zig");
 const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const visibility = @import("light_visibility.zig");
@@ -480,6 +481,17 @@ pub fn knee(c: Rgb) Rgb {
     return out;
 }
 
+/// `knee` and `flashed` for a fragment shader.
+pub const TONE_FS = shaders.glslConsts(.{ .KNEE = KNEE, .FLASH = FLASH_RGB }) ++
+    \\vec3 knee(vec3 c) {
+    \\    return mix(c, KNEE * sqrt(c / KNEE), step(KNEE, c));
+    \\}
+    \\vec3 flashed(vec3 c, float k) {
+    \\    return mix(c, FLASH, k);
+    \\}
+    \\
+;
+
 pub const smooth = mathx.smooth;
 
 /// The cosine a light `dy` south of a south face and `flat` from it along the ground strikes it at.
@@ -492,11 +504,7 @@ pub const FACE_EPS: f32 = 1e-2;
 pub const splat = sky.splat;
 
 pub const rgbOf = look.rgbOf;
-
-pub fn colourOf(c: Rgb, a: f32) rl.Color {
-    const k = @max(splat(0), @min(splat(1), c)) * splat(255) + splat(0.5);
-    return .{ .r = @intFromFloat(k[0]), .g = @intFromFloat(k[1]), .b = @intFromFloat(k[2]), .a = @intFromFloat(std.math.clamp(a, 0, 1) * 255 + 0.5) };
-}
+pub const colourOf = look.colourOf;
 
 pub fn texelOf(c: Rgb, sight: f32) rl.Color {
     return colourOf(knee(c) / splat(OVERBRIGHT), sight);

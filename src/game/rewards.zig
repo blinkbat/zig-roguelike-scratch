@@ -20,7 +20,8 @@ comptime {
 
 pub const Frightened = std.StaticBitSet(actor.MAX);
 pub const Ignited = std.StaticBitSet(actor.MAX);
-pub const Death = struct { gold: i32, frightened: Frightened, ignited: Ignited = .initEmpty() };
+/// `unmasked`: it died in its chest, which then fell open.
+pub const Death = struct { gold: i32, frightened: Frightened, ignited: Ignited = .initEmpty(), unmasked: bool = false };
 pub const Chest = enum { opened, not_closed, ground_full };
 
 pub fn groundRoom(sim: *Simulation) bool {
@@ -89,8 +90,10 @@ pub fn noticeItems(sim: *Simulation, at: P) void {
 }
 
 pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
-    sim.pool.items[target.slot().index].unmask(&sim.lv);
-    const fallen = sim.pool.items[target.slot().index];
+    const slot = target.slot().index;
+    const unmasked = sim.pool.items[slot].disguised;
+    sim.pool.items[slot].unmask(&sim.lv);
+    const fallen = sim.pool.items[slot];
     sim.kills += 1;
     sim.plot.died(fallen.kind);
     gainExperience(sim, fallen.kind);
@@ -115,7 +118,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
         sim.log.say("The last {s} is dead.", .{actor.row(family).name});
         sim.chronicle.mark(.{ .cleared = family });
     }
-    return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .ignited = ignited };
+    return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .ignited = ignited, .unmasked = unmasked };
 }
 
 /// A mimic leaves its chest's loot; nothing is left where no one could walk to fetch it.
@@ -144,11 +147,11 @@ fn ignite(sim: *Simulation, at: P, name: []const u8) Ignited {
     const area = pyre(&sim.lv, at);
     for (sim.pool.slice(), 0..) |*a, i| {
         if (!a.alive or !area.has(a.at)) continue;
-        const chance: u32 = @intCast(@min(mathx.PERCENT, damage.resisted(mathx.PERCENT, sim.combatStats(a).elements.get(.fire))));
+        const chance = damage.resistedChance(mathx.PERCENT, sim.combatStats(a).elements.get(.fire));
         if (!sim.procStatus(a, .burn, chance)) continue;
         a.burn.start();
         out.set(i);
-        if (sim.isHero(i)) sim.log.push(.danger, "{s} catches fire!", .{sim.name.text()}) else sim.sayAt(a.at, "The {s} catches fire!", .{actor.row(a.kind).name});
+        if (sim.isHero(i)) sim.log.push(.danger, "{s} catches fire!", .{sim.name.text()}) else sim.sayOf(a, "The {s} catches fire!", .{actor.row(a.kind).name});
     }
     return out;
 }
@@ -214,7 +217,7 @@ test "death rewards resolve without presentation and return only newly frightene
     pib.fright = 1;
     try std.testing.expectEqual(@as(usize, 0), scare(&run.sim, at).count());
     try std.testing.expectEqual(actor.FLEE_TURNS, pib.fright);
-    run.pic.recordDeath(fallen, result);
+    run.pic.recordDeath(&run.sim, fallen, result);
     try std.testing.expectEqual(expected.gold, run.pic.dropped_gold[fallen.slot().index]);
     std.debug.print("death rewards: seeded loot, gas, refreshed fright and unchanged combat RNG/picture; presentation consumes the result separately\n", .{});
 }

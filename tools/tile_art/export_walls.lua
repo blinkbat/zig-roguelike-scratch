@@ -42,8 +42,9 @@ local function decorate(image,inside,offsets)
   end
 end
 local function tile(mask)
-  local n,e,s,w=(mask&1)~=0,(mask&2)~=0,(mask&4)~=0,(mask&8)~=0
-  local ne,se,sw,nw=(mask&16)~=0,(mask&32)~=0,(mask&64)~=0,(mask&128)~=0
+  local bit=masks.bit
+  local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
+  local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
   local image=Image(64,64,ColorMode.RGB)
   local foot=s and 64 or 64-FACE
   for y=0,63 do for x=0,63 do

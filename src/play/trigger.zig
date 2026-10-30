@@ -120,6 +120,10 @@ pub const Runtime = struct {
             const a = &t.act[r.at];
             switch (a.kind) {
                 .dialog => {
+                    if (!s.opens(a.slot)) {
+                        r.at += 1;
+                        continue;
+                    }
                     if (self.asked != null or self.talk != null) return;
                     r.at += 1;
                     r.held = true;
@@ -174,9 +178,9 @@ pub const Runtime = struct {
         return d;
     }
 
-    /// Opens dialog `d` at its first line, its actions done; refused while one is up.
+    /// Opens dialog `d` at its first line, its actions done; refused while one is up, or when no way through it ends.
     pub fn open(self: *Runtime, s: *const Script, d: u8, folk: ?u8, l: *log.Log) bool {
-        if (self.talk != null or d >= s.dialog_n or s.dialog[d].line_n == 0) return false;
+        if (self.talk != null or !s.opens(d)) return false;
         self.talk = .{ .dialog = d, .folk = folk };
         self.enter(s, l);
         return true;

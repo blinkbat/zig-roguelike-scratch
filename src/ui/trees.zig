@@ -15,7 +15,7 @@ const line_icons = @import("../gfx/line_icons.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");
 const input = @import("../core/input.zig");
-const book = @import("book.zig");
+const AREA = @import("character_layout.zig").AREA;
 
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
@@ -33,8 +33,8 @@ pub const PAN_RATE: f32 = 3.4;
 const INSET: i32 = 20;
 const DETAIL_W: f32 = 332;
 const PANEL_GAP: f32 = 24;
-const CANVAS = rl.Rectangle{ .x = book.AREA.x, .y = book.AREA.y, .width = book.AREA.width - DETAIL_W - PANEL_GAP, .height = book.AREA.height };
-const DETAIL = rl.Rectangle{ .x = book.AREA.x + book.AREA.width - DETAIL_W, .y = book.AREA.y, .width = DETAIL_W, .height = book.AREA.height };
+const CANVAS = rl.Rectangle{ .x = AREA.x, .y = AREA.y, .width = AREA.width - DETAIL_W - PANEL_GAP, .height = AREA.height };
+const DETAIL = rl.Rectangle{ .x = AREA.x + AREA.width - DETAIL_W, .y = AREA.y, .width = DETAIL_W, .height = AREA.height };
 const WHEEL_TOP: f32 = 44;
 const WHEEL_FOOT: f32 = 44;
 const WHEEL = rl.Rectangle{ .x = CANVAS.x + @as(f32, @floatFromInt(INSET)), .y = CANVAS.y + WHEEL_TOP, .width = CANVAS.width - 2 * @as(f32, @floatFromInt(INSET)), .height = CANVAS.height - WHEEL_TOP - WHEEL_FOOT };
@@ -159,13 +159,20 @@ fn treeHints(face: *const font.Face, device: input.Device) void {
     const x = CANVAS_LEFT;
     const keys = input.TreeKeys;
     const pad = device.pad();
+    const overview = overviewPrompt(device);
     const hints = [_]struct { pad: []const prompt_icon.Prompt, keys: []const prompt_icon.Prompt, label: [:0]const u8 }{
         .{ .pad = &.{.{ .stick = .left }}, .keys = &.{.{ .key = keys.BROWSE_CAPTION }}, .label = "Browse" },
         .{ .pad = &.{.{ .stick = .right }}, .keys = &.{ .{ .key = keys.PAN_CAPTION }, .arrows }, .label = "Pan" },
         .{ .pad = &.{.dpad}, .keys = &.{ .{ .key = keys.ZOOM_OUT_CAPTION }, .{ .key = keys.ZOOM_IN_CAPTION } }, .label = "Zoom" },
-        .{ .pad = &.{prompt_icon.Prompt.menuOn(device, keys.PAD_OVERVIEW)}, .keys = &.{.{ .key = keys.OVERVIEW_CAPTION }}, .label = "Overview" },
+        .{ .pad = &.{overview}, .keys = &.{overview}, .label = OVERVIEW },
     };
     for (hints, 0..) |h, i| hint(face, x + @as(i32, @intCast(i)) * HINT_STEP, y, if (pad) h.pad else h.keys, h.label);
+}
+
+const OVERVIEW = "Overview";
+
+fn overviewPrompt(device: input.Device) prompt_icon.Prompt {
+    return if (device.pad()) prompt_icon.Prompt.menuOn(device, input.TreeKeys.PAD_OVERVIEW) else .{ .key = input.TreeKeys.OVERVIEW_CAPTION };
 }
 
 pub fn actionBox() rl.Rectangle {
@@ -612,7 +619,7 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
         const mid = raster.middleAt(box);
         face.centred(if (increase) "+" else "-", mid.x, mid.y, font.BODY, if (enabled) look.TEXT else LOCKED);
     }
-    menu.action(face, overviewBox(), if (device.pad()) prompt_icon.Prompt.menuOn(device, input.TreeKeys.PAD_OVERVIEW) else .{ .key = input.TreeKeys.OVERVIEW_CAPTION }, "Overview");
+    menu.action(face, overviewBox(), overviewPrompt(device), OVERVIEW);
     passiveDetails(face, class, growth, view.cursor);
 }
 

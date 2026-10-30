@@ -1,5 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const resilience = @import("resilience.zig");
 
 pub const TURNS: u8 = 3;
 /// Cells a blinded body sees.
@@ -8,20 +9,7 @@ pub const TAKES = "is blinded";
 pub const STATUS = "Sees only adjacent cells.";
 
 /// Its turns left unable to see past the cells beside it.
-pub const Blind = struct {
-    turns: u8 = 0,
-
-    pub fn start(self: *Blind) void {
-        self.turns = @max(self.turns, TURNS);
-    }
-
-    /// One of its turns: whether it is blinded this turn.
-    pub fn wear(self: *Blind) bool {
-        if (self.turns == 0) return false;
-        self.turns -= 1;
-        return true;
-    }
-};
+pub const Blind = resilience.Turns(TURNS);
 
 /// The cells a body whose eyes reach `normal` sees.
 pub fn sight(blinded: bool, normal: i32) i32 {

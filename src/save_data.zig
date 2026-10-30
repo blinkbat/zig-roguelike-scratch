@@ -43,7 +43,7 @@ comptime {
     const by_hand = .{ "seed", "map", "node", "visited", "visits" };
     std.debug.assert(HEAD_FIELDS.len == by_hand.len);
     for (HEAD_FIELDS, by_hand) |f, h| {
-        if (!std.mem.eql(u8, f, h)) @compileError("save.Header: write, inspect and read take " ++ h ++ " here by hand, not " ++ f);
+        if (!std.mem.eql(u8, f, h)) @compileError("save_data.Header: save.zig's writeLegacy, inspect and parseLegacy take " ++ h ++ " here by hand, not " ++ f);
     }
 }
 /// Field identities shared by portable saves and the ordered legacy tail.
@@ -135,10 +135,16 @@ pub const UNSAVED = .{
         "seq",
         "split_from",
         "dropped_gold",
+        "masked",
+        "under",
+        "dives",
+        "befallen",
         "owed",
         "shot",
         "foe_shots",
         "knocked_from",
+        "hero_cell",
+        "bursting",
         "busy",
         "lead",
         "fx",
@@ -174,18 +180,26 @@ comptime {
             if (p == .game) for (std.enums.values(Part)) |q| {
                 if (q != .game and std.mem.eql(u8, f.name, @tagName(q))) n += 1;
             };
-            if (n != 1) @compileError("save.zig: say whether " ++ @typeName(T) ++ "." ++ f.name ++ " is saved");
+            if (n != 1) @compileError("save_data.zig: say whether " ++ @typeName(T) ++ "." ++ f.name ++ " is saved");
         }
         for (unsaved) |name| {
-            if (!@hasField(T, name)) @compileError("save.zig: " ++ @typeName(T) ++ " has no field " ++ name);
+            if (!@hasField(T, name)) @compileError("save_data.zig: " ++ @typeName(T) ++ " has no field " ++ name);
         }
     }
     for (TAIL_FIELDS ++ PORTABLE_FIELDS) |t| {
-        if (!@hasField(Of(t[0]), t[1])) @compileError("save.zig: " ++ @typeName(Of(t[0])) ++ " has no field " ++ t[1]);
+        if (!@hasField(Of(t[0]), t[1])) @compileError("save_data.zig: " ++ @typeName(Of(t[0])) ++ " has no field " ++ t[1]);
     }
 }
 
 const REQUIRED_FIELDS = .{ "lv", "pool", "hero", "rng", "name", "class", "growth" };
+
+comptime {
+    for (REQUIRED_FIELDS) |required| {
+        for (TAIL_FIELDS) |t| {
+            if (std.mem.eql(u8, t[1], required)) break;
+        } else @compileError("save_data.REQUIRED_FIELDS names " ++ required ++ ", which TAIL_FIELDS does not");
+    }
+}
 
 pub const Tail = blk: {
     var fs: [TAIL_FIELDS.len]std.builtin.Type.StructField = undefined;
@@ -296,6 +310,17 @@ pub const Summary = struct {
     /// Null on a generated floor.
     node: ?usize,
     place: atlas.Label = .{},
+
+    /// Null with no hero to describe.
+    pub fn of(g: *game.Game) ?Summary {
+        const body = g.sim.heroActor() orelse return null;
+        var s = Summary{ .name = g.sim.name, .hp = body.hp, .max = body.max, .gold = g.sim.gold, .node = null };
+        if (g.sim.map) |map| {
+            s.node = g.sim.node;
+            s.place = map.node[g.sim.node].label;
+        }
+        return s;
+    }
 
     pub fn details(self: *const Summary, buf: []u8) [:0]const u8 {
         var at: [atlas.TITLE_MAX]u8 = undefined;

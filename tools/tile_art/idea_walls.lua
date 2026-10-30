@@ -79,8 +79,9 @@ local function faceTop(x) return kind=='cave' and TOP-1+math.floor(noise(x,8,7)*
 local function canopyFoot(x) return TOP+11-edge(x,0) end
 local function trunk(x) return (x%32)-11 end
 local function cell(mask)
-  local n,e,s,w=(mask&1)~=0,(mask&2)~=0,(mask&4)~=0,(mask&8)~=0
-  local ne,se,sw,nw=(mask&16)~=0,(mask&32)~=0,(mask&64)~=0,(mask&128)~=0
+  local bit=masks.bit
+  local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
+  local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
   local R=kind=='cave' and 6 or 10
   local B=kind=='cave' and 4 or 6
   local function within(x,y)
@@ -170,8 +171,9 @@ local function noise2(x,y,step,seed)
 end
 local function shore(t,seed) return 1+math.floor(noise(t,8,seed)*2.99)+math.floor(noise(t,4,seed+50)*1.99) end
 local function liquidCell(mask)
-  local n,e,s,w=(mask&1)~=0,(mask&2)~=0,(mask&4)~=0,(mask&8)~=0
-  local ne,se,sw,nw=(mask&16)~=0,(mask&32)~=0,(mask&64)~=0,(mask&128)~=0
+  local bit=masks.bit
+  local n,e,s,w=(mask&bit.n)~=0,(mask&bit.e)~=0,(mask&bit.s)~=0,(mask&bit.w)~=0
+  local ne,se,sw,nw=(mask&bit.ne)~=0,(mask&bit.se)~=0,(mask&bit.sw)~=0,(mask&bit.nw)~=0
   local R,B=8,5
   local function bankFoot(x) return shore(x,1)+BANK+math.floor(noise(x,8,21)*1.99) end
   local function within(x,y)

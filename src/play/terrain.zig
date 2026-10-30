@@ -78,7 +78,7 @@ pub fn of(tile: grid.Tile) Modifiers {
 }
 
 pub const Stats = struct {
-    hit: u32 = 100,
+    hit: u32 = mathx.PERCENT,
     dodge: u32 = 0,
     /// Before the cap `attrs.armoured` applies.
     armour: i32 = 0,
@@ -88,15 +88,15 @@ pub const Stats = struct {
     pub fn on(base: Stats, tile: grid.Tile) Stats {
         const m = of(tile);
         var out = base;
-        out.hit = @intCast(std.math.clamp(@as(i32, @intCast(base.hit)) + m.hit, 0, 100));
+        out.hit = @intCast(std.math.clamp(@as(i32, @intCast(base.hit)) + m.hit, 0, mathx.PERCENT));
         out.dodge = @intCast(std.math.clamp(@as(i32, @intCast(base.dodge)) + m.dodge, 0, attrs.DODGE_MAX));
-        for (std.enums.values(damage.Element)) |e| out.elements.set(e, @intCast(std.math.clamp(@as(i32, base.elements.get(e)) + m.elements.get(e), -100, 100)));
-        for (std.enums.values(resilience.Kind)) |k| out.statuses.set(k, @intCast(std.math.clamp(@as(i32, base.statuses.get(k)) + m.statuses.get(k), -100, 100)));
+        for (std.enums.values(damage.Element)) |e| out.elements.set(e, damage.clampResist(@as(i32, base.elements.get(e)) + m.elements.get(e)));
+        for (std.enums.values(resilience.Kind)) |k| out.statuses.set(k, damage.clampResist(@as(i32, base.statuses.get(k)) + m.statuses.get(k)));
         return out;
     }
 
     pub fn misses(attacker: Stats, defender: Stats, rng: *mathx.Rng) bool {
-        if (attacker.hit < 100 and (attacker.hit == 0 or !rng.percent(attacker.hit))) return true;
+        if (attacker.hit < mathx.PERCENT and (attacker.hit == 0 or !rng.percent(attacker.hit))) return true;
         return defender.dodge > 0 and rng.percent(defender.dodge);
     }
 };

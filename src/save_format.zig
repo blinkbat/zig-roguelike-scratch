@@ -48,8 +48,35 @@ fn references(comptime T: type) type {
     return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fields, .decls = &.{}, .is_tuple = false } });
 }
 
-pub fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
+/// `Snapshot` as the file holds it, each field by reference.
+const Encoded = struct {
+    summary: *const data.Summary,
+    seed: u64,
+    map: ?*const data.Map,
+    node: usize,
+    visits: *const [atlas.MAX_NODES]?*const data.Visit,
+    run: *const references(data.Tail),
+    portable: *const references(data.Portable),
+};
+
+comptime {
+    const want = std.meta.fieldNames(Snapshot);
+    const got = std.meta.fieldNames(Encoded);
+    if (want.len != got.len) @compileError("save_format.Encoded must hold every Snapshot field");
+    for (want, got) |w, e| {
+        if (!std.mem.eql(u8, w, e)) @compileError("save_format.Encoded must list Snapshot's fields in its order: " ++ w ++ ", not " ++ e);
+    }
+}
+
+/// Into an empty `out`, all but the sum `seal` ends it with, with room kept for that sum.
+fn encode(out: *std.ArrayList(u8), file: Encoded) !void {
     std.debug.assert(out.items.len == 0);
+    try store.begin(out.writer(), MAGIC, VERSION);
+    try Code.write(out, file);
+    try out.ensureUnusedCapacity(store.SUM);
+}
+
+pub fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
     var visits: [atlas.MAX_NODES]?*const data.Visit = @splat(null);
     var visited = g.sim.visited.iterator(.{});
     while (visited.next()) |node| visits[node] = &g.sim.visits[node];
@@ -57,28 +84,16 @@ pub fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
     inline for (data.TAIL_FIELDS) |field| @field(run, field[1]) = &@field(data.part(g, field[0]), field[1]);
     var portable: references(data.Portable) = undefined;
     inline for (data.PORTABLE_FIELDS) |field| @field(portable, field[1]) = &@field(data.part(g, field[0]), field[1]);
-    const body = g.sim.heroActor() orelse return error.Damaged;
-    var summary = data.Summary{ .name = g.sim.name, .hp = body.hp, .max = body.max, .gold = g.sim.gold, .node = null };
-    if (g.sim.map) |map| {
-        summary.node = g.sim.node;
-        summary.place = map.node[g.sim.node].label;
-    }
-    try store.begin(out.writer(), MAGIC, VERSION);
-    try Code.write(out, .{ .summary = summary, .seed = g.sim.seed, .map = g.sim.map, .node = g.sim.node, .visits = &visits, .run = &run, .portable = &portable });
-    try out.ensureUnusedCapacity(store.SUM);
+    const summary = data.Summary.of(g) orelse return error.Damaged;
+    try encode(out, .{ .summary = &summary, .seed = g.sim.seed, .map = g.sim.map, .node = g.sim.node, .visits = &visits, .run = &run, .portable = &portable });
 }
 
 pub fn capture(g: *game.Game, snapshot: *Snapshot) !void {
-    const body = g.sim.heroActor() orelse return error.Damaged;
-    snapshot.summary = .{ .name = g.sim.name, .hp = body.hp, .max = body.max, .gold = g.sim.gold, .node = null };
+    snapshot.summary = data.Summary.of(g) orelse return error.Damaged;
     snapshot.seed = g.sim.seed;
     snapshot.node = g.sim.node;
     snapshot.map = null;
-    if (g.sim.map) |map| {
-        snapshot.map = map.*;
-        snapshot.summary.node = g.sim.node;
-        snapshot.summary.place = map.node[g.sim.node].label;
-    }
+    if (g.sim.map) |map| snapshot.map = map.*;
     for (&snapshot.visits, 0..) |*visit, node| {
         visit.* = null;
         if (g.sim.visited.isSet(node)) visit.* = g.sim.visits[node];
@@ -88,7 +103,6 @@ pub fn capture(g: *game.Game, snapshot: *Snapshot) !void {
 }
 
 pub fn writeSnapshot(snapshot: *const Snapshot, out: *std.ArrayList(u8)) !void {
-    std.debug.assert(out.items.len == 0);
     var visits: [atlas.MAX_NODES]?*const data.Visit = @splat(null);
     for (&snapshot.visits, 0..) |*visit, node| if (visit.*) |*loaded| {
         visits[node] = loaded;
@@ -98,9 +112,7 @@ pub fn writeSnapshot(snapshot: *const Snapshot, out: *std.ArrayList(u8)) !void {
     var portable: references(data.Portable) = undefined;
     inline for (std.meta.fields(data.Portable)) |field| @field(portable, field.name) = &@field(snapshot.portable, field.name);
     const map: ?*const data.Map = if (snapshot.map) |*loaded| loaded else null;
-    try store.begin(out.writer(), MAGIC, VERSION);
-    try Code.write(out, .{ .summary = &snapshot.summary, .seed = snapshot.seed, .map = map, .node = snapshot.node, .visits = &visits, .run = &run, .portable = &portable });
-    try out.ensureUnusedCapacity(store.SUM);
+    try encode(out, .{ .summary = &snapshot.summary, .seed = snapshot.seed, .map = map, .node = snapshot.node, .visits = &visits, .run = &run, .portable = &portable });
 }
 
 test "portable autosave snapshots own every byte while the live run changes" {
@@ -187,9 +199,11 @@ pub fn apply(snapshot: *Snapshot, g: *game.Game, map: *data.Map) void {
 
 pub fn validate(snapshot: *Snapshot) !void {
     const run = &snapshot.run;
-    if (!run.name.valid() or run.hero == 0 or run.hero > run.pool.n) return error.Damaged;
+    if (!run.name.valid() or !holdsHero(&run.pool, run.hero, run.class.kind())) return error.Damaged;
     const body = &run.pool.items[actor.Pool.slot(run.hero)];
-    if (!body.alive or body.kind != run.class.kind()) return error.Damaged;
+    if (run.bar.modifier) |m| if (std.mem.indexOfScalar(@TypeOf(m), &skillbar.SLOTS, m) == null) {
+        run.bar.modifier = null;
+    };
     if (run.gold < 0 or run.mana < 0 or run.growth.level == 0) return error.Damaged;
     if (run.growth.xp >= run.growth.needed()) return error.Damaged;
     run.clock = day.Clock.at(run.clock.hour());
@@ -236,7 +250,7 @@ pub fn validate(snapshot: *Snapshot) !void {
         }
         for (&snapshot.visits, 0..) |*visit, node| {
             if (visit.*) |*loaded| {
-                if (node >= map.node_n) return error.Damaged;
+                if (node >= map.node_n or !holdsHero(&loaded.pool, run.hero, run.class.kind())) return error.Damaged;
                 try validateLevel(&loaded.lv, &loaded.pool, &loaded.ground);
                 try validateDoors(&loaded.lv, &map.node[node]);
             }
@@ -271,12 +285,30 @@ fn validateDoors(level: *const grid.Level, node: ?*const atlas.Node) !void {
     }
 }
 
+fn holdsHero(pool: *const actor.Pool, id: u16, kind: actor.Kind) bool {
+    if (id == 0 or id > pool.n) return false;
+    const body = &pool.items[actor.Pool.slot(id)];
+    return body.alive and body.kind == kind;
+}
+
+/// Every death still to come, of a body standing or one yet to split off, drops on the ground with room for it.
+fn deathsToCome(pool: *const actor.Pool) usize {
+    var alive: usize = 0;
+    for (pool.items[0..pool.n]) |a| alive += @intFromBool(a.alive and a.foe());
+    return alive + (actor.MAX - pool.n);
+}
+
+/// Beyond this a turn's arithmetic on a body's clock, bleed or life overflows.
+const BODY_MOST: i32 = std.math.maxInt(i32) / 2;
+
 fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *const items.Ground) !void {
     if (pool.n > actor.MAX or ground.n > items.GROUND_MAX or ground.coin_n > grid.CELLS or level.torch.n > grid.MAX_TORCHES) return error.Damaged;
+    if (ground.n + deathsToCome(pool) > items.GROUND_MAX) return error.Damaged;
     for (pool.slice(), 0..) |body, slot| {
         if (!grid.Level.inside(body.at) or body.max <= 0 or body.hp < 0 or body.hp > body.max) return error.Damaged;
         if (body.alive and (body.hp == 0 or level.who(body.at) != actor.Pool.idOf(slot))) return error.Damaged;
         if (body.chill.phase > 2 or body.bleed.amount < 0) return error.Damaged;
+        if (body.max > BODY_MOST or body.bleed.amount > BODY_MOST or body.clock.ticks < -BODY_MOST or body.clock.ticks > BODY_MOST) return error.Damaged;
         if (body.sunder.stacks > sunder.MOST or (body.sunder.stacks == 0) != (body.sunder.turns == 0)) return error.Damaged;
     }
     for (level.occupant, 0..) |id, index| {
@@ -405,6 +437,29 @@ test "runs saved before flasks were items gain both, while a current run keeps a
     try read(bytes.items, target, map);
     for (std.enums.values(flask.Kind)) |k| try std.testing.expect(!target.sim.inventory.gear.holds(k));
     std.debug.print("flask saves: version {d} runs gain both flasks; version {d} keeps an unequipped flask in the bag\n", .{ FLASKLESS, VERSION });
+}
+
+test "a body whose clock, bleed or life would overflow a turn's arithmetic is damaged" {
+    const alloc = std.testing.allocator;
+    const run = try game.boot(alloc);
+    defer game.shut(alloc, run);
+    game.begin(run, 37);
+    try validateLevel(&run.sim.lv, &run.sim.pool, &run.sim.ground);
+    const h = run.sim.heroActor().?;
+    const saved = h.*;
+    for (0..3) |case| {
+        h.* = saved;
+        switch (case) {
+            0 => h.clock.ticks = std.math.minInt(i32),
+            1 => h.bleed.amount = std.math.maxInt(i32),
+            else => {
+                h.max = std.math.maxInt(i32);
+                h.hp = h.max;
+            },
+        }
+        try std.testing.expectError(error.Damaged, validateLevel(&run.sim.lv, &run.sim.pool, &run.sim.ground));
+    }
+    h.* = saved;
 }
 
 test "portable save corruption and missing required state leave the live game and map unchanged" {

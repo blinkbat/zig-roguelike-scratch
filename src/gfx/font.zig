@@ -1,13 +1,14 @@
 const std = @import("std");
 const rl = @import("raylib");
 const look = @import("look.zig");
+const raster = @import("raster.zig");
 
 const TTF = "Balthazar-Regular.ttf";
 const DATA_TTF = "SourceSans3-Regular.ttf";
 const ATLAS_PX: i32 = 96;
 /// Drawn from its own point-filtered atlas, not the mipmapped one.
 const NATIVE_SIZES = [_]i32{ LABEL, SMALL, BODY, HEAD };
-const SHADOW_A: u16 = 200;
+const SHADOW_A: u16 = look.DROP_SHADOW_A;
 /// Text size per pixel the shadow sits down and right.
 const SHADOW_STEP: i32 = 14;
 pub const BODY: i32 = 20;
@@ -490,5 +491,5 @@ fn placed(f: rl.Font, i: usize, x: f32, y: f32, scale: f32) struct { rl.Rectangl
 /// raylib's DrawTextCodepoint, glyph `i` already found.
 fn put(f: rl.Font, i: usize, x: f32, y: f32, scale: f32, col: rl.Color) void {
     const src, const dst = placed(f, i, x, y, scale);
-    rl.drawTexturePro(f.texture, src, dst, .{ .x = 0, .y = 0 }, 0, col);
+    raster.blit(f.texture, src, dst, col);
 }

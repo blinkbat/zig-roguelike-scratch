@@ -317,6 +317,8 @@ pub const Desk = struct {
     pub const BARE = [_][]const u8{ "play", "play_here", "graph", "go", "rename", "back", "smaller", "bigger", "zoom_in", "zoom_out", "fit", "help", "objects", "reroll", "delete" };
     pub const WITH_CTRL = [_][]const u8{ "open", "new", "copy", "cut", "paste" };
     pub const SHIFTED = [_][]const u8{ "save", "undo", "redo" };
+    /// Shift turns the first of each pair, a `SHIFTED` command, into the second.
+    pub const SHIFT_TWINS = [_][2][]const u8{ .{ "save", "save_as" }, .{ "undo", "redo" } };
 
     pub fn keyOf(comptime field: []const u8) rl.KeyboardKey {
         return @field(Desk, upper(field) ++ "_KEY");
@@ -342,6 +344,11 @@ pub const Desk = struct {
         for (@typeInfo(Desk).@"struct".decls) |d| {
             if (!std.mem.endsWith(u8, d.name, "_KEY")) continue;
             if (std.mem.indexOfScalar(rl.KeyboardKey, named, @field(Desk, d.name)) == null) @compileError(d.name ++ " is in no list update reads");
+        }
+        for (SHIFT_TWINS) |t| {
+            for (SHIFTED) |s| {
+                if (std.mem.eql(u8, s, t[0])) break;
+            } else @compileError(t[0] ++ " turns into " ++ t[1] ++ " with Shift but is not SHIFTED");
         }
         distinct(bare);
         distinct(ctrl);

@@ -6,6 +6,8 @@ const P = mathx.P;
 pub const W: i32 = 96;
 pub const H: i32 = 64;
 pub const CELLS: usize = @intCast(W * H);
+/// One bit a cell, by `Level.idx`.
+pub const CellSet = std.StaticBitSet(CELLS);
 pub const COLS: usize = @intCast(W);
 pub const ROWS: usize = @intCast(H);
 /// The points where cells meet, the map's edges included.
@@ -295,6 +297,8 @@ pub const WallShape = packed struct(u8) {
 pub const Torches = struct {
     at: [MAX_TORCHES]P = undefined,
     n: usize = 0,
+
+    pub const COUNTED = .{.{ "at", "n" }};
 
     pub fn slice(self: *const Torches) []const P {
         return self.at[0..self.n];
@@ -630,6 +634,24 @@ pub fn nearest(from: P, set: anytype) ?P {
     }
     return null;
 }
+
+/// The nearest cell offered within `reach`, by steps and then by the straighter line.
+pub const Nearest = struct {
+    from: P,
+    reach: i32 = std.math.maxInt(i32),
+    best: ?P = null,
+    best_d: i32 = std.math.maxInt(i32),
+    best_line: f32 = std.math.floatMax(f32),
+
+    pub fn offer(n: *Nearest, p: P) void {
+        const d = mathx.dist(n.from, p);
+        const line = mathx.distEuclid(n.from, p);
+        if (d > n.reach or d > n.best_d or (d == n.best_d and line >= n.best_line)) return;
+        n.best_d = d;
+        n.best_line = line;
+        n.best = p;
+    }
+};
 
 /// Up to `N` cells.
 pub fn Area(comptime N: usize) type {

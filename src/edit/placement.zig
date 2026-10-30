@@ -188,17 +188,16 @@ fn paintInto(nd: *const atlas.Node, b: *atlas.Bespoke, p: P, t: grid.Tile) bool 
 
 const Put = enum { there, laid, refused };
 
-fn barrelInto(nd: *const atlas.Node, b: *atlas.Bespoke, p: P) Put {
+fn barrelInto(map: *const atlas.Atlas, n: usize, b: *atlas.Bespoke, p: P) Put {
     const i = grid.Level.idx(p);
     if (b.barrel[i]) return .there;
-    if (!nd.barrelGoes(b, p)) return .refused;
+    if (!map.barrelGoes(n, b, p)) return .refused;
     b.barrel[i] = true;
     return .laid;
 }
 
 fn putBarrel(ed: *Editor, b: *atlas.Bespoke, p: P) bool {
-    if (ed.map.script.folkAt(ed.node, p) != null) return false;
-    const put = barrelInto(ed.here(), b, p);
+    const put = barrelInto(ed.map, ed.node, b, p);
     if (put == .laid) ed.changed();
     return put != .refused;
 }
@@ -349,7 +348,7 @@ pub fn startPaste(ed: *Editor) void {
 }
 
 pub fn layBoard(ed: *Editor, at: P) void {
-    const laid = layInto(ed.here(), .{ .script = &ed.map.script, .node = ed.node }, &ed.plan().bespoke, &ed.board, at);
+    const laid = layInto(ed.map, ed.node, &ed.plan().bespoke, &ed.board, at);
     if (laid.left > 0) ed.say("Pasted; {d} torch(es), barrel(s) or foe(s) did not fit there", .{laid.left}) else ed.say("Pasted", .{});
     if (laid.changed) ed.changed();
 }
@@ -360,7 +359,7 @@ pub fn layAside(ed: *Editor, at: P) Pasted {
     const cached = &ed.paste_preview;
     if (cached.matches(ed, at)) return cached.result;
     ed.trial = ed.plan().bespoke;
-    const result = layInto(ed.here(), .{ .script = &ed.map.script, .node = ed.node }, &ed.trial, &ed.board, at);
+    const result = layInto(ed.map, ed.node, &ed.trial, &ed.board, at);
     @memcpy(std.mem.asBytes(&cached.source), std.mem.asBytes(ed.here()));
     @memcpy(std.mem.asBytes(&cached.board), std.mem.asBytes(&ed.board));
     cached.at = at;
@@ -370,17 +369,9 @@ pub fn layAside(ed: *Editor, at: P) Pasted {
     return result;
 }
 
-const Folk = struct {
-    script: *const script.Script,
-    node: usize,
-
-    fn at(self: Folk, p: P) bool {
-        return self.script.folkAt(self.node, p) != null;
-    }
-};
-
 /// The copy laid into `b` with its corner at `at`; the paste's ghost lays it aside the same way.
-fn layInto(nd: *const atlas.Node, folk: Folk, b: *atlas.Bespoke, bd: *const Board, at: P) Pasted {
+fn layInto(map: *const atlas.Atlas, n: usize, b: *atlas.Bespoke, bd: *const Board, at: P) Pasted {
+    const nd = &map.node[n];
     var laid: Pasted = .{};
     var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
     while (cells.next()) |q| {
@@ -392,11 +383,7 @@ fn layInto(nd: *const atlas.Node, folk: Folk, b: *atlas.Bespoke, bd: *const Boar
         }
         if (paintInto(nd, b, p, bd.cells.tile[k])) laid.changed = true;
         if (!bd.cells.barrel[k]) continue;
-        if (folk.at(p)) {
-            laid.left += 1;
-            continue;
-        }
-        switch (barrelInto(nd, b, p)) {
+        switch (barrelInto(map, n, b, p)) {
             .there => {},
             .laid => laid.changed = true,
             .refused => laid.left += 1,
@@ -416,7 +403,7 @@ fn layInto(nd: *const atlas.Node, folk: Folk, b: *atlas.Bespoke, bd: *const Boar
             laid.left += 1;
         } else if (b.foeAt(p)) |i| {
             if (b.foe[i].kind != f.kind) laid.left += 1;
-        } else if (!folk.at(p) and nd.foeGoes(b, p, f.kind) and b.addFoe(.{ .kind = f.kind, .at = p })) laid.changed = true else laid.left += 1;
+        } else if (map.foeGoes(n, b, p, f.kind) and b.addFoe(.{ .kind = f.kind, .at = p })) laid.changed = true else laid.left += 1;
     }
     return laid;
 }
@@ -426,9 +413,9 @@ pub fn legal(ed: *Editor, p: P) bool {
     if (!ed.tool.fits(nd)) return false;
     return switch (ed.tool) {
         .paint, .start => true,
-        .barrel => nd.barrelGoes(&nd.plan.bespoke, p) and ed.map.script.folkAt(ed.node, p) == null,
+        .barrel => ed.map.barrelGoes(ed.node, &nd.plan.bespoke, p),
         .torch => nd.torchGoes(&nd.plan.bespoke, p),
-        .foe => |k| nd.foeGoes(&nd.plan.bespoke, p, k) and ed.map.script.folkAt(ed.node, p) == null,
+        .foe => |k| ed.map.foeGoes(ed.node, &nd.plan.bespoke, p, k),
         .folk => ed.map.folkGoes(ed.node, p) or ed.map.script.folkAt(ed.node, p) != null,
         .door => nd.takesDoor(p),
         .link => nd.doorAt(p) != null,

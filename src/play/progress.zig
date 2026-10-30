@@ -276,22 +276,7 @@ pub const State = struct {
     }
 
     pub fn writeRank(self: *const State, act: skillbar.Act, w: anytype) void {
-        const t = @import("tactics.zig");
-        const rank = @max(1, self.ranks.get(act));
-        switch (act) {
-            .caltrops => {
-                w.print("Patch: {d} turns; pin: {d} turn(s); ", .{ t.Caltrops.duration(rank), t.Caltrops.pins(rank) }) catch {};
-                if (t.Caltrops.bleed(rank) == 0) w.writeAll("no bleed.") catch {} else w.print("bleed: {d} per turn.", .{t.Caltrops.bleed(rank)}) catch {};
-            },
-            .gravity_well => w.print("Pull: {d} cell(s); pin: {d} turn(s).", .{ t.GravityWell.pulls(rank), t.GravityWell.pins(rank) }) catch {},
-            .arcane_barrier => w.print("Wall: up to {d} cells, {d} turns.", .{ t.ArcaneBarrier.length(rank), t.ArcaneBarrier.duration(rank) }) catch {},
-            .fire_wall => w.print("Flames: up to {d} cells, {d} turns.", .{ t.FireWall.length(rank), t.FireWall.duration(rank) }) catch {},
-            .war_cry => w.print("{d}% fright chance; frightened {d} turns.", .{ t.WarCry.chance(rank), t.WarCry.turns(rank) }) catch {},
-            .guard => w.print("{d}% less physical attack damage.", .{t.Guard.reduction(rank)}) catch {},
-            .unyielding => w.print("{d}% counter chance; {d} mana per turn.", .{ t.Unyielding.chance(rank), t.Unyielding.DRAIN }) catch {},
-            .steady_aim => w.print("Next arrow: +{d}% damage, +{d}% critical chance.", .{ t.SteadyAim.bonus(rank), t.SteadyAim.critical(rank) }) catch {},
-            else => {},
-        }
+        act.writeRank(@max(1, self.ranks.get(act)), w);
     }
 
     pub fn kit(self: *const State, c: hero.Class, out: *skillbar.KitBuf) []const skillbar.Act {

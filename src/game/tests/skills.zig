@@ -1710,13 +1710,6 @@ test "every targeted skill rechecks readiness and bounds at confirmation without
     std.debug.print("target confirmation: {d} out-of-bounds and changed-readiness cases preserve the reticle and simulation\n", .{checked});
 }
 
-fn aimedAt(g: *game.Game, act: skillbar.Act, at: P) void {
-    skills.useSkill(g, .{ .act = act, .by = .x });
-    if (g.mode != .aim) return;
-    g.mode.aim.mark = at;
-    skills.confirmAim(g);
-}
-
 test "rend strikes the foe beside the knight and opens its stronger bleed" {
     const rend = @import("../../play/rend.zig");
     const g = try game.boot(std.testing.allocator);
@@ -1727,7 +1720,7 @@ test "rend strikes the foe beside the knight and opens its stronger bleed" {
     const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
     harness.toughen(g.sim.pool.get(id).?);
     game.settle(g);
-    aimedAt(g, .rend, .{ .x = 21, .y = 20 });
+    harness.aimAt(g, .rend, .{ .x = 21, .y = 20 });
     const rat = g.sim.pool.get(id).?;
     try std.testing.expect(rat.hp < harness.TEST_HP);
     try std.testing.expectEqual(bleeding.TURNS, rat.bleed.turns);
@@ -1748,7 +1741,7 @@ test "piercing shot strikes every foe in its line, each as the arrow reaches it,
     for ([_]u16{ near, far, beyond }) |id| harness.toughen(g.sim.pool.get(id).?);
     g.sim.lv.putBarrel(.{ .x = 28, .y = 20 });
     game.settle(g);
-    aimedAt(g, .piercing_shot, .{ .x = 22, .y = 20 });
+    harness.aimAt(g, .piercing_shot, .{ .x = 22, .y = 20 });
     try std.testing.expect(g.sim.pool.get(near).?.hp < harness.TEST_HP);
     try std.testing.expect(g.sim.pool.get(far).?.hp < harness.TEST_HP);
     try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(beyond).?.hp);

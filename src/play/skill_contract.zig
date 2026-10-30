@@ -73,6 +73,7 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
         if (!has(d, "AILMENT") or !has(d, "CHANCE") or !@hasDecl(m, "TAKES") or !@hasDecl(m, "VERB")) return "afflict requires AILMENT, CHANCE, TAKES and VERB";
         if (!signature(m, "afflict", &.{ null, *mathx.Rng }, void)) return "afflict must accept (actor: anytype, rng: *Rng) and return void";
         if (!signature(m, "procs", &.{ *mathx.Rng, i16 }, bool)) return "procs must accept (*Rng, i16) and return bool";
+        if (!signature(m, "chance", &.{i16}, u32)) return "chance must accept (resist: i16) and return u32";
     }
     if (has(d, "burst")) {
         if (d.reticle != .bow or !has(d, "ELEMENT") or !has(d, "afflict")) return "burst requires an elemental afflicting projectile";

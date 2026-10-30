@@ -6,7 +6,7 @@ const raster = @import("raster.zig");
 const shaders = @import("shaders.zig");
 const sky = @import("sky.zig");
 const shadow = @import("shadow.zig");
-const light = @import("light_model.zig");
+const model = @import("light_model.zig");
 const Rgb = sky.Rgb;
 const splat = sky.splat;
 
@@ -28,7 +28,7 @@ const MIRROR_FS = MIRROR_HEAD ++
     \\}
 ;
 
-const BODY_FS = MIRROR_HEAD ++ shaders.glslConsts(.{ .LIGHTS = light.BODY_LIGHTS, .KNEE = light.KNEE, .FLASH = light.FLASH_RGB }) ++
+const BODY_FS = MIRROR_HEAD ++ shaders.glslConsts(.{ .LIGHTS = model.BODY_LIGHTS }) ++ model.TONE_FS ++
     \\uniform sampler2D normals;
     \\uniform vec2 size;
     \\uniform float flip;
@@ -68,8 +68,8 @@ const BODY_FS = MIRROR_HEAD ++ shaders.glslConsts(.{ .LIGHTS = light.BODY_LIGHTS
     \\        light += lcol[i] * (diffuse + rim * RIM);
     \\        sheen += lcol[i] * rim * SHEEN;
     \\    }
-    \\    light = mix(light, KNEE * sqrt(light / KNEE), step(KNEE, light));
-    \\    finalColor = vec4(mix(c.rgb * light + sheen + emission, FLASH, flash), c.a) * fragColor;
+    \\    light = knee(light);
+    \\    finalColor = vec4(flashed(c.rgb * light + sheen + emission, flash), c.a) * fragColor;
     \\    finalColor.a *= mirrorFade();
     \\}
 ;
@@ -105,7 +105,7 @@ const ReceiverShader = struct {
     screen: i32,
 };
 
-const SHADOW_FS = POOL_HEAD ++ shaders.glslConsts(.{ .TAPS = light.SHADOW_TAPS }) ++
+const SHADOW_FS = POOL_HEAD ++ shaders.glslConsts(.{ .TAPS = model.SHADOW_TAPS }) ++
     \\uniform vec2 size;
     \\uniform float foot;
     \\uniform vec4 joined;
@@ -176,6 +176,7 @@ pub const Gpu = struct {
     /// `ox, oy` is where the map's top-left corner lands on screen.
     pub fn drawMap(self: *const Gpu, ox: i32, oy: i32, cell: i32) void {
         const tex = self.layers.get(.map) orelse return;
+        comptime std.debug.assert(model.OVERBRIGHT == 2);
         raster.beginBlend(rl.gl.rl_dst_color, rl.gl.rl_src_color, rl.gl.rl_func_add);
         raster.overFloor(tex, ox, oy, cell);
         rl.endBlendMode();
@@ -186,19 +187,19 @@ pub const Gpu = struct {
         }
     }
 
-    pub fn uploadRows(self: *const Gpu, texels: *const std.EnumArray(light.Layer, [light.TEXELS]rl.Color), rows: [2]i32) void {
+    pub fn uploadRows(self: *const Gpu, texels: *const std.EnumArray(model.Layer, [model.TEXELS]rl.Color), rows: [2]i32) void {
         if (self.layers.get(.map) == null) return;
         const from, const to = rows;
         if (to > from) {
-            const rect = raster.rect(0, from, light.MAP_W, to - from);
-            for (std.enums.values(light.Layer)) |k| {
-                if (self.layers.get(k)) |t| rl.updateTextureRec(t, rect, &texels.getPtrConst(k)[@intCast(from * light.MAP_W)]);
+            const rect = raster.rect(0, from, model.MAP_W, to - from);
+            for (std.enums.values(model.Layer)) |k| {
+                if (self.layers.get(k)) |t| rl.updateTextureRec(t, rect, &texels.getPtrConst(k)[@intCast(from * model.MAP_W)]);
             }
         }
     }
 
     /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
-    pub fn drawBody(self: *const Gpu, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const light.Shine, flash: f32, fade_bounds: [2]f32, enabled: bool) void {
+    pub fn drawBody(self: *const Gpu, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const model.Shine, flash: f32, fade_bounds: [2]f32, enabled: bool) void {
         const size = raster.sizeOf(tex);
         const w, const h = size;
         const src = raster.rect(0, 0, if (left) -tex.width else tex.width, tex.height);
@@ -210,10 +211,10 @@ pub const Gpu = struct {
             raster.blit(tex, src, dest, s.drawn(rl.Color.white, flash));
             return;
         }
-        var pos: [light.BODY_LIGHTS][3]f32 = undefined;
-        var col: [light.BODY_LIGHTS][3]f32 = undefined;
+        var pos: [model.BODY_LIGHTS][3]f32 = undefined;
+        var col: [model.BODY_LIGHTS][3]f32 = undefined;
         for (s.lamp[0..s.n], 0..) |l, i| {
-            pos[i] = .{ (l.drawn[0] - centre[0]) * w, (l.drawn[1] - centre[1]) * h, light.BODY_LIGHT_Z };
+            pos[i] = .{ (l.drawn[0] - centre[0]) * w, (l.drawn[1] - centre[1]) * h, model.BODY_LIGHT_Z };
             col[i] = l.colour;
         }
         const flip: f32 = if (left) -1 else 1;
@@ -247,7 +248,7 @@ pub const Gpu = struct {
         return true;
     }
 
-    pub fn drawGlows(self: *const Gpu, flames_: []const light.Flame, ox: f32, oy: f32, cell: f32) void {
+    pub fn drawGlows(self: *const Gpu, flames_: []const model.Flame, ox: f32, oy: f32, cell: f32) void {
         const g = self.glow orelse return;
         rl.beginBlendMode(.additive);
         defer rl.endBlendMode();
@@ -255,12 +256,12 @@ pub const Gpu = struct {
             if (!f.live()) continue;
             const x = ox + f.at[0] * cell;
             const y = oy + f.at[1] * cell;
-            glowAt(g, x, y, cell * light.GLOW_HALO, cell * light.GLOW_HALO, light.colourOf(f.tint(), light.GLOW_HALO_A * f.glow * f.lit));
-            if (f.kind == .wall) glowAt(g, x, y, cell * light.GLOW_CORE, cell * light.GLOW_CORE, light.colourOf(f.tint(), light.GLOW_CORE_A * f.glow * f.lit));
+            glowAt(g, x, y, cell * model.GLOW_HALO, cell * model.GLOW_HALO, model.colourOf(f.tint(), model.GLOW_HALO_A * f.glow * f.lit));
+            if (f.kind == .wall) glowAt(g, x, y, cell * model.GLOW_CORE, cell * model.GLOW_CORE, model.colourOf(f.tint(), model.GLOW_CORE_A * f.glow * f.lit));
         }
     }
 
-    layers: std.EnumArray(light.Layer, ?rl.Texture2D) = .initFill(null),
+    layers: std.EnumArray(model.Layer, ?rl.Texture2D) = .initFill(null),
     glow: ?rl.Texture2D = null,
     streak: ?rl.Texture2D = null,
     body: ?BodyShader = null,
@@ -276,7 +277,7 @@ pub const Gpu = struct {
 
     pub fn load() Gpu {
         var g = Gpu{};
-        for (std.enums.values(light.Layer)) |k| g.layers.set(k, raster.canvas(light.MAP_W, light.MAP_H, light.UNSEEN.get(k), .bilinear));
+        for (std.enums.values(model.Layer)) |k| g.layers.set(k, raster.canvas(model.MAP_W, model.MAP_H, model.UNSEEN.get(k), .bilinear));
         g.glow = raster.radial(GLOW_PX, glowAlpha);
         g.streak = raster.field(STREAK_PX[0], STREAK_PX[1], shadow.streakAlpha);
         g.body = shaders.program(BodyShader, BODY_FS);
@@ -379,10 +380,10 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
     while (y < h) : (y += 1) {
         var x: i32 = 0;
         while (x < w) : (x += 1) {
-            const gx = light.texel(&height, w, h, x + 1, y) - light.texel(&height, w, h, x - 1, y);
-            const gy = light.texel(&height, w, h, x, y + 1) - light.texel(&height, w, h, x, y - 1);
+            const gx = model.texel(&height, w, h, x + 1, y) - model.texel(&height, w, h, x - 1, y);
+            const gy = model.texel(&height, w, h, x, y + 1) - model.texel(&height, w, h, x, y - 1);
             const n = Rgb{ -gx * BEVEL_DEPTH, -gy * BEVEL_DEPTH, 1 };
-            px[@intCast(y * w + x)] = light.colourOf(sky.unit(n) * splat(0.5) + splat(0.5), 1);
+            px[@intCast(y * w + x)] = model.colourOf(sky.unit(n) * splat(0.5) + splat(0.5), 1);
         }
     }
     return raster.clamped(raster.rgba(&px, w, h), .point);

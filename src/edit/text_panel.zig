@@ -14,7 +14,8 @@ const PAD = widgets.PAD;
 const TEXT = widgets.TEXT;
 const DETAIL = widgets.DETAIL;
 const ROW = TEXT + 2 * DETAIL + 20;
-const LINE = TEXT + 8;
+pub const FIELD_LINE: i32 = TEXT + 8;
+const LINE = FIELD_LINE;
 const NAV_ROW = DETAIL + 20;
 const Focus = enum { search, passage };
 const Leave = enum { close, quit };
@@ -279,15 +280,15 @@ pub const State = struct {
         const q = s.search.text();
         if (q.len == 0) return true;
         for ([_][]const u8{ e.text, e.path, e.category, e.owner, e.role, e.context }) |value| {
-            if (std.ascii.indexOfIgnoreCase(value, q) != null) return true;
+            if (q.len <= value.len and std.ascii.indexOfIgnoreCasePosLinear(value, 0, q) != null) return true;
         }
         return false;
     }
 
-    fn matches(s: *const State, e: catalog.Entry) bool {
+    fn inScope(s: *const State, e: catalog.Entry) bool {
         if (s.category) |category| if (!std.mem.eql(u8, category, e.category)) return false;
         if (s.owner) |owner| if (!std.mem.eql(u8, owner, e.owner)) return false;
-        return s.queryMatches(e);
+        return true;
     }
 
     fn reindex(s: *State, alloc: std.mem.Allocator) !void {
@@ -340,7 +341,7 @@ pub const State = struct {
                 const e = c.entries()[index];
                 if (!s.queryMatches(e)) continue;
                 group.matches += 1;
-                if (s.matches(e)) s.results.appendAssumeCapacity(index);
+                if (s.inScope(e)) s.results.appendAssumeCapacity(index);
             }
         }
         s.top = @min(s.top, s.results.items.len -| s.rows);
@@ -464,16 +465,14 @@ fn save(ed: *editor.Editor) void {
     const s = &ed.words;
     const c = s.data orelse return;
     const i = s.selected orelse return;
-    const requested_author = s.author;
-    const result = c.save(i, s.draft.text(), requested_author) catch |err| {
+    const result = c.save(i, s.draft.text(), s.author) catch |err| {
         s.say("Could not save: {s}. Your draft is still here.", .{@errorName(err)});
         return;
     };
     s.restore();
     s.view_dirty = true;
-    if (result == .tags_not_saved) s.author = requested_author;
     if (result == .saved) s.say("Saved. Rebuild to apply wording changes.", .{}) else s.say("Source saved; author tags could not be saved.", .{});
-    if (result == .saved and s.leave != null) finishClose(ed);
+    if (s.leave != null) finishClose(ed);
 }
 
 pub fn keys(ed: *editor.Editor) void {
@@ -503,7 +502,7 @@ pub fn keys(ed: *editor.Editor) void {
             if (!s.draft.feed(d, true)) s.say("Text must be ASCII and at most {d} characters.", .{catalog.MAX_TEXT});
             if (!was_dirty and std.hash.Wyhash.hash(0, s.draft.text()) != old) s.author = .you;
         } else {
-            var nav = input.Desk{ .text_all = d.text_all, .text_left = d.text_left, .text_right = d.text_right, .text_home = d.text_home, .text_end = d.text_end, .shift = d.shift, .nav = d.nav, .copy = d.copy };
+            var nav = d.navigationOnly();
             _ = s.draft.feed(&nav, true);
         }
     }
@@ -511,13 +510,13 @@ pub fn keys(ed: *editor.Editor) void {
     s.refresh();
     const n = s.results.items.len;
     if (d.wheel != 0) {
-        const by: i32 = if (d.wheel > 0) -3 else 3;
+        const by = 3 * d.notch();
         if (raster.holds(s.passage_box, d.mouse)) {
-            s.draft.scroll = mathx.nudge(s.draft.scroll, by, (s.draft.lines -| s.draft.rows) + 1);
+            s.draft.scroll = widgets.scrollTop(s.draft.scroll, by, s.draft.lines, s.draft.rows);
             s.draft.reveal = false;
         } else if (raster.holds(s.nav_box, d.mouse)) {
-            s.nav_top = mathx.nudge(s.nav_top, by, (s.nav_count -| s.nav_rows) + 1);
-        } else if (raster.holds(s.list_box, d.mouse)) s.top = mathx.nudge(s.top, by, (n -| s.rows) + 1);
+            s.nav_top = widgets.scrollTop(s.nav_top, by, s.nav_count, s.nav_rows);
+        } else if (raster.holds(s.list_box, d.mouse)) s.top = widgets.scrollTop(s.top, by, n, s.rows);
     }
     if (d.nav != 0 and s.focus == .search and n > 0) {
         var at: usize = 0;
@@ -532,8 +531,8 @@ pub fn keys(ed: *editor.Editor) void {
     }
 }
 
-fn button(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: [:0]const u8, on: bool, live: bool) bool {
-    return widgets.buttonOn(ed.controls(), &g.face, raster.rect(x, y, w, widgets.ROW_H), label, on, live, true, null);
+fn button(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool) bool {
+    return widgets.buttonOn(ed.controls(), &g.face, r, label, on, live, true, null);
 }
 
 fn displayBytes(s: []u8) void {
@@ -571,7 +570,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, 
     f.reveal = false;
     f.scroll = @min(f.scroll, lines -| rows);
     const first = f.scroll;
-    rl.beginScissorMode(@intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height));
+    widgets.scissorIn(ed.clip, r);
     defer rl.endScissorMode();
     for (first..@min(lines, first + rows)) |line| {
         const start = breaks[line];
@@ -615,10 +614,6 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: *Field, r: rl.Rectangle, 
     return hit;
 }
 
-fn scrollMark(r: rl.Rectangle, top: usize, rows: usize, count: usize) void {
-    widgets.scrollbar(.{ .x = r.x + r.width - 3, .y = r.y, .width = 3, .height = r.height }, top, rows, count);
-}
-
 fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8, count: usize, on: bool) bool {
     const s = &ed.words;
     if (ordinal < s.nav_top or ordinal >= s.nav_top + s.nav_rows) return false;
@@ -640,10 +635,10 @@ fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bot
     const s = &ed.words;
     widgets.drawFit(&g.face, if (s.category) |category| category else "Features", TEXT, w, false, x, y, look.UI_GOLD);
     var yy = y + LINE;
-    if (button(ed, g, x, yy, w - widgets.GAP, if (s.category != null) "< All features" else "All text", s.category == null, s.leave == null)) s.scope(null, null);
+    if (button(ed, g, widgets.row(x, yy, w - widgets.GAP), if (s.category != null) "< All features" else "All text", s.category == null, s.leave == null)) s.scope(null, null);
     yy += widgets.ROW_STEP;
     if (s.category != null) {
-        if (button(ed, g, x, yy, w - widgets.GAP, "All in this feature", s.owner == null, s.leave == null)) s.scope(s.category, null);
+        if (button(ed, g, widgets.row(x, yy, w - widgets.GAP), "All in this feature", s.owner == null, s.leave == null)) s.scope(s.category, null);
         yy += widgets.ROW_STEP;
     }
     s.nav_box = raster.rect(x, yy, w, @max(0, bottom - yy));
@@ -680,39 +675,43 @@ fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bot
             ordinal += 1;
         }
     }
-    scrollMark(s.nav_box, s.nav_top, s.nav_rows, s.nav_count);
+    widgets.scrollbarIn(s.nav_box, s.nav_top, s.nav_rows, s.nav_count);
 }
 
 pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.words;
     s.refresh();
-    const height = @min(1080, g.screen.y - 2 * PAD);
-    const f = widgets.modalFrame(&g.face, g.screen, 1800, height, "Text editor", false);
+    const page = widgets.pageFrame(&g.face, g.screen, "Text editor");
+    const f = page.frame;
     const x = f.x + PAD;
     const w = f.w - 2 * PAD;
     var y = f.y;
     var buf: [1024]u8 = undefined;
     widgets.drawFit(&g.face, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
     y += DETAIL + 6;
-    if (drawField(ed, g, &s.search, raster.rect(x, y, w - 294, LINE + 12), s.focus == .search, true)) s.focus = .search;
-    if (button(ed, g, x + w - 282, y + 4, 86, "Clear", false, s.search.n > 0)) {
+    var tools = widgets.LayEnd{ .right = x + w, .y = y + 4, .gap = 8 };
+    const close_r = tools.take(90);
+    const reload_r = tools.take(90);
+    const clear_r = tools.take(86);
+    if (drawField(ed, g, &s.search, raster.rect(x, y, @as(i32, @intFromFloat(clear_r.x)) - PAD - x, LINE + 12), s.focus == .search, true)) s.focus = .search;
+    if (button(ed, g, clear_r, "Clear", false, s.search.n > 0)) {
         s.search.set("");
         s.view_dirty = true;
         s.top = 0;
         s.nav_top = 0;
         s.focus = .search;
     }
-    if (button(ed, g, x + w - 188, y + 4, 90, "Reload", false, !s.dirty())) reload(ed);
-    if (button(ed, g, x + w - 90, y + 4, 90, "Close", false, true)) requestClose(ed, false);
+    if (button(ed, g, reload_r, "Reload", false, !s.dirty())) reload(ed);
+    if (button(ed, g, close_r, "Close", false, true)) requestClose(ed, false);
     y += LINE + 28;
     const nav_w = std.math.clamp(@divTrunc(w, 5), 180, 250);
     const list_x = x + nav_w + PAD;
     const list_w = std.math.clamp(@divTrunc(w, 4), 240, 360);
     const right_x = list_x + list_w + PAD;
     const right_w = x + w - right_x;
-    const bottom = f.top - PAD + height - PAD - DETAIL - 8;
-    rl.drawRectangle(list_x - @divTrunc(PAD, 2), y, 1, bottom - y, look.EDGE);
-    rl.drawRectangle(right_x - @divTrunc(PAD, 2), y, 1, bottom - y, look.EDGE);
+    const bottom = page.bottom - DETAIL - 8;
+    widgets.divider(list_x, y, bottom);
+    widgets.divider(right_x, y, bottom);
     drawNavigation(ed, g, x, y, nav_w, bottom);
     widgets.drawFit(&g.face, "Passages", TEXT, list_w, false, list_x, y, look.UI_GOLD);
     const list_y = y + LINE;
@@ -739,7 +738,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
             if (h.hit and s.pick(i)) s.focus = .passage;
         }
     }
-    scrollMark(s.list_box, s.top, s.rows, s.results.items.len);
+    widgets.scrollbarIn(s.list_box, s.top, s.rows, s.results.items.len);
     const count_label = std.fmt.bufPrintZ(&buf, "{d} passages", .{s.results.items.len}) catch "";
     widgets.drawFit(&g.face, count_label, DETAIL, list_w, false, list_x, bottom - DETAIL, look.DIM);
     if (s.results.items.len == 0) {
@@ -774,17 +773,18 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
                 .ai => "AI",
                 .mixed => "Mixed",
             };
-            if (button(ed, g, right_x + @as(i32, @intCast(at)) * tag_w, yy, tag_w - 4, label, s.author == tag, e.editable and s.leave == null)) s.author = tag;
+            if (button(ed, g, widgets.row(right_x + @as(i32, @intCast(at)) * tag_w, yy, tag_w - 4), label, s.author == tag, e.editable and s.leave == null)) s.author = tag;
         }
         yy += widgets.ROW_STEP;
         const save_w = @min(160, @divTrunc(right_w, 3));
-        if (button(ed, g, right_x, yy, save_w, "Save passage", false, e.editable and s.dirty())) save(ed);
-        if (button(ed, g, right_x + save_w + 6, yy, 100, "Discard", false, s.dirty())) {
+        var foot = widgets.Lay{ .x = right_x, .y = yy };
+        if (button(ed, g, foot.take(save_w), "Save passage", false, e.editable and s.dirty())) save(ed);
+        if (button(ed, g, foot.take(100), "Discard", false, s.dirty())) {
             s.restore();
             s.note_n = 0;
             if (s.leave != null) finishClose(ed);
         }
-        if (s.leave != null and button(ed, g, right_x + save_w + 112, yy, right_w - save_w - 112, "Keep editing", false, true)) s.leave = null;
+        if (s.leave != null and button(ed, g, foot.take(right_w - save_w - 112), "Keep editing", false, true)) s.leave = null;
         yy += widgets.ROW_STEP;
         const status = if (s.leave != null) "Save or discard before leaving." else if (!e.editable) e.reason else if (s.dirty()) "Unsaved changes" else if (e.alias != null) "Display name; code identity stays fixed." else "Keep format placeholders and control markers intact.";
         widgets.drawFit(&g.face, status, DETAIL, right_w, false, right_x, yy, if (s.dirty()) look.UI_FOCUS else look.DIM);

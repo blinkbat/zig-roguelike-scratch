@@ -38,6 +38,13 @@ pub fn seal(w: anytype, body: []const u8) !void {
     try w.writeInt(u64, sum(body), .little);
 }
 
+/// `seal` into room `out` already holds, so it may run off the frame; its body starts `head_len` bytes in.
+pub fn sealReserved(out: *std.ArrayList(u8), head_len: usize) void {
+    var bytes: [SUM]u8 = undefined;
+    std.mem.writeInt(u64, &bytes, sum(out.items[head_len..]), .little);
+    out.appendSliceAssumeCapacity(&bytes);
+}
+
 pub const OpenError = error{ Foreign, OtherBuild, Short, Damaged };
 
 pub fn open(bytes: []const u8, magic: []const u8, print: u64) OpenError![]const u8 {

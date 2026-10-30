@@ -44,6 +44,7 @@ pub const mouseControls = @import("game/mouse.zig");
 const window = @import("core/window.zig");
 const binds = @import("game/binds.zig");
 const skills = @import("game/skills.zig");
+const tactics = @import("game/tactics.zig");
 pub const presentation = @import("game/presentation.zig");
 pub const simulation = @import("game/sim.zig");
 pub const epitaph = @import("game/epitaph.zig");
@@ -367,8 +368,9 @@ const TravelCarry = struct {
     }
 };
 
-/// Finish pending facing changes and door travel before leaving a run.
+/// Finish a loot visit's turn, pending facing changes and door travel before leaving a run.
 pub fn leave(g: *Game) void {
+    character.endLoot(g);
     g.pic.turnNow();
     const l = g.sim.travel orelse return;
     goThrough(g, l);
@@ -510,7 +512,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
     const d = astray(g, chosen);
     const to = h.at.add(d.delta());
     const move = heroMove(g, d);
-    if (spends(move)) @import("game/tactics.zig").beforeAction(&g.sim);
+    if (spends(move)) tactics.beforeAction(&g.sim);
     switch (move) {
         .kick => {
             const w = g.sim.lv.who(to);
@@ -536,10 +538,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
             talking.speak(g, g.sim.lv.folkAt(to).?);
             return;
         },
-        .loot, .step => if (h.pin.turns > 0) {
-            g.sim.log.say("{s} is pinned and struggles.", .{g.sim.name.text()});
-            g.mouse.stop();
-        } else {
+        .loot, .step => if (h.pin.turns > 0) struggle(g) else {
             heroTo(g, to);
             if (move == .loot) character.openLoot(g, to);
         },
@@ -547,6 +546,12 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
     }
     g.pic.turnToward(g.sim.hero, d.delta().x);
     combat.endTurn(g);
+}
+
+/// A pinned hero's move, spent in place.
+pub fn struggle(g: *Game) void {
+    g.sim.log.say("{s} is pinned and struggles.", .{g.sim.name.text()});
+    g.mouse.stop();
 }
 
 /// `late` seconds into the bump; the hit lands at its apex.
@@ -672,12 +677,11 @@ pub fn update(g: *Game, dt: f32) void {
     if (!g.st.focused) holdWalk(g);
     mouseControls.prepare(g);
     if (playShown(g) or g.mode == .aim or g.mode == .inspect) {
-        if (g.st.pointer) |p| {
-            if (raster.holds(journal.box(g.screen), p) and g.st.scroll != 0) g.sim.log.move(g.st.scroll);
-        }
+        if (overLog(g) and g.st.scroll != 0) g.sim.log.move(g.st.scroll);
     }
     const death_drawn = deathShown(g);
     g.pic.advance(&g.sim, dt);
+    if (g.pic.uprooted()) |p| g.light.uproot(&g.sim.lv, p);
     if (g.pic.quiet()) {
         g.sim.log.release();
         drawnTurn(g);
@@ -699,11 +703,11 @@ pub fn update(g: *Game, dt: f32) void {
         character.openCharacter(g);
     } else if (g.mode == .play and g.st.hit(PAUSE)) {
         character.openPause(g);
-    } else if (stunnedTurn(g)) {
+    } else if (g.mode == .play and talking.due(g)) {} else if (stunnedTurn(g)) {
         if (g.mode == .play) queuePress(g);
     } else switch (g.mode) {
         .play => {
-            if (talking.due(g)) {} else if (g.sim.travel) |l| {
+            if (g.sim.travel) |l| {
                 queuePress(g);
                 if (g.pic.quiet()) goThrough(g, l);
             } else if (interacted(g)) {} else if (g.st.hit(skillbar.INSPECT)) {
@@ -748,6 +752,12 @@ pub fn update(g: *Game, dt: f32) void {
     g.light.step(&g.sim.lv, dt);
     g.light.carrier = g.pic.carrierAt(&g.sim);
     if (g.debug.visuals.weather) g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, CELL_F);
+}
+
+/// The wheel scrolls the event log while the pointer rests on it, and nothing else.
+pub fn overLog(g: *const Game) bool {
+    const p = g.st.pointer orelse return false;
+    return raster.holds(journal.box(g.screen), p);
 }
 
 fn skyNow(g: *const Game) ?sky.Sky {
@@ -801,8 +811,10 @@ fn dismissed(st: *const input.State) bool {
 
 /// Read the slot even after death so the lethal hit still reddens the view.
 fn stepVignette(g: *Game, dt: f32) void {
-    const max = g.sim.lifeMax();
-    const i = g.sim.heroSlot() orelse return g.vignette.step(dt, 0, max, max);
+    const i = g.sim.heroSlot() orelse {
+        const max = g.sim.lifeMax();
+        return g.vignette.step(dt, 0, max, max);
+    };
     g.vignette.step(dt, g.pic.fx.flashOf(i), g.pic.pictured[i].hp, g.pic.pictured[i].max);
 }
 
@@ -888,6 +900,7 @@ pub fn mapAssets(g: *Game) look.Assets {
     need.barrel = need.barrel or g.pic.fx.barrels_due > 0;
     for (g.sim.pool.slice(), 0..) |a, i| {
         if (a.alive) need.body(a.kind);
+        if (a.alive and a.disguised) need.beneath(a.under, a.at);
         if (g.pic.standing(&g.sim, i)) need.body(g.pic.pictured[i].kind);
     }
     return need;

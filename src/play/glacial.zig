@@ -40,7 +40,7 @@ pub const Chill = struct {
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub fn chance(resist: i16) u32 {
-    return @intCast(@min(mathx.PERCENT, damage.resisted(@as(i32, CHANCE), resist)));
+    return damage.resistedChance(CHANCE, resist);
 }
 
 pub fn procs(rng: *mathx.Rng, resist: i16) bool {
@@ -79,24 +79,27 @@ pub fn spread(lv: *const grid.Level, at: P, range: i32, ctx: anytype, comptime k
     return out;
 }
 
+/// Every cell `spread` reaches within `range` of `at`.
+pub fn patch(lv: *const grid.Level, at: P, range: i32) Burst {
+    return spread(lv, at, range, {}, every);
+}
+
+pub fn every(_: void, _: P) bool {
+    return true;
+}
+
 const Ahead = struct {
     impact: P,
-    dx: i32,
-    dy: i32,
+    heading: P,
 
     fn holds(a: Ahead, p: P) bool {
-        if (p.eq(a.impact)) return true;
-        const x = p.x - a.impact.x;
-        const y = p.y - a.impact.y;
-        const along = a.dx * x + a.dy * y;
-        const across = a.dx * y - a.dy * x;
-        return along > 0 and @abs(across) <= along;
+        return p.eq(a.impact) or mathx.ahead(a.impact, a.heading, p);
     }
 };
 
 pub fn cone(lv: *const grid.Level, from: P, impact: P) Burst {
     if (from.eq(impact)) return .{};
-    return spread(lv, impact, RANGE, Ahead{ .impact = impact, .dx = impact.x - from.x, .dy = impact.y - from.y }, Ahead.holds);
+    return spread(lv, impact, RANGE, Ahead{ .impact = impact, .heading = impact.sub(from) }, Ahead.holds);
 }
 
 /// What its arrow bursts into where it strikes.

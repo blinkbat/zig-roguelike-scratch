@@ -90,6 +90,8 @@ pub const Nearby = union(enum) {
     }
 };
 pub const Vital = struct { now: i32 = 0, max: i32 = 0 };
+/// Armour and dodge as combat resolves them where the hero stands, terrain and sunder included.
+pub const Defence = struct { dodge: u32, armour: i32 };
 pub const View = struct {
     class: hero.Class,
     name: []const u8,
@@ -107,13 +109,17 @@ pub const View = struct {
     status_resist: std.EnumArray(resilience.Kind, resilience.Standing) = .initFill(.{}),
     steady: u8 = 0,
     environment: terrain.Modifiers = .{},
-    /// Armour a sunder takes off.
-    sundered: i32 = 0,
+    /// Null with no hero standing: the sheet's own, without terrain or sunder.
+    defence: ?Defence = null,
+
     pub fn stats(v: View) attr.Attrs {
         var out = v.inventory.gear.stats(v.base);
-        out.dodge_bonus += v.environment.dodge;
-        out.armour -= v.sundered;
+        if (v.defence) |d| out.armour = d.armour;
         return out;
+    }
+
+    pub fn dodge(v: View) u32 {
+        return if (v.defence) |d| d.dodge else v.stats().dodge();
     }
 };
 pub const Command = union(enum) {

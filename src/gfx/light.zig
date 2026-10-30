@@ -37,9 +37,7 @@ pub const VOID_REACH = model.VOID_REACH;
 const CORNERS_W = model.CORNERS_W;
 const CORNERS_H = model.CORNERS_H;
 pub const FLICKER = model.FLICKER;
-pub const KNEE = model.KNEE;
 pub const BODY_LIGHTS = model.BODY_LIGHTS;
-pub const FLASH_RGB = model.FLASH_RGB;
 pub const SHADE_RGB = model.SHADE_RGB;
 pub const SHADOW_MAX = model.SHADOW_MAX;
 pub const SHADOW_TAPS = model.SHADOW_TAPS;
@@ -73,7 +71,6 @@ pub const smoothSpecular = model.smoothSpecular;
 const remembered = model.remembered;
 pub const carryFade = model.carryFade;
 const wrapped = model.wrapped;
-pub const texel = model.texel;
 pub const mask = model.mask;
 pub const flicker = model.flicker;
 const faceCos = model.faceCos;
@@ -177,7 +174,7 @@ pub const Light = struct {
         self.torch_n += 1;
     }
 
-    /// A glowing plant gone from `p`: its light and its shadow with it.
+    /// A glowing plant gone from `p`: its light and its shadow with it, and the next plant unlit for want of lights now lit.
     pub fn uproot(self: *Light, lv: *const grid.Level, p: P) void {
         for (self.torch[0..self.torch_n], 0..) |*t, i| {
             if (t.mount != .plant or !t.mount.plant.eq(p)) continue;
@@ -186,6 +183,19 @@ pub const Light = struct {
         }
         self.scratch.tile[grid.Level.idx(p)] = lv.at(p);
         self.countCasters(&self.scratch);
+        if (self.torch_n < lv.torches().len + PLANT_LIGHTS) for (lv.tile, 0..) |t, i| {
+            const q = grid.Level.of(i);
+            if (!t.glows() or self.hangs(q)) continue;
+            self.hang(lv, .{ .plant = q });
+            break;
+        };
+    }
+
+    fn hangs(self: *const Light, p: P) bool {
+        for (self.torch[0..self.torch_n]) |*t| {
+            if (t.mount == .plant and t.mount.plant.eq(p)) return true;
+        }
+        return false;
     }
 
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {
@@ -731,4 +741,3 @@ pub const Light = struct {
 };
 
 pub const glowAt = light_gpu.glowAt;
-pub const flashed = model.flashed;

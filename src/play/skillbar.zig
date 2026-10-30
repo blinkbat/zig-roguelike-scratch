@@ -113,6 +113,15 @@ pub const Act = enum {
         }
     }
 
+    /// What `rank` of it gives, for a skill whose module writes that; nothing for the rest.
+    pub fn writeRank(a: Act, rank: u8, w: anytype) void {
+        switch (a) {
+            inline else => |t| if (comptime module(t)) |m| {
+                if (comptime @hasDecl(m, "writeRank")) m.writeRank(rank, w);
+            },
+        }
+    }
+
     fn module(comptime a: Act) ?type {
         return SKILLS.get(a).module;
     }
@@ -124,6 +133,8 @@ pub const Act = enum {
     pub const Reticle = contracts.Reticle;
 
     pub fn contract(a: Act) *const contracts.Contract {
+        // Callers ask this of every act at comptime in one function; each ask is a chain of calls.
+        @setEvalBranchQuota(10_000);
         return CONTRACTS.getPtrConst(a);
     }
 
@@ -361,19 +372,37 @@ const CONTRACTS = blk: {
     break :blk table;
 };
 
+/// What every class carries after its own skills: the flasks and the supplies, in `Act` order.
+const CARRIED = blk: {
+    @setEvalBranchQuota(100_000);
+    var acts: []const Act = &.{};
+    for (ACTS) |a| {
+        if (a.flaskOf() != null or a.supplyOf() != null) acts = acts ++ &[_]Act{a};
+    }
+    break :blk acts[0..acts.len].*;
+};
+
+/// A class's basic attack, then waiting and the set modifier, its own skills and what every class carries.
+fn kitOf(comptime basic: Act, comptime own: []const Act) [3 + own.len + CARRIED.len]Act {
+    return [_]Act{ basic, .wait, .secondary } ++ own[0..own.len].* ++ CARRIED;
+}
+
+const ARCHER_KIT = kitOf(.shoot, &.{ .juke, .steady_aim, .burning_arrow, .glacial_shot, .barbed_arrow, .caltrops, .pinning_shot, .overwatch, .piercing_shot });
+const WIZARD_KIT = kitOf(.spark, &.{ .blink, .fireball, .frost_nova, .mana_shield, .chain_lightning, .combustion, .gravity_well, .arcane_barrier, .shatter, .fire_wall });
+const KNIGHT_KIT = kitOf(.cleave, &.{ .charge, .guard, .shield_bash, .whirlwind, .unyielding, .rend, .war_cry });
+
 /// The skills a class may bind, in the bind picker's order.
 pub fn kit(c: hero.Class) []const Act {
     return switch (c) {
-        .archer => &.{ .shoot, .wait, .secondary, .juke, .steady_aim, .burning_arrow, .glacial_shot, .barbed_arrow, .caltrops, .pinning_shot, .overwatch, .piercing_shot, .life_flask, .mana_flask, .bandage, .smelling_salts, .frost_vial },
-        .wizard => &.{ .spark, .wait, .secondary, .blink, .fireball, .frost_nova, .mana_shield, .chain_lightning, .combustion, .gravity_well, .arcane_barrier, .shatter, .fire_wall, .life_flask, .mana_flask, .bandage, .smelling_salts, .frost_vial },
-        .knight => &.{ .cleave, .wait, .secondary, .charge, .guard, .shield_bash, .whirlwind, .unyielding, .rend, .war_cry, .life_flask, .mana_flask, .bandage, .smelling_salts, .frost_vial },
+        .archer => &ARCHER_KIT,
+        .wizard => &WIZARD_KIT,
+        .knight => &KNIGHT_KIT,
     };
 }
 
 comptime {
     @setEvalBranchQuota(100_000);
     for (ACTS) |a| {
-        if ((a.reticle() == .bow or Act.has(a, "BASE")) != (a.attack() != null)) @compileError(@tagName(a) ++ ": a damage skill has no attack type to scale by");
         var n: usize = 0;
         for (hero.CLASSES) |c| {
             if (std.mem.indexOfScalar(Act, kit(c), a) != null) n += 1;

@@ -11,6 +11,7 @@ const damage = @import("../play/damage.zig");
 const attrs = @import("../play/attrs.zig");
 const resilience = @import("../play/resilience.zig");
 const actor = @import("../play/actor.zig");
+const grid = @import("../map/grid.zig");
 const terrain = @import("../play/terrain.zig");
 const progress = @import("../play/progress.zig");
 const look = @import("../gfx/look.zig");
@@ -159,6 +160,7 @@ pub fn slotBox(layout: hud.Layout, i: usize) rl.Rectangle {
 
 fn drawSkills(g: *game.Game, layout: hud.Layout) void {
     const mana = g.pic.manaShown(&g.sim);
+    const pinned = if (g.pic.heroShown(&g.sim)) |h| h.status.get(.pinned) > 0 else false;
     for (skillbar.SLOTS, 0..) |b, i| {
         const box = slotBox(layout, i);
         const held = (g.st.held(b) and game.playShown(g)) or (g.mode == .aim and g.mode.aim.by == b) or (b == g.bar.modifier and g.mouse.secondary);
@@ -167,7 +169,7 @@ fn drawSkills(g: *game.Game, layout: hud.Layout) void {
             .act = if (s) |v| v.act else null,
             .key = b,
             .edge = if (held) look.SLOT_HELD else null,
-            .faded = if (s) |v| skills.blocked(g, v.act, &g.pic.flasks_shown, mana) != null else false,
+            .faded = if (s) |v| skills.blocked(g, v.act, &g.pic.flasks_shown, mana, pinned) != null else false,
         });
         const v = s orelse continue;
         if (v.cooling > 0 or v.drinks != null or v.carried != null) hud.counter(&g.face, box, v.drinks orelse v.carried orelse v.cooling);
@@ -356,7 +358,8 @@ pub fn inspectStep(g: *game.Game) void {
     if (!std.meta.eql(g.inspecting, here.spot)) g.inspect_scroll = 0;
     g.inspecting = here.spot;
     if (here.spot == .actor) {
-        const scroll = -g.st.scroll + @as(i32, @intFromBool(g.st.hit(menu.PAGE_NEXT))) - @as(i32, @intFromBool(g.st.hit(menu.PAGE_PREV)));
+        const wheel = if (game.overLog(g)) 0 else g.st.scroll;
+        const scroll = -wheel + @as(i32, @intFromBool(g.st.hit(menu.PAGE_NEXT))) - @as(i32, @intFromBool(g.st.hit(menu.PAGE_PREV)));
         g.inspect_scroll = @intCast(std.math.clamp(@as(i32, @intCast(g.inspect_scroll)) + scroll, 0, @as(i32, hud.TIP_LINES_MAX - 1)));
     }
     if (g.st.pointing()) {
@@ -445,7 +448,7 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             const w = body.writer();
             writeDescription(g, act, w);
             if (act.reticle() != null) w.print("\nRange: {d} cells", .{act.reach()}) catch {};
-            if (g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, act, if (g.sim.heroBody()) |h| h.tactics.steady else 0)) |h| {
+            if (g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, act, g.sim.heroSteady())) |h| {
                 if (h.physical.hi > 0) w.print("\n" ++ damage.PHYSICAL_FMT, .{ h.physical.lo, h.physical.hi }) catch {};
                 if (h.element) |e| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi }) catch {};
                 w.print("\n" ++ attrs.SCALES_FMT, .{menu.named(h.style.attr())}) catch {};
@@ -479,8 +482,24 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
     };
 }
 
+/// Each kind's name with every word capitalised, as its card heads it.
+const TITLES = blk: {
+    var t = std.EnumArray(actor.Kind, [:0]const u8).initUndefined();
+    for (std.enums.values(actor.Kind)) |k| {
+        var name = actor.row(k).name[0..actor.row(k).name.len :0].*;
+        var first = true;
+        for (&name) |*c| {
+            if (first) c.* = std.ascii.toUpper(c.*);
+            first = c.* == ' ';
+        }
+        const out = name;
+        t.set(k, &out);
+    }
+    break :blk t;
+};
+
 fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip {
-    if (id == 0 or actor.Pool.slot(id) >= g.sim.pool.n) return null;
+    if (id == grid.NO_ONE or actor.Pool.slot(id) >= g.sim.pool.n) return null;
     const i = actor.Pool.slot(id);
     const at = g.pic.drawnCell(&g.sim, i) orelse return null;
     const pictured = g.pic.pictured[i];
@@ -492,11 +511,5 @@ fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip 
     w.print("{d}/{d} HP\n" ++ hud.TIP_RULE ++ "\n{s}", .{ pictured.hp, pictured.max, menu.titleOf(tile) }) catch {};
     terrain.of(tile).write(w);
     if (g.sim.isHero(i)) return .{ .title = std.fmt.bufPrintZ(title_buf, "{s}", .{g.sim.name.text()}) catch row.name, .body = stream.getWritten() };
-    const title = std.fmt.bufPrintZ(title_buf, "{s}", .{row.name}) catch return .{ .title = row.name, .body = stream.getWritten() };
-    var first = true;
-    for (title) |*c| {
-        if (first) c.* = std.ascii.toUpper(c.*);
-        first = c.* == ' ';
-    }
-    return .{ .title = title, .body = stream.getWritten() };
+    return .{ .title = TITLES.get(pictured.kind), .body = stream.getWritten() };
 }

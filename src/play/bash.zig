@@ -17,6 +17,7 @@ pub const DESCRIPTION = std.fmt.comptimePrint("Strike an adjacent foe and knock 
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const procs = damage.chance(CHANCE);
+pub const chance = damage.flat(CHANCE);
 pub const afflict = clock.stuns;
 
 /// A body or barrel beside `from`.

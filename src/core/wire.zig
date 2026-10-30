@@ -1,6 +1,14 @@
 const std = @import("std");
 
 pub const Error = error{ Short, Damaged };
+const Flag = u8;
+const Bits = u64;
+const NameLen = u16;
+const FieldCount = u16;
+const PayloadLen = u32;
+const Count = u32;
+const FIELD_HEAD = @sizeOf(NameLen) + @sizeOf(PayloadLen);
+
 pub const Defaults = struct {
     pub fn countField(comptime _: type, comptime _: []const u8) ?[]const u8 {
         return null;
@@ -16,27 +24,27 @@ fn maxSizeOf(comptime Policy: type, comptime T: type) usize {
         if (Policy.Stored(T) != T) return maxSizeOf(Policy, Policy.Stored(T));
     }
     return switch (@typeInfo(T)) {
-        .int => 9,
-        .float => 8,
-        .bool => 1,
+        .int => @sizeOf(Flag) + @sizeOf(Bits),
+        .float => @sizeOf(Bits),
+        .bool => @sizeOf(Flag),
         .void => 0,
-        .optional => |o| 1 + maxSizeOf(Policy, o.child),
-        .array => |a| 4 + a.len * (if (a.child == u8) 1 else maxSizeOf(Policy, a.child)),
+        .optional => |o| @sizeOf(Flag) + maxSizeOf(Policy, o.child),
+        .array => |a| @sizeOf(Count) + a.len * (if (a.child == u8) 1 else maxSizeOf(Policy, a.child)),
         .@"enum" => |e| blk: {
             var longest: usize = 0;
             for (e.fields) |field| longest = @max(longest, field.name.len);
-            break :blk 2 + longest;
+            break :blk @sizeOf(NameLen) + longest;
         },
         .@"struct" => blk: {
-            var size: usize = 2;
+            var size: usize = @sizeOf(FieldCount);
             if (enumArray(T)) {
-                for (std.enums.values(T.Key)) |key| size += 6 + @tagName(key).len + maxSizeOf(Policy, T.Value);
-            } else for (std.meta.fields(T)) |field| size += 6 + field.name.len + maxSizeOf(Policy, field.type);
+                for (std.enums.values(T.Key)) |key| size += FIELD_HEAD + @tagName(key).len + maxSizeOf(Policy, T.Value);
+            } else for (std.meta.fields(T)) |field| size += FIELD_HEAD + field.name.len + maxSizeOf(Policy, field.type);
             break :blk size;
         },
         .@"union" => |u| blk: {
             var longest: usize = 0;
-            for (u.fields) |field| longest = @max(longest, 2 + field.name.len + maxSizeOf(Policy, field.type));
+            for (u.fields) |field| longest = @max(longest, @sizeOf(NameLen) + field.name.len + maxSizeOf(Policy, field.type));
             break :blk longest;
         },
         else => @compileError("unbounded wire value"),
@@ -64,10 +72,10 @@ pub fn Codec(comptime Policy: type) type {
                 .int => |info| {
                     if (info.bits > 64) @compileError("wire integer exceeds 64 bits");
                     try out.append(@intFromBool(info.signedness == .signed));
-                    const bits: u64 = if (info.signedness == .signed) @bitCast(@as(i64, value)) else @intCast(value);
-                    try integer(out, u64, bits);
+                    const bits: Bits = if (info.signedness == .signed) @bitCast(@as(i64, value)) else @intCast(value);
+                    try integer(out, Bits, bits);
                 },
-                .float => try integer(out, u64, @bitCast(@as(f64, value))),
+                .float => try integer(out, Bits, @bitCast(@as(f64, value))),
                 .bool => try out.append(@intFromBool(value)),
                 .void => {},
                 .@"enum" => try string(out, @tagName(value)),
@@ -84,11 +92,11 @@ pub fn Codec(comptime Policy: type) type {
                 },
                 .@"struct" => {
                     if (comptime enumArray(T)) {
-                        try integer(out, u16, @intCast(std.enums.values(T.Key).len));
+                        try integer(out, FieldCount, @intCast(std.enums.values(T.Key).len));
                         for (std.enums.values(T.Key)) |key| try field(out, @tagName(key), value.getPtrConst(key));
                     } else {
                         const fields = std.meta.fields(T);
-                        try integer(out, u16, @intCast(fields.len));
+                        try integer(out, FieldCount, @intCast(fields.len));
                         inline for (fields) |f| {
                             const size_at = try beginField(out, f.name);
                             if (comptime Policy.countField(T, f.name)) |count| {
@@ -110,7 +118,7 @@ pub fn Codec(comptime Policy: type) type {
 
         fn array(out: *std.ArrayList(u8), values: anytype, count: usize) !void {
             if (count > values.len) return error.Damaged;
-            try integer(out, u32, @intCast(count));
+            try integer(out, Count, @intCast(count));
             if (comptime std.meta.Elem(@TypeOf(values.*)) == u8) {
                 try out.appendSlice(values[0..count]);
             } else for (values[0..count]) |*value| try write(out, value);
@@ -135,14 +143,14 @@ pub fn Codec(comptime Policy: type) type {
             switch (@typeInfo(T)) {
                 .int => {
                     const signed = try cursor.boolean();
-                    const bits = try cursor.int(u64);
+                    const bits = try cursor.int(Bits);
                     destination.* = if (signed)
                         std.math.cast(T, @as(i64, @bitCast(bits))) orelse return error.Damaged
                     else
                         std.math.cast(T, bits) orelse return error.Damaged;
                 },
                 .float => {
-                    const number: f64 = @bitCast(try cursor.int(u64));
+                    const number: f64 = @bitCast(try cursor.int(Bits));
                     if (!std.math.isFinite(number) or @abs(number) > std.math.floatMax(T)) return error.Damaged;
                     destination.* = @floatCast(number);
                 },
@@ -174,7 +182,7 @@ pub fn Codec(comptime Policy: type) type {
         }
 
         fn readArray(cursor: *Cursor, destination: anytype) Error!usize {
-            const count = try cursor.int(u32);
+            const count = try cursor.int(Count);
             if (count > destination.len) return error.Damaged;
             if (comptime std.meta.Elem(std.meta.Child(@TypeOf(destination))) == u8) {
                 @memcpy(destination[0..count], try cursor.take(count));
@@ -258,19 +266,20 @@ pub fn integer(out: *std.ArrayList(u8), comptime T: type, value: T) !void {
 }
 
 fn string(out: *std.ArrayList(u8), value: []const u8) !void {
-    try integer(out, u16, std.math.cast(u16, value.len) orelse return error.Damaged);
+    try integer(out, NameLen, std.math.cast(NameLen, value.len) orelse return error.Damaged);
     try out.appendSlice(value);
 }
 
 fn beginField(out: *std.ArrayList(u8), name: []const u8) !usize {
     try string(out, name);
     const at = out.items.len;
-    try integer(out, u32, 0);
+    try integer(out, PayloadLen, 0);
     return at;
 }
 
 fn endField(out: *std.ArrayList(u8), at: usize) void {
-    std.mem.writeInt(u32, out.items[at..][0..4], @intCast(out.items.len - at - 4), .little);
+    const len = @sizeOf(PayloadLen);
+    std.mem.writeInt(PayloadLen, out.items[at..][0..len], @intCast(out.items.len - at - len), .little);
 }
 
 pub const Cursor = struct {
@@ -287,11 +296,11 @@ pub const Cursor = struct {
     }
 
     fn name(self: *Cursor) Error![]const u8 {
-        return self.take(try self.int(u16));
+        return self.take(try self.int(NameLen));
     }
 
     fn boolean(self: *Cursor) Error!bool {
-        return switch (try self.int(u8)) {
+        return switch (try self.int(Flag)) {
             0 => false,
             1 => true,
             else => error.Damaged,
@@ -301,18 +310,18 @@ pub const Cursor = struct {
 
 pub const Record = struct {
     cursor: *Cursor,
-    remaining: u16,
+    remaining: FieldCount,
     pub const Entry = struct { name: []const u8, bytes: []const u8 };
 
     pub fn init(cursor: *Cursor) Error!Record {
-        return .{ .cursor = cursor, .remaining = try cursor.int(u16) };
+        return .{ .cursor = cursor, .remaining = try cursor.int(FieldCount) };
     }
 
     pub fn next(self: *Record) Error!?Entry {
         if (self.remaining == 0) return null;
         self.remaining -= 1;
         const name = try self.cursor.name();
-        const size = try self.cursor.int(u32);
+        const size = try self.cursor.int(PayloadLen);
         return .{ .name = name, .bytes = try self.cursor.take(size) };
     }
 };

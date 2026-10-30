@@ -34,17 +34,17 @@ pub fn openAim(run: *game.Game, by: input.Button, act: skillbar.Act) void {
 
 fn targetAt(run: *game.Game, act: skillbar.Act, from: P, id: u16) ?P {
     const a = run.sim.pool.get(id) orelse return null;
-    if (!a.foe() or !a.seenIn(&run.sim.lv) or !tactics.validAct(run, act, from, a.at)) return null;
+    if (!a.seenFoe(&run.sim.lv) or !tactics.validAct(run, act, from, a.at)) return null;
     if (act.reticle() == .bow) {
         const flight = bow.previewAmong(&run.sim.lv, &run.sim.pool, from, a.at);
-        if (flight.struck == null or flight.struck.? != .body or flight.struck.?.body != id) return null;
+        if (!flight.hits(id)) return null;
     }
     return a.at;
 }
 
 fn preferredTarget(run: *game.Game, act: skillbar.Act, from: P) ?P {
     if (run.target) |id| if (targetAt(run, act, from, id)) |at| return at;
-    var near = bow.Nearest{ .from = from };
+    var near = grid.Nearest{ .from = from };
     for (0..run.sim.pool.n) |i| {
         if (targetAt(run, act, from, actor.Pool.idOf(i))) |at| near.offer(at);
     }
@@ -55,7 +55,7 @@ pub fn rememberTarget(run: *game.Game) void {
     if (run.mode.aim.act().attack() == null) return;
     const id = run.sim.lv.who(run.mode.aim.mark);
     const a = run.sim.pool.get(id);
-    run.target = if (a != null and a.?.foe() and a.?.seenIn(&run.sim.lv)) id else null;
+    run.target = if (a != null and a.?.seenFoe(&run.sim.lv)) id else null;
 }
 
 pub fn openLeap(run: *game.Game, by: input.Button, act: skillbar.Act) void {
@@ -99,9 +99,13 @@ pub fn closeAim(run: *game.Game) void {
 
 const Blocked = enum { cooling, mana, unworn, empty, none_left, locked, pinned };
 
-pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.simulation.Flasks, mana: i32) ?Blocked {
+pub fn heroPinned(run: *const game.Game) bool {
+    return (run.sim.heroBody() orelse return false).pin.turns > 0;
+}
+
+pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.simulation.Flasks, mana: i32, pinned: bool) ?Blocked {
     if (!run.sim.growth.unlocked(act)) return .locked;
-    if (movesHero(act) and run.sim.heroBody() != null and run.sim.heroBody().?.pin.turns > 0) return .pinned;
+    if (movesHero(act) and pinned) return .pinned;
     if (act == .unyielding and run.sim.heroBody() != null and run.sim.heroBody().?.tactics.unyielding) return null;
     if (run.sim.cooldown.get(act) > 0) return .cooling;
     if (act.flaskOf()) |k| {
@@ -115,7 +119,7 @@ pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.sim
 
 fn ready(run: *game.Game, act: skillbar.Act) bool {
     if (!run.pic.quiet()) return false;
-    switch (blocked(run, act, &run.sim.flasks, run.sim.mana) orelse return true) {
+    switch (blocked(run, act, &run.sim.flasks, run.sim.mana, heroPinned(run)) orelse return true) {
         .cooling => {
             const left = run.sim.cooldown.get(act);
             run.sim.log.say("{s} is ready in {d} turn{s}.", .{ act.name(), left, plural(left) });
@@ -135,9 +139,14 @@ fn movesHero(act: skillbar.Act) bool {
     return r == .leap or r == .rush;
 }
 
-fn spend(run: *game.Game, act: skillbar.Act) void {
+/// The hero acts: what it held up ends, and the turn's report notes what it did.
+fn acted(run: *game.Game, used: skillbar.Act) void {
     tactics.beforeAction(&run.sim);
-    run.sim.chronicle.note(.{ .used = act });
+    run.sim.chronicle.note(.{ .used = used });
+}
+
+fn spend(run: *game.Game, act: skillbar.Act) void {
+    acted(run, act);
     run.sim.mana -= run.sim.growth.cost(act);
     run.sim.cooldown.set(act, run.sim.growth.cooldown(act));
     if (act.supplyOf()) |k| run.sim.inventory.stacks.getPtr(k).* -= 1;
@@ -250,8 +259,7 @@ pub fn useSkill(run: *game.Game, selection: Use) void {
 fn useUnaimed(run: *game.Game, act: skillbar.Act) void {
     switch (act) {
         .wait => {
-            tactics.beforeAction(&run.sim);
-            run.sim.chronicle.note(.{ .used = .wait });
+            acted(run, .wait);
             combat.endTurn(run);
         },
         .secondary => unreachable,
@@ -285,8 +293,7 @@ fn castSpell(run: *game.Game, comptime act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     const ending_stance = act == .unyielding and hero.tactics.unyielding;
     if (ending_stance) {
-        tactics.beforeAction(&run.sim);
-        run.sim.chronicle.note(.{ .used = act });
+        acted(run, act);
     } else spend(run, act);
     if (comptime act.surrounds()) {
         const s = game.presentation.Stroke{ .from = hero.at, .wait = game.CAST_S };
@@ -319,8 +326,8 @@ pub fn foesIn(run: *game.Game, area: glacial.Burst) Struck {
 fn openRush(run: *game.Game, by: input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     if (preferredTarget(run, act, hero.at)) |at| return aimAt(run, by, act, hero.at, at);
-    var near = bow.Nearest{ .from = hero.at };
-    var empty = bow.Nearest{ .from = hero.at };
+    var near = grid.Nearest{ .from = hero.at };
+    var empty = grid.Nearest{ .from = hero.at };
     var cells = grid.Cells.around(hero.at, act.reach());
     while (cells.next()) |p| {
         if (tactics.validAct(run, act, hero.at, p)) {

@@ -106,12 +106,23 @@ fn footOf(lines: usize, mods: usize) i32 {
     return CARD_STATS + n * CARD_LINE + (if (m > 0) MODS_ABOVE + MODS_BELOW + m * CARD_LINE else 0);
 }
 
-pub fn height(item: items.Item, slot: items.Slot) i32 {
-    var mods: usize = 0;
-    if (item.magical()) for (items.MODS) |m| {
-        if (item.value(m) != 0) mods += 1;
+/// Down from a card's top to the foot of what `draw` lays out for `maybe` in `slot`.
+pub fn height(maybe: ?items.Item, slot: items.Slot) i32 {
+    const item = maybe orelse return SLOT_Y + font.LABEL;
+    var shown: Mods = undefined;
+    return footOf(CardLines.of(items.spec(item.kind), slot, null).n, if (item.magical()) modsOf(item, &shown).len else 0);
+}
+
+const Mods = [items.MODS.len]items.Mod;
+
+/// The modifier kinds a magical card lists for `item`, one line each, in `items.MODS` order.
+fn modsOf(item: items.Item, out: *Mods) []const items.Mod {
+    var n: usize = 0;
+    for (items.MODS) |m| if (item.value(m) != 0) {
+        out[n] = m;
+        n += 1;
     };
-    return footOf(CardLines.of(items.spec(item.kind), slot, null).n, mods);
+    return out[0..n];
 }
 
 comptime {
@@ -164,9 +175,8 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
         top += MODS_ABOVE;
         rl.drawLine(x + MODS_INSET, top, x + width - MODS_INSET, top, look.EDGE);
         top += MODS_BELOW;
-        for (items.MODS) |m| {
-            const n = item.value(m);
-            if (n == 0) continue;
+        var shown: Mods = undefined;
+        for (modsOf(item, &shown)) |m| {
             text.clear();
             for (item.mods) |rolled| if (rolled) |a| {
                 if (a.kind == m) a.write(text.writer());

@@ -13,6 +13,7 @@ const sunder = @import("../play/sunder.zig");
 const blind = @import("../play/blind.zig");
 const confusion = @import("../play/confusion.zig");
 const ward = @import("../play/ward.zig");
+const resilience = @import("../play/resilience.zig");
 const look = @import("look.zig");
 const font = @import("font.zig");
 const menu = @import("../ui/menu.zig");
@@ -153,7 +154,7 @@ const StatusGlow = struct { radius: f32, gain: f32 };
 const BURN_GLOW = StatusGlow{ .radius = 2, .gain = 0.55 };
 const WARD_GLOW = StatusGlow{ .radius = 1.5, .gain = 0.25 };
 const STATUS_FLICKER: f32 = 0.1;
-const STATUS_FLICKER_HZ: f32 = 11;
+const STATUS_FLICKER_RAD_S: f32 = 11;
 
 /// What a body suffers for turns, in the order the hud names them.
 pub const Status = enum {
@@ -175,18 +176,24 @@ pub const Status = enum {
 
     pub fn ink(s: Status) rl.Color {
         return switch (s) {
-            .bleeding => look.ailmentInk(.bleed),
-            .burning => look.ailmentInk(.burn),
-            .chilled => look.ailmentInk(.chill),
-            .pinned => look.ailmentInk(.pin),
-            .shocked => look.ailmentInk(.shock),
-            .sundered => look.ailmentInk(.sunder),
-            .blinded => look.ailmentInk(.blind),
-            .confused => look.ailmentInk(.confusion),
-            .frightened => look.ailmentInk(.fright),
             .warded => look.WARD,
-            .resistant => look.UI_GOLD,
-            .guarding, .unyielding, .steady, .overwatch => look.UI_GOLD,
+            .resistant, .guarding, .unyielding, .steady, .overwatch => look.UI_GOLD,
+            inline else => |t| look.ailmentInk(comptime t.ailment().?),
+        };
+    }
+
+    fn ailment(s: Status) ?resilience.Kind {
+        return switch (s) {
+            .bleeding => .bleed,
+            .burning => .burn,
+            .chilled => .chill,
+            .pinned => .pin,
+            .shocked => .shock,
+            .sundered => .sunder,
+            .blinded => .blind,
+            .confused => .confusion,
+            .frightened => .fright,
+            .warded, .resistant, .guarding, .unyielding, .steady, .overwatch => null,
         };
     }
 
@@ -219,7 +226,7 @@ pub const Status = enum {
     /// What it does to the body, as its tooltip says.
     pub fn about(s: Status) []const u8 {
         return switch (s) {
-            .resistant => @import("../play/resilience.zig").ABOUT,
+            .resistant => resilience.ABOUT,
             .guarding => @import("../play/tactics.zig").Guard.DESCRIPTION,
             .unyielding => @import("../play/tactics.zig").Unyielding.DESCRIPTION,
             .steady => @import("../play/tactics.zig").SteadyAim.DESCRIPTION,
@@ -239,27 +246,17 @@ pub const Status = enum {
             .sundered => sunder,
             .blinded => blind,
             .confused => confusion,
-            .frightened => actor,
             .warded => ward,
-            .resistant => @import("../play/resilience.zig"),
-            .guarding, .unyielding, .steady, .overwatch => @import("../play/tactics.zig"),
+            .frightened, .resistant, .guarding, .unyielding, .steady, .overwatch => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
         };
     }
 
     fn field(comptime s: Status) []const u8 {
         return switch (s) {
-            .bleeding => "bleed",
-            .burning => "burn",
-            .chilled => "chill",
-            .pinned => "pin",
-            .shocked => "shock",
-            .sundered => "sunder",
-            .blinded => "blind",
-            .confused => "confusion",
-            .frightened => "fright",
             .warded => "ward",
             .resistant => "resilience",
             .guarding, .unyielding, .steady, .overwatch => "tactics",
+            inline else => |t| @tagName(comptime t.ailment().?),
         };
     }
 
@@ -293,7 +290,7 @@ pub const Body = struct {
     seq: u64,
     /// Turns left of each.
     status: std.EnumArray(Status, u8) = .initFill(0),
-    resilience: @import("../play/resilience.zig").State = .{},
+    resilience: resilience.State = .{},
     sunder: sunder.Sunder = .{},
 
     pub fn of(a: actor.Actor, seq: u64) Body {
@@ -348,6 +345,8 @@ pub const DUE: usize = actor.MAX * (12 + actor.SWEEP_CELLS) + 2;
 pub const Burst = struct { at: mathx.P, area: glacial.Burst, element: damage.Element };
 
 pub const Zap = struct { from: [2]f32, to: [2]f32 };
+
+pub const Shimmer = struct { at: [2]f32, col: rl.Color };
 
 const ARC_S: f32 = 0.18;
 const ARC_POINTS = 25;
@@ -416,7 +415,7 @@ const HALO_R: f32 = 0.2;
 /// Across a body's cell, where fright's mark trembles, how far either way, and how fast.
 const FRIGHT_X: f32 = 0.8;
 const FRIGHT_SHAKE: f32 = 0.015;
-const FRIGHT_HZ: f32 = 30;
+const FRIGHT_RAD_S: f32 = 30;
 const SHIMMER_MOTES = 24;
 /// Stake (horizontal position, lean) pairs in cell units.
 const PIN_STAKES = [_][2]f32{ .{ 0.24, -0.06 }, .{ 0.5, 0 }, .{ 0.76, 0.06 } };
@@ -424,8 +423,8 @@ const PIN_H: f32 = 0.16;
 const PIN_FOOT: f32 = 0.92;
 /// A ward's ring, out from the body's middle in cells.
 const WARD_R: f32 = 0.46;
-/// Its breathing, radians a second.
-const WARD_HZ: f32 = 2.4;
+/// Its breathing.
+const WARD_RAD_S: f32 = 2.4;
 /// Where across a body's cell chill's flakes and burn's flames begin, and how far they spread.
 const MARKS_FROM: f32 = 0.22;
 const MARKS_SPAN: f32 = 0.56;
@@ -456,6 +455,7 @@ const Due = union(enum) {
     burst: Burst,
     zap: Zap,
     puff: Puff,
+    shimmer: Shimmer,
 
     fn on(d: *const Due) ?usize {
         return switch (d.*) {
@@ -465,14 +465,14 @@ const Due = union(enum) {
             },
             .sting => |*s| s.slot,
             .settle => |*s| s.slot,
-            .burst, .zap, .puff => null,
+            .burst, .zap, .puff, .shimmer => null,
         };
     }
 
     fn blowOf(d: *const Due) ?*const Blow {
         return switch (d.*) {
             .blow => |*b| b,
-            .sting, .settle, .burst, .zap, .puff => null,
+            .sting, .settle, .burst, .zap, .puff, .shimmer => null,
         };
     }
 
@@ -489,7 +489,7 @@ const Due = union(enum) {
             },
             .sting => |*s| s.after,
             .settle => |*s| s.after,
-            .burst, .zap, .puff => null,
+            .burst, .zap, .puff, .shimmer => null,
         };
     }
 };
@@ -502,9 +502,8 @@ const LEVEL_OUT_S: f32 = 0.65;
 /// Seconds after the gain the shaft is gone.
 const SHAFT_S: f32 = 1.55;
 const LEVEL_GLOW = Glow{ .radius = 2.5, .gain = 0.65, .life = LEVEL_UP_S };
-/// The body's added light at its peak, and its colour.
+/// The body's added light at its peak.
 const LEVEL_BODY_GAIN: f32 = 0.18;
-const LEVEL_BODY_TINT = [3]f32{ 1, 0.72, 0.28 };
 const LEVEL_GLINTS = 18;
 /// Spreads the glints evenly: the golden ratio's fraction, and the golden angle.
 const GOLDEN_FRACTION: f32 = 0.618034;
@@ -526,7 +525,7 @@ pub const LevelUp = struct {
 
     pub fn bodyGlow(self: LevelUp) [3]f32 {
         const gain = self.alpha() * LEVEL_BODY_GAIN;
-        return .{ gain * LEVEL_BODY_TINT[0], gain * LEVEL_BODY_TINT[1], gain * LEVEL_BODY_TINT[2] };
+        return .{ gain * look.LEVEL_BODY_TINT[0], gain * look.LEVEL_BODY_TINT[1], gain * look.LEVEL_BODY_TINT[2] };
     }
 
     pub fn emission(self: LevelUp, at: [2]f32) ?light.Emission {
@@ -675,6 +674,10 @@ pub const Fx = struct {
         self.later(wait, .{ .puff = p });
     }
 
+    pub fn shimmerIn(self: *Fx, wait: f32, s: Shimmer) void {
+        self.later(wait, .{ .shimmer = s });
+    }
+
     fn later(self: *Fx, wait: f32, what: Due) void {
         if (wait <= 0 or self.due_n == DUE) return self.fire(what, @max(0, -wait));
         self.due[self.due_n] = .{ .t = wait, .what = what };
@@ -688,6 +691,7 @@ pub const Fx = struct {
             .burst => |b| self.spill(b),
             .zap => |z| self.arc(z),
             .puff => |p| self.wisps(p),
+            .shimmer => |s| self.shimmer(s.at, s.col),
             .settle => |s| if (s.puff) |p| self.wisps(p),
             .sting => |s| {
                 if (s.fire_at) |at| self.embers(at);
@@ -698,7 +702,7 @@ pub const Fx = struct {
         const slot = what.on() orelse return;
         switch (what) {
             .blow, .sting => self.flash[slot] = @max(self.flash[slot], FLASH_S - late),
-            .settle, .burst, .zap, .puff => {},
+            .settle, .burst, .zap, .puff, .shimmer => {},
         }
         const a = what.after() orelse return;
         self.mana_landed += a.mana;
@@ -754,7 +758,7 @@ pub const Fx = struct {
 
     /// A status glow's gain, wavering out of step with others by `phase`.
     pub fn statusFlicker(self: *const Fx, phase: f32) f32 {
-        return 1 - STATUS_FLICKER + STATUS_FLICKER * @sin(self.seconds.at() * STATUS_FLICKER_HZ + phase);
+        return 1 - STATUS_FLICKER + STATUS_FLICKER * @sin(self.seconds.at() * STATUS_FLICKER_RAD_S + phase);
     }
 
     pub fn breaking(self: *const Fx, p: mathx.P) bool {
@@ -836,7 +840,7 @@ pub const Fx = struct {
 
     pub fn illuminate(self: *const Fx, lv: *const grid.Level, lamps: *light.Light) void {
         lamps.clearEffects();
-        for (self.pulses) |p| {
+        for (&self.pulses) |*p| {
             if (p.life <= 0) continue;
             var source = p.source;
             source.gain *= p.life / p.max;
@@ -848,12 +852,13 @@ pub const Fx = struct {
         const m = flareOf(act.element()) orelse return;
         const life = m.trail_s;
         if (age >= life) return;
+        const motes = missileOf(act).trail_r;
         const slot = self.head;
         self.emit(.{
             .p = .{ at[0] + self.rng.spread(0.08), at[1] + self.rng.spread(0.08), STRIKE_Z },
             .v = .{ -dir[0] * 0.8 + self.rng.spread(0.6), -dir[1] * 0.8 + self.rng.spread(0.6), m.rise },
             .life = life,
-            .r = if (act == .fireball) self.rng.between(1.5, 3.5) else self.rng.between(0.7, 1.7),
+            .r = self.rng.between(motes[0], motes[1]),
             .col = look.arrowInk(act),
             .drag = 3,
             .add = m.add,
@@ -989,7 +994,7 @@ pub const Fx = struct {
 
     /// A ring round it, breathing.
     pub fn drawWarded(self: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
-        const breath = @sin(self.seconds.at() * WARD_HZ);
+        const breath = @sin(self.seconds.at() * WARD_RAD_S);
         const r = cell * (WARD_R + breath * 0.02);
         for (0..WARD_DOTS) |i| {
             const a = @as(f32, @floatFromInt(i)) * mathx.TAU / WARD_DOTS;
@@ -1046,7 +1051,7 @@ pub const Fx = struct {
     /// A trembling mark beside its head.
     pub fn drawFrightened(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
         const k = pxScale(cell);
-        const shake = @sin(self.seconds.at() * FRIGHT_HZ + @as(f32, @floatFromInt(seed))) * FRIGHT_SHAKE;
+        const shake = @sin(self.seconds.at() * FRIGHT_RAD_S + @as(f32, @floatFromInt(seed))) * FRIGHT_SHAKE;
         const top = rl.Vector2{ .x = x + cell * (FRIGHT_X + shake), .y = y + cell * HALO_Y };
         pixel.rect(top, 2, 6, k, ink);
         pixel.rect(.{ .x = top.x, .y = top.y + 6 * k }, 2, 2, k, ink);
@@ -1194,9 +1199,15 @@ fn flameAge(t: f32, phase: f32, seed: f32) f32 {
 }
 
 /// By element: a trailed missile's light, how long the motes it sheds live and how fast they rise, the glow its
-/// burst flashes, and whether its motes add light; a fireball's light reaches further.
+/// burst flashes, and whether its motes add light.
 const Flare = struct { radius: f32, gain: f32, trail_s: f32, rise: f32, burst: Glow, add: bool };
-const FIREBALL_REACH: f32 = 2.8;
+
+const Missile = struct { trail_r: [2]f32 = .{ 0.7, 1.7 }, reach: ?f32 = null, ball: bool = false };
+const FIREBALL = Missile{ .trail_r = .{ 1.5, 3.5 }, .reach = 2.8, .ball = true };
+
+fn missileOf(act: skillbar.Act) Missile {
+    return if (act == .fireball) FIREBALL else .{};
+}
 
 fn flareOf(element: ?damage.Element) ?Flare {
     return switch (element orelse return null) {
@@ -1211,7 +1222,7 @@ pub fn missileLight(at: [2]f32, act: skillbar.Act) ?light.Emission {
     return .{
         .at = .{ at[0], at[1], STRIKE_Z },
         .col = look.arrowInk(act),
-        .radius = if (act == .fireball) FIREBALL_REACH else m.radius,
+        .radius = missileOf(act).reach orelse m.radius,
         .gain = m.gain,
     };
 }
@@ -1221,7 +1232,7 @@ pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, 
     const p = projected(at, ox, oy, cell);
     const k = pxScale(cell);
     const col = look.arrowInk(act);
-    if (act == .fireball) {
+    if (missileOf(act).ball) {
         for (0..6) |i| {
             const f: f32 = @floatFromInt(i);
             const w = rl.Vector2{ .x = p.x - dir[0] * f * 4 * k, .y = p.y - dir[1] * f * 4 * k + @sin(t * 65 + f * 2) * 2 * k };
@@ -1234,7 +1245,6 @@ pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, 
     drawArrow(p, dir, col, k);
 }
 
-const NET_INK = rl.Color{ .r = 214, .g = 196, .b = 150, .a = 255 };
 const NET_SPIN: f32 = 14;
 const NET_R: f32 = 8;
 
@@ -1255,8 +1265,8 @@ pub fn drawNet(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32) void {
     };
     const m = Mesh{ .p = p, .c = c, .s = s, .k = k };
     for ([_]f32{ -NET_R, 0, NET_R }) |o| {
-        pixel.line(m.knot(-NET_R, o), m.knot(NET_R, o), 1, k, NET_INK);
-        pixel.line(m.knot(o, -NET_R), m.knot(o, NET_R), 1, k, NET_INK);
+        pixel.line(m.knot(-NET_R, o), m.knot(NET_R, o), 1, k, look.NET);
+        pixel.line(m.knot(o, -NET_R), m.knot(o, NET_R), 1, k, look.NET);
     }
 }
 

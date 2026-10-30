@@ -186,7 +186,7 @@ test "mouse naming types letters spaces deletes and finishes with keyboard hints
         try std.testing.expectEqualStrings("Ab ", e.name.text());
         try std.testing.expectEqual(@as(?Outcome, .done), e.stepAt(&.{ .device = .keys, .click = true, .pointer = raster.middleAt(keyBox(screen, AT_DONE.row, AT_DONE.col)) }, screen));
         try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .right_click = true }, screen));
-        try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .click = true, .pointer = raster.middleAt(menu.footerBox(screen, false)) }, screen));
+        try std.testing.expectEqual(@as(?Outcome, .back), e.stepAt(&.{ .click = true, .pointer = raster.middleAt(menu.footerBox(screen)) }, screen));
     }
     std.debug.print("mouse naming: five text edits, Done with keyboard prompts and both back controls at {d} resolutions\n", .{screens.len});
 }

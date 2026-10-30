@@ -23,23 +23,26 @@ const HOVER = look.EDIT_HOVER;
 const SEP = menu.SEP;
 
 pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
-    var buf: [widgets.LINE]u8 = undefined;
     game.character.veil(g);
     switch (ed.modal) {
-        .text => return @import("text_panel.zig").draw(ed, g),
-        .dialogs, .script => return editor.plot.draw(ed, g),
-        .help => return drawHelp(ed, g),
-        .objects => return drawObjects(ed, g),
-        .none, .confirm, .name, .open => {},
+        .none => {},
+        .prompt => |p| drawPrompt(ed, g, p),
+        .text => @import("text_panel.zig").draw(ed, g),
+        .plot => editor.plot.draw(ed, g),
+        .help => drawHelp(ed, g),
+        .objects => drawObjects(ed, g),
     }
-    const body = modalBody(ed);
+}
+
+fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
+    var buf: [widgets.LINE]u8 = undefined;
+    const body = promptBody(ed, prompt);
     var title_buf: [listing.PATH_MAX + widgets.LINE]u8 = undefined;
     var dir_buf: [listing.PATH_MAX]u8 = undefined;
-    const title: [:0]const u8 = switch (ed.modal) {
+    const title: [:0]const u8 = switch (prompt) {
         .confirm => "Unsaved changes",
         .name => if (ed.naming == .new) "New map" else "Save the map as",
         .open => std.fmt.bufPrintZ(&title_buf, "Open: {s}", .{ed.listing.dirPath(&dir_buf)}) catch "Open",
-        .none, .help, .objects, .text, .dialogs, .script => "",
     };
     const f = widgets.modalFrame(&g.face, g.screen, widgets.MODAL_W, widgets.MODAL_HEAD + body + widgets.ROW_H + widgets.PAD, title, true);
     const x = f.x;
@@ -47,7 +50,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
     const buttons_y = y + body;
     const bx = f.buttonX();
     const inner = f.w - widgets.PAD * 2;
-    switch (ed.modal) {
+    switch (prompt) {
         .confirm => {
             var fit_buf: [widgets.LINE]u8 = undefined;
             widgets.textFace(&g.face).draw(widgets.fitBefore(&g.face, &buf, &fit_buf, ed.path(), " has changes that are not saved.", inner), x + widgets.PAD, y, widgets.TEXT, look.TEXT);
@@ -87,7 +90,6 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
             widgets.textFace(&g.face).draw(OPEN_CRIB, x + widgets.PAD, buttons_y + editor.SMALL_DY, SMALL, look.DIM);
             backButton(ed, g, bx, buttons_y, "Cancel");
         },
-        .none, .help, .objects, .text, .dialogs, .script => {},
     }
 }
 
@@ -237,11 +239,14 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             if (r.armour > 0 or r.stun_resist > 0) f.put("Physical reduction {d}%  /  Stun resist {d}%", .{ r.armour, r.stun_resist });
             switch (r.blow) {
                 .strike => |st| {
-                    f.put("{d}-{d} physical damage ({s})", .{ st.hit.lo, st.hit.hi, st.verb });
+                    f.put("{d}-{d} {s} damage ({s})", .{ st.hit.lo, st.hit.hi, if (st.element) |e| @tagName(e) else "physical", st.verb });
                     if (st.bleeds > 0) f.put("{d}% of its blows open a bleed", .{st.bleeds});
                     if (st.stuns > 0) f.put("{d}% of its blows stun, friend or foe", .{st.stuns});
                 },
-                .burst => f.put("Bursts into " ++ @import("../map/gas.zig").NAME ++ " instead of striking", .{}),
+                .burst => |b| switch (b) {
+                    .gas => f.put("Bursts into " ++ @import("../map/gas.zig").NAME ++ " instead of striking", .{}),
+                    .fire => f.put("Bursts into flame instead of striking, setting the bodies beside it alight", .{}),
+                },
             }
             if (r.sweep_every > 0) f.put("Sweeps {d} adjacent cells every {d} turns", .{ actor.SWEEP_CELLS, r.sweep_every });
             if (r.ranged) |ranged| {
@@ -268,12 +273,11 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
     }
 }
 
-fn modalBody(ed: *const editor.Editor) i32 {
-    return switch (ed.modal) {
+fn promptBody(ed: *const editor.Editor, prompt: editor.Prompt) i32 {
+    return switch (prompt) {
         .confirm => widgets.ROW_H * 2 + widgets.PAD,
         .name => widgets.ROW_STEP + widgets.ROW_H + widgets.PAD,
         .open => @as(i32, @intCast(@max(1, @min(ed.listing.n, widgets.MODAL_ROWS)))) * widgets.ROW_H + widgets.PAD,
-        .none, .help, .objects, .text, .dialogs, .script => 0,
     };
 }
 

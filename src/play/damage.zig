@@ -12,6 +12,21 @@ pub fn chance(comptime pc: u32) fn (*mathx.Rng, i16) bool {
         }
     }.procs;
 }
+
+/// A skill's `chance` to afflict: `pc` percent whatever the resistance, as `chance(pc)` rolls it.
+pub fn flat(comptime pc: u32) fn (i16) u32 {
+    return struct {
+        fn of(_: i16) u32 {
+            return pc;
+        }
+    }.of;
+}
+
+/// `pc` percent cut by `resist` as its element's damage is, held to 0..100.
+pub fn resistedChance(pc: u32, resist: i16) u32 {
+    return @intCast(@min(mathx.PERCENT, resisted(std.math.lossyCast(i32, pc), resist)));
+}
+
 /// A foe's blow landing its status `pc` percent of the time; never, drawing nothing.
 pub fn procs(rng: *mathx.Rng, pc: u32) bool {
     return pc > 0 and rng.percent(pc);
@@ -100,8 +115,15 @@ pub fn due(self: anytype) bool {
     return true;
 }
 
+/// Resistances, elemental and to statuses alike, run from -100% to 100%.
+pub const RESIST_MAX: i16 = mathx.PERCENT;
+
+pub fn clampResist(v: i32) i16 {
+    return @intCast(std.math.clamp(v, -RESIST_MAX, RESIST_MAX));
+}
+
 pub fn resisted(amount: i32, resist: i16) i32 {
-    const scale: i64 = mathx.PERCENT - @as(i64, std.math.clamp(resist, -mathx.PERCENT, mathx.PERCENT));
+    const scale: i64 = mathx.PERCENT - @as(i64, clampResist(resist));
     return std.math.lossyCast(i32, @divTrunc(@as(i64, @max(0, amount)) * scale, mathx.PERCENT));
 }
 

@@ -302,7 +302,11 @@ test "stepping into a glow plant bursts it into healing gas for a turn, leaving 
     try std.testing.expect(g.sim.heroActor().?.at.eq(from));
     try std.testing.expectEqual(grid.Tile.grass, g.sim.lv.at(plant));
     try std.testing.expect(g.sim.lv.volumeAt(.healing, plant) > 0 and !g.sim.lv.gassy(plant));
+    try std.testing.expectEqual(lights, g.light.torch_n);
+    try std.testing.expectEqual(grid.Tile.glow_plant, g.pic.tileShown(&g.sim, plant));
+    harness.drawnOut(g);
     try std.testing.expectEqual(lights - 1, g.light.torch_n);
+    try std.testing.expectEqual(grid.Tile.grass, g.pic.tileShown(&g.sim, plant));
     try std.testing.expect(harness.logged(g, gas.HEALING_NAME));
     try std.testing.expectEqual(game.Move.step, game.heroMove(g, .e));
 }

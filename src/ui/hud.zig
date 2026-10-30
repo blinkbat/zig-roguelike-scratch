@@ -274,11 +274,7 @@ pub fn table(comptime rows: anytype) []const u8 {
 const TIP_VALUE_DX = 24;
 const TIP_VALUE_X = @divTrunc(TIP_W, 2) + TIP_VALUE_DX;
 
-/// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does.
-pub fn tooltip(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8) void {
-    _ = tooltipScrolled(face, layout, screen, over, title, body, 0);
-}
-
+/// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does; returns the first line shown.
 pub fn tooltipScrolled(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize) usize {
     var buf: [TIP_LINES_MAX][font.WRAP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;

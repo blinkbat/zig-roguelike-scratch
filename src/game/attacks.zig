@@ -74,7 +74,7 @@ pub fn heroScaled(sim: *Simulation, comptime act: skillbar.Act, raw: damage.Dama
 
 pub fn blowFor(sim: *const Simulation, comptime act: skillbar.Act) progress.Blow {
     comptime std.debug.assert(act.attack() != null);
-    return sim.growth.preparedBlow(sim.heroAttrs(), sim.inventory.gear, act, if (sim.heroBody()) |h| h.tactics.steady else 0).?;
+    return sim.growth.preparedBlow(sim.heroAttrs(), sim.inventory.gear, act, sim.heroSteady()).?;
 }
 
 pub fn basesFor(sim: *const Simulation, act: skillbar.Act) skillbar.EquippedBases {
@@ -98,7 +98,7 @@ pub fn rawFor(sim: *Simulation, comptime act: skillbar.Act, body: bool) damage.D
 /// Roll status before nonlethal damage so split halves inherit it.
 pub fn afflicted(sim: *Simulation, a: *actor.Actor, comptime M: type, lands: bool, resist: i16) bool {
     const takes = lands and if (sim.combatStats(a).statuses.get(M.AILMENT) < 0)
-        sim.procStatus(a, M.AILMENT, if (M.AILMENT == .chill) glacial.chance(resist) else M.CHANCE)
+        sim.procStatus(a, M.AILMENT, M.chance(resist))
     else
         M.procs(&sim.rng, resist) and sim.takeStatus(a, M.AILMENT);
     if (takes) M.afflict(a, &sim.rng);
@@ -135,7 +135,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
     var r = raw.against(sim.combatStats(a).armour, &sim.rng);
-    r.dmg = a.shock.spend(r.dmg);
+    if (r.applied != .shock) r.dmg = a.shock.spend(r.dmg);
     const kind = a.kind;
     const at = a.at;
     const perks = sim.heroPerks();

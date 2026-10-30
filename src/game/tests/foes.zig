@@ -894,6 +894,7 @@ test "a pib that sees a foe die wakes and runs for a few turns, then comes back;
     harness.wallRow(&g.sim.lv, 22, 15, 25);
     const near = harness.spawnAt(g, .pib, .{ .x = 20, .y = 21 }, false);
     const walled = harness.spawnAt(g, .pib, .{ .x = 19, .y = 24 }, false);
+    game.settle(g);
     game.castSight(g, hero);
     harness.slay(g, 2, hero);
     const p = g.sim.pool.get(near).?;
@@ -906,8 +907,10 @@ test "a pib that sees a foe die wakes and runs for a few turns, then comes back;
     g.st = .{};
     game.update(g, 0.1);
     try std.testing.expectEqual(@as(f32, 0), speech.life);
+    try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[actor.Pool.slot(near)].status.get(.frightened));
     game.update(g, 0.11);
     try std.testing.expectEqual(fx.SPEECH_S, speech.life);
+    try std.testing.expectEqual(actor.FLEE_TURNS, g.pic.pictured[actor.Pool.slot(near)].status.get(.frightened));
     try std.testing.expectEqual(@as(?usize, null), g.pic.fx.speech[actor.Pool.slot(walled)].after);
     try std.testing.expectEqual(@as(f32, 0), g.pic.fx.speech[actor.Pool.slot(walled)].life);
     combat.scare(g, actor.Pool.slot(2));
@@ -927,6 +930,24 @@ test "a pib that sees a foe die wakes and runs for a few turns, then comes back;
     combat.endTurn(g);
     std.debug.print("a frightened pib runs from {d} to {d} cells in {d} turns, then turns back to {d}\n", .{ from, far, actor.FLEE_TURNS, mathx.dist(p.at, hero) });
     try std.testing.expect(mathx.dist(p.at, hero) < far);
+}
+
+test "a pib's fright is drawn until its last flight is" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const id = harness.spawnAt(g, .pib, .{ .x = 22, .y = 20 }, true);
+    g.sim.pool.get(id).?.fright = 1;
+    game.settle(g);
+    const slot = actor.Pool.slot(id);
+    combat.endTurn(g);
+    try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(id).?.fright);
+    g.pic.lead = 0;
+    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    g.pic.catchUp(&g.sim);
+    try std.testing.expectEqual(@as(u8, 1), g.pic.pictured[slot].status.get(.frightened));
+    harness.drawnOut(g);
+    try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[slot].status.get(.frightened));
 }
 
 test "a frightened pib in a dead end holds it, and strikes only an archer beside it" {
@@ -969,6 +990,12 @@ test "a bog leech swims unseen to the shore, surfaces beside the hero and is str
     while (g.sim.pool.get(id).?.submerged and turns < 8) : (turns += 1) {
         combat.endTurn(g);
         try std.testing.expectEqual(grid.Tile.water, g.sim.lv.at(g.sim.pool.get(id).?.at));
+        if (!g.sim.pool.get(id).?.submerged) {
+            g.pic.lead = 0;
+            g.pic.stepGlide(&g.sim, g.cloud, 0);
+            g.pic.catchUp(&g.sim);
+            try std.testing.expect(harness.gone(g, slot));
+        }
         harness.drawnOut(g);
     }
     std.debug.print("bog leech: {d} turns swimming unseen, then shown beside the hero\n", .{turns});
@@ -1030,8 +1057,10 @@ test "a bandit netter's net pins the hero, who struggles in place and cannot lea
         g.pic.lead = 0;
         g.pic.stepGlide(&g.sim, g.cloud, 0);
         try std.testing.expect(g.pic.foe_shots[slot].?.net);
+        try std.testing.expectEqual(@as(u8, 0), g.pic.heroShown(&g.sim).?.status.get(.pinned));
         harness.drawnOut(g);
-        try std.testing.expect((skills.blocked(g, .juke, &g.sim.flasks, g.sim.mana) orelse return error.NotPinned) == .pinned);
+        try std.testing.expect(g.pic.heroShown(&g.sim).?.status.get(.pinned) > 0);
+        try std.testing.expect((skills.blocked(g, .juke, &g.sim.flasks, g.sim.mana, skills.heroPinned(g)) orelse return error.NotPinned) == .pinned);
         for (0..net.pins) |_| {
             game.heroStep(g, .w, 0);
             try std.testing.expectEqual(from, g.sim.heroAt().?);
@@ -1067,6 +1096,23 @@ test "a bandit shieldbearer's landed bash knocks the hero a cell back as the blo
         harness.drawnOut(g);
         try std.testing.expect(harness.samePx(g.pic.glide[hero].ground(), glide.cellPx(want)));
     }
+}
+
+test "a shieldbearer killed by thorns as its bash lands still knocks the hero back, tearing its bleed" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 50 }, null, null, null } });
+    const id = harness.spawnAt(g, .bandit_shieldbearer, .{ .x = 21, .y = 20 }, true);
+    g.sim.pool.get(id).?.hp = 1;
+    harness.toughen(g.sim.heroActor().?);
+    game.settle(g);
+    g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
+    combat.endTurn(g);
+    try std.testing.expect(g.sim.pool.get(id) == null);
+    try std.testing.expectEqual(from.add(mathx.Dir.w.delta()), g.sim.heroAt().?);
+    try std.testing.expect(g.sim.stepped);
 }
 
 test "a frost wisp's touch chills the hero unless cold-proof, and a chilled hero's third action costs the next turn" {
@@ -1163,4 +1209,107 @@ test "a pib shaman mends the most hurt pib in reach, else wakes the sleeping one
     combat.endTurn(g);
     try std.testing.expectEqual(@as(i32, 2), mathx.dist(g.sim.pool.get(cornered).?.at, from));
     std.debug.print("pib shaman: mended a pib to {d}, woke a sleeper {d} turns later, stepped back from a hero beside it\n", .{ mended, turns });
+}
+
+test "a foe biting before a shieldbearer's knock that turn lunges at where the hero stood" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    harness.toughen(g.sim.heroActor().?);
+    const rat = harness.spawnAt(g, .rat, .{ .x = 20, .y = 19 }, true);
+    const shield = harness.spawnAt(g, .bandit_shieldbearer, .{ .x = 21, .y = 20 }, true);
+    game.settle(g);
+    g.sim.rng = harness.bitesRng(g, &.{ .{ .id = rat, .lands = true }, .{ .id = shield, .lands = true } });
+    combat.endTurn(g);
+    try std.testing.expectEqual(from.add(mathx.Dir.w.delta()), g.sim.heroAt().?);
+    g.pic.lead = 0;
+    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    const bump = g.pic.glide[actor.Pool.slot(rat)].bump.?;
+    std.debug.print("knock order: the rat ahead of the knock lunges ({d:.1}, {d:.1}) px, straight at the hero's old cell\n", .{ bump.x, bump.y });
+    try std.testing.expect(bump.x == 0 and bump.y > 0);
+}
+
+test "a mimic killed in its chest stays the chest until the killing blow lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 23, .y = 20 };
+    harness.arena(g, from, &.{});
+    const id = harness.spawnAt(g, .mimic, at, false);
+    game.settle(g);
+    const slot = actor.Pool.slot(id);
+    combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0.3 });
+    try std.testing.expect(g.sim.pool.get(id) == null);
+    try std.testing.expect(g.sim.lv.at(at) != .chest);
+    var frames: usize = 0;
+    while (!g.pic.pictured[slot].down()) : (frames += 1) {
+        try std.testing.expectEqual(grid.Tile.chest, g.pic.tileShown(&g.sim, at));
+        try std.testing.expect(harness.gone(g, slot));
+        game.update(g, harness.TEST_DT);
+    }
+    try std.testing.expectEqual(g.sim.lv.at(at), g.pic.tileShown(&g.sim, at));
+    std.debug.print("mimic: drawn as its chest for {d} frames, until the killing arrow lands\n", .{frames});
+    try std.testing.expect(frames > 0);
+}
+
+test "a pyre bloat sets its neighbours alight as its death lands, not before" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    const bloat = harness.spawnAt(g, .pyre_bloat, .{ .x = 22, .y = 20 }, false);
+    const near = harness.spawnAt(g, .rat, .{ .x = 23, .y = 20 }, false);
+    game.settle(g);
+    const slot = actor.Pool.slot(near);
+    combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0.3 });
+    try std.testing.expect(g.sim.pool.get(near).?.burn.turns > 0);
+    var frames: usize = 0;
+    while (!g.pic.pictured[actor.Pool.slot(bloat)].down()) : (frames += 1) {
+        try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[slot].status.get(.burning));
+        game.update(g, harness.TEST_DT);
+    }
+    try std.testing.expect(g.pic.pictured[slot].status.get(.burning) > 0);
+    std.debug.print("pyre: the rat beside it drawn unburnt for {d} frames, alight as the burst lands\n", .{frames});
+    try std.testing.expect(frames > 0);
+}
+
+test "a leech swimming unseen holds neither the stagger nor the walk" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    var cells = grid.Cells.of(.{ .x = 21, .y = 18 }, .{ .x = 27, .y = 23 });
+    while (cells.next()) |p| g.sim.lv.set(p, .water);
+    const id = harness.spawnAt(g, .bog_leech, .{ .x = 25, .y = 20 }, true);
+    game.settle(g);
+    combat.endTurn(g);
+    const leech = g.sim.pool.get(id).?;
+    try std.testing.expect(leech.submerged and !leech.at.eq(.{ .x = 25, .y = 20 }));
+    g.pic.lead = 0;
+    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    std.debug.print("submerged leech: swam to {d},{d}; the turn holds {d:.3} s\n", .{ leech.at.x, leech.at.y, @max(0, g.pic.busy) });
+    try std.testing.expect(g.pic.quiet());
+}
+
+test "a bolt bursting on a leech in deep water strikes it though the burst spreads over no water" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 23, .y = 20 };
+    var struck: usize = 0;
+    for (0..16) |seed| {
+        harness.arena(g, from, &.{});
+        g.sim.lv.set(at, .water);
+        const id = harness.spawnAt(g, .bog_leech, at, true);
+        const a = g.sim.pool.get(id).?;
+        a.submerged = false;
+        harness.toughen(a);
+        game.settle(g);
+        g.sim.rng = mathx.Rng.init(seed);
+        combat.burstHit(g, .glacial_shot, .{ .body = id }, at, .{ .from = from, .wait = 0.2 });
+        if (g.sim.pool.get(id).?.hp < harness.TEST_HP) struck += 1;
+    }
+    std.debug.print("bolt on a leech in deep water: struck {d} of 16 rolls\n", .{struck});
+    try std.testing.expect(struck > 0);
 }

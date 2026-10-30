@@ -160,16 +160,12 @@ const App = struct {
 
     fn saveStep(app: *App, st: *const input.State, screen: mathx.P) ?SaveAction {
         const was = app.loads.at;
-        const picked = app.loads.step(st, save.SLOTS);
-        app.loads.at = st.scrolled(app.loads.at, save.SLOTS);
-        var action: ?SaveAction = if (picked) |i| .{ .load = i } else null;
-        if (menu.pointed(st, save.SLOTS, screen, saveRowBox)) |i| {
-            app.loads.at = i;
-            if (st.click) {
-                if (raster.holds(saveDeleteBox(screen, i), st.pointer.?)) {
-                    if (app.list[i] != .empty) action = .{ .remove = i };
-                } else action = .{ .load = i };
-            }
+        var action: ?SaveAction = null;
+        if (app.loads.stepOver(st, save.SLOTS, screen, saveRowBox)) |i| {
+            const on_delete = st.click and st.pointer != null and raster.holds(saveDeleteBox(screen, i), st.pointer.?);
+            if (!on_delete) {
+                action = .{ .load = i };
+            } else if (app.list[i] != .empty) action = .{ .remove = i };
         }
         if (app.loads.at != was) {
             app.armed = null;
@@ -201,14 +197,14 @@ const App = struct {
             if (on) rl.drawRectangleRec(.{ .x = row.x, .y = row.y, .width = remove.x - row.x - menu.ACTION_GAP, .height = row.height }, look.PICK_BG);
             const text = g.face.fit(&fit, slotLine(slot, &line, i), menu.ROW, @as(i32, @intFromFloat(remove.x - row.x)) - 2 * menu.ACTION_GAP, false);
             const x = @as(i32, @intFromFloat(row.x)) + menu.ACTION_GAP;
-            g.face.text(text, x, @as(i32, @intFromFloat(row.y)) + 4, menu.ROW, if (on) look.UI_FOCUS else look.DIM);
+            g.face.text(text, x, menu.rowTextY(row), menu.ROW, if (on) look.UI_FOCUS else look.DIM);
             if (slotDetails(slot, &line)) |detail| {
                 const fitted = g.face.fit(&fit, detail, font.SMALL, @as(i32, @intFromFloat(remove.x - row.x)) - 2 * menu.ACTION_GAP, false);
                 g.face.text(fitted, x, @as(i32, @intFromFloat(row.y)) + SAVE_DETAIL_Y, font.SMALL, look.DIM);
             }
             if (slot.* != .empty) menu.action(&g.face, remove, prompt_icon.Prompt.menuOf(&g.st, DELETE), if (app.armed == i) "Delete it?" else "Delete save");
         }
-        menu.mid(g.face, g.screen, app.note.text(), @as(i32, @intFromFloat(last.y + last.height)) + 24, menu.NOTE, look.DIM);
+        menu.mid(g.face, g.screen, app.note.text(), @as(i32, @intFromFloat(last.y + last.height)) + menu.NOTE_GAP, menu.NOTE, look.DIM);
     }
 
     fn slotFree(app: *App) bool {
@@ -294,7 +290,10 @@ const App = struct {
     fn leaveRun(app: *App) void {
         if (app.autosave) |*a| {
             game.leave(app.g);
-            if (a.close(app.g)) |e| app.say(save.NOT_WRITTEN, .{@errorName(e)});
+            if (app.g.mode == .dead) {
+                app.undeleted = a.end();
+                a.deinit();
+            } else if (a.close(app.g)) |e| app.say(save.NOT_WRITTEN, .{@errorName(e)});
         }
         app.autosave = null;
     }

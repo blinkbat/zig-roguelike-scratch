@@ -35,7 +35,7 @@ pub fn beside(g: *game.Game) ?usize {
     while (cells.next()) |p| {
         if (p.eq(at) or !g.sim.lv.isLit(p)) continue;
         const f = g.sim.lv.folkAt(p) orelse continue;
-        if (f < s.folk_n and s.folk[f].dialog != null) return f;
+        if (f < s.folk_n) if (s.folk[f].dialog) |d| if (s.opens(d)) return f;
     }
     return null;
 }
@@ -47,10 +47,12 @@ pub fn speak(g: *game.Game, folk: usize) void {
     const f = &s.folk[folk];
     if (g.sim.heroAt()) |at| g.pic.turnToward(g.sim.hero, f.at.x - at.x);
     game.holdWalk(g);
-    const d = f.dialog orelse return g.sim.log.say("{s} has nothing to say.", .{f.called()});
-    if (!g.sim.plot.open(s, d, @intCast(folk), &g.sim.log)) return;
-    g.mode = .talk;
-    g.sim.unsaved = true;
+    if (f.dialog) |d| if (g.sim.plot.open(s, d, @intCast(folk), &g.sim.log)) {
+        g.mode = .talk;
+        g.sim.unsaved = true;
+        return;
+    };
+    g.sim.log.say("{s} has nothing to say.", .{f.called()});
 }
 
 /// A conversation up, or one a trigger asked for once the turn is drawn: it takes the screen.
@@ -183,6 +185,65 @@ test "bumping a folk opens its conversation without a turn; it closes only throu
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expectEqualStrings("Stranger has nothing to say.", g.sim.log.line(0).?);
     std.debug.print("folk: bump opens a conversation on turn {d}; back refused, two lines walked and an ending closes it\n", .{turns});
+}
+
+test "a dialog no way through ends never opens, while one whose way out is gated does" {
+    const w = try testWorld(
+        \\flag met
+        \\dialog loop
+        \\line root
+        \\say Round and round.
+        \\then root
+        \\dialog gated
+        \\line root
+        \\say Not yet.
+        \\ask Leave. -> end
+        \\need flag met on
+        \\folk 0 6 5 loop Looper
+        \\folk 0 5 6 gated Keeper
+    );
+    defer std.testing.allocator.destroy(w);
+    try std.testing.expect(!w.script.dialog[0].ends());
+    try std.testing.expect(w.script.dialog[1].ends());
+    try std.testing.expectEqual(@as(usize, 1), w.script.endless());
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, 9);
+    game.heroStep(g, .e, 0);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    game.heroStep(g, .s, 0);
+    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    std.debug.print("dialogs: {d} endless refused, a gated way out still opens\n", .{w.script.endless()});
+}
+
+test "a way out that never shows ends nothing: its folk has nothing to say and a trigger asking for it goes on" {
+    const w = try testWorld(
+        \\flag reward
+        \\dialog stuck
+        \\line root
+        \\say Again.
+        \\ask Again. -> root
+        \\ask Bye. -> end
+        \\need never
+        \\folk 0 6 5 stuck Stuck
+        \\trigger asks 0 once live
+        \\when elapsed >= 1
+        \\do dialog stuck
+        \\do flag reward on
+    );
+    defer std.testing.allocator.destroy(w);
+    try std.testing.expect(!w.script.dialog[0].ends());
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, 9);
+    try std.testing.expectEqual(@as(?usize, null), beside(g));
+    game.heroStep(g, .e, 0);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try std.testing.expectEqualStrings("Stuck has nothing to say.", g.sim.log.line(0).?);
+    game.heroStep(g, .s, 0);
+    try std.testing.expectEqual(@as(?u8, null), g.sim.plot.asked);
+    try std.testing.expect(g.sim.plot.flags[0]);
+    try std.testing.expect(!g.sim.plot.runs[0].held);
 }
 
 test "a trigger's conversation waits for the turn to be drawn, then takes the screen" {

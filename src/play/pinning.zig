@@ -1,9 +1,10 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const damage = @import("damage.zig");
+const resilience = @import("resilience.zig");
 
 pub const COST: i32 = 6;
-pub const AILMENT = @import("resilience.zig").Kind.pin;
+pub const AILMENT = resilience.Kind.pin;
 pub const TURNS_LO: u8 = 2;
 pub const TURNS_HI: u8 = 4;
 pub const VERB = "pins";
@@ -17,18 +18,21 @@ pub const Pin = struct {
 
     /// One of its turns: whether it is held this turn.
     pub fn hold(self: *Pin) bool {
-        if (self.turns == 0) return false;
-        self.turns -= 1;
-        return true;
+        return resilience.wearTurn(&self.turns);
+    }
+
+    /// Pinned again, it is held for the longer of the two.
+    pub fn extend(self: *Pin, turns: u8) void {
+        resilience.lengthen(&self.turns, turns);
     }
 };
 
 pub const CHANCE: u32 = mathx.PERCENT;
 pub const procs = damage.chance(CHANCE);
+pub const chance = damage.flat(CHANCE);
 
-/// Pinned again, it is held for the longer of the two.
 pub fn afflict(a: anytype, rng: *mathx.Rng) void {
-    a.pin.turns = @max(a.pin.turns, @as(u8, @intCast(rng.range(TURNS_LO, TURNS_HI))));
+    a.pin.extend(@intCast(rng.range(TURNS_LO, TURNS_HI)));
 }
 
 test "a pin holds for two to four turns, and a second never shortens the first" {

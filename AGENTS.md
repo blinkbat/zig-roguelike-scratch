@@ -367,7 +367,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   none never fires. Timers, `wait` and `elapsed` count spent turns; `deaths`/`alive` count a whole foe family.
 - A `dialog` action holds its own list until that conversation is heard out; one at a time, opened once the turn
   is drawn (`talking.due`). Bumping a folk or Interact beside one opens its dialog without a turn, ahead of
-  containers. No back-out: a conversation ends only through an ending, so `talked` means heard. A gate hides a
+  containers. No back-out: a conversation ends only through an ending, so `talked` means heard; a dialog no way
+  through ends (`Dialog.ends`) never opens, and the editor lists it under Problems. A gate hides a
   choice; line actions land on arrival, choice actions on the pick. The HUD hides behind `ui/talk.zig`'s panel.
 - Editor: the Folk tool places and removes folk and opens Dialog on one; Dialog edits folk, dialogs, lines and
   choices, Script the triggers and name tables. Words are typed into the map, one undo step per click; a

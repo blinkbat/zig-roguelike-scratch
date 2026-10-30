@@ -12,6 +12,7 @@ pub const SUMMARY_MAX: usize = obituary.REPORT_MAX + BURIED.len;
 
 /// One hero's bones: who they were and how they died.
 pub const Entry = struct {
+    pub const COUNTED = .{.{ "summary", "summary_n" }};
     name: heroes.Name,
     class: heroes.Class,
     level: u16,
@@ -98,17 +99,18 @@ const VERSION = 1;
 const Count = u8;
 const PRINT = store.legacy.fingerprint(.{ Count, Entry });
 const HEAD = store.head(MAGIC);
-const Bones = struct { entries: [MAX]Entry = undefined, n: usize = 0 };
+const Bones = struct {
+    pub const COUNTED = .{.{ "entries", "n" }};
+    entries: [MAX]Entry = undefined,
+    n: usize = 0,
+};
 pub const FILE_MAX = HEAD + wire.maxSize(Bones) + store.SUM;
 const Code = wire.Codec(struct {
     pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {
-        const COUNT_FIELDS = .{
-            .{ Bones, "entries", "n" },
-            .{ heroes.Name, "buf", "n" },
-            .{ Entry, "summary", "summary_n" },
-        };
-        inline for (COUNT_FIELDS) |entry| {
-            if (T == entry[0] and std.mem.eql(u8, field, entry[1])) return entry[2];
+        if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "COUNTED")) {
+            inline for (T.COUNTED) |entry| {
+                if (comptime std.mem.eql(u8, field, entry[0])) return entry[1];
+            }
         }
         return null;
     }

@@ -94,7 +94,7 @@ fn moveViewport(ed: *Editor, bounds: rl.Rectangle, over_canvas: bool, dt: f32) v
     switch (ed.view) {
         .map => {
             panBy(&ed.cam, desk, dt, ed.px());
-            if (desk.wheel != 0 and over_canvas) zoom(ed, bounds, -notch(desk), desk.mouse);
+            if (desk.wheel != 0 and over_canvas) zoom(ed, bounds, -desk.notch(), desk.mouse);
             mapMouse(ed, bounds, over_canvas);
             if (desk.fullscreen) ed.stroke_at = null;
         },
@@ -108,18 +108,11 @@ fn moveViewport(ed: *Editor, bounds: rl.Rectangle, over_canvas: bool, dt: f32) v
 fn scrollPanel(ed: *Editor) void {
     const desk = &ed.desk;
     if (desk.wheel != 0 and desk.mouse.x < widgets.PANEL_W and desk.mouse.y >= ed.lower_top) {
-        if (ed.lower == .tools or ed.lower == .things or ed.generator() != null) {
-            ed.gen_top = std.math.clamp(ed.gen_top + notch(desk) * widgets.ROW_H, 0, ed.gen_most);
-        } else scrollNodes(ed, notch(desk));
+        const by = desk.notch();
+        if (ed.lowerScrolls()) {
+            widgets.scrollBy(&ed.lower_scroll, ed.lower_most, by * widgets.ROW_H);
+        } else scrollNodes(ed, by);
     }
-}
-
-fn notch(d: *const Desk) i32 {
-    return if (d.wheel > 0) -1 else if (d.wheel < 0) 1 else 0;
-}
-
-fn scrollTop(top: usize, by: i32, n: usize, rows: usize) usize {
-    return mathx.nudge(top, by, (n -| rows) + 1);
 }
 
 /// `px` screen pixels a unit of `cam`.
@@ -150,38 +143,43 @@ pub fn escape(ed: *Editor) void {
 }
 
 pub fn modalKeys(ed: *Editor) void {
-    if (ed.modal == .text) return text_panel.keys(ed);
-    if (ed.modal == .dialogs or ed.modal == .script) return editor.plot.keys(ed);
     const d = &ed.desk;
-    if (d.erase_hit) {
-        ed.modal = .none;
-        return;
-    }
-    if (ed.modal == .open and (d.back or d.rub) and ed.listing.up()) return ed.showListing();
-    if (d.back) {
-        ed.modal = .none;
-        return;
-    }
     switch (ed.modal) {
-        .confirm => if (d.enter and ed.save()) ed.commit(),
-        .name => {
-            ed.field.feed(d);
-            if (d.enter) ed.named();
-        },
-        .open => {
-            if (d.wheel != 0) ed.listed_top = scrollTop(ed.listed_top, notch(d), ed.listing.n, widgets.MODAL_ROWS);
-            if (d.nav != 0 and ed.listing.n > 0) {
-                ed.listed_at = mathx.wrap(ed.listed_at, d.nav, ed.listing.n);
-                ed.listed_top = mathx.reveal(ed.listed_top, ed.listed_at, widgets.MODAL_ROWS);
-            }
-            if (d.enter and ed.listed_at < ed.listing.n) ed.openListed(ed.listed_at);
-        },
+        .none => {},
+        .text => text_panel.keys(ed),
+        .plot => editor.plot.keys(ed),
+        .help => _ = dismissed(ed),
         .objects => {
+            if (dismissed(ed)) return;
             if (d.nav != 0) ed.seen_at = mathx.wrap(ed.seen_at, d.nav, editor.SEEN.len);
             if (d.enter) modals.fightSeen(ed);
         },
-        .help, .none, .text, .dialogs, .script => {},
+        .prompt => |p| {
+            if (p == .open and !d.erase_hit and (d.back or d.rub) and ed.listing.up()) return ed.showListing();
+            if (dismissed(ed)) return;
+            switch (p) {
+                .confirm => if (d.enter and ed.save()) ed.commit(),
+                .name => {
+                    ed.field.feed(d);
+                    if (d.enter) ed.named();
+                },
+                .open => {
+                    if (d.wheel != 0) ed.listed_top = widgets.scrollTop(ed.listed_top, d.notch(), ed.listing.n, widgets.MODAL_ROWS);
+                    if (d.nav != 0 and ed.listing.n > 0) {
+                        ed.listed_at = mathx.wrap(ed.listed_at, d.nav, ed.listing.n);
+                        ed.listed_top = mathx.reveal(ed.listed_top, ed.listed_at, widgets.MODAL_ROWS);
+                    }
+                    if (d.enter and ed.listed_at < ed.listing.n) ed.openListed(ed.listed_at);
+                },
+            }
+        },
     }
+}
+
+fn dismissed(ed: *Editor) bool {
+    if (!ed.desk.erase_hit and !ed.desk.back) return false;
+    ed.modal = .none;
+    return true;
 }
 
 fn playHere(ed: *Editor, c: rl.Rectangle, over: bool) void {
@@ -208,9 +206,7 @@ fn goThrough(ed: *Editor, c: rl.Rectangle, over: bool) void {
     const door = if (over) ed.doorAt(ed.mouseCell(c)) else null;
     const k = door orelse return ed.say("{s} goes through the door under the cursor", .{Desk.GO_CAPTION});
     const to = ed.here().door[k].to orelse return ed.say("Door {d} leads nowhere yet", .{k});
-    ed.select(to.node);
-    ed.recentre = false;
-    ed.lookAt(c, ed.map.door(to).at);
+    ed.visit(c, to.node, ed.map.door(to).at);
     var buf: [atlas.TITLE_MAX]u8 = undefined;
     ed.say("Through door {d} to {s}, door {d}", .{ k, ed.nodeName(to.node, &buf), to.door });
 }
@@ -349,5 +345,5 @@ pub fn fitView(ed: *Editor, c: rl.Rectangle) void {
 }
 
 fn scrollNodes(ed: *Editor, by: i32) void {
-    ed.scroll = scrollTop(ed.scroll, by, ed.map.node_n, ed.node_rows);
+    ed.scroll = widgets.scrollTop(ed.scroll, by, ed.map.node_n, ed.node_rows);
 }

@@ -163,9 +163,9 @@ pub const Attrs = struct {
 
     pub fn collectedGold(a: Attrs, amount: i32, rng: *mathx.Rng) i32 {
         if (amount <= 0) return 0;
-        const scaled = @as(i64, amount) * @max(0, 100 + @as(i64, a.gold_find));
-        const whole = @divTrunc(scaled, 100);
-        const fraction: u32 = @intCast(@mod(scaled, 100));
+        const scaled = @as(i64, amount) * @max(0, mathx.PERCENT + @as(i64, a.gold_find));
+        const whole = @divTrunc(scaled, mathx.PERCENT);
+        const fraction: u32 = @intCast(@mod(scaled, mathx.PERCENT));
         const extra: i64 = @intFromBool(fraction > 0 and rng.percent(fraction));
         return @intCast(@min(std.math.maxInt(i32), whole + extra));
     }

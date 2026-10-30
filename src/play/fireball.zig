@@ -24,15 +24,12 @@ pub const BASE = damage.Base{ .lo = 3, .hi = 6 };
 
 pub const CHANCE = burning.CHANCE;
 pub const procs = burning.procs;
+pub const chance = burning.chance;
 pub const afflict = burning.afflict;
 pub const AILMENT = burning.AILMENT;
 
 pub fn burst(lv: *const grid.Level, _: P, impact: P) glacial.Burst {
-    return glacial.spread(lv, impact, BLAST, {}, every);
-}
-
-fn every(_: void, _: P) bool {
-    return true;
+    return glacial.patch(lv, impact, BLAST);
 }
 
 test "a fireball's blast takes the cell it strikes and the eight round it, but not past a wall" {

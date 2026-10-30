@@ -109,22 +109,12 @@ const HEAD = store.head(MAGIC);
 
 pub const Error = error{ NotASave, OtherBuild, Short, Damaged };
 
-fn summaryOf(g: *game.Game) Summary {
-    const h = g.sim.heroActor().?;
-    var s = Summary{ .name = g.sim.name, .hp = h.hp, .max = h.max, .gold = g.sim.gold, .node = null };
-    if (g.sim.map) |a| {
-        s.node = g.sim.node;
-        s.place = a.node[g.sim.node].label;
-    }
-    return s;
-}
-
 /// Into an empty `out`, all but the sum `seal` ends it with.
 fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
     std.debug.assert(out.items.len == 0);
     const w = out.writer();
     try store.begin(w, MAGIC, FINGERPRINT);
-    try store.legacy.put(w, &summaryOf(g));
+    try store.legacy.put(w, &(Summary.of(g) orelse return error.Damaged));
     try store.legacy.put(w, &g.sim.seed);
     const has_map = g.sim.map != null;
     try store.legacy.put(w, &has_map);
@@ -155,11 +145,7 @@ fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
 
 /// Ends a file `write` began in `out` with its sum, in the room `write` kept, so it may run off the frame.
 fn seal(out: *std.ArrayList(u8)) void {
-    const payload_at = if (std.mem.startsWith(u8, out.items, format.MAGIC)) store.head(format.MAGIC) else HEAD;
-    const sum = store.sum(out.items[payload_at..]);
-    var bytes: [8]u8 = undefined;
-    std.mem.writeInt(u64, &bytes, sum, .little);
-    out.appendSliceAssumeCapacity(&bytes);
+    store.sealReserved(out, if (std.mem.startsWith(u8, out.items, format.MAGIC)) store.head(format.MAGIC) else HEAD);
 }
 
 fn payload(bytes: []const u8) Error![]const u8 {

@@ -12,6 +12,38 @@ pub const Meter = struct {
     fresh: bool = false,
 };
 
+/// A status's turns left, worn one a turn; started again, it never runs shorter than it had.
+pub fn Turns(comptime N: u8) type {
+    return struct {
+        turns: u8 = 0,
+
+        pub fn start(self: *@This()) void {
+            lengthen(&self.turns, N);
+        }
+
+        pub fn atLeast(self: *@This(), n: u8) void {
+            lengthen(&self.turns, n);
+        }
+
+        /// One of its turns: whether it ran.
+        pub fn wear(self: *@This()) bool {
+            return wearTurn(&self.turns);
+        }
+    };
+}
+
+/// `turns` held to at least `n`.
+pub fn lengthen(turns: *u8, n: u8) void {
+    turns.* = @max(turns.*, n);
+}
+
+/// One turn off a countdown: whether it was running.
+pub fn wearTurn(turns: *u8) bool {
+    if (turns.* == 0) return false;
+    turns.* -= 1;
+    return true;
+}
+
 /// A body's resistance to a status as shown, and the turns before its built-up part expires.
 pub const Standing = struct {
     percent: i16 = 0,
@@ -34,11 +66,6 @@ pub const State = struct {
         return @min(mathx.PERCENT, @as(u32, innate) + self.meters.get(kind).percent);
     }
 
-    /// Its whole resistance to `kind`, innate included.
-    pub fn standing(self: State, kind: Kind, innate: u8) Standing {
-        return .{ .percent = @intCast(self.resistance(kind, innate)), .turns = self.meters.get(kind).turns };
-    }
-
     pub fn take(self: *State, kind: Kind, innate: u8, rng: *mathx.Rng) bool {
         return self.takeResisted(kind, @intCast(self.resistance(kind, innate)), rng);
     }
@@ -48,6 +75,11 @@ pub const State = struct {
         const meter = self.meters.getPtr(kind);
         meter.* = .{ .percent = @min(mathx.PERCENT, meter.percent + GAIN), .turns = EXPIRY, .fresh = true };
         return true;
+    }
+
+    /// Nothing of `kind` lands for `turns` spent turns after this one.
+    pub fn immune(self: *State, kind: Kind, turns: u8) void {
+        self.meters.set(kind, .{ .percent = mathx.PERCENT, .turns = turns, .fresh = true });
     }
 
     pub fn settle(self: *State) void {

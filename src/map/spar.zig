@@ -20,7 +20,7 @@ pub fn author(map: *atlas.Atlas, kind: actor.Kind) void {
     _ = map.node[node].rename("Arena");
     const room = &map.node[node].plan.bespoke;
     for ([_]i32{ -TORCH_STEP, 0, TORCH_STEP }) |dx| std.debug.assert(room.torch.add(lume.torchOver(ROOM, MIDDLE.x + dx)));
-    if (actor.row(kind).movement == .swimming) {
+    if (!actor.groundFits(kind, .floor)) {
         var pond = grid.Box.around(FOE, POND).cells();
         while (pond.next()) |p| room.tile[grid.Level.idx(p)] = .water;
     }
@@ -28,7 +28,7 @@ pub fn author(map: *atlas.Atlas, kind: actor.Kind) void {
     std.debug.assert(room.addFoe(.{ .kind = kind, .at = FOE }));
 }
 
-/// Cells round a swimming opponent that are water, short of the hero.
+/// Cells round an opponent that cannot stand on floor that are water, short of the hero.
 const POND: i32 = 1;
 
 comptime {

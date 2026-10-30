@@ -53,6 +53,7 @@ fn zoomOf(px: f32) usize {
 }
 
 const SAY_S: f32 = 4;
+const FLASH_S: f32 = 1.2;
 pub const UNDO_CAP = history.CAPACITY;
 const PATH_FIELD_MAX: usize = 256;
 const FIELD_MAX: usize = 32;
@@ -68,7 +69,7 @@ pub const DOT_R: f32 = 4;
 /// Pixels past a door's dot a press still takes it.
 pub const DOT_SLOP: f32 = 3;
 pub const LABEL_W: i32 = 126;
-pub const STEP_W: i32 = 30;
+pub const STEP_W = widgets.STEP_W;
 pub const STEP_PITCH: i32 = STEP_W + widgets.GAP;
 pub const SHIFT_STEP = tool_catalog.SHIFT_STEP;
 pub const STATUS_H: i32 = widgets.GAP + 2 * widgets.LINE_STEP;
@@ -121,7 +122,9 @@ pub const Ink = enum {
 pub const INKS = std.enums.values(Ink);
 /// Asked for, and done once any unsaved changes are saved or let go.
 pub const Pending = enum { leave, quit, open, new };
-pub const Modal = enum { none, confirm, name, open, help, objects, text, dialogs, script };
+/// A framed question with its buttons along the foot.
+pub const Prompt = enum { confirm, name, open };
+pub const Modal = union(enum) { none, prompt: Prompt, help, objects, text, plot: plot.Page };
 const Naming = enum { new, save_as };
 
 const Field = name_field.Text(FIELD_MAX);
@@ -177,10 +180,10 @@ pub const Editor = struct {
     lower: Lower = .tools,
     lower_top: i32 = 0,
     node_rows: usize = 1,
-    /// Scrolled pixels and maximum scroll in the generator or Things panel.
-    gen_top: i32 = 0,
-    gen_most: i32 = 0,
-    /// Set while a part of the panel that scrolls is drawn: nothing outside it is hot.
+    /// Scrolled pixels and maximum scroll of the Tools, Things or generator workspace.
+    lower_scroll: i32 = 0,
+    lower_most: i32 = 0,
+    /// Set while a scrolled area is drawn: nothing outside it is hot.
     clip: ?rl.Rectangle = null,
     /// The map's top-left, in cells.
     cam: [2]f32 = .{ 0, 0 },
@@ -289,13 +292,11 @@ pub const Editor = struct {
         ed.history.reset();
         ed.node = 0;
         ed.scroll = 0;
-        ed.release();
-        ed.renaming = false;
+        ed.dropHeld();
         ed.modal = .none;
         ed.view = .map;
         ed.recentre = true;
-        ed.forgetNode();
-        ed.gen_top = 0;
+        ed.lower_scroll = 0;
         ed.scene.reset();
         ed.fitTool();
         ed.restamp();
@@ -343,6 +344,7 @@ pub const Editor = struct {
         ed.bank();
         ed.scene.invalidate();
         ed.thumbnails.invalidate(ed.node);
+        ed.paste_preview.ready = false;
     }
 
     pub fn relinked(ed: *Editor) void {
@@ -353,9 +355,10 @@ pub const Editor = struct {
     fn restamp(ed: *Editor) void {
         ed.scene.invalidate();
         ed.thumbnails.invalidateAll();
+        ed.paste_preview.ready = false;
     }
 
-    fn prepareHistory(ed: *Editor) void {
+    fn dropHeld(ed: *Editor) void {
         ed.release();
         ed.forgetNode();
         ed.renaming = false;
@@ -369,12 +372,13 @@ pub const Editor = struct {
     fn restampSwapped(ed: *Editor) void {
         ed.scene.invalidate();
         ed.thumbnails.changedMap(ed.map, ed.history.transaction.before);
+        ed.paste_preview.ready = false;
     }
 
     pub fn undo(ed: *Editor) void {
         ed.keepDrag();
         if (ed.history.at == 0) return ed.say("Nothing to undo", .{});
-        ed.prepareHistory();
+        ed.dropHeld();
         _ = ed.history.undo(ed.map);
         ed.changedHistory();
         ed.say("Undone ({d} more)", .{ed.history.at});
@@ -383,7 +387,7 @@ pub const Editor = struct {
     pub fn redo(ed: *Editor) void {
         if (ed.history.at < ed.history.len) ed.drop() else ed.keepDrag();
         if (ed.history.at == ed.history.len) return ed.say("Nothing to redo", .{});
-        ed.prepareHistory();
+        ed.dropHeld();
         _ = ed.history.redo(ed.map);
         ed.changedHistory();
         ed.say("Redone ({d} more)", .{ed.history.len - ed.history.at});
@@ -448,9 +452,18 @@ pub const Editor = struct {
         ed.node = n;
         ed.scene.invalidate();
         ed.recentre = true;
-        ed.gen_top = 0;
+        ed.lower_scroll = 0;
         ed.forgetNode();
         ed.fitTool();
+    }
+
+    /// The workspace scrolls by pixels; Nodes scrolls by rows.
+    pub fn lowerScrolls(ed: *Editor) bool {
+        return switch (ed.lower) {
+            .tools, .things => true,
+            .generator => ed.rolled() != null,
+            .nodes => false,
+        };
     }
 
     fn forgetNode(ed: *Editor) void {
@@ -524,12 +537,27 @@ pub const Editor = struct {
         ed.setView(.map);
     }
 
+    /// Node `n`'s map, looking at `p` rather than refitted.
+    pub fn visit(ed: *Editor, c: rl.Rectangle, n: usize, p: P) void {
+        ed.goTo(n);
+        ed.recentre = false;
+        ed.lookAt(c, p);
+    }
+
+    /// This node's map, looking at `p` and lighting it a moment.
+    pub fn showCell(ed: *Editor, c: rl.Rectangle, p: P) void {
+        ed.setView(.map);
+        ed.lookAt(c, p);
+        ed.flash = p;
+        ed.flash_t = FLASH_S;
+    }
+
     pub fn request(ed: *Editor, p: Pending) void {
         ed.keepDrag();
         if (ed.renaming) ed.commitRename();
         ed.pending = p;
         if (!ed.history.dirty) return ed.commit();
-        ed.ask(.confirm);
+        ed.ask(.{ .prompt = .confirm });
     }
 
     pub fn commit(ed: *Editor) void {
@@ -569,13 +597,13 @@ pub const Editor = struct {
     pub fn askName(ed: *Editor, n: Naming) void {
         ed.naming = n;
         ed.field.put("");
-        ed.ask(.name);
+        ed.ask(.{ .prompt = .name });
     }
 
     pub fn askOpen(ed: *Editor) void {
         ed.listing.scanAt(listing.folderOf(ed.path()));
         ed.showListing();
-        ed.ask(.open);
+        ed.ask(.{ .prompt = .open });
     }
 
     pub fn showListing(ed: *Editor) void {
@@ -620,6 +648,7 @@ pub const Editor = struct {
     }
 
     pub fn startRename(ed: *Editor) void {
+        ed.keepDrag();
         ed.drop();
         ed.gesture();
         ed.typeName();
@@ -782,9 +811,7 @@ pub fn reroll(ed: *Editor) void {
 
 pub fn deleteNode(ed: *Editor) void {
     ed.map.remove(ed.node);
-    ed.release();
-    ed.forgetNode();
-    ed.renaming = false;
+    ed.dropHeld();
     ed.clampSelection();
     ed.bank();
     ed.restamp();
@@ -951,9 +978,9 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-nodes.png", .{dir}));
     ed.lower = .tools;
     render(ed, g, target);
-    ed.gen_top = ed.gen_most;
+    ed.lower_scroll = ed.lower_most;
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-tools-palette.png", .{dir}));
-    ed.gen_top = 0;
+    ed.lower_scroll = 0;
     ed.select(1);
     ed.lower = .generator;
     const fo = &ed.map.node[1].plan.procgen.foes;
@@ -963,7 +990,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     ed.desk.mouse = .{ .x = 0, .y = 0 };
     render(ed, g, target);
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-gen-top.png", .{dir}));
-    ed.gen_top = ed.gen_most;
+    ed.lower_scroll = ed.lower_most;
     try snap(ed, g, target, gen_path);
     ed.modal = .objects;
     ed.seen_at = seenIndex(.{ .body = .slime });
@@ -972,7 +999,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-beefy-pib.png", .{dir}));
     ed.modal = .help;
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-help.png", .{dir}));
-    ed.modal = .dialogs;
+    ed.modal = .{ .plot = .dialogs };
     ed.plot.pick = .{ .folk = 0 };
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-folk.png", .{dir}));
     ed.plot.pick = .{ .dialog = 0 };
@@ -982,15 +1009,15 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     ed.plot.field.set(ed.map.script.dialog[0].line[0].say.text());
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-dialog-typing.png", .{dir}));
     ed.plot.focus = null;
-    ed.modal = .script;
+    ed.modal = .{ .plot = .script };
     ed.plot.trigger = 0;
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-script.png", .{dir}));
     ed.naming = .save_as;
     ed.field.put("The Warrens");
     ed.listing.scan();
-    inline for (.{ Modal.confirm, Modal.name, Modal.open }) |modal| {
-        ed.modal = modal;
-        try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-" ++ @tagName(modal) ++ ".png", .{dir}));
+    inline for (comptime std.enums.values(Prompt)) |prompt| {
+        ed.modal = .{ .prompt = prompt };
+        try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-" ++ @tagName(prompt) ++ ".png", .{dir}));
     }
     text_panel.open(ed);
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-text-browse.png", .{dir}));

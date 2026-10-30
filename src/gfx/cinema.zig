@@ -201,7 +201,7 @@ fn copyTarget(t: rl.Texture2D) void {
 const FOCUS_FS = shaders.FS_HEAD ++ look.FOCUS_TAPS ++
     \\void main() {
     \\    vec4 c = focused();
-    \\    finalColor = vec4(c.rgb / max(c.a, 0.0001), c.a) * fragColor;
+    \\    finalColor = vec4(unpremultiplied(c), c.a) * fragColor;
     \\}
 ;
 
@@ -248,7 +248,7 @@ const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++
     \\}
 ;
 
-const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR }) ++
+const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR, .MIST_TINT = look.MIST_TINT, .SHAFT_TINT = look.SHAFT_TINT }) ++
     \\uniform float time;
     \\uniform float daylight;
     \\uniform float brightness;
@@ -278,7 +278,7 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR 
     \\    float dust = (1.0 - smoothstep(0.008, 0.024, length(fract(p - drift) - dotAt))) * step(0.88, seed);
     \\    dust *= daylight * (0.25 + trees) * 0.20 * (0.6 + 0.4 * sin(time * 0.7 + seed * 20.0));
     \\    float alpha = (mist + shafts + dust) * live;
-    \\    vec3 tint = (vec3(0.48, 0.58, 0.68) * mist + vec3(1.0, 0.87, 0.64) * (shafts + dust)) / max(mist + shafts + dust, 0.00001);
+    \\    vec3 tint = (MIST_TINT * mist + SHAFT_TINT * (shafts + dust)) / max(mist + shafts + dust, 0.00001);
     \\    finalColor = vec4(tint, alpha);
     \\}
 ;

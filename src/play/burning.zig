@@ -24,6 +24,7 @@ fn seared(fire_resist: i16) i32 {
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const procs = damage.chance(CHANCE);
+pub const chance = damage.flat(CHANCE);
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.burn.start();

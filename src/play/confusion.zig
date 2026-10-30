@@ -1,5 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const resilience = @import("resilience.zig");
 
 pub const TURNS: u8 = 3;
 /// Percent of a confused body's moves that go a random way.
@@ -9,20 +10,7 @@ pub const STUMBLES = "stumbles";
 pub const STATUS = std.fmt.comptimePrint("{d}% of moves go a random way.", .{CHANCE});
 
 /// Its turns left moving unsteadily.
-pub const Confusion = struct {
-    turns: u8 = 0,
-
-    pub fn start(self: *Confusion) void {
-        self.turns = @max(self.turns, TURNS);
-    }
-
-    /// One of its turns: whether it is confused this turn.
-    pub fn wear(self: *Confusion) bool {
-        if (self.turns == 0) return false;
-        self.turns -= 1;
-        return true;
-    }
-};
+pub const Confusion = resilience.Turns(TURNS);
 
 /// Whether a move goes astray; a body not confused draws nothing.
 pub fn strays(confused: bool, rng: *mathx.Rng) bool {

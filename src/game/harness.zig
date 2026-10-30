@@ -149,6 +149,14 @@ pub fn confirmUse(g: *game.Game, act: skillbar.Act) void {
     press(g, CONFIRM);
 }
 
+/// `act` opened, bound or not, its reticle put on `at` and confirmed.
+pub fn aimAt(g: *game.Game, act: skillbar.Act, at: P) void {
+    skills.useSkill(g, .{ .act = act, .by = .x });
+    if (g.mode != .aim) return;
+    g.mode.aim.mark = at;
+    skills.confirmAim(g);
+}
+
 pub fn boundTo(g: *const game.Game, act: skillbar.Act) skills.Use {
     const s = g.bar.slotOf(act).?;
     return .{ .act = act, .by = s.button, .set = s.set };

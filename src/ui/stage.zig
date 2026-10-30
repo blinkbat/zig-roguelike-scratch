@@ -126,21 +126,35 @@ fn vertex(x: f32, y: f32, c: rl.Color) void {
 
 /// `k` spotlit, standing left of `box` with its feet level with `box`'s foot.
 pub fn beside(sprites: *const look.Sprites, k: actor.Kind, box: rl.Rectangle, screen: mathx.P) void {
-    const scale = scaleFor(screen);
-    const size = look.SPRITE_PX * scale;
-    const feet = mathx.P{ .x = @as(i32, @intFromFloat(box.x)) - BESIDE_GAP - @divTrunc(size, 2), .y = @intFromFloat(box.y + box.height) };
-    const sz: f32 = @floatFromInt(size);
-    const fy: f32 = @floatFromInt(feet.y);
-    spotlight(@floatFromInt(feet.x), fy - sz - @as(f32, @floatFromInt(BEAM_ABOVE)), fy, sz);
-    figure(sprites, k, feet, scale, 1);
+    const at = Beside.of(box, screen);
+    spotlight(@floatFromInt(at.feet.x), at.top(), @floatFromInt(at.feet.y), @floatFromInt(at.size));
+    figure(sprites, k, at.feet, at.scale, 1);
 }
 
 pub fn besideBounds(box: rl.Rectangle, screen: mathx.P) rl.Rectangle {
-    const size: f32 = @floatFromInt(look.SPRITE_PX * scaleFor(screen));
-    const cx = box.x - @as(f32, @floatFromInt(BESIDE_GAP)) - size / 2;
-    const feet = box.y + box.height;
-    return .{ .x = cx - size * POOL_RX, .y = feet - size - @as(f32, @floatFromInt(BEAM_ABOVE)), .width = size * POOL_RX * 2, .height = size * (1 + POOL_RY) + @as(f32, @floatFromInt(BEAM_ABOVE)) };
+    const at = Beside.of(box, screen);
+    const size: f32 = @floatFromInt(at.size);
+    const cx: f32 = @floatFromInt(at.feet.x);
+    return .{ .x = cx - size * POOL_RX, .y = at.top(), .width = size * POOL_RX * 2, .height = size * (1 + POOL_RY) + @as(f32, @floatFromInt(BEAM_ABOVE)) };
 }
+
+/// Where `beside` stands its figure for `box`, and how large.
+const Beside = struct {
+    feet: mathx.P,
+    scale: i32,
+    size: i32,
+
+    fn of(box: rl.Rectangle, screen: mathx.P) Beside {
+        const scale = scaleFor(screen);
+        const size = look.SPRITE_PX * scale;
+        return .{ .scale = scale, .size = size, .feet = .{ .x = @as(i32, @intFromFloat(box.x)) - BESIDE_GAP - @divTrunc(size, 2), .y = @intFromFloat(box.y + box.height) } };
+    }
+
+    /// The beam's top, over the figure's head.
+    fn top(self: Beside) f32 {
+        return @floatFromInt(self.feet.y - self.size - BEAM_ABOVE);
+    }
+};
 
 const Layout = struct {
     scale: i32,
@@ -209,11 +223,7 @@ pub const Lineup = struct {
     }
 
     pub fn step(self: *Lineup, st: *const input.State, screen: mathx.P) ?usize {
-        self.at = st.scrolled(self.at, N);
-        if (menu.pointed(st, N, Layout.of(screen), Layout.box)) |i| {
-            self.at = i;
-            if (st.click) return i;
-        }
+        if (menu.pointAt(&self.at, st, N, Layout.of(screen), Layout.box)) |i| return i;
         if (st.walk) |d| {
             const v = d.delta();
             self.at = mathx.wrap(self.at, if (v.x != 0) v.x else v.y, N);
@@ -277,7 +287,7 @@ test "pointing at a hero picks it, and the lineup keeps inside the screen at 720
     for (SCREENS) |screen| {
         const lay = Layout.of(screen);
         try std.testing.expect(lay.box(0).x >= menu.PANEL_PAD and lay.box(N - 1).x + lay.box(N - 1).width <= @as(f32, @floatFromInt(screen.x - menu.PANEL_PAD)));
-        try std.testing.expect(lay.top >= menu.PANEL_PAD and lay.box(0).y + lay.box(0).height < menu.footerBox(screen, false).y);
+        try std.testing.expect(lay.top >= menu.PANEL_PAD and lay.box(0).y + lay.box(0).height < menu.footerBox(screen).y);
         try std.testing.expect(lay.size >= 2 * look.SPRITE_PX and @rem(lay.size, look.SPRITE_PX) == 0);
         var l = Lineup{};
         for (0..N) |i| {

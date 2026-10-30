@@ -134,10 +134,7 @@ pub const Assets = struct {
         var need = Assets{ .item_bag = true, .small_coins = true, .large_coins = true };
         for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
             const p = grid.Level.of(i);
-            if (grassDecor(t, p)) |decor| switch (decor) {
-                .brush => need.brush = true,
-                .flowers => need.flowers = true,
-            };
+            need.decor(t, p);
             need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
             need.chest_item_bag = need.chest_item_bag or t.isChest();
             if (t.opened()) |open| need.add(.{ .tile = open });
@@ -149,6 +146,21 @@ pub const Assets = struct {
             if (under(t)) |u| need.bed(ground.of(u).?);
         }
         return need;
+    }
+
+    /// The ground `t` a mimic's chest stands on at `p`, ready for when the chest is flung open.
+    pub fn beneath(need: *Assets, t: grid.Tile, p: mathx.P) void {
+        need.decor(t, p);
+        if (standsOver(t)) if (cutOf(t, null)) |c| need.add(c);
+        if (ground.of(t)) |g| need.bed(g);
+        if (under(t)) |u| need.bed(ground.of(u).?);
+    }
+
+    fn decor(need: *Assets, t: grid.Tile, p: mathx.P) void {
+        if (grassDecor(t, p)) |d| switch (d) {
+            .brush => need.brush = true,
+            .flowers => need.flowers = true,
+        };
     }
 
     fn bed(need: *Assets, g: ground.Ground) void {
@@ -316,7 +328,7 @@ pub const Sprites = struct {
     }
 
     fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4, p: mathx.P) ?Piece {
-        if (g == .grass and mask == ground.FULL and cellHash(0x62A552, p) % 3 == 0) {
+        if (g == .grass and mask == ground.FULL and cellHash(GRASS2_SEED, p) % GRASS2_IN == 0) {
             if (self.grass2) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
         }
         const tex = self.grounds.getPtrConst(g).* orelse return null;
@@ -602,6 +614,11 @@ const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const
 comptime {
     std.debug.assert(TILE_PNGS.get(.wall) == null);
     std.debug.assert(std.meta.eql(pngSize(TILE_PNGS.get(.large_tree).?), mathx.P{ .x = SPRITE_PX, .y = 2 * SPRITE_PX }));
+    for (std.enums.values(grid.Tile)) |t| {
+        if (!standsOver(t)) continue;
+        const size = pngSize(TILE_PNGS.get(t) orelse continue);
+        if (size.x != SPRITE_PX or (size.y > SPRITE_PX) != tall(t)) @compileError(@tagName(t) ++ ": a standing picture is a sprite wide, and taller only when `tall`");
+    }
     for (STANDING) |t| {
         if (TILE_PNGS.get(t) == null) @compileError("a standing tile casts from its picture: " ++ @tagName(t));
     }
@@ -639,12 +656,17 @@ comptime {
 /// One lone shrub in this many is a forest clump, the rest `shrub.png`; which ones by a hash of the cell.
 const LONE_CLUMP_IN: u64 = 3;
 const LONE_CLUMP_SEED: u64 = 0xF02E57;
+/// One whole grass piece in this many draws `grass2.png`; one grass cell in `DECOR_IN` takes brush, one more flowers.
+const GRASS2_IN: u64 = 3;
+const GRASS2_SEED: u64 = 0x62A552;
+const DECOR_IN: u64 = 20;
+const DECOR_SEED: u64 = 0xB2754;
 
 const GrassDecor = enum { brush, flowers };
 
 fn grassDecor(t: grid.Tile, p: mathx.P) ?GrassDecor {
     if (t != .grass) return null;
-    return switch (cellHash(0xB2754, p) % 20) {
+    return switch (cellHash(DECOR_SEED, p) % DECOR_IN) {
         0 => .brush,
         1 => .flowers,
         else => null,
@@ -780,6 +802,8 @@ pub const FIRE = rgb(0xff8a32);
 pub const FIRE_CORE = rgb(0xffe6a0);
 pub const LEVEL_GOLD = rgb(0xe6c57c);
 pub const LEVEL_CORE = rgb(0xffedbd);
+/// The light a level gain adds to its body, per channel.
+pub const LEVEL_BODY_TINT = [3]f32{ 1, 0.72, 0.28 };
 pub const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
 pub const UI_GOLD = rgb(0xbca06b);
@@ -816,6 +840,7 @@ pub const SOFTENED = CROWNS.unionWith(grid.LITTER_TILES);
 comptime {
     for (std.enums.values(grid.Tile)) |t| {
         if (SOFTENED.contains(t) and !stands(t)) @compileError(@tagName(t) ++ " is softened but stands in no STANDS row");
+        if (CROWNS.contains(t) and !canopied(t)) @compileError(@tagName(t) ++ " is a crown but no .canopy STANDS row");
     }
 }
 
@@ -936,14 +961,23 @@ pub fn body(k: actor.Kind) Look {
 }
 
 /// Drawn a figure's glyph is, offset down-right in this ink, so letters standing in for art read at a glance.
-pub const GLYPH_SHADOW = rl.Color{ .r = 0, .g = 0, .b = 0, .a = 200 };
+pub const GLYPH_SHADOW = rl.Color{ .r = 0, .g = 0, .b = 0, .a = DROP_SHADOW_A };
 pub const GLYPH_SHADOW_PX: i32 = 4;
+/// A glyph's or a line of text's drop shadow, at full ink.
+pub const DROP_SHADOW_A: u8 = 200;
 
 /// Brogue's `poisonGasColor`, the bloat's.
 pub const BLOAT = rgb(0xbf40d9);
 /// Its caustic gas, a greyer purple.
 pub const GAS = rgb(0x9a76aa);
 pub const HEALING_GAS = rgb(0xa6cff0);
+
+pub fn gasInk(g: grid.Gas) rl.Color {
+    return switch (g) {
+        .caustic => GAS,
+        .healing => HEALING_GAS,
+    };
+}
 
 pub const BLOOD = rl.Color{ .r = 112, .g = 22, .b = 16, .a = GORE_A };
 pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = GORE_A };
@@ -955,6 +989,11 @@ pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
 pub const JUKE_TRAIL = rl.Color{ .r = 196, .g = 212, .b = 218, .a = 140 };
 pub const JUKE_DUST = rl.Color{ .r = 184, .g = 161, .b = 125, .a = 170 };
 pub const WATER_DROP = rl.Color{ .r = 166, .g = 197, .b = 242, .a = 150 };
+pub const NET = rgb(0xd6c496);
+pub const RAIN = rgb(0xc4d0e2);
+/// The atmosphere's water mist, and its light shafts and dust.
+pub const MIST_TINT = [3]f32{ 0.48, 0.58, 0.68 };
+pub const SHAFT_TINT = [3]f32{ 1.0, 0.87, 0.64 };
 
 pub const Gait = enum { hop, slide };
 
@@ -1071,7 +1110,7 @@ pub const Focused = struct {
 pub const FOCUS_CENTRE_W = 0.4;
 pub const FOCUS_SIDE_W = (1 - FOCUS_CENTRE_W) / 4.0;
 pub const FOCUS_WEIGHTS = shaders.glslConsts(.{ .FOCUS_CENTRE_W = FOCUS_CENTRE_W, .FOCUS_SIDE_W = FOCUS_SIDE_W });
-/// `focused()`: `texture0` softened by `Focused`'s uniforms, premultiplied.
+/// `focused()`: `texture0` softened by `Focused`'s uniforms, premultiplied; `unpremultiplied(c)` its colour back.
 pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\uniform vec2 texel;
     \\uniform float strength;
@@ -1084,6 +1123,9 @@ pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\    vec4 blur = base * FOCUS_CENTRE_W;
     \\    blur += (tap(vec2(1.0, 0.0)) + tap(vec2(-1.0, 0.0)) + tap(vec2(0.0, 1.0)) + tap(vec2(0.0, -1.0))) * FOCUS_SIDE_W;
     \\    return mix(base, blur, strength);
+    \\}
+    \\vec3 unpremultiplied(vec4 c) {
+    \\    return c.rgb / max(c.a, 0.0001);
     \\}
     \\
 ;
@@ -1110,7 +1152,7 @@ const SCENERY_FS = shaders.FS_HEAD ++ FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ OCCLU
     \\    vec4 art = focused();
     \\    vec3 lit = texture(lightmap, uv).rgb * OVERBRIGHT;
     \\    vec3 fog = FOG_RGB * texture(fogmap, uv).a;
-    \\    finalColor = vec4(art.rgb / max(art.a, 0.0001) * lit + fog, art.a * occlusionAt(p));
+    \\    finalColor = vec4(unpremultiplied(art) * lit + fog, art.a * occlusionAt(p));
     \\}
 ;
 
@@ -1160,6 +1202,7 @@ const WATER_SHALLOW: f32 = 1;
 const WATER_SATURATION: f32 = 0.8;
 const MIRROR_DEEP: f32 = 0.42;
 const MIRROR_SHALLOW: f32 = 0.28;
+const MIRROR_TINT = [3]f32{ 0.8, 0.9, 1.0 };
 const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     .SATURATION = WATER_SATURATION,
     .OVERBRIGHT = @import("light.zig").OVERBRIGHT,
@@ -1167,6 +1210,7 @@ const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     .SHALLOW = WATER_SHALLOW,
     .MIRROR_DEEP = MIRROR_DEEP,
     .MIRROR_SHALLOW = MIRROR_SHALLOW,
+    .MIRROR_TINT = MIRROR_TINT,
 }) ++ shaders.MAP_VIEW_FS ++
     \\uniform float depth;
     \\uniform sampler2D visibility;
@@ -1186,7 +1230,7 @@ const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     \\        reflected = mix(remembered, texture(mirror, uv), light.a);
     \\    }
     \\    float strength = mix(MIRROR_DEEP, MIRROR_SHALLOW, smoothstep(DEEP, SHALLOW, depth));
-    \\    vec3 shine = reflected.rgb * vec3(0.80, 0.90, 1.0) * strength;
+    \\    vec3 shine = reflected.rgb * MIRROR_TINT * strength;
     \\    shine = mix(vec3(dot(shine, LUMA)), shine, SATURATION);
     \\    shine += texture(glints, at / CELLS).rgb * light.a;
     \\    vec3 base = art.rgb * (1.0 - reflected.a * strength);
@@ -1223,6 +1267,11 @@ pub fn rgbOf(c: rl.Color) sky.Rgb {
     return sky.Rgb{ @floatFromInt(c.r), @floatFromInt(c.g), @floatFromInt(c.b) } / sky.splat(255);
 }
 
+pub fn colourOf(c: sky.Rgb, a: f32) rl.Color {
+    const k = @max(sky.splat(0), @min(sky.splat(1), c)) * sky.splat(255) + sky.splat(0.5);
+    return .{ .r = @intFromFloat(k[0]), .g = @intFromFloat(k[1]), .b = @intFromFloat(k[2]), .a = @intFromFloat(std.math.clamp(a, 0, 1) * 255 + 0.5) };
+}
+
 /// The opacity of the hud plate's and the minimap's backing.
 pub const BACKING_A: f32 = 0.7;
 pub const MINI_BG = fade(FOG, BACKING_A);
@@ -1241,6 +1290,20 @@ pub const EDIT_PICKED = UI_FOCUS;
 pub const EDIT_WARN = FOE;
 pub const EDIT_HOVER = fade(TEXT, 0.6);
 pub const EDIT_UNLINKED = DIM;
+
+pub const PROMPT_BODY = rgb(0x1b1713);
+pub const PROMPT_FACE = rgb(0x28221c);
+pub const PROMPT_EDGE = rgb(0x6a604e);
+pub const PROMPT_LIP = rgb(0x0c0a08);
+pub const PROMPT_INK = rgb(0xe2d2b4);
+pub const XBOX_A = rgb(0x5eb242);
+pub const XBOX_B = rgb(0xd63e34);
+pub const XBOX_X = rgb(0x2e78cd);
+pub const XBOX_Y = UI_FOCUS;
+pub const SONY_CROSS = rgb(0x7cb2e8);
+pub const SONY_CIRCLE = rgb(0xea6060);
+pub const SONY_SQUARE = rgb(0xd686c4);
+pub const SONY_TRIANGLE = rgb(0x40c4a0);
 
 test "a cell's shine crosses once a period, corner to corner, and neighbours shine at other times" {
     const dt = mathx.TEST_DT;
@@ -1409,8 +1472,16 @@ test "floor shows through a wall's gaps; a tile with its own ground or backgroun
     try std.testing.expectEqual(@as(?grid.Tile, null), under(.water));
 }
 
-test "the wall sheet's masks and face height are the ones its export script paints" {
-    try ground.expectLuaList(u8, &WALL_MASKS, "tools/tile_art/wall_masks.lua", "return {");
+test "the wall sheet's masks, shape bits and face height are the ones its scripts paint" {
+    try ground.expectLuaList(u8, &WALL_MASKS, "tools/tile_art/wall_masks.lua", "local masks={");
+    const sides = .{ "n", "e", "s", "w", "ne", "se", "sw", "nw" };
+    var bits: [sides.len]u8 = undefined;
+    inline for (sides, 0..) |side, i| {
+        var shape = grid.WallShape{};
+        @field(shape, side) = true;
+        bits[i] = shape.mask();
+    }
+    try ground.expectLuaList(u8, &bits, "tools/tile_art/wall_masks.lua", "local N,E,S,W,NE,SE,SW,NW=");
     try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/export_walls.lua", "local FACE=");
     try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/guide_walls.lua", "local FACE=tonumber(app.params.rows) or ");
     try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/idea_walls.lua", "local FACE=");

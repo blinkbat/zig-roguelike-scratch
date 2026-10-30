@@ -826,6 +826,25 @@ test "a door trip finishes behind Character opened during it, so item commands c
     std.debug.print("door behind Character: arrived at node {d} with the inventory still open\n", .{g.sim.node});
 }
 
+test "a pinned hero on the door it came through struggles there instead of going back" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try std.testing.allocator.create(atlas.Atlas);
+    defer std.testing.allocator.destroy(w);
+    const b = runTwoRooms(g, w);
+    harness.nudge(g, .w);
+    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    try std.testing.expectEqual(b, g.sim.node);
+    const at = g.sim.heroAt().?;
+    try std.testing.expect(character.doorReached(g, at, at) != null);
+    g.sim.heroActor().?.pin.turns = 2;
+    character.characterCommand(g, .{ .travel = at });
+    try std.testing.expect(g.sim.travel == null);
+    try std.testing.expect(std.mem.endsWith(u8, g.sim.log.line(0).?, "is pinned and struggles."));
+    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    try std.testing.expectEqual(b, g.sim.node);
+}
+
 test "inspect opened during a door trip opens, and the trip still finishes behind it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

@@ -28,8 +28,6 @@ fn tintOf(volume: u16) f32 {
     return @min(TINT_HI, TINT_LO + TINT_PER * @as(f32, @floatFromInt(volume)));
 }
 
-const INK = std.EnumArray(grid.Gas, rl.Color).init(.{ .caustic = look.GAS, .healing = look.HEALING_GAS });
-
 const Shade = struct { shader: rl.Shader, time: i32 };
 const Veil = struct { shader: rl.Shader, time: i32, cloud: i32, origin: i32, cell: i32, screen: i32, lit: i32, texel: i32, strength: i32, body: i32, hidden: i32 };
 
@@ -87,8 +85,9 @@ pub const Cloud = struct {
         const k = mathx.easing(dt, EASE);
         for (std.enums.values(grid.Gas)) |kind| {
             for (self.tint.getPtr(kind), &lv.lit, lv.volumes(kind)) |*t, lit, v| {
+                if (!lit) continue;
                 const want = tintOf(v);
-                if (!lit or t.* == want) continue;
+                if (t.* == want) continue;
                 t.* = mathx.ease(t.*, want, k, k);
                 self.stale = true;
             }
@@ -187,7 +186,7 @@ pub const Cloud = struct {
         var sum: f32 = 0;
         for (std.enums.values(grid.Gas)) |kind| {
             const t = texel(self.tint.getPtrConst(kind), lv, tx, ty);
-            rgb += look.rgbOf(INK.get(kind)) * sky.splat(t);
+            rgb += look.rgbOf(look.gasInk(kind)) * sky.splat(t);
             sum += t;
         }
         if (sum == 0) return rl.Color.blank;

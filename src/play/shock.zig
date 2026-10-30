@@ -1,5 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const resilience = @import("resilience.zig");
 
 pub const TURNS: u8 = 3;
 /// Percent more damage the hit it is spent on deals, rounded up.
@@ -12,7 +13,7 @@ pub const Shock = struct {
     turns: u8 = 0,
 
     pub fn start(self: *Shock) void {
-        self.turns = @max(self.turns, TURNS);
+        resilience.lengthen(&self.turns, TURNS);
     }
 
     /// `dmg` as the hit it is spent on deals it; a hit dealing nothing leaves it waiting.
@@ -23,7 +24,7 @@ pub const Shock = struct {
     }
 
     pub fn wear(self: *Shock) void {
-        self.turns -|= 1;
+        _ = resilience.wearTurn(&self.turns);
     }
 };
 

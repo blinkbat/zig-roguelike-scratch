@@ -140,20 +140,20 @@ pub fn labelPx(h: i32) i32 {
     return @divTrunc(h * 11, 16);
 }
 
-const PROMPT_BODY = look.rgb(0x1b1713);
-const PROMPT_FACE = look.rgb(0x28221c);
-const PROMPT_EDGE = look.rgb(0x6a604e);
-const PROMPT_LIP = look.rgb(0x0c0a08);
-const PROMPT_INK = look.rgb(0xe2d2b4);
+const PROMPT_BODY = look.PROMPT_BODY;
+const PROMPT_FACE = look.PROMPT_FACE;
+const PROMPT_EDGE = look.PROMPT_EDGE;
+const PROMPT_LIP = look.PROMPT_LIP;
+const PROMPT_INK = look.PROMPT_INK;
 
 pub const FaceButton = enum { a, b, x, y };
 
 pub fn faceInk(b: FaceButton, sony: bool) rl.Color {
     return switch (b) {
-        .a => if (sony) look.rgb(0x7cb2e8) else look.rgb(0x5eb242),
-        .b => if (sony) look.rgb(0xea6060) else look.rgb(0xd63e34),
-        .x => if (sony) look.rgb(0xd686c4) else look.rgb(0x2e78cd),
-        .y => if (sony) look.rgb(0x40c4a0) else look.UI_FOCUS,
+        .a => if (sony) look.SONY_CROSS else look.XBOX_A,
+        .b => if (sony) look.SONY_CIRCLE else look.XBOX_B,
+        .x => if (sony) look.SONY_SQUARE else look.XBOX_X,
+        .y => if (sony) look.SONY_TRIANGLE else look.XBOX_Y,
     };
 }
 

@@ -74,8 +74,7 @@ pub fn overUi(g: *const game.Game, p: P) bool {
 pub fn cell(g: *game.Game) ?P {
     const p = g.st.pointer orelse return null;
     if (p.x < 0 or p.y < 0 or p.x >= g.screen.x or p.y >= g.screen.y or overUi(g, p)) return null;
-    const cam = game.scene.Cam.of(g);
-    const at = P{ .x = @divFloor(p.x + cam.x, game.CELL), .y = @divFloor(p.y + cam.y, game.CELL) };
+    const at = game.scene.Cam.of(g).cellAt(p);
     return if (grid.Level.inside(at)) at else null;
 }
 
@@ -140,7 +139,7 @@ pub fn aim(g: *game.Game) bool {
 }
 
 fn danger(g: *const game.Game) bool {
-    for (g.sim.pool.items[0..g.sim.pool.n]) |a| if (a.alive and a.foe() and a.seenIn(&g.sim.lv)) return true;
+    for (g.sim.pool.items[0..g.sim.pool.n]) |a| if (a.seenFoe(&g.sim.lv)) return true;
     return false;
 }
 
@@ -150,7 +149,7 @@ fn attack(g: *game.Game, at: P) bool {
     for (skillbar.SLOTS) |b| {
         const act = g.bar.at(.{ .set = set, .button = b }) orelse continue;
         if (act.reticle() == null or act.attack() == null or act.supplyOf() != null or !tactics.validAct(g, act, h.at, at)) continue;
-        if (skills.blocked(g, act, &g.sim.flasks, g.sim.mana) != null) continue;
+        if (skills.blocked(g, act, &g.sim.flasks, g.sim.mana, skills.heroPinned(g)) != null) continue;
         skills.useSkill(g, .{ .act = act, .by = b, .set = set });
         if (g.mode == .aim) {
             g.mode.aim.mark = at;
@@ -215,7 +214,7 @@ const FAN = [_]u3{ 0, 1, 7, 2, 6, 3, 5, 4 };
 
 pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
     if (!grid.Level.inside(to) or !g.sim.lv.isSeen(to) or from.eq(to)) return null;
-    var visited = std.StaticBitSet(grid.CELLS).initEmpty();
+    var visited = grid.CellSet.initEmpty();
     var queue: [grid.CELLS]P = undefined;
     var first: [grid.CELLS]mathx.Dir = undefined;
     var head: usize = 0;

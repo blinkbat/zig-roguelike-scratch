@@ -86,6 +86,26 @@ pub fn plain(s: []const u8) bool {
     return true;
 }
 
+fn nameOf(it: anytype) *const Name {
+    return if (comptime @TypeOf(it.*) == Name) it else &it.name;
+}
+
+/// Where `name` is among `items`: names, or anything holding its own in `name`.
+pub fn indexOfName(items: anytype, name: []const u8) ?u8 {
+    for (items, 0..) |*it, i| {
+        if (nameOf(it).eql(name)) return @intCast(i);
+    }
+    return null;
+}
+
+/// No two of `items` go by one name.
+fn distinct(items: anytype) bool {
+    for (items, 0..) |*it, i| {
+        if (indexOfName(items[0..i], nameOf(it).text()) != null) return false;
+    }
+    return true;
+}
+
 /// One word the map file can read back: letters, digits, `_` and `-`, and never `end` or `-`.
 pub fn token(s: []const u8) bool {
     if (s.len == 0 or s.len > NAME_MAX or std.mem.eql(u8, s, END) or std.mem.eql(u8, s, NONE)) return false;
@@ -215,7 +235,21 @@ pub const Choice = struct {
     pub fn acts(self: *const Choice) []const Act {
         return self.act[0..self.act_n];
     }
+
+    /// Offered whatever holds.
+    pub fn always(self: *const Choice) bool {
+        const g = self.gate orelse return true;
+        return g.kind == .always;
+    }
 };
+
+const Lines = std.StaticBitSet(MAX_LINES);
+
+/// The end, or a line in `ending`.
+fn endsAt(next: ?u8, ending: *const Lines) bool {
+    const n = next orelse return true;
+    return n < MAX_LINES and ending.isSet(n);
+}
 
 pub const Line = struct {
     pub const COUNTED = .{ .{ "choice", "choice_n" }, .{ "act", "act_n" } };
@@ -238,6 +272,22 @@ pub const Line = struct {
     pub fn acts(self: *const Line) []const Act {
         return self.act[0..self.act_n];
     }
+
+    /// Goes on to `then` when no choice is offered, as every gated one may not be.
+    pub fn thenUsed(self: *const Line) bool {
+        for (self.choices()) |*c| {
+            if (c.always()) return false;
+        }
+        return true;
+    }
+
+    fn goesOn(self: *const Line, ending: *const Lines) bool {
+        for (self.choices()) |*c| {
+            if (c.gate) |g| if (g.kind == .never) continue;
+            if (endsAt(c.next, ending)) return true;
+        }
+        return self.thenUsed() and endsAt(self.then, ending);
+    }
 };
 
 pub const Dialog = struct {
@@ -251,10 +301,22 @@ pub const Dialog = struct {
     }
 
     pub fn findLine(self: *const Dialog, name: []const u8) ?u8 {
-        for (self.lines(), 0..) |*l, i| {
-            if (l.name.eql(name)) return @intCast(i);
+        return indexOfName(self.lines(), name);
+    }
+
+    /// Some way from its first line comes to an end, taking every gate as one that may hold or not.
+    pub fn ends(self: *const Dialog) bool {
+        var ending = Lines.initEmpty();
+        var grew = true;
+        while (grew) {
+            grew = false;
+            for (self.lines(), 0..) |*l, i| {
+                if (ending.isSet(i) or !l.goesOn(&ending)) continue;
+                ending.set(i);
+                grew = true;
+            }
         }
-        return null;
+        return self.line_n == 0 or ending.isSet(0);
     }
 
     pub fn addLine(self: *Dialog) ?u8 {
@@ -349,11 +411,15 @@ pub const Script = struct {
         };
     }
 
+    /// How many names table `t` holds at most.
+    pub fn tableMax(t: Table) usize {
+        return switch (t) {
+            inline else => |tag| @typeInfo(@FieldType(Script, @tagName(tag))).array.len,
+        };
+    }
+
     pub fn find(self: *const Script, t: Table, name: []const u8) ?u8 {
-        for (self.names(t), 0..) |*nm, i| {
-            if (nm.eql(name)) return @intCast(i);
-        }
-        return null;
+        return indexOfName(self.names(t), name);
     }
 
     pub fn declare(self: *Script, t: Table, name: []const u8) ?u8 {
@@ -368,12 +434,7 @@ pub const Script = struct {
     /// A fresh `flag1`-style name in table `t`.
     pub fn coin(self: *Script, t: Table) ?u8 {
         var nb: [NAME_MAX]u8 = undefined;
-        var i: usize = 1;
-        while (i <= MAX_FLAGS + MAX_COUNTERS) : (i += 1) {
-            const nm = std.fmt.bufPrint(&nb, "{s}{d}", .{ @tagName(t), i }) catch return null;
-            if (self.find(t, nm) == null) return self.declare(t, nm);
-        }
-        return null;
+        return self.declare(t, freshName(&nb, @tagName(t), InTable{ .script = self, .table = t }, InTable.find));
     }
 
     pub fn rename(self: *Script, t: Table, i: u8, name: []const u8) bool {
@@ -384,16 +445,33 @@ pub const Script = struct {
     }
 
     pub fn tableUsers(self: *const Script, t: Table, i: u8) usize {
+        return self.refUsers(.{ .table = t }, i);
+    }
+
+    /// The conditions and actions whose `slot` is `i` of what `r` names.
+    fn refUsers(self: *const Script, r: Ref, i: u8) usize {
         var n: usize = 0;
         var conds = self.condIter();
         while (conds.next()) |c| {
-            if (condTable(c.kind) == t and c.slot == i) n += 1;
+            if (refersTo(condRef(c.kind), r) and c.slot == i) n += 1;
         }
         var acts = self.actIter();
         while (acts.next()) |a| {
-            if (actTable(a.kind) == t and a.slot == i) n += 1;
+            if (refersTo(actRef(a.kind), r) and a.slot == i) n += 1;
         }
         return n;
+    }
+
+    /// Every `slot` past `i` of what `r` names moved down one, as `i` goes.
+    fn lowerRefs(self: *Script, r: Ref, i: u8) void {
+        var conds = self.condIterMut();
+        while (conds.next()) |c| {
+            if (refersTo(condRef(c.kind), r) and c.slot > i) c.slot -= 1;
+        }
+        var acts = self.actIterMut();
+        while (acts.next()) |a| {
+            if (refersTo(actRef(a.kind), r) and a.slot > i) a.slot -= 1;
+        }
     }
 
     /// Refused while anything names it.
@@ -401,14 +479,7 @@ pub const Script = struct {
         if (self.tableUsers(t, i) > 0) return false;
         const tb = self.tableOf(t);
         cut(Name, tb.items, tb.n, i);
-        var conds = self.condIterMut();
-        while (conds.next()) |c| {
-            if (condTable(c.kind) == t and c.slot > i) c.slot -= 1;
-        }
-        var acts = self.actIterMut();
-        while (acts.next()) |a| {
-            if (actTable(a.kind) == t and a.slot > i) a.slot -= 1;
-        }
+        self.lowerRefs(.{ .table = t }, i);
         return true;
     }
 
@@ -430,12 +501,12 @@ pub const Script = struct {
         return self.folk_n - 1;
     }
 
-    /// Every `near` it was named in can no longer hold.
+    /// Every condition it was named in can no longer hold.
     pub fn dropFolk(self: *Script, i: u8) void {
         cut(Folk, &self.folk, &self.folk_n, i);
         var conds = self.condIterMut();
         while (conds.next()) |c| {
-            if (c.kind != .near) continue;
+            if (!refersTo(condRef(c.kind), .folk)) continue;
             if (c.slot == i) c.* = .{ .kind = .never } else if (c.slot > i) c.slot -= 1;
         }
     }
@@ -461,11 +532,20 @@ pub const Script = struct {
         return self.dialog[0..self.dialog_n];
     }
 
+    /// Dialogs no way through ends, which never open.
+    pub fn endless(self: *const Script) usize {
+        var n: usize = 0;
+        for (self.dialogs()) |*d| n += @intFromBool(!d.ends());
+        return n;
+    }
+
+    /// Dialog `d` has a first line, and a way through it ends.
+    pub fn opens(self: *const Script, d: u8) bool {
+        return d < self.dialog_n and self.dialog[d].line_n > 0 and self.dialog[d].ends();
+    }
+
     pub fn findDialog(self: *const Script, name: []const u8) ?u8 {
-        for (self.dialogs(), 0..) |*d, i| {
-            if (d.name.eql(name)) return @intCast(i);
-        }
-        return null;
+        return indexOfName(self.dialogs(), name);
     }
 
     /// A new dialog of one empty line, named after `stem` when it can be.
@@ -485,15 +565,7 @@ pub const Script = struct {
         for (self.folks()) |f| {
             if (f.dialog == d) n += 1;
         }
-        var conds = self.condIter();
-        while (conds.next()) |c| {
-            if (c.kind == .talked and c.slot == d) n += 1;
-        }
-        var acts = self.actIter();
-        while (acts.next()) |a| {
-            if (a.kind == .dialog and a.slot == d) n += 1;
-        }
-        return n;
+        return n + self.refUsers(.dialog, d);
     }
 
     /// Refused while anything names it, so no reference is left pointing past the end.
@@ -505,14 +577,7 @@ pub const Script = struct {
                 f.dialog = fd - 1;
             };
         }
-        var conds = self.condIterMut();
-        while (conds.next()) |c| {
-            if (c.kind == .talked and c.slot > d) c.slot -= 1;
-        }
-        var acts = self.actIterMut();
-        while (acts.next()) |a| {
-            if (a.kind == .dialog and a.slot > d) a.slot -= 1;
-        }
+        self.lowerRefs(.dialog, d);
         return true;
     }
 
@@ -521,10 +586,7 @@ pub const Script = struct {
     }
 
     pub fn findTrigger(self: *const Script, name: []const u8) ?u8 {
-        for (self.triggers(), 0..) |*t, i| {
-            if (t.name.eql(name)) return @intCast(i);
-        }
-        return null;
+        return indexOfName(self.triggers(), name);
     }
 
     pub fn addTrigger(self: *Script) ?u8 {
@@ -564,22 +626,20 @@ pub const Script = struct {
         if (self.folk_n > MAX_FOLK or self.dialog_n > MAX_DIALOGS or self.trigger_n > MAX_TRIGGERS) return false;
         for (std.enums.values(Table)) |t| {
             const all = self.names(t);
-            for (all, 0..) |*nm, i| {
+            for (all) |*nm| {
                 if (!nm.valid() or !token(nm.text())) return false;
-                for (all[0..i]) |*other| if (other.eql(nm.text())) return false;
             }
+            if (!distinct(all)) return false;
         }
         for (self.folks(), 0..) |*f, i| {
             if (f.node >= node_n or !grid.Level.inside(f.at) or !f.name.valid()) return false;
             if (f.dialog) |d| if (d >= self.dialog_n) return false;
             for (self.folks()[0..i]) |*other| if (other.node == f.node and other.at.eq(f.at)) return false;
         }
-        for (self.dialogs(), 0..) |*d, di| {
+        for (self.dialogs()) |*d| {
             if (!d.name.valid() or !token(d.name.text()) or d.line_n == 0 or d.line_n > MAX_LINES) return false;
-            for (self.dialogs()[0..di]) |*other| if (other.name.eql(d.name.text())) return false;
-            for (d.lines(), 0..) |*l, li| {
+            for (d.lines()) |*l| {
                 if (!l.name.valid() or !token(l.name.text()) or !l.who.valid() or !l.say.valid()) return false;
-                for (d.lines()[0..li]) |*other| if (other.name.eql(l.name.text())) return false;
                 if (l.choice_n > MAX_CHOICES or l.act_n > LINE_ACTS) return false;
                 if (l.then) |t| if (t >= d.line_n) return false;
                 for (l.acts()) |*a| if (!a.kind.spoken() or !self.actFits(a)) return false;
@@ -590,59 +650,99 @@ pub const Script = struct {
                     for (c.acts()) |*a| if (!a.kind.spoken() or !self.actFits(a)) return false;
                 }
             }
+            if (!distinct(d.lines())) return false;
         }
-        for (self.triggers(), 0..) |*t, ti| {
+        if (!distinct(self.dialogs())) return false;
+        for (self.triggers()) |*t| {
             if (!t.name.valid() or !token(t.name.text()) or t.cond_n > MAX_CONDS or t.act_n > MAX_ACTS) return false;
             if (t.priority < -PRIORITY_MAX or t.priority > PRIORITY_MAX) return false;
-            for (self.triggers()[0..ti]) |*other| if (other.name.eql(t.name.text())) return false;
             for (t.conds()) |*c| if (!self.condFits(c, node_n)) return false;
             for (t.acts()) |*a| if (!self.actFits(a)) return false;
         }
-        return true;
+        return distinct(self.triggers());
     }
 
-    fn slotFits(self: *const Script, t: ?Table, slot: u8) bool {
-        return if (t) |tb| slot < self.names(tb).len else true;
+    fn slotFits(self: *const Script, r: ?Ref, slot: u8) bool {
+        const ref = r orelse return true;
+        return slot < switch (ref) {
+            .table => |t| self.names(t).len,
+            .folk => self.folk_n,
+            .dialog => self.dialog_n,
+        };
     }
 
     fn condFits(self: *const Script, c: *const Cond, node_n: usize) bool {
-        if (!self.slotFits(condTable(c.kind), c.slot)) return false;
+        if (!self.slotFits(condRef(c.kind), c.slot)) return false;
         if (c.n < -NUMBER_MAX or c.n > NUMBER_MAX) return false;
         return switch (c.kind) {
-            .always, .never, .flag, .counter, .timer, .elapsed => true,
+            .always, .never, .flag, .counter, .timer, .elapsed, .talked => true,
             .region => c.node < node_n and grid.Level.inside(c.from) and grid.Level.inside(c.to),
-            .near => c.slot < self.folk_n and c.n >= 0 and c.n <= NEAR_MAX,
-            .talked => c.slot < self.dialog_n,
+            .near => c.n >= 0 and c.n <= NEAR_MAX,
             .deaths, .alive => c.foe.stocked(),
         };
     }
 
     fn actFits(self: *const Script, a: *const Act) bool {
-        if (!self.slotFits(actTable(a.kind), a.slot) or !a.note.valid()) return false;
+        if (!self.slotFits(actRef(a.kind), a.slot) or !a.note.valid()) return false;
         if (a.n < -NUMBER_MAX or a.n > NUMBER_MAX) return false;
         return switch (a.kind) {
-            .dialog => a.slot < self.dialog_n,
             .timer, .wait => a.n >= 0,
-            .text, .flag, .counter, .preserve => true,
+            .dialog, .text, .flag, .counter, .preserve => true,
         };
     }
 };
 
-pub fn condTable(k: CondKind) ?Table {
+const InTable = struct {
+    script: *const Script,
+    table: Table,
+
+    fn find(in: InTable, name: []const u8) ?u8 {
+        return in.script.find(in.table, name);
+    }
+};
+
+/// What a condition's or action's `slot` indexes.
+pub const Ref = union(enum) { table: Table, folk, dialog };
+
+pub fn condRef(k: CondKind) ?Ref {
     return switch (k) {
-        .flag => .flag,
-        .counter => .counter,
-        .timer => .timer,
-        .always, .never, .elapsed, .region, .near, .talked, .deaths, .alive => null,
+        inline .flag, .counter, .timer => |t| .{ .table = @field(Table, @tagName(t)) },
+        .near => .folk,
+        .talked => .dialog,
+        .always, .never, .elapsed, .region, .deaths, .alive => null,
+    };
+}
+
+pub fn actRef(k: ActKind) ?Ref {
+    return switch (k) {
+        inline .flag, .counter, .timer => |t| .{ .table = @field(Table, @tagName(t)) },
+        .dialog => .dialog,
+        .text, .wait, .preserve => null,
+    };
+}
+
+fn refersTo(have: ?Ref, r: Ref) bool {
+    const h = have orelse return false;
+    return std.meta.eql(h, r);
+}
+
+comptime {
+    for (std.enums.values(ActKind)) |k| std.debug.assert(!refersTo(actRef(k), .folk));
+}
+
+pub fn condTable(k: CondKind) ?Table {
+    const r = condRef(k) orelse return null;
+    return switch (r) {
+        .table => |t| t,
+        .folk, .dialog => null,
     };
 }
 
 pub fn actTable(k: ActKind) ?Table {
-    return switch (k) {
-        .flag => .flag,
-        .counter => .counter,
-        .timer => .timer,
-        .dialog, .text, .wait, .preserve => null,
+    const r = actRef(k) orelse return null;
+    return switch (r) {
+        .table => |t| t,
+        .folk, .dialog => null,
     };
 }
 
@@ -741,9 +841,7 @@ fn freshName(buf: *[NAME_MAX]u8, stem: []const u8, owner: anytype, comptime take
 }
 
 pub fn cut(comptime T: type, items: []T, n: *u8, i: usize) void {
-    std.mem.copyForwards(T, items[i .. n.* - 1], items[i + 1 .. n.*]);
-    n.* -= 1;
-    items[n.*] = .{};
+    mathx.removeAt(T, items, n, i, .{});
 }
 
 test "dropping a folk, a node or a line leaves no reference past the end" {

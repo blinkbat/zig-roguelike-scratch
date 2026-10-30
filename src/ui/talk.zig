@@ -39,26 +39,36 @@ pub const Layout = struct {
     wrapped: font.Wrapped = undefined,
     lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined,
     line_n: usize = 0,
+    who_y: i32 = 0,
+    who_rule_y: i32 = 0,
+    text_y: i32 = 0,
+    choices_rule_y: i32 = 0,
 
     pub fn of(self: *Layout, face: anytype, screen: P, v: View) void {
         const w = @max(1, @min(WIDTH, screen.x - 2 * MARGIN));
         self.text_w = w - 2 * PAD;
         self.line_n = font.wrap(face, v.say, font.BODY, self.text_w, &self.wrapped, &self.lines);
         self.row_n = @min(v.choices.len, script.MAX_CHOICES);
-        var h: i32 = 2 * PAD + RULE_GAP + menu.ACTION_BOX.y;
-        if (v.who.len > 0) h += HEAD_LINE + 2 * RULE_GAP;
-        h += @as(i32, @intCast(self.line_n)) * font.BODY_LINE;
-        if (self.row_n > 0) h += 2 * RULE_GAP + @as(i32, @intCast(self.row_n)) * ROW_H;
+        var down: i32 = PAD;
+        const who_rule = down + HEAD_LINE + RULE_GAP;
+        if (v.who.len > 0) down += HEAD_LINE + 2 * RULE_GAP;
+        const text = down;
+        down += @as(i32, @intCast(self.line_n)) * font.BODY_LINE;
+        const choices_rule = down + RULE_GAP;
+        if (self.row_n > 0) down += 2 * RULE_GAP;
+        const rows = down;
+        down += @as(i32, @intCast(self.row_n)) * ROW_H;
+        const h = down + RULE_GAP + menu.ACTION_BOX.y + PAD;
         const x = @divTrunc(screen.x - w, 2);
         const y = @max(0, screen.y - MARGIN - h);
         self.panel = raster.rect(x, y, w, h);
         self.text_x = x + PAD;
-        var ry = y + PAD;
-        if (v.who.len > 0) ry += HEAD_LINE + 2 * RULE_GAP;
-        ry += @as(i32, @intCast(self.line_n)) * font.BODY_LINE;
-        if (self.row_n > 0) ry += RULE_GAP * 2;
+        self.who_y = y + PAD;
+        self.who_rule_y = y + who_rule;
+        self.text_y = y + text;
+        self.choices_rule_y = y + choices_rule;
         for (0..self.row_n) |i| {
-            self.rows[i] = raster.rect(self.text_x - ROW_INSET, ry + @as(i32, @intCast(i)) * ROW_H, self.text_w + 2 * ROW_INSET, ROW_H);
+            self.rows[i] = raster.rect(self.text_x - ROW_INSET, y + rows + @as(i32, @intCast(i)) * ROW_H, self.text_w + 2 * ROW_INSET, ROW_H);
         }
         self.action = raster.rect(x + w - PAD - menu.ACTION_BOX.x, y + h - PAD - menu.ACTION_BOX.y, menu.ACTION_BOX.x, menu.ACTION_BOX.y);
     }
@@ -76,18 +86,12 @@ pub fn draw(face: *const font.Face, screen: P, v: View, l: *const Layout) void {
     rl.drawRectangle(0, 0, screen.x, screen.y, VEIL);
     rl.drawRectangleRec(l.panel, look.CARD_BG);
     rl.drawRectangleLinesEx(l.panel, 1, look.EDGE);
-    var y: i32 = @as(i32, @intFromFloat(l.panel.y)) + PAD;
     if (v.who.len > 0) {
-        face.engraved(std.fmt.bufPrintZ(&buf, "{s}", .{v.who}) catch "", l.text_x, y, font.HEAD, look.UI_GOLD);
-        y += HEAD_LINE + RULE_GAP;
-        rl.drawRectangle(l.text_x, y, l.text_w, 1, look.fade(look.UI_GOLD, 0.35));
-        y += RULE_GAP;
+        face.engraved(std.fmt.bufPrintZ(&buf, "{s}", .{v.who}) catch "", l.text_x, l.who_y, font.HEAD, look.UI_GOLD);
+        rl.drawRectangle(l.text_x, l.who_rule_y, l.text_w, 1, look.fade(look.UI_GOLD, 0.35));
     }
-    for (l.lines[0..l.line_n]) |line| {
-        face.text(line, l.text_x, y, font.BODY, look.TEXT);
-        y += font.BODY_LINE;
-    }
-    if (l.row_n > 0) rl.drawRectangle(l.text_x, y + RULE_GAP, l.text_w, 1, look.fade(look.EDGE, 0.8));
+    for (l.lines[0..l.line_n], 0..) |line, i| face.text(line, l.text_x, l.text_y + @as(i32, @intCast(i)) * font.BODY_LINE, font.BODY, look.TEXT);
+    if (l.row_n > 0) rl.drawRectangle(l.text_x, l.choices_rule_y, l.text_w, 1, look.fade(look.EDGE, 0.8));
     for (l.rows[0..l.row_n], v.choices[0..l.row_n], 0..) |r, label, i| {
         const on = i == v.cursor;
         if (on) rl.drawRectangleRec(r, look.EDIT_ROW_ON);

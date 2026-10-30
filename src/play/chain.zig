@@ -5,7 +5,6 @@ const damage = @import("damage.zig");
 const actor = @import("actor.zig");
 const spark = @import("spark.zig");
 const clock = @import("clock.zig");
-const bow = @import("bow.zig");
 
 pub const COST: i32 = 4;
 /// Foes it leaps on to after the first, each the nearest unstruck foe to the last within `JUMP_RANGE`.
@@ -21,6 +20,7 @@ pub const BASE = damage.Base{ .lo = 2, .hi = 5 };
 
 pub const CHANCE = spark.CHANCE;
 pub const procs = spark.procs;
+pub const chance = spark.chance;
 pub const afflict = spark.afflict;
 pub const AILMENT = spark.AILMENT;
 
@@ -33,7 +33,7 @@ pub fn chain(lv: *const grid.Level, pool: *actor.Pool, first: u16) Chain {
     while (c.n <= JUMPS) {
         const last = actor.Pool.slot(c.id[c.n - 1]);
         const from = pool.items[last].at;
-        var near = bow.Nearest{ .from = from, .reach = JUMP_RANGE };
+        var near = grid.Nearest{ .from = from, .reach = JUMP_RANGE };
         for (pool.slice(), 0..) |a, i| {
             if (!a.alive or !a.foe() or c.has(actor.Pool.idOf(i))) continue;
             if (a.seenIn(lv) and grid.projectileLine(lv, from, a.at)) near.offer(a.at);

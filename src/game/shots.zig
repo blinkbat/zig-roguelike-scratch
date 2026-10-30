@@ -40,6 +40,8 @@ const game = @import("../game.zig");
 const rewards = @import("rewards.zig");
 const skills = @import("skills.zig");
 const binds = @import("binds.zig");
+const glide = @import("glide.zig");
+const script_text = @import("../map/script_text.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 const SHOOT = bow.VERB;
@@ -306,7 +308,7 @@ pub fn shoot(g: *game.Game) !void {
 pub fn shootEditor(g: *game.Game) !void {
     const screen = g.screen;
     defer g.screen = screen;
-    for (@import("../core/window.zig").SCREENS) |size| {
+    for (game.SCREENS) |size| {
         g.screen = size;
         const target = try renderTarget(g);
         defer rl.unloadRenderTexture(target);
@@ -377,7 +379,7 @@ fn shootTalk(g: *game.Game) !void {
     var floor = grid.Box.sized(.{ .x = 6, .y = 4 }, 20, 10).cells();
     while (floor.next()) |p| w.node[n].plan.bespoke.tile[grid.Level.idx(p)] = .floor;
     w.start = .{ .node = n, .at = .{ .x = 12, .y = 8 } };
-    try @import("../map/script_text.zig").readAlone(editor.SHOT_SCRIPT, &w.script, w.node_n);
+    try script_text.readAlone(editor.SHOT_SCRIPT, &w.script, w.node_n);
     inline for (.{ game.SCREEN_720, game.SCREEN_1080 }, .{ "720", "1080" }) |size, suffix| {
         g.screen = size;
         game.beginMapAt(g, w, w.start, 5);
@@ -752,7 +754,7 @@ pub fn shootTrees(g: *game.Game) !void {
     @memset(&g.sim.lv.gas, 0);
     g.cloud.settle(&g.sim.lv);
     g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
-    g.pic.glide[hero] = @import("glide.zig").Glide.rest(g.sim.heroActor().?);
+    g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
     game.update(g, 0.04);
     const restoring = g.pic.occlusion[grid.Level.idx(tree)];
     if (restoring <= 0 or restoring >= 0.99) return error.TreeRestoreNotSmooth;
@@ -813,7 +815,7 @@ pub fn shootTrees(g: *game.Game) !void {
     g.cloud.settle(&g.sim.lv);
     try capture(g, target, SHOTS_DIR ++ "/trees/grass-gas.png");
     g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
-    g.pic.glide[g.sim.heroSlot().?] = @import("glide.zig").Glide.rest(g.sim.heroActor().?);
+    g.pic.glide[g.sim.heroSlot().?] = glide.Glide.rest(g.sim.heroActor().?);
     for (0..120) |_| game.update(g, mathx.TEST_DT);
     if (g.pic.occlusion[grid.Level.idx(grass)] > 0.01) return error.GrassDidNotRestore;
     try capture(g, target, SHOTS_DIR ++ "/trees/grass-front.png");
@@ -867,7 +869,7 @@ fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []con
                 const b = rl.getImageColor(img, x, y);
                 const same = sameRgb(a, b);
                 changed += @intFromBool(!same);
-                const p = mathx.cellOf(.{ @as(f32, @floatFromInt(x + c.x)) / game.CELL_F, @as(f32, @floatFromInt(y + c.y)) / game.CELL_F });
+                const p = c.cellAt(q);
                 const live_only = comptime cinema.LIVE_ONLY.contains(@field(cinema.Effect, f.name));
                 const dx = @mod(x + c.x, game.CELL);
                 const dy = @mod(y + c.y, game.CELL);

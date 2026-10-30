@@ -5,6 +5,7 @@ const climate = @import("../map/climate.zig");
 const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
 const pixel = @import("pixel.zig");
+const window = @import("../core/window.zig");
 
 // Cosmetic, map-anchored weather shows only in visible cells.
 
@@ -17,7 +18,7 @@ const FALLS = std.EnumArray(climate.Weather, ?Fall).init(.{
 });
 
 /// The screen a weather's `drops` fill.
-const AREA_AT = mathx.P{ .x = 1920, .y = 1080 };
+const AREA_AT = window.SCREEN_1080;
 const AREA: f32 = @floatFromInt(AREA_AT.x * AREA_AT.y);
 /// A 4K screen holds four `AREA`s.
 const SCREENS_MOST: u32 = 4;
@@ -31,7 +32,7 @@ const DROPS_MAX: usize = blk: {
 /// Of the screen's height, the least and the most a drop falls before it lands.
 const FALL_LEAST: f32 = 0.2;
 const FALL_MOST: f32 = 0.6;
-const INK = look.rgb(0xc4d0e2);
+const INK = look.RAIN;
 /// Drops are drawn no fainter than this share of their daylight alpha, so rain still shows at night.
 const DIM_FLOOR: f32 = 0.25;
 const SPLASH_DROPS = 4;

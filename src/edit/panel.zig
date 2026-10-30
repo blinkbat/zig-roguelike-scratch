@@ -80,7 +80,7 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
         const live = l != .generator or ed.rolled() != null;
         if (widgets.button(ed.controls(), &g.face, r, menu.named(l), ed.lower == l, live, LOWER_TIPS.get(l))) {
             ed.lower = l;
-            ed.gen_top = 0;
+            ed.lower_scroll = 0;
         }
     }
     y += WORKSPACE_ROWS * widgets.ROW_STEP + widgets.GAP;
@@ -322,6 +322,11 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, top: i32) void {
         wrong = true;
         thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{d} foe(s) no walk reaches", .{is.foes_cut_off}) catch "", WARN, null);
     }
+    const endless = ed.map.script.endless();
+    if (endless > 0) {
+        wrong = true;
+        thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{d} dialog(s) never end, so never open", .{endless}) catch "", WARN, null);
+    }
     if (!wrong) thingRow(ed, g, &y, "Nothing wrong", look.DIM, null);
     y += widgets.BLOCK_GAP;
     knobs.section(g, &y, if (ed.here().unrolled()) "On this roll" else "On this node");
@@ -337,8 +342,7 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, top: i32) void {
     const s = &ed.map.script;
     for (s.folks()) |f| {
         if (f.node != ed.node) continue;
-        const talk = if (f.dialog) |d| s.dialog[d].name.text() else "nothing to say";
-        thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}  talks: {s}", .{ f.called(), f.at.x, f.at.y, talk }) catch "", look.TEXT, f.at);
+        thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}  talks: {s}", .{ f.called(), f.at.x, f.at.y, editor.plot.talksTo(s, &f) }) catch "", look.TEXT, f.at);
     }
     switch (ed.plan().*) {
         .bespoke => |*b| {
@@ -369,17 +373,9 @@ fn thingRow(ed: *editor.Editor, g: *game.Game, y: *i32, line: [:0]const u8, col:
     const h = widgets.hot(ed.controls(), r, at != null, false, if (at != null) "Show it on the map" else null);
     widgets.plate(r, false, h.hot);
     widgets.drawFit(&g.face, line, SMALL, widgets.insetW(r), false, widgets.textX(r), y.* + editor.SMALL_DY, col);
-    if (h.hit) {
-        const p = at.?;
-        ed.setView(.map);
-        ed.lookAt(editor.Editor.canvas(g), p);
-        ed.flash = p;
-        ed.flash_t = FLASH_S;
-    }
+    if (h.hit) ed.showCell(editor.Editor.canvas(g), at.?);
     y.* += widgets.ROW_H;
 }
-
-const FLASH_S: f32 = 1.2;
 
 pub fn toolPicture(g: *const game.Game, t: editor.Tool) ?rl.Texture2D {
     return switch (t) {
@@ -418,23 +414,21 @@ fn lowerArea(g: *const game.Game, top: i32) rl.Rectangle {
     return raster.rect(0, top, widgets.PANEL_W, @max(0, g.screen.y - top));
 }
 
+fn lowerScroll(ed: *editor.Editor, g: *const game.Game, top: i32) widgets.Scroll {
+    return .{ .box = lowerArea(g, top), .top = &ed.lower_scroll, .most = &ed.lower_most };
+}
+
 pub fn beginScroll(ed: *editor.Editor, g: *const game.Game, top: i32) i32 {
-    const area = lowerArea(g, top);
-    ed.clip = area;
-    widgets.scissor(area);
-    ed.gen_top = std.math.clamp(ed.gen_top, 0, ed.gen_most);
-    return top - ed.gen_top;
+    return lowerScroll(ed, g, top).begin(&ed.clip);
 }
 
 pub fn endScroll(ed: *editor.Editor) void {
-    rl.endScissorMode();
-    ed.clip = null;
+    widgets.unclip(&ed.clip);
 }
 
 pub fn scrolledTo(ed: *editor.Editor, g: *const game.Game, top: i32, end: i32) void {
-    const shown: i32 = @intFromFloat(lowerArea(g, top).height);
-    ed.gen_most = @max(0, end + widgets.PAD + ed.gen_top - top - shown);
-    drawScroll(g, top, ed.gen_top, ed.gen_most);
+    lowerScroll(ed, g, top).fit(end, widgets.PAD);
+    drawScroll(g, top, ed.lower_scroll, ed.lower_most);
 }
 
 fn drawScroll(g: *const game.Game, top: i32, offset: i32, most: i32) void {
@@ -442,7 +436,7 @@ fn drawScroll(g: *const game.Game, top: i32, offset: i32, most: i32) void {
     const height = g.screen.y - top - 2 * widgets.GAP;
     if (height <= 0) return;
     const shown: usize = @intCast(g.screen.y - top);
-    widgets.scrollbar(raster.rect(widgets.PANEL_W - 6, top + widgets.GAP, 3, height), @intCast(std.math.clamp(offset, 0, most)), shown, shown + @as(usize, @intCast(most)));
+    widgets.scrollbar(raster.rect(widgets.PANEL_W - 2 * widgets.SCROLL_W, top + widgets.GAP, widgets.SCROLL_W, height), @intCast(std.math.clamp(offset, 0, most)), shown, shown + @as(usize, @intCast(most)));
 }
 
 const ACTION_W: i32 = 122;

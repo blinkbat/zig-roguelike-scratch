@@ -26,7 +26,8 @@ pub const NOTE: i32 = font.SMALL;
 const TITLE_DY: i32 = -44;
 const ROWS_DY: i32 = 16;
 const ROW_INSET: i32 = 4;
-const NOTE_GAP: i32 = 24;
+/// From under a list's last row to its note.
+pub const NOTE_GAP: i32 = 24;
 const MARK_GAP: i32 = 14;
 const MARK_L = ">";
 /// `draw`'s, from the title's top to the first row, and from under the last row to the note's foot.
@@ -178,7 +179,23 @@ pub const Menu = struct {
         };
         return self.step(st, n);
     }
+
+    /// `step` over every one of `n` rows that `boxOf` lays out: scrolled, pointed at, walked and confirmed.
+    pub fn stepOver(self: *Menu, st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
+        if (n == 0) return null;
+        self.at = @min(self.at, n - 1);
+        if (pointAt(&self.at, st, n, ctx, boxOf)) |k| return k;
+        return self.step(st, n);
+    }
 };
+
+/// `at` scrolled, then moved to the row under the pointer; a click there picks it.
+pub fn pointAt(at: *usize, st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
+    at.* = st.scrolled(at.*, n);
+    const k = pointed(st, n, ctx, boxOf) orelse return null;
+    at.* = k;
+    return if (st.click) k else null;
+}
 
 const Rows = struct {
     screen: mathx.P,
@@ -201,16 +218,16 @@ pub fn backed(st: *const input.State) bool {
     return st.right_click or st.hit(BACK) or st.hit(PAUSE);
 }
 
-pub fn footerBox(screen: mathx.P, right: bool) rl.Rectangle {
-    return raster.rect(if (right) screen.x - PANEL_PAD - ACTION_WIDE.x else PANEL_PAD, screen.y - PANEL_PAD - ACTION_WIDE.y, ACTION_WIDE.x, ACTION_WIDE.y);
+pub fn footerBox(screen: mathx.P) rl.Rectangle {
+    return raster.rect(PANEL_PAD, screen.y - PANEL_PAD - ACTION_WIDE.y, ACTION_WIDE.x, ACTION_WIDE.y);
 }
 
 pub fn backedAt(st: *const input.State, screen: mathx.P) bool {
-    return backed(st) or st.clicked(footerBox(screen, false));
+    return backed(st) or st.clicked(footerBox(screen));
 }
 
 pub fn drawBack(face: *const font.Face, screen: mathx.P, st: *const input.State) void {
-    action(face, footerBox(screen, false), prompt_icon.Prompt.menuOf(st, BACK), "Back");
+    action(face, footerBox(screen), prompt_icon.Prompt.menuOf(st, BACK), "Back");
 }
 
 /// Backed out, or Character pressed to shut what it opened over.
@@ -334,7 +351,6 @@ pub fn capital(comptime s: [:0]const u8) [:0]const u8 {
 }
 
 pub const titled = wording.titled;
-pub const spoken = wording.spoken;
 pub const named = wording.named;
 pub const namedOr = wording.namedOr;
 pub const titleOf = wording.titleOf;
@@ -425,7 +441,7 @@ test "mouse menus share drawn rows and scrolling keeps long menus reachable" {
         const p = raster.middleAt(rowBox(screen, win, win.from));
         try std.testing.expectEqual(@as(?usize, win.from), m.stepAt(&.{ .pointer = p, .click = true }, 40, screen));
         try std.testing.expectEqual(@as(?usize, null), m.stepAt(&.{ .pointer = .{ .x = 1, .y = 1 }, .click = true }, 40, screen));
-        try std.testing.expect(backedAt(&.{ .pointer = raster.middleAt(footerBox(screen, false)), .click = true }, screen));
+        try std.testing.expect(backedAt(&.{ .pointer = raster.middleAt(footerBox(screen)), .click = true }, screen));
         try std.testing.expect(backed(&.{ .right_click = true }));
     }
     var empty = Menu{};

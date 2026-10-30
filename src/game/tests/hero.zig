@@ -129,8 +129,7 @@ test "chosen attacks reactions and status ticks retain recorded seeded outcomes"
         defer game.shut(std.testing.allocator, g);
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
         const target = g.sim.pool.get(2).?;
-        target.max = 100;
-        target.hp = 100;
+        harness.toughen(target);
         g.sim.rng = mathx.Rng.init(case[0]);
         const stroke = game.presentation.Stroke{ .from = g.sim.heroAt().?, .wait = 0.2 };
         combat.wound(g, 2, attacks.heroRoll(&g.sim, .ranged, 7), "shoots", stroke);
