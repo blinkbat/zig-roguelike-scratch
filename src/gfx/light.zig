@@ -21,7 +21,6 @@ const NONE_BAKED = model.NONE_BAKED;
 pub const TEXELS = model.TEXELS;
 pub const Layer = model.Layer;
 pub const UNSEEN = model.UNSEEN;
-pub const OVERBRIGHT = model.OVERBRIGHT;
 pub const REACH = model.REACH;
 pub const WALL_H = model.WALL_H;
 const FACE_H = model.FACE_H;
@@ -58,7 +57,6 @@ pub const offMiddle = model.offMiddle;
 pub const Spot = model.Spot;
 pub const TorchIx = model.TorchIx;
 pub const LIGHTS = model.LIGHTS;
-const PLANT_LIGHTS = model.PLANT_LIGHTS;
 const Torch = model.Torch;
 const Mount = model.Mount;
 const upright = model.upright;
@@ -177,30 +175,25 @@ pub const Light = struct {
 
     /// A glowing plant gone from `p`: its light and its shadow with it, and the next plant unlit for want of lights now lit.
     pub fn uproot(self: *Light, lv: *const grid.Level, p: P) void {
-        for (self.torch[0..self.torch_n], 0..) |*t, i| {
-            if (t.mount != .plant or !t.mount.plant.eq(p)) continue;
-            _ = mathx.swapRemove(Torch, &self.torch, &self.torch_n, i);
-            break;
-        }
+        if (self.plantAt(p)) |i| _ = mathx.swapRemove(Torch, &self.torch, &self.torch_n, i);
         self.scratch.tile[grid.Level.idx(p)] = lv.at(p);
         self.countCasters(&self.scratch);
         self.hangPlants(lv);
     }
 
-    /// Glowing plants not yet lit, in reading order, as many as the lights left over from the torches allow.
+    /// The glowing plants that give light and are not yet lit.
     fn hangPlants(self: *Light, lv: *const grid.Level) void {
-        for (lv.tile, 0..) |t, i| {
-            if (self.torch_n >= lv.torches().len + PLANT_LIGHTS) break;
-            const q = grid.Level.of(i);
-            if (t.glows() and !self.hangs(q)) self.hang(lv, .{ .plant = q });
+        var glows = lv.glowing();
+        while (glows.next()) |q| {
+            if (self.plantAt(q) == null) self.hang(lv, .{ .plant = q });
         }
     }
 
-    fn hangs(self: *const Light, p: P) bool {
-        for (self.torch[0..self.torch_n]) |*t| {
-            if (t.mount == .plant and t.mount.plant.eq(p)) return true;
+    fn plantAt(self: *const Light, p: P) ?usize {
+        for (self.torch[0..self.torch_n], 0..) |*t, i| {
+            if (t.mount == .plant and t.mount.plant.eq(p)) return i;
         }
-        return false;
+        return null;
     }
 
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {
@@ -378,7 +371,11 @@ pub const Light = struct {
     }
 
     pub fn base(self: *const Light) Rgb {
-        return @max(MEMORY, self.ambientOf());
+        return @max(self.memoryFloor(), self.ambientOf());
+    }
+
+    pub fn memoryFloor(self: *const Light) Rgb {
+        return model.memoryUnder(if (self.sky) |k| k.moon else 0);
     }
 
     fn carryColour(self: *const Light) Rgb {
@@ -433,7 +430,8 @@ pub const Light = struct {
         const sight = v.sight;
         const memory = v.memory;
         if (memory <= FAINT) return @splat(0);
-        var view = self.base();
+        const floor = self.memoryFloor();
+        var view = @max(floor, self.ambientOf());
         if (sight > FAINT) {
             const s = Spot.of(lv, q);
             view += self.carryColour() * splat(self.carried(s));
@@ -463,7 +461,7 @@ pub const Light = struct {
                 }
             }
         }
-        return remembered(view, sight, memory);
+        return remembered(floor, view, sight, memory);
     }
 
     /// Cells `lo` up to `hi`, and a texel round them for the filter.
@@ -616,8 +614,9 @@ pub const Light = struct {
         const lit = v.lit;
         var s = Shine{ .sight = lit };
         const night: Rgb = if (self.sunRay()) |ray| self.sunOnBody(&s, &ray, centre, lit) else splat(1);
-        s.ambient = remembered(self.base() * night, v.sight, v.memory);
-        s.floor = remembered((self.base() - self.ambientOf()) * night, v.sight, v.memory);
+        const floor = self.memoryFloor();
+        s.ambient = remembered(floor, self.base() * night, v.sight, v.memory);
+        s.floor = remembered(floor, (self.base() - self.ambientOf()) * night, v.sight, v.memory);
         if (self.carryToward(centre[0], centre[1], fogged)) |f| {
             const k = f.k * lit;
             if (carrier) {

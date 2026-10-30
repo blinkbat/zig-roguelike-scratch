@@ -51,7 +51,7 @@ pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.chill.apply();
 }
 
-/// The widest any burst reaches, this cone's, a fireball's or a nova's; `Burst` holds the cells of one.
+/// The widest any burst, patch or spread reaches; `Burst` holds the cells of one.
 pub const BURST_MAX: i32 = 2;
 pub const Burst = grid.Area(grid.Cells.square(BURST_MAX));
 

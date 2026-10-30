@@ -212,6 +212,21 @@ pub const Simulation = struct {
         return damage.procs(&self.rng, effective) and self.takeStatus(a, kind);
     }
 
+    /// `a` held `turns` longer unless its pin resistance holds; true when it is.
+    pub fn pinFor(self: *Simulation, a: *actor.Actor, turns: u8) bool {
+        if (turns == 0 or !self.takeStatus(a, .pin)) return false;
+        a.pin.extend(turns);
+        return true;
+    }
+
+    /// Fire takes hold of `a` as far as its fire and burn resistance allow; true when it does.
+    pub fn ignite(self: *Simulation, a: *actor.Actor) bool {
+        const chance = damage.resistedChance(mathx.PERCENT, self.combatStats(a).elements.get(.fire));
+        if (!self.procStatus(a, .burn, chance)) return false;
+        a.burn.start();
+        return true;
+    }
+
     pub fn lifeMax(self: *const Simulation) i32 {
         return self.heroAttrs().life();
     }

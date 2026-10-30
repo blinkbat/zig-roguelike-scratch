@@ -10,14 +10,15 @@ const Editor = editor.Editor;
 const Desk = input.Desk;
 const P = mathx.P;
 
-const TORCH_RULE = @import("tool_catalog.zig").TORCH_RULE;
-const FOE_RULE = @import("tool_catalog.zig").FOE_RULE;
-const FOLK_RULE = @import("tool_catalog.zig").FOLK_RULE;
+const tool_catalog = @import("tool_catalog.zig");
+const TORCH_RULE = tool_catalog.TORCH_RULE;
+const FOE_RULE = tool_catalog.FOE_RULE;
+const FOLK_RULE = tool_catalog.FOLK_RULE;
 pub const NO_ROOM = "The node has no room for another {s}";
 pub const LINKING = "Linking node {d} door {d}: ";
 pub const LINK_CANCELLED = "Link cancelled";
 
-pub const Spanned = @import("tool_catalog.zig").Spanned;
+pub const Spanned = tool_catalog.Spanned;
 pub const Span = struct { from: P, erase: bool, shape: Spanned };
 
 pub const Board = struct {

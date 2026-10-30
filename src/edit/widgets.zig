@@ -30,6 +30,7 @@ pub const MODAL_BTN_W: i32 = 180;
 pub const PAGE_W: i32 = 1800;
 pub const PAGE_H: i32 = 1080;
 pub const STEP_W: i32 = 30;
+pub const STEP_PITCH: i32 = STEP_W + GAP;
 pub const SCROLL_W: i32 = 3;
 pub const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
 pub const PANEL_BG = look.EDIT_PANEL;
@@ -97,7 +98,7 @@ pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, valu
 }
 
 pub fn stepValue(r: rl.Rectangle) rl.Rectangle {
-    const inset: f32 = @floatFromInt(STEP_W + GAP);
+    const inset: f32 = @floatFromInt(STEP_PITCH);
     return .{ .x = r.x + inset, .y = r.y, .width = r.width - 2 * inset, .height = r.height };
 }
 

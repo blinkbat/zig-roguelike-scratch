@@ -43,9 +43,9 @@ fn pools(lv: *const grid.Level, viewer: P, sight: i32, carried: []const Source, 
     for (lv.torches()) |t| {
         if (mathx.dist(torchFloor(t), viewer) <= near) torchPool(lv, torchFloor(t), out);
     }
-    var cells = grid.Box.around(viewer, near).cells();
-    while (cells.next()) |p| {
-        if (lv.at(p).glows()) torchPool(lv, p, out);
+    var glows = lv.glowing();
+    while (glows.next()) |p| {
+        if (mathx.dist(p, viewer) <= near) torchPool(lv, p, out);
     }
     for (carried) |s| fov.castInto(lv, s.at, s.reach, out);
 }

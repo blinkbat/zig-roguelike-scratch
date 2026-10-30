@@ -13,6 +13,7 @@ const sky = @import("sky.zig");
 const line_icons = @import("line_icons.zig");
 const shaders = @import("shaders.zig");
 const raster = @import("raster.zig");
+const light_model = @import("light_model.zig");
 const embedded = @import("assets").names;
 
 pub const SPRITE_PX: i32 = 64;
@@ -136,6 +137,7 @@ pub const Assets = struct {
         for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
             const p = grid.Level.of(i);
             need.decor(t, p);
+            if (t.bursts()) need.beneath(t.ground().?, p);
             need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
             need.chest_item_bag = need.chest_item_bag or t.isChest();
             if (t.opened()) |open| need.add(.{ .tile = open });
@@ -149,7 +151,7 @@ pub const Assets = struct {
         return need;
     }
 
-    /// The ground `t` a mimic's chest stands on at `p`, ready for when the chest is flung open.
+    /// The ground `t` left at `p` once a mimic's chest is flung open or a glow plant bursts.
     pub fn beneath(need: *Assets, t: grid.Tile, p: mathx.P) void {
         need.decor(t, p);
         if (standsOver(t)) if (cutOf(t, null)) |c| need.add(c);
@@ -1148,7 +1150,7 @@ pub const VALUE_NOISE_FS =
 ;
 
 const FadeShader = struct { shader: rl.Shader, bounds: i32, minimum: i32 };
-const SCENERY_FS = shaders.FS_HEAD ++ FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ OCCLUSION_FS ++ shaders.glslConsts(.{ .FOG_RGB = rgbOf(FOG), .OVERBRIGHT = @import("light.zig").OVERBRIGHT }) ++
+const SCENERY_FS = shaders.FS_HEAD ++ FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ OCCLUSION_FS ++ shaders.glslConsts(.{ .FOG_RGB = rgbOf(FOG), .OVERBRIGHT = light_model.OVERBRIGHT }) ++
     \\uniform sampler2D lightmap;
     \\uniform sampler2D fogmap;
     \\void main() {
@@ -1211,7 +1213,7 @@ const MIRROR_SHALLOW: f32 = 0.28;
 const MIRROR_TINT = [3]f32{ 0.8, 0.9, 1.0 };
 const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     .SATURATION = WATER_SATURATION,
-    .OVERBRIGHT = @import("light.zig").OVERBRIGHT,
+    .OVERBRIGHT = light_model.OVERBRIGHT,
     .DEEP = WATER_DEEP,
     .SHALLOW = WATER_SHALLOW,
     .MIRROR_DEEP = MIRROR_DEEP,
@@ -1396,6 +1398,25 @@ test "map assets hold the fallback ground a prop stands on when only unbearing n
     const need = Assets.of(&lv);
     try std.testing.expect(if (GROUND_SHEETS.contains(shown)) need.grounds.contains(shown) else need.tiles.contains(shown.tile()));
     std.debug.print("prop seen over water only: drawn on {s}, loaded\n", .{@tagName(shown)});
+}
+
+test "map assets hold the grass decor a glow plant leaves when it bursts" {
+    var checked: usize = 0;
+    var cells = grid.Box.inMap(1).cells();
+    while (cells.next()) |p| {
+        const d = grassDecor(.grass, p) orelse continue;
+        var lv = grid.openFloor();
+        lv.set(p, .glow_plant);
+        const need = Assets.of(&lv);
+        try std.testing.expect(switch (d) {
+            .brush => need.brush,
+            .flowers => need.flowers,
+        });
+        checked += 1;
+        if (checked == 8) break;
+    }
+    try std.testing.expectEqual(@as(usize, 8), checked);
+    std.debug.print("glow plant decor: {d} lone plants on floor load the grass decor they burst into\n", .{checked});
 }
 
 test "every glyph is printable ascii" {

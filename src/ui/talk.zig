@@ -113,7 +113,8 @@ test "the conversation panel keeps every choice and its action inside the window
     const longest = "a word " ** (script.SAY_MAX / 7);
     const asks = [_][]const u8{"y" ** script.ASK_MAX} ** script.MAX_CHOICES;
     var checked: usize = 0;
-    for ([_]P{ .{ .x = 1280, .y = 720 }, .{ .x = 1920, .y = 1080 }, .{ .x = 800, .y = 600 } }) |screen| {
+    const display = @import("../core/window.zig");
+    for ([_]P{ display.SCREEN_720, display.SCREEN_1080, .{ .x = 800, .y = 600 } }) |screen| {
         l.of(&face, screen, .{ .who = "w" ** script.WHO_MAX, .say = longest, .choices = &asks, .cursor = 0, .prompt = .{ .key = "Enter" } });
         try std.testing.expect(l.panel.y >= 0 and l.panel.y + l.panel.height <= @as(f32, @floatFromInt(screen.y)));
         try std.testing.expect(l.action.y + l.action.height <= l.panel.y + l.panel.height);

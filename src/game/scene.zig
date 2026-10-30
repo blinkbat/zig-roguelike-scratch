@@ -99,7 +99,7 @@ pub const Cam = struct {
         return .{ .x = @divFloor(s.x + c.x, game.CELL), .y = @divFloor(s.y + c.y, game.CELL) };
     }
 
-    fn box(c: Cam, p: P) rl.Rectangle {
+    pub fn box(c: Cam, p: P) rl.Rectangle {
         return raster.rect(c.sx(p), c.sy(p), game.CELL, game.CELL);
     }
 
@@ -610,7 +610,7 @@ pub fn drawMap(g: *game.Game) void {
             if (g.sim.lv.isLit(p) and skills.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
         }
         if (g.mode.aim.act().reticle() == .bow and skills.aimable(g, from, g.mode.aim.mark)) {
-            const f = if (g.mode.aim.act().pierces()) bow.piercePreviewAmong(&g.sim.lv, &g.sim.pool, from, g.mode.aim.mark) else bow.previewAmong(&g.sim.lv, &g.sim.pool, from, g.mode.aim.mark);
+            const f = skills.shownFlight(g, from, g.mode.aim.act(), g.mode.aim.mark);
             for (f.path[0..f.len]) |p| if (g.sim.lv.isLit(p)) {
                 fillCell(c, p, look.AIM_PATH);
             };
@@ -728,7 +728,9 @@ fn drawOccluder(g: *game.Game, c: Cam, p: P, kind: grid.Tile) void {
     const fogmap = g.light.gpu.layers.get(.fog);
     const shaded = if (lightmap != null and fogmap != null) g.sprites.drawScenery(tex, rect, view, lightmap.?, fogmap.?, occlusion, focus) else false;
     if (!shaded) raster.stretch(tex, rect, look.fade(sceneryTint(g, p), look.occlusionAlpha(hidden)));
-    if (g.cloud.visible and g.cloud.beginOccludedVeil(g.light.onBody(mathx.centre(p), false).tint(rl.Color.white), focus, if (shaded) occlusion else .{})) {
+    const rows = @divTrunc(@as(i32, @intFromFloat(rect.height)) + game.CELL - 1, game.CELL);
+    const under = grid.Box{ .lo = .{ .x = p.x, .y = p.y + 1 - rows }, .hi = .{ .x = p.x + 1, .y = p.y + 1 } };
+    if (g.cloud.veils(under) and g.cloud.beginOccludedVeil(g.light.onBody(mathx.centre(p), false).tint(rl.Color.white), focus, if (shaded) occlusion else .{})) {
         raster.stretch(tex, rect, if (shaded) rl.Color.white else look.fade(rl.Color.white, look.occlusionAlpha(hidden)));
         cloud.Cloud.endVeil();
     }
@@ -781,12 +783,12 @@ fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
             }
         }
         if (g.sim.lv.barrier[i] > 0) {
-            fillCell(c, p, rl.fade(look.WARD, BARRIER_FILL_A));
+            fillCell(c, p, look.fade(look.WARD, BARRIER_FILL_A));
             outline(c, p, look.WARD);
             inline for (.{ game.CELL / 4, game.CELL * 3 / 4 }) |bar_x| rl.drawLine(x + bar_x, y + BARRIER_INSET, x + bar_x, y + game.CELL - BARRIER_INSET, look.WARD);
         }
         if (g.sim.lv.flames[i] > 0) {
-            fillCell(c, p, rl.fade(look.FIRE, FLAME_FILL_A));
+            fillCell(c, p, look.fade(look.FIRE, FLAME_FILL_A));
             g.pic.fx.drawBurning(@floatFromInt(x), @floatFromInt(y), game.CELL_F, i, 1);
         }
     }

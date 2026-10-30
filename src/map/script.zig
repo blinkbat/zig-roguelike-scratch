@@ -733,14 +733,6 @@ pub fn condTable(k: CondKind) ?Table {
     };
 }
 
-pub fn actTable(k: ActKind) ?Table {
-    const r = actRef(k) orelse return null;
-    return switch (r) {
-        .table => |t| t,
-        .folk, .dialog => null,
-    };
-}
-
 /// Every condition in a script: the triggers', then each dialog's choice gates.
 pub fn CondIter(comptime S: type, comptime C: type) type {
     return struct {

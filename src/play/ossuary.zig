@@ -106,14 +106,7 @@ const Bones = struct {
 };
 pub const FILE_MAX = HEAD + wire.maxSize(Bones) + store.SUM;
 const Code = wire.Codec(struct {
-    pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {
-        if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "COUNTED")) {
-            inline for (T.COUNTED) |entry| {
-                if (comptime std.mem.eql(u8, field, entry[0])) return entry[1];
-            }
-        }
-        return null;
-    }
+    pub const countField = wire.counted;
 });
 const ClassRaw = std.meta.Int(.unsigned, 8 * @sizeOf(heroes.Class));
 
@@ -163,12 +156,10 @@ fn decodeLegacy(bytes: []const u8) Error!Hall {
     if (n > MAX) return error.Damaged;
     if (b.len != @as(usize, n) * @sizeOf(Entry)) return error.Short;
     var hall = Hall{ .n = n, .dirty = true };
-    for (hall.entries[0..n], 0..) |*e, i| {
+    for (hall.entries[0..n]) |*e| {
         const class = std.mem.bytesToValue(ClassRaw, b[@offsetOf(Entry, "class")..][0..@sizeOf(ClassRaw)]);
         _ = std.meta.intToEnum(heroes.Class, class) catch return error.Damaged;
         _ = store.legacy.take(&b, e);
-        if (!e.name.valid() or e.summary_n > SUMMARY_MAX) return error.Damaged;
-        if (i > 0 and hall.entries[i - 1].renown < e.renown) return error.Damaged;
     }
     try validate(&hall);
     return hall;

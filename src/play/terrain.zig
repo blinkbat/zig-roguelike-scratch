@@ -73,6 +73,10 @@ pub const EFFECTS = std.EnumArray(grid.Tile, Modifiers).initDefault(.{}, .{
     .tall_grass = GRASS,
 });
 
+comptime {
+    for (std.enums.values(grid.Tile)) |t| std.debug.assert(t.wet() == std.meta.eql(EFFECTS.get(t), WET));
+}
+
 pub fn of(tile: grid.Tile) Modifiers {
     return EFFECTS.get(tile);
 }

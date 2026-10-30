@@ -113,7 +113,7 @@ pub const Book = struct {
         return switch (self.page) {
             .passives => .passives,
             .skills => .skills,
-            else => null,
+            .equipment, .inventory, .stats, .nearby, .loot => null,
         };
     }
     fn treeView(self: *const Book) trees.View {
@@ -150,7 +150,7 @@ pub const Book = struct {
             .equipment => view.inventory.gear.slots.get(items.SLOTS[self.cursor]),
             .inventory => if (self.bagIndex(view)) |b| view.inventory.bag[b] else null,
             .nearby, .loot => if (self.cursor < view.nearby.len) view.nearby[self.cursor].item() else null,
-            else => null,
+            .stats, .passives, .skills => null,
         };
     }
     fn destination(self: *const Book, view: View) items.Slot {
@@ -179,7 +179,7 @@ pub const Book = struct {
         return switch (self.page) {
             .loot => layout.LOOT_SIZE,
             .nearby => .{ .x = layout.DIRECT_W, .y = self.nearbyActionY(view) + layout.ACTION_H + menu.PANEL_PAD },
-            else => layout.SIZE,
+            .equipment, .inventory, .stats, .passives, .skills => layout.SIZE,
         };
     }
     pub fn surface(self: *const Book, screen: P, view: View) menu.Surface {
@@ -192,7 +192,7 @@ pub const Book = struct {
         return switch (self.page) {
             .loot => layout.LOOT_ROWS,
             .nearby => layout.DIRECT_VISIBLE_ROWS,
-            else => layout.VISIBLE_ROWS,
+            .equipment, .inventory, .stats, .passives, .skills => layout.VISIBLE_ROWS,
         };
     }
     fn noteY(self: *const Book, view: View) i32 {
@@ -343,7 +343,7 @@ pub const Book = struct {
         const at: P = switch (self.page) {
             .loot => .{ .x = layout.DETAIL_X, .y = layout.LOOT_FOOT_Y },
             .nearby => .{ .x = layout.LIST_X, .y = self.nearbyActionY(view) },
-            else => .{ .x = layout.DETAIL_X, .y = layout.ACTION_Y },
+            .equipment, .inventory, .stats, .passives, .skills => .{ .x = layout.DETAIL_X, .y = layout.ACTION_Y },
         };
         return raster.rect(at.x + i * (layout.ACTION_W + menu.ACTION_GAP), at.y, layout.ACTION_W, layout.ACTION_H);
     }
@@ -459,6 +459,7 @@ pub const Book = struct {
             const r = self.cellBox(i, view);
             const x: i32 = @intFromFloat(r.x);
             const y: i32 = @intFromFloat(r.y);
+            const row_mid = y + layout.ROW_HEIGHT / 2;
             const chosen = i == self.cursor;
             rl.drawRectangleRec(r, look.BG);
             menu.outline(r, chosen, look.UI_FOCUS, look.EDGE);
@@ -466,7 +467,7 @@ pub const Book = struct {
                 .equipment => {
                     const slot = items.SLOTS[i];
                     const inner = @as(i32, @intFromFloat(r.width)) - 2 * layout.SLOT_INSET;
-                    var fitted: [64]u8 = undefined;
+                    var fitted: [items.NAME_MAX]u8 = undefined;
                     face.draw(face.fit(&fitted, slotLabel(slot), layout.SLOT_LABEL, inner, false), x + layout.SLOT_INSET, y + layout.SLOT_INSET, layout.SLOT_LABEL, look.DIM);
                     const it = view.inventory.gear.slots.get(slot);
                     const named = r.height >= layout.NAMED_CELL_H;
@@ -486,20 +487,20 @@ pub const Book = struct {
                 .inventory => if (stockAt(view, i)) |k| {
                     var carried: menu.Note(24) = .{};
                     carried.say("{d} carried", .{view.inventory.stacks.get(k)});
-                    line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, look.itemInk(.normal));
+                    line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, look.itemInk(.normal));
                     listRow(face, x, y, menu.named(k), look.itemInk(.normal), carried.text());
                 } else {
                     const at = i - stocked(view);
                     const it = view.inventory.bag[at];
                     const slots = it.kind.slots();
-                    line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, look.itemInk(it.rarity()));
+                    line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, look.itemInk(it.rarity()));
                     listRow(face, x, y, it.name(&name_buf), look.itemInk(it.rarity()), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.named(it.kind) else slots[0].name());
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];
                     if (n.item()) |it| {
-                        line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, inkOf(it));
-                    } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, y + layout.ROW_HEIGHT / 2, look.itemInk(.normal));
+                        line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
+                    } else if (n.supplyOf()) |k| line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, look.itemInk(.normal));
                     listRow(face, x, y, n.label(&name_buf), inkOf(n.item()), n.command().verb());
                 },
                 .passives, .skills, .stats => unreachable,
@@ -510,7 +511,7 @@ pub const Book = struct {
         return switch (self.page) {
             .inventory => (view.inventory.swapped(self.bagIndex(view).?, slot) catch view.inventory.gear).statsWithout(slot, view.base),
             .nearby, .loot => neededAttrs(view, self.selected(view).?, slot),
-            else => view.inventory.gear.statsWithout(slot, view.base),
+            .equipment, .stats, .passives, .skills => view.inventory.gear.statsWithout(slot, view.base),
         };
     }
     fn drawDetail(self: *const Book, face: *const font.Face, view: View) void {

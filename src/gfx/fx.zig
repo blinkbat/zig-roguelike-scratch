@@ -13,6 +13,7 @@ const sunder = @import("../play/sunder.zig");
 const blind = @import("../play/blind.zig");
 const confusion = @import("../play/confusion.zig");
 const ward = @import("../play/ward.zig");
+const tactics = @import("../play/tactics.zig");
 const resilience = @import("../play/resilience.zig");
 const look = @import("look.zig");
 const font = @import("font.zig");
@@ -227,10 +228,10 @@ pub const Status = enum {
     pub fn about(s: Status) []const u8 {
         return switch (s) {
             .resistant => resilience.ABOUT,
-            .guarding => @import("../play/tactics.zig").Guard.DESCRIPTION,
-            .unyielding => @import("../play/tactics.zig").Unyielding.DESCRIPTION,
-            .steady => @import("../play/tactics.zig").SteadyAim.DESCRIPTION,
-            .overwatch => @import("../play/tactics.zig").Overwatch.DESCRIPTION,
+            .guarding => tactics.Guard.DESCRIPTION,
+            .unyielding => tactics.Unyielding.DESCRIPTION,
+            .steady => tactics.SteadyAim.DESCRIPTION,
+            .overwatch => tactics.Overwatch.DESCRIPTION,
             .frightened => actor.FRIGHT_STATUS,
             inline else => |t| module(t).STATUS,
         };

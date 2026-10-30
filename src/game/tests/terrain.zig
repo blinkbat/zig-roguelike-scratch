@@ -209,6 +209,9 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
         g.sim.lv.lit[grid.Level.idx(far)] = false;
         try std.testing.expect(skills.aimable(g, from, far));
         skills.confirmAim(g);
+        try std.testing.expect(g.mode == .aim and g.mode.aim.askedHere());
+        try std.testing.expectEqual(clock, g.sim.clock);
+        skills.confirmAim(g);
         try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
         try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
         try std.testing.expect(g.pic.shot.?.flight.struck == null);

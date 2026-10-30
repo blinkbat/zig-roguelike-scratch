@@ -120,20 +120,20 @@ fn keyDim(hour: f32) f32 {
 const Palette = struct { key: Rgb, sky: Rgb };
 const Key = struct { at: f32, key: Rgb, sky: Rgb };
 
-const NIGHT = Palette{ .key = .{ 0.018, 0.036, 0.100 }, .sky = .{ 0.008, 0.018, 0.050 } };
-const DEEPEST_NIGHT = Palette{ .key = .{ 0.003, 0.006, 0.020 }, .sky = .{ 0.002, 0.004, 0.012 } };
+const NIGHT = Palette{ .key = .{ 0.012, 0.024, 0.068 }, .sky = .{ 0.005, 0.012, 0.034 } };
+const DEEPEST_NIGHT = Palette{ .key = .{ 0.002, 0.004, 0.013 }, .sky = .{ 0.001, 0.003, 0.008 } };
 
 /// Equal endpoints at the middle of the night avoid a seam.
 const KEYS = [_]Key{
     .{ .at = day.DEAD_OF_NIGHT, .key = DEEPEST_NIGHT.key, .sky = DEEPEST_NIGHT.sky },
     .{ .at = SUNRISE - GLOW_HOURS, .key = NIGHT.key, .sky = NIGHT.sky },
-    .{ .at = KEY_SWAP_DAWN, .key = .{ 0.088, 0.104, 0.168 }, .sky = .{ 0.046, 0.056, 0.088 } },
-    .{ .at = SUNRISE, .key = .{ 1.100, 0.620, 0.340 }, .sky = .{ 0.120, 0.124, 0.166 } },
+    .{ .at = KEY_SWAP_DAWN, .key = .{ 0.104, 0.096, 0.168 }, .sky = .{ 0.054, 0.052, 0.090 } },
+    .{ .at = SUNRISE, .key = .{ 1.040, 0.700, 0.640 }, .sky = .{ 0.144, 0.126, 0.172 } },
     .{ .at = FULL_MORNING, .key = .{ 1.300, 1.070, 0.800 }, .sky = .{ 0.196, 0.208, 0.250 } },
     .{ .at = day.NOON, .key = .{ 1.380, 1.250, 1.040 }, .sky = .{ 0.220, 0.230, 0.260 } },
     .{ .at = LATE_DAY, .key = .{ 1.320, 1.100, 0.800 }, .sky = .{ 0.168, 0.188, 0.244 } },
-    .{ .at = DUSK_GLOW, .key = .{ 1.180, 0.660, 0.320 }, .sky = .{ 0.132, 0.136, 0.186 } },
-    .{ .at = KEY_SWAP_DUSK, .key = .{ 0.130, 0.150, 0.230 }, .sky = .{ 0.058, 0.068, 0.102 } },
+    .{ .at = DUSK_GLOW, .key = .{ 1.120, 0.720, 0.620 }, .sky = .{ 0.152, 0.130, 0.182 } },
+    .{ .at = KEY_SWAP_DUSK, .key = .{ 0.144, 0.132, 0.226 }, .sky = .{ 0.064, 0.060, 0.104 } },
     .{ .at = SUNSET + GLOW_HOURS, .key = NIGHT.key, .sky = NIGHT.sky },
     .{ .at = HOURS + day.DEAD_OF_NIGHT, .key = DEEPEST_NIGHT.key, .sky = DEEPEST_NIGHT.sky },
 };

@@ -158,6 +158,11 @@ pub const Cloud = struct {
         rl.endShaderMode();
     }
 
+    /// Whether a veil over the cells of `box` could show any gas.
+    pub fn veils(self: *const Cloud, box: grid.Box) bool {
+        return self.visible and self.tinted(box.grown(1));
+    }
+
     /// Whether any gas is drawn over `box`, which must cover every cell a baked texel reads.
     fn tinted(self: *const Cloud, box: grid.Box) bool {
         const lo: usize = @intCast(@max(0, box.lo.x));
@@ -193,8 +198,7 @@ pub const Cloud = struct {
         }
         if (sum == 0) return rl.Color.blank;
         const a = @min(TINT_HI, sum);
-        const c = rgb * sky.splat(a / sum * 255);
-        return .{ .r = @intFromFloat(@round(c[0])), .g = @intFromFloat(@round(c[1])), .b = @intFromFloat(@round(c[2])), .a = @intFromFloat(@round(a * 255)) };
+        return look.colourOf(rgb * sky.splat(a / sum), a);
     }
 };
 

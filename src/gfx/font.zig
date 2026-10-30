@@ -362,7 +362,7 @@ test "font fitting preserves linear results for native fallback and long ASCII t
     }
     const metric = rl.Font{ .baseSize = 20, .glyphCount = ASCII_N, .glyphPadding = 0, .texture = undefined, .recs = &recs, .glyphs = &glyphs };
     var face = Face{ .font = metric, .data_font = metric, .ordered = true };
-    face.native[2] = metric;
+    face.native[comptime std.mem.indexOfScalar(i32, &NATIVE_SIZES, BODY).?] = metric;
     var text: [max_text]u8 = undefined;
     for (&text, 0..) |*c, i| c.* = @intCast(ASCII_LO + (i * 37) % ASCII_N);
     var actual: [max_text + 1]u8 = undefined;

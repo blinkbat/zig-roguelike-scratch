@@ -230,7 +230,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
                 f.put("Contains gold and items; never broken by attacks", .{});
             }
             if (t.isOpened()) f.put("Already opened; may hold items and be walked over", .{});
-            if (t.bursts()) f.put("Bursts into " ++ @import("../map/gas.zig").HEALING_NAME ++ " when the hero steps into it", .{});
+            if (t.bursts()) f.put("Bursts into " ++ @import("../map/gas.zig").HEALING_NAME ++ " when the hero steps into it or strikes it", .{});
         },
         .body => |k| {
             const r = actor.row(k);

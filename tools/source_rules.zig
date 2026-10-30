@@ -14,13 +14,15 @@ fn domain(path: []const u8) bool {
         gameRules(path) or std.mem.eql(u8, path, "edit/preview.zig");
 }
 
+const INDEPENDENT = [_][]const u8{
+    "edit/widgets.zig",       "edit/thumbnails.zig",   "edit/tool_catalog.zig",   "edit/name_field.zig",
+    "edit/history.zig",       "edit/text_catalog.zig", "ui/character_view.zig",   "ui/character_layout.zig",
+    "ui/character_stats.zig", "ui/item_card.zig",      "core/input_bindings.zig", "core/input_names.zig",
+    "gfx/light_model.zig",    "gfx/light_gpu.zig",
+};
+
 fn independentHelper(path: []const u8) bool {
-    for ([_][]const u8{
-        "edit/widgets.zig",       "edit/thumbnails.zig",   "edit/tool_catalog.zig",   "edit/name_field.zig",
-        "edit/history.zig",       "edit/text_catalog.zig", "ui/character_view.zig",   "ui/character_layout.zig",
-        "ui/character_stats.zig", "ui/item_card.zig",      "core/input_bindings.zig", "core/input_names.zig",
-        "gfx/light_model.zig",    "gfx/light_gpu.zig",
-    }) |owner| {
+    for (INDEPENDENT) |owner| {
         if (std.mem.eql(u8, path, owner)) return true;
     }
     return false;
@@ -105,11 +107,7 @@ test "source boundaries recognize real imports and permit integration tests" {
     try std.testing.expect((try check(alloc, "play/items.zig", source)) == null);
     try std.testing.expect((try check(alloc, "play/items.zig", "const good = @import(\"../core/wording.zig\",);")) == null);
     try std.testing.expectError(error.NonliteralImport, check(alloc, "play/items.zig", "const bad = @import(\"../ui/\" ++ \"menu.zig\");"));
-    for ([_][]const u8{
-        "edit/widgets.zig",       "edit/thumbnails.zig",   "edit/tool_catalog.zig", "edit/name_field.zig",
-        "edit/history.zig",       "edit/text_catalog.zig", "ui/character_view.zig", "ui/character_layout.zig",
-        "ui/character_stats.zig", "ui/item_card.zig",
-    }) |owner| {
+    for (INDEPENDENT) |owner| {
         try std.testing.expect((try check(alloc, owner, "const bad = @import(\"../edit/editor.zig\");")) != null);
         try std.testing.expect((try check(alloc, owner, "const bad = @import(\"../game.zig\");")) != null);
         try std.testing.expect((try check(alloc, owner, "const good = @import(\"../gfx/raster.zig\");")) == null);

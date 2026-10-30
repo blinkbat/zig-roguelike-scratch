@@ -182,8 +182,7 @@ test "every affliction shows on the pictured hero and the HUD, worn down by the 
     try std.testing.expectEqualSlices(fx.Status, &statuses, hud.shownStatuses(g.pic.heroShown(&g.sim).?.status, &buf));
     combat.endTurn(g);
     try std.testing.expectEqual(shock.TURNS, g.pic.heroShown(&g.sim).?.status.get(.shocked));
-    g.pic.lead = 0;
-    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    harness.stagger(g);
     g.st = .{};
     game.update(g, harness.TEST_DT);
     harness.drawnOut(g);

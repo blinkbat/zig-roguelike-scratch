@@ -106,6 +106,7 @@ comptime {
 }
 const Print = @TypeOf(FINGERPRINT);
 const HEAD = store.head(MAGIC);
+const Raw = struct { map: RawMap, visit: RawVisit, lv: RawLevel };
 
 pub const Error = error{ NotASave, OtherBuild, Short, Damaged };
 
@@ -118,7 +119,7 @@ fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
     try store.legacy.put(w, &g.sim.seed);
     const has_map = g.sim.map != null;
     try store.legacy.put(w, &has_map);
-    const raw = try std.heap.page_allocator.create(struct { map: RawMap, visit: RawVisit, lv: RawLevel });
+    const raw = try std.heap.page_allocator.create(Raw);
     defer std.heap.page_allocator.destroy(raw);
     if (g.sim.map) |a| {
         data.convert(&raw.map, a);
@@ -209,7 +210,7 @@ fn parseLegacy(bytes: []const u8) !*format.Snapshot {
     snapshot.map = null;
     snapshot.visits = @splat(null);
     snapshot.portable = .{};
-    const raw = try std.heap.page_allocator.create(struct { map: RawMap, visit: RawVisit, lv: RawLevel });
+    const raw = try std.heap.page_allocator.create(Raw);
     defer std.heap.page_allocator.destroy(raw);
     var b = c.body;
     if (c.has_map) {
@@ -771,7 +772,7 @@ test "autosave gates retain dirty state until the interval turn and door are com
         a.step(g, 0);
         try std.testing.expect(g.sim.unsaved);
     }
-    std.debug.print("autosave: 4 independent gates preserve dirty state; each released gate attempts capture without filesystem writes\n", .{});
+    std.debug.print("autosave: {d} independent gates preserve dirty state; each released gate attempts capture without filesystem writes\n", .{std.enums.values(Gate).len});
 }
 
 test "checksummed save structure failures preserve both the live run and destination map" {

@@ -27,6 +27,8 @@ const DROP_W: i32 = 34;
 const BTN_W: i32 = 200;
 const TALK_W: i32 = 320;
 const TARGET_W: i32 = 300;
+const WHICH_W: i32 = 260;
+const NEW_W: i32 = 90;
 const NAME_BTN_W: i32 = 210;
 const NAME_BTN_GAP: i32 = 10;
 const TOGGLE_W: i32 = 160;
@@ -293,11 +295,11 @@ fn nameRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: []c
 }
 
 fn caption(g: *game.Game, x: i32, y: i32, w: i32, s: []const u8, col: rl.Color) void {
-    widgets.drawFit(&g.face, s, DETAIL, w, false, x, y + @divTrunc(ROW - DETAIL, 2), col);
+    widgets.drawFit(&g.face, s, DETAIL, w, false, x, y + editor.SMALL_DY, col);
 }
 
 fn heading(g: *game.Game, x: i32, y: i32, w: i32, s: []const u8) void {
-    widgets.drawFit(&g.face, s, TEXT, w, false, x, y + @divTrunc(ROW - TEXT, 2), look.UI_GOLD);
+    widgets.drawFit(&g.face, s, TEXT, w, false, x, y + editor.TEXT_DY, look.UI_GOLD);
 }
 
 /// `<` and `>` round `value`; -1 or 1 as one is pressed, 0 otherwise.
@@ -356,9 +358,9 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
     if (h.hot) rl.drawRectangleLinesEx(r, 1, look.EDIT_HOVER);
     const words_ = target(&ed.map.script, f).?.words;
     const now = words_.text();
-    const x: i32 = @as(i32, @intFromFloat(r.x)) + GAP;
+    const x = widgets.textX(r);
     const y: i32 = @as(i32, @intFromFloat(r.y)) + GAP;
-    const w: i32 = @as(i32, @intFromFloat(r.width)) - 2 * GAP;
+    const w = widgets.insetW(r);
     if (now.len == 0) {
         widgets.drawFit(&g.face, blank, TEXT, w, false, x, y, look.DIM);
     } else if (r.height > @as(f32, @floatFromInt(FIELD_LINE + 2 * GAP))) {
@@ -415,7 +417,7 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     }
     y += GAP;
     heading(g, f.x, y, lw, std.fmt.bufPrint(&buf, "Dialogs {d}/{d}", .{ m.dialog_n, script.MAX_DIALOGS }) catch "");
-    if (rightButton(ed, g, f.x + lw - GAP, y, 90, "+ New", m.dialog_n < script.MAX_DIALOGS, "A new dialog of one empty line")) {
+    if (rightButton(ed, g, f.x + lw - GAP, y, NEW_W, "+ New", m.dialog_n < script.MAX_DIALOGS, "A new dialog of one empty line")) {
         if (m.addDialog("")) |d| {
             ed.bank();
             s.pick = .{ .dialog = d };
@@ -779,25 +781,25 @@ fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.
     var lay = widgets.Lay{ .x = fx, .y = y };
     switch (a.kind) {
         .preserve => caption(g, fx, y, fw, "not spent: it fires again when it next holds", look.DIM),
-        .dialog => dialogStep(ed, g, raster.rect(fx, y, @min(fw, 260), ROW), &a.slot),
+        .dialog => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &a.slot),
         .text => words(ed, g, widgets.row(fx, y, fw), .{ .note = at }, "(the line the log shows)"),
         .flag => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ 260, 150 });
+            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, 150 });
             tableStep(ed, g, lay.take(ws[0]), .flag, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Setop, &a.setop, &SETOP_WORDS, null);
         },
         .counter => {
-            const ws = split(fw, &.{ 4, 3, 3 }, &.{ 260, 130, 150 });
+            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, 130, 150 });
             tableStep(ed, g, lay.take(ws[0]), .counter, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Countop, &a.countop, &COUNTOP_WORDS, null);
             numberStep(ed, g, lay.take(ws[2]), &a.n, -script.NUMBER_MAX, script.NUMBER_MAX, "", "By how much");
         },
         .timer => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ 260, 170 });
+            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, 170 });
             tableStep(ed, g, lay.take(ws[0]), .timer, &a.slot);
             numberStep(ed, g, lay.take(ws[1]), &a.n, 0, script.NUMBER_MAX, " turns", "Turns it runs before it is done");
         },
-        .wait => numberStep(ed, g, raster.rect(fx, y, 170, ROW), &a.n, 0, script.NUMBER_MAX, " turns", "Spent turns held before the next action"),
+        .wait => numberStep(ed, g, widgets.row(fx, y, 170), &a.n, 0, script.NUMBER_MAX, " turns", "Spent turns held before the next action"),
     }
 }
 
@@ -857,7 +859,7 @@ fn fitCond(ed: *editor.Editor, c: *script.Cond) void {
                 c.to = b.hi.sub(.{ .x = 1, .y = 1 });
             }
         },
-        else => {},
+        .always, .never, .flag, .counter, .timer, .elapsed, .talked, .deaths, .alive => {},
     }
 }
 
@@ -872,7 +874,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
     switch (c.kind) {
         .always, .never => {},
         .flag, .timer => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ 260, 160 });
+            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, 160 });
             tableStep(ed, g, lay.take(ws[0]), script.condTable(c.kind).?, &c.slot);
             const words_ = if (c.kind == .flag) [2][]const u8{ "is off", "is on" } else [2][]const u8{ "is running", "has run out" };
             if (button(ed, g, lay.take(ws[1]), std.fmt.bufPrintZ(&buf, "{s}", .{words_[@intFromBool(c.on)]}) catch "", false, true, "Which way it has to be")) {
@@ -881,7 +883,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
             }
         },
         .counter => {
-            const ws = split(fw, &.{ 4, 3, 3 }, &.{ 260, 150, 150 });
+            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, 150, 150 });
             tableStep(ed, g, lay.take(ws[0]), .counter, &c.slot);
             cmpStep(ed, g, lay.take(ws[1]), &c.cmp);
             numberStep(ed, g, lay.take(ws[2]), &c.n, -script.NUMBER_MAX, script.NUMBER_MAX, "", "The number it is held to");
@@ -895,17 +897,17 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
             const ws = split(fw, &.{ 3, 2 }, &.{ 400, 200 });
             caption(g, fx, y, ws[0], std.fmt.bufPrint(&buf, "node {d}: {d},{d} to {d},{d}", .{ c.node, c.from.x, c.from.y, c.to.x, c.to.y }) catch "", look.TEXT);
             _ = lay.take(ws[0]);
-            if (button(ed, g, lay.take(ws[1]), "From selection", false, ed.selection != null, "This node and the cells selected on it (" ++ Desk.SHAPES_CAPTION ++ ")")) {
+            if (button(ed, g, lay.take(ws[1]), "From selection", false, ed.selection != null, "This node and the cells selected on it (" ++ Desk.SHAPE_CAPTIONS[@intFromEnum(editor.Shape.select)] ++ ")")) {
                 fitCond(ed, c);
                 ed.bank();
             }
         },
         .near => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ 260, 170 });
+            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, 170 });
             indexStep(ed, g, lay.take(ws[0]), m.folk[c.slot].called(), &c.slot, m.folk_n, "Which folk");
             numberStep(ed, g, lay.take(ws[1]), &c.n, 0, script.NEAR_MAX, " cells", "How near, in steps either way");
         },
-        .talked => dialogStep(ed, g, raster.rect(fx, y, @min(fw, 260), ROW), &c.slot),
+        .talked => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &c.slot),
         .deaths, .alive => {
             const ws = split(fw, &.{ 4, 3, 3 }, &.{ 220, 150, 150 });
             const by = stepper(ed, g, lay.take(ws[0]), actor.row(c.foe).name, true, "Which foe; a slime counts its halves");
@@ -936,7 +938,7 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     const list = widgets.Scroll{ .box = s.list, .top = &s.list_top, .most = &s.list_most };
     var y = list.begin(&ed.clip);
     heading(g, f.x, y, lw, std.fmt.bufPrint(&buf, "Triggers {d}/{d}", .{ m.trigger_n, script.MAX_TRIGGERS }) catch "");
-    if (rightButton(ed, g, f.x + lw - GAP, y, 90, "+ New", m.trigger_n < script.MAX_TRIGGERS, "A trigger that always holds and does nothing yet")) {
+    if (rightButton(ed, g, f.x + lw - GAP, y, NEW_W, "+ New", m.trigger_n < script.MAX_TRIGGERS, "A trigger that always holds and does nothing yet")) {
         if (m.addTrigger()) |t| {
             ed.bank();
             s.trigger = t;

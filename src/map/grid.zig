@@ -18,6 +18,8 @@ pub const MIDDLE = P{ .x = @divTrunc(W, 2), .y = @divTrunc(H, 2) };
 
 pub const NO_ONE: u16 = 0;
 pub const MAX_TORCHES: usize = 32;
+/// Only the first this many glowing tiles give light (`Level.glowing`).
+pub const MAX_GLOWS: usize = 64;
 pub const MAX_DOORS: usize = 16;
 pub const NO_DOOR: u8 = 0;
 pub const NO_FOLK: u8 = 0;
@@ -101,7 +103,7 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).glows;
     }
 
-    /// Bursts into healing gas when the hero steps into it, leaving its ground.
+    /// Bursts into healing gas when stepped into or struck, leaving its ground.
     pub fn bursts(t: Tile) bool {
         return TERRAIN.getPtrConst(t).bursts;
     }
@@ -176,6 +178,7 @@ comptime {
     for (std.enums.values(Tile), 0..) |a, i| {
         std.debug.assert(std.ascii.isPrint(a.letter()) and a.letter() != ' ');
         std.debug.assert(!a.liquid() or a.solid());
+        std.debug.assert(!a.bursts() or a.ground() != null);
         for (std.enums.values(Tile)[0..i]) |b| std.debug.assert(a.letter() != b.letter());
     }
 }
@@ -403,6 +406,28 @@ pub const Level = struct {
     pub fn torches(self: *const Level) []const P {
         return self.torch.slice();
     }
+
+    /// The glowing tiles that give light: the first `MAX_GLOWS` in reading order.
+    pub fn glowing(self: *const Level) Glowing {
+        return .{ .lv = self };
+    }
+
+    pub const Glowing = struct {
+        lv: *const Level,
+        i: usize = 0,
+        n: usize = 0,
+
+        pub fn next(self: *Glowing) ?P {
+            while (self.n < MAX_GLOWS and self.i < CELLS) {
+                const i = self.i;
+                self.i += 1;
+                if (!self.lv.tile[i].glows()) continue;
+                self.n += 1;
+                return Level.of(i);
+            }
+            return null;
+        }
+    };
 
     pub fn addTorch(self: *Level, p: P) void {
         _ = self.torch.add(p);
@@ -954,7 +979,7 @@ pub fn projectileLine(lv: *const Level, from: P, to: P) bool {
     return lineOk(lv, from, to, false, true);
 }
 
-/// `clearLine`, and every cell on it lit, the target's too.
+/// `projectileLine`, and every cell on it lit, the target's too.
 pub fn litLine(lv: *const Level, from: P, to: P) bool {
     return lineOk(lv, from, to, true, true);
 }

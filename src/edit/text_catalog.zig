@@ -6,9 +6,11 @@ const atlas = @import("../map/atlas.zig");
 const atlas_text = @import("../map/atlas_text.zig");
 
 pub const MAX_TEXT: usize = 4096;
-const FILE_CAP = 4 << 20;
+const FILE_CAP = atlas_text.TEXT_CAP;
 const TAG_FILE = "text-tags.json";
 const LABEL_FILE = wording.FILE;
+const SRC = "src/";
+const ZIG = ".zig";
 pub const Author = enum { unknown, you, ai, mixed };
 pub const SaveResult = enum { saved, tags_not_saved };
 pub const Entry = struct {
@@ -121,7 +123,7 @@ pub const Catalog = struct {
         defer source.close();
         for (try sortedFiles(a, source, included)) |path| {
             const bytes = try source.readFileAlloc(a, path, FILE_CAP);
-            try self.scan(try std.fmt.allocPrint(a, "src/{s}", .{path}), bytes);
+            try self.scan(try std.fmt.allocPrint(a, SRC ++ "{s}", .{path}), bytes);
         }
         try self.readMaps(project);
         for (self.list.items) |*entry| {
@@ -158,7 +160,6 @@ pub const Catalog = struct {
         if (index >= self.list.items.len) return error.NoEntry;
         const entry = self.list.items[index];
         if (!entry.editable) return error.ReadOnly;
-        if (replacement.len > MAX_TEXT) return error.TextTooLong;
         try validate(entry.text, replacement);
         const source = self.files.items[entry.file];
         const path = try std.fs.path.join(self.alloc, &.{ self.root, source.path });
@@ -284,15 +285,8 @@ pub const Catalog = struct {
         const bytes = try a.dupeZ(u8, text);
         const file = self.files.items.len;
         try self.files.append(a, .{ .path = path, .bytes = bytes });
-        var tokens = std.ArrayList(Token).init(a);
-        var lex = std.zig.Tokenizer.init(bytes);
-        while (true) {
-            const token = lex.next();
-            if (token.tag == .eof) break;
-            if (token.tag == .invalid) return error.InvalidSource;
-            try tokens.append(token);
-        }
-        const ts = tokens.items;
+        const ts = try tokenize(a, bytes);
+        for (ts) |token| if (token.tag == .invalid) return error.InvalidSource;
         if (self.skills == null) self.skills = try skillSources(a, @embedFile("../play/skillbar.zig"));
         var contexts = try ContextScan.init(a, path, bytes, ts, self.skills.?);
         var excluded = try a.alloc(bool, ts.len);
@@ -365,7 +359,7 @@ pub const Catalog = struct {
                         const key = if (type_name) |tn| try wording.keyAlloc(a, tn, name) else null;
                         const allowed = if (type_name) |tn| wording.allowed(tn, name) else false;
                         const identity = key orelse try std.fmt.allocPrint(a, "{s}.{s}", .{ path, name });
-                        try self.list.append(a, .{ .path = path, .line = lineOf(bytes, ts[at].loc.start), .text = if (key) |k| try a.dupe(u8, wording.lookup(self.labels, k) orelse label) else label, .category = try categoryOf(a, path), .owner = try humanize(a, name), .role = "Display name", .context = identity, .editable = allowed, .reason = if (allowed) "Display alias; saves to assets/player-labels.txt without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
+                        try self.list.append(a, .{ .path = path, .line = lineOf(bytes, ts[at].loc.start), .text = if (key) |k| try a.dupe(u8, wording.lookup(self.labels, k) orelse label) else label, .category = try categoryOf(a, path), .owner = try humanize(a, name), .role = "Display name", .context = identity, .editable = allowed, .reason = if (allowed) "Display alias; saves to " ++ LABEL_FILE ++ " without renaming code" else "Generated identifier; no editable display alias", .file = file, .start = ts[at].loc.start, .end = ts[at].loc.end, .ordinal = if (key) |k| @truncate(hash(k)) else 0, .alias = if (allowed) key else null });
                     }
                     field = false;
                 }
@@ -378,7 +372,7 @@ pub const Catalog = struct {
 };
 
 fn included(path: []const u8) bool {
-    if (!std.mem.endsWith(u8, path, ".zig")) return false;
+    if (!std.mem.endsWith(u8, path, ZIG)) return false;
     for ([_][]const u8{ "tests/", "shots.zig", "harness.zig", "atlas_text.zig", "script_text.zig", "text_catalog.zig", "text_panel.zig" }) |part| {
         if (std.mem.indexOf(u8, path, part) != null) return false;
     }
@@ -390,7 +384,7 @@ fn included(path: []const u8) bool {
 const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
 
 fn inputSource(path: []const u8) bool {
-    return std.mem.startsWith(u8, path, "src/") and oneOf(path["src/".len..], &INPUT_SOURCES);
+    return std.mem.startsWith(u8, path, SRC) and oneOf(path[SRC.len..], &INPUT_SOURCES);
 }
 
 fn isMap(path: []const u8) bool {
@@ -423,7 +417,7 @@ fn oneOf(value: []const u8, choices: []const []const u8) bool {
 
 const SkillSource = struct { scope: []const u8, name: []const u8 };
 
-fn skillSources(a: std.mem.Allocator, bytes: [:0]const u8) ![]const SkillSource {
+fn tokenize(a: std.mem.Allocator, bytes: [:0]const u8) ![]const Token {
     var tokens = std.ArrayList(Token).init(a);
     var lex = std.zig.Tokenizer.init(bytes);
     while (true) {
@@ -431,7 +425,11 @@ fn skillSources(a: std.mem.Allocator, bytes: [:0]const u8) ![]const SkillSource 
         if (token.tag == .eof) break;
         try tokens.append(token);
     }
-    const ts = tokens.items;
+    return tokens.items;
+}
+
+fn skillSources(a: std.mem.Allocator, bytes: [:0]const u8) ![]const SkillSource {
+    const ts = try tokenize(a, bytes);
     var imports = std.StringHashMap([]const u8).init(a);
     for (ts, 0..) |t, i| {
         if (t.tag != .keyword_const or i + 6 >= ts.len) continue;
@@ -480,8 +478,8 @@ fn humanize(a: std.mem.Allocator, value: []const u8) ![]const u8 {
 }
 
 fn moduleOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
-    const start: usize = if (std.mem.startsWith(u8, path, "src/")) 4 else 0;
-    const end = if (std.mem.endsWith(u8, path, ".zig")) path.len - 4 else path.len;
+    const start: usize = if (std.mem.startsWith(u8, path, SRC)) SRC.len else 0;
+    const end = if (std.mem.endsWith(u8, path, ZIG)) path.len - ZIG.len else path.len;
     const module = try a.dupe(u8, path[start..end]);
     std.mem.replaceScalar(u8, module, '/', '.');
     return module;
@@ -497,7 +495,7 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (std.mem.eql(u8, path, "src/play/skillbar.zig")) return "Skills";
     if (std.mem.eql(u8, path, "src/gfx/fx.zig")) return "Effects";
     const base = std.fs.path.basename(path);
-    return humanize(a, if (std.mem.endsWith(u8, base, ".zig")) base[0 .. base.len - 4] else base);
+    return humanize(a, if (std.mem.endsWith(u8, base, ZIG)) base[0 .. base.len - ZIG.len] else base);
 }
 
 fn textRole(name: []const u8) ?[]const u8 {
@@ -654,7 +652,7 @@ fn oneOfToken(tag: Token.Tag, choices: []const Token.Tag) bool {
 
 fn enumType(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []const Token, at: usize) !?[]const u8 {
     if (at < 3 or ts[at - 1].tag != .equal or ts[at - 2].tag != .identifier or ts[at - 3].tag != .keyword_const) return null;
-    if (!std.mem.startsWith(u8, path, "src/") or !std.mem.endsWith(u8, path, ".zig")) return null;
+    if (!std.mem.startsWith(u8, path, SRC) or !std.mem.endsWith(u8, path, ZIG)) return null;
     var name = std.ArrayList(u8).init(a);
     try name.appendSlice(try moduleOf(a, path));
     for (ts[0..at], 0..) |token, i| {
@@ -706,7 +704,7 @@ fn forbiddenBuiltin(name: []const u8) bool {
 
 fn technicalCall(bytes: []const u8, ts: []const Token, i: usize) bool {
     const name = slice(bytes, ts[i]);
-    if (oneOf(name, &.{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "getUniformLocation", "loadShaderFromMemory", "capture", "snap", "shootPage", "has", "declares", "declOr" })) return true;
+    if (oneOf(name, &.{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "getUniformLocation", "loadShaderFromMemory", "capture", "snap", "shootPage", "has", "declares" })) return true;
     if (std.mem.eql(u8, name, "print") and i >= 2 and std.mem.eql(u8, slice(bytes, ts[i - 2]), "debug")) return true;
     return false;
 }
@@ -731,7 +729,7 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     for (ts[from..i]) |token| {
         if (token.tag != .identifier) continue;
         const name = slice(bytes, token);
-        if (oneOf(name, &.{ "name", "label", "title", "description", "desc", "tip", "note", "caption", "say", "push", "draw", "drawMid", "drawFit", "button", "buttonOn", "put", "text", "textLine", "line", "bufPrint", "bufPrintZ", "comptimePrint", "verb", "slain" })) context = true;
+        if (oneOf(name, &.{ "name", "label", "title", "description", "desc", "tip", "note", "caption", "say", "push", "draw", "drawMid", "drawFit", "button", "buttonOn", "put", "text", "line", "bufPrint", "bufPrintZ", "comptimePrint", "verb", "slain" })) context = true;
     }
     if (context) return true;
     if (std.mem.indexOfScalar(u8, text, ' ') != null and letters >= 3) return true;

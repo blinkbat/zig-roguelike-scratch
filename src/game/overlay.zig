@@ -355,8 +355,7 @@ pub fn inspectStep(g: *game.Game) void {
     var buf: [SPOTS_MAX]Part = undefined;
     const spots = spotsOf(g, &buf);
     const here = inspected(g, spots);
-    if (!std.meta.eql(g.inspecting, here.spot)) g.inspect_scroll = 0;
-    g.inspecting = here.spot;
+    inspect(g, here.spot);
     if (here.spot == .actor) {
         const wheel = if (game.overLog(g)) 0 else g.st.scroll;
         const scroll = -wheel + @as(i32, @intFromBool(g.st.hit(menu.PAGE_NEXT))) - @as(i32, @intFromBool(g.st.hit(menu.PAGE_PREV)));
@@ -364,8 +363,7 @@ pub fn inspectStep(g: *game.Game) void {
     }
     if (g.st.pointing()) {
         for (spots) |part| if (under(part, g.st.pointer.?)) {
-            if (!std.meta.eql(g.inspecting, part.spot)) g.inspect_scroll = 0;
-            g.inspecting = part.spot;
+            inspect(g, part.spot);
             return;
         };
         if (g.st.click) g.mode = .play;
@@ -375,9 +373,12 @@ pub fn inspectStep(g: *game.Game) void {
         g.sim.log.move(-d.delta().y);
         return;
     }
-    const next = toward(spots, here, d) orelse here.spot;
-    if (!std.meta.eql(next, here.spot)) g.inspect_scroll = 0;
-    g.inspecting = next;
+    inspect(g, toward(spots, here, d) orelse here.spot);
+}
+
+fn inspect(g: *game.Game, s: game.Spot) void {
+    if (!std.meta.eql(g.inspecting, s)) g.inspect_scroll = 0;
+    g.inspecting = s;
 }
 
 fn inspected(g: *const game.Game, spots: []const Part) Part {
@@ -403,7 +404,11 @@ pub fn hovered(g: *const game.Game) ?Part {
 }
 
 pub fn drawTips(g: *game.Game) void {
-    if (g.mode == .inspect) {
+    if (g.mode == .aim and g.mode.aim.askedHere()) {
+        var buf: [TIP_TITLE_MAX]u8 = undefined;
+        const ask = std.fmt.bufPrintZ(&buf, skills.UNSEEN_ASK, .{g.mode.aim.act().name()}) catch return;
+        hud.prompt(&g.face, g.screen, game.scene.Cam.of(g).box(g.mode.aim.mark), ask);
+    } else if (g.mode == .inspect) {
         var buf: [SPOTS_MAX]Part = undefined;
         const spots = spotsOf(g, &buf);
         drawTip(g, inspected(g, spots));
@@ -424,6 +429,7 @@ fn drawTip(g: *game.Game, here: Part) void {
 const Tip = struct { title: [:0]const u8, body: []const u8 };
 pub const TIP_TITLE_MAX: usize = 64;
 pub const TIP_BODY_MAX: usize = 2048;
+const ORB_TIP = hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" } });
 
 /// The log is its own tooltip: scrolled, never titled.
 pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8) ?Tip {
@@ -434,12 +440,12 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             const life = g.pic.lifeShown(&g.sim);
             break :blk .{
                 .title = hud.LIFE,
-                .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" } }), .{ life.hp, life.max }) catch "",
+                .body = std.fmt.bufPrint(body_buf, ORB_TIP, .{ life.hp, life.max }) catch "",
             };
         },
         .mana => .{
             .title = hud.MANA,
-            .body = std.fmt.bufPrint(body_buf, comptime hud.table(.{ .{ "Current", "{d}" }, .{ "Maximum", "{d}" } }), .{ g.pic.manaShown(&g.sim), g.sim.manaMax() }) catch "",
+            .body = std.fmt.bufPrint(body_buf, ORB_TIP, .{ g.pic.manaShown(&g.sim), g.sim.manaMax() }) catch "",
         },
         .slot => |i| blk: {
             const v = slotShown(g, i) orelse break :blk .{ .title = "Empty skill slot", .body = "" };

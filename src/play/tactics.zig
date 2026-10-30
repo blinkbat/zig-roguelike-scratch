@@ -26,7 +26,7 @@ pub const Caltrops = struct {
         return rank -| 1;
     }
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, 1);
+        return patch(lv, at, ADJACENT);
     }
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("Patch: {d} turns; pin: {d} turn(s); ", .{ duration(rank), pins(rank) }) catch {};
@@ -45,10 +45,10 @@ pub const SteadyAim = struct {
     pub const COST: i32 = 2;
     pub const DESCRIPTION = "Prepare your next arrow for increased damage and critical chance. Movement cancels preparation.";
     pub fn bonus(rank: u8) i32 {
-        return 15 + 15 * @as(i32, @max(1, rank));
+        return 15 + 15 * @as(i32, ranked(rank));
     }
     pub fn critical(rank: u8) i32 {
-        return 5 + 5 * @as(i32, @max(1, rank));
+        return 5 + 5 * @as(i32, ranked(rank));
     }
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("Next arrow: +{d}% damage, +{d}% critical chance.", .{ bonus(rank), critical(rank) }) catch {};
@@ -94,10 +94,10 @@ pub const ArcaneBarrier = struct {
     pub const RANGE: i32 = 6;
     pub const DESCRIPTION = "Choose two endpoints to raise a straight arcane wall. Blocks movement and projectiles, allows sight. Cannot cover bodies, props or doors.";
     pub fn length(rank: u8) usize {
-        return 2 + @as(usize, @max(1, rank));
+        return 2 + @as(usize, ranked(rank));
     }
     pub fn duration(rank: u8) u8 {
-        return 3 + @max(1, rank);
+        return 3 + ranked(rank);
     }
     /// What a wall's cells are laid with.
     pub fn laid(rank: u8) u8 {
@@ -141,10 +141,10 @@ pub const WarCry = struct {
     pub const RADIUS: i32 = 3;
     pub const DESCRIPTION = std.fmt.comptimePrint("Each visible foe within {d} tiles may be frightened and run from you.", .{RADIUS});
     pub fn chance(rank: u8) u32 {
-        return 40 + 15 * @as(u32, @max(1, rank));
+        return 40 + 15 * @as(u32, ranked(rank));
     }
     pub fn turns(rank: u8) u8 {
-        return 2 + @max(1, rank);
+        return 2 + ranked(rank);
     }
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("{d}% fright chance; frightened {d} turns.", .{ chance(rank), turns(rank) }) catch {};
@@ -154,7 +154,7 @@ pub const Guard = struct {
     pub const COST: i32 = 2;
     pub const DESCRIPTION = "Reduce incoming physical attack damage until your next action.";
     pub fn reduction(rank: u8) i32 {
-        return 40 + 10 * @as(i32, @max(1, rank));
+        return 40 + 10 * @as(i32, ranked(rank));
     }
     /// `dmg` as guarding at `rank` lets it through, rounded up.
     pub fn reduce(rank: u8, dmg: i32) i32 {
@@ -171,7 +171,7 @@ pub const Whirlwind = struct {
     pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
     pub const DESCRIPTION = "Strike every adjacent foe and barrel with your melee weapon.";
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, 1);
+        return patch(lv, at, ADJACENT);
     }
 };
 pub const Unyielding = struct {
@@ -180,7 +180,7 @@ pub const Unyielding = struct {
     pub const DESCRIPTION = "Counter adjacent melee attackers. Toggle the stance; ends when mana runs out.";
     pub const DRAIN: i32 = 2;
     pub fn chance(rank: u8) u32 {
-        return 15 + 10 * @as(u32, @max(1, rank));
+        return 15 + 10 * @as(u32, ranked(rank));
     }
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("{d}% counter chance; {d} mana per turn.", .{ chance(rank), DRAIN }) catch {};
@@ -195,6 +195,17 @@ pub const State = struct {
 };
 
 pub const patch = glacial.patch;
+/// The reach of a patch on a cell and its neighbours.
+const ADJACENT: i32 = 1;
+
+comptime {
+    for ([_]i32{ ADJACENT, GravityWell.RADIUS, Combustion.REACH, Shatter.REACH }) |r| std.debug.assert(r <= glacial.BURST_MAX);
+}
+
+/// A rank counted as at least the first.
+fn ranked(rank: u8) u8 {
+    return @max(1, rank);
+}
 pub fn covered(from: P, dir: mathx.Dir, at: P) bool {
     return mathx.ahead(from, dir.delta(), at);
 }
@@ -211,7 +222,7 @@ fn raisable(lv: *const grid.Level, p: P) bool {
     return lv.vacant(p);
 }
 fn flammable(lv: *const grid.Level, p: P) bool {
-    return lv.walkable(p) and !lv.hasBarrel(p) and !lv.at(p).liquid();
+    return lv.walkable(p) and !lv.hasBarrel(p) and !lv.at(p).wet();
 }
 fn line(lv: *const grid.Level, hero: P, start: P, end: P, most: usize, range: i32, comptime fits: fn (*const grid.Level, P) bool) ?Wall {
     var out = Wall{};
@@ -251,6 +262,8 @@ test "a fire line may cover bodies but not barrels or water, and stretches with 
     try std.testing.expect(blaze(&lv, hero, a, b, 3) != null);
     try std.testing.expect(wall(&lv, hero, a, b, 3) == null);
     lv.set(.{ .x = 22, .y = 21 }, .water);
+    try std.testing.expect(blaze(&lv, hero, a, b, 3) == null);
+    lv.set(.{ .x = 22, .y = 21 }, .shallows);
     try std.testing.expect(blaze(&lv, hero, a, b, 3) == null);
     lv.set(.{ .x = 22, .y = 21 }, .floor);
     lv.putBarrel(.{ .x = 22, .y = 19 });

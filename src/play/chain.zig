@@ -35,8 +35,8 @@ pub fn chain(lv: *const grid.Level, pool: *actor.Pool, first: u16) Chain {
         const from = pool.items[last].at;
         var near = grid.Nearest{ .from = from, .reach = JUMP_RANGE };
         for (pool.slice(), 0..) |a, i| {
-            if (!a.alive or !a.foe() or c.has(actor.Pool.idOf(i))) continue;
-            if (a.seenIn(lv) and grid.projectileLine(lv, from, a.at)) near.offer(a.at);
+            if (!a.seenFoe(lv) or c.has(actor.Pool.idOf(i))) continue;
+            if (grid.projectileLine(lv, from, a.at)) near.offer(a.at);
         }
         c.push(lv.who(near.best orelse break));
     }

@@ -7,7 +7,7 @@ pub const Stepper = struct {
     pub const FIRE: f32 = 0.50;
     pub const REARM: f32 = 0.32;
     pub const DAS: f32 = 0.28;
-    pub const ARR: f32 = 0.1625;
+    pub const ARR: f32 = 0.2175;
     pub const SETTLE: f32 = 0.05;
 
     latched: ?mathx.Dir = null,
@@ -96,6 +96,7 @@ pub const RadialStepper = struct {
 
     /// Cosine of 40 degrees: a bearing turned further than this is a fresh press, not a hold.
     const TURN_COS: f32 = 0.766;
+    const ARR: f32 = 0.1625;
 
     pub fn tick(self: *RadialStepper, dt: f32, x: f32, y: f32) ?rl.Vector2 {
         const magnitude = mathx.len(x, y);
@@ -112,7 +113,7 @@ pub const RadialStepper = struct {
         }
         self.wait -= dt;
         if (self.wait > 0) return null;
-        self.wait = Stepper.ARR;
+        self.wait = ARR;
         self.direction = next;
         return next;
     }

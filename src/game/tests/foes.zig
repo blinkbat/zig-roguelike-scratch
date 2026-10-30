@@ -11,6 +11,7 @@ const glacial = @import("../../play/glacial.zig");
 const pack = @import("../../play/pack.zig");
 const fx = @import("../../gfx/fx.zig");
 const combat = @import("../combat.zig");
+const attacks = @import("../attacks.zig");
 const harness = @import("../harness.zig");
 const game = @import("../../game.zig");
 const P = mathx.P;
@@ -36,8 +37,7 @@ test "thorns returns melee damage with the incoming impact and ignores dodges an
             try std.testing.expectEqual(hp - expected, g.sim.pool.get(id).?.hp);
             try std.testing.expectEqual(expected > 0, g.pic.owed[slot].thorns != null);
             try std.testing.expectEqual(hp, g.pic.pictured[slot].hp);
-            g.pic.lead = 0;
-            g.pic.stepGlide(&g.sim, g.cloud, 0);
+            harness.stagger(g);
             if (expected > 0) {
                 const impact = g.pic.fx.landsIn(slot);
                 try std.testing.expectApproxEqAbs(impact, g.pic.fx.landsIn(g.sim.heroSlot().?), 0.0001);
@@ -74,8 +74,7 @@ test "thorns still returns a connected melee hit rounded to zero by hero armour"
         absorbed += 1;
         try std.testing.expectEqual(foe_hp - 2, g.sim.pool.get(id).?.hp);
         try std.testing.expect(g.pic.owed[slot].thorns != null);
-        g.pic.lead = 0;
-        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        harness.stagger(g);
         harness.drawnOut(g);
         try std.testing.expectEqual(foe_hp - 2, g.pic.pictured[slot].hp);
         try std.testing.expectEqual(hero_hp, g.pic.heroShown(&g.sim).?.hp);
@@ -111,8 +110,7 @@ test "thorns kills grant rewards and harvest after a shielded hit without blow r
             try std.testing.expectEqual(hp + 2, g.sim.heroActor().?.hp);
             try std.testing.expect(g.pic.owed[actor.Pool.slot(id)].thorns.?.recovery != null);
         }
-        g.pic.lead = 0;
-        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        harness.stagger(g);
         harness.drawnOut(g);
         try std.testing.expect(!g.pic.standing(&g.sim, actor.Pool.slot(id)));
     }
@@ -181,8 +179,7 @@ test "thorns respects armour splits slimes and coexists with unyielding counters
         if (debt.thorns != null and debt.reaction != null) {
             counters += 1;
             try std.testing.expect(debt.thorns.?.after.body.hp > debt.reaction.?.outcome.hit.after.?.body.hp);
-            g.pic.lead = 0;
-            g.pic.stepGlide(&g.sim, g.cloud, 0);
+            harness.stagger(g);
             harness.drawnOut(g);
             try std.testing.expectEqual(g.sim.pool.get(rat).?.hp, g.pic.pictured[actor.Pool.slot(rat)].hp);
         }
@@ -197,8 +194,7 @@ test "thorns respects armour splits slimes and coexists with unyielding counters
     combat.endTurn(g);
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.tally(.slime).left);
     try std.testing.expect(g.pic.owed[actor.Pool.slot(slime)].thorns.?.after.reveals != null);
-    g.pic.lead = 0;
-    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    harness.stagger(g);
     harness.drawnOut(g);
     std.debug.print("Thorns: {d} armour reductions, {d} separate counters across 40 seeds, one inherited slime split\n", .{ reduced, counters });
 }
@@ -942,8 +938,7 @@ test "a pib's fright is drawn until its last flight is" {
     const slot = actor.Pool.slot(id);
     combat.endTurn(g);
     try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(id).?.fright);
-    g.pic.lead = 0;
-    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    harness.stagger(g);
     g.pic.catchUp(&g.sim);
     try std.testing.expectEqual(@as(u8, 1), g.pic.pictured[slot].status.get(.frightened));
     harness.drawnOut(g);
@@ -991,8 +986,7 @@ test "a bog leech swims unseen to the shore, surfaces beside the hero and is str
         combat.endTurn(g);
         try std.testing.expectEqual(grid.Tile.water, g.sim.lv.at(g.sim.pool.get(id).?.at));
         if (!g.sim.pool.get(id).?.submerged) {
-            g.pic.lead = 0;
-            g.pic.stepGlide(&g.sim, g.cloud, 0);
+            harness.stagger(g);
             g.pic.catchUp(&g.sim);
             try std.testing.expect(harness.gone(g, slot));
         }
@@ -1062,6 +1056,46 @@ test "an arrow into a submerged leech strikes it unseen: no line names it until 
     try std.testing.expect(harness.logged(g, name));
 }
 
+test "a status taking hold of a disguised mimic names nothing" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 23, .y = 20 };
+    harness.arena(g, from, &.{});
+    const id = harness.spawnAt(g, .mimic, at, false);
+    game.settle(g);
+    const raw = attacks.rawFor(&g.sim, .burning_arrow, true);
+    var burned: usize = 0;
+    for (0..16) |seed| {
+        harness.toughen(g.sim.pool.get(id).?);
+        g.sim.rng = mathx.Rng.init(seed);
+        combat.arrowHit(g, id, attacks.heroScaled(&g.sim, .burning_arrow, raw), .burning_arrow, .{ .from = from, .wait = 0 });
+        if (g.sim.pool.get(id).?.burn.turns > 0) burned += 1;
+        g.sim.pool.get(id).?.burn = .{};
+    }
+    std.debug.print("disguised mimic: set alight by {d} of 16 burning arrows, none said\n", .{burned});
+    try std.testing.expect(burned > 0 and g.sim.pool.get(id).?.disguised);
+    try std.testing.expect(!harness.logged(g, actor.row(.mimic).name));
+}
+
+test "a disguised mimic's afflictions wear off on its turns" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const id = harness.spawnAt(g, .mimic, .{ .x = 26, .y = 20 }, false);
+    game.settle(g);
+    const m = g.sim.pool.get(id).?;
+    m.chill.apply();
+    m.pin.turns = 2;
+    var turns: usize = 0;
+    while ((m.chill.turns > 0 or m.pin.turns > 0) and turns < 20) : (turns += 1) {
+        combat.endTurn(g);
+        harness.drawnOut(g);
+    }
+    std.debug.print("disguised mimic: chill and pin worn off in {d} turns\n", .{turns});
+    try std.testing.expect(m.disguised and m.chill.turns == 0 and m.pin.turns == 0);
+}
+
 test "a bandit netter's net pins the hero, who struggles in place and cannot leap until it wears off" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -1081,8 +1115,7 @@ test "a bandit netter's net pins the hero, who struggles in place and cannot lea
         try std.testing.expectEqual(net.every, g.sim.pool.get(id).?.ready_in);
         if (g.sim.heroActor().?.pin.turns == 0) continue;
         try std.testing.expectEqual(net.pins, g.sim.heroActor().?.pin.turns);
-        g.pic.lead = 0;
-        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        harness.stagger(g);
         try std.testing.expect(g.pic.foe_shots[slot].?.net);
         try std.testing.expectEqual(@as(u8, 0), g.pic.heroShown(&g.sim).?.status.get(.pinned));
         harness.drawnOut(g);
@@ -1117,8 +1150,7 @@ test "a bandit shieldbearer's landed bash knocks the hero a cell back as the blo
         const want = if (walled) from else back;
         try std.testing.expectEqual(want, g.sim.heroAt().?);
         const hero = g.sim.heroSlot().?;
-        g.pic.lead = 0;
-        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        harness.stagger(g);
         try std.testing.expect(harness.samePx(g.pic.glide[hero].ground(), glide.cellPx(from)));
         harness.drawnOut(g);
         try std.testing.expect(harness.samePx(g.pic.glide[hero].ground(), glide.cellPx(want)));
@@ -1270,8 +1302,7 @@ test "a foe biting before a shieldbearer's knock that turn lunges at where the h
     g.sim.rng = harness.bitesRng(g, &.{ .{ .id = rat, .lands = true }, .{ .id = shield, .lands = true } });
     combat.endTurn(g);
     try std.testing.expectEqual(from.add(mathx.Dir.w.delta()), g.sim.heroAt().?);
-    g.pic.lead = 0;
-    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    harness.stagger(g);
     const bump = g.pic.glide[actor.Pool.slot(rat)].bump.?;
     std.debug.print("knock order: the rat ahead of the knock lunges ({d:.1}, {d:.1}) px, straight at the hero's old cell\n", .{ bump.x, bump.y });
     try std.testing.expect(bump.x == 0 and bump.y > 0);
@@ -1361,8 +1392,7 @@ test "a leech swimming unseen holds neither the stagger nor the walk" {
     combat.endTurn(g);
     const leech = g.sim.pool.get(id).?;
     try std.testing.expect(leech.submerged and !leech.at.eq(.{ .x = 25, .y = 20 }));
-    g.pic.lead = 0;
-    g.pic.stepGlide(&g.sim, g.cloud, 0);
+    harness.stagger(g);
     std.debug.print("submerged leech: swam to {d},{d}; the turn holds {d:.3} s\n", .{ leech.at.x, leech.at.y, @max(0, g.pic.busy) });
     try std.testing.expect(g.pic.quiet());
 }

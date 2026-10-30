@@ -186,10 +186,6 @@ pub const Attrs = struct {
         return rng.percent(a.crit());
     }
 
-    pub fn dodges(a: Attrs, rng: *mathx.Rng) bool {
-        return rng.percent(a.dodge());
-    }
-
     pub fn dealt(a: Attrs, s: Style, amount: i32, critical: bool) Dealt {
         return a.dealtWith(s, amount, critical, 0);
     }

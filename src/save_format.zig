@@ -237,6 +237,7 @@ pub fn validate(snapshot: *Snapshot) !void {
                 if (!grid.Level.inside(door.at)) return error.Damaged;
                 if (door.to) |target| {
                     if (target.node >= map.node_n or target.door >= map.node[target.node].door_n) return error.Damaged;
+                    if (target.node == index and target.door == door_index) return error.Damaged;
                     const reverse = map.node[target.node].door[target.door].to orelse return error.Damaged;
                     if (reverse.node != index or reverse.door != door_index) return error.Damaged;
                 }
@@ -402,7 +403,7 @@ test "portable save parsing defaults optional fields for every class and retains
         for (target.sim.cooldown.values) |turns| try std.testing.expectEqual(@as(u8, 0), turns);
         try std.testing.expect(target.sim.unsaved);
     }
-    std.debug.print("portable saves: 7 absent run fields and initial skill ranks default across 3 classes; name, gold, gear, progress and RNG retained\n", .{});
+    std.debug.print("portable saves: {d} absent run fields and initial skill ranks default across {d} classes; name, gold, gear, progress and RNG retained\n", .{ omitted.len, hero.CLASSES.len });
 }
 
 test "runs saved before flasks were items gain both, while a current run keeps a flask taken off" {
@@ -516,5 +517,5 @@ test "portable save corruption and missing required state leave the live game an
         try store.seal(after.writer(), after.items[store.head(MAGIC)..]);
         try std.testing.expectEqualSlices(u8, original.items, after.items);
     }
-    std.debug.print("portable saves: 8 checksummed semantic corruptions refused by listing and loading; complete run and map unchanged\n", .{});
+    std.debug.print("portable saves: {d} checksummed semantic corruptions refused by listing and loading; complete run and map unchanged\n", .{std.enums.values(Case).len});
 }

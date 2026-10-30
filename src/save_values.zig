@@ -39,12 +39,13 @@ test "save values retain passive identities refund retired nodes and preserve th
     try std.testing.expectError(error.Damaged, Policy.decode(mathx.Rng, .{ .xoshiro256 = @splat(0) }));
     std.debug.print("save identities: passive allocations retained, removed node refunded, duplicate refused; 100 RNG draws identical\n", .{});
 }
+const ALLOCATION_MAX: usize = 512;
 const SavedProgress = struct {
     level: u16 = 1,
     xp: u64 = 0,
     passive_points: u16 = 0,
     active_points: u16 = 0,
-    allocations: [512]NodeKey = undefined,
+    allocations: [ALLOCATION_MAX]NodeKey = undefined,
     n: usize = 0,
     ranks: @FieldType(progress.State, "ranks") = .initFill(0),
 };
@@ -56,7 +57,7 @@ fn carried(comptime name: []const u8) bool {
 
 comptime {
     @setEvalBranchQuota(100_000);
-    if (progress.NODES.len > 512) @compileError("raise the saved allocation limit");
+    if (progress.NODES.len > ALLOCATION_MAX) @compileError("raise the saved allocation limit");
     for (progress.NODES, 0..) |node, index| for (progress.NODES[0..index]) |other| {
         if (std.meta.eql(NodeKey.of(node), NodeKey.of(other))) @compileError("passive save identities must be unique");
     };
@@ -121,11 +122,7 @@ pub const Policy = struct {
     }
 
     pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {
-        if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "COUNTED")) {
-            inline for (T.COUNTED) |entry| {
-                if (comptime std.mem.eql(u8, field, entry[0])) return entry[1];
-            }
-        }
+        if (comptime wire.counted(T, field)) |count| return count;
         if (T == data.LegacyMap) return countField(data.Map, field);
         inline for (.{
             .{ SavedProgress, "allocations", "n" },

@@ -45,6 +45,16 @@ const SHAFT_NEAR: f32 = 1.1;
 const SHAFT_FAR: f32 = 2.3;
 /// Cells past the view the field covers: the farthest shaft lookup, softened over one more.
 const FIELD_MARGIN: i32 = @intFromFloat(@ceil(SHAFT_FAR + 1));
+/// Each glow's share of the light it blooms from.
+const BLOOM_GAIN: f32 = 0.22;
+/// Peak opacity of the water mist, the canopy's light shafts and the dust motes in them.
+const MIST_GAIN: f32 = 0.065;
+const SHAFT_GAIN: f32 = 0.035;
+const DUST_GAIN: f32 = 0.20;
+/// Of the cells the dust drifts over, the share with no mote: a seed below this.
+const DUST_EMPTY: f32 = 0.88;
+/// Cells a second the mist and dust drift east.
+const AIR_DRIFT: f32 = 0.025;
 
 fn focusStrength(t: grid.Tile, at: [2]f32, hero: ?[2]f32) f32 {
     if (!look.SOFTENED.contains(t)) return 0;
@@ -218,7 +228,7 @@ const FIELD_FS = shaders.MAP_VIEW_FS ++ FIELD_DEFINES ++
     \\
 ;
 
-const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++
+const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .BLOOM_GAIN = BLOOM_GAIN }) ++
     \\uniform sampler2D glints;
     \\uniform vec2 direction;
     \\uniform int extract;
@@ -243,12 +253,12 @@ const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++
     \\    sum += (sampleLight(fragTexCoord + d * 3.0) + sampleLight(fragTexCoord - d * 3.0)) * 0.054054;
     \\    sum += (sampleLight(fragTexCoord + d * 4.0) + sampleLight(fragTexCoord - d * 4.0)) * 0.016216;
     \\    vec2 p = cellAtFrag();
-    \\    float gain = extract != 0 ? 1.0 : 0.22 * liveAt(p);
+    \\    float gain = extract != 0 ? 1.0 : BLOOM_GAIN * liveAt(p);
     \\    finalColor = vec4(sum * gain, 1.0);
     \\}
 ;
 
-const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR, .MIST_TINT = look.MIST_TINT, .SHAFT_TINT = look.SHAFT_TINT }) ++
+const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR, .MIST_TINT = look.MIST_TINT, .SHAFT_TINT = look.SHAFT_TINT, .MIST_GAIN = MIST_GAIN, .SHAFT_GAIN = SHAFT_GAIN, .DUST_GAIN = DUST_GAIN, .DUST_EMPTY = DUST_EMPTY, .AIR_DRIFT = AIR_DRIFT }) ++
     \\uniform float time;
     \\uniform float daylight;
     \\uniform float brightness;
@@ -265,18 +275,18 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR 
     \\    float live = liveAt(p);
     \\    if (live < CLEAR_A) { finalColor = vec4(0.0); return; }
     \\    vec4 f = softField(p);
-    \\    float mist = f.WATER * (0.35 + 0.65 * noise(p * vec2(0.7, 2.2) + vec2(time * 0.025, time * 0.012)));
-    \\    mist *= 0.065 * brightness;
+    \\    float mist = f.WATER * (0.35 + 0.65 * noise(p * vec2(0.7, 2.2) + vec2(time * AIR_DRIFT, time * 0.012)));
+    \\    mist *= MIST_GAIN * brightness;
     \\    float trees = (softField(p + direction * SHAFT_NEAR).CROWN + softField(p + direction * SHAFT_FAR).CROWN) * 0.5;
     \\    float band = dot(p, vec2(-direction.y, direction.x));
     \\    float shafts = pow(max(0.0, sin(band * 4.7 + noise(p * 0.3) * 2.0)), 10.0);
-    \\    shafts *= trees * (1.0 - f.CROWN) * daylight * 0.035;
-    \\    vec2 drift = vec2(time * 0.025, sin(time * 0.18) * 0.06);
+    \\    shafts *= trees * (1.0 - f.CROWN) * daylight * SHAFT_GAIN;
+    \\    vec2 drift = vec2(time * AIR_DRIFT, sin(time * 0.18) * 0.06);
     \\    vec2 dustCell = floor(p - drift);
     \\    float seed = hash(dustCell);
     \\    vec2 dotAt = vec2(seed, hash(dustCell + 19.0)) * 0.7 + 0.15;
-    \\    float dust = (1.0 - smoothstep(0.008, 0.024, length(fract(p - drift) - dotAt))) * step(0.88, seed);
-    \\    dust *= daylight * (0.25 + trees) * 0.20 * (0.6 + 0.4 * sin(time * 0.7 + seed * 20.0));
+    \\    float dust = (1.0 - smoothstep(0.008, 0.024, length(fract(p - drift) - dotAt))) * step(DUST_EMPTY, seed);
+    \\    dust *= daylight * (0.25 + trees) * DUST_GAIN * (0.6 + 0.4 * sin(time * 0.7 + seed * 20.0));
     \\    float alpha = (mist + shafts + dust) * live;
     \\    vec3 tint = (MIST_TINT * mist + SHAFT_TINT * (shafts + dust)) / max(mist + shafts + dust, 0.00001);
     \\    finalColor = vec4(tint, alpha);

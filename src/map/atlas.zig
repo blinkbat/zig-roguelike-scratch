@@ -129,6 +129,10 @@ pub const Bespoke = struct {
         return !self.tileAt(p).solid();
     }
 
+    pub fn barrelAt(self: *const Bespoke, p: P) bool {
+        return grid.cellOr(bool, &self.barrel, p, false);
+    }
+
     pub fn torches(self: *const Bespoke) []const P {
         return self.torch.slice();
     }
@@ -293,7 +297,7 @@ pub const Node = struct {
 
     /// `k`'s own ground, as `actor.groundFits` says, with no door or barrel on it.
     pub fn foeFits(self: *const Node, b: *const Bespoke, p: P, k: actor.Kind) bool {
-        if (self.doorAt(p) != null or grid.cellOr(bool, &b.barrel, p, false)) return false;
+        if (self.doorAt(p) != null or b.barrelAt(p)) return false;
         return actor.groundFits(k, b.tileAt(p));
     }
 
@@ -376,7 +380,7 @@ pub const Atlas = struct {
         if (n >= self.node_n or !grid.Level.inside(p)) return false;
         const nd = &self.node[n];
         return switch (nd.plan) {
-            .bespoke => |*b| b.floorAt(p) and nd.doorAt(p) == null and !grid.cellOr(bool, &b.barrel, p, false) and b.foeAt(p) == null,
+            .bespoke => |*b| b.floorAt(p) and nd.doorAt(p) == null and !b.barrelAt(p) and b.foeAt(p) == null,
             .procgen => false,
         };
     }

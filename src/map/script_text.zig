@@ -456,7 +456,7 @@ pub fn readAlone(text: []const u8, s: *Script, node_n: usize) Error!void {
     var r = try Reader.of(text);
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |raw| {
-        var f = std.mem.tokenizeScalar(u8, raw, ' ');
+        var f = std.mem.tokenizeScalar(u8, std.mem.trimRight(u8, raw, "\r"), ' ');
         const word = std.meta.stringToEnum(Word, f.next() orelse continue) orelse return error.BadLine;
         try r.take(s, word, &f);
         if (f.next() != null) return error.BadLine;

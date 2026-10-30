@@ -275,10 +275,7 @@ pub fn convert(dest: anytype, src: anytype) void {
     inline for (std.meta.fields(D)) |f| {
         if (@hasField(S, f.name)) {
             convert(&@field(dest, f.name), &@field(src, f.name));
-        } else {
-            const default = f.default_value_ptr orelse @compileError(@typeName(D) ++ "." ++ f.name ++ " has no default to convert into");
-            @field(dest, f.name) = @as(*const f.type, @ptrCast(@alignCast(default))).*;
-        }
+        } else @field(dest, f.name) = f.defaultValue() orelse @compileError(@typeName(D) ++ "." ++ f.name ++ " has no default to convert into");
     }
 }
 

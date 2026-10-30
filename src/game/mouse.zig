@@ -310,7 +310,7 @@ test "mouse walking follows explored routes once per turn and stops on arrival o
     game.update(g, 2);
     try std.testing.expectEqual(stopped, g.sim.heroActor().?.at);
     try std.testing.expect(g.mouse.target == null);
-    std.debug.print("mouse walking: three resolutions, nine exact turns, busy queue, keyboard override and focus cancellation\n", .{});
+    std.debug.print("mouse walking: {d} resolutions, {d} exact turns, busy queue, keyboard override and focus cancellation\n", .{ game.SCREENS.len, @as(usize, @intCast(dest.x - start.x)) * game.SCREENS.len });
 }
 
 test "a routed walk keeps a held walk's pace, the first step leaving at once" {

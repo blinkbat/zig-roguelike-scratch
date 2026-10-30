@@ -6,7 +6,9 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
+const burning = @import("../play/burning.zig");
 const glacial = @import("../play/glacial.zig");
+const progress = @import("../play/progress.zig");
 const rules = @import("../play/tactics.zig");
 const skillbar = @import("../play/skillbar.zig");
 const look = @import("../gfx/look.zig");
@@ -24,7 +26,7 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
         .whirlwind => {
             const area = rules.Whirlwind.area(&g.sim.lv, h.at);
             const ids = skills.foesIn(g, area);
-            const raw = attacks.rollRaw(&g.sim.rng, .whirlwind, attacks.basesFor(&g.sim, .whirlwind), true);
+            const raw = attacks.rawFor(&g.sim, .whirlwind, true);
             const s = game.presentation.Stroke{ .from = h.at, .wait = game.CAST_S };
             for (ids.slice()) |id| combat.wound(g, id, attacks.heroScaled(&g.sim, .whirlwind, raw).physical(), rules.Whirlwind.VERB, s);
             for (area.slice()) |at| combat.smash(g, at, rules.Whirlwind.VERB, s);
@@ -32,8 +34,7 @@ pub fn instant(g: *game.Game, comptime act: skillbar.Act) void {
         },
         .war_cry => {
             warCry(g, h.at, rank);
-            g.pic.lead = game.CAST_S;
-            g.pic.holdUntil(game.CAST_S);
+            g.pic.leadUntil(game.CAST_S);
         },
         else => @compileError(@tagName(act) ++ " has no instant tactical use"),
     }
@@ -144,7 +145,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
                     entered(g, id);
                 }
                 if (g.sim.displaced.isSet(actor.Pool.slot(id))) _ = g.pic.glideToHeld(actor.Pool.slot(id), a.at, -game.CAST_S);
-                if (rules.GravityWell.pins(rank) > 0 and g.sim.takeStatus(a, .pin)) a.pin.extend(rules.GravityWell.pins(rank));
+                _ = g.sim.pinFor(a, rules.GravityWell.pins(rank));
                 g.pic.settleSlot(&g.sim, game.CAST_S, actor.Pool.slot(id));
             }
             g.sim.flowed = false;
@@ -166,8 +167,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
         else => @compileError(@tagName(act) ++ " has no ground tactical use"),
     }
     g.sim.log.say("{s} casts {s}.", .{ g.sim.name.text(), act.name() });
-    g.pic.lead = game.CAST_S;
-    g.pic.holdUntil(game.CAST_S);
+    g.pic.leadUntil(game.CAST_S);
     combat.endTurn(g);
 }
 
@@ -181,7 +181,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     g.pic.settleSlot(&g.sim, game.CAST_S, slot);
     const area = Skill.area(&g.sim.lv, at);
     const ids = skills.foesIn(g, area);
-    var raw = attacks.rollRaw(&g.sim.rng, act, attacks.basesFor(&g.sim, act), false);
+    var raw = attacks.rawFor(&g.sim, act, false);
     raw.elements.getPtr(Skill.ELEMENT).* += Skill.FUEL_DAMAGE * fuel;
     const s = game.presentation.Stroke{ .from = from, .wait = game.CAST_S, .fire = Skill.ELEMENT == .fire };
     g.pic.fx.burst(s.wait, .{ .at = at, .area = area, .element = Skill.ELEMENT });
@@ -193,12 +193,12 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     if (comptime Skill.ELEMENT == .fire) combat.boil(g, at, Skill.REACH, s.wait);
 }
 
-/// Fire Wall's flames take hold of a body unless its burn resistance holds; true when they do.
+/// Fire Wall's flames take hold of a body unless its fire or burn resistance holds; true when they do.
 fn ignite(g: *game.Game, id: u16) bool {
     const a = g.sim.pool.get(id) orelse return false;
-    if (!g.sim.takeStatus(a, .burn)) return false;
-    if (a.burn.turns == 0) g.sim.sayOf(a, "The {s} catches fire!", .{actor.row(a.kind).name});
-    a.burn.start();
+    const fresh = a.burn.turns == 0;
+    if (!g.sim.ignite(a)) return false;
+    if (fresh) combat.sayTakes(g, burning.TAKES, a);
     return true;
 }
 
@@ -246,7 +246,7 @@ pub fn landed(g: *game.Game, id: u16) void {
     const cell = grid.Level.idx(a.at);
     const trap = g.sim.lv.caltrops[cell];
     if (trap.turns > 0 and actor.row(a.kind).movement != .flying) {
-        if (g.sim.takeStatus(a, .pin)) a.pin.extend(rules.Caltrops.pins(trap.rank));
+        _ = g.sim.pinFor(a, rules.Caltrops.pins(trap.rank));
         if (rules.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) a.bleed.startWith(rules.Caltrops.bleed(trap.rank));
         g.pic.recordWear(&g.sim, .fromInt(id));
         g.sim.sayOf(a, "The {s} steps into caltrops.", .{actor.row(a.kind).name});
@@ -266,7 +266,7 @@ test "tactical caltrops ranks pin entering ground foes and unlock stronger bleed
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const h = game.harness;
-    for (1..4) |rank| {
+    for (1..progress.RANKS + 1) |rank| {
         h.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
         g.sim.growth.ranks.set(.caltrops, @intCast(rank));
         const id = h.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, true);
@@ -282,7 +282,7 @@ test "tactical caltrops ranks pin entering ground foes and unlock stronger bleed
         game.update(g, 1);
         try std.testing.expectEqual(turns, g.sim.lv.caltrops[grid.Level.idx(foe.at)].turns);
     }
-    std.debug.print("tactical caltrops: 3 ranks, real enemy entries, pinning, bleed unlock/strength and idle lifetime checked\n", .{});
+    std.debug.print("tactical caltrops: {d} ranks, real enemy entries, pinning, bleed unlock/strength and idle lifetime checked\n", .{progress.RANKS});
 }
 
 test "tactical overwatch fires once after movement and steady aim is consumed or canceled by movement" {
@@ -326,7 +326,7 @@ test "tactical gravity ranks pull and unlock pin while combustion consumes burn 
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const h = game.harness;
-    for (1..4) |rank| {
+    for (1..progress.RANKS + 1) |rank| {
         h.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
         g.sim.growth.ranks.set(.gravity_well, @intCast(rank));
         const id = h.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, false);
@@ -350,7 +350,7 @@ test "tactical gravity ranks pull and unlock pin while combustion consumes burn 
     try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(id).?.burn.turns);
     try std.testing.expect(g.sim.pool.get(id).?.hp < before);
     try std.testing.expect(g.sim.pool.get(neighbor).?.hp < before);
-    std.debug.print("tactical wizard: 3 pull/pin ranks, no-spend invalid combustion, consumed burn and neighboring explosion checked\n", .{});
+    std.debug.print("tactical wizard: {d} pull/pin ranks, no-spend invalid combustion, consumed burn and neighboring explosion checked\n", .{progress.RANKS});
 }
 
 test "tactical combustion consumes pictured burn at explosion time even when damage misses" {
@@ -370,14 +370,14 @@ test "tactical combustion consumes pictured burn at explosion time even when dam
         game.settle(g);
         const slot = actor.Pool.slot(id);
         const hp = foe.hp;
-        const burning = g.pic.pictured[slot].status.get(.burning);
+        const burnt = g.pic.pictured[slot].status.get(.burning);
         g.sim.rng = mathx.Rng.init(seed);
         h.aimAt(g, .combustion, at);
         misses += @intFromBool(foe.hp == hp);
         try std.testing.expectEqual(@as(u8, 0), foe.burn.turns);
         g.pic.stepGlide(&g.sim, g.cloud, 0);
         g.pic.advance(&g.sim, game.CAST_S / 2);
-        try std.testing.expectEqual(burning, g.pic.pictured[slot].status.get(.burning));
+        try std.testing.expectEqual(burnt, g.pic.pictured[slot].status.get(.burning));
         try std.testing.expectEqual(hp, g.pic.pictured[slot].hp);
         g.pic.advance(&g.sim, game.CAST_S / 2 + 0.001);
         try std.testing.expectEqual(@as(u8, 0), g.pic.pictured[slot].status.get(.burning));

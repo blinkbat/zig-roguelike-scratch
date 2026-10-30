@@ -735,11 +735,11 @@ pub fn shootTrees(g: *game.Game) !void {
     studyLit(g, true, day.NOON);
     g.st = .{};
     try capture(g, target, SHOTS_DIR ++ "/trees/behind-opaque.png");
-    game.update(g, 0.04);
+    game.update(g, FADING_S);
     const partial = g.pic.occlusion[grid.Level.idx(tree)];
     if (partial <= 0 or partial >= 1) return error.TreeFadeNotSmooth;
     try capture(g, target, SHOTS_DIR ++ "/trees/behind-fading.png");
-    for (0..120) |_| game.update(g, mathx.TEST_DT);
+    fadeOut(g);
     if (g.pic.occlusion[grid.Level.idx(tree)] < 0.99) return error.TreeDidNotFade;
     try capture(g, target, SHOTS_DIR ++ "/trees/behind-clear.png");
     const hero = g.sim.heroSlot().?;
@@ -748,22 +748,22 @@ pub fn shootTrees(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/trees/behind-midstep.png");
     g.pic.glide[hero] = still;
     var behind_gas = grid.Cells.of(.{ .x = 23, .y = 17 }, .{ .x = 26, .y = 21 });
-    while (behind_gas.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = 60;
+    while (behind_gas.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = VEIL_GAS;
     g.cloud.settle(&g.sim.lv);
     try capture(g, target, SHOTS_DIR ++ "/trees/behind-gas.png");
     @memset(&g.sim.lv.gas, 0);
     g.cloud.settle(&g.sim.lv);
     g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
     g.pic.glide[hero] = glide.Glide.rest(g.sim.heroActor().?);
-    game.update(g, 0.04);
+    game.update(g, FADING_S);
     const restoring = g.pic.occlusion[grid.Level.idx(tree)];
     if (restoring <= 0 or restoring >= 0.99) return error.TreeRestoreNotSmooth;
     try capture(g, target, SHOTS_DIR ++ "/trees/front-restoring.png");
-    for (0..120) |_| game.update(g, mathx.TEST_DT);
+    fadeOut(g);
     if (g.pic.occlusion[grid.Level.idx(tree)] > 0.01) return error.TreeDidNotRestore;
     try capture(g, target, SHOTS_DIR ++ "/trees/front-opaque.png");
     var gassed = grid.Cells.of(.{ .x = 21, .y = 17 }, .{ .x = 29, .y = 25 });
-    while (gassed.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = 60;
+    while (gassed.next()) |p| g.sim.lv.gas[grid.Level.idx(p)] = VEIL_GAS;
     studyLit(g, false, NIGHT);
     try capture(g, target, SHOTS_DIR ++ "/trees/night-gas.png");
     g.cam.y = @as(f32, @floatFromInt(24 * game.CELL - g.screen.y + game.HALF_CELL));
@@ -789,11 +789,11 @@ pub fn shootTrees(g: *game.Game) !void {
     studyLit(g, true, day.NOON);
     g.st = .{};
     try capture(g, target, SHOTS_DIR ++ "/trees/grass-opaque.png");
-    game.update(g, 0.04);
+    game.update(g, FADING_S);
     const grass_partial = g.pic.occlusion[grid.Level.idx(grass)];
     if (grass_partial <= 0 or grass_partial >= 1) return error.GrassFadeNotSmooth;
     try capture(g, target, SHOTS_DIR ++ "/trees/grass-fading.png");
-    for (0..120) |_| game.update(g, mathx.TEST_DT);
+    fadeOut(g);
     if (g.pic.occlusion[grid.Level.idx(grass)] < 0.99) return error.GrassDidNotFade;
     try capture(g, target, SHOTS_DIR ++ "/trees/grass-clear.png");
     const faded_grass = try readTarget(target);
@@ -811,16 +811,24 @@ pub fn shootTrees(g: *game.Game) !void {
     defer rl.unloadImage(restored_grass);
     if (differentPixels(faded_grass, restored_grass) != 0) return error.GrassOcclusionDidNotRestoreFrame;
     std.debug.print("reed occlusion GPU check: {d} pixels changed, exact restoration\n", .{grass_pixels});
-    g.sim.lv.gas[grid.Level.idx(grass)] = 60;
+    g.sim.lv.gas[grid.Level.idx(grass)] = VEIL_GAS;
     g.cloud.settle(&g.sim.lv);
     try capture(g, target, SHOTS_DIR ++ "/trees/grass-gas.png");
     g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 24, .y = 20 });
     g.pic.glide[g.sim.heroSlot().?] = glide.Glide.rest(g.sim.heroActor().?);
-    for (0..120) |_| game.update(g, mathx.TEST_DT);
+    fadeOut(g);
     if (g.pic.occlusion[grid.Level.idx(grass)] > 0.01) return error.GrassDidNotRestore;
     try capture(g, target, SHOTS_DIR ++ "/trees/grass-front.png");
     std.debug.print("tall tree captures: native height, wall adjacency, smooth hiding/restoration and front/behind depth checked\n", .{});
     std.debug.print("reed patch captures: body depth, smooth hiding/restoration and shared gas fade checked\n", .{});
+}
+
+const FADING_S: f32 = 0.04;
+const FADE_FRAMES = 120;
+const VEIL_GAS = 60;
+
+fn fadeOut(g: *game.Game) void {
+    for (0..FADE_FRAMES) |_| game.update(g, mathx.TEST_DT);
 }
 
 /// The start map with its weather under way.

@@ -194,11 +194,12 @@ const App = struct {
             const remove = saveDeleteBox(g.screen, i);
             const on = app.loads.at == i;
             if (on) rl.drawRectangleRec(.{ .x = row.x, .y = row.y, .width = remove.x - row.x - menu.ACTION_GAP, .height = row.height }, look.PICK_BG);
-            const text = g.face.fit(&fit, slotLine(slot, &line, i), menu.ROW, @as(i32, @intFromFloat(remove.x - row.x)) - 2 * menu.ACTION_GAP, false);
+            const text_w = @as(i32, @intFromFloat(remove.x - row.x)) - 2 * menu.ACTION_GAP;
+            const text = g.face.fit(&fit, slotLine(slot, &line, i), menu.ROW, text_w, false);
             const x = @as(i32, @intFromFloat(row.x)) + menu.ACTION_GAP;
             g.face.text(text, x, menu.rowTextY(row), menu.ROW, if (on) look.UI_FOCUS else look.DIM);
             if (slotDetails(slot, &line)) |detail| {
-                const fitted = g.face.fit(&fit, detail, font.SMALL, @as(i32, @intFromFloat(remove.x - row.x)) - 2 * menu.ACTION_GAP, false);
+                const fitted = g.face.fit(&fit, detail, font.SMALL, text_w, false);
                 g.face.text(fitted, x, @as(i32, @intFromFloat(row.y)) + SAVE_DETAIL_Y, font.SMALL, look.DIM);
             }
             if (slot.* != .empty) menu.action(&g.face, remove, prompt_icon.Prompt.menuOf(&g.st, DELETE), if (app.armed == i) "Delete it?" else "Delete save");

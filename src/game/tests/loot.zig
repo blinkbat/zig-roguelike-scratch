@@ -691,7 +691,7 @@ test "nearby loot checks stay inside the map at every edge and corner" {
 test "loot on a nearby door preserves both loot and travel choices" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     const door = P{ .x = 2, .y = 5 };
     for (1..4) |contents| {
@@ -731,7 +731,7 @@ test "loot on a nearby door preserves both loot and travel choices" {
 test "a door is listed nearby only once no body is drawn on it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     _ = runTwoRooms(g, w);
     const door = P{ .x = 2, .y = 5 };
@@ -749,7 +749,7 @@ test "a door is listed nearby only once no body is drawn on it" {
 test "the nearby list closes once a body takes the last door it listed" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     _ = runTwoRooms(g, w);
     try std.testing.expect(character.openNearby(g));
@@ -763,7 +763,7 @@ test "the nearby list closes once a body takes the last door it listed" {
 test "interact during door travel stays an interaction on arrival" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     const b = runTwoRooms(g, w);
     harness.nudge(g, .w);
@@ -787,7 +787,7 @@ test "interact during door travel stays an interaction on arrival" {
 test "travel and chest opening from the nearby list turn the hero toward them" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     _ = runTwoRooms(g, w);
     const at = g.sim.heroActor().?.at;
@@ -809,7 +809,7 @@ test "travel and chest opening from the nearby list turn the hero toward them" {
 test "a door trip finishes behind Character opened during it, so item commands can act" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     const b = runTwoRooms(g, w);
     harness.nudge(g, .w);
@@ -829,7 +829,7 @@ test "a door trip finishes behind Character opened during it, so item commands c
 test "a pinned hero on the door it came through struggles there instead of going back" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     const b = runTwoRooms(g, w);
     harness.nudge(g, .w);
@@ -848,7 +848,7 @@ test "a pinned hero on the door it came through struggles there instead of going
 test "inspect opened during a door trip opens, and the trip still finishes behind it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     const b = runTwoRooms(g, w);
     harness.nudge(g, .w);

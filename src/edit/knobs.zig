@@ -20,6 +20,7 @@ const pack = @import("../play/pack.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const menu = @import("../ui/menu.zig");
+const wording = @import("../core/wording.zig");
 const game = @import("../game.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
@@ -43,7 +44,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Pro
     section(g, &y, "Features");
     var drop_feature: ?usize = null;
     for (pg.featuresMut(), 0..) |*ft, i| {
-        if (widgets.button(ed.controls(), &g.face, widgets.row(widgets.PAD + editor.LABEL_W - editor.STEP_W - widgets.GAP, y, editor.STEP_W), DROP, false, true, "Take this feature away")) drop_feature = i;
+        if (widgets.button(ed.controls(), &g.face, widgets.row(widgets.PAD + editor.LABEL_W - editor.STEP_PITCH, y, editor.STEP_W), DROP, false, true, "Take this feature away")) drop_feature = i;
         choiceRow(ed, g, &y, atlas.Feature, ft, FEATURE_CHOICE, .{ .feature = i });
         switch (ft.*) {
             inline else => |*fp, k| knobRows(ed, g, &y, fp, comptime featureRowsOf(k), true),
@@ -107,11 +108,7 @@ fn knobRows(ed: *editor.Editor, g: *game.Game, y: *i32, owner: anytype, comptime
             section(g, y, k.caption());
             inline for (k.parts, 0..) |part, i| {
                 if (!panel.clipped(ed, y.*)) {
-                    var buf: [64]u8 = undefined;
-                    const label = std.fmt.bufPrintZ(&buf, "{s}", .{part}) catch "";
-                    std.mem.replaceScalar(u8, buf[0..label.len], '_', ' ');
-                    if (label.len > 0) buf[0] = std.ascii.toUpper(buf[0]);
-                    rowLabel(g, y.*, label);
+                    rowLabel(g, y.*, comptime wording.spoken(part));
                     const reach = [2]bool{ live and moves(owner, k, i, -1), live and moves(owner, k, i, 1) };
                     stepNumber(ed, g, y.*, i, 1, numberOf(owner, k, i), k, reach);
                 }
@@ -216,7 +213,7 @@ const Knob = struct {
     field: [:0]const u8,
     label: ?[:0]const u8 = null,
     tips: []const [:0]const u8,
-    parts: []const []const u8 = &.{},
+    parts: []const [:0]const u8 = &.{},
     unit: i32 = 1,
     fmt: []const u8 = "{d}",
 

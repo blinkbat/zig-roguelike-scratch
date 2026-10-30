@@ -761,7 +761,7 @@ test "night lantern on explored ground fades into memory without a dark ring" {
     defer std.testing.allocator.destroy(l);
     l.carrier = mathx.centre(at);
     l.sky = sky.at(day.DEAD_OF_NIGHT);
-    var lowest = lum(light.MEMORY);
+    var lowest = lum(l.memoryFloor());
     var rise: f32 = 0;
     var last = lum(l.at(&lv, &.{}, l.carrier.?));
     for (1..161) |i| {
@@ -771,8 +771,8 @@ test "night lantern on explored ground fades into memory without a dark ring" {
         rise = @max(rise, value - last);
         last = value;
     }
-    std.debug.print("night lantern into explored ground: minimum {d:.4}, memory {d:.4}, outward rise {d:.4}\n", .{ lowest, lum(light.MEMORY), rise });
-    try std.testing.expect(lowest >= lum(light.MEMORY) - 0.002);
+    std.debug.print("night lantern into explored ground: minimum {d:.4}, memory {d:.4}, outward rise {d:.4}\n", .{ lowest, lum(l.memoryFloor()), rise });
+    try std.testing.expect(lowest >= lum(l.memoryFloor()) - 0.002);
     try std.testing.expect(rise < 0.002);
 }
 
@@ -787,7 +787,7 @@ test "moving night light stays above memory at 60 and 144 Hz" {
         l.sky = sky.at(day.DEAD_OF_NIGHT);
         const to = from.add(.{ .x = 1, .y = 1 });
         lume.see(&lv, to, actor.row(.archer).sight, 0, &.{.{ .at = to, .reach = actor.row(.archer).light }});
-        var lowest = lum(light.MEMORY);
+        var lowest = lum(l.memoryFloor());
         var worst: f32 = 0;
         var previous: [80]f32 = undefined;
         var frame: usize = 0;
@@ -806,7 +806,7 @@ test "moving night light stays above memory at 60 and 144 Hz" {
             frame += 1;
         }
         std.debug.print("moving night light at {d} Hz: minimum {d:.4}, largest frame change {d:.4}\n", .{ hz, lowest, worst });
-        try std.testing.expect(lowest >= lum(light.MEMORY) - 0.002);
+        try std.testing.expect(lowest >= lum(l.memoryFloor()) - 0.002);
         try std.testing.expect(worst < 0.08);
     }
 }
@@ -1339,7 +1339,7 @@ test "under the sky, ground in the sun outshines ground in shade, and night is d
     const night = lum(l.at(&lv, none, .{ m[0] + 5, m[1] }));
     std.debug.print("{d}h ground: {d:.2} in the sun, {d:.2} in a rock's shadow; {d:.3} at midnight\n", .{ morning, sun, shade, night });
     try std.testing.expect(sun > shade * 1.2 and sun < shade * 2 and shade > night * 2.5);
-    try std.testing.expect(night >= lum(light.MEMORY));
+    try std.testing.expect(night >= lum(l.memoryFloor()) and lum(l.memoryFloor()) < lum(light.MEMORY));
 }
 
 test "the moon throws a cold shadow as deep as the sun's, over the archer's own light too" {

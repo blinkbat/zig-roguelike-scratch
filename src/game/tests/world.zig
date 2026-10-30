@@ -165,7 +165,7 @@ test "a step into a wall turns no one and spends no turn" {
 test "a node's sky shows its light and its weather out of doors, and neither under a roof" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     w.* = .{};
     const wet: climate.Climate = .{ .light = .bleak, .weather = .drizzle };
@@ -192,7 +192,7 @@ test "a node's sky shows its light and its weather out of doors, and neither und
 test "a door takes the archer to the door it leads to, and a node left is found as it was" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     w.* = .{};
     const room = w.add(.{ .bespoke = .{} }).?;
@@ -238,7 +238,7 @@ test "a door takes the archer to the door it leads to, and a node left is found 
 }
 
 test "a procgen node rolls another floor round the same doors each run, and two nodes differ in one run" {
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     w.* = .{};
     const n = w.add(.{ .procgen = .{} }).?;
@@ -261,7 +261,7 @@ test "a procgen node rolls another floor round the same doors each run, and two 
 test "a door keeps the low glow, a level-up, the archer's facing and a walk pressed while the door turn is drawn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const w = try std.testing.allocator.create(atlas.Atlas);
+    const w = try atlas.testAtlas();
     defer std.testing.allocator.destroy(w);
     const b = harness.twoRooms(w);
     const a = w.start.node;

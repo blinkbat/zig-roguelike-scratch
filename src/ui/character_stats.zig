@@ -340,8 +340,6 @@ pub fn verify(face: *const font.Face) !void {
         var inv = items.Inventory{};
         inv.gear.slots.set(.right_hand, .{ .kind = .axe });
         var view = View{ .class = class, .name = "", .inventory = &inv, .growth = &growth, .base = growth.attributes(class) };
-        view.class = class;
-        view.base = growth.attributes(class);
         view.life = .{ .now = 999, .max = 999 };
         view.mana = .{ .now = 999, .max = 999 };
         for (std.enums.values(resilience.Kind)) |k| view.status_resist.set(k, .{ .percent = 100, .turns = resilience.EXPIRY });

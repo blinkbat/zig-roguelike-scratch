@@ -208,6 +208,11 @@ pub const Presentation = struct {
         self.busy = @max(self.busy, t);
     }
 
+    pub fn leadUntil(self: *Presentation, t: f32) void {
+        self.holdUntil(t);
+        self.lead = t;
+    }
+
     pub fn deferDamage(self: *Presentation, result: simulation.DamageResult) void {
         self.mana_held += result.mana;
     }

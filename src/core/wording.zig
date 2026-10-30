@@ -1,7 +1,7 @@
 const std = @import("std");
 
-pub const FILE = "assets/player-labels.txt";
 pub const ASSET = "player-labels.txt";
+pub const FILE = "assets/" ++ ASSET;
 pub const Case = enum { sentence, title, word };
 const Registration = struct { name: []const u8, saved_name: ?[]const u8 = null, casing: Case = .sentence, except: []const []const u8 = &.{}, only: ?[]const []const u8 = null };
 const TYPES = [_]Registration{

@@ -15,6 +15,16 @@ pub const Defaults = struct {
     }
 };
 
+/// The field counting `field` as `T` declares it in its `COUNTED` pairs.
+pub fn counted(comptime T: type, comptime field: []const u8) ?[]const u8 {
+    if (comptime @typeInfo(T) == .@"struct" and @hasDecl(T, "COUNTED")) {
+        inline for (T.COUNTED) |entry| {
+            if (comptime std.mem.eql(u8, field, entry[0])) return entry[1];
+        }
+    }
+    return null;
+}
+
 pub fn maxSize(comptime T: type) usize {
     return maxSizeOf(Defaults, T);
 }
@@ -53,8 +63,6 @@ fn maxSizeOf(comptime Policy: type, comptime T: type) usize {
 
 pub fn Codec(comptime Policy: type) type {
     return struct {
-        const Self = @This();
-
         pub fn maxSize(comptime T: type) usize {
             return maxSizeOf(Policy, T);
         }
@@ -215,9 +223,7 @@ pub fn Codec(comptime Policy: type) type {
                         if (seen.isSet(index)) return error.Damaged;
                         seen.set(index);
                         if (comptime Policy.countField(T, f.name) != null) {
-                            if (f.default_value_ptr) |value| {
-                                @field(destination, f.name) = @as(*const f.type, @ptrCast(@alignCast(value))).*;
-                            }
+                            if (f.defaultValue()) |value| @field(destination, f.name) = value;
                             var body = Cursor{ .bytes = entry.bytes };
                             counts[index] = try readArray(&body, &@field(destination, f.name));
                             if (body.bytes.len != 0) return error.Damaged;
@@ -227,9 +233,7 @@ pub fn Codec(comptime Policy: type) type {
             }
             inline for (fields, 0..) |f, index| {
                 if (!seen.isSet(index)) {
-                    if (f.default_value_ptr) |value| {
-                        @field(destination, f.name) = @as(*const f.type, @ptrCast(@alignCast(value))).*;
-                    } else return error.Short;
+                    @field(destination, f.name) = f.defaultValue() orelse return error.Short;
                 }
             }
             if (comptime @hasDecl(Policy, "defaults")) Policy.defaults(destination, seen);

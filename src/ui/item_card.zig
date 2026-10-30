@@ -66,7 +66,7 @@ const CardLine = union(enum) {
 };
 
 const CardLines = struct {
-    all: [4 + attr.ATTRS.len]CardLine = undefined,
+    all: [std.meta.fields(CardLine).len - 1 + attr.ATTRS.len]CardLine = undefined,
     n: usize = 0,
 
     fn add(self: *CardLines, line: CardLine) void {

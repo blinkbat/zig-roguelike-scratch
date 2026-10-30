@@ -12,7 +12,7 @@ pub const VERB = "shoots";
 
 pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
 
-pub const Hit = union(enum) { body: u16, barrel: P };
+pub const Hit = union(enum) { body: u16, barrel: P, plant: P };
 
 pub const Flight = struct {
     path: [RANGE]P = undefined,
@@ -29,8 +29,17 @@ pub const Flight = struct {
         const s = f.struck orelse return false;
         return switch (s) {
             .body => |b| b == id,
-            .barrel => false,
+            .barrel, .plant => false,
         };
+    }
+
+    fn prop(f: *Flight, lv: *const grid.Level, c: P) bool {
+        if (lv.hasBarrel(c)) {
+            f.struck = .{ .barrel = c };
+        } else if (lv.at(c).bursts()) {
+            f.struck = .{ .plant = c };
+        } else return false;
+        return true;
     }
 
     /// `c` laid on its path toward `to`: whether it stops there, flies on through the dark, or may strike there.
@@ -54,7 +63,7 @@ pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
 pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
     var near = grid.Nearest{ .from = from };
     for (pool.slice()) |a| {
-        if (a.alive and a.foe() and a.seenIn(lv) and aimable(lv, from, a.at)) {
+        if (a.seenFoe(lv) and aimable(lv, from, a.at)) {
             const flight = previewAmong(lv, pool, from, a.at);
             if (flight.impact()) |at| if (at.eq(a.at)) {
                 near.offer(a.at);
@@ -97,10 +106,7 @@ fn trace(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, compti
             f.struck = .{ .body = w };
             break;
         }
-        if (lv.hasBarrel(c)) {
-            f.struck = .{ .barrel = c };
-            break;
-        }
+        if (f.prop(lv, c)) break;
     }
     return f;
 }
@@ -148,10 +154,7 @@ fn through(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, comp
             out.body[out.n] = w;
             out.step[out.n] = f.len - 1;
             out.n += 1;
-        } else if (lv.hasBarrel(c)) {
-            f.struck = .{ .barrel = c };
-            break;
-        }
+        } else if (f.prop(lv, c)) break;
     }
     if (f.struck == null and out.n > 0) f.struck = .{ .body = out.body[out.n - 1] };
     return out;
@@ -244,6 +247,19 @@ test "a barrel in the line takes the arrow meant for the rat behind it" {
     const f = fly(&lv, .{ .x = 10, .y = 10 }, .{ .x = 16, .y = 10 });
     try std.testing.expectEqual(@as(?Hit, .{ .barrel = .{ .x = 12, .y = 10 } }), f.struck);
     try std.testing.expectEqual(@as(usize, 2), f.len);
+}
+
+test "a glow plant in the line takes the arrow, piercing or not" {
+    var lv = grid.openFloor();
+    var pool = actor.Pool{};
+    const from = P{ .x = 10, .y = 10 };
+    const to = P{ .x = 16, .y = 10 };
+    const plant = P{ .x = 13, .y = 10 };
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, to));
+    lv.set(plant, .glow_plant);
+    try std.testing.expectEqual(@as(?Hit, .{ .plant = plant }), fly(&lv, from, to).struck);
+    try std.testing.expectEqual(@as(?Hit, .{ .plant = plant }), pierce(&lv, from, to).flight.struck);
+    try std.testing.expectEqual(@as(usize, 3), fly(&lv, from, to).len);
 }
 
 test "a closed chest stops an arrow without opening, while an opened chest lets it pass" {

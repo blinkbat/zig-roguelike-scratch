@@ -310,9 +310,7 @@ pub fn tooltipScrolled(face: *const font.Face, layout: Layout, screen: mathx.P, 
             y = std.math.clamp(@as(i32, @intFromFloat(over.y)) - @divTrunc(h, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.y - h - TIP_MARGIN));
         }
     }
-    shadow(x, y, TIP_W, h, TIP_SHADOW_A);
-    rl.drawRectangle(x, y, TIP_W, h, PLATE);
-    rl.drawRectangleLinesEx(raster.rect(x, y, TIP_W, h), TIP_FRAME_W, FRAME);
+    tipPlate(x, y, TIP_W, h);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
     for (lines[first .. first + shown], first..) |l, i| {
         const top = y + TIP_BODY_Y + @as(i32, @intCast(i - first)) * TIP_LINE;
@@ -325,6 +323,22 @@ pub fn tooltipScrolled(face: *const font.Face, layout: Layout, screen: mathx.P, 
         } else face.text(l, x + TIP_PAD, top, font.SMALL, look.TEXT);
     }
     return first;
+}
+
+fn tipPlate(x: i32, y: i32, w: i32, h: i32) void {
+    shadow(x, y, w, h, TIP_SHADOW_A);
+    rl.drawRectangle(x, y, w, h, PLATE);
+    rl.drawRectangleLinesEx(raster.rect(x, y, w, h), TIP_FRAME_W, FRAME);
+}
+
+/// A question put to the player in a tooltip's plate, one line above `over`.
+pub fn prompt(face: *const font.Face, screen: mathx.P, over: rl.Rectangle, text: [:0]const u8) void {
+    const w = face.width(text, font.BODY) + 2 * TIP_PAD;
+    const h = font.BODY + 2 * TIP_PAD;
+    const x = std.math.clamp(raster.middleAt(over).x - @divTrunc(w, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - w - TIP_MARGIN));
+    const y = @max(TIP_MARGIN, @as(i32, @intFromFloat(over.y)) - TIP_GAP - h);
+    tipPlate(x, y, w, h);
+    face.text(text, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
 }
 
 test "a tooltip's body breaks at spaces into lines that each fit" {

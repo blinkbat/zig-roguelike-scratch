@@ -236,7 +236,7 @@ pub fn innateResist(k: Kind, status: resilience.Kind) u8 {
     return switch (status) {
         .stun => row(k).stun_resist,
         .fright => row(k).fright_resist,
-        else => 0,
+        .burn, .bleed, .chill, .pin, .shock, .sunder, .blind, .confusion => 0,
     };
 }
 
@@ -414,7 +414,8 @@ pub const Actor = struct {
             switch (k) {
                 .blind => out.blinded = ran,
                 .confusion => out.confused = ran,
-                else => {},
+                .shock, .sunder => {},
+                else => comptime unreachable,
             }
         }
         return out;

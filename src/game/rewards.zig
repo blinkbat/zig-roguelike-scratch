@@ -3,6 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const gas = @import("../map/gas.zig");
 const actor = @import("../play/actor.zig");
+const burning = @import("../play/burning.zig");
 const damage = @import("../play/damage.zig");
 const glacial = @import("../play/glacial.zig");
 const items = @import("../play/items.zig");
@@ -36,8 +37,8 @@ pub fn dropItem(sim: *Simulation, drop: items.Drop) void {
     std.debug.assert(added);
 }
 
-fn dropSupply(sim: *Simulation, supply: items.Supply) void {
-    _ = sim.ground.addSupply(supply);
+fn dropSupply(sim: *Simulation, supply: items.Supply) ?consumable.Kind {
+    return if (sim.ground.addSupply(supply)) supply.kind else null;
 }
 
 fn dropGold(sim: *Simulation, at: P, amount: i32) void {
@@ -60,10 +61,12 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
     const opened = sim.lv.at(at).opened() orelse return .not_closed;
     if (!groundRoom(sim)) return .ground_full;
     sim.lv.set(at, opened);
-    dropItem(sim, .{ .item = items.roll(&sim.loot_rng, sim.heroAttrs().item_rarity), .at = at });
-    const gold = rollGold(sim, at, items.CHEST_GOLD);
-    if (consumable.roll(&sim.loot_rng, consumable.CHEST_PERCENT)) |k| {
-        dropSupply(sim, .{ .kind = k, .at = at });
+    const loot = chestLoot(sim);
+    dropItem(sim, .{ .item = loot.item.?, .at = at });
+    const gold = loot.gold;
+    dropGold(sim, at, gold);
+    const supply = if (loot.supply) |k| dropSupply(sim, .{ .kind = k, .at = at }) else null;
+    if (supply) |k| {
         sim.log.push(.loot, "{s} opens the chest: {d} gold, an item and {s}.", .{ sim.name.text(), gold, consumable.phrase(k) });
     } else sim.log.push(.loot, "{s} opens the chest: {d} gold and an item.", .{ sim.name.text(), gold });
     sim.chronicle.mark(.chest);
@@ -101,7 +104,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     const reward = lootOf(sim, fallen);
     if (reward.gold > 0) dropGold(sim, fallen.at, reward.gold);
     if (reward.item) |item| dropItem(sim, .{ .item = item, .at = fallen.at, .source = target.value });
-    if (reward.supply) |k| dropSupply(sim, .{ .kind = k, .at = fallen.at, .source = target.value });
+    if (reward.supply) |k| _ = dropSupply(sim, .{ .kind = k, .at = fallen.at, .source = target.value });
     for (std.enums.values(flask.Kind)) |k| if (sim.inventory.gear.holds(k)) sim.flasks.getPtr(k).fill(flask.PER_KILL);
     var caught = Caught.initEmpty();
     switch (actor.row(fallen.kind).blow) {
@@ -128,12 +131,21 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
 /// A mimic leaves its chest's loot; nothing is left where no one could walk to fetch it.
 fn lootOf(sim: *Simulation, fallen: actor.Actor) items.Loot {
     if (!sim.lv.walkable(fallen.at)) return .{};
-    const rarity = sim.heroAttrs().item_rarity;
-    if (actor.row(fallen.kind).disguised) return .{ .item = items.roll(&sim.loot_rng, rarity), .gold = items.CHEST_GOLD.roll(&sim.loot_rng), .supply = consumable.roll(&sim.loot_rng, consumable.CHEST_PERCENT) };
-    return items.foeLoot(&sim.loot_rng, rarity);
+    if (actor.row(fallen.kind).disguised) return chestLoot(sim);
+    return items.foeLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
+}
+
+/// What a chest holds, rolled item, gold, then supply.
+fn chestLoot(sim: *Simulation) items.Loot {
+    const item = items.roll(&sim.loot_rng, sim.heroAttrs().item_rarity);
+    const gold = items.CHEST_GOLD.roll(&sim.loot_rng);
+    return .{ .item = item, .gold = gold, .supply = consumable.roll(&sim.loot_rng, consumable.CHEST_PERCENT) };
 }
 
 pub const PYRE_REACH: i32 = 1;
+comptime {
+    std.debug.assert(PYRE_REACH <= glacial.BURST_MAX);
+}
 
 /// Where a pyre bursting at `at` sets bodies alight.
 pub fn pyre(lv: *const grid.Level, at: P) glacial.Burst {
@@ -147,11 +159,9 @@ fn ignite(sim: *Simulation, at: P, name: []const u8) Caught {
     const area = pyre(&sim.lv, at);
     for (sim.pool.slice(), 0..) |*a, i| {
         if (!a.alive or !area.has(a.at)) continue;
-        const chance = damage.resistedChance(mathx.PERCENT, sim.combatStats(a).elements.get(.fire));
-        if (!sim.procStatus(a, .burn, chance)) continue;
-        a.burn.start();
+        if (!sim.ignite(a)) continue;
         out.set(i);
-        if (sim.isHero(i)) sim.log.push(.danger, "{s} catches fire!", .{sim.name.text()}) else sim.sayOf(a, "The {s} catches fire!", .{actor.row(a.kind).name});
+        if (sim.isHero(i)) sim.log.push(.danger, "{s} " ++ burning.TAKES ++ "!", .{sim.name.text()}) else sim.sayOf(a, "The {s} " ++ burning.TAKES ++ "!", .{actor.row(a.kind).name});
     }
     return out;
 }

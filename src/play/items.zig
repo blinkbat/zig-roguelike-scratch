@@ -74,10 +74,15 @@ pub const Mod = enum {
     thorns,
     spoils,
 
+    /// The passive of the same name, for a modifier that reads and applies as one.
+    fn grant(comptime m: Mod, amount: i32) passives.Grant {
+        return .{ .kind = @field(passives.Kind, @tagName(m)), .amount = amount };
+    }
+
     pub fn prefix(m: Mod) bool {
         return switch (m) {
             .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns => true,
-            else => false,
+            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils => false,
         };
     }
     pub fn title(m: Mod, element: damage.Element) [:0]const u8 {
@@ -125,7 +130,7 @@ pub const Mod = enum {
             .penetration => weapon or slot == .gloves,
             .thorns => slot == .chest or k == .shield,
             .spoils => ring or slot == .amulet,
-            else => true,
+            .life, .mana, .strength, .dexterity, .intelligence => true,
         };
     }
 };
@@ -152,6 +157,7 @@ const AFFIXES = [_]struct { kind: Mod, lo: i32, hi: i32 }{
 pub const MODS = blk: {
     var out: [AFFIXES.len]Mod = undefined;
     for (AFFIXES, &out) |a, *m| m.* = a.kind;
+    std.debug.assert(std.mem.eql(Mod, &out, std.enums.values(Mod)));
     break :blk out;
 };
 pub const Kind = enum {
@@ -272,23 +278,12 @@ pub const Affix = struct {
     pub fn write(m: Affix, w: anytype) void {
         const n = m.value;
         switch (m.kind) {
-            .life, .mana, .strength, .dexterity, .intelligence => |k| w.print(attrs.Bonus.RAISE_FMT, .{ n, switch (k) {
-                .life => attrs.Bonus.life.label(),
-                .mana => attrs.Bonus.mana.label(),
-                .strength => attrs.Bonus.strength.label(),
-                .dexterity => attrs.Bonus.dexterity.label(),
-                .intelligence => attrs.Bonus.intelligence.label(),
-                else => unreachable,
-            } }) catch {},
+            inline .life, .mana, .strength, .dexterity, .intelligence, .crit, .armour, .mana_regen, .life_flask => |k| k.grant(n).write(w),
             .physical_damage => w.print("+{d}% physical weapon damage", .{n}) catch {},
             .spell_damage => w.print("+{d}% spell damage", .{n}) catch {},
-            .crit => w.print("+{d}% critical strike chance", .{n}) catch {},
-            .armour => w.print("+{d}% physical damage reduction", .{n}) catch {},
             .dodge => w.print("+{d}% dodge chance", .{n}) catch {},
             .resistance => w.print("+{d}% {s} resistance", .{ n, wording.word(m.element) }) catch {},
-            .mana_regen => w.print("+{d} mana recovered per {d} turns", .{ n, @import("hero.zig").MANA_REGEN_TURNS }) catch {},
             .life_on_kill => w.print("+{d} life on kill", .{n}) catch {},
-            .life_flask => w.print("+{d}% life flask recovery", .{n}) catch {},
             .penetration => w.print("Ignore {d}% physical damage reduction", .{n}) catch {},
             .thorns => w.print("Return {d} damage to melee attackers", .{n}) catch {},
             .spoils => w.print("+{d}% gold and item rarity", .{n}) catch {},
@@ -473,16 +468,8 @@ pub const Item = struct {
         a.armour += base.armour;
         if (base.innate) |innate| innate.apply(a);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
-            .life => a.add(.life, m.value),
-            .mana => a.add(.mana, m.value),
-            .strength => a.add(.strength, m.value),
-            .dexterity => a.add(.dexterity, m.value),
-            .intelligence => a.add(.intelligence, m.value),
+            inline .life, .mana, .strength, .dexterity, .intelligence, .spell_damage, .crit, .armour, .dodge => |k| k.grant(m.value).apply(a),
             .physical_damage => a.physical_bonus += m.value,
-            .spell_damage => a.damage_bonus.getPtr(.spell).* += m.value,
-            .crit => a.crit_bonus += m.value,
-            .armour => a.armour += m.value,
-            .dodge => a.dodge_bonus += m.value,
             .resistance => a.resists.getPtr(m.element).* += m.value,
             .thorns => a.thorns += m.value,
             .spoils => {

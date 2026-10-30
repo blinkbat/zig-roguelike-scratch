@@ -321,7 +321,7 @@ test "Character page shortcuts open switch and close without acting or carrying 
 test "an arena restart restores its selected opponent and hero" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const map = try std.testing.allocator.create(atlas.Atlas);
+    const map = try atlas.testAtlas();
     defer std.testing.allocator.destroy(map);
     spar.author(map, .bloat);
     game.beginMap(g, map);
@@ -413,7 +413,7 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
 test "Debug restart begins the map anew and clears visited nodes" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const map = try std.testing.allocator.create(atlas.Atlas);
+    const map = try atlas.testAtlas();
     defer std.testing.allocator.destroy(map);
     map.* = .{};
     _ = map.add(.{ .procgen = .{} });
@@ -466,6 +466,19 @@ test "inspect walks the orbs, the slots and the statuses, spends no turn, and ba
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expect(std.meta.eql(clock, g.sim.clock));
     std.debug.print("inspect: life to mana in {d} steps across {d} slots, then a visible character; status navigation, 3 ways out and no turn spent\n", .{ walked, skillbar.SLOTS.len });
+}
+
+test "inspect forgets the body it was on once the hero enters a node" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const foe = P{ .x = 30, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{foe});
+    g.inspecting = .{ .actor = g.sim.lv.who(foe) };
+    g.inspect_scroll = 2;
+    game.reset(g, .{ .x = 20, .y = 20 });
+    try std.testing.expectEqual(game.Spot{ .slot = 0 }, g.inspecting);
+    try std.testing.expectEqual(@as(usize, 0), g.inspect_scroll);
+    std.debug.print("inspect focus: a foe's pool slot and the card scroll reset on entering a node\n", .{});
 }
 
 test "the mouse over an orb, a slot or a status shows its tooltip while playing, and nothing off the hud" {

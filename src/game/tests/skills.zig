@@ -222,6 +222,10 @@ test "glacial shot uses an intervening body or barrel and an empty shot has no c
     harness.arena(g, from, &.{.{ .x = 26, .y = 21 }});
     harness.use(g, .glacial_shot);
     g.mode.aim.mark = .{ .x = 25, .y = 20 };
+    const mana = g.sim.mana;
+    harness.press(g, CONFIRM);
+    try std.testing.expect(g.mode == .aim and g.mode.aim.askedHere());
+    try std.testing.expectEqual(mana, g.sim.mana);
     harness.press(g, CONFIRM);
     try std.testing.expect(g.pic.shot.?.flight.struck == null);
     try std.testing.expectEqual(actor.row(.rat).hp, g.sim.pool.get(2).?.hp);

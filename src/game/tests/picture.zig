@@ -458,7 +458,8 @@ test "a turn's glides start the archer first, then each foe in sight a stagger b
     std.debug.print("glide starts: archer {d:.3} s, then {d:.3}, {d:.3}, {d:.3}; the turn is busy {d:.3} s\n", .{ -t[0], -t[1], -t[2], -t[3], g.pic.busy });
     try std.testing.expectEqualSlices(u16, &.{ 3, 4, 2 }, g.sim.order[0..g.sim.order_n]);
     for (t, 0..) |v, i| try std.testing.expectApproxEqAbs(-game.STAGGER_S * @as(f32, @floatFromInt(i)), v, 1e-6);
-    try std.testing.expectApproxEqAbs(game.STAGGER_S * 2 + game.SLIDE_S, g.pic.busy, 1e-6);
+    const last = @max(game.STAGGER_S * 2 + game.SLIDE_S, game.STAGGER_S * 3 + game.GLIDE_S);
+    try std.testing.expectApproxEqAbs(last, g.pic.busy, 1e-6);
     const at = g.sim.heroActor().?.at;
     g.st = .{ .walk = .e };
     game.update(g, 0);
@@ -468,7 +469,7 @@ test "a turn's glides start the archer first, then each foe in sight a stagger b
     while (g.sim.heroActor().?.at.eq(at) and waited < 1) : (waited += harness.TEST_DT) game.update(g, harness.TEST_DT);
     std.debug.print("a walk pressed mid-turn steps {d:.3} s later\n", .{waited});
     try std.testing.expect(!g.sim.heroActor().?.at.eq(at));
-    try std.testing.expectApproxEqAbs(game.STAGGER_S * 2 + game.SLIDE_S, waited, harness.TEST_TOL);
+    try std.testing.expectApproxEqAbs(last, waited, harness.TEST_TOL);
 }
 
 test "an arrow's rat flashes when the arrow gets there, not when the hit resolves" {

@@ -94,7 +94,7 @@ pub const GLOW_HALO: f32 = 2.6;
 pub const GLOW_CORE_A: f32 = 0.85;
 pub const GLOW_HALO_A: f32 = 0.2;
 pub const GLOW_TINT: Rgb = .{ 1.0, 0.52, 0.22 };
-pub const PLANT_TINT: Rgb = .{ 0.62, 0.82, 1.0 };
+pub const PLANT_TINT: Rgb = rgbOf(look.tile(.glow_plant).fg);
 /// Cells between ray samples; softness is a fraction of caster height and a cell distance from round edges.
 pub const SUN_STEP: f32 = 0.1;
 pub const SUN_SOFT: f32 = 0.7;
@@ -122,6 +122,7 @@ pub const CASTERS = std.EnumArray(grid.Tile, ?Caster).initDefault(@as(?Caster, n
 comptime {
     for (std.enums.values(grid.Tile)) |t| {
         if (t.upright()) std.debug.assert((CASTERS.get(t) != null) != look.stands(t));
+        if (t.glows()) std.debug.assert(PLANT_Z > (CASTERS.get(t) orelse continue).h);
     }
 }
 
@@ -294,8 +295,7 @@ pub fn faceY(top: f32, z: f32) f32 {
     return top + 1 - z / WALL_H * FACE_H;
 }
 
-/// Glowing plants the renderer lights, the first this many in reading order; sight takes them all.
-pub const PLANT_LIGHTS: usize = 64;
+pub const PLANT_LIGHTS: usize = grid.MAX_GLOWS;
 pub const LIGHTS: usize = grid.MAX_TORCHES + PLANT_LIGHTS;
 pub const TorchIx = std.math.IntFittingRange(0, LIGHTS - 1);
 
@@ -419,8 +419,16 @@ pub fn smoothSpecular(toward: [3]f32, comptime power: u32) f32 {
     return mathx.powi(@max(0, h[2]), power);
 }
 
-pub fn remembered(view: Rgb, sight: f32, memory: f32) Rgb {
-    return mix(MEMORY, view, sight) * splat(memory);
+pub fn remembered(floor: Rgb, view: Rgb, sight: f32, memory: f32) Rgb {
+    return mix(floor, view, sight) * splat(memory);
+}
+
+/// Of `MEMORY`, the share left under the moon.
+pub const NIGHT_MEMORY: f32 = 0.65;
+
+/// `MEMORY` under a sky whose casting light is the moon's by `moon`.
+pub fn memoryUnder(moon: f32) Rgb {
+    return MEMORY * splat(mathx.lerpF(1, NIGHT_MEMORY, moon));
 }
 
 /// Windowed inverse square: exactly nothing at `REACH`.

@@ -18,6 +18,7 @@ const heroes = @import("play/hero.zig");
 const actor = @import("play/actor.zig");
 const turn_clock = @import("play/clock.zig");
 const confusion = @import("play/confusion.zig");
+const pinning = @import("play/pinning.zig");
 const pack = @import("play/pack.zig");
 const skillbar = @import("play/skillbar.zig");
 const look = @import("gfx/look.zig");
@@ -341,6 +342,7 @@ pub fn rollOf(run: u64, n: usize) u64 {
 }
 
 fn goThrough(g: *Game, l: atlas.Link) void {
+    g.pic.turnNow();
     g.sim.visits[g.sim.node] = visitOf(g);
     g.sim.visited.set(g.sim.node);
     const carried = TravelCarry.of(g);
@@ -418,7 +420,7 @@ fn freshTurn(g: *Game) void {
     skills.closeAim(g);
     g.mouse = .{};
     g.sim.resetTransientTurn();
-    toDefaults(g, &.{ "pending", "target" });
+    toDefaults(g, &.{ "pending", "target", "inspecting", "inspect_scroll" });
     g.pic.freshTurn();
     g.cloud.clear();
 }
@@ -550,7 +552,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
 
 /// A pinned hero's move, spent in place.
 pub fn struggle(g: *Game) void {
-    g.sim.log.say("{s} is pinned and struggles.", .{g.sim.name.text()});
+    g.sim.log.say("{s} " ++ pinning.TAKES ++ " and struggles.", .{g.sim.name.text()});
     g.mouse.stop();
 }
 
@@ -577,7 +579,7 @@ pub fn syncStats(g: *Game) void {
     g.pic.settleHero(&g.sim, 0);
 }
 
-fn characterShown(g: *const Game) bool {
+pub fn characterShown(g: *const Game) bool {
     return g.mode == .pause and g.pause_page == .character;
 }
 

@@ -19,7 +19,7 @@ const Kind = procgen.Kind;
 const Feature = procgen.Feature;
 
 pub const HEADER = "roguelike-map 1";
-const TEXT_CAP: usize = 8 << 20;
+pub const TEXT_CAP: usize = 8 << 20;
 
 pub fn save(self: *atlas.Atlas, alloc: std.mem.Allocator, path: []const u8) !void {
     var text = std.ArrayList(u8).init(alloc);

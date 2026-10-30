@@ -69,6 +69,10 @@ fn inLoot(g: *const game.Game, from: P, at: P, laid: anytype) bool {
     return laid.at.eq(at) and laidReached(g, from, laid);
 }
 
+fn takeable(g: *const game.Game, from: P, laid: anytype) bool {
+    return if (g.character.page == .loot) inLoot(g, from, g.character.loot_at, laid) else laidReached(g, from, laid);
+}
+
 fn withinReach(from: P, p: P) bool {
     return mathx.dist(from, p) <= game.INTERACT_REACH;
 }
@@ -199,16 +203,14 @@ pub fn openNearby(g: *game.Game) bool {
 }
 
 pub fn openLoot(g: *game.Game, at: P) void {
-    if (!drawnFor(g)) return;
-    if (g.sim.travel != null) return notYet(g);
+    if (!turnFree(g)) return;
     const h = g.sim.heroActor() orelse return;
     if (chestReached(g, h.at, at)) {
         if (!game.combat.openChest(g, at)) return;
-        tactics.beforeAction(&g.sim);
         g.pic.turnToward(g.sim.hero, at.x - h.at.x);
         g.mode = .play;
         game.holdWalk(g);
-        game.combat.endTurn(g);
+        spendTurn(g);
         return;
     }
     if (!lootReached(g, h.at, at)) return;
@@ -245,8 +247,7 @@ fn takeSupply(g: *game.Game, i: usize) bool {
 
 /// Throwing closes Character for the reticle; anything else is used where it is.
 fn useCarried(g: *game.Game, k: consumable.Kind) void {
-    if (!drawnFor(g)) return;
-    if (g.sim.travel != null) return notYet(g);
+    if (!turnFree(g)) return;
     const act = skillbar.Act.ofSupply(k);
     if (act.reticle() != null) g.mode = .play;
     const slot = g.bar.slotOf(act);
@@ -295,11 +296,17 @@ fn drawnFor(g: *game.Game) bool {
     return true;
 }
 
+fn turnFree(g: *game.Game) bool {
+    if (!drawnFor(g)) return false;
+    if (g.sim.travel == null) return true;
+    notYet(g);
+    return false;
+}
+
 /// Item commands spend the turn, and wait out door travel.
 fn itemCommand(g: *game.Game, command: book.Command) void {
     var name: [items.NAME_MAX]u8 = undefined;
-    if (!drawnFor(g)) return;
-    if (g.sim.travel != null) return notYet(g);
+    if (!turnFree(g)) return;
     const h = g.sim.heroActor() orelse return;
     const base = g.sim.growth.attributes(g.sim.class);
     switch (command) {
@@ -325,13 +332,11 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             g.sim.log.push(.loot, "Dropped {s}.", .{g.sim.inventory.remove(i).name(&name)});
         },
         .pickup => |i| {
-            if (i >= g.sim.ground.n or !laidReached(g, h.at, g.sim.ground.drops[i])) return;
-            if (g.character.page == .loot and !g.sim.ground.drops[i].at.eq(g.character.loot_at)) return;
+            if (i >= g.sim.ground.n or !takeable(g, h.at, g.sim.ground.drops[i])) return;
             if (!takeDrop(g, i)) return;
         },
         .take_supply => |i| {
-            if (i >= g.sim.ground.supply_n or !laidReached(g, h.at, g.sim.ground.supplies[i])) return;
-            if (g.character.page == .loot and !g.sim.ground.supplies[i].at.eq(g.character.loot_at)) return;
+            if (i >= g.sim.ground.supply_n or !takeable(g, h.at, g.sim.ground.supplies[i])) return;
             if (!takeSupply(g, i)) return;
         },
         .take_gold => |at| {
@@ -399,7 +404,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
 
 /// Everything taken while the loot menu was open is one action, spent once it closes.
 pub fn settleLoot(g: *game.Game) void {
-    if (g.mode == .pause and g.pause_page == .character and g.character.page == .loot) return;
+    if (game.characterShown(g) and g.character.page == .loot) return;
     endLoot(g);
 }
 

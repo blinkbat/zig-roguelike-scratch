@@ -89,6 +89,10 @@ pub fn logged(g: *const game.Game, needle: []const u8) bool {
 pub fn staggerOnly(g: *game.Game, id: u16) void {
     g.sim.order[0] = id;
     g.sim.order_n = 1;
+    stagger(g);
+}
+
+pub fn stagger(g: *game.Game) void {
     g.pic.lead = 0;
     g.pic.stepGlide(&g.sim, g.cloud, 0);
 }
@@ -155,6 +159,7 @@ pub fn aimAt(g: *game.Game, act: skillbar.Act, at: P) void {
     if (g.mode != .aim) return;
     g.mode.aim.mark = at;
     skills.confirmAim(g);
+    if (g.mode == .aim and g.mode.aim.askedHere()) skills.confirmAim(g);
 }
 
 pub fn boundTo(g: *const game.Game, act: skillbar.Act) skills.Use {
@@ -212,12 +217,14 @@ fn bitesHold(g: *const game.Game, hero_at: P, bites: []const Bite, rng: *mathx.R
         const strike = actor.row(a.kind).blow.strike;
         const hit = attacks.bite(rng, g.sim.combatStats(a), defender, strike);
         if ((hit != null) != b.lands) return false;
-        if (i + 1 < bites.len) {
-            std.debug.assert(strike.bleeds == 0 and strike.stuns == 0 and g.sim.heroAttrs().thorns == 0 and !hero.tactics.unyielding);
-            if (hit) |dmg| _ = attrs.armoured(defender.armour, dmg, rng);
-        }
+        if (i + 1 < bites.len) armourBefore(g, strike, defender.armour, hit, rng);
     }
     return true;
+}
+
+fn armourBefore(g: *const game.Game, strike: actor.Strike, armour: i32, hit: ?i32, rng: *mathx.Rng) void {
+    std.debug.assert(strike.bleeds == 0 and strike.stuns == 0 and g.sim.heroAttrs().thorns == 0 and !g.sim.heroBody().?.tactics.unyielding);
+    if (hit) |dmg| _ = attrs.armoured(armour, dmg, rng);
 }
 
 pub fn bitesRng(g: *const game.Game, bites: []const Bite) mathx.Rng {
@@ -302,10 +309,7 @@ pub fn meleeThenBites(g: *const game.Game, target: u16, attackers: []const u16) 
                 const a = combatant(s.g, id);
                 const strike = actor.row(a.kind).blow.strike;
                 const dmg = attacks.bite(rng, s.g.sim.combatStats(a), s.g.sim.combatStats(hero), strike) orelse return false;
-                if (i + 1 < s.attackers.len) {
-                    std.debug.assert(strike.bleeds == 0 and strike.stuns == 0 and s.g.sim.heroAttrs().thorns == 0 and !hero.tactics.unyielding);
-                    _ = attrs.armoured(s.g.sim.combatStats(hero).armour, dmg, rng);
-                }
+                if (i + 1 < s.attackers.len) armourBefore(s.g, strike, s.g.sim.combatStats(hero).armour, dmg, rng);
             }
             return true;
         }
@@ -477,7 +481,7 @@ test "predicted foe strikes follow terrain and ordered armour rolls in real turn
             }
         };
     };
-    std.debug.print("strike prediction: {d} real attacks across 3 classes, 2 hero terrains, distinct foe terrains and ordered armour rolls\n", .{checked});
+    std.debug.print("strike prediction: {d} real attacks across {d} classes, 2 hero terrains, distinct foe terrains and ordered armour rolls\n", .{ checked, heroes.CLASSES.len });
 }
 
 test "a strike with zero dodge draws only terrain hit chance and damage" {

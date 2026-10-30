@@ -8,6 +8,7 @@ const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const glacial = @import("../play/glacial.zig");
 const juke = @import("../play/juke.zig");
+const pinning = @import("../play/pinning.zig");
 const flask = @import("../play/flask.zig");
 const consumable = @import("../play/consumable.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -136,7 +137,7 @@ fn ready(run: *game.Game, act: skillbar.Act) bool {
         .empty => run.sim.log.say("{s} is empty.", .{act.name()}),
         .none_left => run.sim.log.say("{s}: none carried.", .{act.name()}),
         .locked => run.sim.log.say("{s} is not learned.", .{act.name()}),
-        .pinned => run.sim.log.say("{s} is pinned.", .{run.sim.name.text()}),
+        .pinned => run.sim.log.say("{s} " ++ pinning.TAKES ++ ".", .{run.sim.name.text()}),
     }
     return false;
 }
@@ -304,11 +305,10 @@ fn castSpell(run: *game.Game, comptime act: skillbar.Act) void {
     } else spend(run, act);
     if (comptime act.surrounds()) {
         const s = game.presentation.Stroke{ .from = hero.at, .wait = game.CAST_S };
-        run.pic.holdUntil(s.wait);
+        run.pic.leadUntil(s.wait);
         const area = Skill.around(&run.sim.lv, hero.at);
         if (foesIn(run, area).n == 0) sayDone(run, act);
         combat.areaHit(run, act, hero.at, area, s, null, false);
-        run.pic.lead = s.wait;
     } else if (comptime act.wards()) {
         sayDone(run, act);
         hero.ward.raise();
@@ -422,6 +422,10 @@ pub fn confirmAim(run: *game.Game) void {
         }
         return;
     }
+    if (reticle == .bow and shownFlight(run, hero.at, act, run.mode.aim.mark).struck == null and !run.mode.aim.askedHere()) {
+        run.mode.aim.asked = run.mode.aim.mark;
+        return;
+    }
     if (run.mode.aim.chooseStart()) return;
     rememberTarget(run);
     const aim = run.mode.aim;
@@ -436,6 +440,13 @@ pub fn confirmAim(run: *game.Game) void {
         .ground => tactics.cast(run, aim, from),
     }
 }
+
+/// The flight the reticle shows toward `mark`, passing over bodies the hero cannot see.
+pub fn shownFlight(run: *const game.Game, from: P, act: skillbar.Act, mark: P) bow.Flight {
+    return if (act.pierces()) bow.piercePreviewAmong(&run.sim.lv, &run.sim.pool, from, mark) else bow.previewAmong(&run.sim.lv, &run.sim.pool, from, mark);
+}
+
+pub const UNSEEN_ASK = "There's no visible target, {s} anyway?";
 
 fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
     const pierced = if (act.pierces()) bow.pierce(&run.sim.lv, from, to) else null;
@@ -468,7 +479,7 @@ fn resolveProjectileHit(run: *game.Game, comptime action: skillbar.Act, hit: bow
     }
     switch (hit) {
         .body => |id| hitProjectileActor(run, action, id, stroke),
-        .barrel => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),
+        .barrel, .plant => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),
     }
     if (comptime action.element() == .fire) combat.boil(run, flight.impact().?, 0, stroke.wait);
 }

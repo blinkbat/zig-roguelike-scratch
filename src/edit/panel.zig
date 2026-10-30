@@ -299,7 +299,6 @@ const PALETTE_TIPS = blk: {
 };
 
 fn drawThings(ed: *editor.Editor, g: *game.Game, top: i32) void {
-    var buf: [widgets.LINE]u8 = undefined;
     var name: [atlas.TITLE_MAX]u8 = undefined;
     var y = beginScroll(ed, g, top);
     defer endScroll(ed);
@@ -308,49 +307,48 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, top: i32) void {
     var wrong = false;
     if (is.start_walled) {
         wrong = true;
-        thingRow(ed, g, &y, "The start is on solid ground", WARN, ed.map.start.at);
+        thingRow(ed, g, &y, "The start is on solid ground", .{}, WARN, ed.map.start.at);
     }
     if (is.unlinked > 0) {
         wrong = true;
-        thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{d} door(s) lead nowhere", .{is.unlinked}) catch "", WARN, null);
+        thingRow(ed, g, &y, "{d} door(s) lead nowhere", .{is.unlinked}, WARN, null);
     }
     if (is.cut_off > 0) {
         wrong = true;
-        thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{d} open cells no walk reaches (shaded)", .{is.cut_off}) catch "", WARN, is.reach_from);
+        thingRow(ed, g, &y, "{d} open cells no walk reaches (shaded)", .{is.cut_off}, WARN, is.reach_from);
     }
     if (is.foes_cut_off > 0) {
         wrong = true;
-        thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{d} foe(s) no walk reaches", .{is.foes_cut_off}) catch "", WARN, null);
+        thingRow(ed, g, &y, "{d} foe(s) no walk reaches", .{is.foes_cut_off}, WARN, null);
     }
     const endless = ed.map.script.endless();
     if (endless > 0) {
         wrong = true;
-        thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{d} dialog(s) never end, so never open", .{endless}) catch "", WARN, null);
+        thingRow(ed, g, &y, "{d} dialog(s) never end, so never open", .{endless}, WARN, null);
     }
-    if (!wrong) thingRow(ed, g, &y, "Nothing wrong", look.DIM, null);
+    if (!wrong) thingRow(ed, g, &y, "Nothing wrong", .{}, look.DIM, null);
     y += widgets.BLOCK_GAP;
     knobs.section(g, &y, if (ed.here().unrolled()) "On this roll" else "On this node");
-    if (ed.scene.start_at) |s| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "Start  {d},{d}", .{ s.x, s.y }) catch "", look.TEXT, s);
+    if (ed.scene.start_at) |s| thingRow(ed, g, &y, "Start  {d},{d}", .{ s.x, s.y }, look.TEXT, s);
     for (ed.here().doors(), 0..) |d, k| {
-        const line = if (d.to) |to|
-            std.fmt.bufPrintZ(&buf, "Door {d}  {d},{d}  to {s}, door {d}", .{ k, d.at.x, d.at.y, ed.nodeName(to.node, &name), to.door }) catch ""
+        if (d.to) |to|
+            thingRow(ed, g, &y, "Door {d}  {d},{d}  to {s}, door {d}", .{ k, d.at.x, d.at.y, ed.nodeName(to.node, &name), to.door }, look.TEXT, d.at)
         else
-            std.fmt.bufPrintZ(&buf, "Door {d}  {d},{d}  leads nowhere", .{ k, d.at.x, d.at.y }) catch "";
-        thingRow(ed, g, &y, line, if (d.to == null) WARN else look.TEXT, d.at);
+            thingRow(ed, g, &y, "Door {d}  {d},{d}  leads nowhere", .{ k, d.at.x, d.at.y }, WARN, d.at);
     }
-    for (ed.scene.shownFoes()) |f| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}", .{ editor.kindName(f.kind), f.at.x, f.at.y }) catch "", look.TEXT, f.at);
+    for (ed.scene.shownFoes()) |f| thingRow(ed, g, &y, "{s}  {d},{d}", .{ editor.kindName(f.kind), f.at.x, f.at.y }, look.TEXT, f.at);
     const s = &ed.map.script;
     for (s.folks()) |f| {
         if (f.node != ed.node) continue;
-        thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "{s}  {d},{d}  talks: {s}", .{ f.called(), f.at.x, f.at.y, editor.plot.talksTo(s, &f) }) catch "", look.TEXT, f.at);
+        thingRow(ed, g, &y, "{s}  {d},{d}  talks: {s}", .{ f.called(), f.at.x, f.at.y, editor.plot.talksTo(s, &f) }, look.TEXT, f.at);
     }
     switch (ed.plan().*) {
         .bespoke => |*b| {
-            for (b.torches()) |t| thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "Torch  {d},{d}", .{ t.x, t.y }) catch "", look.TEXT, t);
+            for (b.torches()) |t| thingRow(ed, g, &y, "Torch  {d},{d}", .{ t.x, t.y }, look.TEXT, t);
             for (&b.barrel, 0..) |*on, i| {
                 if (!on.*) continue;
                 const p = grid.Level.of(i);
-                thingRow(ed, g, &y, std.fmt.bufPrintZ(&buf, "Barrel  {d},{d}", .{ p.x, p.y }) catch "", look.TEXT, p);
+                thingRow(ed, g, &y, "Barrel  {d},{d}", .{ p.x, p.y }, look.TEXT, p);
             }
         },
         .procgen => {},
@@ -364,11 +362,14 @@ pub fn clipped(ed: *const editor.Editor, y: i32) bool {
     return top + widgets.ROW_H <= c.y or top >= c.y + c.height;
 }
 
-fn thingRow(ed: *editor.Editor, g: *game.Game, y: *i32, line: [:0]const u8, col: rl.Color, at: ?P) void {
+/// Formatted only when it shows.
+fn thingRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime fmt: []const u8, args: anytype, col: rl.Color, at: ?P) void {
     if (clipped(ed, y.*)) {
         y.* += widgets.ROW_H;
         return;
     }
+    var buf: [widgets.LINE]u8 = undefined;
+    const line = std.fmt.bufPrintZ(&buf, fmt, args) catch "";
     const r = widgets.row(widgets.PAD, y.*, widgets.INNER_W);
     const h = widgets.hot(ed.controls(), r, at != null, false, if (at != null) "Show it on the map" else null);
     widgets.plate(r, false, h.hot);
