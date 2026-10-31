@@ -243,8 +243,8 @@ test "glacial splash beyond sight does damage without naming the unseen foe in t
     harness.confirmUse(g, .glacial_shot);
     const lost = harness.TEST_HP - g.sim.pool.get(far).?.hp;
     try harness.expectDamage(g, .glacial_shot, lost, &.{glacial.BASE});
-    try std.testing.expect(!harness.logged(g, "bloat"));
-    std.debug.print("unseen glacial splash: {d} damage, 0 log lines naming the hidden bloat\n", .{lost});
+    try std.testing.expect(!harness.logged(g, "caustic bloat"));
+    std.debug.print("unseen glacial splash: {d} damage, 0 log lines naming the hidden caustic bloat\n", .{lost});
 }
 
 test "chill slows movement and attacks while idle frames preserve it and skipped turns still take burn and gas" {
@@ -358,7 +358,7 @@ test "burning arrow honors fire resistance, refuses insufficient mana and uses t
     std.debug.print("100% fire resistance: only physical arrow damage, no ignition; far target untouched\n", .{});
 }
 
-test "burning and gas both land in order, while a burning kill bursts a bloat" {
+test "burning and gas both land in order, while a burning kill bursts a caustic bloat" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 28, .y = 20 };
@@ -381,7 +381,7 @@ test "burning and gas both land in order, while a burning kill bursts a bloat" {
     try std.testing.expect(g.sim.pool.get(id) == null);
     try std.testing.expectEqual(@as(usize, 1), g.sim.kills);
     try std.testing.expectEqual(gas.BURST, g.sim.lv.gasAt(at));
-    std.debug.print("burning plus gas: both damage events shown; burning bloat death releases {d} gas\n", .{gas.BURST});
+    std.debug.print("burning plus gas: both damage events shown; burning caustic bloat death releases {d} gas\n", .{gas.BURST});
 }
 
 test "burning follows both slime halves without an extra application turn or tick" {
@@ -888,16 +888,16 @@ test "free projectile aim moves one cell in eight directions and retains melee a
     try std.testing.expectEqual(@as(?u16, 3), g.target);
     g.mode = .play;
     harness.useAct(g, .charge);
-    try std.testing.expectEqual(@as(?u16, null), g.target);
+    try std.testing.expectEqual(@as(?u16, 3), g.target);
     g.mode = .play;
-    g.sim.pool.move(&g.sim.lv, 3, .{ .x = 21, .y = 21 });
+    g.sim.pool.move(&g.sim.lv, 3, .{ .x = 22, .y = 21 });
     harness.useAct(g, .charge);
-    try std.testing.expectEqual(@as(?u16, 4), g.target);
-    try std.testing.expectEqual(P{ .x = 23, .y = 20 }, g.mode.aim.mark);
+    try std.testing.expectEqual(@as(?u16, 2), g.target);
+    try std.testing.expectEqual(P{ .x = 20, .y = 19 }, g.mode.aim.mark);
     skills.openLeap(g, .b, .juke);
     try std.testing.expectEqual(from, g.mode.aim.mark);
-    try std.testing.expectEqual(@as(?u16, 4), g.target);
-    std.debug.print("free projectile aim: eight directions without snapping; adjacent melee, blocked and clear rushes and free leaps checked\n", .{});
+    try std.testing.expectEqual(@as(?u16, 2), g.target);
+    std.debug.print("free projectile aim: eight directions without snapping; adjacent melee, adjacent and off-line rushes and free leaps checked\n", .{});
 }
 
 test "smart aim forgets actor identities when a pool is reset or a run resumes" {

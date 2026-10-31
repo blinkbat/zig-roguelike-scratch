@@ -269,6 +269,7 @@ pub const Gold = struct {
     }
 };
 pub const BARREL_GOLD = Gold{ .lo = 3, .hi = 12 };
+pub const BARREL_ITEM_PERCENT = 15;
 pub const CHEST_GOLD = Gold{ .lo = 18, .hi = 36 };
 pub const FOE_GOLD = Gold{ .lo = 1, .hi = 6 };
 pub const Affix = struct {
@@ -365,14 +366,14 @@ pub const Spec = struct {
 };
 const SPECS = std.EnumArray(Kind, Spec).init(.{
     .sword = .{ .name = "Short sword", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 3, .hi = 4 }, .style = .light },
-    .axe = .{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 3, .hi = 6 }, .two_handed = true, .innate = .{ .bleed = .{ .chance = 30, .damage = 2 } } },
+    .axe = .{ .name = "Great axe", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 9 }, .two_handed = true, .innate = .{ .bleed = .{ .chance = 30, .damage = 2 } } },
     .bow = .{ .name = "Short bow", .slots = &.{.right_hand}, .needs = .{ .dexterity = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .style = .light, .attack = .ranged, .two_handed = true },
     .staff = .{ .name = "Oak staff", .slots = &.{.right_hand}, .needs = .{ .intelligence = 16 }, .two_handed = true, .caster = true, .innate = Innate.stat(.spell_damage, 30) },
-    .longsword = .{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 3, .hi = 5 } },
-    .mace = .{ .name = "Mace", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 2, .hi = 4 }, .innate = .{ .stun = 15 } },
-    .greatsword = .{ .name = "Greatsword", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 8 }, .two_handed = true },
-    .crossbow = .{ .name = "Crossbow", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 2, .hi = 5 }, .attack = .ranged, .two_handed = true, .innate = .{ .penetration = 20 } },
-    .greatclub = .{ .name = "Greatclub", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 3, .hi = 6 }, .two_handed = true, .innate = .{ .stun = 25 } },
+    .longsword = .{ .name = "Longsword", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 4, .hi = 7 } },
+    .mace = .{ .name = "Mace", .slots = &.{.right_hand}, .needs = .{ .strength = 10 }, .damage = .{ .lo = 3, .hi = 6 }, .innate = .{ .stun = 15 } },
+    .greatsword = .{ .name = "Greatsword", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 7, .hi = 12 }, .two_handed = true },
+    .crossbow = .{ .name = "Crossbow", .slots = &.{.right_hand}, .needs = .{ .strength = 12 }, .damage = .{ .lo = 3, .hi = 7 }, .attack = .ranged, .two_handed = true, .innate = .{ .penetration = 20 } },
+    .greatclub = .{ .name = "Greatclub", .slots = &.{.right_hand}, .needs = .{ .strength = 20 }, .damage = .{ .lo = 5, .hi = 9 }, .two_handed = true, .innate = .{ .stun = 25 } },
     .sling = .{ .name = "Sling", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .attack = .ranged },
     .dagger = .{ .name = "Dagger", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 1, .hi = 4 }, .style = .light, .innate = .{ .weapon_crit = 15 } },
     .handaxe = .{ .name = "Handaxe", .slots = &.{.right_hand}, .needs = .{ .dexterity = 10 }, .damage = .{ .lo = 2, .hi = 3 }, .style = .light, .innate = .{ .bleed = .{ .chance = 25 } } },
@@ -490,18 +491,32 @@ pub const Item = struct {
     }
 };
 
+/// A white item, no modifiers rolled.
+pub fn unrolled(rng: *mathx.Rng) Item {
+    return .{ .kind = rng.pick(Kind, &LOOT) };
+}
+
 pub fn roll(rng: *mathx.Rng, item_rarity: i32) Item {
-    var out = Item{ .kind = rng.pick(Kind, &LOOT) };
+    var out = unrolled(rng);
     const quality = rng.below(mathx.PERCENT);
     if (quality >= qualityChance(MAGIC_PERCENT + RARE_PERCENT, item_rarity)) return out;
-    const rare = quality < qualityChance(RARE_PERCENT, item_rarity);
+    affix(&out, rng, quality < qualityChance(RARE_PERCENT, item_rarity));
+    return out;
+}
+
+pub fn rollRare(rng: *mathx.Rng) Item {
+    var out = unrolled(rng);
+    affix(&out, rng, true);
+    return out;
+}
+
+fn affix(out: *Item, rng: *mathx.Rng, rare: bool) void {
     if (rare) out.rare_name = RareName.roll(rng);
     const count = if (rare) rng.range(3, AFFIXES_MAX) else rng.range(1, 2);
     for (0..@intCast(count)) |i| {
-        const a = rng.pickWhere(AffixRoll, &AFFIXES, out, Item.allowsRoll).?;
+        const a = rng.pickWhere(AffixRoll, &AFFIXES, out.*, Item.allowsRoll).?;
         out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)), .element = if (a.kind == .resistance) rng.pick(damage.Element, std.enums.values(damage.Element)) else .fire };
     }
-    return out;
 }
 
 fn qualityChance(base: u32, item_rarity: i32) u32 {

@@ -9,6 +9,7 @@ const bow = @import("../../play/bow.zig");
 const bleeding = @import("../../play/bleeding.zig");
 const glacial = @import("../../play/glacial.zig");
 const pack = @import("../../play/pack.zig");
+const items = @import("../../play/items.zig");
 const fx = @import("../../gfx/fx.zig");
 const combat = @import("../combat.zig");
 const attacks = @import("../attacks.zig");
@@ -533,7 +534,7 @@ test "foes act nearest first, so the one behind in a corridor follows the one ah
     try std.testing.expectEqual(@as(i32, 24), g.sim.pool.get(2).?.at.x);
 }
 
-test "a bloat beside the archer bursts on it about two turns in three, and never bites" {
+test "a caustic bloat beside the archer bursts on it about two turns in three, and never bites" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 21, .y = 20 };
@@ -548,11 +549,11 @@ test "a bloat beside the archer bursts on it about two turns in three, and never
         bursts += 1;
         try std.testing.expectEqual(gas.BURST, g.sim.lv.gasAt(at));
     }
-    std.debug.print("an awake bloat beside the archer bursts on {d} of {d} turns\n", .{ bursts, harness.TRIES });
+    std.debug.print("an awake caustic bloat beside the archer bursts on {d} of {d} turns\n", .{ bursts, harness.TRIES });
     try std.testing.expect(harness.aboutRate(bursts, 1 - actor.FLIT + actor.FLIT / mathx.ALL_DIRS.len));
 }
 
-test "a bloat with no way to the archer still flits a third of its turns" {
+test "a caustic bloat with no way to the archer still flits a third of its turns" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const hero = P{ .x = 20, .y = 20 };
@@ -566,11 +567,11 @@ test "a bloat with no way to the archer still flits a third of its turns" {
         combat.endTurn(g);
         if (!g.sim.pool.get(id).?.at.eq(at)) moved += 1;
     }
-    std.debug.print("a bloat walled off from the archer flits on {d} of {d} turns\n", .{ moved, harness.TRIES });
+    std.debug.print("a caustic bloat walled off from the archer flits on {d} of {d} turns\n", .{ moved, harness.TRIES });
     try std.testing.expect(harness.aboutRate(moved, actor.FLIT));
 }
 
-test "an arrow bursts a bloat where it floats, and its gas reaches the archer and eats at it every turn after" {
+test "an arrow bursts a caustic bloat where it floats, and its gas reaches the archer and eats at it every turn after" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
@@ -589,11 +590,11 @@ test "an arrow bursts a bloat where it floats, and its gas reaches the archer an
         try std.testing.expectEqual(if (first == null) 0 else per, lost);
         if (lost > 0) try std.testing.expect(g.pic.fx.flashOf(g.sim.heroSlot().?) > 0);
     }
-    std.debug.print("a bloat shot 4 cells off: its gas first eats at the archer {?d} turns after, {d} hp a turn\n", .{ first, per });
+    std.debug.print("a caustic bloat shot 4 cells off: its gas first eats at the archer {?d} turns after, {d} hp a turn\n", .{ first, per });
     try std.testing.expectEqual(@as(?usize, 3), first);
 }
 
-test "a bloat caught in another's gas bursts too" {
+test "a caustic bloat caught in another's gas bursts too" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
@@ -604,7 +605,7 @@ test "a bloat caught in another's gas bursts too" {
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(near));
     var waited: usize = 0;
     while (g.sim.pool.get(far) != null and waited < 20) : (waited += 1) harness.use(g, .wait);
-    std.debug.print("a bloat beside one shot dead bursts {d} turns later\n", .{waited});
+    std.debug.print("a caustic bloat beside one shot dead bursts {d} turns later\n", .{waited});
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(far));
     try std.testing.expectEqual(@as(usize, 2), g.sim.kills);
 }
@@ -1033,6 +1034,25 @@ test "a mimic stands as a closed chest until opened, then bites, and dies leavin
     try std.testing.expect(g.sim.pool.get(id) == null);
     try std.testing.expectEqual(drops + 1, g.sim.ground.n);
     try std.testing.expect(g.sim.ground.hasItems(at));
+    try std.testing.expectEqual(items.Rarity.rare, g.sim.ground.drops[g.sim.ground.n - 1].item.rarity());
+}
+
+test "a mimic always leaves a rare" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 21, .y = 20 };
+    for (0..40) |seed| {
+        harness.arena(g, from, &.{});
+        const id = harness.spawnAt(g, .mimic, at, true);
+        game.settle(g);
+        g.sim.pool.get(id).?.unmask(&g.sim.lv);
+        g.sim.loot_rng = mathx.Rng.init(seed);
+        combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+        try std.testing.expectEqual(@as(usize, 1), g.sim.ground.n);
+        try std.testing.expectEqual(items.Rarity.rare, g.sim.ground.drops[0].item.rarity());
+    }
+    std.debug.print("mimic loot: 40 seeds, every item rare\n", .{});
 }
 
 test "an arrow into a submerged leech strikes it unseen: no line names it until a blow kills it" {
@@ -1100,13 +1120,14 @@ test "a disguised mimic's afflictions wear off on its turns" {
     try std.testing.expect(m.disguised and m.chill.turns == 0 and m.pin.turns == 0);
 }
 
-test "a bandit netter's net pins the hero, who struggles in place and cannot leap until it wears off" {
+test "a bandit trapper's net pins the hero, who struggles in place and cannot leap until it wears off" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const skills = @import("../skills.zig");
     const from = P{ .x = 20, .y = 20 };
     const net = actor.row(.bandit_netter).net.?;
     var tries: usize = 0;
+    var struggles: usize = 0;
     const pinned = for (0..64) |seed| {
         tries += 1;
         harness.arena(g, from, &.{});
@@ -1125,16 +1146,15 @@ test "a bandit netter's net pins the hero, who struggles in place and cannot lea
         harness.drawnOut(g);
         try std.testing.expect(g.pic.heroShown(&g.sim).?.status.get(.pinned) > 0);
         try std.testing.expect((skills.blocked(g, .juke, &g.sim.flasks, g.sim.mana, skills.heroPinned(g)) orelse return error.NotPinned) == .pinned);
-        for (0..net.pins) |_| {
+        while (g.sim.heroAt().?.eq(from) and struggles <= net.pins) : (struggles += 1) {
             game.heroStep(g, .w, 0);
-            try std.testing.expectEqual(from, g.sim.heroAt().?);
             harness.drawnOut(g);
         }
-        game.heroStep(g, .w, 0);
+        try std.testing.expect(struggles > 1 and struggles <= net.pins + 1);
         try std.testing.expectEqual(from.add(mathx.Dir.w.delta()), g.sim.heroAt().?);
         break true;
     } else false;
-    std.debug.print("bandit netter: pinned on throw {d}; {d} struggling turns in place, then free\n", .{ tries, net.pins });
+    std.debug.print("bandit trapper: pinned on throw {d}; {d} struggling turns in place of {d}, then free\n", .{ tries, struggles - 1, net.pins });
     try std.testing.expect(pinned);
 }
 

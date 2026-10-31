@@ -174,7 +174,7 @@ test "a burst shut in a room lingers, and on open floor clears sooner and spread
     shut.addGas(room.centre(), BURST);
     const a = try lasts(&shut, .caustic, &rng);
     const b = try onOpenFloor(&rng);
-    std.debug.print("a bloat's burst: shut in a 9x6 room it lasts {d} turns over at most {d} cells, on open floor {d} turns over at most {d}\n", .{ a.turns, a.most, b.turns, b.most });
+    std.debug.print("a caustic bloat's burst: shut in a 9x6 room it lasts {d} turns over at most {d} cells, on open floor {d} turns over at most {d}\n", .{ a.turns, a.most, b.turns, b.most });
     try std.testing.expectEqual(@as(usize, @intCast(room.width() * room.height())), a.most);
     try std.testing.expect(a.turns > b.turns);
     try std.testing.expect(b.most < BURST / GASSED_UP * 2);

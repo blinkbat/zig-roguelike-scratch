@@ -10,16 +10,16 @@
 | Loot | Normal, magic or rare; blues roll 1–2 mods and affix/base names; yellow rares roll 3–4 distinct mods and independent two-part names |
 | Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery, penetration, thorns and Spoils (gold and item rarity); equipment restrictions live in `items.Mod.allows` |
 | Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
-| Gold | Ground gold without items is a coin drop, automatically collected when stepped onto, with no extra turn or modal. Gold with items shares their bag; chest gold stays in its chest. Select the gold row or use Take all in bags/chests. Gold needs no inventory space |
-| Item actions | Take item, Take gold, Take all, drop, equip and unequip cost one turn when successful; Take all collects gold, fills available inventory space and leaves excess items |
+| Gold | Ground gold without items is a coin drop, automatically collected when stepped onto, with no extra turn or modal. Gold with items shares their bag; chest gold stays in its chest. A bag's or chest's gold is no row: the loot shows it beside the position count and takes it, free, as it closes; a chest holding only gold is taken without opening loot. Gold needs no inventory space |
+| Item actions | Take item, Take all, drop, equip and unequip cost one turn when successful; Take all fills available inventory space and leaves excess items |
 | Interact | First bump or Interact opens a closed chest for one turn, revealing its contents without a modal. Stepping onto a bag/open chest opens loot for the movement turn; bags remain walkable. Interact browses one bag/open chest for free, or offers a choice among multiple nearby containers/doors. Canceling is free |
 | Loot artwork | One `item-bag.png` per ground cell containing items, including any gold in that cell. Gold alone uses `small-coins.png` or `large-coins.png`. Chests use `chest-item-bag.png` while containing items or gold, then `chest-open.png` when empty. No coin lights |
-| Foe loot | Gold is common; item drops are 75% plain white, 20% magic blue and 5% rare yellow before rarity bonuses. Whites have no rolled mods, blues 1–2, rares 3–4 |
+| Foe loot | Gold is common; item drops are 75% plain white, 20% magic blue and 5% rare yellow before rarity bonuses. Whites have no rolled mods, blues 1–2, rares 3–4. A mimic always leaves a rare with its chest gold; a barrel sometimes leaves a white beside its gold |
 | XP | Foe kills grant XP; each level grants one passive and one active point |
 | Passive tree | 81-node radial graph lifted from Soulslike; three origins, six branches and six bridges |
 | Active trees | Per class, prerequisites, three ranks; Shoot is a fixed basic attack and cannot be upgraded; only learned skills may be bound |
 | Initial skills | Archer: Shoot/Juke; Wizard: Spark/Blink; Knight: Charge/Cleave; all keep bump melee |
-| Charge | Can target a clear empty line for retreat |
+| Charge | Reaches 1–3 tiles, an adjacent foe struck in place; can target a clear empty line for retreat |
 | Respec | Deferred |
 
 Balance values live in `src/play/items.zig` (including loot rates and foe/barrel/chest gold), `src/play/progress.zig`, `src/play/passives.zig`, `src/play/attrs.zig` (life, mana, crit, dodge, armour cap), `src/play/hero.zig` (class bases, mana recovery), `src/play/flask.zig` and each skill module. These are small
@@ -147,7 +147,7 @@ foe and always opens a 2-per-turn bleed, subject to bleed resistance.
 
 War Cry gives each visible foe within 3 tiles a rank-based chance to become Frightened, a status
 with its own resistance meter. Frightened foes run from the hero and attack only when cornered.
-Innate fright resistance: slimes and bloats 100%, beefy pibs 50%, bandit crossbowmen 25%, others 0%.
+Innate fright resistance: slimes, caustic bloats and pyre bloats 100%, beefy pibs 50%, bandit crossbowmen 25%, others 0%.
 A pib's witness fright applies the same status without a roll.
 
 Steady Aim prepares the next arrow with damage and critical bonuses; movement cancels it.

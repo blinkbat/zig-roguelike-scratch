@@ -52,9 +52,12 @@ fn rollGold(sim: *Simulation, at: P, range: items.Gold) i32 {
     return gold;
 }
 
-pub fn barrelGold(sim: *Simulation, at: P) ?i32 {
+/// A broken barrel's gold, and now and then a white item; the gold.
+pub fn barrelLoot(sim: *Simulation, at: P) ?i32 {
     if (!sim.lv.breakBarrel(at)) return null;
-    return rollGold(sim, at, items.BARREL_GOLD);
+    const gold = rollGold(sim, at, items.BARREL_GOLD);
+    if (sim.loot_rng.percent(items.BARREL_ITEM_PERCENT) and sim.ground.room(1)) dropItem(sim, .{ .item = items.unrolled(&sim.loot_rng), .at = at });
+    return gold;
 }
 
 pub fn openChest(sim: *Simulation, at: P) Chest {
@@ -128,10 +131,14 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .caught = caught, .unmasked = unmasked };
 }
 
-/// A mimic leaves its chest's loot; nothing is left where no one could walk to fetch it.
+/// A mimic leaves a chest's loot with a rare item; nothing is left where no one could walk to fetch it.
 fn lootOf(sim: *Simulation, fallen: actor.Actor) items.Loot {
     if (!sim.lv.walkable(fallen.at)) return .{};
-    if (actor.row(fallen.kind).disguised) return chestLoot(sim);
+    if (actor.row(fallen.kind).disguised) {
+        var loot = chestLoot(sim);
+        loot.item = items.rollRare(&sim.loot_rng);
+        return loot;
+    }
     return items.foeLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
 }
 

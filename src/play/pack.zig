@@ -409,7 +409,7 @@ test "a spec of its own makeups places only them, its packs kept apart and the p
     _ = pool.spawn(&lv, actor.Actor.of(.archer, .{ .x = 0, .y = 0 }));
     place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &crowd);
     const slimes = pool.tally(.slime).total;
-    std.debug.print("pairs of bloats 10 apart: the closest two of different packs {d} cells; 32 packs of 5 rats: {d} bodies; of 5 slimes, by an archer: {d} slimes\n", .{ closest, rats, slimes });
+    std.debug.print("pairs of caustic bloats 10 apart: the closest two of different packs {d} cells; 32 packs of 5 rats: {d} bodies; of 5 slimes, by an archer: {d} slimes\n", .{ closest, rats, slimes });
     try std.testing.expect(closest >= spec.apart);
     try std.testing.expectEqual(actor.MAX, rats);
     try std.testing.expectEqual(actor.MAX, 1 + slimes * actor.most(.slime) + 3);

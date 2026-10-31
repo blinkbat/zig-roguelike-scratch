@@ -587,14 +587,14 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .slime = @embedFile("slime.png"),
     .slime_half = @embedFile("slime-half.png"),
     .slime_quarter = @embedFile("slime-quarter.png"),
-    .bloat = @embedFile("bloat.png"),
+    .bloat = @embedFile("caustic-bloat.png"),
     .pib = @embedFile("pib.png"),
     .beefy_pib = @embedFile("beefy-pib.png"),
     .bandit_crossbowman = @embedFile("bandit-crossbowman.png"),
-    .bandit_netter = null,
+    .bandit_netter = @embedFile("bandit-trapper.png"),
     .bandit_shieldbearer = null,
     .frost_wisp = null,
-    .pyre_bloat = null,
+    .pyre_bloat = @embedFile("pyre-bloat.png"),
     .pib_shaman = null,
     .bog_leech = null,
     .mimic = @embedFile("mimic-open.png"),
@@ -962,11 +962,11 @@ pub fn body(k: actor.Kind) Look {
         .knight => .{ .ch = '@', .fg = rgb(0xd6d9e0) },
         .rat => .{ .ch = 'r', .fg = rgb(0xb07a4e) },
         .slime, .slime_half, .slime_quarter => .{ .ch = 's', .fg = rgb(0x6fae5a) },
-        .bloat => .{ .ch = 'b', .fg = BLOAT },
+        .bloat => .{ .ch = 'b', .fg = CAUSTIC_BLOAT },
         .pib => .{ .ch = 'p', .fg = rgb(0xe89aa6) },
         .beefy_pib => .{ .ch = 'P', .fg = rgb(0xe89aa6) },
         .bandit_crossbowman => .{ .ch = 'c', .fg = rgb(0xb07a4e) },
-        .bandit_netter => .{ .ch = 'N', .fg = rgb(0xffeb3b) },
+        .bandit_netter => .{ .ch = 'T', .fg = rgb(0xffeb3b) },
         .bandit_shieldbearer => .{ .ch = 'S', .fg = rgb(0x4d7cff) },
         .frost_wisp => .{ .ch = 'W', .fg = rgb(0x4ff0ff) },
         .pyre_bloat => .{ .ch = 'B', .fg = rgb(0xff3b3b) },
@@ -982,11 +982,10 @@ pub const GLYPH_SHADOW_PX: i32 = 4;
 /// A glyph's or a line of text's drop shadow, at full ink.
 pub const DROP_SHADOW_A: u8 = 200;
 
-/// Brogue's `poisonGasColor`, the bloat's.
-pub const BLOAT = rgb(0xbf40d9);
-/// Its caustic gas, a greyer purple.
-pub const GAS = rgb(0x9a76aa);
-pub const HEALING_GAS = rgb(0xa6cff0);
+/// Brogue's `poisonGasColor`, the caustic bloat's.
+pub const CAUSTIC_BLOAT = rgb(0xbf40d9);
+pub const GAS = rgb(0xe0509a);
+pub const HEALING_GAS = rgb(0x2ed6c0);
 pub const STEAM = rgb(0xe6e8ea);
 
 pub fn gasInk(g: grid.Gas) rl.Color {
@@ -1000,8 +999,8 @@ pub fn gasInk(g: grid.Gas) rl.Color {
 pub const BLOOD = rl.Color{ .r = 112, .g = 22, .b = 16, .a = GORE_A };
 pub const OOZE = rl.Color{ .r = 70, .g = 120, .b = 72, .a = GORE_A };
 pub const SPLINTER = rl.Color{ .r = 120, .g = 82, .b = 46, .a = 230 };
-/// Brogue's purple blood: the bloat's, darker.
-pub const ICHOR = rl.Color{ .r = BLOAT.r / 2, .g = BLOAT.g / 2, .b = BLOAT.b / 2, .a = GORE_A };
+/// Brogue's purple blood: the caustic bloat's, darker.
+pub const ICHOR = rl.Color{ .r = CAUSTIC_BLOAT.r / 2, .g = CAUSTIC_BLOAT.g / 2, .b = CAUSTIC_BLOAT.b / 2, .a = GORE_A };
 const GORE_A: u8 = 220;
 pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
 pub const JUKE_TRAIL = rl.Color{ .r = 196, .g = 212, .b = 218, .a = 140 };

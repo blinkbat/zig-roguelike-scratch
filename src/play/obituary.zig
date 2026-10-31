@@ -396,9 +396,9 @@ fn cause(ctx: *const Context, tagged: Tags, w: Writer) !void {
             try w.print(" was {s} by {s} {s}{s} {s}{s}.", .{ done(k) orelse "killed", article(if (mere.len > 0) mere else foe, false), mere, foe, ctx.place, dark });
         },
         .gas => if (tagged.contains(.own_goal))
-            try w.print("{} burst a bloat {s}{s}, then died in its gas.", .{ who, ctx.place, dark })
+            try w.print("{} burst a {s} {s}{s}, then died in its gas.", .{ who, actor.row(.bloat).name, ctx.place, dark })
         else if (tagged.contains(.burst_beside))
-            try w.print("{} died in gas from a bloat that burst nearby {s}{s}.", .{ who, ctx.place, dark })
+            try w.print("{} died in gas from a {s} that burst nearby {s}{s}.", .{ who, actor.row(.bloat).name, ctx.place, dark })
         else
             try w.print("{} choked on {s} {s}{s}.", .{ who, sourceName(.gas), ctx.place, dark }),
         .steam => try w.print("{} was scalded to death by {s} {s}{s}.", .{ who, sourceName(.steam), ctx.place, dark }),
@@ -598,7 +598,7 @@ test "an arrow answered by a bolt past the last of life names the hero's last sh
     try std.testing.expect(ctx.unlucky());
 }
 
-test "gas from a bloat the hero burst is the hero's own doing, and the foe that wore the hero down is named" {
+test "gas from a caustic bloat the hero burst is the hero's own doing, and the foe that wore the hero down is named" {
     const choke = chronicle.Event{ .hurt = .{ .by = .gas, .dmg = 2, .before = 2 } };
     const turns = [_]Turn{
         turnOf(3, 10, &.{.{ .dealt = .{ .to = .bloat, .killed = true } }}),
@@ -610,7 +610,7 @@ test "gas from a bloat the hero burst is the hero's own doing, and the foe that 
     ctx.milestone = .{ .turn = 3, .what = .{ .cleared = .bloat } };
     const r = write(&ctx);
     std.debug.print("own goal: {s}\n", .{r.text()});
-    try std.testing.expectEqualStrings("Arwen the archer burst a bloat in the Warrens, then died in its gas. The pib had already wounded Arwen. Arwen had recently killed the last bloat.", r.text());
+    try std.testing.expectEqualStrings("Arwen the archer burst a caustic bloat in the Warrens, then died in its gas. The pib had already wounded Arwen. Arwen had recently killed the last caustic bloat.", r.text());
 }
 
 test "the hero's own last act in the turn it died is its last gasp" {
@@ -633,7 +633,7 @@ test "the hero's own last act in the turn it died is its last gasp" {
     try std.testing.expectEqualStrings("Arwen the Bold was bitten to death by a rat in the Warrens. Arwen the Bold's last blow killed a rat.", felled.text());
 }
 
-test "reactions preserve the chosen last deed and still attribute a burst bloat" {
+test "reactions preserve the chosen last deed and still attribute a burst caustic bloat" {
     for ([_]bool{ false, true }) |killed| {
         const turns = [_]Turn{turnOf(8, 4, &.{
             .{ .used = .shoot },
@@ -652,9 +652,9 @@ test "reactions preserve the chosen last deed and still attribute a burst bloat"
     })};
     const ctx = testContext(&turns);
     const report = write(&ctx);
-    try std.testing.expect(std.mem.indexOf(u8, report.text(), "burst a bloat") != null);
+    try std.testing.expect(std.mem.indexOf(u8, report.text(), "burst a caustic bloat") != null);
     try std.testing.expect(std.mem.indexOf(u8, report.text(), "Arwen waited.") != null);
-    std.debug.print("reaction reports: nonlethal and lethal reactions preserve the shot; reactive bloat kill retains gas attribution and Wait\n", .{});
+    std.debug.print("reaction reports: nonlethal and lethal reactions preserve the shot; reactive caustic bloat kill retains gas attribution and Wait\n", .{});
 }
 
 test "bites a shield took whole wore nobody down, and a shield cast in time was not starved" {
@@ -681,7 +681,7 @@ test "a report too long for its room drops whole sentences" {
     try std.testing.expect(std.mem.indexOf(u8, r.text(), "last arrow") == null);
 }
 
-test "gas from a bloat that burst beside the hero after one the hero shot is the later bloat's" {
+test "gas from a caustic bloat that burst beside the hero after one the hero shot is the later caustic bloat's" {
     const turns = [_]Turn{
         turnOf(3, 10, &.{.{ .dealt = .{ .to = .bloat, .killed = true } }}),
         turnOf(4, 10, &.{.burst}),

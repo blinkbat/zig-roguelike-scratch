@@ -435,7 +435,13 @@ pub const Book = struct {
         const note_y = self.noteY(view);
         if (self.message.n > 0) face.draw(self.message.text(), layout.LIST_X, note_y, font.SMALL, look.TEXT);
         const position = self.positionOf(view);
-        face.draw(position.text(), layout.DIRECT_W - layout.LIST_X - face.width(position.text(), font.SMALL), note_y, font.SMALL, look.DIM);
+        const position_x = layout.DIRECT_W - layout.LIST_X - face.width(position.text(), font.SMALL);
+        face.draw(position.text(), position_x, note_y, font.SMALL, look.DIM);
+        if (self.page == .loot and view.loot_gold > 0) {
+            var coins: menu.Note(32) = .{};
+            coins.say("{d} gold", .{view.loot_gold});
+            face.draw(coins.text(), position_x - layout.TEXT_X * 2 - face.width(coins.text(), font.SMALL), note_y, font.SMALL, look.UI_GOLD);
+        }
     }
 
     fn positionOf(self: *const Book, view: View) menu.Note(50) {
@@ -732,16 +738,10 @@ test "loot exposes single pickup and take all through controller and mouse contr
     std.debug.print("loot panel: fixed {d}x{d}, list {d} rows left, card {d}px right, Book {d}x{d}\n", .{ panel.x, panel.y, layout.LOOT_ROWS, card, layout.SIZE.x, layout.SIZE.y });
     _ = book.step(&.{ .pressed = .initOne(menu.PAGE_NEXT) }, screen, view);
     try std.testing.expectEqual(Page.loot, book.page);
-    const at = P{ .x = 20, .y = 20 };
-    view.nearby = &.{.{ .gold = .{ .at = at, .amount = 37 } }};
-    try std.testing.expectEqual(panel, book.size(view));
-    try std.testing.expectEqual(at, book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).?.take_gold);
-    var label: [80]u8 = undefined;
-    try std.testing.expectEqualStrings("37 gold", view.nearby[0].label(&label));
-    const gold_box = book.actionBox(menu.CHANGE, view);
-    const gold_p = book.surface(screen, view).screenOf(.{ .x = gold_box.x + 20, .y = gold_box.y + 20 });
-    try std.testing.expect(book.step(&.{ .click = true, .pointer = gold_p }, screen, view).? == .take_all);
-    std.debug.print("loot controls: item and gold pickup, take-all press and scaled mouse hit on both row types, no character tabs\n", .{});
+    view.loot_gold = 37;
+    try std.testing.expectEqual(@as(usize, 1), book.count(view));
+    try std.testing.expectEqual(@as(usize, 7), book.step(&.{ .pressed = .initOne(menu.CONFIRM) }, screen, view).?.pickup);
+    std.debug.print("loot controls: item pickup, take-all press and scaled mouse hit; gold shown beside, never a row; no character tabs\n", .{});
 }
 
 test "the inventory list scrolls back when the bag shrinks" {

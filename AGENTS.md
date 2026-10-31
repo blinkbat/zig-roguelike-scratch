@@ -1,7 +1,7 @@
 # AGENTS.md — Cistern
 
-Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, bloats, pyre bloats, frost wisps, pibs, beefy pibs, pib shamans,
-bandit crossbowmen, netters and shieldbearers, bog leeches and mimics; breakable barrels, treasure chests, equipment, XP and class progression.
+Working title: **Cistern**. Grid roguelike in **Zig 0.14.1 + raylib**: archer, wizard and knight; rats, slimes, caustic bloats, pyre bloats, frost wisps, pibs, beefy pibs, pib shamans,
+bandit crossbowmen, trappers and shieldbearers, bog leeches and mimics; breakable barrels, treasure chests, equipment, XP and class progression.
 Art starts as glyphs, replaced by the owner's PNGs; a body without art draws its letter cell-high and bright over a drop shadow (`look.body`).
 Source paths below are relative to `src/`; scripts, docs and assets are relative to the repository root.
 
@@ -162,8 +162,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Bumping or interacting with a closed chest opens it for one turn, revealing its loot without a modal.
   Stepping onto a loose bag or stocked open chest opens its loot modal and spends the movement turn; bags remain walkable.
   Interact opens a sole bag/open chest's loot modal directly, or lists nearby containers/doors first when there is a choice (a door always lists).
-  Ground gold without items is a coin drop, automatically collected when the hero steps onto it without an extra turn or modal. Gold with items shares one item bag; loot shows only the selected cell, with Take item, Take gold and Take all. Pickups in one loot visit are one action: `Game.looted` defers the turn to the loot's close (`character.settleLoot`);
-  Take all collects gold and as many items as fit, leaving the rest. Gold needs no inventory space. Empty loot closes. A press while busy waits for `quiet` (`Queued.interact`)
+  Ground gold without items is a coin drop, automatically collected when the hero steps onto it without an extra turn or modal. Gold with items shares one item bag; loot shows only the selected cell, with Take item and Take all. Its gold is no row: shown beside the position count and taken free as the loot closes (`Game.loot_gold`, `character.endLoot`); a chest holding only gold is taken without opening loot. Pickups in one loot visit are one action: `Game.looted` defers the turn to the loot's close (`character.settleLoot`);
+  Take all collects as many items as fit, leaving the rest. Gold needs no inventory space. Empty loot closes. A press while busy waits for `quiet` (`Queued.interact`)
   instead of queuing its button's skill. Item commands wait out door travel. Movement and browsing never collect gold from bags or chests.
   Foes roll gold more often than items; plain white items have no rolled modifiers and are more common than magic blues.
   `items.foeLoot`/`items.roll` own the rates and rolls; bags and gold appear when the foe's death is presented.
@@ -241,7 +241,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   join: 47 shapes. `procgen.reshape`/`Node.stamp` produce them; revelation never changes them.
   Brick walls join walls, forests join shrubs. `Level.wallShape` is brick-only; `tileShape` handles both.
   Missing forest masks are restored on save resume. Torch/barrel placement must preserve routes;
-  barrels stop movement/arrows and break for gold in one hit, with no HP.
+  barrels stop movement/arrows and break for gold in one hit, with no HP, now and then leaving a white item (`items.BARREL_ITEM_PERCENT`), hidden until the break is drawn.
   Chests spawn closed; the first bump or Interact reveals their items and gold.
   Open chests remain walkable, showing `chest-item-bag.png` while items or gold remain and `chest-open.png` once empty;
   ground cells with items show one `item-bag.png`, including any gold in that cell; gold alone uses `small-coins.png` or `large-coins.png`, with no coin lights. Seen coins, bags, closed or stocked chests and barrels
@@ -303,20 +303,21 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   retry on a later blow. Pack quotas/makeups (`play/pack.zig`) and bespoke placement must reserve capacity
   for all eventual halves via `actor.roomFor`. `Kind.family` keeps their counts together.
 - `Row.movement` and `Row.foe_type` describe every kind and appear in the object viewer; heroes have no
-  foe type. Bloats fly; ground-only water footsteps must not be added to flying bodies.
+  foe type. Caustic and pyre bloats fly; ground-only water footsteps must not be added to flying bodies.
+  Caustic bloat uses the stable `actor.Kind.bloat` save/map identity; displayed names come from `actor.row`.
 - Bandit crossbowmen spawn with rats, retreat when crowded and use `bow.aimable`/`bow.fly` plus the
   player's base arrow damage/range. `Presentation.foe_shots` draws each arrow; its harm lands on arrival.
 - `actor.dwells` is each kind's ground for packs, bespoke spawns and the editor (`Node.foeFits`); a pack whose lead has none
   is skipped. Bog leeches swim only in water (`actor.swim`), stay `submerged` beyond the hero's reach and are struck there.
-  Mimics stand as a real chest tile (`under` keeps the ground) until opened (`Actor.unmask`), then drop chest loot.
+  Mimics stand as a real chest tile (`under` keeps the ground) until opened (`Actor.unmask`), then drop chest loot with a rare item (`items.rollRare`).
   That chest draws `mimic-closed.png` (`Presentation.mimicAt`); the body is `mimic-open.png`.
   `Actor.veiled`/`seenIn` hide both from drawing, aiming (`bow.previewAmong`), inspection and targeting.
-  Netters (`Row.net`) pin the hero: steps struggle in place, leaps and rushes are blocked. Shieldbearers knock the hero back
+  Bandit trappers (`Row.net`, stable `bandit_netter` save/map identity, `assets/bandit-trapper.png`) pin the hero: steps struggle in place, each with `pinning.SLIP`% to make that turn the pin's last; leaps and rushes are blocked. Shieldbearers knock the hero back
   (`Presentation.knocked_from`/`Owed.knock` draw it as the blow lands). Frost wisps' touch chills the hero; every third chilled
   action costs its next turn. Pyre bloats' burst (`rewards.pyre`) burns the bodies beside it. Pib shamans (`Row.mends`) heal
   the most hurt pib in reach or wake sleepers, keeping `Row.keeps` cells off the hero.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
-  each followed by gas, steam, healing gas, burn and bleed. Bloats burst however killed; foes do not enter gas, steam or Fire Wall flames from outside them (`actor.shuns`).
+  each followed by gas, steam, healing gas, burn and bleed. Caustic and pyre bloats burst however killed; foes do not enter gas, steam or Fire Wall flames from outside them (`actor.shuns`).
   `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`), healing (`Level.healing`)
   and steam (`Level.steam`) are separate volumes (`grid.Gas`), spread alike; healing gas mends every hurt body a fifteenth of its life a turn, as caustic gas eats at it.
   Fire landing on deep water or shallows boils it into steam (`gas.boil`, `rewards.boilRound`): fireball and Combustion blasts over `glacial.wetIn`,

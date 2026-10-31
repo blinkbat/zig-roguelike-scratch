@@ -43,9 +43,11 @@ documented scripts; it does not mean every resulting tile has been hand-painted 
 | `assets/flowers.png` | Owner-supplied 64x64 raster; editable source and individual authorship not verified | Scattered on separate grass tiles alongside brush by stable cell position; original pixels unchanged | Supplied raster preserved at native scale |
 | `assets/beefy-pib.png` | Owner-supplied 64x64 raster, placed in `assets/` by the owner; editable source not recorded | Registered as the beefy pib's body; original pixels unchanged | Supplied raster preserved |
 | `assets/bandit-crossbowman.png` | Owner-supplied 64x64 raster in `assets/`; editable source and individual authorship not verified | Registered as the bandit crossbowman's body; original pixels unchanged | Supplied raster preserved at native scale |
+| `assets/bandit-trapper.png` | Owner-supplied 64x64 raster in `assets/`; editable source and individual authorship not verified | Registered as the bandit trapper's body; original pixels unchanged | Supplied raster preserved at native scale |
 | `assets/small-coins.png`, `assets/large-coins.png` | Owner-supplied 64x64 rasters in `assets/`; editable sources not recorded | Registered for ground gold without items; mixed drops share an item bag and chest gold stays in its chest; no coin lights | Supplied rasters preserved at native scale |
 | `assets/item-bag.png`, `assets/chest-item-bag.png` | Owner-supplied 64x64 rasters in `assets/`; editable sources and individual authorship not verified | Registered for ground item piles and nonempty open chests; original pixels unchanged | Supplied rasters preserved at native scale |
 | `assets/mimic-closed.png`, `assets/mimic-open.png` | Owner-supplied 64x64 rasters in `assets/`; editable sources not recorded | Closed: a mimic's chest while disguised and until its death in it is drawn. Open: the mimic's body; original pixels unchanged | Supplied rasters preserved at native scale |
+| `assets/pyre-bloat.png` | Owner-supplied 64x64 raster in `assets/`; editable source not recorded | Registered as the pyre bloat's body; original pixels unchanged | Supplied raster preserved at native scale |
 | `assets/grass.png` | Existing grass raster; original source not recorded here | Documented 15% RGB reduction in `tone_forest.lua` | Preserve owner backup; verify original attribution |
 | `assets/grass2.png` | Owner-supplied 64x64 raster; editable source and individual authorship not verified | Stable alternate for fully filled grass pieces; existing border art retained and original pixels unchanged | Supplied raster preserved at native scale |
 | `assets/source/hud-elements.aseprite` | Paint on the Desktop working copy must be inspected before export | Initial template, guides, reference assembly and named slices from `create_template.py` | Original paint layer versus generated guides |
@@ -64,7 +66,7 @@ to repaint or replace them.
 | Group | Runtime files | Status |
 |---|---|---|
 | Heroes | `archer.png`, `wizard.png` | Verify source/author |
-| Foes | `rat.png`, `bloat.png`, `pib.png`, `slime.png`, `slime-half.png`, `slime-quarter.png` | Verify originals versus derived size variants |
+| Foes | `rat.png`, `caustic-bloat.png` (renamed from `bloat.png`, identical image bytes), `pib.png`, `slime.png`, `slime-half.png`, `slime-quarter.png` | Verify originals versus derived size variants |
 | Props | `barrel.png`, `chest.png`, `chest-open.png`, `boulder.png` | Verify source/author |
 | Ground/decor | `floor.png`, `reeds.png`, `shrub.png`, `small-shrooms.png`, `tall-grass.png`, `tall-shroom.png`, `tiny-shrub.png` | Verify source/author |
 

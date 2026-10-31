@@ -247,17 +247,17 @@ pub fn row(k: Kind) Row {
         .slime => .{ .name = "slime", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half, .fright_resist = damage.RESIST_MAX },
         .slime_half => smaller(.slime, "half slime", .slime_quarter),
         .slime_quarter => smaller(.slime_half, "quarter slime", null),
-        .bloat => .{ .name = "bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .{ .burst = .gas }, .flits = true, .fright_resist = damage.RESIST_MAX },
+        .bloat => .{ .name = "caustic bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .{ .burst = .gas }, .flits = true, .fright_resist = damage.RESIST_MAX },
         .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .slain = "stabbed to death", .bleeds = 30 } }, .flees = true },
         .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .slain = "beaten to death", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .fright_resist = 50, .armour = 20 },
         .bandit_crossbowman => .{ .name = "bandit crossbowman", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15, .fright_resist = 25 },
-        .bandit_netter => .{ .name = "bandit netter", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "clubs", .slain = "clubbed down" } }, .keeps = 2, .net = NET, .armour = 10, .fright_resist = 25 },
+        .bandit_netter => .{ .name = "bandit trapper", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "clubs", .slain = "clubbed down" } }, .keeps = 2, .net = NET, .armour = 10, .fright_resist = 25 },
         .bandit_shieldbearer => .{ .name = "bandit shieldbearer", .movement = .ground, .foe_type = .humanoid, .hp = 24, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bashes", .slain = "battered down", .knocks = true } }, .armour = 40, .stun_resist = 75, .fright_resist = 50 },
         .frost_wisp => .{ .name = "frost wisp", .movement = .flying, .foe_type = .aberration, .hp = 8, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "touches", .slain = "frozen solid", .element = .cold, .chills = 100 } }, .flits = true, .resists = ICY, .fright_resist = damage.RESIST_MAX },
         .pyre_bloat => .{ .name = "pyre bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .{ .burst = .fire }, .flits = true, .resists = FIERY, .fright_resist = damage.RESIST_MAX },
         .pib_shaman => .{ .name = "pib shaman", .movement = .ground, .foe_type = .beast, .hp = 12, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "pokes", .slain = "poked to death" } }, .keeps = 3, .mends = MEND },
         .bog_leech => .{ .name = "bog leech", .movement = .swimming, .foe_type = .beast, .hp = 12, .sight = 5, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bites", .slain = "drained dry", .bleeds = 50 } }, .lurks = true, .fright_resist = damage.RESIST_MAX },
-        .mimic => .{ .name = "mimic", .movement = .ground, .foe_type = .aberration, .hp = 24, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 10, .fright_resist = damage.RESIST_MAX },
+        .mimic => .{ .name = "mimic", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 4, .hi = 8 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 20, .fright_resist = damage.RESIST_MAX },
     };
 }
 

@@ -32,7 +32,7 @@ pub const Event = union(enum) {
     dealt: Dealt,
     missed: struct { origin: AttackOrigin = .chosen },
     used: skillbar.Act,
-    /// A bloat burst beside the hero.
+    /// A caustic bloat burst beside the hero.
     burst,
 };
 

@@ -335,7 +335,7 @@ test "an arena restart restores its selected opponent and hero" {
     try std.testing.expectEqual(actor.row(HERO).hp, g.sim.heroActor().?.hp);
     try std.testing.expectEqual(g.sim.manaMax(), g.sim.mana);
     try std.testing.expectEqual(spar.HERO, g.sim.heroActor().?.at);
-    std.debug.print("arena retry: bloat and hero restored at their starting positions with full resources\n", .{});
+    std.debug.print("arena retry: caustic bloat and hero restored at their starting positions with full resources\n", .{});
 }
 
 test "Debug graphics toggles are independent and spend no simulation" {

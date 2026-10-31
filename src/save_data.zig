@@ -79,6 +79,7 @@ pub const UNSAVED = .{
     .game = .{
         "character",
         "looted",
+        "loot_gold",
         "nearby",
         "pause_page",
         "debug",

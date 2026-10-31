@@ -171,6 +171,8 @@ pub const Game = struct {
     character: book.Book = .{},
     /// Something was taken from the open loot menu; closing it spends the one turn.
     looted: bool = false,
+    /// The open loot's gold, taken as it closes.
+    loot_gold: ?P = null,
     /// What Character's Nearby page lists, filled afresh each step and draw; too big for the stack each frame.
     nearby: NearbyBuf = undefined,
     back: Back = .title,
@@ -263,7 +265,7 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
 
 fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
     toDefaults(&g.sim, &.{ "visited", "node", "outdoors", "pool", "hero", "clock" });
-    toDefaults(g, &.{ "character", "looted" });
+    toDefaults(g, &.{ "character", "looted", "loot_gold" });
     g.sim.map = w;
     g.sim.seed = seed;
     g.sim.rng = mathx.Rng.init(seed ^ PLAY_SALT);
@@ -444,7 +446,7 @@ pub fn resumeRun(g: *Game) void {
     gen.restoreShapes(&g.sim.lv);
     var visits = g.sim.visited.iterator(.{});
     while (visits.next()) |n| gen.restoreShapes(&g.sim.visits[n].lv);
-    toDefaults(g, &.{ "mode", "exit", "character", "looted", "epitaph" });
+    toDefaults(g, &.{ "mode", "exit", "character", "looted", "loot_gold", "epitaph" });
     toDefaults(&g.sim, &.{ "unsaved", "chronicle" });
     g.sim.unsaved = g.sim.growth.refundBasicRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
@@ -552,7 +554,11 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
 
 /// A pinned hero's move, spent in place.
 pub fn struggle(g: *Game) void {
-    g.sim.log.say("{s} " ++ pinning.TAKES ++ " and struggles.", .{g.sim.name.text()});
+    const h = g.sim.heroActor() orelse return;
+    if (h.pin.struggle(&g.sim.rng))
+        g.sim.log.say("{s} struggles free.", .{g.sim.name.text()})
+    else
+        g.sim.log.say("{s} " ++ pinning.TAKES ++ " and struggles.", .{g.sim.name.text()});
     g.mouse.stop();
 }
 

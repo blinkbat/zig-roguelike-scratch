@@ -737,7 +737,7 @@ test "a foe the gas kills after it steps keeps its place in the turn, and its de
     try std.testing.expectApproxEqAbs(game.STAGGER_S + game.GLIDE_S, t, harness.TEST_TOL);
 }
 
-test "an arrow that bursts a bloat eats at a sleeping foe with its gas as it lands, not before" {
+test "an arrow that bursts a caustic bloat eats at a sleeping foe with its gas as it lands, not before" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
@@ -749,11 +749,11 @@ test "an arrow that bursts a bloat eats at a sleeping foe with its gas as it lan
     try std.testing.expect(g.sim.pool.get(rat).?.hurt());
     const lands = game.presentation.flown(6);
     const t = harness.framesUntil(g, actor.Pool.slot(rat), harness.flashing);
-    std.debug.print("a bloat shot 7 cells out: the arrow lands {d:.3} s in, and its gas stings the rat beside it {d:.3} s in\n", .{ lands, t });
+    std.debug.print("a caustic bloat shot 7 cells out: the arrow lands {d:.3} s in, and its gas stings the rat beside it {d:.3} s in\n", .{ lands, t });
     try std.testing.expectApproxEqAbs(lands, t, harness.TEST_TOL);
 }
 
-test "a bloat's cloud is drawn from when its burst lands" {
+test "a caustic bloat's cloud is drawn from when its burst lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
@@ -768,7 +768,7 @@ test "a bloat's cloud is drawn from when its burst lands" {
     harness.confirmUse(g, .shoot);
     try std.testing.expect(g.sim.lv.gasAt(Burst.at) > 0 and !Burst.clouded(g, 0));
     const t = harness.framesUntil(g, 0, Burst.clouded);
-    std.debug.print("a bloat shot 7 cells out: the arrow lands {d:.3} s in, its cloud first drawn {d:.3} s in\n", .{ game.presentation.flown(6), t });
+    std.debug.print("a caustic bloat shot 7 cells out: the arrow lands {d:.3} s in, its cloud first drawn {d:.3} s in\n", .{ game.presentation.flown(6), t });
     try std.testing.expectApproxEqAbs(game.presentation.flown(6), t, harness.TEST_TOL);
 }
 
@@ -1357,7 +1357,7 @@ test "an unkillable archer keeps 1 hp through gas and bites that would kill it" 
     try std.testing.expectEqual(@as(i32, 1), g.sim.heroActor().?.hp);
 }
 
-test "a bloat that bursts on the archer takes its place in the turn as a bite does, and its spray lands there" {
+test "a caustic bloat that bursts on the archer takes its place in the turn as a bite does, and its spray lands there" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     var seed: u64 = 0;
@@ -1374,6 +1374,6 @@ test "a bloat that bursts on the archer takes its place in the turn as a bite do
     try std.testing.expectEqual(@as(usize, 2), g.pic.fx.due_n);
     const busy = g.pic.busy;
     const t = harness.framesUntil(g, actor.Pool.slot(3), harness.flashing);
-    std.debug.print("a rat bites, then a bloat bursts on the archer: the burst lands {d:.3} s in, the turn is busy {d:.3} s\n", .{ t, busy });
+    std.debug.print("a rat bites, then a caustic bloat bursts on the archer: the burst lands {d:.3} s in, the turn is busy {d:.3} s\n", .{ t, busy });
     try std.testing.expectApproxEqAbs(game.STAGGER_S + game.BUMP_LANDS, t, harness.TEST_TOL);
 }

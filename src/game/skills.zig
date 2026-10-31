@@ -362,7 +362,7 @@ fn rushTo(run: *game.Game, from: P, comptime action: skillbar.Act, mark: P) void
     const direction = Skill.wayTo(from, mark).?;
     const occupied = run.sim.lv.who(mark) != grid.NO_ONE;
     const stop = if (occupied) Skill.stop(from, mark) else mark;
-    game.heroTo(run, stop);
+    if (!stop.eq(from)) game.heroTo(run, stop);
     const stroke = game.presentation.Stroke{ .from = stop, .wait = run.pic.glideToHeld(run.sim.heroSlot().?, stop, 0) };
     if (occupied) combat.knock(run, action, direction, stroke) else sayDone(run, action);
     run.pic.turnToward(run.sim.hero, direction.delta().x);

@@ -50,7 +50,7 @@ pub fn openCharacter(g: *game.Game) void {
 
 /// `laid` is an `items.Drop` or `items.Supply`: lying lit where its foe's death has been drawn.
 pub fn laidShown(g: *const game.Game, laid: anytype) bool {
-    return g.pic.litShown(&g.sim, laid.at) and laidDown(g, laid);
+    return g.pic.litShown(&g.sim, laid.at) and laidDown(g, laid) and !scene.barrelPresent(g, laid.at);
 }
 
 /// Laid, or its foe's death drawn; seen or not.
@@ -121,10 +121,6 @@ fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
         out[n] = .{ .supply = .{ .index = i, .kind = s.kind } };
         n += 1;
     }
-    if (goldReached(g, from, at)) |pile| {
-        out[n] = .{ .gold = pile };
-        n += 1;
-    }
     return out[0..n];
 }
 
@@ -189,6 +185,9 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
         v.environment = terrain.of(g.sim.lv.at(at));
         for (std.enums.values(resilience.Kind)) |k| v.status_resist.set(k, .{ .percent = stats.statuses.get(k), .turns = buildup.meters.get(k).turns });
     }
+    if (g.character.page == .loot) if (g.sim.heroAt()) |from| if (goldReached(g, from, g.character.loot_at)) |pile| {
+        v.loot_gold = pile.amount;
+    };
     return v;
 }
 
@@ -215,9 +214,22 @@ pub fn openLoot(g: *game.Game, at: P) void {
     }
     if (!lootReached(g, h.at, at)) return;
     g.pic.turnToward(g.sim.hero, at.x - h.at.x);
+    g.loot_gold = at;
+    if (lootOf(g, &g.nearby, at).len == 0) {
+        takeLootGold(g);
+        if (directEmptied(g)) g.mode = .play;
+        return;
+    }
     openCharacter(g);
     g.character.choose(.loot);
     g.character.loot_at = at;
+}
+
+fn takeLootGold(g: *game.Game) void {
+    const at = g.loot_gold orelse return;
+    g.loot_gold = null;
+    const h = g.sim.heroAt() orelse return;
+    if (goldReached(g, h, at) != null) game.combat.collectGold(g, at);
 }
 
 fn itemFailed(g: *game.Game, err: items.Failure) void {
@@ -340,19 +352,13 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             if (!takeSupply(g, i)) return;
         },
         .take_gold => |at| {
-            if (goldReached(g, h.at, at) == null) return;
-            if (g.character.page == .loot) {
-                if (!at.eq(g.character.loot_at)) return;
-            } else if (g.sim.lv.at(at).isChest() or g.sim.ground.bagged(at)) return;
+            if (g.character.page == .loot or goldReached(g, h.at, at) == null) return;
+            if (g.sim.lv.at(at).isChest() or g.sim.ground.bagged(at)) return;
             game.combat.collectGold(g, at);
         },
         .take_all => {
             if (g.character.page != .loot) return;
             var taken: usize = 0;
-            if (goldReached(g, h.at, g.character.loot_at) != null) {
-                game.combat.collectGold(g, g.character.loot_at);
-                taken += 1;
-            }
             var i: usize = 0;
             var bag_full = false;
             while (i < g.sim.ground.n) {
@@ -408,8 +414,9 @@ pub fn settleLoot(g: *game.Game) void {
     endLoot(g);
 }
 
-/// The loot visit's one turn, spent now if anything was taken.
+/// The loot visit's gold, and its one turn, spent now if anything was taken.
 pub fn endLoot(g: *game.Game) void {
+    takeLootGold(g);
     if (!g.looted) return;
     g.looted = false;
     spendTurn(g);

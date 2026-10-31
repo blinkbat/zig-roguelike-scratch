@@ -100,6 +100,7 @@ pub const View = struct {
     /// Class and passives, before gear.
     base: attr.Attrs,
     gold: i32 = 0,
+    loot_gold: i32 = 0,
     nearby: []const Nearby = &.{},
     device: input.Device = .keys,
     chest: bool = false,

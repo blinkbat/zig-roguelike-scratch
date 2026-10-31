@@ -9,12 +9,12 @@ const P = mathx.P;
 pub const COST: i32 = 3;
 pub const COOLDOWN: u8 = 4;
 pub const RANGE: i32 = 3;
-pub const MIN_RANGE: i32 = 2;
+pub const MIN_RANGE: i32 = 1;
 pub const VERB = "charges into";
 pub const DONE = "charges";
 pub const DESCRIPTION = std.fmt.comptimePrint("Rush {d}-{d} tiles along a clear line. Strike a foe at the end and knock it back a tile, or retreat to empty ground.", .{ MIN_RANGE, RANGE });
 
-pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
+pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
 
 pub const knocked = bash.knocked;
 
@@ -44,7 +44,7 @@ pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
     return true;
 }
 
-test "a charge runs a straight open line of two or three tiles to a lit body, and stops beside it" {
+test "a charge runs a straight open line of one to three tiles to a lit body, and stops beside it" {
     var lv = grid.openFloor();
     lv.lit = @splat(true);
     const from = P{ .x = 20, .y = 20 };
@@ -55,7 +55,9 @@ test "a charge runs a straight open line of two or three tiles to a lit body, an
     try std.testing.expect(aimable(&lv, from, .{ .x = 23, .y = 20 }));
     try std.testing.expectEqual(P{ .x = 22, .y = 20 }, stop(from, .{ .x = 23, .y = 20 }));
     try std.testing.expect(aimable(&lv, from, .{ .x = 22, .y = 22 }));
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 21, .y = 19 }));
+    try std.testing.expect(aimable(&lv, from, .{ .x = 21, .y = 19 }));
+    try std.testing.expectEqual(from, stop(from, .{ .x = 21, .y = 19 }));
+    try std.testing.expect(aimable(&lv, from, .{ .x = 20, .y = 21 }));
     try std.testing.expect(!aimable(&lv, from, .{ .x = 22, .y = 17 }));
     try std.testing.expect(!aimable(&lv, from, .{ .x = 24, .y = 20 }));
     lv.putBarrel(.{ .x = 21, .y = 20 });

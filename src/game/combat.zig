@@ -205,7 +205,7 @@ pub fn areaHit(g: *game.Game, comptime act: skillbar.Act, at: P, area: glacial.B
 /// A barrel broken or a glow plant burst at `p`, if one stands there.
 pub fn smash(g: *game.Game, p: P, comptime verb: []const u8, s: Stroke) void {
     if (g.sim.lv.at(p).bursts()) return burstPlant(g, p, s);
-    const gold = rewards.barrelGold(&g.sim, p) orelse return;
+    const gold = rewards.barrelLoot(&g.sim, p) orelse return;
     g.sim.log.push(.loot, "{s} " ++ verb ++ BARREL_DROPS, .{ g.sim.name.text(), gold });
     g.pic.strike(&g.sim, g.cloud, .{ .barrel = p }, s);
 }
@@ -872,7 +872,7 @@ fn swipe(g: *game.Game, source: u16, id: u16, by: actor.Row, s: actor.Strike) ?f
 }
 
 fn smashedBy(g: *game.Game, p: P, by: actor.Row) ?fx.Impact {
-    const gold = rewards.barrelGold(&g.sim, p) orelse return null;
+    const gold = rewards.barrelLoot(&g.sim, p) orelse return null;
     g.sim.sayAt(p, "The {s} smashes" ++ BARREL_DROPS, .{ by.name, gold });
     return .{ .barrel = p };
 }

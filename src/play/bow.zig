@@ -383,7 +383,7 @@ test "a slime outlasts two arrows and hits harder than a rat" {
     try std.testing.expect(slam.hit.lo > bite.hit.lo and slam.hit.hi > bite.hit.hi);
 }
 
-test "one arrow bursts a bloat two times in three, and one that lives is left on 1 hp" {
+test "one arrow bursts a caustic bloat two times in three, and one that lives is left on 1 hp" {
     const hp = actor.row(.bloat).hp;
     try std.testing.expectEqual(2 * (BASE.hi - BASE.lo + 1), 3 * (BASE.hi - hp + 1));
     try std.testing.expectEqual(@as(i32, 1), hp - BASE.lo);

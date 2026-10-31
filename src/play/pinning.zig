@@ -9,7 +9,8 @@ pub const TURNS_LO: u8 = 2;
 pub const TURNS_HI: u8 = 4;
 pub const VERB = "pins";
 pub const TAKES = "is pinned";
-pub const STATUS = "Cannot move. Can still attack.";
+pub const SLIP: u32 = 30;
+pub const STATUS = std.fmt.comptimePrint("Cannot move. Can still attack. Each struggle has a {d}% chance to break free.", .{SLIP});
 pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. Pins for {d}-{d} turns.", .{ TURNS_LO, TURNS_HI });
 
 /// Its turns left held to its cell.
@@ -24,6 +25,13 @@ pub const Pin = struct {
     /// Pinned again, it is held for the longer of the two.
     pub fn extend(self: *Pin, turns: u8) void {
         resilience.lengthen(&self.turns, turns);
+    }
+
+    /// A struggle against it: whether this turn is its last.
+    pub fn struggle(self: *Pin, rng: *mathx.Rng) bool {
+        if (!rng.percent(SLIP)) return false;
+        self.turns = @min(self.turns, 1);
+        return true;
     }
 };
 
@@ -51,4 +59,18 @@ test "a pin holds for two to four turns, and a second never shortens the first" 
     afflict(&a, &rng);
     try std.testing.expectEqual(@as(u8, 9), a.pin.turns);
     std.debug.print("pinning shot: every length {d}-{d} rolled in 300 pins; a re-pin keeps the longer\n", .{ TURNS_LO, TURNS_HI });
+}
+
+test "a struggle sometimes makes this turn the pin's last" {
+    var rng = mathx.Rng.init(0x51);
+    var freed: u32 = 0;
+    for (0..1000) |_| {
+        var p = Pin{ .turns = 4 };
+        if (p.struggle(&rng)) {
+            freed += 1;
+            try std.testing.expect(p.hold() and !p.hold());
+        } else try std.testing.expectEqual(@as(u8, 4), p.turns);
+    }
+    try std.testing.expect(freed > 250 and freed < 350);
+    std.debug.print("pin struggle: {d} of 1000 broke free at {d}%\n", .{ freed, SLIP });
 }
