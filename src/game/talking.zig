@@ -98,14 +98,16 @@ pub fn step(g: *game.Game) void {
     const w = g.sim.world();
     const rt = &g.sim.plot;
     if (g.st.walk) |d| if (d.delta().y != 0) rt.moveCursor(s, w, d.delta().y);
+    var picked = false;
     if (g.st.pointing()) if (shown.layout.rowAt(g.st.pointer.?)) |row| {
         rt.talk.?.cursor = @intCast(row);
         if (g.st.click) {
             rt.pick(s, row, w, &g.sim.log);
             g.sim.unsaved = true;
+            picked = true;
         }
     };
-    if (rt.talk != null and (g.st.hit(menu.CONFIRM) or g.st.clicked(shown.layout.action))) {
+    if (!picked and rt.talk != null and (g.st.hit(menu.CONFIRM) or g.st.clicked(shown.layout.action))) {
         rt.confirm(s, w, &g.sim.log);
         g.sim.unsaved = true;
     }
@@ -127,6 +129,7 @@ pub fn draw(g: *game.Game) void {
 const harness = @import("harness.zig");
 const atlas = @import("../map/atlas.zig");
 const script_text = @import("../map/script_text.zig");
+const raster = @import("../gfx/raster.zig");
 
 fn testWorld(text: []const u8) !*atlas.Atlas {
     const w = try atlas.testAtlas();
@@ -187,6 +190,33 @@ test "bumping a folk opens its conversation without a turn; it closes only throu
     std.debug.print("folk: bump opens a conversation on turn {d}; back refused, two lines walked and an ending closes it\n", .{turns});
 }
 
+test "a choice clicked while confirm is pressed is one pick" {
+    const w = try testWorld(
+        \\flag met
+        \\dialog wenna
+        \\line root
+        \\say Nobody comes down the well.
+        \\ask Who are you? -> name
+        \\ask Goodbye. -> end
+        \\line name
+        \\act flag met on
+        \\say Wenna. I keep the cistern.
+        \\then root
+        \\folk 0 6 5 wenna Old Wenna
+    );
+    defer std.testing.allocator.destroy(w);
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, 9);
+    game.heroStep(g, .e, 0);
+    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    var shown: Shown = .{ .view = undefined };
+    try std.testing.expect(shownOf(g, scriptOf(g).?, &shown));
+    g.st = .{ .device = .keys, .click = true, .pointer = raster.middleAt(shown.layout.rows[0]), .pressed = .initOne(menu.CONFIRM) };
+    game.update(g, 0);
+    try std.testing.expectEqual(@as(u8, 1), g.sim.plot.talk.?.line);
+}
+
 test "a dialog no way through ends never opens, while one whose way out is gated does" {
     const w = try testWorld(
         \\flag met
@@ -214,6 +244,29 @@ test "a dialog no way through ends never opens, while one whose way out is gated
     game.heroStep(g, .s, 0);
     try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
     std.debug.print("dialogs: {d} endless refused, a gated way out still opens\n", .{w.script.endless()});
+}
+
+test "a dialog with a reachable line no way out of never opens, though its first line can end" {
+    const w = try testWorld(
+        \\dialog trap
+        \\line root
+        \\say Choose.
+        \\ask Bye. -> end
+        \\ask Stay. -> held
+        \\line held
+        \\say Stay forever.
+        \\then held
+        \\folk 0 6 5 trap Trapper
+    );
+    defer std.testing.allocator.destroy(w);
+    try std.testing.expect(!w.script.dialog[0].ends());
+    try std.testing.expectEqual(@as(usize, 1), w.script.endless());
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, 9);
+    game.heroStep(g, .e, 0);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try std.testing.expectEqualStrings("Trapper has nothing to say.", g.sim.log.line(0).?);
 }
 
 test "a way out that never shows ends nothing: its folk has nothing to say and a trigger asking for it goes on" {

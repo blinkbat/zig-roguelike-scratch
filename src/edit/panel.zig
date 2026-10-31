@@ -19,10 +19,10 @@ const editor = @import("editor.zig");
 const text_panel = @import("text_panel.zig");
 const P = mathx.P;
 const Desk = input.Desk;
-const SMALL = widgets.DETAIL;
+const DETAIL = widgets.DETAIL;
 const HEAD = widgets.HEAD;
-const PANEL_BG = look.EDIT_PANEL;
-const ON = look.EDIT_ON;
+const PANEL_BG = widgets.PANEL_BG;
+const ON = widgets.ON;
 const HOVER = look.EDIT_HOVER;
 const WARN = look.EDIT_WARN;
 const SEP = menu.SEP;
@@ -159,7 +159,7 @@ fn drawNodes(ed: *editor.Editor, g: *game.Game, top: i32) void {
         const h = widgets.hot(ed.controls(), r, true, false, "Open this node");
         widgets.plate(r, n == ed.node, h.hot);
         drawNodeTitle(ed, g, n, r, y + editor.TITLE_DY);
-        widgets.textFace(&g.face).draw(nodeDetail(nd, &detail_buf), widgets.textX(r), y + editor.TITLE_DY + editor.DETAIL_DY, SMALL, if (nd.unlinked() > 0) WARN else look.DIM);
+        widgets.textFace(&g.face).draw(nodeDetail(nd, &detail_buf), widgets.textX(r), y + editor.TITLE_DY + editor.DETAIL_DY, DETAIL, if (nd.unlinked() > 0) WARN else look.DIM);
         if (h.hit) ed.goTo(n);
         y += editor.NODE_H;
     }
@@ -204,7 +204,7 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
         const pic = widgets.pictureIn(icon, ICON_PIC, ICON_PIC_TOP);
         if (t == .paint) swatch(g, ed.ink.get(.first), pic) else toolFigure(g, t, pic);
         if (!live) rl.drawRectangleRec(icon, UNLIVE);
-        widgets.textFace(&g.face).draw(key, @as(i32, @intFromFloat(icon.x)) + ICON_KEY.x, @as(i32, @intFromFloat(icon.y)) + ICON_KEY.y, SMALL, look.DIM);
+        widgets.textFace(&g.face).draw(key, @as(i32, @intFromFloat(icon.x)) + ICON_KEY.x, @as(i32, @intFromFloat(icon.y)) + ICON_KEY.y, DETAIL, look.DIM);
         if (h.hit) ed.setTool(t);
     }
     y += @as(i32, @intCast(rows)) * (ICON_H + widgets.GAP) + widgets.GAP;
@@ -214,7 +214,7 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
         const live = s == .select or ed.paintable();
         const h = widgets.hot(ed.controls(), r, live, false, if (live) s.tip() else editor.GENERATED);
         widgets.plate(r, ed.shape == s and (s == .select or ed.tool.broad()), h.hot);
-        widgets.drawFit(&g.face, label, SMALL, widgets.insetW(r), false, widgets.textX(r), @as(i32, @intFromFloat(r.y)) + editor.SMALL_DY, if (live) look.TEXT else look.DIM);
+        widgets.drawFit(&g.face, label, DETAIL, widgets.insetW(r), false, widgets.textX(r), @as(i32, @intFromFloat(r.y)) + editor.ROW_DETAIL_DY, if (live) look.TEXT else look.DIM);
         if (h.hit) ed.setShape(s);
     }
     y += @as(i32, @intCast(std.math.divCeil(usize, editor.SHAPES.len, SHAPE_COLS) catch unreachable)) * widgets.ROW_STEP;
@@ -232,7 +232,7 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
         rl.drawRectangleLinesEx(r, canvas.INK_EDGE, INK_EDGES.get(k));
         _ = widgets.hot(ed.controls(), r, true, false, INK_TIPS.get(k));
     }
-    widgets.textFace(&g.face).draw("Inks", inks_x - widgets.textFace(&g.face).width("Inks", SMALL) - widgets.GAP, y + editor.SMALL_DY, SMALL, look.DIM);
+    widgets.textFace(&g.face).draw("Inks", inks_x - widgets.textFace(&g.face).width("Inks", DETAIL) - widgets.GAP, y + editor.ROW_DETAIL_DY, DETAIL, look.DIM);
     y += widgets.ROW_STEP + widgets.GAP;
     const swatches = Tiles{ .x = widgets.PAD, .y = y, .cols = PALETTE_COLS, .pitch = SWATCH + SWATCH_GAP, .size = SWATCH };
     for (PALETTE, 0..) |t, i| {
@@ -373,7 +373,7 @@ fn thingRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime fmt: []const u8
     const r = widgets.row(widgets.PAD, y.*, widgets.INNER_W);
     const h = widgets.hot(ed.controls(), r, at != null, false, if (at != null) "Show it on the map" else null);
     widgets.plate(r, false, h.hot);
-    widgets.drawFit(&g.face, line, SMALL, widgets.insetW(r), false, widgets.textX(r), y.* + editor.SMALL_DY, col);
+    widgets.drawFit(&g.face, line, DETAIL, widgets.insetW(r), false, widgets.textX(r), y.* + editor.ROW_DETAIL_DY, col);
     if (h.hit) ed.showCell(editor.Editor.canvas(g), at.?);
     y.* += widgets.ROW_H;
 }
@@ -459,8 +459,11 @@ pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     const first_w = w - actions_w - widgets.BLOCK_GAP;
     widgets.drawFit(&g.face, hover(ed, c, &buf), widgets.TEXT, first_w - state_w - widgets.BLOCK_GAP, false, x, y, look.TEXT);
     widgets.textFace(&g.face).draw(state, x + first_w - state_w, y, widgets.TEXT, look.DIM);
-    if (widgets.button(ed.controls(), &g.face, widgets.row(x + w - actions_w, y, action_w), "Play here", ed.cell_action == .play, true, "Choose a cell to play from")) interaction.armCellAction(ed, .play);
-    if (widgets.button(ed.controls(), &g.face, widgets.row(x + w - action_w, y, action_w), "Go through", ed.cell_action == .go, true, "Choose a linked door to follow")) interaction.armCellAction(ed, .go);
+    var cells = widgets.Lay{ .x = x + w - actions_w, .y = y };
+    for (std.enums.values(editor.CellAction)) |a| {
+        const act = editor.CELL_ACTIONS.get(a);
+        if (widgets.button(ed.controls(), &g.face, cells.take(action_w), act.label, ed.cell_action == a, true, act.tip)) interaction.armCellAction(ed, a);
+    }
     y += widgets.LINE_STEP;
     const said = ed.said_t > 0;
     const line: []const u8 = if (said) ed.said.text() else if (ed.view == .map) editor.CRIB_MAP else editor.CRIB_GRAPH;

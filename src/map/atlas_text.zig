@@ -81,18 +81,17 @@ pub fn load(self: *atlas.Atlas, alloc: std.mem.Allocator, path: []const u8) !voi
 
 pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
     self.* = .{};
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    const head = std.mem.trimRight(u8, lines.next() orelse return error.NoHeader, "\r");
-    if (!std.mem.eql(u8, head, HEADER)) return error.NoHeader;
+    var lines = script_text.Lines.of(text);
+    const head = lines.next() orelse return error.NoHeader;
+    if (!std.mem.eql(u8, head.buffer, HEADER)) return error.NoHeader;
     var row: usize = 0;
     var own_makeups = false;
     var seen = std.EnumSet(Word).initEmpty();
     var knobbed = KnobSet.initEmpty();
     var featured = FeatureKnobSet.initEmpty();
     var told = try script_text.Reader.of(text);
-    while (lines.next()) |raw| {
-        const line = std.mem.trimRight(u8, raw, "\r");
-        var f = std.mem.tokenizeScalar(u8, line, ' ');
+    while (lines.next()) |line| {
+        var f = line;
         const word = f.next() orelse continue;
         if (std.meta.stringToEnum(script_text.Word, word)) |sw| {
             try told.take(&self.script, sw, &f);

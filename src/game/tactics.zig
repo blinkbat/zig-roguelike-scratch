@@ -61,9 +61,7 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
     if (!act.aimable(&g.sim.lv, from, at) or strikesHidden(g, act, from, at)) return false;
     const start = (if (g.mode == .aim) g.mode.aim.anchor() else null) orelse at;
     if (act.consumes()) {
-        const id = g.sim.lv.who(at);
-        if (id == grid.NO_ONE) return false;
-        const a = &g.sim.pool.items[actor.Pool.slot(id)];
+        const a = g.sim.pool.getConst(g.sim.lv.who(at)) orelse return false;
         return a.seenFoe(&g.sim.lv) and fuelOf(act, a) > 0;
     }
     return switch (act) {
@@ -291,7 +289,7 @@ test "tactical overwatch fires once after movement and steady aim is consumed or
     const h = game.harness;
     const from = P{ .x = 20, .y = 20 };
     h.heroArena(g, .archer, from, &.{});
-    skills.useSkill(g, .{ .act = .steady_aim, .by = .x });
+    game.harness.useAct(g, .steady_aim);
     try std.testing.expectEqual(@as(u8, 1), g.sim.heroActor().?.tactics.steady);
     const boosted = attacks.blowFor(&g.sim, .shoot).by;
     g.sim.heroActor().?.tactics.steady = 0;
@@ -411,7 +409,7 @@ test "tactical barrier selects endpoints without spending then blocks paths unti
     try std.testing.expect(g.sim.lv.isLit(.{ .x = 24, .y = 20 }));
     h.drawnOut(g);
     for (0..rules.ArcaneBarrier.duration(1)) |_| {
-        skills.useSkill(g, .{ .act = .wait, .by = .y });
+        game.harness.useAct(g, .wait);
         h.drawnOut(g);
     }
     try std.testing.expect(!g.sim.lv.hasBarrier(middle));
@@ -425,10 +423,10 @@ test "tactical knight guard expires on action whirlwind hits neighbors and unyie
     const h = game.harness;
     const from = P{ .x = 20, .y = 20 };
     h.heroArena(g, .knight, from, &.{});
-    skills.useSkill(g, .{ .act = .guard, .by = .x });
+    game.harness.useAct(g, .guard);
     try std.testing.expect(g.sim.heroActor().?.tactics.guard > 0);
     h.drawnOut(g);
-    skills.useSkill(g, .{ .act = .wait, .by = .y });
+    game.harness.useAct(g, .wait);
     try std.testing.expectEqual(@as(u8, 0), g.sim.heroActor().?.tactics.guard);
     h.drawnOut(g);
     const a = h.spawnAt(g, .rat, from.add(.{ .x = 1, .y = 0 }), false);
@@ -437,20 +435,20 @@ test "tactical knight guard expires on action whirlwind hits neighbors and unyie
     h.toughen(g.sim.pool.get(b).?);
     const before = g.sim.pool.get(a).?.hp;
     game.settle(g);
-    skills.useSkill(g, .{ .act = .whirlwind, .by = .x });
+    game.harness.useAct(g, .whirlwind);
     try std.testing.expect(g.sim.pool.get(a).?.hp < before and g.sim.pool.get(b).?.hp < before);
     h.drawnOut(g);
     h.heroArena(g, .knight, from, &.{});
     g.sim.mana = 4;
-    skills.useSkill(g, .{ .act = .unyielding, .by = .x });
+    game.harness.useAct(g, .unyielding);
     try std.testing.expect(g.sim.heroActor().?.tactics.unyielding);
     try std.testing.expectEqual(@as(i32, 0), g.sim.mana);
     h.drawnOut(g);
-    skills.useSkill(g, .{ .act = .unyielding, .by = .x });
+    game.harness.useAct(g, .unyielding);
     try std.testing.expect(!g.sim.heroActor().?.tactics.unyielding);
     h.drawnOut(g);
     g.sim.heroActor().?.tactics.unyielding = true;
-    skills.useSkill(g, .{ .act = .wait, .by = .y });
+    game.harness.useAct(g, .wait);
     try std.testing.expect(!g.sim.heroActor().?.tactics.unyielding);
     std.debug.print("tactical knight: guard expiry, two-sided whirlwind, activation/upkeep and zero-mana stance exit checked\n", .{});
 }
@@ -461,11 +459,11 @@ test "unyielding is refused without the mana for its first turn's upkeep as well
     game.harness.heroArena(g, .knight, .{ .x = 20, .y = 20 }, &.{});
     const needed = g.sim.growth.cost(.unyielding) + rules.Unyielding.DRAIN;
     g.sim.mana = needed - 1;
-    skills.useSkill(g, .{ .act = .unyielding, .by = .x });
+    game.harness.useAct(g, .unyielding);
     try std.testing.expect(!g.sim.heroActor().?.tactics.unyielding);
     try std.testing.expectEqual(needed - 1, g.sim.mana);
     g.sim.mana = needed;
-    skills.useSkill(g, .{ .act = .unyielding, .by = .x });
+    game.harness.useAct(g, .unyielding);
     try std.testing.expect(g.sim.heroActor().?.tactics.unyielding);
 }
 
@@ -526,7 +524,7 @@ test "tactical reaction recovery waits for impact and Harvest restores life from
     g.sim.pool.get(bled).?.bleed.startWith(2);
     g.sim.pool.get(bled).?.bleed.fresh = false;
     game.settle(g);
-    skills.useSkill(g, .{ .act = .wait, .by = .y });
+    game.harness.useAct(g, .wait);
     try std.testing.expect(g.sim.pool.get(bled) == null);
     try std.testing.expectEqual(before + 4, g.sim.heroActor().?.hp);
     h.drawnOut(g);
@@ -583,14 +581,14 @@ test "war cry frightens foes as their fright resistance allows and the picture s
         const slime = h.spawnAt(g, .slime, .{ .x = 18, .y = 20 }, false);
         game.settle(g);
         g.sim.rng = mathx.Rng.init(seed);
-        skills.useSkill(g, .{ .act = .war_cry, .by = .x });
+        game.harness.useAct(g, .war_cry);
         rats += @intFromBool(g.sim.pool.get(rat).?.fright > 0);
         pibs += @intFromBool(g.sim.pool.get(beefy).?.fright > 0);
         slimes += @intFromBool(g.sim.pool.get(slime).?.fright > 0);
     }
-    const chance = @as(f32, @floatFromInt(rules.WarCry.chance(1))) / 100;
+    const chance = mathx.fraction(rules.WarCry.chance(1));
     try std.testing.expect(h.aboutRate(rats, chance));
-    try std.testing.expect(h.aboutRate(pibs, chance * @as(f32, @floatFromInt(100 - actor.row(.beefy_pib).fright_resist)) / 100));
+    try std.testing.expect(h.aboutRate(pibs, chance * mathx.fraction(mathx.PERCENT - actor.row(.beefy_pib).fright_resist)));
     try std.testing.expectEqual(@as(usize, 0), slimes);
     h.heroArena(g, .knight, from, &.{});
     g.sim.growth.ranks.set(.war_cry, 3);
@@ -601,7 +599,7 @@ test "war cry frightens foes as their fright resistance allows and the picture s
         if (g.sim.pool.get(rat).?.fright > 0) break;
         g.sim.cooldown.set(.war_cry, 0);
         g.sim.mana = WAR_CRY_MANA;
-        skills.useSkill(g, .{ .act = .war_cry, .by = .x });
+        game.harness.useAct(g, .war_cry);
         h.drawnOut(g);
     }
     try std.testing.expect(g.sim.pool.get(rat).?.fright > 0);
@@ -669,7 +667,7 @@ test "fire wall ignites foes it rises under and those that enter, is shunned, an
     g.sim.unkillable = true;
     for (0..rules.FireWall.duration(1)) |_| {
         h.drawnOut(g);
-        skills.useSkill(g, .{ .act = .wait, .by = .y });
+        game.harness.useAct(g, .wait);
     }
     g.sim.unkillable = false;
     try std.testing.expect(!g.sim.lv.burning(into));

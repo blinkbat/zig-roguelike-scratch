@@ -60,13 +60,7 @@ pub const FrostVial = struct {
     pub const AILMENT = glacial.AILMENT;
     pub const DESCRIPTION = std.fmt.comptimePrint("A thrown vial shatters into cold, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), glacial.CHILL_NOTE });
 
-    comptime {
-        std.debug.assert(BLAST <= glacial.BURST_MAX);
-    }
-
-    pub fn burst(lv: *const grid.Level, _: P, impact: P) glacial.Burst {
-        return glacial.patch(lv, impact, BLAST);
-    }
+    pub const burst = glacial.Patch(BLAST).burst;
 };
 
 test "smelling salts hold stun resistance full until their turns run out, and leave other meters alone" {

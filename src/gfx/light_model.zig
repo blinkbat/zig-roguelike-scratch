@@ -114,14 +114,13 @@ pub const CASTERS = std.EnumArray(grid.Tile, ?Caster).initDefault(@as(?Caster, n
     .rock = .{ .h = WALL_H },
     .grave = .{ .h = 0.5, .r = 0.28 },
     .fence = .{ .h = 0.5 },
-    .reeds = .{ .h = 0.5 },
     .crop = .{ .h = 0.4 },
     .glow_plant = .{ .h = 0.5, .r = 0.28 },
 });
 
 comptime {
     for (std.enums.values(grid.Tile)) |t| {
-        if (t.upright()) std.debug.assert((CASTERS.get(t) != null) != look.stands(t));
+        if (t.upright()) std.debug.assert((CASTERS.get(t) != null) != look.castsPicture(t));
         if (t.glows()) std.debug.assert(PLANT_Z > (CASTERS.get(t) orelse continue).h);
     }
 }

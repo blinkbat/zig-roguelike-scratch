@@ -47,7 +47,7 @@ const CONFIRM = menu.CONFIRM;
 const SHOOT = bow.VERB;
 const HERO = actor.HERO;
 const SHOT_SEED: u64 = 0x5EED_1234;
-const SHOTS_DIR = "shots";
+pub const SHOTS_DIR = "shots";
 const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
 
 fn shootCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -339,7 +339,8 @@ pub fn shootUi(g: *game.Game) !void {
 fn shootInspect(g: *game.Game) !void {
     const screen = g.screen;
     defer g.screen = screen;
-    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }, .{ "720", "1080" }) |size, suffix| {
+    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
+        const suffix = std.fmt.comptimePrint("{d}", .{size.y});
         g.screen = size;
         const h = game.harness;
         const from = P{ .x = 20, .y = 20 };
@@ -380,7 +381,8 @@ fn shootTalk(g: *game.Game) !void {
     while (floor.next()) |p| w.node[n].plan.bespoke.tile[grid.Level.idx(p)] = .floor;
     w.start = .{ .node = n, .at = .{ .x = 12, .y = 8 } };
     try script_text.readAlone(editor.SHOT_SCRIPT, &w.script, w.node_n);
-    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }, .{ "720", "1080" }) |size, suffix| {
+    inline for (.{ game.SCREEN_720, game.SCREEN_1080 }) |size| {
+        const suffix = std.fmt.comptimePrint("{d}", .{size.y});
         g.screen = size;
         game.beginMapAt(g, w, w.start, 5);
         g.st = .{ .device = .keys };
@@ -409,7 +411,8 @@ fn shootRares(g: *game.Game) !void {
     if (!g.sim.ground.add(.{ .item = maw, .at = g.sim.heroActor().?.at })) return error.GroundFull;
     game.syncStats(g);
     game.harness.drawnOut(g);
-    inline for (.{ game.SCREEN_720, game.SCREEN_1080, game.SCREEN_1440 }, .{ "720", "1080", "1440" }) |size, tag| {
+    inline for (game.SCREENS) |size| {
+        const tag = std.fmt.comptimePrint("{d}", .{size.y});
         g.screen = size;
         const target = try renderTarget(g);
         defer rl.unloadRenderTexture(target);
@@ -1071,13 +1074,14 @@ fn shootCharacter(g: *game.Game) !void {
 
             g.character.cursor = progress.skills(class).len - 1;
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-future.png");
-            g.character.cursor = if (class == .wizard) 4 else 0;
+            const described = if (class == .wizard) skillbar.Act.frost_nova else progress.skills(class)[0].act;
+            g.character.cursor = skillCursor(class, described);
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-description.png");
-            g.sim.growth.ranks.set(progress.skills(class)[g.character.cursor].act, 2);
+            g.sim.growth.ranks.set(described, 2);
             try capture(g, target, SHOTS_DIR ++ "/tree-skills-" ++ @tagName(class) ++ "-upgrade.png");
             if (class == .archer) {
-                g.character.cursor = 2;
-                g.sim.growth.ranks.set(progress.skills(class)[2].act, 2);
+                g.character.cursor = skillCursor(class, .burning_arrow);
+                g.sim.growth.ranks.set(.burning_arrow, 2);
                 try capture(g, target, SHOTS_DIR ++ "/tree-skills-mixed-upgrade.png");
             }
             g.character.cursor = progress.skills(class).len - 1;
@@ -1145,6 +1149,11 @@ fn shootCharacter(g: *game.Game) !void {
     g.sim.inventory.bag[@intFromEnum(items.Kind.axe)].mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 }, null, null };
     g.character.cursor = @intFromEnum(items.Kind.axe);
     try capture(g, target, SHOTS_DIR ++ "/item-axe-magic.png");
+}
+
+fn skillCursor(class: heroes.Class, act: skillbar.Act) usize {
+    for (progress.skills(class), 0..) |s, i| if (s.act == act) return i;
+    unreachable;
 }
 
 fn shootEffects(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -1305,7 +1314,7 @@ const POSE_GAS_TURNS: usize = 3;
 fn posePicker(g: *game.Game, u: skills.Use) void {
     binds.openBinds(g);
     g.binds.row = game.rowAt(u.set);
-    g.binds.col = binds.Binds.colOf(u.by);
+    g.binds.col = binds.Binds.colOf(u.by.?);
     var kit_buf: skillbar.KitBuf = undefined;
     g.binds.openPick(g.sim.growth.kit(g.sim.class, &kit_buf), &g.bar);
 }
@@ -1702,6 +1711,33 @@ fn checkWaterSurface(g: *game.Game) !void {
         }
     }
     std.debug.print("smooth water GPU: glints {d}/{d}, live mirrors {d}/{d}, remembered mirrors {d}/{d}; {d} grass/memory pixels exclude live effects, {d} camera samples agree; static art and alpha preserved\n", .{ glinted[0], glinted[1], reflected[0], reflected[1], remembered[0], remembered[1], fixed, compared });
+    view.glints = dark;
+    view.shimmer = true;
+    const swelled = try waterSample(g, target, &beds, view, .{ 0, 0 });
+    defer rl.unloadImage(swelled);
+    view.seconds = 1.7;
+    const later = try waterSample(g, target, &beds, view, .{ 0, 0 });
+    defer rl.unloadImage(later);
+    var swelling = [_]usize{0} ** DRY;
+    var moving: usize = 0;
+    {
+        var px = pixels(width, height);
+        while (px.next()) |q| {
+            const base = rl.getImageColor(still, q.x, q.y);
+            const a = rl.getImageColor(swelled, q.x, q.y);
+            const b = rl.getImageColor(later, q.x, q.y);
+            if (a.a != base.a or b.a != base.a) return error.WaterAlphaChanged;
+            const band = Band.of(q.x) orelse continue;
+            if (q.y >= game.CELL or band == DRY) {
+                if (!std.meta.eql(base, a) or !std.meta.eql(base, b)) return error.WaterOutsideSurface;
+            } else {
+                if (!sameRgb(base, a)) swelling[band] += 1;
+                if (!sameRgb(a, b)) moving += 1;
+            }
+        }
+    }
+    if (swelling[0] < MIN_PIXELS or swelling[1] < MIN_PIXELS or moving < MIN_PIXELS) return error.WaterShimmerMissing;
+    std.debug.print("water shimmer GPU: {d}/{d} deep/shallow highlight pixels swell, {d} move in 1.7 s; grass, memory and alpha untouched\n", .{ swelling[0], swelling[1], moving });
 }
 
 fn checkMapEdge(g: *game.Game, target: rl.RenderTexture2D) !void {

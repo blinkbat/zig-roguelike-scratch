@@ -98,6 +98,8 @@ pub const Befallen = struct { by: usize, after: fx.After };
 /// `was` stands at `at` for `left` seconds more.
 pub const Bursting = struct { at: P, was: grid.Tile, left: f32 };
 
+pub const Pictured = struct { masked: std.StaticBitSet(actor.MAX) = .initEmpty(), bursting: ?P = null };
+
 /// Presentation debts land at the body's stagger, or after the hero when it has no stagger.
 pub const Owed = struct {
     bit: ?Bite = null,
@@ -173,8 +175,10 @@ pub const Presentation = struct {
     knocked_from: ?P = null,
     /// Where the hero stands as each stagger is drawn: a knock moves it on for the foes after.
     hero_cell: ?P = null,
-    /// A glow plant burst by the hero's bump: drawn, and lit, until the bump lands.
+    /// A glow plant burst by a bump, an arrow or a blow: drawn, and lit, until that lands.
     bursting: ?Bursting = null,
+    /// Sight as the bursting plant still lit it; its pool stays drawn until the burst lands.
+    lit_before: [grid.CELLS]bool = @splat(false),
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -325,7 +329,7 @@ pub const Presentation = struct {
     }
 
     pub fn freshTurn(self: *Presentation) void {
-        game.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "dives", "befallen", "turning", "gold_taken" });
+        game.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
         self.fx.clear();
     }
 
@@ -400,7 +404,7 @@ pub const Presentation = struct {
 
     pub fn snapGlide(self: *Presentation, pool: *const actor.Pool) void {
         self.occlusion = @splat(0);
-        for (pool.items[0..pool.n], 0..) |*a, i| self.glide[i] = glide.Glide.rest(a);
+        for (pool.constSlice(), 0..) |*a, i| self.glide[i] = glide.Glide.rest(a);
     }
 
     /// Dead bodies remain until their killing blow, flash and glide finish.
@@ -431,7 +435,7 @@ pub const Presentation = struct {
     pub fn drawnAt(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
         if (!self.figured(sim, i)) return null;
         const at = self.glide[i].now();
-        return if (sim.lv.isLit(game.cellUnder(at))) at else null;
+        return if (self.litShown(sim, game.cellUnder(at))) at else null;
     }
 
     pub fn drawnCell(self: *const Presentation, sim: *const Simulation, i: usize) ?P {
@@ -449,25 +453,33 @@ pub const Presentation = struct {
         return self.standing(sim, i) and !sim.pool.items[i].disguised and !self.under.isSet(i) and !self.masked.isSet(i);
     }
 
-    /// What is drawn at `p`: a mimic's chest until its death is, a glow plant until the bump that bursts it lands.
+    /// What is drawn at `p`: a mimic's chest until its death is, a glow plant until the bump, arrow or blow that bursts it lands.
     pub fn tileShown(self: *const Presentation, sim: *const Simulation, p: P) grid.Tile {
         if (self.bursting) |b| if (b.at.eq(p)) return b.was;
         if (self.mimicAt(sim, p)) return .chest;
         return sim.lv.at(p);
     }
 
+    pub fn pictureKey(self: *const Presentation) Pictured {
+        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null };
+    }
+
     /// The chest drawn at `p` is a mimic's: one still disguised, or one killed in it until its death is drawn.
     pub fn mimicAt(self: *const Presentation, sim: *const Simulation, p: P) bool {
         var each = self.masked.iterator(.{});
         while (each.next()) |i| if (sim.pool.items[i].at.eq(p)) return true;
-        const id = sim.lv.who(p);
-        if (id == grid.NO_ONE) return false;
-        const a = &sim.pool.items[actor.Pool.slot(id)];
-        return a.alive and a.disguised;
+        const a = sim.pool.getConst(sim.lv.who(p)) orelse return false;
+        return a.disguised;
     }
 
-    pub fn burstPlant(self: *Presentation, at: P, was: grid.Tile, wait: f32) void {
+    pub fn burstPlant(self: *Presentation, lv: *const grid.Level, at: P, was: grid.Tile, wait: f32) void {
         self.bursting = .{ .at = at, .was = was, .left = wait };
+        self.lit_before = lv.lit;
+    }
+
+    pub fn litShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
+        if (sim.lv.isLit(p)) return true;
+        return self.bursting != null and grid.cellOr(bool, &self.lit_before, p, false);
     }
 
     /// The plant whose burst has now landed, once.
@@ -602,7 +614,7 @@ pub const Presentation = struct {
     /// Reveal split halves at impact, after their parent becomes visible.
     pub fn catchUp(self: *Presentation, sim: *const Simulation) void {
         var dying = false;
-        for (sim.pool.items[0..sim.pool.n], 0..) |a, i| {
+        for (sim.pool.constSlice(), 0..) |a, i| {
             if (!self.fx.pending(i)) {
                 self.pictured[i] = fx.Body.of(a, self.seq);
             } else if (self.fx.landedOn(i)) |b| {
@@ -615,7 +627,7 @@ pub const Presentation = struct {
             if (self.fx.revealing(i) or self.split_from[from] != null) continue;
             self.split_from[i] = null;
             self.glide[i] = self.glide[from].toward(a.at, -self.clearIn(sim, i, a.at));
-            if (sim.lv.isLit(sim.pool.items[from].at) or sim.lv.isLit(a.at)) self.holdUntil(self.glide[i].left());
+            if (self.litShown(sim, sim.pool.items[from].at) or self.litShown(sim, a.at)) self.holdUntil(self.glide[i].left());
         }
         if (!dying) self.flasks_shown = sim.flasks;
         self.mana_held = @max(0, self.mana_held - self.fx.mana_landed);
@@ -646,7 +658,7 @@ pub const Presentation = struct {
         self.hero_cell = null;
         self.befallen = @splat(null);
         if (warded) |c| self.fx.settle(std.mem.max(f32, part[0..sim.pool.n]), .{ .slot = hero, .after = c });
-        for (sim.pool.items[0..sim.pool.n], 0..) |*a, i| {
+        for (sim.pool.constSlice(), 0..) |*a, i| {
             if (!self.glide[i].to.eq(a.at)) self.glide[i] = self.glide[i].toward(a.at, late);
             if (a.submerged != self.under.isSet(i) and self.dives[i] == null) self.dives[i] = part[i];
         }
@@ -673,8 +685,8 @@ pub const Presentation = struct {
         const bit = owed.bit;
         const at = if (id == sim.hero) dest else a.at;
         const hidden = a.disguised or (a.submerged and self.under.isSet(i) and bit == null);
-        const shown = sim.lv.isLit(at) and !hidden;
-        const placed = if (moved) shown or (!hidden and sim.lv.isLit(gl.to)) else (shown or owed.arrow != null) and (bit != null or owed.mended != null);
+        const shown = self.litShown(sim, at) and !hidden;
+        const placed = if (moved) shown or (!hidden and self.litShown(sim, gl.to)) else (shown or owed.arrow != null) and (bit != null or owed.mended != null);
         var wait = if (placed) next.* else 0;
         if (placed and id != sim.hero and (moved or bit != null)) wait = @max(wait, late + gl.left());
         if (placed and moved and id != sim.hero) wait = @max(wait, late + self.clearIn(sim, i, a.at));
@@ -709,12 +721,13 @@ pub const Presentation = struct {
             .miss => {},
         };
         if (owed.mended) |m| {
+            lands = @max(lands, hits);
             var seen = shown;
             if (shown) self.fx.shimmerIn(hits, .{ .at = mathx.centre(a.at), .col = look.body(a.kind).fg });
             if (m.slot) |s| {
                 if (m.after) |after| self.fx.settle(hits, .{ .slot = s.index, .after = after });
                 const kin = self.glide[s.index].to;
-                if (sim.lv.isLit(kin)) {
+                if (self.litShown(sim, kin)) {
                     self.fx.shimmerIn(hits, .{ .at = mathx.centre(kin), .col = look.LIFE });
                     seen = true;
                 }
@@ -769,15 +782,15 @@ pub const Presentation = struct {
         if (owed.healed) |after| self.fx.settle(lands, .{ .slot = i, .after = after, .puff = fx.Puff.over(mark, look.gasInk(.healing)) });
         if (owed.burned) |h| self.harmShown(sim, gas, at, lands, h, true, in_view, .{ .slot = i, .fire_at = mark });
         if (owed.bled) |h| self.harmShown(sim, gas, at, lands, h, false, in_view, .{ .slot = i, .drip = drip });
-        if (a.submerged != self.under.isSet(i)) self.dives[i] = if (a.submerged) lands else if (placed) @max(0, wait - late) else start;
+        if (a.submerged != self.under.isSet(i)) self.dives[i] = if (a.submerged or moved) lands else if (placed) @max(0, wait - late) else start;
         return lands;
     }
 
     /// Wait for deaths at the destination and witnessed deaths that caused flight.
     fn clearIn(self: *const Presentation, sim: *const Simulation, slot: usize, to: P) f32 {
         var t: f32 = if (self.fx.speech[slot].after) |fallen| self.fx.landsIn(fallen) else 0;
-        if (!sim.lv.isLit(to)) return t;
-        for (sim.pool.items[0..sim.pool.n], 0..) |a, j| {
+        if (!self.litShown(sim, to)) return t;
+        for (sim.pool.constSlice(), 0..) |a, j| {
             if (a.alive or !a.at.eq(to) or !self.standing(sim, j)) continue;
             t = @max(t, @max(self.fx.heldIn(j), self.glide[j].left()));
         }
@@ -812,7 +825,7 @@ pub const Presentation = struct {
             .actor => |a| sim.pool.items[a.slot.index].veiled(),
             .barrel => false,
         };
-        if (hero or (sim.lv.isLit(at) and !veiled)) {
+        if (hero or (self.litShown(sim, at) and !veiled)) {
             self.fx.strike(s.wait, .{ .impact = impact, .dir = dir, .matter = fx.matterOf(kind), .fire = s.fire });
             self.flashes(s.wait);
         } else switch (impact) {
@@ -827,7 +840,7 @@ pub const Presentation = struct {
                 .gas => gas.hold(s.wait),
                 .fire => {
                     gas.hold(s.wait);
-                    if (sim.lv.isLit(at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
+                    if (self.litShown(sim, at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
                 },
             },
             .strike => {},

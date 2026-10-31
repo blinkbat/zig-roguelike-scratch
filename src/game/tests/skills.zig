@@ -774,7 +774,7 @@ test "smart aim retains a moved enemy across skills without spending or firing" 
     const mana = g.sim.mana;
     const rng = g.sim.rng;
     const hp = g.sim.pool.get(3).?.hp;
-    skills.useSkill(g, .{ .act = .shoot, .by = .x });
+    harness.useAct(g, .shoot);
     try std.testing.expectEqual(@as(?u16, 2), g.target);
     g.mode.aim.mark = g.sim.pool.get(3).?.at;
     skills.rememberTarget(g);
@@ -782,7 +782,7 @@ test "smart aim retains a moved enemy across skills without spending or firing" 
     harness.press(g, BACK);
     const moved = P{ .x = 25, .y = 22 };
     g.sim.pool.move(&g.sim.lv, 3, moved);
-    skills.useSkill(g, .{ .act = .burning_arrow, .by = .x });
+    harness.useAct(g, .burning_arrow);
     try std.testing.expectEqual(moved, g.mode.aim.mark);
     try std.testing.expectEqual(@as(?u16, 3), g.target);
     try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
@@ -849,7 +849,7 @@ test "smart aim replaces dead hidden blocked distant and invalid targets with a 
         }
         const clock = g.sim.clock;
         const mana = g.sim.mana;
-        skills.useSkill(g, .{ .act = .burning_arrow, .by = .x });
+        harness.useAct(g, .burning_arrow);
         try std.testing.expectEqual(second, g.mode.aim.mark);
         try std.testing.expectEqual(@as(?u16, 3), g.target);
         try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
@@ -875,7 +875,7 @@ test "free projectile aim moves one cell in eight directions and retains melee a
     for (mathx.ALL_DIRS) |d| {
         g.mode = .play;
         g.target = 2;
-        skills.useSkill(g, .{ .act = .shoot, .by = .x });
+        harness.useAct(g, .shoot);
         g.mode.aim.mark = centre;
         skills.nudgeAim(g, d);
         try std.testing.expectEqual(@as(?u16, null), g.target);
@@ -884,14 +884,14 @@ test "free projectile aim moves one cell in eight directions and retains melee a
     }
     harness.heroArena(g, .knight, from, &.{ .{ .x = 20, .y = 19 }, .{ .x = 21, .y = 20 }, .{ .x = 23, .y = 20 } });
     g.target = 3;
-    skills.useSkill(g, .{ .act = .shield_bash, .by = .x });
+    harness.useAct(g, .shield_bash);
     try std.testing.expectEqual(@as(?u16, 3), g.target);
     g.mode = .play;
-    skills.useSkill(g, .{ .act = .charge, .by = .x });
+    harness.useAct(g, .charge);
     try std.testing.expectEqual(@as(?u16, null), g.target);
     g.mode = .play;
     g.sim.pool.move(&g.sim.lv, 3, .{ .x = 21, .y = 21 });
-    skills.useSkill(g, .{ .act = .charge, .by = .x });
+    harness.useAct(g, .charge);
     try std.testing.expectEqual(@as(?u16, 4), g.target);
     try std.testing.expectEqual(P{ .x = 23, .y = 20 }, g.mode.aim.mark);
     skills.openLeap(g, .b, .juke);

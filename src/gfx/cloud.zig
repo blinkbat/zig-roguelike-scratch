@@ -248,7 +248,7 @@ const CLOUD_NOISE = shaders.glslConsts(.{
     \\    return fract(p.x * p.y);
     \\}
     \\
-++ look.VALUE_NOISE_FS ++
+++ shaders.VALUE_NOISE_FS ++
     \\float fbm(vec2 p) {
     \\    float v = 0.0;
     \\    float a = FBM_GAIN;

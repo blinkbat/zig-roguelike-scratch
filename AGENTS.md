@@ -370,8 +370,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   none never fires. Timers, `wait` and `elapsed` count spent turns; `deaths`/`alive` count a whole foe family.
 - A `dialog` action holds its own list until that conversation is heard out; one at a time, opened once the turn
   is drawn (`talking.due`). Bumping a folk or Interact beside one opens its dialog without a turn, ahead of
-  containers. No back-out: a conversation ends only through an ending, so `talked` means heard; a dialog no way
-  through ends (`Dialog.ends`) never opens, and the editor lists it under Problems. A gate hides a
+  containers. No back-out: a conversation ends only through an ending, so `talked` means heard; a dialog with a
+  reachable line no way out of (`Dialog.ends`) never opens, and the editor lists it under Problems. A gate hides a
   choice; line actions land on arrival, choice actions on the pick. The HUD hides behind `ui/talk.zig`'s panel.
 - Editor: the Folk tool places and removes folk and opens Dialog on one; Dialog edits folk, dialogs, lines and
   choices, Script the triggers and name tables. Words are typed into the map, one undo step per click; a
@@ -428,7 +428,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   lit outdoor cells. Water stays smooth: fixed art/UVs, subtle light glints and undistorted mirrored scenery,
   bodies and flames, clipped by the authored water alpha and dry ground layers. Static scenery reflections
   persist in explored fog under memory lighting; bodies, animated flames and glints require live visibility.
-  Mirrors follow presented feet/facing/lift, fade out toward their reflected tops, and exclude unexplored
+  The art's own highlights swell and fade under two crossing drifting noise layers (`WATER_FS` `swell`), live-visible
+  only and switched with water glints.  Mirrors follow presented feet/facing/lift, fade out toward their reflected tops, and exclude unexplored
   sources; glints obey light occlusion.
   Source art/editor preview remain static. `Presentation.splashSteps`/`Fx.splash` follows visible ground
   footsteps in water, excluding idle bodies and melee bumps. Vignette draws under minimap/HUD.

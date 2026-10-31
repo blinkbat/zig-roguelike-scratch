@@ -145,6 +145,7 @@ pub const UNSAVED = .{
         "knocked_from",
         "hero_cell",
         "bursting",
+        "lit_before",
         "busy",
         "lead",
         "fx",

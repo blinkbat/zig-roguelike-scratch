@@ -97,6 +97,19 @@ pub fn patch(lv: *const grid.Level, at: P, range: i32) Burst {
     return spread(lv, at, range, {}, every);
 }
 
+pub fn Patch(comptime range: i32) type {
+    comptime std.debug.assert(range <= BURST_MAX);
+    return struct {
+        pub fn area(lv: *const grid.Level, at: P) Burst {
+            return patch(lv, at, range);
+        }
+
+        pub fn burst(lv: *const grid.Level, _: P, impact: P) Burst {
+            return patch(lv, impact, range);
+        }
+    };
+}
+
 pub fn every(_: void, _: P) bool {
     return true;
 }

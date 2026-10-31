@@ -46,7 +46,9 @@ if name=='bridge' and not stand_in then
   for it in sheet:pixels() do
     local v=it()
     if pc.rgbaA(v)>0 then
-      it(pc.rgba(math.floor(pc.rgbaR(v)*0.70+0.5),math.floor(pc.rgbaG(v)*0.70+0.5),math.floor(pc.rgbaB(v)*0.70+0.5),pc.rgbaA(v)))
+      local r,g,b=math.floor(pc.rgbaR(v)*0.70+0.5),math.floor(pc.rgbaG(v)*0.70+0.5),math.floor(pc.rgbaB(v)*0.70+0.5)
+      if r==0 and g==0 and b==0 then r,g,b=42,33,25 end
+      it(pc.rgba(r,g,b,pc.rgbaA(v)))
     end
   end
 end

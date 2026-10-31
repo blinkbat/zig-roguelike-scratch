@@ -1210,7 +1210,7 @@ test "everything that blocks a step and does not stand shades the ground past it
     const at = P{ .x = 30, .y = 30 };
     const m = mathx.centre(at);
     for (std.enums.values(grid.Tile)) |t| {
-        if (!t.upright() or look.stands(t)) continue;
+        if (!t.upright() or look.castsPicture(t)) continue;
         var lv = grid.openFloor();
         lv.set(at, t);
         var worst: f32 = 0;

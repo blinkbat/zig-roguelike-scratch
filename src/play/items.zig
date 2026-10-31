@@ -135,7 +135,8 @@ pub const Mod = enum {
     }
 };
 /// The modifiers loot rolls, in roll order, with their value ranges.
-const AFFIXES = [_]struct { kind: Mod, lo: i32, hi: i32 }{
+const AffixRoll = struct { kind: Mod, lo: i32, hi: i32 };
+const AFFIXES = [_]AffixRoll{
     .{ .kind = .life, .lo = 2, .hi = 6 },
     .{ .kind = .mana, .lo = 1, .hi = 3 },
     .{ .kind = .strength, .lo = 1, .hi = 3 },
@@ -284,7 +285,7 @@ pub const Affix = struct {
             .dodge => w.print("+{d}% dodge chance", .{n}) catch {},
             .resistance => w.print("+{d}% {s} resistance", .{ n, wording.word(m.element) }) catch {},
             .life_on_kill => w.print("+{d} life on kill", .{n}) catch {},
-            .penetration => w.print("Ignore {d}% physical damage reduction", .{n}) catch {},
+            .penetration => w.print("Ignore {d}% " ++ attrs.REDUCTION_LABEL, .{n}) catch {},
             .thorns => w.print("Return {d} damage to melee attackers", .{n}) catch {},
             .spoils => w.print("+{d}% gold and item rarity", .{n}) catch {},
         }
@@ -455,6 +456,10 @@ pub const Item = struct {
         return same_side < @as(usize, if (self.rarity() == .rare) 2 else 1);
     }
 
+    fn allowsRoll(self: Item, a: AffixRoll) bool {
+        return self.allows(a.kind);
+    }
+
     pub fn value(self: Item, kind: Mod) i32 {
         var n: i32 = 0;
         for (self.mods) |maybe| if (maybe) |m| {
@@ -493,16 +498,7 @@ pub fn roll(rng: *mathx.Rng, item_rarity: i32) Item {
     if (rare) out.rare_name = RareName.roll(rng);
     const count = if (rare) rng.range(3, AFFIXES_MAX) else rng.range(1, 2);
     for (0..@intCast(count)) |i| {
-        var eligible: usize = 0;
-        for (AFFIXES) |a| {
-            if (out.allows(a.kind)) eligible += 1;
-        }
-        var left = rng.below(@intCast(eligible));
-        const a = for (AFFIXES) |a| {
-            if (!out.allows(a.kind)) continue;
-            if (left == 0) break a;
-            left -= 1;
-        } else unreachable;
+        const a = rng.pickWhere(AffixRoll, &AFFIXES, out, Item.allowsRoll).?;
         out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)), .element = if (a.kind == .resistance) rng.pick(damage.Element, std.enums.values(damage.Element)) else .fire };
     }
     return out;
@@ -584,7 +580,7 @@ pub const Gear = struct {
             .bleed => |b| .{ .bleed = b.chance, .bleed_damage = b.damage },
             .stun => |n| .{ .stun = n },
             .penetration => |n| .{ .penetration = n },
-            else => .{},
+            .grant, .weapon_crit, .spell_crit, .physical_damage, .element, .flask => .{},
         };
         out.bleed = fixed.bleed;
         out.bleed_damage = fixed.bleed_damage;
@@ -743,6 +739,10 @@ pub const Ground = struct {
     supply_n: usize = 0,
 
     pub const COUNTED = .{ .{ "drops", "n" }, .{ "coins", "coin_n" }, .{ "supplies", "supply_n" } };
+
+    pub fn laid(self: *const Ground) struct { []const Drop, []const Supply } {
+        return .{ self.drops[0..self.n], self.supplies[0..self.supply_n] };
+    }
 
     pub fn hasItems(self: *const Ground, at: mathx.P) bool {
         for (self.drops[0..self.n]) |drop| if (drop.at.eq(at)) return true;

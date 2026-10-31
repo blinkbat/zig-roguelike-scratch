@@ -291,11 +291,15 @@ const App = struct {
         if (app.autosave) |*a| {
             game.leave(app.g);
             if (app.g.mode == .dead) {
-                app.undeleted = a.end();
-                a.deinit();
+                app.endDead(a);
             } else if (a.close(app.g)) |e| app.say(save.NOT_WRITTEN, .{@errorName(e)});
         }
         app.autosave = null;
+    }
+
+    fn endDead(app: *App, a: *save.Autosave) void {
+        app.undeleted = a.end();
+        a.deinit();
     }
 
     /// False once the app should close.
@@ -323,8 +327,7 @@ const App = struct {
                 app.bury();
                 if (app.autosave) |*a| {
                     if (g.mode == .dead) {
-                        app.undeleted = a.end();
-                        a.deinit();
+                        app.endDead(a);
                         app.autosave = null;
                     } else a.step(g, rl.getFrameTime());
                 }
@@ -599,9 +602,11 @@ fn slotDetails(s: *const save.Slot, buf: *[LINE]u8) ?[:0]const u8 {
 
 /// About half the spotlight's way from one hero to the next.
 const HEROES_MID_DT: f32 = 0.08;
+const HEROES_DIR = shots.SHOTS_DIR ++ "/heroes";
+const MOUSE_DIR = shots.SHOTS_DIR ++ "/mouse";
 
 pub fn shootHeroes(g: *game.Game) !void {
-    try std.fs.cwd().makePath("shots/heroes");
+    try std.fs.cwd().makePath(HEROES_DIR);
     const alloc = std.heap.c_allocator;
     const map = try alloc.create(atlas.Atlas);
     defer alloc.destroy(map);
@@ -617,12 +622,12 @@ pub fn shootHeroes(g: *game.Game) !void {
         const at = std.fmt.comptimePrint("-{d}p.png", .{size.y});
         app.page = .class;
         app.classes = .on(0);
-        try shootPage(&app, target, "shots/heroes/class" ++ at);
+        try shootPage(&app, target, HEROES_DIR ++ "/class" ++ at);
         _ = app.classes.step(&.{ .walk = .e }, size);
         app.classes.tick(HEROES_MID_DT);
-        try shootPage(&app, target, "shots/heroes/class-moving" ++ at);
+        try shootPage(&app, target, HEROES_DIR ++ "/class-moving" ++ at);
         app.page = .name;
-        try shootPage(&app, target, "shots/heroes/name" ++ at);
+        try shootPage(&app, target, HEROES_DIR ++ "/name" ++ at);
     }
 }
 
@@ -709,7 +714,7 @@ pub fn shootMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
     g.st = .{ .device = .keys };
     inline for (comptime std.enums.values(Page)) |page| {
         app.page = page;
-        try shootPage(&app, target, "shots/mouse/title-" ++ @tagName(page) ++ ".png");
+        try shootPage(&app, target, MOUSE_DIR ++ "/title-" ++ @tagName(page) ++ ".png");
     }
     const screen = g.screen;
     inline for (game.SCREENS) |size| {
@@ -718,19 +723,19 @@ pub fn shootMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
         defer rl.unloadRenderTexture(sized);
         inline for (.{ Page.main, Page.load, Page.ossuary, Page.bones }) |page| {
             app.page = page;
-            try shootPage(&app, sized, std.fmt.comptimePrint("shots/mouse/title-{s}-{d}p.png", .{ @tagName(page), size.y }));
+            try shootPage(&app, sized, std.fmt.comptimePrint(MOUSE_DIR ++ "/title-{s}-{d}p.png", .{ @tagName(page), size.y }));
         }
     }
     g.screen = screen;
     var empty = App{ .alloc = alloc, .g = g, .map = map, .edit_path = atlas.MAIN, .page = .ossuary };
-    try shootPage(&empty, target, "shots/mouse/title-ossuary-empty.png");
+    try shootPage(&empty, target, MOUSE_DIR ++ "/title-ossuary-empty.png");
     var longest: [listing.STEM_MAX + 1]u8 = @splat('W');
     longest[listing.STEM_MAX] = 0;
     rl.beginTextureMode(target);
     rl.clearBackground(look.BG);
     menu.draw(g.face, g.screen, CHOOSE_MAP, &.{longest[0..listing.STEM_MAX :0]}, 0, null);
     rl.endTextureMode();
-    try game.shots.exportTarget(target, "shots/mouse/title-long-row.png");
+    try game.shots.exportTarget(target, MOUSE_DIR ++ "/title-long-row.png");
 }
 
 test "an editor arena uses a separate map and never opens a save slot" {

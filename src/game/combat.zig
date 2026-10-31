@@ -217,7 +217,7 @@ pub fn burstPlant(g: *game.Game, p: P, s: Stroke) void {
     if (!gas.burst(&g.sim.lv, p)) return;
     g.sim.sayAt(p, "The glow plant bursts, leaving a cloud of " ++ gas.HEALING_NAME ++ "!", .{});
     g.cloud.hold(s.wait);
-    g.pic.burstPlant(p, was, s.wait);
+    g.pic.burstPlant(&g.sim.lv, p, was, s.wait);
     if (g.sim.lv.isLit(p)) g.pic.fx.puff(s.wait, .{ .at = mathx.centre(p), .ink = look.gasInk(.healing), .motes = fx.BURST_WISPS });
 }
 
@@ -614,9 +614,7 @@ fn swimTurn(g: *game.Game, id: u16, row: actor.Row, held: bool) void {
     }
     if (held) return;
     const d = actor.swim(&g.sim.lv, r.at, r.kind, h.at) orelse return;
-    g.pic.turnLater(id, d.delta().x);
-    g.sim.pool.move(&g.sim.lv, id, r.at.add(d.delta()));
-    tactics.entered(g, id);
+    foeStep(g, id, r.at, d, false);
 }
 
 /// Mends or nets when it can; otherwise holds `keeps` cells off, striking only when the hero corners it.
@@ -807,8 +805,7 @@ fn knockHero(g: *game.Game, by: u16) void {
     g.sim.pool.move(&g.sim.lv, g.sim.hero, to);
     g.sim.travel = null;
     g.sim.flowed = false;
-    h.tactics.steady = 0;
-    g.sim.stepped = true;
+    g.sim.heroMoved();
     game.castSight(g, to);
     g.sim.log.say("{s} is knocked back.", .{g.sim.name.text()});
     g.pic.recordKnock(.fromInt(by), from, to);

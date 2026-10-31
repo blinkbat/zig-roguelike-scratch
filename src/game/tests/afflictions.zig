@@ -24,8 +24,7 @@ const TRIES: usize = 400;
 const STRAY_PERCENT = confusion.CHANCE * 7 / 8;
 
 fn strayedAbout(strayed: usize) bool {
-    const want = TRIES * STRAY_PERCENT / mathx.PERCENT;
-    return strayed * 5 > want * 4 and strayed * 5 < want * 6;
+    return harness.aboutRateOf(strayed, TRIES, mathx.fraction(STRAY_PERCENT));
 }
 
 test "a shock adds half again to the next hit on either side, then is spent" {

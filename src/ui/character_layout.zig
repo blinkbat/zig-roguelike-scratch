@@ -88,7 +88,6 @@ pub const LOOT_SIZE = P{ .x = WIDTH, .y = LOOT_FOOT_Y + ACTION_H + menu.PANEL_PA
 pub const REQUIREMENT_GAP = 10;
 /// Under "Both hands in use", its explanation's top.
 pub const HELD_NOTE_DY = 42;
-pub const LOSS = look.rgb(0xe18c83);
 /// The most cells any page lays out by box.
 pub const CELLS_MAX = @max(skillbar.ACTS.len, items.SLOTS.len);
 pub const SLOT_BOX = std.EnumArray(items.Slot, struct { at: P, w: i32, h: i32 }).init(.{

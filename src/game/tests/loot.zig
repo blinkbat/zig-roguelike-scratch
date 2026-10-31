@@ -845,6 +845,28 @@ test "a pinned hero on the door it came through struggles there instead of going
     try std.testing.expectEqual(b, g.sim.node);
 }
 
+test "clicking the hero on the door it came through waits instead of going back" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const w = try atlas.testAtlas();
+    defer std.testing.allocator.destroy(w);
+    const b = runTwoRooms(g, w);
+    harness.nudge(g, .w);
+    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    try std.testing.expectEqual(b, g.sim.node);
+    const at = g.sim.heroAt().?;
+    try std.testing.expect(character.doorReached(g, at, at) != null);
+    var next = g.sim.clock;
+    next.turn();
+    g.mouse.target = at;
+    g.mouse.fresh = true;
+    try std.testing.expect(game.mouseControls.step(g));
+    try std.testing.expect(g.sim.travel == null);
+    try std.testing.expectEqual(next, g.sim.clock);
+    game.update(g, game.GLIDE_S + mathx.FRAME_DT);
+    try std.testing.expectEqual(b, g.sim.node);
+}
+
 test "inspect opened during a door trip opens, and the trip still finishes behind it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

@@ -22,7 +22,7 @@ const game = @import("../game.zig");
 const menu = @import("../ui/menu.zig");
 const P = mathx.P;
 
-pub fn openAim(run: *game.Game, by: input.Button, act: skillbar.Act) void {
+pub fn openAim(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     const suggested = preferredTarget(run, act, hero.at) orelse (if (act.consumes()) null else bow.pick(&run.sim.lv, &run.sim.pool, hero.at));
     if (suggested) |at| return aimAt(run, by, act, hero.at, at);
@@ -60,13 +60,13 @@ pub fn rememberTarget(run: *game.Game) void {
     run.target = if (a != null and a.?.seenFoe(&run.sim.lv)) id else null;
 }
 
-pub fn openLeap(run: *game.Game, by: input.Button, act: skillbar.Act) void {
+pub fn openLeap(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     aiming(run, by, act);
     run.mode.aim.mark = hero.at;
 }
 
-fn openSwing(run: *game.Game, by: input.Button, act: skillbar.Act) void {
+fn openSwing(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     if (preferredTarget(run, act, hero.at)) |at| return aimAt(run, by, act, hero.at, at);
     var mark: ?P = null;
@@ -80,7 +80,7 @@ fn openSwing(run: *game.Game, by: input.Button, act: skillbar.Act) void {
     aimAt(run, by, act, hero.at, mark);
 }
 
-fn aimAt(run: *game.Game, by: input.Button, act: skillbar.Act, from: P, mark: ?P) void {
+fn aimAt(run: *game.Game, by: ?input.Button, act: skillbar.Act, from: P, mark: ?P) void {
     const to = mark orelse {
         run.sim.log.say("Nothing in reach.", .{});
         return;
@@ -91,7 +91,7 @@ fn aimAt(run: *game.Game, by: input.Button, act: skillbar.Act, from: P, mark: ?P
     rememberTarget(run);
 }
 
-pub fn aiming(run: *game.Game, by: input.Button, act: skillbar.Act) void {
+pub fn aiming(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     run.mode = .{ .aim = game.Aim.of(by, act, run.sim.heroAt().?) };
 }
 
@@ -119,6 +119,10 @@ pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.sim
     return null;
 }
 
+pub fn blockedNow(run: *const game.Game, act: skillbar.Act) ?Blocked {
+    return blocked(run, act, &run.sim.flasks, run.sim.mana, heroPinned(run));
+}
+
 /// A stance's first upkeep falls due on the turn it is raised.
 fn needs(run: *const game.Game, act: skillbar.Act) i32 {
     const upkeep: i32 = if (act == .unyielding) rules.Unyielding.DRAIN else 0;
@@ -127,7 +131,7 @@ fn needs(run: *const game.Game, act: skillbar.Act) i32 {
 
 fn ready(run: *game.Game, act: skillbar.Act) bool {
     if (!run.pic.quiet()) return false;
-    switch (blocked(run, act, &run.sim.flasks, run.sim.mana, heroPinned(run)) orelse return true) {
+    switch (blockedNow(run, act) orelse return true) {
         .cooling => {
             const left = run.sim.cooldown.get(act);
             run.sim.log.say("{s} is ready in {d} turn{s}.", .{ act.name(), left, plural(left) });
@@ -230,7 +234,7 @@ fn recoverFlask(run: *game.Game, k: flask.Kind, wait: f32) void {
     }
 }
 
-pub const Use = struct { act: skillbar.Act, by: input.Button, set: skillbar.Set = .primary };
+pub const Use = struct { act: skillbar.Act, by: ?input.Button, set: skillbar.Set = .primary };
 
 /// Since PoE2 0.2.0, pressing the modifier while a button is already held fires that button's secondary skill.
 pub fn usedSkill(run: *game.Game) ?Use {
@@ -330,7 +334,7 @@ pub fn foesIn(run: *game.Game, area: glacial.Burst) Struck {
     return out;
 }
 
-fn openRush(run: *game.Game, by: input.Button, act: skillbar.Act) void {
+fn openRush(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
     if (preferredTarget(run, act, hero.at)) |at| return aimAt(run, by, act, hero.at, at);
     var near = grid.Nearest{ .from = hero.at };

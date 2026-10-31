@@ -163,7 +163,7 @@ fn drawSkills(g: *game.Game, layout: hud.Layout) void {
     const pinned = if (g.pic.heroShown(&g.sim)) |h| h.status.get(.pinned) > 0 else false;
     for (skillbar.SLOTS, 0..) |b, i| {
         const box = slotBox(layout, i);
-        const held = (g.st.held(b) and game.playShown(g)) or (g.mode == .aim and g.mode.aim.by == b) or (b == g.bar.modifier and g.mouse.secondary);
+        const held = (g.st.held(b) and game.playShown(g)) or (g.mode == .aim and g.mode.aim.by != null and g.mode.aim.by.? == b) or (b == g.bar.modifier and g.mouse.secondary);
         const s = slotShown(g, i);
         drawSlot(g, box, .{
             .act = if (s) |v| v.act else null,

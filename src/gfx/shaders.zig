@@ -152,6 +152,22 @@ pub const MAP_VIEW_FS =
     \\
 ;
 
+pub const SIN_HASH_FS =
+    \\float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    \\
+;
+
+/// `noise(p)`: value noise over the `float hash(vec2)` declared before it.
+pub const VALUE_NOISE_FS =
+    \\float noise(vec2 p) {
+    \\    vec2 i = floor(p);
+    \\    vec2 f = fract(p);
+    \\    vec2 u = f * f * (3.0 - 2.0 * f);
+    \\    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+    \\}
+    \\
+;
+
 /// `MAP_VIEW_FS`'s uniforms: where the map's top-left corner lands, a cell's pixels, and the target's size.
 pub const MapView = struct {
     origin: [2]f32,

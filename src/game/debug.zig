@@ -251,6 +251,10 @@ pub fn draw(g: *game.Game) void {
     menu.drawBack(&g.face, g.screen, &g.st);
 }
 
+const GL_VENDOR: c_uint = 0x1F00;
+const GL_RENDERER: c_uint = 0x1F01;
+const GL_VERSION: c_uint = 0x1F02;
+
 fn glString(id: c_uint) [:0]const u8 {
     const get: *const fn (c_uint) callconv(.c) ?[*:0]const u8 = @ptrCast(window.glfw.glfwGetProcAddress("glGetString") orelse return "Unavailable");
     return std.mem.span(get(id) orelse return "Unavailable");
@@ -289,9 +293,9 @@ fn drawDiagnostics(g: *game.Game) void {
     menu.action(&face, toggleBox(), prompt_icon.Prompt.menuOf(&g.st, menu.CONFIRM), label(g, .performance_overlay, &buf));
     var line: menu.Note(512) = .{};
     for ([_]struct { name: []const u8, id: c_uint }{
-        .{ .name = "Vendor", .id = 0x1F00 },
-        .{ .name = "Renderer", .id = 0x1F01 },
-        .{ .name = "OpenGL", .id = 0x1F02 },
+        .{ .name = "Vendor", .id = GL_VENDOR },
+        .{ .name = "Renderer", .id = GL_RENDERER },
+        .{ .name = "OpenGL", .id = GL_VERSION },
     }, 0..) |info, i| {
         line.say("{s}: {s}", .{ info.name, glString(info.id) });
         const size = @min(font.SMALL, @divTrunc(font.SMALL * INNER_W, @max(1, face.width(line.text(), font.SMALL))));

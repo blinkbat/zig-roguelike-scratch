@@ -487,13 +487,16 @@ fn moduleOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
 
 fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (inputSource(path)) return "Input";
-    if (std.mem.eql(u8, path, "src/save_data.zig")) return "Save";
-    if (std.mem.startsWith(u8, path, "src/edit/")) return "Editor";
-    if (std.mem.startsWith(u8, path, "src/map/")) return "Maps";
-    if (std.mem.startsWith(u8, path, "src/ui/")) return "Interface";
-    if (std.mem.eql(u8, path, "src/play/items.zig")) return "Items";
-    if (std.mem.eql(u8, path, "src/play/skillbar.zig")) return "Skills";
-    if (std.mem.eql(u8, path, "src/gfx/fx.zig")) return "Effects";
+    if (std.mem.startsWith(u8, path, SRC)) {
+        const rel = path[SRC.len..];
+        if (std.mem.eql(u8, rel, "save_data.zig")) return "Save";
+        if (std.mem.startsWith(u8, rel, "edit/")) return "Editor";
+        if (std.mem.startsWith(u8, rel, "map/")) return "Maps";
+        if (std.mem.startsWith(u8, rel, "ui/")) return "Interface";
+        if (std.mem.eql(u8, rel, "play/items.zig")) return "Items";
+        if (std.mem.eql(u8, rel, "play/skillbar.zig")) return "Skills";
+        if (std.mem.eql(u8, rel, "gfx/fx.zig")) return "Effects";
+    }
     const base = std.fs.path.basename(path);
     return humanize(a, if (std.mem.endsWith(u8, base, ZIG)) base[0 .. base.len - ZIG.len] else base);
 }

@@ -580,11 +580,10 @@ fn widthTo(face: anytype, buf: []u8, n: usize) i32 {
 
 /// Whether it was clicked.
 pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle, focused: bool, editable: bool) bool {
-    rl.drawRectangleRec(r, look.EDIT_PANEL);
-    rl.drawRectangleLinesEx(r, 1, if (focused) look.UI_FOCUS else look.EDGE);
+    const origin = widgets.well(r, focused);
     const hit = widgets.hot(ed.controls(), r, true, true, null).hit;
-    const x = widgets.textX(r);
-    const y = @as(i32, @intFromFloat(r.y)) + widgets.GAP;
+    const x = origin.x;
+    const y = origin.y;
     const width = widgets.insetW(r);
     const rows: usize = @intCast(@max(1, @divTrunc(@as(i32, @intFromFloat(r.height)) - 2 * widgets.GAP, LINE)));
     _ = f.layout(width, FontKey.of(&g.face), &g.face);
@@ -613,7 +612,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
         buf[end - start] = 0;
         if (focused and hi > lo) {
             const left = widthTo(&g.face, &buf, lo - start);
-            rl.drawRectangle(x + left, yy, widthTo(&g.face, &buf, hi - start) - left, LINE, look.EDIT_ROW_ON);
+            rl.drawRectangle(x + left, yy, widthTo(&g.face, &buf, hi - start) - left, LINE, widgets.ROW_ON);
         }
         displayBytes(buf[0 .. end - start]);
         g.face.draw(buf[0 .. end - start :0], x, yy, TEXT, if (editable) look.TEXT else look.DIM);
@@ -707,7 +706,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     var y = f.y;
     var buf: [1024]u8 = undefined;
     widgets.drawFit(&g.face, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
-    y += DETAIL + 6;
+    y += DETAIL + widgets.GAP;
     var tools = widgets.LayEnd{ .right = x + w, .y = y + 4, .gap = 8 };
     const close_r = tools.take(90);
     const reload_r = tools.take(90);
@@ -742,18 +741,18 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         for (s.results.items[s.top..end], 0..) |i, at| {
             const e = c.entries()[i];
             const yy = list_y + @as(i32, @intCast(at)) * ROW;
-            const r = raster.rect(list_x, yy, list_w - widgets.GAP, ROW - 6);
+            const r = raster.rect(list_x, yy, list_w - widgets.GAP, ROW - widgets.GAP);
             const h = widgets.hot(ed.controls(), r, s.leave == null, true, null);
             widgets.plate(r, s.selected == i, h.hot);
-            widgets.drawFit(&g.face, e.role, TEXT, list_w - 20, false, list_x + 6, yy + 4, if (s.selected == i) look.UI_GOLD else look.TEXT);
-            widgets.drawFit(&g.face, e.owner, DETAIL, list_w - 20, false, list_x + 6, yy + TEXT + 8, look.DIM);
+            widgets.drawFit(&g.face, e.role, TEXT, list_w - 20, false, list_x + widgets.GAP, yy + 4, if (s.selected == i) look.UI_GOLD else look.TEXT);
+            widgets.drawFit(&g.face, e.owner, DETAIL, list_w - 20, false, list_x + widgets.GAP, yy + TEXT + 8, look.DIM);
             var snippet: [SNIPPET_MAX]u8 = undefined;
             const n = @min(e.text.len, SNIPPET_MAX);
             @memcpy(snippet[0..n], e.text[0..n]);
             for (snippet[0..n]) |*char| if (char.* < ' ') {
                 char.* = ' ';
             };
-            widgets.drawFit(&g.face, snippet[0..n], DETAIL, list_w - 20, false, list_x + 6, yy + TEXT + DETAIL + 12, look.TEXT);
+            widgets.drawFit(&g.face, snippet[0..n], DETAIL, list_w - 20, false, list_x + widgets.GAP, yy + TEXT + DETAIL + 12, look.TEXT);
             if (h.hit and s.pick(i)) s.focus = .passage;
         }
     }
@@ -761,8 +760,8 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const count_label = std.fmt.bufPrintZ(&buf, "{d} passages", .{s.results.items.len}) catch "";
     widgets.drawFit(&g.face, count_label, DETAIL, list_w, false, list_x, bottom - DETAIL, look.DIM);
     if (s.results.items.len == 0) {
-        widgets.drawFit(&g.face, "No matching passages.", DETAIL, list_w, false, list_x + 6, list_y + 8, look.TEXT);
-        widgets.drawFit(&g.face, "Clear search or choose another group.", DETAIL, list_w, false, list_x + 6, list_y + 36, look.DIM);
+        widgets.drawFit(&g.face, "No matching passages.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + 8, look.TEXT);
+        widgets.drawFit(&g.face, "Clear search or choose another group.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + 36, look.DIM);
     }
     s.passage_box = raster.rect(0, 0, 0, 0);
     if (s.selected) |i| if (s.data) |c| {
@@ -771,9 +770,9 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         const breadcrumb = std.fmt.bufPrintZ(&buf, "{s}  >  {s}", .{ e.category, e.role }) catch "";
         widgets.drawFit(&g.face, breadcrumb, DETAIL, right_w, false, right_x, y + LINE, look.UI_GOLD);
         const source = std.fmt.bufPrintZ(&buf, "{s}:{d}", .{ e.path, e.line }) catch "";
-        widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE + DETAIL + 6, look.DIM);
-        widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * (DETAIL + 6), look.DIM);
-        var yy = y + LINE + 3 * (DETAIL + 6) + 4;
+        widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE + DETAIL + widgets.GAP, look.DIM);
+        widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * (DETAIL + widgets.GAP), look.DIM);
+        var yy = y + LINE + 3 * (DETAIL + widgets.GAP) + 4;
         const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
         widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
         yy += DETAIL + 8;
@@ -782,7 +781,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         if (drawField(ed, g, &s.draft, s.passage_box, s.focus == .passage, e.editable)) s.focus = .passage;
         yy += field_h + 8;
         widgets.drawFit(&g.face, "Written by", DETAIL, right_w, false, right_x, yy, look.DIM);
-        yy += DETAIL + 6;
+        yy += DETAIL + widgets.GAP;
         const tags = std.enums.values(catalog.Author);
         const tag_w = @divTrunc(right_w, @as(i32, @intCast(tags.len)));
         for (tags, 0..) |tag, at| {
@@ -806,7 +805,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
             s.note.clear();
             if (s.leave != null) finishClose(ed);
         }
-        if (s.leave != null and button(ed, g, foot.take(right_w - save_w - 112), "Keep editing", false, true)) s.leave = null;
+        if (s.leave != null and button(ed, g, foot.take(right_x + right_w - foot.x), "Keep editing", false, true)) s.leave = null;
         yy += widgets.ROW_STEP;
         const status = if (s.leave != null) "Save or discard before leaving." else if (!e.editable) e.reason else if (s.dirty()) "Unsaved changes" else if (e.alias != null) "Display name; code identity stays fixed." else "Keep format placeholders and control markers intact.";
         widgets.drawFit(&g.face, status, DETAIL, right_w, false, right_x, yy, if (s.dirty()) look.UI_FOCUS else look.DIM);

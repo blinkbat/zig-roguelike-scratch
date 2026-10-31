@@ -48,15 +48,15 @@ const STANDS = std.EnumArray(grid.Tile, ?Shadow).initDefault(@as(?Shadow, null),
     .chest_open = .silhouette,
 });
 
-const STANDING = blk: {
+const PICTURE_CASTERS = blk: {
     var n: usize = 0;
-    for (STANDS.values) |s| {
-        if (s != null) n += 1;
+    for (std.enums.values(grid.Tile)) |t| {
+        if (castsPicture(t)) n += 1;
     }
     var out: [n]grid.Tile = undefined;
     var i: usize = 0;
     for (std.enums.values(grid.Tile)) |t| {
-        if (STANDS.get(t) == null) continue;
+        if (!castsPicture(t)) continue;
         out[i] = t;
         i += 1;
     }
@@ -77,6 +77,10 @@ pub fn tall(t: grid.Tile) bool {
 
 pub fn occludes(t: grid.Tile) bool {
     return tall(t) or t == .reeds;
+}
+
+pub fn castsPicture(t: grid.Tile) bool {
+    return stands(t) or occludes(t);
 }
 
 pub const OCCLUDED_A: f32 = 0.4;
@@ -110,8 +114,8 @@ pub fn tileRect(t: grid.Tile, tex: rl.Texture2D, cell: rl.Rectangle) rl.Rectangl
     return .{ .x = cell.x, .y = cell.y + if (tall(t)) cell.height - height else (cell.height - height) / 2, .width = cell.width, .height = height };
 }
 
-/// Every sprite that throws a shadow from its feet: bodies, barrel, standing tiles, forest shapes, item bags and a mimic's chest.
-pub const FIGURES: usize = LIT_FIGURES + STANDING.len + WALL_MASKS.len + PROP_FIGURES;
+/// Every sprite that throws a shadow from its feet: bodies, barrel, picture casters, forest shapes, item bags and a mimic's chest.
+pub const FIGURES: usize = LIT_FIGURES + PICTURE_CASTERS.len + WALL_MASKS.len + PROP_FIGURES;
 const PROP_FIGURES = 3;
 /// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
 pub const LIT_FIGURES: usize = Bodies.len + 1;
@@ -250,9 +254,11 @@ pub const WaterView = struct {
     visibility: rl.Texture2D,
     glints: rl.Texture2D,
     mirror: ?Mirrors = null,
+    shimmer: bool = false,
+    seconds: f32 = 0,
 };
 
-const WaterShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, depth: i32, visibility: i32, glints: i32, mirror: i32, memory: i32, mirrored: i32 };
+const WaterShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, depth: i32, visibility: i32, glints: i32, mirror: i32, memory: i32, mirrored: i32, shimmer: i32, seconds: i32 };
 
 const SceneryShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, lightmap: i32, fogmap: i32, body: i32, hidden: i32, texel: i32, strength: i32 };
 
@@ -403,6 +409,8 @@ pub const Sprites = struct {
         shaders.setMapView(s, .{ .origin = origin, .cell = px, .screen = v.screen });
         shaders.setUniform(s.shader, s.depth, depth);
         shaders.setUniform(s.shader, s.mirrored, @as(i32, @intFromBool(v.mirror != null)));
+        shaders.setUniform(s.shader, s.shimmer, @as(i32, @intFromBool(v.shimmer)));
+        shaders.setUniform(s.shader, s.seconds, v.seconds);
         rl.setShaderValueTexture(s.shader, s.visibility, v.visibility);
         rl.setShaderValueTexture(s.shader, s.glints, v.glints);
         if (v.mirror) |m| {
@@ -448,10 +456,10 @@ pub const Sprites = struct {
     }
 
     pub fn figures(self: *const Sprites) [FIGURES]?rl.Texture2D {
-        var standing: [STANDING.len]?rl.Texture2D = undefined;
-        for (STANDING, &standing) |t, *s| s.* = self.tiles.getPtrConst(t).*;
+        var casters: [PICTURE_CASTERS.len]?rl.Texture2D = undefined;
+        for (PICTURE_CASTERS, &casters) |t, *s| s.* = self.tiles.getPtrConst(t).*;
         const props: [PROP_FIGURES]?rl.Texture2D = .{ self.item_bag, self.chest_item_bag, self.mimic_closed };
-        return self.litFigures() ++ standing ++ self.forest ++ props;
+        return self.litFigures() ++ casters ++ self.forest ++ props;
     }
 
     fn litFigures(self: *const Sprites) [LIT_FIGURES]?rl.Texture2D {
@@ -623,8 +631,8 @@ comptime {
         const size = pngSize(TILE_PNGS.get(t) orelse continue);
         if (size.x != SPRITE_PX or (size.y > SPRITE_PX) != tall(t)) @compileError(@tagName(t) ++ ": a standing picture is a sprite wide, and taller only when `tall`");
     }
-    for (STANDING) |t| {
-        if (TILE_PNGS.get(t) == null) @compileError("a standing tile casts from its picture: " ++ @tagName(t));
+    for (PICTURE_CASTERS) |t| {
+        if (TILE_PNGS.get(t) == null) @compileError("a picture caster needs its picture: " ++ @tagName(t));
     }
 }
 
@@ -813,6 +821,7 @@ pub const BLEED = rgb(0xd8483a);
 pub const EDGE = rgb(0x4a4438);
 pub const UI_GOLD = rgb(0xbca06b);
 pub const UI_FOCUS = rgb(0xd0b581);
+pub const LOSS = rgb(0xe18c83);
 const ARROW = rgb(0xe6dcb4);
 pub const VEIL = fade(BG, 0.72);
 
@@ -871,6 +880,8 @@ pub fn glyphGround(t: grid.Tile, sprites: *const Sprites) bool {
 
 const TileLook = struct { sym: [:0]const u8, ch: u8, fg: rl.Color, bg: ?rl.Color, mini: rl.Color, mini_dim: rl.Color };
 
+const TREE_INK = .{ .fg = rgb(0x788650), .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) };
+
 const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .wall = .{ .sym = "#", .ch = '#', .fg = rgb(0x9a8e78), .bg = null, .mini = rgb(0x8a7f6a), .mini_dim = rgb(0x46434c) },
     .floor = .{ .sym = "·", .ch = '.', .fg = rgb(0x5e5a50), .bg = FLOOR_BG, .mini = rgb(0x3a3830), .mini_dim = rgb(0x1c1c22) },
@@ -898,8 +909,8 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .shrooms = .{ .sym = "•", .ch = ',', .fg = rgb(0xd8ccb4), .bg = null, .mini = rgb(0x3c4a30), .mini_dim = rgb(0x1e241a) },
     .chest = .{ .sym = "C", .ch = 'C', .fg = GOLD, .bg = null, .mini = GOLD, .mini_dim = rgb(0x66502b) },
     .chest_open = .{ .sym = "O", .ch = 'O', .fg = rgb(0x96724d), .bg = null, .mini = rgb(0x96724d), .mini_dim = rgb(0x443422) },
-    .swamp_tree = .{ .sym = "S", .ch = 'S', .fg = rgb(0x788650), .bg = null, .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) },
-    .large_tree = .{ .sym = "L", .ch = 'L', .fg = rgb(0x788650), .bg = null, .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) },
+    .swamp_tree = .{ .sym = "S", .ch = 'S', .fg = TREE_INK.fg, .bg = null, .mini = TREE_INK.mini, .mini_dim = TREE_INK.mini_dim },
+    .large_tree = .{ .sym = "L", .ch = 'L', .fg = TREE_INK.fg, .bg = null, .mini = TREE_INK.mini, .mini_dim = TREE_INK.mini_dim },
     .glow_plant = .{ .sym = "&", .ch = '&', .fg = rgb(0x9fd2ff), .bg = null, .mini = rgb(0x7fb2e0), .mini_dim = rgb(0x2e4256) },
 });
 
@@ -1043,6 +1054,10 @@ pub const RETICLE = rgb(0xe8c25a);
 pub fn aimArea(a: skillbar.Act) rl.Color {
     return fade(arrowInk(a), AIM_AREA_A);
 }
+
+pub fn aimElement(e: damage.Element) rl.Color {
+    return fade(elementInk(e), AIM_AREA_A);
+}
 pub const RETICLE_BLOCKED = SHADE;
 pub const LEAN_OPEN = GOLD;
 pub const LEAN_FOE = FOE;
@@ -1138,17 +1153,6 @@ pub const FOCUS_TAPS = FOCUS_WEIGHTS ++
     \\
 ;
 
-/// `noise(p)`: value noise over the `float hash(vec2)` declared before it.
-pub const VALUE_NOISE_FS =
-    \\float noise(vec2 p) {
-    \\    vec2 i = floor(p);
-    \\    vec2 f = fract(p);
-    \\    vec2 u = f * f * (3.0 - 2.0 * f);
-    \\    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
-    \\}
-    \\
-;
-
 const FadeShader = struct { shader: rl.Shader, bounds: i32, minimum: i32 };
 const SCENERY_FS = shaders.FS_HEAD ++ FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ OCCLUSION_FS ++ shaders.glslConsts(.{ .FOG_RGB = rgbOf(FOG), .OVERBRIGHT = light_model.OVERBRIGHT }) ++
     \\uniform sampler2D lightmap;
@@ -1211,6 +1215,11 @@ const WATER_SATURATION: f32 = 0.8;
 const MIRROR_DEEP: f32 = 0.42;
 const MIRROR_SHALLOW: f32 = 0.28;
 const MIRROR_TINT = [3]f32{ 0.8, 0.9, 1.0 };
+/// Art this bright, over its depth, swells and fades with the surface; by up to this share.
+const WATER_HIGHLIGHT = [2]f32{ 0.62, 0.82 };
+const WATER_SHIMMER: f32 = 0.32;
+/// Cells a second each of the two crossing noise layers drifts.
+const SHIMMER_DRIFT = [2][2]f32{ .{ 0.21, -0.13 }, .{ -0.17, 0.24 } };
 const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     .SATURATION = WATER_SATURATION,
     .OVERBRIGHT = light_model.OVERBRIGHT,
@@ -1219,6 +1228,10 @@ const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     .MIRROR_DEEP = MIRROR_DEEP,
     .MIRROR_SHALLOW = MIRROR_SHALLOW,
     .MIRROR_TINT = MIRROR_TINT,
+    .HIGHLIGHT = WATER_HIGHLIGHT,
+    .SHIMMER = WATER_SHIMMER,
+    .DRIFT_A = SHIMMER_DRIFT[0],
+    .DRIFT_B = SHIMMER_DRIFT[1],
 }) ++ shaders.MAP_VIEW_FS ++
     \\uniform float depth;
     \\uniform sampler2D visibility;
@@ -1226,6 +1239,14 @@ const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     \\uniform sampler2D mirror;
     \\uniform sampler2D memory;
     \\uniform int mirrored;
+    \\uniform int shimmer;
+    \\uniform float seconds;
+    \\
+++ shaders.SIN_HASH_FS ++ shaders.VALUE_NOISE_FS ++
+    \\float swell(vec2 at) {
+    \\    float n = noise(at * 1.9 + DRIFT_A * seconds) * 0.55 + noise(at * 3.7 + DRIFT_B * seconds + 19.7) * 0.45;
+    \\    return smoothstep(0.25, 0.75, n) * 2.0 - 1.0;
+    \\}
     \\void main() {
     \\    vec4 art = texture(texture0, fragTexCoord) * fragColor;
     \\    vec2 at = cellAtFrag();
@@ -1242,6 +1263,7 @@ const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     \\    shine = mix(vec3(dot(shine, LUMA)), shine, SATURATION);
     \\    shine += texture(glints, at / CELLS).rgb * light.a;
     \\    vec3 base = art.rgb * (1.0 - reflected.a * strength);
+    \\    if (shimmer != 0) base *= 1.0 + SHIMMER * smoothstep(HIGHLIGHT.x, HIGHLIGHT.y, dot(art.rgb / depth, LUMA)) * swell(at) * light.a;
     \\    finalColor = vec4(clamp(base + shine / max(light.rgb * OVERBRIGHT, vec3(0.06)), 0.0, 1.0), art.a);
     \\}
 ;

@@ -545,7 +545,7 @@ pub const Book = struct {
                 } else if (dependent(view, bagged, slot)) |other| {
                     reason.say("Would leave {s} without its required attributes.", .{other.name(&name_buf)});
                 } else return;
-                _ = face.paragraph(reason.text(), x, at, layout.DETAIL_W, font.SMALL, layout.LOSS);
+                _ = face.paragraph(reason.text(), x, at, layout.DETAIL_W, font.SMALL, look.LOSS);
                 return;
             };
         }

@@ -25,11 +25,9 @@ pub const Caltrops = struct {
     pub fn bleed(rank: u8) i32 {
         return rank -| 1;
     }
-    pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, ADJACENT);
-    }
+    pub const area = glacial.Patch(ADJACENT).area;
     pub fn writeRank(rank: u8, w: anytype) void {
-        w.print("Patch: {d} turns; pin: {d} turn(s); ", .{ duration(rank), pins(rank) }) catch {};
+        w.print("Patch: {d} turns; pin: {d} turn{s}; ", .{ duration(rank), pins(rank), mathx.plural(pins(rank)) }) catch {};
         if (bleed(rank) == 0) w.writeAll("no bleed.") catch {} else w.print("bleed: {d} per turn.", .{bleed(rank)}) catch {};
     }
 };
@@ -66,11 +64,9 @@ pub const GravityWell = struct {
     pub fn pins(rank: u8) u8 {
         return rank -| 1;
     }
-    pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, RADIUS);
-    }
+    pub const area = glacial.Patch(RADIUS).area;
     pub fn writeRank(rank: u8, w: anytype) void {
-        w.print("Pull: {d} cell(s); pin: {d} turn(s).", .{ pulls(rank), pins(rank) }) catch {};
+        w.print("Pull: {d} cell{s}; pin: {d} turn{s}.", .{ pulls(rank), mathx.plural(pulls(rank)), pins(rank), mathx.plural(pins(rank)) }) catch {};
     }
 };
 pub const Combustion = struct {
@@ -84,9 +80,7 @@ pub const Combustion = struct {
     pub const FUEL = resilience.Kind.burn;
     pub const FUEL_DAMAGE: i32 = 2;
     pub const REACH: i32 = 1;
-    pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, REACH);
-    }
+    pub const area = glacial.Patch(REACH).area;
 };
 pub const ArcaneBarrier = struct {
     pub const COST: i32 = 6;
@@ -118,9 +112,7 @@ pub const Shatter = struct {
     pub const FUEL = resilience.Kind.chill;
     pub const FUEL_DAMAGE: i32 = 2;
     pub const REACH: i32 = 1;
-    pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, REACH);
-    }
+    pub const area = glacial.Patch(REACH).area;
 };
 pub const FireWall = struct {
     pub const COST: i32 = 6;
@@ -170,9 +162,7 @@ pub const Whirlwind = struct {
     pub const VERB = "whirls into";
     pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
     pub const DESCRIPTION = "Strike every adjacent foe and barrel with your melee weapon.";
-    pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        return patch(lv, at, ADJACENT);
-    }
+    pub const area = glacial.Patch(ADJACENT).area;
 };
 pub const Unyielding = struct {
     pub const COST: i32 = 2;
@@ -194,13 +184,8 @@ pub const State = struct {
     overwatch: ?mathx.Dir = null,
 };
 
-pub const patch = glacial.patch;
 /// The reach of a patch on a cell and its neighbours.
 const ADJACENT: i32 = 1;
-
-comptime {
-    for ([_]i32{ ADJACENT, GravityWell.RADIUS, Combustion.REACH, Shatter.REACH }) |r| std.debug.assert(r <= glacial.BURST_MAX);
-}
 
 /// A rank counted as at least the first.
 fn ranked(rank: u8) u8 {

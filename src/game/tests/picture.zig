@@ -1191,7 +1191,7 @@ test "a flask pressed mid-walk is drunk once the step is drawn, ahead of the hel
     g.sim.heroActor().?.hp -= 5;
     const by = harness.boundTo(g, .life_flask);
     g.pic.busy = game.GLIDE_S;
-    g.st = .{ .walk = .e, .pressed = .initOne(by.by), .down = .initOne(by.by) };
+    g.st = .{ .walk = .e, .pressed = .initOne(by.by.?), .down = .initOne(by.by.?) };
     if (by.set == .secondary) g.st.down.insert(g.bar.modifier.?);
     game.update(g, 0);
     try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);
@@ -1217,7 +1217,7 @@ test "a fresh walk tap pressed after a queued skill replaces it, the latest pres
     g.sim.heroActor().?.hp -= 5;
     const by = harness.boundTo(g, .life_flask);
     g.pic.busy = game.GLIDE_S;
-    g.st = .{ .pressed = .initOne(by.by), .down = .initOne(by.by) };
+    g.st = .{ .pressed = .initOne(by.by.?), .down = .initOne(by.by.?) };
     if (by.set == .secondary) g.st.down.insert(g.bar.modifier.?);
     game.update(g, 0);
     try std.testing.expectEqual(skillbar.Act.life_flask, g.pending.?.skill.act);

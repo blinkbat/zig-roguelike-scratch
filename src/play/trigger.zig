@@ -178,7 +178,7 @@ pub const Runtime = struct {
         return d;
     }
 
-    /// Opens dialog `d` at its first line, its actions done; refused while one is up, or when no way through it ends.
+    /// Opens dialog `d` at its first line, its actions done; refused while one is up, or when a line it reaches has no way to an end.
     pub fn open(self: *Runtime, s: *const Script, d: u8, folk: ?u8, l: *log.Log) bool {
         if (self.talk != null or !s.opens(d)) return false;
         self.talk = .{ .dialog = d, .folk = folk };

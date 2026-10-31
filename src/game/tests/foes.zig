@@ -133,7 +133,7 @@ test "retaliation kills do not replace the last arrow in the death report" {
         game.settle(g);
         g.sim.rng = mathx.Rng.init(seed);
         const skills = @import("../skills.zig");
-        skills.useSkill(g, .{ .act = .shoot, .by = .x });
+        harness.useAct(g, .shoot);
         g.mode.aim.mark = g.sim.pool.get(target).?.at;
         skills.confirmAim(g);
         if (g.mode != .dead) continue;
@@ -988,7 +988,11 @@ test "a bog leech swims unseen to the shore, surfaces beside the hero and is str
         if (!g.sim.pool.get(id).?.submerged) {
             harness.stagger(g);
             g.pic.catchUp(&g.sim);
-            try std.testing.expect(harness.gone(g, slot));
+            g.st = .{};
+            while (g.pic.glide[slot].left() > 0) {
+                try std.testing.expect(harness.gone(g, slot));
+                game.update(g, harness.TEST_DT);
+            }
         }
         harness.drawnOut(g);
     }

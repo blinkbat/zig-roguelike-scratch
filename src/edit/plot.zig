@@ -271,7 +271,7 @@ fn split(w: i32, comptime shares: []const i32, comptime caps: []const i32) [shar
 fn frameOf(ed: *editor.Editor, g: *game.Game, title: [:0]const u8) Frame {
     const page = widgets.pageFrame(&g.face, g.screen, title);
     const f = page.frame;
-    if (button(ed, g, widgets.row(f.buttonX(), page.bottom - ROW, widgets.MODAL_BTN_W), widgets.keyed("Close", Desk.BACK_CAPTION), false, true, "Every change is in the map already; it saves with it")) close(ed);
+    if (button(ed, g, f.button(page.bottom - ROW, 0), widgets.keyed("Close", Desk.BACK_CAPTION), false, true, "Every change is in the map already; it saves with it")) close(ed);
     return .{ .x = f.x + PAD, .y = f.y, .w = f.w - 2 * PAD, .bottom = page.bottom - ROW - GAP };
 }
 
@@ -284,7 +284,7 @@ fn rightButton(ed: *editor.Editor, g: *game.Game, right: i32, y: i32, w: i32, la
 }
 
 fn dropButton(ed: *editor.Editor, g: *game.Game, right: i32, y: i32, live: bool, tip: [:0]const u8) bool {
-    return rightButton(ed, g, right, y, DROP_W, "x", live, tip);
+    return rightButton(ed, g, right, y, DROP_W, widgets.DROP, live, tip);
 }
 
 /// A name's row: its label, its words, and a button at its end; whether that was pressed.
@@ -295,7 +295,7 @@ fn nameRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: []c
 }
 
 fn caption(g: *game.Game, x: i32, y: i32, w: i32, s: []const u8, col: rl.Color) void {
-    widgets.drawFit(&g.face, s, DETAIL, w, false, x, y + editor.SMALL_DY, col);
+    widgets.drawFit(&g.face, s, DETAIL, w, false, x, y + editor.ROW_DETAIL_DY, col);
 }
 
 fn heading(g: *game.Game, x: i32, y: i32, w: i32, s: []const u8) void {
@@ -352,14 +352,13 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
         if (text_panel.drawField(ed, g, &s.field, r, true, true) or ed.mouseIn(r)) s.claimed = true;
         return;
     }
-    rl.drawRectangleRec(r, look.EDIT_PANEL);
-    rl.drawRectangleLinesEx(r, 1, look.EDGE);
+    const origin = widgets.well(r, false);
     const h = widgets.hot(ed.controls(), r, true, true, "Click to type; it is written into the map as you type");
     if (h.hot) rl.drawRectangleLinesEx(r, 1, look.EDIT_HOVER);
     const words_ = target(&ed.map.script, f).?.words;
     const now = words_.text();
-    const x = widgets.textX(r);
-    const y: i32 = @as(i32, @intFromFloat(r.y)) + GAP;
+    const x = origin.x;
+    const y = origin.y;
     const w = widgets.insetW(r);
     if (now.len == 0) {
         widgets.drawFit(&g.face, blank, TEXT, w, false, x, y, look.DIM);
@@ -1005,7 +1004,7 @@ fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i
         t.parked = !t.parked;
         ed.bank();
     }
-    const priority_x = x + LABEL_W + 2 * TOGGLE_W + 3 * GAP;
+    const priority_x = toggles.x + GAP;
     caption(g, priority_x, y, PRIORITY_LABEL_W, "priority", look.DIM);
     var pri: i32 = t.priority;
     numberStep(ed, g, widgets.row(priority_x + PRIORITY_LABEL_W, y, 140), &pri, -script.PRIORITY_MAX, script.PRIORITY_MAX, "", "Higher runs first when two are ready on the same turn");

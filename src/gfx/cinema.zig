@@ -263,9 +263,8 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR 
     \\uniform float daylight;
     \\uniform float brightness;
     \\uniform vec2 direction;
-    \\float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     \\
-++ look.VALUE_NOISE_FS ++
+++ shaders.SIN_HASH_FS ++ shaders.VALUE_NOISE_FS ++
     \\vec4 softField(vec2 p) {
     \\    vec2 i = floor(p - 0.5), f = smoothstep(vec2(0.0), vec2(1.0), fract(p - 0.5));
     \\    return mix(mix(fieldAt(i), fieldAt(i + vec2(1.0, 0.0)), f.x), mix(fieldAt(i + vec2(0.0, 1.0)), fieldAt(i + vec2(1.0)), f.x), f.y);

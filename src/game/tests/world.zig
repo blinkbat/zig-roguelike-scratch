@@ -15,6 +15,7 @@ const climate = @import("../../map/climate.zig");
 const day = @import("../../map/day.zig");
 const shots = @import("../shots.zig");
 const harness = @import("../harness.zig");
+const menu = @import("../../ui/menu.zig");
 const game = @import("../../game.zig");
 const P = mathx.P;
 const HERO = actor.HERO;
@@ -309,6 +310,28 @@ test "stepping into a glow plant bursts it into healing gas for a turn, leaving 
     try std.testing.expectEqual(grid.Tile.grass, g.pic.tileShown(&g.sim, plant));
     try std.testing.expect(harness.logged(g, gas.HEALING_NAME));
     try std.testing.expectEqual(game.Move.step, game.heroMove(g, .e));
+}
+
+test "a glow plant shot in the dark keeps its pool drawn, and the foe it lit, until the arrow lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const plant = P{ .x = 27, .y = 20 };
+    harness.arena(g, from, &.{});
+    g.sim.outdoors = false;
+    g.sim.lv.set(plant, .glow_plant);
+    const rat = harness.spawnAt(g, .rat, .{ .x = 28, .y = 20 }, false);
+    game.settle(g);
+    const slot = actor.Pool.slot(rat);
+    try std.testing.expect(harness.drawn(g, slot));
+    harness.use(g, .shoot);
+    g.mode.aim.mark = plant;
+    while (g.mode == .aim) harness.press(g, menu.CONFIRM);
+    try std.testing.expectEqual(grid.Tile.grass, g.sim.lv.at(plant));
+    try std.testing.expect(!g.sim.lv.isLit(g.sim.pool.get(rat).?.at));
+    try std.testing.expect(harness.drawn(g, slot) and g.pic.shot != null);
+    harness.drawnOut(g);
+    try std.testing.expect(harness.gone(g, slot));
 }
 
 fn wispsOf(g: *const game.Game, ink: @TypeOf(look.GAS)) usize {

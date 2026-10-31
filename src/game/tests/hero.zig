@@ -76,6 +76,7 @@ test "a frost vial thrown from the bag splashes cold on every foe round its mark
     g.character.choose(.inventory);
     harness.press(g, menu.CONFIRM);
     try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+    try std.testing.expect(g.bar.slotOf(.frost_vial) == null and g.mode.aim.by == null);
     try std.testing.expectEqual(@as(u8, 2), g.sim.inventory.stacks.get(.frost_vial));
     var next = g.sim.clock;
     next.turn();

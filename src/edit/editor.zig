@@ -43,7 +43,6 @@ const P = mathx.P;
 const Desk = input.Desk;
 
 pub const NODE_H: i32 = 60;
-const SMALL = widgets.DETAIL;
 pub const ZOOMS = [_]f32{ 8, 16, 32, 64 };
 const ZOOM_AT = zoomOf(16);
 pub const BRUSHES = [_]i32{ 1, 2, 3, 5 };
@@ -69,20 +68,17 @@ pub const DOT_R: f32 = 4;
 /// Pixels past a door's dot a press still takes it.
 pub const DOT_SLOP: f32 = 3;
 pub const LABEL_W: i32 = 126;
-pub const STEP_W = widgets.STEP_W;
-pub const STEP_PITCH = widgets.STEP_PITCH;
-pub const SHIFT_STEP = tool_catalog.SHIFT_STEP;
 pub const STATUS_H: i32 = widgets.GAP + 2 * widgets.LINE_STEP;
 const WEIGHT_W: i32 = 36;
 pub const MEMBER_W: i32 = 24;
 pub const MEMBER_GAP: i32 = 2;
-pub const WEIGHT_SPAN: i32 = 2 * STEP_W + WEIGHT_W;
+pub const WEIGHT_SPAN: i32 = 2 * widgets.STEP_W + WEIGHT_W;
 const BRUSH_W: i32 = 64;
-pub const BRUSH_SPAN: i32 = 2 * STEP_W + BRUSH_W;
+pub const BRUSH_SPAN: i32 = 2 * widgets.STEP_W + BRUSH_W;
 pub const MEMBERS_X: i32 = WEIGHT_SPAN + widgets.BLOCK_GAP;
-pub const MAKEUP_TOOLS_X: i32 = widgets.INNER_W - @as(i32, knobs.MAKEUP_TOOLS.len) * STEP_PITCH + widgets.GAP;
+pub const MAKEUP_TOOLS_X: i32 = widgets.INNER_W - @as(i32, knobs.MAKEUP_TOOLS.len) * widgets.STEP_PITCH + widgets.GAP;
 pub const TEXT_DY: i32 = @divTrunc(widgets.ROW_H - widgets.TEXT, 2);
-pub const SMALL_DY: i32 = @divTrunc(widgets.ROW_H - SMALL, 2);
+pub const ROW_DETAIL_DY: i32 = @divTrunc(widgets.ROW_H - widgets.DETAIL, 2);
 pub const TITLE_DY: i32 = 3;
 pub const NODE_GAP: i32 = 2;
 pub const DETAIL_DY: i32 = widgets.TEXT + 1;
@@ -154,6 +150,10 @@ pub const SEEN = blk: {
 const Popup = struct { slot: rl.Rectangle, which: Which };
 pub const Which = union(enum) { algo, feature: usize };
 pub const CellAction = enum { play, go };
+pub const CELL_ACTIONS = std.EnumArray(CellAction, struct { label: [:0]const u8, tip: [:0]const u8, armed: []const u8 }).init(.{
+    .play = .{ .label = "Play here", .tip = "Choose a cell to play from", .armed = "a cell to play there" },
+    .go = .{ .label = "Go through", .tip = "Choose a linked door to follow", .armed = "a linked door to go through" },
+});
 
 pub const Editor = struct {
     pub fn controls(ed: *Editor) widgets.Controls {
@@ -908,7 +908,7 @@ pub fn refit(ed: *Editor, pg: *atlas.Procgen, was: atlas.Procgen) void {
 fn drawTip(ed: *const Editor, g: *game.Game) void {
     const tip = ed.tip orelse return;
     var fit_buf: [widgets.LINE]u8 = undefined;
-    const s = widgets.textFace(&g.face).fit(&fit_buf, tip, SMALL, TIP_MAX_W, false);
+    const s = widgets.textFace(&g.face).fit(&fit_buf, tip, widgets.DETAIL, TIP_MAX_W, false);
     const size = widgets.tagSize(&g.face, s, widgets.GAPS);
     const x = std.math.clamp(ed.desk.mouse.x + TIP_DX, 0, @max(0, g.screen.x - size.x));
     const y = if (ed.desk.mouse.y + TIP_DY + size.y > g.screen.y) ed.desk.mouse.y - TIP_DY - size.y else ed.desk.mouse.y + TIP_DY;

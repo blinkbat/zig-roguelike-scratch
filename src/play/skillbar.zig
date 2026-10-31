@@ -434,6 +434,10 @@ pub const SLOTS = blk: {
     break :blk s[0..s.len].*;
 };
 
+comptime {
+    std.debug.assert(std.mem.eql(Button, &SLOTS, &input.SLOT_ORDER));
+}
+
 pub const Slot = struct { set: Set, button: Button };
 
 const Row = std.EnumArray(Button, ?Act);

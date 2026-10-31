@@ -563,10 +563,9 @@ pub fn heroBump(g: *Game, from: P, at: P, late: f32) presentation.Stroke {
 }
 
 pub fn heroTo(g: *Game, to: P) void {
-    if (g.sim.heroActor()) |h| h.tactics.steady = 0;
+    g.sim.heroMoved();
     g.sim.pool.move(&g.sim.lv, g.sim.hero, to);
     combat.arrive(g, to);
-    g.sim.stepped = true;
     g.sim.travel = g.sim.leadsTo(to);
 }
 
@@ -802,7 +801,7 @@ pub fn playShown(g: *const Game) bool {
     return modeShown(g) == .play;
 }
 
-pub const DISMISS = [_]input.Button{ CONFIRM, PAUSE, BACK, .x };
+pub const DISMISS = [_]input.Button{ CONFIRM, PAUSE, BACK, menu.CHANGE };
 
 fn dismissed(st: *const input.State) bool {
     for (DISMISS) |b| {

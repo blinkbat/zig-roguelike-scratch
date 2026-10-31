@@ -132,6 +132,11 @@ pub const Simulation = struct {
         self.displaced = .initEmpty();
     }
 
+    pub fn heroMoved(self: *Simulation) void {
+        if (self.heroActor()) |h| h.tactics.steady = 0;
+        self.stepped = true;
+    }
+
     pub fn heroSteady(self: *const Simulation) u8 {
         const h = self.heroBody() orelse return 0;
         return h.tactics.steady;
@@ -154,7 +159,7 @@ pub const Simulation = struct {
     /// What the map's triggers read of the run.
     pub fn world(self: *const Simulation) trigger.World {
         var w = trigger.World{ .node = self.node, .hero = self.heroAt() orelse .{ .x = 0, .y = 0 } };
-        for (self.pool.items[0..self.pool.n]) |a| {
+        for (self.pool.constSlice()) |a| {
             if (a.alive and a.foe()) w.alive.getPtr(a.kind.family()).* += 1;
         }
         return w;
@@ -166,10 +171,8 @@ pub const Simulation = struct {
 
     /// A body stands at `p` that nothing shows: a chest that is a mimic, a leech under the water.
     pub fn hiddenAt(self: *const Simulation, p: P) bool {
-        const id = self.lv.who(p);
-        if (id == grid.NO_ONE) return false;
-        const a = &self.pool.items[actor.Pool.slot(id)];
-        return a.alive and a.veiled();
+        const a = self.pool.getConst(self.lv.who(p)) orelse return false;
+        return a.veiled();
     }
 
     pub fn heroRow(self: *const Simulation) actor.Row {

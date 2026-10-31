@@ -137,7 +137,7 @@ const Tier = enum {
 
 /// Nothing to read in a zero, so it recedes.
 fn quiet(n: i32, col: rl.Color) rl.Color {
-    return if (n == 0) look.DIM else if (n < 0) layout.LOSS else col;
+    return if (n == 0) look.DIM else if (n < 0) look.LOSS else col;
 }
 
 /// One column of the sheet, top down; `dry` lays it out without drawing to check it fits.

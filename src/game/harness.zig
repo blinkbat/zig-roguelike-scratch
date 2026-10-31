@@ -145,7 +145,7 @@ pub fn pressInteract(g: *game.Game) void {
 
 pub fn use(g: *game.Game, act: skillbar.Act) void {
     const u = boundTo(g, act);
-    if (u.set == .secondary) pressHolding(g, u.by, &.{g.bar.modifier.?}) else press(g, u.by);
+    if (u.set == .secondary) pressHolding(g, u.by.?, &.{g.bar.modifier.?}) else press(g, u.by.?);
 }
 
 pub fn confirmUse(g: *game.Game, act: skillbar.Act) void {
@@ -153,9 +153,13 @@ pub fn confirmUse(g: *game.Game, act: skillbar.Act) void {
     press(g, CONFIRM);
 }
 
+pub fn useAct(g: *game.Game, act: skillbar.Act) void {
+    skills.useSkill(g, .{ .act = act, .by = null });
+}
+
 /// `act` opened, bound or not, its reticle put on `at` and confirmed.
 pub fn aimAt(g: *game.Game, act: skillbar.Act, at: P) void {
-    skills.useSkill(g, .{ .act = act, .by = .x });
+    useAct(g, act);
     if (g.mode != .aim) return;
     g.mode.aim.mark = at;
     skills.confirmAim(g);
@@ -203,10 +207,7 @@ pub fn expectDamage(g: *const game.Game, comptime act: skillbar.Act, dealt: i32,
 pub const Bite = struct { id: u16, lands: bool };
 
 fn combatant(g: *const game.Game, id: u16) *const actor.Actor {
-    std.debug.assert(id != grid.NO_ONE and id <= g.sim.pool.n);
-    const a = &g.sim.pool.items[actor.Pool.slot(id)];
-    std.debug.assert(a.alive);
-    return a;
+    return g.sim.pool.getConst(id).?;
 }
 
 fn bitesHold(g: *const game.Game, hero_at: P, bites: []const Bite, rng: *mathx.Rng) bool {

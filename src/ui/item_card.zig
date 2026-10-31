@@ -60,7 +60,7 @@ const CardLine = union(enum) {
         return switch (line) {
             .damage, .armour, .innate => look.TEXT,
             .unarmed => look.DIM,
-            .requires => |r| if (r.met) look.DIM else layout.LOSS,
+            .requires => |r| if (r.met) look.DIM else look.LOSS,
         };
     }
 };

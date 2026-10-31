@@ -196,7 +196,7 @@ pub fn armCellAction(ed: *Editor, action: editor.CellAction) void {
     ed.cell_action = action;
     ed.say("{s} {s}; {s} cancels", .{
         Desk.PAINT_CAPTION,
-        if (action == .play) "a cell to play there" else "a linked door to go through",
+        editor.CELL_ACTIONS.get(action).armed,
         Desk.ERASE_CAPTION,
     });
 }

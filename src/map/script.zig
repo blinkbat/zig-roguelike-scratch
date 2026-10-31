@@ -242,15 +242,15 @@ pub const Choice = struct {
         const g = self.gate orelse return true;
         return g.kind == .always;
     }
+
+    pub fn possible(self: *const Choice) bool {
+        const g = self.gate orelse return true;
+        return g.kind != .never;
+    }
 };
 
 const Lines = std.StaticBitSet(MAX_LINES);
-
-/// The end, or a line in `ending`.
-fn endsAt(next: ?u8, ending: *const Lines) bool {
-    const n = next orelse return true;
-    return n < MAX_LINES and ending.isSet(n);
-}
+const EXITS = MAX_CHOICES + 1;
 
 pub const Line = struct {
     pub const COUNTED = .{ .{ "choice", "choice_n" }, .{ "act", "act_n" } };
@@ -282,12 +282,18 @@ pub const Line = struct {
         return true;
     }
 
-    fn goesOn(self: *const Line, ending: *const Lines) bool {
+    fn exits(self: *const Line, out: *[EXITS]?u8) []const ?u8 {
+        var n: usize = 0;
         for (self.choices()) |*c| {
-            if (c.gate) |g| if (g.kind == .never) continue;
-            if (endsAt(c.next, ending)) return true;
+            if (!c.possible()) continue;
+            out[n] = c.next;
+            n += 1;
         }
-        return self.thenUsed() and endsAt(self.then, ending);
+        if (self.thenUsed()) {
+            out[n] = self.then;
+            n += 1;
+        }
+        return out[0..n];
     }
 };
 
@@ -305,19 +311,54 @@ pub const Dialog = struct {
         return indexOfName(self.lines(), name);
     }
 
-    /// Some way from its first line comes to an end, taking every gate as one that may hold or not.
+    /// Every line reachable from its first has some way to an end, taking every gate as one that may hold or not.
     pub fn ends(self: *const Dialog) bool {
+        if (self.line_n == 0) return true;
         var ending = Lines.initEmpty();
         var grew = true;
         while (grew) {
             grew = false;
             for (self.lines(), 0..) |*l, i| {
-                if (ending.isSet(i) or !l.goesOn(&ending)) continue;
+                if (ending.isSet(i) or !self.goesOn(l, &ending)) continue;
                 ending.set(i);
                 grew = true;
             }
         }
-        return self.line_n == 0 or ending.isSet(0);
+        var reached = Lines.initEmpty();
+        reached.set(0);
+        var todo: [MAX_LINES]u8 = undefined;
+        todo[0] = 0;
+        var n: usize = 1;
+        var buf: [EXITS]?u8 = undefined;
+        while (n > 0) {
+            n -= 1;
+            const at = todo[n];
+            if (!ending.isSet(at)) return false;
+            for (self.line[at].exits(&buf)) |next| self.reach(next, &reached, &todo, &n);
+        }
+        return true;
+    }
+
+    fn lineOf(self: *const Dialog, next: ?u8) ?u8 {
+        const at = next orelse return null;
+        return if (at < self.line_n) at else null;
+    }
+
+    fn goesOn(self: *const Dialog, l: *const Line, ending: *const Lines) bool {
+        var buf: [EXITS]?u8 = undefined;
+        for (l.exits(&buf)) |next| {
+            if (next == null) return true;
+            if (self.lineOf(next)) |at| if (ending.isSet(at)) return true;
+        }
+        return false;
+    }
+
+    fn reach(self: *const Dialog, next: ?u8, reached: *Lines, todo: *[MAX_LINES]u8, n: *usize) void {
+        const at = self.lineOf(next) orelse return;
+        if (reached.isSet(at)) return;
+        reached.set(at);
+        todo[n.*] = at;
+        n.* += 1;
     }
 
     pub fn addLine(self: *Dialog) ?u8 {
@@ -527,14 +568,14 @@ pub const Script = struct {
         return self.dialog[0..self.dialog_n];
     }
 
-    /// Dialogs no way through ends, which never open.
+    /// Dialogs with a reachable line no way out of, which never open.
     pub fn endless(self: *const Script) usize {
         var n: usize = 0;
         for (self.dialogs()) |*d| n += @intFromBool(!d.ends());
         return n;
     }
 
-    /// Dialog `d` has a first line, and a way through it ends.
+    /// Dialog `d` has a first line, and every line reachable from it has a way to an end.
     pub fn opens(self: *const Script, d: u8) bool {
         return d < self.dialog_n and self.dialog[d].line_n > 0 and self.dialog[d].ends();
     }

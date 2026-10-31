@@ -44,7 +44,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Pro
     section(g, &y, "Features");
     var drop_feature: ?usize = null;
     for (pg.featuresMut(), 0..) |*ft, i| {
-        if (widgets.button(ed.controls(), &g.face, widgets.row(widgets.PAD + editor.LABEL_W - editor.STEP_PITCH, y, editor.STEP_W), DROP, false, true, "Take this feature away")) drop_feature = i;
+        if (widgets.button(ed.controls(), &g.face, widgets.row(widgets.PAD + editor.LABEL_W - widgets.STEP_PITCH, y, widgets.STEP_W), widgets.DROP, false, true, "Take this feature away")) drop_feature = i;
         choiceRow(ed, g, &y, atlas.Feature, ft, FEATURE_CHOICE, .{ .feature = i });
         switch (ft.*) {
             inline else => |*fp, k| knobRows(ed, g, &y, fp, comptime featureRowsOf(k), true),
@@ -159,7 +159,7 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
     }
     var dropped = false;
     for (MAKEUP_TOOLS, 0..) |t, i| {
-        const r = widgets.row(widgets.PAD + editor.MAKEUP_TOOLS_X + @as(i32, @intCast(i)) * editor.STEP_PITCH, y, editor.STEP_W);
+        const r = widgets.row(widgets.PAD + editor.MAKEUP_TOOLS_X + @as(i32, @intCast(i)) * widgets.STEP_PITCH, y, widgets.STEP_W);
         const live = switch (t) {
             .grow => m.canGrow(),
             .shrink => m.canShrink(),
@@ -175,8 +175,6 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
     return dropped;
 }
 
-const DROP = "x";
-
 const MakeupTool = enum {
     grow,
     shrink,
@@ -186,7 +184,7 @@ const MakeupTool = enum {
         return switch (t) {
             .grow => "+",
             .shrink => "-",
-            .drop => DROP,
+            .drop => widgets.DROP,
         };
     }
 
@@ -478,7 +476,7 @@ pub const FOE_ROWS = [_]Knob{
 
 pub const ADD_PROCGEN_TIP = "A node the " ++ @tagName((atlas.Procgen{}).floor) ++ " generator rolls round its doors, anew each run";
 const ADD_MAKEUP_TIP = "Another pack it may roll, a lone " ++ actor.row(pack.FIRST).name ++ " to begin";
-const SHIFT_TIP = std.fmt.comptimePrint(" ({s} steps {d})", .{ Desk.SHIFT_CAPTION, editor.SHIFT_STEP });
+const SHIFT_TIP = std.fmt.comptimePrint(" ({s} steps {d})", .{ Desk.SHIFT_CAPTION, @import("tool_catalog.zig").SHIFT_STEP });
 
 comptime {
     @setEvalBranchQuota(1_000_000);

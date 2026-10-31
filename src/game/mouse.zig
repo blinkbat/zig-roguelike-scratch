@@ -126,7 +126,8 @@ pub fn prepare(g: *game.Game) void {
 }
 
 pub fn aim(g: *game.Game) bool {
-    if (!g.st.pointing() and !g.st.left_released) return false;
+    const dropped = g.st.left_released and g.mode.aim.act().spans() and g.mode.aim.anchor() != null;
+    if (!g.st.pointing() and !dropped) return false;
     const at = cell(g) orelse return false;
     const h = g.sim.heroActor() orelse return false;
     if (g.mode.aim.act().reticle() == .swing) {
@@ -135,11 +136,11 @@ pub fn aim(g: *game.Game) bool {
     } else g.mode.aim.mark = at;
     skills.rememberTarget(g);
     g.pic.turnToward(g.sim.hero, g.mode.aim.mark.x - h.at.x);
-    return g.st.click or (g.mode.aim.act().spans() and g.mode.aim.anchor() != null and g.st.left_released);
+    return g.st.click or dropped;
 }
 
 fn danger(g: *const game.Game) bool {
-    for (g.sim.pool.items[0..g.sim.pool.n]) |a| if (a.seenFoe(&g.sim.lv)) return true;
+    for (g.sim.pool.constSlice()) |a| if (a.seenFoe(&g.sim.lv)) return true;
     return false;
 }
 
@@ -149,7 +150,7 @@ fn attack(g: *game.Game, at: P) bool {
     for (skillbar.SLOTS) |b| {
         const act = g.bar.at(.{ .set = set, .button = b }) orelse continue;
         if (act.reticle() == null or act.attack() == null or act.supplyOf() != null or !tactics.validAct(g, act, h.at, at)) continue;
-        if (skills.blocked(g, act, &g.sim.flasks, g.sim.mana, skills.heroPinned(g)) != null) continue;
+        if (skills.blockedNow(g, act) != null) continue;
         skills.useSkill(g, .{ .act = act, .by = b, .set = set });
         if (g.mode == .aim) {
             g.mode.aim.mark = at;
@@ -174,7 +175,7 @@ pub fn step(g: *game.Game) bool {
     if (g.mouse.foe) |id| {
         g.mouse.stop();
         const foe = g.sim.pool.get(id) orelse return true;
-        if (!foe.alive or !g.sim.lv.isLit(foe.at)) return true;
+        if (!foe.seenFoe(&g.sim.lv)) return true;
         at = foe.at;
         if (attack(g, at)) return true;
         if (mathx.dist(h.at, at) <= 1) {
@@ -188,7 +189,7 @@ pub fn step(g: *game.Game) bool {
         game.character.openLoot(g, at);
         return true;
     }
-    if (game.character.doorReached(g, h.at, at) != null) {
+    if (!h.at.eq(at) and game.character.doorReached(g, h.at, at) != null) {
         g.mouse.stop();
         game.character.characterCommand(g, .{ .travel = at });
         return true;
@@ -196,7 +197,7 @@ pub fn step(g: *game.Game) bool {
     if (h.at.eq(at)) {
         const fresh = g.mouse.fresh;
         g.mouse.stop();
-        if (fresh) skills.useSkill(g, .{ .act = .wait, .by = input.CONFIRM });
+        if (fresh) skills.useSkill(g, .{ .act = .wait, .by = null });
         return true;
     }
     const d = next(g, h.at, at) orelse {
@@ -372,7 +373,7 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     game.harness.arena(g, start, &.{target});
     const clock = g.sim.clock;
     const use = game.harness.boundTo(g, .shoot);
-    const slot = game.overlay.slotBox(game.overlay.hudLayout(g), binds.Binds.colOf(use.by));
+    const slot = game.overlay.slotBox(game.overlay.hudLayout(g), binds.Binds.colOf(use.by.?));
     g.st = .{ .device = .keys, .pointer = raster.middleAt(slot), .click = true };
     game.update(g, 0);
     try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
@@ -399,6 +400,20 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     try std.testing.expectEqual(after, g.sim.clock);
     try std.testing.expect(g.mouse.target == null);
     std.debug.print("mouse targeting: HUD activation, no click-through, blocked shot, cancel and one clicked foe attack\n", .{});
+}
+
+test "a mouse release that ends no wall drag leaves a smart-aimed reticle on its foe" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const start = P{ .x = 20, .y = 20 };
+    const target = P{ .x = 23, .y = 20 };
+    game.harness.arena(g, start, &.{target});
+    skills.openAim(g, null, .shoot);
+    try std.testing.expectEqual(target, g.mode.aim.mark);
+    g.st = .{ .device = .keys, .left_released = true, .pointer = game.scene.Cam.of(g).mid(.{ .x = 20, .y = 23 }) };
+    game.update(g, 0);
+    try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
+    try std.testing.expectEqual(target, g.mode.aim.mark);
 }
 
 test "mouse attacks skip combustion for unburning foes and cast it on burning foes" {
@@ -447,6 +462,23 @@ test "a clicked foe beside the hero is bumped when every aimed attack is cooling
     clickCell(g, .{ .x = 21, .y = 20 });
     try std.testing.expect(!std.meta.eql(clock, g.sim.clock));
     std.debug.print("clicked foe with every attack cooling: the turn is spent on a bump\n", .{});
+}
+
+test "a clicked foe that dived out of sight before the walk resumed draws no reticle or shot" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const lake = P{ .x = 24, .y = 20 };
+    g.sim.lv.set(lake, .water);
+    const id = game.harness.spawnAt(g, .bog_leech, lake, false);
+    game.settle(g);
+    try std.testing.expect(g.sim.pool.get(id).?.submerged and g.sim.lv.isLit(lake));
+    g.mouse.target = lake;
+    g.mouse.foe = id;
+    const clock = g.sim.clock;
+    try std.testing.expect(step(g));
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try std.testing.expectEqual(clock, g.sim.clock);
 }
 
 test "mouse containers menu buttons secondary set and death action preserve their turn contracts" {

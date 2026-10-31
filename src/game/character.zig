@@ -50,7 +50,7 @@ pub fn openCharacter(g: *game.Game) void {
 
 /// `laid` is an `items.Drop` or `items.Supply`: lying lit where its foe's death has been drawn.
 pub fn laidShown(g: *const game.Game, laid: anytype) bool {
-    return g.sim.lv.isLit(laid.at) and laidDown(g, laid);
+    return g.pic.litShown(&g.sim, laid.at) and laidDown(g, laid);
 }
 
 /// Laid, or its foe's death drawn; seen or not.
@@ -81,7 +81,7 @@ pub fn nearbyOf(g: *game.Game, out: *game.NearbyBuf) []const book.Nearby {
     const at = g.sim.heroAt() orelse return out[0..0];
     var n: usize = 0;
     var listed = grid.CellSet.initEmpty();
-    inline for (.{ g.sim.ground.drops[0..g.sim.ground.n], g.sim.ground.supplies[0..g.sim.ground.supply_n] }) |laid| for (laid) |l| {
+    inline for (g.sim.ground.laid()) |laid| for (laid) |l| {
         if (!laidReached(g, at, l)) continue;
         const cell = grid.Level.idx(l.at);
         if (listed.isSet(cell)) continue;
@@ -137,7 +137,7 @@ fn goldReached(g: *const game.Game, from: P, at: P) ?items.Coins {
 }
 
 pub fn lootReached(g: *const game.Game, from: P, at: P) bool {
-    inline for (.{ g.sim.ground.drops[0..g.sim.ground.n], g.sim.ground.supplies[0..g.sim.ground.supply_n] }) |laid| for (laid) |l| {
+    inline for (g.sim.ground.laid()) |laid| for (laid) |l| {
         if (inLoot(g, from, at, l)) return true;
     };
     return g.sim.lv.at(at).isChest() and goldReached(g, from, at) != null;
@@ -251,7 +251,7 @@ fn useCarried(g: *game.Game, k: consumable.Kind) void {
     const act = skillbar.Act.ofSupply(k);
     if (act.reticle() != null) g.mode = .play;
     const slot = g.bar.slotOf(act);
-    skills.useSkill(g, .{ .act = act, .by = if (slot) |s| s.button else menu.CONFIRM, .set = if (slot) |s| s.set else .primary });
+    skills.useSkill(g, .{ .act = act, .by = if (slot) |s| s.button else null, .set = if (slot) |s| s.set else .primary });
 }
 
 fn notYet(g: *game.Game) void {

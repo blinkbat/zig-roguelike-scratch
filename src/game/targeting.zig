@@ -4,14 +4,14 @@ const input = @import("../core/input.zig");
 const skillbar = @import("../play/skillbar.zig");
 
 pub const Aim = struct {
-    by: input.Button,
+    by: ?input.Button,
     set: skillbar.Set = .primary,
     mark: mathx.P,
     action: union(enum) { single: skillbar.Act, wall_start: skillbar.Act, wall_end: struct { act: skillbar.Act, at: mathx.P } },
     /// The mark last confirmed with no visible target on its line, awaiting a second confirmation.
     asked: ?mathx.P = null,
 
-    pub fn of(by: input.Button, act_: skillbar.Act, mark: mathx.P) Aim {
+    pub fn of(by: ?input.Button, act_: skillbar.Act, mark: mathx.P) Aim {
         std.debug.assert(act_.reticle() != null);
         return .{ .by = by, .mark = mark, .action = if (act_.spans()) .{ .wall_start = act_ } else .{ .single = act_ } };
     }

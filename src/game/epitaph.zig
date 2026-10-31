@@ -3,7 +3,6 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
 const day = @import("../map/day.zig");
-const actor = @import("../play/actor.zig");
 const chronicle = @import("../play/chronicle.zig");
 const obituary = @import("../play/obituary.zig");
 const ossuary = @import("../play/ossuary.zig");
@@ -14,7 +13,7 @@ const skills = @import("skills.zig");
 /// Why a bound `act` could not be used now, `.unbound` when it is not on the bar.
 fn readiness(g: *const game.Game, act: skillbar.Act) enum { ready, mana, other, unbound } {
     if (g.bar.slotOf(act) == null) return .unbound;
-    const why = skills.blocked(g, act, &g.sim.flasks, g.sim.mana, skills.heroPinned(g)) orelse return .ready;
+    const why = skills.blockedNow(g, act) orelse return .ready;
     return if (why == .mana) .mana else .other;
 }
 
@@ -69,11 +68,8 @@ pub fn of(g: *const game.Game) ossuary.Entry {
     var open: usize = 0;
     for (mathx.ALL_DIRS) |d| {
         const to = h.at.add(d.delta());
-        const who = s.lv.who(to);
-        if (who != grid.NO_ONE) {
-            const slot = actor.Pool.slot(who);
-            const a = &s.pool.items[slot];
-            if (a.alive and a.foe()) beside += 1;
+        if (s.pool.getConst(s.lv.who(to))) |a| {
+            if (a.foe()) beside += 1;
         }
         if (s.lv.stepOk(h.at, d, grid.NO_ONE)) open += 1;
     }

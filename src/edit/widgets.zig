@@ -17,8 +17,8 @@ pub const GAP: i32 = 6;
 pub const SECTION_GAP: i32 = GAP * 3;
 pub const BLOCK_GAP: i32 = GAP * 2;
 pub const ROW_STEP: i32 = ROW_H + GAP;
-pub const TEXT: i32 = 24;
-pub const DETAIL: i32 = 20;
+pub const TEXT: i32 = font.HEAD;
+pub const DETAIL: i32 = font.BODY;
 pub const HEAD: i32 = 32;
 pub const LINE_STEP: i32 = TEXT + GAP;
 pub const INNER_W: i32 = PANEL_W - PAD * 2;
@@ -31,13 +31,13 @@ pub const PAGE_W: i32 = 1800;
 pub const PAGE_H: i32 = 1080;
 pub const STEP_W: i32 = 30;
 pub const STEP_PITCH: i32 = STEP_W + GAP;
+pub const DROP = "x";
 pub const SCROLL_W: i32 = 3;
+const THUMB_MIN: f32 = 24;
 pub const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
 pub const PANEL_BG = look.EDIT_PANEL;
 pub const ROW_ON = look.EDIT_ROW_ON;
 pub const ON = look.EDIT_ON;
-
-const SMALL = DETAIL;
 
 pub const Controls = struct {
     pointer: P,
@@ -116,6 +116,12 @@ pub fn fitBefore(face: *const font.Face, buf: []u8, fit_buf: []u8, s: []const u8
     return std.fmt.bufPrintZ(buf, "{s}{s}", .{ head, suffix }) catch "";
 }
 
+pub fn well(r: rl.Rectangle, focused: bool) P {
+    rl.drawRectangleRec(r, PANEL_BG);
+    rl.drawRectangleLinesEx(r, 1, if (focused) look.UI_FOCUS else look.EDGE);
+    return .{ .x = textX(r), .y = @as(i32, @intFromFloat(r.y)) + GAP };
+}
+
 pub fn plate(r: rl.Rectangle, on: bool, hot_: bool) void {
     if (on or hot_) rl.drawRectangleRec(r, ROW_ON);
     if (on) rl.drawRectangleLinesEx(r, 1, ON);
@@ -143,7 +149,7 @@ pub fn scrollThumb(track: rl.Rectangle, offset: usize, shown: usize, total: usiz
     if (shown == 0 or total <= shown or track.width <= 0 or track.height <= 0) return null;
     const visible: f32 = @floatFromInt(shown);
     const count: f32 = @floatFromInt(total);
-    const height = @min(track.height, @max(24, track.height * visible / count));
+    const height = @min(track.height, @max(THUMB_MIN, track.height * visible / count));
     const travel = (track.height - height) * @as(f32, @floatFromInt(@min(offset, total - shown))) / @as(f32, @floatFromInt(total - shown));
     return .{ .x = track.x, .y = track.y + travel, .width = track.width, .height = height };
 }
@@ -220,7 +226,7 @@ test "editor scrollbar thumb remains inside its track for large catalogs and sho
             const thumb = scrollThumb(track, offset, 4, 2000).?;
             try std.testing.expect(thumb.y >= track.y);
             try std.testing.expect(thumb.y + thumb.height <= track.y + track.height);
-            try std.testing.expect(thumb.height >= @min(24, height));
+            try std.testing.expect(thumb.height >= @min(THUMB_MIN, height));
         }
         try std.testing.expect(scrollThumb(track, 0, 4, 4) == null);
         try std.testing.expect(scrollThumb(track, 0, 0, 4) == null);
@@ -274,14 +280,14 @@ pub fn divider(x: i32, top: i32, bottom: i32) void {
 pub const GAPS = P{ .x = GAP, .y = GAP };
 
 pub fn tagSize(face: *const font.Face, s: [:0]const u8, pad: P) P {
-    return .{ .x = textFace(face).width(s, SMALL) + 2 * pad.x, .y = SMALL + 2 * pad.y };
+    return .{ .x = textFace(face).width(s, DETAIL) + 2 * pad.x, .y = DETAIL + 2 * pad.y };
 }
 
 pub fn drawTag(face: *const font.Face, s: [:0]const u8, at: P, pad: P, bg: rl.Color, edge: ?rl.Color) void {
     const size = tagSize(face, s, pad);
     rl.drawRectangle(at.x, at.y, size.x, size.y, bg);
     if (edge) |e| rl.drawRectangleLines(at.x, at.y, size.x, size.y, e);
-    textFace(face).draw(s, at.x + pad.x, at.y + pad.y, SMALL, look.TEXT);
+    textFace(face).draw(s, at.x + pad.x, at.y + pad.y, DETAIL, look.TEXT);
 }
 
 pub fn framed(x: i32, y: i32, w: i32, h: i32) void {
@@ -297,6 +303,10 @@ pub const Frame = struct {
 
     pub fn buttonX(f: Frame) i32 {
         return f.x + f.w - PAD - MODAL_BTN_W;
+    }
+
+    pub fn button(f: Frame, y: i32, k: i32) rl.Rectangle {
+        return row(f.buttonX() - (MODAL_BTN_W + GAP) * k, y, MODAL_BTN_W);
     }
 };
 

@@ -29,15 +29,11 @@ pub const Prompt = union(enum) {
 
     pub fn of(st: *const input.State, b: input.Button) Prompt {
         if (!st.device.pad()) return .{ .key = st.slotCaption(b) };
-        return switch (b.pad()) {
-            .right_face_down => .{ .face = .{ .button = .a, .sony = st.device.playstation() } },
-            .right_face_right => .{ .face = .{ .button = .b, .sony = st.device.playstation() } },
-            .right_face_left => .{ .face = .{ .button = .x, .sony = st.device.playstation() } },
-            .right_face_up => .{ .face = .{ .button = .y, .sony = st.device.playstation() } },
-            .left_trigger_1, .right_trigger_1, .right_trigger_2, .right_thumb => .{ .pill = st.caption(b) },
-            .middle_right => if (st.device.playstation()) .{ .pill = st.caption(b) } else .menu,
-            .middle_left => if (st.device.playstation()) .{ .pill = st.caption(b) } else .view,
-            else => unreachable,
+        return switch (b) {
+            inline .a, .b, .x, .y => |f| .{ .face = .{ .button = @field(FaceButton, @tagName(f)), .sony = st.device.playstation() } },
+            .lb, .rb, .rt, .inspect => .{ .pill = st.caption(b) },
+            .character => if (st.device.playstation()) .{ .pill = st.caption(b) } else .menu,
+            .pause => if (st.device.playstation()) .{ .pill = st.caption(b) } else .view,
         };
     }
 

@@ -22,6 +22,19 @@ fn says(comptime w: Word) []const u8 {
     return firstWord(w);
 }
 
+pub const Lines = struct {
+    lines: std.mem.SplitIterator(u8, .scalar),
+
+    pub fn of(text: []const u8) Lines {
+        return .{ .lines = std.mem.splitScalar(u8, text, '\n') };
+    }
+
+    pub fn next(self: *Lines) ?Tokens {
+        const raw = self.lines.next() orelse return null;
+        return std.mem.tokenizeScalar(u8, std.mem.trimRight(u8, raw, "\r"), ' ');
+    }
+};
+
 /// A map-text line's first word as written, its space included.
 pub fn firstWord(comptime w: anytype) []const u8 {
     return @tagName(w) ++ " ";
@@ -103,9 +116,9 @@ const Index = struct {
 
     fn of(text: []const u8) Error!Index {
         var ix = Index{};
-        var lines = std.mem.splitScalar(u8, text, '\n');
-        while (lines.next()) |raw| {
-            var f = std.mem.tokenizeScalar(u8, std.mem.trimRight(u8, raw, "\r"), ' ');
+        var lines = Lines.of(text);
+        while (lines.next()) |line| {
+            var f = line;
             const word = std.meta.stringToEnum(Word, f.next() orelse continue) orelse continue;
             switch (word) {
                 .dialog => {
@@ -176,11 +189,11 @@ pub const Reader = struct {
             },
             .who => {
                 const l = try r.lineOf(s);
-                if (l.who.n > 0 or !l.who.set(rest(f))) return error.BadLine;
+                if (l.who.n > 0 or !l.who.set(try said(f))) return error.BadLine;
             },
             .say => {
                 const l = try r.lineOf(s);
-                if (l.say.n > 0 or !l.say.set(rest(f))) return error.BadLine;
+                if (l.say.n > 0 or !l.say.set(try said(f))) return error.BadLine;
             },
             .act => {
                 const l = try r.lineOf(s);
@@ -363,6 +376,11 @@ fn rest(f: *Tokens) []const u8 {
     return all;
 }
 
+fn said(f: *Tokens) ![]const u8 {
+    const all = rest(f);
+    return if (all.len == 0) error.BadLine else all;
+}
+
 fn slotOf(s: *const Script, t: script.Table, f: *Tokens) Error!u8 {
     return s.find(t, f.next() orelse return error.BadLine) orelse error.BadLink;
 }
@@ -454,9 +472,9 @@ pub const SAMPLE =
 pub fn readAlone(text: []const u8, s: *Script, node_n: usize) Error!void {
     s.* = .{};
     var r = try Reader.of(text);
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    while (lines.next()) |raw| {
-        var f = std.mem.tokenizeScalar(u8, std.mem.trimRight(u8, raw, "\r"), ' ');
+    var lines = Lines.of(text);
+    while (lines.next()) |line| {
+        var f = line;
         const word = std.meta.stringToEnum(Word, f.next() orelse continue) orelse return error.BadLine;
         try r.take(s, word, &f);
         if (f.next() != null) return error.BadLine;
@@ -507,6 +525,8 @@ test "a script with a dangling name, a misplaced line or a trigger's action in a
         "dialog d\nline a\nneed always\n",
         "dialog d\nline a\nthen a\nthen a\n",
         "dialog d\nline a\nsay one\nsay two\n",
+        "dialog d\nline a\nsay\nsay two\n",
+        "dialog d\nline a\nwho  \nwho Bob\n",
         "trigger t 0 once live\nwhen flag nope on\n",
         "trigger t 0 once live\ndo dialog nope\n",
         "trigger t 0 sometimes live\n",
