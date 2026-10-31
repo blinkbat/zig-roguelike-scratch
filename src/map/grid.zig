@@ -56,6 +56,9 @@ pub const Tile = enum(u8) {
     swamp_tree,
     large_tree,
     glow_plant,
+    /// Stands on its cell and the `.caravan_part` right of it, its picture rising into the row above.
+    caravan,
+    caravan_part,
 
     pub fn solid(t: Tile) bool {
         return TERRAIN.getPtrConst(t).solid;
@@ -122,6 +125,21 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).shaped;
     }
 
+    /// Cells from its own rightward that it stands on.
+    pub fn wide(t: Tile) i32 {
+        return if (t == .caravan) 2 else 1;
+    }
+
+    /// The rest of a wider prop's footprint, drawn by the prop.
+    pub fn isPart(t: Tile) bool {
+        return t == .caravan_part;
+    }
+
+    /// Chosen for a cell on its own: by the palette or a generator; never one opened or a piece of a wider prop.
+    pub fn single(t: Tile) bool {
+        return !t.isOpened() and t.wide() == 1 and !t.isPart();
+    }
+
     pub fn letter(t: Tile) u8 {
         return switch (t) {
             .wall => '#',
@@ -153,6 +171,8 @@ pub const Tile = enum(u8) {
             .swamp_tree => 'S',
             .large_tree => 'L',
             .glow_plant => 'p',
+            .caravan => 'H',
+            .caravan_part => 'h',
         };
     }
 
@@ -170,6 +190,19 @@ pub const BARREL_GROUND: Tile = .floor;
 
 pub fn groundOf(c: u8) ?Tile {
     return if (c == BARREL_LETTER) BARREL_GROUND else Tile.ofLetter(c);
+}
+
+/// Every wider prop has its parts beside it, and every part its prop.
+pub fn propsWhole(tile: *const [CELLS]Tile) bool {
+    for (tile, 0..) |t, i| {
+        const x: i32 = Level.of(i).x;
+        if (t.isPart() and (x == 0 or tile[i - 1].wide() == 1)) return false;
+        if (x + t.wide() > W) return false;
+        for (1..@intCast(t.wide())) |k| {
+            if (!tile[i + k].isPart()) return false;
+        }
+    }
+    return true;
 }
 
 comptime {
@@ -237,6 +270,8 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .swamp_tree = .{ .solid = true, .blind = true, .ground = .dirt },
     .large_tree = TALL_PROP,
     .glow_plant = .{ .solid = true, .blind = false, .ground = .grass, .glows = true, .bursts = true },
+    .caravan = TALL_PROP,
+    .caravan_part = TALL_PROP,
 });
 
 fn tilesWhere(comptime has: fn (Tile) bool) std.EnumSet(Tile) {
@@ -1010,6 +1045,24 @@ test "an index round-trips" {
     }
     try std.testing.expect(!Level.inside(.{ .x = -1, .y = 0 }));
     try std.testing.expect(!Level.inside(.{ .x = W, .y = 0 }));
+}
+
+test "a caravan stands whole on its cell and the part beside it, blocking both" {
+    var tile: [CELLS]Tile = @splat(.grass);
+    try std.testing.expect(propsWhole(&tile));
+    tile[Level.idx(.{ .x = 4, .y = 3 })] = .caravan;
+    try std.testing.expect(!propsWhole(&tile));
+    tile[Level.idx(.{ .x = 5, .y = 3 })] = .caravan_part;
+    try std.testing.expect(propsWhole(&tile));
+    tile[Level.idx(.{ .x = 6, .y = 3 })] = .caravan_part;
+    try std.testing.expect(!propsWhole(&tile));
+    tile[Level.idx(.{ .x = 6, .y = 3 })] = .grass;
+    tile[Level.idx(.{ .x = W - 1, .y = 8 })] = .caravan;
+    try std.testing.expect(!propsWhole(&tile));
+    tile[Level.idx(.{ .x = W - 1, .y = 8 })] = .grass;
+    tile[Level.idx(.{ .x = 0, .y = 9 })] = .caravan_part;
+    try std.testing.expect(!propsWhole(&tile));
+    for ([_]Tile{ .caravan, .caravan_part }) |t| try std.testing.expect(t.solid() and t.blind() and !t.single());
 }
 
 test "outside the map reads as wall" {

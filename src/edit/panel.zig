@@ -185,7 +185,7 @@ const PALETTE_COLS: usize = @intCast(@divTrunc(widgets.INNER_W + SWATCH_GAP, SWA
 const PALETTE = blk: {
     var tiles: []const grid.Tile = &.{};
     for (std.enums.values(grid.Tile)) |t| {
-        if (!t.isOpened()) tiles = tiles ++ &[_]grid.Tile{t};
+        if (t.single()) tiles = tiles ++ &[_]grid.Tile{t};
     }
     break :blk tiles;
 };

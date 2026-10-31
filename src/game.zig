@@ -276,7 +276,7 @@ pub fn begin(g: *Game, seed: u64) void {
     startRun(g, null, seed);
     const floor = gen.build(&g.sim.lv, seed);
     reset(g, floor.start);
-    pack.place(&g.sim.lv, &g.sim.pool, &g.sim.rng, floor.start, &.{});
+    pack.place(&g.sim.lv, &g.sim.pool, &g.sim.rng, floor.start, &.{}, &.{});
     settle(g);
     var buf: [Log.COLS]u8 = undefined;
     var out = std.io.fixedBufferStream(&buf);
@@ -323,7 +323,10 @@ fn enter(g: *Game, n: usize, at: P) void {
         g.sim.ground = .{};
         spawnHero(g, to);
         switch (w.node[n].plan) {
-            .procgen => |*pg| pack.place(&g.sim.lv, &g.sim.pool, &g.sim.rng, to, &pg.foes),
+            .procgen => |*pg| {
+                var doors: [grid.MAX_DOORS]P = undefined;
+                pack.place(&g.sim.lv, &g.sim.pool, &g.sim.rng, to, w.node[n].doorCells(&doors), &pg.foes);
+            },
             .bespoke => for (placing) |f| {
                 if (actor.dwells(f.kind, &g.sim.lv, f.at)) _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(f.kind, f.at));
             },

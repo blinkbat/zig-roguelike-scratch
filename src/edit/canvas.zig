@@ -40,7 +40,7 @@ fn drawCells(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) vo
         const r = ed.cellRect(c, p);
         const here = ed.scene.lv.at(p);
         if (look.glyphGround(here, &g.sprites)) widgets.tileGlyph(&g.face, here, r);
-        if (!look.standsOver(here)) continue;
+        if (!look.standsOver(here) or here.isPart()) continue;
         if (g.sprites.tileAt(&ed.scene.lv, p)) |t| {
             raster.stretch(t, look.tileRect(here, t, r), look.LIT);
             continue;

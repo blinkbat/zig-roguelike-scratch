@@ -46,6 +46,7 @@ const STANDS = std.EnumArray(grid.Tile, ?Shadow).initDefault(@as(?Shadow, null),
     .shrooms = .silhouette,
     .chest = .silhouette,
     .chest_open = .silhouette,
+    .caravan = .silhouette,
 });
 
 const PICTURE_CASTERS = blk: {
@@ -72,7 +73,7 @@ pub fn canopied(t: grid.Tile) bool {
 }
 
 pub fn tall(t: grid.Tile) bool {
-    return t == .large_tree;
+    return t == .large_tree or t == .caravan;
 }
 
 pub fn occludes(t: grid.Tile) bool {
@@ -110,8 +111,9 @@ pub fn occlusionAlpha(hidden: f32) f32 {
 }
 
 pub fn tileRect(t: grid.Tile, tex: rl.Texture2D, cell: rl.Rectangle) rl.Rectangle {
-    const height = cell.width * @as(f32, @floatFromInt(tex.height)) / @as(f32, @floatFromInt(tex.width));
-    return .{ .x = cell.x, .y = cell.y + if (tall(t)) cell.height - height else (cell.height - height) / 2, .width = cell.width, .height = height };
+    const width = cell.width * @as(f32, @floatFromInt(t.wide()));
+    const height = width * @as(f32, @floatFromInt(tex.height)) / @as(f32, @floatFromInt(tex.width));
+    return .{ .x = cell.x, .y = cell.y + if (tall(t)) cell.height - height else (cell.height - height) / 2, .width = width, .height = height };
 }
 
 /// Every sprite that throws a shadow from its feet: bodies, barrel, picture casters, forest shapes, item bags and a mimic's chest.
@@ -595,7 +597,7 @@ const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
     .bandit_shieldbearer = null,
     .frost_wisp = null,
     .pyre_bloat = @embedFile("pyre-bloat.png"),
-    .pib_shaman = null,
+    .pib_shaman = @embedFile("pib-shaman.png"),
     .bog_leech = null,
     .mimic = @embedFile("mimic-open.png"),
 });
@@ -621,6 +623,7 @@ const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const
     .shrooms = @embedFile("small-shrooms.png"),
     .chest = @embedFile("chest.png"),
     .chest_open = @embedFile("chest-open.png"),
+    .caravan = @embedFile("caravan-cart.png"),
 });
 
 comptime {
@@ -629,7 +632,7 @@ comptime {
     for (std.enums.values(grid.Tile)) |t| {
         if (!standsOver(t)) continue;
         const size = pngSize(TILE_PNGS.get(t) orelse continue);
-        if (size.x != SPRITE_PX or (size.y > SPRITE_PX) != tall(t)) @compileError(@tagName(t) ++ ": a standing picture is a sprite wide, and taller only when `tall`");
+        if (size.x != SPRITE_PX * t.wide() or (size.y > SPRITE_PX) != tall(t)) @compileError(@tagName(t) ++ ": a standing picture is a sprite wide a cell it stands on, and taller only when `tall`");
     }
     for (PICTURE_CASTERS) |t| {
         if (TILE_PNGS.get(t) == null) @compileError("a picture caster needs its picture: " ++ @tagName(t));
@@ -912,7 +915,11 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .swamp_tree = .{ .sym = "S", .ch = 'S', .fg = TREE_INK.fg, .bg = null, .mini = TREE_INK.mini, .mini_dim = TREE_INK.mini_dim },
     .large_tree = .{ .sym = "L", .ch = 'L', .fg = TREE_INK.fg, .bg = null, .mini = TREE_INK.mini, .mini_dim = TREE_INK.mini_dim },
     .glow_plant = .{ .sym = "&", .ch = '&', .fg = rgb(0x9fd2ff), .bg = null, .mini = rgb(0x7fb2e0), .mini_dim = rgb(0x2e4256) },
+    .caravan = .{ .sym = "H", .ch = 'H', .fg = CARAVAN_INK.fg, .bg = null, .mini = CARAVAN_INK.mini, .mini_dim = CARAVAN_INK.mini_dim },
+    .caravan_part = .{ .sym = "h", .ch = 'h', .fg = CARAVAN_INK.fg, .bg = null, .mini = CARAVAN_INK.mini, .mini_dim = CARAVAN_INK.mini_dim },
 });
+
+const CARAVAN_INK = .{ .fg = rgb(0xd8c8a4), .mini = rgb(0x9a7a52), .mini_dim = rgb(0x46382a) };
 
 comptime {
     for (TILES.values) |l| std.debug.assert(l.sym.len != 1 or l.sym[0] == l.ch);
@@ -984,7 +991,7 @@ pub const DROP_SHADOW_A: u8 = 200;
 
 /// Brogue's `poisonGasColor`, the caustic bloat's.
 pub const CAUSTIC_BLOAT = rgb(0xbf40d9);
-pub const GAS = rgb(0xe0509a);
+pub const GAS = rgb(0xd0609a);
 pub const HEALING_GAS = rgb(0x2ed6c0);
 pub const STEAM = rgb(0xe6e8ea);
 
@@ -1466,6 +1473,17 @@ test "every wall and forest cell lies inside its PNG, and one past its end is re
         std.debug.print("{s}.png {d}x{d}: {d} shapes cut from it\n", .{ name, w, h, WALL_MASKS.len });
         try std.testing.expect(wallCell(sheet, @intCast(@divTrunc(w, SPRITE_PX) * @divTrunc(h, SPRITE_PX))) == null);
     }
+}
+
+test "a caravan's picture spans its two cells and rises a cell above them, at native scale" {
+    const size = pngSize(TILE_PNGS.get(.caravan).?);
+    const tex = rl.Texture2D{ .id = 1, .width = size.x, .height = size.y, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    for ([_]f32{ SPRITE_PX, 2 * SPRITE_PX }) |cell| {
+        const r = tileRect(.caravan, tex, .{ .x = 10 * cell, .y = 5 * cell, .width = cell, .height = cell });
+        std.debug.print("caravan at a {d}px cell: {d}x{d} from ({d},{d})\n", .{ cell, r.width, r.height, r.x, r.y });
+        try std.testing.expectEqual(rl.Rectangle{ .x = 10 * cell, .y = 4 * cell, .width = 2 * cell, .height = 2 * cell }, r);
+    }
+    try std.testing.expect(tall(.caravan) and !stands(.caravan_part) and !castsPicture(.caravan_part));
 }
 
 test "forest sprites follow connections and isolated trees mix with clumps without changing visibility" {

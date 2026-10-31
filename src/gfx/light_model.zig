@@ -120,7 +120,7 @@ pub const CASTERS = std.EnumArray(grid.Tile, ?Caster).initDefault(@as(?Caster, n
 
 comptime {
     for (std.enums.values(grid.Tile)) |t| {
-        if (t.upright()) std.debug.assert((CASTERS.get(t) != null) != look.castsPicture(t));
+        if (t.upright() and !t.isPart()) std.debug.assert((CASTERS.get(t) != null) != look.castsPicture(t));
         if (t.glows()) std.debug.assert(PLANT_Z > (CASTERS.get(t) orelse continue).h);
     }
 }

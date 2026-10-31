@@ -239,7 +239,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   movement checks its destination; sight, projectiles and effects also pass through the tight gap.
 - Walls/forests use stored eight-neighbour masks, with corners joined only when both adjacent sides
   join: 47 shapes. `procgen.reshape`/`Node.stamp` produce them; revelation never changes them.
-  Brick walls join walls, forests join shrubs. `Level.wallShape` is brick-only; `tileShape` handles both.
+  Brick walls join walls, forests join shrubs. A `caravan` blocks its cell and the `caravan_part` right of it, its picture rising
+  a cell above (`Tile.wide`, `grid.propsWhole`); props wider than a cell stay out of the palette and generator choices (`Tile.single`). `Level.wallShape` is brick-only; `tileShape` handles both.
   Missing forest masks are restored on save resume. Torch/barrel placement must preserve routes;
   barrels stop movement/arrows and break for gold in one hit, with no HP, now and then leaving a white item (`items.BARREL_ITEM_PERCENT`), hidden until the break is drawn.
   Chests spawn closed; the first bump or Interact reveals their items and gold.

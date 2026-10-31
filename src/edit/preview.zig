@@ -63,7 +63,8 @@ pub const Scene = struct {
                 var rng = mathx.Rng.init(self.roll);
                 const at = atlas.landing(&self.lv, arrival(map, node), nd.placed()) orelse arrival(map, node);
                 _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
-                pack.place(&self.lv, &self.rolled_foes, &rng, at, &pg.foes);
+                var doors: [grid.MAX_DOORS]P = undefined;
+                pack.place(&self.lv, &self.rolled_foes, &rng, at, nd.doorCells(&doors), &pg.foes);
                 self.lv.clear(at);
             },
         }

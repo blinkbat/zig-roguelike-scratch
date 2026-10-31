@@ -342,7 +342,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const grid.CellSet
                 veilSprite(g, t, c, p, .sharp);
             }
         };
-        if (look.occludes(here)) continue;
+        if (look.occludes(here) or here.isPart()) continue;
         if (!look.standsOver(here)) continue;
         if (tileTexture(g, here, p, &bags)) |t| {
             const focus = g.cinema.beginFocus(here, t, mathx.centre(p), g.light.carrier);
@@ -670,7 +670,7 @@ pub fn drawMap(g: *game.Game) void {
     var occluders = view.grown(1).cells();
     while (occluders.next()) |p| {
         const kind = g.sim.lv.at(p);
-        if (!look.occludes(kind) or !game.character.terrainSeen(g, p)) continue;
+        if (!look.occludes(kind) or !footprintSeen(g, p, kind)) continue;
         const depth = @as(f32, @floatFromInt(p.y)) + 0.5;
         while (next_body < bodies.len and bodies[next_body].mid[1] <= depth) : (next_body += 1) drawStandingBody(g, &bodies[next_body]);
         drawOccluder(g, c, p, kind);
@@ -714,6 +714,13 @@ pub fn drawMap(g: *game.Game) void {
     if (level_up_at) |at| g.pic.fx.level_up.drawText(at, &g.face, o[0], o[1], game.CELL_F);
 }
 
+fn footprintSeen(g: *const game.Game, p: P, kind: grid.Tile) bool {
+    for (0..@intCast(kind.wide())) |k| {
+        if (game.character.terrainSeen(g, p.add(.{ .x = @intCast(k), .y = 0 }))) return true;
+    }
+    return false;
+}
+
 fn drawOccluder(g: *game.Game, c: Cam, p: P, kind: grid.Tile) void {
     const i = grid.Level.idx(p);
     const hidden = g.pic.occlusion[i];
@@ -731,7 +738,7 @@ fn drawOccluder(g: *game.Game, c: Cam, p: P, kind: grid.Tile) void {
     const shaded = if (lightmap != null and fogmap != null) g.sprites.drawScenery(tex, rect, view, lightmap.?, fogmap.?, occlusion, focus) else false;
     if (!shaded) raster.stretch(tex, rect, look.fade(sceneryTint(g, p), look.occlusionAlpha(hidden)));
     const rows = @divTrunc(@as(i32, @intFromFloat(rect.height)) + game.CELL - 1, game.CELL);
-    const under = grid.Box{ .lo = .{ .x = p.x, .y = p.y + 1 - rows }, .hi = .{ .x = p.x + 1, .y = p.y + 1 } };
+    const under = grid.Box{ .lo = .{ .x = p.x, .y = p.y + 1 - rows }, .hi = .{ .x = p.x + kind.wide(), .y = p.y + 1 } };
     if (g.cloud.veils(under) and g.cloud.beginOccludedVeil(sceneryTint(g, p), focus, if (shaded) occlusion else .{})) {
         raster.stretch(tex, rect, if (shaded) rl.Color.white else look.fade(rl.Color.white, look.occlusionAlpha(hidden)));
         cloud.Cloud.endVeil();

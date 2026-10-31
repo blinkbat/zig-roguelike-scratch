@@ -39,7 +39,11 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
                     inline for (grp.knobs) |k| try putKnob(w, k, @field(@field(pg, grp.field), k));
                 }
                 for (pg.foes.makeups()) |*m| {
-                    try w.print(says(.makeup) ++ "{d}", .{m.weight});
+                    switch (m.draw) {
+                        .weight => |n| try w.print(says(.makeup) ++ "{d}", .{n}),
+                        .count => |n| try w.print(says(.makeup) ++ COUNTED ++ " {d}", .{n}),
+                    }
+                    if (m.exit) try w.writeAll(" " ++ EXIT);
                     for (m.kinds()) |k| try w.print(" {s}", .{@tagName(k)});
                     try w.writeByte('\n');
                 }
@@ -159,7 +163,14 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                 own_makeups = true;
                 if (!fo.addMakeup()) return error.TooMany;
                 const m = &fo.makeup[fo.makeup_n - 1];
-                m.* = .{ .weight = try int(u8, &f), .n = 0 };
+                const counted = if (f.peek()) |t| std.mem.eql(u8, t, COUNTED) else false;
+                if (counted) _ = f.next();
+                const n = try int(u8, &f);
+                m.* = .{ .draw = if (counted) .{ .count = n } else .{ .weight = n }, .n = 0 };
+                if (f.peek()) |t| if (std.mem.eql(u8, t, EXIT)) {
+                    _ = f.next();
+                    m.exit = true;
+                };
                 while (f.next()) |name| {
                     const k = std.meta.stringToEnum(actor.Kind, name) orelse return error.BadLine;
                     if (!m.grow()) return error.BadLine;
@@ -212,7 +223,7 @@ fn finished(self: *atlas.Atlas, rows: usize) Error!void {
     const nd = &self.node[self.node_n - 1];
     switch (nd.plan) {
         .bespoke => |*b| {
-            if (rows != ROWS) return error.BadLine;
+            if (rows != ROWS or !grid.propsWhole(&b.tile)) return error.BadLine;
             for (b.foes()) |f| {
                 if (!nd.foeFits(b, f.at, f.kind)) return error.BadLine;
             }
@@ -278,6 +289,8 @@ const KnobSet = std.StaticBitSet(groupBase(GROUPS.len));
 const MAKEUP = @tagName(Word.makeup);
 /// `pack.Spec`'s makeups, which are lines of their own.
 const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
+const COUNTED = @tagName(pack.Draw.count);
+const EXIT = "exit";
 
 fn says(comptime w: Word) []const u8 {
     return script_text.firstWord(w);
@@ -421,7 +434,7 @@ fn takeValue(comptime T: type, f: *Tokens) Error!T {
         .int => return int(T, f),
         .@"enum" => {
             const value = try script_text.value(T, f);
-            if (T == grid.Tile and value.isOpened()) return error.BadLine;
+            if (T == grid.Tile and !value.single()) return error.BadLine;
             return value;
         },
         .array => |a| {
@@ -473,7 +486,9 @@ test "a map saves and loads back the same" {
     pg.foes.apart = 6;
     pg.foes.makeup_n = 2;
     pg.foes.makeup[1] = pack.Makeup.of(&.{ .bloat, .rat });
-    pg.foes.makeup[1].weight = 3;
+    pg.foes.makeup[1].draw = .{ .weight = 3 };
+    pg.foes.makeup[0].draw = .{ .count = 2 };
+    pg.foes.makeup[0].exit = true;
     const b = &a.node[room].plan.bespoke;
     var floor = grid.Box.sized(.{ .x = 3, .y = 3 }, 9, 6).cells();
     while (floor.next()) |p| b.tile[grid.Level.idx(p)] = .floor;
@@ -507,7 +522,9 @@ test "a map saves and loads back the same" {
     try std.testing.expectEqual(grid.Tile.lava, back.node[wood].plan.procgen.feature[0].river.fill);
     try std.testing.expectEqual(@as(i32, 6), bpg.foes.apart);
     try std.testing.expectEqual(@as(usize, 2), bpg.foes.makeup_n);
-    try std.testing.expectEqual(@as(u8, 3), bpg.foes.makeup[1].weight);
+    try std.testing.expectEqual(pack.Draw{ .weight = 3 }, bpg.foes.makeup[1].draw);
+    try std.testing.expectEqual(pack.Draw{ .count = 2 }, bpg.foes.makeup[0].draw);
+    try std.testing.expect(bpg.foes.makeup[0].exit and !bpg.foes.makeup[1].exit);
     try std.testing.expectEqualSlices(actor.Kind, &.{ .bloat, .rat }, bpg.foes.makeup[1].kinds());
     try std.testing.expectEqualStrings("The Deep Cave", back.node[cave].name());
     try std.testing.expectEqual(P{ .x = -40, .y = 310 }, back.node[room].pos);
@@ -550,11 +567,18 @@ test "a map file with a one-way link, a door linked to itself, a stray word, a f
         head ++ "node procgen rooms\nmakeup 0 rat\n",
         head ++ "node procgen rooms\nmakeup 1 slime_half\n",
         head ++ "node procgen rooms\nmakeup 1\n",
+        head ++ "node procgen rooms\nmakeup count 0 rat\n",
+        head ++ "node procgen rooms\nmakeup count 10 rat\n",
+        head ++ "node procgen rooms\nmakeup count exit rat\n",
+        head ++ "node procgen rooms\nmakeup 1 exit\n",
         head ++ "node procgen rooms\napart 99\n",
         head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** ROWS ++ "foe rat 3 3\n",
         head ++ "node bespoke\n" ++ ("row " ++ "." ** COLS ++ "\n") ** ROWS ++ "foe slime_half 3 3\n",
         head ++ "node bespoke\n" ++ ("row " ++ "#" ** COLS ++ "\n") ** ROWS ++ "torch 3 3\n",
         head ++ "node bespoke\n" ++ ("row " ++ "." ** COLS ++ "\n") ** ROWS ++ "torch 3 3\n",
+        head ++ "node bespoke\n" ++ ("row " ++ "H" ++ "." ** (COLS - 1) ++ "\n") ** ROWS,
+        head ++ "node bespoke\n" ++ ("row " ++ ".h" ++ "." ** (COLS - 2) ++ "\n") ** ROWS,
+        head ++ "node procgen wilds\nfeature scatter\ntile caravan\n",
         head ++ "node bespoke\n" ++ ("row " ++ "0" ** COLS ++ "\n") ** ROWS ++ "door 3 3\n",
         head ++ "start 0 6 6\nnode procgen rooms\n",
         head ++ "node procgen rooms\nname A\nname B\n",
@@ -641,7 +665,7 @@ test "map text round-trips every floor and feature with default and changed knob
                     pg.foes.apart = 7;
                     pg.foes.makeup_n = 1;
                     pg.foes.makeup[0] = pack.Makeup.of(&.{ .bandit_crossbowman, .rat, .slime });
-                    pg.foes.makeup[0].weight = 4;
+                    pg.foes.makeup[0].draw = .{ .weight = 4 };
                 }
                 try std.testing.expect(pg.valid());
                 buf.clearRetainingCapacity();

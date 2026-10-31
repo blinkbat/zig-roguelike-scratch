@@ -140,11 +140,24 @@ fn choiceRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime U: type, v: *U
 
 fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bool) bool {
     var buf: [8]u8 = undefined;
-    const weight = stepper(ed, g, widgets.row(widgets.PAD, y, editor.WEIGHT_SPAN), num(&buf, "x{d}", m.weight), .{
-        .{ .tip = "Drawn less often against the others", .live = m.weight > pack.WEIGHT_MIN },
-        .{ .tip = "Drawn more often against the others", .live = m.weight < pack.WEIGHT_MAX },
+    const span = widgets.row(widgets.PAD, y, editor.WEIGHT_SPAN);
+    switch (m.draw) {
+        .weight => |*w| bump(u8, w, stepper(ed, g, span, num(&buf, "x{d}", w.*), .{
+            .{ .tip = "Drawn less often against the others", .live = w.* > pack.WEIGHT_MIN },
+            .{ .tip = "Drawn more often against the others", .live = w.* < pack.WEIGHT_MAX },
+        })),
+        .count => |*c| bump(u8, c, stepper(ed, g, span, num(&buf, "={d}", c.*), .{
+            .{ .tip = "One fewer of these packs", .live = c.* > pack.COUNT_MIN },
+            .{ .tip = "One more of these packs", .live = c.* < pack.COUNT_MAX },
+        })),
+    }
+    const value = widgets.stepValue(span);
+    const flip = widgets.hot(ed.controls(), value, true, false, switch (m.draw) {
+        .weight => "Drawn by weight; " ++ Desk.PAINT_CAPTION ++ " for an exact count of packs",
+        .count => "Exactly this many packs; " ++ Desk.PAINT_CAPTION ++ " to draw by weight",
     });
-    bump(u8, &m.weight, weight);
+    if (flip.hot) rl.drawRectangleLinesEx(value, 1, HOVER);
+    if (flip.hit) m.draw = m.draw.flipped();
     var x = widgets.PAD + editor.MEMBERS_X;
     for (0..pack.MAKEUP_MAX) |i| {
         const r = widgets.row(x, y, editor.MEMBER_W);
@@ -161,12 +174,14 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
     for (MAKEUP_TOOLS, 0..) |t, i| {
         const r = widgets.row(widgets.PAD + editor.MAKEUP_TOOLS_X + @as(i32, @intCast(i)) * widgets.STEP_PITCH, y, widgets.STEP_W);
         const live = switch (t) {
+            .exit => true,
             .grow => m.canGrow(),
             .shrink => m.canShrink(),
             .drop => droppable,
         };
-        if (!widgets.button(ed.controls(), &g.face, r, t.label(), false, live, t.tip())) continue;
+        if (!widgets.button(ed.controls(), &g.face, r, t.label(), t == .exit and m.exit, live, t.tip())) continue;
         switch (t) {
+            .exit => m.exit = !m.exit,
             .grow => _ = m.grow(),
             .shrink => _ = m.shrink(),
             .drop => dropped = true,
@@ -176,12 +191,14 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
 }
 
 const MakeupTool = enum {
+    exit,
     grow,
     shrink,
     drop,
 
     fn label(t: MakeupTool) [:0]const u8 {
         return switch (t) {
+            .exit => "E",
             .grow => "+",
             .shrink => "-",
             .drop => widgets.DROP,
@@ -190,6 +207,7 @@ const MakeupTool = enum {
 
     fn tip(t: MakeupTool) [:0]const u8 {
         return switch (t) {
+            .exit => "The lead stands by a door",
             .grow => "One more in the pack",
             .shrink => "One fewer in the pack",
             .drop => "Delete this makeup; the last one stays",
@@ -591,25 +609,26 @@ fn cycle(comptime T: type, v: T, by: i32) T {
     const values = comptime std.enums.values(T);
     var next = mathx.stepIn(T, values, v, std.math.sign(by), null);
     if (T == grid.Tile) {
-        while (next.isOpened()) next = mathx.stepIn(T, values, next, std.math.sign(by), null);
+        while (!next.single()) next = mathx.stepIn(T, values, next, std.math.sign(by), null);
     }
     return next;
 }
 
-test "generator tile choices skip opened containers in both directions" {
+test "generator tile choices skip opened containers and wide props in both directions" {
     var checked: usize = 0;
     for (std.enums.values(grid.Tile)) |tile| {
         try std.testing.expectEqual(tile, cycle(grid.Tile, tile, 0));
         for ([_]i32{ -1, 1 }) |by| {
             const next = cycle(grid.Tile, tile, by);
-            try std.testing.expect(!next.isOpened());
-            if (!tile.isOpened()) try std.testing.expectEqual(tile, cycle(grid.Tile, next, -by));
+            try std.testing.expect(next.single());
+            if (tile.single()) try std.testing.expectEqual(tile, cycle(grid.Tile, next, -by));
             checked += 1;
         }
     }
     try std.testing.expectEqual(grid.Tile.swamp_tree, cycle(grid.Tile, .chest, 1));
     try std.testing.expectEqual(grid.Tile.chest, cycle(grid.Tile, .swamp_tree, -1));
-    std.debug.print("generator tile choices: {d} forward/back steps exclude opened containers; idle choices preserved\n", .{checked});
+    try std.testing.expectEqual(grid.Tile.wall, cycle(grid.Tile, .glow_plant, 1));
+    std.debug.print("generator tile choices: {d} forward/back steps exclude opened containers and wide props; idle choices preserved\n", .{checked});
 }
 
 pub fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, steps: [2]widgets.Step) i32 {

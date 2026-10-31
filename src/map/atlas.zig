@@ -708,6 +708,38 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
     try std.testing.expect(dirt_trees * 10 >= swamp_trees * 8 and inland_trees > 0);
 }
 
+test "the strand holds only rats, crossbowmen, pibs, two shamans, two bloats and one beefy pib by the exit" {
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    try a.load(std.testing.allocator, START);
+    var lv: grid.Level = undefined;
+    const nd = &a.node[a.start.node];
+    var doors: [grid.MAX_DOORS]P = undefined;
+    const exits = nd.doorCells(&doors);
+    const allowed = std.EnumSet(actor.Kind).initMany(&.{ .rat, .bandit_crossbowman, .pib, .pib_shaman, .beefy_pib, .bloat });
+    var counts = std.EnumArray(actor.Kind, usize).initFill(0);
+    var farthest: i32 = 0;
+    const RUNS = 50;
+    for (0..RUNS) |i| {
+        const seed = 0xF0E5 +% i *% grid.TEST_SEED_STRIDE;
+        nd.stamp(&lv, seed);
+        const at = landing(&lv, a.start.at, &.{}) orelse return error.NoFloor;
+        var pool = actor.Pool{};
+        var rng = mathx.Rng.init(seed);
+        pack.place(&lv, &pool, &rng, at, exits, &nd.plan.procgen.foes);
+        try std.testing.expectEqual(@as(usize, 1), pool.tally(.beefy_pib).total);
+        try std.testing.expectEqual(@as(usize, 2), pool.tally(.pib_shaman).total);
+        try std.testing.expectEqual(@as(usize, 2), pool.tally(.bloat).total);
+        for (pool.slice()) |f| {
+            try std.testing.expect(allowed.contains(f.kind));
+            counts.getPtr(f.kind).* += 1;
+            if (f.kind == .beefy_pib) farthest = @max(farthest, mathx.dist(f.at, exits[0]));
+        }
+    }
+    std.debug.print("the strand over {d} rolls: {d} rats, {d} crossbowmen, {d} pibs; beefy pib at most {d} cells from the exit\n", .{ RUNS, counts.get(.rat), counts.get(.bandit_crossbowman), counts.get(.pib), farthest });
+    try std.testing.expect(farthest <= pack.EXIT_REACH);
+}
+
 test "the strand grows a few glowing plants on every roll" {
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);

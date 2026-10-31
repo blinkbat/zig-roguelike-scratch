@@ -15,18 +15,11 @@ light bleak
 weather drizzle
 makeup 3 rat rat
 makeup 2 rat
-makeup 3 pib
-makeup 2 pib rat
-makeup 1 bloat
-makeup 1 beefy_pib pib pib
-makeup 1 bandit_crossbowman rat rat
-makeup 1 rat slime
-makeup 1 bandit_shieldbearer bandit_crossbowman bandit_netter
-makeup 1 pib_shaman pib
-makeup 1 frost_wisp
-makeup 1 pyre_bloat
-makeup 1 bog_leech
-makeup 1 mimic
+makeup 2 bandit_crossbowman rat rat
+makeup 3 pib pib
+makeup count 2 pib_shaman pib
+makeup count 1 exit beefy_pib pib pib
+makeup count 2 bloat
 feature coast
 side west
 sea 6

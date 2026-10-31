@@ -986,7 +986,7 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     const fo = &ed.map.node[1].plan.procgen.foes;
     _ = fo.addMakeup();
     fo.makeup[fo.makeup_n - 1] = pack.Makeup.of(&.{ .slime, .bloat, .rat, .rat, .rat });
-    fo.makeup[fo.makeup_n - 1].weight = 3;
+    fo.makeup[fo.makeup_n - 1].draw = .{ .weight = 3 };
     ed.desk.mouse = .{ .x = 0, .y = 0 };
     render(ed, g, target);
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-gen-top.png", .{dir}));

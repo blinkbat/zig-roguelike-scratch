@@ -886,7 +886,7 @@ fn hides(at: rl.Vector2, p: P, t: grid.Tile) bool {
     const y = @as(f32, @floatFromInt(p.y)) * game.CELL_F;
     const top = y - if (look.tall(t)) game.CELL_F else 0;
     const bottom = y + if (look.tall(t)) 0 else game.CELL_F;
-    return at.x + game.CELL_F * (1 - FIGURE_INSET_X) > x and at.x + game.CELL_F * FIGURE_INSET_X < x + game.CELL_F and
+    return at.x + game.CELL_F * (1 - FIGURE_INSET_X) > x and at.x + game.CELL_F * FIGURE_INSET_X < x + game.CELL_F * @as(f32, @floatFromInt(t.wide())) and
         at.y + game.CELL_F * (1 - FIGURE_INSET_Y) > top and at.y + game.CELL_F * FIGURE_INSET_Y < bottom;
 }
 
