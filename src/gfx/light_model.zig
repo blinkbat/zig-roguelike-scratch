@@ -47,6 +47,10 @@ pub const BODY_Z: f32 = 0.4;
 
 pub const CARRY: Rgb = .{ 0.92, 0.88, 0.80 };
 pub const MOON_CARRY: Rgb = .{ 0.52, 0.68, 1.0 };
+/// At night the carried light warms toward this at its carrier's feet, by up to `NIGHT_GLOW_SHARE`, and is moonlit again this many cells out.
+pub const NIGHT_GLOW: Rgb = .{ 0.85, 0.66, 0.45 };
+pub const NIGHT_GLOW_SHARE: f32 = 0.35;
+pub const NIGHT_GLOW_R: f32 = 3;
 /// A cell past what the hero's light lets it see, so its glow fades out on the edge of sight.
 pub const CARRY_R: f32 = @floatFromInt(actor.row(actor.HERO).light + 1);
 pub const CARRY_FADE: f32 = 0.3;
@@ -54,7 +58,7 @@ pub const CARRY_CEILING: f32 = 0.7;
 pub const CARRY_FACE_WRAP: f32 = 0.6;
 
 /// The light remembered terrain is drawn under, after Brogue's memory colour.
-pub const MEMORY = rgbOf(look.rgb(0x33385c));
+pub const MEMORY = rgbOf(look.rgb(0x2b2f4e));
 pub const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 pub const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };

@@ -243,7 +243,7 @@ fn takeDrop(g: *game.Game, i: usize) bool {
         itemFailed(g, error.Full);
         return false;
     }
-    g.sim.log.push(.loot, "Picked up {s}.", .{item.name(&name)});
+    g.sim.log.push(.loot, "Picked up {s}.", .{item.spoken(&name)});
     return true;
 }
 
@@ -328,7 +328,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
                 itemFailed(g, err);
                 return;
             };
-            g.sim.log.push(.loot, "Equipped {s}: {s}.", .{ g.sim.inventory.gear.slots.get(e.slot).?.name(&name), e.slot.name() });
+            g.sim.log.push(.loot, "Equipped {s}: {s}.", .{ g.sim.inventory.gear.slots.get(e.slot).?.spoken(&name), e.slot.name() });
         },
         .unequip => |s| {
             g.sim.inventory.unequip(s, base) catch |err| {
@@ -341,7 +341,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             if (i >= g.sim.inventory.n) return;
             if (!game.combat.groundRoom(g)) return;
             rewards.dropItem(&g.sim, .{ .item = g.sim.inventory.bag[i], .at = h.at });
-            g.sim.log.push(.loot, "Dropped {s}.", .{g.sim.inventory.remove(i).name(&name)});
+            g.sim.log.push(.loot, "Dropped {s}.", .{g.sim.inventory.remove(i).spoken(&name)});
         },
         .pickup => |i| {
             if (i >= g.sim.ground.n or !takeable(g, h.at, g.sim.ground.drops[i])) return;

@@ -355,7 +355,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - `map/fov.zig` owns line of sight; `map/lume.zig` owns visibility from light. `Level.los` is geometric
   sight; `Level.lit` additionally requires sky, torch or carried light. A `Tile.glows` tile lights a torch's
   pool from its own cell; `gfx/light.zig` hangs it as a plant-mounted `Torch`. Terrain is remembered; bodies are
-  shown only where lit at their presented center. Rendering never decides visibility.
+  shown only where lit at their presented center, fading in at the ground's rate (`Presentation.sighted`) with their shadow,
+  reflection, marks and bars; births, surfacings and unmaskings appear at once. Rendering never decides visibility.
 
 ## Folk, triggers and dialog
 
@@ -409,7 +410,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Gas also veils prop/body artwork at half its ground opacity (45% maximum), respecting sprite alpha
   and presented positions; brick and rock walls stay clear. This overlay does not change gas spread.
 - Shadows/contact pools combine by channelwise `GL_MIN`, never stacking darker than the darkest source.
-  `Light.onCaster` ignores fog: unseen/offscreen casters still cast when lit. Receiver visibility in the
+  `Light.onCaster` ignores fog: unseen scenery and offscreen casters still cast when lit; a body casts at its `Presentation.sighted` fade, none while unseen. Receiver visibility in the
   light-map alpha fades shadows, keeping unseen/remembered ground unchanged. Keep the `CAST_MARGIN` culling
   margin (from `shadow.CAST_REACH`) and presented actor position/birth/death. Bind the receiver light-map sampler after blend-mode
   changes, which flush raylib's auxiliary texture bindings.

@@ -693,7 +693,42 @@ test "hidden and offscreen objects keep casting without being drawn" {
     g.sim.lv.putBarrel(p);
     try std.testing.expect(!scene.barrelShownAt(g, p));
     try std.testing.expect(scene.barrelPresent(g, p));
-    std.debug.print("hidden actor and barrel still cast within {d} cells of the view; dead actors and unborn splits do not\n", .{game.CAST_MARGIN});
+    std.debug.print("actors within {d} cells of the view are casters (a hidden one at its unsighted fade) and hidden barrels cast; dead actors and unborn splits do not\n", .{game.CAST_MARGIN});
+}
+
+test "a body coming into sight fades in with its ground and shadow; one born in sight appears at once" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const p = P{ .x = 24, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{p});
+    const i = actor.Pool.slot(2);
+    const k = grid.Level.idx(p);
+    const dt = mathx.FRAME_DT;
+    g.sim.lv.lit[k] = false;
+    g.light.visibility.snap(&g.sim.lv, false);
+    g.pic.ease(&g.sim, dt);
+    try std.testing.expectEqual(@as(f32, 0), g.pic.sighted[i]);
+    g.sim.lv.lit[k] = true;
+    var first: f32 = 0;
+    var frames: usize = 0;
+    var apart: f32 = 0;
+    while (g.pic.sighted[i] < 0.95) : (frames += 1) {
+        g.pic.ease(&g.sim, dt);
+        g.light.visibility.step(&g.sim.lv, dt, false);
+        if (frames == 0) first = g.pic.sighted[i];
+        apart = @max(apart, @abs(g.pic.sighted[i] - g.light.visibility.sight[k]));
+    }
+    try std.testing.expect(first > 0 and first < 0.5);
+    try std.testing.expect(apart < 1e-5);
+    try std.testing.expect(frames <= 15);
+    g.sim.lv.lit[k] = false;
+    g.pic.split_from[i] = g.sim.heroSlot().?;
+    g.pic.ease(&g.sim, dt);
+    g.pic.split_from[i] = null;
+    g.sim.lv.lit[k] = true;
+    g.pic.ease(&g.sim, dt);
+    try std.testing.expectEqual(@as(f32, 1), g.pic.sighted[i]);
+    std.debug.print("a body coming into sight: {d:.3} the first frame, 95% after {d} frames, at most {d:.6} off its ground\n", .{ first, frames, apart });
 }
 
 test "the minimap and the day beneath it fit in the top right, clear of the hud" {

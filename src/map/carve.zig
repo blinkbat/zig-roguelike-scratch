@@ -139,18 +139,34 @@ pub fn clearAround(lv: *const grid.Level, p: P) bool {
     return true;
 }
 
-/// What a scatter lays over: `tile`, and if `decked` the decor standing on it too; with `water_range`, only that near water.
+/// What a scatter lays over: `tile`, and if `decked` the decor standing on it too; with `water_range`, only that near water,
+/// with `water_clear`, none that near it, and with `land_range`, only that near dry ground of another kind.
 pub const Over = struct {
     tile: grid.Tile,
     decked: bool = false,
     water_range: u8 = 0,
+    water_clear: u8 = 0,
+    land_range: u8 = 0,
 
     fn has(o: Over, t: grid.Tile) bool {
         return t == o.tile or (o.decked and !t.solid() and t.ground() == o.tile);
     }
 
     fn at(o: Over, lv: *const grid.Level, p: P) bool {
-        return o.has(lv.at(p)) and (o.water_range == 0 or nearWater(lv, p, o.water_range));
+        if (!o.has(lv.at(p))) return false;
+        if (o.water_range != 0 and !nearWater(lv, p, o.water_range)) return false;
+        if (o.water_clear != 0 and nearWater(lv, p, o.water_clear)) return false;
+        return o.land_range == 0 or o.nearLand(lv, p);
+    }
+
+    fn nearLand(o: Over, lv: *const grid.Level, p: P) bool {
+        var cells = grid.Cells.around(p, o.land_range);
+        while (cells.next()) |q| {
+            if (!grid.Level.inside(q)) continue;
+            const t = lv.at(q);
+            if (!t.wet() and !o.has(t)) return true;
+        }
+        return false;
     }
 };
 
@@ -756,9 +772,24 @@ pub const Decor = struct {
     pub fn strew(d: Decor, lv: *grid.Level, rng: *mathx.Rng, seed: u64) void {
         strewn(lv, rng, d.tiny_shrubs, TILES.tiny_shrubs);
         clumps(lv, Noise.init(seed, .tall_grass), TALL_GRASS_SCALE, d.tall_grass, .{ .tile = TILES.tall_grass.ground().? }, TILES.tall_grass);
+        hearts(lv, TILES.tall_grass, .reeds);
         strewn(lv, rng, d.shrooms, TILES.shrooms);
     }
 };
+
+/// Each `t` with only `t` all round it becomes `heart`, judged on the tiles as they lay before.
+fn hearts(lv: *grid.Level, t: grid.Tile, heart: grid.Tile) void {
+    const before = lv.tile;
+    for (before, 0..) |here, i| {
+        if (here != t) continue;
+        const p = grid.Level.of(i);
+        const whole = for (mathx.ALL_DIRS) |d| {
+            const q = p.add(d.delta());
+            if (!grid.Level.inside(q) or before[grid.Level.idx(q)] != t) break false;
+        } else true;
+        if (whole) lv.tile[i] = heart;
+    }
+}
 
 fn capped(v: anytype, max: u16) @TypeOf(v) {
     var q = v;

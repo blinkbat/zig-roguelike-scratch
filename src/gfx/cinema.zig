@@ -29,6 +29,10 @@ const Focus = struct { shader: rl.Shader, texel: i32, strength: i32 };
 const Focused = look.Focused;
 const Bloom = struct { shader: rl.Shader, field: i32, visibility: i32, glints: i32, origin: i32, cell: i32, screen: i32, direction: i32, extract: i32 };
 const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, daylight: i32, brightness: i32, direction: i32 };
+const Grade = struct { shader: rl.Shader, visibility: i32, origin: i32, cell: i32, screen: i32 };
+
+/// How far toward grey remembered cells are drawn.
+const MEMORY_GREY: f32 = 0.7;
 
 const FOCUS_MAX: f32 = 0.24;
 /// Screen pixels between the bloom blur's taps, across then down.
@@ -84,6 +88,7 @@ pub const Cinema = struct {
     focus: ?Focus = null,
     bloom: ?Bloom = null,
     air: ?Air = null,
+    grade: ?Grade = null,
     field: ?rl.Texture2D = null,
     scene: ?rl.RenderTexture2D = null,
     spread: ?rl.RenderTexture2D = null,
@@ -93,6 +98,7 @@ pub const Cinema = struct {
         self.focus = shaders.program(Focus, FOCUS_FS);
         self.bloom = shaders.program(Bloom, BLOOM_FS);
         self.air = shaders.program(Air, AIR_FS);
+        self.grade = shaders.program(Grade, GRADE_FS);
         self.field = raster.canvas(grid.W, grid.H, rl.Color.blank, .point);
     }
 
@@ -124,8 +130,12 @@ pub const Cinema = struct {
         rl.updateTexture(tex, &pixels);
     }
 
+    fn blooms(self: *const Cinema) bool {
+        return self.options.bloom and self.active_bloom and self.bloom != null and self.field != null;
+    }
+
     pub fn beginScene(self: *Cinema, screen: mathx.P, outer: u32) bool {
-        if (!self.options.bloom or !self.active_bloom or self.bloom == null or self.field == null) return false;
+        if (!self.blooms() and self.grade == null) return false;
         return raster.beginTarget(&self.scene, screen, outer, look.FOG);
     }
 
@@ -133,23 +143,37 @@ pub const Cinema = struct {
         raster.endTarget(outer);
         const scene = self.scene.?.texture;
         const size = mathx.P{ .x = scene.width, .y = scene.height };
-        const b = self.bloom.?;
         const visibility = l.mapTexture();
         const glints = l.glintTexture();
-        if (visibility != null and glints != null and raster.beginTarget(&self.spread, size, outer, rl.Color.black)) {
+        const view = shaders.MapView{ .origin = origin, .cell = cell, .screen = raster.sizeOf(scene) };
+        if (self.blooms() and visibility != null and glints != null and raster.beginTarget(&self.spread, size, outer, rl.Color.black)) {
+            const b = self.bloom.?;
             rl.beginShaderMode(b.shader);
             self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ BLOOM_STEP, 0 }, 1);
             drawTarget(scene);
             rl.endShaderMode();
             raster.endTarget(outer);
-            copyTarget(scene);
+            self.composite(scene, view, visibility);
             rl.beginBlendMode(.additive);
             rl.beginShaderMode(b.shader);
             self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ 0, BLOOM_STEP }, 0);
             drawTarget(self.spread.?.texture);
             rl.endShaderMode();
             rl.endBlendMode();
-        } else copyTarget(scene);
+        } else self.composite(scene, view, visibility);
+    }
+
+    /// The scene onto the outer target, remembered cells greyed.
+    fn composite(self: *const Cinema, scene: rl.Texture2D, view: shaders.MapView, visibility: ?rl.Texture2D) void {
+        const g = self.grade orelse return copyTarget(scene);
+        const v = visibility orelse return copyTarget(scene);
+        raster.beginBlend(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
+        rl.beginShaderMode(g.shader);
+        shaders.setMapView(g, view);
+        rl.setShaderValueTexture(g.shader, g.visibility, v);
+        drawTarget(scene);
+        rl.endShaderMode();
+        rl.endBlendMode();
     }
 
     fn bindBloom(self: *Cinema, b: Bloom, origin: [2]f32, cell: f32, visibility: rl.Texture2D, glints: rl.Texture2D, scene: rl.Texture2D, direction: [2]f32, extract: i32) void {
@@ -255,6 +279,16 @@ const BLOOM_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .BLOOM_GAI
     \\    vec2 p = cellAtFrag();
     \\    float gain = extract != 0 ? 1.0 : BLOOM_GAIN * liveAt(p);
     \\    finalColor = vec4(sum * gain, 1.0);
+    \\}
+;
+
+const GRADE_FS = shaders.FS_HEAD ++ shaders.MAP_VIEW_FS ++ shaders.glslConsts(.{ .MEMORY_GREY = MEMORY_GREY }) ++
+    \\uniform sampler2D visibility;
+    \\void main() {
+    \\    vec4 c = texture(texture0, fragTexCoord);
+    \\    vec2 p = cellAtFrag();
+    \\    float live = insideMap(p) ? texture(visibility, p / CELLS).a : 1.0;
+    \\    finalColor = vec4(mix(c.rgb, vec3(dot(c.rgb, LUMA)), MEMORY_GREY * (1.0 - live)), c.a);
     \\}
 ;
 

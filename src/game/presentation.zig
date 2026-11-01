@@ -13,6 +13,7 @@ const chronicle = @import("../play/chronicle.zig");
 const fx = @import("../gfx/fx.zig");
 const cloud = @import("../gfx/cloud.zig");
 const look = @import("../gfx/look.zig");
+const visibility = @import("../gfx/light_visibility.zig");
 const game = @import("../game.zig");
 const glide = @import("glide.zig");
 const simulation = @import("sim.zig");
@@ -152,6 +153,8 @@ pub const Presentation = struct {
     /// Indexed by pool slot.
     facing: [actor.MAX]actor.Facing = @splat(.right),
     turning: [actor.MAX]?Turning = @splat(null),
+    /// Indexed by pool slot: how far into sight each body has faded, as its ground does; 0 while unseen.
+    sighted: [actor.MAX]f32 = @splat(1),
     /// Pool-indexed presentation state, updated when each blow lands.
     pictured: [actor.MAX]fx.Body = undefined,
     /// The blows dealt so far, so the picture takes them in the order they were dealt.
@@ -404,6 +407,7 @@ pub const Presentation = struct {
 
     pub fn snapGlide(self: *Presentation, pool: *const actor.Pool) void {
         self.occlusion = @splat(0);
+        self.sighted = @splat(1);
         for (pool.constSlice(), 0..) |*a, i| self.glide[i] = glide.Glide.rest(a);
     }
 
@@ -528,11 +532,20 @@ pub const Presentation = struct {
     /// The sky, experience bar and orbs ease toward what the drawn turns show.
     pub fn ease(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.stepOcclusion(sim, dt);
+        self.stepSighted(sim, dt);
         self.hour_shown = day.wrapHour(self.hour_shown + day.toward(self.hour_shown, sim.clock.hour()) * mathx.easing(dt, HOUR_EASE));
         self.xp_shown = mathx.ease(self.xp_shown, self.xp_aim, mathx.easing(dt, XP_EASE), 1);
         const resource_ease = mathx.easing(dt, RESOURCE_EASE);
         self.life_fill = mathx.ease(self.life_fill, self.lifeFill(sim), resource_ease, resource_ease);
         self.mana_fill = mathx.ease(self.mana_fill, self.manaFill(sim), resource_ease, resource_ease);
+    }
+
+    /// Births, surfacings and unmaskings appear at once; only a body coming into sight fades in.
+    fn stepSighted(self: *Presentation, sim: *const Simulation, dt: f32) void {
+        const k = mathx.easing(dt, visibility.REVEAL);
+        for (self.sighted[0..sim.pool.n], 0..) |*s, i| {
+            s.* = if (!self.figured(sim, i)) 1 else if (self.drawnAt(sim, i) == null) 0 else mathx.ease(s.*, 1, k, k);
+        }
     }
 
     fn occluding(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {

@@ -494,13 +494,13 @@ pub const Book = struct {
                     var carried: menu.Note(24) = .{};
                     carried.say("{d} carried", .{view.inventory.stacks.get(k)});
                     line_icons.drawSupply(sprites, k, .row, x + layout.GLYPH_X, row_mid, look.itemInk(.normal));
-                    listRow(face, x, y, menu.named(k), look.itemInk(.normal), carried.text());
+                    listRow(face, x, y, menu.titleOf(k), look.itemInk(.normal), carried.text());
                 } else {
                     const at = i - stocked(view);
                     const it = view.inventory.bag[at];
                     const slots = it.kind.slots();
                     line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, look.itemInk(it.rarity()));
-                    listRow(face, x, y, it.name(&name_buf), look.itemInk(it.rarity()), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.named(it.kind) else slots[0].name());
+                    listRow(face, x, y, it.name(&name_buf), look.itemInk(it.rarity()), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name());
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];

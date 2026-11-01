@@ -206,7 +206,7 @@ pub const Gpu = struct {
     }
 
     /// `centre` is its middle, cells; `flash` is how far toward `FLASH_RGB` it is drawn.
-    pub fn drawBody(self: *const Gpu, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const model.Shine, flash: f32, fade_bounds: [2]f32, enabled: bool) void {
+    pub fn drawBody(self: *const Gpu, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const model.Shine, flash: f32, opacity: f32, fade_bounds: [2]f32, enabled: bool) void {
         const size = raster.sizeOf(tex);
         const w, const h = size;
         const src = raster.rect(0, 0, if (left) -tex.width else tex.width, tex.height);
@@ -215,7 +215,7 @@ pub const Gpu = struct {
         if (!enabled or sh == null or normals == null) {
             const fading = self.beginMirrorFade(fade_bounds);
             defer if (fading) rl.endShaderMode();
-            raster.blit(tex, src, dest, s.drawn(rl.Color.white, flash));
+            raster.blit(tex, src, dest, look.fade(s.drawn(rl.Color.white, flash), opacity));
             return;
         }
         var pos: [model.BODY_LIGHTS][3]f32 = undefined;
@@ -243,7 +243,7 @@ pub const Gpu = struct {
             shaders.setUniforms(b.shader, b.lpos, &pos, n);
             shaders.setUniforms(b.shader, b.lcol, &col, n);
         }
-        raster.blit(tex, src, dest, rl.Color.white);
+        raster.blit(tex, src, dest, look.fade(rl.Color.white, opacity));
         rl.gl.rlDrawRenderBatchActive();
     }
 

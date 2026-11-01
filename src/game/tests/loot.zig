@@ -313,8 +313,8 @@ test "walking onto a bag opens only its loot and can leave every item behind" {
     const before = g.sim.clock.minute;
     harness.nudge(g, .e);
     try std.testing.expectEqual(@as(usize, 2), g.sim.log.n);
-    try std.testing.expectEqualStrings("Arwen steps over Leather cap.", g.sim.log.line(1).?);
-    try std.testing.expectEqualStrings("Arwen steps over Copper ring.", g.sim.log.line(0).?);
+    try std.testing.expectEqualStrings("Arwen steps over leather cap.", g.sim.log.line(1).?);
+    try std.testing.expectEqualStrings("Arwen steps over copper ring.", g.sim.log.line(0).?);
     try std.testing.expectEqual(@as(usize, 2), g.sim.log.held);
     try std.testing.expectEqual(before + day.TURN_MINUTES, g.sim.clock.minute);
     try std.testing.expectEqual(@as(usize, 3), g.sim.ground.n);

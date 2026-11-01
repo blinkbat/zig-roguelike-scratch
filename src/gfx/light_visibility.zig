@@ -6,7 +6,7 @@ const P = mathx.P;
 const smooth = mathx.smooth;
 
 /// Per second.
-const REVEAL: f32 = 14.0;
+pub const REVEAL: f32 = 14.0;
 const FORGET: f32 = 5.0;
 /// Cells: memory is black on the edge of anything unseen and full this far from it.
 const VOID_FADE: f32 = 1.5;

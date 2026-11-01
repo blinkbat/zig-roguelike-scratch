@@ -116,9 +116,9 @@ pub fn tileRect(t: grid.Tile, tex: rl.Texture2D, cell: rl.Rectangle) rl.Rectangl
     return .{ .x = cell.x, .y = cell.y + if (tall(t)) cell.height - height else (cell.height - height) / 2, .width = width, .height = height };
 }
 
-/// Every sprite that throws a shadow from its feet: bodies, barrel, picture casters, forest shapes, item bags and a mimic's chest.
+/// Every sprite that throws a shadow from its feet: bodies, barrel, picture casters, forest shapes, item bags, a mimic's chest and `shrub2.png`.
 pub const FIGURES: usize = LIT_FIGURES + PICTURE_CASTERS.len + WALL_MASKS.len + PROP_FIGURES;
-const PROP_FIGURES = 3;
+const PROP_FIGURES = 4;
 /// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
 pub const LIT_FIGURES: usize = Bodies.len + 1;
 
@@ -130,6 +130,9 @@ pub const Assets = struct {
     grounds: ground.Grounds = .initEmpty(),
     grass2: bool = false,
     dirt2: bool = false,
+    shallows2: bool = false,
+    shallows3: bool = false,
+    shrub2: bool = false,
     brush: bool = false,
     flowers: bool = false,
     barrel: bool = false,
@@ -176,6 +179,8 @@ pub const Assets = struct {
     fn bed(need: *Assets, g: ground.Ground) void {
         need.grass2 = need.grass2 or g == .grass;
         need.dirt2 = need.dirt2 or g == .dirt;
+        need.shallows2 = need.shallows2 or g == .shallows;
+        need.shallows3 = need.shallows3 or g == .shallows;
         if (GROUND_SHEETS.contains(g)) need.grounds.insert(g) else need.add(.{ .tile = g.tile() });
     }
 
@@ -184,6 +189,7 @@ pub const Assets = struct {
             .tile => |t| if (TILE_PNGS.get(t) != null) need.tiles.insert(t),
             .wall => |i| need.wall.set(i),
             .forest => |i| need.forest.set(i),
+            .shrub2 => need.shrub2 = true,
         }
     }
 
@@ -271,6 +277,9 @@ pub const Sprites = struct {
     bodies: Bodies = .initFill(null),
     grass2: ?rl.Texture2D = null,
     dirt2: ?rl.Texture2D = null,
+    shallows2: ?rl.Texture2D = null,
+    shallows3: ?rl.Texture2D = null,
+    shrub2: ?rl.Texture2D = null,
     brush: ?rl.Texture2D = null,
     flowers: ?rl.Texture2D = null,
     barrel: ?rl.Texture2D = null,
@@ -348,6 +357,14 @@ pub const Sprites = struct {
         }
         if (g == .dirt and mask == ground.FULL and cellHash(DIRT2_SEED, p) % DIRT2_IN == 0) {
             if (self.dirt2) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
+        }
+        if (g == .shallows and mask == ground.FULL) {
+            const alt = switch (cellHash(SHALLOWS_ALT_SEED, p) % SHALLOWS_ALT_IN) {
+                0 => self.shallows2,
+                1 => self.shallows3,
+                else => null,
+            };
+            if (alt) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
         }
         const tex = self.grounds.getPtrConst(g).* orelse return null;
         const at = ground.CELL_OF[mask];
@@ -466,7 +483,7 @@ pub const Sprites = struct {
     pub fn figures(self: *const Sprites) [FIGURES]?rl.Texture2D {
         var casters: [PICTURE_CASTERS.len]?rl.Texture2D = undefined;
         for (PICTURE_CASTERS, &casters) |t, *s| s.* = self.tiles.getPtrConst(t).*;
-        const props: [PROP_FIGURES]?rl.Texture2D = .{ self.item_bag, self.chest_item_bag, self.mimic_closed };
+        const props: [PROP_FIGURES]?rl.Texture2D = .{ self.item_bag, self.chest_item_bag, self.mimic_closed, self.shrub2 };
         return self.litFigures() ++ casters ++ self.forest ++ props;
     }
 
@@ -487,6 +504,7 @@ pub const Sprites = struct {
             .tile => |t| self.tiles.getPtrConst(t).*,
             .wall => |i| self.wall[i],
             .forest => |i| self.forest[i],
+            .shrub2 => self.shrub2,
         };
     }
 
@@ -654,6 +672,9 @@ const SOURCES = .{
     .grounds = GROUND_PNGS,
     .grass2 = @as([]const u8, @embedFile("grass2.png")),
     .dirt2 = @as([]const u8, @embedFile("dirt2.png")),
+    .shallows2 = @as([]const u8, @embedFile("shallows2.png")),
+    .shallows3 = @as([]const u8, @embedFile("shallows3.png")),
+    .shrub2 = @as([]const u8, @embedFile("shrub2.png")),
     .brush = @as([]const u8, @embedFile("brush.png")),
     .flowers = @as([]const u8, @embedFile("flowers.png")),
     .barrel = @as([]const u8, @embedFile("barrel.png")),
@@ -679,24 +700,29 @@ comptime {
 /// One lone shrub in this many is a forest clump, the rest `shrub.png`; which ones by a hash of the cell.
 const LONE_CLUMP_IN: u64 = 3;
 const LONE_CLUMP_SEED: u64 = 0xF02E57;
-/// One whole grass piece in this many draws `grass2.png`; one grass cell in `DECOR_IN` takes brush, one more flowers.
+/// One lone shrub in this many that is no clump draws `shrub2.png`.
+const SHRUB2_IN: u64 = 2;
+const SHRUB2_SEED: u64 = 0x5B2;
+/// One whole grass piece in this many draws `grass2.png`; of `DECOR_IN` grass cells, `BRUSH_IN` take brush and one flowers.
 const GRASS2_IN: u64 = 3;
 const GRASS2_SEED: u64 = 0x62A552;
 /// One whole dirt piece in this many draws `dirt2.png`.
 const DIRT2_IN: u64 = 3;
 const DIRT2_SEED: u64 = 0xD127;
-const DECOR_IN: u64 = 20;
+/// One whole shallows piece in this many draws `shallows2.png`, one more `shallows3.png`.
+const SHALLOWS_ALT_IN: u64 = 16;
+const SHALLOWS_ALT_SEED: u64 = 0x5A110;
+const DECOR_IN: u64 = 60;
+const BRUSH_IN: u64 = 3;
 const DECOR_SEED: u64 = 0xB2754;
 
 const GrassDecor = enum { brush, flowers };
 
 fn grassDecor(t: grid.Tile, p: mathx.P) ?GrassDecor {
     if (t != .grass) return null;
-    return switch (cellHash(DECOR_SEED, p) % DECOR_IN) {
-        0 => .brush,
-        1 => .flowers,
-        else => null,
-    };
+    const roll = cellHash(DECOR_SEED, p) % DECOR_IN;
+    if (roll < BRUSH_IN) return .brush;
+    return if (roll == BRUSH_IN) .flowers else null;
 }
 
 fn loneClump(p: mathx.P) bool {
@@ -712,10 +738,11 @@ pub fn forestAt(lv: *const grid.Level, p: mathx.P) bool {
     return lv.at(p) == .shrub and (lv.tileMask(p) != 0 or loneClump(p));
 }
 
-const Cut = union(enum) { tile: grid.Tile, wall: usize, forest: usize };
+const Cut = union(enum) { tile: grid.Tile, wall: usize, forest: usize, shrub2 };
 
 fn cutAt(lv: *const grid.Level, p: mathx.P) ?Cut {
     if (forestAt(lv, p)) return .{ .forest = WALL_CELL[lv.tileMask(p)] };
+    if (lv.at(p) == .shrub and cellHash(SHRUB2_SEED, p) % SHRUB2_IN == 0) return .shrub2;
     return cutOf(lv.at(p), lv.tileShape(p));
 }
 
@@ -1236,7 +1263,13 @@ const WATER_HIGHLIGHT = [2]f32{ 0.62, 0.82 };
 const WATER_SHIMMER: f32 = 0.32;
 /// Cells a second each of the two crossing noise layers drifts.
 const SHIMMER_DRIFT = [2][2]f32{ .{ 0.21, -0.13 }, .{ -0.17, 0.24 } };
+/// Water's brightness at the screen's top and bottom edges, eased between.
+const WATER_SCREEN_FADE = [2]f32{ 1.1, 0.45 };
+/// Deep water's brightness at the screen's bottom edge.
+const WATER_SCREEN_FADE_DEEP: f32 = 0.05;
 const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
+    .SCREEN_FADE = WATER_SCREEN_FADE,
+    .SCREEN_FADE_DEEP = WATER_SCREEN_FADE_DEEP,
     .SATURATION = WATER_SATURATION,
     .OVERBRIGHT = light_model.OVERBRIGHT,
     .DEEP = WATER_DEEP,
@@ -1274,13 +1307,15 @@ const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     \\        remembered.rgb *= light.rgb * OVERBRIGHT;
     \\        reflected = mix(remembered, texture(mirror, uv), light.a);
     \\    }
-    \\    float strength = mix(MIRROR_DEEP, MIRROR_SHALLOW, smoothstep(DEEP, SHALLOW, depth));
+    \\    float shallow = smoothstep(DEEP, SHALLOW, depth);
+    \\    float strength = mix(MIRROR_DEEP, MIRROR_SHALLOW, shallow);
     \\    vec3 shine = reflected.rgb * MIRROR_TINT * strength;
     \\    shine = mix(vec3(dot(shine, LUMA)), shine, SATURATION);
     \\    shine += texture(glints, at / CELLS).rgb * light.a;
     \\    vec3 base = art.rgb * (1.0 - reflected.a * strength);
     \\    if (shimmer != 0) base *= 1.0 + SHIMMER * smoothstep(HIGHLIGHT.x, HIGHLIGHT.y, dot(art.rgb / depth, LUMA)) * swell(at) * light.a;
-    \\    finalColor = vec4(clamp(base + shine / max(light.rgb * OVERBRIGHT, vec3(0.06)), 0.0, 1.0), art.a);
+    \\    float fade = mix(SCREEN_FADE.x, mix(SCREEN_FADE_DEEP, SCREEN_FADE.y, shallow), clamp(1.0 - gl_FragCoord.y / screen.y, 0.0, 1.0));
+    \\    finalColor = vec4(clamp((base + shine / max(light.rgb * OVERBRIGHT, vec3(0.06))) * fade, 0.0, 1.0), art.a);
     \\}
 ;
 
@@ -1503,6 +1538,9 @@ test "forest sprites follow connections and isolated trees mix with clumps witho
     var sprites = Sprites{};
     const tree = rl.Texture2D{ .id = 1, .width = SPRITE_PX, .height = SPRITE_PX, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
     sprites.tiles.set(.shrub, tree);
+    var alt = tree;
+    alt.id = 1000;
+    sprites.shrub2 = alt;
     for (&sprites.forest, 0..) |*t, i| {
         var texture_ = tree;
         texture_.id = @intCast(i + 2);
@@ -1519,6 +1557,7 @@ test "forest sprites follow connections and isolated trees mix with clumps witho
     try std.testing.expectEqual(sprites.forest[WALL_CELL[2]].?.id, sprites.tileAt(&lv, a).?.id);
     @memset(&lv.tile, .grass);
     var trees: usize = 0;
+    var alts: usize = 0;
     var clumps: usize = 0;
     for (0..100) |i| {
         const p = mathx.P{ .x = 2 + @as(i32, @intCast(i % 10)) * 3, .y = 2 + @as(i32, @intCast(i / 10)) * 3 };
@@ -1526,17 +1565,17 @@ test "forest sprites follow connections and isolated trees mix with clumps witho
     }
     gen.shapeWalls(&lv);
     const need = Assets.of(&lv);
-    try std.testing.expect(need.tiles.contains(.shrub) and need.forest.isSet(WALL_CELL[0]));
+    try std.testing.expect(need.tiles.contains(.shrub) and need.shrub2 and need.forest.isSet(WALL_CELL[0]));
     for (lv.tile, 0..) |t, i| {
         if (t != .shrub) continue;
         const p = grid.Level.of(i);
         const id = sprites.tileAt(&lv, p).?.id;
         try std.testing.expectEqual(id, sprites.tileAt(&lv, p).?.id);
         try std.testing.expect(t.solid() and t.blind());
-        if (id == tree.id) trees += 1 else if (id == sprites.forest[WALL_CELL[0]].?.id) clumps += 1 else return error.NotAnIsolatedSprite;
+        if (id == tree.id) trees += 1 else if (id == alt.id) alts += 1 else if (id == sprites.forest[WALL_CELL[0]].?.id) clumps += 1 else return error.NotAnIsolatedSprite;
     }
-    std.debug.print("100 isolated blockers: {d} lone trees, {d} forest clumps; 2 connected tiles keep their shapes\n", .{ trees, clumps });
-    try std.testing.expect(trees > 40 and clumps > 15 and clumps < trees);
+    std.debug.print("100 isolated blockers: {d} lone trees, {d} alternates, {d} forest clumps; 2 connected tiles keep their shapes\n", .{ trees, alts, clumps });
+    try std.testing.expect(trees > 20 and alts > 20 and clumps > 15 and clumps < trees + alts);
 }
 
 test "floor shows through a wall's gaps; a tile with its own ground or background keeps it" {

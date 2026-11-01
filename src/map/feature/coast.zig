@@ -3,6 +3,8 @@ const mathx = @import("../../core/mathx.zig");
 const grid = @import("../grid.zig");
 const carve = @import("../carve.zig");
 
+const P = mathx.P;
+
 // Path of Exile's Twilight Strand, Dwarf Fortress's ocean edge: the sea along one side, its surf, then a beach.
 
 pub const SEA_MAX: u8 = 24;
@@ -11,6 +13,10 @@ pub const BEACH_MAX: u8 = 16;
 pub const ROUGH_MAX: u8 = 12;
 /// Cells along the coast over which a line wanders once.
 const WANDER: f32 = 9;
+/// Cells across a jag in that line, and its share of the line's `rough`.
+const JAG: f32 = 2;
+const JAG_SHARE: f32 = 0.5;
+const JAG_ROW: i32 = 1 << 12;
 /// Noise rows far enough apart that the waterline and the beach's inland edge wander apart.
 const BEACH_ROW: i32 = 1 << 10;
 
@@ -48,7 +54,9 @@ pub const Params = struct {
 };
 
 fn wander(noise: carve.Noise, along: usize, row: i32, rough: f32) f32 {
-    return (noise.at(.{ .x = @intCast(along), .y = row }, WANDER, 2) * 2 - 1) * rough;
+    const at = P{ .x = @intCast(along), .y = row };
+    const jag = noise.at(at.add(.{ .x = 0, .y = JAG_ROW }), JAG, 1) * 2 - 1;
+    return ((noise.at(at, WANDER, 2) * 2 - 1) + jag * JAG_SHARE) * rough;
 }
 
 pub fn apply(lv: *grid.Level, _: *mathx.Rng, seed: u64, _: carve.Palette, p: Params) void {

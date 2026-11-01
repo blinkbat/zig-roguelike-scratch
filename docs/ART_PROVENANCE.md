@@ -53,6 +53,8 @@ documented scripts; it does not mean every resulting tile has been hand-painted 
 | `assets/grass.png` | Existing grass raster; original source not recorded here | Documented 15% RGB reduction in `tone_forest.lua` | Preserve owner backup; verify original attribution |
 | `assets/grass2.png` | Owner-supplied 64x64 raster; editable source and individual authorship not verified | Stable alternate for fully filled grass pieces; existing border art retained and original pixels unchanged | Supplied raster preserved at native scale |
 | `assets/dirt2.png` | Owner-supplied 64x64 raster; editable source and individual authorship not verified | Stable alternate for fully filled dirt pieces; existing border art retained and original pixels unchanged | Supplied raster preserved at native scale |
+| `assets/shrub2.png` | Owner-supplied 64x64 raster; editable source and individual authorship not verified | Stable alternate for lone shrubs that are not forest clumps | Supplied raster preserved at native scale |
+| `assets/shallows2.png`, `assets/shallows3.png` | Owner-supplied 64x64 rasters; editable source and individual authorship not verified | Stable alternates for fully filled shallows pieces; existing border art retained and original pixels unchanged | Supplied rasters preserved at native scale |
 | `assets/source/hud-elements.aseprite` | Paint on the Desktop working copy must be inspected before export | Initial template, guides, reference assembly and named slices from `create_template.py` | Original paint layer versus generated guides |
 | Desktop cave/forest guide sheets | Owner paint on `Draw here`, if present | `guide_walls.lua` guides and `idea_walls.lua` rough ideas | `Ideas - hide before export` is assistant work, not shipping art |
 

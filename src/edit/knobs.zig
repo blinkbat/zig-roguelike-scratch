@@ -420,6 +420,8 @@ const SCATTER_ROWS = [_]Knob{
     .{ .field = "amount", .tips = &.{std.fmt.comptimePrint("A thousandth of those cells; {d} lays it on all of them", .{scatter.AMOUNT_MAX})} },
     .{ .field = "clump", .tips = &.{"Clumps this many cells across; 0 lays it a cell at a time"} },
     .{ .field = "water_range", .label = "Near water", .tips = &.{"Within this many cells of water or shallows; 0 allows any distance"} },
+    .{ .field = "water_clear", .label = "Off water", .tips = &.{"None within this many cells of water or shallows; 0 allows any"} },
+    .{ .field = "land_range", .label = "Near land", .tips = &.{"Within this many cells of dry ground other than what it lays on; 0 allows any distance"} },
 };
 
 const BORDER_ROWS = [_]Knob{

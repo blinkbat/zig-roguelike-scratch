@@ -151,10 +151,10 @@ fn drawFigureGlyph(g: *game.Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void 
 }
 
 /// Bright whatever the light, over a drop shadow, so a stand-in letter reads at a glance.
-fn drawFigureLetter(g: *game.Game, l: look.Look, s: P, flash: f32) void {
+fn drawFigureLetter(g: *game.Game, l: look.Look, s: P, flash: f32, opacity: f32) void {
     const off = game.authored(look.GLYPH_SHADOW_PX);
-    drawFigureGlyph(g, l.ch, s.x + off, s.y + off, look.GLYPH_SHADOW);
-    drawFigureGlyph(g, l.ch, s.x, s.y, look.mixed(l.fg, rl.Color.white, flash));
+    drawFigureGlyph(g, l.ch, s.x + off, s.y + off, look.fade(look.GLYPH_SHADOW, opacity));
+    drawFigureGlyph(g, l.ch, s.x, s.y, look.fade(look.mixed(l.fg, rl.Color.white, flash), opacity));
 }
 
 fn drawCoins(g: *const game.Game, c: Cam, pile: items.Coins) void {
@@ -221,6 +221,7 @@ fn bar(x: i32, y: i32, w: i32, h: i32, v: i32, max: i32, back: rl.Color, fill: r
 const Shown = struct {
     pic: fx.Body,
     slot: usize,
+    sighted: f32,
     s: P,
     lifted: P,
     mid: [2]f32,
@@ -256,19 +257,20 @@ const Barrels = struct {
     }
 };
 
-fn drawLit(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, fade: [2]f32) void {
+fn drawLit(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, opacity: f32, fade: [2]f32) void {
     if (tex) |t| {
-        g.light.drawBody(t, spriteRect(t, s.x, s.y), left, mid, shine, flash, fade);
-    } else drawFigureLetter(g, l, s, flash);
+        g.light.drawBody(t, spriteRect(t, s.x, s.y), left, mid, shine, flash, opacity, fade);
+    } else drawFigureLetter(g, l, s, flash, opacity);
 }
 
-fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32) void {
-    drawLit(g, tex, l, s, left, mid, shine, flash, .{ 0, 0 });
+fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, opacity: f32) void {
+    drawLit(g, tex, l, s, left, mid, shine, flash, opacity, .{ 0, 0 });
     if (!g.cloud.beginVeil(shine.tint(rl.Color.white), .sharp)) return;
     defer cloud.Cloud.endVeil();
+    const ink = look.fade(rl.Color.white, opacity);
     if (tex) |t| {
-        raster.blit(t, raster.rect(0, 0, if (left) -t.width else t.width, t.height), spriteRect(t, s.x, s.y), rl.Color.white);
-    } else drawFigureGlyph(g, l.ch, s.x, s.y, rl.Color.white);
+        raster.blit(t, raster.rect(0, 0, if (left) -t.width else t.width, t.height), spriteRect(t, s.x, s.y), ink);
+    } else drawFigureGlyph(g, l.ch, s.x, s.y, ink);
 }
 
 fn drawGroundPass(g: *game.Game, c: Cam, beds: *const dual.Beds, stood: *const grid.CellSet, mirror: ?look.Mirrors) void {
@@ -397,22 +399,24 @@ fn drawShadows(g: *game.Game, c: Cam, cast: grid.Box) void {
             g.light.drawForestShadows(t, rect, pr.mid, &pr.shine, g.sim.lv.tileShape(p) orelse .{});
         } else if (look.canopied(kind)) {
             g.light.drawCanopy(t, rect, pr.mid, &pr.shine);
-        } else g.light.drawShadows(t, rect, false, pr.mid, &pr.shine);
+        } else g.light.drawShadows(t, rect, false, pr.mid, &pr.shine, 1);
     }
     for (0..g.sim.pool.n) |i| {
         const at = g.pic.casterAt(&g.sim, i, cast) orelse continue;
+        const opacity = g.pic.sighted[i];
+        if (opacity <= 0) continue;
         const t = g.sprites.body(g.pic.pictured[i].kind) orelse continue;
         const s = c.px(at);
         const mid = game.middle(at);
         const shine = g.light.onCaster(mid, g.sim.isHero(i));
-        g.light.drawShadows(t, spriteRect(t, s.x, s.y), g.pic.facing[i] == .left, mid, &shine);
+        g.light.drawShadows(t, spriteRect(t, s.x, s.y), g.pic.facing[i] == .left, mid, &shine, opacity);
     }
 }
 
 fn propShadow(g: *game.Game, c: Cam, p: P, tex: ?rl.Texture2D) void {
     const t = tex orelse return;
     const b = Prop.at(g, c, p, true);
-    g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), false, b.mid, &b.shine);
+    g.light.drawShadows(t, spriteRect(t, b.s.x, b.s.y), false, b.mid, &b.shine, 1);
 }
 
 pub fn viewBox(g: *const game.Game, c: Cam) grid.Box {
@@ -452,13 +456,13 @@ fn footOf(g: *const game.Game, tex: ?rl.Texture2D, s: P) f32 {
     return g.light.footY(t, spriteRect(t, s.x, s.y));
 }
 
-fn drawMirrored(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, stands: P, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32) void {
+fn drawMirrored(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, stands: P, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, opacity: f32) void {
     const foot = footOf(g, tex, stands);
     const top = if (tex) |t| g.light.topY(t, spriteRect(t, s.x, s.y)) else @as(f32, @floatFromInt(s.y + game.HALF_CELL - @divTrunc(game.GLYPH, 2)));
     const bounds = mirrorFade(g, foot, top, footOf(g, tex, s));
     const r = Reflection.begin(g, foot, if (tex == null) bounds else null);
     defer r.end();
-    drawLit(g, tex, l, s, left, mid, shine, flash, bounds);
+    drawLit(g, tex, l, s, left, mid, shine, flash, opacity, bounds);
 }
 
 fn mirrorFade(g: *const game.Game, foot: f32, top: f32, bottom: f32) [2]f32 {
@@ -472,11 +476,11 @@ fn drawBody(g: *game.Game, b: *const Shown, mirrored: bool) void {
     const flash = g.pic.fx.flashOf(b.slot);
     var shine = b.shine;
     if (g.sim.isHero(b.slot)) shine.emission = g.pic.fx.level_up.bodyGlow();
-    if (mirrored) drawMirrored(g, tex, l, b.s, b.lifted, b.left, b.mid, &shine, flash) else drawFigure(g, tex, l, b.lifted, b.left, b.mid, &shine, flash);
+    if (mirrored) drawMirrored(g, tex, l, b.s, b.lifted, b.left, b.mid, &shine, flash, b.sighted) else drawFigure(g, tex, l, b.lifted, b.left, b.mid, &shine, flash, b.sighted);
 }
 
 fn drawBarrel(g: *game.Game, b: *const Prop, mirrored: bool) void {
-    if (mirrored) drawMirrored(g, g.sprites.barrel, look.BARREL, b.s, b.s, false, b.mid, &b.shine, 0) else drawFigure(g, g.sprites.barrel, look.BARREL, b.s, false, b.mid, &b.shine, 0);
+    if (mirrored) drawMirrored(g, g.sprites.barrel, look.BARREL, b.s, b.s, false, b.mid, &b.shine, 0, 1) else drawFigure(g, g.sprites.barrel, look.BARREL, b.s, false, b.mid, &b.shine, 0, 1);
 }
 
 fn sceneryTint(g: *const game.Game, p: P) rl.Color {
@@ -564,6 +568,7 @@ pub fn drawMap(g: *game.Game) void {
         shown[n] = .{
             .pic = g.pic.pictured[i],
             .slot = i,
+            .sighted = g.pic.sighted[i],
             .s = c.px(at),
             .lifted = c.px(at).sub(.{ .x = 0, .y = g.pic.glide[i].lift() }),
             .mid = mid,
@@ -659,7 +664,7 @@ pub fn drawMap(g: *game.Game) void {
     while (folk_cells.next()) |p| {
         if (g.sim.lv.folkAt(p) == null or !g.pic.litShown(&g.sim, p)) continue;
         const f = Prop.at(g, c, p, false);
-        drawFigure(g, null, look.FOLK, f.s, false, f.mid, &f.shine, 0);
+        drawFigure(g, null, look.FOLK, f.s, false, f.mid, &f.shine, 0, 1);
     }
     std.sort.insertion(Shown, bodies, {}, struct {
         fn less(_: void, a: Shown, b: Shown) bool {
@@ -697,19 +702,20 @@ pub fn drawMap(g: *game.Game) void {
     for (bodies) |*b| {
         if (!b.pic.kind.foe()) continue;
         const y_bar = b.s.y + game.CELL - BODY_BAR_H - BODY_BAR_LIFT;
+        const back = look.fade(look.BG, b.sighted);
         const chill = b.pic.status.get(.chilled);
-        if (chill > 0) pips(b.s.x + BODY_BAR_INSET, y_bar - CHILL_BAR_GAP - CHILL_BAR_H, game.CELL - BODY_BAR_INSET * 2, chill, glacial.TURNS, look.ailmentInk(.chill));
+        if (chill > 0) pips(b.s.x + BODY_BAR_INSET, y_bar - CHILL_BAR_GAP - CHILL_BAR_H, game.CELL - BODY_BAR_INSET * 2, chill, glacial.TURNS, look.fade(look.ailmentInk(.chill), b.sighted), back);
         if (!b.pic.hurt()) continue;
-        bar(b.s.x + BODY_BAR_INSET, y_bar, game.CELL - BODY_BAR_INSET * 2, BODY_BAR_H, b.pic.hp, b.pic.max, look.BG, look.LIFE);
+        bar(b.s.x + BODY_BAR_INSET, y_bar, game.CELL - BODY_BAR_INSET * 2, BODY_BAR_H, b.pic.hp, b.pic.max, back, look.fade(look.LIFE, b.sighted));
         const resistance = b.pic.resilience.peak().percent;
-        if (resistance > 0) bar(b.s.x + BODY_BAR_INSET, y_bar + BODY_BAR_H + RESIST_BAR_GAP, game.CELL - BODY_BAR_INSET * 2, RESIST_BAR_H, resistance, mathx.PERCENT, look.BG, look.UI_GOLD);
+        if (resistance > 0) bar(b.s.x + BODY_BAR_INSET, y_bar + BODY_BAR_H + RESIST_BAR_GAP, game.CELL - BODY_BAR_INSET * 2, RESIST_BAR_H, resistance, mathx.PERCENT, back, look.fade(look.UI_GOLD, b.sighted));
     }
 
     if (aim_from) |from| outline(c, g.mode.aim.mark, if (skills.aimable(g, from, g.mode.aim.mark)) look.RETICLE else look.RETICLE_BLOCKED);
     if (game.playShown(g) and g.st.lean) drawLean(g, c, &stood);
 
     for (bodies) |*b| {
-        g.pic.fx.drawSpeech(&g.face, b.slot, b.lifted.x, b.lifted.y, game.CELL_F, b.shine.sight);
+        g.pic.fx.drawSpeech(&g.face, b.slot, b.lifted.x, b.lifted.y, game.CELL_F, b.shine.sight * b.sighted);
     }
     if (level_up_at) |at| g.pic.fx.level_up.drawText(at, &g.face, o[0], o[1], game.CELL_F);
 }
@@ -752,17 +758,18 @@ fn drawStandingBody(g: *game.Game, b: *const Shown) void {
     const y: f32 = @floatFromInt(at.y);
     for (std.enums.values(fx.Status)) |s| {
         if (b.pic.status.get(s) == 0) continue;
+        const ink = look.fade(b.shine.tint(s.ink()), b.sighted);
         switch (s) {
-            .bleeding => g.pic.fx.drawBleeding(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
-            .burning => g.pic.fx.drawBurning(x, y, game.CELL_F, b.slot, b.shine.sight),
-            .chilled => g.pic.fx.drawChilled(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
-            .pinned => g.pic.fx.drawPinned(x, y, game.CELL_F, b.shine.tint(s.ink())),
-            .shocked => g.pic.fx.drawShocked(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
-            .sundered => g.pic.fx.drawSundered(x, y, game.CELL_F, b.pic.sunder.stacks, b.shine.tint(s.ink())),
-            .blinded => g.pic.fx.drawBlinded(x, y, game.CELL_F, b.shine.tint(s.ink())),
-            .confused => g.pic.fx.drawConfused(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
-            .frightened => g.pic.fx.drawFrightened(x, y, game.CELL_F, b.slot, b.shine.tint(s.ink())),
-            .warded => g.pic.fx.drawWarded(x, y, game.CELL_F, b.shine.tint(s.ink())),
+            .bleeding => g.pic.fx.drawBleeding(x, y, game.CELL_F, b.slot, ink),
+            .burning => g.pic.fx.drawBurning(x, y, game.CELL_F, b.slot, b.shine.sight * b.sighted),
+            .chilled => g.pic.fx.drawChilled(x, y, game.CELL_F, b.slot, ink),
+            .pinned => g.pic.fx.drawPinned(x, y, game.CELL_F, ink),
+            .shocked => g.pic.fx.drawShocked(x, y, game.CELL_F, b.slot, ink),
+            .sundered => g.pic.fx.drawSundered(x, y, game.CELL_F, b.pic.sunder.stacks, ink),
+            .blinded => g.pic.fx.drawBlinded(x, y, game.CELL_F, ink),
+            .confused => g.pic.fx.drawConfused(x, y, game.CELL_F, b.slot, ink),
+            .frightened => g.pic.fx.drawFrightened(x, y, game.CELL_F, b.slot, ink),
+            .warded => g.pic.fx.drawWarded(x, y, game.CELL_F, ink),
             .guarding, .unyielding, .steady, .overwatch => {},
             .resistant => {},
         }
@@ -804,12 +811,12 @@ fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
 }
 
 /// `n` of `of` equal segments lit, as a foe's chill meter.
-fn pips(x: i32, y: i32, w: i32, n: u8, of: u8, fill: rl.Color) void {
+fn pips(x: i32, y: i32, w: i32, n: u8, of: u8, fill: rl.Color, back: rl.Color) void {
     const count: i32 = of;
     const each = @divTrunc(w - (count - 1) * CHILL_PIP_GAP, count);
     for (0..of) |k| {
         const px = x + @as(i32, @intCast(k)) * (each + CHILL_PIP_GAP);
-        rl.drawRectangle(px, y, each, CHILL_BAR_H, if (k < n) fill else look.BG);
+        rl.drawRectangle(px, y, each, CHILL_BAR_H, if (k < n) fill else back);
     }
 }
 

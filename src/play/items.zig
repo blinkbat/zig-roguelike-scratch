@@ -419,12 +419,58 @@ pub fn spec(k: Kind) Spec {
     return SPECS.getPtrConst(k).*;
 }
 
+/// A base's name alone, Title Case.
+pub fn baseName(k: Kind, buf: []u8) [:0]const u8 {
+    const base = wording.namedOr(k, spec(k).name);
+    return cased(buf, std.fmt.bufPrintZ(buf, "{s}", .{base}) catch base, .title);
+}
+
+const Casing = enum { title, lower };
+/// Words a title leaves lower case past its first.
+const MINOR_WORDS = [_][]const u8{ "of", "the", "and", "a", "an" };
+
+/// Recases `text` in place when it lies in `buf`; a fallback literal is returned as it is.
+fn cased(buf: []u8, text: [:0]const u8, how: Casing) [:0]const u8 {
+    const at = @intFromPtr(text.ptr);
+    if (at < @intFromPtr(buf.ptr) or at + text.len > @intFromPtr(buf.ptr) + buf.len) return text;
+    const bytes = buf[at - @intFromPtr(buf.ptr) ..][0..text.len];
+    var start: usize = 0;
+    while (start < bytes.len) {
+        const end = std.mem.indexOfScalarPos(u8, bytes, start, ' ') orelse bytes.len;
+        const w = bytes[start..end];
+        switch (how) {
+            .lower => for (w) |*c| {
+                c.* = std.ascii.toLower(c.*);
+            },
+            .title => {
+                const minor = start > 0 and for (MINOR_WORDS) |m| {
+                    if (std.ascii.eqlIgnoreCase(w, m)) break true;
+                } else false;
+                if (w.len > 0) w[0] = if (minor) std.ascii.toLower(w[0]) else std.ascii.toUpper(w[0]);
+            },
+        }
+        start = end + 1;
+    }
+    return text;
+}
+
 pub const Item = struct {
     kind: Kind,
     mods: [AFFIXES_MAX]?Affix = @splat(null),
     rare_name: ?RareName = null,
 
+    /// Title Case, as the UI shows it.
     pub fn name(self: Item, buf: []u8) [:0]const u8 {
+        return cased(buf, self.composed(buf), .title);
+    }
+
+    /// Lower case within a sentence, as the log says it; a rare item's own name keeps its capitals.
+    pub fn spoken(self: Item, buf: []u8) [:0]const u8 {
+        const text = self.composed(buf);
+        return if (self.rare_name != null) text else cased(buf, text, .lower);
+    }
+
+    fn composed(self: Item, buf: []u8) [:0]const u8 {
         if (self.rare_name) |rare| return rare.name(buf);
         const base = wording.namedOr(self.kind, spec(self.kind).name);
         var pre: []const u8 = "";
@@ -1014,8 +1060,12 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
     try std.testing.expectEqual(std.enums.values(damage.Element).len, elements.count());
     var name: [NAME_MAX]u8 = undefined;
     const gloves = Item{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 2 }, .{ .kind = .crit, .value = 3 }, null, null } };
-    try std.testing.expectEqualStrings("Bear's Leather gloves of Precision", gloves.name(&name));
-    try std.testing.expectEqualStrings("Leather gloves of Precision", (Item{ .kind = .gloves, .mods = .{ .{ .kind = .crit, .value = 3 }, null, null, null } }).name(&name));
+    try std.testing.expectEqualStrings("Bear's Leather Gloves of Precision", gloves.name(&name));
+    try std.testing.expectEqualStrings("bear's leather gloves of precision", gloves.spoken(&name));
+    try std.testing.expectEqualStrings("Leather Gloves of Precision", (Item{ .kind = .gloves, .mods = .{ .{ .kind = .crit, .value = 3 }, null, null, null } }).name(&name));
+    try std.testing.expectEqualStrings("Fire-Warded Hunter's Hood", (Item{ .kind = .hood, .mods = .{ .{ .kind = .resistance, .value = 10, .element = .fire }, null, null, null } }).name(&name));
+    try std.testing.expectEqualStrings("Short Sword", baseName(.sword, &name));
+    try std.testing.expectEqualStrings("Magus Fold", (Item{ .kind = .robes, .rare_name = .{ .first = .Magus, .last = .Fold } }).spoken(&name));
     std.debug.print("magic affixes: 50000 rolls, all {d} modifiers and {d} elements; {d} legal prefix/suffix pairs and exact composed names checked\n", .{ seen.count(), elements.count(), two });
 }
 

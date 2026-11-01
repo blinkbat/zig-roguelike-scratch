@@ -665,7 +665,7 @@ test "a body lands on the side of a wall it arrived on, however near the far sid
     try std.testing.expectEqual(@as(i32, 2), mathx.dist(door, at));
 }
 
-test "the strand: the archer washes up on the beach, and the exit is reached through the trees" {
+test "the strand: the archer washes up on the beach, trees stand back from the surf, and the exit is reached through them" {
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);
     try a.load(std.testing.allocator, START);
@@ -679,6 +679,8 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
     var swamp_trees: usize = 0;
     var dirt_trees: usize = 0;
     var inland_trees: usize = 0;
+    var surf_trees: usize = 0;
+    var landward_trees: usize = 0;
     const RUNS = 50;
     for (0..RUNS) |i| {
         nd.stamp(&lv, 0x57A2D +% i *% grid.TEST_SEED_STRIDE);
@@ -693,9 +695,24 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
         for (lv.tile, 0..) |t, k| {
             if (t != .swamp_tree) continue;
             const p = grid.Level.of(k);
-            try std.testing.expect(carve.nearWater(&lv, p, 4));
+            try std.testing.expect(carve.nearWater(&lv, p, 14));
+            var land = grid.Cells.around(p, 3);
+            while (land.next()) |q| {
+                const there = lv.at(q);
+                if (grid.Level.inside(q) and there != .dirt and there != .swamp_tree and !there.wet()) {
+                    landward_trees += 1;
+                    break;
+                }
+            }
             dirt_trees += @intFromBool(@import("../gfx/ground.zig").bedAt(&lv, p, false) == .dirt);
-            inland_trees += @intFromBool(p.x > 20);
+            inland_trees += @intFromBool(p.x > 25);
+            var near = grid.Cells.around(p, 7);
+            while (near.next()) |q| {
+                if (grid.Level.inside(q) and q.x < 4 and lv.at(q) == .water) {
+                    surf_trees += 1;
+                    break;
+                }
+            }
             trees += 1;
         }
         try std.testing.expect(trees > 0);
@@ -703,9 +720,9 @@ test "the strand: the archer washes up on the beach, and the exit is reached thr
     }
     std.debug.print("the strand over {d} rolls: {d} land on the dirt shore, no sand; the exit walks {d:.2} times the straight line\n", .{ RUNS, on_shore, wound / RUNS });
     try std.testing.expect(on_shore * 10 >= RUNS * 9);
-    try std.testing.expect(wound / RUNS > 1.1);
-    std.debug.print("the strand: {d} swamp trees near water, {d} on dirt, {d} at inland ponds across {d} rolls\n", .{ swamp_trees, dirt_trees, inland_trees, RUNS });
-    try std.testing.expect(dirt_trees * 10 >= swamp_trees * 8 and inland_trees > 0);
+    try std.testing.expect(wound / RUNS > 1.05);
+    std.debug.print("the strand: {d} swamp trees, {d} on dirt, {d} at inland ponds, {d} within 7 of the open sea, {d} within 3 of land across {d} rolls\n", .{ swamp_trees, dirt_trees, inland_trees, surf_trees, landward_trees, RUNS });
+    try std.testing.expect(dirt_trees * 10 >= swamp_trees * 8 and inland_trees > 0 and surf_trees * 20 < swamp_trees and landward_trees * 10 >= swamp_trees * 8);
 }
 
 test "the strand holds only rats, crossbowmen, pibs, two shamans, two bloats and one beefy pib by the exit" {

@@ -89,7 +89,7 @@ pub fn collectGold(sim: *Simulation, at: P) ?items.Coins {
 pub fn noticeItems(sim: *Simulation, at: P) void {
     var name: [items.NAME_MAX]u8 = undefined;
     for (sim.ground.drops[0..sim.ground.n]) |drop| {
-        if (drop.at.eq(at)) sim.log.push(.loot, "{s} steps over {s}.", .{ sim.name.text(), drop.item.name(&name) });
+        if (drop.at.eq(at)) sim.log.push(.loot, "{s} steps over {s}.", .{ sim.name.text(), drop.item.spoken(&name) });
     }
     for (sim.ground.supplies[0..sim.ground.supply_n]) |s| {
         if (s.at.eq(at)) sim.log.push(.loot, "{s} steps over {s}.", .{ sim.name.text(), consumable.phrase(s.kind) });

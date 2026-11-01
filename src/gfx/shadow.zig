@@ -58,7 +58,7 @@ pub const CAST_REACH: f32 = blk: {
     break :blk 0.5 + @max(pad + l * (1 + pad), CANOPY_AT * l + CANOPY_R * (1 + l * CANOPY_STRETCH));
 };
 const TRUNK_OF: f32 = 0.6;
-fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *const light.Shine, contact: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
+fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *const light.Shine, contact: f32, opacity: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
     const lit = s.reached();
     if (lit <= light.FAINT) return null;
     const foot = self.gpu.art(tex).foot;
@@ -68,7 +68,7 @@ fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *c
     const x = raster.middle(dest).x;
     const y = dest.y + height;
     if (self.gpu.glow) |g| {
-        const a = CONTACT_A * @min(1, lit / lum(light.CARRY));
+        const a = CONTACT_A * @min(1, lit / lum(light.CARRY)) * opacity;
         light.glowAt(g, x, y, dest.width * CONTACT_W * 0.5 * contact, dest.width * CONTACT_H * 0.5 * contact, light.colourOf(light.SHADE_RGB, a));
     }
     return .{ .x = x, .y = y, .height = height, .share = share };
@@ -104,13 +104,15 @@ pub fn endShadows(self: *light.Light, ox: i32, oy: i32, cell: i32) void {
 }
 
 /// Between `beginShadows` and `endShadows`, before the walls, which cover whatever of it reaches them.
-pub fn drawShadows(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const light.Shine) void {
-    const f = footOf(self, tex, dest, s, 1) orelse return;
+pub fn drawShadows(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const light.Shine, opacity: f32) void {
+    const f = footOf(self, tex, dest, s, 1, opacity) orelse return;
     const fx = f.x;
     const fy = f.y;
     var buf: [light.BODY_LIGHTS]Cast = undefined;
-    const cs = casts(s, centre, f.height, &buf);
-    if (cs.len == 0) return;
+    const found = casts(s, centre, f.height, &buf);
+    if (found.len == 0) return;
+    const cs = buf[0..found.len];
+    for (cs) |*c| c.alpha *= opacity;
     const foot = f.share;
     if (!beginSilhouettes(self, tex, foot, (Sides{}).uniform(), .{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT })) return;
     for (cs) |c| {
@@ -129,7 +131,7 @@ pub fn drawShadows(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectang
 /// Between `beginShadows` and `endShadows`: a tree's canopy pool thrown away from each light, a soft pool over its trunk's foot.
 pub fn drawCanopy(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: *const light.Shine) void {
     const g = self.gpu.glow orelse return;
-    const f = footOf(self, tex, dest, s, TRUNK_OF) orelse return;
+    const f = footOf(self, tex, dest, s, TRUNK_OF, 1) orelse return;
     const fx = f.x;
     const fy = f.y;
     const height = f.height;
@@ -144,7 +146,7 @@ pub fn drawCanopy(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangl
 
 /// Contact draws now; silhouettes batch by joined sides at `endShadows`.
 pub fn drawForestShadows(self: *light.Light, tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, s: *const light.Shine, shape: grid.WallShape) void {
-    _ = footOf(self, tex, dest, s, 1) orelse return;
+    _ = footOf(self, tex, dest, s, 1, 1) orelse return;
     var f = ForestCast{ .tex = tex, .dest = dest, .centre = centre, .cast = undefined, .n = 0, .joined = .of(shape) };
     f.n = casts(s, centre, dest.height, &f.cast).len;
     if (f.n == 0) return;

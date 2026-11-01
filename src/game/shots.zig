@@ -960,7 +960,7 @@ fn shootCharacter(g: *game.Game) !void {
     g.sim.log.push(.recovery, "Archer recovers 4 life.", .{});
     g.sim.log.push(.loot, "Archer picks up 8 gold.", .{});
     g.sim.log.push(.event, "Archer opens the chest.", .{});
-    g.sim.log.push(.loot, "Picked up Iron helm.", .{});
+    g.sim.log.push(.loot, "Picked up iron helm.", .{});
     g.sim.log.push(.progress, "Level 3: +2 passive, +2 active points.", .{});
     g.sim.log.push(.damage, "Archer shoots the slime for 4.", .{});
     g.sim.log.push(.danger, "The slime hits Archer for 2.", .{});

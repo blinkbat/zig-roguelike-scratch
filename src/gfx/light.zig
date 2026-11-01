@@ -275,14 +275,14 @@ pub const Light = struct {
         return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat) * share * reach };
     }
 
-    fn carried(self: *const Light, s: Spot) f32 {
-        const f = self.carryToward(s.x, s.y, true) orelse return 0;
+    fn carried(self: *const Light, s: Spot) Rgb {
+        const f = self.carryToward(s.x, s.y, true) orelse return splat(0);
         const facing = switch (s.surface) {
             .floor => 1,
             .face => wrapped(faceCos(f.dy, f.flat), CARRY_FACE_WRAP),
             .ceiling => CARRY_CEILING,
         };
-        return f.k * facing;
+        return self.carryColourAt(f.flat) * splat(f.k * facing);
     }
 
     fn carryReach(self: *const Light, x: f32, y: f32) f32 {
@@ -382,6 +382,13 @@ pub const Light = struct {
         return if (self.sky) |k| mix(CARRY, MOON_CARRY, k.moon) else CARRY;
     }
 
+    /// The carried light `flat` cells from its carrier, warmed at its feet by night.
+    fn carryColourAt(self: *const Light, flat: f32) Rgb {
+        const moon = if (self.sky) |k| k.moon else 0;
+        const warm = moon * model.NIGHT_GLOW_SHARE * (1 - mathx.smoothstep(0, model.NIGHT_GLOW_R, flat));
+        return mix(self.carryColour(), model.NIGHT_GLOW, warm);
+    }
+
     /// Before a frame's `emit`s: effect lights last one frame.
     pub fn clearEffects(self: *Light) void {
         self.effect_n = 0;
@@ -434,7 +441,7 @@ pub const Light = struct {
         var view = @max(floor, self.ambientOf());
         if (sight > FAINT) {
             const s = Spot.of(lv, q);
-            view += self.carryColour() * splat(self.carried(s));
+            view += self.carried(s);
             for (torches) |i| {
                 const t = &self.torch[i];
                 view += t.colour * splat(t.shine(s));
@@ -620,9 +627,9 @@ pub const Light = struct {
         if (self.carryToward(centre[0], centre[1], fogged)) |f| {
             const k = f.k * lit;
             if (carrier) {
-                s.ambient += self.carryColour() * splat(k) * night;
+                s.ambient += self.carryColourAt(f.flat) * splat(k) * night;
             } else if (k > FAINT) {
-                s.add(.{ .drawn = f.at, .ground = f.at, .colour = self.carryColour() * splat(k), .casts = false });
+                s.add(.{ .drawn = f.at, .ground = f.at, .colour = self.carryColourAt(f.flat) * splat(k), .casts = false });
             }
         }
         for (self.torch[0..self.torch_n]) |*t| {
@@ -712,8 +719,8 @@ pub const Light = struct {
         self.baked = NONE_BAKED;
     }
 
-    pub fn drawBody(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, shine: *const Shine, flash: f32, fade_bounds: [2]f32) void {
-        self.gpu.drawBody(tex, dest, left, centre, shine, flash, fade_bounds, self.options.body_lighting);
+    pub fn drawBody(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, shine: *const Shine, flash: f32, opacity: f32, fade_bounds: [2]f32) void {
+        self.gpu.drawBody(tex, dest, left, centre, shine, flash, opacity, fade_bounds, self.options.body_lighting);
     }
 
     pub fn footY(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle) f32 {

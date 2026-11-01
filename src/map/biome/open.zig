@@ -42,29 +42,38 @@ test "a field strews lone boulders, open ground all round each" {
     try std.testing.expect(boulders > 100);
 }
 
-test "a field strews tiny shrubs, tall grass in patches and shrooms, and a step goes through each" {
+test "a field strews tiny shrubs, tall grass in patches with reeds at their hearts, and shrooms, and a step goes through each" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0xDEC0);
     dressed(&lv, &rng, 0xDEC0, .{});
     var tall: usize = 0;
     var patched: usize = 0;
+    var reeds: usize = 0;
     var shrooms: usize = 0;
     var shrubs: usize = 0;
     for (lv.tile, 0..) |t, k| {
         if (t == .shrooms) shrooms += 1;
         if (t == .tiny_shrub) shrubs += 1;
+        const p = grid.Level.of(k);
+        if (t == .reeds) {
+            reeds += 1;
+            for (mathx.ALL_DIRS) |d| {
+                const n = lv.at(p.add(d.delta()));
+                try std.testing.expect(n == .reeds or n == .tall_grass or n == .shrooms);
+            }
+        }
         if (t != .tall_grass) continue;
         tall += 1;
-        const p = grid.Level.of(k);
-        for (mathx.CARDINALS) |d| {
-            if (lv.at(p.add(d)) == .tall_grass) {
+        for (mathx.ALL_DIRS) |d| {
+            const n = lv.at(p.add(d.delta()));
+            if (n == .tall_grass or n == .reeds) {
                 patched += 1;
                 break;
             }
         }
     }
-    std.debug.print("a field's decor: {d} tiny shrubs, {d} tall grass, {d} of it beside more, {d} shrooms\n", .{ shrubs, tall, patched, shrooms });
-    try std.testing.expect(shrubs > 10 and tall > 200 and patched * 10 > tall * 9 and shrooms > 10);
+    std.debug.print("a field's decor: {d} tiny shrubs, {d} tall grass, {d} of it beside more, {d} reeds at patch hearts, {d} shrooms\n", .{ shrubs, tall, patched, reeds, shrooms });
+    try std.testing.expect(shrubs > 10 and tall > 150 and patched * 10 > tall * 9 and reeds > 0 and reeds < tall and shrooms > 10);
     var litter = grid.LITTER_TILES.iterator();
     while (litter.next()) |t| try std.testing.expect(!t.solid() and !t.blind());
 }

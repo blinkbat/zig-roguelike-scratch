@@ -132,6 +132,7 @@ pub const UNSAVED = .{
         "occluder",
         "glide",
         "turning",
+        "sighted",
         "pictured",
         "seq",
         "split_from",

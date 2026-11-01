@@ -17,18 +17,24 @@ pub const Params = struct {
     /// Clumps about this many cells across; 0 lays it a cell at a time, where it closes no way if it is solid.
     clump: u8 = 0,
     water_range: u8 = 0,
+    /// Lays none within this many cells of water.
+    water_clear: u8 = 0,
+    /// Lays only within this many cells of dry ground other than `on`.
+    land_range: u8 = 0,
 
     pub fn fit(p: Params) Params {
         var q = p;
         q.amount = @min(p.amount, AMOUNT_MAX);
         q.clump = @min(p.clump, CLUMP_MAX);
         q.water_range = @min(p.water_range, WATER_RANGE_MAX);
+        q.water_clear = @min(p.water_clear, WATER_RANGE_MAX);
+        q.land_range = @min(p.land_range, WATER_RANGE_MAX);
         return q;
     }
 };
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: Params) void {
-    const on = carve.Over{ .tile = p.on, .decked = true, .water_range = p.water_range };
+    const on = carve.Over{ .tile = p.on, .decked = true, .water_range = p.water_range, .water_clear = p.water_clear, .land_range = p.land_range };
     if (p.clump == 0) {
         carve.scatter(lv, rng, p.amount, on, p.tile, p.tile.solid() and p.amount < AMOUNT_MAX);
         return;
@@ -72,6 +78,44 @@ test "water-limited scatter keeps single trees and clumps on dry nearby ground" 
         try std.testing.expectEqual(grid.Tile.shallows, lv.at(.{ .x = 60, .y = 40 }));
     }
     std.debug.print("waterside scatter: {d} trees/clump cells within 3 cells of water; dry maps and both water depths preserved\n", .{checked});
+}
+
+test "a scatter kept off water lays nothing that near it, and still lays further out" {
+    var lv = grid.Level.blank();
+    var rng = mathx.Rng.init(0x5A4F);
+    carve.fill(&lv, .dirt);
+    for (0..grid.H) |y| lv.set(.{ .x = 0, .y = @intCast(y) }, .water);
+    apply(&lv, &rng, 7, carve.Palette.WILD, .{ .tile = .swamp_tree, .on = .dirt, .amount = 500, .water_range = 7, .water_clear = 4 });
+    var nearest: i32 = grid.W;
+    var farthest: i32 = 0;
+    for (lv.tile, 0..) |t, i| {
+        if (t != .swamp_tree) continue;
+        const x = grid.Level.of(i).x;
+        nearest = @min(nearest, x);
+        farthest = @max(farthest, x);
+    }
+    std.debug.print("trees kept 4 off water within 7 of it: {d} laid, columns {d} to {d}\n", .{ carve.count(&lv, .swamp_tree), nearest, farthest });
+    try std.testing.expect(carve.count(&lv, .swamp_tree) > 0 and nearest == 5 and farthest == 7);
+}
+
+test "a scatter kept near land lays only along the edge of its ground away from water" {
+    var lv = grid.Level.blank();
+    var rng = mathx.Rng.init(0x5A50);
+    carve.fill(&lv, .grass);
+    for (0..grid.H) |y| {
+        for (0..12) |x| lv.set(.{ .x = @intCast(x), .y = @intCast(y) }, if (x == 0) .water else .dirt);
+    }
+    apply(&lv, &rng, 7, carve.Palette.WILD, .{ .tile = .swamp_tree, .on = .dirt, .amount = 500, .water_clear = 4, .land_range = 2 });
+    var nearest: i32 = grid.W;
+    var farthest: i32 = 0;
+    for (lv.tile, 0..) |t, i| {
+        if (t != .swamp_tree) continue;
+        const x = grid.Level.of(i).x;
+        nearest = @min(nearest, x);
+        farthest = @max(farthest, x);
+    }
+    std.debug.print("trees on a beach from column 1 to 11, kept 4 off water and 2 from land: columns {d} to {d}\n", .{ nearest, farthest });
+    try std.testing.expect(carve.count(&lv, .swamp_tree) > 0 and nearest >= 10 and farthest <= 11);
 }
 
 test "scattered water reaches only from the water there before it, not from what it lays" {
