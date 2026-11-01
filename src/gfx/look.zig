@@ -129,6 +129,7 @@ pub const Assets = struct {
     forest: std.StaticBitSet(WALL_MASKS.len) = .initEmpty(),
     grounds: ground.Grounds = .initEmpty(),
     grass2: bool = false,
+    dirt2: bool = false,
     brush: bool = false,
     flowers: bool = false,
     barrel: bool = false,
@@ -174,6 +175,7 @@ pub const Assets = struct {
 
     fn bed(need: *Assets, g: ground.Ground) void {
         need.grass2 = need.grass2 or g == .grass;
+        need.dirt2 = need.dirt2 or g == .dirt;
         if (GROUND_SHEETS.contains(g)) need.grounds.insert(g) else need.add(.{ .tile = g.tile() });
     }
 
@@ -268,6 +270,7 @@ const SceneryShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen
 pub const Sprites = struct {
     bodies: Bodies = .initFill(null),
     grass2: ?rl.Texture2D = null,
+    dirt2: ?rl.Texture2D = null,
     brush: ?rl.Texture2D = null,
     flowers: ?rl.Texture2D = null,
     barrel: ?rl.Texture2D = null,
@@ -342,6 +345,9 @@ pub const Sprites = struct {
     fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4, p: mathx.P) ?Piece {
         if (g == .grass and mask == ground.FULL and cellHash(GRASS2_SEED, p) % GRASS2_IN == 0) {
             if (self.grass2) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
+        }
+        if (g == .dirt and mask == ground.FULL and cellHash(DIRT2_SEED, p) % DIRT2_IN == 0) {
+            if (self.dirt2) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
         }
         const tex = self.grounds.getPtrConst(g).* orelse return null;
         const at = ground.CELL_OF[mask];
@@ -647,6 +653,7 @@ const SOURCES = .{
     .tiles = TILE_PNGS,
     .grounds = GROUND_PNGS,
     .grass2 = @as([]const u8, @embedFile("grass2.png")),
+    .dirt2 = @as([]const u8, @embedFile("dirt2.png")),
     .brush = @as([]const u8, @embedFile("brush.png")),
     .flowers = @as([]const u8, @embedFile("flowers.png")),
     .barrel = @as([]const u8, @embedFile("barrel.png")),
@@ -675,6 +682,9 @@ const LONE_CLUMP_SEED: u64 = 0xF02E57;
 /// One whole grass piece in this many draws `grass2.png`; one grass cell in `DECOR_IN` takes brush, one more flowers.
 const GRASS2_IN: u64 = 3;
 const GRASS2_SEED: u64 = 0x62A552;
+/// One whole dirt piece in this many draws `dirt2.png`.
+const DIRT2_IN: u64 = 3;
+const DIRT2_SEED: u64 = 0xD127;
 const DECOR_IN: u64 = 20;
 const DECOR_SEED: u64 = 0xB2754;
 
