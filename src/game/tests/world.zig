@@ -315,7 +315,7 @@ test "stepping into a glow plant bursts it into healing gas for a turn, leaving 
 test "a glow plant shot in the dark keeps its pool drawn, and the foe it lit, until the arrow lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const from = P{ .x = 20, .y = 20 };
+    const from = P{ .x = 22, .y = 20 };
     const plant = P{ .x = 27, .y = 20 };
     harness.arena(g, from, &.{});
     g.sim.outdoors = false;

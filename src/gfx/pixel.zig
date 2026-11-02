@@ -79,6 +79,30 @@ pub fn fleck(at: rl.Vector2, r: f32, scale: f32, col: rl.Color) void {
     for (fleckBoxes(at, r, scale)) |b| fill(b, col);
 }
 
+const HAZE_LAYERS = 3;
+const HAZE_LUMPS = 3;
+
+fn hazeEach(at: rl.Vector2, r: f32, scale: f32, turn: f32, sink: anytype) void {
+    for (0..HAZE_LUMPS) |i| {
+        const n: f32 = @floatFromInt(i);
+        const a = turn + n * 2.4;
+        const off = if (i == 0) 0 else r * 0.6 * scale;
+        const lump = rl.Vector2{ .x = at.x + @cos(a) * off, .y = at.y + @sin(a) * off * 0.7 };
+        const size = if (i == 0) r else r * (0.9 - 0.15 * n);
+        for (0..HAZE_LAYERS) |k| {
+            for (fleckBoxes(lump, size * (1 - @as(f32, @floatFromInt(k)) * 0.3), scale)) |b| sink.put(b);
+        }
+    }
+}
+
+/// A soft clump of vapour: offset lumps stacked from faint layers, so it thins toward its edge; `turn` varies the clump.
+pub fn haze(at: rl.Vector2, r: f32, scale: f32, turn: f32, col: rl.Color) void {
+    if (col.a == 0) return;
+    const a = @as(f32, @floatFromInt(col.a)) / 255;
+    const each = 1 - std.math.pow(f32, 1 - a * 0.8, 1.0 / @as(f32, HAZE_LAYERS));
+    hazeEach(at, r, scale, turn, Filler{ .col = .{ .r = col.r, .g = col.g, .b = col.b, .a = @intFromFloat(@max(1, each * 255)) } });
+}
+
 const Stamps = struct {
     a: rl.Vector2,
     d: rl.Vector2,
@@ -188,6 +212,25 @@ test "a fleck covers each of its pixels once" {
         }
     }
     std.debug.print("flecks: {d} pixels over 8 sizes and scales, none drawn twice, corners cut\n", .{drawn});
+}
+
+test "a haze is densest at its core, one faint layer at its edge, and clumps differently by turn" {
+    var first = Canvas{};
+    var second = Canvas{};
+    hazeEach(.{ .x = 32, .y = 32 }, 4, 2, 0, Canvas.Sink{ .c = &first });
+    hazeEach(.{ .x = 32, .y = 32 }, 4, 2, 1.3, Canvas.Sink{ .c = &second });
+    var core: u8 = 0;
+    var edge: usize = 0;
+    var covered: usize = 0;
+    var differ: usize = 0;
+    for (first.covered, second.covered) |row, other| for (row, other) |c, d| {
+        core = @max(core, c);
+        edge += @intFromBool(c == 1);
+        covered += @intFromBool(c > 0);
+        differ += @intFromBool((c > 0) != (d > 0));
+    };
+    try std.testing.expect(core >= HAZE_LAYERS and edge > 0 and differ > 0);
+    std.debug.print("haze: {d} pixels, {d} at one layer, {d} layers deep at the core, {d} pixels differ by turn\n", .{ covered, edge, core, differ });
 }
 
 test "a line of any width and scale covers its stamps' pixels once each, in fewer rects than pixels" {

@@ -117,6 +117,7 @@ pub const Mote = struct {
     terrain: bool = true,
     /// Of its radius, how much wider it has grown by the end of its life.
     grow: f32 = 0,
+    vapor: bool = false,
 };
 
 pub const ActorImpact = struct {
@@ -933,6 +934,7 @@ pub const Fx = struct {
                 .drag = 1.6,
                 .terrain = false,
                 .grow = 0.9,
+                .vapor = true,
             });
         }
     }
@@ -1241,10 +1243,17 @@ pub const Fx = struct {
             const s = screen(m.p, ox, oy, cell);
             pixel.rect(s, m.r * STAIN_W * 2, m.r * STAIN_H * 2, k, look.fade(m.col, a));
         }
-        for (&self.motes) |*m| {
+        for (&self.motes, 0..) |*m, i| {
             if (m.life <= 0 or m.landed or m.add) continue;
             const a = if (m.stains) 1 else m.life / (m.max * FLY_FADE);
-            pixel.fleck(screen(m.p, ox, oy, cell), m.r * (1 + m.grow * (1 - m.life / m.max)), k, look.fade(m.col, a));
+            const age = 1 - m.life / m.max;
+            const at = screen(m.p, ox, oy, cell);
+            const r = m.r * (1 + m.grow * age);
+            if (m.vapor) {
+                pixel.haze(at, r, k, @as(f32, @floatFromInt(i)) * 1.7 + age * 1.2, look.fade(m.col, a));
+            } else {
+                pixel.fleck(at, r, k, look.fade(m.col, a));
+            }
         }
     }
 

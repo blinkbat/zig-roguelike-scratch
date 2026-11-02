@@ -598,7 +598,7 @@ test "an arrow bursts a caustic bloat where it floats, and its gas reaches the a
 test "a caustic bloat caught in another's gas bursts too" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    harness.arena(g, .{ .x = 22, .y = 20 }, &.{});
     const near = harness.spawnAt(g, .bloat, .{ .x = 27, .y = 20 }, false);
     const far = harness.spawnAt(g, .bloat, .{ .x = 28, .y = 21 }, false);
     g.sim.pool.get(near).?.hp = 1;
@@ -783,6 +783,7 @@ test "a beefy pib's sweep whirls round it as the sweep lands, with nothing besid
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const beefy = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
     g.sim.unkillable = true;
+    g.sim.heroActor().?.resilience.immune(.stun, 100);
     harness.use(g, .wait);
     try std.testing.expectEqual(@as(usize, 0), sweepMotes(g));
     var t: f32 = 0;

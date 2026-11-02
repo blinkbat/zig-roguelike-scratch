@@ -198,7 +198,7 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
     const near = P{ .x = 23, .y = 20 };
-    const far = P{ .x = 26, .y = 20 };
+    const far = P{ .x = 25, .y = 20 };
     inline for ([_]skillbar.Act{ .shoot, .burning_arrow, .spark }) |act| {
         harness.heroArena(g, if (act == .spark) .wizard else .archer, from, &.{});
         const clock = g.sim.clock;

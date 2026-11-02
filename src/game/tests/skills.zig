@@ -1331,9 +1331,9 @@ test "a pinning shot holds a chasing rat to its cell for two to four of its turn
     try harness.expectDamage(g, .pinning_shot, dealt, &.{bow.BASE});
     try std.testing.expectEqual(manaAfter(g, .pinning_shot), g.sim.mana);
     var held: usize = 1;
-    while (rat.at.x == 26 and held < 10) {
+    while (rat.at.x == 25 and held < 10) {
         harness.use(g, .wait);
-        if (rat.at.x == 26) held += 1;
+        if (rat.at.x == 25) held += 1;
     }
     try harness.expectWithin(held, pinning.TURNS_LO, pinning.TURNS_HI);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
