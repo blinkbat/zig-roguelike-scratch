@@ -188,16 +188,15 @@ const App = struct {
         var line: [LINE]u8 = undefined;
         var fit: [LINE + 1]u8 = undefined;
         const last = saveRowBox(g.screen, save.SLOTS - 1);
-        rl.drawRectangleRec(.{ .x = first.x, .y = first.y, .width = first.width, .height = last.y + last.height - first.y }, look.CARD_BG);
+        look.hudPanelIn(&g.sprites, raster.grown(.{ .x = first.x, .y = first.y, .width = first.width, .height = last.y + last.height - first.y }, @floatFromInt(look.HUD_BORDER_CUT)), look.BACKING, look.LIT);
         for (&app.list, 0..) |*slot, i| {
             const row = saveRowBox(g.screen, i);
             const remove = saveDeleteBox(g.screen, i);
             const on = app.loads.at == i;
-            if (on) rl.drawRectangleRec(.{ .x = row.x, .y = row.y, .width = remove.x - row.x - menu.ACTION_GAP, .height = row.height }, look.PICK_BG);
-            const text_w = @as(i32, @intFromFloat(remove.x - row.x)) - 2 * menu.ACTION_GAP;
+            const x = menu.pick(g.face, .{ .x = row.x, .y = row.y, .width = remove.x - row.x - menu.ACTION_GAP, .height = row.height }, on);
+            const text_w = @as(i32, @intFromFloat(remove.x)) - x - menu.ACTION_GAP;
             const text = g.face.fit(&fit, slotLine(slot, &line, i), menu.ROW, text_w, false);
-            const x = @as(i32, @intFromFloat(row.x)) + menu.ACTION_GAP;
-            g.face.text(text, x, menu.rowTextY(row), menu.ROW, if (on) look.UI_FOCUS else look.DIM);
+            g.face.text(text, x, menu.rowTextY(row), menu.ROW, menu.rowInk(on));
             if (slotDetails(slot, &line)) |detail| {
                 const fitted = g.face.fit(&fit, detail, font.SMALL, text_w, false);
                 g.face.text(fitted, x, @as(i32, @intFromFloat(row.y)) + SAVE_DETAIL_Y, font.SMALL, look.DIM);
@@ -395,7 +394,7 @@ const App = struct {
                     break :blk ls;
                 };
                 const picked = app.title.stepAt(&g.st, MAIN_ROWS.len, g.screen);
-                menu.draw(g.face, g.screen, comptime menu.caps(NAME), &rows, app.title.at, note);
+                menu.draw(g.face, &g.sprites, g.screen, comptime menu.caps(NAME), &rows, app.title.at, note);
                 switch (MAIN_ROWS[picked orelse return true]) {
                     .new => {
                         if (!app.slotFree()) return app.refuse();
@@ -433,7 +432,7 @@ const App = struct {
                 var where: [listing.PATH_MAX + 1]u8 = undefined;
                 var dir: [listing.PATH_MAX]u8 = undefined;
                 const shown = if (app.listing.entry(app.maps.at) == .up) std.fmt.bufPrintZ(&where, "Up from {s}", .{app.listing.dirPath(&dir)}) catch "" else app.listing.at(app.maps.at);
-                menu.draw(g.face, g.screen, CHOOSE_MAP, rows[0..n], app.maps.at, shown);
+                menu.draw(g.face, &g.sprites, g.screen, CHOOSE_MAP, rows[0..n], app.maps.at, shown);
                 if (back) {
                     if (app.listing.up()) {
                         app.folderOpened();
@@ -498,7 +497,7 @@ const App = struct {
                 var rows: [ossuary.MAX][]const u8 = undefined;
                 for (bones, rows[0..bones.len], lines[0..bones.len], 0..) |*e, *l, *b, i| l.* = boneLine(e, b, i);
                 const picked = app.bones.stepAt(&g.st, bones.len, g.screen);
-                menu.draw(g.face, g.screen, comptime menu.caps(OSSUARY), rows[0..bones.len], app.bones.at, if (bones.len == 0) NO_BONES else note);
+                menu.draw(g.face, &g.sprites, g.screen, comptime menu.caps(OSSUARY), rows[0..bones.len], app.bones.at, if (bones.len == 0) NO_BONES else note);
                 if (back) {
                     app.toTitle();
                 } else if (picked != null) app.goPage(.bones);
@@ -516,7 +515,7 @@ const App = struct {
                     .debug => menu.named(r),
                 };
                 const picked = app.options.stepAt(&g.st, rows.len, g.screen);
-                menu.draw(g.face, g.screen, comptime menu.caps(menu.named(MainRow.options)), &rows, app.options.at, null);
+                menu.draw(g.face, &g.sprites, g.screen, comptime menu.caps(menu.named(MainRow.options)), &rows, app.options.at, null);
                 if (back) {
                     app.toTitle();
                 } else if (picked) |i| switch (OPTION_ROWS[i]) {
@@ -529,7 +528,7 @@ const App = struct {
                 var bufs: [DEBUG_ROWS.len][game.debugging.LABEL_MAX]u8 = undefined;
                 inline for (DEBUG_ROWS, &rows, &bufs) |d, *l, *b| l.* = game.debugging.label(g, d.row, b);
                 const picked = app.debugs.stepAt(&g.st, rows.len, g.screen);
-                menu.draw(g.face, g.screen, comptime menu.caps(menu.named(OptionRow.debug)), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note);
+                menu.draw(g.face, &g.sprites, g.screen, comptime menu.caps(menu.named(OptionRow.debug)), &rows, app.debugs.at, DEBUG_ROWS[app.debugs.at].note);
                 if (back) {
                     app.goPage(.options);
                 } else if (picked) |i| {
@@ -566,7 +565,7 @@ const App = struct {
         const top = @divTrunc(g.screen.y - lead - panel_h, 2) + lead;
         var name: [hero.Name.MAX + 1]u8 = undefined;
         menu.pageHeading(g.face, g.screen, menu.shout(&name, "{s}", .{e.name.text()}), top - lead);
-        rl.drawRectangleRec(raster.rect(x, top, w, panel_h), look.CARD_BG);
+        look.hudPanel(&g.sprites, x, top, w, panel_h, look.BACKING, look.LIT);
         stage.figure(&g.sprites, e.class.kind(), .{ .x = @divTrunc(g.screen.x, 2), .y = top + feet_dy }, BONES_SCALE, 1);
         var stats: [LINE + 1]u8 = undefined;
         const said = std.fmt.bufPrintZ(&stats, BONES_RANK ++ menu.SEP ++ "Kills {d}" ++ menu.SEP ++ hero.GOLD_FMT, .{ e.level, e.class.title(), e.renown, e.kills, e.gold }) catch "";
@@ -733,7 +732,7 @@ pub fn shootMenus(g: *game.Game, target: rl.RenderTexture2D) !void {
     longest[listing.STEM_MAX] = 0;
     rl.beginTextureMode(target);
     rl.clearBackground(look.BG);
-    menu.draw(g.face, g.screen, CHOOSE_MAP, &.{longest[0..listing.STEM_MAX :0]}, 0, null);
+    menu.draw(g.face, &g.sprites, g.screen, CHOOSE_MAP, &.{longest[0..listing.STEM_MAX :0]}, 0, null);
     rl.endTextureMode();
     try game.shots.exportTarget(target, MOUSE_DIR ++ "/title-long-row.png");
 }
@@ -785,6 +784,7 @@ pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime inner: fn (
     defer game.unloadGraphics(g);
     g.face = font.Face.load(look.TILE_CODEPOINTS);
     defer g.face.unload();
+    g.sprites.loadBorder();
     if (startup_shown) std.debug.print("startup: {d:.3} ms, {d} map textures\n", .{ shots.ms(startup.read()), g.sprites.count() });
     try inner(g);
 }

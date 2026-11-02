@@ -495,7 +495,7 @@ pub fn drawPause(g: *game.Game) void {
         .main => {
             var rows: [game.PAUSE_ROWS.len][]const u8 = undefined;
             for (game.PAUSE_ROWS, &rows) |r, *l| l.* = pauseLabel(g, r);
-            menu.draw(g.face, g.screen, "PAUSED", &rows, g.pause_menu.at, null);
+            menu.draw(g.face, &g.sprites, g.screen, "PAUSED", &rows, g.pause_menu.at, null);
             menu.drawBack(&g.face, g.screen, &g.st);
         },
     }

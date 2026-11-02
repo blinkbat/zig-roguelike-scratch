@@ -238,7 +238,7 @@ pub fn drawBinds(g: *game.Game) void {
             var label: menu.Note(100) = .{};
             label.say("Choose skill  /  {d}-{d} of {d}", .{ picker.first() + 1, picker.end(), picker.picks });
             g.face.draw(label.text(), picker.x, picker.y - font.LABEL - BIND_POP_DY, font.LABEL, look.DIM);
-            rl.drawRectangleRec(raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)), look.PICK_BG);
+            look.hudPanelIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)), look.BACKING, look.LIT);
             for (picker.first()..picker.end()) |i| {
                 const r = picker.cell(i);
                 const x: i32 = @intFromFloat(r.x);
@@ -407,7 +407,7 @@ pub fn drawTips(g: *game.Game) void {
     if (g.mode == .aim and g.mode.aim.askedHere()) {
         var buf: [TIP_TITLE_MAX]u8 = undefined;
         const ask = std.fmt.bufPrintZ(&buf, skills.UNSEEN_ASK, .{g.mode.aim.act().name()}) catch return;
-        hud.prompt(&g.face, g.screen, game.scene.Cam.of(g).box(g.mode.aim.mark), ask);
+        hud.prompt(&g.face, &g.sprites, g.screen, game.scene.Cam.of(g).box(g.mode.aim.mark), ask);
     } else if (g.mode == .inspect) {
         var buf: [SPOTS_MAX]Part = undefined;
         const spots = spotsOf(g, &buf);
@@ -422,7 +422,7 @@ fn drawTip(g: *game.Game, here: Part) void {
     var title_buf: [TIP_TITLE_MAX]u8 = undefined;
     var body_buf: [TIP_BODY_MAX]u8 = undefined;
     const tip = tipOf(g, here.spot, &title_buf, &body_buf) orelse return;
-    const scroll = hud.tooltipScrolled(&g.face, hudLayout(g), g.screen, here.box, tip.title, tip.body, if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll else 0);
+    const scroll = hud.tooltipScrolled(&g.face, &g.sprites, hudLayout(g), g.screen, here.box, tip.title, tip.body, if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll else 0);
     if (g.mode == .inspect and here.spot == .actor) g.inspect_scroll = scroll;
 }
 

@@ -32,9 +32,7 @@ const PLATE_SHADOW_GROW: i32 = 2;
 const ORB_SHADOW_DY: i32 = 4;
 const ORB_SHADOW_GROW: i32 = 2;
 const STATUS_Y: i32 = 4;
-const PLATE_A: f32 = look.BACKING_A;
 const PLATE_SHADOW_A: f32 = 0.25;
-const TIP_SHADOW_A: f32 = 0.5;
 const ORB_SHADOW_A: f32 = 0.6;
 /// Insets of the orb's bright rim and the dark ring inside it, and the well's rim past the fill.
 const ORB_RIM: i32 = 2;
@@ -61,7 +59,6 @@ const FRAME = look.rgb(0x625a48);
 const FRAME_DARK = look.rgb(0x22211f);
 const WELL = look.rgb(0x080a10);
 const WELL_RIM = look.rgb(0x020305);
-pub const PLATE = look.rgb(0x101114);
 const LIFE_CORE = look.rgb(0xb83b32);
 const LIFE_EDGE = look.rgb(0x541412);
 const MANA_CORE = look.rgb(0x376eb4);
@@ -105,7 +102,7 @@ pub fn frame(layout: Layout, sprites: *const look.Sprites) void {
     const y = layout.top + PLATE_Y;
     const width = layout.mana.x - x;
     shadow(x, y, width, PLATE_H, PLATE_SHADOW_A);
-    look.hudPanel(sprites, x, y, width, PLATE_H, look.fade(PLATE, PLATE_A), look.LIT);
+    look.hudPanel(sprites, x, y, width, PLATE_H, look.BACKING, look.LIT);
 }
 
 fn shadow(x: i32, y: i32, width: i32, height: i32, opacity: f32) void {
@@ -214,7 +211,7 @@ pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.
         const box = statusBox(layout, shown.len, k);
         const x: i32 = @intFromFloat(box.x);
         const y: i32 = @intFromFloat(box.y);
-        look.hudPanelIn(sprites, box, PLATE, look.LIT);
+        look.hudPanelIn(sprites, box, look.BACKING, look.LIT);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         if (s == .resistant) {
             const bar_y = y + STATUS_PX - RESIST_RISE;
@@ -243,7 +240,6 @@ const TIP_GAP: i32 = 8;
 const TIP_LINE = font.SMALL_LINE;
 /// Below the tooltip's top, where its body starts under the title.
 const TIP_BODY_Y = TIP_PAD + font.BODY + TIP_GAP;
-const TIP_FRAME_W: f32 = 2;
 const TIP_MARGIN: i32 = 8;
 pub const TIP_LINES_MAX: usize = 96;
 
@@ -271,7 +267,7 @@ const TIP_VALUE_DX = 24;
 const TIP_VALUE_X = @divTrunc(TIP_W, 2) + TIP_VALUE_DX;
 
 /// A panel over `over` and above the whole hud, kept on the screen: what is inspected, then what it does; returns the first line shown.
-pub fn tooltipScrolled(face: *const font.Face, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize) usize {
+pub fn tooltipScrolled(face: *const font.Face, sprites: *const look.Sprites, layout: Layout, screen: mathx.P, over: rl.Rectangle, title: [:0]const u8, body: []const u8, scroll: usize) usize {
     var buf: [TIP_LINES_MAX][font.WRAP_COLS_MAX + 1]u8 = undefined;
     var lines: [TIP_LINES_MAX][:0]const u8 = undefined;
     var wrapped: font.Wrapped = undefined;
@@ -310,7 +306,7 @@ pub fn tooltipScrolled(face: *const font.Face, layout: Layout, screen: mathx.P, 
             y = std.math.clamp(@as(i32, @intFromFloat(over.y)) - @divTrunc(h, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.y - h - TIP_MARGIN));
         }
     }
-    tipPlate(x, y, TIP_W, h);
+    tipPlate(sprites, x, y, TIP_W, h);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
     for (lines[first .. first + shown], first..) |l, i| {
         const top = y + TIP_BODY_Y + @as(i32, @intCast(i - first)) * TIP_LINE;
@@ -325,19 +321,17 @@ pub fn tooltipScrolled(face: *const font.Face, layout: Layout, screen: mathx.P, 
     return first;
 }
 
-fn tipPlate(x: i32, y: i32, w: i32, h: i32) void {
-    shadow(x, y, w, h, TIP_SHADOW_A);
-    rl.drawRectangle(x, y, w, h, PLATE);
-    rl.drawRectangleLinesEx(raster.rect(x, y, w, h), TIP_FRAME_W, FRAME);
+fn tipPlate(sprites: *const look.Sprites, x: i32, y: i32, w: i32, h: i32) void {
+    look.hudPanel(sprites, x, y, w, h, look.BACKING, look.LIT);
 }
 
 /// A question put to the player in a tooltip's plate, one line above `over`.
-pub fn prompt(face: *const font.Face, screen: mathx.P, over: rl.Rectangle, text: [:0]const u8) void {
+pub fn prompt(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.P, over: rl.Rectangle, text: [:0]const u8) void {
     const w = face.width(text, font.BODY) + 2 * TIP_PAD;
     const h = font.BODY + 2 * TIP_PAD;
     const x = std.math.clamp(raster.middleAt(over).x - @divTrunc(w, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - w - TIP_MARGIN));
     const y = @max(TIP_MARGIN, @as(i32, @intFromFloat(over.y)) - TIP_GAP - h);
-    tipPlate(x, y, w, h);
+    tipPlate(sprites, x, y, w, h);
     face.text(text, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
 }
 

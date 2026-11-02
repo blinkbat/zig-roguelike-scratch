@@ -123,7 +123,7 @@ pub fn draw(g: *game.Game) void {
     const s = scriptOf(g) orelse return;
     var shown: Shown = .{ .view = undefined };
     if (!shownOf(g, s, &shown)) return;
-    panel.draw(&g.face, g.screen, shown.view, &shown.layout);
+    panel.draw(&g.face, &g.sprites, g.screen, shown.view, &shown.layout);
 }
 
 const harness = @import("harness.zig");

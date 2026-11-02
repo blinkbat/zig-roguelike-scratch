@@ -247,7 +247,7 @@ pub fn draw(g: *game.Game) void {
         .main => "DEBUG",
         inline else => |page| comptime menu.caps(menu.named(page)),
     };
-    menu.draw(g.face, g.screen, title, labels[0..entries.len], g.pause_menu.at, null);
+    menu.draw(g.face, &g.sprites, g.screen, title, labels[0..entries.len], g.pause_menu.at, null);
     menu.drawBack(&g.face, g.screen, &g.st);
 }
 

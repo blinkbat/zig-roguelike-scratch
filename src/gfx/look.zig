@@ -309,11 +309,15 @@ pub const Sprites = struct {
     pub fn loadCommon(self: *Sprites) void {
         self.skills = line_icons.skillIcons();
         self.item_icons = line_icons.itemIcons();
-        self.hud_border = texture(HUD_BORDER_PNG);
+        self.loadBorder();
         self.log_fade = shaders.program(FadeShader, FADE_FS);
         self.water = shaders.program(WaterShader, WATER_FS);
         self.shine = shaders.program(ShineShader, SHINE_FS);
         self.scenery = shaders.program(SceneryShader, SCENERY_FS);
+    }
+
+    pub fn loadBorder(self: *Sprites) void {
+        if (self.hud_border == null) self.hud_border = texture(HUD_BORDER_PNG);
     }
 
     pub fn drawScenery(self: *const Sprites, tex: rl.Texture2D, dest: rl.Rectangle, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: Occlusion, focus: Focused) bool {
@@ -1160,7 +1164,6 @@ pub const SLOT_HELD = UI_GOLD;
 pub const SLOT_CURSOR = UI_FOCUS;
 pub const SLOT_CLEAR = FOE;
 pub const PICK_BG = PANEL;
-pub const CARD_BG = PANEL;
 pub const ROW_ON = RAISED;
 pub const CLEAR = Look{ .ch = 'x', .fg = SLOT_CLEAR };
 
@@ -1363,8 +1366,9 @@ pub fn colourOf(c: sky.Rgb, a: f32) rl.Color {
     return .{ .r = @intFromFloat(k[0]), .g = @intFromFloat(k[1]), .b = @intFromFloat(k[2]), .a = @intFromFloat(std.math.clamp(a, 0, 1) * 255 + 0.5) };
 }
 
-/// The opacity of the hud plate's and the minimap's backing.
+/// The opacity of every ui panel's backing and the minimap's.
 pub const BACKING_A: f32 = 0.7;
+pub const BACKING = fade(rgb(0x101114), BACKING_A);
 pub const MINI_BG = fade(FOG, BACKING_A);
 pub const MINI_HERO = rgb(0x9cf08a);
 pub const MINI_FOE = FOE;

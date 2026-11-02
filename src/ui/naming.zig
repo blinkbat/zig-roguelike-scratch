@@ -157,8 +157,8 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
             const box = keyBox(screen, r, c);
             const centre = raster.middleAt(box);
             const on = r == at.row and c == at.col;
-            if (on) rl.drawRectangleRec(box, look.PICK_BG);
-            const col = if (on) look.UI_FOCUS else look.DIM;
+            if (on) rl.drawRectangleRec(box, look.ROW_ON);
+            const col = menu.rowInk(on);
             if (r < LETTERS.len) {
                 face.glyph(LETTERS[r][c], centre.x, centre.y, KEY, col);
                 continue;

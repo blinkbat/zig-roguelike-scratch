@@ -85,7 +85,7 @@ pub const Surface = struct {
     /// `begin`, then a panel's card backing across `size`.
     pub fn beginPanel(self: Surface, sprites: *const look.Sprites, size: mathx.P) void {
         self.begin();
-        look.hudPanel(sprites, 0, 0, size.x, size.y, look.CARD_BG, look.LIT);
+        look.hudPanel(sprites, 0, 0, size.x, size.y, look.BACKING, look.LIT);
     }
 
     /// `f` as this surface draws it: scaled, from the mipmapped atlas rather than the native-size ones.
@@ -305,14 +305,14 @@ pub fn noteY(first: rl.Rectangle, count: usize) i32 {
     return rowTextY(first) + @as(i32, @intCast(count)) * ROW_STEP + NOTE_GAP;
 }
 
-pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const []const u8, at: usize, note: ?[:0]const u8) void {
+pub fn draw(face: font.Face, sprites: *const look.Sprites, screen: mathx.P, title: [:0]const u8, all: []const []const u8, at: usize, note: ?[:0]const u8) void {
     const win = window(screen.y, all.len, at);
     const rows = all[win.from..][0..win.len];
     const first = rowBox(screen, win, win.from);
     pageHeading(face, screen, title, titleY(first));
     if (rows.len > 0) {
-        const panel = rl.Rectangle{ .x = first.x, .y = first.y - ROW_INSET, .width = first.width, .height = @floatFromInt(rows.len * ROW_STEP + 2 * ROW_INSET) };
-        rl.drawRectangleRec(panel, look.CARD_BG);
+        const panel = rl.Rectangle{ .x = first.x, .y = first.y, .width = first.width, .height = @floatFromInt(rows.len * ROW_STEP) };
+        look.hudPanelIn(sprites, raster.grown(panel, @floatFromInt(look.HUD_BORDER_CUT)), look.BACKING, look.LIT);
     }
     const mark_w = face.width(MARK_L, ROW);
     const widest = @as(i32, @intFromFloat(first.width)) - 2 * (MARK_GAP * 2 + mark_w);
@@ -320,16 +320,25 @@ pub fn draw(face: font.Face, screen: mathx.P, title: [:0]const u8, all: []const 
     for (rows, win.from..) |whole, i| {
         const r = face.fit(&fit_buf, whole, ROW, widest, false);
         const box = rowBox(screen, win, i);
-        const y = rowTextY(box);
         const on = i == at;
-        if (on) rl.drawRectangleRec(box, look.ROW_ON);
-        const x = @as(i32, @intFromFloat(box.x)) + MARK_GAP * 2 + mark_w;
-        face.text(r, x, y, ROW, if (on) look.UI_FOCUS else look.DIM);
-        if (on) {
-            face.text(MARK_L, x - MARK_GAP - mark_w, y, ROW, look.UI_FOCUS);
-        }
+        face.text(r, pick(face, box, on), rowTextY(box), ROW, rowInk(on));
     }
     if (note) |n| _ = face.paragraph(n, @as(i32, @intFromFloat(first.x)) + MARK_GAP * 2 + mark_w, noteY(first, rows.len), widest, NOTE, look.DIM);
+}
+
+/// A list row's selection band and mark, when `on`; returns where its text starts.
+pub fn pick(face: font.Face, box: rl.Rectangle, on: bool) i32 {
+    const mark_w = face.width(MARK_L, ROW);
+    const x = @as(i32, @intFromFloat(box.x)) + MARK_GAP * 2 + mark_w;
+    if (on) {
+        rl.drawRectangleRec(box, look.ROW_ON);
+        face.text(MARK_L, x - MARK_GAP - mark_w, rowTextY(box), ROW, look.UI_FOCUS);
+    }
+    return x;
+}
+
+pub fn rowInk(on: bool) rl.Color {
+    return if (on) look.UI_FOCUS else look.DIM;
 }
 
 /// Printed into `buf` upper-cased, as a title is; empty if it does not fit.

@@ -35,12 +35,7 @@ const ROWS_BOTTOM: i32 = BOX_H - PAD + font.LEADING;
 const LINE_H = font.SMALL_LINE;
 const ENTRY_GAP: i32 = 4;
 const TOP_OPACITY: f32 = 0.1;
-const BG_A: u8 = 210;
-const BG = blk: {
-    var c = hud.PLATE;
-    c.a = BG_A;
-    break :blk c;
-};
+const BG = look.BACKING;
 
 pub fn box(screen: mathx.P) rl.Rectangle {
     const beside = hud.leftOf(screen) - HUD_GAP;

@@ -81,11 +81,10 @@ pub const Layout = struct {
     }
 };
 
-pub fn draw(face: *const font.Face, screen: P, v: View, l: *const Layout) void {
+pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: P, v: View, l: *const Layout) void {
     var buf: [LINE_MAX]u8 = undefined;
     rl.drawRectangle(0, 0, screen.x, screen.y, VEIL);
-    rl.drawRectangleRec(l.panel, look.CARD_BG);
-    rl.drawRectangleLinesEx(l.panel, 1, look.EDGE);
+    look.hudPanelIn(sprites, l.panel, look.BACKING, look.LIT);
     if (v.who.len > 0) {
         face.engraved(std.fmt.bufPrintZ(&buf, "{s}", .{v.who}) catch "", l.text_x, l.who_y, font.HEAD, look.UI_GOLD);
         rl.drawRectangle(l.text_x, l.who_rule_y, l.text_w, 1, look.fade(look.UI_GOLD, 0.35));
