@@ -1053,6 +1053,7 @@ pub const JUKE_TRAIL = rl.Color{ .r = 196, .g = 212, .b = 218, .a = 140 };
 pub const JUKE_DUST = rl.Color{ .r = 184, .g = 161, .b = 125, .a = 170 };
 pub const SWEEP = rl.Color{ .r = 232, .g = 226, .b = 208, .a = 200 };
 pub const WATER_DROP = rl.Color{ .r = 214, .g = 232, .b = 252, .a = 205 };
+pub const RIPPLE = rgb(0x9db6d4);
 pub const DIRT_DUST = rl.Color{ .r = 200, .g = 182, .b = 148, .a = 170 };
 pub const SAND_DUST = rl.Color{ .r = 238, .g = 226, .b = 192, .a = 160 };
 pub const NET = rgb(0xd6c496);

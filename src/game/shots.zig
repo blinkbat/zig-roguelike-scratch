@@ -1211,7 +1211,7 @@ fn shootArrows() !void {
             const dir = [2]f32{ @cos(angle), @sin(angle) };
             const x = 40 + @as(f32, @floatFromInt(i % 8)) * 80;
             const y = 40 + @as(f32, @floatFromInt(row * 2 + i / 8)) * 80;
-            fx.drawArrow(.{ .x = x + dir[0] * 8 * scale, .y = y + dir[1] * 8 * scale }, dir, look.arrowInk(.shoot), scale);
+            fx.drawArrow(.{ .x = x + dir[0] * 8 * scale, .y = y + dir[1] * 8 * scale }, dir, look.arrowInk(.shoot), .{ 0, 0 }, scale);
         }
     }
     rl.endTextureMode();

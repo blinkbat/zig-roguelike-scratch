@@ -172,6 +172,47 @@ pub fn line(a: rl.Vector2, b: rl.Vector2, width: f32, scale: f32, col: rl.Color)
     trace(a, b, width, scale, Filler{ .col = col });
 }
 
+/// The art pixels, `scale` screen pixels a side from `origin`, a pixel-wide line from `a` to `b` passes through, each once.
+pub fn gridCells(a: rl.Vector2, b: rl.Vector2, origin: [2]f32, scale: f32, out: [][2]i32) [][2]i32 {
+    var x: i32 = @intFromFloat(@floor((a.x - origin[0]) / scale));
+    var y: i32 = @intFromFloat(@floor((a.y - origin[1]) / scale));
+    const x1: i32 = @intFromFloat(@floor((b.x - origin[0]) / scale));
+    const y1: i32 = @intFromFloat(@floor((b.y - origin[1]) / scale));
+    const dx: i32 = @intCast(@abs(x1 - x));
+    const dy: i32 = -@as(i32, @intCast(@abs(y1 - y)));
+    const sx: i32 = if (x < x1) 1 else -1;
+    const sy: i32 = if (y < y1) 1 else -1;
+    var err = dx + dy;
+    var n: usize = 0;
+    while (n < out.len) {
+        out[n] = .{ x, y };
+        n += 1;
+        if (x == x1 and y == y1) break;
+        const e2 = 2 * err;
+        if (e2 >= dy) {
+            err += dy;
+            x += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            y += sy;
+        }
+    }
+    return out[0..n];
+}
+
+/// A pixel-wide line snapped to the art-pixel grid `scale` screen pixels a side from `origin`; `from_second` leaves out its first pixel, so joined segments put each pixel once.
+pub fn gridLine(a: rl.Vector2, b: rl.Vector2, origin: [2]f32, scale: f32, col: rl.Color, from_second: bool) void {
+    if (col.a == 0) return;
+    var buf: [512][2]i32 = undefined;
+    const cells = gridCells(a, b, origin, scale, &buf);
+    for (cells[@min(cells.len, @intFromBool(from_second))..]) |c| {
+        const x = @round(origin[0] + @as(f32, @floatFromInt(c[0])) * scale);
+        const y = @round(origin[1] + @as(f32, @floatFromInt(c[1])) * scale);
+        fill(.{ .x = @intFromFloat(x), .y = @intFromFloat(y), .w = @intFromFloat(@round(origin[0] + @as(f32, @floatFromInt(c[0] + 1)) * scale) - x), .h = @intFromFloat(@round(origin[1] + @as(f32, @floatFromInt(c[1] + 1)) * scale) - y) }, col);
+    }
+}
+
 const Canvas = struct {
     covered: [64][64]u8 = @splat(@splat(0)),
     rects: usize = 0,
@@ -262,4 +303,34 @@ test "a line of any width and scale covers its stamps' pixels once each, in fewe
     };
     try std.testing.expect(rects < pixels);
     std.debug.print("lines: {d} pixels, each once, in {d} rects; {d} of them stamped more than once\n", .{ pixels, rects, overlapped });
+}
+
+test "a grid line steps one art pixel at a time from the cell under one end to the cell under the other" {
+    var buf: [128][2]i32 = undefined;
+    var total: usize = 0;
+    for ([_][2]f32{ .{ 0, 0 }, .{ 0.4, 0.7 } }) |origin| for ([_]f32{ 1, 2 }) |scale| {
+        for ([_][2]rl.Vector2{
+            .{ .{ .x = 5.4, .y = 8.2 }, .{ .x = 50.1, .y = 12.7 } },
+            .{ .{ .x = 50.1, .y = 40.7 }, .{ .x = 8.6, .y = 9.3 } },
+            .{ .{ .x = 30.2, .y = 50.5 }, .{ .x = 36.7, .y = 7.1 } },
+            .{ .{ .x = 5.4, .y = 8.2 }, .{ .x = 5.9, .y = 8.6 } },
+        }) |ends| {
+            const cells = gridCells(ends[0], ends[1], origin, scale, &buf);
+            const cellOf = struct {
+                fn of(v: rl.Vector2, o: [2]f32, s: f32) [2]i32 {
+                    return .{ @intFromFloat(@floor((v.x - o[0]) / s)), @intFromFloat(@floor((v.y - o[1]) / s)) };
+                }
+            }.of;
+            try std.testing.expectEqual(cellOf(ends[0], origin, scale), cells[0]);
+            try std.testing.expectEqual(cellOf(ends[1], origin, scale), cells[cells.len - 1]);
+            for (cells[1..], cells[0 .. cells.len - 1]) |c, prev| {
+                try std.testing.expect(@max(@abs(c[0] - prev[0]), @abs(c[1] - prev[1])) == 1);
+            }
+            const span = cellOf(ends[1], origin, scale);
+            const start = cellOf(ends[0], origin, scale);
+            try std.testing.expectEqual(@max(@abs(span[0] - start[0]), @abs(span[1] - start[1])) + 1, @as(u32, @intCast(cells.len)));
+            total += cells.len;
+        }
+    };
+    std.debug.print("grid lines: {d} art pixels, one step apart, the fewest that join each pair of ends\n", .{total});
 }

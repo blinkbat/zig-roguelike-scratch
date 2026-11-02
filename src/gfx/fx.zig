@@ -359,9 +359,15 @@ pub const Zap = struct { from: [2]f32, to: [2]f32 };
 pub const Shimmer = struct { at: [2]f32, col: rl.Color };
 
 const ARC_S: f32 = 0.18;
-const ARC_POINTS = 25;
+/// An arc's kinks: cells apart along it and the most they stray across it, a fork every `ARC_FORK` kinks, and its light every `ARC_GLOW_EVERY` cells.
+const ARC_STEP: f32 = 0.2;
+const ARC_JITTER: f32 = 0.16;
+const ARC_FORK = 6;
+const ARC_GLOW_EVERY: f32 = 2;
+const ARC_POINTS = 96;
 const Arc = struct {
     points: [ARC_POINTS][2]f32 = undefined,
+    n: usize = 0,
     life: f32 = 0,
 };
 
@@ -377,6 +383,20 @@ const Pulse = struct {
     source: light.Emission = .{ .at = @splat(0), .col = rl.Color.blank, .radius = 0, .gain = 0 },
     life: f32 = 0,
     max: f32 = 1,
+};
+
+const Ripple = struct {
+    at: [2]f32 = @splat(0),
+    t: f32 = RIPPLE_S,
+
+    const Ring = struct { r: f32, a: f32 };
+
+    /// Its outermost ring.
+    fn ring(self: Ripple) ?Ring {
+        if (self.t >= RIPPLE_S) return null;
+        const k = self.t / RIPPLE_S;
+        return .{ .r = mathx.lerpF(RIPPLE_R[0], RIPPLE_R[1], 1 - (1 - k) * (1 - k)), .a = 1 - k };
+    }
 };
 
 pub const JUKE_S: f32 = 0.6;
@@ -407,6 +427,12 @@ const WATER_MOTES = [2]u32{ 5, 9 };
 pub const SPLASH_FOOT: f32 = 0.32;
 pub const SPLASH_R: f32 = 0.26;
 pub const SPLASH_RY: f32 = 0.09;
+/// A footfall's rings: the outermost grows across `RIPPLE_R` sprite pixels in `RIPPLE_S`, the rest follow `RIPPLE_GAP` inside it, all `RIPPLE_FLAT` as tall as wide.
+const RIPPLE_RINGS: usize = 4;
+const RIPPLE_GAP: f32 = 5;
+const RIPPLE_S: f32 = 0.9;
+const RIPPLE_R = [2]f32{ 2, 20 };
+const RIPPLE_FLAT: f32 = 0.45;
 const STEP_DUST = [2]u32{ 3, 6 };
 const BLEED_DROPS = 4;
 const CHILL_FLAKES = 5;
@@ -614,6 +640,8 @@ pub const Fx = struct {
     arc_head: usize = 0,
     pulses: [32]Pulse = @splat(.{}),
     pulse_head: usize = 0,
+    ripples: [24]Ripple = @splat(.{}),
+    ripple_head: usize = 0,
     motes: [MOTES]Mote = @splat(.{ .p = @splat(0), .v = @splat(0), .r = 0, .col = rl.Color.blank }),
     head: usize = 0,
     flash: [actor.MAX]f32 = @splat(0),
@@ -807,6 +835,7 @@ pub const Fx = struct {
         self.level_up.life = @max(0, self.level_up.life - dt);
         for (&self.arcs) |*a| a.life = @max(0, a.life - dt);
         for (&self.pulses) |*p| p.life = @max(0, p.life - dt);
+        for (&self.ripples) |*r| r.t = @min(RIPPLE_S, r.t + dt);
         for (&self.flash) |*f| f.* = @max(0, f.* - dt);
         for (&self.speech) |*s| s.life = @max(0, s.life - dt);
         for (&self.motes) |*m| advance(m, lv, dt);
@@ -975,14 +1004,19 @@ pub const Fx = struct {
         const a = &self.arcs[self.arc_head];
         self.arc_head = (self.arc_head + 1) % self.arcs.len;
         a.life = ARC_S;
-        for (&a.points, 0..) |*p, i| {
-            const t = @as(f32, @floatFromInt(i)) / (ARC_POINTS - 1);
-            const spread: f32 = if (i == 0 or i == ARC_POINTS - 1) 0 else ZAP_JITTER;
+        const span = mathx.len(z.to[0] - z.from[0], z.to[1] - z.from[1]);
+        const across: [2]f32 = if (span > 0) .{ -(z.to[1] - z.from[1]) / span, (z.to[0] - z.from[0]) / span } else .{ 0, 0 };
+        const segments: usize = @intFromFloat(std.math.clamp(@round(span / ARC_STEP), 1, ARC_POINTS - 1));
+        a.n = segments + 1;
+        for (a.points[0..a.n], 0..) |*p, i| {
+            const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(segments));
+            const off = if (i == 0 or i == segments) 0 else self.rng.spread(ARC_JITTER);
             const on = mathx.lerp2(z.from, z.to, t);
-            p.* = .{ on[0] + self.rng.spread(spread), on[1] + self.rng.spread(spread) };
+            p.* = .{ on[0] + across[0] * off, on[1] + across[1] * off };
         }
-        for ([_]f32{ 0.25, 0.65, 1 }) |t| self.glow(mathx.lerp2(z.from, z.to, t), look.LIGHTNING, ARC_GLOW);
-        const len = @max(1, mathx.len(z.to[0] - z.from[0], z.to[1] - z.from[1]));
+        const glows: usize = @intFromFloat(@max(1, @round(span / ARC_GLOW_EVERY)));
+        for (0..glows) |i| self.glow(mathx.lerp2(z.from, z.to, (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(glows))), look.LIGHTNING, ARC_GLOW);
+        const len = @max(1, span);
         const count: usize = @intFromFloat(@ceil(len * ZAP_MOTES));
         for (0..count) |i| {
             const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(count));
@@ -1147,6 +1181,8 @@ pub const Fx = struct {
                 .drag = 2,
             });
         }
+        self.ripples[self.ripple_head] = .{ .at = .{ at[0], at[1] + SPLASH_FOOT }, .t = 0 };
+        self.ripple_head = (self.ripple_head + 1) % self.ripples.len;
     }
 
     pub fn dust(self: *Fx, at: [2]f32, col: rl.Color) void {
@@ -1237,6 +1273,15 @@ pub const Fx = struct {
     /// Draw before lighting/fog; stains precede airborne motes.
     pub fn draw(self: *const Fx, ox: f32, oy: f32, cell: f32) void {
         const k = pxScale(cell);
+        for (&self.ripples) |r| {
+            const ring = r.ring() orelse continue;
+            const x = ox + (@round(r.at[0] * look.SPRITE_PX) + 0.5) * k;
+            const y = oy + (@round(r.at[1] * look.SPRITE_PX) + 0.5) * k;
+            var dots: [RIPPLE_RINGS * ringDotsMax()]Dot = undefined;
+            for (rippleDots(ring.r, &dots)) |d| {
+                pixel.rect(.{ .x = x + @as(f32, @floatFromInt(d.x)) * k, .y = y + @as(f32, @floatFromInt(d.y)) * k }, 1, 1, k, look.fade(look.RIPPLE, ring.a));
+            }
+        }
         for (&self.motes) |*m| {
             if (m.life <= 0 or !m.landed) continue;
             const a = m.life / (m.max * STAIN_FADE);
@@ -1271,22 +1316,73 @@ pub const Fx = struct {
         }
         for (&self.arcs) |*a| {
             if (a.life <= 0) continue;
-            for (a.points[1..], a.points[0 .. ARC_POINTS - 1], 0..) |p, from, i| {
+            for (a.points[1..a.n], a.points[0 .. a.n - 1], 0..) |p, from, i| {
                 if (!lv.isLit(mathx.cellOf(p)) or !lv.isLit(mathx.cellOf(from))) continue;
                 const alpha = @min(1, a.life / (ARC_S * 0.5)) * grid.cellOr(f32, sight, mathx.cellOf(p), 0);
                 const v = projected(from, ox, oy, cell);
                 const w = projected(p, ox, oy, cell);
-                pixel.line(v, w, 3, k, look.fade(look.LIGHTNING, alpha * 0.28));
-                pixel.line(v, w, 1, k, look.fade(look.LIGHTNING_CORE, alpha));
-                if (i % 6 == 3) {
+                pixel.gridLine(v, w, .{ ox, oy }, k, look.fade(look.LIGHTNING_CORE, alpha), i > 0);
+                if (i % ARC_FORK == ARC_FORK / 2) {
                     const tip = rl.Vector2{ .x = w.x + (w.y - v.y) * 1.8, .y = w.y - (w.x - v.x) * 1.8 };
                     const at = mathx.cellOf(unprojected(tip, ox, oy, cell));
-                    if (lv.isLit(at) and grid.clearLine(lv, mathx.cellOf(p), at)) pixel.line(w, tip, 1, k, look.fade(look.LIGHTNING, alpha * 0.65));
+                    if (lv.isLit(at) and grid.clearLine(lv, mathx.cellOf(p), at)) pixel.gridLine(w, tip, .{ ox, oy }, k, look.fade(look.LIGHTNING, alpha), true);
                 }
             }
         }
     }
 };
+
+fn ringDotsMax() usize {
+    return @as(usize, @intFromFloat(@ceil(mathx.TAU * RIPPLE_R[1]))) + 4;
+}
+
+/// The sprite pixels a ring of radius `r` passes through, each once.
+fn ringDots(r: f32, out: *[ringDotsMax()][2]i32) []const [2]i32 {
+    const steps = @min(out.len, @as(usize, @intFromFloat(@ceil(mathx.TAU * r))) + 4);
+    var n: usize = 0;
+    for (0..steps) |i| {
+        const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / @as(f32, @floatFromInt(steps));
+        const d = [2]i32{ @intFromFloat(@round(@cos(angle) * r)), @intFromFloat(@round(@sin(angle) * r * RIPPLE_FLAT)) };
+        if (n > 0 and (std.meta.eql(d, out[n - 1]) or std.meta.eql(d, out[0]))) continue;
+        out[n] = d;
+        n += 1;
+    }
+    return out[0..n];
+}
+
+const Dot = struct { x: i32, y: i32, ring: u8 };
+
+fn touchesTaken(taken: anytype, x: i32, y: i32) bool {
+    for (0..3) |dy| for (0..3) |dx| {
+        if (taken[@intCast(y + RIPPLE_HALF_H + @as(i32, @intCast(dy)) - 1)][@intCast(x + RIPPLE_HALF_W + @as(i32, @intCast(dx)) - 1)]) return true;
+    };
+    return false;
+}
+
+const RIPPLE_HALF_W: i32 = @intFromFloat(@ceil(RIPPLE_R[1]) + 2);
+const RIPPLE_HALF_H: i32 = @intFromFloat(@ceil(RIPPLE_R[1] * RIPPLE_FLAT) + 2);
+
+/// A ripple's rings, outermost `outer` sprite pixels across; an inner ring drops any pixel touching one outside it.
+fn rippleDots(outer: f32, out: *[RIPPLE_RINGS * ringDotsMax()]Dot) []const Dot {
+    var taken: [2 * RIPPLE_HALF_H + 1][2 * RIPPLE_HALF_W + 1]bool = @splat(@splat(false));
+    var n: usize = 0;
+    for (0..RIPPLE_RINGS) |i| {
+        const r = outer - @as(f32, @floatFromInt(i)) * RIPPLE_GAP;
+        if (r < RIPPLE_R[0]) break;
+        var buf: [ringDotsMax()][2]i32 = undefined;
+        const from = n;
+        var here: @TypeOf(taken) = @splat(@splat(false));
+        for (ringDots(r, &buf)) |d| {
+            const mine = &here[@intCast(d[1] + RIPPLE_HALF_H)][@intCast(d[0] + RIPPLE_HALF_W)];
+            if (mine.* or touchesTaken(&taken, d[0], d[1])) continue;
+            mine.* = true;
+            out[n] = .{ .x = d[0], .y = d[1], .ring = @intCast(i) };
+            n += 1;
+        }
+        for (out[from..n]) |d| taken[@intCast(d.y + RIPPLE_HALF_H)][@intCast(d.x + RIPPLE_HALF_W)] = true;
+    }
+    return out[0..n];
+}
 
 fn projected(at: [2]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {
     return screen(.{ at[0], at[1], STRIKE_Z }, ox, oy, cell);
@@ -1347,7 +1443,7 @@ pub fn drawMissile(at: [2]f32, dir: [2]f32, act: skillbar.Act, t: f32, ox: f32, 
         pixel.rect(p, 2, 2, k, rl.Color.white);
         return;
     }
-    drawArrow(p, dir, col, k);
+    drawArrow(p, dir, col, .{ ox, oy }, k);
 }
 
 const NET_SPIN: f32 = 14;
@@ -1375,17 +1471,18 @@ pub fn drawNet(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32) void {
     }
 }
 
-pub fn drawArrow(p: rl.Vector2, dir: [2]f32, col: rl.Color, k: f32) void {
+/// On the art-pixel grid `scale` screen pixels a side from `origin`.
+pub fn drawArrow(p: rl.Vector2, dir: [2]f32, col: rl.Color, origin: [2]f32, k: f32) void {
     const tail = rl.Vector2{ .x = p.x - dir[0] * 16 * k, .y = p.y - dir[1] * 16 * k };
-    pixel.line(tail, p, 1, k, look.SPLINTER);
+    pixel.gridLine(tail, p, origin, k, look.SPLINTER, false);
     const back = rl.Vector2{ .x = p.x - dir[0] * 4 * k, .y = p.y - dir[1] * 4 * k };
     for ([_]f32{ -2, -1, 0, 1, 2 }) |side| {
-        pixel.line(p, .{ .x = back.x - dir[1] * side * k, .y = back.y + dir[0] * side * k }, 1, k, col);
+        pixel.gridLine(p, .{ .x = back.x - dir[1] * side * k, .y = back.y + dir[0] * side * k }, origin, k, col, false);
     }
     const nock = rl.Vector2{ .x = tail.x + dir[0] * 4 * k, .y = tail.y + dir[1] * 4 * k };
     for ([_]f32{ -1, 1 }) |side| {
         const feather = rl.Vector2{ .x = tail.x - dir[1] * side * 3 * k, .y = tail.y + dir[0] * side * 3 * k };
-        pixel.line(feather, nock, 1, k, col);
+        pixel.gridLine(feather, nock, origin, k, col, false);
     }
 }
 
@@ -1448,6 +1545,32 @@ fn live(fx: *const Fx) Live {
 }
 
 const TEST_BLOW = Blow{ .impact = .{ .actor = .{ .slot = .fromIndex(3), .at = .{ .x = 20, .y = 20 }, .lethal = false } }, .dir = .{ 1, 0 }, .matter = .blood };
+
+test "an arc kinks, strays and lights at the same spacing whatever its length" {
+    var widest_gap: [2]f32 = .{ 1, 0 };
+    var widest_stray: f32 = 0;
+    for ([_][2]f32{ .{ 21.5, 20.5 }, .{ 24.5, 23.5 }, .{ 28.5, 28.5 }, .{ 20.5, 31.5 } }) |to| {
+        var effects = Fx{};
+        const z = Zap{ .from = .{ 20.5, 20.5 }, .to = to };
+        effects.arc(z);
+        const a = effects.arcs[0];
+        const span = mathx.len(to[0] - z.from[0], to[1] - z.from[1]);
+        try std.testing.expectEqualDeep(z.from, a.points[0]);
+        try std.testing.expectEqualDeep(z.to, a.points[a.n - 1]);
+        const step = span / @as(f32, @floatFromInt(a.n - 1));
+        try std.testing.expect(@abs(step - ARC_STEP) < ARC_STEP * 0.15);
+        for (a.points[0..a.n]) |p| {
+            const stray = @abs((p[0] - z.from[0]) * (to[1] - z.from[1]) - (p[1] - z.from[1]) * (to[0] - z.from[0])) / span;
+            try std.testing.expect(stray <= ARC_JITTER / 2 + 0.0001);
+            widest_stray = @max(widest_stray, stray);
+        }
+        widest_gap = .{ @min(widest_gap[0], step), @max(widest_gap[1], step) };
+        var lights: usize = 0;
+        for (effects.pulses) |p| lights += @intFromBool(p.life > 0);
+        try std.testing.expectEqual(@as(usize, @intFromFloat(@max(1, @round(span / ARC_GLOW_EVERY)))), lights);
+    }
+    std.debug.print("arcs from 1 to 11 cells: kinks {d:.3} to {d:.3} cells apart, straying at most {d:.3} cells, a light every ~{d} cells\n", .{ widest_gap[0], widest_gap[1], widest_stray, ARC_GLOW_EVERY });
+}
 
 test "a delayed effect starts its particles and light together after a long frame" {
     const lv = grid.openFloor();
@@ -1531,6 +1654,39 @@ test "water footsteps throw a varying few small drops that vanish without stains
         for (effects.flash) |f| try std.testing.expectEqual(@as(f32, 0), f);
         std.debug.print("water footsteps on {s}: {d} drops, peak {d:.3} cells up, {d:.3} cells out, no stains or flashes\n", .{ @tagName(water), n, peak, wide });
     }
+}
+
+test "water footsteps leave thin concentric rings a pixel apart that widen and fade, then vanish" {
+    const lv = grid.openFloor();
+    var effects = Fx{};
+    effects.splash(.{ 20.5, 20.5 });
+    var first: ?Ripple.Ring = null;
+    var last_r: f32 = 0;
+    var last_a: f32 = 1;
+    var most: u8 = 0;
+    var elapsed: f32 = 0;
+    var dots: [RIPPLE_RINGS * ringDotsMax()]Dot = undefined;
+    while (elapsed < RIPPLE_S + 0.1) : (elapsed += mathx.TEST_DT) {
+        if (effects.ripples[0].ring()) |ring| {
+            const all = rippleDots(ring.r, &dots);
+            for (all, 0..) |d, i| {
+                most = @max(most, d.ring + 1);
+                for (all[0..i]) |e| {
+                    const apart = @max(@abs(d.x - e.x), @abs(d.y - e.y));
+                    try std.testing.expect(if (d.ring == e.ring) apart > 0 else apart >= 2);
+                }
+            }
+            if (first == null) first = ring;
+            try std.testing.expect(ring.r >= last_r and ring.a <= last_a);
+            try std.testing.expect(ring.r <= RIPPLE_R[1]);
+            last_r = ring.r;
+            last_a = ring.a;
+        }
+        effects.step(&lv, mathx.TEST_DT);
+    }
+    try std.testing.expect(first != null and most == RIPPLE_RINGS);
+    for (effects.ripples) |r| try std.testing.expect(r.ring() == null);
+    std.debug.print("water ripples: up to {d} rings, outermost {d:.1} to {d:.1} sprite px across {d:.2} s, alpha {d:.2} to {d:.2}, {d} pixels at widest, none touching another ring\n", .{ most, first.?.r, last_r, RIPPLE_S, first.?.a, last_a, rippleDots(RIPPLE_R[1], &dots).len });
 }
 
 test "dust footsteps puff a varying few low motes, then vanish without stains" {
