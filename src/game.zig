@@ -18,6 +18,7 @@ const heroes = @import("play/hero.zig");
 const actor = @import("play/actor.zig");
 const turn_clock = @import("play/clock.zig");
 const confusion = @import("play/confusion.zig");
+const maim = @import("play/maim.zig");
 const pinning = @import("play/pinning.zig");
 const pack = @import("play/pack.zig");
 const skillbar = @import("play/skillbar.zig");
@@ -547,6 +548,10 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
         },
         .loot, .step => if (h.pin.turns > 0) struggle(g) else {
             heroTo(g, to);
+            if (h.maim.step()) {
+                h.clock.delay(turn_clock.TURN);
+                g.sim.log.say("{s} " ++ maim.LIMPS ++ ".", .{g.sim.name.text()});
+            }
             if (move == .loot) character.openLoot(g, to);
         },
         .blocked => return,

@@ -13,6 +13,8 @@ const turn_clock = @import("../play/clock.zig");
 const glacial = @import("../play/glacial.zig");
 const blind = @import("../play/blind.zig");
 const confusion = @import("../play/confusion.zig");
+const enfeeble = @import("../play/enfeeble.zig");
+const shock = @import("../play/shock.zig");
 const skillbar = @import("../play/skillbar.zig");
 const fx = @import("../gfx/fx.zig");
 const look = @import("../gfx/look.zig");
@@ -154,8 +156,26 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     const lands = r.dmg > 0 and r.dmg < a.hp and if (el) |e| hit.blow.reaches(resists, e) else true;
     const takes = attacks.afflicted(&g.sim, a, M, lands, if (el) |e| resists.get(e) else 0);
     if (takes) r.applied = M.AILMENT;
+    const at = a.at;
+    const grounded = actor.row(a.kind).movement != .flying;
     if (r.dmg > 0) wound(g, id, r, M.VERB, s);
     if (takes) if (g.sim.pool.get(id)) |b| sayTakes(g, M.TAKES, b);
+    if (el == .lightning and grounded) conduct(g, at, s);
+}
+
+/// Lightning landing in water runs through it: every body wading or swimming in the water it reaches is shocked as it lands.
+pub fn conduct(g: *game.Game, at: P, s: Stroke) void {
+    const water = shock.conducted(&g.sim.lv, at);
+    if (water.n == 0) return;
+    g.pic.fx.burst(s.wait, .{ .at = at, .area = water, .element = .lightning });
+    g.sim.sayAt(at, shock.CONDUCTS, .{});
+    for (g.sim.pool.slice(), 0..) |*a, slot| {
+        if (!a.alive or !water.has(a.at) or actor.row(a.kind).movement == .flying) continue;
+        if (!g.sim.takeStatus(a, .shock)) continue;
+        a.shock.start();
+        if (g.sim.isHero(slot)) g.sim.log.push(.danger, "{s} " ++ shock.TAKES ++ "!", .{g.sim.name.text()}) else sayTakes(g, shock.TAKES, a);
+        g.pic.settleSlot(&g.sim, s.wait, slot);
+    }
 }
 
 /// Rolled once and scaled per body, as an area blow; each is struck as the arrow reaches its cell.
@@ -262,7 +282,19 @@ pub fn reaction(g: *game.Game, id: u16, raw: attacks.Roll, comptime verb: []cons
     woundAt(g, .fromInt(id), raw, verb, s, .{ .reaction = .fromInt(source) }, flight);
 }
 
+/// A blow on a mimic still posing as its chest flings it open, to act from the next turn; its chest stays drawn where it stands until the blow lands.
+fn reveal(g: *game.Game, target: actor.ActorId, s: Stroke) void {
+    const a = g.sim.pool.get(target.value) orelse return;
+    if (!a.disguised) return;
+    a.unmask(&g.sim.lv);
+    a.waits = true;
+    g.sim.sayAs(.danger, a.at, "The chest is a {s}!", .{actor.row(a.kind).name});
+    g.pic.masked.set(target.slot().index);
+    g.pic.fx.shimmerIn(s.wait, .{ .at = mathx.centre(a.at), .col = look.body(a.kind).fg });
+}
+
 fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime verb: []const u8, s: Stroke, origin: chronicle.AttackOrigin, flight: ?bow.Flight) void {
+    reveal(g, target, s);
     const outcome = attacks.resolve(&g.sim, target, raw, origin) orelse return;
     const hit = switch (outcome) {
         .miss => {
@@ -589,7 +621,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
     if (row.ranged) |ranged| {
         const gap = mathx.dist(r.at, h.at);
         if (!held and backOff(g, id, ranged.retreat, confused)) return;
-        if (gap <= ranged.range and bow.aimable(&g.sim.lv, r.at, h.at)) {
+        if (bow.aimable(&g.sim.lv, r.at, h.at, ranged.range)) {
             const flight = bow.fly(&g.sim.lv, r.at, h.at);
             if (flight.hits(g.sim.hero)) return reach(g, id, row, h.at.x - r.at.x, flight);
         }
@@ -656,7 +688,7 @@ fn kinInReach(lv: *const grid.Level, m: actor.Mend, a: *const actor.Actor, from:
 fn throwNet(g: *game.Game, id: u16, n: actor.Net) bool {
     const r = g.sim.pool.get(id).?;
     const h = g.sim.heroActor().?;
-    if (r.ready_in > 0 or h.pin.turns > 0 or mathx.dist(r.at, h.at) > n.range or !bow.aimable(&g.sim.lv, r.at, h.at)) return false;
+    if (r.ready_in > 0 or h.pin.turns > 0 or !bow.aimable(&g.sim.lv, r.at, h.at, n.range)) return false;
     const flight = bow.fly(&g.sim.lv, r.at, h.at);
     if (!flight.hits(g.sim.hero)) return false;
     r.ready_in = n.every;
@@ -712,7 +744,13 @@ fn foeStep(g: *game.Game, id: u16, from: P, chosen: mathx.Dir, confused: bool) v
     const d = if (confusion.strays(confused, &g.sim.rng)) actor.stumble(&g.sim.lv, from, id, &g.sim.rng) orelse chosen else chosen;
     g.pic.turnLater(id, d.delta().x);
     g.sim.pool.move(&g.sim.lv, id, from.add(d.delta()));
+    limp(g.sim.pool.get(id).?);
     tactics.entered(g, id);
+}
+
+/// A maimed body's step: every second one costs its next turn.
+pub fn limp(a: *actor.Actor) void {
+    if (a.maim.step()) a.clock.delay(turn_clock.TURN);
 }
 
 fn foeWay(g: *game.Game, at: P, id: u16, hero: P) ?mathx.Dir {
@@ -758,6 +796,7 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight) v
             const defended = g.sim.combatStats(hero);
             var physical = if (s.element) |e| damage.resisted(landed, defended.elements.get(e)) else attrs.armoured(defended.armour, landed, &g.sim.rng);
             if (s.element == null and hero.tactics.guard > 0) physical = rules.Guard.reduce(hero.tactics.guard, physical);
+            physical = enfeeble.weaken(attacker.enfeeble.turns > 0, physical);
             const h = game.hurt(g, .fromInt(g.sim.hero), hero.shock.spend(physical));
             const lethal = h.lethal;
             g.sim.log.push(.danger, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), h.dmg });
@@ -852,13 +891,15 @@ fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike) void {
 
 fn swipe(g: *game.Game, source: u16, id: u16, by: actor.Row, s: actor.Strike) ?fx.Impact {
     const a = g.sim.pool.get(id).?;
-    const rolled = attacks.bite(&g.sim.rng, g.sim.combatStats(g.sim.pool.get(source).?), g.sim.combatStats(a), s) orelse {
+    const sweeper = g.sim.pool.get(source).?;
+    const rolled = attacks.bite(&g.sim.rng, g.sim.combatStats(sweeper), g.sim.combatStats(a), s) orelse {
         g.sim.sayOf(a, "The {s} misses the {s}.", .{ by.name, actor.row(a.kind).name });
         return null;
     };
     const at = a.at;
     const name = actor.row(a.kind).name;
-    const dmg = a.shock.spend((attacks.Roll{ .dmg = rolled, .physical = rolled }).against(g.sim.combatStats(a).armour, &g.sim.rng).dmg);
+    const armoured = (attacks.Roll{ .dmg = rolled, .physical = rolled }).against(g.sim.combatStats(a).armour, &g.sim.rng).dmg;
+    const dmg = a.shock.spend(enfeeble.weaken(sweeper.enfeeble.turns > 0, armoured));
     const stunned = dmg > 0 and dmg < a.hp and g.sim.procStatus(a, .stun, s.stuns);
     if (stunned) {
         if (!a.waits and !g.sim.ran[actor.Pool.slot(id)].contains(.worn)) a.clock.stunBeforeAction(actor.row(a.kind).pace) else a.clock.stun();

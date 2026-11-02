@@ -119,6 +119,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
             .fire => {
                 caught = ignite(sim, fallen.at, actor.row(fallen.kind).name);
                 if (boilRound(sim, fallen.at, PYRE_REACH)) |steeped| caught.setUnion(steeped);
+                sim.lv.release(.smoke, fallen.at, gas.SMOKE_BURST);
             },
         },
         .strike => {},

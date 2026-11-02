@@ -384,14 +384,18 @@ pub const Gas = enum {
     caustic,
     healing,
     steam,
+    smoke,
 
     pub fn harms(self: Gas) bool {
         return switch (self) {
             .caustic, .steam => true,
-            .healing => false,
+            .healing, .smoke => false,
         };
     }
 };
+
+/// Smoke at least this thick hides what lies beyond its cell; thinner wisps are seen through.
+pub const SMOKE_THICK: u16 = 20;
 
 pub const Level = struct {
     barrier: [CELLS]u8 = @splat(0),
@@ -421,6 +425,8 @@ pub const Level = struct {
     healing: [CELLS]u16 = @splat(0),
     /// Steam boiled off water by fire, Qud's.
     steam: [CELLS]u16 = @splat(0),
+    /// Smoke, Brogue's: it hides what lies past it.
+    smoke: [CELLS]u16 = @splat(0),
 
     pub fn blank() Level {
         return .{
@@ -586,7 +592,13 @@ pub const Level = struct {
             .caustic => &self.gas,
             .healing => &self.healing,
             .steam => &self.steam,
+            .smoke => &self.smoke,
         };
+    }
+
+    /// Nothing past `p` is seen through it: an opaque tile, or smoke thick enough.
+    pub fn hidesBeyond(self: *const Level, p: P) bool {
+        return self.at(p).blind() or self.volumeAt(.smoke, p) >= SMOKE_THICK;
     }
 
     pub fn volumeAt(self: *const Level, kind: Gas, p: P) u16 {

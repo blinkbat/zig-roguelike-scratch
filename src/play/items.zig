@@ -304,7 +304,7 @@ pub const WeaponEffect = struct {
         return switch (k) {
             .bleed => self.bleed,
             .stun => self.stun,
-            .burn, .chill, .pin, .shock, .sunder, .blind, .confusion, .fright => 0,
+            .burn, .chill, .pin, .shock, .sunder, .blind, .confusion, .enfeeble, .maim, .fright => 0,
         };
     }
 };

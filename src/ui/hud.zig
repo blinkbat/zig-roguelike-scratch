@@ -418,6 +418,18 @@ fn statusIcon(status: fx.Status, x: i32, y: i32) void {
                 at = next;
             }
         },
+        .enfeebled => {
+            rl.drawLine(x - 6, y - 6, x, y, colour);
+            rl.drawLine(x, y, x + 6, y - 6, colour);
+            rl.drawLine(x - 6, y + 1, x, y + 7, colour);
+            rl.drawLine(x, y + 7, x + 6, y + 1, colour);
+        },
+        .maimed => {
+            rl.drawLine(x - 2, y - 8, x - 2, y, colour);
+            rl.drawLine(x - 2, y, x + 5, y + 4, colour);
+            rl.drawLine(x + 5, y + 4, x + 1, y + 8, colour);
+            rl.drawLine(x - 7, y + 8, x + 7, y + 8, colour);
+        },
         .frightened => {
             rl.drawRectangle(x - 1, y - 8, 3, 11, colour);
             rl.drawRectangle(x - 1, y + 5, 3, 3, colour);

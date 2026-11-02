@@ -8,6 +8,7 @@ pub const AILMENT = @import("resilience.zig").Kind.stun;
 pub const CHANCE: u32 = 50;
 pub const VERB = "sparks";
 pub const BOLT = "spark";
+pub const BOLT_RANGE: i32 = 7;
 pub const TAKES = clock.STUNNED;
 pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("Strike a target in sight with lightning. {s}.", .{clock.stunNote(CHANCE)});

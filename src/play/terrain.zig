@@ -42,6 +42,8 @@ pub const Modifiers = struct {
                     .sunder => "Chance To Be Sundered",
                     .blind => "Chance To Be Blinded",
                     .confusion => "Chance To Be Confused",
+                    .enfeeble => "Chance To Be Enfeebled",
+                    .maim => "Chance To Be Maimed",
                     .fright => "Chance To Be Frightened",
                 };
                 w.print("\n{s}{d}% {s}", .{ sign(n), n, label }) catch {};

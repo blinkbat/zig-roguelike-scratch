@@ -278,7 +278,10 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   within range and geometric line of sight (`bow.aimable`, plus `Level.inLos` for the player's reticle).
   Visible targets are suggestions; projectile directions move freely by cell, and aiming opens without a target.
   `bow.fly` stops at the first collision even when the intercepted attack misses. Previews must not reveal
-  hidden collisions. Spend nothing before confirmation.
+  hidden collisions. Spend nothing before confirmation. Arrows reach `bow.RANGE`; each bolt declares its own `BOLT_RANGE`
+  (contract-checked against `bow.LONGEST`, the flight's capacity), so `Act.reach` and `bow.aimable`/`pick` take the act's reach.
+  A missile that strikes nothing bursts on no one, but still comes down where its flight ends (`skills.comeDown`): fire boils
+  the water its blast would reach and lightning conducts.
   Area previews/damage/effects share geometry (each module's `burst`/`around`, `glacial.spread`, `cleave.arc`); use `fov.castInto` for
   terrain occlusion without changing sight or memory. Capture area targets before damage so newborn
   slime halves inherit statuses without being hit twice by that burst.
@@ -313,14 +316,19 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Mimics stand as a real chest tile (`under` keeps the ground) until opened (`Actor.unmask`), then drop chest loot with a rare item (`items.rollRare`).
   That chest draws `mimic-closed.png` (`Presentation.mimicAt`); the body is `mimic-open.png`.
   `Actor.veiled`/`seenIn` hide both from drawing, aiming (`bow.previewAmong`), inspection and targeting.
+  A closed chest takes a missile whole; a mimic in it is struck by the real flight while previews show only the chest. Any hero
+  blow on a disguised mimic lands (`attacks.heroLands`) and flings it open (`combat.reveal`): it acts from the next turn (`waits`)
+  and stays drawn as its chest until that blow lands (`Presentation.masked`). Melee swings still never target a closed chest.
   Bandit trappers (`Row.net`, stable `bandit_netter` save/map identity, `assets/bandit-trapper.png`) pin the hero: steps struggle in place, each with `pinning.SLIP`% to make that turn the pin's last; leaps and rushes are blocked. Shieldbearers knock the hero back
   (`Presentation.knocked_from`/`Owed.knock` draw it as the blow lands). Frost wisps' touch chills the hero; every third chilled
   action costs its next turn. Pyre bloats' burst (`rewards.pyre`) burns the bodies beside it. Pib shamans (`Row.mends`) heal
   the most hurt pib in reach or wake sleepers, keeping `Row.keeps` cells off the hero.
 - Preserve Brogue's turn order: hero action and its harm, gas spread, then foes nearest the hero first,
   each followed by gas, steam, healing gas, burn and bleed. Caustic and pyre bloats burst however killed; foes do not enter gas, steam or Fire Wall flames from outside them (`actor.shuns`).
-  `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`), healing (`Level.healing`)
-  and steam (`Level.steam`) are separate volumes (`grid.Gas`), spread alike; healing gas mends every hurt body a fifteenth of its life a turn, as caustic gas eats at it.
+  `map/gas.zig` alone advances gas; it spreads through open cells, including liquids. Caustic (`Level.gas`), healing (`Level.healing`),
+  steam (`Level.steam`) and smoke (`Level.smoke`) are separate volumes (`grid.Gas`), spread alike; healing gas mends every hurt body a fifteenth of its life a turn, as caustic gas eats at it.
+  Smoke harms nothing and thins by `gas.THIN` a pass; at `grid.SMOKE_THICK` a cell hides what lies past it (`Level.hidesBeyond`) from
+  sight casts, the hero's and so foes' noticing, while `fov.castInto` (burst geometry) sees through it. A pyre bloat's burst releases it.
   Fire landing on deep water or shallows boils it into steam (`gas.boil`, `rewards.boilRound`): fireball and Combustion blasts over `glacial.wetIn`,
   a fire arrow's impact cell, a pyre bloat's burst. Steam also loses a third of each cell a pass (`gas.CONDENSE`) and scalds for `gas.SCALD` fire damage, resisted.
   `gfx/cloud.zig` draws them in one premultiplied texture; gas harm and heals shed `fx.Puff` wisps of their gas's colour as they land.
@@ -328,11 +336,15 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   add resistance until expiry on spent turns; failed applications and free actions never extend or age it.
   `Simulation.takeStatus/procStatus` combine innate resistance, buildup and terrain before gating combat applications.
   Preserve buildup and bleed strength across splits, travel and saves; present resistance with the blow.
-- `play/shock.zig`, `sunder.zig`, `blind.zig` and `confusion.zig` own afflictions that nothing applies yet. Each wears
-  a turn on its body's own turn (`combat.wearTurn`; the hero's right after its action). Shock spends itself on the next
-  damaging hit (`attacks.resolve`, foe bites and sweeps) for half again, rounded up. Sunder stacks lower armour in
+- `play/shock.zig`, `sunder.zig`, `blind.zig`, `confusion.zig`, `enfeeble.zig` and `maim.zig` own afflictions (`actor.AFFLICTIONS`).
+  Each wears a turn on its body's own turn (`combat.wearTurn`; the hero's right after its action). Shock spends itself on the next
+  damaging hit (`attacks.resolve`, foe bites and sweeps) for half again, rounded up. Only shock has a source: lightning landing
+  in water, on a wading body or none, shocks every grounded body in the water joined to it within `shock.CONDUCT` (`shock.conducted`,
+  `combat.conduct`), the hero too. Sunder stacks lower armour in
   `Simulation.combatStatsAt`, which every armour read uses. Blindness limits sight to adjacent cells; a blinded foe acts
   only beside the hero. Confusion sends half of moves a random way that also spends the move (`actor.stumble`, `game.astray`).
+  Enfeeble cuts its body's blows by `enfeeble.LESS`%, rounded up, after armour and before shock (`attacks.resolve`, foe bites and sweeps).
+  Maim makes every second step cost the next turn (`Maim.step`; `combat.limp` for foes, `game.heroStep` for the hero's clock).
 - `play/terrain.zig` owns typed tile modifiers for hit, dodge, elemental and status resistance.
   `Simulation.combatStats/combatStatsAt` resolve them from base stats without mutating or saving bonuses.
   Combat, Character and inspection share this resolver; see `docs/TERRAIN.md`. Shoot is a fixed basic attack:
@@ -345,7 +357,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   presentation supports at most one action per foe per turn. Check chill before the stalled-action return.
   Use `Clock.delay`/`Clock.stun` for delays/stun, with no separate stun status or visible clock. A stunned hero
   loses its next turn on its own once the stunning turn is drawn (`stunnedTurn`, in play or Character).
-  A foe's sweep (`Row.sweep_every`) strikes every body and barrel round it; its victims land with its blow on the hero (`Owed.swept`).
+  A foe's sweep (`Row.sweep_every`) strikes every body and barrel round it; its victims and its drawn whirl (`fx.whirl`) land with its blow on the hero (`Owed.swept`).
 - A pib witnessing a nearby foe death wakes and flees (`FRIGHT_REACH`, `FLEE_TURNS`); subsequent deaths
   refresh it. Cornered beside the hero, it attacks. Fright speech waits for the death's presented impact
   and uses cosmetic RNG. This is the Frightened status (`Actor.fright`, resilience `.fright`); witness fright

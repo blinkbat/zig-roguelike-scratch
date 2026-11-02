@@ -65,17 +65,17 @@ test "underground a rat past the archer's light is out of sight and out of the b
     const hero = P{ .x = 20, .y = 20 };
     const rat_at = P{ .x = 27, .y = 20 };
     harness.arena(g, hero, &.{rat_at});
-    try std.testing.expect(g.sim.lv.isLit(rat_at) and bow.aimable(&g.sim.lv, hero, rat_at));
+    try std.testing.expect(g.sim.lv.isLit(rat_at) and bow.aimable(&g.sim.lv, hero, rat_at, bow.LONGEST));
     g.sim.outdoors = false;
     game.settle(g);
     try std.testing.expect(!g.sim.lv.isLit(rat_at) and g.sim.lv.inLos(rat_at));
-    try std.testing.expect(bow.pick(&g.sim.lv, &g.sim.pool, hero) == null);
+    try std.testing.expect(bow.pick(&g.sim.lv, &g.sim.pool, hero, bow.LONGEST) == null);
     try std.testing.expect(fov.sees(&g.sim.lv, rat_at, hero, actor.row(.rat).sight));
     const wall = rat_at.add(mathx.Dir.n.delta());
     g.sim.lv.set(wall, .wall);
     g.sim.lv.addTorch(wall);
     game.settle(g);
-    try std.testing.expect(g.sim.lv.isLit(rat_at) and bow.aimable(&g.sim.lv, hero, rat_at));
+    try std.testing.expect(g.sim.lv.isLit(rat_at) and bow.aimable(&g.sim.lv, hero, rat_at, bow.LONGEST));
 }
 
 test "the archer sees further by day than by night out of doors, and as little at midnight as underground" {
@@ -112,7 +112,7 @@ test "tight diagonals carry movement sight projectiles melee and gas in all four
         game.settle(g);
         for ([_]P{ near, ahead, far }) |p| {
             try std.testing.expect(g.sim.lv.isLit(p) and g.sim.lv.isSeen(p));
-            try std.testing.expect(bow.aimable(&g.sim.lv, from, p));
+            try std.testing.expect(bow.aimable(&g.sim.lv, from, p, bow.RANGE));
         }
         try std.testing.expect(juke.aimable(&g.sim.lv, from, ahead));
         const cone = glacial.cone(&g.sim.lv, from, near);
@@ -124,7 +124,7 @@ test "tight diagonals carry movement sight projectiles melee and gas in all four
         g.sim.lv.set(near, .wall);
         game.castSight(g, from);
         try std.testing.expect(!g.sim.lv.isLit(ahead) and !g.sim.lv.isLit(far));
-        try std.testing.expect(!bow.aimable(&g.sim.lv, from, far));
+        try std.testing.expect(!bow.aimable(&g.sim.lv, from, far, bow.RANGE));
         try std.testing.expectEqual(@as(usize, 0), bow.fly(&g.sim.lv, from, far).len);
         g.sim.lv.set(near, .floor);
         game.castSight(g, from);
@@ -405,4 +405,33 @@ test "steam scalds each body in it for a little fire damage a turn, less in wate
     std.debug.print("a turn in steam: the archer and a rat scalded for {d}, a rat in shallows for {d}, a pyre bloat for {d}; {d} steam wisps\n", .{ lost[0], lost[2], lost[3], wisps });
     try std.testing.expect(t < 1);
     try std.testing.expectEqual(3 * fx.TICK_WISPS, wisps);
+}
+
+test "thick smoke hides what lies past its nearest cell, both ways, and thin smoke nothing; it harms nothing and no foe shuns it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const smoke = P{ .x = 22, .y = 20 };
+    const past = P{ .x = 24, .y = 20 };
+    harness.arena(g, from, &.{});
+    const rat = harness.spawnAt(g, .rat, past, false);
+    try std.testing.expect(g.sim.lv.isLit(past));
+    var cloud = grid.Cells.around(smoke, 1);
+    while (cloud.next()) |p| g.sim.lv.release(.smoke, p, grid.SMOKE_THICK);
+    game.castSight(g, from);
+    try std.testing.expect(g.sim.lv.isLit(smoke.add(.{ .x = -1, .y = 0 })) and !g.sim.lv.isLit(smoke) and !g.sim.lv.inLos(past));
+    try std.testing.expect(!fov.sees(&g.sim.lv, past, from, actor.row(.rat).sight));
+    var burst: [grid.CELLS]bool = @splat(false);
+    fov.castInto(&g.sim.lv, from, actor.row(HERO).sight, &burst);
+    try std.testing.expect(burst[grid.Level.idx(past)]);
+    try std.testing.expect(!g.sim.lv.harmful(smoke));
+    for (&g.sim.lv.smoke) |*v| v.* = @min(v.*, grid.SMOKE_THICK - 1);
+    game.castSight(g, from);
+    try std.testing.expect(g.sim.lv.isLit(past));
+    for (&g.sim.lv.smoke) |*v| v.* = if (v.* > 0) gas.SMOKE_BURST else 0;
+    game.castSight(g, from);
+    g.sim.pool.get(rat).?.awake = true;
+    harness.use(g, .wait);
+    try std.testing.expectEqual(@as(i32, 3), mathx.dist(g.sim.pool.get(rat).?.at, from));
+    std.debug.print("smoke: a 3x3 cloud from a cell off shows its near edge and hides the rat 4 off, and the rat the hero; thinned below {d} it hides nothing; the rat walks into it\n", .{grid.SMOKE_THICK});
 }

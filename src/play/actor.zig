@@ -13,6 +13,8 @@ const shock = @import("shock.zig");
 const sunder = @import("sunder.zig");
 const blind = @import("blind.zig");
 const confusion = @import("confusion.zig");
+const enfeeble = @import("enfeeble.zig");
+const maim = @import("maim.zig");
 const ward = @import("ward.zig");
 const heroes = @import("hero.zig");
 const wording = @import("../core/wording.zig");
@@ -236,7 +238,7 @@ pub fn innateResist(k: Kind, status: resilience.Kind) u8 {
     return switch (status) {
         .stun => row(k).stun_resist,
         .fright => row(k).fright_resist,
-        .burn, .bleed, .chill, .pin, .shock, .sunder, .blind, .confusion => 0,
+        .burn, .bleed, .chill, .pin, .shock, .sunder, .blind, .confusion, .enfeeble, .maim => 0,
     };
 }
 
@@ -312,7 +314,7 @@ pub const Actor = struct {
     max: i32,
     awake: bool = false,
     alive: bool = true,
-    /// Split off this turn: it acts from the next.
+    /// Split off, or flung out of its chest, this turn: it acts from the next.
     waits: bool = false,
     resists: damage.Resists = .initFill(0),
     burn: burning.Burn = .{},
@@ -325,6 +327,8 @@ pub const Actor = struct {
     sunder: sunder.Sunder = .{},
     blind: blind.Blind = .{},
     confusion: confusion.Confusion = .{},
+    enfeeble: enfeeble.Enfeeble = .{},
+    maim: maim.Maim = .{},
     ward: ward.Ward = .{},
     tactics: @import("tactics.zig").State = .{},
     /// Its turns left running from the hero.
@@ -414,7 +418,7 @@ pub const Actor = struct {
             switch (k) {
                 .blind => out.blinded = ran,
                 .confusion => out.confused = ran,
-                .shock, .sunder => {},
+                .shock, .sunder, .enfeeble, .maim => {},
                 else => comptime unreachable,
             }
         }
@@ -434,7 +438,7 @@ pub const Actor = struct {
 pub const Afflicted = struct { blinded: bool = false, confused: bool = false };
 
 /// The statuses worn on a body's own turn, each kept in the `Actor` field its kind names.
-pub const AFFLICTIONS = [_]resilience.Kind{ .shock, .sunder, .blind, .confusion };
+pub const AFFLICTIONS = [_]resilience.Kind{ .shock, .sunder, .blind, .confusion, .enfeeble, .maim };
 
 pub const MAX: usize = 64;
 

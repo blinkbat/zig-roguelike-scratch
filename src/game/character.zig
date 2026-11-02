@@ -388,7 +388,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             const dx = p.x - h.at.x;
             if (p.eq(h.at)) {
                 if (h.pin.turns > 0) game.struggle(g) else g.sim.travel = link;
-            } else if (h.pin.turns > 0 or h.confusion.turns > 0) {
+            } else if (h.pin.turns > 0 or h.confusion.turns > 0 or h.maim.turns > 0) {
                 g.mode = .play;
                 game.holdWalk(g);
                 return game.heroStep(g, mathx.dirTo(h.at, p).?, 0);

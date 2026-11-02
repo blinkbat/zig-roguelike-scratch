@@ -12,6 +12,8 @@ const shock = @import("../play/shock.zig");
 const sunder = @import("../play/sunder.zig");
 const blind = @import("../play/blind.zig");
 const confusion = @import("../play/confusion.zig");
+const enfeeble = @import("../play/enfeeble.zig");
+const maim = @import("../play/maim.zig");
 const ward = @import("../play/ward.zig");
 const tactics = @import("../play/tactics.zig");
 const resilience = @import("../play/resilience.zig");
@@ -167,6 +169,8 @@ pub const Status = enum {
     sundered,
     blinded,
     confused,
+    enfeebled,
+    maimed,
     frightened,
     warded,
     resistant,
@@ -193,6 +197,8 @@ pub const Status = enum {
             .sundered => .sunder,
             .blinded => .blind,
             .confused => .confusion,
+            .enfeebled => .enfeeble,
+            .maimed => .maim,
             .frightened => .fright,
             .warded, .resistant, .guarding, .unyielding, .steady, .overwatch => null,
         };
@@ -203,7 +209,7 @@ pub const Status = enum {
         return switch (s) {
             .burning => BURN_GLOW,
             .warded => WARD_GLOW,
-            .bleeding, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .frightened, .resistant, .guarding, .unyielding, .steady, .overwatch => null,
+            .bleeding, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .resistant, .guarding, .unyielding, .steady, .overwatch => null,
         };
     }
 
@@ -247,6 +253,8 @@ pub const Status = enum {
             .sundered => sunder,
             .blinded => blind,
             .confused => confusion,
+            .enfeebled => enfeeble,
+            .maimed => maim,
             .warded => ward,
             .frightened, .resistant, .guarding, .unyielding, .steady, .overwatch => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
         };
@@ -381,6 +389,12 @@ fn burstMotes(cells: usize) usize {
 }
 const TRAIL_MOTES: usize = 20;
 const DUST_MOTES: usize = 24;
+const WHIRL_MOTES: usize = 36;
+/// A sweep's ring: cells out from the sweeper, cells a second its streaks race round, their longest life, and how flat the ring lies.
+const WHIRL_R: f32 = 0.7;
+const WHIRL_SPEED: f32 = 3.2;
+const WHIRL_S: f32 = 0.34;
+const WHIRL_FLAT: f32 = 0.6;
 /// Motes a cell of a zap's line.
 const ZAP_MOTES: usize = 5;
 /// How far a zap's motes stray off its line, in cells.
@@ -413,6 +427,9 @@ const CONFUSION_DOTS = 3;
 /// Cells under a body's top its blindness and confusion marks sit, and how wide confusion circles.
 const HALO_Y: f32 = 0.1;
 const HALO_R: f32 = 0.2;
+/// Across a body's cell, where enfeeblement's chevron sinks, and how often a second.
+const ENFEEBLE_X: f32 = 0.2;
+const ENFEEBLE_HZ: f32 = 0.8;
 /// Across a body's cell, where fright's mark trembles, how far either way, and how fast.
 const FRIGHT_X: f32 = 0.8;
 const FRIGHT_SHAKE: f32 = 0.015;
@@ -457,6 +474,8 @@ const Due = union(enum) {
     zap: Zap,
     puff: Puff,
     shimmer: Shimmer,
+    /// A sweep round the cell centred here.
+    whirl: [2]f32,
 
     fn on(d: *const Due) ?usize {
         return switch (d.*) {
@@ -466,14 +485,14 @@ const Due = union(enum) {
             },
             .sting => |*s| s.slot,
             .settle => |*s| s.slot,
-            .burst, .zap, .puff, .shimmer => null,
+            .burst, .zap, .puff, .shimmer, .whirl => null,
         };
     }
 
     fn blowOf(d: *const Due) ?*const Blow {
         return switch (d.*) {
             .blow => |*b| b,
-            .sting, .settle, .burst, .zap, .puff, .shimmer => null,
+            .sting, .settle, .burst, .zap, .puff, .shimmer, .whirl => null,
         };
     }
 
@@ -490,7 +509,7 @@ const Due = union(enum) {
             },
             .sting => |*s| s.after,
             .settle => |*s| s.after,
-            .burst, .zap, .puff, .shimmer => null,
+            .burst, .zap, .puff, .shimmer, .whirl => null,
         };
     }
 };
@@ -679,6 +698,10 @@ pub const Fx = struct {
         self.later(wait, .{ .shimmer = s });
     }
 
+    pub fn sweep(self: *Fx, wait: f32, at: [2]f32) void {
+        self.later(wait, .{ .whirl = at });
+    }
+
     fn later(self: *Fx, wait: f32, what: Due) void {
         if (wait <= 0 or self.due_n == DUE) return self.fire(what, @max(0, -wait));
         self.due[self.due_n] = .{ .t = wait, .what = what };
@@ -693,6 +716,7 @@ pub const Fx = struct {
             .zap => |z| self.arc(z),
             .puff => |p| self.wisps(p),
             .shimmer => |s| self.shimmer(s.at, s.col),
+            .whirl => |at| self.whirl(at),
             .settle => |s| if (s.puff) |p| self.wisps(p),
             .sting => |s| {
                 if (s.fire_at) |at| self.embers(at);
@@ -703,7 +727,7 @@ pub const Fx = struct {
         const slot = what.on() orelse return;
         switch (what) {
             .blow, .sting => self.flash[slot] = @max(self.flash[slot], FLASH_S - late),
-            .settle, .burst, .zap, .puff, .shimmer => {},
+            .settle, .burst, .zap, .puff, .shimmer, .whirl => {},
         }
         const a = what.after() orelse return;
         self.mana_landed += a.mana;
@@ -1049,6 +1073,26 @@ pub const Fx = struct {
         }
     }
 
+    /// A chevron sinking beside its head.
+    pub fn drawEnfeebled(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
+        const k = pxScale(cell);
+        const sink = @mod(self.seconds.at() * ENFEEBLE_HZ + @as(f32, @floatFromInt(seed)) * 0.31, 1);
+        const tip = rl.Vector2{ .x = x + cell * ENFEEBLE_X, .y = y + cell * (HALO_Y + 0.08 + sink * 0.08) };
+        const arm = cell * 0.05;
+        const col = look.fade(ink, 0.9 - sink * 0.5);
+        pixel.line(.{ .x = tip.x - arm, .y = tip.y - arm }, tip, 1, k, col);
+        pixel.line(tip, .{ .x = tip.x + arm, .y = tip.y - arm }, 1, k, col);
+    }
+
+    /// A bent bar at its feet, the leg it favours.
+    pub fn drawMaimed(_: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
+        const k = pxScale(cell);
+        const foot = y + cell * PIN_FOOT;
+        const knee = rl.Vector2{ .x = x + cell * 0.3, .y = foot - cell * 0.1 };
+        pixel.line(.{ .x = x + cell * 0.24, .y = foot }, knee, 2, k, ink);
+        pixel.line(knee, .{ .x = x + cell * 0.38, .y = foot - cell * 0.04 }, 2, k, ink);
+    }
+
     /// A trembling mark beside its head.
     pub fn drawFrightened(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
         const k = pxScale(cell);
@@ -1095,6 +1139,37 @@ pub const Fx = struct {
                 .r = self.rng.between(0.8, 1.3),
                 .col = look.WATER_DROP,
                 .grav = 5,
+                .drag = 3,
+            });
+        }
+    }
+
+    /// A sweep's swing: streaks turning round the sweeper, the first gone first, and dust kicked off the ground.
+    fn whirl(self: *Fx, at: [2]f32) void {
+        for (0..WHIRL_MOTES) |i| {
+            const k = @as(f32, @floatFromInt(i)) / WHIRL_MOTES;
+            const d = heading(k * mathx.TAU);
+            const r = WHIRL_R + self.rng.spread(0.06);
+            self.emit(.{
+                .p = .{ at[0] + d[0] * r, at[1] + d[1] * r * WHIRL_FLAT, self.rng.between(0.15, 0.45) },
+                .v = .{ -d[1] * WHIRL_SPEED, d[0] * WHIRL_SPEED * WHIRL_FLAT, 0 },
+                .life = WHIRL_S * (0.35 + k * 0.65),
+                .r = self.rng.between(1.2, 2.2),
+                .col = look.SWEEP,
+                .drag = 3,
+                .terrain = false,
+            });
+        }
+        for (0..DUST_MOTES) |i| {
+            const d = ringDir(&self.rng, i, DUST_MOTES, 1);
+            const speed = self.rng.between(0.6, 1.8);
+            self.emit(.{
+                .p = .{ at[0] + d[0] * WHIRL_R, at[1] + d[1] * WHIRL_R * WHIRL_FLAT, 0.04 },
+                .v = .{ d[0] * speed, d[1] * speed * WHIRL_FLAT, self.rng.between(0.2, 0.7) },
+                .life = self.rng.between(WHIRL_S * 0.6, WHIRL_S * 1.2),
+                .r = self.rng.between(JUKE_R[0], JUKE_R[1]),
+                .col = look.JUKE_DUST,
+                .grav = 2,
                 .drag = 3,
             });
         }

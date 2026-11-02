@@ -68,6 +68,8 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
     if ((d.reticle == .bow or has(d, "BASE")) != (d.delivery != null)) return "damage BASE requires explicit delivery (melee, ranged or spell)";
     if (has(d, "ELEMENT") and (!has(d, "BASE") or d.delivery == null)) return "ELEMENT requires BASE and delivery";
     if (has(d, "BOLT") and (d.reticle != .bow or d.delivery != .spell)) return "BOLT requires bow targeting and spell delivery";
+    if (has(d, "BOLT") != has(d, "BOLT_RANGE")) return "a BOLT names its BOLT_RANGE, and only a bolt does";
+    if (has(d, "BOLT_RANGE") and (m.BOLT_RANGE < 1 or m.BOLT_RANGE > bow.LONGEST)) return "BOLT_RANGE must be 1 to bow.LONGEST";
     if (d.reticle == .bow and !has(d, "BOLT") and d.delivery != .ranged) return "arrow requires ranged delivery";
     if (has(d, "afflict")) {
         if (!has(d, "AILMENT") or !has(d, "CHANCE") or !@hasDecl(m, "TAKES") or !@hasDecl(m, "VERB")) return "afflict requires AILMENT, CHANCE, TAKES and VERB";
@@ -141,7 +143,7 @@ pub fn interpret(comptime name: []const u8, comptime d: Definition) Contract {
         .cost = value(d, "COST", @as(i32, 0)),
         .cooldown = value(d, "COOLDOWN", @as(u8, 0)),
         .reach = if (d.reticle) |r| switch (r) {
-            .bow => bow.RANGE,
+            .bow => value(d, "BOLT_RANGE", bow.RANGE),
             .swing => MELEE_REACH,
             .leap, .rush, .ground => d.module.?.RANGE,
         } else 0,

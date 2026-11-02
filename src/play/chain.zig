@@ -12,6 +12,7 @@ pub const JUMPS: usize = 2;
 pub const JUMP_RANGE: i32 = 3;
 pub const VERB = "shocks";
 pub const BOLT = "chain lightning";
+pub const BOLT_RANGE: i32 = 6;
 pub const TAKES = spark.TAKES;
 pub const ELEMENT: damage.Element = .lightning;
 pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {s} each.", .{ JUMPS, JUMP_RANGE, clock.stunNote(spark.CHANCE) });

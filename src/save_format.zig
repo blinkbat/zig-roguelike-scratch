@@ -311,6 +311,7 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *const ite
         if (body.chill.phase > 2 or body.bleed.amount < 0) return error.Damaged;
         if (body.max > BODY_MOST or body.bleed.amount > BODY_MOST or body.clock.ticks < -BODY_MOST or body.clock.ticks > BODY_MOST) return error.Damaged;
         if (body.sunder.stacks > sunder.MOST or (body.sunder.stacks == 0) != (body.sunder.turns == 0)) return error.Damaged;
+        if (body.maim.limp and body.maim.turns == 0) return error.Damaged;
     }
     for (level.occupant, 0..) |id, index| {
         if (id == grid.NO_ONE) continue;

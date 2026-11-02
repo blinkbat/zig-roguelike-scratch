@@ -10,6 +10,9 @@ const P = mathx.P;
 pub const NAME = "caustic gas";
 pub const HEALING_NAME = "healing gas";
 pub const STEAM_NAME = "steam";
+pub const SMOKE_NAME = "smoke";
+/// What a fire's burst gives off where it bursts.
+pub const SMOKE_BURST: u16 = 1200;
 /// Brogue's `DF_BLOAT_DEATH`.
 pub const BURST: u16 = 2000;
 /// Brogue's bloodwort pod bursting.
@@ -26,6 +29,8 @@ const HARM_PART: i32 = 15;
 pub const BOIL: u16 = 60;
 /// Steam also loses this part of each cell's volume a pass, rounded up, so it clears in a few turns.
 pub const CONDENSE: u32 = 3;
+/// Smoke likewise thins by this part of each cell a pass, slower than steam condenses.
+pub const THIN: u32 = 12;
 pub const SCALD: i32 = 2;
 const SCALD_ELEMENT: damage.Element = .fire;
 
@@ -103,7 +108,11 @@ fn spread(lv: *grid.Level, kind: grid.Gas, rng: *mathx.Rng) void {
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
         if (next[i] > 0 and vol[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
-        if (kind == .steam) next[i] -= std.math.divCeil(u32, next[i], CONDENSE) catch unreachable;
+        switch (kind) {
+            .steam => next[i] -= std.math.divCeil(u32, next[i], CONDENSE) catch unreachable,
+            .smoke => next[i] -= std.math.divCeil(u32, next[i], THIN) catch unreachable,
+            .caustic, .healing => {},
+        }
         vol[i] = @intCast(@min(next[i], std.math.maxInt(u16)));
     }
 }
@@ -280,6 +289,26 @@ test "steam boiled off a lake clears in a few turns, far sooner than as much hea
     std.debug.print("steam: a 3x3 blast on a lake gone in {d} turns over at most {d} cells, one boiled cell in {d}; as much healing gas lasts {d}\n", .{ steam.turns, steam.most, lone.turns, healing.turns });
     try std.testing.expect(steam.turns * 3 < healing.turns);
     try std.testing.expect(lone.turns < steam.turns);
+}
+
+test "a burst of smoke hides what lies past it for a few turns, then thins to wisps sight passes" {
+    var rng = mathx.Rng.init(0x5E0C);
+    var lv = grid.openFloor();
+    lv.release(.smoke, OPEN_AT, SMOKE_BURST);
+    var hiding: usize = 0;
+    var most: usize = 0;
+    var turns: usize = 0;
+    while (any(&lv.smoke)) : (turns += 1) {
+        try std.testing.expect(turns < NEVER);
+        turn(&lv, &rng);
+        var thick: usize = 0;
+        for (0..grid.CELLS) |i| thick += @intFromBool(lv.hidesBeyond(grid.Level.of(i)) and !lv.tile[i].blind());
+        if (thick > 0) hiding += 1;
+        most = @max(most, thick);
+        try std.testing.expect(!lv.harmful(OPEN_AT));
+    }
+    std.debug.print("a smoke burst: hides sight for {d} turns over at most {d} cells, gone in {d}\n", .{ hiding, most, turns });
+    try std.testing.expect(hiding >= 4 and hiding < turns and most >= 9);
 }
 
 test "steam scalds for a little fire damage, less in water, none to the fireproof" {

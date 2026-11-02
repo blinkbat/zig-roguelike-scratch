@@ -198,7 +198,7 @@ pub const Act = enum {
     pub fn aimable(a: Act, lv: *const grid.Level, from: mathx.P, to: mathx.P) bool {
         return switch (a) {
             inline else => |t| if (comptime reticle(t)) |r| switch (r) {
-                .bow => bow.aimable(lv, from, to),
+                .bow => bow.aimable(lv, from, to, t.reach()),
                 .leap, .swing, .rush => module(t).?.aimable(lv, from, to),
                 .ground => grid.Level.inside(to) and mathx.dist(from, to) <= t.reach() and lv.walkable(to) and lv.isLit(to) and grid.litLine(lv, from, to),
             } else unreachable,
@@ -602,6 +602,22 @@ test "arrows scale as ranged, bolts and novas as spells, swings and rushes as me
         .frost_vial = .spell,
     });
     for (ACTS) |a| try std.testing.expectEqual(want.get(a), a.attack());
+}
+
+test "arrows reach the bow's five tiles; each bolt reaches its own, and aims no further" {
+    const lv = grid.openFloor();
+    const from = mathx.P{ .x = 20, .y = 20 };
+    var n: usize = 0;
+    for (ACTS) |a| {
+        if (a.reticle() != .bow) continue;
+        const reach = a.reach();
+        try std.testing.expectEqual(a.bolt() == null, reach == bow.RANGE);
+        try std.testing.expect(a.aimable(&lv, from, from.add(.{ .x = reach, .y = 0 })));
+        try std.testing.expect(!a.aimable(&lv, from, from.add(.{ .x = reach + 1, .y = 0 })));
+        n += 1;
+    }
+    try std.testing.expectEqual(@as(i32, 5), bow.RANGE);
+    std.debug.print("missile reach: {d} acts; arrows {d}, spark {d}, fireball {d}, chain lightning {d}, frost vial {d}\n", .{ n, bow.RANGE, Act.spark.reach(), Act.fireball.reach(), Act.chain_lightning.reach(), Act.frost_vial.reach() });
 }
 
 test "each afflicting skill's stated chance is what its roll lands" {

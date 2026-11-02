@@ -229,7 +229,7 @@ pub fn entered(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     const h = g.sim.heroActor() orelse return;
     const direction = h.tactics.overwatch orelse return;
-    if (a.veiled() or !rules.covered(h.at, direction, a.at) or !bow.aimable(&g.sim.lv, h.at, a.at)) return;
+    if (a.veiled() or !rules.covered(h.at, direction, a.at) or !bow.aimable(&g.sim.lv, h.at, a.at, rules.Overwatch.RANGE)) return;
     const flight = bow.fly(&g.sim.lv, h.at, a.at);
     if (!flight.hits(id)) return;
     h.tactics.overwatch = null;
@@ -403,7 +403,7 @@ test "tactical barrier selects endpoints without spending then blocks paths unti
     const middle = P{ .x = 22, .y = 20 };
     try std.testing.expect(g.sim.lv.hasBarrier(middle));
     try std.testing.expect(!g.sim.lv.walkable(middle));
-    try std.testing.expect(bow.aimable(&g.sim.lv, from, .{ .x = 24, .y = 20 }));
+    try std.testing.expect(bow.aimable(&g.sim.lv, from, .{ .x = 24, .y = 20 }, bow.RANGE));
     try std.testing.expect(grid.clearLine(&g.sim.lv, from, .{ .x = 24, .y = 20 }));
     try std.testing.expectEqual(@as(usize, 1), bow.fly(&g.sim.lv, from, .{ .x = 24, .y = 20 }).len);
     try std.testing.expect(g.sim.lv.isLit(.{ .x = 24, .y = 20 }));

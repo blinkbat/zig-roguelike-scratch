@@ -128,7 +128,7 @@ pub const Owed = struct {
 pub const ReactionOutcome = union(enum) { miss, hit: fx.ActorImpact };
 pub const Reaction = struct { from: P, flight: ?bow.Flight, outcome: ReactionOutcome, recovery: ?fx.After = null };
 
-/// What a foe's sweep struck besides the hero, landing with its blow on the hero.
+/// A foe's sweep, drawn round it, and what it struck besides the hero, landing with its blow on the hero.
 pub const Swept = struct {
     hit: [actor.SWEEP_CELLS]fx.Impact = undefined,
     n: usize = 0,
@@ -163,7 +163,7 @@ pub const Presentation = struct {
     split_from: [actor.MAX]?usize = @splat(null),
     /// Indexed by pool slot: gold kept out of its drop until that death is drawn.
     dropped_gold: [actor.MAX]i32 = @splat(0),
-    /// Pool slots of mimics killed in their chests, each drawn as its chest until its death is.
+    /// Pool slots of mimics struck or killed in their chests, each drawn as its chest until that blow or death is.
     masked: std.StaticBitSet(actor.MAX) = .initEmpty(),
     /// Pool slots drawn underwater; each takes the simulation's depth once its `dives` runs out.
     under: std.StaticBitSet(actor.MAX) = .initEmpty(),
@@ -270,7 +270,7 @@ pub const Presentation = struct {
     pub fn recordDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId, death: rewards.Death) void {
         const i = target.slot().index;
         self.dropped_gold[i] = death.gold;
-        self.masked.setValue(i, death.unmasked);
+        if (death.unmasked) self.masked.set(i);
         self.recordFright(sim, target.slot(), death.frightened);
         self.befall(sim, i, death.caught);
     }
@@ -319,7 +319,7 @@ pub const Presentation = struct {
     }
 
     pub fn recordSweep(self: *Presentation, by: actor.ActorId, swept: Swept) void {
-        if (swept.n > 0) self.owed[by.slot().index].swept = swept;
+        self.owed[by.slot().index].swept = swept;
     }
 
     pub fn recordKnock(self: *Presentation, by: actor.ActorId, from: P, to: P) void {
@@ -634,7 +634,7 @@ pub const Presentation = struct {
                 if (b.seq > self.pictured[i].seq) self.pictured[i] = b;
             }
             if (!a.alive and !self.pictured[i].down()) dying = true;
-            if (self.pictured[i].down()) self.masked.unset(i);
+            if (self.pictured[i].down() or (a.alive and !self.fx.pending(i))) self.masked.unset(i);
             if (self.dives[i] == null) self.under.setValue(i, a.submerged);
             const from = self.split_from[i] orelse continue;
             if (self.fx.revealing(i) or self.split_from[from] != null) continue;
@@ -747,7 +747,10 @@ pub const Presentation = struct {
             }
             if (seen) self.holdUntil(hits);
         }
-        if (owed.swept) |*sw| for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h, .{ .from = a.at, .wait = hits });
+        if (owed.swept) |*sw| {
+            if (shown) self.fx.sweep(hits, mathx.centre(a.at));
+            for (sw.hit[0..sw.n]) |h| self.strike(sim, gas, h, .{ .from = a.at, .wait = hits });
+        }
         if (owed.thorns) |h| {
             self.strike(sim, gas, .{ .actor = .{ .slot = .fromIndex(i), .at = a.at, .lethal = h.kill, .after = h.after } }, .{ .from = hero_at, .wait = hits });
             if (h.recovery) |after| self.recordRecovery(sim, hits, after);

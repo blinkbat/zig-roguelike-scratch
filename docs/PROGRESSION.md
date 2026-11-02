@@ -175,7 +175,7 @@ Charge and Shield Bash cost 3 mana; Cleave starts learned and costs 2. Spark's b
 is 2-4, retaining its 2-mana cost and 50% base stun chance.
 
 Every hero and foe has separate temporary resistance meters for stun, burn, bleed, chill,
-pin, shock, sunder, blind, confusion and fright. A successful application adds 25 percentage points, up to 100%; each meter clears
+pin, shock, sunder, blind, confusion, enfeeble, maim and fright. A successful application adds 25 percentage points, up to 100%; each meter clears
 after five spent turns without a successful reapplication. Failed attempts do not refresh
 the timer. Idle frames and free actions never age these meters. Innate
 stun resistance adds to buildup: beefy pib starts at 75%, so one landed stun temporarily
@@ -184,11 +184,15 @@ other foes. Slime halves inherit meters and bleed strength; doors and saves pres
 The HUD shows an inspectable resistance icon and meter, and wounded foes show a slim gold
 bar for their highest current buildup below their life bar.
 
-Four afflictions have rules but no source yet. Each lasts a number of the body's own turns. Shock (3 turns) makes the
-next hit that deals damage deal 50% more, rounded up, and is spent on it. Sunder (4 turns from the latest stack) takes
+Six afflictions last a number of the body's own turns; only shock has a source yet. Shock (3 turns) makes the
+next hit that deals damage deal 50% more, rounded up, and is spent on it. Lightning landing in deep water or shallows,
+striking a wading body or none, shocks every grounded body, hero included, in the water joined to that cell within
+2 cells. Sunder (4 turns from the latest stack) takes
 10 points of armour per stack, up to 3 stacks, and its stacks all fall away together. Blindness (3 turns) limits sight
 to adjacent cells: a blinded foe neither notices nor hunts a hero farther away. Confusion (3 turns) sends half of all
 moves a random way, gas or not; a confused hero strays only onto moves that would also spend the turn, bumps included.
+Enfeeble (3 turns) makes the body's blows deal 30% less, rounded up. Maim (4 turns) makes every second step cost the
+body its next turn.
 
 The expanded item enum and updated passive grants change the save fingerprint;
 older saves are rejected by the existing compatibility check.

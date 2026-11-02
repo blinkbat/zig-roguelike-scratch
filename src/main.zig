@@ -102,6 +102,8 @@ test {
     _ = @import("play/sunder.zig");
     _ = @import("play/blind.zig");
     _ = @import("play/confusion.zig");
+    _ = @import("play/enfeeble.zig");
+    _ = @import("play/maim.zig");
     _ = @import("play/terrain.zig");
     _ = @import("play/bow.zig");
     _ = @import("play/damage.zig");

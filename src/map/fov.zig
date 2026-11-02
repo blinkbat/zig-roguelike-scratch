@@ -50,10 +50,19 @@ const Sight = struct {
     fn mark(s: Sight, p: P) void {
         s.lv.light(p);
     }
+
+    fn stops(_: Sight, lv: *const grid.Level, p: P) bool {
+        return lv.hidesBeyond(p);
+    }
 };
 
+/// The terrain alone: smoke shades no burst.
 const Into = struct {
     out: *[grid.CELLS]bool,
+
+    fn stops(_: Into, lv: *const grid.Level, p: P) bool {
+        return lv.at(p).blind();
+    }
 
     fn mark(s: Into, p: P) void {
         if (!grid.Level.inside(p)) return;
@@ -79,7 +88,7 @@ fn scan(lv: *const grid.Level, sink: anytype, q: Quad, row_in: Row, radius: i32)
     const max_col = mathx.roundTiesDown(d * row.end);
     while (col <= max_col) : (col += 1) {
         const p = q.at(row.depth, col);
-        const wall = lv.at(p).blind();
+        const wall = sink.stops(lv, p);
         if (mathx.reaches(q.origin, p, @floatFromInt(radius))) {
             if (wall or symmetric(row, col)) sink.mark(p);
         }

@@ -1031,12 +1031,14 @@ pub const CAUSTIC_BLOAT = rgb(0xbf40d9);
 pub const GAS = rgb(0xd0609a);
 pub const HEALING_GAS = rgb(0x2ed6c0);
 pub const STEAM = rgb(0xe6e8ea);
+pub const SMOKE = rgb(0x5a5652);
 
 pub fn gasInk(g: grid.Gas) rl.Color {
     return switch (g) {
         .caustic => GAS,
         .healing => HEALING_GAS,
         .steam => STEAM,
+        .smoke => SMOKE,
     };
 }
 
@@ -1049,6 +1051,7 @@ const GORE_A: u8 = 220;
 pub const CONTACT = rl.Color{ .r = 255, .g = 244, .b = 214, .a = 180 };
 pub const JUKE_TRAIL = rl.Color{ .r = 196, .g = 212, .b = 218, .a = 140 };
 pub const JUKE_DUST = rl.Color{ .r = 184, .g = 161, .b = 125, .a = 170 };
+pub const SWEEP = rl.Color{ .r = 232, .g = 226, .b = 208, .a = 200 };
 pub const WATER_DROP = rl.Color{ .r = 166, .g = 197, .b = 242, .a = 150 };
 pub const NET = rgb(0xd6c496);
 pub const RAIN = rgb(0xc4d0e2);
@@ -1078,6 +1081,8 @@ pub const SHOCK = rgb(0xb48cff);
 pub const SUNDER = rgb(0xb5652e);
 pub const BLIND = rgb(0x8a96a3);
 pub const CONFUSION = rgb(0x9ad46b);
+pub const ENFEEBLE = rgb(0xa58bb8);
+pub const MAIM = rgb(0xc9805e);
 pub const FEAR = rgb(0xe39bc4);
 pub const WARD = rgb(0x6fa8f0);
 pub const MAGIC = WARD;
@@ -1137,6 +1142,8 @@ pub fn ailmentInk(k: resilience.Kind) rl.Color {
         .sunder => SUNDER,
         .blind => BLIND,
         .confusion => CONFUSION,
+        .enfeeble => ENFEEBLE,
+        .maim => MAIM,
         .fright => FEAR,
     };
 }

@@ -12,6 +12,7 @@ pub const COST: i32 = 5;
 pub const BLAST: i32 = 1;
 pub const VERB = "blasts";
 pub const BOLT = "fireball";
+pub const BOLT_RANGE: i32 = 6;
 pub const TAKES = burning.TAKES;
 pub const ELEMENT: damage.Element = .fire;
 pub const DESCRIPTION = std.fmt.comptimePrint("A fire bolt bursts on impact, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), burning.BURN_NOTE });

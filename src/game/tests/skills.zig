@@ -149,7 +149,7 @@ test "skills cannot start a second turn while the first is still being drawn" {
 test "glacial shot spends only on confirmation and bursts at the first body with delayed chill and cone damage" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{
+    harness.arena(g, .{ .x = 21, .y = 20 }, &.{
         .{ .x = 26, .y = 20 },
         .{ .x = 27, .y = 19 },
         .{ .x = 28, .y = 20 },
@@ -200,7 +200,7 @@ test "glacial shot spends only on confirmation and bursts at the first body with
 test "glacial shot uses an intervening body or barrel and an empty shot has no cone" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    const from = P{ .x = 20, .y = 20 };
+    const from = P{ .x = 23, .y = 20 };
     harness.arena(g, from, &.{ .{ .x = 24, .y = 20 }, .{ .x = 28, .y = 20 } });
     const near = g.sim.pool.get(2).?;
     near.resists.set(.cold, 100);
@@ -235,7 +235,8 @@ test "glacial shot uses an intervening body or barrel and an empty shot has no c
 test "glacial splash beyond sight does damage without naming the unseen foe in the log" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 29, .y = 20 }});
+    harness.arena(g, .{ .x = 25, .y = 20 }, &.{.{ .x = 29, .y = 20 }});
+    g.sim.outdoors = false;
     const far = harness.spawnAt(g, .bloat, .{ .x = 31, .y = 20 }, false);
     harness.toughenFoes(g);
     game.settle(g);
@@ -305,7 +306,7 @@ test "glacial chill and its cadence follow slime splits without hitting newborn 
 test "burning arrow spends mana only on confirmation and shows burning when its hit lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 28, .y = 20 }});
+    harness.arena(g, .{ .x = 23, .y = 20 }, &.{.{ .x = 28, .y = 20 }});
     const rat = g.sim.pool.get(2).?;
     harness.toughen(rat);
     g.pic.catchUp(&g.sim);
@@ -342,7 +343,7 @@ test "burning arrow spends mana only on confirmation and shows burning when its 
 test "burning arrow honors fire resistance, refuses insufficient mana and uses the first body in its path" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 24, .y = 20 }, .{ .x = 27, .y = 20 } });
+    harness.arena(g, .{ .x = 22, .y = 20 }, &.{ .{ .x = 24, .y = 20 }, .{ .x = 27, .y = 20 } });
     const rat = g.sim.pool.get(2).?;
     rat.resists.set(.fire, 100);
     g.sim.mana = burning.COST - 1;
@@ -799,7 +800,7 @@ test "smart aim ignores hidden interception until the shot is confirmed" {
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
     const hidden = P{ .x = 23, .y = 20 };
-    const to = P{ .x = 26, .y = 20 };
+    const to = P{ .x = 25, .y = 20 };
     const Interceptor = enum { body, barrel };
     for (std.enums.values(Interceptor)) |kind| {
         harness.arena(g, from, &.{to});
@@ -934,11 +935,11 @@ test "the projectile reticle can aim at walls while staying within range" {
 test "two arrows kill a rat at range, and the first wakes it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
     harness.confirmUse(g, .shoot);
     const r = g.sim.pool.get(2).?;
     try std.testing.expect(r.awake and r.hp > 0 and r.hp <= actor.row(.rat).hp - bow.BASE.lo);
-    try std.testing.expectEqual(@as(i32, 26), r.at.x);
+    try std.testing.expectEqual(@as(i32, 24), r.at.x);
     harness.confirmUse(g, .shoot);
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(2));
     try std.testing.expectEqual(@as(usize, 1), g.sim.kills);
@@ -1053,7 +1054,7 @@ test "live skill tooltips include equipped damage, ranks and the actual targetin
     var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
     const tip = overlay.tipOf(g, .{ .slot = 0 }, &title, &body).?;
-    try std.testing.expect(std.mem.indexOf(u8, tip.body, "Range: 9 cells") != null);
+    try std.testing.expect(std.mem.indexOf(u8, tip.body, "Range: 5 cells") != null);
     try std.testing.expect(std.mem.indexOf(u8, tip.body, "Physical damage: 2-6") != null);
     try std.testing.expectEqualStrings("Shoot", tip.title);
     try std.testing.expect(std.mem.startsWith(u8, tip.body, skillbar.Act.shoot.desc()));
@@ -1319,7 +1320,7 @@ test "a wizard's blink lands further than juke and takes a turn" {
 test "a pinning shot holds a chasing rat to its cell for two to four of its turns, and a pinned rat still bites" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
     const rat = g.sim.pool.get(2).?;
     harness.wakeFoes(g);
     harness.toughen(rat);
@@ -1350,7 +1351,7 @@ test "a pinning shot holds a chasing rat to its cell for two to four of its turn
 test "a barbed arrow always opens a bleed on a body it leaves alive" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 26, .y = 20 }});
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
     const rat = g.sim.pool.get(2).?;
     harness.toughen(rat);
     harness.use(g, .barbed_arrow);
@@ -1475,6 +1476,62 @@ test "a fireball striking a foe at a lake's edge boils the water into steam, whi
     }
     std.debug.print("a fireball at a lake's edge: its steam gone {d} turns after the blast\n", .{turns});
     try std.testing.expect(turns > 0);
+}
+
+test "fire landing on open water with no foe in it still boils it: a fireball's blast and a burning arrow's cell" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 24, .y = 20 };
+    var boiled: [2]usize = undefined;
+    for ([_]heroes.Class{ .wizard, .archer }, [_]skillbar.Act{ .fireball, .burning_arrow }, &boiled) |c, act, *n| {
+        harness.heroArena(g, c, .{ .x = 20, .y = 20 }, &.{});
+        var lake = grid.Cells.around(at, 2);
+        while (lake.next()) |p| g.sim.lv.set(p, .water);
+        game.castSight(g, .{ .x = 20, .y = 20 });
+        harness.aimAt(g, act, at);
+        try std.testing.expect(g.mode != .aim);
+        try std.testing.expect(harness.logged(g, gas.STEAM_NAME));
+        n.* = grid.CELLS - std.mem.count(u16, &g.sim.lv.steam, &.{0});
+    }
+    try std.testing.expect(boiled[0] > boiled[1] and boiled[1] > 0);
+    std.debug.print("fire on an empty lake, a turn's spread on: a fireball's steam over {d} cells, a burning arrow's over {d}\n", .{ boiled[0], boiled[1] });
+}
+
+test "a spark landing on empty water shocks the bodies wading in it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
+    var x: i32 = 23;
+    while (x <= 26) : (x += 1) g.sim.lv.set(.{ .x = x, .y = 20 }, .shallows);
+    const id = harness.spawnAt(g, .rat, .{ .x = 25, .y = 20 }, false);
+    game.castSight(g, .{ .x = 20, .y = 20 });
+    harness.aimAt(g, .spark, .{ .x = 23, .y = 20 });
+    try std.testing.expectEqual(actor.row(.rat).hp, g.sim.pool.get(id).?.hp);
+    try std.testing.expect(g.sim.pool.get(id).?.shock.turns > 0);
+    std.debug.print("a spark into empty shallows: the rat 2 cells along them shocked, unhurt\n", .{});
+}
+
+test "an arrow or bolt loosed at a closed chest strikes the mimic in it, flinging it open as the blow lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 23, .y = 20 };
+    for ([_]heroes.Class{ .archer, .wizard }, [_]skillbar.Act{ .shoot, .spark }) |c, act| {
+        harness.heroArena(g, c, .{ .x = 20, .y = 20 }, &.{});
+        const id = harness.spawnAt(g, .mimic, at, false);
+        const under = g.sim.pool.get(id).?.under;
+        try std.testing.expect(g.pic.mimicAt(&g.sim, at));
+        harness.aimAt(g, act, at);
+        const m = g.sim.pool.get(id).?;
+        try std.testing.expect(m.hp < m.max and !m.disguised and m.awake);
+        try std.testing.expectEqual(under, g.sim.lv.at(at));
+        try std.testing.expect(harness.logged(g, "The chest is a mimic!"));
+        try std.testing.expect(g.pic.mimicAt(&g.sim, at) and m.at.eq(at));
+        const t = harness.framesUntil(g, actor.Pool.slot(id), harness.flashing);
+        harness.drawnOut(g);
+        try std.testing.expect(!g.pic.mimicAt(&g.sim, at));
+        try std.testing.expect(t > 0);
+        std.debug.print("{s} at a mimic's chest: struck for {d}, drawn as its chest, unmoved, until the blow lands {d:.3} s in\n", .{ act.name(), m.max - m.hp, t });
+    }
 }
 
 test "chain lightning leaps from the struck foe to two more, each within three tiles of the last" {
@@ -1783,23 +1840,23 @@ test "piercing shot strikes every foe in its line, each as the arrow reaches it,
     harness.heroArena(g, .archer, from, &.{});
     g.sim.growth.ranks.set(.piercing_shot, 1);
     const near = harness.spawnAt(g, .rat, .{ .x = 22, .y = 20 }, true);
-    const far = harness.spawnAt(g, .rat, .{ .x = 26, .y = 20 }, true);
-    const beyond = harness.spawnAt(g, .rat, .{ .x = 29, .y = 20 }, true);
+    const far = harness.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, true);
+    const beyond = harness.spawnAt(g, .rat, .{ .x = 26, .y = 20 }, true);
     for ([_]u16{ near, far, beyond }) |id| harness.toughen(g.sim.pool.get(id).?);
-    g.sim.lv.putBarrel(.{ .x = 28, .y = 20 });
+    g.sim.lv.putBarrel(.{ .x = 25, .y = 20 });
     game.settle(g);
     harness.aimAt(g, .piercing_shot, .{ .x = 22, .y = 20 });
     try std.testing.expect(g.sim.pool.get(near).?.hp < harness.TEST_HP);
     try std.testing.expect(g.sim.pool.get(far).?.hp < harness.TEST_HP);
     try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(beyond).?.hp);
-    try std.testing.expect(!g.sim.lv.hasBarrel(.{ .x = 28, .y = 20 }));
+    try std.testing.expect(!g.sim.lv.hasBarrel(.{ .x = 25, .y = 20 }));
     const shot = g.pic.shot.?;
-    try std.testing.expectEqual(@as(usize, 8), shot.flight.len);
+    try std.testing.expectEqual(@as(usize, bow.RANGE), shot.flight.len);
     g.pic.stepGlide(&g.sim, g.cloud, 0);
-    g.pic.advance(&g.sim, shot.lands() * 2 / 8 + 0.001);
+    g.pic.advance(&g.sim, shot.lands() * 2 / bow.RANGE + 0.001);
     try std.testing.expectEqual(g.sim.pool.get(near).?.hp, g.pic.pictured[actor.Pool.slot(near)].hp);
     try std.testing.expectEqual(harness.TEST_HP, g.pic.pictured[actor.Pool.slot(far)].hp);
     harness.drawnOut(g);
     try std.testing.expectEqual(g.sim.pool.get(far).?.hp, g.pic.pictured[actor.Pool.slot(far)].hp);
-    std.debug.print("piercing shot: 2 rats struck in an 8-cell flight, the near one pictured first; the barrel at 8 shields the rat behind it\n", .{});
+    std.debug.print("piercing shot: 2 rats struck in a {d}-cell flight, the near one pictured first; the barrel at {d} shields the rat behind it\n", .{ bow.RANGE, bow.RANGE });
 }

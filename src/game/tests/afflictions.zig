@@ -6,6 +6,8 @@ const blind = @import("../../play/blind.zig");
 const confusion = @import("../../play/confusion.zig");
 const shock = @import("../../play/shock.zig");
 const sunder = @import("../../play/sunder.zig");
+const enfeeble = @import("../../play/enfeeble.zig");
+const maim = @import("../../play/maim.zig");
 const fx = @import("../../gfx/fx.zig");
 const hud = @import("../../ui/hud.zig");
 const format = @import("../../save_format.zig");
@@ -174,9 +176,11 @@ test "every affliction shows on the pictured hero and the HUD, worn down by the 
     sunder.afflict(hero, &g.sim.rng);
     blind.afflict(hero, &g.sim.rng);
     confusion.afflict(hero, &g.sim.rng);
+    enfeeble.afflict(hero, &g.sim.rng);
+    maim.afflict(hero, &g.sim.rng);
     g.pic.catchUp(&g.sim);
-    const statuses = [_]fx.Status{ .shocked, .sundered, .blinded, .confused };
-    const turns = [_]u8{ shock.TURNS, sunder.TURNS, blind.TURNS, confusion.TURNS };
+    const statuses = [_]fx.Status{ .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed };
+    const turns = [_]u8{ shock.TURNS, sunder.TURNS, blind.TURNS, confusion.TURNS, enfeeble.TURNS, maim.TURNS };
     var buf: hud.Shown = undefined;
     try std.testing.expectEqualSlices(fx.Status, &statuses, hud.shownStatuses(g.pic.heroShown(&g.sim).?.status, &buf));
     combat.endTurn(g);
@@ -204,6 +208,8 @@ test "afflictions survive a save and load, and an impossible sunder is refused" 
     hero.sunder = .{ .stacks = 2, .turns = 3 };
     hero.blind.turns = 1;
     hero.confusion.turns = 3;
+    hero.enfeeble.turns = 2;
+    hero.maim = .{ .turns = 3, .limp = true };
     const back = try game.boot(alloc);
     defer game.shut(alloc, back);
     game.begin(back, 2);
@@ -218,12 +224,115 @@ test "afflictions survive a save and load, and an impossible sunder is refused" 
     try std.testing.expectEqual(hero.sunder, loaded.sunder);
     try std.testing.expectEqual(hero.blind, loaded.blind);
     try std.testing.expectEqual(hero.confusion, loaded.confusion);
+    try std.testing.expectEqual(hero.enfeeble, loaded.enfeeble);
+    try std.testing.expectEqual(hero.maim, loaded.maim);
     hero.sunder.stacks = sunder.MOST + 1;
     bytes.clearRetainingCapacity();
     try sealed(g, &bytes);
     try std.testing.expectError(error.Damaged, format.read(bytes.items, back, map));
     try std.testing.expectEqual(@as(u8, 2), back.sim.heroActor().?.sunder.stacks);
-    std.debug.print("afflictions: shock, sunder, blind and confusion round-trip; {d} sunder stacks refused before load\n", .{sunder.MOST + 1});
+    hero.sunder.stacks = 2;
+    hero.maim = .{ .limp = true };
+    bytes.clearRetainingCapacity();
+    try sealed(g, &bytes);
+    try std.testing.expectError(error.Damaged, format.read(bytes.items, back, map));
+    std.debug.print("afflictions: shock, sunder, blind, confusion, enfeeble and maim round-trip; {d} sunder stacks and a limp with no maim refused before load\n", .{sunder.MOST + 1});
+}
+
+test "an enfeebled body's blows deal 30% less, rounded up, on either side" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, FROM, &.{.{ .x = 23, .y = 20 }});
+    harness.setLife(g.sim.pool.get(2).?, 50, 50);
+    const blow = attacks.Roll{ .dmg = 10, .hit_checked = true };
+    enfeeble.afflict(g.sim.heroActor().?, &g.sim.rng);
+    try std.testing.expectEqual(@as(i32, 7), attacks.resolve(&g.sim, .fromInt(2), blow, .chosen).?.hit.damage.dmg);
+
+    var lost: [2]i32 = undefined;
+    for ([_]bool{ false, true }, &lost) |weak, *out| {
+        harness.arena(g, FROM, &.{});
+        harness.toughen(g.sim.heroActor().?);
+        const id = harness.spawnAt(g, .mimic, EAST, true);
+        g.sim.pool.get(id).?.unmask(&g.sim.lv);
+        if (weak) enfeeble.afflict(g.sim.pool.get(id).?, &g.sim.rng);
+        g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
+        combat.endTurn(g);
+        out.* = harness.TEST_HP - g.sim.heroActor().?.hp;
+    }
+    try std.testing.expect(lost[0] > 0);
+    try std.testing.expectEqual(enfeeble.weaken(true, lost[0]), lost[1]);
+    std.debug.print("enfeeble: the archer's 10-damage blow deals 7; a mimic's bite of {d} deals {d} enfeebled\n", .{ lost[0], lost[1] });
+}
+
+test "a maimed foe loses a turn to every second step, closing on the hero a step slower over its four turns" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const start = FROM.add(.{ .x = 7, .y = 0 });
+    var gap: [2][maim.TURNS]i32 = undefined;
+    for ([_]bool{ false, true }, &gap) |maimed, *row| {
+        harness.arena(g, FROM, &.{});
+        const id = harness.spawnAt(g, .rat, start, true);
+        if (maimed) maim.afflict(g.sim.pool.get(id).?, &g.sim.rng);
+        for (row) |*d| {
+            combat.endTurn(g);
+            d.* = mathx.dist(g.sim.pool.get(id).?.at, FROM);
+        }
+        if (maimed) try std.testing.expectEqualDeep(maim.Maim{}, g.sim.pool.get(id).?.maim);
+    }
+    try std.testing.expectEqualSlices(i32, &.{ 6, 5, 4, 3 }, &gap[0]);
+    try std.testing.expectEqualSlices(i32, &.{ 6, 5, 5, 4 }, &gap[1]);
+    std.debug.print("maimed rat: {any} cells off over {d} turns against {any} unmaimed\n", .{ gap[1], maim.TURNS, gap[0] });
+}
+
+test "a maimed hero's second step costs its next turn, which passes on its own" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, FROM, &.{});
+    const hero = g.sim.heroActor().?;
+    maim.afflict(hero, &g.sim.rng);
+    game.heroStep(g, .e, 0);
+    try std.testing.expect(!hero.clock.owes());
+    harness.drawnOut(g);
+    game.heroStep(g, .e, 0);
+    try std.testing.expect(hero.clock.owes());
+    try std.testing.expect(harness.logged(g, maim.LIMPS));
+    const minutes = g.sim.clock;
+    harness.drawnOut(g);
+    harness.idle(g);
+    try std.testing.expect(!g.sim.heroActor().?.clock.owes());
+    try std.testing.expect(!std.meta.eql(minutes, g.sim.clock));
+    try std.testing.expectEqual(FROM.add(.{ .x = 2, .y = 0 }), g.sim.heroAt().?);
+    std.debug.print("maimed hero: 2 steps, the second costing the turn after it, which passed unbidden\n", .{});
+}
+
+test "lightning striking a body in water shocks every body wading in the water joined to it within reach, the hero too" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const struck = P{ .x = 24, .y = 20 };
+    const near = P{ .x = 26, .y = 20 };
+    const past = P{ .x = 27, .y = 20 };
+    const apart = P{ .x = 24, .y = 23 };
+    for ([_]bool{ false, true }) |wading| {
+        const hero_at = if (wading) P{ .x = 22, .y = 20 } else FROM;
+        harness.heroArena(g, .wizard, hero_at, &.{});
+        var x: i32 = 22;
+        while (x <= 28) : (x += 1) g.sim.lv.set(.{ .x = x, .y = 20 }, .shallows);
+        if (!wading) g.sim.lv.set(.{ .x = 22, .y = 20 }, .floor);
+        g.sim.lv.set(apart, .shallows);
+        var ids: [4]u16 = undefined;
+        for ([_]P{ struck, near, past, apart }, &ids) |p, *id| {
+            id.* = harness.spawnAt(g, .rat, p, false);
+            harness.toughen(g.sim.pool.get(id.*).?);
+        }
+        game.castSight(g, hero_at);
+        harness.aimAt(g, .spark, struck);
+        try std.testing.expect(g.sim.pool.get(ids[0]).?.hp < harness.TEST_HP);
+        try std.testing.expect(harness.logged(g, shock.CONDUCTS));
+        const shocked = [_]bool{ true, true, false, false };
+        for (ids, shocked) |id, want| try std.testing.expectEqual(want, g.sim.pool.get(id).?.shock.turns > 0);
+        try std.testing.expectEqual(wading, g.sim.heroActor().?.shock.turns > 0);
+    }
+    std.debug.print("conducted spark: the struck rat and one 2 cells along the water shocked; one 3 along and one in other water spared; the hero shocked only wading in it\n", .{});
 }
 
 fn sealed(g: *game.Game, out: *std.ArrayList(u8)) !void {

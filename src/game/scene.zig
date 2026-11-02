@@ -637,9 +637,9 @@ pub fn drawMap(g: *game.Game) void {
                 for (area.slice()) |p| fillCell(c, p, if (a == .fire_wall) look.aimElement(.fire) else look.AIM_PATH);
             },
             .overwatch => if (mathx.toward(from, g.mode.aim.mark)) |d| {
-                var covered = grid.Cells.around(from, bow.RANGE);
+                var covered = grid.Cells.around(from, rules.Overwatch.RANGE);
                 while (covered.next()) |p| {
-                    if (g.sim.lv.isLit(p) and rules.covered(from, d, p) and bow.aimable(&g.sim.lv, from, p)) fillCell(c, p, look.AIM_PATH);
+                    if (g.sim.lv.isLit(p) and rules.covered(from, d, p) and bow.aimable(&g.sim.lv, from, p, rules.Overwatch.RANGE)) fillCell(c, p, look.AIM_PATH);
                 }
             },
             inline else => |a| if (comptime a.sweeps()) {
@@ -768,6 +768,8 @@ fn drawStandingBody(g: *game.Game, b: *const Shown) void {
             .sundered => g.pic.fx.drawSundered(x, y, game.CELL_F, b.pic.sunder.stacks, ink),
             .blinded => g.pic.fx.drawBlinded(x, y, game.CELL_F, ink),
             .confused => g.pic.fx.drawConfused(x, y, game.CELL_F, b.slot, ink),
+            .enfeebled => g.pic.fx.drawEnfeebled(x, y, game.CELL_F, b.slot, ink),
+            .maimed => g.pic.fx.drawMaimed(x, y, game.CELL_F, ink),
             .frightened => g.pic.fx.drawFrightened(x, y, game.CELL_F, b.slot, ink),
             .warded => g.pic.fx.drawWarded(x, y, game.CELL_F, ink),
             .guarding, .unyielding, .steady, .overwatch => {},

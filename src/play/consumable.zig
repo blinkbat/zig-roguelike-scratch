@@ -50,6 +50,7 @@ pub const FrostVial = struct {
     pub const BLAST: i32 = 1;
     pub const VERB = "splashes";
     pub const BOLT = "frost vial";
+    pub const BOLT_RANGE: i32 = 4;
     pub const TAKES = glacial.TAKES;
     pub const ELEMENT: damage.Element = .cold;
     pub const BASE = damage.Base{ .lo = 1, .hi = 3 };

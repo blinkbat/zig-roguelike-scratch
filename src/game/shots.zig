@@ -52,7 +52,7 @@ const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
 
 fn shootCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     const h = game.harness;
-    h.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 25, .y = 19 }, .{ .x = 26, .y = 21 } });
+    h.arena(g, .{ .x = 21, .y = 20 }, &.{ .{ .x = 25, .y = 19 }, .{ .x = 26, .y = 21 } });
     h.grassOver(&g.sim.lv);
     const id = h.spawnAt(g, .bandit_crossbowman, .{ .x = 26, .y = 20 }, true);
     const slot = actor.Pool.slot(id);
@@ -1243,7 +1243,7 @@ fn shootHud(g: *game.Game) !void {
         g.pic.settleResources(&g.sim);
         g.pic.xp_shown = study.xp;
         if (study.ailing) {
-            body.status = .initDefault(0, .{ .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1, .shocked = 2, .sundered = 3, .blinded = 1, .confused = 2 });
+            body.status = .initDefault(0, .{ .bleeding = bleeding.TURNS, .burning = burning.TURNS, .chilled = glacial.TURNS - 1, .shocked = 2, .sundered = 3, .blinded = 1, .confused = 2, .enfeebled = 2, .maimed = 3 });
             body.resilience.meters.set(.stun, .{ .percent = 75, .turns = 4 });
             body.resilience.meters.set(.bleed, .{ .percent = 25, .turns = 5 });
             body.status.set(.resistant, 5);
@@ -2141,7 +2141,7 @@ fn poseRat(g: *game.Game) void {
     for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);
         const d = mathx.dist(p, h.at);
-        if (d < POSE_NEAR or d > POSE_FAR or !bow.aimable(&g.sim.lv, h.at, p) or g.sim.lv.taken(p)) continue;
+        if (d < POSE_NEAR or d > POSE_FAR or !bow.aimable(&g.sim.lv, h.at, p, bow.RANGE) or g.sim.lv.taken(p)) continue;
         g.sim.pool.move(&g.sim.lv, rat, p);
         break;
     }

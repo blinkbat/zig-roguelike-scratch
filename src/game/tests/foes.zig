@@ -11,6 +11,7 @@ const glacial = @import("../../play/glacial.zig");
 const pack = @import("../../play/pack.zig");
 const items = @import("../../play/items.zig");
 const fx = @import("../../gfx/fx.zig");
+const look = @import("../../gfx/look.zig");
 const combat = @import("../combat.zig");
 const attacks = @import("../attacks.zig");
 const harness = @import("../harness.zig");
@@ -268,7 +269,7 @@ test "crossbowman arrows respect terrain bodies containers darkness and diagonal
     var fired: usize = 0;
     for (std.enums.values(Case)) |case| {
         const hero = P{ .x = 20, .y = 20 };
-        const at = P{ .x = if (case == .darkness) 28 else 26, .y = if (case == .diagonal) 26 else 20 };
+        const at = P{ .x = 20 + bow.RANGE, .y = if (case == .diagonal) 20 + bow.RANGE else 20 };
         const middle = P{ .x = 23, .y = 20 };
         harness.arena(g, hero, &.{});
         const id = harness.spawnAt(g, .bandit_crossbowman, at, true);
@@ -372,7 +373,7 @@ test "a crossbowman's stun and chill skip shots while retreat avoids gas and tic
     defer game.shut(std.testing.allocator, g);
     for ([_]bool{ false, true }) |chilled| {
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-        const id = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 26, .y = 20 }, true);
+        const id = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 20 + bow.RANGE, .y = 20 }, true);
         const a = g.sim.pool.get(id).?;
         if (chilled) a.chill = .{ .turns = 2, .phase = glacial.CYCLE - 1 } else a.clock.stun();
         game.settle(g);
@@ -400,7 +401,7 @@ test "crossbowman arrows present separate hits on arrival and stay busy through 
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const near = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 23, .y = 20 }, true);
-    const far = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 20, .y = 27 }, true);
+    const far = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 20, .y = 20 + bow.RANGE }, true);
     game.settle(g);
     const hero = g.sim.heroSlot().?;
     const hp = g.sim.heroActor().?.hp;
@@ -434,7 +435,7 @@ test "crossbowman arrows can be dodged and mana shield harm waits for the arrow"
     defer game.shut(std.testing.allocator, g);
     for ([_]bool{ false, true }) |shielded| {
         harness.heroArena(g, .wizard, .{ .x = 20, .y = 20 }, &.{});
-        const id = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 26, .y = 20 }, true);
+        const id = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 20 + bow.RANGE, .y = 20 }, true);
         if (shielded) g.sim.heroActor().?.ward.turns = 2;
         game.settle(g);
         const hp = g.sim.heroActor().?.hp;
@@ -770,6 +771,44 @@ test "a beefy pib's landed blow stuns the archer about a quarter of the time, an
     try std.testing.expect(harness.aboutRateOf(stunned, landed, mathx.fraction(actor.row(.beefy_pib).blow.strike.stuns)));
 }
 
+fn sweepMotes(g: *const game.Game) usize {
+    var n: usize = 0;
+    for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and std.meta.eql(m.col, look.SWEEP));
+    return n;
+}
+
+test "a beefy pib's sweep whirls round it as the sweep lands, with nothing beside it but the archer, and its plain blows do not" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const beefy = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
+    g.sim.unkillable = true;
+    harness.use(g, .wait);
+    try std.testing.expectEqual(@as(usize, 0), sweepMotes(g));
+    var t: f32 = 0;
+    while (sweepMotes(g) == 0 and t < 1) : (t += harness.TEST_DT) {
+        g.st = .{};
+        game.update(g, harness.TEST_DT);
+    }
+    const whirled = sweepMotes(g);
+    var faded: f32 = 0;
+    while (sweepMotes(g) > 0 and faded < 1) : (faded += harness.TEST_DT) {
+        g.st = .{};
+        game.update(g, harness.TEST_DT);
+    }
+    try std.testing.expectEqual(@as(usize, 0), sweepMotes(g));
+    harness.drawnOut(g);
+    for (0..actor.row(.beefy_pib).sweep_every - 1) |_| {
+        harness.calm(g);
+        harness.use(g, .wait);
+        harness.drawnOut(g);
+        try std.testing.expectEqual(@as(usize, 0), sweepMotes(g));
+    }
+    try std.testing.expect(g.sim.pool.get(beefy) != null);
+    std.debug.print("a beefy pib's sweep: {d} streaks {d:.3} s in, the bump lands at {d:.3} s; none from its next {d} blows\n", .{ whirled, t, game.BUMP_LANDS, actor.row(.beefy_pib).sweep_every - 1 });
+    try std.testing.expect(whirled > 0 and t >= game.BUMP_LANDS - harness.TEST_TOL);
+}
+
 test "a foe a beefy pib sweeps is drawn struck as the sweep lands, not before" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -981,7 +1020,7 @@ test "a bog leech swims unseen to the shore, surfaces beside the hero and is str
     game.settle(g);
     const slot = actor.Pool.slot(id);
     try std.testing.expect(g.sim.pool.get(id).?.submerged and harness.gone(g, slot));
-    try std.testing.expectEqual(@as(?P, null), bow.pick(&g.sim.lv, &g.sim.pool, from));
+    try std.testing.expectEqual(@as(?P, null), bow.pick(&g.sim.lv, &g.sim.pool, from, bow.RANGE));
     var turns: usize = 0;
     while (g.sim.pool.get(id).?.submerged and turns < 8) : (turns += 1) {
         combat.endTurn(g);
@@ -1080,7 +1119,7 @@ test "an arrow into a submerged leech strikes it unseen: no line names it until 
     try std.testing.expect(harness.logged(g, name));
 }
 
-test "a status taking hold of a disguised mimic names nothing" {
+test "a burning arrow flings a disguised mimic open, so what takes hold of it after is said" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
@@ -1094,12 +1133,13 @@ test "a status taking hold of a disguised mimic names nothing" {
         harness.toughen(g.sim.pool.get(id).?);
         g.sim.rng = mathx.Rng.init(seed);
         combat.arrowHit(g, id, attacks.heroScaled(&g.sim, .burning_arrow, raw), .burning_arrow, .{ .from = from, .wait = 0 });
+        try std.testing.expect(!g.sim.pool.get(id).?.disguised);
         if (g.sim.pool.get(id).?.burn.turns > 0) burned += 1;
         g.sim.pool.get(id).?.burn = .{};
     }
-    std.debug.print("disguised mimic: set alight by {d} of 16 burning arrows, none said\n", .{burned});
-    try std.testing.expect(burned > 0 and g.sim.pool.get(id).?.disguised);
-    try std.testing.expect(!harness.logged(g, actor.row(.mimic).name));
+    std.debug.print("struck mimic: flung open by the first of 16 burning arrows, set alight by {d}, each said\n", .{burned});
+    try std.testing.expect(burned > 0 and harness.logged(g, "The chest is a mimic!"));
+    try std.testing.expect(harness.logged(g, "The mimic " ++ @import("../../play/burning.zig").TAKES));
 }
 
 test "a disguised mimic's afflictions wear off on its turns" {
@@ -1256,6 +1296,7 @@ test "a pyre bloat bursts into flame, setting the bodies beside it burning and n
     try std.testing.expect(g.sim.pool.get(near).?.burn.turns > 0);
     try std.testing.expectEqual(@as(u8, 0), g.sim.pool.get(far).?.burn.turns);
     try std.testing.expect(!g.sim.lv.gassy(at) and !g.sim.lv.scalding(at));
+    try std.testing.expectEqual(gas.SMOKE_BURST, g.sim.lv.volumeAt(.smoke, at));
 }
 
 test "a pyre bloat bursting over a lake boils the water beside it into steam and none further" {

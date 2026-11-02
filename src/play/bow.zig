@@ -7,20 +7,35 @@ const damage = @import("damage.zig");
 
 const P = mathx.P;
 
-pub const RANGE: i32 = 9;
+/// An arrow's reach; a bolt names its own.
+pub const RANGE: i32 = 5;
+/// The furthest any missile flies.
+pub const LONGEST: i32 = 8;
 pub const VERB = "shoots";
 
 pub const BASE = damage.Base{ .lo = 3, .hi = 5 };
 
 pub const Hit = union(enum) { body: u16, barrel: P, plant: P };
 
+comptime {
+    std.debug.assert(RANGE <= LONGEST);
+}
+
 pub const Flight = struct {
-    path: [RANGE]P = undefined,
+    path: [LONGEST]P = undefined,
     len: usize = 0,
+    /// Cells it can fly before it falls.
+    most: usize = LONGEST,
     struck: ?Hit = null,
 
     pub fn impact(f: *const Flight) ?P {
         if (f.struck == null) return null;
+        return f.path[f.len - 1];
+    }
+
+    /// Where it came down, struck or not; none when it never left the bow.
+    pub fn end(f: *const Flight) ?P {
+        if (f.len == 0) return null;
         return f.path[f.len - 1];
     }
 
@@ -42,28 +57,29 @@ pub const Flight = struct {
         return true;
     }
 
-    /// `c` laid on its path toward `to`: whether it stops there, flies on through the dark, or may strike there.
+    /// `c` laid on its path toward `to`: whether it stops short there, flies on through the dark, may strike there, or ends there striking only what stands in it.
     fn enter(f: *Flight, lv: *const grid.Level, c: P, to: P, comptime visible_only: bool) Cell {
-        if (!grid.Level.inside(c) or f.len == f.path.len or lv.hasBarrier(c) or (!c.eq(to) and lv.at(c).blind())) return .stop;
+        if (!grid.Level.inside(c) or f.len == f.most or lv.hasBarrier(c) or (!c.eq(to) and lv.at(c).blind())) return .stop;
         f.path[f.len] = c;
         f.len += 1;
-        if (lv.at(c).halts()) return .stop;
+        if (lv.at(c).halts()) return .last;
         if (visible_only and !lv.isLit(c)) return .unseen;
         return .open;
     }
 };
 
-const Cell = enum { stop, unseen, open };
+/// `last`: a closed chest, which takes the missile whole; a mimic in it is struck.
+const Cell = enum { stop, unseen, open, last };
 
-pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
+pub fn aimable(lv: *const grid.Level, from: P, to: P, reach: i32) bool {
     const d = mathx.dist(from, to);
-    return d >= 1 and d <= RANGE and grid.Level.inside(to) and grid.clearLine(lv, from, to);
+    return d >= 1 and d <= reach and grid.Level.inside(to) and grid.clearLine(lv, from, to);
 }
 
-pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
+pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P, reach: i32) ?P {
     var near = grid.Nearest{ .from = from };
     for (pool.slice()) |a| {
-        if (a.seenFoe(lv) and aimable(lv, from, a.at)) {
+        if (a.seenFoe(lv) and aimable(lv, from, a.at, reach)) {
             const flight = previewAmong(lv, pool, from, a.at);
             if (flight.impact()) |at| if (at.eq(a.at)) {
                 near.offer(a.at);
@@ -71,9 +87,9 @@ pub fn pick(lv: *const grid.Level, pool: *actor.Pool, from: P) ?P {
         }
     }
     if (near.best != null) return near.best;
-    var cells = grid.Cells.around(from, RANGE);
+    var cells = grid.Cells.around(from, reach);
     while (cells.next()) |p| {
-        if (lv.hasBarrel(p) and lv.isLit(p) and aimable(lv, from, p)) near.offer(p);
+        if (lv.hasBarrel(p) and lv.isLit(p) and aimable(lv, from, p, reach)) near.offer(p);
     }
     return near.best;
 }
@@ -95,18 +111,18 @@ fn trace(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, compti
     var f = Flight{};
     var ray = grid.Ray.init(from, to);
     while (ray.next()) |c| {
-        switch (f.enter(lv, c, to, visible_only)) {
+        const cell = f.enter(lv, c, to, visible_only);
+        switch (cell) {
             .stop => break,
             .unseen => continue,
-            .open => {},
+            .open, .last => {},
         }
         const w = lv.who(c);
-        if (w != grid.NO_ONE) {
-            if (veiled(seen, w)) continue;
+        if (w != grid.NO_ONE and !veiled(seen, w)) {
             f.struck = .{ .body = w };
             break;
         }
-        if (f.prop(lv, c)) break;
+        if (cell == .last or f.prop(lv, c)) break;
     }
     return f;
 }
@@ -120,7 +136,7 @@ fn veiled(seen: ?*const actor.Pool, w: u16) bool {
 
 /// The bodies an arrow passes through, nearest first, each with its index along the flight.
 pub const Pierced = struct {
-    flight: Flight = .{},
+    flight: Flight = .{ .most = RANGE },
     body: [RANGE]u16 = undefined,
     step: [RANGE]usize = undefined,
     n: usize = 0,
@@ -143,18 +159,19 @@ fn through(lv: *const grid.Level, seen: ?*const actor.Pool, from: P, to: P, comp
     const f = &out.flight;
     var ray = grid.Ray.init(from, from.add(to.sub(from).scaled(@divFloor(RANGE + d - 1, d))));
     while (ray.next()) |c| {
-        switch (f.enter(lv, c, to, visible_only)) {
+        const cell = f.enter(lv, c, to, visible_only);
+        switch (cell) {
             .stop => break,
             .unseen => continue,
-            .open => {},
+            .open, .last => {},
         }
         const w = lv.who(c);
-        if (w != grid.NO_ONE) {
-            if (veiled(seen, w)) continue;
+        if (w != grid.NO_ONE and !veiled(seen, w)) {
             out.body[out.n] = w;
             out.step[out.n] = f.len - 1;
             out.n += 1;
-        } else if (f.prop(lv, c)) break;
+            if (cell == .last) break;
+        } else if (cell == .last or (w == grid.NO_ONE and f.prop(lv, c))) break;
     }
     if (f.struck == null and out.n > 0) f.struck = .{ .body = out.body[out.n - 1] };
     return out;
@@ -180,18 +197,19 @@ test "a piercing arrow passes every body in its line to full range and stops at 
     var pool = actor.Pool{};
     const from = P{ .x = 10, .y = 10 };
     const near = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 12, .y = 11 }));
-    const far = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 16, .y = 13 }));
+    const far = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 14, .y = 12 }));
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 16, .y = 13 }));
     const p = pierce(&lv, from, .{ .x = 12, .y = 11 });
     try std.testing.expectEqual(@as(usize, RANGE), p.flight.len);
     try std.testing.expectEqualSlices(u16, &.{ near, far }, p.body[0..p.n]);
     try std.testing.expectEqual(@as(usize, 1), p.step[0]);
     try std.testing.expectEqual(@as(?Hit, .{ .body = far }), p.flight.struck);
     try std.testing.expectEqualSlices(P, fly(&lv, from, .{ .x = 12, .y = 11 }).path[0..2], p.flight.path[0..2]);
-    lv.putBarrel(.{ .x = 14, .y = 12 });
+    lv.putBarrel(.{ .x = 13, .y = 11 });
     const stopped = pierce(&lv, from, .{ .x = 12, .y = 11 });
     try std.testing.expectEqualSlices(u16, &.{near}, stopped.body[0..stopped.n]);
-    try std.testing.expectEqual(@as(?Hit, .{ .barrel = .{ .x = 14, .y = 12 } }), stopped.flight.struck);
-    std.debug.print("piercing arrow: {d} cells, {d} bodies passed; a barrel at 4 stops it after {d}\n", .{ p.flight.len, p.n, stopped.n });
+    try std.testing.expectEqual(@as(?Hit, .{ .barrel = .{ .x = 13, .y = 11 } }), stopped.flight.struck);
+    std.debug.print("piercing arrow: {d} cells, {d} bodies passed, the rat past its reach spared; a barrel at 3 stops it after {d}\n", .{ p.flight.len, p.n, stopped.n });
 }
 
 test "an arrow stops on the first body in the line" {
@@ -222,7 +240,7 @@ test "a foe standing in reeds is aimable and the arrow reaches it" {
     lv.set(at, .reeds);
     const rat = pool.spawn(&lv, actor.Actor.of(.rat, at));
     fov.cast(&lv, hero, actor.row(actor.HERO).sight);
-    try std.testing.expect(aimable(&lv, hero, at));
+    try std.testing.expect(aimable(&lv, hero, at, RANGE));
     try std.testing.expectEqual(@as(?Hit, .{ .body = rat }), fly(&lv, hero, at).struck);
 }
 
@@ -235,7 +253,7 @@ test "an arrow flies over water to the rat across it" {
     for (0..3) |k| lv.set(.{ .x = 12 + @as(i32, @intCast(k)), .y = 10 }, .water);
     const rat = pool.spawn(&lv, actor.Actor.of(.rat, at));
     fov.cast(&lv, hero, actor.row(actor.HERO).sight);
-    try std.testing.expect(aimable(&lv, hero, at));
+    try std.testing.expect(aimable(&lv, hero, at, RANGE));
     try std.testing.expectEqual(@as(?Hit, .{ .body = rat }), fly(&lv, hero, at).struck);
 }
 
@@ -279,6 +297,26 @@ test "a closed chest stops an arrow without opening, while an opened chest lets 
     std.debug.print("closed chest intercepts an arrow at 2 cells; opened chest passes it to the foe at 6\n", .{});
 }
 
+test "a mimic in its chest takes the arrow its chest stops, though the preview shows only the chest" {
+    var lv = grid.openFloor();
+    lv.lit = @splat(true);
+    var pool = actor.Pool{};
+    const from = P{ .x = 10, .y = 10 };
+    const at = P{ .x = 13, .y = 10 };
+    const to = P{ .x = 15, .y = 10 };
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, to));
+    const mimic = pool.spawn(&lv, actor.Actor.of(.mimic, at));
+    try std.testing.expect(pool.get(mimic).?.disguised and lv.at(at) == .chest);
+    const shown = previewAmong(&lv, &pool, from, to);
+    try std.testing.expectEqual(@as(?Hit, null), shown.struck);
+    try std.testing.expectEqual(@as(usize, 3), shown.len);
+    const real = fly(&lv, from, to);
+    try std.testing.expectEqual(@as(?Hit, .{ .body = mimic }), real.struck);
+    try std.testing.expectEqualSlices(P, shown.path[0..shown.len], real.path[0..real.len]);
+    try std.testing.expect(pierce(&lv, from, to).flight.hits(mimic));
+    std.debug.print("a disguised mimic {d} cells off: the preview stops at its chest striking nothing, the arrow strikes the mimic\n", .{shown.len});
+}
+
 test "pick suggests an intercepting barrel instead of a foe behind it" {
     var lv = grid.openFloor();
     var pool = actor.Pool{};
@@ -287,9 +325,9 @@ test "pick suggests an intercepting barrel instead of a foe behind it" {
     lv.putBarrel(.{ .x = 32, .y = 30 });
     lv.putBarrel(.{ .x = 30, .y = 30 - RANGE - 1 });
     fov.cast(&lv, hero, actor.row(actor.HERO).sight);
-    try std.testing.expectEqual(@as(?P, .{ .x = 32, .y = 30 }), pick(&lv, &pool, hero));
-    _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 36, .y = 30 }));
-    try std.testing.expectEqual(@as(?P, .{ .x = 32, .y = 30 }), pick(&lv, &pool, hero));
+    try std.testing.expectEqual(@as(?P, .{ .x = 32, .y = 30 }), pick(&lv, &pool, hero, RANGE));
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 34, .y = 30 }));
+    try std.testing.expectEqual(@as(?P, .{ .x = 32, .y = 30 }), pick(&lv, &pool, hero, RANGE));
 }
 
 test "projectile suggestions do not expose hidden interceptors" {
@@ -297,22 +335,23 @@ test "projectile suggestions do not expose hidden interceptors" {
     var pool = actor.Pool{};
     const from = P{ .x = 20, .y = 20 };
     const hidden = P{ .x = 23, .y = 20 };
-    const to = P{ .x = 26, .y = 20 };
+    const to = P{ .x = 25, .y = 20 };
     _ = pool.spawn(&lv, actor.Actor.of(.archer, from));
     _ = pool.spawn(&lv, actor.Actor.of(.rat, to));
     fov.cast(&lv, from, actor.row(actor.HERO).sight);
     lv.lit[grid.Level.idx(hidden)] = false;
-    const clear = pick(&lv, &pool, from);
+    const clear = pick(&lv, &pool, from, RANGE);
+    try std.testing.expectEqual(@as(?P, to), clear);
     const clear_preview = preview(&lv, from, to);
     const rat = pool.spawn(&lv, actor.Actor.of(.rat, hidden));
-    try std.testing.expectEqual(clear, pick(&lv, &pool, from));
+    try std.testing.expectEqual(clear, pick(&lv, &pool, from, RANGE));
     const body_preview = preview(&lv, from, to);
     try std.testing.expectEqual(clear_preview.struck, body_preview.struck);
     try std.testing.expectEqualSlices(P, clear_preview.path[0..clear_preview.len], body_preview.path[0..body_preview.len]);
     try std.testing.expectEqual(@as(?Hit, .{ .body = rat }), fly(&lv, from, to).struck);
     _ = pool.damage(&lv, rat, actor.row(.rat).hp);
     lv.putBarrel(hidden);
-    try std.testing.expectEqual(clear, pick(&lv, &pool, from));
+    try std.testing.expectEqual(clear, pick(&lv, &pool, from, RANGE));
     const barrel_preview = preview(&lv, from, to);
     try std.testing.expectEqual(clear_preview.struck, barrel_preview.struck);
     try std.testing.expectEqualSlices(P, clear_preview.path[0..clear_preview.len], barrel_preview.path[0..barrel_preview.len]);
@@ -327,16 +366,16 @@ test "pick takes the nearest visible rat in range and ignores the dark" {
     var pool = actor.Pool{};
     const hero = P{ .x = 30, .y = 30 };
     _ = pool.spawn(&lv, actor.Actor.of(.archer, hero));
-    _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 36, .y = 30 }));
+    _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 34, .y = 30 }));
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 27, .y = 32 }));
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 30, .y = 30 + RANGE + 1 }));
     const sight = actor.row(actor.HERO).sight;
     fov.cast(&lv, hero, sight);
-    try std.testing.expectEqual(@as(?P, .{ .x = 27, .y = 32 }), pick(&lv, &pool, hero));
+    try std.testing.expectEqual(@as(?P, .{ .x = 27, .y = 32 }), pick(&lv, &pool, hero, RANGE));
     var y: i32 = 25;
     while (y < 36) : (y += 1) lv.set(.{ .x = 28, .y = y }, .wall);
     fov.cast(&lv, hero, sight);
-    try std.testing.expectEqual(@as(?P, .{ .x = 36, .y = 30 }), pick(&lv, &pool, hero));
+    try std.testing.expectEqual(@as(?P, .{ .x = 34, .y = 30 }), pick(&lv, &pool, hero, RANGE));
 }
 
 test "pick takes the rat fewest steps away, not the one nearest as the crow flies" {
@@ -348,23 +387,24 @@ test "pick takes the rat fewest steps away, not the one nearest as the crow flie
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 34, .y = 34 }));
     _ = pool.spawn(&lv, actor.Actor.of(.rat, .{ .x = 34, .y = 27 }));
     fov.cast(&lv, hero, actor.row(actor.HERO).sight);
-    try std.testing.expectEqual(@as(?P, .{ .x = 34, .y = 27 }), pick(&lv, &pool, hero));
+    try std.testing.expectEqual(@as(?P, .{ .x = 34, .y = 27 }), pick(&lv, &pool, hero, RANGE));
 }
 
 test "free projectile aim accepts dark empty and wall marks but cannot aim beyond walls" {
     var lv = grid.openFloor();
     const from = P{ .x = 20, .y = 20 };
-    const mark = P{ .x = 26, .y = 20 };
+    const mark = P{ .x = 20 + RANGE, .y = 20 };
     try std.testing.expect(!lv.isLit(mark));
-    try std.testing.expect(aimable(&lv, from, mark));
-    try std.testing.expectEqual(@as(usize, 6), fly(&lv, from, mark).len);
+    try std.testing.expect(aimable(&lv, from, mark, RANGE));
+    try std.testing.expect(!aimable(&lv, from, mark.add(.{ .x = 1, .y = 0 }), RANGE));
+    try std.testing.expect(aimable(&lv, from, mark.add(.{ .x = 1, .y = 0 }), RANGE + 1));
+    try std.testing.expectEqual(@as(usize, RANGE), fly(&lv, from, mark).len);
     lv.set(.{ .x = 23, .y = 20 }, .wall);
-    try std.testing.expect(!aimable(&lv, from, mark));
-    try std.testing.expect(aimable(&lv, from, .{ .x = 23, .y = 20 }));
+    try std.testing.expect(!aimable(&lv, from, mark, RANGE));
+    try std.testing.expect(aimable(&lv, from, .{ .x = 23, .y = 20 }, RANGE));
     try std.testing.expectEqual(@as(usize, 2), fly(&lv, from, mark).len);
-    try std.testing.expect(!aimable(&lv, from, from));
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 30, .y = 20 }));
-    try std.testing.expect(!aimable(&lv, .{ .x = 1, .y = 1 }, .{ .x = -1, .y = 1 }));
+    try std.testing.expect(!aimable(&lv, from, from, RANGE));
+    try std.testing.expect(!aimable(&lv, .{ .x = 1, .y = 1 }, .{ .x = -1, .y = 1 }, RANGE));
     std.debug.print("free projectile aim: dark and empty cells, wall endpoints, blocked sight, collision, range and map bounds checked\n", .{});
 }
 

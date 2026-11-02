@@ -9,6 +9,7 @@ const resilience = @import("../play/resilience.zig");
 const chronicle = @import("../play/chronicle.zig");
 const skillbar = @import("../play/skillbar.zig");
 const terrain = @import("../play/terrain.zig");
+const enfeeble = @import("../play/enfeeble.zig");
 const simulation = @import("sim.zig");
 const Simulation = simulation.Simulation;
 
@@ -104,9 +105,10 @@ pub fn afflicted(sim: *Simulation, a: *actor.Actor, comptime M: type, lands: boo
     return takes;
 }
 
+/// A mimic still posing as its chest cannot dodge.
 pub fn heroLands(sim: *Simulation, a: *const actor.Actor, origin: chronicle.AttackOrigin) bool {
     const h = sim.heroBody() orelse return false;
-    if (!sim.combatStats(h).misses(sim.combatStats(a), &sim.rng)) return true;
+    if (a.disguised or !sim.combatStats(h).misses(sim.combatStats(a), &sim.rng)) return true;
     sim.sayOf(a, "{s} misses the {s}.", .{ sim.name.text(), actor.row(a.kind).name });
     sim.chronicle.note(.{ .missed = .{ .origin = origin } });
     return false;
@@ -134,6 +136,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
     var r = raw.against(sim.combatStats(a).armour, &sim.rng);
+    r.dmg = enfeeble.weaken(if (sim.heroBody()) |h| h.enfeeble.turns > 0 else false, r.dmg);
     if (r.applied != .shock) r.dmg = a.shock.spend(r.dmg);
     const kind = a.kind;
     const at = a.at;

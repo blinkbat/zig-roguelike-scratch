@@ -24,7 +24,7 @@ const P = mathx.P;
 
 pub fn openAim(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     const hero = run.sim.heroActor() orelse return;
-    const suggested = preferredTarget(run, act, hero.at) orelse (if (act.consumes()) null else bow.pick(&run.sim.lv, &run.sim.pool, hero.at));
+    const suggested = preferredTarget(run, act, hero.at) orelse (if (act.consumes()) null else bow.pick(&run.sim.lv, &run.sim.pool, hero.at, act.reach()));
     if (suggested) |at| return aimAt(run, by, act, hero.at, at);
     if (act.reticle() == .bow) {
         const dx: i32 = if (run.pic.facing[run.sim.heroSlot().?] == .left) -1 else 1;
@@ -469,11 +469,23 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
     } else {
         run.sim.log.say("{s}'s {s} finds nothing.", .{ run.sim.name.text(), act.bolt() orelse "arrow" });
         run.sim.chronicle.note(.{ .missed = .{} });
+        comeDown(run, act, flight, stroke);
     }
     if (act.isArrow()) if (run.sim.heroActor()) |hero| {
         hero.tactics.steady = 0;
     };
     combat.endTurn(run);
+}
+
+/// A missile that struck nothing bursts on no one, but still comes down: fire boils the water its blast would reach, lightning runs through it.
+fn comeDown(run: *game.Game, act: skillbar.Act, flight: bow.Flight, stroke: game.presentation.Stroke) void {
+    const at = flight.end() orelse return;
+    switch (act) {
+        inline else => |action| {
+            if (comptime action.element() == .fire) combat.boil(run, at, if (comptime action.bursts()) skillbar.Act.elemental(action).BLAST else 0, stroke.wait);
+            if (comptime action.element() == .lightning) combat.conduct(run, at, stroke);
+        },
+    }
 }
 
 fn resolveProjectileHit(run: *game.Game, comptime action: skillbar.Act, hit: bow.Hit, flight: bow.Flight, stroke: game.presentation.Stroke) void {
