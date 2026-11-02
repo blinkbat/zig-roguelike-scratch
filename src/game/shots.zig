@@ -189,8 +189,10 @@ pub fn shoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/debug.png");
     g.mode = .play;
 
-    poseWaterSteps(g);
+    poseSteps(g, .shallows);
     try capture(g, target, SHOTS_DIR ++ "/water-steps.png");
+    poseSteps(g, .dirt);
+    try capture(g, target, SHOTS_DIR ++ "/dirt-steps.png");
 
     for ([_]struct { hour: f32, outdoors: bool, path: [:0]const u8 }{
         .{ .hour = day.NOON, .outdoors = true, .path = SHOTS_DIR ++ "/water-mirrors-day.png" },
@@ -1394,18 +1396,18 @@ comptime {
     std.debug.assert(seen.count() == std.enums.values(actor.Kind).len);
 }
 
-fn poseWaterSteps(g: *game.Game) void {
+fn poseSteps(g: *game.Game, ground: grid.Tile) void {
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     game.harness.grassOver(&g.sim.lv);
     var cells = grid.Cells.of(.{ .x = 17, .y = 15 }, .{ .x = 30, .y = 26 });
-    while (cells.next()) |p| g.sim.lv.set(p, if (p.x < 19) .water else .shallows);
+    while (cells.next()) |p| g.sim.lv.set(p, if (p.x < 19) .water else ground);
     for (WADERS) |w| g.sim.pool.get(game.harness.spawnAt(g, w.kind, w.at, false)).?.unmask(&g.sim.lv);
     game.settle(g);
     g.st = .{};
     for (g.sim.pool.slice(), 0..) |a, i| {
         const to = a.at.add(mathx.Dir.e.delta());
         g.sim.pool.move(&g.sim.lv, actor.Pool.idOf(i), to);
-        g.pic.glide[i] = g.pic.glide[i].toward(to, g.pic.glide[i].span() * (game.presentation.SPLASH_AT + 0.01));
+        g.pic.glide[i] = g.pic.glide[i].toward(to, g.pic.glide[i].span() * (game.presentation.STEP_AT + 0.01));
     }
     game.update(g, 0);
     game.update(g, 0.055);

@@ -446,8 +446,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   The art's own highlights swell and fade under two crossing drifting noise layers (`WATER_FS` `swell`), live-visible
   only and switched with water glints.  Mirrors follow presented feet/facing/lift, fade out toward their reflected tops, and exclude unexplored
   sources; glints obey light occlusion.
-  Source art/editor preview remain static. `Presentation.splashSteps`/`Fx.splash` follows visible ground
-  footsteps in water, excluding idle bodies and melee bumps. Vignette draws under minimap/HUD.
+  Source art/editor preview remain static. `Presentation.footfalls` (`Fx.splash`, `Fx.dust`) follows visible ground
+  footsteps in shallows, dirt and sand, excluding idle bodies and melee bumps. Vignette draws under minimap/HUD.
 - `gfx/pixel.zig` draws crisp FX shapes with smooth map motion. Missiles arrive at the existing impact
   time; electrical arcs, trails and light use cosmetic state. `Light.emit` lights terrain and body normals
   through a bounded, wall-occluded pool, never revealing memory or changing visibility. Night's darkest

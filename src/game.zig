@@ -757,7 +757,7 @@ pub fn update(g: *Game, dt: f32) void {
     if (!std.meta.eql(was, screenOf(g))) holdWalk(g);
     g.pic.stepGlide(&g.sim, g.cloud, late);
     g.pic.catchUp(&g.sim);
-    g.pic.splashSteps(&g.sim);
+    g.pic.footfalls(&g.sim);
     stepVignette(g, dt);
     const want = camWant(g);
     const k = mathx.easing(dt, CAM_EASE);

@@ -595,7 +595,7 @@ pub const Presentation = struct {
 
     /// Footfalls, missiles and pending turns move on.
     pub fn stepMotion(self: *Presentation, sim: *const Simulation, dt: f32) void {
-        self.splashSteps(sim);
+        self.footfalls(sim);
         if (self.shot) |*s| {
             s.t += dt;
             const end = @min(s.t, s.lands());
@@ -613,14 +613,19 @@ pub const Presentation = struct {
         self.stepTurning(dt);
     }
 
-    pub fn splashSteps(self: *Presentation, sim: *const Simulation) void {
+    pub fn footfalls(self: *Presentation, sim: *const Simulation) void {
         for (self.glide[0..sim.pool.n], 0..) |*gl, i| {
-            if (gl.splashed or gl.done() < SPLASH_AT) continue;
-            gl.splashed = true;
+            if (gl.stepped or gl.done() < STEP_AT) continue;
+            gl.stepped = true;
             if (gl.bump != null or std.meta.eql(gl.from, glide.cellPx(gl.to))) continue;
             if (self.pictured[i].down() or actor.row(self.pictured[i].kind).movement != .ground) continue;
             const at = self.drawnAt(sim, i) orelse continue;
-            if (sim.lv.at(game.cellUnder(at)) == .shallows) self.fx.splash(game.middle(at));
+            switch (sim.lv.at(game.cellUnder(at))) {
+                .shallows => self.fx.splash(game.middle(at)),
+                .dirt => self.fx.dust(game.middle(at), look.DIRT_DUST),
+                .sand => self.fx.dust(game.middle(at), look.SAND_DUST),
+                else => {},
+            }
         }
     }
 
@@ -880,8 +885,8 @@ pub const Life = struct { hp: i32, max: i32 };
 
 /// A walk due this close to the turn's last glide ending is not held for it.
 const PACE_SLACK: f32 = 1e-4;
-/// How far through a step in shallows its splash is drawn: the foot coming down.
-pub const SPLASH_AT: f32 = 0.85;
+/// How far through a step its splash or dust is drawn: the foot coming down.
+pub const STEP_AT: f32 = 0.85;
 /// Per second, how fast the sky drawn catches the hour a turn moved on.
 const HOUR_EASE: f32 = 4;
 const OCCLUSION_EASE: f32 = 12;

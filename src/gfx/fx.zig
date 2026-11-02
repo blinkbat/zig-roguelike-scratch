@@ -401,11 +401,12 @@ const ZAP_MOTES: usize = 5;
 const ZAP_JITTER: f32 = 0.18;
 const EMBERS = Spray{ .col = look.FIRE, .hit = 18, .kill = 18, .along_lo = 0.4, .along_hi = 1.4, .fan = 0, .up_lo = 0.5, .up_hi = 1.5, .grav = 0, .drag = 2, .life_lo = 0.25, .life_hi = 0.55, .r_lo = 1, .r_hi = 2.5, .stains = false, .add = true };
 const DRIP_MOTES: usize = 5;
-const WATER_MOTES: usize = 4;
-/// Cells below a body's middle its splash rises from, and how far across and down it spreads.
+const WATER_MOTES = [2]u32{ 5, 9 };
+/// Cells below a body's middle its footfall rises from, and how far across and down it spreads.
 pub const SPLASH_FOOT: f32 = 0.32;
-pub const SPLASH_R: f32 = 0.22;
-pub const SPLASH_RY: f32 = 0.08;
+pub const SPLASH_R: f32 = 0.26;
+pub const SPLASH_RY: f32 = 0.09;
+const STEP_DUST = [2]u32{ 3, 6 };
 const BLEED_DROPS = 4;
 const CHILL_FLAKES = 5;
 const BURN_FLAMES = 7;
@@ -1130,16 +1131,35 @@ pub const Fx = struct {
     }
 
     pub fn splash(self: *Fx, at: [2]f32) void {
-        for (0..WATER_MOTES) |i| {
-            const dir = ringDir(&self.rng, i, WATER_MOTES, 0.5);
+        const n = WATER_MOTES[0] + self.rng.below(WATER_MOTES[1] - WATER_MOTES[0] + 1);
+        for (0..n) |_| {
+            const dir = heading(self.rng.unit() * mathx.TAU);
+            const out = self.rng.between(0.6, 1);
             self.emit(.{
-                .p = .{ at[0] + dir[0] * SPLASH_R, at[1] + SPLASH_FOOT + dir[1] * SPLASH_RY, 0.025 },
-                .v = .{ dir[0] * 0.55, dir[1] * 0.3, self.rng.between(0.45, 0.75) },
-                .life = self.rng.between(0.24, 0.34),
-                .r = self.rng.between(0.8, 1.3),
-                .col = look.WATER_DROP,
-                .grav = 5,
-                .drag = 3,
+                .p = .{ at[0] + dir[0] * SPLASH_R * out, at[1] + SPLASH_FOOT + dir[1] * SPLASH_RY * out, 0.02 },
+                .v = .{ dir[0] * self.rng.between(0.25, 0.8), dir[1] * self.rng.between(0.05, 0.3), self.rng.between(0.8, 1.7) },
+                .life = self.rng.between(0.24, 0.4),
+                .r = if (self.rng.chance(0.6)) self.rng.between(0.9, 1.3) else self.rng.between(1.4, 2),
+                .col = look.fade(look.WATER_DROP, self.rng.between(0.6, 1)),
+                .grav = 9,
+                .drag = 2,
+            });
+        }
+    }
+
+    pub fn dust(self: *Fx, at: [2]f32, col: rl.Color) void {
+        const n = STEP_DUST[0] + self.rng.below(STEP_DUST[1] - STEP_DUST[0] + 1);
+        for (0..n) |_| {
+            const dir = heading(self.rng.unit() * mathx.TAU);
+            const out = self.rng.between(0.5, 1);
+            self.emit(.{
+                .p = .{ at[0] + dir[0] * SPLASH_R * out, at[1] + SPLASH_FOOT + dir[1] * SPLASH_RY * out, 0.02 },
+                .v = .{ dir[0] * self.rng.between(0.2, 0.6), dir[1] * self.rng.between(0.05, 0.25), self.rng.between(0.15, 0.4) },
+                .life = self.rng.between(0.35, 0.55),
+                .r = self.rng.between(1.2, 2.2),
+                .col = look.fade(col, self.rng.between(0.55, 1)),
+                .drag = 4,
+                .grow = self.rng.between(0.6, 1.2),
             });
         }
     }
@@ -1459,29 +1479,77 @@ test "electrical particles move between tiles and delayed arcs and light expire 
     std.debug.print("electric arc: delayed onset, sub-tile particle motion, all light and particles expired\n", .{});
 }
 
-test "water footsteps make a few small droplets that vanish without stains or flashes" {
+fn footfallCounts(comptime emit_one: fn (*Fx) void, bounds: [2]u32) !void {
+    var effects = Fx{};
+    var seen = [_]bool{false} ** 16;
+    for (0..24) |_| {
+        const before = live(&effects).flying;
+        emit_one(&effects);
+        const n = live(&effects).flying - before;
+        try std.testing.expect(n >= bounds[0] and n <= bounds[1]);
+        seen[n] = true;
+        for (&effects.motes) |*m| m.life = 0;
+    }
+    try std.testing.expect(std.mem.count(bool, &seen, &.{true}) > 1);
+}
+
+test "water footsteps throw a varying few small drops that vanish without stains or flashes" {
+    try footfallCounts(struct {
+        fn one(f: *Fx) void {
+            f.splash(.{ 20.5, 20.5 });
+        }
+    }.one, WATER_MOTES);
     for ([_]grid.Tile{ .shallows, .water }) |water| {
         var lv = grid.openFloor();
         lv.set(.{ .x = 20, .y = 20 }, water);
         var effects = Fx{};
         effects.splash(.{ 20.5, 20.5 });
         const n = live(&effects).flying;
-        try std.testing.expectEqual(WATER_MOTES, n);
         var peak: f32 = 0;
+        var wide: f32 = 0;
         for (0..120) |_| {
             for (effects.motes) |m| {
                 if (m.life <= 0) continue;
                 try std.testing.expect(!m.stains and !m.add);
-                try std.testing.expect(m.r <= 1.5 and m.col.a <= look.WATER_DROP.a);
+                try std.testing.expect(m.r <= 2 and m.col.a <= look.WATER_DROP.a);
                 peak = @max(peak, m.p[2]);
+                wide = @max(wide, @abs(m.p[0] - 20.5));
             }
             effects.step(&lv, mathx.TEST_DT);
         }
-        try std.testing.expect(peak < 0.12);
+        try std.testing.expect(peak < 0.2 and wide < 0.55);
         try std.testing.expectEqual(@as(usize, 0), live(&effects).flying + live(&effects).stains);
         for (effects.flash) |f| try std.testing.expectEqual(@as(f32, 0), f);
-        std.debug.print("water footsteps on {s}: {d} small drops, peak {d:.3} cells, no stains or flashes\n", .{ @tagName(water), n, peak });
+        std.debug.print("water footsteps on {s}: {d} drops, peak {d:.3} cells up, {d:.3} cells out, no stains or flashes\n", .{ @tagName(water), n, peak, wide });
     }
+}
+
+test "dust footsteps puff a varying few low motes, then vanish without stains" {
+    try footfallCounts(struct {
+        fn one(f: *Fx) void {
+            f.dust(.{ 20.5, 20.5 }, look.DIRT_DUST);
+        }
+    }.one, STEP_DUST);
+    var lv = grid.openFloor();
+    var effects = Fx{};
+    effects.dust(.{ 20.5, 20.5 }, look.DIRT_DUST);
+    const n = live(&effects).flying;
+    var peak: f32 = 0;
+    var wide: f32 = 0;
+    var biggest: f32 = 0;
+    for (0..160) |_| {
+        for (effects.motes) |m| {
+            if (m.life <= 0) continue;
+            try std.testing.expect(!m.stains and !m.add);
+            peak = @max(peak, m.p[2]);
+            wide = @max(wide, @abs(m.p[0] - 20.5));
+            biggest = @max(biggest, m.r * (1 + m.grow * (1 - m.life / m.max)));
+        }
+        effects.step(&lv, mathx.TEST_DT);
+    }
+    try std.testing.expect(peak < 0.12 and wide < 0.5 and biggest <= 4.9);
+    try std.testing.expectEqual(@as(usize, 0), live(&effects).flying + live(&effects).stains);
+    std.debug.print("dust footsteps: {d} motes, peak {d:.3} cells up, {d:.3} cells out, widest {d:.1} sprite px\n", .{ n, peak, wide, biggest });
 }
 
 test "glacial frost waits for impact then fills only its cone and clears without stains" {

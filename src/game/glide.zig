@@ -17,7 +17,7 @@ pub const Glide = struct {
     to: P,
     t: f32,
     gait: look.Gait,
-    splashed: bool = false,
+    stepped: bool = false,
     /// Retain mid-hop height when a new step starts.
     from_lift: f32 = 0,
     /// Pixels toward what a melee blow strikes, at the bump's height; null for a step.
@@ -43,7 +43,7 @@ pub const Glide = struct {
 
     comptime {
         for (std.meta.fields(Glide)) |f| {
-            const own = std.mem.eql(u8, f.name, "t") or std.mem.eql(u8, f.name, "splashed") or std.mem.eql(u8, f.name, "prior");
+            const own = std.mem.eql(u8, f.name, "t") or std.mem.eql(u8, f.name, "stepped") or std.mem.eql(u8, f.name, "prior");
             std.debug.assert(own or @hasField(Prior, f.name));
         }
     }

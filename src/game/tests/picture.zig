@@ -268,7 +268,7 @@ test "water footsteps follow the shown ground unit step once, excluding flying u
         g.pic.glide[slot].t = -0.2;
         game.update(g, 0.19);
         try std.testing.expectEqual(initial, g.pic.fx.head);
-        game.update(g, 0.01 + span * (game.presentation.SPLASH_AT - 0.1));
+        game.update(g, 0.01 + span * (game.presentation.STEP_AT - 0.1));
         try std.testing.expectEqual(initial, g.pic.fx.head);
         game.update(g, span * 0.2);
         const emitted = g.pic.fx.head;
@@ -307,15 +307,42 @@ test "a long frame that ends a step in shallows and starts the next walk still s
     const initial = g.pic.fx.head;
     harness.stepTo(g, g.sim.hero, to);
     const span = g.pic.glide[slot].span();
-    g.pic.glide[slot].t = span * (game.presentation.SPLASH_AT - 0.05);
-    g.pic.busy = span * (1 - game.presentation.SPLASH_AT + 0.05);
+    g.pic.glide[slot].t = span * (game.presentation.STEP_AT - 0.05);
+    g.pic.busy = span * (1 - game.presentation.STEP_AT + 0.05);
     g.pending = .{ .walk = .e };
-    game.update(g, span * (1 - game.presentation.SPLASH_AT + 0.1));
+    game.update(g, span * (1 - game.presentation.STEP_AT + 0.1));
     try std.testing.expect(g.sim.heroActor().?.at.eq(to.add(mathx.Dir.e.delta())));
     try std.testing.expect(g.pic.fx.head != initial);
 }
 
-test "water footsteps do not appear on dry ground, hidden steps or melee bumps" {
+test "a step onto dirt or sand kicks up its own dust at the footfall, once" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const cases = [_]struct { tile: grid.Tile, ink: @TypeOf(look.DIRT_DUST) }{
+        .{ .tile = .dirt, .ink = look.DIRT_DUST },
+        .{ .tile = .sand, .ink = look.SAND_DUST },
+    };
+    for (cases) |case| {
+        const from = P{ .x = 20, .y = 20 };
+        const to = P{ .x = 21, .y = 20 };
+        harness.arena(g, from, &.{});
+        g.sim.lv.set(to, case.tile);
+        game.settle(g);
+        g.st = .{};
+        const slot = g.sim.heroSlot().?;
+        harness.stepTo(g, g.sim.hero, to);
+        game.update(g, g.pic.glide[slot].span());
+        var n: usize = 0;
+        for (g.pic.fx.motes) |m| n += @intFromBool(m.life > 0 and m.col.r == case.ink.r and m.col.g == case.ink.g and m.col.b == case.ink.b);
+        try std.testing.expect(n > 0);
+        const emitted = g.pic.fx.head;
+        game.update(g, 1);
+        try std.testing.expectEqual(emitted, g.pic.fx.head);
+        std.debug.print("footfall on {s}: {d} dust motes, none after\n", .{ @tagName(case.tile), n });
+    }
+}
+
+test "footfalls do not appear on bare ground, hidden steps or melee bumps" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const cases = [_]struct { tile: grid.Tile, hidden: bool = false, bump: bool = false }{
@@ -325,6 +352,8 @@ test "water footsteps do not appear on dry ground, hidden steps or melee bumps" 
         .{ .tile = .lava },
         .{ .tile = .shallows, .hidden = true },
         .{ .tile = .shallows, .bump = true },
+        .{ .tile = .dirt, .hidden = true },
+        .{ .tile = .dirt, .bump = true },
     };
     for (cases) |case| {
         const from = P{ .x = 20, .y = 20 };
@@ -345,7 +374,7 @@ test "water footsteps do not appear on dry ground, hidden steps or melee bumps" 
         game.update(g, g.pic.glide[slot].span());
         try std.testing.expectEqual(initial, g.pic.fx.head);
     }
-    std.debug.print("water footsteps: {d} dry, hidden or attacking cases emit no drops\n", .{cases.len});
+    std.debug.print("footfalls: {d} bare, hidden or attacking cases emit nothing\n", .{cases.len});
 }
 
 test "every step is one hop that peaks mid-glide and lands as the glide ends, and the ground under it does not bob" {
