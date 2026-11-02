@@ -23,17 +23,15 @@ fn ink(k: Kind) rl.Color {
 }
 
 const MARGIN: i32 = hud.EDGE;
-const BOX_H: i32 = 270;
-const MIN_W: i32 = 160;
-const MAX_W: i32 = 440;
+const BOX_H: i32 = 360;
+const MIN_W: i32 = 120;
+const MAX_W: i32 = 330;
 /// Kept clear between the box and the hud's assembly.
 const HUD_GAP: i32 = 24;
-const ROWS_Y: i32 = 10;
-/// Rows clip this far above the box's foot; the last row's leading falls inside it.
-const CLIP_BOTTOM: i32 = 12;
-const ROWS_BOTTOM: i32 = BOX_H - CLIP_BOTTOM - font.LEADING;
-const CLIP_X: i32 = 10;
-const TEXT_X: i32 = 14;
+/// Text's inset from every edge of the box; a row that would cross it is not drawn.
+const PAD: i32 = 14;
+/// The last row's glyphs end `PAD` above the foot; its trailing leading falls below them.
+const ROWS_BOTTOM: i32 = BOX_H - PAD + font.LEADING;
 const LINE_H = font.SMALL_LINE;
 const ENTRY_GAP: i32 = 4;
 const TOP_OPACITY: f32 = 0.1;
@@ -65,19 +63,20 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
     defer if (sprites.log_fade != null) rl.endShaderMode();
     var bottom = y + ROWS_BOTTOM;
     var back = log.held + log.scroll;
-    rl.beginScissorMode(x + CLIP_X, y + ROWS_Y, w - 2 * CLIP_X, BOX_H - ROWS_Y - CLIP_BOTTOM);
+    rl.beginScissorMode(x + PAD, y + PAD, w - 2 * PAD, BOX_H - 2 * PAD);
     defer rl.endScissorMode();
     var buf: font.Wrapped = undefined;
     var rows: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
-    while (back < log.n and bottom > y + ROWS_Y) : (back += 1) {
-        const count = font.wrap(face, log.line(back).?, font.SMALL, w - 2 * TEXT_X, &buf, &rows);
+    while (back < log.n and bottom > y + PAD) : (back += 1) {
+        const count = font.wrap(face, log.line(back).?, font.SMALL, w - 2 * PAD, &buf, &rows);
         bottom -= @as(i32, @intCast(count)) * LINE_H;
         const at = log.index(back);
         const color = ink(log.kinds[at]);
         for (rows[0..count], 0..) |text, i| {
             const row = bottom + @as(i32, @intCast(i)) * LINE_H;
+            if (row < y + PAD) continue;
             const alpha = mathx.lerpF(TOP_OPACITY, 1, std.math.clamp(@as(f32, @floatFromInt(row - y)) / BOX_H, 0, 1));
-            face.draw(text, x + TEXT_X, row, font.SMALL, if (sprites.log_fade != null) color else look.fade(color, alpha));
+            face.draw(text, x + PAD, row, font.SMALL, if (sprites.log_fade != null) color else look.fade(color, alpha));
         }
         bottom -= ENTRY_GAP;
     }
