@@ -3,11 +3,12 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const fov = @import("../map/fov.zig");
 const damage = @import("damage.zig");
+const resilience = @import("resilience.zig");
 
 const P = mathx.P;
 
 pub const COST: i32 = 4;
-pub const AILMENT = @import("resilience.zig").Kind.chill;
+pub const AILMENT = resilience.Kind.chill;
 pub const CHANCE: u32 = 50;
 pub const TURNS: u8 = 3;
 pub const RANGE: i32 = 2;
@@ -30,8 +31,7 @@ pub const Chill = struct {
     }
 
     pub fn skip(self: *Chill) bool {
-        if (self.turns == 0) return false;
-        self.turns -= 1;
+        if (!resilience.wearTurn(&self.turns)) return false;
         self.phase = (self.phase + 1) % CYCLE;
         return self.phase == 0;
     }

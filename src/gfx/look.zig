@@ -1077,10 +1077,10 @@ pub const SAND_DUST = rl.Color{ .r = 238, .g = 226, .b = 192, .a = 160 };
 
 /// The dust a footfall on `t` kicks up.
 pub fn stepDust(t: grid.Tile) ?rl.Color {
-    return switch (t) {
+    return switch (ground.of(t) orelse return null) {
         .dirt => DIRT_DUST,
         .sand => SAND_DUST,
-        else => null,
+        .chasm, .lava, .water, .shallows, .ice, .snow, .crop, .grass, .rubble, .bridge, .cobble => null,
     };
 }
 pub const NET = rgb(0xd6c496);

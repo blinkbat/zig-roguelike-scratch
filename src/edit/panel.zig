@@ -23,12 +23,11 @@ const DETAIL = widgets.DETAIL;
 const HEAD = widgets.HEAD;
 const PANEL_BG = widgets.PANEL_BG;
 const ON = widgets.ON;
-const HOVER = look.EDIT_HOVER;
 const WARN = look.EDIT_WARN;
 const SEP = menu.SEP;
 
 const WORKSPACE_COLS = 2;
-const WORKSPACE_ROWS = std.math.divCeil(usize, std.enums.values(editor.Lower).len, WORKSPACE_COLS) catch unreachable;
+const WORKSPACE_ROWS = widgets.rowsOf(std.enums.values(editor.Lower).len, WORKSPACE_COLS);
 pub const WORKSPACE_TOP: i32 = widgets.PAD + HEAD + widgets.GAP + (5 + WORKSPACE_ROWS) * widgets.ROW_STEP + widgets.GAP;
 
 pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
@@ -75,12 +74,12 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     y += widgets.ROW_STEP;
     if (ed.lower == .generator and ed.rolled() == null) ed.lower = .nodes;
     for (std.enums.values(editor.Lower), 0..) |l, i| {
-        const s = mathx.unslot(i, WORKSPACE_COLS);
-        const r = widgets.slotOf(widgets.PAD, widgets.INNER_W, y + s.y * widgets.ROW_STEP, @intCast(s.x), WORKSPACE_COLS);
+        const r = widgets.gridSlot(y, i, WORKSPACE_COLS, widgets.ROW_STEP);
         const live = l != .generator or ed.rolled() != null;
         if (widgets.button(ed.controls(), &g.face, r, menu.named(l), ed.lower == l, live, LOWER_TIPS.get(l))) {
             ed.lower = l;
             ed.lower_scroll = 0;
+            ed.delete_armed = null;
         }
     }
     y += WORKSPACE_ROWS * widgets.ROW_STEP + widgets.GAP;
@@ -193,10 +192,9 @@ const PALETTE = blk: {
 fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
     var buf: [widgets.LINE]u8 = undefined;
     var y = top;
-    const rows = comptime std.math.divCeil(usize, editor.TOOLS.len, TOOL_ROW) catch unreachable;
+    const rows = comptime widgets.rowsOf(editor.TOOLS.len, TOOL_ROW);
     for (editor.TOOLS, Desk.TOOL_CAPTIONS, 0..) |t, key, i| {
-        const s = mathx.unslot(i, TOOL_ROW);
-        const r = widgets.slotOf(widgets.PAD, widgets.INNER_W, y + s.y * (ICON_H + widgets.GAP), @intCast(s.x), TOOL_ROW);
+        const r = widgets.gridSlot(y, i, TOOL_ROW, ICON_H + widgets.GAP);
         const icon = rl.Rectangle{ .x = r.x, .y = r.y, .width = r.width, .height = ICON_H };
         const live = t.fits(ed.here());
         const h = widgets.hot(ed.controls(), icon, live, false, if (live) t.tip() else editor.GENERATED);
@@ -207,17 +205,17 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
         widgets.textFace(&g.face).draw(key, @as(i32, @intFromFloat(icon.x)) + ICON_KEY.x, @as(i32, @intFromFloat(icon.y)) + ICON_KEY.y, DETAIL, look.DIM);
         if (h.hit) ed.setTool(t);
     }
-    y += @as(i32, @intCast(rows)) * (ICON_H + widgets.GAP) + widgets.GAP;
+    y += rows * (ICON_H + widgets.GAP) + widgets.GAP;
     for (editor.SHAPES, Desk.SHAPE_CAPTIONS, 0..) |s, key, i| {
         const r = shapeSlot(y, i);
         const label = std.fmt.bufPrintZ(&buf, "{s} {s}", .{ key, SHAPE_LABELS.get(s) }) catch "";
         const live = s == .select or ed.paintable();
         const h = widgets.hot(ed.controls(), r, live, false, if (live) s.tip() else editor.GENERATED);
         widgets.plate(r, ed.shape == s and (s == .select or ed.tool.broad()), h.hot);
-        widgets.drawFit(&g.face, label, DETAIL, widgets.insetW(r), false, widgets.textX(r), @as(i32, @intFromFloat(r.y)) + editor.ROW_DETAIL_DY, if (live) look.TEXT else look.DIM);
+        widgets.drawFit(&g.face, label, DETAIL, widgets.insetW(r), false, widgets.textX(r), @as(i32, @intFromFloat(r.y)) + widgets.DETAIL_DY, if (live) look.TEXT else look.DIM);
         if (h.hit) ed.setShape(s);
     }
-    y += @as(i32, @intCast(std.math.divCeil(usize, editor.SHAPES.len, SHAPE_COLS) catch unreachable)) * widgets.ROW_STEP;
+    y += widgets.rowsOf(editor.SHAPES.len, SHAPE_COLS) * widgets.ROW_STEP;
     knobs.rowLabel(g, y, "Brush");
     const n = ed.brushSize();
     const by = knobs.stepper(ed, g, widgets.row(widgets.PAD + editor.LABEL_W, y, editor.BRUSH_SPAN), std.fmt.bufPrintZ(&buf, "{d}x{d}", .{ n, n }) catch "", .{
@@ -232,14 +230,14 @@ fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
         rl.drawRectangleLinesEx(r, canvas.INK_EDGE, INK_EDGES.get(k));
         _ = widgets.hot(ed.controls(), r, true, false, INK_TIPS.get(k));
     }
-    widgets.textFace(&g.face).draw("Inks", inks_x - widgets.textFace(&g.face).width("Inks", DETAIL) - widgets.GAP, y + editor.ROW_DETAIL_DY, DETAIL, look.DIM);
+    widgets.textFace(&g.face).draw("Inks", inks_x - widgets.textFace(&g.face).width("Inks", DETAIL) - widgets.GAP, y + widgets.DETAIL_DY, DETAIL, look.DIM);
     y += widgets.ROW_STEP + widgets.GAP;
     const swatches = Tiles{ .x = widgets.PAD, .y = y, .cols = PALETTE_COLS, .pitch = SWATCH + SWATCH_GAP, .size = SWATCH };
     for (PALETTE, 0..) |t, i| {
         const r = swatches.at(i);
         const h = widgets.hot(ed.controls(), r, true, false, PALETTE_TIPS.get(t));
         swatch(g, t, r);
-        if (inkOf(ed, t)) |k| rl.drawRectangleLinesEx(r, canvas.INK_EDGE, INK_EDGES.get(k)) else if (h.hot) rl.drawRectangleLinesEx(r, 1, HOVER);
+        if (inkOf(ed, t)) |k| rl.drawRectangleLinesEx(r, canvas.INK_EDGE, INK_EDGES.get(k)) else widgets.hoverEdge(r, h.hot);
         const second = h.hot and ed.desk.erase_hit;
         if (h.hit or second) {
             ed.ink.set(.of(second), t);
@@ -263,13 +261,12 @@ pub const Tiles = struct {
     }
 
     pub fn height(t: Tiles, n: usize) i32 {
-        return @as(i32, @intCast(std.math.divCeil(usize, n, t.cols) catch unreachable)) * t.pitch;
+        return widgets.rowsOf(n, t.cols) * t.pitch;
     }
 };
 
 pub fn shapeSlot(top: i32, i: usize) rl.Rectangle {
-    const s = mathx.unslot(i, SHAPE_COLS);
-    return widgets.slotOf(widgets.PAD, widgets.INNER_W, top + s.y * widgets.ROW_STEP, @intCast(s.x), SHAPE_COLS);
+    return widgets.gridSlot(top, i, SHAPE_COLS, widgets.ROW_STEP);
 }
 
 const ICON_PIC: f32 = 36;
@@ -373,7 +370,7 @@ fn thingRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime fmt: []const u8
     const r = widgets.row(widgets.PAD, y.*, widgets.INNER_W);
     const h = widgets.hot(ed.controls(), r, at != null, false, if (at != null) "Show it on the map" else null);
     widgets.plate(r, false, h.hot);
-    widgets.drawFit(&g.face, line, DETAIL, widgets.insetW(r), false, widgets.textX(r), y.* + editor.ROW_DETAIL_DY, col);
+    widgets.drawFit(&g.face, line, DETAIL, widgets.insetW(r), false, widgets.textX(r), y.* + widgets.DETAIL_DY, col);
     if (h.hit) ed.showCell(editor.Editor.canvas(g), at.?);
     y.* += widgets.ROW_H;
 }

@@ -122,6 +122,7 @@ fn thinning(kind: grid.Gas) ?u32 {
 
 /// A cell wider than the gas all round; the high corner exclusive.
 fn reach(vol: *const [grid.CELLS]u16) ?grid.Box {
+    if (!any(vol)) return null;
     var lo = grid.SIZE;
     var hi = P{ .x = -1, .y = -1 };
     for (vol, 0..) |v, i| {

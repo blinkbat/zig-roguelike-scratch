@@ -56,6 +56,10 @@ pub fn heroRoll(sim: *Simulation, comptime attack: attrs.Attack, raw: i32) Roll 
     return hit.physical();
 }
 
+pub fn heroKick(sim: *Simulation) Roll {
+    return heroRoll(sim, .melee, kickRaw(&sim.rng, &sim.inventory.gear, sim.class.strike()));
+}
+
 pub fn heroSkill(sim: *Simulation, comptime act: skillbar.Act) Roll {
     return heroArrow(sim, act, true).physical();
 }

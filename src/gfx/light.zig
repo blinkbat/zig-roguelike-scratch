@@ -12,24 +12,18 @@ const visibility = @import("light_visibility.zig");
 const model = @import("light_model.zig");
 
 const P = model.P;
-pub const Rgb = model.Rgb;
+const Rgb = model.Rgb;
 const mix = model.mix;
 pub const SUB = model.SUB;
 pub const MAP_W = model.MAP_W;
-pub const MAP_H = model.MAP_H;
-const NONE_BAKED = model.NONE_BAKED;
+const MAP_H = model.MAP_H;
 pub const TEXELS = model.TEXELS;
 pub const Layer = model.Layer;
 pub const UNSEEN = model.UNSEEN;
 pub const REACH = model.REACH;
 pub const WALL_H = model.WALL_H;
-const FACE_H = model.FACE_H;
 pub const BODY_Z = model.BODY_Z;
 pub const CARRY = model.CARRY;
-const MOON_CARRY = model.MOON_CARRY;
-const CARRY_R = model.CARRY_R;
-const CARRY_CEILING = model.CARRY_CEILING;
-const CARRY_FACE_WRAP = model.CARRY_FACE_WRAP;
 pub const MEMORY = model.MEMORY;
 pub const FAINT = model.FAINT;
 pub const VOID_REACH = model.VOID_REACH;
@@ -49,7 +43,6 @@ const clouded = model.clouded;
 const reaching = model.reaching;
 pub const SunRay = model.SunRay;
 const cloudIn = model.cloudIn;
-const sunFacing = model.sunFacing;
 pub const Surface = model.Surface;
 pub const topOf = model.topOf;
 const offset = model.offset;
@@ -58,48 +51,29 @@ pub const Spot = model.Spot;
 pub const TorchIx = model.TorchIx;
 pub const LIGHTS = model.LIGHTS;
 const Torch = model.Torch;
-const Mount = model.Mount;
 const upright = model.upright;
 pub const GLINT_POWER = model.GLINT_POWER;
-const SUN_GLINT = model.SUN_GLINT;
-const CARRY_GLINT = model.CARRY_GLINT;
-const TORCH_GLINT = model.TORCH_GLINT;
-const EFFECT_GLINT = model.EFFECT_GLINT;
 pub const smoothSpecular = model.smoothSpecular;
 const remembered = model.remembered;
 pub const carryFade = model.carryFade;
-const wrapped = model.wrapped;
 pub const mask = model.mask;
 pub const flicker = model.flicker;
-const faceCos = model.faceCos;
 const splat = model.splat;
 const rgbOf = model.rgbOf;
-pub const colourOf = model.colourOf;
 pub const texelOf = model.texelOf;
-const skyDepth = model.skyDepth;
 pub const castShare = model.castShare;
 pub const Shine = model.Shine;
 pub const Flame = model.Flame;
-const COMPOSED_KEY = model.COMPOSED_KEY;
-const COMPOSED_AMBIENT = model.COMPOSED_AMBIENT;
-const PATCH_LIFT = model.PATCH_LIFT;
-const PATCH_CLOUD = model.PATCH_CLOUD;
 const DAPPLE_WAVE = model.DAPPLE_WAVE;
-const DAPPLE_MIN = model.DAPPLE_MIN;
-const DAPPLE_SPAN = model.DAPPLE_SPAN;
-const DAPPLE_REACH = model.DAPPLE_REACH;
-const DAPPLE_COVER = model.DAPPLE_COVER;
 pub const Emission = model.Emission;
 pub const EFFECTS = model.EFFECTS;
 pub const EffectSet = model.EffectSet;
-const EFFECT_REACH = model.EFFECT_REACH;
 pub const EFFECT_SPAN = model.EFFECT_SPAN;
-const Effect = model.Effect;
 pub const Options = model.Options;
 
 pub const Light = struct {
     options: Options = .{},
-    effects: [EFFECTS]Effect = undefined,
+    effects: [EFFECTS]model.Effect = undefined,
     effect_n: usize = 0,
     visibility: visibility.Visibility,
     torch: [LIGHTS]Torch,
@@ -158,7 +132,7 @@ pub const Light = struct {
         self.fan();
     }
 
-    fn hang(self: *Light, lv: *const grid.Level, mount: Mount) void {
+    fn hang(self: *Light, lv: *const grid.Level, mount: model.Mount) void {
         var t = Torch{ .mount = mount, .reach = undefined, .open = undefined, .seed = self.hung *% 0x27D4EB2F +% 0x165667B1 };
         self.hung +%= 1;
         var pool: [grid.CELLS]bool = @splat(false);
@@ -232,14 +206,14 @@ pub const Light = struct {
         self.visibility.terrain(&self.scratch);
         var cells = grid.Cells.of(.{ .x = 0, .y = 0 }, grid.SIZE);
         while (cells.next()) |p| {
-            var neighbours = grid.Cells.around(p, DAPPLE_REACH);
+            var neighbours = grid.Cells.around(p, model.DAPPLE_REACH);
             var cover: f32 = 0;
             while (neighbours.next()) |q| {
                 if (!look.crowned(self.scratch.at(q))) continue;
                 const d = p.sub(q);
                 cover += 1 / @as(f32, @floatFromInt(1 + d.x * d.x + d.y * d.y));
             }
-            self.canopy[grid.Level.idx(p)] = @min(1, cover * DAPPLE_COVER);
+            self.canopy[grid.Level.idx(p)] = @min(1, cover * model.DAPPLE_COVER);
         }
         for (&self.dappling, 0..) |*d, i| d.* = self.dapplingAt(texelCentreOf(i));
     }
@@ -270,7 +244,7 @@ pub const Light = struct {
         const dx = c[0] - x;
         const dy = c[1] - y;
         const flat = mathx.len(dx, dy);
-        if (flat >= CARRY_R) return null;
+        if (flat >= model.CARRY_R) return null;
         const reach = if (fogged) visibility.sampleOccluded(&self.visibility.sight, &self.visibility.carry_open, x, y) else self.carryReach(x, y);
         return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat) * share * reach };
     }
@@ -279,8 +253,8 @@ pub const Light = struct {
         const f = self.carryToward(s.x, s.y, true) orelse return splat(0);
         const facing = switch (s.surface) {
             .floor => 1,
-            .face => wrapped(faceCos(f.dy, f.flat), CARRY_FACE_WRAP),
-            .ceiling => CARRY_CEILING,
+            .face => model.wrapped(model.faceCos(f.dy, f.flat), model.CARRY_FACE_WRAP),
+            .ceiling => model.CARRY_CEILING,
         };
         return self.carryColourAt(f.flat) * splat(f.k * facing);
     }
@@ -343,8 +317,8 @@ pub const Light = struct {
     fn profile(self: *const Light) ?sky.Sky {
         var k = self.sky orelse return null;
         if (self.composed) {
-            k.key *= mix(splat(1), COMPOSED_KEY, k.sun());
-            k.ambient *= mix(splat(1), COMPOSED_AMBIENT, k.sun());
+            k.key *= mix(splat(1), model.COMPOSED_KEY, k.sun());
+            k.ambient *= mix(splat(1), model.COMPOSED_AMBIENT, k.sun());
         }
         return k;
     }
@@ -358,7 +332,7 @@ pub const Light = struct {
         const k = self.sky orelse return cloud;
         if (!self.composed or k.sun() == 0) return cloud;
         const dappling = if (map_at) |i| self.dappling[i] else self.dapplingAt(q);
-        const patch = PATCH_LIFT - (1 - cloud) * PATCH_CLOUD - dappling;
+        const patch = model.PATCH_LIFT - (1 - cloud) * model.PATCH_CLOUD - dappling;
         return mathx.lerpF(cloud, patch, k.sun());
     }
 
@@ -367,7 +341,7 @@ pub const Light = struct {
         const cover = visibility.sample(&self.canopy, q[0], q[1]);
         if (cover == 0) return 0;
         const dapple = 0.5 + 0.5 * @sin(q[0] * DAPPLE_WAVE[0] + q[1] * DAPPLE_WAVE[1] + @sin(q[1] * DAPPLE_WAVE[2]));
-        return cover * (DAPPLE_MIN + DAPPLE_SPAN * dapple);
+        return cover * (model.DAPPLE_MIN + model.DAPPLE_SPAN * dapple);
     }
 
     pub fn base(self: *const Light) Rgb {
@@ -379,7 +353,7 @@ pub const Light = struct {
     }
 
     fn carryColour(self: *const Light) Rgb {
-        return if (self.sky) |k| mix(CARRY, MOON_CARRY, k.moon) else CARRY;
+        return if (self.sky) |k| mix(CARRY, model.MOON_CARRY, k.moon) else CARRY;
     }
 
     /// The carried light `flat` cells from its carrier, warmed at its feet by night.
@@ -401,7 +375,7 @@ pub const Light = struct {
         const e = &self.effects[self.effect_n];
         self.effect_n += 1;
         e.source = source;
-        e.source.radius = @min(source.radius, EFFECT_REACH - 1);
+        e.source.radius = @min(source.radius, model.EFFECT_REACH - 1);
         e.origin = origin;
         @memset(&e.reach, false);
         var cells = grid.Cells.around(origin, @intFromFloat(@ceil(e.source.radius)));
@@ -417,7 +391,7 @@ pub const Light = struct {
         for (self.effects[0..self.effect_n], 0..) |*e, i| {
             const s = e.source;
             if (s.at[0] + s.radius <= x or s.at[0] - s.radius >= x + 1 or
-                s.at[1] + s.radius <= y or s.at[1] - s.radius >= y + 1 + FACE_H) continue;
+                s.at[1] + s.radius <= y or s.at[1] - s.radius >= y + 1 + model.FACE_H) continue;
             kept.set(i);
         }
         return kept;
@@ -447,7 +421,7 @@ pub const Light = struct {
                 view += t.colour * splat(t.shine(s));
             }
             if (ray) |r| {
-                const facing = sunFacing(r.k, s);
+                const facing = model.sunFacing(r.k, s);
                 if (facing > 0 or r.night > 0) {
                     const on = self.sunAt(lv, r, s.x, s.y, s.z);
                     if (facing > 0) view += r.k.key * splat(facing * reaching(on, self.composedAt(map_at, q, cloud)));
@@ -572,7 +546,7 @@ pub const Light = struct {
                 const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
                 map[i] = texelOf(self.shade(lv, torches, effects, q, i, v, if (ray) |*r| r else null, cloud), v.lit);
                 if (self.options.water_glints and wet and v.lit > FAINT and lv.isLit(c))
-                    glints[i] = colourOf(self.waterGlint(torches, effects, q, i, if (ray) |*r| r else null, cloud), 1);
+                    glints[i] = look.colourOf(self.waterGlint(torches, effects, q, i, if (ray) |*r| r else null, cloud), 1);
             }
         }
     }
@@ -581,14 +555,14 @@ pub const Light = struct {
         var gleam: Rgb = @splat(0);
         if (ray) |r| {
             const on = self.sunAt(&self.scratch, r, q[0], q[1], 0);
-            gleam += r.k.key * splat(r.glint * reaching(on, self.composedAt(map_at, q, cloud)) * SUN_GLINT);
+            gleam += r.k.key * splat(r.glint * reaching(on, self.composedAt(map_at, q, cloud)) * model.SUN_GLINT);
         }
         if (self.carryToward(q[0], q[1], true)) |f|
-            gleam += self.carryColour() * splat(smoothSpecular(.{ f.at[0] - q[0], f.at[1] - q[1], BODY_Z }, GLINT_POWER) * f.k * CARRY_GLINT);
+            gleam += self.carryColour() * splat(smoothSpecular(.{ f.at[0] - q[0], f.at[1] - q[1], BODY_Z }, GLINT_POWER) * f.k * model.CARRY_GLINT);
         for (torches) |i| {
             const t = &self.torch[i];
             const r = t.toward(q[0], q[1], 0) orelse continue;
-            gleam += t.colour * splat(smoothSpecular(r.d, GLINT_POWER) * r.k * TORCH_GLINT);
+            gleam += t.colour * splat(smoothSpecular(r.d, GLINT_POWER) * r.k * model.TORCH_GLINT);
         }
         var it = effects.iterator(.{});
         while (it.next()) |i| {
@@ -596,7 +570,7 @@ pub const Light = struct {
             const s = e.source;
             const k = e.strength(q[0], q[1], 0);
             if (k <= FAINT) continue;
-            gleam += rgbOf(s.col) * splat(smoothSpecular(offset(s.at, q[0], q[1], 0), GLINT_POWER) * k * EFFECT_GLINT);
+            gleam += rgbOf(s.col) * splat(smoothSpecular(offset(s.at, q[0], q[1], 0), GLINT_POWER) * k * model.EFFECT_GLINT);
         }
         return gleam;
     }
@@ -660,7 +634,7 @@ pub const Light = struct {
             .ground = .{ centre[0] + toward[0], centre[1] + toward[1] },
             .colour = k.key * splat(lit * on),
             .casts = !sky.upright(ray.flat),
-            .sky = .{ .reach = k.reach(), .depth = skyDepth(k, sun * cloud) * lit, .shade = ray.shade },
+            .sky = .{ .reach = k.reach(), .depth = model.skyDepth(k, sun * cloud) * lit, .shade = ray.shade },
         });
         return ray.dim(sun, cloud);
     }
@@ -716,7 +690,7 @@ pub const Light = struct {
     pub fn uploadMap(self: *Light) void {
         if (self.gpu.layers.get(.map) == null) return;
         self.gpu.uploadRows(&self.texels, self.baked);
-        self.baked = NONE_BAKED;
+        self.baked = model.NONE_BAKED;
     }
 
     pub fn drawBody(self: *const Light, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, shine: *const Shine, flash: f32, opacity: f32, fade_bounds: [2]f32) void {

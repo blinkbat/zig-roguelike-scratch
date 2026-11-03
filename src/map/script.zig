@@ -463,9 +463,7 @@ pub const Script = struct {
     pub fn declare(self: *Script, t: Table, name: []const u8) ?u8 {
         if (!token(name) or self.find(t, name) != null) return null;
         const tb = self.tableOf(t);
-        if (tb.n.* == tb.items.len) return null;
-        tb.items[tb.n.*] = Name.of(name);
-        tb.n.* += 1;
+        if (!mathx.push(Name, tb.items, tb.n, Name.of(name))) return null;
         return tb.n.* - 1;
     }
 
@@ -531,9 +529,7 @@ pub const Script = struct {
     }
 
     pub fn addFolk(self: *Script, f: Folk) ?u8 {
-        if (self.folk_n == MAX_FOLK or self.folkAt(f.node, f.at) != null) return null;
-        self.folk[self.folk_n] = f;
-        self.folk_n += 1;
+        if (self.folkAt(f.node, f.at) != null or !mathx.push(Folk, &self.folk, &self.folk_n, f)) return null;
         return self.folk_n - 1;
     }
 
@@ -658,8 +654,7 @@ pub const Script = struct {
 
     /// Every index in range, every name readable back and every text plain; `node_n` nodes on the map.
     pub fn valid(self: *const Script, node_n: usize) bool {
-        if (self.flag_n > MAX_FLAGS or self.counter_n > MAX_COUNTERS or self.timer_n > MAX_TIMERS) return false;
-        if (self.folk_n > MAX_FOLK or self.dialog_n > MAX_DIALOGS or self.trigger_n > MAX_TRIGGERS) return false;
+        if (!bounded(self)) return false;
         for (std.enums.values(Table)) |t| {
             const all = self.names(t);
             for (all) |*nm| {
@@ -673,14 +668,14 @@ pub const Script = struct {
             for (self.folks()[0..i]) |*other| if (other.node == f.node and other.at.eq(f.at)) return false;
         }
         for (self.dialogs()) |*d| {
-            if (!d.name.valid() or !token(d.name.text()) or d.line_n == 0 or d.line_n > MAX_LINES) return false;
+            if (!d.name.valid() or !token(d.name.text()) or d.line_n == 0 or !bounded(d)) return false;
             for (d.lines()) |*l| {
                 if (!l.name.valid() or !token(l.name.text()) or !l.who.valid() or !l.say.valid()) return false;
-                if (l.choice_n > MAX_CHOICES or l.act_n > LINE_ACTS) return false;
+                if (!bounded(l)) return false;
                 if (l.then) |t| if (t >= d.line_n) return false;
                 for (l.acts()) |*a| if (!a.kind.spoken() or !self.actFits(a)) return false;
                 for (l.choices()) |*c| {
-                    if (!c.ask.valid() or c.act_n > CHOICE_ACTS) return false;
+                    if (!c.ask.valid() or !bounded(c)) return false;
                     if (c.next) |nx| if (nx >= d.line_n) return false;
                     if (c.gate) |*gt| if (!self.condFits(gt, node_n)) return false;
                     for (c.acts()) |*a| if (!a.kind.spoken() or !self.actFits(a)) return false;
@@ -690,7 +685,7 @@ pub const Script = struct {
         }
         if (!distinct(self.dialogs())) return false;
         for (self.triggers()) |*t| {
-            if (!t.name.valid() or !token(t.name.text()) or t.cond_n > MAX_CONDS or t.act_n > MAX_ACTS) return false;
+            if (!t.name.valid() or !token(t.name.text()) or !bounded(t)) return false;
             if (t.priority < -PRIORITY_MAX or t.priority > PRIORITY_MAX) return false;
             for (t.conds()) |*c| if (!self.condFits(c, node_n)) return false;
             for (t.acts()) |*a| if (!self.actFits(a)) return false;
@@ -870,6 +865,13 @@ fn freshName(buf: *[NAME_MAX]u8, stem: []const u8, owner: anytype, comptime take
 
 pub fn cut(comptime T: type, items: []T, n: *u8, i: usize) void {
     mathx.removeAt(T, items, n, i, .{});
+}
+
+fn bounded(x: anytype) bool {
+    inline for (@TypeOf(x.*).COUNTED) |c| {
+        if (@field(x, c[1]) > @field(x, c[0]).len) return false;
+    }
+    return true;
 }
 
 test "dropping a folk, a node or a line leaves no reference past the end" {

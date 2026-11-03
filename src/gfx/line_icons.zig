@@ -383,7 +383,10 @@ fn iconX(i: usize, size: ItemSize) i32 {
 }
 
 fn iconY(size: ItemSize) i32 {
-    return if (size == .cell) 0 else @intFromEnum(ItemSize.cell);
+    return switch (size) {
+        .cell => 0,
+        .row => @intFromEnum(ItemSize.cell),
+    };
 }
 
 /// Needs a live GL context.

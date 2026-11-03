@@ -69,7 +69,7 @@ fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *c
     const y = dest.y + height;
     if (self.gpu.glow) |g| {
         const a = CONTACT_A * @min(1, lit / lum(light.CARRY)) * opacity;
-        light.glowAt(g, x, y, dest.width * CONTACT_W * 0.5 * contact, dest.width * CONTACT_H * 0.5 * contact, light.colourOf(light.SHADE_RGB, a));
+        light.glowAt(g, x, y, dest.width * CONTACT_W * 0.5 * contact, dest.width * CONTACT_H * 0.5 * contact, look.colourOf(light.SHADE_RGB, a));
     }
     return .{ .x = x, .y = y, .height = height, .share = share };
 }
@@ -139,7 +139,7 @@ pub fn drawCanopy(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangl
         const r = dest.width * CANOPY_R;
         const rx = r * (1 + c.len / height * CANOPY_STRETCH);
         const ry = r * CANOPY_SQUASH;
-        drawAlong(g, .{ fx + c.lean[0] * CANOPY_AT, fy + c.lean[1] * CANOPY_AT }, c.lean, .{ rx * 2, ry * 2 }, .{ .x = rx, .y = ry }, light.colourOf(c.shade, c.alpha * CANOPY_A));
+        drawAlong(g, .{ fx + c.lean[0] * CANOPY_AT, fy + c.lean[1] * CANOPY_AT }, c.lean, .{ rx * 2, ry * 2 }, .{ .x = rx, .y = ry }, look.colourOf(c.shade, c.alpha * CANOPY_A));
     }
 }
 
@@ -171,7 +171,7 @@ fn flushForest(self: *light.Light) void {
             if (!beginSilhouettes(self, f.tex, 1, f.joined.uniform(), .{ FOREST_SOFT, FOREST_SOFT })) return;
             drawing = .{ .joined = f.joined, .size = size };
         }
-        for (f.cast[0..f.n]) |c| forestQuads(f.tex, f.dest, f.centre, c, light.colourOf(c.shade, @min(FOREST_MAX, c.alpha * FOREST_A)));
+        for (f.cast[0..f.n]) |c| forestQuads(f.tex, f.dest, f.centre, c, look.colourOf(c.shade, @min(FOREST_MAX, c.alpha * FOREST_A)));
     }
     if (drawing != null) endSilhouettes(self);
 }
@@ -303,7 +303,7 @@ pub fn solidity(lean: [2]f32) f32 {
 fn streak(g: rl.Texture2D, fx: f32, fy: f32, width: f32, c: Cast) void {
     const len = c.len / (1 - STREAK_FOOT);
     const ry = width * STREAK_W;
-    drawAlong(g, .{ fx, fy }, c.lean, .{ len, ry * 2 }, .{ .x = len * STREAK_FOOT, .y = ry }, light.colourOf(c.shade, c.alpha * STREAK_A * (1 - c.solid)));
+    drawAlong(g, .{ fx, fy }, c.lean, .{ len, ry * 2 }, .{ .x = len * STREAK_FOOT, .y = ry }, look.colourOf(c.shade, c.alpha * STREAK_A * (1 - c.solid)));
 }
 
 /// `g` stretched to `size`, its long side turned down `lean`, `origin` of it at `at`.
@@ -336,5 +336,5 @@ fn silhouette(tex: rl.Texture2D, fx: f32, fy: f32, width: f32, foot: f32, left: 
         .{ east, foot, fx + half, fy },
         .{ east, -pad, tip[0] + half, tip[1] },
     };
-    texQuad(tex, light.colourOf(c.shade, c.alpha), if (mirrored) .{ corners[3], corners[2], corners[1], corners[0] } else corners);
+    texQuad(tex, look.colourOf(c.shade, c.alpha), if (mirrored) .{ corners[3], corners[2], corners[1], corners[0] } else corners);
 }

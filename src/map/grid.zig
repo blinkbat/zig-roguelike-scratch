@@ -418,10 +418,7 @@ pub const Torches = struct {
     }
 
     pub fn add(self: *Torches, p: P) bool {
-        if (!self.takes(p)) return false;
-        self.at[self.n] = p;
-        self.n += 1;
-        return true;
+        return self.takes(p) and mathx.push(P, &self.at, &self.n, p);
     }
 
     pub fn remove(self: *Torches, p: P) bool {

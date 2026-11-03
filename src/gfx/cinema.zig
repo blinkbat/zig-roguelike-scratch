@@ -167,7 +167,7 @@ pub const Cinema = struct {
     fn composite(self: *const Cinema, scene: rl.Texture2D, view: shaders.MapView, visibility: ?rl.Texture2D) void {
         const g = self.grade orelse return copyTarget(scene);
         const v = visibility orelse return copyTarget(scene);
-        raster.beginBlend(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
+        raster.beginReplace();
         rl.beginShaderMode(g.shader);
         shaders.setMapView(g, view);
         rl.setShaderValueTexture(g.shader, g.visibility, v);
@@ -227,7 +227,7 @@ fn setField(p: anytype, field: rl.Texture2D, visibility: rl.Texture2D, view: sha
 const drawTarget = raster.drawTarget;
 
 fn copyTarget(t: rl.Texture2D) void {
-    raster.beginBlend(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
+    raster.beginReplace();
     drawTarget(t);
     rl.endBlendMode();
 }

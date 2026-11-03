@@ -49,8 +49,7 @@ pub const Shot = struct {
 
     pub fn position(self: *const Shot, time: f32) [2]f32 {
         const a = mathx.centre(self.from);
-        if (self.flight.len == 0) return a;
-        const b = mathx.centre(self.flight.path[self.flight.len - 1]);
+        const b = mathx.centre(self.flight.end() orelse return a);
         const duration = self.lands();
         const k = if (duration > 0) std.math.clamp(time / duration, 0, 1) else 1;
         return mathx.lerp2(a, b, k);
@@ -245,7 +244,7 @@ pub const Presentation = struct {
         self.shot = .{ .flight = flight, .from = from, .act = act };
         self.holdUntil(self.shot.?.ends());
         const stroke = Stroke{ .from = from, .wait = self.shot.?.lands(), .fire = act.element() == .fire };
-        if (act.element() == .lightning and flight.len > 0) self.fx.zap(@max(0, stroke.wait - game.ZAP_S), .{ .from = mathx.centre(from), .to = mathx.centre(flight.path[flight.len - 1]) });
+        if (act.element() == .lightning) if (flight.end()) |to| self.fx.zap(@max(0, stroke.wait - game.ZAP_S), .{ .from = mathx.centre(from), .to = mathx.centre(to) });
         self.lead = stroke.wait;
         return stroke;
     }
@@ -302,24 +301,12 @@ pub const Presentation = struct {
         owed.arrow = flight;
     }
 
-    pub fn recordStatus(self: *Presentation, target: actor.ActorId, comptime tick: simulation.Tick, harm: Harm) void {
-        @field(self.owed[target.slot().index], @tagName(tick)) = harm;
-    }
-
-    pub fn recordHeal(self: *Presentation, target: actor.ActorId, after: fx.After) void {
-        self.owed[target.slot().index].healed = after;
+    pub fn owe(self: *Presentation, target: actor.ActorId, comptime field: anytype, value: @FieldType(Owed, @tagName(field))) void {
+        @field(self.owed[target.slot().index], @tagName(field)) = value;
     }
 
     pub fn recordWear(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
         self.owed[target.slot().index].worn = self.afterOf(sim, target.slot().index);
-    }
-
-    pub fn recordThorns(self: *Presentation, target: actor.ActorId, harm: Harm) void {
-        self.owed[target.slot().index].thorns = harm;
-    }
-
-    pub fn recordSweep(self: *Presentation, by: actor.ActorId, swept: Swept) void {
-        self.owed[by.slot().index].swept = swept;
     }
 
     pub fn recordKnock(self: *Presentation, by: actor.ActorId, from: P, to: P) void {
@@ -327,21 +314,17 @@ pub const Presentation = struct {
         self.owed[by.slot().index].knock = .{ .from = from, .to = to };
     }
 
-    pub fn recordMend(self: *Presentation, by: actor.ActorId, mended: Mended) void {
-        self.owed[by.slot().index].mended = mended;
-    }
-
     pub fn freshTurn(self: *Presentation) void {
-        game.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
+        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
         self.fx.clear();
     }
 
     pub fn freshRun(self: *Presentation) void {
-        game.toDefaults(self, &.{ "mana_held", "flasks_shown" });
+        mathx.toDefaults(self, &.{ "mana_held", "flasks_shown" });
     }
 
     pub fn freshFacing(self: *Presentation) void {
-        game.toDefaults(self, &.{"facing"});
+        mathx.toDefaults(self, &.{"facing"});
     }
 
     fn glideHeld(self: *Presentation, slot: usize, gl: glide.Glide) f32 {

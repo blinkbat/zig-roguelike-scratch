@@ -221,7 +221,11 @@ pub const HELP = [_]HelpSection{
         Desk.FULLSCREEN_CAPTION ++ " fullscreen" ++ SEP ++ Desk.BACK_CAPTION ++ " back",
     } },
 };
-pub const HELP_COLUMNS = 2;
+pub const HELP_COLUMNS = blk: {
+    var most: usize = 0;
+    for (HELP) |s| most = @max(most, s.column);
+    break :blk @as(comptime_int, most + 1);
+};
 pub const HELP_ROWS = blk: {
     var n: [HELP_COLUMNS]i32 = @splat(0);
     for (HELP) |s| n[s.column] += 2 + s.lines.len;

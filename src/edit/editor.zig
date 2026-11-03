@@ -77,8 +77,6 @@ const BRUSH_W: i32 = 64;
 pub const BRUSH_SPAN: i32 = 2 * widgets.STEP_W + BRUSH_W;
 pub const MEMBERS_X: i32 = DRAW_SPAN + widgets.BLOCK_GAP;
 pub const MAKEUP_TOOLS_X: i32 = widgets.INNER_W - @as(i32, knobs.MAKEUP_TOOLS.len) * widgets.STEP_PITCH + widgets.GAP;
-pub const TEXT_DY: i32 = @divTrunc(widgets.ROW_H - widgets.TEXT, 2);
-pub const ROW_DETAIL_DY: i32 = @divTrunc(widgets.ROW_H - widgets.DETAIL, 2);
 pub const TITLE_DY: i32 = 3;
 pub const NODE_GAP: i32 = 2;
 pub const DETAIL_DY: i32 = widgets.TEXT + 1;
@@ -342,8 +340,12 @@ pub const Editor = struct {
     pub fn changed(ed: *Editor) void {
         if (ed.map.pruneFolk(ed.node)) ed.say("Folk that no longer had open floor to stand on went", .{});
         ed.bank();
-        ed.scene.invalidate();
+        ed.stale();
         ed.thumbnails.invalidate(ed.node);
+    }
+
+    fn stale(ed: *Editor) void {
+        ed.scene.invalidate();
         ed.paste_preview.ready = false;
     }
 
@@ -353,9 +355,8 @@ pub const Editor = struct {
     }
 
     fn restamp(ed: *Editor) void {
-        ed.scene.invalidate();
+        ed.stale();
         ed.thumbnails.invalidateAll();
-        ed.paste_preview.ready = false;
     }
 
     fn dropHeld(ed: *Editor) void {
@@ -370,9 +371,8 @@ pub const Editor = struct {
     }
 
     fn restampSwapped(ed: *Editor) void {
-        ed.scene.invalidate();
+        ed.stale();
         ed.thumbnails.changedMap(ed.map, ed.history.transaction.before);
-        ed.paste_preview.ready = false;
     }
 
     pub fn undo(ed: *Editor) void {
@@ -410,6 +410,7 @@ pub const Editor = struct {
         ed.drag = null;
         ed.linking = null;
         ed.popup = null;
+        ed.delete_armed = null;
     }
 
     pub fn release(ed: *Editor) void {
@@ -888,7 +889,7 @@ fn drawPopup(ed: *Editor, g: *game.Game) void {
 fn popupRows(ed: *Editor, g: *game.Game, comptime U: type, v: *U, x: i32, top: i32, w: i32) void {
     var y = top;
     for (std.enums.values(std.meta.Tag(U))) |t| {
-        if (widgets.buttonOn(ed.controls(), &g.face, widgets.row(x, y, w), @tagName(t), t == std.meta.activeTag(v.*), true, true, null)) {
+        if (widgets.modalButton(ed.controls(), &g.face, widgets.row(x, y, w), @tagName(t), t == std.meta.activeTag(v.*), true, null)) {
             retag(U, v, t);
             ed.popup = null;
         }

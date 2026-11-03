@@ -4,6 +4,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const menu = @import("../ui/menu.zig");
+const wording = @import("../core/wording.zig");
 const hud = @import("../ui/hud.zig");
 const book = @import("../ui/book.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -487,22 +488,6 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
     };
 }
 
-/// Each kind's name with every word capitalised, as its card heads it.
-const TITLES = blk: {
-    var t = std.EnumArray(actor.Kind, [:0]const u8).initUndefined();
-    for (std.enums.values(actor.Kind)) |k| {
-        var name = actor.row(k).name[0..actor.row(k).name.len :0].*;
-        var first = true;
-        for (&name) |*c| {
-            if (first) c.* = std.ascii.toUpper(c.*);
-            first = c.* == ' ';
-        }
-        const out = name;
-        t.set(k, &out);
-    }
-    break :blk t;
-};
-
 fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip {
     if (id == grid.NO_ONE or actor.Pool.slot(id) >= g.sim.pool.n) return null;
     const i = actor.Pool.slot(id);
@@ -516,5 +501,5 @@ fn actorTip(g: *const game.Game, id: u16, title_buf: []u8, body_buf: []u8) ?Tip 
     w.print("{d}/{d} HP\n" ++ hud.TIP_RULE ++ "\n{s}", .{ pictured.hp, pictured.max, menu.titleOf(tile) }) catch {};
     terrain.of(tile).write(w);
     if (g.sim.isHero(i)) return .{ .title = std.fmt.bufPrintZ(title_buf, "{s}", .{g.sim.name.text()}) catch row.name, .body = stream.getWritten() };
-    return .{ .title = TITLES.get(pictured.kind), .body = stream.getWritten() };
+    return .{ .title = wording.recased(title_buf, std.fmt.bufPrintZ(title_buf, "{s}", .{row.name}) catch row.name, .title), .body = stream.getWritten() };
 }

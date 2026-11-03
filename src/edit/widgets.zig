@@ -21,6 +21,8 @@ pub const TEXT: i32 = font.HEAD;
 pub const DETAIL: i32 = font.BODY;
 pub const HEAD: i32 = 32;
 pub const LINE_STEP: i32 = TEXT + GAP;
+pub const TEXT_DY: i32 = @divTrunc(ROW_H - TEXT, 2);
+pub const DETAIL_DY: i32 = @divTrunc(ROW_H - DETAIL, 2);
 pub const INNER_W: i32 = PANEL_W - PAD * 2;
 pub const LINE: usize = 200;
 pub const MODAL_W: i32 = 720;
@@ -38,6 +40,7 @@ pub const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32,
 pub const PANEL_BG = look.EDIT_PANEL;
 pub const ROW_ON = look.EDIT_ROW_ON;
 pub const ON = look.EDIT_ON;
+pub const HOVER = look.EDIT_HOVER;
 const LIVE_FILL = look.fade(ROW_ON, 0.5);
 const DEAD_FILL = look.fade(ROW_ON, 0.2);
 const LIVE_EDGE = look.fade(look.EDGE, 0.85);
@@ -67,6 +70,10 @@ pub fn hot(controls: Controls, r: rl.Rectangle, live: bool, modal: bool, tip: ?[
 
 pub fn button(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
     return buttonOn(controls, face, r, label, on, live, false, tip);
+}
+
+pub fn modalButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
+    return buttonOn(controls, face, r, label, on, live, true, tip);
 }
 
 pub fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
@@ -131,6 +138,10 @@ pub fn plate(r: rl.Rectangle, on: bool, hot_: bool) void {
     if (on) rl.drawRectangleLinesEx(r, 1, ON);
 }
 
+pub fn hoverEdge(r: rl.Rectangle, hot_: bool) void {
+    if (hot_) rl.drawRectangleLinesEx(r, 1, HOVER);
+}
+
 pub fn row(x: i32, y: i32, w: i32) rl.Rectangle {
     return raster.rect(x, y, w, ROW_H);
 }
@@ -143,6 +154,15 @@ pub fn slotOf(x0: i32, span: i32, y: i32, k: usize, n: usize) rl.Rectangle {
 
 pub fn cellOfRow(y: i32, k: usize, n: usize) rl.Rectangle {
     return slotOf(PAD, INNER_W, y, k, n);
+}
+
+pub fn gridSlot(top: i32, i: usize, cols: usize, pitch: i32) rl.Rectangle {
+    const s = mathx.unslot(i, cols);
+    return slotOf(PAD, INNER_W, top + s.y * pitch, @intCast(s.x), cols);
+}
+
+pub fn rowsOf(n: usize, cols: usize) i32 {
+    return @intCast(std.math.divCeil(usize, n, cols) catch unreachable);
 }
 
 pub fn scissor(r: rl.Rectangle) void {

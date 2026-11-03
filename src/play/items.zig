@@ -507,6 +507,14 @@ pub const Item = struct {
         };
     }
 
+    pub fn perk(self: Item, p: *passives.Perks) void {
+        if (spec(self.kind).innate) |innate| if (innate == .grant) innate.grant.perk(p);
+        for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
+            inline .mana_regen, .life_on_kill, .life_flask => |k| k.grant(m.value).perk(p),
+            .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .resistance, .penetration, .thorns, .spoils => {},
+        };
+    }
+
     pub fn meets(self: Item, a: attrs.Attrs) bool {
         return a.meets(spec(self.kind).needs);
     }
@@ -600,12 +608,7 @@ pub const Gear = struct {
 
     pub fn perks(self: Gear, base: passives.Perks) passives.Perks {
         var out = base;
-        for (self.slots.values) |maybe| if (maybe) |it| {
-            if (spec(it.kind).innate) |innate| if (innate == .grant) innate.grant.perk(&out);
-            out.mana_regen += it.value(.mana_regen);
-            out.life_on_kill += it.value(.life_on_kill);
-            out.life_flask += it.value(.life_flask);
-        };
+        for (self.slots.values) |maybe| if (maybe) |it| it.perk(&out);
         return out;
     }
 
@@ -713,10 +716,7 @@ pub const Inventory = struct {
     pub const COUNTED = .{.{ "bag", "n" }};
 
     pub fn add(self: *Inventory, it: Item) bool {
-        if (self.n == BAG_MAX) return false;
-        self.bag[self.n] = it;
-        self.n += 1;
-        return true;
+        return mathx.push(Item, &self.bag, &self.n, it);
     }
 
     /// One more `k` on its stack, unless the stack is full.
@@ -813,10 +813,7 @@ pub const Ground = struct {
     }
 
     pub fn addSupply(self: *Ground, s: Supply) bool {
-        if (self.supply_n == self.supplies.len) return false;
-        self.supplies[self.supply_n] = s;
-        self.supply_n += 1;
-        return true;
+        return mathx.push(Supply, &self.supplies, &self.supply_n, s);
     }
 
     pub fn takeSupply(self: *Ground, i: usize, into: *Inventory) bool {
@@ -831,10 +828,7 @@ pub const Ground = struct {
             pile.amount +|= amount;
             return true;
         };
-        if (self.coin_n == self.coins.len) return false;
-        self.coins[self.coin_n] = .{ .at = at, .amount = amount };
-        self.coin_n += 1;
-        return true;
+        return mathx.push(Coins, &self.coins, &self.coin_n, .{ .at = at, .amount = amount });
     }
 
     pub fn collect(self: *Ground, at: mathx.P) i32 {
@@ -845,10 +839,7 @@ pub const Ground = struct {
     }
 
     pub fn add(self: *Ground, drop: Drop) bool {
-        if (self.n == GROUND_MAX) return false;
-        self.drops[self.n] = drop;
-        self.n += 1;
-        return true;
+        return mathx.push(Drop, &self.drops, &self.n, drop);
     }
 
     pub fn room(self: *const Ground, reserved: usize) bool {

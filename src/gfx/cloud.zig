@@ -168,11 +168,22 @@ pub const Cloud = struct {
         const lo: usize = @intCast(@max(0, box.lo.x));
         const hi: usize = @intCast(@min(grid.W, box.hi.x));
         if (hi <= lo) return false;
-        var y = @max(0, box.lo.y);
-        while (y < @min(grid.H, box.hi.y)) : (y += 1) {
+        const top = @max(0, box.lo.y);
+        const bottom = @min(grid.H, box.hi.y);
+        if (bottom <= top) return false;
+        if (lo == 0 and hi == grid.W) {
+            const start: usize = @intCast(top * grid.W);
+            const end: usize = @intCast(bottom * grid.W);
+            for (&self.tint.values) |*tint| {
+                if (anyOn(tint[start..end])) return true;
+            }
+            return false;
+        }
+        var y = top;
+        while (y < bottom) : (y += 1) {
             const row: usize = @intCast(y * grid.W);
             for (&self.tint.values) |*tint| {
-                if (!std.mem.allEqual(f32, tint[row + lo .. row + hi], 0)) return true;
+                if (anyOn(tint[row + lo .. row + hi])) return true;
             }
         }
         return false;
@@ -203,6 +214,19 @@ pub const Cloud = struct {
 };
 
 /// A wall's texels take the tint of the open cell each faces, so gas meets a wall whole and none shows past it.
+fn anyOn(xs: []const f32) bool {
+    const LANES = 16;
+    const V = @Vector(LANES, f32);
+    const zero: V = @splat(0);
+    var i: usize = 0;
+    while (i + LANES <= xs.len) : (i += LANES) {
+        const v: V = xs[i..][0..LANES].*;
+        if (@reduce(.Or, v != zero)) return true;
+    }
+    for (xs[i..]) |x| if (x != 0) return true;
+    return false;
+}
+
 fn texel(tint: *const [grid.CELLS]f32, lv: *const grid.Level, tx: i32, ty: i32) f32 {
     const c = P{ .x = @divFloor(tx, SUB), .y = @divFloor(ty, SUB) };
     if (lv.flat(c)) return openAt(tint, lv, c);
@@ -331,7 +355,12 @@ test "gas remembered off screen leaves the view untinted, gas a wall away from i
     defer alloc.destroy(c);
     const view = grid.Box.sized(.{ .x = 10, .y = 10 }, 20, 12);
     const reads = view.grown(2);
+    try std.testing.expect(!c.tinted(grid.Box.inMap(0)));
+    c.tint.getPtr(.smoke)[grid.CELLS - 1] = 0.5;
+    try std.testing.expect(c.tinted(grid.Box.inMap(0)));
+    c.tint.getPtr(.smoke)[grid.CELLS - 1] = 0;
     c.tint.getPtr(.caustic)[grid.Level.idx(.{ .x = 50, .y = 40 })] = 0.5;
+    try std.testing.expect(c.tinted(grid.Box.inMap(0)));
     try std.testing.expect(!c.tinted(reads));
     c.tint.getPtr(.healing)[grid.Level.idx(.{ .x = view.hi.x + 1, .y = view.lo.y })] = 0.5;
     try std.testing.expect(c.tinted(reads));

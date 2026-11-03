@@ -22,9 +22,7 @@ pub const Bonus = enum {
     /// What "+N to" raises.
     pub fn label(b: Bonus) [:0]const u8 {
         return switch (b) {
-            .strength => wording.named(Attr.strength),
-            .dexterity => wording.named(Attr.dexterity),
-            .intelligence => wording.named(Attr.intelligence),
+            inline .strength, .dexterity, .intelligence => |t| wording.named(@field(Attr, @tagName(t))),
             .life => "maximum life",
             .mana => "maximum mana",
             .armour => "Armour",

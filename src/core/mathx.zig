@@ -271,6 +271,13 @@ pub fn swapRemove(comptime T: type, items: []T, n: *usize, i: usize) T {
     return out;
 }
 
+pub fn push(comptime T: type, items: []T, n: anytype, x: T) bool {
+    if (n.* == items.len) return false;
+    items[n.*] = x;
+    n.* += 1;
+    return true;
+}
+
 /// A test's fine frame, seconds, for timings read to a few milliseconds.
 pub const TEST_DT: f32 = 1.0 / 240.0;
 /// A frame at 60 a second, for a bench or a test that counts frames.
@@ -539,4 +546,10 @@ test "a seed reproduces a roll" {
     var a = Rng.init(99);
     var b = Rng.init(99);
     for (0..64) |_| try std.testing.expectEqual(a.range(1, 6), b.range(1, 6));
+}
+
+pub fn toDefaults(s: anytype, comptime fields: []const []const u8) void {
+    const T = @TypeOf(s.*);
+    @setEvalBranchQuota(20_000);
+    inline for (fields) |f| @field(s, f) = comptime std.meta.fieldInfo(T, @field(std.meta.FieldEnum(T), f)).defaultValue().?;
 }

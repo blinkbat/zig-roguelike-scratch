@@ -251,10 +251,9 @@ fn visitOf(g: *const Game) simulation.Visit {
 }
 
 fn revisit(g: *Game, v: *const simulation.Visit) void {
-    g.sim.lv = v.lv;
-    g.sim.pool = v.pool;
-    g.pic.facing = v.facing;
-    g.sim.ground = v.ground;
+    inline for (std.meta.fields(simulation.Visit)) |f| {
+        if (comptime @hasField(simulation.Simulation, f.name)) @field(g.sim, f.name) = @field(v, f.name) else @field(g.pic, f.name) = @field(v, f.name);
+    }
 }
 
 pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
@@ -400,11 +399,7 @@ pub fn reset(g: *Game, hero: P) void {
     freshTurn(g);
 }
 
-pub fn toDefaults(s: anytype, comptime fields: []const []const u8) void {
-    const T = @TypeOf(s.*);
-    @setEvalBranchQuota(20_000);
-    inline for (fields) |f| @field(s, f) = comptime std.meta.fieldInfo(T, @field(std.meta.FieldEnum(T), f)).defaultValue().?;
-}
+const toDefaults = mathx.toDefaults;
 
 fn freshRun(g: *Game) void {
     toDefaults(&g.sim, &.{ "kills", "gold", "mana_recovery", "flasks", "cooldown", "stepped", "log", "chronicle", "inventory", "ground", "plot" });
@@ -526,8 +521,8 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
             const s = heroBump(g, h.at, to, late);
             switch (g.sim.class) {
                 inline else => |c| {
-                    const blow = comptime c.strike();
-                    if (w != grid.NO_ONE) combat.wound(g, w, attacks.heroRoll(&g.sim, .melee, attacks.kickRaw(&g.sim.rng, &g.sim.inventory.gear, blow)), blow.verb, s) else combat.smash(g, to, blow.verb, s);
+                    const verb = comptime c.strike().verb;
+                    if (w != grid.NO_ONE) combat.wound(g, w, attacks.heroKick(&g.sim), verb, s) else combat.smash(g, to, verb, s);
                 },
             }
             g.pic.lead = s.wait;
@@ -701,6 +696,7 @@ pub fn update(g: *Game, dt: f32) void {
     g.pic.stepMotion(&g.sim, dt);
     var late: f32 = 0;
     const was = screenOf(g);
+    const turn_at = g.sim.clock.minute;
     if (g.mode != .dead and g.mode != .talk and g.st.character_page != null) {
         const page = book.Page.of(g.st.character_page.?);
         if (bookOpen(g) and g.character.page == page) {
@@ -748,7 +744,7 @@ pub fn update(g: *Game, dt: f32) void {
         .pause => character.pauseStep(g),
         .talk => talking.step(g),
     }
-    character.settleLoot(g);
+    if (g.sim.clock.minute == turn_at) character.settleLoot(g);
     if (characterShown(g) or g.mode == .inspect) if (g.sim.travel) |l| if (g.pic.quiet()) goThrough(g, l);
     if (!std.meta.eql(was, screenOf(g))) holdWalk(g);
     g.pic.stepGlide(&g.sim, g.cloud, late);

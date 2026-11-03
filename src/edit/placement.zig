@@ -181,7 +181,8 @@ fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
 
 /// Whether `p`'s tile changed; a door keeps its own.
 fn paintInto(nd: *const atlas.Node, b: *atlas.Bespoke, p: P, t: grid.Tile) bool {
-    if (b.tile[grid.Level.idx(p)] == t or nd.doorAt(p) != null) return false;
+    const i = grid.Level.idx(p);
+    if (b.tile[i] == t or nd.doorAt(p) != null) return false;
     layTile(nd, b, p, t);
     return true;
 }

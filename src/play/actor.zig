@@ -194,12 +194,12 @@ pub const Row = struct {
     stun_resist: u8 = 0,
     fright_resist: u8 = 0,
     name: [:0]const u8,
-    movement: Movement,
+    movement: Movement = .ground,
     foe_type: ?FoeType,
     /// A fresh body's; one split off a slime has half what that slime had left.
     hp: i32,
     /// Cells its eyes reach, where there is light to see by.
-    sight: i32,
+    sight: i32 = SIGHT,
     blow: Blow,
     ranged: ?Ranged = null,
     /// Cells round it the light it carries reaches.
@@ -225,6 +225,7 @@ pub const Row = struct {
     mends: ?Mend = null,
 };
 
+const SIGHT: i32 = 7;
 pub const LURK_REACH: i32 = 1;
 
 pub const SWEEP_VERB = "sweeps";
@@ -259,21 +260,21 @@ pub fn innateResist(k: Kind, status: resilience.Kind) u8 {
 pub fn row(k: Kind) Row {
     return switch (k) {
         inline .archer, .wizard, .knight => |h| heroRow(@field(heroes.Class, @tagName(h))),
-        .rat => .{ .name = "rat", .movement = .ground, .foe_type = .beast, .hp = 6, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "bites", .slain = "bitten to death" } } },
-        .slime => .{ .name = "slime", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half, .fright_resist = damage.RESIST_MAX },
+        .rat => .{ .name = "rat", .foe_type = .beast, .hp = 6, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "bites", .slain = "bitten to death" } } },
+        .slime => .{ .name = "slime", .foe_type = .aberration, .hp = 40, .sight = 6, .blow = SLAM, .splits = .slime_half, .fright_resist = damage.RESIST_MAX },
         .slime_half => smaller(.slime, "half slime", .slime_quarter),
         .slime_quarter => smaller(.slime_half, "quarter slime", null),
-        .bloat => .{ .name = "caustic bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .{ .burst = .gas }, .flits = true, .fright_resist = damage.RESIST_MAX },
-        .pib => .{ .name = "pib", .movement = .ground, .foe_type = .beast, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .slain = "stabbed to death", .bleeds = 30 } }, .flees = true },
-        .beefy_pib => .{ .name = "beefy pib", .movement = .ground, .foe_type = .beast, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .slain = "beaten to death", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .fright_resist = 50, .armour = 20 },
-        .bandit_crossbowman => .{ .name = "bandit crossbowman", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15, .fright_resist = 25 },
-        .bandit_netter => .{ .name = "bandit trapper", .movement = .ground, .foe_type = .humanoid, .hp = 10, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "clubs", .slain = "clubbed down" } }, .keeps = 2, .net = NET, .armour = 10, .fright_resist = 25 },
-        .bandit_shieldbearer => .{ .name = "bandit shieldbearer", .movement = .ground, .foe_type = .humanoid, .hp = 24, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bashes", .slain = "battered down", .knocks = true } }, .armour = 40, .stun_resist = 75, .fright_resist = 50 },
-        .frost_wisp => .{ .name = "frost wisp", .movement = .flying, .foe_type = .aberration, .hp = 8, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "touches", .slain = "frozen solid", .element = .cold, .chills = 100 } }, .flits = true, .resists = ICY, .fright_resist = damage.RESIST_MAX },
-        .pyre_bloat => .{ .name = "pyre bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .sight = 7, .blow = .{ .burst = .fire }, .flits = true, .resists = FIERY, .fright_resist = damage.RESIST_MAX },
-        .pib_shaman => .{ .name = "pib shaman", .movement = .ground, .foe_type = .beast, .hp = 12, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "pokes", .slain = "poked to death" } }, .keeps = 3, .mends = MEND },
+        .bloat => .{ .name = "caustic bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .blow = .{ .burst = .gas }, .flits = true, .fright_resist = damage.RESIST_MAX },
+        .pib => .{ .name = "pib", .foe_type = .beast, .hp = 10, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "stabs", .slain = "stabbed to death", .bleeds = 30 } }, .flees = true },
+        .beefy_pib => .{ .name = "beefy pib", .foe_type = .beast, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 3, .hi = 6 }, .verb = "pummels", .slain = "beaten to death", .stuns = 25 } }, .sweep_every = 4, .stun_resist = 75, .fright_resist = 50, .armour = 20 },
+        .bandit_crossbowman => .{ .name = "bandit crossbowman", .foe_type = .humanoid, .hp = 10, .sight = bow.RANGE, .blow = .{ .strike = .{ .hit = bow.BASE, .verb = bow.VERB, .slain = "shot dead" } }, .ranged = .{ .range = bow.RANGE, .retreat = 2 }, .armour = 15, .fright_resist = 25 },
+        .bandit_netter => .{ .name = "bandit trapper", .foe_type = .humanoid, .hp = 10, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "clubs", .slain = "clubbed down" } }, .keeps = 2, .net = NET, .armour = 10, .fright_resist = 25 },
+        .bandit_shieldbearer => .{ .name = "bandit shieldbearer", .foe_type = .humanoid, .hp = 24, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bashes", .slain = "battered down", .knocks = true } }, .armour = 40, .stun_resist = 75, .fright_resist = 50 },
+        .frost_wisp => .{ .name = "frost wisp", .movement = .flying, .foe_type = .aberration, .hp = 8, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 3 }, .verb = "touches", .slain = "frozen solid", .element = .cold, .chills = 100 } }, .flits = true, .resists = ICY, .fright_resist = damage.RESIST_MAX },
+        .pyre_bloat => .{ .name = "pyre bloat", .movement = .flying, .foe_type = .aberration, .hp = 4, .blow = .{ .burst = .fire }, .flits = true, .resists = FIERY, .fright_resist = damage.RESIST_MAX },
+        .pib_shaman => .{ .name = "pib shaman", .foe_type = .beast, .hp = 12, .blow = .{ .strike = .{ .hit = .{ .lo = 1, .hi = 2 }, .verb = "pokes", .slain = "poked to death" } }, .keeps = 3, .mends = MEND },
         .bog_leech => .{ .name = "bog leech", .movement = .swimming, .foe_type = .beast, .hp = 12, .sight = 5, .blow = .{ .strike = .{ .hit = .{ .lo = 2, .hi = 4 }, .verb = "bites", .slain = "drained dry", .bleeds = 50 } }, .lurks = true, .fright_resist = damage.RESIST_MAX },
-        .mimic => .{ .name = "mimic", .movement = .ground, .foe_type = .aberration, .hp = 40, .sight = 7, .blow = .{ .strike = .{ .hit = .{ .lo = 4, .hi = 8 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 20, .fright_resist = damage.RESIST_MAX },
+        .mimic => .{ .name = "mimic", .foe_type = .aberration, .hp = 40, .blow = .{ .strike = .{ .hit = .{ .lo = 4, .hi = 8 }, .verb = "chomps", .slain = "swallowed whole" } }, .disguised = true, .armour = 20, .fright_resist = damage.RESIST_MAX },
     };
 }
 
@@ -298,7 +299,7 @@ pub fn holds(k: Kind, lv: *const grid.Level, p: P) bool {
 }
 
 fn heroRow(comptime c: heroes.Class) Row {
-    return .{ .name = wording.word(c), .movement = .ground, .foe_type = null, .hp = c.attrs().life(), .sight = 10, .light = 5, .blow = .{ .strike = c.strike() } };
+    return .{ .name = wording.word(c), .foe_type = null, .hp = c.attrs().life(), .sight = 10, .light = 5, .blow = .{ .strike = c.strike() } };
 }
 
 fn smaller(of: Kind, name: [:0]const u8, splits: ?Kind) Row {
@@ -539,12 +540,14 @@ pub const Pool = struct {
     }
 
     pub fn get(self: *Pool, id: u16) ?*Actor {
-        if (id == grid.NO_ONE or id > self.n) return null;
-        const a = &self.items[slot(id)];
-        return if (a.alive) a else null;
+        return living(self, id);
     }
 
     pub fn getConst(self: *const Pool, id: u16) ?*const Actor {
+        return living(self, id);
+    }
+
+    fn living(self: anytype, id: u16) ?@TypeOf(&self.items[0]) {
         if (id == grid.NO_ONE or id > self.n) return null;
         const a = &self.items[slot(id)];
         return if (a.alive) a else null;

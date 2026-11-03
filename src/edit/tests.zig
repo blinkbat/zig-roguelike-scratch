@@ -542,6 +542,30 @@ test "undo and redo disarm deletion when a node index changes owners" {
     std.debug.print("2 history swaps changed the selected node and cleared its deletion confirmation\n", .{});
 }
 
+test "a modal, rename, view or tool change disarms a node deletion" {
+    const ed = try testEditor();
+    defer ed.destroy();
+    _ = ed.map.add(.{ .bespoke = .{} }).?;
+    const nodes = ed.map.node_n;
+    ed.delete_armed = ed.node;
+    ed.ask(.help);
+    ed.modal = .none;
+    try std.testing.expect(ed.delete_armed == null);
+    ed.delete_armed = ed.node;
+    ed.startRename();
+    ed.commitRename();
+    try std.testing.expect(ed.delete_armed == null);
+    ed.delete_armed = ed.node;
+    ed.setView(.graph);
+    try std.testing.expect(ed.delete_armed == null);
+    ed.setView(.map);
+    ed.delete_armed = ed.node;
+    ed.setTool(.door);
+    ed.setTool(.paint);
+    try std.testing.expect(ed.delete_armed == null);
+    try std.testing.expectEqual(nodes, ed.map.node_n);
+}
+
 test "a node added is named as it is added, one undo for both" {
     const ed = try testBespoke();
     defer ed.destroy();

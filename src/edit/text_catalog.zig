@@ -314,7 +314,7 @@ pub const Catalog = struct {
             const decoded = std.zig.string_literal.parseAlloc(a, slice(bytes, token)) catch continue;
             if (!spoken(decoded, bytes, ts, i)) continue;
             const is_input = inputSource(path);
-            const is_keyboard = std.mem.eql(u8, path, "src/ui/naming.zig") and std.mem.eql(u8, declaration(bytes, ts, i) orelse "", "LETTERS");
+            const is_keyboard = std.mem.eql(u8, path, SRC ++ KEYBOARD_SOURCE) and std.mem.eql(u8, declaration(bytes, ts, i) orelse "", KEYBOARD_DECL);
             const semantic = try contexts.describe();
             try self.list.append(a, .{
                 .path = path,
@@ -375,10 +375,18 @@ fn included(path: []const u8) bool {
     }
     if (std.mem.endsWith(u8, path, "tests.zig")) return false;
     for ([_][]const u8{ "game/", "play/", "ui/", "edit/", "map/" }) |prefix| if (std.mem.startsWith(u8, path, prefix)) return true;
-    return oneOf(path, &INPUT_SOURCES) or oneOf(path, &.{ "app.zig", "game.zig", "save.zig", "save_data.zig", "gfx/look.zig", "gfx/fx.zig" });
+    return oneOf(path, &INPUT_SOURCES) or oneOf(path, &LONE_SOURCES);
 }
 
 const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
+const LONE_SOURCES = [_][]const u8{ "app.zig", "game.zig", "save.zig", "save_data.zig", "gfx/look.zig", "gfx/fx.zig" };
+const KEYBOARD_SOURCE = "ui/naming.zig";
+const KEYBOARD_DECL = "LETTERS";
+
+comptime {
+    for (INPUT_SOURCES ++ LONE_SOURCES) |p| _ = @embedFile("../" ++ p);
+    if (std.mem.indexOf(u8, @embedFile("../" ++ KEYBOARD_SOURCE), "const " ++ KEYBOARD_DECL ++ " ") == null) @compileError(KEYBOARD_SOURCE ++ " no longer declares " ++ KEYBOARD_DECL);
+}
 
 fn inputSource(path: []const u8) bool {
     return std.mem.startsWith(u8, path, SRC) and oneOf(path[SRC.len..], &INPUT_SOURCES);
@@ -1135,7 +1143,7 @@ test "text tag preparation shares source and alias upserts without mutating load
 test "text catalog protects reflection controls while finding short verbs" {
     var c = Catalog.init(std.testing.allocator);
     defer c.deinit();
-    try c.scan("src/ui/naming.zig", "const LETTERS = [_][]const u8{ \"ABCDEFGHIJKLM\", \"NOPQRSTUVWXYZ\" };\n");
+    try c.scan(SRC ++ KEYBOARD_SOURCE, "const " ++ KEYBOARD_DECL ++ " = [_][]const u8{ \"ABCDEFGHIJKLM\", \"NOPQRSTUVWXYZ\" };\n");
     try std.testing.expect(!c.entries()[0].editable and !c.entries()[1].editable);
     const n = c.entries().len;
     try c.scan("src/play/example.zig", "const VERB = \"shoots\";\nconst s = .{ .verb = \"bites\" };\nconst name = @tagName(k) ++ \"_bonus\";\nconst PROBED = .{ \"BASE\", \"KIND\" };\n");

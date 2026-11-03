@@ -1,5 +1,6 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
+const resilience = @import("resilience.zig");
 
 pub const Element = enum { cold, fire, chaos, lightning };
 
@@ -111,8 +112,7 @@ pub fn due(self: anytype) bool {
         self.fresh = false;
         return false;
     }
-    self.turns -= 1;
-    return true;
+    return resilience.wearTurn(&self.turns);
 }
 
 /// Resistances, elemental and to statuses alike, run from -100% to 100%.

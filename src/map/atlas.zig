@@ -88,10 +88,7 @@ pub const Procgen = struct {
     }
 
     pub fn addFeature(self: *Procgen, k: Kind) bool {
-        if (self.feature_n == MAX_FEATURES) return false;
-        self.feature[self.feature_n] = Feature.of(k);
-        self.feature_n += 1;
-        return true;
+        return mathx.push(Feature, &self.feature, &self.feature_n, Feature.of(k));
     }
 
     pub fn dropFeature(self: *Procgen, i: usize) void {
@@ -162,9 +159,7 @@ pub const Bespoke = struct {
 
     pub fn addFoe(self: *Bespoke, f: Foe) bool {
         if (self.foeAt(f.at) != null or !self.roomAt(f.at, f.kind)) return false;
-        self.foe[self.foe_n] = f;
-        self.foe_n += 1;
-        return true;
+        return mathx.push(Foe, &self.foe, &self.foe_n, f);
     }
 
     pub fn dropFoe(self: *Bespoke, i: usize) void {
@@ -433,9 +428,7 @@ pub const Atlas = struct {
     }
 
     pub fn add(self: *Atlas, plan: Plan) ?usize {
-        if (self.node_n == MAX_NODES) return null;
-        self.node[self.node_n] = .{ .plan = plan, .pos = self.freeSlot() };
-        self.node_n += 1;
+        if (!mathx.push(Node, &self.node, &self.node_n, .{ .plan = plan, .pos = self.freeSlot() })) return null;
         return self.node_n - 1;
     }
 
@@ -473,9 +466,7 @@ pub const Atlas = struct {
 
     pub fn addDoor(self: *Atlas, n: usize, p: P) ?usize {
         const nd = &self.node[n];
-        if (!nd.takesDoor(p)) return null;
-        nd.door[nd.door_n] = .{ .at = p };
-        nd.door_n += 1;
+        if (!nd.takesDoor(p) or !mathx.push(Door, &nd.door, &nd.door_n, .{ .at = p })) return null;
         return nd.door_n - 1;
     }
 

@@ -641,14 +641,16 @@ pub fn drawMap(g: *game.Game) void {
                 },
             }
         }
-        switch (g.mode.aim.act()) {
-            .arcane_barrier, .fire_wall => |a| if (tactics.span(g, a, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark)) |area| {
-                for (area.slice()) |p| fillCell(c, p, if (a == .fire_wall) look.aimElement(.fire) else look.AIM_PATH);
-            },
+        const act = g.mode.aim.act();
+        if (act.spans()) {
+            if (tactics.span(g, act, from, g.mode.aim.anchor() orelse g.mode.aim.mark, g.mode.aim.mark)) |area| {
+                for (area.slice()) |p| fillCell(c, p, if (act == .fire_wall) look.aimElement(.fire) else look.AIM_PATH);
+            }
+        } else switch (act) {
             .overwatch => if (mathx.toward(from, g.mode.aim.mark)) |d| {
                 var covered = grid.Cells.around(from, rules.Overwatch.RANGE);
                 while (covered.next()) |p| {
-                    if (g.sim.lv.isLit(p) and rules.covered(from, d, p) and bow.aimable(&g.sim.lv, from, p, rules.Overwatch.RANGE)) fillCell(c, p, look.AIM_PATH);
+                    if (g.sim.lv.isLit(p) and tactics.watches(&g.sim.lv, from, d, p)) fillCell(c, p, look.AIM_PATH);
                 }
             },
             inline else => |a| if (comptime a.sweeps()) {

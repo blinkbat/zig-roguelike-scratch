@@ -121,15 +121,12 @@ pub const Simulation = struct {
     }
 
     pub fn resetTransientTurn(self: *Simulation) void {
-        self.travel = null;
-        self.order_n = 0;
+        mathx.toDefaults(self, &.{ "travel", "order_n", "flowed" });
         self.clearTurnMarks();
-        self.flowed = false;
     }
 
     fn clearTurnMarks(self: *Simulation) void {
-        self.ran = @splat(Ran.initEmpty());
-        self.displaced = .initEmpty();
+        mathx.toDefaults(self, &.{ "ran", "displaced" });
     }
 
     pub fn heroMoved(self: *Simulation) void {

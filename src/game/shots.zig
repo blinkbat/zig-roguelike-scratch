@@ -949,12 +949,12 @@ fn shootCharacter(g: *game.Game) !void {
     g.sim.class = heroes.DEFAULT;
     game.beginMapAt(g, w, w.start, SHOT_SEED);
     _ = g.sim.growth.gain(100);
-    _ = g.sim.inventory.add(.{ .kind = .cap, .mods = .{ .{ .kind = .life, .value = 3 }, null, null, null } });
+    _ = g.sim.inventory.add(game.harness.affixed(.cap, .{ .kind = .life, .value = 3 }));
     try g.sim.inventory.equip(0, .helm, g.sim.growth.attributes(g.sim.class));
-    _ = g.sim.inventory.add(.{ .kind = .bow, .mods = .{ .{ .kind = .dexterity, .value = 2 }, null, null, null } });
+    _ = g.sim.inventory.add(game.harness.affixed(.bow, .{ .kind = .dexterity, .value = 2 }));
     try g.sim.inventory.equip(0, .right_hand, g.sim.growth.attributes(g.sim.class));
     _ = g.sim.inventory.add(.{ .kind = .helmet, .mods = .{ .{ .kind = .life, .value = 6 }, .{ .kind = .mana, .value = 2 }, null, null } });
-    _ = g.sim.inventory.add(.{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 3 }, null, null, null } });
+    _ = g.sim.inventory.add(game.harness.affixed(.ring, .{ .kind = .strength, .value = 3 }));
     _ = g.sim.inventory.add(.{ .kind = .leather });
     _ = g.sim.ground.add(.{ .item = .{ .kind = .amulet }, .at = g.sim.heroActor().?.at });
     g.sim.log.push(.event, "Archer enters the old ruins.", .{});
@@ -1002,15 +1002,15 @@ fn shootCharacter(g: *game.Game) !void {
 
         g.character.cursor = 2;
         try capture(g, target, SHOTS_DIR ++ "/item-normal-armour.png");
-        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .mana, .value = 3 }, null, null, null } });
-        g.sim.inventory.gear.slots.set(.right_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .dexterity, .value = 3 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.left_ring, game.harness.affixed(.ring, .{ .kind = .mana, .value = 3 }));
+        g.sim.inventory.gear.slots.set(.right_ring, game.harness.affixed(.ring, .{ .kind = .dexterity, .value = 3 }));
         g.character.cursor = 1;
         g.character.destination_index = 0;
         try capture(g, target, SHOTS_DIR ++ "/item-ring-left.png");
         g.character.destination_index = 1;
         try capture(g, target, SHOTS_DIR ++ "/item-ring-right.png");
         g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = .sling });
-        g.sim.inventory.gear.slots.set(.left_hand, .{ .kind = .buckler, .mods = .{ .{ .kind = .life, .value = 6 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.left_hand, game.harness.affixed(.buckler, .{ .kind = .life, .value = 6 }));
         _ = g.sim.inventory.add(.{ .kind = .crossbow, .mods = .{ .{ .kind = .strength, .value = 3 }, .{ .kind = .mana, .value = 2 }, null, null } });
         g.character.cursor = bag_n;
         g.character.destination_index = 0;

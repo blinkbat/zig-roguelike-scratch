@@ -139,6 +139,11 @@ pub fn pickPause(g: *game.Game, row: game.PauseRow) void {
     press(g, CONFIRM);
 }
 
+pub fn clickAt(g: *game.Game, p: P) void {
+    g.st = .{ .device = .keys, .click = true, .pointer = p };
+    game.update(g, 0);
+}
+
 pub fn pressInteract(g: *game.Game) void {
     g.st = .{ .interact = true, .pressed = .initOne(CONFIRM), .down = .initOne(CONFIRM) };
     game.update(g, 0);
@@ -389,6 +394,12 @@ pub const TEST_HP: i32 = 100;
 
 pub fn toughen(a: *actor.Actor) void {
     setLife(a, TEST_HP, TEST_HP);
+}
+
+pub fn affixed(kind: items.Kind, affix: items.Affix) items.Item {
+    var it = items.Item{ .kind = kind };
+    it.mods[0] = affix;
+    return it;
 }
 
 pub const TEST_GAS = 100;

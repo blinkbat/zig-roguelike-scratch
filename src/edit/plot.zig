@@ -33,6 +33,14 @@ const NAME_BTN_W: i32 = 210;
 const NAME_BTN_GAP: i32 = 10;
 const TOGGLE_W: i32 = 160;
 const PRIORITY_LABEL_W: i32 = 90;
+const PRIORITY_W: i32 = 140;
+const CHOICE_ADD_W: i32 = 120;
+const COND_ADD_W: i32 = 160;
+const NAME_ADD_W: i32 = 50;
+const OP_W: i32 = 150;
+const NUMBER_W: i32 = 150;
+const UNIT_W: i32 = 170;
+const SPLIT_MIN_W: i32 = 2 * widgets.STEP_W + 24;
 const SAY_ROWS: i32 = 4;
 const WHEEL_PX: i32 = ROW * 2;
 
@@ -263,8 +271,30 @@ fn split(w: i32, comptime shares: []const i32, comptime caps: []const i32) [shar
     inline for (shares) |s| total += s;
     const room = w - GAP * @as(i32, @intCast(shares.len - 1));
     var out: [shares.len]i32 = undefined;
-    inline for (shares, caps, 0..) |s, cap, i| out[i] = @max(2 * widgets.STEP_W + 24, @min(cap, @divTrunc(room * s, total)));
+    inline for (shares, caps, 0..) |s, cap, i| out[i] = @max(SPLIT_MIN_W, @min(cap, @divTrunc(room * s, total)));
     return out;
+}
+
+fn listArea(ed: *editor.Editor, f: Frame) widgets.Scroll {
+    const s = &ed.plot;
+    s.list = raster.rect(f.x, f.y, f.listW(), f.bottom - f.y);
+    return .{ .box = s.list, .top = &s.list_top, .most = &s.list_most };
+}
+
+const Column = struct { x: i32, w: i32 };
+
+/// Ends the list at `y`; the column right of it, past its divider.
+fn rightOf(ed: *editor.Editor, f: Frame, list: widgets.Scroll, y: i32) Column {
+    endScroll(ed, list, y);
+    const x = f.x + f.listW() + PAD;
+    widgets.divider(x, f.y, f.bottom);
+    return .{ .x = x, .w = f.x + f.w - x };
+}
+
+fn detailArea(ed: *editor.Editor, box: rl.Rectangle) widgets.Scroll {
+    const s = &ed.plot;
+    s.detail = box;
+    return .{ .box = s.detail, .top = &s.detail_top, .most = &s.detail_most };
 }
 
 fn frameOf(ed: *editor.Editor, g: *game.Game, title: [:0]const u8) Frame {
@@ -275,7 +305,7 @@ fn frameOf(ed: *editor.Editor, g: *game.Game, title: [:0]const u8) Frame {
 }
 
 fn button(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
-    return widgets.buttonOn(ed.controls(), &g.face, r, label, on, live, true, tip);
+    return widgets.modalButton(ed.controls(), &g.face, r, label, on, live, tip);
 }
 
 fn rightButton(ed: *editor.Editor, g: *game.Game, right: i32, y: i32, w: i32, label: [:0]const u8, live: bool, tip: ?[:0]const u8) bool {
@@ -294,11 +324,16 @@ fn nameRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, label: []c
 }
 
 fn caption(g: *game.Game, x: i32, y: i32, w: i32, s: []const u8, col: rl.Color) void {
-    widgets.drawFit(&g.face, s, DETAIL, w, false, x, y + editor.ROW_DETAIL_DY, col);
+    widgets.drawFit(&g.face, s, DETAIL, w, false, x, y + widgets.DETAIL_DY, col);
 }
 
 fn heading(g: *game.Game, x: i32, y: i32, w: i32, s: []const u8) void {
-    widgets.drawFit(&g.face, s, TEXT, w, false, x, y + editor.TEXT_DY, look.UI_GOLD);
+    widgets.drawFit(&g.face, s, TEXT, w, false, x, y + widgets.TEXT_DY, look.UI_GOLD);
+}
+
+fn countHeading(g: *game.Game, x: i32, y: i32, w: i32, comptime title: []const u8, n: usize, most: usize) void {
+    var buf: [widgets.LINE]u8 = undefined;
+    heading(g, x, y, w, std.fmt.bufPrint(&buf, title ++ " {d}/{d}", .{ n, most }) catch "");
 }
 
 /// `<` and `>` round `value`; -1 or 1 as one is pressed, 0 otherwise.
@@ -353,7 +388,7 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
     }
     const origin = widgets.well(r, false);
     const h = widgets.hot(ed.controls(), r, true, true, "Click to type; it is written into the map as you type");
-    if (h.hot) rl.drawRectangleLinesEx(r, 1, look.EDIT_HOVER);
+    widgets.hoverEdge(r, h.hot);
     const words_ = target(&ed.map.script, f).?.words;
     const now = words_.text();
     const x = origin.x;
@@ -396,10 +431,9 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     const f = frameOf(ed, g, "Dialog");
     const lw = f.listW();
     var buf: [widgets.LINE]u8 = undefined;
-    s.list = raster.rect(f.x, f.y, lw, f.bottom - f.y);
-    const list = widgets.Scroll{ .box = s.list, .top = &s.list_top, .most = &s.list_most };
+    const list = listArea(ed, f);
     var y = list.begin(&ed.clip);
-    heading(g, f.x, y, lw, std.fmt.bufPrint(&buf, "Folk {d}/{d}", .{ m.folk_n, script.MAX_FOLK }) catch "");
+    countHeading(g, f.x, y, lw, "Folk", m.folk_n, script.MAX_FOLK);
     y += STEP;
     if (m.folk_n == 0) {
         caption(g, f.x, y, lw, "Place folk with their tool on a painted node", look.DIM);
@@ -414,7 +448,7 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
         y += STEP;
     }
     y += GAP;
-    heading(g, f.x, y, lw, std.fmt.bufPrint(&buf, "Dialogs {d}/{d}", .{ m.dialog_n, script.MAX_DIALOGS }) catch "");
+    countHeading(g, f.x, y, lw, "Dialogs", m.dialog_n, script.MAX_DIALOGS);
     if (rightButton(ed, g, f.x + lw - GAP, y, NEW_W, "+ New", m.dialog_n < script.MAX_DIALOGS, "A new dialog of one empty line")) {
         if (m.addDialog("")) |d| {
             ed.bank();
@@ -431,14 +465,11 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
         }
         y += STEP;
     }
-    endScroll(ed, list, y);
-    const rx = f.x + lw + PAD;
-    const rw = f.x + f.w - rx;
-    widgets.divider(rx, f.y, f.bottom);
+    const right = rightOf(ed, f, list, y);
     switch (s.pick) {
-        .none => caption(g, rx, f.y, rw, "Pick a folk or a dialog", look.DIM),
-        .folk => |i| drawFolk(ed, g, i, rx, f.y, rw),
-        .dialog => |i| drawDialog(ed, g, i, rx, f.y, rw, f.bottom),
+        .none => caption(g, right.x, f.y, right.w, "Pick a folk or a dialog", look.DIM),
+        .folk => |i| drawFolk(ed, g, i, right.x, f.y, right.w),
+        .dialog => |i| drawDialog(ed, g, i, right.x, f.y, right.w, f.bottom),
     }
 }
 
@@ -530,7 +561,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     }
     y += STEP + GAP;
     const lx = x;
-    heading(g, lx, y, lines_w, std.fmt.bufPrint(&buf, "Lines {d}/{d}", .{ d.line_n, script.MAX_LINES }) catch "");
+    countHeading(g, lx, y, lines_w, "Lines", d.line_n, script.MAX_LINES);
     y += STEP;
     var line_buf: [script.NAME_MAX + script.SAY_MAX + 5]u8 = undefined;
     for (d.lines(), 0..) |*ln, i| {
@@ -562,9 +593,8 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     }
     const dx = x + lines_w + PAD;
     const dw = x + w - dx;
-    s.detail = raster.rect(dx, top + STEP + GAP, dw, bottom - top - STEP - GAP);
+    const area = detailArea(ed, raster.rect(dx, top + STEP + GAP, dw, bottom - top - STEP - GAP));
     widgets.divider(dx, top + STEP + GAP, bottom);
-    const area = widgets.Scroll{ .box = s.detail, .top = &s.detail_top, .most = &s.detail_most };
     const end = drawLine(ed, g, di, s.line, dx, area.begin(&ed.clip), dw - PAD);
     endScroll(ed, area, end);
 }
@@ -588,8 +618,8 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, li: u8, x: i32, top: i32,
     y += say_h + GAP;
     y = actRows(ed, g, x, x, y, w, "When shown", .{ .line = .{ .d = di, .l = li, .a = 0 } });
     y += GAP;
-    heading(g, x, y, w, std.fmt.bufPrint(&buf, "Choices {d}/{d}", .{ ln.choice_n, script.MAX_CHOICES }) catch "");
-    if (rightButton(ed, g, x + w, y, 120, "+ Choice", ln.choice_n < script.MAX_CHOICES, "Something the hero may answer")) {
+    countHeading(g, x, y, w, "Choices", ln.choice_n, script.MAX_CHOICES);
+    if (rightButton(ed, g, x + w, y, CHOICE_ADD_W, "+ Choice", ln.choice_n < script.MAX_CHOICES, "Something the hero may answer")) {
         ln.choice[ln.choice_n] = .{};
         ln.choice_n += 1;
         ed.bank();
@@ -782,22 +812,22 @@ fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.
         .dialog => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &a.slot),
         .text => words(ed, g, widgets.row(fx, y, fw), .{ .note = at }, "(the line the log shows)"),
         .flag => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, 150 });
+            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, OP_W });
             tableStep(ed, g, lay.take(ws[0]), .flag, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Setop, &a.setop, &SETOP_WORDS, null);
         },
         .counter => {
-            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, 130, 150 });
+            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, 130, NUMBER_W });
             tableStep(ed, g, lay.take(ws[0]), .counter, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Countop, &a.countop, &COUNTOP_WORDS, null);
             numberStep(ed, g, lay.take(ws[2]), &a.n, -script.NUMBER_MAX, script.NUMBER_MAX, "", "By how much");
         },
         .timer => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, 170 });
+            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, UNIT_W });
             tableStep(ed, g, lay.take(ws[0]), .timer, &a.slot);
             numberStep(ed, g, lay.take(ws[1]), &a.n, 0, script.NUMBER_MAX, " turns", "Turns it runs before it is done");
         },
-        .wait => numberStep(ed, g, widgets.row(fx, y, 170), &a.n, 0, script.NUMBER_MAX, " turns", "Spent turns held before the next action"),
+        .wait => numberStep(ed, g, widgets.row(fx, y, UNIT_W), &a.n, 0, script.NUMBER_MAX, " turns", "Spent turns held before the next action"),
     }
 }
 
@@ -881,13 +911,13 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
             }
         },
         .counter => {
-            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, 150, 150 });
+            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, OP_W, NUMBER_W });
             tableStep(ed, g, lay.take(ws[0]), .counter, &c.slot);
             cmpStep(ed, g, lay.take(ws[1]), &c.cmp);
             numberStep(ed, g, lay.take(ws[2]), &c.n, -script.NUMBER_MAX, script.NUMBER_MAX, "", "The number it is held to");
         },
         .elapsed => {
-            const ws = split(fw, &.{ 1, 1 }, &.{ 150, 180 });
+            const ws = split(fw, &.{ 1, 1 }, &.{ OP_W, 180 });
             cmpStep(ed, g, lay.take(ws[0]), &c.cmp);
             numberStep(ed, g, lay.take(ws[1]), &c.n, 0, script.NUMBER_MAX, " turns", "Spent turns since the run began");
         },
@@ -901,13 +931,13 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
             }
         },
         .near => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, 170 });
+            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, UNIT_W });
             indexStep(ed, g, lay.take(ws[0]), m.folk[c.slot].called(), &c.slot, m.folk_n, "Which folk");
             numberStep(ed, g, lay.take(ws[1]), &c.n, 0, script.NEAR_MAX, " cells", "How near, in steps either way");
         },
         .talked => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &c.slot),
         .deaths, .alive => {
-            const ws = split(fw, &.{ 4, 3, 3 }, &.{ 220, 150, 150 });
+            const ws = split(fw, &.{ 4, 3, 3 }, &.{ 220, OP_W, NUMBER_W });
             const by = stepper(ed, g, lay.take(ws[0]), actor.row(c.foe).name, true, "Which foe; a slime counts its halves");
             if (by != 0) {
                 c.foe = mathx.stepIn(actor.Kind, &actor.FOES, c.foe, by, 0);
@@ -932,10 +962,9 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     const f = frameOf(ed, g, "Script");
     const lw = f.listW();
     var buf: [widgets.LINE]u8 = undefined;
-    s.list = raster.rect(f.x, f.y, lw, f.bottom - f.y);
-    const list = widgets.Scroll{ .box = s.list, .top = &s.list_top, .most = &s.list_most };
+    const list = listArea(ed, f);
     var y = list.begin(&ed.clip);
-    heading(g, f.x, y, lw, std.fmt.bufPrint(&buf, "Triggers {d}/{d}", .{ m.trigger_n, script.MAX_TRIGGERS }) catch "");
+    countHeading(g, f.x, y, lw, "Triggers", m.trigger_n, script.MAX_TRIGGERS);
     if (rightButton(ed, g, f.x + lw - GAP, y, NEW_W, "+ New", m.trigger_n < script.MAX_TRIGGERS, "A trigger that always holds and does nothing yet")) {
         if (m.addTrigger()) |t| {
             ed.bank();
@@ -955,8 +984,8 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     inline for (comptime std.enums.values(script.Table)) |t| {
         y += GAP;
         const all = m.names(t);
-        heading(g, f.x, y, lw, std.fmt.bufPrint(&buf, "{s}s {d}/{d}", .{ comptime menu.capital(@tagName(t)), all.len, Script.tableMax(t) }) catch "");
-        if (rightButton(ed, g, f.x + lw - GAP, y, 50, "+", all.len < Script.tableMax(t), "A new " ++ @tagName(t) ++ ", named for its kind")) {
+        countHeading(g, f.x, y, lw, comptime menu.capital(@tagName(t)) ++ "s", all.len, Script.tableMax(t));
+        if (rightButton(ed, g, f.x + lw - GAP, y, NAME_ADD_W, "+", all.len < Script.tableMax(t), "A new " ++ @tagName(t) ++ ", named for its kind")) {
             if (m.coin(t)) |_| ed.bank();
         }
         y += STEP;
@@ -971,21 +1000,16 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
             y += STEP;
         }
     }
-    endScroll(ed, list, y);
-    const rx = f.x + lw + PAD;
-    const rw = f.x + f.w - rx;
-    widgets.divider(rx, f.y, f.bottom);
-    const ti = s.trigger orelse return caption(g, rx, f.y, rw, "Pick a trigger: when every condition holds after a turn, its actions run in order", look.DIM);
-    s.detail = raster.rect(rx, f.y, rw, f.bottom - f.y);
-    const area = widgets.Scroll{ .box = s.detail, .top = &s.detail_top, .most = &s.detail_most };
-    const end = drawTrigger(ed, g, ti, rx, area.begin(&ed.clip), rw - PAD);
+    const right = rightOf(ed, f, list, y);
+    const ti = s.trigger orelse return caption(g, right.x, f.y, right.w, "Pick a trigger: when every condition holds after a turn, its actions run in order", look.DIM);
+    const area = detailArea(ed, raster.rect(right.x, f.y, right.w, f.bottom - f.y));
+    const end = drawTrigger(ed, g, ti, right.x, area.begin(&ed.clip), right.w - PAD);
     endScroll(ed, area, end);
 }
 
 fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i32) i32 {
     const m = &ed.map.script;
     const t = &m.trigger[ti];
-    var buf: [widgets.LINE]u8 = undefined;
     var y = top;
     if (nameRow(ed, g, x, y, w, "Trigger", .{ .trigger = ti }, "Delete trigger", true, "Throw it away")) {
         m.dropTrigger(ti);
@@ -1006,11 +1030,11 @@ fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i
     const priority_x = toggles.x + GAP;
     caption(g, priority_x, y, PRIORITY_LABEL_W, "priority", look.DIM);
     var pri: i32 = t.priority;
-    numberStep(ed, g, widgets.row(priority_x + PRIORITY_LABEL_W, y, 140), &pri, -script.PRIORITY_MAX, script.PRIORITY_MAX, "", "Higher runs first when two are ready on the same turn");
+    numberStep(ed, g, widgets.row(priority_x + PRIORITY_LABEL_W, y, PRIORITY_W), &pri, -script.PRIORITY_MAX, script.PRIORITY_MAX, "", "Higher runs first when two are ready on the same turn");
     t.priority = @intCast(pri);
     y += STEP + GAP;
-    heading(g, x, y, w, std.fmt.bufPrint(&buf, "When every one holds {d}/{d}", .{ t.cond_n, script.MAX_CONDS }) catch "");
-    if (rightButton(ed, g, x + w, y, 160, "+ Condition", t.cond_n < script.MAX_CONDS, "Another that has to hold; with none it never fires")) {
+    countHeading(g, x, y, w, "When every one holds", t.cond_n, script.MAX_CONDS);
+    if (rightButton(ed, g, x + w, y, COND_ADD_W, "+ Condition", t.cond_n < script.MAX_CONDS, "Another that has to hold; with none it never fires")) {
         t.cond[t.cond_n] = .{ .kind = .always };
         t.cond_n += 1;
         ed.bank();

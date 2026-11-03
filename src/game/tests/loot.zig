@@ -70,7 +70,7 @@ test "spoils applies to chest and foe quality and every gold pickup route" {
     const from = P{ .x = 20, .y = 20 };
     const at = from.add(.{ .x = 1, .y = 0 });
     harness.arena(g, from, &.{});
-    g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .spoils, .value = 25 }, null, null, null } });
+    g.sim.inventory.gear.slots.set(.left_ring, harness.affixed(.ring, .{ .kind = .spoils, .value = 25 }));
     var magic: usize = 0;
     for (0..100) |seed| {
         g.sim.ground = .{};
@@ -250,7 +250,7 @@ test "new runs gate class skills; underfoot and adjacent loot commit exactly one
     }
     harness.heroArena(g, .archer, .{ .x = 20, .y = 20 }, &.{});
     const at = g.sim.heroActor().?.at;
-    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .cap, .mods = .{ .{ .kind = .life, .value = 6 }, null, null, null } }, .at = at }));
+    try std.testing.expect(g.sim.ground.add(.{ .item = harness.affixed(.cap, .{ .kind = .life, .value = 6 }), .at = at }));
     try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at.add(.{ .x = 1, .y = 0 }) }));
     try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .boots }, .at = at.add(.{ .x = 2, .y = 0 }) }));
     const clock = g.sim.clock;
@@ -616,6 +616,30 @@ test "closing a mixed bag takes its gold for free even when no item fits" {
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expect(!scene.bagCells(g).isSet(grid.Level.idx(at)));
     std.debug.print("mixed bag with full inventory: gold taken free on close, item preserved; one freed slot takes the item for one turn\n", .{});
+}
+
+test "loot gold left while the step onto its bag is drawn is not taken on the frame the next walk starts" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 21, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
+    try std.testing.expect(g.sim.ground.gold(at, 37));
+    g.st = .{ .walk = .e };
+    game.update(g, 0);
+    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    g.st = .{ .pressed = .initOne(BACK) };
+    game.update(g, mathx.TEST_DT);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    try std.testing.expect(!g.pic.quiet() and g.loot_gold != null);
+    g.st = .{ .walk = .e };
+    game.update(g, mathx.TEST_DT);
+    g.st = .{};
+    var t: f32 = 0;
+    while (t < 2 and g.sim.heroActor().?.at.eq(at)) : (t += mathx.TEST_DT) game.update(g, mathx.TEST_DT);
+    try std.testing.expect(!g.sim.heroActor().?.at.eq(at));
+    try std.testing.expectEqual(@as(i32, 0), g.sim.gold);
+    try std.testing.expectEqual(@as(usize, 1), g.sim.ground.coin_n);
 }
 
 test "a hero killed while a bag's loot is open takes none of its gold" {

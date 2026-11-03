@@ -8,6 +8,7 @@ const carve = @import("../carve.zig");
 const P = mathx.P;
 
 const N: usize = 3;
+const ROTATIONS: usize = 4;
 const PATTERNS_MAX: usize = 128;
 const Bits = if (@import("builtin").mode == .Debug) std.bit_set.IntegerBitSet(PATTERNS_MAX) else std.StaticBitSet(PATTERNS_MAX);
 const SECTION_W: i32 = 30;
@@ -109,9 +110,9 @@ const Model = struct {
                     for (0..N) |dx| base[dy * N + dx] = symbol(art[(y + dy) % h][(x + dx) % w]);
                 }
                 var p = base;
-                for (0..8) |k| {
+                for (0..2 * ROTATIONS) |k| {
                     m.add(p);
-                    p = if (k == 3) reflect(base) else rotate(p);
+                    p = if (k == ROTATIONS - 1) reflect(base) else rotate(p);
                 }
             }
         }

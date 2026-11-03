@@ -64,11 +64,8 @@ pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
         const a = g.sim.pool.getConst(g.sim.lv.who(at)) orelse return false;
         return a.seenFoe(&g.sim.lv) and fuelOf(act, a) > 0;
     }
-    return switch (act) {
-        .arcane_barrier, .fire_wall => span(g, act, from, start, at) != null,
-        .overwatch => !from.eq(at),
-        else => true,
-    };
+    if (act.spans()) return span(g, act, from, start, at) != null;
+    return act != .overwatch or !from.eq(at);
 }
 
 /// The line a wall-laying skill covers from `start` toward `end`, at its rank.
@@ -138,9 +135,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
                     const d = mathx.toward(a.at, at) orelse break;
                     const to = a.at.add(d.delta());
                     if (!actor.holds(a.kind, &g.sim.lv, to) or !area.has(to)) break;
-                    g.sim.pool.move(&g.sim.lv, id, to);
-                    g.sim.displaced.set(actor.Pool.slot(id));
-                    entered(g, id);
+                    displace(g, id, to);
                 }
                 if (g.sim.displaced.isSet(actor.Pool.slot(id))) _ = g.pic.glideToHeld(actor.Pool.slot(id), a.at, -game.CAST_S);
                 _ = g.sim.pinFor(a, rules.GravityWell.pins(rank));
@@ -224,18 +219,28 @@ pub fn startTurn(sim: *Simulation) void {
     }
 }
 
+pub fn displace(g: *game.Game, id: u16, to: P) void {
+    g.sim.pool.move(&g.sim.lv, id, to);
+    g.sim.displaced.set(actor.Pool.slot(id));
+    entered(g, id);
+}
+
 pub fn entered(g: *game.Game, id: u16) void {
     landed(g, id);
     const a = g.sim.pool.get(id) orelse return;
     const h = g.sim.heroActor() orelse return;
     const direction = h.tactics.overwatch orelse return;
-    if (a.veiled() or !rules.covered(h.at, direction, a.at) or !bow.aimable(&g.sim.lv, h.at, a.at, rules.Overwatch.RANGE)) return;
+    if (a.veiled() or !watches(&g.sim.lv, h.at, direction, a.at)) return;
     const flight = bow.fly(&g.sim.lv, h.at, a.at);
     if (!flight.hits(id)) return;
     h.tactics.overwatch = null;
     combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), rules.Overwatch.VERB, .{ .from = h.at, .wait = 0 }, id, flight);
     h.tactics.steady = 0;
     if (g.pic.owed[actor.Pool.slot(id)].reaction) |*r| r.recovery = g.pic.afterOf(&g.sim, g.sim.heroSlot().?);
+}
+
+pub fn watches(lv: *const grid.Level, from: P, d: mathx.Dir, p: P) bool {
+    return rules.covered(from, d, p) and bow.aimable(lv, from, p, rules.Overwatch.RANGE);
 }
 
 /// Caltrops and Fire Wall's flames take whatever comes to stand on them, a split half as well as a step.
@@ -256,8 +261,7 @@ pub fn counter(g: *game.Game, id: u16) void {
     const h = g.sim.heroActor() orelse return;
     const a = g.sim.pool.get(id) orelse return;
     if (!h.tactics.unyielding or mathx.dist(h.at, a.at) != 1 or !g.sim.rng.percent(rules.Unyielding.chance(g.sim.growth.ranks.get(.unyielding)))) return;
-    const raw = attacks.kickRaw(&g.sim.rng, &g.sim.inventory.gear, g.sim.heroRow().blow.strike);
-    combat.reaction(g, id, attacks.heroRoll(&g.sim, .melee, raw), rules.Unyielding.VERB, .{ .from = h.at, .wait = 0 }, id, null);
+    combat.reaction(g, id, attacks.heroKick(&g.sim), rules.Unyielding.VERB, .{ .from = h.at, .wait = 0 }, id, null);
 }
 
 test "tactical caltrops ranks pin entering ground foes and unlock stronger bleeding" {
@@ -506,7 +510,7 @@ test "tactical reaction recovery waits for impact and Harvest restores life from
     const h = game.harness;
     const from = P{ .x = 20, .y = 20 };
     h.heroArena(g, .knight, from, &.{});
-    g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .life_on_kill, .value = 2 }, null, null, null } });
+    g.sim.inventory.gear.slots.set(.left_ring, game.harness.affixed(.ring, .{ .kind = .life_on_kill, .value = 2 }));
     game.syncStats(g);
     g.sim.heroActor().?.hp -= 10;
     const id = h.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
@@ -538,7 +542,7 @@ test "tactical overwatch reaction finishes before the next foe can expose its re
     const h = game.harness;
     const from = P{ .x = 20, .y = 20 };
     h.heroArena(g, .archer, from, &.{});
-    g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .life_on_kill, .value = 2 }, null, null, null } });
+    g.sim.inventory.gear.slots.set(.left_ring, game.harness.affixed(.ring, .{ .kind = .life_on_kill, .value = 2 }));
     game.syncStats(g);
     g.sim.heroActor().?.hp -= 10;
     const rat = h.spawnAt(g, .rat, .{ .x = 24, .y = 20 }, true);

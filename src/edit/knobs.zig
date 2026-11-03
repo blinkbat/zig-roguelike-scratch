@@ -26,7 +26,6 @@ const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const Desk = input.Desk;
 const HEAD = widgets.HEAD;
-const HOVER = look.EDIT_HOVER;
 
 pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void {
     const was = pg.*;
@@ -137,7 +136,7 @@ fn choiceRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime U: type, v: *U
 
 fn valueHit(ed: *editor.Editor, value: rl.Rectangle, tip: [:0]const u8) bool {
     const h = widgets.hot(ed.controls(), value, true, false, tip);
-    if (h.hot) rl.drawRectangleLinesEx(value, 1, HOVER);
+    widgets.hoverEdge(value, h.hot);
     return h.hit;
 }
 
@@ -224,7 +223,7 @@ const MakeupTool = enum {
 pub const MAKEUP_TOOLS = std.enums.values(MakeupTool);
 
 pub fn rowLabel(g: *game.Game, y: i32, s: [:0]const u8) void {
-    widgets.drawFit(&g.face, s, widgets.TEXT, editor.LABEL_W - widgets.GAP, false, widgets.PAD, y + editor.TEXT_DY, look.TEXT);
+    widgets.drawFit(&g.face, s, widgets.TEXT, editor.LABEL_W - widgets.GAP, false, widgets.PAD, y + widgets.TEXT_DY, look.TEXT);
 }
 
 fn num(buf: []u8, comptime fmt: []const u8, v: anytype) [:0]const u8 {

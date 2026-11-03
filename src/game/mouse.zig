@@ -32,7 +32,7 @@ pub const State = struct {
 };
 
 const BUTTON = P{ .x = 144, .y = 32 };
-const BUTTON_RIGHT: i32 = 12;
+const BUTTON_RIGHT: i32 = hud.EDGE;
 const BUTTON_BOTTOM: i32 = 16;
 const Corner = struct { button: input.Button, label: [:0]const u8 };
 const CORNER = [_]Corner{
@@ -248,8 +248,7 @@ pub fn next(g: *const game.Game, from: P, to: P) ?mathx.Dir {
 }
 
 fn clickCell(g: *game.Game, at: P) void {
-    g.st = .{ .device = .keys, .click = true, .pointer = game.scene.Cam.of(g).mid(at) };
-    game.update(g, 0);
+    game.harness.clickAt(g, game.scene.Cam.of(g).mid(at));
 }
 
 test "mouse walking stops on harm despite healing or mana shielding" {
@@ -374,12 +373,10 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     const clock = g.sim.clock;
     const use = game.harness.boundTo(g, .shoot);
     const slot = game.overlay.slotBox(game.overlay.hudLayout(g), binds.Binds.colOf(use.by.?));
-    g.st = .{ .device = .keys, .pointer = raster.middleAt(slot), .click = true };
-    game.update(g, 0);
+    game.harness.clickAt(g, raster.middleAt(slot));
     try std.testing.expectEqual(game.Mode.aim, std.meta.activeTag(g.mode));
     try std.testing.expectEqual(clock, g.sim.clock);
-    g.st = .{ .device = .keys, .pointer = raster.middleAt(slot), .click = true };
-    game.update(g, 0);
+    game.harness.clickAt(g, raster.middleAt(slot));
     try std.testing.expectEqual(clock, g.sim.clock);
     const blocked = P{ .x = 20, .y = 24 };
     g.sim.lv.set(.{ .x = 20, .y = 22 }, .wall);
@@ -395,8 +392,7 @@ test "mouse targeting respects legality and hud clicks never confirm or move thr
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     game.harness.drawnOut(g);
     const after = g.sim.clock;
-    g.st = .{ .device = .keys, .pointer = raster.middleAt(journal.box(g.screen)), .click = true };
-    game.update(g, 0);
+    game.harness.clickAt(g, raster.middleAt(journal.box(g.screen)));
     try std.testing.expectEqual(after, g.sim.clock);
     try std.testing.expect(g.mouse.target == null);
     std.debug.print("mouse targeting: HUD activation, no click-through, blocked shot, cancel and one clicked foe attack\n", .{});
@@ -512,11 +508,9 @@ test "mouse containers menu buttons secondary set and death action preserve thei
     g.st = .{ .right_click = true };
     game.update(g, 0);
     const modifier = game.overlay.slotBox(game.overlay.hudLayout(g), binds.Binds.colOf(g.bar.modifier.?));
-    g.st = .{ .device = .keys, .click = true, .pointer = raster.middleAt(modifier) };
-    game.update(g, 0);
+    game.harness.clickAt(g, raster.middleAt(modifier));
     try std.testing.expectEqual(skillbar.Set.secondary, skills.activeSet(g));
-    g.st = .{ .device = .keys, .click = true, .pointer = raster.middleAt(modifier) };
-    game.update(g, 0);
+    game.harness.clickAt(g, raster.middleAt(modifier));
     try std.testing.expectEqual(skillbar.Set.primary, skills.activeSet(g));
     g.mode = .dead;
     g.permadeath = true;

@@ -19,6 +19,7 @@ const game = @import("../../game.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 const HERO = actor.HERO;
+const THORNS = harness.affixed(.leather, .{ .kind = .thorns, .value = 2 });
 
 test "thorns returns melee damage with the incoming impact and ignores dodges and arrows" {
     const g = try game.boot(std.testing.allocator);
@@ -27,7 +28,7 @@ test "thorns returns melee damage with the incoming impact and ignores dodges an
     inline for (.{ actor.Kind.rat, actor.Kind.bandit_crossbowman }) |kind| {
         for ([_]bool{ false, true }) |hit| {
             harness.arena(g, from, &.{});
-            g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+            g.sim.inventory.gear.slots.set(.chest, THORNS);
             const id = harness.spawnAt(g, kind, from.add(.{ .x = if (kind == .rat) 1 else 4, .y = 0 }), true);
             game.settle(g);
             const slot = actor.Pool.slot(id);
@@ -90,8 +91,8 @@ test "thorns kills grant rewards and harvest after a shielded hit without blow r
     defer game.shut(std.testing.allocator, g);
     for ([_]bool{ false, true }) |lethal_hero| {
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
-        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .life_on_kill, .value = 2 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.chest, THORNS);
+        g.sim.inventory.gear.slots.set(.left_ring, harness.affixed(.ring, .{ .kind = .life_on_kill, .value = 2 }));
         const id = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
         g.sim.pool.get(id).?.hp = 1;
         const hero = g.sim.heroActor().?;
@@ -125,7 +126,7 @@ test "retaliation kills do not replace the last arrow in the death report" {
     var deaths: usize = 0;
     for (0..16) |seed| {
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
-        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.chest, THORNS);
         const rat = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
         g.sim.pool.get(rat).?.hp = 1;
         const target = harness.spawnAt(g, .bandit_crossbowman, .{ .x = 20, .y = 24 }, false);
@@ -157,7 +158,7 @@ test "thorns respects armour splits slimes and coexists with unyielding counters
     var reduced: usize = 0;
     for (0..40) |seed| {
         harness.heroArena(g, .knight, from, &.{});
-        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.chest, THORNS);
         const id = harness.spawnAt(g, .beefy_pib, .{ .x = 21, .y = 20 }, true);
         game.settle(g);
         g.sim.rng = mathx.Rng.init(seed);
@@ -168,7 +169,7 @@ test "thorns respects armour splits slimes and coexists with unyielding counters
             if (loss == 1) reduced += 1;
         }
         harness.heroArena(g, .knight, from, &.{});
-        g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.chest, THORNS);
         const rat = harness.spawnAt(g, .rat, .{ .x = 21, .y = 20 }, true);
         harness.toughen(g.sim.pool.get(rat).?);
         g.sim.heroActor().?.tactics.unyielding = true;
@@ -188,7 +189,7 @@ test "thorns respects armour splits slimes and coexists with unyielding counters
     }
     try std.testing.expect(reduced > 0 and counters > 0);
     harness.arena(g, from, &.{});
-    g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 2 }, null, null, null } });
+    g.sim.inventory.gear.slots.set(.chest, THORNS);
     const slime = harness.spawnAt(g, .slime, .{ .x = 21, .y = 20 }, true);
     g.sim.pool.get(slime).?.hp = 5;
     game.settle(g);
@@ -1142,6 +1143,27 @@ test "a burning arrow flings a disguised mimic open, so what takes hold of it af
     try std.testing.expect(harness.logged(g, "The mimic " ++ @import("../../play/burning.zig").TAKES));
 }
 
+test "a mimic stunned by the blow that flings it open loses its first turn out" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    const id = harness.spawnAt(g, .mimic, .{ .x = 21, .y = 20 }, false);
+    game.settle(g);
+    const m = g.sim.pool.get(id).?;
+    harness.toughen(m);
+    combat.wound(g, id, .{ .dmg = 1, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    m.clock.stun();
+    try std.testing.expect(!m.disguised and m.waits);
+    combat.endTurn(g);
+    harness.drawnOut(g);
+    combat.endTurn(g);
+    try std.testing.expect(m.clock.stalled);
+    harness.drawnOut(g);
+    combat.endTurn(g);
+    try std.testing.expect(!m.clock.stalled);
+}
+
 test "a disguised mimic's afflictions wear off on its turns" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -1226,7 +1248,7 @@ test "a shieldbearer killed by thorns as its bash lands still knocks the hero ba
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
     harness.arena(g, from, &.{});
-    g.sim.inventory.gear.slots.set(.chest, .{ .kind = .leather, .mods = .{ .{ .kind = .thorns, .value = 50 }, null, null, null } });
+    g.sim.inventory.gear.slots.set(.chest, harness.affixed(.leather, .{ .kind = .thorns, .value = 50 }));
     const id = harness.spawnAt(g, .bandit_shieldbearer, .{ .x = 21, .y = 20 }, true);
     g.sim.pool.get(id).?.hp = 1;
     harness.toughen(g.sim.heroActor().?);

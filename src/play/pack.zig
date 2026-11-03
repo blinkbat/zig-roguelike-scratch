@@ -125,10 +125,7 @@ pub const Makeup = struct {
     }
 
     pub fn grow(self: *Makeup) bool {
-        if (!self.canGrow()) return false;
-        self.kind[self.n] = FIRST;
-        self.n += 1;
-        return true;
+        return self.canGrow() and mathx.push(actor.Kind, &self.kind, &self.n, FIRST);
     }
 
     pub fn shrink(self: *Makeup) bool {
@@ -175,10 +172,7 @@ pub const Spec = struct {
     }
 
     pub fn addMakeup(self: *Spec) bool {
-        if (!self.canAdd()) return false;
-        self.makeup[self.makeup_n] = .{};
-        self.makeup_n += 1;
-        return true;
+        return self.canAdd() and mathx.push(Makeup, &self.makeup, &self.makeup_n, .{});
     }
 
     pub fn dropMakeup(self: *Spec, i: usize) bool {

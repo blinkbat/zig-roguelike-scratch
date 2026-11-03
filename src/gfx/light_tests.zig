@@ -358,10 +358,8 @@ test "shadow casters keep their light outside sight and memory" {
 }
 
 test "a contact pool needs a light: memory's floor reaches nothing" {
-    var lv = grid.openFloor();
+    var lv = litFloor();
     @memset(&lv.los, true);
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     const centre = [2]f32{ 20.5, 13.5 };
@@ -812,11 +810,9 @@ test "moving night light stays above memory at 60 and 144 Hz" {
 }
 
 test "cinema lighting stays subtle and leaves night and indoor light unchanged" {
-    var lv = grid.openFloor();
+    var lv = litFloor();
     lv.set(.{ .x = 20, .y = 20 }, .shrub);
     lv.set(.{ .x = 21, .y = 20 }, .swamp_tree);
-    @memset(&lv.lit, true);
-    @memset(&lv.seen, true);
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     l.carrier = null;

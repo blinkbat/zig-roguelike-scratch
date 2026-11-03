@@ -117,7 +117,7 @@ pub const Face = struct {
 
     /// raylib's DrawTextEx with zero spacing.
     pub fn draw(self: *const Face, s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
-        const at = rl.Vector2{ .x = @floatFromInt(x), .y = @floatFromInt(y) };
+        const at = raster.vec(.{ .x = x, .y = y });
         const f = self.walkable(s, size) orelse {
             const whole = self.font orelse return rl.drawText(s, x, y, size, col);
             return rl.drawTextEx(whole, s, at, @floatFromInt(size), 0, col);
@@ -328,7 +328,7 @@ fn band(src: rl.Rectangle, dst: rl.Rectangle, tw: f32, th: f32, y0: f32, y1: f32
 }
 
 test "an engraved line is lit at its top, its own ink through the middle and deeper at its foot" {
-    const col = rl.Color{ .r = 188, .g = 160, .b = 107, .a = 255 };
+    const col = look.UI_GOLD;
     const ink = Ink.of(col, 100, 54);
     const top = ink.at(100);
     const mid = ink.at(ink.split());

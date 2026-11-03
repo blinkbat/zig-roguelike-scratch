@@ -316,7 +316,7 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *const ite
     for (level.occupant, 0..) |id, index| {
         if (id == grid.NO_ONE) continue;
         if (id > pool.n) return error.Damaged;
-        const body = pool.items[actor.Pool.slot(id)];
+        const body = &pool.items[actor.Pool.slot(id)];
         if (!body.alive or !body.at.eq(grid.Level.of(index))) return error.Damaged;
     }
     for (level.torches()) |at| if (!grid.Level.inside(at)) return error.Damaged;

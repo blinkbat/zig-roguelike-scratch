@@ -105,6 +105,10 @@ pub fn beginBlend(src: i32, dst: i32, equation: i32) void {
     rl.beginBlendMode(.custom);
 }
 
+pub fn beginReplace() void {
+    beginBlend(rl.gl.rl_one, rl.gl.rl_zero, rl.gl.rl_func_add);
+}
+
 /// A render texture over the whole frame, flipped the right way up.
 pub fn drawTarget(t: rl.Texture2D) void {
     rl.drawTextureRec(t, rect(0, 0, t.width, -t.height), .{ .x = 0, .y = 0 }, rl.Color.white);

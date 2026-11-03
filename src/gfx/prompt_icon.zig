@@ -82,7 +82,7 @@ pub const Prompt = union(enum) {
                 if (button == .left or button == .right) {
                     rl.drawRectangleRec(.{ .x = x + (if (button == .left) -s * 0.24 else @as(f32, 0.04)), .y = y - s * 0.33, .width = s * 0.2, .height = s * 0.3 }, look.fade(PROMPT_INK, alpha));
                 } else {
-                    rl.drawRectangleRounded(.{ .x = x - 1.5, .y = y - s * 0.3, .width = 3, .height = s * 0.3 }, WHEEL_ROUND.roundness, WHEEL_ROUND.segments, look.fade(PROMPT_INK, alpha));
+                    WHEEL_ROUND.fill(.{ .x = x - 1.5, .y = y - s * 0.3, .width = 3, .height = s * 0.3 }, look.fade(PROMPT_INK, alpha));
                     if (button == .wheel) for ([_]mathx.Dir{ .n, .s }) |d| {
                         promptArrow(d, cx, cy + d.delta().y * @divTrunc(h, 3), arrowPx(h), look.fade(PROMPT_INK, alpha));
                     };
@@ -184,7 +184,18 @@ fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i3
     }
 }
 
-const Round = struct { roundness: f32, segments: i32 };
+const Round = struct {
+    roundness: f32,
+    segments: i32,
+
+    fn fill(r: Round, box: rl.Rectangle, col: rl.Color) void {
+        rl.drawRectangleRounded(box, r.roundness, r.segments, col);
+    }
+
+    fn edge(r: Round, box: rl.Rectangle, col: rl.Color) void {
+        rl.drawRectangleRoundedLinesEx(box, r.roundness, r.segments, 1, col);
+    }
+};
 const PILL_ROUND = Round{ .roundness = 0.6, .segments = 8 };
 const KEYCAP_ROUND = Round{ .roundness = 0.3, .segments = 6 };
 const MOUSE_ROUND = Round{ .roundness = 0.65, .segments = 8 };
@@ -195,16 +206,16 @@ fn pill(box: rl.Rectangle, alpha: f32) void {
 }
 
 fn rounded(box: rl.Rectangle, r: Round, alpha: f32) void {
-    rl.drawRectangleRounded(box, r.roundness, r.segments, look.fade(PROMPT_BODY, alpha));
-    rl.drawRectangleRoundedLinesEx(box, r.roundness, r.segments, 1, look.fade(PROMPT_EDGE, alpha));
+    r.fill(box, look.fade(PROMPT_BODY, alpha));
+    r.edge(box, look.fade(PROMPT_EDGE, alpha));
 }
 
 fn keycap(box: rl.Rectangle, alpha: f32) void {
     const lip = @max(2, box.height / 8);
-    rl.drawRectangleRounded(box, KEYCAP_ROUND.roundness, KEYCAP_ROUND.segments, look.fade(PROMPT_LIP, alpha));
+    KEYCAP_ROUND.fill(box, look.fade(PROMPT_LIP, alpha));
     const top = rl.Rectangle{ .x = box.x, .y = box.y, .width = box.width, .height = box.height - lip };
-    rl.drawRectangleRounded(top, KEYCAP_ROUND.roundness, KEYCAP_ROUND.segments, look.fade(PROMPT_FACE, alpha));
-    rl.drawRectangleRoundedLinesEx(top, KEYCAP_ROUND.roundness, KEYCAP_ROUND.segments, 1, look.fade(PROMPT_EDGE, alpha));
+    KEYCAP_ROUND.fill(top, look.fade(PROMPT_FACE, alpha));
+    KEYCAP_ROUND.edge(top, look.fade(PROMPT_EDGE, alpha));
 }
 
 fn viewMark(cx: i32, cy: i32, h: i32, alpha: f32) void {

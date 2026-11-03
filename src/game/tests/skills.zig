@@ -1078,7 +1078,7 @@ test "weapon weight controls live damage and its preview independently of attack
         const style = case[2];
         harness.heroArena(g, if (act == .shoot) .archer else .knight, .{ .x = 20, .y = 20 }, &.{});
         g.sim.inventory.gear.slots.set(.right_hand, .{ .kind = case[0] });
-        g.sim.inventory.gear.slots.set(.left_ring, .{ .kind = .ring, .mods = .{ .{ .kind = .strength, .value = 70 }, null, null, null } });
+        g.sim.inventory.gear.slots.set(.left_ring, harness.affixed(.ring, .{ .kind = .strength, .value = 70 }));
         g.sim.growth.ranks.set(act, 2);
         var expected_attrs = g.sim.inventory.gear.forAttack(g.sim.heroAttrs(), act.attack().?);
         expected_attrs.damage_bonus.getPtr(style).* += g.sim.growth.damageBonus(act);

@@ -24,6 +24,7 @@ const skillbar = @import("../play/skillbar.zig");
 const nova = @import("../play/nova.zig");
 const pixel = @import("pixel.zig");
 const light = @import("light.zig");
+const sky = @import("sky.zig");
 
 /// `ichor` is Brogue's purple blood.
 pub const Matter = enum { blood, ooze, wood, ichor };
@@ -584,7 +585,7 @@ pub const LevelUp = struct {
 
     pub fn bodyGlow(self: LevelUp) [3]f32 {
         const gain = self.alpha() * LEVEL_BODY_GAIN;
-        return .{ gain * look.LEVEL_BODY_TINT[0], gain * look.LEVEL_BODY_TINT[1], gain * look.LEVEL_BODY_TINT[2] };
+        return sky.splat(gain) * @as(sky.Rgb, look.LEVEL_BODY_TINT);
     }
 
     pub fn emission(self: LevelUp, at: [2]f32) ?light.Emission {

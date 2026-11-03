@@ -261,14 +261,12 @@ pub const Runtime = struct {
 fn ordered(s: *const Script, buf: *[script.MAX_TRIGGERS]u8) []const u8 {
     const ord = buf[0..s.trigger_n];
     for (ord, 0..) |*o, i| o.* = @intCast(i);
-    var i: usize = 1;
-    while (i < ord.len) : (i += 1) {
-        const v = ord[i];
-        var j = i;
-        while (j > 0 and s.trigger[ord[j - 1]].priority < s.trigger[v].priority) : (j -= 1) ord[j] = ord[j - 1];
-        ord[j] = v;
-    }
+    std.sort.insertion(u8, ord, s, before);
     return ord;
+}
+
+fn before(s: *const Script, a: u8, b: u8) bool {
+    return s.trigger[a].priority > s.trigger[b].priority;
 }
 
 const script_text = @import("../map/script_text.zig");

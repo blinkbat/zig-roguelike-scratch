@@ -14,15 +14,17 @@ const catalog = @import("text_catalog.zig");
 const PAD = widgets.PAD;
 const TEXT = widgets.TEXT;
 const DETAIL = widgets.DETAIL;
-const ROW = TEXT + 2 * DETAIL + 20;
+const ROW_PAD: i32 = 20;
+const ROW = TEXT + 2 * DETAIL + ROW_PAD;
 /// Of a passage, the most a list row's one fitted line could show.
 const SNIPPET_MAX: usize = 160;
-const LINE: i32 = TEXT + 8;
+const LEAD: i32 = 8;
+const LINE: i32 = TEXT + LEAD;
 
 pub fn fieldHeight(rows: i32) i32 {
     return rows * LINE + 2 * widgets.GAP;
 }
-const NAV_ROW = DETAIL + 20;
+const NAV_ROW = DETAIL + ROW_PAD;
 const Focus = enum { search, passage };
 const Leave = enum { close, quit };
 const HISTORY = 16;
@@ -368,6 +370,12 @@ pub const State = struct {
         s.view_dirty = false;
     }
 
+    fn searched(s: *State) void {
+        s.top = 0;
+        s.nav_top = 0;
+        s.view_dirty = true;
+    }
+
     fn scope(s: *State, category: ?[]const u8, owner: ?[]const u8) void {
         if (s.dirty()) return s.say("Save or discard this passage before changing its group.", .{});
         const same_category = if (s.category) |previous| if (category) |next| std.mem.eql(u8, previous, next) else false else category == null;
@@ -511,11 +519,7 @@ pub fn keys(ed: *editor.Editor) void {
     if (s.focus == .search) {
         const old = std.hash.Wyhash.hash(0, s.search.text());
         if (!s.search.feed(d, false)) s.say("Search accepts plain ASCII text on one line.", .{});
-        if (std.hash.Wyhash.hash(0, s.search.text()) != old) {
-            s.top = 0;
-            s.nav_top = 0;
-            s.view_dirty = true;
-        }
+        if (std.hash.Wyhash.hash(0, s.search.text()) != old) s.searched();
     } else if (s.selected) |i| {
         const e = s.data.?.entries()[i];
         if (e.editable) {
@@ -561,7 +565,7 @@ pub fn keys(ed: *editor.Editor) void {
 }
 
 fn button(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool) bool {
-    return widgets.buttonOn(ed.controls(), &g.face, r, label, on, live, true, null);
+    return widgets.modalButton(ed.controls(), &g.face, r, label, on, live, null);
 }
 
 fn displayBytes(s: []u8) void {
@@ -651,8 +655,8 @@ fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8,
     var buf: [32]u8 = undefined;
     const number = std.fmt.bufPrintZ(&buf, "{d}", .{count}) catch "";
     const number_w = g.face.width(number, DETAIL);
-    widgets.drawFit(&g.face, label, DETAIL, w - number_w - 3 * widgets.GAP - 6, false, x + widgets.GAP, y + 8, if (on) look.UI_GOLD else look.TEXT);
-    g.face.draw(number, x + w - number_w - 2 * widgets.GAP, y + 8, DETAIL, look.DIM);
+    widgets.drawFit(&g.face, label, DETAIL, w - number_w - 3 * widgets.GAP - 6, false, x + widgets.GAP, y + LEAD, if (on) look.UI_GOLD else look.TEXT);
+    g.face.draw(number, x + w - number_w - 2 * widgets.GAP, y + LEAD, DETAIL, look.DIM);
     return h.hit;
 }
 
@@ -721,9 +725,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     if (drawField(ed, g, &s.search, raster.rect(x, y, @as(i32, @intFromFloat(clear_r.x)) - PAD - x, fieldHeight(1)), s.focus == .search, true)) s.focus = .search;
     if (button(ed, g, clear_r, "Clear", false, s.search.n > 0)) {
         s.search.set("");
-        s.view_dirty = true;
-        s.top = 0;
-        s.nav_top = 0;
+        s.searched();
         s.focus = .search;
     }
     if (button(ed, g, reload_r, "Reload", false, !s.dirty())) reload(ed);
@@ -734,16 +736,17 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const list_w = std.math.clamp(@divTrunc(w, 4), 240, 360);
     const right_x = list_x + list_w + PAD;
     const right_w = x + w - right_x;
-    const bottom = page.bottom - DETAIL - 8;
+    const bottom = page.bottom - DETAIL - LEAD;
     widgets.divider(list_x, y, bottom);
     widgets.divider(right_x, y, bottom);
     drawNavigation(ed, g, x, y, nav_w, bottom);
     widgets.drawFit(&g.face, "Passages", TEXT, list_w, false, list_x, y, look.UI_GOLD);
     const list_y = y + LINE;
-    s.rows = @intCast(@max(1, @divTrunc(bottom - list_y - DETAIL - 8, ROW)));
+    s.rows = @intCast(@max(1, @divTrunc(bottom - list_y - DETAIL - LEAD, ROW)));
     s.top = widgets.clampTop(s.top, s.results.items.len, s.rows);
     s.list_box = raster.rect(list_x, list_y, list_w, @as(i32, @intCast(s.rows)) * ROW);
     if (s.data) |c| {
+        const entry_w = list_w - ROW_PAD;
         const end = @min(s.results.items.len, s.top + s.rows);
         for (s.results.items[s.top..end], 0..) |i, at| {
             const e = c.entries()[i];
@@ -751,15 +754,15 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
             const r = raster.rect(list_x, yy, list_w - widgets.GAP, ROW - widgets.GAP);
             const h = widgets.hot(ed.controls(), r, s.leave == null, true, null);
             widgets.plate(r, s.selected == i, h.hot);
-            widgets.drawFit(&g.face, e.role, TEXT, list_w - 20, false, list_x + widgets.GAP, yy + 4, if (s.selected == i) look.UI_GOLD else look.TEXT);
-            widgets.drawFit(&g.face, e.owner, DETAIL, list_w - 20, false, list_x + widgets.GAP, yy + TEXT + 8, look.DIM);
+            widgets.drawFit(&g.face, e.role, TEXT, entry_w, false, list_x + widgets.GAP, yy + 4, if (s.selected == i) look.UI_GOLD else look.TEXT);
+            widgets.drawFit(&g.face, e.owner, DETAIL, entry_w, false, list_x + widgets.GAP, yy + LINE, look.DIM);
             var snippet: [SNIPPET_MAX]u8 = undefined;
             const n = @min(e.text.len, SNIPPET_MAX);
             @memcpy(snippet[0..n], e.text[0..n]);
             for (snippet[0..n]) |*char| if (char.* < ' ') {
                 char.* = ' ';
             };
-            widgets.drawFit(&g.face, snippet[0..n], DETAIL, list_w - 20, false, list_x + widgets.GAP, yy + TEXT + DETAIL + 12, look.TEXT);
+            widgets.drawFit(&g.face, snippet[0..n], DETAIL, entry_w, false, list_x + widgets.GAP, yy + TEXT + DETAIL + 12, look.TEXT);
             if (h.hit and s.pick(i)) s.focus = .passage;
         }
     }
@@ -767,7 +770,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const count_label = std.fmt.bufPrintZ(&buf, "{d} passages", .{s.results.items.len}) catch "";
     widgets.drawFit(&g.face, count_label, DETAIL, list_w, false, list_x, bottom - DETAIL, look.DIM);
     if (s.results.items.len == 0) {
-        widgets.drawFit(&g.face, "No matching passages.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + 8, look.TEXT);
+        widgets.drawFit(&g.face, "No matching passages.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + LEAD, look.TEXT);
         widgets.drawFit(&g.face, "Clear search or choose another group.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + 36, look.DIM);
     }
     s.passage_box = raster.rect(0, 0, 0, 0);
@@ -782,11 +785,11 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         var yy = y + LINE + 3 * (DETAIL + widgets.GAP) + 4;
         const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
         widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
-        yy += DETAIL + 8;
-        const field_h = @max(fieldHeight(1), bottom - yy - (DETAIL + 8 + 2 * widgets.ROW_STEP + DETAIL + 8));
+        yy += DETAIL + LEAD;
+        const field_h = @max(fieldHeight(1), bottom - yy - (DETAIL + LEAD + 2 * widgets.ROW_STEP + DETAIL + LEAD));
         s.passage_box = raster.rect(right_x, yy, right_w, field_h);
         if (drawField(ed, g, &s.draft, s.passage_box, s.focus == .passage, e.editable)) s.focus = .passage;
-        yy += field_h + 8;
+        yy += field_h + LEAD;
         widgets.drawFit(&g.face, "Written by", DETAIL, right_w, false, right_x, yy, look.DIM);
         yy += DETAIL + widgets.GAP;
         const tags = std.enums.values(catalog.Author);
@@ -819,10 +822,10 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     };
     if (s.selected == null) {
         widgets.drawFit(&g.face, "Choose a passage", TEXT, right_w, false, right_x, y, look.TEXT);
-        _ = g.face.paragraph("Browse a feature, then its object or screen. Select a named field to see its wording and exact source.", right_x, y + LINE + 8, right_w, DETAIL, look.DIM);
+        _ = g.face.paragraph("Browse a feature, then its object or screen. Select a named field to see its wording and exact source.", right_x, y + LINE + LEAD, right_w, DETAIL, look.DIM);
     }
     const note = if (s.note.n > 0) s.note.text() else "Saved wording takes effect after rebuilding.";
-    widgets.drawFit(&g.face, note, DETAIL, w, false, x, bottom + 8, look.UI_GOLD);
+    widgets.drawFit(&g.face, note, DETAIL, w, false, x, bottom + LEAD, look.UI_GOLD);
 }
 
 test "text field replaces selections, preserves drafts on invalid paste, and inserts at cursor" {

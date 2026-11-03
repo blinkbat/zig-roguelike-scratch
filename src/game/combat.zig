@@ -122,11 +122,8 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
     const name = actor.row(a.kind).name;
     const back = if (a.pin.turns > 0) null else M.knocked(&g.sim.lv, a.at, d, id);
     if (back) |b| if (actor.holds(a.kind, &g.sim.lv, b)) {
-        const i = actor.Pool.slot(id);
-        g.sim.pool.move(&g.sim.lv, id, b);
-        g.sim.displaced.set(i);
-        _ = g.pic.glideToHeld(i, b, -s.wait);
-        tactics.entered(g, id);
+        tactics.displace(g, id, b);
+        _ = g.pic.glideToHeld(actor.Pool.slot(id), b, -s.wait);
         g.sim.sayAt(b, "The {s} is knocked back.", .{name});
     };
     if (comptime act.afflicts()) if (hit.takes) g.sim.sayFoeTakes(a, M.TAKES);
@@ -411,7 +408,7 @@ fn heroAfterAction(g: *game.Game) void {
 fn spreadGasAndAdvanceClocks(sim: *game.simulation.Simulation) void {
     gas.turn(&sim.lv, &sim.rng);
     for (sim.pool.slice()) |*a| {
-        if (a.alive and a.foe()) a.clock.pass(actor.row(a.kind).pace);
+        if (a.alive and a.foe() and !(a.waits and actor.row(a.kind).disguised)) a.clock.pass(actor.row(a.kind).pace);
     }
 }
 
@@ -478,7 +475,7 @@ fn gasHeal(g: *game.Game, id: u16) void {
     if (g.sim.lv.volumeAt(.healing, a.at) == 0 or ranAlready(g, id, .healed) or !a.hurt()) return;
     const n = a.heal(gas.heal(a.max));
     if (id == g.sim.hero) g.sim.log.push(.recovery, "The " ++ gas.HEALING_NAME ++ " mends {s} for {d}.", .{ g.sim.name.text(), n });
-    g.pic.recordHeal(.fromInt(id), g.pic.afterOf(&g.sim, actor.Pool.slot(id)));
+    g.pic.owe(.fromInt(id), .healed, g.pic.afterOf(&g.sim, actor.Pool.slot(id)));
 }
 
 /// Mark a tick consumed; split halves inherit the parent's consumed ticks.
@@ -539,7 +536,7 @@ fn harmTick(g: *game.Game, id: u16, dmg: i32, comptime owed: game.simulation.Tic
             debt.recovery = killRecovery(g);
         }
     }
-    g.pic.recordStatus(.fromInt(id), owed, debt);
+    g.pic.owe(.fromInt(id), owed, debt);
     return h;
 }
 
@@ -734,13 +731,13 @@ fn mend(g: *game.Game, id: u16, m: actor.Mend, sight: i32) bool {
         const a = &g.sim.pool.items[i];
         _ = a.heal(m.amount);
         g.sim.sayAt(r.at, "The {s} mends the {s}.", .{ name, actor.row(a.kind).name });
-        g.pic.recordMend(.fromInt(id), .{ .slot = actor.ActorSlot.fromIndex(i), .after = g.pic.afterOf(&g.sim, i) });
+        g.pic.owe(.fromInt(id), .mended, .{ .slot = actor.ActorSlot.fromIndex(i), .after = g.pic.afterOf(&g.sim, i) });
     } else if (sleepers) {
         for (g.sim.pool.slice()) |*a| {
             if (kinInReach(&g.sim.lv, m, a, r.at, within)) a.awake = true;
         }
         g.sim.sayAt(r.at, "The {s} rouses its kin.", .{name});
-        g.pic.recordMend(.fromInt(id), .{});
+        g.pic.owe(.fromInt(id), .mended, .{});
     } else return false;
     r.ready_in = m.every;
     return true;
@@ -865,7 +862,7 @@ fn returnThorns(g: *game.Game, id: u16, from: P) void {
     g.sim.chronicle.note(.{ .dealt = .{ .to = kind, .killed = h.lethal, .origin = .{ .reaction = .fromInt(id) } } });
     g.sim.sayAs(.damage, at, "{s}'s thorns hurt the {s} for {d}.{s}", .{ g.sim.name.text(), actor.row(kind).name, h.dmg, deathNote(h) });
     if (h.lethal) fell(g, id);
-    g.pic.recordThorns(.fromInt(id), .{ .kill = h.lethal, .after = after, .recovery = if (h.lethal) killRecovery(g) else null });
+    g.pic.owe(.fromInt(id), .thorns, .{ .kill = h.lethal, .after = after, .recovery = if (h.lethal) killRecovery(g) else null });
 }
 
 fn sweepReady(g: *game.Game, id: u16, row: actor.Row) bool {
@@ -887,7 +884,7 @@ fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike, weak: boo
         swept.hit[swept.n] = hit;
         swept.n += 1;
     }
-    g.pic.recordSweep(.fromInt(id), swept);
+    g.pic.owe(.fromInt(id), .swept, swept);
 }
 
 fn swipe(g: *game.Game, source: u16, id: u16, by: actor.Row, s: actor.Strike, weak: bool) ?fx.Impact {

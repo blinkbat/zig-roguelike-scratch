@@ -19,7 +19,6 @@ const Desk = input.Desk;
 const DETAIL = widgets.DETAIL;
 const HEAD = widgets.HEAD;
 const ROW_ON = widgets.ROW_ON;
-const HOVER = look.EDIT_HOVER;
 const SEP = menu.SEP;
 
 pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
@@ -55,8 +54,8 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
             widgets.textFace(&g.face).draw(widgets.fitBefore(&g.face, &buf, &fit_buf, ed.path(), " has changes that are not saved.", inner), x + widgets.PAD, y, widgets.TEXT, look.TEXT);
             std.debug.assert(y + widgets.TEXT <= buttons_y);
             y = buttons_y;
-            if (widgets.buttonOn(ed.controls(), &g.face, f.button(y, 2), widgets.keyed("Save", Desk.ENTER_CAPTION), false, true, true, null) and ed.save()) ed.commit();
-            if (widgets.buttonOn(ed.controls(), &g.face, f.button(y, 1), "Discard", false, true, true, null)) ed.commit();
+            if (widgets.modalButton(ed.controls(), &g.face, f.button(y, 2), widgets.keyed("Save", Desk.ENTER_CAPTION), false, true, null) and ed.save()) ed.commit();
+            if (widgets.modalButton(ed.controls(), &g.face, f.button(y, 1), "Discard", false, true, null)) ed.commit();
             backButton(ed, g, f, y, "Cancel");
         },
         .name => {
@@ -67,7 +66,7 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
             widgets.drawFit(&g.face, note, DETAIL, inner, false, x + widgets.PAD, y, look.DIM);
             std.debug.assert(y + DETAIL <= buttons_y);
             y = buttons_y;
-            if (widgets.buttonOn(ed.controls(), &g.face, f.button(y, 1), widgets.keyed("OK", Desk.ENTER_CAPTION), false, true, true, null)) ed.named();
+            if (widgets.modalButton(ed.controls(), &g.face, f.button(y, 1), widgets.keyed("OK", Desk.ENTER_CAPTION), false, true, null)) ed.named();
             backButton(ed, g, f, y, "Cancel");
         },
         .open => {
@@ -79,14 +78,14 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
                     .map => "   ",
                 }, ed.listing.label(i) }) catch "";
                 const r = widgets.row(x + widgets.PAD, y, inner);
-                if (i == ed.listed_at) rl.drawRectangleLinesEx(r, 1, HOVER);
-                if (widgets.buttonOn(ed.controls(), &g.face, r, label, std.mem.eql(u8, ed.listing.at(i), ed.path()), true, true, OPEN_TIPS.get(ed.listing.entry(i)))) {
+                widgets.hoverEdge(r, i == ed.listed_at);
+                if (widgets.modalButton(ed.controls(), &g.face, r, label, std.mem.eql(u8, ed.listing.at(i), ed.path()), true, OPEN_TIPS.get(ed.listing.entry(i)))) {
                     return ed.openListed(i);
                 }
                 y += widgets.ROW_H;
             }
             std.debug.assert(y + @as(i32, if (ed.listing.n == 0) widgets.TEXT else 0) <= buttons_y);
-            widgets.textFace(&g.face).draw(OPEN_CRIB, x + widgets.PAD, buttons_y + editor.ROW_DETAIL_DY, DETAIL, look.DIM);
+            widgets.textFace(&g.face).draw(OPEN_CRIB, x + widgets.PAD, buttons_y + widgets.DETAIL_DY, DETAIL, look.DIM);
             backButton(ed, g, f, buttons_y, "Cancel");
         },
     }
@@ -165,7 +164,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     }
     backButton(ed, g, f, y + cells_h, "Close");
     if (seenFoe(s) != null) {
-        if (widgets.buttonOn(ed.controls(), &g.face, f.button(y + cells_h, 1), widgets.keyed("Fight", Desk.ENTER_CAPTION), false, true, true, "Fight this foe in an arena; return through the pause menu")) fightSeen(ed);
+        if (widgets.modalButton(ed.controls(), &g.face, f.button(y + cells_h, 1), widgets.keyed("Fight", Desk.ENTER_CAPTION), false, true, "Fight this foe in an arena; return through the pause menu")) fightSeen(ed);
     }
 }
 
@@ -298,9 +297,9 @@ pub fn fieldRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) void {
     rl.drawRectangleRec(r, ROW_ON);
     if (ed.field.selected) rl.drawRectangleLinesEx(r, 2, look.UI_FOCUS);
     const typed = std.fmt.bufPrintZ(&buf, "{s}" ++ menu.CARET, .{ed.field.text()}) catch "";
-    widgets.drawFit(&g.face, typed, widgets.TEXT, widgets.insetW(r), true, widgets.textX(r), @as(i32, @intFromFloat(r.y)) + editor.TEXT_DY, look.UI_FOCUS);
+    widgets.drawFit(&g.face, typed, widgets.TEXT, widgets.insetW(r), true, widgets.textX(r), @as(i32, @intFromFloat(r.y)) + widgets.TEXT_DY, look.UI_FOCUS);
 }
 
 fn backButton(ed: *editor.Editor, g: *game.Game, f: widgets.Frame, y: i32, comptime label: []const u8) void {
-    if (widgets.buttonOn(ed.controls(), &g.face, f.button(y, 0), widgets.keyed(label, Desk.BACK_CAPTION), false, true, true, null)) ed.modal = .none;
+    if (widgets.modalButton(ed.controls(), &g.face, f.button(y, 0), widgets.keyed(label, Desk.BACK_CAPTION), false, true, null)) ed.modal = .none;
 }
