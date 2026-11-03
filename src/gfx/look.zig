@@ -171,8 +171,7 @@ pub const Assets = struct {
 
     fn decor(need: *Assets, t: grid.Tile, p: mathx.P) void {
         if (grassDecor(t, p)) |d| switch (d) {
-            .brush => need.brush = true,
-            .flowers => need.flowers = true,
+            inline else => |k| @field(need, @tagName(k)) = true,
         };
     }
 
@@ -423,8 +422,7 @@ pub const Sprites = struct {
                     if (beds.ground(p) != .grass) continue;
                     const decor = grassDecor(lv.at(p), p) orelse continue;
                     const tex = (switch (decor) {
-                        .brush => self.brush,
-                        .flowers => self.flowers,
+                        inline else => |k| @field(self, @tagName(k)),
                     }) orelse continue;
                     const at = cellAt(origin, p, px);
                     raster.stretch(tex, .{ .x = at[0], .y = at[1], .width = px, .height = px }, LIT);
@@ -1038,7 +1036,7 @@ pub fn body(k: actor.Kind) Look {
     };
 }
 
-/// Drawn a figure's glyph is, offset down-right in this ink, so letters standing in for art read at a glance.
+/// A figure's glyph is drawn over this ink offset down-right, so letters standing in for art read at a glance.
 pub const GLYPH_SHADOW = rl.Color{ .r = 0, .g = 0, .b = 0, .a = DROP_SHADOW_A };
 pub const GLYPH_SHADOW_PX: i32 = 4;
 /// A glyph's or a line of text's drop shadow, at full ink.

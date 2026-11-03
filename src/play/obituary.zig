@@ -396,9 +396,9 @@ fn cause(ctx: *const Context, tagged: Tags, w: Writer) !void {
             try w.print(" was {s} by {s} {s}{s} {s}{s}.", .{ done(k) orelse "killed", article(if (mere.len > 0) mere else foe, false), mere, foe, ctx.place, dark });
         },
         .gas => if (tagged.contains(.own_goal))
-            try w.print("{} burst a {s} {s}{s}, then died in its gas.", .{ who, actor.row(.bloat).name, ctx.place, dark })
+            try w.print("{} burst {} {s}{s}, then died in its gas.", .{ who, Indefinite{ .word = actor.row(.bloat).name }, ctx.place, dark })
         else if (tagged.contains(.burst_beside))
-            try w.print("{} died in gas from a {s} that burst nearby {s}{s}.", .{ who, actor.row(.bloat).name, ctx.place, dark })
+            try w.print("{} died in gas from {} that burst nearby {s}{s}.", .{ who, Indefinite{ .word = actor.row(.bloat).name }, ctx.place, dark })
         else
             try w.print("{} choked on {s} {s}{s}.", .{ who, sourceName(.gas), ctx.place, dark }),
         .steam => try w.print("{} was scalded to death by {s} {s}{s}.", .{ who, sourceName(.steam), ctx.place, dark }),

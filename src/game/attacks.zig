@@ -50,8 +50,12 @@ pub fn scaled(rng: *mathx.Rng, by: attrs.Attrs, style: attrs.Style, hit: damage.
 }
 
 pub fn heroRoll(sim: *Simulation, comptime attack: attrs.Attack, raw: i32) Roll {
+    return heroRollWith(&sim.rng, sim, attack, raw);
+}
+
+pub fn heroRollWith(rng: *mathx.Rng, sim: *const Simulation, comptime attack: attrs.Attack, raw: i32) Roll {
     const gear = sim.inventory.gear;
-    var hit = scaled(&sim.rng, gear.forAttack(sim.heroAttrs(), attack), gear.scaling(attack), .{ .physical = raw });
+    var hit = scaled(rng, gear.forAttack(sim.heroAttrs(), attack), gear.scaling(attack), .{ .physical = raw });
     hit.effect = gear.onHit(attack);
     return hit.physical();
 }

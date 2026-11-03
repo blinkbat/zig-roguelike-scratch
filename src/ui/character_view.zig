@@ -6,7 +6,6 @@ const attr = @import("../play/attrs.zig");
 const items = @import("../play/items.zig");
 const damage = @import("../play/damage.zig");
 const resilience = @import("../play/resilience.zig");
-const terrain = @import("../play/terrain.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
 const consumable = @import("../play/consumable.zig");
@@ -109,7 +108,6 @@ pub const View = struct {
     resists: damage.Resists = .initFill(0),
     status_resist: std.EnumArray(resilience.Kind, resilience.Standing) = .initFill(.{}),
     steady: u8 = 0,
-    environment: terrain.Modifiers = .{},
     /// Null with no hero standing: the sheet's own, without terrain or sunder.
     defence: ?Defence = null,
 

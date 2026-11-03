@@ -42,10 +42,9 @@ fn references(comptime T: type) type {
     const original = std.meta.fields(T);
     var fields: [original.len]std.builtin.Type.StructField = undefined;
     for (original, 0..) |field, i| {
-        const Pointer = *const field.type;
-        fields[i] = .{ .name = field.name, .type = Pointer, .default_value_ptr = null, .is_comptime = false, .alignment = @alignOf(Pointer) };
+        fields[i] = data.fieldOf(field.name, *const field.type, null);
     }
-    return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fields, .decls = &.{}, .is_tuple = false } });
+    return data.Struct(fields);
 }
 
 /// `Snapshot` as the file holds it, each field by reference.
@@ -335,20 +334,17 @@ const TestRecord = struct {
     fn change(out: *std.ArrayList(u8), bytes: []const u8, path: []const []const u8, replacement: ?[]const u8) !void {
         var cursor = wire.Cursor{ .bytes = bytes };
         var record = try wire.Record.init(&cursor);
-        try wire.integer(out, u16, record.remaining - @as(u16, @intFromBool(path.len == 1 and replacement == null)));
+        try wire.integer(out, wire.FieldCount, record.remaining - @as(wire.FieldCount, @intFromBool(path.len == 1 and replacement == null)));
         var found = false;
         while (try record.next()) |entry| {
             const matches = std.mem.eql(u8, entry.name, path[0]);
             if (matches) found = true;
             if (matches and path.len == 1 and replacement == null) continue;
-            try wire.integer(out, u16, @intCast(entry.name.len));
-            try out.appendSlice(entry.name);
-            const size_at = out.items.len;
-            try wire.integer(out, u32, 0);
+            const size_at = try wire.beginField(out, entry.name);
             if (matches and path.len > 1) {
                 try change(out, entry.bytes, path[1..], replacement);
             } else try out.appendSlice(if (matches) replacement.? else entry.bytes);
-            std.mem.writeInt(u32, out.items[size_at..][0..4], @intCast(out.items.len - size_at - 4), .little);
+            wire.endField(out, size_at);
         }
         try std.testing.expect(found and cursor.bytes.len == 0);
     }

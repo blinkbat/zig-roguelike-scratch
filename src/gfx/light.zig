@@ -141,7 +141,7 @@ pub const Light = struct {
         while (box.next()) |p| {
             const k = t.texel(p);
             t.reach[k] = mask(grid.cellOr(bool, &pool, p, false));
-            t.open[k] = t.reach[k] * grid.cellOr(f32, &self.visibility.see_through, p, 0);
+            t.open[k] = self.visibility.openAt(p, t.reach[k]);
         }
         self.torch[self.torch_n] = t;
         self.torch_n += 1;
@@ -266,9 +266,10 @@ pub const Light = struct {
         for (0..4) |i| {
             const p = corner.add(mathx.unslot(i, 2));
             reach[i] = mask(self.scratch.inLos(p));
-            open[i] = reach[i] * grid.cellOr(f32, &self.visibility.see_through, p, 0);
+            open[i] = self.visibility.openAt(p, reach[i]);
         }
-        return visibility.occluded(&reach, &open, 2, 2, x - 0.5 - @as(f32, @floatFromInt(corner.x)), y - 0.5 - @as(f32, @floatFromInt(corner.y)));
+        const uv = visibility.fieldUv(corner, x, y);
+        return visibility.occluded(&reach, &open, 2, 2, uv[0], uv[1]);
     }
 
     fn countCasters(self: *Light, lv: *const grid.Level) void {

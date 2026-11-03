@@ -47,7 +47,7 @@ pub const Branch = enum {
         return BRANCH_POSITIONS.get(b).lane;
     }
     pub fn on(a: Arm, lane_: Lane) Branch {
-        return BRANCHES.get(a)[@intFromEnum(lane_)];
+        return BRANCHES.get(a).get(lane_);
     }
     pub fn name(b: Branch) [:0]const u8 {
         return switch (b) {
@@ -73,18 +73,19 @@ pub const Seam = enum {
 };
 /// An arm's two branches: the one whose bridges reach the next arm in `Arm`'s order, then the one reached from the previous.
 pub const Lane = enum { next, previous };
-const BRANCHES = std.EnumArray(Arm, [std.enums.values(Lane).len]Branch).init(.{
-    .warrior = .{ .warrior_life, .warrior_berserk },
-    .rogue = .{ .rogue_evade, .rogue_ranged },
-    .wizard = .{ .wizard_well, .wizard_cast },
+const BRANCHES = std.EnumArray(Arm, std.EnumArray(Lane, Branch)).init(.{
+    .warrior = .init(.{ .next = .warrior_life, .previous = .warrior_berserk }),
+    .rogue = .init(.{ .next = .rogue_evade, .previous = .rogue_ranged }),
+    .wizard = .init(.{ .next = .wizard_well, .previous = .wizard_cast }),
 });
 const BRANCH_POSITIONS = blk: {
     var out = std.EnumArray(Branch, struct { arm: Arm, lane: Lane }).initUndefined();
     var seen = std.EnumSet(Branch).initEmpty();
-    for (ARMS) |a| for (BRANCHES.get(a), 0..) |b, lane| {
+    for (ARMS) |a| for (std.enums.values(Lane)) |lane| {
+        const b = BRANCHES.get(a).get(lane);
         if (seen.contains(b)) @compileError(@tagName(b) ++ " belongs to more than one passive branch");
         seen.insert(b);
-        out.set(b, .{ .arm = a, .lane = @enumFromInt(lane) });
+        out.set(b, .{ .arm = a, .lane = lane });
     };
     for (std.enums.values(Branch)) |b| {
         if (!seen.contains(b)) @compileError(@tagName(b) ++ " has no passive arm");
@@ -462,7 +463,7 @@ pub const NODES: [N]Node = blk: {
     });
     for (ARMS) |a| {
         out[armFirst(a)] = .{ .arm = a, .ring = 0, .name = roots.get(a), .grant = .{ .kind = a.stat(), .amount = ROOT_GRANT } };
-        for (BRANCHES.get(a)) |b| {
+        for (BRANCHES.get(a).values) |b| {
             var i: usize = 0;
             for (BRANCH_RINGS, 0..) |wide, r| for (0..wide) |slot| {
                 const e = BANK.get(b)[i];

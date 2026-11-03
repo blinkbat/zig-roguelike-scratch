@@ -161,6 +161,10 @@ pub fn gridSlot(top: i32, i: usize, cols: usize, pitch: i32) rl.Rectangle {
     return slotOf(PAD, INNER_W, top + s.y * pitch, @intCast(s.x), cols);
 }
 
+pub fn share(w: i32, parts: i32, lo: i32, hi: i32) i32 {
+    return std.math.clamp(@divTrunc(w, parts), lo, hi);
+}
+
 pub fn rowsOf(n: usize, cols: usize) i32 {
     return @intCast(std.math.divCeil(usize, n, cols) catch unreachable);
 }
@@ -225,7 +229,7 @@ pub const Scroll = struct {
     }
 
     pub fn shown(s: Scroll) i32 {
-        return @intFromFloat(s.box.height);
+        return @max(0, @as(i32, @intFromFloat(s.box.height)));
     }
 
     /// The content ran to `bottom`, wanting `margin` below it.

@@ -618,7 +618,7 @@ test "closing a mixed bag takes its gold for free even when no item fits" {
     std.debug.print("mixed bag with full inventory: gold taken free on close, item preserved; one freed slot takes the item for one turn\n", .{});
 }
 
-test "loot gold left while the step onto its bag is drawn is not taken on the frame the next walk starts" {
+test "loot gold left while the step onto its bag is drawn is taken from the bag before the next walk starts" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 21, .y = 20 };
@@ -638,8 +638,32 @@ test "loot gold left while the step onto its bag is drawn is not taken on the fr
     var t: f32 = 0;
     while (t < 2 and g.sim.heroActor().?.at.eq(at)) : (t += mathx.TEST_DT) game.update(g, mathx.TEST_DT);
     try std.testing.expect(!g.sim.heroActor().?.at.eq(at));
-    try std.testing.expectEqual(@as(i32, 0), g.sim.gold);
-    try std.testing.expectEqual(@as(usize, 1), g.sim.ground.coin_n);
+    try std.testing.expectEqual(@as(i32, 37), g.sim.gold);
+    try std.testing.expectEqual(@as(usize, 0), g.sim.ground.coin_n);
+}
+
+test "loot gold left while the step onto its bag is drawn is taken there though the walk is held two cells on" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 21, .y = 20 };
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
+    try std.testing.expect(g.sim.ground.gold(at, 37));
+    g.st = .{ .walk = .e };
+    game.update(g, 0);
+    g.st = .{ .pressed = .initOne(BACK) };
+    game.update(g, mathx.TEST_DT);
+    const minute = g.sim.clock.minute;
+    var t: f32 = 0;
+    while (t < 3 and g.sim.clock.minute < minute + 2 * day.TURN_MINUTES) : (t += mathx.TEST_DT) {
+        g.st = .{ .walk = .e };
+        game.update(g, mathx.TEST_DT);
+    }
+    g.st = .{};
+    try std.testing.expectEqual(@as(i32, 23), g.sim.heroActor().?.at.x);
+    try std.testing.expectEqual(@as(i32, 37), g.sim.gold);
+    try std.testing.expectEqual(@as(usize, 0), g.sim.ground.coin_n);
+    try std.testing.expectEqual(@as(?P, null), g.loot_gold);
 }
 
 test "a hero killed while a bag's loot is open takes none of its gold" {

@@ -1534,6 +1534,26 @@ test "an arrow or bolt loosed at a closed chest strikes the mimic in it, flingin
     }
 }
 
+test "a shot that would miss from the reeds still lands on a mimic posing as its chest" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = P{ .x = 23, .y = 20 };
+    harness.arena(g, from, &.{});
+    g.sim.lv.set(from, .reeds);
+    const id = harness.spawnAt(g, .mimic, at, false);
+    var seed: u64 = 0;
+    while (true) : (seed += 1) {
+        var rng = mathx.Rng.init(seed);
+        if (!rng.percent(95)) break;
+    }
+    g.sim.rng = mathx.Rng.init(seed);
+    combat.wound(g, id, .{ .dmg = 1 }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    const m = g.sim.pool.get(id).?;
+    std.debug.print("mimic from the reeds: seed {d} misses an open target, the posing mimic takes {d}\n", .{ seed, m.max - m.hp });
+    try std.testing.expect(!m.disguised and m.hp < m.max);
+}
+
 test "chain lightning leaps from the struck foe to two more, each within three tiles of the last" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

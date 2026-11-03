@@ -148,6 +148,7 @@ pub const UNSAVED = .{
         "hero_cell",
         "bursting",
         "lit_before",
+        "lit_held",
         "busy",
         "lead",
         "fx",
@@ -217,9 +218,9 @@ pub const Tail = blk: {
             }
             unreachable;
         };
-        fs[i] = .{ .name = f[1], .type = T, .default_value_ptr = default, .is_comptime = false, .alignment = @alignOf(T) };
+        fs[i] = fieldOf(f[1], T, default);
     }
-    break :blk @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fs, .decls = &.{}, .is_tuple = false } });
+    break :blk Struct(fs);
 };
 pub const LegacyTail = Replaced(Tail, "lv", LegacyLevel);
 /// The legacy tail's bytes, field after field.
@@ -233,10 +234,18 @@ pub const Portable = blk: {
     var fs: [PORTABLE_FIELDS.len]std.builtin.Type.StructField = undefined;
     for (PORTABLE_FIELDS, 0..) |f, i| {
         const source = std.meta.fieldInfo(Of(f[0]), @field(std.meta.FieldEnum(Of(f[0])), f[1]));
-        fs[i] = .{ .name = f[1], .type = source.type, .default_value_ptr = source.default_value_ptr orelse @compileError(f[1] ++ " needs a default for files written before it"), .is_comptime = false, .alignment = @alignOf(source.type) };
+        fs[i] = fieldOf(f[1], source.type, source.default_value_ptr orelse @compileError(f[1] ++ " needs a default for files written before it"));
     }
-    break :blk @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fs, .decls = &.{}, .is_tuple = false } });
+    break :blk Struct(fs);
 };
+
+pub fn Struct(comptime fields: anytype) type {
+    return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fields, .decls = &.{}, .is_tuple = false } });
+}
+
+pub fn fieldOf(comptime name: [:0]const u8, comptime T: type, comptime default: ?*const anyopaque) std.builtin.Type.StructField {
+    return .{ .name = name, .type = T, .default_value_ptr = default, .is_comptime = false, .alignment = @alignOf(T) };
+}
 
 /// `T` without its field `name`.
 pub fn Without(comptime T: type, comptime name: []const u8) type {
@@ -249,7 +258,7 @@ pub fn Without(comptime T: type, comptime name: []const u8) type {
         fs[n] = f;
         n += 1;
     }
-    return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fs, .decls = &.{}, .is_tuple = false } });
+    return Struct(fs);
 }
 
 /// `T` with its field `name` of type `U` instead.
@@ -260,11 +269,11 @@ pub fn Replaced(comptime T: type, comptime name: []const u8, comptime U: type) t
     for (all, 0..) |f, i| {
         fs[i] = f;
         if (!std.mem.eql(u8, f.name, name)) continue;
-        fs[i] = .{ .name = f.name, .type = U, .default_value_ptr = null, .is_comptime = false, .alignment = @alignOf(U) };
+        fs[i] = fieldOf(f.name, U, null);
         found = true;
     }
     if (!found) @compileError(@typeName(T) ++ " has no field " ++ name);
-    return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fs, .decls = &.{}, .is_tuple = false } });
+    return Struct(fs);
 }
 
 /// Into `dest` whatever of `src` it shares, field by field; what `src` lacks takes its default.

@@ -7,6 +7,10 @@ pub fn whole(t: rl.Texture2D) rl.Rectangle {
     return rect(0, 0, t.width, t.height);
 }
 
+pub fn facing(t: rl.Texture2D, left: bool) rl.Rectangle {
+    return rect(0, 0, if (left) -t.width else t.width, t.height);
+}
+
 pub fn sizeOf(t: rl.Texture2D) [2]f32 {
     return .{ @floatFromInt(t.width), @floatFromInt(t.height) };
 }

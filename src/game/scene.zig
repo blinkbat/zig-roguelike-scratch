@@ -277,7 +277,7 @@ fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool,
     defer cloud.Cloud.endVeil();
     const ink = look.fade(rl.Color.white, opacity);
     if (tex) |t| {
-        raster.blit(t, raster.rect(0, 0, if (left) -t.width else t.width, t.height), spriteRect(t, s.x, s.y), ink);
+        raster.blit(t, raster.facing(t, left), spriteRect(t, s.x, s.y), ink);
     } else drawFigureGlyph(g, l.ch, s.x, s.y, ink);
 }
 
@@ -687,7 +687,7 @@ pub fn drawMap(g: *game.Game) void {
     while (occluders.next()) |p| {
         const kind = g.sim.lv.at(p);
         if (!look.occludes(kind) or !footprintSeen(g, p, kind)) continue;
-        const depth = @as(f32, @floatFromInt(p.y)) + 0.5;
+        const depth = mathx.centre(p)[1];
         while (next_body < bodies.len and bodies[next_body].mid[1] <= depth) : (next_body += 1) drawStandingBody(g, &bodies[next_body]);
         drawOccluder(g, c, p, kind);
     }

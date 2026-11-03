@@ -195,7 +195,7 @@ fn near(lv: *const grid.Level, p: P, r: i32, which: anytype) bool {
 
 /// `lone` puts it only where it closes no way.
 pub fn scatter(lv: *grid.Level, rng: *mathx.Rng, per_mille: u32, on: Over, put: grid.Tile, lone: bool) void {
-    var over = std.StaticBitSet(grid.CELLS).initEmpty();
+    var over = grid.CellSet.initEmpty();
     for (0..grid.CELLS) |i| over.setValue(i, on.at(lv, grid.Level.of(i)));
     for (0..grid.CELLS) |i| {
         const p = grid.Level.of(i);

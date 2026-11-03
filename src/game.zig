@@ -691,6 +691,7 @@ pub fn update(g: *Game, dt: f32) void {
     if (g.pic.quiet()) {
         g.sim.log.release();
         drawnTurn(g);
+        character.settleLoot(g);
     }
     g.cloud.step(&g.sim.lv, dt);
     g.pic.stepMotion(&g.sim, dt);

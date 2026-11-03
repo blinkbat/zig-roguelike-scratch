@@ -1467,6 +1467,31 @@ test "a pyre bloat bursting on its own turn scalds a body on the water it boils 
     try std.testing.expect(frames > 0 and t < 1);
 }
 
+test "a pyre bloat's smoke hides a body past it only as its burst lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    const bloat = harness.spawnAt(g, .pyre_bloat, .{ .x = 24, .y = 20 }, false);
+    const rat_at = P{ .x = 27, .y = 20 };
+    const rat = harness.spawnAt(g, .rat, rat_at, false);
+    game.settle(g);
+    try std.testing.expect(g.pic.drawnAt(&g.sim, actor.Pool.slot(rat)) != null);
+    combat.wound(g, bloat, .{ .dmg = 100, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0.3 });
+    combat.endTurn(g);
+    game.update(g, 0);
+    try std.testing.expect(!g.sim.lv.isLit(rat_at));
+    var frames: usize = 0;
+    while (!g.pic.pictured[actor.Pool.slot(bloat)].down()) : (frames += 1) {
+        try std.testing.expect(frames < 200);
+        try std.testing.expect(g.pic.litShown(&g.sim, rat_at));
+        game.update(g, harness.TEST_DT);
+    }
+    game.update(g, harness.TEST_DT);
+    std.debug.print("pyre smoke: the rat past it drawn for {d} frames, hidden once the burst lands\n", .{frames});
+    try std.testing.expect(frames > 0 and !g.pic.litShown(&g.sim, rat_at));
+}
+
 test "a leech swimming unseen holds neither the stagger nor the walk" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

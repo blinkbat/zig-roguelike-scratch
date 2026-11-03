@@ -602,7 +602,7 @@ fn slotDetails(s: *const save.Slot, buf: *[LINE]u8) ?[:0]const u8 {
 /// About half the spotlight's way from one hero to the next.
 const HEROES_MID_DT: f32 = 0.08;
 const HEROES_DIR = shots.SHOTS_DIR ++ "/heroes";
-const MOUSE_DIR = shots.SHOTS_DIR ++ "/mouse";
+const MOUSE_DIR = shots.MOUSE_DIR;
 
 pub fn shootHeroes(g: *game.Game) !void {
     try std.fs.cwd().makePath(HEROES_DIR);

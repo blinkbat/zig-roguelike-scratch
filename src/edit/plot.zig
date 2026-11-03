@@ -2,7 +2,6 @@ const std = @import("std");
 const rl = @import("raylib");
 const input = @import("../core/input.zig");
 const mathx = @import("../core/mathx.zig");
-const grid = @import("../map/grid.zig");
 const script = @import("../map/script.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
@@ -38,6 +37,10 @@ const CHOICE_ADD_W: i32 = 120;
 const COND_ADD_W: i32 = 160;
 const NAME_ADD_W: i32 = 50;
 const OP_W: i32 = 150;
+const COUNTOP_W: i32 = 130;
+const ELAPSED_W: i32 = 180;
+const REGION_W: i32 = 400;
+const FOE_W: i32 = 220;
 const NUMBER_W: i32 = 150;
 const UNIT_W: i32 = 170;
 const SPLIT_MIN_W: i32 = 2 * widgets.STEP_W + 24;
@@ -261,7 +264,7 @@ const Frame = struct {
     bottom: i32,
 
     fn listW(f: Frame) i32 {
-        return std.math.clamp(@divTrunc(f.w, 5), 240, 330);
+        return widgets.share(f.w, 5, 240, 330);
     }
 };
 
@@ -304,9 +307,7 @@ fn frameOf(ed: *editor.Editor, g: *game.Game, title: [:0]const u8) Frame {
     return .{ .x = f.x + PAD, .y = f.y, .w = f.w - 2 * PAD, .bottom = page.bottom - ROW - GAP };
 }
 
-fn button(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
-    return widgets.modalButton(ed.controls(), &g.face, r, label, on, live, tip);
-}
+const button = editor.modalButton;
 
 fn rightButton(ed: *editor.Editor, g: *game.Game, right: i32, y: i32, w: i32, label: [:0]const u8, live: bool, tip: ?[:0]const u8) bool {
     return button(ed, g, widgets.row(right - w, y, w), label, false, live, tip);
@@ -548,7 +549,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     const d = &m.dialog[di];
     var buf: [widgets.LINE]u8 = undefined;
     s.line = @min(s.line, d.line_n - 1);
-    const lines_w = std.math.clamp(@divTrunc(w, 4), 200, 300);
+    const lines_w = widgets.share(w, 4, 200, 300);
     var y = top;
     const users = m.dialogUsers(di);
     const drop = if (users > 0) std.fmt.bufPrintZ(&buf, "Used {d} times", .{users}) catch "" else "Delete dialog";
@@ -748,7 +749,7 @@ fn fitSlot(m: *Script, t: script.Table, slot: *u8) void {
 }
 
 fn kindW(w: i32) i32 {
-    return std.math.clamp(@divTrunc(w, 3), 150, 200);
+    return widgets.share(w, 3, 150, 200);
 }
 
 /// The kind heading an action's or a condition's row: a new kind starts afresh, fitted to the map by `rule`.
@@ -817,7 +818,7 @@ fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.
             wordStep(ed, g, lay.take(ws[1]), script.Setop, &a.setop, &SETOP_WORDS, null);
         },
         .counter => {
-            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, 130, NUMBER_W });
+            const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, COUNTOP_W, NUMBER_W });
             tableStep(ed, g, lay.take(ws[0]), .counter, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Countop, &a.countop, &COUNTOP_WORDS, null);
             numberStep(ed, g, lay.take(ws[2]), &a.n, -script.NUMBER_MAX, script.NUMBER_MAX, "", "By how much");
@@ -902,7 +903,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
     switch (c.kind) {
         .always, .never => {},
         .flag, .timer => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, 160 });
+            const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, TOGGLE_W });
             tableStep(ed, g, lay.take(ws[0]), script.condTable(c.kind).?, &c.slot);
             const words_ = if (c.kind == .flag) [2][]const u8{ "is off", "is on" } else [2][]const u8{ "is running", "has run out" };
             if (button(ed, g, lay.take(ws[1]), std.fmt.bufPrintZ(&buf, "{s}", .{words_[@intFromBool(c.on)]}) catch "", false, true, "Which way it has to be")) {
@@ -917,17 +918,18 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
             numberStep(ed, g, lay.take(ws[2]), &c.n, -script.NUMBER_MAX, script.NUMBER_MAX, "", "The number it is held to");
         },
         .elapsed => {
-            const ws = split(fw, &.{ 1, 1 }, &.{ OP_W, 180 });
+            const ws = split(fw, &.{ 1, 1 }, &.{ OP_W, ELAPSED_W });
             cmpStep(ed, g, lay.take(ws[0]), &c.cmp);
             numberStep(ed, g, lay.take(ws[1]), &c.n, 0, script.NUMBER_MAX, " turns", "Spent turns since the run began");
         },
         .region => {
-            const ws = split(fw, &.{ 3, 2 }, &.{ 400, 200 });
+            const ws = split(fw, &.{ 3, 2 }, &.{ REGION_W, BTN_W });
             caption(g, fx, y, ws[0], std.fmt.bufPrint(&buf, "node {d}: {d},{d} to {d},{d}", .{ c.node, c.from.x, c.from.y, c.to.x, c.to.y }) catch "", look.TEXT);
             _ = lay.take(ws[0]);
-            if (button(ed, g, lay.take(ws[1]), "From selection", false, ed.selection != null, "This node and the cells selected on it (" ++ Desk.SHAPE_CAPTIONS[@intFromEnum(editor.Shape.select)] ++ ")")) {
+            if (button(ed, g, lay.take(ws[1]), "From selection", false, ed.selection != null, "This node and the cells selected on it (" ++ comptime editor.Shape.select.caption() ++ ")")) {
+                const before = c.*;
                 fitCond(ed, c);
-                ed.bank();
+                if (!std.meta.eql(before, c.*)) ed.bank();
             }
         },
         .near => {
@@ -937,7 +939,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
         },
         .talked => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &c.slot),
         .deaths, .alive => {
-            const ws = split(fw, &.{ 4, 3, 3 }, &.{ 220, OP_W, NUMBER_W });
+            const ws = split(fw, &.{ 4, 3, 3 }, &.{ FOE_W, OP_W, NUMBER_W });
             const by = stepper(ed, g, lay.take(ws[0]), actor.row(c.foe).name, true, "Which foe; a slime counts its halves");
             if (by != 0) {
                 c.foe = mathx.stepIn(actor.Kind, &actor.FOES, c.foe, by, 0);

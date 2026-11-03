@@ -318,12 +318,11 @@ pub fn meleeThenBites(g: *const game.Game, target: u16, attackers: []const u16) 
             const gear = &s.g.sim.inventory.gear;
             const effect = gear.onHit(.melee);
             std.debug.assert(effect.bleed == 0 and effect.stun == 0);
-            const raw = attacks.kickRaw(rng, gear, s.g.sim.class.strike());
-            const hit = attacks.scaled(rng, gear.forAttack(s.g.sim.heroAttrs(), .melee), gear.scaling(.melee), .{ .physical = raw });
+            const hit = attacks.heroRollWith(rng, &s.g.sim, .melee, attacks.kickRaw(rng, gear, s.g.sim.class.strike()));
             const hero = s.g.sim.heroBody().?;
             const target_actor = combatant(s.g, s.target);
             if (s.g.sim.combatStats(hero).misses(s.g.sim.combatStats(target_actor), rng)) return false;
-            _ = attrs.armoured(s.g.sim.combatStats(target_actor).armour - effect.penetration, hit.blow.physical, rng);
+            _ = hit.against(s.g.sim.combatStats(target_actor).armour, rng);
             for (s.attackers, 0..) |id, i| {
                 const a = combatant(s.g, id);
                 const strike = actor.row(a.kind).blow.strike;

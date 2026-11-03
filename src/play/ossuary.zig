@@ -128,15 +128,19 @@ pub fn encode(hall: *const Hall, buf: *[FILE_MAX]u8) []const u8 {
 
 pub fn decode(bytes: []const u8) Error!Hall {
     if (std.mem.startsWith(u8, bytes, OLD_MAGIC)) return decodeLegacy(bytes);
-    const body = store.open(bytes, MAGIC, VERSION) catch |e| return switch (e) {
-        error.Foreign => error.NotOssuary,
-        else => |other| other,
-    };
+    const body = store.open(bytes, MAGIC, VERSION) catch |e| return opened(e);
     var bones: Bones = undefined;
     try Code.read(body, &bones);
     const hall = Hall{ .entries = bones.entries, .n = bones.n };
     try validate(&hall);
     return hall;
+}
+
+fn opened(e: anytype) Error {
+    return switch (e) {
+        error.Foreign => error.NotOssuary,
+        else => |other| other,
+    };
 }
 
 fn validate(hall: *const Hall) Error!void {
@@ -147,10 +151,7 @@ fn validate(hall: *const Hall) Error!void {
 }
 
 fn decodeLegacy(bytes: []const u8) Error!Hall {
-    var b = store.open(bytes, OLD_MAGIC, PRINT) catch |e| return switch (e) {
-        error.Foreign => error.NotOssuary,
-        else => |other| other,
-    };
+    var b = store.open(bytes, OLD_MAGIC, PRINT) catch |e| return opened(e);
     var n: Count = undefined;
     if (!store.legacy.take(&b, &n)) return error.Short;
     if (n > MAX) return error.Damaged;

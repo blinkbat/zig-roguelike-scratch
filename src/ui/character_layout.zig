@@ -3,7 +3,6 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const items = @import("../play/items.zig");
 const skillbar = @import("../play/skillbar.zig");
-const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const font = @import("../gfx/font.zig");
 const menu = @import("menu.zig");

@@ -54,8 +54,8 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
             widgets.textFace(&g.face).draw(widgets.fitBefore(&g.face, &buf, &fit_buf, ed.path(), " has changes that are not saved.", inner), x + widgets.PAD, y, widgets.TEXT, look.TEXT);
             std.debug.assert(y + widgets.TEXT <= buttons_y);
             y = buttons_y;
-            if (widgets.modalButton(ed.controls(), &g.face, f.button(y, 2), widgets.keyed("Save", Desk.ENTER_CAPTION), false, true, null) and ed.save()) ed.commit();
-            if (widgets.modalButton(ed.controls(), &g.face, f.button(y, 1), "Discard", false, true, null)) ed.commit();
+            if (editor.modalButton(ed, g, f.button(y, 2), widgets.keyed("Save", Desk.ENTER_CAPTION), false, true, null) and ed.save()) ed.commit();
+            if (editor.modalButton(ed, g, f.button(y, 1), "Discard", false, true, null)) ed.commit();
             backButton(ed, g, f, y, "Cancel");
         },
         .name => {
@@ -66,7 +66,7 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
             widgets.drawFit(&g.face, note, DETAIL, inner, false, x + widgets.PAD, y, look.DIM);
             std.debug.assert(y + DETAIL <= buttons_y);
             y = buttons_y;
-            if (widgets.modalButton(ed.controls(), &g.face, f.button(y, 1), widgets.keyed("OK", Desk.ENTER_CAPTION), false, true, null)) ed.named();
+            if (editor.modalButton(ed, g, f.button(y, 1), widgets.keyed("OK", Desk.ENTER_CAPTION), false, true, null)) ed.named();
             backButton(ed, g, f, y, "Cancel");
         },
         .open => {
@@ -79,7 +79,7 @@ fn drawPrompt(ed: *editor.Editor, g: *game.Game, prompt: editor.Prompt) void {
                 }, ed.listing.label(i) }) catch "";
                 const r = widgets.row(x + widgets.PAD, y, inner);
                 widgets.hoverEdge(r, i == ed.listed_at);
-                if (widgets.modalButton(ed.controls(), &g.face, r, label, std.mem.eql(u8, ed.listing.at(i), ed.path()), true, OPEN_TIPS.get(ed.listing.entry(i)))) {
+                if (editor.modalButton(ed, g, r, label, std.mem.eql(u8, ed.listing.at(i), ed.path()), true, OPEN_TIPS.get(ed.listing.entry(i)))) {
                     return ed.openListed(i);
                 }
                 y += widgets.ROW_H;
@@ -164,7 +164,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     }
     backButton(ed, g, f, y + cells_h, "Close");
     if (seenFoe(s) != null) {
-        if (widgets.modalButton(ed.controls(), &g.face, f.button(y + cells_h, 1), widgets.keyed("Fight", Desk.ENTER_CAPTION), false, true, "Fight this foe in an arena; return through the pause menu")) fightSeen(ed);
+        if (editor.modalButton(ed, g, f.button(y + cells_h, 1), widgets.keyed("Fight", Desk.ENTER_CAPTION), false, true, "Fight this foe in an arena; return through the pause menu")) fightSeen(ed);
     }
 }
 
@@ -180,20 +180,22 @@ pub fn fightSeen(ed: *editor.Editor) void {
     ed.action = .{ .fight = kind };
 }
 
-fn seenName(s: editor.Seen) [:0]const u8 {
+fn seenTool(s: editor.Seen) ?editor.Tool {
     return switch (s) {
-        .tile => |t| menu.named(t),
-        .body => |k| editor.kindName(k),
-        inline else => |_, tag| comptime menu.named(tag),
+        .tile => null,
+        .body => |k| .{ .foe = k },
+        inline .barrel, .torch, .door, .folk => |_, tag| @unionInit(editor.Tool, @tagName(tag), {}),
     };
 }
 
+fn seenName(s: editor.Seen) [:0]const u8 {
+    if (seenTool(s)) |t| return t.name();
+    return menu.named(s.tile);
+}
+
 pub fn seenPicture(g: *game.Game, s: editor.Seen, r: rl.Rectangle) void {
-    switch (s) {
-        .tile => |t| panel.swatch(g, t, r),
-        .body => |k| panel.toolFigure(g, .{ .foe = k }, r),
-        inline .barrel, .torch, .door, .folk => |_, tag| panel.toolFigure(g, @unionInit(editor.Tool, @tagName(tag), {}), r),
-    }
+    if (seenTool(s)) |t| return panel.toolFigure(g, t, r);
+    panel.swatch(g, s.tile, r);
 }
 
 const FACTS_MAX: usize = 8;
@@ -301,5 +303,5 @@ pub fn fieldRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) void {
 }
 
 fn backButton(ed: *editor.Editor, g: *game.Game, f: widgets.Frame, y: i32, comptime label: []const u8) void {
-    if (widgets.modalButton(ed.controls(), &g.face, f.button(y, 0), widgets.keyed(label, Desk.BACK_CAPTION), false, true, null)) ed.modal = .none;
+    if (editor.modalButton(ed, g, f.button(y, 0), widgets.keyed(label, Desk.BACK_CAPTION), false, true, null)) ed.modal = .none;
 }

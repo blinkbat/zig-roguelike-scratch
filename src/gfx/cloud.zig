@@ -213,7 +213,6 @@ pub const Cloud = struct {
     }
 };
 
-/// A wall's texels take the tint of the open cell each faces, so gas meets a wall whole and none shows past it.
 fn anyOn(xs: []const f32) bool {
     const LANES = 16;
     const V = @Vector(LANES, f32);
@@ -227,6 +226,7 @@ fn anyOn(xs: []const f32) bool {
     return false;
 }
 
+/// A wall's texels take the tint of the open cell each faces, so gas meets a wall whole and none shows past it.
 fn texel(tint: *const [grid.CELLS]f32, lv: *const grid.Level, tx: i32, ty: i32) f32 {
     const c = P{ .x = @divFloor(tx, SUB), .y = @divFloor(ty, SUB) };
     if (lv.flat(c)) return openAt(tint, lv, c);

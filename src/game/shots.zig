@@ -44,11 +44,12 @@ const glide = @import("glide.zig");
 const script_text = @import("../map/script_text.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
-const SHOOT = bow.VERB;
 const HERO = actor.HERO;
 const SHOT_SEED: u64 = 0x5EED_1234;
 pub const SHOTS_DIR = "shots";
 const SHOTS_MAPS = SHOTS_DIR ++ "/maps";
+pub const MOUSE_DIR = SHOTS_DIR ++ "/mouse";
+const CINEMA_DIR = SHOTS_DIR ++ "/cinema";
 
 fn shootCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     const h = game.harness;
@@ -493,7 +494,7 @@ fn shootTactics(g: *game.Game) !void {
 }
 
 fn shootMouse(g: *game.Game) !void {
-    try std.fs.cwd().makePath(SHOTS_DIR ++ "/mouse");
+    try std.fs.cwd().makePath(MOUSE_DIR);
     const screen = g.screen;
     defer g.screen = screen;
     const target = try target720(g);
@@ -501,18 +502,18 @@ fn shootMouse(g: *game.Game) !void {
     try app.shootMenus(g, target);
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 24, .y = 20 }});
     g.st = .{ .device = .keys, .modifier = g.bar.modifier };
-    try capture(g, target, SHOTS_DIR ++ "/mouse/hud.png");
+    try capture(g, target, MOUSE_DIR ++ "/hud.png");
     skills.openAim(g, game.harness.boundTo(g, .shoot).by, .shoot);
     g.st.pointer = game.scene.Cam.of(g).mid(.{ .x = 24, .y = 20 });
     g.st.mouse_moved = true;
     game.update(g, 0);
-    try capture(g, target, SHOTS_DIR ++ "/mouse/aim.png");
+    try capture(g, target, MOUSE_DIR ++ "/aim.png");
     try checkMouseHiddenAim(g, target);
     game.character.openPause(g);
-    try capture(g, target, SHOTS_DIR ++ "/mouse/pause.png");
+    try capture(g, target, MOUSE_DIR ++ "/pause.png");
     game.debugging.open(g, .diagnostics);
-    try capture(g, target, SHOTS_DIR ++ "/mouse/diagnostics.png");
-    try editor.shoot(g, target, SHOTS_DIR ++ "/mouse/editor.png", SHOTS_DIR ++ "/mouse/editor-graph.png", SHOTS_DIR ++ "/mouse/editor-generator.png", SHOTS_DIR ++ "/mouse/editor-objects.png");
+    try capture(g, target, MOUSE_DIR ++ "/diagnostics.png");
+    try editor.shoot(g, target, MOUSE_DIR ++ "/editor.png", MOUSE_DIR ++ "/editor-graph.png", MOUSE_DIR ++ "/editor-generator.png", MOUSE_DIR ++ "/editor-objects.png");
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const before = g.sim.heroActor().?.hp;
     _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, before);
@@ -520,7 +521,7 @@ fn shootMouse(g: *game.Game) !void {
     g.pic.catchUp(&g.sim);
     g.mode = .dead;
     game.epitaph.inscribe(g);
-    try capture(g, target, SHOTS_DIR ++ "/mouse/death.png");
+    try capture(g, target, MOUSE_DIR ++ "/death.png");
 }
 
 fn checkMouseHiddenAim(g: *game.Game, target: rl.RenderTexture2D) !void {
@@ -538,7 +539,7 @@ fn checkHiddenAim(g: *game.Game, target: rl.RenderTexture2D, comptime act: skill
     g.st = .{ .device = .keys, .modifier = g.bar.modifier, .mouse_moved = true, .pointer = game.scene.Cam.of(g).mid(.{ .x = if (act == .overwatch) 21 else 24, .y = 20 }) };
     _ = game.mouseControls.aim(g);
     if (g.mode != .aim or !skills.aimable(g, g.sim.heroActor().?.at, g.mode.aim.mark)) return error.MouseHiddenAimSetup;
-    try capture(g, target, SHOTS_DIR ++ "/mouse/aim-hidden-" ++ @tagName(act) ++ ".png");
+    try capture(g, target, MOUSE_DIR ++ "/aim-hidden-" ++ @tagName(act) ++ ".png");
     const aimed = try readTarget(target);
     defer rl.unloadImage(aimed);
     g.mode = .play;
@@ -724,7 +725,7 @@ pub fn shootCinema(g: *game.Game) !void {
     try cinemaWater(g, target);
     game.character.openPause(g);
     game.debugging.select(g, .composed_lighting);
-    try capture(g, target, SHOTS_DIR ++ "/cinema/debug.png");
+    try capture(g, target, CINEMA_DIR ++ "/debug.png");
 }
 
 pub fn shootTrees(g: *game.Game) !void {
@@ -856,16 +857,16 @@ fn cinemaWater(g: *game.Game, target: rl.RenderTexture2D) !void {
 fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []const u8) !void {
     const options = g.cinema.options;
     defer g.cinema.options = options;
-    try std.fs.cwd().makePath(SHOTS_DIR ++ "/cinema");
+    try std.fs.cwd().makePath(CINEMA_DIR);
     g.cinema.options = cinema.Options.off;
-    try capture(g, target, SHOTS_DIR ++ "/cinema/" ++ name ++ "-off.png");
+    try capture(g, target, CINEMA_DIR ++ "/" ++ name ++ "-off.png");
     const base = try readTarget(target);
     defer rl.unloadImage(base);
     if (g.cinema.bloom == null or g.cinema.air == null or g.cinema.focus == null) return error.CinemaShaderMissing;
     inline for (std.meta.fields(cinema.Options)) |f| {
         g.cinema.options = cinema.Options.off;
         @field(g.cinema.options, f.name) = true;
-        try capture(g, target, SHOTS_DIR ++ "/cinema/" ++ name ++ "-" ++ f.name ++ ".png");
+        try capture(g, target, CINEMA_DIR ++ "/" ++ name ++ "-" ++ f.name ++ ".png");
         const img = try readTarget(target);
         defer rl.unloadImage(img);
         const c = game.scene.Cam.of(g);
@@ -903,7 +904,7 @@ fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []con
         std.debug.print("cinema {s}/{s}: {d} changed pixels, {d} hidden pixels unchanged\n", .{ name, f.name, changed, hidden });
     }
     g.cinema.options = .{};
-    try capture(g, target, SHOTS_DIR ++ "/cinema/" ++ name ++ "-all.png");
+    try capture(g, target, CINEMA_DIR ++ "/" ++ name ++ "-all.png");
     g.cinema.options = cinema.Options.off;
     drawInto(g, target);
     const restored = try readTarget(target);
@@ -1330,7 +1331,7 @@ fn poseFright(g: *game.Game) void {
     for (pibs, &slots) |p, *s| s.* = actor.Pool.slot(game.harness.spawnAt(g, .pib, p, false));
     game.settle(g);
     const wait: f32 = 0.2;
-    game.combat.wound(g, 2, .{ .dmg = actor.row(.rat).hp }, SHOOT, .{ .from = hero, .wait = wait });
+    game.combat.wound(g, 2, .{ .dmg = actor.row(.rat).hp }, game.combat.SHOOT, .{ .from = hero, .wait = wait });
     g.pic.lead = wait;
     game.combat.endTurn(g);
     g.st = .{};
@@ -1443,12 +1444,18 @@ fn poseForest(g: *game.Game) void {
         ".#..#..#..#..#..#..",
         "...................",
     };
-    for (rows, 0..) |row, y| {
-        for (row, 0..) |ch, x| {
-            if (ch == '#') g.sim.lv.set(.{ .x = 16 + @as(i32, @intCast(x)), .y = 12 + @as(i32, @intCast(y)) }, .shrub);
+    stampRows(&g.sim.lv, .{ .x = 16, .y = 12 }, &rows, struct {
+        fn of(ch: u8) ?grid.Tile {
+            return if (ch == '#') .shrub else null;
         }
-    }
+    }.of);
     posed(g, g.sim.outdoors);
+}
+
+fn stampRows(lv: *grid.Level, origin: P, rows: []const []const u8, comptime tileOf: fn (u8) ?grid.Tile) void {
+    for (rows, 0..) |row, y| for (row, 0..) |ch, x| {
+        if (tileOf(ch)) |t| lv.set(origin.add(.{ .x = @intCast(x), .y = @intCast(y) }), t);
+    };
 }
 
 fn poseBridges(g: *game.Game) void {
@@ -1465,17 +1472,16 @@ fn poseBridges(g: *game.Game) void {
         "ss=ssss==sss===sssss",
         "..=....==...===.....",
     };
-    for (rows, 0..) |row, y| {
-        for (row, 0..) |ch, x| {
-            const t: grid.Tile = switch (ch) {
+    stampRows(&g.sim.lv, .{ .x = 15, .y = 14 }, &rows, struct {
+        fn of(ch: u8) ?grid.Tile {
+            return switch (ch) {
                 '=' => .bridge,
                 '~' => .water,
                 's' => .shallows,
-                else => continue,
+                else => null,
             };
-            g.sim.lv.set(.{ .x = 15 + @as(i32, @intCast(x)), .y = 14 + @as(i32, @intCast(y)) }, t);
         }
-    }
+    }.of);
     studyAt(g, true, day.NOON);
 }
 
@@ -2148,6 +2154,6 @@ fn poseRat(g: *game.Game) void {
         g.sim.pool.move(&g.sim.lv, rat, p);
         break;
     }
-    game.combat.wound(g, rat, .{ .dmg = bow.BASE.lo }, SHOOT, .{ .from = h.at, .wait = 0 });
+    game.combat.wound(g, rat, .{ .dmg = bow.BASE.lo }, game.combat.SHOOT, .{ .from = h.at, .wait = 0 });
     game.settle(g);
 }

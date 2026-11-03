@@ -825,6 +825,14 @@ pub fn addNode(ed: *Editor, plan: atlas.Plan) void {
     ed.typeName();
 }
 
+pub fn button(ed: *Editor, g: *const game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
+    return widgets.button(ed.controls(), &g.face, r, label, on, live, tip);
+}
+
+pub fn modalButton(ed: *Editor, g: *const game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, tip: ?[:0]const u8) bool {
+    return widgets.modalButton(ed.controls(), &g.face, r, label, on, live, tip);
+}
+
 fn prepare(ed: *Editor, g: *game.Game) void {
     ed.preview();
     if (g.art == .editor) return;
@@ -889,7 +897,7 @@ fn drawPopup(ed: *Editor, g: *game.Game) void {
 fn popupRows(ed: *Editor, g: *game.Game, comptime U: type, v: *U, x: i32, top: i32, w: i32) void {
     var y = top;
     for (std.enums.values(std.meta.Tag(U))) |t| {
-        if (widgets.modalButton(ed.controls(), &g.face, widgets.row(x, y, w), @tagName(t), t == std.meta.activeTag(v.*), true, null)) {
+        if (modalButton(ed, g, widgets.row(x, y, w), @tagName(t), t == std.meta.activeTag(v.*), true, null)) {
             retag(U, v, t);
             ed.popup = null;
         }

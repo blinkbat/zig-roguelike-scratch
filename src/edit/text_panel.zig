@@ -20,6 +20,20 @@ const ROW = TEXT + 2 * DETAIL + ROW_PAD;
 const SNIPPET_MAX: usize = 160;
 const LEAD: i32 = 8;
 const LINE: i32 = TEXT + LEAD;
+const ROW_INSET: i32 = 4;
+const BUTTON_GAP: i32 = 4;
+const COUNT_PAD: i32 = 6;
+const TOOL_GAP: i32 = 8;
+const CLOSE_W: i32 = 90;
+const RELOAD_W: i32 = 90;
+const CLEAR_W: i32 = 86;
+const SEARCH_GAP: i32 = 28;
+const NAV_MIN_W: i32 = 180;
+const NAV_MAX_W: i32 = 250;
+const LIST_MIN_W: i32 = 240;
+const LIST_MAX_W: i32 = 360;
+const SAVE_W: i32 = 160;
+const DISCARD_W: i32 = 100;
 
 pub fn fieldHeight(rows: i32) i32 {
     return rows * LINE + 2 * widgets.GAP;
@@ -565,7 +579,7 @@ pub fn keys(ed: *editor.Editor) void {
 }
 
 fn button(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool) bool {
-    return widgets.modalButton(ed.controls(), &g.face, r, label, on, live, null);
+    return editor.modalButton(ed, g, r, label, on, live, null);
 }
 
 fn displayBytes(s: []u8) void {
@@ -649,13 +663,13 @@ fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8,
     const x: i32 = @intFromFloat(s.nav_box.x);
     const y = @as(i32, @intFromFloat(s.nav_box.y)) + @as(i32, @intCast(ordinal - s.nav_top)) * NAV_ROW;
     const w: i32 = @intFromFloat(s.nav_box.width);
-    const r = raster.rect(x, y, w - widgets.GAP, NAV_ROW - 4);
+    const r = raster.rect(x, y, w - widgets.GAP, NAV_ROW - BUTTON_GAP);
     const h = widgets.hot(ed.controls(), r, s.leave == null, true, null);
     widgets.plate(r, on, h.hot);
     var buf: [32]u8 = undefined;
     const number = std.fmt.bufPrintZ(&buf, "{d}", .{count}) catch "";
     const number_w = g.face.width(number, DETAIL);
-    widgets.drawFit(&g.face, label, DETAIL, w - number_w - 3 * widgets.GAP - 6, false, x + widgets.GAP, y + LEAD, if (on) look.UI_GOLD else look.TEXT);
+    widgets.drawFit(&g.face, label, DETAIL, w - number_w - 3 * widgets.GAP - COUNT_PAD, false, x + widgets.GAP, y + LEAD, if (on) look.UI_GOLD else look.TEXT);
     g.face.draw(number, x + w - number_w - 2 * widgets.GAP, y + LEAD, DETAIL, look.DIM);
     return h.hit;
 }
@@ -718,10 +732,10 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     var buf: [1024]u8 = undefined;
     widgets.drawFit(&g.face, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
     y += DETAIL + widgets.GAP;
-    var tools = widgets.LayEnd{ .right = x + w, .y = y + 4, .gap = 8 };
-    const close_r = tools.take(90);
-    const reload_r = tools.take(90);
-    const clear_r = tools.take(86);
+    var tools = widgets.LayEnd{ .right = x + w, .y = y + ROW_INSET, .gap = TOOL_GAP };
+    const close_r = tools.take(CLOSE_W);
+    const reload_r = tools.take(RELOAD_W);
+    const clear_r = tools.take(CLEAR_W);
     if (drawField(ed, g, &s.search, raster.rect(x, y, @as(i32, @intFromFloat(clear_r.x)) - PAD - x, fieldHeight(1)), s.focus == .search, true)) s.focus = .search;
     if (button(ed, g, clear_r, "Clear", false, s.search.n > 0)) {
         s.search.set("");
@@ -730,10 +744,10 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     }
     if (button(ed, g, reload_r, "Reload", false, !s.dirty())) reload(ed);
     if (button(ed, g, close_r, "Close", false, true)) requestClose(ed, false);
-    y += LINE + 28;
-    const nav_w = std.math.clamp(@divTrunc(w, 5), 180, 250);
+    y += LINE + SEARCH_GAP;
+    const nav_w = widgets.share(w, 5, NAV_MIN_W, NAV_MAX_W);
     const list_x = x + nav_w + PAD;
-    const list_w = std.math.clamp(@divTrunc(w, 4), 240, 360);
+    const list_w = widgets.share(w, 4, LIST_MIN_W, LIST_MAX_W);
     const right_x = list_x + list_w + PAD;
     const right_w = x + w - right_x;
     const bottom = page.bottom - DETAIL - LEAD;
@@ -754,7 +768,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
             const r = raster.rect(list_x, yy, list_w - widgets.GAP, ROW - widgets.GAP);
             const h = widgets.hot(ed.controls(), r, s.leave == null, true, null);
             widgets.plate(r, s.selected == i, h.hot);
-            widgets.drawFit(&g.face, e.role, TEXT, entry_w, false, list_x + widgets.GAP, yy + 4, if (s.selected == i) look.UI_GOLD else look.TEXT);
+            widgets.drawFit(&g.face, e.role, TEXT, entry_w, false, list_x + widgets.GAP, yy + ROW_INSET, if (s.selected == i) look.UI_GOLD else look.TEXT);
             widgets.drawFit(&g.face, e.owner, DETAIL, entry_w, false, list_x + widgets.GAP, yy + LINE, look.DIM);
             var snippet: [SNIPPET_MAX]u8 = undefined;
             const n = @min(e.text.len, SNIPPET_MAX);
@@ -762,7 +776,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
             for (snippet[0..n]) |*char| if (char.* < ' ') {
                 char.* = ' ';
             };
-            widgets.drawFit(&g.face, snippet[0..n], DETAIL, entry_w, false, list_x + widgets.GAP, yy + TEXT + DETAIL + 12, look.TEXT);
+            widgets.drawFit(&g.face, snippet[0..n], DETAIL, entry_w, false, list_x + widgets.GAP, yy + LINE + DETAIL + ROW_INSET, look.TEXT);
             if (h.hit and s.pick(i)) s.focus = .passage;
         }
     }
@@ -771,7 +785,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     widgets.drawFit(&g.face, count_label, DETAIL, list_w, false, list_x, bottom - DETAIL, look.DIM);
     if (s.results.items.len == 0) {
         widgets.drawFit(&g.face, "No matching passages.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + LEAD, look.TEXT);
-        widgets.drawFit(&g.face, "Clear search or choose another group.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + 36, look.DIM);
+        widgets.drawFit(&g.face, "Clear search or choose another group.", DETAIL, list_w, false, list_x + widgets.GAP, list_y + LEAD + DETAIL + LEAD, look.DIM);
     }
     s.passage_box = raster.rect(0, 0, 0, 0);
     if (s.selected) |i| if (s.data) |c| {
@@ -801,16 +815,16 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
                 .ai => "AI",
                 .mixed => "Mixed",
             };
-            if (button(ed, g, widgets.row(right_x + @as(i32, @intCast(at)) * tag_w, yy, tag_w - 4), label, s.author == tag, e.editable and s.leave == null)) {
+            if (button(ed, g, widgets.row(right_x + @as(i32, @intCast(at)) * tag_w, yy, tag_w - BUTTON_GAP), label, s.author == tag, e.editable and s.leave == null)) {
                 s.author = tag;
                 s.typed_author = false;
             }
         }
         yy += widgets.ROW_STEP;
-        const save_w = @min(160, @divTrunc(right_w, 3));
+        const save_w = @min(SAVE_W, @divTrunc(right_w, 3));
         var foot = widgets.Lay{ .x = right_x, .y = yy };
         if (button(ed, g, foot.take(save_w), "Save passage", false, e.editable and s.dirty())) save(ed);
-        if (button(ed, g, foot.take(100), "Discard", false, s.dirty())) {
+        if (button(ed, g, foot.take(DISCARD_W), "Discard", false, s.dirty())) {
             s.restore();
             s.note.clear();
             if (s.leave != null) finishClose(ed);

@@ -4,7 +4,7 @@ pub const Error = error{ Short, Damaged };
 const Flag = u8;
 const Bits = u64;
 const NameLen = u16;
-const FieldCount = u16;
+pub const FieldCount = u16;
 const PayloadLen = u32;
 const Count = u32;
 const FIELD_HEAD = @sizeOf(NameLen) + @sizeOf(PayloadLen);
@@ -274,14 +274,14 @@ fn string(out: *std.ArrayList(u8), value: []const u8) !void {
     try out.appendSlice(value);
 }
 
-fn beginField(out: *std.ArrayList(u8), name: []const u8) !usize {
+pub fn beginField(out: *std.ArrayList(u8), name: []const u8) !usize {
     try string(out, name);
     const at = out.items.len;
     try integer(out, PayloadLen, 0);
     return at;
 }
 
-fn endField(out: *std.ArrayList(u8), at: usize) void {
+pub fn endField(out: *std.ArrayList(u8), at: usize) void {
     const len = @sizeOf(PayloadLen);
     std.mem.writeInt(PayloadLen, out.items[at..][0..len], @intCast(out.items.len - at - len), .little);
 }

@@ -14,7 +14,7 @@ const MELEE_REACH: i32 = 1;
 
 pub const Reticle = enum { bow, leap, swing, rush, ground };
 pub const Definition = struct { module: ?type, reticle: ?Reticle = null, delivery: ?attrs.Attack = null };
-pub const Declaration = enum { describe, FREE, TELEPORTS, KIND, BOLT, arc, COST, ELEMENT, burst, JUMPS, afflict, AILMENT, CHANCE, around, Ward, knocked, COOLDOWN, MIN_RANGE, BASE, DONE, PIERCES, length, FUEL_DAMAGE, SUPPLY };
+pub const Declaration = enum { describe, TELEPORTS, arc, ELEMENT, burst, JUMPS, afflict, around, Ward, knocked, PIERCES, length, FUEL_DAMAGE };
 pub const Bases = struct { physical: ?damage.Base, element: ?damage.Base };
 pub const Ailment = struct { kind: resilience.Kind, chance: u32 };
 

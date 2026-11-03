@@ -12,7 +12,7 @@ const Rgb = sky.Rgb;
 const smooth = mathx.smooth;
 const lum = sky.luma;
 
-/// And a light at least this bright; a torch is, out to about half its reach.
+/// A light at least this bright casts its full shadow; a torch is, out to about half its reach.
 const SHADOW_LAMP_FULL: f32 = 0.25;
 const SHADOW_FAINT = look.CLEAR_A;
 /// Of the body's drawn height.

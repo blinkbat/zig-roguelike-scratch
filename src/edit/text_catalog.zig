@@ -212,7 +212,7 @@ pub const Catalog = struct {
     fn saveAlias(self: *Catalog, index: usize, key: []const u8, replacement: []const u8, author: Author) !SaveResult {
         if (!oneLine(replacement)) return error.SingleLineOnly;
         const entry = self.list.items[index];
-        const changed = aliasChanged(entry.text, replacement);
+        const changed = !unchanged(entry.text, replacement);
         const path = try std.fs.path.join(self.alloc, &.{ self.root, LABEL_FILE });
         defer self.alloc.free(path);
         const current = try self.readOrEmpty(path);
@@ -762,10 +762,6 @@ fn unchanged(before: []const u8, current: []const u8) bool {
     return std.mem.eql(u8, before, current);
 }
 
-fn aliasChanged(before: []const u8, replacement: []const u8) bool {
-    return !std.mem.eql(u8, before, replacement);
-}
-
 fn quote(alloc: std.mem.Allocator, text: []const u8) ![]u8 {
     var out = std.ArrayList(u8).init(alloc);
     errdefer out.deinit();
@@ -1148,8 +1144,8 @@ test "text catalog protects reflection controls while finding short verbs" {
     const n = c.entries().len;
     try c.scan("src/play/example.zig", "const VERB = \"shoots\";\nconst s = .{ .verb = \"bites\" };\nconst name = @tagName(k) ++ \"_bonus\";\nconst PROBED = .{ \"BASE\", \"KIND\" };\n");
     try std.testing.expectEqual(n + 2, c.entries().len);
-    try std.testing.expect(!aliasChanged("Burning Arrow", "Burning Arrow"));
-    try std.testing.expect(aliasChanged("Burning Arrow", "Flaming Arrow"));
+    try std.testing.expect(unchanged("Burning Arrow", "Burning Arrow"));
+    try std.testing.expect(!unchanged("Burning Arrow", "Flaming Arrow"));
     try c.scanMap("maps/start.map", "roguelike-map 1\nnode procgen wilds\nname The Strand\n");
     const entry = c.entries()[c.entries().len - 1];
     try std.testing.expect(!entry.editable);

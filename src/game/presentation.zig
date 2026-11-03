@@ -179,8 +179,10 @@ pub const Presentation = struct {
     hero_cell: ?P = null,
     /// A glow plant burst by a bump, an arrow or a blow: drawn, and lit, until that lands.
     bursting: ?Bursting = null,
-    /// Sight as the bursting plant still lit it; its pool stays drawn until the burst lands.
+    /// Sight before a glow plant's burst darkened it or a pyre's smoke hid what lies past it, drawn until that lands.
     lit_before: [grid.CELLS]bool = @splat(false),
+    /// Seconds `lit_before` is still drawn.
+    lit_held: f32 = 0,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -315,7 +317,7 @@ pub const Presentation = struct {
     }
 
     pub fn freshTurn(self: *Presentation) void {
-        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
+        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "lit_held", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
         self.fx.clear();
     }
 
@@ -461,12 +463,18 @@ pub const Presentation = struct {
 
     pub fn burstPlant(self: *Presentation, lv: *const grid.Level, at: P, was: grid.Tile, wait: f32) void {
         self.bursting = .{ .at = at, .was = was, .left = wait };
-        self.lit_before = lv.lit;
+        self.holdLit(lv, wait);
+    }
+
+    /// Keeps sight as it stands drawn for `wait` seconds; an earlier hold keeps its older sight.
+    fn holdLit(self: *Presentation, lv: *const grid.Level, wait: f32) void {
+        if (self.lit_held <= 0) self.lit_before = lv.lit;
+        self.lit_held = @max(self.lit_held, wait);
     }
 
     pub fn litShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
         if (sim.lv.isLit(p)) return true;
-        return self.bursting != null and grid.cellOr(bool, &self.lit_before, p, false);
+        return self.lit_held > 0 and grid.cellOr(bool, &self.lit_before, p, false);
     }
 
     /// The plant whose burst has now landed, once.
@@ -564,6 +572,7 @@ pub const Presentation = struct {
     pub fn advance(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.busy -= dt;
         if (self.bursting) |*b| b.left -= dt;
+        self.lit_held = @max(0, self.lit_held - dt);
         for (self.glide[0..sim.pool.n]) |*gl| gl.t += dt;
         for (&self.dives) |*d| if (d.*) |*left| {
             left.* -= dt;
@@ -838,6 +847,7 @@ pub const Presentation = struct {
                 .fire => {
                     gas.hold(s.wait);
                     if (self.litShown(sim, at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
+                    self.holdLit(&sim.lv, s.wait);
                 },
             },
             .strike => {},
@@ -879,8 +889,9 @@ const COVER_LO = P{ .x = grid.WIDEST, .y = 1 };
 const COVER_HI = P{ .x = 2, .y = 3 };
 
 fn hides(at: rl.Vector2, p: P, t: grid.Tile) bool {
-    const x = @as(f32, @floatFromInt(p.x)) * game.CELL_F;
-    const y = @as(f32, @floatFromInt(p.y)) * game.CELL_F;
+    const corner = glide.cellPx(p);
+    const x = corner.x;
+    const y = corner.y;
     const top = y - if (look.tall(t)) game.CELL_F else 0;
     const bottom = y + if (look.tall(t)) 0 else game.CELL_F;
     return at.x + game.CELL_F * (1 - FIGURE_INSET_X) > x and at.x + game.CELL_F * FIGURE_INSET_X < x + game.CELL_F * @as(f32, @floatFromInt(t.footprint(p).width())) and

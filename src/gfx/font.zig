@@ -480,7 +480,7 @@ fn placed(f: rl.Font, i: usize, x: f32, y: f32, scale: f32) struct { rl.Rectangl
     const g = f.glyphs[i];
     const r = f.recs[i];
     const pad: f32 = @floatFromInt(f.glyphPadding);
-    const src = rl.Rectangle{ .x = r.x - pad, .y = r.y - pad, .width = r.width + 2 * pad, .height = r.height + 2 * pad };
+    const src = raster.grown(r, pad);
     const dst = rl.Rectangle{
         .x = x + @as(f32, @floatFromInt(g.offsetX)) * scale - pad * scale,
         .y = y + @as(f32, @floatFromInt(g.offsetY)) * scale - pad * scale,

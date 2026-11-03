@@ -151,6 +151,10 @@ pub const Shape = enum {
         };
     }
 
+    pub fn caption(s: Shape) [:0]const u8 {
+        return Desk.SHAPE_CAPTIONS[@intFromEnum(s)];
+    }
+
     fn rule(s: Shape) [:0]const u8 {
         return switch (s) {
             .brush => "paints every cell it passes, the brush's size",

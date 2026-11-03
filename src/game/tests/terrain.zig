@@ -5,12 +5,10 @@ const mathx = @import("../../core/mathx.zig");
 const actor = @import("../../play/actor.zig");
 const damage = @import("../../play/damage.zig");
 const resilience = @import("../../play/resilience.zig");
-const terrain = @import("../../play/terrain.zig");
 const skillbar = @import("../../play/skillbar.zig");
 const progress = @import("../../play/progress.zig");
 const combat = @import("../combat.zig");
 const overlay = @import("../overlay.zig");
-const character = @import("../character.zig");
 const skills = @import("../skills.zig");
 const harness = @import("../harness.zig");
 const P = mathx.P;
@@ -104,8 +102,6 @@ test "terrain reeds affect real hero hits without applying harm or statuses on m
         }
     }
     try std.testing.expect(misses > 20 and misses < 85);
-    const view = character.bookView(g, &g.nearby);
-    try std.testing.expectEqual(terrain.of(.reeds), view.environment);
     std.debug.print("terrain reeds: {d}/512 real attacks miss; missed blows leave HP, bleed and resistance unchanged\n", .{misses});
 }
 

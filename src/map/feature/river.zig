@@ -35,7 +35,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
         f.* = carve.Flow.of(rng, ends[0], ends[1]);
     }
     const bank = p.bank.tile();
-    var native = std.StaticBitSet(grid.CELLS).initEmpty();
+    var native = grid.CellSet.initEmpty();
     for (lv.tile, 0..) |t, i| native.setValue(i, t == bank);
     if (bank) |bk| for (flows[0..p.count]) |*f| f.bank(lv, w, bk);
     for (flows[0..p.count]) |*f| f.fill(lv, w, p.fill);

@@ -39,44 +39,44 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     widgets.textFace(&g.face).draw(widgets.fitBefore(&g.face, &buf, &fit_buf, ed.path(), if (ed.history.dirty) " *" else "", widgets.INNER_W), widgets.PAD, y, widgets.TEXT, look.TEXT);
     y += HEAD + widgets.GAP;
     var file = widgets.Across{ .y = y, .n = 4 };
-    if (widgets.button(ed.controls(), &g.face, file.next(), "New", false, true, widgets.keyed("New map", Desk.NEW_CAPTION))) ed.askName(.new);
-    if (widgets.button(ed.controls(), &g.face, file.next(), "Open", false, true, widgets.keyed("Open a map", Desk.OPEN_CAPTION))) ed.askOpen();
-    if (widgets.button(ed.controls(), &g.face, file.next(), "Save", false, true, widgets.keyed("Save", Desk.SAVE_CAPTION))) _ = ed.save();
-    if (widgets.button(ed.controls(), &g.face, file.next(), "Save as", false, true, widgets.keyed("Save under a new name", Desk.SAVE_AS_CAPTION))) ed.askName(.save_as);
+    if (editor.button(ed, g, file.next(), "New", false, true, widgets.keyed("New map", Desk.NEW_CAPTION))) ed.askName(.new);
+    if (editor.button(ed, g, file.next(), "Open", false, true, widgets.keyed("Open a map", Desk.OPEN_CAPTION))) ed.askOpen();
+    if (editor.button(ed, g, file.next(), "Save", false, true, widgets.keyed("Save", Desk.SAVE_CAPTION))) _ = ed.save();
+    if (editor.button(ed, g, file.next(), "Save as", false, true, widgets.keyed("Save under a new name", Desk.SAVE_AS_CAPTION))) ed.askName(.save_as);
     file.done();
     y += widgets.ROW_STEP;
     var views = widgets.Across{ .y = y, .n = std.enums.values(editor.View).len + 1 };
     for (std.enums.values(editor.View)) |v| {
-        if (widgets.button(ed.controls(), &g.face, views.next(), menu.named(v), ed.view == v, true, widgets.keyed("The map of one node, or every node and how they link", Desk.GRAPH_CAPTION))) ed.setView(v);
+        if (editor.button(ed, g, views.next(), menu.named(v), ed.view == v, true, widgets.keyed("The map of one node, or every node and how they link", Desk.GRAPH_CAPTION))) ed.setView(v);
     }
-    if (widgets.button(ed.controls(), &g.face, views.next(), "Fit", false, ed.view == .map, "Fit the map in view")) interaction.fitView(ed, editor.Editor.canvas(g));
+    if (editor.button(ed, g, views.next(), "Fit", false, ed.view == .map, "Fit the map in view")) interaction.fitView(ed, editor.Editor.canvas(g));
     views.done();
     y += widgets.ROW_STEP;
     var library = widgets.Across{ .y = y, .n = 3 };
-    if (widgets.button(ed.controls(), &g.face, library.next(), "Objects", false, true, widgets.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
-    if (widgets.button(ed.controls(), &g.face, library.next(), "Text", false, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
-    if (widgets.button(ed.controls(), &g.face, library.next(), "Keys", false, true, widgets.keyed("Every key", Desk.HELP_CAPTION))) ed.ask(.help);
+    if (editor.button(ed, g, library.next(), "Objects", false, true, widgets.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
+    if (editor.button(ed, g, library.next(), "Text", false, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
+    if (editor.button(ed, g, library.next(), "Keys", false, true, widgets.keyed("Every key", Desk.HELP_CAPTION))) ed.ask(.help);
     library.done();
     y += widgets.ROW_STEP;
     var story = widgets.Across{ .y = y, .n = 2 };
-    if (widgets.button(ed.controls(), &g.face, story.next(), "Dialog", false, true, "Folk and the conversations they open: lines, choices and what each does")) editor.plot.open(ed, .dialogs);
-    if (widgets.button(ed.controls(), &g.face, story.next(), "Script", false, true, "Triggers: when every condition holds after a turn, their actions run in order")) editor.plot.open(ed, .script);
+    if (editor.button(ed, g, story.next(), "Dialog", false, true, "Folk and the conversations they open: lines, choices and what each does")) editor.plot.open(ed, .dialogs);
+    if (editor.button(ed, g, story.next(), "Script", false, true, "Triggers: when every condition holds after a turn, their actions run in order")) editor.plot.open(ed, .script);
     story.done();
     y += widgets.ROW_STEP;
     var acts = widgets.Across{ .y = y, .n = 4 };
-    if (widgets.button(ed.controls(), &g.face, acts.next(), "Undo", false, ed.history.at > 0, widgets.keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
-    if (widgets.button(ed.controls(), &g.face, acts.next(), "Redo", false, ed.history.at < ed.history.len, widgets.keyed("Redo", Desk.REDO_CAPTION))) ed.redo();
-    if (widgets.button(ed.controls(), &g.face, acts.next(), "Play", false, true, "Play from the map start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) {
+    if (editor.button(ed, g, acts.next(), "Undo", false, ed.history.at > 0, widgets.keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
+    if (editor.button(ed, g, acts.next(), "Redo", false, ed.history.at < ed.history.len, widgets.keyed("Redo", Desk.REDO_CAPTION))) ed.redo();
+    if (editor.button(ed, g, acts.next(), "Play", false, true, "Play from the map start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) {
         ed.playStart();
     }
-    if (widgets.button(ed.controls(), &g.face, acts.next(), "Title", false, true, widgets.keyed("Back to the title", Desk.BACK_CAPTION))) ed.request(.leave);
+    if (editor.button(ed, g, acts.next(), "Title", false, true, widgets.keyed("Back to the title", Desk.BACK_CAPTION))) ed.request(.leave);
     acts.done();
     y += widgets.ROW_STEP;
     if (ed.lower == .generator and ed.rolled() == null) ed.lower = .nodes;
     for (std.enums.values(editor.Lower), 0..) |l, i| {
         const r = widgets.gridSlot(y, i, WORKSPACE_COLS, widgets.ROW_STEP);
         const live = l != .generator or ed.rolled() != null;
-        if (widgets.button(ed.controls(), &g.face, r, menu.named(l), ed.lower == l, live, LOWER_TIPS.get(l))) {
+        if (editor.button(ed, g, r, menu.named(l), ed.lower == l, live, LOWER_TIPS.get(l))) {
             ed.lower = l;
             ed.lower_scroll = 0;
             ed.delete_armed = null;
@@ -99,12 +99,12 @@ fn drawToolsWorkspace(ed: *editor.Editor, g: *game.Game, top: i32) void {
     var clipboard = widgets.Across{ .y = y, .n = 3 };
     const on_map = ed.view == .map and ed.paintable();
     const selected = ed.selection != null and on_map;
-    if (widgets.button(ed.controls(), &g.face, clipboard.next(), "Copy", false, selected, widgets.keyed("Copy selection", Desk.COPY_CAPTION))) placement.copySelection(ed, false);
-    if (widgets.button(ed.controls(), &g.face, clipboard.next(), "Cut", false, selected, widgets.keyed("Cut selection", Desk.CUT_CAPTION))) placement.copySelection(ed, true);
-    if (widgets.button(ed.controls(), &g.face, clipboard.next(), "Paste", ed.pasting, ed.board.size.x > 0 and on_map, widgets.keyed("Paste selection", Desk.PASTE_CAPTION))) placement.startPaste(ed);
+    if (editor.button(ed, g, clipboard.next(), "Copy", false, selected, widgets.keyed("Copy selection", Desk.COPY_CAPTION))) placement.copySelection(ed, false);
+    if (editor.button(ed, g, clipboard.next(), "Cut", false, selected, widgets.keyed("Cut selection", Desk.CUT_CAPTION))) placement.copySelection(ed, true);
+    if (editor.button(ed, g, clipboard.next(), "Paste", ed.pasting, ed.board.size.x > 0 and on_map, widgets.keyed("Paste selection", Desk.PASTE_CAPTION))) placement.startPaste(ed);
     clipboard.done();
     y += widgets.ROW_STEP;
-    if (widgets.button(ed.controls(), &g.face, widgets.cellOfRow(y, 0, 1), "Clear selection", false, selected, widgets.keyed("Clear selection", Desk.DELETE_CAPTION))) placement.clearSelection(ed);
+    if (editor.button(ed, g, widgets.cellOfRow(y, 0, 1), "Clear selection", false, selected, widgets.keyed("Clear selection", Desk.DELETE_CAPTION))) placement.clearSelection(ed);
     y += widgets.ROW_STEP + widgets.BLOCK_GAP;
     y = drawTools(ed, g, y);
     scrolledTo(ed, g, top, y);
@@ -113,17 +113,17 @@ fn drawToolsWorkspace(ed: *editor.Editor, g: *game.Game, top: i32) void {
 fn drawNodesWorkspace(ed: *editor.Editor, g: *game.Game, top: i32) void {
     var y = top;
     var adds = widgets.Across{ .y = y, .n = 2 };
-    if (widgets.button(ed.controls(), &g.face, adds.next(), "+ Bespoke", false, true, "A node you paint yourself")) editor.addNode(ed, .{ .bespoke = .{} });
-    if (widgets.button(ed.controls(), &g.face, adds.next(), "+ Procgen", false, true, knobs.ADD_PROCGEN_TIP)) editor.addNode(ed, .{ .procgen = .{} });
+    if (editor.button(ed, g, adds.next(), "+ Bespoke", false, true, "A node you paint yourself")) editor.addNode(ed, .{ .bespoke = .{} });
+    if (editor.button(ed, g, adds.next(), "+ Procgen", false, true, knobs.ADD_PROCGEN_TIP)) editor.addNode(ed, .{ .procgen = .{} });
     adds.done();
     y += widgets.ROW_STEP;
     if (ed.renaming or ed.renamed) {
         modals.fieldRow(ed, g, widgets.cellOfRow(y, 0, 1));
     } else {
         var node = widgets.Across{ .y = y, .n = 2 };
-        if (widgets.button(ed.controls(), &g.face, node.next(), "Rename", false, true, widgets.keyed("Name this node", Desk.RENAME_CAPTION))) ed.startRename();
+        if (editor.button(ed, g, node.next(), "Rename", false, true, widgets.keyed("Name this node", Desk.RENAME_CAPTION))) ed.startRename();
         const armed = ed.delete_armed == ed.node;
-        if (widgets.button(ed.controls(), &g.face, node.next(), if (armed) "Delete it?" else "Delete", armed, ed.map.node_n > 1, if (armed) "Again deletes it; its doors' links go with it" else "Delete this node; it asks first")) {
+        if (editor.button(ed, g, node.next(), if (armed) "Delete it?" else "Delete", armed, ed.map.node_n > 1, if (armed) "Again deletes it; its doors' links go with it" else "Delete this node; it asks first")) {
             if (armed) editor.deleteNode(ed) else ed.delete_armed = ed.node;
         }
         node.done();
@@ -459,7 +459,7 @@ pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     var cells = widgets.Lay{ .x = x + w - actions_w, .y = y };
     for (std.enums.values(editor.CellAction)) |a| {
         const act = editor.CELL_ACTIONS.get(a);
-        if (widgets.button(ed.controls(), &g.face, cells.take(action_w), act.label, ed.cell_action == a, true, act.tip)) interaction.armCellAction(ed, a);
+        if (editor.button(ed, g, cells.take(action_w), act.label, ed.cell_action == a, true, act.tip)) interaction.armCellAction(ed, a);
     }
     y += widgets.LINE_STEP;
     const said = ed.said_t > 0;

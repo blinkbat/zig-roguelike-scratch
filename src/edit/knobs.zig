@@ -43,7 +43,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Pro
     section(g, &y, "Features");
     var drop_feature: ?usize = null;
     for (pg.featuresMut(), 0..) |*ft, i| {
-        if (widgets.button(ed.controls(), &g.face, widgets.row(widgets.PAD + editor.LABEL_W - widgets.STEP_PITCH, y, widgets.STEP_W), widgets.DROP, false, true, "Take this feature away")) drop_feature = i;
+        if (editor.button(ed, g, widgets.row(widgets.PAD + editor.LABEL_W - widgets.STEP_PITCH, y, widgets.STEP_W), widgets.DROP, false, true, "Take this feature away")) drop_feature = i;
         choiceRow(ed, g, &y, atlas.Feature, ft, FEATURE_CHOICE, .{ .feature = i });
         switch (ft.*) {
             inline else => |*fp, k| knobRows(ed, g, &y, fp, comptime featureRowsOf(k), true),
@@ -51,7 +51,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Pro
         y += widgets.BLOCK_GAP;
     }
     if (drop_feature) |i| pg.dropFeature(i);
-    if (widgets.button(ed.controls(), &g.face, widgets.cellOfRow(y, 0, 1), "+ Feature", false, pg.feature_n < atlas.MAX_FEATURES, ADD_FEATURE_TIP)) _ = pg.addFeature(atlas.FIRST_FEATURE);
+    if (editor.button(ed, g, widgets.cellOfRow(y, 0, 1), "+ Feature", false, pg.feature_n < atlas.MAX_FEATURES, ADD_FEATURE_TIP)) _ = pg.addFeature(atlas.FIRST_FEATURE);
     y += widgets.ROW_H + widgets.SECTION_GAP;
     knobs(ed, g, &y, if (pg.floor.outdoor()) "Sky" else "Sky (this base is under a roof)", &pg.sky, &SKY_ROWS, pg.floor.outdoor());
     y += widgets.BLOCK_GAP;
@@ -64,7 +64,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Pro
         y += widgets.ROW_STEP;
     }
     if (drop) |i| _ = fo.dropMakeup(i);
-    if (widgets.button(ed.controls(), &g.face, widgets.cellOfRow(y, 0, 1), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
+    if (editor.button(ed, g, widgets.cellOfRow(y, 0, 1), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
     panel.scrolledTo(ed, g, top, y + widgets.ROW_H);
     editor.refit(ed, pg, was);
 }
@@ -184,7 +184,7 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
             .shrink => m.canShrink(),
             .drop => droppable,
         };
-        if (!widgets.button(ed.controls(), &g.face, r, t.label(), t == .exit and m.exit, live, t.tip())) continue;
+        if (!editor.button(ed, g, r, t.label(), t == .exit and m.exit, live, t.tip())) continue;
         switch (t) {
             .exit => m.exit = !m.exit,
             .grow => _ = m.grow(),

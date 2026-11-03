@@ -450,7 +450,7 @@ test "a house floored as the base's own ground keeps it through the joins, a bor
             buildings.apply(&lv, &rng, seed, pal, &lots, SMALL_HOUSES);
             border.apply(&lv, &rng, seed, pal, rim);
             carve.seal(&lv, pal.solid);
-            var laid = std.StaticBitSet(grid.CELLS).initEmpty();
+            var laid = grid.CellSet.initEmpty();
             for (lots.slice()) |box| {
                 var cells = box.cells();
                 while (cells.next()) |q| {
@@ -499,7 +499,7 @@ test "a cliff's fords keep their crossing through the joins" {
             base = lv.tile;
             river.apply(&lv, &rng, seed, pal, cliff);
             carve.seal(&lv, pal.solid);
-            var opened = std.StaticBitSet(grid.CELLS).initEmpty();
+            var opened = grid.CellSet.initEmpty();
             for (lv.tile, base, 0..) |t, was, k| opened.setValue(k, was.solid() and !t.solid());
             carve.connect(&lv, &rng, pal, .{ .before = &base });
             if (filled(&lv, &opened)) lost += 1;
@@ -547,7 +547,7 @@ fn joinsLose(lv: *grid.Level, rng: *mathx.Rng, pal: carve.Palette, laid: carve.L
     return carve.count(lv, t) < before;
 }
 
-fn filled(lv: *const grid.Level, cells: *const std.StaticBitSet(grid.CELLS)) bool {
+fn filled(lv: *const grid.Level, cells: *const grid.CellSet) bool {
     var it = cells.iterator(.{});
     while (it.next()) |k| {
         if (lv.tile[k].solid()) return true;

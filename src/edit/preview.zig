@@ -112,7 +112,7 @@ pub const Scene = struct {
             is.cut_off += 1;
             if (is.reach_from == null) is.reach_from = grid.Level.of(i);
         }
-        var swims: ?std.StaticBitSet(grid.CELLS) = null;
+        var swims: ?grid.CellSet = null;
         for (nd.placed()) |foe| {
             const i = grid.Level.idx(foe.at);
             if (self.reach_dist[i] >= 0) continue;
@@ -127,8 +127,8 @@ pub const Scene = struct {
     }
 
     /// Wet cells joined to ground the walk reaches, so a swimmer there meets it; reuses the walk's spent queue.
-    fn swimReach(self: *Scene) std.StaticBitSet(grid.CELLS) {
-        var out = std.StaticBitSet(grid.CELLS).initEmpty();
+    fn swimReach(self: *Scene) grid.CellSet {
+        var out = grid.CellSet.initEmpty();
         var tail: usize = 0;
         for (&self.reach_dist, 0..) |*d, i| if (d.* >= 0) {
             self.reach_queue[tail] = @intCast(i);

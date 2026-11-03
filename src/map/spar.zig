@@ -21,7 +21,7 @@ pub fn author(map: *atlas.Atlas, kind: actor.Kind) void {
     const room = &map.node[node].plan.bespoke;
     for ([_]i32{ -TORCH_STEP, 0, TORCH_STEP }) |dx| std.debug.assert(room.torch.add(lume.torchOver(ROOM, MIDDLE.x + dx)));
     if (!actor.groundFits(kind, .floor)) {
-        var pond = grid.Box.around(FOE, POND).cells();
+        var pond = grid.Cells.around(FOE, POND);
         while (pond.next()) |p| room.tile[grid.Level.idx(p)] = .water;
     }
     std.debug.assert(map.node[node].foeFits(room, FOE, kind));

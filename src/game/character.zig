@@ -9,7 +9,6 @@ const menu = @import("../ui/menu.zig");
 const book = @import("../ui/book.zig");
 const actor = @import("../play/actor.zig");
 const resilience = @import("../play/resilience.zig");
-const terrain = @import("../play/terrain.zig");
 const look = @import("../gfx/look.zig");
 const scene = @import("scene.zig");
 const game = @import("../game.zig");
@@ -182,7 +181,6 @@ pub fn bookView(g: *game.Game, nearby: *game.NearbyBuf) book.View {
         const stats = g.sim.combatStatsAt(h, at, buildup, sundered);
         v.defence = .{ .dodge = stats.dodge, .armour = stats.armour };
         v.resists = stats.elements;
-        v.environment = terrain.of(g.sim.lv.at(at));
         for (std.enums.values(resilience.Kind)) |k| v.status_resist.set(k, .{ .percent = stats.statuses.get(k), .turns = buildup.meters.get(k).turns });
     }
     if (g.character.page == .loot) if (g.sim.heroAt()) |from| if (goldReached(g, from, g.character.loot_at)) |pile| {

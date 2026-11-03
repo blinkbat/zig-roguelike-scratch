@@ -56,11 +56,11 @@ fn buttonAt(screen: P, p: P) ?input.Button {
 }
 
 pub fn draw(g: *game.Game) void {
-    if (g.st.device.pad() or !clickable(g.mode)) return;
+    if (g.st.device.pad() or !clickable(game.modeShown(g))) return;
     for (CORNER) |c| menu.action(&g.face, buttonBox(g.screen, c.button), prompt_icon.Prompt.menuOf(&g.st, c.button), c.label);
 }
 
-fn clickable(mode: game.ModeState) bool {
+fn clickable(mode: game.Mode) bool {
     return mode == .play or mode == .aim or mode == .inspect;
 }
 
@@ -81,7 +81,7 @@ pub fn cell(g: *game.Game) ?P {
 pub fn prepare(g: *game.Game) void {
     if (g.st.device.pad()) g.mouse.secondary = false;
     if (!g.st.focused or g.mode != .play or g.st.walk != null or g.st.interact or g.st.pressed.count() > 0 or g.st.character_page != null) g.mouse.stop();
-    if (!g.st.focused or !clickable(g.mode)) return;
+    if (!g.st.focused or !clickable(std.meta.activeTag(g.mode))) return;
     if (g.st.right_click and g.mode == .play) {
         g.mouse.stop();
         g.pending = null;

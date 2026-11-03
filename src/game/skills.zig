@@ -204,13 +204,13 @@ fn drink(run: *game.Game, act: skillbar.Act, k: flask.Kind) void {
     combat.endTurn(run);
 }
 
-fn useSupply(run: *game.Game, act: skillbar.Act, k: consumable.Kind) void {
+fn useSupply(run: *game.Game, comptime act: skillbar.Act, comptime k: consumable.Kind) void {
     const hero = run.sim.heroActor() orelse return;
     spend(run, act);
     switch (k) {
         .bandage => hero.bleed = .{},
         .smelling_salts => consumable.SmellingSalts.steel(&hero.resilience),
-        .frost_vial => unreachable,
+        .frost_vial => @compileError(@tagName(act) ++ " is thrown, not used where it is"),
     }
     sayDone(run, act);
     run.pic.fx.shimmer(mathx.centre(hero.at), look.TEXT);

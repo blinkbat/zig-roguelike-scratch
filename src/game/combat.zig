@@ -297,8 +297,10 @@ fn unmaskMimic(g: *game.Game, a: *actor.Actor, wait: f32) void {
 }
 
 fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime verb: []const u8, s: Stroke, origin: chronicle.AttackOrigin, flight: ?bow.Flight) void {
+    var roll = raw;
+    if (g.sim.pool.get(target.value)) |a| roll.hit_checked = roll.hit_checked or a.disguised;
     reveal(g, target, s);
-    const outcome = attacks.resolve(&g.sim, target, raw, origin) orelse return;
+    const outcome = attacks.resolve(&g.sim, target, roll, origin) orelse return;
     const hit = switch (outcome) {
         .miss => {
             g.pic.recordAttack(&g.sim, g.cloud, origin, s, flight, .miss, null);
@@ -316,9 +318,7 @@ fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime ver
         if (hit.bled) |said| g.sim.sayAt(hit.at, "The {s} {s}!", .{ name, said });
         if (hit.stunned) g.sim.sayAt(hit.at, "The {s} " ++ turn_clock.STUNNED ++ "!", .{name});
     }
-    const after = afterBlow(g, target.value, h);
-    const impact = fx.ActorImpact{ .slot = target.slot(), .at = hit.at, .lethal = h.lethal, .after = after };
-    if (h.lethal) fell(g, target.value);
+    const impact = fx.ActorImpact{ .slot = target.slot(), .at = hit.at, .lethal = h.lethal, .after = landBlow(g, target.value, h) };
     const recovery = recoverLife(g, hit.recovery);
     g.pic.recordAttack(&g.sim, g.cloud, origin, s, flight, .{ .hit = impact }, recovery);
 }
@@ -337,6 +337,12 @@ fn recoverLife(g: *game.Game, n: i32) ?fx.After {
 /// A kill no chosen blow made: gear's life on kill only.
 fn killRecovery(g: *game.Game) ?fx.After {
     return recoverLife(g, g.sim.inventory.gear.killRecovery());
+}
+
+fn landBlow(g: *game.Game, id: u16, h: Hurt) fx.After {
+    const after = afterBlow(g, id, h);
+    if (h.lethal) fell(g, id);
+    return after;
 }
 
 fn afterBlow(g: *game.Game, id: u16, h: Hurt) fx.After {
@@ -896,7 +902,7 @@ fn swipe(g: *game.Game, source: u16, id: u16, by: actor.Row, s: actor.Strike, we
     };
     const at = a.at;
     const name = actor.row(a.kind).name;
-    const armoured = (attacks.Roll{ .dmg = rolled, .physical = rolled }).against(g.sim.combatStats(a).armour, &g.sim.rng).dmg;
+    const armoured = attrs.armoured(g.sim.combatStats(a).armour, rolled, &g.sim.rng);
     const dmg = attacks.landed(weak, a, armoured);
     const stunned = dmg > 0 and dmg < a.hp and g.sim.procStatus(a, .stun, s.stuns);
     if (stunned) {
@@ -905,8 +911,7 @@ fn swipe(g: *game.Game, source: u16, id: u16, by: actor.Row, s: actor.Strike, we
     const h = game.hurt(g, .fromInt(id), dmg);
     g.sim.sayOf(a, "The {s} " ++ actor.SWEEP_VERB ++ " the {s} for {d}.{s}", .{ by.name, name, h.dmg, deathNote(h) });
     if (stunned) g.sim.sayFoeTakes(a, turn_clock.STUNNED);
-    const after = afterBlow(g, id, h);
-    if (h.lethal) fell(g, id);
+    const after = landBlow(g, id, h);
     return .{ .actor = .{ .slot = actor.ActorId.fromInt(id).slot(), .at = at, .lethal = h.lethal, .after = after } };
 }
 

@@ -495,7 +495,6 @@ pub const Item = struct {
         a.armour += base.armour;
         if (base.innate) |innate| innate.apply(a);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
-            inline .life, .mana, .strength, .dexterity, .intelligence, .spell_damage, .crit, .armour, .dodge => |k| k.grant(m.value).apply(a),
             .physical_damage => a.physical_bonus += m.value,
             .resistance => a.resists.getPtr(m.element).* += m.value,
             .thorns => a.thorns += m.value,
@@ -503,15 +502,16 @@ pub const Item = struct {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            .mana_regen, .life_on_kill, .life_flask, .penetration => {},
+            .penetration => {},
+            inline else => |k| k.grant(m.value).apply(a),
         };
     }
 
     pub fn perk(self: Item, p: *passives.Perks) void {
         if (spec(self.kind).innate) |innate| if (innate == .grant) innate.grant.perk(p);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
-            inline .mana_regen, .life_on_kill, .life_flask => |k| k.grant(m.value).perk(p),
-            .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .resistance, .penetration, .thorns, .spoils => {},
+            .physical_damage, .resistance, .penetration, .thorns, .spoils => {},
+            inline else => |k| k.grant(m.value).perk(p),
         };
     }
 

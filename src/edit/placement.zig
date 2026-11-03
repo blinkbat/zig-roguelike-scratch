@@ -109,7 +109,7 @@ pub fn fill(ed: *Editor, p: P, second: bool) void {
     const from = b.tile[at];
     const to = ed.ink.get(.of(second));
     if (from == to) return;
-    var seen = std.StaticBitSet(grid.CELLS).initEmpty();
+    var seen = grid.CellSet.initEmpty();
     var queue: [grid.CELLS]u32 = undefined;
     var head: usize = 0;
     var tail: usize = 1;
@@ -308,7 +308,7 @@ pub fn remove(ed: *Editor, p: P) void {
 }
 
 pub fn copySelection(ed: *Editor, cut: bool) void {
-    const s = ed.selection orelse return ed.say("Nothing selected: {s} then drag", .{Desk.SHAPE_CAPTIONS[@intFromEnum(editor.Shape.select)]});
+    const s = ed.selection orelse return ed.say("Nothing selected: {s} then drag", .{editor.Shape.select.caption()});
     const b = ed.painted() orelse return ed.say("A procgen node's cells are rolled; there is nothing to copy", .{});
     const bd = &ed.board;
     bd.* = .{ .size = s.hi.sub(s.lo) };

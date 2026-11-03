@@ -175,10 +175,8 @@ pub fn line(a: rl.Vector2, b: rl.Vector2, width: f32, scale: f32, col: rl.Color)
 
 /// The art pixels, `scale` screen pixels a side from `origin`, a pixel-wide line from `a` to `b` passes through, each once.
 pub fn gridCells(a: rl.Vector2, b: rl.Vector2, origin: [2]f32, scale: f32, out: [][2]i32) [][2]i32 {
-    var x: i32 = @intFromFloat(@floor((a.x - origin[0]) / scale));
-    var y: i32 = @intFromFloat(@floor((a.y - origin[1]) / scale));
-    const x1: i32 = @intFromFloat(@floor((b.x - origin[0]) / scale));
-    const y1: i32 = @intFromFloat(@floor((b.y - origin[1]) / scale));
+    var x, var y = artCell(a, origin, scale);
+    const x1, const y1 = artCell(b, origin, scale);
     const dx: i32 = @intCast(@abs(x1 - x));
     const dy: i32 = -@as(i32, @intCast(@abs(y1 - y)));
     const sx: i32 = if (x < x1) 1 else -1;
@@ -208,10 +206,18 @@ pub fn gridLine(a: rl.Vector2, b: rl.Vector2, origin: [2]f32, scale: f32, col: r
     var buf: [512][2]i32 = undefined;
     const cells = gridCells(a, b, origin, scale, &buf);
     for (cells[@min(cells.len, @intFromBool(from_second))..]) |c| {
-        const x = @round(origin[0] + @as(f32, @floatFromInt(c[0])) * scale);
-        const y = @round(origin[1] + @as(f32, @floatFromInt(c[1])) * scale);
-        fill(.{ .x = @intFromFloat(x), .y = @intFromFloat(y), .w = @intFromFloat(@round(origin[0] + @as(f32, @floatFromInt(c[0] + 1)) * scale) - x), .h = @intFromFloat(@round(origin[1] + @as(f32, @floatFromInt(c[1] + 1)) * scale) - y) }, col);
+        const x = artEdge(origin[0], c[0], scale);
+        const y = artEdge(origin[1], c[1], scale);
+        fill(.{ .x = @intFromFloat(x), .y = @intFromFloat(y), .w = @intFromFloat(artEdge(origin[0], c[0] + 1, scale) - x), .h = @intFromFloat(artEdge(origin[1], c[1] + 1, scale) - y) }, col);
     }
+}
+
+fn artCell(v: rl.Vector2, origin: [2]f32, scale: f32) [2]i32 {
+    return .{ @intFromFloat(@floor((v.x - origin[0]) / scale)), @intFromFloat(@floor((v.y - origin[1]) / scale)) };
+}
+
+fn artEdge(o: f32, c: i32, scale: f32) f32 {
+    return @round(o + @as(f32, @floatFromInt(c)) * scale);
 }
 
 const Canvas = struct {
@@ -317,18 +323,13 @@ test "a grid line steps one art pixel at a time from the cell under one end to t
             .{ .{ .x = 5.4, .y = 8.2 }, .{ .x = 5.9, .y = 8.6 } },
         }) |ends| {
             const cells = gridCells(ends[0], ends[1], origin, scale, &buf);
-            const cellOf = struct {
-                fn of(v: rl.Vector2, o: [2]f32, s: f32) [2]i32 {
-                    return .{ @intFromFloat(@floor((v.x - o[0]) / s)), @intFromFloat(@floor((v.y - o[1]) / s)) };
-                }
-            }.of;
-            try std.testing.expectEqual(cellOf(ends[0], origin, scale), cells[0]);
-            try std.testing.expectEqual(cellOf(ends[1], origin, scale), cells[cells.len - 1]);
+            try std.testing.expectEqual(artCell(ends[0], origin, scale), cells[0]);
+            try std.testing.expectEqual(artCell(ends[1], origin, scale), cells[cells.len - 1]);
             for (cells[1..], cells[0 .. cells.len - 1]) |c, prev| {
                 try std.testing.expect(@max(@abs(c[0] - prev[0]), @abs(c[1] - prev[1])) == 1);
             }
-            const span = cellOf(ends[1], origin, scale);
-            const start = cellOf(ends[0], origin, scale);
+            const span = artCell(ends[1], origin, scale);
+            const start = artCell(ends[0], origin, scale);
             try std.testing.expectEqual(@max(@abs(span[0] - start[0]), @abs(span[1] - start[1])) + 1, @as(u32, @intCast(cells.len)));
             total += cells.len;
         }

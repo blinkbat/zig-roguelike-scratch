@@ -250,6 +250,10 @@ pub const Visibility = struct {
         return sightOf(Whole{ .fields = self }, self.groundAt(mathx.cellOf(.{ x, y })), x, y);
     }
 
+    pub fn openAt(self: *const Visibility, p: P, reach: f32) f32 {
+        return reach * grid.cellOr(f32, &self.see_through, p, 0);
+    }
+
     pub fn groundAt(self: *const Visibility, c: P) bool {
         return grid.cellOr(f32, &self.ground, c, 0) > 0;
     }

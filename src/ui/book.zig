@@ -18,7 +18,6 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
-const hero = @import("../play/hero.zig");
 const attr = @import("../play/attrs.zig");
 const items = @import("../play/items.zig");
 const consumable = @import("../play/consumable.zig");
@@ -316,7 +315,7 @@ pub const Book = struct {
             .skills => {
                 const act = self.selectedSkill(view);
                 c.add(trees.bindBox(), menu.CHANGE, .{ .label = if (view.growth.unlocked(act)) character_view.verbOf(.bindings) else "Bindings" });
-                c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (view.growth.canLearn(view.class, act)) 1 else look.FADED_A });
+                if (!progress.basic(act)) c.add(trees.actionBox(), menu.CONFIRM, .{ .prompt = if (view.growth.canLearn(view.class, act)) 1 else look.FADED_A });
             },
             .stats => c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = if (self.advanced) "Main stats" else "Advanced" }),
             .equipment, .inventory, .nearby, .loot => if (self.count(view) > 0) {

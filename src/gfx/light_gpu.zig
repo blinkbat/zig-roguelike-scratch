@@ -209,7 +209,7 @@ pub const Gpu = struct {
     pub fn drawBody(self: *const Gpu, tex: rl.Texture2D, dest: rl.Rectangle, left: bool, centre: [2]f32, s: *const model.Shine, flash: f32, opacity: f32, fade_bounds: [2]f32, enabled: bool) void {
         const size = raster.sizeOf(tex);
         const w, const h = size;
-        const src = raster.rect(0, 0, if (left) -tex.width else tex.width, tex.height);
+        const src = raster.facing(tex, left);
         const normals = self.art(tex).normals;
         const sh = self.body;
         if (!enabled or sh == null or normals == null) {

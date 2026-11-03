@@ -257,7 +257,6 @@ fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
 fn read(bytes: []const u8, g: *game.Game, map: *Map) !void {
     if (std.mem.startsWith(u8, bytes, format.MAGIC)) return format.read(bytes, g, map);
     try readLegacy(bytes, g, map);
-    g.sim.unsaved = true;
 }
 
 fn peek(bytes: []const u8) !Summary {

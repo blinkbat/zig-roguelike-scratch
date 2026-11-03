@@ -187,7 +187,7 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
         var open = lv.openCount();
         for (g.branch[0..g.n]) |b| {
             const neck = Graph.first(lv, b.neck) orelse continue;
-            _ = grid.distances(lv, neck, &distances, &queue);
+            const joined = grid.distances(lv, neck, &distances, &queue) == open;
             while (true) {
                 var far: ?P = null;
                 var deepest: i32 = MIN_DEPTH - 1;
@@ -198,7 +198,7 @@ pub fn improve(lv: *grid.Level, seed: u64, doors: []const P, params: wilds.Param
                     far = p;
                 }
                 const p = far orelse break;
-                if (keepsRoute(lv, p, neck, open, &reached, &queue)) {
+                if (keepsRoute(lv, p, neck, open, joined, &reached, &queue)) {
                     result.chests += 1;
                     open -= 1;
                     break;
@@ -280,6 +280,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
     var dist: [grid.CELLS]i32 = undefined;
     var queue: [grid.CELLS]u32 = undefined;
     var open = blocked.openCount();
+    const joined = grid.distances(blocked, origin, &dist, &queue) == open;
     var added: usize = 0;
     while (have < target and count > 0) {
         const p = rng.takeFrom(P, &spots, &count);
@@ -288,7 +289,7 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
             if (mathx.dist(p, other) < rule.gap) near = true;
         }
         if (near) continue;
-        if (!keepsRoute(blocked, p, origin, open, &dist, &queue)) continue;
+        if (!keepsRoute(blocked, p, origin, open, joined, &dist, &queue)) continue;
         kind.put(lv, p);
         placed[have] = p;
         have += 1;
@@ -299,12 +300,40 @@ fn stock(lv: *grid.Level, blocked: *grid.Level, origin: P, doors: []const P, rng
 }
 
 /// A chest at `p`, standing in for any reward, if the `open` cells less that one all still reach `from`; otherwise `lv` as it was.
-fn keepsRoute(lv: *grid.Level, p: P, from: P, open: usize, dist: *[grid.CELLS]i32, queue: *[grid.CELLS]u32) bool {
+fn keepsRoute(lv: *grid.Level, p: P, from: P, open: usize, joined: bool, dist: *[grid.CELLS]i32, queue: *[grid.CELLS]u32) bool {
     const was = lv.at(p);
     lv.set(p, .chest);
+    if (joined and !was.solid() and ringJoined(lv, p)) return true;
     if (grid.distances(lv, from, dist, queue) == open - 1) return true;
     lv.set(p, was);
     return false;
+}
+
+fn ringJoined(lv: *const grid.Level, p: P) bool {
+    var ring: [mathx.ALL_DIRS.len]P = undefined;
+    var n: usize = 0;
+    for (mathx.ALL_DIRS) |d| {
+        if (!lv.passOk(p, d)) continue;
+        ring[n] = p.add(d.delta());
+        n += 1;
+    }
+    if (n == 0) return false;
+    var seen: u8 = 1;
+    var todo: [mathx.ALL_DIRS.len]u8 = undefined;
+    todo[0] = 0;
+    var top: usize = 1;
+    while (top > 0) {
+        top -= 1;
+        const a = ring[todo[top]];
+        for (ring[0..n], 0..) |b, k| {
+            const bit = @as(u8, 1) << @intCast(k);
+            if (seen & bit != 0 or mathx.dist(a, b) != 1) continue;
+            seen |= bit;
+            todo[top] = @intCast(k);
+            top += 1;
+        }
+    }
+    return @popCount(seen) == n;
 }
 
 fn rewardAt(lv: *const grid.Level, p: P) bool {
