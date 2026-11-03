@@ -777,6 +777,14 @@ fn sweepMotes(g: *const game.Game) usize {
     return n;
 }
 
+fn whirling(g: *game.Game, _: usize) bool {
+    return sweepMotes(g) > 0;
+}
+
+fn stillAir(g: *game.Game, _: usize) bool {
+    return sweepMotes(g) == 0;
+}
+
 test "a beefy pib's sweep whirls round it as the sweep lands, with nothing beside it but the archer, and its plain blows do not" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -786,17 +794,9 @@ test "a beefy pib's sweep whirls round it as the sweep lands, with nothing besid
     g.sim.heroActor().?.resilience.immune(.stun, 100);
     harness.use(g, .wait);
     try std.testing.expectEqual(@as(usize, 0), sweepMotes(g));
-    var t: f32 = 0;
-    while (sweepMotes(g) == 0 and t < 1) : (t += harness.TEST_DT) {
-        g.st = .{};
-        game.update(g, harness.TEST_DT);
-    }
+    const t = harness.framesUntil(g, 0, whirling);
     const whirled = sweepMotes(g);
-    var faded: f32 = 0;
-    while (sweepMotes(g) > 0 and faded < 1) : (faded += harness.TEST_DT) {
-        g.st = .{};
-        game.update(g, harness.TEST_DT);
-    }
+    _ = harness.framesUntil(g, 0, stillAir);
     try std.testing.expectEqual(@as(usize, 0), sweepMotes(g));
     harness.drawnOut(g);
     for (0..actor.row(.beefy_pib).sweep_every - 1) |_| {
@@ -1084,9 +1084,8 @@ test "a mimic always leaves a rare" {
     const at = P{ .x = 21, .y = 20 };
     for (0..40) |seed| {
         harness.arena(g, from, &.{});
-        const id = harness.spawnAt(g, .mimic, at, true);
+        const id = harness.openMimic(g, at);
         game.settle(g);
-        g.sim.pool.get(id).?.unmask(&g.sim.lv);
         g.sim.loot_rng = mathx.Rng.init(seed);
         combat.wound(g, id, .{ .dmg = 1000, .hit_checked = true }, combat.SHOOT, .{ .from = from, .wait = 0 });
         try std.testing.expectEqual(@as(usize, 1), g.sim.ground.n);

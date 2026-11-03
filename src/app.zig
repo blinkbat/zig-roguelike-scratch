@@ -188,7 +188,7 @@ const App = struct {
         var line: [LINE]u8 = undefined;
         var fit: [LINE + 1]u8 = undefined;
         const last = saveRowBox(g.screen, save.SLOTS - 1);
-        look.hudPanelIn(&g.sprites, raster.grown(.{ .x = first.x, .y = first.y, .width = first.width, .height = last.y + last.height - first.y }, @floatFromInt(look.HUD_BORDER_CUT)), look.BACKING, look.LIT);
+        menu.listPanel(&g.sprites, .{ .x = first.x, .y = first.y, .width = first.width, .height = last.y + last.height - first.y });
         for (&app.list, 0..) |*slot, i| {
             const row = saveRowBox(g.screen, i);
             const remove = saveDeleteBox(g.screen, i);
@@ -565,7 +565,7 @@ const App = struct {
         const top = @divTrunc(g.screen.y - lead - panel_h, 2) + lead;
         var name: [hero.Name.MAX + 1]u8 = undefined;
         menu.pageHeading(g.face, g.screen, menu.shout(&name, "{s}", .{e.name.text()}), top - lead);
-        look.hudPanel(&g.sprites, x, top, w, panel_h, look.BACKING, look.LIT);
+        look.backing(&g.sprites, x, top, w, panel_h);
         stage.figure(&g.sprites, e.class.kind(), .{ .x = @divTrunc(g.screen.x, 2), .y = top + feet_dy }, BONES_SCALE, 1);
         var stats: [LINE + 1]u8 = undefined;
         const said = std.fmt.bufPrintZ(&stats, BONES_RANK ++ menu.SEP ++ "Kills {d}" ++ menu.SEP ++ hero.GOLD_FMT, .{ e.level, e.class.title(), e.renown, e.kills, e.gold }) catch "";

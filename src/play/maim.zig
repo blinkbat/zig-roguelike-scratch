@@ -16,17 +16,20 @@ pub const Maim = struct {
         resilience.lengthen(&self.turns, TURNS);
     }
 
-    /// A step taken: whether it costs the body its next turn.
+    /// A step taken on a turn it held, worn already or not: whether it costs the body its next turn.
     pub fn step(self: *Maim) bool {
-        if (self.turns == 0) return false;
-        defer self.limp = !self.limp;
-        return self.limp;
+        const costs = self.limp;
+        self.limp = !self.limp and self.turns > 0;
+        return costs;
     }
 
     pub fn wear(self: *Maim) bool {
-        const ran = resilience.wearTurn(&self.turns);
+        return resilience.wearTurn(&self.turns);
+    }
+
+    /// The turn is over: a limp outlives no maim.
+    pub fn settle(self: *Maim) void {
         if (self.turns == 0) self.limp = false;
-        return ran;
     }
 };
 
@@ -39,12 +42,24 @@ test "a maimed body loses a turn to every second step, and walks freely once it 
     m.start();
     var lost: usize = 0;
     for (0..TURNS) |_| {
-        lost += @intFromBool(m.step());
+        lost += @intFromBool(m.turns > 0 and m.step());
         _ = m.wear();
     }
     try std.testing.expectEqual(@as(usize, TURNS / 2), lost);
+    m.settle();
     try std.testing.expectEqualDeep(Maim{}, m);
-    try std.testing.expect(!m.step());
+    try std.testing.expect(!(m.turns > 0 and m.step()));
+    var worn_first = Maim{};
+    worn_first.start();
+    var foe_lost: usize = 0;
+    for (0..TURNS) |_| {
+        const maimed = worn_first.turns > 0;
+        _ = worn_first.wear();
+        foe_lost += @intFromBool(maimed and worn_first.step());
+    }
+    worn_first.settle();
+    try std.testing.expectEqual(lost, foe_lost);
+    try std.testing.expectEqualDeep(Maim{}, worn_first);
     m.turns = 9;
     m.start();
     try std.testing.expectEqual(@as(u8, 9), m.turns);

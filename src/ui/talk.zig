@@ -84,7 +84,7 @@ pub const Layout = struct {
 pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: P, v: View, l: *const Layout) void {
     var buf: [LINE_MAX]u8 = undefined;
     rl.drawRectangle(0, 0, screen.x, screen.y, VEIL);
-    look.hudPanelIn(sprites, l.panel, look.BACKING, look.LIT);
+    look.backingIn(sprites, l.panel);
     if (v.who.len > 0) {
         face.engraved(std.fmt.bufPrintZ(&buf, "{s}", .{v.who}) catch "", l.text_x, l.who_y, font.HEAD, look.UI_GOLD);
         rl.drawRectangle(l.text_x, l.who_rule_y, l.text_w, 1, look.fade(look.UI_GOLD, 0.35));
@@ -96,7 +96,7 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: P, v: 
         if (on) rl.drawRectangleRec(r, look.ROW_ON);
         const row = std.fmt.bufPrintZ(&buf, "{d}. {s}", .{ i + 1, label }) catch "";
         var fit_buf: [LINE_MAX]u8 = undefined;
-        face.text(face.fit(&fit_buf, row, font.BODY, l.text_w, false), l.text_x, @as(i32, @intFromFloat(r.y)) + @divTrunc(ROW_H - font.BODY, 2), font.BODY, if (on) look.UI_FOCUS else look.DIM);
+        face.text(face.fit(&fit_buf, row, font.BODY, l.text_w, false), l.text_x, @as(i32, @intFromFloat(r.y)) + @divTrunc(ROW_H - font.BODY, 2), font.BODY, menu.rowInk(on));
     }
     menu.action(face, l.action, v.prompt, if (l.row_n > 0) "Choose" else "Continue");
 }

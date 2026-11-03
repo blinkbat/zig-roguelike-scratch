@@ -99,7 +99,7 @@ In play, `look.WATER_FS` keeps the water's art, alpha and texture coordinates fi
 
 Headless `water-mirrors-day.png`, `water-mirrors-night.png` and `water-mirrors-torch.png` show a shoreline with scenery, barrels and bodies; `water-mirrors-memory.png` shows the remembered scenery. GPU checks cover fixed source pixels without illumination, glints and mirrors at both depths, unchanged grass/alpha, exclusion of live effects from memory, remembered barrels after unseen destruction, camera translation and hidden reflection sources. `water-glints.png` and `water-mirror-mask.png` are synthetic clipping checks; `water-reflections/00.png` through `39.png` cover four seconds of normal idle play, with no turn spent. `--bench` includes the posed reflective-water scene.
 
-Ground units also throw pale blue droplets from the footfall of a visible step through shallows, and a low puff of dust on dirt or sand. `Presentation.footfalls` follows the presented glide and checks `Row.movement`; `Fx.splash`/`Fx.dust` use the existing particle pool, normal lighting and fog, spreading past the body drawn over them and fading within 0.6 seconds without stains or flashes. Flying units, idle bodies, melee bumps and hidden steps emit none. Headless `water-steps.png` poses the hero and all current foe forms together.
+Ground units also throw pale blue droplets from the footfall of a visible step through shallows, and a low puff of dust on dirt or sand. `Presentation.footfalls` follows the presented glide and checks `Row.movement`; `Fx.splash`/`Fx.dust` use the existing particle pool, normal lighting and fog, spreading past the body drawn over them and fading within 0.6 seconds without stains or flashes. A shallows step also leaves thin concentric rings at the foot, outside the particle pool, widening and fading over `RIPPLE_S` (0.9 seconds). Flying units, idle bodies, melee bumps and hidden steps emit none. Headless `water-steps.png` and `dirt-steps.png` pose the hero and all current foe forms together.
 
 `deepen_water.lua` records the derivation: generate labels with `ground_labels.py <TEMP PNG> "Deep water - ground transitions"`, then pass `labels=<TEMP PNG>` and optionally `work=<TEMP directory>` or `percent=<RGB percent>` (default 60). It writes a TEMP draft and comparison; `install=yes` backs up the old unpainted deep template, updates the Desktop file and creates the canonical copy. It refuses an existing canonical deep source or artwork on the old template, so subsequent owner edits require inspection before regeneration. The saved result is reopened and every art pixel checked against the palette transform; all alpha and positions must match. Export both water names after installation, then rebuild and inspect their in-game boundary.
 
@@ -136,11 +136,13 @@ Shadow casters use the actual light at their position without fog or memory fadi
 ground, and is registered for the normal canopy shadow, lighting, fog and water-reflection
 paths. It does not join the forest-wall sheet. The editor exposes it as Swamp Tree.
 
-The default `maps/start.map` (The Strand) uses dirt around its ponds and a final
-scatter of swamp trees on dirt within three cells of water or shallows. Single-tree
+The default `maps/start.map` (The Strand) uses dirt around its ponds and two
+scatters of swamp trees on dirt: one within three cells of water or shallows, and one
+within twelve but none within four, and within two cells of other dry ground. Single-tree
 placement preserves open routes and leaves spacing between trees. Other maps retain
-their settings. Scatter's optional `water_range` knob (Near water in the editor)
-defaults to zero for unrestricted placement and applies to both single cells and clumps.
+their settings. Scatter's optional `water_range`, `water_clear` and `land_range` knobs
+(Near water, Off water and Near land in the editor) default to zero for unrestricted
+placement and apply to both single cells and clumps.
 
 ## Validate the saved result
 

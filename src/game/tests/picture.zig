@@ -510,21 +510,21 @@ test "an arrow's rat flashes when the arrow gets there, not when the hit resolve
     try std.testing.expect(g.sim.pool.get(2).?.hurt());
     try std.testing.expectEqual(@as(f32, 0), g.pic.fx.flashOf(rat));
     const t = harness.framesUntil(g, rat, harness.flashing);
-    std.debug.print("arrow 5 cells out: the rat flashes {d:.3} s after the shot, the arrow reaches it at {d:.3} s\n", .{ t, game.presentation.flown(4) });
-    try std.testing.expectApproxEqAbs(game.presentation.flown(4), t, harness.TEST_TOL);
+    std.debug.print("arrow 5 cells out: the rat flashes {d:.3} s after the shot, the arrow reaches it at {d:.3} s\n", .{ t, harness.SHOT_LANDS });
+    try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
 }
 
 test "after an arrow the foes act a stagger after it lands, so the rat it strikes is still under it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 22, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
+    harness.arena(g, harness.SHOT_FROM, &.{harness.SHOT_AT});
     harness.wakeFoes(g);
     harness.confirmUse(g, .shoot);
-    const lands = game.presentation.flown(4);
+    const lands = harness.SHOT_LANDS;
     const starts = -g.pic.glide[actor.Pool.slot(2)].t;
     std.debug.print("an arrow 5 cells out lands {d:.3} s in, and the rat it struck steps at {d:.3} s\n", .{ lands, starts });
     try std.testing.expect(g.sim.pool.get(2).?.hurt());
-    try std.testing.expectEqual(@as(i32, 26), g.sim.pool.get(2).?.at.x);
+    try std.testing.expectEqual(harness.SHOT_AT.x - 1, g.sim.pool.get(2).?.at.x);
     try std.testing.expectApproxEqAbs(lands + game.STAGGER_S, starts, 1e-6);
 }
 
@@ -804,14 +804,14 @@ test "a foe the gas kills after it steps keeps its place in the turn, and its de
 test "an arrow that bursts a caustic bloat eats at a sleeping foe with its gas as it lands, not before" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 22, .y = 20 }, &.{});
-    const bloat = harness.spawnAt(g, .bloat, .{ .x = 27, .y = 20 }, false);
-    const rat = harness.spawnAt(g, .rat, .{ .x = 28, .y = 21 }, false);
+    harness.arena(g, harness.SHOT_FROM, &.{});
+    const bloat = harness.spawnAt(g, .bloat, harness.SHOT_AT, false);
+    const rat = harness.spawnAt(g, .rat, harness.SHOT_AT.add(.{ .x = 1, .y = 1 }), false);
     g.sim.pool.get(bloat).?.hp = 1;
     harness.confirmUse(g, .shoot);
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(bloat));
     try std.testing.expect(g.sim.pool.get(rat).?.hurt());
-    const lands = game.presentation.flown(4);
+    const lands = harness.SHOT_LANDS;
     const t = harness.framesUntil(g, actor.Pool.slot(rat), harness.flashing);
     std.debug.print("a caustic bloat shot 5 cells out: the arrow lands {d:.3} s in, and its gas stings the rat beside it {d:.3} s in\n", .{ lands, t });
     try std.testing.expectApproxEqAbs(lands, t, harness.TEST_TOL);
@@ -820,9 +820,9 @@ test "an arrow that bursts a caustic bloat eats at a sleeping foe with its gas a
 test "a caustic bloat's cloud is drawn from when its burst lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 22, .y = 20 }, &.{});
+    harness.arena(g, harness.SHOT_FROM, &.{});
     const Burst = struct {
-        const at = P{ .x = 27, .y = 20 };
+        const at = harness.SHOT_AT;
         fn clouded(gm: *game.Game, _: usize) bool {
             return gm.cloud.tint.getPtrConst(.caustic)[grid.Level.idx(at)] > 0;
         }
@@ -832,8 +832,8 @@ test "a caustic bloat's cloud is drawn from when its burst lands" {
     harness.confirmUse(g, .shoot);
     try std.testing.expect(g.sim.lv.gasAt(Burst.at) > 0 and !Burst.clouded(g, 0));
     const t = harness.framesUntil(g, 0, Burst.clouded);
-    std.debug.print("a caustic bloat shot 5 cells out: the arrow lands {d:.3} s in, its cloud first drawn {d:.3} s in\n", .{ game.presentation.flown(4), t });
-    try std.testing.expectApproxEqAbs(game.presentation.flown(4), t, harness.TEST_TOL);
+    std.debug.print("a caustic bloat shot 5 cells out: the arrow lands {d:.3} s in, its cloud first drawn {d:.3} s in\n", .{ harness.SHOT_LANDS, t });
+    try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
 }
 
 test "a foe stepping out of sight takes its place in the turn" {
@@ -874,7 +874,7 @@ test "a barrel the arrow breaks stands until the arrow reaches it" {
 test "a foe's hp as drawn, the archer's and the low glow drop as the blow lands, not as it resolves" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 22, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
+    harness.arena(g, harness.SHOT_FROM, &.{harness.SHOT_AT});
     const rat = actor.Pool.slot(2);
     harness.confirmUse(g, .shoot);
     try std.testing.expect(g.sim.pool.get(2).?.hurt());
@@ -885,8 +885,8 @@ test "a foe's hp as drawn, the archer's and the low glow drop as the blow lands,
         }
     };
     const t = harness.framesUntil(g, rat, Drop.f);
-    std.debug.print("an arrow 5 cells out: the rat's bar drops {d:.3} s in, as it lands at {d:.3} s\n", .{ t, game.presentation.flown(4) });
-    try std.testing.expectApproxEqAbs(game.presentation.flown(4), t, harness.TEST_TOL);
+    std.debug.print("an arrow 5 cells out: the rat's bar drops {d:.3} s in, as it lands at {d:.3} s\n", .{ t, harness.SHOT_LANDS });
+    try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 25, .y = 21 }, .{ .x = 22, .y = 20 } });
     harness.wakeFoes(g);
     const low: i32 = @intFromFloat(vignette.LOW * @as(f32, @floatFromInt(actor.row(HERO).hp)));
@@ -906,8 +906,8 @@ test "a foe's hp as drawn, the archer's and the low glow drop as the blow lands,
 test "an arrow that splits a slime shows it as the arrow lands, the new half sliding out of it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 22, .y = 20 }, &.{});
-    const at = P{ .x = 27, .y = 20 };
+    harness.arena(g, harness.SHOT_FROM, &.{});
+    const at = harness.SHOT_AT;
     const id = harness.splittable(g, at, false);
     g.pic.catchUp(&g.sim);
     harness.confirmUse(g, .shoot);
@@ -921,7 +921,7 @@ test "an arrow that splits a slime shows it as the arrow lands, the new half sli
     try std.testing.expectEqual(fx.Body.of(g.sim.pool.items[other], g.pic.pictured[other].seq), g.pic.pictured[other]);
     try std.testing.expectEqualStrings("The slime splits in two!", g.sim.log.line(0).?);
     const t = harness.framesUntil(g, other, harness.drawn);
-    const lands = game.presentation.flown(4);
+    const lands = harness.SHOT_LANDS;
     try std.testing.expectEqual(actor.Kind.slime_half, g.pic.pictured[slime].kind);
     try std.testing.expect(!game.mapAssets(g).bodies.contains(.slime));
     try std.testing.expect(game.mapAssets(g).bodies.contains(.slime_quarter));
@@ -976,7 +976,7 @@ test "a slime an arrow splits shows split as the arrow lands, though the gas eat
     const other = slime + 1;
     try std.testing.expect(!g.sim.pool.items[slime].at.eq(at));
     const t = harness.framesUntil(g, other, harness.drawn);
-    const lands = game.presentation.flown(4);
+    const lands = harness.SHOT_LANDS;
     std.debug.print("an arrow 5 cells out splits a slime in gas: the new half shows {d:.3} s in, as the arrow lands at {d:.3} s, the gas still to land on the slime\n", .{ t, lands });
     try std.testing.expectApproxEqAbs(lands, t, harness.TEST_TOL);
     try std.testing.expect(g.pic.fx.pending(slime));

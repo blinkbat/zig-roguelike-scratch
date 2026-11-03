@@ -10,7 +10,6 @@ const P = mathx.P;
 pub const NAME = "caustic gas";
 pub const HEALING_NAME = "healing gas";
 pub const STEAM_NAME = "steam";
-pub const SMOKE_NAME = "smoke";
 /// What a fire's burst gives off where it bursts.
 pub const SMOKE_BURST: u16 = 1200;
 /// Brogue's `DF_BLOAT_DEATH`.
@@ -108,13 +107,17 @@ fn spread(lv: *grid.Level, kind: grid.Gas, rng: *mathx.Rng) void {
     while (cells.next()) |p| {
         const i = grid.Level.idx(p);
         if (next[i] > 0 and vol[i] > 0 and rng.chance(DISSIPATE)) next[i] -= 1;
-        switch (kind) {
-            .steam => next[i] -= std.math.divCeil(u32, next[i], CONDENSE) catch unreachable,
-            .smoke => next[i] -= std.math.divCeil(u32, next[i], THIN) catch unreachable,
-            .caustic, .healing => {},
-        }
+        if (thinning(kind)) |part| next[i] -= std.math.divCeil(u32, next[i], part) catch unreachable;
         vol[i] = @intCast(@min(next[i], std.math.maxInt(u16)));
     }
+}
+
+fn thinning(kind: grid.Gas) ?u32 {
+    return switch (kind) {
+        .steam => CONDENSE,
+        .smoke => THIN,
+        .caustic, .healing => null,
+    };
 }
 
 /// A cell wider than the gas all round; the high corner exclusive.

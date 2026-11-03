@@ -113,6 +113,35 @@ pub fn titled(comptime text: [:0]const u8) [:0]const u8 {
     return formatted(text, .title);
 }
 
+pub const Recase = enum { title, lower };
+/// Words a title leaves lower case past its first.
+const MINOR_WORDS = [_][]const u8{ "of", "the", "and", "a", "an" };
+
+/// Recases `text` in place when it lies in `buf`; a fallback literal is returned as it is.
+pub fn recased(buf: []u8, text: [:0]const u8, how: Recase) [:0]const u8 {
+    const at = @intFromPtr(text.ptr);
+    if (at < @intFromPtr(buf.ptr) or at + text.len > @intFromPtr(buf.ptr) + buf.len) return text;
+    const bytes = buf[at - @intFromPtr(buf.ptr) ..][0..text.len];
+    var start: usize = 0;
+    while (start < bytes.len) {
+        const end = std.mem.indexOfScalarPos(u8, bytes, start, ' ') orelse bytes.len;
+        const w = bytes[start..end];
+        switch (how) {
+            .lower => for (w) |*c| {
+                c.* = std.ascii.toLower(c.*);
+            },
+            .title => {
+                const minor = start > 0 and for (MINOR_WORDS) |m| {
+                    if (std.ascii.eqlIgnoreCase(w, m)) break true;
+                } else false;
+                if (w.len > 0) w[0] = if (minor) std.ascii.toLower(w[0]) else std.ascii.toUpper(w[0]);
+            },
+        }
+        start = end + 1;
+    }
+    return text;
+}
+
 pub fn displayAliasIn(comptime labels: []const u8, comptime name: []const u8, comptime tag: []const u8) ?[:0]const u8 {
     @setEvalBranchQuota(100_000);
     const value = lookup(labels, savedName(name) ++ "." ++ tag) orelse return null;

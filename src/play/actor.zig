@@ -116,7 +116,12 @@ const FAMILY = blk: {
 pub const HERO: Kind = .archer;
 
 comptime {
-    for (std.enums.values(Kind)) |k| std.debug.assert(row(k).pace >= clock.TURN);
+    for (std.enums.values(Kind)) |k| {
+        const r = row(k);
+        std.debug.assert(r.pace >= clock.TURN);
+        if (r.ranged) |shot| std.debug.assert(shot.range <= bow.LONGEST);
+        if (r.net) |n| std.debug.assert(n.range <= bow.LONGEST);
+    }
 }
 
 pub const FOES = blk: {
@@ -164,7 +169,16 @@ pub const Blow = union(enum) {
 };
 
 /// Swimming bodies keep to deep water and shallows.
-pub const Movement = enum { ground, flying, swimming };
+pub const Movement = enum {
+    ground,
+    flying,
+    swimming,
+
+    /// Its body touches the ground or the water under it.
+    pub fn grounded(m: Movement) bool {
+        return m != .flying;
+    }
+};
 pub const FoeType = enum { beast, humanoid, aberration, undead, construct };
 
 pub const Ranged = struct { range: i32, retreat: i32 };
@@ -408,21 +422,32 @@ pub const Actor = struct {
         return self.pin.turns > 0 or self.chill.turns > 0 or self.afflicted();
     }
 
-    /// One of its turns spent under each of `AFFLICTIONS`, in order.
-    pub fn wearAfflictions(self: *Actor) Afflicted {
-        var out = Afflicted{};
+    /// The `AFFLICTIONS` running on it now.
+    pub fn afflictions(self: Actor) Afflicted {
+        var out = Afflicted.initEmpty();
         inline for (AFFLICTIONS) |k| {
-            const status = &@field(self, @tagName(k));
-            const ran = status.turns > 0;
-            _ = status.wear();
-            switch (k) {
-                .blind => out.blinded = ran,
-                .confusion => out.confused = ran,
-                .shock, .sunder, .enfeeble, .maim => {},
-                else => comptime unreachable,
-            }
+            if (@field(self, @tagName(k)).turns > 0) out.insert(k);
         }
         return out;
+    }
+
+    /// One of its turns spent under each of `AFFLICTIONS`, in order.
+    pub fn wearAfflictions(self: *Actor) Afflicted {
+        const out = self.afflictions();
+        inline for (AFFLICTIONS) |k| _ = @field(self, @tagName(k)).wear();
+        return out;
+    }
+
+    /// Its steps take more than a move: pinned, confused or maimed.
+    pub fn hampered(self: Actor) bool {
+        return self.pin.turns > 0 or self.confusion.turns > 0 or self.maim.turns > 0;
+    }
+
+    /// A step taken on a turn worn under `af`: whether a limp costs it its next turn.
+    pub fn limp(self: *Actor, af: Afflicted) bool {
+        if (!af.contains(.maim) or !self.maim.step()) return false;
+        self.clock.delay(clock.TURN);
+        return true;
     }
 
     /// The turn is over: what started or split off in it is no longer fresh.
@@ -435,7 +460,7 @@ pub const Actor = struct {
 };
 
 /// What a turn worn under them was.
-pub const Afflicted = struct { blinded: bool = false, confused: bool = false };
+pub const Afflicted = std.EnumSet(resilience.Kind);
 
 /// The statuses worn on a body's own turn, each kept in the `Actor` field its kind names.
 pub const AFFLICTIONS = [_]resilience.Kind{ .shock, .sunder, .blind, .confusion, .enfeeble, .maim };

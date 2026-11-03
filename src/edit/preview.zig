@@ -3,7 +3,6 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
 const actor = @import("../play/actor.zig");
-const pack = @import("../play/pack.zig");
 const P = mathx.P;
 const INITIAL_ROLL: u64 = 0x5EE;
 
@@ -58,13 +57,12 @@ pub const Scene = struct {
                 nd.sketch(&self.lv);
                 map.stampFolk(node, &self.lv);
             },
-            .procgen => |*pg| {
+            .procgen => {
                 nd.stamp(&self.lv, self.roll);
                 var rng = mathx.Rng.init(self.roll);
                 const at = atlas.landing(&self.lv, arrival(map, node), nd.placed()) orelse arrival(map, node);
                 _ = self.rolled_foes.spawn(&self.lv, actor.Actor.of(actor.HERO, at));
-                var doors: [grid.MAX_DOORS]P = undefined;
-                pack.place(&self.lv, &self.rolled_foes, &rng, at, nd.doorCells(&doors), &pg.foes);
+                nd.placePacks(&self.lv, &self.rolled_foes, &rng, at);
                 self.lv.clear(at);
             },
         }

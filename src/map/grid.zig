@@ -127,17 +127,37 @@ pub const Tile = enum(u8) {
 
     /// Cells from its own rightward that it stands on.
     pub fn wide(t: Tile) i32 {
-        return if (t == .caravan) 2 else 1;
+        return TERRAIN.getPtrConst(t).wide;
     }
 
     /// The rest of a wider prop's footprint, drawn by the prop.
     pub fn isPart(t: Tile) bool {
-        return t == .caravan_part;
+        return TERRAIN.getPtrConst(t).part;
+    }
+
+    /// A wider prop or a part of one.
+    pub fn pieced(t: Tile) bool {
+        return t.wide() > 1 or t.isPart();
+    }
+
+    /// What is left when it goes: its ground, or bare floor.
+    pub fn bare(t: Tile) Tile {
+        return t.ground() orelse .floor;
+    }
+
+    /// Upright and pictured for itself, not as the rest of a wider prop.
+    pub fn uprightWhole(t: Tile) bool {
+        return t.upright() and !t.isPart();
+    }
+
+    /// The cells it stands on from `p`.
+    pub fn footprint(t: Tile, p: P) Box {
+        return Box.sized(p, t.wide(), 1);
     }
 
     /// Chosen for a cell on its own: by the palette or a generator; never one opened or a piece of a wider prop.
     pub fn single(t: Tile) bool {
-        return !t.isOpened() and t.wide() == 1 and !t.isPart();
+        return !t.isOpened() and !t.pieced();
     }
 
     pub fn letter(t: Tile) u8 {
@@ -194,15 +214,43 @@ pub fn groundOf(c: u8) ?Tile {
 
 /// Every wider prop has its parts beside it, and every part its prop.
 pub fn propsWhole(tile: *const [CELLS]Tile) bool {
-    for (tile, 0..) |t, i| {
-        const x: i32 = Level.of(i).x;
-        if (t.isPart() and (x == 0 or tile[i - 1].wide() == 1)) return false;
-        if (x + t.wide() > W) return false;
-        for (1..@intCast(t.wide())) |k| {
-            if (!tile[i + k].isPart()) return false;
-        }
+    for (0..CELLS) |i| {
+        if (!propWhole(tile, i)) return false;
     }
     return true;
+}
+
+fn propWhole(tile: *const [CELLS]Tile, i: usize) bool {
+    const t = tile[i];
+    if (t.isPart()) return headOf(tile, i) != null;
+    if (Level.of(i).x + t.wide() > W) return false;
+    for (1..@intCast(t.wide())) |k| {
+        if (!tile[i + k].isPart()) return false;
+    }
+    return true;
+}
+
+/// The wider prop whose footprint holds `i`: `i` itself, or the prop the parts left of it lead back to.
+pub fn headOf(tile: *const [CELLS]Tile, i: usize) ?usize {
+    var lo = i;
+    while (tile[lo].isPart() and Level.of(lo).x > 0) lo -= 1;
+    const wide: usize = @intCast(tile[lo].wide());
+    return if (wide > 1 and lo + wide > i) lo else null;
+}
+
+/// Every wider prop cut short and every part without its prop, back to its ground.
+pub fn mendProps(tile: *[CELLS]Tile) void {
+    for (0..CELLS) |i| {
+        if (!propWhole(tile, i)) tile[i] = tile[i].bare();
+    }
+}
+
+/// The whole wider prop covering `i`, if one does, back to its ground.
+pub fn unprop(tile: *[CELLS]Tile, i: usize) void {
+    const head = headOf(tile, i) orelse return;
+    var end = head + 1;
+    while (end < head + @as(usize, @intCast(tile[head].wide())) and Level.of(end).x > 0 and tile[end].isPart()) end += 1;
+    for (tile[head..end]) |*t| t.* = t.bare();
 }
 
 comptime {
@@ -212,6 +260,7 @@ comptime {
         std.debug.assert(std.ascii.isPrint(a.letter()) and a.letter() != ' ');
         std.debug.assert(!a.liquid() or a.solid());
         std.debug.assert(!a.bursts() or a.ground() != null);
+        std.debug.assert(a.wide() >= 1 and !(a.isPart() and a.wide() > 1));
         for (std.enums.values(Tile)[0..i]) |b| std.debug.assert(a.letter() != b.letter());
     }
 }
@@ -229,6 +278,8 @@ const Terrain = struct {
     opens: ?Tile = null,
     glows: bool = false,
     bursts: bool = false,
+    wide: u8 = 1,
+    part: bool = false,
 };
 const OPEN = Terrain{ .solid = false, .blind = false };
 const BARE = Terrain{ .solid = false, .blind = false, .rewards = true };
@@ -239,6 +290,8 @@ const LIQUID = Terrain{ .solid = true, .blind = false, .liquid = true };
 const DECOR = Terrain{ .solid = false, .blind = false, .ground = .grass };
 const TALL_PROP = Terrain{ .solid = true, .blind = true, .ground = .grass };
 const LOW_PROP = Terrain{ .solid = true, .blind = false, .ground = .grass };
+const CART = Terrain{ .solid = true, .blind = true, .ground = .grass, .wide = 2 };
+const CART_PART = Terrain{ .solid = true, .blind = true, .ground = .grass, .part = true };
 
 const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .wall = .{ .solid = true, .blind = true, .shaped = true },
@@ -270,9 +323,16 @@ const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
     .swamp_tree = .{ .solid = true, .blind = true, .ground = .dirt },
     .large_tree = TALL_PROP,
     .glow_plant = .{ .solid = true, .blind = false, .ground = .grass, .glows = true, .bursts = true },
-    .caravan = TALL_PROP,
-    .caravan_part = TALL_PROP,
+    .caravan = CART,
+    .caravan_part = CART_PART,
 });
+
+/// The most cells any prop stands on.
+pub const WIDEST: i32 = blk: {
+    var most: i32 = 1;
+    for (TERRAIN.values) |r| most = @max(most, r.wide);
+    break :blk most;
+};
 
 fn tilesWhere(comptime has: fn (Tile) bool) std.EnumSet(Tile) {
     @setEvalBranchQuota(10_000);
@@ -1075,6 +1135,32 @@ test "a caravan stands whole on its cell and the part beside it, blocking both" 
     tile[Level.idx(.{ .x = 0, .y = 9 })] = .caravan_part;
     try std.testing.expect(!propsWhole(&tile));
     for ([_]Tile{ .caravan, .caravan_part }) |t| try std.testing.expect(t.solid() and t.blind() and !t.single());
+}
+
+test "breaking or cutting a caravan short leaves its ground, never half a cart" {
+    var tile: [CELLS]Tile = @splat(.dirt);
+    const head = Level.idx(.{ .x = 4, .y = 3 });
+    var broken: usize = 0;
+    for ([_]usize{ head, head + 1 }) |i| {
+        tile[head] = .caravan;
+        tile[head + 1] = .caravan_part;
+        unprop(&tile, i);
+        try std.testing.expectEqual(Tile.grass, tile[head]);
+        try std.testing.expectEqual(Tile.grass, tile[head + 1]);
+        try std.testing.expectEqual(Tile.dirt, tile[head + 2]);
+        broken += 1;
+    }
+    unprop(&tile, head + 2);
+    try std.testing.expectEqual(Tile.dirt, tile[head + 2]);
+    tile[Level.idx(.{ .x = W - 1, .y = 8 })] = .caravan;
+    tile[Level.idx(.{ .x = 0, .y = 9 })] = .caravan_part;
+    tile[head] = .caravan;
+    tile[head + 1] = .caravan_part;
+    mendProps(&tile);
+    try std.testing.expect(propsWhole(&tile));
+    try std.testing.expectEqual(Tile.caravan, tile[head]);
+    try std.testing.expectEqual(Tile.grass, tile[Level.idx(.{ .x = W - 1, .y = 8 })]);
+    std.debug.print("caravan footprint: broken from either cell {d} times to grass; a cart cut off at the rim and a part at the left edge mended\n", .{broken});
 }
 
 test "outside the map reads as wall" {

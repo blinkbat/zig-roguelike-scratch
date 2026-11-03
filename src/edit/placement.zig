@@ -150,7 +150,8 @@ pub fn pickUp(ed: *Editor, p: P, second: bool) void {
     }
     ed.preview();
     if (!ed.paintable()) return ed.say(editor.GENERATED, .{});
-    const t = ed.scene.lv.at(p);
+    const under = ed.scene.lv.at(p);
+    const t = if (under.single()) under else under.bare();
     ed.ink.set(.of(second), t);
     ed.setTool(.paint);
     ed.say("{s} is the {s} ink", .{ @tagName(t), @tagName(editor.Ink.of(second)) });
@@ -182,6 +183,7 @@ fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
 fn paintInto(nd: *const atlas.Node, b: *atlas.Bespoke, p: P, t: grid.Tile) bool {
     const i = grid.Level.idx(p);
     if (b.tile[i] == t or nd.doorAt(p) != null) return false;
+    grid.unprop(&b.tile, i);
     b.tile[i] = t;
     nd.pruneAt(b, p);
     return true;
@@ -257,6 +259,7 @@ pub fn place(ed: *Editor, p: P) void {
         .door => {
             const k = ed.map.addDoor(ed.node, p) orelse return ed.say("That cell is a door, or the node holds {d}", .{grid.MAX_DOORS});
             if (ed.painted()) |b| {
+                grid.unprop(&b.tile, grid.Level.idx(p));
                 b.tile[grid.Level.idx(p)] = .floor;
                 ed.here().pruneAt(b, p);
             }
@@ -315,6 +318,7 @@ pub fn copySelection(ed: *Editor, cut: bool) void {
         bd.cells.tile[at] = b.tile[i];
         bd.cells.barrel[at] = b.barrel[i];
     }
+    grid.mendProps(&bd.cells.tile);
     for (b.torches()) |t| {
         if (s.holds(t)) _ = bd.cells.torch.add(t.sub(s.lo));
     }
@@ -391,6 +395,7 @@ fn layInto(map: *const atlas.Atlas, n: usize, b: *atlas.Bespoke, bd: *const Boar
             .refused => laid.left += 1,
         }
     }
+    grid.mendProps(&b.tile);
     for (bd.cells.torches()) |t| {
         const p = at.add(t);
         if (!grid.Level.inside(p)) {

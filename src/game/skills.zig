@@ -482,7 +482,7 @@ fn comeDown(run: *game.Game, act: skillbar.Act, flight: bow.Flight, stroke: game
     const at = flight.end() orelse return;
     switch (act) {
         inline else => |action| {
-            if (comptime action.element() == .fire) combat.boil(run, at, if (comptime action.bursts()) skillbar.Act.elemental(action).BLAST else 0, stroke.wait);
+            combat.boilUnder(run, action, at, stroke.wait);
             if (comptime action.element() == .lightning) combat.conduct(run, at, stroke);
         },
     }
@@ -497,7 +497,7 @@ fn resolveProjectileHit(run: *game.Game, comptime action: skillbar.Act, hit: bow
         .body => |id| hitProjectileActor(run, action, id, stroke),
         .barrel, .plant => |at| combat.smash(run, at, combat.barrelVerb(action), stroke),
     }
-    if (comptime action.element() == .fire) combat.boil(run, flight.impact().?, 0, stroke.wait);
+    combat.boilUnder(run, action, flight.impact().?, stroke.wait);
 }
 
 fn hitProjectileActor(run: *game.Game, comptime action: skillbar.Act, id: u16, stroke: game.presentation.Stroke) void {

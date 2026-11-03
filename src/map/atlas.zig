@@ -323,9 +323,20 @@ pub const Node = struct {
         }
     }
 
+    /// No door stands on a wider prop or a part of one.
+    pub fn doorFits(_: *const Node, b: *const Bespoke, p: P) bool {
+        return !b.tileAt(p).pieced();
+    }
+
     pub fn doorCells(self: *const Node, out: *[grid.MAX_DOORS]P) []const P {
         for (self.doors(), 0..) |d, i| out[i] = d.at;
         return out[0..self.door_n];
+    }
+
+    /// A procgen node's packs round the hero arriving at `at`, exit packs by its doors.
+    pub fn placePacks(self: *const Node, lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, at: P) void {
+        var buf: [grid.MAX_DOORS]P = undefined;
+        pack.place(lv, pool, rng, at, self.doorCells(&buf), &self.plan.procgen.foes);
     }
 
     pub fn stamp(self: *const Node, lv: *grid.Level, roll: u64) void {
@@ -731,8 +742,7 @@ test "the strand holds only rats, crossbowmen, pibs, two shamans, two bloats and
     try a.load(std.testing.allocator, START);
     var lv: grid.Level = undefined;
     const nd = &a.node[a.start.node];
-    var doors: [grid.MAX_DOORS]P = undefined;
-    const exits = nd.doorCells(&doors);
+    const exit = nd.doors()[0].at;
     const allowed = std.EnumSet(actor.Kind).initMany(&.{ .rat, .bandit_crossbowman, .pib, .pib_shaman, .beefy_pib, .bloat });
     var counts = std.EnumArray(actor.Kind, usize).initFill(0);
     var farthest: i32 = 0;
@@ -743,14 +753,14 @@ test "the strand holds only rats, crossbowmen, pibs, two shamans, two bloats and
         const at = landing(&lv, a.start.at, &.{}) orelse return error.NoFloor;
         var pool = actor.Pool{};
         var rng = mathx.Rng.init(seed);
-        pack.place(&lv, &pool, &rng, at, exits, &nd.plan.procgen.foes);
+        nd.placePacks(&lv, &pool, &rng, at);
         try std.testing.expectEqual(@as(usize, 1), pool.tally(.beefy_pib).total);
         try std.testing.expectEqual(@as(usize, 2), pool.tally(.pib_shaman).total);
         try std.testing.expectEqual(@as(usize, 2), pool.tally(.bloat).total);
         for (pool.slice()) |f| {
             try std.testing.expect(allowed.contains(f.kind));
             counts.getPtr(f.kind).* += 1;
-            if (f.kind == .beefy_pib) farthest = @max(farthest, mathx.dist(f.at, exits[0]));
+            if (f.kind == .beefy_pib) farthest = @max(farthest, mathx.dist(f.at, exit));
         }
     }
     std.debug.print("the strand over {d} rolls: {d} rats, {d} crossbowmen, {d} pibs; beefy pib at most {d} cells from the exit\n", .{ RUNS, counts.get(.rat), counts.get(.bandit_crossbowman), counts.get(.pib), farthest });

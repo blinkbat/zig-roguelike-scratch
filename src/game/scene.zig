@@ -238,6 +238,13 @@ const Prop = struct {
         const mid = mathx.centre(p);
         return .{ .s = c.corner(p), .mid = mid, .shine = if (casting) g.light.onCaster(mid, false) else g.light.onBody(mid, false) };
     }
+
+    /// A standing tile casting from the middle of its whole footprint.
+    fn over(g: *game.Game, c: Cam, p: P, kind: grid.Tile) Prop {
+        var mid = mathx.centre(p);
+        mid[0] += @as(f32, @floatFromInt(kind.wide() - 1)) / 2;
+        return .{ .s = c.corner(p), .mid = mid, .shine = g.light.onCaster(mid, false) };
+    }
 };
 
 const Barrels = struct {
@@ -393,7 +400,7 @@ fn drawShadows(g: *game.Game, c: Cam, cast: grid.Box) void {
         if (!look.castsPicture(kind)) continue;
         const forest = look.forestAt(&g.sim.lv, p);
         const t = tileTexture(g, kind, p, &bags) orelse continue;
-        const pr = Prop.at(g, c, p, true);
+        const pr = Prop.over(g, c, p, kind);
         const rect = tileRect(kind, t, c, p);
         if (forest) {
             g.light.drawForestShadows(t, rect, pr.mid, &pr.shine, g.sim.lv.tileShape(p) orelse .{});
@@ -499,8 +506,8 @@ fn drawMirrorScenery(g: *game.Game, c: Cam, view: grid.Box, memory: bool) void {
     const bags = bagCells(g);
     var cells = view.grown(game.CAST_MARGIN).cells();
     while (cells.next()) |p| {
-        if (!game.character.terrainSeen(g, p)) continue;
         const kind = g.pic.tileShown(&g.sim, p);
+        if (!footprintSeen(g, p, kind)) continue;
         if (look.standsOver(kind)) {
             if (tileTexture(g, kind, p, &bags)) |t| mirrorSprite(g, c, p, kind, t, if (memory) rl.Color.white else sceneryTint(g, p));
         }
@@ -721,8 +728,9 @@ pub fn drawMap(g: *game.Game) void {
 }
 
 fn footprintSeen(g: *const game.Game, p: P, kind: grid.Tile) bool {
-    for (0..@intCast(kind.wide())) |k| {
-        if (game.character.terrainSeen(g, p.add(.{ .x = @intCast(k), .y = 0 }))) return true;
+    var cells = kind.footprint(p).cells();
+    while (cells.next()) |q| {
+        if (game.character.terrainSeen(g, q)) return true;
     }
     return false;
 }
@@ -744,7 +752,7 @@ fn drawOccluder(g: *game.Game, c: Cam, p: P, kind: grid.Tile) void {
     const shaded = if (lightmap != null and fogmap != null) g.sprites.drawScenery(tex, rect, view, lightmap.?, fogmap.?, occlusion, focus) else false;
     if (!shaded) raster.stretch(tex, rect, look.fade(sceneryTint(g, p), look.occlusionAlpha(hidden)));
     const rows = @divTrunc(@as(i32, @intFromFloat(rect.height)) + game.CELL - 1, game.CELL);
-    const under = grid.Box{ .lo = .{ .x = p.x, .y = p.y + 1 - rows }, .hi = .{ .x = p.x + kind.wide(), .y = p.y + 1 } };
+    const under = grid.Box{ .lo = .{ .x = p.x, .y = p.y + 1 - rows }, .hi = kind.footprint(p).hi };
     if (g.cloud.veils(under) and g.cloud.beginOccludedVeil(sceneryTint(g, p), focus, if (shaded) occlusion else .{})) {
         raster.stretch(tex, rect, if (shaded) rl.Color.white else look.fade(rl.Color.white, look.occlusionAlpha(hidden)));
         cloud.Cloud.endVeil();

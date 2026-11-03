@@ -349,6 +349,17 @@ pub const Sting = struct { slot: usize, after: ?After = null, fire_at: ?[2]f32 =
 pub const Settle = struct { slot: usize, after: After, puff: ?Puff = null };
 
 const MOTES: usize = 320;
+const ARCS: usize = 12;
+const PULSES: usize = 32;
+const RIPPLES: usize = 24;
+
+/// `ring`'s slot at `head`, the oldest, with `head` moved on past it.
+fn claim(comptime T: type, ring: []T, head: *usize) *T {
+    const at = &ring[head.*];
+    head.* = (head.* + 1) % ring.len;
+    return at;
+}
+
 /// Capacity for every body's turn effects, hero hit and sweep, plus a burst and a puff, or chain jumps.
 pub const DUE: usize = actor.MAX * (13 + actor.SWEEP_CELLS) + 2;
 
@@ -636,11 +647,11 @@ pub const LevelUp = struct {
 
 pub const Fx = struct {
     level_up: LevelUp = .{},
-    arcs: [12]Arc = @splat(.{}),
+    arcs: [ARCS]Arc = @splat(.{}),
     arc_head: usize = 0,
-    pulses: [32]Pulse = @splat(.{}),
+    pulses: [PULSES]Pulse = @splat(.{}),
     pulse_head: usize = 0,
-    ripples: [24]Ripple = @splat(.{}),
+    ripples: [RIPPLES]Ripple = @splat(.{}),
     ripple_head: usize = 0,
     motes: [MOTES]Mote = @splat(.{ .p = @splat(0), .v = @splat(0), .r = 0, .col = rl.Color.blank }),
     head: usize = 0,
@@ -661,6 +672,7 @@ pub const Fx = struct {
         for (&self.arcs) |*a| a.life = 0;
         for (&self.pulses) |*p| p.life = 0;
         for (&self.motes) |*m| m.life = 0;
+        for (&self.ripples) |*r| r.t = RIPPLE_S;
         self.flash = @splat(0);
         self.due_n = 0;
         self.barrels_due = 0;
@@ -890,8 +902,7 @@ pub const Fx = struct {
     }
 
     pub fn glow(self: *Fx, at: [2]f32, col: rl.Color, g: Glow) void {
-        self.pulses[self.pulse_head] = .{ .source = .{ .at = .{ at[0], at[1], STRIKE_Z }, .col = col, .radius = g.radius, .gain = g.gain }, .life = g.life, .max = g.life };
-        self.pulse_head = (self.pulse_head + 1) % self.pulses.len;
+        claim(Pulse, &self.pulses, &self.pulse_head).* = .{ .source = .{ .at = .{ at[0], at[1], STRIKE_Z }, .col = col, .radius = g.radius, .gain = g.gain }, .life = g.life, .max = g.life };
     }
 
     pub fn illuminate(self: *const Fx, lv: *const grid.Level, lamps: *light.Light) void {
@@ -1001,8 +1012,7 @@ pub const Fx = struct {
     }
 
     fn arc(self: *Fx, z: Zap) void {
-        const a = &self.arcs[self.arc_head];
-        self.arc_head = (self.arc_head + 1) % self.arcs.len;
+        const a = claim(Arc, &self.arcs, &self.arc_head);
         a.life = ARC_S;
         const span = mathx.len(z.to[0] - z.from[0], z.to[1] - z.from[1]);
         const across: [2]f32 = if (span > 0) .{ -(z.to[1] - z.from[1]) / span, (z.to[0] - z.from[0]) / span } else .{ 0, 0 };
@@ -1166,13 +1176,23 @@ pub const Fx = struct {
         }
     }
 
+    fn footfallCount(self: *Fx, bounds: [2]u32) usize {
+        return @intCast(self.rng.range(@intCast(bounds[0]), @intCast(bounds[1])));
+    }
+
+    /// Somewhere on a footfall's ring, at least `near` of the way out, and the way out to it.
+    fn footSpot(self: *Fx, at: [2]f32, near: f32) struct { dir: [2]f32, p: [3]f32 } {
+        const dir = heading(self.rng.unit() * mathx.TAU);
+        const out = self.rng.between(near, 1);
+        return .{ .dir = dir, .p = .{ at[0] + dir[0] * SPLASH_R * out, at[1] + SPLASH_FOOT + dir[1] * SPLASH_RY * out, 0.02 } };
+    }
+
     pub fn splash(self: *Fx, at: [2]f32) void {
-        const n = WATER_MOTES[0] + self.rng.below(WATER_MOTES[1] - WATER_MOTES[0] + 1);
-        for (0..n) |_| {
-            const dir = heading(self.rng.unit() * mathx.TAU);
-            const out = self.rng.between(0.6, 1);
+        for (0..self.footfallCount(WATER_MOTES)) |_| {
+            const spot = self.footSpot(at, 0.6);
+            const dir = spot.dir;
             self.emit(.{
-                .p = .{ at[0] + dir[0] * SPLASH_R * out, at[1] + SPLASH_FOOT + dir[1] * SPLASH_RY * out, 0.02 },
+                .p = spot.p,
                 .v = .{ dir[0] * self.rng.between(0.25, 0.8), dir[1] * self.rng.between(0.05, 0.3), self.rng.between(0.8, 1.7) },
                 .life = self.rng.between(0.24, 0.4),
                 .r = if (self.rng.chance(0.6)) self.rng.between(0.9, 1.3) else self.rng.between(1.4, 2),
@@ -1181,17 +1201,15 @@ pub const Fx = struct {
                 .drag = 2,
             });
         }
-        self.ripples[self.ripple_head] = .{ .at = .{ at[0], at[1] + SPLASH_FOOT }, .t = 0 };
-        self.ripple_head = (self.ripple_head + 1) % self.ripples.len;
+        claim(Ripple, &self.ripples, &self.ripple_head).* = .{ .at = .{ at[0], at[1] + SPLASH_FOOT }, .t = 0 };
     }
 
     pub fn dust(self: *Fx, at: [2]f32, col: rl.Color) void {
-        const n = STEP_DUST[0] + self.rng.below(STEP_DUST[1] - STEP_DUST[0] + 1);
-        for (0..n) |_| {
-            const dir = heading(self.rng.unit() * mathx.TAU);
-            const out = self.rng.between(0.5, 1);
+        for (0..self.footfallCount(STEP_DUST)) |_| {
+            const spot = self.footSpot(at, 0.5);
+            const dir = spot.dir;
             self.emit(.{
-                .p = .{ at[0] + dir[0] * SPLASH_R * out, at[1] + SPLASH_FOOT + dir[1] * SPLASH_RY * out, 0.02 },
+                .p = spot.p,
                 .v = .{ dir[0] * self.rng.between(0.2, 0.6), dir[1] * self.rng.between(0.05, 0.25), self.rng.between(0.15, 0.4) },
                 .life = self.rng.between(0.35, 0.55),
                 .r = self.rng.between(1.2, 2.2),
@@ -1218,13 +1236,18 @@ pub const Fx = struct {
                 .terrain = false,
             });
         }
+        self.dustRing(at, .{ .r = WHIRL_R, .flat = WHIRL_FLAT, .speed = .{ 0.6, 1.8 }, .rise = .{ 0.2, 0.7 }, .life = .{ WHIRL_S * 0.6, WHIRL_S * 1.2 } });
+    }
+
+    /// Dust kicked out round `at`, from `r` cells out, its ring `flat` as tall as wide.
+    fn dustRing(self: *Fx, at: [2]f32, ring: struct { r: f32, flat: f32 = 1, speed: [2]f32, rise: [2]f32, life: [2]f32 }) void {
         for (0..DUST_MOTES) |i| {
             const d = ringDir(&self.rng, i, DUST_MOTES, 1);
-            const speed = self.rng.between(0.6, 1.8);
+            const speed = self.rng.between(ring.speed[0], ring.speed[1]);
             self.emit(.{
-                .p = .{ at[0] + d[0] * WHIRL_R, at[1] + d[1] * WHIRL_R * WHIRL_FLAT, 0.04 },
-                .v = .{ d[0] * speed, d[1] * speed * WHIRL_FLAT, self.rng.between(0.2, 0.7) },
-                .life = self.rng.between(WHIRL_S * 0.6, WHIRL_S * 1.2),
+                .p = .{ at[0] + d[0] * ring.r, at[1] + d[1] * ring.r * ring.flat, 0.04 },
+                .v = .{ d[0] * speed, d[1] * speed * ring.flat, self.rng.between(ring.rise[0], ring.rise[1]) },
+                .life = self.rng.between(ring.life[0], ring.life[1]),
                 .r = self.rng.between(JUKE_R[0], JUKE_R[1]),
                 .col = look.JUKE_DUST,
                 .grav = 2,
@@ -1249,25 +1272,13 @@ pub const Fx = struct {
                 .terrain = false,
             });
         }
-        for (0..DUST_MOTES) |i| {
-            const dir = ringDir(&self.rng, i, DUST_MOTES, 1);
-            const speed = self.rng.between(0.8, 2.6);
-            self.emit(.{
-                .p = .{ b[0] + dir[0] * 0.28, b[1] + dir[1] * 0.28, 0.04 },
-                .v = .{ dir[0] * speed, dir[1] * speed, self.rng.between(0.3, 1) },
-                .life = self.rng.between(JUKE_S / 2, JUKE_S),
-                .r = self.rng.between(JUKE_R[0], JUKE_R[1]),
-                .col = look.JUKE_DUST,
-                .grav = 2,
-                .drag = 3,
-            });
-        }
+        self.dustRing(b, .{ .r = 0.28, .speed = .{ 0.8, 2.6 }, .rise = .{ 0.3, 1 }, .life = .{ JUKE_S / 2, JUKE_S } });
     }
 
     fn emit(self: *Fx, m: Mote) void {
-        self.motes[self.head] = m;
-        self.motes[self.head].max = m.life;
-        self.head = (self.head + 1) % MOTES;
+        const slot = claim(Mote, &self.motes, &self.head);
+        slot.* = m;
+        slot.max = m.life;
     }
 
     /// Draw before lighting/fog; stains precede airborne motes.
@@ -1333,12 +1344,17 @@ pub const Fx = struct {
 };
 
 fn ringDotsMax() usize {
-    return @as(usize, @intFromFloat(@ceil(mathx.TAU * RIPPLE_R[1]))) + 4;
+    return ringSteps(RIPPLE_R[1]);
+}
+
+/// Angles round a ring of radius `r` sampled for its pixels, a few past one a pixel of its rim.
+fn ringSteps(r: f32) usize {
+    return @as(usize, @intFromFloat(@ceil(mathx.TAU * r))) + 4;
 }
 
 /// The sprite pixels a ring of radius `r` passes through, each once.
 fn ringDots(r: f32, out: *[ringDotsMax()][2]i32) []const [2]i32 {
-    const steps = @min(out.len, @as(usize, @intFromFloat(@ceil(mathx.TAU * r))) + 4);
+    const steps = @min(out.len, ringSteps(r));
     var n: usize = 0;
     for (0..steps) |i| {
         const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / @as(f32, @floatFromInt(steps));
@@ -1471,7 +1487,7 @@ pub fn drawNet(at: [2]f32, t: f32, ox: f32, oy: f32, cell: f32) void {
     }
 }
 
-/// On the art-pixel grid `scale` screen pixels a side from `origin`.
+/// On the art-pixel grid `k` screen pixels a side from `origin`.
 pub fn drawArrow(p: rl.Vector2, dir: [2]f32, col: rl.Color, origin: [2]f32, k: f32) void {
     const tail = rl.Vector2{ .x = p.x - dir[0] * 16 * k, .y = p.y - dir[1] * 16 * k };
     pixel.gridLine(tail, p, origin, k, look.SPLINTER, false);
@@ -1611,9 +1627,9 @@ test "electrical particles move between tiles and delayed arcs and light expire 
     std.debug.print("electric arc: delayed onset, sub-tile particle motion, all light and particles expired\n", .{});
 }
 
-fn footfallCounts(comptime emit_one: fn (*Fx) void, bounds: [2]u32) !void {
+fn footfallCounts(comptime emit_one: fn (*Fx) void, comptime bounds: [2]u32) !void {
     var effects = Fx{};
-    var seen = [_]bool{false} ** 16;
+    var seen = [_]bool{false} ** (bounds[1] + 1);
     for (0..24) |_| {
         const before = live(&effects).flying;
         emit_one(&effects);

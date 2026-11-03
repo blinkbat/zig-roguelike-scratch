@@ -85,7 +85,7 @@ pub const Surface = struct {
     /// `begin`, then a panel's card backing across `size`.
     pub fn beginPanel(self: Surface, sprites: *const look.Sprites, size: mathx.P) void {
         self.begin();
-        look.hudPanel(sprites, 0, 0, size.x, size.y, look.BACKING, look.LIT);
+        look.backing(sprites, 0, 0, size.x, size.y);
     }
 
     /// `f` as this surface draws it: scaled, from the mipmapped atlas rather than the native-size ones.
@@ -311,11 +311,10 @@ pub fn draw(face: font.Face, sprites: *const look.Sprites, screen: mathx.P, titl
     const first = rowBox(screen, win, win.from);
     pageHeading(face, screen, title, titleY(first));
     if (rows.len > 0) {
-        const panel = rl.Rectangle{ .x = first.x, .y = first.y, .width = first.width, .height = @floatFromInt(rows.len * ROW_STEP) };
-        look.hudPanelIn(sprites, raster.grown(panel, @floatFromInt(look.HUD_BORDER_CUT)), look.BACKING, look.LIT);
+        listPanel(sprites, .{ .x = first.x, .y = first.y, .width = first.width, .height = @floatFromInt(rows.len * ROW_STEP) });
     }
-    const mark_w = face.width(MARK_L, ROW);
-    const widest = @as(i32, @intFromFloat(first.width)) - 2 * (MARK_GAP * 2 + mark_w);
+    const inset = markInset(face);
+    const widest = @as(i32, @intFromFloat(first.width)) - 2 * inset;
     var fit_buf: [NOTE_MAX + 1]u8 = undefined;
     for (rows, win.from..) |whole, i| {
         const r = face.fit(&fit_buf, whole, ROW, widest, false);
@@ -323,16 +322,25 @@ pub fn draw(face: font.Face, sprites: *const look.Sprites, screen: mathx.P, titl
         const on = i == at;
         face.text(r, pick(face, box, on), rowTextY(box), ROW, rowInk(on));
     }
-    if (note) |n| _ = face.paragraph(n, @as(i32, @intFromFloat(first.x)) + MARK_GAP * 2 + mark_w, noteY(first, rows.len), widest, NOTE, look.DIM);
+    if (note) |n| _ = face.paragraph(n, @as(i32, @intFromFloat(first.x)) + inset, noteY(first, rows.len), widest, NOTE, look.DIM);
+}
+
+/// The backing behind a stack of list rows, its border clear of them.
+pub fn listPanel(sprites: *const look.Sprites, rows: rl.Rectangle) void {
+    look.backingIn(sprites, raster.grown(rows, @floatFromInt(look.HUD_BORDER_CUT)));
+}
+
+/// A list row's text past its edge and selection mark.
+fn markInset(face: font.Face) i32 {
+    return MARK_GAP * 2 + face.width(MARK_L, ROW);
 }
 
 /// A list row's selection band and mark, when `on`; returns where its text starts.
 pub fn pick(face: font.Face, box: rl.Rectangle, on: bool) i32 {
-    const mark_w = face.width(MARK_L, ROW);
-    const x = @as(i32, @intFromFloat(box.x)) + MARK_GAP * 2 + mark_w;
+    const x = @as(i32, @intFromFloat(box.x)) + markInset(face);
     if (on) {
         rl.drawRectangleRec(box, look.ROW_ON);
-        face.text(MARK_L, x - MARK_GAP - mark_w, rowTextY(box), ROW, look.UI_FOCUS);
+        face.text(MARK_L, x - MARK_GAP - face.width(MARK_L, ROW), rowTextY(box), ROW, look.UI_FOCUS);
     }
     return x;
 }
@@ -361,7 +369,6 @@ pub fn capital(comptime s: [:0]const u8) [:0]const u8 {
 
 pub const titled = wording.titled;
 pub const named = wording.named;
-pub const namedOr = wording.namedOr;
 pub const titleOf = wording.titleOf;
 pub const word = wording.word;
 

@@ -40,8 +40,7 @@ pub fn write(self: *atlas.Atlas, w: anytype) !void {
                 }
                 for (pg.foes.makeups()) |*m| {
                     switch (m.draw) {
-                        .weight => |n| try w.print(says(.makeup) ++ "{d}", .{n}),
-                        .count => |n| try w.print(says(.makeup) ++ COUNTED ++ " {d}", .{n}),
+                        inline else => |n, tag| try w.print(says(.makeup) ++ (if (tag == .count) COUNTED ++ " " else "") ++ "{d}", .{n}),
                     }
                     if (m.exit) try w.writeAll(" " ++ EXIT);
                     for (m.kinds()) |k| try w.print(" {s}", .{@tagName(k)});
@@ -163,14 +162,10 @@ pub fn parse(self: *atlas.Atlas, text: []const u8) Error!void {
                 own_makeups = true;
                 if (!fo.addMakeup()) return error.TooMany;
                 const m = &fo.makeup[fo.makeup_n - 1];
-                const counted = if (f.peek()) |t| std.mem.eql(u8, t, COUNTED) else false;
-                if (counted) _ = f.next();
+                const counted = takeWord(&f, COUNTED);
                 const n = try int(u8, &f);
                 m.* = .{ .draw = if (counted) .{ .count = n } else .{ .weight = n }, .n = 0 };
-                if (f.peek()) |t| if (std.mem.eql(u8, t, EXIT)) {
-                    _ = f.next();
-                    m.exit = true;
-                };
+                m.exit = takeWord(&f, EXIT);
                 while (f.next()) |name| {
                     const k = std.meta.stringToEnum(actor.Kind, name) orelse return error.BadLine;
                     if (!m.grow()) return error.BadLine;
@@ -224,6 +219,9 @@ fn finished(self: *atlas.Atlas, rows: usize) Error!void {
     switch (nd.plan) {
         .bespoke => |*b| {
             if (rows != ROWS or !grid.propsWhole(&b.tile)) return error.BadLine;
+            for (nd.doors()) |d| {
+                if (!nd.doorFits(b, d.at)) return error.BadLine;
+            }
             for (b.foes()) |f| {
                 if (!nd.foeFits(b, f.at, f.kind)) return error.BadLine;
             }
@@ -291,6 +289,13 @@ const MAKEUP = @tagName(Word.makeup);
 const MAKEUP_FIELDS: []const []const u8 = &.{ MAKEUP, MAKEUP ++ "_n" };
 const COUNTED = @tagName(pack.Draw.count);
 const EXIT = "exit";
+
+fn takeWord(f: *Tokens, word: []const u8) bool {
+    const next = f.peek() orelse return false;
+    if (!std.mem.eql(u8, next, word)) return false;
+    _ = f.next();
+    return true;
+}
 
 fn says(comptime w: Word) []const u8 {
     return script_text.firstWord(w);

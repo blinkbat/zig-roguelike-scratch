@@ -114,6 +114,11 @@ pub fn heroLands(sim: *Simulation, a: *const actor.Actor, origin: chronicle.Atta
     return false;
 }
 
+/// `dmg` past armour as it lands on `target`: cut by an enfeebled striker, then raised by the target's shock.
+pub fn landed(weak: bool, target: *actor.Actor, dmg: i32) i32 {
+    return target.shock.spend(enfeeble.weaken(weak, dmg));
+}
+
 pub fn bite(rng: *mathx.Rng, attacker: terrain.Stats, defender: terrain.Stats, s: actor.Strike) ?i32 {
     if (attacker.misses(defender, rng)) return null;
     return s.roll(rng);
@@ -136,8 +141,8 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
     var r = raw.against(sim.combatStats(a).armour, &sim.rng);
-    r.dmg = enfeeble.weaken(if (sim.heroBody()) |h| h.enfeeble.turns > 0 else false, r.dmg);
-    if (r.applied != .shock) r.dmg = a.shock.spend(r.dmg);
+    const weak = if (sim.heroBody()) |h| h.afflictions().contains(.enfeeble) else false;
+    r.dmg = if (r.applied == .shock) enfeeble.weaken(weak, r.dmg) else landed(weak, a, r.dmg);
     const kind = a.kind;
     const at = a.at;
     const perks = sim.heroPerks();

@@ -243,7 +243,7 @@ pub fn landed(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     const cell = grid.Level.idx(a.at);
     const trap = g.sim.lv.caltrops[cell];
-    if (trap.turns > 0 and actor.row(a.kind).movement != .flying) {
+    if (trap.turns > 0 and actor.row(a.kind).movement.grounded()) {
         _ = g.sim.pinFor(a, rules.Caltrops.pins(trap.rank));
         if (rules.Caltrops.bleed(trap.rank) > 0 and g.sim.takeStatus(a, .bleed)) a.bleed.startWith(rules.Caltrops.bleed(trap.rank));
         g.pic.recordWear(&g.sim, .fromInt(id));

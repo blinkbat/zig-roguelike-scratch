@@ -89,6 +89,8 @@ const STATS_X = 40;
 const SECTION_RULE = 22;
 const SECTION_ROWS = 32;
 const STAT_ROW = font.BODY_LINE;
+/// The advanced sheet's rows, packed to fit every status.
+const TIGHT_ROW = font.SMALL + 2;
 const HEADLINE = font.HEAD + 4;
 const HEADLINE_ROW = HEADLINE + 8;
 const CHANCE_ROW = font.LABEL + 3;
@@ -114,10 +116,6 @@ const Tier = enum {
             .key => font.BODY,
             .plain => font.SMALL,
         };
-    }
-
-    fn step(t: Tier) i32 {
-        return if (t == .headline) HEADLINE_ROW else STAT_ROW;
     }
 
     /// The display face engraved for the first two, the data face for the rest.
@@ -147,6 +145,11 @@ const Column = struct {
     y: i32 = layout.CONTENT_TOP,
     dry: bool = false,
     cramped: bool = false,
+    row: i32 = STAT_ROW,
+
+    fn step(column: *const Column, tier: Tier) i32 {
+        return if (tier == .headline) HEADLINE_ROW else column.row;
+    }
 
     fn heading(column: *Column, title: [:0]const u8) void {
         if (!column.dry) {
@@ -166,7 +169,7 @@ const Column = struct {
             tier.label().put(column.face, label, column.x, column.y + tier.labelDrop(), look.TEXT);
             tier.put(column.face, value, column.x + STAT_W - column.face.width(value, tier.size()), column.y, col);
         }
-        column.y += tier.step();
+        column.y += column.step(tier);
     }
 
     fn stat(column: *Column, measure: Measure, figures: Figures, tier: Tier, col: rl.Color) void {
@@ -205,7 +208,7 @@ const Column = struct {
                 at += column.face.width(p[0], tier.size());
             }
         }
-        column.y += tier.step();
+        column.y += column.step(tier);
         const chances = chancesOf(act, hit, effect);
         var any = false;
         var at = column.x;
@@ -277,7 +280,7 @@ fn sheet(face: *const font.Face, view: View, dry: bool) [2]Column {
 fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     const figures = Figures.of(view);
     const attributes = figures.attrs;
-    var left = Column{ .face = face, .x = STATS_X, .dry = dry };
+    var left = Column{ .face = face, .x = STATS_X, .dry = dry, .row = TIGHT_ROW };
     left.heading("DAMAGE MODIFIERS");
     for (attr.STYLES) |s| left.stat(.{ .style = s }, figures, .plain, quiet(attributes.increase(s), look.TEXT));
     left.stat(.physical, figures, .plain, quiet(attributes.physical_bonus, look.PHYSICAL));
@@ -300,7 +303,7 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     left.stat(.gold_find, figures, .plain, quiet(attributes.gold_find, look.UI_GOLD));
     left.stat(.item_rarity, figures, .plain, quiet(attributes.item_rarity, look.MAGIC));
 
-    var right = Column{ .face = face, .x = layout.DETAIL_X, .dry = dry };
+    var right = Column{ .face = face, .x = layout.DETAIL_X, .dry = dry, .row = TIGHT_ROW };
     right.heading("RESISTANCES");
     for (std.enums.values(damage.Element)) |e| {
         const n = view.resists.get(e);

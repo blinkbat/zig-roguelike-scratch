@@ -148,6 +148,8 @@ pub const Over = struct {
     water_clear: u8 = 0,
     land_range: u8 = 0,
 
+    pub const RANGES = .{ "water_range", "water_clear", "land_range" };
+
     fn has(o: Over, t: grid.Tile) bool {
         return t == o.tile or (o.decked and !t.solid() and t.ground() == o.tile);
     }
@@ -156,29 +158,37 @@ pub const Over = struct {
         if (!o.has(lv.at(p))) return false;
         if (o.water_range != 0 and !nearWater(lv, p, o.water_range)) return false;
         if (o.water_clear != 0 and nearWater(lv, p, o.water_clear)) return false;
-        return o.land_range == 0 or o.nearLand(lv, p);
+        return o.land_range == 0 or near(lv, p, o.land_range, Land{ .tile = o.tile });
     }
 
-    fn nearLand(o: Over, lv: *const grid.Level, p: P) bool {
-        var cells = grid.Cells.around(p, o.land_range);
-        while (cells.next()) |q| {
-            if (!grid.Level.inside(q)) continue;
-            const t = lv.at(q);
-            if (!t.wet() and !o.has(t)) return true;
+    const Land = struct {
+        tile: grid.Tile,
+
+        fn holds(l: Land, t: grid.Tile) bool {
+            if (t.solid() and t.ground() == null) return false;
+            const ground = t.ground() orelse t;
+            return !ground.wet() and ground != l.tile;
         }
-        return false;
-    }
+    };
 };
 
 pub fn nearWater(lv: *const grid.Level, p: P, range: u8) bool {
-    return near(lv, p, range, grid.Tile.wet);
+    return near(lv, p, range, Is(grid.Tile.wet){});
 }
 
-/// Any cell within `r` of `p`, `p` included, whose tile `has`.
-fn near(lv: *const grid.Level, p: P, r: i32, comptime has: fn (grid.Tile) bool) bool {
+fn Is(comptime has: fn (grid.Tile) bool) type {
+    return struct {
+        fn holds(_: @This(), t: grid.Tile) bool {
+            return has(t);
+        }
+    };
+}
+
+/// Any cell within `r` of `p`, `p` included, whose tile `which` holds.
+fn near(lv: *const grid.Level, p: P, r: i32, which: anytype) bool {
     var cells = grid.Cells.around(p, r);
     while (cells.next()) |q| {
-        if (grid.Level.inside(q) and has(lv.at(q))) return true;
+        if (grid.Level.inside(q) and which.holds(lv.at(q))) return true;
     }
     return false;
 }
@@ -579,7 +589,7 @@ fn keptIn(lv: *const grid.Level, region: *const [grid.CELLS]u16, pal: Palette, l
         const t = lv.tile[i];
         const other = !base.has(t) and t != pal.path;
         const opened = if (laid.before) |b| b[i].solid() else false;
-        if (other or opened or lv.door[i] != grid.NO_DOOR or near(lv, grid.Level.of(i), 1, grid.Tile.liquid)) out.set(region[i]);
+        if (other or opened or lv.door[i] != grid.NO_DOOR or near(lv, grid.Level.of(i), 1, Is(grid.Tile.liquid){})) out.set(region[i]);
     }
     for (laid.lots) |lot| {
         var cells = lot.cells();

@@ -238,7 +238,7 @@ pub fn drawBinds(g: *game.Game) void {
             var label: menu.Note(100) = .{};
             label.say("Choose skill  /  {d}-{d} of {d}", .{ picker.first() + 1, picker.end(), picker.picks });
             g.face.draw(label.text(), picker.x, picker.y - font.LABEL - BIND_POP_DY, font.LABEL, look.DIM);
-            look.hudPanelIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)), look.BACKING, look.LIT);
+            look.backingIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)));
             for (picker.first()..picker.end()) |i| {
                 const r = picker.cell(i);
                 const x: i32 = @intFromFloat(r.x);

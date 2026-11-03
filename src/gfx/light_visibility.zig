@@ -112,7 +112,7 @@ pub fn mask(on: bool) f32 {
 }
 
 fn hidesGround(t: grid.Tile) bool {
-    return t.blind() and t.upright() and !look.stands(t);
+    return t.blind() and t.uprightWhole() and !look.stands(t);
 }
 
 pub const Fade = struct {

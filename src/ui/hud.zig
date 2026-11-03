@@ -101,12 +101,12 @@ pub fn frame(layout: Layout, sprites: *const look.Sprites) void {
     const x = layout.life.x;
     const y = layout.top + PLATE_Y;
     const width = layout.mana.x - x;
-    shadow(x, y, width, PLATE_H, PLATE_SHADOW_A);
-    look.hudPanel(sprites, x, y, width, PLATE_H, look.BACKING, look.LIT);
+    shadow(x, y, width, PLATE_H);
+    look.backing(sprites, x, y, width, PLATE_H);
 }
 
-fn shadow(x: i32, y: i32, width: i32, height: i32, opacity: f32) void {
-    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, height + PLATE_SHADOW_GROW, look.fade(rl.Color.black, opacity));
+fn shadow(x: i32, y: i32, width: i32, height: i32) void {
+    rl.drawRectangle(x - SHADOW_DROP, y + SHADOW_DROP, width + 2 * SHADOW_DROP, height + PLATE_SHADOW_GROW, look.fade(rl.Color.black, PLATE_SHADOW_A));
 }
 
 pub const LIFE = "Life";
@@ -211,7 +211,7 @@ pub fn statuses(layout: Layout, sprites: *const look.Sprites, face: *const font.
         const box = statusBox(layout, shown.len, k);
         const x: i32 = @intFromFloat(box.x);
         const y: i32 = @intFromFloat(box.y);
-        look.hudPanelIn(sprites, box, look.BACKING, look.LIT);
+        look.backingIn(sprites, box);
         statusIcon(s, x + ICON_AT.x, y + ICON_AT.y);
         if (s == .resistant) {
             const bar_y = y + STATUS_PX - RESIST_RISE;
@@ -306,7 +306,7 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const look.Sprites, lay
             y = std.math.clamp(@as(i32, @intFromFloat(over.y)) - @divTrunc(h, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.y - h - TIP_MARGIN));
         }
     }
-    tipPlate(sprites, x, y, TIP_W, h);
+    look.backing(sprites, x, y, TIP_W, h);
     face.text(title, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
     for (lines[first .. first + shown], first..) |l, i| {
         const top = y + TIP_BODY_Y + @as(i32, @intCast(i - first)) * TIP_LINE;
@@ -321,17 +321,13 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const look.Sprites, lay
     return first;
 }
 
-fn tipPlate(sprites: *const look.Sprites, x: i32, y: i32, w: i32, h: i32) void {
-    look.hudPanel(sprites, x, y, w, h, look.BACKING, look.LIT);
-}
-
 /// A question put to the player in a tooltip's plate, one line above `over`.
 pub fn prompt(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.P, over: rl.Rectangle, text: [:0]const u8) void {
     const w = face.width(text, font.BODY) + 2 * TIP_PAD;
     const h = font.BODY + 2 * TIP_PAD;
     const x = std.math.clamp(raster.middleAt(over).x - @divTrunc(w, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - w - TIP_MARGIN));
     const y = @max(TIP_MARGIN, @as(i32, @intFromFloat(over.y)) - TIP_GAP - h);
-    tipPlate(sprites, x, y, w, h);
+    look.backing(sprites, x, y, w, h);
     face.text(text, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
 }
 

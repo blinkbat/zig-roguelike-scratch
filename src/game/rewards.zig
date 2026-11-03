@@ -46,25 +46,20 @@ fn dropGold(sim: *Simulation, at: P, amount: i32) void {
     std.debug.assert(added);
 }
 
-fn rollGold(sim: *Simulation, at: P, range: items.Gold) i32 {
-    const gold = range.roll(&sim.loot_rng);
-    dropGold(sim, at, gold);
-    return gold;
-}
-
 /// A broken barrel's gold, and now and then a white item; the gold.
 pub fn barrelLoot(sim: *Simulation, at: P) ?i32 {
     if (!sim.lv.breakBarrel(at)) return null;
-    const gold = rollGold(sim, at, items.BARREL_GOLD);
-    if (sim.loot_rng.percent(items.BARREL_ITEM_PERCENT) and sim.ground.room(1)) dropItem(sim, .{ .item = items.unrolled(&sim.loot_rng), .at = at });
-    return gold;
+    const loot = items.barrelLoot(&sim.loot_rng, sim.ground.room(1));
+    dropGold(sim, at, loot.gold);
+    if (loot.item) |item| dropItem(sim, .{ .item = item, .at = at });
+    return loot.gold;
 }
 
 pub fn openChest(sim: *Simulation, at: P) Chest {
     const opened = sim.lv.at(at).opened() orelse return .not_closed;
     if (!groundRoom(sim)) return .ground_full;
     sim.lv.set(at, opened);
-    const loot = chestLoot(sim);
+    const loot = items.chestLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
     dropItem(sim, .{ .item = loot.item.?, .at = at });
     const gold = loot.gold;
     dropGold(sim, at, gold);
@@ -135,19 +130,9 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
 /// A mimic leaves a chest's loot with a rare item; nothing is left where no one could walk to fetch it.
 fn lootOf(sim: *Simulation, fallen: actor.Actor) items.Loot {
     if (!sim.lv.walkable(fallen.at)) return .{};
-    if (actor.row(fallen.kind).disguised) {
-        var loot = chestLoot(sim);
-        loot.item = items.rollRare(&sim.loot_rng);
-        return loot;
-    }
-    return items.foeLoot(&sim.loot_rng, sim.heroAttrs().item_rarity);
-}
-
-/// What a chest holds, rolled item, gold, then supply.
-fn chestLoot(sim: *Simulation) items.Loot {
-    const item = items.roll(&sim.loot_rng, sim.heroAttrs().item_rarity);
-    const gold = items.CHEST_GOLD.roll(&sim.loot_rng);
-    return .{ .item = item, .gold = gold, .supply = consumable.roll(&sim.loot_rng, consumable.CHEST_PERCENT) };
+    const rarity = sim.heroAttrs().item_rarity;
+    if (actor.row(fallen.kind).disguised) return items.mimicLoot(&sim.loot_rng, rarity);
+    return items.foeLoot(&sim.loot_rng, rarity);
 }
 
 pub const PYRE_REACH: i32 = 1;
@@ -169,7 +154,7 @@ fn ignite(sim: *Simulation, at: P, name: []const u8) Caught {
         if (!a.alive or !area.has(a.at)) continue;
         if (!sim.ignite(a)) continue;
         out.set(i);
-        if (sim.isHero(i)) sim.log.push(.danger, "{s} " ++ burning.TAKES ++ "!", .{sim.name.text()}) else sim.sayOf(a, "The {s} " ++ burning.TAKES ++ "!", .{actor.row(a.kind).name});
+        sim.sayTakes(i, a, burning.TAKES);
     }
     return out;
 }

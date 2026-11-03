@@ -591,7 +591,7 @@ test "a flask's first heal shows on its own turn and later recovery precedes the
 test "passive leech and kill healing land on the drawn hero with the arrow" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 22, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
+    harness.arena(g, harness.SHOT_FROM, &.{harness.SHOT_AT});
     takeNode(g, "Sanguine Pact");
     takeNode(g, "Red Harvest");
     const h = g.sim.heroActor().?;
@@ -604,8 +604,8 @@ test "passive leech and kill healing land on the drawn hero with the arrow" {
     const hero = g.sim.heroSlot().?;
     try std.testing.expectEqual(@as(i32, 5), g.pic.pictured[hero].hp);
     const t = harness.framesUntil(g, hero, harness.caughtUp);
-    std.debug.print("leech 1 + kill heal 2: drawn hero 5 -> 8 at {d:.3} s, as the arrow lands at {d:.3} s\n", .{ t, game.presentation.flown(4) });
-    try std.testing.expectApproxEqAbs(game.presentation.flown(4), t, harness.TEST_TOL);
+    std.debug.print("leech 1 + kill heal 2: drawn hero 5 -> 8 at {d:.3} s, as the arrow lands at {d:.3} s\n", .{ t, harness.SHOT_LANDS });
+    try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
 }
 
 test "passive cull finishes a foe left at its threshold and spares one above it" {
@@ -647,7 +647,7 @@ test "a culled foe is not said to take the arrow's status" {
 test "passive leech waits for the arrow while a life flask recovers" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 22, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
+    harness.arena(g, harness.SHOT_FROM, &.{harness.SHOT_AT});
     takeNode(g, "Sanguine Pact");
     const h = g.sim.heroActor().?;
     h.hp = 5;
@@ -658,8 +658,8 @@ test "passive leech waits for the arrow while a life flask recovers" {
     harness.confirmUse(g, .shoot);
     try std.testing.expect(g.sim.pool.get(2) != null);
     const t = harness.framesUntil(g, hero, harness.caughtUp);
-    std.debug.print("leech under a ticking flask: drawn hero reaches {d} at {d:.3} s, as the arrow lands at {d:.3} s\n", .{ h.hp, t, game.presentation.flown(4) });
-    try std.testing.expectApproxEqAbs(game.presentation.flown(4), t, harness.TEST_TOL);
+    std.debug.print("leech under a ticking flask: drawn hero reaches {d} at {d:.3} s, as the arrow lands at {d:.3} s\n", .{ h.hp, t, harness.SHOT_LANDS });
+    try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
 }
 
 test "passive mana recovery, skill cost and flask recovery reach the live numbers" {
@@ -688,7 +688,7 @@ test "passive mana recovery, skill cost and flask recovery reach the live number
 test "a kill's flask refill shows as the kill is drawn, not as the arrow leaves" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
-    harness.arena(g, .{ .x = 22, .y = 20 }, &.{.{ .x = 27, .y = 20 }});
+    harness.arena(g, harness.SHOT_FROM, &.{harness.SHOT_AT});
     g.sim.pool.get(2).?.hp = 1;
     g.sim.flasks.getPtr(.life).charges = flask.USE - flask.PER_KILL;
     g.pic.catchUp(&g.sim);
@@ -702,6 +702,6 @@ test "a kill's flask refill shows as the kill is drawn, not as the arrow leaves"
         }
     };
     const t = harness.framesUntil(g, 0, Refilled.f);
-    std.debug.print("a kill 5 cells out refills the drawn flask {d:.3} s in, as the arrow lands at {d:.3} s\n", .{ t, game.presentation.flown(4) });
-    try std.testing.expectApproxEqAbs(game.presentation.flown(4), t, harness.TEST_TOL);
+    std.debug.print("a kill 5 cells out refills the drawn flask {d:.3} s in, as the arrow lands at {d:.3} s\n", .{ t, harness.SHOT_LANDS });
+    try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
 }

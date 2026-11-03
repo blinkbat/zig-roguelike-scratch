@@ -128,9 +128,7 @@ fn choiceRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime U: type, v: *U
     editor.retag(U, v, tag);
     const slot = valueSlot(y.*, 0, 1);
     const value = widgets.stepValue(slot);
-    const h = widgets.hot(ed.controls(), value, true, false, "Every choice; " ++ c.tip);
-    if (h.hot) rl.drawRectangleLinesEx(value, 1, HOVER);
-    if (h.hit) {
+    if (valueHit(ed, value, "Every choice; " ++ c.tip)) {
         ed.drop();
         ed.popup = .{ .slot = value, .which = which };
         ed.fresh = true;
@@ -138,26 +136,35 @@ fn choiceRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime U: type, v: *U
     y.* += widgets.ROW_STEP;
 }
 
+fn valueHit(ed: *editor.Editor, value: rl.Rectangle, tip: [:0]const u8) bool {
+    const h = widgets.hot(ed.controls(), value, true, false, tip);
+    if (h.hot) rl.drawRectangleLinesEx(value, 1, HOVER);
+    return h.hit;
+}
+
+const DrawStep = struct { fmt: []const u8, tips: [2][:0]const u8, min: u8, max: u8 };
+const DRAW_STEPS = std.EnumArray(std.meta.Tag(pack.Draw), DrawStep).init(.{
+    .weight = .{ .fmt = "x{d}", .tips = .{ "Drawn less often against the others", "Drawn more often against the others" }, .min = pack.WEIGHT_MIN, .max = pack.WEIGHT_MAX },
+    .count = .{ .fmt = "={d}", .tips = .{ "One fewer of these packs", "One more of these packs" }, .min = pack.COUNT_MIN, .max = pack.COUNT_MAX },
+});
+
 fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bool) bool {
     var buf: [8]u8 = undefined;
-    const span = widgets.row(widgets.PAD, y, editor.WEIGHT_SPAN);
+    const span = widgets.row(widgets.PAD, y, editor.DRAW_SPAN);
     switch (m.draw) {
-        .weight => |*w| bump(u8, w, stepper(ed, g, span, num(&buf, "x{d}", w.*), .{
-            .{ .tip = "Drawn less often against the others", .live = w.* > pack.WEIGHT_MIN },
-            .{ .tip = "Drawn more often against the others", .live = w.* < pack.WEIGHT_MAX },
-        })),
-        .count => |*c| bump(u8, c, stepper(ed, g, span, num(&buf, "={d}", c.*), .{
-            .{ .tip = "One fewer of these packs", .live = c.* > pack.COUNT_MIN },
-            .{ .tip = "One more of these packs", .live = c.* < pack.COUNT_MAX },
-        })),
+        inline else => |*n, tag| {
+            const s = comptime DRAW_STEPS.get(tag);
+            bump(u8, n, stepper(ed, g, span, num(&buf, s.fmt, n.*), .{
+                .{ .tip = s.tips[0], .live = n.* > s.min },
+                .{ .tip = s.tips[1], .live = n.* < s.max },
+            }));
+        },
     }
-    const value = widgets.stepValue(span);
-    const flip = widgets.hot(ed.controls(), value, true, false, switch (m.draw) {
+    const flip_tip: [:0]const u8 = switch (m.draw) {
         .weight => "Drawn by weight; " ++ Desk.PAINT_CAPTION ++ " for an exact count of packs",
         .count => "Exactly this many packs; " ++ Desk.PAINT_CAPTION ++ " to draw by weight",
-    });
-    if (flip.hot) rl.drawRectangleLinesEx(value, 1, HOVER);
-    if (flip.hit) m.draw = m.draw.flipped();
+    };
+    if (valueHit(ed, widgets.stepValue(span), flip_tip)) m.draw = m.draw.flipped();
     var x = widgets.PAD + editor.MEMBERS_X;
     for (0..pack.MAKEUP_MAX) |i| {
         const r = widgets.row(x, y, editor.MEMBER_W);
@@ -629,7 +636,11 @@ test "generator tile choices skip opened containers and wide props in both direc
     }
     try std.testing.expectEqual(grid.Tile.swamp_tree, cycle(grid.Tile, .chest, 1));
     try std.testing.expectEqual(grid.Tile.chest, cycle(grid.Tile, .swamp_tree, -1));
-    try std.testing.expectEqual(grid.Tile.wall, cycle(grid.Tile, .glow_plant, 1));
+    var last = grid.Tile.wall;
+    for (std.enums.values(grid.Tile)) |t| {
+        if (t.single()) last = t;
+    }
+    try std.testing.expectEqual(grid.Tile.wall, cycle(grid.Tile, last, 1));
     std.debug.print("generator tile choices: {d} forward/back steps exclude opened containers and wide props; idle choices preserved\n", .{checked});
 }
 

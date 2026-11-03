@@ -264,9 +264,12 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
     alloc.destroy(g);
 }
 
+/// A loot visit's unsaved state, reset with every run.
+const LOOT_VISIT = [_][]const u8{ "character", "looted", "loot_gold" };
+
 fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
     toDefaults(&g.sim, &.{ "visited", "node", "outdoors", "pool", "hero", "clock" });
-    toDefaults(g, &.{ "character", "looted", "loot_gold" });
+    toDefaults(g, &LOOT_VISIT);
     g.sim.map = w;
     g.sim.seed = seed;
     g.sim.rng = mathx.Rng.init(seed ^ PLAY_SALT);
@@ -324,10 +327,7 @@ fn enter(g: *Game, n: usize, at: P) void {
         g.sim.ground = .{};
         spawnHero(g, to);
         switch (w.node[n].plan) {
-            .procgen => |*pg| {
-                var doors: [grid.MAX_DOORS]P = undefined;
-                pack.place(&g.sim.lv, &g.sim.pool, &g.sim.rng, to, w.node[n].doorCells(&doors), &pg.foes);
-            },
+            .procgen => w.node[n].placePacks(&g.sim.lv, &g.sim.pool, &g.sim.rng, to),
             .bespoke => for (placing) |f| {
                 if (actor.dwells(f.kind, &g.sim.lv, f.at)) _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(f.kind, f.at));
             },
@@ -450,7 +450,8 @@ pub fn resumeRun(g: *Game) void {
     gen.restoreShapes(&g.sim.lv);
     var visits = g.sim.visited.iterator(.{});
     while (visits.next()) |n| gen.restoreShapes(&g.sim.visits[n].lv);
-    toDefaults(g, &.{ "mode", "exit", "character", "looted", "loot_gold", "epitaph" });
+    toDefaults(g, &.{ "mode", "exit", "epitaph" });
+    toDefaults(g, &LOOT_VISIT);
     toDefaults(&g.sim, &.{ "unsaved", "chronicle" });
     g.sim.unsaved = g.sim.growth.refundBasicRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
@@ -508,7 +509,7 @@ fn spendsMove(g: *Game, d: mathx.Dir) bool {
 /// A confused hero's move that spends a turn may go any way that also would.
 fn astray(g: *Game, chosen: mathx.Dir) mathx.Dir {
     const h = g.sim.heroActor() orelse return chosen;
-    if (!spends(heroMove(g, chosen)) or !confusion.strays(h.confusion.turns > 0, &g.sim.rng)) return chosen;
+    if (!spends(heroMove(g, chosen)) or !confusion.strays(h.afflictions().contains(.confusion), &g.sim.rng)) return chosen;
     const d = g.sim.rng.pickWhere(mathx.Dir, mathx.ALL_DIRS, g, spendsMove) orelse return chosen;
     if (d != chosen) g.sim.log.say("{s} " ++ confusion.STUMBLES ++ ".", .{g.sim.name.text()});
     return d;
@@ -548,10 +549,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
         },
         .loot, .step => if (h.pin.turns > 0) struggle(g) else {
             heroTo(g, to);
-            if (h.maim.step()) {
-                h.clock.delay(turn_clock.TURN);
-                g.sim.log.say("{s} " ++ maim.LIMPS ++ ".", .{g.sim.name.text()});
-            }
+            if (h.limp(h.afflictions())) g.sim.log.say("{s} " ++ maim.LIMPS ++ ".", .{g.sim.name.text()});
             if (move == .loot) character.openLoot(g, to);
         },
         .blocked => return,

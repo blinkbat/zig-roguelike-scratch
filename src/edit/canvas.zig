@@ -35,12 +35,17 @@ fn drawCells(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) vo
     var beds: dual.Beds = undefined;
     beds.fill(&ed.scene.lv, v.lo, v.hi, false);
     g.sprites.drawGround(&ed.scene.lv, &beds, ed.origin(c), ed.px(), null);
-    var cells = grid.Cells.of(v.lo, v.hi);
+    var cells = grid.Cells.of(.{ .x = @max(0, v.lo.x - (grid.WIDEST - 1)), .y = v.lo.y }, v.hi);
     while (cells.next()) |p| {
         const r = ed.cellRect(c, p);
         const here = ed.scene.lv.at(p);
+        if (p.x < v.lo.x) {
+            if (p.x + here.wide() <= v.lo.x) continue;
+            if (g.sprites.tileAt(&ed.scene.lv, p)) |t| raster.stretch(t, look.tileRect(here, t, r), look.LIT);
+            continue;
+        }
         if (look.glyphGround(here, &g.sprites)) widgets.tileGlyph(&g.face, here, r);
-        if (!look.standsOver(here) or here.isPart()) continue;
+        if (here.isPart() or !look.standsOver(here)) continue;
         if (g.sprites.tileAt(&ed.scene.lv, p)) |t| {
             raster.stretch(t, look.tileRect(here, t, r), look.LIT);
             continue;

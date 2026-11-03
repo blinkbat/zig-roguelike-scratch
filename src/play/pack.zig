@@ -220,13 +220,12 @@ pub const Spec = struct {
         return n;
     }
 
-    /// `homeless`: the kinds no lead could be found ground for.
-    fn pick(self: *const Spec, rng: *mathx.Rng, k: ?actor.Kind, bodies: usize, homeless: Kinds) ?*const Makeup {
+    fn pick(self: *const Spec, rng: *mathx.Rng, k: ?actor.Kind, bodies: usize, homeless: Homeless) ?*const Makeup {
         const Holding = struct {
             spec: *const Spec,
             k: ?actor.Kind,
             bodies: usize,
-            homeless: Kinds,
+            homeless: Homeless,
 
             fn weight(h: @This(), i: usize) u32 {
                 const m = &h.spec.makeups()[i];
@@ -234,7 +233,7 @@ pub const Spec = struct {
                     .weight => |w| w,
                     .count => return 0,
                 };
-                return if (!h.homeless.contains(m.lead()) and m.fits(h.bodies, h.k)) w else 0;
+                return if (!h.homeless.refuses(m) and m.fits(h.bodies, h.k)) w else 0;
             }
         };
         return &self.makeups()[rng.weighted(self.makeup_n, Holding{ .spec = self, .k = k, .bodies = bodies, .homeless = homeless }, Holding.weight) orelse return null];
@@ -254,13 +253,27 @@ pub const Spec = struct {
 
 const Kinds = std.EnumSet(actor.Kind);
 
+/// The leads no ground could be found for anywhere, and those found none by any door.
+const Homeless = struct {
+    anywhere: Kinds = .initEmpty(),
+    by_door: Kinds = .initEmpty(),
+
+    fn refuses(h: Homeless, m: *const Makeup) bool {
+        return h.anywhere.contains(m.lead()) or (m.exit and h.by_door.contains(m.lead()));
+    }
+
+    fn add(h: *Homeless, m: *const Makeup) void {
+        if (m.exit) h.by_door.insert(m.lead()) else h.anywhere.insert(m.lead());
+    }
+};
+
 /// No more than the pool holds once every slime placed has split down to quarters.
 /// A makeup whose lead finds no ground of its own, as a leech on a dry floor, gives way to the rest.
 pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, given: *const Spec) void {
     const fitted = given.fit();
     const spec = &fitted;
     var bodies = pool.n;
-    var homeless = Kinds.initEmpty();
+    var homeless = Homeless{};
     var packs: usize = 0;
     for (spec.makeups()) |*m| {
         const count = switch (m.draw) {
@@ -275,19 +288,27 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exit
     for (spec.quotaOrder()) |k| {
         while (packs < spec.packs and pool.tally(k).total < spec.few) {
             const m = spec.pick(rng, k, bodies, homeless) orelse break;
-            if (placeOne(lv, pool, rng, start, exits, spec, m, &bodies)) packs += 1 else homeless.insert(m.lead());
+            if (placeOne(lv, pool, rng, start, exits, spec, m, &bodies)) packs += 1 else homeless.add(m);
         }
     }
     while (packs < spec.packs) {
         const m = spec.pick(rng, null, bodies, homeless) orelse return;
-        if (placeOne(lv, pool, rng, start, exits, spec, m, &bodies)) packs += 1 else homeless.insert(m.lead());
+        if (placeOne(lv, pool, rng, start, exits, spec, m, &bodies)) packs += 1 else homeless.add(m);
     }
 }
 
+/// An exit makeup's lead tries a door at random, then each other door in turn.
 fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, spec: *const Spec, m: *const Makeup, bodies: *usize) bool {
     const others = pool.n;
-    const by: ?P = if (!m.exit) null else if (exits.len == 0) return false else rng.pick(P, exits);
-    const lead = leadSpot(lv, pool, rng, start, by, spec, others, m.lead()) orelse return false;
+    const lead = if (!m.exit) leadSpot(lv, pool, rng, start, null, spec, others, m.lead()) orelse return false else lead: {
+        if (exits.len == 0) return false;
+        const first = rng.below(@intCast(exits.len));
+        for (0..exits.len) |k| {
+            const by = exits[(first + k) % exits.len];
+            if (leadSpot(lv, pool, rng, start, by, spec, others, m.lead())) |p| break :lead p;
+        }
+        return false;
+    };
     spawnCounted(lv, pool, m.lead(), lead, bodies);
     for (m.followers()) |k| {
         if (!actor.roomFor(bodies.*, k)) continue;
@@ -516,6 +537,39 @@ test "a counted makeup places exactly its packs, an exit one's lead by a door, a
     }
     std.debug.print("50 rolls of 8 packs, one beefy pib by the door and two bloats counted: beefy pib at most {d} cells from the door\n", .{farthest});
     try std.testing.expect(farthest <= EXIT_REACH);
+}
+
+test "an exit pack that no door can hold leaves its lead's other makeups be, and tries every door before giving up" {
+    var spec = Spec{ .packs = 4, .few = 0, .gap = 12, .makeup_n = 2 };
+    spec.makeup[0] = Makeup.of(&.{.rat});
+    spec.makeup[0].exit = true;
+    spec.makeup[0].draw = .{ .weight = WEIGHT_MAX };
+    spec.makeup[1] = Makeup.of(&.{ .rat, .rat });
+    const start = P{ .x = 2, .y = 2 };
+    const far = P{ .x = grid.W - 3, .y = grid.H - 3 };
+    var doorless: usize = 0;
+    var by_far: usize = 0;
+    for (0..50) |i| {
+        var lv = grid.openFloor();
+        var pool = actor.Pool{};
+        var rng = mathx.Rng.init(0xD00E +% i);
+        place(&lv, &pool, &rng, start, &.{}, &spec);
+        doorless += pool.tally(.rat).total;
+        try std.testing.expectEqual(@as(usize, 2 * spec.packs), pool.tally(.rat).total);
+        var counted = spec;
+        counted.makeup[0] = Makeup.of(&.{.bloat});
+        counted.makeup[0].exit = true;
+        counted.makeup[0].draw = .{ .count = 1 };
+        lv = grid.openFloor();
+        pool = .{};
+        place(&lv, &pool, &rng, start, &.{ start, far }, &counted);
+        for (pool.slice()) |a| if (a.kind == .bloat) {
+            try std.testing.expect(mathx.dist(a.at, far) <= EXIT_REACH);
+            by_far += 1;
+        };
+    }
+    try std.testing.expectEqual(@as(usize, 50), by_far);
+    std.debug.print("exit packs: 50 doorless nodes still laid {d} rats in pairs; a counted exit pack, the arrival door too near, stood by the far door {d} of 50\n", .{ doorless, by_far });
 }
 
 test "a makeup grows, shrinks to its lead and turns round the foe kinds; the last makeup stays" {

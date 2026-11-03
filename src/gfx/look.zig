@@ -177,10 +177,11 @@ pub const Assets = struct {
     }
 
     fn bed(need: *Assets, g: ground.Ground) void {
-        need.grass2 = need.grass2 or g == .grass;
-        need.dirt2 = need.dirt2 or g == .dirt;
-        need.shallows2 = need.shallows2 or g == .shallows;
-        need.shallows3 = need.shallows3 or g == .shallows;
+        switch (g) {
+            inline else => |k| if (comptime GROUND_ALTERNATES.get(k)) |alts| inline for (alts.fields) |name| {
+                @field(need, name) = true;
+            },
+        }
         if (GROUND_SHEETS.contains(g)) need.grounds.insert(g) else need.add(.{ .tile = g.tile() });
     }
 
@@ -356,23 +357,24 @@ pub const Sprites = struct {
     }
 
     fn groundPiece(self: *const Sprites, g: ground.Ground, mask: u4, p: mathx.P) ?Piece {
-        if (g == .grass and mask == ground.FULL and cellHash(GRASS2_SEED, p) % GRASS2_IN == 0) {
-            if (self.grass2) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
-        }
-        if (g == .dirt and mask == ground.FULL and cellHash(DIRT2_SEED, p) % DIRT2_IN == 0) {
-            if (self.dirt2) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
-        }
-        if (g == .shallows and mask == ground.FULL) {
-            const alt = switch (cellHash(SHALLOWS_ALT_SEED, p) % SHALLOWS_ALT_IN) {
-                0 => self.shallows2,
-                1 => self.shallows3,
-                else => null,
-            };
-            if (alt) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
+        if (mask == ground.FULL) {
+            if (self.alternateAt(g, p)) |tex| return .{ .tex = tex, .src = raster.whole(tex) };
         }
         const tex = self.grounds.getPtrConst(g).* orelse return null;
         const at = ground.CELL_OF[mask];
         return .{ .tex = tex, .src = sheetCell(at.x, at.y) };
+    }
+
+    fn alternateAt(self: *const Sprites, g: ground.Ground, p: mathx.P) ?rl.Texture2D {
+        switch (g) {
+            inline else => |k| if (comptime GROUND_ALTERNATES.get(k)) |alts| {
+                const roll = cellHash(alts.seed, p) % alts.in;
+                inline for (alts.fields, 0..) |name, i| {
+                    if (roll == i) return @field(self, name);
+                }
+            },
+        }
+        return null;
     }
 
     /// The grounds with a sheet loaded.
@@ -577,6 +579,15 @@ pub fn hudPanelIn(sprites: *const Sprites, r: rl.Rectangle, fill: rl.Color, tint
     hudPanel(sprites, @intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height), fill, tint);
 }
 
+/// A ui panel's backing and border.
+pub fn backing(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32) void {
+    hudPanel(sprites, x, y, width, height, BACKING, LIT);
+}
+
+pub fn backingIn(sprites: *const Sprites, r: rl.Rectangle) void {
+    hudPanelIn(sprites, r, BACKING, LIT);
+}
+
 fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, tint: rl.Color) void {
     const tex = sprites.hud_border orelse {
         rl.drawRectangleLines(x, y, width, height, tint);
@@ -707,15 +718,14 @@ const LONE_CLUMP_SEED: u64 = 0xF02E57;
 /// One lone shrub in this many that is no clump draws `shrub2.png`.
 const SHRUB2_IN: u64 = 2;
 const SHRUB2_SEED: u64 = 0x5B2;
-/// One whole grass piece in this many draws `grass2.png`; of `DECOR_IN` grass cells, `BRUSH_IN` take brush and one flowers.
-const GRASS2_IN: u64 = 3;
-const GRASS2_SEED: u64 = 0x62A552;
-/// One whole dirt piece in this many draws `dirt2.png`.
-const DIRT2_IN: u64 = 3;
-const DIRT2_SEED: u64 = 0xD127;
-/// One whole shallows piece in this many draws `shallows2.png`, one more `shallows3.png`.
-const SHALLOWS_ALT_IN: u64 = 16;
-const SHALLOWS_ALT_SEED: u64 = 0x5A110;
+/// Of every `in` whole pieces of a ground, by a hash of the cell, the first draw its `fields` in turn instead.
+const Alternates = struct { seed: u64, in: u64, fields: []const []const u8 };
+const GROUND_ALTERNATES = std.EnumArray(ground.Ground, ?Alternates).initDefault(@as(?Alternates, null), .{
+    .grass = .{ .seed = 0x62A552, .in = 3, .fields = &.{"grass2"} },
+    .dirt = .{ .seed = 0xD127, .in = 3, .fields = &.{"dirt2"} },
+    .shallows = .{ .seed = 0x5A110, .in = 16, .fields = &.{ "shallows2", "shallows3" } },
+});
+/// Of `DECOR_IN` grass cells, `BRUSH_IN` take brush and one flowers.
 const DECOR_IN: u64 = 60;
 const BRUSH_IN: u64 = 3;
 const DECOR_SEED: u64 = 0xB2754;
@@ -730,7 +740,11 @@ fn grassDecor(t: grid.Tile, p: mathx.P) ?GrassDecor {
 }
 
 fn loneClump(p: mathx.P) bool {
-    return cellHash(LONE_CLUMP_SEED, p) % LONE_CLUMP_IN == 0;
+    return oneIn(LONE_CLUMP_SEED, LONE_CLUMP_IN, p);
+}
+
+fn oneIn(seed: u64, in: u64, p: mathx.P) bool {
+    return cellHash(seed, p) % in == 0;
 }
 
 fn cellHash(seed: u64, p: mathx.P) u64 {
@@ -746,7 +760,7 @@ const Cut = union(enum) { tile: grid.Tile, wall: usize, forest: usize, shrub2 };
 
 fn cutAt(lv: *const grid.Level, p: mathx.P) ?Cut {
     if (forestAt(lv, p)) return .{ .forest = WALL_CELL[lv.tileMask(p)] };
-    if (lv.at(p) == .shrub and cellHash(SHRUB2_SEED, p) % SHRUB2_IN == 0) return .shrub2;
+    if (lv.at(p) == .shrub and oneIn(SHRUB2_SEED, SHRUB2_IN, p)) return .shrub2;
     return cutOf(lv.at(p), lv.tileShape(p));
 }
 
@@ -1060,6 +1074,15 @@ pub const WATER_DROP = rl.Color{ .r = 214, .g = 232, .b = 252, .a = 205 };
 pub const RIPPLE = rgb(0x9db6d4);
 pub const DIRT_DUST = rl.Color{ .r = 200, .g = 182, .b = 148, .a = 170 };
 pub const SAND_DUST = rl.Color{ .r = 238, .g = 226, .b = 192, .a = 160 };
+
+/// The dust a footfall on `t` kicks up.
+pub fn stepDust(t: grid.Tile) ?rl.Color {
+    return switch (t) {
+        .dirt => DIRT_DUST,
+        .sand => SAND_DUST,
+        else => null,
+    };
+}
 pub const NET = rgb(0xd6c496);
 pub const RAIN = rgb(0xc4d0e2);
 /// The atmosphere's water mist, and its light shafts and dust.

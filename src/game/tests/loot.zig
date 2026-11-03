@@ -129,7 +129,7 @@ test "a kicked barrel breaks for gold where it stood, and the archer stays put" 
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const at = P{ .x = 21, .y = 20 };
     g.sim.lv.putBarrel(at);
-    g.sim.loot_rng = barrelRng(false);
+    g.sim.loot_rng = harness.barrelRng(false);
     harness.nudge(g, .e);
     std.debug.print("kicked barrel: {d} gold auto-looted on the next step\n", .{g.sim.ground.coins[0].amount});
     try std.testing.expectEqual(@as(usize, 0), g.sim.ground.n);
@@ -148,23 +148,13 @@ test "a kicked barrel breaks for gold where it stood, and the archer stays put" 
     try std.testing.expectEqual(@as(usize, 0), g.sim.ground.coin_n);
 }
 
-/// A loot RNG under which a broken barrel leaves a white item, or leaves none.
-fn barrelRng(item: bool) mathx.Rng {
-    for (0..256) |seed| {
-        var rng = mathx.Rng.init(seed);
-        _ = items.BARREL_GOLD.roll(&rng);
-        if (rng.percent(items.BARREL_ITEM_PERCENT) == item) return mathx.Rng.init(seed);
-    }
-    unreachable;
-}
-
 test "a broken barrel sometimes leaves a white item in a bag with its gold, unseen until the break is drawn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     const at = P{ .x = 21, .y = 20 };
     g.sim.lv.putBarrel(at);
-    g.sim.loot_rng = barrelRng(true);
+    g.sim.loot_rng = harness.barrelRng(true);
     harness.nudge(g, .e);
     try std.testing.expectEqual(@as(usize, 1), g.sim.ground.n);
     try std.testing.expectEqual(items.Rarity.normal, g.sim.ground.drops[0].item.rarity());
@@ -626,6 +616,27 @@ test "closing a mixed bag takes its gold for free even when no item fits" {
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
     try std.testing.expect(!scene.bagCells(g).isSet(grid.Level.idx(at)));
     std.debug.print("mixed bag with full inventory: gold taken free on close, item preserved; one freed slot takes the item for one turn\n", .{});
+}
+
+test "a hero killed while a bag's loot is open takes none of its gold" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    harness.arena(g, at, &.{at.add(.{ .x = 1, .y = 0 })});
+    harness.wakeFoes(g);
+    try std.testing.expect(g.sim.ground.add(.{ .item = .{ .kind = .ring }, .at = at }));
+    try std.testing.expect(g.sim.ground.gold(at, 37));
+    character.openLoot(g, at);
+    try std.testing.expectEqual(book.Page.loot, g.character.page);
+    harness.setLife(g.sim.heroActor().?, 1, harness.TEST_HP);
+    g.sim.rng = harness.bitesRng(g, &.{.{ .id = 2, .lands = true }});
+    game.combat.endTurn(g);
+    try std.testing.expect(g.sim.heroActor() == null);
+    harness.drawnOut(g);
+    for (0..4) |_| game.update(g, mathx.TEST_DT);
+    try std.testing.expectEqual(@as(i32, 0), g.sim.gold);
+    try std.testing.expectEqual(@as(usize, 1), g.sim.ground.coin_n);
+    std.debug.print("death under open loot: the bag's 37 gold stays on the ground\n", .{});
 }
 
 test "every pickup in one loot visit is one turn, spent however the loot closes" {

@@ -18,6 +18,7 @@ const carve = @import("../map/carve.zig");
 const combat = @import("combat.zig");
 const game = @import("../game.zig");
 const skills = @import("skills.zig");
+const bow = @import("../play/bow.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 
@@ -287,6 +288,18 @@ pub fn lootRng(magic: ?bool) mathx.Rng {
     return rngWhere(Loot{ .magic = magic });
 }
 
+/// A loot RNG under which a broken barrel leaves a white item, or leaves none.
+pub fn barrelRng(item: bool) mathx.Rng {
+    const Barrel = struct {
+        item: bool,
+
+        fn holds(b: @This(), rng: *mathx.Rng) bool {
+            return (items.barrelLoot(rng, true).item != null) == b.item;
+        }
+    };
+    return rngWhere(Barrel{ .item = item });
+}
+
 pub fn slay(g: *game.Game, id: u16, from: P) void {
     combat.wound(g, id, .{ .dmg = 1000 }, combat.SHOOT, .{ .from = from, .wait = 0.2 });
 }
@@ -367,6 +380,11 @@ pub fn drawn(g: *game.Game, slot: usize) bool {
     return !gone(g, slot);
 }
 
+/// An arrow shot from `SHOT_FROM` at `SHOT_AT`, its full reach off, lands `SHOT_LANDS` in.
+pub const SHOT_FROM = P{ .x = 22, .y = 20 };
+pub const SHOT_AT = P{ .x = SHOT_FROM.x + bow.RANGE, .y = SHOT_FROM.y };
+pub const SHOT_LANDS = game.presentation.flown(bow.RANGE - 1);
+
 pub const TEST_HP: i32 = 100;
 
 pub fn toughen(a: *actor.Actor) void {
@@ -410,6 +428,13 @@ pub fn spawnAt(g: *game.Game, k: actor.Kind, at: P, awake: bool) u16 {
     const id = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(k, at));
     g.sim.pool.get(id).?.awake = awake;
     g.pic.snapGlide(&g.sim.pool);
+    return id;
+}
+
+/// An awake mimic at `at`, already out of its chest.
+pub fn openMimic(g: *game.Game, at: P) u16 {
+    const id = spawnAt(g, .mimic, at, true);
+    g.sim.pool.get(id).?.unmask(&g.sim.lv);
     return id;
 }
 

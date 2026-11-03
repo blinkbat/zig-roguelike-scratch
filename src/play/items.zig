@@ -421,37 +421,12 @@ pub fn spec(k: Kind) Spec {
 
 /// A base's name alone, Title Case.
 pub fn baseName(k: Kind, buf: []u8) [:0]const u8 {
-    const base = wording.namedOr(k, spec(k).name);
-    return cased(buf, std.fmt.bufPrintZ(buf, "{s}", .{base}) catch base, .title);
+    const base = baseOf(k);
+    return wording.recased(buf, std.fmt.bufPrintZ(buf, "{s}", .{base}) catch base, .title);
 }
 
-const Casing = enum { title, lower };
-/// Words a title leaves lower case past its first.
-const MINOR_WORDS = [_][]const u8{ "of", "the", "and", "a", "an" };
-
-/// Recases `text` in place when it lies in `buf`; a fallback literal is returned as it is.
-fn cased(buf: []u8, text: [:0]const u8, how: Casing) [:0]const u8 {
-    const at = @intFromPtr(text.ptr);
-    if (at < @intFromPtr(buf.ptr) or at + text.len > @intFromPtr(buf.ptr) + buf.len) return text;
-    const bytes = buf[at - @intFromPtr(buf.ptr) ..][0..text.len];
-    var start: usize = 0;
-    while (start < bytes.len) {
-        const end = std.mem.indexOfScalarPos(u8, bytes, start, ' ') orelse bytes.len;
-        const w = bytes[start..end];
-        switch (how) {
-            .lower => for (w) |*c| {
-                c.* = std.ascii.toLower(c.*);
-            },
-            .title => {
-                const minor = start > 0 and for (MINOR_WORDS) |m| {
-                    if (std.ascii.eqlIgnoreCase(w, m)) break true;
-                } else false;
-                if (w.len > 0) w[0] = if (minor) std.ascii.toLower(w[0]) else std.ascii.toUpper(w[0]);
-            },
-        }
-        start = end + 1;
-    }
-    return text;
+fn baseOf(k: Kind) [:0]const u8 {
+    return wording.namedOr(k, spec(k).name);
 }
 
 pub const Item = struct {
@@ -461,18 +436,18 @@ pub const Item = struct {
 
     /// Title Case, as the UI shows it.
     pub fn name(self: Item, buf: []u8) [:0]const u8 {
-        return cased(buf, self.composed(buf), .title);
+        return wording.recased(buf, self.composed(buf), .title);
     }
 
     /// Lower case within a sentence, as the log says it; a rare item's own name keeps its capitals.
     pub fn spoken(self: Item, buf: []u8) [:0]const u8 {
         const text = self.composed(buf);
-        return if (self.rare_name != null) text else cased(buf, text, .lower);
+        return if (self.rare_name != null) text else wording.recased(buf, text, .lower);
     }
 
     fn composed(self: Item, buf: []u8) [:0]const u8 {
         if (self.rare_name) |rare| return rare.name(buf);
-        const base = wording.namedOr(self.kind, spec(self.kind).name);
+        const base = baseOf(self.kind);
         var pre: []const u8 = "";
         var post: []const u8 = "";
         for (self.mods) |maybe| if (maybe) |m| {
@@ -577,6 +552,26 @@ pub fn foeLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
         .item = if (rng.percent(DROP_PERCENT)) roll(rng, item_rarity) else null,
         .supply = consumable.roll(rng, consumable.FOE_PERCENT),
     };
+}
+
+/// What a chest holds, rolled item, gold, then supply.
+pub fn chestLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
+    const item = roll(rng, item_rarity);
+    const gold = CHEST_GOLD.roll(rng);
+    return .{ .item = item, .gold = gold, .supply = consumable.roll(rng, consumable.CHEST_PERCENT) };
+}
+
+/// A chest's loot, its item rolled and then given up for a rare.
+pub fn mimicLoot(rng: *mathx.Rng, item_rarity: i32) Loot {
+    var loot = chestLoot(rng, item_rarity);
+    loot.item = rollRare(rng);
+    return loot;
+}
+
+/// Its gold, then now and then a white item, rolled only where `room` lets it lie.
+pub fn barrelLoot(rng: *mathx.Rng, room: bool) Loot {
+    const gold = BARREL_GOLD.roll(rng);
+    return .{ .gold = gold, .item = if (rng.percent(BARREL_ITEM_PERCENT) and room) unrolled(rng) else null };
 }
 
 pub const Gear = struct {

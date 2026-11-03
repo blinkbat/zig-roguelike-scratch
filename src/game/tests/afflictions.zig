@@ -252,8 +252,7 @@ test "an enfeebled body's blows deal 30% less, rounded up, on either side" {
     for ([_]bool{ false, true }, &lost) |weak, *out| {
         harness.arena(g, FROM, &.{});
         harness.toughen(g.sim.heroActor().?);
-        const id = harness.spawnAt(g, .mimic, EAST, true);
-        g.sim.pool.get(id).?.unmask(&g.sim.lv);
+        const id = harness.openMimic(g, EAST);
         if (weak) enfeeble.afflict(g.sim.pool.get(id).?, &g.sim.rng);
         g.sim.rng = harness.bitesRng(g, &.{.{ .id = id, .lands = true }});
         combat.endTurn(g);

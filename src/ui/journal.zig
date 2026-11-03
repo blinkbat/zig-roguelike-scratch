@@ -35,7 +35,6 @@ const ROWS_BOTTOM: i32 = BOX_H - PAD + font.LEADING;
 const LINE_H = font.SMALL_LINE;
 const ENTRY_GAP: i32 = 4;
 const TOP_OPACITY: f32 = 0.1;
-const BG = look.BACKING;
 
 pub fn box(screen: mathx.P) rl.Rectangle {
     const beside = hud.leftOf(screen) - HUD_GAP;
@@ -51,9 +50,9 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
         rl.beginShaderMode(fade.shader);
         shaders.setUniform(fade.shader, fade.bounds, [2]f32{ @floatFromInt(screen.y - y - BOX_H), @floatFromInt(screen.y - y) });
         shaders.setUniform(fade.shader, fade.minimum, TOP_OPACITY);
-        look.hudPanelIn(sprites, r, BG, look.LIT);
+        look.backingIn(sprites, r);
     } else {
-        rl.drawRectangleGradientV(x, y, w, BOX_H, look.fade(BG, TOP_OPACITY), BG);
+        rl.drawRectangleGradientV(x, y, w, BOX_H, look.fade(look.BACKING, TOP_OPACITY), look.BACKING);
     }
     defer if (sprites.log_fade != null) rl.endShaderMode();
     var bottom = y + ROWS_BOTTOM;

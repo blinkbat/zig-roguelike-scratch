@@ -249,8 +249,9 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   catch a very subtle diagonal shine (`look.shineSweep`), each cell at its own time. Attacks never open chests. Wilds' `loops` reconnects side paths;
   `rewards chests` rewards substantial branches, fills sparse maps with spaced chests in sheltered alcoves,
   and scatters barrels as minor gold rewards. The Strand enables both; rewards must preserve routes.
-  Its swamp trees (`assets/swamp-tree.png`, standalone `swamp_tree` tiles) scatter on dirt
-  within three cells of water/shallows. Scatter's `water_range = 0` leaves other maps unrestricted.
+  Its swamp trees (`assets/swamp-tree.png`, standalone `swamp_tree` tiles) scatter on dirt in two passes: within three cells
+  of water/shallows, then within twelve but none within four, and within two of other dry ground (`water_range`, `water_clear`,
+  `land_range`: Near water, Off water, Near land). Each knob's 0 leaves other maps unrestricted.
   A few glow plants (`glow_plant`, a pale blue `&` glyph and light) scatter on its grass as natural torches. Stepping into one
   (`Move.burst`, a spent turn) or striking it (`combat.smash`; arrows and bolts stop on it as on a barrel, `bow.Hit.plant`) bursts it into healing gas (`gas.burst`, Brogue's bloodwort pod) and leaves its grass; `Light.uproot` drops its light.
 
@@ -343,8 +344,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `combat.conduct`), the hero too. Sunder stacks lower armour in
   `Simulation.combatStatsAt`, which every armour read uses. Blindness limits sight to adjacent cells; a blinded foe acts
   only beside the hero. Confusion sends half of moves a random way that also spends the move (`actor.stumble`, `game.astray`).
-  Enfeeble cuts its body's blows by `enfeeble.LESS`%, rounded up, after armour and before shock (`attacks.resolve`, foe bites and sweeps).
-  Maim makes every second step cost the next turn (`Maim.step`; `combat.limp` for foes, `game.heroStep` for the hero's clock).
+  Enfeeble cuts its body's blows by `enfeeble.LESS`%, rounded up, after armour and before shock (`attacks.landed`, from `attacks.resolve`, foe bites and sweeps).
+  Maim makes every second step cost the next turn (`Actor.limp`, from `combat.foeStep` and `game.heroStep`).
 - `play/terrain.zig` owns typed tile modifiers for hit, dodge, elemental and status resistance.
   `Simulation.combatStats/combatStatsAt` resolve them from base stats without mutating or saving bonuses.
   Combat, Character and inspection share this resolver; see `docs/TERRAIN.md`. Shoot is a fixed basic attack:

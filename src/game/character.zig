@@ -225,11 +225,13 @@ pub fn openLoot(g: *game.Game, at: P) void {
     g.character.loot_at = at;
 }
 
+/// Waits for the turn to be drawn, so no gold a death has yet to drop is taken with it.
 fn takeLootGold(g: *game.Game) void {
     const at = g.loot_gold orelse return;
+    if (!g.pic.quiet()) return;
     g.loot_gold = null;
-    const h = g.sim.heroAt() orelse return;
-    if (goldReached(g, h, at) != null) game.combat.collectGold(g, at);
+    const h = g.sim.heroActor() orelse return;
+    if (goldReached(g, h.at, at) != null) game.combat.collectGold(g, at);
 }
 
 fn itemFailed(g: *game.Game, err: items.Failure) void {
@@ -388,7 +390,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             const dx = p.x - h.at.x;
             if (p.eq(h.at)) {
                 if (h.pin.turns > 0) game.struggle(g) else g.sim.travel = link;
-            } else if (h.pin.turns > 0 or h.confusion.turns > 0 or h.maim.turns > 0) {
+            } else if (h.hampered()) {
                 g.mode = .play;
                 game.holdWalk(g);
                 return game.heroStep(g, mathx.dirTo(h.at, p).?, 0);

@@ -7,7 +7,7 @@ const carve = @import("../carve.zig");
 
 pub const AMOUNT_MAX: u16 = mathx.MILLE;
 pub const CLUMP_MAX: u8 = 32;
-pub const WATER_RANGE_MAX: u8 = 12;
+pub const RANGE_MAX: u8 = 12;
 
 pub const Params = struct {
     tile: grid.Tile = .shrub,
@@ -26,15 +26,14 @@ pub const Params = struct {
         var q = p;
         q.amount = @min(p.amount, AMOUNT_MAX);
         q.clump = @min(p.clump, CLUMP_MAX);
-        q.water_range = @min(p.water_range, WATER_RANGE_MAX);
-        q.water_clear = @min(p.water_clear, WATER_RANGE_MAX);
-        q.land_range = @min(p.land_range, WATER_RANGE_MAX);
+        inline for (carve.Over.RANGES) |f| @field(q, f) = @min(@field(p, f), RANGE_MAX);
         return q;
     }
 };
 
 pub fn apply(lv: *grid.Level, rng: *mathx.Rng, seed: u64, _: carve.Palette, p: Params) void {
-    const on = carve.Over{ .tile = p.on, .decked = true, .water_range = p.water_range, .water_clear = p.water_clear, .land_range = p.land_range };
+    var on = carve.Over{ .tile = p.on, .decked = true };
+    inline for (carve.Over.RANGES) |f| @field(on, f) = @field(p, f);
     if (p.clump == 0) {
         carve.scatter(lv, rng, p.amount, on, p.tile, p.tile.solid() and p.amount < AMOUNT_MAX);
         return;
@@ -86,16 +85,21 @@ test "a scatter kept off water lays nothing that near it, and still lays further
     carve.fill(&lv, .dirt);
     for (0..grid.H) |y| lv.set(.{ .x = 0, .y = @intCast(y) }, .water);
     apply(&lv, &rng, 7, carve.Palette.WILD, .{ .tile = .swamp_tree, .on = .dirt, .amount = 500, .water_range = 7, .water_clear = 4 });
+    const span = columns(&lv, .swamp_tree);
+    std.debug.print("trees kept 4 off water within 7 of it: {d} laid, columns {d} to {d}\n", .{ carve.count(&lv, .swamp_tree), span.nearest, span.farthest });
+    try std.testing.expect(carve.count(&lv, .swamp_tree) > 0 and span.nearest == 5 and span.farthest == 7);
+}
+
+fn columns(lv: *const grid.Level, tile: grid.Tile) struct { nearest: i32, farthest: i32 } {
     var nearest: i32 = grid.W;
     var farthest: i32 = 0;
     for (lv.tile, 0..) |t, i| {
-        if (t != .swamp_tree) continue;
+        if (t != tile) continue;
         const x = grid.Level.of(i).x;
         nearest = @min(nearest, x);
         farthest = @max(farthest, x);
     }
-    std.debug.print("trees kept 4 off water within 7 of it: {d} laid, columns {d} to {d}\n", .{ carve.count(&lv, .swamp_tree), nearest, farthest });
-    try std.testing.expect(carve.count(&lv, .swamp_tree) > 0 and nearest == 5 and farthest == 7);
+    return .{ .nearest = nearest, .farthest = farthest };
 }
 
 test "a scatter kept near land lays only along the edge of its ground away from water" {
@@ -106,16 +110,9 @@ test "a scatter kept near land lays only along the edge of its ground away from 
         for (0..12) |x| lv.set(.{ .x = @intCast(x), .y = @intCast(y) }, if (x == 0) .water else .dirt);
     }
     apply(&lv, &rng, 7, carve.Palette.WILD, .{ .tile = .swamp_tree, .on = .dirt, .amount = 500, .water_clear = 4, .land_range = 2 });
-    var nearest: i32 = grid.W;
-    var farthest: i32 = 0;
-    for (lv.tile, 0..) |t, i| {
-        if (t != .swamp_tree) continue;
-        const x = grid.Level.of(i).x;
-        nearest = @min(nearest, x);
-        farthest = @max(farthest, x);
-    }
-    std.debug.print("trees on a beach from column 1 to 11, kept 4 off water and 2 from land: columns {d} to {d}\n", .{ nearest, farthest });
-    try std.testing.expect(carve.count(&lv, .swamp_tree) > 0 and nearest >= 10 and farthest <= 11);
+    const span = columns(&lv, .swamp_tree);
+    std.debug.print("trees on a beach from column 1 to 11, kept 4 off water and 2 from land: columns {d} to {d}\n", .{ span.nearest, span.farthest });
+    try std.testing.expect(carve.count(&lv, .swamp_tree) > 0 and span.nearest >= 10 and span.farthest <= 11);
 }
 
 test "scattered water reaches only from the water there before it, not from what it lays" {

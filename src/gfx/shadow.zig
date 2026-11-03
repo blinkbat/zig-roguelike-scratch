@@ -109,9 +109,8 @@ pub fn drawShadows(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectang
     const fx = f.x;
     const fy = f.y;
     var buf: [light.BODY_LIGHTS]Cast = undefined;
-    const found = casts(s, centre, f.height, &buf);
-    if (found.len == 0) return;
-    const cs = buf[0..found.len];
+    const cs = casts(s, centre, f.height, &buf);
+    if (cs.len == 0) return;
     for (cs) |*c| c.alpha *= opacity;
     const foot = f.share;
     if (!beginSilhouettes(self, tex, foot, (Sides{}).uniform(), .{ SHADOW_SOFT_TIP, SHADOW_SOFT_FOOT })) return;
@@ -230,7 +229,7 @@ comptime {
 }
 
 /// `height` is pixels from the feet to the top of the art.
-pub fn casts(s: *const light.Shine, centre: [2]f32, height: f32, out: *[light.BODY_LIGHTS]Cast) []const Cast {
+pub fn casts(s: *const light.Shine, centre: [2]f32, height: f32, out: *[light.BODY_LIGHTS]Cast) []Cast {
     const lit = s.lit();
     if (lit <= 0) return out[0..0];
     var n: usize = 0;

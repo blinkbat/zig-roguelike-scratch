@@ -296,4 +296,14 @@ pub const Simulation = struct {
     pub fn sayOf(self: *Simulation, a: *const actor.Actor, comptime fmt: []const u8, args: anytype) void {
         if (a.seenIn(&self.lv)) self.log.push(.status, fmt, args);
     }
+
+    /// The foe `a` `takes`, where seen.
+    pub fn sayFoeTakes(self: *Simulation, a: *const actor.Actor, comptime takes: []const u8) void {
+        self.sayOf(a, "The {s} " ++ takes ++ "!", .{actor.row(a.kind).name});
+    }
+
+    /// The body in `slot` `takes`: the hero's as danger, a foe's where seen.
+    pub fn sayTakes(self: *Simulation, slot: usize, a: *const actor.Actor, comptime takes: []const u8) void {
+        if (self.isHero(slot)) self.log.push(.danger, "{s} " ++ takes ++ "!", .{self.name.text()}) else self.sayFoeTakes(a, takes);
+    }
 };

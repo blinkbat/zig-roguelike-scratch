@@ -620,12 +620,10 @@ pub const Presentation = struct {
             if (gl.bump != null or std.meta.eql(gl.from, glide.cellPx(gl.to))) continue;
             if (self.pictured[i].down() or actor.row(self.pictured[i].kind).movement != .ground) continue;
             const at = self.drawnAt(sim, i) orelse continue;
-            switch (sim.lv.at(game.cellUnder(at))) {
-                .shallows => self.fx.splash(game.middle(at)),
-                .dirt => self.fx.dust(game.middle(at), look.DIRT_DUST),
-                .sand => self.fx.dust(game.middle(at), look.SAND_DUST),
-                else => {},
-            }
+            const under = sim.lv.at(game.cellUnder(at));
+            if (under == .shallows) {
+                self.fx.splash(game.middle(at));
+            } else if (look.stepDust(under)) |col| self.fx.dust(game.middle(at), col);
         }
     }
 
@@ -907,7 +905,7 @@ fn hides(at: rl.Vector2, p: P, t: grid.Tile) bool {
     const y = @as(f32, @floatFromInt(p.y)) * game.CELL_F;
     const top = y - if (look.tall(t)) game.CELL_F else 0;
     const bottom = y + if (look.tall(t)) 0 else game.CELL_F;
-    return at.x + game.CELL_F * (1 - FIGURE_INSET_X) > x and at.x + game.CELL_F * FIGURE_INSET_X < x + game.CELL_F * @as(f32, @floatFromInt(t.wide())) and
+    return at.x + game.CELL_F * (1 - FIGURE_INSET_X) > x and at.x + game.CELL_F * FIGURE_INSET_X < x + game.CELL_F * @as(f32, @floatFromInt(t.footprint(p).width())) and
         at.y + game.CELL_F * (1 - FIGURE_INSET_Y) > top and at.y + game.CELL_F * FIGURE_INSET_Y < bottom;
 }
 

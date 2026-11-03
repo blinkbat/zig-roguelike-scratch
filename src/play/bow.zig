@@ -30,7 +30,7 @@ pub const Flight = struct {
 
     pub fn impact(f: *const Flight) ?P {
         if (f.struck == null) return null;
-        return f.path[f.len - 1];
+        return f.end();
     }
 
     /// Where it came down, struck or not; none when it never left the bow.

@@ -613,6 +613,8 @@ fn pixels(width: i32, height: i32) grid.Cells {
     return grid.Cells.of(.{ .x = 0, .y = 0 }, .{ .x = width, .y = height });
 }
 
+const BAG_GOLD = 37;
+
 fn shootLoot(g: *game.Game) !void {
     const screen = g.screen;
     defer g.screen = screen;
@@ -625,7 +627,7 @@ fn shootLoot(g: *game.Game) !void {
     const bag = P{ .x = 19, .y = 20 };
     const chest = P{ .x = 21, .y = 20 };
     for ([_]items.Kind{ .ring, .boots, .axe }) |kind| _ = g.sim.ground.add(.{ .item = .{ .kind = kind, .mods = .{ if (kind == .axe) .{ .kind = .strength, .value = 3 } else null, null, null, null } }, .at = bag });
-    _ = g.sim.ground.gold(bag, 37);
+    _ = g.sim.ground.gold(bag, BAG_GOLD);
     g.sim.lv.set(chest, .chest);
     game.settle(g);
     try capture(g, target, SHOTS_DIR ++ "/loot-ground.png");
@@ -636,23 +638,22 @@ fn shootLoot(g: *game.Game) !void {
     try capture(g, target, SHOTS_DIR ++ "/loot-bag-pad.png");
     g.st.device = .keys;
     try capture(g, target, SHOTS_DIR ++ "/loot-bag-keys.png");
-    g.character.cursor = 3;
-    try capture(g, target, SHOTS_DIR ++ "/loot-gold.png");
     game.character.characterCommand(g, .close);
+    if (g.sim.gold != BAG_GOLD) return error.BagGoldUntaken;
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.mode != .play or g.sim.gold != 0 or g.sim.ground.coin_n != 2) return error.ChestRevealMismatch;
+    if (g.mode != .play or g.sim.gold != BAG_GOLD or g.sim.ground.coin_n != 1) return error.ChestRevealMismatch;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-revealed.png");
     game.heroStep(g, .e, 0);
     game.harness.drawnOut(g);
-    if (g.mode != .pause or g.character.page != .loot or g.sim.gold != 0 or g.sim.ground.coin_n != 2) return error.ChestLootUnopened;
+    if (g.mode != .pause or g.character.page != .loot or g.sim.gold != BAG_GOLD or g.sim.ground.coin_n != 1) return error.ChestLootUnopened;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest.png");
     game.character.characterCommand(g, .close);
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-left.png");
     game.character.openLoot(g, chest);
     game.character.characterCommand(g, .take_all);
     game.harness.drawnOut(g);
-    if (g.sim.ground.n != 3 or g.sim.inventory.n != 1 or g.sim.gold < items.CHEST_GOLD.lo or g.sim.ground.coin_n != 1 or g.sim.lv.at(chest) != .chest_open) return error.LootContainerMismatch;
+    if (g.sim.ground.n != 3 or g.sim.inventory.n != 1 or g.sim.gold < BAG_GOLD + items.CHEST_GOLD.lo or g.sim.ground.coin_n != 0 or g.sim.lv.at(chest) != .chest_open) return error.LootContainerMismatch;
     try capture(g, target, SHOTS_DIR ++ "/loot-chest-empty.png");
     for (0..items.BAG_MAX - g.sim.inventory.n) |_| _ = g.sim.inventory.add(.{ .kind = .cap });
     game.heroStep(g, .w, 0);
@@ -680,12 +681,12 @@ fn shootLoot(g: *game.Game) !void {
 
     game.harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
     game.harness.grassOver(&g.sim.lv);
-    _ = g.sim.ground.gold(bag, 37);
+    _ = g.sim.ground.gold(bag, BAG_GOLD);
     game.settle(g);
     try capture(g, target, SHOTS_DIR ++ "/loot-gold-only-ground.png");
     game.heroStep(g, .w, 0);
     game.harness.drawnOut(g);
-    if (g.mode != .play or g.sim.gold != 37 or g.sim.ground.coin_n != 0) return error.GoldAutoLootMismatch;
+    if (g.mode != .play or g.sim.gold != BAG_GOLD or g.sim.ground.coin_n != 0) return error.GoldAutoLootMismatch;
     try capture(g, target, SHOTS_DIR ++ "/loot-gold-only.png");
 }
 
@@ -1650,11 +1651,10 @@ fn checkWaterSurface(g: *game.Game) !void {
         while (px.next()) |q| {
             const x = q.x;
             const y = q.y;
-            const base = rl.getImageColor(plain, x, y);
-            if (!std.meta.eql(base, rl.getImageColor(still, x, y))) return error.WaterSurfaceChanged;
+            const base = rl.getImageColor(still, x, y);
             const a = rl.getImageColor(first, x, y);
             const b = rl.getImageColor(second, x, y);
-            if (a.a != base.a or b.a != base.a) return error.WaterAlphaChanged;
+            if (base.a != rl.getImageColor(plain, x, y).a or a.a != base.a or b.a != base.a) return error.WaterAlphaChanged;
             const band = Band.of(x) orelse continue;
             if (y >= game.CELL or band == DRY) {
                 if (!std.meta.eql(base, a) or !std.meta.eql(base, b)) return error.WaterOutsideSurface;
@@ -1680,7 +1680,7 @@ fn checkWaterSurface(g: *game.Game) !void {
         while (px.next()) |q| {
             const x = q.x;
             const y = q.y;
-            const base = rl.getImageColor(plain, x, y);
+            const base = rl.getImageColor(still, x, y);
             const m = rl.getImageColor(memory, x, y);
             if (m.a != base.a) return error.WaterAlphaChanged;
             const band = Band.of(x) orelse continue;
@@ -1697,7 +1697,8 @@ fn checkWaterSurface(g: *game.Game) !void {
     }
     view.glints = gleam;
     view.mirror = null;
-    const shift = CAMERA_SHIFT;
+    // Water fades by screen row, so only a sideways shift keeps each row's fade.
+    const shift = P{ .x = CAMERA_SHIFT.x, .y = 0 };
     const shifted = try waterSample(g, target, &beds, view, .{ -shift.x, -shift.y });
     defer rl.unloadImage(shifted);
     var compared: usize = 0;
@@ -1712,7 +1713,7 @@ fn checkWaterSurface(g: *game.Game) !void {
             compared += 1;
         }
     }
-    std.debug.print("smooth water GPU: glints {d}/{d}, live mirrors {d}/{d}, remembered mirrors {d}/{d}; {d} grass/memory pixels exclude live effects, {d} camera samples agree; static art and alpha preserved\n", .{ glinted[0], glinted[1], reflected[0], reflected[1], remembered[0], remembered[1], fixed, compared });
+    std.debug.print("smooth water GPU: glints {d}/{d}, live mirrors {d}/{d}, remembered mirrors {d}/{d}; {d} grass/memory pixels exclude live effects, {d} sideways camera samples agree; alpha preserved\n", .{ glinted[0], glinted[1], reflected[0], reflected[1], remembered[0], remembered[1], fixed, compared });
     view.glints = dark;
     view.shimmer = true;
     const swelled = try waterSample(g, target, &beds, view, .{ 0, 0 });

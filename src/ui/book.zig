@@ -12,6 +12,8 @@ pub const verifyCards = item_card.verify;
 pub const verifyStats = character_stats.verify;
 const BOTH_HANDS = "Both hands";
 const BOTH_IN_USE = BOTH_HANDS ++ " in use";
+/// Between loot's gold and its position count.
+const LOOT_GOLD_GAP: i32 = 80;
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -440,7 +442,7 @@ pub const Book = struct {
         if (self.page == .loot and view.loot_gold > 0) {
             var coins: menu.Note(32) = .{};
             coins.say("{d} gold", .{view.loot_gold});
-            face.draw(coins.text(), position_x - layout.TEXT_X * 2 - face.width(coins.text(), font.SMALL), note_y, font.SMALL, look.UI_GOLD);
+            face.draw(coins.text(), position_x - LOOT_GOLD_GAP - face.width(coins.text(), font.SMALL), note_y, font.SMALL, look.UI_GOLD);
         }
     }
 
