@@ -200,12 +200,15 @@ fn skillBox(class: hero.Class, i: usize) rl.Rectangle {
 }
 
 fn frame(face: *const font.Face, title: [:0]const u8, points: u16) void {
-    for ([_]rl.Rectangle{ CANVAS, DETAIL }) |box| {
-        rl.drawRectangleRec(box, BACK);
-        rl.drawRectangleLinesEx(box, 1, BORDER);
-    }
+    backdrop(CANVAS);
+    backdrop(DETAIL);
     face.draw(title, CANVAS_LEFT, TITLE_Y, font.SMALL, look.TEXT);
     drawPoints(face, points, true);
+}
+
+fn backdrop(box: rl.Rectangle) void {
+    rl.drawRectangleRec(box, BACK);
+    rl.drawRectangleLinesEx(box, 1, BORDER);
 }
 
 fn drawPoints(face: *const font.Face, points: u16, right: bool) void {
@@ -253,7 +256,7 @@ fn arrow(from: rl.Rectangle, to: rl.Rectangle, ink: rl.Color) void {
     rl.drawLineEx(.{ .x = b.x + 4, .y = b.y - 5 }, b, 1, ink);
 }
 
-const SkillState = enum {
+pub const SkillState = enum {
     learned,
     available,
     locked,
@@ -575,8 +578,7 @@ fn passiveLink(layout: Layout, pos: *const Positions, growth: *const progress.St
 const Positions = [passives.N]rl.Vector2;
 
 fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progress.State, view: View, surface: menu.Surface, device: input.Device) void {
-    rl.drawRectangleRec(CANVAS, BACK);
-    rl.drawRectangleLinesEx(CANVAS, 1, BORDER);
+    backdrop(CANVAS);
     rl.drawLine(@intFromFloat(DETAIL.x), DETAIL_TOP, @intFromFloat(DETAIL.x), CANVAS_BOTTOM, BORDER);
     drawPoints(face, growth.passive_points, false);
     const layout = wheelLayout(view);

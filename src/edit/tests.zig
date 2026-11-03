@@ -649,6 +649,34 @@ test "the paste's ghost lays aside what the click lays, so a door refuses the ba
     try std.testing.expectEqualStrings("Pasted; 1 torch(es), barrel(s) or foe(s) did not fit there", ed.said.text());
 }
 
+test "a pasted caravan with no room for its part lays its ground and spares what stands under its head" {
+    const ed = try editor.Editor.create(std.testing.allocator);
+    defer ed.destroy();
+    _ = ed.map.oneRoom(grid.Box.inMap(0), grid.MIDDLE);
+    ed.board.size = .{ .x = 2, .y = 1 };
+    ed.board.cells.tile = @splat(.floor);
+    ed.board.cells.tile[0] = .caravan;
+    ed.board.cells.tile[1] = .caravan_part;
+    const b = &ed.map.node[0].plan.bespoke;
+    const doored = P{ .x = 30, .y = 20 };
+    const edge = P{ .x = grid.W - 1, .y = 20 };
+    const room = P{ .x = 40, .y = 20 };
+    click(ed, .door, doored.add(.{ .x = 1, .y = 0 }));
+    for ([_]P{ doored, edge }) |p| {
+        click(ed, .{ .foe = .rat }, p);
+        const at = ed.history.at;
+        ed.gesture();
+        placement.layBoard(ed, p);
+        try std.testing.expect(b.foeAt(p) != null);
+        try std.testing.expectEqual(grid.Tile.caravan.bare(), tileAt(ed, p));
+        try std.testing.expectEqual(at + 1, ed.history.at);
+    }
+    ed.gesture();
+    placement.layBoard(ed, room);
+    try std.testing.expectEqual(grid.Tile.caravan, tileAt(ed, room));
+    try std.testing.expectEqual(grid.Tile.caravan_part, tileAt(ed, room.add(.{ .x = 1, .y = 0 })));
+}
+
 test "paste previews reuse unchanged content and follow cells clipboard terrain doors nodes and undo" {
     const ed = try editor.Editor.create(std.testing.allocator);
     defer ed.destroy();

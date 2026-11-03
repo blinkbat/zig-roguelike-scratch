@@ -481,7 +481,7 @@ pub fn flicker(t: f32, seed: u32) f32 {
 }
 
 pub fn pulse(t: f32, seed: u32) f32 {
-    return 1 + PULSE * @sin((t * PULSE_HZ + hash(0, seed)) * std.math.tau);
+    return 1 + PULSE * @sin((t * PULSE_HZ + hash(0, seed)) * mathx.TAU);
 }
 
 pub fn knee(c: Rgb) Rgb {

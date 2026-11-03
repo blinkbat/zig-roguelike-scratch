@@ -320,22 +320,21 @@ pub const Book = struct {
             },
             .stats => c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = if (self.advanced) "Main stats" else "Advanced" }),
             .equipment, .inventory, .nearby, .loot => if (self.count(view) > 0) {
-                const it = self.selected(view) orelse {
-                    c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = if (self.direct()) view.nearby[self.cursor].command().verb() else if (self.carriedRow(view) != null) character_view.verbOf(.use) else "Inventory" });
-                    if (self.page == .loot) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = character_view.verbOf(.take_all) });
-                    return c;
-                };
-                c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = switch (self.page) {
+                const chosen = self.selected(view);
+                const label: [:0]const u8 = if (chosen == null)
+                    (if (self.direct()) view.nearby[self.cursor].command().verb() else if (self.carriedRow(view) != null) character_view.verbOf(.use) else "Inventory")
+                else switch (self.page) {
                     .equipment => character_view.verbOf(.unequip),
                     .inventory => character_view.verbOf(.equip),
                     .nearby, .loot => character_view.verbOf(.pickup),
                     .stats, .passives, .skills => unreachable,
-                } });
+                };
+                c.add(self.actionBox(menu.CONFIRM, view), menu.CONFIRM, .{ .label = label });
                 if (self.page == .loot) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = character_view.verbOf(.take_all) });
-                if (self.page == .inventory) {
+                if (self.page == .inventory) if (chosen) |it| {
                     if (it.kind.slots().len > 1) c.add(self.actionBox(menu.CHANGE, view), menu.CHANGE, .{ .label = slotLabel(self.destination(view)) });
                     c.add(self.actionBox(menu.REMOVE, view), menu.REMOVE, .{ .label = character_view.verbOf(.drop) });
-                }
+                };
             },
         }
         return c;

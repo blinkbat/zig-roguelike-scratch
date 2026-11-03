@@ -639,6 +639,22 @@ fn shootPage(app: *App, target: rl.RenderTexture2D, path: [:0]const u8) !void {
 
 var start_edit: ?[]const u8 = null;
 
+test "every type whose words the player may rename is registered under its own name" {
+    const debug = @import("game/debug.zig");
+    const types = .{
+        MainRow,                               OptionRow,                           game.PauseRow,
+        debug.Page,                            debug.Row,                           hero.Class,
+        @import("play/skillbar.zig").Act,      @import("play/items.zig").Kind,      @import("play/attrs.zig").Attr,
+        @import("play/damage.zig").Element,    @import("play/resilience.zig").Kind, @import("play/flask.zig").Kind,
+        @import("play/consumable.zig").Kind,   actor.FoeType,                       actor.Movement,
+        @import("ui/character_view.zig").Page, @import("ui/trees.zig").SkillState,  editor.View,
+        editor.Lower,                          @import("map/grid.zig").Tile,
+    };
+    const wording = @import("core/wording.zig");
+    try std.testing.expectEqual(wording.TYPES.len, types.len);
+    inline for (types, wording.TYPES) |T, row| try std.testing.expectEqualStrings(@typeName(T), row.name);
+}
+
 test "mouse save deletion stays tied to its row through intermediate movement and needs two presses" {
     const alloc = std.testing.allocator;
     const g = try game.boot(alloc);

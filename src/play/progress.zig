@@ -80,7 +80,7 @@ pub fn skills(c: hero.Class) []const Skill {
 
 /// Every hero has it from the start, outside the class's tree.
 fn innate(act: skillbar.Act) bool {
-    return act == .wait or act == .secondary or act.flaskOf() != null or act.supplyOf() != null;
+    return act == .wait or act == .secondary or act.carried();
 }
 
 comptime {

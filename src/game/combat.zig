@@ -111,7 +111,7 @@ fn strike(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) ?S
 fn cut(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) void {
     const hit = strike(g, act, d, s) orelse return;
     const a = g.sim.pool.get(hit.id).?;
-    if (comptime act.afflicts()) if (hit.takes) sayTakes(g, skillbar.Act.skill(act).TAKES, a);
+    if (comptime act.afflicts()) if (hit.takes) g.sim.sayFoeTakes(a, skillbar.Act.skill(act).TAKES);
 }
 
 pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) void {
@@ -129,11 +129,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
         tactics.entered(g, id);
         g.sim.sayAt(b, "The {s} is knocked back.", .{name});
     };
-    if (comptime act.afflicts()) if (hit.takes) sayTakes(g, M.TAKES, a);
-}
-
-pub fn sayTakes(g: *game.Game, comptime takes: []const u8, a: *const actor.Actor) void {
-    g.sim.sayFoeTakes(a, takes);
+    if (comptime act.afflicts()) if (hit.takes) g.sim.sayFoeTakes(a, M.TAKES);
 }
 
 pub const SHOOT = bow.VERB;
@@ -159,7 +155,7 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     const takes = attacks.afflicted(&g.sim, a, M, lands, if (el) |e| resists.get(e) else 0);
     if (takes) r.applied = M.AILMENT;
     if (r.dmg > 0) wound(g, id, r, M.VERB, s);
-    if (takes) if (g.sim.pool.get(id)) |b| sayTakes(g, M.TAKES, b);
+    if (takes) if (g.sim.pool.get(id)) |b| g.sim.sayFoeTakes(b, M.TAKES);
 }
 
 /// Lightning landing in water runs through it: every body wading or swimming in the water it reaches is shocked as it lands.
@@ -433,7 +429,7 @@ fn orderedFoeTurns(g: *game.Game) bool {
 fn waitingNewbornTurns(g: *game.Game) void {
     var i: usize = 0;
     while (i < g.sim.pool.n) : (i += 1) {
-        const a = g.sim.pool.items[i];
+        const a = &g.sim.pool.items[i];
         if (!a.alive or !a.waits) continue;
         const id = actor.Pool.idOf(i);
         _ = wearTurn(g, id);
@@ -691,7 +687,7 @@ fn closeIn(g: *game.Game, id: u16, keep: i32, af: actor.Afflicted) void {
 /// Of `m.kin`, alive and in its sight of the mender at `from`.
 fn kinInReach(lv: *const grid.Level, m: actor.Mend, a: *const actor.Actor, from: P, within: i32) bool {
     if (!a.alive or std.mem.indexOfScalar(actor.Kind, m.kin, a.kind) == null) return false;
-    return mathx.dist(a.at, from) <= within and grid.clearLine(lv, from, a.at);
+    return mathx.dist(a.at, from) <= within and grid.sightLine(lv, from, a.at);
 }
 
 /// Thrown along a clear flight at a hero not already held; a dodge or resistance spends it all the same.
@@ -829,8 +825,7 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
         },
         .burst => |b| {
             if (b == .gas) g.sim.chronicle.note(.burst);
-            const a = g.sim.pool.get(id).?.*;
-            _ = g.sim.pool.damage(&g.sim.lv, id, a.hp);
+            _ = g.sim.pool.damage(&g.sim.lv, id, g.sim.pool.get(id).?.hp);
             g.pic.recordFoeAttack(.fromInt(id), .{ .burst = g.pic.afterOf(&g.sim, i) }, flight);
             fell(g, id);
         },
@@ -912,7 +907,7 @@ fn swipe(g: *game.Game, source: u16, id: u16, by: actor.Row, s: actor.Strike, we
     }
     const h = game.hurt(g, .fromInt(id), dmg);
     g.sim.sayOf(a, "The {s} " ++ actor.SWEEP_VERB ++ " the {s} for {d}.{s}", .{ by.name, name, h.dmg, deathNote(h) });
-    if (stunned) sayTakes(g, turn_clock.STUNNED, a);
+    if (stunned) g.sim.sayFoeTakes(a, turn_clock.STUNNED);
     const after = afterBlow(g, id, h);
     if (h.lethal) fell(g, id);
     return .{ .actor = .{ .slot = actor.ActorId.fromInt(id).slot(), .at = at, .lethal = h.lethal, .after = after } };

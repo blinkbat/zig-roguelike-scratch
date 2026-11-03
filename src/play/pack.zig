@@ -299,20 +299,20 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exit
 
 /// An exit makeup's lead tries a door at random, then each other door in turn.
 fn placeOne(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exits: []const P, spec: *const Spec, m: *const Makeup, bodies: *usize) bool {
-    const others = pool.n;
-    const lead = if (!m.exit) leadSpot(lv, pool, rng, start, null, spec, others, m.lead()) orelse return false else lead: {
+    const ground = Ground{ .lv = lv, .pool = pool, .start = start, .spec = spec, .others = pool.n };
+    const lead = if (!m.exit) ground.leadSpot(rng, null, m.lead()) orelse return false else lead: {
         if (exits.len == 0) return false;
         const first = rng.below(@intCast(exits.len));
         for (0..exits.len) |k| {
             const by = exits[(first + k) % exits.len];
-            if (leadSpot(lv, pool, rng, start, by, spec, others, m.lead())) |p| break :lead p;
+            if (ground.leadSpot(rng, by, m.lead())) |p| break :lead p;
         }
         return false;
     };
     spawnCounted(lv, pool, m.lead(), lead, bodies);
     for (m.followers()) |k| {
         if (!actor.roomFor(bodies.*, k)) continue;
-        const at = spotNear(lv, pool, rng, lead, start, spec, others, k) orelse continue;
+        const at = ground.spotNear(rng, lead, k) orelse continue;
         spawnCounted(lv, pool, k, at, bodies);
     }
     return true;
@@ -323,49 +323,53 @@ fn spawnCounted(lv: *grid.Level, pool: *actor.Pool, k: actor.Kind, at: P, bodies
     bodies.* += actor.most(k);
 }
 
-/// `others` bounds the previously placed packs.
-fn clear(lv: *const grid.Level, pool: *actor.Pool, p: P, start: P, spec: *const Spec, others: usize, k: actor.Kind) bool {
-    if (!actor.dwells(k, lv, p) or mathx.dist(p, start) < spec.gap) return false;
-    if (spec.apart == 0) return true;
-    for (pool.items[0..others]) |*a| {
-        if (a.foe() and mathx.dist(a.at, p) < spec.apart) return false;
-    }
-    return true;
-}
+/// Where one pack's bodies may stand; `others` bounds the previously placed packs.
+const Ground = struct {
+    lv: *const grid.Level,
+    pool: *const actor.Pool,
+    start: P,
+    spec: *const Spec,
+    others: usize,
 
-/// `by`: the door the lead must stand within `EXIT_REACH` of.
-fn leadSpot(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, by: ?P, spec: *const Spec, others: usize, k: actor.Kind) ?P {
-    const Clear = struct {
-        lv: *const grid.Level,
-        pool: *actor.Pool,
-        start: P,
-        spec: *const Spec,
-        others: usize,
-        k: actor.Kind,
-
-        fn at(c: @This(), p: P) bool {
-            return grid.Box.inMap(1).holds(p) and clear(c.lv, c.pool, p, c.start, c.spec, c.others, c.k);
+    fn clear(g: Ground, p: P, k: actor.Kind) bool {
+        if (!actor.dwells(k, g.lv, p) or mathx.dist(p, g.start) < g.spec.gap) return false;
+        if (g.spec.apart == 0) return true;
+        for (g.pool.items[0..g.others]) |*a| {
+            if (a.foe() and mathx.dist(a.at, p) < g.spec.apart) return false;
         }
-    };
-    const box = if (by) |d| grid.Box.around(d, EXIT_REACH) else grid.Box.inMap(1);
-    return box.rollWhere(rng, SPOT_TRIES, Clear{ .lv = lv, .pool = pool, .start = start, .spec = spec, .others = others, .k = k }, Clear.at);
-}
-
-fn spotNear(lv: *const grid.Level, pool: *actor.Pool, rng: *mathx.Rng, lead: P, start: P, spec: *const Spec, others: usize, k: actor.Kind) ?P {
-    var ring: i32 = 1;
-    while (ring <= spec.reach) : (ring += 1) {
-        var spots: [mathx.Ring.cells(REACH_MAX)]P = undefined;
-        var n: usize = 0;
-        var cells = mathx.Ring.init(lead, ring);
-        while (cells.next()) |p| {
-            if (!clear(lv, pool, p, start, spec, others, k) or !grid.clearLine(lv, lead, p)) continue;
-            spots[n] = p;
-            n += 1;
-        }
-        if (n > 0) return rng.pick(P, spots[0..n]);
+        return true;
     }
-    return null;
-}
+
+    /// `by`: the door the lead must stand within `EXIT_REACH` of.
+    fn leadSpot(g: Ground, rng: *mathx.Rng, by: ?P, k: actor.Kind) ?P {
+        const Lead = struct {
+            ground: Ground,
+            k: actor.Kind,
+
+            fn at(l: @This(), p: P) bool {
+                return grid.Box.inMap(1).holds(p) and l.ground.clear(p, l.k);
+            }
+        };
+        const box = if (by) |d| grid.Box.around(d, EXIT_REACH) else grid.Box.inMap(1);
+        return box.rollWhere(rng, SPOT_TRIES, Lead{ .ground = g, .k = k }, Lead.at);
+    }
+
+    fn spotNear(g: Ground, rng: *mathx.Rng, lead: P, k: actor.Kind) ?P {
+        var ring: i32 = 1;
+        while (ring <= g.spec.reach) : (ring += 1) {
+            var spots: [mathx.Ring.cells(REACH_MAX)]P = undefined;
+            var n: usize = 0;
+            var cells = mathx.Ring.init(lead, ring);
+            while (cells.next()) |p| {
+                if (!g.clear(p, k) or !grid.clearLine(g.lv, lead, p)) continue;
+                spots[n] = p;
+                n += 1;
+            }
+            if (n > 0) return rng.pick(P, spots[0..n]);
+        }
+        return null;
+    }
+};
 
 test "every floor has a few of each foe it has ground for, each on its own ground, slimes by rats and crossbowmen by rats or shields" {
     var lv: grid.Level = undefined;

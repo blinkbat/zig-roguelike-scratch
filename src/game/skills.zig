@@ -108,7 +108,7 @@ pub fn heroPinned(run: *const game.Game) bool {
 pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.simulation.Flasks, mana: i32, pinned: bool) ?Blocked {
     if (!run.sim.growth.unlocked(act)) return .locked;
     if (movesHero(act) and pinned) return .pinned;
-    if (act == .unyielding and run.sim.heroBody() != null and run.sim.heroBody().?.tactics.unyielding) return null;
+    if (act == .unyielding) if (run.sim.heroBody()) |h| if (h.tactics.unyielding) return null;
     if (run.sim.cooldown.get(act) > 0) return .cooling;
     if (act.flaskOf()) |k| {
         if (!run.sim.inventory.gear.holds(k)) return .unworn;

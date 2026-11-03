@@ -146,7 +146,7 @@ pub fn titleOf(c: hero.Class, buf: *[TITLE_MAX]u8) [:0]const u8 {
 pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const u8, device: input.Device) void {
     const at = if (device == .keys and !e.pointer_selected) AT_DONE else e.*;
     const content = contentBox(screen);
-    rl.beginMode2D(.{ .target = .{ .x = 0, .y = 0 }, .offset = .{ .x = content.x, .y = content.y }, .rotation = 0, .zoom = 1 });
+    (menu.Surface{ .scale = 1, .offset = .{ .x = content.x, .y = content.y } }).begin();
     const column = mathx.P{ .x = GRID_W, .y = CONTENT_H };
     menu.pageHeading(face, column, title, 0);
     var buf: [hero.Name.MAX + CARET.len + 1]u8 = undefined;
@@ -157,7 +157,7 @@ pub fn draw(e: *const Entry, face: font.Face, screen: mathx.P, title: [:0]const 
             const box = keyBox(screen, r, c);
             const centre = raster.middleAt(box);
             const on = r == at.row and c == at.col;
-            if (on) rl.drawRectangleRec(box, look.ROW_ON);
+            menu.band(box, on);
             const col = menu.rowInk(on);
             if (r < LETTERS.len) {
                 face.glyph(LETTERS[r][c], centre.x, centre.y, KEY, col);

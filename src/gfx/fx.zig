@@ -920,8 +920,7 @@ pub const Fx = struct {
         const life = m.trail_s;
         if (age >= life) return;
         const motes = missileOf(act).trail_r;
-        const slot = self.head;
-        self.emit(.{
+        advance(self.spawn(.{
             .p = .{ at[0] + self.rng.spread(0.08), at[1] + self.rng.spread(0.08), STRIKE_Z },
             .v = .{ -dir[0] * 0.8 + self.rng.spread(0.6), -dir[1] * 0.8 + self.rng.spread(0.6), m.rise },
             .life = life,
@@ -929,8 +928,7 @@ pub const Fx = struct {
             .col = look.arrowInk(act),
             .drag = 3,
             .add = m.add,
-        });
-        advance(&self.motes[slot], lv, age);
+        }), lv, age);
     }
 
     pub fn shimmer(self: *Fx, at: [2]f32, col: rl.Color) void {
@@ -1276,9 +1274,14 @@ pub const Fx = struct {
     }
 
     fn emit(self: *Fx, m: Mote) void {
+        _ = self.spawn(m);
+    }
+
+    fn spawn(self: *Fx, m: Mote) *Mote {
         const slot = claim(Mote, &self.motes, &self.head);
         slot.* = m;
         slot.max = m.life;
+        return slot;
     }
 
     /// Draw before lighting/fog; stains precede airborne motes.
@@ -1289,8 +1292,9 @@ pub const Fx = struct {
             const x = ox + (@round(r.at[0] * look.SPRITE_PX) + 0.5) * k;
             const y = oy + (@round(r.at[1] * look.SPRITE_PX) + 0.5) * k;
             var dots: [RIPPLE_RINGS * ringDotsMax()]Dot = undefined;
+            const col = look.fade(look.RIPPLE, ring.a);
             for (rippleDots(ring.r, &dots)) |d| {
-                pixel.rect(.{ .x = x + @as(f32, @floatFromInt(d.x)) * k, .y = y + @as(f32, @floatFromInt(d.y)) * k }, 1, 1, k, look.fade(look.RIPPLE, ring.a));
+                pixel.rect(.{ .x = x + @as(f32, @floatFromInt(d.x)) * k, .y = y + @as(f32, @floatFromInt(d.y)) * k }, 1, 1, k, col);
             }
         }
         for (&self.motes) |*m| {
@@ -1352,13 +1356,30 @@ fn ringSteps(r: f32) usize {
     return @as(usize, @intFromFloat(@ceil(mathx.TAU * r))) + 4;
 }
 
+const RING_STEPS_MIN = ringSteps(RIPPLE_R[0]);
+/// Per step count, each step's cosine and sine, filled at run time so they match `@cos`/`@sin` there.
+var ring_trig: [ringDotsMax() - RING_STEPS_MIN + 1][ringDotsMax()][2]f32 = undefined;
+var ring_trig_ready = false;
+
+fn ringTrig(steps: usize) []const [2]f32 {
+    if (!ring_trig_ready) {
+        for (&ring_trig, RING_STEPS_MIN..) |*row, n| {
+            for (row[0..n], 0..) |*t, i| {
+                const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / @as(f32, @floatFromInt(n));
+                t.* = .{ @cos(angle), @sin(angle) };
+            }
+        }
+        ring_trig_ready = true;
+    }
+    return ring_trig[steps - RING_STEPS_MIN][0..steps];
+}
+
 /// The sprite pixels a ring of radius `r` passes through, each once.
 fn ringDots(r: f32, out: *[ringDotsMax()][2]i32) []const [2]i32 {
     const steps = @min(out.len, ringSteps(r));
     var n: usize = 0;
-    for (0..steps) |i| {
-        const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / @as(f32, @floatFromInt(steps));
-        const d = [2]i32{ @intFromFloat(@round(@cos(angle) * r)), @intFromFloat(@round(@sin(angle) * r * RIPPLE_FLAT)) };
+    for (ringTrig(steps)) |t| {
+        const d = [2]i32{ @intFromFloat(@round(t[0] * r)), @intFromFloat(@round(t[1] * r * RIPPLE_FLAT)) };
         if (n > 0 and (std.meta.eql(d, out[n - 1]) or std.meta.eql(d, out[0]))) continue;
         out[n] = d;
         n += 1;
@@ -1368,36 +1389,66 @@ fn ringDots(r: f32, out: *[ringDotsMax()][2]i32) []const [2]i32 {
 
 const Dot = struct { x: i32, y: i32, ring: u8 };
 
-fn touchesTaken(taken: anytype, x: i32, y: i32) bool {
-    for (0..3) |dy| for (0..3) |dx| {
-        if (taken[@intCast(y + RIPPLE_HALF_H + @as(i32, @intCast(dy)) - 1)][@intCast(x + RIPPLE_HALF_W + @as(i32, @intCast(dx)) - 1)]) return true;
-    };
+fn touchesTaken(taken: *RippleGrid, x: i32, y: i32) bool {
+    var dy: i32 = -1;
+    while (dy <= 1) : (dy += 1) {
+        var dx: i32 = -1;
+        while (dx <= 1) : (dx += 1) {
+            if (rippleAt(taken, x + dx, y + dy).*) return true;
+        }
+    }
     return false;
 }
 
 const RIPPLE_HALF_W: i32 = @intFromFloat(@ceil(RIPPLE_R[1]) + 2);
 const RIPPLE_HALF_H: i32 = @intFromFloat(@ceil(RIPPLE_R[1] * RIPPLE_FLAT) + 2);
+const RippleGrid = [2 * RIPPLE_HALF_H + 1][2 * RIPPLE_HALF_W + 1]bool;
+
+fn rippleAt(g: *RippleGrid, x: i32, y: i32) *bool {
+    return &g[@intCast(y + RIPPLE_HALF_H)][@intCast(x + RIPPLE_HALF_W)];
+}
 
 /// A ripple's rings, outermost `outer` sprite pixels across; an inner ring drops any pixel touching one outside it.
 fn rippleDots(outer: f32, out: *[RIPPLE_RINGS * ringDotsMax()]Dot) []const Dot {
-    var taken: [2 * RIPPLE_HALF_H + 1][2 * RIPPLE_HALF_W + 1]bool = @splat(@splat(false));
+    var taken: RippleGrid = @splat(@splat(false));
     var n: usize = 0;
     for (0..RIPPLE_RINGS) |i| {
         const r = outer - @as(f32, @floatFromInt(i)) * RIPPLE_GAP;
         if (r < RIPPLE_R[0]) break;
         var buf: [ringDotsMax()][2]i32 = undefined;
         const from = n;
-        var here: @TypeOf(taken) = @splat(@splat(false));
+        var here: RippleGrid = @splat(@splat(false));
         for (ringDots(r, &buf)) |d| {
-            const mine = &here[@intCast(d[1] + RIPPLE_HALF_H)][@intCast(d[0] + RIPPLE_HALF_W)];
+            const mine = rippleAt(&here, d[0], d[1]);
             if (mine.* or touchesTaken(&taken, d[0], d[1])) continue;
             mine.* = true;
             out[n] = .{ .x = d[0], .y = d[1], .ring = @intCast(i) };
             n += 1;
         }
-        for (out[from..n]) |d| taken[@intCast(d.y + RIPPLE_HALF_H)][@intCast(d.x + RIPPLE_HALF_W)] = true;
+        for (out[from..n]) |d| rippleAt(&taken, d.x, d.y).* = true;
     }
     return out[0..n];
+}
+
+test "a ring's dots from the cached angles are the dots its own trig gives" {
+    var buf: [ringDotsMax()][2]i32 = undefined;
+    var radii: usize = 0;
+    var r: f32 = RIPPLE_R[0];
+    while (r <= RIPPLE_R[1]) : (r += 0.01) {
+        const steps = @min(buf.len, ringSteps(r));
+        var want: [ringDotsMax()][2]i32 = undefined;
+        var n: usize = 0;
+        for (0..steps) |i| {
+            const angle = @as(f32, @floatFromInt(i)) * mathx.TAU / @as(f32, @floatFromInt(steps));
+            const d = [2]i32{ @intFromFloat(@round(@cos(angle) * r)), @intFromFloat(@round(@sin(angle) * r * RIPPLE_FLAT)) };
+            if (n > 0 and (std.meta.eql(d, want[n - 1]) or std.meta.eql(d, want[0]))) continue;
+            want[n] = d;
+            n += 1;
+        }
+        try std.testing.expectEqualSlices([2]i32, want[0..n], ringDots(r, &buf));
+        radii += 1;
+    }
+    std.debug.print("ripple rings: {d} radii from cached angles match direct trig\n", .{radii});
 }
 
 fn projected(at: [2]f32, ox: f32, oy: f32, cell: f32) rl.Vector2 {

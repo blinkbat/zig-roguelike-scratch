@@ -486,16 +486,14 @@ pub fn heroMove(g: *Game, d: mathx.Dir) Move {
 
 /// A step from `from` toward `d`, `occupied` saying whether a body or barrel stands where it lands.
 pub fn moveOf(g: *const Game, from: P, d: mathx.Dir, occupied: bool) Move {
-    if (opensChest(g, from, d)) return .open;
-    if (g.sim.lv.at(from.add(d.delta())).bursts()) return .burst;
-    if (!g.sim.lv.passOk(from, d)) return if (occupied and g.sim.lv.at(from.add(d.delta())).wet()) .kick else .blocked;
-    if (g.sim.lv.folkAt(from.add(d.delta())) != null) return .talk;
+    const to = from.add(d.delta());
+    const there = g.sim.lv.at(to);
+    if (there.opened() != null) return .open;
+    if (there.bursts()) return .burst;
+    if (!g.sim.lv.passOk(from, d)) return if (occupied and there.wet()) .kick else .blocked;
+    if (g.sim.lv.folkAt(to) != null) return .talk;
     if (occupied) return .kick;
-    return if (character.lootReached(g, from, from.add(d.delta()))) .loot else .step;
-}
-
-fn opensChest(g: *const Game, from: P, d: mathx.Dir) bool {
-    return g.sim.lv.at(from.add(d.delta())).opened() != null;
+    return if (character.lootReached(g, from, to)) .loot else .step;
 }
 
 fn spends(m: Move) bool {
@@ -912,10 +910,11 @@ pub fn mapAssets(g: *Game) look.Assets {
     var need = look.Assets.of(&g.sim.lv);
     need.barrel = need.barrel or g.pic.fx.barrels_due > 0;
     for (g.sim.pool.slice(), 0..) |a, i| {
+        const posing = a.alive and a.disguised;
         if (a.alive) need.body(a.kind);
-        if (a.alive and a.disguised) need.beneath(a.under, a.at);
+        if (posing) need.beneath(a.under, a.at);
         if (g.pic.standing(&g.sim, i)) need.body(g.pic.pictured[i].kind);
-        if ((a.alive and a.disguised) or g.pic.masked.isSet(i)) need.mimic_closed = true;
+        if (posing or g.pic.masked.isSet(i)) need.mimic_closed = true;
     }
     return need;
 }

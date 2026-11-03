@@ -35,7 +35,7 @@ fn drawCells(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) vo
     var beds: dual.Beds = undefined;
     beds.fill(&ed.scene.lv, v.lo, v.hi, false);
     g.sprites.drawGround(&ed.scene.lv, &beds, ed.origin(c), ed.px(), null);
-    var cells = grid.Cells.of(.{ .x = @max(0, v.lo.x - (grid.WIDEST - 1)), .y = v.lo.y }, v.hi);
+    var cells = grid.Cells.of(.{ .x = @max(0, v.lo.x - PROP_REACH.x), .y = v.lo.y }, v.hi);
     while (cells.next()) |p| {
         const r = ed.cellRect(c, p);
         const here = ed.scene.lv.at(p);
@@ -93,6 +93,7 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     if (ed.here().unrolled()) plaque(g, c, "One roll of this node (" ++ Desk.REROLL_CAPTION ++ " rolls another); play rolls it afresh each run");
 }
 
+const PROP_REACH = P{ .x = grid.WIDEST - 1, .y = 0 };
 const GRID_PX: f32 = 32;
 const FLASH_PX: f32 = 4;
 const GHOST_A: f32 = 0.5;
@@ -145,14 +146,19 @@ fn drawCursor(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         const lays = ed.paintable();
         if (lays) _ = placement.layAside(ed, m);
         const trial = &ed.trial;
-        var cells = bd.box(.{ .x = 0, .y = 0 }).cells();
+        const board = bd.box(.{ .x = 0, .y = 0 });
+        var cells = grid.Cells.of(board.lo.sub(PROP_REACH), board.hi.add(PROP_REACH));
         while (cells.next()) |q| {
             const p = m.add(q);
-            const k = grid.Level.idx(q);
             if (!view.holds(p)) continue;
-            ghostInk(ed, g, c, p, bd.cells.tile[k]);
-            if (!bd.cells.barrel[k]) continue;
             const i = grid.Level.idx(p);
+            if (!board.holds(q)) {
+                if (lays and trial.tile[i] != ed.plan().bespoke.tile[i]) ghostInk(ed, g, c, p, trial.tile[i]);
+                continue;
+            }
+            const k = grid.Level.idx(q);
+            ghostInk(ed, g, c, p, if (lays) trial.tile[i] else bd.cells.tile[k]);
+            if (!bd.cells.barrel[k]) continue;
             ghostPasted(ed, g, c, p, .barrel, lays and trial.barrel[i]);
         }
         for (bd.cells.torches()) |t| {
@@ -211,6 +217,7 @@ pub fn ghostInk(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, t: gri
 }
 
 fn ghostTile(g: *game.Game, t: grid.Tile, r: rl.Rectangle) void {
+    if (t.isPart()) return;
     if (g.sprites.tileOf(t, .{})) |tex| return raster.stretch(tex, look.tileRect(t, tex, r), GHOST);
     rl.drawRectangleRec(r, look.fade(panel.bareBg(t), GHOST_A));
 }

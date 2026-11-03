@@ -48,6 +48,8 @@ const SavedProgress = struct {
     allocations: [ALLOCATION_MAX]NodeKey = undefined,
     n: usize = 0,
     ranks: @FieldType(progress.State, "ranks") = .initFill(0),
+
+    pub const COUNTED = .{.{ "allocations", "n" }};
 };
 
 /// A `progress.State` field `SavedProgress` keeps as it is; `nodes` is kept by identity in `allocations`.
@@ -124,11 +126,6 @@ pub const Policy = struct {
     pub fn countField(comptime T: type, comptime field: []const u8) ?[]const u8 {
         if (comptime wire.counted(T, field)) |count| return count;
         if (T == data.LegacyMap) return countField(data.Map, field);
-        inline for (.{
-            .{ SavedProgress, "allocations", "n" },
-        }) |entry| {
-            if (T == entry[0] and std.mem.eql(u8, field, entry[1])) return entry[2];
-        }
         return null;
     }
 };

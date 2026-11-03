@@ -1079,25 +1079,32 @@ pub const Ray = struct {
 
 /// The target's own cell may be opaque.
 pub fn clearLine(lv: *const Level, from: P, to: P) bool {
-    return lineOk(lv, from, to, false, false);
+    return lineOk(lv, from, to, .{});
+}
+
+/// `clearLine` for eyes: thick smoke hides what lies past it too.
+pub fn sightLine(lv: *const Level, from: P, to: P) bool {
+    return lineOk(lv, from, to, .{ .smoke = true });
 }
 
 pub fn projectileLine(lv: *const Level, from: P, to: P) bool {
-    return lineOk(lv, from, to, false, true);
+    return lineOk(lv, from, to, .{ .projectiles = true });
 }
 
 /// `projectileLine`, and every cell on it lit, the target's too.
 pub fn litLine(lv: *const Level, from: P, to: P) bool {
-    return lineOk(lv, from, to, true, true);
+    return lineOk(lv, from, to, .{ .lit = true, .projectiles = true });
 }
 
-fn lineOk(lv: *const Level, from: P, to: P, comptime lit: bool, comptime projectiles: bool) bool {
+const LineRule = struct { lit: bool = false, projectiles: bool = false, smoke: bool = false };
+
+fn lineOk(lv: *const Level, from: P, to: P, comptime rule: LineRule) bool {
     var ray = Ray.init(from, to);
     while (ray.next()) |c| {
-        if (lit and !lv.isLit(c)) return false;
-        if (projectiles and lv.hasBarrier(c)) return false;
+        if (rule.lit and !lv.isLit(c)) return false;
+        if (rule.projectiles and lv.hasBarrier(c)) return false;
         if (c.eq(to)) return true;
-        if (lv.at(c).blind()) return false;
+        if (if (rule.smoke) lv.hidesBeyond(c) else lv.at(c).blind()) return false;
     }
     return true;
 }
@@ -1224,6 +1231,18 @@ test "a ray reaches its mark in chebyshev steps and a wall blocks the line" {
     var y: i32 = 5;
     while (y < 20) : (y += 1) lv.set(.{ .x = 10, .y = y }, .wall);
     try std.testing.expect(!clearLine(&lv, a, b));
+}
+
+test "thick smoke cuts a sight line but not a clear one, and never hides its own cell" {
+    var lv = openFloor();
+    const a = P{ .x = 4, .y = 9 };
+    const b = P{ .x = 12, .y = 9 };
+    lv.smoke[Level.idx(.{ .x = 8, .y = 9 })] = SMOKE_THICK;
+    try std.testing.expect(!sightLine(&lv, a, b));
+    try std.testing.expect(clearLine(&lv, a, b));
+    try std.testing.expect(sightLine(&lv, a, .{ .x = 8, .y = 9 }));
+    lv.smoke[Level.idx(.{ .x = 8, .y = 9 })] = SMOKE_THICK - 1;
+    try std.testing.expect(sightLine(&lv, a, b));
 }
 
 test "distances walk round a wall rather than through it" {

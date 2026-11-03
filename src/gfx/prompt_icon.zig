@@ -75,9 +75,7 @@ pub const Prompt = union(enum) {
                 }
             },
             .mouse => |button| {
-                const shell = raster.rect(cx - @divTrunc(h, 3), cy - @divTrunc(h, 2), @divTrunc(h * 2, 3), h);
-                rl.drawRectangleRounded(shell, MOUSE_ROUND.roundness, MOUSE_ROUND.segments, look.fade(PROMPT_BODY, alpha));
-                rl.drawRectangleRoundedLinesEx(shell, MOUSE_ROUND.roundness, MOUSE_ROUND.segments, 1, look.fade(PROMPT_EDGE, alpha));
+                rounded(raster.rect(cx - @divTrunc(h, 3), cy - @divTrunc(h, 2), @divTrunc(h * 2, 3), h), MOUSE_ROUND, alpha);
                 const x: f32 = @floatFromInt(cx);
                 const y: f32 = @floatFromInt(cy);
                 const s: f32 = @floatFromInt(h);
@@ -193,8 +191,12 @@ const MOUSE_ROUND = Round{ .roundness = 0.65, .segments = 8 };
 const WHEEL_ROUND = Round{ .roundness = 0.5, .segments = 4 };
 
 fn pill(box: rl.Rectangle, alpha: f32) void {
-    rl.drawRectangleRounded(box, PILL_ROUND.roundness, PILL_ROUND.segments, look.fade(PROMPT_BODY, alpha));
-    rl.drawRectangleRoundedLinesEx(box, PILL_ROUND.roundness, PILL_ROUND.segments, 1, look.fade(PROMPT_EDGE, alpha));
+    rounded(box, PILL_ROUND, alpha);
+}
+
+fn rounded(box: rl.Rectangle, r: Round, alpha: f32) void {
+    rl.drawRectangleRounded(box, r.roundness, r.segments, look.fade(PROMPT_BODY, alpha));
+    rl.drawRectangleRoundedLinesEx(box, r.roundness, r.segments, 1, look.fade(PROMPT_EDGE, alpha));
 }
 
 fn keycap(box: rl.Rectangle, alpha: f32) void {

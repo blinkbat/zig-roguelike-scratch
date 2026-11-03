@@ -298,11 +298,8 @@ pub const Catalog = struct {
                 if (end < ts.len) end = close(ts, end, .l_brace, .r_brace);
                 @memset(excluded[i..@min(end + 1, ts.len)], true);
             }
-            if (token.tag == .builtin and forbiddenBuiltin(slice(bytes, token)) and i + 1 < ts.len and ts[i + 1].tag == .l_paren) {
-                const end = close(ts, i + 1, .l_paren, .r_paren);
-                @memset(excluded[i..@min(end + 1, ts.len)], true);
-            }
-            if (token.tag == .identifier and i + 1 < ts.len and ts[i + 1].tag == .l_paren and technicalCall(bytes, ts, i)) {
+            const technical = (token.tag == .builtin and forbiddenBuiltin(slice(bytes, token))) or (token.tag == .identifier and technicalCall(bytes, ts, i));
+            if (technical and i + 1 < ts.len and ts[i + 1].tag == .l_paren) {
                 const end = close(ts, i + 1, .l_paren, .r_paren);
                 @memset(excluded[i..@min(end + 1, ts.len)], true);
             }
@@ -724,7 +721,7 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     const decl = declaration(bytes, ts, i) orelse "";
     if (oneOf(decl, &.{ "PROBED", "SYMBOLS", "TTF", "DATA_TTF" }) or std.mem.endsWith(u8, decl, "_FIELDS")) return false;
     if (oneOf(decl, &ACTION_WORDS) or oneOf(decl, &.{ "NAME", "NUMBERS", FRIGHT_WORDS })) return true;
-    for ([_][]const u8{ ".zig", ".png", ".ttf", atlas.EXT, ".json", "#version", "void main", "uniform ", "layout(", "roguelike-map", "shots/", "assets/", atlas.PREFIX, "saves/" }) |part| {
+    for ([_][]const u8{ ZIG, ".png", ".ttf", atlas.EXT, ".json", "#version", "void main", "uniform ", "layout(", "roguelike-map", "shots/", "assets/", atlas.PREFIX, store.DIR ++ "/" }) |part| {
         if (std.mem.indexOf(u8, text, part) != null) return false;
     }
     const from = i -| 12;

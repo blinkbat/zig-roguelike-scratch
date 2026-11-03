@@ -34,7 +34,6 @@ const NAME_BTN_GAP: i32 = 10;
 const TOGGLE_W: i32 = 160;
 const PRIORITY_LABEL_W: i32 = 90;
 const SAY_ROWS: i32 = 4;
-const FIELD_LINE = text_panel.FIELD_LINE;
 const WHEEL_PX: i32 = ROW * 2;
 
 pub const Page = enum { dialogs, script };
@@ -362,7 +361,7 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
     const w = widgets.insetW(r);
     if (now.len == 0) {
         widgets.drawFit(&g.face, blank, TEXT, w, false, x, y, look.DIM);
-    } else if (r.height > @as(f32, @floatFromInt(FIELD_LINE + 2 * GAP))) {
+    } else if (r.height > @as(f32, @floatFromInt(text_panel.fieldHeight(1)))) {
         widgets.scissorIn(ed.clip, r);
         _ = g.face.paragraph(now, x, y, w, TEXT, look.TEXT);
         widgets.reclip(ed.clip);
@@ -584,7 +583,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, li: u8, x: i32, top: i32,
     words(ed, g, widgets.row(x + LABEL_W, y, w - LABEL_W), .{ .who = at }, "(blank: whoever is spoken to)");
     y += STEP;
     caption(g, x, y, LABEL_W, std.fmt.bufPrint(&buf, "Says {d}/{d}", .{ ln.say.n, script.SAY_MAX }) catch "", look.TEXT);
-    const say_h = SAY_ROWS * FIELD_LINE + 2 * GAP;
+    const say_h = text_panel.fieldHeight(SAY_ROWS);
     words(ed, g, raster.rect(x + LABEL_W, y, w - LABEL_W, say_h), .{ .say = at }, "(says nothing)");
     y += say_h + GAP;
     y = actRows(ed, g, x, x, y, w, "When shown", .{ .line = .{ .d = di, .l = li, .a = 0 } });

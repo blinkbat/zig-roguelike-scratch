@@ -357,6 +357,10 @@ const TestRecord = struct {
         out.clearRetainingCapacity();
         try store.begin(out.writer(), MAGIC, VERSION);
         try change(out, try store.open(bytes, MAGIC, VERSION), path, replacement);
+        try seal(out);
+    }
+
+    fn seal(out: *std.ArrayList(u8)) !void {
         try store.seal(out.writer(), out.items[store.head(MAGIC)..]);
     }
 };
@@ -383,7 +387,7 @@ test "portable save parsing defaults optional fields for every class and retains
         try std.testing.expect(source.sim.inventory.add(.{ .kind = .sword }));
         original.clearRetainingCapacity();
         try write(source, &original);
-        try store.seal(original.writer(), original.items[store.head(MAGIC)..]);
+        try TestRecord.seal(&original);
         try TestRecord.file(&changed, original.items, &.{ "run", "growth", "ranks" }, null);
         std.mem.swap(std.ArrayList(u8), &original, &changed);
         for (omitted) |field| {
@@ -422,14 +426,14 @@ test "runs saved before flasks were items gain both, while a current run keeps a
     game.begin(source, 41);
     try source.sim.inventory.unequip(.life_flask, source.sim.growth.attributes(source.sim.class));
     try write(source, &bytes);
-    try store.seal(bytes.writer(), bytes.items[store.head(MAGIC)..]);
+    try TestRecord.seal(&bytes);
     try read(bytes.items, target, map);
     try std.testing.expect(!target.sim.inventory.gear.holds(.life) and target.sim.inventory.gear.holds(.mana));
     try std.testing.expectEqual(items.Kind.life_flask, target.sim.inventory.bag[0].kind);
     source.sim.inventory = .{};
     bytes.clearRetainingCapacity();
     try write(source, &bytes);
-    try store.seal(bytes.writer(), bytes.items[store.head(MAGIC)..]);
+    try TestRecord.seal(&bytes);
     try TestRecord.file(&stripped, bytes.items, &.{ "run", "inventory", "gear", "slots", "life_flask" }, null);
     try TestRecord.file(&bytes, stripped.items, &.{ "run", "inventory", "gear", "slots", "mana_flask" }, null);
     std.mem.writeInt(u64, bytes.items[MAGIC.len..][0..8], FLASKLESS, .little);
@@ -476,7 +480,7 @@ test "portable save corruption and missing required state leave the live game an
     var original = std.ArrayList(u8).init(alloc);
     defer original.deinit();
     try write(current, &original);
-    try store.seal(original.writer(), original.items[store.head(MAGIC)..]);
+    try TestRecord.seal(&original);
     var changed = std.ArrayList(u8).init(alloc);
     defer changed.deinit();
     var after = std.ArrayList(u8).init(alloc);
@@ -515,7 +519,7 @@ test "portable save corruption and missing required state leave the live game an
         try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
         after.clearRetainingCapacity();
         try write(current, &after);
-        try store.seal(after.writer(), after.items[store.head(MAGIC)..]);
+        try TestRecord.seal(&after);
         try std.testing.expectEqualSlices(u8, original.items, after.items);
     }
     std.debug.print("portable saves: {d} checksummed semantic corruptions refused by listing and loading; complete run and map unchanged\n", .{std.enums.values(Case).len});

@@ -109,8 +109,7 @@ fn knobRows(ed: *editor.Editor, g: *game.Game, y: *i32, owner: anytype, comptime
             inline for (k.parts, 0..) |part, i| {
                 if (!panel.clipped(ed, y.*)) {
                     rowLabel(g, y.*, comptime wording.spoken(part));
-                    const reach = [2]bool{ live and moves(owner, k, i, -1), live and moves(owner, k, i, 1) };
-                    stepNumber(ed, g, y.*, i, 1, numberOf(owner, k, i), k, reach);
+                    stepNumber(ed, g, y.*, owner, k, i, 1, live);
                 }
                 y.* += widgets.ROW_STEP;
             }
@@ -564,10 +563,7 @@ fn knobRow(ed: *editor.Editor, g: *game.Game, y: i32, owner: anytype, comptime k
     const n = comptime atlas_text.knobNumbers(T);
     switch (@typeInfo(T)) {
         .@"enum" => stepChoice(ed, g, y, T, v, k.tips[0], live),
-        .int, .array, .@"struct" => inline for (0..n) |i| {
-            const reach = [2]bool{ live and moves(owner, k, i, -1), live and moves(owner, k, i, 1) };
-            stepNumber(ed, g, y, i, n, numberOf(owner, k, i), k, reach);
-        },
+        .int, .array, .@"struct" => inline for (0..n) |i| stepNumber(ed, g, y, owner, k, i, n, live),
         else => @compileError(@typeName(T) ++ " is no knob"),
     }
 }
@@ -598,10 +594,12 @@ pub fn moves(owner: anytype, comptime k: Knob, comptime i: usize, by: i32) bool 
     return !std.meta.eql(carve.fitted(o), owner.*);
 }
 
-fn stepNumber(ed: *editor.Editor, g: *game.Game, y: i32, comptime i: usize, n: usize, v: anytype, comptime k: Knob, reach: [2]bool) void {
+fn stepNumber(ed: *editor.Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob, comptime i: usize, n: usize, live: bool) void {
     var buf: [16]u8 = undefined;
     const tip = k.tips[i] ++ SHIFT_TIP;
-    bump(@TypeOf(v.*), v, k.unit * stepper(ed, g, valueSlot(y, if (k.parts.len > 0) 0 else i, n), num(&buf, k.fmt, v.*), .{ .{ .tip = tip, .live = reach[0] }, .{ .tip = tip, .live = reach[1] } }));
+    const steps = [2]widgets.Step{ .{ .tip = tip, .live = live and moves(owner, k, i, -1) }, .{ .tip = tip, .live = live and moves(owner, k, i, 1) } };
+    const v = numberOf(owner, k, i);
+    bump(@TypeOf(v.*), v, k.unit * stepper(ed, g, valueSlot(y, if (k.parts.len > 0) 0 else i, n), num(&buf, k.fmt, v.*), steps));
 }
 
 fn stepChoice(ed: *editor.Editor, g: *game.Game, y: i32, comptime T: type, v: *T, tip: [:0]const u8, live: bool) void {

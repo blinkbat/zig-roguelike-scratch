@@ -181,12 +181,16 @@ fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
 
 /// Whether `p`'s tile changed; a door keeps its own.
 fn paintInto(nd: *const atlas.Node, b: *atlas.Bespoke, p: P, t: grid.Tile) bool {
+    if (b.tile[grid.Level.idx(p)] == t or nd.doorAt(p) != null) return false;
+    layTile(nd, b, p, t);
+    return true;
+}
+
+fn layTile(nd: *const atlas.Node, b: *atlas.Bespoke, p: P, t: grid.Tile) void {
     const i = grid.Level.idx(p);
-    if (b.tile[i] == t or nd.doorAt(p) != null) return false;
     grid.unprop(&b.tile, i);
     b.tile[i] = t;
     nd.pruneAt(b, p);
-    return true;
 }
 
 const Put = enum { there, laid, refused };
@@ -258,11 +262,7 @@ pub fn place(ed: *Editor, p: P) void {
         },
         .door => {
             const k = ed.map.addDoor(ed.node, p) orelse return ed.say("That cell is a door, or the node holds {d}", .{grid.MAX_DOORS});
-            if (ed.painted()) |b| {
-                grid.unprop(&b.tile, grid.Level.idx(p));
-                b.tile[grid.Level.idx(p)] = .floor;
-                ed.here().pruneAt(b, p);
-            }
+            if (ed.painted()) |b| layTile(ed.here(), b, p, .floor);
             ed.say("Door {d}; the {s} tool joins it to another", .{ k, @as(editor.Tool, .link).name() });
             ed.changed();
         },
@@ -375,6 +375,19 @@ pub fn layAside(ed: *Editor, at: P) Pasted {
     return result;
 }
 
+/// The copy's tile at `q`, or its ground where a wider prop it belongs to would leave the map or meet a door.
+fn pastedTile(nd: *const atlas.Node, bd: *const Board, at: P, q: P) grid.Tile {
+    const k = grid.Level.idx(q);
+    const t = bd.cells.tile[k];
+    if (!t.pieced()) return t;
+    const head = grid.headOf(&bd.cells.tile, k) orelse return t.bare();
+    var cells = bd.cells.tile[head].footprint(at.add(grid.Level.of(head))).cells();
+    while (cells.next()) |p| {
+        if (!grid.Level.inside(p) or nd.doorAt(p) != null) return t.bare();
+    }
+    return t;
+}
+
 /// The copy laid into `b` with its corner at `at`; the paste's ghost lays it aside the same way.
 fn layInto(map: *const atlas.Atlas, n: usize, b: *atlas.Bespoke, bd: *const Board, at: P) Pasted {
     const nd = &map.node[n];
@@ -387,7 +400,7 @@ fn layInto(map: *const atlas.Atlas, n: usize, b: *atlas.Bespoke, bd: *const Boar
             if (bd.cells.barrel[k]) laid.left += 1;
             continue;
         }
-        if (paintInto(nd, b, p, bd.cells.tile[k])) laid.changed = true;
+        if (paintInto(nd, b, p, pastedTile(nd, bd, at, q))) laid.changed = true;
         if (!bd.cells.barrel[k]) continue;
         switch (barrelInto(map, n, b, p)) {
             .there => {},

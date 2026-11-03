@@ -918,7 +918,7 @@ fn drawTip(ed: *const Editor, g: *game.Game) void {
 const SHOT_ZOOM = zoomOf(32);
 const SHOT_BRUSH = std.mem.indexOfScalar(i32, &BRUSHES, 3).?;
 
-/// DEV ONLY: the posed map's map mid link-pick, its graph, its procgen node's generator, then the object viewer.
+/// DEV ONLY: the posed map's map mid link-pick, its graph, its procgen node's generator and the object viewer at those paths; its other workspaces, modals and pages beside them.
 pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8, objects_path: [:0]const u8) !void {
     const ed = try Editor.create(std.heap.c_allocator);
     defer ed.destroy();

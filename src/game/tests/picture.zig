@@ -538,7 +538,7 @@ test "a body the arrow kills stands until the arrow reaches it and its flash is 
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(2));
     try std.testing.expect(g.pic.drawnAt(&g.sim, rat) != null);
     const t = harness.framesUntil(g, rat, harness.gone);
-    const lands = game.presentation.flown(bow.RANGE - 1);
+    const lands = harness.SHOT_LANDS;
     std.debug.print("a rat an arrow kills {d} cells out is drawn {d:.3} s on; the arrow lands at {d:.3} s\n", .{ bow.RANGE, t, lands });
     try std.testing.expectApproxEqAbs(lands + fx.FLASH_S, t, harness.TEST_TOL);
 }
@@ -866,7 +866,7 @@ test "a barrel the arrow breaks stands until the arrow reaches it" {
     try std.testing.expect(game.mapAssets(g).barrel);
     const t = harness.framesUntil(g, 0, Gone.f);
     try std.testing.expect(!game.mapAssets(g).barrel);
-    const lands = game.presentation.flown(bow.RANGE - 1);
+    const lands = harness.SHOT_LANDS;
     std.debug.print("a barrel shot {d} cells out breaks {d:.3} s on; the arrow lands at {d:.3} s\n", .{ bow.RANGE, t, lands });
     try std.testing.expectApproxEqAbs(lands, t, harness.TEST_TOL);
 }

@@ -1,5 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
+const look = @import("look.zig");
 
 const Box = struct { x: i32, y: i32, w: i32, h: i32 };
 
@@ -98,7 +99,7 @@ fn hazeEach(at: rl.Vector2, r: f32, scale: f32, turn: f32, sink: anytype) void {
 /// A soft clump of vapour: offset lumps stacked from faint layers, so it thins toward its edge; `turn` varies the clump.
 pub fn haze(at: rl.Vector2, r: f32, scale: f32, turn: f32, col: rl.Color) void {
     if (col.a == 0) return;
-    const a = @as(f32, @floatFromInt(col.a)) / 255;
+    const a = look.alphaOf(col);
     const each = 1 - std.math.pow(f32, 1 - a * 0.8, 1.0 / @as(f32, HAZE_LAYERS));
     hazeEach(at, r, scale, turn, Filler{ .col = .{ .r = col.r, .g = col.g, .b = col.b, .a = @intFromFloat(@max(1, each * 255)) } });
 }

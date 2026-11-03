@@ -6,6 +6,7 @@ const input = @import("../core/input.zig");
 const atlas = @import("../map/atlas.zig");
 const listing = @import("../map/listing.zig");
 const lume = @import("../map/lume.zig");
+const gas = @import("../map/gas.zig");
 const actor = @import("../play/actor.zig");
 const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
@@ -220,7 +221,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             f.put("Letter '{c}' in a map file", .{t.letter()});
             f.put("{s}; {s}", .{ if (t.solid()) "Blocks a step" else "Walked on", if (t.blind()) "blocks sight" else "seen through" });
             if (t.liquid()) f.put("A liquid: gas spreads over it, a trail bridges it", .{});
-            if (t.wet()) f.put("Fire landing on it boils off as " ++ @import("../map/gas.zig").STEAM_NAME, .{});
+            if (t.wet()) f.put("Fire landing on it boils off as " ++ gas.STEAM_NAME, .{});
             if (look.under(t)) |u| f.put("Drawn over the ground beside it, else {s}", .{@tagName(u)});
             if (dual.of(t)) |gr| if (look.GROUND_SHEETS.contains(gr)) f.put("Ground {s}: its edges meet the grounds below it", .{@tagName(gr)});
             if (look.castsPicture(t)) f.put("Stands up and throws a shadow", .{});
@@ -229,7 +230,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
                 f.put("Contains gold and items; never broken by attacks", .{});
             }
             if (t.isOpened()) f.put("Already opened; may hold items and be walked over", .{});
-            if (t.bursts()) f.put("Bursts into " ++ @import("../map/gas.zig").HEALING_NAME ++ " when the hero steps into it or strikes it", .{});
+            if (t.bursts()) f.put("Bursts into " ++ gas.HEALING_NAME ++ " when the hero steps into it or strikes it", .{});
         },
         .body => |k| {
             const r = actor.row(k);
@@ -243,7 +244,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
                     if (st.stuns > 0) f.put("{d}% of its blows stun, friend or foe", .{st.stuns});
                 },
                 .burst => |b| switch (b) {
-                    .gas => f.put("Bursts into " ++ @import("../map/gas.zig").NAME ++ " instead of striking", .{}),
+                    .gas => f.put("Bursts into " ++ gas.NAME ++ " instead of striking", .{}),
                     .fire => f.put("Bursts into flame instead of striking, setting the bodies beside it alight", .{}),
                 },
             }

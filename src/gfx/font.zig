@@ -42,8 +42,7 @@ pub const Face = struct {
         };
         var cps = all;
         var f = rl.loadFontFromMemory(".ttf", @embedFile(TTF), ATLAS_PX, &cps) catch return .{};
-        rl.genTextureMipmaps(&f.texture);
-        rl.setTextureFilter(f.texture, .trilinear);
+        trilinear(&f);
         var face = Face{ .font = f };
         if (!orderedGlyphs(f, &all)) return face;
         @memcpy(face.symbols[0..symbols.len], symbols);
@@ -53,8 +52,7 @@ pub const Face = struct {
         if (rl.loadFontFromMemory(".ttf", @embedFile(DATA_TTF), ATLAS_PX, &ascii_cps)) |loaded| {
             var data = loaded;
             if (orderedGlyphs(data, &ascii_cps)) {
-                rl.genTextureMipmaps(&data.texture);
-                rl.setTextureFilter(data.texture, .trilinear);
+                trilinear(&data);
                 face.data_font = data;
             } else rl.unloadFont(data);
         } else |_| {}
@@ -248,6 +246,11 @@ pub const Face = struct {
         self.engraved(s, self.leftFor(s, cx, size), y, size, col);
     }
 };
+
+fn trilinear(f: *rl.Font) void {
+    rl.genTextureMipmaps(&f.texture);
+    rl.setTextureFilter(f.texture, .trilinear);
+}
 
 fn dataSized(size: i32) bool {
     return size <= SMALL;

@@ -338,11 +338,13 @@ fn markInset(face: font.Face) i32 {
 /// A list row's selection band and mark, when `on`; returns where its text starts.
 pub fn pick(face: font.Face, box: rl.Rectangle, on: bool) i32 {
     const x = @as(i32, @intFromFloat(box.x)) + markInset(face);
-    if (on) {
-        rl.drawRectangleRec(box, look.ROW_ON);
-        face.text(MARK_L, x - MARK_GAP - face.width(MARK_L, ROW), rowTextY(box), ROW, look.UI_FOCUS);
-    }
+    band(box, on);
+    if (on) face.text(MARK_L, x - MARK_GAP - face.width(MARK_L, ROW), rowTextY(box), ROW, look.UI_FOCUS);
     return x;
+}
+
+pub fn band(box: rl.Rectangle, on: bool) void {
+    if (on) rl.drawRectangleRec(box, look.ROW_ON);
 }
 
 pub fn rowInk(on: bool) rl.Color {

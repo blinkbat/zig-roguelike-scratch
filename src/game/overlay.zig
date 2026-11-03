@@ -278,8 +278,7 @@ fn writeDescription(g: *const game.Game, act: skillbar.Act, w: anytype) void {
     act.describe(w, g.sim.heroPerks());
     w.writeAll(" ") catch {};
     g.sim.growth.writeUsage(act, w);
-    w.writeAll(".") catch {};
-    w.writeAll(" ") catch {};
+    w.writeAll(". ") catch {};
     g.sim.growth.writeRank(act, w);
 }
 

@@ -178,6 +178,11 @@ pub const Act = enum {
         return a.contract().supply;
     }
 
+    /// A flask or a supply, which every class carries.
+    pub fn carried(a: Act) bool {
+        return a.flaskOf() != null or a.supplyOf() != null;
+    }
+
     pub fn ofSupply(k: consumable.Kind) Act {
         return switch (k) {
             inline else => |t| @field(Act, @tagName(t)),
@@ -377,7 +382,7 @@ const CARRIED = blk: {
     @setEvalBranchQuota(100_000);
     var acts: []const Act = &.{};
     for (ACTS) |a| {
-        if (a.flaskOf() != null or a.supplyOf() != null) acts = acts ++ &[_]Act{a};
+        if (a.carried()) acts = acts ++ &[_]Act{a};
     }
     break :blk acts[0..acts.len].*;
 };

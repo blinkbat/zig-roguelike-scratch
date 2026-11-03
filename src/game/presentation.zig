@@ -832,18 +832,13 @@ pub const Presentation = struct {
         const at = impact.at();
         const len = mathx.distEuclid(at, s.from);
         const dir: ?[2]f32 = if (len == 0) null else .{ @as(f32, @floatFromInt(at.x - s.from.x)) / len, @as(f32, @floatFromInt(at.y - s.from.y)) / len };
-        const kind: ?actor.Kind = switch (impact) {
-            .actor => |a| sim.pool.items[a.slot.index].kind,
+        const body: ?*const actor.Actor = switch (impact) {
+            .actor => |a| &sim.pool.items[a.slot.index],
             .barrel => null,
         };
-        const hero = switch (impact) {
-            .actor => |a| sim.isHero(a.slot.index),
-            .barrel => false,
-        };
-        const veiled = switch (impact) {
-            .actor => |a| sim.pool.items[a.slot.index].veiled(),
-            .barrel => false,
-        };
+        const kind: ?actor.Kind = if (body) |b| b.kind else null;
+        const hero = impact == .actor and sim.isHero(impact.actor.slot.index);
+        const veiled = if (body) |b| b.veiled() else false;
         if (hero or (self.litShown(sim, at) and !veiled)) {
             self.fx.strike(s.wait, .{ .impact = impact, .dir = dir, .matter = fx.matterOf(kind), .fire = s.fire });
             self.flashes(s.wait);
@@ -897,7 +892,7 @@ pub const RESOURCE_EASE = XP_EASE;
 const FIGURE_INSET_X = 0.15;
 const FIGURE_INSET_Y = 0.1;
 /// Cells round a body that may hide it, from a cell up-left to the two-cell tall scenery in front of it.
-const COVER_LO = P{ .x = 1, .y = 1 };
+const COVER_LO = P{ .x = grid.WIDEST, .y = 1 };
 const COVER_HI = P{ .x = 2, .y = 3 };
 
 fn hides(at: rl.Vector2, p: P, t: grid.Tile) bool {

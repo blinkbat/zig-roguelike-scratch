@@ -38,6 +38,10 @@ pub const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32,
 pub const PANEL_BG = look.EDIT_PANEL;
 pub const ROW_ON = look.EDIT_ROW_ON;
 pub const ON = look.EDIT_ON;
+const LIVE_FILL = look.fade(ROW_ON, 0.5);
+const DEAD_FILL = look.fade(ROW_ON, 0.2);
+const LIVE_EDGE = look.fade(look.EDGE, 0.85);
+const DEAD_EDGE = look.fade(look.EDGE, 0.35);
 
 pub const Controls = struct {
     pointer: P,
@@ -67,8 +71,8 @@ pub fn button(controls: Controls, face: *const font.Face, r: rl.Rectangle, label
 
 pub fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     const h = hot(controls, r, live, modal, tip);
-    rl.drawRectangleRec(r, look.fade(ROW_ON, if (live) 0.5 else 0.2));
-    rl.drawRectangleLinesEx(r, 1, look.fade(look.EDGE, if (live) 0.85 else 0.35));
+    rl.drawRectangleRec(r, if (live) LIVE_FILL else DEAD_FILL);
+    rl.drawRectangleLinesEx(r, 1, if (live) LIVE_EDGE else DEAD_EDGE);
     plate(r, on, h.hot);
     const y: i32 = @intFromFloat(r.y);
     drawFit(face, label, TEXT, insetW(r), false, textX(r), y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), if (live) look.TEXT else look.DIM);
@@ -90,7 +94,7 @@ pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, valu
     var by: i32 = 0;
     if (buttonOn(controls, face, row(x, y, STEP_W), arrows.glyphs[0], false, steps[0].live, arrows.modal, steps[0].tip)) by = -1;
     if (buttonOn(controls, face, row(x + w - STEP_W, y, STEP_W), arrows.glyphs[1], false, steps[1].live, arrows.modal, steps[1].tip)) by = 1;
-    if (arrows.well) rl.drawRectangle(x + STEP_W, y, w - 2 * STEP_W, ROW_H, look.fade(ROW_ON, 0.5));
+    if (arrows.well) rl.drawRectangle(x + STEP_W, y, w - 2 * STEP_W, ROW_H, LIVE_FILL);
     var fit_buf: [LINE]u8 = undefined;
     const shown = textFace(face).fit(&fit_buf, value, arrows.size, @intFromFloat(stepValue(r).width), false);
     textFace(face).drawMid(shown, x + @divTrunc(w, 2), y + @divTrunc(ROW_H - arrows.size, 2), arrows.size, look.TEXT);

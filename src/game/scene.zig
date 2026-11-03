@@ -30,6 +30,7 @@ const LEAN_MARK: i32 = game.authored(30);
 const LEAN_PAD: i32 = game.authored(4);
 const OUTLINE_INSET: i32 = game.authored(1);
 const BODY_BAR_INSET: i32 = game.authored(6);
+const BODY_BAR_W: i32 = game.CELL - BODY_BAR_INSET * 2;
 const BODY_BAR_H: i32 = game.authored(4);
 const BODY_BAR_LIFT: i32 = game.authored(2);
 const RESIST_BAR_H: i32 = game.authored(2);
@@ -565,6 +566,7 @@ pub fn drawMap(g: *game.Game) void {
     const lo = view.lo;
     const hi = view.hi;
     const aim_from: ?P = if (g.mode != .aim) null else if (g.sim.heroActor()) |a| a.at else null;
+    const aim_legal = if (aim_from) |from| skills.aimable(g, from, g.mode.aim.mark) else false;
 
     var shown: [actor.MAX]Shown = undefined;
     const stood = stoodNow(g);
@@ -623,7 +625,7 @@ pub fn drawMap(g: *game.Game) void {
         while (cells.next()) |p| {
             if (g.sim.lv.isLit(p) and skills.aimable(g, from, p)) fillCell(c, p, look.AIM_REACH);
         }
-        if (g.mode.aim.act().reticle() == .bow and skills.aimable(g, from, g.mode.aim.mark)) {
+        if (g.mode.aim.act().reticle() == .bow and aim_legal) {
             const f = skills.shownFlight(g, from, g.mode.aim.act(), g.mode.aim.mark);
             for (f.path[0..f.len]) |p| if (g.sim.lv.isLit(p)) {
                 fillCell(c, p, look.AIM_PATH);
@@ -654,7 +656,7 @@ pub fn drawMap(g: *game.Game) void {
                 for (arc.slice()) |p| fillCell(c, p, look.AIM_PATH);
             } else if (comptime a.reticle() == .ground and @hasDecl(skillbar.Act.skill(a), "area")) {
                 const area = skillbar.Act.skill(a).area(&g.sim.lv, g.mode.aim.mark);
-                if (skills.aimable(g, from, g.mode.aim.mark)) for (area.slice()) |p| {
+                if (aim_legal) for (area.slice()) |p| {
                     if (g.sim.lv.isLit(p)) fillCell(c, p, look.AIM_PATH);
                 };
             },
@@ -708,17 +710,18 @@ pub fn drawMap(g: *game.Game) void {
 
     for (bodies) |*b| {
         if (!b.pic.kind.foe()) continue;
+        const x_bar = b.s.x + BODY_BAR_INSET;
         const y_bar = b.s.y + game.CELL - BODY_BAR_H - BODY_BAR_LIFT;
         const back = look.fade(look.BG, b.sighted);
         const chill = b.pic.status.get(.chilled);
-        if (chill > 0) pips(b.s.x + BODY_BAR_INSET, y_bar - CHILL_BAR_GAP - CHILL_BAR_H, game.CELL - BODY_BAR_INSET * 2, chill, glacial.TURNS, look.fade(look.ailmentInk(.chill), b.sighted), back);
+        if (chill > 0) pips(x_bar, y_bar - CHILL_BAR_GAP - CHILL_BAR_H, BODY_BAR_W, chill, glacial.TURNS, look.fade(look.ailmentInk(.chill), b.sighted), back);
         if (!b.pic.hurt()) continue;
-        bar(b.s.x + BODY_BAR_INSET, y_bar, game.CELL - BODY_BAR_INSET * 2, BODY_BAR_H, b.pic.hp, b.pic.max, back, look.fade(look.LIFE, b.sighted));
+        bar(x_bar, y_bar, BODY_BAR_W, BODY_BAR_H, b.pic.hp, b.pic.max, back, look.fade(look.LIFE, b.sighted));
         const resistance = b.pic.resilience.peak().percent;
-        if (resistance > 0) bar(b.s.x + BODY_BAR_INSET, y_bar + BODY_BAR_H + RESIST_BAR_GAP, game.CELL - BODY_BAR_INSET * 2, RESIST_BAR_H, resistance, mathx.PERCENT, back, look.fade(look.UI_GOLD, b.sighted));
+        if (resistance > 0) bar(x_bar, y_bar + BODY_BAR_H + RESIST_BAR_GAP, BODY_BAR_W, RESIST_BAR_H, resistance, mathx.PERCENT, back, look.fade(look.UI_GOLD, b.sighted));
     }
 
-    if (aim_from) |from| outline(c, g.mode.aim.mark, if (skills.aimable(g, from, g.mode.aim.mark)) look.RETICLE else look.RETICLE_BLOCKED);
+    if (aim_from != null) outline(c, g.mode.aim.mark, if (aim_legal) look.RETICLE else look.RETICLE_BLOCKED);
     if (game.playShown(g) and g.st.lean) drawLean(g, c, &stood);
 
     for (bodies) |*b| {

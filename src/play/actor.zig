@@ -411,10 +411,7 @@ pub const Actor = struct {
     }
 
     pub fn afflicted(self: Actor) bool {
-        inline for (AFFLICTIONS) |k| {
-            if (@field(self, @tagName(k)).turns > 0) return true;
-        }
-        return false;
+        return self.afflictions().count() > 0;
     }
 
     /// Something its own turns wear: an affliction, a pin or a chill.

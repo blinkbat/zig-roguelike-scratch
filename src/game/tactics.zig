@@ -172,11 +172,11 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
 /// Consume the target's burn or chill, then burst over it and its neighbours.
 fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     const Skill = skillbar.Act.skill(act);
-    const target = g.sim.pool.get(g.sim.lv.who(at)).?;
+    const struck = g.sim.lv.who(at);
+    const target = g.sim.pool.get(struck).?;
     const fuel: i32 = fuelOf(act, target);
     @field(target, @tagName(Skill.FUEL)) = .{};
-    const slot = actor.Pool.slot(g.sim.lv.who(at));
-    g.pic.settleSlot(&g.sim, game.CAST_S, slot);
+    g.pic.settleSlot(&g.sim, game.CAST_S, actor.Pool.slot(struck));
     const area = Skill.area(&g.sim.lv, at);
     const ids = skills.foesIn(g, area);
     var raw = attacks.rawFor(&g.sim, act, false);
@@ -196,7 +196,7 @@ fn ignite(g: *game.Game, id: u16) bool {
     const a = g.sim.pool.get(id) orelse return false;
     const fresh = a.burn.turns == 0;
     if (!g.sim.ignite(a)) return false;
-    if (fresh) combat.sayTakes(g, burning.TAKES, a);
+    if (fresh) g.sim.sayFoeTakes(a, burning.TAKES);
     return true;
 }
 

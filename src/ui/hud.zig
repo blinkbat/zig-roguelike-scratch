@@ -295,15 +295,15 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const look.Sprites, lay
     const shown = @min(n, limit);
     const first = @min(scroll, n - shown);
     const h = TIP_BODY_Y + TIP_PAD + @as(i32, @intCast(shown)) * TIP_LINE;
-    const mid = raster.middleAt(over).x;
-    var x = std.math.clamp(mid - @divTrunc(TIP_W, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - TIP_W - TIP_MARGIN));
-    var y: i32 = @max(TIP_MARGIN, @min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y) - TIP_GAP - h);
+    var x = centredOver(over, TIP_W, screen);
+    var y = above(@min(@as(i32, @intFromFloat(over.y)), layout.top + STATUS_Y), h);
     if (over.y < @as(f32, @floatFromInt(layout.top)) and over.y < @as(f32, @floatFromInt(h + TIP_GAP + TIP_MARGIN))) {
         const right = @as(i32, @intFromFloat(over.x + over.width)) + TIP_GAP;
         const left = @as(i32, @intFromFloat(over.x)) - TIP_GAP - TIP_W;
-        if (right + TIP_W <= screen.x - TIP_MARGIN or left >= TIP_MARGIN) {
-            x = if (right + TIP_W <= screen.x - TIP_MARGIN) right else left;
-            y = std.math.clamp(@as(i32, @intFromFloat(over.y)) - @divTrunc(h, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.y - h - TIP_MARGIN));
+        const fits_right = right + TIP_W <= screen.x - TIP_MARGIN;
+        if (fits_right or left >= TIP_MARGIN) {
+            x = if (fits_right) right else left;
+            y = onScreen(@as(i32, @intFromFloat(over.y)) - @divTrunc(h, 2), h, screen.y);
         }
     }
     look.backing(sprites, x, y, TIP_W, h);
@@ -325,10 +325,22 @@ pub fn tooltipScrolled(face: *const font.Face, sprites: *const look.Sprites, lay
 pub fn prompt(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.P, over: rl.Rectangle, text: [:0]const u8) void {
     const w = face.width(text, font.BODY) + 2 * TIP_PAD;
     const h = font.BODY + 2 * TIP_PAD;
-    const x = std.math.clamp(raster.middleAt(over).x - @divTrunc(w, 2), TIP_MARGIN, @max(TIP_MARGIN, screen.x - w - TIP_MARGIN));
-    const y = @max(TIP_MARGIN, @as(i32, @intFromFloat(over.y)) - TIP_GAP - h);
+    const x = centredOver(over, w, screen);
+    const y = above(@intFromFloat(over.y), h);
     look.backing(sprites, x, y, w, h);
     face.text(text, x + TIP_PAD, y + TIP_PAD, font.BODY, look.UI_FOCUS);
+}
+
+fn onScreen(at: i32, size: i32, room: i32) i32 {
+    return std.math.clamp(at, TIP_MARGIN, @max(TIP_MARGIN, room - size - TIP_MARGIN));
+}
+
+fn centredOver(over: rl.Rectangle, w: i32, screen: mathx.P) i32 {
+    return onScreen(raster.middleAt(over).x - @divTrunc(w, 2), w, screen.x);
+}
+
+fn above(top: i32, h: i32) i32 {
+    return @max(TIP_MARGIN, top - TIP_GAP - h);
 }
 
 test "a tooltip's body breaks at spaces into lines that each fit" {

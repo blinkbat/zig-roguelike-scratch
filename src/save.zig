@@ -558,7 +558,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     try std.testing.expectEqualStrings("Arwen", back.sim.name.text());
     try std.testing.expectEqual(g.sim.growth, back.sim.growth);
     try std.testing.expectEqual(g.sim.inventory.gear, back.sim.inventory.gear);
-    try std.testing.expectEqualSlices(@import("play/items.zig").Item, g.sim.inventory.bag[0..g.sim.inventory.n], back.sim.inventory.bag[0..back.sim.inventory.n]);
+    try std.testing.expectEqualSlices(items.Item, g.sim.inventory.bag[0..g.sim.inventory.n], back.sim.inventory.bag[0..back.sim.inventory.n]);
     try std.testing.expectEqual(@as(usize, 1), back.sim.visits[0].ground.n);
     try std.testing.expectEqual(@as(i32, 12), back.sim.visits[0].ground.coins[0].amount);
     try std.testing.expectEqual(g.sim.loot_rng, back.sim.loot_rng);

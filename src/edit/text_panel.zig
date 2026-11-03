@@ -17,8 +17,11 @@ const DETAIL = widgets.DETAIL;
 const ROW = TEXT + 2 * DETAIL + 20;
 /// Of a passage, the most a list row's one fitted line could show.
 const SNIPPET_MAX: usize = 160;
-pub const FIELD_LINE: i32 = TEXT + 8;
-const LINE = FIELD_LINE;
+const LINE: i32 = TEXT + 8;
+
+pub fn fieldHeight(rows: i32) i32 {
+    return rows * LINE + 2 * widgets.GAP;
+}
 const NAV_ROW = DETAIL + 20;
 const Focus = enum { search, passage };
 const Leave = enum { close, quit };
@@ -118,22 +121,26 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
             f.layout_valid = false;
         }
 
+        fn picked(f: *const Self) struct { lo: usize, hi: usize } {
+            return .{ .lo = @min(f.cursor, f.anchor), .hi = @max(f.cursor, f.anchor) };
+        }
+
         fn erase(f: *Self) bool {
-            const lo = @min(f.cursor, f.anchor);
-            const hi = @max(f.cursor, f.anchor);
-            if (lo == hi) return false;
+            const held = f.picked();
+            if (held.lo == held.hi) return false;
             f.layout_valid = false;
-            std.mem.copyForwards(u8, f.buf[lo..], f.buf[hi .. f.n + 1]);
-            f.n -= hi - lo;
-            f.cursor = lo;
-            f.anchor = lo;
+            std.mem.copyForwards(u8, f.buf[held.lo..], f.buf[held.hi .. f.n + 1]);
+            f.n -= held.hi - held.lo;
+            f.cursor = held.lo;
+            f.anchor = held.lo;
             return true;
         }
 
         pub fn insert(f: *Self, s: []const u8) bool {
             if (s.len == 0) return true;
             for (s) |c| if (!accepts(c)) return false;
-            const removed = @max(f.cursor, f.anchor) - @min(f.cursor, f.anchor);
+            const held = f.picked();
+            const removed = held.hi - held.lo;
             var count: usize = 0;
             for (s) |c| if (c != '\r') {
                 count += 1;
@@ -209,12 +216,11 @@ pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
             }
             if (d.copy or d.cut) {
                 var copied: [N + 1]u8 = undefined;
-                const lo = @min(f.cursor, f.anchor);
-                const hi = @max(f.cursor, f.anchor);
-                if (hi > lo) {
-                    @memcpy(copied[0 .. hi - lo], f.buf[lo..hi]);
-                    copied[hi - lo] = 0;
-                    input.copyText(copied[0 .. hi - lo :0]);
+                const held = f.picked();
+                if (held.hi > held.lo) {
+                    @memcpy(copied[0 .. held.hi - held.lo], f.buf[held.lo..held.hi]);
+                    copied[held.hi - held.lo] = 0;
+                    input.copyText(copied[0 .. held.hi - held.lo :0]);
                     if (d.cut) _ = f.erase();
                 }
             }
@@ -585,7 +591,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
     const x = origin.x;
     const y = origin.y;
     const width = widgets.insetW(r);
-    const rows: usize = @intCast(@max(1, @divTrunc(@as(i32, @intFromFloat(r.height)) - 2 * widgets.GAP, LINE)));
+    const rows: usize = @intCast(@max(1, @divTrunc(@as(i32, @intFromFloat(r.height)) - fieldHeight(0), LINE)));
     _ = f.layout(width, FontKey.of(&g.face), &g.face);
     const breaks = f.starts[0 .. f.lines + 1];
     const lines = f.lines;
@@ -606,8 +612,9 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
         var end = breaks[line + 1];
         if (end > start and f.buf[end - 1] == '\n') end -= 1;
         const yy = y + @as(i32, @intCast(line - first)) * LINE;
-        const lo = std.math.clamp(@min(f.cursor, f.anchor), start, end);
-        const hi = std.math.clamp(@max(f.cursor, f.anchor), start, end);
+        const held = f.picked();
+        const lo = std.math.clamp(held.lo, start, end);
+        const hi = std.math.clamp(held.hi, start, end);
         @memcpy(buf[0 .. end - start], f.buf[start..end]);
         buf[end - start] = 0;
         if (focused and hi > lo) {
@@ -711,7 +718,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const close_r = tools.take(90);
     const reload_r = tools.take(90);
     const clear_r = tools.take(86);
-    if (drawField(ed, g, &s.search, raster.rect(x, y, @as(i32, @intFromFloat(clear_r.x)) - PAD - x, LINE + 12), s.focus == .search, true)) s.focus = .search;
+    if (drawField(ed, g, &s.search, raster.rect(x, y, @as(i32, @intFromFloat(clear_r.x)) - PAD - x, fieldHeight(1)), s.focus == .search, true)) s.focus = .search;
     if (button(ed, g, clear_r, "Clear", false, s.search.n > 0)) {
         s.search.set("");
         s.view_dirty = true;
@@ -776,7 +783,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
         widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
         yy += DETAIL + 8;
-        const field_h = @max(LINE + 12, bottom - yy - (DETAIL + 8 + 2 * widgets.ROW_STEP + DETAIL + 8));
+        const field_h = @max(fieldHeight(1), bottom - yy - (DETAIL + 8 + 2 * widgets.ROW_STEP + DETAIL + 8));
         s.passage_box = raster.rect(right_x, yy, right_w, field_h);
         if (drawField(ed, g, &s.draft, s.passage_box, s.focus == .passage, e.editable)) s.focus = .passage;
         yy += field_h + 8;

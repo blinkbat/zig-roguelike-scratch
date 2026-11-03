@@ -4,7 +4,7 @@ pub const ASSET = "player-labels.txt";
 pub const FILE = "assets/" ++ ASSET;
 pub const Case = enum { sentence, title, word };
 const Registration = struct { name: []const u8, saved_name: ?[]const u8 = null, casing: Case = .sentence, except: []const []const u8 = &.{}, only: ?[]const []const u8 = null };
-const TYPES = [_]Registration{
+pub const TYPES = [_]Registration{
     .{ .name = "app.MainRow", .except = &.{"ossuary"} },
     .{ .name = "app.OptionRow" },
     .{ .name = "game.PauseRow", .only = &.{ "debug", "quit" } },
@@ -152,10 +152,14 @@ fn displayAlias(comptime name: []const u8, comptime tag: []const u8) ?[:0]const 
     return displayAliasIn(@embedFile(ASSET), name, tag);
 }
 
-pub fn named(e: anytype) [:0]const u8 {
+fn aliasOr(e: anytype, comptime style: Case) [:0]const u8 {
     return switch (e) {
-        inline else => |t| comptime displayAlias(@typeName(@TypeOf(e)), @tagName(t)) orelse spoken(@tagName(t)),
+        inline else => |t| comptime displayAlias(@typeName(@TypeOf(e)), @tagName(t)) orelse formatted(@tagName(t), style),
     };
+}
+
+pub fn named(e: anytype) [:0]const u8 {
+    return aliasOr(e, .sentence);
 }
 
 pub fn namedOr(e: anytype, fallback: [:0]const u8) [:0]const u8 {
@@ -165,15 +169,11 @@ pub fn namedOr(e: anytype, fallback: [:0]const u8) [:0]const u8 {
 }
 
 pub fn titleOf(e: anytype) [:0]const u8 {
-    return switch (e) {
-        inline else => |t| comptime displayAlias(@typeName(@TypeOf(e)), @tagName(t)) orelse titled(@tagName(t)),
-    };
+    return aliasOr(e, .title);
 }
 
 pub fn word(e: anytype) [:0]const u8 {
-    return switch (e) {
-        inline else => |t| comptime displayAlias(@typeName(@TypeOf(e)), @tagName(t)) orelse @tagName(t),
-    };
+    return aliasOr(e, .word);
 }
 
 test "wording aliases share record replacement lookup and display casing" {

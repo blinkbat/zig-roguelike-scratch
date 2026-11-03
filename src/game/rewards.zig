@@ -49,7 +49,7 @@ fn dropGold(sim: *Simulation, at: P, amount: i32) void {
 /// A broken barrel's gold, and now and then a white item; the gold.
 pub fn barrelLoot(sim: *Simulation, at: P) ?i32 {
     if (!sim.lv.breakBarrel(at)) return null;
-    const loot = items.barrelLoot(&sim.loot_rng, sim.ground.room(1));
+    const loot = items.barrelLoot(&sim.loot_rng, sim.ground.room(FOE_DROPS));
     dropGold(sim, at, loot.gold);
     if (loot.item) |item| dropItem(sim, .{ .item = item, .at = at });
     return loot.gold;
@@ -193,7 +193,7 @@ pub fn scare(sim: *Simulation, at: P) Frightened {
     for (sim.pool.slice(), 0..) |*foe, slot| {
         const row = actor.row(foe.kind);
         if (!foe.alive or !row.flees) continue;
-        if (mathx.dist(foe.at, at) > actor.FRIGHT_REACH or !grid.clearLine(&sim.lv, foe.at, at)) continue;
+        if (mathx.dist(foe.at, at) > actor.FRIGHT_REACH or !grid.sightLine(&sim.lv, foe.at, at)) continue;
         foe.awake = true;
         if (!foe.frighten(actor.FLEE_TURNS)) continue;
         sim.sayAt(foe.at, actor.FLEES, .{row.name});

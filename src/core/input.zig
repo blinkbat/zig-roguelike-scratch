@@ -393,7 +393,7 @@ pub const State = struct {
         const wheel = self.readPointer(was_focused);
         const alt_down = altDown();
         const free_keys = !self.typing and !alt_down;
-        self.readButtons(alt_down, &before);
+        self.readButtons(alt_down, free_keys, &before);
         var keyed = false;
         while (rl.getKeyPressed() != .null) keyed = true;
         self.fullscreen = fullscreenHit();
@@ -421,9 +421,8 @@ pub const State = struct {
         return wheel;
     }
 
-    fn readButtons(self: *State, alt_down: bool, before: *const [PADS]Triggers) void {
+    fn readButtons(self: *State, alt_down: bool, free_keys: bool, before: *const [PADS]Triggers) void {
         const live = self.pad_at;
-        const free_keys = !self.typing and !alt_down;
         self.character_page = null;
         if (free_keys) {
             for (std.enums.values(CharacterPage)) |page| {
