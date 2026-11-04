@@ -81,7 +81,7 @@ pub const Nearby = union(enum) {
         return switch (n) {
             .loot => |l| l.item.name(buf),
             .supply => |s| wording.titleOf(s.kind),
-            .gold => |pile| std.fmt.bufPrintZ(buf, "{d} gold", .{pile.amount}) catch "Gold",
+            .gold => |pile| std.fmt.bufPrintZ(buf, hero.COINS_FMT, .{pile.amount}) catch "Gold",
             .chest => "Treasure chest",
             .bag => "Item bag",
             .door => "Door",

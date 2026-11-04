@@ -163,10 +163,9 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
         .count => "Exactly this many packs; " ++ Desk.PAINT_CAPTION ++ " to draw by weight",
     };
     if (valueHit(ed, widgets.stepValue(span), flip_tip)) m.draw = m.draw.flipped();
-    var x = widgets.PAD + editor.MEMBERS_X;
+    var members = widgets.Lay{ .x = widgets.PAD + editor.MEMBERS_X, .y = y, .gap = editor.MEMBER_GAP };
     for (0..pack.MAKEUP_MAX) |i| {
-        const r = widgets.row(x, y, editor.MEMBER_W);
-        x += editor.MEMBER_W + editor.MEMBER_GAP;
+        const r = members.take(editor.MEMBER_W);
         if (i >= m.n) continue;
         const h = widgets.hot(ed.controls(), r, true, false, if (i == 0) "The lead: " ++ Desk.PAINT_CAPTION ++ " for the next foe" else "A member: " ++ Desk.PAINT_CAPTION ++ " for the next foe");
         widgets.plate(r, false, h.hot);
@@ -176,8 +175,9 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
         if (h.hit) m.turn(i);
     }
     var dropped = false;
-    for (MAKEUP_TOOLS, 0..) |t, i| {
-        const r = widgets.row(widgets.PAD + editor.MAKEUP_TOOLS_X + @as(i32, @intCast(i)) * widgets.STEP_PITCH, y, widgets.STEP_W);
+    var tools = widgets.Lay{ .x = widgets.PAD + editor.MAKEUP_TOOLS_X, .y = y };
+    for (MAKEUP_TOOLS) |t| {
+        const r = tools.take(widgets.STEP_W);
         const live = switch (t) {
             .exit => true,
             .grow => m.canGrow(),

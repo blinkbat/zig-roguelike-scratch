@@ -117,9 +117,11 @@ pub const Cinema = struct {
             const t = lv.at(p);
             const pixel = &pixels[grid.Level.idx(p)];
             @field(pixel, FIELD.lit) = 255;
-            if (look.reflects(t)) @field(pixel, FIELD.water) = 255;
+            if (look.reflects(t)) {
+                @field(pixel, FIELD.water) = 255;
+                self.active_bloom = true;
+            }
             if (look.crowned(t)) @field(pixel, FIELD.crown) = 255;
-            self.active_bloom = self.active_bloom or look.reflects(t);
         }
         for (flames) |f| {
             if (f.live() and markEmissive(&pixels, f.at)) self.active_bloom = true;
@@ -149,14 +151,14 @@ pub const Cinema = struct {
         if (self.blooms() and visibility != null and glints != null and raster.beginTarget(&self.spread, size, outer, rl.Color.black)) {
             const b = self.bloom.?;
             rl.beginShaderMode(b.shader);
-            self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ BLOOM_STEP, 0 }, 1);
+            self.bindBloom(b, view, visibility.?, glints.?, .{ BLOOM_STEP, 0 }, 1);
             drawTarget(scene);
             rl.endShaderMode();
             raster.endTarget(outer);
             self.composite(scene, view, visibility);
             rl.beginBlendMode(.additive);
             rl.beginShaderMode(b.shader);
-            self.bindBloom(b, origin, cell, visibility.?, glints.?, scene, .{ 0, BLOOM_STEP }, 0);
+            self.bindBloom(b, view, visibility.?, glints.?, .{ 0, BLOOM_STEP }, 0);
             drawTarget(self.spread.?.texture);
             rl.endShaderMode();
             rl.endBlendMode();
@@ -176,8 +178,8 @@ pub const Cinema = struct {
         rl.endBlendMode();
     }
 
-    fn bindBloom(self: *Cinema, b: Bloom, origin: [2]f32, cell: f32, visibility: rl.Texture2D, glints: rl.Texture2D, scene: rl.Texture2D, direction: [2]f32, extract: i32) void {
-        setField(b, self.field.?, visibility, .{ .origin = origin, .cell = cell, .screen = raster.sizeOf(scene) });
+    fn bindBloom(self: *Cinema, b: Bloom, view: shaders.MapView, visibility: rl.Texture2D, glints: rl.Texture2D, direction: [2]f32, extract: i32) void {
+        setField(b, self.field.?, visibility, view);
         rl.setShaderValueTexture(b.shader, b.glints, glints);
         shaders.setUniform(b.shader, b.direction, direction);
         shaders.setUniform(b.shader, b.extract, extract);
@@ -187,7 +189,7 @@ pub const Cinema = struct {
         const focused = self.focusOf(t, tex, at, hero) orelse return null;
         const f = self.focus.?;
         rl.beginShaderMode(f.shader);
-        focused.set(f.shader, f.texel, f.strength);
+        focused.set(f);
         return focused;
     }
 

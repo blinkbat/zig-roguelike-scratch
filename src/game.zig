@@ -845,7 +845,7 @@ fn drawDead(g: *Game) void {
     menu.heading(g.face, g.screen, said, mid + DEAD_TITLE_DY, menu.TITLE, look.LIFE, look.LIFE);
     if (g.epitaph) |*e| drawEpitaph(g, e.text(), mid + DEAD_STORY_DY);
     const s = &g.sim;
-    const score = std.fmt.bufPrintZ(&buf, "Level {d}" ++ menu.SEP ++ "{d} foe{s} killed" ++ menu.SEP ++ "{d} gold" ++ menu.SEP ++ "Seed {d}", .{ s.growth.level, s.kills, mathx.plural(s.kills), s.gold, s.seed }) catch "";
+    const score = std.fmt.bufPrintZ(&buf, "Level {d}" ++ menu.SEP ++ "{d} foe{s} killed" ++ menu.SEP ++ heroes.COINS_FMT ++ menu.SEP ++ "Seed {d}", .{ s.growth.level, s.kills, mathx.plural(s.kills), s.gold, s.seed }) catch "";
     menu.mid(g.face, g.screen, score, mid + DEAD_SCORE_DY, font.BODY, look.DIM);
     menu.action(&g.face, deadBox(g.screen), prompt_icon.Prompt.menuOf(&g.st, CONFIRM), if (g.permadeath) "Title" else "Restart");
 }

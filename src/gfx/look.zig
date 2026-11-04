@@ -90,9 +90,9 @@ pub const Occlusion = struct {
     body: [2]f32 = .{ 0, 0 },
     hidden: f32 = 0,
 
-    pub fn set(self: Occlusion, shader: rl.Shader, at: i32, hidden: i32) void {
-        shaders.setUniform(shader, at, self.body);
-        shaders.setUniform(shader, hidden, self.hidden);
+    pub fn set(self: Occlusion, p: anytype) void {
+        shaders.setUniform(p.shader, p.body, self.body);
+        shaders.setUniform(p.shader, p.hidden, self.hidden);
     }
 };
 
@@ -321,15 +321,20 @@ pub const Sprites = struct {
     }
 
     pub fn drawScenery(self: *const Sprites, tex: rl.Texture2D, dest: rl.Rectangle, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: Occlusion, focus: Focused) bool {
+        if (!self.beginScenery(view, lightmap, fogmap, occlusion, focus)) return false;
+        defer rl.endShaderMode();
+        raster.stretch(tex, dest, LIT);
+        return true;
+    }
+
+    pub fn beginScenery(self: *const Sprites, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: Occlusion, focus: Focused) bool {
         const s = self.scenery orelse return false;
         rl.beginShaderMode(s.shader);
-        defer rl.endShaderMode();
         shaders.setMapView(s, view);
-        occlusion.set(s.shader, s.body, s.hidden);
-        focus.set(s.shader, s.texel, s.strength);
+        occlusion.set(s);
+        focus.set(s);
         rl.setShaderValueTexture(s.shader, s.lightmap, lightmap);
         rl.setShaderValueTexture(s.shader, s.fogmap, fogmap);
-        raster.stretch(tex, dest, LIT);
         return true;
     }
 
@@ -1200,9 +1205,9 @@ pub const Focused = struct {
 
     pub const sharp: Focused = .{};
 
-    pub fn set(self: Focused, s: rl.Shader, texel: i32, strength: i32) void {
-        shaders.setUniform(s, texel, self.texel);
-        shaders.setUniform(s, strength, self.strength);
+    pub fn set(self: Focused, p: anytype) void {
+        shaders.setUniform(p.shader, p.texel, self.texel);
+        shaders.setUniform(p.shader, p.strength, self.strength);
     }
 };
 

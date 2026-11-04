@@ -140,7 +140,7 @@ test "a kicked barrel breaks for gold where it stood, and the archer stays put" 
     try std.testing.expect(!scene.bagCells(g).isSet(grid.Level.idx(at)));
     harness.drawnOut(g);
     try std.testing.expect(!scene.bagCells(g).isSet(grid.Level.idx(at)));
-    try std.testing.expect(scene.pileShown(g, g.sim.ground.coins[0]) != null);
+    try std.testing.expect(g.pic.pileShown(&g.sim, g.sim.ground.coins[0]) != null);
     harness.nudge(g, .e);
     try std.testing.expectEqual(at, g.sim.heroActor().?.at);
     try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
@@ -405,10 +405,10 @@ test "foes with items drop one bag at their presented death and gold stays with 
             try std.testing.expectEqual(@as(usize, 1), g.sim.ground.coin_n);
             try std.testing.expectEqual(magic, g.sim.ground.drops[0].item.magical());
             try std.testing.expect(!scene.bagCells(g).isSet(grid.Level.idx(at)));
-            try std.testing.expect(scene.pileShown(g, g.sim.ground.coins[0]) == null);
+            try std.testing.expect(g.pic.pileShown(&g.sim, g.sim.ground.coins[0]) == null);
             harness.drawnOut(g);
             try std.testing.expect(scene.bagCells(g).isSet(grid.Level.idx(at)));
-            try std.testing.expect(scene.pileShown(g, g.sim.ground.coins[0]) != null);
+            try std.testing.expect(g.pic.pileShown(&g.sim, g.sim.ground.coins[0]) != null);
             const gold = g.sim.ground.coins[0].amount;
             harness.pressInteract(g);
             try std.testing.expectEqual(book.Page.loot, g.character.page);
@@ -442,10 +442,10 @@ test "a death on a drawn gold pile adds its gold when it lands" {
         g.sim.loot_rng = loot;
         was = if (g.sim.ground.coin_n > 0) g.sim.ground.coins[0].amount else 0;
         harness.slay(g, id, from);
-        const drawn = scene.pileShown(g, g.sim.ground.coins[0]);
+        const drawn = g.pic.pileShown(&g.sim, g.sim.ground.coins[0]);
         try std.testing.expectEqual(was, if (drawn) |pile| pile.amount else 0);
         harness.drawnOut(g);
-        try std.testing.expectEqual(g.sim.ground.coins[0].amount, scene.pileShown(g, g.sim.ground.coins[0]).?.amount);
+        try std.testing.expectEqual(g.sim.ground.coins[0].amount, g.pic.pileShown(&g.sim, g.sim.ground.coins[0]).?.amount);
         try std.testing.expectEqual(@as(usize, 0), scene.bagCells(g).count());
     }
     std.debug.print("a second death on a drawn pile: {d} gold stayed drawn until the blow landed\n", .{was});

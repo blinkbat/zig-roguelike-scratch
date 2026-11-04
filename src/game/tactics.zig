@@ -74,7 +74,7 @@ pub fn span(g: *const game.Game, act: skillbar.Act, from: P, start: P, end: P) ?
     return switch (act) {
         .arcane_barrier => rules.wall(&g.sim.lv, from, start, end, rank),
         .fire_wall => rules.blaze(&g.sim.lv, from, start, end, rank),
-        else => null,
+        inline else => |a| if (comptime a.spans()) @compileError(@tagName(a) ++ " spans with no wall") else null,
     };
 }
 

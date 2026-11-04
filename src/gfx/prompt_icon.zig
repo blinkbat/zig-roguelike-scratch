@@ -117,6 +117,8 @@ fn arrowPx(h: i32) i32 {
     return @max(6, @divTrunc(h, 3));
 }
 
+const STROKE_PX: f32 = 1.2;
+
 fn promptArrow(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) void {
     const delta = d.delta();
     const dx: f32 = @floatFromInt(delta.x);
@@ -125,8 +127,8 @@ fn promptArrow(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) void {
     const x: f32 = @floatFromInt(cx);
     const y: f32 = @floatFromInt(cy);
     const tip = rl.Vector2{ .x = x + dx * radius, .y = y + dy * radius };
-    rl.drawLineEx(.{ .x = x - dx * radius, .y = y - dy * radius }, tip, 1.2, col);
-    for ([_]f32{ -1, 1 }) |side| rl.drawLineEx(.{ .x = x - dy * radius * side, .y = y + dx * radius * side }, tip, 1.2, col);
+    rl.drawLineEx(.{ .x = x - dx * radius, .y = y - dy * radius }, tip, STROKE_PX, col);
+    for ([_]f32{ -1, 1 }) |side| rl.drawLineEx(.{ .x = x - dy * radius * side, .y = y + dx * radius * side }, tip, STROKE_PX, col);
 }
 
 /// An input icon `h` tall: its caption's text size.
@@ -223,8 +225,8 @@ fn viewMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
     const x: f32 = @floatFromInt(cx);
     const y: f32 = @floatFromInt(cy);
     const col = look.fade(PROMPT_INK, alpha);
-    rl.drawRectangleLinesEx(.{ .x = x - s * 1.3, .y = y - s * 1.1, .width = s * 1.6, .height = s * 1.4 }, 1.2, col);
-    rl.drawRectangleLinesEx(.{ .x = x - s * 0.3, .y = y - s * 0.3, .width = s * 1.6, .height = s * 1.4 }, 1.2, col);
+    rl.drawRectangleLinesEx(.{ .x = x - s * 1.3, .y = y - s * 1.1, .width = s * 1.6, .height = s * 1.4 }, STROKE_PX, col);
+    rl.drawRectangleLinesEx(.{ .x = x - s * 0.3, .y = y - s * 0.3, .width = s * 1.6, .height = s * 1.4 }, STROKE_PX, col);
 }
 
 fn menuMark(cx: i32, cy: i32, h: i32, alpha: f32) void {

@@ -361,13 +361,7 @@ pub fn shout(buf: []u8, comptime fmt: []const u8, args: anytype) [:0]const u8 {
 /// `shout` for a string known at compile time; call it `comptime`.
 pub const caps = input.upper;
 
-/// "Rat" from "rat"; call it `comptime`.
-pub fn capital(comptime s: [:0]const u8) [:0]const u8 {
-    comptime var c: [s.len:0]u8 = s[0..s.len].*;
-    c[0] = std.ascii.toUpper(c[0]);
-    const out = c;
-    return &out;
-}
+pub const capital = wording.spoken;
 
 pub const titled = wording.titled;
 pub const named = wording.named;

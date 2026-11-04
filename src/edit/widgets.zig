@@ -28,15 +28,15 @@ pub const LINE: usize = 200;
 pub const MODAL_W: i32 = 720;
 pub const MODAL_HEAD: i32 = PAD + HEAD + PAD;
 pub const MODAL_ROWS: usize = 12;
-pub const MODAL_BTN_W: i32 = 180;
-pub const PAGE_W: i32 = 1800;
-pub const PAGE_H: i32 = 1080;
+const MODAL_BTN_W: i32 = 180;
+const PAGE_W: i32 = 1800;
+const PAGE_H: i32 = 1080;
 pub const STEP_W: i32 = 30;
 pub const STEP_PITCH: i32 = STEP_W + GAP;
 pub const DROP = "x";
 pub const SCROLL_W: i32 = 3;
 const THUMB_MIN: f32 = 24;
-pub const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
+const GLYPH_OF_CELL: f32 = @as(f32, @floatFromInt(look.GLYPH_PX)) / @as(f32, @floatFromInt(look.SPRITE_PX));
 pub const PANEL_BG = look.EDIT_PANEL;
 pub const ROW_ON = look.EDIT_ROW_ON;
 pub const ON = look.EDIT_ON;
@@ -173,7 +173,7 @@ pub fn scissor(r: rl.Rectangle) void {
     rl.beginScissorMode(@intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height));
 }
 
-pub fn scrollThumb(track: rl.Rectangle, offset: usize, shown: usize, total: usize) ?rl.Rectangle {
+fn scrollThumb(track: rl.Rectangle, offset: usize, shown: usize, total: usize) ?rl.Rectangle {
     if (shown == 0 or total <= shown or track.width <= 0 or track.height <= 0) return null;
     const visible: f32 = @floatFromInt(shown);
     const count: f32 = @floatFromInt(total);
@@ -329,7 +329,7 @@ pub const Frame = struct {
     top: i32,
     y: i32,
 
-    pub fn buttonX(f: Frame) i32 {
+    fn buttonX(f: Frame) i32 {
         return f.x + f.w - PAD - MODAL_BTN_W;
     }
 

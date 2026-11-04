@@ -23,6 +23,7 @@ pub const LEAN_KEYS = SHIFT_KEYS;
 pub const ZOOM_IN_KEYS = [_]rl.KeyboardKey{ .equal, .kp_add };
 pub const ZOOM_OUT_KEYS = [_]rl.KeyboardKey{ .minus, .kp_subtract };
 pub const OVERVIEW_KEY: rl.KeyboardKey = .home;
+pub const RUB_KEY: rl.KeyboardKey = .backspace;
 
 pub fn letters(comptime walks: []const Walk) [:0]const u8 {
     var out: []const u8 = "";
@@ -141,11 +142,8 @@ pub const CONFIRM = Button.a;
 
 /// The slots left to right, as the keyboard numbers them.
 pub const SLOT_ORDER = [_]Button{ .lb, .a, .x, .y, .b, .rb, .rt };
-pub const SLOT_KEYS = blk: {
-    var out: [SLOT_ORDER.len]rl.KeyboardKey = undefined;
-    for (&out, 0..) |*k, i| k.* = @enumFromInt(@intFromEnum(rl.KeyboardKey.one) + i);
-    break :blk out;
-};
+const DIGIT_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
+pub const SLOT_KEYS = DIGIT_KEYS[0..SLOT_ORDER.len].*;
 pub const SLOT_CAPTIONS = captions(&SLOT_KEYS);
 
 pub fn captions(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const u8 {
@@ -207,7 +205,6 @@ pub const TreeKeys = struct {
 };
 
 pub const Desk = struct {
-    pub const DIGIT_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
     pub const TOOL_KEYS = DIGIT_KEYS ++ [_]rl.KeyboardKey{ .grave, .semicolon, .apostrophe, .comma, .period, .slash, .backslash, .h, .j, .k };
     pub const TOOL_CAPTIONS = glyphCaptions(&TOOL_KEYS);
     /// The editor's shapes, named and ordered as its `Shape` is.
@@ -261,6 +258,12 @@ pub const Desk = struct {
     pub const CUT_KEY: rl.KeyboardKey = .x;
     pub const PASTE_KEY: rl.KeyboardKey = .v;
     pub const NAV_KEYS = [2]rl.KeyboardKey{ .up, .down };
+    pub const TEXT_LEFT: rl.KeyboardKey = .left;
+    pub const TEXT_RIGHT: rl.KeyboardKey = .right;
+    pub const TEXT_HOME: rl.KeyboardKey = .home;
+    pub const TEXT_END: rl.KeyboardKey = .end;
+    pub const TEXT_DELETE: rl.KeyboardKey = .delete;
+    pub const TEXT_ALL: rl.KeyboardKey = .a;
     pub const CTRL = keyGlyph(CTRL_KEYS[0]) ++ "+";
     pub const ALT = keyGlyph(ALT_KEYS[0]) ++ "+";
     pub const SHIFT_CAPTION = keyGlyph(SHIFT_KEYS[0]);
@@ -351,7 +354,7 @@ pub const Desk = struct {
             } else @compileError(t[0] ++ " turns into " ++ t[1] ++ " with Shift but is not SHIFTED");
         }
         distinct(bare);
-        distinct(ctrl);
+        distinct(ctrl ++ &[_]rl.KeyboardKey{TEXT_ALL});
     }
 
     pub fn distinct(comptime keys: []const rl.KeyboardKey) void {

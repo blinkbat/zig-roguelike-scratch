@@ -14,7 +14,7 @@ const tool_catalog = @import("tool_catalog.zig");
 const TORCH_RULE = tool_catalog.TORCH_RULE;
 const FOE_RULE = tool_catalog.FOE_RULE;
 const FOLK_RULE = tool_catalog.FOLK_RULE;
-pub const NO_ROOM = "The node has no room for another {s}";
+const NO_ROOM = "The node has no room for another {s}";
 pub const LINKING = "Linking node {d} door {d}: ";
 pub const LINK_CANCELLED = "Link cancelled";
 
@@ -175,6 +175,11 @@ pub fn linkDoors(ed: *Editor, from: atlas.Link, to: atlas.Link) void {
     ed.say("Node {d} door {d} and node {d} door {d} lead to each other", .{ from.node, from.door, to.node, to.door });
 }
 
+pub fn unlinkDoor(ed: *Editor, l: atlas.Link) void {
+    ed.map.unlink(l);
+    ed.relinked();
+}
+
 fn paintTile(ed: *Editor, p: P, t: grid.Tile) void {
     if (paintInto(ed.here(), &ed.plan().bespoke, p, t)) ed.changed();
 }
@@ -299,10 +304,7 @@ pub fn remove(ed: *Editor, p: P) void {
             ed.pick = null;
             ed.changed();
         },
-        .link => {
-            ed.map.unlink(.{ .node = ed.node, .door = ed.doorAt(p).? });
-            ed.relinked();
-        },
+        .link => unlinkDoor(ed, .{ .node = ed.node, .door = ed.doorAt(p).? }),
         .start => unreachable,
     }
 }

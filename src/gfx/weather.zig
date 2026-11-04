@@ -134,7 +134,7 @@ test "a drizzle keeps its drops falling and landing, none for a clear sky, and a
             try std.testing.expect(d.y <= d.land + 1e-3);
         }
     }
-    w.step(mathx.FRAME_DT, .drizzle, 1280, 720, look.SPRITE_PX);
+    w.step(mathx.FRAME_DT, .drizzle, window.SCREEN_720.x, window.SCREEN_720.y, look.SPRITE_PX);
     const at_720 = w.n;
     std.debug.print("a drizzle: {d} drops at 1080p, {d} at 720p, {d} drop-frames spent splashing over 10 s\n", .{ at_1080, at_720, landed });
     try std.testing.expectEqual(@as(usize, FALLS.get(.drizzle).?.drops), at_1080);

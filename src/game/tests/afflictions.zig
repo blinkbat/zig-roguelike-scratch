@@ -263,6 +263,25 @@ test "an enfeebled body's blows deal 30% less, rounded up, on either side" {
     std.debug.print("enfeeble: the archer's 10-damage blow deals 7; a mimic's bite of {d} deals {d} enfeebled\n", .{ lost[0], lost[1] });
 }
 
+test "a blow's ailment check sees it as the enfeebled hero and the target's shock will deal it, spending nothing" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, FROM, &.{.{ .x = 23, .y = 20 }});
+    const target = g.sim.pool.get(2).?;
+    harness.setLife(target, 10, 10);
+    enfeeble.afflict(g.sim.heroActor().?, &g.sim.rng);
+    const weak = attacks.dealt(&g.sim, target, 10, .bleed);
+    target.shock.start();
+    const shocked = attacks.dealt(&g.sim, target, 10, .bleed);
+    const shocking = attacks.dealt(&g.sim, target, 10, .shock);
+    std.debug.print("ailment check on a 10 hp foe: an enfeebled 10 deals {d}; shocked {d}; a shocking blow {d}\n", .{ weak, shocked, shocking });
+    try std.testing.expectEqual(enfeeble.weaken(true, 10), weak);
+    try std.testing.expectEqual(mathx.percentCeil(weak, mathx.PERCENT + shock.MORE), shocked);
+    try std.testing.expectEqual(weak, shocking);
+    try std.testing.expect(target.shock.turns > 0);
+    try std.testing.expectEqual(weak, attacks.resolve(&g.sim, .fromInt(2), .{ .dmg = 10, .hit_checked = true, .applied = .shock }, .chosen).?.hit.damage.dmg);
+}
+
 test "a maimed foe loses a turn to every second step, closing on the hero a step slower over its four turns" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

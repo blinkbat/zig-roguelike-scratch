@@ -106,6 +106,8 @@ comptime {
 }
 const Print = @TypeOf(FINGERPRINT);
 const HEAD = store.head(MAGIC);
+const MAP_FLAG_AT = HEAD + @sizeOf(Summary) + @sizeOf(Seed);
+const MAP_AT = MAP_FLAG_AT + @sizeOf(bool);
 const Raw = struct { map: RawMap, visit: RawVisit, lv: RawLevel };
 
 pub const Error = error{ NotASave, OtherBuild, Short, Damaged };
@@ -695,7 +697,7 @@ test "legacy saves convert on load and reject invalid native tags before changin
     try std.testing.expect(std.mem.startsWith(u8, fresh.items, format.MAGIC));
     _ = try peek(fresh.items);
 
-    const tail_at = HEAD + @sizeOf(Summary) + @sizeOf(Seed) + 1 + @sizeOf(RawMap) + @sizeOf(Node) + @sizeOf(Visited) + source.sim.visited.count() * @sizeOf(RawVisit);
+    const tail_at = MAP_AT + @sizeOf(RawMap) + @sizeOf(Node) + @sizeOf(Visited) + source.sim.visited.count() * @sizeOf(RawVisit);
     const actor_at = tail_at + @sizeOf(RawLevel) + @offsetOf(actor.Pool, "items");
     const offsets = [_]usize{ actor_at + @offsetOf(actor.Actor, "kind"), actor_at + @offsetOf(actor.Actor, "alive") };
     const map_hash = store.sum(std.mem.asBytes(into));
@@ -725,7 +727,7 @@ test "a listed save must have the complete run that loading requires" {
     defer std.testing.allocator.destroy(map);
     const hp = g.sim.heroActor().?.hp;
     const seed = g.sim.seed;
-    const cuts = [_]usize{ HEAD + @sizeOf(Summary), HEAD + @sizeOf(Summary) + @sizeOf(Seed) + @sizeOf(bool), full.len - 1 };
+    const cuts = [_]usize{ HEAD + @sizeOf(Summary), MAP_AT, full.len - 1 };
     for (cuts) |cut| {
         buf.clearRetainingCapacity();
         try buf.appendSlice(full[0..cut]);
@@ -737,7 +739,7 @@ test "a listed save must have the complete run that loading requires" {
     }
     buf.clearRetainingCapacity();
     try buf.appendSlice(full);
-    buf.items[HEAD + @sizeOf(Summary) + @sizeOf(Seed)] = 2;
+    buf.items[MAP_FLAG_AT] = 2;
     seal(&buf);
     try std.testing.expectError(error.Damaged, peekLegacy(buf.items));
     try std.testing.expectError(error.Damaged, readLegacy(buf.items, g, map));
@@ -797,7 +799,7 @@ test "checksummed save structure failures preserve both the live run and destina
     var before = std.ArrayList(u8).init(alloc);
     defer before.deinit();
     try writeLegacy(back, &before);
-    const map_at = HEAD + @sizeOf(Summary) + @sizeOf(Seed) + @sizeOf(bool);
+    const map_at = MAP_AT;
     const visits_at = map_at + @sizeOf(RawMap) + @sizeOf(Node) + @sizeOf(Visited);
     const cuts = [_]usize{
         HEAD,

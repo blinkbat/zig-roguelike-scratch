@@ -204,7 +204,7 @@ pub fn step(g: *game.Game) void {
     if (opens(row)) |page| return open(g, page);
     switch (row) {
         .restart_map => game.restart(g),
-        .reveal_map => game.character.toggleReveal(g),
+        .reveal_map => game.scene.toggleReveal(g),
         .fullscreen => game.syncScreen(g, true),
         .vsync => {
             g.debug.vsync = !g.debug.vsync;

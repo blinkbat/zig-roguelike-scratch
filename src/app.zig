@@ -161,8 +161,7 @@ const App = struct {
         const was = app.loads.at;
         var action: ?SaveAction = null;
         if (app.loads.stepOver(st, save.SLOTS, screen, saveRowBox)) |i| {
-            const on_delete = st.click and st.pointer != null and raster.holds(saveDeleteBox(screen, i), st.pointer.?);
-            if (!on_delete) {
+            if (!st.clicked(saveDeleteBox(screen, i))) {
                 action = .{ .load = i };
             } else if (app.list[i] != .empty) action = .{ .remove = i };
         }

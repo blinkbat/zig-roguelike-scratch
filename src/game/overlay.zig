@@ -121,7 +121,7 @@ fn drawSlot(g: *game.Game, box: rl.Rectangle, s: SlotLook) void {
     const x: i32 = @intFromFloat(box.x);
     const y: i32 = @intFromFloat(box.y);
     const a: f32 = if (s.faded) look.FADED_A else 1;
-    look.hudPanel(&g.sprites, x, y, game.SLOT_PX, game.SLOT_PX, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a), look.fade(look.LIT, a));
+    look.hudPanelIn(&g.sprites, box, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a), look.fade(look.LIT, a));
     if (s.edge) |edge| {
         rl.drawRectangleLinesEx(raster.grown(box, @floatFromInt(-SLOT_EDGE_INSET)), SLOT_EDGE_W, look.fade(edge, a));
     }

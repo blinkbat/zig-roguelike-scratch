@@ -1497,6 +1497,23 @@ test "fire landing on open water with no foe in it still boils it: a fireball's 
     std.debug.print("fire on an empty lake, a turn's spread on: a fireball's steam over {d} cells, a burning arrow's over {d}\n", .{ boiled[0], boiled[1] });
 }
 
+test "a fireball aimed into a wall comes down short of it and boils no water behind it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.heroArena(g, .wizard, from, &.{});
+    for (15..26) |y| {
+        g.sim.lv.set(.{ .x = 23, .y = @intCast(y) }, .wall);
+        for (24..27) |x| g.sim.lv.set(.{ .x = @intCast(x), .y = @intCast(y) }, .water);
+    }
+    game.castSight(g, from);
+    harness.aimAt(g, .fireball, .{ .x = 23, .y = 20 });
+    try std.testing.expect(g.mode != .aim and g.sim.mana < g.sim.manaMax());
+    const steam = grid.CELLS - std.mem.count(u16, &g.sim.lv.steam, &.{0});
+    std.debug.print("a fireball into a wall with a lake behind it: steam over {d} cells\n", .{steam});
+    try std.testing.expectEqual(@as(usize, 0), steam);
+}
+
 test "a spark landing on empty water shocks the bodies wading in it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

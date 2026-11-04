@@ -39,6 +39,13 @@ pub const Flight = struct {
         return f.path[f.len - 1];
     }
 
+    /// Where it falls to the ground: short of a wall it was aimed into.
+    pub fn grounded(f: *const Flight, lv: *const grid.Level) ?P {
+        const at = f.end() orelse return null;
+        if (f.struck != null or !(lv.at(at).solid() and lv.at(at).blind())) return at;
+        return if (f.len > 1) f.path[f.len - 2] else null;
+    }
+
     /// It struck the body `id`.
     pub fn hits(f: *const Flight, id: u16) bool {
         const s = f.struck orelse return false;

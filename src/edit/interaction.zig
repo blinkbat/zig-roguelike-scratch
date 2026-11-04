@@ -290,8 +290,7 @@ pub fn graphMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (over and d.erase_hit) {
         if (ed.dotUnder(c, d.mouse)) |l| {
             if (ed.map.door(l).to == null) return;
-            ed.map.unlink(l);
-            ed.relinked();
+            placement.unlinkDoor(ed, l);
             return ed.say("Node {d} door {d} unlinked", .{ l.node, l.door });
         }
     }

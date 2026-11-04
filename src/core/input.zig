@@ -616,6 +616,12 @@ pub const Desk = struct {
     const ERASE_BUTTON = bindings.Desk.ERASE_BUTTON;
     const GRAB_BUTTON = bindings.Desk.GRAB_BUTTON;
     const NAV_KEYS = bindings.Desk.NAV_KEYS;
+    const TEXT_LEFT = bindings.Desk.TEXT_LEFT;
+    const TEXT_RIGHT = bindings.Desk.TEXT_RIGHT;
+    const TEXT_HOME = bindings.Desk.TEXT_HOME;
+    const TEXT_END = bindings.Desk.TEXT_END;
+    const TEXT_DELETE = bindings.Desk.TEXT_DELETE;
+    const TEXT_ALL = bindings.Desk.TEXT_ALL;
     pub const SHIFT_CAPTION = bindings.Desk.SHIFT_CAPTION;
     pub const PLAY_CAPTION = bindings.Desk.PLAY_CAPTION;
     pub const PLAY_HERE_CAPTION = bindings.Desk.PLAY_HERE_CAPTION;
@@ -768,12 +774,12 @@ pub const Desk = struct {
         self.enter = !altDown() and anyHit(&ENTER_KEYS);
         self.rub = rubbed();
         self.alt = altDown();
-        self.text_left = repeated(.left);
-        self.text_right = repeated(.right);
-        self.text_home = hit(.home);
-        self.text_end = hit(.end);
-        self.text_delete = repeated(.delete);
-        self.text_all = ctrl and hit(.a);
+        self.text_left = repeated(TEXT_LEFT);
+        self.text_right = repeated(TEXT_RIGHT);
+        self.text_home = hit(TEXT_HOME);
+        self.text_end = hit(TEXT_END);
+        self.text_delete = repeated(TEXT_DELETE);
+        self.text_all = ctrl and hit(TEXT_ALL);
         self.paste_text = if (self.paste) rl.getClipboardText() else null;
         self.nav = 0;
         for (NAV_KEYS, [2]i32{ -1, 1 }) |k, by| {
@@ -809,7 +815,7 @@ fn fullscreenHit() bool {
     return altDown() and anyHit(&ENTER_KEYS);
 }
 
-const RUB_KEY: rl.KeyboardKey = .backspace;
+const RUB_KEY = bindings.RUB_KEY;
 pub const RUB_CAPTION = keyGlyph(RUB_KEY);
 
 fn rubbed() bool {

@@ -21,6 +21,10 @@ pub const Transaction = struct {
 
     fn cancel(self: *Transaction, map: *atlas.Atlas) void {
         if (self.state == .open) map.* = self.before.*;
+        self.close();
+    }
+
+    fn close(self: *Transaction) void {
         self.state = .closed;
         self.changed = false;
     }
@@ -41,8 +45,7 @@ pub const History = struct {
         self.at = 0;
         self.saved_at = 0;
         self.dirty = false;
-        self.transaction.state = .closed;
-        self.transaction.changed = false;
+        self.transaction.close();
     }
 
     pub fn begin(self: *History, map: *const atlas.Atlas) void {
@@ -94,8 +97,7 @@ pub const History = struct {
         scratch.* = map.*;
         map.* = self.kept(index).*;
         self.kept(index).* = scratch.*;
-        self.transaction.state = .closed;
-        self.transaction.changed = false;
+        self.transaction.close();
     }
 
     pub fn undo(self: *History, map: *atlas.Atlas) bool {

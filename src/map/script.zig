@@ -362,12 +362,10 @@ pub const Dialog = struct {
     }
 
     pub fn addLine(self: *Dialog) ?u8 {
-        if (self.line_n == MAX_LINES) return null;
         var nb: [NAME_MAX]u8 = undefined;
-        const at = self.line_n;
-        self.line[at] = .{ .name = Name.of(freshName(&nb, "line", self, Dialog.findLine)) };
-        self.line_n += 1;
-        return at;
+        const line = Line{ .name = Name.of(freshName(&nb, "line", self, Dialog.findLine)) };
+        if (!mathx.push(Line, &self.line, &self.line_n, line)) return null;
+        return self.line_n - 1;
     }
 
     /// Lines `a` and `b` change places, every way into either following it; the first line is where it opens.
@@ -582,13 +580,11 @@ pub const Script = struct {
 
     /// A new dialog of one empty line, named after `stem` when it can be.
     pub fn addDialog(self: *Script, stem: []const u8) ?u8 {
-        if (self.dialog_n == MAX_DIALOGS) return null;
         var nb: [NAME_MAX]u8 = undefined;
-        const at = self.dialog_n;
         const name = if (token(stem) and self.findDialog(stem) == null) stem else freshName(&nb, "dialog", self, Script.findDialog);
-        self.dialog[at] = .{ .name = Name.of(name) };
+        if (!mathx.push(Dialog, &self.dialog, &self.dialog_n, .{ .name = Name.of(name) })) return null;
+        const at = self.dialog_n - 1;
         _ = self.dialog[at].addLine();
-        self.dialog_n += 1;
         return at;
     }
 
@@ -622,14 +618,12 @@ pub const Script = struct {
     }
 
     pub fn addTrigger(self: *Script) ?u8 {
-        if (self.trigger_n == MAX_TRIGGERS) return null;
         var nb: [NAME_MAX]u8 = undefined;
-        const at = self.trigger_n;
-        self.trigger[at] = .{ .name = Name.of(freshName(&nb, "trigger", self, Script.findTrigger)) };
-        self.trigger[at].cond[0] = .{ .kind = .always };
-        self.trigger[at].cond_n = 1;
-        self.trigger_n += 1;
-        return at;
+        var t = Trigger{ .name = Name.of(freshName(&nb, "trigger", self, Script.findTrigger)) };
+        t.cond[0] = .{ .kind = .always };
+        t.cond_n = 1;
+        if (!mathx.push(Trigger, &self.trigger, &self.trigger_n, t)) return null;
+        return self.trigger_n - 1;
     }
 
     pub fn dropTrigger(self: *Script, i: u8) void {

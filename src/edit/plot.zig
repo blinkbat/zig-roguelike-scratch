@@ -22,7 +22,7 @@ const TEXT = widgets.TEXT;
 const DETAIL = widgets.DETAIL;
 const LABEL_W: i32 = 130;
 const SUB_W: i32 = 100;
-const DROP_W: i32 = 34;
+const DROP_W: i32 = widgets.ROW_H;
 const BTN_W: i32 = 200;
 const TALK_W: i32 = 320;
 const TARGET_W: i32 = 300;
@@ -44,6 +44,12 @@ const FOE_W: i32 = 220;
 const NUMBER_W: i32 = 150;
 const UNIT_W: i32 = 170;
 const SPLIT_MIN_W: i32 = 2 * widgets.STEP_W + 24;
+const LIST_MIN_W: i32 = 240;
+const LIST_MAX_W: i32 = 330;
+const LINES_MIN_W: i32 = 200;
+const LINES_MAX_W: i32 = 300;
+const KIND_MIN_W: i32 = 150;
+const KIND_MAX_W: i32 = 200;
 const SAY_ROWS: i32 = 4;
 const WHEEL_PX: i32 = ROW * 2;
 
@@ -264,7 +270,7 @@ const Frame = struct {
     bottom: i32,
 
     fn listW(f: Frame) i32 {
-        return widgets.share(f.w, 5, 240, 330);
+        return widgets.share(f.w, 5, LIST_MIN_W, LIST_MAX_W);
     }
 };
 
@@ -549,7 +555,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     const d = &m.dialog[di];
     var buf: [widgets.LINE]u8 = undefined;
     s.line = @min(s.line, d.line_n - 1);
-    const lines_w = widgets.share(w, 4, 200, 300);
+    const lines_w = widgets.share(w, 4, LINES_MIN_W, LINES_MAX_W);
     var y = top;
     const users = m.dialogUsers(di);
     const drop = if (users > 0) std.fmt.bufPrintZ(&buf, "Used {d} times", .{users}) catch "" else "Delete dialog";
@@ -621,9 +627,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, li: u8, x: i32, top: i32,
     y += GAP;
     countHeading(g, x, y, w, "Choices", ln.choice_n, script.MAX_CHOICES);
     if (rightButton(ed, g, x + w, y, CHOICE_ADD_W, "+ Choice", ln.choice_n < script.MAX_CHOICES, "Something the hero may answer")) {
-        ln.choice[ln.choice_n] = .{};
-        ln.choice_n += 1;
-        ed.bank();
+        if (mathx.push(script.Choice, &ln.choice, &ln.choice_n, .{})) ed.bank();
     }
     y += STEP;
     var c: u8 = 0;
@@ -684,10 +688,9 @@ fn actRows(ed: *editor.Editor, g: *game.Game, x: i32, title_x: i32, top: i32, w:
     const count = list.n.*;
     const most = list.items.len;
     if (count < most and button(ed, g, widgets.row(x + LABEL_W, y, BTN_W), "+ Action", false, true, if (spoken) "Done as the line shows or the choice is taken" else "Done in order once every condition holds")) {
-        list.items[count] = .{ .kind = if (spoken) .flag else .text };
-        fitAct(m, &list.items[count], spoken);
-        list.n.* += 1;
-        ed.bank();
+        var a = script.Act{ .kind = if (spoken) .flag else .text };
+        fitAct(m, &a, spoken);
+        if (mathx.push(script.Act, list.items, list.n, a)) ed.bank();
     } else if (count == most) caption(g, x + LABEL_W, y, w - LABEL_W, std.fmt.bufPrint(&buf, "{d} is the most", .{most}) catch "", look.DIM);
     y += STEP;
     var i: u8 = 0;
@@ -749,7 +752,7 @@ fn fitSlot(m: *Script, t: script.Table, slot: *u8) void {
 }
 
 fn kindW(w: i32) i32 {
-    return widgets.share(w, 3, 150, 200);
+    return widgets.share(w, 3, KIND_MIN_W, KIND_MAX_W);
 }
 
 /// The kind heading an action's or a condition's row: a new kind starts afresh, fitted to the map by `rule`.
@@ -1037,9 +1040,7 @@ fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i
     y += STEP + GAP;
     countHeading(g, x, y, w, "When every one holds", t.cond_n, script.MAX_CONDS);
     if (rightButton(ed, g, x + w, y, COND_ADD_W, "+ Condition", t.cond_n < script.MAX_CONDS, "Another that has to hold; with none it never fires")) {
-        t.cond[t.cond_n] = .{ .kind = .always };
-        t.cond_n += 1;
-        ed.bank();
+        if (mathx.push(script.Cond, &t.cond, &t.cond_n, .{ .kind = .always })) ed.bank();
     }
     y += STEP;
     if (t.cond_n == 0) {

@@ -112,22 +112,30 @@ pub fn cellular(lv: *grid.Level, rng: *mathx.Rng, sown: u32, passes: u32, strays
 /// The cave rule, `passes` times: off the map counts as solid; any other tile is left, and counts as open.
 pub fn smooth(lv: *grid.Level, passes: u32, solid: grid.Tile, open: grid.Tile) void {
     var next: [grid.CELLS]grid.Tile = undefined;
+    var walled: Walled = undefined;
     for (0..passes) |_| {
+        @memset(&walled, 1);
+        for (0..grid.CELLS) |i| walled[padded(i)] = @intFromBool(lv.tile[i] == solid);
         for (0..grid.CELLS) |i| {
             const t = lv.tile[i];
-            const p = grid.Level.of(i);
-            next[i] = if (t != solid and t != open) t else if (grid.Level.onRim(p) or crowded(lv, p, solid)) solid else open;
+            next[i] = if (t != solid and t != open) t else if (grid.Level.onRim(grid.Level.of(i)) or crowded(&walled, padded(i))) solid else open;
         }
         lv.tile = next;
     }
 }
 
-fn crowded(lv: *const grid.Level, p: P, solid: grid.Tile) bool {
+const PADDED_W: usize = @as(usize, @intCast(grid.W)) + 2;
+/// Solid cells as 1, padded a cell all round with the off-map counted solid.
+const Walled = [PADDED_W * (@as(usize, @intCast(grid.H)) + 2)]u8;
+
+fn padded(i: usize) usize {
+    const w: usize = @intCast(grid.W);
+    return (i / w + 1) * PADDED_W + i % w + 1;
+}
+
+fn crowded(walled: *const Walled, c: usize) bool {
     var n: usize = 0;
-    var cells = grid.Cells.around(p, 1);
-    while (cells.next()) |q| {
-        if (!grid.Level.inside(q) or lv.at(q) == solid) n += 1;
-    }
+    for ([_]usize{ c - PADDED_W, c, c + PADDED_W }) |row| n += @as(usize, walled[row - 1]) + walled[row] + walled[row + 1];
     return n >= CROWD;
 }
 
@@ -148,7 +156,13 @@ pub const Over = struct {
     water_clear: u8 = 0,
     land_range: u8 = 0,
 
-    pub const RANGES = .{ "water_range", "water_clear", "land_range" };
+    pub const RANGES = blk: {
+        var names: []const []const u8 = &.{};
+        for (std.meta.fields(Over)) |f| {
+            if (f.type == u8) names = names ++ .{f.name};
+        }
+        break :blk names;
+    };
 
     fn has(o: Over, t: grid.Tile) bool {
         return t == o.tile or (o.decked and !t.solid() and t.ground() == o.tile);
@@ -927,6 +941,38 @@ pub fn count(lv: *const grid.Level, t: grid.Tile) usize {
         if (c == t) n += 1;
     }
     return n;
+}
+
+test "the cave rule counts each cell's solid neighbours, off the map solid, as cell by cell" {
+    var lv = grid.Level.blank();
+    var want = grid.Level.blank();
+    var rng = mathx.Rng.init(0x5300);
+    var ns: u64 = 0;
+    for (0..20) |_| {
+        sow(&lv, &rng, 45, .rock, .floor);
+        for (0..40) |_| lv.tile[rng.below(grid.CELLS)] = .water;
+        want.tile = lv.tile;
+        for (0..4) |_| {
+            var next = want.tile;
+            for (0..grid.CELLS) |i| {
+                const t = want.tile[i];
+                if (t != .rock and t != .floor) continue;
+                const p = grid.Level.of(i);
+                var n: usize = 0;
+                var cells = grid.Cells.around(p, 1);
+                while (cells.next()) |q| {
+                    if (!grid.Level.inside(q) or want.at(q) == .rock) n += 1;
+                }
+                next[i] = if (grid.Level.onRim(p) or n >= CROWD) .rock else .floor;
+            }
+            want.tile = next;
+        }
+        var timer = std.time.Timer.start() catch unreachable;
+        smooth(&lv, 4, .rock, .floor);
+        ns += timer.read();
+        try std.testing.expectEqualSlices(grid.Tile, &want.tile, &lv.tile);
+    }
+    std.debug.print("cave rule: 20 fields x 4 passes match the cell-by-cell count, {d} us a smooth\n", .{ns / 20 / std.time.ns_per_us});
 }
 
 test "noise is smooth, in range, and a seed is a field" {

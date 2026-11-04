@@ -7,7 +7,6 @@ const grid = @import("../map/grid.zig");
 const atlas = @import("../map/atlas.zig");
 const menu = @import("../ui/menu.zig");
 const book = @import("../ui/book.zig");
-const actor = @import("../play/actor.zig");
 const resilience = @import("../play/resilience.zig");
 const look = @import("../gfx/look.zig");
 const scene = @import("scene.zig");
@@ -47,21 +46,9 @@ pub fn openCharacter(g: *game.Game) void {
     game.holdWalk(g);
 }
 
-/// `laid` is an `items.Drop` or `items.Supply`: lying lit where its foe's death has been drawn.
-pub fn laidShown(g: *const game.Game, laid: anytype) bool {
-    return g.pic.litShown(&g.sim, laid.at) and laidDown(g, laid) and !scene.barrelPresent(g, laid.at);
-}
-
-/// Laid, or its foe's death drawn; seen or not.
-pub fn laidDown(g: *const game.Game, laid: anytype) bool {
-    if (laid.source == grid.NO_ONE) return true;
-    const i = actor.Pool.slot(laid.source);
-    return g.pic.pictured[i].down();
-}
-
 /// What Interact can reach from `from`, as listed and as resolved alike.
 fn laidReached(g: *const game.Game, from: P, laid: anytype) bool {
-    return withinReach(from, laid.at) and laidShown(g, laid);
+    return withinReach(from, laid.at) and g.pic.laidShown(&g.sim, laid);
 }
 
 fn inLoot(g: *const game.Game, from: P, at: P, laid: anytype) bool {
@@ -126,7 +113,7 @@ fn lootOf(g: *game.Game, out: *game.NearbyBuf, at: P) []const book.Nearby {
 fn goldReached(g: *const game.Game, from: P, at: P) ?items.Coins {
     if (!withinReach(from, at)) return null;
     for (g.sim.ground.coins[0..g.sim.ground.coin_n]) |pile| {
-        if (pile.at.eq(at)) return scene.pileShown(g, pile);
+        if (pile.at.eq(at)) return g.pic.pileShown(&g.sim, pile);
     }
     return null;
 }
@@ -353,7 +340,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
         },
         .take_gold => |at| {
             if (g.character.page == .loot or goldReached(g, h.at, at) == null) return;
-            if (g.sim.lv.at(at).isChest() or g.sim.ground.bagged(at)) return;
+            if (!rewards.coinDrop(&g.sim, at)) return;
             game.combat.collectGold(g, at);
         },
         .take_all => {
@@ -459,15 +446,6 @@ pub fn pauseStep(g: *game.Game) void {
             }
         },
     }
-}
-
-pub fn toggleReveal(g: *game.Game) void {
-    g.light.reveal(&g.sim.lv, !g.light.reveal_map);
-    g.mini.stale = true;
-}
-
-pub fn terrainSeen(g: *const game.Game, p: P) bool {
-    return g.light.remembers(&g.sim.lv, p);
 }
 
 fn pauseLabel(g: *const game.Game, r: game.PauseRow) [:0]const u8 {

@@ -149,6 +149,7 @@ pub const UNSAVED = .{
         "bursting",
         "lit_before",
         "lit_held",
+        "lit_due",
         "busy",
         "lead",
         "fx",

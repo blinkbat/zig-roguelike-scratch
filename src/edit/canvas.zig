@@ -175,7 +175,9 @@ fn drawCursor(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     }
     if (ed.span) |s| {
         const to = grid.Level.clamp(m);
-        placement.eachSpanCell(ed, s, to, Ghost.of(ed, g, c, ed.ink.get(.of(s.erase))));
+        var ghost = Ghost.of(ed, g, c, ed.ink.get(.of(s.erase)));
+        placement.eachSpanCell(ed, s, to, &ghost);
+        ghost.draw();
         outlineCells(ed, c, grid.Box.between(s.from, to), PICKED);
         return;
     }
@@ -183,17 +185,24 @@ fn drawCursor(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     if (ed.shape == .select or (ed.desk.alt and ed.stroke == .none)) return outlineCells(ed, c, placement.brushBox(m, 1), PICKED);
     const erase = if (ed.stroke == .none) ed.desk.erase else ed.stroke == .erase;
     if (ed.tool.broad()) {
-        const ghost = Ghost.of(ed, g, c, ed.ink.get(.of(erase)));
+        var ghost = Ghost.of(ed, g, c, ed.ink.get(.of(erase)));
         const begins = if (ed.stroke == .none) placement.spanOf(ed, ed.desk.shift) else null;
         if (begins) |sh| {
-            placement.eachSpanCell(ed, .{ .from = m, .erase = erase, .shape = sh }, m, ghost);
+            placement.eachSpanCell(ed, .{ .from = m, .erase = erase, .shape = sh }, m, &ghost);
+            ghost.draw();
             return outlineCells(ed, c, placement.brushBox(m, if (sh == .line) ed.brushSize() else 1), HOVER);
         }
-        if (ed.shape != .fill) placement.eachBrushCell(ed, m, ghost);
+        if (ed.shape != .fill) placement.eachBrushCell(ed, m, &ghost);
+        ghost.draw();
         return outlineCells(ed, c, placement.brushBox(m, if (ed.shape == .fill) 1 else ed.brushSize()), if (ed.tool.fits(ed.here())) HOVER else WARN);
     }
     const r = ed.cellRect(c, m);
     const ok = if (erase) placement.removable(ed, m) else placement.legal(ed, m);
+    if (!erase and ok and ed.tool == .door) if (ed.painted()) |b| if (grid.headOf(&b.tile, grid.Level.idx(m)) != null) {
+        var floor = Ghost.of(ed, g, c, .floor);
+        floor.at(m);
+        floor.draw();
+    };
     if (!erase) ghostTool(g, r, ed.tool);
     rl.drawRectangleLinesEx(r, INK_EDGE, if (ok) HOVER else WARN);
     if (!ok) rl.drawRectangleRec(r, CUT_OFF);
@@ -211,7 +220,7 @@ fn ghostTool(g: *game.Game, r: rl.Rectangle, tool: editor.Tool) void {
     widgets.glyph(&g.face, l.ch, r, look.fade(l.fg, GHOST_A));
 }
 
-pub fn ghostInk(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, t: grid.Tile) void {
+fn ghostInk(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, p: P, t: grid.Tile) void {
     const r = ed.cellRect(c, p);
     if (ed.paintable() and ed.doorAt(p) == null) ghostTile(g, t, r) else rl.drawRectangleRec(r, CUT_OFF);
 }
@@ -310,12 +319,30 @@ const Ghost = struct {
     c: rl.Rectangle,
     ink: grid.Tile,
     view: grid.Box,
+    cells: std.StaticBitSet(grid.CELLS) = .initEmpty(),
 
     pub fn of(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, ink: grid.Tile) Ghost {
         return .{ .ed = ed, .g = g, .c = c, .ink = ink, .view = visible(ed, c) };
     }
 
-    pub fn at(h: Ghost, p: P) void {
-        if (h.view.holds(p)) ghostInk(h.ed, h.g, h.c, p, h.ink);
+    pub fn at(h: *Ghost, p: P) void {
+        h.cells.set(grid.Level.idx(p));
+    }
+
+    /// Each cell inked once, and the rest of a wider prop it cuts back to its ground, as `placement.layTile` lays it.
+    pub fn draw(h: *const Ghost) void {
+        const board = h.ed.painted();
+        var each = h.cells.iterator(.{});
+        while (each.next()) |i| {
+            const p = grid.Level.of(i);
+            if (h.view.holds(p)) ghostInk(h.ed, h.g, h.c, p, h.ink);
+            const b = board orelse continue;
+            const head = grid.headOf(&b.tile, i) orelse continue;
+            var foot = b.tile[head].footprint(grid.Level.of(head)).cells();
+            while (foot.next()) |q| {
+                const k = grid.Level.idx(q);
+                if (!h.cells.isSet(k) and h.view.holds(q)) ghostInk(h.ed, h.g, h.c, q, b.tile[k].bare());
+            }
+        }
     }
 };

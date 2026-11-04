@@ -71,6 +71,11 @@ pub fn openChest(sim: *Simulation, at: P) Chest {
     return .opened;
 }
 
+/// Gold lying with no chest or item bag at `at`, taken as the hero steps there.
+pub fn coinDrop(sim: *const Simulation, at: P) bool {
+    return !sim.lv.at(at).isChest() and !sim.ground.bagged(at);
+}
+
 pub fn collectGold(sim: *Simulation, at: P) ?items.Coins {
     const coins = sim.ground.collect(at);
     if (coins == 0) return null;

@@ -98,7 +98,7 @@ pub const Befallen = struct { by: usize, after: fx.After };
 /// `was` stands at `at` for `left` seconds more.
 pub const Bursting = struct { at: P, was: grid.Tile, left: f32 };
 
-pub const Pictured = struct { masked: std.StaticBitSet(actor.MAX) = .initEmpty(), bursting: ?P = null };
+pub const Pictured = struct { masked: std.StaticBitSet(actor.MAX) = .initEmpty(), bursting: ?P = null, held: bool = false };
 
 /// Presentation debts land at the body's stagger, or after the hero when it has no stagger.
 pub const Owed = struct {
@@ -183,6 +183,8 @@ pub const Presentation = struct {
     lit_before: [grid.CELLS]bool = @splat(false),
     /// Seconds `lit_before` is still drawn.
     lit_held: f32 = 0,
+    /// `lit_before` was taken as a pyre died, before the turn recast sight through its smoke; its strike keeps it.
+    lit_due: bool = false,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -274,6 +276,10 @@ pub const Presentation = struct {
         if (death.unmasked) self.masked.set(i);
         self.recordFright(sim, target.slot(), death.frightened);
         self.befall(sim, i, death.caught);
+        if (self.lit_held <= 0 and !self.lit_due and std.meta.eql(actor.row(sim.pool.items[i].kind).blow, actor.Blow{ .burst = .fire })) {
+            self.lit_before = sim.lv.lit;
+            self.lit_due = true;
+        }
     }
 
     pub fn recordFright(self: *Presentation, sim: *const Simulation, fallen: actor.ActorSlot, frightened: rewards.Frightened) void {
@@ -317,7 +323,7 @@ pub const Presentation = struct {
     }
 
     pub fn freshTurn(self: *Presentation) void {
-        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "lit_held", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
+        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "lit_held", "lit_due", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
         self.fx.clear();
     }
 
@@ -450,7 +456,7 @@ pub const Presentation = struct {
     }
 
     pub fn pictureKey(self: *const Presentation) Pictured {
-        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null };
+        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.lit_held > 0 };
     }
 
     /// The chest drawn at `p` is a mimic's: one still disguised, or one killed in it until its death is drawn.
@@ -468,13 +474,42 @@ pub const Presentation = struct {
 
     /// Keeps sight as it stands drawn for `wait` seconds; an earlier hold keeps its older sight.
     fn holdLit(self: *Presentation, lv: *const grid.Level, wait: f32) void {
-        if (self.lit_held <= 0) self.lit_before = lv.lit;
+        if (self.lit_held <= 0 and !self.lit_due) self.lit_before = lv.lit;
+        self.lit_due = false;
         self.lit_held = @max(self.lit_held, wait);
     }
 
     pub fn litShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
         if (sim.lv.isLit(p)) return true;
         return self.lit_held > 0 and grid.cellOr(bool, &self.lit_before, p, false);
+    }
+
+    pub fn barrelPresent(self: *const Presentation, sim: *const Simulation, p: P) bool {
+        return sim.lv.hasBarrel(p) or self.fx.breaking(p);
+    }
+
+    pub fn pileShown(self: *const Presentation, sim: *const Simulation, pile: items.Coins) ?items.Coins {
+        if (!self.litShown(sim, pile.at) or self.barrelPresent(sim, pile.at)) return null;
+        return self.pileLanded(sim, pile);
+    }
+
+    pub fn pileLanded(self: *const Presentation, sim: *const Simulation, pile: items.Coins) ?items.Coins {
+        var shown = pile;
+        for (sim.pool.constSlice(), 0..) |a, i| {
+            if (!a.alive and a.at.eq(pile.at) and !self.pictured[i].down()) shown.amount -= self.dropped_gold[i];
+        }
+        return if (shown.amount > 0) shown else null;
+    }
+
+    /// `laid` is an `items.Drop` or `items.Supply`: lying lit where its foe's death has been drawn.
+    pub fn laidShown(self: *const Presentation, sim: *const Simulation, laid: anytype) bool {
+        return self.litShown(sim, laid.at) and self.laidDown(laid) and !self.barrelPresent(sim, laid.at);
+    }
+
+    /// Laid, or its foe's death drawn; seen or not.
+    pub fn laidDown(self: *const Presentation, laid: anytype) bool {
+        if (laid.source == grid.NO_ONE) return true;
+        return self.pictured[actor.Pool.slot(laid.source)].down();
     }
 
     /// The plant whose burst has now landed, once.
@@ -731,7 +766,7 @@ pub const Presentation = struct {
         if (owed.mended) |m| {
             lands = @max(lands, hits);
             var seen = shown;
-            if (shown) self.fx.shimmerIn(hits, .{ .at = mathx.centre(a.at), .col = look.body(a.kind).fg });
+            if (shown) self.shimmerBody(hits, a);
             if (m.slot) |s| {
                 if (m.after) |after| self.fx.settle(hits, .{ .slot = s.index, .after = after });
                 const kin = self.glide[s.index].to;
@@ -852,6 +887,11 @@ pub const Presentation = struct {
             },
             .strike => {},
         }
+    }
+
+    /// `a` shimmering in its own colour as `wait` runs out.
+    pub fn shimmerBody(self: *Presentation, wait: f32, a: *const actor.Actor) void {
+        self.fx.shimmerIn(wait, .{ .at = mathx.centre(a.at), .col = look.body(a.kind).fg });
     }
 
     pub fn sting(self: *Presentation, wait: f32, s: fx.Sting) void {

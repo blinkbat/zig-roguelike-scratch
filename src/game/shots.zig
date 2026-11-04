@@ -262,9 +262,9 @@ pub fn shoot(g: *game.Game) !void {
             try captureCinema(g, target, "strand");
             const seen = g.sim.lv.seen;
             const lit = g.sim.lv.lit;
-            game.character.toggleReveal(g);
+            game.scene.toggleReveal(g);
             try capture(g, target, SHOTS_DIR ++ "/map-revealed.png");
-            game.character.toggleReveal(g);
+            game.scene.toggleReveal(g);
             if (!std.mem.eql(bool, &seen, &g.sim.lv.seen) or !std.mem.eql(bool, &lit, &g.sim.lv.lit)) return error.RevealChangedSight;
             try checkWaterSurface(g);
             try shootWater(g, target);
@@ -909,10 +909,7 @@ fn captureCinema(g: *game.Game, target: rl.RenderTexture2D, comptime name: []con
     drawInto(g, target);
     const restored = try readTarget(target);
     defer rl.unloadImage(restored);
-    var px = pixels(base.width, base.height);
-    while (px.next()) |p| {
-        if (!std.meta.eql(rl.getImageColor(base, p.x, p.y), rl.getImageColor(restored, p.x, p.y))) return error.CinemaOffChangedFrame;
-    }
+    if (differentPixels(base, restored) != 0) return error.CinemaOffChangedFrame;
 }
 
 const CINEMA_FRAMES = 120;

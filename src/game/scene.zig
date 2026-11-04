@@ -41,6 +41,7 @@ const CHILL_PIP_GAP: i32 = game.authored(2);
 const FLAME_FILL_A: f32 = 0.18;
 const BARRIER_FILL_A: f32 = 0.28;
 const BARRIER_INSET: i32 = game.authored(5);
+const BARRIER_BARS = .{ game.authored(16), game.authored(48) };
 /// Each caltrop's middle, in authored cell pixels: a point above it, a foot either side below.
 const CALTROPS = [_]P{ .{ .x = 12, .y = 20 }, .{ .x = 29, .y = 32 }, .{ .x = 42, .y = 17 } };
 const CALTROP_HALF: i32 = game.authored(4);
@@ -191,13 +192,18 @@ fn fillCell(c: Cam, p: P, col: rl.Color) void {
 
 /// Barrels stay remembered until the hero's visible breaking blow lands, or until it sees them gone.
 pub fn barrelShownAt(g: *game.Game, p: P) bool {
-    if (!game.character.terrainSeen(g, p)) return false;
-    if (g.pic.litShown(&g.sim, p) or !g.sim.lv.isSeen(p)) return barrelPresent(g, p);
+    if (!terrainSeen(g, p)) return false;
+    if (g.pic.litShown(&g.sim, p) or !g.sim.lv.isSeen(p)) return g.pic.barrelPresent(&g.sim, p);
     return g.sim.lv.barrelSeen(p);
 }
 
-pub fn barrelPresent(g: *const game.Game, p: P) bool {
-    return g.sim.lv.hasBarrel(p) or g.pic.fx.breaking(p);
+pub fn toggleReveal(g: *game.Game) void {
+    g.light.reveal(&g.sim.lv, !g.light.reveal_map);
+    g.mini.stale = true;
+}
+
+pub fn terrainSeen(g: *const game.Game, p: P) bool {
+    return g.light.remembers(&g.sim.lv, p);
 }
 
 pub fn shownAt(g: *game.Game, stood: *const grid.CellSet, p: P) bool {
@@ -299,7 +305,7 @@ fn drawGroundPass(g: *game.Game, c: Cam, beds: *const dual.Beds, stood: *const g
     g.sprites.drawGround(&g.sim.lv, beds, c.origin(), game.CELL_F, water);
     var cells = grid.Cells.of(beds.lo, beds.hi);
     while (cells.next()) |p| {
-        if (!game.character.terrainSeen(g, p)) continue;
+        if (!terrainSeen(g, p)) continue;
         const here = g.sim.lv.at(p);
         if (look.glyphGround(here, &g.sprites)) inkCell(g, c, p, here, stood);
         if (g.sim.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
@@ -309,26 +315,13 @@ fn drawGroundPass(g: *game.Game, c: Cam, beds: *const dual.Beds, stood: *const g
 pub fn bagCells(g: *const game.Game) grid.CellSet {
     var bags = grid.CellSet.initEmpty();
     inline for (g.sim.ground.laid()) |laid| for (laid) |l| {
-        const remembered = g.sim.lv.at(l.at) == .chest_open and game.character.laidDown(g, l);
-        if (remembered or game.character.laidShown(g, l)) bags.set(grid.Level.idx(l.at));
+        const remembered = g.sim.lv.at(l.at) == .chest_open and g.pic.laidDown(l);
+        if (remembered or g.pic.laidShown(&g.sim, l)) bags.set(grid.Level.idx(l.at));
     };
     for (g.sim.ground.coins[0..g.sim.ground.coin_n]) |pile| {
-        if (g.sim.lv.at(pile.at) == .chest_open and pileLanded(g, pile) != null) bags.set(grid.Level.idx(pile.at));
+        if (g.sim.lv.at(pile.at) == .chest_open and g.pic.pileLanded(&g.sim, pile) != null) bags.set(grid.Level.idx(pile.at));
     }
     return bags;
-}
-
-pub fn pileShown(g: *const game.Game, pile: items.Coins) ?items.Coins {
-    if (!g.pic.litShown(&g.sim, pile.at) or barrelPresent(g, pile.at)) return null;
-    return pileLanded(g, pile);
-}
-
-fn pileLanded(g: *const game.Game, pile: items.Coins) ?items.Coins {
-    var shown = pile;
-    for (g.sim.pool.constSlice(), 0..) |a, i| {
-        if (!a.alive and a.at.eq(pile.at) and !g.pic.pictured[i].down()) shown.amount -= g.pic.dropped_gold[i];
-    }
-    return if (shown.amount > 0) shown else null;
 }
 
 /// `here` is `tileShown` at `p`.
@@ -344,7 +337,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const grid.CellSet
     const bags = bagCells(g);
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
-        if (!game.character.terrainSeen(g, p)) continue;
+        if (!terrainSeen(g, p)) continue;
         const here = g.pic.tileShown(&g.sim, p);
         defer if (looseBag(here, &bags, p)) {
             if (g.sprites.item_bag) |t| {
@@ -397,7 +390,7 @@ fn drawShadows(g: *game.Game, c: Cam, cast: grid.Box) void {
     while (props.next()) |p| {
         const kind = g.pic.tileShown(&g.sim, p);
         if (looseBag(kind, &bags, p)) propShadow(g, c, p, g.sprites.item_bag);
-        if (barrelPresent(g, p)) propShadow(g, c, p, g.sprites.barrel);
+        if (g.pic.barrelPresent(&g.sim, p)) propShadow(g, c, p, g.sprites.barrel);
         if (!look.castsPicture(kind)) continue;
         const forest = look.forestAt(&g.sim.lv, p);
         const t = tileTexture(g, kind, p, &bags) orelse continue;
@@ -602,7 +595,7 @@ pub fn drawMap(g: *game.Game) void {
     const bags = bagCells(g);
     for (g.sim.ground.coins[0..g.sim.ground.coin_n]) |pile| {
         if (g.sim.lv.at(pile.at).isChest() or bagged(&bags, pile.at)) continue;
-        if (pileShown(g, pile)) |shown_pile| drawCoins(g, c, shown_pile);
+        if (g.pic.pileShown(&g.sim, pile)) |shown_pile| drawCoins(g, c, shown_pile);
     }
     if (g.pic.gold_taken) |pile| {
         if (g.sim.heroSlot()) |hero| {
@@ -683,14 +676,19 @@ pub fn drawMap(g: *game.Game) void {
         }
     }.less);
     var next_body: usize = 0;
+    var run: OccluderRun = .{};
     var occluders = view.grown(1).cells();
     while (occluders.next()) |p| {
         const kind = g.sim.lv.at(p);
         if (!look.occludes(kind) or !footprintSeen(g, p, kind)) continue;
         const depth = mathx.centre(p)[1];
-        while (next_body < bodies.len and bodies[next_body].mid[1] <= depth) : (next_body += 1) drawStandingBody(g, &bodies[next_body]);
-        drawOccluder(g, c, p, kind);
+        while (next_body < bodies.len and bodies[next_body].mid[1] <= depth) : (next_body += 1) {
+            run.end();
+            drawStandingBody(g, &bodies[next_body]);
+        }
+        drawOccluder(g, c, p, kind, &run);
     }
+    run.end();
     for (bodies[next_body..]) |*b| drawStandingBody(g, b);
 
     drawTorches(g, c, flames);
@@ -735,16 +733,27 @@ pub fn drawMap(g: *game.Game) void {
 fn footprintSeen(g: *const game.Game, p: P, kind: grid.Tile) bool {
     var cells = kind.footprint(p).cells();
     while (cells.next()) |q| {
-        if (game.character.terrainSeen(g, q)) return true;
+        if (terrainSeen(g, q)) return true;
     }
     return false;
 }
 
-fn drawOccluder(g: *game.Game, c: Cam, p: P, kind: grid.Tile) void {
+const OccluderRun = struct {
+    focus: ?look.Focused = null,
+
+    fn end(self: *OccluderRun) void {
+        if (self.focus == null) return;
+        rl.endShaderMode();
+        self.focus = null;
+    }
+};
+
+fn drawOccluder(g: *game.Game, c: Cam, p: P, kind: grid.Tile, run: *OccluderRun) void {
     const i = grid.Level.idx(p);
     const hidden = g.pic.occlusion[i];
     const occlusion: look.Occlusion = .{ .body = g.pic.occluder[i], .hidden = hidden };
     const tex = g.sprites.tileAt(&g.sim.lv, p) orelse {
+        run.end();
         const l = look.tile(kind);
         drawGlyph(g, l.ch, c.sx(p), c.sy(p), look.fade(g.light.onBody(mathx.centre(p), false).tint(l.fg), look.occlusionAlpha(hidden)));
         return;
@@ -754,10 +763,21 @@ fn drawOccluder(g: *game.Game, c: Cam, p: P, kind: grid.Tile) void {
     const view = shaders.MapView.of(-c.x, -c.y, game.CELL, g.screen.x, g.screen.y);
     const lightmap = g.light.mapTexture();
     const fogmap = g.light.gpu.layers.get(.fog);
-    const shaded = if (lightmap != null and fogmap != null) g.sprites.drawScenery(tex, rect, view, lightmap.?, fogmap.?, occlusion, focus) else false;
-    if (!shaded) raster.stretch(tex, rect, look.fade(sceneryTint(g, p), look.occlusionAlpha(hidden)));
     const rows = @divTrunc(@as(i32, @intFromFloat(rect.height)) + game.CELL - 1, game.CELL);
     const under = grid.Box{ .lo = .{ .x = p.x, .y = p.y + 1 - rows }, .hi = kind.footprint(p).hi };
+    if (hidden == 0 and lightmap != null and fogmap != null and !g.cloud.veils(under)) {
+        if (run.focus == null or !std.meta.eql(run.focus.?, focus)) {
+            run.end();
+            if (g.sprites.beginScenery(view, lightmap.?, fogmap.?, occlusion, focus)) run.focus = focus;
+        }
+        if (run.focus != null) {
+            raster.stretch(tex, rect, look.LIT);
+            return;
+        }
+    }
+    run.end();
+    const shaded = if (lightmap != null and fogmap != null) g.sprites.drawScenery(tex, rect, view, lightmap.?, fogmap.?, occlusion, focus) else false;
+    if (!shaded) raster.stretch(tex, rect, look.fade(sceneryTint(g, p), look.occlusionAlpha(hidden)));
     if (g.cloud.veils(under) and g.cloud.beginOccludedVeil(sceneryTint(g, p), focus, if (shaded) occlusion else .{})) {
         raster.stretch(tex, rect, if (shaded) rl.Color.white else look.fade(rl.Color.white, look.occlusionAlpha(hidden)));
         cloud.Cloud.endVeil();
@@ -816,7 +836,7 @@ fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
         if (g.sim.lv.barrier[i] > 0) {
             fillCell(c, p, look.fade(look.WARD, BARRIER_FILL_A));
             outline(c, p, look.WARD);
-            inline for (.{ game.CELL / 4, game.CELL * 3 / 4 }) |bar_x| rl.drawLine(x + bar_x, y + BARRIER_INSET, x + bar_x, y + game.CELL - BARRIER_INSET, look.WARD);
+            inline for (BARRIER_BARS) |bar_x| rl.drawLine(x + bar_x, y + BARRIER_INSET, x + bar_x, y + game.CELL - BARRIER_INSET, look.WARD);
         }
         if (g.sim.lv.flames[i] > 0) {
             fillCell(c, p, look.fade(look.FIRE, FLAME_FILL_A));

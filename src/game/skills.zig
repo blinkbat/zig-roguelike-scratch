@@ -479,7 +479,7 @@ fn loose(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
 
 /// A missile that struck nothing bursts on no one, but still comes down: fire boils the water its blast would reach, lightning runs through it.
 fn comeDown(run: *game.Game, act: skillbar.Act, flight: bow.Flight, stroke: game.presentation.Stroke) void {
-    const at = flight.end() orelse return;
+    const at = flight.grounded(&run.sim.lv) orelse return;
     switch (act) {
         inline else => |action| {
             combat.boilUnder(run, action, at, stroke.wait);

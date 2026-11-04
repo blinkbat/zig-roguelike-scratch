@@ -142,8 +142,8 @@ pub const Cloud = struct {
         const tex = self.tex orelse return false;
         const s = self.veil orelse return false;
         rl.beginShaderMode(s.shader);
-        focus.set(s.shader, s.texel, s.strength);
-        occlusion.set(s.shader, s.body, s.hidden);
+        focus.set(s);
+        occlusion.set(s);
         shaders.setUniform(s.shader, s.time, self.t.at());
         shaders.setMapView(s, self.map_view);
         const rgb: [3]f32 = look.rgbOf(lit);

@@ -14,6 +14,7 @@ const glacial = @import("../play/glacial.zig");
 const blind = @import("../play/blind.zig");
 const confusion = @import("../play/confusion.zig");
 const shock = @import("../play/shock.zig");
+const resilience = @import("../play/resilience.zig");
 const skillbar = @import("../play/skillbar.zig");
 const fx = @import("../gfx/fx.zig");
 const look = @import("../gfx/look.zig");
@@ -87,6 +88,12 @@ fn occupants(comptime N: usize, lv: *const grid.Level, area: *const grid.Area(N)
 /// A single swing's blow on the cell `d` of the hero; the body it leaves alive, and whether its ailment took.
 const Struck = struct { id: u16, takes: bool };
 
+/// The blow wounds `a` without killing it, as `attacks.resolve` will deal it with its ailment.
+fn survives(sim: *const game.simulation.Simulation, a: *const actor.Actor, dmg: i32, ailment: resilience.Kind) bool {
+    const d = attacks.dealt(sim, a, dmg, ailment);
+    return d > 0 and d < a.hp;
+}
+
 fn strike(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) ?Struck {
     const M = skillbar.Act.skill(act);
     const to = s.from.add(d.delta());
@@ -99,7 +106,7 @@ fn strike(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) ?S
     if (!attacks.heroLands(&g.sim, a, .chosen)) return null;
     var r = attacks.heroSkill(&g.sim, act).against(g.sim.combatStats(a).armour, &g.sim.rng);
     r.hit_checked = true;
-    const takes = if (comptime act.afflicts()) attacks.afflicted(&g.sim, a, M, r.dmg > 0 and r.dmg < a.hp, 0) else false;
+    const takes = if (comptime act.afflicts()) attacks.afflicted(&g.sim, a, M, survives(&g.sim, a, r.dmg, M.AILMENT), 0) else false;
     if (comptime act.afflicts()) if (takes) {
         r.applied = M.AILMENT;
     };
@@ -143,12 +150,13 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     const a = g.sim.pool.get(id) orelse return;
     const at = a.at;
     const grounded = actor.row(a.kind).movement.grounded();
-    defer if (el == .lightning and grounded) conduct(g, at, s);
+    const wet = if (el == .lightning and grounded) wading(&g.sim, at) else null;
+    defer conductTo(g, at, wet, s);
     if (!attacks.heroLands(&g.sim, a, .chosen)) return;
     const stats = g.sim.combatStats(a);
     const resists = stats.elements;
     var r = (attacks.Roll{ .dmg = hit.blow.total(resists), .physical = hit.blow.physical, .crit = hit.crit, .effect = hit.effect, .hit_checked = true }).against(stats.armour, &g.sim.rng);
-    const lands = r.dmg > 0 and r.dmg < a.hp and if (el) |e| hit.blow.reaches(resists, e) else true;
+    const lands = survives(&g.sim, a, r.dmg, M.AILMENT) and if (el) |e| hit.blow.reaches(resists, e) else true;
     const takes = attacks.afflicted(&g.sim, a, M, lands, if (el) |e| resists.get(e) else 0);
     if (takes) r.applied = M.AILMENT;
     if (r.dmg > 0) wound(g, id, r, M.VERB, s);
@@ -157,11 +165,27 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
 
 /// Lightning landing in water runs through it: every body wading or swimming in the water it reaches is shocked as it lands.
 pub fn conduct(g: *game.Game, at: P, s: Stroke) void {
-    const water = shock.conducted(&g.sim.lv, at);
-    if (water.n == 0) return;
+    conductTo(g, at, wading(&g.sim, at), s);
+}
+
+/// The grounded bodies in the water joined to `at`, taken before a blow so a half it splits off is not shocked apart from its parent.
+fn wading(sim: *const game.simulation.Simulation, at: P) ?rewards.Caught {
+    const water = shock.conducted(&sim.lv, at);
+    if (water.n == 0) return null;
+    var out = rewards.Caught.initEmpty();
+    for (sim.pool.constSlice(), 0..) |a, slot| {
+        if (a.alive and water.has(a.at) and actor.row(a.kind).movement.grounded()) out.set(slot);
+    }
+    return out;
+}
+
+fn conductTo(g: *game.Game, at: P, wet: ?rewards.Caught, s: Stroke) void {
+    const bodies = wet orelse return;
     g.sim.sayAt(at, shock.CONDUCTS, .{});
-    for (g.sim.pool.slice(), 0..) |*a, slot| {
-        if (!a.alive or !water.has(a.at) or !actor.row(a.kind).movement.grounded()) continue;
+    var each = bodies.iterator(.{});
+    while (each.next()) |slot| {
+        const a = &g.sim.pool.items[slot];
+        if (!a.alive) continue;
         if (!a.at.eq(at) and g.sim.lv.isLit(at) and a.seenIn(&g.sim.lv)) g.pic.fx.zap(s.wait, .{ .from = mathx.centre(at), .to = mathx.centre(a.at) });
         if (!g.sim.takeStatus(a, .shock)) continue;
         a.shock.start();
@@ -266,7 +290,7 @@ pub fn collectGold(g: *game.Game, at: P) void {
 }
 
 pub fn arrive(g: *game.Game, at: P) void {
-    if (!g.sim.lv.at(at).isChest() and !g.sim.ground.bagged(at)) collectGold(g, at);
+    if (rewards.coinDrop(&g.sim, at)) collectGold(g, at);
     rewards.noticeItems(&g.sim, at);
 }
 
@@ -293,7 +317,7 @@ const CHEST_IS = "The chest is a {s}!";
 /// Out of its chest, shimmering as `wait` runs out.
 fn unmaskMimic(g: *game.Game, a: *actor.Actor, wait: f32) void {
     a.unmask(&g.sim.lv);
-    g.pic.fx.shimmerIn(wait, .{ .at = mathx.centre(a.at), .col = look.body(a.kind).fg });
+    g.pic.shimmerBody(wait, a);
 }
 
 fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime verb: []const u8, s: Stroke, origin: chronicle.AttackOrigin, flight: ?bow.Flight) void {
@@ -316,7 +340,7 @@ fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime ver
     if (h.lethal or !g.sim.pool.items[slot].veiled()) {
         g.sim.sayAs(.damage, hit.at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.sim.name.text(), name, if (hit.roll.crit) " critically" else "", hit.roll.dmg, if (hit.culled) CUT_DOWN else deathNote(h) });
         if (hit.bled) |said| g.sim.sayAt(hit.at, "The {s} {s}!", .{ name, said });
-        if (hit.stunned) g.sim.sayAt(hit.at, "The {s} " ++ turn_clock.STUNNED ++ "!", .{name});
+        if (hit.stunned) g.sim.sayFoeTakes(&g.sim.pool.items[slot], turn_clock.STUNNED);
     }
     const impact = fx.ActorImpact{ .slot = target.slot(), .at = hit.at, .lethal = h.lethal, .after = landBlow(g, target.value, h) };
     const recovery = recoverLife(g, hit.recovery);

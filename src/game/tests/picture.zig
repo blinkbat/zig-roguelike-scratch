@@ -721,7 +721,7 @@ test "hidden and offscreen objects keep casting without being drawn" {
     try std.testing.expect(g.pic.casterAt(&g.sim, i, cast) == null);
     g.sim.lv.putBarrel(p);
     try std.testing.expect(!scene.barrelShownAt(g, p));
-    try std.testing.expect(scene.barrelPresent(g, p));
+    try std.testing.expect(g.pic.barrelPresent(&g.sim, p));
     std.debug.print("actors within {d} cells of the view are casters (a hidden one at its unsighted fade) and hidden barrels cast; dead actors and unborn splits do not\n", .{game.CAST_MARGIN});
 }
 

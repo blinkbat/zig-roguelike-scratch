@@ -10,6 +10,7 @@ const chronicle = @import("../play/chronicle.zig");
 const skillbar = @import("../play/skillbar.zig");
 const terrain = @import("../play/terrain.zig");
 const enfeeble = @import("../play/enfeeble.zig");
+const shock = @import("../play/shock.zig");
 const simulation = @import("sim.zig");
 const Simulation = simulation.Simulation;
 
@@ -127,6 +128,21 @@ pub fn landed(weak: bool, target: *actor.Actor, dmg: i32) i32 {
     return target.shock.spend(enfeeble.weaken(weak, dmg));
 }
 
+fn heroWeak(sim: *const Simulation) bool {
+    return if (sim.heroBody()) |h| h.afflictions().contains(.enfeeble) else false;
+}
+
+fn blowOn(weak: bool, s: *shock.Shock, dmg: i32, applied: ?resilience.Kind) i32 {
+    const weakened = enfeeble.weaken(weak, dmg);
+    return if (applied == .shock) weakened else s.spend(weakened);
+}
+
+/// What `resolve` deals `target` past armour for a blow carrying `applied`, spending nothing.
+pub fn dealt(sim: *const Simulation, target: *const actor.Actor, dmg: i32, applied: ?resilience.Kind) i32 {
+    var s = target.shock;
+    return blowOn(heroWeak(sim), &s, dmg, applied);
+}
+
 pub fn bite(rng: *mathx.Rng, attacker: terrain.Stats, defender: terrain.Stats, s: actor.Strike) ?i32 {
     if (attacker.misses(defender, rng)) return null;
     return s.roll(rng);
@@ -149,8 +165,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
     var r = raw.against(sim.combatStats(a).armour, &sim.rng);
-    const weak = if (sim.heroBody()) |h| h.afflictions().contains(.enfeeble) else false;
-    r.dmg = if (r.applied == .shock) enfeeble.weaken(weak, r.dmg) else landed(weak, a, r.dmg);
+    r.dmg = blowOn(heroWeak(sim), &a.shock, r.dmg, r.applied);
     const kind = a.kind;
     const at = a.at;
     const perks = sim.heroPerks();

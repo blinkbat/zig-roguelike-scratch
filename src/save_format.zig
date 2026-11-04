@@ -432,10 +432,10 @@ test "runs saved before flasks were items gain both, while a current run keeps a
     try TestRecord.seal(&bytes);
     try TestRecord.file(&stripped, bytes.items, &.{ "run", "inventory", "gear", "slots", "life_flask" }, null);
     try TestRecord.file(&bytes, stripped.items, &.{ "run", "inventory", "gear", "slots", "mana_flask" }, null);
-    std.mem.writeInt(u64, bytes.items[MAGIC.len..][0..8], FLASKLESS, .little);
+    std.mem.writeInt(u64, bytes.items[MAGIC.len..][0..@sizeOf(u64)], FLASKLESS, .little);
     try read(bytes.items, target, map);
     for (std.enums.values(flask.Kind)) |k| try std.testing.expect(target.sim.inventory.gear.holds(k));
-    std.mem.writeInt(u64, bytes.items[MAGIC.len..][0..8], VERSION, .little);
+    std.mem.writeInt(u64, bytes.items[MAGIC.len..][0..@sizeOf(u64)], VERSION, .little);
     try read(bytes.items, target, map);
     for (std.enums.values(flask.Kind)) |k| try std.testing.expect(!target.sim.inventory.gear.holds(k));
     std.debug.print("flask saves: version {d} runs gain both flasks; version {d} keeps an unequipped flask in the bag\n", .{ FLASKLESS, VERSION });

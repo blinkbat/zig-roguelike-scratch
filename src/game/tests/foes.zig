@@ -1467,6 +1467,17 @@ test "a pyre bloat bursting on its own turn scalds a body on the water it boils 
     try std.testing.expect(frames > 0 and t < 1);
 }
 
+fn litUntilDown(g: *game.Game, slot: usize, at: P) !usize {
+    var frames: usize = 0;
+    while (!g.pic.pictured[slot].down()) : (frames += 1) {
+        try std.testing.expect(frames < 200);
+        try std.testing.expect(g.pic.litShown(&g.sim, at));
+        game.update(g, harness.TEST_DT);
+    }
+    game.update(g, harness.TEST_DT);
+    return frames;
+}
+
 test "a pyre bloat's smoke hides a body past it only as its burst lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
@@ -1481,14 +1492,26 @@ test "a pyre bloat's smoke hides a body past it only as its burst lands" {
     combat.endTurn(g);
     game.update(g, 0);
     try std.testing.expect(!g.sim.lv.isLit(rat_at));
-    var frames: usize = 0;
-    while (!g.pic.pictured[actor.Pool.slot(bloat)].down()) : (frames += 1) {
-        try std.testing.expect(frames < 200);
-        try std.testing.expect(g.pic.litShown(&g.sim, rat_at));
-        game.update(g, harness.TEST_DT);
-    }
-    game.update(g, harness.TEST_DT);
+    const frames = try litUntilDown(g, actor.Pool.slot(bloat), rat_at);
     std.debug.print("pyre smoke: the rat past it drawn for {d} frames, hidden once the burst lands\n", .{frames});
+    try std.testing.expect(frames > 0 and !g.pic.litShown(&g.sim, rat_at));
+}
+
+test "a pyre bloat bursting on the hero on its own turn hides a body past its smoke only as the burst lands" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const bloat = harness.spawnAt(g, .pyre_bloat, .{ .x = 21, .y = 20 }, true);
+    g.sim.pool.get(bloat).?.pin.extend(2);
+    const rat_at = P{ .x = 24, .y = 20 };
+    _ = harness.spawnAt(g, .rat, rat_at, false);
+    game.settle(g);
+    try std.testing.expect(g.sim.lv.isLit(rat_at));
+    harness.use(g, .wait);
+    try std.testing.expect(g.sim.pool.get(bloat) == null and !g.sim.lv.isLit(rat_at));
+    g.st = .{};
+    const frames = try litUntilDown(g, actor.Pool.slot(bloat), rat_at);
+    std.debug.print("pyre smoke on its own turn: the rat past it drawn for {d} frames, hidden once the burst lands\n", .{frames});
     try std.testing.expect(frames > 0 and !g.pic.litShown(&g.sim, rat_at));
 }
 

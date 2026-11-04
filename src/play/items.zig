@@ -115,7 +115,7 @@ pub const Mod = enum {
         const s = spec(k);
         const slot = s.slots[0];
         const weapon = s.damage != null;
-        const ring = slot == .left_ring;
+        const ring = std.mem.indexOfScalar(Slot, s.slots, .left_ring) != null;
         const armour = slot.armour();
         return switch (m) {
             .physical_damage => weapon,
@@ -229,13 +229,11 @@ pub const Kind = enum {
 };
 /// What loot rolls: every base but the flasks.
 const LOOT = blk: {
-    var out: [std.enums.values(Kind).len - std.enums.values(flask.Kind).len]Kind = undefined;
-    var n: usize = 0;
-    for (std.enums.values(Kind)) |k| if (k.flaskOf() == null) {
-        out[n] = k;
-        n += 1;
-    };
-    break :blk out;
+    var ks: []const Kind = &.{};
+    for (std.enums.values(Kind)) |k| {
+        if (k.flaskOf() == null) ks = ks ++ &[_]Kind{k};
+    }
+    break :blk ks[0..ks.len].*;
 };
 /// Percent of slain foes that drop an item.
 pub const DROP_PERCENT = 10;
@@ -292,7 +290,10 @@ pub const Affix = struct {
         }
     }
 };
-pub const AFFIXES_MAX = 4;
+/// Modifiers a magic or a rare item rolls on each side, prefix and suffix.
+const MAGIC_SIDE: usize = 1;
+const RARE_SIDE: usize = 2;
+pub const AFFIXES_MAX = 2 * RARE_SIDE;
 pub const NAME_MAX = 128;
 pub const WeaponEffect = struct {
     bleed: u32 = 0,
@@ -475,7 +476,7 @@ pub const Item = struct {
             if (m.kind == kind) return false;
             if (m.kind.prefix() == kind.prefix()) same_side += 1;
         };
-        return same_side < @as(usize, if (self.rarity() == .rare) 2 else 1);
+        return same_side < @as(usize, if (self.rarity() == .rare) RARE_SIDE else MAGIC_SIDE);
     }
 
     fn allowsRoll(self: Item, a: AffixRoll) bool {
@@ -541,7 +542,7 @@ pub fn rollRare(rng: *mathx.Rng) Item {
 
 fn affix(out: *Item, rng: *mathx.Rng, rare: bool) void {
     if (rare) out.rare_name = RareName.roll(rng);
-    const count = if (rare) rng.range(3, AFFIXES_MAX) else rng.range(1, 2);
+    const count = if (rare) rng.range(3, AFFIXES_MAX) else rng.range(1, 2 * MAGIC_SIDE);
     for (0..@intCast(count)) |i| {
         const a = rng.pickWhere(AffixRoll, &AFFIXES, out.*, Item.allowsRoll).?;
         out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)), .element = if (a.kind == .resistance) rng.pick(damage.Element, std.enums.values(damage.Element)) else .fire };

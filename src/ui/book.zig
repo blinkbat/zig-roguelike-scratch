@@ -12,6 +12,7 @@ pub const verifyCards = item_card.verify;
 pub const verifyStats = character_stats.verify;
 const BOTH_HANDS = "Both hands";
 const BOTH_IN_USE = BOTH_HANDS ++ " in use";
+const EMPTY = "Empty";
 /// Between loot's gold and its position count.
 const LOOT_GOLD_GAP: i32 = 80;
 const std = @import("std");
@@ -19,6 +20,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
 const attr = @import("../play/attrs.zig");
+const hero = @import("../play/hero.zig");
 const items = @import("../play/items.zig");
 const consumable = @import("../play/consumable.zig");
 const progress = @import("../play/progress.zig");
@@ -379,7 +381,7 @@ pub const Book = struct {
             self.drawDirect(face, sprites, view);
         } else {
             var who: menu.Note(100) = .{};
-            who.say("{s}   {s}", .{ view.name, view.class.title() });
+            who.say("{s}" ++ menu.SEP ++ "{s}", .{ view.name, view.class.title() });
             header(face, who.text());
             var xp: menu.Note(100) = .{};
             xp.say("Level  {d}     XP  {d} / {d}", .{ view.growth.level, view.growth.xp, view.growth.needed() });
@@ -423,7 +425,7 @@ pub const Book = struct {
         }
         self.drawCells(face, sprites, view);
         if (self.count(view) == 0) {
-            face.draw("Empty", layout.LIST_X + layout.TEXT_X, self.directTop(), font.BODY, look.DIM);
+            face.draw(EMPTY, layout.LIST_X + layout.TEXT_X, self.directTop(), font.BODY, look.DIM);
             return;
         }
         if (self.selected(view)) |it| {
@@ -439,7 +441,7 @@ pub const Book = struct {
         face.draw(position.text(), position_x, note_y, font.SMALL, look.DIM);
         if (self.page == .loot and view.loot_gold > 0) {
             var coins: menu.Note(32) = .{};
-            coins.say("{d} gold", .{view.loot_gold});
+            coins.say(hero.COINS_FMT, .{view.loot_gold});
             face.draw(coins.text(), position_x - LOOT_GOLD_GAP - face.width(coins.text(), font.SMALL), note_y, font.SMALL, look.UI_GOLD);
         }
     }
@@ -455,7 +457,7 @@ pub const Book = struct {
             const text_x = layout.LIST_X + layout.TEXT_X;
             face.draw("ITEM", text_x, layout.CONTENT_TOP, font.SMALL, look.DIM);
             face.draw("SLOT", layout.LIST_X + layout.SECOND_X, layout.CONTENT_TOP, font.SMALL, look.DIM);
-            if (self.count(view) == 0) face.draw("Empty", text_x, layout.CONTENT_TOP + layout.EMPTY_DY, font.BODY, look.DIM);
+            if (self.count(view) == 0) face.draw(EMPTY, text_x, layout.CONTENT_TOP + layout.EMPTY_DY, font.BODY, look.DIM);
             const position = self.positionOf(view);
             face.draw(position.text(), text_x, layout.FOOT_Y, font.SMALL, look.DIM);
         }

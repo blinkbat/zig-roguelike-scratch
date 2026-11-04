@@ -381,7 +381,7 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
     const lit = g.sim.lv.lit;
     const clock = g.sim.clock;
     const rng = g.sim.rng;
-    try std.testing.expect(!character.terrainSeen(g, far));
+    try std.testing.expect(!game.scene.terrainSeen(g, far));
     harness.openDebug(g);
     try std.testing.expectEqual(game.PausePage.debug, g.pause_page);
     try std.testing.expectEqual(game.Mode.pause, std.meta.activeTag(g.mode));
@@ -391,7 +391,7 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
     for ([_]bool{ true, false }) |enabled| {
         harness.press(g, CONFIRM);
         try std.testing.expectEqual(enabled, g.light.reveal_map);
-        try std.testing.expectEqual(enabled, character.terrainSeen(g, far));
+        try std.testing.expectEqual(enabled, game.scene.terrainSeen(g, far));
         try std.testing.expectEqual(@as(f32, if (enabled) 1 else 0), g.light.visibility.memory[grid.Level.idx(far)]);
         try std.testing.expectEqualSlices(bool, &seen, &g.sim.lv.seen);
         try std.testing.expectEqualSlices(bool, &lit, &g.sim.lv.lit);

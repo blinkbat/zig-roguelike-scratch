@@ -17,6 +17,8 @@ const WANDER: f32 = 9;
 const JAG: f32 = 2;
 const JAG_SHARE: f32 = 0.5;
 const JAG_ROW: i32 = 1 << 12;
+/// The furthest a line wanders either way, in shares of its `rough`.
+const SWING: f32 = 1 + JAG_SHARE;
 /// Noise rows far enough apart that the waterline and the beach's inland edge wander apart.
 const BEACH_ROW: i32 = 1 << 10;
 
@@ -96,16 +98,17 @@ test "a coast lies deep water, then shallows, then sand, in from its own side al
         carve.field(&lv, carve.Palette.WILD);
         const p = (Params{ .side = side, .sea = 6, .shore = 2, .beach = 5, .rough = 3 }).fit();
         apply(&lv, &rng, 7, carve.Palette.WILD, p);
+        const swing = @as(f32, @floatFromInt(p.rough)) * SWING;
         var far: i32 = 0;
         for (0..grid.CELLS) |k| {
             const in = carve.inFrom(side.dir(), grid.Level.of(k));
             const t = lv.tile[k];
-            if (in < p.sea - p.rough) try std.testing.expectEqual(grid.Tile.water, t);
+            if (@as(f32, @floatFromInt(in)) < @as(f32, @floatFromInt(p.sea)) - swing) try std.testing.expectEqual(grid.Tile.water, t);
             if (t == .water or t == .shallows or t == .sand) far = @max(far, in);
             if (t == .shallows) try std.testing.expect(in >= 1);
         }
         std.debug.print("a coast on the {s}: {d} water, {d} shallows, {d} sand, reaching {d} cells in\n", .{ @tagName(side), carve.count(&lv, .water), carve.count(&lv, .shallows), carve.count(&lv, .sand), far });
-        try std.testing.expect(far <= p.sea + p.shore + p.beach + 2 * p.rough);
+        try std.testing.expect(@as(f32, @floatFromInt(far)) <= @as(f32, @floatFromInt(@as(u32, p.sea) + p.shore + p.beach)) + 2 * swing);
     }
 }
 

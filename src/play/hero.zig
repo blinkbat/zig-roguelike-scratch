@@ -15,6 +15,8 @@ pub fn manaRegen(perks: @import("passives.zig").Perks) i32 {
 /// Hp then most hp, as a save slot reads it.
 pub const HP_FMT = "HP {d}/{d}";
 pub const GOLD_FMT = "Gold {d}";
+/// A pile of coins.
+pub const COINS_FMT = "{d} gold";
 
 pub const Class = enum {
     archer,

@@ -289,18 +289,19 @@ pub const Catalog = struct {
         for (ts) |token| if (token.tag == .invalid) return error.InvalidSource;
         if (self.skills == null) self.skills = try skillSources(a, @embedFile("../play/skillbar.zig"));
         var contexts = try ContextScan.init(a, path, bytes, ts, self.skills.?);
+        const pairs = contexts.pairs;
         var excluded = try a.alloc(bool, ts.len);
         @memset(excluded, false);
         for (ts, 0..) |token, i| {
             if (token.tag == .keyword_test) {
                 var end = i + 1;
                 while (end < ts.len and ts[end].tag != .l_brace) : (end += 1) {}
-                if (end < ts.len) end = close(ts, end, .l_brace, .r_brace);
+                if (end < ts.len) end = pairs[end];
                 @memset(excluded[i..@min(end + 1, ts.len)], true);
             }
             const technical = (token.tag == .builtin and forbiddenBuiltin(slice(bytes, token))) or (token.tag == .identifier and technicalCall(bytes, ts, i));
             if (technical and i + 1 < ts.len and ts[i + 1].tag == .l_paren) {
-                const end = close(ts, i + 1, .l_paren, .r_paren);
+                const end = pairs[i + 1];
                 @memset(excluded[i..@min(end + 1, ts.len)], true);
             }
         }
@@ -332,18 +333,18 @@ pub const Catalog = struct {
                 .reason = if (is_input or is_keyboard) "Input glyph identifiers are tied to controls" else if (decoded.len > MAX_TEXT) "Text exceeds the editor limit" else "",
             });
         }
-        try self.enumLabels(path, bytes, ts, excluded, file);
+        try self.enumLabels(path, bytes, ts, pairs, excluded, file);
     }
 
-    fn enumLabels(self: *Catalog, path: []const u8, bytes: []const u8, ts: []const Token, excluded: []const bool, file: usize) !void {
+    fn enumLabels(self: *Catalog, path: []const u8, bytes: []const u8, ts: []const Token, pairs: []const usize, excluded: []const bool, file: usize) !void {
         const a = self.arena.allocator();
         for (ts, 0..) |token, i| {
             if (token.tag != .keyword_enum or excluded[i]) continue;
             var open = i + 1;
-            if (open < ts.len and ts[open].tag == .l_paren) open = close(ts, open, .l_paren, .r_paren) + 1;
+            if (open < ts.len and ts[open].tag == .l_paren) open = pairs[open] + 1;
             if (open >= ts.len or ts[open].tag != .l_brace) continue;
-            const end = close(ts, open, .l_brace, .r_brace);
-            const type_name = try enumType(a, path, bytes, ts, i);
+            const end = pairs[open];
+            const type_name = try enumType(a, path, bytes, ts, pairs, i);
             var at = open + 1;
             var field = true;
             while (at < end) : (at += 1) {
@@ -361,8 +362,8 @@ pub const Catalog = struct {
                     field = false;
                 }
                 if (ts[at].tag == .comma) field = true;
-                if (ts[at].tag == .l_paren) at = close(ts, at, .l_paren, .r_paren);
-                if (ts[at].tag == .l_brace) at = close(ts, at, .l_brace, .r_brace);
+                if (ts[at].tag == .l_paren) at = pairs[at];
+                if (ts[at].tag == .l_brace) at = pairs[at];
             }
         }
     }
@@ -586,7 +587,7 @@ const ContextScan = struct {
     fn step(s: *ContextScan, i: usize) !void {
         while (s.scopes.items.len > 0 and s.scopes.items[s.scopes.items.len - 1].end < i) _ = s.scopes.pop();
         const ts = s.ts;
-        if (oneOfToken(ts[i].tag, &.{ .keyword_const, .keyword_var }) and (i == 0 or !oneOfToken(ts[i - 1].tag, &.{ .r_bracket, .asterisk })) and i + 2 < ts.len and ts[i + 1].tag == .identifier and oneOfToken(ts[i + 2].tag, &.{ .equal, .colon })) {
+        if (declares(ts, i)) {
             try s.scopes.append(.{ .name = slice(s.bytes, ts[i + 1]), .end = s.expressionEnd(i + 2), .kind = .declaration });
         } else if (ts[i].tag == .keyword_fn and i + 2 < ts.len and ts[i + 1].tag == .identifier and ts[i + 2].tag == .l_paren) {
             var body = s.pairs[i + 2] + 1;
@@ -658,7 +659,7 @@ fn oneOfToken(tag: Token.Tag, choices: []const Token.Tag) bool {
     return false;
 }
 
-fn enumType(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []const Token, at: usize) !?[]const u8 {
+fn enumType(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []const Token, pairs: []const usize, at: usize) !?[]const u8 {
     if (at < 3 or ts[at - 1].tag != .equal or ts[at - 2].tag != .identifier or ts[at - 3].tag != .keyword_const) return null;
     if (!std.mem.startsWith(u8, path, SRC) or !std.mem.endsWith(u8, path, ZIG)) return null;
     var name = std.ArrayList(u8).init(a);
@@ -666,8 +667,8 @@ fn enumType(a: std.mem.Allocator, path: []const u8, bytes: []const u8, ts: []con
     for (ts[0..at], 0..) |token, i| {
         if (token.tag != .keyword_struct and token.tag != .keyword_union and token.tag != .keyword_enum) continue;
         var open = i + 1;
-        if (open < ts.len and ts[open].tag == .l_paren) open = close(ts, open, .l_paren, .r_paren) + 1;
-        if (open >= at or ts[open].tag != .l_brace or close(ts, open, .l_brace, .r_brace) < at) continue;
+        if (open < ts.len and ts[open].tag == .l_paren) open = pairs[open] + 1;
+        if (open >= at or ts[open].tag != .l_brace or pairs[open] < at) continue;
         if (i < 3 or ts[i - 1].tag != .equal or ts[i - 2].tag != .identifier or ts[i - 3].tag != .keyword_const) return null;
         try name.append('.');
         try name.appendSlice(slice(bytes, ts[i - 2]));
@@ -682,28 +683,17 @@ fn declaration(bytes: []const u8, ts: []const Token, before: usize) ?[]const u8 
     while (i > 0) {
         i -= 1;
         if (ts[i].tag == .keyword_fn or ts[i].tag == .semicolon) return null;
-        if (ts[i].tag == .keyword_const or ts[i].tag == .keyword_var) {
-            if (i > 0 and (ts[i - 1].tag == .r_bracket or ts[i - 1].tag == .asterisk)) continue;
-            if (i + 2 < ts.len and ts[i + 1].tag == .identifier and (ts[i + 2].tag == .equal or ts[i + 2].tag == .colon)) return slice(bytes, ts[i + 1]);
-        }
+        if (declares(ts, i)) return slice(bytes, ts[i + 1]);
     }
     return null;
 }
 
-fn slice(bytes: []const u8, token: Token) []const u8 {
-    return bytes[token.loc.start..token.loc.end];
+fn declares(ts: []const Token, i: usize) bool {
+    return oneOfToken(ts[i].tag, &.{ .keyword_const, .keyword_var }) and (i == 0 or !oneOfToken(ts[i - 1].tag, &.{ .r_bracket, .asterisk })) and i + 2 < ts.len and ts[i + 1].tag == .identifier and oneOfToken(ts[i + 2].tag, &.{ .equal, .colon });
 }
 
-fn close(ts: []const Token, at: usize, left: Token.Tag, right: Token.Tag) usize {
-    var depth: usize = 0;
-    for (ts[at..], at..) |token, i| {
-        if (token.tag == left) depth += 1;
-        if (token.tag == right) {
-            depth -= 1;
-            if (depth == 0) return i;
-        }
-    }
-    return ts.len - 1;
+fn slice(bytes: []const u8, token: Token) []const u8 {
+    return bytes[token.loc.start..token.loc.end];
 }
 
 fn forbiddenBuiltin(name: []const u8) bool {
