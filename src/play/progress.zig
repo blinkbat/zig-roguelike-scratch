@@ -258,20 +258,22 @@ pub const State = struct {
         return @max(1, mathx.percentCeil(act.cost(), percent));
     }
 
-    pub fn cooldown(self: *const State, act: skillbar.Act) u8 {
-        if (act.attack() != null or act.cooldown() == 0) return act.cooldown();
+    /// Its cooldown at its rank, `quicker` turns shorter.
+    pub fn cooldown(self: *const State, act: skillbar.Act, quicker: u8) u8 {
+        if (act.cooldown() == 0) return 0;
+        const ranks = if (act.attack() != null) 0 else self.extraRanks(act);
         // A cooldown of 1 runs out in the turn the skill took, so a turn-taking skill keeps 2.
         const floor = @min(act.cooldown(), 1 + act.turns());
-        return @max(floor, act.cooldown() -| self.extraRanks(act));
+        return @max(floor, act.cooldown() -| ranks -| quicker);
     }
 
     /// What using it costs at its rank: "3 mana, 1 turn, 2-turn cooldown".
-    pub fn writeUsage(self: *const State, act: skillbar.Act, w: anytype) void {
+    pub fn writeUsage(self: *const State, act: skillbar.Act, quicker: u8, w: anytype) void {
         const c = self.cost(act);
         if (c > 0) w.print("{d} mana, ", .{c}) catch {};
         const turns = act.turns();
         if (turns == 0) w.writeAll("no turn cost") catch {} else w.print("{d} turn{s}", .{ turns, mathx.plural(turns) }) catch {};
-        const cd = self.cooldown(act);
+        const cd = self.cooldown(act, quicker);
         if (cd > 0) w.print(", {d}-turn cooldown", .{cd}) catch {};
     }
 
@@ -328,10 +330,10 @@ test "experience awards both point pools; passive paths cross class regions; act
     }
     var top = State{};
     for ([_]skillbar.Act{ .juke, .blink, .mana_shield }) |a| top.ranks.set(a, RANKS);
-    try std.testing.expectEqual(@as(u8, 1), top.cooldown(.juke));
-    try std.testing.expectEqual(@as(u8, 2), top.cooldown(.blink));
+    try std.testing.expectEqual(@as(u8, 1), top.cooldown(.juke, 0));
+    try std.testing.expectEqual(@as(u8, 2), top.cooldown(.blink, 0));
     try std.testing.expectEqual(@as(i32, 0), top.damageBonus(.blink));
-    std.debug.print("progression: {d} classes traverse all {d} passive nodes; {d} ranks, prerequisites and separate point pools checked; top-rank blink cools {d}, juke {d}, ward {d}\n", .{ std.enums.values(hero.Class).len, NODES.len, RANKS, top.cooldown(.blink), top.cooldown(.juke), top.cooldown(.mana_shield) });
+    std.debug.print("progression: {d} classes traverse all {d} passive nodes; {d} ranks, prerequisites and separate point pools checked; top-rank blink cools {d}, juke {d}, ward {d}\n", .{ std.enums.values(hero.Class).len, NODES.len, RANKS, top.cooldown(.blink, 0), top.cooldown(.juke, 0), top.cooldown(.mana_shield, 0) });
 }
 
 test "small mana costs round discounts up and paid skills stay paid at every rank" {

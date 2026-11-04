@@ -107,10 +107,21 @@ pub const Act = enum {
     }
 
     /// Its description as flask recovery `bonus` changes it.
-    pub fn describe(a: Act, w: anytype, bonus: flask.Bonus) void {
+    /// What it does for a hero drinking `bonus` and reaching `reach_` cells.
+    pub fn describe(a: Act, w: anytype, bonus: flask.Bonus, reach_: i32) void {
         switch (a) {
-            inline else => |t| if (comptime has(t, "describe")) module(t).?.describe(w, bonus) else w.writeAll(t.desc()) catch {},
+            inline else => |t| if (comptime has(t, "describe"))
+                module(t).?.describe(w, bonus)
+            else if (comptime t.moves())
+                module(t).?.describeReach(w, reach_)
+            else
+                w.writeAll(t.desc()) catch {},
         }
+    }
+
+    /// Its reach with `bounding` cells added, should it move the hero.
+    pub fn reachWith(a: Act, bounding: i32) i32 {
+        return a.reach() + if (a.moves()) bounding else 0;
     }
 
     /// What `rank` of it gives, for a skill whose module writes that; nothing for the rest.
@@ -201,13 +212,24 @@ pub const Act = enum {
 
     /// A missile's marks, a leap's landings, a swing's or a rush's: what its reticle holds legal.
     pub fn aimable(a: Act, lv: *const grid.Level, from: mathx.P, to: mathx.P) bool {
+        return a.aimableIn(lv, from, to, a.reach());
+    }
+
+    /// `aimable` with its reach stretched or cut to `reach`; a swing always strikes beside.
+    pub fn aimableIn(a: Act, lv: *const grid.Level, from: mathx.P, to: mathx.P, reach_: i32) bool {
         return switch (a) {
             inline else => |t| if (comptime reticle(t)) |r| switch (r) {
-                .bow => bow.aimable(lv, from, to, t.reach()),
-                .leap, .swing, .rush => module(t).?.aimable(lv, from, to),
-                .ground => grid.Level.inside(to) and mathx.dist(from, to) <= t.reach() and lv.walkable(to) and lv.isLit(to) and grid.litLine(lv, from, to),
+                .bow => bow.aimable(lv, from, to, reach_),
+                .swing => module(t).?.aimable(lv, from, to),
+                .leap, .rush => module(t).?.aimable(lv, from, to, reach_),
+                .ground => grid.Level.inside(to) and mathx.dist(from, to) <= reach_ and lv.walkable(to) and lv.isLit(to) and grid.litLine(lv, from, to),
             } else unreachable,
         };
+    }
+
+    /// A leap or a rush: it carries the hero.
+    pub fn moves(a: Act) bool {
+        return a.reticle() == .leap or a.reticle() == .rush;
     }
 
     /// Not an arrow: what it is called, and it has no arrow's physical hit nor picture.

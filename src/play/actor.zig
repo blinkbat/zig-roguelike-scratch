@@ -441,6 +441,10 @@ pub const Actor = struct {
         return self.pin.turns > 0 or self.confusion.turns > 0 or self.maim.turns > 0;
     }
 
+    pub fn slowed(self: Actor) bool {
+        return self.pin.turns > 0 or self.chill.turns > 0 or self.maim.turns > 0;
+    }
+
     /// A step taken on a turn worn under `af`: whether a limp costs it its next turn.
     pub fn limp(self: *Actor, af: Afflicted) bool {
         if (!af.contains(.maim) or !self.maim.step()) return false;

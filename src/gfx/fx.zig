@@ -43,6 +43,15 @@ pub fn matterOf(kind: ?actor.Kind) Matter {
 /// Longer flashes hold every turn containing a blow.
 pub const FLASH_S: f32 = 0.16;
 const FLASH_GAIN: f32 = 0.75;
+/// A killed foe's body, from its death landing until it is gone.
+pub const DEATH_S: f32 = 0.22;
+/// Of `DEATH_S`, the first part, over which it darkens wholly before it fades.
+const DEATH_DARKEN: f32 = 0.35;
+/// The light left on a wholly darkened body, per channel.
+pub const DEATH_RGB = [3]f32{ 0.65, 0.35, 0.32 };
+
+/// How far a dying body has darkened and how much of it is left.
+pub const Dying = struct { dark: f32 = 0, alpha: f32 = 1 };
 
 /// Cells, ground to where a blow lands on a body.
 const STRIKE_Z: f32 = 0.3;
@@ -657,6 +666,8 @@ pub const Fx = struct {
     motes: [MOTES]Mote = @splat(.{ .p = @splat(0), .v = @splat(0), .r = 0, .col = rl.Color.blank }),
     head: usize = 0,
     flash: [actor.MAX]f32 = @splat(0),
+    /// Indexed by pool slot: seconds left of a foe's death fade.
+    dying: [actor.MAX]f32 = @splat(0),
     due: [DUE]struct { t: f32, what: Due } = undefined,
     due_n: usize = 0,
     /// Of `due`, the blows on a barrel.
@@ -675,6 +686,7 @@ pub const Fx = struct {
         for (&self.motes) |*m| m.life = 0;
         for (&self.ripples) |*r| r.t = RIPPLE_S;
         self.flash = @splat(0);
+        self.dying = @splat(0);
         self.due_n = 0;
         self.barrels_due = 0;
         self.landed = @splat(null);
@@ -777,7 +789,15 @@ pub const Fx = struct {
         if (self.landed[slot]) |was| {
             if (was.seq >= a.body.seq) return;
         }
+        const died = a.body.down() and !(if (self.landed[slot]) |was| was.down() else false);
+        if (died and a.body.kind.foe()) self.dying[slot] = @max(0, DEATH_S - late);
         self.landed[slot] = a.body;
+    }
+
+    pub fn dyingOf(self: *const Fx, slot: usize) Dying {
+        if (self.dying[slot] <= 0) return .{};
+        const k = self.dying[slot] / DEATH_S;
+        return .{ .dark = @min(1, (1 - k) / DEATH_DARKEN), .alpha = @min(1, k / (1 - DEATH_DARKEN)) };
     }
 
     /// A blow, sting or settle is still to land on the slot.
@@ -850,6 +870,7 @@ pub const Fx = struct {
         for (&self.pulses) |*p| p.life = @max(0, p.life - dt);
         for (&self.ripples) |*r| r.t = @min(RIPPLE_S, r.t + dt);
         for (&self.flash) |*f| f.* = @max(0, f.* - dt);
+        for (&self.dying) |*d| d.* = @max(0, d.* - dt);
         for (&self.speech) |*s| s.life = @max(0, s.life - dt);
         for (&self.motes) |*m| advance(m, lv, dt);
         var i: usize = 0;
@@ -1980,4 +2001,37 @@ test "a sting flashes its body when the picture gets there and sprays nothing" {
     try std.testing.expectApproxEqAbs(FLASH_GAIN, fx.flashOf(3), 0.1);
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying + live(&fx).stains);
     for (fx.motes) |m| try std.testing.expect(m.life <= 0);
+}
+
+test "a killed foe darkens as its death lands, then fades out; a hurt one and a dead hero do not" {
+    const lv = grid.openFloor();
+    var fx = Fx{};
+    fx.clear();
+    const body = Body{ .kind = .rat, .hp = 0, .max = 6, .seq = 1 };
+    var kill = TEST_BLOW;
+    kill.impact.actor.lethal = true;
+    kill.impact.actor.after = .{ .body = body };
+    fx.strike(0.1, kill);
+    var hurt = TEST_BLOW;
+    hurt.impact.actor.slot = .fromIndex(4);
+    hurt.impact.actor.after = .{ .body = .{ .kind = .rat, .hp = 3, .max = 6, .seq = 1 } };
+    fx.strike(0.1, hurt);
+    fx.settle(0.1, .{ .slot = 0, .after = .{ .body = .{ .kind = .archer, .hp = 0, .max = 20, .seq = 1 } } });
+    fx.step(&lv, 0.05);
+    try std.testing.expectEqual(Dying{}, fx.dyingOf(3));
+    const dt = mathx.TEST_DT;
+    var dark_at: ?f32 = null;
+    var gone_at: ?f32 = null;
+    var t: f32 = 0.05;
+    while (t < 1) {
+        fx.step(&lv, dt);
+        t += dt;
+        if (dark_at == null and fx.dyingOf(3).dark >= 1) dark_at = t - 0.1;
+        if (dark_at != null and gone_at == null and fx.dying[3] == 0) gone_at = t - 0.1;
+        try std.testing.expectEqual(Dying{}, fx.dyingOf(4));
+        try std.testing.expectEqual(Dying{}, fx.dyingOf(0));
+    }
+    std.debug.print("death fade: wholly dark {d:.3} s after landing, gone at {d:.3} s\n", .{ dark_at.?, gone_at.? });
+    try std.testing.expectApproxEqAbs(DEATH_S * DEATH_DARKEN, dark_at.?, dt * 1.5);
+    try std.testing.expectApproxEqAbs(DEATH_S, gone_at.?, dt * 1.5);
 }

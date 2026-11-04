@@ -21,6 +21,8 @@ const overlay = @import("../overlay.zig");
 const gas = @import("../../map/gas.zig");
 const flask = @import("../../play/flask.zig");
 const light = @import("../../gfx/light.zig");
+const juke = @import("../../play/juke.zig");
+const blink = @import("../../play/blink.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 const BACK = menu.BACK;
@@ -1044,6 +1046,61 @@ test "stillness keeps a sleeping foe from noticing the hero until nearer" {
         try std.testing.expectEqual(wakes, g.sim.pool.get(id).?.awake);
     }
     std.debug.print("stillness: a rat {d} cells off notices the hero, but not with 2 stillness\n", .{sight - 1});
+}
+
+test "opportunist's blows land harder only on a pinned, chilled or maimed foe" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
+    const rat = g.sim.pool.get(2).?;
+    const blow = attacks.Roll{ .dmg = 10, .hit_checked = true };
+    g.sim.inventory.gear.slots.set(.gloves, harness.affixed(.gloves, .{ .kind = .opportunist, .value = 25 }));
+    var dealt: [4]i32 = undefined;
+    for (&dealt, 0..) |*d, i| {
+        harness.setLife(rat, 50, 50);
+        rat.pin.turns = @intFromBool(i == 1);
+        rat.chill.turns = @intFromBool(i == 2);
+        rat.maim.turns = @intFromBool(i == 3);
+        d.* = attacks.resolve(&g.sim, .fromInt(2), blow, .chosen).?.hit.damage.dmg;
+    }
+    try std.testing.expectEqualSlices(i32, &.{ 10, 13, 13, 13 }, &dealt);
+    std.debug.print("opportunist 25%: a 10 blow deals {d} free, {d} pinned, {d} chilled, {d} maimed\n", .{ dealt[0], dealt[1], dealt[2], dealt[3] });
+}
+
+test "bounding boots stretch every movement skill's reach and nothing else" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const far = from.add(.{ .x = juke.RANGE + 1, .y = 0 });
+    harness.arena(g, from, &.{});
+    harness.aimAt(g, .juke, far);
+    try std.testing.expectEqual(from, g.sim.heroActor().?.at);
+    harness.press(g, BACK);
+    try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+    g.sim.inventory.gear.slots.set(.boots, harness.affixed(.boots, .{ .kind = .bounding, .value = 1 }));
+    for (skillbar.ACTS) |a| try std.testing.expectEqual(a.reach() + @intFromBool(a.moves()), g.sim.reachOf(a));
+    try std.testing.expect(skillbar.Act.juke.moves() and skillbar.Act.blink.moves() and skillbar.Act.charge.moves());
+    var desc: [256]u8 = undefined;
+    try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .juke, &desc), "within 3 tiles") != null);
+    try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .charge, &desc), "Rush 1-4 tiles") != null);
+    harness.aimAt(g, .juke, far);
+    try std.testing.expectEqual(far, g.sim.heroActor().?.at);
+    std.debug.print("bounding: juke lands {d} cells off, beyond its {d}\n", .{ far.x - from.x, juke.RANGE });
+}
+
+test "alacrity shortens every cooldown it is spent on, never below a turn-taking skill's floor" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    harness.arena(g, from, &.{});
+    g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .alacrity, .value = 1 }));
+    harness.aimAt(g, .juke, from.add(.{ .x = juke.RANGE, .y = 0 }));
+    try std.testing.expectEqual(juke.COOLDOWN - 1, g.sim.cooldown.get(.juke));
+    const growth = progress.State{};
+    try std.testing.expectEqual(blink.COOLDOWN - 1, growth.cooldown(.blink, 1));
+    try std.testing.expectEqual(@as(u8, 2), growth.cooldown(.blink, 9));
+    try std.testing.expectEqual(@as(u8, 1), growth.cooldown(.juke, 9));
+    std.debug.print("alacrity: juke cools {d} not {d}; blink floors at {d}, free juke at {d}\n", .{ g.sim.cooldown.get(.juke), juke.COOLDOWN, growth.cooldown(.blink, 9), growth.cooldown(.juke, 9) });
 }
 
 test "siphoning mana lands with the kill and draughts enlarge a mana drink" {

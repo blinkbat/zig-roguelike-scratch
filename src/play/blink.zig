@@ -8,15 +8,18 @@ pub const COOLDOWN: u8 = 3;
 pub const COST: i32 = 7;
 pub const TELEPORTS = true;
 pub const DONE = "blinks away";
-pub const DESCRIPTION = std.fmt.comptimePrint("Teleport to visible empty ground within {d} tiles.", .{RANGE});
+const DESCRIBED = "Teleport to visible empty ground within {d} tiles.";
+pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIBED, .{RANGE});
+
+pub fn describeReach(w: anytype, range: i32) void {
+    w.print(DESCRIBED, .{range}) catch {};
+}
 
 comptime {
     std.debug.assert(RANGE > juke.RANGE and COST > juke.COST);
 }
 
-pub fn aimable(lv: *const grid.Level, from: mathx.P, to: mathx.P) bool {
-    return juke.lands(lv, from, to, RANGE);
-}
+pub const aimable = juke.aimable;
 
 test "blink lands further than juke, across obstacles, only on visible empty ground" {
     var lv = grid.openFloor();
@@ -24,11 +27,11 @@ test "blink lands further than juke, across obstacles, only on visible empty gro
     lv.lit = @splat(true);
     lv.set(.{ .x = 21, .y = 20 }, .wall);
     const far = mathx.P{ .x = 24, .y = 24 };
-    try std.testing.expect(aimable(&lv, from, far));
-    try std.testing.expect(!juke.aimable(&lv, from, .{ .x = 23, .y = 23 }));
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 25, .y = 20 }));
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 21, .y = 20 }));
+    try std.testing.expect(aimable(&lv, from, far, RANGE));
+    try std.testing.expect(!juke.aimable(&lv, from, .{ .x = 23, .y = 23 }, juke.RANGE));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 25, .y = 20 }, RANGE));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 21, .y = 20 }, RANGE));
     lv.lightless();
-    try std.testing.expect(!aimable(&lv, from, far));
+    try std.testing.expect(!aimable(&lv, from, far, RANGE));
     std.debug.print("Blink range: {d} tiles against Juke's {d}; {d} mana against {d}\n", .{ RANGE, juke.RANGE, COST, juke.COST });
 }

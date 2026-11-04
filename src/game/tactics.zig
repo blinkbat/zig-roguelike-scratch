@@ -58,7 +58,7 @@ pub fn valid(g: *const game.Game, from: P, at: P) bool {
 }
 
 pub fn validAct(g: *const game.Game, act: skillbar.Act, from: P, at: P) bool {
-    if (!act.aimable(&g.sim.lv, from, at) or strikesHidden(g, act, from, at)) return false;
+    if (!act.aimableIn(&g.sim.lv, from, at, g.sim.reachOf(act)) or strikesHidden(g, act, from, at)) return false;
     const start = (if (g.mode == .aim) g.mode.aim.anchor() else null) orelse at;
     if (act.consumes()) {
         const a = g.sim.pool.getConst(g.sim.lv.who(at)) orelse return false;

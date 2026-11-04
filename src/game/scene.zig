@@ -404,7 +404,7 @@ fn drawShadows(g: *game.Game, c: Cam, cast: grid.Box) void {
     }
     for (0..g.sim.pool.n) |i| {
         const at = g.pic.casterAt(&g.sim, i, cast) orelse continue;
-        const opacity = g.pic.sighted[i];
+        const opacity = g.pic.sighted[i] * g.pic.fx.dyingOf(i).alpha;
         if (opacity <= 0) continue;
         const t = g.sprites.body(g.pic.pictured[i].kind) orelse continue;
         const s = c.px(at);
@@ -474,10 +474,22 @@ fn mirrorFade(g: *const game.Game, foot: f32, top: f32, bottom: f32) [2]f32 {
 fn drawBody(g: *game.Game, b: *const Shown, mirrored: bool) void {
     const tex = g.sprites.body(b.pic.kind);
     const l = look.body(b.pic.kind);
-    const flash = g.pic.fx.flashOf(b.slot);
+    const dying = g.pic.fx.dyingOf(b.slot);
+    const flash = if (g.pic.fx.dying[b.slot] > 0) 0 else g.pic.fx.flashOf(b.slot);
+    const opacity = b.sighted * dying.alpha;
     var shine = b.shine;
     if (g.sim.isHero(b.slot)) shine.emission = g.pic.fx.level_up.bodyGlow();
-    if (mirrored) drawMirrored(g, tex, l, b.s, b.lifted, b.left, b.mid, &shine, flash, b.sighted) else drawFigure(g, tex, l, b.lifted, b.left, b.mid, &shine, flash, b.sighted);
+    if (dying.dark > 0) darken(&shine, dying.dark);
+    if (mirrored) drawMirrored(g, tex, l, b.s, b.lifted, b.left, b.mid, &shine, flash, opacity) else drawFigure(g, tex, l, b.lifted, b.left, b.mid, &shine, flash, opacity);
+}
+
+fn darken(shine: *light.Shine, dark: f32) void {
+    const one: @Vector(3, f32) = @splat(1);
+    const k = one + (@as(@Vector(3, f32), fx.DEATH_RGB) - one) * @as(@Vector(3, f32), @splat(dark));
+    shine.ambient *= k;
+    shine.floor *= k;
+    shine.emission *= k;
+    for (shine.lamp[0..shine.n]) |*l| l.colour *= k;
 }
 
 fn drawBarrel(g: *game.Game, b: *const Prop, mirrored: bool) void {
@@ -565,7 +577,7 @@ pub fn drawMap(g: *game.Game) void {
     const stood = stoodNow(g);
     var n: usize = 0;
     for (0..g.sim.pool.n) |i| {
-        const at = g.pic.drawnAt(&g.sim, i) orelse continue;
+        const at = g.pic.bodyAt(&g.sim, i) orelse continue;
         const mid = game.middle(at);
         shown[n] = .{
             .pic = g.pic.pictured[i],
@@ -709,7 +721,7 @@ pub fn drawMap(g: *game.Game) void {
     }
 
     for (bodies) |*b| {
-        if (!b.pic.kind.foe()) continue;
+        if (!b.pic.kind.foe() or b.pic.down()) continue;
         const x_bar = b.s.x + BODY_BAR_INSET;
         const y_bar = b.s.y + game.CELL - BODY_BAR_H - BODY_BAR_LIFT;
         const back = look.fade(look.BG, b.sighted);

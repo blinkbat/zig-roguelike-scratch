@@ -8,7 +8,7 @@
 | Equipment rules | Attribute requirements, one main-hand item plus an offhand, or a two-handed item |
 | Requirements | Final loadout must remain valid; an item cannot fund its own requirement |
 | Loot | Normal, magic or rare; blues roll 1–2 mods and affix/base names; yellow rares roll 3–4 distinct mods and independent two-part names |
-| Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery, penetration, thorns, Spoils (gold and item rarity), weapon imbues (burn, chill or shock on hit), stun resistance, light radius, mana on kill, mana flask recovery, gas masks and stillness; equipment restrictions live in `items.Mod.allows` |
+| Modifier pool | Life, mana, Strength, Dexterity, Intelligence, physical weapon damage, spell damage, crit, physical reduction, dodge, elemental resistance, mana recovery, life on kill, flask recovery, penetration, thorns, Spoils (gold and item rarity), weapon imbues (burn, chill or shock on hit), stun resistance, light radius, mana on kill, mana flask recovery, gas masks, stillness, Opportunist's (damage against slowed foes), Bounding (movement skill reach) and Alacrity (shorter cooldowns); equipment restrictions live in `items.Mod.allows` |
 | Armour | Physical damage reduction, capped at 75%; fractional damage rounds probabilistically |
 | Gold | Ground gold without items is a coin drop, automatically collected when stepped onto, with no extra turn or modal. Gold with items shares their bag; chest gold stays in its chest. A bag's or chest's gold is no row: the loot shows it beside the position count and takes it, free, as it closes; a chest holding only gold is taken without opening loot. Gold needs no inventory space |
 | Item actions | Take item, Take all, drop, equip and unequip cost one turn when successful; Take all fills available inventory space and leaves excess items |
@@ -130,6 +130,10 @@ any kill, as flasks refill, and the orb shows it as the death is drawn (`Present
 Draughts scales a mana drink as Plenty scales a life one. Masked helms cut the hero's caustic gas
 and steam harm, the remainder rounding up as often as its fraction. Stillness shortens the
 distance at which a sleeping foe notices the hero, never below one cell.
+Opportunist's raises the hero's blows on a pinned, chilled or maimed foe (`Actor.slowed`), before
+enfeeble and shock (`attacks.opportune`). Bounding adds cells to every leap's and rush's reach
+(`Simulation.reachOf`), for aiming, previews and the tooltip alike. Alacrity takes turns off every
+cooldown as it is spent (`progress.State.cooldown`), never below a turn-taking skill's floor.
 
 ## Tactical skills and class paths
 

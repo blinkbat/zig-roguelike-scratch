@@ -100,8 +100,10 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
     }
     if (d.reticle) |r| switch (r) {
         .leap, .rush, .swing => {
-            if (!signature(m, "aimable", &.{ *const grid.Level, mathx.P, mathx.P }, bool)) return "targeting requires aimable(*const Level, P, P) bool";
+            if (r == .swing and !signature(m, "aimable", &.{ *const grid.Level, mathx.P, mathx.P }, bool)) return "targeting requires aimable(*const Level, P, P) bool";
+            if (r != .swing and !signature(m, "aimable", &.{ *const grid.Level, mathx.P, mathx.P, i32 }, bool)) return "a leap or rush requires aimable(*const Level, P, P, range: i32) bool";
             if (r != .swing and !@hasDecl(m, "RANGE")) return "targeting requires RANGE";
+            if (r != .swing and !@hasDecl(m, "describeReach")) return "a leap or rush requires describeReach(writer, range: i32)";
             if (r == .swing and has(d, "arc") and has(d, "knocked")) return "swing takes at most one of arc or knocked";
             if (r == .swing and !has(d, "arc") and !has(d, "knocked") and !has(d, "afflict")) return "a single-target swing requires afflict";
             if (r == .rush) {
@@ -169,6 +171,6 @@ test "skill contract diagnostics reject missing delivery status requirements and
     };
     try std.testing.expectEqualStrings("damage BASE requires explicit delivery (melee, ranged or spell)", comptime invalid(.{ .module = MissingDelivery }).?);
     try std.testing.expectEqualStrings("afflict requires AILMENT, CHANCE, TAKES and VERB", comptime invalid(.{ .module = MissingStatus }).?);
-    try std.testing.expectEqualStrings("targeting requires aimable(*const Level, P, P) bool", comptime invalid(.{ .module = BadGeometry, .reticle = .leap }).?);
+    try std.testing.expectEqualStrings("a leap or rush requires aimable(*const Level, P, P, range: i32) bool", comptime invalid(.{ .module = BadGeometry, .reticle = .leap }).?);
     std.debug.print("skill contracts: 3 incomplete definitions rejected with actionable delivery, status and signature diagnostics\n", .{});
 }

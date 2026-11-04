@@ -12,7 +12,12 @@ pub const RANGE: i32 = 3;
 pub const MIN_RANGE: i32 = 1;
 pub const VERB = "charges into";
 pub const DONE = "charges";
-pub const DESCRIPTION = std.fmt.comptimePrint("Rush {d}-{d} tiles along a clear line. Strike a foe at the end and knock it back a tile, or retreat to empty ground.", .{ MIN_RANGE, RANGE });
+const DESCRIBED = "Rush {d}-{d} tiles along a clear line. Strike a foe at the end and knock it back a tile, or retreat to empty ground.";
+pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIBED, .{ MIN_RANGE, RANGE });
+
+pub fn describeReach(w: anytype, range: i32) void {
+    w.print(DESCRIBED, .{ MIN_RANGE, range }) catch {};
+}
 
 pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
 
@@ -30,11 +35,11 @@ pub fn stop(from: P, to: P) P {
     return to.sub(wayTo(from, to).?.delta());
 }
 
-/// A lit body or empty landing in a straight line; every intervening cell must be lit and vacant.
-pub fn aimable(lv: *const grid.Level, from: P, to: P) bool {
+/// A lit body or empty landing in a straight line within `range`; every intervening cell must be lit and vacant.
+pub fn aimable(lv: *const grid.Level, from: P, to: P, range: i32) bool {
     const d = wayTo(from, to) orelse return false;
     const n = mathx.dist(from, to);
-    if (n < MIN_RANGE or n > RANGE or !lv.isLit(to) or (!lv.vacant(to) and lv.who(to) == grid.NO_ONE)) return false;
+    if (n < MIN_RANGE or n > range or !lv.isLit(to) or (!lv.vacant(to) and lv.who(to) == grid.NO_ONE)) return false;
     var at = from;
     for (0..@intCast(n - 1)) |_| {
         if (!lv.passOk(at, d)) return false;
@@ -52,21 +57,21 @@ test "a charge runs a straight open line of one to three tiles to a lit body, an
     lv.stand(.{ .x = 22, .y = 22 }, 3);
     lv.stand(.{ .x = 21, .y = 19 }, 4);
     lv.stand(.{ .x = 22, .y = 17 }, 5);
-    try std.testing.expect(aimable(&lv, from, .{ .x = 23, .y = 20 }));
+    try std.testing.expect(aimable(&lv, from, .{ .x = 23, .y = 20 }, RANGE));
     try std.testing.expectEqual(P{ .x = 22, .y = 20 }, stop(from, .{ .x = 23, .y = 20 }));
-    try std.testing.expect(aimable(&lv, from, .{ .x = 22, .y = 22 }));
-    try std.testing.expect(aimable(&lv, from, .{ .x = 21, .y = 19 }));
+    try std.testing.expect(aimable(&lv, from, .{ .x = 22, .y = 22 }, RANGE));
+    try std.testing.expect(aimable(&lv, from, .{ .x = 21, .y = 19 }, RANGE));
     try std.testing.expectEqual(from, stop(from, .{ .x = 21, .y = 19 }));
-    try std.testing.expect(aimable(&lv, from, .{ .x = 20, .y = 21 }));
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 22, .y = 17 }));
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 24, .y = 20 }));
+    try std.testing.expect(aimable(&lv, from, .{ .x = 20, .y = 21 }, RANGE));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 22, .y = 17 }, RANGE));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 24, .y = 20 }, RANGE));
     lv.putBarrel(.{ .x = 21, .y = 20 });
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 23, .y = 20 }));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 23, .y = 20 }, RANGE));
     _ = lv.breakBarrel(.{ .x = 21, .y = 20 });
     lv.set(.{ .x = 21, .y = 21 }, .water);
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 22, .y = 22 }));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 22, .y = 22 }, RANGE));
     lv.stand(.{ .x = 24, .y = 20 }, 6);
     lv.lit[grid.Level.idx(.{ .x = 23, .y = 20 })] = false;
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 23, .y = 20 }));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 23, .y = 20 }, RANGE));
     std.debug.print("charge: {d} to {d} tiles in {d} lines, blocked by a barrel, water, a body or darkness\n", .{ MIN_RANGE, RANGE, mathx.ALL_DIRS.len });
 }

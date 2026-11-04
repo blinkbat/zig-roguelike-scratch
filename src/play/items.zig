@@ -81,6 +81,9 @@ pub const Mod = enum {
     mana_flask,
     masked,
     stillness,
+    opportunist,
+    bounding,
+    alacrity,
 
     /// The passive of the same name, for a modifier that reads and applies as one.
     fn grant(comptime m: Mod, amount: i32) passives.Grant {
@@ -89,8 +92,8 @@ pub const Mod = enum {
 
     pub fn prefix(m: Mod) bool {
         return switch (m) {
-            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked => true,
-            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness => false,
+            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked, .opportunist => true,
+            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness, .bounding, .alacrity => false,
         };
     }
 
@@ -137,6 +140,9 @@ pub const Mod = enum {
             .mana_flask => "of Draughts",
             .masked => "Masked",
             .stillness => "of Stillness",
+            .opportunist => "Opportunist's",
+            .bounding => "of Bounding",
+            .alacrity => "of Alacrity",
         };
     }
     pub fn allows(m: Mod, k: Kind) bool {
@@ -165,6 +171,9 @@ pub const Mod = enum {
             .mana_flask => slot == .belt,
             .masked => slot == .helm,
             .stillness => slot == .boots or slot == .chest,
+            .opportunist => weapon or slot == .gloves,
+            .bounding => slot == .boots,
+            .alacrity => k == .circlet or slot == .amulet,
             .life, .mana, .strength, .dexterity, .intelligence => true,
         };
     }
@@ -206,6 +215,9 @@ const AFFIXES = [_]AffixRoll{
     .{ .kind = .mana_flask, .lo = 10, .hi = 20 },
     .{ .kind = .masked, .lo = 25, .hi = 40 },
     .{ .kind = .stillness, .lo = 1, .hi = 2 },
+    .{ .kind = .opportunist, .lo = 15, .hi = 30 },
+    .{ .kind = .bounding, .lo = 1, .hi = 1 },
+    .{ .kind = .alacrity, .lo = 1, .hi = 1 },
 };
 pub const MODS = blk: {
     var out: [AFFIXES.len]Mod = undefined;
@@ -298,8 +310,8 @@ pub const RareName = struct {
     first: First,
     last: Last,
 
-    pub const First = enum { Spine, Void, Magus, Doom, Dread, Storm, Blood, Bone, Ash, Rune, Gloom, Soul, Death, Wraith, Grim, Viper, Raven, Dragon, Demon, Havoc, Eagle, Bramble, Carrion, Mind };
-    pub const Last = enum { Crusher, Maw, Fold, Bite, Grasp, Shroud, Song, Ward, Eye, Heart, Fang, Coil, Veil, Mark, Clasp, Crown, Touch, Hold, Bane, Whisper, Shell, Knot, Edge, Call };
+    pub const First = enum { Spine, Void, Magus, Doom, Dread, Storm, Blood, Bone, Ash, Rune, Gloom, Soul, Death, Wraith, Grim, Viper, Raven, Dragon, Demon, Havoc, Eagle, Bramble, Carrion, Mind, Iron, Blight, Thorn, Frost, Ember, Shadow, Night, Plague, Grave, Rot, Hollow, Pale, Bitter, Cinder, Hate, Oath, Wolf, Serpent, Corpse, Skull, Pyre, Stone, Thunder, Venom, Mire, Gale, Moon, Dusk, Rift, Scourge, Wrath, Sorrow, Fate, Vortex, Hex, Brood, Kraken, Golem, Behemoth, Beast, Tempest, Ghoul, Lich, Warp, Chaos, Rage, Pain, Gore, Winter, Cairn };
+    pub const Last = enum { Crusher, Maw, Fold, Bite, Grasp, Shroud, Song, Ward, Eye, Heart, Fang, Coil, Veil, Mark, Clasp, Crown, Touch, Hold, Bane, Whisper, Shell, Knot, Edge, Call, Thirst, Spike, Lash, Scar, Brand, Howl, Wing, Claw, Talon, Horn, Spur, Gnash, Rend, Ruin, Torment, Weaver, Reaver, Spiral, Breaker, Gyre, Scream, Roar, Stinger, Needle, Spark, Gaze, Bloom, Loop, Band, Sigil, Mantle, Cowl, Guard, Aegis, Bastion, Keep, Wall, Tread, Stride, Grip, Fist, Hand, Hew, Cleaver, Splitter, Impaler, Harp, Chant, Dirge, Hymn };
 
     fn roll(rng: *mathx.Rng) RareName {
         return .{ .first = rng.pick(First, std.enums.values(First)), .last = rng.pick(Last, std.enums.values(Last)) };
@@ -346,6 +358,9 @@ pub const Affix = struct {
             .mana_flask => w.print("+{d}% mana flask recovery", .{n}) catch {},
             .masked => w.print("{d}% less gas and steam damage", .{n}) catch {},
             .stillness => w.print("Sleeping foes notice {d} cells nearer", .{n}) catch {},
+            .opportunist => w.print("+{d}% damage against pinned, chilled or maimed foes", .{n}) catch {},
+            .bounding => w.print("+{d} movement skill range", .{n}) catch {},
+            .alacrity => w.print("Skill cooldowns {d} turn{s} shorter", .{ n, mathx.plural(n) }) catch {},
         }
     }
 };
@@ -576,7 +591,7 @@ pub const Item = struct {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness => {},
+            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity => {},
             inline else => |k| k.grant(m.value).apply(a),
         };
     }
@@ -584,7 +599,7 @@ pub const Item = struct {
     pub fn perk(self: Item, p: *passives.Perks) void {
         if (spec(self.kind).innate) |innate| if (innate == .grant) innate.grant.perk(p);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
-            .physical_damage, .resistance, .penetration, .thorns, .spoils, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness => {},
+            .physical_damage, .resistance, .penetration, .thorns, .spoils, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity => {},
             inline else => |k| k.grant(m.value).perk(p),
         };
     }
@@ -710,6 +725,16 @@ pub const Gear = struct {
             n += it.value(kind);
         };
         return n;
+    }
+
+    /// Turns Alacrity takes off every cooldown.
+    pub fn quicker(self: Gear) u8 {
+        return std.math.lossyCast(u8, @max(0, self.sum(.alacrity)));
+    }
+
+    /// Cells Bounding adds to every movement skill's reach.
+    pub fn bounding(self: Gear) i32 {
+        return @max(0, self.sum(.bounding));
     }
 
     /// Each flask's recovery bonus: life from `held`, which already counts worn grants; mana from worn mods alone.

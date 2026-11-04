@@ -160,7 +160,7 @@ fn acted(run: *game.Game, used: skillbar.Act) void {
 fn spend(run: *game.Game, act: skillbar.Act) void {
     acted(run, act);
     run.sim.mana -= run.sim.growth.cost(act);
-    run.sim.cooldown.set(act, run.sim.growth.cooldown(act));
+    run.sim.cooldown.set(act, run.sim.growth.cooldown(act, run.sim.inventory.gear.quicker()));
     if (act.supplyOf()) |k| run.sim.inventory.stacks.getPtr(k).* -= 1;
 }
 
@@ -170,7 +170,7 @@ pub fn aimable(run: *const game.Game, from: P, to: P) bool {
     const act = run.mode.aim.act();
     if (act.reticle() == .ground) return tactics.valid(run, from, to);
     if (act.reticle() == .bow and !run.sim.lv.inLos(to)) return false;
-    return act.aimable(&run.sim.lv, from, to) and !tactics.strikesHidden(run, act, from, to);
+    return act.aimableIn(&run.sim.lv, from, to, run.sim.reachOf(act)) and !tactics.strikesHidden(run, act, from, to);
 }
 
 fn leap(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
@@ -339,7 +339,7 @@ fn openRush(run: *game.Game, by: ?input.Button, act: skillbar.Act) void {
     if (preferredTarget(run, act, hero.at)) |at| return aimAt(run, by, act, hero.at, at);
     var near = grid.Nearest{ .from = hero.at };
     var empty = grid.Nearest{ .from = hero.at };
-    var cells = grid.Cells.around(hero.at, act.reach());
+    var cells = grid.Cells.around(hero.at, run.sim.reachOf(act));
     while (cells.next()) |p| {
         if (tactics.validAct(run, act, hero.at, p)) {
             if (run.sim.lv.who(p) != grid.NO_ONE) near.offer(p) else empty.offer(p);
@@ -380,7 +380,7 @@ pub fn nudgeAim(run: *game.Game, d: mathx.Dir) void {
     };
     var to = run.mode.aim.mark.add(d.delta());
     switch (run.mode.aim.act().reticle().?) {
-        .leap, .rush, .ground => if (!juke.inReach(hero.at, to, run.mode.aim.act().reach()) or !grid.Level.inside(to)) return,
+        .leap, .rush, .ground => if (!juke.inReach(hero.at, to, run.sim.reachOf(run.mode.aim.act())) or !grid.Level.inside(to)) return,
         .bow => {
             if (to.eq(hero.at)) to = to.add(d.delta());
             if (!aimable(run, hero.at, to)) return;
@@ -419,9 +419,9 @@ pub fn confirmAim(run: *game.Game) void {
     if (!aimable(run, hero.at, run.mode.aim.mark)) {
         switch (reticle) {
             .bow => run.sim.log.say("Can't shoot there.", .{}),
-            .leap => run.sim.log.say("{s} needs a visible, empty landing within {d} tiles.", .{ act.name(), act.reach() }),
+            .leap => run.sim.log.say("{s} needs a visible, empty landing within {d} tiles.", .{ act.name(), run.sim.reachOf(act) }),
             .swing => run.sim.log.say("Nothing to strike there.", .{}),
-            .rush => run.sim.log.say("{s} needs a clear straight line {d} to {d} tiles away.", .{ act.name(), act.nearest(), act.reach() }),
+            .rush => run.sim.log.say("{s} needs a clear straight line {d} to {d} tiles away.", .{ act.name(), act.nearest(), run.sim.reachOf(act) }),
             .ground => run.sim.log.say("Choose a legal visible target for {s}.", .{act.name()}),
         }
         return;

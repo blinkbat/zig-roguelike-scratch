@@ -439,8 +439,19 @@ pub const Presentation = struct {
         return game.cellUnder(self.drawnAt(sim, i) orelse return null);
     }
 
+    /// Where its body is drawn: as `drawnAt`, or fading out once its death is.
+    pub fn bodyAt(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
+        if (!self.fading(sim, i)) return self.drawnAt(sim, i);
+        const at = self.glide[i].now();
+        return if (self.litShown(sim, game.cellUnder(at))) at else null;
+    }
+
+    fn fading(self: *const Presentation, sim: *const Simulation, i: usize) bool {
+        return self.fx.dying[i] > 0 and !self.standing(sim, i) and self.split_from[i] == null and !self.under.isSet(i) and !self.masked.isSet(i);
+    }
+
     pub fn casterAt(self: *const Presentation, sim: *const Simulation, i: usize, area: grid.Box) ?rl.Vector2 {
-        if (!self.figured(sim, i)) return null;
+        if (!self.figured(sim, i) and !self.fading(sim, i)) return null;
         const at = self.glide[i].now();
         return if (area.holds(game.cellUnder(at))) at else null;
     }
@@ -572,6 +583,7 @@ pub const Presentation = struct {
     fn stepSighted(self: *Presentation, sim: *const Simulation, dt: f32) void {
         const k = mathx.easing(dt, visibility.REVEAL);
         for (self.sighted[0..sim.pool.n], 0..) |*s, i| {
+            if (self.fading(sim, i)) continue;
             s.* = if (!self.figured(sim, i)) 1 else if (self.drawnAt(sim, i) == null) 0 else mathx.ease(s.*, 1, k, k);
         }
     }

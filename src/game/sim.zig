@@ -188,6 +188,11 @@ pub const Simulation = struct {
         return self.inventory.gear.draughts(self.heroPerks());
     }
 
+    /// How far the hero's `act` reaches: a movement skill further for Bounding.
+    pub fn reachOf(self: *const Simulation, act: skillbar.Act) i32 {
+        return act.reachWith(self.inventory.gear.bounding());
+    }
+
     pub fn combatStats(self: *const Simulation, a: *const actor.Actor) terrain.Stats {
         return self.combatStatsAt(a, a.at, a.resilience, a.sunder);
     }

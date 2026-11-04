@@ -114,7 +114,7 @@ test "tight diagonals carry movement sight projectiles melee and gas in all four
             try std.testing.expect(g.sim.lv.isLit(p) and g.sim.lv.isSeen(p));
             try std.testing.expect(bow.aimable(&g.sim.lv, from, p, bow.RANGE));
         }
-        try std.testing.expect(juke.aimable(&g.sim.lv, from, ahead));
+        try std.testing.expect(juke.aimable(&g.sim.lv, from, ahead, juke.RANGE));
         const cone = glacial.cone(&g.sim.lv, from, near);
         try std.testing.expect(cone.has(ahead) and cone.has(far));
         var reverse: [grid.CELLS]bool = @splat(false);

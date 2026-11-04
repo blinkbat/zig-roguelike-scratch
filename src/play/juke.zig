@@ -8,19 +8,20 @@ pub const FREE = true;
 pub const DONE = "jukes away";
 pub const COOLDOWN: u8 = 3;
 pub const COST: i32 = 5;
-pub const DESCRIPTION = std.fmt.comptimePrint("Jump to visible empty ground within {d} tiles.", .{RANGE});
+const DESCRIBED = "Jump to visible empty ground within {d} tiles.";
+pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIBED, .{RANGE});
+
+pub fn describeReach(w: anytype, range: i32) void {
+    w.print(DESCRIBED, .{range}) catch {};
+}
 
 pub fn inReach(from: mathx.P, to: mathx.P, range: i32) bool {
     return mathx.dist(from, to) <= range;
 }
 
 /// Any leap's landings: visible vacant ground within `range`, whatever lies between.
-pub fn lands(lv: *const grid.Level, from: mathx.P, to: mathx.P, range: i32) bool {
+pub fn aimable(lv: *const grid.Level, from: mathx.P, to: mathx.P, range: i32) bool {
     return !to.eq(from) and inReach(from, to, range) and lv.isLit(to) and lv.vacant(to);
-}
-
-pub fn aimable(lv: *const grid.Level, from: mathx.P, to: mathx.P) bool {
-    return lands(lv, from, to, RANGE);
 }
 
 test "juke lands up to two tiles away across obstacles but only on visible empty ground" {
@@ -29,20 +30,20 @@ test "juke lands up to two tiles away across obstacles but only on visible empty
     lv.lit = @splat(true);
     lv.set(.{ .x = 21, .y = 20 }, .wall);
     lv.set(.{ .x = 20, .y = 21 }, .water);
-    try std.testing.expect(aimable(&lv, from, .{ .x = 22, .y = 22 }));
-    try std.testing.expect(aimable(&lv, from, .{ .x = 22, .y = 20 }));
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 23, .y = 20 }));
-    try std.testing.expect(!aimable(&lv, from, from));
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 21, .y = 20 }));
-    try std.testing.expect(!aimable(&lv, from, .{ .x = 20, .y = 21 }));
+    try std.testing.expect(aimable(&lv, from, .{ .x = 22, .y = 22 }, RANGE));
+    try std.testing.expect(aimable(&lv, from, .{ .x = 22, .y = 20 }, RANGE));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 23, .y = 20 }, RANGE));
+    try std.testing.expect(!aimable(&lv, from, from, RANGE));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 21, .y = 20 }, RANGE));
+    try std.testing.expect(!aimable(&lv, from, .{ .x = 20, .y = 21 }, RANGE));
     const to = mathx.P{ .x = 22, .y = 20 };
     lv.putBarrel(to);
-    try std.testing.expect(!aimable(&lv, from, to));
+    try std.testing.expect(!aimable(&lv, from, to, RANGE));
     _ = lv.breakBarrel(to);
     lv.stand(to, 2);
-    try std.testing.expect(!aimable(&lv, from, to));
+    try std.testing.expect(!aimable(&lv, from, to, RANGE));
     lv.clear(to);
     lv.lightless();
-    try std.testing.expect(!aimable(&lv, from, to));
+    try std.testing.expect(!aimable(&lv, from, to, RANGE));
     std.debug.print("Juke range: {d} tiles, diagonal and obstacle crossings checked\n", .{RANGE});
 }

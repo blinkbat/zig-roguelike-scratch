@@ -366,7 +366,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     if (progress.basic(s.act)) rank.say("Basic attack", .{}) else if (learned) rank.say("Rank {d} of {d}", .{ growth.ranks.get(s.act), progress.rankLimit(s.act) }) else rank.say("Not learned", .{});
     face.draw(rank.text(), x, RANK_Y, font.SMALL, skillInk(class, growth, s));
     var desc: menu.Note(256) = .{};
-    s.act.describe(desc.writer(), loadout.gear.draughts(loadout.gear.perks(growth.perks())));
+    s.act.describe(desc.writer(), loadout.gear.draughts(loadout.gear.perks(growth.perks())), s.act.reachWith(loadout.gear.bounding()));
     const end = paragraph(face, desc.text(), x, DESC_Y, TEXT_W, look.TEXT);
     var top: i32 = @max(RULE_MIN_Y, end + RULE_GAP);
     rl.drawLine(x, top, x + TEXT_W, top, BORDER);
@@ -379,7 +379,8 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
         top = paragraph(face, hitText(s.act, h, &text), x, top, TEXT_W, look.TEXT);
     }
     text.clear();
-    growth.writeUsage(s.act, text.writer());
+    const quicker = loadout.gear.quicker();
+    growth.writeUsage(s.act, quicker, text.writer());
     text.buf[0] = std.ascii.toUpper(text.buf[0]);
     top = paragraph(face, text.text(), x, top, TEXT_W, look.TEXT);
     text.clear();
@@ -392,7 +393,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     next.writeRank(s.act, ranked.writer());
     const mana_changes = next.cost(s.act) != growth.cost(s.act);
     const damage_changes = next.damageBonus(s.act) != growth.damageBonus(s.act);
-    const cooldown_changes = next.cooldown(s.act) != growth.cooldown(s.act);
+    const cooldown_changes = next.cooldown(s.act, quicker) != growth.cooldown(s.act, quicker);
     if (learned and !maximum and (ranked.n > 0 or mana_changes or damage_changes or cooldown_changes)) {
         top += NEXT_GAP;
         text.say("NEXT RANK  {d}", .{next.ranks.get(s.act)});
@@ -409,7 +410,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
         }
         const mana_separate = mana_changes and !damage_changes;
         if (mana_separate or cooldown_changes) {
-            const cd = next.cooldown(s.act);
+            const cd = next.cooldown(s.act, quicker);
             if (mana_separate and cooldown_changes) {
                 text.say("Mana: {d}; cooldown: {d} turn{s}", .{ next.cost(s.act), cd, mathx.plural(cd) });
             } else if (mana_separate) {

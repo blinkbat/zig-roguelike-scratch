@@ -134,15 +134,20 @@ fn heroWeak(sim: *const Simulation) bool {
     return if (sim.heroBody()) |h| h.afflictions().contains(.enfeeble) else false;
 }
 
-fn blowOn(weak: bool, s: *shock.Shock, dmg: i32, applied: ?resilience.Kind) i32 {
-    const weakened = enfeeble.weaken(weak, dmg);
+fn blowOn(weak: bool, bonus: i32, s: *shock.Shock, dmg: i32, applied: ?resilience.Kind) i32 {
+    const weakened = enfeeble.weaken(weak, mathx.percentCeil(dmg, mathx.PERCENT + bonus));
     return if (applied == .shock) weakened else s.spend(weakened);
+}
+
+/// The hero's percent more damage against `a`, from Opportunist's.
+pub fn opportune(sim: *const Simulation, a: *const actor.Actor) i32 {
+    return if (a.slowed()) @max(0, sim.inventory.gear.sum(.opportunist)) else 0;
 }
 
 /// What `resolve` deals `target` past armour for a blow carrying `applied`, spending nothing.
 pub fn dealt(sim: *const Simulation, target: *const actor.Actor, dmg: i32, applied: ?resilience.Kind) i32 {
     var s = target.shock;
-    return blowOn(heroWeak(sim), &s, dmg, applied);
+    return blowOn(heroWeak(sim), opportune(sim, target), &s, dmg, applied);
 }
 
 pub fn bite(rng: *mathx.Rng, attacker: terrain.Stats, defender: terrain.Stats, s: actor.Strike) ?i32 {
@@ -176,7 +181,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
     var r = raw.against(sim.combatStats(a).armour, &sim.rng);
-    r.dmg = blowOn(heroWeak(sim), &a.shock, r.dmg, r.applied);
+    r.dmg = blowOn(heroWeak(sim), opportune(sim, a), &a.shock, r.dmg, r.applied);
     const kind = a.kind;
     const at = a.at;
     const perks = sim.heroPerks();

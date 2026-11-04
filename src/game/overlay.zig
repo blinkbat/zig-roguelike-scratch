@@ -276,9 +276,9 @@ pub fn describe(g: *const game.Game, act: skillbar.Act, buf: []u8) [:0]const u8 
 }
 
 fn writeDescription(g: *const game.Game, act: skillbar.Act, w: anytype) void {
-    act.describe(w, g.sim.heroDraughts());
+    act.describe(w, g.sim.heroDraughts(), g.sim.reachOf(act));
     w.writeAll(" ") catch {};
-    g.sim.growth.writeUsage(act, w);
+    g.sim.growth.writeUsage(act, g.sim.inventory.gear.quicker(), w);
     w.writeAll(". ") catch {};
     g.sim.growth.writeRank(act, w);
 }
@@ -453,7 +453,7 @@ pub fn tipOf(g: *const game.Game, s: game.Spot, title_buf: []u8, body_buf: []u8)
             var body = std.io.fixedBufferStream(body_buf);
             const w = body.writer();
             writeDescription(g, act, w);
-            if (act.reticle() != null) w.print("\nRange: {d} cells", .{act.reach()}) catch {};
+            if (act.reticle() != null) w.print("\nRange: {d} cells", .{g.sim.reachOf(act)}) catch {};
             if (g.sim.growth.preparedHit(g.sim.heroAttrs(), g.sim.inventory.gear, act, g.sim.heroSteady())) |h| {
                 if (h.physical.hi > 0) w.print("\n" ++ damage.PHYSICAL_FMT, .{ h.physical.lo, h.physical.hi }) catch {};
                 if (h.element) |e| w.print("\n" ++ damage.ELEMENT_FMT, .{ menu.named(act.element().?), e.lo, e.hi }) catch {};
