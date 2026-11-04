@@ -300,6 +300,11 @@ fn advancedSheet(face: *const font.Face, view: View, dry: bool) [2]Column {
     left.entry("Life on kill", text.text(), .plain, quiet(perks.life_on_kill, look.LIFE_TEXT));
     text.say("+{d}%", .{perks.life_flask});
     left.entry("Life flask recovery", text.text(), .plain, quiet(perks.life_flask, look.LIFE_TEXT));
+    const gear = view.inventory.gear;
+    text.say("{d}", .{gear.sum(.mana_on_kill)});
+    left.entry("Mana on kill", text.text(), .plain, quiet(gear.sum(.mana_on_kill), look.MANA_TEXT));
+    text.say("+{d}%", .{gear.sum(.mana_flask)});
+    left.entry("Mana flask recovery", text.text(), .plain, quiet(gear.sum(.mana_flask), look.MANA_TEXT));
     left.stat(.gold_find, figures, .plain, quiet(attributes.gold_find, look.UI_GOLD));
     left.stat(.item_rarity, figures, .plain, quiet(attributes.item_rarity, look.MAGIC));
 

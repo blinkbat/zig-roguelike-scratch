@@ -15,6 +15,12 @@ const scene = @import("../scene.zig");
 const character = @import("../character.zig");
 const harness = @import("../harness.zig");
 const game = @import("../../game.zig");
+const attacks = @import("../attacks.zig");
+const combat = @import("../combat.zig");
+const overlay = @import("../overlay.zig");
+const gas = @import("../../map/gas.zig");
+const flask = @import("../../play/flask.zig");
+const light = @import("../../gfx/light.zig");
 const P = mathx.P;
 const CONFIRM = menu.CONFIRM;
 const BACK = menu.BACK;
@@ -968,4 +974,95 @@ test "inspect opened during a door trip opens, and the trip still finishes behin
     try std.testing.expect(g.sim.travel == null);
     try std.testing.expectEqual(game.Mode.inspect, std.meta.activeTag(g.mode));
     std.debug.print("inspect during a door trip: arrived at node {d} with inspect open\n", .{g.sim.node});
+}
+
+test "an imbued weapon's hit brings its element's ailment and a resolute helm adds stun resistance" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
+    const rat = g.sim.pool.get(2).?;
+    harness.toughen(rat);
+    const h = g.sim.heroActor().?;
+    for (items.IMBUES) |e| {
+        g.sim.inventory.gear.slots.set(.right_hand, harness.affixed(.sword, .{ .kind = .imbue, .value = 100, .element = e }));
+        var roll = attacks.heroKick(&g.sim);
+        roll.hit_checked = true;
+        combat.wound(g, 2, roll, combat.SHOOT, .{ .from = h.at, .wait = 0.2 });
+    }
+    try std.testing.expect(rat.burn.turns > 0 and rat.chill.turns > 0 and rat.shock.turns > 0);
+    try std.testing.expect(harness.logged(g, "catches fire") and harness.logged(g, "is chilled") and harness.logged(g, "is shocked"));
+    const stun = g.sim.combatStats(h).statuses.get(.stun);
+    g.sim.inventory.gear.slots.set(.helm, harness.affixed(.helmet, .{ .kind = .resolve, .value = 20 }));
+    try std.testing.expectEqual(stun + 20, g.sim.combatStats(h).statuses.get(.stun));
+    std.debug.print("imbue: burn, chill and shock each land from their own weapon; resolve raises stun resistance {d}% to {d}%\n", .{ stun, g.sim.combatStats(h).statuses.get(.stun) });
+}
+
+test "a lantern widens what the hero's light shows at night" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    harness.arena(g, at, &.{});
+    g.sim.outdoors = false;
+    const edge = at.add(.{ .x = g.sim.heroRow().light + 1, .y = 0 });
+    g.sim.see(at);
+    try std.testing.expect(!g.sim.lv.isLit(edge));
+    g.sim.inventory.gear.slots.set(.amulet, harness.affixed(.amulet, .{ .kind = .lantern, .value = 1 }));
+    g.sim.see(at);
+    try std.testing.expect(g.sim.lv.isLit(edge));
+    try std.testing.expectEqual(light.carryR(g.sim.heroRow().light) + 1, light.carryR(g.sim.heroLight()));
+    std.debug.print("lantern: the cell {d} east is dark underground, lit with +1 light radius\n", .{edge.x - at.x});
+}
+
+test "a mask cuts the hero's gas harm and spares foes nothing" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const harm = gas.harm(harness.TEST_HP);
+    for ([_]i16{ 50, 100 }, [_]i32{ @divExact(harm, 2), 0 }) |mask, lost| {
+        const at = P{ .x = 20, .y = 20 };
+        harness.arena(g, at, &.{});
+        const h = g.sim.heroActor().?;
+        harness.setLife(h, harness.TEST_HP, harness.TEST_HP);
+        g.sim.inventory.gear.slots.set(.helm, harness.affixed(.cap, .{ .kind = .masked, .value = mask }));
+        g.sim.lv.addGas(at, harness.TEST_GAS * 10);
+        game.settle(g);
+        harness.use(g, .wait);
+        try std.testing.expectEqual(harness.TEST_HP - lost, h.hp);
+    }
+    std.debug.print("mask: {d} gas harm becomes {d} at 50% and none at 100%\n", .{ harm, @divExact(harm, 2) });
+}
+
+test "stillness keeps a sleeping foe from noticing the hero until nearer" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const sight = actor.row(.rat).sight;
+    for ([_]i16{ 0, 2 }, [_]bool{ true, false }) |still, wakes| {
+        const at = P{ .x = 20, .y = 20 };
+        harness.arena(g, at, &.{});
+        if (still > 0) g.sim.inventory.gear.slots.set(.boots, harness.affixed(.boots, .{ .kind = .stillness, .value = still }));
+        const id = harness.spawnAt(g, .rat, at.add(.{ .x = sight - 1, .y = 0 }), false);
+        harness.use(g, .wait);
+        try std.testing.expectEqual(wakes, g.sim.pool.get(id).?.awake);
+    }
+    std.debug.print("stillness: a rat {d} cells off notices the hero, but not with 2 stillness\n", .{sight - 1});
+}
+
+test "siphoning mana lands with the kill and draughts enlarge a mana drink" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
+    g.sim.inventory.gear.slots.set(.left_ring, harness.affixed(.ring, .{ .kind = .mana_on_kill, .value = 2 }));
+    g.sim.inventory.gear.slots.set(.belt, harness.affixed(.belt, .{ .kind = .mana_flask, .value = 20 }));
+    g.sim.mana = 0;
+    g.pic.catchUp(&g.sim);
+    harness.slay(g, 2, g.sim.heroActor().?.at);
+    try std.testing.expectEqual(@as(i32, 2), g.sim.mana);
+    try std.testing.expectEqual(@as(i32, 0), g.pic.manaShown(&g.sim));
+    harness.drawnOut(g);
+    try std.testing.expectEqual(@as(i32, 2), g.pic.manaShown(&g.sim));
+    const drink = flask.recovers(.mana, 0, g.sim.heroDraughts());
+    var desc: [256]u8 = undefined;
+    try std.testing.expect(std.mem.indexOf(u8, overlay.describe(g, .mana_flask, &desc), "Recover 12 mana") != null);
+    harness.use(g, .mana_flask);
+    try std.testing.expectEqual(drink - try std.math.divCeil(i32, drink, flask.TURNS), g.sim.flasks.get(.mana).left);
+    std.debug.print("siphoning: +2 mana shown once the kill is drawn; draughts: a mana drink recovers {d}\n", .{drink});
 }

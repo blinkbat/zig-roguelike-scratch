@@ -276,7 +276,7 @@ pub fn describe(g: *const game.Game, act: skillbar.Act, buf: []u8) [:0]const u8 
 }
 
 fn writeDescription(g: *const game.Game, act: skillbar.Act, w: anytype) void {
-    act.describe(w, g.sim.heroPerks());
+    act.describe(w, g.sim.heroDraughts());
     w.writeAll(" ") catch {};
     g.sim.growth.writeUsage(act, w);
     w.writeAll(". ") catch {};

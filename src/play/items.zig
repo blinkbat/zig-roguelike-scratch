@@ -8,6 +8,7 @@ const bleeding = @import("bleeding.zig");
 const flask = @import("flask.zig");
 const consumable = @import("consumable.zig");
 const wording = @import("../core/wording.zig");
+const resilience = @import("resilience.zig");
 
 pub const Slot = enum {
     left_hand,
@@ -73,6 +74,13 @@ pub const Mod = enum {
     penetration,
     thorns,
     spoils,
+    imbue,
+    resolve,
+    lantern,
+    mana_on_kill,
+    mana_flask,
+    masked,
+    stillness,
 
     /// The passive of the same name, for a modifier that reads and applies as one.
     fn grant(comptime m: Mod, amount: i32) passives.Grant {
@@ -81,8 +89,17 @@ pub const Mod = enum {
 
     pub fn prefix(m: Mod) bool {
         return switch (m) {
-            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns => true,
-            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils => false,
+            .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked => true,
+            .life, .mana, .crit, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .stillness => false,
+        };
+    }
+
+    /// Whether it rolls an element, and from which.
+    fn elements(m: Mod) []const damage.Element {
+        return switch (m) {
+            .resistance => std.enums.values(damage.Element),
+            .imbue => &IMBUES,
+            else => &.{},
         };
     }
     pub fn title(m: Mod, element: damage.Element) [:0]const u8 {
@@ -109,6 +126,17 @@ pub const Mod = enum {
             .penetration => "of Puncturing",
             .thorns => "Thorned",
             .spoils => "of Spoils",
+            .imbue => switch (element) {
+                .fire => "Searing",
+                .cold => "Rimed",
+                .lightning, .chaos => "Charged",
+            },
+            .resolve => "of Resolve",
+            .lantern => "of the Lantern",
+            .mana_on_kill => "of Siphoning",
+            .mana_flask => "of Draughts",
+            .masked => "Masked",
+            .stillness => "of Stillness",
         };
     }
     pub fn allows(m: Mod, k: Kind) bool {
@@ -130,10 +158,27 @@ pub const Mod = enum {
             .penetration => weapon or slot == .gloves,
             .thorns => slot == .chest or k == .shield,
             .spoils => ring or slot == .amulet,
+            .imbue => weapon,
+            .resolve => slot == .helm or slot == .chest or slot == .amulet,
+            .lantern => slot == .helm or slot == .amulet,
+            .mana_on_kill => s.caster or ring,
+            .mana_flask => slot == .belt,
+            .masked => slot == .helm,
+            .stillness => slot == .boots or slot == .chest,
             .life, .mana, .strength, .dexterity, .intelligence => true,
         };
     }
 };
+/// The elements a weapon is imbued with, each the ailment it brings on a hit.
+pub const IMBUES = [_]damage.Element{ .fire, .cold, .lightning };
+
+pub fn imbued(e: damage.Element) resilience.Kind {
+    return switch (e) {
+        .fire => .burn,
+        .cold => .chill,
+        .lightning, .chaos => .shock,
+    };
+}
 /// The modifiers loot rolls, in roll order, with their value ranges.
 const AffixRoll = struct { kind: Mod, lo: i32, hi: i32 };
 const AFFIXES = [_]AffixRoll{
@@ -154,6 +199,13 @@ const AFFIXES = [_]AffixRoll{
     .{ .kind = .penetration, .lo = 5, .hi = 10 },
     .{ .kind = .thorns, .lo = 1, .hi = 2 },
     .{ .kind = .spoils, .lo = 15, .hi = 25 },
+    .{ .kind = .imbue, .lo = 10, .hi = 20 },
+    .{ .kind = .resolve, .lo = 10, .hi = 20 },
+    .{ .kind = .lantern, .lo = 1, .hi = 1 },
+    .{ .kind = .mana_on_kill, .lo = 1, .hi = 2 },
+    .{ .kind = .mana_flask, .lo = 10, .hi = 20 },
+    .{ .kind = .masked, .lo = 25, .hi = 40 },
+    .{ .kind = .stillness, .lo = 1, .hi = 2 },
 };
 pub const MODS = blk: {
     var out: [AFFIXES.len]Mod = undefined;
@@ -287,6 +339,13 @@ pub const Affix = struct {
             .penetration => w.print("Ignore {d}% " ++ attrs.REDUCTION_LABEL, .{n}) catch {},
             .thorns => w.print("Return {d} damage to melee attackers", .{n}) catch {},
             .spoils => w.print("+{d}% gold and item rarity", .{n}) catch {},
+            .imbue => w.print("{d}% chance to {s} on hit", .{ n, wording.word(imbued(m.element)) }) catch {},
+            .resolve => w.print("+{d}% stun resistance", .{n}) catch {},
+            .lantern => w.print("+{d} light radius", .{n}) catch {},
+            .mana_on_kill => w.print("+{d} mana on kill", .{n}) catch {},
+            .mana_flask => w.print("+{d}% mana flask recovery", .{n}) catch {},
+            .masked => w.print("{d}% less gas and steam damage", .{n}) catch {},
+            .stillness => w.print("Sleeping foes notice {d} cells nearer", .{n}) catch {},
         }
     }
 };
@@ -299,14 +358,28 @@ pub const WeaponEffect = struct {
     bleed: u32 = 0,
     bleed_damage: i32 = bleeding.STILL,
     stun: u32 = 0,
+    burn: u32 = 0,
+    chill: u32 = 0,
+    shock: u32 = 0,
     penetration: i32 = 0,
 
-    pub fn chance(self: WeaponEffect, k: @import("resilience.zig").Kind) u32 {
+    pub fn chance(self: WeaponEffect, k: resilience.Kind) u32 {
         return switch (k) {
             .bleed => self.bleed,
             .stun => self.stun,
-            .burn, .chill, .pin, .shock, .sunder, .blind, .confusion, .enfeeble, .maim, .fright => 0,
+            .burn => self.burn,
+            .chill => self.chill,
+            .shock => self.shock,
+            .pin, .sunder, .blind, .confusion, .enfeeble, .maim, .fright => 0,
         };
+    }
+
+    fn imbue(self: *WeaponEffect, e: damage.Element, n: u32) void {
+        switch (imbued(e)) {
+            .burn => self.burn += n,
+            .chill => self.chill += n,
+            else => self.shock += n,
+        }
     }
 };
 
@@ -503,7 +576,7 @@ pub const Item = struct {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            .penetration => {},
+            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness => {},
             inline else => |k| k.grant(m.value).apply(a),
         };
     }
@@ -511,7 +584,7 @@ pub const Item = struct {
     pub fn perk(self: Item, p: *passives.Perks) void {
         if (spec(self.kind).innate) |innate| if (innate == .grant) innate.grant.perk(p);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
-            .physical_damage, .resistance, .penetration, .thorns, .spoils => {},
+            .physical_damage, .resistance, .penetration, .thorns, .spoils, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness => {},
             inline else => |k| k.grant(m.value).perk(p),
         };
     }
@@ -545,7 +618,8 @@ fn affix(out: *Item, rng: *mathx.Rng, rare: bool) void {
     const count = if (rare) rng.range(3, AFFIXES_MAX) else rng.range(1, 2 * MAGIC_SIDE);
     for (0..@intCast(count)) |i| {
         const a = rng.pickWhere(AffixRoll, &AFFIXES, out.*, Item.allowsRoll).?;
-        out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)), .element = if (a.kind == .resistance) rng.pick(damage.Element, std.enums.values(damage.Element)) else .fire };
+        const from = a.kind.elements();
+        out.mods[i] = .{ .kind = a.kind, .value = @intCast(rng.range(a.lo, a.hi)), .element = if (from.len > 0) rng.pick(damage.Element, from) else .fire };
     }
 }
 
@@ -629,11 +703,26 @@ pub const Gear = struct {
         return self.perks(.{}).life_on_kill;
     }
 
+    /// What every worn item rolled of `kind`, together.
+    pub fn sum(self: Gear, kind: Mod) i32 {
+        var n: i32 = 0;
+        for (self.slots.values) |maybe| if (maybe) |it| {
+            n += it.value(kind);
+        };
+        return n;
+    }
+
+    /// Each flask's recovery bonus: life from `held`, which already counts worn grants; mana from worn mods alone.
+    pub fn draughts(self: Gear, held: passives.Perks) flask.Bonus {
+        return .{ .life = held.life_flask, .mana = self.sum(.mana_flask) };
+    }
+
     pub fn onHit(self: Gear, attack: attrs.Attack) WeaponEffect {
         if (self.weapon(attack) == null) return .{};
         var out = WeaponEffect{};
         for (self.slots.values) |maybe| if (maybe) |it| {
             out.penetration += it.value(.penetration);
+            for (it.mods) |m| if (m) |a| if (a.kind == .imbue) out.imbue(a.element, @intCast(a.value));
         };
         const innate = spec(self.slots.get(.right_hand).?.kind).innate orelse return out;
         const fixed: WeaponEffect = switch (innate) {
@@ -1029,6 +1118,7 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
     var rng = mathx.Rng.init(0xAFF1);
     var seen = std.EnumSet(Mod).initEmpty();
     var elements = std.EnumSet(damage.Element).initEmpty();
+    var imbues = std.EnumSet(damage.Element).initEmpty();
     var two: usize = 0;
     for (0..50000) |_| {
         const it = roll(&rng, 0);
@@ -1037,6 +1127,10 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
             try std.testing.expect(m.kind.allows(it.kind));
             for (AFFIXES) |a| if (a.kind == m.kind) try std.testing.expect(m.value >= a.lo and m.value <= a.hi);
             if (m.kind == .resistance) elements.insert(m.element);
+            if (m.kind == .imbue) {
+                try std.testing.expect(m.element != .chaos);
+                imbues.insert(m.element);
+            }
         };
         if (it.rarity() == .magic) if (it.mods[1]) |second| {
             two += 1;
@@ -1045,7 +1139,10 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
     }
     try std.testing.expectEqual(AFFIXES.len, seen.count());
     try std.testing.expectEqual(std.enums.values(damage.Element).len, elements.count());
+    try std.testing.expectEqual(IMBUES.len, imbues.count());
     var name: [NAME_MAX]u8 = undefined;
+    try std.testing.expectEqualStrings("Rimed Mace of Siphoning", (Item{ .kind = .mace, .mods = .{ .{ .kind = .imbue, .value = 10, .element = .cold }, .{ .kind = .mana_on_kill, .value = 1 }, null, null } }).name(&name));
+    try std.testing.expectEqualStrings("Masked Iron Helm of the Lantern", (Item{ .kind = .helmet, .mods = .{ .{ .kind = .masked, .value = 30 }, .{ .kind = .lantern, .value = 1 }, null, null } }).name(&name));
     const gloves = Item{ .kind = .gloves, .mods = .{ .{ .kind = .strength, .value = 2 }, .{ .kind = .crit, .value = 3 }, null, null } };
     try std.testing.expectEqualStrings("Bear's Leather Gloves of Precision", gloves.name(&name));
     try std.testing.expectEqualStrings("bear's leather gloves of precision", gloves.spoken(&name));
@@ -1128,6 +1225,32 @@ test "rolled combat defenses and recovery modifiers reach equipment consumers" {
     try std.testing.expectEqual(@as(i32, 0), gear.forAttack(stats, .spell).physical_bonus);
     try std.testing.expectEqualDeep(passives.Perks{ .mana_regen = 1, .life_flask = 20 }, gear.perks(.{}));
     std.debug.print("rolled item effects: weapon-scoped damage and penetration, additive crit, elemental defense and two recovery consumers checked\n", .{});
+}
+
+test "imbued weapons add their element's ailment to that weapon's hits and worn mods sum across slots" {
+    var gear = Gear{};
+    gear.slots.set(.right_hand, .{ .kind = .handaxe, .mods = .{ .{ .kind = .imbue, .value = 15, .element = .fire }, .{ .kind = .mana_on_kill, .value = 2 }, null, null } });
+    gear.slots.set(.helm, .{ .kind = .helmet, .mods = .{ .{ .kind = .masked, .value = 30 }, .{ .kind = .resolve, .value = 12 }, null, null } });
+    gear.slots.set(.amulet, .{ .kind = .amulet, .mods = .{ .{ .kind = .lantern, .value = 1 }, .{ .kind = .resolve, .value = 8 }, null, null } });
+    gear.slots.set(.belt, .{ .kind = .belt, .mods = .{ .{ .kind = .mana_flask, .value = 20 }, null, null, null } });
+    gear.slots.set(.boots, .{ .kind = .boots, .mods = .{ .{ .kind = .stillness, .value = 2 }, null, null, null } });
+    const hit = gear.onHit(.melee);
+    try std.testing.expectEqual(@as(u32, 15), hit.chance(.burn));
+    try std.testing.expectEqual(@as(u32, 25), hit.chance(.bleed));
+    try std.testing.expectEqual(@as(u32, 0), hit.chance(.chill) + hit.chance(.shock));
+    try std.testing.expectEqual(@as(u32, 0), gear.onHit(.ranged).chance(.burn));
+    try std.testing.expectEqual(@as(i32, 20), gear.sum(.resolve));
+    try std.testing.expectEqual(@as(i32, 1), gear.sum(.lantern));
+    try std.testing.expectEqual(@as(i32, 30), gear.sum(.masked));
+    try std.testing.expectEqual(@as(i32, 2), gear.sum(.stillness));
+    try std.testing.expectEqualDeep(passives.Perks{}, gear.perks(.{}));
+    try std.testing.expectEqual(@as(i32, 2), gear.sum(.mana_on_kill));
+    try std.testing.expectEqual(@as(i32, 12), flask.recovers(.mana, 0, gear.draughts(gear.perks(.{}))));
+    var line: [64]u8 = undefined;
+    var s = std.io.fixedBufferStream(&line);
+    (Affix{ .kind = .imbue, .value = 15, .element = .lightning }).write(s.writer());
+    try std.testing.expectEqualStrings("15% chance to shock on hit", s.getWritten());
+    std.debug.print("new mods: fire imbue {d}% burn on its own weapon's hits, resolve {d}, lantern {d}, mask {d}%, stillness {d}, mana flask {d}\n", .{ hit.chance(.burn), gear.sum(.resolve), gear.sum(.lantern), gear.sum(.masked), gear.sum(.stillness), flask.recovers(.mana, 0, gear.draughts(gear.perks(.{}))) });
 }
 
 test "spoils rarity improves magic and rare quality without increasing item quantity" {

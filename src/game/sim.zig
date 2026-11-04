@@ -184,6 +184,10 @@ pub const Simulation = struct {
         return self.inventory.gear.perks(self.growth.perks());
     }
 
+    pub fn heroDraughts(self: *const Simulation) flask.Bonus {
+        return self.inventory.gear.draughts(self.heroPerks());
+    }
+
     pub fn combatStats(self: *const Simulation, a: *const actor.Actor) terrain.Stats {
         return self.combatStatsAt(a, a.at, a.resilience, a.sunder);
     }
@@ -199,6 +203,7 @@ pub const Simulation = struct {
         for (std.enums.values(resilience.Kind)) |k| {
             base.statuses.set(k, @as(i16, actor.innateResist(a.kind, k)) + buildup.meters.get(k).percent);
         }
+        if (!a.foe()) base.statuses.getPtr(.stun).* +|= std.math.lossyCast(i16, self.inventory.gear.sum(.resolve));
         return base.on(self.lv.at(at));
     }
 
@@ -266,12 +271,17 @@ pub const Simulation = struct {
         return w.node[self.node].sky();
     }
 
+    /// Cells round the hero its carried light reaches.
+    pub fn heroLight(self: *const Simulation) i32 {
+        return self.heroRow().light + self.inventory.gear.sum(.lantern);
+    }
+
     /// What the hero sees from `from`, by its own sight, the sky's and every carried light.
     pub fn see(self: *Simulation, from: P) void {
         var carried: [actor.MAX]lume.Source = undefined;
         var n: usize = 0;
         for (self.pool.slice(), 0..) |a, i| {
-            const r = actor.row(a.kind).light;
+            const r = if (self.isHero(i)) self.heroLight() else actor.row(a.kind).light;
             if (!a.alive or r <= 0) continue;
             carried[n] = .{ .at = if (self.isHero(i)) from else a.at, .reach = r };
             n += 1;

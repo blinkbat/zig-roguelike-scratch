@@ -23,7 +23,7 @@ pub const Frightened = std.StaticBitSet(actor.MAX);
 /// The bodies a pyre's burst catches: set alight, or standing on the water it boils.
 pub const Caught = std.StaticBitSet(actor.MAX);
 /// `unmasked`: it died in its chest, which then fell open.
-pub const Death = struct { gold: i32, frightened: Frightened, caught: Caught = .initEmpty(), unmasked: bool = false };
+pub const Death = struct { gold: i32, frightened: Frightened, caught: Caught = .initEmpty(), unmasked: bool = false, mana: i32 = 0 };
 pub const Chest = enum { opened, not_closed, ground_full };
 
 pub fn groundRoom(sim: *Simulation) bool {
@@ -109,6 +109,8 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     if (reward.item) |item| dropItem(sim, .{ .item = item, .at = fallen.at, .source = target.value });
     if (reward.supply) |k| _ = dropSupply(sim, .{ .kind = k, .at = fallen.at, .source = target.value });
     for (std.enums.values(flask.Kind)) |k| if (sim.inventory.gear.holds(k)) sim.flasks.getPtr(k).fill(flask.PER_KILL);
+    const mana_before = sim.mana;
+    if (sim.heroBody()) |h| if (h.alive) sim.gainMana(sim.inventory.gear.sum(.mana_on_kill));
     var caught = Caught.initEmpty();
     switch (actor.row(fallen.kind).blow) {
         .burst => |b| switch (b) {
@@ -129,7 +131,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
         sim.log.say("The last {s} is dead.", .{actor.row(family).name});
         sim.chronicle.mark(.{ .cleared = family });
     }
-    return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .caught = caught, .unmasked = unmasked };
+    return .{ .gold = reward.gold, .frightened = scare(sim, fallen.at), .caught = caught, .unmasked = unmasked, .mana = sim.mana - mana_before };
 }
 
 /// A mimic leaves a chest's loot with a rare item; nothing is left where no one could walk to fetch it.

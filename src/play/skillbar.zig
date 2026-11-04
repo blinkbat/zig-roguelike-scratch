@@ -106,10 +106,10 @@ pub const Act = enum {
         };
     }
 
-    /// Its description as the passives `perks` change it.
-    pub fn describe(a: Act, w: anytype, perks: passives.Perks) void {
+    /// Its description as flask recovery `bonus` changes it.
+    pub fn describe(a: Act, w: anytype, bonus: flask.Bonus) void {
         switch (a) {
-            inline else => |t| if (comptime has(t, "describe")) module(t).?.describe(w, perks) else w.writeAll(t.desc()) catch {},
+            inline else => |t| if (comptime has(t, "describe")) module(t).?.describe(w, bonus) else w.writeAll(t.desc()) catch {},
         }
     }
 

@@ -14,6 +14,7 @@ comptime {
 }
 /// Percent more damage the hit it is spent on deals, rounded up.
 pub const MORE: i32 = 50;
+pub const AILMENT = resilience.Kind.shock;
 pub const TAKES = "is shocked";
 pub const STATUS = std.fmt.comptimePrint("The next hit taken deals {d}% more damage.", .{MORE});
 

@@ -1,8 +1,9 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
-const passives = @import("passives.zig");
 
 pub const Kind = enum { life, mana };
+/// Percent more each flask's drink recovers.
+pub const Bonus = std.enums.EnumFieldStruct(Kind, i32, 0);
 
 /// After PoE2's flasks: charges spent a drink at a time, and refilled by kills.
 pub const CHARGES: u8 = 60;
@@ -20,8 +21,8 @@ pub const Life = struct {
     pub const EFFECT = std.fmt.comptimePrint("Recover {d}% of life", .{LIFE_PCT});
     pub const DESCRIPTION = EFFECT ++ ".";
 
-    pub fn describe(w: anytype, perks: passives.Perks) void {
-        const tenths = lifeTenths(perks.life_flask);
+    pub fn describe(w: anytype, bonus: Bonus) void {
+        const tenths = lifeTenths(bonus.life);
         var part: [3]u8 = undefined;
         const fraction = if (@mod(tenths, TENTHS) == 0) "" else std.fmt.bufPrint(&part, ".{d}", .{@mod(tenths, TENTHS)}) catch unreachable;
         w.print(TEXT, .{ @divTrunc(tenths, TENTHS), fraction }) catch {};
@@ -30,9 +31,18 @@ pub const Life = struct {
 
 pub const Mana = struct {
     pub const KIND: Kind = .mana;
+    const TEXT = "Recover {d} mana.";
     pub const EFFECT = std.fmt.comptimePrint("Recover {d} mana", .{MANA_GAIN});
     pub const DESCRIPTION = EFFECT ++ ".";
+
+    pub fn describe(w: anytype, bonus: Bonus) void {
+        w.print(TEXT, .{manaOf(bonus.mana)}) catch {};
+    }
 };
+
+pub fn manaOf(bonus: i32) i32 {
+    return @divTrunc(MANA_GAIN * (mathx.PERCENT + bonus), mathx.PERCENT);
+}
 
 pub fn effect(k: Kind) [:0]const u8 {
     return switch (k) {
@@ -91,10 +101,10 @@ pub fn lifeOf(max: i32, bonus: i32) i32 {
 }
 
 /// What a drink of `k` recovers in all.
-pub fn recovers(k: Kind, max_life: i32, perks: passives.Perks) i32 {
+pub fn recovers(k: Kind, max_life: i32, bonus: Bonus) i32 {
     return switch (k) {
-        .life => lifeOf(max_life, perks.life_flask),
-        .mana => MANA_GAIN,
+        .life => lifeOf(max_life, bonus.life),
+        .mana => manaOf(bonus.mana),
     };
 }
 
@@ -103,7 +113,7 @@ test "a bonused drink scales the base recovery once, without truncating its shar
     try std.testing.expectEqual(@as(i32, 125), lifeOf(200, 25));
     var buf: [128]u8 = undefined;
     var s = std.io.fixedBufferStream(&buf);
-    Life.describe(s.writer(), .{ .life_flask = 25 });
+    Life.describe(s.writer(), .{ .life = 25 });
     try std.testing.expect(std.mem.startsWith(u8, s.getWritten(), "Recover 62.5% of life"));
 }
 

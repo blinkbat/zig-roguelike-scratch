@@ -52,7 +52,11 @@ pub const NIGHT_GLOW: Rgb = .{ 0.85, 0.66, 0.45 };
 pub const NIGHT_GLOW_SHARE: f32 = 0.35;
 pub const NIGHT_GLOW_R: f32 = 3;
 /// A cell past what the hero's light lets it see, so its glow fades out on the edge of sight.
-pub const CARRY_R: f32 = @floatFromInt(actor.row(actor.HERO).light + 1);
+pub const CARRY_R: f32 = carryR(actor.row(actor.HERO).light);
+
+pub fn carryR(light: i32) f32 {
+    return @floatFromInt(light + 1);
+}
 pub const CARRY_FADE: f32 = 0.3;
 pub const CARRY_CEILING: f32 = 0.7;
 pub const CARRY_FACE_WRAP: f32 = 0.6;
@@ -441,15 +445,13 @@ pub fn falloff(d2: f32) f32 {
     return w * w / (1 + d2 / (FALLOFF_D0 * FALLOFF_D0));
 }
 
-pub fn carryFade(d: f32) f32 {
-    return @max(0, @min(carryAlong(d), CARRY_EDGE * (CARRY_R - d)));
+pub fn carryFade(d: f32, r: f32) f32 {
+    return @max(0, @min(carryAlong(d, r), carryAlong(r - 1, r) * (r - d)));
 }
 
-pub fn carryAlong(d: f32) f32 {
-    return 1 - (1 - CARRY_FADE) * d / CARRY_R;
+pub fn carryAlong(d: f32, r: f32) f32 {
+    return 1 - (1 - CARRY_FADE) * d / r;
 }
-
-pub const CARRY_EDGE = carryAlong(CARRY_R - 1);
 
 pub fn wrapped(cos: f32, wrap: f32) f32 {
     return @max(0, (cos + wrap) / (1 + wrap));

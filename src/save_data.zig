@@ -156,6 +156,7 @@ pub const UNSAVED = .{
         "gold_taken",
         "mana_held",
         "flasks_shown",
+        "mana_killed",
         "xp_aim",
         "xp_shown",
         "life_fill",

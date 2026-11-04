@@ -11,6 +11,8 @@ const skillbar = @import("../play/skillbar.zig");
 const terrain = @import("../play/terrain.zig");
 const enfeeble = @import("../play/enfeeble.zig");
 const shock = @import("../play/shock.zig");
+const burning = @import("../play/burning.zig");
+const glacial = @import("../play/glacial.zig");
 const simulation = @import("sim.zig");
 const Simulation = simulation.Simulation;
 
@@ -156,8 +158,17 @@ pub const Hit = struct {
     culled: bool,
     bled: ?[]const u8,
     stunned: bool,
+    imbued: Imbued,
     recovery: i32,
 };
+
+/// The ailments an imbued weapon brings, each by the module that owns it.
+pub const IMBUED = .{ burning, glacial, shock };
+pub const Imbued = std.EnumSet(resilience.Kind);
+
+comptime {
+    for (IMBUED, items.IMBUES) |M, e| std.debug.assert(M.AILMENT == items.imbued(e));
+}
 
 pub const Outcome = union(enum) { miss, hit: Hit };
 
@@ -172,6 +183,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     const culled = r.dmg > 0 and perks.culls(a.hp - r.dmg, a.max);
     var bled: ?[]const u8 = null;
     var stunned = false;
+    var imbued = Imbued.initEmpty();
     if (!culled and r.dmg > 0 and r.dmg < a.hp) {
         if (r.applied != .bleed and sim.procStatus(a, .bleed, r.effect.bleed)) {
             bled = a.bleed.said();
@@ -180,6 +192,12 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
         if (r.applied != .stun and sim.procStatus(a, .stun, r.effect.stun)) {
             a.clock.stun();
             stunned = true;
+        }
+        inline for (IMBUED) |M| {
+            if (r.applied != M.AILMENT and sim.procStatus(a, M.AILMENT, r.effect.chance(M.AILMENT))) {
+                M.afflict(a, &sim.rng);
+                imbued.insert(M.AILMENT);
+            }
         }
     }
     const h = sim.resolveDamage(target, if (culled) a.hp else r.dmg);
@@ -191,6 +209,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
         .culled = culled,
         .bled = bled,
         .stunned = stunned,
+        .imbued = imbued,
         .recovery = if (h.dmg > 0) perks.life_on_hit + if (h.lethal) perks.life_on_kill else 0 else 0,
     } };
 }

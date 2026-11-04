@@ -56,6 +56,7 @@ pub const GLINT_POWER = model.GLINT_POWER;
 pub const smoothSpecular = model.smoothSpecular;
 const remembered = model.remembered;
 pub const carryFade = model.carryFade;
+pub const carryR = model.carryR;
 pub const mask = model.mask;
 pub const flicker = model.flicker;
 const splat = model.splat;
@@ -82,6 +83,8 @@ pub const Light = struct {
     hung: u32 = 0,
     /// The hero's centre as drawn, cells.
     carrier: ?[2]f32 = null,
+    /// Cells round the carrier its light fades out by.
+    carry_r: f32 = model.CARRY_R,
     sky: ?sky.Sky = null,
     /// Integral image of caster counts at cell corners.
     casting: [CORNERS_W * CORNERS_H]u16,
@@ -244,9 +247,9 @@ pub const Light = struct {
         const dx = c[0] - x;
         const dy = c[1] - y;
         const flat = mathx.len(dx, dy);
-        if (flat >= model.CARRY_R) return null;
+        if (flat >= self.carry_r) return null;
         const reach = if (fogged) visibility.sampleOccluded(&self.visibility.sight, &self.visibility.carry_open, x, y) else self.carryReach(x, y);
-        return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat) * share * reach };
+        return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat, self.carry_r) * share * reach };
     }
 
     fn carried(self: *const Light, s: Spot) Rgb {

@@ -439,6 +439,7 @@ pub fn settle(g: *Game) void {
     g.pic.hour_shown = g.sim.clock.hour();
     g.light.sky = skyNow(g);
     g.light.carrier = g.pic.carrierAt(&g.sim);
+    g.light.carry_r = light.carryR(g.sim.heroLight());
 }
 
 pub fn resumeRun(g: *Game) void {
@@ -759,6 +760,7 @@ pub fn update(g: *Game, dt: f32) void {
     g.light.sky = skyNow(g);
     g.light.step(&g.sim.lv, dt);
     g.light.carrier = g.pic.carrierAt(&g.sim);
+    g.light.carry_r = light.carryR(g.sim.heroLight());
     if (g.debug.visuals.weather) g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, CELL_F);
 }
 

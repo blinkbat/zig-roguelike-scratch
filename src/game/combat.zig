@@ -341,6 +341,7 @@ fn woundAt(g: *game.Game, target: actor.ActorId, raw: attacks.Roll, comptime ver
         g.sim.sayAs(.damage, hit.at, "{s} " ++ verb ++ " the {s}{s} for {d}.{s}", .{ g.sim.name.text(), name, if (hit.roll.crit) " critically" else "", hit.roll.dmg, if (hit.culled) CUT_DOWN else deathNote(h) });
         if (hit.bled) |said| g.sim.sayAt(hit.at, "The {s} {s}!", .{ name, said });
         if (hit.stunned) g.sim.sayFoeTakes(&g.sim.pool.items[slot], turn_clock.STUNNED);
+        inline for (attacks.IMBUED) |M| if (hit.imbued.contains(M.AILMENT)) g.sim.sayFoeTakes(&g.sim.pool.items[slot], M.TAKES);
     }
     const impact = fx.ActorImpact{ .slot = target.slot(), .at = hit.at, .lethal = h.lethal, .after = landBlow(g, target.value, h) };
     const recovery = recoverLife(g, hit.recovery);
@@ -488,15 +489,26 @@ fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
 fn gasHarm(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     if (!g.sim.lv.gassy(a.at) or ranAlready(g, id, .gassed)) return;
-    _ = harmTick(g, id, gas.harm(a.max), .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." });
+    const dmg = masked(g, id, gas.harm(a.max));
+    if (dmg == 0) return;
+    _ = harmTick(g, id, dmg, .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." });
 }
 
 fn steamHarm(g: *game.Game, id: u16) void {
     const a = g.sim.pool.get(id) orelse return;
     if (!g.sim.lv.scalding(a.at) or ranAlready(g, id, .scalded)) return;
-    const dmg = gas.scald(g.sim.combatStats(a).elements);
+    const dmg = masked(g, id, gas.scald(g.sim.combatStats(a).elements));
     if (dmg == 0) return;
     _ = harmTick(g, id, dmg, .scalded, .{ .hero = "The " ++ gas.STEAM_NAME ++ " scalds {s} for {d}." });
+}
+
+/// The hero's mask takes its share of a gas's harm, the remainder rounded up as often as its fraction.
+fn masked(g: *game.Game, id: u16, dmg: i32) i32 {
+    const share = if (id == g.sim.hero) std.math.clamp(g.sim.inventory.gear.sum(.masked), 0, mathx.PERCENT) else 0;
+    if (share == 0 or dmg <= 0) return dmg;
+    const kept = dmg * (mathx.PERCENT - share);
+    const part: u32 = @intCast(@mod(kept, mathx.PERCENT));
+    return @divTrunc(kept, mathx.PERCENT) + @intFromBool(part > 0 and g.sim.rng.percent(part));
 }
 
 /// Brogue's `T_CAUSES_HEALING`: every hurt body in it, foe or hero.
@@ -630,7 +642,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
     const af = worn.afflicted;
     const sight = blind.sight(af.contains(.blind), row.sight);
     if (!r.awake) {
-        if (!fov.sees(&g.sim.lv, r.at, h.at, sight)) return;
+        if (!fov.sees(&g.sim.lv, r.at, h.at, @max(1, sight - g.sim.inventory.gear.sum(.stillness)))) return;
         r.awake = true;
         g.pic.turnLater(id, h.at.x - r.at.x);
         if (!r.submerged) g.sim.sayAt(r.at, "A {s} notices {s}.", .{ row.name, g.sim.name.text() });

@@ -193,7 +193,7 @@ fn leap(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
 fn drink(run: *game.Game, act: skillbar.Act, k: flask.Kind) void {
     const hero = run.sim.heroActor() orelse return;
     spend(run, act);
-    run.sim.flasks.getPtr(k).drink(flask.recovers(k, hero.max, run.sim.heroPerks()));
+    run.sim.flasks.getPtr(k).drink(flask.recovers(k, hero.max, run.sim.heroDraughts()));
     run.pic.flasks_shown.set(k, run.sim.flasks.get(k));
     run.pic.fx.shimmer(mathx.centre(hero.at), switch (k) {
         .life => look.LIFE,

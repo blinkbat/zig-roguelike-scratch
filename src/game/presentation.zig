@@ -195,6 +195,7 @@ pub const Presentation = struct {
     mana_held: i32 = 0,
     /// Kill refills appear only when the killing blow lands.
     flasks_shown: simulation.Flasks = .initFill(.{}),
+    mana_killed: i32 = 0,
     /// `xpLevels` as of the last drawn turn, and the bar easing toward it.
     xp_aim: f32 = 0,
     xp_shown: f32 = 0,
@@ -273,6 +274,7 @@ pub const Presentation = struct {
     pub fn recordDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId, death: rewards.Death) void {
         const i = target.slot().index;
         self.dropped_gold[i] = death.gold;
+        self.mana_killed += death.mana;
         if (death.unmasked) self.masked.set(i);
         self.recordFright(sim, target.slot(), death.frightened);
         self.befall(sim, i, death.caught);
@@ -328,7 +330,7 @@ pub const Presentation = struct {
     }
 
     pub fn freshRun(self: *Presentation) void {
-        mathx.toDefaults(self, &.{ "mana_held", "flasks_shown" });
+        mathx.toDefaults(self, &.{ "mana_held", "flasks_shown", "mana_killed" });
     }
 
     pub fn freshFacing(self: *Presentation) void {
@@ -521,7 +523,7 @@ pub const Presentation = struct {
     }
 
     pub fn manaShown(self: *const Presentation, sim: *const Simulation) i32 {
-        return @min(sim.manaMax(), sim.mana + self.mana_held);
+        return @max(0, @min(sim.manaMax(), sim.mana + self.mana_held) - self.mana_killed);
     }
 
     pub fn lifeShown(self: *const Presentation, sim: *const Simulation) Life {
@@ -672,7 +674,10 @@ pub const Presentation = struct {
             self.glide[i] = self.glide[from].toward(a.at, -self.clearIn(sim, i, a.at));
             if (self.litShown(sim, sim.pool.items[from].at) or self.litShown(sim, a.at)) self.holdUntil(self.glide[i].left());
         }
-        if (!dying) self.flasks_shown = sim.flasks;
+        if (!dying) {
+            self.flasks_shown = sim.flasks;
+            self.mana_killed = 0;
+        }
         self.mana_held = @max(0, self.mana_held - self.fx.mana_landed);
         self.fx.mana_landed = 0;
         if (sim.heroSlot()) |h| {

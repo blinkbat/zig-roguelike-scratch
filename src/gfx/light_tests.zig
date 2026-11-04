@@ -687,7 +687,7 @@ test "a doorway sight skips in a hall's side wall leaves no dark patch in the ha
         const d: f32 = @floatFromInt(x - 20);
         const v = lum(l.at(&lv, &.{}, .{ 20.5 + d, 20.5 }));
         std.debug.print(" {d}:{d:.3}", .{ d, v });
-        worst = @max(worst, @abs(v - lum(l.base() + light.CARRY * splat(light.carryFade(d)))));
+        worst = @max(worst, @abs(v - lum(l.base() + light.CARRY * splat(light.carryFade(d, l.carry_r)))));
     }
     std.debug.print("; furthest off the carried light alone {d:.4}\n", .{worst});
     try std.testing.expect(worst < 1e-3);
