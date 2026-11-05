@@ -491,6 +491,8 @@ fn shootTactics(g: *game.Game) !void {
     g.character.choose(.inventory);
     g.character.cursor = 0;
     try capture(g, target, SHOTS_DIR ++ "/tactics/item-prefix-suffix.png");
+    g.sim.inventory.bag[0].mods = .{ .{ .kind = .opportunist, .value = 30 }, .{ .kind = .crit, .value = 5 }, null, null };
+    try capture(g, target, SHOTS_DIR ++ "/tactics/item-wrapped-affix.png");
 }
 
 fn shootMouse(g: *game.Game) !void {
@@ -726,6 +728,265 @@ pub fn shootCinema(g: *game.Game) !void {
     game.character.openPause(g);
     game.debugging.select(g, .composed_lighting);
     try capture(g, target, CINEMA_DIR ++ "/debug.png");
+}
+
+pub fn shootWaterCliffs(g: *game.Game) !void {
+    const target = try renderTarget(g);
+    defer rl.unloadRenderTexture(target);
+    try std.fs.cwd().makePath(SHOTS_DIR ++ "/water-cliffs");
+    try checkCaravanShadowCulling(g, target);
+    try waterCliffTemplates(g);
+    try checkWaterCapTint(g);
+    game.harness.arena(g, .{ .x = 24, .y = 19 }, &.{});
+    game.harness.grassOver(&g.sim.lv);
+    const rows = [_][]const u8{
+        "...................",
+        "..sssssss...sss.....",
+        "..sswwwss...sss.....",
+        "..sswwwss...sss.....",
+        "....sss.....ssssss..",
+        "....sss.....ssssss..",
+        "...................",
+        "..s...ss....wwwww...",
+        "..s...ss....wwwww...",
+        "...................",
+    };
+    stampRows(&g.sim.lv, .{ .x = 15, .y = 13 }, &rows, struct {
+        fn of(ch: u8) ?grid.Tile {
+            return switch (ch) {
+                's' => .shallows,
+                'w' => .water,
+                else => null,
+            };
+        }
+    }.of);
+    studyLit(g, true, day.NOON);
+    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/grass-day.png");
+    for (&g.sim.lv.tile) |*t| if (t.* == .grass) {
+        t.* = .dirt;
+    };
+    studyLit(g, true, day.NOON);
+    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/dirt-day.png");
+    studyLit(g, true, NIGHT);
+    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/dirt-night.png");
+    const lands = [_]grid.Tile{ .sand, .snow, .ice, .floor, .rubble, .crop };
+    for (lands, 0..) |land, n| {
+        const previous = if (n == 0) .dirt else lands[n - 1];
+        for (&g.sim.lv.tile) |*t| if (t.* == previous) {
+            t.* = land;
+        };
+        studyLit(g, true, day.NOON);
+        var path: [128]u8 = undefined;
+        try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/{s}-day.png", .{@tagName(land)}));
+    }
+    for (&g.sim.lv.tile, 0..) |*t, i| if (t.* == .crop) {
+        t.* = if (grid.Level.of(i).x < 21) .grass else .dirt;
+    };
+    studyLit(g, true, day.NOON);
+    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/mixed-day.png");
+    for ([_]struct { hour: f32, name: []const u8 }{ .{ .hour = MORNING, .name = "morning" }, .{ .hour = EVENING, .name = "evening" } }) |sun| {
+        studyLit(g, true, sun.hour);
+        var path: [128]u8 = undefined;
+        try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/sun-{s}.png", .{sun.name}));
+        g.light.options.shadows = false;
+        g.light.settle(&g.sim.lv);
+        try capture(g, target, try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/sun-{s}-off.png", .{sun.name}));
+        g.light.options.shadows = true;
+        g.light.settle(&g.sim.lv);
+    }
+    game.harness.arena(g, .{ .x = 25, .y = 18 }, &.{});
+    @memset(&g.sim.lv.tile, .dirt);
+    const stepped = [_][]const u8{
+        "wwwwwwsdddddddddddd",
+        "wwwwwsddddddddddddd",
+        "wwwwsdddddddddddddd",
+        "wwwsddddddddddddddd",
+        "wwwwsdddddddddddddd",
+        "wwwwwsddddddddddddd",
+        "wwwwwwsdddddddddddd",
+        "wwwwwwwsddddddddddd",
+        "wwwwwwwwsdddddddddd",
+        "wwwwwwwsddddddddddd",
+        "wwwwwwsdddddddddddd",
+    };
+    stampRows(&g.sim.lv, .{ .x = 14, .y = 13 }, &stepped, struct {
+        fn of(ch: u8) ?grid.Tile {
+            return switch (ch) {
+                'w' => .water,
+                's' => .shallows,
+                else => .dirt,
+            };
+        }
+    }.of);
+    studyLit(g, true, day.NOON);
+    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/stepped-depths.png");
+    poseWaterMirrors(g, day.NOON, true);
+    try capture(g, target, SHOTS_DIR ++ "/water-cliffs/mirrors.png");
+    try checkWaterMirrors(g, target);
+    try checkMapEdge(g, target);
+}
+
+fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
+    var missed: usize = 0;
+    var cases: usize = 0;
+    var shadowed: usize = 0;
+    for (10..15) |tx| for (21..26) |ty| {
+        game.harness.arena(g, .{ .x = 25, .y = 25 }, &.{});
+        g.sim.lv.set(.{ .x = 16, .y = 25 }, .caravan);
+        g.sim.lv.set(.{ .x = 17, .y = 25 }, .caravan_part);
+        const torch = P{ .x = @intCast(tx), .y = @intCast(ty) };
+        g.sim.lv.set(torch, .wall);
+        g.sim.lv.addTorch(torch);
+        studyLit(g, false, day.NOON);
+        g.sim.pool.n = 0;
+        g.light.carrier = null;
+        g.cam = .{ .x = 20 * game.CELL, .y = 20 * game.CELL };
+        game.prepare(g);
+        const c = game.scene.Cam.of(g);
+        const view = game.scene.viewBox(g, c);
+        g.light.bake(&g.sim.lv, view.lo, view.hi);
+        var images: [2]rl.Image = undefined;
+        for (0..2) |i| {
+            rl.beginTextureMode(target);
+            rl.clearBackground(rl.Color.white);
+            if (!game.scene.shadowPass(g, c, if (i == 0) view else grid.Box.inMap(0), target.id)) return error.ShadowShaderMissing;
+            rl.endTextureMode();
+            images[i] = try readTarget(target);
+        }
+        defer for (images) |im| rl.unloadImage(im);
+        var different: usize = 0;
+        var px = pixels(g.screen.x, g.screen.y);
+        while (px.next()) |p| {
+            const expected = rl.getImageColor(images[1], p.x, p.y);
+            if (!sameRgb(expected, rl.Color.white)) shadowed += 1;
+            if (!sameRgb(rl.getImageColor(images[0], p.x, p.y), expected)) different += 1;
+        }
+        if (different > 0) {
+            if (missed == 0) {
+                if (!rl.exportImage(images[0], SHOTS_DIR ++ "/water-cliffs/caravan-shadow-culled.png")) return error.ExportFailed;
+                if (!rl.exportImage(images[1], SHOTS_DIR ++ "/water-cliffs/caravan-shadow-reference.png")) return error.ExportFailed;
+            }
+            std.debug.print("caravan culling torch {d},{d}: {d} differing pixels\n", .{ tx, ty, different });
+            missed += different;
+        }
+        cases += 1;
+    };
+    std.debug.print("caravan shadow culling GPU: {d} cases, {d} shadow pixels, {d} missing pixels against whole-map scan\n", .{ cases, shadowed, missed });
+    if (missed > 0) return error.CaravanShadowCulled;
+    if (shadowed < 20) return error.CaravanShadowMissing;
+}
+
+fn checkWaterCapTint(g: *game.Game) !void {
+    const target = try rl.loadRenderTexture(256, 256);
+    defer rl.unloadRenderTexture(target);
+    const sight = raster.canvas(1, 1, .{ .r = 128, .g = 128, .b = 128, .a = 255 }, .point) orelse return error.WaterVisibilityMissing;
+    defer rl.unloadTexture(sight);
+    const dark = raster.canvas(1, 1, rl.Color.black, .point) orelse return error.WaterGlintsMissing;
+    defer rl.unloadTexture(dark);
+    const shine = raster.canvas(1, 1, look.rgb(0x302010), .point) orelse return error.WaterGlintsMissing;
+    defer rl.unloadTexture(shine);
+    const mirror = raster.canvas(1, 1, .{ .r = 80, .g = 90, .b = 120, .a = 128 }, .point) orelse return error.WaterMirrorMissing;
+    defer rl.unloadTexture(mirror);
+    const blank = raster.canvas(1, 1, rl.Color.blank, .point) orelse return error.WaterMirrorMissing;
+    defer rl.unloadTexture(blank);
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .shallows);
+    lv.set(.{ .x = 30, .y = 30 }, .water);
+    g.sprites.sync(look.Assets.of(&lv));
+    const alternates = .{ g.sprites.shallows2, g.sprites.shallows3 };
+    defer {
+        g.sprites.shallows2 = alternates[0];
+        g.sprites.shallows3 = alternates[1];
+    }
+    g.sprites.shallows2 = null;
+    g.sprites.shallows3 = null;
+    var checked: usize = 0;
+    for ([_]bool{ false, true }) |effects| {
+        const view = look.WaterView{
+            .screen = .{ 256, 256 },
+            .visibility = sight,
+            .glints = if (effects) shine else dark,
+            .mirror = if (effects) .{ .live = mirror, .memory = blank } else null,
+            .shimmer = effects,
+            .seconds = 1.7,
+        };
+        for ([_]f32{ -640, -544 }) |y_origin| {
+            const origin = [2]f32{ -608, y_origin };
+            var beds: dual.Beds = undefined;
+            @memset(&lv.tile, .shallows);
+            beds.fill(&lv, .{ .x = 8, .y = 8 }, .{ .x = 15, .y = 15 }, false);
+            const reference = try waterSample(g, target, &beds, view, origin);
+            defer rl.unloadImage(reference);
+            for (&lv.tile, 0..) |*t, i| if (grid.Level.of(i).y >= 11) {
+                t.* = .water;
+            };
+            beds.fill(&lv, beds.lo, beds.hi, false);
+            rl.beginTextureMode(target);
+            rl.clearBackground(rl.Color.blank);
+            g.sprites.drawWaterCliffCaps(&beds, origin, game.CELL_F, view);
+            rl.endTextureMode();
+            const cap = try readTarget(target);
+            defer rl.unloadImage(cap);
+            var px = pixels(256, 256);
+            while (px.next()) |p| {
+                const actual = rl.getImageColor(cap, p.x, p.y);
+                if (actual.a == 0) continue;
+                if (!sameRgb(actual, rl.getImageColor(reference, p.x, p.y))) return error.WaterCapTintMismatch;
+                checked += 1;
+            }
+        }
+    }
+    if (checked < 20000) return error.WaterCapCoverageMissing;
+    std.debug.print("water cap GPU: {d} pixels match ordinary shallow water at two screen heights, with tint-only and reflections/glints/shimmer\n", .{checked});
+}
+
+fn waterCliffTemplates(g: *game.Game) !void {
+    game.prepare(g);
+    if (g.sprites.bank_cap == null) return error.BankCapShaderMissing;
+    const target = try rl.loadRenderTexture(256, 256);
+    defer rl.unloadRenderTexture(target);
+    const pairs = [_][2]grid.Tile{ .{ .dirt, .shallows }, .{ .dirt, .water }, .{ .shallows, .water } };
+    for (pairs, 0..) |pair, n| {
+        var lv = grid.Level.blank();
+        @memset(&lv.tile, pair[0]);
+        for (dual.ORDER, 0..) |mask, i| {
+            const p = P{ .x = 10 + @as(i32, @intCast(i % 4)), .y = 10 + @as(i32, @intCast(i / 4)) };
+            for (dual.AROUND) |a| lv.set(p.add(a.d), if (mask & a.bit != 0) pair[0] else pair[1]);
+        }
+        var beds: dual.Beds = undefined;
+        beds.fill(&lv, .{ .x = 8, .y = 8 }, .{ .x = 15, .y = 15 }, false);
+        g.sprites.sync(look.Assets.of(&lv));
+        const origin = [2]f32{ -608, -608 };
+        for (0..5) |pass| {
+            rl.beginTextureMode(target);
+            rl.clearBackground(rl.Color.blank);
+            switch (pass) {
+                0 => g.sprites.drawGround(&lv, &beds, origin, 64, null),
+                1 => {
+                    var base = g.sprites;
+                    base.shallows_cliff = null;
+                    base.water_cliff = null;
+                    base.dirt_shallows_edges = null;
+                    base.dirt_water_edges = null;
+                    base.shallows_water_edges = null;
+                    base.drawGround(&lv, &beds, origin, 64, null);
+                },
+                2 => g.sprites.drawWaterCliffFaces(&beds, origin, 64, null),
+                3 => g.sprites.drawWaterCliffCaps(&beds, origin, 64, null),
+                4 => g.sprites.drawWaterEdges(&beds, origin, 64, null),
+                else => unreachable,
+            }
+            rl.endTextureMode();
+            var path: [128]u8 = undefined;
+            const name = if (pass == 0)
+                try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/template-{d}.png", .{n})
+            else
+                try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/template-{d}-layer-{d}.png", .{ n, pass });
+            const img = try readTarget(target);
+            defer rl.unloadImage(img);
+            if (!rl.exportImage(img, name)) return error.ExportFailed;
+        }
+    }
 }
 
 pub fn shootTrees(g: *game.Game) !void {

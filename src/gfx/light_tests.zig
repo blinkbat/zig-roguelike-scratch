@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const fov = @import("../map/fov.zig");
 const look = @import("look.zig");
+const dual = @import("ground.zig");
 const sky = @import("sky.zig");
 const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
@@ -526,6 +527,48 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
     std.debug.print("whole floor baked: {d} texels never seen, {d} fading in, {d} off what `at` gives\n", .{ dark, fading, off });
     try std.testing.expect(dark > 0 and fading > 0);
     try std.testing.expectEqual(@as(usize, 0), off);
+}
+
+test "baked water sun samples preserve ground glints and raised surfaces across terrain changes" {
+    const model = @import("light_model.zig");
+    var lv = litFloor();
+    for (&lv.tile) |*t| t.* = .shallows;
+    for (20..26) |x| lv.set(.{ .x = @intCast(x), .y = 19 }, .grass);
+    const tiles = [_]grid.Tile{ .water, .shallows, .wall, .rock, .grave, .crop };
+    for (tiles, 0..) |t, x| lv.set(.{ .x = @intCast(20 + x), .y = 20 }, t);
+    gen.shapeWalls(&lv);
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    var surfaces = std.EnumSet(light.Surface).initEmpty();
+    var samples: usize = 0;
+    for ([_]bool{ false, true }) |diverged| {
+        l.settle(&lv);
+        if (diverged) l.scratch.set(.{ .x = 21, .y = 20 }, .grass);
+        for ([_]?f32{ 8, 17, day.DEAD_OF_NIGHT, null }) |hour| {
+            l.sky = if (hour) |h| sky.at(h) else null;
+            const ray: ?light.SunRay = if (l.sky) |k| .of(k) else null;
+            for ([_]bool{ false, true }) |shadows| {
+                l.options.shadows = shadows;
+                l.bake(&lv, .{ .x = 20, .y = 20 }, .{ .x = 26, .y = 23 });
+                for (20 * light.SUB..23 * light.SUB) |ty| {
+                    for (20 * light.SUB..26 * light.SUB) |tx| {
+                        const q = light.Light.texelCentre(tx, ty);
+                        const i = ty * light.Light.TEXELS_W + tx;
+                        const c = mathx.cellOf(q);
+                        const corner = @as(usize, @intCast(c.y)) * grid.CORNERS_W + @as(usize, @intCast(c.x));
+                        const cloud = if (ray != null) model.cloudIn(.{ l.clouds[corner], l.clouds[corner + 1], l.clouds[corner + grid.CORNERS_W], l.clouds[corner + grid.CORNERS_W + 1] }, c, q) else 1;
+                        const expected = l.waterGlint(&.{}, .initEmpty(), q, i, if (ray) |*r| r else null, cloud);
+                        try std.testing.expectEqual(look.colourOf(expected, 1), l.texels.getPtrConst(.glints)[i]);
+                        try std.testing.expectEqual(light.texelOf(l.at(&lv, &.{}, q), l.viewAt(q).lit), l.texels.getPtrConst(.map)[i]);
+                        surfaces.insert(light.Spot.of(&lv, q).surface);
+                        samples += 1;
+                    }
+                }
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), surfaces.count());
+    std.debug.print("water sun reuse: {d} baked samples match independent ground/glint queries across 3 surfaces, sky/shadow modes and differing terrain\n", .{samples});
 }
 
 test "clipped light baking clears unseen texels without touching adjacent rows or columns" {
@@ -1181,6 +1224,57 @@ fn shadowLength(lv: *const grid.Level, k: sky.Sky, c: P) f32 {
     return d;
 }
 
+test "water banks shade both depths away from the sun without requiring standing casters" {
+    var lv = litFloor();
+    const l = try testLight(&lv);
+    defer std.testing.allocator.destroy(l);
+    var spans: [2]f32 = @splat(0);
+    for ([_]grid.Tile{ .shallows, .water }, 0..) |wet, i| {
+        var cells = grid.Cells.of(.{ .x = 20, .y = 10 }, .{ .x = 22, .y = 31 });
+        while (cells.next()) |p| lv.set(p, wet);
+        l.settle(&lv);
+        const foot = dual.bankFoot(&lv, .{ 20.75, 10.0 }).?;
+        try std.testing.expect(foot > 10.2 and foot < 10.7);
+        var front = light.SunRay.of(sky.at(12));
+        front.u = .{ 0, 1 };
+        try std.testing.expectEqual(@as(f32, 1), l.sunAt(&lv, &front, 20.75, foot - 0.01, 0));
+        try std.testing.expect(l.sunAt(&lv, &front, 20.75, foot + 0.01, 0) < 0.75);
+        try std.testing.expectEqual(@as(f32, 1), l.sunAt(&lv, &front, 20.75, foot + 0.1, 0));
+        front.u = .{ 0, -1 };
+        front.rise = 0.1;
+        const lip = dual.bankLip(&lv, .{ 20.75, 10.0 }).?;
+        try std.testing.expect(l.sunAt(&lv, &front, 20.75, lip + 0.05, 0) < 0.5);
+        try std.testing.expect(l.sunAt(&lv, &front, 20.75, foot + 0.05, 0) < 0.5);
+        for ([_]f32{ 8, 17 }) |hour| {
+            const ray = light.SunRay.of(sky.at(hour));
+            const edge: f32 = if (ray.u[0] > 0) 22 else 20;
+            const sign: f32 = if (ray.u[0] > 0) -1 else 1;
+            const x = edge + sign * 0.02;
+            try std.testing.expect(l.sunAt(&lv, &ray, x, 20.5, 0) < 0.5);
+            try std.testing.expectEqual(@as(f32, 1), l.sunAt(&lv, &ray, 42 - x, 20.5, 0));
+            try std.testing.expectEqual(@as(f32, 1), l.sunAt(&lv, &ray, x, 20.5, 0.5));
+            l.options.shadows = false;
+            try std.testing.expectEqual(@as(f32, 1), l.sunAt(&lv, &ray, x, 20.5, 0));
+            l.options.shadows = true;
+            var d: f32 = 0.05;
+            while (d < 1) : (d += 0.01) {
+                if (l.sunAt(&lv, &ray, edge + sign * d, 20.5, 0) < 0.9) spans[i] = @max(spans[i], d);
+            }
+        }
+    }
+    for (20..22) |x| lv.set(.{ .x = @intCast(x), .y = 9 }, .shallows);
+    l.settle(&lv);
+    var north = light.SunRay.of(sky.at(12));
+    north.u = .{ 0, -1 };
+    north.rise = 0.1;
+    const lip = dual.bankLip(&lv, .{ 20.75, 10.0 }).?;
+    const foot = dual.bankFoot(&lv, .{ 20.75, 10.0 }).?;
+    try std.testing.expect(l.sunAt(&lv, &north, 20.75, lip + 0.05, 0) < 0.5);
+    try std.testing.expect(l.sunAt(&lv, &north, 20.75, foot + 0.05, 0) < 0.5);
+    try std.testing.expect(spans[1] > spans[0] * 1.5);
+    std.debug.print("bank sun shadows: morning/evening reverse, toggle and raised receivers clear; shallow {d:.2}, deep {d:.2} cells\n", .{ spans[0], spans[1] });
+}
+
 test "the sun throws a thing's shadow its height times the hour's reach, away from the sun, and none on itself" {
     var lv = grid.openFloor();
     const rock = P{ .x = 30, .y = 30 };
@@ -1223,6 +1317,31 @@ test "everything that blocks a step and does not stand shades the ground past it
         std.debug.print("a {s}: the ground just past its edge takes at most {d:.2} of the sun\n", .{ @tagName(t), worst });
         try std.testing.expect(worst < 0.3);
     }
+}
+
+test "the shadows switch clears and restores ordinary terrain sun shadows" {
+    var checked: usize = 0;
+    const at = P{ .x = 30, .y = 30 };
+    const m = mathx.centre(at);
+    const ray = light.SunRay.of(sky.at(8));
+    for (std.enums.values(grid.Tile)) |t| {
+        if (!t.uprightWhole() or look.castsPicture(t)) continue;
+        var lv = litFloor();
+        lv.set(at, t);
+        const l = try testLight(&lv);
+        defer std.testing.allocator.destroy(l);
+        const edge = light.CASTERS.get(t).?.r orelse 0.5 / @max(@abs(ray.u[0]), @abs(ray.u[1]));
+        const x = m[0] - ray.u[0] * (edge + 0.05);
+        const y = m[1] - ray.u[1] * (edge + 0.05);
+        const shaded = l.sunAt(&lv, &ray, x, y, 0);
+        try std.testing.expect(shaded < 0.3);
+        l.options.shadows = false;
+        try std.testing.expectEqual(@as(f32, 1), l.sunAt(&lv, &ray, x, y, 0));
+        l.options.shadows = true;
+        try std.testing.expectEqual(shaded, l.sunAt(&lv, &ray, x, y, 0));
+        checked += 1;
+    }
+    std.debug.print("shadow switch: {d} terrain casters clear and restore their sun shadows exactly\n", .{checked});
 }
 
 test "a standing shrub takes the sun as a body does, and throws its shadow the same length away from it" {

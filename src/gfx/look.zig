@@ -132,6 +132,14 @@ pub const Assets = struct {
     dirt2: bool = false,
     shallows2: bool = false,
     shallows3: bool = false,
+    shallows_cliff: bool = false,
+    shallows_cliff_cap: bool = false,
+    water_cliff: bool = false,
+    water_cliff_cap: bool = false,
+    dirt_shallows_edges: bool = false,
+    dirt_water_edges: bool = false,
+    shallows_water_edges: bool = false,
+    shallows_water_cap: bool = false,
     shrub2: bool = false,
     brush: bool = false,
     flowers: bool = false,
@@ -176,6 +184,18 @@ pub const Assets = struct {
     }
 
     fn bed(need: *Assets, g: ground.Ground) void {
+        if (g == .shallows) {
+            need.shallows_cliff = true;
+            need.shallows_cliff_cap = true;
+            need.dirt_shallows_edges = true;
+        }
+        if (g == .water) {
+            need.water_cliff = true;
+            need.water_cliff_cap = true;
+            need.dirt_water_edges = true;
+            need.shallows_water_edges = true;
+            need.shallows_water_cap = true;
+        }
         switch (g) {
             inline else => |k| if (comptime GROUND_ALTERNATES.get(k)) |alts| inline for (alts.fields) |name| {
                 @field(need, name) = true;
@@ -269,6 +289,26 @@ pub const WaterView = struct {
 };
 
 const WaterShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, depth: i32, visibility: i32, glints: i32, mirror: i32, memory: i32, mirrored: i32, shimmer: i32, seconds: i32 };
+const WaterFaceShader = struct { shader: rl.Shader, screen: i32, depth: i32 };
+
+const BankCapShader = struct { shader: rl.Shader, land: i32, region: i32, mask_region: i32, offset: i32, solid: i32, textured: i32 };
+
+const BANK_CAP_FS = shaders.FS_HEAD ++
+    \\uniform sampler2D land;
+    \\uniform vec4 region;
+    \\uniform vec4 mask_region;
+    \\uniform vec2 offset;
+    \\uniform vec4 solid;
+    \\uniform int textured;
+    \\void main() {
+    \\    float coverage = texture(texture0, fragTexCoord).a;
+    \\    if (coverage < CLEAR_A) discard;
+    \\    vec2 uv = fract((fragTexCoord - mask_region.xy) / mask_region.zw + offset);
+    \\    vec4 ground = textured != 0 ? texture(land, region.xy + uv * region.zw) : solid;
+    \\    finalColor = ground * fragColor;
+    \\    finalColor.a *= coverage;
+    \\}
+;
 
 const SceneryShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, lightmap: i32, fogmap: i32, body: i32, hidden: i32, texel: i32, strength: i32 };
 
@@ -279,6 +319,14 @@ pub const Sprites = struct {
     dirt2: ?rl.Texture2D = null,
     shallows2: ?rl.Texture2D = null,
     shallows3: ?rl.Texture2D = null,
+    shallows_cliff: ?rl.Texture2D = null,
+    shallows_cliff_cap: ?rl.Texture2D = null,
+    water_cliff: ?rl.Texture2D = null,
+    water_cliff_cap: ?rl.Texture2D = null,
+    dirt_shallows_edges: ?rl.Texture2D = null,
+    dirt_water_edges: ?rl.Texture2D = null,
+    shallows_water_edges: ?rl.Texture2D = null,
+    shallows_water_cap: ?rl.Texture2D = null,
     shrub2: ?rl.Texture2D = null,
     brush: ?rl.Texture2D = null,
     flowers: ?rl.Texture2D = null,
@@ -301,6 +349,8 @@ pub const Sprites = struct {
     hud_border: ?rl.Texture2D = null,
     log_fade: ?FadeShader = null,
     water: ?WaterShader = null,
+    bank_cap: ?BankCapShader = null,
+    water_face: ?WaterFaceShader = null,
     shine: ?ShineShader = null,
     scenery: ?SceneryShader = null,
     mirror: ?rl.RenderTexture2D = null,
@@ -312,6 +362,8 @@ pub const Sprites = struct {
         self.loadBorder();
         self.log_fade = shaders.program(FadeShader, FADE_FS);
         self.water = shaders.program(WaterShader, WATER_FS);
+        self.bank_cap = shaders.program(BankCapShader, BANK_CAP_FS);
+        self.water_face = shaders.program(WaterFaceShader, WATER_FACE_FS);
         self.shine = shaders.program(ShineShader, SHINE_FS);
         self.scenery = shaders.program(SceneryShader, SCENERY_FS);
     }
@@ -396,7 +448,6 @@ pub const Sprites = struct {
             const sheet = sheeted.contains(gr);
             const depth = if (sheet) waterDepth(gr) else null;
             const reflective = if (depth) |d| self.beginWater(water, origin, px, d) else false;
-            defer if (reflective) rl.endShaderMode();
             if (!sheet) {
                 var cells = grid.Cells.of(beds.lo, beds.hi);
                 while (cells.next()) |p| {
@@ -433,7 +484,166 @@ pub const Sprites = struct {
                     raster.stretch(tex, .{ .x = at[0], .y = at[1], .width = px, .height = px }, LIT);
                 }
             }
+            if (reflective) rl.endShaderMode();
         }
+        self.drawWaterCliffs(beds, origin, px, water);
+        self.drawWaterEdges(beds, origin, px, water);
+    }
+
+    pub fn drawWaterEdges(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
+        const pairs = [_]struct { upper: ground.Ground, lower: ground.Ground, tex: ?rl.Texture2D }{
+            .{ .upper = .shallows, .lower = .water, .tex = self.shallows_water_edges },
+            .{ .upper = .dirt, .lower = .shallows, .tex = self.dirt_shallows_edges },
+            .{ .upper = .dirt, .lower = .water, .tex = self.dirt_water_edges },
+        };
+        for (pairs) |pair| {
+            const tex = pair.tex orelse continue;
+            for (std.enums.values(WaterBand)) |band| {
+                const depth = band.depth();
+                const surface = band.surface() and self.beginWater(water, origin, px, depth);
+                const face = band.face() and water != null and self.water_face != null;
+                if (face) {
+                    const s = self.water_face.?;
+                    rl.beginShaderMode(s.shader);
+                    shaders.setUniform(s.shader, s.screen, water.?.screen);
+                    shaders.setUniform(s.shader, s.depth, depth);
+                }
+                var points = beds.points();
+                while (points.next()) |p| {
+                    const corners = beds.pointAt(p).corners;
+                    const mask = corners.edgeMask(pair.upper, pair.lower) orelse continue;
+                    const cell = ground.CELL_OF[mask];
+                    const src = sheetCell(cell.x + @as(i32, @intCast(@intFromEnum(band) * ground.COLS)), cell.y);
+                    const at = cellAt(origin, p, px);
+                    if (corners.pairMask(pair.upper, pair.lower) != null) {
+                        raster.blit(tex, src, .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px }, LIT);
+                    } else for (0..4) |q| {
+                        if (!corners.edgeQuarter(pair.upper, pair.lower, q)) continue;
+                        const dx = @as(f32, @floatFromInt(q % 2)) / 2;
+                        const dy = @as(f32, @floatFromInt(q / 2)) / 2;
+                        const quarter_src = rl.Rectangle{ .x = src.x + dx * SPRITE_PX, .y = src.y + dy * SPRITE_PX, .width = SPRITE_PX / 2, .height = SPRITE_PX / 2 };
+                        raster.blit(tex, quarter_src, .{ .x = at[0] + (dx - 0.5) * px, .y = at[1] + (dy - 0.5) * px, .width = px / 2, .height = px / 2 }, LIT);
+                    }
+                }
+                if (surface or face) rl.endShaderMode();
+            }
+        }
+    }
+
+    fn drawWaterCliffs(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
+        if (self.shallows_cliff == null and self.water_cliff == null) return;
+        for (std.enums.values(ground.Bank)) |bank| {
+            self.drawWaterBankFaces(beds, origin, px, water, bank);
+            self.drawWaterBankCaps(beds, origin, px, water, bank);
+        }
+    }
+
+    pub fn drawWaterCliffFaces(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
+        for (std.enums.values(ground.Bank)) |bank| self.drawWaterBankFaces(beds, origin, px, water, bank);
+    }
+
+    fn drawWaterBankFaces(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView, bank: ground.Bank) void {
+        var points = beds.points();
+        while (points.next()) |p| {
+            const index = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
+            const at = cellAt(origin, p, px);
+            for (0..2) |side| {
+                const wet_side: i32 = if (index == 0) 0 else if (index == 2) -1 else @as(i32, @intCast(side)) - 1;
+                const south = p.add(.{ .x = wet_side, .y = 0 });
+                const depth = beds.ground(south) orelse continue;
+                const tex = (if (depth == .water) self.water_cliff else self.shallows_cliff) orelse continue;
+                const shift: f32 = @as(f32, @floatFromInt(side)) / 2;
+                var src = sheetCell(index, 0);
+                src.x += shift * SPRITE_PX;
+                src.width /= 2;
+                const tinted = self.water_face != null and water != null;
+                if (tinted) {
+                    const s = self.water_face.?;
+                    rl.beginShaderMode(s.shader);
+                    shaders.setUniform(s.shader, s.screen, water.?.screen);
+                    shaders.setUniform(s.shader, s.depth, waterDepth(depth).?);
+                }
+                raster.blit(tex, src, .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px * ground.BANK_LIFT, .width = px / 2, .height = px }, LIT);
+                if (tinted) rl.endShaderMode();
+            }
+        }
+    }
+
+    pub fn drawWaterCliffCaps(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
+        for (std.enums.values(ground.Bank)) |bank| self.drawWaterBankCaps(beds, origin, px, water, bank);
+    }
+
+    fn drawWaterBankCaps(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView, bank: ground.Bank) void {
+        var points = beds.points();
+        while (points.next()) |p| {
+            const index = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
+            const at = cellAt(origin, p, px);
+            for (0..2) |side| {
+                const north = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = -1 });
+                const gr = beds.ground(north) orelse continue;
+                const wet_side: i32 = if (index == 0) 0 else if (index == 2) -1 else @as(i32, @intCast(side)) - 1;
+                const depth = beds.ground(p.add(.{ .x = wet_side, .y = 0 })) orelse continue;
+                if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
+                const fill = self.bankFill(gr) orelse continue;
+                const shift: f32 = @as(f32, @floatFromInt(side)) / 2;
+                var src = fill.src;
+                src.x += shift * SPRITE_PX;
+                src.width /= 2;
+                src.height /= 2;
+                const reflective = if (waterDepth(gr)) |d| self.beginWater(water, origin, px, d) else false;
+                raster.blit(fill.tex, src, .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px / 2, .width = px / 2, .height = px / 2 }, LIT);
+                if (reflective) rl.endShaderMode();
+            }
+            for (0..2) |side| {
+                const outside = (index == 0 and side == 0) or (index == 2 and side == 1);
+                const land = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = if (outside) 0 else -1 });
+                const wet_side: i32 = if (index == 0) 0 else if (index == 2) -1 else @as(i32, @intCast(side)) - 1;
+                const south = p.add(.{ .x = wet_side, .y = 0 });
+                const depth = beds.ground(south) orelse continue;
+                const cap = (if (depth == .water) self.water_cliff_cap else self.shallows_cliff_cap) orelse continue;
+                const gr = beds.ground(land) orelse continue;
+                if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
+                const fill = self.bankFill(gr);
+                const mask = Piece{ .tex = cap, .src = sheetCell(index, 0) };
+                const offset = [2]f32{ 0, 0.5 - ground.BANK_LIFT };
+                const wet_cap = if (gr == .shallows) self.shallows_water_cap else null;
+                const reflective = wet_cap != null and self.beginWater(water, origin, px, WATER_SHALLOW);
+                if (!reflective and !self.beginGroundFill(mask, fill, tileBg(gr.tile()) orelse rl.Color.blank, offset)) continue;
+                const shift: f32 = @as(f32, @floatFromInt(side)) / 2;
+                var src = sheetCell(index, 0);
+                src.x += shift * SPRITE_PX;
+                src.width /= 2;
+                raster.blit(if (reflective) wet_cap.? else cap, src, .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px * ground.BANK_LIFT, .width = px / 2, .height = px }, LIT);
+                rl.endShaderMode();
+            }
+        }
+    }
+
+    fn bankFill(self: *const Sprites, gr: ground.Ground) ?Piece {
+        if (self.grounds.getPtrConst(gr).*) |tex| {
+            const cell = ground.CELL_OF[ground.FULL];
+            return .{ .tex = tex, .src = sheetCell(cell.x, cell.y) };
+        }
+        const tex = self.tiles.getPtrConst(gr.tile()).* orelse return null;
+        return .{ .tex = tex, .src = raster.whole(tex) };
+    }
+
+    fn beginGroundFill(self: *const Sprites, mask: Piece, fill: ?Piece, color: rl.Color, offset: [2]f32) bool {
+        const s = self.bank_cap orelse return false;
+        rl.beginShaderMode(s.shader);
+        rl.gl.rlDrawRenderBatchActive();
+        const mw, const mh = raster.sizeOf(mask.tex);
+        shaders.setUniform(s.shader, s.mask_region, [4]f32{ mask.src.x / mw, mask.src.y / mh, mask.src.width / mw, mask.src.height / mh });
+        shaders.setUniform(s.shader, s.offset, offset);
+        shaders.setUniform(s.shader, s.textured, @as(i32, @intFromBool(fill != null)));
+        if (fill) |piece| {
+            const w, const h = raster.sizeOf(piece.tex);
+            shaders.setUniform(s.shader, s.region, [4]f32{ piece.src.x / w, piece.src.y / h, piece.src.width / w, piece.src.height / h });
+            rl.setShaderValueTexture(s.shader, s.land, piece.tex);
+        } else {
+            shaders.setUniform(s.shader, s.solid, [4]f32{ @as(f32, @floatFromInt(color.r)) / 255, @as(f32, @floatFromInt(color.g)) / 255, @as(f32, @floatFromInt(color.b)) / 255, @as(f32, @floatFromInt(color.a)) / 255 });
+        }
+        return true;
     }
 
     fn beginWater(self: *const Sprites, view: ?WaterView, origin: [2]f32, px: f32, depth: f32) bool {
@@ -692,6 +902,14 @@ const SOURCES = .{
     .dirt2 = @as([]const u8, @embedFile("dirt2.png")),
     .shallows2 = @as([]const u8, @embedFile("shallows2.png")),
     .shallows3 = @as([]const u8, @embedFile("shallows3.png")),
+    .shallows_cliff = @as([]const u8, @embedFile("shallows-cliff.png")),
+    .shallows_cliff_cap = @as([]const u8, @embedFile("shallows-cliff-cap.png")),
+    .water_cliff = @as([]const u8, @embedFile("water-cliff.png")),
+    .water_cliff_cap = @as([]const u8, @embedFile("water-cliff-cap.png")),
+    .dirt_shallows_edges = @as([]const u8, @embedFile("dirt-shallows-edges.png")),
+    .dirt_water_edges = @as([]const u8, @embedFile("dirt-water-edges.png")),
+    .shallows_water_edges = @as([]const u8, @embedFile("shallows-water-edges.png")),
+    .shallows_water_cap = @as([]const u8, @embedFile("shallows-water-cap.png")),
     .shrub2 = @as([]const u8, @embedFile("shrub2.png")),
     .brush = @as([]const u8, @embedFile("brush.png")),
     .flowers = @as([]const u8, @embedFile("flowers.png")),
@@ -1293,6 +1511,43 @@ pub fn shineSweep(seconds: f32, p: mathx.P) ?f32 {
 const WATER_DEEP_PERCENT = 60;
 const WATER_DEEP: f32 = mathx.fraction(WATER_DEEP_PERCENT);
 const WATER_SHALLOW: f32 = 1;
+
+const WaterBand = enum {
+    dry,
+    shallow,
+    deep,
+    shallow_face,
+    deep_face,
+
+    fn depth(self: WaterBand) f32 {
+        return switch (self) {
+            .shallow, .shallow_face => WATER_SHALLOW,
+            .dry, .deep, .deep_face => WATER_DEEP,
+        };
+    }
+
+    fn surface(self: WaterBand) bool {
+        return switch (self) {
+            .shallow, .deep => true,
+            .dry, .shallow_face, .deep_face => false,
+        };
+    }
+
+    fn face(self: WaterBand) bool {
+        return switch (self) {
+            .shallow_face, .deep_face => true,
+            .dry, .shallow, .deep => false,
+        };
+    }
+};
+
+comptime {
+    const size = mathx.P{ .x = std.enums.values(WaterBand).len * ground.COLS * SPRITE_PX, .y = ground.ROWS * SPRITE_PX };
+    for (.{ SOURCES.dirt_shallows_edges, SOURCES.dirt_water_edges, SOURCES.shallows_water_edges }) |png| {
+        std.debug.assert(std.meta.eql(pngSize(png), size));
+    }
+    std.debug.assert(std.meta.eql(pngSize(SOURCES.shallows_water_cap), mathx.P{ .x = 3 * SPRITE_PX, .y = SPRITE_PX }));
+}
 const WATER_SATURATION: f32 = 0.8;
 const MIRROR_DEEP: f32 = 0.42;
 const MIRROR_SHALLOW: f32 = 0.28;
@@ -1306,13 +1561,29 @@ const SHIMMER_DRIFT = [2][2]f32{ .{ 0.21, -0.13 }, .{ -0.17, 0.24 } };
 const WATER_SCREEN_FADE = [2]f32{ 1.1, 0.45 };
 /// Deep water's brightness at the screen's bottom edge.
 const WATER_SCREEN_FADE_DEEP: f32 = 0.05;
-const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
+const WATER_FADE_FS = shaders.glslConsts(.{
     .SCREEN_FADE = WATER_SCREEN_FADE,
     .SCREEN_FADE_DEEP = WATER_SCREEN_FADE_DEEP,
-    .SATURATION = WATER_SATURATION,
-    .OVERBRIGHT = light_model.OVERBRIGHT,
     .DEEP = WATER_DEEP,
     .SHALLOW = WATER_SHALLOW,
+}) ++
+    \\float waterFade(float depth, float screenHeight) {
+    \\    float shallow = smoothstep(DEEP, SHALLOW, depth);
+    \\    return mix(SCREEN_FADE.x, mix(SCREEN_FADE_DEEP, SCREEN_FADE.y, shallow), clamp(1.0 - gl_FragCoord.y / screenHeight, 0.0, 1.0));
+    \\}
+    \\
+;
+const WATER_FACE_FS = shaders.FS_HEAD ++ WATER_FADE_FS ++
+    \\uniform vec2 screen;
+    \\uniform float depth;
+    \\void main() {
+    \\    vec4 art = texture(texture0, fragTexCoord) * fragColor;
+    \\    finalColor = vec4(clamp(art.rgb * waterFade(depth, screen.y), 0.0, 1.0), art.a);
+    \\}
+;
+const WATER_FS = shaders.FS_HEAD ++ WATER_FADE_FS ++ shaders.glslConsts(.{
+    .SATURATION = WATER_SATURATION,
+    .OVERBRIGHT = light_model.OVERBRIGHT,
     .MIRROR_DEEP = MIRROR_DEEP,
     .MIRROR_SHALLOW = MIRROR_SHALLOW,
     .MIRROR_TINT = MIRROR_TINT,
@@ -1353,7 +1624,7 @@ const WATER_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{
     \\    shine += texture(glints, at / CELLS).rgb * light.a;
     \\    vec3 base = art.rgb * (1.0 - reflected.a * strength);
     \\    if (shimmer != 0) base *= 1.0 + SHIMMER * smoothstep(HIGHLIGHT.x, HIGHLIGHT.y, dot(art.rgb / depth, LUMA)) * swell(at) * light.a;
-    \\    float fade = mix(SCREEN_FADE.x, mix(SCREEN_FADE_DEEP, SCREEN_FADE.y, shallow), clamp(1.0 - gl_FragCoord.y / screen.y, 0.0, 1.0));
+    \\    float fade = waterFade(depth, screen.y);
     \\    finalColor = vec4(clamp((base + shine / max(light.rgb * OVERBRIGHT, vec3(0.06))) * fade, 0.0, 1.0), art.a);
     \\}
 ;
@@ -1648,6 +1919,36 @@ test "the hud border's size and corner cut are the ones its export script checks
     try ground.expectLuaList(i32, &.{size.x}, path, "local W=");
     try ground.expectLuaList(i32, &.{size.y}, path, "local H=");
     try ground.expectLuaList(i32, &.{HUD_BORDER_CUT}, path, "local CUT=");
+}
+
+test "water material bands and cap sampling match the tile-art exporter" {
+    try ground.expectLuaList(WaterBand, std.enums.values(WaterBand), "tools/tile_art/water_cliff_materials.lua", "local bands={");
+    try ground.expectLuaList(i32, &.{@intFromFloat(ground.BANK_LIFT_PX)}, "tools/tile_art/export_water_edges.lua", "local BANK_LIFT=");
+    const cap = try rl.loadImageFromMemory(".png", SOURCES.shallows_water_cap);
+    defer rl.unloadImage(cap);
+    const mask = try rl.loadImageFromMemory(".png", SOURCES.water_cliff_cap);
+    defer rl.unloadImage(mask);
+    const water = try rl.loadImageFromMemory(".png", GROUND_PNGS.get(.shallows).?);
+    defer rl.unloadImage(water);
+    const cell = ground.CELL_OF[ground.FULL];
+    const lift: i32 = @intFromFloat(ground.BANK_LIFT_PX);
+    var covered: usize = 0;
+    var y: i32 = 0;
+    while (y < cap.height) : (y += 1) {
+        var x: i32 = 0;
+        while (x < cap.width) : (x += 1) {
+            const actual = rl.getImageColor(cap, x, y);
+            if (rl.getImageColor(mask, x, y).a == 0) {
+                try std.testing.expectEqual(@as(u8, 0), actual.a);
+                continue;
+            }
+            const expected = rl.getImageColor(water, cell.x * SPRITE_PX + @mod(x, SPRITE_PX), cell.y * SPRITE_PX + @mod(y + SPRITE_PX / 2 - lift, SPRITE_PX));
+            try std.testing.expectEqual(expected, actual);
+            covered += 1;
+        }
+    }
+    try std.testing.expect(covered > 0);
+    std.debug.print("water export: {d} named material bands, {d} cap pixels aligned at bank lift {d}\n", .{ std.enums.values(WaterBand).len, covered, lift });
 }
 
 test "the deep water sheet is the shallows' at WATER_DEEP_PERCENT, as deepen_water.lua rounds it" {

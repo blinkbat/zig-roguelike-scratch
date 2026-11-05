@@ -813,6 +813,7 @@ pub const HEADLESS = [_]Headless{
     .{ .flag = "--shot-debug", .body = shots.shootDebug },
     .{ .flag = "--shot-cinema", .body = shots.shootCinema },
     .{ .flag = "--shot-trees", .body = shots.shootTrees },
+    .{ .flag = "--shot-water-cliffs", .body = shots.shootWaterCliffs },
     .{ .flag = "--bench", .body = shots.benchWalk, .startup_shown = true },
 };
 

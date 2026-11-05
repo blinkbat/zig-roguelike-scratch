@@ -14,6 +14,7 @@ const raster = @import("../gfx/raster.zig");
 const line_icons = @import("../gfx/line_icons.zig");
 const dual = @import("../gfx/ground.zig");
 const light = @import("../gfx/light.zig");
+const shadows = @import("../gfx/shadow.zig");
 const fx = @import("../gfx/fx.zig");
 const items = @import("../play/items.zig");
 const cloud = @import("../gfx/cloud.zig");
@@ -379,7 +380,7 @@ fn inkCell(g: *game.Game, c: Cam, p: P, here: grid.Tile, stood: *const grid.Cell
 /// Every shadow cast into `view`, multiplied over what `framebuffer` holds; false with no shader for it.
 pub fn shadowPass(g: *game.Game, c: Cam, view: grid.Box, framebuffer: u32) bool {
     if (!g.light.beginShadows(g.screen, framebuffer)) return false;
-    drawShadows(g, c, view.grown(game.CAST_MARGIN));
+    drawShadows(g, c, view.grown(shadows.sceneryMargin(&g.sprites)));
     g.light.endShadows(-c.x, -c.y, game.CELL);
     return true;
 }

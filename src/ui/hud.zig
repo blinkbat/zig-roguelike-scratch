@@ -363,9 +363,14 @@ test "a tooltip's body breaks at spaces into lines that each fit" {
     try std.testing.expect(n > 1);
     try std.testing.expectEqual(std.mem.count(u8, body, " ") + 1, words);
     const long = "x" ** (font.WRAP_COLS_MAX + 4) ++ " y";
-    try std.testing.expectEqual(@as(usize, 2), font.wrap(&face, long, font.SMALL, w, &buf, &lines));
-    try std.testing.expectEqual(font.WRAP_COLS_MAX, lines[0].len);
-    try std.testing.expectEqualStrings("y", lines[1]);
+    const long_n = font.wrap(&face, long, font.SMALL, w, &buf, &lines);
+    var retained: usize = 0;
+    for (lines[0..long_n]) |line| {
+        try std.testing.expect(face.width(line, font.SMALL) <= w);
+        retained += std.mem.count(u8, line, "x");
+    }
+    try std.testing.expectEqual(font.WRAP_COLS_MAX + 4, retained);
+    try std.testing.expect(std.mem.endsWith(u8, lines[long_n - 1], "y"));
     std.debug.print("tooltip: a {d}-word description in {d} lines of {d} px at most\n", .{ words, n, w });
 }
 

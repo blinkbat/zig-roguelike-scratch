@@ -107,7 +107,43 @@ fn scan(lv: *const grid.Level, sink: anytype, q: Quad, row_in: Row, radius: i32)
 
 /// The hero carries a light, so is never too dark to see.
 pub fn sees(lv: *const grid.Level, watcher: P, hero: P, reach: i32) bool {
-    return lv.inLos(watcher) and mathx.dist(watcher, hero) <= reach;
+    if (!grid.Level.inside(watcher) or !grid.Level.inside(hero) or mathx.dist(watcher, hero) > reach) return false;
+    var found = false;
+    const Probe = struct {
+        target: P,
+        found: *bool,
+
+        fn mark(self: @This(), p: P) void {
+            if (p.eq(self.target)) self.found.* = true;
+        }
+
+        fn stops(_: @This(), level: *const grid.Level, p: P) bool {
+            return level.hidesBeyond(p);
+        }
+    };
+    castWith(lv, hero, @intFromFloat(@ceil(mathx.distEuclid(watcher, hero))), Probe{ .target = watcher, .found = &found });
+    return found;
+}
+
+test "foe sight reads current occluders independently of hero sight and memory" {
+    var lv = grid.openFloor();
+    const hero = P{ .x = 20, .y = 20 };
+    const watcher = hero.add(.{ .x = 3, .y = 0 });
+    const diagonal = hero.add(.{ .x = 3, .y = 3 });
+    cast(&lv, hero, 1);
+    const before = lv;
+    try std.testing.expect(sees(&lv, watcher, hero, 3));
+    try std.testing.expect(sees(&lv, diagonal, hero, 3));
+    try std.testing.expect(!sees(&lv, watcher, hero, 2));
+    try std.testing.expectEqualDeep(before, lv);
+    const between = hero.add(.{ .x = 1, .y = 0 });
+    lv.smoke[grid.Level.idx(between)] = grid.SMOKE_THICK;
+    try std.testing.expect(!sees(&lv, watcher, hero, 3));
+    lv.smoke[grid.Level.idx(between)] = grid.SMOKE_THICK - 1;
+    try std.testing.expect(sees(&lv, watcher, hero, 3));
+    lv.set(between, .wall);
+    try std.testing.expect(!sees(&lv, watcher, hero, 3));
+    std.debug.print("foe sight: independent hero radius, Chebyshev reach, current smoke and walls; no visibility or memory writes\n", .{});
 }
 
 test "an open floor lights a round pool, not a square one" {

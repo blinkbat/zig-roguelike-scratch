@@ -16,7 +16,7 @@ pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
 pub const Arc = grid.Area(WIDTH);
 
-/// The cell toward `to` and the two either side of it round `from`, those a step could reach.
+/// The cell toward `to` and the two either side of it round `from`, those a melee blow could reach.
 pub fn arc(lv: *const grid.Level, from: P, to: P) Arc {
     const d = mathx.dirTo(from, to) orelse return .{};
     var dirs: [WIDTH]mathx.Dir = undefined;

@@ -723,11 +723,16 @@ pub const Level = struct {
         self.seen[i] = true;
     }
 
-    /// The cells one step from `from` along `dirs` that a step could reach, in their order.
+    pub fn strikeable(self: *const Level, p: P) bool {
+        return inside(p) and !self.hasBarrier(p) and (!self.at(p).solid() or (self.at(p).wet() and self.who(p) != NO_ONE));
+    }
+
+    /// The cells one step from `from` along `dirs` that a melee blow could reach, in their order.
     pub fn reachable(self: *const Level, comptime N: usize, from: P, dirs: [N]mathx.Dir) Area(N) {
         var out = Area(N){};
         for (dirs) |d| {
-            if (self.passOk(from, d)) out.push(from.add(d.delta()));
+            const p = from.add(d.delta());
+            if (self.strikeable(p)) out.push(p);
         }
         return out;
     }

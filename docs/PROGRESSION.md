@@ -31,6 +31,10 @@ heal current HP.
 Shoot remains available as a basic attack and scales with equipment and attributes, with
 no skill-rank bonus. Loading an older run refunds points spent above its first rank once.
 
+Save evolution follows [SAVE_FORMAT.md](SAVE_FORMAT.md): portable saves use named fields
+and enum keys, default supported additions, and preserve passive allocations by identity.
+Only compatible raw legacy layouts load through the fingerprint-gated reader.
+
 Mana uses small whole numbers alongside life. Starting pools are 20 for archer/knight and 24 for wizard;
 base skill costs range from 2 to 7. Intelligence grants 2 mana per 5 points, and mana affixes grant 1–3.
 Natural recovery is 1 mana per 5 spent turns; recovery passives add to that five-turn rate, with partial
@@ -51,7 +55,6 @@ the turn they are used and the five after; a thrown Frost vial splashes small co
 foe within one tile of its mark, scaling as a spell. Each is a stack in the bag (up to 20 of a kind) listed above
 the items in Inventory, used there or from a bound skill slot, which shows the count. Foes drop one 8% of the
 time and chests 50%; they lie in the ground bag with any items and gold. Using one spends a turn.
-The saved recovery remainder and revised passive grants change the save fingerprint; older saves are incompatible.
 
 ## Weapons and offhands
 
@@ -119,7 +122,7 @@ is checked within the combined threshold: +100% rarity yields 50% plain, 40% mag
 10% rare; sufficiently high rarity can make every item rare.
 Foes and newly opened chests use equipped rarity when their items roll. Bonuses from
 multiple items add together. Advanced Stats and item cards show all three
-new stats. The added affix identities change the save fingerprint; older saves are rejected.
+new stats.
 
 Searing, Rimed and Charged weapons roll fire, cold or lightning and add that chance to
 burn, chill or shock to the weapon's own physical hits, rolled after the skill's own ailment
@@ -180,7 +183,6 @@ same two-endpoint targeting over visible dry walkable ground, bodies allowed, bu
 barrels, chests or doors. Foes on its cells catch fire as it rises and foes entering later catch
 fire, both through burn resistance. Foes shun its flames as they shun gas. Barrier, flame and
 caltrop lifetimes persist with the node; hero preparations and stances persist with the hero.
-The expanded run layout changes the save fingerprint; older saves are rejected.
 
 ## Class balance and status resistance
 
@@ -207,9 +209,6 @@ to adjacent cells: a blinded foe neither notices nor hunts a hero farther away. 
 moves a random way, gas or not; a confused hero strays only onto moves that would also spend the turn, bumps included.
 Enfeeble (3 turns) makes the body's blows deal 30% less, rounded up. Maim (4 turns) makes every second step cost the
 body its next turn.
-
-The expanded item enum and updated passive grants change the save fingerprint;
-older saves are rejected by the existing compatibility check.
 
 ## Tree panels and maintained references
 
@@ -243,9 +242,10 @@ The board opens zoomed in; zoom follows the selected node, with pan and a full-b
 The graph uses simple circles and quiet lines without labels, legends or a central node. Allocated
 nodes have solid arm-coloured fills and gold rims; reachable nodes have clear rims, and distant
 nodes stay muted. The sidebar shows a small name, readable grants and riders, any essential note,
-and one allocation action or status. One deliberate action allocates the selected eligible node. Node-index
-layout, grants and feeder wiring participate in the save fingerprint; saves from the old hex tree are
-rejected as incompatible rather than interpreting their allocations as different nodes.
+and one allocation action or status. One deliberate action allocates the selected eligible node.
+Portable saves retain allocations by `(arm, branch, seam, ring, slot)` identity and refund
+removed nodes. Preserve those identities when rearranging the graph; changed meanings need
+an explicit migration. Unknown raw layouts, including the old hex tree, remain incompatible.
 
 ## Equipment layout references
 

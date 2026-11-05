@@ -277,6 +277,38 @@ pub const AROUND = [4]struct { d: P, bit: u4 }{
 pub const Corners = struct {
     rank: [4]u8,
 
+    pub fn pairMask(self: Corners, upper: Ground, lower: Ground) ?u4 {
+        var mask_: u4 = 0;
+        for (self.rank, AROUND) |r, a| {
+            if (r == upper.rank()) mask_ |= a.bit else if (r != lower.rank()) return null;
+        }
+        return if (mask_ == 0 or mask_ == FULL) null else mask_;
+    }
+
+    pub fn edgeMask(self: Corners, upper: Ground, lower: Ground) ?u4 {
+        if (!self.holds(upper) or !self.holds(lower)) return null;
+        for (self.rank) |r| {
+            if (r != Ground.dirt.rank() and r != Ground.shallows.rank() and r != Ground.water.rank()) return null;
+        }
+        return self.mask(upper);
+    }
+
+    pub fn edgeQuarter(self: Corners, upper: Ground, lower: Ground, quarter: usize) bool {
+        if (self.pairMask(upper, lower) != null) return true;
+        if (upper == .shallows) return self.rank[quarter] != Ground.dirt.rank();
+        for ([_]usize{ quarter, quarter ^ 2, quarter ^ 1, quarter ^ 3 }) |q| {
+            if (self.rank[q] == Ground.dirt.rank()) continue;
+            return self.rank[q] == lower.rank();
+        }
+        return false;
+    }
+
+    pub fn waterCliffFor(self: Corners, bank: Bank) ?u8 {
+        const west = bank.matches(self.rank[0], self.rank[2]);
+        const east = bank.matches(self.rank[1], self.rank[3]);
+        return if (west) (if (east) @as(u8, 1) else 2) else if (east) 0 else null;
+    }
+
     fn holds(self: Corners, g: Ground) bool {
         return std.mem.indexOfScalar(u8, &self.rank, g.rank()) != null;
     }
@@ -302,6 +334,105 @@ pub const Corners = struct {
         return m;
     }
 };
+
+pub const Bank = enum {
+    shallow_deep,
+    land_deep,
+    land_shallow,
+
+    fn matches(self: Bank, north: u8, south: u8) bool {
+        if (!isGround(north) or !isGround(south)) return false;
+        return Bank.of(Ground.ofRank(north).tile(), Ground.ofRank(south).tile()) == self;
+    }
+
+    pub fn of(north: grid.Tile, south: grid.Tile) ?Bank {
+        if (north == .shallows and south == .water) return .shallow_deep;
+        if (!bankLand(north)) return null;
+        return switch (south) {
+            .shallows => .land_shallow,
+            .water => .land_deep,
+            else => null,
+        };
+    }
+};
+
+pub fn bankLand(t: grid.Tile) bool {
+    return switch (of(t) orelse return false) {
+        .water, .shallows, .lava, .chasm, .bridge => false,
+        else => true,
+    };
+}
+
+pub fn bankHeight(t: grid.Tile) f32 {
+    return switch (t) {
+        .shallows => 6.0 / @as(f32, @floatFromInt(look.SPRITE_PX)),
+        .water => 24.0 / @as(f32, @floatFromInt(look.SPRITE_PX)),
+        else => 0,
+    };
+}
+
+pub fn bankAbove(north: grid.Tile, south: grid.Tile) bool {
+    return Bank.of(north, south) != null;
+}
+
+pub const BANK_LIFT_PX: f32 = 8;
+pub const BANK_LIFT: f32 = BANK_LIFT_PX / look.SPRITE_PX;
+
+const BANK_FEET = [2][3 * look.SPRITE_PX]u8{
+    cliffFeet(@embedFile("shallows-cliff-foot.txt")),
+    cliffFeet(@embedFile("water-cliff-foot.txt")),
+};
+
+const BANK_LIPS = [2][3 * look.SPRITE_PX]u8{
+    cliffFeet(@embedFile("shallows-cliff-lip.txt")),
+    cliffFeet(@embedFile("water-cliff-lip.txt")),
+};
+
+fn cliffFeet(comptime text: []const u8) [3 * look.SPRITE_PX]u8 {
+    @setEvalBranchQuota(100000);
+    var feet: [3 * look.SPRITE_PX]u8 = undefined;
+    var words = std.mem.tokenizeAny(u8, text, ",\r\n");
+    for (&feet) |*foot| {
+        foot.* = std.fmt.parseInt(u8, words.next().?, 10) catch unreachable;
+        std.debug.assert(foot.* <= look.SPRITE_PX);
+    }
+    std.debug.assert(words.next() == null);
+    return feet;
+}
+
+fn bankCell(lv: *const grid.Level, p: P) bool {
+    if (bankHeight(lv.at(p)) == 0) return false;
+    const north = bedAt(lv, p.add(.{ .x = 0, .y = -1 }), false) orelse return false;
+    return bankAbove(north.tile(), lv.at(p));
+}
+
+pub fn bankFoot(lv: *const grid.Level, q: [2]f32) ?f32 {
+    return bankProfile(lv, q, &BANK_FEET);
+}
+
+pub fn bankLip(lv: *const grid.Level, q: [2]f32) ?f32 {
+    return bankProfile(lv, q, &BANK_LIPS);
+}
+
+fn bankProfile(lv: *const grid.Level, q: [2]f32, profile: *const [2][3 * look.SPRITE_PX]u8) ?f32 {
+    const c = mathx.cellOf(q);
+    if (!bankCell(lv, c)) return null;
+    const p = mathx.cellOf(.{ q[0] + 0.5, q[1] });
+    const north = bedAt(lv, c.add(.{ .x = 0, .y = -1 }), false).?;
+    const bank = Bank.of(north.tile(), lv.at(c)).?;
+    const west_p = p.add(.{ .x = -1, .y = 0 });
+    const west_n = bedAt(lv, west_p.add(.{ .x = 0, .y = -1 }), false);
+    const east_n = bedAt(lv, p.add(.{ .x = 0, .y = -1 }), false);
+    const west = if (west_n) |g| Bank.of(g.tile(), lv.at(west_p)) == bank else false;
+    const east = if (east_n) |g| Bank.of(g.tile(), lv.at(p)) == bank else false;
+    const index: usize = if (west) (if (east) @as(usize, 1) else 2) else 0;
+    const col: usize = @intFromFloat((q[0] - @as(f32, @floatFromInt(p.x)) + 0.5) * look.SPRITE_PX);
+    const depth = @intFromBool(lv.at(c) == .water);
+    const offset = index * look.SPRITE_PX + @min(col, look.SPRITE_PX - 1);
+    if (BANK_FEET[depth][offset] == 0) return null;
+    const foot = profile[depth][offset];
+    return @as(f32, @floatFromInt(p.y)) + (@as(f32, @floatFromInt(foot)) - BANK_LIFT_PX) / look.SPRITE_PX;
+}
 
 test "every ground without a sheet lies under every ground with one, and each keeps its order among its own" {
     for (std.enums.values(Ground)) |a| {
@@ -413,7 +544,115 @@ fn bedsOf(lv: *const grid.Level, lo: P, hi: P, seen_only: bool) Beds {
     return b;
 }
 
-/// The numbers in a tile-art script after `after`, to its `}` when it opens a table or else to the line's end, are `want`.
+test "water edge edits select all mixed pair masks and exclude unseen or different grounds" {
+    for ([_][2]Ground{ .{ .dirt, .shallows }, .{ .dirt, .water }, .{ .shallows, .water } }) |pair| {
+        for (0..MASKS) |n| {
+            const mask_: u4 = @intCast(n);
+            var c: Corners = undefined;
+            for (&c.rank, AROUND) |*r, a| r.* = (if (mask_ & a.bit != 0) pair[0] else pair[1]).rank();
+            try std.testing.expectEqual(if (n == 0 or n == FULL) @as(?u4, null) else mask_, c.pairMask(pair[0], pair[1]));
+            for ([_]u8{ NONE, OVER, Ground.grass.rank() }) |other| {
+                var mixed = c;
+                mixed.rank[0] = other;
+                try std.testing.expectEqual(@as(?u4, null), mixed.pairMask(pair[0], pair[1]));
+            }
+        }
+    }
+    std.debug.print("water edge masks: 48 pair layouts, 144 unseen/upright/grass exclusions\n", .{});
+}
+
+test "stepped water banks end each depth independently and route all three material corners" {
+    const c = Corners{ .rank = .{ Ground.shallows.rank(), Ground.dirt.rank(), Ground.water.rank(), Ground.shallows.rank() } };
+    try std.testing.expectEqual(@as(?u8, 2), c.waterCliffFor(.shallow_deep));
+    try std.testing.expectEqual(@as(?u8, 0), c.waterCliffFor(.land_shallow));
+    try std.testing.expectEqual(@as(?u8, null), c.waterCliffFor(.land_deep));
+    try std.testing.expectEqual(@as(?u4, NE), c.edgeMask(.dirt, .shallows));
+    try std.testing.expectEqual(@as(?u4, NW | NE | SE), c.edgeMask(.shallows, .water));
+    const grounds = [_]Ground{ .dirt, .shallows, .water };
+    var mixed_n: usize = 0;
+    for (0..81) |n| {
+        var k: Corners = undefined;
+        var left = n;
+        for (&k.rank) |*r| {
+            r.* = grounds[left % 3].rank();
+            left /= 3;
+        }
+        if (!k.holds(.dirt) or !k.holds(.shallows) or !k.holds(.water)) continue;
+        mixed_n += 1;
+        for (0..4) |q| {
+            try std.testing.expect(k.edgeQuarter(.dirt, .shallows, q) != k.edgeQuarter(.dirt, .water, q));
+            try std.testing.expectEqual(k.rank[q] != Ground.dirt.rank(), k.edgeQuarter(.shallows, .water, q));
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 36), mixed_n);
+    std.debug.print("stepped banks: separate shallow/deep ends and 36 three-material layouts, 144 quarter routes\n", .{});
+}
+
+test "water cliff faces dry north banks with joined middles and separate ends" {
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .grass);
+    @memset(&lv.seen, true);
+    for (10..13) |x| lv.set(.{ .x = @intCast(x), .y = 10 }, .shallows);
+    var b = bedsOf(&lv, .{ .x = 8, .y = 8 }, .{ .x = 15, .y = 13 }, true);
+    for ([_]?u8{ 0, 1, 1, 2 }, 10..) |want, x| {
+        try std.testing.expectEqual(want, b.pointAt(.{ .x = @intCast(x), .y = 10 }).corners.waterCliffFor(.land_shallow));
+        for (std.enums.values(Bank)) |bank| {
+            try std.testing.expectEqual(@as(?u8, null), b.pointAt(.{ .x = @intCast(x), .y = 11 }).corners.waterCliffFor(bank));
+        }
+    }
+    for ([_]grid.Tile{ .water, .shallows, .bridge, .chasm, .lava }) |t| {
+        lv.set(.{ .x = 10, .y = 9 }, t);
+        lv.set(.{ .x = 11, .y = 9 }, t);
+        b.fill(&lv, b.lo, b.hi, true);
+        for (std.enums.values(Bank)) |bank| {
+            try std.testing.expectEqual(@as(?u8, null), b.pointAt(.{ .x = 11, .y = 10 }).corners.waterCliffFor(bank));
+        }
+    }
+    lv.set(.{ .x = 10, .y = 9 }, .dirt);
+    lv.set(.{ .x = 11, .y = 9 }, .dirt);
+    lv.seen[grid.Level.idx(.{ .x = 10, .y = 9 })] = false;
+    lv.seen[grid.Level.idx(.{ .x = 11, .y = 9 })] = false;
+    b.fill(&lv, b.lo, b.hi, true);
+    try std.testing.expectEqual(@as(?u8, null), b.pointAt(.{ .x = 11, .y = 10 }).corners.waterCliffFor(.land_shallow));
+    b.fill(&lv, b.lo, b.hi, false);
+    try std.testing.expectEqual(@as(?u8, 1), b.pointAt(.{ .x = 11, .y = 10 }).corners.waterCliffFor(.land_shallow));
+    lv.set(.{ .x = 10, .y = 10 }, .water);
+    lv.set(.{ .x = 11, .y = 10 }, .water);
+    b.fill(&lv, b.lo, b.hi, false);
+    try std.testing.expectEqual(@as(?u8, 1), b.pointAt(.{ .x = 11, .y = 10 }).corners.waterCliffFor(.land_deep));
+    lv.set(.{ .x = 10, .y = 9 }, .shallows);
+    lv.set(.{ .x = 11, .y = 9 }, .shallows);
+    b.fill(&lv, b.lo, b.hi, false);
+    try std.testing.expectEqual(@as(?u8, 1), b.pointAt(.{ .x = 11, .y = 10 }).corners.waterCliffFor(.shallow_deep));
+    try std.testing.expect(bankLip(&lv, .{ 10.75, 10 }) != null);
+    try std.testing.expect(bankFoot(&lv, .{ 10.75, 10 }) != null);
+    const top_lips = [2][3 * look.SPRITE_PX]u8{ @splat(0), @splat(0) };
+    try std.testing.expectEqual(@as(?f32, 10 - BANK_LIFT), bankProfile(&lv, .{ 10.75, 10 }, &top_lips));
+    for ([_]Ground{ .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .cobble }) |land| {
+        for ([_]Ground{ .shallows, .water }) |water| {
+            lv.set(.{ .x = 10, .y = 9 }, land.tile());
+            lv.set(.{ .x = 11, .y = 9 }, land.tile());
+            lv.set(.{ .x = 10, .y = 10 }, water.tile());
+            lv.set(.{ .x = 11, .y = 10 }, water.tile());
+            b.fill(&lv, b.lo, b.hi, false);
+            for (std.enums.values(Bank)) |bank| {
+                const want: ?u8 = if (bank == (if (water == .shallows) Bank.land_shallow else Bank.land_deep)) 1 else null;
+                try std.testing.expectEqual(want, b.pointAt(.{ .x = 11, .y = 10 }).corners.waterCliffFor(bank));
+            }
+        }
+    }
+    lv.set(.{ .x = 10, .y = 9 }, .grass);
+    lv.set(.{ .x = 11, .y = 9 }, .dirt);
+    lv.set(.{ .x = 10, .y = 10 }, .shallows);
+    b.fill(&lv, b.lo, b.hi, false);
+    const mixed = b.pointAt(.{ .x = 11, .y = 10 }).corners;
+    try std.testing.expectEqual(@as(?u8, 2), mixed.waterCliffFor(.land_shallow));
+    try std.testing.expectEqual(@as(?u8, 0), mixed.waterCliffFor(.land_deep));
+    try std.testing.expectEqual(@as(?u8, null), mixed.waterCliffFor(.shallow_deep));
+    std.debug.print("water cliffs: joined banks and ends, 5 excluded surfaces, fog/editor, 16 land/depth combinations across 3 bank selectors, shallow-to-deep lip/foot and separate mixed ends\n", .{});
+}
+
+/// The values in a tile-art script after `after`, to its `}` when it opens a table or else to the line's end, are `want`.
 pub fn expectLuaList(comptime T: type, want: []const T, path: []const u8, after: []const u8) !void {
     const alloc = std.testing.allocator;
     const lua = try std.fs.cwd().readFileAlloc(alloc, path, 1 << 16);
@@ -424,7 +663,11 @@ pub fn expectLuaList(comptime T: type, want: []const T, path: []const u8, after:
     var n: usize = 0;
     while (nums.next()) |m| : (n += 1) {
         try std.testing.expect(n < want.len);
-        try std.testing.expectEqual(want[n], try std.fmt.parseInt(T, m, 10));
+        const value = switch (@typeInfo(T)) {
+            .@"enum" => std.meta.stringToEnum(T, std.mem.trim(u8, m, "'\"")) orelse return error.InvalidEnum,
+            else => try std.fmt.parseInt(T, m, 10),
+        };
+        try std.testing.expectEqual(want[n], value);
     }
     try std.testing.expectEqual(want.len, n);
 }

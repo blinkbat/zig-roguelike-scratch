@@ -232,7 +232,6 @@ pub const SWEEP_VERB = "sweeps";
 pub const SWEEP_CELLS = mathx.ALL_DIRS.len;
 pub const Swept = grid.Area(SWEEP_CELLS);
 
-/// The cells round `from` its sweep reaches, those a step could.
 pub fn sweep(lv: *const grid.Level, from: P) Swept {
     return lv.reachable(SWEEP_CELLS, from, mathx.ALL_DIRS[0..SWEEP_CELLS].*);
 }

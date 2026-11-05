@@ -83,6 +83,8 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   use the same temporary-directory procedure. Tall trees occupy only their bottom cell; unsaved fading
   uses a soft aperture around whichever drawn body (hero first, then visible foes) stands behind it, shared by scenery and gas, preserving the lower trunk.
   Dense sight-blocking grass (`reeds`) uses that same occlusion and depth ordering within its walkable cell; these captures cover it too.
+- `--shot-water-cliffs` captures both bank depths, eight grounds, mixed banks and morning/evening shadow toggles,
+  then verifies mirror visibility and map-edge clipping; use the same TEMP capture procedure.
 - Inspect actual headless PNGs. Recursive map overviews use `shots/maps/<relative.map>/overview.png`, preserving folder and filename identity.
   `game/shots.zig`'s `shoot` and helpers define the coverage: abilities, editor,
   maps, HUD sizes/devices/resources, day/night memory, forest, hidden/offscreen shadows and water.
@@ -470,6 +472,20 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `deep-water.aseprite` into `water-ground.png`. The deep copy uses 60% RGB with identical shapes/alpha
   (`deepen_water.lua`); both retain `Water extensions`. `port_bridge.lua` re-cuts the bridge planks into
   every cell of `Bridge extensions`, its `Draw here` kept but hidden, so only the extension exports.
+- Canonical `assets/source/water-cliff-edge.aseprite` holds the shallow paint; `water-cliff-edge-deep.aseprite`
+  holds the later deep paint (the Desktop shallow row was cleared). Both use layer 8, a duplicate reference-layer
+  name. The shallow source keeps layer 8 hidden beneath `Shallow cliff - half height`, the owner-requested
+  column compression. `export_water_cliff.lua layer="Shallow cliff - half height" depth=shallow source=...`
+  exports it; deep still uses `layer=8`. Shallow cap taper and shadow height are halved with the face.
+  `ground.Corners.waterCliffFor` joins each land/shallow, land/deep and shallow/deep bank separately; aligned plain ground fills caps and end gaps only,
+  preserving other borders' light/dark rims. Faces share water's camera/depth tint; `light_model.bankSunlit`
+  casts lip shadows across faces and water using `*-cliff-lip.txt`, with `*-cliff-foot.txt` contact shading.
+  Desktop `water-cliff-connections.aseprite` contains three connected 16-mask painting sets and original face strips;
+  `water_cliff_connected.py` assembles native `--shot-water-cliffs` template renders without overwriting existing art.
+  Canonical `assets/source/water-cliff-connections.aseprite` preserves owner edits and separate deep extensions;
+  `export_water_edges.lua` emits sparse material bands in the three `*-edges.png` atlases. Its shared palette is
+  `water_cliff_materials.lua`. Shallow caps use `shallows-water-cap.png` with the ordinary water shader;
+  their tint, gradient and water effects must match the surrounding surface. See `docs/TILE_ART_WORKFLOW.md`.
 - Forest source is `assets/source/forest-tree-walls.aseprite`; preserve `Draw here`/`Forest extensions` in
   the Desktop source. `export_forest.lua` exports the art layers. Isolated shrubs mix `shrub.png` and forest
   cell 01 by stable position hash. `tone_forest.lua` records the darker foliage/grass palette; inspect

@@ -107,15 +107,34 @@ fn footOf(lines: usize, mods: usize) i32 {
 }
 
 /// Down from a card's top to the foot of what `draw` lays out for `maybe` in `slot`.
-pub fn height(maybe: ?items.Item, slot: items.Slot) i32 {
+pub fn height(face: *const font.Face, width: i32, maybe: ?items.Item, slot: items.Slot) i32 {
     const item = maybe orelse return SLOT_Y + font.LABEL;
     var shown: Mods = undefined;
-    return footOf(CardLines.of(items.spec(item.kind), slot, null).n, if (item.magical()) modsOf(item, &shown).len else 0);
+    var rows: usize = 0;
+    var text: menu.Note(120) = .{};
+    if (item.magical()) for (modsOf(item, &shown)) |m| {
+        rows += wrappedRows(face, modifierText(item, m, &text), width);
+    };
+    return footOf(CardLines.of(items.spec(item.kind), slot, null).n, rows);
+}
+
+fn modifierText(item: items.Item, mod: items.Mod, text: *menu.Note(120)) [:0]const u8 {
+    text.clear();
+    for (item.mods) |rolled| if (rolled) |a| {
+        if (a.kind == mod) a.write(text.writer());
+    };
+    return text.text();
+}
+
+fn wrappedRows(face: *const font.Face, text: []const u8, width: i32) usize {
+    var buf: font.Wrapped = undefined;
+    var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
+    return font.wrap(face, text, font.SMALL, width, &buf, &lines);
 }
 
 const Mods = [items.MODS.len]items.Mod;
 
-/// The modifier kinds a magical card lists for `item`, one line each, in `items.MODS` order.
+/// The modifier kinds a magical card lists for `item`, in `items.MODS` order.
 fn modsOf(item: items.Item, out: *Mods) []const items.Mod {
     var n: usize = 0;
     for (items.MODS) |m| if (item.value(m) != 0) {
@@ -181,17 +200,18 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
         top += MODS_BELOW;
         var shown: Mods = undefined;
         for (modsOf(item, &shown)) |m| {
-            text.clear();
-            for (item.mods) |rolled| if (rolled) |a| {
-                if (a.kind == m) a.write(text.writer());
-            };
-            face.draw(text.text(), x, top, font.SMALL, ink);
-            top += CARD_LINE;
+            top = face.paragraph(modifierText(item, m, &text), x, top, width, font.SMALL, ink);
         }
     }
 }
 
 pub fn verify(face: *const font.Face) !void {
+    try verifyFace(face);
+    const scaled = face.mipmapped();
+    try verifyFace(&scaled);
+}
+
+fn verifyFace(face: *const font.Face) !void {
     var count: usize = 0;
     var text: menu.Note(120) = .{};
     for (std.enums.values(items.Kind)) |kind| {
@@ -209,12 +229,36 @@ pub fn verify(face: *const font.Face) !void {
         }
     }
     std.debug.print("item typography: {d} property and requirement rows fit {d}px comparison cards\n", .{ count, layout.CARD_W });
-    for (items.MODS) |mod| {
-        text.clear();
-        (items.Affix{ .kind = mod, .value = 25 }).write(text.writer());
-        if (face.width(text.text(), font.SMALL) > layout.CARD_W) {
-            std.debug.print("affix overflow: {s}\n", .{text.text()});
-            return error.ItemCardOverflow;
+    for ([_]i32{ layout.CARD_W, layout.DETAIL_W }) |width| {
+        var rows: [items.MODS.len]usize = @splat(0);
+        for (items.AFFIXES, &rows) |roll, *most| {
+            for (std.enums.values(damage.Element)) |element| {
+                var value = roll.lo;
+                while (value <= roll.hi) : (value += 1) {
+                    text.clear();
+                    (items.Affix{ .kind = roll.kind, .value = @intCast(value), .element = element }).write(text.writer());
+                    most.* = @max(most.*, wrappedRows(face, text.text(), width));
+                }
+            }
+        }
+        for (std.enums.values(items.Kind)) |kind| {
+            var largest: [items.AFFIXES_MAX]usize = @splat(0);
+            for (items.MODS, rows) |mod, n| {
+                if (!mod.allows(kind)) continue;
+                var left = n;
+                for (&largest) |*row| if (left > row.*) {
+                    std.mem.swap(usize, &left, row);
+                };
+            }
+            var total: usize = 0;
+            for (largest) |n| total += n;
+            for (items.spec(kind).slots) |slot| {
+                const foot = footOf(CardLines.of(items.spec(kind), slot, null).n, total);
+                if (foot > layout.CARD_H) {
+                    std.debug.print("wrapped card overflow {s}: {d}px at {d}px wide\n", .{ @tagName(kind), foot, width });
+                    return error.ItemCardOverflow;
+                }
+            }
         }
     }
     var rare_buf: [items.NAME_MAX]u8 = undefined;

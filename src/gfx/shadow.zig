@@ -57,6 +57,18 @@ pub const CAST_REACH: f32 = blk: {
     const pad = @max(SHADOW_PAD, FOREST_PAD) / look.SPRITE_PX;
     break :blk 0.5 + @max(pad + l * (1 + pad), CANOPY_AT * l + CANOPY_R * (1 + l * CANOPY_STRETCH));
 };
+
+pub fn sceneryMargin(sprites: *const look.Sprites) i32 {
+    var scale: f32 = 1;
+    for (std.enums.values(grid.Tile)) |kind| {
+        if (!look.castsPicture(kind)) continue;
+        const tex = sprites.tileOf(kind, null) orelse continue;
+        const rect = look.tileRect(kind, tex, .{ .x = 0, .y = 0, .width = 1, .height = 1 });
+        scale = @max(scale, @max(rect.width, rect.height));
+    }
+    return @intFromFloat(@ceil(CAST_REACH * scale));
+}
+
 const TRUNK_OF: f32 = 0.6;
 fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *const light.Shine, contact: f32, opacity: f32) ?struct { x: f32, y: f32, height: f32, share: f32 } {
     const lit = s.reached();
@@ -337,4 +349,23 @@ fn silhouette(tex: rl.Texture2D, fx: f32, fy: f32, width: f32, foot: f32, left: 
         .{ east, -pad, tip[0] + half, tip[1] },
     };
     texQuad(tex, look.colourOf(c.shade, c.alpha), if (mirrored) .{ corners[3], corners[2], corners[1], corners[0] } else corners);
+}
+
+test "scenery shadow margins include the drawn height and width of loaded terrain" {
+    var sprites = look.Sprites{};
+    const ordinary: i32 = @intFromFloat(@ceil(CAST_REACH));
+    const doubled: i32 = @intFromFloat(@ceil(CAST_REACH * 2));
+    try std.testing.expectEqual(ordinary, sceneryMargin(&sprites));
+    const tree = rl.Texture2D{ .id = 1, .width = 64, .height = 128, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    sprites.tiles.set(.large_tree, tree);
+    try std.testing.expectEqual(doubled, sceneryMargin(&sprites));
+    sprites.tiles.set(.large_tree, null);
+    var cart = tree;
+    cart.width = 128;
+    sprites.tiles.set(.caravan, cart);
+    try std.testing.expectEqual(doubled, sceneryMargin(&sprites));
+    sprites.tiles.set(.caravan, null);
+    sprites.tiles.set(.floor, cart);
+    try std.testing.expectEqual(ordinary, sceneryMargin(&sprites));
+    std.debug.print("scenery shadow margins: empty and floor {d}; tall tree and wide caravan {d} cells\n", .{ ordinary, doubled });
 }

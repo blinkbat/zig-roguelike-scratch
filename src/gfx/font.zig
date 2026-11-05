@@ -407,7 +407,7 @@ pub const WRAP_COLS_MAX: usize = 96;
 /// `wrap`'s lines, each nul-terminated.
 pub const Wrapped = [WRAP_LINES_MAX][WRAP_COLS_MAX + 1]u8;
 
-/// Each line in `buf` is nul-terminated; wrapping breaks only at spaces.
+/// Each line is nul-terminated; words wider than a line split across it.
 pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, lines: *[WRAP_LINES_MAX][:0]const u8) usize {
     var n: usize = 0;
     var words = std.mem.tokenizeScalar(u8, body, ' ');
@@ -422,7 +422,7 @@ pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, l
             if (len > 0) try_buf[len] = ' ';
             @memcpy(try_buf[with - word.len .. with], word);
             try_buf[with] = 0;
-            if (len == 0 or face.width(try_buf[0..with :0], size) <= w) {
+            if (face.width(try_buf[0..with :0], size) <= w) {
                 @memcpy(line[0 .. with + 1], try_buf[0 .. with + 1]);
                 len = with;
                 lines[n] = line[0..len :0];
@@ -431,13 +431,53 @@ pub fn wrap(face: anytype, body: []const u8, size: i32, w: i32, buf: *Wrapped, l
         }
         if (len > 0) n += 1;
         if (n == WRAP_LINES_MAX) break;
-        const fit = @min(word.len, WRAP_COLS_MAX);
-        @memcpy(buf[n][0..fit], word[0..fit]);
-        buf[n][fit] = 0;
-        len = fit;
-        lines[n] = buf[n][0..len :0];
+        var rest = word;
+        while (rest.len > 0) {
+            var fit = @min(rest.len, WRAP_COLS_MAX);
+            @memcpy(buf[n][0..fit], rest[0..fit]);
+            buf[n][fit] = 0;
+            while (fit > 1 and face.width(buf[n][0..fit :0], size) > w) {
+                fit -= 1;
+                buf[n][fit] = 0;
+            }
+            len = fit;
+            lines[n] = buf[n][0..len :0];
+            rest = rest[fit..];
+            if (rest.len == 0) break;
+            n += 1;
+            if (n == WRAP_LINES_MAX) return n;
+        }
     }
     return if (len > 0) @min(n + 1, WRAP_LINES_MAX) else n;
+}
+
+test "wrapping retains long words and bounds their lines by pixels and storage" {
+    const Fixed = struct {
+        pub fn width(_: @This(), s: [:0]const u8, _: i32) i32 {
+            return @as(i32, @intCast(s.len)) * 10;
+        }
+    };
+    var buf: Wrapped = undefined;
+    var lines: [WRAP_LINES_MAX][:0]const u8 = undefined;
+    const word = "abcdefghij" ** 12;
+    for ([_]i32{ 70, 300, 2000 }) |width| {
+        const n = wrap(Fixed{}, word, BODY, width, &buf, &lines);
+        var offset: usize = 0;
+        for (lines[0..n]) |line| {
+            try std.testing.expect(line.len <= WRAP_COLS_MAX);
+            try std.testing.expect(Fixed.width(.{}, line, BODY) <= width);
+            try std.testing.expectEqualStrings(word[offset..][0..line.len], line);
+            offset += line.len;
+        }
+        try std.testing.expectEqual(word.len, offset);
+    }
+    const n = wrap(Fixed{}, "one abcdefghijk two", BODY, 70, &buf, &lines);
+    try std.testing.expectEqual(@as(usize, 4), n);
+    for ([_][]const u8{ "one", "abcdefg", "hijk", "two" }, lines[0..n]) |want, got| try std.testing.expectEqualStrings(want, got);
+    try std.testing.expectEqual(@as(usize, 0), wrap(Fixed{}, "   ", BODY, 70, &buf, &lines));
+    try std.testing.expectEqual(WRAP_LINES_MAX, wrap(Fixed{}, word, BODY, 0, &buf, &lines));
+    for (lines) |line| try std.testing.expectEqual(@as(usize, 1), line.len);
+    std.debug.print("wrapping: 120-character token retained at 3 widths; word boundaries, empty input and line capacity checked\n", .{});
 }
 
 fn orderedGlyphs(f: rl.Font, cps: []const i32) bool {

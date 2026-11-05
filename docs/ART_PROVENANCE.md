@@ -57,6 +57,38 @@ documented scripts; it does not mean every resulting tile has been hand-painted 
 | `assets/shallows2.png`, `assets/shallows3.png` | Owner-supplied 64x64 rasters; editable source and individual authorship not verified | Stable alternates for fully filled shallows pieces; existing border art retained and original pixels unchanged | Supplied rasters preserved at native scale |
 | `assets/source/hud-elements.aseprite` | Paint on the Desktop working copy must be inspected before export | Initial template, guides, reference assembly and named slices from `create_template.py` | Original paint layer versus generated guides |
 | Desktop cave/forest guide sheets | Owner paint on `Draw here`, if present | `guide_walls.lua` guides and `idea_walls.lua` rough ideas | `Ideas - hide before export` is assistant work, not shipping art |
+| `assets/shallows-cliff.png`, `assets/water-cliff.png` | Desktop `water-cliff-edge.aseprite`, layer 8 (duplicate reference-layer name); separate byte-for-byte originals at `assets/source/water-cliff-edge.aseprite` (shallow) and `water-cliff-edge-deep.aseprite` (deep) | `water_edge_template.py` supplies guides; `export_water_cliff.lua layer=8 depth=shallow\|deep source=...` copies three original 64x64 tiles unchanged, without reference pixels; runtime joins the pieces along viewer-facing banks | Owner-painted faces at both depths. Assistant-derived `*-cliff-cap.png` alpha masks fill above the paint using adjacent ground; cap masks close and taper the outside end gaps with aligned plain ground texture; exported foot profiles anchor shadows to the painted outline. Faces share the water camera/depth tint; other border tiles retain their original light/dark rims. Guide/reference layers are assistant layout, separate from the cropped artwork |
+
+Desktop `water-cliff-connections.aseprite` and its PNG preview are assistant-assembled
+templates from native game renders of the existing ground and owner-painted cliff art.
+Three connected 16-mask blocks cover land/shallows, land/deep and shallows/deep; six
+original face crops retain exact RGBA on separate editable layers. Labels, mask keys,
+grid and layout are assistant work. No light or shadows are baked. Exported lip profiles
+now place cast shadows across both faces and water; foot profiles retain contact shading.
+
+`assets/source/water-cliff-connections.aseprite` preserves the owner's subsequent flat PNG
+border edits on `Owner flat border edits`, above the original template layers. The middle
+land/deep-water block carries assistant extensions on `Deep border extensions from shallow
+edits`: `port_water_cliff_edits.lua` transfers the 918 changed shallow pixels using the
+existing deep palette, retains the taller deep faces, and extends eight erased end pixels
+through their deeper feet. The left and right blocks and all pixels outside the middle
+block remain identical to the owner's edited PNG. `export_water_edges.lua` installs these
+changes as `dirt-shallows-edges.png`, `dirt-water-edges.png` and `shallows-water-edges.png`.
+Each sparse atlas separates dry ground, shallow/deep surfaces and shallow/deep faces so
+runtime lighting follows the material under each edited pixel. `shallows-water-cap.png`
+combines the deep cap mask with unchanged shallow-water pixels; it uses the ordinary
+water shader, including its camera gradient, reflections and glints. No lighting is baked
+into these assets. `water_cliff_materials.lua` shares the source-to-deep palette and material
+classification between the port and exporter.
+
+The owner subsequently requested half-height shallow cliffs. `pinch_shallow_cliff.lua`
+derives `Shallow cliff - half height` in the shallow canonical source, preserving original
+layer 8 hidden and unchanged. It keeps each lip row and horizontal position, compresses
+the face column to half its height with native-palette endpoint sampling, and moves matching
+border edits. Shallow caps/profiles and the 6/64-cell shadow height follow that adjustment.
+The connected source and Desktop working sheet show the shorter left block; previous layers
+remain hidden under `Before shallow pinch`. Deep blocks and original reference strips are
+unchanged. These compressed pixels are assistant-transformed owner art, not fresh painting.
 
 Original forest/grass backups are in `assets/backup/`, by owner request. Other backups and
 reference screenshots belong in TEMP. Generated guides, labels, and rough ideas are never

@@ -544,7 +544,7 @@ pub const Book = struct {
         item_card.draw(face, x, y, if (comparing) layout.CARD_W else layout.DETAIL_W, it, slot, self.requirementAttrs(view, slot), if (comparing) "SELECTED" else null);
         if (comparing) item_card.draw(face, x + layout.CARD_W + layout.CARD_GAP, y, layout.CARD_W, view.inventory.gear.slots.get(slot), slot, view.inventory.gear.statsWithout(slot, view.base), "EQUIPPED");
         if (comparing) {
-            const at = y + @max(item_card.height(it, slot), item_card.height(view.inventory.gear.slots.get(slot), slot)) + layout.REQUIREMENT_GAP;
+            const at = y + @max(item_card.height(face, layout.CARD_W, it, slot), item_card.height(face, layout.CARD_W, view.inventory.gear.slots.get(slot), slot)) + layout.REQUIREMENT_GAP;
             const bagged = self.bagIndex(view).?;
             _ = view.inventory.preview(bagged, slot, view.base) catch |err| {
                 var reason: menu.Note(140) = .{};
@@ -730,7 +730,7 @@ test "loot exposes single pickup and take all through controller and mouse contr
     const panel = book.size(view);
     try std.testing.expect(panel.y < layout.SIZE.y);
     try std.testing.expectEqual(@as(f32, @floatFromInt(panel.y - layout.ACTION_H - menu.PANEL_PAD)), book.actionBox(menu.CONFIRM, view).y);
-    const card = item_card.height(.{ .kind = .cap }, .helm);
+    const card = item_card.height(&.{}, layout.DETAIL_W, .{ .kind = .cap }, .helm);
     try std.testing.expect(book.cellBox(0, view).x + layout.LIST_W < layout.DETAIL_X and layout.LOOT_TOP + card <= layout.LOOT_FOOT_Y);
     var many: [layout.LOOT_ROWS + 4]Nearby = undefined;
     for (&many, 0..) |*n, i| n.* = .{ .loot = .{ .index = i, .item = .{ .kind = .axe } } };

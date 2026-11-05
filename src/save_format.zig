@@ -243,8 +243,11 @@ pub fn validate(snapshot: *Snapshot) !void {
             }
             switch (node.plan) {
                 .procgen => |*plan| plan.* = plan.fit(),
-                .bespoke => |*plan| for (plan.foes()) |foe| {
-                    if (!foe.kind.foe() or !grid.Level.inside(foe.at)) return error.Damaged;
+                .bespoke => |*plan| {
+                    for (plan.foes()) |foe| {
+                        if (!foe.kind.foe() or !grid.Level.inside(foe.at)) return error.Damaged;
+                    }
+                    for (plan.torches()) |at| if (!grid.Level.inside(at)) return error.Damaged;
                 },
             }
         }

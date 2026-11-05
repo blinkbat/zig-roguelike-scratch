@@ -1184,6 +1184,92 @@ test "each spark that stuns costs a chasing rat its next turn, and mana is spent
     std.debug.print("spark: {d} lightning over 2 stunning hits; the rat lost both turns, then walked on\n", .{dealt});
 }
 
+test "wet melee skills strike surfaced swimmers without opening water to walking" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = from.add(.{ .x = 1, .y = 0 });
+    const acts = [_]skillbar.Act{ .shield_bash, .rend, .cleave, .whirlwind };
+    for (acts) |act| {
+        harness.heroArena(g, .knight, from, &.{});
+        g.sim.lv.set(at, .water);
+        const id = harness.spawnAt(g, .bog_leech, at, true);
+        const foe = g.sim.pool.get(id).?;
+        harness.toughen(foe);
+        foe.pin.turns = pinning.TURNS_HI;
+        game.settle(g);
+        try std.testing.expect(foe.seenFoe(&g.sim.lv));
+        try std.testing.expect(!g.sim.lv.walkable(at));
+        if (act.reticle() != null) harness.aimAt(g, act, at) else harness.useAct(g, act);
+        try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
+        try std.testing.expect(foe.hp < harness.TEST_HP);
+        try std.testing.expectEqual(at, foe.at);
+        try std.testing.expectEqual(from, g.sim.heroActor().?.at);
+    }
+    std.debug.print("wet melee: {d} knight skills damage surfaced deep-water leeches; pinned targets and the hero stay put\n", .{acts.len});
+}
+
+test "wet knockback follows swimming and walking landings and preserves obstacles" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const from = P{ .x = 20, .y = 20 };
+    const at = from.add(.{ .x = 1, .y = 0 });
+    const back = at.add(.{ .x = 1, .y = 0 });
+    const Case = enum { water, shallows, floor, pinned, barrier, body, folk, barrel, wall };
+    var checked: usize = 0;
+    for ([_]actor.Kind{ .bog_leech, .rat, .bloat }) |kind| {
+        for (std.enums.values(Case)) |case| {
+            harness.heroArena(g, .knight, from, &.{});
+            g.sim.lv.set(at, if (kind == .bog_leech) .water else .floor);
+            g.sim.lv.set(back, switch (case) {
+                .shallows => .shallows,
+                .floor => .floor,
+                .wall => .wall,
+                else => .water,
+            });
+            const id = harness.spawnAt(g, kind, at, true);
+            const foe = g.sim.pool.get(id).?;
+            harness.toughen(foe);
+            switch (case) {
+                .pinned => foe.pin.turns = pinning.TURNS_HI,
+                .barrier => g.sim.lv.barrier[grid.Level.idx(back)] = 2,
+                .body => _ = harness.spawnAt(g, .bog_leech, back, true),
+                .folk => g.sim.lv.putFolk(back, 0),
+                .barrel => g.sim.lv.putBarrel(back),
+                else => {},
+            }
+            game.settle(g);
+            combat.knock(g, .charge, .e, .{ .from = from, .wait = 0 });
+            const moves = switch (case) {
+                .water => kind == .bog_leech,
+                .shallows => true,
+                .floor => kind != .bog_leech,
+                else => false,
+            };
+            try std.testing.expect(foe.hp < harness.TEST_HP);
+            try std.testing.expectEqual(if (moves) back else at, foe.at);
+            checked += 1;
+        }
+    }
+    std.debug.print("wet knockback: {d} swimmer, walker and flyer landings cover water, shallows, dry floor, pin, barrier, body, folk, barrel and wall\n", .{checked});
+    for ([_]bool{ false, true }) |pinned| {
+        harness.heroArena(g, .knight, from, &.{});
+        g.sim.lv.set(at, .water);
+        g.sim.lv.set(back, .water);
+        const id = harness.spawnAt(g, .bog_leech, at, true);
+        const foe = g.sim.pool.get(id).?;
+        harness.toughen(foe);
+        skipsNext(foe);
+        if (pinned) foe.pin.turns = pinning.TURNS_HI;
+        game.settle(g);
+        harness.aimAt(g, .charge, at);
+        try std.testing.expect(foe.hp < harness.TEST_HP);
+        try std.testing.expectEqual(if (pinned) at else back, foe.at);
+        try std.testing.expectEqual(from, g.sim.heroActor().?.at);
+    }
+    std.debug.print("wet charge: confirmation knocks a surfaced leech into deeper water; pin keeps it in place and neither cast moves the hero into water\n", .{});
+}
+
 test "a knight's shield bash knocks a foe back a tile, and its stun keeps the foe from stepping back in" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

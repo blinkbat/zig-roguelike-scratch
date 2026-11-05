@@ -177,7 +177,8 @@ three seams, yielding **81 nodes: 3 x (1 + 2 x 12) + 6**. Each of the six final
 branch nodes is a capstone.
 
 Local reward and name tables are keyed by their branch, arm or seam enum. Node
-counts derive from the ring widths and enum sizes; preserve node order when
+counts derive from the ring widths and enum sizes. Cistern's portable saves use
+stable node identities rather than array positions; preserve those identities when
 changing the authoring code so saved allocations keep the same meaning.
 
 | Sibling arm | Branches | Structural intent to retain |
@@ -263,11 +264,12 @@ allocation also requires a passive point. The visual distinction between reachab
 and affordable must survive when the budget reaches zero. These rules are local
 choices, not a claim that PoE2 has the same root or prerequisite rules.
 
-Changing the former graph also changes the meaning and number of saved allocation
-bits. Preserve the existing strict save fingerprint mechanism and reject
-incompatible layouts; never reinterpret old node indices as new rewards. A future
-migration needs its own deliberate mapping and verification.
-[Save layout contract](../src/save.zig), [project instructions](../AGENTS.md).
+Portable saves identify allocations by `(arm, branch, seam, ring, slot)` and refund
+removed identities. Reordering nodes needs no migration; changing an identity's
+meaning needs an explicit mapping and verification. The legacy raw reader remains
+fingerprint-gated and rejects unknown layouts, including the former hex graph;
+never reinterpret those old indices as new rewards.
+[Save compatibility](SAVE_FORMAT.md), [value conversions](../src/save_values.zig).
 
 ## Simple graphics specification
 
@@ -421,7 +423,8 @@ repository, following [`AGENTS.md`](../AGENTS.md).
   critical information.
 - Allocation consumes the proper point pool once; cancel consumes nothing and
   browsing advances no turn.
-- A changed graph is covered by the save compatibility fingerprint.
+- A changed graph preserves portable node identities or supplies a tested migration;
+  the legacy fingerprint still guards raw layouts.
 - Existing active skill prerequisites and ranks remain their own system, even when
   their page shares the new visual language.
 

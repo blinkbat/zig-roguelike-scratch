@@ -407,6 +407,49 @@ test "steam scalds each body in it for a little fire damage a turn, less in wate
     try std.testing.expectEqual(3 * fx.TICK_WISPS, wisps);
 }
 
+test "steam stays transparent and masked scalding reaches mana shield once per turn without burning" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const at = P{ .x = 20, .y = 20 };
+    const beyond = at.add(.{ .x = 3, .y = 0 });
+    var paid: i32 = 0;
+    for (0..100) |seed| {
+        harness.heroArena(g, .wizard, at, &.{});
+        g.sim.inventory.gear.slots.set(.helm, .{ .kind = .hood, .mods = .{ .{ .kind = .masked, .value = 40 }, null, null, null } });
+        const h = g.sim.heroActor().?;
+        h.ward.turns = 3;
+        g.sim.rng = mathx.Rng.init(seed);
+        var cells = grid.Cells.around(at, 1);
+        while (cells.next()) |p| g.sim.lv.release(.steam, p, gas.BOIL);
+        game.settle(g);
+        try std.testing.expect(g.sim.lv.isLit(beyond));
+        const hp = h.hp;
+        const mana = g.sim.mana;
+        harness.useAct(g, .wait);
+        const spent = mana - g.sim.mana;
+        try harness.expectWithin(spent, 1, gas.SCALD);
+        paid += spent;
+        try std.testing.expectEqual(hp, h.hp);
+        try std.testing.expectEqual(@as(u8, 0), h.burn.turns);
+        try std.testing.expectEqual(mana, g.sim.mana + g.pic.mana_held);
+        g.pic.stepGlide(&g.sim, g.cloud, 0);
+        game.update(g, harness.TEST_DT);
+        harness.drawnOut(g);
+        try std.testing.expectEqual(@as(i32, 0), g.pic.mana_held);
+        try std.testing.expectEqual(mana - spent, g.sim.mana);
+        const volume = g.sim.lv.steam;
+        g.st = .{};
+        for (0..30) |_| game.update(g, harness.TEST_DT);
+        try std.testing.expectEqualSlices(u16, &volume, &g.sim.lv.steam);
+        try std.testing.expectEqual(mana - spent, g.sim.mana);
+    }
+    try std.testing.expect(paid > 100 and paid < 150);
+    g.sim.lv.release(.smoke, at.add(.{ .x = 1, .y = 0 }), gas.SMOKE_BURST);
+    game.settle(g);
+    try std.testing.expect(!g.sim.lv.isLit(beyond));
+    std.debug.print("steam compatibility: 100 masked shield ticks cost {d} mana, no life or burn; idle frames preserve steam/mana, steam stays transparent and smoke blocks sight\n", .{paid});
+}
+
 test "thick smoke hides what lies past its nearest cell, both ways, and thin smoke nothing; it harms nothing and no foe shuns it" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

@@ -190,7 +190,7 @@ pub fn imbued(e: damage.Element) resilience.Kind {
 }
 /// The modifiers loot rolls, in roll order, with their value ranges.
 const AffixRoll = struct { kind: Mod, lo: i32, hi: i32 };
-const AFFIXES = [_]AffixRoll{
+pub const AFFIXES = [_]AffixRoll{
     .{ .kind = .life, .lo = 2, .hi = 6 },
     .{ .kind = .mana, .lo = 1, .hi = 3 },
     .{ .kind = .strength, .lo = 1, .hi = 3 },

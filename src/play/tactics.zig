@@ -162,7 +162,12 @@ pub const Whirlwind = struct {
     pub const VERB = "whirls into";
     pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
     pub const DESCRIPTION = "Strike every adjacent foe and barrel with your melee weapon.";
-    pub const area = glacial.Patch(ADJACENT).area;
+    pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
+        var out = glacial.Burst{};
+        const cells = lv.reachable(mathx.ALL_DIRS.len, at, mathx.ALL_DIRS[0..mathx.ALL_DIRS.len].*);
+        for (cells.slice()) |p| out.push(p);
+        return out;
+    }
 };
 pub const Unyielding = struct {
     pub const COST: i32 = 2;

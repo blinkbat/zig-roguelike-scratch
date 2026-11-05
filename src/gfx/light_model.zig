@@ -8,6 +8,7 @@ const shaders = @import("shaders.zig");
 const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const visibility = @import("light_visibility.zig");
+const ground = @import("ground.zig");
 
 pub const P = mathx.P;
 pub const Rgb = sky.Rgb;
@@ -159,6 +160,32 @@ pub fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
         if (over <= 0) continue;
         lit = @min(lit, 1 - smooth(over));
         if (lit <= 0) return 0;
+    }
+    return lit;
+}
+
+pub fn bankSunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
+    if (z != 0 or sky.upright(ray.flat)) return 1;
+    const height = ground.bankHeight(lv.at(mathx.cellOf(.{ x, y })));
+    if (height == 0) return 1;
+    var lit: f32 = 1;
+    if (ground.bankFoot(lv, .{ x, y })) |foot| {
+        if (y >= foot) lit = 1 - 0.35 * (1 - mathx.smoothstep(0, 3.0 / 64.0, y - foot));
+    }
+    const far = height / ray.rise;
+    var distance: f32 = SUN_STEP * 0.25;
+    while (distance < far) : (distance += SUN_STEP * 0.5) {
+        const q = [2]f32{ x + ray.u[0] * distance, y + ray.u[1] * distance };
+        const p = mathx.cellOf(q);
+        if (!grid.Level.inside(p)) break;
+        var bed = ground.bedAt(lv, p, false) orelse continue;
+        if (ground.bankLip(lv, q)) |lip| {
+            if (q[1] < lip) bed = ground.bedAt(lv, p.add(.{ .x = 0, .y = -1 }), false) orelse continue;
+        }
+        if (!ground.bankAbove(bed.tile(), lv.at(mathx.cellOf(.{ x, y })))) continue;
+        const drop = height - ground.bankHeight(bed.tile());
+        lit = @min(lit, 1 - smooth(std.math.clamp((drop - distance * ray.rise) / (SUN_SOFT * drop), 0, 1)));
+        if (lit == 0) return 0;
     }
     return lit;
 }

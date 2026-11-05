@@ -121,6 +121,30 @@ test "a blinded hero sees only the cells beside it for three of its turns" {
     std.debug.print("blind hero: {d} turns seeing {d} cell, then a cell 4 off is lit again\n", .{ blinded, blind.SIGHT });
 }
 
+test "hero blindness does not hide it from unblinded foes beyond adjacent cells" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    const grid = @import("../../map/grid.zig");
+    const ahead = FROM.add(.{ .x = 3, .y = 0 });
+    const between = FROM.add(.{ .x = 1, .y = 0 });
+    for (0..3) |obstacle| {
+        harness.arena(g, FROM, &.{});
+        const id = harness.spawnAt(g, .rat, ahead, false);
+        if (obstacle == 1) {
+            for (0..@intCast(grid.H)) |y| g.sim.lv.set(.{ .x = between.x, .y = @intCast(y) }, .wall);
+        } else if (obstacle == 2) {
+            for (0..@intCast(grid.H)) |y| g.sim.lv.smoke[grid.Level.idx(.{ .x = between.x, .y = @intCast(y) })] = 60000;
+        }
+        blind.afflict(g.sim.heroActor().?, &g.sim.rng);
+        game.castSight(g, FROM);
+        try std.testing.expect(!g.sim.lv.inLos(ahead));
+        combat.endTurn(g);
+        try std.testing.expectEqual(obstacle == 0, g.sim.pool.get(id).?.awake);
+        try std.testing.expect(!g.sim.lv.isLit(ahead));
+    }
+    std.debug.print("blind hero: an unblinded rat notices across open floor; walls and thick smoke still hide the hero\n", .{});
+}
+
 test "a confused hero's moves stray about as often as its chance, only onto moves that spend a turn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);

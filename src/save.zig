@@ -1,4 +1,5 @@
 const std = @import("std");
+const mathx = @import("core/mathx.zig");
 const items = @import("play/items.zig");
 const store = @import("core/store.zig");
 const game = @import("game.zig");
@@ -492,6 +493,55 @@ fn testMap() !*Map {
     return m;
 }
 
+test "save terrain refuses unvisited bespoke torches outside the map before mutation" {
+    const alloc = std.testing.allocator;
+    const world = try testMap();
+    defer alloc.destroy(world);
+    world.node[1].plan = .{ .bespoke = .{} };
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    game.beginMapAt(source, world, world.start, 37);
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    game.begin(target, 91);
+    const into = try alloc.create(Map);
+    defer alloc.destroy(into);
+    into.* = .{};
+    const map_hash = store.sum(std.mem.asBytes(into));
+    var before = std.ArrayList(u8).init(alloc);
+    defer before.deinit();
+    try write(target, &before);
+    seal(&before);
+    var corrupt = std.ArrayList(u8).init(alloc);
+    defer corrupt.deinit();
+    var after = std.ArrayList(u8).init(alloc);
+    defer after.deinit();
+    const invalid = [_]mathx.P{
+        .{ .x = -1, .y = 10 },
+        .{ .x = grid.W, .y = 10 },
+        .{ .x = 10, .y = -1 },
+        .{ .x = 10, .y = grid.H },
+        .{ .x = 10, .y = std.math.maxInt(i32) },
+    };
+    for ([_]bool{ false, true }) |legacy| {
+        for (invalid) |at| {
+            world.node[1].plan.bespoke.torch = .{};
+            _ = world.node[1].plan.bespoke.torch.add(at);
+            corrupt.clearRetainingCapacity();
+            if (legacy) try writeLegacy(source, &corrupt) else try write(source, &corrupt);
+            seal(&corrupt);
+            try std.testing.expectError(error.Damaged, peek(corrupt.items));
+            try std.testing.expectError(error.Damaged, read(corrupt.items, target, into));
+            try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(into)));
+            after.clearRetainingCapacity();
+            try write(target, &after);
+            seal(&after);
+            try std.testing.expectEqualSlices(u8, before.items, after.items);
+        }
+    }
+    std.debug.print("saved terrain: {d} invalid unvisited torch positions rejected in portable and legacy saves; listing/loading preserve the live run and map\n", .{invalid.len});
+}
+
 test "a run reads back as it was written, and a short or foreign file leaves the game alone" {
     const alloc = std.testing.allocator;
     const w = try testMap();
@@ -626,6 +676,10 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     const at = g.sim.heroActor().?.at.add(.{ .x = 2, .y = 0 });
     g.sim.lv.barrier[grid.Level.idx(at)] = 3;
     g.sim.lv.caltrops[grid.Level.idx(at)] = .{ .turns = 4, .rank = 2 };
+    const cloud_at = grid.Level.idx(.{ .x = 69, .y = 49 });
+    for ([_]*grid.Level{ &g.sim.lv, &g.sim.visits[0].lv }, 0..) |lv, floor| {
+        for (std.enums.values(grid.Gas), 0..) |kind, i| lv.volumes(kind)[cloud_at] = @intCast(23 + floor * 100 + i * 7);
+    }
     var first = std.ArrayList(u8).init(alloc);
     defer first.deinit();
     const snapshot = try alloc.create(format.Snapshot);
@@ -659,6 +713,10 @@ test "portable saves retain the recorded gameplay values and rewrite canonically
     try std.testing.expectEqualDeep(g.sim.heroActor().?.tactics, back.sim.heroActor().?.tactics);
     try std.testing.expectEqual(@as(u8, 3), back.sim.lv.barrier[grid.Level.idx(at)]);
     try std.testing.expectEqual(@as(u8, 2), back.sim.lv.caltrops[grid.Level.idx(at)].rank);
+    for ([_]*const grid.Level{ &g.sim.lv, &g.sim.visits[0].lv }, [_]*const grid.Level{ &back.sim.lv, &back.sim.visits[0].lv }) |before, after| {
+        for (std.enums.values(grid.Gas)) |kind| try std.testing.expectEqualSlices(u16, before.volumes(kind), after.volumes(kind));
+    }
+    std.debug.print("saved clouds: all {d} gas fields, including steam, retained independently on current and visited floors\n", .{std.enums.values(grid.Gas).len});
     var again = std.ArrayList(u8).init(alloc);
     defer again.deinit();
     try write(back, &again);
