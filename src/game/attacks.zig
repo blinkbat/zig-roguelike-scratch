@@ -13,6 +13,7 @@ const enfeeble = @import("../play/enfeeble.zig");
 const shock = @import("../play/shock.zig");
 const burning = @import("../play/burning.zig");
 const glacial = @import("../play/glacial.zig");
+const rules = @import("../play/tactics.zig");
 const simulation = @import("sim.zig");
 const Simulation = simulation.Simulation;
 
@@ -23,6 +24,8 @@ pub const Roll = struct {
     effect: items.WeaponEffect = .{},
     applied: ?resilience.Kind = null,
     hit_checked: bool = false,
+    /// Opportunist's bonus as the target stood before this blow's own ailment.
+    opportunity: ?i32 = null,
 
     pub fn against(self: Roll, armour: i32, rng: *mathx.Rng) Roll {
         var out = self;
@@ -38,6 +41,11 @@ pub const Rolled = struct {
 
     pub fn physical(h: Rolled) Roll {
         return .{ .dmg = h.blow.physical, .physical = h.blow.physical, .crit = h.crit, .effect = h.effect };
+    }
+
+    /// Its whole blow past `resists`, armour still to take its physical part.
+    pub fn against(h: Rolled, resists: damage.Resists) Roll {
+        return .{ .dmg = h.blow.total(resists), .physical = h.blow.physical, .crit = h.crit, .effect = h.effect };
     }
 };
 
@@ -127,7 +135,7 @@ pub fn heroLands(sim: *Simulation, a: *const actor.Actor, origin: chronicle.Atta
 
 /// `dmg` past armour as it lands on `target`: cut by an enfeebled striker, then raised by the target's shock.
 pub fn landed(weak: bool, target: *actor.Actor, dmg: i32) i32 {
-    return target.shock.spend(enfeeble.weaken(weak, dmg));
+    return shock.spend(&target.shock, enfeeble.weaken(weak, dmg));
 }
 
 fn heroWeak(sim: *const Simulation) bool {
@@ -136,7 +144,7 @@ fn heroWeak(sim: *const Simulation) bool {
 
 fn blowOn(weak: bool, bonus: i32, s: *shock.Shock, dmg: i32, applied: ?resilience.Kind) i32 {
     const weakened = enfeeble.weaken(weak, mathx.percentCeil(dmg, mathx.PERCENT + bonus));
-    return if (applied == .shock) weakened else s.spend(weakened);
+    return if (applied == .shock) weakened else shock.spend(s, weakened);
 }
 
 /// The hero's percent more damage against `a`, from Opportunist's.
@@ -153,6 +161,18 @@ pub fn dealt(sim: *const Simulation, target: *const actor.Actor, dmg: i32, appli
 pub fn bite(rng: *mathx.Rng, attacker: terrain.Stats, defender: terrain.Stats, s: actor.Strike) ?i32 {
     if (attacker.misses(defender, rng)) return null;
     return s.roll(rng);
+}
+
+/// `rolled` before the target's resistance or armour, its guard, an enfeebled striker and its shock; `dealt` after.
+pub const FoeBlow = struct { rolled: i32, dealt: i32 };
+
+/// A foe's strike `s` on `target`; null when it misses.
+pub fn foeBlow(sim: *Simulation, attacker: *const actor.Actor, target: *actor.Actor, s: actor.Strike, weak: bool) ?FoeBlow {
+    const defended = sim.combatStats(target);
+    const rolled = bite(&sim.rng, sim.combatStats(attacker), defended, s) orelse return null;
+    var dmg = if (s.element) |e| damage.resisted(rolled, defended.elements.get(e)) else attrs.armoured(defended.armour, rolled, &sim.rng);
+    if (s.element == null and target.tactics.guard > 0) dmg = rules.Guard.reduce(target.tactics.guard, dmg);
+    return .{ .rolled = rolled, .dealt = landed(weak, target, dmg) };
 }
 
 pub const Hit = struct {
@@ -181,7 +201,7 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
     const a = sim.pool.get(target.value) orelse return null;
     if (!raw.hit_checked and !heroLands(sim, a, origin)) return .miss;
     var r = raw.against(sim.combatStats(a).armour, &sim.rng);
-    r.dmg = blowOn(heroWeak(sim), opportune(sim, a), &a.shock, r.dmg, r.applied);
+    r.dmg = blowOn(heroWeak(sim), r.opportunity orelse opportune(sim, a), &a.shock, r.dmg, r.applied);
     const kind = a.kind;
     const at = a.at;
     const perks = sim.heroPerks();
@@ -198,8 +218,9 @@ pub fn resolve(sim: *Simulation, target: actor.ActorId, raw: Roll, origin: chron
             a.clock.stun();
             stunned = true;
         }
-        inline for (IMBUED) |M| {
-            if (r.applied != M.AILMENT and sim.procStatus(a, M.AILMENT, r.effect.chance(M.AILMENT))) {
+        inline for (IMBUED, items.IMBUES) |M, e| {
+            const chance = damage.resistedChance(r.effect.chance(M.AILMENT), sim.combatStats(a).elements.get(e));
+            if (r.applied != M.AILMENT and sim.procStatus(a, M.AILMENT, chance)) {
                 M.afflict(a, &sim.rng);
                 imbued.insert(M.AILMENT);
             }

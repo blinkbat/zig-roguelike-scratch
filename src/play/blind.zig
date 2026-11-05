@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const resilience = @import("resilience.zig");
 
+pub const AILMENT = resilience.Kind.blind;
 pub const TURNS: u8 = 3;
 /// Cells a blinded body sees.
 pub const SIGHT: i32 = 1;

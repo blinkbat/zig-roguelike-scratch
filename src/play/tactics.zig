@@ -5,6 +5,7 @@ const damage = @import("damage.zig");
 const glacial = @import("glacial.zig");
 const bow = @import("bow.zig");
 const resilience = @import("resilience.zig");
+const actor = @import("actor.zig");
 const P = mathx.P;
 
 pub const Caltrops = struct {
@@ -69,19 +70,12 @@ pub const GravityWell = struct {
         w.print("Pull: {d} cell{s}; pin: {d} turn{s}.", .{ pulls(rank), mathx.plural(pulls(rank)), pins(rank), mathx.plural(pins(rank)) }) catch {};
     }
 };
-pub const Combustion = struct {
-    pub const COST: i32 = 5;
-    pub const COOLDOWN: u8 = 3;
-    pub const RANGE: i32 = 7;
+pub const Combustion = Detonation(struct {
     pub const VERB = "detonates";
     pub const ELEMENT = damage.Element.fire;
-    pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
-    pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding {d} damage per remaining burn turn.", .{FUEL_DAMAGE});
+    pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's burn. Explode it and its neighbors for fire damage, adding {d} damage per remaining burn turn.", .{DETONATION_FUEL});
     pub const FUEL = resilience.Kind.burn;
-    pub const FUEL_DAMAGE: i32 = 2;
-    pub const REACH: i32 = 1;
-    pub const area = glacial.Patch(REACH).area;
-};
+});
 pub const ArcaneBarrier = struct {
     pub const COST: i32 = 6;
     pub const COOLDOWN: u8 = 6;
@@ -101,19 +95,12 @@ pub const ArcaneBarrier = struct {
         w.print("Wall: up to {d} cells, {d} turns.", .{ length(rank), duration(rank) }) catch {};
     }
 };
-pub const Shatter = struct {
-    pub const COST: i32 = 5;
-    pub const COOLDOWN: u8 = 3;
-    pub const RANGE: i32 = 7;
+pub const Shatter = Detonation(struct {
     pub const VERB = "shatters";
     pub const ELEMENT = damage.Element.cold;
-    pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
-    pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's chill. Shatter it and its neighbors for cold damage, adding {d} damage per remaining chill turn.", .{FUEL_DAMAGE});
+    pub const DESCRIPTION = std.fmt.comptimePrint("Consume a visible foe's chill. Shatter it and its neighbors for cold damage, adding {d} damage per remaining chill turn.", .{DETONATION_FUEL});
     pub const FUEL = resilience.Kind.chill;
-    pub const FUEL_DAMAGE: i32 = 2;
-    pub const REACH: i32 = 1;
-    pub const area = glacial.Patch(REACH).area;
-};
+});
 pub const FireWall = struct {
     pub const COST: i32 = 6;
     pub const COOLDOWN: u8 = 5;
@@ -164,7 +151,7 @@ pub const Whirlwind = struct {
     pub const DESCRIPTION = "Strike every adjacent foe and barrel with your melee weapon.";
     pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
         var out = glacial.Burst{};
-        const cells = lv.reachable(mathx.ALL_DIRS.len, at, mathx.ALL_DIRS[0..mathx.ALL_DIRS.len].*);
+        const cells = actor.sweep(lv, at);
         for (cells.slice()) |p| out.push(p);
         return out;
     }
@@ -195,6 +182,25 @@ const ADJACENT: i32 = 1;
 /// A rank counted as at least the first.
 fn ranked(rank: u8) u8 {
     return @max(1, rank);
+}
+
+const DETONATION_FUEL: i32 = 2;
+
+/// Combustion and Shatter: a visible foe's `Words.FUEL` spent in a blast of `Words.ELEMENT` round it.
+fn Detonation(comptime Words: type) type {
+    return struct {
+        pub const COST: i32 = 5;
+        pub const COOLDOWN: u8 = 3;
+        pub const RANGE: i32 = 7;
+        pub const VERB = Words.VERB;
+        pub const ELEMENT = Words.ELEMENT;
+        pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
+        pub const DESCRIPTION = Words.DESCRIPTION;
+        pub const FUEL = Words.FUEL;
+        pub const FUEL_DAMAGE = DETONATION_FUEL;
+        pub const REACH: i32 = 1;
+        pub const area = glacial.Patch(REACH).area;
+    };
 }
 pub fn covered(from: P, dir: mathx.Dir, at: P) bool {
     return mathx.ahead(from, dir.delta(), at);

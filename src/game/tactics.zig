@@ -181,7 +181,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     for (ids.slice()) |id| {
         const a = g.sim.pool.get(id) orelse continue;
         const hit = attacks.heroScaled(&g.sim, act, raw);
-        combat.wound(g, id, .{ .dmg = hit.blow.total(g.sim.combatStats(a).elements), .crit = hit.crit }, Skill.VERB, s);
+        combat.wound(g, id, hit.against(g.sim.combatStats(a).elements), Skill.VERB, s);
     }
     if (comptime Skill.ELEMENT == .fire) combat.boil(g, at, Skill.REACH, s.wait);
 }

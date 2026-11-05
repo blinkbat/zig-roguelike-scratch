@@ -252,8 +252,8 @@ fn arrow(from: rl.Rectangle, to: rl.Rectangle, ink: rl.Color) void {
     rl.drawLineEx(a, .{ .x = a.x, .y = elbow }, 1, ink);
     rl.drawLineEx(.{ .x = a.x, .y = elbow }, .{ .x = b.x, .y = elbow }, 1, ink);
     rl.drawLineEx(.{ .x = b.x, .y = elbow }, b, 1, ink);
-    rl.drawLineEx(.{ .x = b.x - 4, .y = b.y - 5 }, b, 1, ink);
-    rl.drawLineEx(.{ .x = b.x + 4, .y = b.y - 5 }, b, 1, ink);
+    rl.drawLineEx(.{ .x = b.x - ARROW_HEAD.x, .y = b.y - ARROW_HEAD.y }, b, 1, ink);
+    rl.drawLineEx(.{ .x = b.x + ARROW_HEAD.x, .y = b.y - ARROW_HEAD.y }, b, 1, ink);
 }
 
 pub const SkillState = enum {
@@ -284,6 +284,13 @@ fn skillInk(class: hero.Class, growth: *const progress.State, s: progress.Skill)
 const LEARNABLE_A: f32 = 0.8;
 const ORPHAN_A: f32 = 0.3;
 const LOCKED_A: f32 = 0.55;
+/// A passive node out of reach, its arm's colour faded this far; and the link to it.
+const DISTANT_A: f32 = 0.55;
+const CLOSED_LINE_A: f32 = 0.65;
+/// Back and out from an arrow's point, each side of its head.
+const ARROW_HEAD = rl.Vector2{ .x = 4, .y = 5 };
+/// Half the bridge mark's width and the half-gap between its two bars.
+const SEAM_MARK = rl.Vector2{ .x = 3, .y = 2 };
 
 fn skillAlpha(class: hero.Class, growth: *const progress.State, s: progress.Skill) f32 {
     return switch (SkillState.of(class, growth, s)) {
@@ -322,7 +329,7 @@ fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, class: hero.
     skillDetails(face, class, growth, skills[cursor], loadout);
 }
 
-fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Skill, buf: *menu.Note(128)) ?[:0]const u8 {
+fn skillReason(class: hero.Class, growth: *const progress.State, s: progress.Skill, buf: *Prose) ?[:0]const u8 {
     if (progress.basic(s.act) or growth.maxed(s.act)) return null;
     if (s.parent) |p| if (!growth.unlocked(p)) {
         buf.say("Learn {s} first.", .{p.name()});
@@ -342,12 +349,13 @@ fn drawAction(face: *const font.Face, label: [:0]const u8, enabled: bool) void {
 }
 
 const Hit = progress.Hit;
+const Prose = menu.Note(128);
 
 fn skillHit(growth: *const progress.State, act: skillbar.Act, loadout: Loadout) ?Hit {
     return growth.preparedHit(loadout.stats, loadout.gear, act, loadout.steady);
 }
 
-fn hitText(act: skillbar.Act, hit: Hit, text: *menu.Note(128)) [:0]const u8 {
+fn hitText(act: skillbar.Act, hit: Hit, text: *Prose) [:0]const u8 {
     if (hit.element) |e| {
         if (hit.physical.hi > 0) {
             text.say(damage.MIXED_FMT, .{ hit.physical.lo, hit.physical.hi, e.lo, e.hi, menu.word(act.element().?) });
@@ -366,14 +374,14 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     if (progress.basic(s.act)) rank.say("Basic attack", .{}) else if (learned) rank.say("Rank {d} of {d}", .{ growth.ranks.get(s.act), progress.rankLimit(s.act) }) else rank.say("Not learned", .{});
     face.draw(rank.text(), x, RANK_Y, font.SMALL, skillInk(class, growth, s));
     var desc: menu.Note(256) = .{};
-    s.act.describe(desc.writer(), loadout.gear.draughts(loadout.gear.perks(growth.perks())), s.act.reachWith(loadout.gear.bounding()));
+    s.act.describe(desc.writer(), loadout.gear.draughtsOver(growth.perks()), s.act.reachWith(loadout.gear.bounding()));
     const end = paragraph(face, desc.text(), x, DESC_Y, TEXT_W, look.TEXT);
     var top: i32 = @max(RULE_MIN_Y, end + RULE_GAP);
     rl.drawLine(x, top, x + TEXT_W, top, BORDER);
     top += RULE_GAP;
     face.draw(if (progress.basic(s.act)) "ATTACK" else if (learned) "CURRENT RANK" else "FIRST RANK", x, top, font.SMALL, look.DIM);
     top += CAPTION_STEP;
-    var text: menu.Note(128) = .{};
+    var text: Prose = .{};
     const hit = skillHit(growth, s.act, loadout);
     if (hit) |h| {
         top = paragraph(face, hitText(s.act, h, &text), x, top, TEXT_W, look.TEXT);
@@ -389,7 +397,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
     const maximum = growth.maxed(s.act);
     var next = growth.*;
     if (!maximum) next.ranks.getPtr(s.act).* += 1;
-    var ranked: menu.Note(128) = .{};
+    var ranked: Prose = .{};
     next.writeRank(s.act, ranked.writer());
     const mana_changes = next.cost(s.act) != growth.cost(s.act);
     const damage_changes = next.damageBonus(s.act) != growth.damageBonus(s.act);
@@ -419,7 +427,7 @@ fn skillDetails(face: *const font.Face, class: hero.Class, growth: *const progre
             top = paragraph(face, text.text(), x, top, TEXT_W, OWNED);
         }
     }
-    var reason: menu.Note(128) = .{};
+    var reason: Prose = .{};
     if (skillReason(class, growth, s, &reason)) |why| _ = paragraph(face, why, x, REASON_Y, TEXT_W, if (growth.canLearn(class, s.act)) OWNED else look.DIM);
     if (!progress.basic(s.act)) drawAction(face, if (maximum) "Maximum rank" else if (learned) "Upgrade skill" else "Learn skill", growth.canLearn(class, s.act));
 }
@@ -497,15 +505,20 @@ fn wheelLayout(view: View) Layout {
     return layout;
 }
 
+/// A node's radius: this share of a ring's unit, but never under `least` pixels.
+const NodeSize = struct { least: f32, share: f32 };
+const ORIGIN_SIZE = NodeSize{ .least = 8, .share = 0.26 };
+const SEAM_SIZE = NodeSize{ .least = 8, .share = 0.23 };
+const TIER_SIZE = std.EnumArray(passives.Tier, NodeSize).init(.{
+    .stat = .{ .least = 5, .share = 0.15 },
+    .interest = .{ .least = 7, .share = 0.21 },
+    .capstone = .{ .least = 10, .share = 0.30 },
+});
+
 fn nodeRadius(i: usize, unit: f32) f32 {
-    if (passives.NODES[i].ring == 0) return @max(8, unit * 0.26);
     const n = passives.NODES[i];
-    if (n.seam != null) return @max(8, unit * 0.23);
-    return switch (n.tier) {
-        .stat => @max(5, unit * 0.15),
-        .interest => @max(7, unit * 0.21),
-        .capstone => @max(10, unit * 0.30),
-    };
+    const size = if (n.ring == 0) ORIGIN_SIZE else if (n.seam != null) SEAM_SIZE else TIER_SIZE.get(n.tier);
+    return @max(size.least, unit * size.share);
 }
 
 fn armInk(arm: passives.Arm) rl.Color {
@@ -562,14 +575,14 @@ const NodeState = enum {
 };
 
 fn nodeInk(state: NodeState, arm: passives.Arm) rl.Color {
-    return if (state == .distant) look.fade(armInk(arm), 0.55) else state.ink();
+    return if (state == .distant) look.fade(armInk(arm), DISTANT_A) else state.ink();
 }
 
 fn passiveLink(layout: Layout, pos: *const Positions, growth: *const progress.State, from: usize, to: usize) void {
     const before = growth.nodes.isSet(from);
     const after = growth.nodes.isSet(to);
     const bridge = passives.NODES[from].seam != null;
-    const ink = if (before and after) OWNED else if (before or (bridge and after)) OPEN_LINE else look.fade(LINE, 0.65);
+    const ink = if (before and after) OWNED else if (before or (bridge and after)) OPEN_LINE else look.fade(LINE, CLOSED_LINE_A);
     const a = pos[from];
     const b = pos[to];
     if (!layout.shows(a, b, 2)) return;
@@ -609,7 +622,7 @@ fn drawPassives(face: *const font.Face, class: hero.Class, growth: *const progre
         if (n.ring == 0) {
             face.centred(armInitial(n.arm), @intFromFloat(@round(p.x)), @intFromFloat(@round(p.y)), font.SMALL, if (state == .allocated) BACK else look.TEXT);
         } else if (n.seam) |s| {
-            for ([_]f32{ -2, 2 }) |dy| rl.drawLineEx(.{ .x = p.x - 3, .y = p.y + dy }, .{ .x = p.x + 3, .y = p.y + dy }, 1, if (state == .allocated) BACK else armInk(s.to()));
+            for ([_]f32{ -SEAM_MARK.y, SEAM_MARK.y }) |dy| rl.drawLineEx(.{ .x = p.x - SEAM_MARK.x, .y = p.y + dy }, .{ .x = p.x + SEAM_MARK.x, .y = p.y + dy }, 1, if (state == .allocated) BACK else armInk(s.to()));
         }
     }
     ring(pos[view.cursor], nodeRadius(view.cursor, layout.unit) + NODE_FOCUS_GROW, FOCUS);

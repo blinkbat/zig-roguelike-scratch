@@ -29,8 +29,8 @@ test "a body faces right until it steps, aims or turns on someone to its left, a
     harness.nudge(g, .w);
     harness.drawnOut(g);
     try std.testing.expectEqual(actor.Facing.left, g.pic.facing[hero]);
-    try std.testing.expectEqual(actor.Facing.right, g.pic.facing[actor.Pool.slot(2)]);
-    try std.testing.expectEqual(actor.Facing.left, g.pic.facing[actor.Pool.slot(3)]);
+    try std.testing.expectEqual(actor.Facing.right, g.pic.facing[harness.foeSlot(0)]);
+    try std.testing.expectEqual(actor.Facing.left, g.pic.facing[harness.foeSlot(1)]);
     harness.nudge(g, .n);
     try std.testing.expectEqual(actor.Facing.left, g.pic.facing[hero]);
     harness.nudge(g, .e);
@@ -83,7 +83,7 @@ test "the archer sees further by day than by night out of doors, and as little a
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 40, .y = 30 }, &.{});
     var seen: [4]usize = undefined;
-    for ([_]f32{ day.NOON, shots.LATE_DUSK, shots.MIDNIGHT }, 0..) |h, i| {
+    for ([_]f32{ day.NOON, shots.LATE_DUSK, day.MIDNIGHT }, 0..) |h, i| {
         g.sim.clock = day.Clock.at(h);
         game.settle(g);
         seen[i] = std.mem.count(bool, &g.sim.lv.lit, &.{true});
@@ -160,7 +160,7 @@ test "a step into a wall turns no one and spends no turn" {
     g.sim.lv.set(.{ .x = 19, .y = 20 }, .wall);
     harness.nudge(g, .w);
     try std.testing.expectEqual(actor.Facing.right, g.pic.facing[g.sim.heroSlot().?]);
-    try std.testing.expectEqual(P{ .x = 25, .y = 20 }, g.sim.pool.get(2).?.at);
+    try std.testing.expectEqual(P{ .x = 25, .y = 20 }, g.sim.pool.get(harness.foeId(0)).?.at);
 }
 
 test "a node's sky shows its light and its weather out of doors, and neither under a roof" {
@@ -233,7 +233,7 @@ test "a door takes the archer to the door it leads to, and a node left is found 
     try std.testing.expectEqual(@as(usize, 0), g.sim.ground.coin_n);
     try std.testing.expectEqual(P{ .x = 12, .y = 5 }, g.sim.heroActor().?.at);
     try std.testing.expectEqual(@as(usize, 2), g.sim.pool.n);
-    try std.testing.expectEqual(slime, g.sim.pool.items[actor.Pool.slot(2)].at);
+    try std.testing.expectEqual(slime, g.sim.pool.items[harness.foeSlot(0)].at);
     try std.testing.expect(g.sim.lv.isSeen(.{ .x = 10, .y = 5 }));
     std.debug.print("through a door and back: node {d}, the slime still at {d},{d}\n", .{ g.sim.node, slime.x, slime.y });
 }
@@ -287,7 +287,7 @@ test "a door keeps the low glow, a level-up, the archer's facing and a walk pres
     try std.testing.expectApproxEqAbs(low, g.vignette.low, 0.05);
 }
 
-test "stepping into a glow plant bursts it into healing gas for a turn, leaving its grass and taking its light" {
+test "stepping into a glowbulb bursts it into healing gas for a turn, leaving its grass and taking its light" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 20, .y = 20 };
@@ -312,7 +312,7 @@ test "stepping into a glow plant bursts it into healing gas for a turn, leaving 
     try std.testing.expectEqual(game.Move.step, game.heroMove(g, .e));
 }
 
-test "a glow plant shot in the dark keeps its pool drawn, and the foe it lit, until the arrow lands" {
+test "a glowbulb shot in the dark keeps its pool drawn, and the foe it lit, until the arrow lands" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     const from = P{ .x = 22, .y = 20 };

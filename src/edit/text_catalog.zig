@@ -10,6 +10,8 @@ const FILE_CAP = atlas_text.TEXT_CAP;
 const TAG_FILE = "text-tags.json";
 const LABEL_FILE = wording.FILE;
 const SRC = "src/";
+/// A map file's header before its version.
+const MAP_WORD = atlas_text.HEADER[0..std.mem.indexOfScalar(u8, atlas_text.HEADER, ' ').?];
 const ZIG = ".zig";
 pub const Author = enum { unknown, you, ai, mixed };
 pub const SaveResult = enum { saved, tags_not_saved };
@@ -371,7 +373,7 @@ pub const Catalog = struct {
 
 fn included(path: []const u8) bool {
     if (!std.mem.endsWith(u8, path, ZIG)) return false;
-    for ([_][]const u8{ "tests/", "shots.zig", "harness.zig", "atlas_text.zig", "script_text.zig", "text_catalog.zig", "text_panel.zig" }) |part| {
+    for ([_][]const u8{"tests/"} ++ EXCLUDED_SOURCES) |part| {
         if (std.mem.indexOf(u8, path, part) != null) return false;
     }
     if (std.mem.endsWith(u8, path, "tests.zig")) return false;
@@ -381,12 +383,40 @@ fn included(path: []const u8) bool {
 
 const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
 const LONE_SOURCES = [_][]const u8{ "app.zig", "game.zig", "save.zig", "save_data.zig", "gfx/look.zig", "gfx/fx.zig" };
+const EXCLUDED_SOURCES = [_][]const u8{ "game/shots.zig", "game/harness.zig", "map/atlas_text.zig", "map/script_text.zig", "edit/text_catalog.zig", "edit/text_panel.zig" };
 const KEYBOARD_SOURCE = "ui/naming.zig";
 const KEYBOARD_DECL = "LETTERS";
+/// Declarations `spoken` judges by name: never prose, then always prose.
+const SOURCED_TECHNICAL = [_][]const u8{ "SYMBOLS", "TTF", "DATA_TTF" };
+const TECHNICAL_DECLS = [_][]const u8{"PROBED"} ++ SOURCED_TECHNICAL;
+const SPOKEN_DECLS = [_][]const u8{ "NAME", "NUMBERS", FRIGHT_WORDS };
+/// A source declaring each of those names but `PROBED`, which only tests pin.
+const DECL_SOURCES = [_][2][]const u8{
+    .{ KEYBOARD_SOURCE, KEYBOARD_DECL },
+    .{ "map/biome/site.zig", "SYMBOLS" },
+    .{ "gfx/font.zig", "TTF" },
+    .{ "gfx/font.zig", "DATA_TTF" },
+    .{ "map/gas.zig", "NAME" },
+    .{ "play/hero.zig", "NUMBERS" },
+    .{ "gfx/fx.zig", FRIGHT_WORDS },
+    .{ "play/bow.zig", "VERB" },
+    .{ "play/juke.zig", "DONE" },
+    .{ "play/burning.zig", "TAKES" },
+    .{ "play/bleeding.zig", "RETAKES" },
+    .{ "play/actor.zig", "SWEEP_VERB" },
+};
 
 comptime {
-    for (INPUT_SOURCES ++ LONE_SOURCES) |p| _ = @embedFile("../" ++ p);
-    if (std.mem.indexOf(u8, @embedFile("../" ++ KEYBOARD_SOURCE), "const " ++ KEYBOARD_DECL ++ " ") == null) @compileError(KEYBOARD_SOURCE ++ " no longer declares " ++ KEYBOARD_DECL);
+    @setEvalBranchQuota(100_000);
+    for (INPUT_SOURCES ++ LONE_SOURCES ++ EXCLUDED_SOURCES) |p| _ = @embedFile("../" ++ p);
+    for (DECL_SOURCES) |d| {
+        if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "const " ++ d[1] ++ " ") == null) @compileError(d[0] ++ " no longer declares " ++ d[1]);
+    }
+    for (SOURCED_TECHNICAL ++ SPOKEN_DECLS ++ ACTION_WORDS) |name| {
+        for (DECL_SOURCES) |d| {
+            if (std.mem.eql(u8, d[1], name)) break;
+        } else @compileError(name ++ " has no source to check");
+    }
 }
 
 fn inputSource(path: []const u8) bool {
@@ -717,9 +747,9 @@ fn spoken(text: []const u8, bytes: []const u8, ts: []const Token, i: usize) bool
     }
     if (letters == 0) return false;
     const decl = declaration(bytes, ts, i) orelse "";
-    if (oneOf(decl, &.{ "PROBED", "SYMBOLS", "TTF", "DATA_TTF" }) or std.mem.endsWith(u8, decl, "_FIELDS")) return false;
-    if (oneOf(decl, &ACTION_WORDS) or oneOf(decl, &.{ "NAME", "NUMBERS", FRIGHT_WORDS })) return true;
-    for ([_][]const u8{ ZIG, ".png", ".ttf", atlas.EXT, ".json", "#version", "void main", "uniform ", "layout(", "roguelike-map", "shots/", "assets/", atlas.PREFIX, store.DIR ++ "/" }) |part| {
+    if (oneOf(decl, &TECHNICAL_DECLS) or std.mem.endsWith(u8, decl, "_FIELDS")) return false;
+    if (oneOf(decl, &ACTION_WORDS) or oneOf(decl, &SPOKEN_DECLS)) return true;
+    for ([_][]const u8{ ZIG, ".png", ".ttf", atlas.EXT, ".json", "#version", "void main", "uniform ", "layout(", MAP_WORD, "shots/", "assets/", atlas.PREFIX, store.DIR ++ "/" }) |part| {
         if (std.mem.indexOf(u8, text, part) != null) return false;
     }
     const from = i -| 12;
@@ -740,7 +770,7 @@ fn lineOf(bytes: []const u8, at: usize) usize {
     return 1 + std.mem.count(u8, bytes[0..at], "\n");
 }
 
-fn hash(text: []const u8) u64 {
+pub fn hash(text: []const u8) u64 {
     return std.hash.Wyhash.hash(0, text);
 }
 

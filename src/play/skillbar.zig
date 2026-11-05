@@ -106,14 +106,13 @@ pub const Act = enum {
         };
     }
 
-    /// Its description as flask recovery `bonus` changes it.
     /// What it does for a hero drinking `bonus` and reaching `reach_` cells.
     pub fn describe(a: Act, w: anytype, bonus: flask.Bonus, reach_: i32) void {
         switch (a) {
             inline else => |t| if (comptime has(t, "describe"))
                 module(t).?.describe(w, bonus)
             else if (comptime t.moves())
-                module(t).?.describeReach(w, reach_)
+                contracts.describeReach(module(t).?, w, reach_)
             else
                 w.writeAll(t.desc()) catch {},
         }

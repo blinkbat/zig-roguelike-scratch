@@ -89,19 +89,39 @@ pub const REQUIREMENT_GAP = 10;
 pub const HELD_NOTE_DY = 42;
 /// The most cells any page lays out by box.
 pub const CELLS_MAX = @max(skillbar.ACTS.len, items.SLOTS.len);
+/// The paperdoll: big and small cells in five columns, a gutter between every two.
+const SLOT_BIG = 96;
+const SLOT_SMALL = 54;
+const SLOT_GUTTER = 12;
+const SLOT_LEFT = 65;
+const SLOT_TOP = 62;
+const HANDS_Y = 128;
+const LOW_Y = 320;
+const SLOT_X = blk: {
+    var xs: [5]i32 = undefined;
+    var x: i32 = SLOT_LEFT;
+    for (&xs, [_]i32{ SLOT_BIG, SLOT_SMALL, SLOT_BIG, SLOT_SMALL, SLOT_BIG }) |*at, w| {
+        at.* = x;
+        x += w + SLOT_GUTTER;
+    }
+    break :blk xs;
+};
+const CHEST_Y = SLOT_TOP + SLOT_BIG + SLOT_GUTTER;
+const FLASK_Y = LOW_Y + SLOT_SMALL + SLOT_GUTTER;
+const FLASK_W = @divExact(SLOT_X[3] + SLOT_SMALL - SLOT_X[1] - SLOT_GUTTER, 2);
 pub const SLOT_BOX = std.EnumArray(items.Slot, struct { at: P, w: i32, h: i32 }).init(.{
-    .right_hand = .{ .at = .{ .x = 65, .y = 128 }, .w = 96, .h = 180 },
-    .left_hand = .{ .at = .{ .x = 413, .y = 128 }, .w = 96, .h = 180 },
-    .helm = .{ .at = .{ .x = 239, .y = 62 }, .w = 96, .h = 96 },
-    .chest = .{ .at = .{ .x = 239, .y = 170 }, .w = 96, .h = 138 },
-    .amulet = .{ .at = .{ .x = 347, .y = 104 }, .w = 54, .h = 54 },
-    .gloves = .{ .at = .{ .x = 65, .y = 320 }, .w = 96, .h = 96 },
-    .right_ring = .{ .at = .{ .x = 173, .y = 320 }, .w = 54, .h = 54 },
-    .belt = .{ .at = .{ .x = 239, .y = 320 }, .w = 96, .h = 54 },
-    .left_ring = .{ .at = .{ .x = 347, .y = 320 }, .w = 54, .h = 54 },
-    .boots = .{ .at = .{ .x = 413, .y = 320 }, .w = 96, .h = 96 },
-    .life_flask = .{ .at = .{ .x = 173, .y = 386 }, .w = 108, .h = 54 },
-    .mana_flask = .{ .at = .{ .x = 293, .y = 386 }, .w = 108, .h = 54 },
+    .right_hand = .{ .at = .{ .x = SLOT_X[0], .y = HANDS_Y }, .w = SLOT_BIG, .h = LOW_Y - SLOT_GUTTER - HANDS_Y },
+    .left_hand = .{ .at = .{ .x = SLOT_X[4], .y = HANDS_Y }, .w = SLOT_BIG, .h = LOW_Y - SLOT_GUTTER - HANDS_Y },
+    .helm = .{ .at = .{ .x = SLOT_X[2], .y = SLOT_TOP }, .w = SLOT_BIG, .h = SLOT_BIG },
+    .chest = .{ .at = .{ .x = SLOT_X[2], .y = CHEST_Y }, .w = SLOT_BIG, .h = LOW_Y - SLOT_GUTTER - CHEST_Y },
+    .amulet = .{ .at = .{ .x = SLOT_X[3], .y = SLOT_TOP + SLOT_BIG - SLOT_SMALL }, .w = SLOT_SMALL, .h = SLOT_SMALL },
+    .gloves = .{ .at = .{ .x = SLOT_X[0], .y = LOW_Y }, .w = SLOT_BIG, .h = SLOT_BIG },
+    .right_ring = .{ .at = .{ .x = SLOT_X[1], .y = LOW_Y }, .w = SLOT_SMALL, .h = SLOT_SMALL },
+    .belt = .{ .at = .{ .x = SLOT_X[2], .y = LOW_Y }, .w = SLOT_BIG, .h = SLOT_SMALL },
+    .left_ring = .{ .at = .{ .x = SLOT_X[3], .y = LOW_Y }, .w = SLOT_SMALL, .h = SLOT_SMALL },
+    .boots = .{ .at = .{ .x = SLOT_X[4], .y = LOW_Y }, .w = SLOT_BIG, .h = SLOT_BIG },
+    .life_flask = .{ .at = .{ .x = SLOT_X[1], .y = FLASK_Y }, .w = FLASK_W, .h = SLOT_SMALL },
+    .mana_flask = .{ .at = .{ .x = SLOT_X[1] + FLASK_W + SLOT_GUTTER, .y = FLASK_Y }, .w = FLASK_W, .h = SLOT_SMALL },
 });
 pub const SLOT_LABEL = font.SMALL;
 pub const SLOT_INSET = 4;

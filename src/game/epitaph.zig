@@ -69,7 +69,7 @@ pub fn of(g: *const game.Game) ossuary.Entry {
     for (mathx.ALL_DIRS) |d| {
         const to = h.at.add(d.delta());
         if (s.pool.getConst(s.lv.who(to))) |a| {
-            if (a.foe()) beside += 1;
+            if (a.foe() and !a.veiled()) beside += 1;
         }
         if (s.lv.stepOk(h.at, d, grid.NO_ONE)) open += 1;
     }

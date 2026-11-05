@@ -111,7 +111,7 @@ const MAP_FLAG_AT = HEAD + @sizeOf(Summary) + @sizeOf(Seed);
 const MAP_AT = MAP_FLAG_AT + @sizeOf(bool);
 const Raw = struct { map: RawMap, visit: RawVisit, lv: RawLevel };
 
-pub const Error = error{ NotASave, OtherBuild, Short, Damaged };
+pub const Error = format.OpenError;
 
 /// Into an empty `out`, all but the sum `seal` ends it with.
 fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
@@ -149,14 +149,16 @@ fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
 
 /// Ends a file `write` began in `out` with its sum, in the room `write` kept, so it may run off the frame.
 fn seal(out: *std.ArrayList(u8)) void {
-    store.sealReserved(out, if (std.mem.startsWith(u8, out.items, format.MAGIC)) store.head(format.MAGIC) else HEAD);
+    store.sealReserved(out, if (portable(out.items)) store.head(format.MAGIC) else HEAD);
+}
+
+/// Written by `format`, not the raw legacy writer.
+fn portable(bytes: []const u8) bool {
+    return std.mem.startsWith(u8, bytes, format.MAGIC);
 }
 
 fn payload(bytes: []const u8) Error![]const u8 {
-    return store.open(bytes, MAGIC, FINGERPRINT) catch |e| switch (e) {
-        error.Foreign => error.NotASave,
-        else => |other| other,
-    };
+    return format.open(bytes, MAGIC, FINGERPRINT);
 }
 
 fn peekLegacy(bytes: []const u8) !Summary {
@@ -258,12 +260,12 @@ fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
 }
 
 fn read(bytes: []const u8, g: *game.Game, map: *Map) !void {
-    if (std.mem.startsWith(u8, bytes, format.MAGIC)) return format.read(bytes, g, map);
+    if (portable(bytes)) return format.read(bytes, g, map);
     try readLegacy(bytes, g, map);
 }
 
 fn peek(bytes: []const u8) !Summary {
-    if (std.mem.startsWith(u8, bytes, format.MAGIC)) return format.peek(bytes);
+    if (portable(bytes)) return format.peek(bytes);
     return peekLegacy(bytes);
 }
 

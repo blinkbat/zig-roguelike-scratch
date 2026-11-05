@@ -516,17 +516,11 @@ pub const Editor = struct {
     }
 
     pub fn rolled(ed: *Editor) ?*atlas.Procgen {
-        return switch (ed.plan().*) {
-            .procgen => |*pg| pg,
-            .bespoke => null,
-        };
+        return ed.plan().procgenOf();
     }
 
     pub fn painted(ed: *Editor) ?*atlas.Bespoke {
-        return switch (ed.plan().*) {
-            .bespoke => |*b| b,
-            .procgen => null,
-        };
+        return ed.plan().bespokeOf();
     }
 
     pub fn generator(ed: *Editor) ?*atlas.Procgen {

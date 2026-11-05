@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const resilience = @import("resilience.zig");
 
+pub const AILMENT = resilience.Kind.maim;
 pub const TURNS: u8 = 4;
 pub const TAKES = "is maimed";
 pub const LIMPS = "limps";

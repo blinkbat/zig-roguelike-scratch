@@ -72,6 +72,15 @@ pub fn foes(g: *game.Game) []actor.Actor {
     return g.sim.pool.slice()[1..];
 }
 
+/// The `i`th body spawned after the hero, as an arena's rats are.
+pub fn foeId(i: usize) u16 {
+    return actor.Pool.idOf(foeSlot(i));
+}
+
+pub fn foeSlot(i: usize) usize {
+    return i + 1;
+}
+
 pub fn wakeFoes(g: *game.Game) void {
     for (foes(g)) |*a| a.awake = true;
 }

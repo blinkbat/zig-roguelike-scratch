@@ -6,6 +6,31 @@ pub const GAIN: u8 = 25;
 pub const EXPIRY: u8 = 5;
 pub const ABOUT = std.fmt.comptimePrint("Repeated harmful statuses build resistance. Each successful application adds {d}%; it expires after {d} turns without another successful application.", .{ GAIN, EXPIRY });
 
+/// The module owning `k`'s turns, `TAKES` and `STATUS`; stun lives on the clock and fright on the actor.
+pub fn module(comptime k: Kind) type {
+    return switch (k) {
+        .burn => @import("burning.zig"),
+        .bleed => @import("bleeding.zig"),
+        .chill => @import("glacial.zig"),
+        .pin => @import("pinning.zig"),
+        .shock => @import("shock.zig"),
+        .sunder => @import("sunder.zig"),
+        .blind => @import("blind.zig"),
+        .confusion => @import("confusion.zig"),
+        .enfeeble => @import("enfeeble.zig"),
+        .maim => @import("maim.zig"),
+        .stun, .fright => @compileError(@tagName(k) ++ " has no module of its own"),
+    };
+}
+
+comptime {
+    for (std.enums.values(Kind)) |k| {
+        if (k == .stun or k == .fright) continue;
+        const m = module(k);
+        std.debug.assert(m.AILMENT == k and @hasDecl(m, "TAKES") and @hasDecl(m, "STATUS"));
+    }
+}
+
 pub const Meter = struct {
     percent: u8 = 0,
     turns: u8 = 0,

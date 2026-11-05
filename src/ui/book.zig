@@ -560,7 +560,8 @@ pub const Book = struct {
     }
 };
 
-const CONTROLS_MAX = 5;
+/// A page shows each button at most once.
+const CONTROLS_MAX = std.enums.values(input.Button).len;
 /// A labelled button; a prompt over a button the tree panel draws, at this alpha; or drawn there whole.
 const Shown = union(enum) { label: [:0]const u8, prompt: f32, drawn };
 const Control = struct { box: rl.Rectangle, button: input.Button, shown: Shown };

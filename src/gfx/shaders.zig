@@ -49,9 +49,11 @@ pub fn program(comptime T: type, comptime fs: [:0]const u8) ?T {
     return uniforms(T, shader(fs) orelse return null);
 }
 
-/// `value` to the uniform at `loc`, its GLSL type read off its Zig type.
+/// `value` to the uniform at `loc`, its GLSL type read off its Zig type; a `bool` goes as an `int`.
 pub fn setUniform(s: rl.Shader, loc: i32, value: anytype) void {
-    rl.setShaderValue(s, loc, &value, comptime uniformType(@TypeOf(value)));
+    if (@TypeOf(value) == bool) {
+        setUniform(s, loc, @as(i32, @intFromBool(value)));
+    } else rl.setShaderValue(s, loc, &value, comptime uniformType(@TypeOf(value)));
 }
 
 /// The first `n` of `values` to the uniform array at `loc`.
@@ -154,6 +156,16 @@ pub const MAP_VIEW_FS =
 
 pub const SIN_HASH_FS =
     \\float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    \\
+;
+
+/// `SIN_HASH_FS`'s `hash` without `sin`.
+pub const FRACT_HASH_FS =
+    \\float hash(vec2 p) {
+    \\    p = fract(p * vec2(123.34, 456.21));
+    \\    p += dot(p, p + 45.32);
+    \\    return fract(p.x * p.y);
+    \\}
     \\
 ;
 

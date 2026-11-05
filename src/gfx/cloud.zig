@@ -266,13 +266,8 @@ const CLOUD_NOISE = shaders.glslConsts(.{
     .DRIFT = DRIFT,
 }) ++
     \\uniform float time;
-    \\float hash(vec2 p) {
-    \\    p = fract(p * vec2(123.34, 456.21));
-    \\    p += dot(p, p + 45.32);
-    \\    return fract(p.x * p.y);
-    \\}
     \\
-++ shaders.VALUE_NOISE_FS ++
+++ shaders.FRACT_HASH_FS ++ shaders.VALUE_NOISE_FS ++
     \\float fbm(vec2 p) {
     \\    float v = 0.0;
     \\    float a = FBM_GAIN;

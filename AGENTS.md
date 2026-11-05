@@ -254,7 +254,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   Its swamp trees (`assets/swamp-tree.png`, standalone `swamp_tree` tiles) scatter on dirt in two passes: within three cells
   of water/shallows, then within twelve but none within four, and within two of other dry ground (`water_range`, `water_clear`,
   `land_range`: Near water, Off water, Near land). Each knob's 0 leaves other maps unrestricted.
-  A few glow plants (`glow_plant`, a pale blue `&` glyph and light) scatter on its grass as natural torches. Stepping into one
+  A few glowbulbs (`glow_plant`, `assets/glowbulb.png` with a pale blue light) scatter on its grass as natural torches. Stepping into one
   (`Move.burst`, a spent turn) or striking it (`combat.smash`; arrows and bolts stop on it as on a barrel, `bow.Hit.plant`) bursts it into healing gas (`gas.burst`, Brogue's bloodwort pod) and leaves its grass; `Light.uproot` drops its light.
 
 ## Combat and simulation

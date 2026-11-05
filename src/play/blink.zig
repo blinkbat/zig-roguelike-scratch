@@ -8,12 +8,8 @@ pub const COOLDOWN: u8 = 3;
 pub const COST: i32 = 7;
 pub const TELEPORTS = true;
 pub const DONE = "blinks away";
-const DESCRIBED = "Teleport to visible empty ground within {d} tiles.";
+pub const DESCRIBED = "Teleport to visible empty ground within {d} tiles.";
 pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIBED, .{RANGE});
-
-pub fn describeReach(w: anytype, range: i32) void {
-    w.print(DESCRIBED, .{range}) catch {};
-}
 
 comptime {
     std.debug.assert(RANGE > juke.RANGE and COST > juke.COST);

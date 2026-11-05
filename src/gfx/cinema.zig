@@ -28,7 +28,7 @@ const Focus = struct { shader: rl.Shader, texel: i32, strength: i32 };
 
 const Focused = look.Focused;
 const Bloom = struct { shader: rl.Shader, field: i32, visibility: i32, glints: i32, origin: i32, cell: i32, screen: i32, direction: i32, extract: i32 };
-const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, daylight: i32, brightness: i32, direction: i32 };
+const Air = struct { shader: rl.Shader, field: i32, visibility: i32, origin: i32, cell: i32, screen: i32, time: i32, sunlight: i32, brightness: i32, direction: i32 };
 const Grade = struct { shader: rl.Shader, visibility: i32, origin: i32, cell: i32, screen: i32 };
 
 /// How far toward grey remembered cells are drawn.
@@ -151,14 +151,14 @@ pub const Cinema = struct {
         if (self.blooms() and visibility != null and glints != null and raster.beginTarget(&self.spread, size, outer, rl.Color.black)) {
             const b = self.bloom.?;
             rl.beginShaderMode(b.shader);
-            self.bindBloom(b, view, visibility.?, glints.?, .{ BLOOM_STEP, 0 }, 1);
+            self.bindBloom(b, view, visibility.?, glints.?, .{ BLOOM_STEP, 0 }, true);
             drawTarget(scene);
             rl.endShaderMode();
             raster.endTarget(outer);
             self.composite(scene, view, visibility);
             rl.beginBlendMode(.additive);
             rl.beginShaderMode(b.shader);
-            self.bindBloom(b, view, visibility.?, glints.?, .{ 0, BLOOM_STEP }, 0);
+            self.bindBloom(b, view, visibility.?, glints.?, .{ 0, BLOOM_STEP }, false);
             drawTarget(self.spread.?.texture);
             rl.endShaderMode();
             rl.endBlendMode();
@@ -178,7 +178,7 @@ pub const Cinema = struct {
         rl.endBlendMode();
     }
 
-    fn bindBloom(self: *Cinema, b: Bloom, view: shaders.MapView, visibility: rl.Texture2D, glints: rl.Texture2D, direction: [2]f32, extract: i32) void {
+    fn bindBloom(self: *Cinema, b: Bloom, view: shaders.MapView, visibility: rl.Texture2D, glints: rl.Texture2D, direction: [2]f32, extract: bool) void {
         setField(b, self.field.?, visibility, view);
         rl.setShaderValueTexture(b.shader, b.glints, glints);
         shaders.setUniform(b.shader, b.direction, direction);
@@ -211,7 +211,7 @@ pub const Cinema = struct {
         rl.beginShaderMode(a.shader);
         setField(a, field, visibility, .{ .origin = origin, .cell = cell, .screen = .{ @floatFromInt(screen.x), @floatFromInt(screen.y) } });
         shaders.setUniform(a.shader, a.time, l.t.at());
-        shaders.setUniform(a.shader, a.daylight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
+        shaders.setUniform(a.shader, a.sunlight, k.sun() * std.math.clamp(sky.luma(k.key), 0, 1));
         shaders.setUniform(a.shader, a.brightness, std.math.clamp(sky.brightness(k), AIR_DARKEST, 1));
         shaders.setUniform(a.shader, a.direction, k.across());
         rl.drawRectangle(0, 0, screen.x, screen.y, rl.Color.white);
@@ -296,7 +296,7 @@ const GRADE_FS = shaders.FS_HEAD ++ shaders.MAP_VIEW_FS ++ shaders.glslConsts(.{
 
 const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR = SHAFT_NEAR, .SHAFT_FAR = SHAFT_FAR, .MIST_TINT = look.MIST_TINT, .SHAFT_TINT = look.SHAFT_TINT, .MIST_GAIN = MIST_GAIN, .SHAFT_GAIN = SHAFT_GAIN, .DUST_GAIN = DUST_GAIN, .DUST_EMPTY = DUST_EMPTY, .AIR_DRIFT = AIR_DRIFT }) ++
     \\uniform float time;
-    \\uniform float daylight;
+    \\uniform float sunlight;
     \\uniform float brightness;
     \\uniform vec2 direction;
     \\
@@ -315,13 +315,13 @@ const AIR_FS = shaders.FS_HEAD ++ FIELD_FS ++ shaders.glslConsts(.{ .SHAFT_NEAR 
     \\    float trees = (softField(p + direction * SHAFT_NEAR).CROWN + softField(p + direction * SHAFT_FAR).CROWN) * 0.5;
     \\    float band = dot(p, vec2(-direction.y, direction.x));
     \\    float shafts = pow(max(0.0, sin(band * 4.7 + noise(p * 0.3) * 2.0)), 10.0);
-    \\    shafts *= trees * (1.0 - f.CROWN) * daylight * SHAFT_GAIN;
+    \\    shafts *= trees * (1.0 - f.CROWN) * sunlight * SHAFT_GAIN;
     \\    vec2 drift = vec2(time * AIR_DRIFT, sin(time * 0.18) * 0.06);
     \\    vec2 dustCell = floor(p - drift);
     \\    float seed = hash(dustCell);
     \\    vec2 dotAt = vec2(seed, hash(dustCell + 19.0)) * 0.7 + 0.15;
     \\    float dust = (1.0 - smoothstep(0.008, 0.024, length(fract(p - drift) - dotAt))) * step(DUST_EMPTY, seed);
-    \\    dust *= daylight * (0.25 + trees) * DUST_GAIN * (0.6 + 0.4 * sin(time * 0.7 + seed * 20.0));
+    \\    dust *= sunlight * (0.25 + trees) * DUST_GAIN * (0.6 + 0.4 * sin(time * 0.7 + seed * 20.0));
     \\    float alpha = (mist + shafts + dust) * live;
     \\    vec3 tint = (MIST_TINT * mist + SHAFT_TINT * (shafts + dust)) / max(mist + shafts + dust, 0.00001);
     \\    finalColor = vec4(tint, alpha);

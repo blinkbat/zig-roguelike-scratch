@@ -232,7 +232,7 @@ test "a glowing plant pools pale blue light round its own cell and draws a glow 
     var ids: [light.LIGHTS]light.TorchIx = undefined;
     const near = l.near(grid.Box.inMap(0), &ids);
     const top = l.at(&lv, near, mathx.centre(at)) - l.at(&lv, &.{}, mathx.centre(at));
-    std.debug.print("glow plant light by cells along the floor:", .{});
+    std.debug.print("glowbulb light by cells along the floor:", .{});
     var last = std.math.floatMax(f32);
     for ([_]f32{ 1, 2, 3, 4, 5, 6, @floatFromInt(light.REACH) }) |r| {
         const q = [2]f32{ mathx.centre(at)[0] + r, mathx.centre(at)[1] };

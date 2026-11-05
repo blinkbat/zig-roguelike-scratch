@@ -282,7 +282,13 @@ pub fn place(lv: *grid.Level, pool: *actor.Pool, rng: *mathx.Rng, start: P, exit
     for (spec.quotaOrder()) |k| {
         while (packs < spec.packs and pool.tally(k).total < spec.few) {
             const m = spec.pick(rng, k, bodies, homeless) orelse break;
-            if (placeOne(lv, pool, rng, start, exits, spec, m, &bodies)) packs += 1 else homeless.add(m);
+            const before = pool.tally(k).total;
+            if (!placeOne(lv, pool, rng, start, exits, spec, m, &bodies)) {
+                homeless.add(m);
+                continue;
+            }
+            packs += 1;
+            if (pool.tally(k).total == before) break;
         }
     }
     while (packs < spec.packs) {
@@ -508,6 +514,21 @@ test "a quota skips a makeup whose lead the pool has no room for, for one holdin
     std.debug.print("two places left, a slime-led makeup weighted {d} to 1: {d} pibs\n", .{ WEIGHT_MAX, pool.tally(.pib).total });
     try std.testing.expectEqual(@as(usize, 2), pool.tally(.pib).total);
     try std.testing.expectEqual(@as(usize, 0), pool.tally(.slime).total);
+}
+
+test "a quota whose makeup places its lead but not the kind gives way to the next kind's" {
+    var lv = grid.openFloor();
+    var spec = Spec{ .packs = 14, .few = 1, .gap = 0, .makeup_n = 3 };
+    spec.makeup[0] = Makeup.of(&.{ .rat, .bog_leech });
+    spec.makeup[1] = Makeup.of(&.{.pib});
+    spec.makeup[2] = Makeup.of(&.{ .pib, .rat });
+    var pool = actor.Pool{};
+    var rng = mathx.Rng.init(0x5EED);
+    place(&lv, &pool, &rng, .{ .x = 0, .y = 0 }, &.{}, &spec);
+    const pibs = pool.tally(.pib).total;
+    std.debug.print("a leech-holding makeup on a dry floor: no leeches, {d} pibs still placed\n", .{pibs});
+    try std.testing.expectEqual(@as(usize, 0), pool.tally(.bog_leech).total);
+    try std.testing.expect(pibs >= spec.few);
 }
 
 test "a counted makeup places exactly its packs, an exit one's lead by a door, and is never drawn by weight" {

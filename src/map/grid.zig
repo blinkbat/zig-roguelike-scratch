@@ -245,12 +245,18 @@ pub fn mendProps(tile: *[CELLS]Tile) void {
     }
 }
 
-/// The whole wider prop covering `i`, if one does, back to its ground.
-pub fn unprop(tile: *[CELLS]Tile, i: usize) void {
-    const head = headOf(tile, i) orelse return;
+/// The cells of the wider prop covering `i`, its head to the end of its parts.
+pub fn propSpan(tile: *const [CELLS]Tile, i: usize) ?struct { head: usize, end: usize } {
+    const head = headOf(tile, i) orelse return null;
     var end = head + 1;
     while (end < head + @as(usize, @intCast(tile[head].wide())) and Level.of(end).x > 0 and tile[end].isPart()) end += 1;
-    for (tile[head..end]) |*t| t.* = t.bare();
+    return .{ .head = head, .end = end };
+}
+
+/// The whole wider prop covering `i`, if one does, back to its ground.
+pub fn unprop(tile: *[CELLS]Tile, i: usize) void {
+    const span = propSpan(tile, i) orelse return;
+    for (tile[span.head..span.end]) |*t| t.* = t.bare();
 }
 
 comptime {
@@ -356,6 +362,21 @@ pub const LITTER_TILES = tilesWhere(struct {
         return TERRAIN.getPtrConst(t).litter;
     }
 }.of);
+
+/// Every `single` tile, in order: the palette's choices.
+pub const SINGLES = blk: {
+    var out: []const Tile = &.{};
+    for (std.enums.values(Tile)) |t| {
+        if (t.single()) out = out ++ &[_]Tile{t};
+    }
+    break :blk out;
+};
+
+/// A generator knob of type `T` may hold `v`: any value but a tile that is not `single`.
+pub fn knobbable(comptime T: type, v: T) bool {
+    if (T != Tile) return true;
+    return v.single();
+}
 
 /// Same-material neighbours, stamped by `gen.shapeWalls`; its bits are the wall sheets' masks.
 pub const WallShape = packed struct(u8) {
@@ -724,7 +745,9 @@ pub const Level = struct {
     }
 
     pub fn strikeable(self: *const Level, p: P) bool {
-        return inside(p) and !self.hasBarrier(p) and (!self.at(p).solid() or (self.at(p).wet() and self.who(p) != NO_ONE));
+        if (!inside(p) or self.hasBarrier(p)) return false;
+        const t = self.at(p);
+        return !t.solid() or (t.wet() and self.who(p) != NO_ONE);
     }
 
     /// The cells one step from `from` along `dirs` that a melee blow could reach, in their order.
@@ -841,6 +864,10 @@ pub const Box = struct {
 
     pub fn sized(lo: P, w: i32, h: i32) Box {
         return .{ .lo = lo, .hi = lo.add(.{ .x = w, .y = h }) };
+    }
+
+    pub fn sizedP(lo: P, size: P) Box {
+        return sized(lo, size.x, size.y);
     }
 
     /// The cells from `a` to `b`, both included, whichever corners they are.
@@ -1032,6 +1059,50 @@ pub const Flood = struct {
         return here;
     }
 };
+
+/// Every neighbour's offset, in `mathx.ALL_DIRS` order.
+pub const STEPS = blk: {
+    var out: [mathx.ALL_DIRS.len]P = undefined;
+    for (mathx.ALL_DIRS, &out) |d, *s| s.* = d.delta();
+    break :blk out;
+};
+
+/// Breadth first from its seeds over the cells `steps` join that `ok` takes; a cell's neighbours are looked at only once `next` has given it.
+pub fn Spread(comptime Ctx: type, comptime ok: fn (Ctx, P) bool) type {
+    return struct {
+        ctx: Ctx,
+        steps: []const P,
+        seen: *CellSet,
+        queue: *[CELLS]u32,
+        head: usize = 0,
+        tail: usize = 0,
+        given: bool = false,
+
+        pub fn seed(self: *@This(), p: P) void {
+            const i = Level.idx(p);
+            if (self.seen.isSet(i)) return;
+            self.seen.set(i);
+            self.queue[self.tail] = @intCast(i);
+            self.tail += 1;
+        }
+
+        pub fn next(self: *@This()) ?P {
+            if (self.given) {
+                self.given = false;
+                const here = Level.of(self.queue[self.head - 1]);
+                for (self.steps) |d| {
+                    const q = here.add(d);
+                    if (!Level.inside(q) or self.seen.isSet(Level.idx(q)) or !ok(self.ctx, q)) continue;
+                    self.seed(q);
+                }
+            }
+            if (self.head == self.tail) return null;
+            self.head += 1;
+            self.given = true;
+            return Level.of(self.queue[self.head - 1]);
+        }
+    };
+}
 
 /// Bresenham from the cell after `from` up to and including `to`.
 pub const Ray = struct {

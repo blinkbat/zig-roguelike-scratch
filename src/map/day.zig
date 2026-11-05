@@ -5,6 +5,7 @@ pub const HOURS: f32 = 24;
 pub const SUNRISE: f32 = 6;
 pub const SUNSET: f32 = 20;
 pub const NOON: f32 = 12;
+pub const MIDNIGHT: f32 = 0;
 /// Midway between sunrise and sunset, where the sun stands highest; not `NOON`, as the day is lopsided.
 pub const SOLAR_NOON: f32 = (SUNRISE + SUNSET) / 2;
 pub const DAY_SPAN: f32 = SUNSET - SUNRISE;

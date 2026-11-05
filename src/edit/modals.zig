@@ -109,14 +109,10 @@ fn drawHelp(ed: *editor.Editor, g: *game.Game) void {
     const column_w = @divTrunc(w - (editor.HELP_COLUMNS + 1) * widgets.PAD, editor.HELP_COLUMNS);
     for (editor.HELP) |s| {
         const cx = x + widgets.PAD + @as(i32, @intCast(s.column)) * (column_w + widgets.PAD);
-        var y = ys[s.column];
+        const y = ys[s.column];
         widgets.drawFit(&g.face, s.head, DETAIL, column_w, false, cx, y, look.UI_GOLD);
-        y += HELP_STEP;
-        for (s.lines) |l| {
-            widgets.drawFit(&g.face, l, DETAIL, column_w, false, cx, y, look.TEXT);
-            y += HELP_STEP;
-        }
-        ys[s.column] = y + HELP_STEP;
+        for (s.lines, 1..) |l, k| widgets.drawFit(&g.face, l, DETAIL, column_w, false, cx, y + @as(i32, @intCast(k)) * HELP_STEP, look.TEXT);
+        ys[s.column] = y + s.rows() * HELP_STEP;
     }
     backButton(ed, g, f, std.mem.max(i32, &ys), "Close");
 }

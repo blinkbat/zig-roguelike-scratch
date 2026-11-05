@@ -90,6 +90,10 @@ pub const Mod = enum {
         return .{ .kind = @field(passives.Kind, @tagName(m)), .amount = amount };
     }
 
+    fn granted(comptime m: Mod) bool {
+        return @hasField(passives.Kind, @tagName(m));
+    }
+
     pub fn prefix(m: Mod) bool {
         return switch (m) {
             .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .armour, .resistance, .thorns, .imbue, .masked, .opportunist => true,
@@ -225,6 +229,10 @@ pub const MODS = blk: {
     std.debug.assert(std.mem.eql(Mod, &out, std.enums.values(Mod)));
     break :blk out;
 };
+
+pub fn affixOf(k: Mod) AffixRoll {
+    return AFFIXES[@intFromEnum(k)];
+}
 pub const Kind = enum {
     sword,
     axe,
@@ -368,6 +376,7 @@ pub const Affix = struct {
 const MAGIC_SIDE: usize = 1;
 const RARE_SIDE: usize = 2;
 pub const AFFIXES_MAX = 2 * RARE_SIDE;
+const RARE_LEAST = 2 * MAGIC_SIDE + 1;
 pub const NAME_MAX = 128;
 pub const WeaponEffect = struct {
     bleed: u32 = 0,
@@ -393,7 +402,8 @@ pub const WeaponEffect = struct {
         switch (imbued(e)) {
             .burn => self.burn += n,
             .chill => self.chill += n,
-            else => self.shock += n,
+            .shock => self.shock += n,
+            .bleed, .stun, .pin, .sunder, .blind, .confusion, .enfeeble, .maim, .fright => unreachable,
         }
     }
 };
@@ -571,6 +581,13 @@ pub const Item = struct {
         return self.allows(a.kind);
     }
 
+    /// A loaded item's modifiers, raised to the least their rolls give.
+    pub fn mend(self: *Item) void {
+        for (&self.mods) |*maybe| if (maybe.*) |*m| {
+            m.value = @max(m.value, @as(i16, @intCast(affixOf(m.kind).lo)));
+        };
+    }
+
     pub fn value(self: Item, kind: Mod) i32 {
         var n: i32 = 0;
         for (self.mods) |maybe| if (maybe) |m| {
@@ -591,16 +608,14 @@ pub const Item = struct {
                 a.gold_find += m.value;
                 a.item_rarity += m.value;
             },
-            .penetration, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity => {},
-            inline else => |k| k.grant(m.value).apply(a),
+            inline else => |k| if (comptime k.granted()) k.grant(m.value).apply(a),
         };
     }
 
     pub fn perk(self: Item, p: *passives.Perks) void {
         if (spec(self.kind).innate) |innate| if (innate == .grant) innate.grant.perk(p);
         for (self.mods) |maybe| if (maybe) |m| switch (m.kind) {
-            .physical_damage, .resistance, .penetration, .thorns, .spoils, .imbue, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity => {},
-            inline else => |k| k.grant(m.value).perk(p),
+            inline else => |k| if (comptime k.granted()) k.grant(m.value).perk(p),
         };
     }
 
@@ -630,7 +645,7 @@ pub fn rollRare(rng: *mathx.Rng) Item {
 
 fn affix(out: *Item, rng: *mathx.Rng, rare: bool) void {
     if (rare) out.rare_name = RareName.roll(rng);
-    const count = if (rare) rng.range(3, AFFIXES_MAX) else rng.range(1, 2 * MAGIC_SIDE);
+    const count = if (rare) rng.range(RARE_LEAST, AFFIXES_MAX) else rng.range(1, 2 * MAGIC_SIDE);
     for (0..@intCast(count)) |i| {
         const a = rng.pickWhere(AffixRoll, &AFFIXES, out.*, Item.allowsRoll).?;
         const from = a.kind.elements();
@@ -704,11 +719,7 @@ pub const Gear = struct {
 
     pub fn forAttack(self: Gear, base: attrs.Attrs, attack: attrs.Attack) attrs.Attrs {
         var out = base;
-        if (self.weapon(attack) == null) {
-            for (self.slots.values) |maybe| if (maybe) |it| {
-                out.physical_bonus -= it.value(.physical_damage);
-            };
-        }
+        if (self.weapon(attack) == null) out.physical_bonus -= self.sum(.physical_damage);
         out.crit_bonus += if (attack == .spell) base.spell_crit_bonus else if (self.weapon(attack) != null) base.weapon_crit_bonus else 0;
         return out;
     }
@@ -716,6 +727,10 @@ pub const Gear = struct {
     /// Life its worn items heal for a kill, innate grants and rolled modifiers alike; passives' heal blows only.
     pub fn killRecovery(self: Gear) i32 {
         return self.perks(.{}).life_on_kill;
+    }
+
+    pub fn manaOnKill(self: Gear) i32 {
+        return @max(0, self.sum(.mana_on_kill));
     }
 
     /// What every worn item rolled of `kind`, together.
@@ -742,11 +757,15 @@ pub const Gear = struct {
         return .{ .life = held.life_flask, .mana = self.sum(.mana_flask) };
     }
 
+    /// `draughts` for a hero whose passives grant `passive`.
+    pub fn draughtsOver(self: Gear, passive: passives.Perks) flask.Bonus {
+        return self.draughts(self.perks(passive));
+    }
+
     pub fn onHit(self: Gear, attack: attrs.Attack) WeaponEffect {
         if (self.weapon(attack) == null) return .{};
-        var out = WeaponEffect{};
+        var out = WeaponEffect{ .penetration = self.sum(.penetration) };
         for (self.slots.values) |maybe| if (maybe) |it| {
-            out.penetration += it.value(.penetration);
             for (it.mods) |m| if (m) |a| if (a.kind == .imbue) out.imbue(a.element, @intCast(a.value));
         };
         const innate = spec(self.slots.get(.right_hand).?.kind).innate orelse return out;
@@ -832,6 +851,11 @@ pub const Inventory = struct {
 
     pub fn add(self: *Inventory, it: Item) bool {
         return mathx.push(Item, &self.bag, &self.n, it);
+    }
+
+    pub fn mend(self: *Inventory) void {
+        for (self.bag[0..self.n]) |*it| it.mend();
+        for (&self.gear.slots.values) |*worn| if (worn.*) |*it| it.mend();
     }
 
     /// One more `k` on its stack, unless the stack is full.
@@ -1150,7 +1174,7 @@ test "magic affixes respect equipment eligibility prefix suffix and rolled bound
         for (it.mods) |maybe| if (maybe) |m| {
             seen.insert(m.kind);
             try std.testing.expect(m.kind.allows(it.kind));
-            for (AFFIXES) |a| if (a.kind == m.kind) try std.testing.expect(m.value >= a.lo and m.value <= a.hi);
+            try std.testing.expect(m.value >= affixOf(m.kind).lo and m.value <= affixOf(m.kind).hi);
             if (m.kind == .resistance) elements.insert(m.element);
             if (m.kind == .imbue) {
                 try std.testing.expect(m.element != .chaos);
@@ -1199,7 +1223,7 @@ test "rare items roll distinct legal affixes and persistent combinatorial names"
             try std.testing.expect(!seen.contains(m.kind));
             seen.insert(m.kind);
             sides[@intFromBool(m.kind.prefix())] += 1;
-            for (AFFIXES) |a| if (a.kind == m.kind) try std.testing.expect(m.value >= a.lo and m.value <= a.hi);
+            try std.testing.expect(m.value >= affixOf(m.kind).lo and m.value <= affixOf(m.kind).hi);
         };
         try std.testing.expect(seen.count() >= 3 and seen.count() <= 4);
         try std.testing.expect(sides[0] <= 2 and sides[1] <= 2);

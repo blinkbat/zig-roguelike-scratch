@@ -1,1 +1,1 @@
-
+map.grid.Tile.glow_plant	Glowbulb

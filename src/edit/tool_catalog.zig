@@ -192,7 +192,16 @@ pub const CRIB_MAP = Desk.PAINT_CAPTION ++ " place" ++ SEP ++ Desk.ERASE_CAPTION
     " tool" ++ SEP ++ Desk.SHAPES_CAPTION ++ " shape" ++ SEP ++ Desk.PICK_CAPTION ++ " pick" ++ SEP ++ Desk.HELP_CAPTION ++ " every key";
 pub const CRIB_GRAPH = Desk.PAINT_CAPTION ++ " open a node" ++ SEP ++ "drag it to move it, or a door's dot to another's to link them" ++ SEP ++
     Desk.ERASE_CAPTION ++ " on a dot unlinks" ++ SEP ++ Desk.GRAPH_CAPTION ++ " back to the map" ++ SEP ++ Desk.HELP_CAPTION ++ " every key";
-const HelpSection = struct { head: [:0]const u8, column: usize = 0, lines: []const [:0]const u8 };
+const HelpSection = struct {
+    head: [:0]const u8,
+    column: usize = 0,
+    lines: []const [:0]const u8,
+
+    /// Its head, its lines and the gap after them.
+    pub fn rows(s: HelpSection) i32 {
+        return @intCast(s.lines.len + 2);
+    }
+};
 pub const HELP = [_]HelpSection{
     .{ .head = "PAINTING", .lines = &.{
         Desk.PAINT_CAPTION ++ " use tool / paint first ink",
@@ -232,7 +241,7 @@ pub const HELP_COLUMNS = blk: {
 };
 pub const HELP_ROWS = blk: {
     var n: [HELP_COLUMNS]i32 = @splat(0);
-    for (HELP) |s| n[s.column] += 2 + s.lines.len;
+    for (HELP) |s| n[s.column] += s.rows();
     break :blk std.mem.max(i32, &n);
 };
 

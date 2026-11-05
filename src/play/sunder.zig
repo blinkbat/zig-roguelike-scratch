@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const resilience = @import("resilience.zig");
 
+pub const AILMENT = resilience.Kind.sunder;
 pub const TURNS: u8 = 4;
 pub const MOST: u8 = 3;
 /// Points of armour each stack takes off.

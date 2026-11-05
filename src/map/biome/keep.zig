@@ -115,7 +115,7 @@ fn clearOfTowers(curtain: grid.Box, towers: u8, at: P, size: P) bool {
     if (towers == 0) return true;
     const r = towerReach(towers) + WELL_GAP;
     for (carve.corners(curtain)) |c| {
-        const q = grid.Box.sized(at, size.x, size.y).clamp(c);
+        const q = grid.Box.sizedP(at, size).clamp(c);
         if (carve.inDisc(c, q, @floatFromInt(r))) return false;
     }
     return true;
@@ -145,9 +145,7 @@ fn towerReach(towers: u8) i32 {
 
 fn keepOf(p: Params) grid.Box {
     const yard = yardOf(p);
-    const kw: i32 = @intFromFloat(@as(f32, @floatFromInt(yard.width())) * KEEP_OF);
-    const kh: i32 = @intFromFloat(@as(f32, @floatFromInt(yard.height())) * KEEP_OF);
-    return grid.Box.centred(kw, kh);
+    return grid.Box.centred(carve.partOf(yard.width(), KEEP_OF), carve.partOf(yard.height(), KEEP_OF));
 }
 
 test "every room of the keep opens onto the yard" {

@@ -94,7 +94,7 @@ fn dirFrom(az_deg: f32, alt_deg: f32) [3]f32 {
 fn sunDir(hour: f32) [3]f32 {
     const u = dayU(hour);
     const alt = SUN_ALT_MAX * @sin(std.math.pi * u);
-    const az = if (u <= 1) AZ_RISE + (AZ_SET - AZ_RISE) * u else AZ_SET + (360 - (AZ_SET - AZ_RISE)) * (u - 1);
+    const az = if (u <= 1) mathx.lerpF(AZ_RISE, AZ_SET, u) else AZ_SET + (360 - (AZ_SET - AZ_RISE)) * (u - 1);
     return dirFrom(az, alt);
 }
 
@@ -165,6 +165,8 @@ pub const Sky = struct {
     carry: f32,
     /// How far the light that casts is the moon's: 0 by day, 1 by night.
     moon: f32,
+    /// `day.daylight`: 1 in full day, 0 in full night.
+    daylight: f32,
 
     /// How far the light that casts is the sun's.
     pub fn sun(s: Sky) f32 {
@@ -237,12 +239,14 @@ pub fn under(hour: f32, light: climate.Light) Sky {
     const moon = moonShare(hour);
     const gain = mathx.lerpF(1, MOON_LIFT / dir[2], moon);
     const night_fill = mathx.lerpF(NIGHT_FILL_MIN, 1, mathx.smoothstep(0, day.NIGHT_SPAN * NIGHT_FILL_SPREAD, @abs(day.toward(day.DEAD_OF_NIGHT, hour))));
+    const daylight = day.daylight(hour);
     return .{
         .dir = dir,
         .key = looked(p.key, keyDim(hour) * KEY_GAIN * l.key * gain, l),
         .ambient = looked(p.sky, SKY_GAIN * l.sky, l),
-        .carry = (1 - day.daylight(hour)) * night_fill,
+        .carry = (1 - daylight) * night_fill,
         .moon = moon,
+        .daylight = daylight,
     };
 }
 

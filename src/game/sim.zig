@@ -47,6 +47,32 @@ pub const DamageResult = struct {
 
 pub const UNKILLABLE_HP: i32 = 1;
 
+/// When each `Simulation` field is reset, every field in exactly one list; `save_data.zig` checks it.
+pub const Fields = struct {
+    /// Defaulted as the hero is spawned: a run's first node and each node entered afresh.
+    pub const hero = [_][]const u8{"pool"};
+    /// Defaulted as a run starts, besides `hero`.
+    pub const start = [_][]const u8{ "visited", "node", "hero", "clock" };
+    /// Worked out from the map as a run starts, a node is entered and a saved run resumes.
+    pub const derived = [_][]const u8{"outdoors"};
+    /// Defaulted as a run starts, and again as a saved one resumes.
+    pub const rebuilt = [_][]const u8{"chronicle"};
+    /// Defaulted as a run starts, besides `rebuilt`.
+    pub const run = [_][]const u8{ "kills", "gold", "mana_recovery", "flasks", "cooldown", "stepped", "log", "inventory", "ground", "plot" };
+    /// Defaulted as a saved run resumes, besides `rebuilt`.
+    pub const resumed = [_][]const u8{"unsaved"};
+    /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
+    pub const turn = [_][]const u8{ "travel", "order_n", "flowed" };
+    /// Defaulted as each turn ends, and as a turn starts afresh.
+    pub const marks = [_][]const u8{ "ran", "displaced" };
+    /// Given their values by hand: by the app, as a run begins, or as a node is entered or left.
+    pub const set = [_][]const u8{ "name", "class", "lv", "map", "visits", "rng", "seed", "mana", "growth", "loot_rng" };
+    /// Written before each read.
+    pub const scratch = [_][]const u8{ "order", "flow", "queue" };
+    /// Kept across runs.
+    pub const kept = [_][]const u8{"unkillable"};
+};
+
 /// The run as it is, whatever has been drawn of it.
 pub const Simulation = struct {
     name: heroes.Name = heroes.DEFAULT.unnamed(),
@@ -121,12 +147,12 @@ pub const Simulation = struct {
     }
 
     pub fn resetTransientTurn(self: *Simulation) void {
-        mathx.toDefaults(self, &.{ "travel", "order_n", "flowed" });
+        mathx.toDefaults(self, &Fields.turn);
         self.clearTurnMarks();
     }
 
     fn clearTurnMarks(self: *Simulation) void {
-        mathx.toDefaults(self, &.{ "ran", "displaced" });
+        mathx.toDefaults(self, &Fields.marks);
     }
 
     pub fn heroMoved(self: *Simulation) void {
@@ -185,7 +211,7 @@ pub const Simulation = struct {
     }
 
     pub fn heroDraughts(self: *const Simulation) flask.Bonus {
-        return self.inventory.gear.draughts(self.heroPerks());
+        return self.inventory.gear.draughtsOver(self.growth.perks());
     }
 
     /// How far the hero's `act` reaches: a movement skill further for Bounding.

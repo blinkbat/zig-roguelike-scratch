@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const resilience = @import("resilience.zig");
 
+pub const AILMENT = resilience.Kind.enfeeble;
 pub const TURNS: u8 = 3;
 /// Percent less damage an enfeebled body's blows deal, rounded up so a blow still lands.
 pub const LESS: i32 = 30;

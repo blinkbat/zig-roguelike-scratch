@@ -8,12 +8,8 @@ pub const FREE = true;
 pub const DONE = "jukes away";
 pub const COOLDOWN: u8 = 3;
 pub const COST: i32 = 5;
-const DESCRIBED = "Jump to visible empty ground within {d} tiles.";
+pub const DESCRIBED = "Jump to visible empty ground within {d} tiles.";
 pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIBED, .{RANGE});
-
-pub fn describeReach(w: anytype, range: i32) void {
-    w.print(DESCRIBED, .{range}) catch {};
-}
 
 pub fn inReach(from: mathx.P, to: mathx.P, range: i32) bool {
     return mathx.dist(from, to) <= range;

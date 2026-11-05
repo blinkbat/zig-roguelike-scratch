@@ -334,13 +334,12 @@ fn tileTexture(g: *const game.Game, here: grid.Tile, p: P, bags: *const grid.Cel
 }
 
 /// At full light, what stands on the seen cells from `lo` up to `hi`, over the shadows cast on the ground.
-fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const grid.CellSet) void {
-    const bags = bagCells(g);
+fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const grid.CellSet, bags: *const grid.CellSet) void {
     var cells = grid.Cells.of(lo, hi);
     while (cells.next()) |p| {
         if (!terrainSeen(g, p)) continue;
         const here = g.pic.tileShown(&g.sim, p);
-        defer if (looseBag(here, &bags, p)) {
+        defer if (looseBag(here, bags, p)) {
             if (g.sprites.item_bag) |t| {
                 drawShining(g, t, c, p, 0);
                 veilSprite(g, t, c, p, .sharp);
@@ -348,11 +347,11 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const grid.CellSet
         };
         if (look.occludes(here) or here.isPart()) continue;
         if (!look.standsOver(here)) continue;
-        if (tileTexture(g, here, p, &bags)) |t| {
+        if (tileTexture(g, here, p, bags)) |t| {
             const focus = g.cinema.beginFocus(here, t, mathx.centre(p), g.light.carrier);
             drawSprite(t, c.sx(p), c.sy(p));
             if (focus != null) rl.endShaderMode();
-            if (chestShines(here, p, &bags)) shineOver(g, t, spriteRect(t, c.sx(p), c.sy(p)), p, look.LIT);
+            if (chestShines(here, p, bags)) shineOver(g, t, spriteRect(t, c.sx(p), c.sy(p)), p, look.LIT);
             if (look.veiled(here)) veilSprite(g, t, c, p, focus orelse .sharp);
             continue;
         }
@@ -378,23 +377,22 @@ fn inkCell(g: *game.Game, c: Cam, p: P, here: grid.Tile, stood: *const grid.Cell
 }
 
 /// Every shadow cast into `view`, multiplied over what `framebuffer` holds; false with no shader for it.
-pub fn shadowPass(g: *game.Game, c: Cam, view: grid.Box, framebuffer: u32) bool {
+pub fn shadowPass(g: *game.Game, c: Cam, view: grid.Box, bags: *const grid.CellSet, framebuffer: u32) bool {
     if (!g.light.beginShadows(g.screen, framebuffer)) return false;
-    drawShadows(g, c, view.grown(shadows.sceneryMargin(&g.sprites)));
+    drawShadows(g, c, view.grown(shadows.sceneryMargin(&g.sprites)), bags);
     g.light.endShadows(-c.x, -c.y, game.CELL);
     return true;
 }
 
-fn drawShadows(g: *game.Game, c: Cam, cast: grid.Box) void {
-    const bags = bagCells(g);
+fn drawShadows(g: *game.Game, c: Cam, cast: grid.Box, bags: *const grid.CellSet) void {
     var props = cast.cells();
     while (props.next()) |p| {
         const kind = g.pic.tileShown(&g.sim, p);
-        if (looseBag(kind, &bags, p)) propShadow(g, c, p, g.sprites.item_bag);
+        if (looseBag(kind, bags, p)) propShadow(g, c, p, g.sprites.item_bag);
         if (g.pic.barrelPresent(&g.sim, p)) propShadow(g, c, p, g.sprites.barrel);
         if (!look.castsPicture(kind)) continue;
         const forest = look.forestAt(&g.sim.lv, p);
-        const t = tileTexture(g, kind, p, &bags) orelse continue;
+        const t = tileTexture(g, kind, p, bags) orelse continue;
         const pr = Prop.over(g, c, p, kind);
         const rect = tileRect(kind, t, c, p);
         if (forest) {
@@ -509,16 +507,15 @@ fn mirrorSprite(g: *const game.Game, c: Cam, p: P, kind: grid.Tile, t: rl.Textur
     raster.stretch(t, rect, tint);
 }
 
-fn drawMirrorScenery(g: *game.Game, c: Cam, view: grid.Box, memory: bool) void {
-    const bags = bagCells(g);
+fn drawMirrorScenery(g: *game.Game, c: Cam, view: grid.Box, bags: *const grid.CellSet, memory: bool) void {
     var cells = view.grown(game.CAST_MARGIN).cells();
     while (cells.next()) |p| {
         const kind = g.pic.tileShown(&g.sim, p);
         if (!footprintSeen(g, p, kind)) continue;
         if (look.standsOver(kind)) {
-            if (tileTexture(g, kind, p, &bags)) |t| mirrorSprite(g, c, p, kind, t, if (memory) rl.Color.white else sceneryTint(g, p));
+            if (tileTexture(g, kind, p, bags)) |t| mirrorSprite(g, c, p, kind, t, if (memory) rl.Color.white else sceneryTint(g, p));
         }
-        if (!memory and looseBag(kind, &bags, p)) {
+        if (!memory and looseBag(kind, bags, p)) {
             if (g.sprites.item_bag) |t| mirrorSprite(g, c, p, kind, t, sceneryTint(g, p));
         }
         if (barrelShownAt(g, p)) {
@@ -550,15 +547,15 @@ fn drawFlame(g: *game.Game, c: Cam, f: light.Flame, lit: f32) void {
     g.pic.fx.drawTorch(@floatFromInt(x), @floatFromInt(y), game.CELL_F, f.at[0] * FLAME_PHASE[0] + f.at[1] * FLAME_PHASE[1], lit, f.memory);
 }
 
-pub fn drawMirrors(g: *game.Game, c: Cam, view: grid.Box, bodies: []const Shown, flames: []const light.Flame) ?look.Mirrors {
+pub fn drawMirrors(g: *game.Game, c: Cam, view: grid.Box, bags: *const grid.CellSet, bodies: []const Shown, flames: []const light.Flame) ?look.Mirrors {
     if (!g.sprites.beginMirror(g.screen, g.framebuffer, true)) return null;
-    drawMirrorScenery(g, c, view, true);
+    drawMirrorScenery(g, c, view, bags, true);
     drawMirrorTorches(g, c, flames, true);
     if (!g.sprites.beginMirror(g.screen, g.framebuffer, false)) {
         rl.gl.rlEnableBackfaceCulling();
         return null;
     }
-    drawMirrorScenery(g, c, view, false);
+    drawMirrorScenery(g, c, view, bags, false);
     for (bodies) |*b| drawBody(g, b, true);
     drawMirrorTorches(g, c, flames, false);
     return g.sprites.endMirror(g.framebuffer);
@@ -603,9 +600,9 @@ pub fn drawMap(g: *game.Game) void {
     if (blooming) g.framebuffer = g.cinema.scene.?.id;
     var beds: dual.Beds = undefined;
     beds.fill(&g.sim.lv, lo, hi, !g.light.reveal_map);
-    const mirror = if (g.debug.visuals.water_reflections and beds.shown.intersectWith(look.REFLECTIVE).count() > 0) drawMirrors(g, c, view, bodies, flames) else null;
-    drawGroundPass(g, c, &beds, &stood, mirror);
     const bags = bagCells(g);
+    const mirror = if (g.debug.visuals.water_reflections and beds.shown.intersectWith(look.REFLECTIVE).count() > 0) drawMirrors(g, c, view, &bags, bodies, flames) else null;
+    drawGroundPass(g, c, &beds, &stood, mirror);
     for (g.sim.ground.coins[0..g.sim.ground.coin_n]) |pile| {
         if (g.sim.lv.at(pile.at).isChest() or bagged(&bags, pile.at)) continue;
         if (g.pic.pileShown(&g.sim, pile)) |shown_pile| drawCoins(g, c, shown_pile);
@@ -615,9 +612,9 @@ pub fn drawMap(g: *game.Game) void {
             if (g.pic.glide[hero].left() > 0 and g.pic.litShown(&g.sim, pile.at)) drawCoins(g, c, pile);
         }
     }
-    _ = shadowPass(g, c, view, g.framebuffer);
+    _ = shadowPass(g, c, view, &bags, g.framebuffer);
     g.cloud.draw(&g.sim.lv, view, -c.x, -c.y, game.CELL, g.screen);
-    drawSolidPass(g, c, lo, hi, &stood);
+    drawSolidPass(g, c, lo, hi, &stood, &bags);
     const o = c.origin();
     g.pic.fx.draw(o[0], o[1], game.CELL_F);
     g.light.drawMap(-c.x, -c.y, game.CELL);
@@ -894,11 +891,13 @@ pub fn effectLights(g: *game.Game) void {
     }
 }
 
-/// Over the light map, so each glows as its own light, but under the bodies that pass it.
+/// A plant without its picture, over the light map, so each glows as its own light, but under the bodies that pass it.
 fn drawPlants(g: *game.Game, c: Cam, flames: []const light.Flame) void {
     for (flames) |f| if (f.kind == .plant and f.live()) {
         const p = mathx.cellOf(f.at);
-        const l = look.tile(g.pic.tileShown(&g.sim, p));
+        const t = g.pic.tileShown(&g.sim, p);
+        if (g.sprites.tileOf(t, null) != null) continue;
+        const l = look.tile(t);
         drawGlyph(g, l.ch, c.sx(p), c.sy(p), look.fade(l.fg, flameLit(f)));
     };
 }

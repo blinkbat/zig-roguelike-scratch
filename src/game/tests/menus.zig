@@ -255,7 +255,7 @@ test "the pause menu spends no turn, and its way out leads back to where the gam
         try std.testing.expectEqual(game.Mode.play, std.meta.activeTag(g.mode));
         g.exit = null;
     }
-    try std.testing.expectEqual(P{ .x = 26, .y = 20 }, g.sim.pool.get(2).?.at);
+    try std.testing.expectEqual(P{ .x = 26, .y = 20 }, g.sim.pool.get(harness.foeId(0)).?.at);
 }
 
 test "Character and Game have separate shortcuts and never spend a turn" {
@@ -325,7 +325,7 @@ test "an arena restart restores its selected opponent and hero" {
     defer std.testing.allocator.destroy(map);
     spar.author(map, .bloat);
     game.beginMap(g, map);
-    _ = g.sim.pool.damage(&g.sim.lv, 2, 100);
+    _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), 100);
     _ = g.sim.pool.damage(&g.sim.lv, g.sim.hero, 3);
     g.sim.mana = 0;
     game.restart(g);
@@ -397,7 +397,7 @@ test "Debug reveal toggles map terrain without spending turns or changing explor
         try std.testing.expectEqualSlices(bool, &lit, &g.sim.lv.lit);
         try std.testing.expectEqual(clock, g.sim.clock);
         try std.testing.expectEqual(rng, g.sim.rng);
-        try std.testing.expect(g.pic.drawnAt(&g.sim, actor.Pool.slot(2)) == null);
+        try std.testing.expect(g.pic.drawnAt(&g.sim, harness.foeSlot(0)) == null);
     }
     harness.press(g, BACK);
     try std.testing.expectEqual(game.PausePage.debug, g.pause_page);

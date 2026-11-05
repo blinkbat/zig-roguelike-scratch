@@ -15,6 +15,12 @@ pub fn sizeOf(t: rl.Texture2D) [2]f32 {
     return .{ @floatFromInt(t.width), @floatFromInt(t.height) };
 }
 
+/// `r` of `t` as fractions of its size: x, y, width, height.
+pub fn uvOf(t: rl.Texture2D, r: rl.Rectangle) [4]f32 {
+    const w, const h = sizeOf(t);
+    return .{ r.x / w, r.y / h, r.width / w, r.height / h };
+}
+
 pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
     return .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(w), .height = @floatFromInt(h) };
 }

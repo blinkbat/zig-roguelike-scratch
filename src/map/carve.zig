@@ -486,31 +486,34 @@ pub const Stretches = struct {
 
     fn labelBy(s: *Stretches, lv: *const grid.Level, comptime barred: bool) usize {
         @memset(&s.region, NONE);
+        var seen = grid.CellSet.initEmpty();
         var n: u16 = 0;
         for (0..grid.CELLS) |c| {
-            if (s.region[c] != NONE or lv.tile[c].solid() or (barred and lv.barrel[c])) continue;
-            s.region[c] = n;
-            s.queue[0] = @intCast(c);
-            var head: usize = 0;
-            var tail: usize = 1;
-            while (head < tail) : (head += 1) {
-                const here = grid.Level.of(s.queue[head]);
-                for (mathx.ALL_DIRS) |d| {
-                    if (!lv.passOk(here, d)) continue;
-                    const k = grid.Level.idx(here.add(d.delta()));
-                    if (s.region[k] != NONE or (barred and lv.barrel[k])) continue;
-                    s.region[k] = n;
-                    s.queue[tail] = @intCast(k);
-                    tail += 1;
-                }
-            }
-            s.size[n] = @intCast(tail);
+            if (seen.isSet(c) or lv.tile[c].solid() or (barred and lv.barrel[c])) continue;
+            const Way = Walked(barred);
+            var spread = grid.Spread(Way, Way.has){ .ctx = .{ .lv = lv }, .steps = &grid.STEPS, .seen = &seen, .queue = &s.queue };
+            spread.seed(grid.Level.of(c));
+            while (spread.next()) |p| s.region[grid.Level.idx(p)] = n;
+            s.size[n] = @intCast(spread.tail);
             n += 1;
         }
         s.n = n;
         return n;
     }
 };
+
+fn Walked(comptime barred: bool) type {
+    return struct {
+        lv: *const grid.Level,
+
+        fn has(w: @This(), p: P) bool {
+            if (!w.lv.walkable(p)) return false;
+            if (!barred) return true;
+            const i = grid.Level.idx(p);
+            return !w.lv.barrel[i];
+        }
+    };
+}
 
 const InStretch = struct {
     st: *const Stretches,
@@ -933,6 +936,11 @@ pub fn clumps(lv: *grid.Level, noise: Noise, scale: f32, per_mille: u32, on: Ove
 
 fn bucket(v: f32, n: usize) usize {
     return @min(n - 1, @as(usize, @intFromFloat(@max(0, v) * @as(f32, @floatFromInt(n)))));
+}
+
+/// `share` of `n` cells, rounded toward zero.
+pub fn partOf(n: i32, share: f32) i32 {
+    return @intFromFloat(@as(f32, @floatFromInt(n)) * share);
 }
 
 pub fn count(lv: *const grid.Level, t: grid.Tile) usize {

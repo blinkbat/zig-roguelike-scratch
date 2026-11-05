@@ -134,7 +134,8 @@ pub const Swept = struct {
 };
 
 comptime {
-    std.debug.assert(fx.DUE >= actor.MAX * (std.meta.fields(Owed).len + actor.SWEEP_CELLS) + @max(2, chain.JUMPS));
+    std.debug.assert(fx.OWED_KINDS == std.meta.fields(Owed).len);
+    std.debug.assert(fx.DUE >= actor.MAX * (fx.OWED_KINDS + actor.SWEEP_CELLS) + @max(2, chain.JUMPS));
 }
 
 pub const Harm = struct { kill: bool, after: fx.After, recovery: ?fx.After = null };
@@ -177,9 +178,9 @@ pub const Presentation = struct {
     knocked_from: ?P = null,
     /// Where the hero stands as each stagger is drawn: a knock moves it on for the foes after.
     hero_cell: ?P = null,
-    /// A glow plant burst by a bump, an arrow or a blow: drawn, and lit, until that lands.
+    /// A glowbulb burst by a bump, an arrow or a blow: drawn, and lit, until that lands.
     bursting: ?Bursting = null,
-    /// Sight before a glow plant's burst darkened it or a pyre's smoke hid what lies past it, drawn until that lands.
+    /// Sight before a glowbulb's burst darkened it or a pyre's smoke hid what lies past it, drawn until that lands.
     lit_before: [grid.CELLS]bool = @splat(false),
     /// Seconds `lit_before` is still drawn.
     lit_held: f32 = 0,
@@ -195,7 +196,8 @@ pub const Presentation = struct {
     mana_held: i32 = 0,
     /// Kill refills appear only when the killing blow lands.
     flasks_shown: simulation.Flasks = .initFill(.{}),
-    mana_killed: i32 = 0,
+    /// Each death's mana on kill, shown once that death is drawn.
+    mana_killed: [actor.MAX]i32 = @splat(0),
     /// `xpLevels` as of the last drawn turn, and the bar easing toward it.
     xp_aim: f32 = 0,
     xp_shown: f32 = 0,
@@ -274,7 +276,7 @@ pub const Presentation = struct {
     pub fn recordDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId, death: rewards.Death) void {
         const i = target.slot().index;
         self.dropped_gold[i] = death.gold;
-        self.mana_killed += death.mana;
+        self.mana_killed[i] = death.mana;
         if (death.unmasked) self.masked.set(i);
         self.recordFright(sim, target.slot(), death.frightened);
         self.befall(sim, i, death.caught);
@@ -325,12 +327,12 @@ pub const Presentation = struct {
     }
 
     pub fn freshTurn(self: *Presentation) void {
-        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "lit_held", "lit_due", "busy", "lead", "owed", "split_from", "dropped_gold", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
+        mathx.toDefaults(self, &.{ "shot", "foe_shots", "knocked_from", "hero_cell", "bursting", "lit_held", "lit_due", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" });
         self.fx.clear();
     }
 
     pub fn freshRun(self: *Presentation) void {
-        mathx.toDefaults(self, &.{ "mana_held", "flasks_shown", "mana_killed" });
+        mathx.toDefaults(self, &.{ "mana_held", "flasks_shown" });
     }
 
     pub fn freshFacing(self: *Presentation) void {
@@ -461,7 +463,7 @@ pub const Presentation = struct {
         return self.standing(sim, i) and !sim.pool.items[i].disguised and !self.under.isSet(i) and !self.masked.isSet(i);
     }
 
-    /// What is drawn at `p`: a mimic's chest until its death is, a glow plant until the bump, arrow or blow that bursts it lands.
+    /// What is drawn at `p`: a mimic's chest until its death is, a glowbulb until the bump, arrow or blow that bursts it lands.
     pub fn tileShown(self: *const Presentation, sim: *const Simulation, p: P) grid.Tile {
         if (self.bursting) |b| if (b.at.eq(p)) return b.was;
         if (self.mimicAt(sim, p)) return .chest;
@@ -534,7 +536,11 @@ pub const Presentation = struct {
     }
 
     pub fn manaShown(self: *const Presentation, sim: *const Simulation) i32 {
-        return @max(0, @min(sim.manaMax(), sim.mana + self.mana_held) - self.mana_killed);
+        var killed: i32 = 0;
+        for (sim.pool.constSlice(), 0..) |a, i| {
+            if (!a.alive and !self.pictured[i].down()) killed += self.mana_killed[i];
+        }
+        return @max(0, @min(sim.manaMax(), sim.mana + self.mana_held) - killed);
     }
 
     pub fn lifeShown(self: *const Presentation, sim: *const Simulation) Life {
@@ -686,10 +692,7 @@ pub const Presentation = struct {
             self.glide[i] = self.glide[from].toward(a.at, -self.clearIn(sim, i, a.at));
             if (self.litShown(sim, sim.pool.items[from].at) or self.litShown(sim, a.at)) self.holdUntil(self.glide[i].left());
         }
-        if (!dying) {
-            self.flasks_shown = sim.flasks;
-            self.mana_killed = 0;
-        }
+        if (!dying) self.flasks_shown = sim.flasks;
         self.mana_held = @max(0, self.mana_held - self.fx.mana_landed);
         self.fx.mana_landed = 0;
         if (sim.heroSlot()) |h| {

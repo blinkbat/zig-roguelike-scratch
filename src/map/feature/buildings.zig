@@ -15,6 +15,8 @@ pub const BARRELS_MAX: u8 = 4;
 const TRIES: usize = 120;
 const SPLIT_TRIES: usize = 8;
 const BARREL_TRIES: usize = 40;
+/// Rooms `partition` holds waiting to be cut; past that, a room is left whole.
+const PARTS_MAX: usize = 64;
 /// Cells between a building and the map's edge.
 const SITE_MARGIN: i32 = 2;
 
@@ -197,7 +199,7 @@ pub fn cutBoxes(b: Box, across: bool, at: i32) [2]Box {
 
 /// Cut by walls, each with a doorway, till no room is wider than twice `least`.
 pub fn partition(lv: *grid.Level, rng: *mathx.Rng, inside: Box, least: i32, walls: grid.Tile) void {
-    var stack: [64]Box = undefined;
+    var stack: [PARTS_MAX]Box = undefined;
     stack[0] = inside;
     var n: usize = 1;
     while (n > 0) {

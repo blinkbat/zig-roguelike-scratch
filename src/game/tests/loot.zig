@@ -982,14 +982,14 @@ test "an imbued weapon's hit brings its element's ailment and a resolute helm ad
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
-    const rat = g.sim.pool.get(2).?;
+    const rat = g.sim.pool.get(harness.foeId(0)).?;
     harness.toughen(rat);
     const h = g.sim.heroActor().?;
     for (items.IMBUES) |e| {
         g.sim.inventory.gear.slots.set(.right_hand, harness.affixed(.sword, .{ .kind = .imbue, .value = 100, .element = e }));
         var roll = attacks.heroKick(&g.sim);
         roll.hit_checked = true;
-        combat.wound(g, 2, roll, combat.SHOOT, .{ .from = h.at, .wait = 0.2 });
+        combat.wound(g, harness.foeId(0), roll, combat.SHOOT, .{ .from = h.at, .wait = 0.2 });
     }
     try std.testing.expect(rat.burn.turns > 0 and rat.chill.turns > 0 and rat.shock.turns > 0);
     try std.testing.expect(harness.logged(g, "catches fire") and harness.logged(g, "is chilled") and harness.logged(g, "is shocked"));
@@ -1052,7 +1052,7 @@ test "opportunist's blows land harder only on a pinned, chilled or maimed foe" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
-    const rat = g.sim.pool.get(2).?;
+    const rat = g.sim.pool.get(harness.foeId(0)).?;
     const blow = attacks.Roll{ .dmg = 10, .hit_checked = true };
     g.sim.inventory.gear.slots.set(.gloves, harness.affixed(.gloves, .{ .kind = .opportunist, .value = 25 }));
     var dealt: [4]i32 = undefined;
@@ -1061,10 +1061,49 @@ test "opportunist's blows land harder only on a pinned, chilled or maimed foe" {
         rat.pin.turns = @intFromBool(i == 1);
         rat.chill.turns = @intFromBool(i == 2);
         rat.maim.turns = @intFromBool(i == 3);
-        d.* = attacks.resolve(&g.sim, .fromInt(2), blow, .chosen).?.hit.damage.dmg;
+        d.* = attacks.resolve(&g.sim, .fromInt(harness.foeId(0)), blow, .chosen).?.hit.damage.dmg;
     }
     try std.testing.expectEqualSlices(i32, &.{ 10, 13, 13, 13 }, &dealt);
     std.debug.print("opportunist 25%: a 10 blow deals {d} free, {d} pinned, {d} chilled, {d} maimed\n", .{ dealt[0], dealt[1], dealt[2], dealt[3] });
+}
+
+test "opportunist reads the foe as it stood before the blow pinned it" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
+    const rat = g.sim.pool.get(harness.foeId(0)).?;
+    g.sim.inventory.gear.slots.set(.gloves, harness.affixed(.gloves, .{ .kind = .opportunist, .value = 25 }));
+    const h = g.sim.heroActor().?;
+    var tries: usize = 0;
+    while (rat.pin.turns == 0) : (tries += 1) {
+        try std.testing.expect(tries < 50);
+        harness.setLife(rat, 50, 50);
+        rat.resilience = .{};
+        combat.arrowHit(g, harness.foeId(0), .{ .blow = .{ .physical = 10 } }, .pinning_shot, .{ .from = h.at, .wait = 0.2 });
+    }
+    try std.testing.expectEqual(@as(i32, 40), rat.hp);
+    std.debug.print("opportunist 25%: a 10 pinning shot on a free rat deals {d}, pinning it\n", .{50 - rat.hp});
+}
+
+test "an imbued ailment is resisted by its element's resistance" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{});
+    const id = harness.spawnAt(g, .frost_wisp, .{ .x = 21, .y = 20 }, true);
+    const wisp = g.sim.pool.get(id).?;
+    harness.toughen(wisp);
+    const h = g.sim.heroActor().?;
+    g.sim.inventory.gear.slots.set(.right_hand, harness.affixed(.sword, .{ .kind = .imbue, .value = 100, .element = .cold }));
+    var landed: usize = 0;
+    for (0..20) |_| {
+        var roll = attacks.heroKick(&g.sim);
+        roll.hit_checked = true;
+        landed += @intFromBool(roll.dmg > 0);
+        combat.wound(g, id, roll, combat.SHOOT, .{ .from = h.at, .wait = 0.2 });
+    }
+    try std.testing.expect(landed > 0);
+    try std.testing.expectEqual(@as(u8, 0), wisp.chill.turns);
+    std.debug.print("imbue: a 100% cold imbue chills a frost wisp in none of {d} landed blows\n", .{landed});
 }
 
 test "bounding boots stretch every movement skill's reach and nothing else" {
@@ -1111,7 +1150,7 @@ test "siphoning mana lands with the kill and draughts enlarge a mana drink" {
     g.sim.inventory.gear.slots.set(.belt, harness.affixed(.belt, .{ .kind = .mana_flask, .value = 20 }));
     g.sim.mana = 0;
     g.pic.catchUp(&g.sim);
-    harness.slay(g, 2, g.sim.heroActor().?.at);
+    harness.slay(g, harness.foeId(0), g.sim.heroActor().?.at);
     try std.testing.expectEqual(@as(i32, 2), g.sim.mana);
     try std.testing.expectEqual(@as(i32, 0), g.pic.manaShown(&g.sim));
     harness.drawnOut(g);
@@ -1122,4 +1161,19 @@ test "siphoning mana lands with the kill and draughts enlarge a mana drink" {
     harness.use(g, .mana_flask);
     try std.testing.expectEqual(drink - try std.math.divCeil(i32, drink, flask.TURNS), g.sim.flasks.get(.mana).left);
     std.debug.print("siphoning: +2 mana shown once the kill is drawn; draughts: a mana drink recovers {d}\n", .{drink});
+}
+
+test "each kill's siphoned mana shows as its own death is drawn, not the turn's last" {
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 22, .y = 20 }, .{ .x = 20, .y = 22 } });
+    g.sim.inventory.gear.slots.set(.left_ring, harness.affixed(.ring, .{ .kind = .mana_on_kill, .value = 2 }));
+    g.sim.mana = 0;
+    g.pic.catchUp(&g.sim);
+    for ([_]u16{ harness.foeId(0), harness.foeId(1) }) |id| harness.slay(g, id, g.sim.heroActor().?.at);
+    try std.testing.expectEqual(@as(i32, 4), g.sim.mana);
+    try std.testing.expectEqual(@as(i32, 0), g.pic.manaShown(&g.sim));
+    g.pic.pictured[harness.foeSlot(0)].hp = 0;
+    try std.testing.expectEqual(@as(i32, 2), g.pic.manaShown(&g.sim));
+    std.debug.print("siphoning: two kills of +2 show 0, then 2 once the first death is drawn, of 4\n", .{});
 }

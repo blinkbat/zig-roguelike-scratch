@@ -4,7 +4,7 @@ const bleeding = @import("bleeding.zig");
 const damage = @import("damage.zig");
 
 pub const COST: i32 = 6;
-pub const AILMENT = @import("resilience.zig").Kind.bleed;
+pub const AILMENT = bleeding.AILMENT;
 pub const VERB = "shoots a barbed arrow into";
 pub const TAKES = bleeding.TAKES;
 pub const DESCRIPTION = "Arrow damage. Inflicts bleeding.";

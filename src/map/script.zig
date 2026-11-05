@@ -151,7 +151,46 @@ pub const Cmp = enum {
     }
 };
 
-pub const CondKind = enum { always, never, flag, counter, timer, elapsed, region, near, talked, deaths, alive };
+/// The least and most a number may hold, both included.
+pub const Span = struct {
+    lo: i32,
+    hi: i32,
+
+    pub fn holds(s: Span, n: i64) bool {
+        return n >= s.lo and n <= s.hi;
+    }
+
+    pub fn clamp(s: Span, n: i32) i32 {
+        return std.math.clamp(n, s.lo, s.hi);
+    }
+};
+
+const SIGNED_SPAN = Span{ .lo = -NUMBER_MAX, .hi = NUMBER_MAX };
+const COUNT_SPAN = Span{ .lo = 0, .hi = NUMBER_MAX };
+pub const PRIORITY = Span{ .lo = -PRIORITY_MAX, .hi = PRIORITY_MAX };
+
+pub const CondKind = enum {
+    always,
+    never,
+    flag,
+    counter,
+    timer,
+    elapsed,
+    region,
+    near,
+    talked,
+    deaths,
+    alive,
+
+    /// What its `n` may hold.
+    pub fn span(k: CondKind) Span {
+        return switch (k) {
+            .always, .never, .flag, .counter, .timer, .region, .talked => SIGNED_SPAN,
+            .elapsed, .deaths, .alive => COUNT_SPAN,
+            .near => .{ .lo = 0, .hi = NEAR_MAX },
+        };
+    }
+};
 
 /// Each kind reads only its own fields; `slot` indexes the table its kind names.
 pub const Cond = struct {
@@ -185,6 +224,14 @@ pub const ActKind = enum {
         return switch (k) {
             .text, .flag, .counter, .timer => true,
             .dialog, .wait, .preserve => false,
+        };
+    }
+
+    /// What its `n` may hold.
+    pub fn span(k: ActKind) Span {
+        return switch (k) {
+            .dialog, .text, .flag, .counter, .preserve => SIGNED_SPAN,
+            .timer, .wait => COUNT_SPAN,
         };
     }
 };
@@ -394,7 +441,13 @@ fn swapped(at: *?u8, a: u8, b: u8) void {
 
 fn lowered(at: *?u8, gone: u8) void {
     const v = at.* orelse return;
-    if (v == gone) at.* = null else if (v > gone) at.* = v - 1;
+    at.* = renumbered(v, gone);
+}
+
+/// Index `at` once the item at `gone` is removed from its list: null for that item, one less past it.
+pub fn renumbered(at: anytype, gone: usize) ?@TypeOf(at) {
+    if (at == gone) return null;
+    return if (at > gone) at - 1 else at;
 }
 
 /// A body that talks: not a foe, it neither fights nor moves.
@@ -498,11 +551,11 @@ pub const Script = struct {
     fn lowerRefs(self: *Script, r: Ref, i: u8) void {
         var conds = self.condIterMut();
         while (conds.next()) |c| {
-            if (refersTo(condRef(c.kind), r) and c.slot > i) c.slot -= 1;
+            if (refersTo(condRef(c.kind), r)) c.slot = renumbered(c.slot, i) orelse c.slot;
         }
         var acts = self.actIterMut();
         while (acts.next()) |a| {
-            if (refersTo(actRef(a.kind), r) and a.slot > i) a.slot -= 1;
+            if (refersTo(actRef(a.kind), r)) a.slot = renumbered(a.slot, i) orelse a.slot;
         }
     }
 
@@ -537,7 +590,7 @@ pub const Script = struct {
         var conds = self.condIterMut();
         while (conds.next()) |c| {
             if (!refersTo(condRef(c.kind), .folk)) continue;
-            if (c.slot == i) c.* = .{ .kind = .never } else if (c.slot > i) c.slot -= 1;
+            if (renumbered(c.slot, i)) |s| c.slot = s else c.* = .{ .kind = .never };
         }
     }
 
@@ -548,13 +601,11 @@ pub const Script = struct {
             i -= 1;
             if (self.folk[i].node == n) self.dropFolk(@intCast(i));
         }
-        for (self.folk[0..self.folk_n]) |*f| {
-            if (f.node > n) f.node -= 1;
-        }
+        for (self.folk[0..self.folk_n]) |*f| f.node = renumbered(f.node, n) orelse f.node;
         var conds = self.condIterMut();
         while (conds.next()) |c| {
             if (c.kind != .region) continue;
-            if (c.node == n) c.* = .{ .kind = .never } else if (c.node > n) c.node -= 1;
+            if (renumbered(c.node, n)) |at| c.node = at else c.* = .{ .kind = .never };
         }
     }
 
@@ -600,11 +651,7 @@ pub const Script = struct {
     pub fn dropDialog(self: *Script, d: u8) bool {
         if (self.dialogUsers(d) > 0) return false;
         cut(Dialog, &self.dialog, &self.dialog_n, d);
-        for (self.folk[0..self.folk_n]) |*f| {
-            if (f.dialog) |fd| if (fd > d) {
-                f.dialog = fd - 1;
-            };
-        }
+        for (self.folk[0..self.folk_n]) |*f| lowered(&f.dialog, d);
         self.lowerRefs(.dialog, d);
         return true;
     }
@@ -680,7 +727,7 @@ pub const Script = struct {
         if (!distinct(self.dialogs())) return false;
         for (self.triggers()) |*t| {
             if (!t.name.valid() or !token(t.name.text()) or !bounded(t)) return false;
-            if (t.priority < -PRIORITY_MAX or t.priority > PRIORITY_MAX) return false;
+            if (!PRIORITY.holds(t.priority)) return false;
             for (t.conds()) |*c| if (!self.condFits(c, node_n)) return false;
             for (t.acts()) |*a| if (!self.actFits(a)) return false;
         }
@@ -698,22 +745,17 @@ pub const Script = struct {
 
     fn condFits(self: *const Script, c: *const Cond, node_n: usize) bool {
         if (!self.slotFits(condRef(c.kind), c.slot)) return false;
-        if (c.n < -NUMBER_MAX or c.n > NUMBER_MAX) return false;
+        if (!c.kind.span().holds(c.n)) return false;
         return switch (c.kind) {
-            .always, .never, .flag, .counter, .timer, .elapsed, .talked => true,
+            .always, .never, .flag, .counter, .timer, .elapsed, .talked, .near => true,
             .region => c.node < node_n and grid.Level.inside(c.from) and grid.Level.inside(c.to),
-            .near => c.n >= 0 and c.n <= NEAR_MAX,
             .deaths, .alive => c.foe.stocked(),
         };
     }
 
     fn actFits(self: *const Script, a: *const Act) bool {
         if (!self.slotFits(actRef(a.kind), a.slot) or !a.note.valid()) return false;
-        if (a.n < -NUMBER_MAX or a.n > NUMBER_MAX) return false;
-        return switch (a.kind) {
-            .timer, .wait => a.n >= 0,
-            .dialog, .text, .flag, .counter, .preserve => true,
-        };
+        return a.kind.span().holds(a.n);
     }
 };
 

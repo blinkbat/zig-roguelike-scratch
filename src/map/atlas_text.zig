@@ -237,10 +237,7 @@ fn finished(self: *atlas.Atlas, rows: usize) Error!void {
 }
 
 fn lastProcgen(self: *atlas.Atlas) Error!*atlas.Procgen {
-    return switch ((try lastNode(self)).plan) {
-        .procgen => |*pg| pg,
-        .bespoke => error.BadLine,
-    };
+    return (try lastNode(self)).plan.procgenOf() orelse error.BadLine;
 }
 
 fn lastNode(self: *atlas.Atlas) Error!*atlas.Node {
@@ -249,10 +246,7 @@ fn lastNode(self: *atlas.Atlas) Error!*atlas.Node {
 }
 
 fn lastBespoke(self: *atlas.Atlas) Error!*atlas.Bespoke {
-    return switch ((try lastNode(self)).plan) {
-        .bespoke => |*b| b,
-        .procgen => error.BadLine,
-    };
+    return (try lastNode(self)).plan.bespokeOf() orelse error.BadLine;
 }
 
 /// A procgen node's base lines: each named for, and holding, a field of its floor; the foes' and sky's are `GROUPS`.
@@ -439,7 +433,7 @@ fn takeValue(comptime T: type, f: *Tokens) Error!T {
         .int => return int(T, f),
         .@"enum" => {
             const value = try script_text.value(T, f);
-            if (T == grid.Tile and !value.single()) return error.BadLine;
+            if (!grid.knobbable(T, value)) return error.BadLine;
             return value;
         },
         .array => |a| {

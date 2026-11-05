@@ -265,11 +265,15 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
 
 /// A loot visit's unsaved state, reset with every run.
 const LOOT_VISIT = [_][]const u8{ "character", "looted", "loot_gold" };
+/// Unsaved, reset with every run as it starts or resumes.
+const RUN_GAME = [_][]const u8{ "mode", "epitaph" };
+const SimFields = simulation.Fields;
 
 fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
-    toDefaults(&g.sim, &.{ "visited", "node", "outdoors", "pool", "hero", "clock" });
+    toDefaults(&g.sim, &(SimFields.hero ++ SimFields.start));
     toDefaults(g, &LOOT_VISIT);
     g.sim.map = w;
+    g.sim.outdoors = g.sim.outdoorsNow();
     g.sim.seed = seed;
     g.sim.rng = mathx.Rng.init(seed ^ PLAY_SALT);
     g.sim.unsaved = true;
@@ -388,7 +392,7 @@ pub fn restart(g: *Game) void {
 }
 
 fn spawnHero(g: *Game, at: P) void {
-    toDefaults(&g.sim, &.{"pool"});
+    toDefaults(&g.sim, &SimFields.hero);
     g.pic.freshFacing();
     g.sim.hero = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(g.sim.class.kind(), at));
 }
@@ -402,8 +406,8 @@ pub fn reset(g: *Game, hero: P) void {
 const toDefaults = mathx.toDefaults;
 
 fn freshRun(g: *Game) void {
-    toDefaults(&g.sim, &.{ "kills", "gold", "mana_recovery", "flasks", "cooldown", "stepped", "log", "chronicle", "inventory", "ground", "plot" });
-    toDefaults(g, &.{ "mode", "epitaph" });
+    toDefaults(&g.sim, &(SimFields.run ++ SimFields.rebuilt));
+    toDefaults(g, &RUN_GAME);
     g.pic.freshRun();
     g.sim.growth = progress.State.of(g.sim.class);
     g.bar = g.sim.growth.bar(g.sim.class);
@@ -435,9 +439,9 @@ pub fn settle(g: *Game) void {
     g.pic.catchUp(&g.sim);
     g.pic.settleResources(&g.sim);
     g.cam = camWant(g);
-    g.light.settle(&g.sim.lv);
     g.pic.hour_shown = g.sim.clock.hour();
     g.light.sky = skyNow(g);
+    g.light.settle(&g.sim.lv);
     g.light.carrier = g.pic.carrierAt(&g.sim);
     g.light.carry_r = light.carryR(g.sim.heroLight());
 }
@@ -446,9 +450,8 @@ pub fn resumeRun(g: *Game) void {
     gen.restoreShapes(&g.sim.lv);
     var visits = g.sim.visited.iterator(.{});
     while (visits.next()) |n| gen.restoreShapes(&g.sim.visits[n].lv);
-    toDefaults(g, &.{ "mode", "exit", "epitaph" });
-    toDefaults(g, &LOOT_VISIT);
-    toDefaults(&g.sim, &.{ "unsaved", "chronicle" });
+    toDefaults(g, &(RUN_GAME ++ LOOT_VISIT ++ [_][]const u8{"exit"}));
+    toDefaults(&g.sim, &(SimFields.resumed ++ SimFields.rebuilt));
     g.sim.unsaved = g.sim.growth.refundBasicRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
     if (g.sim.map) |w| {
@@ -683,9 +686,7 @@ fn stunnedTurn(g: *Game) bool {
 pub fn update(g: *Game, dt: f32) void {
     if (!g.st.focused) holdWalk(g);
     mouseControls.prepare(g);
-    if (playShown(g) or g.mode == .aim or g.mode == .inspect) {
-        if (overLog(g) and g.st.scroll != 0) g.sim.log.move(g.st.scroll);
-    }
+    if (mouseControls.clickable(modeShown(g)) and overLog(g) and g.st.scroll != 0) g.sim.log.move(g.st.scroll);
     const death_drawn = deathShown(g);
     g.pic.advance(&g.sim, dt);
     if (g.pic.uprooted()) |p| g.light.uproot(&g.sim.lv, p);

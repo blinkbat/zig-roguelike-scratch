@@ -16,7 +16,7 @@ const RULE_GAP: i32 = 10;
 const ROW_H: i32 = font.BODY_LINE + 10;
 const ROW_INSET: i32 = 8;
 const HEAD_LINE: i32 = font.HEAD + font.LEADING;
-const VEIL = look.fade(look.BG, 0.45);
+const TALK_VEIL = look.fade(look.BG, 0.45);
 const LINE_MAX: usize = @max(script.SAY_MAX, script.ASK_MAX) + 8;
 
 /// What the conversation panel shows; `choices` are only those offered.
@@ -83,7 +83,7 @@ pub const Layout = struct {
 
 pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: P, v: View, l: *const Layout) void {
     var buf: [LINE_MAX]u8 = undefined;
-    rl.drawRectangle(0, 0, screen.x, screen.y, VEIL);
+    rl.drawRectangle(0, 0, screen.x, screen.y, TALK_VEIL);
     look.backingIn(sprites, l.panel);
     if (v.who.len > 0) {
         face.engraved(std.fmt.bufPrintZ(&buf, "{s}", .{v.who}) catch "", l.text_x, l.who_y, font.HEAD, look.UI_GOLD);

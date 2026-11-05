@@ -83,23 +83,23 @@ test "a frost vial thrown from the bag splashes cold on every foe round its mark
     harness.press(g, menu.CONFIRM);
     try std.testing.expectEqual(next, g.sim.clock);
     try std.testing.expectEqual(@as(u8, 1), g.sim.inventory.stacks.get(.frost_vial));
-    const struck = harness.TEST_HP - g.sim.pool.get(2).?.hp;
+    const struck = harness.TEST_HP - g.sim.pool.get(harness.foeId(0)).?.hp;
     try harness.expectDamage(g, .frost_vial, struck, &.{consumable.FrostVial.BASE});
-    try harness.expectDamage(g, .frost_vial, harness.TEST_HP - g.sim.pool.get(3).?.hp, &.{consumable.FrostVial.BASE});
-    try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(4).?.hp);
-    std.debug.print("frost vial: {d} cold to the struck rat, {d} beside it, none 3 tiles on; one vial used\n", .{ struck, harness.TEST_HP - g.sim.pool.get(3).?.hp });
+    try harness.expectDamage(g, .frost_vial, harness.TEST_HP - g.sim.pool.get(harness.foeId(1)).?.hp, &.{consumable.FrostVial.BASE});
+    try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(harness.foeId(2)).?.hp);
+    std.debug.print("frost vial: {d} cold to the struck rat, {d} beside it, none 3 tiles on; one vial used\n", .{ struck, harness.TEST_HP - g.sim.pool.get(harness.foeId(1)).?.hp });
 }
 
 test "attack resolution returns harm and statuses without advancing the picture" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
-    const target = g.sim.pool.get(2).?;
+    const target = g.sim.pool.get(harness.foeId(0)).?;
     harness.setLife(target, 20, 20);
     g.pic.catchUp(&g.sim);
     const before = g.pic.pictured[1];
     const raw = attacks.Roll{ .dmg = 3, .hit_checked = true, .effect = .{ .bleed = 100, .bleed_damage = 2, .stun = 100 } };
-    const outcome = attacks.resolve(&g.sim, .fromInt(2), raw, .chosen).?;
+    const outcome = attacks.resolve(&g.sim, .fromInt(harness.foeId(0)), raw, .chosen).?;
     try std.testing.expect(outcome == .hit);
     const hit = outcome.hit;
     try std.testing.expectEqual(@as(i32, 17), target.hp);
@@ -112,7 +112,7 @@ test "attack resolution returns harm and statuses without advancing the picture"
     try std.testing.expect(!g.pic.owed[1].any());
     const rng = g.sim.rng;
     const log = g.sim.log;
-    try std.testing.expect(attacks.resolve(&g.sim, .fromInt(3), raw, .chosen) == null);
+    try std.testing.expect(attacks.resolve(&g.sim, .fromInt(harness.foeId(1)), raw, .chosen) == null);
     try std.testing.expectEqualDeep(rng, g.sim.rng);
     try std.testing.expectEqualDeep(log, g.sim.log);
     std.debug.print("attack boundary: damage, bleed and stun resolved before picture changes; missing target leaves RNG and log untouched\n", .{});
@@ -128,15 +128,15 @@ test "chosen attacks reactions and status ticks retain recorded seeded outcomes"
         const g = try game.boot(std.testing.allocator);
         defer game.shut(std.testing.allocator, g);
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
-        const target = g.sim.pool.get(2).?;
+        const target = g.sim.pool.get(harness.foeId(0)).?;
         harness.toughen(target);
         g.sim.rng = mathx.Rng.init(case[0]);
         const stroke = game.presentation.Stroke{ .from = g.sim.heroAt().?, .wait = 0.2 };
-        combat.wound(g, 2, attacks.heroRoll(&g.sim, .ranged, 7), "shoots", stroke);
-        combat.reaction(g, 2, attacks.heroRoll(&g.sim, .melee, 5), "counters", stroke, 2, null);
+        combat.wound(g, harness.foeId(0), attacks.heroRoll(&g.sim, .ranged, 7), "shoots", stroke);
+        combat.reaction(g, harness.foeId(0), attacks.heroRoll(&g.sim, .melee, 5), "counters", stroke, harness.foeId(0), null);
         target.burn.start();
         _ = target.burn.tick(0);
-        combat.burnHarm(g, 2);
+        combat.burnHarm(g, harness.foeId(0));
         try std.testing.expectEqual(case[1], target.hp);
         try std.testing.expectEqualDeep(case[2], g.sim.rng.impl.s);
     }
@@ -423,10 +423,10 @@ test "the log says the blow and the experience it awards, a juke as itself, and 
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 23, .y = 20 }});
-    g.sim.pool.get(2).?.hp = 1;
+    g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     game.settle(g);
     harness.confirmUse(g, .shoot);
-    try std.testing.expect(g.sim.pool.get(2) == null);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)) == null);
     var buf: [64]u8 = undefined;
     const gained = try std.fmt.bufPrint(&buf, "Archer gains {d} experience.", .{progress.xpOf(.rat)});
     try std.testing.expect(harness.logged(g, gained));
@@ -464,7 +464,7 @@ test "a flask drink spends a turn, recovers on it and the next two, and kills re
     harness.use(g, .life_flask);
     try std.testing.expectEqual(empty, g.sim.clock);
     try std.testing.expectEqual(@as(u8, 0), g.sim.flasks.get(.life).uses());
-    for (0..flask.USE / flask.PER_KILL) |_| combat.fell(g, 2);
+    for (0..flask.USE / flask.PER_KILL) |_| combat.fell(g, harness.foeId(0));
     try std.testing.expectEqual(@as(u8, 1), g.sim.flasks.get(.life).uses());
     try g.sim.inventory.unequip(.life_flask, g.sim.growth.attributes(g.sim.class));
     const charges = g.sim.flasks.get(.life).charges;
@@ -475,7 +475,7 @@ test "a flask drink spends a turn, recovers on it and the next two, and kills re
     try std.testing.expectEqual(unworn, g.sim.clock);
     try std.testing.expectEqual(charges, g.sim.flasks.get(.life).charges);
     try std.testing.expect(harness.logged(g, "is not equipped."));
-    combat.fell(g, 2);
+    combat.fell(g, harness.foeId(0));
     try std.testing.expectEqual(charges, g.sim.flasks.get(.life).charges);
     try std.testing.expectEqual(mana_charges + flask.PER_KILL, g.sim.flasks.get(.mana).charges);
     std.debug.print("life flask: {d} hp over {d} turns on a knight of {d}; empty after {d} drinks; {d} kills refill one; unworn it neither drinks nor refills\n", .{ flask.lifeOf(h.max, 0), flask.TURNS, h.max, flask.CHARGES / flask.USE, flask.USE / flask.PER_KILL });
@@ -596,10 +596,10 @@ test "passive leech and kill healing land on the drawn hero with the arrow" {
     takeNode(g, "Red Harvest");
     const h = g.sim.heroActor().?;
     h.hp = 5;
-    g.sim.pool.get(2).?.hp = 1;
+    g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     g.pic.catchUp(&g.sim);
     harness.confirmUse(g, .shoot);
-    try std.testing.expect(g.sim.pool.get(2) == null);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)) == null);
     try std.testing.expectEqual(@as(i32, 5 + 1 + 2), h.hp);
     const hero = g.sim.heroSlot().?;
     try std.testing.expectEqual(@as(i32, 5), g.pic.pictured[hero].hp);
@@ -614,12 +614,12 @@ test "passive cull finishes a foe left at its threshold and spares one above it"
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 22, .y = 20 }, .{ .x = 22, .y = 22 } });
     takeCull(g);
     try std.testing.expectEqual(@as(i32, 10), g.sim.growth.perks().cull);
-    for ([_]u16{ 2, 3 }) |id| harness.setLife(g.sim.pool.get(id).?, 20, 20);
+    for ([_]u16{ harness.foeId(0), harness.foeId(1) }) |id| harness.setLife(g.sim.pool.get(id).?, 20, 20);
     const from = g.sim.heroActor().?.at;
-    combat.wound(g, 2, .{ .dmg = 18 }, combat.SHOOT, .{ .from = from, .wait = 0 });
-    combat.wound(g, 3, .{ .dmg = 17 }, combat.SHOOT, .{ .from = from, .wait = 0 });
-    try std.testing.expect(g.sim.pool.get(2) == null);
-    try std.testing.expectEqual(@as(i32, 3), g.sim.pool.get(3).?.hp);
+    combat.wound(g, harness.foeId(0), .{ .dmg = 18 }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    combat.wound(g, harness.foeId(1), .{ .dmg = 17 }, combat.SHOOT, .{ .from = from, .wait = 0 });
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)) == null);
+    try std.testing.expectEqual(@as(i32, 3), g.sim.pool.get(harness.foeId(1)).?.hp);
     std.debug.print("cull 10%: a 20-life foe left at 2 is cut down, one left at 3 survives\n", .{});
 }
 
@@ -628,9 +628,9 @@ test "a blow that does no damage culls nothing" {
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
     takeCull(g);
-    harness.setLife(g.sim.pool.get(2).?, 2, 20);
-    combat.wound(g, 2, .{ .dmg = 0 }, combat.SHOOT, .{ .from = g.sim.heroActor().?.at, .wait = 0 });
-    try std.testing.expectEqual(@as(i32, 2), g.sim.pool.get(2).?.hp);
+    harness.setLife(g.sim.pool.get(harness.foeId(0)).?, 2, 20);
+    combat.wound(g, harness.foeId(0), .{ .dmg = 0 }, combat.SHOOT, .{ .from = g.sim.heroActor().?.at, .wait = 0 });
+    try std.testing.expectEqual(@as(i32, 2), g.sim.pool.get(harness.foeId(0)).?.hp);
 }
 
 test "a culled foe is not said to take the arrow's status" {
@@ -638,9 +638,9 @@ test "a culled foe is not said to take the arrow's status" {
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
     takeCull(g);
-    harness.setLife(g.sim.pool.get(2).?, 3, 20);
-    combat.arrowHit(g, 2, .{ .blow = .{ .physical = 1 } }, .pinning_shot, .{ .from = g.sim.heroActor().?.at, .wait = 0 });
-    try std.testing.expect(g.sim.pool.get(2) == null);
+    harness.setLife(g.sim.pool.get(harness.foeId(0)).?, 3, 20);
+    combat.arrowHit(g, harness.foeId(0), .{ .blow = .{ .physical = 1 } }, .pinning_shot, .{ .from = g.sim.heroActor().?.at, .wait = 0 });
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)) == null);
     try std.testing.expect(!harness.logged(g, pinning.TAKES));
 }
 
@@ -651,12 +651,12 @@ test "passive leech waits for the arrow while a life flask recovers" {
     takeNode(g, "Sanguine Pact");
     const h = g.sim.heroActor().?;
     h.hp = 5;
-    harness.setLife(g.sim.pool.get(2).?, 50, 50);
+    harness.setLife(g.sim.pool.get(harness.foeId(0)).?, 50, 50);
     harness.use(g, .life_flask);
     g.pic.catchUp(&g.sim);
     const hero = g.sim.heroSlot().?;
     harness.confirmUse(g, .shoot);
-    try std.testing.expect(g.sim.pool.get(2) != null);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)) != null);
     const t = harness.framesUntil(g, hero, harness.caughtUp);
     std.debug.print("leech under a ticking flask: drawn hero reaches {d} at {d:.3} s, as the arrow lands at {d:.3} s\n", .{ h.hp, t, harness.SHOT_LANDS });
     try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
@@ -689,11 +689,11 @@ test "a kill's flask refill shows as the kill is drawn, not as the arrow leaves"
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, harness.SHOT_FROM, &.{harness.SHOT_AT});
-    g.sim.pool.get(2).?.hp = 1;
+    g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     g.sim.flasks.getPtr(.life).charges = flask.USE - flask.PER_KILL;
     g.pic.catchUp(&g.sim);
     harness.confirmUse(g, .shoot);
-    try std.testing.expect(g.sim.pool.get(2) == null);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)) == null);
     try std.testing.expectEqual(@as(u8, 1), g.sim.flasks.get(.life).uses());
     try std.testing.expectEqual(@as(u8, 0), g.pic.flasks_shown.get(.life).uses());
     const Refilled = struct {

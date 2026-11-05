@@ -461,7 +461,7 @@ test "a rat that sees you notices, closes and bites" {
     var contact: ?usize = null;
     for (0..12) |turn| {
         combat.endTurn(g);
-        const r = g.sim.pool.get(2).?;
+        const r = g.sim.pool.get(harness.foeId(0)).?;
         if (noticed == null and r.awake) noticed = turn;
         if (contact == null and mathx.dist(r.at, g.sim.heroActor().?.at) == 1) contact = turn;
     }
@@ -530,10 +530,10 @@ test "foes act nearest first, so the one behind in a corridor follows the one ah
     harness.wallRow(&g.sim.lv, 21, 21, 29);
     harness.wakeFoes(g);
     combat.endTurn(g);
-    std.debug.print("corridor: nearer rat to {d}, the one behind to {d}\n", .{ g.sim.pool.get(3).?.at.x, g.sim.pool.get(2).?.at.x });
-    try std.testing.expectEqualSlices(u16, &.{ 3, 2 }, g.sim.order[0..g.sim.order_n]);
-    try std.testing.expectEqual(@as(i32, 23), g.sim.pool.get(3).?.at.x);
-    try std.testing.expectEqual(@as(i32, 24), g.sim.pool.get(2).?.at.x);
+    std.debug.print("corridor: nearer rat to {d}, the one behind to {d}\n", .{ g.sim.pool.get(harness.foeId(1)).?.at.x, g.sim.pool.get(harness.foeId(0)).?.at.x });
+    try std.testing.expectEqualSlices(u16, &.{ harness.foeId(1), harness.foeId(0) }, g.sim.order[0..g.sim.order_n]);
+    try std.testing.expectEqual(@as(i32, 23), g.sim.pool.get(harness.foeId(1)).?.at.x);
+    try std.testing.expectEqual(@as(i32, 24), g.sim.pool.get(harness.foeId(0)).?.at.x);
 }
 
 test "a caustic bloat beside the archer bursts on it about two turns in three, and never bites" {
@@ -934,7 +934,7 @@ test "a pib that sees a foe die wakes and runs for a few turns, then comes back;
     const walled = harness.spawnAt(g, .pib, .{ .x = 19, .y = 24 }, false);
     game.settle(g);
     game.castSight(g, hero);
-    harness.slay(g, 2, hero);
+    harness.slay(g, harness.foeId(0), hero);
     const p = g.sim.pool.get(near).?;
     try std.testing.expect(p.awake);
     try std.testing.expectEqual(actor.FLEE_TURNS, p.fright);
@@ -951,7 +951,7 @@ test "a pib that sees a foe die wakes and runs for a few turns, then comes back;
     try std.testing.expectEqual(actor.FLEE_TURNS, g.pic.pictured[actor.Pool.slot(near)].status.get(.frightened));
     try std.testing.expectEqual(@as(?usize, null), g.pic.fx.speech[actor.Pool.slot(walled)].after);
     try std.testing.expectEqual(@as(f32, 0), g.pic.fx.speech[actor.Pool.slot(walled)].life);
-    combat.scare(g, actor.Pool.slot(2));
+    combat.scare(g, harness.foeSlot(0));
     try std.testing.expectEqual(@as(?usize, null), speech.after);
     game.update(g, fx.SPEECH_S);
     try std.testing.expectEqual(@as(f32, 0), speech.life);

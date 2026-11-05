@@ -8,7 +8,7 @@ const bash = @import("bash.zig");
 const P = mathx.P;
 
 pub const COST: i32 = 4;
-pub const AILMENT = @import("resilience.zig").Kind.bleed;
+pub const AILMENT = bleeding.AILMENT;
 pub const BLEED: i32 = 2;
 pub const VERB = "rends";
 pub const TAKES = bleeding.TAKES;

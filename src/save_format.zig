@@ -14,6 +14,7 @@ const skillbar = @import("play/skillbar.zig");
 const flask = @import("play/flask.zig");
 const consumable = @import("play/consumable.zig");
 const sunder = @import("play/sunder.zig");
+const glacial = @import("play/glacial.zig");
 const day = @import("map/day.zig");
 
 pub const MAGIC = "cistern-save\n";
@@ -144,11 +145,20 @@ test "portable autosave snapshots own every byte while the live run changes" {
     std.debug.print("portable autosave: current run, map, visited actors and terrain frozen independently for worker encoding\n", .{});
 }
 
+pub const OpenError = error{ NotASave, OtherBuild, Short, Damaged };
+
+/// `store.open`, a file of another kind being no save.
+pub fn open(bytes: []const u8, magic: []const u8, print: u64) OpenError![]const u8 {
+    return store.open(bytes, magic, print) catch |err| switch (err) {
+        error.Foreign => error.NotASave,
+        else => |other| other,
+    };
+}
+
 fn opened(bytes: []const u8) !struct { body: []const u8, version: u64 } {
     for ([_]u64{ VERSION, FLASKLESS }) |version| {
-        const body = store.open(bytes, MAGIC, version) catch |err| switch (err) {
+        const body = open(bytes, MAGIC, version) catch |err| switch (err) {
             error.OtherBuild => continue,
-            error.Foreign => return error.NotASave,
             else => return err,
         };
         return .{ .body = body, .version = version };
@@ -223,6 +233,8 @@ pub fn validate(snapshot: *Snapshot) !void {
         if (bottle.turns == 0) bottle.left = 0;
     }
     for (&run.inventory.stacks.values) |*carried| carried.* = @min(carried.*, consumable.STACK_MAX);
+    if (run.inventory.n > items.BAG_MAX) return error.Damaged;
+    run.inventory.mend();
     run.log.scroll = @min(run.log.scroll, run.log.n -| 1);
     try validateLevel(&run.lv, &run.pool, &run.ground);
     try validateLog(&run.log);
@@ -304,13 +316,13 @@ fn deathsToCome(pool: *const actor.Pool) usize {
 /// Beyond this a turn's arithmetic on a body's clock, bleed or life overflows.
 const BODY_MOST: i32 = std.math.maxInt(i32) / 2;
 
-fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *const items.Ground) !void {
+fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *items.Ground) !void {
     if (pool.n > actor.MAX or ground.n > items.GROUND_MAX or ground.coin_n > grid.CELLS or level.torch.n > grid.MAX_TORCHES) return error.Damaged;
     if (ground.n + deathsToCome(pool) > items.GROUND_MAX) return error.Damaged;
     for (pool.slice(), 0..) |body, slot| {
         if (!grid.Level.inside(body.at) or body.max <= 0 or body.hp < 0 or body.hp > body.max) return error.Damaged;
         if (body.alive and (body.hp == 0 or level.who(body.at) != actor.Pool.idOf(slot))) return error.Damaged;
-        if (body.chill.phase > 2 or body.bleed.amount < 0) return error.Damaged;
+        if (body.chill.phase >= glacial.CYCLE or body.bleed.amount < 0) return error.Damaged;
         if (body.max > BODY_MOST or body.bleed.amount > BODY_MOST or body.clock.ticks < -BODY_MOST or body.clock.ticks > BODY_MOST) return error.Damaged;
         if (body.sunder.stacks > sunder.MOST or (body.sunder.stacks == 0) != (body.sunder.turns == 0)) return error.Damaged;
         if (body.maim.limp and body.maim.turns == 0) return error.Damaged;
@@ -323,7 +335,10 @@ fn validateLevel(level: *const grid.Level, pool: *actor.Pool, ground: *const ite
     }
     for (level.torches()) |at| if (!grid.Level.inside(at)) return error.Damaged;
     for (level.caltrops) |patch| if (patch.turns != 0 and (patch.rank == 0 or patch.rank > progress.RANKS)) return error.Damaged;
-    for (ground.drops[0..ground.n]) |drop| if (!grid.Level.inside(drop.at) or drop.source > pool.n) return error.Damaged;
+    for (ground.drops[0..ground.n]) |*drop| {
+        if (!grid.Level.inside(drop.at) or drop.source > pool.n) return error.Damaged;
+        drop.item.mend();
+    }
     for (ground.coins[0..ground.coin_n]) |coins| if (!grid.Level.inside(coins.at) or coins.amount <= 0) return error.Damaged;
     for (ground.supplies[0..ground.supply_n]) |s| if (!grid.Level.inside(s.at) or s.source > pool.n) return error.Damaged;
 }
@@ -465,6 +480,24 @@ test "a body whose clock, bleed or life would overflow a turn's arithmetic is da
         try std.testing.expectError(error.Damaged, validateLevel(&run.sim.lv, &run.sim.pool, &run.sim.ground));
     }
     h.* = saved;
+}
+
+test "a loaded modifier below its roll is raised to the least its roll gives, carried or lying" {
+    const alloc = std.testing.allocator;
+    const run = try game.boot(alloc);
+    defer game.shut(alloc, run);
+    game.begin(run, 37);
+    var it = items.Item{ .kind = .sword };
+    it.mods[0] = .{ .kind = .imbue, .value = -5, .element = .cold };
+    it.mods[1] = .{ .kind = .mana_on_kill, .value = -3 };
+    try std.testing.expect(run.sim.inventory.add(it));
+    try std.testing.expect(run.sim.ground.add(.{ .item = it, .at = run.sim.heroActor().?.at }));
+    try validateLevel(&run.sim.lv, &run.sim.pool, &run.sim.ground);
+    run.sim.inventory.mend();
+    for ([_]items.Item{ run.sim.inventory.bag[run.sim.inventory.n - 1], run.sim.ground.drops[run.sim.ground.n - 1].item }) |got| {
+        try std.testing.expectEqual(@as(i32, 10), got.value(.imbue));
+        try std.testing.expectEqual(@as(i32, 1), got.value(.mana_on_kill));
+    }
 }
 
 test "portable save corruption and missing required state leave the live game and map unchanged" {

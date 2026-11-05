@@ -128,7 +128,7 @@ fn spaced(lots: *buildings.Lots, lv: *const grid.Level, rng: *mathx.Rng, w: i32,
 /// Stamped, its gaps and the ring round it opened, so no thicket or rock seals its ground in.
 pub fn place(lv: *grid.Level, at: P, art: []const []const u8, pal: carve.Palette) void {
     stampOver(lv, at, art, pal);
-    carve.clearRound(lv, grid.Box.sized(at, size(art).x, size(art).y), pal);
+    carve.clearRound(lv, grid.Box.sizedP(at, size(art)), pal);
 }
 
 pub fn size(art: []const []const u8) P {

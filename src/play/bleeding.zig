@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const damage = @import("damage.zig");
 
+pub const AILMENT = @import("resilience.zig").Kind.bleed;
 pub const TURNS: u8 = 5;
 pub const STILL: i32 = 1;
 pub const MOVE_FACTOR: i32 = 2;

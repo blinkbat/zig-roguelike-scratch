@@ -28,7 +28,9 @@ const SEP = menu.SEP;
 
 const WORKSPACE_COLS = 2;
 const WORKSPACE_ROWS = widgets.rowsOf(std.enums.values(editor.Lower).len, WORKSPACE_COLS);
-pub const WORKSPACE_TOP: i32 = widgets.PAD + HEAD + widgets.GAP + (5 + WORKSPACE_ROWS) * widgets.ROW_STEP + widgets.GAP;
+/// The rows of buttons above the workspaces, top to bottom.
+const Bar = enum { file, views, library, story, acts };
+pub const WORKSPACE_TOP: i32 = widgets.PAD + HEAD + widgets.GAP + (@as(i32, std.enums.values(Bar).len) + WORKSPACE_ROWS) * widgets.ROW_STEP + widgets.GAP;
 
 pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     var buf: [widgets.LINE]u8 = undefined;
@@ -38,40 +40,10 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
     var fit_buf: [widgets.LINE]u8 = undefined;
     widgets.textFace(&g.face).draw(widgets.fitBefore(&g.face, &buf, &fit_buf, ed.path(), if (ed.history.dirty) " *" else "", widgets.INNER_W), widgets.PAD, y, widgets.TEXT, look.TEXT);
     y += HEAD + widgets.GAP;
-    var file = widgets.Across{ .y = y, .n = 4 };
-    if (editor.button(ed, g, file.next(), "New", false, true, widgets.keyed("New map", Desk.NEW_CAPTION))) ed.askName(.new);
-    if (editor.button(ed, g, file.next(), "Open", false, true, widgets.keyed("Open a map", Desk.OPEN_CAPTION))) ed.askOpen();
-    if (editor.button(ed, g, file.next(), "Save", false, true, widgets.keyed("Save", Desk.SAVE_CAPTION))) _ = ed.save();
-    if (editor.button(ed, g, file.next(), "Save as", false, true, widgets.keyed("Save under a new name", Desk.SAVE_AS_CAPTION))) ed.askName(.save_as);
-    file.done();
-    y += widgets.ROW_STEP;
-    var views = widgets.Across{ .y = y, .n = std.enums.values(editor.View).len + 1 };
-    for (std.enums.values(editor.View)) |v| {
-        if (editor.button(ed, g, views.next(), menu.named(v), ed.view == v, true, widgets.keyed("The map of one node, or every node and how they link", Desk.GRAPH_CAPTION))) ed.setView(v);
+    for (std.enums.values(Bar)) |bar| {
+        drawBar(ed, g, bar, y);
+        y += widgets.ROW_STEP;
     }
-    if (editor.button(ed, g, views.next(), "Fit", false, ed.view == .map, "Fit the map in view")) interaction.fitView(ed, editor.Editor.canvas(g));
-    views.done();
-    y += widgets.ROW_STEP;
-    var library = widgets.Across{ .y = y, .n = 3 };
-    if (editor.button(ed, g, library.next(), "Objects", false, true, widgets.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
-    if (editor.button(ed, g, library.next(), "Text", false, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
-    if (editor.button(ed, g, library.next(), "Keys", false, true, widgets.keyed("Every key", Desk.HELP_CAPTION))) ed.ask(.help);
-    library.done();
-    y += widgets.ROW_STEP;
-    var story = widgets.Across{ .y = y, .n = 2 };
-    if (editor.button(ed, g, story.next(), "Dialog", false, true, "Folk and the conversations they open: lines, choices and what each does")) editor.plot.open(ed, .dialogs);
-    if (editor.button(ed, g, story.next(), "Script", false, true, "Triggers: when every condition holds after a turn, their actions run in order")) editor.plot.open(ed, .script);
-    story.done();
-    y += widgets.ROW_STEP;
-    var acts = widgets.Across{ .y = y, .n = 4 };
-    if (editor.button(ed, g, acts.next(), "Undo", false, ed.history.at > 0, widgets.keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
-    if (editor.button(ed, g, acts.next(), "Redo", false, ed.history.at < ed.history.len, widgets.keyed("Redo", Desk.REDO_CAPTION))) ed.redo();
-    if (editor.button(ed, g, acts.next(), "Play", false, true, "Play from the map start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) {
-        ed.playStart();
-    }
-    if (editor.button(ed, g, acts.next(), "Title", false, true, widgets.keyed("Back to the title", Desk.BACK_CAPTION))) ed.request(.leave);
-    acts.done();
-    y += widgets.ROW_STEP;
     if (ed.lower == .generator and ed.rolled() == null) ed.lower = .nodes;
     for (std.enums.values(editor.Lower), 0..) |l, i| {
         const r = widgets.gridSlot(y, i, WORKSPACE_COLS, widgets.ROW_STEP);
@@ -90,6 +62,50 @@ pub fn drawPanel(ed: *editor.Editor, g: *game.Game) void {
         .nodes => drawNodesWorkspace(ed, g, y),
         .generator => if (ed.generator()) |pg| knobs.drawGenerator(ed, g, y, pg),
         .things => drawThings(ed, g, y),
+    }
+}
+
+fn drawBar(ed: *editor.Editor, g: *game.Game, bar: Bar, y: i32) void {
+    switch (bar) {
+        .file => {
+            var file = widgets.Across{ .y = y, .n = 4 };
+            if (editor.button(ed, g, file.next(), "New", false, true, widgets.keyed("New map", Desk.NEW_CAPTION))) ed.askName(.new);
+            if (editor.button(ed, g, file.next(), "Open", false, true, widgets.keyed("Open a map", Desk.OPEN_CAPTION))) ed.askOpen();
+            if (editor.button(ed, g, file.next(), "Save", false, true, widgets.keyed("Save", Desk.SAVE_CAPTION))) _ = ed.save();
+            if (editor.button(ed, g, file.next(), "Save as", false, true, widgets.keyed("Save under a new name", Desk.SAVE_AS_CAPTION))) ed.askName(.save_as);
+            file.done();
+        },
+        .views => {
+            var views = widgets.Across{ .y = y, .n = std.enums.values(editor.View).len + 1 };
+            for (std.enums.values(editor.View)) |v| {
+                if (editor.button(ed, g, views.next(), menu.named(v), ed.view == v, true, widgets.keyed("The map of one node, or every node and how they link", Desk.GRAPH_CAPTION))) ed.setView(v);
+            }
+            if (editor.button(ed, g, views.next(), "Fit", false, ed.view == .map, "Fit the map in view")) interaction.fitView(ed, editor.Editor.canvas(g));
+            views.done();
+        },
+        .library => {
+            var library = widgets.Across{ .y = y, .n = 3 };
+            if (editor.button(ed, g, library.next(), "Objects", false, true, widgets.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
+            if (editor.button(ed, g, library.next(), "Text", false, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
+            if (editor.button(ed, g, library.next(), "Keys", false, true, widgets.keyed("Every key", Desk.HELP_CAPTION))) ed.ask(.help);
+            library.done();
+        },
+        .story => {
+            var story = widgets.Across{ .y = y, .n = 2 };
+            if (editor.button(ed, g, story.next(), "Dialog", false, true, "Folk and the conversations they open: lines, choices and what each does")) editor.plot.open(ed, .dialogs);
+            if (editor.button(ed, g, story.next(), "Script", false, true, "Triggers: when every condition holds after a turn, their actions run in order")) editor.plot.open(ed, .script);
+            story.done();
+        },
+        .acts => {
+            var acts = widgets.Across{ .y = y, .n = 4 };
+            if (editor.button(ed, g, acts.next(), "Undo", false, ed.history.at > 0, widgets.keyed("Undo", Desk.UNDO_CAPTION))) ed.undo();
+            if (editor.button(ed, g, acts.next(), "Redo", false, ed.history.at < ed.history.len, widgets.keyed("Redo", Desk.REDO_CAPTION))) ed.redo();
+            if (editor.button(ed, g, acts.next(), "Play", false, true, "Play from the map start (" ++ Desk.PLAY_CAPTION ++ "); " ++ Desk.PLAY_HERE_CAPTION ++ " comes back")) {
+                ed.playStart();
+            }
+            if (editor.button(ed, g, acts.next(), "Title", false, true, widgets.keyed("Back to the title", Desk.BACK_CAPTION))) ed.request(.leave);
+            acts.done();
+        },
     }
 }
 
@@ -181,13 +197,7 @@ const SWATCH: i32 = 40;
 const SWATCH_GAP: i32 = 4;
 const SHAPE_COLS: usize = 3;
 const PALETTE_COLS: usize = @intCast(@divTrunc(widgets.INNER_W + SWATCH_GAP, SWATCH + SWATCH_GAP));
-const PALETTE = blk: {
-    var tiles: []const grid.Tile = &.{};
-    for (std.enums.values(grid.Tile)) |t| {
-        if (t.single()) tiles = tiles ++ &[_]grid.Tile{t};
-    }
-    break :blk tiles;
-};
+const PALETTE = grid.SINGLES;
 
 fn drawTools(ed: *editor.Editor, g: *game.Game, top: i32) i32 {
     var buf: [widgets.LINE]u8 = undefined;

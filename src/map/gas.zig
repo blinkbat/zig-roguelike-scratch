@@ -239,7 +239,7 @@ test "gas eats a fifteenth of full hp a turn and never less than one" {
     try std.testing.expectEqual(@as(i32, 2), heal(40));
 }
 
-test "a glow plant bursts into healing gas over its grass, which spreads and clears apart from caustic gas" {
+test "a glowbulb bursts into healing gas over its grass, which spreads and clears apart from caustic gas" {
     var rng = mathx.Rng.init(0x6A5);
     var lv = grid.openFloor();
     const at = OPEN_AT;
@@ -257,7 +257,7 @@ test "a glow plant bursts into healing gas over its grass, which spreads and cle
         try std.testing.expect(!any(&lv.gas));
         most = @max(most, grid.CELLS - std.mem.count(u16, &lv.healing, &.{0}));
     }
-    std.debug.print("a glow plant's healing gas on open floor: gone in {d} turns, over at most {d} cells\n", .{ turns, most });
+    std.debug.print("a glowbulb's healing gas on open floor: gone in {d} turns, over at most {d} cells\n", .{ turns, most });
     try std.testing.expect(turns > 5 and most > 9);
 }
 

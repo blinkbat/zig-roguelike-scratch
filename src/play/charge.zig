@@ -12,12 +12,8 @@ pub const RANGE: i32 = 3;
 pub const MIN_RANGE: i32 = 1;
 pub const VERB = "charges into";
 pub const DONE = "charges";
-const DESCRIBED = "Rush {d}-{d} tiles along a clear line. Strike a foe at the end and knock it back a tile, or retreat to empty ground.";
+pub const DESCRIBED = "Rush {d}-{d} tiles along a clear line. Strike a foe at the end and knock it back a tile, or retreat to empty ground.";
 pub const DESCRIPTION = std.fmt.comptimePrint(DESCRIBED, .{ MIN_RANGE, RANGE });
-
-pub fn describeReach(w: anytype, range: i32) void {
-    w.print(DESCRIBED, .{ MIN_RANGE, range }) catch {};
-}
 
 pub const BASE = damage.Base{ .lo = 5, .hi = 8 };
 

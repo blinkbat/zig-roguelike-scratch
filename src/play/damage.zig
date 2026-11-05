@@ -69,11 +69,6 @@ pub const Damage = struct {
     pub fn reaches(self: Damage, resists: Resists, e: Element) bool {
         return resisted(self.elements.get(e), resists.get(e)) > 0;
     }
-
-    /// Leaves a body on `hp` alive with some of its `e` got through, so `e`'s status may take.
-    pub fn afflicts(self: Damage, resists: Resists, e: Element, hp: i32) bool {
-        return self.total(resists) < hp and self.reaches(resists, e);
-    }
 };
 
 /// Harm a turn for `TURNS` turns from the turn after it starts; started again, it refreshes without stacking or delaying a due tick.
@@ -162,26 +157,4 @@ test "damage floors each element separately clamps resistance and saturates larg
     const large = Damage{ .physical = std.math.maxInt(i32), .elements = .initFill(std.math.maxInt(i32)) };
     try std.testing.expectEqual(std.math.maxInt(i32), large.total(.initFill(-100)));
     std.debug.print("damage boundaries: {d} explicit cases, per-element rounding and saturated mixed totals checked\n", .{cases.len});
-}
-
-test "elemental statuses require penetrating damage and a surviving target" {
-    var checks: usize = 0;
-    for (std.enums.values(Element)) |element| {
-        const hit = Damage{ .physical = 3 };
-        var elemental = hit;
-        elemental.elements.set(element, 2);
-        const clear = Resists.initFill(0);
-        try std.testing.expect(elemental.afflicts(clear, element, 6));
-        try std.testing.expect(!elemental.afflicts(clear, element, 5));
-        try std.testing.expect(!elemental.afflicts(clear, element, 4));
-        var immune = clear;
-        immune.set(element, 100);
-        try std.testing.expect(!elemental.afflicts(immune, element, 20));
-        try std.testing.expect(!hit.afflicts(clear, element, 20));
-        elemental.elements.set(element, 1);
-        immune.set(element, 50);
-        try std.testing.expect(!elemental.afflicts(immune, element, 20));
-        checks += 6;
-    }
-    std.debug.print("elemental status eligibility: {d} survival, lethal, immune, absent and rounded-away cases checked\n", .{checks});
 }

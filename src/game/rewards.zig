@@ -110,7 +110,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
     if (reward.supply) |k| _ = dropSupply(sim, .{ .kind = k, .at = fallen.at, .source = target.value });
     for (std.enums.values(flask.Kind)) |k| if (sim.inventory.gear.holds(k)) sim.flasks.getPtr(k).fill(flask.PER_KILL);
     const mana_before = sim.mana;
-    if (sim.heroBody()) |h| if (h.alive) sim.gainMana(sim.inventory.gear.sum(.mana_on_kill));
+    if (sim.heroBody()) |h| if (h.alive) sim.gainMana(sim.inventory.gear.manaOnKill());
     var caught = Caught.initEmpty();
     switch (actor.row(fallen.kind).blow) {
         .burst => |b| switch (b) {

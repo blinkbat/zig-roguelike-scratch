@@ -96,7 +96,11 @@ pub const Occlusion = struct {
     }
 };
 
-pub const OCCLUSION_FS = shaders.glslConsts(.{ .OCCLUDED_A = OCCLUDED_A, .OCCLUSION_RADIUS = [2]f32{ 0.6, 0.85 }, .OCCLUSION_INNER = @as(f32, 0.35) }) ++
+/// Cells across and down the see-through aperture round an occluded body reaches, and where inside it the aperture is whole.
+const OCCLUSION_RADIUS = [2]f32{ 0.6, 0.85 };
+const OCCLUSION_INNER: f32 = 0.35;
+
+pub const OCCLUSION_FS = shaders.glslConsts(.{ .OCCLUDED_A = OCCLUDED_A, .OCCLUSION_RADIUS = OCCLUSION_RADIUS, .OCCLUSION_INNER = OCCLUSION_INNER }) ++
     \\uniform vec2 body;
     \\uniform float hidden;
     \\float occlusionAt(vec2 p) {
@@ -169,7 +173,7 @@ pub const Assets = struct {
         return need;
     }
 
-    /// The ground `t` left at `p` once a mimic's chest is flung open or a glow plant bursts.
+    /// The ground `t` left at `p` once a mimic's chest is flung open or a glowbulb bursts.
     pub fn beneath(need: *Assets, t: grid.Tile, p: mathx.P) void {
         need.decor(t, p);
         if (standsOver(t)) if (cutOf(t, null)) |c| need.add(c);
@@ -461,7 +465,7 @@ pub const Sprites = struct {
                 if (sheet) {
                     const piece = self.groundPiece(gr, here.corners.mask(gr), p) orelse continue;
                     const at = cellAt(origin, p, px);
-                    raster.blit(piece.tex, piece.src, .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px }, LIT);
+                    raster.blit(piece.tex, piece.src, pointRect(at, px), LIT);
                     continue;
                 }
                 const under_ = here.corners.under(gr, sheeted);
@@ -490,24 +494,20 @@ pub const Sprites = struct {
         self.drawWaterEdges(beds, origin, px, water);
     }
 
+    /// Each water edge atlas, by its `Sprites`/`SOURCES` field, and the grounds whose meeting it draws, in drawing order.
+    const WATER_EDGES = [_]struct { upper: ground.Ground, lower: ground.Ground, name: [:0]const u8 }{
+        .{ .upper = .shallows, .lower = .water, .name = "shallows_water_edges" },
+        .{ .upper = .dirt, .lower = .shallows, .name = "dirt_shallows_edges" },
+        .{ .upper = .dirt, .lower = .water, .name = "dirt_water_edges" },
+    };
+
     pub fn drawWaterEdges(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
-        const pairs = [_]struct { upper: ground.Ground, lower: ground.Ground, tex: ?rl.Texture2D }{
-            .{ .upper = .shallows, .lower = .water, .tex = self.shallows_water_edges },
-            .{ .upper = .dirt, .lower = .shallows, .tex = self.dirt_shallows_edges },
-            .{ .upper = .dirt, .lower = .water, .tex = self.dirt_water_edges },
-        };
-        for (pairs) |pair| {
-            const tex = pair.tex orelse continue;
+        inline for (WATER_EDGES) |pair| if (@field(self, pair.name)) |tex| {
             for (std.enums.values(WaterBand)) |band| {
                 const depth = band.depth();
                 const surface = band.surface() and self.beginWater(water, origin, px, depth);
-                const face = band.face() and water != null and self.water_face != null;
-                if (face) {
-                    const s = self.water_face.?;
-                    rl.beginShaderMode(s.shader);
-                    shaders.setUniform(s.shader, s.screen, water.?.screen);
-                    shaders.setUniform(s.shader, s.depth, depth);
-                }
+                const face = if (band.face()) self.waterFace(water) else null;
+                if (face) |f| f.begin(depth);
                 var points = beds.points();
                 while (points.next()) |p| {
                     const corners = beds.pointAt(p).corners;
@@ -516,7 +516,7 @@ pub const Sprites = struct {
                     const src = sheetCell(cell.x + @as(i32, @intCast(@intFromEnum(band) * ground.COLS)), cell.y);
                     const at = cellAt(origin, p, px);
                     if (corners.pairMask(pair.upper, pair.lower) != null) {
-                        raster.blit(tex, src, .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px }, LIT);
+                        raster.blit(tex, src, pointRect(at, px), LIT);
                     } else for (0..4) |q| {
                         if (!corners.edgeQuarter(pair.upper, pair.lower, q)) continue;
                         const dx = @as(f32, @floatFromInt(q % 2)) / 2;
@@ -525,9 +525,9 @@ pub const Sprites = struct {
                         raster.blit(tex, quarter_src, .{ .x = at[0] + (dx - 0.5) * px, .y = at[1] + (dy - 0.5) * px, .width = px / 2, .height = px / 2 }, LIT);
                     }
                 }
-                if (surface or face) rl.endShaderMode();
+                if (surface or face != null) rl.endShaderMode();
             }
-        }
+        };
     }
 
     fn drawWaterCliffs(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
@@ -543,30 +543,41 @@ pub const Sprites = struct {
     }
 
     fn drawWaterBankFaces(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView, bank: ground.Bank) void {
+        const face = self.waterFace(water);
+        var bound: ?f32 = null;
         var points = beds.points();
         while (points.next()) |p| {
-            const index = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
+            const piece = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
             const at = cellAt(origin, p, px);
             for (0..2) |side| {
-                const wet_side: i32 = if (index == 0) 0 else if (index == 2) -1 else @as(i32, @intCast(side)) - 1;
-                const south = p.add(.{ .x = wet_side, .y = 0 });
-                const depth = beds.ground(south) orelse continue;
+                const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
                 const tex = (if (depth == .water) self.water_cliff else self.shallows_cliff) orelse continue;
-                const shift: f32 = @as(f32, @floatFromInt(side)) / 2;
-                var src = sheetCell(index, 0);
-                src.x += shift * SPRITE_PX;
-                src.width /= 2;
-                const tinted = self.water_face != null and water != null;
-                if (tinted) {
-                    const s = self.water_face.?;
-                    rl.beginShaderMode(s.shader);
-                    shaders.setUniform(s.shader, s.screen, water.?.screen);
-                    shaders.setUniform(s.shader, s.depth, waterDepth(depth).?);
+                if (face) |f| {
+                    const d = waterDepth(depth).?;
+                    if (bound != d) {
+                        if (bound != null) rl.gl.rlDrawRenderBatchActive();
+                        f.begin(d);
+                        bound = d;
+                    }
                 }
-                raster.blit(tex, src, .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px * ground.BANK_LIFT, .width = px / 2, .height = px }, LIT);
-                if (tinted) rl.endShaderMode();
+                const half = bankHalf(piece, side, at, px);
+                raster.blit(tex, half.src, half.dst, LIT);
             }
         }
+        if (bound != null) rl.endShaderMode();
+    }
+
+    /// `side`'s half of `piece`'s face or cap cell, and where it stands over the point at `at`.
+    fn bankHalf(piece: ground.BankPiece, side: usize, at: [2]f32, px: f32) struct { src: rl.Rectangle, dst: rl.Rectangle } {
+        const shift = sideShift(side);
+        var src = sheetCell(piece.col(), 0);
+        src.x += shift * SPRITE_PX;
+        src.width /= 2;
+        return .{ .src = src, .dst = .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px * ground.BANK_LIFT, .width = px / 2, .height = px } };
+    }
+
+    fn sideShift(side: usize) f32 {
+        return @as(f32, @floatFromInt(side)) / 2;
     }
 
     pub fn drawWaterCliffCaps(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
@@ -576,74 +587,100 @@ pub const Sprites = struct {
     fn drawWaterBankCaps(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView, bank: ground.Bank) void {
         var points = beds.points();
         while (points.next()) |p| {
-            const index = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
+            const piece = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
             const at = cellAt(origin, p, px);
             for (0..2) |side| {
                 const north = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = -1 });
                 const gr = beds.ground(north) orelse continue;
-                const wet_side: i32 = if (index == 0) 0 else if (index == 2) -1 else @as(i32, @intCast(side)) - 1;
-                const depth = beds.ground(p.add(.{ .x = wet_side, .y = 0 })) orelse continue;
+                const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
                 if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
                 const fill = self.bankFill(gr) orelse continue;
-                const shift: f32 = @as(f32, @floatFromInt(side)) / 2;
-                var src = fill.src;
-                src.x += shift * SPRITE_PX;
-                src.width /= 2;
-                src.height /= 2;
                 const reflective = if (waterDepth(gr)) |d| self.beginWater(water, origin, px, d) else false;
-                raster.blit(fill.tex, src, .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px / 2, .width = px / 2, .height = px / 2 }, LIT);
+                raster.blit(fill.piece.tex, fill.lowerQuarter(side), .{ .x = at[0] + (sideShift(side) - 0.5) * px, .y = at[1] - px / 2, .width = px / 2, .height = px / 2 }, LIT);
                 if (reflective) rl.endShaderMode();
             }
             for (0..2) |side| {
-                const outside = (index == 0 and side == 0) or (index == 2 and side == 1);
-                const land = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = if (outside) 0 else -1 });
-                const wet_side: i32 = if (index == 0) 0 else if (index == 2) -1 else @as(i32, @intCast(side)) - 1;
-                const south = p.add(.{ .x = wet_side, .y = 0 });
-                const depth = beds.ground(south) orelse continue;
+                const land = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = if (piece.outside(side)) 0 else -1 });
+                const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
                 const cap = (if (depth == .water) self.water_cliff_cap else self.shallows_cliff_cap) orelse continue;
                 const gr = beds.ground(land) orelse continue;
                 if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
                 const fill = self.bankFill(gr);
-                const mask = Piece{ .tex = cap, .src = sheetCell(index, 0) };
-                const offset = [2]f32{ 0, 0.5 - ground.BANK_LIFT };
+                const mask = Piece{ .tex = cap, .src = sheetCell(piece.col(), 0) };
                 const wet_cap = if (gr == .shallows) self.shallows_water_cap else null;
                 const reflective = wet_cap != null and self.beginWater(water, origin, px, WATER_SHALLOW);
-                if (!reflective and !self.beginGroundFill(mask, fill, tileBg(gr.tile()) orelse rl.Color.blank, offset)) continue;
-                const shift: f32 = @as(f32, @floatFromInt(side)) / 2;
-                var src = sheetCell(index, 0);
-                src.x += shift * SPRITE_PX;
-                src.width /= 2;
-                raster.blit(if (reflective) wet_cap.? else cap, src, .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px * ground.BANK_LIFT, .width = px / 2, .height = px }, LIT);
+                if (!reflective and !self.beginGroundFill(mask, fill, tileBg(gr.tile()) orelse rl.Color.blank)) continue;
+                const half = bankHalf(piece, side, at, px);
+                raster.blit(if (reflective) wet_cap.? else cap, half.src, half.dst, LIT);
                 rl.endShaderMode();
             }
         }
     }
 
-    fn bankFill(self: *const Sprites, gr: ground.Ground) ?Piece {
+    /// Land drawn into a bank's cap: a sheet's full cell, set on the dual grid, or a whole tile picture, set on its own cell.
+    const BankFill = struct {
+        piece: Piece,
+        sheet: bool,
+
+        /// Where its picture continues in the lower quarter of the cell north-west (side 0) or north-east (side 1) of a point.
+        fn lowerQuarter(self: BankFill, side: usize) rl.Rectangle {
+            const shift = sideShift(side);
+            var src = self.piece.src;
+            if (self.sheet) {
+                src.x += shift * src.width;
+            } else {
+                src.x += (0.5 - shift) * src.width;
+                src.y += src.height / 2;
+            }
+            src.width /= 2;
+            src.height /= 2;
+            return src;
+        }
+
+        /// The cap shader's shift from the cap cell, `BANK_LIFT` above the point's row, into this picture's frame.
+        fn offset(self: BankFill) [2]f32 {
+            return if (self.sheet) .{ 0, 0.5 - ground.BANK_LIFT } else .{ 0.5, 1 - ground.BANK_LIFT };
+        }
+    };
+
+    fn bankFill(self: *const Sprites, gr: ground.Ground) ?BankFill {
         if (self.grounds.getPtrConst(gr).*) |tex| {
             const cell = ground.CELL_OF[ground.FULL];
-            return .{ .tex = tex, .src = sheetCell(cell.x, cell.y) };
+            return .{ .piece = .{ .tex = tex, .src = sheetCell(cell.x, cell.y) }, .sheet = true };
         }
         const tex = self.tiles.getPtrConst(gr.tile()).* orelse return null;
-        return .{ .tex = tex, .src = raster.whole(tex) };
+        return .{ .piece = .{ .tex = tex, .src = raster.whole(tex) }, .sheet = false };
     }
 
-    fn beginGroundFill(self: *const Sprites, mask: Piece, fill: ?Piece, color: rl.Color, offset: [2]f32) bool {
+    fn beginGroundFill(self: *const Sprites, mask: Piece, maybe: ?BankFill, color: rl.Color) bool {
         const s = self.bank_cap orelse return false;
         rl.beginShaderMode(s.shader);
         rl.gl.rlDrawRenderBatchActive();
-        const mw, const mh = raster.sizeOf(mask.tex);
-        shaders.setUniform(s.shader, s.mask_region, [4]f32{ mask.src.x / mw, mask.src.y / mh, mask.src.width / mw, mask.src.height / mh });
-        shaders.setUniform(s.shader, s.offset, offset);
-        shaders.setUniform(s.shader, s.textured, @as(i32, @intFromBool(fill != null)));
-        if (fill) |piece| {
-            const w, const h = raster.sizeOf(piece.tex);
-            shaders.setUniform(s.shader, s.region, [4]f32{ piece.src.x / w, piece.src.y / h, piece.src.width / w, piece.src.height / h });
+        shaders.setUniform(s.shader, s.mask_region, raster.uvOf(mask.tex, mask.src));
+        shaders.setUniform(s.shader, s.textured, maybe != null);
+        if (maybe) |fill| {
+            const piece = fill.piece;
+            shaders.setUniform(s.shader, s.offset, fill.offset());
+            shaders.setUniform(s.shader, s.region, raster.uvOf(piece.tex, piece.src));
             rl.setShaderValueTexture(s.shader, s.land, piece.tex);
-        } else {
-            shaders.setUniform(s.shader, s.solid, [4]f32{ @as(f32, @floatFromInt(color.r)) / 255, @as(f32, @floatFromInt(color.g)) / 255, @as(f32, @floatFromInt(color.b)) / 255, @as(f32, @floatFromInt(color.a)) / 255 });
-        }
+        } else shaders.setUniform(s.shader, s.solid, rgbaOf(color));
         return true;
+    }
+
+    const WaterFace = struct {
+        s: WaterFaceShader,
+        screen: [2]f32,
+
+        fn begin(f: WaterFace, depth: f32) void {
+            rl.beginShaderMode(f.s.shader);
+            shaders.setUniform(f.s.shader, f.s.screen, f.screen);
+            shaders.setUniform(f.s.shader, f.s.depth, depth);
+        }
+    };
+
+    fn waterFace(self: *const Sprites, view: ?WaterView) ?WaterFace {
+        const v = view orelse return null;
+        return .{ .s = self.water_face orelse return null, .screen = v.screen };
     }
 
     fn beginWater(self: *const Sprites, view: ?WaterView, origin: [2]f32, px: f32, depth: f32) bool {
@@ -652,8 +689,8 @@ pub const Sprites = struct {
         rl.beginShaderMode(s.shader);
         shaders.setMapView(s, .{ .origin = origin, .cell = px, .screen = v.screen });
         shaders.setUniform(s.shader, s.depth, depth);
-        shaders.setUniform(s.shader, s.mirrored, @as(i32, @intFromBool(v.mirror != null)));
-        shaders.setUniform(s.shader, s.shimmer, @as(i32, @intFromBool(v.shimmer)));
+        shaders.setUniform(s.shader, s.mirrored, v.mirror != null);
+        shaders.setUniform(s.shader, s.shimmer, v.shimmer);
         shaders.setUniform(s.shader, s.seconds, v.seconds);
         rl.setShaderValueTexture(s.shader, s.visibility, v.visibility);
         rl.setShaderValueTexture(s.shader, s.glints, v.glints);
@@ -680,6 +717,11 @@ pub const Sprites = struct {
 
     fn cellAt(origin: [2]f32, p: mathx.P, px: f32) [2]f32 {
         return .{ origin[0] + @as(f32, @floatFromInt(p.x)) * px, origin[1] + @as(f32, @floatFromInt(p.y)) * px };
+    }
+
+    /// A cell's square centred on the dual-grid point at `at`.
+    fn pointRect(at: [2]f32, px: f32) rl.Rectangle {
+        return .{ .x = at[0] - px / 2, .y = at[1] - px / 2, .width = px, .height = px };
     }
 
     /// The part of a ground's square from `uv` across `span`, fractions of the cell: its picture, else its colour.
@@ -876,6 +918,7 @@ const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const
     .chest = @embedFile("chest.png"),
     .chest_open = @embedFile("chest-open.png"),
     .caravan = @embedFile("caravan-cart.png"),
+    .glow_plant = @embedFile("glowbulb.png"),
 });
 
 comptime {
@@ -1160,12 +1203,16 @@ pub fn glyphGround(t: grid.Tile, sprites: *const Sprites) bool {
 const TileLook = struct { sym: [:0]const u8, ch: u8, fg: rl.Color, bg: ?rl.Color, mini: rl.Color, mini_dim: rl.Color };
 
 const TREE_INK = .{ .fg = rgb(0x788650), .mini = rgb(0x667247), .mini_dim = rgb(0x343b29) };
+const SHRUB_INK = rgb(0x6f9a4a);
+const STONE_INK = rgb(0x8a7f6a);
+const HIDE_INK = rgb(0xb07a4e);
+const PIB_INK = rgb(0xe89aa6);
 
 const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
-    .wall = .{ .sym = "#", .ch = '#', .fg = rgb(0x9a8e78), .bg = null, .mini = rgb(0x8a7f6a), .mini_dim = rgb(0x46434c) },
+    .wall = .{ .sym = "#", .ch = '#', .fg = rgb(0x9a8e78), .bg = null, .mini = STONE_INK, .mini_dim = rgb(0x46434c) },
     .floor = .{ .sym = "·", .ch = '.', .fg = rgb(0x5e5a50), .bg = FLOOR_BG, .mini = rgb(0x3a3830), .mini_dim = rgb(0x1c1c22) },
     .grass = .{ .sym = "\"", .ch = '"', .fg = rgb(0x4f7a3a), .bg = GRASS_BG, .mini = rgb(0x2e4426), .mini_dim = rgb(0x182016) },
-    .shrub = .{ .sym = "¥", .ch = '&', .fg = rgb(0x6f9a4a), .bg = null, .mini = rgb(0x5e8a3e), .mini_dim = rgb(0x2e3c2a) },
+    .shrub = .{ .sym = "¥", .ch = '&', .fg = SHRUB_INK, .bg = null, .mini = rgb(0x5e8a3e), .mini_dim = rgb(0x2e3c2a) },
     .rock = .{ .sym = "#", .ch = '#', .fg = rgb(0x8a7e6c), .bg = rgb(0x262220), .mini = rgb(0x6e6558), .mini_dim = rgb(0x38332e) },
     .dirt = .{ .sym = "·", .ch = '.', .fg = rgb(0x8a6a44), .bg = rgb(0x1a140e), .mini = rgb(0x4a3a28), .mini_dim = rgb(0x231c14) },
     .sand = .{ .sym = "·", .ch = '.', .fg = rgb(0xd8c084), .bg = rgb(0x2e2716), .mini = rgb(0x8a7a50), .mini_dim = rgb(0x403a28) },
@@ -1174,7 +1221,7 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .shallows = .{ .sym = "~", .ch = '~', .fg = rgb(0x78b0d4), .bg = rgb(0x14283c), .mini = rgb(0x3e6e8e), .mini_dim = rgb(0x1e3444) },
     .bridge = .{ .sym = "=", .ch = '=', .fg = rgb(0xa87c48), .bg = rgb(0x1e160e), .mini = rgb(0x7a5a36), .mini_dim = rgb(0x3a2c1c) },
     .reeds = .{ .sym = "¦", .ch = '|', .fg = rgb(0xa8b24a), .bg = null, .mini = rgb(0x6a7030), .mini_dim = rgb(0x32361a) },
-    .rubble = .{ .sym = "•", .ch = ',', .fg = rgb(0x8a7f6a), .bg = rgb(0x18161a), .mini = rgb(0x4e4840), .mini_dim = rgb(0x26241f) },
+    .rubble = .{ .sym = "•", .ch = ',', .fg = STONE_INK, .bg = rgb(0x18161a), .mini = rgb(0x4e4840), .mini_dim = rgb(0x26241f) },
     .fence = .{ .sym = "∏", .ch = '#', .fg = rgb(0x9a6638), .bg = null, .mini = rgb(0x7a5030), .mini_dim = rgb(0x3a2818) },
     .lava = .{ .sym = "≈", .ch = '~', .fg = rgb(0xff8a30), .bg = rgb(0x501406), .mini = rgb(0xc8501a), .mini_dim = rgb(0x5a240c) },
     .fungus = .{ .sym = "¶", .ch = 'T', .fg = rgb(0xb882e0), .bg = null, .mini = rgb(0x7a4e9a), .mini_dim = rgb(0x3a2a48) },
@@ -1182,7 +1229,7 @@ const TILES = std.EnumArray(grid.Tile, TileLook).init(.{
     .ice = .{ .sym = "·", .ch = '_', .fg = rgb(0xb8e4f4), .bg = rgb(0x1c3440), .mini = rgb(0x7ab0c8), .mini_dim = rgb(0x3a5462) },
     .grave = .{ .sym = "†", .ch = '+', .fg = rgb(0xc8c4b8), .bg = null, .mini = rgb(0x8a8680), .mini_dim = rgb(0x44423e) },
     .crop = .{ .sym = "¥", .ch = '"', .fg = rgb(0xd8b84a), .bg = rgb(0x1e1a0a), .mini = rgb(0x8a7a30), .mini_dim = rgb(0x403a18) },
-    .tiny_shrub = .{ .sym = "'", .ch = '\'', .fg = rgb(0x6f9a4a), .bg = null, .mini = rgb(0x4e7436), .mini_dim = rgb(0x26341f) },
+    .tiny_shrub = .{ .sym = "'", .ch = '\'', .fg = SHRUB_INK, .bg = null, .mini = rgb(0x4e7436), .mini_dim = rgb(0x26341f) },
     .boulder = .{ .sym = "o", .ch = 'o', .fg = rgb(0x9a8e90), .bg = null, .mini = rgb(0x7a7072), .mini_dim = rgb(0x3c3638) },
     .tall_grass = .{ .sym = "\"", .ch = '"', .fg = rgb(0x7aa84e), .bg = null, .mini = rgb(0x3a5630), .mini_dim = rgb(0x1c2818) },
     .shrooms = .{ .sym = "•", .ch = ',', .fg = rgb(0xd8ccb4), .bg = null, .mini = rgb(0x3c4a30), .mini_dim = rgb(0x1e241a) },
@@ -1243,12 +1290,12 @@ pub fn body(k: actor.Kind) Look {
         .archer => .{ .ch = '@', .fg = rgb(0x7cc86e) },
         .wizard => .{ .ch = '@', .fg = rgb(0x8f9cf2) },
         .knight => .{ .ch = '@', .fg = rgb(0xd6d9e0) },
-        .rat => .{ .ch = 'r', .fg = rgb(0xb07a4e) },
+        .rat => .{ .ch = 'r', .fg = HIDE_INK },
         .slime, .slime_half, .slime_quarter => .{ .ch = 's', .fg = rgb(0x6fae5a) },
         .bloat => .{ .ch = 'b', .fg = CAUSTIC_BLOAT },
-        .pib => .{ .ch = 'p', .fg = rgb(0xe89aa6) },
-        .beefy_pib => .{ .ch = 'P', .fg = rgb(0xe89aa6) },
-        .bandit_crossbowman => .{ .ch = 'c', .fg = rgb(0xb07a4e) },
+        .pib => .{ .ch = 'p', .fg = PIB_INK },
+        .beefy_pib => .{ .ch = 'P', .fg = PIB_INK },
+        .bandit_crossbowman => .{ .ch = 'c', .fg = HIDE_INK },
         .bandit_netter => .{ .ch = 'T', .fg = rgb(0xffeb3b) },
         .bandit_shieldbearer => .{ .ch = 'S', .fg = rgb(0x4d7cff) },
         .frost_wisp => .{ .ch = 'W', .fg = rgb(0x4ff0ff) },
@@ -1543,10 +1590,8 @@ const WaterBand = enum {
 
 comptime {
     const size = mathx.P{ .x = std.enums.values(WaterBand).len * ground.COLS * SPRITE_PX, .y = ground.ROWS * SPRITE_PX };
-    for (.{ SOURCES.dirt_shallows_edges, SOURCES.dirt_water_edges, SOURCES.shallows_water_edges }) |png| {
-        std.debug.assert(std.meta.eql(pngSize(png), size));
-    }
-    std.debug.assert(std.meta.eql(pngSize(SOURCES.shallows_water_cap), mathx.P{ .x = 3 * SPRITE_PX, .y = SPRITE_PX }));
+    for (Sprites.WATER_EDGES) |e| std.debug.assert(std.meta.eql(pngSize(@field(SOURCES, e.name)), size));
+    std.debug.assert(std.meta.eql(pngSize(SOURCES.shallows_water_cap), mathx.P{ .x = ground.BankPiece.COUNT * SPRITE_PX, .y = SPRITE_PX }));
 }
 const WATER_SATURATION: f32 = 0.8;
 const MIRROR_DEEP: f32 = 0.42;
@@ -1556,7 +1601,12 @@ const MIRROR_TINT = [3]f32{ 0.8, 0.9, 1.0 };
 const WATER_HIGHLIGHT = [2]f32{ 0.62, 0.82 };
 const WATER_SHIMMER: f32 = 0.32;
 /// Cells a second each of the two crossing noise layers drifts.
-const SHIMMER_DRIFT = [2][2]f32{ .{ 0.21, -0.13 }, .{ -0.17, 0.24 } };
+const SHIMMER_DRIFT = [2][2]f32{ .{ 0.26, -0.16 }, .{ -0.21, 0.30 } };
+/// Each layer's noise cells a map cell and share of the swell, the second layer's offset, and the noise span stretched to a full swell.
+const SHIMMER_SCALE = [2]f32{ 1.9, 3.7 };
+const SHIMMER_WEIGHT = [2]f32{ 0.55, 0.45 };
+const SHIMMER_OFFSET: f32 = 19.7;
+const SHIMMER_SPAN = [2]f32{ 0.25, 0.75 };
 /// Water's brightness at the screen's top and bottom edges, eased between.
 const WATER_SCREEN_FADE = [2]f32{ 1.1, 0.45 };
 /// Deep water's brightness at the screen's bottom edge.
@@ -1591,6 +1641,10 @@ const WATER_FS = shaders.FS_HEAD ++ WATER_FADE_FS ++ shaders.glslConsts(.{
     .SHIMMER = WATER_SHIMMER,
     .DRIFT_A = SHIMMER_DRIFT[0],
     .DRIFT_B = SHIMMER_DRIFT[1],
+    .SWELL_SCALE = SHIMMER_SCALE,
+    .SWELL_WEIGHT = SHIMMER_WEIGHT,
+    .SWELL_OFFSET = SHIMMER_OFFSET,
+    .SWELL_SPAN = SHIMMER_SPAN,
 }) ++ shaders.MAP_VIEW_FS ++
     \\uniform float depth;
     \\uniform sampler2D visibility;
@@ -1603,8 +1657,8 @@ const WATER_FS = shaders.FS_HEAD ++ WATER_FADE_FS ++ shaders.glslConsts(.{
     \\
 ++ shaders.SIN_HASH_FS ++ shaders.VALUE_NOISE_FS ++
     \\float swell(vec2 at) {
-    \\    float n = noise(at * 1.9 + DRIFT_A * seconds) * 0.55 + noise(at * 3.7 + DRIFT_B * seconds + 19.7) * 0.45;
-    \\    return smoothstep(0.25, 0.75, n) * 2.0 - 1.0;
+    \\    float n = noise(at * SWELL_SCALE.x + DRIFT_A * seconds) * SWELL_WEIGHT.x + noise(at * SWELL_SCALE.y + DRIFT_B * seconds + SWELL_OFFSET) * SWELL_WEIGHT.y;
+    \\    return smoothstep(SWELL_SPAN.x, SWELL_SPAN.y, n) * 2.0 - 1.0;
     \\}
     \\void main() {
     \\    vec4 art = texture(texture0, fragTexCoord) * fragColor;
@@ -1656,6 +1710,11 @@ pub fn alphaOf(c: rl.Color) f32 {
 
 pub fn rgbOf(c: rl.Color) sky.Rgb {
     return sky.Rgb{ @floatFromInt(c.r), @floatFromInt(c.g), @floatFromInt(c.b) } / sky.splat(255);
+}
+
+pub fn rgbaOf(c: rl.Color) [4]f32 {
+    const tone = rgbOf(c);
+    return .{ tone[0], tone[1], tone[2], alphaOf(c) };
 }
 
 pub fn colourOf(c: sky.Rgb, a: f32) rl.Color {
@@ -1784,7 +1843,7 @@ test "map assets hold the fallback ground a prop stands on when only unbearing n
     std.debug.print("prop seen over water only: drawn on {s}, loaded\n", .{@tagName(shown)});
 }
 
-test "map assets hold the grass decor a glow plant leaves when it bursts" {
+test "map assets hold the grass decor a glowbulb leaves when it bursts" {
     var checked: usize = 0;
     var cells = grid.Box.inMap(1).cells();
     while (cells.next()) |p| {
@@ -1800,7 +1859,7 @@ test "map assets hold the grass decor a glow plant leaves when it bursts" {
         if (checked == 8) break;
     }
     try std.testing.expectEqual(@as(usize, 8), checked);
-    std.debug.print("glow plant decor: {d} lone plants on floor load the grass decor they burst into\n", .{checked});
+    std.debug.print("glowbulb decor: {d} lone plants on floor load the grass decor they burst into\n", .{checked});
 }
 
 test "every glyph is printable ascii" {

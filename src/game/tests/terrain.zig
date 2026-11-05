@@ -49,16 +49,16 @@ test "terrain fire damage burn ticks and burn application share effective resist
     var fresh: [tiles.len]usize = @splat(0);
     for (tiles, expected, 0..) |tile, want, k| {
         harness.arena(g, .{ .x = 20, .y = 20 }, &.{at});
-        const a = g.sim.pool.get(2).?;
+        const a = g.sim.pool.get(harness.foeId(0)).?;
         harness.toughen(a);
         g.sim.lv.set(at, tile);
         const before = a.hp;
-        combat.arrowHit(g, 2, .{ .blow = .{ .elements = .initDefault(0, .{ .fire = 20 }) } }, .fireball, .{ .from = g.sim.heroAt().?, .wait = 0 });
+        combat.arrowHit(g, harness.foeId(0), .{ .blow = .{ .elements = .initDefault(0, .{ .fire = 20 }) } }, .fireball, .{ .from = g.sim.heroAt().?, .wait = 0 });
         try std.testing.expectEqual(want, before - a.hp);
         a.burn = .{ .turns = 2 };
-        g.sim.ran[actor.Pool.slot(2)] = .initEmpty();
+        g.sim.ran[harness.foeSlot(0)] = .initEmpty();
         const burnt = a.hp;
-        combat.burnHarm(g, 2);
+        combat.burnHarm(g, harness.foeId(0));
         try std.testing.expectEqual(damage.resisted(4, g.sim.combatStats(a).elements.get(.fire)), burnt - a.hp);
         g.sim.rng = mathx.Rng.init(1234);
         for (0..2048) |_| {
@@ -85,7 +85,7 @@ test "terrain reeds affect real hero hits without applying harm or statuses on m
     harness.arena(g, from, &.{at});
     g.sim.lv.set(from, .reeds);
     g.sim.lv.set(at, .reeds);
-    const a = g.sim.pool.get(2).?;
+    const a = g.sim.pool.get(harness.foeId(0)).?;
     harness.toughen(a);
     var misses: usize = 0;
     g.sim.rng = mathx.Rng.init(0x123AF);
@@ -94,7 +94,7 @@ test "terrain reeds affect real hero hits without applying harm or statuses on m
         a.resilience = .{};
         a.bleed = .{};
         const hp = a.hp;
-        combat.wound(g, 2, .{ .dmg = 1, .effect = .{ .bleed = 100, .bleed_damage = 2 } }, "strikes", .{ .from = from, .wait = 0 });
+        combat.wound(g, harness.foeId(0), .{ .dmg = 1, .effect = .{ .bleed = 100, .bleed_damage = 2 } }, "strikes", .{ .from = from, .wait = 0 });
         if (a.hp == hp) {
             misses += 1;
             try std.testing.expectEqual(@as(u8, 0), a.bleed.turns);
@@ -111,7 +111,7 @@ test "terrain inspection uses pictured characters and tiles while excluding hidd
     const from = P{ .x = 20, .y = 20 };
     const at = P{ .x = 23, .y = 20 };
     harness.arena(g, from, &.{at});
-    const a = g.sim.pool.get(2).?;
+    const a = g.sim.pool.get(harness.foeId(0)).?;
     g.sim.lv.set(at, .shallows);
     game.settle(g);
     const shown = g.pic.pictured[1].hp;
@@ -214,14 +214,14 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
 
         harness.heroArena(g, if (act == .spark) .wizard else .archer, from, &.{ near, far });
         harness.toughenFoes(g);
-        g.sim.pool.get(2).?.clock.stun();
-        g.sim.pool.get(3).?.clock.stun();
+        g.sim.pool.get(harness.foeId(0)).?.clock.stun();
+        g.sim.pool.get(harness.foeId(1)).?.clock.stun();
         harness.use(g, act);
         g.mode.aim.mark = far;
-        const untouched = g.sim.pool.get(3).?.hp;
+        const untouched = g.sim.pool.get(harness.foeId(1)).?.hp;
         skills.confirmAim(g);
         try std.testing.expectEqual(@as(u16, 2), g.pic.shot.?.flight.struck.?.body);
-        try std.testing.expectEqual(untouched, g.sim.pool.get(3).?.hp);
+        try std.testing.expectEqual(untouched, g.sim.pool.get(harness.foeId(1)).?.hp);
 
         harness.heroArena(g, if (act == .spark) .wizard else .archer, from, &.{});
         g.sim.lv.set(near, .wall);
@@ -241,17 +241,17 @@ test "projectiles fire at empty dark cells in line of sight and stop at the firs
         harness.arena(g, from, &.{ near, far });
         harness.toughenFoes(g);
         g.sim.lv.set(from, .reeds);
-        g.sim.pool.get(2).?.clock.stun();
-        g.sim.pool.get(3).?.clock.stun();
+        g.sim.pool.get(harness.foeId(0)).?.clock.stun();
+        g.sim.pool.get(harness.foeId(1)).?.clock.stun();
         game.castSight(g, from);
         g.sim.rng = rng;
         harness.use(g, .shoot);
         g.mode.aim.mark = far;
         skills.confirmAim(g);
         rng = g.sim.rng;
-        missed += @intFromBool(g.sim.pool.get(2).?.hp == harness.TEST_HP);
+        missed += @intFromBool(g.sim.pool.get(harness.foeId(0)).?.hp == harness.TEST_HP);
         try std.testing.expectEqual(@as(u16, 2), g.pic.shot.?.flight.struck.?.body);
-        try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(3).?.hp);
+        try std.testing.expectEqual(harness.TEST_HP, g.sim.pool.get(harness.foeId(1)).?.hp);
     }
     try std.testing.expect(missed > 0);
     var state = progress.State.of(.archer);

@@ -96,7 +96,7 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, seed: u64, p: Params) void {
     for (g.spots, 0..) |s, i| {
         const fx = std.math.clamp(s.x + rng.spread(2 * JITTER), 0, 1);
         const fy = std.math.clamp(s.y + rng.spread(2 * JITTER), 0, 1);
-        at[i] = .{ .x = inset + @as(i32, @intFromFloat(fx * @as(f32, @floatFromInt(span.x)))), .y = inset + @as(i32, @intFromFloat(fy * @as(f32, @floatFromInt(span.y)))) };
+        at[i] = .{ .x = inset + carve.partOf(span.x, fx), .y = inset + carve.partOf(span.y, fy) };
     }
     const short: f32 = @floatFromInt(@min(grid.W, grid.H));
     for (g.spots, 0..) |s, i| {

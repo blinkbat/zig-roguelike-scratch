@@ -60,7 +60,7 @@ pub fn draw(g: *game.Game) void {
     for (CORNER) |c| menu.action(&g.face, buttonBox(g.screen, c.button), prompt_icon.Prompt.menuOf(&g.st, c.button), c.label);
 }
 
-fn clickable(mode: game.Mode) bool {
+pub fn clickable(mode: game.Mode) bool {
     return mode == .play or mode == .aim or mode == .inspect;
 }
 

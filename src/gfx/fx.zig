@@ -22,6 +22,7 @@ const font = @import("font.zig");
 const menu = @import("../ui/menu.zig");
 const skillbar = @import("../play/skillbar.zig");
 const nova = @import("../play/nova.zig");
+const chain = @import("../play/chain.zig");
 const pixel = @import("pixel.zig");
 const light = @import("light.zig");
 const sky = @import("sky.zig");
@@ -256,18 +257,9 @@ pub const Status = enum {
 
     fn module(comptime s: Status) type {
         return switch (s) {
-            .bleeding => bleeding,
-            .burning => burning,
-            .chilled => glacial,
-            .pinned => pinning,
-            .shocked => shock,
-            .sundered => sunder,
-            .blinded => blind,
-            .confused => confusion,
-            .enfeebled => enfeeble,
-            .maimed => maim,
             .warded => ward,
             .frightened, .resistant, .guarding, .unyielding, .steady, .overwatch => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
+            else => resilience.module(comptime s.ailment().?),
         };
     }
 
@@ -337,7 +329,7 @@ pub const After = struct { body: Body, reveals: ?usize = null, mana: i32 = 0 };
 
 pub const Drip = struct { at: [2]f32, matter: Matter };
 
-/// Gas curling off a body it eats at or mends, or out of a glow plant bursting.
+/// Gas curling off a body it eats at or mends, or out of a glowbulb bursting.
 pub const Puff = struct {
     at: [2]f32,
     ink: rl.Color,
@@ -370,8 +362,12 @@ fn claim(comptime T: type, ring: []T, head: *usize) *T {
     return at;
 }
 
+/// The kinds of turn effect a body can owe: `presentation.Owed`'s fields.
+pub const OWED_KINDS: usize = 13;
+/// A burst and a puff.
+const LOOSE_DUE: usize = 2;
 /// Capacity for every body's turn effects, hero hit and sweep, plus a burst and a puff, or chain jumps.
-pub const DUE: usize = actor.MAX * (13 + actor.SWEEP_CELLS) + 2;
+pub const DUE: usize = actor.MAX * (OWED_KINDS + actor.SWEEP_CELLS) + @max(LOOSE_DUE, chain.JUMPS);
 
 pub const Burst = struct { at: mathx.P, area: glacial.Burst, element: damage.Element };
 

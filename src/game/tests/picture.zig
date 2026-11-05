@@ -406,11 +406,11 @@ test "every step is one hop that peaks mid-glide and lands as the glide ends, an
     for (0..60) |_| {
         harness.walkFrame(g, dt, null);
     }
-    std.debug.print("hop: {d} steps, {d} hops, the archer peaks {d} px and the rat {d} px\n", .{ steps, hops, peaks[hero], peaks[actor.Pool.slot(2)] });
+    std.debug.print("hop: {d} steps, {d} hops, the archer peaks {d} px and the rat {d} px\n", .{ steps, hops, peaks[hero], peaks[harness.foeSlot(0)] });
     try std.testing.expect(steps > 5);
     try std.testing.expectEqual(steps, hops);
     try std.testing.expectEqual(@as(i32, game.HOP_PX), peaks[hero]);
-    try std.testing.expectEqual(@as(i32, game.HOP_PX), peaks[actor.Pool.slot(2)]);
+    try std.testing.expectEqual(@as(i32, game.HOP_PX), peaks[harness.foeSlot(0)]);
     for (g.pic.glide[0..g.sim.pool.n]) |gl| try std.testing.expectEqual(@as(i32, 0), gl.lift());
     try std.testing.expect(!bobbed);
 }
@@ -420,13 +420,13 @@ test "a foe stepping into the cell of a body still dying there sets off once tha
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 24, .y = 20 }, .{ .x = 25, .y = 20 } });
     const cell = P{ .x = 24, .y = 20 };
-    const dying = actor.Pool.slot(2);
-    const mover = actor.Pool.slot(3);
-    _ = g.sim.pool.damage(&g.sim.lv, 2, g.sim.pool.get(2).?.hp);
+    const dying = harness.foeSlot(0);
+    const mover = harness.foeSlot(1);
+    _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), g.sim.pool.get(harness.foeId(0)).?.hp);
     const lands: f32 = 0.3;
     g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(dying), .at = cell, .lethal = true, .after = g.pic.afterOf(&g.sim, dying) } }, .{ .from = .{ .x = 20, .y = 20 }, .wait = lands });
     g.sim.pool.move(&g.sim.lv, 3, cell);
-    harness.staggerOnly(g, 3);
+    harness.staggerOnly(g, harness.foeId(1));
     var overlap: f32 = 0;
     var t: f32 = 0;
     while (t < 1) : (t += harness.TEST_DT) {
@@ -483,9 +483,9 @@ test "a turn's glides start the archer first, then each foe in sight a stagger b
     harness.wakeFoes(g);
     game.settle(g);
     harness.nudge(g, .e);
-    const t = [_]f32{ g.pic.glide[g.sim.heroSlot().?].t, g.pic.glide[actor.Pool.slot(3)].t, g.pic.glide[actor.Pool.slot(4)].t, g.pic.glide[actor.Pool.slot(2)].t };
+    const t = [_]f32{ g.pic.glide[g.sim.heroSlot().?].t, g.pic.glide[harness.foeSlot(1)].t, g.pic.glide[harness.foeSlot(2)].t, g.pic.glide[harness.foeSlot(0)].t };
     std.debug.print("glide starts: archer {d:.3} s, then {d:.3}, {d:.3}, {d:.3}; the turn is busy {d:.3} s\n", .{ -t[0], -t[1], -t[2], -t[3], g.pic.busy });
-    try std.testing.expectEqualSlices(u16, &.{ 3, 4, 2 }, g.sim.order[0..g.sim.order_n]);
+    try std.testing.expectEqualSlices(u16, &.{ harness.foeId(1), harness.foeId(2), harness.foeId(0) }, g.sim.order[0..g.sim.order_n]);
     for (t, 0..) |v, i| try std.testing.expectApproxEqAbs(-game.STAGGER_S * @as(f32, @floatFromInt(i)), v, 1e-6);
     const last = @max(game.STAGGER_S * 2 + game.SLIDE_S, game.STAGGER_S * 3 + game.GLIDE_S);
     try std.testing.expectApproxEqAbs(last, g.pic.busy, 1e-6);
@@ -506,8 +506,8 @@ test "an arrow's rat flashes when the arrow gets there, not when the hit resolve
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
     harness.confirmUse(g, .shoot);
-    const rat = actor.Pool.slot(2);
-    try std.testing.expect(g.sim.pool.get(2).?.hurt());
+    const rat = harness.foeSlot(0);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.hurt());
     try std.testing.expectEqual(@as(f32, 0), g.pic.fx.flashOf(rat));
     const t = harness.framesUntil(g, rat, harness.flashing);
     std.debug.print("arrow 5 cells out: the rat flashes {d:.3} s after the shot, the arrow reaches it at {d:.3} s\n", .{ t, harness.SHOT_LANDS });
@@ -521,10 +521,10 @@ test "after an arrow the foes act a stagger after it lands, so the rat it strike
     harness.wakeFoes(g);
     harness.confirmUse(g, .shoot);
     const lands = harness.SHOT_LANDS;
-    const starts = -g.pic.glide[actor.Pool.slot(2)].t;
+    const starts = -g.pic.glide[harness.foeSlot(0)].t;
     std.debug.print("an arrow 5 cells out lands {d:.3} s in, and the rat it struck steps at {d:.3} s\n", .{ lands, starts });
-    try std.testing.expect(g.sim.pool.get(2).?.hurt());
-    try std.testing.expectEqual(harness.SHOT_AT.x - 1, g.sim.pool.get(2).?.at.x);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.hurt());
+    try std.testing.expectEqual(harness.SHOT_AT.x - 1, g.sim.pool.get(harness.foeId(0)).?.at.x);
     try std.testing.expectApproxEqAbs(lands + game.STAGGER_S, starts, 1e-6);
 }
 
@@ -532,10 +532,10 @@ test "a body the arrow kills stands until the arrow reaches it and its flash is 
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 20 + bow.RANGE, .y = 20 }});
-    g.sim.pool.get(2).?.hp = 1;
+    g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     harness.confirmUse(g, .shoot);
-    const rat = actor.Pool.slot(2);
-    try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(2));
+    const rat = harness.foeSlot(0);
+    try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(harness.foeId(0)));
     try std.testing.expect(g.pic.drawnAt(&g.sim, rat) != null);
     const t = harness.framesUntil(g, rat, harness.gone);
     const lands = harness.SHOT_LANDS;
@@ -547,12 +547,12 @@ test "a long frame finishes a killing flash before the next turn is ready" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
-    g.sim.pool.get(2).?.hp = 1;
+    g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     harness.confirmUse(g, .shoot);
     g.st = .{};
     game.update(g, g.pic.busy + 0.01);
     try std.testing.expect(g.pic.quiet());
-    try std.testing.expect(g.pic.drawnAt(&g.sim, actor.Pool.slot(2)) == null);
+    try std.testing.expect(g.pic.drawnAt(&g.sim, harness.foeSlot(0)) == null);
     std.debug.print("long frame: killing flash finished when play becomes ready\n", .{});
 }
 
@@ -574,12 +574,12 @@ test "a foe whose bite kills the archer is not then killed by the gas it stands 
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 21, .y = 20 }});
     harness.wakeFoes(g);
-    g.sim.pool.get(2).?.hp = 1;
+    g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     g.sim.heroActor().?.hp = 1;
     g.sim.lv.addGas(.{ .x = 21, .y = 20 }, harness.TEST_GAS);
     harness.use(g, .wait);
     try std.testing.expectEqual(game.Mode.dead, std.meta.activeTag(g.mode));
-    try std.testing.expect(g.sim.pool.get(2) != null);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)) != null);
     try std.testing.expectEqual(@as(usize, 0), g.sim.kills);
     try std.testing.expectEqualStrings("Archer dies.", g.sim.log.line(0).?);
 }
@@ -594,8 +594,8 @@ test "a bite lands on the archer at the height of the biter's bump, from its pla
     try std.testing.expect(g.sim.heroActor().?.hurt());
     const t = harness.framesUntil(g, hero, harness.flashing);
     std.debug.print("the biting rat is first in the turn: it sets off {d:.3} s in, the archer flashes {d:.3} s in\n", .{ game.STAGGER_S, t });
-    try std.testing.expectEqualSlices(u16, &.{ 3, 2 }, g.sim.order[0..g.sim.order_n]);
-    const bump = g.pic.glide[actor.Pool.slot(3)].bump orelse return error.NoBump;
+    try std.testing.expectEqualSlices(u16, &.{ harness.foeId(1), harness.foeId(0) }, g.sim.order[0..g.sim.order_n]);
+    const bump = g.pic.glide[harness.foeSlot(1)].bump orelse return error.NoBump;
     try std.testing.expect(bump.x < 0 and bump.y == 0);
     try std.testing.expectApproxEqAbs(game.STAGGER_S + game.BUMP_LANDS, t, harness.TEST_TOL);
 }
@@ -607,11 +607,11 @@ test "a kick bumps the rat and lands at the bump's height, and the rat bites bac
     harness.arena(g, at, &.{.{ .x = 21, .y = 20 }});
     harness.wakeFoes(g);
     const cam = g.cam;
-    g.sim.rng = harness.meleeThenBites(g, 2, &.{2});
+    g.sim.rng = harness.meleeThenBites(g, harness.foeId(0), &.{harness.foeId(0)});
     harness.nudge(g, .e);
     const hero = g.sim.heroSlot().?;
-    const rat = actor.Pool.slot(2);
-    try std.testing.expect(g.sim.pool.get(2).?.hurt() and g.sim.heroActor().?.hurt());
+    const rat = harness.foeSlot(0);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.hurt() and g.sim.heroActor().?.hurt());
     try std.testing.expectEqual(@as(f32, 0), g.pic.fx.flashOf(rat));
     g.st = .{};
     var bumped: f32 = 0;
@@ -643,9 +643,9 @@ test "the lean shows a kick on the rat a kick killed until it falls" {
     defer game.shut(std.testing.allocator, g);
     const at = P{ .x = 20, .y = 20 };
     harness.arena(g, at, &.{.{ .x = 21, .y = 20 }});
-    g.sim.pool.get(2).?.hp = 1;
+    g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     harness.nudge(g, .e);
-    try std.testing.expect(g.sim.pool.get(2) == null);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)) == null);
     try std.testing.expectEqual(game.Move.kick, scene.leanShown(g, &scene.stoodNow(g), at, .e));
     harness.drawnOut(g);
     try std.testing.expectEqual(game.Move.step, scene.leanShown(g, &scene.stoodNow(g), at, .e));
@@ -706,7 +706,7 @@ test "hidden and offscreen objects keep casting without being drawn" {
     defer game.shut(std.testing.allocator, g);
     const p = P{ .x = 27, .y = 20 };
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{p});
-    const i = actor.Pool.slot(2);
+    const i = harness.foeSlot(0);
     const view = grid.Box{ .lo = .{ .x = 15, .y = 15 }, .hi = .{ .x = 27, .y = 25 } };
     const cast = view.grown(game.CAST_MARGIN);
     g.sim.lv.lit[grid.Level.idx(p)] = false;
@@ -730,7 +730,7 @@ test "a body coming into sight fades in with its ground and shadow; one born in 
     defer game.shut(std.testing.allocator, g);
     const p = P{ .x = 24, .y = 20 };
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{p});
-    const i = actor.Pool.slot(2);
+    const i = harness.foeSlot(0);
     const k = grid.Level.idx(p);
     const dt = mathx.FRAME_DT;
     g.sim.lv.lit[k] = false;
@@ -773,10 +773,10 @@ test "a foe the gas kills out of sight leaves nothing drawn and nothing said" {
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 40, .y = 20 }});
     g.sim.lv.addGas(.{ .x = 40, .y = 20 }, harness.TEST_GAS);
-    g.sim.pool.get(2).?.hp = 1;
+    g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     const said = g.sim.log.n;
     harness.use(g, .wait);
-    try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(2));
+    try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(harness.foeId(0)));
     try std.testing.expectEqual(@as(usize, 1), g.sim.kills);
     try std.testing.expectEqual(@as(usize, 0), g.pic.fx.due_n);
     for (g.pic.fx.motes) |m| try std.testing.expect(m.life <= 0);
@@ -789,14 +789,14 @@ test "a foe the gas kills after it steps keeps its place in the turn, and its de
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 25, .y = 20 }});
-    const was = g.sim.pool.get(2).?.at;
+    const was = g.sim.pool.get(harness.foeId(0)).?.at;
     harness.wakeFoes(g);
-    g.sim.pool.get(2).?.hp = 1;
+    g.sim.pool.get(harness.foeId(0)).?.hp = 1;
     g.sim.lv.addGas(was, harness.TEST_GAS);
     harness.nudge(g, .w);
-    try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(2));
-    try std.testing.expect(!g.sim.pool.items[actor.Pool.slot(2)].at.eq(was));
-    const t = harness.framesUntil(g, actor.Pool.slot(2), harness.flashing);
+    try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(harness.foeId(0)));
+    try std.testing.expect(!g.sim.pool.items[harness.foeSlot(0)].at.eq(was));
+    const t = harness.framesUntil(g, harness.foeSlot(0), harness.flashing);
     std.debug.print("a rat that steps and dies in the gas: its death lands {d:.3} s into the turn, its hop ends at {d:.3} s\n", .{ t, game.STAGGER_S + game.GLIDE_S });
     try std.testing.expectApproxEqAbs(game.STAGGER_S + game.GLIDE_S, t, harness.TEST_TOL);
 }
@@ -840,12 +840,12 @@ test "a foe stepping out of sight takes its place in the turn" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
-    const rat = actor.Pool.slot(2);
+    const rat = harness.foeSlot(0);
     const dark = ledge(g);
     game.castSight(g, .{ .x = 20, .y = 20 });
     try std.testing.expect(!g.sim.lv.isLit(dark));
     g.sim.pool.move(&g.sim.lv, 2, dark);
-    harness.staggerOnly(g, 2);
+    harness.staggerOnly(g, harness.foeId(0));
     std.debug.print("a rat stepping out of sight a stagger after a kick sets off {d:.3} s in\n", .{-g.pic.glide[rat].t});
     try std.testing.expectApproxEqAbs(game.STAGGER_S, -g.pic.glide[rat].t, 1e-6);
 }
@@ -875,9 +875,9 @@ test "a foe's hp as drawn, the archer's and the low glow drop as the blow lands,
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, harness.SHOT_FROM, &.{harness.SHOT_AT});
-    const rat = actor.Pool.slot(2);
+    const rat = harness.foeSlot(0);
     harness.confirmUse(g, .shoot);
-    try std.testing.expect(g.sim.pool.get(2).?.hurt());
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.hurt());
     try std.testing.expectEqual(actor.row(.rat).hp, g.pic.pictured[rat].hp);
     const Drop = struct {
         fn f(gm: *game.Game, i: usize) bool {
@@ -1164,14 +1164,14 @@ test "a foe the gas kills as it steps out of sight is drawn stepping out, not go
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 22, .y = 20 }});
-    const rat = actor.Pool.slot(2);
+    const rat = harness.foeSlot(0);
     const dark = ledge(g);
     game.castSight(g, .{ .x = 20, .y = 20 });
     try std.testing.expect(!g.sim.lv.isLit(dark));
     g.sim.pool.move(&g.sim.lv, 2, dark);
-    _ = g.sim.pool.damage(&g.sim.lv, 2, actor.row(.rat).hp);
+    _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), actor.row(.rat).hp);
     g.pic.owed[rat].gassed = .{ .kill = true, .after = .{ .body = fx.Body.of(g.sim.pool.items[rat], 0) } };
-    harness.staggerOnly(g, 2);
+    harness.staggerOnly(g, harness.foeId(0));
     g.pic.catchUp(&g.sim);
     try std.testing.expect(g.pic.drawnAt(&g.sim, rat) != null);
     const alive_shown = g.pic.pictured[rat].hp;
@@ -1210,8 +1210,8 @@ test "a foe with no place in the turn is stung as the archer's step lands, not b
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{at});
     g.sim.lv.addGas(at, harness.TEST_GAS);
     harness.nudge(g, .w);
-    const rat = actor.Pool.slot(2);
-    try std.testing.expect(g.sim.pool.get(2).?.hurt() and g.sim.pool.get(2).?.at.eq(at));
+    const rat = harness.foeSlot(0);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.hurt() and g.sim.pool.get(harness.foeId(0)).?.at.eq(at));
     const t = harness.framesUntil(g, rat, harness.flashing);
     std.debug.print("a still rat in gas as the archer steps: stung {d:.3} s in, the step lands at {d:.3} s\n", .{ t, game.GLIDE_S });
     try std.testing.expectApproxEqAbs(game.GLIDE_S, t, harness.TEST_TOL);
@@ -1223,7 +1223,7 @@ test "a foe is drawn turning at its place in the turn" {
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 23, .y = 20 }, .{ .x = 26, .y = 20 } });
     harness.wakeFoes(g);
     harness.use(g, .wait);
-    const far = actor.Pool.slot(3);
+    const far = harness.foeSlot(1);
     try std.testing.expectEqual(actor.Facing.right, g.pic.facing[far]);
     const t = harness.framesUntil(g, far, harness.facesLeft);
     std.debug.print("the second rat in the turn is drawn turning {d:.3} s in\n", .{t});
@@ -1240,7 +1240,7 @@ test "a kick due late in a frame puts the foes a stagger after it lands, late on
     g.pic.busy = -1;
     g.st = .{ .walk = .e };
     g.st.step.late = late;
-    g.sim.rng = harness.meleeThenBites(g, 2, &.{ 2, 3 });
+    g.sim.rng = harness.meleeThenBites(g, harness.foeId(0), &.{ harness.foeId(0), harness.foeId(1) });
     game.update(g, 0);
     const t = harness.framesUntil(g, g.sim.heroSlot().?, harness.reddened);
     std.debug.print("a kick due {d:.3} s late: the first bite lands {d:.3} s on\n", .{ late, t });
@@ -1340,7 +1340,7 @@ test "a run left mid-turn keeps the way its foes were turning" {
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{ .{ .x = 23, .y = 20 }, .{ .x = 26, .y = 20 } });
     harness.wakeFoes(g);
     harness.use(g, .wait);
-    const far = actor.Pool.slot(3);
+    const far = harness.foeSlot(1);
     try std.testing.expectEqual(actor.Facing.right, g.pic.facing[far]);
     game.leave(g);
     std.debug.print("a rat turning as the run is left faces {s}\n", .{@tagName(g.pic.facing[far])});
@@ -1352,8 +1352,8 @@ test "a foe that notices the archer turns to it once the archer's step is drawn"
     defer game.shut(std.testing.allocator, g);
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{.{ .x = 24, .y = 20 }});
     harness.nudge(g, .w);
-    const rat = actor.Pool.slot(2);
-    try std.testing.expect(g.sim.pool.get(2).?.awake);
+    const rat = harness.foeSlot(0);
+    try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.awake);
     const t = harness.framesUntil(g, rat, harness.facesLeft);
     std.debug.print("a rat noticing the archer turns {d:.3} s in, the step lands at {d:.3} s\n", .{ t, game.GLIDE_S });
     try std.testing.expectApproxEqAbs(game.GLIDE_S, t, harness.TEST_TOL);
@@ -1433,11 +1433,11 @@ test "a caustic bloat that bursts on the archer takes its place in the turn as a
         harness.use(g, .wait);
         if (g.sim.pool.get(id) == null) break;
     } else return error.NeverBurst;
-    try std.testing.expectEqualSlices(u16, &.{ 2, 3 }, g.sim.order[0..g.sim.order_n]);
+    try std.testing.expectEqualSlices(u16, &.{ harness.foeId(0), harness.foeId(1) }, g.sim.order[0..g.sim.order_n]);
     try std.testing.expectApproxEqAbs(game.STAGGER_S + game.BUMP_LANDS + fx.FLASH_S, g.pic.busy, 1e-6);
     try std.testing.expectEqual(@as(usize, 2), g.pic.fx.due_n);
     const busy = g.pic.busy;
-    const t = harness.framesUntil(g, actor.Pool.slot(3), harness.flashing);
+    const t = harness.framesUntil(g, harness.foeSlot(1), harness.flashing);
     std.debug.print("a rat bites, then a caustic bloat bursts on the archer: the burst lands {d:.3} s in, the turn is busy {d:.3} s\n", .{ t, busy });
     try std.testing.expectApproxEqAbs(game.STAGGER_S + game.BUMP_LANDS, t, harness.TEST_TOL);
 }

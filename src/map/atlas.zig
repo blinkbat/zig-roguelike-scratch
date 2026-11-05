@@ -167,7 +167,24 @@ pub const Bespoke = struct {
     }
 };
 
-pub const Plan = union(enum) { bespoke: Bespoke, procgen: Procgen };
+pub const Plan = union(enum) {
+    bespoke: Bespoke,
+    procgen: Procgen,
+
+    pub fn procgenOf(self: *Plan) ?*Procgen {
+        return switch (self.*) {
+            .procgen => |*pg| pg,
+            .bespoke => null,
+        };
+    }
+
+    pub fn bespokeOf(self: *Plan) ?*Bespoke {
+        return switch (self.*) {
+            .bespoke => |*b| b,
+            .procgen => null,
+        };
+    }
+};
 
 /// A node's name: printable ascii, `NAME_MAX` at most; an empty name is none.
 pub const Label = struct {
@@ -231,10 +248,7 @@ pub const Node = struct {
     }
 
     pub fn unrolled(self: *const Node) bool {
-        return switch (self.plan) {
-            .procgen => true,
-            .bespoke => false,
-        };
+        return self.plan == .procgen;
     }
 
     pub fn unlinked(self: *const Node) usize {
@@ -461,7 +475,7 @@ pub const Atlas = struct {
         self.script.dropNode(n);
         mathx.removeAt(Node, &self.node, &self.node_n, n, null);
         self.renumber(.{ .node = n, .door = 0 }, Atlas.pastNode);
-        if (self.start.node == n) self.start = .{} else if (self.start.node > n) self.start.node -= 1;
+        if (script.renumbered(self.start.node, n)) |at| self.start.node = at else self.start = .{};
     }
 
     pub fn addDoor(self: *Atlas, n: usize, p: P) ?usize {
@@ -486,11 +500,11 @@ pub const Atlas = struct {
     }
 
     fn pastNode(l: *Link, gone: Link) void {
-        if (l.node > gone.node) l.node -= 1;
+        l.node = script.renumbered(l.node, gone.node) orelse l.node;
     }
 
     fn pastDoor(l: *Link, gone: Link) void {
-        if (l.node == gone.node and l.door > gone.door) l.door -= 1;
+        if (l.node == gone.node) l.door = script.renumbered(l.door, gone.door) orelse l.door;
     }
 
     fn doorOf(self: *Atlas, at: Link) *Door {
@@ -775,7 +789,7 @@ test "the strand grows a few glowing plants on every roll" {
         most = @max(most, n);
         total += n;
     }
-    std.debug.print("the strand over {d} rolls: {d} to {d} glow plants, {d:.1} on average\n", .{ RUNS, least, most, @as(f32, @floatFromInt(total)) / RUNS });
+    std.debug.print("the strand over {d} rolls: {d} to {d} glowbulbs, {d:.1} on average\n", .{ RUNS, least, most, @as(f32, @floatFromInt(total)) / RUNS });
     try std.testing.expect(least >= 1 and most <= 14 and total >= RUNS * 3);
 }
 

@@ -28,7 +28,14 @@ const MIRROR_FS = MIRROR_HEAD ++
     \\}
 ;
 
-const BODY_FS = MIRROR_HEAD ++ shaders.glslConsts(.{ .LIGHTS = model.BODY_LIGHTS }) ++ model.TONE_FS ++
+const BODY_FS = MIRROR_HEAD ++ shaders.glslConsts(.{
+    .LIGHTS = model.BODY_LIGHTS,
+    .WRAP = model.BODY_WRAP,
+    .RISE = model.BODY_RISE,
+    .RIM = model.BODY_RIM,
+    .RIM_REACH = model.BODY_RIM_REACH,
+    .SHEEN = model.BODY_SHEEN,
+}) ++ model.TONE_FS ++
     \\uniform sampler2D normals;
     \\uniform vec2 size;
     \\uniform float flip;
@@ -38,11 +45,6 @@ const BODY_FS = MIRROR_HEAD ++ shaders.glslConsts(.{ .LIGHTS = model.BODY_LIGHTS
     \\uniform vec3 lpos[LIGHTS];
     \\uniform vec3 lcol[LIGHTS];
     \\uniform float flash;
-    \\const float WRAP = 0.4;
-    \\const float RISE = 0.7;
-    \\const float RIM = 0.8;
-    \\const float RIM_REACH = 2.0;
-    \\const float SHEEN = 0.12;
     \\float alphaAt(vec2 px) {
     \\    if (px.x < 0.0 || px.y < 0.0 || px.x >= size.x || px.y >= size.y) return 0.0;
     \\    return texture(texture0, px / size).a;

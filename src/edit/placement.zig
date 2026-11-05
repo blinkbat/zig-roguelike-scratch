@@ -26,7 +26,7 @@ pub const Board = struct {
     cells: atlas.Bespoke = .{},
 
     pub fn box(b: *const Board, lo: P) grid.Box {
-        return grid.Box.sized(lo, b.size.x, b.size.y);
+        return grid.Box.sizedP(lo, b.size);
     }
 };
 
@@ -111,29 +111,26 @@ pub fn fill(ed: *Editor, p: P, second: bool) void {
     if (from == to) return;
     var seen = grid.CellSet.initEmpty();
     var queue: [grid.CELLS]u32 = undefined;
-    var head: usize = 0;
-    var tail: usize = 1;
     var filled: usize = 0;
     const folk_before = ed.map.script.folk_n;
-    queue[0] = @intCast(at);
-    seen.set(queue[0]);
-    while (head < tail) : (head += 1) {
-        const here = grid.Level.of(queue[head]);
+    var spread = grid.Spread(Same, Same.has){ .ctx = .{ .tile = &b.tile, .was = from }, .steps = &mathx.CARDINALS, .seen = &seen, .queue = &queue };
+    spread.seed(p);
+    while (spread.next()) |here| {
         if (ed.doorAt(here) == null) filled += 1;
         paintTile(ed, here, to);
-        for (mathx.CARDINALS) |d| {
-            const q = here.add(d);
-            if (!grid.Level.inside(q)) continue;
-            const i = grid.Level.idx(q);
-            if (seen.isSet(i) or b.tile[i] != from) continue;
-            seen.set(i);
-            queue[tail] = @intCast(i);
-            tail += 1;
-        }
     }
     const folk_went = ed.map.script.folk_n < folk_before;
     ed.say("Filled {d} cells of {s} with {s}{s}", .{ filled, @tagName(from), @tagName(to), if (folk_went) "; folk standing there went" else "" });
 }
+
+const Same = struct {
+    tile: *const [grid.CELLS]grid.Tile,
+    was: grid.Tile,
+
+    fn has(s: Same, p: P) bool {
+        return s.tile[grid.Level.idx(p)] == s.was;
+    }
+};
 
 pub fn pickUp(ed: *Editor, p: P, second: bool) void {
     if (!grid.Level.inside(p)) return;

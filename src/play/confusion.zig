@@ -2,6 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const resilience = @import("resilience.zig");
 
+pub const AILMENT = resilience.Kind.confusion;
 pub const TURNS: u8 = 3;
 /// Percent of a confused body's moves that go a random way.
 pub const CHANCE: u32 = 50;

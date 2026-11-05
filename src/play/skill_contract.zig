@@ -103,7 +103,7 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
             if (r == .swing and !signature(m, "aimable", &.{ *const grid.Level, mathx.P, mathx.P }, bool)) return "targeting requires aimable(*const Level, P, P) bool";
             if (r != .swing and !signature(m, "aimable", &.{ *const grid.Level, mathx.P, mathx.P, i32 }, bool)) return "a leap or rush requires aimable(*const Level, P, P, range: i32) bool";
             if (r != .swing and !@hasDecl(m, "RANGE")) return "targeting requires RANGE";
-            if (r != .swing and !@hasDecl(m, "describeReach")) return "a leap or rush requires describeReach(writer, range: i32)";
+            if (r != .swing and !@hasDecl(m, "DESCRIBED")) return "a leap or rush requires DESCRIBED, its description with its reach left open";
             if (r == .swing and has(d, "arc") and has(d, "knocked")) return "swing takes at most one of arc or knocked";
             if (r == .swing and !has(d, "arc") and !has(d, "knocked") and !has(d, "afflict")) return "a single-target swing requires afflict";
             if (r == .rush) {
@@ -120,6 +120,11 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
     if (has(d, "SUPPLY") and (has(d, "COST") or has(d, "COOLDOWN"))) return "consumables cannot cost mana or cool down";
     if (has(d, "TELEPORTS") and d.reticle != .leap) return "TELEPORTS requires leap targeting";
     return null;
+}
+
+/// A leap or rush's `DESCRIBED` at `range` cells, after its `MIN_RANGE` where it has one.
+pub fn describeReach(comptime m: type, w: anytype, range: i32) void {
+    (if (@hasDecl(m, "MIN_RANGE")) w.print(m.DESCRIBED, .{ m.MIN_RANGE, range }) else w.print(m.DESCRIBED, .{range})) catch {};
 }
 
 pub fn interpret(comptime name: []const u8, comptime d: Definition) Contract {

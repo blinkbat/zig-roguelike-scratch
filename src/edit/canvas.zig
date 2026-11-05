@@ -337,10 +337,9 @@ const Ghost = struct {
             const p = grid.Level.of(i);
             if (h.view.holds(p)) ghostInk(h.ed, h.g, h.c, p, h.ink);
             const b = board orelse continue;
-            const head = grid.headOf(&b.tile, i) orelse continue;
-            var foot = b.tile[head].footprint(grid.Level.of(head)).cells();
-            while (foot.next()) |q| {
-                const k = grid.Level.idx(q);
+            const span = grid.propSpan(&b.tile, i) orelse continue;
+            for (span.head..span.end) |k| {
+                const q = grid.Level.of(k);
                 if (!h.cells.isSet(k) and h.view.holds(q)) ghostInk(h.ed, h.g, h.c, q, b.tile[k].bare());
             }
         }

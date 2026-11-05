@@ -19,24 +19,14 @@ pub const TAKES = "is shocked";
 pub const STATUS = std.fmt.comptimePrint("The next hit taken deals {d}% more damage.", .{MORE});
 
 /// Its turns left waiting for a hit; the first that deals damage spends it.
-pub const Shock = struct {
-    turns: u8 = 0,
+pub const Shock = resilience.Turns(TURNS);
 
-    pub fn start(self: *Shock) void {
-        resilience.lengthen(&self.turns, TURNS);
-    }
-
-    /// `dmg` as the hit it is spent on deals it; a hit dealing nothing leaves it waiting.
-    pub fn spend(self: *Shock, dmg: i32) i32 {
-        if (self.turns == 0 or dmg <= 0) return dmg;
-        self.turns = 0;
-        return mathx.percentCeil(dmg, mathx.PERCENT + MORE);
-    }
-
-    pub fn wear(self: *Shock) void {
-        _ = resilience.wearTurn(&self.turns);
-    }
-};
+/// `dmg` as the hit `s` is spent on deals it; a hit dealing nothing leaves it waiting.
+pub fn spend(s: *Shock, dmg: i32) i32 {
+    if (s.turns == 0 or dmg <= 0) return dmg;
+    s.turns = 0;
+    return mathx.percentCeil(dmg, mathx.PERCENT + MORE);
+}
 
 pub fn afflict(a: anytype, _: *mathx.Rng) void {
     a.shock.start();
@@ -79,17 +69,17 @@ test "a shock adds half again to the next damaging hit, rounded up, then is gone
     for (cases) |c| {
         var s = Shock{};
         s.start();
-        try std.testing.expectEqual(c[1], s.spend(c[0]));
+        try std.testing.expectEqual(c[1], spend(&s, c[0]));
         try std.testing.expectEqual(@as(u8, 0), s.turns);
-        try std.testing.expectEqual(c[0], s.spend(c[0]));
+        try std.testing.expectEqual(c[0], spend(&s, c[0]));
     }
     var s = Shock{};
     s.start();
-    try std.testing.expectEqual(@as(i32, 0), s.spend(0));
+    try std.testing.expectEqual(@as(i32, 0), spend(&s, 0));
     try std.testing.expectEqual(TURNS, s.turns);
-    for (0..TURNS) |_| s.wear();
-    try std.testing.expectEqual(@as(i32, 4), s.spend(4));
+    for (0..TURNS) |_| _ = s.wear();
+    try std.testing.expectEqual(@as(i32, 4), spend(&s, 4));
     s.start();
-    try std.testing.expectEqual(std.math.maxInt(i32), s.spend(std.math.maxInt(i32)));
+    try std.testing.expectEqual(std.math.maxInt(i32), spend(&s, std.math.maxInt(i32)));
     std.debug.print("shock: {d} hits each amplified once ({d}% rounded up); a 0-damage hit keeps it; {d} unhit turns end it\n", .{ cases.len, MORE, TURNS });
 }

@@ -20,13 +20,13 @@ const CARD_LINE = font.SMALL_LINE;
 const CARD_RULE = 20;
 const CARD_NAME = 32;
 const CARD_EMPTY = 35;
-pub const SLOT_Y = 84;
+const SLOT_Y = 84;
 const SLOT_STATS_GAP = 11;
 const CARD_STATS = SLOT_Y + font.LABEL + SLOT_STATS_GAP;
 /// Above and below the modifiers' rule, and its inset from the card's sides.
 const MODS_ABOVE = 6;
 const MODS_BELOW = 10;
-const MODS_INSET = 0;
+const CardText = menu.Note(120);
 
 const CardLine = union(enum) {
     damage: damage.Base,
@@ -35,7 +35,7 @@ const CardLine = union(enum) {
     innate: items.Innate,
     requires: struct { at: attr.Attr, n: i32, available: i32, met: bool },
 
-    fn text(line: CardLine, out: *menu.Note(120)) [:0]const u8 {
+    fn text(line: CardLine, out: *CardText) [:0]const u8 {
         switch (line) {
             .damage => |hit| out.say(damage.PHYSICAL_FMT, .{ hit.lo, hit.hi }),
             .unarmed => return "No weapon damage",
@@ -111,14 +111,14 @@ pub fn height(face: *const font.Face, width: i32, maybe: ?items.Item, slot: item
     const item = maybe orelse return SLOT_Y + font.LABEL;
     var shown: Mods = undefined;
     var rows: usize = 0;
-    var text: menu.Note(120) = .{};
+    var text: CardText = .{};
     if (item.magical()) for (modsOf(item, &shown)) |m| {
         rows += wrappedRows(face, modifierText(item, m, &text), width);
     };
     return footOf(CardLines.of(items.spec(item.kind), slot, null).n, rows);
 }
 
-fn modifierText(item: items.Item, mod: items.Mod, text: *menu.Note(120)) [:0]const u8 {
+fn modifierText(item: items.Item, mod: items.Mod, text: *CardText) [:0]const u8 {
     text.clear();
     for (item.mods) |rolled| if (rolled) |a| {
         if (a.kind == mod) a.write(text.writer());
@@ -188,7 +188,7 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     if (spec.damage != null) metadata.say("{s}  /  {s}", .{ slot_name, menu.named(spec.style.attr()) }) else metadata.say("{s}", .{slot_name});
     face.draw(metadata.text(), x, y + SLOT_Y, font.LABEL, look.DIM);
     var top = y + CARD_STATS;
-    var text: menu.Note(120) = .{};
+    var text: CardText = .{};
     const stats = CardLines.of(spec, slot, available);
     for (stats.lines()) |line| {
         face.draw(line.text(&text), x, top, line.size(), line.ink());
@@ -196,7 +196,7 @@ pub fn draw(face: *const font.Face, x: i32, y: i32, width: i32, maybe: ?items.It
     }
     if (item.magical()) {
         top += MODS_ABOVE;
-        rl.drawLine(x + MODS_INSET, top, x + width - MODS_INSET, top, look.EDGE);
+        rl.drawLine(x, top, x + width, top, look.EDGE);
         top += MODS_BELOW;
         var shown: Mods = undefined;
         for (modsOf(item, &shown)) |m| {
@@ -213,7 +213,7 @@ pub fn verify(face: *const font.Face) !void {
 
 fn verifyFace(face: *const font.Face) !void {
     var count: usize = 0;
-    var text: menu.Note(120) = .{};
+    var text: CardText = .{};
     for (std.enums.values(items.Kind)) |kind| {
         const spec = items.spec(kind);
         for (spec.slots) |slot| {

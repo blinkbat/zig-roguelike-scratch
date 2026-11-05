@@ -63,7 +63,7 @@ pub const Prompt = union(enum) {
                 const c = raster.vec(.{ .x = cx, .y = cy });
                 const radius: f32 = @as(f32, @floatFromInt(h)) * 0.46;
                 rl.drawCircleV(c, radius, look.fade(PROMPT_BODY, alpha));
-                rl.drawRing(c, radius - 1.5, radius, 0, 360, 24, look.fade(PROMPT_EDGE, alpha));
+                rl.drawRing(c, radius - STICK_RIM_PX, radius, 0, 360, 24, look.fade(PROMPT_EDGE, alpha));
                 face.centred(if (side == .left) "L" else "R", cx, cy, labelPx(h), look.fade(PROMPT_INK, alpha));
             },
             .dpad, .arrows => {
@@ -82,7 +82,7 @@ pub const Prompt = union(enum) {
                 if (button == .left or button == .right) {
                     rl.drawRectangleRec(.{ .x = x + (if (button == .left) -s * 0.24 else @as(f32, 0.04)), .y = y - s * 0.33, .width = s * 0.2, .height = s * 0.3 }, look.fade(PROMPT_INK, alpha));
                 } else {
-                    WHEEL_ROUND.fill(.{ .x = x - 1.5, .y = y - s * 0.3, .width = 3, .height = s * 0.3 }, look.fade(PROMPT_INK, alpha));
+                    WHEEL_ROUND.fill(.{ .x = x - WHEEL_PX / 2, .y = y - s * 0.3, .width = WHEEL_PX, .height = s * 0.3 }, look.fade(PROMPT_INK, alpha));
                     if (button == .wheel) for ([_]mathx.Dir{ .n, .s }) |d| {
                         promptArrow(d, cx, cy + d.delta().y * @divTrunc(h, 3), arrowPx(h), look.fade(PROMPT_INK, alpha));
                     };
@@ -118,6 +118,12 @@ fn arrowPx(h: i32) i32 {
 }
 
 const STROKE_PX: f32 = 1.2;
+/// A mark's heavier stroke, the wheel's width, a stick's rim, and how far in a face button's body and ring sit.
+const MARK_PX: f32 = 1.5;
+const WHEEL_PX: f32 = 3;
+const STICK_RIM_PX: f32 = 1.5;
+const FACE_LIP_PX: f32 = 1;
+const FACE_RING_PX: f32 = 2.6;
 
 fn promptArrow(d: mathx.Dir, cx: i32, cy: i32, size: i32, col: rl.Color) void {
     const delta = d.delta();
@@ -158,15 +164,15 @@ fn faceButton(face: *const font.Face, b: FaceButton, sony: bool, cx: i32, cy: i3
     const c = raster.vec(.{ .x = cx, .y = cy });
     const ink = faceInk(b, sony);
     rl.drawCircleV(c, r, look.fade(PROMPT_LIP, alpha));
-    rl.drawCircleV(c, r - 1, look.fade(PROMPT_BODY, alpha));
+    rl.drawCircleV(c, r - FACE_LIP_PX, look.fade(PROMPT_BODY, alpha));
     rl.drawCircleV(.{ .x = c.x, .y = c.y - r * 0.12 }, r * 0.78, look.fade(PROMPT_FACE, alpha));
-    rl.drawRing(c, r - 2.6, r - 1, 0, 360, 32, look.fade(ink, alpha));
+    rl.drawRing(c, r - FACE_RING_PX, r - FACE_LIP_PX, 0, 360, 32, look.fade(ink, alpha));
     if (!sony) {
         const letter = [_:0]u8{std.ascii.toUpper(@tagName(b)[0])};
         return face.centred(&letter, cx, cy, labelPx(h), look.fade(ink, alpha));
     }
     const s = r * 0.42;
-    const line = @max(1.5, r * 0.16);
+    const line = @max(MARK_PX, r * 0.16);
     const col = look.fade(ink, alpha);
     switch (b) {
         .a => {
@@ -233,7 +239,7 @@ fn menuMark(cx: i32, cy: i32, h: i32, alpha: f32) void {
     const s: f32 = @as(f32, @floatFromInt(h)) * 0.24;
     const x: f32 = @floatFromInt(cx);
     const y: f32 = @floatFromInt(cy);
-    for ([_]f32{ -1, 0, 1 }) |k| rl.drawLineEx(.{ .x = x - s, .y = y + k * s * 0.7 }, .{ .x = x + s, .y = y + k * s * 0.7 }, 1.5, look.fade(PROMPT_INK, alpha));
+    for ([_]f32{ -1, 0, 1 }) |k| rl.drawLineEx(.{ .x = x - s, .y = y + k * s * 0.7 }, .{ .x = x + s, .y = y + k * s * 0.7 }, MARK_PX, look.fade(PROMPT_INK, alpha));
 }
 
 test "a slot's prompt is its maker's face button or shoulder on a pad, and its key's cap on the keyboard" {

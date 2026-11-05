@@ -34,6 +34,13 @@ const LIST_MIN_W: i32 = 240;
 const LIST_MAX_W: i32 = 360;
 const SAVE_W: i32 = 160;
 const DISCARD_W: i32 = 100;
+/// Of the page's width, the navigation's and the list's parts.
+const NAV_PARTS: i32 = 5;
+const LIST_PARTS: i32 = 4;
+const WHEEL_ROWS: i32 = 3;
+/// Above the passage's hint, under its source lines.
+const HINT_GAP: i32 = 4;
+const PAGE_LINE: usize = 1024;
 
 pub fn fieldHeight(rows: i32) i32 {
     return rows * LINE + 2 * widgets.GAP;
@@ -531,16 +538,16 @@ pub fn keys(ed: *editor.Editor) void {
     }
     if (s.leave != null) return;
     if (s.focus == .search) {
-        const old = std.hash.Wyhash.hash(0, s.search.text());
+        const old = catalog.hash(s.search.text());
         if (!s.search.feed(d, false)) s.say("Search accepts plain ASCII text on one line.", .{});
-        if (std.hash.Wyhash.hash(0, s.search.text()) != old) s.searched();
+        if (catalog.hash(s.search.text()) != old) s.searched();
     } else if (s.selected) |i| {
         const e = s.data.?.entries()[i];
         if (e.editable) {
             const was_dirty = s.dirty();
-            const old = std.hash.Wyhash.hash(0, s.draft.text());
+            const old = catalog.hash(s.draft.text());
             if (!s.draft.feed(d, e.alias == null)) s.say("Text must be ASCII{s} and at most {d} characters.", .{ if (e.alias != null) " on one line" else "", catalog.MAX_TEXT });
-            if (!was_dirty and std.hash.Wyhash.hash(0, s.draft.text()) != old) {
+            if (!was_dirty and catalog.hash(s.draft.text()) != old) {
                 s.author = .you;
                 s.typed_author = true;
             }
@@ -557,7 +564,7 @@ pub fn keys(ed: *editor.Editor) void {
     s.refresh();
     const n = s.results.items.len;
     if (d.wheel != 0) {
-        const by = 3 * d.notch();
+        const by = WHEEL_ROWS * d.notch();
         if (raster.holds(s.passage_box, d.mouse)) {
             s.draft.scroll = widgets.scrollTop(s.draft.scroll, by, s.draft.lines, s.draft.rows);
             s.draft.reveal = false;
@@ -729,7 +736,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const x = f.x + PAD;
     const w = f.w - 2 * PAD;
     var y = f.y;
-    var buf: [1024]u8 = undefined;
+    var buf: [PAGE_LINE]u8 = undefined;
     widgets.drawFit(&g.face, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
     y += DETAIL + widgets.GAP;
     var tools = widgets.LayEnd{ .right = x + w, .y = y + ROW_INSET, .gap = TOOL_GAP };
@@ -745,9 +752,9 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     if (button(ed, g, reload_r, "Reload", false, !s.dirty())) reload(ed);
     if (button(ed, g, close_r, "Close", false, true)) requestClose(ed, false);
     y += LINE + SEARCH_GAP;
-    const nav_w = widgets.share(w, 5, NAV_MIN_W, NAV_MAX_W);
+    const nav_w = widgets.share(w, NAV_PARTS, NAV_MIN_W, NAV_MAX_W);
     const list_x = x + nav_w + PAD;
-    const list_w = widgets.share(w, 4, LIST_MIN_W, LIST_MAX_W);
+    const list_w = widgets.share(w, LIST_PARTS, LIST_MIN_W, LIST_MAX_W);
     const right_x = list_x + list_w + PAD;
     const right_w = x + w - right_x;
     const bottom = page.bottom - DETAIL - LEAD;
@@ -796,7 +803,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         const source = std.fmt.bufPrintZ(&buf, "{s}:{d}", .{ e.path, e.line }) catch "";
         widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE + DETAIL + widgets.GAP, look.DIM);
         widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * (DETAIL + widgets.GAP), look.DIM);
-        var yy = y + LINE + 3 * (DETAIL + widgets.GAP) + 4;
+        var yy = y + LINE + 3 * (DETAIL + widgets.GAP) + HINT_GAP;
         const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
         widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
         yy += DETAIL + LEAD;

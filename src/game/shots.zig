@@ -225,6 +225,16 @@ pub fn shoot(g: *game.Game) !void {
     }
     poseShadowStudy(g, day.NOON, false);
     try capture(g, target, SHOTS_DIR ++ "/shadows-torch.png");
+    for ([_]struct { hour: f32, name: [:0]const u8 }{
+        .{ .hour = MORNING, .name = SHOTS_DIR ++ "/glowbulb-morning.png" },
+        .{ .hour = day.NOON, .name = SHOTS_DIR ++ "/glowbulb-noon.png" },
+        .{ .hour = DUSK, .name = SHOTS_DIR ++ "/glowbulb-dusk.png" },
+        .{ .hour = day.DEAD_OF_NIGHT, .name = SHOTS_DIR ++ "/glowbulb-night.png" },
+    }) |study| {
+        poseGlowbulbs(g);
+        studyAt(g, true, study.hour);
+        try capture(g, target, study.name);
+    }
     for ([_]struct { hour: ?f32, path: [:0]const u8 }{
         .{ .hour = MORNING, .path = SHOTS_DIR ++ "/shadows-hidden-sun.png" },
         .{ .hour = NIGHT, .path = SHOTS_DIR ++ "/shadows-hidden-moon.png" },
@@ -675,7 +685,7 @@ fn shootLoot(g: *game.Game) !void {
     game.harness.grassOver(&g.sim.lv);
     g.sim.loot_rng = game.harness.lootRng(true);
     game.settle(g);
-    game.harness.slay(g, 2, g.sim.heroActor().?.at);
+    game.harness.slay(g, game.harness.foeId(0), g.sim.heroActor().?.at);
     try capture(g, target, SHOTS_DIR ++ "/loot-foe-before.png");
     game.harness.drawnOut(g);
     try capture(g, target, SHOTS_DIR ++ "/loot-foe-dropped.png");
@@ -849,7 +859,7 @@ fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
         for (0..2) |i| {
             rl.beginTextureMode(target);
             rl.clearBackground(rl.Color.white);
-            if (!game.scene.shadowPass(g, c, if (i == 0) view else grid.Box.inMap(0), target.id)) return error.ShadowShaderMissing;
+            if (!game.scene.shadowPass(g, c, if (i == 0) view else grid.Box.inMap(0), &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
             rl.endTextureMode();
             images[i] = try readTarget(target);
         }
@@ -1560,7 +1570,6 @@ fn promptRoom(g: *const game.Game) void {
 
 const POSE_BURST = P{ .x = 25, .y = 15 };
 const POSE_ZAP = fx.Zap{ .from = .{ 27.5, 20.5 }, .to = .{ 29.5, 20.5 } };
-pub const MIDNIGHT: f32 = 0;
 const LATE_NIGHT: f32 = day.SUNRISE - 2;
 const DAWN: f32 = day.SUNRISE + 1;
 const BLEAK_MORNING: f32 = day.SUNRISE + 2.5;
@@ -1589,7 +1598,7 @@ fn poseFright(g: *game.Game) void {
     for (pibs, &slots) |p, *s| s.* = actor.Pool.slot(game.harness.spawnAt(g, .pib, p, false));
     game.settle(g);
     const wait: f32 = 0.2;
-    game.combat.wound(g, 2, .{ .dmg = actor.row(.rat).hp }, game.combat.SHOOT, .{ .from = hero, .wait = wait });
+    game.combat.wound(g, game.harness.foeId(0), .{ .dmg = actor.row(.rat).hp }, game.combat.SHOOT, .{ .from = hero, .wait = wait });
     g.pic.lead = wait;
     game.combat.endTurn(g);
     g.st = .{};
@@ -1778,6 +1787,12 @@ fn studyLit(g: *game.Game, outdoors: bool, hour: f32) void {
     @memset(&g.sim.lv.seen, true);
     @memset(&g.sim.lv.lit, true);
     g.light.settle(&g.sim.lv);
+}
+
+fn poseGlowbulbs(g: *game.Game) void {
+    game.harness.arena(g, .{ .x = 24, .y = 21 }, &.{});
+    game.harness.grassOver(&g.sim.lv);
+    for ([_]P{ .{ .x = 22, .y = 19 }, .{ .x = 27, .y = 20 }, .{ .x = 25, .y = 23 } }) |p| g.sim.lv.set(p, .glow_plant);
 }
 
 fn studyAt(g: *game.Game, outdoors: bool, hour: f32) void {
@@ -2094,7 +2109,7 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     intoTarget(g, target);
     const c = game.scene.Cam.of(g);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;
-    _ = game.scene.drawMirrors(g, c, game.scene.viewBox(g, c), &.{}, g.light.flames(&g.sim.lv, &flame_buf));
+    _ = game.scene.drawMirrors(g, c, game.scene.viewBox(g, c), &game.scene.bagCells(g), &.{}, g.light.flames(&g.sim.lv, &flame_buf));
     outOfTarget(g);
     for ([_]rl.RenderTexture2D{ g.sprites.mirror.?, g.sprites.mirror_memory.? }) |t| {
         const hidden = try readTarget(t);
@@ -2148,7 +2163,7 @@ fn checkHiddenShadowMask(g: *game.Game, target: rl.RenderTexture2D, visible: boo
         rl.beginTextureMode(target);
         defer rl.endTextureMode();
         rl.clearBackground(rl.Color.white);
-        if (!game.scene.shadowPass(g, c, view, target.id)) return error.ShadowShaderMissing;
+        if (!game.scene.shadowPass(g, c, view, &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
     }
     const img = try readTarget(target);
     defer rl.unloadImage(img);

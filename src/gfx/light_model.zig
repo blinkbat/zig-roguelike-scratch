@@ -68,6 +68,13 @@ pub const FLAME: Rgb = .{ 1.30, 0.80, 0.40 };
 /// Per channel, the power the flicker is raised to, so a flame whitens as it flares.
 pub const FLAME_SHIFT: Rgb = .{ 1.0, 1.6, 2.4 };
 pub const PLANT_LIGHT: Rgb = .{ 0.52, 0.68, 0.92 };
+/// Of its light, what a plant still casts in full day; all of it at night.
+pub const PLANT_DAY: f32 = 0.2;
+
+/// A plant's light at `daylight` (`day.daylight`).
+pub fn plantShare(daylight: f32) f32 {
+    return mathx.lerpF(1, PLANT_DAY, daylight);
+}
 /// A glowing plant breathes rather than flickers: its share either way, and breaths a second.
 pub const PULSE: f32 = 0.08;
 pub const PULSE_HZ: f32 = 0.3;
@@ -90,6 +97,12 @@ pub const BODY_LIGHTS: usize = 4;
 pub const FLASH_RGB = Rgb{ 0.88, 0.38, 0.30 };
 /// Texels toward the viewer, for the side-lighting of a body.
 pub const BODY_LIGHT_Z: f32 = 40.0;
+/// The body shader's wrap round the normal, least rise toward the viewer per texel out, rim strength, rim reach in texels and sheen.
+pub const BODY_WRAP: f32 = 0.4;
+pub const BODY_RISE: f32 = 0.7;
+pub const BODY_RIM: f32 = 0.8;
+pub const BODY_RIM_REACH: f32 = 2.0;
+pub const BODY_SHEEN: f32 = 0.12;
 /// Darkest ground tint; overlapping shadows take the channelwise minimum.
 pub const SHADE_RGB = Rgb{ 0.42, 0.45, 0.54 };
 /// Darkens whatever lights the ground, the hero's own light too.
@@ -164,13 +177,19 @@ pub fn sunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
     return lit;
 }
 
-pub fn bankSunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f32 {
+/// Of the light at a bank's foot, the most its contact shading takes, eased out over this many sprite pixels south.
+pub const BANK_FOOT_SHADE: f32 = 0.35;
+pub const BANK_FOOT_PX: f32 = 3;
+
+/// `banks` reads `lv`'s terrain: a `ground.LiveBanks` or a `*const ground.Banks` synced to it.
+pub fn bankSunlit(lv: *const grid.Level, banks: anytype, ray: SunRay, x: f32, y: f32, z: f32) f32 {
     if (z != 0 or sky.upright(ray.flat)) return 1;
-    const height = ground.bankHeight(lv.at(mathx.cellOf(.{ x, y })));
+    const here = lv.at(mathx.cellOf(.{ x, y }));
+    const height = ground.bankHeight(here);
     if (height == 0) return 1;
     var lit: f32 = 1;
-    if (ground.bankFoot(lv, .{ x, y })) |foot| {
-        if (y >= foot) lit = 1 - 0.35 * (1 - mathx.smoothstep(0, 3.0 / 64.0, y - foot));
+    if (banks.foot(.{ x, y })) |foot| {
+        if (y >= foot) lit = 1 - BANK_FOOT_SHADE * (1 - mathx.smoothstep(0, BANK_FOOT_PX / look.SPRITE_PX, y - foot));
     }
     const far = height / ray.rise;
     var distance: f32 = SUN_STEP * 0.25;
@@ -178,11 +197,11 @@ pub fn bankSunlit(lv: *const grid.Level, ray: SunRay, x: f32, y: f32, z: f32) f3
         const q = [2]f32{ x + ray.u[0] * distance, y + ray.u[1] * distance };
         const p = mathx.cellOf(q);
         if (!grid.Level.inside(p)) break;
-        var bed = ground.bedAt(lv, p, false) orelse continue;
-        if (ground.bankLip(lv, q)) |lip| {
-            if (q[1] < lip) bed = ground.bedAt(lv, p.add(.{ .x = 0, .y = -1 }), false) orelse continue;
+        var bed = banks.bed(p) orelse continue;
+        if (banks.lip(q)) |lip| {
+            if (q[1] < lip) bed = banks.bed(p.add(.{ .x = 0, .y = -1 })) orelse continue;
         }
-        if (!ground.bankAbove(bed.tile(), lv.at(mathx.cellOf(.{ x, y })))) continue;
+        if (!ground.bankAbove(bed.tile(), here)) continue;
         const drop = height - ground.bankHeight(bed.tile());
         lit = @min(lit, 1 - smooth(std.math.clamp((drop - distance * ray.rise) / (SUN_SOFT * drop), 0, 1)));
         if (lit == 0) return 0;
@@ -374,7 +393,8 @@ pub const Torch = struct {
     }
 
     /// The flame's flicker, or the plant's slow breath, at `s` seconds.
-    pub fn fan(t: *Torch, s: f32) void {
+    /// `plant` is the share of a plant's light the sky leaves showing, `plantShare`.
+    pub fn fan(t: *Torch, s: f32, plant: f32) void {
         switch (t.mount) {
             .wall => {
                 t.glow = flicker(s, t.seed);
@@ -383,7 +403,7 @@ pub const Torch = struct {
                 t.colour = FLAME * shift;
             },
             .plant => {
-                t.glow = pulse(s, t.seed);
+                t.glow = pulse(s, t.seed) * plant;
                 t.colour = PLANT_LIGHT * splat(t.glow);
             },
         }

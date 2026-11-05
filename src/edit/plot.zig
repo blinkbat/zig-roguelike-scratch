@@ -353,12 +353,12 @@ fn cycle(comptime T: type, v: T, by: i32) T {
     return mathx.stepIn(T, std.enums.values(T), v, by, 0);
 }
 
-fn numberStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, v: *i32, lo: i32, hi: i32, unit: []const u8, tip: [:0]const u8) void {
+fn numberStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, v: *i32, span: script.Span, unit: []const u8, tip: [:0]const u8) void {
     var buf: [32]u8 = undefined;
     const step = widgets.Step{ .tip = tip };
     const by = widgets.stepper(ed.controls(), &g.face, r, std.fmt.bufPrint(&buf, "{d}{s}", .{ v.*, unit }) catch "", widgets.PAGE_ARROWS, .{ step, step }, ed.desk.shift);
     if (by == 0) return;
-    const next = std.math.clamp(v.* + by, lo, hi);
+    const next = span.clamp(v.* + by);
     if (next == v.*) return;
     v.* = next;
     ed.bank();
@@ -824,14 +824,14 @@ fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.
             const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, COUNTOP_W, NUMBER_W });
             tableStep(ed, g, lay.take(ws[0]), .counter, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Countop, &a.countop, &COUNTOP_WORDS, null);
-            numberStep(ed, g, lay.take(ws[2]), &a.n, -script.NUMBER_MAX, script.NUMBER_MAX, "", "By how much");
+            numberStep(ed, g, lay.take(ws[2]), &a.n, a.kind.span(), "", "By how much");
         },
         .timer => {
             const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, UNIT_W });
             tableStep(ed, g, lay.take(ws[0]), .timer, &a.slot);
-            numberStep(ed, g, lay.take(ws[1]), &a.n, 0, script.NUMBER_MAX, " turns", "Turns it runs before it is done");
+            numberStep(ed, g, lay.take(ws[1]), &a.n, a.kind.span(), " turns", "Turns it runs before it is done");
         },
-        .wait => numberStep(ed, g, widgets.row(fx, y, UNIT_W), &a.n, 0, script.NUMBER_MAX, " turns", "Spent turns held before the next action"),
+        .wait => numberStep(ed, g, widgets.row(fx, y, UNIT_W), &a.n, a.kind.span(), " turns", "Spent turns held before the next action"),
     }
 }
 
@@ -881,7 +881,7 @@ fn fitCond(ed: *editor.Editor, c: *script.Cond) void {
     if (script.condRef(c.kind)) |r| fitRef(m, r, &c.slot);
     switch (c.kind) {
         .near => {
-            c.n = std.math.clamp(c.n, 0, script.NEAR_MAX);
+            c.n = c.kind.span().clamp(c.n);
             if (c.n == 0) c.n = 2;
         },
         .region => {
@@ -918,12 +918,12 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
             const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, OP_W, NUMBER_W });
             tableStep(ed, g, lay.take(ws[0]), .counter, &c.slot);
             cmpStep(ed, g, lay.take(ws[1]), &c.cmp);
-            numberStep(ed, g, lay.take(ws[2]), &c.n, -script.NUMBER_MAX, script.NUMBER_MAX, "", "The number it is held to");
+            numberStep(ed, g, lay.take(ws[2]), &c.n, c.kind.span(), "", "The number it is held to");
         },
         .elapsed => {
             const ws = split(fw, &.{ 1, 1 }, &.{ OP_W, ELAPSED_W });
             cmpStep(ed, g, lay.take(ws[0]), &c.cmp);
-            numberStep(ed, g, lay.take(ws[1]), &c.n, 0, script.NUMBER_MAX, " turns", "Spent turns since the run began");
+            numberStep(ed, g, lay.take(ws[1]), &c.n, c.kind.span(), " turns", "Spent turns since the run began");
         },
         .region => {
             const ws = split(fw, &.{ 3, 2 }, &.{ REGION_W, BTN_W });
@@ -938,7 +938,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
         .near => {
             const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, UNIT_W });
             indexStep(ed, g, lay.take(ws[0]), m.folk[c.slot].called(), &c.slot, m.folk_n, "Which folk");
-            numberStep(ed, g, lay.take(ws[1]), &c.n, 0, script.NEAR_MAX, " cells", "How near, in steps either way");
+            numberStep(ed, g, lay.take(ws[1]), &c.n, c.kind.span(), " cells", "How near, in steps either way");
         },
         .talked => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &c.slot),
         .deaths, .alive => {
@@ -949,7 +949,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
                 ed.bank();
             }
             cmpStep(ed, g, lay.take(ws[1]), &c.cmp);
-            numberStep(ed, g, lay.take(ws[2]), &c.n, 0, script.NUMBER_MAX, "", "How many");
+            numberStep(ed, g, lay.take(ws[2]), &c.n, c.kind.span(), "", "How many");
         },
     }
 }
@@ -1035,7 +1035,7 @@ fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i
     const priority_x = toggles.x + GAP;
     caption(g, priority_x, y, PRIORITY_LABEL_W, "priority", look.DIM);
     var pri: i32 = t.priority;
-    numberStep(ed, g, widgets.row(priority_x + PRIORITY_LABEL_W, y, PRIORITY_W), &pri, -script.PRIORITY_MAX, script.PRIORITY_MAX, "", "Higher runs first when two are ready on the same turn");
+    numberStep(ed, g, widgets.row(priority_x + PRIORITY_LABEL_W, y, PRIORITY_W), &pri, script.PRIORITY, "", "Higher runs first when two are ready on the same turn");
     t.priority = @intCast(pri);
     y += STEP + GAP;
     countHeading(g, x, y, w, "When every one holds", t.cond_n, script.MAX_CONDS);

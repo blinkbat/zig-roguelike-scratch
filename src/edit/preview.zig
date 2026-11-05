@@ -129,24 +129,10 @@ pub const Scene = struct {
     /// Wet cells joined to ground the walk reaches, so a swimmer there meets it; reuses the walk's spent queue.
     fn swimReach(self: *Scene) grid.CellSet {
         var out = grid.CellSet.initEmpty();
-        var tail: usize = 0;
-        for (&self.reach_dist, 0..) |*d, i| if (d.* >= 0) {
-            self.reach_queue[tail] = @intCast(i);
-            tail += 1;
-        };
-        var head: usize = 0;
-        while (head < tail) : (head += 1) {
-            const here = grid.Level.of(self.reach_queue[head]);
-            for (mathx.ALL_DIRS) |d| {
-                const p = here.add(d.delta());
-                if (!grid.Level.inside(p)) continue;
-                const i = grid.Level.idx(p);
-                if (out.isSet(i) or self.reach_dist[i] >= 0 or !self.lv.tile[i].wet()) continue;
-                out.set(i);
-                self.reach_queue[tail] = @intCast(i);
-                tail += 1;
-            }
-        }
+        var spread = grid.Spread(*const grid.Level, wetAt){ .ctx = &self.lv, .steps = &grid.STEPS, .seen = &out, .queue = &self.reach_queue };
+        for (self.reach_dist, 0..) |d, i| if (d >= 0) spread.seed(grid.Level.of(i));
+        while (spread.next()) |_| {}
+        for (self.reach_dist, 0..) |d, i| if (d >= 0) out.unset(i);
         return out;
     }
 
@@ -154,6 +140,10 @@ pub const Scene = struct {
         return !self.lv.tile[i].solid() and self.reach_dist[i] < 0;
     }
 };
+
+fn wetAt(lv: *const grid.Level, p: P) bool {
+    return lv.at(p).wet();
+}
 
 pub fn arrival(map: *const atlas.Atlas, node: usize) P {
     if (map.start.node == node) return map.start.at;

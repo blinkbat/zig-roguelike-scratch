@@ -274,7 +274,7 @@ test "a barrel in the line takes the arrow meant for the rat behind it" {
     try std.testing.expectEqual(@as(usize, 2), f.len);
 }
 
-test "a glow plant in the line takes the arrow, piercing or not" {
+test "a glowbulb in the line takes the arrow, piercing or not" {
     var lv = grid.openFloor();
     var pool = actor.Pool{};
     const from = P{ .x = 10, .y = 10 };

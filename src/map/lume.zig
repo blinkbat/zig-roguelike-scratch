@@ -125,7 +125,7 @@ test "a glowing plant lights its own pool at night, out to the hero's sight and 
     see(&lv, at, 10, 0, &lamp);
     var shown: usize = 0;
     for (lv.lit, 0..) |l, i| shown += @intFromBool(l and mathx.dist(grid.Level.of(i), at) > 5);
-    std.debug.print("a glow plant 9 cells off at midnight: {d} cells seen past the lantern's 5\n", .{shown});
+    std.debug.print("a glowbulb 9 cells off at midnight: {d} cells seen past the lantern's 5\n", .{shown});
     try std.testing.expect(lv.isLit(plant) and lv.isLit(behind));
     try std.testing.expect(!lv.isLit(past) and lv.inLos(.{ .x = 50, .y = 30 }));
 }

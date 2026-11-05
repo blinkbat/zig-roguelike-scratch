@@ -23,7 +23,6 @@ const attacks = @import("attacks.zig");
 const rewards = @import("rewards.zig");
 const skills = @import("skills.zig");
 const tactics = @import("tactics.zig");
-const rules = @import("../play/tactics.zig");
 const P = mathx.P;
 const Stroke = game.presentation.Stroke;
 
@@ -106,6 +105,7 @@ fn strike(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) ?S
     if (!attacks.heroLands(&g.sim, a, .chosen)) return null;
     var r = attacks.heroSkill(&g.sim, act).against(g.sim.combatStats(a).armour, &g.sim.rng);
     r.hit_checked = true;
+    r.opportunity = attacks.opportune(&g.sim, a);
     const takes = if (comptime act.afflicts()) attacks.afflicted(&g.sim, a, M, survives(&g.sim, a, r.dmg, M.AILMENT), 0) else false;
     if (comptime act.afflicts()) if (takes) {
         r.applied = M.AILMENT;
@@ -150,12 +150,15 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     const a = g.sim.pool.get(id) orelse return;
     const at = a.at;
     const grounded = actor.row(a.kind).movement.grounded();
-    const wet = if (el == .lightning and grounded) wading(&g.sim, at) else null;
+    const wet: ?Wet = if (el == .lightning and grounded) if (wading(&g.sim, at)) |bodies| .{ .bodies = bodies, .struck = actor.Pool.slot(id), .born = g.sim.pool.n } else null else null;
     defer conductTo(g, at, wet, s);
     if (!attacks.heroLands(&g.sim, a, .chosen)) return;
     const stats = g.sim.combatStats(a);
     const resists = stats.elements;
-    var r = (attacks.Roll{ .dmg = hit.blow.total(resists), .physical = hit.blow.physical, .crit = hit.crit, .effect = hit.effect, .hit_checked = true }).against(stats.armour, &g.sim.rng);
+    var rolled = hit.against(resists);
+    rolled.hit_checked = true;
+    rolled.opportunity = attacks.opportune(&g.sim, a);
+    var r = rolled.against(stats.armour, &g.sim.rng);
     const lands = survives(&g.sim, a, r.dmg, M.AILMENT) and if (el) |e| hit.blow.reaches(resists, e) else true;
     const takes = attacks.afflicted(&g.sim, a, M, lands, if (el) |e| resists.get(e) else 0);
     if (takes) r.applied = M.AILMENT;
@@ -165,8 +168,11 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
 
 /// Lightning landing in water runs through it: every body wading or swimming in the water it reaches is shocked as it lands.
 pub fn conduct(g: *game.Game, at: P, s: Stroke) void {
-    conductTo(g, at, wading(&g.sim, at), s);
+    conductTo(g, at, if (wading(&g.sim, at)) |bodies| .{ .bodies = bodies } else null, s);
 }
+
+/// The bodies wading before a blow, and the body it struck, whose halves born from `born` on share the shock it takes.
+const Wet = struct { bodies: rewards.Caught, struck: ?usize = null, born: usize = 0 };
 
 /// The grounded bodies in the water joined to `at`, taken before a blow so a half it splits off is not shocked apart from its parent.
 fn wading(sim: *const game.simulation.Simulation, at: P) ?rewards.Caught {
@@ -179,10 +185,10 @@ fn wading(sim: *const game.simulation.Simulation, at: P) ?rewards.Caught {
     return out;
 }
 
-fn conductTo(g: *game.Game, at: P, wet: ?rewards.Caught, s: Stroke) void {
-    const bodies = wet orelse return;
+fn conductTo(g: *game.Game, at: P, wet: ?Wet, s: Stroke) void {
+    const w = wet orelse return;
     g.sim.sayAt(at, shock.CONDUCTS, .{});
-    var each = bodies.iterator(.{});
+    var each = w.bodies.iterator(.{});
     while (each.next()) |slot| {
         const a = &g.sim.pool.items[slot];
         if (!a.alive) continue;
@@ -191,6 +197,13 @@ fn conductTo(g: *game.Game, at: P, wet: ?rewards.Caught, s: Stroke) void {
         a.shock.start();
         g.sim.sayTakes(slot, a, shock.TAKES);
         g.pic.settleSlot(&g.sim, s.wait, slot);
+        if (w.struck != slot) continue;
+        for (g.sim.pool.items[w.born..g.sim.pool.n], w.born..) |*half, o| {
+            if (!half.alive) continue;
+            half.shock = a.shock;
+            half.resilience.meters.set(.shock, a.resilience.meters.get(.shock));
+            g.pic.settleSlot(&g.sim, s.wait, o);
+        }
     }
 }
 
@@ -243,7 +256,7 @@ pub fn areaHit(g: *game.Game, comptime act: skillbar.Act, at: P, area: glacial.B
         arrowHit(g, id, attacks.heroScaled(&g.sim, act, hit), act, s);
     }
 }
-/// A barrel broken or a glow plant burst at `p`, if one stands there.
+/// A barrel broken or a glowbulb burst at `p`, if one stands there.
 pub fn smash(g: *game.Game, p: P, comptime verb: []const u8, s: Stroke) void {
     if (g.sim.lv.at(p).bursts()) return burstPlant(g, p, s);
     const gold = rewards.barrelLoot(&g.sim, p) orelse return;
@@ -256,7 +269,7 @@ const BARREL_DROPS = " the barrel. It drops {d} gold.";
 pub fn burstPlant(g: *game.Game, p: P, s: Stroke) void {
     const was = g.sim.lv.at(p);
     if (!gas.burst(&g.sim.lv, p)) return;
-    g.sim.sayAt(p, "The glow plant bursts, leaving a cloud of " ++ gas.HEALING_NAME ++ "!", .{});
+    g.sim.sayAt(p, "The glowbulb bursts, leaving a cloud of " ++ gas.HEALING_NAME ++ "!", .{});
     g.cloud.hold(s.wait);
     g.pic.burstPlant(&g.sim.lv, p, was, s.wait);
     if (g.sim.lv.isLit(p)) g.pic.fx.puff(s.wait, .{ .at = mathx.centre(p), .ink = look.gasInk(.healing), .motes = fx.BURST_WISPS });
@@ -479,27 +492,26 @@ fn finishTurnPicture(g: *game.Game) void {
 const Hurt = game.simulation.DamageResult;
 
 fn harmAfter(g: *game.Game, id: u16, moved: bool) void {
-    gasHarm(g, id);
-    steamHarm(g, id);
+    gasTick(g, id, .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." });
+    gasTick(g, id, .scalded, .{ .hero = "The " ++ gas.STEAM_NAME ++ " scalds {s} for {d}." });
     gasHeal(g, id);
     burnHarm(g, id);
     bleedHarm(g, id, moved or g.sim.displaced.isSet(actor.Pool.slot(id)));
 }
 
-fn gasHarm(g: *game.Game, id: u16) void {
+/// The caustic gas or steam the body stands in eats at it, once a turn.
+fn gasTick(g: *game.Game, id: u16, comptime tick: game.simulation.Tick, comptime said: Said) void {
     const a = g.sim.pool.get(id) orelse return;
-    if (!g.sim.lv.gassy(a.at) or ranAlready(g, id, .gassed)) return;
-    const dmg = masked(g, id, gas.harm(a.max));
+    const kind: grid.Gas = switch (tick) {
+        .gassed => .caustic,
+        .scalded => .steam,
+        else => @compileError(@tagName(tick) ++ " is no gas's harm"),
+    };
+    if (g.sim.lv.volumeAt(kind, a.at) == 0 or ranAlready(g, id, tick)) return;
+    const harm = if (kind == .steam) gas.scald(g.sim.combatStats(a).elements) else gas.harm(a.max);
+    const dmg = masked(g, id, harm);
     if (dmg == 0) return;
-    _ = harmTick(g, id, dmg, .gassed, .{ .hero = "The " ++ gas.NAME ++ " eats at {s} for {d}." });
-}
-
-fn steamHarm(g: *game.Game, id: u16) void {
-    const a = g.sim.pool.get(id) orelse return;
-    if (!g.sim.lv.scalding(a.at) or ranAlready(g, id, .scalded)) return;
-    const dmg = masked(g, id, gas.scald(g.sim.combatStats(a).elements));
-    if (dmg == 0) return;
-    _ = harmTick(g, id, dmg, .scalded, .{ .hero = "The " ++ gas.STEAM_NAME ++ " scalds {s} for {d}." });
+    _ = harmTick(g, id, dmg, tick, said);
 }
 
 /// The hero's mask takes its share of a gas's harm, the remainder rounded up as often as its fraction.
@@ -595,14 +607,9 @@ fn wearTurn(g: *game.Game, id: u16) Worn {
 /// The hero's own action is spent: so is a turn of what afflicts, holds or chills it; a chill's skipped action is its next turn.
 fn wearHero(g: *game.Game) void {
     const h = g.sim.heroActor() orelse return;
-    if (!h.wearsAny()) return;
-    _ = h.wearAfflictions();
-    _ = h.pin.hold();
-    if (h.chill.turns > 0 and h.chill.skip()) {
-        h.clock.delay(turn_clock.TURN);
-        g.sim.log.say("The cold slows {s}.", .{g.sim.name.text()});
-    }
-    g.pic.recordWear(&g.sim, .fromInt(g.sim.hero));
+    if (!wearTurn(g, g.sim.hero).skips) return;
+    h.clock.delay(turn_clock.TURN);
+    g.sim.log.say("The cold slows {s}.", .{g.sim.name.text()});
 }
 
 fn orderFoes(g: *game.Game, from: P) void {
@@ -827,8 +834,7 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
             const verb = if (sweeps) actor.SWEEP_VERB else s.verb;
             const hero = g.sim.heroActor().?;
             const attacker = &g.sim.pool.items[i];
-            const dmg = attacks.bite(&g.sim.rng, g.sim.combatStats(attacker), g.sim.combatStats(hero), s);
-            const landed = dmg orelse {
+            const blow = attacks.foeBlow(&g.sim, attacker, hero, s, weak) orelse {
                 g.sim.log.say("{s} dodges the {s}.", .{ g.sim.name.text(), row.name });
                 g.pic.recordFoeAttack(.fromInt(id), .miss, flight);
                 if (row.ranged == null) tactics.counter(g, id);
@@ -836,12 +842,10 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
             };
             const before = hero.hp;
             const defended = g.sim.combatStats(hero);
-            var physical = if (s.element) |e| damage.resisted(landed, defended.elements.get(e)) else attrs.armoured(defended.armour, landed, &g.sim.rng);
-            if (s.element == null and hero.tactics.guard > 0) physical = rules.Guard.reduce(hero.tactics.guard, physical);
-            const h = game.hurt(g, .fromInt(g.sim.hero), attacks.landed(weak, hero, physical));
+            const h = game.hurt(g, .fromInt(g.sim.hero), blow.dealt);
             const lethal = h.lethal;
             g.sim.log.push(.danger, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), h.dmg });
-            g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = kind }, .dmg = h.dmg, .before = before, .best = landed == s.hit.hi } });
+            g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = kind }, .dmg = h.dmg, .before = before, .best = blow.rolled == s.hit.hi } });
             if (!lethal and h.dmg > 0 and g.sim.procStatus(hero, .bleed, s.bleeds)) {
                 g.sim.log.say("{s} {s}!", .{ g.sim.name.text(), hero.bleed.said() });
                 hero.bleed.start();
@@ -932,14 +936,12 @@ fn sweepRound(g: *game.Game, id: u16, row: actor.Row, s: actor.Strike, weak: boo
 fn swipe(g: *game.Game, source: u16, id: u16, by: actor.Row, s: actor.Strike, weak: bool) ?fx.Impact {
     const a = g.sim.pool.get(id).?;
     const sweeper = g.sim.pool.get(source).?;
-    const rolled = attacks.bite(&g.sim.rng, g.sim.combatStats(sweeper), g.sim.combatStats(a), s) orelse {
+    const dmg = (attacks.foeBlow(&g.sim, sweeper, a, s, weak) orelse {
         g.sim.sayOf(a, "The {s} misses the {s}.", .{ by.name, actor.row(a.kind).name });
         return null;
-    };
+    }).dealt;
     const at = a.at;
     const name = actor.row(a.kind).name;
-    const armoured = attrs.armoured(g.sim.combatStats(a).armour, rolled, &g.sim.rng);
-    const dmg = attacks.landed(weak, a, armoured);
     const stunned = dmg > 0 and dmg < a.hp and g.sim.procStatus(a, .stun, s.stuns);
     if (stunned) {
         if (!a.waits and !g.sim.ran[actor.Pool.slot(id)].contains(.worn)) a.clock.stunBeforeAction(actor.row(a.kind).pace) else a.clock.stun();

@@ -614,9 +614,7 @@ fn cycle(comptime T: type, v: T, by: i32) T {
     if (by == 0) return v;
     const values = comptime std.enums.values(T);
     var next = mathx.stepIn(T, values, v, std.math.sign(by), null);
-    if (T == grid.Tile) {
-        while (!next.single()) next = mathx.stepIn(T, values, next, std.math.sign(by), null);
-    }
+    while (!grid.knobbable(T, next)) next = mathx.stepIn(T, values, next, std.math.sign(by), null);
     return next;
 }
 
