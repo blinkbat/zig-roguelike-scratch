@@ -549,7 +549,7 @@ pub const TONE_FS = shaders.glslConsts(.{ .KNEE = KNEE, .FLASH = FLASH_RGB }) ++
     \\
 ;
 
-pub const smooth = mathx.smooth;
+const smooth = mathx.smooth;
 
 /// The cosine a light `dy` south of a south face and `flat` from it along the ground strikes it at.
 pub fn faceCos(dy: f32, flat: f32) f32 {
@@ -561,13 +561,13 @@ const FACE_EPS: f32 = 1e-2;
 pub const splat = sky.splat;
 
 pub const rgbOf = look.rgbOf;
-pub const colourOf = look.colourOf;
+const colourOf = look.colourOf;
 
 pub fn texelOf(c: Rgb, sight: f32) rl.Color {
     return colourOf(knee(c) / splat(OVERBRIGHT), sight);
 }
 
-pub const lum = sky.luma;
+const lum = sky.luma;
 
 /// Cells: `drawn` as on screen, `ground` where it stands.
 const Lamp = struct {

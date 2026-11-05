@@ -9,6 +9,7 @@ const raster = @import("raster.zig");
 const shaders = @import("shaders.zig");
 const sky = @import("sky.zig");
 const light = @import("light.zig");
+const model = @import("light_model.zig");
 const P = mathx.P;
 const Rgb = sky.Rgb;
 const smooth = mathx.smooth;
@@ -25,7 +26,7 @@ const SHADOW_SQUASH: f32 = 0.55;
 /// Cells: a light this close to a body's middle stands over it and casts no shadow.
 pub const SHADOW_OVERHEAD: f32 = 0.05;
 const SHADOW_NEAR: f32 = 0.5;
-const SHADOW_PAD: f32 = SHADOW_SOFT_TIP * @as(f32, @floatFromInt(light.SHADOW_TAPS));
+const SHADOW_PAD: f32 = SHADOW_SOFT_TIP * @as(f32, @floatFromInt(model.SHADOW_TAPS));
 /// Texels between the shadow shader's blur taps, at its tip and at its foot.
 const SHADOW_SOFT_TIP: f32 = 2.0;
 const SHADOW_SOFT_FOOT: f32 = 0.6;
@@ -52,7 +53,7 @@ const FOREST_STEPS: usize = 8;
 const FOREST_A: f32 = 1.3;
 const FOREST_MAX: f32 = 0.75;
 const FOREST_SOFT: f32 = 3.0;
-const FOREST_PAD: f32 = FOREST_SOFT * light.SHADOW_TAPS;
+const FOREST_PAD: f32 = FOREST_SOFT * model.SHADOW_TAPS;
 /// Maximum ground reach, in cells, of a cell-tall sky or torch caster.
 pub const CAST_REACH: f32 = blk: {
     const l = @max(sky.REACH_MAX, SHADOW_LEN_HI);
@@ -82,7 +83,7 @@ fn footOf(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangle, s: *c
     const y = dest.y + height;
     if (self.gpu.glow) |g| {
         const a = CONTACT_A * @min(1, lit / lum(light.CARRY)) * opacity;
-        light.glowAt(g, x, y, dest.width * CONTACT_W * 0.5 * contact, dest.width * CONTACT_H * 0.5 * contact, look.colourOf(light.SHADE_RGB, a));
+        light.glowAt(g, x, y, dest.width * CONTACT_W * 0.5 * contact, dest.width * CONTACT_H * 0.5 * contact, look.colourOf(model.SHADE_RGB, a));
     }
     return .{ .x = x, .y = y, .height = height, .share = share };
 }
@@ -121,7 +122,7 @@ pub fn drawShadows(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectang
     const f = footOf(self, tex, dest, s, 1, opacity) orelse return;
     const fx = f.x;
     const fy = f.y;
-    var buf: [light.BODY_LIGHTS]Cast = undefined;
+    var buf: [model.BODY_LIGHTS]Cast = undefined;
     const cs = casts(s, centre, f.height, &buf);
     if (cs.len == 0) return;
     for (cs) |*c| c.alpha *= opacity;
@@ -147,7 +148,7 @@ pub fn drawCanopy(self: *const light.Light, tex: rl.Texture2D, dest: rl.Rectangl
     const fx = f.x;
     const fy = f.y;
     const height = f.height;
-    var buf: [light.BODY_LIGHTS]Cast = undefined;
+    var buf: [model.BODY_LIGHTS]Cast = undefined;
     for (casts(s, centre, height, &buf)) |c| {
         const r = dest.width * CANOPY_R;
         const rx = r * (1 + c.len / height * CANOPY_STRETCH);
@@ -227,7 +228,7 @@ const Sides = packed struct(u4) {
         return out;
     }
 };
-pub const ForestCast = struct { tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, cast: [light.BODY_LIGHTS]Cast, n: usize, joined: Sides };
+pub const ForestCast = struct { tex: rl.Texture2D, dest: rl.Rectangle, centre: [2]f32, cast: [model.BODY_LIGHTS]Cast, n: usize, joined: Sides };
 pub const FOREST_QUEUE: usize = 2048;
 /// `flushForest`'s sort key: the queue index below, the texture id over it, the joined sides on top.
 const INDEX_BITS = 16;
@@ -242,14 +243,14 @@ comptime {
 }
 
 /// `height` is pixels from the feet to the top of the art.
-pub fn casts(s: *const light.Shine, centre: [2]f32, height: f32, out: *[light.BODY_LIGHTS]Cast) []Cast {
+pub fn casts(s: *const light.Shine, centre: [2]f32, height: f32, out: *[model.BODY_LIGHTS]Cast) []Cast {
     const lit = s.lit();
     if (lit <= 0) return out[0..0];
     var n: usize = 0;
     for (s.lamp[0..s.n]) |l| {
         if (!l.casts) continue;
         const own = lum(l.colour);
-        var alpha = if (l.sky) |k| k.depth else light.SHADOW_MAX * light.castShare(own, lit) * smooth(own / SHADOW_LAMP_FULL);
+        var alpha = if (l.sky) |k| k.depth else model.SHADOW_MAX * model.castShare(own, lit) * smooth(own / SHADOW_LAMP_FULL);
         const dx = centre[0] - l.ground[0];
         const dy = centre[1] - l.ground[1];
         const d = mathx.len(dx, dy);
@@ -257,7 +258,7 @@ pub fn casts(s: *const light.Shine, centre: [2]f32, height: f32, out: *[light.BO
         if (l.sky == null) alpha *= mathx.smoothstep(SHADOW_OVERHEAD, SHADOW_NEAR, d);
         if (alpha < SHADOW_FAINT) continue;
         const lean = if (l.sky) |k| [2]f32{ dx / d * height * k.reach, dy / d * height * k.reach } else lampLean(.{ dx, dy }, height);
-        out[n] = .{ .lean = lean, .len = mathx.len(lean[0], lean[1]), .solid = solidity(lean), .alpha = alpha, .shade = if (l.sky) |k| k.shade else light.SHADE_RGB, .source = if (l.sky == null) l.ground else null };
+        out[n] = .{ .lean = lean, .len = mathx.len(lean[0], lean[1]), .solid = solidity(lean), .alpha = alpha, .shade = if (l.sky) |k| k.shade else model.SHADE_RGB, .source = if (l.sky == null) l.ground else null };
         n += 1;
     }
     return out[0..n];

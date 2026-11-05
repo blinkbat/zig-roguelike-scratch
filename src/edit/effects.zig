@@ -128,7 +128,7 @@ const SAMPLES = blk: {
     for (DUSTED) |t| out = out ++ &[_]Sample{.{ .dust = t }};
     out = out ++ &[_]Sample{ .juke, .torch, .fire_wall };
     for (std.enums.values(fx.Status)) |st| {
-        if (st.marked()) out = out ++ &[_]Sample{.{ .mark = st }};
+        if (fx.Fx.marks(st)) out = out ++ &[_]Sample{.{ .mark = st }};
     }
     out = out ++ &[_]Sample{.level_up};
     break :blk out[0..out.len].*;

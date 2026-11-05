@@ -97,14 +97,6 @@ pub const Status = enum {
         };
     }
 
-    /// Drawn over its body by `Fx.drawStatus`.
-    pub fn marked(s: Status) bool {
-        return switch (s) {
-            .resistant, .guarding, .unyielding, .steady, .overwatch => false,
-            .bleeding, .burning, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .warded => true,
-        };
-    }
-
     /// The first status a body has, in this order, that glows lights it.
     pub fn glow(s: Status) ?StatusGlow {
         return switch (s) {

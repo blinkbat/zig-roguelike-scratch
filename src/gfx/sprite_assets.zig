@@ -252,6 +252,7 @@ comptime {
 
 const WALLS_PNG = @embedFile("walls.png");
 const FOREST_PNG = @embedFile("forest-tree-walls.png");
+pub const HUD_BORDER_PNG = @embedFile("hud-border.png");
 
 pub const SOURCES = .{
     .bodies = BODY_PNGS,

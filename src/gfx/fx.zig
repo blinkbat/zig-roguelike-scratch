@@ -604,7 +604,11 @@ pub const Fx = struct {
         mark(self, m);
     }
 
-    /// Null for a status shown only on the hud; `Status.marked` must agree.
+    pub fn marks(s: Status) bool {
+        return markOf(s) != null;
+    }
+
+    /// Null for a status shown only on the hud.
     fn markOf(s: Status) ?*const fn (*const Fx, Mark) void {
         return switch (s) {
             .bleeding => &drawBleeding,
@@ -1285,15 +1289,6 @@ fn live(fx: *const Fx) Live {
 }
 
 const TEST_BLOW = Blow{ .impact = .{ .actor = .{ .slot = .fromIndex(3), .at = .{ .x = 20, .y = 20 }, .lethal = false } }, .dir = .{ 1, 0 }, .matter = .blood };
-
-test "a status draws a mark over its body exactly when it is marked" {
-    var marks: usize = 0;
-    for (std.enums.values(Status)) |s| {
-        try std.testing.expectEqual(s.marked(), Fx.markOf(s) != null);
-        marks += @intFromBool(s.marked());
-    }
-    std.debug.print("status marks: {d} of {d} statuses draw one\n", .{ marks, std.enums.values(Status).len });
-}
 
 test "an arc kinks, strays and lights at the same spacing whatever its length" {
     var widest_gap: [2]f32 = .{ 1, 0 };

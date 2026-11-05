@@ -398,10 +398,10 @@ const SHALLOW_BANK_PX: f32 = 6;
 const DEEP_BANK_PX: f32 = 24;
 
 pub fn bankHeight(t: grid.Tile) f32 {
-    return switch (t) {
+    return switch (of(t) orelse return 0) {
         .shallows => SHALLOW_BANK_PX / look.SPRITE_PX,
         .water => DEEP_BANK_PX / look.SPRITE_PX,
-        else => 0,
+        .lava, .chasm, .bridge, .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .cobble => 0,
     };
 }
 

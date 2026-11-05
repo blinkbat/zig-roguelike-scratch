@@ -10,6 +10,8 @@ const lume = @import("../map/lume.zig");
 const actor = @import("../play/actor.zig");
 const shadow = @import("shadow.zig");
 const light = @import("light.zig");
+const model = @import("light_model.zig");
+const light_visibility = @import("light_visibility.zig");
 const P = mathx.P;
 const splat = sky.splat;
 const rgbOf = look.rgbOf;
@@ -112,7 +114,7 @@ test "effect reach bounds preserve lighting at fractional positions and map edge
             const bounded = &l.effects[0];
             var reference = bounded.*;
             for (&reference.reach, 0..) |*reached, i| {
-                const p = reference.box().lo.add(mathx.unslot(i, light.EFFECT_SPAN));
+                const p = reference.box().lo.add(mathx.unslot(i, model.EFFECT_SPAN));
                 reached.* = grid.Level.inside(p) and grid.clearLine(&lv, reference.origin, p);
                 for (offsets) |dx| {
                     for (offsets) |dy| {
@@ -154,7 +156,7 @@ test "cell effect culling preserves floor wall and water lighting" {
     var cells = grid.Cells.of(.{ .x = 14, .y = 14 }, .{ .x = 38, .y = 32 });
     var samples: usize = 0;
     var candidates: usize = 0;
-    var surfaces = std.EnumSet(light.Surface).initEmpty();
+    var surfaces = std.EnumSet(model.Surface).initEmpty();
     const sub: usize = light.SUB;
     while (cells.next()) |c| {
         const kept = l.effectsNear(c);
@@ -211,7 +213,7 @@ test "a torch pools light on the floor below it, fading to nothing at its reach"
     const fl = l.torch[0].flame();
     std.debug.print("torchlight on the floor by cells from the flame:", .{});
     var last = std.math.floatMax(f32);
-    for ([_]f32{ 0.25, 1, 2, 3, 4, 5, 6, @floatFromInt(light.REACH) }) |r| {
+    for ([_]f32{ 0.25, 1, 2, 3, 4, 5, 6, @floatFromInt(model.REACH) }) |r| {
         const v = added(l, &lv, .{ fl[0], fl[1] + r });
         std.debug.print(" {d}:{d:.3}", .{ r, v });
         try std.testing.expect(v <= last);
@@ -234,7 +236,7 @@ test "a glowing plant pools pale blue light round its own cell and draws a glow 
     const top = l.at(&lv, near, mathx.centre(at)) - l.at(&lv, &.{}, mathx.centre(at));
     std.debug.print("glowbulb light by cells along the floor:", .{});
     var last = std.math.floatMax(f32);
-    for ([_]f32{ 1, 2, 3, 4, 5, 6, @floatFromInt(light.REACH) }) |r| {
+    for ([_]f32{ 1, 2, 3, 4, 5, 6, @floatFromInt(model.REACH) }) |r| {
         const q = [2]f32{ mathx.centre(at)[0] + r, mathx.centre(at)[1] };
         const rgb = l.at(&lv, near, q) - l.at(&lv, &.{}, q);
         std.debug.print(" {d}:{d:.3}/{d:.3}/{d:.3}", .{ r, rgb[0], rgb[1], rgb[2] });
@@ -307,7 +309,7 @@ test "forest shadow edges project together under torches and the sky" {
     const a = [2]f32{ 20.5, 20.5 };
     var checked: usize = 0;
     for ([_]?[2]f32{ null, .{ 20.5, 17.3 }, .{ 15.5, 20.5 }, .{ 26.5, 25.5 } }) |source| {
-        const cast = shadow.Cast{ .lean = .{ 40, -12 }, .len = 42, .solid = 1, .alpha = 0.7, .shade = light.SHADE_RGB, .source = source };
+        const cast = shadow.Cast{ .lean = .{ 40, -12 }, .len = 42, .solid = 1, .alpha = 0.7, .shade = model.SHADE_RGB, .source = source };
         for (0..2) |axis| {
             var b = a;
             b[axis] += 1;
@@ -341,14 +343,14 @@ test "shadow casters keep their light outside sight and memory" {
         @memset(&lv.lit, true);
         @memset(&lv.seen, true);
         l.settle(&lv);
-        var before: [light.BODY_LIGHTS]shadow.Cast = undefined;
+        var before: [model.BODY_LIGHTS]shadow.Cast = undefined;
         const expected = shadow.casts(&l.onCaster(centre, false), centre, ART_H, &before);
         try std.testing.expect(expected.len > 0);
         for ([_]bool{ false, true }) |remembered_| {
             @memset(&lv.lit, false);
             @memset(&lv.seen, remembered_);
             l.settle(&lv);
-            var after: [light.BODY_LIGHTS]shadow.Cast = undefined;
+            var after: [model.BODY_LIGHTS]shadow.Cast = undefined;
             const actual = shadow.casts(&l.onCaster(centre, false), centre, ART_H, &after);
             try std.testing.expectEqualSlices(shadow.Cast, expected, actual);
             try std.testing.expectEqual(@as(usize, 0), shadow.casts(&l.onBody(centre, false), centre, ART_H, &after).len);
@@ -443,7 +445,7 @@ test "a cell coming into sight fades up fast, and fades down to memory slower on
     const q = [2]f32{ 15.5, 15.5 };
     l.carrier = q;
     const bright = lum(l.base() + light.CARRY);
-    const dim = lum(light.MEMORY);
+    const dim = lum(model.MEMORY);
     const Up = struct {
         var want: f32 = 0;
         fn f(v: f32) bool {
@@ -530,7 +532,6 @@ test "a baked texel is exactly the light `at` gives its middle, fading or never 
 }
 
 test "baked water sun samples preserve ground glints and raised surfaces across terrain changes" {
-    const model = @import("light_model.zig");
     var lv = litFloor();
     for (&lv.tile) |*t| t.* = .shallows;
     for (20..26) |x| lv.set(.{ .x = @intCast(x), .y = 19 }, .grass);
@@ -539,7 +540,7 @@ test "baked water sun samples preserve ground glints and raised surfaces across 
     gen.shapeWalls(&lv);
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
-    var surfaces = std.EnumSet(light.Surface).initEmpty();
+    var surfaces = std.EnumSet(model.Surface).initEmpty();
     var samples: usize = 0;
     for ([_]bool{ false, true }) |diverged| {
         l.settle(&lv);
@@ -668,7 +669,7 @@ test "remembered ground is black on every line where a seen cell meets an unseen
     const l = try light.Light.create(std.testing.allocator);
     defer std.testing.allocator.destroy(l);
     const sight = actor.row(.archer).sight;
-    const full = lum(light.MEMORY);
+    const full = lum(model.MEMORY);
     var lines: usize = 0;
     var bright: usize = 0;
     var worst: f32 = 0;
@@ -752,19 +753,19 @@ test "a flame flickers within a tenth or so either way and never jumps" {
         last = v;
     }
     std.debug.print("flicker over a minute: {d:.3} to {d:.3}, at most {d:.4} a frame at 60 Hz\n", .{ lo, hi, jump });
-    try std.testing.expect(lo >= 1 - light.FLICKER and hi <= 1 + light.FLICKER);
-    try std.testing.expect(hi - lo > light.FLICKER);
+    try std.testing.expect(lo >= 1 - model.FLICKER and hi <= 1 + model.FLICKER);
+    try std.testing.expect(hi - lo > model.FLICKER);
     try std.testing.expect(jump < 0.03);
 }
 
 test "a shadow fades through zero as a body passes directly under a torch" {
-    var s = light.Shine{ .ambient = light.MEMORY };
+    var s = light.Shine{ .ambient = model.MEMORY };
     s.add(.{ .drawn = .{ 40.5, 30.5 }, .ground = .{ 40.5, 30.5 }, .colour = splat(1), .casts = true });
     var last: f32 = 0;
     var worst: f32 = 0;
     for (0..201) |i| {
         const dx = (@as(f32, @floatFromInt(i)) - 100) / 100;
-        var buf: [light.BODY_LIGHTS]shadow.Cast = undefined;
+        var buf: [model.BODY_LIGHTS]shadow.Cast = undefined;
         const cs = shadow.casts(&s, .{ 40.5 + dx, 30.5 }, ART_H, &buf);
         const alpha = if (cs.len == 0) 0 else cs[0].alpha;
         if (i > 0) worst = @max(worst, @abs(alpha - last));
@@ -776,13 +777,13 @@ test "a shadow fades through zero as a body passes directly under a torch" {
 }
 
 test "torch shadow crosses its light's horizontal line without flipping" {
-    var s = light.Shine{ .ambient = light.MEMORY };
+    var s = light.Shine{ .ambient = model.MEMORY };
     s.add(.{ .drawn = .{ 43.5, 30.5 }, .ground = .{ 43.5, 30.5 }, .colour = splat(1), .casts = true });
     var last: ?[2]f32 = null;
     var worst: f32 = 0;
     for (0..41) |i| {
         const dy = (@as(f32, @floatFromInt(i)) - 20) / 1000;
-        var buf: [light.BODY_LIGHTS]shadow.Cast = undefined;
+        var buf: [model.BODY_LIGHTS]shadow.Cast = undefined;
         const cs = shadow.casts(&s, .{ 40.5, 30.5 + dy }, ART_H, &buf);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         try std.testing.expectEqual(@as(f32, 0), cs[0].solid);
@@ -900,9 +901,9 @@ test "the carried light fades across what it lets the archer see and leaves that
         last = v;
     }
     const past = lum(l.at(&lv, &.{}, .{ 40.5 + edge + 1, 30.5 }));
-    std.debug.print(", a cell past {d:.3}, memory {d:.3}\n", .{ past, lum(light.MEMORY) });
-    try std.testing.expect(last > lum(light.MEMORY));
-    try std.testing.expectApproxEqAbs(lum(light.MEMORY), past, 1e-4);
+    std.debug.print(", a cell past {d:.3}, memory {d:.3}\n", .{ past, lum(model.MEMORY) });
+    try std.testing.expect(last > lum(model.MEMORY));
+    try std.testing.expectApproxEqAbs(lum(model.MEMORY), past, 1e-4);
 }
 
 test "the carried light reaches no remembered floor behind a wall" {
@@ -926,8 +927,8 @@ test "the carried light reaches no remembered floor behind a wall" {
         try std.testing.expectApproxEqAbs(@as(f32, 0), v, 1e-5);
     }
     const front = lum(l.at(&lv, &.{}, .{ 30.5, wy + 1 + EDGE_EPS }));
-    std.debug.print(", at its front {d:.4}\n", .{front - lum(light.MEMORY)});
-    try std.testing.expect(front > lum(light.MEMORY) + 0.05);
+    std.debug.print(", at its front {d:.4}\n", .{front - lum(model.MEMORY)});
+    try std.testing.expect(front > lum(model.MEMORY) + 0.05);
 }
 
 test "daylight reaches no remembered floor behind a wall in sight" {
@@ -944,13 +945,13 @@ test "daylight reaches no remembered floor behind a wall in sight" {
     const wy: f32 = @floatFromInt(TORCH_AT.y);
     std.debug.print("noon behind a wall in sight, over memory:", .{});
     for ([_][2]f32{ .{ 30.5, wy - 1.5 }, .{ 30.5, wy - 0.5 }, .{ 30.5, wy - EDGE_EPS } }) |q| {
-        const v = lum(l.at(&lv, &.{}, q)) - lum(light.MEMORY);
+        const v = lum(l.at(&lv, &.{}, q)) - lum(model.MEMORY);
         std.debug.print(" {d:.4}", .{v});
         try std.testing.expectApproxEqAbs(@as(f32, 0), v, 1e-5);
     }
     const front = lum(l.at(&lv, &.{}, .{ 30.5, wy + 1.5 }));
-    std.debug.print(", in front {d:.4}\n", .{front - lum(light.MEMORY)});
-    try std.testing.expect(front > lum(light.MEMORY) + 0.1);
+    std.debug.print(", in front {d:.4}\n", .{front - lum(model.MEMORY)});
+    try std.testing.expect(front > lum(model.MEMORY) + 0.1);
 }
 
 test "a cell is clear exactly when every cell within its fade's reach is wholly remembered" {
@@ -958,7 +959,7 @@ test "a cell is clear exactly when every cell within its fade's reach is wholly 
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     var rng = mathx.Rng.init(0xC1EA);
-    const r = light.VOID_REACH;
+    const r = light_visibility.VOID_REACH;
     var n: usize = 0;
     for (0..20) |_| {
         for (&l.visibility.memory) |*m| m.* = if (rng.percent(97)) 1 else 0.5;
@@ -1128,7 +1129,7 @@ test "a remembered torch seen again from behind its wall burns at memory, not li
 }
 
 fn castAlpha(l: *const light.Light, at: [2]f32, carrier: bool) [2]f32 {
-    var buf: [light.BODY_LIGHTS]shadow.Cast = undefined;
+    var buf: [model.BODY_LIGHTS]shadow.Cast = undefined;
     const cs = shadow.casts(&l.onBody(at, carrier), at, ART_H, &buf);
     if (cs.len == 0) return .{ 0, 0 };
     return .{ cs[0].alpha, cs[0].len };
@@ -1149,7 +1150,7 @@ test "a cast shadow fades out smoothly as its body walks away from the torch" {
         var worst: f32 = 0;
         var gone: f32 = 0;
         var d: f32 = 0.5;
-        while (d < @as(f32, @floatFromInt(light.REACH)) + 0.5) : (d += 0.0625) {
+        while (d < @as(f32, @floatFromInt(model.REACH)) + 0.5) : (d += 0.0625) {
             const at = [2]f32{ fl[0] + d, fl[1] + 0.5 };
             l.carrier = if (r.carrier) |c| .{ at[0] + c, at[1] } else null;
             const v = castAlpha(l, at, r.carrying);
@@ -1163,7 +1164,7 @@ test "a cast shadow fades out smoothly as its body walks away from the torch" {
         nearest_end = @min(nearest_end, gone);
     }
     try std.testing.expect(steepest < 0.07);
-    try std.testing.expect(nearest_end + 0.0625 >= @as(f32, @floatFromInt(light.REACH)) - 1.5);
+    try std.testing.expect(nearest_end + 0.0625 >= @as(f32, @floatFromInt(model.REACH)) - 1.5);
 }
 
 test "a body is lit as the ground under it is, fading into sight and on the edge of the unseen" {
@@ -1206,7 +1207,7 @@ test "a body takes its torch's light from where the flame is drawn, and none fro
     try std.testing.expect(!near_carrier.lamp[0].casts);
     try std.testing.expect(open.lamp[0].casts);
     try std.testing.expectEqual(@as(usize, 0), carrying.n);
-    try std.testing.expect(lum(carrying.ambient) > lum(light.MEMORY + light.CARRY) * 0.95);
+    try std.testing.expect(lum(carrying.ambient) > lum(model.MEMORY + light.CARRY) * 0.95);
 }
 
 const ART_H: f32 = @floatFromInt(look.SPRITE_PX);
@@ -1288,8 +1289,8 @@ test "the sun throws a thing's shadow its height times the hour's reach, away fr
         const b = light.CASTERS.get(.grave).?;
         const tip = b.h * k.reach() + b.r.?;
         std.debug.print("at {d:.1}h, reach {d:.2}: a rock's shadow runs {d:.2} cells from its middle, a grave's {d:.2} (its top's tip {d:.2})\n", .{ hour, k.reach(), rock_len, bush_len, tip });
-        try std.testing.expect(rock_len > k.reach() * light.WALL_H * (1 - light.SUN_SOFT) and rock_len < k.reach() * light.WALL_H + 0.75);
-        try std.testing.expect(bush_len > tip - light.SUN_SOFT * b.h * k.reach() - light.SUN_EDGE and bush_len <= tip);
+        try std.testing.expect(rock_len > k.reach() * model.WALL_H * (1 - model.SUN_SOFT) and rock_len < k.reach() * model.WALL_H + 0.75);
+        try std.testing.expect(bush_len > tip - model.SUN_SOFT * b.h * k.reach() - model.SUN_EDGE and bush_len <= tip);
         const m = mathx.centre(rock);
         const u = k.across();
         try std.testing.expectEqual(@as(f32, 1), light.sunlit(&lv, light.SunRay.of(k), m[0] + u[0] * 0.6, m[1] + u[1] * 0.6, 0));
@@ -1312,7 +1313,7 @@ test "everything that blocks a step and does not stand shades the ground past it
             const past = edge + 0.05;
             const shade = light.sunlit(&lv, light.SunRay.of(k), m[0] - ux * past, m[1] - uy * past, 0);
             worst = @max(worst, shade);
-            if (light.CASTERS.get(t).?.r != null) try std.testing.expectEqual(@as(f32, 1), light.sunlit(&lv, light.SunRay.of(k), m[0], m[1], light.topOf(t, at, m)));
+            if (light.CASTERS.get(t).?.r != null) try std.testing.expectEqual(@as(f32, 1), light.sunlit(&lv, light.SunRay.of(k), m[0], m[1], model.topOf(t, at, m)));
         }
         std.debug.print("a {s}: the ground just past its edge takes at most {d:.2} of the sun\n", .{ @tagName(t), worst });
         try std.testing.expect(worst < 0.3);
@@ -1352,7 +1353,7 @@ test "a standing shrub takes the sun as a body does, and throws its shadow the s
     const l = try testLight(&lv);
     defer std.testing.allocator.destroy(l);
     l.sky = sky.at(16.5);
-    var out: [2][light.BODY_LIGHTS]shadow.Cast = undefined;
+    var out: [2][model.BODY_LIGHTS]shadow.Cast = undefined;
     var lean: [2][2]f32 = undefined;
     for ([_]P{ shrub, foe }, 0..) |c, i| {
         const s = l.onBody(mathx.centre(c), false);
@@ -1372,7 +1373,7 @@ test "a body's sun shadow runs the way the ground's do, its height times the hou
     const at = mathx.centre(.{ .x = 40, .y = 30 });
     for ([_]f32{ 9, 13, 16.5 }) |hour| {
         l.sky = sky.at(hour);
-        var buf: [light.BODY_LIGHTS]shadow.Cast = undefined;
+        var buf: [model.BODY_LIGHTS]shadow.Cast = undefined;
         const cs = shadow.casts(&l.onBody(at, false), at, ART_H, &buf);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         const u = l.sky.?.across();
@@ -1421,7 +1422,7 @@ test "a sun shadow turns smoothly through due east and due west, never flipping 
         var h = span[0];
         while (h < span[1]) : (h += 0.005) {
             l.sky = sky.at(h);
-            var buf: [light.BODY_LIGHTS]shadow.Cast = undefined;
+            var buf: [model.BODY_LIGHTS]shadow.Cast = undefined;
             const cs = shadow.casts(&l.onBody(at, false), at, ART_H, &buf);
             if (cs.len == 0) {
                 was = null;
@@ -1454,7 +1455,7 @@ test "under the sky, ground in the sun outshines ground in shade, and night is d
     const night = lum(l.at(&lv, none, .{ m[0] + 5, m[1] }));
     std.debug.print("{d}h ground: {d:.2} in the sun, {d:.2} in a rock's shadow; {d:.3} at midnight\n", .{ morning, sun, shade, night });
     try std.testing.expect(sun > shade * 1.2 and sun < shade * 2 and shade > night * 2.5);
-    try std.testing.expect(night >= lum(l.memoryFloor()) and lum(l.memoryFloor()) < lum(light.MEMORY));
+    try std.testing.expect(night >= lum(l.memoryFloor()) and lum(l.memoryFloor()) < lum(model.MEMORY));
 }
 
 test "the moon throws a cold shadow as deep as the sun's, over the archer's own light too" {
@@ -1470,7 +1471,7 @@ test "the moon throws a cold shadow as deep as the sun's, over the archer's own 
     var blue: [2]f32 = undefined;
     for ([_]f32{ day.NOON, day.DEAD_OF_NIGHT }, 0..) |h, i| {
         l.sky = sky.at(h);
-        var buf: [light.BODY_LIGHTS]shadow.Cast = undefined;
+        var buf: [model.BODY_LIGHTS]shadow.Cast = undefined;
         const cs = shadow.casts(&l.onBody(foe, false), foe, ART_H, &buf);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         depth[i] = cs[0].alpha;
@@ -1502,7 +1503,7 @@ test "sun and torch shadows thinned to slivers give way to soft streaks" {
     var silhouette_at: [3]f32 = undefined;
     for ([_]f32{ day.SUNRISE, 8, day.NOON }, &silhouette_at) |h, *k| {
         l.sky = sky.at(h);
-        var buf: [light.BODY_LIGHTS]shadow.Cast = undefined;
+        var buf: [model.BODY_LIGHTS]shadow.Cast = undefined;
         const cs = shadow.casts(&l.onBody(at, false), at, ART_H, &buf);
         try std.testing.expectEqual(@as(usize, 1), cs.len);
         k.* = cs[0].solid;
@@ -1523,7 +1524,7 @@ test "a streak is darkest at the feet and gone at the tip, and a sideways sun sh
     var h: f32 = 5.5;
     while (h <= 20.5) : (h += 0.1) {
         l.sky = sky.at(h);
-        var buf: [light.BODY_LIGHTS]shadow.Cast = undefined;
+        var buf: [model.BODY_LIGHTS]shadow.Cast = undefined;
         for (shadow.casts(&l.onBody(at, false), at, ART_H, &buf)) |c| longest = @max(longest, c.len / ART_H);
     }
     const mid = 0.5;

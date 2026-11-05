@@ -519,7 +519,7 @@ pub const Sprites = struct {
     }
 };
 
-const HUD_BORDER_PNG = @embedFile("hud-border.png");
+const HUD_BORDER_PNG = sprite_assets.HUD_BORDER_PNG;
 pub const HUD_BORDER_CUT: i32 = 9;
 
 pub fn hudPanel(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, fill: rl.Color, tint: rl.Color) void {

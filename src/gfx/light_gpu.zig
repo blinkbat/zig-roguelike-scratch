@@ -266,8 +266,8 @@ pub const Gpu = struct {
             if (!f.live()) continue;
             const x = ox + f.at[0] * cell;
             const y = oy + f.at[1] * cell;
-            glowAt(g, x, y, cell * model.GLOW_HALO, cell * model.GLOW_HALO, model.colourOf(f.tint(), model.GLOW_HALO_A * f.glow * f.lit));
-            if (f.kind == .wall) glowAt(g, x, y, cell * model.GLOW_CORE, cell * model.GLOW_CORE, model.colourOf(f.tint(), model.GLOW_CORE_A * f.glow * f.lit));
+            glowAt(g, x, y, cell * model.GLOW_HALO, cell * model.GLOW_HALO, look.colourOf(f.tint(), model.GLOW_HALO_A * f.glow * f.lit));
+            if (f.kind == .wall) glowAt(g, x, y, cell * model.GLOW_CORE, cell * model.GLOW_CORE, look.colourOf(f.tint(), model.GLOW_CORE_A * f.glow * f.lit));
         }
     }
 
@@ -393,7 +393,7 @@ fn bevelNormals(solid: *const [ART_MAX * ART_MAX]bool, w: i32, h: i32) ?rl.Textu
             const gx = model.texel(&height, w, h, x + 1, y) - model.texel(&height, w, h, x - 1, y);
             const gy = model.texel(&height, w, h, x, y + 1) - model.texel(&height, w, h, x, y - 1);
             const n = Rgb{ -gx * BEVEL_DEPTH, -gy * BEVEL_DEPTH, 1 };
-            px[@intCast(y * w + x)] = model.colourOf(sky.unit(n) * splat(0.5) + splat(0.5), 1);
+            px[@intCast(y * w + x)] = look.colourOf(sky.unit(n) * splat(0.5) + splat(0.5), 1);
         }
     }
     return raster.clamped(raster.rgba(&px, w, h), .point);
