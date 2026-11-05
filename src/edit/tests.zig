@@ -1,3 +1,4 @@
+const sprite_assets = @import("../gfx/sprite_assets.zig");
 const interaction = @import("interaction.zig");
 const placement = @import("placement.zig");
 const widgets = @import("widgets.zig");
@@ -198,9 +199,9 @@ test "painting a bespoke node: a door opens its wall and no wall paints over it"
     try std.testing.expectEqual(@as(usize, 1), w.node[0].plan.bespoke.foe_n);
     try std.testing.expectEqual(@as(usize, 1), ed.scene.lv.torch.n);
     try std.testing.expect(ed.history.dirty);
-    const map = look.Assets.of(&ed.scene.lv);
-    try std.testing.expect(std.meta.eql(map.merge(look.Assets.everything()), look.Assets.everything()));
-    try std.testing.expect(look.Assets.everything().bodies.contains(.rat) and look.Assets.everything().bodies.contains(.slime_quarter) and look.Assets.everything().barrel);
+    const map = sprite_assets.Assets.of(&ed.scene.lv);
+    try std.testing.expect(std.meta.eql(map.merge(sprite_assets.Assets.everything()), sprite_assets.Assets.everything()));
+    try std.testing.expect(sprite_assets.Assets.everything().bodies.contains(.rat) and sprite_assets.Assets.everything().bodies.contains(.slime_quarter) and sprite_assets.Assets.everything().barrel);
 }
 
 test "the link tool joins doors on two nodes, and a procgen node takes doors but no floor" {

@@ -62,7 +62,7 @@ pub fn swing(g: *game.Game, from: P, act: skillbar.Act, mark: P) void {
         else
             cut(g, a, d, s),
     }
-    g.pic.turnToward(g.sim.hero, d.delta().x);
+    g.pic.turnToward(.fromInt(g.sim.hero), d.delta().x);
     g.pic.lead = s.wait;
     endTurn(g);
 }
@@ -130,7 +130,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
     const back = if (a.pin.turns > 0) null else M.knocked(&g.sim.lv, a.at, d, id);
     if (back) |b| if (actor.holds(a.kind, &g.sim.lv, b)) {
         tactics.displace(g, id, b);
-        _ = g.pic.glideToHeld(actor.Pool.slot(id), b, -s.wait);
+        _ = g.pic.glideToHeld(.fromIndex(actor.Pool.slot(id)), b, -s.wait);
         g.sim.sayAt(b, "The {s} is knocked back.", .{name});
     };
     if (comptime act.afflicts()) if (hit.takes) g.sim.sayFoeTakes(a, M.TAKES);
@@ -196,13 +196,13 @@ fn conductTo(g: *game.Game, at: P, wet: ?Wet, s: Stroke) void {
         if (!g.sim.takeStatus(a, .shock)) continue;
         a.shock.start();
         g.sim.sayTakes(slot, a, shock.TAKES);
-        g.pic.settleSlot(&g.sim, s.wait, slot);
+        g.pic.settleSlot(&g.sim, s.wait, .fromIndex(slot));
         if (w.struck != slot) continue;
         for (g.sim.pool.items[w.born..g.sim.pool.n], w.born..) |*half, o| {
             if (!half.alive) continue;
             half.shock = a.shock;
             half.resilience.meters.set(.shock, a.resilience.meters.get(.shock));
-            g.pic.settleSlot(&g.sim, s.wait, o);
+            g.pic.settleSlot(&g.sim, s.wait, .fromIndex(o));
         }
     }
 }
@@ -369,7 +369,7 @@ pub fn heal(g: *game.Game, n: i32, wait: f32) void {
 
 fn recoverLife(g: *game.Game, n: i32) ?fx.After {
     if (!g.sim.recoverLife(n)) return null;
-    return g.pic.afterOf(&g.sim, g.sim.heroSlot().?);
+    return g.pic.afterOf(&g.sim, .fromIndex(g.sim.heroSlot().?));
 }
 
 /// A kill no chosen blow made: gear's life on kill only.
@@ -529,7 +529,7 @@ fn gasHeal(g: *game.Game, id: u16) void {
     if (g.sim.lv.volumeAt(.healing, a.at) == 0 or ranAlready(g, id, .healed) or !a.hurt()) return;
     const n = a.heal(gas.heal(a.max));
     if (id == g.sim.hero) g.sim.log.push(.recovery, "The " ++ gas.HEALING_NAME ++ " mends {s} for {d}.", .{ g.sim.name.text(), n });
-    g.pic.owe(.fromInt(id), .healed, g.pic.afterOf(&g.sim, actor.Pool.slot(id)));
+    g.pic.owe(.fromInt(id), .healed, g.pic.afterOf(&g.sim, .fromIndex(actor.Pool.slot(id))));
 }
 
 /// Mark a tick consumed; split halves inherit the parent's consumed ticks.
@@ -651,7 +651,7 @@ fn foeTurn(g: *game.Game, id: u16) void {
     if (!r.awake) {
         if (!fov.sees(&g.sim.lv, r.at, h.at, @max(1, sight - g.sim.inventory.gear.sum(.stillness)))) return;
         r.awake = true;
-        g.pic.turnLater(id, h.at.x - r.at.x);
+        g.pic.turnLater(.fromInt(id), h.at.x - r.at.x);
         if (!r.submerged) g.sim.sayAt(r.at, "A {s} notices {s}.", .{ row.name, g.sim.name.text() });
         return;
     }
@@ -744,7 +744,7 @@ fn throwNet(g: *game.Game, id: u16, n: actor.Net) bool {
     const flight = bow.fly(&g.sim.lv, r.at, h.at);
     if (!flight.hits(g.sim.hero)) return false;
     r.ready_in = n.every;
-    g.pic.turnLater(id, h.at.x - r.at.x);
+    g.pic.turnLater(.fromInt(id), h.at.x - r.at.x);
     const name = actor.row(r.kind).name;
     if (g.sim.combatStats(r).misses(g.sim.combatStats(h), &g.sim.rng)) {
         g.sim.log.say("{s} dodges the {s}'s net.", .{ g.sim.name.text(), name });
@@ -754,7 +754,7 @@ fn throwNet(g: *game.Game, id: u16, n: actor.Net) bool {
     if (g.sim.pinFor(h, n.pins)) {
         g.sim.log.push(.danger, "The {s} nets {s}!", .{ name, g.sim.name.text() });
     } else g.sim.log.say("{s} shrugs off the {s}'s net.", .{ g.sim.name.text(), name });
-    g.pic.recordFoeAttack(.fromInt(id), .{ .snare = g.pic.afterOf(&g.sim, g.sim.heroSlot().?) }, flight);
+    g.pic.recordFoeAttack(.fromInt(id), .{ .snare = g.pic.afterOf(&g.sim, .fromIndex(g.sim.heroSlot().?)) }, flight);
     return true;
 }
 
@@ -780,7 +780,7 @@ fn mend(g: *game.Game, id: u16, m: actor.Mend, sight: i32) bool {
         const a = &g.sim.pool.items[i];
         _ = a.heal(m.amount);
         g.sim.sayAt(r.at, "The {s} mends the {s}.", .{ name, actor.row(a.kind).name });
-        g.pic.owe(.fromInt(id), .mended, .{ .slot = actor.ActorSlot.fromIndex(i), .after = g.pic.afterOf(&g.sim, i) });
+        g.pic.owe(.fromInt(id), .mended, .{ .slot = actor.ActorSlot.fromIndex(i), .after = g.pic.afterOf(&g.sim, .fromIndex(i)) });
     } else if (sleepers) {
         for (g.sim.pool.slice()) |*a| {
             if (kinInReach(&g.sim.lv, m, a, r.at, within)) a.awake = true;
@@ -794,7 +794,7 @@ fn mend(g: *game.Game, id: u16, m: actor.Mend, sight: i32) bool {
 
 fn foeStep(g: *game.Game, id: u16, from: P, chosen: mathx.Dir, af: actor.Afflicted) void {
     const d = if (confusion.strays(af.contains(.confusion), &g.sim.rng)) actor.stumble(&g.sim.lv, from, id, &g.sim.rng) orelse chosen else chosen;
-    g.pic.turnLater(id, d.delta().x);
+    g.pic.turnLater(.fromInt(id), d.delta().x);
     g.sim.pool.move(&g.sim.lv, id, from.add(d.delta()));
     _ = g.sim.pool.get(id).?.limp(af);
     tactics.entered(g, id);
@@ -823,7 +823,7 @@ fn flowTo(g: *game.Game, hero: P) *const [grid.CELLS]i32 {
 
 /// `af`: what the turn it strikes on was worn under.
 fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, af: actor.Afflicted) void {
-    g.pic.turnLater(id, dx);
+    g.pic.turnLater(.fromInt(id), dx);
     const i = actor.Pool.slot(id);
     const kind = g.sim.pool.items[i].kind;
     switch (row.blow) {
@@ -869,7 +869,7 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
         .burst => |b| {
             if (b == .gas) g.sim.chronicle.note(.burst);
             _ = g.sim.pool.damage(&g.sim.lv, id, g.sim.pool.get(id).?.hp);
-            g.pic.recordFoeAttack(.fromInt(id), .{ .burst = g.pic.afterOf(&g.sim, i) }, flight);
+            g.pic.recordFoeAttack(.fromInt(id), .{ .burst = g.pic.afterOf(&g.sim, .fromIndex(i)) }, flight);
             fell(g, id);
         },
     }

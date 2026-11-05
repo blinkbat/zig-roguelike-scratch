@@ -1,3 +1,4 @@
+const sprite_assets = @import("sprite_assets.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -179,7 +180,7 @@ const BEVEL_DEPTH: f32 = 2.0;
 const ART_MAX: i32 = 2 * look.SPRITE_PX;
 const SOLID_A: u8 = 25;
 
-pub const NO_FIGURES: [look.FIGURES]?rl.Texture2D = @splat(null);
+pub const NO_FIGURES: [sprite_assets.FIGURES]?rl.Texture2D = @splat(null);
 
 pub const Gpu = struct {
     /// `ox, oy` is where the map's top-left corner lands on screen.
@@ -282,7 +283,7 @@ pub const Gpu = struct {
     mask: ?rl.RenderTexture2D = null,
     /// The framebuffer the mask was drawn from, to go back to.
     outer: u32 = 0,
-    arts: [look.FIGURES]?Art = @splat(null),
+    arts: [sprite_assets.FIGURES]?Art = @splat(null),
 
     pub fn load() Gpu {
         var g = Gpu{};
@@ -297,7 +298,7 @@ pub const Gpu = struct {
         return g;
     }
 
-    pub fn syncFigures(g: *Gpu, figures: *const [look.FIGURES]?rl.Texture2D) void {
+    pub fn syncFigures(g: *Gpu, figures: *const [sprite_assets.FIGURES]?rl.Texture2D) void {
         for (&g.arts, figures, 0..) |*held, tex, i| {
             if (held.*) |a| {
                 if (tex) |t| {
@@ -305,12 +306,12 @@ pub const Gpu = struct {
                 }
                 if (a.normals) |t| rl.unloadTexture(t);
             }
-            held.* = if (tex) |t| artOf(t, i < look.LIT_FIGURES) else null;
+            held.* = if (tex) |t| artOf(t, i < sprite_assets.LIT_FIGURES) else null;
         }
     }
 
     pub fn unload(g: *Gpu) void {
-        look.unloadAll(g);
+        raster.unloadAll(g);
         g.syncFigures(&NO_FIGURES);
     }
 

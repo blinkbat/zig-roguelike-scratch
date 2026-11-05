@@ -1,3 +1,29 @@
+const FLASH_GAIN = impact_queue.FLASH_GAIN;
+const DEATH_DARKEN = impact_queue.DEATH_DARKEN;
+const state = @import("effect_state.zig");
+const impact_queue = @import("impact_queue.zig");
+pub const Matter = state.Matter;
+pub const ActorImpact = state.ActorImpact;
+pub const Impact = state.Impact;
+pub const Blow = state.Blow;
+pub const Status = state.Status;
+pub const Body = state.Body;
+pub const After = state.After;
+pub const Drip = state.Drip;
+pub const Puff = state.Puff;
+pub const TICK_WISPS = state.TICK_WISPS;
+pub const BURST_WISPS = state.BURST_WISPS;
+pub const Sting = state.Sting;
+pub const Settle = state.Settle;
+pub const Burst = state.Burst;
+pub const Zap = state.Zap;
+pub const Shimmer = state.Shimmer;
+pub const FLASH_S = impact_queue.FLASH_S;
+pub const DEATH_S = impact_queue.DEATH_S;
+pub const DEATH_RGB = impact_queue.DEATH_RGB;
+pub const Dying = impact_queue.Dying;
+pub const DUE = impact_queue.DUE;
+pub const OWED_KINDS = impact_queue.OWED_KINDS;
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -6,29 +32,16 @@ const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
 const glacial = @import("../play/glacial.zig");
 const burning = @import("../play/burning.zig");
-const bleeding = @import("../play/bleeding.zig");
-const pinning = @import("../play/pinning.zig");
 const shock = @import("../play/shock.zig");
-const sunder = @import("../play/sunder.zig");
-const blind = @import("../play/blind.zig");
 const confusion = @import("../play/confusion.zig");
-const enfeeble = @import("../play/enfeeble.zig");
-const maim = @import("../play/maim.zig");
 const ward = @import("../play/ward.zig");
-const tactics = @import("../play/tactics.zig");
-const resilience = @import("../play/resilience.zig");
 const look = @import("look.zig");
 const font = @import("font.zig");
-const menu = @import("../ui/menu.zig");
 const skillbar = @import("../play/skillbar.zig");
 const nova = @import("../play/nova.zig");
-const chain = @import("../play/chain.zig");
 const pixel = @import("pixel.zig");
 const light = @import("light.zig");
 const sky = @import("sky.zig");
-
-/// `ichor` is Brogue's purple blood.
-pub const Matter = enum { blood, ooze, wood, ichor };
 
 /// A body's, or a barrel's (null).
 pub fn matterOf(kind: ?actor.Kind) Matter {
@@ -40,19 +53,6 @@ pub fn matterOf(kind: ?actor.Kind) Matter {
         .mimic => .wood,
     };
 }
-
-/// Longer flashes hold every turn containing a blow.
-pub const FLASH_S: f32 = 0.16;
-const FLASH_GAIN: f32 = 0.75;
-/// A killed foe's body, from its death landing until it is gone.
-pub const DEATH_S: f32 = 0.22;
-/// Of `DEATH_S`, the first part, over which it darkens wholly before it fades.
-const DEATH_DARKEN: f32 = 0.35;
-/// The light left on a wholly darkened body, per channel.
-pub const DEATH_RGB = [3]f32{ 0.65, 0.35, 0.32 };
-
-/// How far a dying body has darkened and how much of it is left.
-pub const Dying = struct { dark: f32 = 0, alpha: f32 = 1 };
 
 /// Cells, ground to where a blow lands on a body.
 const STRIKE_Z: f32 = 0.3;
@@ -131,224 +131,10 @@ pub const Mote = struct {
     vapor: bool = false,
 };
 
-pub const ActorImpact = struct {
-    slot: actor.ActorSlot,
-    at: mathx.P,
-    lethal: bool,
-    after: ?After = null,
-};
-
-pub const Impact = union(enum) {
-    actor: ActorImpact,
-    barrel: mathx.P,
-
-    pub fn at(self: Impact) mathx.P {
-        return switch (self) {
-            .actor => |a| a.at,
-            .barrel => |p| p,
-        };
-    }
-
-    pub fn lethal(self: Impact) bool {
-        return switch (self) {
-            .actor => |a| a.lethal,
-            .barrel => true,
-        };
-    }
-};
-
-pub const Blow = struct {
-    impact: Impact,
-    /// Unit travel direction; null scatters a directionless hit such as gas.
-    dir: ?[2]f32,
-    matter: Matter,
-    fire: bool = false,
-};
-
-const StatusGlow = struct { radius: f32, gain: f32 };
-const BURN_GLOW = StatusGlow{ .radius = 2, .gain = 0.55 };
-const WARD_GLOW = StatusGlow{ .radius = 1.5, .gain = 0.25 };
 const STATUS_FLICKER: f32 = 0.1;
 const STATUS_FLICKER_RAD_S: f32 = 11;
 
-/// What a body suffers for turns, in the order the hud names them.
-pub const Status = enum {
-    bleeding,
-    burning,
-    chilled,
-    pinned,
-    shocked,
-    sundered,
-    blinded,
-    confused,
-    enfeebled,
-    maimed,
-    frightened,
-    warded,
-    resistant,
-    guarding,
-    unyielding,
-    steady,
-    overwatch,
-
-    pub fn ink(s: Status) rl.Color {
-        return switch (s) {
-            .warded => look.WARD,
-            .resistant, .guarding, .unyielding, .steady, .overwatch => look.UI_GOLD,
-            inline else => |t| look.ailmentInk(comptime t.ailment().?),
-        };
-    }
-
-    fn ailment(s: Status) ?resilience.Kind {
-        return switch (s) {
-            .bleeding => .bleed,
-            .burning => .burn,
-            .chilled => .chill,
-            .pinned => .pin,
-            .shocked => .shock,
-            .sundered => .sunder,
-            .blinded => .blind,
-            .confused => .confusion,
-            .enfeebled => .enfeeble,
-            .maimed => .maim,
-            .frightened => .fright,
-            .warded, .resistant, .guarding, .unyielding, .steady, .overwatch => null,
-        };
-    }
-
-    /// The first status a body has, in this order, that glows lights it.
-    pub fn glow(s: Status) ?StatusGlow {
-        return switch (s) {
-            .burning => BURN_GLOW,
-            .warded => WARD_GLOW,
-            .bleeding, .chilled, .pinned, .shocked, .sundered, .blinded, .confused, .enfeebled, .maimed, .frightened, .resistant, .guarding, .unyielding, .steady, .overwatch => null,
-        };
-    }
-
-    pub fn emission(s: Status, at: [2]f32, flicker: f32) ?light.Emission {
-        const g = s.glow() orelse return null;
-        return .{ .at = .{ at[0], at[1], light.BODY_Z }, .col = s.ink(), .radius = g.radius, .gain = g.gain * flicker };
-    }
-
-    pub fn title(s: Status) [:0]const u8 {
-        return switch (s) {
-            .warded => skillbar.Act.mana_shield.name(),
-            .resistant => "Status resistance",
-            .guarding => skillbar.Act.guard.name(),
-            .unyielding => skillbar.Act.unyielding.name(),
-            .steady => skillbar.Act.steady_aim.name(),
-            .overwatch => skillbar.Act.overwatch.name(),
-            inline else => |t| comptime menu.capital(@tagName(t)),
-        };
-    }
-
-    /// What it does to the body, as its tooltip says.
-    pub fn about(s: Status) []const u8 {
-        return switch (s) {
-            .resistant => resilience.ABOUT,
-            .guarding => tactics.Guard.DESCRIPTION,
-            .unyielding => tactics.Unyielding.DESCRIPTION,
-            .steady => tactics.SteadyAim.DESCRIPTION,
-            .overwatch => tactics.Overwatch.DESCRIPTION,
-            .frightened => actor.FRIGHT_STATUS,
-            inline else => |t| module(t).STATUS,
-        };
-    }
-
-    fn module(comptime s: Status) type {
-        return switch (s) {
-            .warded => ward,
-            .frightened, .resistant, .guarding, .unyielding, .steady, .overwatch => @compileError("about names " ++ @tagName(s) ++ "'s text itself"),
-            else => resilience.module(comptime s.ailment().?),
-        };
-    }
-
-    fn field(comptime s: Status) []const u8 {
-        return switch (s) {
-            .warded => "ward",
-            .resistant => "resilience",
-            .guarding, .unyielding, .steady, .overwatch => "tactics",
-            inline else => |t| @tagName(comptime t.ailment().?),
-        };
-    }
-
-    fn turnsOf(s: Status, a: actor.Actor) u8 {
-        return switch (s) {
-            .resistant => a.resilience.peak().turns,
-            .guarding => @intFromBool(a.tactics.guard > 0),
-            .unyielding => @intFromBool(a.tactics.unyielding),
-            .steady => @intFromBool(a.tactics.steady > 0),
-            .overwatch => @intFromBool(a.tactics.overwatch != null),
-            .frightened => a.fright,
-            inline else => |t| @field(a, field(t)).turns,
-        };
-    }
-
-    comptime {
-        for (std.meta.fields(actor.Actor)) |f| {
-            if (@typeInfo(f.type) != .@"struct" or !@hasField(f.type, "turns")) continue;
-            var claimed = false;
-            for (std.enums.values(Status)) |s| claimed = claimed or std.mem.eql(u8, field(s), f.name);
-            if (!claimed) @compileError("fx.Status: no status shows Actor." ++ f.name);
-        }
-    }
-};
-
-/// Presented body state; `seq` preserves simulation hit order.
-pub const Body = struct {
-    kind: actor.Kind,
-    hp: i32,
-    max: i32,
-    seq: u64,
-    /// Turns left of each.
-    status: std.EnumArray(Status, u8) = .initFill(0),
-    resilience: resilience.State = .{},
-    sunder: sunder.Sunder = .{},
-
-    pub fn of(a: actor.Actor, seq: u64) Body {
-        var b = Body{ .kind = a.kind, .hp = a.hp, .max = a.max, .seq = seq };
-        if (a.alive) {
-            b.resilience = a.resilience;
-            b.sunder = a.sunder;
-            for (std.enums.values(Status)) |s| b.status.set(s, s.turnsOf(a));
-        }
-        return b;
-    }
-
-    pub fn hurt(self: Body) bool {
-        return self.hp < self.max;
-    }
-
-    pub fn down(self: Body) bool {
-        return self.hp <= 0;
-    }
-};
-
-/// State at impact; `reveals` is the newly visible split-half pool slot.
-pub const After = struct { body: Body, reveals: ?usize = null, mana: i32 = 0 };
-
-pub const Drip = struct { at: [2]f32, matter: Matter };
-
-/// Gas curling off a body it eats at or mends, or out of a glowbulb bursting.
-pub const Puff = struct {
-    at: [2]f32,
-    ink: rl.Color,
-    motes: usize = TICK_WISPS,
-
-    /// Over a body seen at `mark`; none for an unseen one.
-    pub fn over(mark: ?[2]f32, ink: rl.Color) ?Puff {
-        return .{ .at = mark orelse return null, .ink = ink };
-    }
-};
-
-pub const TICK_WISPS: usize = 6;
-pub const BURST_WISPS: usize = 22;
 const WISP_A: f32 = 0.5;
-
-pub const Sting = struct { slot: usize, after: ?After = null, fire_at: ?[2]f32 = null, drip: ?Drip = null, puff: ?Puff = null };
-
-/// A body changed by no seen blow, as a chill wearing off or a heal: it catches up unflashed.
-pub const Settle = struct { slot: usize, after: After, puff: ?Puff = null };
 
 const MOTES: usize = 320;
 const ARCS: usize = 12;
@@ -363,18 +149,6 @@ fn claim(comptime T: type, ring: []T, head: *usize) *T {
 }
 
 /// The kinds of turn effect a body can owe: `presentation.Owed`'s fields.
-pub const OWED_KINDS: usize = 13;
-/// A burst and a puff.
-const LOOSE_DUE: usize = 2;
-/// Capacity for every body's turn effects, hero hit and sweep, plus a burst and a puff, or chain jumps.
-pub const DUE: usize = actor.MAX * (OWED_KINDS + actor.SWEEP_CELLS) + @max(LOOSE_DUE, chain.JUMPS);
-
-pub const Burst = struct { at: mathx.P, area: glacial.Burst, element: damage.Element };
-
-pub const Zap = struct { from: [2]f32, to: [2]f32 };
-
-pub const Shimmer = struct { at: [2]f32, col: rl.Color };
-
 const ARC_S: f32 = 0.18;
 /// An arc's kinks: cells apart along it and the most they stray across it, a fork every `ARC_FORK` kinks, and its light every `ARC_GLOW_EVERY` cells.
 const ARC_STEP: f32 = 0.2;
@@ -511,54 +285,6 @@ const Speech = struct {
     word: usize = 0,
 };
 
-const Due = union(enum) {
-    blow: Blow,
-    sting: Sting,
-    settle: Settle,
-    burst: Burst,
-    zap: Zap,
-    puff: Puff,
-    shimmer: Shimmer,
-    /// A sweep round the cell centred here.
-    whirl: [2]f32,
-
-    fn on(d: *const Due) ?usize {
-        return switch (d.*) {
-            .blow => |*b| switch (b.impact) {
-                .actor => |a| a.slot.index,
-                .barrel => null,
-            },
-            .sting => |*s| s.slot,
-            .settle => |*s| s.slot,
-            .burst, .zap, .puff, .shimmer, .whirl => null,
-        };
-    }
-
-    fn blowOf(d: *const Due) ?*const Blow {
-        return switch (d.*) {
-            .blow => |*b| b,
-            .sting, .settle, .burst, .zap, .puff, .shimmer, .whirl => null,
-        };
-    }
-
-    fn onBarrel(d: *const Due) bool {
-        const b = d.blowOf() orelse return false;
-        return b.impact == .barrel;
-    }
-
-    fn after(d: *const Due) ?After {
-        return switch (d.*) {
-            .blow => |*b| switch (b.impact) {
-                .actor => |a| a.after,
-                .barrel => null,
-            },
-            .sting => |*s| s.after,
-            .settle => |*s| s.after,
-            .burst, .zap, .puff, .shimmer, .whirl => null,
-        };
-    }
-};
-
 pub const LEVEL_UP_S: f32 = 2;
 const LEVEL_UP_TEXT = "Level up!";
 /// Seconds the effect, and each glint, takes to show; and the effect, and the shaft, to fade.
@@ -661,16 +387,7 @@ pub const Fx = struct {
     ripple_head: usize = 0,
     motes: [MOTES]Mote = @splat(.{ .p = @splat(0), .v = @splat(0), .r = 0, .col = rl.Color.blank }),
     head: usize = 0,
-    flash: [actor.MAX]f32 = @splat(0),
-    /// Indexed by pool slot: seconds left of a foe's death fade.
-    dying: [actor.MAX]f32 = @splat(0),
-    due: [DUE]struct { t: f32, what: Due } = undefined,
-    due_n: usize = 0,
-    /// Of `due`, the blows on a barrel.
-    barrels_due: usize = 0,
-    /// Indexed by pool slot: the body as the latest-dealt of the blows landed on it left it.
-    landed: [actor.MAX]?Body = @splat(null),
-    mana_landed: i32 = 0,
+    impacts: impact_queue.Queue = .{},
     speech: [actor.MAX]Speech = @splat(.{}),
     rng: mathx.Rng = mathx.Rng.init(0xF1A5),
     seconds: mathx.Seconds = .{},
@@ -681,12 +398,7 @@ pub const Fx = struct {
         for (&self.pulses) |*p| p.life = 0;
         for (&self.motes) |*m| m.life = 0;
         for (&self.ripples) |*r| r.t = RIPPLE_S;
-        self.flash = @splat(0);
-        self.dying = @splat(0);
-        self.due_n = 0;
-        self.barrels_due = 0;
-        self.landed = @splat(null);
-        self.mana_landed = 0;
+        self.impacts.clear();
         self.speech = @splat(.{});
     }
 
@@ -753,14 +465,11 @@ pub const Fx = struct {
         self.later(wait, .{ .whirl = at });
     }
 
-    fn later(self: *Fx, wait: f32, what: Due) void {
-        if (wait <= 0 or self.due_n == DUE) return self.fire(what, @max(0, -wait));
-        self.due[self.due_n] = .{ .t = wait, .what = what };
-        self.due_n += 1;
-        if (what.onBarrel()) self.barrels_due += 1;
+    fn later(self: *Fx, wait: f32, what: impact_queue.Event) void {
+        if (self.impacts.schedule(wait, what)) |ready| self.fire(ready.event, ready.late);
     }
 
-    fn fire(self: *Fx, what: Due, late: f32) void {
+    fn fire(self: *Fx, what: impact_queue.Event, late: f32) void {
         switch (what) {
             .blow => |b| self.land(b),
             .burst => |b| self.spill(b),
@@ -775,88 +484,11 @@ pub const Fx = struct {
                 if (s.puff) |p| self.wisps(p);
             },
         }
-        const slot = what.on() orelse return;
-        switch (what) {
-            .blow, .sting => self.flash[slot] = @max(self.flash[slot], FLASH_S - late),
-            .settle, .burst, .zap, .puff, .shimmer, .whirl => {},
-        }
-        const a = what.after() orelse return;
-        self.mana_landed += a.mana;
-        if (self.landed[slot]) |was| {
-            if (was.seq >= a.body.seq) return;
-        }
-        const died = a.body.down() and !(if (self.landed[slot]) |was| was.down() else false);
-        if (died and a.body.kind.foe()) self.dying[slot] = @max(0, DEATH_S - late);
-        self.landed[slot] = a.body;
+        self.impacts.land(what, late);
     }
-
-    pub fn dyingOf(self: *const Fx, slot: usize) Dying {
-        if (self.dying[slot] <= 0) return .{};
-        const k = self.dying[slot] / DEATH_S;
-        return .{ .dark = @min(1, (1 - k) / DEATH_DARKEN), .alpha = @min(1, k / (1 - DEATH_DARKEN)) };
-    }
-
-    /// A blow, sting or settle is still to land on the slot.
-    pub fn pending(self: *const Fx, slot: usize) bool {
-        return self.landsIn(slot) > 0;
-    }
-
-    pub fn landedOn(self: *const Fx, slot: usize) ?Body {
-        return self.landed[slot];
-    }
-
-    /// The blow that split the body in `slot` off another is still to land.
-    pub fn revealing(self: *const Fx, slot: usize) bool {
-        return self.revealsIn(slot) > 0;
-    }
-
-    /// Seconds until the blow that reveals the slot lands; 0 when none is due.
-    pub fn revealsIn(self: *const Fx, slot: usize) f32 {
-        var t: f32 = 0;
-        for (self.due[0..self.due_n]) |*d| {
-            const a = d.what.after() orelse continue;
-            if (a.reveals == slot) t = @max(t, d.t);
-        }
-        return t;
-    }
-
-    pub fn holds(self: *const Fx, slot: usize) bool {
-        return self.flash[slot] > 0 or self.pending(slot);
-    }
-
-    /// Seconds until the last blow, sting or settle due on the slot lands.
-    pub fn landsIn(self: *const Fx, slot: usize) f32 {
-        var t: f32 = 0;
-        for (self.due[0..self.due_n]) |*d| {
-            if (d.what.on() == slot) t = @max(t, d.t);
-        }
-        return t;
-    }
-
-    /// Seconds until the slot is held no longer: its last due landed and flashed.
-    pub fn heldIn(self: *const Fx, slot: usize) f32 {
-        const lands = self.landsIn(slot);
-        const due = if (lands > 0) lands + FLASH_S else 0;
-        return @max(self.flash[slot], due);
-    }
-
     /// A status glow's gain, wavering out of step with others by `phase`.
     pub fn statusFlicker(self: *const Fx, phase: f32) f32 {
         return 1 - STATUS_FLICKER + STATUS_FLICKER * @sin(self.seconds.at() * STATUS_FLICKER_RAD_S + phase);
-    }
-
-    pub fn breaking(self: *const Fx, p: mathx.P) bool {
-        if (self.barrels_due == 0) return false;
-        for (self.due[0..self.due_n]) |*d| {
-            if (d.what.onBarrel() and d.what.blowOf().?.impact.barrel.eq(p)) return true;
-        }
-        return false;
-    }
-
-    /// Eased out, so it holds near full before it fades.
-    pub fn flashOf(self: *const Fx, slot: usize) f32 {
-        const k = std.math.clamp(self.flash[slot] / FLASH_S, 0, 1);
-        return FLASH_GAIN * k * (2 - k);
     }
 
     pub fn step(self: *Fx, lv: *const grid.Level, dt: f32) void {
@@ -865,24 +497,11 @@ pub const Fx = struct {
         for (&self.arcs) |*a| a.life = @max(0, a.life - dt);
         for (&self.pulses) |*p| p.life = @max(0, p.life - dt);
         for (&self.ripples) |*r| r.t = @min(RIPPLE_S, r.t + dt);
-        for (&self.flash) |*f| f.* = @max(0, f.* - dt);
-        for (&self.dying) |*d| d.* = @max(0, d.* - dt);
+        self.impacts.advance(dt);
         for (&self.speech) |*s| s.life = @max(0, s.life - dt);
         for (&self.motes) |*m| advance(m, lv, dt);
-        var i: usize = 0;
-        while (i < self.due_n) {
-            self.due[i].t -= dt;
-            if (self.due[i].t > 0) {
-                i += 1;
-                continue;
-            }
-            const what = self.due[i].what;
-            const late = -self.due[i].t;
-            self.due_n -= 1;
-            self.due[i] = self.due[self.due_n];
-            if (what.onBarrel()) self.barrels_due -= 1;
-            self.fire(what, late);
-        }
+        var ready = self.impacts.ready();
+        while (ready.next()) |event| self.fire(event.event, event.late);
     }
 
     fn land(self: *Fx, b: Blow) void {
@@ -1736,7 +1355,7 @@ test "water footsteps throw a varying few small drops that vanish without stains
         }
         try std.testing.expect(peak < 0.2 and wide < 0.55);
         try std.testing.expectEqual(@as(usize, 0), live(&effects).flying + live(&effects).stains);
-        for (effects.flash) |f| try std.testing.expectEqual(@as(f32, 0), f);
+        for (effects.impacts.flash) |f| try std.testing.expectEqual(@as(f32, 0), f);
         std.debug.print("water footsteps on {s}: {d} drops, peak {d:.3} cells up, {d:.3} cells out, no stains or flashes\n", .{ @tagName(water), n, peak, wide });
     }
 }
@@ -1845,7 +1464,7 @@ test "juke leaves a fading trail and landing dust without stains or damage flash
     try std.testing.expectEqual(DUST_MOTES, dust);
     fx.step(&lv, 1);
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying + live(&fx).stains);
-    for (fx.flash) |f| try std.testing.expectEqual(@as(f32, 0), f);
+    for (fx.impacts.flash) |f| try std.testing.expectEqual(@as(f32, 0), f);
     std.debug.print("Juke effects: {d} trail motes, {d} landing dust motes, all gone after 1.1 s\n", .{ trail, dust });
 }
 
@@ -1854,8 +1473,8 @@ test "a blow flashes its body for a beat and sprays blood a fraction of a cell, 
     var fx = Fx{};
     fx.clear();
     fx.strike(0, TEST_BLOW);
-    try std.testing.expectApproxEqAbs(FLASH_GAIN, fx.flashOf(3), 1e-6);
-    try std.testing.expectEqual(@as(f32, 0), fx.flashOf(2));
+    try std.testing.expectApproxEqAbs(FLASH_GAIN, fx.impacts.flashOf(.fromIndex(3)), 1e-6);
+    try std.testing.expectEqual(@as(f32, 0), fx.impacts.flashOf(.fromIndex(2)));
     const dt = mathx.TEST_DT;
     var reach: f32 = 0;
     var ahead: usize = 0;
@@ -1863,7 +1482,7 @@ test "a blow flashes its body for a beat and sprays blood a fraction of a cell, 
     var flash_gone: ?f32 = null;
     while (t < 3) : (t += dt) {
         fx.step(&lv, dt);
-        if (flash_gone == null and fx.flashOf(3) == 0) flash_gone = t;
+        if (flash_gone == null and fx.impacts.flashOf(.fromIndex(3)) == 0) flash_gone = t;
         for (fx.motes) |m| {
             if (m.life <= 0 or m.add) continue;
             reach = @max(reach, mathx.len(m.p[0] - mathx.centre(TEST_BLOW.impact.at())[0], m.p[1] - mathx.centre(TEST_BLOW.impact.at())[1]));
@@ -1966,23 +1585,23 @@ test "a blow dealt now lands when the picture gets there" {
     fx.clear();
     fx.strike(0.1, TEST_BLOW);
     fx.step(&lv, 0.05);
-    try std.testing.expectEqual(@as(f32, 0), fx.flashOf(3));
+    try std.testing.expectEqual(@as(f32, 0), fx.impacts.flashOf(.fromIndex(3)));
     fx.step(&lv, 0.06);
-    try std.testing.expect(fx.flashOf(3) > 0);
+    try std.testing.expect(fx.impacts.flashOf(.fromIndex(3)) > 0);
 }
 
 test "overdue flashes keep the latest impact time regardless of queue order" {
     const lv = grid.openFloor();
     var fx = Fx{};
-    fx.sting(0.12, .{ .slot = 3 });
+    fx.sting(0.12, .{ .slot = .fromIndex(3) });
     fx.strike(0.02, TEST_BLOW);
-    fx.sting(0.08, .{ .slot = 3 });
+    fx.sting(0.08, .{ .slot = .fromIndex(3) });
     fx.step(&lv, 0.15);
-    try std.testing.expectApproxEqAbs(FLASH_S - 0.03, fx.flash[3], 1e-6);
+    try std.testing.expectApproxEqAbs(FLASH_S - 0.03, fx.impacts.flash[3], 1e-6);
     fx.step(&lv, FLASH_S);
-    try std.testing.expect(!fx.holds(3));
+    try std.testing.expect(!fx.impacts.holds(.fromIndex(3)));
     fx.strike(-FLASH_S, TEST_BLOW);
-    try std.testing.expect(!fx.holds(3));
+    try std.testing.expect(!fx.impacts.holds(.fromIndex(3)));
     std.debug.print("flash timing: 3 unordered impacts and an overdue immediate blow checked\n", .{});
 }
 
@@ -1990,11 +1609,11 @@ test "a sting flashes its body when the picture gets there and sprays nothing" {
     const lv = grid.openFloor();
     var fx = Fx{};
     fx.clear();
-    fx.sting(0.1, .{ .slot = 3 });
+    fx.sting(0.1, .{ .slot = .fromIndex(3) });
     fx.step(&lv, 0.05);
-    try std.testing.expectEqual(@as(f32, 0), fx.flashOf(3));
+    try std.testing.expectEqual(@as(f32, 0), fx.impacts.flashOf(.fromIndex(3)));
     fx.step(&lv, 0.06);
-    try std.testing.expectApproxEqAbs(FLASH_GAIN, fx.flashOf(3), 0.1);
+    try std.testing.expectApproxEqAbs(FLASH_GAIN, fx.impacts.flashOf(.fromIndex(3)), 0.1);
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying + live(&fx).stains);
     for (fx.motes) |m| try std.testing.expect(m.life <= 0);
 }
@@ -2012,9 +1631,9 @@ test "a killed foe darkens as its death lands, then fades out; a hurt one and a 
     hurt.impact.actor.slot = .fromIndex(4);
     hurt.impact.actor.after = .{ .body = .{ .kind = .rat, .hp = 3, .max = 6, .seq = 1 } };
     fx.strike(0.1, hurt);
-    fx.settle(0.1, .{ .slot = 0, .after = .{ .body = .{ .kind = .archer, .hp = 0, .max = 20, .seq = 1 } } });
+    fx.settle(0.1, .{ .slot = .fromIndex(0), .after = .{ .body = .{ .kind = .archer, .hp = 0, .max = 20, .seq = 1 } } });
     fx.step(&lv, 0.05);
-    try std.testing.expectEqual(Dying{}, fx.dyingOf(3));
+    try std.testing.expectEqual(Dying{}, fx.impacts.dyingOf(.fromIndex(3)));
     const dt = mathx.TEST_DT;
     var dark_at: ?f32 = null;
     var gone_at: ?f32 = null;
@@ -2022,10 +1641,10 @@ test "a killed foe darkens as its death lands, then fades out; a hurt one and a 
     while (t < 1) {
         fx.step(&lv, dt);
         t += dt;
-        if (dark_at == null and fx.dyingOf(3).dark >= 1) dark_at = t - 0.1;
-        if (dark_at != null and gone_at == null and fx.dying[3] == 0) gone_at = t - 0.1;
-        try std.testing.expectEqual(Dying{}, fx.dyingOf(4));
-        try std.testing.expectEqual(Dying{}, fx.dyingOf(0));
+        if (dark_at == null and fx.impacts.dyingOf(.fromIndex(3)).dark >= 1) dark_at = t - 0.1;
+        if (dark_at != null and gone_at == null and !fx.impacts.isDying(.fromIndex(3))) gone_at = t - 0.1;
+        try std.testing.expectEqual(Dying{}, fx.impacts.dyingOf(.fromIndex(4)));
+        try std.testing.expectEqual(Dying{}, fx.impacts.dyingOf(.fromIndex(0)));
     }
     std.debug.print("death fade: wholly dark {d:.3} s after landing, gone at {d:.3} s\n", .{ dark_at.?, gone_at.? });
     try std.testing.expectApproxEqAbs(DEATH_S * DEATH_DARKEN, dark_at.?, dt * 1.5);

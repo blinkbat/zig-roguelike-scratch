@@ -1,3 +1,4 @@
+const sprite = @import("../gfx/sprites.zig");
 const placement = @import("placement.zig");
 const widgets = @import("widgets.zig");
 const std = @import("std");
@@ -44,7 +45,7 @@ fn drawCells(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle, v: grid.Box) vo
             if (g.sprites.tileAt(&ed.scene.lv, p)) |t| raster.stretch(t, look.tileRect(here, t, r), look.LIT);
             continue;
         }
-        if (look.glyphGround(here, &g.sprites)) widgets.tileGlyph(&g.face, here, r);
+        if (sprite.glyphGround(here, &g.sprites)) widgets.tileGlyph(&g.face, here, r);
         if (here.isPart() or !look.standsOver(here)) continue;
         if (g.sprites.tileAt(&ed.scene.lv, p)) |t| {
             raster.stretch(t, look.tileRect(here, t, r), look.LIT);

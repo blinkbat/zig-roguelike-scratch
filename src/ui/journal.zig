@@ -1,3 +1,4 @@
+const sprite = @import("../gfx/sprites.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -41,7 +42,7 @@ pub fn box(screen: mathx.P) rl.Rectangle {
     const width = @max(MIN_W, @min(MAX_W, beside));
     return raster.rect(MARGIN, screen.y - MARGIN - BOX_H, width, BOX_H);
 }
-pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.P, log: *const Log) void {
+pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: mathx.P, log: *const Log) void {
     const r = box(screen);
     const x: i32 = @intFromFloat(r.x);
     const y: i32 = @intFromFloat(r.y);
@@ -50,7 +51,7 @@ pub fn draw(face: *const font.Face, sprites: *const look.Sprites, screen: mathx.
         rl.beginShaderMode(fade.shader);
         shaders.setUniform(fade.shader, fade.bounds, [2]f32{ @floatFromInt(screen.y - y - BOX_H), @floatFromInt(screen.y - y) });
         shaders.setUniform(fade.shader, fade.minimum, TOP_OPACITY);
-        look.backingIn(sprites, r);
+        sprite.backingIn(sprites, r);
     } else {
         rl.drawRectangleGradientV(x, y, w, BOX_H, look.fade(look.BACKING, TOP_OPACITY), look.BACKING);
     }

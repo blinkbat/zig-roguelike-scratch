@@ -42,8 +42,8 @@ test "thorns returns melee damage with the incoming impact and ignores dodges an
             try std.testing.expectEqual(hp, g.pic.pictured[slot].hp);
             harness.stagger(g);
             if (expected > 0) {
-                const impact = g.pic.fx.landsIn(slot);
-                try std.testing.expectApproxEqAbs(impact, g.pic.fx.landsIn(g.sim.heroSlot().?), 0.0001);
+                const impact = g.pic.fx.impacts.landsIn(.fromIndex(slot));
+                try std.testing.expectApproxEqAbs(impact, g.pic.fx.impacts.landsIn(.fromIndex(g.sim.heroSlot().?)), 0.0001);
                 game.update(g, impact - 0.001);
                 try std.testing.expectEqual(hp, g.pic.pictured[slot].hp);
                 try std.testing.expectEqual(hero_hp, g.pic.pictured[g.sim.heroSlot().?].hp);
@@ -590,7 +590,7 @@ test "an arrow bursts a caustic bloat where it floats, and its gas reaches the a
         const lost = before - g.sim.heroActor().?.hp;
         if (first == null and lost > 0) first = turn;
         try std.testing.expectEqual(if (first == null) 0 else per, lost);
-        if (lost > 0) try std.testing.expect(g.pic.fx.flashOf(g.sim.heroSlot().?) > 0);
+        if (lost > 0) try std.testing.expect(g.pic.fx.impacts.flashOf(.fromIndex(g.sim.heroSlot().?)) > 0);
     }
     std.debug.print("a caustic bloat shot 4 cells off: its gas first eats at the archer {?d} turns after, {d} hp a turn\n", .{ first, per });
     try std.testing.expectEqual(@as(?usize, 3), first);

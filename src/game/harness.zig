@@ -378,7 +378,7 @@ pub fn framesUntil(g: *game.Game, slot: usize, comptime done: fn (*game.Game, us
 }
 
 pub fn flashing(g: *game.Game, slot: usize) bool {
-    return g.pic.fx.flashOf(slot) > 0;
+    return g.pic.fx.impacts.flashOf(.fromIndex(slot)) > 0;
 }
 
 pub fn facesLeft(g: *game.Game, slot: usize) bool {

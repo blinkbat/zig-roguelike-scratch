@@ -1,3 +1,5 @@
+const sprite_assets = @import("../gfx/sprite_assets.zig");
+const sprite = @import("../gfx/sprites.zig");
 const std = @import("std");
 const items = @import("../play/items.zig");
 const progress = @import("../play/progress.zig");
@@ -58,7 +60,7 @@ fn shootCrossbowman(g: *game.Game, target: rl.RenderTexture2D) !void {
     const id = h.spawnAt(g, .bandit_crossbowman, .{ .x = 26, .y = 20 }, true);
     const slot = actor.Pool.slot(id);
     game.settle(g);
-    g.pic.turnToward(id, -1);
+    g.pic.turnToward(.fromInt(id), -1);
     try capture(g, target, SHOTS_DIR ++ "/bandit-crossbowman-pack.png");
     g.sim.rng = h.bitesRng(g, &.{.{ .id = id, .lands = true }});
     h.use(g, .wait);
@@ -902,7 +904,7 @@ fn checkWaterCapTint(g: *game.Game) !void {
     var lv = grid.Level.blank();
     @memset(&lv.tile, .shallows);
     lv.set(.{ .x = 30, .y = 30 }, .water);
-    g.sprites.sync(look.Assets.of(&lv));
+    g.sprites.sync(sprite_assets.Assets.of(&lv));
     const alternates = .{ g.sprites.shallows2, g.sprites.shallows3 };
     defer {
         g.sprites.shallows2 = alternates[0];
@@ -912,7 +914,7 @@ fn checkWaterCapTint(g: *game.Game) !void {
     g.sprites.shallows3 = null;
     var checked: usize = 0;
     for ([_]bool{ false, true }) |effects| {
-        const view = look.WaterView{
+        const view = sprite.WaterView{
             .screen = .{ 256, 256 },
             .visibility = sight,
             .glints = if (effects) shine else dark,
@@ -965,7 +967,7 @@ fn waterCliffTemplates(g: *game.Game) !void {
         }
         var beds: dual.Beds = undefined;
         beds.fill(&lv, .{ .x = 8, .y = 8 }, .{ .x = 15, .y = 15 }, false);
-        g.sprites.sync(look.Assets.of(&lv));
+        g.sprites.sync(sprite_assets.Assets.of(&lv));
         const origin = [2]f32{ -608, -608 };
         for (0..5) |pass| {
             rl.beginTextureMode(target);
@@ -1842,7 +1844,7 @@ fn poseHiddenShadows(g: *game.Game, hour: ?f32) void {
     g.light.settle(&g.sim.lv);
 }
 
-fn waterSample(g: *game.Game, target: rl.RenderTexture2D, beds: *const dual.Beds, view: ?look.WaterView, origin: [2]f32) !rl.Image {
+fn waterSample(g: *game.Game, target: rl.RenderTexture2D, beds: *const dual.Beds, view: ?sprite.WaterView, origin: [2]f32) !rl.Image {
     rl.beginTextureMode(target);
     rl.clearBackground(rl.Color.blank);
     g.sprites.drawGround(&g.sim.lv, beds, origin, game.CELL_F, view);
@@ -1910,7 +1912,7 @@ fn checkWaterSurface(g: *game.Game) !void {
     defer rl.unloadTexture(blank);
     const plain = try waterSample(g, target, &beds, null, .{ 0, 0 });
     defer rl.unloadImage(plain);
-    var view = look.WaterView{ .screen = .{ width, height }, .visibility = visibility, .glints = dark };
+    var view = sprite.WaterView{ .screen = .{ width, height }, .visibility = visibility, .glints = dark };
     const still = try waterSample(g, target, &beds, view, .{ 0, 0 });
     defer rl.unloadImage(still);
     view.glints = gleam;

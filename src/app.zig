@@ -1,3 +1,4 @@
+const sprite = @import("gfx/sprites.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const game = @import("game.zig");
@@ -564,7 +565,7 @@ const App = struct {
         const top = @divTrunc(g.screen.y - lead - panel_h, 2) + lead;
         var name: [hero.Name.MAX + 1]u8 = undefined;
         menu.pageHeading(g.face, g.screen, menu.shout(&name, "{s}", .{e.name.text()}), top - lead);
-        look.backing(&g.sprites, x, top, w, panel_h);
+        sprite.backing(&g.sprites, x, top, w, panel_h);
         stage.figure(&g.sprites, e.class.kind(), .{ .x = @divTrunc(g.screen.x, 2), .y = top + feet_dy }, BONES_SCALE, 1);
         var stats: [LINE + 1]u8 = undefined;
         const said = std.fmt.bufPrintZ(&stats, BONES_RANK ++ menu.SEP ++ "Kills {d}" ++ menu.SEP ++ hero.GOLD_FMT, .{ e.level, e.class.title(), e.renown, e.kills, e.gold }) catch "";

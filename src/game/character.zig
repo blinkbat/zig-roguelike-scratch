@@ -191,14 +191,14 @@ pub fn openLoot(g: *game.Game, at: P) void {
     const h = g.sim.heroActor() orelse return;
     if (chestReached(g, h.at, at)) {
         if (!game.combat.openChest(g, at)) return;
-        g.pic.turnToward(g.sim.hero, at.x - h.at.x);
+        g.pic.turnToward(.fromInt(g.sim.hero), at.x - h.at.x);
         g.mode = .play;
         game.holdWalk(g);
         spendTurn(g);
         return;
     }
     if (!lootReached(g, h.at, at)) return;
-    g.pic.turnToward(g.sim.hero, at.x - h.at.x);
+    g.pic.turnToward(.fromInt(g.sim.hero), at.x - h.at.x);
     g.loot_gold = at;
     if (lootOf(g, &g.nearby, at).len == 0) {
         takeLootGold(g);
@@ -380,7 +380,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
                 game.holdWalk(g);
                 return game.heroStep(g, mathx.dirTo(h.at, p).?, 0);
             } else game.heroTo(g, p);
-            g.pic.turnToward(g.sim.hero, dx);
+            g.pic.turnToward(.fromInt(g.sim.hero), dx);
         },
     }
     game.syncStats(g);

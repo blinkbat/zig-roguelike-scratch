@@ -286,13 +286,13 @@ test "missed reactions preserve projectile timing without phantom barrels or imp
         combat.reaction(g, id, .{ .dmg = 100 }, "counters", .{ .from = from, .wait = 0 }, id, flight);
         try std.testing.expectEqual(before, g.sim.pool.get(id).?.hp);
         g.pic.stepGlide(&g.sim, g.cloud, 0);
-        try std.testing.expect(!g.pic.fx.breaking(at));
+        try std.testing.expect(!g.pic.fx.impacts.breaking(at));
         try std.testing.expectEqual(projectile, g.pic.shot != null);
         try std.testing.expect(g.pic.busy >= game.BUMP_LANDS);
         if (g.pic.shot) |shot| try std.testing.expect(g.pic.busy >= -shot.t + shot.ends());
-        try std.testing.expectEqual(@as(usize, 0), g.pic.fx.due_n);
+        try std.testing.expectEqual(@as(usize, 0), g.pic.fx.impacts.count());
         harness.drawnOut(g);
-        try std.testing.expect(!g.pic.fx.breaking(at));
+        try std.testing.expect(!g.pic.fx.impacts.breaking(at));
     }
     std.debug.print("missed reactions: melee and projectile misses schedule no barrel or hit effects; arrow timing retained\n", .{});
 }
@@ -307,9 +307,9 @@ test "life and mana fill and drain at XP speed after their presented impact" {
     h.hp = @divTrunc(h.max, 2);
     g.sim.mana = @divTrunc(max_mana, 2);
     g.pic.mana_held = max_mana - g.sim.mana;
-    var after = g.pic.afterOf(&g.sim, g.sim.heroSlot().?);
+    var after = g.pic.afterOf(&g.sim, .fromIndex(g.sim.heroSlot().?));
     after.mana = g.pic.mana_held;
-    g.pic.fx.settle(1, .{ .slot = g.sim.heroSlot().?, .after = after });
+    g.pic.fx.settle(1, .{ .slot = .fromIndex(g.sim.heroSlot().?), .after = after });
     g.pic.busy = 1;
     g.st = .{};
     game.update(g, harness.TEST_DT);

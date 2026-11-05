@@ -1,3 +1,4 @@
+const sprite = @import("../gfx/sprites.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -53,7 +54,7 @@ pub fn scaleFor(screen: mathx.P) i32 {
 }
 
 /// Every hero's body that is not resident yet, loaded beside what is; true when any was missing.
-pub fn loadHeroes(sprites: *look.Sprites) bool {
+pub fn loadHeroes(sprites: *sprite.Sprites) bool {
     var need = sprites.resident();
     var missing = false;
     for (hero.CLASSES) |c| {
@@ -65,7 +66,7 @@ pub fn loadHeroes(sprites: *look.Sprites) bool {
 }
 
 /// `k` standing with its feet's middle on `feet`, `scale` times its pixels, `light` from shadow (0) to its own colours (1).
-pub fn figure(sprites: *const look.Sprites, k: actor.Kind, feet: mathx.P, scale: i32, light: f32) void {
+pub fn figure(sprites: *const sprite.Sprites, k: actor.Kind, feet: mathx.P, scale: i32, light: f32) void {
     const tex = sprites.body(k) orelse return;
     const size = look.SPRITE_PX * scale;
     raster.stretch(tex, raster.rect(feet.x - @divTrunc(size, 2), feet.y - size, size, size), look.mixed(SHADE, look.LIT, light));
@@ -125,7 +126,7 @@ fn vertex(x: f32, y: f32, c: rl.Color) void {
 }
 
 /// `k` spotlit, standing left of `box` with its feet level with `box`'s foot.
-pub fn beside(sprites: *const look.Sprites, k: actor.Kind, box: rl.Rectangle, screen: mathx.P) void {
+pub fn beside(sprites: *const sprite.Sprites, k: actor.Kind, box: rl.Rectangle, screen: mathx.P) void {
     const at = Beside.of(box, screen);
     spotlight(@floatFromInt(at.feet.x), at.top(), @floatFromInt(at.feet.y), @floatFromInt(at.size));
     figure(sprites, k, at.feet, at.scale, 1);
@@ -242,7 +243,7 @@ pub const Lineup = struct {
         return mathx.smooth(1 - @abs(self.spot - @as(f32, @floatFromInt(i))) / LIGHT_REACH);
     }
 
-    pub fn draw(self: *const Lineup, face: font.Face, sprites: *const look.Sprites, screen: mathx.P, title: [:0]const u8) void {
+    pub fn draw(self: *const Lineup, face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, title: [:0]const u8) void {
         const lay = Layout.of(screen);
         menu.pageHeading(face, screen, title, lay.top);
         spotlight(lay.centreX(self.spot), @floatFromInt(lay.top + BEAM_DROP), @floatFromInt(lay.feet_y), @floatFromInt(lay.size));

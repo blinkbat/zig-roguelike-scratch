@@ -7,10 +7,11 @@ conversion live in `save_format.zig` and `save_values.zig`. See [save compatibil
 
 | Contract | Owner and enforcement | Representative verification |
 | --- | --- | --- |
-| Actor and barrel impacts differ; misses cannot destroy barrels | `gfx/fx.zig`: tagged impacts, distinct actor IDs and slots from `play/actor.zig` | [Hero tests](../src/game/tests/hero.zig): missed reaction timing and phantom barrels; [picture tests](../src/game/tests/picture.zig): barrel removal |
+| Actor and barrel impacts differ; misses cannot destroy barrels | `gfx/effect_state.zig`: tagged impacts, distinct actor IDs and slots from `play/actor.zig`; `gfx/impact_queue.zig` owns pending impacts | [Hero tests](../src/game/tests/hero.zig): missed reaction timing and phantom barrels; [picture tests](../src/game/tests/picture.zig): barrel removal |
 | Chosen attacks and reactions have distinct attribution | `play/chronicle.zig`: attack origin carried through combat and obituary handling | [Hero tests](../src/game/tests/hero.zig): missed reactions retain the chosen deed; [epitaph tests](../src/game/epitaph.zig) |
 | Attack rules cannot update graphics or input | `game/attacks.zig`: rolls and hit/status resolution accept only Simulation and return a typed outcome; `game/sim.zig` owns HP loss; Game applies input consequences, Presentation defers resources | [Hero tests](../src/game/tests/hero.zig): isolated damage/attack resolution and seeded attack/reaction/status outcomes from revision `c989855`; [skill tests](../src/game/tests/skills.zig): staggered shielding; [terrain tests](../src/game/tests/terrain.zig): resistances |
-| Each resolution is pictured at its own impact | `game/presentation.zig`: semantic recording operations own snapshots, debts and recovery; bounded FX capacity | [Picture tests](../src/game/tests/picture.zig): multiple blows and split births; [tactics tests](../src/game/tactics.zig): reaction recovery |
+| Each resolution is pictured at its own impact | `game/presentation.zig`: recording operations and ordered scheduling stages; `gfx/impact_queue.zig`: bounded delivery, landed snapshots, flashes, death fades and mana release | [Queue tests](../src/gfx/impact_queue.zig): overdue ordering, one-time mana release and capacity; [picture tests](../src/game/tests/picture.zig): multiple blows and split births; [tactics tests](../src/game/tactics.zig): reaction recovery |
+| Sprite selection, GPU resources and appearance have separate owners | `gfx/sprite_assets.zig` selects required art; `gfx/sprites.zig` owns loading, drawing and release; `gfx/sprite_materials.zig` owns shader programs; `gfx/look.zig` owns appearance | Asset selection and export-contract tests stay with their owners; headless captures cover resource reuse and rendered output |
 | Turn stages preserve causality and clean up on death | `game/combat.zig`: named stages; Simulation owns consumed ticks inherited by split children | [Skill tests](../src/game/tests/skills.zig): inherited ticks, skipped actions, movement bleed and free actions; [hero tests](../src/game/tests/hero.zig): death prevents later stages and clears transients |
 | Targeting is valid only while active | `game.zig`, `game/skills.zig`: cohesive mode payload and begin/end operations | [Skill tests](../src/game/tests/skills.zig): opening input, cancellation, two-point barrier; [picture tests](../src/game/tests/picture.zig): queued actions |
 | Transients reset at their declared lifetime | Game coordinates new run, travel and resume; Presentation owns picture resets | [World tests](../src/game/tests/world.zig): travel; [loot tests](../src/game/tests/loot.zig): carried interactions; [save tests](../src/save.zig): in-memory round trips, legacy migration and rejected corruption |
@@ -44,6 +45,10 @@ bodies may import other layers to verify integration contracts. These are direct
 source dependency checks; `core/input.zig` still owns device access and its shared
 input types.
 
+Sprite asset selection and shader definitions cannot import the sprite renderer.
+Effect payloads and the impact queue cannot import the particle-effects coordinator.
+These helpers also cannot import Game, Presentation or the application.
+
 ## Lifetimes
 
 Simulation owns run data, including the seeded RNG and consumed turn ticks.
@@ -56,6 +61,24 @@ later blow changes that body. A missed reaction still owns animation time. New r
 discard pending presentation; travel preserves only explicitly carried state; resume
 settles the loaded picture without replaying effects. Free actions and idle frames
 do not age simulation state.
+
+Presentation mutation APIs take `ActorId` for identity or `ActorSlot` for indexed
+storage. Convert legacy integer identities at the caller's boundary; impact
+payloads, split reveals and queue queries keep those types throughout delivery.
+
+`stepGlide` owns a local `TurnTiming`, including the hero's pictured cell after
+each knockback. Each body's schedule runs motion/projectile timing, blows and
+mending, reactions, knockback, then status harm. `BodyTiming.impact_in` and
+`finishes_in` are seconds from the current frame; `starts_at` and
+`TurnTiming.next_at` retain the turn origin, with `late` converting between them.
+New effects should record their resolved snapshot once and join the appropriate
+stage; gameplay callers do not write the queue's landed state or timers.
+
+`Fx.step` ages existing visuals before delivering ready events. `impact_queue`
+preserves the previous swap-removal delivery order and selects body snapshots by
+simulation sequence, even when several deadlines pass in one frame. Every event
+releases its mana debt once, including an older snapshot superseded by a newer
+one. `Fx` renders each delivered event and owns cosmetic RNG; the queue does not.
 
 `attacks.resolve` returns null for an absent target, otherwise a miss or a hit carrying
 damage, applied statuses, culling and recovery. Combat consumes that outcome once:

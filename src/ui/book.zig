@@ -1,3 +1,4 @@
+const sprite = @import("../gfx/sprites.zig");
 const character_view = @import("character_view.zig");
 const layout = @import("character_layout.zig");
 const item_card = @import("item_card.zig");
@@ -365,13 +366,13 @@ pub const Book = struct {
         };
     }
     /// A command can shrink the list under the cursor before the next `step` clamps it.
-    pub fn draw(self: *const Book, source_face: *const font.Face, sprites: *const look.Sprites, screen: P, view: View) void {
+    pub fn draw(self: *const Book, source_face: *const font.Face, sprites: *const sprite.Sprites, screen: P, view: View) void {
         var shown = self.*;
         shown.cursor = @min(self.cursor, self.count(view) -| 1);
         shown.top = shown.settledTop(view);
         shown.drawClamped(source_face, sprites, screen, view);
     }
-    fn drawClamped(self: *const Book, source_face: *const font.Face, sprites: *const look.Sprites, screen: P, view: View) void {
+    fn drawClamped(self: *const Book, source_face: *const font.Face, sprites: *const sprite.Sprites, screen: P, view: View) void {
         const on = self.surface(screen, view);
         on.beginPanel(sprites, self.size(view));
         defer rl.endMode2D();
@@ -415,7 +416,7 @@ pub const Book = struct {
         };
     }
 
-    fn drawDirect(self: *const Book, face: *const font.Face, sprites: *const look.Sprites, view: View) void {
+    fn drawDirect(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
         header(face, if (self.page == .nearby) "NEARBY" else if (view.chest) "CHEST LOOT" else "ITEM BAG");
         if (self.page == .loot) {
             var holding: menu.Note(100) = .{};
@@ -452,7 +453,7 @@ pub const Book = struct {
         return out;
     }
 
-    fn drawCells(self: *const Book, face: *const font.Face, sprites: *const look.Sprites, view: View) void {
+    fn drawCells(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
         if (self.page == .inventory) {
             const text_x = layout.LIST_X + layout.TEXT_X;
             face.draw("ITEM", text_x, layout.CONTENT_TOP, font.SMALL, look.DIM);

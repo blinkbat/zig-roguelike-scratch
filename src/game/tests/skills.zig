@@ -299,7 +299,7 @@ test "glacial chill and its cadence follow slime splits without hitting newborn 
     try std.testing.expectEqual(@as(u8, 2), a.chill.phase);
     try std.testing.expectEqual(a.chill, half.chill);
     try std.testing.expectEqual(@as(i16, -100), half.resists.get(.cold));
-    try std.testing.expect(g.pic.fx.revealing(actor.Pool.slot(id + 1)));
+    try std.testing.expect(g.pic.fx.impacts.revealing(.fromIndex(actor.Pool.slot(id + 1))));
     std.debug.print("Glacial Shot split: 2 equal halves, chill duration {d} and cadence {d} inherited, one damage event each\n", .{ half.chill.turns, half.chill.phase });
 }
 
@@ -1152,7 +1152,7 @@ test "dodging spends the foe turn without damage, bleeding or mana shield loss" 
                 harness.drawnOut(g);
                 try std.testing.expectEqual(h.hp, g.pic.pictured[g.sim.heroSlot().?].hp);
                 try std.testing.expectEqual(g.sim.mana, g.pic.manaShown(&g.sim));
-                if (dodged) try std.testing.expectEqual(@as(f32, 0), g.pic.fx.flashOf(g.sim.heroSlot().?));
+                if (dodged) try std.testing.expectEqual(@as(f32, 0), g.pic.fx.impacts.flashOf(.fromIndex(g.sim.heroSlot().?)));
                 checked += 1;
             }
         }
@@ -1689,7 +1689,7 @@ test "resisted chain lightning still holds play until its last jump" {
     game.update(g, last - game.ZAP_S / 2);
     try std.testing.expectEqual(before, g.sim.clock);
     harness.drawnOut(g);
-    try std.testing.expectEqual(@as(usize, 0), g.pic.fx.due_n);
+    try std.testing.expectEqual(@as(usize, 0), g.pic.fx.impacts.count());
     std.debug.print("resisted chain lightning: {d} jumps hold play for {d:.3} s\n", .{ chain.JUMPS, last });
 }
 

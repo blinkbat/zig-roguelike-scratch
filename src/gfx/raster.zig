@@ -1,3 +1,4 @@
+const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
@@ -147,4 +148,38 @@ pub fn field(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f
         }
     }
     return clamped(rgba(&img, w, h), .bilinear);
+}
+
+fn unloadEach(held: []?rl.Texture2D) void {
+    for (held) |*h| {
+        if (h.*) |t| rl.unloadTexture(t);
+        h.* = null;
+    }
+}
+
+pub fn unloadAll(v: anytype) void {
+    inline for (std.meta.fields(@TypeOf(v.*))) |f| {
+        if (comptime @typeInfo(f.type) == .@"struct" and @hasField(f.type, "values") and @hasDecl(f.type, "Key") and std.meta.Elem(@FieldType(f.type, "values")) == ?rl.Texture2D) {
+            unloadEach(&@field(v.*, f.name).values);
+            continue;
+        }
+        if (comptime @typeInfo(f.type) == .array and std.meta.Elem(f.type) == ?rl.Texture2D) {
+            unloadEach(&@field(v.*, f.name));
+            continue;
+        }
+        const Child = switch (@typeInfo(f.type)) {
+            .optional => |o| o.child,
+            else => void,
+        };
+        const program_ = @typeInfo(Child) == .@"struct" and @hasField(Child, "shader");
+        const resource = Child == rl.Texture2D or Child == rl.RenderTexture2D or Child == rl.Shader or program_;
+        if (!resource and comptime std.mem.startsWith(u8, @typeName(Child), "raylib.")) @compileError("unloadAll frees no " ++ @typeName(Child));
+        if (resource) {
+            const held = &@field(v.*, f.name);
+            if (held.*) |r| {
+                if (Child == rl.Texture2D) rl.unloadTexture(r) else if (Child == rl.RenderTexture2D) rl.unloadRenderTexture(r) else if (Child == rl.Shader) rl.unloadShader(r) else rl.unloadShader(r.shader);
+            }
+            held.* = null;
+        }
+    }
 }

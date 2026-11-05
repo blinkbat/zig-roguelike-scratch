@@ -1,3 +1,5 @@
+const sprite_assets = @import("../gfx/sprite_assets.zig");
+const sprite = @import("../gfx/sprites.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -54,7 +56,7 @@ const MINI: i32 = 3;
 const MINI_W: i32 = grid.W * MINI;
 const MINI_H: i32 = grid.H * MINI;
 const MINI_PAD: i32 = hud.EDGE;
-const MINI_FRAME: i32 = look.HUD_BORDER_CUT;
+const MINI_FRAME: i32 = sprite.HUD_BORDER_CUT;
 const MINI_HERO_GROW: i32 = 1;
 const DAY_GAP: i32 = 12;
 const DAY_INSET: i32 = 16;
@@ -288,14 +290,14 @@ fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool,
     } else drawFigureGlyph(g, l.ch, s.x, s.y, ink);
 }
 
-fn drawGroundPass(g: *game.Game, c: Cam, beds: *const dual.Beds, stood: *const grid.CellSet, mirror: ?look.Mirrors) void {
+fn drawGroundPass(g: *game.Game, c: Cam, beds: *const dual.Beds, stood: *const grid.CellSet, mirror: ?sprite.Mirrors) void {
     const x = std.math.clamp(-c.x, 0, g.screen.x);
     const y = std.math.clamp(-c.y, 0, g.screen.y);
     const right = std.math.clamp(game.MAP_PX.x - c.x, 0, g.screen.x);
     const bottom = std.math.clamp(game.MAP_PX.y - c.y, 0, g.screen.y);
     rl.beginScissorMode(x, y, right - x, bottom - y);
     defer rl.endScissorMode();
-    const water: ?look.WaterView = if (g.light.glintTexture()) |glints| if (g.light.mapTexture()) |tex| .{
+    const water: ?sprite.WaterView = if (g.light.glintTexture()) |glints| if (g.light.mapTexture()) |tex| .{
         .screen = .{ @floatFromInt(g.screen.x), @floatFromInt(g.screen.y) },
         .visibility = tex,
         .glints = glints,
@@ -308,7 +310,7 @@ fn drawGroundPass(g: *game.Game, c: Cam, beds: *const dual.Beds, stood: *const g
     while (cells.next()) |p| {
         if (!terrainSeen(g, p)) continue;
         const here = g.sim.lv.at(p);
-        if (look.glyphGround(here, &g.sprites)) inkCell(g, c, p, here, stood);
+        if (sprite.glyphGround(here, &g.sprites)) inkCell(g, c, p, here, stood);
         if (g.sim.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
     }
 }
@@ -391,7 +393,7 @@ fn drawShadows(g: *game.Game, c: Cam, cast: grid.Box, bags: *const grid.CellSet)
         if (looseBag(kind, bags, p)) propShadow(g, c, p, g.sprites.item_bag);
         if (g.pic.barrelPresent(&g.sim, p)) propShadow(g, c, p, g.sprites.barrel);
         if (!look.castsPicture(kind)) continue;
-        const forest = look.forestAt(&g.sim.lv, p);
+        const forest = sprite_assets.forestAt(&g.sim.lv, p);
         const t = tileTexture(g, kind, p, bags) orelse continue;
         const pr = Prop.over(g, c, p, kind);
         const rect = tileRect(kind, t, c, p);
@@ -403,7 +405,7 @@ fn drawShadows(g: *game.Game, c: Cam, cast: grid.Box, bags: *const grid.CellSet)
     }
     for (0..g.sim.pool.n) |i| {
         const at = g.pic.casterAt(&g.sim, i, cast) orelse continue;
-        const opacity = g.pic.sighted[i] * g.pic.fx.dyingOf(i).alpha;
+        const opacity = g.pic.sighted[i] * g.pic.fx.impacts.dyingOf(.fromIndex(i)).alpha;
         if (opacity <= 0) continue;
         const t = g.sprites.body(g.pic.pictured[i].kind) orelse continue;
         const s = c.px(at);
@@ -473,8 +475,8 @@ fn mirrorFade(g: *const game.Game, foot: f32, top: f32, bottom: f32) [2]f32 {
 fn drawBody(g: *game.Game, b: *const Shown, mirrored: bool) void {
     const tex = g.sprites.body(b.pic.kind);
     const l = look.body(b.pic.kind);
-    const dying = g.pic.fx.dyingOf(b.slot);
-    const flash = if (g.pic.fx.dying[b.slot] > 0) 0 else g.pic.fx.flashOf(b.slot);
+    const dying = g.pic.fx.impacts.dyingOf(.fromIndex(b.slot));
+    const flash = if (g.pic.fx.impacts.isDying(.fromIndex(b.slot))) 0 else g.pic.fx.impacts.flashOf(.fromIndex(b.slot));
     const opacity = b.sighted * dying.alpha;
     var shine = b.shine;
     if (g.sim.isHero(b.slot)) shine.emission = g.pic.fx.level_up.bodyGlow();
@@ -547,7 +549,7 @@ fn drawFlame(g: *game.Game, c: Cam, f: light.Flame, lit: f32) void {
     g.pic.fx.drawTorch(@floatFromInt(x), @floatFromInt(y), game.CELL_F, f.at[0] * FLAME_PHASE[0] + f.at[1] * FLAME_PHASE[1], lit, f.memory);
 }
 
-pub fn drawMirrors(g: *game.Game, c: Cam, view: grid.Box, bags: *const grid.CellSet, bodies: []const Shown, flames: []const light.Flame) ?look.Mirrors {
+pub fn drawMirrors(g: *game.Game, c: Cam, view: grid.Box, bags: *const grid.CellSet, bodies: []const Shown, flames: []const light.Flame) ?sprite.Mirrors {
     if (!g.sprites.beginMirror(g.screen, g.framebuffer, true)) return null;
     drawMirrorScenery(g, c, view, bags, true);
     drawMirrorTorches(g, c, flames, true);
@@ -951,7 +953,7 @@ pub const Minimap = struct {
     }
 
     pub fn unload(m: *Minimap) void {
-        look.unloadAll(m);
+        raster.unloadAll(m);
     }
 };
 
@@ -966,7 +968,7 @@ fn miniDot(o: P, p: P, grow: i32, col: rl.Color) void {
 pub fn drawMinimap(g: *game.Game) void {
     const o = miniOrigin(g.screen.x);
     const map = miniBox(g.screen.x);
-    look.hudPanelIn(&g.sprites, miniFrame(g.screen.x), look.MINI_BG, look.LIT);
+    sprite.hudPanelIn(&g.sprites, miniFrame(g.screen.x), look.MINI_BG, look.LIT);
     if (g.mini.tex) |t| {
         const pictured = g.pic.pictureKey();
         if (g.mini.stale or !std.meta.eql(pictured, g.mini.pictured)) {

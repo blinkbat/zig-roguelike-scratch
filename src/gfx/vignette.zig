@@ -69,7 +69,7 @@ pub const Vignette = struct {
     }
 
     pub fn unload(self: *Vignette) void {
-        look.unloadAll(self);
+        raster.unloadAll(self);
     }
 
     /// Over the view, `w` by `h` from the screen's top-left.

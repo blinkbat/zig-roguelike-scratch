@@ -51,7 +51,11 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `character` (pause, Character, Nearby), `debug` (Pause > Debug, diagnostics, `Perf`), `shots` (headless captures, bench), `harness` (scripted play shared by
   tests and shots) and `tests/` (the game's integration tests by domain: skills, foes, world, loot, picture, menus, hero).
   `app.zig` opens the window around a `Game` (`withGame`) and owns the headless flags; `core/window.zig` owns fullscreen.
-- `gfx/look.zig` keeps tile/body appearance and `Sprites`; `raster` holds raylib rect/blit/render-target helpers,
+- `gfx/look.zig` keeps tile/body appearance; `sprite_assets` selects required art and owns its catalog,
+  `sprites` owns texture loading, lifetime and drawing, and `sprite_materials` owns its shader programs.
+  `effect_state` owns presented bodies and typed impact payloads; `impact_queue` owns delayed delivery,
+  landed snapshots, flashes, death fades and mana release. `fx` owns particles and cosmetic drawing.
+  `raster` holds raylib rect/blit/render-target and resource-release helpers,
   `shaders` shader loading/uniforms/GLSL heads, `prompt_icon` input glyphs, `line_icons` skill, item and direction line art.
   `gfx/light.zig` coordinates light state and baking; `light_model` owns shading math and source types;
   `light_visibility` owns eased sight, memory and visibility sampling;
@@ -407,7 +411,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   movement, skills and interactions pressed while busy are queued (`Game.pending`, the latest wins, but a repeating
   held walk never displaces a skill or interaction). Queued interactions survive door travel and open nearby after arrival.
   Skill activation/confirmation (including Wait/Shoot) requires `quiet`.
-- `gfx/look.zig` owns pictures and `look.Assets` map residency. Load required textures before drawing,
+- `gfx/sprite_assets.zig` owns picture selection and `Assets` map residency; `gfx/sprites.zig` owns textures. Load required textures before drawing,
   including later slime forms and delayed deaths; retain common textures/normals and unload unused map
   assets. `Game.art` records stale/play/editor residency intent; scene changes and title assets invalidate it,
   and each renderer prepares its set once. Title loads only the font; play graphics load lazily.
@@ -465,7 +469,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   owner edits before regenerating extensions. Palette matching alone is not a faithful port.
 - Regular walls use Desktop `regular-walls.aseprite`, `Layer 1`; cave/forest art is separate.
   `tools/tile_art/port_walls.lua` updates extensions; `export_walls.lua` writes the 47-cell runtime atlas
-  (`assets/source/walls.aseprite`, `assets/walls.png`). Keep `look.WALL_MASKS` and `WALL_FACE_PX` aligned.
+  (`assets/source/walls.aseprite`, `assets/walls.png`). Keep `sprite_assets.WALL_MASKS` and `look.WALL_FACE_PX` aligned.
 - Ground sources live on Desktop and in `assets/source/`; preserve `Draw here` and the material's named
   extensions layer. `port_ground.lua` records crops; `export_ground.lua` produces 16 dual-grid masks in
   64px cells. `name=shallows` reads `water.aseprite` into `shallows-ground.png`; `name=water` reads
@@ -492,6 +496,6 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   existing tone and `assets/backup/` before applying it again.
 - `build.zig` embeds top-level PNG/TTF/TXT files in `assets/` by filename (`@embedFile`,
   `@import("assets").names`), including controller mappings. Maps/saves still use the working directory.
-  Register body/tile PNGs in `look.BODY_PNGS`/`TILE_PNGS`. Sprites are 64px wide; tall scenery retains its native height. Bodies face right; `Presentation.facing`
+  Register body/tile PNGs in `sprite_assets.BODY_PNGS`/`TILE_PNGS`. Sprites are 64px wide; tall scenery retains its native height. Bodies face right; `Presentation.facing`
   mirrors leftward movement/strikes/aim and retains facing for vertical motion. `CELL` must be a whole
   multiple of 64, never fractional sprite scaling. Rebuild after installing assets.

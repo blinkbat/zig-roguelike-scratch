@@ -1,3 +1,4 @@
+const sprite = @import("../gfx/sprites.zig");
 const std = @import("std");
 const wording = @import("../core/wording.zig");
 const rl = @import("raylib");
@@ -83,9 +84,9 @@ pub const Surface = struct {
     }
 
     /// `begin`, then a panel's card backing across `size`.
-    pub fn beginPanel(self: Surface, sprites: *const look.Sprites, size: mathx.P) void {
+    pub fn beginPanel(self: Surface, sprites: *const sprite.Sprites, size: mathx.P) void {
         self.begin();
-        look.backing(sprites, 0, 0, size.x, size.y);
+        sprite.backing(sprites, 0, 0, size.x, size.y);
     }
 
     /// `f` as this surface draws it: scaled, from the mipmapped atlas rather than the native-size ones.
@@ -305,7 +306,7 @@ pub fn noteY(first: rl.Rectangle, count: usize) i32 {
     return rowTextY(first) + @as(i32, @intCast(count)) * ROW_STEP + NOTE_GAP;
 }
 
-pub fn draw(face: font.Face, sprites: *const look.Sprites, screen: mathx.P, title: [:0]const u8, all: []const []const u8, at: usize, note: ?[:0]const u8) void {
+pub fn draw(face: font.Face, sprites: *const sprite.Sprites, screen: mathx.P, title: [:0]const u8, all: []const []const u8, at: usize, note: ?[:0]const u8) void {
     const win = window(screen.y, all.len, at);
     const rows = all[win.from..][0..win.len];
     const first = rowBox(screen, win, win.from);
@@ -326,8 +327,8 @@ pub fn draw(face: font.Face, sprites: *const look.Sprites, screen: mathx.P, titl
 }
 
 /// The backing behind a stack of list rows, its border clear of them.
-pub fn listPanel(sprites: *const look.Sprites, rows: rl.Rectangle) void {
-    look.backingIn(sprites, raster.grown(rows, @floatFromInt(look.HUD_BORDER_CUT)));
+pub fn listPanel(sprites: *const sprite.Sprites, rows: rl.Rectangle) void {
+    sprite.backingIn(sprites, raster.grown(rows, @floatFromInt(sprite.HUD_BORDER_CUT)));
 }
 
 /// A list row's text past its edge and selection mark.

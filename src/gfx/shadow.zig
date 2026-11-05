@@ -1,3 +1,4 @@
+const sprite = @import("sprites.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -58,7 +59,7 @@ pub const CAST_REACH: f32 = blk: {
     break :blk 0.5 + @max(pad + l * (1 + pad), CANOPY_AT * l + CANOPY_R * (1 + l * CANOPY_STRETCH));
 };
 
-pub fn sceneryMargin(sprites: *const look.Sprites) i32 {
+pub fn sceneryMargin(sprites: *const sprite.Sprites) i32 {
     var scale: f32 = 1;
     for (std.enums.values(grid.Tile)) |kind| {
         if (!look.castsPicture(kind)) continue;
@@ -352,7 +353,7 @@ fn silhouette(tex: rl.Texture2D, fx: f32, fy: f32, width: f32, foot: f32, left: 
 }
 
 test "scenery shadow margins include the drawn height and width of loaded terrain" {
-    var sprites = look.Sprites{};
+    var sprites = sprite.Sprites{};
     const ordinary: i32 = @intFromFloat(@ceil(CAST_REACH));
     const doubled: i32 = @intFromFloat(@ceil(CAST_REACH * 2));
     try std.testing.expectEqual(ordinary, sceneryMargin(&sprites));

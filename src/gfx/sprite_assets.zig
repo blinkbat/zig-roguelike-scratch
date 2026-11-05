@@ -1,0 +1,546 @@
+const std = @import("std");
+const rl = @import("raylib");
+const mathx = @import("../core/mathx.zig");
+const grid = @import("../map/grid.zig");
+const actor = @import("../play/actor.zig");
+const ground = @import("ground.zig");
+const raster = @import("raster.zig");
+const embedded = @import("assets").names;
+
+const look = @import("look.zig");
+const SPRITE_PX = look.SPRITE_PX;
+const WALL_FACE_PX = look.WALL_FACE_PX;
+const standsOver = look.standsOver;
+const under = look.under;
+const tall = look.tall;
+const castsPicture = look.castsPicture;
+const stands = look.stands;
+const tileRect = look.tileRect;
+
+pub const Bodies = std.EnumArray(actor.Kind, ?rl.Texture2D);
+
+pub const PICTURE_CASTERS = blk: {
+    var n: usize = 0;
+    for (std.enums.values(grid.Tile)) |t| {
+        if (castsPicture(t)) n += 1;
+    }
+    var out: [n]grid.Tile = undefined;
+    var i: usize = 0;
+    for (std.enums.values(grid.Tile)) |t| {
+        if (!castsPicture(t)) continue;
+        out[i] = t;
+        i += 1;
+    }
+    break :blk out;
+};
+
+/// Every sprite that throws a shadow from its feet: bodies, barrel, picture casters, forest shapes, item bags, a mimic's chest and `shrub2.png`.
+pub const FIGURES: usize = LIT_FIGURES + PICTURE_CASTERS.len + WALL_MASKS.len + PROP_FIGURES;
+pub const PROP_FIGURES = 4;
+/// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
+pub const LIT_FIGURES: usize = Bodies.len + 1;
+
+pub const Assets = struct {
+    bodies: std.EnumSet(actor.Kind) = .initEmpty(),
+    tiles: std.EnumSet(grid.Tile) = .initEmpty(),
+    wall: std.StaticBitSet(WALL_MASKS.len) = .initEmpty(),
+    forest: std.StaticBitSet(WALL_MASKS.len) = .initEmpty(),
+    grounds: ground.Grounds = .initEmpty(),
+    grass2: bool = false,
+    dirt2: bool = false,
+    shallows2: bool = false,
+    shallows3: bool = false,
+    shallows_cliff: bool = false,
+    shallows_cliff_cap: bool = false,
+    water_cliff: bool = false,
+    water_cliff_cap: bool = false,
+    dirt_shallows_edges: bool = false,
+    dirt_water_edges: bool = false,
+    shallows_water_edges: bool = false,
+    shallows_water_cap: bool = false,
+    shrub2: bool = false,
+    brush: bool = false,
+    flowers: bool = false,
+    barrel: bool = false,
+    item_bag: bool = false,
+    chest_item_bag: bool = false,
+    mimic_closed: bool = false,
+    small_coins: bool = false,
+    large_coins: bool = false,
+
+    pub fn of(lv: *const grid.Level) Assets {
+        var need = Assets{ .item_bag = true, .small_coins = true, .large_coins = true };
+        for (lv.tile, lv.barrel, 0..) |t, barrel, i| {
+            const p = grid.Level.of(i);
+            need.decor(t, p);
+            if (t.bursts()) need.beneath(t.ground().?, p);
+            need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
+            need.chest_item_bag = need.chest_item_bag or t.isChest();
+            if (t.opened()) |open| need.add(.{ .tile = open });
+            if (standsOver(t)) {
+                if (cutAt(lv, p)) |c| need.add(c);
+            }
+            const g = ground.bedAt(lv, p, false) orelse continue;
+            need.bed(g);
+            if (under(t)) |u| need.bed(ground.of(u).?);
+        }
+        return need;
+    }
+
+    /// The ground `t` left at `p` once a mimic's chest is flung open or a glowbulb bursts.
+    pub fn beneath(need: *Assets, t: grid.Tile, p: mathx.P) void {
+        need.decor(t, p);
+        if (standsOver(t)) if (cutOf(t, null)) |c| need.add(c);
+        if (ground.of(t)) |g| need.bed(g);
+        if (under(t)) |u| need.bed(ground.of(u).?);
+    }
+
+    fn decor(need: *Assets, t: grid.Tile, p: mathx.P) void {
+        if (grassDecor(t, p)) |d| switch (d) {
+            inline else => |k| @field(need, @tagName(k)) = true,
+        };
+    }
+
+    fn bed(need: *Assets, g: ground.Ground) void {
+        if (g == .shallows) {
+            need.shallows_cliff = true;
+            need.shallows_cliff_cap = true;
+            need.dirt_shallows_edges = true;
+        }
+        if (g == .water) {
+            need.water_cliff = true;
+            need.water_cliff_cap = true;
+            need.dirt_water_edges = true;
+            need.shallows_water_edges = true;
+            need.shallows_water_cap = true;
+        }
+        switch (g) {
+            inline else => |k| if (comptime GROUND_ALTERNATES.get(k)) |alts| inline for (alts.fields) |name| {
+                @field(need, name) = true;
+            },
+        }
+        if (GROUND_SHEETS.contains(g)) need.grounds.insert(g) else need.add(.{ .tile = g.tile() });
+    }
+
+    fn add(need: *Assets, c: Cut) void {
+        switch (c) {
+            .tile => |t| if (TILE_PNGS.get(t) != null) need.tiles.insert(t),
+            .wall => |i| need.wall.set(i),
+            .forest => |i| need.forest.set(i),
+            .shrub2 => need.shrub2 = true,
+        }
+    }
+
+    pub fn body(need: *Assets, k: actor.Kind) void {
+        need.bodies.setUnion(actor.descent(k).intersectWith(PICTURED));
+    }
+
+    /// Preload every editor asset so painting does not decode sheets mid-stroke.
+    pub fn everything() Assets {
+        var all = Assets{ .grounds = GROUND_SHEETS, .bodies = PICTURED, .wall = .initFull(), .forest = .initFull() };
+        inline for (std.meta.fields(Assets)) |f| {
+            if (f.type == bool) @field(all, f.name) = true;
+        }
+        for (std.enums.values(grid.Tile)) |t| all.add(.{ .tile = t });
+        return all;
+    }
+
+    pub fn merge(a: Assets, b: Assets) Assets {
+        var out: Assets = undefined;
+        inline for (std.meta.fields(Assets)) |f| {
+            const x = @field(a, f.name);
+            const y = @field(b, f.name);
+            @field(out, f.name) = if (f.type == bool) x or y else x.unionWith(y);
+        }
+        return out;
+    }
+
+    pub fn count(need: Assets) usize {
+        var n: usize = 0;
+        inline for (std.meta.fields(Assets)) |f| {
+            const x = @field(need, f.name);
+            n += if (f.type == bool) @intFromBool(x) else x.count();
+        }
+        return n;
+    }
+};
+
+fn listed(comptime name: []const u8) bool {
+    @setEvalBranchQuota(10_000);
+    for (embedded) |n| {
+        if (std.mem.eql(u8, n, name)) return true;
+    }
+    return false;
+}
+
+fn optionalPng(comptime name: []const u8) ?[]const u8 {
+    return if (comptime listed(name)) @embedFile(name) else null;
+}
+
+pub const GROUND_PNGS = blk: {
+    var pngs = std.EnumArray(ground.Ground, ?[]const u8).initFill(null);
+    for (std.enums.values(ground.Ground)) |g| pngs.set(g, optionalPng(g.png()));
+    break :blk pngs;
+};
+
+pub const GROUND_SHEETS = blk: {
+    var s = ground.Grounds.initEmpty();
+    for (std.enums.values(ground.Ground)) |g| {
+        const png = GROUND_PNGS.get(g) orelse continue;
+        std.debug.assert(std.meta.eql(pngSize(png), mathx.P{ .x = ground.COLS * SPRITE_PX, .y = ground.ROWS * SPRITE_PX }));
+        s.insert(g);
+    }
+    break :blk s;
+};
+
+const BODY_PNGS = std.EnumArray(actor.Kind, ?[]const u8).init(.{
+    .archer = @embedFile("archer.png"),
+    .wizard = @embedFile("wizard.png"),
+    .knight = @embedFile("knight.png"),
+    .rat = @embedFile("rat.png"),
+    .slime = @embedFile("slime.png"),
+    .slime_half = @embedFile("slime-half.png"),
+    .slime_quarter = @embedFile("slime-quarter.png"),
+    .bloat = @embedFile("caustic-bloat.png"),
+    .pib = @embedFile("pib.png"),
+    .beefy_pib = @embedFile("beefy-pib.png"),
+    .bandit_crossbowman = @embedFile("bandit-crossbowman.png"),
+    .bandit_netter = @embedFile("bandit-trapper.png"),
+    .bandit_shieldbearer = null,
+    .frost_wisp = null,
+    .pyre_bloat = @embedFile("pyre-bloat.png"),
+    .pib_shaman = @embedFile("pib-shaman.png"),
+    .bog_leech = null,
+    .mimic = @embedFile("mimic-open.png"),
+});
+
+const PICTURED = blk: {
+    var s = std.EnumSet(actor.Kind).initEmpty();
+    for (std.enums.values(actor.Kind)) |k| s.setPresent(k, BODY_PNGS.get(k) != null);
+    break :blk s;
+};
+
+/// A wall's are cut from `WALLS_PNG` by its shape instead, and a forest's shrubs from `FOREST_PNG`.
+const TILE_PNGS = std.EnumArray(grid.Tile, ?[]const u8).initDefault(@as(?[]const u8, null), .{
+    .floor = @embedFile("floor.png"),
+    .grass = @embedFile("grass.png"),
+    .reeds = @embedFile("reeds.png"),
+    .shrub = @embedFile("shrub.png"),
+    .swamp_tree = @embedFile("swamp-tree.png"),
+    .large_tree = @embedFile("large-tree.png"),
+    .tiny_shrub = @embedFile("tiny-shrub.png"),
+    .boulder = @embedFile("boulder.png"),
+    .fungus = @embedFile("tall-shroom.png"),
+    .tall_grass = @embedFile("tall-grass.png"),
+    .shrooms = @embedFile("small-shrooms.png"),
+    .chest = @embedFile("chest.png"),
+    .chest_open = @embedFile("chest-open.png"),
+    .caravan = @embedFile("caravan-cart.png"),
+    .glow_plant = @embedFile("glowbulb.png"),
+});
+
+comptime {
+    std.debug.assert(TILE_PNGS.get(.wall) == null);
+    std.debug.assert(std.meta.eql(pngSize(TILE_PNGS.get(.large_tree).?), mathx.P{ .x = SPRITE_PX, .y = 2 * SPRITE_PX }));
+    for (std.enums.values(grid.Tile)) |t| {
+        if (!standsOver(t)) continue;
+        const size = pngSize(TILE_PNGS.get(t) orelse continue);
+        if (size.x != SPRITE_PX * t.wide() or (size.y > SPRITE_PX) != tall(t)) @compileError(@tagName(t) ++ ": a standing picture is a sprite wide a cell it stands on, and taller only when `tall`");
+    }
+    for (PICTURE_CASTERS) |t| {
+        if (TILE_PNGS.get(t) == null) @compileError("a picture caster needs its picture: " ++ @tagName(t));
+    }
+}
+
+const WALLS_PNG = @embedFile("walls.png");
+const FOREST_PNG = @embedFile("forest-tree-walls.png");
+
+pub const SOURCES = .{
+    .bodies = BODY_PNGS,
+    .tiles = TILE_PNGS,
+    .grounds = GROUND_PNGS,
+    .grass2 = @as([]const u8, @embedFile("grass2.png")),
+    .dirt2 = @as([]const u8, @embedFile("dirt2.png")),
+    .shallows2 = @as([]const u8, @embedFile("shallows2.png")),
+    .shallows3 = @as([]const u8, @embedFile("shallows3.png")),
+    .shallows_cliff = @as([]const u8, @embedFile("shallows-cliff.png")),
+    .shallows_cliff_cap = @as([]const u8, @embedFile("shallows-cliff-cap.png")),
+    .water_cliff = @as([]const u8, @embedFile("water-cliff.png")),
+    .water_cliff_cap = @as([]const u8, @embedFile("water-cliff-cap.png")),
+    .dirt_shallows_edges = @as([]const u8, @embedFile("dirt-shallows-edges.png")),
+    .dirt_water_edges = @as([]const u8, @embedFile("dirt-water-edges.png")),
+    .shallows_water_edges = @as([]const u8, @embedFile("shallows-water-edges.png")),
+    .shallows_water_cap = @as([]const u8, @embedFile("shallows-water-cap.png")),
+    .shrub2 = @as([]const u8, @embedFile("shrub2.png")),
+    .brush = @as([]const u8, @embedFile("brush.png")),
+    .flowers = @as([]const u8, @embedFile("flowers.png")),
+    .barrel = @as([]const u8, @embedFile("barrel.png")),
+    .item_bag = @as([]const u8, @embedFile("item-bag.png")),
+    .chest_item_bag = @as([]const u8, @embedFile("chest-item-bag.png")),
+    .mimic_closed = @as([]const u8, @embedFile("mimic-closed.png")),
+    .small_coins = @as([]const u8, @embedFile("small-coins.png")),
+    .large_coins = @as([]const u8, @embedFile("large-coins.png")),
+    .wall = @as([]const u8, WALLS_PNG),
+    .forest = @as([]const u8, FOREST_PNG),
+};
+
+comptime {
+    const want = std.meta.fieldNames(Assets);
+    std.debug.assert(want.len == std.meta.fieldNames(@TypeOf(SOURCES)).len);
+    for (want) |n| std.debug.assert(@hasField(@TypeOf(SOURCES), n));
+}
+
+comptime {
+    std.debug.assert(std.meta.eql(pngSize(WALLS_PNG), pngSize(FOREST_PNG)));
+}
+
+/// One lone shrub in this many is a forest clump, the rest `shrub.png`; which ones by a hash of the cell.
+const LONE_CLUMP_IN: u64 = 3;
+const LONE_CLUMP_SEED: u64 = 0xF02E57;
+/// One lone shrub in this many that is no clump draws `shrub2.png`.
+const SHRUB2_IN: u64 = 2;
+const SHRUB2_SEED: u64 = 0x5B2;
+/// Of every `in` whole pieces of a ground, by a hash of the cell, the first draw its `fields` in turn instead.
+const Alternates = struct { seed: u64, in: u64, fields: []const []const u8 };
+pub const GROUND_ALTERNATES = std.EnumArray(ground.Ground, ?Alternates).initDefault(@as(?Alternates, null), .{
+    .grass = .{ .seed = 0x62A552, .in = 3, .fields = &.{"grass2"} },
+    .dirt = .{ .seed = 0xD127, .in = 3, .fields = &.{"dirt2"} },
+    .shallows = .{ .seed = 0x5A110, .in = 16, .fields = &.{ "shallows2", "shallows3" } },
+});
+/// Of `DECOR_IN` grass cells, `BRUSH_IN` take brush and one flowers.
+const DECOR_IN: u64 = 60;
+const BRUSH_IN: u64 = 3;
+const DECOR_SEED: u64 = 0xB2754;
+
+const GrassDecor = enum { brush, flowers };
+
+pub fn grassDecor(t: grid.Tile, p: mathx.P) ?GrassDecor {
+    if (t != .grass) return null;
+    const roll = mathx.cellHash(DECOR_SEED, p) % DECOR_IN;
+    if (roll < BRUSH_IN) return .brush;
+    return if (roll == BRUSH_IN) .flowers else null;
+}
+
+fn loneClump(p: mathx.P) bool {
+    return oneIn(LONE_CLUMP_SEED, LONE_CLUMP_IN, p);
+}
+
+fn oneIn(seed: u64, in: u64, p: mathx.P) bool {
+    return mathx.cellHash(seed, p) % in == 0;
+}
+
+pub fn forestAt(lv: *const grid.Level, p: mathx.P) bool {
+    return lv.at(p) == .shrub and (lv.tileMask(p) != 0 or loneClump(p));
+}
+
+pub const Cut = union(enum) { tile: grid.Tile, wall: usize, forest: usize, shrub2 };
+
+pub fn cutAt(lv: *const grid.Level, p: mathx.P) ?Cut {
+    if (forestAt(lv, p)) return .{ .forest = WALL_CELL[lv.tileMask(p)] };
+    if (lv.at(p) == .shrub and oneIn(SHRUB2_SEED, SHRUB2_IN, p)) return .shrub2;
+    return cutOf(lv.at(p), lv.tileShape(p));
+}
+
+pub fn cutOf(t: grid.Tile, shape: ?grid.WallShape) ?Cut {
+    if (t == .wall) return .{ .wall = WALL_CELL[(shape orelse return null).mask()] };
+    return .{ .tile = t };
+}
+
+/// Row-major masks shared with `tools/tile_art/wall_masks.lua` for both wall and forest sheets.
+pub const WALL_MASKS = [_]u8{ 0, 1, 2, 4, 8, 3, 19, 5, 6, 38, 9, 137, 10, 12, 76, 7, 23, 39, 55, 11, 27, 139, 155, 13, 77, 141, 205, 14, 46, 78, 110, 15, 31, 47, 63, 79, 95, 111, 127, 143, 159, 175, 191, 207, 223, 239, 255 };
+const WALL_COLS: usize = @divExact(pngSize(WALLS_PNG).x, SPRITE_PX);
+
+pub fn pngSize(png: []const u8) mathx.P {
+    return .{ .x = std.mem.readInt(i32, png[16..20], .big), .y = std.mem.readInt(i32, png[20..24], .big) };
+}
+
+const WALL_CELL = blk: {
+    @setEvalBranchQuota(10_000);
+    var at = [_]u8{0xFF} ** 256;
+    for (WALL_MASKS, 0..) |m, i| {
+        std.debug.assert(at[m] == 0xFF and @as(grid.WallShape, @bitCast(m)).joined().mask() == m);
+        at[m] = i;
+    }
+    var all: [256]u8 = undefined;
+    for (&all, 0..) |*cell, m| {
+        cell.* = at[@as(grid.WallShape, @bitCast(@as(u8, m))).joined().mask()];
+        std.debug.assert(cell.* != 0xFF);
+    }
+    break :blk all;
+};
+
+/// raylib's `imageFromImage` copies without clamping, so a cell off the sheet would read past it.
+pub fn wallCell(sheet: rl.Image, i: usize) ?rl.Image {
+    const at = mathx.unslot(i, WALL_COLS);
+    if ((at.x + 1) * SPRITE_PX > sheet.width or (at.y + 1) * SPRITE_PX > sheet.height) return null;
+    return rl.imageFromImage(sheet, sheetCell(at.x, at.y));
+}
+
+pub fn sheetCell(col: i32, row: i32) rl.Rectangle {
+    return raster.rect(col * SPRITE_PX, row * SPRITE_PX, SPRITE_PX, SPRITE_PX);
+}
+
+test "map assets include unseen shapes, ground under props and future slime forms" {
+    const gen = @import("../map/gen.zig");
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .rock);
+    lv.set(.{ .x = 20, .y = 20 }, .wall);
+    lv.set(.{ .x = 23, .y = 20 }, .shrub);
+    lv.set(.{ .x = 24, .y = 20 }, .shrub);
+    lv.set(.{ .x = 30, .y = 20 }, .boulder);
+    gen.shapeWalls(&lv);
+    var need = Assets.of(&lv);
+    need.body(.archer);
+    need.body(.slime_half);
+    try std.testing.expect(need.tiles.contains(.floor) and need.grounds.contains(.grass) and !need.tiles.contains(.grass));
+    try std.testing.expect(need.tiles.contains(.boulder) and !need.tiles.contains(.shrub));
+    try std.testing.expectEqual(@as(usize, 1), need.wall.count());
+    try std.testing.expect(need.wall.isSet(WALL_CELL[0]));
+    try std.testing.expectEqual(@as(usize, 2), need.forest.count());
+    try std.testing.expect(need.forest.isSet(WALL_CELL[2]) and need.forest.isSet(WALL_CELL[8]));
+    try std.testing.expect(need.bodies.contains(.slime_half) and need.bodies.contains(.slime_quarter));
+    try std.testing.expect(!need.bodies.contains(.slime) and !need.bodies.contains(.rat));
+    try std.testing.expect(!need.barrel);
+    need.body(.slime);
+    try std.testing.expectEqual(@as(usize, 4), need.bodies.count());
+    lv = grid.openFloor();
+    lv.putBarrel(grid.MIDDLE);
+    lv.set(.{ .x = 20, .y = 20 }, .chest);
+    const next = Assets.of(&lv);
+    try std.testing.expect(next.item_bag and next.chest_item_bag and next.tiles.contains(.chest_open));
+    try std.testing.expect(next.barrel and next.forest.count() == 0 and next.bodies.count() == 0);
+    try std.testing.expect(next.tiles.contains(.floor) and !next.tiles.contains(.grass));
+    const cell = grid.Level.idx(grid.MIDDLE);
+    lv.seen[cell] = true;
+    lv.barrel_seen[cell] = true;
+    try std.testing.expect(lv.breakBarrel(grid.MIDDLE));
+    try std.testing.expect(Assets.of(&lv).barrel);
+    lv.barrel_seen[cell] = false;
+    try std.testing.expect(!Assets.of(&lv).barrel);
+    std.debug.print("map assets: hidden walls and forest, 2 underlays, slime descendants, remembered barrels and map replacement checked\n", .{});
+}
+
+test "map assets hold the fallback ground a prop stands on when only unbearing neighbours are seen" {
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .water);
+    @memset(&lv.seen, true);
+    const p = grid.MIDDLE;
+    lv.set(p, .boulder);
+    const fallback = ground.of(under(.boulder).?).?;
+    const other: ground.Ground = if (fallback == .dirt) .sand else .dirt;
+    for (mathx.CARDINALS) |d| {
+        lv.set(p.add(d), other.tile());
+        lv.seen[grid.Level.idx(p.add(d))] = false;
+    }
+    const shown = ground.bedAt(&lv, p, true).?;
+    try std.testing.expect(shown != ground.bedAt(&lv, p, false).?);
+    const need = Assets.of(&lv);
+    try std.testing.expect(if (GROUND_SHEETS.contains(shown)) need.grounds.contains(shown) else need.tiles.contains(shown.tile()));
+    std.debug.print("prop seen over water only: drawn on {s}, loaded\n", .{@tagName(shown)});
+}
+
+test "map assets hold the grass decor a glowbulb leaves when it bursts" {
+    var checked: usize = 0;
+    var cells = grid.Box.inMap(1).cells();
+    while (cells.next()) |p| {
+        const d = grassDecor(.grass, p) orelse continue;
+        var lv = grid.openFloor();
+        lv.set(p, .glow_plant);
+        const need = Assets.of(&lv);
+        try std.testing.expect(switch (d) {
+            .brush => need.brush,
+            .flowers => need.flowers,
+        });
+        checked += 1;
+        if (checked == 8) break;
+    }
+    try std.testing.expectEqual(@as(usize, 8), checked);
+    std.debug.print("glowbulb decor: {d} lone plants on floor load the grass decor they burst into\n", .{checked});
+}
+
+test "every wall and forest cell lies inside its PNG, and one past its end is refused" {
+    for ([_][]const u8{ WALLS_PNG, FOREST_PNG }, [_][]const u8{ "walls", "forest" }) |png, name| {
+        const w = pngSize(png).x;
+        const h = pngSize(png).y;
+        const sheet = rl.genImageColor(w, h, rl.Color.white);
+        defer rl.unloadImage(sheet);
+        try std.testing.expectEqual(@as(i32, SPRITE_PX * WALL_COLS), w);
+        try std.testing.expectEqual(@as(i32, SPRITE_PX * ((WALL_MASKS.len + WALL_COLS - 1) / WALL_COLS)), h);
+        for (0..WALL_MASKS.len) |i| rl.unloadImage(wallCell(sheet, i) orelse return error.CellOffSheet);
+        std.debug.print("{s}.png {d}x{d}: {d} shapes cut from it\n", .{ name, w, h, WALL_MASKS.len });
+        try std.testing.expect(wallCell(sheet, @intCast(@divTrunc(w, SPRITE_PX) * @divTrunc(h, SPRITE_PX))) == null);
+    }
+}
+
+test "a caravan's picture spans its two cells and rises a cell above them, at native scale" {
+    const size = pngSize(TILE_PNGS.get(.caravan).?);
+    const tex = rl.Texture2D{ .id = 1, .width = size.x, .height = size.y, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    for ([_]f32{ SPRITE_PX, 2 * SPRITE_PX }) |cell| {
+        const r = tileRect(.caravan, tex, .{ .x = 10 * cell, .y = 5 * cell, .width = cell, .height = cell });
+        std.debug.print("caravan at a {d}px cell: {d}x{d} from ({d},{d})\n", .{ cell, r.width, r.height, r.x, r.y });
+        try std.testing.expectEqual(rl.Rectangle{ .x = 10 * cell, .y = 4 * cell, .width = 2 * cell, .height = 2 * cell }, r);
+    }
+    try std.testing.expect(tall(.caravan) and !stands(.caravan_part) and !castsPicture(.caravan_part));
+}
+
+test "forest sprites follow connections and isolated trees mix with clumps without changing visibility" {
+    const gen = @import("../map/gen.zig");
+    var lv = grid.Level.blank();
+    @memset(&lv.tile, .grass);
+    var sprites = @import("sprites.zig").Sprites{};
+    const tree = rl.Texture2D{ .id = 1, .width = SPRITE_PX, .height = SPRITE_PX, .mipmaps = 1, .format = .uncompressed_r8g8b8a8 };
+    sprites.tiles.set(.shrub, tree);
+    var alt = tree;
+    alt.id = 1000;
+    sprites.shrub2 = alt;
+    for (&sprites.forest, 0..) |*t, i| {
+        var texture_ = tree;
+        texture_.id = @intCast(i + 2);
+        t.* = texture_;
+    }
+    const a = mathx.P{ .x = 20, .y = 20 };
+    const b = a.add(.{ .x = 1, .y = 0 });
+    lv.set(a, .shrub);
+    lv.set(b, .shrub);
+    gen.shapeWalls(&lv);
+    try std.testing.expectEqual(sprites.forest[WALL_CELL[2]].?.id, sprites.tileAt(&lv, a).?.id);
+    try std.testing.expectEqual(sprites.forest[WALL_CELL[8]].?.id, sprites.tileAt(&lv, b).?.id);
+    lv.seen = @splat(true);
+    try std.testing.expectEqual(sprites.forest[WALL_CELL[2]].?.id, sprites.tileAt(&lv, a).?.id);
+    @memset(&lv.tile, .grass);
+    var trees: usize = 0;
+    var alts: usize = 0;
+    var clumps: usize = 0;
+    for (0..100) |i| {
+        const p = mathx.P{ .x = 2 + @as(i32, @intCast(i % 10)) * 3, .y = 2 + @as(i32, @intCast(i / 10)) * 3 };
+        lv.set(p, .shrub);
+    }
+    gen.shapeWalls(&lv);
+    const need = Assets.of(&lv);
+    try std.testing.expect(need.tiles.contains(.shrub) and need.shrub2 and need.forest.isSet(WALL_CELL[0]));
+    for (lv.tile, 0..) |t, i| {
+        if (t != .shrub) continue;
+        const p = grid.Level.of(i);
+        const id = sprites.tileAt(&lv, p).?.id;
+        try std.testing.expectEqual(id, sprites.tileAt(&lv, p).?.id);
+        try std.testing.expect(t.solid() and t.blind());
+        if (id == tree.id) trees += 1 else if (id == alt.id) alts += 1 else if (id == sprites.forest[WALL_CELL[0]].?.id) clumps += 1 else return error.NotAnIsolatedSprite;
+    }
+    std.debug.print("100 isolated blockers: {d} lone trees, {d} alternates, {d} forest clumps; 2 connected tiles keep their shapes\n", .{ trees, alts, clumps });
+    try std.testing.expect(trees > 20 and alts > 20 and clumps > 15 and clumps < trees + alts);
+}
+
+test "the wall sheet's masks, shape bits and face height are the ones its scripts paint" {
+    try ground.expectLuaList(u8, &WALL_MASKS, "tools/tile_art/wall_masks.lua", "local masks={");
+    const sides = .{ "n", "e", "s", "w", "ne", "se", "sw", "nw" };
+    var bits: [sides.len]u8 = undefined;
+    inline for (sides, 0..) |side, i| {
+        var shape = grid.WallShape{};
+        @field(shape, side) = true;
+        bits[i] = shape.mask();
+    }
+    try ground.expectLuaList(u8, &bits, "tools/tile_art/wall_masks.lua", "local N,E,S,W,NE,SE,SW,NW=");
+    try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/export_walls.lua", "local FACE=");
+    try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/guide_walls.lua", "local FACE=tonumber(app.params.rows) or ");
+    try ground.expectLuaList(i32, &.{WALL_FACE_PX}, "tools/tile_art/idea_walls.lua", "local FACE=");
+}

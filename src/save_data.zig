@@ -145,7 +145,6 @@ pub const UNSAVED = .{
         "shot",
         "foe_shots",
         "knocked_from",
-        "hero_cell",
         "bursting",
         "lit_before",
         "lit_held",

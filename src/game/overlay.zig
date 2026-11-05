@@ -1,3 +1,4 @@
+const sprite = @import("../gfx/sprites.zig");
 const std = @import("std");
 const journal = @import("../ui/journal.zig");
 const rl = @import("raylib");
@@ -32,7 +33,7 @@ const plural = mathx.plural;
 
 const SLOT_MID: i32 = @divTrunc(game.SLOT_PX, 2);
 const CLEAR_GLYPH: i32 = @divTrunc(game.SLOT_PX, 2);
-const SLOT_EDGE_INSET: i32 = look.HUD_BORDER_CUT - 3;
+const SLOT_EDGE_INSET: i32 = sprite.HUD_BORDER_CUT - 3;
 const SLOT_EDGE_W: f32 = 2;
 const BIND_TOP: i32 = menu.PANEL_PAD;
 const BIND_X0: i32 = @divTrunc(BIND_W - game.SKILLS_W, 2);
@@ -121,7 +122,7 @@ fn drawSlot(g: *game.Game, box: rl.Rectangle, s: SlotLook) void {
     const x: i32 = @intFromFloat(box.x);
     const y: i32 = @intFromFloat(box.y);
     const a: f32 = if (s.faded) look.FADED_A else 1;
-    look.hudPanelIn(&g.sprites, box, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a), look.fade(look.LIT, a));
+    sprite.hudPanelIn(&g.sprites, box, look.fade(if (s.act == null) look.SLOT_EMPTY else look.SLOT_BG, a), look.fade(look.LIT, a));
     if (s.edge) |edge| {
         rl.drawRectangleLinesEx(raster.grown(box, @floatFromInt(-SLOT_EDGE_INSET)), SLOT_EDGE_W, look.fade(edge, a));
     }
@@ -239,7 +240,7 @@ pub fn drawBinds(g: *game.Game) void {
             var label: menu.Note(100) = .{};
             label.say("Choose skill  /  {d}-{d} of {d}", .{ picker.first() + 1, picker.end(), picker.picks });
             g.face.draw(label.text(), picker.x, picker.y - font.LABEL - BIND_POP_DY, font.LABEL, look.DIM);
-            look.backingIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)));
+            sprite.backingIn(&g.sprites, raster.grown(raster.rect(picker.x, picker.y, picker.w, picker.h), @floatFromInt(game.SLOT_GAP)));
             for (picker.first()..picker.end()) |i| {
                 const r = picker.cell(i);
                 const x: i32 = @intFromFloat(r.x);

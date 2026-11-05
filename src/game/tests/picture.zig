@@ -1,3 +1,4 @@
+const sprite_assets = @import("../../gfx/sprite_assets.zig");
 const std = @import("std");
 const mathx = @import("../../core/mathx.zig");
 const input = @import("../../core/input.zig");
@@ -32,7 +33,7 @@ test "large tree boughs fade with the pictured hero and only their base blocks" 
     const i = grid.Level.idx(base);
     try std.testing.expect(g.sim.lv.walkable(behind));
     try std.testing.expect(!g.sim.lv.walkable(base) and g.sim.lv.at(base).blind());
-    try std.testing.expect(look.Assets.of(&g.sim.lv).tiles.contains(.large_tree));
+    try std.testing.expect(sprite_assets.Assets.of(&g.sim.lv).tiles.contains(.large_tree));
     g.pic.ease(&g.sim, 0);
     try std.testing.expectEqual(@as(f32, 0), g.pic.occlusion[i]);
     g.pic.ease(&g.sim, 0.04);
@@ -142,7 +143,7 @@ fn showsAndLands(g: *game.Game, slot: usize) struct { shows: f32, lands: f32 } {
     while ((shows == null or lands == null) and t < 1) : (t += harness.TEST_DT) {
         game.update(g, harness.TEST_DT);
         if (shows == null and harness.drawn(g, slot)) shows = t;
-        if (lands == null and !g.pic.fx.pending(slot)) lands = t;
+        if (lands == null and !g.pic.fx.impacts.pending(.fromIndex(slot))) lands = t;
     }
     return .{ .shows = shows.?, .lands = lands.? };
 }
@@ -168,8 +169,8 @@ fn gassedOffLedge(g: *game.Game) Ledged {
     g.pic.split_from[half] = s;
     g.sim.pool.move(&g.sim.lv, g.sim.hero, .{ .x = 19, .y = 20 });
     game.castSight(g, .{ .x = 19, .y = 20 });
-    var after = g.pic.afterOf(&g.sim, s);
-    after.reveals = half;
+    var after = g.pic.afterOf(&g.sim, .fromIndex(s));
+    after.reveals = .fromIndex(half);
     g.pic.owed[s].gassed = .{ .kill = false, .after = after };
     g.sim.order_n = 0;
     g.pic.stepGlide(&g.sim, g.cloud, 0);
@@ -424,7 +425,7 @@ test "a foe stepping into the cell of a body still dying there sets off once tha
     const mover = harness.foeSlot(1);
     _ = g.sim.pool.damage(&g.sim.lv, harness.foeId(0), g.sim.pool.get(harness.foeId(0)).?.hp);
     const lands: f32 = 0.3;
-    g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(dying), .at = cell, .lethal = true, .after = g.pic.afterOf(&g.sim, dying) } }, .{ .from = .{ .x = 20, .y = 20 }, .wait = lands });
+    g.pic.strike(&g.sim, g.cloud, .{ .actor = .{ .slot = .fromIndex(dying), .at = cell, .lethal = true, .after = g.pic.afterOf(&g.sim, .fromIndex(dying)) } }, .{ .from = .{ .x = 20, .y = 20 }, .wait = lands });
     g.sim.pool.move(&g.sim.lv, 3, cell);
     harness.staggerOnly(g, harness.foeId(1));
     var overlap: f32 = 0;
@@ -508,7 +509,7 @@ test "an arrow's rat flashes when the arrow gets there, not when the hit resolve
     harness.confirmUse(g, .shoot);
     const rat = harness.foeSlot(0);
     try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.hurt());
-    try std.testing.expectEqual(@as(f32, 0), g.pic.fx.flashOf(rat));
+    try std.testing.expectEqual(@as(f32, 0), g.pic.fx.impacts.flashOf(.fromIndex(rat)));
     const t = harness.framesUntil(g, rat, harness.flashing);
     std.debug.print("arrow 5 cells out: the rat flashes {d:.3} s after the shot, the arrow reaches it at {d:.3} s\n", .{ t, harness.SHOT_LANDS });
     try std.testing.expectApproxEqAbs(harness.SHOT_LANDS, t, harness.TEST_TOL);
@@ -612,7 +613,7 @@ test "a kick bumps the rat and lands at the bump's height, and the rat bites bac
     const hero = g.sim.heroSlot().?;
     const rat = harness.foeSlot(0);
     try std.testing.expect(g.sim.pool.get(harness.foeId(0)).?.hurt() and g.sim.heroActor().?.hurt());
-    try std.testing.expectEqual(@as(f32, 0), g.pic.fx.flashOf(rat));
+    try std.testing.expectEqual(@as(f32, 0), g.pic.fx.impacts.flashOf(.fromIndex(rat)));
     g.st = .{};
     var bumped: f32 = 0;
     var bumped_at: f32 = 0;
@@ -778,7 +779,7 @@ test "a foe the gas kills out of sight leaves nothing drawn and nothing said" {
     harness.use(g, .wait);
     try std.testing.expectEqual(@as(?*actor.Actor, null), g.sim.pool.get(harness.foeId(0)));
     try std.testing.expectEqual(@as(usize, 1), g.sim.kills);
-    try std.testing.expectEqual(@as(usize, 0), g.pic.fx.due_n);
+    try std.testing.expectEqual(@as(usize, 0), g.pic.fx.impacts.count());
     for (g.pic.fx.motes) |m| try std.testing.expect(m.life <= 0);
     try std.testing.expectEqualStrings("The last rat is dead.", g.sim.log.line(0).?);
     try std.testing.expect(std.mem.endsWith(u8, g.sim.log.line(1).?, "experience."));
@@ -979,7 +980,7 @@ test "a slime an arrow splits shows split as the arrow lands, though the gas eat
     const lands = harness.SHOT_LANDS;
     std.debug.print("an arrow 5 cells out splits a slime in gas: the new half shows {d:.3} s in, as the arrow lands at {d:.3} s, the gas still to land on the slime\n", .{ t, lands });
     try std.testing.expectApproxEqAbs(lands, t, harness.TEST_TOL);
-    try std.testing.expect(g.pic.fx.pending(slime));
+    try std.testing.expect(g.pic.fx.impacts.pending(.fromIndex(slime)));
     try std.testing.expectEqual(actor.Kind.slime_half, g.pic.pictured[slime].kind);
 }
 
@@ -995,7 +996,7 @@ test "a half the gas splits off a burning slime on the foes' turn burns no soone
     g.pic.catchUp(&g.sim);
     harness.use(g, .wait);
     const half = actor.Pool.slot(id) + 1;
-    try std.testing.expect(g.pic.split_from[half] != null and g.pic.fx.pending(half));
+    try std.testing.expect(g.pic.split_from[half] != null and g.pic.fx.impacts.pending(.fromIndex(half)));
     const when = showsAndLands(g, half);
     std.debug.print("a half the gas splits off a burning slime on the foes' turn: shows {d:.3} s in, its burn lands {d:.3} s in\n", .{ when.shows, when.lands });
     try std.testing.expect(when.lands >= when.shows);
@@ -1049,7 +1050,7 @@ test "a barrel broken out of sight stays remembered, with no blow drawn, until i
     try std.testing.expect(g.sim.lv.breakBarrel(p));
     g.sim.lv.lit[grid.Level.idx(p)] = false;
     g.pic.strike(&g.sim, g.cloud, .{ .barrel = p }, .{ .from = .{ .x = 24, .y = 20 }, .wait = 0.2 });
-    try std.testing.expect(!g.pic.fx.breaking(p));
+    try std.testing.expect(!g.pic.fx.impacts.breaking(p));
     try std.testing.expect(scene.barrelShownAt(g, p));
     game.castSight(g, g.sim.heroActor().?.at);
     try std.testing.expect(!scene.barrelShownAt(g, p));
@@ -1199,8 +1200,8 @@ test "a foe the gas kills stepping from dark to dark has its death landed by the
     var t: f32 = 0;
     while (!g.pic.quiet() and t < 1) : (t += harness.TEST_DT) game.update(g, harness.TEST_DT);
     game.update(g, harness.TEST_DT);
-    std.debug.print("a slime the gas kills sliding dark to dark: quiet {d:.3} s in, its death still due: {}\n", .{ t, g.pic.fx.pending(s) });
-    try std.testing.expect(!g.pic.fx.pending(s));
+    std.debug.print("a slime the gas kills sliding dark to dark: quiet {d:.3} s in, its death still due: {}\n", .{ t, g.pic.fx.impacts.pending(.fromIndex(s)) });
+    try std.testing.expect(!g.pic.fx.impacts.pending(.fromIndex(s)));
 }
 
 test "a foe with no place in the turn is stung as the archer's step lands, not before" {
@@ -1369,7 +1370,7 @@ test "a slime split off one not yet drawn waits for it" {
     g.pic.split_from[c] = p;
     g.pic.split_from[d] = c;
     const wait: f32 = 0.1;
-    g.pic.fx.strike(wait, .{ .impact = .{ .actor = .{ .slot = .fromIndex(p), .at = g.sim.pool.items[p].at, .lethal = false, .after = .{ .body = fx.Body.of(g.sim.pool.items[p], 1), .reveals = c } } }, .dir = null, .matter = .ooze });
+    g.pic.fx.strike(wait, .{ .impact = .{ .actor = .{ .slot = .fromIndex(p), .at = g.sim.pool.items[p].at, .lethal = false, .after = .{ .body = fx.Body.of(g.sim.pool.items[p], 1), .reveals = .fromIndex(c) } } }, .dir = null, .matter = .ooze });
     g.pic.catchUp(&g.sim);
     try std.testing.expect(g.pic.split_from[c] != null and g.pic.split_from[d] != null);
     const t = harness.framesUntil(g, d, harness.drawn);
@@ -1435,7 +1436,7 @@ test "a caustic bloat that bursts on the archer takes its place in the turn as a
     } else return error.NeverBurst;
     try std.testing.expectEqualSlices(u16, &.{ harness.foeId(0), harness.foeId(1) }, g.sim.order[0..g.sim.order_n]);
     try std.testing.expectApproxEqAbs(game.STAGGER_S + game.BUMP_LANDS + fx.FLASH_S, g.pic.busy, 1e-6);
-    try std.testing.expectEqual(@as(usize, 2), g.pic.fx.due_n);
+    try std.testing.expectEqual(@as(usize, 2), g.pic.fx.impacts.count());
     const busy = g.pic.busy;
     const t = harness.framesUntil(g, harness.foeSlot(1), harness.flashing);
     std.debug.print("a rat bites, then a caustic bloat bursts on the archer: the burst lands {d:.3} s in, the turn is busy {d:.3} s\n", .{ t, busy });

@@ -1,3 +1,5 @@
+const sprite_assets = @import("gfx/sprite_assets.zig");
+const sprite = @import("gfx/sprites.zig");
 const attacks = @import("game/attacks.zig");
 const std = @import("std");
 const items = @import("play/items.zig");
@@ -204,7 +206,7 @@ pub const Game = struct {
     cinema: cinema.Cinema = .{},
     rain: weather.Weather = .{},
     mini: scene.Minimap = .{},
-    sprites: look.Sprites = .{},
+    sprites: sprite.Sprites = .{},
     graphics_ready: bool = false,
     art: enum { stale, play, editor } = .stale,
     face: font.Face = .{},
@@ -551,7 +553,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
         },
         .blocked => return,
     }
-    g.pic.turnToward(g.sim.hero, d.delta().x);
+    g.pic.turnToward(.fromInt(g.sim.hero), d.delta().x);
     combat.endTurn(g);
 }
 
@@ -567,7 +569,7 @@ pub fn struggle(g: *Game) void {
 
 /// `late` seconds into the bump; the hit lands at its apex.
 pub fn heroBump(g: *Game, from: P, at: P, late: f32) presentation.Stroke {
-    _ = g.pic.bumpHeld(g.sim.heroSlot().?, at, late);
+    _ = g.pic.bumpHeld(.fromIndex(g.sim.heroSlot().?), at, late);
     return .{ .from = from, .wait = BUMP_LANDS - late };
 }
 
@@ -826,7 +828,7 @@ fn stepVignette(g: *Game, dt: f32) void {
         const max = g.sim.lifeMax();
         return g.vignette.step(dt, 0, max, max);
     };
-    g.vignette.step(dt, g.pic.fx.flashOf(i), g.pic.pictured[i].hp, g.pic.pictured[i].max);
+    g.vignette.step(dt, g.pic.fx.impacts.flashOf(.fromIndex(i)), g.pic.pictured[i].hp, g.pic.pictured[i].max);
 }
 
 pub fn middle(v: rl.Vector2) [2]f32 {
@@ -906,14 +908,14 @@ pub fn prepare(g: *Game) void {
     g.art = .play;
 }
 
-pub fn mapAssets(g: *Game) look.Assets {
-    var need = look.Assets.of(&g.sim.lv);
-    need.barrel = need.barrel or g.pic.fx.barrels_due > 0;
+pub fn mapAssets(g: *Game) sprite_assets.Assets {
+    var need = sprite_assets.Assets.of(&g.sim.lv);
+    need.barrel = need.barrel or g.pic.fx.impacts.hasBarrels();
     for (g.sim.pool.slice(), 0..) |a, i| {
         const posing = a.alive and a.disguised;
         if (a.alive) need.body(a.kind);
         if (posing) need.beneath(a.under, a.at);
-        if (g.pic.standing(&g.sim, i) or g.pic.fx.dying[i] > 0) need.body(g.pic.pictured[i].kind);
+        if (g.pic.standing(&g.sim, i) or g.pic.fx.impacts.isDying(.fromIndex(i))) need.body(g.pic.pictured[i].kind);
         if (posing or g.pic.masked.isSet(i)) need.mimic_closed = true;
     }
     return need;

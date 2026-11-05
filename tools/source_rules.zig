@@ -18,7 +18,8 @@ const INDEPENDENT = [_][]const u8{
     "edit/widgets.zig",       "edit/thumbnails.zig",   "edit/tool_catalog.zig",   "edit/name_field.zig",
     "edit/history.zig",       "edit/text_catalog.zig", "ui/character_view.zig",   "ui/character_layout.zig",
     "ui/character_stats.zig", "ui/item_card.zig",      "core/input_bindings.zig", "core/input_names.zig",
-    "gfx/light_model.zig",    "gfx/light_gpu.zig",
+    "gfx/light_model.zig",    "gfx/light_gpu.zig",     "gfx/sprite_assets.zig",   "gfx/sprite_materials.zig",
+    "gfx/impact_queue.zig",   "gfx/effect_state.zig",
 };
 
 fn independentHelper(path: []const u8) bool {
@@ -29,6 +30,12 @@ fn independentHelper(path: []const u8) bool {
 }
 
 fn allowed(owner: []const u8, target: []const u8) bool {
+    if (std.mem.eql(u8, owner, "gfx/sprite_assets.zig") or std.mem.eql(u8, owner, "gfx/sprite_materials.zig")) {
+        if (std.mem.eql(u8, target, "gfx/sprites.zig")) return false;
+    }
+    if (std.mem.eql(u8, owner, "gfx/impact_queue.zig") or std.mem.eql(u8, owner, "gfx/effect_state.zig")) {
+        if (std.mem.eql(u8, target, "gfx/fx.zig")) return false;
+    }
     if (std.mem.eql(u8, owner, "core/input_bindings.zig") or std.mem.eql(u8, owner, "core/input_names.zig")) {
         if (std.mem.eql(u8, target, "core/input.zig")) return false;
     }
@@ -91,8 +98,14 @@ test "source boundaries reject rendering and application imports in domain code"
     try std.testing.expect((try check(alloc, "game/attacks.zig", "const sim = @import(\"sim.zig\");")) == null);
     try std.testing.expect((try check(alloc, "core/input_names.zig", "const input = @import(\"input.zig\");")) != null);
     try std.testing.expect((try check(alloc, "gfx/light_model.zig", "const light = @import(\"light.zig\");")) != null);
+    for ([_][]const u8{ "gfx/sprite_assets.zig", "gfx/sprite_materials.zig" }) |owner| {
+        try std.testing.expect((try check(alloc, owner, "const sprite = @import(\"sprites.zig\");")) != null);
+    }
+    for ([_][]const u8{ "gfx/impact_queue.zig", "gfx/effect_state.zig" }) |owner| {
+        try std.testing.expect((try check(alloc, owner, "const fx = @import(\"fx.zig\");")) != null);
+    }
     try std.testing.expect((try check(alloc, "play/items.zig", "const bad = @import(\"../core/../ui/menu.zig\");")) != null);
-    std.debug.print("source boundaries: 33 forbidden imports rejected, 7 allowed imports retained\n", .{});
+    std.debug.print("source boundaries: 37 forbidden imports rejected, 7 allowed imports retained\n", .{});
 }
 
 test "source boundaries recognize real imports and permit integration tests" {

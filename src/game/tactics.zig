@@ -49,7 +49,7 @@ fn warCry(g: *game.Game, from: P, rank: u8) void {
         a.awake = true;
         if (!g.sim.procStatus(a, .fright, rules.WarCry.chance(rank))) continue;
         if (a.frighten(rules.WarCry.turns(rank))) g.sim.sayAt(a.at, actor.FLEES, .{actor.row(a.kind).name});
-        g.pic.settleSlot(&g.sim, game.CAST_S, slot);
+        g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(slot));
     }
 }
 
@@ -137,9 +137,9 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
                     if (!actor.holds(a.kind, &g.sim.lv, to) or !area.has(to)) break;
                     displace(g, id, to);
                 }
-                if (g.sim.displaced.isSet(actor.Pool.slot(id))) _ = g.pic.glideToHeld(actor.Pool.slot(id), a.at, -game.CAST_S);
+                if (g.sim.displaced.isSet(actor.Pool.slot(id))) _ = g.pic.glideToHeld(.fromIndex(actor.Pool.slot(id)), a.at, -game.CAST_S);
                 _ = g.sim.pinFor(a, rules.GravityWell.pins(rank));
-                g.pic.settleSlot(&g.sim, game.CAST_S, actor.Pool.slot(id));
+                g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(id)));
             }
             g.sim.flowed = false;
             g.pic.fx.shimmer(mathx.centre(at), look.WARD);
@@ -154,7 +154,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
             for (area.slice()) |p| {
                 const id = g.sim.lv.who(p);
                 const a = g.sim.pool.get(id) orelse continue;
-                if (a.foe() and ignite(g, id)) g.pic.settleSlot(&g.sim, game.CAST_S, actor.Pool.slot(id));
+                if (a.foe() and ignite(g, id)) g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(id)));
             }
         },
         else => @compileError(@tagName(act) ++ " has no ground tactical use"),
@@ -171,7 +171,7 @@ fn detonate(g: *game.Game, comptime act: skillbar.Act, at: P, from: P) void {
     const target = g.sim.pool.get(struck).?;
     const fuel: i32 = fuelOf(act, target);
     @field(target, @tagName(Skill.FUEL)) = .{};
-    g.pic.settleSlot(&g.sim, game.CAST_S, actor.Pool.slot(struck));
+    g.pic.settleSlot(&g.sim, game.CAST_S, .fromIndex(actor.Pool.slot(struck)));
     const area = Skill.area(&g.sim.lv, at);
     const ids = skills.foesIn(g, area);
     var raw = attacks.rawFor(&g.sim, act, false);
@@ -236,7 +236,7 @@ pub fn entered(g: *game.Game, id: u16) void {
     h.tactics.overwatch = null;
     combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), rules.Overwatch.VERB, .{ .from = h.at, .wait = 0 }, id, flight);
     h.tactics.steady = 0;
-    if (g.pic.owed[actor.Pool.slot(id)].reaction) |*r| r.recovery = g.pic.afterOf(&g.sim, g.sim.heroSlot().?);
+    if (g.pic.owed[actor.Pool.slot(id)].reaction) |*r| r.recovery = g.pic.afterOf(&g.sim, .fromIndex(g.sim.heroSlot().?));
 }
 
 pub fn watches(lv: *const grid.Level, from: P, d: mathx.Dir, p: P) bool {

@@ -87,7 +87,7 @@ fn aimAt(run: *game.Game, by: ?input.Button, act: skillbar.Act, from: P, mark: ?
     };
     aiming(run, by, act);
     run.mode.aim.mark = to;
-    run.pic.turnToward(run.sim.hero, to.x - from.x);
+    run.pic.turnToward(.fromInt(run.sim.hero), to.x - from.x);
     rememberTarget(run);
 }
 
@@ -176,7 +176,7 @@ pub fn aimable(run: *const game.Game, from: P, to: P) bool {
 fn leap(run: *game.Game, from: P, act: skillbar.Act, to: P) void {
     game.heroTo(run, to);
     run.pic.glide[run.sim.heroSlot().?] = glide.Glide.rest(run.sim.heroActor().?);
-    run.pic.turnToward(run.sim.hero, to.x - from.x);
+    run.pic.turnToward(.fromInt(run.sim.hero), to.x - from.x);
     if (act.teleports()) {
         run.pic.fx.shimmer(mathx.centre(from), look.WARD);
         run.pic.fx.shimmer(mathx.centre(to), look.WARD);
@@ -363,9 +363,9 @@ fn rushTo(run: *game.Game, from: P, comptime action: skillbar.Act, mark: P) void
     const occupied = run.sim.lv.who(mark) != grid.NO_ONE;
     const stop = if (occupied) Skill.stop(from, mark) else mark;
     if (!stop.eq(from)) game.heroTo(run, stop);
-    const stroke = game.presentation.Stroke{ .from = stop, .wait = run.pic.glideToHeld(run.sim.heroSlot().?, stop, 0) };
+    const stroke = game.presentation.Stroke{ .from = stop, .wait = run.pic.glideToHeld(.fromIndex(run.sim.heroSlot().?), stop, 0) };
     if (occupied) combat.knock(run, action, direction, stroke) else sayDone(run, action);
-    run.pic.turnToward(run.sim.hero, direction.delta().x);
+    run.pic.turnToward(.fromInt(run.sim.hero), direction.delta().x);
     run.pic.lead = stroke.wait;
 }
 
@@ -375,7 +375,7 @@ pub fn nudgeAim(run: *game.Game, d: mathx.Dir) void {
     if (run.mode.aim.act().attack() != null and run.mode.aim.act().reticle() != .bow) if (targetToward(run, hero.at, d)) |at| {
         run.mode.aim.mark = at;
         rememberTarget(run);
-        run.pic.turnToward(run.sim.hero, at.x - hero.at.x);
+        run.pic.turnToward(.fromInt(run.sim.hero), at.x - hero.at.x);
         return;
     };
     var to = run.mode.aim.mark.add(d.delta());
@@ -389,7 +389,7 @@ pub fn nudgeAim(run: *game.Game, d: mathx.Dir) void {
     }
     run.mode.aim.mark = to;
     rememberTarget(run);
-    run.pic.turnToward(run.sim.hero, to.x - hero.at.x);
+    run.pic.turnToward(.fromInt(run.sim.hero), to.x - hero.at.x);
 }
 
 fn targetToward(run: *game.Game, from: P, d: mathx.Dir) ?P {

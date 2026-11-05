@@ -103,7 +103,7 @@ pub const Cinema = struct {
     }
 
     pub fn unload(self: *Cinema) void {
-        look.unloadAll(self);
+        raster.unloadAll(self);
     }
 
     pub fn prepare(self: *Cinema, lv: *const grid.Level, l: *const light.Light, view: grid.Box, flames: []const light.Flame) void {

@@ -553,3 +553,8 @@ pub fn toDefaults(s: anytype, comptime fields: []const []const u8) void {
     @setEvalBranchQuota(20_000);
     inline for (fields) |f| @field(s, f) = comptime std.meta.fieldInfo(T, @field(std.meta.FieldEnum(T), f)).defaultValue().?;
 }
+
+pub fn cellHash(seed: u64, p: P) u64 {
+    const coordinates = [2]i32{ p.x, p.y };
+    return std.hash.Wyhash.hash(seed, std.mem.asBytes(&coordinates));
+}

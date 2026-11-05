@@ -104,7 +104,7 @@ pub const Cloud = struct {
     }
 
     pub fn unload(self: *Cloud) void {
-        look.unloadAll(self);
+        raster.unloadAll(self);
     }
 
     /// `ox, oy` is where the floor's top-left corner lands.

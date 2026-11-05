@@ -28,6 +28,11 @@ pub fn main() !void {
 }
 
 test {
+    _ = @import("gfx/effect_state.zig");
+    _ = @import("gfx/impact_queue.zig");
+    _ = @import("gfx/sprite_assets.zig");
+    _ = @import("gfx/sprites.zig");
+    _ = @import("gfx/sprite_materials.zig");
     _ = @import("save_data.zig");
     _ = @import("save_format.zig");
     _ = @import("core/wire.zig");

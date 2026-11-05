@@ -1,3 +1,4 @@
+const sprite_assets = @import("../gfx/sprite_assets.zig");
 const tool_catalog = @import("tool_catalog.zig");
 const name_field = @import("name_field.zig");
 pub const kindName = tool_catalog.kindName;
@@ -831,7 +832,7 @@ fn prepare(ed: *Editor, g: *game.Game) void {
     ed.preview();
     if (g.art == .editor) return;
     g.light.clearFigures();
-    g.sprites.sync(look.Assets.everything());
+    g.sprites.sync(sprite_assets.Assets.everything());
     g.art = .editor;
 }
 

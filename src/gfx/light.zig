@@ -1,3 +1,4 @@
+const sprite_assets = @import("sprite_assets.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -696,7 +697,7 @@ pub const Light = struct {
         self.gpu = light_gpu.Gpu.load();
     }
 
-    pub fn syncFigures(self: *Light, figures: *const [look.FIGURES]?rl.Texture2D) void {
+    pub fn syncFigures(self: *Light, figures: *const [sprite_assets.FIGURES]?rl.Texture2D) void {
         self.gpu.syncFigures(figures);
     }
 

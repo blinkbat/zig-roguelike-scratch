@@ -1,3 +1,4 @@
+const sprite_assets = @import("sprite_assets.zig");
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
@@ -67,7 +68,7 @@ const RANK = blk: {
     var n: u8 = NONE + 1;
     for ([2]bool{ false, true }) |sheet| {
         for (std.enums.values(Ground)) |g| {
-            if (look.GROUND_SHEETS.contains(g) != sheet) continue;
+            if (sprite_assets.GROUND_SHEETS.contains(g) != sheet) continue;
             r.set(g, n);
             n += 1;
         }
@@ -552,8 +553,8 @@ pub const Banks = struct {
 test "every ground without a sheet lies under every ground with one, and each keeps its order among its own" {
     for (std.enums.values(Ground)) |a| {
         for (std.enums.values(Ground)) |b| {
-            const sa = look.GROUND_SHEETS.contains(a);
-            const sb = look.GROUND_SHEETS.contains(b);
+            const sa = sprite_assets.GROUND_SHEETS.contains(a);
+            const sb = sprite_assets.GROUND_SHEETS.contains(b);
             const want = if (sa == sb) @intFromEnum(a) < @intFromEnum(b) else sb;
             try std.testing.expectEqual(want, a.rank() < b.rank());
         }
@@ -564,7 +565,7 @@ test "every ground without a sheet lies under every ground with one, and each ke
 }
 
 fn paintedAsTested() !void {
-    const s = look.GROUND_SHEETS;
+    const s = sprite_assets.GROUND_SHEETS;
     if (!(s.contains(.water) and s.contains(.dirt) and s.contains(.grass)) or s.contains(.cobble) or s.contains(.sand)) return error.SkipZigTest;
 }
 

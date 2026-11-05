@@ -1,3 +1,4 @@
+const sprite = @import("../gfx/sprites.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -138,7 +139,7 @@ pub fn overviewBox() rl.Rectangle {
     return raster.rect(CANVAS_LEFT, FOOT_MID - ZOOM_PX / 2, menu.ACTION_BOX.x, ZOOM_PX);
 }
 
-pub fn draw(panel: Panel, face: *const font.Face, sprites: *const look.Sprites, class: hero.Class, growth: *const progress.State, view: View, device: input.Device, loadout: Loadout, surface: menu.Surface) void {
+pub fn draw(panel: Panel, face: *const font.Face, sprites: *const sprite.Sprites, class: hero.Class, growth: *const progress.State, view: View, device: input.Device, loadout: Loadout, surface: menu.Surface) void {
     switch (panel) {
         .skills => drawSkills(face, sprites, class, growth, view.cursor, loadout),
         .passives => {
@@ -300,7 +301,7 @@ fn skillAlpha(class: hero.Class, growth: *const progress.State, s: progress.Skil
     };
 }
 
-fn drawSkills(face: *const font.Face, sprites: *const look.Sprites, class: hero.Class, growth: *const progress.State, cursor: usize, loadout: Loadout) void {
+fn drawSkills(face: *const font.Face, sprites: *const sprite.Sprites, class: hero.Class, growth: *const progress.State, cursor: usize, loadout: Loadout) void {
     frame(face, "CLASS SKILLS", growth.active_points);
     const skills = progress.skills(class);
     for (skills, 0..) |s, i| if (s.parent) |parent| {

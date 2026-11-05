@@ -382,7 +382,10 @@ fn included(path: []const u8) bool {
 }
 
 const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
-const LONE_SOURCES = [_][]const u8{ "app.zig", "game.zig", "save.zig", "save_data.zig", "gfx/look.zig", "gfx/fx.zig" };
+const LONE_SOURCES = [_][]const u8{
+    "app.zig",              "game.zig",             "save.zig",              "save_data.zig",   "gfx/look.zig",             "gfx/fx.zig",
+    "gfx/effect_state.zig", "gfx/impact_queue.zig", "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig",
+};
 const EXCLUDED_SOURCES = [_][]const u8{ "game/shots.zig", "game/harness.zig", "map/atlas_text.zig", "map/script_text.zig", "edit/text_catalog.zig", "edit/text_panel.zig" };
 const KEYBOARD_SOURCE = "ui/naming.zig";
 const KEYBOARD_DECL = "LETTERS";
@@ -531,7 +534,8 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (std.mem.startsWith(u8, rel, "ui/")) return "Interface";
         if (std.mem.eql(u8, rel, "play/items.zig")) return "Items";
         if (std.mem.eql(u8, rel, "play/skillbar.zig")) return "Skills";
-        if (std.mem.eql(u8, rel, "gfx/fx.zig")) return "Effects";
+        if (oneOf(rel, &.{ "gfx/fx.zig", "gfx/effect_state.zig", "gfx/impact_queue.zig" })) return "Effects";
+        if (oneOf(rel, &.{ "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig" })) return "Look";
     }
     const base = std.fs.path.basename(path);
     return humanize(a, if (std.mem.endsWith(u8, base, ZIG)) base[0 .. base.len - ZIG.len] else base);
@@ -972,9 +976,14 @@ test "text catalog indexes live item skill and speech sources with complete meta
     try c.scan("src/play/items.zig", @embedFile("../play/items.zig"));
     try c.scan("src/play/tactics.zig", @embedFile("../play/tactics.zig"));
     try c.scan("src/gfx/fx.zig", @embedFile("../gfx/fx.zig"));
+    for ([_][]const u8{ "gfx/effect_state.zig", "gfx/impact_queue.zig", "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig" }) |source| {
+        try std.testing.expect(included(source));
+    }
+    try c.scan("src/gfx/effect_state.zig", @embedFile("../gfx/effect_state.zig"));
     var bow = false;
     var barrier = false;
     var speech: usize = 0;
+    var resistance = false;
     for (c.entries()) |e| {
         try std.testing.expect(e.category.len > 0 and e.owner.len > 0 and e.role.len > 0 and e.context.len > 0);
         if (std.mem.eql(u8, e.context, "play.items.SPECS.war_bow.name")) {
@@ -988,8 +997,15 @@ test "text catalog indexes live item skill and speech sources with complete meta
             try std.testing.expectEqualStrings("Arcane barrier", e.owner);
         }
         if (std.mem.eql(u8, e.context, "gfx.fx.FRIGHT_WORDS")) speech += 1;
+        if (std.mem.eql(u8, e.text, "Status resistance")) {
+            resistance = true;
+            try std.testing.expect(e.editable);
+            try std.testing.expectEqualStrings("Effects", e.category);
+            try std.testing.expectEqualStrings("src/gfx/effect_state.zig", e.path);
+        }
     }
     try std.testing.expect(bow and barrier);
+    try std.testing.expect(resistance);
     try std.testing.expectEqual(@import("../gfx/fx.zig").FRIGHT_WORDS.len, speech);
     std.debug.print("text catalog: {d} live entries have nonempty metadata; item/skill context and all {d} fright utterances found\n", .{ c.entries().len, speech });
 }

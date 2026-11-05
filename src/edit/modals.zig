@@ -1,3 +1,4 @@
+const sprite_assets = @import("../gfx/sprite_assets.zig");
 const tool_catalog = @import("tool_catalog.zig");
 const widgets = @import("widgets.zig");
 const std = @import("std");
@@ -220,7 +221,7 @@ fn seenFacts(s: editor.Seen, f: *Facts) void {
             if (t.liquid()) f.put("A liquid: gas spreads over it, a trail bridges it", .{});
             if (t.wet()) f.put("Fire landing on it boils off as " ++ gas.STEAM_NAME, .{});
             if (look.under(t)) |u| f.put("Drawn over the ground beside it, else {s}", .{@tagName(u)});
-            if (dual.of(t)) |gr| if (look.GROUND_SHEETS.contains(gr)) f.put("Ground {s}: its edges meet the grounds below it", .{@tagName(gr)});
+            if (dual.of(t)) |gr| if (sprite_assets.GROUND_SHEETS.contains(gr)) f.put("Ground {s}: its edges meet the grounds below it", .{@tagName(gr)});
             if (look.castsPicture(t)) f.put("Stands up and throws a shadow", .{});
             if (t.opened() != null) {
                 f.put("Opened by stepping toward it or interacting", .{});

@@ -1,3 +1,4 @@
+const sprite = @import("sprites.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -331,7 +332,7 @@ const ITEM_LINES = std.EnumArray(items.Kind, []const [4]f32).init(.{
 
 pub const SKILL_PX: i32 = 30;
 
-pub fn drawSkill(sprites: *const look.Sprites, a: skillbar.Act, x: i32, y: i32, alpha: f32) void {
+pub fn drawSkill(sprites: *const sprite.Sprites, a: skillbar.Act, x: i32, y: i32, alpha: f32) void {
     const ink = look.fade(rl.Color.white, alpha);
     const t = sprites.skills orelse return inkSkill(a, x, y, ink);
     raster.blit(t, raster.rect(skillX(a), 0, SKILL_PX, SKILL_PX), raster.rect(x, y, SKILL_PX, SKILL_PX), ink);
@@ -353,16 +354,16 @@ fn inkSkills() void {
 /// An item glyph's side: beside a list row's text, or filling a paperdoll cell.
 pub const ItemSize = enum(i32) { row = 24, cell = 48 };
 
-pub fn drawItem(sprites: *const look.Sprites, k: items.Kind, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
+pub fn drawItem(sprites: *const sprite.Sprites, k: items.Kind, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
     drawIcon(sprites, @intFromEnum(k), size, cx, cy, ink);
 }
 
 /// A supply's glyph is its skill's.
-pub fn drawSupply(sprites: *const look.Sprites, k: consumable.Kind, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
+pub fn drawSupply(sprites: *const sprite.Sprites, k: consumable.Kind, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
     drawIcon(sprites, ITEM_KINDS.len + @intFromEnum(k), size, cx, cy, ink);
 }
 
-fn drawIcon(sprites: *const look.Sprites, i: usize, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
+fn drawIcon(sprites: *const sprite.Sprites, i: usize, size: ItemSize, cx: i32, cy: i32, ink: rl.Color) void {
     const px = @intFromEnum(size);
     const x = cx - @divTrunc(px, 2);
     const y = cy - @divTrunc(px, 2);
@@ -410,7 +411,7 @@ fn baked(w: i32, h: i32, comptime paint: fn () void) ?rl.Texture2D {
     rl.endTextureMode();
     var img = rl.loadImageFromTexture(target.texture) catch return null;
     rl.imageFlipVertical(&img);
-    return look.Sprites.toTexture(img);
+    return sprite.Sprites.toTexture(img);
 }
 
 const SKILL_GRID: f32 = 32;
