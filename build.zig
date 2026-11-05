@@ -107,7 +107,7 @@ const Root = struct {
     optimize: std.builtin.OptimizeMode,
     strip: bool,
     raylib: *std.Build.Dependency,
-    assets: []const []const u8,
+    assets: Assets,
     macos_sdk: ?*std.Build.Dependency,
 
     fn module(r: Root) *std.Build.Module {
@@ -119,9 +119,9 @@ const Root = struct {
         }
         m.linkLibrary(r.raylib.artifact("raylib"));
         m.addImport("raylib", r.raylib.module("raylib"));
-        for (r.assets) |name| m.addAnonymousImport(name, .{ .root_source_file = r.b.path(r.b.fmt(ASSETS ++ "/{s}", .{name})) });
+        for (r.assets.names, r.assets.paths) |name, path| m.addAnonymousImport(name, .{ .root_source_file = r.b.path(path) });
         const listed = r.b.addOptions();
-        listed.addOption([]const []const u8, "names", r.assets);
+        listed.addOption([]const []const u8, "names", r.assets.names);
         listed.addOption([]const u8, "source_root", r.b.pathFromRoot("."));
         m.addImport("assets", listed.createModule());
         return m;
@@ -130,23 +130,50 @@ const Root = struct {
 
 const EMBEDDED = [_][]const u8{ ".png", ".ttf", ".txt" };
 
-/// Embedded by filename; `assets.names` lets callers check for optional artwork.
-fn assetNames(b: *std.Build) []const []const u8 {
+const UNEMBEDDED = [_][]const u8{ "source", "backup" };
+
+const Assets = struct { names: []const []const u8, paths: []const []const u8 };
+
+const Asset = struct {
+    name: []const u8,
+    path: []const u8,
+    fn lessThan(_: void, a: Asset, c: Asset) bool {
+        return std.mem.lessThan(u8, a.name, c.name);
+    }
+};
+
+/// Embedded by filename from any category folder; `assets.names` lets callers check for optional artwork.
+fn assetNames(b: *std.Build) Assets {
     var dir = b.build_root.handle.openDir(ASSETS, .{ .iterate = true }) catch |e|
         std.debug.panic(ASSETS ++ "/ could not be opened ({s})", .{@errorName(e)});
     defer dir.close();
-    var names = std.ArrayList([]const u8).init(b.allocator);
-    var it = dir.iterate();
+    var found = std.ArrayList(Asset).init(b.allocator);
+    var it = dir.walk(b.allocator) catch |e| std.debug.panic(ASSETS ++ "/ could not be walked ({s})", .{@errorName(e)});
+    defer it.deinit();
     while (it.next() catch |e| std.debug.panic(ASSETS ++ "/ could not be listed ({s})", .{@errorName(e)})) |ent| {
-        if (ent.kind != .file or !embedded(ent.name)) continue;
-        names.append(b.dupe(ent.name)) catch @panic("OOM listing " ++ ASSETS ++ "/");
+        if (ent.kind != .file or !embedded(ent.basename) or unembedded(ent.path)) continue;
+        const path = b.fmt(ASSETS ++ "/{s}", .{ent.path});
+        std.mem.replaceScalar(u8, path, '\\', '/');
+        found.append(.{ .name = b.dupe(ent.basename), .path = path }) catch @panic("OOM listing " ++ ASSETS ++ "/");
     }
-    std.mem.sort([]const u8, names.items, {}, struct {
-        fn lessThan(_: void, a: []const u8, c: []const u8) bool {
-            return std.mem.lessThan(u8, a, c);
-        }
-    }.lessThan);
-    return names.items;
+    std.mem.sort(Asset, found.items, {}, Asset.lessThan);
+    const names = b.allocator.alloc([]const u8, found.items.len) catch @panic("OOM listing " ++ ASSETS ++ "/");
+    const paths = b.allocator.alloc([]const u8, found.items.len) catch @panic("OOM listing " ++ ASSETS ++ "/");
+    for (found.items, 0..) |a, i| {
+        if (i > 0 and std.mem.eql(u8, a.name, names[i - 1]))
+            std.debug.panic("{s} and {s} share a filename; embedded assets are keyed by filename", .{ paths[i - 1], a.path });
+        names[i] = a.name;
+        paths[i] = a.path;
+    }
+    return .{ .names = names, .paths = paths };
+}
+
+fn unembedded(path: []const u8) bool {
+    const top = path[0 .. std.mem.indexOfAny(u8, path, "/\\") orelse return false];
+    for (UNEMBEDDED) |skip| {
+        if (std.mem.eql(u8, top, skip)) return true;
+    }
+    return false;
 }
 
 fn embedded(name: []const u8) bool {

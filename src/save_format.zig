@@ -239,7 +239,7 @@ pub fn validate(snapshot: *Snapshot) !void {
     try validateLevel(&run.lv, &run.pool, &run.ground);
     try validateLog(&run.log);
     if (snapshot.map) |*map| {
-        if (map.node_n == 0 or map.node_n > atlas.MAX_NODES or snapshot.node >= map.node_n) return error.Damaged;
+        if (!atlas.holdsNodes(map.node_n, snapshot.node)) return error.Damaged;
         if (map.start.node >= map.node_n or !grid.Level.inside(map.start.at)) return error.Damaged;
         try validateDoors(&run.lv, &map.node[snapshot.node]);
         for (map.nodes(), 0..) |*node, index| {

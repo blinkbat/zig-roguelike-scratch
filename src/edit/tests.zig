@@ -44,20 +44,24 @@ test "editor input gives modal and view changes priority over canvas gestures" {
     std.debug.print("editor input: modal opening, modal dismissal and view switching consume their canvas clicks\n", .{});
 }
 
-test "editor workspaces retain a useful viewport and shape hit targets do not overlap" {
+test "editor panels leave a useful map between them and shape hit targets do not overlap" {
     try std.testing.expectEqual(@as(i32, 24), widgets.TEXT);
     try std.testing.expect(widgets.DETAIL >= 20);
-    for (@import("../core/window.zig").SCREENS) |screen| {
-        try std.testing.expect(screen.y - panel.WORKSPACE_TOP >= 380);
-        try std.testing.expect(screen.x - widgets.PANEL_W > grid.W * 8);
+    const window = @import("../core/window.zig");
+    for (window.SCREENS ++ [_]P{window.WINDOW}) |screen| {
+        const c = editor.Editor.canvasOf(screen);
+        try std.testing.expect(c.height >= grid.H * 8);
+        if (screen.x >= window.WINDOW_W) try std.testing.expect(c.width >= grid.W * 8);
+        try std.testing.expect(c.width >= @as(f32, @floatFromInt(@divTrunc(screen.x, 3))));
     }
-    for (editor.SHAPES, 0..) |_, i| {
-        const r = panel.shapeSlot(panel.WORKSPACE_TOP, i);
-        try std.testing.expect(r.x >= widgets.PAD and r.x + r.width <= widgets.PANEL_W - widgets.PAD);
-        try std.testing.expect(r.width >= 120 and r.height >= widgets.TEXT + 8);
-        for (0..i) |j| try std.testing.expect(!rl.checkCollisionRecs(r, panel.shapeSlot(panel.WORKSPACE_TOP, j)));
+    const side = editor.SIDE;
+    for (panel.PAINT_SHAPES, 0..) |_, i| {
+        const r = panel.shapeSlot(side, widgets.TOP_H, i);
+        try std.testing.expect(r.x >= widgets.PAD and r.x + r.width <= widgets.SIDE_W - widgets.PAD);
+        try std.testing.expect(r.width >= 100 and r.height >= widgets.TEXT + 8);
+        for (0..i) |j| try std.testing.expect(!rl.checkCollisionRecs(r, panel.shapeSlot(side, widgets.TOP_H, j)));
     }
-    std.debug.print("editor layout: 3 supported screens retain at least 380px of workspace; 6 readable shape targets stay separate\n", .{});
+    std.debug.print("editor layout: the map fits whole at zoom 8 from the default window up; {d} readable shape targets stay separate\n", .{panel.PAINT_SHAPES.len});
 }
 
 test "disabled editor controls expose their tooltip without accepting a click" {
@@ -954,6 +958,45 @@ test "the eyedropper refused on a procgen node leaves both inks as they were" {
     try std.testing.expectEqualStrings(editor.GENERATED, ed.said.text());
     try std.testing.expectEqual(inks.get(.first), ed.ink.get(.first));
     try std.testing.expectEqual(inks.get(.second), ed.ink.get(.second));
+}
+
+test "a tool a procgen node refuses gives way to the door with its own tab shown" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    ed.select(1);
+    ed.setTool(.paint);
+    try std.testing.expectEqual(editor.Family.terrain, ed.family);
+    ed.select(ed.map.add(.{ .procgen = .{ .floor = .{ .wilds = .{} } } }).?);
+    try std.testing.expect(ed.tool.eql(.door));
+    try std.testing.expectEqual(editor.Family.doors, ed.family);
+    try std.testing.expect(ed.family_tool.get(.doors).eql(.door));
+}
+
+test "leaving Select keeps the foe it was taken up with" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    ed.select(1);
+    ed.setTool(.{ .foe = .slime });
+    ed.toggleSelect();
+    try std.testing.expectEqual(editor.Shape.select, ed.shape);
+    ed.toggleSelect();
+    try std.testing.expect(ed.shape != .select);
+    try std.testing.expect(ed.tool.eql(.{ .foe = .slime }));
+    try std.testing.expectEqual(editor.Family.foes, ed.family);
+}
+
+test "a foe taken up outside the listed type lifts the filter so its row shows" {
+    const ed = try testBespoke();
+    defer ed.destroy();
+    ed.select(1);
+    const other = for (actor.FOES) |k| {
+        if (actor.row(k).foe_type != actor.row(.slime).foe_type) break k;
+    } else unreachable;
+    ed.foe_type = actor.row(.slime).foe_type;
+    ed.setTool(.{ .foe = .slime });
+    try std.testing.expectEqual(actor.row(.slime).foe_type, ed.foe_type);
+    ed.setTool(.{ .foe = other });
+    try std.testing.expect(ed.foe_type == null);
 }
 
 test "a pasted barrel hanging off the map counts as not fitting, as a torch does" {

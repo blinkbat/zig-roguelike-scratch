@@ -17,6 +17,11 @@ pub const DESCRIPTION = std.fmt.comptimePrint("Arrow damage. Pins for {d}-{d} tu
 pub const Pin = struct {
     turns: u8 = 0,
 
+    /// Held now: no step, leap or rush of its own, and no knock or pull moves it.
+    pub fn holding(self: Pin) bool {
+        return self.turns > 0;
+    }
+
     /// One of its turns: whether it is held this turn.
     pub fn hold(self: *Pin) bool {
         return resilience.wearTurn(&self.turns);

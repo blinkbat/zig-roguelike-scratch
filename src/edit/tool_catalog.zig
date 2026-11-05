@@ -23,6 +23,35 @@ pub fn kindName(k: actor.Kind) [:0]const u8 {
     };
 }
 
+/// The tabs the brush panel is filed under.
+pub const Family = enum {
+    terrain,
+    props,
+    foes,
+    folk,
+    doors,
+
+    pub fn tip(f: Family) [:0]const u8 {
+        return switch (f) {
+            .terrain => "Paint tiles in a shape, from two inks",
+            .props => "Barrels and torches",
+            .foes => "Foes, filed by type",
+            .folk => "Folk who talk, and their dialog",
+            .doors => "Doors, the links between them, and where the map starts",
+        };
+    }
+
+    /// The first tool filed under it.
+    pub fn first(f: Family) Tool {
+        for (TOOLS) |t| {
+            if (t.family() == f) return t;
+        }
+        unreachable;
+    }
+};
+
+pub const FAMILIES = std.enums.values(Family);
+
 pub const Tool = union(enum) {
     paint,
     barrel,
@@ -32,6 +61,16 @@ pub const Tool = union(enum) {
     door,
     link,
     start,
+
+    pub fn family(tool: Tool) Family {
+        return switch (tool) {
+            .paint => .terrain,
+            .barrel, .torch => .props,
+            .foe => .foes,
+            .folk => .folk,
+            .door, .link, .start => .doors,
+        };
+    }
 
     pub fn fits(tool: Tool, node: *const atlas.Node) bool {
         return !node.unrolled() or !tool.generated();
@@ -127,6 +166,7 @@ comptime {
     @setEvalBranchQuota(10_000);
     std.debug.assert(TOOLS.len == Desk.TOOL_KEYS.len);
     for (actor.FOES) |k| std.debug.assert(k.stocked());
+    for (FAMILIES) |f| _ = f.first();
 }
 
 /// How the paint tool lays its ink, in `Desk.SHAPE_KEYS`' order; a selection is any tool's.

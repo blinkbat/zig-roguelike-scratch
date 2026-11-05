@@ -34,7 +34,7 @@ end
 for x = CUT, W - CUT - 1 do rail(x, RAIL); rail(x, H - 1 - RAIL) end
 for y = CUT, H - CUT - 1 do rail(RAIL, y); rail(W - 1 - RAIL, y) end
 
-local png = root .. 'assets/hud-border.png'
+local png = root .. 'assets/ui/hud-border.png'
 local canonical = root .. 'assets/source/hud-border.aseprite'
 for _, path in ipairs({source, canonical, png}) do
   local input = io.open(path, 'rb')

@@ -224,6 +224,24 @@ comptime {
     }
 }
 
+comptime {
+    @setEvalBranchQuota(100_000);
+    const F = game.Fields;
+    const lists = .{ F.loot, F.run, F.resumed, F.turn, F.graphics, F.set, F.scratch };
+    for (UNSAVED.game) |name| {
+        var n: usize = 0;
+        for (lists) |list| for (list) |l| {
+            if (std.mem.eql(u8, name, l)) n += 1;
+        };
+        if (n != 1) @compileError("game.Fields: say once when " ++ name ++ " is reset");
+    }
+    for (lists) |list| for (list) |l| {
+        for (UNSAVED.game) |name| {
+            if (std.mem.eql(u8, name, l)) break;
+        } else @compileError("game.Fields: " ++ l ++ " is not in save_data.UNSAVED.game");
+    };
+}
+
 const REQUIRED_FIELDS = .{ "lv", "pool", "hero", "rng", "name", "class", "growth" };
 
 comptime {

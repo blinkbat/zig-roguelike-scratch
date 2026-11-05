@@ -3,15 +3,6 @@ const mathx = @import("../core/mathx.zig");
 const actor = @import("../play/actor.zig");
 const chain = @import("../play/chain.zig");
 const state = @import("effect_state.zig");
-const Blow = state.Blow;
-const Sting = state.Sting;
-const Settle = state.Settle;
-const Burst = state.Burst;
-const Zap = state.Zap;
-const Puff = state.Puff;
-const Shimmer = state.Shimmer;
-const After = state.After;
-const Body = state.Body;
 
 pub const FLASH_S: f32 = 0.16;
 pub const FLASH_GAIN: f32 = 0.75;
@@ -25,6 +16,7 @@ pub const DEATH_RGB = [3]f32{ 0.65, 0.35, 0.32 };
 /// How far a dying body has darkened and how much of it is left.
 pub const Dying = struct { dark: f32 = 0, alpha: f32 = 1 };
 
+/// The kinds of turn effect a body can owe: `presentation.Owed`'s fields.
 pub const OWED_KINDS: usize = 13;
 /// A burst and a puff.
 const LOOSE_DUE: usize = 2;
@@ -32,13 +24,13 @@ const LOOSE_DUE: usize = 2;
 pub const DUE: usize = actor.MAX * (OWED_KINDS + actor.SWEEP_CELLS) + @max(LOOSE_DUE, chain.JUMPS);
 
 pub const Event = union(enum) {
-    blow: Blow,
-    sting: Sting,
-    settle: Settle,
-    burst: Burst,
-    zap: Zap,
-    puff: Puff,
-    shimmer: Shimmer,
+    blow: state.Blow,
+    sting: state.Sting,
+    settle: state.Settle,
+    burst: state.Burst,
+    zap: state.Zap,
+    puff: state.Puff,
+    shimmer: state.Shimmer,
     /// A sweep round the cell centred here.
     whirl: [2]f32,
 
@@ -54,7 +46,7 @@ pub const Event = union(enum) {
         };
     }
 
-    fn blowOf(d: *const Event) ?*const Blow {
+    fn blowOf(d: *const Event) ?*const state.Blow {
         return switch (d.*) {
             .blow => |*b| b,
             .sting, .settle, .burst, .zap, .puff, .shimmer, .whirl => null,
@@ -66,7 +58,7 @@ pub const Event = union(enum) {
         return b.impact == .barrel;
     }
 
-    pub fn after(d: *const Event) ?After {
+    pub fn after(d: *const Event) ?state.After {
         return switch (d.*) {
             .blow => |*b| switch (b.impact) {
                 .actor => |a| a.after,
@@ -90,7 +82,7 @@ pub const Queue = struct {
     /// Of `due`, the blows on a barrel.
     barrels_due: usize = 0,
     /// Indexed by pool slot: the body as the latest-dealt of the blows landed on it left it.
-    landed: [actor.MAX]?Body = @splat(null),
+    landed: [actor.MAX]?state.Body = @splat(null),
     mana_landed: i32 = 0,
     pub fn dyingOf(self: *const Queue, slot: actor.ActorSlot) Dying {
         if (self.dying[slot.index] <= 0) return .{};
@@ -103,7 +95,7 @@ pub const Queue = struct {
         return self.landsIn(slot) > 0;
     }
 
-    pub fn landedOn(self: *const Queue, slot: actor.ActorSlot) ?Body {
+    pub fn landedOn(self: *const Queue, slot: actor.ActorSlot) ?state.Body {
         return self.landed[slot.index];
     }
 
@@ -246,7 +238,7 @@ test "overdue impacts retain simulation order and release each mana debt once" {
     const child = actor.ActorSlot.fromIndex(4);
     const sequences = [_]u64{ 3, 1, 2 };
     for (sequences) |seq| {
-        const after = After{
+        const after = state.After{
             .body = .{ .kind = .slime, .hp = @intCast(10 - seq), .max = 10, .seq = seq },
             .reveals = if (seq == 3) child else null,
             .mana = @intCast(seq),

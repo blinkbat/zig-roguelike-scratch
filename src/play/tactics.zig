@@ -18,7 +18,7 @@ pub const Caltrops = struct {
     }
     /// What a patch's cells are laid with.
     pub fn laid(rank: u8) u8 {
-        return duration(rank) + 1;
+        return laidFor(duration(rank));
     }
     pub fn pins(rank: u8) u8 {
         return 1 + @as(u8, @intFromBool(rank == TOP_RANK));
@@ -89,7 +89,7 @@ pub const ArcaneBarrier = struct {
     }
     /// What a wall's cells are laid with.
     pub fn laid(rank: u8) u8 {
-        return duration(rank) + 1;
+        return laidFor(duration(rank));
     }
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("Wall: up to {d} cells, {d} turns.", .{ length(rank), duration(rank) }) catch {};
@@ -178,6 +178,11 @@ pub const State = struct {
 
 /// The reach of a patch on a cell and its neighbours.
 const ADJACENT: i32 = 1;
+
+/// The turns a cell is laid with to last `turns`: the turn it is laid on wears one.
+fn laidFor(turns: u8) u8 {
+    return turns + 1;
+}
 
 /// A rank counted as at least the first.
 fn ranked(rank: u8) u8 {

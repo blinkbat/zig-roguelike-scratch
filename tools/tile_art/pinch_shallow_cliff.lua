@@ -92,8 +92,8 @@ for row=0,3 do for x=0,255 do
   end end
  end
 end end
-edges:saveAs(root..'assets/dirt-shallows-edges.png')
-assert(Image{fromFile=root..'assets/dirt-shallows-edges.png'}:isEqual(edges))
+edges:saveAs(root..'assets/water/dirt-shallows-edges.png')
+assert(Image{fromFile=root..'assets/water/dirt-shallows-edges.png'}:isEqual(edges))
 local report=assert(io.open(work..'pinch.txt','w'))
 report:write(string.format('%d painted columns compressed to ceil(height/2), lip row and width preserved; endpoints sampled without smoothing. Original layer retained hidden. Matching face-span border edits compressed identically.\n',columns))
 report:close()

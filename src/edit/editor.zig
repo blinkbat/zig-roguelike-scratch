@@ -39,6 +39,7 @@ const modals = @import("modals.zig");
 const panel = @import("panel.zig");
 const text_panel = @import("text_panel.zig");
 pub const plot = @import("plot.zig");
+const effects_view = @import("effects.zig");
 
 const P = mathx.P;
 const Desk = input.Desk;
@@ -77,10 +78,10 @@ pub const DRAW_SPAN: i32 = 2 * widgets.STEP_W + DRAW_W;
 const BRUSH_W: i32 = 64;
 pub const BRUSH_SPAN: i32 = 2 * widgets.STEP_W + BRUSH_W;
 pub const MEMBERS_X: i32 = DRAW_SPAN + widgets.BLOCK_GAP;
-pub const MAKEUP_TOOLS_X: i32 = widgets.INNER_W - @as(i32, knobs.MAKEUP_TOOLS.len) * widgets.STEP_PITCH + widgets.GAP;
+pub const MAKEUP_TOOLS_X: i32 = widgets.INSPECT_INNER_W - @as(i32, knobs.MAKEUP_TOOLS.len) * widgets.STEP_PITCH + widgets.GAP;
 pub const TITLE_DY: i32 = 3;
 pub const NODE_GAP: i32 = 2;
-pub const DETAIL_DY: i32 = widgets.TEXT + 1;
+pub const NODE_DETAIL_DY: i32 = widgets.TEXT + 1;
 
 comptime {
     std.debug.assert(atlas.GRAPH_STEP.x > BOX_W and atlas.GRAPH_STEP.y > BOX_H);
@@ -99,12 +100,18 @@ pub const View = enum {
         return if (v == .map) .graph else .map;
     }
 };
-pub const Lower = enum {
-    tools,
-    nodes,
+/// The brush panel down the left.
+pub const SIDE = widgets.Column{ .x = 0, .w = widgets.SIDE_W };
+pub const Family = tool_catalog.Family;
+pub const FAMILIES = tool_catalog.FAMILIES;
+/// The tabs of the node's panel.
+pub const Inspect = enum {
     things,
     generator,
 };
+/// The two scrolled panels either side of the canvas.
+pub const Pane = enum { side, inspector };
+pub const Band = struct { top: i32, bottom: i32 };
 const Stroke = enum { none, paint, erase };
 pub const Ink = enum {
     first,
@@ -119,7 +126,7 @@ pub const INKS = std.enums.values(Ink);
 pub const Pending = enum { leave, quit, open, new };
 /// A framed question with its buttons along the foot.
 pub const Prompt = enum { confirm, name, open };
-pub const Modal = union(enum) { none, prompt: Prompt, help, objects, text, plot: plot.Page };
+pub const Modal = union(enum) { none, prompt: Prompt, help, objects, effects, text, plot: plot.Page };
 const Naming = enum { new, save_as };
 
 const Field = name_field.Text(FIELD_MAX);
@@ -147,7 +154,7 @@ pub const SEEN = blk: {
 };
 
 const Popup = struct { slot: rl.Rectangle, which: Which };
-pub const Which = union(enum) { algo, feature: usize };
+pub const Which = union(enum) { algo, feature: usize, node, file };
 pub const CellAction = enum { play, go };
 pub const CELL_ACTIONS = std.EnumArray(CellAction, struct { label: [:0]const u8, tip: [:0]const u8, armed: []const u8 }).init(.{
     .play = .{ .label = "Play here", .tip = "Choose a cell to play from", .armed = "a cell to play there" },
@@ -176,12 +183,22 @@ pub const Editor = struct {
     shape: Shape = .brush,
     brush: usize = 0,
     view: View = .map,
-    lower: Lower = .tools,
-    lower_top: i32 = 0,
-    node_rows: usize = 1,
-    /// Scrolled pixels and maximum scroll of the Tools, Things or generator workspace.
-    lower_scroll: i32 = 0,
-    lower_most: i32 = 0,
+    family: Family = .terrain,
+    /// The tool each tab last held, taken up again when it is opened.
+    family_tool: std.EnumArray(Family, Tool) = blk: {
+        var tools = std.EnumArray(Family, Tool).initUndefined();
+        for (FAMILIES) |f| tools.set(f, f.first());
+        break :blk tools;
+    },
+    /// Of the foes tab, the one type it lists; null lists every foe.
+    foe_type: ?actor.FoeType = null,
+    inspect: Inspect = .things,
+    /// Each panel's scrolled area as last drawn, its scrolled pixels and how far it scrolls.
+    pane_box: std.EnumArray(Pane, rl.Rectangle) = .initFill(.{ .x = 0, .y = 0, .width = 0, .height = 0 }),
+    pane_scroll: std.EnumArray(Pane, i32) = .initFill(0),
+    pane_most: std.EnumArray(Pane, i32) = .initFill(0),
+    /// The node dropdown's first row shown.
+    popup_top: usize = 0,
     /// Set while a scrolled area is drawn: nothing outside it is hot.
     clip: ?rl.Rectangle = null,
     /// The map's top-left, in cells.
@@ -190,9 +207,6 @@ pub const Editor = struct {
     recentre: bool = true,
     /// The graph's top-left, in graph pixels.
     gcam: [2]f32 = .{ -widgets.PAD, -widgets.PAD },
-    scroll: usize = 0,
-    /// The node the list last scrolled to show, so the wheel may scroll away from it.
-    revealed: ?usize = null,
     scene: previews.Scene = .{},
     thumbnails: thumbnails.Thumbnails = .{},
     selection: ?grid.Box = null,
@@ -226,6 +240,8 @@ pub const Editor = struct {
     field: Field = .{},
     words: text_panel.State = .{},
     plot: plot.State = .{},
+    /// Made the first time the effects viewer opens.
+    effects: ?*effects_view.Viewer = null,
     listing: listing.Listing = .{},
     listed_top: usize = 0,
     listed_at: usize = 0,
@@ -253,6 +269,7 @@ pub const Editor = struct {
         ed.words.deinit(ed.alloc);
         ed.thumbnails.deinit();
         const alloc = ed.alloc;
+        if (ed.effects) |v| alloc.destroy(v);
         alloc.destroy(ed.history.states);
         alloc.destroy(ed.history.transaction.before);
         alloc.destroy(ed.map);
@@ -290,12 +307,11 @@ pub const Editor = struct {
     fn settle(ed: *Editor) void {
         ed.history.reset();
         ed.node = 0;
-        ed.scroll = 0;
         ed.dropHeld();
         ed.modal = .none;
         ed.view = .map;
         ed.recentre = true;
-        ed.lower_scroll = 0;
+        ed.pane_scroll.set(.inspector, 0);
         ed.scene.reset();
         ed.fitTool();
         ed.restamp();
@@ -423,13 +439,57 @@ pub const Editor = struct {
     pub fn setTool(ed: *Editor, t: Tool) void {
         if (!t.fits(ed.here())) return ed.say(GENERATED, .{});
         if (!t.eql(ed.tool)) ed.release();
+        if (t == .foe and !ed.foeShown(t.foe)) ed.foe_type = null;
+        ed.hold(t);
+    }
+
+    fn hold(ed: *Editor, t: Tool) void {
         ed.tool = t;
+        ed.showFamily(t.family());
+        ed.family_tool.set(t.family(), t);
+    }
+
+    /// Whether the foes tab lists it under the type it narrows to.
+    pub fn foeShown(ed: *const Editor, k: actor.Kind) bool {
+        const want = ed.foe_type orelse return true;
+        return actor.row(k).foe_type == want;
+    }
+
+    /// Its tab in the brush panel, taking up the tool it last held where that fits.
+    pub fn openFamily(ed: *Editor, f: Family) void {
+        ed.showFamily(f);
+        const t = ed.family_tool.get(f);
+        if (t.fits(ed.here())) ed.setTool(t);
+    }
+
+    fn showFamily(ed: *Editor, f: Family) void {
+        if (f != ed.family) ed.pane_scroll.set(.side, 0);
+        ed.family = f;
+    }
+
+    pub fn setInspect(ed: *Editor, i: Inspect) void {
+        if (i == .generator and ed.rolled() == null) return;
+        if (i != ed.inspect) ed.pane_scroll.set(.inspector, 0);
+        ed.inspect = i;
+        ed.delete_armed = null;
     }
 
     pub fn setShape(ed: *Editor, s: Shape) void {
         if (s != ed.shape) ed.release();
         ed.shape = s;
         if (s != .select and !ed.tool.broad() and ed.paintable()) ed.setTool(.paint);
+    }
+
+    /// Leaving Select keeps the tool it was taken up with.
+    pub fn toggleSelect(ed: *Editor) void {
+        if (ed.shape != .select) return ed.setShape(.select);
+        ed.leaveSelect();
+    }
+
+    pub fn leaveSelect(ed: *Editor) void {
+        if (ed.shape != .select) return;
+        ed.release();
+        ed.shape = .brush;
     }
 
     pub fn setView(ed: *Editor, v: View) void {
@@ -439,12 +499,12 @@ pub const Editor = struct {
 
     fn clampSelection(ed: *Editor) void {
         ed.node = @min(ed.node, ed.map.node_n - 1);
-        ed.scroll = @min(ed.scroll, ed.map.node_n - 1);
         ed.fitTool();
     }
 
     fn fitTool(ed: *Editor) void {
-        if (!ed.tool.fits(ed.here())) ed.tool = .door;
+        if (!ed.tool.fits(ed.here())) ed.hold(.door);
+        if (ed.inspect == .generator and ed.rolled() == null) ed.inspect = .things;
     }
 
     /// Preserve paste across node selection; cancel pending links and gestures.
@@ -454,18 +514,9 @@ pub const Editor = struct {
         ed.node = n;
         ed.scene.invalidate();
         ed.recentre = true;
-        ed.lower_scroll = 0;
+        ed.pane_scroll.set(.inspector, 0);
         ed.forgetNode();
         ed.fitTool();
-    }
-
-    /// The workspace scrolls by pixels; Nodes scrolls by rows.
-    pub fn lowerScrolls(ed: *Editor) bool {
-        return switch (ed.lower) {
-            .tools, .things => true,
-            .generator => ed.rolled() != null,
-            .nodes => false,
-        };
     }
 
     fn forgetNode(ed: *Editor) void {
@@ -525,7 +576,7 @@ pub const Editor = struct {
     }
 
     pub fn generator(ed: *Editor) ?*atlas.Procgen {
-        return if (ed.lower == .generator) ed.rolled() else null;
+        return if (ed.inspect == .generator) ed.rolled() else null;
     }
 
     pub fn goTo(ed: *Editor, n: usize) void {
@@ -652,7 +703,6 @@ pub const Editor = struct {
 
     fn typeName(ed: *Editor) void {
         ed.drop();
-        ed.lower = .nodes;
         ed.field.set(ed.here().name(), atlas.NAME_MAX);
         ed.renaming = true;
     }
@@ -665,7 +715,32 @@ pub const Editor = struct {
     }
 
     pub fn canvas(g: *const game.Game) rl.Rectangle {
-        return raster.rect(widgets.PANEL_W, 0, @max(0, g.screen.x - widgets.PANEL_W), @max(0, g.screen.y - STATUS_H));
+        return canvasOf(g.screen);
+    }
+
+    /// Between the brush panel and the node's, under the bar and over the status line.
+    pub fn canvasOf(screen: P) rl.Rectangle {
+        const left = SIDE.x + SIDE.w;
+        const band = bandOf(screen);
+        return raster.rect(left, band.top, @max(0, inspectorOf(screen).x - left), @max(0, band.bottom - band.top));
+    }
+
+    /// Under the bar and over the status line, where the panels and canvas stand.
+    pub fn bandOf(screen: P) Band {
+        return .{ .top = widgets.TOP_H, .bottom = screen.y - STATUS_H };
+    }
+
+    pub fn inspector(g: *const game.Game) widgets.Column {
+        return inspectorOf(g.screen);
+    }
+
+    pub fn inspectorOf(screen: P) widgets.Column {
+        return .{ .x = screen.x - widgets.INSPECT_W, .w = widgets.INSPECT_W };
+    }
+
+    pub fn paneScroll(ed: *Editor, p: Pane, box: rl.Rectangle) widgets.Scroll {
+        ed.pane_box.set(p, box);
+        return .{ .box = box, .top = ed.pane_scroll.getPtr(p), .most = ed.pane_most.getPtr(p) };
     }
 
     /// Screen origin rounded to whole pixels to keep sprites aligned.
@@ -776,6 +851,7 @@ pub fn frame(ed: *Editor, g: *game.Game, closing: bool) Action {
         ed.recentre = false;
     }
     interaction.step(ed, c, g.screen.y, rl.getFrameTime());
+    if (ed.modal == .effects) if (ed.effects) |v| v.step(rl.getFrameTime());
     prepare(ed, g);
     rl.beginDrawing();
     draw(ed, g);
@@ -844,7 +920,9 @@ fn draw(ed: *Editor, g: *game.Game) void {
         .map => canvas.drawMap(ed, g, c),
         .graph => canvas.drawGraph(ed, g, c),
     }
-    panel.drawPanel(ed, g);
+    panel.drawTop(ed, g);
+    panel.drawSide(ed, g);
+    panel.drawInspector(ed, g);
     panel.drawStatus(ed, g, c);
     if (ed.popup != null) drawPopup(ed, g);
     if (ed.modal != .none) modals.drawModal(ed, g);
@@ -852,51 +930,97 @@ fn draw(ed: *Editor, g: *game.Game) void {
 }
 
 const POPUP_W: f32 = 200;
+const FILE_MENU_W: f32 = 340;
 const TIP_DX: i32 = 16;
 const TIP_DY: i32 = 20;
 const TIP_MAX_W: i32 = 520;
 
-fn popupLen(w: Which) usize {
+fn popupLen(ed: *const Editor, w: Which) usize {
     return switch (w) {
         .algo => std.enums.values(atlas.Algo).len,
         .feature => std.enums.values(atlas.Kind).len,
+        .node => ed.map.node_n,
+        .file => panel.FILE_ITEMS.len,
     };
 }
 
-pub fn popupRect(p: Popup, screen_h: i32) rl.Rectangle {
-    const h: f32 = @floatFromInt(@as(i32, @intCast(popupLen(p.which))) * widgets.ROW_H);
+pub fn popupRowH(w: Which) i32 {
+    return switch (w) {
+        .algo, .feature, .file => widgets.ROW_H,
+        .node => NODE_H,
+    };
+}
+
+fn popupW(w: Which) f32 {
+    return switch (w) {
+        .algo, .feature, .node => POPUP_W,
+        .file => FILE_MENU_W,
+    };
+}
+
+/// Of its rows, how many fit the screen at once; the wheel scrolls the rest.
+pub fn popupShown(ed: *const Editor, w: Which, screen_h: i32) usize {
+    const fit: usize = @intCast(@max(1, @divTrunc(screen_h - 2 * widgets.PAD, popupRowH(w))));
+    return @min(popupLen(ed, w), fit);
+}
+
+pub fn popupRect(ed: *const Editor, p: Popup, screen_h: i32) rl.Rectangle {
+    const h: f32 = @floatFromInt(@as(i32, @intCast(popupShown(ed, p.which, screen_h))) * popupRowH(p.which));
     const below = p.slot.y + p.slot.height;
     const sh: f32 = @floatFromInt(screen_h);
-    return .{ .x = p.slot.x, .y = if (below + h > sh) @max(0, sh - h) else below, .width = @max(p.slot.width, POPUP_W), .height = h };
+    return .{ .x = p.slot.x, .y = if (below + h > sh) @max(0, sh - h) else below, .width = @max(p.slot.width, popupW(p.which)), .height = h };
+}
+
+/// Drops `which`'s list below `slot`, its chosen row in view.
+pub fn openPopup(ed: *Editor, slot: rl.Rectangle, which: Which, chosen: usize, screen_h: i32) void {
+    ed.drop();
+    ed.popup = .{ .slot = slot, .which = which };
+    ed.popup_top = mathx.reveal(0, chosen, popupShown(ed, which, screen_h));
+    ed.fresh = true;
 }
 
 fn drawPopup(ed: *Editor, g: *game.Game) void {
     const p = ed.popup.?;
+    const box = popupRect(ed, p, g.screen.y);
+    const y: i32 = @intFromFloat(box.y);
+    const x: i32 = @intFromFloat(box.x);
+    const w: i32 = @intFromFloat(box.width);
+    widgets.framed(x, y, w, @intFromFloat(box.height));
+    if (p.which == .file) return panel.fileRows(ed, g, x, y, w);
+    if (p.which == .node) {
+        const shown = popupShown(ed, .node, g.screen.y);
+        const row_h = popupRowH(.node);
+        ed.popup_top = widgets.clampTop(ed.popup_top, ed.map.node_n, shown);
+        for (ed.popup_top..ed.popup_top + shown, 0..) |n, k| {
+            if (panel.nodeRow(ed, g, raster.rect(x, y + @as(i32, @intCast(k)) * row_h, w, row_h - NODE_GAP), n, true)) {
+                ed.popup = null;
+                ed.goTo(n);
+            }
+        }
+        widgets.scrollbarIn(box, ed.popup_top, shown, ed.map.node_n);
+        return;
+    }
     const pg = ed.rolled() orelse {
         ed.popup = null;
         return;
     };
     const was = pg.*;
-    const box = popupRect(p, g.screen.y);
-    const y: i32 = @intFromFloat(box.y);
-    const x: i32 = @intFromFloat(box.x);
-    const w: i32 = @intFromFloat(box.width);
-    widgets.framed(x, y, w, @intFromFloat(box.height));
     switch (p.which) {
-        .algo => popupRows(ed, g, atlas.Floor, &pg.floor, x, y, w),
-        .feature => |i| if (i < pg.feature_n) popupRows(ed, g, atlas.Feature, &pg.feature[i], x, y, w),
+        .algo => popupRows(ed, g, atlas.Floor, &pg.floor, x, y, w, p.which),
+        .feature => |i| if (i < pg.feature_n) popupRows(ed, g, atlas.Feature, &pg.feature[i], x, y, w, p.which),
+        .node, .file => unreachable,
     }
     if (ed.popup == null) refit(ed, pg, was);
 }
 
-fn popupRows(ed: *Editor, g: *game.Game, comptime U: type, v: *U, x: i32, top: i32, w: i32) void {
+fn popupRows(ed: *Editor, g: *game.Game, comptime U: type, v: *U, x: i32, top: i32, w: i32, which: Which) void {
     var y = top;
     for (std.enums.values(std.meta.Tag(U))) |t| {
         if (modalButton(ed, g, widgets.row(x, y, w), @tagName(t), t == std.meta.activeTag(v.*), true, null)) {
             retag(U, v, t);
             ed.popup = null;
         }
-        y += widgets.ROW_H;
+        y += popupRowH(which);
     }
 }
 
@@ -922,7 +1046,7 @@ fn drawTip(ed: *const Editor, g: *game.Game) void {
 const SHOT_ZOOM = zoomOf(32);
 const SHOT_BRUSH = std.mem.indexOfScalar(i32, &BRUSHES, 3).?;
 
-/// DEV ONLY: the posed map's map mid link-pick, its graph, its procgen node's generator and the object viewer at those paths; its other workspaces, modals and pages beside them.
+/// DEV ONLY: the posed map's map mid link-pick, its graph, its procgen node's generator and the object viewer at those paths; its other panels, dropdowns, modals and pages beside them.
 pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, graph_path: [:0]const u8, gen_path: [:0]const u8, objects_path: [:0]const u8) !void {
     const ed = try Editor.create(std.heap.c_allocator);
     defer ed.destroy();
@@ -978,15 +1102,21 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
         try snap(ed, g, target, p);
     }
     ed.view = .map;
-    ed.lower = .nodes;
+    openPopup(ed, panel.nodeSlot(g), .node, ed.node, g.screen.y);
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-nodes.png", .{dir}));
-    ed.lower = .tools;
+    openPopup(ed, panel.fileSlot(g), .file, 0, g.screen.y);
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-file.png", .{dir}));
+    ed.popup = null;
     render(ed, g, target);
-    ed.lower_scroll = ed.lower_most;
+    ed.pane_scroll.set(.side, ed.pane_most.get(.side));
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-tools-palette.png", .{dir}));
-    ed.lower_scroll = 0;
+    ed.setTool(.{ .foe = .slime });
+    ed.foe_type = actor.row(.slime).foe_type;
+    try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-foes.png", .{dir}));
+    ed.foe_type = null;
+    ed.setTool(.paint);
     ed.select(1);
-    ed.lower = .generator;
+    ed.setInspect(.generator);
     const fo = &ed.map.node[1].plan.procgen.foes;
     _ = fo.addMakeup();
     fo.makeup[fo.makeup_n - 1] = pack.Makeup.of(&.{ .slime, .bloat, .rat, .rat, .rat });
@@ -994,13 +1124,17 @@ pub fn shoot(g: *game.Game, target: rl.RenderTexture2D, map_path: [:0]const u8, 
     ed.desk.mouse = .{ .x = 0, .y = 0 };
     render(ed, g, target);
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-gen-top.png", .{dir}));
-    ed.lower_scroll = ed.lower_most;
+    ed.pane_scroll.set(.inspector, ed.pane_most.get(.inspector));
     try snap(ed, g, target, gen_path);
     ed.modal = .objects;
     ed.seen_at = seenIndex(.{ .body = .slime });
     try snap(ed, g, target, objects_path);
     ed.seen_at = seenIndex(.{ .body = .beefy_pib });
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-beefy-pib.png", .{dir}));
+    for (EFFECT_POSES) |q| {
+        try effects_view.pose(ed, q.sample, q.seconds);
+        try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-effects-{s}.png", .{ dir, q.name }));
+    }
     ed.modal = .help;
     try snap(ed, g, target, try std.fmt.bufPrintZ(&path, "{s}/edit-help.png", .{dir}));
     ed.modal = .{ .plot = .dialogs };
@@ -1069,6 +1203,14 @@ pub const SHOT_SCRIPT =
     \\do flag met_wenna flip
     \\
 ;
+
+const EFFECT_POSES = [_]struct { name: []const u8, sample: effects_view.Sample, seconds: f32 }{
+    .{ .name = "hit", .sample = .{ .hit = .blood }, .seconds = 0.12 },
+    .{ .name = "fireball", .sample = .{ .missile = .fireball }, .seconds = 0.1 },
+    .{ .name = "blast", .sample = .{ .missile = .fireball }, .seconds = 0.22 },
+    .{ .name = "burning", .sample = .{ .mark = .burning }, .seconds = 1 },
+    .{ .name = "level-up", .sample = .level_up, .seconds = 0.6 },
+};
 
 fn seenIndex(want: Seen) usize {
     for (SEEN, 0..) |s, i| {

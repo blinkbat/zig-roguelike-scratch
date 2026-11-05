@@ -102,12 +102,12 @@ pub fn closeAim(run: *game.Game) void {
 const Blocked = enum { cooling, mana, unworn, empty, none_left, locked, pinned };
 
 pub fn heroPinned(run: *const game.Game) bool {
-    return (run.sim.heroBody() orelse return false).pin.turns > 0;
+    return (run.sim.heroBody() orelse return false).pin.holding();
 }
 
 pub fn blocked(run: *const game.Game, act: skillbar.Act, flasks: *const game.simulation.Flasks, mana: i32, pinned: bool) ?Blocked {
     if (!run.sim.growth.unlocked(act)) return .locked;
-    if (movesHero(act) and pinned) return .pinned;
+    if (act.moves() and pinned) return .pinned;
     if (act == .unyielding) if (run.sim.heroBody()) |h| if (h.tactics.unyielding) return null;
     if (run.sim.cooldown.get(act) > 0) return .cooling;
     if (act.flaskOf()) |k| {
@@ -144,11 +144,6 @@ fn ready(run: *game.Game, act: skillbar.Act) bool {
         .pinned => run.sim.log.say("{s} " ++ pinning.TAKES ++ ".", .{run.sim.name.text()}),
     }
     return false;
-}
-
-fn movesHero(act: skillbar.Act) bool {
-    const r = act.reticle() orelse return false;
-    return r == .leap or r == .rush;
 }
 
 /// The hero acts: what it held up ends, and the turn's report notes what it did.

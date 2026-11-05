@@ -150,11 +150,19 @@ pub fn field(comptime w: i32, comptime h: i32, comptime alphaAt: fn (f32, f32) f
     return clamped(rgba(&img, w, h), .bilinear);
 }
 
+/// `img`'s texture, with `img` unloaded. Needs a live GL context.
+pub fn adopt(img: rl.Image) ?rl.Texture2D {
+    defer rl.unloadImage(img);
+    return rl.loadTextureFromImage(img) catch null;
+}
+
+pub fn release(held: *?rl.Texture2D) void {
+    if (held.*) |t| rl.unloadTexture(t);
+    held.* = null;
+}
+
 fn unloadEach(held: []?rl.Texture2D) void {
-    for (held) |*h| {
-        if (h.*) |t| rl.unloadTexture(t);
-        h.* = null;
-    }
+    for (held) |*h| release(h);
 }
 
 pub fn unloadAll(v: anytype) void {

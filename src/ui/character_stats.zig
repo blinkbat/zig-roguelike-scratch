@@ -91,7 +91,7 @@ const SECTION_ROWS = 32;
 const STAT_ROW = font.BODY_LINE;
 /// The advanced sheet's rows, packed to fit every status.
 const TIGHT_ROW = font.SMALL + 2;
-const HEADLINE = font.HEAD + 4;
+const HEADLINE = font.HEAD_LINE;
 const HEADLINE_ROW = HEADLINE + 8;
 const CHANCE_ROW = font.LABEL + 3;
 const SECTION_GAP = 12;

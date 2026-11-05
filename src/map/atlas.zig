@@ -15,6 +15,12 @@ pub const script = @import("script.zig");
 const P = mathx.P;
 
 pub const MAX_NODES: usize = 32;
+
+/// A map of `n` nodes a save may hold, with the run on its node `at`.
+pub fn holdsNodes(n: usize, at: usize) bool {
+    return n > 0 and n <= MAX_NODES and at < n;
+}
+
 /// Every placed foe and the hero fit the pool.
 pub const MAX_FOES: usize = actor.MAX - actor.most(actor.HERO);
 pub const DIR = "maps";

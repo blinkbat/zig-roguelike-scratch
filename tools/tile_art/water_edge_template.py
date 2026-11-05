@@ -52,7 +52,7 @@ for depth, y, height, asset in (('shallow', 104, 12, 'shallows-ground.png'), ('d
         face(ud, x, y + 16, kind, height, (120, 109, 94, 255), (49, 43, 37, 255))
         gd.rectangle((x - 1, y - 1, x + 64, y + 64), outline=(160, 160, 160, 255))
         slices.append((f'water_cliff_{depth}_{kind}', x, y))
-    with Image.open(ROOT / 'assets' / asset) as source:
+    with Image.open(ROOT / 'assets/ground' / asset) as source:
         atlas = source.convert('RGBA')
         assert atlas.size == (256, 256)
         for x, edge, crop in ((324, 'NORTH EDGE', (64, 0, 128, 64)), (420, 'SOUTH EDGE', (192, 128, 256, 192))):

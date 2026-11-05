@@ -16,6 +16,7 @@ const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
+const effects = @import("effects.zig");
 const Desk = input.Desk;
 const DETAIL = widgets.DETAIL;
 const HEAD = widgets.HEAD;
@@ -31,6 +32,7 @@ pub fn drawModal(ed: *editor.Editor, g: *game.Game) void {
         .plot => editor.plot.draw(ed, g),
         .help => drawHelp(ed, g),
         .objects => drawObjects(ed, g),
+        .effects => effects.draw(ed, g),
     }
 }
 
@@ -136,8 +138,7 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     const y = f.y;
     cells.x = x + widgets.PAD;
     cells.y = y;
-    const hint_x = x + 2 * widgets.PAD + widgets.textFace(&g.face).width(title, HEAD);
-    widgets.drawFit(&g.face, Desk.NAV_CAPTION ++ " or " ++ Desk.PAINT_CAPTION ++ " picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes", DETAIL, x + w - widgets.PAD - hint_x, false, hint_x, f.top + @divTrunc(HEAD - DETAIL, 2), look.DIM);
+    widgets.titleHint(&g.face, f, title, Desk.NAV_CAPTION ++ " or " ++ Desk.PAINT_CAPTION ++ " picks one" ++ SEP ++ Desk.BACK_CAPTION ++ " closes");
     for (editor.SEEN, 0..) |s, i| {
         const r = cells.at(i);
         const hh = widgets.hot(ed.controls(), r, true, true, seenName(s));

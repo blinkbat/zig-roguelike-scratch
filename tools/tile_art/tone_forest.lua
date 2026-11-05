@@ -40,18 +40,18 @@ for _,layer in ipairs(sprite.layers) do
 end
 assert(changed>0,'Forest palette already toned or owner palette changed')
 copy(source,root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.aseprite')
-copy(root..'assets/forest-tree-walls.png',root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.png')
-copy(root..'assets/grass.png',root..'assets/backup/grass.'..stamp..'.png')
+copy(root..'assets/walls/forest-tree-walls.png',root..'assets/backup/forest-tree-walls-before-tone.'..stamp..'.png')
+copy(root..'assets/ground/grass.png',root..'assets/backup/grass.'..stamp..'.png')
 sprite:saveAs(source)
 sprite:saveCopyAs(desktop)
 sprite:close()
-local grass=Image{fromFile=root..'assets/grass.png'}
+local grass=Image{fromFile=root..'assets/ground/grass.png'}
 for pixel in grass:pixels() do
   local p=pixel()
   pixel(pc.rgba(math.floor(pc.rgbaR(p)*0.85+0.5),math.floor(pc.rgbaG(p)*0.85+0.5),math.floor(pc.rgbaB(p)*0.85+0.5),pc.rgbaA(p)))
 end
-grass:saveAs(root..'assets/grass.png')
-local check=Image{fromFile=root..'assets/grass.png'}
+grass:saveAs(root..'assets/ground/grass.png')
+local check=Image{fromFile=root..'assets/ground/grass.png'}
 assert(check:isEqual(grass))
 dofile(root..'tools/tile_art/export_forest.lua')
 local report=assert(io.open(app.fs.joinPath(app.fs.tempPath,'wall-mocks/forest-tone.txt'),'w'))

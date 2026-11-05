@@ -1,3 +1,4 @@
+const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
@@ -9,6 +10,7 @@ const placement = @import("placement.zig");
 const widgets = @import("widgets.zig");
 const modals = @import("modals.zig");
 const text_panel = @import("text_panel.zig");
+const effects = @import("effects.zig");
 const Editor = editor.Editor;
 const Desk = input.Desk;
 const P = mathx.P;
@@ -48,7 +50,8 @@ pub fn step(ed: *Editor, bounds: rl.Rectangle, screen_height: i32, dt: f32) void
     if (desk.erase_hit and (ed.drag != null or ed.linking != null)) return ed.drop();
     if (ed.modal != .none or ed.renaming) return;
     if (ed.popup) |pp| {
-        if (desk.clicked() and !ed.mouseIn(editor.popupRect(pp, screen_height))) {
+        if (pp.which == .node and desk.wheel != 0) ed.popup_top = widgets.scrollTop(ed.popup_top, desk.notch(), ed.map.node_n, editor.popupShown(ed, pp.which, screen_height));
+        if (desk.clicked() and !ed.mouseIn(editor.popupRect(ed, pp, screen_height))) {
             ed.popup = null;
             ed.fresh = true;
         } else if (desk.clicked()) ed.gesture();
@@ -106,11 +109,9 @@ fn moveViewport(ed: *Editor, bounds: rl.Rectangle, over_canvas: bool, dt: f32) v
 
 fn scrollPanel(ed: *Editor) void {
     const desk = &ed.desk;
-    if (desk.wheel != 0 and desk.mouse.x < widgets.PANEL_W and desk.mouse.y >= ed.lower_top) {
-        const by = desk.notch();
-        if (ed.lowerScrolls()) {
-            widgets.scrollBy(&ed.lower_scroll, ed.lower_most, by * widgets.ROW_H);
-        } else scrollNodes(ed, by);
+    if (desk.wheel == 0) return;
+    for (std.enums.values(editor.Pane)) |p| {
+        if (ed.mouseIn(ed.pane_box.get(p))) widgets.scrollBy(ed.pane_scroll.getPtr(p), ed.pane_most.get(p), desk.notch() * widgets.ROW_H);
     }
 }
 
@@ -152,6 +153,10 @@ pub fn modalKeys(ed: *Editor) void {
             if (dismissed(ed)) return;
             if (d.nav != 0) ed.seen_at = mathx.wrap(ed.seen_at, d.nav, editor.SEEN.len);
             if (d.enter) modals.fightSeen(ed);
+        },
+        .effects => {
+            if (dismissed(ed)) return;
+            effects.keys(ed);
         },
         .prompt => |p| {
             if (p == .open and !d.erase_hit and (d.back or d.rub) and ed.listing.up()) return ed.showListing();
@@ -340,8 +345,4 @@ pub fn fitView(ed: *Editor, c: rl.Rectangle) void {
     }
     ed.lookAt(c, grid.MIDDLE);
     ed.stroke_at = null;
-}
-
-fn scrollNodes(ed: *Editor, by: i32) void {
-    ed.scroll = widgets.scrollTop(ed.scroll, by, ed.map.node_n, ed.node_rows);
 }

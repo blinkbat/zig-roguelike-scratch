@@ -290,6 +290,13 @@ fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool,
     } else drawFigureGlyph(g, l.ch, s.x, s.y, ink);
 }
 
+const TilesShown = struct {
+    g: *const game.Game,
+    pub fn at(self: TilesShown, p: P) grid.Tile {
+        return self.g.pic.tileShown(&self.g.sim, p);
+    }
+};
+
 fn drawGroundPass(g: *game.Game, c: Cam, beds: *const dual.Beds, stood: *const grid.CellSet, mirror: ?sprite.Mirrors) void {
     const x = std.math.clamp(-c.x, 0, g.screen.x);
     const y = std.math.clamp(-c.y, 0, g.screen.y);
@@ -305,11 +312,11 @@ fn drawGroundPass(g: *game.Game, c: Cam, beds: *const dual.Beds, stood: *const g
         .shimmer = g.light.options.water_glints,
         .seconds = g.light.t.at(),
     } else null else null;
-    g.sprites.drawGround(&g.sim.lv, beds, c.origin(), game.CELL_F, water);
+    g.sprites.drawGround(TilesShown{ .g = g }, beds, c.origin(), game.CELL_F, water);
     var cells = grid.Cells.of(beds.lo, beds.hi);
     while (cells.next()) |p| {
         if (!terrainSeen(g, p)) continue;
-        const here = g.sim.lv.at(p);
+        const here = g.pic.tileShown(&g.sim, p);
         if (sprite.glyphGround(here, &g.sprites)) inkCell(g, c, p, here, stood);
         if (g.sim.lv.doorAt(p) != null) drawGlyph(g, look.DOOR.ch, c.sx(p), c.sy(p), look.DOOR.fg);
     }
@@ -803,30 +810,24 @@ fn drawStandingBody(g: *game.Game, b: *const Shown) void {
     const y: f32 = @floatFromInt(at.y);
     for (std.enums.values(fx.Status)) |s| {
         if (b.pic.status.get(s) == 0) continue;
-        const ink = look.fade(b.shine.tint(s.ink()), b.sighted);
-        switch (s) {
-            .bleeding => g.pic.fx.drawBleeding(x, y, game.CELL_F, b.slot, ink),
-            .burning => g.pic.fx.drawBurning(x, y, game.CELL_F, b.slot, b.shine.sight * b.sighted),
-            .chilled => g.pic.fx.drawChilled(x, y, game.CELL_F, b.slot, ink),
-            .pinned => g.pic.fx.drawPinned(x, y, game.CELL_F, ink),
-            .shocked => g.pic.fx.drawShocked(x, y, game.CELL_F, b.slot, ink),
-            .sundered => g.pic.fx.drawSundered(x, y, game.CELL_F, b.pic.sunder.stacks, ink),
-            .blinded => g.pic.fx.drawBlinded(x, y, game.CELL_F, ink),
-            .confused => g.pic.fx.drawConfused(x, y, game.CELL_F, b.slot, ink),
-            .enfeebled => g.pic.fx.drawEnfeebled(x, y, game.CELL_F, b.slot, ink),
-            .maimed => g.pic.fx.drawMaimed(x, y, game.CELL_F, ink),
-            .frightened => g.pic.fx.drawFrightened(x, y, game.CELL_F, b.slot, ink),
-            .warded => g.pic.fx.drawWarded(x, y, game.CELL_F, ink),
-            .guarding, .unyielding, .steady, .overwatch => {},
-            .resistant => {},
-        }
+        g.pic.fx.drawStatus(s, .{ .x = x, .y = y, .cell = game.CELL_F, .seed = b.slot, .ink = look.fade(b.shine.tint(s.ink()), b.sighted), .alpha = b.shine.sight * b.sighted, .stacks = b.pic.sunder.stacks });
     }
 }
 
 fn drawShot(g: *const game.Game, s: game.presentation.Shot, o: [2]f32) void {
+    if (!g.pic.litShown(&g.sim, mathx.cellOf(s.position(s.t)))) return;
+    drawFlight(&s, o, game.CELL_F);
+}
+
+pub fn drawFlight(s: *const game.presentation.Shot, o: [2]f32, cell: f32) void {
     const at = s.position(s.t);
-    if (!g.pic.litShown(&g.sim, mathx.cellOf(at))) return;
-    if (s.net) fx.drawNet(at, s.t, o[0], o[1], game.CELL_F) else fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], game.CELL_F);
+    if (s.net) fx.drawNet(at, s.t, o[0], o[1], cell) else fx.drawMissile(at, s.direction(), s.act, s.t, o[0], o[1], cell);
+}
+
+/// A cell of Fire Wall's flames, its top-left at `x`, `y`.
+pub fn drawFlames(effects: *const fx.Fx, x: f32, y: f32, cell: f32, seed: usize) void {
+    rl.drawRectangleRec(.{ .x = x, .y = y, .width = cell, .height = cell }, look.fade(look.FIRE, FLAME_FILL_A));
+    effects.drawBurning(x, y, cell, seed, 1);
 }
 
 fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
@@ -850,10 +851,7 @@ fn drawTacticalGround(g: *game.Game, c: Cam, lo: P, hi: P) void {
             outline(c, p, look.WARD);
             inline for (BARRIER_BARS) |bar_x| rl.drawLine(x + bar_x, y + BARRIER_INSET, x + bar_x, y + game.CELL - BARRIER_INSET, look.WARD);
         }
-        if (g.sim.lv.flames[i] > 0) {
-            fillCell(c, p, look.fade(look.FIRE, FLAME_FILL_A));
-            g.pic.fx.drawBurning(@floatFromInt(x), @floatFromInt(y), game.CELL_F, i, 1);
-        }
+        if (g.sim.lv.flames[i] > 0) drawFlames(&g.pic.fx, @floatFromInt(x), @floatFromInt(y), game.CELL_F, i);
     }
 }
 
@@ -867,14 +865,27 @@ fn pips(x: i32, y: i32, w: i32, n: u8, of: u8, fill: rl.Color, back: rl.Color) v
     }
 }
 
+pub const EFFECT_SOURCES = fx.PULSES + 2;
+
+/// The light `effects` casts, then the level-up glow round `carrier` and `shot`'s missile, in emitting order.
+pub fn effectSources(effects: *const fx.Fx, carrier: ?[2]f32, shot: ?*const game.presentation.Shot, buf: *[EFFECT_SOURCES]light.Emission) []const light.Emission {
+    var n = effects.pulseLights(buf[0..fx.PULSES]).len;
+    if (carrier) |at| if (effects.level_up.emission(at)) |e| {
+        buf[n] = e;
+        n += 1;
+    };
+    if (shot) |s| if (fx.missileLight(s.position(s.t), s.act)) |e| {
+        buf[n] = e;
+        n += 1;
+    };
+    return buf[0..n];
+}
+
 pub fn effectLights(g: *game.Game) void {
-    g.pic.fx.illuminate(&g.sim.lv, g.light);
-    if (g.pic.carrierAt(&g.sim)) |at| {
-        if (g.pic.fx.level_up.emission(at)) |source| g.light.emit(&g.sim.lv, source);
-    }
-    if (g.pic.shot) |s| {
-        if (fx.missileLight(s.position(s.t), s.act)) |source| g.light.emit(&g.sim.lv, source);
-    }
+    g.light.clearEffects();
+    var buf: [EFFECT_SOURCES]light.Emission = undefined;
+    const shot: ?*const game.presentation.Shot = if (g.pic.shot) |*s| s else null;
+    for (effectSources(&g.pic.fx, g.pic.carrierAt(&g.sim), shot, &buf)) |source| g.light.emit(&g.sim.lv, source);
     for (0..g.sim.pool.n) |i| {
         const at = g.pic.drawnAt(&g.sim, i) orelse continue;
         const pic = g.pic.pictured[i];

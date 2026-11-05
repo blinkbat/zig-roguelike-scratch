@@ -230,7 +230,7 @@ pub fn label(g: *game.Game, comptime row: Row, buf: []u8) [:0]const u8 {
         .reveal_map => menu.toggle(name, g.light.reveal_map),
         .fullscreen => menu.toggle(name, window.fullscreen()),
         .vsync => menu.toggle("VSync", g.debug.vsync),
-        .frame_limit => if (g.debug.limit == 0) "Frame Limit: Uncapped" else std.fmt.bufPrintZ(buf, "Frame Limit: {d} FPS", .{LIMITS[g.debug.limit]}) catch "Frame Limit",
+        .frame_limit => if (LIMITS[g.debug.limit] == 0) name ++ ": Uncapped" else std.fmt.bufPrintZ(buf, name ++ ": {d} FPS", .{LIMITS[g.debug.limit]}) catch name,
         else => name,
     };
 }

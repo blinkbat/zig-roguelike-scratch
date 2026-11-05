@@ -66,7 +66,7 @@ fn padOf(guid: []const u8) Device {
     return .ps4;
 }
 
-/// SDL_GameControllerDB (see assets/gamecontrollerdb-LICENSE); environment and adjacent file override it.
+/// SDL_GameControllerDB (see assets/data/gamecontrollerdb-LICENSE); environment and adjacent file override it.
 const MAPPINGS_FILE = "gamecontrollerdb.txt";
 const MAPPINGS = @embedFile(MAPPINGS_FILE);
 const MAPPINGS_ENV = "SDL_GAMECONTROLLERCONFIG";

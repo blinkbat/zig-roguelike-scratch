@@ -411,7 +411,7 @@ fn baked(w: i32, h: i32, comptime paint: fn () void) ?rl.Texture2D {
     rl.endTextureMode();
     var img = rl.loadImageFromTexture(target.texture) catch return null;
     rl.imageFlipVertical(&img);
-    return sprite.Sprites.toTexture(img);
+    return raster.adopt(img);
 }
 
 const SKILL_GRID: f32 = 32;

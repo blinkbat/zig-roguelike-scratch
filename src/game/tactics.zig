@@ -131,7 +131,7 @@ fn castGround(g: *game.Game, comptime act: skillbar.Act, aim: game.Aim, from: P)
                 const a = g.sim.pool.get(id) orelse continue;
                 if (!a.seenIn(&g.sim.lv)) continue;
                 for (0..rules.GravityWell.pulls(rank)) |_| {
-                    if (a.pin.turns > 0) break;
+                    if (a.pin.holding()) break;
                     const d = mathx.toward(a.at, at) orelse break;
                     const to = a.at.add(d.delta());
                     if (!actor.holds(a.kind, &g.sim.lv, to) or !area.has(to)) break;
@@ -260,7 +260,7 @@ pub fn landed(g: *game.Game, id: u16) void {
 pub fn counter(g: *game.Game, id: u16) void {
     const h = g.sim.heroActor() orelse return;
     const a = g.sim.pool.get(id) orelse return;
-    if (!h.tactics.unyielding or mathx.dist(h.at, a.at) != 1 or !g.sim.rng.percent(rules.Unyielding.chance(g.sim.growth.ranks.get(.unyielding)))) return;
+    if (!h.tactics.unyielding or !mathx.adjacent(h.at, a.at) or !g.sim.rng.percent(rules.Unyielding.chance(g.sim.growth.ranks.get(.unyielding)))) return;
     combat.reaction(g, id, attacks.heroKick(&g.sim), rules.Unyielding.VERB, .{ .from = h.at, .wait = 0 }, id, null);
 }
 

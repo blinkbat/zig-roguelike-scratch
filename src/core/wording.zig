@@ -1,7 +1,7 @@
 const std = @import("std");
 
 pub const ASSET = "player-labels.txt";
-pub const FILE = "assets/" ++ ASSET;
+pub const FILE = "assets/data/" ++ ASSET;
 pub const Case = enum { sentence, title, word };
 const Registration = struct { name: []const u8, saved_name: ?[]const u8 = null, casing: Case = .sentence, except: []const []const u8 = &.{}, only: ?[]const []const u8 = null };
 pub const TYPES = [_]Registration{
@@ -23,7 +23,8 @@ pub const TYPES = [_]Registration{
     .{ .name = "ui.character_view.Page", .saved_name = "ui.book.Page" },
     .{ .name = "ui.trees.SkillState" },
     .{ .name = "edit.editor.View" },
-    .{ .name = "edit.editor.Lower" },
+    .{ .name = "edit.tool_catalog.Family" },
+    .{ .name = "edit.editor.Inspect" },
     .{ .name = "map.grid.Tile" },
 };
 

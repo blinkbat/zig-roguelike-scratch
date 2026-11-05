@@ -25,7 +25,7 @@ pub const Ground = enum {
     bridge,
     cobble,
 
-    /// Exported to `assets/<name>-ground.png` by `export_ground.lua`, which names its Desktop source.
+    /// Exported to `assets/ground/<name>-ground.png` by `export_ground.lua`, which names its Desktop source.
     pub fn png(comptime g: Ground) []const u8 {
         return @tagName(g) ++ "-ground.png";
     }
@@ -390,7 +390,7 @@ pub const BankPiece = enum(u8) {
 pub fn bankLand(t: grid.Tile) bool {
     return switch (of(t) orelse return false) {
         .water, .shallows, .lava, .chasm, .bridge => false,
-        else => true,
+        .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .cobble => true,
     };
 }
 

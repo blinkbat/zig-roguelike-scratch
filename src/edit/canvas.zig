@@ -61,7 +61,7 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     defer rl.endScissorMode();
     const v = visible(ed, c);
     drawCells(ed, g, c, v);
-    if (ed.lower == .things and ed.scene.issues.cut_off > 0) {
+    if (ed.inspect == .things and ed.scene.issues.cut_off > 0) {
         var cells = grid.Cells.of(v.lo, v.hi);
         while (cells.next()) |p| {
             if (ed.scene.cutOff(grid.Level.idx(p))) rl.drawRectangleRec(ed.cellRect(c, p), CUT_OFF);
@@ -289,7 +289,7 @@ test "offscreen graph thumbnails defer generation and uploads until their image 
     const ed = try editor.Editor.create(std.testing.allocator);
     defer ed.destroy();
     while (ed.map.node_n < atlas.MAX_NODES) _ = ed.map.add(.{ .procgen = .{} });
-    const c = raster.rect(widgets.PANEL_W, 0, 640, 480);
+    const c = raster.rect(widgets.SIDE_W, widgets.TOP_H, 640, 480);
     ed.gcam = .{ 10000, 10000 };
     for (0..ed.map.node_n) |n| {
         try std.testing.expect(thumb(ed, n, thumbRect(ed.boxAt(c, n)), c) == null);

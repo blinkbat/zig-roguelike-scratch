@@ -23,6 +23,7 @@ EXE = 'cistern'
 LINUX_ARCH = 'x86_64'
 LINUX_TRIPLE = LINUX_ARCH + '-linux-gnu'
 EMBEDDED = ('.png', '.ttf', '.txt')
+UNEMBEDDED = ('source', 'backup')
 PREFIX_LAYOUT = 1
 GLIBC = (2, 31)
 MACOS = (11, 0)
@@ -276,7 +277,7 @@ def map_paths():
 def source_hash():
     paths = [ROOT / 'build.zig', ROOT / 'build.zig.zon', ROOT / 'tools/source_rules.zig', LOCK_PATH, SELF]
     paths += list((ROOT / 'src').rglob('*.zig'))
-    paths += [p for p in ASSETS.iterdir() if p.suffix in EMBEDDED]
+    paths += [p for p in ASSETS.rglob('*') if p.is_file() and p.suffix in EMBEDDED and p.relative_to(ASSETS).parts[0] not in UNEMBEDDED]
     paths += map_paths()
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda p: p.relative_to(ROOT).as_posix()):
@@ -296,8 +297,8 @@ def package(binary, output, metadata, platform, arch):
         files['run.command'] = (LAUNCHER, 0o755)
     for path in map_paths():
         files[path.relative_to(ROOT).as_posix()] = (path.read_bytes(), 0o644)
-    for filename in ('Balthazar-OFL.txt', 'SourceSans3-OFL.txt', 'gamecontrollerdb-LICENSE'):
-        files['licenses/' + filename] = ((ASSETS / filename).read_bytes(), 0o644)
+    for license in ('fonts/Balthazar-OFL.txt', 'fonts/SourceSans3-OFL.txt', 'data/gamecontrollerdb-LICENSE'):
+        files['licenses/' + posixpath.basename(license)] = ((ASSETS / license).read_bytes(), 0o644)
     requirements = '''Requires glibc ''' + dotted(GLIBC) + ''' or newer, an X11 display (or XWayland), and OpenGL 3.3.
 On Debian/Ubuntu, runtime libraries can be installed with:
   sudo apt install libgl1 libglx0 libx11-6 libxcursor1 libxext6 libxfixes3 libxi6 libxinerama1 libxrandr2 libxrender1

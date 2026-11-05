@@ -100,7 +100,7 @@ Harvest also recovers life from status kills; the existing passive/totem kill re
 keeps its blow-only contract. Its healing is presented with the killing impact or tick.
 
 Rare names combine two saved words independently of the modifiers, such as `Spine Crusher`,
-`Void Maw` or `Magus Fold` (576 combinations). The base name remains visible beneath the
+`Void Maw` or `Magus Fold`; `items.RareName` owns the word pools. The base name remains visible beneath the
 yellow name on item cards. Added modifiers are yellow; fixed base properties stay neutral.
 Rares use the same legal modifier pool and value ranges as magic items, without repeating
 a modifier kind, with at most two prefixes and two suffixes. Names and all four mod slots
@@ -164,7 +164,8 @@ foe and always opens a 2-per-turn bleed, subject to bleed resistance.
 
 War Cry gives each visible foe within 3 tiles a rank-based chance to become Frightened, a status
 with its own resistance meter. Frightened foes run from the hero and attack only when cornered.
-Innate fright resistance: slimes, caustic bloats and pyre bloats 100%, beefy pibs 50%, bandit crossbowmen 25%, others 0%.
+Each foe's innate fright resistance comes from `actor.row().fright_resist`, resolved by
+`actor.innateResist` in [actor.zig](../src/play/actor.zig). A value of 100% prevents War Cry from frightening it.
 A pib's witness fright applies the same status without a roll.
 
 Steady Aim prepares the next arrow with damage and critical bonuses; movement cancels it.

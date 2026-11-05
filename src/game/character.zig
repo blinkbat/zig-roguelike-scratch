@@ -237,7 +237,7 @@ fn takeDrop(g: *game.Game, i: usize) bool {
 fn takeSupply(g: *game.Game, i: usize) bool {
     const kind = g.sim.ground.supplies[i].kind;
     if (!g.sim.ground.takeSupply(i, &g.sim.inventory)) {
-        g.character.message.say("Stack full", .{});
+        g.character.message.say(items.STACK_FULL, .{});
         return false;
     }
     g.sim.log.push(.loot, "Picked up {s}.", .{consumable.phrase(kind)});
@@ -374,7 +374,7 @@ fn itemCommand(g: *game.Game, command: book.Command) void {
             const link = doorReached(g, h.at, p) orelse return;
             const dx = p.x - h.at.x;
             if (p.eq(h.at)) {
-                if (h.pin.turns > 0) game.struggle(g) else g.sim.travel = link;
+                if (h.pin.holding()) game.struggle(g) else g.sim.travel = link;
             } else if (h.hampered()) {
                 g.mode = .play;
                 game.holdWalk(g);

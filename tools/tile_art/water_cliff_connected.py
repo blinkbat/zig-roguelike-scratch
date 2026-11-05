@@ -96,7 +96,7 @@ for n, name in enumerate(names):
             f'slice.name={q(f"transition_{n}_mask_{mask:02d}")}',
         ])
 for n, asset in enumerate(('shallows-cliff.png', 'water-cliff.png')):
-    layer(('Shallow' if n == 0 else 'Deep') + ' - original faces', root / 'assets' / asset, 32 + n * 320, 496)
+    layer(('Shallow' if n == 0 else 'Deep') + ' - original faces', root / 'assets/water' / asset, 32 + n * 320, 496)
     for i, name in enumerate(('left', 'repeat', 'right')):
         lua.extend([
             f'local slice=s:newSlice(Rectangle({32+n*320+i*64},496,64,64))',

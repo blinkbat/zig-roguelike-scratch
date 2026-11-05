@@ -1,11 +1,11 @@
-const FLASH_GAIN = impact_queue.FLASH_GAIN;
-const DEATH_DARKEN = impact_queue.DEATH_DARKEN;
+const std = @import("std");
+const rl = @import("raylib");
 const state = @import("effect_state.zig");
 const impact_queue = @import("impact_queue.zig");
 pub const Matter = state.Matter;
 pub const ActorImpact = state.ActorImpact;
 pub const Impact = state.Impact;
-pub const Blow = state.Blow;
+const Blow = state.Blow;
 pub const Status = state.Status;
 pub const Body = state.Body;
 pub const After = state.After;
@@ -14,18 +14,13 @@ pub const Puff = state.Puff;
 pub const TICK_WISPS = state.TICK_WISPS;
 pub const BURST_WISPS = state.BURST_WISPS;
 pub const Sting = state.Sting;
-pub const Settle = state.Settle;
-pub const Burst = state.Burst;
+const Settle = state.Settle;
+const Burst = state.Burst;
 pub const Zap = state.Zap;
-pub const Shimmer = state.Shimmer;
+const Shimmer = state.Shimmer;
 pub const FLASH_S = impact_queue.FLASH_S;
-pub const DEATH_S = impact_queue.DEATH_S;
 pub const DEATH_RGB = impact_queue.DEATH_RGB;
-pub const Dying = impact_queue.Dying;
-pub const DUE = impact_queue.DUE;
 pub const OWED_KINDS = impact_queue.OWED_KINDS;
-const std = @import("std");
-const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const actor = @import("../play/actor.zig");
@@ -68,7 +63,6 @@ const FLY_FADE: f32 = 0.5;
 const MOTE_STEP: f32 = 1.0 / 30.0;
 /// Of its speed along the ground a mote keeps through each bounce.
 const SKID: f32 = 0.6;
-const CONTACT = look.CONTACT;
 const CONTACT_S: f32 = 0.09;
 /// Sprite pixels.
 const CONTACT_R: f32 = 7;
@@ -138,7 +132,7 @@ const WISP_A: f32 = 0.5;
 
 const MOTES: usize = 320;
 const ARCS: usize = 12;
-const PULSES: usize = 32;
+pub const PULSES: usize = 32;
 const RIPPLES: usize = 24;
 
 /// `ring`'s slot at `head`, the oldest, with `head` moved on past it.
@@ -148,7 +142,6 @@ fn claim(comptime T: type, ring: []T, head: *usize) *T {
     return at;
 }
 
-/// The kinds of turn effect a body can owe: `presentation.Owed`'s fields.
 const ARC_S: f32 = 0.18;
 /// An arc's kinks: cells apart along it and the most they stray across it, a fork every `ARC_FORK` kinks, and its light every `ARC_GLOW_EVERY` cells.
 const ARC_STEP: f32 = 0.2;
@@ -164,6 +157,7 @@ const Arc = struct {
 
 /// A brief light an effect casts: reach in cells, peak gain, and seconds to fade.
 pub const Glow = struct { radius: f32, gain: f32, life: f32 };
+pub const Mark = struct { x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color, alpha: f32, stacks: u8 };
 pub const EMBER_GLOW = Glow{ .radius = 2.2, .gain = 0.8, .life = 0.32 };
 const SHIMMER_GLOW = Glow{ .radius = 2.2, .gain = 0.65, .life = 0.4 };
 const FIRE_BURST_GLOW = Glow{ .radius = 3.5, .gain = 1.4, .life = 0.35 };
@@ -507,7 +501,7 @@ pub const Fx = struct {
     fn land(self: *Fx, b: Blow) void {
         const at = mathx.centre(b.impact.at());
         if (b.fire) self.embers(at);
-        self.emit(.{ .p = .{ at[0], at[1], STRIKE_Z }, .v = .{ 0, 0, 0 }, .life = CONTACT_S, .r = CONTACT_R * (if (b.impact.lethal()) KILL_POP else 1), .col = CONTACT, .add = true });
+        self.emit(.{ .p = .{ at[0], at[1], STRIKE_Z }, .v = .{ 0, 0, 0 }, .life = CONTACT_S, .r = CONTACT_R * (if (b.impact.lethal()) KILL_POP else 1), .col = look.CONTACT, .add = true });
         const s = sprayOf(b.matter);
         self.spray(at, b.dir, s, if (b.impact.lethal()) s.kill else s.hit);
     }
@@ -540,16 +534,6 @@ pub const Fx = struct {
 
     pub fn glow(self: *Fx, at: [2]f32, col: rl.Color, g: Glow) void {
         claim(Pulse, &self.pulses, &self.pulse_head).* = .{ .source = .{ .at = .{ at[0], at[1], STRIKE_Z }, .col = col, .radius = g.radius, .gain = g.gain }, .life = g.life, .max = g.life };
-    }
-
-    pub fn illuminate(self: *const Fx, lv: *const grid.Level, lamps: *light.Light) void {
-        lamps.clearEffects();
-        for (&self.pulses) |*p| {
-            if (p.life <= 0) continue;
-            var source = p.source;
-            source.gain *= p.life / p.max;
-            lamps.emit(lv, source);
-        }
     }
 
     pub fn trail(self: *Fx, lv: *const grid.Level, at: [2]f32, dir: [2]f32, act: skillbar.Act, age: f32) void {
@@ -614,7 +598,49 @@ pub const Fx = struct {
         }
     }
 
-    pub fn drawBleeding(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
+    /// A status's mark over a body whose cell's top-left is `m.x`, `m.y`.
+    pub fn drawStatus(self: *const Fx, s: Status, m: Mark) void {
+        const mark = markOf(s) orelse return;
+        mark(self, m);
+    }
+
+    /// Null for a status shown only on the hud; `Status.marked` must agree.
+    fn markOf(s: Status) ?*const fn (*const Fx, Mark) void {
+        return switch (s) {
+            .bleeding => &drawBleeding,
+            .burning => &markBurning,
+            .chilled => &drawChilled,
+            .pinned => &drawPinned,
+            .shocked => &drawShocked,
+            .sundered => &drawSundered,
+            .blinded => &drawBlinded,
+            .confused => &drawConfused,
+            .enfeebled => &drawEnfeebled,
+            .maimed => &drawMaimed,
+            .frightened => &drawFrightened,
+            .warded => &drawWarded,
+            .resistant, .guarding, .unyielding, .steady, .overwatch => null,
+        };
+    }
+
+    fn markBurning(self: *const Fx, m: Mark) void {
+        self.drawBurning(m.x, m.y, m.cell, m.seed, m.alpha);
+    }
+
+    /// Each glow pulse's light as it stands, faded by its age.
+    pub fn pulseLights(self: *const Fx, buf: *[PULSES]light.Emission) []const light.Emission {
+        var n: usize = 0;
+        for (&self.pulses) |*p| {
+            if (p.life <= 0) continue;
+            buf[n] = p.source;
+            buf[n].gain *= p.life / p.max;
+            n += 1;
+        }
+        return buf[0..n];
+    }
+
+    fn drawBleeding(self: *const Fx, m: Mark) void {
+        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
         const t = self.seconds.at();
         for (0..BLEED_DROPS) |i| {
             const phase = @as(f32, @floatFromInt(i)) / BLEED_DROPS;
@@ -678,7 +704,8 @@ pub const Fx = struct {
         }
     }
 
-    pub fn drawChilled(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
+    fn drawChilled(self: *const Fx, m: Mark) void {
+        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
         const t = self.seconds.at() + @as(f32, @floatFromInt(seed));
         for (0..CHILL_FLAKES) |i| {
             const phase = @as(f32, @floatFromInt(i)) / CHILL_FLAKES;
@@ -691,7 +718,8 @@ pub const Fx = struct {
     }
 
     /// Stakes driven in round its feet.
-    pub fn drawPinned(_: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
+    fn drawPinned(_: *const Fx, m: Mark) void {
+        const x, const y, const cell, const ink = .{ m.x, m.y, m.cell, m.ink };
         for (PIN_STAKES) |s| {
             const foot = rl.Vector2{ .x = x + cell * s[0], .y = y + cell * PIN_FOOT };
             const top = rl.Vector2{ .x = foot.x + cell * s[1], .y = foot.y - cell * PIN_H };
@@ -700,7 +728,8 @@ pub const Fx = struct {
     }
 
     /// A ring round it, breathing.
-    pub fn drawWarded(self: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
+    fn drawWarded(self: *const Fx, m: Mark) void {
+        const x, const y, const cell, const ink = .{ m.x, m.y, m.cell, m.ink };
         const breath = @sin(self.seconds.at() * WARD_RAD_S);
         const r = cell * (WARD_R + breath * 0.02);
         for (0..WARD_DOTS) |i| {
@@ -711,7 +740,8 @@ pub const Fx = struct {
     }
 
     /// Sparks flickering across it.
-    pub fn drawShocked(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
+    fn drawShocked(self: *const Fx, m: Mark) void {
+        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
         const t = self.seconds.at() * SHOCK_HZ + @as(f32, @floatFromInt(seed)) * 0.37;
         const k = pxScale(cell);
         const arm = cell * 0.05;
@@ -726,7 +756,8 @@ pub const Fx = struct {
     }
 
     /// A crack across its middle for each stack.
-    pub fn drawSundered(_: *const Fx, x: f32, y: f32, cell: f32, stacks: u8, ink: rl.Color) void {
+    fn drawSundered(_: *const Fx, m: Mark) void {
+        const x, const y, const cell, const stacks, const ink = .{ m.x, m.y, m.cell, m.stacks, m.ink };
         const k = pxScale(cell);
         for (0..stacks) |i| {
             const cx = x + cell * (0.3 + @as(f32, @floatFromInt(i)) * 0.2);
@@ -738,7 +769,8 @@ pub const Fx = struct {
     }
 
     /// A shut eye over its head.
-    pub fn drawBlinded(_: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
+    fn drawBlinded(_: *const Fx, m: Mark) void {
+        const x, const y, const cell, const ink = .{ m.x, m.y, m.cell, m.ink };
         const k = pxScale(cell);
         const lid = y + cell * HALO_Y;
         pixel.line(.{ .x = x + cell * 0.38, .y = lid }, .{ .x = x + cell * 0.62, .y = lid }, 1, k, ink);
@@ -746,7 +778,8 @@ pub const Fx = struct {
     }
 
     /// Dots circling over its head.
-    pub fn drawConfused(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
+    fn drawConfused(self: *const Fx, m: Mark) void {
+        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
         const t = self.seconds.at() * 3 + @as(f32, @floatFromInt(seed));
         for (0..CONFUSION_DOTS) |i| {
             const a = t + @as(f32, @floatFromInt(i)) * mathx.TAU / CONFUSION_DOTS;
@@ -756,7 +789,8 @@ pub const Fx = struct {
     }
 
     /// A chevron sinking beside its head.
-    pub fn drawEnfeebled(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
+    fn drawEnfeebled(self: *const Fx, m: Mark) void {
+        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
         const k = pxScale(cell);
         const sink = @mod(self.seconds.at() * ENFEEBLE_HZ + @as(f32, @floatFromInt(seed)) * 0.31, 1);
         const tip = rl.Vector2{ .x = x + cell * ENFEEBLE_X, .y = y + cell * (HALO_Y + 0.08 + sink * 0.08) };
@@ -767,7 +801,8 @@ pub const Fx = struct {
     }
 
     /// A bent bar at its feet, the leg it favours.
-    pub fn drawMaimed(_: *const Fx, x: f32, y: f32, cell: f32, ink: rl.Color) void {
+    fn drawMaimed(_: *const Fx, m: Mark) void {
+        const x, const y, const cell, const ink = .{ m.x, m.y, m.cell, m.ink };
         const k = pxScale(cell);
         const foot = y + cell * PIN_FOOT;
         const knee = rl.Vector2{ .x = x + cell * 0.3, .y = foot - cell * 0.1 };
@@ -776,7 +811,8 @@ pub const Fx = struct {
     }
 
     /// A trembling mark beside its head.
-    pub fn drawFrightened(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color) void {
+    fn drawFrightened(self: *const Fx, m: Mark) void {
+        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
         const k = pxScale(cell);
         const shake = @sin(self.seconds.at() * FRIGHT_RAD_S + @as(f32, @floatFromInt(seed))) * FRIGHT_SHAKE;
         const top = rl.Vector2{ .x = x + cell * (FRIGHT_X + shake), .y = y + cell * HALO_Y };
@@ -1250,6 +1286,15 @@ fn live(fx: *const Fx) Live {
 
 const TEST_BLOW = Blow{ .impact = .{ .actor = .{ .slot = .fromIndex(3), .at = .{ .x = 20, .y = 20 }, .lethal = false } }, .dir = .{ 1, 0 }, .matter = .blood };
 
+test "a status draws a mark over its body exactly when it is marked" {
+    var marks: usize = 0;
+    for (std.enums.values(Status)) |s| {
+        try std.testing.expectEqual(s.marked(), Fx.markOf(s) != null);
+        marks += @intFromBool(s.marked());
+    }
+    std.debug.print("status marks: {d} of {d} statuses draw one\n", .{ marks, std.enums.values(Status).len });
+}
+
 test "an arc kinks, strays and lights at the same spacing whatever its length" {
     var widest_gap: [2]f32 = .{ 1, 0 };
     var widest_stray: f32 = 0;
@@ -1473,7 +1518,7 @@ test "a blow flashes its body for a beat and sprays blood a fraction of a cell, 
     var fx = Fx{};
     fx.clear();
     fx.strike(0, TEST_BLOW);
-    try std.testing.expectApproxEqAbs(FLASH_GAIN, fx.impacts.flashOf(.fromIndex(3)), 1e-6);
+    try std.testing.expectApproxEqAbs(impact_queue.FLASH_GAIN, fx.impacts.flashOf(.fromIndex(3)), 1e-6);
     try std.testing.expectEqual(@as(f32, 0), fx.impacts.flashOf(.fromIndex(2)));
     const dt = mathx.TEST_DT;
     var reach: f32 = 0;
@@ -1613,7 +1658,7 @@ test "a sting flashes its body when the picture gets there and sprays nothing" {
     fx.step(&lv, 0.05);
     try std.testing.expectEqual(@as(f32, 0), fx.impacts.flashOf(.fromIndex(3)));
     fx.step(&lv, 0.06);
-    try std.testing.expectApproxEqAbs(FLASH_GAIN, fx.impacts.flashOf(.fromIndex(3)), 0.1);
+    try std.testing.expectApproxEqAbs(impact_queue.FLASH_GAIN, fx.impacts.flashOf(.fromIndex(3)), 0.1);
     try std.testing.expectEqual(@as(usize, 0), live(&fx).flying + live(&fx).stains);
     for (fx.motes) |m| try std.testing.expect(m.life <= 0);
 }
@@ -1633,7 +1678,7 @@ test "a killed foe darkens as its death lands, then fades out; a hurt one and a 
     fx.strike(0.1, hurt);
     fx.settle(0.1, .{ .slot = .fromIndex(0), .after = .{ .body = .{ .kind = .archer, .hp = 0, .max = 20, .seq = 1 } } });
     fx.step(&lv, 0.05);
-    try std.testing.expectEqual(Dying{}, fx.impacts.dyingOf(.fromIndex(3)));
+    try std.testing.expectEqual(impact_queue.Dying{}, fx.impacts.dyingOf(.fromIndex(3)));
     const dt = mathx.TEST_DT;
     var dark_at: ?f32 = null;
     var gone_at: ?f32 = null;
@@ -1643,10 +1688,10 @@ test "a killed foe darkens as its death lands, then fades out; a hurt one and a 
         t += dt;
         if (dark_at == null and fx.impacts.dyingOf(.fromIndex(3)).dark >= 1) dark_at = t - 0.1;
         if (dark_at != null and gone_at == null and !fx.impacts.isDying(.fromIndex(3))) gone_at = t - 0.1;
-        try std.testing.expectEqual(Dying{}, fx.impacts.dyingOf(.fromIndex(4)));
-        try std.testing.expectEqual(Dying{}, fx.impacts.dyingOf(.fromIndex(0)));
+        try std.testing.expectEqual(impact_queue.Dying{}, fx.impacts.dyingOf(.fromIndex(4)));
+        try std.testing.expectEqual(impact_queue.Dying{}, fx.impacts.dyingOf(.fromIndex(0)));
     }
     std.debug.print("death fade: wholly dark {d:.3} s after landing, gone at {d:.3} s\n", .{ dark_at.?, gone_at.? });
-    try std.testing.expectApproxEqAbs(DEATH_S * DEATH_DARKEN, dark_at.?, dt * 1.5);
-    try std.testing.expectApproxEqAbs(DEATH_S, gone_at.?, dt * 1.5);
+    try std.testing.expectApproxEqAbs(impact_queue.DEATH_S * impact_queue.DEATH_DARKEN, dark_at.?, dt * 1.5);
+    try std.testing.expectApproxEqAbs(impact_queue.DEATH_S, gone_at.?, dt * 1.5);
 }

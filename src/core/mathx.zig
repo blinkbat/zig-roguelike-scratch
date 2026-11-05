@@ -109,6 +109,12 @@ pub fn percentCeil(v: i32, pc: i32) i32 {
     return std.math.lossyCast(i32, @divTrunc(@as(i64, v) * pc + PERCENT - 1, PERCENT));
 }
 
+/// A non-negative amount counted in hundredths, rounded up as often as its fraction.
+pub fn percentRound(hundredths: i64, rng: *Rng) i64 {
+    const part: u32 = @intCast(@mod(hundredths, PERCENT));
+    return @divTrunc(hundredths, PERCENT) + @intFromBool(part > 0 and rng.percent(part));
+}
+
 /// The ending a noun counted `n` times takes.
 pub fn plural(n: anytype) []const u8 {
     return if (n == 1) "" else "s";
@@ -174,6 +180,11 @@ pub fn stepIn(comptime T: type, list: []const T, v: T, by: i32, missing: ?usize)
 /// Chebyshev, to match 8-way movement: every step, range and gap on the grid.
 pub fn dist(a: P, b: P) i32 {
     return @intCast(@max(@abs(a.x - b.x), @abs(a.y - b.y)));
+}
+
+/// One cell apart, diagonals included: within a melee blow's reach.
+pub fn adjacent(a: P, b: P) bool {
+    return dist(a, b) == 1;
 }
 
 /// The cells exactly `r` from `c`, row by row.

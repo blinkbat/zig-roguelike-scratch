@@ -103,16 +103,25 @@ fn strike(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) ?S
     }
     const a = g.sim.pool.get(id).?;
     if (!attacks.heroLands(&g.sim, a, .chosen)) return null;
-    var r = attacks.heroSkill(&g.sim, act).against(g.sim.combatStats(a).armour, &g.sim.rng);
+    const blow = chosenBlow(g, a, attacks.heroSkill(&g.sim, act), act, true, 0);
+    wound(g, id, blow.roll, M.VERB, s);
+    if (g.sim.pool.get(id) == null) return null;
+    return .{ .id = id, .takes = blow.takes };
+}
+
+const Chosen = struct { roll: attacks.Roll, takes: bool };
+
+/// A landing chosen blow through `a`'s armour, its ailment rolled first where `through` and the blow leaves it alive.
+fn chosenBlow(g: *game.Game, a: *actor.Actor, raw: attacks.Roll, comptime act: skillbar.Act, through: bool, resist: i16) Chosen {
+    const M = skillbar.Act.skill(act);
+    var r = raw.against(g.sim.combatStats(a).armour, &g.sim.rng);
     r.hit_checked = true;
     r.opportunity = attacks.opportune(&g.sim, a);
-    const takes = if (comptime act.afflicts()) attacks.afflicted(&g.sim, a, M, survives(&g.sim, a, r.dmg, M.AILMENT), 0) else false;
+    const takes = if (comptime act.afflicts()) attacks.afflicted(&g.sim, a, M, through and survives(&g.sim, a, r.dmg, M.AILMENT), resist) else false;
     if (comptime act.afflicts()) if (takes) {
         r.applied = M.AILMENT;
     };
-    wound(g, id, r, M.VERB, s);
-    if (g.sim.pool.get(id) == null) return null;
-    return .{ .id = id, .takes = takes };
+    return .{ .roll = r, .takes = takes };
 }
 
 fn cut(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke) void {
@@ -127,7 +136,7 @@ pub fn knock(g: *game.Game, comptime act: skillbar.Act, d: mathx.Dir, s: Stroke)
     const id = hit.id;
     const a = g.sim.pool.get(id).?;
     const name = actor.row(a.kind).name;
-    const back = if (a.pin.turns > 0) null else M.knocked(&g.sim.lv, a.at, d, id);
+    const back = if (a.pin.holding()) null else M.knocked(&g.sim.lv, a.at, d, id);
     if (back) |b| if (actor.holds(a.kind, &g.sim.lv, b)) {
         tactics.displace(g, id, b);
         _ = g.pic.glideToHeld(.fromIndex(actor.Pool.slot(id)), b, -s.wait);
@@ -153,17 +162,11 @@ pub fn arrowHit(g: *game.Game, id: u16, hit: attacks.Rolled, comptime act: skill
     const wet: ?Wet = if (el == .lightning and grounded) if (wading(&g.sim, at)) |bodies| .{ .bodies = bodies, .struck = actor.Pool.slot(id), .born = g.sim.pool.n } else null else null;
     defer conductTo(g, at, wet, s);
     if (!attacks.heroLands(&g.sim, a, .chosen)) return;
-    const stats = g.sim.combatStats(a);
-    const resists = stats.elements;
-    var rolled = hit.against(resists);
-    rolled.hit_checked = true;
-    rolled.opportunity = attacks.opportune(&g.sim, a);
-    var r = rolled.against(stats.armour, &g.sim.rng);
-    const lands = survives(&g.sim, a, r.dmg, M.AILMENT) and if (el) |e| hit.blow.reaches(resists, e) else true;
-    const takes = attacks.afflicted(&g.sim, a, M, lands, if (el) |e| resists.get(e) else 0);
-    if (takes) r.applied = M.AILMENT;
-    if (r.dmg > 0) wound(g, id, r, M.VERB, s);
-    if (takes) if (g.sim.pool.get(id)) |b| g.sim.sayFoeTakes(b, M.TAKES);
+    const resists = g.sim.combatStats(a).elements;
+    const reaches = if (el) |e| hit.blow.reaches(resists, e) else true;
+    const blow = chosenBlow(g, a, hit.against(resists), act, reaches, if (el) |e| resists.get(e) else 0);
+    if (blow.roll.dmg > 0) wound(g, id, blow.roll, M.VERB, s);
+    if (blow.takes) if (g.sim.pool.get(id)) |b| g.sim.sayFoeTakes(b, M.TAKES);
 }
 
 /// Lightning landing in water runs through it: every body wading or swimming in the water it reaches is shocked as it lands.
@@ -518,9 +521,7 @@ fn gasTick(g: *game.Game, id: u16, comptime tick: game.simulation.Tick, comptime
 fn masked(g: *game.Game, id: u16, dmg: i32) i32 {
     const share = if (id == g.sim.hero) std.math.clamp(g.sim.inventory.gear.sum(.masked), 0, mathx.PERCENT) else 0;
     if (share == 0 or dmg <= 0) return dmg;
-    const kept = dmg * (mathx.PERCENT - share);
-    const part: u32 = @intCast(@mod(kept, mathx.PERCENT));
-    return @divTrunc(kept, mathx.PERCENT) + @intFromBool(part > 0 and g.sim.rng.percent(part));
+    return @intCast(mathx.percentRound(@as(i64, dmg) * (mathx.PERCENT - share), &g.sim.rng));
 }
 
 /// Brogue's `T_CAUSES_HEALING`: every hurt body in it, foe or hero.
@@ -740,7 +741,7 @@ fn kinInReach(lv: *const grid.Level, m: actor.Mend, a: *const actor.Actor, from:
 fn throwNet(g: *game.Game, id: u16, n: actor.Net) bool {
     const r = g.sim.pool.get(id).?;
     const h = g.sim.heroActor().?;
-    if (r.ready_in > 0 or h.pin.turns > 0 or !bow.aimable(&g.sim.lv, r.at, h.at, n.range)) return false;
+    if (r.ready_in > 0 or h.pin.holding() or !bow.aimable(&g.sim.lv, r.at, h.at, n.range)) return false;
     const flight = bow.fly(&g.sim.lv, r.at, h.at);
     if (!flight.hits(g.sim.hero)) return false;
     r.ready_in = n.every;
@@ -847,18 +848,18 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
             g.sim.log.push(.danger, "The {s} {s} {s} for {d}.", .{ row.name, verb, g.sim.name.text(), h.dmg });
             g.sim.chronicle.note(.{ .hurt = .{ .by = .{ .foe = kind }, .dmg = h.dmg, .before = before, .best = blow.rolled == s.hit.hi } });
             if (!lethal and h.dmg > 0 and g.sim.procStatus(hero, .bleed, s.bleeds)) {
-                g.sim.log.say("{s} {s}!", .{ g.sim.name.text(), hero.bleed.said() });
+                g.sim.log.push(.danger, "{s} {s}!", .{ g.sim.name.text(), hero.bleed.said() });
                 hero.bleed.start();
             }
             if (!lethal and h.dmg > 0 and g.sim.procStatus(hero, .stun, s.stuns)) {
                 hero.clock.stun();
-                g.sim.log.say("{s} " ++ turn_clock.STUNNED ++ "!", .{g.sim.name.text()});
+                g.sim.sayTakes(actor.Pool.slot(g.sim.hero), hero, turn_clock.STUNNED);
                 g.sim.chronicle.note(.{ .stunned = kind });
             }
             const chills = damage.resistedChance(s.chills, defended.elements.get(glacial.ELEMENT));
             if (!lethal and h.dmg > 0 and g.sim.procStatus(hero, glacial.AILMENT, chills)) {
                 hero.chill.apply();
-                g.sim.log.say("{s} " ++ glacial.TAKES ++ "!", .{g.sim.name.text()});
+                g.sim.sayTakes(actor.Pool.slot(g.sim.hero), hero, glacial.TAKES);
             }
             const after = afterBlow(g, g.sim.hero, h);
             g.pic.recordFoeAttack(.fromInt(id), if (lethal) .{ .kill = after } else .{ .hurt = after }, flight);
@@ -880,7 +881,7 @@ fn knockHero(g: *game.Game, by: u16) void {
     const slot = actor.Pool.slot(by);
     const striker = g.sim.pool.items[slot].at;
     const h = g.sim.heroActor() orelse return;
-    if (h.pin.turns > 0) return;
+    if (h.pin.holding()) return;
     const d = mathx.dirTo(striker, h.at) orelse return;
     const from = h.at;
     const to = from.add(d.delta());
@@ -898,7 +899,7 @@ fn returnThorns(g: *game.Game, id: u16, from: P) void {
     const amount = g.sim.heroAttrs().thorns;
     if (amount <= 0) return;
     const a = g.sim.pool.get(id) orelse return;
-    if (mathx.dist(from, a.at) != 1) return;
+    if (!mathx.adjacent(from, a.at)) return;
     const dmg = attrs.armoured(g.sim.combatStats(a).armour, amount, &g.sim.rng);
     if (dmg <= 0) return;
     const at = a.at;

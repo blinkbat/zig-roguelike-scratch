@@ -43,7 +43,7 @@ pub const Vignette = struct {
         self.low = lowOf(hp, max);
     }
 
-    /// `flash` is the hero's, as `fx.flashOf` gives it.
+    /// `flash` is the hero's, as `impact_queue.Queue.flashOf` gives it.
     pub fn step(self: *Vignette, dt: f32, flash: f32, hp: i32, max: i32) void {
         if (flash > self.was) self.rising = true;
         self.was = flash;

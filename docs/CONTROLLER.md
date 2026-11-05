@@ -39,8 +39,8 @@ joystick's GUID, `input.padOf`) shows PlayStation's icons instead: Cross A, Circ
 bumpers, L2/R2 the triggers. The right-stick click (RS/R3) opens Inspect. The left-stick click and
 PS button do nothing; GLFW reads no touchpad.
 
-- **Mappings** (`input.mapPads`): `assets/gamecontrollerdb.txt` is SDL_GameControllerDB at commit `c1d5289`
-  (2026-10-02, zlib, `assets/gamecontrollerdb-LICENSE`), embedded and newer than the copy GLFW ships (which lacks the
+- **Mappings** (`input.mapPads`): `assets/data/gamecontrollerdb.txt` is SDL_GameControllerDB at commit `c1d5289`
+  (2026-10-02, zlib, `assets/data/gamecontrollerdb-LICENSE`), embedded and newer than the copy GLFW ships (which lacks the
   DualSense Edge). `SDL_GAMECONTROLLERCONFIG`, then a `gamecontrollerdb.txt` beside the exe, take over the pads they
   name, so a new pad needs no rebuild. To update, replace the asset from the repo's `gamecontrollerdb.txt`.
 - **Which pad**: the first of raylib's four slots that GLFW has a mapping for, until another pad presses a button or
@@ -99,7 +99,7 @@ Overwatch uses normal targeting to choose the direction of its covered cone.
 - Click a HUD skill to activate it. A targeted skill previews under the pointer; click the map to confirm and right-click to cancel. Clicking a HUD panel never confirms a map target. Click the modifier slot to toggle the secondary set, or wheel over a slot (down for secondary, up for primary). Returning to a controller clears the mouse toggle.
 - Character and Menu buttons sit in the bottom-right gutter with keyboard/mouse hints. Right-click during play also opens the game menu. Character tabs, shoulder arrows, equipment, inventory, loot, tree actions and binding controls accept clicks. Click an item, skill, passive node or binding slot to select it; moving toward its action button preserves that selection. The wheel scrolls lists and the event log.
 - On Passives, wheel to zoom and drag with the middle button to pan; release stops the drag. The visible Overview action resets zoom and pan. Selection, pan and zoom spend no points. Use the visible allocation or upgrade action to spend one point.
-- The death screen's action is clickable once the lethal turn finishes. The editor retains paint/erase, wheel zoom and middle-drag pan, with clickable Copy/Cut/Paste/Clear/Fit controls and right-click to close modals. Play here and Go through in its status bar arm the next map-cell click; right-click cancels. These actions neither paint nor change the map.
+- The death screen's action is clickable once the lethal turn finishes. The editor retains paint/erase, wheel zoom and middle-drag pan, with clickable Copy/Cut/Paste/Clear/Fit controls and right-click to close modals. Play here (top bar) and Go through (Doors tab) arm the next map-cell click; right-click cancels. These actions neither paint nor change the map.
 
 - **Everything is slots.** On the pad a slot is its button. On the keyboard it is a number (`input.SLOT_ORDER`), and
   the slot holding "Activate Secondary Skill Set" is Ctrl instead, so moving the modifier renumbers the rest. The bar

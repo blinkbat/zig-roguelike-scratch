@@ -80,7 +80,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
 - For concurrent owner play, copy the built executable into the temporary shot directory with a distinct
   basename before `--shot`; `run.cmd` kills every process named `cistern.exe`, including headless captures.
 - `--shot-ui` runs Character/HUD, loot and day/night level-up captures; use the same temporary-directory procedure as `--shot`.
-- `--shot-editor` captures editor workspaces and text/modal states at 720p, 1080p and 1440p; use the same temporary-directory procedure.
+- `--shot-editor` captures editor panels, dropdowns and text/modal states at 720p, 1080p and 1440p; use the same temporary-directory procedure.
 - `--shot-debug` captures each Debug submenu at 720p and loot states, and verifies that the six additional
   lighting/water/weather switches change pixels and restore the exact frame when re-enabled.
 - `--shot-trees` captures two-cell tree height, wall adjacency, smooth hero occlusion and front/behind depth;
@@ -215,16 +215,23 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `thumbnails.Thumbnails` owns graph texture generation, invalidation and lifetime. Notify them through editor change/history operations.
   `widgets` takes explicit `Controls`, font and screen values, with no `Editor` or `Game` access;
   `tool_catalog` owns tool/shape descriptions and checked help; `name_field` owns bounded naming/paste input.
-  `panel` (node list, tools, palette, things,
-  status), `knobs` (generator rows), `canvas` (map, cursor/paste ghost, graph), `modals` (modals, help, object
-  viewer) and `tests` sit beside it in `src/edit/`.
+  The layout follows the soulslike editor (`../zig-soulslike/src/ui/editor.zig`): a two-row top bar (File dropdown,
+  undo/redo, the viewers and Play; brush tabs `tool_catalog.Family` with Map/Graph), the brush panel on the left
+  (Select and its clipboard, then the tab's tools; foes narrow by type), the node's panel on the right (node dropdown,
+  node actions, Things/Generator tabs, `Editor.Inspect`) and a full-width status line. `Editor.canvasOf` owns the
+  geometry; each side scrolls as an `Editor.Pane`; dropdowns are `Editor.popup` (`Which`).
+  `panel` (bars, brush panel, node panel, status), `knobs` (generator rows), `canvas` (map, cursor/paste ghost, graph),
+  `modals` (modals, help, object viewer), `effects` (the Effects viewer) and `tests` sit beside it in `src/edit/`.
+- Effects plays every particle effect, missile, gas puff, flame and status mark on a stage of its own (`effects.Viewer`:
+  an open-floor level and its own `fx.Fx`), through the same calls play makes (`Shot.fly`, `scene.drawFlight`,
+  `Fx.drawStatus`, `scene.drawFlames`); light pools are drawn as soft discs, the stage having no light map.
 - Objects > select a foe > Fight launches `map/spar.zig`'s arena using the app's separate map, with the
   normal editor-test archer and no save slot. Returning preserves the editor map, modal and undo history;
   death retry and Debug > Gameplay > Restart Map recreate the selected opponent. `--shot` includes the arena and character pages.
 - Editor > Text uses `edit/text_catalog.zig` and `edit/text_panel.zig` to browse source wording, rewrite literals
-  by feature, owner and field purpose, and assign separate author tags. Editor workspaces use 24px primary text,
-  20px details and scrollable Tools/Nodes/Things/Generator panels. Source and tag conflict checks protect external edits; wording applies after rebuilding.
-  Display aliases live in `assets/player-labels.txt`, attribution in root `text-tags.json`; enum/save identities stay fixed.
+  by feature, owner and field purpose, and assign separate author tags. Editor panels use 24px primary text
+  and 20px details. Source and tag conflict checks protect external edits; wording applies after rebuilding.
+  Display aliases live in `assets/data/player-labels.txt`, attribution in root `text-tags.json`; enum/save identities stay fixed.
   Map names are references here and use the existing node Rename action. See `docs/TEXT_EDITOR.md`.
 - `save.zig` freezes the whole run: map, visited/current nodes, actors, class/name, resources/statuses,
   RNG, log, skill bar, time, gold, inventory, progression and each node's ground drops. `core/wire.zig`
@@ -255,10 +262,10 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   catch a very subtle diagonal shine (`look.shineSweep`), each cell at its own time. Attacks never open chests. Wilds' `loops` reconnects side paths;
   `rewards chests` rewards substantial branches, fills sparse maps with spaced chests in sheltered alcoves,
   and scatters barrels as minor gold rewards. The Strand enables both; rewards must preserve routes.
-  Its swamp trees (`assets/swamp-tree.png`, standalone `swamp_tree` tiles) scatter on dirt in two passes: within three cells
+  Its swamp trees (`assets/plants/swamp-tree.png`, standalone `swamp_tree` tiles) scatter on dirt in two passes: within three cells
   of water/shallows, then within twelve but none within four, and within two of other dry ground (`water_range`, `water_clear`,
   `land_range`: Near water, Off water, Near land). Each knob's 0 leaves other maps unrestricted.
-  A few glowbulbs (`glow_plant`, `assets/glowbulb.png` with a pale blue light) scatter on its grass as natural torches. Stepping into one
+  A few glowbulbs (`glow_plant`, `assets/plants/glowbulb.png` with a pale blue light) scatter on its grass as natural torches. Stepping into one
   (`Move.burst`, a spent turn) or striking it (`combat.smash`; arrows and bolts stop on it as on a barrel, `bow.Hit.plant`) bursts it into healing gas (`gas.burst`, Brogue's bloodwort pod) and leaves its grass; `Light.uproot` drops its light.
 
 ## Combat and simulation
@@ -326,7 +333,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   A closed chest takes a missile whole; a mimic in it is struck by the real flight while previews show only the chest. Any hero
   blow on a disguised mimic lands (`attacks.heroLands`) and flings it open (`combat.reveal`): it acts from the next turn (`waits`)
   and stays drawn as its chest until that blow lands (`Presentation.masked`). Melee swings still never target a closed chest.
-  Bandit trappers (`Row.net`, stable `bandit_netter` save/map identity, `assets/bandit-trapper.png`) pin the hero: steps struggle in place, each with `pinning.SLIP`% to make that turn the pin's last; leaps and rushes are blocked. Shieldbearers knock the hero back
+  Bandit trappers (`Row.net`, stable `bandit_netter` save/map identity, `assets/bodies/bandit-trapper.png`) pin the hero: steps struggle in place, each with `pinning.SLIP`% to make that turn the pin's last; leaps and rushes are blocked. Shieldbearers knock the hero back
   (`Presentation.knocked_from`/`Owed.knock` draw it as the blow lands). Frost wisps' touch chills the hero; every third chilled
   action costs its next turn. Pyre bloats' burst (`rewards.pyre`) burns the bodies beside it. Pib shamans (`Row.mends`) heal
   the most hurt pib in reach or wake sleepers, keeping `Row.keeps` cells off the hero.
@@ -469,7 +476,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   owner edits before regenerating extensions. Palette matching alone is not a faithful port.
 - Regular walls use Desktop `regular-walls.aseprite`, `Layer 1`; cave/forest art is separate.
   `tools/tile_art/port_walls.lua` updates extensions; `export_walls.lua` writes the 47-cell runtime atlas
-  (`assets/source/walls.aseprite`, `assets/walls.png`). Keep `sprite_assets.WALL_MASKS` and `look.WALL_FACE_PX` aligned.
+  (`assets/source/walls.aseprite`, `assets/walls/walls.png`). Keep `sprite_assets.WALL_MASKS` and `look.WALL_FACE_PX` aligned.
 - Ground sources live on Desktop and in `assets/source/`; preserve `Draw here` and the material's named
   extensions layer. `port_ground.lua` records crops; `export_ground.lua` produces 16 dual-grid masks in
   64px cells. `name=shallows` reads `water.aseprite` into `shallows-ground.png`; `name=water` reads
@@ -494,8 +501,10 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   the Desktop source. `export_forest.lua` exports the art layers. Isolated shrubs mix `shrub.png` and forest
   cell 01 by stable position hash. `tone_forest.lua` records the darker foliage/grass palette; inspect
   existing tone and `assets/backup/` before applying it again.
-- `build.zig` embeds top-level PNG/TTF/TXT files in `assets/` by filename (`@embedFile`,
-  `@import("assets").names`), including controller mappings. Maps/saves still use the working directory.
+- Runtime assets sit in one folder per kind: `bodies/`, `props/`, `plants/`, `ground/`, `water/`, `walls/`, `ui/`, `fonts/`
+  and `data/` (controller mappings, player labels); `source/` holds Aseprite sources and `backup/` only the owner's forest backups.
+  Nothing else goes in `assets/`. `build.zig` embeds every PNG/TTF/TXT outside `source/` and `backup/` by bare filename
+  (`@embedFile`, `@import("assets").names`), so filenames must stay unique across folders. Maps/saves still use the working directory.
   Register body/tile PNGs in `sprite_assets.BODY_PNGS`/`TILE_PNGS`. Sprites are 64px wide; tall scenery retains its native height. Bodies face right; `Presentation.facing`
   mirrors leftward movement/strikes/aim and retains facing for vertical motion. `CELL` must be a whole
   multiple of 64, never fractional sprite scaling. Rebuild after installing assets.

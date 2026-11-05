@@ -103,15 +103,18 @@ for name in ('shoot', 'wait', 'secondary', 'juke', 'burning_arrow', 'glacial_sho
 hud_source = (ROOT / 'src/ui/hud.zig').read_text(encoding='utf-8')
 
 
-def hud_rgb(name):
-    hex_ = re.search(rf'const {name} = look\.rgb\(0x([0-9a-fA-F]{{6}})\)', hud_source).group(1)
+def source_rgb(source, name):
+    match = re.search(rf'\bconst {name} = (?:fade\()?(?:look\.)?rgb\(0x([0-9a-fA-F]{{6}})\)', source)
+    if match is None:
+        raise ValueError(f'Missing source color: {name}')
+    hex_ = match.group(1)
     return tuple(int(hex_[i:i + 2], 16) for i in (0, 2, 4))
 
 
-LIFE = (hud_rgb('LIFE_CORE'), hud_rgb('LIFE_EDGE'))
-MANA = (hud_rgb('MANA_CORE'), hud_rgb('MANA_EDGE'))
-PLATE = hud_rgb('PLATE')
-WELL = hud_rgb('WELL')
+LIFE = (source_rgb(hud_source, 'LIFE_CORE'), source_rgb(hud_source, 'LIFE_EDGE'))
+MANA = (source_rgb(hud_source, 'MANA_CORE'), source_rgb(hud_source, 'MANA_EDGE'))
+PLATE = source_rgb((ROOT / 'src/gfx/look.zig').read_text(encoding='utf-8'), 'BACKING')
+WELL = source_rgb(hud_source, 'WELL')
 
 
 def skill(name, x, y):

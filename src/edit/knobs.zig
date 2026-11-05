@@ -25,15 +25,14 @@ const game = @import("../game.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const Desk = input.Desk;
-const HEAD = widgets.HEAD;
 
-pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Procgen) void {
+/// In the node's panel, scrolled within `box`.
+pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *atlas.Procgen) void {
     const was = pg.*;
     const fo = &pg.foes;
-    var y = panel.beginScroll(ed, g, top);
-    defer panel.endScroll(ed);
-    if (nodeSwitch(ed, g, &y)) return;
-    y += widgets.BLOCK_GAP;
+    const col = column(g);
+    var y = panel.beginPane(ed, .inspector, box);
+    defer panel.endPane(ed);
     section(g, &y, "Base");
     choiceRow(ed, g, &y, atlas.Floor, &pg.floor, ALGO_CHOICE, .algo);
     switch (pg.floor) {
@@ -43,7 +42,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Pro
     section(g, &y, "Features");
     var drop_feature: ?usize = null;
     for (pg.featuresMut(), 0..) |*ft, i| {
-        if (editor.button(ed, g, widgets.row(widgets.PAD + editor.LABEL_W - widgets.STEP_PITCH, y, widgets.STEP_W), widgets.DROP, false, true, "Take this feature away")) drop_feature = i;
+        if (editor.button(ed, g, widgets.row(col.left() + editor.LABEL_W - widgets.STEP_PITCH, y, widgets.STEP_W), widgets.DROP, false, true, "Take this feature away")) drop_feature = i;
         choiceRow(ed, g, &y, atlas.Feature, ft, FEATURE_CHOICE, .{ .feature = i });
         switch (ft.*) {
             inline else => |*fp, k| knobRows(ed, g, &y, fp, comptime featureRowsOf(k), true),
@@ -51,7 +50,7 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Pro
         y += widgets.BLOCK_GAP;
     }
     if (drop_feature) |i| pg.dropFeature(i);
-    if (editor.button(ed, g, widgets.cellOfRow(y, 0, 1), "+ Feature", false, pg.feature_n < atlas.MAX_FEATURES, ADD_FEATURE_TIP)) _ = pg.addFeature(atlas.FIRST_FEATURE);
+    if (editor.button(ed, g, col.row(y), "+ Feature", false, pg.feature_n < atlas.MAX_FEATURES, ADD_FEATURE_TIP)) _ = pg.addFeature(atlas.FIRST_FEATURE);
     y += widgets.ROW_H + widgets.SECTION_GAP;
     knobs(ed, g, &y, if (pg.floor.outdoor()) "Sky" else "Sky (this base is under a roof)", &pg.sky, &SKY_ROWS, pg.floor.outdoor());
     y += widgets.BLOCK_GAP;
@@ -64,37 +63,22 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, top: i32, pg: *atlas.Pro
         y += widgets.ROW_STEP;
     }
     if (drop) |i| _ = fo.dropMakeup(i);
-    if (editor.button(ed, g, widgets.cellOfRow(y, 0, 1), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
-    panel.scrolledTo(ed, g, top, y + widgets.ROW_H);
+    if (editor.button(ed, g, col.row(y), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
+    panel.fitPane(ed, .inspector, y + widgets.ROW_H);
     editor.refit(ed, pg, was);
 }
 
-fn nodeSwitch(ed: *editor.Editor, g: *game.Game, y: *i32) bool {
-    var name: [atlas.TITLE_MAX]u8 = undefined;
-    rowLabel(g, y.*, "Node");
-    var procgen: usize = 0;
-    for (ed.map.nodes()) |*nd| procgen += @intFromBool(nd.unrolled());
-    const tip = "The next or last procgen node's generator";
-    const by = stepper(ed, g, valueSlot(y.*, 0, 1), ed.nodeName(ed.node, &name), .{
-        .{ .tip = tip, .live = procgen > 1 },
-        .{ .tip = tip, .live = procgen > 1 },
-    });
-    y.* += widgets.ROW_STEP;
-    if (by == 0) return false;
-    var n = ed.node;
-    while (true) {
-        n = mathx.wrap(n, std.math.sign(by), ed.map.node_n);
-        if (ed.map.node[n].unrolled()) break;
-    }
-    if (n == ed.node) return false;
-    ed.select(n);
-    return true;
+/// The generator's rows stand in the node's panel.
+fn column(g: *const game.Game) widgets.Column {
+    return editor.Editor.inspector(g);
 }
 
 pub fn section(g: *game.Game, y: *i32, title: [:0]const u8) void {
-    widgets.textFace(&g.face).draw(title, widgets.PAD, y.*, widgets.TEXT, look.DIM);
-    y.* += HEAD;
+    widgets.textFace(&g.face).draw(title, column(g).left(), y.* + widgets.GAP, widgets.DETAIL, look.UI_GOLD);
+    y.* += SECTION_H;
 }
+
+const SECTION_H: i32 = widgets.DETAIL + 3 * widgets.GAP;
 
 fn knobs(ed: *editor.Editor, g: *game.Game, y: *i32, title: [:0]const u8, owner: anytype, comptime rows: []const Knob, live: bool) void {
     section(g, y, title);
@@ -124,13 +108,9 @@ fn choiceRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime U: type, v: *U
     var tag = std.meta.activeTag(v.*);
     stepChoice(ed, g, y.*, std.meta.Tag(U), &tag, c.tip, true);
     editor.retag(U, v, tag);
-    const slot = valueSlot(y.*, 0, 1);
+    const slot = valueSlot(g, y.*, 0, 1);
     const value = widgets.stepValue(slot);
-    if (valueHit(ed, value, "Every choice; " ++ c.tip)) {
-        ed.drop();
-        ed.popup = .{ .slot = value, .which = which };
-        ed.fresh = true;
-    }
+    if (valueHit(ed, value, "Every choice; " ++ c.tip)) editor.openPopup(ed, value, which, @intFromEnum(tag), g.screen.y);
     y.* += widgets.ROW_STEP;
 }
 
@@ -148,7 +128,8 @@ const DRAW_STEPS = std.EnumArray(std.meta.Tag(pack.Draw), DrawStep).init(.{
 
 fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bool) bool {
     var buf: [8]u8 = undefined;
-    const span = widgets.row(widgets.PAD, y, editor.DRAW_SPAN);
+    const x = column(g).left();
+    const span = widgets.row(x, y, editor.DRAW_SPAN);
     switch (m.draw) {
         inline else => |*n, tag| {
             const s = comptime DRAW_STEPS.get(tag);
@@ -163,7 +144,7 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
         .count => "Exactly this many packs; " ++ Desk.PAINT_CAPTION ++ " to draw by weight",
     };
     if (valueHit(ed, widgets.stepValue(span), flip_tip)) m.draw = m.draw.flipped();
-    var members = widgets.Lay{ .x = widgets.PAD + editor.MEMBERS_X, .y = y, .gap = editor.MEMBER_GAP };
+    var members = widgets.Lay{ .x = x + editor.MEMBERS_X, .y = y, .gap = editor.MEMBER_GAP };
     for (0..pack.MAKEUP_MAX) |i| {
         const r = members.take(editor.MEMBER_W);
         if (i >= m.n) continue;
@@ -175,7 +156,7 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
         if (h.hit) m.turn(i);
     }
     var dropped = false;
-    var tools = widgets.Lay{ .x = widgets.PAD + editor.MAKEUP_TOOLS_X, .y = y };
+    var tools = widgets.Lay{ .x = x + editor.MAKEUP_TOOLS_X, .y = y };
     for (MAKEUP_TOOLS) |t| {
         const r = tools.take(widgets.STEP_W);
         const live = switch (t) {
@@ -223,7 +204,7 @@ const MakeupTool = enum {
 pub const MAKEUP_TOOLS = std.enums.values(MakeupTool);
 
 pub fn rowLabel(g: *game.Game, y: i32, s: [:0]const u8) void {
-    widgets.drawFit(&g.face, s, widgets.TEXT, editor.LABEL_W - widgets.GAP, false, widgets.PAD, y + widgets.TEXT_DY, look.TEXT);
+    widgets.drawFit(&g.face, s, widgets.TEXT, editor.LABEL_W - widgets.GAP, false, column(g).left(), y + widgets.TEXT_DY, look.TEXT);
 }
 
 fn num(buf: []u8, comptime fmt: []const u8, v: anytype) [:0]const u8 {
@@ -598,16 +579,17 @@ fn stepNumber(ed: *editor.Editor, g: *game.Game, y: i32, owner: anytype, comptim
     const tip = k.tips[i] ++ SHIFT_TIP;
     const steps = [2]widgets.Step{ .{ .tip = tip, .live = live and moves(owner, k, i, -1) }, .{ .tip = tip, .live = live and moves(owner, k, i, 1) } };
     const v = numberOf(owner, k, i);
-    bump(@TypeOf(v.*), v, k.unit * stepper(ed, g, valueSlot(y, if (k.parts.len > 0) 0 else i, n), num(&buf, k.fmt, v.*), steps));
+    bump(@TypeOf(v.*), v, k.unit * stepper(ed, g, valueSlot(g, y, if (k.parts.len > 0) 0 else i, n), num(&buf, k.fmt, v.*), steps));
 }
 
 fn stepChoice(ed: *editor.Editor, g: *game.Game, y: i32, comptime T: type, v: *T, tip: [:0]const u8, live: bool) void {
-    const by = stepper(ed, g, valueSlot(y, 0, 1), @tagName(v.*), .{ .{ .tip = tip, .live = live }, .{ .tip = tip, .live = live } });
+    const by = stepper(ed, g, valueSlot(g, y, 0, 1), @tagName(v.*), .{ .{ .tip = tip, .live = live }, .{ .tip = tip, .live = live } });
     v.* = cycle(T, v.*, by);
 }
 
-fn valueSlot(y: i32, k: usize, n: usize) rl.Rectangle {
-    return widgets.slotOf(widgets.PAD + editor.LABEL_W, widgets.INNER_W - editor.LABEL_W, y, k, n);
+fn valueSlot(g: *const game.Game, y: i32, k: usize, n: usize) rl.Rectangle {
+    const col = column(g);
+    return widgets.slotOf(col.left() + editor.LABEL_W, col.inner() - editor.LABEL_W, y, k, n);
 }
 
 fn cycle(comptime T: type, v: T, by: i32) T {

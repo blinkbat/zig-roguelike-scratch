@@ -888,18 +888,24 @@ fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
     if (shadowed < 20) return error.CaravanShadowMissing;
 }
 
+const GLINT_INK = look.rgb(0x302010);
+
+fn swatch(w: i32, h: i32, c: rl.Color, comptime missing: anyerror) !rl.Texture2D {
+    return raster.canvas(w, h, c, .point) orelse return missing;
+}
+
 fn checkWaterCapTint(g: *game.Game) !void {
     const target = try rl.loadRenderTexture(256, 256);
     defer rl.unloadRenderTexture(target);
-    const sight = raster.canvas(1, 1, .{ .r = 128, .g = 128, .b = 128, .a = 255 }, .point) orelse return error.WaterVisibilityMissing;
+    const sight = try swatch(1, 1, .{ .r = 128, .g = 128, .b = 128, .a = 255 }, error.WaterVisibilityMissing);
     defer rl.unloadTexture(sight);
-    const dark = raster.canvas(1, 1, rl.Color.black, .point) orelse return error.WaterGlintsMissing;
+    const dark = try swatch(1, 1, rl.Color.black, error.WaterGlintsMissing);
     defer rl.unloadTexture(dark);
-    const shine = raster.canvas(1, 1, look.rgb(0x302010), .point) orelse return error.WaterGlintsMissing;
+    const shine = try swatch(1, 1, GLINT_INK, error.WaterGlintsMissing);
     defer rl.unloadTexture(shine);
-    const mirror = raster.canvas(1, 1, .{ .r = 80, .g = 90, .b = 120, .a = 128 }, .point) orelse return error.WaterMirrorMissing;
+    const mirror = try swatch(1, 1, .{ .r = 80, .g = 90, .b = 120, .a = 128 }, error.WaterMirrorMissing);
     defer rl.unloadTexture(mirror);
-    const blank = raster.canvas(1, 1, rl.Color.blank, .point) orelse return error.WaterMirrorMissing;
+    const blank = try swatch(1, 1, rl.Color.blank, error.WaterMirrorMissing);
     defer rl.unloadTexture(blank);
     var lv = grid.Level.blank();
     @memset(&lv.tile, .shallows);
@@ -1904,11 +1910,11 @@ fn checkWaterSurface(g: *game.Game) !void {
     for (sight[0..grid.COLS]) |*pixel| pixel.a = 255;
     const visibility = raster.clamped(raster.rgba(&sight, grid.W, grid.H), .point) orelse return error.WaterVisibilityMissing;
     defer rl.unloadTexture(visibility);
-    const gleam = raster.canvas(grid.W, grid.H, look.rgb(0x302010), .point) orelse return error.WaterGlintsMissing;
+    const gleam = try swatch(grid.W, grid.H, GLINT_INK, error.WaterGlintsMissing);
     defer rl.unloadTexture(gleam);
-    const dark = raster.canvas(1, 1, rl.Color.black, .point) orelse return error.WaterGlintsMissing;
+    const dark = try swatch(1, 1, rl.Color.black, error.WaterGlintsMissing);
     defer rl.unloadTexture(dark);
-    const blank = raster.canvas(1, 1, rl.Color.blank, .point) orelse return error.WaterMirrorMissing;
+    const blank = try swatch(1, 1, rl.Color.blank, error.WaterMirrorMissing);
     defer rl.unloadTexture(blank);
     const plain = try waterSample(g, target, &beds, null, .{ 0, 0 });
     defer rl.unloadImage(plain);

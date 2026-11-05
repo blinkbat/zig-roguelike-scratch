@@ -833,6 +833,9 @@ pub const Gear = struct {
 pub const BAG_MAX = 256;
 pub const Failure = error{ Missing, WrongSlot, Requirements, Full };
 
+/// A supply refused because its stack is full.
+pub const STACK_FULL = "Stack full";
+
 pub fn caption(err: Failure) [:0]const u8 {
     return switch (err) {
         error.Full => "Inventory full",

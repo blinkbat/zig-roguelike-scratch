@@ -208,6 +208,7 @@ test {
     _ = @import("edit/knobs.zig");
     _ = @import("edit/canvas.zig");
     _ = @import("edit/modals.zig");
+    _ = @import("edit/effects.zig");
     _ = @import("edit/panel.zig");
     _ = @import("edit/tests.zig");
     _ = @import("save.zig");

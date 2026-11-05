@@ -30,9 +30,9 @@ for i,mask in ipairs(masks) do
   pixels=pixels+count
 end
 for y=320,383 do for x=448,511 do assert(app.pixelColor.rgbaA(atlas:getPixel(x,y))==0,'Unused cell painted') end end
-atlas:saveAs(root..'assets/forest-tree-walls.png')
+atlas:saveAs(root..'assets/walls/forest-tree-walls.png')
 sprite:close()
-local check=Image{fromFile=root..'assets/forest-tree-walls.png'}
+local check=Image{fromFile=root..'assets/walls/forest-tree-walls.png'}
 assert(check:isEqual(atlas),'Export changed the visible artwork')
 local report=assert(io.open(work..'forest-tree-walls-export.txt','w'))
 report:write(('47 cells exported, 64x64 each, %d opaque pixels; unused cell clear.\n'):format(pixels))

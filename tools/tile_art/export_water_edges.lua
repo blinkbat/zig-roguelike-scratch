@@ -7,8 +7,8 @@ local s=assert(app.open(original))
 assert(s.width==960 and s.height==640 and #s.frames==1,'Expected connected water template')
 local baseline=Image(s.width,s.height,ColorMode.RGB)
 local pc=app.pixelColor
-local mask=Image{fromFile=root..'assets/water-cliff-cap.png'}
-local water=Image{fromFile=root..'assets/shallows-ground.png'}
+local mask=Image{fromFile=root..'assets/water/water-cliff-cap.png'}
+local water=Image{fromFile=root..'assets/ground/shallows-ground.png'}
 assert(mask.width==192 and mask.height==64 and water.width==256 and water.height==256,'Unexpected cap or water atlas dimensions')
 local cap=Image(mask.width,mask.height,ColorMode.RGB)
 for y=0,63 do
@@ -28,7 +28,7 @@ local materials=dofile(root..'tools/tile_art/water_cliff_materials.lua')
 local bands=materials.band
 local names={'dirt-shallows-edges','dirt-water-edges','shallows-water-edges'}
 local counts={}
-local outputs={{image=cap,path=root..'assets/shallows-water-cap.png'}}
+local outputs={{image=cap,path=root..'assets/water/shallows-water-cap.png'}}
 for n,name in ipairs(names) do
  local atlas=Image(#materials.bands*water.width,water.height,ColorMode.RGB)
  local x0=32+(n-1)*320
@@ -50,7 +50,7 @@ for n,name in ipairs(names) do
   end
  end
  assert(count>0,'Missing edits for '..name)
- local out=root..'assets/'..name..'.png'
+ local out=root..'assets/water/'..name..'.png'
  outputs[#outputs+1]={image=atlas,path=out}
  counts[#counts+1]=name..': '..count..' changed pixels'
 end

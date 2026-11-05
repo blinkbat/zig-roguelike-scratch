@@ -5,7 +5,6 @@ const grid = @import("../map/grid.zig");
 const day = @import("../map/day.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
-const chain = @import("../play/chain.zig");
 const items = @import("../play/items.zig");
 const progress = @import("../play/progress.zig");
 const skillbar = @import("../play/skillbar.zig");
@@ -60,6 +59,23 @@ pub const Shot = struct {
         const b = self.position(self.ends());
         const len = @max(0.001, mathx.len(b[0] - a[0], b[1] - a[1]));
         return .{ (b[0] - a[0]) / len, (b[1] - a[1]) / len };
+    }
+
+    /// Moves on `dt`, shedding its trail into `effects`; false once it has ended.
+    pub fn fly(self: *Shot, effects: *fx.Fx, lv: *const grid.Level, dt: f32) bool {
+        self.t += dt;
+        const end = @min(self.t, self.lands());
+        const gap = self.lands() / @as(f32, @floatFromInt(@max(1, self.flight.len * TRAIL_PER_CELL)));
+        const heading = self.direction();
+        while (self.trail_t < end) : (self.trail_t += gap) effects.trail(lv, self.position(self.trail_t), heading, self.act, self.t - self.trail_t);
+        return self.t < self.ends();
+    }
+
+    /// A lightning missile's arc into `effects`, struck as it lands.
+    pub fn zapInto(self: *const Shot, effects: *fx.Fx) void {
+        if (self.act.element() != .lightning) return;
+        const to = self.flight.end() orelse return;
+        effects.zap(@max(0, self.lands() - game.ZAP_S), .{ .from = mathx.centre(self.from), .to = mathx.centre(to) });
     }
 };
 
@@ -135,7 +151,6 @@ pub const Swept = struct {
 
 comptime {
     std.debug.assert(fx.OWED_KINDS == std.meta.fields(Owed).len);
-    std.debug.assert(fx.DUE >= actor.MAX * (fx.OWED_KINDS + actor.SWEEP_CELLS) + @max(2, chain.JUMPS));
 }
 
 pub const Harm = struct { kill: bool, after: fx.After, recovery: ?fx.After = null };
@@ -249,7 +264,7 @@ pub const Presentation = struct {
         self.shot = .{ .flight = flight, .from = from, .act = act };
         self.holdUntil(self.shot.?.ends());
         const stroke = Stroke{ .from = from, .wait = self.shot.?.lands(), .fire = act.element() == .fire };
-        if (act.element() == .lightning) if (flight.end()) |to| self.fx.zap(@max(0, stroke.wait - game.ZAP_S), .{ .from = mathx.centre(from), .to = mathx.centre(to) });
+        self.shot.?.zapInto(&self.fx);
         self.lead = stroke.wait;
         return stroke;
     }
@@ -477,6 +492,7 @@ pub const Presentation = struct {
     pub fn mimicAt(self: *const Presentation, sim: *const Simulation, p: P) bool {
         var each = self.masked.iterator(.{});
         while (each.next()) |i| if (sim.pool.items[i].at.eq(p)) return true;
+        if (sim.lv.at(p) != .chest) return false;
         const a = sim.pool.getConst(sim.lv.who(p)) orelse return false;
         return a.disguised;
     }
@@ -643,17 +659,11 @@ pub const Presentation = struct {
     pub fn stepMotion(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.footfalls(sim);
         if (self.shot) |*s| {
-            s.t += dt;
-            const end = @min(s.t, s.lands());
-            const gap = s.lands() / @as(f32, @floatFromInt(@max(1, s.flight.len * TRAIL_PER_CELL)));
-            const heading = s.direction();
-            while (s.trail_t < end) : (s.trail_t += gap) self.fx.trail(&sim.lv, s.position(s.trail_t), heading, s.act, s.t - s.trail_t);
-            if (s.t >= s.ends()) self.shot = null;
+            if (!s.fly(&self.fx, &sim.lv, dt)) self.shot = null;
         }
         for (&self.foe_shots) |*pending| {
             if (pending.*) |*s| {
-                s.t += dt;
-                if (s.t >= s.ends()) pending.* = null;
+                if (!s.fly(&self.fx, &sim.lv, dt)) pending.* = null;
             }
         }
         self.stepTurning(dt);

@@ -2,17 +2,7 @@ const rl = @import("raylib");
 const ground = @import("ground.zig");
 const shaders = @import("shaders.zig");
 const light_model = @import("light_model.zig");
-
 const look = @import("look.zig");
-const FOCUS_TAPS = look.FOCUS_TAPS;
-const OCCLUSION_FS = look.OCCLUSION_FS;
-const rgbOf = look.rgbOf;
-const FOG = look.FOG;
-const SHINE_WIDTH = look.SHINE_WIDTH;
-const SHINE_SLANT = look.SHINE_SLANT;
-const SHINE_GAIN = look.SHINE_GAIN;
-const WATER_SHALLOW = look.WATER_SHALLOW;
-const WATER_DEEP = look.WATER_DEEP;
 
 pub const WaterShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, depth: i32, visibility: i32, glints: i32, mirror: i32, memory: i32, mirrored: i32, shimmer: i32, seconds: i32 };
 pub const WaterFaceShader = struct { shader: rl.Shader, screen: i32, depth: i32 };
@@ -39,7 +29,7 @@ pub const BANK_CAP_FS = shaders.FS_HEAD ++
 pub const SceneryShader = struct { shader: rl.Shader, origin: i32, cell: i32, screen: i32, lightmap: i32, fogmap: i32, body: i32, hidden: i32, texel: i32, strength: i32 };
 
 pub const FadeShader = struct { shader: rl.Shader, bounds: i32, minimum: i32 };
-pub const SCENERY_FS = shaders.FS_HEAD ++ FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ OCCLUSION_FS ++ shaders.glslConsts(.{ .FOG_RGB = rgbOf(FOG), .OVERBRIGHT = light_model.OVERBRIGHT }) ++
+pub const SCENERY_FS = shaders.FS_HEAD ++ look.FOCUS_TAPS ++ shaders.MAP_VIEW_FS ++ look.OCCLUSION_FS ++ shaders.glslConsts(.{ .FOG_RGB = look.rgbOf(look.FOG), .OVERBRIGHT = light_model.OVERBRIGHT }) ++
     \\uniform sampler2D lightmap;
     \\uniform sampler2D fogmap;
     \\void main() {
@@ -64,7 +54,7 @@ pub const FADE_FS = shaders.FS_HEAD ++
 ;
 
 pub const ShineShader = struct { shader: rl.Shader, sweep: i32 };
-pub const SHINE_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .SHINE_WIDTH = SHINE_WIDTH, .SHINE_SLANT = SHINE_SLANT, .SHINE_GAIN = SHINE_GAIN }) ++
+pub const SHINE_FS = shaders.FS_HEAD ++ shaders.glslConsts(.{ .SHINE_WIDTH = look.SHINE_WIDTH, .SHINE_SLANT = look.SHINE_SLANT, .SHINE_GAIN = look.SHINE_GAIN }) ++
     \\uniform float sweep;
     \\void main() {
     \\    vec4 tex = texture(texture0, fragTexCoord);
@@ -95,8 +85,8 @@ const WATER_SCREEN_FADE_DEEP: f32 = 0.05;
 const WATER_FADE_FS = shaders.glslConsts(.{
     .SCREEN_FADE = WATER_SCREEN_FADE,
     .SCREEN_FADE_DEEP = WATER_SCREEN_FADE_DEEP,
-    .DEEP = WATER_DEEP,
-    .SHALLOW = WATER_SHALLOW,
+    .DEEP = look.WATER_DEEP,
+    .SHALLOW = look.WATER_SHALLOW,
 }) ++
     \\float waterFade(float depth, float screenHeight) {
     \\    float shallow = smoothstep(DEEP, SHALLOW, depth);

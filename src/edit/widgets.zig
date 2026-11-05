@@ -10,10 +10,15 @@ const listing = @import("../map/listing.zig");
 const SHIFT_STEP = @import("tool_catalog.zig").SHIFT_STEP;
 const P = mathx.P;
 
-pub const PANEL_W: i32 = 420;
+/// The brush panel down the left.
+pub const SIDE_W: i32 = 360;
+/// The node's panel down the right; the generator's rows are laid to it.
+pub const INSPECT_W: i32 = 420;
 pub const PAD: i32 = 12;
 pub const ROW_H: i32 = 34;
 pub const GAP: i32 = 6;
+/// The two rows of the bar along the top.
+pub const TOP_H: i32 = GAP + 2 * (ROW_H + GAP);
 pub const SECTION_GAP: i32 = GAP * 3;
 pub const BLOCK_GAP: i32 = GAP * 2;
 pub const ROW_STEP: i32 = ROW_H + GAP;
@@ -23,7 +28,7 @@ pub const HEAD: i32 = 32;
 pub const LINE_STEP: i32 = TEXT + GAP;
 pub const TEXT_DY: i32 = @divTrunc(ROW_H - TEXT, 2);
 pub const DETAIL_DY: i32 = @divTrunc(ROW_H - DETAIL, 2);
-pub const INNER_W: i32 = PANEL_W - PAD * 2;
+pub const INSPECT_INNER_W: i32 = INSPECT_W - PAD * 2;
 pub const LINE: usize = 200;
 pub const MODAL_W: i32 = 720;
 pub const MODAL_HEAD: i32 = PAD + HEAD + PAD;
@@ -41,9 +46,9 @@ pub const PANEL_BG = look.EDIT_PANEL;
 pub const ROW_ON = look.EDIT_ROW_ON;
 pub const ON = look.EDIT_ON;
 pub const HOVER = look.EDIT_HOVER;
-const LIVE_FILL = look.fade(ROW_ON, 0.5);
+pub const LIVE_FILL = look.fade(ROW_ON, 0.5);
 const DEAD_FILL = look.fade(ROW_ON, 0.2);
-const LIVE_EDGE = look.fade(look.EDGE, 0.85);
+pub const LIVE_EDGE = look.fade(look.EDGE, 0.85);
 const DEAD_EDGE = look.fade(look.EDGE, 0.35);
 
 pub const Controls = struct {
@@ -77,13 +82,49 @@ pub fn modalButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, 
 }
 
 pub fn buttonOn(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
+    return buttonSized(controls, face, r, label, TEXT, on, live, modal, tip);
+}
+
+/// Its label `size` pixels high.
+pub fn buttonSized(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: [:0]const u8, size: i32, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
     const h = hot(controls, r, live, modal, tip);
+    buttonBack(r, live);
+    plate(r, on, h.hot);
+    drawFit(face, label, size, insetW(r), false, textX(r), midY(r, size), if (live) look.TEXT else look.DIM);
+    return h.hit;
+}
+
+pub fn buttonBack(r: rl.Rectangle, live: bool) void {
     rl.drawRectangleRec(r, if (live) LIVE_FILL else DEAD_FILL);
     rl.drawRectangleLinesEx(r, 1, if (live) LIVE_EDGE else DEAD_EDGE);
+}
+
+/// A row of `r`, with no frame of its own, its label `ink`.
+pub fn flatButton(controls: Controls, face: *const font.Face, r: rl.Rectangle, label: []const u8, ink: rl.Color, on: bool, live: bool, modal: bool, tip: ?[:0]const u8) bool {
+    const h = hot(controls, r, live, modal, tip);
     plate(r, on, h.hot);
-    const y: i32 = @intFromFloat(r.y);
-    drawFit(face, label, TEXT, insetW(r), false, textX(r), y + @divTrunc(@as(i32, @intFromFloat(r.height)) - TEXT, 2), if (live) look.TEXT else look.DIM);
+    drawFit(face, label, DETAIL, insetW(r), false, textX(r), @as(i32, @intFromFloat(r.y)) + DETAIL_DY, ink);
     return h.hit;
+}
+
+/// Where text `size` high stands centred in `h` from `top`.
+pub fn midIn(top: i32, h: i32, size: i32) i32 {
+    return top + @divTrunc(h - size, 2);
+}
+
+pub fn midY(r: rl.Rectangle, size: i32) i32 {
+    return midIn(@intFromFloat(r.y), @intFromFloat(r.height), size);
+}
+
+pub fn rightX(r: rl.Rectangle) i32 {
+    return @intFromFloat(r.x + r.width);
+}
+
+const LABEL_PAD: i32 = 10;
+
+/// A button just wide enough for `label` at `size`.
+pub fn labelW(face: *const font.Face, label: [:0]const u8, size: i32) i32 {
+    return textFace(face).width(label, size) + 2 * LABEL_PAD;
 }
 
 pub const Step = struct { tip: ?[:0]const u8, live: bool = true };
@@ -104,7 +145,7 @@ pub fn stepper(controls: Controls, face: *const font.Face, r: rl.Rectangle, valu
     if (arrows.well) rl.drawRectangle(x + STEP_W, y, w - 2 * STEP_W, ROW_H, LIVE_FILL);
     var fit_buf: [LINE]u8 = undefined;
     const shown = textFace(face).fit(&fit_buf, value, arrows.size, @intFromFloat(stepValue(r).width), false);
-    textFace(face).drawMid(shown, x + @divTrunc(w, 2), y + @divTrunc(ROW_H - arrows.size, 2), arrows.size, look.TEXT);
+    textFace(face).drawMid(shown, x + @divTrunc(w, 2), midIn(y, ROW_H, arrows.size), arrows.size, look.TEXT);
     return if (shift) by * SHIFT_STEP else by;
 }
 
@@ -152,14 +193,37 @@ pub fn slotOf(x0: i32, span: i32, y: i32, k: usize, n: usize) rl.Rectangle {
     return row(x0 + @as(i32, @intCast(k)) * (w + GAP), y, w);
 }
 
-pub fn cellOfRow(y: i32, k: usize, n: usize) rl.Rectangle {
-    return slotOf(PAD, INNER_W, y, k, n);
-}
+/// A panel down one side of the editor, `w` wide from `x`.
+pub const Column = struct {
+    x: i32,
+    w: i32,
 
-pub fn gridSlot(top: i32, i: usize, cols: usize, pitch: i32) rl.Rectangle {
-    const s = mathx.unslot(i, cols);
-    return slotOf(PAD, INNER_W, top + s.y * pitch, @intCast(s.x), cols);
-}
+    pub fn left(c: Column) i32 {
+        return c.x + PAD;
+    }
+
+    pub fn inner(c: Column) i32 {
+        return c.w - 2 * PAD;
+    }
+
+    pub fn box(c: Column, top: i32, bottom: i32) rl.Rectangle {
+        return raster.rect(c.x, top, c.w, @max(0, bottom - top));
+    }
+
+    /// The `k`th of `n` equal slots across row `y`.
+    pub fn cell(c: Column, y: i32, k: usize, n: usize) rl.Rectangle {
+        return slotOf(c.left(), c.inner(), y, k, n);
+    }
+
+    pub fn row(c: Column, y: i32) rl.Rectangle {
+        return c.cell(y, 0, 1);
+    }
+
+    pub fn grid(c: Column, top: i32, i: usize, cols: usize, pitch: i32) rl.Rectangle {
+        const s = mathx.unslot(i, cols);
+        return c.cell(top + s.y * pitch, @intCast(s.x), cols);
+    }
+};
 
 pub fn share(w: i32, parts: i32, lo: i32, hi: i32) i32 {
     return std.math.clamp(@divTrunc(w, parts), lo, hi);
@@ -237,6 +301,14 @@ pub const Scroll = struct {
         s.most.* = @max(0, bottom + margin + s.top.* - @as(i32, @intFromFloat(s.box.y)) - s.shown());
     }
 
+    /// Scrolls the least that shows `h` pixels from `at`, the content's own offset.
+    pub fn reveal(s: Scroll, at: i32, h: i32) void {
+        const shown_at = at - s.top.*;
+        if (shown_at < 0) s.top.* += shown_at;
+        const below = shown_at + h - s.shown();
+        if (below > 0) s.top.* += below;
+    }
+
     pub fn bar(s: Scroll) void {
         if (s.most.* > 0) scrollbarIn(s.box, @intCast(s.top.*), @intCast(s.shown()), @intCast(s.shown() + s.most.*));
     }
@@ -263,6 +335,7 @@ test "editor scrollbar thumb remains inside its track for large catalogs and sho
 }
 
 pub const Across = struct {
+    col: Column,
     y: i32,
     n: usize,
     k: usize = 0,
@@ -270,7 +343,7 @@ pub const Across = struct {
     pub fn next(a: *Across) rl.Rectangle {
         std.debug.assert(a.k < a.n);
         defer a.k += 1;
-        return cellOfRow(a.y, a.k, a.n);
+        return a.col.cell(a.y, a.k, a.n);
     }
 
     pub fn done(a: *const Across) void {
@@ -348,6 +421,12 @@ pub fn modalFrame(face: *const font.Face, screen: P, want_w: i32, h: i32, title:
     return .{ .x = x, .w = w, .top = top, .y = y + MODAL_HEAD };
 }
 
+/// `hint` after the frame's `title`, on its line.
+pub fn titleHint(face: *const font.Face, f: Frame, title: [:0]const u8, hint: []const u8) void {
+    const x = f.x + 2 * PAD + textFace(face).width(title, HEAD);
+    drawFit(face, hint, DETAIL, f.x + f.w - PAD - x, false, x, midIn(f.top, HEAD, DETAIL), look.DIM);
+}
+
 pub const Page = struct { frame: Frame, bottom: i32 };
 
 /// A page over the whole editor; `bottom` is the inside of its padding.
@@ -364,6 +443,11 @@ pub fn keyed(comptime what: []const u8, comptime key: []const u8) [:0]const u8 {
 /// A square picture `size` across, centred in a button `top` below its edge.
 pub fn pictureIn(r: rl.Rectangle, size: f32, top: f32) rl.Rectangle {
     return .{ .x = r.x + (r.width - size) / 2, .y = r.y + top, .width = size, .height = size };
+}
+
+/// A square picture `size` across, `dx` in from a row's left and centred down it.
+pub fn pictureAt(r: rl.Rectangle, dx: f32, size: f32) rl.Rectangle {
+    return .{ .x = r.x + dx, .y = r.y + (r.height - size) / 2, .width = size, .height = size };
 }
 
 pub fn sprite(t: rl.Texture2D, r: rl.Rectangle) void {

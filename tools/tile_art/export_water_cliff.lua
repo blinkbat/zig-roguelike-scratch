@@ -2,7 +2,7 @@ local source=app.params.source or 'C:/Users/DavidBennett/Desktop/water-cliff-edg
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local depth=app.params.depth or 'shallow'
 assert(depth=='shallow' or depth=='deep','depth=shallow|deep')
-local out=app.params.out or root..'assets/'..(depth=='shallow' and 'shallows' or 'water')..'-cliff.png'
+local out=app.params.out or root..'assets/water/'..(depth=='shallow' and 'shallows' or 'water')..'-cliff.png'
 local layer_name=assert(app.params.layer,'layer=<painted layer index or name>')
 local s=assert(app.open(source))
 local layer=s.layers[tonumber(layer_name) or 0]

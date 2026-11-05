@@ -265,15 +265,28 @@ pub fn shut(alloc: std.mem.Allocator, g: *Game) void {
     alloc.destroy(g);
 }
 
-/// A loot visit's unsaved state, reset with every run.
-const LOOT_VISIT = [_][]const u8{ "character", "looted", "loot_gold" };
-/// Unsaved, reset with every run as it starts or resumes.
-const RUN_GAME = [_][]const u8{ "mode", "epitaph" };
+/// When each unsaved `Game` field is reset, every one in exactly one list; `save_data.zig` checks it.
+pub const Fields = struct {
+    /// A loot visit's unsaved state, reset with every run.
+    pub const loot = [_][]const u8{ "character", "looted", "loot_gold" };
+    /// Reset with every run as it starts or resumes.
+    pub const run = [_][]const u8{ "mode", "epitaph" };
+    /// Reset as a saved run resumes, besides `run` and `loot`.
+    pub const resumed = [_][]const u8{"exit"};
+    /// Reset as a turn starts afresh.
+    pub const turn = [_][]const u8{ "pending", "target", "inspecting", "inspect_scroll" };
+    /// Loaded and unloaded together.
+    pub const graphics = [_][]const u8{ "light", "cloud", "vignette", "mini", "cinema" };
+    /// Given their values by hand.
+    pub const set = [_][]const u8{ "died_in", "pause_menu", "pause_page", "debug", "back", "permadeath", "hall", "perf", "st", "mouse", "binds", "cam", "screen", "framebuffer", "rain", "sprites", "graphics_ready", "art", "face" };
+    /// Written before each read.
+    pub const scratch = [_][]const u8{"nearby"};
+};
 const SimFields = simulation.Fields;
 
 fn startRun(g: *Game, w: ?*const atlas.Atlas, seed: u64) void {
     toDefaults(&g.sim, &(SimFields.hero ++ SimFields.start));
-    toDefaults(g, &LOOT_VISIT);
+    toDefaults(g, &Fields.loot);
     g.sim.map = w;
     g.sim.outdoors = g.sim.outdoorsNow();
     g.sim.seed = seed;
@@ -409,7 +422,7 @@ const toDefaults = mathx.toDefaults;
 
 fn freshRun(g: *Game) void {
     toDefaults(&g.sim, &(SimFields.run ++ SimFields.rebuilt));
-    toDefaults(g, &RUN_GAME);
+    toDefaults(g, &Fields.run);
     g.pic.freshRun();
     g.sim.growth = progress.State.of(g.sim.class);
     g.bar = g.sim.growth.bar(g.sim.class);
@@ -427,7 +440,7 @@ fn freshTurn(g: *Game) void {
     skills.closeAim(g);
     g.mouse = .{};
     g.sim.resetTransientTurn();
-    toDefaults(g, &.{ "pending", "target", "inspecting", "inspect_scroll" });
+    toDefaults(g, &Fields.turn);
     g.pic.freshTurn();
     g.cloud.clear();
 }
@@ -452,7 +465,7 @@ pub fn resumeRun(g: *Game) void {
     gen.restoreShapes(&g.sim.lv);
     var visits = g.sim.visited.iterator(.{});
     while (visits.next()) |n| gen.restoreShapes(&g.sim.visits[n].lv);
-    toDefaults(g, &(RUN_GAME ++ LOOT_VISIT ++ [_][]const u8{"exit"}));
+    toDefaults(g, &(Fields.run ++ Fields.loot ++ Fields.resumed));
     toDefaults(&g.sim, &(SimFields.resumed ++ SimFields.rebuilt));
     g.sim.unsaved = g.sim.growth.refundBasicRanks();
     g.sim.outdoors = g.sim.outdoorsNow();
@@ -546,7 +559,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
             talking.speak(g, g.sim.lv.folkAt(to).?);
             return;
         },
-        .loot, .step => if (h.pin.turns > 0) struggle(g) else {
+        .loot, .step => if (h.pin.holding()) struggle(g) else {
             heroTo(g, to);
             if (h.limp(h.afflictions())) g.sim.log.say("{s} " ++ maim.LIMPS ++ ".", .{g.sim.name.text()});
             if (move == .loot) character.openLoot(g, to);
@@ -883,17 +896,15 @@ pub fn drawFrame(g: *Game) void {
     if (modeShown(g) == .pause) character.drawPause(g);
 }
 
-const GRAPHICS = .{ "light", "cloud", "vignette", "mini", "cinema" };
-
 fn loadGraphics(g: *Game) void {
     g.sprites.loadCommon();
-    inline for (GRAPHICS) |f| @field(g, f).load();
+    inline for (Fields.graphics) |f| @field(g, f).load();
     g.graphics_ready = true;
 }
 
 pub fn unloadGraphics(g: *Game) void {
     g.sprites.unload();
-    inline for (GRAPHICS) |f| @field(g, f).unload();
+    inline for (Fields.graphics) |f| @field(g, f).unload();
     g.graphics_ready = false;
     g.art = .stale;
 }

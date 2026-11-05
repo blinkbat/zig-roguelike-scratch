@@ -648,7 +648,7 @@ test "every type whose words the player may rename is registered under its own n
         @import("play/damage.zig").Element,    @import("play/resilience.zig").Kind, @import("play/flask.zig").Kind,
         @import("play/consumable.zig").Kind,   actor.FoeType,                       actor.Movement,
         @import("ui/character_view.zig").Page, @import("ui/trees.zig").SkillState,  editor.View,
-        editor.Lower,                          @import("map/grid.zig").Tile,
+        editor.Family,                         editor.Inspect,                      @import("map/grid.zig").Tile,
     };
     const wording = @import("core/wording.zig");
     try std.testing.expectEqual(wording.TYPES.len, types.len);

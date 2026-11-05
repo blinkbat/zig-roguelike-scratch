@@ -8,51 +8,9 @@ const ground = @import("ground.zig");
 const line_icons = @import("line_icons.zig");
 const shaders = @import("shaders.zig");
 const raster = @import("raster.zig");
-
 const look = @import("look.zig");
-const tileBg = look.tileBg;
-const rgbaOf = look.rgbaOf;
-const cellHash = mathx.cellHash;
-const SPRITE_PX = look.SPRITE_PX;
-const LIT = look.LIT;
-const BACKING = look.BACKING;
-const Occlusion = look.Occlusion;
-const Focused = look.Focused;
-const WATER_DEEP_PERCENT = look.WATER_DEEP_PERCENT;
-const WATER_DEEP = look.WATER_DEEP;
-const WATER_SHALLOW = look.WATER_SHALLOW;
-const waterDepth = look.waterDepth;
 const sprite_assets = @import("sprite_assets.zig");
-const GROUND_PNGS = sprite_assets.GROUND_PNGS;
-const Bodies = sprite_assets.Bodies;
-const Assets = sprite_assets.Assets;
-const FIGURES = sprite_assets.FIGURES;
-const LIT_FIGURES = sprite_assets.LIT_FIGURES;
-const PROP_FIGURES = sprite_assets.PROP_FIGURES;
-const PICTURE_CASTERS = sprite_assets.PICTURE_CASTERS;
-const GROUND_ALTERNATES = sprite_assets.GROUND_ALTERNATES;
-const SOURCES = sprite_assets.SOURCES;
-const WALL_MASKS = sprite_assets.WALL_MASKS;
-const wallCell = sprite_assets.wallCell;
-const sheetCell = sprite_assets.sheetCell;
-const cutAt = sprite_assets.cutAt;
-const cutOf = sprite_assets.cutOf;
-const Cut = sprite_assets.Cut;
-const grassDecor = sprite_assets.grassDecor;
-const pngSize = sprite_assets.pngSize;
 const sprite_materials = @import("sprite_materials.zig");
-const WaterShader = sprite_materials.WaterShader;
-const WaterFaceShader = sprite_materials.WaterFaceShader;
-const BankCapShader = sprite_materials.BankCapShader;
-const BANK_CAP_FS = sprite_materials.BANK_CAP_FS;
-const SceneryShader = sprite_materials.SceneryShader;
-const FadeShader = sprite_materials.FadeShader;
-const SCENERY_FS = sprite_materials.SCENERY_FS;
-const FADE_FS = sprite_materials.FADE_FS;
-const ShineShader = sprite_materials.ShineShader;
-const SHINE_FS = sprite_materials.SHINE_FS;
-const WATER_FACE_FS = sprite_materials.WATER_FACE_FS;
-const WATER_FS = sprite_materials.WATER_FS;
 
 pub const Piece = struct { tex: rl.Texture2D, src: rl.Rectangle };
 
@@ -69,7 +27,7 @@ pub const WaterView = struct {
 
 /// Needs a live GL context.
 pub const Sprites = struct {
-    bodies: Bodies = .initFill(null),
+    bodies: sprite_assets.Bodies = .initFill(null),
     grass2: ?rl.Texture2D = null,
     dirt2: ?rl.Texture2D = null,
     shallows2: ?rl.Texture2D = null,
@@ -93,8 +51,8 @@ pub const Sprites = struct {
     large_coins: ?rl.Texture2D = null,
     tiles: std.EnumArray(grid.Tile, ?rl.Texture2D) = .initFill(null),
     /// In the sheet's order, `WALL_MASKS`.
-    wall: [WALL_MASKS.len]?rl.Texture2D = @splat(null),
-    forest: [WALL_MASKS.len]?rl.Texture2D = @splat(null),
+    wall: [sprite_assets.WALL_MASKS.len]?rl.Texture2D = @splat(null),
+    forest: [sprite_assets.WALL_MASKS.len]?rl.Texture2D = @splat(null),
     /// Each ground's whole sheet, drawn a piece at a time so a ground's pieces batch.
     grounds: std.EnumArray(ground.Ground, ?rl.Texture2D) = .initFill(null),
     /// Every skill's icon side by side, in `skillbar.Act`'s order, inked once rather than every frame.
@@ -102,12 +60,12 @@ pub const Sprites = struct {
     /// Every item kind's icon at each `line_icons.ItemSize`, a strip per size.
     item_icons: ?rl.Texture2D = null,
     hud_border: ?rl.Texture2D = null,
-    log_fade: ?FadeShader = null,
-    water: ?WaterShader = null,
-    bank_cap: ?BankCapShader = null,
-    water_face: ?WaterFaceShader = null,
-    shine: ?ShineShader = null,
-    scenery: ?SceneryShader = null,
+    log_fade: ?sprite_materials.FadeShader = null,
+    water: ?sprite_materials.WaterShader = null,
+    bank_cap: ?sprite_materials.BankCapShader = null,
+    water_face: ?sprite_materials.WaterFaceShader = null,
+    shine: ?sprite_materials.ShineShader = null,
+    scenery: ?sprite_materials.SceneryShader = null,
     mirror: ?rl.RenderTexture2D = null,
     mirror_memory: ?rl.RenderTexture2D = null,
 
@@ -115,26 +73,26 @@ pub const Sprites = struct {
         self.skills = line_icons.skillIcons();
         self.item_icons = line_icons.itemIcons();
         self.loadBorder();
-        self.log_fade = shaders.program(FadeShader, FADE_FS);
-        self.water = shaders.program(WaterShader, WATER_FS);
-        self.bank_cap = shaders.program(BankCapShader, BANK_CAP_FS);
-        self.water_face = shaders.program(WaterFaceShader, WATER_FACE_FS);
-        self.shine = shaders.program(ShineShader, SHINE_FS);
-        self.scenery = shaders.program(SceneryShader, SCENERY_FS);
+        self.log_fade = shaders.program(sprite_materials.FadeShader, sprite_materials.FADE_FS);
+        self.water = shaders.program(sprite_materials.WaterShader, sprite_materials.WATER_FS);
+        self.bank_cap = shaders.program(sprite_materials.BankCapShader, sprite_materials.BANK_CAP_FS);
+        self.water_face = shaders.program(sprite_materials.WaterFaceShader, sprite_materials.WATER_FACE_FS);
+        self.shine = shaders.program(sprite_materials.ShineShader, sprite_materials.SHINE_FS);
+        self.scenery = shaders.program(sprite_materials.SceneryShader, sprite_materials.SCENERY_FS);
     }
 
     pub fn loadBorder(self: *Sprites) void {
         if (self.hud_border == null) self.hud_border = texture(HUD_BORDER_PNG);
     }
 
-    pub fn drawScenery(self: *const Sprites, tex: rl.Texture2D, dest: rl.Rectangle, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: Occlusion, focus: Focused) bool {
+    pub fn drawScenery(self: *const Sprites, tex: rl.Texture2D, dest: rl.Rectangle, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: look.Occlusion, focus: look.Focused) bool {
         if (!self.beginScenery(view, lightmap, fogmap, occlusion, focus)) return false;
         defer rl.endShaderMode();
-        raster.stretch(tex, dest, LIT);
+        raster.stretch(tex, dest, look.LIT);
         return true;
     }
 
-    pub fn beginScenery(self: *const Sprites, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: Occlusion, focus: Focused) bool {
+    pub fn beginScenery(self: *const Sprites, view: shaders.MapView, lightmap: rl.Texture2D, fogmap: rl.Texture2D, occlusion: look.Occlusion, focus: look.Focused) bool {
         const s = self.scenery orelse return false;
         rl.beginShaderMode(s.shader);
         shaders.setMapView(s, view);
@@ -154,11 +112,11 @@ pub const Sprites = struct {
         raster.stretch(t, dest, col);
     }
 
-    pub fn sync(self: *Sprites, need: Assets) void {
-        inline for (comptime std.meta.fieldNames(@TypeOf(SOURCES))) |name| {
+    pub fn sync(self: *Sprites, need: sprite_assets.Assets) void {
+        inline for (comptime std.meta.fieldNames(@TypeOf(sprite_assets.SOURCES))) |name| {
             const held = &@field(self, name);
             const wants = @field(need, name);
-            const src = @field(SOURCES, name);
+            const src = @field(sprite_assets.SOURCES, name);
             switch (@typeInfo(@TypeOf(held.*))) {
                 .optional => syncTexture(held, wants, src),
                 .array => syncShapes(held, wants, src),
@@ -173,13 +131,13 @@ pub const Sprites = struct {
         }
         const tex = self.grounds.getPtrConst(g).* orelse return null;
         const at = ground.CELL_OF[mask];
-        return .{ .tex = tex, .src = sheetCell(at.x, at.y) };
+        return .{ .tex = tex, .src = sprite_assets.sheetCell(at.x, at.y) };
     }
 
     fn alternateAt(self: *const Sprites, g: ground.Ground, p: mathx.P) ?rl.Texture2D {
         switch (g) {
-            inline else => |k| if (comptime GROUND_ALTERNATES.get(k)) |alts| {
-                const roll = cellHash(alts.seed, p) % alts.in;
+            inline else => |k| if (comptime sprite_assets.GROUND_ALTERNATES.get(k)) |alts| {
+                const roll = mathx.cellHash(alts.seed, p) % alts.in;
                 inline for (alts.fields, 0..) |name, i| {
                     if (roll == i) return @field(self, name);
                 }
@@ -196,12 +154,13 @@ pub const Sprites = struct {
     }
 
     /// Draw lowest layers first; `origin` is cell (0, 0)'s top-left and `px` is pixels per cell.
-    pub fn drawGround(self: *const Sprites, lv: *const grid.Level, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
+    /// `tiles.at(p)` is the tile drawn at `p`: a level, or play's presented picture of one.
+    pub fn drawGround(self: *const Sprites, tiles: anytype, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
         const sheeted = self.sheets();
         for (ground.LAYERS) |gr| {
             if (!beds.shown.contains(gr)) continue;
             const sheet = sheeted.contains(gr);
-            const depth = if (sheet) waterDepth(gr) else null;
+            const depth = if (sheet) look.waterDepth(gr) else null;
             const reflective = if (depth) |d| self.beginWater(water, origin, px, d) else false;
             if (!sheet) {
                 var cells = grid.Cells.of(beds.lo, beds.hi);
@@ -216,7 +175,7 @@ pub const Sprites = struct {
                 if (sheet) {
                     const piece = self.groundPiece(gr, here.corners.mask(gr), p) orelse continue;
                     const at = cellAt(origin, p, px);
-                    raster.blit(piece.tex, piece.src, pointRect(at, px), LIT);
+                    raster.blit(piece.tex, piece.src, pointRect(at, px), look.LIT);
                     continue;
                 }
                 const under_ = here.corners.under(gr, sheeted);
@@ -231,12 +190,12 @@ pub const Sprites = struct {
                 var cells = grid.Cells.of(beds.lo, beds.hi);
                 while (cells.next()) |p| {
                     if (beds.ground(p) != .grass) continue;
-                    const decor = grassDecor(lv.at(p), p) orelse continue;
+                    const decor = sprite_assets.grassDecor(tiles.at(p), p) orelse continue;
                     const tex = (switch (decor) {
                         inline else => |k| @field(self, @tagName(k)),
                     }) orelse continue;
                     const at = cellAt(origin, p, px);
-                    raster.stretch(tex, .{ .x = at[0], .y = at[1], .width = px, .height = px }, LIT);
+                    raster.stretch(tex, .{ .x = at[0], .y = at[1], .width = px, .height = px }, look.LIT);
                 }
             }
             if (reflective) rl.endShaderMode();
@@ -245,15 +204,8 @@ pub const Sprites = struct {
         self.drawWaterEdges(beds, origin, px, water);
     }
 
-    /// Each water edge atlas, by its `Sprites`/`SOURCES` field, and the grounds whose meeting it draws, in drawing order.
-    const WATER_EDGES = [_]struct { upper: ground.Ground, lower: ground.Ground, name: [:0]const u8 }{
-        .{ .upper = .shallows, .lower = .water, .name = "shallows_water_edges" },
-        .{ .upper = .dirt, .lower = .shallows, .name = "dirt_shallows_edges" },
-        .{ .upper = .dirt, .lower = .water, .name = "dirt_water_edges" },
-    };
-
     pub fn drawWaterEdges(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
-        inline for (WATER_EDGES) |pair| if (@field(self, pair.name)) |tex| {
+        inline for (sprite_assets.WATER_EDGES) |pair| if (@field(self, pair.name)) |tex| {
             for (std.enums.values(WaterBand)) |band| {
                 const depth = band.depth();
                 const surface = band.surface() and self.beginWater(water, origin, px, depth);
@@ -264,16 +216,16 @@ pub const Sprites = struct {
                     const corners = beds.pointAt(p).corners;
                     const mask = corners.edgeMask(pair.upper, pair.lower) orelse continue;
                     const cell = ground.CELL_OF[mask];
-                    const src = sheetCell(cell.x + @as(i32, @intCast(@intFromEnum(band) * ground.COLS)), cell.y);
+                    const src = sprite_assets.sheetCell(cell.x + @as(i32, @intCast(@intFromEnum(band) * ground.COLS)), cell.y);
                     const at = cellAt(origin, p, px);
                     if (corners.pairMask(pair.upper, pair.lower) != null) {
-                        raster.blit(tex, src, pointRect(at, px), LIT);
+                        raster.blit(tex, src, pointRect(at, px), look.LIT);
                     } else for (0..4) |q| {
                         if (!corners.edgeQuarter(pair.upper, pair.lower, q)) continue;
                         const dx = @as(f32, @floatFromInt(q % 2)) / 2;
                         const dy = @as(f32, @floatFromInt(q / 2)) / 2;
-                        const quarter_src = rl.Rectangle{ .x = src.x + dx * SPRITE_PX, .y = src.y + dy * SPRITE_PX, .width = SPRITE_PX / 2, .height = SPRITE_PX / 2 };
-                        raster.blit(tex, quarter_src, .{ .x = at[0] + (dx - 0.5) * px, .y = at[1] + (dy - 0.5) * px, .width = px / 2, .height = px / 2 }, LIT);
+                        const quarter_src = rl.Rectangle{ .x = src.x + dx * look.SPRITE_PX, .y = src.y + dy * look.SPRITE_PX, .width = look.SPRITE_PX / 2, .height = look.SPRITE_PX / 2 };
+                        raster.blit(tex, quarter_src, .{ .x = at[0] + (dx - 0.5) * px, .y = at[1] + (dy - 0.5) * px, .width = px / 2, .height = px / 2 }, look.LIT);
                     }
                 }
                 if (surface or face != null) rl.endShaderMode();
@@ -304,7 +256,7 @@ pub const Sprites = struct {
                 const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
                 const tex = (if (depth == .water) self.water_cliff else self.shallows_cliff) orelse continue;
                 if (face) |f| {
-                    const d = waterDepth(depth).?;
+                    const d = look.waterDepth(depth).?;
                     if (bound != d) {
                         if (bound != null) rl.gl.rlDrawRenderBatchActive();
                         f.begin(d);
@@ -312,7 +264,7 @@ pub const Sprites = struct {
                     }
                 }
                 const half = bankHalf(piece, side, at, px);
-                raster.blit(tex, half.src, half.dst, LIT);
+                raster.blit(tex, half.src, half.dst, look.LIT);
             }
         }
         if (bound != null) rl.endShaderMode();
@@ -321,8 +273,8 @@ pub const Sprites = struct {
     /// `side`'s half of `piece`'s face or cap cell, and where it stands over the point at `at`.
     fn bankHalf(piece: ground.BankPiece, side: usize, at: [2]f32, px: f32) struct { src: rl.Rectangle, dst: rl.Rectangle } {
         const shift = sideShift(side);
-        var src = sheetCell(piece.col(), 0);
-        src.x += shift * SPRITE_PX;
+        var src = sprite_assets.sheetCell(piece.col(), 0);
+        src.x += shift * look.SPRITE_PX;
         src.width /= 2;
         return .{ .src = src, .dst = .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px * ground.BANK_LIFT, .width = px / 2, .height = px } };
     }
@@ -346,8 +298,8 @@ pub const Sprites = struct {
                 const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
                 if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
                 const fill = self.bankFill(gr) orelse continue;
-                const reflective = if (waterDepth(gr)) |d| self.beginWater(water, origin, px, d) else false;
-                raster.blit(fill.piece.tex, fill.lowerQuarter(side), .{ .x = at[0] + (sideShift(side) - 0.5) * px, .y = at[1] - px / 2, .width = px / 2, .height = px / 2 }, LIT);
+                const reflective = if (look.waterDepth(gr)) |d| self.beginWater(water, origin, px, d) else false;
+                raster.blit(fill.piece.tex, fill.lowerQuarter(side), .{ .x = at[0] + (sideShift(side) - 0.5) * px, .y = at[1] - px / 2, .width = px / 2, .height = px / 2 }, look.LIT);
                 if (reflective) rl.endShaderMode();
             }
             for (0..2) |side| {
@@ -357,12 +309,12 @@ pub const Sprites = struct {
                 const gr = beds.ground(land) orelse continue;
                 if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
                 const fill = self.bankFill(gr);
-                const mask = Piece{ .tex = cap, .src = sheetCell(piece.col(), 0) };
+                const mask = Piece{ .tex = cap, .src = sprite_assets.sheetCell(piece.col(), 0) };
                 const wet_cap = if (gr == .shallows) self.shallows_water_cap else null;
-                const reflective = wet_cap != null and self.beginWater(water, origin, px, WATER_SHALLOW);
-                if (!reflective and !self.beginGroundFill(mask, fill, tileBg(gr.tile()) orelse rl.Color.blank)) continue;
+                const reflective = wet_cap != null and self.beginWater(water, origin, px, look.WATER_SHALLOW);
+                if (!reflective and !self.beginGroundFill(mask, fill, look.tileBg(gr.tile()) orelse rl.Color.blank)) continue;
                 const half = bankHalf(piece, side, at, px);
-                raster.blit(if (reflective) wet_cap.? else cap, half.src, half.dst, LIT);
+                raster.blit(if (reflective) wet_cap.? else cap, half.src, half.dst, look.LIT);
                 rl.endShaderMode();
             }
         }
@@ -397,7 +349,7 @@ pub const Sprites = struct {
     fn bankFill(self: *const Sprites, gr: ground.Ground) ?BankFill {
         if (self.grounds.getPtrConst(gr).*) |tex| {
             const cell = ground.CELL_OF[ground.FULL];
-            return .{ .piece = .{ .tex = tex, .src = sheetCell(cell.x, cell.y) }, .sheet = true };
+            return .{ .piece = .{ .tex = tex, .src = sprite_assets.sheetCell(cell.x, cell.y) }, .sheet = true };
         }
         const tex = self.tiles.getPtrConst(gr.tile()).* orelse return null;
         return .{ .piece = .{ .tex = tex, .src = raster.whole(tex) }, .sheet = false };
@@ -414,12 +366,12 @@ pub const Sprites = struct {
             shaders.setUniform(s.shader, s.offset, fill.offset());
             shaders.setUniform(s.shader, s.region, raster.uvOf(piece.tex, piece.src));
             rl.setShaderValueTexture(s.shader, s.land, piece.tex);
-        } else shaders.setUniform(s.shader, s.solid, rgbaOf(color));
+        } else shaders.setUniform(s.shader, s.solid, look.rgbaOf(color));
         return true;
     }
 
     const WaterFace = struct {
-        s: WaterFaceShader,
+        s: sprite_materials.WaterFaceShader,
         screen: [2]f32,
 
         fn begin(f: WaterFace, depth: f32) void {
@@ -480,8 +432,8 @@ pub const Sprites = struct {
         const dest = rl.Rectangle{ .x = cell[0] + uv[0] * px, .y = cell[1] + uv[1] * px, .width = span * px, .height = span * px };
         if (self.tiles.getPtrConst(t).*) |tex| {
             const w, const h = raster.sizeOf(tex);
-            raster.blit(tex, .{ .x = uv[0] * w, .y = uv[1] * h, .width = span * w, .height = span * h }, dest, LIT);
-        } else if (tileBg(t)) |bg| rl.drawRectangleRec(dest, bg);
+            raster.blit(tex, .{ .x = uv[0] * w, .y = uv[1] * h, .width = span * w, .height = span * h }, dest, look.LIT);
+        } else if (look.tileBg(t)) |bg| rl.drawRectangleRec(dest, bg);
     }
 
     pub fn unload(self: *Sprites) void {
@@ -492,26 +444,26 @@ pub const Sprites = struct {
         return self.bodies.getPtrConst(k).*;
     }
 
-    pub fn figures(self: *const Sprites) [FIGURES]?rl.Texture2D {
-        var casters: [PICTURE_CASTERS.len]?rl.Texture2D = undefined;
-        for (PICTURE_CASTERS, &casters) |t, *s| s.* = self.tiles.getPtrConst(t).*;
-        const props: [PROP_FIGURES]?rl.Texture2D = .{ self.item_bag, self.chest_item_bag, self.mimic_closed, self.shrub2 };
+    pub fn figures(self: *const Sprites) [sprite_assets.FIGURES]?rl.Texture2D {
+        var casters: [sprite_assets.PICTURE_CASTERS.len]?rl.Texture2D = undefined;
+        for (sprite_assets.PICTURE_CASTERS, &casters) |t, *s| s.* = self.tiles.getPtrConst(t).*;
+        const props: [sprite_assets.PROP_FIGURES]?rl.Texture2D = .{ self.item_bag, self.chest_item_bag, self.mimic_closed, self.shrub2 };
         return self.litFigures() ++ casters ++ self.forest ++ props;
     }
 
-    fn litFigures(self: *const Sprites) [LIT_FIGURES]?rl.Texture2D {
+    fn litFigures(self: *const Sprites) [sprite_assets.LIT_FIGURES]?rl.Texture2D {
         return self.bodies.values ++ [_]?rl.Texture2D{self.barrel};
     }
 
     pub fn tileAt(self: *const Sprites, lv: *const grid.Level, p: mathx.P) ?rl.Texture2D {
-        return self.cut(cutAt(lv, p) orelse return null);
+        return self.cut(sprite_assets.cutAt(lv, p) orelse return null);
     }
 
     pub fn tileOf(self: *const Sprites, t: grid.Tile, shape: ?grid.WallShape) ?rl.Texture2D {
-        return self.cut(cutOf(t, shape) orelse return null);
+        return self.cut(sprite_assets.cutOf(t, shape) orelse return null);
     }
 
-    fn cut(self: *const Sprites, c: Cut) ?rl.Texture2D {
+    fn cut(self: *const Sprites, c: sprite_assets.Cut) ?rl.Texture2D {
         return switch (c) {
             .tile => |t| self.tiles.getPtrConst(t).*,
             .wall => |i| self.wall[i],
@@ -524,9 +476,9 @@ pub const Sprites = struct {
         return self.resident().count();
     }
 
-    pub fn resident(self: *const Sprites) Assets {
-        var held = Assets{};
-        inline for (std.meta.fields(Assets)) |f| {
+    pub fn resident(self: *const Sprites) sprite_assets.Assets {
+        var held = sprite_assets.Assets{};
+        inline for (std.meta.fields(sprite_assets.Assets)) |f| {
             const have = &@field(self, f.name);
             const out = &@field(held, f.name);
             switch (@typeInfo(@TypeOf(have.*))) {
@@ -538,38 +490,27 @@ pub const Sprites = struct {
         return held;
     }
 
-    fn keep(t: *?rl.Texture2D, needed: bool) void {
-        if (needed) return;
-        if (t.*) |held| rl.unloadTexture(held);
-        t.* = null;
-    }
-
     fn syncTexture(t: *?rl.Texture2D, needed: bool, png: ?[]const u8) void {
-        keep(t, needed);
+        if (!needed) raster.release(t);
         if (needed and t.* == null) t.* = texture(png orelse return);
     }
 
-    fn syncShapes(held: *[WALL_MASKS.len]?rl.Texture2D, need: std.StaticBitSet(WALL_MASKS.len), png: []const u8) void {
+    fn syncShapes(held: *[sprite_assets.WALL_MASKS.len]?rl.Texture2D, need: std.StaticBitSet(sprite_assets.WALL_MASKS.len), png: []const u8) void {
         var missing = false;
         for (held, 0..) |*t, i| {
-            keep(t, need.isSet(i));
+            if (!need.isSet(i)) raster.release(t);
             missing = missing or (need.isSet(i) and t.* == null);
         }
         if (!missing) return;
         const sheet = rl.loadImageFromMemory(".png", png) catch return;
         defer rl.unloadImage(sheet);
         for (held, 0..) |*t, i| {
-            if (need.isSet(i) and t.* == null) t.* = toTexture(wallCell(sheet, i) orelse continue);
+            if (need.isSet(i) and t.* == null) t.* = raster.adopt(sprite_assets.wallCell(sheet, i) orelse continue);
         }
     }
 
     fn texture(png: []const u8) ?rl.Texture2D {
-        return toTexture(rl.loadImageFromMemory(".png", png) catch return null);
-    }
-
-    pub fn toTexture(img: rl.Image) ?rl.Texture2D {
-        defer rl.unloadImage(img);
-        return rl.loadTextureFromImage(img) catch null;
+        return raster.adopt(rl.loadImageFromMemory(".png", png) catch return null);
     }
 };
 
@@ -587,11 +528,11 @@ pub fn hudPanelIn(sprites: *const Sprites, r: rl.Rectangle, fill: rl.Color, tint
 
 /// A ui panel's backing and border.
 pub fn backing(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32) void {
-    hudPanel(sprites, x, y, width, height, BACKING, LIT);
+    hudPanel(sprites, x, y, width, height, look.BACKING, look.LIT);
 }
 
 pub fn backingIn(sprites: *const Sprites, r: rl.Rectangle) void {
-    hudPanelIn(sprites, r, BACKING, LIT);
+    hudPanelIn(sprites, r, look.BACKING, look.LIT);
 }
 
 fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, tint: rl.Color) void {
@@ -601,7 +542,7 @@ fn hudBorder(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, t
     };
     const cut = HUD_BORDER_CUT;
     if (width < cut * 2 or height < cut * 2) return;
-    const size = comptime pngSize(HUD_BORDER_PNG);
+    const size = comptime sprite_assets.pngSize(HUD_BORDER_PNG);
     const sx = [_]i32{ 0, cut, size.x - cut };
     const sy = [_]i32{ 0, cut, size.y - cut };
     const sw = [_]i32{ cut, size.x - cut * 2, cut };
@@ -641,8 +582,8 @@ const WaterBand = enum {
 
     fn depth(self: WaterBand) f32 {
         return switch (self) {
-            .shallow, .shallow_face => WATER_SHALLOW,
-            .dry, .deep, .deep_face => WATER_DEEP,
+            .shallow, .shallow_face => look.WATER_SHALLOW,
+            .dry, .deep, .deep_face => look.WATER_DEEP,
         };
     }
 
@@ -662,13 +603,13 @@ const WaterBand = enum {
 };
 
 comptime {
-    const size = mathx.P{ .x = std.enums.values(WaterBand).len * ground.COLS * SPRITE_PX, .y = ground.ROWS * SPRITE_PX };
-    for (Sprites.WATER_EDGES) |e| std.debug.assert(std.meta.eql(pngSize(@field(SOURCES, e.name)), size));
-    std.debug.assert(std.meta.eql(pngSize(SOURCES.shallows_water_cap), mathx.P{ .x = ground.BankPiece.COUNT * SPRITE_PX, .y = SPRITE_PX }));
+    const size = mathx.P{ .x = std.enums.values(WaterBand).len * ground.COLS * look.SPRITE_PX, .y = ground.ROWS * look.SPRITE_PX };
+    for (sprite_assets.WATER_EDGES) |e| std.debug.assert(std.meta.eql(sprite_assets.pngSize(@field(sprite_assets.SOURCES, e.name)), size));
+    std.debug.assert(std.meta.eql(sprite_assets.pngSize(sprite_assets.SOURCES.shallows_water_cap), mathx.P{ .x = ground.BankPiece.COUNT * look.SPRITE_PX, .y = look.SPRITE_PX }));
 }
 test "the hud border's size and corner cut are the ones its export script checks" {
     const path = "tools/hud_art/export_border.lua";
-    const size = comptime pngSize(HUD_BORDER_PNG);
+    const size = comptime sprite_assets.pngSize(HUD_BORDER_PNG);
     try ground.expectLuaList(i32, &.{size.x}, path, "local W=");
     try ground.expectLuaList(i32, &.{size.y}, path, "local H=");
     try ground.expectLuaList(i32, &.{HUD_BORDER_CUT}, path, "local CUT=");
@@ -677,11 +618,11 @@ test "the hud border's size and corner cut are the ones its export script checks
 test "water material bands and cap sampling match the tile-art exporter" {
     try ground.expectLuaList(WaterBand, std.enums.values(WaterBand), "tools/tile_art/water_cliff_materials.lua", "local bands={");
     try ground.expectLuaList(i32, &.{@intFromFloat(ground.BANK_LIFT_PX)}, "tools/tile_art/export_water_edges.lua", "local BANK_LIFT=");
-    const cap = try rl.loadImageFromMemory(".png", SOURCES.shallows_water_cap);
+    const cap = try rl.loadImageFromMemory(".png", sprite_assets.SOURCES.shallows_water_cap);
     defer rl.unloadImage(cap);
-    const mask = try rl.loadImageFromMemory(".png", SOURCES.water_cliff_cap);
+    const mask = try rl.loadImageFromMemory(".png", sprite_assets.SOURCES.water_cliff_cap);
     defer rl.unloadImage(mask);
-    const water = try rl.loadImageFromMemory(".png", GROUND_PNGS.get(.shallows).?);
+    const water = try rl.loadImageFromMemory(".png", sprite_assets.GROUND_PNGS.get(.shallows).?);
     defer rl.unloadImage(water);
     const cell = ground.CELL_OF[ground.FULL];
     const lift: i32 = @intFromFloat(ground.BANK_LIFT_PX);
@@ -695,7 +636,7 @@ test "water material bands and cap sampling match the tile-art exporter" {
                 try std.testing.expectEqual(@as(u8, 0), actual.a);
                 continue;
             }
-            const expected = rl.getImageColor(water, cell.x * SPRITE_PX + @mod(x, SPRITE_PX), cell.y * SPRITE_PX + @mod(y + SPRITE_PX / 2 - lift, SPRITE_PX));
+            const expected = rl.getImageColor(water, cell.x * look.SPRITE_PX + @mod(x, look.SPRITE_PX), cell.y * look.SPRITE_PX + @mod(y + look.SPRITE_PX / 2 - lift, look.SPRITE_PX));
             try std.testing.expectEqual(expected, actual);
             covered += 1;
         }
@@ -705,16 +646,16 @@ test "water material bands and cap sampling match the tile-art exporter" {
 }
 
 test "the deep water sheet is the shallows' at WATER_DEEP_PERCENT, as deepen_water.lua rounds it" {
-    try ground.expectLuaList(i32, &.{WATER_DEEP_PERCENT}, "tools/tile_art/deepen_water.lua", "local percent=tonumber(app.params.percent) or ");
-    const shallow = try rl.loadImageFromMemory(".png", GROUND_PNGS.get(.shallows).?);
+    try ground.expectLuaList(i32, &.{look.WATER_DEEP_PERCENT}, "tools/tile_art/deepen_water.lua", "local percent=tonumber(app.params.percent) or ");
+    const shallow = try rl.loadImageFromMemory(".png", sprite_assets.GROUND_PNGS.get(.shallows).?);
     defer rl.unloadImage(shallow);
-    const deep = try rl.loadImageFromMemory(".png", GROUND_PNGS.get(.water).?);
+    const deep = try rl.loadImageFromMemory(".png", sprite_assets.GROUND_PNGS.get(.water).?);
     defer rl.unloadImage(deep);
     try std.testing.expectEqual(shallow.width, deep.width);
     try std.testing.expectEqual(shallow.height, deep.height);
     const Lua = struct {
         fn channel(v: u8) u8 {
-            return @intCast((@as(u32, v) * WATER_DEEP_PERCENT + mathx.PERCENT / 2) / mathx.PERCENT);
+            return @intCast((@as(u32, v) * look.WATER_DEEP_PERCENT + mathx.PERCENT / 2) / mathx.PERCENT);
         }
     };
     var y: i32 = 0;

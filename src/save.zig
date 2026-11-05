@@ -197,7 +197,7 @@ fn inspect(bytes: []const u8) Error!Contents {
         var node_count: @FieldType(RawMap, "node_n") = undefined;
         var count_bytes = b[@offsetOf(RawMap, "node_n")..];
         _ = store.legacy.take(&count_bytes, &node_count);
-        if (node_count == 0 or node_count > atlas.MAX_NODES or node >= node_count) return error.Damaged;
+        if (!atlas.holdsNodes(node_count, node)) return error.Damaged;
         var it = visited.iterator(.{});
         while (it.next()) |n| if (n >= node_count) return error.Damaged;
         if (s.node != node) return error.Damaged;

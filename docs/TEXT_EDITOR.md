@@ -42,7 +42,7 @@ here: use the map editor's existing Rename action so its open map and undo state
 authoritative.
 
 Enums used by display helpers can have editable display aliases. These save to
-`assets/player-labels.txt`, keyed by the full enum type and field; their declaration stays
+`assets/data/player-labels.txt`, keyed by the full enum type and field; their declaration stays
 the source provenance. The aliases are embedded at rebuild and change captions without
 renaming code or changing save identities. Default generated casing follows `menu.named`;
 title and sentence uses can have different default casing. An explicit alias uses the exact

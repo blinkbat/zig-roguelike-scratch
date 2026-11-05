@@ -1,4 +1,4 @@
--- A ground template's painting, its 4x4 block alone, as the game's sheet: assets/<name>-ground.png, which src/gfx/ground.zig reads.
+-- A ground template's painting, its 4x4 block alone, as the game's sheet: assets/ground/<name>-ground.png, which src/gfx/ground.zig reads.
 -- params: name=grass|cobble|dirt|water|shallows|bridge [source=<sheet.aseprite>] [out=<png>] [from=underdrawing, a stand-in, only with out=]
 local root=app.params.root or 'C:/Users/DavidBennett/Desktop/projects/tests/zig-roguelike-scratch/'
 local name=assert(app.params.name,'name=grass|cobble|dirt|water|shallows|bridge')
@@ -7,7 +7,7 @@ local source=app.params.source or ('C:/Users/DavidBennett/Desktop/'..source_name
 local stand_in=app.params.from=='underdrawing'
 assert(app.params.from==nil or stand_in,'from=underdrawing or nothing')
 assert(not stand_in or app.params.out,'a stand-in never goes into assets/: give out=')
-local out=app.params.out or (root..'assets/'..name..'-ground.png')
+local out=app.params.out or (root..'assets/ground/'..name..'-ground.png')
 local HEAD,CELL,COLS=64,64,4
 local order=dofile(root..'tools/tile_art/ground_corners.lua')
 assert(#order==COLS*COLS)
