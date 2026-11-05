@@ -600,7 +600,7 @@ test "a corner's pieces stack: each ground covers its own corners and those of e
     std.debug.print("cobble, water, dirt and grass round one point: masks {d} {d} {d} {d}\n", .{ c.mask(.cobble), c.mask(.water), c.mask(.dirt), c.mask(.grass) });
 }
 
-test "what stands takes the ground its neighbours bear, and the sheet's cells match the template's order" {
+test "what stands takes the ground its neighbours bear" {
     try paintedAsTested();
     var lv = grid.Level.blank();
     @memset(&lv.tile, .rock);
@@ -626,10 +626,13 @@ test "what stands takes the ground its neighbours bear, and the sheet's cells ma
     try std.testing.expectEqual(of(look.under(.boulder).?), bedAt(&lv, boulder, true));
     lv.seen[grid.Level.idx(.{ .x = 19, .y = 19 })] = true;
     try std.testing.expectEqual(@as(?Ground, .dirt), bedAt(&lv, boulder, true));
+}
+
+test "ground sheet cells and corner bits match the art templates independently of installed sheets" {
     try expectLuaList(u4, &ORDER, "tools/tile_art/ground_corners.lua", "return {");
     try expectLuaList(u4, &.{ NW, NE, SW, SE }, "tools/tile_art/ground_sheet.lua", "local NW,NE,SW,SE=");
-
     try std.testing.expectEqual(P{ .x = 1, .y = 1 }, CELL_OF[FULL]);
+    std.debug.print("ground art contract: {d} sheet masks and {d} corner bits checked without artwork-dependent skips\n", .{ ORDER.len, AROUND.len });
 }
 
 test "a ground with no sheet lies under the edges round it of a higher one that has a sheet" {

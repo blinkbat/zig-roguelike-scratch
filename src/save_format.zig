@@ -208,6 +208,7 @@ pub fn apply(snapshot: *Snapshot, g: *game.Game, map: *data.Map) void {
 
 pub fn validate(snapshot: *Snapshot) !void {
     const run = &snapshot.run;
+    if (!run.rng.valid() or !run.loot_rng.valid()) return error.Damaged;
     if (!run.name.valid() or !holdsHero(&run.pool, run.hero, run.class.kind())) return error.Damaged;
     const body = &run.pool.items[actor.Pool.slot(run.hero)];
     if (run.bar.modifier) |m| if (std.mem.indexOfScalar(@TypeOf(m), &skillbar.SLOTS, m) == null) {

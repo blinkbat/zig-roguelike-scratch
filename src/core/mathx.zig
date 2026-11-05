@@ -420,6 +420,10 @@ pub const Rng = struct {
         return .{ .impl = std.Random.Xoshiro256.init(seed) };
     }
 
+    pub fn valid(self: Rng) bool {
+        return !std.mem.allEqual(u64, &self.impl.s, 0);
+    }
+
     fn r(self: *Rng) std.Random {
         return self.impl.random();
     }

@@ -30,7 +30,7 @@ add an explicit migration if their meaning changes. RNG state explicitly names
 Xoshiro256 and stores its four words; changing algorithms requires a converter.
 
 Lengths and counts are bounded before indexing. Unknown enum/union tags, invalid
-booleans, numeric overflow, non-finite floats, duplicate known fields, impossible
+booleans, numeric overflow, non-finite floats, all-zero RNG states, duplicate known fields, impossible
 actor references, incomplete required data and checksum failures are rejected.
 Active and visited levels validate occupancy and positions. Summary data must agree
 with the run. Parsing and validation complete before either the live game or its map

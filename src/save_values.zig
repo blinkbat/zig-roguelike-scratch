@@ -104,8 +104,9 @@ pub const Policy = struct {
 
     pub fn decode(comptime T: type, stored: Stored(T)) wire.Error!T {
         if (T == mathx.Rng) {
-            if (std.mem.allEqual(u64, &stored.xoshiro256, 0)) return error.Damaged;
-            return .{ .impl = .{ .s = stored.xoshiro256 } };
+            const rng = mathx.Rng{ .impl = .{ .s = stored.xoshiro256 } };
+            if (!rng.valid()) return error.Damaged;
+            return rng;
         }
         var result = progress.State{};
         inline for (std.meta.fields(progress.State)) |f| {

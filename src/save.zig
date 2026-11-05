@@ -766,6 +766,46 @@ test "legacy saves convert on load and reject invalid native tags before changin
     std.debug.print("legacy conversion: visited map, progress and RNG retained; native enum/bool corruption rejected without mutation\n", .{});
 }
 
+test "save readers reject an all-zero combat or loot random stream before applying it" {
+    const alloc = std.testing.allocator;
+    const source = try game.boot(alloc);
+    defer game.shut(alloc, source);
+    game.begin(source, 37);
+    const target = try game.boot(alloc);
+    defer game.shut(alloc, target);
+    game.begin(target, 91);
+    const map = try alloc.create(Map);
+    defer alloc.destroy(map);
+    map.* = .{};
+    const map_hash = store.sum(std.mem.asBytes(map));
+    var before = std.ArrayList(u8).init(alloc);
+    defer before.deinit();
+    try write(target, &before);
+    var changed = std.ArrayList(u8).init(alloc);
+    defer changed.deinit();
+    var after = std.ArrayList(u8).init(alloc);
+    defer after.deinit();
+    var checked: usize = 0;
+    inline for (.{ "rng", "loot_rng" }) |field| {
+        const saved = @field(source.sim, field);
+        @field(source.sim, field).impl.s = @splat(0);
+        for ([_]bool{ false, true }) |legacy| {
+            changed.clearRetainingCapacity();
+            if (legacy) try writeLegacy(source, &changed) else try write(source, &changed);
+            seal(&changed);
+            try std.testing.expectError(error.Damaged, peek(changed.items));
+            try std.testing.expectError(error.Damaged, read(changed.items, target, map));
+            after.clearRetainingCapacity();
+            try write(target, &after);
+            try std.testing.expectEqualSlices(u8, before.items, after.items);
+            try std.testing.expectEqual(map_hash, store.sum(std.mem.asBytes(map)));
+            checked += 1;
+        }
+        @field(source.sim, field) = saved;
+    }
+    std.debug.print("save RNG validation: {d} zero combat/loot streams rejected in portable and legacy saves without mutation\n", .{checked});
+}
+
 test "a listed save must have the complete run that loading requires" {
     const g = try game.boot(std.testing.allocator);
     defer game.shut(std.testing.allocator, g);
