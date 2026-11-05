@@ -254,7 +254,7 @@ pub const Sprites = struct {
             const at = cellAt(origin, p, px);
             for (0..2) |side| {
                 const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
-                const tex = (if (depth == .water) self.water_cliff else self.shallows_cliff) orelse continue;
+                const tex = self.cliffOf(depth, false) orelse continue;
                 if (face) |f| {
                     const d = look.waterDepth(depth).?;
                     if (bound != d) {
@@ -277,6 +277,11 @@ pub const Sprites = struct {
         src.x += shift * look.SPRITE_PX;
         src.width /= 2;
         return .{ .src = src, .dst = .{ .x = at[0] + (shift - 0.5) * px, .y = at[1] - px * ground.BANK_LIFT, .width = px / 2, .height = px } };
+    }
+
+    fn cliffOf(self: *const Sprites, depth: ground.Ground, cap: bool) ?rl.Texture2D {
+        if (depth == .water) return if (cap) self.water_cliff_cap else self.water_cliff;
+        return if (cap) self.shallows_cliff_cap else self.shallows_cliff;
     }
 
     fn sideShift(side: usize) f32 {
@@ -305,7 +310,7 @@ pub const Sprites = struct {
             for (0..2) |side| {
                 const land = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = if (piece.outside(side)) 0 else -1 });
                 const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
-                const cap = (if (depth == .water) self.water_cliff_cap else self.shallows_cliff_cap) orelse continue;
+                const cap = self.cliffOf(depth, true) orelse continue;
                 const gr = beds.ground(land) orelse continue;
                 if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
                 const fill = self.bankFill(gr);

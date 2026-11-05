@@ -45,7 +45,7 @@ pub fn speak(g: *game.Game, folk: usize) void {
     const s = scriptOf(g) orelse return;
     if (folk >= s.folk_n) return;
     const f = &s.folk[folk];
-    if (g.sim.heroAt()) |at| g.pic.turnToward(.fromInt(g.sim.hero), f.at.x - at.x);
+    if (g.sim.heroAt()) |at| g.pic.turnHero(&g.sim, f.at.x - at.x);
     game.holdWalk(g);
     if (f.dialog) |d| if (g.sim.plot.open(s, d, @intCast(folk), &g.sim.log)) {
         g.mode = .talk;

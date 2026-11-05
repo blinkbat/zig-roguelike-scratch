@@ -344,9 +344,9 @@ fn countHeading(g: *game.Game, x: i32, y: i32, w: i32, comptime title: []const u
 }
 
 /// `<` and `>` round `value`; -1 or 1 as one is pressed, 0 otherwise.
-fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, live: bool, tip: ?[:0]const u8) i32 {
+fn stepper(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, value: []const u8, live: bool, tip: ?[:0]const u8, shift: bool) i32 {
     const step = widgets.Step{ .tip = tip, .live = live };
-    return widgets.stepper(ed.controls(), &g.face, r, value, widgets.PAGE_ARROWS, .{ step, step }, false);
+    return widgets.stepper(ed.controls(), &g.face, r, value, widgets.PAGE_ARROWS, .{ step, step }, shift);
 }
 
 fn cycle(comptime T: type, v: T, by: i32) T {
@@ -355,8 +355,7 @@ fn cycle(comptime T: type, v: T, by: i32) T {
 
 fn numberStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, v: *i32, span: script.Span, unit: []const u8, tip: [:0]const u8) void {
     var buf: [32]u8 = undefined;
-    const step = widgets.Step{ .tip = tip };
-    const by = widgets.stepper(ed.controls(), &g.face, r, std.fmt.bufPrint(&buf, "{d}{s}", .{ v.*, unit }) catch "", widgets.PAGE_ARROWS, .{ step, step }, ed.desk.shift);
+    const by = stepper(ed, g, r, std.fmt.bufPrint(&buf, "{d}{s}", .{ v.*, unit }) catch "", true, tip, ed.desk.shift);
     if (by == 0) return;
     const next = span.clamp(v.* + by);
     if (next == v.*) return;
@@ -365,14 +364,14 @@ fn numberStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, v: *i32, span:
 }
 
 fn wordStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, comptime T: type, v: *T, names: *const std.EnumArray(T, []const u8), tip: ?[:0]const u8) void {
-    const by = stepper(ed, g, r, names.get(v.*), true, tip);
+    const by = stepper(ed, g, r, names.get(v.*), true, tip, false);
     if (by == 0) return;
     v.* = cycle(T, v.*, by);
     ed.bank();
 }
 
 fn indexStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, label: []const u8, slot: *u8, n: usize, tip: [:0]const u8) void {
-    const by = stepper(ed, g, r, label, n > 1, tip);
+    const by = stepper(ed, g, r, label, n > 1, tip, false);
     if (by == 0) return;
     slot.* = @intCast(mathx.wrap(slot.*, by, n));
     ed.bank();
@@ -419,8 +418,7 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
 /// The scrolled area's content ran to `bottom`: stops clipping, then measures and draws its bar.
 fn endScroll(ed: *editor.Editor, area: widgets.Scroll, bottom: i32) void {
     widgets.unclip(&ed.clip);
-    area.fit(bottom, 0);
-    area.bar();
+    area.end(bottom, 0);
 }
 
 fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
@@ -492,7 +490,7 @@ fn drawFolk(ed: *editor.Editor, g: *game.Game, i: u8, x: i32, top: i32, w: i32) 
     y += STEP;
     caption(g, x, y, LABEL_W, "Talks with", look.TEXT);
     var talks = widgets.Lay{ .x = x + LABEL_W, .y = y };
-    const by = stepper(ed, g, talks.take(TALK_W), talksTo(m, fk), m.dialog_n > 0, "Which dialog speaking to it opens");
+    const by = stepper(ed, g, talks.take(TALK_W), talksTo(m, fk), m.dialog_n > 0, "Which dialog speaking to it opens", false);
     if (by != 0) {
         optionalStep(&fk.dialog, by, m.dialog_n);
         ed.bank();
@@ -671,7 +669,7 @@ fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, li: u8, x: i32, top: i32,
 
 fn targetStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, d: *const script.Dialog, next: *?u8) void {
     const label = if (next.*) |n| d.line[n].name.text() else "end";
-    const by = stepper(ed, g, r, label, true, "Another line of this dialog, or the end of it");
+    const by = stepper(ed, g, r, label, true, "Another line of this dialog, or the end of it", false);
     if (by == 0) return;
     optionalStep(next, by, d.line_n);
     ed.bank();
@@ -758,7 +756,7 @@ fn kindW(w: i32) i32 {
 /// The kind heading an action's or a condition's row: a new kind starts afresh, fitted to the map by `rule`.
 fn kindStep(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, v: anytype, names: anytype, tip: [:0]const u8, rule: anytype) void {
     const K = @TypeOf(v.kind);
-    const by = stepper(ed, g, r, names.get(v.kind), true, tip);
+    const by = stepper(ed, g, r, names.get(v.kind), true, tip, false);
     if (by == 0) return;
     var k = cycle(K, v.kind, by);
     while (!rule.ok(k)) k = cycle(K, k, by);
@@ -943,7 +941,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
         .talked => dialogStep(ed, g, widgets.row(fx, y, @min(fw, WHICH_W)), &c.slot),
         .deaths, .alive => {
             const ws = split(fw, &.{ 4, 3, 3 }, &.{ FOE_W, OP_W, NUMBER_W });
-            const by = stepper(ed, g, lay.take(ws[0]), actor.row(c.foe).name, true, "Which foe; a slime counts its halves");
+            const by = stepper(ed, g, lay.take(ws[0]), actor.row(c.foe).name, true, "Which foe; a slime counts its halves", false);
             if (by != 0) {
                 c.foe = mathx.stepIn(actor.Kind, &actor.FOES, c.foe, by, 0);
                 ed.bank();

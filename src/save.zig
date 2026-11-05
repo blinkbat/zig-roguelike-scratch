@@ -42,7 +42,7 @@ pub const Unreadable = enum {
     other_build,
     damaged,
 
-    pub fn caption(u: Unreadable) []const u8 {
+    pub fn caption(u: Unreadable) [:0]const u8 {
         return switch (u) {
             .other_build => "From another build of the game",
             .damaged => "Damaged",
@@ -161,12 +161,6 @@ fn payload(bytes: []const u8) Error![]const u8 {
     return format.open(bytes, MAGIC, FINGERPRINT);
 }
 
-fn peekLegacy(bytes: []const u8) !Summary {
-    const snapshot = try parseLegacy(bytes);
-    defer std.heap.page_allocator.destroy(snapshot);
-    return snapshot.summary;
-}
-
 const Contents = struct { summary: Summary, seed: Seed, has_map: bool, body: []const u8 };
 
 fn inspect(bytes: []const u8) Error!Contents {
@@ -249,24 +243,22 @@ fn parseLegacy(bytes: []const u8) !*format.Snapshot {
     return snapshot;
 }
 
-fn readLegacy(bytes: []const u8, g: *game.Game, map: *Map) !void {
-    const snapshot = try parseLegacy(bytes);
+const write = format.write;
+
+fn parse(bytes: []const u8) !*format.Snapshot {
+    return if (portable(bytes)) format.parse(bytes) else parseLegacy(bytes);
+}
+
+fn read(bytes: []const u8, g: *game.Game, map: *Map) !void {
+    const snapshot = try parse(bytes);
     defer std.heap.page_allocator.destroy(snapshot);
     format.apply(snapshot, g, map);
 }
 
-fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
-    try format.write(g, out);
-}
-
-fn read(bytes: []const u8, g: *game.Game, map: *Map) !void {
-    if (portable(bytes)) return format.read(bytes, g, map);
-    try readLegacy(bytes, g, map);
-}
-
 fn peek(bytes: []const u8) !Summary {
-    if (portable(bytes)) return format.peek(bytes);
-    return peekLegacy(bytes);
+    const snapshot = try parse(bytes);
+    defer std.heap.page_allocator.destroy(snapshot);
+    return snapshot.summary;
 }
 
 pub fn number(slot: usize) usize {
@@ -792,8 +784,8 @@ test "a listed save must have the complete run that loading requires" {
         buf.clearRetainingCapacity();
         try buf.appendSlice(full[0..cut]);
         seal(&buf);
-        try std.testing.expectError(error.Short, peekLegacy(buf.items));
-        try std.testing.expectError(error.Short, readLegacy(buf.items, g, map));
+        try std.testing.expectError(error.Short, peek(buf.items));
+        try std.testing.expectError(error.Short, read(buf.items, g, map));
         try std.testing.expectEqual(hp, g.sim.heroActor().?.hp);
         try std.testing.expectEqual(seed, g.sim.seed);
     }
@@ -801,8 +793,8 @@ test "a listed save must have the complete run that loading requires" {
     try buf.appendSlice(full);
     buf.items[MAP_FLAG_AT] = 2;
     seal(&buf);
-    try std.testing.expectError(error.Damaged, peekLegacy(buf.items));
-    try std.testing.expectError(error.Damaged, readLegacy(buf.items, g, map));
+    try std.testing.expectError(error.Damaged, peek(buf.items));
+    try std.testing.expectError(error.Damaged, read(buf.items, g, map));
     std.debug.print("{d} checksummed incomplete saves and an invalid map flag refused before loading\n", .{cuts.len});
 }
 
@@ -882,8 +874,8 @@ test "checksummed save structure failures preserve both the live run and destina
         try damaged.appendSlice(full.items[0..cut]);
         if (i == cuts.len - 1) try damaged.append(0);
         seal(&damaged);
-        try std.testing.expectError(error.Short, peekLegacy(damaged.items));
-        try std.testing.expectError(error.Short, readLegacy(damaged.items, back, into));
+        try std.testing.expectError(error.Short, peek(damaged.items));
+        try std.testing.expectError(error.Short, read(damaged.items, back, into));
         after.clearRetainingCapacity();
         try writeLegacy(back, &after);
         try std.testing.expectEqualSlices(u8, before.items, after.items);
@@ -916,8 +908,8 @@ test "checksummed save structure failures preserve both the live run and destina
             .summary_node => Patch.value(damaged.items, HEAD + @offsetOf(Summary, "node"), @as(?usize, 0)),
         }
         seal(&damaged);
-        try std.testing.expectError(error.Damaged, peekLegacy(damaged.items));
-        try std.testing.expectError(error.Damaged, readLegacy(damaged.items, back, into));
+        try std.testing.expectError(error.Damaged, peek(damaged.items));
+        try std.testing.expectError(error.Damaged, read(damaged.items, back, into));
         after.clearRetainingCapacity();
         try writeLegacy(back, &after);
         try std.testing.expectEqualSlices(u8, before.items, after.items);

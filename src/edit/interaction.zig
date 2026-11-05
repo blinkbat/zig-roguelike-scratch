@@ -221,6 +221,7 @@ pub fn mapMouse(ed: *Editor, c: rl.Rectangle, over: bool) void {
     if (ed.cell_action) |action| {
         if (d.erase_hit or (d.paint_hit and !over)) {
             ed.cell_action = null;
+            if (d.paint_hit) ed.fresh = true;
         } else if (d.paint_hit and over) {
             ed.cell_action = null;
             switch (action) {

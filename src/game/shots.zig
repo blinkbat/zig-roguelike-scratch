@@ -958,6 +958,8 @@ fn checkWaterCapTint(g: *game.Game) !void {
     std.debug.print("water cap GPU: {d} pixels match ordinary shallow water at two screen heights, with tint-only and reflections/glints/shimmer\n", .{checked});
 }
 
+const TemplateLayer = enum { ground, bare, faces, caps, edges };
+
 fn waterCliffTemplates(g: *game.Game) !void {
     game.prepare(g);
     if (g.sprites.bank_cap == null) return error.BankCapShaderMissing;
@@ -975,31 +977,30 @@ fn waterCliffTemplates(g: *game.Game) !void {
         beds.fill(&lv, .{ .x = 8, .y = 8 }, .{ .x = 15, .y = 15 }, false);
         g.sprites.sync(sprite_assets.Assets.of(&lv));
         const origin = [2]f32{ -608, -608 };
-        for (0..5) |pass| {
+        for (std.enums.values(TemplateLayer)) |pass| {
             rl.beginTextureMode(target);
             rl.clearBackground(rl.Color.blank);
             switch (pass) {
-                0 => g.sprites.drawGround(&lv, &beds, origin, 64, null),
-                1 => {
+                .ground => g.sprites.drawGround(&lv, &beds, origin, game.CELL_F, null),
+                .bare => {
                     var base = g.sprites;
                     base.shallows_cliff = null;
                     base.water_cliff = null;
                     base.dirt_shallows_edges = null;
                     base.dirt_water_edges = null;
                     base.shallows_water_edges = null;
-                    base.drawGround(&lv, &beds, origin, 64, null);
+                    base.drawGround(&lv, &beds, origin, game.CELL_F, null);
                 },
-                2 => g.sprites.drawWaterCliffFaces(&beds, origin, 64, null),
-                3 => g.sprites.drawWaterCliffCaps(&beds, origin, 64, null),
-                4 => g.sprites.drawWaterEdges(&beds, origin, 64, null),
-                else => unreachable,
+                .faces => g.sprites.drawWaterCliffFaces(&beds, origin, game.CELL_F, null),
+                .caps => g.sprites.drawWaterCliffCaps(&beds, origin, game.CELL_F, null),
+                .edges => g.sprites.drawWaterEdges(&beds, origin, game.CELL_F, null),
             }
             rl.endTextureMode();
             var path: [128]u8 = undefined;
-            const name = if (pass == 0)
+            const name = if (pass == .ground)
                 try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/template-{d}.png", .{n})
             else
-                try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/template-{d}-layer-{d}.png", .{ n, pass });
+                try std.fmt.bufPrintZ(&path, SHOTS_DIR ++ "/water-cliffs/template-{d}-layer-{d}.png", .{ n, @intFromEnum(pass) });
             const img = try readTarget(target);
             defer rl.unloadImage(img);
             if (!rl.exportImage(img, name)) return error.ExportFailed;

@@ -203,7 +203,7 @@ fn Detonation(comptime Words: type) type {
         pub const DESCRIPTION = Words.DESCRIPTION;
         pub const FUEL = Words.FUEL;
         pub const FUEL_DAMAGE = DETONATION_FUEL;
-        pub const REACH: i32 = 1;
+        pub const REACH = ADJACENT;
         pub const area = glacial.Patch(REACH).area;
     };
 }

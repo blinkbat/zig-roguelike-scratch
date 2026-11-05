@@ -30,8 +30,6 @@ const SEP = menu.SEP;
 /// Buttons along the top bar: as wide as their words, set apart in groups.
 const BAR_GROUP: i32 = 18;
 const TAB_PIC: f32 = 26;
-/// A small-capital heading over a group of a panel's controls.
-const HEADING_H: i32 = DETAIL + widgets.GAP;
 
 /// A row of the top bar, laid rightward from its left or leftward from its right.
 const Bar = struct {
@@ -194,8 +192,8 @@ pub fn fileRows(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32) voi
 }
 
 fn heading(g: *game.Game, col: Column, y: *i32, s: [:0]const u8) void {
-    widgets.textFace(&g.face).draw(s, col.left(), y.*, DETAIL, look.UI_GOLD);
-    y.* += HEADING_H;
+    widgets.heading(&g.face, s, col.left(), y.*);
+    y.* += widgets.HEADING_H;
 }
 
 fn backPanel(col: Column, band: editor.Band, edge_x: i32) void {
@@ -328,7 +326,7 @@ fn drawTerrain(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
         if (labelButton(ed, g, r, shapeLabel(&buf, s), ed.shape == s and ed.tool.broad(), live, if (live) s.tip() else editor.GENERATED)) ed.setShape(s);
     }
     y += widgets.rowsOf(PAINT_SHAPES.len, SHAPE_COLS) * widgets.ROW_STEP + widgets.GAP;
-    rowLabel(g, col, y, "Brush");
+    rowLabel(g, col, y, "Brush", DETAIL);
     const n = ed.brushSize();
     const by = knobs.stepper(ed, g, widgets.row(col.left() + editor.LABEL_W, y, editor.BRUSH_SPAN), std.fmt.bufPrintZ(&buf, "{d}x{d}", .{ n, n }) catch "", .{
         .{ .tip = widgets.keyed("Smaller", Desk.BRUSH_CAPTION), .live = ed.brush > 0 },
@@ -336,7 +334,7 @@ fn drawTerrain(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
     });
     if (by != 0) ed.stepBrush(by);
     y += widgets.ROW_STEP;
-    rowLabel(g, col, y, "Inks");
+    rowLabel(g, col, y, "Inks", DETAIL);
     for (editor.INKS, 0..) |k, i| {
         const r = raster.rect(col.left() + editor.LABEL_W + @as(i32, @intCast(i)) * (SWATCH + widgets.GAP), widgets.midIn(y, widgets.ROW_H, SWATCH), SWATCH, SWATCH);
         swatch(g, ed.ink.get(k), r);
@@ -364,8 +362,8 @@ fn paletteCols(col: Column) usize {
     return @intCast(@divTrunc(col.inner() + SWATCH_GAP, SWATCH + SWATCH_GAP));
 }
 
-fn rowLabel(g: *game.Game, col: Column, y: i32, s: [:0]const u8) void {
-    widgets.drawFit(&g.face, s, DETAIL, editor.LABEL_W - widgets.GAP, false, col.left(), y + widgets.DETAIL_DY, look.TEXT);
+pub fn rowLabel(g: *game.Game, col: Column, y: i32, s: [:0]const u8, size: i32) void {
+    widgets.drawFit(&g.face, s, size, editor.LABEL_W - widgets.GAP, false, col.left(), widgets.midIn(y, widgets.ROW_H, size), look.TEXT);
 }
 
 pub const Tiles = struct {
@@ -422,7 +420,7 @@ const INSPECT_TIPS = std.EnumArray(editor.Inspect, [:0]const u8).init(.{
 
 /// The node dropdown's place; fixed, so a pose can open it without drawing first.
 pub fn nodeSlot(g: *const game.Game) rl.Rectangle {
-    return editor.Editor.inspector(g).row(editor.Editor.bandOf(g.screen).top + widgets.PAD + HEADING_H);
+    return editor.Editor.inspector(g).row(editor.Editor.bandOf(g.screen).top + widgets.PAD + widgets.HEADING_H);
 }
 
 pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
@@ -440,7 +438,7 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     var detail_buf: [widgets.LINE]u8 = undefined;
     const nd = ed.here();
     widgets.textFace(&g.face).draw(nodeDetail(nd, &detail_buf), col.left(), y, DETAIL, if (nd.unlinked() > 0) WARN else look.DIM);
-    y += DETAIL + widgets.GAP * 2;
+    y += DETAIL + widgets.BLOCK_GAP;
     var node = widgets.Across{ .col = col, .y = y, .n = 2 };
     if (smallButton(ed, g, node.next(), "Rename", ed.renaming, true, widgets.keyed("Name this node", Desk.RENAME_CAPTION)) and !ed.renamed) ed.startRename();
     const armed = ed.delete_armed == ed.node;
@@ -633,8 +631,7 @@ pub fn endPane(ed: *editor.Editor) void {
 /// The pane's content ran to `end`: how far it scrolls, and its bar.
 pub fn fitPane(ed: *editor.Editor, p: editor.Pane, end: i32) void {
     const s = ed.paneScroll(p, ed.pane_box.get(p));
-    s.fit(end, widgets.PAD);
-    s.bar();
+    s.end(end, widgets.PAD);
 }
 
 pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {

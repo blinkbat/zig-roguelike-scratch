@@ -383,7 +383,8 @@ const TravelCarry = struct {
     level_up: @FieldType(fx.Fx, "level_up"),
 
     fn of(g: *const Game) TravelCarry {
-        return .{ .queued = g.pending, .secondary = g.mouse.secondary, .facing = g.pic.facing[g.sim.heroSlot().?], .level_up = g.pic.fx.level_up };
+        const hero = g.sim.heroSlot().?;
+        return .{ .queued = g.pending, .secondary = g.mouse.secondary, .facing = g.pic.facing[hero], .level_up = g.pic.fx.level_up };
     }
 
     fn restore(self: TravelCarry, g: *Game) void {
@@ -457,6 +458,10 @@ pub fn settle(g: *Game) void {
     g.pic.hour_shown = g.sim.clock.hour();
     g.light.sky = skyNow(g);
     g.light.settle(&g.sim.lv);
+    carryLight(g);
+}
+
+fn carryLight(g: *Game) void {
     g.light.carrier = g.pic.carrierAt(&g.sim);
     g.light.carry_r = light.carryR(g.sim.heroLight());
 }
@@ -511,7 +516,10 @@ pub fn moveOf(g: *const Game, from: P, d: mathx.Dir, occupied: bool) Move {
 }
 
 fn spends(m: Move) bool {
-    return m != .blocked and m != .open and m != .talk;
+    return switch (m) {
+        .kick, .burst, .loot, .step => true,
+        .open, .talk, .blocked => false,
+    };
 }
 
 fn spendsMove(g: *Game, d: mathx.Dir) bool {
@@ -566,7 +574,7 @@ pub fn heroStep(g: *Game, chosen: mathx.Dir, late: f32) void {
         },
         .blocked => return,
     }
-    g.pic.turnToward(.fromInt(g.sim.hero), d.delta().x);
+    g.pic.turnHero(&g.sim, d.delta().x);
     combat.endTurn(g);
 }
 
@@ -775,8 +783,7 @@ pub fn update(g: *Game, dt: f32) void {
     g.pic.ease(&g.sim, dt);
     g.light.sky = skyNow(g);
     g.light.step(&g.sim.lv, dt);
-    g.light.carrier = g.pic.carrierAt(&g.sim);
-    g.light.carry_r = light.carryR(g.sim.heroLight());
+    carryLight(g);
     if (g.debug.visuals.weather) g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, CELL_F);
 }
 

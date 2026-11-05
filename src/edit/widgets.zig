@@ -26,6 +26,7 @@ pub const TEXT: i32 = font.HEAD;
 pub const DETAIL: i32 = font.BODY;
 pub const HEAD: i32 = 32;
 pub const LINE_STEP: i32 = TEXT + GAP;
+pub const HEADING_H: i32 = DETAIL + GAP;
 pub const TEXT_DY: i32 = @divTrunc(ROW_H - TEXT, 2);
 pub const DETAIL_DY: i32 = @divTrunc(ROW_H - DETAIL, 2);
 pub const INSPECT_INNER_W: i32 = INSPECT_W - PAD * 2;
@@ -130,7 +131,7 @@ pub fn labelW(face: *const font.Face, label: [:0]const u8, size: i32) i32 {
 pub const Step = struct { tip: ?[:0]const u8, live: bool = true };
 
 /// How a stepper looks: its two arrows, its value's size, and whether it sits on a modal page over a filled well.
-pub const Arrows = struct { glyphs: [2][:0]const u8, size: i32, modal: bool, well: bool };
+const Arrows = struct { glyphs: [2][:0]const u8, size: i32, modal: bool, well: bool };
 pub const KNOB_ARROWS = Arrows{ .glyphs = .{ "-", "+" }, .size = TEXT, .modal = false, .well = false };
 pub const PAGE_ARROWS = Arrows{ .glyphs = .{ "<", ">" }, .size = DETAIL, .modal = true, .well = true };
 
@@ -246,7 +247,7 @@ fn scrollThumb(track: rl.Rectangle, offset: usize, shown: usize, total: usize) ?
     return .{ .x = track.x, .y = track.y + travel, .width = track.width, .height = height };
 }
 
-pub fn scrollbar(track: rl.Rectangle, offset: usize, shown: usize, total: usize) void {
+fn scrollbar(track: rl.Rectangle, offset: usize, shown: usize, total: usize) void {
     const thumb = scrollThumb(track, offset, shown, total) orelse return;
     rl.drawRectangleRec(track, look.EDGE);
     rl.drawRectangleRec(thumb, look.UI_GOLD);
@@ -311,6 +312,11 @@ pub const Scroll = struct {
 
     pub fn bar(s: Scroll) void {
         if (s.most.* > 0) scrollbarIn(s.box, @intCast(s.top.*), @intCast(s.shown()), @intCast(s.shown() + s.most.*));
+    }
+
+    pub fn end(s: Scroll, bottom: i32, margin: i32) void {
+        s.fit(bottom, margin);
+        s.bar();
     }
 };
 
@@ -389,6 +395,14 @@ pub fn drawTag(face: *const font.Face, s: [:0]const u8, at: P, pad: P, bg: rl.Co
     rl.drawRectangle(at.x, at.y, size.x, size.y, bg);
     if (edge) |e| rl.drawRectangleLines(at.x, at.y, size.x, size.y, e);
     textFace(face).draw(s, at.x + pad.x, at.y + pad.y, DETAIL, look.TEXT);
+}
+
+pub fn heading(face: *const font.Face, s: [:0]const u8, x: i32, y: i32) void {
+    textFace(face).draw(s, x, y, DETAIL, look.UI_GOLD);
+}
+
+pub fn cellRect(o: [2]f32, p: P, cell: f32) rl.Rectangle {
+    return .{ .x = o[0] + @as(f32, @floatFromInt(p.x)) * cell, .y = o[1] + @as(f32, @floatFromInt(p.y)) * cell, .width = cell, .height = cell };
 }
 
 pub fn framed(x: i32, y: i32, w: i32, h: i32) void {

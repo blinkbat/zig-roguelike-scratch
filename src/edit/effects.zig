@@ -16,6 +16,7 @@ const menu = @import("../ui/menu.zig");
 const game = @import("../game.zig");
 const widgets = @import("widgets.zig");
 const panel = @import("panel.zig");
+const modals = @import("modals.zig");
 const editor = @import("editor.zig");
 const Desk = input.Desk;
 const P = mathx.P;
@@ -113,7 +114,7 @@ pub const Sample = union(enum) {
     }
 };
 
-pub const SAMPLES = blk: {
+const SAMPLES = blk: {
     @setEvalBranchQuota(20_000);
     var out: []const Sample = &.{};
     for (std.enums.values(fx.Matter)) |m| out = out ++ &[_]Sample{.{ .hit = m }};
@@ -140,7 +141,7 @@ comptime {
     for (SAMPLES[1..], SAMPLES[0 .. SAMPLES.len - 1]) |s, before| std.debug.assert(@intFromEnum(s.group()) >= @intFromEnum(before.group()));
 }
 
-pub const SPEEDS = [_]f32{ 1, 0.5, 0.25 };
+const SPEEDS =[_]f32{ 1, 0.5, 0.25 };
 const SPEED_NAMES = [SPEEDS.len][:0]const u8{ "Full speed", "Half", "Quarter" };
 
 const BURST_S: f32 = 1.4;
@@ -296,8 +297,7 @@ pub fn keys(ed: *editor.Editor) void {
 }
 
 const LIST_W: i32 = 320;
-const HEADER_H: i32 = widgets.DETAIL + widgets.GAP;
-const HEADER_STEP: i32 = HEADER_H + widgets.GAP;
+const HEADER_STEP: i32 = widgets.HEADING_H + widgets.GAP;
 const SPEED_W: i32 = 150;
 const TITLE = "Effects";
 
@@ -321,7 +321,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         if (editor.modalButton(ed, g, controls.take(SPEED_W), label, v.speed == i, true, "How fast the stage plays")) v.speed = i;
     }
     if (editor.modalButton(ed, g, controls.take(SPEED_W), widgets.keyed("Replay", Desk.ENTER_CAPTION), false, true, "Start it again")) v.reset();
-    if (editor.modalButton(ed, g, f.button(page.bottom - widgets.ROW_H, 0), widgets.keyed("Close", Desk.BACK_CAPTION), false, true, null)) ed.modal = .none;
+    modals.backButton(ed, g, f, page.bottom - widgets.ROW_H, "Close");
 }
 
 /// The largest whole multiple of a game cell the stage fits at.
@@ -346,14 +346,13 @@ fn drawList(ed: *editor.Editor, g: *game.Game, v: *Viewer, box: rl.Rectangle) vo
     var last: ?Group = null;
     for (SAMPLES, 0..) |s, i| {
         if (opens(&last, s)) {
-            widgets.textFace(&g.face).draw(GROUP_NAMES.get(s.group()), x, y + widgets.GAP, widgets.DETAIL, look.UI_GOLD);
+            widgets.heading(&g.face, GROUP_NAMES.get(s.group()), x, y + widgets.GAP);
             y += HEADER_STEP;
         }
         if (widgets.flatButton(ed.controls(), &g.face, widgets.row(x, y, w - widgets.SCROLL_W - widgets.GAP), s.name(), look.TEXT, i == v.at, true, true, null)) v.pick(i);
         y += widgets.ROW_H;
     }
-    scroll.fit(y, 0);
-    scroll.bar();
+    scroll.end(y, 0);
 }
 
 /// Whether `s` heads a group of its own, after `last`'s.
@@ -380,17 +379,17 @@ fn drawStage(g: *game.Game, v: *Viewer, stage: rl.Rectangle, cell: f32) void {
     defer rl.endScissorMode();
     const o = [2]f32{ stage.x - @as(f32, @floatFromInt(ORIGIN.x)) * cell, stage.y - @as(f32, @floatFromInt(ORIGIN.y)) * cell };
     var cells = grid.Cells.of(ORIGIN, ORIGIN.add(.{ .x = COLS, .y = ROWS }));
-    while (cells.next()) |p| panel.swatch(g, s.ground(), cellRect(o, p, cell));
+    while (cells.next()) |p| panel.swatch(g, s.ground(), widgets.cellRect(o, p, cell));
     rl.drawRectangleRec(stage, SHADE);
     if (s == .fire_wall) {
         for (0..WALL_CELLS) |k| {
             const p = MIDDLE.add(.{ .x = @as(i32, @intCast(k)) - @divTrunc(WALL_CELLS, 2), .y = 0 });
-            const r = cellRect(o, p, cell);
+            const r = widgets.cellRect(o, p, cell);
             game.scene.drawFlames(&v.effects, r.x, r.y, cell, grid.Level.idx(p));
         }
     }
     drawPools(v, s, o, cell);
-    const body = cellRect(o, MIDDLE, cell);
+    const body = widgets.cellRect(o, MIDDLE, cell);
     const hero_at = mathx.centre(MIDDLE);
     if (s == .level_up) v.effects.level_up.drawBeam(hero_at, o[0], o[1], cell);
     v.effects.draw(o[0], o[1], cell);
@@ -430,10 +429,6 @@ fn drawPools(v: *const Viewer, s: Sample, o: [2]f32, cell: f32) void {
         const at = rl.Vector2{ .x = o[0] + e.at[0] * cell, .y = o[1] + e.at[1] * cell };
         rl.drawCircleGradient(@intFromFloat(at.x), @intFromFloat(at.y), e.radius * cell, look.fade(e.col, @min(1, e.gain * POOL_A)), rl.Color.blank);
     }
-}
-
-fn cellRect(o: [2]f32, p: P, cell: f32) rl.Rectangle {
-    return .{ .x = o[0] + @as(f32, @floatFromInt(p.x)) * cell, .y = o[1] + @as(f32, @floatFromInt(p.y)) * cell, .width = cell, .height = cell };
 }
 
 /// DEV ONLY: the sample named `want`, played `seconds` in.

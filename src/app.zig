@@ -594,7 +594,7 @@ fn slotLine(s: *const save.Slot, buf: *[LINE]u8, i: usize) [:0]const u8 {
 fn slotDetails(s: *const save.Slot, buf: *[LINE]u8) ?[:0]const u8 {
     return switch (s.*) {
         .empty => null,
-        .unreadable => |why| std.fmt.bufPrintZ(buf, "{s}", .{why.caption()}) catch "",
+        .unreadable => |why| why.caption(),
         .run => |*r| r.details(buf),
     };
 }

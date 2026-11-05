@@ -22,8 +22,10 @@ pub const Glide = struct {
     from_lift: f32 = 0,
     /// Pixels toward what a melee blow strikes, at the bump's height; null for a step.
     bump: ?rl.Vector2 = null,
-    /// The glide still drawn while this one waits its turn.
-    prior: ?Prior = null,
+    /// The glides still drawn while this one waits its turn, newest first.
+    priors: [PRIORS]?Prior = @splat(null),
+
+    const PRIORS = 3;
 
     /// Prior motion, offset by `ahead` seconds.
     const Prior = struct {
@@ -39,11 +41,17 @@ pub const Glide = struct {
                 if (comptime !std.mem.eql(u8, f.name, "ahead")) @field(dst, f.name) = @field(src, f.name);
             }
         }
+
+        fn later(self: ?Prior, by: f32) ?Prior {
+            var p = self orelse return null;
+            p.ahead += by;
+            return p;
+        }
     };
 
     comptime {
         for (std.meta.fields(Glide)) |f| {
-            const own = std.mem.eql(u8, f.name, "t") or std.mem.eql(u8, f.name, "stepped") or std.mem.eql(u8, f.name, "prior");
+            const own = std.mem.eql(u8, f.name, "t") or std.mem.eql(u8, f.name, "stepped") or std.mem.eql(u8, f.name, "priors");
             std.debug.assert(own or @hasField(Prior, f.name));
         }
     }
@@ -61,21 +69,26 @@ pub const Glide = struct {
     pub fn toward(self: Glide, p: P, t: f32) Glide {
         var then = self;
         if (t < 0) then.t -= t;
-        var prior: ?Prior = null;
+        var gl = Glide{ .from = then.now(), .to = p, .t = t, .gait = self.gait, .from_lift = then.height() };
         if (t < 0 and self.left() > 0) {
+            const ahead = self.t - t;
             var was: Prior = undefined;
             Prior.copy(&was, self);
-            was.ahead = self.t - t;
-            prior = was;
+            was.ahead = ahead;
+            gl.priors[0] = was;
+            if (self.t < 0) for (self.priors[0 .. PRIORS - 1], gl.priors[1..]) |older, *kept| {
+                kept.* = Prior.later(older, ahead);
+            };
         }
-        return .{ .from = then.now(), .to = p, .t = t, .gait = self.gait, .from_lift = then.height(), .prior = prior };
+        return gl;
     }
 
     fn waiting(self: Glide) ?Glide {
         if (self.t >= 0) return null;
-        const p = self.prior orelse return null;
+        const p = self.priors[0] orelse return null;
         var gl = Glide{ .from = undefined, .to = undefined, .t = self.t + p.ahead, .gait = undefined };
         Prior.copy(&gl, p);
+        for (self.priors[1..], gl.priors[0 .. PRIORS - 1]) |older, *kept| kept.* = Prior.later(older, -p.ahead);
         return gl;
     }
 
@@ -157,4 +170,29 @@ fn bumpOf(k: f32) f32 {
 fn overshoot(k: f32) f32 {
     const u = k - 1;
     return 1 + (game.SLIDE_BACK + 1) * u * u * u + game.SLIDE_BACK * u * u;
+}
+
+test "two knocks queued behind a walk keep drawing the walk first" {
+    const a = P{ .x = 4, .y = 4 };
+    const walk = Glide.still(a, .hop).toward(.{ .x = 5, .y = 4 }, 0);
+    const first = walk.toward(.{ .x = 6, .y = 4 }, -0.13);
+    var second = first.toward(.{ .x = 7, .y = 4 }, -0.41);
+    var shown = walk;
+    var at: f32 = 0;
+    while (at < 0.6) : (at += 0.01) {
+        second.t = -0.41 + at;
+        const want = if (at < 0.13) blk: {
+            shown.t = at;
+            break :blk shown.now();
+        } else if (at < 0.41) blk: {
+            var k = first;
+            k.t = -0.13 + at;
+            break :blk k.now();
+        } else second.now();
+        try std.testing.expectApproxEqAbs(want.x, second.now().x, 0.01);
+        try std.testing.expectApproxEqAbs(want.y, second.now().y, 0.01);
+    }
+    second.t = -0.41;
+    try std.testing.expectApproxEqAbs(cellPx(a).x, second.now().x, 0.01);
+    std.debug.print("glide: a walk then two queued knocks draw in order from the walk's start\n", .{});
 }

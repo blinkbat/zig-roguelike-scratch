@@ -364,7 +364,6 @@ pub const caps = input.upper;
 
 pub const capital = wording.spoken;
 
-pub const titled = wording.titled;
 pub const named = wording.named;
 pub const titleOf = wording.titleOf;
 pub const word = wording.word;
@@ -471,8 +470,8 @@ test "a long menu shows the rows that fit, the one it is on among them" {
 }
 
 test "a tag is titled word by word" {
-    try std.testing.expectEqualStrings("Chain Lightning", comptime titled("chain_lightning"));
-    try std.testing.expectEqualStrings("Fireball", comptime titled("fireball"));
+    try std.testing.expectEqualStrings("Chain Lightning", comptime wording.titled("chain_lightning"));
+    try std.testing.expectEqualStrings("Fireball", comptime wording.titled("fireball"));
 }
 
 test "the menu walks round its rows and picks the one it is on" {

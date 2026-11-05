@@ -754,11 +754,7 @@ pub const Desk = struct {
         const ctrl = either(CTRL_KEYS);
         self.shift = either(SHIFT_KEYS);
         self.pan = if (ctrl) .{ .x = 0, .y = 0 } else heldWalk(&PAN_KEYS, false);
-        const hit = struct {
-            fn f(k: rl.KeyboardKey) bool {
-                return rl.isKeyPressed(k);
-            }
-        }.f;
+        const hit = rl.isKeyPressed;
         const bare = !ctrl;
         inline for (BARE) |f| @field(self, f) = bare and hit(comptime keyOf(f));
         inline for (WITH_CTRL) |f| @field(self, f) = ctrl and hit(comptime keyOf(f));

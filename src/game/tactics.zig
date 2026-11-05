@@ -236,7 +236,7 @@ pub fn entered(g: *game.Game, id: u16) void {
     h.tactics.overwatch = null;
     combat.reaction(g, id, attacks.heroSkill(&g.sim, .overwatch), rules.Overwatch.VERB, .{ .from = h.at, .wait = 0 }, id, flight);
     h.tactics.steady = 0;
-    if (g.pic.owed[actor.Pool.slot(id)].reaction) |*r| r.recovery = g.pic.afterOf(&g.sim, .fromIndex(g.sim.heroSlot().?));
+    if (g.pic.owed[actor.Pool.slot(id)].reaction) |*r| r.recovery = g.pic.heroAfter(&g.sim);
 }
 
 pub fn watches(lv: *const grid.Level, from: P, d: mathx.Dir, p: P) bool {

@@ -44,7 +44,7 @@ const effects_view = @import("effects.zig");
 const P = mathx.P;
 const Desk = input.Desk;
 
-pub const NODE_H: i32 = 60;
+const NODE_H: i32 = 60;
 pub const ZOOMS = [_]f32{ 8, 16, 32, 64 };
 const ZOOM_AT = zoomOf(16);
 pub const BRUSHES = [_]i32{ 1, 2, 3, 5 };
@@ -80,7 +80,7 @@ pub const BRUSH_SPAN: i32 = 2 * widgets.STEP_W + BRUSH_W;
 pub const MEMBERS_X: i32 = DRAW_SPAN + widgets.BLOCK_GAP;
 pub const MAKEUP_TOOLS_X: i32 = widgets.INSPECT_INNER_W - @as(i32, knobs.MAKEUP_TOOLS.len) * widgets.STEP_PITCH + widgets.GAP;
 pub const TITLE_DY: i32 = 3;
-pub const NODE_GAP: i32 = 2;
+const NODE_GAP: i32 = 2;
 pub const NODE_DETAIL_DY: i32 = widgets.TEXT + 1;
 
 comptime {
@@ -734,7 +734,7 @@ pub const Editor = struct {
         return inspectorOf(g.screen);
     }
 
-    pub fn inspectorOf(screen: P) widgets.Column {
+    fn inspectorOf(screen: P) widgets.Column {
         return .{ .x = screen.x - widgets.INSPECT_W, .w = widgets.INSPECT_W };
     }
 
@@ -786,13 +786,7 @@ pub const Editor = struct {
     }
 
     pub fn cellRect(ed: *const Editor, c: rl.Rectangle, p: P) rl.Rectangle {
-        const o = ed.origin(c);
-        return .{
-            .x = o[0] + @as(f32, @floatFromInt(p.x)) * ed.px(),
-            .y = o[1] + @as(f32, @floatFromInt(p.y)) * ed.px(),
-            .width = ed.px(),
-            .height = ed.px(),
-        };
+        return widgets.cellRect(ed.origin(c), p, ed.px());
     }
 
     pub fn lookAt(ed: *Editor, c: rl.Rectangle, p: P) void {
@@ -994,7 +988,7 @@ fn drawPopup(ed: *Editor, g: *game.Game) void {
         for (ed.popup_top..ed.popup_top + shown, 0..) |n, k| {
             if (panel.nodeRow(ed, g, raster.rect(x, y + @as(i32, @intCast(k)) * row_h, w, row_h - NODE_GAP), n, true)) {
                 ed.popup = null;
-                ed.goTo(n);
+                if (n == ed.node) ed.setView(.map) else ed.goTo(n);
             }
         }
         widgets.scrollbarIn(box, ed.popup_top, shown, ed.map.node_n);

@@ -28,8 +28,8 @@ pub const Biome = enum { ocean, coast, beach, mountain, foothills, glacier, tund
 pub const Params = struct {
     /// Lowest and highest, 0 to 100, each field rolled between them.
     height: [2]u8 = .{ 25, 85 },
-    rain: [2]u8 = .{ 0, 100 },
-    drain: [2]u8 = .{ 0, 100 },
+    rain: [2]u8 = .{ 0, mathx.PERCENT },
+    drain: [2]u8 = .{ 0, mathx.PERCENT },
     heat: [2]u8 = .{ 20, 80 },
     /// Cells across a field's features.
     scale: u8 = 28,

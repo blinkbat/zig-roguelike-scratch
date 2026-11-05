@@ -166,7 +166,7 @@ fn opened(bytes: []const u8) !struct { body: []const u8, version: u64 } {
     return error.OtherBuild;
 }
 
-fn parse(bytes: []const u8) !*Snapshot {
+pub fn parse(bytes: []const u8) !*Snapshot {
     const file = try opened(bytes);
     const snapshot = try std.heap.page_allocator.create(Snapshot);
     errdefer std.heap.page_allocator.destroy(snapshot);

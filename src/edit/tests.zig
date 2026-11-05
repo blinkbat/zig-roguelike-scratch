@@ -894,7 +894,7 @@ test "mouse editor cell actions choose play starts and linked doors without pain
     interaction.armCellAction(ed, .go);
     ed.desk = .{ .paint_hit = true };
     interaction.mapMouse(ed, TEST_CANVAS, false);
-    try std.testing.expect(ed.cell_action == null and ed.action == .none);
+    try std.testing.expect(ed.cell_action == null and ed.action == .none and !ed.controls().accepting);
     try std.testing.expectEqualSlices(grid.Tile, &before, &ed.map.node[0].plan.bespoke.tile);
     std.debug.print("mouse editor: chosen play cell, linked-door travel, intermediate motion, held click and three cancellations preserve map and undo\n", .{});
 }

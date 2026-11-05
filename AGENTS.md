@@ -49,7 +49,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   `skills` (aiming, leaps, rushes, spells, flasks), `binds` (the skill picker),
   `glide` (body motion), `scene` (map drawing), `overlay` (skill bar, binds, orbs, inspect, tooltips),
   `character` (pause, Character, Nearby), `debug` (Pause > Debug, diagnostics, `Perf`), `shots` (headless captures, bench), `harness` (scripted play shared by
-  tests and shots) and `tests/` (the game's integration tests by domain: skills, foes, world, loot, picture, menus, hero).
+  tests and shots) and `tests/` (the game's integration tests by domain: skills, foes, world, loot, picture, menus, hero, afflictions, terrain).
   `app.zig` opens the window around a `Game` (`withGame`) and owns the headless flags; `core/window.zig` owns fullscreen.
 - `gfx/look.zig` keeps tile/body appearance; `sprite_assets` selects required art and owns its catalog,
   `sprites` owns texture loading, lifetime and drawing, and `sprite_materials` owns its shader programs.

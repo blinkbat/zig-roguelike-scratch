@@ -62,7 +62,7 @@ pub fn swing(g: *game.Game, from: P, act: skillbar.Act, mark: P) void {
         else
             cut(g, a, d, s),
     }
-    g.pic.turnToward(.fromInt(g.sim.hero), d.delta().x);
+    g.pic.turnHero(&g.sim, d.delta().x);
     g.pic.lead = s.wait;
     endTurn(g);
 }
@@ -372,7 +372,7 @@ pub fn heal(g: *game.Game, n: i32, wait: f32) void {
 
 fn recoverLife(g: *game.Game, n: i32) ?fx.After {
     if (!g.sim.recoverLife(n)) return null;
-    return g.pic.afterOf(&g.sim, .fromIndex(g.sim.heroSlot().?));
+    return g.pic.heroAfter(&g.sim);
 }
 
 /// A kill no chosen blow made: gear's life on kill only.
@@ -755,7 +755,7 @@ fn throwNet(g: *game.Game, id: u16, n: actor.Net) bool {
     if (g.sim.pinFor(h, n.pins)) {
         g.sim.log.push(.danger, "The {s} nets {s}!", .{ name, g.sim.name.text() });
     } else g.sim.log.say("{s} shrugs off the {s}'s net.", .{ g.sim.name.text(), name });
-    g.pic.recordFoeAttack(.fromInt(id), .{ .snare = g.pic.afterOf(&g.sim, .fromIndex(g.sim.heroSlot().?)) }, flight);
+    g.pic.recordFoeAttack(.fromInt(id), .{ .snare = g.pic.heroAfter(&g.sim) }, flight);
     return true;
 }
 
@@ -853,13 +853,13 @@ fn reach(g: *game.Game, id: u16, row: actor.Row, dx: i32, flight: ?bow.Flight, a
             }
             if (!lethal and h.dmg > 0 and g.sim.procStatus(hero, .stun, s.stuns)) {
                 hero.clock.stun();
-                g.sim.sayTakes(actor.Pool.slot(g.sim.hero), hero, turn_clock.STUNNED);
+                g.sim.sayTakes(g.sim.heroSlot().?, hero, turn_clock.STUNNED);
                 g.sim.chronicle.note(.{ .stunned = kind });
             }
             const chills = damage.resistedChance(s.chills, defended.elements.get(glacial.ELEMENT));
             if (!lethal and h.dmg > 0 and g.sim.procStatus(hero, glacial.AILMENT, chills)) {
                 hero.chill.apply();
-                g.sim.sayTakes(actor.Pool.slot(g.sim.hero), hero, glacial.TAKES);
+                g.sim.sayTakes(g.sim.heroSlot().?, hero, glacial.TAKES);
             }
             const after = afterBlow(g, g.sim.hero, h);
             g.pic.recordFoeAttack(.fromInt(id), if (lethal) .{ .kill = after } else .{ .hurt = after }, flight);

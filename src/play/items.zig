@@ -106,7 +106,7 @@ pub const Mod = enum {
         return switch (m) {
             .resistance => std.enums.values(damage.Element),
             .imbue => &IMBUES,
-            else => &.{},
+            .life, .mana, .strength, .dexterity, .intelligence, .physical_damage, .spell_damage, .crit, .armour, .dodge, .mana_regen, .life_on_kill, .life_flask, .penetration, .thorns, .spoils, .resolve, .lantern, .mana_on_kill, .mana_flask, .masked, .stillness, .opportunist, .bounding, .alacrity => &.{},
         };
     }
     pub fn title(m: Mod, element: damage.Element) [:0]const u8 {

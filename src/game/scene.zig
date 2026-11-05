@@ -159,7 +159,7 @@ fn drawFigureGlyph(g: *game.Game, ch: u8, sx: i32, sy: i32, col: rl.Color) void 
 fn drawFigureLetter(g: *game.Game, l: look.Look, s: P, flash: f32, opacity: f32) void {
     const off = game.authored(look.GLYPH_SHADOW_PX);
     drawFigureGlyph(g, l.ch, s.x + off, s.y + off, look.fade(look.GLYPH_SHADOW, opacity));
-    drawFigureGlyph(g, l.ch, s.x, s.y, look.fade(look.mixed(l.fg, rl.Color.white, flash), opacity));
+    drawFigureGlyph(g, l.ch, s.x, s.y, look.fade(look.mixed(l.fg, look.LIT, flash), opacity));
 }
 
 fn drawCoins(g: *const game.Game, c: Cam, pile: items.Coins) void {
@@ -282,9 +282,9 @@ fn drawLit(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mi
 
 fn drawFigure(g: *game.Game, tex: ?rl.Texture2D, l: look.Look, s: P, left: bool, mid: [2]f32, shine: *const light.Shine, flash: f32, opacity: f32) void {
     drawLit(g, tex, l, s, left, mid, shine, flash, opacity, .{ 0, 0 });
-    if (!g.cloud.beginVeil(shine.tint(rl.Color.white), .sharp)) return;
+    if (!g.cloud.beginVeil(shine.tint(look.LIT), .sharp)) return;
     defer cloud.Cloud.endVeil();
-    const ink = look.fade(rl.Color.white, opacity);
+    const ink = look.fade(look.LIT, opacity);
     if (tex) |t| {
         raster.blit(t, raster.facing(t, left), spriteRect(t, s.x, s.y), ink);
     } else drawFigureGlyph(g, l.ch, s.x, s.y, ink);
@@ -366,7 +366,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const grid.CellSet
         }
         if (look.tileBg(here)) |bg| fillCell(c, p, bg);
         inkCell(g, c, p, here, stood);
-        if (look.veiled(here) and g.cloud.beginVeil(rl.Color.white, .sharp)) {
+        if (look.veiled(here) and g.cloud.beginVeil(look.LIT, .sharp)) {
             inkCell(g, c, p, here, stood);
             cloud.Cloud.endVeil();
         }
@@ -374,7 +374,7 @@ fn drawSolidPass(g: *game.Game, c: Cam, lo: P, hi: P, stood: *const grid.CellSet
 }
 
 fn veilSprite(g: *game.Game, t: rl.Texture2D, c: Cam, p: P, focus: look.Focused) void {
-    if (!g.cloud.beginVeil(rl.Color.white, focus)) return;
+    if (!g.cloud.beginVeil(look.LIT, focus)) return;
     drawSprite(t, c.sx(p), c.sy(p));
     cloud.Cloud.endVeil();
 }
@@ -505,7 +505,7 @@ fn drawBarrel(g: *game.Game, b: *const Prop, mirrored: bool) void {
 }
 
 fn sceneryTint(g: *const game.Game, p: P) rl.Color {
-    return g.light.onBody(mathx.centre(p), false).tint(rl.Color.white);
+    return g.light.onBody(mathx.centre(p), false).tint(look.LIT);
 }
 
 fn mirrorSprite(g: *const game.Game, c: Cam, p: P, kind: grid.Tile, t: rl.Texture2D, tint: rl.Color) void {
@@ -522,7 +522,7 @@ fn drawMirrorScenery(g: *game.Game, c: Cam, view: grid.Box, bags: *const grid.Ce
         const kind = g.pic.tileShown(&g.sim, p);
         if (!footprintSeen(g, p, kind)) continue;
         if (look.standsOver(kind)) {
-            if (tileTexture(g, kind, p, bags)) |t| mirrorSprite(g, c, p, kind, t, if (memory) rl.Color.white else sceneryTint(g, p));
+            if (tileTexture(g, kind, p, bags)) |t| mirrorSprite(g, c, p, kind, t, if (memory) look.LIT else sceneryTint(g, p));
         }
         if (!memory and looseBag(kind, bags, p)) {
             if (g.sprites.item_bag) |t| mirrorSprite(g, c, p, kind, t, sceneryTint(g, p));
@@ -681,7 +681,7 @@ pub fn drawMap(g: *game.Game) void {
     var barrels = Barrels.of(g, c, lo, hi);
     while (barrels.next()) |b| {
         drawBarrel(g, &b, false);
-        if (g.sprites.barrel) |t| shineOver(g, t, spriteRect(t, b.s.x, b.s.y), mathx.cellOf(b.mid), b.shine.tint(rl.Color.white));
+        if (g.sprites.barrel) |t| shineOver(g, t, spriteRect(t, b.s.x, b.s.y), mathx.cellOf(b.mid), b.shine.tint(look.LIT));
     }
     var folk_cells = grid.Cells.of(lo, hi);
     while (folk_cells.next()) |p| {
@@ -798,7 +798,7 @@ fn drawOccluder(g: *game.Game, c: Cam, p: P, kind: grid.Tile, run: *OccluderRun)
     const shaded = if (lightmap != null and fogmap != null) g.sprites.drawScenery(tex, rect, view, lightmap.?, fogmap.?, occlusion, focus) else false;
     if (!shaded) raster.stretch(tex, rect, look.fade(sceneryTint(g, p), look.occlusionAlpha(hidden)));
     if (g.cloud.veils(under) and g.cloud.beginOccludedVeil(sceneryTint(g, p), focus, if (shaded) occlusion else .{})) {
-        raster.stretch(tex, rect, if (shaded) rl.Color.white else look.fade(rl.Color.white, look.occlusionAlpha(hidden)));
+        raster.stretch(tex, rect, if (shaded) look.LIT else look.fade(look.LIT, look.occlusionAlpha(hidden)));
         cloud.Cloud.endVeil();
     }
 }

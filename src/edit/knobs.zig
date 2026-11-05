@@ -74,11 +74,11 @@ fn column(g: *const game.Game) widgets.Column {
 }
 
 pub fn section(g: *game.Game, y: *i32, title: [:0]const u8) void {
-    widgets.textFace(&g.face).draw(title, column(g).left(), y.* + widgets.GAP, widgets.DETAIL, look.UI_GOLD);
+    widgets.heading(&g.face, title, column(g).left(), y.* + widgets.GAP);
     y.* += SECTION_H;
 }
 
-const SECTION_H: i32 = widgets.DETAIL + 3 * widgets.GAP;
+const SECTION_H: i32 = widgets.HEADING_H + 2 * widgets.GAP;
 
 fn knobs(ed: *editor.Editor, g: *game.Game, y: *i32, title: [:0]const u8, owner: anytype, comptime rows: []const Knob, live: bool) void {
     section(g, y, title);
@@ -91,7 +91,7 @@ fn knobRows(ed: *editor.Editor, g: *game.Game, y: *i32, owner: anytype, comptime
             section(g, y, k.caption());
             inline for (k.parts, 0..) |part, i| {
                 if (!panel.clipped(ed, y.*)) {
-                    rowLabel(g, y.*, comptime wording.spoken(part));
+                    panel.rowLabel(g, column(g), y.*, comptime wording.spoken(part), widgets.TEXT);
                     stepNumber(ed, g, y.*, owner, k, i, 1, live);
                 }
                 y.* += widgets.ROW_STEP;
@@ -104,7 +104,7 @@ fn knobRows(ed: *editor.Editor, g: *game.Game, y: *i32, owner: anytype, comptime
 }
 
 fn choiceRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime U: type, v: *U, comptime c: Choice, which: editor.Which) void {
-    rowLabel(g, y.*, c.label);
+    panel.rowLabel(g, column(g), y.*, c.label, widgets.TEXT);
     var tag = std.meta.activeTag(v.*);
     stepChoice(ed, g, y.*, std.meta.Tag(U), &tag, c.tip, true);
     editor.retag(U, v, tag);
@@ -202,10 +202,6 @@ const MakeupTool = enum {
 };
 
 pub const MAKEUP_TOOLS = std.enums.values(MakeupTool);
-
-pub fn rowLabel(g: *game.Game, y: i32, s: [:0]const u8) void {
-    widgets.drawFit(&g.face, s, widgets.TEXT, editor.LABEL_W - widgets.GAP, false, column(g).left(), y + widgets.TEXT_DY, look.TEXT);
-}
 
 fn num(buf: []u8, comptime fmt: []const u8, v: anytype) [:0]const u8 {
     return std.fmt.bufPrintZ(buf, fmt, .{v}) catch "";
@@ -537,7 +533,7 @@ pub fn rowNamed(comptime rows: []const Knob, comptime field: []const u8) ?Knob {
 
 fn knobRow(ed: *editor.Editor, g: *game.Game, y: i32, owner: anytype, comptime k: Knob, live: bool) void {
     if (panel.clipped(ed, y)) return;
-    rowLabel(g, y, comptime k.caption());
+    panel.rowLabel(g, column(g), y, comptime k.caption(), widgets.TEXT);
     const v = &@field(owner.*, k.field);
     const T = @TypeOf(v.*);
     const n = comptime atlas_text.knobNumbers(T);

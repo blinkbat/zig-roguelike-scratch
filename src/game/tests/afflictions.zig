@@ -69,7 +69,7 @@ test "sunder takes armour off in the shared resolver, three stacks at most, lett
     for (&dealt, 0..) |*d, stacks| {
         pib.sunder = .{};
         for (0..stacks) |_| sunder.afflict(pib, &g.sim.rng);
-        harness.setLife(pib, 100, 100);
+        harness.toughen(pib);
         d.* = attacks.resolve(&g.sim, .fromInt(id), blow, .chosen).?.hit.damage.dmg;
     }
     try std.testing.expectEqualSlices(i32, &.{ 8, 9, 10, 10, 10 }, &dealt);

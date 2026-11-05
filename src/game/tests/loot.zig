@@ -1023,7 +1023,7 @@ test "a mask cuts the hero's gas harm and spares foes nothing" {
         const at = P{ .x = 20, .y = 20 };
         harness.arena(g, at, &.{});
         const h = g.sim.heroActor().?;
-        harness.setLife(h, harness.TEST_HP, harness.TEST_HP);
+        harness.toughen(h);
         g.sim.inventory.gear.slots.set(.helm, harness.affixed(.cap, .{ .kind = .masked, .value = mask }));
         g.sim.lv.addGas(at, harness.TEST_GAS * 10);
         game.settle(g);

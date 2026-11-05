@@ -300,6 +300,6 @@ pub fn fieldRow(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle) void {
     widgets.drawFit(&g.face, typed, widgets.TEXT, widgets.insetW(r), true, widgets.textX(r), @as(i32, @intFromFloat(r.y)) + widgets.TEXT_DY, look.UI_FOCUS);
 }
 
-fn backButton(ed: *editor.Editor, g: *game.Game, f: widgets.Frame, y: i32, comptime label: []const u8) void {
+pub fn backButton(ed: *editor.Editor, g: *game.Game, f: widgets.Frame, y: i32, comptime label: []const u8) void {
     if (editor.modalButton(ed, g, f.button(y, 0), widgets.keyed(label, Desk.BACK_CAPTION), false, true, null)) ed.modal = .none;
 }

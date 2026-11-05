@@ -324,7 +324,7 @@ pub const Book = struct {
             .equipment, .inventory, .nearby, .loot => if (self.count(view) > 0) {
                 const chosen = self.selected(view);
                 const label: [:0]const u8 = if (chosen == null)
-                    (if (self.direct()) view.nearby[self.cursor].command().verb() else if (self.carriedRow(view) != null) character_view.verbOf(.use) else "Inventory")
+                    (if (self.direct()) view.nearby[self.cursor].command().verb() else if (self.carriedRow(view) != null) character_view.verbOf(.use) else menu.named(Page.inventory))
                 else switch (self.page) {
                     .equipment => character_view.verbOf(.unequip),
                     .inventory => character_view.verbOf(.equip),
@@ -417,7 +417,7 @@ pub const Book = struct {
     }
 
     fn drawDirect(self: *const Book, face: *const font.Face, sprites: *const sprite.Sprites, view: View) void {
-        header(face, if (self.page == .nearby) "NEARBY" else if (view.chest) "CHEST LOOT" else "ITEM BAG");
+        header(face, if (self.page == .nearby) comptime menu.caps(menu.named(Page.nearby)) else if (view.chest) "CHEST LOOT" else "ITEM BAG");
         if (self.page == .loot) {
             var holding: menu.Note(100) = .{};
             holding.say("Inventory  {d} / {d}     Gold  {d}", .{ view.inventory.n, items.BAG_MAX, view.gold });
@@ -532,9 +532,7 @@ pub const Book = struct {
             if (self.carriedRow(view)) |k| return item_card.drawSupply(face, x, y, layout.DETAIL_W, k, view.inventory.stacks.get(k), null);
             if (self.page == .equipment) if (offhandWeapon(view.inventory.gear, items.SLOTS[self.cursor])) |weapon| {
                 face.draw(BOTH_IN_USE, x, y, font.HEAD, look.TEXT);
-                var held: menu.Note(128) = .{};
-                held.say("{s}", .{weapon.name(&name_buf)});
-                _ = face.paragraph(held.text(), x, y + layout.HELD_NOTE_DY, layout.DETAIL_W, font.SMALL, look.DIM);
+                _ = face.paragraph(weapon.name(&name_buf), x, y + layout.HELD_NOTE_DY, layout.DETAIL_W, font.SMALL, look.DIM);
                 return;
             };
             face.draw(item_card.EMPTY_SLOT, x, y, font.HEAD, look.TEXT);

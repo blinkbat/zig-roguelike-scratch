@@ -1,4 +1,5 @@
 const sprite = @import("sprites.zig");
+const sprite_assets = @import("sprite_assets.zig");
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
@@ -61,8 +62,7 @@ pub const CAST_REACH: f32 = blk: {
 
 pub fn sceneryMargin(sprites: *const sprite.Sprites) i32 {
     var scale: f32 = 1;
-    for (std.enums.values(grid.Tile)) |kind| {
-        if (!look.castsPicture(kind)) continue;
+    for (sprite_assets.PICTURE_CASTERS) |kind| {
         const tex = sprites.tileOf(kind, null) orelse continue;
         const rect = look.tileRect(kind, tex, .{ .x = 0, .y = 0, .width = 1, .height = 1 });
         scale = @max(scale, @max(rect.width, rect.height));

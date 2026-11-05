@@ -371,6 +371,10 @@ pub const Presentation = struct {
         self.facing[target.slot().index] = facingOf(dx) orelse return;
     }
 
+    pub fn turnHero(self: *Presentation, sim: *const Simulation, dx: i32) void {
+        self.turnToward(.fromInt(sim.hero), dx);
+    }
+
     pub fn turnLater(self: *Presentation, target: actor.ActorId, dx: i32) void {
         self.turning[target.slot().index] = .{ .to = facingOf(dx) orelse return };
     }
@@ -403,6 +407,10 @@ pub const Presentation = struct {
 
     pub fn afterOf(self: *Presentation, sim: *const Simulation, target: actor.ActorSlot) fx.After {
         return .{ .body = self.snap(sim.pool.items[target.index]) };
+    }
+
+    pub fn heroAfter(self: *Presentation, sim: *const Simulation) fx.After {
+        return self.afterOf(sim, .fromIndex(sim.heroSlot().?));
     }
 
     pub fn settleHero(self: *Presentation, sim: *const Simulation, wait: f32) void {
@@ -447,6 +455,10 @@ pub const Presentation = struct {
 
     pub fn drawnAt(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
         if (!self.figured(sim, i)) return null;
+        return self.litNow(sim, i);
+    }
+
+    fn litNow(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
         const at = self.glide[i].now();
         return if (self.litShown(sim, game.cellUnder(at))) at else null;
     }
@@ -458,8 +470,7 @@ pub const Presentation = struct {
     /// Where its body is drawn: as `drawnAt`, or fading out once its death is.
     pub fn bodyAt(self: *const Presentation, sim: *const Simulation, i: usize) ?rl.Vector2 {
         if (!self.fading(sim, i)) return self.drawnAt(sim, i);
-        const at = self.glide[i].now();
-        return if (self.litShown(sim, game.cellUnder(at))) at else null;
+        return self.litNow(sim, i);
     }
 
     fn fading(self: *const Presentation, sim: *const Simulation, i: usize) bool {

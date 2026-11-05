@@ -135,7 +135,7 @@ pub fn aim(g: *game.Game) bool {
         g.mode.aim.mark = h.at.add(d.delta());
     } else g.mode.aim.mark = at;
     skills.rememberTarget(g);
-    g.pic.turnToward(.fromInt(g.sim.hero), g.mode.aim.mark.x - h.at.x);
+    g.pic.turnHero(&g.sim, g.mode.aim.mark.x - h.at.x);
     return g.st.click or dropped;
 }
 
