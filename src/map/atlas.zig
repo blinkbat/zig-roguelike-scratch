@@ -778,6 +778,31 @@ test "the strand holds only rats, crossbowmen, pibs, two shamans, two bloats and
     try std.testing.expect(farthest <= pack.EXIT_REACH);
 }
 
+test "the strand's door leads to a tee: the whole caravan camp walks from where the hero comes in, carts and a bridge on every roll" {
+    const a = try testAtlas();
+    defer std.testing.allocator.destroy(a);
+    try a.load(std.testing.allocator, START);
+    const link = a.node[a.start.node].doors()[0].to orelse return error.NoLink;
+    const nd = &a.node[link.node];
+    try std.testing.expect(nd.plan == .procgen and nd.plan.procgen.floor == .tee);
+    const door = nd.doors()[link.door].at;
+    var lv: grid.Level = undefined;
+    var dist: [grid.CELLS]i32 = undefined;
+    var queue: [grid.CELLS]u32 = undefined;
+    var carts: usize = 0;
+    var bridges: usize = 0;
+    const RUNS = 50;
+    for (0..RUNS) |i| {
+        nd.stamp(&lv, 0xCA2A +% i *% grid.TEST_SEED_STRIDE);
+        try grid.expectAllReached(&lv, door, &dist, &queue);
+        carts += carve.count(&lv, .caravan);
+        bridges += @intFromBool(carve.count(&lv, .bridge) > 0);
+    }
+    std.debug.print("the caravan over {d} rolls: every open cell walks from its door at {d},{d}; {d} carts, {d} bridged\n", .{ RUNS, door.x, door.y, carts, bridges });
+    try std.testing.expect(carts >= RUNS * 2);
+    try std.testing.expectEqual(@as(usize, RUNS), bridges);
+}
+
 test "the strand grows a few glowing plants on every roll" {
     const a = try testAtlas();
     defer std.testing.allocator.destroy(a);

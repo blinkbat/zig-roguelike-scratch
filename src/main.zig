@@ -74,6 +74,7 @@ test {
     _ = @import("map/biome/open.zig");
     _ = @import("map/biome/site.zig");
     _ = @import("map/biome/strata.zig");
+    _ = @import("map/biome/tee.zig");
     _ = @import("map/biome/terrain.zig");
     _ = @import("map/biome/topology.zig");
     _ = @import("map/biome/town.zig");

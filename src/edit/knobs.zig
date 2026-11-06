@@ -351,6 +351,23 @@ const SITE_ROWS = [_]Knob{
     .{ .field = "ground", .tips = &.{"The ground between and round the buildings"} },
 };
 
+const TEE_ROWS = [_]Knob{
+    .{ .field = "bar", .tips = &.{"Rows the crossbar along the bottom is tall"} },
+    .{ .field = "stem", .tips = &.{"Cells the stem rising from the camp is wide"} },
+    .{ .field = "fray", .tips = &.{"Cells the T's edge wanders in or out"} },
+    .{ .field = "forest", .tips = &.{"Cells of the crossbar, from the west, given to woods"} },
+    .{ .field = "thicket", .tips = &.{"Of the woods' grass at the west edge, how much is shrub; it thins toward the camp"}, .fmt = PERCENT_FMT },
+    .{ .field = "trees", .tips = &.{"Lone large trees, a thousandth of the woods' grass each"} },
+    .{ .field = "camp", .tips = &.{"The camp's radius, where the stem meets the crossbar"} },
+    .{ .field = "carts", .tips = &.{"Caravan carts in the camp, at most"} },
+    .{ .field = "barrels", .tips = &.{"Barrels beside the carts, at most"} },
+    .{ .field = "chests", .tips = &.{"Chests in the camp, at most"} },
+    .{ .field = "river", .tips = &.{"Cells the river to the east is wide; 0 for none"} },
+    .{ .field = "bank", .tips = &.{"Cells of land past the river"} },
+    .{ .field = "bridge", .tips = &.{"Cells the bridge over the river is wide"} },
+    .{ .field = "path", .tips = &.{"Cells the dirt paths are wide"} },
+} ++ GRASS_ROWS;
+
 pub fn rowsOf(comptime a: atlas.Algo) []const Knob {
     return switch (a) {
         .rooms => &ROOMS_ROWS,
@@ -368,6 +385,7 @@ pub fn rowsOf(comptime a: atlas.Algo) []const Knob {
         .town => &TOWN_ROWS,
         .dunes => &DUNES_ROWS,
         .site => &SITE_ROWS,
+        .tee => &TEE_ROWS,
     };
 }
 

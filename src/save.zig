@@ -641,7 +641,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
 }
 
 /// The raw legacy schema accepted by this migration reader.
-const RECORDED_FINGERPRINT: Print = 0xe15742c26617e625;
+const RECORDED_FINGERPRINT: Print = 0x6e53898b0f17cd63;
 
 fn fixture(g: *game.Game, w: *const Map) !void {
     game.beginMapAt(g, w, w.start, 7);

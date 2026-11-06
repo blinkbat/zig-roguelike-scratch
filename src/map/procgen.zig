@@ -18,6 +18,7 @@ const keep = @import("biome/keep.zig");
 const town = @import("biome/town.zig");
 const dunes = @import("biome/dunes.zig");
 const site = @import("biome/site.zig");
+const tee = @import("biome/tee.zig");
 const river = @import("feature/river.zig");
 const lake = @import("feature/lake.zig");
 const road = @import("feature/road.zig");
@@ -51,6 +52,7 @@ const BASES = .{
     .town = town,
     .dunes = dunes,
     .site = site,
+    .tee = tee,
 };
 
 pub const Floor = union(enum) {
@@ -69,6 +71,7 @@ pub const Floor = union(enum) {
     town: town.Params,
     dunes: dunes.Params,
     site: site.Params,
+    tee: tee.Params,
 
     pub fn of(a: Algo) Floor {
         return switch (a) {
@@ -84,7 +87,7 @@ pub const Floor = union(enum) {
 
     pub fn outdoor(f: Floor) bool {
         return switch (f) {
-            .open, .wilds, .terrain, .keep, .town, .dunes, .site => true,
+            .open, .wilds, .terrain, .keep, .town, .dunes, .site, .tee => true,
             .rooms, .caves, .cavern, .strata, .labyrinth, .maze => false,
             .hall => |p| switch (p.style) {
                 .graves, .grove => true,
@@ -230,6 +233,7 @@ fn settle(lv: *grid.Level) void {
     for (0..grid.CELLS) |i| {
         if (lv.barrel[i] and (lv.tile[i].solid() or lv.door[i] != grid.NO_DOOR)) lv.barrel[i] = false;
     }
+    grid.mendProps(&lv.tile);
     carve.unbar(lv);
     reshape(lv);
 }

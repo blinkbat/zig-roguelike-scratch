@@ -37,6 +37,8 @@ pub const Salt = enum(u64) {
     drainage = 0xD2A1,
     warmth = 0x4EA7,
     grain = 0xF1E1,
+    tee = 0x7EE0,
+    tee_woods = 0x7EE1,
 
     pub fn of(salt: Salt, seed: u64) u64 {
         return seed ^ @intFromEnum(salt);
