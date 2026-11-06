@@ -254,7 +254,14 @@ pub fn laneRadius(width: u8) f32 {
 pub fn inDisc(c: P, q: P, r: f32) bool {
     const dx: f32 = @floatFromInt(q.x - c.x);
     const dy: f32 = @floatFromInt(q.y - c.y);
-    return dx * dx + dy * dy <= r * r + 0.25;
+    return dx * dx + dy * dy <= r * r + DISC_SLACK;
+}
+
+const DISC_SLACK: f32 = 0.25;
+
+/// The furthest rows or columns from its centre a disc of `r` lays.
+pub fn discReach(r: f32) i32 {
+    return @intFromFloat(@floor(@sqrt(r * r + DISC_SLACK)));
 }
 
 fn discOf(lv: *grid.Level, c: P, r: f32, t: grid.Tile, comptime with_rim: bool, comptime pave: bool, comptime over: ?fn (grid.Tile) bool) void {

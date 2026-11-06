@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const fire = @import("../map/fire.zig");
+const ice = @import("../map/ice.zig");
 const actor = @import("../play/actor.zig");
 const ground = @import("ground.zig");
 const raster = @import("raster.zig");
@@ -67,7 +68,7 @@ pub const Assets = struct {
             need.decor(t, p);
             if (t.bursts()) need.beneath(t.ground().?, p);
             if (t.burns()) need.beneath(fire.ASH, p);
-            if (lv.frozen(p)) need.beneath(.shallows, p);
+            if (lv.frozen(p)) need.beneath(ice.WATER, p);
             need.barrel = need.barrel or barrel or (lv.seen[i] and lv.barrel_seen[i]);
             need.chest_item_bag = need.chest_item_bag or t.isChest();
             if (t.opened()) |open| need.add(.{ .tile = open });

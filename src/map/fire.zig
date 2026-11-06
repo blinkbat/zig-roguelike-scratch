@@ -9,9 +9,10 @@ const P = mathx.P;
 
 pub const NAME = "flames";
 pub const CATCHES = "Fire takes hold!";
+pub const DIES = "The flames die out.";
 /// Turns a cell burns once it catches.
 pub const BURNS: u8 = 3;
-/// Each turn, a burning cell's chance to catch each neighbour that burns, or to boil each wet one.
+/// Each turn, a burning cell's chance to catch each neighbour that burns, to boil each wet one or to melt each frozen one.
 pub const SPREAD: u32 = 20;
 /// Smoke a burning tile gives off a turn.
 pub const SMOKE: u16 = 14;
@@ -28,6 +29,11 @@ pub const LANDED_HEAT: u8 = 2;
 
 /// Fire landing: its chance to catch each cell that burns, and the cells it may leap on from there.
 pub const Kindle = struct { chance: u32, heat: u8 = LANDED_HEAT };
+
+/// `now` is the ash of `was`, burnt down.
+pub fn burntDown(was: grid.Tile, now: grid.Tile) bool {
+    return now == ASH and was.burns();
+}
 
 /// What standing in flames deals a turn against `resists`.
 pub fn scorch(resists: damage.Resists) i32 {

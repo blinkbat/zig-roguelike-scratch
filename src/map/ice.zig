@@ -7,6 +7,13 @@ const P = mathx.P;
 /// Turns frozen shallows stay ice.
 pub const THAWS: u8 = 10;
 pub const FREEZES = "The water freezes over.";
+/// What freezes, and what ice that thaws or melts goes back to.
+pub const WATER: grid.Tile = .shallows;
+
+/// `was` froze into `now`, or thawed or melted out of it.
+pub fn turned(was: grid.Tile, now: grid.Tile) bool {
+    return (was == WATER and now == .ice) or (was == .ice and now == WATER);
+}
 
 /// Each shallows cell of `cells` freezes for `THAWS` turns, and frozen ice there freezes afresh; how many froze.
 pub fn freeze(lv: *grid.Level, cells: []const P) usize {
@@ -14,7 +21,7 @@ pub fn freeze(lv: *grid.Level, cells: []const P) usize {
     for (cells) |p| {
         if (!grid.Level.inside(p)) continue;
         const i = grid.Level.idx(p);
-        if (lv.tile[i] == .shallows) {
+        if (lv.tile[i] == WATER) {
             lv.tile[i] = .ice;
             n += 1;
         } else if (!lv.frozen(p)) continue;
@@ -29,7 +36,7 @@ pub fn melt(lv: *grid.Level, cells: []const P) usize {
     for (cells) |p| {
         if (!lv.frozen(p)) continue;
         const i = grid.Level.idx(p);
-        lv.tile[i] = .shallows;
+        lv.tile[i] = WATER;
         lv.thaw[i] = 0;
         n += 1;
     }
@@ -47,7 +54,7 @@ pub fn turn(lv: *grid.Level) bool {
         }
         left.* -= 1;
         if (left.* > 0) continue;
-        t.* = .shallows;
+        t.* = WATER;
         thawed = true;
     }
     return thawed;

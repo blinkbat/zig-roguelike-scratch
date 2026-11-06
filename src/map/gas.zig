@@ -10,6 +10,7 @@ const P = mathx.P;
 pub const NAME = "caustic gas";
 pub const HEALING_NAME = "healing gas";
 pub const STEAM_NAME = "steam";
+pub const HISSES = "The water hisses into a cloud of " ++ STEAM_NAME ++ "!";
 /// What a fire's burst gives off where it bursts.
 pub const SMOKE_BURST: u16 = 1200;
 /// Brogue's `DF_BLOAT_DEATH`.

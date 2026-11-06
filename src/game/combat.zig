@@ -248,9 +248,8 @@ pub fn boilUnder(g: *game.Game, comptime act: skillbar.Act, at: P, wait: f32) vo
 /// Fire within `range` of `at`: its steam and the flames it kindles are drawn as the blow lands.
 pub fn fireLands(g: *game.Game, at: P, range: i32, kindle: fire.Kindle, wait: f32) void {
     g.pic.holdFlames(&g.sim.lv, wait);
-    if (rewards.boilRound(&g.sim, at, range) != null) g.cloud.hold(wait);
-    if (!rewards.kindleRound(&g.sim, at, range, kindle)) return;
-    g.cloud.hold(wait);
+    const fired = rewards.fireRound(&g.sim, at, range, kindle);
+    if (fired.steeped != null or fired.caught) g.cloud.hold(wait);
 }
 
 /// `direct` is struck even where the burst spreads no further, as a body in deep water.
@@ -273,7 +272,7 @@ pub fn coldLands(g: *game.Game, area: *const glacial.Burst, wait: f32) void {
     g.pic.holdFlames(&g.sim.lv, wait);
     const doused = rewards.douseRound(&g.sim, area);
     _ = rewards.freezeRound(&g.sim, area);
-    var each = doused.quenched.iterator(.{});
+    var each = doused.iterator(.{});
     while (each.next()) |slot| g.pic.settleSlot(&g.sim, wait, .fromIndex(slot));
 }
 /// A barrel broken or a glowbulb burst at `p`, if one stands there.

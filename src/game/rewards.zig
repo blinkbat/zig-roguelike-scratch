@@ -5,7 +5,6 @@ const gas = @import("../map/gas.zig");
 const fire = @import("../map/fire.zig");
 const ice = @import("../map/ice.zig");
 const actor = @import("../play/actor.zig");
-const burning = @import("../play/burning.zig");
 const damage = @import("../play/damage.zig");
 const glacial = @import("../play/glacial.zig");
 const items = @import("../play/items.zig");
@@ -122,8 +121,7 @@ pub fn defeat(sim: *Simulation, target: actor.ActorId) Death {
             },
             .fire => {
                 caught = ignite(sim, fallen.at, actor.row(fallen.kind).name);
-                if (boilRound(sim, fallen.at, PYRE_REACH)) |steeped| caught.setUnion(steeped);
-                _ = kindleRound(sim, fallen.at, PYRE_REACH, PYRE_KINDLE);
+                if (fireRound(sim, fallen.at, PYRE_REACH, PYRE_KINDLE).steeped) |steeped| caught.setUnion(steeped);
                 sim.lv.release(.smoke, fallen.at, gas.SMOKE_BURST);
             },
         },
@@ -163,9 +161,7 @@ fn ignite(sim: *Simulation, at: P, name: []const u8) Caught {
     const area = pyre(&sim.lv, at);
     for (sim.pool.slice(), 0..) |*a, i| {
         if (!a.alive or !area.has(a.at)) continue;
-        if (!sim.ignite(a)) continue;
-        out.set(i);
-        sim.sayTakes(i, a, burning.TAKES);
+        if (sim.igniteFresh(i, a, mathx.PERCENT)) out.set(i);
     }
     return out;
 }
@@ -176,7 +172,7 @@ pub fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
     const wet = glacial.wetIn(&sim.lv, at, reach);
     if (gas.boil(&sim.lv, wet.slice()) == 0) return null;
     for (wet.slice()) |p| if (sim.lv.isLit(p)) {
-        sim.log.say("The water hisses into a cloud of " ++ gas.STEAM_NAME ++ "!", .{});
+        sim.log.say(gas.HISSES, .{});
         break;
     };
     var out = Caught.initEmpty();
@@ -184,6 +180,15 @@ pub fn boilRound(sim: *Simulation, at: P, reach: i32) ?Caught {
         if (a.alive and wet.has(a.at)) out.set(i);
     }
     return out;
+}
+
+/// `steeped`: the bodies in the water it boiled, if any; `caught`: some of what burns there caught.
+pub const Fired = struct { steeped: ?Caught, caught: bool };
+
+/// Fire landing within `reach` of `at`: it melts and boils what it reaches, then may set what burns there alight.
+pub fn fireRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) Fired {
+    const steeped = boilRound(sim, at, reach);
+    return .{ .steeped = steeped, .caught = kindleRound(sim, at, reach, k) };
 }
 
 /// Fire within `reach` of `at` may set what burns there alight, the less the harder it rains; true when any caught.
@@ -194,19 +199,17 @@ pub fn kindleRound(sim: *Simulation, at: P, reach: i32, k: fire.Kindle) bool {
     return true;
 }
 
-/// `flames`: any cell went out; `quenched`: the burning bodies that stopped.
-pub const Doused = struct { flames: bool, quenched: Caught };
-
-/// Cold over `area` may put out the flames there and the burning of every body standing in it.
-pub fn douseRound(sim: *Simulation, area: *const glacial.Burst) Doused {
+/// Cold over `area` may put out the flames there and the burning of every body standing in it; the bodies it quenched.
+pub fn douseRound(sim: *Simulation, area: *const glacial.Burst) Caught {
     const seen = litFlames(sim, area);
-    var out = Doused{ .flames = fire.douse(&sim.lv, area.slice(), glacial.DOUSE, &sim.rng) > 0, .quenched = .initEmpty() };
-    if (litFlames(sim, area) < seen) sim.log.say("The flames die out.", .{});
+    var out = Caught.initEmpty();
+    _ = fire.douse(&sim.lv, area.slice(), glacial.DOUSE, &sim.rng);
+    if (litFlames(sim, area) < seen) sim.log.say(fire.DIES, .{});
     for (sim.pool.slice(), 0..) |*a, i| {
         if (!a.alive or a.burn.turns == 0 or !area.has(a.at)) continue;
         if (!sim.rng.percent(glacial.QUENCH)) continue;
         a.burn = .{};
-        out.quenched.set(i);
+        out.set(i);
         if (sim.isHero(i)) sim.log.push(.status, "{s} " ++ glacial.QUENCHED ++ ".", .{sim.name.text()}) else sim.sayOf(a, "The {s} " ++ glacial.QUENCHED ++ ".", .{actor.row(a.kind).name});
     }
     return out;
@@ -219,7 +222,7 @@ pub fn freezeRound(sim: *Simulation, area: *const glacial.Burst) bool {
     for (area.slice()) |p| {
         if (sim.pool.getConst(sim.lv.who(p))) |a| if (actor.row(a.kind).movement == .swimming) continue;
         open.push(p);
-        seen = seen or (sim.lv.at(p) == .shallows and sim.lv.isLit(p));
+        seen = seen or (sim.lv.at(p) == ice.WATER and sim.lv.isLit(p));
     }
     if (ice.freeze(&sim.lv, open.slice()) == 0) return false;
     if (seen) sim.log.say(ice.FREEZES, .{});

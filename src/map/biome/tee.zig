@@ -27,6 +27,8 @@ pub const PATH_MAX: u8 = 5;
 
 /// Forest kept below the bar.
 const FOOT: i32 = 2;
+/// The bar's lowest open row.
+const BAR_FLOOR: i32 = grid.H - 1 - FOOT;
 const SHIFT: i32 = 3;
 const FRAY_SCALE: f32 = 5;
 const THICKET_SCALE: f32 = 4;
@@ -99,13 +101,13 @@ const Plan = struct {
     fn of(rng: *mathx.Rng, p: Params) Plan {
         const fray: i32 = p.fray;
         const out = fray + 2;
-        const top = grid.H - 1 - FOOT - @as(i32, p.bar);
+        const top = BAR_FLOOR - @as(i32, p.bar);
         const river_w = if (p.river == 0) grid.W else grid.W - 1 - @as(i32, p.bank) - @as(i32, p.river);
         const stem_x = @divTrunc(river_w, 2) + rng.range(-SHIFT, SHIFT);
         const road_y = top + @divTrunc(@as(i32, p.bar), 2) + rng.range(-1, 1);
         const half = @divTrunc(@as(i32, p.stem), 2);
         return .{
-            .bar = .{ .lo = .{ .x = -out, .y = top }, .hi = .{ .x = grid.W + out, .y = grid.H - 1 - FOOT } },
+            .bar = .{ .lo = .{ .x = -out, .y = top }, .hi = .{ .x = grid.W + out, .y = BAR_FLOOR } },
             .stem = .{ .lo = .{ .x = stem_x - half, .y = -out }, .hi = .{ .x = stem_x - half + p.stem, .y = top + 1 } },
             .camp = .{ .x = stem_x, .y = road_y },
             .river_w = river_w,
@@ -189,20 +191,21 @@ fn woods(lv: *grid.Level, rng: *mathx.Rng, seed: u64, plan: Plan, p: Params) voi
 
 fn roads(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params, kept: *grid.CellSet) void {
     const c = plan.camp;
+    const lowest = plan.bar.hi.y - 1 - carve.discReach(carve.laneRadius(p.path));
     const west = P{ .x = 0, .y = c.y + rng.range(-SHIFT, SHIFT) };
-    road(lv, rng, west, c, p.path, PATH_WANDER, kept);
+    road(lv, rng, west, c, p.path, PATH_WANDER, lowest, kept);
     const up = P{ .x = c.x + rng.range(-SHIFT, SHIFT), .y = 0 };
-    road(lv, rng, c, up, p.path, PATH_WANDER, kept);
+    road(lv, rng, c, up, p.path, PATH_WANDER, lowest, kept);
     if (p.river == 0) {
-        road(lv, rng, c, .{ .x = grid.W - 1, .y = c.y }, p.path, PATH_WANDER, kept);
+        road(lv, rng, c, .{ .x = grid.W - 1, .y = c.y }, p.path, PATH_WANDER, lowest, kept);
         return;
     }
     const span = wetSpan(lv, c) orelse return;
     const near = P{ .x = span[0] - 2, .y = c.y };
     const far = P{ .x = span[1] + 2, .y = c.y };
-    road(lv, rng, c, near, p.path, PATH_WANDER, kept);
+    road(lv, rng, c, near, p.path, PATH_WANDER, lowest, kept);
     carve.lane(lv, rng, near, far, p.bridge, 0, TRAIL, .road);
-    road(lv, rng, far, .{ .x = grid.W - 1, .y = c.y }, p.path, 0, kept);
+    road(lv, rng, far, .{ .x = grid.W - 1, .y = c.y }, p.path, 0, lowest, kept);
 }
 
 /// The first and last wet cells east of `from` on its row.
@@ -214,11 +217,12 @@ fn wetSpan(lv: *const grid.Level, from: P) ?[2]i32 {
     return if (x < last) .{ x, last } else null;
 }
 
-fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, kept: *grid.CellSet) void {
+fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lowest: i32, kept: *grid.CellSet) void {
     const r = carve.laneRadius(width);
     const clear: i32 = @intFromFloat(@ceil(r) + 1);
     var m = carve.Meander.init(a, b, wander);
-    while (m.next(rng)) |c| {
+    while (m.next(rng)) |step| {
+        const c = P{ .x = step.x, .y = @min(step.y, lowest) };
         carve.disc(lv, c, r, TRAIL, null);
         var cells = grid.Cells.around(c, clear);
         while (cells.next()) |q| {
@@ -240,7 +244,7 @@ const Spot = struct {
 
     fn roomy(s: Spot, q: P, t: grid.Tile) bool {
         const foot = t.footprint(q);
-        var cells = (grid.Box{ .lo = foot.lo.sub(.{ .x = 1, .y = 1 }), .hi = foot.hi.add(.{ .x = 1, .y = 1 }) }).cells();
+        var cells = foot.grown(1).cells();
         while (cells.next()) |n| {
             if (!grid.Level.inside(n) or !s.lv.walkable(n)) return false;
         }
@@ -324,12 +328,20 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
     var narrowed = p;
     narrowed.bank = BANK_MIN;
     narrowed.river = RIVER_MAX;
+    var low = p;
+    low.bar = BAR_MIN;
+    low.path = PATH_MAX;
+    const low_door = [_]P{.{ .x = 0, .y = BAR_FLOOR - BAR_MIN / 2 }};
+    const foot = grid.Box.sized(.{ .x = 1, .y = BAR_FLOOR }, grid.W - 2, FOOT);
+    var low_foot_open: usize = 0;
     for (0..RUNS) |i| {
+        rolled(&lv, 0x7E0 +% i *% grid.TEST_SEED_STRIDE, &low_door, low);
+        var under = foot.cells();
+        while (under.next()) |q| low_foot_open += @intFromBool(lv.walkable(q));
         rolled(&lv, 0x17f78a +% i *% grid.TEST_SEED_STRIDE, &door, narrowed);
         narrow = @min(narrow, farBank(&lv));
         rolled(&lv, 0x7EE +% i *% grid.TEST_SEED_STRIDE, &door, p);
         bank = @min(bank, farBank(&lv));
-        const foot = grid.Box.sized(.{ .x = 1, .y = grid.H - 1 - FOOT }, grid.W - 2, FOOT);
         for ([_]grid.Box{ grid.Box.sized(.{ .x = 1, .y = 1 }, 8, 20), grid.Box.sized(.{ .x = grid.W - 9, .y = 1 }, 8, 20), foot }) |b| {
             var cells = b.cells();
             while (cells.next()) |q| corner_open += @intFromBool(lv.walkable(q));
@@ -340,7 +352,9 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
         for (lv.barrel) |b| barrels += @intFromBool(b);
     }
     std.debug.print("{d} tees: {d} open cells in the upper corners and under the bar, {d} of {d} carts, {d} bridged, {d} large trees and {d} barrels a map, a far bank {d} cells at the least of {d}, {d} of {d} at the narrowest\n", .{ RUNS, corner_open, carts, RUNS * p.carts, bridged, trees / RUNS, barrels / RUNS, bank, p.bank, narrow, BANK_MIN });
+    std.debug.print("{d} low tees with the widest paths: {d} open cells under the bar\n", .{ RUNS, low_foot_open });
     try std.testing.expectEqual(@as(usize, 0), corner_open);
+    try std.testing.expectEqual(@as(usize, 0), low_foot_open);
     try std.testing.expect(bank * 2 >= p.bank and narrow >= BANK_MIN);
     try std.testing.expectEqual(RUNS, bridged);
     try std.testing.expect(carts * 10 >= RUNS * p.carts * 9);

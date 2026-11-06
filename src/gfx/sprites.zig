@@ -154,8 +154,7 @@ pub const Sprites = struct {
     }
 
     /// Draw lowest layers first; `origin` is cell (0, 0)'s top-left and `px` is pixels per cell.
-    /// `tiles.at(p)` is the tile drawn at `p`: a level, or play's presented picture of one.
-    pub fn drawGround(self: *const Sprites, tiles: anytype, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
+    pub fn drawGround(self: *const Sprites, tiles: *const grid.Level, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
         const sheeted = self.sheets();
         for (ground.LAYERS) |gr| {
             if (!beds.shown.contains(gr)) continue;

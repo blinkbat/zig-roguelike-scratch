@@ -862,7 +862,7 @@ fn checkCaravanShadowCulling(g: *game.Game, target: rl.RenderTexture2D) !void {
         for (0..2) |i| {
             rl.beginTextureMode(target);
             rl.clearBackground(rl.Color.white);
-            if (!game.scene.shadowPass(g, c, if (i == 0) view else grid.Box.inMap(0), &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
+            if (!game.scene.shadowPass(g, c, g.pic.groundShown(&g.sim), if (i == 0) view else grid.Box.inMap(0), &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
             rl.endTextureMode();
             images[i] = try readTarget(target);
         }
@@ -2119,7 +2119,7 @@ fn checkWaterMirrors(g: *game.Game, target: rl.RenderTexture2D) !void {
     intoTarget(g, target);
     const c = game.scene.Cam.of(g);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;
-    _ = game.scene.drawMirrors(g, c, game.scene.viewBox(g, c), &game.scene.bagCells(g), &.{}, g.light.flames(&g.sim.lv, &flame_buf));
+    _ = game.scene.drawMirrors(g, c, g.pic.groundShown(&g.sim), game.scene.viewBox(g, c), &game.scene.bagCells(g), &.{}, g.light.flames(&g.sim.lv, &flame_buf));
     outOfTarget(g);
     for ([_]rl.RenderTexture2D{ g.sprites.mirror.?, g.sprites.mirror_memory.? }) |t| {
         const hidden = try readTarget(t);
@@ -2173,7 +2173,7 @@ fn checkHiddenShadowMask(g: *game.Game, target: rl.RenderTexture2D, visible: boo
         rl.beginTextureMode(target);
         defer rl.endTextureMode();
         rl.clearBackground(rl.Color.white);
-        if (!game.scene.shadowPass(g, c, view, &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
+        if (!game.scene.shadowPass(g, c, g.pic.groundShown(&g.sim), view, &game.scene.bagCells(g), target.id)) return error.ShadowShaderMissing;
     }
     const img = try readTarget(target);
     defer rl.unloadImage(img);

@@ -166,6 +166,14 @@ pub const Blow = union(enum) {
     strike: Strike,
     /// It dies instead (Brogue's kamikaze), and bursts however it dies.
     burst: Burst,
+
+    /// A pyre: its death lights, boils and melts what lies round it.
+    pub fn pyre(b: Blow) bool {
+        return switch (b) {
+            .burst => |kind| kind == .fire,
+            .strike => false,
+        };
+    }
 };
 
 /// Swimming bodies keep to deep water and shallows.

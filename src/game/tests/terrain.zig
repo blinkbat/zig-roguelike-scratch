@@ -540,8 +540,10 @@ test "a frost nova freezes the shallows round it, drawn as it lands, cutting con
     try std.testing.expectEqual(grid.Tile.shallows, g.sim.lv.at(from));
     try std.testing.expectEqual(grid.Tile.shallows, g.sim.lv.at(far));
     try std.testing.expectEqual(grid.Tile.shallows, g.pic.tileShown(&g.sim, near));
+    try std.testing.expectEqual(grid.Tile.shallows, g.pic.groundShown(&g.sim).at(near));
     harness.drawnOut(g);
     try std.testing.expectEqual(grid.Tile.ice, g.pic.tileShown(&g.sim, near));
+    try std.testing.expectEqual(grid.Tile.ice, g.pic.groundShown(&g.sim).at(near));
     try std.testing.expect(harness.logged(g, ice.FREEZES));
     try std.testing.expectEqual(@as(usize, 1), shock.conducted(&g.sim.lv, from).n);
     var turns: usize = 0;
@@ -571,8 +573,10 @@ test "fire landing on frozen shallows melts them and boils them into steam" {
     try std.testing.expectEqual(grid.Tile.shallows, g.sim.lv.at(at));
     try std.testing.expect(g.sim.lv.frozen(.{ .x = 21, .y = 19 }));
     try std.testing.expectEqual(grid.Tile.ice, g.pic.tileShown(&g.sim, at));
+    try std.testing.expectEqual(grid.Tile.ice, g.pic.groundShown(&g.sim).at(at));
     harness.drawnOut(g);
     try std.testing.expectEqual(grid.Tile.shallows, g.pic.tileShown(&g.sim, at));
+    try std.testing.expectEqual(grid.Tile.shallows, g.pic.groundShown(&g.sim).at(at));
     try std.testing.expect(g.sim.lv.volumeAt(.steam, at) > 0);
 }
 

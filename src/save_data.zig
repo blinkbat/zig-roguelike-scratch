@@ -81,7 +81,8 @@ pub const PORTABLE_FIELDS = .{
     .{ .sim, "plot" },
     .{ .sim, "days" },
 };
-/// Not saved: the picture, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
+const PIC = game.presentation.Fields;
+/// Not saved: the picture but the facing, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
 pub const UNSAVED = .{
     .game = .{
         "character",
@@ -134,48 +135,7 @@ pub const UNSAVED = .{
         "flow",
         "queue",
     },
-    .pic = .{
-        "occlusion",
-        "occluder",
-        "glide",
-        "turning",
-        "sighted",
-        "pictured",
-        "seq",
-        "split_from",
-        "dropped_gold",
-        "masked",
-        "under",
-        "dives",
-        "befallen",
-        "owed",
-        "shot",
-        "foe_shots",
-        "knocked_from",
-        "bursting",
-        "lit_before",
-        "lit_held",
-        "lit_due",
-        "flames_shown",
-        "flames_held",
-        "flames_due",
-        "tiles_before",
-        "busy",
-        "lead",
-        "fx",
-        "gold_taken",
-        "mana_held",
-        "flasks_shown",
-        "mana_killed",
-        "xp_aim",
-        "xp_shown",
-        "life_fill",
-        "mana_fill",
-        "growth_shown",
-        "gold_shown",
-        "hour_shown",
-        "weather_shown",
-    },
+    .pic = PIC.turn ++ PIC.run ++ PIC.settled ++ PIC.scratch ++ PIC.kept,
 };
 
 comptime {
@@ -256,9 +216,9 @@ comptime {
 
 comptime {
     @setEvalBranchQuota(100_000);
-    const F = game.presentation.Fields;
+    const F = PIC;
     const T = Of(.pic);
-    const lists = .{ F.turn, F.run, F.facing, F.settled, F.held, F.kept };
+    const lists = .{ F.turn, F.run, F.facing, F.settled, F.scratch, F.kept };
     for (std.meta.fields(T)) |f| {
         var n: usize = 0;
         for (lists) |list| for (list) |name| {

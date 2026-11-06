@@ -4,7 +4,8 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const day = @import("../map/day.zig");
 const climate = @import("../map/climate.zig");
-const ASH = @import("../map/fire.zig").ASH;
+const fire = @import("../map/fire.zig");
+const ice = @import("../map/ice.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const items = @import("../play/items.zig");
@@ -116,6 +117,38 @@ pub const Befallen = struct { by: usize, after: fx.After };
 /// `was` stands at `at` for `left` seconds more.
 pub const Bursting = struct { at: P, was: grid.Tile, left: f32 };
 
+/// `before` is drawn for `left` seconds; `due` when it was taken ahead of the hold that will keep it.
+pub fn Held(comptime T: type) type {
+    return struct {
+        before: T,
+        left: f32 = 0,
+        due: bool = false,
+
+        const Self = @This();
+
+        pub fn on(self: *const Self) bool {
+            return self.left > 0;
+        }
+
+        /// Takes `now`, unless a hold running or due keeps an older one.
+        fn snap(self: *Self, now: *const T) void {
+            if (self.on() or self.due) return;
+            self.before = now.*;
+            self.due = true;
+        }
+
+        fn hold(self: *Self, now: *const T, wait: f32) void {
+            self.snap(now);
+            self.due = false;
+            self.left = @max(self.left, wait);
+        }
+
+        fn tick(self: *Self, dt: f32) void {
+            self.left = @max(0, self.left - dt);
+        }
+    };
+}
+
 pub const Pictured = struct { masked: std.StaticBitSet(actor.MAX) = .initEmpty(), bursting: ?P = null, held: bool = false, burnt_held: bool = false };
 
 /// Presentation debts land at the body's stagger, or after the hero when it has no stagger.
@@ -164,15 +197,15 @@ pub const Turning = struct { to: actor.Facing, in: ?f32 = null };
 /// When each `Presentation` field is reset, every field in exactly one list; `save_data.zig` checks it.
 pub const Fields = struct {
     /// Defaulted as a turn starts afresh: a node entered or a saved run resumed.
-    pub const turn = [_][]const u8{ "shot", "foe_shots", "knocked_from", "bursting", "lit_held", "lit_due", "flames_held", "flames_due", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
+    pub const turn = [_][]const u8{ "shot", "foe_shots", "knocked_from", "bursting", "lit", "tiles", "busy", "lead", "owed", "split_from", "dropped_gold", "mana_killed", "masked", "under", "dives", "befallen", "turning", "gold_taken" };
     /// Defaulted as a run starts.
     pub const run = [_][]const u8{ "mana_held", "flasks_shown" };
     /// Defaulted as the hero is spawned.
     pub const facing = [_][]const u8{"facing"};
     /// Snapped to the simulation as the game settles, then moved or eased on toward it.
     pub const settled = [_][]const u8{ "occlusion", "glide", "sighted", "pictured", "flames_shown", "xp_aim", "xp_shown", "life_fill", "mana_fill", "growth_shown", "gold_shown", "hour_shown", "weather_shown" };
-    /// Taken as a hold begins, read only while it lasts.
-    pub const held = [_][]const u8{ "lit_before", "tiles_before" };
+    /// Rebuilt from the simulation each time it is read.
+    pub const scratch = [_][]const u8{"ground_shown"};
     /// Kept for the presentation's life: `fx` clears itself each turn, `seq` counts on, `occluder` keeps the last body each cell faded around.
     pub const kept = [_][]const u8{ "seq", "fx", "occluder" };
 };
@@ -213,18 +246,13 @@ pub const Presentation = struct {
     /// A glowbulb burst by a bump, an arrow or a blow: drawn, and lit, until that lands.
     bursting: ?Bursting = null,
     /// Sight before a glowbulb's burst darkened it or a pyre's smoke hid what lies past it, drawn until that lands.
-    lit_before: [grid.CELLS]bool = @splat(false),
-    /// Seconds `lit_before` is still drawn.
-    lit_held: f32 = 0,
-    /// `lit_before` was taken as a pyre died, before the turn recast sight through its smoke; its strike keeps it.
-    lit_due: bool = false,
-    /// The ground's flames as drawn: the simulation's, but kept as they were while fire not yet landed would light more.
+    lit: Held([grid.CELLS]bool) = .{ .before = @splat(false) },
+    /// The ground's flames as drawn: the simulation's, but kept as they were while `tiles` holds.
     flames_shown: [grid.CELLS]u8 = @splat(0),
-    /// Seconds `flames_shown` stays as it is.
-    flames_held: f32 = 0,
-    flames_due: bool = false,
-    /// The ground as `flames_held` began: what fire burns down meanwhile is drawn as it was till then.
-    tiles_before: [grid.CELLS]grid.Tile = @splat(.floor),
+    /// The ground till the fire or cold not yet landed: what burns down, freezes or melts meanwhile is drawn as it was.
+    tiles: Held([grid.CELLS]grid.Tile) = .{ .before = @splat(.floor) },
+    /// The level with `tileShown` laid over it, rebuilt by `groundShown` while any tile is drawn as it was.
+    ground_shown: grid.Level = undefined,
     /// Seconds until the last turn's slowest glide, arrow or flash ends; a walk waits for it.
     busy: f32 = 0,
     /// Seconds until the hero's non-walking action lands; starts the foe stagger.
@@ -314,15 +342,9 @@ pub const Presentation = struct {
     }
 
     pub fn beforeDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId) void {
-        if (!std.meta.eql(actor.row(sim.pool.items[target.slot().index].kind).blow, actor.Blow{ .burst = .fire })) return;
-        if (self.flames_held <= 0 and !self.flames_due) {
-            self.tiles_before = sim.lv.tile;
-            self.flames_due = true;
-        }
-        if (self.lit_held <= 0 and !self.lit_due) {
-            self.lit_before = sim.lv.lit;
-            self.lit_due = true;
-        }
+        if (!actor.row(sim.pool.items[target.slot().index].kind).blow.pyre()) return;
+        self.tiles.snap(&sim.lv.tile);
+        self.lit.snap(&sim.lv.lit);
     }
 
     pub fn recordDeath(self: *Presentation, sim: *const Simulation, target: actor.ActorId, death: rewards.Death) void {
@@ -524,20 +546,33 @@ pub const Presentation = struct {
     }
 
     /// What is drawn at `p`: a mimic's chest until its death is, a glowbulb until the bump, arrow or blow that bursts it lands,
-    /// and what burnt down, froze or melted while `flames_held` as it was.
+    /// and what burnt down, froze or melted while `tiles` holds as it was.
     pub fn tileShown(self: *const Presentation, sim: *const Simulation, p: P) grid.Tile {
+        const t = sim.lv.at(p);
+        if (!self.reshapes()) return t;
         if (self.bursting) |b| if (b.at.eq(p)) return b.was;
         if (self.mimicAt(sim, p)) return .chest;
-        const t = sim.lv.at(p);
-        if (self.flames_held <= 0) return t;
-        const was = grid.cellOr(grid.Tile, &self.tiles_before, p, t);
-        if (t == ASH and was.burns()) return was;
-        if ((t == .ice and was == .shallows) or (t == .shallows and was == .ice)) return was;
+        if (!self.tiles.on()) return t;
+        const was = grid.cellOr(grid.Tile, &self.tiles.before, p, t);
+        if (fire.burntDown(was, t) or ice.turned(was, t)) return was;
         return t;
     }
 
+    /// Some tile is drawn otherwise than the simulation has it.
+    fn reshapes(self: *const Presentation) bool {
+        return self.tiles.on() or self.bursting != null or self.masked.count() > 0;
+    }
+
+    /// The level as drawn: the simulation's, or while a tile is drawn as it was, `ground_shown`.
+    pub fn groundShown(self: *Presentation, sim: *const Simulation) *const grid.Level {
+        if (!self.reshapes()) return &sim.lv;
+        self.ground_shown = sim.lv;
+        for (&self.ground_shown.tile, 0..) |*t, i| t.* = self.tileShown(sim, grid.Level.of(i));
+        return &self.ground_shown;
+    }
+
     pub fn pictureKey(self: *const Presentation) Pictured {
-        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.lit_held > 0, .burnt_held = self.flames_held > 0 };
+        return .{ .masked = self.masked, .bursting = if (self.bursting) |b| b.at else null, .held = self.lit.on(), .burnt_held = self.tiles.on() };
     }
 
     /// The chest drawn at `p` is a mimic's: one still disguised, or one killed in it until its death is drawn.
@@ -551,21 +586,12 @@ pub const Presentation = struct {
 
     pub fn burstPlant(self: *Presentation, lv: *const grid.Level, at: P, was: grid.Tile, wait: f32) void {
         self.bursting = .{ .at = at, .was = was, .left = wait };
-        self.holdLit(lv, wait);
+        self.lit.hold(&lv.lit, wait);
     }
 
-    /// Keeps sight as it stands drawn for `wait` seconds; an earlier hold keeps its older sight.
-    fn holdLit(self: *Presentation, lv: *const grid.Level, wait: f32) void {
-        if (self.lit_held <= 0 and !self.lit_due) self.lit_before = lv.lit;
-        self.lit_due = false;
-        self.lit_held = @max(self.lit_held, wait);
-    }
-
-    /// The flames drawn stay as they are for `wait` seconds, till the fire that lit the newest lands.
+    /// The flames and ground drawn stay as they are for `wait` seconds, till the fire or cold that changed the newest lands.
     pub fn holdFlames(self: *Presentation, lv: *const grid.Level, wait: f32) void {
-        if (self.flames_held <= 0 and !self.flames_due) self.tiles_before = lv.tile;
-        self.flames_due = false;
-        self.flames_held = @max(self.flames_held, wait);
+        self.tiles.hold(&lv.tile, wait);
     }
 
     pub fn flamesShown(self: *const Presentation, i: usize) bool {
@@ -574,7 +600,7 @@ pub const Presentation = struct {
 
     pub fn litShown(self: *const Presentation, sim: *const Simulation, p: P) bool {
         if (sim.lv.isLit(p)) return true;
-        return self.lit_held > 0 and grid.cellOr(bool, &self.lit_before, p, false);
+        return self.lit.on() and grid.cellOr(bool, &self.lit.before, p, false);
     }
 
     pub fn barrelPresent(self: *const Presentation, sim: *const Simulation, p: P) bool {
@@ -679,23 +705,24 @@ pub const Presentation = struct {
     }
 
     fn stepOcclusion(self: *Presentation, sim: *const Simulation, dt: f32) void {
+        const tiles = &self.groundShown(sim).tile;
         var covered = grid.CellSet.initEmpty();
-        if (sim.heroSlot()) |h| self.cover(sim, h, &covered);
-        for (0..sim.pool.n) |i| if (!sim.isHero(i)) self.cover(sim, i, &covered);
+        if (sim.heroSlot()) |h| self.cover(sim, tiles, h, &covered);
+        for (0..sim.pool.n) |i| if (!sim.isHero(i)) self.cover(sim, tiles, i, &covered);
         const k = mathx.easing(dt, OCCLUSION_EASE);
-        for (&sim.lv.tile, &self.occlusion, 0..) |t, *hidden, i| {
+        for (tiles, &self.occlusion, 0..) |t, *hidden, i| {
             hidden.* = if (look.occludes(t)) mathx.ease(hidden.*, if (covered.isSet(i)) 1 else 0, k, k) else 0;
         }
     }
 
-    fn cover(self: *Presentation, sim: *const Simulation, slot: usize, covered: *grid.CellSet) void {
+    fn cover(self: *Presentation, sim: *const Simulation, tiles: *const [grid.CELLS]grid.Tile, slot: usize, covered: *grid.CellSet) void {
         const at = self.occluding(sim, slot) orelse return;
         const under = game.cellUnder(at);
         var near = grid.Cells.of(under.sub(COVER_LO), under.add(COVER_HI));
         while (near.next()) |p| {
             if (!grid.Level.inside(p)) continue;
             const i = grid.Level.idx(p);
-            const t = sim.lv.tile[i];
+            const t = tiles[i];
             if (covered.isSet(i) or !look.occludes(t) or !hides(at, p, t)) continue;
             covered.set(i);
             self.occluder[i] = game.middle(at);
@@ -706,9 +733,9 @@ pub const Presentation = struct {
     pub fn advance(self: *Presentation, sim: *const Simulation, dt: f32) void {
         self.busy -= dt;
         if (self.bursting) |*b| b.left -= dt;
-        self.lit_held = @max(0, self.lit_held - dt);
-        self.flames_held = @max(0, self.flames_held - dt);
-        if (self.flames_held == 0) self.flames_shown = sim.lv.flames;
+        self.lit.tick(dt);
+        self.tiles.tick(dt);
+        if (!self.tiles.on()) self.flames_shown = sim.lv.flames;
         for (self.glide[0..sim.pool.n]) |*gl| gl.t += dt;
         for (&self.dives) |*d| if (d.*) |*left| {
             left.* -= dt;
@@ -742,7 +769,7 @@ pub const Presentation = struct {
             if (gl.bump != null or std.meta.eql(gl.from, glide.cellPx(gl.to))) continue;
             if (self.pictured[i].down() or actor.row(self.pictured[i].kind).movement != .ground) continue;
             const at = self.drawnAt(sim, i) orelse continue;
-            const under = sim.lv.at(game.cellUnder(at));
+            const under = self.tileShown(sim, game.cellUnder(at));
             if (under == .shallows) {
                 self.fx.splash(game.middle(at));
             } else if (look.stepDust(under)) |col| self.fx.dust(game.middle(at), col);
@@ -976,10 +1003,10 @@ pub const Presentation = struct {
         return t;
     }
 
-    fn harmShown(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, at: P, lands: f32, h: Harm, fire: bool, in_view: bool, s: fx.Sting) void {
+    fn harmShown(self: *Presentation, sim: *const Simulation, gas: *cloud.Cloud, at: P, lands: f32, h: Harm, fiery: bool, in_view: bool, s: fx.Sting) void {
         if (h.recovery) |after| self.recordRecovery(sim, lands, after);
         if (h.kill) {
-            self.strike(sim, gas, .{ .actor = .{ .slot = s.slot, .at = at, .lethal = true, .after = h.after } }, .{ .from = at, .wait = lands, .fire = fire });
+            self.strike(sim, gas, .{ .actor = .{ .slot = s.slot, .at = at, .lethal = true, .after = h.after } }, .{ .from = at, .wait = lands, .fire = fiery });
         } else if (in_view) {
             var shown = s;
             shown.after = h.after;
@@ -1016,7 +1043,7 @@ pub const Presentation = struct {
                     gas.hold(s.wait);
                     self.holdFlames(&sim.lv, s.wait);
                     if (self.litShown(sim, at)) self.fx.burst(s.wait, .{ .at = at, .area = rewards.pyre(&sim.lv, at), .element = .fire });
-                    self.holdLit(&sim.lv, s.wait);
+                    self.lit.hold(&sim.lv.lit, s.wait);
                 },
             },
             .strike => {},
