@@ -77,15 +77,16 @@ fn encode(out: *std.ArrayList(u8), file: Encoded) !void {
 }
 
 pub fn write(g: *game.Game, out: *std.ArrayList(u8)) !void {
-    var visits: [atlas.MAX_NODES]?*const data.Visit = @splat(null);
-    var visited = g.sim.visited.iterator(.{});
-    while (visited.next()) |node| visits[node] = &g.sim.visits[node];
-    var run: references(data.Tail) = undefined;
-    inline for (data.TAIL_FIELDS) |field| @field(run, field[1]) = &@field(data.part(g, field[0]), field[1]);
-    var portable: references(data.Portable) = undefined;
-    inline for (data.PORTABLE_FIELDS) |field| @field(portable, field[1]) = &@field(data.part(g, field[0]), field[1]);
-    const summary = data.Summary.of(g) orelse return error.Damaged;
-    try encode(out, .{ .summary = &summary, .seed = g.sim.seed, .map = g.sim.map, .node = g.sim.node, .visits = &visits, .run = &run, .portable = &portable });
+    const snapshot = try out.allocator.create(Snapshot);
+    defer out.allocator.destroy(snapshot);
+    try capture(g, snapshot);
+    try writeSnapshot(snapshot, out);
+}
+
+const PARTS = .{ .{ "run", data.TAIL_FIELDS }, .{ "portable", data.PORTABLE_FIELDS } };
+
+fn refer(into: anytype, from: anytype) void {
+    inline for (std.meta.fields(@TypeOf(from.*))) |field| @field(into, field.name) = &@field(from, field.name);
 }
 
 pub fn capture(g: *game.Game, snapshot: *Snapshot) !void {
@@ -98,8 +99,9 @@ pub fn capture(g: *game.Game, snapshot: *Snapshot) !void {
         visit.* = null;
         if (g.sim.visited.isSet(node)) visit.* = g.sim.visits[node];
     }
-    inline for (data.TAIL_FIELDS) |field| @field(snapshot.run, field[1]) = @field(data.part(g, field[0]), field[1]);
-    inline for (data.PORTABLE_FIELDS) |field| @field(snapshot.portable, field[1]) = @field(data.part(g, field[0]), field[1]);
+    inline for (PARTS) |p| inline for (p[1]) |field| {
+        @field(@field(snapshot, p[0]), field[1]) = @field(data.part(g, field[0]), field[1]);
+    };
 }
 
 pub fn writeSnapshot(snapshot: *const Snapshot, out: *std.ArrayList(u8)) !void {
@@ -108,9 +110,9 @@ pub fn writeSnapshot(snapshot: *const Snapshot, out: *std.ArrayList(u8)) !void {
         visits[node] = loaded;
     };
     var run: references(data.Tail) = undefined;
-    inline for (std.meta.fields(data.Tail)) |field| @field(run, field.name) = &@field(snapshot.run, field.name);
+    refer(&run, &snapshot.run);
     var portable: references(data.Portable) = undefined;
-    inline for (std.meta.fields(data.Portable)) |field| @field(portable, field.name) = &@field(snapshot.portable, field.name);
+    refer(&portable, &snapshot.portable);
     const map: ?*const data.Map = if (snapshot.map) |*loaded| loaded else null;
     try encode(out, .{ .summary = &snapshot.summary, .seed = snapshot.seed, .map = map, .node = snapshot.node, .visits = &visits, .run = &run, .portable = &portable });
 }
@@ -177,13 +179,21 @@ pub fn parse(bytes: []const u8) !*Snapshot {
 }
 
 fn peek(bytes: []const u8) !data.Summary {
-    const snapshot = try parse(bytes);
+    return peekWith(parse, bytes);
+}
+
+pub fn read(bytes: []const u8, g: *game.Game, map: *data.Map) !void {
+    return readWith(parse, bytes, g, map);
+}
+
+pub fn peekWith(comptime parseFn: anytype, bytes: []const u8) !data.Summary {
+    const snapshot = try parseFn(bytes);
     defer std.heap.page_allocator.destroy(snapshot);
     return snapshot.summary;
 }
 
-pub fn read(bytes: []const u8, g: *game.Game, map: *data.Map) !void {
-    const snapshot = try parse(bytes);
+pub fn readWith(comptime parseFn: anytype, bytes: []const u8, g: *game.Game, map: *data.Map) !void {
+    const snapshot = try parseFn(bytes);
     defer std.heap.page_allocator.destroy(snapshot);
     apply(snapshot, g, map);
 }
@@ -200,8 +210,9 @@ pub fn apply(snapshot: *Snapshot, g: *game.Game, map: *data.Map) void {
             g.sim.visits[node] = loaded.*;
         }
     }
-    inline for (data.TAIL_FIELDS) |field| @field(data.part(g, field[0]), field[1]) = @field(snapshot.run, field[1]);
-    inline for (data.PORTABLE_FIELDS) |field| @field(data.part(g, field[0]), field[1]) = @field(snapshot.portable, field[1]);
+    inline for (PARTS) |p| inline for (p[1]) |field| {
+        @field(data.part(g, field[0]), field[1]) = @field(@field(snapshot, p[0]), field[1]);
+    };
     game.resumeRun(g);
     g.sim.unsaved = true;
 }
@@ -215,7 +226,7 @@ pub fn validate(snapshot: *Snapshot) !void {
         run.bar.modifier = null;
     };
     if (run.gold < 0 or run.mana < 0 or run.growth.level == 0) return error.Damaged;
-    if (run.growth.xp >= run.growth.needed()) return error.Damaged;
+    if (run.growth.levelDue()) return error.Damaged;
     run.clock = day.Clock.at(run.clock.hour());
     run.mana_recovery = @mod(run.mana_recovery, hero.MANA_REGEN_TURNS);
     Policy.restoreStart(&run.growth, run.class);

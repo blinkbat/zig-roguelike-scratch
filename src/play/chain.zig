@@ -14,7 +14,7 @@ pub const VERB = "shocks";
 pub const BOLT = "chain lightning";
 pub const BOLT_RANGE: i32 = 6;
 pub const TAKES = spark.TAKES;
-pub const ELEMENT: damage.Element = .lightning;
+pub const ELEMENT = spark.ELEMENT;
 pub const DESCRIPTION = std.fmt.comptimePrint("Lightning leaps to {d} more foes, each within {d} tiles of the last. {s} each.", .{ JUMPS, JUMP_RANGE, clock.stunNote(spark.CHANCE) });
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 5 };
@@ -26,13 +26,13 @@ pub const afflict = spark.afflict;
 pub const AILMENT = spark.AILMENT;
 
 /// The bodies it strikes, the first first: each after it the nearest lit foe to the one before, in a clear line.
-pub const Chain = actor.Ids(JUMPS + 1);
+pub const Chain = grid.Bounded(u16, JUMPS + 1);
 
 pub fn chain(lv: *const grid.Level, pool: *actor.Pool, first: u16) Chain {
     var c = Chain{};
     c.push(first);
     while (c.n <= JUMPS) {
-        const last = actor.Pool.slot(c.id[c.n - 1]);
+        const last = actor.Pool.slot(c.items[c.n - 1]);
         const from = pool.items[last].at;
         var near = grid.Nearest{ .from = from, .reach = JUMP_RANGE };
         for (pool.slice(), 0..) |a, i| {

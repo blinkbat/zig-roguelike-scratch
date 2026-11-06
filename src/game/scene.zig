@@ -564,7 +564,8 @@ pub fn drawMirrors(g: *game.Game, c: Cam, ground: *const grid.Level, view: grid.
 
 pub fn drawMap(g: *game.Game) void {
     g.light.composed = g.cinema.options.composed_lighting;
-    effectLights(g);
+    const ground = g.pic.groundShown(&g.sim);
+    effectLights(g, ground);
     const c = Cam.of(g);
     const view = viewBox(g, c);
     const lo = view.lo;
@@ -592,7 +593,6 @@ pub fn drawMap(g: *game.Game) void {
     }
     const bodies = shown[0..n];
 
-    const ground = g.pic.groundShown(&g.sim);
     g.light.bake(ground, lo, hi);
     var flame_buf: [light.LIGHTS]light.Flame = undefined;
     const flames = g.light.flames(&g.sim.lv, &flame_buf);
@@ -615,7 +615,7 @@ pub fn drawMap(g: *game.Game) void {
         }
     }
     _ = shadowPass(g, c, ground, view, &bags, g.framebuffer);
-    g.cloud.draw(&g.sim.lv, view, -c.x, -c.y, game.CELL, g.screen);
+    g.cloud.draw(ground, view, -c.x, -c.y, game.CELL, g.screen);
     drawSolidPass(g, c, ground, lo, hi, &stood, &bags);
     const o = c.origin();
     g.pic.fx.draw(o[0], o[1], game.CELL_F);
@@ -704,7 +704,7 @@ pub fn drawMap(g: *game.Game) void {
     for (bodies[next_body..]) |*b| drawStandingBody(g, b);
 
     drawTorches(g, c, flames);
-    g.pic.fx.drawGlow(&g.sim.lv, &g.light.visibility.sight, o[0], o[1], game.CELL_F);
+    g.pic.fx.drawGlow(ground, &g.light.visibility.sight, o[0], o[1], game.CELL_F);
     if (level_up_at) |at| g.pic.fx.level_up.drawSparks(at, o[0], o[1], game.CELL_F);
     if (g.debug.visuals.weather) if (g.light.sky) |k| g.rain.draw(game.weatherNow(g), &g.light.visibility.sight, o[0], o[1], game.CELL_F, sky.brightness(k));
 
@@ -874,11 +874,11 @@ pub fn effectSources(effects: *const fx.Fx, carrier: ?[2]f32, shot: ?*const game
     return buf[0..n];
 }
 
-pub fn effectLights(g: *game.Game) void {
+pub fn effectLights(g: *game.Game, ground: *const grid.Level) void {
     g.light.clearEffects();
     var buf: [EFFECT_SOURCES]light.Emission = undefined;
     const shot: ?*const game.presentation.Shot = if (g.pic.shot) |*s| s else null;
-    for (effectSources(&g.pic.fx, g.pic.carrierAt(&g.sim), shot, &buf)) |source| g.light.emit(&g.sim.lv, source);
+    for (effectSources(&g.pic.fx, g.pic.carrierAt(&g.sim), shot, &buf)) |source| g.light.emit(ground, source);
     for (0..g.sim.pool.n) |i| {
         const at = g.pic.drawnAt(&g.sim, i) orelse continue;
         const pic = g.pic.pictured[i];
@@ -887,13 +887,13 @@ pub fn effectLights(g: *game.Game) void {
         const source = for (std.enums.values(fx.Status)) |s| {
             if (pic.status.get(s) > 0) if (s.emission(game.middle(at), flicker)) |e| break e;
         } else continue;
-        g.light.emit(&g.sim.lv, source);
+        g.light.emit(ground, source);
     }
-    for (0..grid.CELLS) |i| {
+    for (&g.pic.flames_shown, 0..) |left, i| {
+        if (left == 0 or !ground.lit[i]) continue;
         const p = grid.Level.of(i);
-        if (!g.pic.flamesShown(i) or !g.sim.lv.isLit(p)) continue;
         const mid = mathx.centre(p);
-        g.light.emit(&g.sim.lv, .{ .at = .{ mid[0], mid[1], light.BODY_Z }, .col = look.FIRE, .radius = FLAME_LIGHT_R, .gain = FLAME_LIGHT_GAIN * g.pic.fx.statusFlicker(@floatFromInt(i)) });
+        g.light.emit(ground, .{ .at = .{ mid[0], mid[1], light.BODY_Z }, .col = look.FIRE, .radius = FLAME_LIGHT_R, .gain = FLAME_LIGHT_GAIN * g.pic.fx.statusFlicker(@floatFromInt(i)) });
     }
 }
 
@@ -976,9 +976,9 @@ pub fn drawMinimap(g: *game.Game) void {
     if (g.mini.tex) |t| {
         const pictured = g.pic.pictureKey();
         if (g.mini.stale or !std.meta.eql(pictured, g.mini.pictured)) {
-            for (&g.mini.px, &g.sim.lv.seen, 0..) |*c, seen, i| {
-                const p = grid.Level.of(i);
-                c.* = if (seen or g.light.reveal_map) look.mini(g.pic.tileShown(&g.sim, p), g.pic.litShown(&g.sim, p)) else rl.Color.blank;
+            const ground = g.pic.groundShown(&g.sim);
+            for (&g.mini.px, ground.seen, ground.tile, ground.lit) |*c, seen, tile, lit| {
+                c.* = if (seen or g.light.reveal_map) look.mini(tile, lit) else rl.Color.blank;
             }
             rl.updateTexture(t, &g.mini.px);
             g.mini.stale = false;

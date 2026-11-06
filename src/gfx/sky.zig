@@ -52,7 +52,7 @@ const LATE_DAY: f32 = SUNSET - 2.55;
 const DUSK_GLOW: f32 = SUNSET - 0.6;
 const KEY_SWAP_FADE: f32 = 0.45;
 /// A light leaning along the ground less than this stands straight up.
-pub const OVERHEAD: f32 = 1e-4;
+const OVERHEAD: f32 = 1e-4;
 /// The palette's sky is a hemisphere's; seen from above it lights the ground in shade this many times over.
 const SKY_GAIN: f32 = 1.6;
 /// The palette's key is a 3D scene's; on art drawn flat it is this strong.

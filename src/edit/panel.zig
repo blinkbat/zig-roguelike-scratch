@@ -91,6 +91,20 @@ pub const FileItem = enum {
         };
     }
 
+    fn pressed(f: FileItem, d: *const Desk) bool {
+        return switch (f) {
+            .new => d.new,
+            .open => d.open,
+            .save => d.save,
+            .save_as => d.save_as,
+            .title => false,
+        };
+    }
+
+    pub fn onKey(f: FileItem, ed: *editor.Editor) void {
+        if (f.pressed(&ed.desk)) f.act(ed);
+    }
+
     fn act(f: FileItem, ed: *editor.Editor) void {
         switch (f) {
             .new => ed.askName(.new),
@@ -107,9 +121,8 @@ pub const FILE_ITEMS = std.enums.values(FileItem);
 pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
     rl.drawRectangle(0, 0, g.screen.x, widgets.TOP_H, PANEL_BG);
     rl.drawRectangle(0, widgets.TOP_H - 1, g.screen.x, 1, look.EDGE);
-    var verbs = Bar.from(ed, g, widgets.PAD, widgets.GAP);
-    const file = verbs.take(widgets.labelW(&g.face, FILE_LABEL, DETAIL));
-    std.debug.assert(std.meta.eql(file, fileSlot(g)));
+    const file = fileSlot(g);
+    var verbs = Bar.from(ed, g, widgets.rightX(file) + widgets.GAP, widgets.GAP);
     if (smallButton(ed, g, file, FILE_LABEL, isPopup(ed, .file), true, "New, open and save maps; back to the title")) {
         editor.openPopup(ed, file, .file, 0, g.screen.y);
     }
@@ -120,8 +133,9 @@ pub fn drawTop(ed: *editor.Editor, g: *game.Game) void {
     if (verbs.button("Objects", ed.modal == .objects, true, widgets.keyed("Every tile and body, and what each is", Desk.OBJECTS_CAPTION))) ed.ask(.objects);
     if (verbs.button("Effects", ed.modal == .effects, true, "Every particle effect and drawn missile, playing")) effects.open(ed);
     if (verbs.button("Text", ed.modal == .text, true, "Rewrite player-facing text and tag its author")) text_panel.open(ed);
-    if (verbs.button("Dialog", isPlot(ed, .dialogs), true, "Folk and the conversations they open: lines, choices and what each does")) editor.plot.open(ed, .dialogs);
-    if (verbs.button("Script", isPlot(ed, .script), true, "Triggers: when every condition holds after a turn, their actions run in order")) editor.plot.open(ed, .script);
+    for (std.enums.values(editor.plot.Page)) |page| {
+        if (verbs.button(page.label(), isPlot(ed, page), true, page.tip())) editor.plot.open(ed, page);
+    }
     if (verbs.button("Keys", ed.modal == .help, true, widgets.keyed("Every key", Desk.HELP_CAPTION))) ed.ask(.help);
     var plays = Bar.back(ed, g, g.screen.x - widgets.PAD, widgets.GAP);
     const here = editor.CELL_ACTIONS.get(.play);
@@ -173,7 +187,7 @@ fn isPlot(ed: *const editor.Editor, page: editor.plot.Page) bool {
 fn familyFigure(ed: *editor.Editor, g: *game.Game, f: editor.Family, r: rl.Rectangle) void {
     switch (f) {
         .terrain => swatch(g, ed.ink.get(.first), r),
-        else => toolFigure(g, ed.family_tool.get(f), r),
+        .props, .foes, .folk, .doors => toolFigure(g, ed.family_tool.get(f), r),
     }
 }
 
@@ -206,7 +220,6 @@ pub fn drawSide(ed: *editor.Editor, g: *game.Game) void {
     const band = editor.Editor.bandOf(g.screen);
     backPanel(col, band, col.x + col.w - 1);
     var y = beginPane(ed, .side, col.box(band.top, band.bottom)) + widgets.PAD;
-    defer endPane(ed);
     y = drawSelect(ed, g, col, y);
     switch (ed.family) {
         .terrain => y = drawTerrain(ed, g, col, y),
@@ -223,7 +236,7 @@ pub fn drawSide(ed: *editor.Editor, g: *game.Game) void {
             y += widgets.ROW_STEP;
         },
     }
-    fitPane(ed, .side, y);
+    closePane(ed, .side, y);
 }
 
 /// Select, and once it is chosen the clipboard over its selection.
@@ -279,9 +292,7 @@ fn toolRow(ed: *editor.Editor, g: *game.Game, col: Column, y: *i32, t: editor.To
     const name_x = widgets.rightX(pic) + widgets.GAP * 2;
     widgets.drawFit(&g.face, t.name(), widgets.TEXT, widgets.rightX(r) - name_x - widgets.GAP, false, name_x, widgets.midY(r, widgets.TEXT), if (live) look.TEXT else look.DIM);
     if (!live) rl.drawRectangleRec(r, UNLIVE);
-    if (!h.hit) return;
-    ed.leaveSelect();
-    ed.setTool(t);
+    if (h.hit) ed.takeTool(t);
 }
 
 const CHIP_GAP: i32 = 4;
@@ -305,6 +316,8 @@ fn drawFoeTypes(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
     return y + widgets.ROW_STEP + widgets.GAP;
 }
 
+const BRUSH_W: i32 = 64;
+const BRUSH_SPAN: i32 = 2 * widgets.STEP_W + BRUSH_W;
 const SWATCH: i32 = 40;
 const SWATCH_GAP: i32 = 4;
 const SHAPE_COLS: usize = 3;
@@ -328,7 +341,7 @@ fn drawTerrain(ed: *editor.Editor, g: *game.Game, col: Column, top: i32) i32 {
     y += widgets.rowsOf(PAINT_SHAPES.len, SHAPE_COLS) * widgets.ROW_STEP + widgets.GAP;
     rowLabel(g, col, y, "Brush", DETAIL);
     const n = ed.brushSize();
-    const by = knobs.stepper(ed, g, widgets.row(col.left() + editor.LABEL_W, y, editor.BRUSH_SPAN), std.fmt.bufPrintZ(&buf, "{d}x{d}", .{ n, n }) catch "", .{
+    const by = knobs.stepper(ed, g, widgets.row(col.left() + editor.LABEL_W, y, BRUSH_SPAN), std.fmt.bufPrintZ(&buf, "{d}x{d}", .{ n, n }) catch "", .{
         .{ .tip = widgets.keyed("Smaller", Desk.BRUSH_CAPTION), .live = ed.brush > 0 },
         .{ .tip = widgets.keyed("Bigger", Desk.BRUSH_CAPTION), .live = ed.brush < editor.BRUSHES.len - 1 },
     });
@@ -427,10 +440,9 @@ pub fn drawInspector(ed: *editor.Editor, g: *game.Game) void {
     const col = editor.Editor.inspector(g);
     const band = editor.Editor.bandOf(g.screen);
     backPanel(col, band, col.x);
-    var y = band.top + widgets.PAD;
-    heading(g, col, &y, "Node");
     const slot = nodeSlot(g);
-    std.debug.assert(@as(i32, @intFromFloat(slot.y)) == y);
+    widgets.heading(&g.face, "Node", col.left(), band.top + widgets.PAD);
+    var y: i32 = @intFromFloat(slot.y);
     if (ed.renaming or ed.renamed) {
         modals.fieldRow(ed, g, slot);
     } else if (nodeDropdown(ed, g, slot)) editor.openPopup(ed, slot, .node, ed.node, g.screen.y);
@@ -513,7 +525,6 @@ fn nodeInk(nd: *const atlas.Node) rl.Color {
 fn drawThings(ed: *editor.Editor, g: *game.Game, col: Column, box: rl.Rectangle) void {
     var name: [atlas.TITLE_MAX]u8 = undefined;
     var y = beginPane(ed, .inspector, box);
-    defer endPane(ed);
     const is = ed.scene.issues;
     heading(g, col, &y, "Problems");
     var wrong = false;
@@ -565,7 +576,7 @@ fn drawThings(ed: *editor.Editor, g: *game.Game, col: Column, box: rl.Rectangle)
         },
         .procgen => {},
     }
-    fitPane(ed, .inspector, y);
+    closePane(ed, .inspector, y);
 }
 
 pub fn clipped(ed: *const editor.Editor, y: i32) bool {
@@ -628,14 +639,9 @@ pub fn beginPane(ed: *editor.Editor, p: editor.Pane, box: rl.Rectangle) i32 {
     return ed.paneScroll(p, box).begin(&ed.clip);
 }
 
-pub fn endPane(ed: *editor.Editor) void {
-    widgets.unclip(&ed.clip);
-}
-
-/// The pane's content ran to `end`: how far it scrolls, and its bar.
-pub fn fitPane(ed: *editor.Editor, p: editor.Pane, end: i32) void {
-    const s = ed.paneScroll(p, ed.pane_box.get(p));
-    s.end(end, widgets.PAD);
+/// The pane's content ran to `end`: stops clipping, then how far it scrolls, and its bar.
+pub fn closePane(ed: *editor.Editor, p: editor.Pane, end: i32) void {
+    ed.paneScroll(p, ed.pane.get(p).box).close(&ed.clip, end, widgets.PAD);
 }
 
 pub fn drawStatus(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {

@@ -1,5 +1,12 @@
 const std = @import("std");
 
+pub fn upper(comptime s: []const u8) [:0]const u8 {
+    var b: [s.len:0]u8 = undefined;
+    _ = std.ascii.upperString(&b, s);
+    const out = b;
+    return &out;
+}
+
 pub fn Note(comptime N: usize) type {
     return struct {
         const Self = @This();

@@ -3,6 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const damage = @import("damage.zig");
 const glacial = @import("glacial.zig");
+const areas = @import("area.zig");
 const resilience = @import("resilience.zig");
 
 const P = mathx.P;
@@ -52,7 +53,7 @@ pub const FrostVial = struct {
     pub const BOLT = "frost vial";
     pub const BOLT_RANGE: i32 = 4;
     pub const TAKES = glacial.TAKES;
-    pub const ELEMENT: damage.Element = .cold;
+    pub const ELEMENT = glacial.ELEMENT;
     pub const BASE = damage.Base{ .lo = 1, .hi = 3 };
     pub const CHANCE = glacial.CHANCE;
     pub const procs = glacial.procs;
@@ -61,7 +62,7 @@ pub const FrostVial = struct {
     pub const AILMENT = glacial.AILMENT;
     pub const DESCRIPTION = std.fmt.comptimePrint("A thrown vial shatters into cold, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), glacial.CHILL_NOTE });
 
-    pub const burst = glacial.Patch(BLAST).burst;
+    pub const burst = areas.Patch(BLAST).burst;
 };
 
 test "smelling salts hold stun resistance full until their turns run out, and leave other meters alone" {

@@ -303,7 +303,8 @@ pub fn shape(lv: *grid.Level, rng: *mathx.Rng, _: u64, p: Params) void {
                         const t: grid.Tile = switch (grid.Tile.ofLetter(SYMBOLS[out[yy * w + xx]]).?) {
                             .wall => if (rng.percent(p.decay)) .rubble else .wall,
                             .grass => pal.open,
-                            else => |kept| kept,
+                            .floor => .floor,
+                            else => unreachable,
                         };
                         lv.set(q, t);
                     }

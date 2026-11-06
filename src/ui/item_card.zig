@@ -10,10 +10,10 @@ const layout = @import("character_layout.zig");
 const consumable = @import("../play/consumable.zig");
 const skillbar = @import("../play/skillbar.zig");
 
-pub const TWO_HANDED = "Two-handed";
-pub const ONE_HANDED = "One-handed";
+const TWO_HANDED = "Two-handed";
+const ONE_HANDED = "One-handed";
 pub const EMPTY_SLOT = "Empty slot";
-pub const CONSUMABLE = "Consumable";
+const CONSUMABLE = "Consumable";
 
 const CARD_LINE = font.SMALL_LINE;
 /// Down from a card's top: its rule, name (or "Empty slot"), slot and first stat line.
@@ -23,7 +23,7 @@ const CARD_EMPTY = 35;
 const SLOT_Y = 84;
 const SLOT_STATS_GAP = 11;
 const CARD_STATS = SLOT_Y + font.LABEL + SLOT_STATS_GAP;
-/// Above and below the modifiers' rule, and its inset from the card's sides.
+/// Above and below the modifiers' rule.
 const MODS_ABOVE = 6;
 const MODS_BELOW = 10;
 const CardText = menu.Note(120);

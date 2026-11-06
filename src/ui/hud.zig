@@ -255,7 +255,7 @@ pub fn focus(box: rl.Rectangle, round: bool) void {
 }
 
 /// A body with this splits into "label|value" rows, drawn as a table.
-pub const TIP_SEP = '|';
+const TIP_SEP = '|';
 pub const TIP_RULE = "---";
 
 /// A tooltip body of `.{ label, value }` rows, the values `std.fmt` patterns.
@@ -345,12 +345,7 @@ fn above(top: i32, h: i32) i32 {
 }
 
 test "a tooltip's body breaks at spaces into lines that each fit" {
-    const Fixed = struct {
-        pub fn width(_: @This(), s: [:0]const u8, size: i32) i32 {
-            return @as(i32, @intCast(s.len)) * @divTrunc(size, 2);
-        }
-    };
-    const face = Fixed{};
+    const face = @import("menu.zig").TestFace{};
     var buf: font.Wrapped = undefined;
     var lines: [font.WRAP_LINES_MAX][:0]const u8 = undefined;
     const body = "Recover 50% of life over 3 turns. Uses 20 of 60 charges; kills refill 5. Takes a turn.";

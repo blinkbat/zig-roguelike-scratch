@@ -19,7 +19,7 @@ const editor = @import("editor.zig");
 const effects = @import("effects.zig");
 const Desk = input.Desk;
 const DETAIL = widgets.DETAIL;
-const HEAD = widgets.HEAD;
+const TITLE = widgets.TITLE;
 const ROW_ON = widgets.ROW_ON;
 const SEP = menu.SEP;
 
@@ -152,8 +152,8 @@ fn drawObjects(ed: *editor.Editor, g: *game.Game) void {
     seenPicture(g, s, raster.rect(dx, dy, VIEW_BIG, VIEW_BIG));
     rl.drawRectangleLines(dx, dy, VIEW_BIG, VIEW_BIG, look.EDGE);
     dy += VIEW_BIG + widgets.PAD;
-    widgets.textFace(&g.face).draw(seenName(s), dx, dy, HEAD, look.TEXT);
-    dy += HEAD + widgets.GAP;
+    widgets.textFace(&g.face).draw(seenName(s), dx, dy, TITLE, look.TEXT);
+    dy += TITLE + widgets.GAP;
     var facts = Facts{};
     seenFacts(s, &facts);
     for (facts.all()) |l| {
@@ -191,7 +191,7 @@ fn seenName(s: editor.Seen) [:0]const u8 {
     return menu.named(s.tile);
 }
 
-pub fn seenPicture(g: *game.Game, s: editor.Seen, r: rl.Rectangle) void {
+fn seenPicture(g: *game.Game, s: editor.Seen, r: rl.Rectangle) void {
     if (seenTool(s)) |t| return panel.toolFigure(g, t, r);
     panel.swatch(g, s.tile, r);
 }

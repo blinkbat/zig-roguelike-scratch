@@ -156,6 +156,9 @@ class ReleaseTests(unittest.TestCase):
         listed = re.search(r'^const EMBEDDED = \[_\]\[\]const u8\{(.*)\};$', build, re.M)
         self.assertIsNotNone(listed)
         self.assertEqual(release.EMBEDDED, tuple(re.findall(r'"([^"]+)"', listed.group(1))))
+        skipped = re.search(r'^const UNEMBEDDED = \[_\]\[\]const u8\{(.*)\};$', build, re.M)
+        self.assertIsNotNone(skipped)
+        self.assertEqual(release.UNEMBEDDED, tuple(re.findall(r'"([^"]+)"', skipped.group(1))))
         print('release source hash covers build.zig\'s', len(release.EMBEDDED), 'embedded extensions')
 
     def test_packages_the_executable_build_zig_names(self):

@@ -6,7 +6,7 @@ const actor = @import("../play/actor.zig");
 const P = mathx.P;
 const INITIAL_ROLL: u64 = 0x5EE;
 
-pub const Issues = struct {
+const Issues = struct {
     unlinked: usize = 0,
     /// Open cells no walk from the start or a door reaches.
     cut_off: usize = 0,

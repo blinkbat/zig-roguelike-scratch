@@ -13,6 +13,7 @@ const burning = @import("../play/burning.zig");
 const damage = @import("../play/damage.zig");
 const turn_clock = @import("../play/clock.zig");
 const glacial = @import("../play/glacial.zig");
+const areas = @import("../play/area.zig");
 const blind = @import("../play/blind.zig");
 const confusion = @import("../play/confusion.zig");
 const shock = @import("../play/shock.zig");
@@ -80,7 +81,7 @@ fn sweep(g: *game.Game, comptime act: skillbar.Act, mark: P, s: Stroke) void {
     }
 }
 
-fn occupants(comptime N: usize, lv: *const grid.Level, area: *const grid.Area(N)) [N]u16 {
+fn occupants(comptime N: usize, lv: *const grid.Level, area: *const grid.Bounded(P, N)) [N]u16 {
     var out: [N]u16 = undefined;
     for (area.slice(), out[0..area.n]) |p, *w| w.* = lv.who(p);
     return out;
@@ -253,7 +254,7 @@ pub fn fireLands(g: *game.Game, at: P, range: i32, kindle: fire.Kindle, wait: f3
 }
 
 /// `direct` is struck even where the burst spreads no further, as a body in deep water.
-pub fn areaHit(g: *game.Game, comptime act: skillbar.Act, at: P, area: glacial.Burst, s: Stroke, direct: ?u16, prop: bool) void {
+pub fn areaHit(g: *game.Game, comptime act: skillbar.Act, at: P, area: areas.Burst, s: Stroke, direct: ?u16, prop: bool) void {
     var struck = skills.foesIn(g, area);
     if (direct) |id| if (!struck.has(id)) struck.push(id);
     g.pic.fx.burst(s.wait, .{ .at = at, .area = area, .element = act.element().? });
@@ -268,7 +269,7 @@ pub fn areaHit(g: *game.Game, comptime act: skillbar.Act, at: P, area: glacial.B
 }
 
 /// Cold over `area`: the flames it puts out and the burning it quenches are drawn as the blow lands.
-pub fn coldLands(g: *game.Game, area: *const glacial.Burst, wait: f32) void {
+pub fn coldLands(g: *game.Game, area: *const areas.Burst, wait: f32) void {
     g.pic.holdFlames(&g.sim.lv, wait);
     const doused = rewards.douseRound(&g.sim, area);
     _ = rewards.freezeRound(&g.sim, area);
@@ -456,7 +457,7 @@ fn beginTurn(g: *game.Game, from: P) void {
     g.sim.unsaved = true;
     if (g.sim.clock.turn()) g.sim.days +|= 1;
     tactics.startTurn(&g.sim);
-    if (fire.turn(&g.sim.lv, &g.sim.rng, g.sim.rainNow())) g.light.retile(&g.sim.lv);
+    _ = fire.turn(&g.sim.lv, &g.sim.rng, g.sim.rainNow());
     _ = ice.turn(&g.sim.lv);
     skills.recover(g);
     for (&g.sim.cooldown.values) |*c| c.* -|= 1;

@@ -24,16 +24,16 @@ pub const BLOCK_GAP: i32 = GAP * 2;
 pub const ROW_STEP: i32 = ROW_H + GAP;
 pub const TEXT: i32 = font.HEAD;
 pub const DETAIL: i32 = font.BODY;
-pub const HEAD: i32 = 32;
+pub const TITLE: i32 = 32;
 pub const LINE_STEP: i32 = TEXT + GAP;
 pub const DETAIL_STEP: i32 = DETAIL + GAP;
-pub const HEADING_H: i32 = DETAIL + GAP;
+pub const HEADING_H: i32 = DETAIL_STEP;
 pub const TEXT_DY: i32 = @divTrunc(ROW_H - TEXT, 2);
 pub const DETAIL_DY: i32 = @divTrunc(ROW_H - DETAIL, 2);
 pub const INSPECT_INNER_W: i32 = INSPECT_W - PAD * 2;
 pub const LINE: usize = 200;
 pub const MODAL_W: i32 = 720;
-pub const MODAL_HEAD: i32 = PAD + HEAD + PAD;
+pub const MODAL_HEAD: i32 = PAD + TITLE + PAD;
 pub const MODAL_ROWS: usize = 12;
 const MODAL_BTN_W: i32 = 180;
 const PAGE_W: i32 = 1800;
@@ -319,6 +319,26 @@ pub const Scroll = struct {
         s.fit(bottom, margin);
         s.bar();
     }
+
+    pub fn close(s: Scroll, clip: *?rl.Rectangle, bottom: i32, margin: i32) void {
+        unclip(clip);
+        s.end(bottom, margin);
+    }
+};
+
+pub const Scrolled = struct {
+    box: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+    top: i32 = 0,
+    most: i32 = 0,
+
+    pub fn at(s: *Scrolled, box: rl.Rectangle) Scroll {
+        s.box = box;
+        return .{ .box = box, .top = &s.top, .most = &s.most };
+    }
+
+    pub fn wheel(s: *Scrolled, mouse: P, by: i32) void {
+        if (raster.holds(s.box, mouse)) scrollBy(&s.top, s.most, by);
+    }
 };
 
 pub fn unclip(clip: *?rl.Rectangle) void {
@@ -432,17 +452,24 @@ pub fn modalFrame(face: *const font.Face, screen: P, want_w: i32, h: i32, title:
     const y = @max(0, @divTrunc(screen.y - h, 2));
     framed(x, y, w, h);
     const top = y + PAD;
-    drawFit(face, title, HEAD, w - 2 * PAD, keep_end, x + PAD, top, look.TEXT);
+    drawFit(face, title, TITLE, w - 2 * PAD, keep_end, x + PAD, top, look.TEXT);
     return .{ .x = x, .w = w, .top = top, .y = y + MODAL_HEAD };
 }
 
 /// `hint` after the frame's `title`, on its line.
 pub fn titleHint(face: *const font.Face, f: Frame, title: [:0]const u8, hint: []const u8) void {
-    const x = f.x + 2 * PAD + textFace(face).width(title, HEAD);
-    drawFit(face, hint, DETAIL, f.x + f.w - PAD - x, false, x, midIn(f.top, HEAD, DETAIL), look.DIM);
+    const x = f.x + 2 * PAD + textFace(face).width(title, TITLE);
+    drawFit(face, hint, DETAIL, f.x + f.w - PAD - x, false, x, midIn(f.top, TITLE, DETAIL), look.DIM);
 }
 
-pub const Page = struct { frame: Frame, bottom: i32 };
+const Page = struct {
+    frame: Frame,
+    bottom: i32,
+
+    pub fn column(p: Page) Column {
+        return .{ .x = p.frame.x, .w = p.frame.w };
+    }
+};
 
 /// A page over the whole editor; `bottom` is the inside of its padding.
 pub fn pageFrame(face: *const font.Face, screen: P, title: [:0]const u8) Page {

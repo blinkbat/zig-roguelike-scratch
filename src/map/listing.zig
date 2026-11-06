@@ -30,7 +30,16 @@ pub fn pathFor(buf: []u8, folder: []const u8, name: []const u8) ?[]const u8 {
         n += 1;
     }
     if (n == 0 or folder.len > FOLDER_MAX) return null;
-    return std.fmt.bufPrint(buf, atlas.PREFIX ++ "{s}{s}" ++ atlas.EXT, .{ folder, stem[0..n] }) catch null;
+    const device = if (reserved(stem[0..n])) "_" else "";
+    return std.fmt.bufPrint(buf, atlas.PREFIX ++ "{s}{s}{s}" ++ atlas.EXT, .{ folder, stem[0..n], device }) catch null;
+}
+
+/// Windows device names, which no file may take even with an extension.
+fn reserved(stem: []const u8) bool {
+    for ([_][]const u8{ "con", "prn", "aux", "nul" }) |d| {
+        if (std.mem.eql(u8, stem, d)) return true;
+    }
+    return stem.len == 4 and (std.mem.startsWith(u8, stem, "com") or std.mem.startsWith(u8, stem, "lpt")) and std.ascii.isDigit(stem[3]) and stem[3] != '0';
 }
 
 /// Folder listing: parent first, then sorted folders and maps; overflow keeps the first `MAX`.
@@ -214,6 +223,10 @@ test "a map file is named from anything typed, and nothing left of it is no name
     try std.testing.expectEqualStrings("qud/", folderOf(atlas.mapPath("qud/qud_strata")));
     try std.testing.expectEqualStrings("", folderOf(atlas.MAIN));
     try std.testing.expectEqualStrings(atlas.mapPath("qud/bog"), pathFor(&buf, folderOf(atlas.mapPath("qud/qud_strata")), "Bog").?);
+    try std.testing.expectEqualStrings(atlas.mapPath("con_"), pathFor(&buf, "", "Con").?);
+    try std.testing.expectEqualStrings(atlas.mapPath("com1_"), pathFor(&buf, "", "COM1").?);
+    try std.testing.expectEqualStrings(atlas.mapPath("com10"), pathFor(&buf, "", "com10").?);
+    try std.testing.expectEqualStrings(atlas.mapPath("console"), pathFor(&buf, "", "console").?);
 }
 
 test "the maps folder lists its folders before its maps, and a folder opens with the way back up first" {

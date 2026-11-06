@@ -7,7 +7,7 @@ const menu = @import("ui/menu.zig");
 /// Where in the game a saved field lives, `game` or its field of that name; the file names it by its field name alone.
 pub const Part = enum { game, sim, pic };
 
-pub fn Of(comptime p: Part) type {
+fn Of(comptime p: Part) type {
     return if (p == .game) game.Game else @FieldType(game.Game, @tagName(p));
 }
 
@@ -15,11 +15,11 @@ pub fn part(g: *game.Game, comptime p: Part) *Of(p) {
     return if (p == .game) g else &@field(g, @tagName(p));
 }
 
-pub const HEAD_PART: Part = .sim;
-pub const Run = Of(HEAD_PART);
+const HEAD_PART: Part = .sim;
+const Run = Of(HEAD_PART);
 
 /// The legacy header also classifies the run's separately stored map and visits.
-pub const Header = struct {
+const Header = struct {
     seed: @FieldType(Run, "seed"),
     map: std.meta.Child(std.meta.Child(@FieldType(Run, "map"))),
     node: @FieldType(Run, "node"),
@@ -31,10 +31,10 @@ pub const Map = @FieldType(Header, "map");
 pub const Node = @FieldType(Header, "node");
 pub const Visited = @FieldType(Header, "visited");
 pub const Visit = @FieldType(Header, "visits");
-pub const HEAD_FIELDS = std.meta.fieldNames(Header);
+const HEAD_FIELDS = std.meta.fieldNames(Header);
 
 /// The level's fields added to its end since raw saves were written.
-pub const LEVEL_ADDED = .{ "folk", "healing", "steam", "smoke", "heat", "thaw" };
+const LEVEL_ADDED = .{ "folk", "healing", "steam", "smoke", "heat", "thaw" };
 /// What raw saves wrote before fields were added to the end of the level and the map; the legacy reader takes them in this shape.
 pub const LegacyLevel = blk: {
     var T = @FieldType(Visit, "lv");
@@ -83,7 +83,7 @@ pub const PORTABLE_FIELDS = .{
 };
 const PIC = game.presentation.Fields;
 /// Not saved: the picture but the facing, the input, what the app sets on whatever it plays, and what `game.resumeRun` rebuilds.
-pub const UNSAVED = .{
+const UNSAVED = .{
     .game = .{
         "character",
         "looted",
@@ -168,21 +168,24 @@ comptime {
     }
 }
 
-comptime {
+fn eachOnce(comptime T: type, comptime lists: anytype, comptime label: []const u8) void {
     @setEvalBranchQuota(100_000);
-    const F = game.simulation.Fields;
-    const T = Of(.sim);
-    const lists = .{ F.hero, F.start, F.derived, F.rebuilt, F.run, F.resumed, F.turn, F.marks, F.set, F.scratch, F.kept };
     for (std.meta.fields(T)) |f| {
         var n: usize = 0;
         for (lists) |list| for (list) |name| {
             if (std.mem.eql(u8, f.name, name)) n += 1;
         };
-        if (n != 1) @compileError("sim.Fields: say once when " ++ f.name ++ " is reset");
+        if (n != 1) @compileError(label ++ ": say once when " ++ f.name ++ " is reset");
     }
     for (lists) |list| for (list) |name| {
-        if (!@hasField(T, name)) @compileError("sim.Fields: " ++ @typeName(T) ++ " has no field " ++ name);
+        if (!@hasField(T, name)) @compileError(label ++ ": " ++ @typeName(T) ++ " has no field " ++ name);
     };
+}
+
+comptime {
+    @setEvalBranchQuota(100_000);
+    const F = game.simulation.Fields;
+    eachOnce(Of(.sim), .{ F.hero, F.start, F.derived, F.rebuilt, F.run, F.resumed, F.turn, F.marks, F.set, F.scratch, F.kept }, "sim.Fields");
     const restored = F.derived ++ F.rebuilt ++ F.resumed ++ F.turn ++ F.marks ++ F.scratch ++ F.kept;
     for (UNSAVED.sim) |name| {
         for (restored) |r| {
@@ -215,20 +218,7 @@ comptime {
 }
 
 comptime {
-    @setEvalBranchQuota(100_000);
-    const F = PIC;
-    const T = Of(.pic);
-    const lists = .{ F.turn, F.run, F.facing, F.settled, F.scratch, F.kept };
-    for (std.meta.fields(T)) |f| {
-        var n: usize = 0;
-        for (lists) |list| for (list) |name| {
-            if (std.mem.eql(u8, f.name, name)) n += 1;
-        };
-        if (n != 1) @compileError("presentation.Fields: say once when " ++ f.name ++ " is reset");
-    }
-    for (lists) |list| for (list) |name| {
-        if (!@hasField(T, name)) @compileError("presentation.Fields: " ++ @typeName(T) ++ " has no field " ++ name);
-    };
+    eachOnce(Of(.pic), .{ PIC.turn, PIC.run, PIC.facing, PIC.settled, PIC.scratch, PIC.kept }, "presentation.Fields");
 }
 
 const REQUIRED_FIELDS = .{ "lv", "pool", "hero", "rng", "name", "class", "growth" };
@@ -284,7 +274,7 @@ pub fn fieldOf(comptime name: [:0]const u8, comptime T: type, comptime default: 
 }
 
 /// `T` without its field `name`.
-pub fn Without(comptime T: type, comptime name: []const u8) type {
+fn Without(comptime T: type, comptime name: []const u8) type {
     const all = std.meta.fields(T);
     var fs: [all.len - 1]std.builtin.Type.StructField = undefined;
     var n: usize = 0;
@@ -298,7 +288,7 @@ pub fn Without(comptime T: type, comptime name: []const u8) type {
 }
 
 /// `T` with its field `name` of type `U` instead.
-pub fn Replaced(comptime T: type, comptime name: []const u8, comptime U: type) type {
+fn Replaced(comptime T: type, comptime name: []const u8, comptime U: type) type {
     const all = std.meta.fields(T);
     var fs: [all.len]std.builtin.Type.StructField = undefined;
     var found = false;

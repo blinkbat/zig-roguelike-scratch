@@ -3,7 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const fire = @import("../map/fire.zig");
 const damage = @import("damage.zig");
-const glacial = @import("glacial.zig");
+const areas = @import("area.zig");
 const bow = @import("bow.zig");
 const resilience = @import("resilience.zig");
 const actor = @import("actor.zig");
@@ -27,7 +27,7 @@ pub const Caltrops = struct {
     pub fn bleed(rank: u8) i32 {
         return rank -| 1;
     }
-    pub const area = glacial.Patch(ADJACENT).area;
+    pub const area = areas.Patch(ADJACENT).area;
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("Patch: {d} turns; pin: {d} turn{s}; ", .{ duration(rank), pins(rank), mathx.plural(pins(rank)) }) catch {};
         if (bleed(rank) == 0) w.writeAll("no bleed.") catch {} else w.print("bleed: {d} per turn.", .{bleed(rank)}) catch {};
@@ -66,7 +66,7 @@ pub const GravityWell = struct {
     pub fn pins(rank: u8) u8 {
         return rank -| 1;
     }
-    pub const area = glacial.Patch(RADIUS).area;
+    pub const area = areas.Patch(RADIUS).area;
     pub fn writeRank(rank: u8, w: anytype) void {
         w.print("Pull: {d} cell{s}; pin: {d} turn{s}.", .{ pulls(rank), mathx.plural(pulls(rank)), pins(rank), mathx.plural(pins(rank)) }) catch {};
     }
@@ -153,8 +153,8 @@ pub const Whirlwind = struct {
     pub const VERB = "whirls into";
     pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
     pub const DESCRIPTION = "Strike every adjacent foe and barrel with your melee weapon.";
-    pub fn area(lv: *const grid.Level, at: P) glacial.Burst {
-        var out = glacial.Burst{};
+    pub fn area(lv: *const grid.Level, at: P) areas.Burst {
+        var out = areas.Burst{};
         const cells = actor.sweep(lv, at);
         for (cells.slice()) |p| out.push(p);
         return out;
@@ -209,14 +209,14 @@ fn Detonation(comptime Words: type) type {
         pub const FUEL_DAMAGE = DETONATION_FUEL;
         pub const KINDLE = if (@hasDecl(Words, "KINDLE")) Words.KINDLE else {};
         pub const REACH = ADJACENT;
-        pub const area = glacial.Patch(REACH).area;
+        pub const area = areas.Patch(REACH).area;
     };
 }
 pub fn covered(from: P, dir: mathx.Dir, at: P) bool {
     return mathx.ahead(from, dir.delta(), at);
 }
 const TOP_RANK = @import("progress.zig").RANKS;
-pub const Wall = grid.Area(@max(ArcaneBarrier.length(TOP_RANK), FireWall.length(TOP_RANK)));
+pub const Wall = grid.Bounded(P, @max(ArcaneBarrier.length(TOP_RANK), FireWall.length(TOP_RANK)));
 pub fn wall(lv: *const grid.Level, hero: P, start: P, end: P, rank: u8) ?Wall {
     return line(lv, hero, start, end, ArcaneBarrier.length(rank), ArcaneBarrier.RANGE, raisable);
 }

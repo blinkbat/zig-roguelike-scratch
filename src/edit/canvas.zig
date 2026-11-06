@@ -11,7 +11,6 @@ const look = @import("../gfx/look.zig");
 const raster = @import("../gfx/raster.zig");
 const dual = @import("../gfx/ground.zig");
 const game = @import("../game.zig");
-const modals = @import("modals.zig");
 const panel = @import("panel.zig");
 const editor = @import("editor.zig");
 const P = mathx.P;
@@ -24,7 +23,7 @@ const UNLINKED = look.EDIT_UNLINKED;
 const WARN = look.EDIT_WARN;
 const vec = raster.vec;
 
-pub fn visible(ed: *const editor.Editor, c: rl.Rectangle) grid.Box {
+fn visible(ed: *const editor.Editor, c: rl.Rectangle) grid.Box {
     const lo = mathx.P{ .x = @min(grid.W, @max(0, @as(i32, @intFromFloat(@floor(ed.cam[0]))))), .y = @min(grid.H, @max(0, @as(i32, @intFromFloat(@floor(ed.cam[1]))))) };
     return .{ .lo = lo, .hi = .{
         .x = @max(lo.x, @min(grid.W, @as(i32, @intFromFloat(@ceil(ed.cam[0] + c.width / ed.px()))) + 1)),
@@ -71,12 +70,12 @@ pub fn drawMap(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
     rl.drawRectangleLinesEx(raster.grown(boxRect(ed, c, grid.Box.inMap(0)), 1), 1, look.EDGE);
     var cells = grid.Cells.of(v.lo, v.hi);
     while (cells.next()) |p| {
-        if (ed.scene.lv.hasBarrel(p)) modals.seenPicture(g, .barrel, ed.cellRect(c, p));
+        if (ed.scene.lv.hasBarrel(p)) panel.toolFigure(g, .barrel, ed.cellRect(c, p));
     }
-    for (ed.scene.lv.torches()) |t| modals.seenPicture(g, .torch, ed.cellRect(c, t));
-    for (ed.scene.shownFoes()) |f| modals.seenPicture(g, .{ .body = f.kind }, ed.cellRect(c, f.at));
+    for (ed.scene.lv.torches()) |t| panel.toolFigure(g, .torch, ed.cellRect(c, t));
+    for (ed.scene.shownFoes()) |f| panel.toolFigure(g, .{ .foe = f.kind }, ed.cellRect(c, f.at));
     for (ed.map.script.folks()) |f| {
-        if (f.node == ed.node) modals.seenPicture(g, .folk, ed.cellRect(c, f.at));
+        if (f.node == ed.node) panel.toolFigure(g, .folk, ed.cellRect(c, f.at));
     }
     drawDoors(ed, g, c);
     if (ed.scene.start_at) |s| panel.toolFigure(g, .start, ed.cellRect(c, s));
@@ -106,6 +105,10 @@ const DOOR_BACK = look.fade(look.BG, 0.55);
 const PLAQUE_BG = look.fade(PANEL_BG, 0.85);
 pub const INK_EDGE: f32 = 2;
 const PICK_EDGE: f32 = 3;
+/// Door numbers crowd their glyph below this many pixels a cell.
+const LABEL_PX: f32 = 32;
+const LABEL_PAD = P{ .x = 2, .y = 1 };
+const LINK_W: f32 = 2;
 
 fn drawGrid(ed: *const editor.Editor, c: rl.Rectangle, v: grid.Box) void {
     const lo = ed.cellRect(c, v.lo);
@@ -129,9 +132,9 @@ fn drawDoors(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
         rl.drawRectangleRec(r, DOOR_BACK);
         widgets.glyph(&g.face, look.DOOR.ch, r, if (d.to == null) UNLINKED else look.DOOR.fg);
         rl.drawRectangleLinesEx(r, 1, if (d.to == null) WARN else look.DOOR.fg);
-        if (ed.px() >= editor.LABEL_PX) {
+        if (ed.px() >= LABEL_PX) {
             const label = std.fmt.bufPrintZ(&buf, "{d}", .{k}) catch "";
-            widgets.drawTag(&g.face, label, .{ .x = @intFromFloat(r.x), .y = @intFromFloat(r.y) }, editor.LABEL_PAD, PANEL_BG, null);
+            widgets.drawTag(&g.face, label, .{ .x = @intFromFloat(r.x), .y = @intFromFloat(r.y) }, LABEL_PAD, PANEL_BG, null);
         }
         const pk = ed.pick orelse continue;
         if (pk.eq(.{ .node = ed.node, .door = k })) rl.drawRectangleLinesEx(r, PICK_EDGE, PICKED);
@@ -269,12 +272,12 @@ pub fn drawGraph(ed: *editor.Editor, g: *game.Game, c: rl.Rectangle) void {
                 rl.drawCircleV(at, editor.DOT_R, WARN);
                 continue;
             };
-            if (to.node > n or (to.node == n and to.door > k)) rl.drawLineEx(at, ed.dotAt(c, to), editor.LINK_W, look.DOOR.fg);
+            if (to.node > n or (to.node == n and to.door > k)) rl.drawLineEx(at, ed.dotAt(c, to), LINK_W, look.DOOR.fg);
             rl.drawCircleV(at, editor.DOT_R, look.DOOR.fg);
         }
     }
     if (ed.dotUnder(c, ed.desk.mouse)) |l| rl.drawCircleLinesV(ed.dotAt(c, l), editor.DOT_R + editor.DOT_SLOP, look.UI_FOCUS);
-    if (ed.linking) |from| rl.drawLineEx(ed.dotAt(c, from), vec(ed.desk.mouse), editor.LINK_W, PICKED);
+    if (ed.linking) |from| rl.drawLineEx(ed.dotAt(c, from), vec(ed.desk.mouse), LINK_W, PICKED);
 }
 
 fn thumbRect(b: rl.Rectangle) rl.Rectangle {

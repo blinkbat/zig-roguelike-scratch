@@ -5,7 +5,7 @@ const mathx = @import("mathx.zig");
 /// Schmitt trigger plus DAS/ARR; `settle` merges staggered key presses into diagonals.
 pub const Stepper = struct {
     pub const FIRE: f32 = 0.50;
-    pub const REARM: f32 = 0.32;
+    const REARM: f32 = 0.32;
     pub const DAS: f32 = 0.28;
     pub const ARR: f32 = 0.2175;
     pub const SETTLE: f32 = 0.05;

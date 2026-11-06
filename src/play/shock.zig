@@ -2,7 +2,7 @@ const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const resilience = @import("resilience.zig");
-const glacial = @import("glacial.zig");
+const areas = @import("area.zig");
 
 pub const TURNS: u8 = 3;
 /// Cells from where lightning lands that the water it lands in carries it.
@@ -10,7 +10,7 @@ pub const CONDUCT: i32 = 2;
 pub const CONDUCTS = "The water carries the shock!";
 
 comptime {
-    std.debug.assert(CONDUCT <= glacial.BURST_MAX);
+    std.debug.assert(CONDUCT <= areas.BURST_MAX);
 }
 /// Percent more damage the hit it is spent on deals, rounded up.
 pub const MORE: i32 = 50;
@@ -33,13 +33,13 @@ pub fn afflict(a: anytype, _: *mathx.Rng) void {
 }
 
 /// The deep water and shallows joined to `at` within `CONDUCT` cells of it; none where `at` is dry.
-pub fn conducted(lv: *const grid.Level, at: mathx.P) glacial.Burst {
-    var out = glacial.Burst{};
+pub fn conducted(lv: *const grid.Level, at: mathx.P) areas.Burst {
+    var out = areas.Burst{};
     if (!lv.at(at).wet()) return out;
     out.push(at);
     var i: usize = 0;
     while (i < out.n) : (i += 1) {
-        const from = out.cells[i];
+        const from = out.items[i];
         for (mathx.ALL_DIRS) |d| {
             const p = from.add(d.delta());
             if (mathx.dist(at, p) > CONDUCT or !lv.at(p).wet() or out.has(p)) continue;

@@ -718,9 +718,9 @@ pub const Flow = struct {
     cell: [MEANDER_STEPS]P = undefined,
     n: usize = 0,
 
-    pub fn of(rng: *mathx.Rng, a: P, b: P) Flow {
+    pub fn of(rng: *mathx.Rng, a: P, b: P, wander: f32) Flow {
         var f = Flow{};
-        var m = Meander.init(a, b, 1);
+        var m = Meander.init(a, b, wander);
         while (m.next(rng)) |c| {
             f.cell[f.n] = c;
             f.n += 1;
@@ -1035,7 +1035,7 @@ test "a river runs edge to edge and parts the ground, and a join bridges it" {
     var lv = grid.Level.blank();
     var rng = mathx.Rng.init(0x21E);
     field(&lv, Palette.WILD);
-    const f = Flow.of(&rng, .{ .x = 0, .y = 32 }, .{ .x = grid.W - 1, .y = 30 });
+    const f = Flow.of(&rng, .{ .x = 0, .y = 32 }, .{ .x = grid.W - 1, .y = 30 }, 1);
     f.bank(&lv, 3, .shallows);
     f.fill(&lv, 3, .water);
     var st: Stretches = .{};

@@ -32,7 +32,7 @@ pub fn apply(lv: *grid.Level, rng: *mathx.Rng, _: u64, pal: carve.Palette, p: Pa
     var flows: [COUNT_MAX]carve.Flow = undefined;
     for (flows[0..p.count]) |*f| {
         const ends = p.course.ends(rng);
-        f.* = carve.Flow.of(rng, ends[0], ends[1]);
+        f.* = carve.Flow.of(rng, ends[0], ends[1], 1);
     }
     const bank = p.bank.tile();
     var native = grid.CellSet.initEmpty();
@@ -159,7 +159,7 @@ test "crossing cliffs with banks keep each other's rock" {
         var again = mathx.Rng.init(0xC4055 + s);
         for (0..p.count) |_| {
             const ends = p.course.ends(&again);
-            carve.Flow.of(&again, ends[0], ends[1]).fill(&cliffs, @floatFromInt(p.width), .rock);
+            carve.Flow.of(&again, ends[0], ends[1], 1).fill(&cliffs, @floatFromInt(p.width), .rock);
         }
         var here: usize = 0;
         for (cliffs.tile, lv.tile) |want, got| {

@@ -137,7 +137,7 @@ pub const Sprites = struct {
     fn alternateAt(self: *const Sprites, g: ground.Ground, p: mathx.P) ?rl.Texture2D {
         switch (g) {
             inline else => |k| if (comptime sprite_assets.GROUND_ALTERNATES.get(k)) |alts| {
-                const roll = mathx.cellHash(alts.seed, p) % alts.in;
+                const roll = sprite_assets.rollIn(alts.seed, alts.in, p);
                 inline for (alts.fields, 0..) |name, i| {
                     if (roll == i) return @field(self, name);
                 }
@@ -221,10 +221,10 @@ pub const Sprites = struct {
                         raster.blit(tex, src, pointRect(at, px), look.LIT);
                     } else for (0..4) |q| {
                         if (!corners.edgeQuarter(pair.upper, pair.lower, q)) continue;
-                        const dx = @as(f32, @floatFromInt(q % 2)) / 2;
-                        const dy = @as(f32, @floatFromInt(q / 2)) / 2;
+                        const dx = sideShift(q % 2);
+                        const dy = sideShift(q / 2);
                         const quarter_src = rl.Rectangle{ .x = src.x + dx * look.SPRITE_PX, .y = src.y + dy * look.SPRITE_PX, .width = look.SPRITE_PX / 2, .height = look.SPRITE_PX / 2 };
-                        raster.blit(tex, quarter_src, .{ .x = at[0] + (dx - 0.5) * px, .y = at[1] + (dy - 0.5) * px, .width = px / 2, .height = px / 2 }, look.LIT);
+                        raster.blit(tex, quarter_src, quarterRect(at, px, q), look.LIT);
                     }
                 }
                 if (surface or face != null) rl.endShaderMode();
@@ -252,7 +252,7 @@ pub const Sprites = struct {
             const piece = beds.pointAt(p).corners.waterCliffFor(bank) orelse continue;
             const at = cellAt(origin, p, px);
             for (0..2) |side| {
-                const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
+                const depth = beds.ground(piece.wetAt(p, side)) orelse continue;
                 const tex = self.cliffOf(depth, false) orelse continue;
                 if (face) |f| {
                     const d = look.waterDepth(depth).?;
@@ -279,12 +279,22 @@ pub const Sprites = struct {
     }
 
     fn cliffOf(self: *const Sprites, depth: ground.Ground, cap: bool) ?rl.Texture2D {
-        if (depth == .water) return if (cap) self.water_cliff_cap else self.water_cliff;
-        return if (cap) self.shallows_cliff_cap else self.shallows_cliff;
+        switch (depth) {
+            inline else => |k| {
+                const found = comptime sprite_assets.CLIFFS.get(k);
+                if (comptime found == null) return null;
+                const c = comptime found.?;
+                return if (cap) @field(self, c.cap) else @field(self, c.face);
+            },
+        }
     }
 
     fn sideShift(side: usize) f32 {
         return @as(f32, @floatFromInt(side)) / 2;
+    }
+
+    fn quarterRect(at: [2]f32, px: f32, q: usize) rl.Rectangle {
+        return .{ .x = at[0] + (sideShift(q % 2) - 0.5) * px, .y = at[1] + (sideShift(q / 2) - 0.5) * px, .width = px / 2, .height = px / 2 };
     }
 
     pub fn drawWaterCliffCaps(self: *const Sprites, beds: *const ground.Beds, origin: [2]f32, px: f32, water: ?WaterView) void {
@@ -299,16 +309,16 @@ pub const Sprites = struct {
             for (0..2) |side| {
                 const north = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = -1 });
                 const gr = beds.ground(north) orelse continue;
-                const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
+                const depth = beds.ground(piece.wetAt(p, side)) orelse continue;
                 if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
                 const fill = self.bankFill(gr) orelse continue;
                 const reflective = if (look.waterDepth(gr)) |d| self.beginWater(water, origin, px, d) else false;
-                raster.blit(fill.piece.tex, fill.lowerQuarter(side), .{ .x = at[0] + (sideShift(side) - 0.5) * px, .y = at[1] - px / 2, .width = px / 2, .height = px / 2 }, look.LIT);
+                raster.blit(fill.piece.tex, fill.lowerQuarter(side), quarterRect(at, px, side), look.LIT);
                 if (reflective) rl.endShaderMode();
             }
             for (0..2) |side| {
                 const land = p.add(.{ .x = @as(i32, @intCast(side)) - 1, .y = if (piece.outside(side)) 0 else -1 });
-                const depth = beds.ground(p.add(.{ .x = piece.wetSide(side), .y = 0 })) orelse continue;
+                const depth = beds.ground(piece.wetAt(p, side)) orelse continue;
                 const cap = self.cliffOf(depth, true) orelse continue;
                 const gr = beds.ground(land) orelse continue;
                 if (!ground.bankAbove(gr.tile(), depth.tile())) continue;
@@ -451,7 +461,8 @@ pub const Sprites = struct {
     pub fn figures(self: *const Sprites) [sprite_assets.FIGURES]?rl.Texture2D {
         var casters: [sprite_assets.PICTURE_CASTERS.len]?rl.Texture2D = undefined;
         for (sprite_assets.PICTURE_CASTERS, &casters) |t, *s| s.* = self.tiles.getPtrConst(t).*;
-        const props: [sprite_assets.PROP_FIGURES]?rl.Texture2D = .{ self.item_bag, self.chest_item_bag, self.mimic_closed, self.shrub2 };
+        var props: [sprite_assets.PROP_FIGURES.len]?rl.Texture2D = undefined;
+        inline for (sprite_assets.PROP_FIGURES, 0..) |name, i| props[i] = @field(self, name);
         return self.litFigures() ++ casters ++ self.forest ++ props;
     }
 
@@ -521,7 +532,7 @@ pub const Sprites = struct {
 const HUD_BORDER_PNG = sprite_assets.HUD_BORDER_PNG;
 pub const HUD_BORDER_CUT: i32 = 9;
 
-pub fn hudPanel(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, fill: rl.Color, tint: rl.Color) void {
+fn hudPanel(sprites: *const Sprites, x: i32, y: i32, width: i32, height: i32, fill: rl.Color, tint: rl.Color) void {
     rl.drawRectangle(x, y, width, height, fill);
     hudBorder(sprites, x, y, width, height, tint);
 }

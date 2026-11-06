@@ -70,6 +70,12 @@ pub fn kindle(lv: *grid.Level, cells: []const P, k: Kindle, rain: f32, rng: *mat
     return n;
 }
 
+/// Every cold blow's chance to put out each burning cell it reaches.
+pub const DOUSE: u32 = 85;
+/// Every cold blow's chance to put out each burning body it reaches.
+pub const QUENCH: u32 = 50;
+pub const QUENCHED = "stops burning";
+
 /// Each burning cell of `cells` goes out by `chance`, leaving its tile unburnt; how many did.
 pub fn douse(lv: *grid.Level, cells: []const P, chance: u32, rng: *mathx.Rng) usize {
     var n: usize = 0;

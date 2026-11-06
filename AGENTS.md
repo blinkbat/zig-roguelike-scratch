@@ -296,7 +296,7 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   (contract-checked against `bow.LONGEST`, the flight's capacity), so `Act.reach` and `bow.aimable`/`pick` take the act's reach.
   A missile that strikes nothing bursts on no one, but still comes down where its flight ends (`skills.comeDown`): fire boils
   the water its blast would reach and lightning conducts.
-  Area previews/damage/effects share geometry (each module's `burst`/`around`, `glacial.spread`, `cleave.arc`); use `fov.castInto` for
+  Area previews/damage/effects share geometry (each module's `burst`/`around`, `area.spread`, `cleave.arc`); use `fov.castInto` for
   terrain occlusion without changing sight or memory. Capture area targets before damage so newborn
   slime halves inherit statuses without being hit twice by that burst.
 - Juke is the free leap (`juke.FREE`); Blink spends a turn. Leap cursors may cross invalid cells but
@@ -343,17 +343,17 @@ Source paths below are relative to `src/`; scripts, docs and assets are relative
   steam (`Level.steam`) and smoke (`Level.smoke`) are separate volumes (`grid.Gas`), spread alike; healing gas mends every hurt body a fifteenth of its life a turn, as caustic gas eats at it.
   Smoke harms nothing and thins by `gas.THIN` a pass; at `grid.SMOKE_THICK` a cell hides what lies past it (`Level.hidesBeyond`) from
   sight casts, the hero's and so foes' noticing, while `fov.castInto` (burst geometry) sees through it. A pyre bloat's burst releases it.
-  Fire landing on deep water or shallows boils it into steam (`gas.boil`, `rewards.boilRound`): fireball and Combustion blasts over `glacial.wetIn`,
+  Fire landing on deep water or shallows boils it into steam (`gas.boil`, `rewards.boilRound`): fireball and Combustion blasts over `area.wetIn`,
   a fire arrow's impact cell, a pyre bloat's burst. Steam also loses a third of each cell a pass (`gas.CONDENSE`) and scalds for `gas.SCALD` fire damage, resisted.
   `gfx/cloud.zig` draws them in one premultiplied texture; gas harm and heals shed `fx.Puff` wisps of their gas's colour as they land.
 - `map/fire.zig` owns ground fire on `Level.flames` (turns left, Fire Wall's too) and `Level.heat` (cells it may still leap).
   `Tile.burns` tiles (grass, litter, reeds, crops, bridges; never walls or trees) catch from fire landing by each source's `KINDLE`
   chance and heat (`rewards.kindleRound`, from `combat.fireLands` and a pyre's burst), damped by rain (`fire.damped`, harder rain more).
   Each turn, at `combat.beginTurn`, a burning tile smokes, every fire may catch its burnable neighbours at one less heat and boil
-  wet ones into steam, and a burnt-out tile becomes dirt (`fire.ASH`; `Light.retile` follows). Standing in flames scorches
+  wet ones into steam, and a burnt-out tile becomes dirt (`fire.ASH`; `Light.follow` retiles once it is drawn). Standing in flames scorches
   (`Tick.scorched`) and may ignite through fire/burn resistance. `Presentation.flames_shown` holds new flames until their fire lands.
-  Cold landing over an area (`combat.coldLands`: glacial/frost vial bursts, frost nova, Shatter) puts out each burning cell by `glacial.DOUSE`
-  and each burning body in it by `glacial.QUENCH` (`fire.douse`, `rewards.douseRound`), drawn as the blow lands.
+  Cold landing over an area (`combat.coldLands`: glacial/frost vial bursts, frost nova, Shatter) puts out each burning cell by `fire.DOUSE`
+  and each burning body in it by `fire.QUENCH` (`fire.douse`, `rewards.douseRound`), drawn as the blow lands.
   The same cold freezes its shallows to ice (`map/ice.zig`, `rewards.freezeRound`) for `ice.THAWS` spent turns (`Level.thaw`), except
   under a swimmer; deep water never freezes. Ice is dry, so it carries no wet modifiers or shock and takes no Fire Wall. Fire landing
   (`rewards.boilRound`) or spreading beside it melts it back to shallows; `Presentation.tileShown` draws either change as its blow lands.

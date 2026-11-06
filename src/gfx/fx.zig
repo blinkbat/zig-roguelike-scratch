@@ -105,7 +105,7 @@ fn sprayOf(m: Matter) Spray {
     };
 }
 
-pub const Mote = struct {
+const Mote = struct {
     /// Cells: `x`, `y` on the ground and `z` up off it.
     p: [3]f32,
     v: [3]f32,
@@ -156,7 +156,7 @@ const Arc = struct {
 };
 
 /// A brief light an effect casts: reach in cells, peak gain, and seconds to fade.
-pub const Glow = struct { radius: f32, gain: f32, life: f32 };
+const Glow = struct { radius: f32, gain: f32, life: f32 };
 pub const Mark = struct { x: f32, y: f32, cell: f32, seed: usize, ink: rl.Color, alpha: f32, stacks: u8 };
 pub const EMBER_GLOW = Glow{ .radius = 2.2, .gain = 0.8, .life = 0.32 };
 const SHIMMER_GLOW = Glow{ .radius = 2.2, .gain = 0.65, .life = 0.4 };
@@ -297,7 +297,7 @@ const GOLDEN_ANGLE: f32 = 2.399963;
 const GLINT_FLASH: f32 = 0.85;
 const GLINT_CROSS_A: f32 = 0.65;
 
-pub const LevelUp = struct {
+const LevelUp = struct {
     life: f32 = 0,
 
     fn age(self: LevelUp) f32 {
@@ -644,14 +644,13 @@ pub const Fx = struct {
     }
 
     fn drawBleeding(self: *const Fx, m: Mark) void {
-        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
         const t = self.seconds.at();
         for (0..BLEED_DROPS) |i| {
             const phase = @as(f32, @floatFromInt(i)) / BLEED_DROPS;
-            const age = @mod(t * 0.9 + phase + @as(f32, @floatFromInt(seed)) * 0.23, 1);
-            const at = rl.Vector2{ .x = x + cell * (0.3 + phase * 0.4), .y = y + cell * (0.45 + age * 0.4) };
+            const age = @mod(t * 0.9 + phase + @as(f32, @floatFromInt(m.seed)) * 0.23, 1);
+            const at = rl.Vector2{ .x = m.x + m.cell * (0.3 + phase * 0.4), .y = m.y + m.cell * (0.45 + age * 0.4) };
             const r = look.SPRITE_PX * (0.022 + age * 0.012);
-            pixel.rect(at, r, r * 1.8, pxScale(cell), look.fade(ink, (1 - age * age) * 0.9));
+            pixel.rect(at, r, r * 1.8, pxScale(m.cell), look.fade(m.ink, (1 - age * age) * 0.9));
         }
     }
 
@@ -709,119 +708,105 @@ pub const Fx = struct {
     }
 
     fn drawChilled(self: *const Fx, m: Mark) void {
-        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
-        const t = self.seconds.at() + @as(f32, @floatFromInt(seed));
+        const t = self.seconds.at() + @as(f32, @floatFromInt(m.seed));
         for (0..CHILL_FLAKES) |i| {
             const phase = @as(f32, @floatFromInt(i)) / CHILL_FLAKES;
-            const cx = x + cell * (MARKS_FROM + phase * MARKS_SPAN);
-            const cy = y + cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
+            const cx = m.x + m.cell * (MARKS_FROM + phase * MARKS_SPAN);
+            const cy = m.y + m.cell * (0.75 + @sin(t * 2 + phase * mathx.TAU) * 0.06);
             const across = @as(f32, look.SPRITE_PX) * 0.07;
-            const col = look.fade(ink, 0.7 + @sin(t * 3 + phase) * 0.2);
-            pixel.cross(.{ .x = cx, .y = cy }, across, pxScale(cell), col);
+            const col = look.fade(m.ink, 0.7 + @sin(t * 3 + phase) * 0.2);
+            pixel.cross(.{ .x = cx, .y = cy }, across, pxScale(m.cell), col);
         }
     }
 
     /// Stakes driven in round its feet.
     fn drawPinned(_: *const Fx, m: Mark) void {
-        const x, const y, const cell, const ink = .{ m.x, m.y, m.cell, m.ink };
         for (PIN_STAKES) |s| {
-            const foot = rl.Vector2{ .x = x + cell * s[0], .y = y + cell * PIN_FOOT };
-            const top = rl.Vector2{ .x = foot.x + cell * s[1], .y = foot.y - cell * PIN_H };
-            pixel.line(top, foot, 2, pxScale(cell), ink);
+            const foot = rl.Vector2{ .x = m.x + m.cell * s[0], .y = m.y + m.cell * PIN_FOOT };
+            const top = rl.Vector2{ .x = foot.x + m.cell * s[1], .y = foot.y - m.cell * PIN_H };
+            pixel.line(top, foot, 2, pxScale(m.cell), m.ink);
         }
     }
 
     /// A ring round it, breathing.
     fn drawWarded(self: *const Fx, m: Mark) void {
-        const x, const y, const cell, const ink = .{ m.x, m.y, m.cell, m.ink };
         const breath = @sin(self.seconds.at() * WARD_RAD_S);
-        const r = cell * (WARD_R + breath * 0.02);
+        const r = m.cell * (WARD_R + breath * 0.02);
         for (0..WARD_DOTS) |i| {
             const a = @as(f32, @floatFromInt(i)) * mathx.TAU / WARD_DOTS;
             const k = 0.35 + 0.25 * @sin(a * 3 + self.seconds.at() * 2);
-            pixel.rect(.{ .x = x + cell * 0.5 + @cos(a) * r, .y = y + cell * 0.5 + @sin(a) * r }, 1, 2, pxScale(cell), look.fade(ink, k));
+            pixel.rect(.{ .x = m.x + m.cell * 0.5 + @cos(a) * r, .y = m.y + m.cell * 0.5 + @sin(a) * r }, 1, 2, pxScale(m.cell), look.fade(m.ink, k));
         }
     }
 
     /// Sparks flickering across it.
     fn drawShocked(self: *const Fx, m: Mark) void {
-        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
-        const t = self.seconds.at() * SHOCK_HZ + @as(f32, @floatFromInt(seed)) * 0.37;
-        const k = pxScale(cell);
-        const arm = cell * 0.05;
+        const t = self.seconds.at() * SHOCK_HZ + @as(f32, @floatFromInt(m.seed)) * 0.37;
+        const k = pxScale(m.cell);
+        const arm = m.cell * 0.05;
         for (0..SHOCK_SPARKS) |i| {
             const phase = @as(f32, @floatFromInt(i)) / SHOCK_SPARKS;
             if (@mod(t + phase * 3.7, 1) > 0.45) continue;
-            const at = rl.Vector2{ .x = x + cell * (MARKS_FROM + phase * MARKS_SPAN), .y = y + cell * (0.35 + @mod(phase * 2.3 + @floor(t) * 0.17, 0.4)) };
+            const at = rl.Vector2{ .x = m.x + m.cell * (MARKS_FROM + phase * MARKS_SPAN), .y = m.y + m.cell * (0.35 + @mod(phase * 2.3 + @floor(t) * 0.17, 0.4)) };
             const bend = rl.Vector2{ .x = at.x + arm * 0.3, .y = at.y };
-            pixel.line(.{ .x = at.x - arm, .y = at.y - arm }, bend, 1, k, ink);
-            pixel.line(bend, .{ .x = at.x - arm * 0.3, .y = at.y + arm * 1.2 }, 1, k, ink);
+            pixel.bend(.{ .x = at.x - arm, .y = at.y - arm }, bend, .{ .x = at.x - arm * 0.3, .y = at.y + arm * 1.2 }, 1, k, m.ink);
         }
     }
 
     /// A crack across its middle for each stack.
     fn drawSundered(_: *const Fx, m: Mark) void {
-        const x, const y, const cell, const stacks, const ink = .{ m.x, m.y, m.cell, m.stacks, m.ink };
-        const k = pxScale(cell);
-        for (0..stacks) |i| {
-            const cx = x + cell * (0.3 + @as(f32, @floatFromInt(i)) * 0.2);
-            const top = y + cell * 0.45;
-            const mid = rl.Vector2{ .x = cx + cell * 0.04, .y = top + cell * 0.08 };
-            pixel.line(.{ .x = cx, .y = top }, mid, 1, k, ink);
-            pixel.line(mid, .{ .x = cx - cell * 0.02, .y = top + cell * 0.16 }, 1, k, ink);
+        const k = pxScale(m.cell);
+        for (0..m.stacks) |i| {
+            const cx = m.x + m.cell * (0.3 + @as(f32, @floatFromInt(i)) * 0.2);
+            const top = m.y + m.cell * 0.45;
+            const mid = rl.Vector2{ .x = cx + m.cell * 0.04, .y = top + m.cell * 0.08 };
+            pixel.bend(.{ .x = cx, .y = top }, mid, .{ .x = cx - m.cell * 0.02, .y = top + m.cell * 0.16 }, 1, k, m.ink);
         }
     }
 
     /// A shut eye over its head.
     fn drawBlinded(_: *const Fx, m: Mark) void {
-        const x, const y, const cell, const ink = .{ m.x, m.y, m.cell, m.ink };
-        const k = pxScale(cell);
-        const lid = y + cell * HALO_Y;
-        pixel.line(.{ .x = x + cell * 0.38, .y = lid }, .{ .x = x + cell * 0.62, .y = lid }, 1, k, ink);
-        for ([_]f32{ 0.42, 0.5, 0.58 }) |across| pixel.line(.{ .x = x + cell * across, .y = lid }, .{ .x = x + cell * across, .y = lid + cell * 0.04 }, 1, k, ink);
+        const k = pxScale(m.cell);
+        const lid = m.y + m.cell * HALO_Y;
+        pixel.line(.{ .x = m.x + m.cell * 0.38, .y = lid }, .{ .x = m.x + m.cell * 0.62, .y = lid }, 1, k, m.ink);
+        for ([_]f32{ 0.42, 0.5, 0.58 }) |across| pixel.line(.{ .x = m.x + m.cell * across, .y = lid }, .{ .x = m.x + m.cell * across, .y = lid + m.cell * 0.04 }, 1, k, m.ink);
     }
 
     /// Dots circling over its head.
     fn drawConfused(self: *const Fx, m: Mark) void {
-        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
-        const t = self.seconds.at() * 3 + @as(f32, @floatFromInt(seed));
+        const t = self.seconds.at() * 3 + @as(f32, @floatFromInt(m.seed));
         for (0..CONFUSION_DOTS) |i| {
             const a = t + @as(f32, @floatFromInt(i)) * mathx.TAU / CONFUSION_DOTS;
-            const at = rl.Vector2{ .x = x + cell * (0.5 + @cos(a) * HALO_R), .y = y + cell * (HALO_Y + @sin(a) * HALO_R * 0.35) };
-            pixel.rect(at, 2, 2, pxScale(cell), look.fade(ink, 0.65 + 0.3 * @sin(a)));
+            const at = rl.Vector2{ .x = m.x + m.cell * (0.5 + @cos(a) * HALO_R), .y = m.y + m.cell * (HALO_Y + @sin(a) * HALO_R * 0.35) };
+            pixel.rect(at, 2, 2, pxScale(m.cell), look.fade(m.ink, 0.65 + 0.3 * @sin(a)));
         }
     }
 
     /// A chevron sinking beside its head.
     fn drawEnfeebled(self: *const Fx, m: Mark) void {
-        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
-        const k = pxScale(cell);
-        const sink = @mod(self.seconds.at() * ENFEEBLE_HZ + @as(f32, @floatFromInt(seed)) * 0.31, 1);
-        const tip = rl.Vector2{ .x = x + cell * ENFEEBLE_X, .y = y + cell * (HALO_Y + 0.08 + sink * 0.08) };
-        const arm = cell * 0.05;
-        const col = look.fade(ink, 0.9 - sink * 0.5);
-        pixel.line(.{ .x = tip.x - arm, .y = tip.y - arm }, tip, 1, k, col);
-        pixel.line(tip, .{ .x = tip.x + arm, .y = tip.y - arm }, 1, k, col);
+        const k = pxScale(m.cell);
+        const sink = @mod(self.seconds.at() * ENFEEBLE_HZ + @as(f32, @floatFromInt(m.seed)) * 0.31, 1);
+        const tip = rl.Vector2{ .x = m.x + m.cell * ENFEEBLE_X, .y = m.y + m.cell * (HALO_Y + 0.08 + sink * 0.08) };
+        const arm = m.cell * 0.05;
+        const col = look.fade(m.ink, 0.9 - sink * 0.5);
+        pixel.bend(.{ .x = tip.x - arm, .y = tip.y - arm }, tip, .{ .x = tip.x + arm, .y = tip.y - arm }, 1, k, col);
     }
 
     /// A bent bar at its feet, the leg it favours.
     fn drawMaimed(_: *const Fx, m: Mark) void {
-        const x, const y, const cell, const ink = .{ m.x, m.y, m.cell, m.ink };
-        const k = pxScale(cell);
-        const foot = y + cell * PIN_FOOT;
-        const knee = rl.Vector2{ .x = x + cell * 0.3, .y = foot - cell * 0.1 };
-        pixel.line(.{ .x = x + cell * 0.24, .y = foot }, knee, 2, k, ink);
-        pixel.line(knee, .{ .x = x + cell * 0.38, .y = foot - cell * 0.04 }, 2, k, ink);
+        const k = pxScale(m.cell);
+        const foot = m.y + m.cell * PIN_FOOT;
+        const knee = rl.Vector2{ .x = m.x + m.cell * 0.3, .y = foot - m.cell * 0.1 };
+        pixel.bend(.{ .x = m.x + m.cell * 0.24, .y = foot }, knee, .{ .x = m.x + m.cell * 0.38, .y = foot - m.cell * 0.04 }, 2, k, m.ink);
     }
 
     /// A trembling mark beside its head.
     fn drawFrightened(self: *const Fx, m: Mark) void {
-        const x, const y, const cell, const seed, const ink = .{ m.x, m.y, m.cell, m.seed, m.ink };
-        const k = pxScale(cell);
-        const shake = @sin(self.seconds.at() * FRIGHT_RAD_S + @as(f32, @floatFromInt(seed))) * FRIGHT_SHAKE;
-        const top = rl.Vector2{ .x = x + cell * (FRIGHT_X + shake), .y = y + cell * HALO_Y };
-        pixel.rect(top, 2, 6, k, ink);
-        pixel.rect(.{ .x = top.x, .y = top.y + 6 * k }, 2, 2, k, ink);
+        const k = pxScale(m.cell);
+        const shake = @sin(self.seconds.at() * FRIGHT_RAD_S + @as(f32, @floatFromInt(m.seed))) * FRIGHT_SHAKE;
+        const top = rl.Vector2{ .x = m.x + m.cell * (FRIGHT_X + shake), .y = m.y + m.cell * HALO_Y };
+        pixel.rect(top, 2, 6, k, m.ink);
+        pixel.rect(.{ .x = top.x, .y = top.y + 6 * k }, 2, 2, k, m.ink);
     }
 
     pub fn drawBurning(self: *const Fx, x: f32, y: f32, cell: f32, seed: usize, alpha: f32) void {

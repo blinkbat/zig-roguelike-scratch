@@ -21,7 +21,7 @@ pub const OWED_KINDS: usize = 14;
 /// A burst and a puff.
 const LOOSE_DUE: usize = 2;
 /// Capacity for every body's turn effects, hero hit and sweep, plus a burst and a puff, or chain jumps.
-pub const DUE: usize = actor.MAX * (OWED_KINDS + actor.SWEEP_CELLS) + @max(LOOSE_DUE, chain.JUMPS);
+const DUE: usize = actor.MAX * (OWED_KINDS + actor.SWEEP_CELLS) + @max(LOOSE_DUE, chain.JUMPS);
 
 pub const Event = union(enum) {
     blow: state.Blow,
@@ -106,11 +106,18 @@ pub const Queue = struct {
 
     /// Seconds until the blow that reveals the slot lands; 0 when none is due.
     pub fn revealsIn(self: *const Queue, slot: actor.ActorSlot) f32 {
+        return self.lastDue(slot, revealed);
+    }
+
+    fn revealed(e: *const Event) ?actor.ActorSlot {
+        return (e.after() orelse return null).reveals;
+    }
+
+    fn lastDue(self: *const Queue, slot: actor.ActorSlot, comptime target: fn (*const Event) ?actor.ActorSlot) f32 {
         var t: f32 = 0;
         for (self.due[0..self.due_n]) |*d| {
-            const a = d.what.after() orelse continue;
-            const child = a.reveals orelse continue;
-            if (child.index == slot.index) t = @max(t, d.t);
+            const s = target(&d.what) orelse continue;
+            if (s.index == slot.index) t = @max(t, d.t);
         }
         return t;
     }
@@ -121,12 +128,7 @@ pub const Queue = struct {
 
     /// Seconds until the last blow, sting or settle due on the slot lands.
     pub fn landsIn(self: *const Queue, slot: actor.ActorSlot) f32 {
-        var t: f32 = 0;
-        for (self.due[0..self.due_n]) |*d| {
-            const target = d.what.on() orelse continue;
-            if (target.index == slot.index) t = @max(t, d.t);
-        }
-        return t;
+        return self.lastDue(slot, Event.on);
     }
 
     /// Seconds until the slot is held no longer: its last due landed and flashed.
@@ -211,7 +213,7 @@ pub const Queue = struct {
     }
 };
 
-pub const ReadyIterator = struct {
+const ReadyIterator = struct {
     queue: *Queue,
     index: usize = 0,
 

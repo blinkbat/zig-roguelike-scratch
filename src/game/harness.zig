@@ -413,6 +413,11 @@ pub fn affixed(kind: items.Kind, affix: items.Affix) items.Item {
 pub const TEST_GAS = 100;
 pub const SLIME_HALF = actor.row(.slime_half).hp;
 
+pub fn expectGroundShown(g: *game.Game) !void {
+    const ground = g.pic.groundShown(&g.sim);
+    for (ground.tile, 0..) |t, i| try std.testing.expectEqual(g.pic.tileShown(&g.sim, grid.Level.of(i)), t);
+}
+
 pub fn drawnOut(g: *game.Game) void {
     g.st = .{};
     var t: f32 = 0;

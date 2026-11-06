@@ -148,9 +148,9 @@ const PROMPT_EDGE = look.PROMPT_EDGE;
 const PROMPT_LIP = look.PROMPT_LIP;
 const PROMPT_INK = look.PROMPT_INK;
 
-pub const FaceButton = enum { a, b, x, y };
+const FaceButton = enum { a, b, x, y };
 
-pub fn faceInk(b: FaceButton, sony: bool) rl.Color {
+fn faceInk(b: FaceButton, sony: bool) rl.Color {
     return switch (b) {
         .a => if (sony) look.SONY_CROSS else look.XBOX_A,
         .b => if (sony) look.SONY_CIRCLE else look.XBOX_B,

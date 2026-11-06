@@ -47,7 +47,7 @@ const LIGHT_REACH: f32 = 0.5;
 const SPOT_RATE: f32 = 9;
 const SHOW_RATE: f32 = 8;
 
-pub fn scaleFor(screen: mathx.P) i32 {
+fn scaleFor(screen: mathx.P) i32 {
     const tall = @divTrunc(screen.y, SCALE_STEP);
     const wide = @divTrunc(screen.x - 2 * menu.PANEL_PAD, N_I * PITCH_SPRITES * look.SPRITE_PX);
     return @max(1, @min(tall, wide));
@@ -73,7 +73,7 @@ pub fn figure(sprites: *const sprite.Sprites, k: actor.Kind, feet: mathx.P, scal
 }
 
 /// A soft beam from `top` down onto a pool at `feet`, sized for a figure `size` pixels tall.
-pub fn spotlight(cx: f32, top: f32, feet: f32, size: f32) void {
+fn spotlight(cx: f32, top: f32, feet: f32, size: f32) void {
     rl.gl.rlSetTexture(rl.gl.rlGetTextureIdDefault());
     defer rl.gl.rlSetTexture(0);
     rl.gl.rlBegin(rl.gl.rl_triangles);

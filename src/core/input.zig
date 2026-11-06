@@ -22,14 +22,13 @@ const OVERVIEW_KEY = bindings.OVERVIEW_KEY;
 
 pub const Device = names.Device;
 
-extern fn glfwGetJoystickGUID(jid: c_int) ?[*:0]const u8;
-extern fn glfwJoystickIsGamepad(jid: c_int) c_int;
+const glfw = @import("window.zig").glfw;
 
 /// raylib's MAX_GAMEPADS, the slots it polls.
 const PADS: usize = 4;
 
 fn mapped(at: i32) bool {
-    return rl.isGamepadAvailable(at) and glfwJoystickIsGamepad(at) != 0;
+    return rl.isGamepadAvailable(at) and glfw.glfwJoystickIsGamepad(at) != 0;
 }
 
 fn choosePad(was: ?i32, focused: bool, before: *const [PADS]Triggers, now: *const [PADS]Triggers) ?i32 {
@@ -48,7 +47,7 @@ fn choosePad(was: ?i32, focused: bool, before: *const [PADS]Triggers, now: *cons
 }
 
 fn kindAt(at: i32) Device {
-    return padOf(std.mem.span(glfwGetJoystickGUID(at) orelse return .xbox));
+    return padOf(std.mem.span(glfw.glfwGetJoystickGUID(at) orelse return .xbox));
 }
 
 const SONY = "4c05";
@@ -171,7 +170,7 @@ pub fn claimKeys() void {
     rl.setExitKey(.null);
 }
 
-pub const Typed = struct {
+const Typed = struct {
     const MAX: usize = 16;
     buf: [MAX]u8 = undefined,
     n: usize = 0,
@@ -228,7 +227,7 @@ fn typingHeld() bool {
     return false;
 }
 
-pub const TreeInput = struct {
+const TreeInput = struct {
     move: ?rl.Vector2 = null,
     pan: rl.Vector2 = .{ .x = 0, .y = 0 },
     zoom: f32 = 0,
@@ -767,7 +766,7 @@ pub const Desk = struct {
             }
         }
         self.alt = altDown();
-        self.fullscreen = self.alt and anyHit(&ENTER_KEYS);
+        self.fullscreen = fullscreenHit();
         self.enter = !self.alt and anyHit(&ENTER_KEYS);
         self.rub = rubbed();
         self.text_left = repeated(TEXT_LEFT);
@@ -821,8 +820,6 @@ fn rubbed() bool {
 fn repeated(k: rl.KeyboardKey) bool {
     return rl.isKeyPressed(k) or rl.isKeyPressedRepeat(k);
 }
-
-pub const upper = names.upper;
 
 fn anyHit(keys: []const rl.KeyboardKey) bool {
     for (keys) |k| {

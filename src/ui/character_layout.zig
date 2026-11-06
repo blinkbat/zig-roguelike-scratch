@@ -10,7 +10,7 @@ const PAGES = @import("character_view.zig").PAGES;
 const P = mathx.P;
 
 pub const WIDTH = 1100;
-pub const HEIGHT = 640;
+const HEIGHT = 640;
 pub const SIZE = P{ .x = WIDTH, .y = HEIGHT };
 pub const CONTENT_TOP = 132;
 pub const DETAIL_X = 568;
@@ -31,7 +31,7 @@ pub const COLUMN_GAP = 12;
 pub const EMPTY_DY = 46;
 /// The area under the tabs a page lays out in.
 pub const AREA = raster.rect(LIST_X, CONTENT_TOP, WIDTH - 2 * LIST_X, AREA_H);
-pub const AREA_H = 458;
+const AREA_H = 458;
 pub const CARD_W = 246;
 pub const CARD_GAP = 16;
 pub const CARD_H = 334;
@@ -49,14 +49,14 @@ pub const DIVIDER_FOOT = HEIGHT - 30;
 pub const NAMED_CELL_H = 96;
 /// Up from a held two-hander's name to "Both hands".
 pub const PAIR_DY = 22;
-pub const TAB_Y = 76;
-pub const TAB_W = 184;
-pub const TAB_H = 34;
-pub const TAB_GAP = 9;
+const TAB_Y = 76;
+const TAB_W = 184;
+const TAB_H = 34;
+const TAB_GAP = 9;
 pub const OFF_TAB_A: f32 = 0.7;
-pub const TABS_X: i32 = @divExact(WIDTH - @as(i32, PAGES.len) * TAB_W - (@as(i32, PAGES.len) - 1) * TAB_GAP, 2);
+const TABS_X: i32 = @divExact(WIDTH - @as(i32, PAGES.len) * TAB_W - (@as(i32, PAGES.len) - 1) * TAB_GAP, 2);
 /// Room each side of the tabs for the shoulder buttons' icons.
-pub const SHOULDER_W = 40;
+const SHOULDER_W = 40;
 comptime {
     std.debug.assert(LIST_X + SHOULDER_W < TABS_X);
 }

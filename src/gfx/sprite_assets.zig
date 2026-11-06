@@ -28,8 +28,8 @@ pub const PICTURE_CASTERS = blk: {
 };
 
 /// Every sprite that throws a shadow from its feet: bodies, barrel, picture casters, forest shapes, item bags, a mimic's chest and `shrub2.png`.
-pub const FIGURES: usize = LIT_FIGURES + PICTURE_CASTERS.len + WALL_MASKS.len + PROP_FIGURES;
-pub const PROP_FIGURES = 4;
+pub const FIGURES: usize = LIT_FIGURES + PICTURE_CASTERS.len + WALL_MASKS.len + PROP_FIGURES.len;
+pub const PROP_FIGURES = [_][:0]const u8{ "item_bag", "chest_item_bag", "mimic_closed", "shrub2" };
 /// The first of `figures`, the bodies and the barrel, which the body shader lights from their normals.
 pub const LIT_FIGURES: usize = Bodies.len + 1;
 
@@ -97,21 +97,19 @@ pub const Assets = struct {
     }
 
     fn bed(need: *Assets, g: ground.Ground) void {
-        if (g == .shallows) {
-            need.shallows_cliff = true;
-            need.shallows_cliff_cap = true;
-        }
-        if (g == .water) {
-            need.water_cliff = true;
-            need.water_cliff_cap = true;
-            need.shallows_water_cap = true;
-        }
+        if (g == .water) need.shallows_water_cap = true;
         inline for (WATER_EDGES) |edge| {
             if (g == edge.lower) @field(need, edge.name) = true;
         }
         switch (g) {
-            inline else => |k| if (comptime GROUND_ALTERNATES.get(k)) |alts| inline for (alts.fields) |name| {
-                @field(need, name) = true;
+            inline else => |k| {
+                if (comptime CLIFFS.get(k)) |c| {
+                    @field(need, c.face) = true;
+                    @field(need, c.cap) = true;
+                }
+                if (comptime GROUND_ALTERNATES.get(k)) |alts| {
+                    inline for (alts.fields) |name| @field(need, name) = true;
+                }
             },
         }
         if (GROUND_SHEETS.contains(g)) need.grounds.insert(g) else need.add(.{ .tile = g.tile() });
@@ -166,6 +164,12 @@ pub const WATER_EDGES = [_]struct { upper: ground.Ground, lower: ground.Ground, 
     .{ .upper = .dirt, .lower = .shallows, .name = "dirt_shallows_edges" },
     .{ .upper = .dirt, .lower = .water, .name = "dirt_water_edges" },
 };
+
+const Cliff = struct { face: [:0]const u8, cap: [:0]const u8 };
+pub const CLIFFS = std.EnumArray(ground.Ground, ?Cliff).initDefault(@as(?Cliff, null), .{
+    .shallows = .{ .face = "shallows_cliff", .cap = "shallows_cliff_cap" },
+    .water = .{ .face = "water_cliff", .cap = "water_cliff_cap" },
+});
 
 fn listed(comptime name: []const u8) bool {
     @setEvalBranchQuota(10_000);
@@ -319,7 +323,7 @@ const GrassDecor = enum { brush, flowers };
 
 pub fn grassDecor(t: grid.Tile, p: mathx.P) ?GrassDecor {
     if (t != .grass) return null;
-    const roll = mathx.cellHash(DECOR_SEED, p) % DECOR_IN;
+    const roll = rollIn(DECOR_SEED, DECOR_IN, p);
     if (roll < BRUSH_IN) return .brush;
     return if (roll == BRUSH_IN) .flowers else null;
 }
@@ -328,8 +332,12 @@ fn loneClump(p: mathx.P) bool {
     return oneIn(LONE_CLUMP_SEED, LONE_CLUMP_IN, p);
 }
 
+pub fn rollIn(seed: u64, in: u64, p: mathx.P) u64 {
+    return mathx.cellHash(seed, p) % in;
+}
+
 fn oneIn(seed: u64, in: u64, p: mathx.P) bool {
-    return mathx.cellHash(seed, p) % in == 0;
+    return rollIn(seed, in, p) == 0;
 }
 
 pub fn forestAt(lv: *const grid.Level, p: mathx.P) bool {

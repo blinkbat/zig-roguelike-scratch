@@ -485,12 +485,12 @@ pub const Book = struct {
                     const side: line_icons.ItemSize = if (named) .cell else .row;
                     const name_mid = foot + font.SMALL / 2;
                     if (offhandWeapon(view.inventory.gear, slot)) |weapon| {
-                        line_icons.drawItem(sprites, weapon.kind, side, glyph.x, glyph.y, look.fade(look.itemInk(weapon.rarity()), look.FADED_A));
+                        line_icons.drawItem(sprites, weapon.kind, side, glyph.x, glyph.y, look.fade(inkOf(weapon), look.FADED_A));
                         face.centred(BOTH_HANDS, glyph.x, name_mid - layout.PAIR_DY, font.SMALL, look.DIM);
-                        face.centred(face.fit(&fitted, weapon.name(&name_buf), font.SMALL, inner, false), glyph.x, name_mid, font.SMALL, look.itemInk(weapon.rarity()));
+                        face.centred(face.fit(&fitted, weapon.name(&name_buf), font.SMALL, inner, false), glyph.x, name_mid, font.SMALL, inkOf(weapon));
                     } else if (it) |worn| {
-                        line_icons.drawItem(sprites, worn.kind, side, glyph.x, glyph.y, look.itemInk(worn.rarity()));
-                        if (named) face.centred(face.fit(&fitted, worn.name(&name_buf), font.SMALL, inner, false), glyph.x, name_mid, font.SMALL, look.itemInk(worn.rarity()));
+                        line_icons.drawItem(sprites, worn.kind, side, glyph.x, glyph.y, inkOf(worn));
+                        if (named) face.centred(face.fit(&fitted, worn.name(&name_buf), font.SMALL, inner, false), glyph.x, name_mid, font.SMALL, inkOf(worn));
                     } else line_icons.drawItem(sprites, slotGlyph(slot), side, glyph.x, glyph.y, look.fade(look.DIM, look.FADED_A));
                 },
                 .inventory => if (stockAt(view, i)) |k| {
@@ -502,8 +502,8 @@ pub const Book = struct {
                     const at = i - stocked(view);
                     const it = view.inventory.bag[at];
                     const slots = it.kind.slots();
-                    line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, look.itemInk(it.rarity()));
-                    listRow(face, x, y, it.name(&name_buf), look.itemInk(it.rarity()), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name());
+                    line_icons.drawItem(sprites, it.kind, .row, x + layout.GLYPH_X, row_mid, inkOf(it));
+                    listRow(face, x, y, it.name(&name_buf), inkOf(it), if (items.spec(it.kind).two_handed) BOTH_HANDS else if (slots.len > 1) menu.titleOf(it.kind) else slots[0].name());
                 },
                 .nearby, .loot => {
                     const n = view.nearby[i];

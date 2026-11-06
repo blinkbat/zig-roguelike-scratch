@@ -14,7 +14,7 @@ pub const DESCRIPTION = std.fmt.comptimePrint("Swing through the {d} tiles in an
 
 pub const BASE = damage.Base{ .lo = 2, .hi = 4 };
 
-pub const Arc = grid.Area(WIDTH);
+pub const Arc = grid.Bounded(P, WIDTH);
 
 /// The cell toward `to` and the two either side of it round `from`, those a melee blow could reach.
 pub fn arc(lv: *const grid.Level, from: P, to: P) Arc {

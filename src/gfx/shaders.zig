@@ -5,7 +5,7 @@ const sky = @import("sky.zig");
 const look = @import("look.zig");
 
 /// Shaders `shader` has failed to compile since the process started.
-pub var shader_failures: u32 = 0;
+var shader_failures: u32 = 0;
 
 /// Null when it does not compile: raylib then hands back its default shader rather than an error.
 pub fn shader(fs: [:0]const u8) ?rl.Shader {

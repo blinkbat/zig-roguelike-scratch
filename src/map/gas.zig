@@ -132,7 +132,6 @@ fn reach(vol: *const [grid.CELLS]u16) ?grid.Box {
         lo = lo.min(p);
         hi = hi.max(p);
     }
-    if (hi.x < 0) return null;
     return grid.Box.between(lo, hi).grown(1);
 }
 

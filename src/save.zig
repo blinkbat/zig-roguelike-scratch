@@ -8,7 +8,6 @@ const grid = @import("map/grid.zig");
 const actor = @import("play/actor.zig");
 const hero = @import("play/hero.zig");
 const progress = @import("play/progress.zig");
-const menu = @import("ui/menu.zig");
 
 pub const SLOTS: usize = 3;
 pub const NOT_WRITTEN = "The last save did not write ({s})";
@@ -36,9 +35,9 @@ const RawLevel = data.LegacyLevel;
 const TAIL_FIELDS = data.TAIL_FIELDS;
 const Tail = data.LegacyTail;
 const TAIL = data.TAIL;
-pub const Summary = data.Summary;
+const Summary = data.Summary;
 
-pub const Unreadable = enum {
+const Unreadable = enum {
     other_build,
     damaged,
 
@@ -111,7 +110,7 @@ const MAP_FLAG_AT = HEAD + @sizeOf(Summary) + @sizeOf(Seed);
 const MAP_AT = MAP_FLAG_AT + @sizeOf(bool);
 const Raw = struct { map: RawMap, visit: RawVisit, lv: RawLevel };
 
-pub const Error = format.OpenError;
+const Error = format.OpenError;
 
 /// Into an empty `out`, all but the sum `seal` ends it with.
 fn writeLegacy(g: *game.Game, out: *std.ArrayList(u8)) !void {
@@ -250,15 +249,11 @@ fn parse(bytes: []const u8) !*format.Snapshot {
 }
 
 fn read(bytes: []const u8, g: *game.Game, map: *Map) !void {
-    const snapshot = try parse(bytes);
-    defer std.heap.page_allocator.destroy(snapshot);
-    format.apply(snapshot, g, map);
+    return format.readWith(parse, bytes, g, map);
 }
 
 fn peek(bytes: []const u8) !Summary {
-    const snapshot = try parse(bytes);
-    defer std.heap.page_allocator.destroy(snapshot);
-    return snapshot.summary;
+    return format.peekWith(parse, bytes);
 }
 
 pub fn number(slot: usize) usize {
@@ -636,6 +631,7 @@ test "a run reads back as it was written, and a short or foreign file leaves the
     std.debug.print("closed and opened chests preserved on both active and visited nodes\n", .{});
     try std.testing.expectEqualStrings("A line to keep.", back.sim.log.line(0).?);
     const s = try peek(buf.items);
+    const menu = @import("ui/menu.zig");
     var line: [menu.NOTE_MAX]u8 = undefined;
     try std.testing.expectEqualStrings(comptime std.fmt.comptimePrint(hero.HP_FMT, .{ 19, actor.row(actor.HERO).hp }) ++ menu.SEP ++ "Gold 17" ++ menu.SEP ++ "The Warrens", s.details(&line));
 }

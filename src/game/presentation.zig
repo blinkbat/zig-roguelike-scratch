@@ -563,11 +563,26 @@ pub const Presentation = struct {
         return self.tiles.on() or self.bursting != null or self.masked.count() > 0;
     }
 
-    /// The level as drawn: the simulation's, or while a tile is drawn as it was, `ground_shown`.
+    /// The level as drawn: the simulation's, or while a tile or light is drawn as it was, `ground_shown`.
     pub fn groundShown(self: *Presentation, sim: *const Simulation) *const grid.Level {
-        if (!self.reshapes()) return &sim.lv;
+        const reshaped = self.reshapes();
+        const held = self.lit.on();
+        if (!reshaped and !held) return &sim.lv;
         self.ground_shown = sim.lv;
-        for (&self.ground_shown.tile, 0..) |*t, i| t.* = self.tileShown(sim, grid.Level.of(i));
+        const tiles = &self.ground_shown.tile;
+        if (self.tiles.on()) for (tiles, self.tiles.before) |*t, was| {
+            if (fire.burntDown(was, t.*) or ice.turned(was, t.*)) t.* = was;
+        };
+        var masked = self.masked.iterator(.{});
+        while (masked.next()) |i| if (grid.Level.inside(sim.pool.items[i].at)) {
+            tiles[grid.Level.idx(sim.pool.items[i].at)] = .chest;
+        };
+        if (self.bursting) |b| if (grid.Level.inside(b.at)) {
+            tiles[grid.Level.idx(b.at)] = b.was;
+        };
+        if (held) for (&self.ground_shown.lit, self.lit.before) |*l, was| {
+            l.* = l.* or was;
+        };
         return &self.ground_shown;
     }
 
@@ -680,7 +695,12 @@ pub const Presentation = struct {
 
     /// The sky, experience bar and orbs ease toward what the drawn turns show.
     pub fn ease(self: *Presentation, sim: *const Simulation, dt: f32) void {
-        self.stepOcclusion(sim, dt);
+        self.easeOver(sim, self.groundShown(sim), dt);
+    }
+
+    /// `ease`, over the ground as `groundShown` gave it this frame.
+    pub fn easeOver(self: *Presentation, sim: *const Simulation, ground: *const grid.Level, dt: f32) void {
+        self.stepOcclusion(sim, &ground.tile, dt);
         self.stepSighted(sim, dt);
         self.hour_shown = day.wrapHour(self.hour_shown + day.toward(self.hour_shown, sim.clock.hour()) * mathx.easing(dt, HOUR_EASE));
         self.weather_shown = climate.eased(self.weather_shown, sim.weatherHere(), mathx.easing(dt, WEATHER_EASE));
@@ -704,8 +724,7 @@ pub const Presentation = struct {
         return .{ .x = at.x, .y = at.y - @as(f32, @floatFromInt(self.glide[i].lift())) };
     }
 
-    fn stepOcclusion(self: *Presentation, sim: *const Simulation, dt: f32) void {
-        const tiles = &self.groundShown(sim).tile;
+    fn stepOcclusion(self: *Presentation, sim: *const Simulation, tiles: *const [grid.CELLS]grid.Tile, dt: f32) void {
         var covered = grid.CellSet.initEmpty();
         if (sim.heroSlot()) |h| self.cover(sim, tiles, h, &covered);
         for (0..sim.pool.n) |i| if (!sim.isHero(i)) self.cover(sim, tiles, i, &covered);

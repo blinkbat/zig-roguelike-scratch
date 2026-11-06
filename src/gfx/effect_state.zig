@@ -3,7 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const actor = @import("../play/actor.zig");
 const damage = @import("../play/damage.zig");
-const glacial = @import("../play/glacial.zig");
+const areas = @import("../play/area.zig");
 const resilience = @import("../play/resilience.zig");
 const sunder = @import("../play/sunder.zig");
 const ward = @import("../play/ward.zig");
@@ -230,7 +230,7 @@ pub const Sting = struct { slot: actor.ActorSlot, after: ?After = null, fire_at:
 /// A body changed by no seen blow, as a chill wearing off or a heal: it catches up unflashed.
 pub const Settle = struct { slot: actor.ActorSlot, after: After, puff: ?Puff = null };
 
-pub const Burst = struct { at: mathx.P, area: glacial.Burst, element: damage.Element };
+pub const Burst = struct { at: mathx.P, area: areas.Burst, element: damage.Element };
 
 pub const Zap = struct { from: [2]f32, to: [2]f32 };
 

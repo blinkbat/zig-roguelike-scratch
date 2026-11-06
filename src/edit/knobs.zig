@@ -32,7 +32,6 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
     const fo = &pg.foes;
     const col = column(g);
     var y = panel.beginPane(ed, .inspector, box);
-    defer panel.endPane(ed);
     section(g, &y, "Base");
     choiceRow(ed, g, &y, atlas.Floor, &pg.floor, ALGO_CHOICE, .algo);
     switch (pg.floor) {
@@ -64,8 +63,40 @@ pub fn drawGenerator(ed: *editor.Editor, g: *game.Game, box: rl.Rectangle, pg: *
     }
     if (drop) |i| _ = fo.dropMakeup(i);
     if (editor.button(ed, g, col.row(y), "+ Makeup", false, fo.canAdd(), ADD_MAKEUP_TIP)) _ = fo.addMakeup();
-    panel.fitPane(ed, .inspector, y + widgets.ROW_H);
-    editor.refit(ed, pg, was);
+    panel.closePane(ed, .inspector, y + widgets.ROW_H);
+    refit(ed, pg, was);
+}
+
+pub fn choiceRows(ed: *editor.Editor, g: *game.Game, x: i32, top: i32, w: i32, feature: ?usize) void {
+    const pg = ed.rolled() orelse {
+        ed.popup = null;
+        return;
+    };
+    const was = pg.*;
+    if (feature) |i| {
+        if (i < pg.feature_n) popupRows(ed, g, atlas.Feature, &pg.feature[i], x, top, w);
+    } else popupRows(ed, g, atlas.Floor, &pg.floor, x, top, w);
+    if (ed.popup == null) refit(ed, pg, was);
+}
+
+fn popupRows(ed: *editor.Editor, g: *game.Game, comptime U: type, v: *U, x: i32, top: i32, w: i32) void {
+    var y = top;
+    for (std.enums.values(std.meta.Tag(U))) |t| {
+        if (editor.modalButton(ed, g, widgets.row(x, y, w), @tagName(t), t == std.meta.activeTag(v.*), true, null)) {
+            retag(U, v, t);
+            ed.popup = null;
+        }
+        y += widgets.ROW_H;
+    }
+}
+
+fn retag(comptime U: type, v: *U, tag: std.meta.Tag(U)) void {
+    if (tag != std.meta.activeTag(v.*)) v.* = U.of(tag);
+}
+
+fn refit(ed: *editor.Editor, pg: *atlas.Procgen, was: atlas.Procgen) void {
+    pg.* = pg.fit();
+    if (!std.meta.eql(was, pg.*)) ed.changed();
 }
 
 /// The generator's rows stand in the node's panel.
@@ -107,7 +138,7 @@ fn choiceRow(ed: *editor.Editor, g: *game.Game, y: *i32, comptime U: type, v: *U
     panel.rowLabel(g, column(g), y.*, c.label, widgets.TEXT);
     var tag = std.meta.activeTag(v.*);
     stepChoice(ed, g, y.*, std.meta.Tag(U), &tag, c.tip, true);
-    editor.retag(U, v, tag);
+    retag(U, v, tag);
     const slot = valueSlot(g, y.*, 0, 1);
     const value = widgets.stepValue(slot);
     if (valueHit(ed, value, "Every choice; " ++ c.tip)) editor.openPopup(ed, value, which, @intFromEnum(tag), g.screen.y);
@@ -129,7 +160,7 @@ const DRAW_STEPS = std.EnumArray(std.meta.Tag(pack.Draw), DrawStep).init(.{
 fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppable: bool) bool {
     var buf: [8]u8 = undefined;
     const x = column(g).left();
-    const span = widgets.row(x, y, editor.DRAW_SPAN);
+    const span = widgets.row(x, y, DRAW_SPAN);
     switch (m.draw) {
         inline else => |*n, tag| {
             const s = comptime DRAW_STEPS.get(tag);
@@ -144,9 +175,9 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
         .count => "Exactly this many packs; " ++ Desk.PAINT_CAPTION ++ " to draw by weight",
     };
     if (valueHit(ed, widgets.stepValue(span), flip_tip)) m.draw = m.draw.flipped();
-    var members = widgets.Lay{ .x = x + editor.MEMBERS_X, .y = y, .gap = editor.MEMBER_GAP };
+    var members = widgets.Lay{ .x = x + MEMBERS_X, .y = y, .gap = MEMBER_GAP };
     for (0..pack.MAKEUP_MAX) |i| {
-        const r = members.take(editor.MEMBER_W);
+        const r = members.take(MEMBER_W);
         if (i >= m.n) continue;
         const h = widgets.hot(ed.controls(), r, true, false, if (i == 0) "The lead: " ++ Desk.PAINT_CAPTION ++ " for the next foe" else "A member: " ++ Desk.PAINT_CAPTION ++ " for the next foe");
         widgets.plate(r, false, h.hot);
@@ -156,7 +187,7 @@ fn drawMakeup(ed: *editor.Editor, g: *game.Game, y: i32, m: *pack.Makeup, droppa
         if (h.hit) m.turn(i);
     }
     var dropped = false;
-    var tools = widgets.Lay{ .x = x + editor.MAKEUP_TOOLS_X, .y = y };
+    var tools = widgets.Lay{ .x = x + MAKEUP_TOOLS_X, .y = y };
     for (MAKEUP_TOOLS) |t| {
         const r = tools.take(widgets.STEP_W);
         const live = switch (t) {
@@ -201,7 +232,17 @@ const MakeupTool = enum {
     }
 };
 
-pub const MAKEUP_TOOLS = std.enums.values(MakeupTool);
+const MAKEUP_TOOLS = std.enums.values(MakeupTool);
+const DRAW_W: i32 = 36;
+const MEMBER_W: i32 = 24;
+const MEMBER_GAP: i32 = 2;
+const DRAW_SPAN: i32 = 2 * widgets.STEP_W + DRAW_W;
+const MEMBERS_X: i32 = DRAW_SPAN + widgets.BLOCK_GAP;
+const MAKEUP_TOOLS_X: i32 = widgets.INSPECT_INNER_W - @as(i32, MAKEUP_TOOLS.len) * widgets.STEP_PITCH + widgets.GAP;
+
+comptime {
+    std.debug.assert(MEMBERS_X + @as(i32, pack.MAKEUP_MAX) * (MEMBER_W + MEMBER_GAP) <= MAKEUP_TOOLS_X);
+}
 
 fn num(buf: []u8, comptime fmt: []const u8, v: anytype) [:0]const u8 {
     return std.fmt.bufPrintZ(buf, fmt, .{v}) catch "";

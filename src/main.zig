@@ -122,6 +122,7 @@ test {
     _ = @import("play/bleeding.zig");
     _ = @import("play/burning.zig");
     _ = @import("play/glacial.zig");
+    _ = @import("play/area.zig");
     _ = @import("play/juke.zig");
     _ = @import("play/blink.zig");
     _ = @import("play/spark.zig");

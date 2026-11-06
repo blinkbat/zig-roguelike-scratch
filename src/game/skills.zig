@@ -6,7 +6,7 @@ const grid = @import("../map/grid.zig");
 const heroes = @import("../play/hero.zig");
 const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
-const glacial = @import("../play/glacial.zig");
+const areas = @import("../play/area.zig");
 const juke = @import("../play/juke.zig");
 const pinning = @import("../play/pinning.zig");
 const flask = @import("../play/flask.zig");
@@ -319,10 +319,10 @@ fn castSpell(run: *game.Game, comptime act: skillbar.Act) void {
     combat.endTurn(run);
 }
 
-const Struck = actor.Ids(actor.MAX);
+const Struck = grid.Bounded(u16, actor.MAX);
 
 /// Snapshot targets before damage so newborn slime halves are not hit twice.
-pub fn foesIn(run: *game.Game, area: glacial.Burst) Struck {
+pub fn foesIn(run: *game.Game, area: areas.Burst) Struck {
     var out = Struck{};
     for (run.sim.pool.slice(), 0..) |a, i| {
         if (a.alive and a.foe() and area.has(a.at)) out.push(actor.Pool.idOf(i));

@@ -17,6 +17,7 @@ const RULE_GAP: i32 = 10;
 const ROW_H: i32 = font.BODY_LINE + 10;
 const ROW_INSET: i32 = 8;
 const TALK_VEIL = look.fade(look.BG, 0.45);
+const CHOICES_RULE_A: f32 = 0.8;
 const LINE_MAX: usize = @max(script.SAY_MAX, script.ASK_MAX) + 8;
 
 /// What the conversation panel shows; `choices` are only those offered.
@@ -87,10 +88,10 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
     sprite.backingIn(sprites, l.panel);
     if (v.who.len > 0) {
         face.engraved(std.fmt.bufPrintZ(&buf, "{s}", .{v.who}) catch "", l.text_x, l.who_y, font.HEAD, look.UI_GOLD);
-        rl.drawRectangle(l.text_x, l.who_rule_y, l.text_w, 1, look.fade(look.UI_GOLD, 0.35));
+        rl.drawRectangle(l.text_x, l.who_rule_y, l.text_w, 1, look.fade(look.UI_GOLD, look.FADED_A));
     }
     for (l.lines[0..l.line_n], 0..) |line, i| face.text(line, l.text_x, l.text_y + @as(i32, @intCast(i)) * font.BODY_LINE, font.BODY, look.TEXT);
-    if (l.row_n > 0) rl.drawRectangle(l.text_x, l.choices_rule_y, l.text_w, 1, look.fade(look.EDGE, 0.8));
+    if (l.row_n > 0) rl.drawRectangle(l.text_x, l.choices_rule_y, l.text_w, 1, look.fade(look.EDGE, CHOICES_RULE_A));
     for (l.rows[0..l.row_n], v.choices[0..l.row_n], 0..) |r, label, i| {
         const on = i == v.cursor;
         menu.band(r, on);
@@ -102,12 +103,7 @@ pub fn draw(face: *const font.Face, sprites: *const sprite.Sprites, screen: P, v
 }
 
 test "the conversation panel keeps every choice and its action inside the window at the smallest size" {
-    const Fixed = struct {
-        pub fn width(_: @This(), s: [:0]const u8, size: i32) i32 {
-            return @as(i32, @intCast(s.len)) * @divTrunc(size, 2);
-        }
-    };
-    const face = Fixed{};
+    const face = menu.TestFace{};
     var l: Layout = .{ .panel = undefined, .text_x = 0, .text_w = 0, .action = undefined };
     const longest = "a word " ** (script.SAY_MAX / 7);
     const asks = [_][]const u8{"y" ** script.ASK_MAX} ** script.MAX_CHOICES;

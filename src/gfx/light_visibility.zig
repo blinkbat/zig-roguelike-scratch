@@ -115,7 +115,7 @@ fn hidesGround(t: grid.Tile) bool {
     return t.blind() and t.uprightWhole() and !look.stands(t);
 }
 
-pub const Fade = struct {
+const Fade = struct {
     flat: ?f32 = null,
     n: usize = 0,
     short: [grid.Cells.square(VOID_REACH)]Short = undefined,

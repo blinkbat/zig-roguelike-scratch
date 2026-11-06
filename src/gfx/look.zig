@@ -63,7 +63,7 @@ pub fn castsPicture(t: grid.Tile) bool {
     return stands(t) or occludes(t);
 }
 
-pub const OCCLUDED_A: f32 = 0.4;
+const OCCLUDED_A: f32 = 0.4;
 
 pub const Occlusion = struct {
     body: [2]f32 = .{ 0, 0 },
@@ -305,7 +305,7 @@ pub const GLYPH_SHADOW_PX: i32 = 4;
 pub const DROP_SHADOW_A: u8 = 200;
 
 /// Brogue's `poisonGasColor`, the caustic bloat's.
-pub const CAUSTIC_BLOAT = rgb(0xbf40d9);
+const CAUSTIC_BLOAT = rgb(0xbf40d9);
 pub const GAS = rgb(0xd0609a);
 pub const HEALING_GAS = rgb(0x2ed6c0);
 pub const STEAM = rgb(0xe6e8ea);
@@ -366,17 +366,17 @@ pub fn mini(t: grid.Tile, lit: bool) rl.Color {
 pub const AIM_REACH = fade(GOLD, 0.10);
 pub const AIM_PATH = fade(GOLD, 0.28);
 pub const COLD = rgb(0x8cddf5);
-pub const PIN = rgb(0xc8c2b4);
-pub const SHOCK = rgb(0xb48cff);
-pub const SUNDER = rgb(0xb5652e);
-pub const BLIND = rgb(0x8a96a3);
-pub const CONFUSION = rgb(0x9ad46b);
-pub const ENFEEBLE = rgb(0xa58bb8);
-pub const MAIM = rgb(0xc9805e);
-pub const FEAR = rgb(0xe39bc4);
+const PIN = rgb(0xc8c2b4);
+const SHOCK = rgb(0xb48cff);
+const SUNDER = rgb(0xb5652e);
+const BLIND = rgb(0x8a96a3);
+const CONFUSION = rgb(0x9ad46b);
+const ENFEEBLE = rgb(0xa58bb8);
+const MAIM = rgb(0xc9805e);
+const FEAR = rgb(0xe39bc4);
 pub const WARD = rgb(0x6fa8f0);
 pub const MAGIC = WARD;
-pub const RARE = rgb(0xe8d15a);
+const RARE = rgb(0xe8d15a);
 
 pub fn itemInk(rarity: items.Rarity) rl.Color {
     return switch (rarity) {
@@ -555,7 +555,7 @@ pub fn colourOf(c: sky.Rgb, a: f32) rl.Color {
 }
 
 /// The opacity of every ui panel's backing and the minimap's.
-pub const BACKING_A: f32 = 0.7;
+const BACKING_A: f32 = 0.7;
 pub const BACKING = fade(rgb(0x101114), BACKING_A);
 pub const MINI_BG = fade(FOG, BACKING_A);
 pub const MINI_HERO = rgb(0x9cf08a);

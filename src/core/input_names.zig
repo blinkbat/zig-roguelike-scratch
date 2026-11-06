@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
+const upper = @import("text.zig").upper;
 
 /// Last active device; selects maker-specific button captions.
 pub const Device = enum {
@@ -69,6 +70,12 @@ pub fn glyphCaptions(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const 
     return out;
 }
 
+pub fn keyNames(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const u8 {
+    var out: [keys.len][:0]const u8 = undefined;
+    for (keys, &out) |key, *name| name.* = keyName(key);
+    return out;
+}
+
 pub fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
     return switch (k) {
         .f1, .f2, .f3, .f4, .f5, .f6, .f7, .f8, .f9, .f10, .f11, .f12 => comptime upper(@tagName(k)),
@@ -99,14 +106,6 @@ pub fn keyName(comptime k: rl.KeyboardKey) [:0]const u8 {
         .zero, .one, .two, .three, .four, .five, .six, .seven, .eight, .nine => &[_:0]u8{'0' + @intFromEnum(k) - @intFromEnum(rl.KeyboardKey.zero)},
         else => @compileError("no caption for " ++ @tagName(k)),
     };
-}
-
-/// Uppercase text at compile time.
-pub fn upper(comptime s: []const u8) [:0]const u8 {
-    var b: [s.len:0]u8 = undefined;
-    _ = std.ascii.upperString(&b, s);
-    const out = b;
-    return &out;
 }
 
 pub fn mouseName(comptime b: rl.MouseButton) [:0]const u8 {

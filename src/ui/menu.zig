@@ -1,6 +1,7 @@
 const sprite = @import("../gfx/sprites.zig");
 const std = @import("std");
 const wording = @import("../core/wording.zig");
+const text = @import("../core/text.zig");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const input = @import("../core/input.zig");
@@ -139,9 +140,9 @@ pub fn actionPrompt(face: *const font.Face, r: rl.Rectangle, prompt: prompt_icon
     return prompt.drawFrom(face, @as(i32, @intFromFloat(r.x)) + ACTION_PAD, raster.middleAt(r).y, font.BODY, alpha) + PROMPT_GAP;
 }
 
-pub const Note = @import("../core/text.zig").Note;
+pub const Note = text.Note;
 
-pub const Conjunction = enum { @"and", @"or" };
+const Conjunction = enum { @"and", @"or" };
 
 pub fn joined(comptime names: anytype, comptime last: Conjunction) [:0]const u8 {
     comptime var s: [:0]const u8 = "";
@@ -162,16 +163,20 @@ pub fn listSep(i: usize, n: usize, last: Conjunction) []const u8 {
 pub const Menu = struct {
     at: usize = 0,
 
-    pub fn step(self: *Menu, st: *const input.State, n: usize) ?usize {
-        if (n == 0) return null;
+    fn clampTo(self: *Menu, n: usize) bool {
+        if (n == 0) return false;
         self.at = @min(self.at, n - 1);
+        return true;
+    }
+
+    pub fn step(self: *Menu, st: *const input.State, n: usize) ?usize {
+        if (!self.clampTo(n)) return null;
         if (st.walk) |d| self.at = mathx.wrap(self.at, d.delta().y, n);
         return if (st.hit(CONFIRM)) self.at else null;
     }
 
     pub fn stepAt(self: *Menu, st: *const input.State, n: usize, screen: mathx.P) ?usize {
-        if (n == 0) return null;
-        self.at = @min(self.at, n - 1);
+        if (!self.clampTo(n)) return null;
         const win = window(screen.y, n, self.at);
         self.at = st.scrolled(self.at, n);
         if (win.len == n or st.click) if (pointed(st, win.len, Rows{ .screen = screen, .win = win }, Rows.box)) |k| {
@@ -183,8 +188,7 @@ pub const Menu = struct {
 
     /// `step` over every one of `n` rows that `boxOf` lays out: scrolled, pointed at, walked and confirmed.
     pub fn stepOver(self: *Menu, st: *const input.State, n: usize, ctx: anytype, comptime boxOf: fn (@TypeOf(ctx), usize) rl.Rectangle) ?usize {
-        if (n == 0) return null;
-        self.at = @min(self.at, n - 1);
+        if (!self.clampTo(n)) return null;
         if (pointAt(&self.at, st, n, ctx, boxOf)) |k| return k;
         return self.step(st, n);
     }
@@ -282,7 +286,7 @@ fn window(screen_h: i32, n: usize, at: usize) Window {
 }
 
 /// Every single-column list's widest, at any screen size.
-pub const LIST_W: i32 = 640;
+const LIST_W: i32 = 640;
 
 pub fn listWidth(screen: mathx.P) i32 {
     return @min(LIST_W, @max(1, screen.x - 2 * MARK_GAP));
@@ -302,7 +306,7 @@ pub fn titleY(first: rl.Rectangle) i32 {
     return @as(i32, @intFromFloat(first.y)) - TITLE_LEAD;
 }
 
-pub fn noteY(first: rl.Rectangle, count: usize) i32 {
+fn noteY(first: rl.Rectangle, count: usize) i32 {
     return rowTextY(first) + @as(i32, @intCast(count)) * ROW_STEP + NOTE_GAP;
 }
 
@@ -360,7 +364,7 @@ pub fn shout(buf: []u8, comptime fmt: []const u8, args: anytype) [:0]const u8 {
 }
 
 /// `shout` for a string known at compile time; call it `comptime`.
-pub const caps = input.upper;
+pub const caps = text.upper;
 
 pub const capital = wording.spoken;
 
@@ -386,6 +390,12 @@ test "display aliases use actual enum types without renaming identifiers" {
 test "an enum's label reads as words" {
     try std.testing.expectEqualStrings("Iron boots", named(@import("../play/items.zig").Kind.iron_boots));
 }
+
+pub const TestFace = struct {
+    pub fn width(_: @This(), s: [:0]const u8, size: i32) i32 {
+        return @as(i32, @intCast(s.len)) * @divTrunc(size, 2);
+    }
+};
 
 pub fn toggle(comptime label: []const u8, on: bool) [:0]const u8 {
     return if (on) label ++ ": On" else label ++ ": Off";
@@ -422,7 +432,7 @@ pub fn pageHeading(face: font.Face, screen: mathx.P, s: [:0]const u8, y: i32) vo
 }
 
 /// Hairlines fading out either side of a small diamond.
-pub fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
+fn rule(cx: i32, y: i32, half: i32, col: rl.Color) void {
     for ([_]bool{ true, false }) |shadow| {
         const by: i32 = @intFromBool(shadow);
         const ink = if (shadow) look.fade(look.BG, look.alphaOf(col)) else col;

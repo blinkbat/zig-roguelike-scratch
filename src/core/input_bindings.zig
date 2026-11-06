@@ -8,7 +8,8 @@ const padName = names.padName;
 const glyphCaption = names.glyphCaption;
 const keyGlyph = names.keyGlyph;
 const glyphCaptions = names.glyphCaptions;
-const upper = names.upper;
+const keyNames = names.keyNames;
+const upper = @import("text.zig").upper;
 const mouseName = names.mouseName;
 const ARROWS = names.ARROWS;
 const WHEEL = names.WHEEL;
@@ -25,7 +26,7 @@ pub const ZOOM_OUT_KEYS = [_]rl.KeyboardKey{ .minus, .kp_subtract };
 pub const OVERVIEW_KEY: rl.KeyboardKey = .home;
 pub const RUB_KEY: rl.KeyboardKey = .backspace;
 
-pub fn letters(comptime walks: []const Walk) [:0]const u8 {
+fn letters(comptime walks: []const Walk) [:0]const u8 {
     var out: []const u8 = "";
     for ([_]mathx.Dir{ .n, .w, .s, .e }) |dir| {
         const w = for (walks) |x| {
@@ -55,7 +56,7 @@ pub const WALKS = [_]Walk{
     .{ .d = .nw, .keys = &.{.kp_7} },
 };
 
-pub fn walkPad(comptime d: mathx.Dir) rl.GamepadButton {
+fn walkPad(comptime d: mathx.Dir) rl.GamepadButton {
     return for (WALKS) |w| {
         if (w.d == d) break w.pad.?;
     } else unreachable;
@@ -144,13 +145,7 @@ pub const CONFIRM = Button.a;
 pub const SLOT_ORDER = [_]Button{ .lb, .a, .x, .y, .b, .rb, .rt };
 const DIGIT_KEYS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero };
 pub const SLOT_KEYS = DIGIT_KEYS[0..SLOT_ORDER.len].*;
-pub const SLOT_CAPTIONS = captions(&SLOT_KEYS);
-
-pub fn captions(comptime keys: []const rl.KeyboardKey) [keys.len][:0]const u8 {
-    var out: [keys.len][:0]const u8 = undefined;
-    for (keys, &out) |k, *c| c.* = keyName(k);
-    return out;
-}
+pub const SLOT_CAPTIONS = keyNames(&SLOT_KEYS);
 
 pub const SECOND_KEYS = CTRL_KEYS;
 pub const SECOND_CAPTION = keyName(SECOND_KEYS[0]);
@@ -264,10 +259,10 @@ pub const Desk = struct {
     pub const TEXT_END: rl.KeyboardKey = .end;
     pub const TEXT_DELETE: rl.KeyboardKey = .delete;
     pub const TEXT_ALL: rl.KeyboardKey = .a;
-    pub const CTRL = keyGlyph(CTRL_KEYS[0]) ++ "+";
-    pub const ALT = keyGlyph(ALT_KEYS[0]) ++ "+";
+    const CTRL = keyGlyph(CTRL_KEYS[0]) ++ "+";
+    const ALT = keyGlyph(ALT_KEYS[0]) ++ "+";
     pub const SHIFT_CAPTION = keyGlyph(SHIFT_KEYS[0]);
-    pub const CTRL_SHIFT = CTRL ++ SHIFT_CAPTION ++ "+";
+    const CTRL_SHIFT = CTRL ++ SHIFT_CAPTION ++ "+";
     pub const PLAY_CAPTION = keyGlyph(PLAY_KEY);
     pub const PLAY_HERE_CAPTION = keyGlyph(PLAY_HERE_KEY);
     pub const SAVE_CAPTION = CTRL ++ keyGlyph(SAVE_KEY);
@@ -357,7 +352,7 @@ pub const Desk = struct {
         distinct(ctrl ++ &[_]rl.KeyboardKey{TEXT_ALL});
     }
 
-    pub fn distinct(comptime keys: []const rl.KeyboardKey) void {
+    fn distinct(comptime keys: []const rl.KeyboardKey) void {
         for (keys, 0..) |a, i| {
             for (keys[0..i]) |b| {
                 if (a == b) @compileError("two desk keys on " ++ @tagName(a));

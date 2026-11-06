@@ -64,7 +64,7 @@ fn added(l: *const light.Light, lv: *const grid.Level, q: [2]f32) f32 {
     return lum(l.at(lv, l.near(grid.Box.inMap(0), &ids), q)) - lum(l.at(lv, &.{}, q));
 }
 
-test "retile refreshes open light fields even when sight and memory stay settled" {
+test "following new tiles refreshes open light fields even when sight and memory stay settled" {
     var lv = litFloor();
     const at = P{ .x = 20, .y = 20 };
     lv.set(at, .reeds);
@@ -73,14 +73,14 @@ test "retile refreshes open light fields even when sight and memory stay settled
     const i = grid.Level.idx(at);
     try std.testing.expectEqual(@as(f32, 0), l.visibility.carry_open[i]);
     lv.set(at, .dirt);
-    l.retile(&lv);
+    l.follow(&lv);
     l.step(&lv, mathx.FRAME_DT);
     const fresh = try testLight(&lv);
     defer std.testing.allocator.destroy(fresh);
     try std.testing.expectEqualSlices(f32, &fresh.visibility.carry_open, &l.visibility.carry_open);
     try std.testing.expectEqualSlices(f32, &fresh.visibility.open_weight, &l.visibility.open_weight);
     try std.testing.expectEqualSlices(f32, &fresh.visibility.open_sight, &l.visibility.open_sight);
-    std.debug.print("retile: 3 derived light fields match fresh terrain with unchanged visibility\n", .{});
+    std.debug.print("follow: 3 derived light fields match fresh terrain with unchanged visibility\n", .{});
 }
 
 test "effect lights shade terrain and bodies without revealing memory or crossing walls" {

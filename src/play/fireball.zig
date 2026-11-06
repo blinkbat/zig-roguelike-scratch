@@ -4,7 +4,7 @@ const grid = @import("../map/grid.zig");
 const fire = @import("../map/fire.zig");
 const damage = @import("damage.zig");
 const burning = @import("burning.zig");
-const glacial = @import("glacial.zig");
+const areas = @import("area.zig");
 
 const P = mathx.P;
 
@@ -15,7 +15,7 @@ pub const VERB = "blasts";
 pub const BOLT = "fireball";
 pub const BOLT_RANGE: i32 = 6;
 pub const TAKES = burning.TAKES;
-pub const ELEMENT: damage.Element = .fire;
+pub const ELEMENT = burning.ELEMENT;
 pub const KINDLE = fire.Kindle{ .chance = 50 };
 pub const DESCRIPTION = std.fmt.comptimePrint("A fire bolt bursts on impact, hitting every foe within {d} tile{s}. {s}.", .{ BLAST, mathx.plural(BLAST), burning.BURN_NOTE });
 
@@ -27,7 +27,7 @@ pub const chance = burning.chance;
 pub const afflict = burning.afflict;
 pub const AILMENT = burning.AILMENT;
 
-pub const burst = glacial.Patch(BLAST).burst;
+pub const burst = areas.Patch(BLAST).burst;
 
 test "a fireball's blast takes the cell it strikes and the eight round it, but not past a wall" {
     var lv = grid.openFloor();

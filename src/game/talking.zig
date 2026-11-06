@@ -217,6 +217,30 @@ test "a choice clicked while confirm is pressed is one pick" {
     try std.testing.expectEqual(@as(u8, 1), g.sim.plot.talk.?.line);
 }
 
+test "a direction held as the conversation moves to another line does not walk the new line's choices" {
+    const w = try testWorld(
+        \\dialog wenna
+        \\line root
+        \\say Nobody comes down the well.
+        \\then pick
+        \\line pick
+        \\say Well?
+        \\ask Stay. -> end
+        \\ask Go. -> end
+        \\folk 0 6 5 wenna Old Wenna
+    );
+    defer std.testing.allocator.destroy(w);
+    const g = try game.boot(std.testing.allocator);
+    defer game.shut(std.testing.allocator, g);
+    game.beginMapAt(g, w, w.start, 9);
+    game.heroStep(g, .e, 0);
+    try std.testing.expectEqual(game.Mode.talk, std.meta.activeTag(g.mode));
+    g.st = .{ .device = .keys, .walk = .s, .pressed = .initOne(menu.CONFIRM) };
+    game.update(g, 0);
+    try std.testing.expectEqual(@as(u8, 1), g.sim.plot.talk.?.line);
+    try std.testing.expect(g.st.step.carried());
+}
+
 test "a dialog no way through ends never opens, while one whose way out is gated does" {
     const w = try testWorld(
         \\flag met

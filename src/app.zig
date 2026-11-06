@@ -785,7 +785,7 @@ pub fn run(edit: ?[]const u8) !void {
     try withGame(.{ .vsync_hint = true, .window_resizable = true }, NAME, body, false);
 }
 
-pub fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime inner: fn (*game.Game) anyerror!void, comptime startup_shown: bool) !void {
+fn withGame(flags: rl.ConfigFlags, title: [:0]const u8, comptime inner: fn (*game.Game) anyerror!void, comptime startup_shown: bool) !void {
     var startup = try std.time.Timer.start();
     const alloc = std.heap.c_allocator;
     rl.setConfigFlags(flags);

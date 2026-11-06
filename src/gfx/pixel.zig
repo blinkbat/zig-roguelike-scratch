@@ -173,8 +173,13 @@ pub fn line(a: rl.Vector2, b: rl.Vector2, width: f32, scale: f32, col: rl.Color)
     trace(a, b, width, scale, Filler{ .col = col });
 }
 
+pub fn bend(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, width: f32, scale: f32, col: rl.Color) void {
+    line(a, b, width, scale, col);
+    line(b, c, width, scale, col);
+}
+
 /// The art pixels, `scale` screen pixels a side from `origin`, a pixel-wide line from `a` to `b` passes through, each once.
-pub fn gridCells(a: rl.Vector2, b: rl.Vector2, origin: [2]f32, scale: f32, out: [][2]i32) [][2]i32 {
+fn gridCells(a: rl.Vector2, b: rl.Vector2, origin: [2]f32, scale: f32, out: [][2]i32) [][2]i32 {
     var x, var y = artCell(a, origin, scale);
     const x1, const y1 = artCell(b, origin, scale);
     const dx: i32 = @intCast(@abs(x1 - x));

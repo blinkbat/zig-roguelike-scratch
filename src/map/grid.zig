@@ -111,7 +111,7 @@ pub const Tile = enum(u8) {
         return TERRAIN.getPtrConst(t).bursts;
     }
 
-    /// Catches fire, and burns down to dirt.
+    /// Catches fire, and burns down to `fire.ASH`.
     pub fn burns(t: Tile) bool {
         return TERRAIN.getPtrConst(t).burns;
     }
@@ -138,6 +138,10 @@ pub const Tile = enum(u8) {
     /// The rest of a wider prop's footprint, drawn by the prop.
     pub fn isPart(t: Tile) bool {
         return TERRAIN.getPtrConst(t).part;
+    }
+
+    pub fn partOf(t: Tile) ?Tile {
+        return TERRAIN.getPtrConst(t).piece;
     }
 
     /// A wider prop or a part of one.
@@ -272,6 +276,8 @@ comptime {
         std.debug.assert(!a.liquid() or a.solid());
         std.debug.assert(!a.bursts() or a.ground() != null);
         std.debug.assert(a.wide() >= 1 and !(a.isPart() and a.wide() > 1));
+        std.debug.assert((a.wide() > 1) == (a.partOf() != null));
+        if (a.partOf()) |q| std.debug.assert(q.isPart());
         for (std.enums.values(Tile)[0..i]) |b| std.debug.assert(a.letter() != b.letter());
     }
 }
@@ -292,6 +298,7 @@ const Terrain = struct {
     burns: bool = false,
     wide: u8 = 1,
     part: bool = false,
+    piece: ?Tile = null,
 };
 const OPEN = Terrain{ .solid = false, .blind = false };
 const BARE = Terrain{ .solid = false, .blind = false, .rewards = true };
@@ -303,7 +310,7 @@ const LIQUID = Terrain{ .solid = true, .blind = false, .liquid = true };
 const DECOR = Terrain{ .solid = false, .blind = false, .ground = .grass };
 const TALL_PROP = Terrain{ .solid = true, .blind = true, .ground = .grass };
 const LOW_PROP = Terrain{ .solid = true, .blind = false, .ground = .grass };
-const CART = Terrain{ .solid = true, .blind = true, .ground = .grass, .wide = 2 };
+const CART = Terrain{ .solid = true, .blind = true, .ground = .grass, .wide = 2, .piece = .caravan_part };
 const CART_PART = Terrain{ .solid = true, .blind = true, .ground = .grass, .part = true };
 
 const TERRAIN = std.EnumArray(Tile, Terrain).init(.{
@@ -631,6 +638,12 @@ pub const Level = struct {
         self.tile[idx(p)] = t;
     }
 
+    pub fn putProp(self: *Level, p: P, t: Tile) void {
+        self.set(p, t);
+        var k: i32 = 1;
+        while (k < t.wide()) : (k += 1) self.set(p.add(.{ .x = k, .y = 0 }), t.partOf().?);
+    }
+
     pub fn who(self: *const Level, p: P) u16 {
         return cellOr(u16, &self.occupant, p, NO_ONE);
     }
@@ -766,8 +779,8 @@ pub const Level = struct {
     }
 
     /// The cells one step from `from` along `dirs` that a melee blow could reach, in their order.
-    pub fn reachable(self: *const Level, comptime N: usize, from: P, dirs: [N]mathx.Dir) Area(N) {
-        var out = Area(N){};
+    pub fn reachable(self: *const Level, comptime N: usize, from: P, dirs: [N]mathx.Dir) Bounded(P, N) {
+        var out = Bounded(P, N){};
         for (dirs) |d| {
             const p = from.add(d.delta());
             if (self.strikeable(p)) out.push(p);
@@ -792,7 +805,12 @@ pub const Level = struct {
     }
 
     pub fn walkable(self: *const Level, p: P) bool {
-        return inside(p) and !self.at(p).solid() and !self.hasBarrier(p);
+        return inside(p) and self.openAt(idx(p));
+    }
+
+    /// `walkable`, for a cell known to be inside.
+    pub fn openAt(self: *const Level, i: usize) bool {
+        return !self.tile[i].solid() and self.barrier[i] == 0;
     }
 
     pub fn hasBarrier(self: *const Level, p: P) bool {
@@ -854,24 +872,24 @@ pub const Nearest = struct {
     }
 };
 
-/// Up to `N` cells.
-pub fn Area(comptime N: usize) type {
+/// Up to `N` of `T`.
+pub fn Bounded(comptime T: type, comptime N: usize) type {
     return struct {
-        cells: [N]P = undefined,
+        items: [N]T = undefined,
         n: usize = 0,
 
-        pub fn slice(self: *const @This()) []const P {
-            return self.cells[0..self.n];
+        pub fn slice(self: *const @This()) []const T {
+            return self.items[0..self.n];
         }
 
-        pub fn push(self: *@This(), p: P) void {
-            self.cells[self.n] = p;
+        pub fn push(self: *@This(), x: T) void {
+            self.items[self.n] = x;
             self.n += 1;
         }
 
-        pub fn has(self: *const @This(), p: P) bool {
+        pub fn has(self: *const @This(), x: T) bool {
             for (self.slice()) |c| {
-                if (c.eq(p)) return true;
+                if (std.meta.eql(c, x)) return true;
             }
             return false;
         }
@@ -1073,10 +1091,11 @@ pub const Flood = struct {
         const i = self.queue[self.head];
         self.head += 1;
         const here = Level.of(i);
-        for (mathx.ALL_DIRS) |d| {
-            if (!self.lv.passOk(here, d)) continue;
-            const qi = Level.idx(here.add(d.delta()));
-            if (self.dist[qi] >= 0) continue;
+        for (STEPS) |d| {
+            const q = here.add(d);
+            if (!Level.inside(q)) continue;
+            const qi = Level.idx(q);
+            if (self.dist[qi] >= 0 or !self.lv.openAt(qi)) continue;
             self.dist[qi] = self.dist[i] + 1;
             self.queue[self.tail] = @intCast(qi);
             self.tail += 1;

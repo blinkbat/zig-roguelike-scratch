@@ -18,7 +18,7 @@ const NO_ROOM = "The node has no room for another {s}";
 pub const LINKING = "Linking node {d} door {d}: ";
 pub const LINK_CANCELLED = "Link cancelled";
 
-pub const Spanned = tool_catalog.Spanned;
+const Spanned = tool_catalog.Spanned;
 pub const Span = struct { from: P, erase: bool, shape: Spanned };
 
 pub const Board = struct {
@@ -142,7 +142,7 @@ pub fn pickUp(ed: *Editor, p: P, second: bool) void {
         .procgen => if (nd.doorAt(p) != null) .door else null,
     };
     if (picked) |t| {
-        ed.setTool(t);
+        ed.takeTool(t);
         return ed.say("Picked up the {s} tool", .{t.name()});
     }
     ed.preview();
@@ -150,7 +150,7 @@ pub fn pickUp(ed: *Editor, p: P, second: bool) void {
     const under = ed.scene.lv.at(p);
     const t = if (under.single()) under else under.bare();
     ed.ink.set(.of(second), t);
-    ed.setTool(.paint);
+    ed.takeTool(.paint);
     ed.say("{s} is the {s} ink", .{ @tagName(t), @tagName(editor.Ink.of(second)) });
 }
 
@@ -359,7 +359,7 @@ pub fn layBoard(ed: *Editor, at: P) void {
     if (laid.changed) ed.changed();
 }
 
-pub const Pasted = struct { left: usize = 0, changed: bool = false };
+const Pasted = struct { left: usize = 0, changed: bool = false };
 
 pub fn layAside(ed: *Editor, at: P) Pasted {
     const cached = &ed.paste_preview;

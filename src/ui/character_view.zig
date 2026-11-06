@@ -90,7 +90,7 @@ pub const Nearby = union(enum) {
 };
 pub const Vital = struct { now: i32 = 0, max: i32 = 0 };
 /// Armour and dodge as combat resolves them where the hero stands, terrain and sunder included.
-pub const Defence = struct { dodge: u32, armour: i32 };
+const Defence = struct { dodge: u32, armour: i32 };
 pub const View = struct {
     class: hero.Class,
     name: []const u8,

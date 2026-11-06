@@ -645,8 +645,10 @@ test "a line, a box and a fill lay the inks, each one undo, and the eyedropper p
     ed.tool = .paint;
     placement.pickUp(ed, .{ .x = 22, .y = 22 }, true);
     try std.testing.expectEqual(grid.Tile.water, ed.ink.get(.second));
+    ed.shape = .select;
     placement.pickUp(ed, .{ .x = 2, .y = 2 }, false);
     try std.testing.expect(ed.tool.eql(.{ .foe = .pib }));
+    try std.testing.expect(ed.shape != .select);
     for (0..3) |_| ed.undo();
     placement.pickUp(ed, .{ .x = 22, .y = 22 }, false);
     try std.testing.expect(tileAt(ed, .{ .x = 22, .y = 22 }) != .water);

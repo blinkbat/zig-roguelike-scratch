@@ -21,7 +21,7 @@ const AREA = @import("character_layout.zig").AREA;
 const P = mathx.P;
 pub const Panel = enum { skills, passives };
 pub const View = struct { cursor: usize = 0, zoom: f32 = ZOOM_MIN, pan: rl.Vector2 = .{ .x = 0, .y = 0 } };
-pub const Loadout = struct { stats: attrs.Attrs, gear: items.Gear, steady: u8 = 0 };
+const Loadout = struct { stats: attrs.Attrs, gear: items.Gear, steady: u8 = 0 };
 pub const ZOOM_MIN: f32 = 1;
 pub const ZOOM_MAX: f32 = 3.2;
 pub const ZOOM_START: f32 = 2.4;

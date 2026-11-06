@@ -53,19 +53,36 @@ const KIND_MAX_W: i32 = 200;
 const SAY_ROWS: i32 = 4;
 const WHEEL_PX: i32 = ROW * 2;
 
-pub const Page = enum { dialogs, script };
+pub const Page = enum {
+    dialogs,
+    script,
 
-pub const LineAt = struct { d: u8, l: u8 };
-pub const ChoiceAt = struct { d: u8, l: u8, c: u8 };
-pub const TableAt = struct { t: script.Table, i: u8 };
+    pub fn label(p: Page) [:0]const u8 {
+        return switch (p) {
+            .dialogs => "Dialog",
+            .script => "Script",
+        };
+    }
+
+    pub fn tip(p: Page) [:0]const u8 {
+        return switch (p) {
+            .dialogs => "Folk and the conversations they open: lines, choices and what each does",
+            .script => "Triggers: when every condition holds after a turn, their actions run in order",
+        };
+    }
+};
+
+const LineAt = struct { d: u8, l: u8 };
+const ChoiceAt = struct { d: u8, l: u8, c: u8 };
+const TableAt = struct { t: script.Table, i: u8 };
 /// An action in place: a trigger's, a line's or a choice's.
-pub const ActAt = union(enum) {
+const ActAt = union(enum) {
     trigger: struct { t: u8, a: u8 },
     line: struct { d: u8, l: u8, a: u8 },
     choice: struct { d: u8, l: u8, c: u8, a: u8 },
 };
 /// The one piece of words being typed into, written to the map as it is typed.
-pub const Focus = union(enum) {
+const Focus = union(enum) {
     folk: u8,
     dialog: u8,
     line: LineAt,
@@ -86,12 +103,8 @@ pub const State = struct {
     field: Field = .{},
     /// A field took this frame's click.
     claimed: bool = false,
-    list: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
-    list_top: i32 = 0,
-    list_most: i32 = 0,
-    detail: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
-    detail_top: i32 = 0,
-    detail_most: i32 = 0,
+    list: widgets.Scrolled = .{},
+    detail: widgets.Scrolled = .{},
 };
 
 pub fn openFolk(ed: *editor.Editor, i: u8) void {
@@ -101,7 +114,7 @@ pub fn openFolk(ed: *editor.Editor, i: u8) void {
 
 pub fn open(ed: *editor.Editor, p: Page) void {
     ed.plot.focus = null;
-    ed.plot.detail_top = 0;
+    ed.plot.detail.top = 0;
     if (p == .dialogs and ed.plot.pick == .none and ed.map.script.dialog_n > 0) ed.plot.pick = .{ .dialog = 0 };
     if (p == .script and ed.plot.trigger == null and ed.map.script.trigger_n > 0) ed.plot.trigger = 0;
     ed.ask(.{ .plot = p });
@@ -119,8 +132,8 @@ pub fn keys(ed: *editor.Editor) void {
     if (d.undo or d.redo) return;
     if (d.wheel != 0) {
         const by = d.notch() * WHEEL_PX;
-        if (raster.holds(s.list, d.mouse)) widgets.scrollBy(&s.list_top, s.list_most, by);
-        if (raster.holds(s.detail, d.mouse)) widgets.scrollBy(&s.detail_top, s.detail_most, by);
+        s.list.wheel(d.mouse, by);
+        s.detail.wheel(d.mouse, by);
     }
     if (s.focus) |f| {
         const t = (if (d.back or d.enter) null else target(&ed.map.script, f)) orelse {
@@ -285,32 +298,23 @@ fn split(w: i32, comptime shares: []const i32, comptime caps: []const i32) [shar
 }
 
 fn listArea(ed: *editor.Editor, f: Frame) widgets.Scroll {
-    const s = &ed.plot;
-    s.list = raster.rect(f.x, f.y, f.listW(), f.bottom - f.y);
-    return .{ .box = s.list, .top = &s.list_top, .most = &s.list_most };
+    return ed.plot.list.at(raster.rect(f.x, f.y, f.listW(), f.bottom - f.y));
 }
 
-const Column = struct { x: i32, w: i32 };
-
 /// Ends the list at `y`; the column right of it, past its divider.
-fn rightOf(ed: *editor.Editor, f: Frame, list: widgets.Scroll, y: i32) Column {
-    endScroll(ed, list, y);
+fn rightOf(ed: *editor.Editor, f: Frame, list: widgets.Scroll, y: i32) widgets.Column {
+    list.close(&ed.clip, y, 0);
     const x = f.x + f.listW() + PAD;
     widgets.divider(x, f.y, f.bottom);
     return .{ .x = x, .w = f.x + f.w - x };
-}
-
-fn detailArea(ed: *editor.Editor, box: rl.Rectangle) widgets.Scroll {
-    const s = &ed.plot;
-    s.detail = box;
-    return .{ .box = s.detail, .top = &s.detail_top, .most = &s.detail_most };
 }
 
 fn frameOf(ed: *editor.Editor, g: *game.Game, title: [:0]const u8) Frame {
     const page = widgets.pageFrame(&g.face, g.screen, title);
     const f = page.frame;
     if (button(ed, g, f.button(page.bottom - ROW, 0), widgets.keyed("Close", Desk.BACK_CAPTION), false, true, "Every change is in the map already; it saves with it")) close(ed);
-    return .{ .x = f.x + PAD, .y = f.y, .w = f.w - 2 * PAD, .bottom = page.bottom - ROW - GAP };
+    const col = page.column();
+    return .{ .x = col.left(), .y = f.y, .w = col.inner(), .bottom = page.bottom - ROW - GAP };
 }
 
 const button = editor.modalButton;
@@ -415,12 +419,6 @@ fn words(ed: *editor.Editor, g: *game.Game, r: rl.Rectangle, f: Focus, blank: []
     }
 }
 
-/// The scrolled area's content ran to `bottom`: stops clipping, then measures and draws its bar.
-fn endScroll(ed: *editor.Editor, area: widgets.Scroll, bottom: i32) void {
-    widgets.unclip(&ed.clip);
-    area.end(bottom, 0);
-}
-
 fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
     const s = &ed.plot;
     const m = &ed.map.script;
@@ -448,7 +446,7 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
         const line = std.fmt.bufPrintZ(&buf, "{s}  (node {d})", .{ fk.called(), fk.node }) catch "";
         if (button(ed, g, widgets.row(f.x, y, lw - GAP), line, s.pick == .folk and s.pick.folk == i, true, "What this folk is called and which dialog it opens")) {
             s.pick = .{ .folk = @intCast(i) };
-            s.detail_top = 0;
+            s.detail.top = 0;
         }
         y += STEP;
     }
@@ -466,7 +464,7 @@ fn drawDialogs(ed: *editor.Editor, g: *game.Game) void {
         if (button(ed, g, widgets.row(f.x, y, lw - GAP), std.fmt.bufPrintZ(&buf, "{s}", .{dl.name.text()}) catch "", s.pick == .dialog and s.pick.dialog == i, true, "Its lines, what they say and where each choice goes")) {
             s.pick = .{ .dialog = @intCast(i) };
             s.line = 0;
-            s.detail_top = 0;
+            s.detail.top = 0;
         }
         y += STEP;
     }
@@ -530,7 +528,7 @@ pub fn talksTo(m: *const Script, f: *const script.Folk) []const u8 {
     return if (f.dialog) |d| m.dialog[d].name.text() else "nothing to say";
 }
 
-/// A dialog name from a folk's: its first word, lowered, where it reads back.
+/// A dialog name from a folk's: its words lowered and joined by `_`, where it reads back.
 fn stemOf(buf: *[script.NAME_MAX]u8, name: []const u8) []const u8 {
     var n: usize = 0;
     for (name) |c| {
@@ -574,7 +572,7 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
         const label = std.fmt.bufPrintZ(&line_buf, "{s}{s}: {s}", .{ if (i == 0) "> " else "", ln.name.text(), first }) catch "";
         if (button(ed, g, widgets.row(lx, y, lines_w - GAP), label, s.line == i, true, if (i == 0) "Where it opens" else null)) {
             s.line = @intCast(i);
-            s.detail_top = 0;
+            s.detail.top = 0;
         }
         y += STEP;
     }
@@ -598,10 +596,10 @@ fn drawDialog(ed: *editor.Editor, g: *game.Game, di: u8, x: i32, top: i32, w: i3
     }
     const dx = x + lines_w + PAD;
     const dw = x + w - dx;
-    const area = detailArea(ed, raster.rect(dx, top + STEP + GAP, dw, bottom - top - STEP - GAP));
+    const area = s.detail.at(raster.rect(dx, top + STEP + GAP, dw, bottom - top - STEP - GAP));
     widgets.divider(dx, top + STEP + GAP, bottom);
     const end = drawLine(ed, g, di, s.line, dx, area.begin(&ed.clip), dw - PAD);
-    endScroll(ed, area, end);
+    area.close(&ed.clip, end, 0);
 }
 
 fn drawLine(ed: *editor.Editor, g: *game.Game, di: u8, li: u8, x: i32, top: i32, w: i32) i32 {
@@ -815,18 +813,18 @@ fn actRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, a: *script.
         .text => words(ed, g, widgets.row(fx, y, fw), .{ .note = at }, "(the line the log shows)"),
         .flag => {
             const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, OP_W });
-            tableStep(ed, g, lay.take(ws[0]), .flag, &a.slot);
+            tableStep(ed, g, lay.take(ws[0]), script.actRef(a.kind).?.table, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Setop, &a.setop, &SETOP_WORDS, null);
         },
         .counter => {
             const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, COUNTOP_W, NUMBER_W });
-            tableStep(ed, g, lay.take(ws[0]), .counter, &a.slot);
+            tableStep(ed, g, lay.take(ws[0]), script.actRef(a.kind).?.table, &a.slot);
             wordStep(ed, g, lay.take(ws[1]), script.Countop, &a.countop, &COUNTOP_WORDS, null);
             numberStep(ed, g, lay.take(ws[2]), &a.n, a.kind.span(), "", "By how much");
         },
         .timer => {
             const ws = split(fw, &.{ 3, 2 }, &.{ WHICH_W, UNIT_W });
-            tableStep(ed, g, lay.take(ws[0]), .timer, &a.slot);
+            tableStep(ed, g, lay.take(ws[0]), script.actRef(a.kind).?.table, &a.slot);
             numberStep(ed, g, lay.take(ws[1]), &a.n, a.kind.span(), " turns", "Turns it runs before it is done");
         },
         .wait => numberStep(ed, g, widgets.row(fx, y, UNIT_W), &a.n, a.kind.span(), " turns", "Spent turns held before the next action"),
@@ -914,7 +912,7 @@ fn condRow(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, c: *script
         },
         .counter => {
             const ws = split(fw, &.{ 4, 3, 3 }, &.{ WHICH_W, OP_W, NUMBER_W });
-            tableStep(ed, g, lay.take(ws[0]), .counter, &c.slot);
+            tableStep(ed, g, lay.take(ws[0]), script.condTable(c.kind).?, &c.slot);
             cmpStep(ed, g, lay.take(ws[1]), &c.cmp);
             numberStep(ed, g, lay.take(ws[2]), &c.n, c.kind.span(), "", "The number it is held to");
         },
@@ -972,7 +970,7 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
         if (m.addTrigger()) |t| {
             ed.bank();
             s.trigger = t;
-            s.detail_top = 0;
+            s.detail.top = 0;
         }
     }
     y += STEP;
@@ -980,7 +978,7 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
         const label = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ t.name.text(), if (t.parked) "  (parked)" else "" }) catch "";
         if (button(ed, g, widgets.row(f.x, y, lw - GAP), label, if (s.trigger) |at| at == i else false, true, "When it fires and what it does")) {
             s.trigger = @intCast(i);
-            s.detail_top = 0;
+            s.detail.top = 0;
         }
         y += STEP;
     }
@@ -1005,9 +1003,9 @@ fn drawScript(ed: *editor.Editor, g: *game.Game) void {
     }
     const right = rightOf(ed, f, list, y);
     const ti = s.trigger orelse return caption(g, right.x, f.y, right.w, "Pick a trigger: when every condition holds after a turn, its actions run in order", look.DIM);
-    const area = detailArea(ed, raster.rect(right.x, f.y, right.w, f.bottom - f.y));
+    const area = s.detail.at(raster.rect(right.x, f.y, right.w, f.bottom - f.y));
     const end = drawTrigger(ed, g, ti, right.x, area.begin(&ed.clip), right.w - PAD);
-    endScroll(ed, area, end);
+    area.close(&ed.clip, end, 0);
 }
 
 fn drawTrigger(ed: *editor.Editor, g: *game.Game, ti: u8, x: i32, top: i32, w: i32) i32 {

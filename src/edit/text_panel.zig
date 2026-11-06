@@ -15,11 +15,11 @@ const PAD = widgets.PAD;
 const TEXT = widgets.TEXT;
 const DETAIL = widgets.DETAIL;
 const ROW_PAD: i32 = 20;
-const ROW = TEXT + 2 * DETAIL + ROW_PAD;
+const ENTRY_H = TEXT + 2 * DETAIL + ROW_PAD;
 /// Of a passage, the most a list row's one fitted line could show.
 const SNIPPET_MAX: usize = 160;
 const LEAD: i32 = 8;
-const LINE: i32 = TEXT + LEAD;
+const LINE_H: i32 = TEXT + LEAD;
 const ROW_INSET: i32 = 4;
 const BUTTON_GAP: i32 = 4;
 const COUNT_PAD: i32 = 6;
@@ -43,7 +43,7 @@ const HINT_GAP: i32 = 4;
 const PAGE_LINE: usize = 1024;
 
 pub fn fieldHeight(rows: i32) i32 {
-    return rows * LINE + 2 * widgets.GAP;
+    return rows * LINE_H + 2 * widgets.GAP;
 }
 const NAV_ROW = DETAIL + ROW_PAD;
 const Focus = enum { search, passage };
@@ -61,7 +61,7 @@ const FontKey = struct {
     }
 };
 
-pub const Field = FieldOf(catalog.MAX_TEXT, catalog.supported);
+const Field = FieldOf(catalog.MAX_TEXT, catalog.supported);
 
 pub fn FieldOf(comptime N: usize, comptime accepts: fn (u8) bool) type {
     return struct {
@@ -515,14 +515,20 @@ fn save(ed: *editor.Editor) void {
     const s = &ed.words;
     const c = s.data orelse return;
     const i = s.selected orelse return;
+    if (!s.dirty()) return;
     const result = c.save(i, s.draft.text(), s.author) catch |err| {
         s.say("Could not save: {s}. Your draft is still here.", .{@errorName(err)});
         return;
     };
     s.restore();
     s.view_dirty = true;
-    if (result == .saved) s.say("Saved. Rebuild to apply wording changes.", .{}) else s.say("Source saved; author tags could not be saved.", .{});
-    if (result == .saved) finishClose(ed) else s.leave = null;
+    if (result == .saved) {
+        s.say("Saved. Rebuild to apply wording changes.", .{});
+        finishClose(ed);
+    } else {
+        s.say("Source saved; author tags could not be saved.", .{});
+        s.leave = null;
+    }
 }
 
 pub fn keys(ed: *editor.Editor) void {
@@ -616,7 +622,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
     const x = origin.x;
     const y = origin.y;
     const width = widgets.insetW(r);
-    const rows: usize = @intCast(@max(1, @divTrunc(@as(i32, @intFromFloat(r.height)) - fieldHeight(0), LINE)));
+    const rows: usize = @intCast(@max(1, @divTrunc(@as(i32, @intFromFloat(r.height)) - fieldHeight(0), LINE_H)));
     _ = f.layout(width, FontKey.of(&g.face), &g.face);
     const breaks = f.starts[0 .. f.lines + 1];
     const lines = f.lines;
@@ -636,7 +642,7 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
         const start = breaks[line];
         var end = breaks[line + 1];
         if (end > start and f.buf[end - 1] == '\n') end -= 1;
-        const yy = y + @as(i32, @intCast(line - first)) * LINE;
+        const yy = y + @as(i32, @intCast(line - first)) * LINE_H;
         const held = f.picked();
         const lo = std.math.clamp(held.lo, start, end);
         const hi = std.math.clamp(held.hi, start, end);
@@ -644,14 +650,14 @@ pub fn drawField(ed: *editor.Editor, g: *game.Game, f: anytype, r: rl.Rectangle,
         buf[end - start] = 0;
         if (focused and hi > lo) {
             const left = widthTo(&g.face, &buf, lo - start);
-            rl.drawRectangle(x + left, yy, widthTo(&g.face, &buf, hi - start) - left, LINE, widgets.ROW_ON);
+            rl.drawRectangle(x + left, yy, widthTo(&g.face, &buf, hi - start) - left, LINE_H, widgets.ROW_ON);
         }
         displayBytes(buf[0 .. end - start]);
         g.face.draw(buf[0 .. end - start :0], x, yy, TEXT, if (editable) look.TEXT else look.DIM);
         if (focused and caret_line == line) {
             rl.drawRectangle(x + widthTo(&g.face, &buf, @min(f.cursor, end) - start), yy, 2, TEXT, look.UI_FOCUS);
         }
-        if (hit and ed.desk.mouse.y >= yy and ed.desk.mouse.y < yy + LINE) {
+        if (hit and ed.desk.mouse.y >= yy and ed.desk.mouse.y < yy + LINE_H) {
             var at = start;
             while (at < end) : (at += 1) {
                 if (x + widthTo(&g.face, &buf, at + 1 - start) > ed.desk.mouse.x) break;
@@ -684,7 +690,7 @@ fn navItem(ed: *editor.Editor, g: *game.Game, ordinal: usize, label: []const u8,
 fn drawNavigation(ed: *editor.Editor, g: *game.Game, x: i32, y: i32, w: i32, bottom: i32) void {
     const s = &ed.words;
     widgets.drawFit(&g.face, if (s.category) |category| category else "Features", TEXT, w, false, x, y, look.UI_GOLD);
-    var yy = y + LINE;
+    var yy = y + LINE_H;
     if (button(ed, g, widgets.row(x, yy, w - widgets.GAP), if (s.category != null) "< All features" else "All text", s.category == null, s.leave == null)) s.scope(null, null);
     yy += widgets.ROW_STEP;
     if (s.category != null) {
@@ -733,8 +739,9 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     s.refresh();
     const page = widgets.pageFrame(&g.face, g.screen, "Text editor");
     const f = page.frame;
-    const x = f.x + PAD;
-    const w = f.w - 2 * PAD;
+    const col = page.column();
+    const x = col.left();
+    const w = col.inner();
     var y = f.y;
     var buf: [PAGE_LINE]u8 = undefined;
     widgets.drawFit(&g.face, "Search wording, feature, owner or source", DETAIL, w, false, x, y, if (s.focus == .search) look.UI_GOLD else look.DIM);
@@ -751,7 +758,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     }
     if (button(ed, g, reload_r, "Reload", false, !s.dirty())) reload(ed);
     if (button(ed, g, close_r, "Close", false, true)) requestClose(ed, false);
-    y += LINE + SEARCH_GAP;
+    y += LINE_H + SEARCH_GAP;
     const nav_w = widgets.share(w, NAV_PARTS, NAV_MIN_W, NAV_MAX_W);
     const list_x = x + nav_w + PAD;
     const list_w = widgets.share(w, LIST_PARTS, LIST_MIN_W, LIST_MAX_W);
@@ -762,28 +769,28 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     widgets.divider(right_x, y, bottom);
     drawNavigation(ed, g, x, y, nav_w, bottom);
     widgets.drawFit(&g.face, "Passages", TEXT, list_w, false, list_x, y, look.UI_GOLD);
-    const list_y = y + LINE;
-    s.rows = @intCast(@max(1, @divTrunc(bottom - list_y - DETAIL - LEAD, ROW)));
+    const list_y = y + LINE_H;
+    s.rows = @intCast(@max(1, @divTrunc(bottom - list_y - DETAIL - LEAD, ENTRY_H)));
     s.top = widgets.clampTop(s.top, s.results.items.len, s.rows);
-    s.list_box = raster.rect(list_x, list_y, list_w, @as(i32, @intCast(s.rows)) * ROW);
+    s.list_box = raster.rect(list_x, list_y, list_w, @as(i32, @intCast(s.rows)) * ENTRY_H);
     if (s.data) |c| {
         const entry_w = list_w - ROW_PAD;
         const end = @min(s.results.items.len, s.top + s.rows);
         for (s.results.items[s.top..end], 0..) |i, at| {
             const e = c.entries()[i];
-            const yy = list_y + @as(i32, @intCast(at)) * ROW;
-            const r = raster.rect(list_x, yy, list_w - widgets.GAP, ROW - widgets.GAP);
+            const yy = list_y + @as(i32, @intCast(at)) * ENTRY_H;
+            const r = raster.rect(list_x, yy, list_w - widgets.GAP, ENTRY_H - widgets.GAP);
             const h = widgets.hot(ed.controls(), r, s.leave == null, true, null);
             widgets.plate(r, s.selected == i, h.hot);
             widgets.drawFit(&g.face, e.role, TEXT, entry_w, false, list_x + widgets.GAP, yy + ROW_INSET, if (s.selected == i) look.UI_GOLD else look.TEXT);
-            widgets.drawFit(&g.face, e.owner, DETAIL, entry_w, false, list_x + widgets.GAP, yy + LINE, look.DIM);
+            widgets.drawFit(&g.face, e.owner, DETAIL, entry_w, false, list_x + widgets.GAP, yy + LINE_H, look.DIM);
             var snippet: [SNIPPET_MAX]u8 = undefined;
             const n = @min(e.text.len, SNIPPET_MAX);
             @memcpy(snippet[0..n], e.text[0..n]);
             for (snippet[0..n]) |*char| if (char.* < ' ') {
                 char.* = ' ';
             };
-            widgets.drawFit(&g.face, snippet[0..n], DETAIL, entry_w, false, list_x + widgets.GAP, yy + LINE + DETAIL + ROW_INSET, look.TEXT);
+            widgets.drawFit(&g.face, snippet[0..n], DETAIL, entry_w, false, list_x + widgets.GAP, yy + LINE_H + DETAIL + ROW_INSET, look.TEXT);
             if (h.hit and s.pick(i)) s.focus = .passage;
         }
     }
@@ -799,11 +806,11 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
         const e = c.entries()[i];
         widgets.drawFit(&g.face, e.owner, TEXT, right_w, false, right_x, y, look.TEXT);
         const breadcrumb = std.fmt.bufPrintZ(&buf, "{s}  >  {s}", .{ e.category, e.role }) catch "";
-        widgets.drawFit(&g.face, breadcrumb, DETAIL, right_w, false, right_x, y + LINE, look.UI_GOLD);
+        widgets.drawFit(&g.face, breadcrumb, DETAIL, right_w, false, right_x, y + LINE_H, look.UI_GOLD);
         const source = std.fmt.bufPrintZ(&buf, "{s}:{d}", .{ e.path, e.line }) catch "";
-        widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE + widgets.DETAIL_STEP, look.DIM);
-        widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE + 2 * widgets.DETAIL_STEP, look.DIM);
-        var yy = y + LINE + 3 * widgets.DETAIL_STEP + HINT_GAP;
+        widgets.drawFit(&g.face, source, DETAIL, right_w, true, right_x, y + LINE_H + widgets.DETAIL_STEP, look.DIM);
+        widgets.drawFit(&g.face, e.context, DETAIL, right_w, true, right_x, y + LINE_H + 2 * widgets.DETAIL_STEP, look.DIM);
+        var yy = y + LINE_H + 3 * widgets.DETAIL_STEP + HINT_GAP;
         const hint = std.fmt.bufPrintZ(&buf, "{s}  |  {d}/{d} characters", .{ if (e.editable) "Wording" else "Reference only", s.draft.n, catalog.MAX_TEXT }) catch "";
         widgets.drawFit(&g.face, hint, DETAIL, right_w, false, right_x, yy, if (s.focus == .passage) look.UI_GOLD else look.DIM);
         yy += DETAIL + LEAD;
@@ -843,7 +850,7 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     };
     if (s.selected == null) {
         widgets.drawFit(&g.face, "Choose a passage", TEXT, right_w, false, right_x, y, look.TEXT);
-        _ = g.face.paragraph("Browse a feature, then its object or screen. Select a named field to see its wording and exact source.", right_x, y + LINE + LEAD, right_w, DETAIL, look.DIM);
+        _ = g.face.paragraph("Browse a feature, then its object or screen. Select a named field to see its wording and exact source.", right_x, y + LINE_H + LEAD, right_w, DETAIL, look.DIM);
     }
     const note = if (s.note.n > 0) s.note.text() else "Saved wording takes effect after rebuilding.";
     widgets.drawFit(&g.face, note, DETAIL, w, false, x, bottom + LEAD, look.UI_GOLD);

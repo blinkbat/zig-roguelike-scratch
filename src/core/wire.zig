@@ -9,7 +9,7 @@ const PayloadLen = u32;
 const Count = u32;
 const FIELD_HEAD = @sizeOf(NameLen) + @sizeOf(PayloadLen);
 
-pub const Defaults = struct {
+const Defaults = struct {
     pub fn countField(comptime _: type, comptime _: []const u8) ?[]const u8 {
         return null;
     }

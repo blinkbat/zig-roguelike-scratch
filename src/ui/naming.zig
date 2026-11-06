@@ -57,7 +57,7 @@ pub fn gridBox(screen: mathx.P) rl.Rectangle {
     return .{ .x = content.x, .y = content.y + GRID_Y, .width = GRID_W, .height = @as(i32, ROWS) * KEY_H };
 }
 
-pub const Outcome = enum { done, back };
+const Outcome = enum { done, back };
 
 pub const Entry = struct {
     name: hero.Name = .{},

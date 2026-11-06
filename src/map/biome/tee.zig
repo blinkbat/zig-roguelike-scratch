@@ -27,7 +27,7 @@ pub const PATH_MAX: u8 = 5;
 
 /// Forest kept below the bar.
 const FOOT: i32 = 2;
-/// The bar's lowest open row.
+/// The first row of the foot, just below the bar.
 const BAR_FLOOR: i32 = grid.H - 1 - FOOT;
 const SHIFT: i32 = 3;
 const FRAY_SCALE: f32 = 5;
@@ -104,7 +104,7 @@ const Plan = struct {
         const top = BAR_FLOOR - @as(i32, p.bar);
         const river_w = if (p.river == 0) grid.W else grid.W - 1 - @as(i32, p.bank) - @as(i32, p.river);
         const stem_x = @divTrunc(river_w, 2) + rng.range(-SHIFT, SHIFT);
-        const road_y = top + @divTrunc(@as(i32, p.bar), 2) + rng.range(-1, 1);
+        const road_y = @min(top + @divTrunc(@as(i32, p.bar), 2) + rng.range(-1, 1), lowestFor(@max(p.path, p.bridge)));
         const half = @divTrunc(@as(i32, p.stem), 2);
         return .{
             .bar = .{ .lo = .{ .x = -out, .y = top }, .hi = .{ .x = grid.W + out, .y = BAR_FLOOR } },
@@ -149,15 +149,11 @@ const NOISE_GAIN: f32 = 5;
 fn river(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params) void {
     const r = @as(f32, @floatFromInt(p.river)) / 2;
     const x = plan.river_w + @divTrunc(@as(i32, p.river), 2) - SHIFT;
-    var m = carve.Meander.init(.{ .x = x + rng.range(-SHIFT, 0), .y = 0 }, .{ .x = x + rng.range(-SHIFT, 0), .y = grid.H - 1 }, RIVER_WANDER);
-    var course: [grid.CELLS]P = undefined;
-    var n: usize = 0;
-    while (m.next(rng)) |c| {
-        course[n] = .{ .x = @min(c.x, x), .y = c.y };
-        n += 1;
-    }
-    for (course[0..n]) |c| carve.disc(lv, c, carve.bankReach(2 * r), .shallows, dry);
-    for (course[0..n]) |c| carve.disc(lv, c, r, .water, null);
+    var f = carve.Flow.of(rng, .{ .x = x + rng.range(-SHIFT, 0), .y = 0 }, .{ .x = x + rng.range(-SHIFT, 0), .y = grid.H - 1 }, RIVER_WANDER);
+    const course = f.cell[0..f.n];
+    for (course) |*c| c.x = @min(c.x, x);
+    for (course) |c| carve.disc(lv, c, carve.bankReach(@floatFromInt(p.river)), .shallows, dry);
+    for (course) |c| carve.disc(lv, c, r, .water, null);
 }
 
 fn dry(t: grid.Tile) bool {
@@ -191,7 +187,7 @@ fn woods(lv: *grid.Level, rng: *mathx.Rng, seed: u64, plan: Plan, p: Params) voi
 
 fn roads(lv: *grid.Level, rng: *mathx.Rng, plan: Plan, p: Params, kept: *grid.CellSet) void {
     const c = plan.camp;
-    const lowest = plan.bar.hi.y - 1 - carve.discReach(carve.laneRadius(p.path));
+    const lowest = lowestFor(p.path);
     const west = P{ .x = 0, .y = c.y + rng.range(-SHIFT, SHIFT) };
     road(lv, rng, west, c, p.path, PATH_WANDER, lowest, kept);
     const up = P{ .x = c.x + rng.range(-SHIFT, SHIFT), .y = 0 };
@@ -215,6 +211,11 @@ fn wetSpan(lv: *const grid.Level, from: P) ?[2]i32 {
     var last = grid.W - 2;
     while (last > x and !lv.at(.{ .x = last, .y = from.y }).wet()) last -= 1;
     return if (x < last) .{ x, last } else null;
+}
+
+/// The lowest row a lane of `width` can run along without paving the foot.
+fn lowestFor(width: u8) i32 {
+    return BAR_FLOOR - 1 - carve.discReach(carve.laneRadius(width));
 }
 
 fn road(lv: *grid.Level, rng: *mathx.Rng, a: P, b: P, width: u8, wander: f32, lowest: i32, kept: *grid.CellSet) void {
@@ -246,7 +247,7 @@ const Spot = struct {
         const foot = t.footprint(q);
         var cells = foot.grown(1).cells();
         while (cells.next()) |n| {
-            if (!grid.Level.inside(n) or !s.lv.walkable(n)) return false;
+            if (!s.lv.walkable(n)) return false;
         }
         var feet = foot.cells();
         while (feet.next()) |n| {
@@ -261,12 +262,9 @@ fn props(lv: *grid.Level, rng: *mathx.Rng, c: P, p: Params, kept: *const grid.Ce
     const r: f32 = @floatFromInt(p.camp);
     var carts: [CARTS_MAX]P = undefined;
     var n: usize = 0;
-    const wide = grid.Tile.caravan.wide();
     for (0..p.carts) |_| {
         const at = around(rng, c, r, .caravan, spot) orelse continue;
-        lv.set(at, .caravan);
-        var k: i32 = 1;
-        while (k < wide) : (k += 1) lv.set(at.add(.{ .x = k, .y = 0 }), .caravan_part);
+        lv.putProp(at, .caravan);
         carts[n] = at;
         n += 1;
     }
@@ -331,6 +329,7 @@ test "a tee stays shut outside its T, and lays its camp, woods and bridge" {
     var low = p;
     low.bar = BAR_MIN;
     low.path = PATH_MAX;
+    low.bridge = BRIDGE_MAX;
     const low_door = [_]P{.{ .x = 0, .y = BAR_FLOOR - BAR_MIN / 2 }};
     const foot = grid.Box.sized(.{ .x = 1, .y = BAR_FLOOR }, grid.W - 2, FOOT);
     var low_foot_open: usize = 0;

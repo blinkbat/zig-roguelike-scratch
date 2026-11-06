@@ -3,7 +3,7 @@ const mathx = @import("../core/mathx.zig");
 
 pub const CAPACITY: usize = 24;
 
-pub const Transaction = struct {
+const Transaction = struct {
     before: *atlas.Atlas,
     state: enum { closed, open, recorded } = .closed,
     changed: bool = false,

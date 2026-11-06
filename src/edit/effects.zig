@@ -7,7 +7,7 @@ const actor = @import("../play/actor.zig");
 const bow = @import("../play/bow.zig");
 const skillbar = @import("../play/skillbar.zig");
 const sunder = @import("../play/sunder.zig");
-const glacial = @import("../play/glacial.zig");
+const areas = @import("../play/area.zig");
 const fx = @import("../gfx/fx.zig");
 const light = @import("../gfx/light.zig");
 const look = @import("../gfx/look.zig");
@@ -22,7 +22,7 @@ const Desk = input.Desk;
 const P = mathx.P;
 const Shot = game.presentation.Shot;
 
-pub const Group = enum { blows, missiles, gas, footfalls, flames, marks, hero };
+const Group = enum { blows, missiles, gas, footfalls, flames, marks, hero };
 
 const GROUP_NAMES = std.EnumArray(Group, [:0]const u8).init(.{
     .blows = "Blows",
@@ -98,7 +98,7 @@ pub const Sample = union(enum) {
         return switch (s) {
             .splash => .shallows,
             .dust => |t| t,
-            else => .floor,
+            .hit, .embers, .drip, .shimmer, .whirl, .arc, .missile, .net, .wisps, .glowbulb, .juke, .torch, .fire_wall, .mark, .level_up => .floor,
         };
     }
 
@@ -141,8 +141,11 @@ comptime {
     for (SAMPLES[1..], SAMPLES[0 .. SAMPLES.len - 1]) |s, before| std.debug.assert(@intFromEnum(s.group()) >= @intFromEnum(before.group()));
 }
 
-const SPEEDS = [_]f32{ 1, 0.5, 0.25 };
-const SPEED_NAMES = [SPEEDS.len][:0]const u8{ "Full speed", "Half", "Quarter" };
+const SPEEDS = [_]struct { rate: f32, label: [:0]const u8 }{
+    .{ .rate = 1, .label = "Full speed" },
+    .{ .rate = 0.5, .label = "Half" },
+    .{ .rate = 0.25, .label = "Quarter" },
+};
 
 const BURST_S: f32 = 1.4;
 const REST_S: f32 = 0.6;
@@ -167,7 +170,7 @@ fn shotOf(lv: *const grid.Level, act: skillbar.Act, net: bool, round: u32) Shot 
     return .{ .flight = bow.fly(lv, from, LANDING), .from = from, .act = act, .net = net };
 }
 
-const LANDING = MIDDLE.add(.{ .x = @divTrunc(COLS, 2) - glacial.BURST_MAX, .y = 0 });
+const LANDING = MIDDLE.add(.{ .x = @divTrunc(COLS, 2) - areas.BURST_MAX, .y = 0 });
 
 fn px(n: i32, cell: f32) f32 {
     return @as(f32, @floatFromInt(n)) * cell;
@@ -185,8 +188,7 @@ pub const Viewer = struct {
     span: ?f32 = null,
     round: u32 = 0,
     due: bool = true,
-    list_top: i32 = 0,
-    list_most: i32 = 0,
+    list: widgets.Scrolled = .{},
     reveal: bool = true,
 
     fn reset(v: *Viewer) void {
@@ -208,7 +210,7 @@ pub const Viewer = struct {
     }
 
     pub fn step(v: *Viewer, dt_shown: f32) void {
-        const dt = dt_shown * SPEEDS[v.speed];
+        const dt = dt_shown * SPEEDS[v.speed].rate;
         if (v.due) {
             v.due = false;
             v.span = v.sample().period();
@@ -264,7 +266,7 @@ pub const Viewer = struct {
     }
 };
 
-pub fn create(alloc: std.mem.Allocator) !*Viewer {
+fn create(alloc: std.mem.Allocator) !*Viewer {
     const v = try alloc.create(Viewer);
     v.* = .{ .lv = grid.openFloor(), .sight = @splat(1) };
     v.lv.lit = @splat(true);
@@ -293,7 +295,7 @@ pub fn keys(ed: *editor.Editor) void {
         v.reveal = true;
     }
     if (d.enter) v.reset();
-    if (d.wheel != 0) widgets.scrollBy(&v.list_top, v.list_most, d.notch() * widgets.ROW_H);
+    if (d.wheel != 0) widgets.scrollBy(&v.list.top, v.list.most, d.notch() * widgets.ROW_H);
 }
 
 const LIST_W: i32 = 320;
@@ -306,19 +308,20 @@ pub fn draw(ed: *editor.Editor, g: *game.Game) void {
     const page = widgets.pageFrame(&g.face, g.screen, TITLE);
     const f = page.frame;
     widgets.titleHint(&g.face, f, TITLE, Desk.NAV_CAPTION ++ " or " ++ Desk.PAINT_CAPTION ++ " picks one" ++ menu.SEP ++ Desk.ENTER_CAPTION ++ " replays" ++ menu.SEP ++ Desk.BACK_CAPTION ++ " closes");
-    const list = raster.rect(f.x + widgets.PAD, f.y, LIST_W, page.bottom - f.y);
+    const col = page.column();
+    const list = raster.rect(col.left(), f.y, LIST_W, page.bottom - f.y);
     drawList(ed, g, v, list);
-    const x = f.x + widgets.PAD + LIST_W + widgets.PAD;
+    const x = col.left() + LIST_W + widgets.PAD;
     widgets.divider(x, f.y, page.bottom);
-    const room = P{ .x = f.x + f.w - widgets.PAD - x, .y = page.bottom - f.y - widgets.HEAD - widgets.GAP - widgets.ROW_STEP };
+    const room = P{ .x = col.left() + col.inner() - x, .y = page.bottom - f.y - widgets.TITLE - widgets.GAP - widgets.ROW_STEP };
     const cell = stageCell(room);
-    widgets.textFace(&g.face).draw(v.sample().name(), x, f.y, widgets.HEAD, look.TEXT);
-    const stage = raster.rect(x, f.y + widgets.HEAD + widgets.GAP, @intFromFloat(px(COLS, cell)), @intFromFloat(px(ROWS, cell)));
+    widgets.textFace(&g.face).draw(v.sample().name(), x, f.y, widgets.TITLE, look.TEXT);
+    const stage = raster.rect(x, f.y + widgets.TITLE + widgets.GAP, @intFromFloat(px(COLS, cell)), @intFromFloat(px(ROWS, cell)));
     drawStage(g, v, stage, cell);
     rl.drawRectangleLinesEx(raster.grown(stage, 1), 1, look.EDGE);
     var controls = widgets.Lay{ .x = x, .y = @as(i32, @intFromFloat(stage.y + stage.height)) + widgets.GAP };
-    for (SPEED_NAMES, 0..) |label, i| {
-        if (editor.modalButton(ed, g, controls.take(SPEED_W), label, v.speed == i, true, "How fast the stage plays")) v.speed = i;
+    for (SPEEDS, 0..) |s, i| {
+        if (editor.modalButton(ed, g, controls.take(SPEED_W), s.label, v.speed == i, true, "How fast the stage plays")) v.speed = i;
     }
     if (editor.modalButton(ed, g, controls.take(SPEED_W), widgets.keyed("Replay", Desk.ENTER_CAPTION), false, true, "Start it again")) v.reset();
     modals.backButton(ed, g, f, page.bottom - widgets.ROW_H, "Close");
@@ -334,13 +337,12 @@ fn stageCell(room: P) f32 {
 }
 
 fn drawList(ed: *editor.Editor, g: *game.Game, v: *Viewer, box: rl.Rectangle) void {
-    const scroll = widgets.Scroll{ .box = box, .top = &v.list_top, .most = &v.list_most };
+    const scroll = v.list.at(box);
     if (v.reveal) {
         v.reveal = false;
         scroll.reveal(rowTop(v.at), widgets.ROW_H);
     }
     var y = scroll.begin(&ed.clip);
-    defer widgets.unclip(&ed.clip);
     const x: i32 = @intFromFloat(box.x);
     const w: i32 = @intFromFloat(box.width);
     var last: ?Group = null;
@@ -352,7 +354,7 @@ fn drawList(ed: *editor.Editor, g: *game.Game, v: *Viewer, box: rl.Rectangle) vo
         if (widgets.flatButton(ed.controls(), &g.face, widgets.row(x, y, w - widgets.SCROLL_W - widgets.GAP), s.name(), look.TEXT, i == v.at, true, true, null)) v.pick(i);
         y += widgets.ROW_H;
     }
-    scroll.end(y, 0);
+    scroll.close(&ed.clip, y, 0);
 }
 
 /// Whether `s` heads a group of its own, after `last`'s.
@@ -396,7 +398,7 @@ fn drawStage(g: *game.Game, v: *Viewer, stage: rl.Rectangle, cell: f32) void {
     switch (s) {
         .mark, .level_up => widgets.figure(&g.face, g.sprites.body(actor.HERO), look.body(actor.HERO), body),
         .torch => v.effects.drawTorch(body.x + cell / 2, body.y + cell / 2, cell, 0, 1, 1),
-        else => {},
+        .hit, .embers, .drip, .shimmer, .whirl, .arc, .missile, .net, .wisps, .glowbulb, .splash, .dust, .juke, .fire_wall => {},
     }
     v.effects.drawGlow(&v.lv, &v.sight, o[0], o[1], cell);
     if (v.shot) |*sh| if (sh.t >= 0) game.scene.drawFlight(sh, o, cell);
@@ -406,7 +408,7 @@ fn drawStage(g: *game.Game, v: *Viewer, stage: rl.Rectangle, cell: f32) void {
             v.effects.level_up.drawSparks(hero_at, o[0], o[1], cell);
             v.effects.level_up.drawText(hero_at, &g.face, o[0], o[1], cell);
         },
-        else => {},
+        .hit, .embers, .drip, .shimmer, .whirl, .arc, .missile, .net, .wisps, .glowbulb, .splash, .dust, .juke, .torch, .fire_wall => {},
     }
 }
 
@@ -421,7 +423,7 @@ fn drawPools(v: *const Viewer, s: Sample, o: [2]f32, cell: f32) void {
             buf[n] = e;
             n += 1;
         },
-        else => {},
+        .hit, .embers, .drip, .shimmer, .whirl, .arc, .missile, .net, .wisps, .glowbulb, .splash, .dust, .juke, .torch, .fire_wall, .level_up => {},
     }
     rl.beginBlendMode(.additive);
     defer rl.endBlendMode();

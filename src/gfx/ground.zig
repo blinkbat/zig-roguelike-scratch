@@ -4,9 +4,6 @@ const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
 const look = @import("look.zig");
 
-// Dual-grid masks use NW 1, NE 2, SW 4, SE 8 and include higher layers.
-// Unsheeted grounds draw below sheeted grounds; each group retains Ground order. Presentation only.
-
 const P = mathx.P;
 
 /// Lowest first among the grounds with a sheet, and among those without.
@@ -237,7 +234,7 @@ pub const FULL: u4 = NW | NE | SW | SE;
 
 /// A ground sheet's 16 cells, read across its 4x4 block, by mask: `tools/tile_art/ground_corners.lua`.
 pub const ORDER = [MASKS]u4{ 9, 12, 4, 8, 10, 15, 13, 14, 6, 11, 7, 3, 5, 2, 1, 0 };
-pub const MASKS: usize = @as(usize, FULL) + 1;
+const MASKS: usize = @as(usize, FULL) + 1;
 pub const COLS: usize = 4;
 pub const ROWS: usize = MASKS / COLS;
 
@@ -275,7 +272,7 @@ pub const AROUND = [4]struct { d: P, bit: u4 }{
 };
 
 /// What the cells round a point hold, as `Beds` ranks them.
-pub const Corners = struct {
+const Corners = struct {
     rank: [4]u8,
 
     pub fn pairMask(self: Corners, upper: Ground, lower: Ground) ?u4 {
@@ -347,13 +344,17 @@ pub const Bank = enum {
     pub fn of(north: grid.Tile, south: grid.Tile) ?Bank {
         if (north == .shallows and south == .water) return .shallow_deep;
         if (!bankLand(north)) return null;
-        return switch (south) {
-            .shallows => .land_shallow,
-            .water => .land_deep,
-            else => null,
-        };
+        return landBank(south);
     }
 };
+
+fn landBank(south: grid.Tile) ?Bank {
+    return switch (of(south) orelse return null) {
+        .shallows => .land_shallow,
+        .water => .land_deep,
+        .chasm, .lava, .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .bridge, .cobble => null,
+    };
+}
 
 /// A bank's face and cap across a dual-grid point, its columns in the art: the west end, a joined middle, the east end.
 pub const BankPiece = enum(u8) {
@@ -373,12 +374,16 @@ pub const BankPiece = enum(u8) {
     }
 
     /// The step across from the point to the water below `side`'s half.
-    pub fn wetSide(self: BankPiece, side: usize) i32 {
+    fn wetSide(self: BankPiece, side: usize) i32 {
         return switch (self) {
             .left => 0,
             .right => -1,
             .repeat => @as(i32, @intCast(side)) - 1,
         };
+    }
+
+    pub fn wetAt(self: BankPiece, p: P, side: usize) P {
+        return p.add(.{ .x = self.wetSide(side), .y = 0 });
     }
 
     /// `side`'s half lies past the bank's end, beside it rather than above it.
@@ -387,7 +392,7 @@ pub const BankPiece = enum(u8) {
     }
 };
 
-pub fn bankLand(t: grid.Tile) bool {
+fn bankLand(t: grid.Tile) bool {
     return switch (of(t) orelse return false) {
         .water, .shallows, .lava, .chasm, .bridge => false,
         .ice, .snow, .sand, .dirt, .crop, .grass, .rubble, .cobble => true,

@@ -19,7 +19,7 @@ pub const LABEL: i32 = 17;
 const ASCII_LO: i32 = ' ';
 const ASCII_N: usize = '~' + 1 - ASCII_LO;
 const SYMBOLS_MAX: usize = 16;
-pub const ELLIPSIS = "...";
+const ELLIPSIS = "...";
 
 /// Until `load` succeeds, raylib's built-in font stands in.
 pub const Face = struct {

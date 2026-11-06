@@ -1,8 +1,8 @@
 const std = @import("std");
 
-pub const ASSET = "player-labels.txt";
+const ASSET = "player-labels.txt";
 pub const FILE = "assets/data/" ++ ASSET;
-pub const Case = enum { sentence, title, word };
+const Case = enum { sentence, title, word };
 const Registration = struct { name: []const u8, saved_name: ?[]const u8 = null, casing: Case = .sentence, except: []const []const u8 = &.{}, only: ?[]const []const u8 = null };
 pub const TYPES = [_]Registration{
     .{ .name = "app.MainRow", .except = &.{"ossuary"} },
@@ -114,7 +114,7 @@ fn titled(comptime text: [:0]const u8) [:0]const u8 {
     return formatted(text, .title);
 }
 
-pub const Recase = enum { title, lower };
+const Recase = enum { title, lower };
 /// Words a title leaves lower case past its first.
 const MINOR_WORDS = [_][]const u8{ "of", "the", "and", "a", "an" };
 

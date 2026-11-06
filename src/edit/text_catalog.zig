@@ -14,7 +14,7 @@ const SRC = "src/";
 const MAP_WORD = atlas_text.HEADER[0..std.mem.indexOfScalar(u8, atlas_text.HEADER, ' ').?];
 const ZIG = ".zig";
 pub const Author = enum { unknown, you, ai, mixed };
-pub const SaveResult = enum { saved, tags_not_saved };
+const SaveResult = enum { saved, tags_not_saved };
 pub const Entry = struct {
     path: []const u8,
     line: usize,
@@ -163,14 +163,17 @@ pub const Catalog = struct {
         const entry = self.list.items[index];
         if (!entry.editable) return error.ReadOnly;
         try validate(entry.text, replacement);
+        if (entry.alias) |key| {
+            try self.checkTags();
+            return self.saveAlias(index, key, replacement, author);
+        }
         const source = self.files.items[entry.file];
-        const path = try std.fs.path.join(self.alloc, &.{ self.root, source.path });
+        const path = try self.rooted(source.path);
         defer self.alloc.free(path);
         const current = try std.fs.cwd().readFileAlloc(self.alloc, path, FILE_CAP);
         defer self.alloc.free(current);
         if (!unchanged(source.bytes, current)) return error.SourceChanged;
         try self.checkTags();
-        if (entry.alias) |key| return self.saveAlias(index, key, replacement, author);
         const encoded = try quote(self.alloc, replacement);
         defer self.alloc.free(encoded);
         const bytes = try replaceLiteral(self.alloc, current, entry.start, entry.end, encoded);
@@ -199,8 +202,12 @@ pub const Catalog = struct {
         return result;
     }
 
+    fn rooted(self: *const Catalog, name: []const u8) ![]u8 {
+        return std.fs.path.join(self.alloc, &.{ self.root, name });
+    }
+
     fn checkTags(self: *Catalog) !void {
-        const path = try std.fs.path.join(self.alloc, &.{ self.root, TAG_FILE });
+        const path = try self.rooted(TAG_FILE);
         defer self.alloc.free(path);
         const current = try self.readOrEmpty(path);
         defer self.alloc.free(current);
@@ -215,7 +222,7 @@ pub const Catalog = struct {
         if (!oneLine(replacement)) return error.SingleLineOnly;
         const entry = self.list.items[index];
         const changed = !unchanged(entry.text, replacement);
-        const path = try std.fs.path.join(self.alloc, &.{ self.root, LABEL_FILE });
+        const path = try self.rooted(LABEL_FILE);
         defer self.alloc.free(path);
         const current = try self.readOrEmpty(path);
         defer self.alloc.free(current);
@@ -259,7 +266,7 @@ pub const Catalog = struct {
         return .{
             .tags = tags,
             .bytes = bytes,
-            .path = try std.fs.path.join(self.alloc, &.{ self.root, TAG_FILE }),
+            .path = try self.rooted(TAG_FILE),
         };
     }
 
@@ -382,18 +389,16 @@ fn included(path: []const u8) bool {
 }
 
 const INPUT_SOURCES = [_][]const u8{ "core/input.zig", "core/input_bindings.zig", "core/input_names.zig" };
-const LONE_SOURCES = [_][]const u8{
-    "app.zig",              "game.zig",             "save.zig",              "save_data.zig",   "gfx/look.zig",             "gfx/fx.zig",
-    "gfx/effect_state.zig", "gfx/impact_queue.zig", "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig",
-};
+const EFFECT_SOURCES = [_][]const u8{ "gfx/fx.zig", "gfx/effect_state.zig", "gfx/impact_queue.zig" };
+const LOOK_SOURCES = [_][]const u8{ "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig" };
+const LONE_SOURCES = [_][]const u8{ "app.zig", "game.zig", "save.zig", "save_data.zig", "gfx/look.zig" } ++ EFFECT_SOURCES ++ LOOK_SOURCES;
 const EXCLUDED_SOURCES = [_][]const u8{ "game/shots.zig", "game/harness.zig", "map/atlas_text.zig", "map/script_text.zig", "edit/text_catalog.zig", "edit/text_panel.zig" };
 const KEYBOARD_SOURCE = "ui/naming.zig";
 const KEYBOARD_DECL = "LETTERS";
 /// Declarations `spoken` judges by name: never prose, then always prose.
-const SOURCED_TECHNICAL = [_][]const u8{ "SYMBOLS", "TTF", "DATA_TTF" };
-const TECHNICAL_DECLS = [_][]const u8{"PROBED"} ++ SOURCED_TECHNICAL;
+const TECHNICAL_DECLS = [_][]const u8{ "SYMBOLS", "TTF", "DATA_TTF" };
 const SPOKEN_DECLS = [_][]const u8{ "NAME", "NUMBERS", FRIGHT_WORDS };
-/// A source declaring each of those names but `PROBED`, which only tests pin.
+/// A source declaring each of those names.
 const DECL_SOURCES = [_][2][]const u8{
     .{ KEYBOARD_SOURCE, KEYBOARD_DECL },
     .{ "map/biome/site.zig", "SYMBOLS" },
@@ -415,7 +420,7 @@ comptime {
     for (DECL_SOURCES) |d| {
         if (std.mem.indexOf(u8, @embedFile("../" ++ d[0]), "const " ++ d[1] ++ " ") == null) @compileError(d[0] ++ " no longer declares " ++ d[1]);
     }
-    for (SOURCED_TECHNICAL ++ SPOKEN_DECLS ++ ACTION_WORDS) |name| {
+    for (TECHNICAL_DECLS ++ SPOKEN_DECLS ++ ACTION_WORDS) |name| {
         for (DECL_SOURCES) |d| {
             if (std.mem.eql(u8, d[1], name)) break;
         } else @compileError(name ++ " has no source to check");
@@ -534,8 +539,8 @@ fn categoryOf(a: std.mem.Allocator, path: []const u8) ![]const u8 {
         if (std.mem.startsWith(u8, rel, "ui/")) return "Interface";
         if (std.mem.eql(u8, rel, "play/items.zig")) return "Items";
         if (std.mem.eql(u8, rel, "play/skillbar.zig")) return "Skills";
-        if (oneOf(rel, &.{ "gfx/fx.zig", "gfx/effect_state.zig", "gfx/impact_queue.zig" })) return "Effects";
-        if (oneOf(rel, &.{ "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig" })) return "Look";
+        if (oneOf(rel, &EFFECT_SOURCES)) return "Effects";
+        if (oneOf(rel, &LOOK_SOURCES)) return "Look";
     }
     const base = std.fs.path.basename(path);
     return humanize(a, if (std.mem.endsWith(u8, base, ZIG)) base[0 .. base.len - ZIG.len] else base);
@@ -736,7 +741,7 @@ fn forbiddenBuiltin(name: []const u8) bool {
 
 fn technicalCall(bytes: []const u8, ts: []const Token, i: usize) bool {
     const name = slice(bytes, ts[i]);
-    if (oneOf(name, &.{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "getUniformLocation", "loadShaderFromMemory", "capture", "snap", "shootPage", "has", "declares" })) return true;
+    if (oneOf(name, &.{ "eql", "startsWith", "endsWith", "indexOf", "indexOfScalar", "lastIndexOfScalar", "hash", "stringToEnum", "expectEqualStrings", "expectError", "loadShaderFromMemory", "capture", "snap", "shootPage", "has", "declares" })) return true;
     if (std.mem.eql(u8, name, "print") and i >= 2 and std.mem.eql(u8, slice(bytes, ts[i - 2]), "debug")) return true;
     return false;
 }
@@ -836,7 +841,7 @@ pub fn oneLine(s: []const u8) bool {
     return std.mem.indexOfAny(u8, s, "\r\n\t") == null;
 }
 
-pub fn validate(before: []const u8, after: []const u8) !void {
+fn validate(before: []const u8, after: []const u8) !void {
     if (after.len > MAX_TEXT) return error.TextTooLong;
     if (std.mem.trim(u8, after, " \r\n\t").len == 0) return error.EmptyText;
     for (after) |c| {
@@ -976,7 +981,7 @@ test "text catalog indexes live item skill and speech sources with complete meta
     try c.scan("src/play/items.zig", @embedFile("../play/items.zig"));
     try c.scan("src/play/tactics.zig", @embedFile("../play/tactics.zig"));
     try c.scan("src/gfx/fx.zig", @embedFile("../gfx/fx.zig"));
-    for ([_][]const u8{ "gfx/effect_state.zig", "gfx/impact_queue.zig", "gfx/sprite_assets.zig", "gfx/sprites.zig", "gfx/sprite_materials.zig" }) |source| {
+    for (EFFECT_SOURCES ++ LOOK_SOURCES) |source| {
         try std.testing.expect(included(source));
     }
     try c.scan("src/gfx/effect_state.zig", @embedFile("../gfx/effect_state.zig"));
@@ -1178,7 +1183,7 @@ test "text catalog protects reflection controls while finding short verbs" {
     try c.scan(SRC ++ KEYBOARD_SOURCE, "const " ++ KEYBOARD_DECL ++ " = [_][]const u8{ \"ABCDEFGHIJKLM\", \"NOPQRSTUVWXYZ\" };\n");
     try std.testing.expect(!c.entries()[0].editable and !c.entries()[1].editable);
     const n = c.entries().len;
-    try c.scan("src/play/example.zig", "const VERB = \"shoots\";\nconst s = .{ .verb = \"bites\" };\nconst name = @tagName(k) ++ \"_bonus\";\nconst PROBED = .{ \"BASE\", \"KIND\" };\n");
+    try c.scan("src/play/example.zig", "const VERB = \"shoots\";\nconst s = .{ .verb = \"bites\" };\nconst name = @tagName(k) ++ \"_bonus\";\n");
     try std.testing.expectEqual(n + 2, c.entries().len);
     try std.testing.expect(unchanged("Burning Arrow", "Burning Arrow"));
     try std.testing.expect(!unchanged("Burning Arrow", "Flaming Arrow"));

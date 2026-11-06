@@ -305,6 +305,7 @@ test "stepping into a glowbulb bursts it into healing gas for a turn, leaving it
     try std.testing.expect(g.sim.lv.volumeAt(.healing, plant) > 0 and !g.sim.lv.gassy(plant));
     try std.testing.expectEqual(lights, g.light.torch_n);
     try std.testing.expectEqual(grid.Tile.glow_plant, g.pic.tileShown(&g.sim, plant));
+    try harness.expectGroundShown(g);
     harness.drawnOut(g);
     try std.testing.expectEqual(lights - 1, g.light.torch_n);
     try std.testing.expectEqual(grid.Tile.grass, g.pic.tileShown(&g.sim, plant));

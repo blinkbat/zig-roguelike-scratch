@@ -19,6 +19,8 @@ pub const MONITOR_OWNED = switch (@import("builtin").os.tag) {
 pub const glfw = struct {
     const GLProc = *const fn () callconv(.c) void;
     pub extern fn glfwGetProcAddress(name: [*:0]const u8) ?GLProc;
+    pub extern fn glfwGetJoystickGUID(jid: c_int) ?[*:0]const u8;
+    pub extern fn glfwJoystickIsGamepad(jid: c_int) c_int;
     const Window = opaque {};
     const Monitor = opaque {};
     const VidMode = extern struct { width: c_int, height: c_int, red: c_int, green: c_int, blue: c_int, refresh: c_int };

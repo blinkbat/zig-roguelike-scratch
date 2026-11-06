@@ -13,50 +13,14 @@ const visibility = @import("light_visibility.zig");
 const model = @import("light_model.zig");
 const dual = @import("ground.zig");
 
-const P = model.P;
-const Rgb = model.Rgb;
-const mix = model.mix;
 pub const SUB = model.SUB;
-const MAP_W = model.MAP_W;
-const MAP_H = model.MAP_H;
-const TEXELS = model.TEXELS;
-const Layer = model.Layer;
-const UNSEEN = model.UNSEEN;
 pub const BODY_Z = model.BODY_Z;
-const CARRY = model.CARRY;
-const FAINT = model.FAINT;
-const CORNERS_W = grid.CORNERS_W;
-const CORNERS_H = grid.CORNERS_H;
-const SUN_LAMP_D = model.SUN_LAMP_D;
-const CASTERS = model.CASTERS;
-const sunlit = model.sunlit;
-const clouded = model.clouded;
-const reaching = model.reaching;
-const SunRay = model.SunRay;
-const cloudIn = model.cloudIn;
-const offset = model.offset;
 pub const offMiddle = model.offMiddle;
-const Spot = model.Spot;
-const TorchIx = model.TorchIx;
 pub const LIGHTS = model.LIGHTS;
-const Torch = model.Torch;
-const upright = model.upright;
-const GLINT_POWER = model.GLINT_POWER;
-const smoothSpecular = model.smoothSpecular;
-const remembered = model.remembered;
-const carryFade = model.carryFade;
 pub const carryR = model.carryR;
-const mask = model.mask;
-const flicker = model.flicker;
-const splat = model.splat;
-const rgbOf = model.rgbOf;
-const texelOf = model.texelOf;
 pub const Shine = model.Shine;
 pub const Flame = model.Flame;
-const DAPPLE_WAVE = model.DAPPLE_WAVE;
 pub const Emission = model.Emission;
-const EFFECTS = model.EFFECTS;
-const EffectSet = model.EffectSet;
 pub const Options = model.Options;
 
 /// Each light hung steps its flicker seed on by this from the first's.
@@ -65,10 +29,10 @@ const TORCH_SEED_BASE: u32 = 0x165667B1;
 
 pub const Light = struct {
     options: Options = .{},
-    effects: [EFFECTS]model.Effect = undefined,
+    effects: [model.EFFECTS]model.Effect = undefined,
     effect_n: usize = 0,
     visibility: visibility.Visibility,
-    torch: [LIGHTS]Torch,
+    torch: [LIGHTS]model.Torch,
     torch_n: usize = 0,
     /// Lights hung since the level settled; each takes its flicker seed from it, never shared after an uproot.
     hung: u32 = 0,
@@ -78,12 +42,12 @@ pub const Light = struct {
     carry_r: f32 = model.CARRY_R,
     sky: ?sky.Sky = null,
     /// Integral image of caster counts at cell corners.
-    casting: [CORNERS_W * CORNERS_H]u16,
-    clouds: [CORNERS_W * CORNERS_H]f32,
+    casting: [grid.CORNERS_W * grid.CORNERS_H]u16,
+    clouds: [grid.CORNERS_W * grid.CORNERS_H]f32,
     /// Cached inclusive cloud corners and sample time in seconds.
     clouds_held: ?struct { box: grid.Box, t: f32 } = null,
     t: mathx.Seconds = .{},
-    texels: std.EnumArray(Layer, [TEXELS]rl.Color),
+    texels: std.EnumArray(model.Layer, [model.TEXELS]rl.Color),
     /// The rows of `texels` baked since the texture was last sent, all it needs sent.
     baked: [2]i32,
     scratch: grid.Level,
@@ -94,8 +58,8 @@ pub const Light = struct {
     reveal_map: bool = false,
     composed: bool = false,
     canopy: [grid.CELLS]f32,
-    /// Per light-map texel, `dapplingAt` its centre: fixed while the ground is.
-    dappling: [TEXELS]f32,
+    /// Per light-map texel, `dapplingAt` its centre: fixed while the crowns are.
+    dappling: [model.TEXELS]f32,
     /// The baked level's banks.
     banks: dual.Banks,
 
@@ -109,8 +73,8 @@ pub const Light = struct {
         @memset(&l.scratch.tile, .floor);
         @memset(&l.scratch.los, false);
         l.grounded();
-        for (std.enums.values(Layer)) |k| @memset(l.texels.getPtr(k), UNSEEN.get(k));
-        l.baked = .{ 0, MAP_H };
+        for (std.enums.values(model.Layer)) |k| @memset(l.texels.getPtr(k), model.UNSEEN.get(k));
+        l.baked = .{ 0, model.MAP_H };
         l.visibility.soften();
         return l;
     }
@@ -131,34 +95,32 @@ pub const Light = struct {
 
     fn hang(self: *Light, lv: *const grid.Level, mount: model.Mount) void {
         const t = &self.torch[self.torch_n];
-        t.* = Torch{ .mount = mount, .reach = undefined, .open = undefined, .seed = self.hung *% TORCH_SEED_STEP +% TORCH_SEED_BASE };
+        t.* = model.Torch{ .mount = mount, .reach = undefined, .open = undefined, .seed = self.hung *% TORCH_SEED_STEP +% TORCH_SEED_BASE };
         self.hung +%= 1;
         self.torch_n += 1;
         self.pour(lv, t);
     }
 
     /// `t`'s pool over the ground as it stands.
-    fn pour(self: *const Light, lv: *const grid.Level, t: *Torch) void {
+    fn pour(self: *const Light, lv: *const grid.Level, t: *model.Torch) void {
         var pool: [grid.CELLS]bool = @splat(false);
         lume.torchPool(lv, t.floor(), &pool);
         var box = t.box().cells();
         while (box.next()) |p| {
             const k = t.texel(p);
-            t.reach[k] = mask(grid.cellOr(bool, &pool, p, false));
+            t.reach[k] = model.mask(grid.cellOr(bool, &pool, p, false));
             t.open[k] = self.visibility.openAt(p, t.reach[k]);
         }
     }
 
     /// A glowing plant gone from `p`: its light and its shadow with it, and the next plant unlit for want of lights now lit.
-    pub fn uproot(self: *Light, lv: *const grid.Level, p: P) void {
-        if (self.plantAt(p)) |i| _ = mathx.swapRemove(Torch, &self.torch, &self.torch_n, i);
-        self.scratch.tile[grid.Level.idx(p)] = lv.at(p);
-        self.countCasters(&self.scratch);
+    pub fn uproot(self: *Light, lv: *const grid.Level, p: model.P) void {
+        if (self.plantAt(p)) |i| _ = mathx.swapRemove(model.Torch, &self.torch, &self.torch_n, i);
         self.hangPlants(lv);
     }
 
-    /// Tiles changed under it, as fire burns them down: sight, shadows and torch pools take the ground as it now is.
-    pub fn retile(self: *Light, lv: *const grid.Level) void {
+    /// Tiles changed under it: sight, shadows and torch pools take the ground as it now is.
+    fn retile(self: *Light, lv: *const grid.Level) void {
         self.scratch.tile = lv.tile;
         self.countCasters(&self.scratch);
         self.visibility.terrain(&self.scratch);
@@ -174,11 +136,16 @@ pub const Light = struct {
         }
     }
 
-    fn plantAt(self: *const Light, p: P) ?usize {
+    fn plantAt(self: *const Light, p: model.P) ?usize {
         for (self.torch[0..self.torch_n], 0..) |*t, i| {
             if (t.mount == .plant and t.mount.plant.eq(p)) return i;
         }
         return null;
+    }
+
+    /// Takes the tiles drawn whenever they differ from those the light was last given.
+    pub fn follow(self: *Light, lv: *const grid.Level) void {
+        if (!std.mem.eql(grid.Tile, &self.scratch.tile, &lv.tile)) self.retile(lv);
     }
 
     pub fn step(self: *Light, lv: *const grid.Level, dt: f32) void {
@@ -194,7 +161,7 @@ pub const Light = struct {
     }
 
     /// Drawn as terrain: explored, or everything while the debug reveal is on.
-    pub fn remembers(self: *const Light, lv: *const grid.Level, p: P) bool {
+    pub fn remembers(self: *const Light, lv: *const grid.Level, p: model.P) bool {
         return self.reveal_map or lv.isSeen(p);
     }
 
@@ -203,7 +170,7 @@ pub const Light = struct {
         for (self.torch[0..self.torch_n]) |*t| t.fan(self.t.at(), plant);
     }
 
-    pub const TEXELS_W: usize = @intCast(MAP_W);
+    pub const TEXELS_W: usize = @intCast(model.MAP_W);
 
     pub fn texelCentre(tx: usize, ty: usize) [2]f32 {
         const sub: f32 = @floatFromInt(SUB);
@@ -234,11 +201,11 @@ pub const Light = struct {
         return self.visibility.sightAt(x, y);
     }
 
-    pub fn memoryAt(self: *const Light, point: P) f32 {
+    pub fn memoryAt(self: *const Light, point: model.P) f32 {
         return self.visibility.memoryAt(point);
     }
 
-    pub fn near(self: *const Light, view: grid.Box, out: *[LIGHTS]TorchIx) []const TorchIx {
+    pub fn near(self: *const Light, view: grid.Box, out: *[LIGHTS]model.TorchIx) []const model.TorchIx {
         var n: usize = 0;
         for (self.torch[0..self.torch_n], 0..) |*t, i| {
             if (!t.box().overlaps(view, 0)) continue;
@@ -258,17 +225,17 @@ pub const Light = struct {
         const flat = mathx.len(dx, dy);
         if (flat >= self.carry_r) return null;
         const reach = if (fogged) visibility.sampleOccluded(&self.visibility.sight, &self.visibility.carry_open, x, y) else self.carryReach(x, y);
-        return .{ .at = c, .flat = flat, .dy = dy, .k = carryFade(flat, self.carry_r) * share * reach };
+        return .{ .at = c, .flat = flat, .dy = dy, .k = model.carryFade(flat, self.carry_r) * share * reach };
     }
 
-    fn carried(self: *const Light, s: Spot) Rgb {
-        const f = self.carryToward(s.x, s.y, true) orelse return splat(0);
+    fn carried(self: *const Light, s: model.Spot) model.Rgb {
+        const f = self.carryToward(s.x, s.y, true) orelse return model.splat(0);
         const facing = switch (s.surface) {
             .floor => 1,
             .face => model.wrapped(model.faceCos(f.dy, f.flat), model.CARRY_FACE_WRAP),
             .ceiling => model.CARRY_CEILING,
         };
-        return self.carryColourAt(f.flat) * splat(f.k * facing);
+        return self.carryColourAt(f.flat) * model.splat(f.k * facing);
     }
 
     fn carryReach(self: *const Light, x: f32, y: f32) f32 {
@@ -277,7 +244,7 @@ pub const Light = struct {
         var open: [4]f32 = undefined;
         for (0..4) |i| {
             const p = corner.add(mathx.unslot(i, 2));
-            reach[i] = mask(self.scratch.inLos(p));
+            reach[i] = model.mask(self.scratch.inLos(p));
             open[i] = self.visibility.openAt(p, reach[i]);
         }
         const uv = visibility.fieldUv(corner, x, y);
@@ -285,37 +252,37 @@ pub const Light = struct {
     }
 
     fn countCasters(self: *Light, lv: *const grid.Level) void {
-        const w = CORNERS_W;
+        const w = grid.CORNERS_W;
         @memset(self.casting[0..w], 0);
         for (0..grid.ROWS) |y| {
             var row: u16 = 0;
             self.casting[(y + 1) * w] = 0;
             for (0..grid.COLS) |x| {
-                row += @intFromBool(CASTERS.getPtrConst(lv.tile[y * grid.COLS + x]).* != null);
+                row += @intFromBool(model.CASTERS.getPtrConst(lv.tile[y * grid.COLS + x]).* != null);
                 self.casting[(y + 1) * w + x + 1] = self.casting[y * w + x + 1] + row;
             }
         }
     }
 
-    pub fn sunAt(self: *const Light, lv: *const grid.Level, ray: *const SunRay, x: f32, y: f32, z: f32) f32 {
+    pub fn sunAt(self: *const Light, lv: *const grid.Level, ray: *const model.SunRay, x: f32, y: f32, z: f32) f32 {
         return self.sunOver(lv, dual.LiveBanks{ .lv = lv }, ray, x, y, z);
     }
 
-    fn sunOver(self: *const Light, lv: *const grid.Level, banks: anytype, ray: *const SunRay, x: f32, y: f32, z: f32) f32 {
+    fn sunOver(self: *const Light, lv: *const grid.Level, banks: anytype, ray: *const model.SunRay, x: f32, y: f32, z: f32) f32 {
         if (!self.options.shadows or sky.upright(ray.flat)) return 1;
         const bank = model.bankSunlit(lv, banks, ray.*, x, y, z);
         const b = sunBox(ray.*, x, y, z);
         if (self.castersIn(b) == 0) return bank;
-        return @min(bank, sunlit(lv, ray.*, x, y, z));
+        return @min(bank, model.sunlit(lv, ray.*, x, y, z));
     }
 
-    pub fn sunBox(ray: SunRay, x: f32, y: f32, z: f32) grid.Box {
+    pub fn sunBox(ray: model.SunRay, x: f32, y: f32, z: f32) grid.Box {
         const far = ray.far(z);
         return grid.Box.between(mathx.cellOf(.{ x, y }), mathx.cellOf(.{ x + ray.u[0] * far, y + ray.u[1] * far })).grown(1);
     }
 
     pub fn castersIn(self: *const Light, box: grid.Box) u16 {
-        const w = CORNERS_W;
+        const w = grid.CORNERS_W;
         const a: usize = @intCast(std.math.clamp(box.lo.x, 0, grid.W));
         const b: usize = @intCast(std.math.clamp(box.lo.y, 0, grid.H));
         const c: usize = @intCast(std.math.clamp(box.hi.x, 0, grid.W));
@@ -328,21 +295,21 @@ pub const Light = struct {
         return if (self.sky) |k| k.carry else 1;
     }
 
-    fn ambientOf(self: *const Light) Rgb {
-        return if (self.profile()) |k| k.ambient else splat(0);
+    fn ambientOf(self: *const Light) model.Rgb {
+        return if (self.profile()) |k| k.ambient else model.splat(0);
     }
 
     fn profile(self: *const Light) ?sky.Sky {
         var k = self.sky orelse return null;
         if (self.composed) {
-            k.key *= mix(splat(1), model.COMPOSED_KEY, k.sun());
-            k.ambient *= mix(splat(1), model.COMPOSED_AMBIENT, k.sun());
+            k.key *= model.mix(model.splat(1), model.COMPOSED_KEY, k.sun());
+            k.ambient *= model.mix(model.splat(1), model.COMPOSED_AMBIENT, k.sun());
         }
         return k;
     }
 
-    fn sunRay(self: *const Light) ?SunRay {
-        return if (self.profile()) |k| SunRay.of(k) else null;
+    fn sunRay(self: *const Light) ?model.SunRay {
+        return if (self.profile()) |k| model.SunRay.of(k) else null;
     }
 
     /// The sun the clouds let through at `q`, composed; from the cached dappling when `q` is light-map texel `map_at`'s centre.
@@ -358,15 +325,15 @@ pub const Light = struct {
     fn dapplingAt(self: *const Light, q: [2]f32) f32 {
         const cover = visibility.sample(&self.canopy, q[0], q[1]);
         if (cover == 0) return 0;
-        const dapple = 0.5 + 0.5 * @sin(q[0] * DAPPLE_WAVE[0] + q[1] * DAPPLE_WAVE[1] + @sin(q[1] * DAPPLE_WAVE[2]));
+        const dapple = 0.5 + 0.5 * @sin(q[0] * model.DAPPLE_WAVE[0] + q[1] * model.DAPPLE_WAVE[1] + @sin(q[1] * model.DAPPLE_WAVE[2]));
         return cover * (model.DAPPLE_MIN + model.DAPPLE_SPAN * dapple);
     }
 
-    pub fn base(self: *const Light) Rgb {
+    pub fn base(self: *const Light) model.Rgb {
         return @max(self.memoryFloor(), self.ambientOf());
     }
 
-    pub fn memoryFloor(self: *const Light) Rgb {
+    pub fn memoryFloor(self: *const Light) model.Rgb {
         return model.memoryUnder(self.moon());
     }
 
@@ -375,14 +342,14 @@ pub const Light = struct {
         return if (self.sky) |k| k.moon else 0;
     }
 
-    fn carryColour(self: *const Light) Rgb {
-        return if (self.sky) |k| mix(CARRY, model.MOON_CARRY, k.moon) else CARRY;
+    fn carryColour(self: *const Light) model.Rgb {
+        return if (self.sky) |k| model.mix(model.CARRY, model.MOON_CARRY, k.moon) else model.CARRY;
     }
 
     /// The carried light `flat` cells from its carrier, warmed at its feet by night.
-    fn carryColourAt(self: *const Light, flat: f32) Rgb {
+    fn carryColourAt(self: *const Light, flat: f32) model.Rgb {
         const warm = self.moon() * model.NIGHT_GLOW_SHARE * (1 - mathx.smoothstep(0, model.NIGHT_GLOW_R, flat));
-        return mix(self.carryColour(), model.NIGHT_GLOW, warm);
+        return model.mix(self.carryColour(), model.NIGHT_GLOW, warm);
     }
 
     /// Before a frame's `emit`s: effect lights last one frame.
@@ -393,7 +360,7 @@ pub const Light = struct {
     pub fn emit(self: *Light, lv: *const grid.Level, source: Emission) void {
         if (!self.options.effect_lights) return;
         const origin = mathx.cellOf(.{ source.at[0], source.at[1] });
-        if (self.effect_n == EFFECTS or source.gain <= FAINT or source.radius <= 0 or !lv.isLit(origin)) return;
+        if (self.effect_n == model.EFFECTS or source.gain <= model.FAINT or source.radius <= 0 or !lv.isLit(origin)) return;
         const e = &self.effects[self.effect_n];
         self.effect_n += 1;
         e.source = source;
@@ -406,8 +373,8 @@ pub const Light = struct {
         }
     }
 
-    pub fn effectsNear(self: *const Light, c: P) EffectSet {
-        var kept = EffectSet.initEmpty();
+    pub fn effectsNear(self: *const Light, c: model.P) model.EffectSet {
+        var kept = model.EffectSet.initEmpty();
         const x: f32 = @floatFromInt(c.x);
         const y: f32 = @floatFromInt(c.y);
         for (self.effects[0..self.effect_n], 0..) |*e, i| {
@@ -420,7 +387,7 @@ pub const Light = struct {
     }
 
     /// `q` is in cells.
-    pub fn at(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, q: [2]f32) Rgb {
+    pub fn at(self: *const Light, lv: *const grid.Level, torches: []const model.TorchIx, q: [2]f32) model.Rgb {
         const c = mathx.cellOf(q);
         const fade = self.visibility.fadeOf(c);
         const ray = self.sunRay();
@@ -429,32 +396,32 @@ pub const Light = struct {
     }
 
     /// `cloud` is the share of the sky's light the clouds let through, read only with a `ray`.
-    pub fn shade(self: *const Light, lv: *const grid.Level, torches: []const TorchIx, effects: EffectSet, q: [2]f32, map_at: ?usize, v: View, ray: ?*const SunRay, cloud: f32) Rgb {
+    pub fn shade(self: *const Light, lv: *const grid.Level, torches: []const model.TorchIx, effects: model.EffectSet, q: [2]f32, map_at: ?usize, v: View, ray: ?*const model.SunRay, cloud: f32) model.Rgb {
         return self.shadeWithSun(lv, dual.LiveBanks{ .lv = lv }, torches, effects, q, map_at, v, ray, cloud).colour;
     }
 
-    const Shaded = struct { colour: Rgb, sun: ?f32 = null };
+    const Shaded = struct { colour: model.Rgb, sun: ?f32 = null };
 
-    fn shadeWithSun(self: *const Light, lv: *const grid.Level, banks: anytype, torches: []const TorchIx, effects: EffectSet, q: [2]f32, map_at: ?usize, v: View, ray: ?*const SunRay, cloud: f32) Shaded {
+    fn shadeWithSun(self: *const Light, lv: *const grid.Level, banks: anytype, torches: []const model.TorchIx, effects: model.EffectSet, q: [2]f32, map_at: ?usize, v: View, ray: ?*const model.SunRay, cloud: f32) Shaded {
         const sight = v.sight;
         const memory = v.memory;
-        if (memory <= FAINT) return .{ .colour = @splat(0) };
+        if (memory <= model.FAINT) return .{ .colour = @splat(0) };
         var sun: ?f32 = null;
         const floor = self.memoryFloor();
         var view = @max(floor, self.ambientOf());
-        if (sight > FAINT) {
-            const s = Spot.of(lv, q);
+        if (sight > model.FAINT) {
+            const s = model.Spot.of(lv, q);
             view += self.carried(s);
             for (torches) |i| {
                 const t = &self.torch[i];
-                view += t.colour * splat(t.shine(s));
+                view += t.colour * model.splat(t.shine(s));
             }
             if (ray) |r| {
                 const facing = model.sunFacing(r.k, s);
                 if (facing > 0 or r.night > 0) {
                     const on = self.sunOver(lv, banks, r, s.x, s.y, s.z);
                     if (s.x == q[0] and s.y == q[1] and s.z == 0) sun = on;
-                    if (facing > 0) view += r.k.key * splat(facing * reaching(on, self.composedAt(map_at, q, cloud)));
+                    if (facing > 0) view += r.k.key * model.splat(facing * model.reaching(on, self.composedAt(map_at, q, cloud)));
                     view *= r.dim(on, cloud);
                 }
             }
@@ -466,28 +433,28 @@ pub const Light = struct {
                     if (strength <= 0) continue;
                     const facing: f32 = switch (s.surface) {
                         .floor => 1,
-                        .face, .ceiling => upright(s.surface, e.source.at[0] - s.x, e.source.at[1] - s.y),
+                        .face, .ceiling => model.upright(s.surface, e.source.at[0] - s.x, e.source.at[1] - s.y),
                     };
-                    view += rgbOf(e.source.col) * splat(strength * facing);
+                    view += model.rgbOf(e.source.col) * model.splat(strength * facing);
                 }
             }
         }
-        return .{ .colour = remembered(floor, view, sight, memory), .sun = sun };
+        return .{ .colour = model.remembered(floor, view, sight, memory), .sun = sun };
     }
 
     /// Cells `lo` up to `hi`, and a texel round them for the filter.
-    pub fn bake(self: *Light, lv: *const grid.Level, lo: P, hi: P) void {
-        var ids: [LIGHTS]TorchIx = undefined;
+    pub fn bake(self: *Light, lv: *const grid.Level, lo: model.P, hi: model.P) void {
+        var ids: [LIGHTS]model.TorchIx = undefined;
         const torches = self.near((grid.Box{ .lo = lo, .hi = hi }).grown(1), &ids);
-        const t0 = P{ .x = @max(0, lo.x * SUB - 1), .y = @max(0, lo.y * SUB - 1) };
-        const t1 = P{ .x = @min(MAP_W, hi.x * SUB + 1), .y = @min(MAP_H, hi.y * SUB + 1) };
+        const t0 = model.P{ .x = @max(0, lo.x * SUB - 1), .y = @max(0, lo.y * SUB - 1) };
+        const t1 = model.P{ .x = @min(model.MAP_W, hi.x * SUB + 1), .y = @min(model.MAP_H, hi.y * SUB + 1) };
         const ray = self.sunRay();
         if (ray != null) self.banks.sync(lv);
         self.baked = .{ @min(self.baked[0], t0.y), @max(self.baked[1], t1.y) };
-        const c0 = P{ .x = @divFloor(t0.x, SUB), .y = @divFloor(t0.y, SUB) };
+        const c0 = model.P{ .x = @divFloor(t0.x, SUB), .y = @divFloor(t0.y, SUB) };
         if (ray != null) self.cloudsOver(c0, .{ .x = std.math.divCeil(i32, t1.x, SUB) catch unreachable, .y = std.math.divCeil(i32, t1.y, SUB) catch unreachable });
         const same_terrain = std.mem.eql(grid.Tile, &lv.tile, &self.scratch.tile);
-        var c = P{ .x = 0, .y = c0.y };
+        var c = model.P{ .x = 0, .y = c0.y };
         while (c.y * SUB < t1.y) : (c.y += 1) {
             c.x = c0.x;
             while (c.x * SUB < t1.x) : (c.x += 1) self.bakeCell(lv, torches, c, t0, t1, ray, same_terrain);
@@ -495,26 +462,26 @@ pub const Light = struct {
     }
 
     /// The corners from `lo` to `hi`, both inclusive.
-    fn cloudsOver(self: *Light, lo: P, hi: P) void {
+    fn cloudsOver(self: *Light, lo: model.P, hi: model.P) void {
         const t = self.t.at();
         var y = lo.y;
         while (y <= hi.y) : (y += 1) {
             var x = lo.x;
-            while (x <= hi.x) : (x += 1) self.clouds[cornerAt(.{ .x = x, .y = y })] = clouded(@floatFromInt(x), @floatFromInt(y), t);
+            while (x <= hi.x) : (x += 1) self.clouds[cornerAt(.{ .x = x, .y = y })] = model.clouded(@floatFromInt(x), @floatFromInt(y), t);
         }
         self.clouds_held = .{ .box = .{ .lo = lo, .hi = hi }, .t = t };
     }
 
-    fn cornerAt(p: P) usize {
-        return @as(usize, @intCast(p.y)) * CORNERS_W + @as(usize, @intCast(p.x));
+    fn cornerAt(p: model.P) usize {
+        return @as(usize, @intCast(p.y)) * grid.CORNERS_W + @as(usize, @intCast(p.x));
     }
 
     fn cloudAt(self: *const Light, q: [2]f32) f32 {
         const c = mathx.cellOf(q);
-        return cloudIn(self.cloudCorners(c), c, q);
+        return model.cloudIn(self.cloudCorners(c), c, q);
     }
 
-    fn cloudCorners(self: *const Light, c: P) [4]f32 {
+    fn cloudCorners(self: *const Light, c: model.P) [4]f32 {
         const t = self.t.at();
         if (self.clouds_held) |h| {
             if (h.t == t and h.box.holds(c)) return self.heldCorners(c);
@@ -522,19 +489,19 @@ pub const Light = struct {
         const cx: f32 = @floatFromInt(c.x);
         const cy: f32 = @floatFromInt(c.y);
         return .{
-            clouded(cx, cy, t),
-            clouded(cx + 1, cy, t),
-            clouded(cx, cy + 1, t),
-            clouded(cx + 1, cy + 1, t),
+            model.clouded(cx, cy, t),
+            model.clouded(cx + 1, cy, t),
+            model.clouded(cx, cy + 1, t),
+            model.clouded(cx + 1, cy + 1, t),
         };
     }
 
-    fn heldCorners(self: *const Light, c: P) [4]f32 {
+    fn heldCorners(self: *const Light, c: model.P) [4]f32 {
         const k = cornerAt(c);
-        return .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + CORNERS_W], self.clouds[k + CORNERS_W + 1] };
+        return .{ self.clouds[k], self.clouds[k + 1], self.clouds[k + grid.CORNERS_W], self.clouds[k + grid.CORNERS_W + 1] };
     }
 
-    fn bakeCell(self: *Light, lv: *const grid.Level, torches: []const TorchIx, c: P, t0: P, t1: P, ray: ?SunRay, same_terrain: bool) void {
+    fn bakeCell(self: *Light, lv: *const grid.Level, torches: []const model.TorchIx, c: model.P, t0: model.P, t1: model.P, ray: ?model.SunRay, same_terrain: bool) void {
         const fade = self.visibility.fadeOf(c);
         const dark = if (fade.flat) |v| v == 0 else false;
         const x0 = @max(t0.x, c.x * SUB);
@@ -544,9 +511,9 @@ pub const Light = struct {
         if (dark) {
             var y = y0;
             while (y < y1) : (y += 1) {
-                const first: usize = @intCast(y * MAP_W + x0);
-                const last: usize = @intCast(y * MAP_W + x1);
-                inline for (comptime std.enums.values(Layer)) |k| @memset(self.texels.getPtr(k)[first..last], UNSEEN.get(k));
+                const first: usize = @intCast(y * model.MAP_W + x0);
+                const last: usize = @intCast(y * model.MAP_W + x1);
+                inline for (comptime std.enums.values(model.Layer)) |k| @memset(self.texels.getPtr(k)[first..last], model.UNSEEN.get(k));
             }
             return;
         }
@@ -570,44 +537,44 @@ pub const Light = struct {
         while (ty < y1) : (ty += 1) {
             var tx = x0;
             while (tx < x1) : (tx += 1) {
-                const i: usize = @intCast(ty * MAP_W + tx);
-                glints[i] = UNSEEN.get(.glints);
+                const i: usize = @intCast(ty * model.MAP_W + tx);
+                glints[i] = model.UNSEEN.get(.glints);
                 const q = texelCentre(@intCast(tx), @intCast(ty));
                 const v = fade.view(patch.sightAt(ground, q[0], q[1]), q);
                 fog[i] = look.fade(rl.Color.white, 1 - v.memory);
-                const cloud = if (ray != null) cloudIn(corners, c, q) else 1;
+                const cloud = if (ray != null) model.cloudIn(corners, c, q) else 1;
                 const shaded = self.shadeWithSun(lv, &self.banks, torches, effects, q, i, v, if (ray) |*r| r else null, cloud);
-                map[i] = texelOf(shaded.colour, v.lit);
-                if (self.options.water_glints and wet and v.lit > FAINT and lv.isLit(c))
+                map[i] = model.texelOf(shaded.colour, v.lit);
+                if (self.options.water_glints and wet and v.lit > model.FAINT and lv.isLit(c))
                     glints[i] = look.colourOf(self.waterGlintWithSun(torches, effects, q, i, if (ray) |*r| r else null, cloud, if (same_terrain) shaded.sun else null), 1);
             }
         }
     }
 
-    pub fn waterGlint(self: *const Light, torches: []const TorchIx, effects: EffectSet, q: [2]f32, map_at: ?usize, ray: ?*const SunRay, cloud: f32) Rgb {
+    pub fn waterGlint(self: *const Light, torches: []const model.TorchIx, effects: model.EffectSet, q: [2]f32, map_at: ?usize, ray: ?*const model.SunRay, cloud: f32) model.Rgb {
         return self.waterGlintWithSun(torches, effects, q, map_at, ray, cloud, null);
     }
 
-    fn waterGlintWithSun(self: *const Light, torches: []const TorchIx, effects: EffectSet, q: [2]f32, map_at: ?usize, ray: ?*const SunRay, cloud: f32, sun: ?f32) Rgb {
-        var gleam: Rgb = @splat(0);
+    fn waterGlintWithSun(self: *const Light, torches: []const model.TorchIx, effects: model.EffectSet, q: [2]f32, map_at: ?usize, ray: ?*const model.SunRay, cloud: f32, sun: ?f32) model.Rgb {
+        var gleam: model.Rgb = @splat(0);
         if (ray) |r| {
             const on = sun orelse self.sunAt(&self.scratch, r, q[0], q[1], 0);
-            gleam += r.k.key * splat(r.glint * reaching(on, self.composedAt(map_at, q, cloud)) * model.SUN_GLINT);
+            gleam += r.k.key * model.splat(r.glint * model.reaching(on, self.composedAt(map_at, q, cloud)) * model.SUN_GLINT);
         }
         if (self.carryToward(q[0], q[1], true)) |f|
-            gleam += self.carryColour() * splat(smoothSpecular(.{ f.at[0] - q[0], f.at[1] - q[1], BODY_Z }, GLINT_POWER) * f.k * model.CARRY_GLINT);
+            gleam += self.carryColour() * model.splat(model.smoothSpecular(.{ f.at[0] - q[0], f.at[1] - q[1], BODY_Z }, model.GLINT_POWER) * f.k * model.CARRY_GLINT);
         for (torches) |i| {
             const t = &self.torch[i];
             const r = t.toward(q[0], q[1], 0) orelse continue;
-            gleam += t.colour * splat(smoothSpecular(r.d, GLINT_POWER) * r.k * model.TORCH_GLINT);
+            gleam += t.colour * model.splat(model.smoothSpecular(r.d, model.GLINT_POWER) * r.k * model.TORCH_GLINT);
         }
         var it = effects.iterator(.{});
         while (it.next()) |i| {
             const e = &self.effects[i];
             const s = e.source;
             const k = e.strength(q[0], q[1], 0);
-            if (k <= FAINT) continue;
-            gleam += rgbOf(s.col) * splat(smoothSpecular(offset(s.at, q[0], q[1], 0), GLINT_POWER) * k * model.EFFECT_GLINT);
+            if (k <= model.FAINT) continue;
+            gleam += model.rgbOf(s.col) * model.splat(model.smoothSpecular(model.offset(s.at, q[0], q[1], 0), model.GLINT_POWER) * k * model.EFFECT_GLINT);
         }
         return gleam;
     }
@@ -631,45 +598,45 @@ pub const Light = struct {
         const v = if (fogged) self.viewAt(centre) else View{ .sight = 1, .memory = 1, .lit = 1 };
         const lit = v.lit;
         var s = Shine{ .sight = lit };
-        const night: Rgb = if (self.sunRay()) |ray| self.sunOnBody(&s, &ray, centre, lit) else splat(1);
+        const night: model.Rgb = if (self.sunRay()) |ray| self.sunOnBody(&s, &ray, centre, lit) else model.splat(1);
         const floor = self.memoryFloor();
-        s.ambient = remembered(floor, self.base() * night, v.sight, v.memory);
-        s.floor = remembered(floor, (self.base() - self.ambientOf()) * night, v.sight, v.memory);
+        s.ambient = model.remembered(floor, self.base() * night, v.sight, v.memory);
+        s.floor = model.remembered(floor, (self.base() - self.ambientOf()) * night, v.sight, v.memory);
         if (self.carryToward(centre[0], centre[1], fogged)) |f| {
             const k = f.k * lit;
             if (carrier) {
-                s.ambient += self.carryColourAt(f.flat) * splat(k) * night;
-            } else if (k > FAINT) {
-                s.add(.{ .drawn = f.at, .ground = f.at, .colour = self.carryColourAt(f.flat) * splat(k), .casts = false });
+                s.ambient += self.carryColourAt(f.flat) * model.splat(k) * night;
+            } else if (k > model.FAINT) {
+                s.add(.{ .drawn = f.at, .ground = f.at, .colour = self.carryColourAt(f.flat) * model.splat(k), .casts = false });
             }
         }
         for (self.torch[0..self.torch_n]) |*t| {
             const r = t.toward(centre[0], centre[1], BODY_Z) orelse continue;
             const k = r.k * lit;
-            if (k <= FAINT) continue;
+            if (k <= model.FAINT) continue;
             const fl = t.flame();
-            s.add(.{ .drawn = t.drawn(), .ground = .{ fl[0], fl[1] }, .colour = t.colour * splat(k), .casts = true });
+            s.add(.{ .drawn = t.drawn(), .ground = .{ fl[0], fl[1] }, .colour = t.colour * model.splat(k), .casts = true });
         }
         for (s.lamp[0..s.n]) |*l| l.colour *= night;
         for (self.effects[0..self.effect_n]) |*e| {
             const k = e.strength(centre[0], centre[1], BODY_Z) * lit;
-            if (k <= FAINT) continue;
+            if (k <= model.FAINT) continue;
             const p = e.source.at;
-            s.add(.{ .drawn = e.source.drawn(), .ground = .{ p[0], p[1] }, .colour = rgbOf(e.source.col) * splat(k), .casts = true });
+            s.add(.{ .drawn = e.source.drawn(), .ground = .{ p[0], p[1] }, .colour = model.rgbOf(e.source.col) * model.splat(k), .casts = true });
         }
         return s;
     }
 
-    fn sunOnBody(self: *const Light, s: *Shine, ray: *const SunRay, centre: [2]f32, lit: f32) Rgb {
+    fn sunOnBody(self: *const Light, s: *Shine, ray: *const model.SunRay, centre: [2]f32, lit: f32) model.Rgb {
         const k = ray.k;
         const toward = ray.u;
         const sun = self.sunAt(&self.scratch, ray, centre[0], centre[1], BODY_Z);
         const cloud = self.cloudAt(centre);
-        const on = reaching(sun, self.composedAt(null, centre, cloud));
+        const on = model.reaching(sun, self.composedAt(null, centre, cloud));
         if (lit > 0) s.add(.{
-            .drawn = .{ centre[0] + toward[0] * SUN_LAMP_D, centre[1] + toward[1] * SUN_LAMP_D },
+            .drawn = .{ centre[0] + toward[0] * model.SUN_LAMP_D, centre[1] + toward[1] * model.SUN_LAMP_D },
             .ground = .{ centre[0] + toward[0], centre[1] + toward[1] },
-            .colour = k.key * splat(lit * on),
+            .colour = k.key * model.splat(lit * on),
             .casts = !sky.upright(ray.flat),
             .sky = .{ .reach = k.reach(), .depth = model.skyDepth(k, sun * cloud) * lit, .shade = ray.shade },
         });

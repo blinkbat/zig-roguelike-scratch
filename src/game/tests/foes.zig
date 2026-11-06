@@ -1411,6 +1411,7 @@ test "a mimic killed in its chest stays the chest until the killing blow lands" 
     while (!g.pic.pictured[slot].down()) : (frames += 1) {
         try std.testing.expectEqual(grid.Tile.chest, g.pic.tileShown(&g.sim, at));
         try std.testing.expect(g.pic.mimicAt(&g.sim, at));
+        try harness.expectGroundShown(g);
         try std.testing.expect(harness.gone(g, slot));
         game.update(g, harness.TEST_DT);
     }
@@ -1472,6 +1473,7 @@ fn litUntilDown(g: *game.Game, slot: usize, at: P) !usize {
     while (!g.pic.pictured[slot].down()) : (frames += 1) {
         try std.testing.expect(frames < 200);
         try std.testing.expect(g.pic.litShown(&g.sim, at));
+        try std.testing.expect(g.light.visibility.sight[grid.Level.idx(at)] > 0.99);
         game.update(g, harness.TEST_DT);
     }
     game.update(g, harness.TEST_DT);

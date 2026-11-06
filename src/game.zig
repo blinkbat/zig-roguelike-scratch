@@ -783,9 +783,11 @@ pub fn update(g: *Game, dt: f32) void {
     const want = camWant(g);
     const k = mathx.easing(dt, CAM_EASE);
     g.cam = g.cam.lerp(want, k);
-    g.pic.ease(&g.sim, dt);
+    const ground = g.pic.groundShown(&g.sim);
+    g.pic.easeOver(&g.sim, ground, dt);
     g.light.sky = skyNow(g);
-    g.light.step(&g.sim.lv, dt);
+    g.light.follow(ground);
+    g.light.step(ground, dt);
     carryLight(g);
     if (g.debug.visuals.weather) g.rain.step(dt, weatherNow(g), g.screen.x, g.screen.y, CELL_F);
 }
@@ -815,10 +817,11 @@ fn drawnTurn(g: *Game) void {
 }
 
 /// Whichever screen takes the way: a walk held across a change of it moves nothing on the new one.
-const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, binds: std.meta.Tag(binds.Binds.Menu) };
+const Screen = struct { mode: Mode, pause_page: PausePage, debug_page: debugging.Page, character_page: book.Page, binds: std.meta.Tag(binds.Binds.Menu), talk: ?[2]u8 };
 
 fn screenOf(g: *const Game) Screen {
-    return .{ .mode = std.meta.activeTag(g.mode), .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .binds = std.meta.activeTag(g.binds.menu) };
+    const talk: ?[2]u8 = if (g.sim.plot.talk) |t| .{ t.dialog, t.line } else null;
+    return .{ .mode = std.meta.activeTag(g.mode), .pause_page = g.pause_page, .debug_page = g.debug.page, .character_page = g.character.page, .binds = std.meta.activeTag(g.binds.menu), .talk = talk };
 }
 
 pub fn holdWalk(g: *Game) void {

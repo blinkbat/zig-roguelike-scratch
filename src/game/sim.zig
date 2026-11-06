@@ -364,6 +364,11 @@ pub const Simulation = struct {
         if (self.lv.isLit(at)) self.log.push(kind, fmt, args);
     }
 
+    /// Logged once if any of `cells` is in sight.
+    pub fn sayAnyAt(self: *Simulation, cells: []const P, comptime fmt: []const u8, args: anytype) void {
+        for (cells) |p| if (self.lv.isLit(p)) return self.log.say(fmt, args);
+    }
+
     /// Logged only if `a` is seen, not underwater or in its chest.
     pub fn sayOf(self: *Simulation, a: *const actor.Actor, comptime fmt: []const u8, args: anytype) void {
         if (a.seenIn(&self.lv)) self.log.push(.status, fmt, args);

@@ -238,7 +238,7 @@ pub const LURK_REACH: i32 = 1;
 
 pub const SWEEP_VERB = "sweeps";
 pub const SWEEP_CELLS = mathx.ALL_DIRS.len;
-pub const Swept = grid.Area(SWEEP_CELLS);
+pub const Swept = grid.Bounded(P, SWEEP_CELLS);
 
 pub fn sweep(lv: *const grid.Level, from: P) Swept {
     return lv.reachable(SWEEP_CELLS, from, mathx.ALL_DIRS[0..SWEEP_CELLS].*);
@@ -496,26 +496,6 @@ test "heroes and foes share independent status buildup with innate beefy pib stu
 }
 
 pub const Tally = struct { left: usize = 0, total: usize = 0 };
-
-pub fn Ids(comptime N: usize) type {
-    return struct {
-        id: [N]u16 = undefined,
-        n: usize = 0,
-
-        pub fn slice(self: *const @This()) []const u16 {
-            return self.id[0..self.n];
-        }
-
-        pub fn push(self: *@This(), id: u16) void {
-            self.id[self.n] = id;
-            self.n += 1;
-        }
-
-        pub fn has(self: *const @This(), id: u16) bool {
-            return std.mem.indexOfScalar(u16, self.slice(), id) != null;
-        }
-    };
-}
 
 /// Ids are 1-based so `grid.NO_ONE` (0) is never a body.
 pub const Pool = struct {

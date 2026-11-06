@@ -926,9 +926,10 @@ pub const Coins = struct {
     amount: i32,
 
     pub fn large(c: Coins) bool {
-        return c.amount > BARREL_GOLD.hi;
+        return c.amount > LARGE_COINS;
     }
 };
+const LARGE_COINS: i32 = 12;
 pub const Ground = struct {
     drops: [GROUND_MAX]Drop = undefined,
     n: usize = 0,

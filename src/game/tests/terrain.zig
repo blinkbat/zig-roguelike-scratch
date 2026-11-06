@@ -15,7 +15,7 @@ const rewards = @import("../rewards.zig");
 const harness = @import("../harness.zig");
 const fire = @import("../../map/fire.zig");
 const ice = @import("../../map/ice.zig");
-const glacial = @import("../../play/glacial.zig");
+const areas = @import("../../play/area.zig");
 const shock = @import("../../play/shock.zig");
 const fireball = @import("../../play/fireball.zig");
 const heroes = @import("../../play/hero.zig");
@@ -201,7 +201,7 @@ test "terrain inspection retains the drawn tile and modifiers until freezing and
     harness.arena(g, .{ .x = 20, .y = 20 }, &.{at});
     g.sim.lv.set(at, .shallows);
     game.settle(g);
-    const area = glacial.patch(&g.sim.lv, at, 0);
+    const area = areas.patch(&g.sim.lv, at, 0);
     var title: [overlay.TIP_TITLE_MAX]u8 = undefined;
     var body: [overlay.TIP_BODY_MAX]u8 = undefined;
     var before: [overlay.TIP_BODY_MAX]u8 = undefined;
@@ -590,7 +590,7 @@ test "a pyre bloat's melted ice stays drawn until its death burst lands" {
         harness.arena(g, from, &.{});
         const bloat = harness.spawnAt(g, .pyre_bloat, .{ .x = 21, .y = 20 }, own_turn);
         g.sim.lv.set(at, .shallows);
-        const area = glacial.patch(&g.sim.lv, at, 0);
+        const area = areas.patch(&g.sim.lv, at, 0);
         try std.testing.expect(rewards.freezeRound(&g.sim, &area));
         game.settle(g);
         if (own_turn) {
@@ -605,6 +605,7 @@ test "a pyre bloat's melted ice stays drawn until its death burst lands" {
         while (!g.pic.pictured[actor.Pool.slot(bloat)].down()) : (frames += 1) {
             try std.testing.expect(frames < 200);
             try std.testing.expectEqual(grid.Tile.ice, g.pic.tileShown(&g.sim, at));
+            try harness.expectGroundShown(g);
             game.update(g, harness.TEST_DT);
         }
         try std.testing.expect(frames > 0);
@@ -623,7 +624,7 @@ test "cold leaves the shallows a swimmer lies in open" {
     var pool = grid.Cells.around(at, 1);
     while (pool.next()) |p| g.sim.lv.set(p, .shallows);
     _ = g.sim.pool.spawn(&g.sim.lv, actor.Actor.of(.bog_leech, at));
-    const area = glacial.patch(&g.sim.lv, at, 1);
+    const area = areas.patch(&g.sim.lv, at, 1);
     try std.testing.expect(rewards.freezeRound(&g.sim, &area));
     try std.testing.expectEqual(grid.Tile.shallows, g.sim.lv.at(at));
     try std.testing.expect(g.sim.lv.frozen(.{ .x = 23, .y = 20 }));

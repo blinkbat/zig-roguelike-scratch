@@ -126,10 +126,14 @@ pub const State = struct {
         return XP_BASE + @as(u64, self.level - 1) * XP_STEP;
     }
 
+    pub fn levelDue(self: State) bool {
+        return self.level < std.math.maxInt(u16) and self.xp >= self.needed();
+    }
+
     pub fn gain(self: *State, xp: u32) u16 {
         const was = self.level;
         self.xp +|= xp;
-        while (self.level < std.math.maxInt(u16) and self.xp >= self.needed()) {
+        while (self.levelDue()) {
             self.xp -= self.needed();
             self.level += 1;
             self.passive_points +|= POINTS_PER_LEVEL;

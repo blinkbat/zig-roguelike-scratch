@@ -7,7 +7,7 @@ const consumable = @import("consumable.zig");
 const resilience = @import("resilience.zig");
 const mathx = @import("../core/mathx.zig");
 const grid = @import("../map/grid.zig");
-const glacial = @import("glacial.zig");
+const areas = @import("area.zig");
 const actor = @import("actor.zig");
 
 const MELEE_REACH: i32 = 1;
@@ -79,15 +79,15 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
     }
     if (has(d, "burst")) {
         if (d.reticle != .bow or !has(d, "ELEMENT") or !has(d, "afflict")) return "burst requires an elemental afflicting projectile";
-        if (!signature(m, "burst", &.{ *const grid.Level, mathx.P, mathx.P }, glacial.Burst)) return "burst must accept (*const Level, P, P) and return glacial.Burst";
+        if (!signature(m, "burst", &.{ *const grid.Level, mathx.P, mathx.P }, areas.Burst)) return "burst must accept (*const Level, P, P) and return area.Burst";
     }
     if (has(d, "around")) {
         if (d.reticle != null or !has(d, "ELEMENT") or !has(d, "afflict")) return "around requires an unaimed elemental afflicting skill";
-        if (!signature(m, "around", &.{ *const grid.Level, mathx.P }, glacial.Burst)) return "around must accept (*const Level, P) and return glacial.Burst";
+        if (!signature(m, "around", &.{ *const grid.Level, mathx.P }, areas.Burst)) return "around must accept (*const Level, P) and return area.Burst";
     }
     if (has(d, "JUMPS")) {
         if (d.reticle != .bow or !has(d, "afflict") or has(d, "burst")) return "JUMPS requires a non-burst afflicting projectile";
-        if (!signature(m, "chain", &.{ *const grid.Level, *actor.Pool, u16 }, actor.Ids(m.JUMPS + 1))) return "chain must accept (*const Level, *Pool, u16) and return actor.Ids(JUMPS + 1)";
+        if (!signature(m, "chain", &.{ *const grid.Level, *actor.Pool, u16 }, grid.Bounded(u16, m.JUMPS + 1))) return "chain must accept (*const Level, *Pool, u16) and return grid.Bounded(u16, JUMPS + 1)";
     }
     if (has(d, "PIERCES") and (d.reticle != .bow or has(d, "BOLT") or has(d, "burst") or has(d, "afflict") or has(d, "JUMPS"))) return "PIERCES requires a plain arrow";
     if (has(d, "length") and d.reticle != .ground) return "length requires ground targeting";
@@ -96,7 +96,7 @@ pub fn invalid(comptime d: Definition) ?[]const u8 {
     if (has(d, "knocked") and !signature(m, "knocked", &.{ *const grid.Level, mathx.P, mathx.Dir, u16 }, ?mathx.P)) return "knocked must accept (*const Level, P, Dir, u16) and return ?P";
     if (has(d, "arc")) {
         if (!@hasDecl(m, "WIDTH")) return "arc requires WIDTH";
-        if (!signature(m, "arc", &.{ *const grid.Level, mathx.P, mathx.P }, grid.Area(m.WIDTH))) return "arc must accept (*const Level, P, P) and return grid.Area(WIDTH)";
+        if (!signature(m, "arc", &.{ *const grid.Level, mathx.P, mathx.P }, grid.Bounded(mathx.P, m.WIDTH))) return "arc must accept (*const Level, P, P) and return grid.Bounded(P, WIDTH)";
     }
     if (d.reticle) |r| switch (r) {
         .leap, .rush, .swing => {
